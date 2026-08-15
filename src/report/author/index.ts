@@ -4,10 +4,15 @@
  * legacy Page factories intentionally do not cross this boundary.
  */
 export {
+  buildReportMeta,
   defineReport,
+  isReportDefinition,
+  resolveReportTitle,
+  Style,
 } from "../definition.ts";
 
 export type {
+  DimensionPins,
   PageDefinition,
   PageEvidence,
   PageLoad,
@@ -19,6 +24,17 @@ export type {
   PlainPageDefinition,
   Report,
   ReportDefinition,
+  ReportMeta,
+  ReportMetaPage,
+  ReportShell,
+  HeadAttributes,
+  HeadAttributeValue,
+  HeadTag,
+  NormalizedPageDefinition,
+  NormalizedParameterizedPageDefinition,
+  NormalizedPlainPageDefinition,
+  NonEmptyArray,
+  StyleDeclaration,
 } from "../definition.ts";
 
 export {
@@ -39,6 +55,8 @@ export type {
   ChartAxisKey,
   ChartDimensionKey,
   ChartProps,
+  AuthorComposeContext,
+  AuthorResolveContext,
   ComponentFaces,
   ComposeContext,
   DownloadFile,
@@ -49,3 +67,20 @@ export type {
   TextContext,
   WebContext,
 } from "../components.ts";
+
+export {
+  isReportElement,
+} from "./element.ts";
+export type {
+  AuthorReportNode,
+  ReportElement,
+} from "./element.ts";
+
+export {
+  REPORT_AUTHOR_EXPORT_MANIFEST,
+} from "./manifest.ts";
+export type {
+  ReportAuthorExportManifest,
+  ReportAuthorTypeExport,
+  ReportAuthorValueExport,
+} from "./manifest.ts";

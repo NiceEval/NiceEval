@@ -10,6 +10,11 @@ import {
   type BuiltInSummaryRows,
 } from "./analysis-values.ts";
 import { AttemptTrace } from "./attempt-trace.ts";
+import {
+  captureExecutionShowResult,
+  captureTimingShowResult,
+} from "./attempt-evidence-json.ts";
+import { registerBuiltInShowResult } from "../execution/results.ts";
 
 export interface ExecutionEvidenceReportOptions {
   /** Match retained Conversation items and Commands with one JavaScript regular expression. */
@@ -33,10 +38,10 @@ export function executionEvidenceReport(
   const options: ExecutionEvidenceReportOptions = Object.freeze({
     ...(input.grep === undefined ? {} : { grep: input.grep }),
   });
-  return defineReport({
+  return registerBuiltInShowResult(defineReport({
     title: "Attempt execution",
     pages: [executionEvidencePage(options)],
-  });
+  }), Object.freeze({ produce: captureExecutionShowResult }));
 }
 
 /** The built-in execution report token target. */
@@ -49,10 +54,10 @@ export function timingEvidenceReport(
   const options: Required<TimingEvidenceReportOptions> = Object.freeze({
     mode: input.mode ?? "summary",
   });
-  return defineReport({
+  return registerBuiltInShowResult(defineReport({
     title: "Attempt timing",
     pages: [timingEvidencePage(options)],
-  });
+  }), Object.freeze({ produce: captureTimingShowResult }));
 }
 
 export const defaultTimingEvidenceReport = timingEvidenceReport();

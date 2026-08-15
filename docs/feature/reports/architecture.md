@@ -1,151 +1,157 @@
 # Report 架构
 
-Report 把固定 Sample 与 Report 定义执行为 immutable、self-contained 的 ReportExecution。它不拥有 Record、事实迁移、总体选择或统计口径。terminal、Web 和 static renderer 都只消费这同一份 execution；它们不会各自重新执行页面或取数。
+Report 的内部边界服务于一个简单结果：固定的 Sample 与 ReportDefinition 只构建一次完整站点，所有公开入口随后从同一
+ClosedSiteRevision 读取。作者仍只写 Page、组件和 JSX；revision 是 Host 的关闭结果。
 
-## 依赖方向
+## 四个入口共享一个 builder
+
+```text
+niceeval show ────────┐
+niceeval show --json ─┤
+niceeval view ────────┼─ select Record ─ open fixed Sample
+niceeval view --out ──┘                         │
+                                                   ▼
+                              ReportDefinition + Sample
+                                                   │
+                                                   ▼
+                                      buildSiteRevision()
+                                                   │
+                                                   ▼
+                                      ClosedSiteRevision
+                         ┌─────────────────┬───────────────┬──────────────────┐
+                         ▼                 ▼               ▼                  ▼
+                    terminal text      canonical JSON   HTTP bytes       static files
+```
+
+`show`、`show --json`、`view` 和 `view --out` 都先走完整 builder。`--page` 只决定最终文字或初始浏览位置，
+不缩小 Page 枚举、Analysis 调用、全站校验或静态文件集合。Host 没有 target-subset builder。
+
+## 分层与所有权
 
 ```text
 Record
-  │ persistent facts
+  │ sealed facts
   ▼
 Analysis
-  │ Sample + rows / domain views / MetricValue
+  │ fixed Sample, ClosedRows, MetricValue, domain views
   ▼
-Report callback
-  │ Page + component composition
+Report author
+  │ defineReport, Page, defineComponent, JSX
   ▼
-ClosedReportTree
-  ├─ terminal
-  ├─ Web revision
-  └─ static site
+Report Host
+  │ buildSiteRevision, validate, content-address
+  ▼
+ClosedSiteRevision
+  │ page projections, HTML, assets, downloads
+  ▼
+show / JSON / view / static
 ```
 
-Record 保存发生过的事。Analysis 固定总体、分母、缺失、归并和 Evidence。Report 只把闭合结果组织为页面。renderer 只读取 ClosedReportTree，不能回到前两层。
+Record 拥有持久事实。Analysis 拥有选择、分母、缺失和 Evidence。Report 作者只组织已关闭的值。Host 在 Sample 的
+Scope 存活时执行作者回调，并把结果变成可以序列化的站点内容。
 
-## 一份 execution 的时序
+作者导入面不包含 Record reader、watcher、模块加载器、文件路径或 renderer。Host 也不会把这些能力留在 revision 中。
+
+## ClosedSiteRevision
+
+ClosedSiteRevision 是全站的不可变内容集合。每一页都同时保留关闭页面投影和最终 HTML body bytes；每个静态文件与下载
+也保留最终 bytes。
+
+```ts
+interface ClosedSiteRevision {
+  readonly identity: ContentAddress;
+  readonly sampleIdentity: ContentAddress;
+  readonly reportIdentity: ContentAddress;
+  readonly rendererIdentity: ContentAddress;
+  readonly pages: readonly ClosedPageProjection[];
+  readonly assets: readonly ClosedAsset[];
+  readonly downloads: readonly ClosedDownload[];
+}
+
+interface ClosedPageProjection {
+  readonly route: string;
+  readonly semanticContent: ClosedPageContent;
+  readonly htmlBodyBytes: Uint8Array;
+}
+```
+
+`identity` 是内容寻址值。它必须绑定 Sample、Report、renderer identity 与关闭后的全站内容，不能只按 route、文件时间或
+当前浏览器状态命名。revision 不含 Sample capability、Record reader、Promise、callback、模块对象、原始 payload 或路径能力。
+
+HTML 由 Host 按上下文转义。关闭页面内容只允许已验证的结构、普通数据、inline CSS、非执行 metadata 与本地静态文件引用。
+任意 HTML、可执行 script、worker、WASM、远程字体和功能性网络请求都不能进入 revision。
+
+## buildSiteRevision 的固定步骤
+
+1. 校验 ReportDefinition 的静态形状、Page id、基路径和声明的安全 metadata。
+2. 在固定 Sample 上调用每个参数化 Page 一次 `params.enumerate(sample)`。
+3. 对全部普通 Page 和全部枚举实例执行 `load`、`render`、组件、计算与下载字节构造。
+4. 关闭每个页面值，并生成每页 HTML、静态文件和下载字节。
+5. 全局校验 route、链接、详情页面、Source、Trace、Diff、下载、路径冲突、限额、问题面和所有最终 bytes。
+6. 以关闭内容形成 content-addressed ClosedSiteRevision，再关闭 Sample 的读取能力。
+
+`params.enumerate(sample)` 是详情集合的唯一入口。Source、Trace 和 Diff 要么是已枚举的详情 Page，要么是 revision 中的
+静态文件。客户端地址、HTTP 请求和浏览器导航不能制造新的参数实例或触发 Analysis。
+
+所有页面成功关闭并通过第 5 步，Host 才有 revision。Analysis issue 仍是可显示的数据：它留在 MetricValue、ClosedRows、
+领域视图和问题面。作者回调失败、枚举失败、路径冲突、坏节点、坏字节或限额超过是全站构建失败，不能发布部分 revision。
+
+## 静态文件与 HTTP 的字节合同
+
+`view --out` 只把 ClosedSiteRevision 的 page、asset 与 download bytes 写入目标目录。它不重新呈现、不为导出调整数据，
+也不允许只写已访问过的页面。
+
+`view` 只托管当前 ClosedSiteRevision 的同一批 bytes。对于每个 route，HTTP 响应 body 与静态目录中的对应 body 字节相同。
+Host 可添加协议 header、管理连接并发送刷新通知，但这些动作不能改变正文、页面投影或下载内容。
+
+因此静态站在断网且禁用 JavaScript 时仍提供正文、导航、详情、问题与下载。Web 图形或刷新只能增强已关闭的文字与链接，
+不能重新计算值、请求 Analysis 或加载延迟的 Source、Trace、Diff。
+
+## view 的 build intent 与发布
 
 ```text
-select target route or static all-pages target
-  │
-  ├─ validate Report definition and known paths
-  │
-  ├─ run Page load / render
-  │     └─ aggregate() or query() closes local Analysis dependencies
-  │
-  ├─ resolve component instances
-  │
-  ├─ validate and close every semantic node
-  │
-  └─ collect routes, downloads and problem table
-        ▼
-   immutable ReportExecution
+intent 41 ── build candidate A ─────────────┐
+                                              ├─ superseded by intent 42 → abort or discard A
+intent 42 ── build candidate B ── validates ─┴─ atomically publish revision B
+                                              │
+intent 43 ── build fails ────────────────────┴─ retain last-good revision B
 ```
 
-普通 show 不带 --page 时执行全部普通 Page。带 --page 的 show 和 view 只执行目标 route；参数化 Page 只 decode、load 和 render 请求的一个实例。静态目标总是执行全部普通 Page，并为每个参数化 Page 调用 enumerate(sample) 后执行全部列出的实例。
+watcher 监听 Record、Report、配置、Theme 与这些模块在项目内的静态 import。每次变化产生新的 build intent。最新 intent
+拥有发布权；旧 candidate 可被中断，无法中断时其完整结果也必须被废弃。
 
-这三种 target 都不会 dry-run 作者 callback。静态目标不是浏览器逐页补读的快捷写法，而是在一次 execution 中形成完整路由和下载 closure。
+只有最新 candidate 完整成功并通过全站校验，Host 才原子替换 current revision。失败通过有界 Host header 暴露 rebuild 问题并保留
+last-good。refresh transport 只是通知浏览器尝试取得新 revision 的可失效增强，不是数据读取通道。
 
-## 局部数据闭合与缓存
+HTTP request 在开始时取得一个 revision 引用。该请求的所有页面、静态文件和下载字节都来自这个引用，即使下一次 revision
+在响应期间发布也不混用内容。
 
-Report 使用 async callback，因此依赖在每次 aggregate() 或 query() 调用时局部闭合。Host 在事实读取前验证该调用所需的有限 Analysis 依赖；cycle、Population mismatch 和字段 identity conflict 在读取前返回 Analysis error。
+## 全站预算与缓存边界
 
-Host 以 frozen Sample identity 与字段依赖 identity 缓存结果。不同 Page 可以复用同一读数；同一个 Page instance 的 load、render、复合组件和原语 `resolve()` 最多各运行一次。缓存只属于当前 ReportExecution，不跨 CLI 命令、Web rebuild 或静态导出共享。
+| 限额 | 最大值 | 计数范围 |
+|---|---:|---|
+| 页面数 | 20,000 | 普通 Page 与所有参数实例。 |
+| 文档节点数 | 20,000 | 单个关闭页面投影。 |
+| 文档深度 | 32 | 单个关闭页面投影。 |
+| 下载文件数 | 1,000 | 一次 revision 的下载集合。 |
+| 单个下载字节数 | 33,554,432 | 一个规范化下载文件。 |
 
-callback 可以依照已经取得的 rows 决定下一段 UI，或发起另一组 aggregate()。它不能把 rows 变成新总体、读取 raw facts、延长 Sample 生命周期或把事实读取能力传给 renderer。
-
-## ClosedReportTree 与验证
-
-ReportNode 是作者返回的语义组件树；ClosedReportTree 是 Host 执行后唯一可交给 renderer 的值。关闭树前，Host 逐层验证 props、已求值数据、row identity、links、downloads 和固定限额。
-
-验证范围至少包括：
-
-- 非有限 number、坏 Unicode scalar、cycle、过深或过宽树；
-- Table 的列、row、MetricValue 和 Evidence 形状；
-- 图形 channel、series 长度、标签、状态与文字降级数据；
-- 参数 key 的规范往返和已枚举实例的 route；
-- route、download、host 文件和 manifest 的跨平台冲突；
-- 内联链接只指向本 execution 已闭合的 route 或下载项。
-
-HTML 由 Host 按上下文 escape。terminal 把控制字符变成可见文本。未知节点和坏 props 不会进入 renderer，而是产生 semantic-tree-invalid execution problem。
-
-## 数据问题与执行问题
-
-Analysis issue 与 execution problem 的边界固定：
-
-| 情况 | 位置 | show / view | static export |
-|---|---|---|---|
-| partial、empty、unsupported 或 failed 的 MetricValue | 数据值及不可关闭问题面 | 显示状态、issues 和 refs。 | 成功写出并显示。 |
-| File Changes 的 partial 或 indeterminate `net` | DomainView 与不可关闭问题面 | 显示 trajectory、collection、limitation 与 issue。 | 成功写出并显示。 |
-| 参数、load、render、组件或树验证失败 | Page execution problem | 隔离该 Page，保留其它成功 Page。 | fail closed。 |
-| route 或下载冲突 | execution problem | 显示问题，保留不冲突 Page。 | fail closed。 |
-| 定义无效、Analysis 全局 error 或超过限额 | typed error | 不形成 execution。 | 不形成 execution。 |
-| interruption | Effect Cause | 传播并运行 finalizer。 | 传播并运行 finalizer。 |
-
-Host 在本次 execution 中收集每个已完成 Analysis request 的 issue，并在树关闭前把它们汇总；这不依赖作者最后是否把 ClosedRows 或领域视图放进节点。callback 边界追加 execution problem。problemTable 是 canonical、稳定排序的去重表；页面和下载结果只保留 problem ID。作者不画问题节点、过滤 rows、丢弃查询结果或返回空数组，都不能移除内建问题面。
-
-Attempt 页面请求 File Changes 时，trajectory 是默认内容。reliable `net` 只能是摘要或 `DiffView` 的补充；它不能替换
-轨迹。完整空轨迹、partial 的空安全前缀和 `not-recorded` 都保留不同的可见状态。partial limitation 与
-`indeterminate` issue 进入同一不可关闭问题面，作者不能通过省略组件移除它们。
-
-## 热重载
-
-niceeval view 的每次 rebuild 都创建新的 fixed ReportExecution。
-
-```text
-file or Record change
-  │
-  ▼
-load exact Report / config / theme closure
-  │
-  ▼
-select + execute once
-  │
-  ├─ succeeds -> atomically publish a new current revision
-  └─ fails    -> retain last-good revision and show bounded rebuild problem
-```
-
-每个成功 revision 都固定包含 Report、config、theme 的内容快照、Sample 摘要和 immutable ReportExecution。HTTP request、页面打开或浏览器刷新不会额外读取事实。
-
-Record、Report 或影响 selection 的 config 变化会产生新的 execution。仅 theme 变化可以复用已有 execution，但仍发布新的 view revision。watch 输入闭集是 Record root、Report module、其项目内静态 import、Theme module 和 niceeval.config.ts；loader、watcher、ESM cache 和 server 的具体实现属于 Node host。
-
-## Static export
-
-静态站只写一份完成的静态 execution 的结果。export 在写入前检查全部 Page、参数实例、闭合树、下载、路径、限额和 execution problem。
-
-```text
-preflight complete closure
-  │
-  ▼
-prepare a previously nonexistent output directory once
-  │
-  ▼
-write pages, host-data, downloads, manifest and built-in runtime
-  │
-  ▼
-write zero-byte complete marker last
-  │
-  ▼
-sync directory and return receipt
-```
-
-任一 execution problem 阻止发布。数据 issue 不阻止发布，因为它们已进入闭合树和问题面。目标已存在时不会删除或替换。失败或中断后缺少 complete marker 的目录也不能重用。Host 提示用户删除该目录后重试，但不承诺原子目录发布。
-
-浏览器在断网且禁 JavaScript 时仍只能读取目录内文件。它不打开 Record、不发起网络请求，也不执行作者 callback。
+完整枚举是正确性的成本，先于首个 route 的响应时间。Host 可以采用页面级缓存，但缓存项只能是已经完全关闭的页面值。
+缓存 key 必须包含 Sample、Report、renderer、Page 与 params identity。命中不会改变 Evidence、分母、issues、
+最终 bytes 或 ClosedSiteRevision identity。
 
 ## 不变量
 
-- Report 作者只处理 Sample 交出的闭合值，不拥有统计口径或事实读取。
-- 同一 execution 内每个 Page instance 与组件实例最多执行一次。
-- 所有面从同一 ClosedReportTree 读取，不各自重算或改变 MetricValue。
-- 参数化 Page 的静态 export 穷尽 enumerate(sample) 的全部实例。
-- 路由、下载和 Host 输出使用同一 collision set。
-- 数据 issue、execution problem、typed error 与 interruption 永远分开。
-- 热重载发布新 execution，不偷偷修改旧 execution。
-- 静态站必须自包含，且 complete marker 是完成的唯一目录内证据。
+- 每个公开入口先构建完整站点，再选择输出投影。
+- 每个参数化 Page 的实例都来自一次完整的 `enumerate(sample)`。
+- revision 的每个页面、静态文件和下载都有最终 bytes 与内容身份。
+- `view` 与静态目录对同一 route 提供相同 body bytes。
+- HTTP、导航、刷新和客户端脚本不执行作者回调或 Analysis。
+- 最新完整成功 revision 才能替换 last-good；失败不会修改已经发布的版本。
+- 数据 issue 可见且不伪装成构建失败；构建失败不伪装成部分站点。
 
 ## 相关阅读
 
-- [Report Library](library.md)：公开形状、树验证和 error union。
-- [Reports CLI](cli.md)：命令、路由和 export 行为。
-- [数值与显示语义](calculations.md)：MetricValue 与分母。
-- [分享静态报告站](use-case/分享静态报告站.md)：全页导出的用户路径。
+- [Report Library](library.md)：作者 API、Page 枚举和中立组件输入。
+- [Reports CLI](cli.md)：命令如何选择 Sample、构建和投影。
+- [分享静态报告站](use-case/分享静态报告站.md)：完整目录与离线读取。

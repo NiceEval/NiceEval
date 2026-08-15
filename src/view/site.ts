@@ -1,13 +1,12 @@
-// A static site plan is a pure projection of one ReportExecution. Filesystem
-// publication belongs to the report host's Effect boundary, not this planner.
+// A site plan is an exact projection of one already-closed SiteRevision.
+// Rendering and filesystem publication belong to the report host's Effect
+// boundaries; this module must never rebuild a subset of Report callbacks.
 
-import type { ReportExecution } from "../report/execution/model.ts";
+import type { ClosedSiteRevision } from "../report/execution/model.ts";
 import {
   renderReportHtml,
   type RenderReportHtmlInput,
 } from "../report/host/html.ts";
-import { renderReportExecutionText } from "../report/host/presentation.ts";
-import { basalt, type ThemeDefinition } from "../report/host/theme.ts";
 import {
   exportStaticReport,
   type ReportExportError,
@@ -20,65 +19,51 @@ import type { Effect } from "effect";
 export interface SiteFile {
   readonly path: string;
   readonly contentType: string;
-  readonly content: string;
+  /** Exact closed bytes, including binary downloads and host assets. */
+  readonly bytes: Uint8Array;
 }
 
 export interface SitePlan {
-  readonly execution: ReportExecution;
-  /** A site is fixed to the same closed Theme as its source view revision. */
-  readonly theme: ThemeDefinition;
+  readonly revision: ClosedSiteRevision;
   readonly files: readonly SiteFile[];
 }
 
 export interface SitePlanOptions {
-  readonly execution?: ReportExecution;
-  readonly theme?: ThemeDefinition;
+  readonly revision?: ClosedSiteRevision;
 }
 
+/**
+ * Retained as a view-level inspection helper. It only copies the revision's
+ * finished file mapping; `writeSite` below publishes that same mapping.
+ */
 export function planSite(
   _input?: string,
   options: ViewScanOptions = {},
   site: SitePlanOptions = {},
 ): SitePlan {
-  const execution = site.execution ?? options.execution;
-  if (execution === undefined) {
-    throw new Error("A static Report site requires a completed ReportExecution.");
+  const revision = site.revision ?? options.revision;
+  if (revision === undefined) {
+    throw new Error("A static Report site requires a completed ClosedSiteRevision.");
   }
-  const theme = site.theme ?? basalt;
-  const root = execution.pages.find(
-    (page): page is Extract<ReportExecution["pages"][number], { readonly state: "rendered" }> =>
-      page.state === "rendered" && page.route === "/",
-  );
   return Object.freeze({
-    execution,
-    theme,
-    files: Object.freeze([
-      Object.freeze({
-        path: "index.html",
-        contentType: "text/html; charset=utf-8",
-        content: root === undefined
-          ? renderHtml(renderReportExecutionText({ execution }), theme)
-          : renderHtml({ tree: execution.tree, page: root.tree, theme }),
-      }),
-    ]),
+    revision,
+    files: Object.freeze(revision.files.map((file) => Object.freeze({
+      path: file.path,
+      contentType: file.mediaType,
+      bytes: new Uint8Array(file.bytes),
+    }))),
   });
 }
 
-/** Publication stays Effect-native and writes the plan's fixed execution once. */
+/** Publication writes the exact closed revision, never a fresh render. */
 export function writeSite(
   plan: SitePlan,
   out: string,
 ): Effect.Effect<ReportStaticExportReceipt, ReportExportError, ReportFileSystem> {
-  return exportStaticReport({ execution: plan.execution, out, theme: plan.theme });
+  return exportStaticReport({ revision: plan.revision, out });
 }
 
-export function renderHtml(text: string, theme?: ThemeDefinition): string;
-export function renderHtml(input: RenderReportHtmlInput): string;
-export function renderHtml(
-  input: string | RenderReportHtmlInput,
-  theme?: ThemeDefinition,
-): string {
-  return typeof input === "string"
-    ? renderReportHtml({ text: input, ...(theme === undefined ? {} : { theme }) })
-    : renderReportHtml(input);
+/** A standalone HTML helper, separate from SiteRevision construction. */
+export function renderHtml(input: RenderReportHtmlInput): string {
+  return renderReportHtml(input);
 }

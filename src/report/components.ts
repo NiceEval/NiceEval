@@ -9,6 +9,7 @@ import {
   isClosedRows,
 } from "../analysis/contracts.ts";
 import type { LocalizedText } from "../shared/types.ts";
+import type { AuthorReportNode } from "./author/element.ts";
 import {
   reportComponentNode,
   type DimensionDeclarations,
@@ -40,12 +41,32 @@ export interface PageContext {
 
 /** A compose callback can read through this bounded Sample only. */
 export interface ComposeContext {
+  /** Current spelling retained for the new Analysis-facing author surface. */
   readonly sample: Sample;
+  /** v0.12 spelling; it is the exact same Sample capability as `sample`. */
+  readonly scope: Sample;
   readonly page: PageContext;
 }
 
 /** resolve() has the same live capability boundary as a compose callback. */
 export interface ResolveContext extends ComposeContext {}
+
+/** Compatibility aliases for code that named the explicit author callback boundary. */
+export type AuthorComposeContext = ComposeContext;
+export type AuthorResolveContext = ResolveContext;
+
+/**
+ * Host adapters created before scope was restored only supply sample. The
+ * descriptor bridge below maps it to the author-required scope without
+ * widening the public callback contract or exposing a Record capability.
+ */
+interface HostComposeContext {
+  readonly sample: Sample;
+  readonly scope?: Sample;
+  readonly page: PageContext;
+}
+
+interface HostResolveContext extends HostComposeContext {}
 
 /** Renderer faces are synchronous and receive only the already resolved value. */
 export interface TextContext {
@@ -61,7 +82,7 @@ export interface WebContext {
 export interface ComponentFaces<Props extends object, Resolved = Props> {
   readonly resolve?: (
     props: Props,
-    context: ResolveContext,
+    context: AuthorResolveContext,
   ) => Resolved | Promise<Resolved>;
   readonly dimensions?: (
     data: Resolved,
@@ -76,6 +97,7 @@ export interface ComponentFaces<Props extends object, Resolved = Props> {
  * records an opaque invocation for the host to resolve exactly once.
  */
 export interface ReportComponent<Props extends object> {
+  /** Direct invocation remains a semantic component node for existing authors. */
   (props: Props): ReportNode;
   readonly [reportComponentTypeId]: true;
 }
@@ -84,15 +106,15 @@ export interface ComposeComponentDescriptor {
   readonly kind: "compose";
   readonly compose: (
     props: Readonly<Record<string, unknown>>,
-    context: ComposeContext,
-  ) => ReportNode | Promise<ReportNode>;
+    context: HostComposeContext,
+  ) => AuthorReportNode | Promise<AuthorReportNode>;
 }
 
 export interface PrimitiveComponentDescriptor {
   readonly kind: "primitive";
   readonly resolve?: (
     props: Readonly<Record<string, unknown>>,
-    context: ResolveContext,
+    context: HostResolveContext,
   ) => unknown | Promise<unknown>;
   readonly dimensions?: (
     data: unknown,
@@ -112,8 +134,8 @@ const descriptors = new WeakMap<object, ReportComponentDescriptor>();
 export function defineComponent<Props extends object>(
   compose: (
     props: Props,
-    context: ComposeContext,
-  ) => ReportNode | Promise<ReportNode>,
+    context: AuthorComposeContext,
+  ) => AuthorReportNode | Promise<AuthorReportNode>,
 ): ReportComponent<Props>;
 
 /** Defines a dual-face primitive with one shared optional resolve phase. */
@@ -123,7 +145,7 @@ export function defineComponent<Props extends object, Resolved = Props>(
 
 export function defineComponent<Props extends object>(
   input:
-    | ((props: Props, context: ComposeContext) => ReportNode | Promise<ReportNode>)
+    | ((props: Props, context: AuthorComposeContext) => AuthorReportNode | Promise<AuthorReportNode>)
     | ComponentFaces<Props, unknown>,
 ): ReportComponent<Props> {
   const descriptor = typeof input === "function"
@@ -288,15 +310,18 @@ export function Stat(input: {
 function composeDescriptor<Props extends object>(
   compose: (
     props: Props,
-    context: ComposeContext,
-  ) => ReportNode | Promise<ReportNode>,
+    context: AuthorComposeContext,
+  ) => AuthorReportNode | Promise<AuthorReportNode>,
 ): ComposeComponentDescriptor {
   if (typeof compose !== "function") {
     throw new TypeError("defineComponent(compose) requires a compose callback");
   }
   return Object.freeze({
     kind: "compose" as const,
-    compose: compose as ComposeComponentDescriptor["compose"],
+    compose: (props: Readonly<Record<string, unknown>>, context: HostComposeContext) => compose(
+      props as Props,
+      authorComposeContext(context),
+    ),
   });
 }
 
@@ -322,17 +347,34 @@ function primitiveDescriptor<Props extends object>(
   if (dimensions !== undefined && typeof dimensions !== "function") {
     throw new TypeError("defineComponent(faces).dimensions must be a function when supplied");
   }
+  const authorResolve = resolve === undefined
+    ? undefined
+    : (props: Readonly<Record<string, unknown>>, context: HostResolveContext) =>
+      (resolve as (props: Props, context: AuthorResolveContext) => unknown | Promise<unknown>)(
+        props as Props,
+        authorComposeContext(context),
+      );
   return Object.freeze({
     kind: "primitive" as const,
-    ...(resolve === undefined
+    ...(authorResolve === undefined
       ? {}
-      : { resolve: resolve as PrimitiveComponentDescriptor["resolve"] }),
+      : { resolve: authorResolve }),
     ...(dimensions === undefined
       ? {}
       : { dimensions: dimensions as PrimitiveComponentDescriptor["dimensions"] }),
     text: text as PrimitiveComponentDescriptor["text"],
     web: web as PrimitiveComponentDescriptor["web"],
   });
+}
+
+function authorComposeContext(context: HostComposeContext): AuthorComposeContext {
+  // Scope and sample deliberately cannot diverge.  Older Host adapters may
+  // omit `scope`, but no adapter can expose a second capability under that
+  // legacy spelling.
+  if (context.scope !== undefined && context.scope !== context.sample) {
+    throw new TypeError("Report compose context scope and sample must be the same Sample capability");
+  }
+  return Object.freeze({ sample: context.sample, scope: context.sample, page: context.page });
 }
 
 function chartNode<Row extends RowRecord>(

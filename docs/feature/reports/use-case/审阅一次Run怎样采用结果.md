@@ -1,7 +1,7 @@
 # 审阅一次 Run 的闭合结果
 
-这个用例把固定 Run 的选择事实与 immutable Attempt 的已关闭 Evidence、Observability 和 File Changes 分开阅读。前者
-说明 Sample 的分母和 Slot 坐标；后者从 exact locator 下钻。Report 不建立第三份持久状态，也不从一类事实猜出另一类事实。
+这个用例把固定 Run 的选择事实与 immutable Attempt 的关闭 Evidence、Observability 和 File Changes 分开阅读。前者
+说明 Sample 的分母和 Slot 坐标；后者由已生成的详情 Page 下钻。Report 不建立第三份持久状态，也不从一类事实猜出另一类事实。
 
 ## 1. 取得 Run ID
 
@@ -37,9 +37,12 @@ niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
 niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc --execution
 ```
 
-第一个命令使用 `attempt-overview`，显示精确 Attempt 的 identity 与完整 MetricValue。第二个命令选择 execution Report，显示关闭的 observability Evidence。两条命令都从各自的 ReportExecution 读取，不会重新打开 Record 或改变固定 Sample 的分母。
+第一个命令使用 `attempt-overview`，显示精确 Attempt 的 identity 与完整 MetricValue。第二个命令显示关闭的
+Observability Evidence。每条命令都先从自己的固定 Sample 构建完整 ClosedSiteRevision；输出阶段不会重新打开 Record
+或改变该 Sample 的分母。
 
-已知 locator 时应使用 `show @locator` 精确下钻。静态站、terminal 和 Web 都读取同一份闭合树，因此 locator、Evidence refs、issues、samples 和 total 可以在任一呈现面复核。
+已知 locator 时应使用 `show @locator` 精确下钻。静态站、terminal 和 Web 都读取同一份 ClosedSiteRevision，因此
+locator、Evidence refs、issues、samples 和 total 可以在任一呈现面复核。
 
 ## 4. 查看 File Changes 轨迹
 
@@ -51,4 +54,4 @@ niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc --execution
 并仍保留已经捕获的轨迹。
 
 完整空轨迹表示完整采集到零个 agent 归因变化；partial 的空安全前缀不作此断言。`not-recorded` 则说明 collector
-不适用于该 Attempt。三者和 partial limitation 都在 terminal、Web 与静态站中保持可见。
+不适用于该 Attempt。三者和 partial limitation 都在完整构建时进入 terminal、Web 与静态站；打开详情页不会再次读取它们。

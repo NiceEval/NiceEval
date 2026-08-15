@@ -32,14 +32,27 @@ const PUBLIC_ENTRIES = [
   ["./record/host", "record/host/index.ts"],
   ["./analysis/host", "analysis/host.ts"],
   ["./report", "report/index.ts"],
+  ["./jsx-runtime", "jsx-runtime.ts"],
+  ["./jsx-dev-runtime", "jsx-dev-runtime.ts"],
+  ["./report/jsx-runtime", "report/jsx-runtime.ts"],
+  ["./report/jsx-dev-runtime", "report/jsx-dev-runtime.ts"],
   ["./report/host", "report/host/index.ts"],
   ["./report/built-in", "report/built-in/index.tsx"],
+  ["./report/react", "report/react/index.ts"],
+  ["./report/extension", "report/extension/index.ts"],
+];
+
+// These entries are copied verbatim by copyRuntimeAssets rather than emitted
+// as CJS/ESM facades. Keep them in the public-closure check nonetheless.
+const PUBLIC_ASSET_ENTRIES = [
+  "./report/react/styles.css",
+  "./report/react/enhance.js",
 ];
 
 async function assertPublicEntryClosure() {
   const manifest = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
   const packageEntries = Object.keys(manifest.exports ?? {}).sort();
-  const facadeEntries = PUBLIC_ENTRIES.map(([entry]) => entry).sort();
+  const facadeEntries = [...PUBLIC_ENTRIES.map(([entry]) => entry), ...PUBLIC_ASSET_ENTRIES].sort();
   const missingFacades = packageEntries.filter((entry) => !facadeEntries.includes(entry));
   const undeclaredFacades = facadeEntries.filter((entry) => !packageEntries.includes(entry));
   if (missingFacades.length > 0 || undeclaredFacades.length > 0) {
@@ -268,6 +281,22 @@ async function copyRuntimeAssets(outputRoot) {
   }
 }
 
+/**
+ * The classic stylesheet has one source of truth: the TS constant consumed by
+ * the Report Host during SSG.  The public CSS export is emitted from that
+ * exact value rather than maintained as a second handwritten asset.
+ */
+async function writeClassicStylesheet(outputRoot) {
+  const module = require(join(outputRoot, "report", "assets", "classic.cjs"));
+  const stylesheet = module.classicStylesheet;
+  if (typeof stylesheet !== "string" || stylesheet.length === 0) {
+    throw new Error("Report classic stylesheet source did not export non-empty CSS.");
+  }
+  const output = join(outputRoot, "report", "react", "styles.css");
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, stylesheet);
+}
+
 async function buildRemarkVendor(outputRoot) {
   await esbuild.build({
     entryPoints: {
@@ -349,6 +378,7 @@ async function build() {
     }
 
     await copyRuntimeAssets(outputRoot);
+    await writeClassicStylesheet(outputRoot);
     await writeDualDeclarations(rawTypes, outputRoot);
     // 旧的仓库内测试和工具会直接读 dist/report/*.js；这些兼容文件仍只是 CJS 主图的
     // ESM façade，绝不重新编译出第二份 report runtime。

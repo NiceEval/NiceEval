@@ -216,6 +216,42 @@ export const publishedAnalysisInputBindings = Object.freeze({
       });
     },
   }),
+  attemptCostUSD: Object.freeze({
+    id: "niceeval.attempt-cost-usd",
+    family: attemptObservabilityFamily,
+    project: ({ payload }: {
+      readonly member: LogicalSlot;
+      readonly core: ClosedAttemptCore;
+      readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
+    }): InputProjection<number> => {
+      const usage = payload.usage;
+      if (usage.collection.state !== "complete") {
+        return collectionProjection(usage.collection, "usage", "usage collection is incomplete");
+      }
+      const amounts: number[] = [];
+      for (const observation of usage.observations) {
+        if (observation.kind === "provider-cost" && observation.currency === "USD") {
+          amounts.push(Number(observation.amount));
+        }
+      }
+      if (amounts.length === 0) {
+        return Object.freeze({
+          state: "missing" as const,
+          message: "no USD provider cost was recorded",
+        });
+      }
+      if (amounts.some((amount) => !Number.isFinite(amount))) {
+        return Object.freeze({
+          state: "failed" as const,
+          message: "a recorded USD provider cost is not representable as a finite number",
+        });
+      }
+      return Object.freeze({
+        state: "value" as const,
+        value: amounts.reduce((total, amount) => total + amount, 0),
+      });
+    },
+  }),
   attemptToolFailure: Object.freeze({
     id: "niceeval.attempt-tool-failure",
     family: attemptObservabilityFamily,

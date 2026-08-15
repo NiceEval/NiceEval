@@ -64,7 +64,6 @@ export type {
   OpenReportViewSessionInput,
   ReportViewExecutionRebuild,
   ReportViewRebuild,
-  ReportViewThemeRebuild,
 } from "./view-session.ts";
 
 /** Node host request after its loader/watcher has closed over all live inputs. */

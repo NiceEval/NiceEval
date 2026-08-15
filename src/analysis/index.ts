@@ -16,6 +16,7 @@ export {
   attemptLatencyMs,
   attemptPassed,
   attemptToolFailure,
+  costUSD,
   defineDimension,
   defineMeasure,
   definePopulation,

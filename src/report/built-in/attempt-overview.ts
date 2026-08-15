@@ -28,6 +28,8 @@ import {
 import { AttemptTrace } from "./attempt-trace.ts";
 import { FileChangesTrajectory } from "./file-changes.ts";
 import type { ReportNode, ReportTone } from "../semantic/closed.ts";
+import { captureAttemptShowResult } from "./attempt-evidence-json.ts";
+import { registerBuiltInShowResult } from "../execution/results.ts";
 
 const ATTEMPT_ROWS_MAX = 200;
 const ASSERTION_ROWS_MAX = 200;
@@ -62,10 +64,10 @@ const attemptOverviewPage = {
  * the resulting Sample and closed Metrics.
  */
 export function attemptOverviewReport(): Report {
-  return defineReport({
+  return registerBuiltInShowResult(defineReport({
     title: "Attempt overview",
     pages: [attemptOverviewPage],
-  });
+  }), Object.freeze({ produce: captureAttemptShowResult }));
 }
 
 /** The built-in default for an exact Attempt locator. */

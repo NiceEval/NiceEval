@@ -16,7 +16,9 @@ interface ExpEvent {
 }
 
 interface ShowOverview {
-  format: "niceeval.report-show/v1";
+  format: "niceeval.show";
+  schemaVersion: 1;
+  view: "leaderboard";
   sample: {
     selection:
       | {
@@ -59,7 +61,9 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
       const initialDocument = initialShow.json<ShowOverview>();
       expect(initialDocument).toMatchObject({
-        format: "niceeval.report-show/v1",
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "leaderboard",
         sample: {
           selection: {
             policy: "project-current",
@@ -70,7 +74,13 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
           denominator: 1,
         },
       });
-      expect(initialDocument.sample.selection.experimentIds).toEqual(["main", "source"]);
+      expect(initialDocument.sample.selection.experimentIds).toEqual([
+        "classic/baseline",
+        "classic/memory-a",
+        "classic/memory-b",
+        "main",
+        "source",
+      ]);
 
       const unchangedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(unchangedRun.exitCode, unchangedRun.diagnostic()).toBe(0);
@@ -112,7 +122,9 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const staleShow = await niceeval.run(["show", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
       expect(staleShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "leaderboard",
         sample: {
           selection: {
             policy: "project-current",
@@ -127,7 +139,9 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const staleHistory = await niceeval.run(["show", "--run", initialRunId, "--json"]);
       expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
       expect(staleHistory.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "leaderboard",
         sample: {
           selection: {
             policy: "explicit-runs",
@@ -165,7 +179,9 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const refreshedShow = await niceeval.run(["show", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
       expect(refreshedShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "leaderboard",
         sample: {
           selection: {
             policy: "project-current",

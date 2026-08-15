@@ -68,7 +68,7 @@ docs/
 │   ├── plugins/                         带稳定身份的生命周期组合语法
 │   ├── record/                          已完成 Run、精确引用与固定持久事实
 │   ├── record-report/                   Record → Analysis → Report 三层总览与命令调用路径
-│   ├── reports/                         一次 execution、show/view 与静态导出
+│   ├── reports/                         SSG-first 全站构建、show/view 与静态导出
 │   ├── sample/                          从 Record 选择 core-only 分母
 │   ├── sandbox/                         隔离运行环境
 │   ├── use-case/                        跨功能的完整用户路径

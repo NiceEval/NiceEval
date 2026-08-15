@@ -1,6 +1,8 @@
 import {
+  attemptEvidenceView,
   query,
   sourcesView,
+  type AttemptEvidenceDomainView,
   type Sample,
   type SampleSnapshot,
   type SourcesDomainDetail,
@@ -14,34 +16,34 @@ import {
   Text,
   type Report,
 } from "../author/index.ts";
+import { captureSourceShowResult } from "./attempt-evidence-json.ts";
+import { registerBuiltInShowResult } from "../execution/results.ts";
 
 const ORIGIN_ROWS_MAX = 500;
 
 type SourcesDomainEntry = SourcesDomainView["entries"][number];
+type AttemptEvidenceEntry = AttemptEvidenceDomainView["entries"][number];
 
-const sourceEvidencePage = {
-  id: "source-evidence",
-  path: "/",
-  title: "Recorded source",
-  load: async (sample: Sample) => Object.freeze({
-    snapshot: sample.snapshot,
-    sources: await query(sample, { kind: "domain-view", view: sourcesView }),
-  }),
-  render: (input: {
-    readonly snapshot: SampleSnapshot;
-    readonly sources: SourcesDomainView;
-  }) => sourceEvidenceNode(input),
-};
+export interface SourceEvidenceReportOptions {
+  /** Restrict the closed source view to one captured, project-relative path. */
+  readonly file?: string;
+}
 
 /**
  * Recorded source is a closed, origin-owned DomainView. This page shows
  * identity navigation and the published source view state.
  */
-export function sourceEvidenceReport(): Report {
-  return defineReport({
-    title: "Recorded source",
-    pages: [sourceEvidencePage],
+export function sourceEvidenceReport(input: SourceEvidenceReportOptions = {}): Report {
+  const options = Object.freeze({
+    ...(input.file === undefined ? {} : { file: input.file }),
   });
+  const page = sourceEvidencePage(options);
+  return registerBuiltInShowResult(defineReport({
+    title: "Recorded source",
+    pages: [page],
+  }), Object.freeze({
+    produce: (sample: Sample) => captureSourceShowResult(sample, options.file),
+  }));
 }
 
 /** A reusable no-filter declaration for closed recorded source. */
@@ -49,13 +51,37 @@ export const defaultSourceEvidenceReport = sourceEvidenceReport();
 
 export default defaultSourceEvidenceReport;
 
+function sourceEvidencePage(options: SourceEvidenceReportOptions) {
+  return Object.freeze({
+    id: "source-evidence",
+    path: "/",
+    title: "Recorded source",
+    load: async (sample: Sample) => {
+      const [evidence, sources] = await Promise.all([
+        query(sample, { kind: "domain-view", view: attemptEvidenceView }),
+        query(sample, { kind: "domain-view", view: sourcesView }),
+      ]);
+      return Object.freeze({ snapshot: sample.snapshot, evidence, sources });
+    },
+    render: (input: {
+      readonly snapshot: SampleSnapshot;
+      readonly evidence: AttemptEvidenceDomainView;
+      readonly sources: SourcesDomainView;
+    }) => sourceEvidenceNode(input, options),
+  });
+}
+
 function sourceEvidenceNode(input: {
   readonly snapshot: SampleSnapshot;
+  readonly evidence: AttemptEvidenceDomainView;
   readonly sources: SourcesDomainView;
-}) {
+}, options: SourceEvidenceReportOptions) {
   const entries = [...input.sources.entries].sort(compareSourceEntries);
   const sourcesByLocator = new Map(
     entries.map((entry) => [entry.attempt.locator, entry] as const),
+  );
+  const evidenceByLocator = new Map(
+    input.evidence.entries.map((entry) => [entry.attempt.locator, entry] as const),
   );
   const included = input.snapshot.slots
     .filter((slot) => slot.state === "included")
@@ -68,6 +94,7 @@ function sourceEvidenceNode(input: {
   const omitted = included.length - origins.length;
   return Stack({
     children: [
+      Text({ value: `Assertions: ${assertionState(origins, evidenceByLocator)}` }),
       Table({
         caption: "Origin Attempts",
         columns: [
@@ -86,7 +113,7 @@ function sourceEvidenceNode(input: {
         })),
       }),
       ...sourceViewMetadata(input.sources),
-      ...entries.flatMap(sourceEntryNodes),
+      ...entries.flatMap((entry) => sourceEntryNodes(entry, options.file)),
       ...(omitted === 0
         ? []
         : [Callout({
@@ -103,7 +130,10 @@ function sourceEvidenceNode(input: {
  * renderer therefore has no reason to reopen a Record, inspect a worktree, or
  * make a second query for any presentation face.
  */
-function sourceEntryNodes(entry: SourcesDomainEntry): readonly ReturnType<typeof Callout>[] {
+function sourceEntryNodes(
+  entry: SourcesDomainEntry,
+  file: string | undefined,
+): readonly ReturnType<typeof Callout>[] {
   if (entry.state !== "available") {
     return Object.freeze([Callout({
       tone: entry.state === "failed" || entry.state === "invalid" ? "negative" : "warning",
@@ -111,9 +141,21 @@ function sourceEntryNodes(entry: SourcesDomainEntry): readonly ReturnType<typeof
       children: [Text({ value: unavailableEntryDetail(entry) })],
     })]);
   }
-  const items = [...entry.detail.items].sort((left, right) =>
-    compareUtf8(left.path, right.path) || compareUtf8(left.sourceItemId, right.sourceItemId)
-  );
+  const items = [...entry.detail.items]
+    .filter((item) => file === undefined || item.path === file)
+    .sort((left, right) =>
+      compareUtf8(left.path, right.path) || compareUtf8(left.sourceItemId, right.sourceItemId)
+    );
+  if (file !== undefined && items.length === 0) {
+    return Object.freeze([Callout({
+      tone: "warning",
+      title: "Recorded source unavailable",
+      children: [
+        Text({ value: `Captured source file not found in annotated source tree: ${file}` }),
+        Text({ value: entry.attempt.locator }),
+      ],
+    })]);
+  }
   if (items.length === 0) {
     return Object.freeze([Callout({
       tone: "warning",
@@ -122,6 +164,15 @@ function sourceEntryNodes(entry: SourcesDomainEntry): readonly ReturnType<typeof
     })]);
   }
   return Object.freeze(items.map((item) => sourceItemNode(entry, item)));
+}
+
+function assertionState(
+  slots: readonly Extract<SampleSnapshot["slots"][number], { readonly state: "included" }>[],
+  evidenceByLocator: ReadonlyMap<string, AttemptEvidenceEntry>,
+): string {
+  const states = new Set(slots.map((slot) => evidenceByLocator.get(slot.attempt.locator)?.state ?? "not-recorded"));
+  if (states.size === 1) return states.values().next().value ?? "not-recorded";
+  return "mixed";
 }
 
 function sourceItemNode(

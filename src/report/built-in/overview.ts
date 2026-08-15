@@ -13,6 +13,8 @@ import {
   loadBuiltInSummaryRows,
   type BuiltInSummaryRows,
 } from "./analysis-values.ts";
+import { captureLeaderboardShowResult } from "./attempt-evidence-json.ts";
+import { registerBuiltInShowResult } from "../execution/results.ts";
 
 const RUN_ROWS_MAX = 200;
 const ATTEMPT_ROWS_MAX = 200;
@@ -34,10 +36,10 @@ const overviewPage = {
 } satisfies PlainPageDefinition<OverviewPageInput>;
 
 /** The default project-current report over Analysis-owned MetricValues. */
-export const defaultOverviewReport: Report = defineReport({
+export const defaultOverviewReport: Report = registerBuiltInShowResult(defineReport({
   title: "NiceEval overview",
   pages: [overviewPage],
-});
+}), Object.freeze({ produce: captureLeaderboardShowResult }));
 
 /** Stable built-in token target for an explicit `--report overview`. */
 export const overview = defaultOverviewReport;
@@ -96,6 +98,9 @@ function overviewNode(input: OverviewPageInput) {
         caption: "Included Attempts",
         columns: [
           { key: "locator", label: "Attempt" },
+          { key: "experimentId", label: "Experiment" },
+          { key: "evalId", label: "Eval" },
+          { key: "attemptOrdinal", label: "Attempt #", align: "end" },
           { key: "originRunId", label: "Origin Run" },
           { key: "runId", label: "Selected Run" },
           { key: "slotId", label: "Slot" },
@@ -103,6 +108,9 @@ function overviewNode(input: OverviewPageInput) {
         ],
         rows: visibleAttempts.map((slot) => ({
           locator: slot.attempt.locator,
+          experimentId: slot.experimentId,
+          evalId: slot.evalId,
+          attemptOrdinal: slot.attemptOrdinal,
           originRunId: slot.attempt.originRunId,
           runId: slot.runId,
           slotId: slot.slotId,

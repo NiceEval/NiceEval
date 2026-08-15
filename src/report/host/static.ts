@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
 import { Context, Effect } from "effect";
 import type {
+  ClosedSiteFile,
+  ClosedSiteRevision,
   ClosedReportNode,
   ClosedReportTree,
   ReportExecution,
@@ -21,14 +24,18 @@ import type {
 import { validateClosedReportTree } from "../semantic/closed.ts";
 import { renderReportHtml } from "./html.ts";
 import {
+  REPORT_CLASSIC_STYLESHEET_PATH,
+  REPORT_REFRESH_RUNTIME_PATH,
+} from "./site-assets.ts";
+import {
   canonicalJson,
   closedDownloadPath,
   compareUtf8,
   isExecutionReportProblem,
   renderReportExecutionJson,
-  type ReportShowRenderError,
 } from "./presentation.ts";
 import { basalt, type ThemeDefinition } from "./theme.ts";
+import { classicStylesheet } from "../assets/classic.ts";
 
 /** A host-private normalized output path. Semantic routes never become filesystem paths directly. */
 export interface ReportHostOutputPath {
@@ -78,6 +85,19 @@ export interface ReportExportExecutionProblem {
   readonly problems: readonly ReportExecutionProblem[];
 }
 
+/** A complete site cannot be formed when its semantic closure has execution failures. */
+export interface ReportSiteBuildExecutionProblem {
+  readonly code: "report-site-execution-problem";
+  readonly problems: readonly ReportExecutionProblem[];
+}
+
+export interface ReportSiteBuildFailure {
+  readonly code: "report-site-build-failed";
+  readonly operation: "render" | "identity";
+}
+
+export type ReportSiteBuildError = ReportSiteBuildExecutionProblem | ReportSiteBuildFailure;
+
 export type ReportExportError =
   | ReportLimitExceeded
   | ReportExportExecutionProblem
@@ -85,17 +105,49 @@ export type ReportExportError =
   | ReportFileSystemError;
 
 /**
+ * SSG-first closure. It materializes every final page, host asset, and
+ * download before a product surface may select a page or open a listener.
+ * The resulting revision contains no renderer work or mutable host metadata.
+ */
+export function buildSiteRevision(input: {
+  readonly execution: ReportExecution;
+  readonly theme?: ThemeDefinition;
+}): Effect.Effect<ClosedSiteRevision, ReportSiteBuildError> {
+  return Effect.gen(function* () {
+    const executionProblems = executionProblemsForStatic(input.execution.tree.problemTable);
+    // A ClosedSiteRevision is publishable by definition. Product surfaces may
+    // choose different projections only after the same complete SSG closure
+    // succeeds; none may turn an incomplete execution into a valid revision.
+    if (executionProblems.length > 0) {
+      return yield* Effect.fail({
+        code: "report-site-execution-problem" as const,
+        problems: executionProblems,
+      });
+    }
+    const files = yield* buildSiteFiles(input.execution, input.theme ?? basalt);
+    const identity = yield* siteRevisionIdentity(input.execution, files);
+    return Object.freeze({
+      identity: Object.freeze({
+        format: "niceeval.report-site-revision/v1" as const,
+        contentHash: identity,
+        renderer: "niceeval.report-ssg/v1" as const,
+      }),
+      execution: input.execution,
+      files,
+    });
+  });
+}
+
+/**
  * Exports one fixed, static execution. Every output byte and collision is
  * calculated before the target is created; any execution problem fails closed.
  */
 export function exportStaticReport(input: {
-  readonly execution: ReportExecution;
+  readonly revision: ClosedSiteRevision;
   readonly out: string;
-  /** A closed host Theme; omission uses the same Basalt default as live view. */
-  readonly theme?: ThemeDefinition;
 }): Effect.Effect<ReportStaticExportReceipt, ReportExportError, ReportFileSystem> {
   return Effect.gen(function* () {
-    const executionProblems = executionProblemsForStatic(input.execution.tree.problemTable);
+    const executionProblems = executionProblemsForStatic(input.revision.execution.tree.problemTable);
     if (executionProblems.length > 0) {
       return yield* Effect.fail({
         code: "report-export-execution-problem" as const,
@@ -103,17 +155,11 @@ export function exportStaticReport(input: {
       });
     }
 
-    // This computes every HTML byte, download byte placement, host-data byte,
-    // manifest byte, and collision before prepareOutput can create the target.
-    const files = yield* staticFiles(input.execution, input.theme ?? basalt).pipe(
-      Effect.mapError((error): ReportFileSystemError => ({
-        code: "report-export-write-failed",
-        operation: error.operation,
-      })),
-    );
+    const files = closedRevisionFiles(input.revision);
     const fileSystem = yield* ReportFileSystem;
     yield* fileSystem.prepareOutput(input.out);
     for (const file of files) {
+      if (file.path === COMPLETE_PATH) continue;
       yield* fileSystem.writeFile({
         out: input.out,
         path: Object.freeze({ value: file.path }),
@@ -124,33 +170,73 @@ export function exportStaticReport(input: {
     // marker. A later attempt sees target-exists rather than reusing it.
     yield* fileSystem.writeCompleteMarker(input.out);
     yield* fileSystem.syncDirectory(input.out);
-    return Object.freeze({ out: input.out, filesWritten: files.length });
+    return Object.freeze({ out: input.out, filesWritten: files.length - 1 });
   });
-}
-
-interface StaticFile {
-  readonly path: string;
-  readonly bytes: Uint8Array;
 }
 
 const HOST_DATA_PATH = "_niceeval/execution.json";
 const MANIFEST_PATH = "_niceeval/manifest.json";
 const PROBLEMS_PATH = "_niceeval/problems/index.html";
-const RUNTIME_PATH = "_niceeval/runtime.js";
 const COMPLETE_PATH = "_niceeval/complete";
 const encoder = new TextEncoder();
 
-function staticFiles(
+/**
+ * The identical enhancement asset is emitted for static export and live view.
+ * A static/file site has no probe endpoint, so it exits without noise. The
+ * report body, navigation, problem details, and downloads stay fully useful
+ * when JavaScript is disabled or this fetch is unavailable.
+ */
+const REFRESH_PROBE_RUNTIME = `(() => {
+  if (location.protocol !== "http:" && location.protocol !== "https:") return;
+  const source = document.currentScript && document.currentScript.src;
+  if (!source) return;
+  const endpoint = new URL("refresh", source).toString();
+  let observed;
+  const probe = async () => {
+    try {
+      const response = await fetch(endpoint, {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { "x-niceeval-refresh-probe": "1" },
+      });
+      if (response.status !== 204) return;
+      const identity = response.headers.get("x-niceeval-report-content-hash");
+      if (response.headers.get("x-niceeval-view-stale") === "1" ||
+        (observed !== undefined && identity !== null && identity !== observed)) {
+        location.reload();
+        return;
+      }
+      if (identity !== null) observed = identity;
+      setTimeout(probe, 1000);
+    } catch {
+      // Missing/offline endpoints are an optional enhancement, not an error.
+    }
+  };
+  setTimeout(probe, 1000);
+})();
+`;
+
+// Package-owned browser behavior is closed into the same runtime byte that
+// every generated document already references. The asset lives beside this
+// compiled Host graph, so it never reaches into an author project or network.
+const CLASSIC_TABS_ENHANCER = readFileSync(new URL("../react/enhance.js", import.meta.url), "utf8");
+
+function buildSiteFiles(
   execution: ReportExecution,
   theme: ThemeDefinition,
-): Effect.Effect<readonly StaticFile[], ReportShowRenderError> {
+): Effect.Effect<readonly ClosedSiteFile[], ReportSiteBuildFailure> {
   return Effect.gen(function* () {
-    const hostData = yield* renderReportExecutionJson({ execution });
+    const hostData = yield* renderReportExecutionJson({ execution }).pipe(
+      Effect.mapError((): ReportSiteBuildFailure => ({
+        code: "report-site-build-failed" as const,
+        operation: "render" as const,
+      })),
+    );
     return yield* Effect.try({
       try: () => buildStaticFiles(execution, theme, hostData),
-      catch: (): ReportShowRenderError => ({
-        code: "report-show-render-failed",
-        operation: "render",
+      catch: (): ReportSiteBuildFailure => ({
+        code: "report-site-build-failed" as const,
+        operation: "render" as const,
       }),
     });
   });
@@ -160,12 +246,12 @@ function buildStaticFiles(
   execution: ReportExecution,
   theme: ThemeDefinition,
   hostData: string,
-): readonly StaticFile[] {
+): readonly ClosedSiteFile[] {
   if (!validateClosedReportTree(execution.tree).valid) {
     throw new StaticPreflightError("the closed Report tree is invalid");
   }
   assertDownloadClosure(execution.tree);
-  const files: StaticFile[] = [];
+  const files: ClosedSiteFile[] = [];
   const paths: ReportStaticPath[] = [];
   let hasRoot = false;
 
@@ -202,42 +288,53 @@ function buildStaticFiles(
       throw new StaticPreflightError("a closed download has invalid bytes");
     }
     paths.push(output);
-    files.push(Object.freeze({ path: output.posix, bytes: new Uint8Array(download.bytes) }));
+    files.push(Object.freeze({
+      path: output.posix,
+      mediaType: download.mediaType,
+      bytes: new Uint8Array(download.bytes),
+    }));
   }
 
   const hostDataPath = hostStaticPath(HOST_DATA_PATH);
   const problemsPath = hostStaticPath(PROBLEMS_PATH);
-  const runtimePath = hostStaticPath(RUNTIME_PATH);
+  const stylesheetPath = hostStaticPath(REPORT_CLASSIC_STYLESHEET_PATH);
+  const runtimePath = hostStaticPath(REPORT_REFRESH_RUNTIME_PATH);
   const manifestPath = hostStaticPath(MANIFEST_PATH);
   const completePath = hostStaticPath(COMPLETE_PATH);
-  paths.push(hostDataPath, problemsPath, runtimePath, manifestPath, completePath);
+  paths.push(hostDataPath, problemsPath, stylesheetPath, runtimePath, manifestPath, completePath);
   files.push(
-    staticTextFile(hostDataPath.posix, hostData),
+    staticTextFile(hostDataPath.posix, hostData, "application/json; charset=utf-8"),
     staticTextFile(problemsPath.posix, renderReportHtml({
       tree: execution.tree,
       surface: "problems",
       theme,
-    })),
-    // The document intentionally does not load this. It is present as a
-    // fixed built-in host asset without making JS necessary for any content.
-    staticTextFile(runtimePath.posix, "export {};\n"),
+    }), "text/html; charset=utf-8"),
+    staticTextFile(stylesheetPath.posix, classicStylesheet, "text/css; charset=utf-8"),
+    staticTextFile(
+      runtimePath.posix,
+      `${REFRESH_PROBE_RUNTIME}\n${CLASSIC_TABS_ENHANCER}`,
+      "text/javascript; charset=utf-8",
+    ),
   );
 
   preflightPaths(paths);
   const manifest = staticManifest(execution, files, manifestPath.posix);
-  files.push(staticTextFile(manifestPath.posix, `${canonicalJson(manifest)}\n`));
+  files.push(
+    staticTextFile(manifestPath.posix, `${canonicalJson(manifest)}\n`, "application/json; charset=utf-8"),
+    Object.freeze({ path: completePath.posix, mediaType: "application/octet-stream", bytes: new Uint8Array() }),
+  );
   return Object.freeze([...files].sort((left, right) => compareUtf8(left.path, right.path)));
 }
 
 function staticManifest(
   execution: ReportExecution,
-  files: readonly StaticFile[],
+  files: readonly ClosedSiteFile[],
   manifestPath: string,
 ): Readonly<Record<string, unknown>> {
   return Object.freeze({
     format: "niceeval.report-static/v1",
     files: Object.freeze(
-      [...files.map((file) => file.path), manifestPath]
+      [...files.map((file) => file.path), manifestPath, COMPLETE_PATH]
         .sort(compareUtf8),
     ),
     pages: Object.freeze(
@@ -246,6 +343,7 @@ function staticManifest(
         .map((page) => Object.freeze({
           pageId: page.pageId,
           route: page.route,
+          navigation: page.navigation,
           path: staticPathForRoute(page.route).posix,
         })),
     ),
@@ -261,7 +359,8 @@ function staticManifest(
     ),
     hostData: HOST_DATA_PATH,
     problems: PROBLEMS_PATH,
-    runtime: RUNTIME_PATH,
+    stylesheet: REPORT_CLASSIC_STYLESHEET_PATH,
+    runtime: REPORT_REFRESH_RUNTIME_PATH,
   });
 }
 
@@ -300,6 +399,8 @@ function assertNodeDownloads(node: ClosedReportNode, downloadIds: ReadonlySet<st
     case "stack":
     case "grid":
     case "callout":
+    case "element":
+    case "link":
       for (const child of node.children) assertNodeDownloads(child, downloadIds);
       return;
     case "download":
@@ -322,8 +423,71 @@ function assertNodeDownloads(node: ClosedReportNode, downloadIds: ReadonlySet<st
   }
 }
 
-function staticTextFile(path: string, text: string): StaticFile {
-  return Object.freeze({ path, bytes: encoder.encode(text) });
+function staticTextFile(path: string, text: string, mediaType = "text/html; charset=utf-8"): ClosedSiteFile {
+  return Object.freeze({ path, mediaType, bytes: encoder.encode(text) });
+}
+
+/** Ensures every view/export consumer receives a deterministic, complete map. */
+function closedRevisionFiles(revision: ClosedSiteRevision): readonly ClosedSiteFile[] {
+  const files = [...revision.files].sort((left, right) => compareUtf8(left.path, right.path));
+  const paths = new Set<string>();
+  let hasComplete = false;
+  for (const file of files) {
+    if (paths.has(file.path) || file.path.length === 0 || !(file.bytes instanceof Uint8Array) || file.mediaType.length === 0) {
+      throw new StaticPreflightError("a closed site revision has an invalid file map");
+    }
+    paths.add(file.path);
+    if (file.path === COMPLETE_PATH) {
+      if (file.bytes.byteLength !== 0) throw new StaticPreflightError("a complete marker must be zero bytes");
+      hasComplete = true;
+    }
+  }
+  if (!hasComplete) throw new StaticPreflightError("a closed site revision has no complete marker");
+  return Object.freeze(files);
+}
+
+/**
+ * The content address deliberately lives outside the emitted files, avoiding
+ * a self-referential manifest while still hashing normalized closure metadata
+ * and every final byte (including the zero-byte completion marker).
+ */
+function siteRevisionIdentity(
+  execution: ReportExecution,
+  files: readonly ClosedSiteFile[],
+): Effect.Effect<string, ReportSiteBuildFailure> {
+  const metadata = canonicalJson({
+    format: "niceeval.report-site-revision/v1",
+    renderer: "niceeval.report-ssg/v1",
+    report: execution.report,
+    sample: execution.sample,
+  });
+  const chunks: Uint8Array[] = [encoder.encode(metadata), new Uint8Array([0])];
+  for (const file of [...files].sort((left, right) => compareUtf8(left.path, right.path))) {
+    chunks.push(encoder.encode(file.path), new Uint8Array([0]));
+    chunks.push(encoder.encode(file.mediaType), new Uint8Array([0]));
+    chunks.push(new Uint8Array(file.bytes), new Uint8Array([0]));
+  }
+  const byteLength = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const material = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    material.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle === undefined) {
+    return Effect.fail({ code: "report-site-build-failed" as const, operation: "identity" as const });
+  }
+  return Effect.map(
+    Effect.tryPromise({
+      try: () => subtle.digest("SHA-256", material),
+      catch: (): ReportSiteBuildFailure => ({
+        code: "report-site-build-failed" as const,
+        operation: "identity" as const,
+      }),
+    }),
+    (digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+  );
 }
 
 function comparePages(

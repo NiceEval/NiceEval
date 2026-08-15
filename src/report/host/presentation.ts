@@ -152,6 +152,7 @@ export function reportExecutionShowDocument(
             pageId: summary.pageId,
             path: summary.path,
             kind: summary.kind,
+            navigation: summary.navigation,
             instanceCount: summary.instanceCount,
           })),
       ),
@@ -177,6 +178,8 @@ function pageShowValue(page: ClosedReportPage): Readonly<Record<string, unknown>
     pageId: page.pageId,
     route: page.route,
     title: jsonLocalizedText(page.title),
+    navigation: page.navigation,
+    head: jsonValue(page.head),
     node: jsonValue(page.node),
     problemIds: sortedProblemIds(page.problemIds),
   });
@@ -244,6 +247,9 @@ function renderPageText(page: ClosedReportPage): readonly string[] {
   if (page.problemIds.length > 0) {
     lines.push(`  problems: ${sortedProblemIds(page.problemIds).map((id) => `#${id}`).join(", ")}`);
   }
+  for (const metadata of page.head.metadata) {
+    lines.push(`  ${metadata.tag} ${visibleText(canonicalJson(metadata.attrs))}`);
+  }
   lines.push(...renderNodeText(page.node, "  ", "text"));
   return lines;
 }
@@ -287,6 +293,10 @@ export function renderNodeText(
       return renderStatText(node, indent);
     case "download":
       return renderDownloadText(node, indent, face);
+    case "element":
+      return renderElementText(node, indent, face);
+    case "link":
+      return renderLinkText(node, indent, face);
     case "primitive": {
       const selected = face === "text" ? node.text : node.web;
       return renderNodeText(selected, indent, face);
@@ -294,6 +304,30 @@ export function renderNodeText(
     default:
       return Object.freeze([`${indent}[unsupported Report node: ${visibleText(node.type)}]`]);
   }
+}
+
+function renderElementText(
+  node: Readonly<Record<string, unknown>>,
+  indent: string,
+  face: RenderFace,
+): readonly string[] {
+  const tag = typeof node.tag === "string" ? node.tag : "element";
+  const children = renderChildrenText(node.children, indent, face);
+  if (/^h[1-6]$/.test(tag)) {
+    return Object.freeze([`${indent}${"#".repeat(Number(tag.slice(1)))} ${children.map((line) => line.trim()).join(" ")}`]);
+  }
+  if (tag === "li") return Object.freeze(children.map((line, index) => index === 0 ? `${indent}- ${line.trimStart()}` : line));
+  return children;
+}
+
+function renderLinkText(
+  node: Readonly<Record<string, unknown>>,
+  indent: string,
+  face: RenderFace,
+): readonly string[] {
+  const children = renderChildrenText(node.children, indent, face);
+  const href = typeof node.href === "string" ? visibleText(node.href) : "[unsupported link]";
+  return Object.freeze([...children, `${indent}  → ${href}`]);
 }
 
 function renderChildrenText(value: unknown, indent: string, face: RenderFace): readonly string[] {

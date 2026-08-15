@@ -2,6 +2,7 @@
 // rerun: pnpm e2e --repo report -- --run test/report-config-reload.test.ts
 
 import { pollUntil, waitForOutput } from "@niceeval/testkit";
+import { Buffer } from "node:buffer";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -29,7 +30,7 @@ async function htmlWithMarkers(url: string, ...markers: string[]): Promise<strin
   }
 }
 
-test("view 重建项目模块、配置与 Record，失败时保留 last-good execution", async () => {
+test("view 重建项目模块、配置与 Record；last-good 保留且 latest intent 获胜", async () => {
   await reportE2E.case(
     "config-reload",
     { artifacts: reportCaseArtifacts() },
@@ -37,6 +38,10 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       expect(run.expReceipt()).toMatchObject({ completion: "completed" });
+      const initialSlots = run.ndjson<{ readonly event: string }>()
+        .filter((event) => event.event === "eval").length;
+      expect(initialSlots, run.diagnostic()).toBeGreaterThan(0);
+      const initialSlotMarker = `SLOTS_${initialSlots}`;
 
       const configPath = join(projectRoot, "niceeval.config.ts");
       const reportPath = join(projectRoot, "reports", "config-reload.ts");
@@ -79,13 +84,13 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       const first = await firstResponse.text();
       expect(first).toContain("REPORT_FIRST");
       expect(first).toContain("INDIRECT_FIRST");
-      expect(first).toContain("SLOTS_3");
+      expect(first).toContain(initialSlotMarker);
       expect(first).toContain("#123456");
       expect(first).not.toContain("INDIRECT_SECOND");
 
       await writeFile(componentPath, component.replace("INDIRECT_FIRST", "INDIRECT_SECOND"), "utf8");
       const indirect = await pollUntil(
-        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", "SLOTS_3"),
+        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", initialSlotMarker),
         { timeoutMs: 15_000, intervalMs: 100, label: "indirect report component reload" },
       );
       expect(indirect).not.toContain("INDIRECT_FIRST");
@@ -112,6 +117,41 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
         { timeoutMs: 15_000, intervalMs: 100, label: "running config restore" },
       );
 
+      // Two legitimate edits race through the watcher. Every observed response
+      // must remain a complete last-good page or the complete latest page; an
+      // earlier candidate must never become temporarily visible.
+      const observedIntentBodies: string[] = [];
+      const latestIntent = pollUntil(
+        async () => {
+          try {
+            const response = await fetch(origin!);
+            if (response.status !== 200) return undefined;
+            const body = await response.text();
+            observedIntentBodies.push(body);
+            return body.includes("REPORT_FIRST") && body.includes("INTENT_LATEST") && body.includes("#654321")
+              ? body
+              : undefined;
+          } catch {
+            return undefined;
+          }
+        },
+        { timeoutMs: 15_000, intervalMs: 25, label: "latest report module intent" },
+      );
+      await writeFile(componentPath, component.replace("INDIRECT_FIRST", "INTENT_STALE"), "utf8");
+      await writeFile(componentPath, component.replace("INDIRECT_FIRST", "INTENT_LATEST"), "utf8");
+      const settledLatestIntent = await latestIntent;
+      expect(settledLatestIntent).not.toContain("INTENT_STALE");
+      expect(observedIntentBodies).not.toEqual(expect.arrayContaining([
+        expect.stringContaining("INTENT_STALE"),
+      ]));
+      for (const body of observedIntentBodies) {
+        expect(body).toContain("REPORT_FIRST");
+        expect(body).toContain("#654321");
+        expect(body.includes("INDIRECT_SECOND") || body.includes("INTENT_LATEST")).toBe(true);
+      }
+      const lastGoodBeforeConfigFailure = Buffer.from(await (await fetch(origin!)).arrayBuffer());
+      expect(lastGoodBeforeConfigFailure.toString("utf8")).toBe(settledLatestIntent);
+
       const unsupportedConfigModule = join(projectRoot, "reports", "unsupported-config.niceeval-invalid");
       await writeFile(unsupportedConfigModule, "export default null;\n", "utf8");
       const brokenConfig = liveConfig.replace(
@@ -131,21 +171,16 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
             response.status !== 200
             || response.headers.get("x-niceeval-last-rebuild-problem") !== "1"
           ) return undefined;
-          const body = await response.text();
-          return body.includes("REPORT_FIRST")
-            && body.includes("INDIRECT_SECOND")
-            && body.includes("#654321")
-            && body.includes("niceeval-last-rebuild-problem")
-            ? body
-            : undefined;
+          const body = Buffer.from(await response.arrayBuffer());
+          return body.equals(lastGoodBeforeConfigFailure) ? body : undefined;
         },
         { timeoutMs: 15_000, intervalMs: 100, label: "config failure retains last-good execution" },
       );
-      expect(retainedAfterConfigFailure).toContain("niceeval-last-rebuild-problem");
+      expect(retainedAfterConfigFailure.equals(lastGoodBeforeConfigFailure)).toBe(true);
 
       await writeFile(configPath, liveConfig, "utf8");
       await pollUntil(
-        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", "#654321"),
+        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INTENT_LATEST", "#654321"),
         { timeoutMs: 15_000, intervalMs: 100, label: "config import recovery" },
       );
 
@@ -153,11 +188,17 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       // Record root 写入新结果；view 不重启也要读到它。
       const newRecord = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
       expect(newRecord.exitCode, newRecord.diagnostic()).toBe(0);
+      const addedSlots = newRecord.ndjson<{ readonly event: string }>()
+        .filter((event) => event.event === "eval").length;
+      expect(addedSlots, newRecord.diagnostic()).toBeGreaterThan(0);
+      const reloadedSlotMarker = `SLOTS_${initialSlots + addedSlots}`;
       const withNewRecord = await pollUntil(
-        () => htmlWithMarkers(origin!, "SLOTS_4", "REPORT_FIRST", "INDIRECT_SECOND"),
+        () => htmlWithMarkers(origin!, reloadedSlotMarker, "REPORT_FIRST", "INTENT_LATEST"),
         { timeoutMs: 15_000, intervalMs: 100, label: "record reload" },
       );
-      expect(withNewRecord).not.toContain("SLOTS_3");
+      expect(withNewRecord).not.toContain(initialSlotMarker);
+      const lastGoodBeforeReportFailure = Buffer.from(await (await fetch(origin!)).arrayBuffer());
+      expect(lastGoodBeforeReportFailure.toString("utf8")).toBe(withNewRecord);
 
       await writeFile(reportPath, 'throw new Error("BROKEN_REPORT");\nexport default {};\n', "utf8");
       await waitForOutput(view, "stderr", /view rebuild failed:/, {
@@ -171,17 +212,12 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
             response.status !== 200
             || response.headers.get("x-niceeval-last-rebuild-problem") !== "1"
           ) return undefined;
-          const body = await response.text();
-          return body.includes("REPORT_FIRST")
-            && body.includes("INDIRECT_SECOND")
-            && body.includes("SLOTS_4")
-            && body.includes("niceeval-last-rebuild-problem")
-            ? body
-            : undefined;
+          const body = Buffer.from(await response.arrayBuffer());
+          return body.equals(lastGoodBeforeReportFailure) ? body : undefined;
         },
         { timeoutMs: 15_000, intervalMs: 100, label: "broken report retains last-good execution" },
       );
-      expect(retained).toContain("niceeval-last-rebuild-problem");
+      expect(retained.equals(lastGoodBeforeReportFailure)).toBe(true);
 
       await writeFile(reportPath, report.replace("REPORT_FIRST", "REPORT_RECOVERED"), "utf8");
       const recovered = await pollUntil(
@@ -189,8 +225,8 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
           htmlWithMarkers(
             origin!,
             "REPORT_RECOVERED",
-            "INDIRECT_SECOND",
-            "SLOTS_4",
+            "INTENT_LATEST",
+            reloadedSlotMarker,
             "#654321",
           ),
         { timeoutMs: 15_000, intervalMs: 100, label: "report recovery" },

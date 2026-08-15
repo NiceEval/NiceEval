@@ -31,6 +31,15 @@ import {
 import type {
   FileChangesTrajectoryProps,
 } from "./file-changes.ts";
+import {
+  classicOverviewReport,
+  standard,
+  standardAttemptPage,
+  standardAttemptsPage,
+  standardExperimentPage,
+  standardOverviewPage,
+  standardTracesPage,
+} from "./classic.ts";
 
 export {
   defaultAttemptOverviewReport,
@@ -42,6 +51,13 @@ export {
   defaultSourceEvidenceReport,
   defaultTimingEvidenceReport,
   executionEvidenceReport,
+  classicOverviewReport,
+  standard,
+  standardAttemptPage,
+  standardAttemptsPage,
+  standardExperimentPage,
+  standardOverviewPage,
+  standardTracesPage,
   overview,
   runMembershipOverviewReport,
   sandboxHistoryReport,

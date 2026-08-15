@@ -176,6 +176,46 @@
         "default": "./dist/report/index.cjs"
       }
     },
+    "./jsx-runtime": {
+      "import": {
+        "types": "./dist/jsx-runtime.d.mts",
+        "default": "./dist/jsx-runtime.mjs"
+      },
+      "require": {
+        "types": "./dist/jsx-runtime.d.cts",
+        "default": "./dist/jsx-runtime.cjs"
+      }
+    },
+    "./jsx-dev-runtime": {
+      "import": {
+        "types": "./dist/jsx-dev-runtime.d.mts",
+        "default": "./dist/jsx-dev-runtime.mjs"
+      },
+      "require": {
+        "types": "./dist/jsx-dev-runtime.d.cts",
+        "default": "./dist/jsx-dev-runtime.cjs"
+      }
+    },
+    "./report/jsx-runtime": {
+      "import": {
+        "types": "./dist/report/jsx-runtime.d.mts",
+        "default": "./dist/report/jsx-runtime.mjs"
+      },
+      "require": {
+        "types": "./dist/report/jsx-runtime.d.cts",
+        "default": "./dist/report/jsx-runtime.cjs"
+      }
+    },
+    "./report/jsx-dev-runtime": {
+      "import": {
+        "types": "./dist/report/jsx-dev-runtime.d.mts",
+        "default": "./dist/report/jsx-dev-runtime.mjs"
+      },
+      "require": {
+        "types": "./dist/report/jsx-dev-runtime.d.cts",
+        "default": "./dist/report/jsx-dev-runtime.cjs"
+      }
+    },
     "./report/host": {
       "import": {
         "types": "./dist/report/host/index.d.mts",
@@ -195,7 +235,29 @@
         "types": "./dist/report/built-in/index.d.cts",
         "default": "./dist/report/built-in/index.cjs"
       }
-    }
+    },
+    "./report/react": {
+      "import": {
+        "types": "./dist/report/react/index.d.mts",
+        "default": "./dist/report/react/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/react/index.d.cts",
+        "default": "./dist/report/react/index.cjs"
+      }
+    },
+    "./report/extension": {
+      "import": {
+        "types": "./dist/report/extension/index.d.mts",
+        "default": "./dist/report/extension/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/extension/index.d.cts",
+        "default": "./dist/report/extension/index.cjs"
+      }
+    },
+    "./report/react/styles.css": "./dist/report/react/styles.css",
+    "./report/react/enhance.js": "./dist/report/react/enhance.js"
   },
   "files": [
     "INDEX.md",

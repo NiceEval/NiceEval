@@ -4,6 +4,7 @@ import type {
   ClosedRowsIdentity,
   MetricValue,
 } from "../../analysis/index.ts";
+import { hasCompleteReportLocaleMap } from "../classic/locale.ts";
 import type { ReportClosedValue } from "./value.ts";
 
 export const REPORT_DOCUMENT_NODES_MAX = 20_000;
@@ -166,6 +167,52 @@ export interface ClosedDownloadNode {
   readonly children: readonly ClosedReportNode[];
 }
 
+/** A deliberately small, data-only subset of intrinsic JSX structure. */
+export type ClosedElementTag =
+  | "article"
+  | "aside"
+  | "blockquote"
+  | "code"
+  | "div"
+  | "em"
+  | "footer"
+  | "header"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "h4"
+  | "h5"
+  | "h6"
+  | "li"
+  | "main"
+  | "ol"
+  | "p"
+  | "pre"
+  | "section"
+  | "small"
+  | "span"
+  | "strong"
+  | "summary"
+  | "ul";
+
+/**
+ * JSX intrinsic elements become this closed semantic shape.  It carries no
+ * DOM object, event handler, inline style, or arbitrary attribute bag.
+ */
+export interface ClosedElementNode {
+  readonly type: "element";
+  readonly tag: ClosedElementTag;
+  readonly classes?: readonly string[];
+  readonly children: readonly ClosedReportNode[];
+}
+
+/** An authored link may only target an already-local Report route or fragment. */
+export interface ClosedLinkNode {
+  readonly type: "link";
+  readonly href: string;
+  readonly children: readonly ClosedReportNode[];
+}
+
 export interface DimensionDeclarations {
   readonly minWidth?: number;
   readonly minHeight?: number;
@@ -193,6 +240,8 @@ export type ClosedReportNode =
   | ClosedChartNode
   | ClosedStatNode
   | ClosedDownloadNode
+  | ClosedElementNode
+  | ClosedLinkNode
   | ClosedPrimitiveNode;
 
 /** The terminal face of an authored primitive. */
@@ -205,8 +254,37 @@ export interface ClosedReportPage {
   readonly pageId: string;
   readonly route: string;
   readonly title: LocalizedText;
+  /** Closed navigation intent; terminal, web, and static share this hierarchy. */
+  readonly navigation: boolean;
+  /** Safe metadata and scoped styles collected while author callbacks are live. */
+  readonly head: ClosedReportHead;
   readonly node: ClosedReportNode;
   readonly problemIds: readonly number[];
+}
+
+/** A closed attribute bag never contains callbacks, URL schemes, or DOM values. */
+export type ClosedHeadAttributeValue = string | true;
+export type ClosedHeadAttributes = Readonly<Record<string, ClosedHeadAttributeValue>>;
+
+/**
+ * Metadata is deliberately limited to inert `meta` and local `link` tags.
+ * A closed tree therefore cannot acquire a script, stylesheet URL, or network
+ * dependency after the author Scope has ended.
+ */
+export interface ClosedReportHeadMetadata {
+  readonly tag: "meta" | "link";
+  readonly attrs: ClosedHeadAttributes;
+}
+
+/** CSS has already been parsed, scoped, and stripped of network/script escape hatches. */
+export interface ClosedReportStyle {
+  readonly attrs?: ClosedHeadAttributes;
+  readonly css: string;
+}
+
+export interface ClosedReportHead {
+  readonly metadata: readonly ClosedReportHeadMetadata[];
+  readonly styles: readonly ClosedReportStyle[];
 }
 
 export interface ClosedDownload {
@@ -251,6 +329,11 @@ export interface ClosedReportNodeValidation {
 
 const encoder = new TextEncoder();
 const MAX_ISSUES = 64;
+const CLOSED_HEAD_ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9:._-]*$/;
+const CLOSED_META_ATTRIBUTES = new Set(["content", "itemprop", "name", "property"]);
+const CLOSED_LINK_ATTRIBUTES = new Set(["href", "hreflang", "rel", "title", "type"]);
+const CLOSED_STYLE_ATTRIBUTES = new Set(["media", "type"]);
+const CLOSED_LINK_RELATIONS = new Set(["alternate", "author", "canonical", "license"]);
 
 /** Builds an unresolved component node without ever treating it as closed. */
 export function reportComponentNode(
@@ -334,16 +417,111 @@ function validatePage(
   const page = enterRecord(value, state, path, 0);
   if (page === undefined) return;
   try {
-    exactFields(page, ["pageId", "route", "title", "node", "problemIds"], state, path);
+    exactFields(page, ["pageId", "route", "title", "navigation", "head", "node", "problemIds"], state, path);
     validateIdentifier(field(page, "pageId"), state, append(path, "pageId"));
     validateRoute(field(page, "route"), state, append(path, "route"));
     validateLocalizedText(field(page, "title"), state, append(path, "title"));
+    if (typeof field(page, "navigation") !== "boolean") {
+      issue(state, "shape", append(path, "navigation"), "a closed Report Page navigation field must be boolean");
+    }
+    validateHead(field(page, "head"), state, append(path, "head"));
     validateNode(field(page, "node"), state, append(path, "node"), 1);
     forEachArray(field(page, "problemIds"), state, append(path, "problemIds"), (id, index) =>
       validateProblemId(id, state, append(append(path, "problemIds"), index)),
     );
   } finally {
     state.active.delete(page);
+  }
+}
+
+function validateHead(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const head = enterRecord(value, state, path, 0);
+  if (head === undefined) return;
+  try {
+    exactFields(head, ["metadata", "styles"], state, path);
+    forEachArray(field(head, "metadata"), state, append(path, "metadata"), (entry, index) => {
+      const entryPath = append(append(path, "metadata"), index);
+      const metadata = enterRecord(entry, state, entryPath, 0);
+      if (metadata === undefined) return;
+      try {
+        exactFields(metadata, ["tag", "attrs"], state, entryPath);
+        const tag = field(metadata, "tag");
+        if (tag !== "meta" && tag !== "link") {
+          issue(state, "shape", append(entryPath, "tag"), "closed Report head metadata must be meta or inert link");
+          return;
+        }
+        validateClosedHeadAttributes(field(metadata, "attrs"), tag, state, append(entryPath, "attrs"));
+      } finally {
+        state.active.delete(metadata);
+      }
+    });
+    forEachArray(field(head, "styles"), state, append(path, "styles"), (entry, index) => {
+      const entryPath = append(append(path, "styles"), index);
+      const style = enterRecord(entry, state, entryPath, 0);
+      if (style === undefined) return;
+      try {
+        exactFields(style, ["attrs", "css"], state, entryPath);
+        if (Object.hasOwn(style, "attrs")) {
+          validateClosedHeadAttributes(field(style, "attrs"), "style", state, append(entryPath, "attrs"));
+        }
+        const css = field(style, "css");
+        validateString(css, state, append(entryPath, "css"));
+        if (typeof css === "string" && !isScopedClosedCss(css)) {
+          issue(state, "unsafe-capability", append(entryPath, "css"), "closed Report CSS must be host-scoped and cannot load or cover host surfaces");
+        }
+      } finally {
+        state.active.delete(style);
+      }
+    });
+  } finally {
+    state.active.delete(head);
+  }
+}
+
+function validateClosedHeadAttributes(
+  value: unknown,
+  tag: "meta" | "link" | "style",
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const attrs = enterRecord(value, state, path, 0);
+  if (attrs === undefined) return;
+  try {
+    const allowed = tag === "meta"
+      ? CLOSED_META_ATTRIBUTES
+      : tag === "link"
+      ? CLOSED_LINK_ATTRIBUTES
+      : CLOSED_STYLE_ATTRIBUTES;
+    for (const key of Object.keys(attrs)) {
+      const attributePath = append(path, key);
+      const attribute = field(attrs, key);
+      if (!allowed.has(key) || !CLOSED_HEAD_ATTRIBUTE_NAME.test(key) || key.toLowerCase().startsWith("on")) {
+        issue(state, "unsafe-capability", attributePath, "this head attribute is not part of the closed safe metadata model");
+        continue;
+      }
+      if (attribute !== true && typeof attribute !== "string") {
+        issue(state, "shape", attributePath, "a closed head attribute must be a string or true");
+        continue;
+      }
+      if (typeof attribute === "string") validateString(attribute, state, attributePath);
+    }
+    if (tag === "link") {
+      const rel = field(attrs, "rel");
+      const href = field(attrs, "href");
+      if (typeof rel !== "string" || !CLOSED_LINK_RELATIONS.has(rel.toLowerCase()) ||
+        typeof href !== "string" || !isLocalHeadReference(href)) {
+        issue(state, "unsafe-capability", path, "a closed link must be inert metadata with a local href");
+      }
+    }
+    if (tag === "style" && Object.hasOwn(attrs, "type") && field(attrs, "type") !== "text/css") {
+      issue(state, "shape", append(path, "type"), "a closed style type must be text/css");
+    }
+  } finally {
+    state.active.delete(attrs);
   }
 }
 
@@ -428,6 +606,14 @@ function validateNode(
         validateString(field(node, "id"), state, append(path, "id"));
         validateChildren(field(node, "children"), state, append(path, "children"), depth + 1);
         return;
+      case "element":
+        validateElement(node, state, path, depth);
+        return;
+      case "link":
+        exactFields(node, ["type", "href", "children"], state, path);
+        validateLocalHref(field(node, "href"), state, append(path, "href"));
+        validateChildren(field(node, "children"), state, append(path, "children"), depth + 1);
+        return;
       case "primitive":
         exactFields(node, ["type", "text", "web", "dimensions"], state, path);
         validateNode(field(node, "text"), state, append(path, "text"), depth + 1);
@@ -448,6 +634,42 @@ function validateNode(
   } finally {
     state.active.delete(node);
   }
+}
+
+function validateElement(
+  node: Record<string, unknown>,
+  state: ValidationState,
+  path: readonly (string | number)[],
+  depth: number,
+): void {
+  exactFields(node, ["type", "tag", "classes", "children"], state, path);
+  if (!isClosedElementTag(field(node, "tag"))) {
+    issue(state, "shape", append(path, "tag"), "this JSX tag is not part of the closed Report model");
+  }
+  if (Object.hasOwn(node, "classes")) {
+    forEachArray(field(node, "classes"), state, append(path, "classes"), (entry, index) => {
+      if (typeof entry !== "string" || !isSafeCssClass(entry)) {
+        issue(state, "unsafe-capability", append(append(path, "classes"), index), "a closed JSX class must be a safe author-scoped token");
+      }
+    });
+  }
+  validateChildren(field(node, "children"), state, append(path, "children"), depth + 1);
+}
+
+function validateLocalHref(
+  value: unknown,
+  state: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  if (typeof value !== "string" || !hasOnlyUnicodeScalars(value) ||
+    !(value.startsWith("/") || value.startsWith("#"))) {
+    issue(state, "unsafe-capability", path, "a closed Report link must be a local route or fragment");
+  }
+}
+
+function isLocalHeadReference(value: string): boolean {
+  return value.length > 0 && hasOnlyUnicodeScalars(value) && !value.startsWith("//") &&
+    !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value);
 }
 
 function validateChildren(
@@ -970,7 +1192,7 @@ function exactFields(
 function optionalField(key: string): boolean {
   return key === "title" || key === "caption" || key === "align" || key === "color" || key === "series" ||
     key === "dimensions" || key === "unit" || key === "format" || key === "better" || key === "bounds" ||
-    key === "min" || key === "max" || key === "identity" || key === "issues";
+    key === "min" || key === "max" || key === "identity" || key === "issues" || key === "classes";
 }
 
 function dangerousField(key: string): boolean {
@@ -1019,6 +1241,9 @@ function validateLocalizedText(
     const keys = Object.keys(record);
     if (keys.length === 0) {
       issue(state, "shape", path, "localized text must contain at least one locale string");
+    }
+    if (!hasCompleteReportLocaleMap(record)) {
+      issue(state, "shape", path, "a localized text map must provide text for en and zh-CN");
     }
     for (const key of keys) {
       validateString(key, state, append(path, key));
@@ -1204,6 +1429,34 @@ function isAxisValue(value: unknown): boolean {
 
 function isTone(value: unknown): value is ReportTone {
   return value === "neutral" || value === "positive" || value === "warning" || value === "negative";
+}
+
+function isClosedElementTag(value: unknown): value is ClosedElementTag {
+  return value === "article" || value === "aside" || value === "blockquote" || value === "code" ||
+    value === "div" || value === "em" || value === "footer" || value === "header" ||
+    value === "h1" || value === "h2" || value === "h3" || value === "h4" || value === "h5" ||
+    value === "h6" || value === "li" || value === "main" || value === "ol" || value === "p" ||
+    value === "pre" || value === "section" || value === "small" || value === "span" ||
+    value === "strong" || value === "summary" || value === "ul";
+}
+
+function isSafeCssClass(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_-]{0,127}$/.test(value) && !value.startsWith("niceeval-report");
+}
+
+/**
+ * The Host sanitizer adds this prefix to every accepted rule. Keep a second
+ * structural guard at the closure boundary so raw/global CSS cannot arrive
+ * through a hand-built tree or a future renderer seam.
+ */
+function isScopedClosedCss(value: string): boolean {
+  if (value.length > 65_536 || value.includes("@") || value.includes("\\") || value.includes("</") ||
+    /url\s*\(/i.test(value) || /expression\s*\(/i.test(value) || /!important/i.test(value) ||
+    /(?:^|[^-\w])(?:html|body|:root|\.niceeval-report__(?:problems|page-problems|row-issues))/i.test(value)) {
+    return false;
+  }
+  const rules = value.split("}").filter((rule) => rule.trim().length > 0);
+  return rules.length > 0 && rules.every((rule) => rule.trimStart().startsWith(".niceeval-report__author "));
 }
 
 function isMetricState(

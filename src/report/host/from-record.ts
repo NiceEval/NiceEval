@@ -20,14 +20,20 @@ import type {
 import type { RecordFileSystem } from "../../record/platform/services.ts";
 import { builtInDefaultReportTarget } from "../built-in/index.tsx";
 import type { Report } from "../definition.ts";
-import type { ReportExecution, ReportTargetSelection } from "../execution/model.ts";
+import type { ClosedSiteRevision, ReportTargetSelection } from "../execution/model.ts";
 import { executeReport, type ReportExecutionError } from "./execute.ts";
 import { withReportHostPhase } from "./progress.ts";
+import {
+  buildSiteRevision,
+  type ReportSiteBuildError,
+} from "./static.ts";
+import type { ThemeDefinition } from "./theme.ts";
 
 export type ExecuteReportFromRecordError =
   | RecordReaderOpenError
   | RecordReaderReadError
   | ReportExecutionError
+  | ReportSiteBuildError
   | {
       readonly code: "sample-attempt-locator-not-found";
       readonly locator: AttemptLocator;
@@ -52,9 +58,11 @@ export function executeReportFromRecord(input: {
   readonly root: RecordRoot;
   readonly selection: AnalysisSelectionRequest;
   readonly report?: Report;
+  /** Host-owned presentation tokens participate in the fixed site bytes. */
+  readonly theme?: ThemeDefinition;
   readonly target?: ReportTargetSelection;
 }): Effect.Effect<
-  ReportExecution,
+  ClosedSiteRevision,
   ExecuteReportFromRecordError,
   ExecuteReportFromRecordRequirements
 > {
@@ -84,10 +92,14 @@ export function executeReportFromRecord(input: {
             matchingOccurrencesForCurrentIdentity(filtered, input.selection.currentSlots),
           )
         : opened;
-      return yield* withReportHostPhase("report-execution", executeReport({
+      const execution = yield* withReportHostPhase("report-execution", executeReport({
         sample,
         report: input.report ?? defaultReportForSelection(input.selection),
-        target: input.target ?? { kind: "show" },
+        target: input.target ?? { kind: "site" },
+      }));
+      return yield* withReportHostPhase("report-execution", buildSiteRevision({
+        execution,
+        ...(input.theme === undefined ? {} : { theme: input.theme }),
       }));
     }),
   );
@@ -101,9 +113,11 @@ export function executeReportForAttemptFromRecord(input: {
   readonly root: RecordRoot;
   readonly locator: AttemptLocator;
   readonly report?: Report;
+  /** Host-owned presentation tokens participate in the fixed site bytes. */
+  readonly theme?: ThemeDefinition;
   readonly target?: ReportTargetSelection;
 }): Effect.Effect<
-  ReportExecution,
+  ClosedSiteRevision,
   ExecuteReportForAttemptFromRecordError,
   ExecuteReportFromRecordRequirements
 > {
@@ -147,10 +161,14 @@ export function executeReportForAttemptFromRecord(input: {
         runIds: [resolved.run.runId],
         slotIds: [resolved.slotId],
       });
-      return yield* withReportHostPhase("report-execution", executeReport({
+      const execution = yield* withReportHostPhase("report-execution", executeReport({
         sample: narrowed,
         report: input.report ?? builtInDefaultReportTarget("attempt-locator").report,
-        target: input.target ?? { kind: "show" },
+        target: input.target ?? { kind: "site" },
+      }));
+      return yield* withReportHostPhase("report-execution", buildSiteRevision({
+        execution,
+        ...(input.theme === undefined ? {} : { theme: input.theme }),
       }));
     }),
   );

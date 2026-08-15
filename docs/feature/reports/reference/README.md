@@ -5,9 +5,9 @@
 Reports 的定稿契约由以下页面拥有：
 
 - [README](../README.md)：功能范围与作者心智。
-- [Library](../library.md)：公开页面、组件、树、路径和 error 形状。
+- [Library](../library.md)：公开页面、组件、关闭站点版本、路径和 error 形状。
 - [读数与显示语义](../calculations.md)：MetricValue、分母和 rows 的边界。
-- [Architecture](../architecture.md)：执行、验证、热重载与静态站。
+- [Architecture](../architecture.md)：全站构建、验证、版本发布与静态站。
 - [CLI](../cli.md)：用户命令。
 
 新增外部材料时，只写可复查的事实和适用范围。采用后的产品行为必须写回上述 owner 页面，不能让读者依赖参考材料推断契约。

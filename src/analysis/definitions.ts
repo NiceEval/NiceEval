@@ -480,7 +480,24 @@ export const attemptPassed = createPublishedInput(publishedAnalysisInputBindings
 
 export const attemptLatencyMs = createPublishedInput(publishedAnalysisInputBindings.attemptLatencyMs);
 
+const attemptCostUSD = createPublishedInput(publishedAnalysisInputBindings.attemptCostUSD);
+
 export const attemptToolFailure = createPublishedInput(publishedAnalysisInputBindings.attemptToolFailure);
+
+/** Mean recorded USD provider cost per selected logical Slot. */
+export const costUSD = defineMeasure({
+  id: "niceeval.cost-usd",
+  population: logicalSlots,
+  input: attemptCostUSD,
+  withinAttempt: oneValue<number>(),
+  withinSlot: latestCompletedAttempt<number>(),
+  acrossSlots: mean(),
+  denominator: allLogicalSlots(),
+  missing: partial(),
+  evidence: retainContributingEvidence(),
+  format: "currency-usd",
+  better: "lower",
+});
 
 /** @internal Query executor accessors. None is re-exported by niceeval/analysis. */
 export function populationMembersState<Member>(

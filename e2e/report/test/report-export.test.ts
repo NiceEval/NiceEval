@@ -4,22 +4,25 @@
 import { only } from "@niceeval/testkit";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
+  readonly event: string;
+  readonly evalId?: string;
+  readonly locator?: string;
 }
 
-test("view --out 从一份固定 ReportExecution 导出带完成标识的静态站", async () => {
+test("view --out 导出完整参数化站点并保护已有目标目录", async () => {
   await reportE2E.case(
     "export",
     { artifacts: reportCaseArtifacts(["site-export", "attempt-export"]) },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
+      const slotCount = run.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
+      expect(slotCount, run.diagnostic()).toBeGreaterThan(0);
       const failed = only(
         run.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "deliberate-fail" && event.locator !== undefined,
@@ -40,25 +43,37 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
 
       const index = await readFile(join(projectRoot, "site-export", "index.html"), "utf8");
       expect(index).toContain("Report fixture");
-      expect(index).toContain("Slot denominator");
-      expect(index).toContain("Fixture copy block");
+      expect(index).not.toContain(projectRoot);
+      expect(index).not.toContain(".niceeval/");
 
-      // The overview exposes each route produced by the one params codec.
-      // Static export must close exactly those Sample slots into detail pages.
-      const detailRoutes = [...new Set(
-        [...index.matchAll(/\/slots\/[a-z0-9][a-z0-9._~-]*/g)].map((match) => match[0]),
+      // The authored hrefs, rather than a hand-built output path, reveal every
+      // parameterized instance that static export had to close.
+      const staticRoot = pathToFileURL(join(projectRoot, "site-export", "index.html"));
+      const detailHrefs = [...new Set(
+        [...index.matchAll(/href="([^"]*(?:source|trace|diff)\/[^"]*)"/g)].map((match) => match[1]!),
       )];
-      expect(detailRoutes).toHaveLength(3);
-      for (const detailRoute of detailRoutes) {
-        const detail = await readFile(
-          join(projectRoot, "site-export", ...detailRoute.split("/").filter(Boolean), "index.html"),
-          "utf8",
-        );
-        expect(detail).toContain("Report fixture slot");
+      expect(detailHrefs).toHaveLength(slotCount * 3);
+      for (const href of detailHrefs) {
+        const kind = detailKind(href);
+        const detail = await readFile(fileURLToPath(new URL(href, staticRoot)), "utf8");
+        expect(detail).toContain(`${kind} fixture detail`);
       }
 
       const complete = await stat(join(projectRoot, "site-export", "_niceeval", "complete"));
       expect(complete.size).toBe(0);
+
+      const alreadyExists = await niceeval.run(
+        [
+          "view",
+          "--report",
+          "./reports/site.ts",
+          "--out",
+          "site-export",
+          "--no-open",
+        ],
+      );
+      expect(alreadyExists.exitCode, alreadyExists.diagnostic()).not.toBe(0);
+      expect(alreadyExists.stderr).toContain("report-export-target-exists");
 
       const attemptExport = await niceeval.run(
         [
@@ -82,3 +97,10 @@ test("view --out 从一份固定 ReportExecution 导出带完成标识的静态�
     },
   );
 });
+
+function detailKind(href: string): "Source" | "Trace" | "Diff" {
+  if (href.includes("source/")) return "Source";
+  if (href.includes("trace/")) return "Trace";
+  if (href.includes("diff/")) return "Diff";
+  throw new Error(`unexpected static detail href: ${JSON.stringify(href)}`);
+}

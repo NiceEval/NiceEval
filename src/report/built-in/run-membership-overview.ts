@@ -18,6 +18,8 @@ import {
   loadBuiltInSummaryRows,
   type BuiltInSummaryRows,
 } from "./analysis-values.ts";
+import { captureLeaderboardShowResult } from "./attempt-evidence-json.ts";
+import { registerBuiltInShowResult } from "../execution/results.ts";
 
 const MEMBERSHIP_ROWS_MAX = 200;
 
@@ -42,10 +44,10 @@ const runMembershipPage = {
  * Assertion evidence, and MetricValues stay independent facts.
  */
 export function runMembershipOverviewReport(): Report {
-  return defineReport({
+  return registerBuiltInShowResult(defineReport({
     title: "Run membership overview",
     pages: [runMembershipPage],
-  });
+  }), Object.freeze({ produce: captureLeaderboardShowResult }));
 }
 
 /** The CLI default Report for one or more explicit `--run` selectors. */

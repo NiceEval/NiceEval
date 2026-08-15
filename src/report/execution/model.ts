@@ -8,9 +8,19 @@ import {
   type ClosedReportProblem,
   type ClosedReportTree,
 } from "../semantic/closed.ts";
+import {
+  freezeReportExecutionResults,
+  type BuiltInShowResult,
+  type ReportExecutionResults,
+} from "./results.ts";
 
-/** A target never implies callback work outside its requested route closure. */
+/** Product projection names; callback work is always the full site closure. */
 export type ReportTargetSelection =
+  /**
+   * The only execution target. Product surfaces may choose a projection after
+   * this full-site closure has completed, but they never narrow author work.
+   */
+  | { readonly kind: "site" }
   | { readonly kind: "show"; readonly route?: string }
   | { readonly kind: "view"; readonly route: string }
   | { readonly kind: "static" };
@@ -70,6 +80,7 @@ export interface ReportPageSummary {
   readonly pageId: string;
   readonly path: string;
   readonly kind: "plain" | "parameterized";
+  readonly navigation: boolean;
   readonly instanceCount: number;
 }
 
@@ -114,12 +125,38 @@ export type ReportDownloadResult =
 export interface ReportExecution {
   readonly report: ReportExecutionIdentity;
   readonly sample: ReportSampleSummary;
+  /** Closed Host-owned product results; never a Sample or a Report callback. */
+  readonly results: ReportExecutionResults;
   readonly target: ReportTargetSelection;
   readonly pageSummaries: readonly ReportPageSummary[];
   readonly pages: readonly ReportPageResult[];
   readonly downloads: readonly ReportDownloadResult[];
   readonly problemTable: readonly ClosedReportProblem[];
   readonly tree: ClosedReportTree;
+}
+
+/** One exact emitted resource in a closed, self-contained report site. */
+export interface ClosedSiteFile {
+  /** Portable POSIX path, relative to the site root. */
+  readonly path: string;
+  /** The exact response/write media type for these bytes. */
+  readonly mediaType: string;
+  /** Final bytes. No renderer or author callback runs after this point. */
+  readonly bytes: Uint8Array;
+}
+
+/**
+ * Content-addressed SSG closure. It deliberately owns both the semantic
+ * execution and every page/asset/download byte consumed by view and export.
+ */
+export interface ClosedSiteRevision {
+  readonly identity: {
+    readonly format: "niceeval.report-site-revision/v1";
+    readonly contentHash: string;
+    readonly renderer: "niceeval.report-ssg/v1";
+  };
+  readonly execution: ReportExecution;
+  readonly files: readonly ClosedSiteFile[];
 }
 
 /**
@@ -156,6 +193,7 @@ export function reportLimit(
 export function freezeReportExecution(input: {
   readonly report: ReportExecutionIdentity;
   readonly sample: ReportSampleSummary;
+  readonly builtInShow?: BuiltInShowResult;
   readonly target: ReportTargetSelection;
   readonly pageSummaries: readonly ReportPageSummary[];
   readonly pages: readonly ReportPageResult[];
@@ -178,6 +216,7 @@ export function freezeReportExecution(input: {
       ...(input.report.title === undefined ? {} : { title: freezeLocalizedText(input.report.title) }),
     }),
     sample: freezeReportSampleSummary(input.sample),
+    results: freezeReportExecutionResults(input.builtInShow),
     target: freezeTarget(input.target),
     pageSummaries: Object.freeze(input.pageSummaries.map((page) => Object.freeze({ ...page }))),
     pages,
@@ -318,6 +357,8 @@ function assertNodeDownloadLinks(node: ClosedReportNode, ids: ReadonlySet<string
     case "stack":
     case "grid":
     case "callout":
+    case "element":
+    case "link":
       for (const child of node.children) assertNodeDownloadLinks(child, ids);
       return;
     case "download":
@@ -340,6 +381,8 @@ function assertNodeDownloadLinks(node: ClosedReportNode, ids: ReadonlySet<string
 
 function freezeTarget(value: ReportTargetSelection): ReportTargetSelection {
   switch (value.kind) {
+    case "site":
+      return Object.freeze({ kind: "site" as const });
     case "show":
       return Object.freeze({
         kind: "show" as const,

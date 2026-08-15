@@ -43,9 +43,10 @@ import {
   timingEvidenceReport,
 } from "./report/built-in/execution.ts";
 import { sourceEvidenceReport } from "./report/built-in/source.ts";
+import { renderShowJson } from "./show/json.ts";
 import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/definition.ts";
-import type { ReportExecution, ReportTargetSelection } from "./report/execution/model.ts";
+import type { ClosedSiteRevision } from "./report/execution/model.ts";
 import { reportHost } from "./report/host/index.ts";
 import {
   ReportHostProgressObserver,
@@ -2265,7 +2266,9 @@ function parseReportCliRequest(input: {
       throw usageError("niceeval show --source requires one current Record Attempt locator.\n");
     }
     const parsedLocator = parseCurrentAttemptLocator(locator);
-    const report = sourceEvidenceReport();
+    const report = sourceEvidenceReport({
+      ...(typeof input.flags.source === "string" ? { file: input.flags.source } : {}),
+    });
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
@@ -2579,29 +2582,22 @@ function uniqueWatchInputs(paths: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(paths.map((path) => resolvePath(path)))].sort());
 }
 
-function reportShowTarget(route: ReportRoute | undefined): ReportTargetSelection {
-  return Object.freeze({
-    kind: "show" as const,
-    ...(route === undefined ? {} : { route }),
-  });
-}
-
-function reportViewTarget(route: ReportRoute | undefined): ReportTargetSelection {
-  return Object.freeze({ kind: "view" as const, route: route ?? "/" });
-}
-
-const staticReportTarget: ReportTargetSelection = Object.freeze({ kind: "static" as const });
-
 function executeCliReport(
   request: ReportCliRequest,
   inputs: LoadedCliReportInputs,
-  target: ReportTargetSelection,
 ) {
-  const execution = request.target.kind === "attempt"
+  const target = request.command === "show"
+    ? Object.freeze({
+      kind: "show" as const,
+      ...(request.page === undefined ? {} : { route: request.page }),
+    })
+    : Object.freeze({ kind: "site" as const });
+  const revision = request.target.kind === "attempt"
     ? reportHost.execute({
       root: request.root,
       locator: request.target.locator,
       report: inputs.report,
+      theme: inputs.theme,
       target,
     })
     : reportHost.execute({
@@ -2610,9 +2606,10 @@ function executeCliReport(
         ? request.target.selection
         : inputs.projectCurrentSelection!,
       report: inputs.report,
+      theme: inputs.theme,
       target,
     });
-  return execution.pipe(Effect.mapError(reportExecutionFailure));
+  return revision.pipe(Effect.mapError(reportExecutionFailure));
 }
 
 function reportExecutionFailure(error: unknown): CliFailure {
@@ -2641,9 +2638,47 @@ function reportExecutionFailure(error: unknown): CliFailure {
       return usageError("record-migration-interrupted\nRestore the Record from Git or a backup before retrying.\n");
     case "report-route-invalid":
       return usageError(`Unknown Report route "${stringProperty(error, "route") ?? "unknown"}".\n`);
+    case "report-site-execution-problem":
+      return usageError(reportSiteExecutionProblemMessage(error));
     default:
       return cliFailure("execute report from Record", error);
   }
+}
+
+const REPORT_CLI_PROBLEMS_MAX = 20;
+const REPORT_CLI_PROBLEM_TEXT_MAX = 1_024;
+
+/** Keep the concrete closed-problem reason while bounding author-controlled diagnostics. */
+function reportSiteExecutionProblemMessage(error: unknown): string {
+  if (typeof error !== "object" || error === null) return "report-site-execution-problem\n";
+  const problems = Reflect.get(error, "problems");
+  if (!Array.isArray(problems)) return "report-site-execution-problem\n";
+
+  const lines = problems
+    .slice(0, REPORT_CLI_PROBLEMS_MAX)
+    .flatMap((problem) => {
+      const code = boundedReportCliProblemText(stringProperty(problem, "code"));
+      const summary = boundedReportCliProblemText(stringProperty(problem, "summary"));
+      if (code === undefined && summary === undefined) return [];
+      if (code === undefined) return [summary!];
+      return [summary === undefined ? code : `${code}: ${summary}`];
+    });
+  const omitted = Math.max(0, problems.length - REPORT_CLI_PROBLEMS_MAX);
+  return [
+    "report-site-execution-problem",
+    ...lines,
+    ...(omitted === 0 ? [] : [`${omitted} additional Report problem(s) omitted.`]),
+    "",
+  ].join("\n");
+}
+
+function boundedReportCliProblemText(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const bounded = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .slice(0, REPORT_CLI_PROBLEM_TEXT_MAX)
+    .trim();
+  return bounded === "" ? undefined : bounded;
 }
 
 function stringProperty(value: unknown, key: string): string | undefined {
@@ -2653,13 +2688,13 @@ function stringProperty(value: unknown, key: string): string | undefined {
 }
 
 function requireKnownReportPage(
-  execution: ReportExecution,
+  revision: ClosedSiteRevision,
   page: ReportRoute | undefined,
 ): Effect.Effect<void, CliUsageError> {
-  if (page === undefined || execution.pages.some((candidate) => candidate.route === page)) {
+  if (page === undefined || revision.execution.pages.some((candidate) => candidate.route === page)) {
     return Effect.void;
   }
-  const available = execution.pages
+  const available = revision.execution.pages
     .flatMap((candidate) => candidate.route === undefined ? [] : [candidate.route])
     .sort()
     .join(", ");
@@ -2755,19 +2790,42 @@ function runShowCommand(
       try: () => parseReportCliRequest({ command: "show", cwd, positionals, flags }),
       catch: (cause) => cliFailure("parse show arguments", cause),
     });
-    const inputs = yield* withCliReportPhase("Load project, config, Report, and Theme", loadCliReportInputs(request));
-    const execution = yield* executeCliReport(request, inputs, reportShowTarget(request.page)).pipe(
-      Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath)),
-    );
-    yield* requireKnownReportPage(execution, request.page);
-    yield* withCliReportPhase("Render terminal report", reportHost.show({
-      execution,
-      ...(flags.json ? { format: "json" as const } : {}),
-      ...(request.page === undefined ? {} : { page: request.page }),
-    }).pipe(
-      Effect.provideService(ReportConsole, cliReportConsole),
-      Effect.mapError((error) => cliFailure("render Report show output", error)),
-    ));
+    const inputs = yield* (flags.json
+      ? loadCliReportInputs(request)
+      : withCliReportPhase("Load project, config, Report, and Theme", loadCliReportInputs(request)));
+    const report = executeCliReport(request, inputs);
+    const revision = yield* (flags.json
+      ? report
+      : report.pipe(Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath))));
+    yield* requireKnownReportPage(revision, request.page);
+    if (flags.json) {
+      const domainJson = yield* Effect.try({
+        try: () => renderShowJson(revision),
+        catch: (cause) => cliFailure("assemble show JSON", cause),
+      });
+      if (domainJson !== undefined) {
+        yield* cliReportConsole.write(domainJson).pipe(
+          Effect.mapError((error) => cliFailure("render Report show output", error)),
+        );
+      } else {
+        yield* reportHost.show({
+          revision,
+          format: "json" as const,
+          ...(request.page === undefined ? {} : { page: request.page }),
+        }).pipe(
+          Effect.provideService(ReportConsole, cliReportConsole),
+          Effect.mapError((error) => cliFailure("render Report show output", error)),
+        );
+      }
+    } else {
+      yield* withCliReportPhase("Render terminal report", reportHost.show({
+        revision,
+        ...(request.page === undefined ? {} : { page: request.page }),
+      }).pipe(
+        Effect.provideService(ReportConsole, cliReportConsole),
+        Effect.mapError((error) => cliFailure("render Report show output", error)),
+      ));
+    }
     return 0;
   });
 }
@@ -2794,13 +2852,12 @@ function runViewCommand(
         return yield* Effect.fail(usageError("view --out does not accept --page.\n"));
       }
       const inputs = yield* withCliReportPhase("Load project, config, Report, and Theme", loadCliReportInputs(request));
-      const execution = yield* executeCliReport(request, inputs, staticReportTarget).pipe(
+      const revision = yield* executeCliReport(request, inputs).pipe(
         Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath)),
       );
       const receipt = yield* withCliReportPhase("Export static report site", reportHost.export({
-        execution,
+        revision,
         out: resolvePath(cwd, flags.out),
-        theme: inputs.theme,
       }).pipe(
         Effect.provideService(ReportFileSystem, makeNodeReportFileSystem()),
         Effect.mapError((error) => staticExportFailure(error, resolvePath(cwd, flags.out!))),
@@ -2813,7 +2870,7 @@ function runViewCommand(
       "Load project, config, Report, and Theme",
       loadCliReportInputs(request),
     );
-    const initial = yield* executeCliReport(request, initialInputs, reportViewTarget(request.page)).pipe(
+    const initial = yield* executeCliReport(request, initialInputs).pipe(
       Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath)),
     );
     yield* requireKnownReportPage(initial, request.page);
@@ -2824,7 +2881,6 @@ function runViewCommand(
     });
     const server = yield* withCliReportPhase("Start HTTP server and file watcher", reportHost.serve({
       url: `http://${host.includes(":") ? `[${host}]` : host}:${port}/`,
-      theme: initialInputs.theme,
       watchInputs: initialInputs.watchInputs,
       initial: Effect.succeed(initial),
       rebuild: () => rebuildReportView(request),
@@ -2856,12 +2912,11 @@ function runViewCommand(
 function rebuildReportView(request: ReportCliRequest) {
   return Effect.gen(function* () {
     const inputs = yield* loadCliReportInputs(request);
-    const execution = yield* executeCliReport(request, inputs, reportViewTarget(request.page));
-    yield* requireKnownReportPage(execution, request.page);
+    const site = yield* executeCliReport(request, inputs);
+    yield* requireKnownReportPage(site, request.page);
     return Object.freeze({
-      kind: "execution" as const,
-      execution,
-      theme: inputs.theme,
+      kind: "site" as const,
+      site,
       watchInputs: inputs.watchInputs,
     });
   }).pipe(

@@ -2,6 +2,12 @@ import type { AttemptEvidenceDomainView, JsonValue, Sample } from "../analysis/i
 import type { AttemptLocator } from "../attempt-locator.ts";
 import type { LocalizedText } from "../shared/types.ts";
 import type { PageContext } from "./components.ts";
+import type { AuthorReportNode } from "./author/element.ts";
+import {
+  isThemeDefinition,
+  type ThemeDefinition,
+} from "./host/theme.ts";
+import { hasCompleteReportLocaleMap } from "./classic/locale.ts";
 import type { ReportNode } from "./semantic/closed.ts";
 
 const reportTypeId: unique symbol = Symbol("@niceeval/report/Report");
@@ -13,6 +19,50 @@ const MAX_PATH_SEGMENT_BYTES = 128;
 const MAX_PATH_BYTES = 1_024;
 const MAX_PATH_SEGMENTS = 32;
 const encoder = new TextEncoder();
+
+export const DEFAULT_PAGE_ID = "report";
+export const DEFAULT_PAGE_TITLE: LocalizedText = "Report";
+
+export type HeadAttributeValue = string | true;
+export type HeadAttributes = Readonly<Record<string, HeadAttributeValue>>;
+
+/**
+ * Safe document metadata only. Script and resource-loading link relations are
+ * intentionally absent: a Report must not acquire a functional network
+ * dependency outside its closed Host output.
+ */
+export type HeadTag =
+  | Readonly<{ readonly tag: "meta"; readonly attrs: HeadAttributes; readonly children?: never }>
+  | Readonly<{ readonly tag: "link"; readonly attrs: HeadAttributes; readonly children?: never }>
+  | Readonly<{ readonly tag: "style"; readonly attrs?: HeadAttributes; readonly children: string }>;
+
+export type StyleDeclaration = Extract<HeadTag, { readonly tag: "style" }>;
+
+/** Props accepted by `<Style>` while an author callback is still live. */
+export interface StyleProps {
+  readonly children: string;
+  readonly media?: string;
+}
+
+/** An open, author-time style node. The Host scopes and closes it before render. */
+export interface StyleNode {
+  readonly type: "style";
+  readonly css: string;
+  readonly attrs?: HeadAttributes;
+}
+
+/**
+ * Pins keep a semantic dimension value in a stable visual slot. Rendering
+ * remains Host-owned; this declaration never carries CSS or callbacks.
+ */
+export type DimensionPins = Readonly<Record<string, Readonly<Record<string, number>>>>;
+
+export interface ReportShell {
+  readonly title?: LocalizedText;
+  readonly theme?: ThemeDefinition;
+  readonly dimensionPins?: DimensionPins;
+  readonly head?: readonly HeadTag[];
+}
 
 /** A canonical locator selects one host-provided closed evidence view. */
 export type EvidenceLocator = AttemptLocator;
@@ -39,7 +89,7 @@ export type PageLoad<Params, Input> = (
 export type PageRender<Input> = (
   input: Input,
   context: PageContext,
-) => ReportNode | Promise<ReportNode>;
+) => AuthorReportNode | Promise<AuthorReportNode>;
 
 export interface PageParams<Params extends JsonValue> {
   encode(params: Params): string;
@@ -50,7 +100,8 @@ export interface PageParams<Params extends JsonValue> {
 /** A normal navigable Page whose render input defaults to the live Sample. */
 export interface PlainPageDefinition<Input = Sample> {
   readonly id: string;
-  readonly path: string;
+  /** Omit path to let the Report definition derive /<id> (and / for report). */
+  readonly path?: string;
   readonly title: LocalizedText;
   readonly navigation?: boolean;
   readonly params?: never;
@@ -64,7 +115,8 @@ export interface ParameterizedPageDefinition<
   Input,
 > {
   readonly id: string;
-  readonly path: string;
+  /** Omit path to let the Report definition derive /<id> (and / for report). */
+  readonly path?: string;
   readonly title: LocalizedText;
   readonly navigation: false;
   readonly params: PageParams<Params>;
@@ -83,10 +135,38 @@ type AnyPageDefinition =
   | PlainPageDefinition<any>
   | ParameterizedPageDefinition<any, any>;
 
-export interface ReportDefinition<
-  Pages extends readonly AnyPageDefinition[] = readonly [AnyPageDefinition, ...AnyPageDefinition[]],
+export interface NormalizedPlainPageDefinition<Input = unknown> {
+  readonly id: string;
+  readonly path: string;
+  readonly title: LocalizedText;
+  readonly navigation?: boolean;
+  readonly params?: never;
+  readonly load?: PageLoad<void, Input>;
+  readonly render: PageRender<Input>;
+}
+
+export interface NormalizedParameterizedPageDefinition<
+  Params extends JsonValue = JsonValue,
+  Input = unknown,
 > {
-  readonly title?: LocalizedText;
+  readonly id: string;
+  readonly path: string;
+  readonly title: LocalizedText;
+  readonly navigation: false;
+  readonly params: PageParams<Params>;
+  readonly load: PageLoad<Params, Input>;
+  readonly render: PageRender<Input>;
+}
+
+export type NormalizedPageDefinition =
+  | NormalizedPlainPageDefinition
+  | NormalizedParameterizedPageDefinition;
+
+export type NonEmptyArray<Value> = readonly [Value, ...Value[]];
+
+export interface ReportDefinition<
+  Pages extends NonEmptyArray<AnyPageDefinition> = NonEmptyArray<AnyPageDefinition>,
+> extends ReportShell {
   readonly pages: Pages;
 }
 
@@ -95,11 +175,25 @@ export interface ReportDefinition<
  * callbacks are executed only by the Report Host while the Sample Scope lives.
  */
 export interface Report<
-  Pages extends readonly AnyPageDefinition[] = readonly [AnyPageDefinition, ...AnyPageDefinition[]],
-> {
-  readonly title?: LocalizedText;
+  Pages extends NonEmptyArray<NormalizedPageDefinition> = NonEmptyArray<NormalizedPageDefinition>,
+> extends ReportShell {
+  readonly head: readonly HeadTag[];
   readonly pages: Pages;
   readonly [reportTypeId]: true;
+}
+
+/** A stable, closed author-side summary of declared pages. */
+export interface ReportMetaPage {
+  readonly id: string;
+  readonly path: string;
+  readonly title: LocalizedText;
+  readonly navigation: boolean;
+}
+
+/** Introspection never opens a Sample or exposes a Host revision. */
+export interface ReportMeta {
+  readonly title: LocalizedText;
+  readonly pages: readonly ReportMetaPage[];
 }
 
 /**
@@ -107,20 +201,40 @@ export interface Report<
  * Input inferred from its own load() so sibling Pages do not collapse to unknown.
  */
 export function defineReport<
-  const Pages extends readonly [AnyPageDefinition, ...AnyPageDefinition[]],
->(definition: ReportDefinition<Pages>): Report<Pages>;
+  const Pages extends NonEmptyArray<AnyPageDefinition>,
+>(definition: ReportDefinition<Pages>): Report;
+/** The one-page author shorthand, normalized as id "report" at route "/". */
+export function defineReport(render: PageRender<Sample>): Report;
 export function defineReport(
   definition: unknown,
-): Report<readonly AnyPageDefinition[]> {
+): Report {
+  if (typeof definition === "function") {
+    return defineReport({
+      pages: [{ id: DEFAULT_PAGE_ID, title: DEFAULT_PAGE_TITLE, render: definition as PageRender<Sample> }],
+    });
+  }
   const fields = ownFields(definition, "defineReport");
-  assertOnlyFields(fields, ["title", "pages"], "defineReport", ["title"]);
+  assertOnlyFields(
+    fields,
+    ["title", "theme", "dimensionPins", "head", "pages"],
+    "defineReport",
+    ["title", "theme", "dimensionPins", "head"],
+  );
   const title = fields.has("title") ? normalizeLocalizedText(fields.get("title"), "Report title") : undefined;
+  const theme = fields.has("theme") ? normalizeTheme(fields.get("theme")) : undefined;
+  const dimensionPins = fields.has("dimensionPins")
+    ? normalizeDimensionPins(fields.get("dimensionPins"))
+    : undefined;
+  const head = fields.has("head") ? normalizeHead(fields.get("head")) : Object.freeze([]) as readonly HeadTag[];
   const pages = normalizePages(fields.get("pages"));
   const report = Object.freeze({
     ...(title === undefined ? {} : { title }),
+    ...(theme === undefined ? {} : { theme }),
+    ...(dimensionPins === undefined ? {} : { dimensionPins }),
+    head,
     pages,
     [reportTypeId]: true as const,
-  }) as Report<readonly AnyPageDefinition[]>;
+  }) as Report;
   reports.add(report);
   return report;
 }
@@ -132,6 +246,9 @@ export function isReport(value: unknown): value is Report {
   return typeof value === "object" && value !== null && reports.has(value);
 }
 
+/** v0.12-compatible spelling for the validated Report identity guard. */
+export const isReportDefinition = isReport;
+
 /** @internal Gives the Host a direct validated definition with no legacy graph facade. */
 export function reportDefinition(value: Report): Report {
   if (!isReport(value)) {
@@ -140,7 +257,30 @@ export function reportDefinition(value: Report): Report {
   return value;
 }
 
-function normalizePages(value: unknown): readonly AnyPageDefinition[] {
+/** The declared title is stable before execution; a Page title is the fallback. */
+export function resolveReportTitle(value: Report): LocalizedText {
+  const report = reportDefinition(value);
+  return report.title ?? report.pages[0].title ?? DEFAULT_PAGE_TITLE;
+}
+
+/**
+ * Produces only immutable declaration metadata. The optional Sample parameter
+ * preserves the old call shape without creating an execution dependency.
+ */
+export function buildReportMeta(value: Report, _sample?: Sample): ReportMeta {
+  const report = reportDefinition(value);
+  return Object.freeze({
+    title: resolveReportTitle(report),
+    pages: Object.freeze(report.pages.map((page) => Object.freeze({
+      id: page.id,
+      path: page.path,
+      title: page.title,
+      navigation: page.navigation !== false,
+    }))),
+  });
+}
+
+function normalizePages(value: unknown): NonEmptyArray<NormalizedPageDefinition> {
   if (!Array.isArray(value) || value.length === 0) {
     throw new TypeError("defineReport requires a non-empty pages array");
   }
@@ -160,10 +300,10 @@ function normalizePages(value: unknown): readonly AnyPageDefinition[] {
       plainPaths.add(page.path);
     }
   }
-  return Object.freeze(pages);
+  return Object.freeze(pages) as NonEmptyArray<NormalizedPageDefinition>;
 }
 
-function normalizePage(value: unknown, index: number): AnyPageDefinition {
+function normalizePage(value: unknown, index: number): NormalizedPageDefinition {
   const label = `Report page at pages[${index}]`;
   const fields = ownFields(value, label);
   const parameterized = fields.has("params");
@@ -173,10 +313,12 @@ function normalizePage(value: unknown, index: number): AnyPageDefinition {
       ? ["id", "path", "title", "navigation", "params", "load", "render"]
       : ["id", "path", "title", "navigation", "load", "render"],
     label,
-    parameterized ? [] : ["navigation", "load"],
+    parameterized ? ["path"] : ["path", "navigation", "load"],
   );
   const id = normalizePageId(fields.get("id"), label);
-  const path = normalizePath(fields.get("path"), label);
+  const path = fields.has("path") && fields.get("path") !== undefined
+    ? normalizePath(fields.get("path"), label)
+    : derivePagePath(id);
   const title = normalizeLocalizedText(fields.get("title"), `${label} title`);
   const render = requireFunction(fields.get("render"), `${label}.render`);
 
@@ -194,7 +336,7 @@ function normalizePage(value: unknown, index: number): AnyPageDefinition {
       params,
       load: load as PageLoad<JsonValue, unknown>,
       render: render as PageRender<unknown>,
-    }) as ParameterizedPageDefinition<JsonValue, unknown>;
+    }) as NormalizedParameterizedPageDefinition<JsonValue, unknown>;
   }
 
   const navigation = fields.get("navigation");
@@ -212,7 +354,11 @@ function normalizePage(value: unknown, index: number): AnyPageDefinition {
     ...(navigation === undefined ? {} : { navigation }),
     ...(load === undefined ? {} : { load: load as PageLoad<void, unknown> }),
     render: render as PageRender<unknown>,
-  }) as PlainPageDefinition<unknown>;
+  }) as NormalizedPlainPageDefinition<unknown>;
+}
+
+function derivePagePath(id: string): string {
+  return id === DEFAULT_PAGE_ID ? "/" : `/${id}`;
 }
 
 function normalizePageParams(value: unknown, label: string): PageParams<JsonValue> {
@@ -266,6 +412,136 @@ function normalizePath(value: unknown, label: string): string {
   return value;
 }
 
+function normalizeTheme(value: unknown): ThemeDefinition {
+  if (!isThemeDefinition(value)) {
+    throw new TypeError("Report theme must be a ThemeDefinition created by defineTheme");
+  }
+  return value;
+}
+
+function normalizeDimensionPins(value: unknown): DimensionPins {
+  const dimensions = ownFields(value, "Report dimensionPins");
+  const copy: Record<string, Readonly<Record<string, number>>> = Object.create(null) as Record<string, Readonly<Record<string, number>>>;
+  for (const [dimension, rawValues] of dimensions) {
+    if (dimension.length === 0) throw new TypeError("Report dimensionPins cannot use an empty dimension name");
+    const values = ownFields(rawValues, `Report dimensionPins.${dimension}`);
+    const slots = new Set<number>();
+    const pinned: Record<string, number> = Object.create(null) as Record<string, number>;
+    for (const [valueName, slot] of values) {
+      if (valueName.length === 0 || typeof slot !== "number" || !Number.isSafeInteger(slot) || slot < 0) {
+        throw new TypeError(`Report dimensionPins.${dimension} entries must map non-empty values to non-negative integer slots`);
+      }
+      if (slots.has(slot)) {
+        throw new TypeError(`Report dimensionPins.${dimension} assigns slot ${slot} more than once`);
+      }
+      slots.add(slot);
+      pinned[valueName] = slot;
+    }
+    copy[dimension] = Object.freeze(pinned);
+  }
+  return Object.freeze(copy);
+}
+
+const HEAD_ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9:._-]*$/;
+const SAFE_LINK_RELATIONS = new Set(["alternate", "author", "canonical", "license"]);
+
+function normalizeHead(value: unknown): readonly HeadTag[] {
+  if (!Array.isArray(value)) throw new TypeError("Report head must be an array of safe meta, link, or style declarations");
+  assertArray(value, "Report head");
+  return Object.freeze(value.map((entry, index) => normalizeHeadTag(entry, `Report head[${index}]`)));
+}
+
+function normalizeHeadTag(value: unknown, label: string): HeadTag {
+  const fields = ownFields(value, label);
+  const tag = fields.get("tag");
+  if (tag === "script") {
+    throw new TypeError(`${label} cannot declare script: Report head never permits executable code`);
+  }
+  if (tag !== "meta" && tag !== "link" && tag !== "style") {
+    throw new TypeError(`${label}.tag must be \"meta\", \"link\", or \"style\"; scripts and other executable tags are forbidden`);
+  }
+  if (tag === "style") {
+    assertOnlyFields(fields, ["tag", "attrs", "children"], label, ["attrs"]);
+    const children = fields.get("children");
+    if (typeof children !== "string") throw new TypeError(`${label}.children must be CSS text`);
+    assertSafeStyle(children, `${label}.children`);
+    const attrs = fields.has("attrs") ? normalizeHeadAttributes(fields.get("attrs"), `${label}.attrs`, ["media", "type"]) : undefined;
+    if (attrs?.type !== undefined && attrs.type !== "text/css") {
+      throw new TypeError(`${label}.attrs.type must be \"text/css\" when supplied`);
+    }
+    return Object.freeze({ tag, ...(attrs === undefined ? {} : { attrs }), children });
+  }
+  assertOnlyFields(fields, ["tag", "attrs"], label);
+  const attrs = normalizeHeadAttributes(
+    fields.get("attrs"),
+    `${label}.attrs`,
+    tag === "meta" ? ["content", "itemprop", "name", "property"] : ["href", "hreflang", "rel", "title", "type"],
+  );
+  if (tag === "link") {
+    const rel = attrs.rel;
+    const href = attrs.href;
+    if (typeof rel !== "string" || !SAFE_LINK_RELATIONS.has(rel.toLowerCase()) || typeof href !== "string") {
+      throw new TypeError(`${label} only permits inert link metadata (rel: alternate, author, canonical, or license) with a local href`);
+    }
+    assertLocalHeadReference(href, `${label}.attrs.href`);
+  }
+  return Object.freeze({ tag, attrs });
+}
+
+function normalizeHeadAttributes(
+  value: unknown,
+  label: string,
+  allowed: readonly string[],
+): HeadAttributes {
+  const fields = ownFields(value, label);
+  const allowedNames = new Set(allowed);
+  const copy: Record<string, HeadAttributeValue> = Object.create(null) as Record<string, HeadAttributeValue>;
+  for (const [name, attribute] of fields) {
+    if (!HEAD_ATTRIBUTE_NAME.test(name) || name.toLowerCase().startsWith("on") || !allowedNames.has(name)) {
+      throw new TypeError(`${label}.${name} is not a safe ${allowed.join(", ")} attribute`);
+    }
+    if (attribute !== true && typeof attribute !== "string") {
+      throw new TypeError(`${label}.${name} must be a string or true`);
+    }
+    copy[name] = attribute;
+  }
+  return Object.freeze(copy);
+}
+
+function assertLocalHeadReference(value: string, label: string): void {
+  if (value.length === 0 || value.startsWith("//") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)) {
+    throw new TypeError(`${label} must be a local metadata reference; network URLs and URL schemes are forbidden`);
+  }
+}
+
+function assertSafeStyle(value: string, label: string): void {
+  if (/<\/style/i.test(value)) throw new TypeError(`${label} cannot contain </style>`);
+  if (/@import\b|url\s*\(|expression\s*\(|-moz-binding\b|\bbehavior\s*:/i.test(value)) {
+    throw new TypeError(`${label} cannot import, fetch, or execute external resources`);
+  }
+}
+
+/** Creates a safe inline declaration for `defineReport({ head: [...] })`. */
+export function Style(css: string): StyleDeclaration;
+/** `<Style>` returns an author-time node that the Host collects and scopes. */
+export function Style(props: StyleProps): AuthorReportNode;
+export function Style(input: string | StyleProps): StyleDeclaration | AuthorReportNode {
+  if (typeof input === "string") {
+    return normalizeHeadTag({ tag: "style" as const, children: input }, "Style") as StyleDeclaration;
+  }
+  const declaration = normalizeHeadTag({
+    tag: "style" as const,
+    children: input.children,
+    ...(input.media === undefined ? {} : { attrs: { media: input.media } }),
+  }, "Style");
+  const style = declaration as StyleDeclaration;
+  return Object.freeze({
+    type: "style" as const,
+    css: style.children,
+    ...(style.attrs === undefined ? {} : { attrs: style.attrs }),
+  }) as unknown as AuthorReportNode;
+}
+
 function normalizeLocalizedText(value: unknown, label: string): LocalizedText {
   if (typeof value === "string") return value;
   const fields = ownFields(value, label);
@@ -278,6 +554,9 @@ function normalizeLocalizedText(value: unknown, label: string): LocalizedText {
       throw new TypeError(`${label} locale entries must use non-empty string keys and values`);
     }
     copy[locale] = text;
+  }
+  if (!hasCompleteReportLocaleMap(copy)) {
+    throw new TypeError(`${label} locale maps must provide text for en and zh-CN`);
   }
   return Object.freeze(copy);
 }

@@ -5,9 +5,11 @@ import {
   Stack,
   Text,
   type PlainPageDefinition,
+  type Sample,
 } from "niceeval/report";
-import type { Sample, SampleSnapshot } from "niceeval/analysis";
 import { configReloadContent } from "./config-reload-content.ts";
+
+type SampleSnapshot = Sample["snapshot"];
 
 const marker = "REPORT_FIRST";
 

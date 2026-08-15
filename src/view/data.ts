@@ -1,9 +1,10 @@
-import type { ReportExecution } from "../report/execution/model.ts";
+import type { ClosedSiteRevision } from "../report/execution/model.ts";
 
 /**
- * A View host receives an already-projected, immutable report execution.
- * It does not discover or adapt historical evaluation data.
+ * A View host receives a byte-complete immutable SiteRevision. It does not
+ * discover historical evaluation data or render from an execution at request
+ * time.
  */
 export interface ViewScanOptions {
-  readonly execution?: ReportExecution;
+  readonly revision?: ClosedSiteRevision;
 }
