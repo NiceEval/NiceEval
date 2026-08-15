@@ -7,7 +7,7 @@ description: "Which layer of code holds attempts, timeout, concurrency, and judg
 Values in [NiceEval](https://niceeval.com/) have exactly two homes:
 
 - **Configuration lives in code** — CLI flags, experiment files under `experiments/`, and `niceeval.config.ts` at the root. How many attempts, how long before timeout, how much concurrency, which judge model, which report to show by default: all of it lives here, with no environment variable counterpart.
-- **Secrets live in environment variables** — API keys and provider tokens, plus facts like `NO_COLOR` that describe *which terminal you are printing to*.
+- **Secrets live in environment variables** — API keys and provider tokens, plus facts like `NO_COLOR` and `COLUMNS` that describe *which terminal you are printing to*.
 
 So every value has exactly one source. What `niceeval exp --dry` prints is what actually takes effect; no environment variable is quietly changing it behind your back. CLI and runtime copy is English; the browser view has its own English and Chinese switch.
 
@@ -85,6 +85,7 @@ These are all the environment variables NiceEval reads. Each agent, sandbox, and
 | `VERCEL_TEAM_ID` | `vercelSandbox()` | |
 | `VERCEL_PROJECT_ID` | `vercelSandbox()` | |
 | `NO_COLOR` | CLI output | When set, no colors and no box drawing |
+| `COLUMNS` | Report presentation | Terminal columns provided by the shell. Used to lay out report text when `stdout` cannot report a terminal size (pipe or redirect). Must be a positive integer; values below 40 are raised to 40; unset or invalid falls back to 80. NiceEval only reads it and never writes it back; it is not a secret. Box drawing and colors still require a TTY with `NO_COLOR` unset |
 
 To keep the judge's key under a different variable name, point at it from the config:
 

@@ -108,7 +108,6 @@ async function classicOverview(sample: Sample) {
     <Col>
       <Hero
         title="MemoryBench Classic"
-        logo={{ src: logo, alt: "MemoryBench Classic" }}
         description="Hero, SampleSummary, leaderboard Bars, ExperimentScatter, and ExperimentTable."
         links={[{ label: "NiceEval", href: "https://github.com/NiceEval/NiceEval" }]}
       />
