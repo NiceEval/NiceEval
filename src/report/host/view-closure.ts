@@ -169,6 +169,46 @@ function compareDisplayValue(en: unknown, zhCN: unknown, path: readonly string[]
   }
 }
 
+/**
+ * Cell-table headings are per-locale display keys. Align cells by column
+ * index and require each row to cover exactly that locale's columns.
+ */
+function compareCellTableRowCells(
+  leftCells: Readonly<Record<string, string>>,
+  rightCells: Readonly<Record<string, string>>,
+  leftColumns: readonly string[],
+  rightColumns: readonly string[],
+  rowPath: readonly string[],
+): void {
+  assertExactLocaleColumnCoverage(leftCells, leftColumns, [...rowPath, "cells"]);
+  assertExactLocaleColumnCoverage(rightCells, rightColumns, [...rowPath, "cells"]);
+  for (let index = 0; index < leftColumns.length; index += 1) {
+    compareLocalizedString(
+      leftCells[leftColumns[index]!],
+      rightCells[rightColumns[index]!],
+      [...rowPath, "cells", String(index)],
+    );
+  }
+}
+
+function assertExactLocaleColumnCoverage(
+  cells: Readonly<Record<string, string>>,
+  columns: readonly string[],
+  path: readonly string[],
+): void {
+  const cellKeys = Object.keys(cells);
+  if (cellKeys.length !== columns.length) {
+    throw closureInvalid(path, "cell-table cells must cover exactly the locale columns");
+  }
+  const seen = new Set<string>();
+  for (const column of columns) {
+    if (!Object.hasOwn(cells, column) || seen.has(column)) {
+      throw closureInvalid(path, "cell-table cells must cover exactly the locale columns");
+    }
+    seen.add(column);
+  }
+}
+
 function compareTarget(en: unknown, zhCN: unknown, path: readonly string[]): void {
   if (en === undefined && zhCN === undefined) return;
   if (!isPlainDataObject(en) || !isPlainDataObject(zhCN)) {
@@ -502,18 +542,7 @@ function compareBlock(en: ReportBlock, zhCN: ReportBlock, path: readonly string[
         compareExact(leftRow.parentKey, rightRow.parentKey, [...rowPath, "parentKey"]);
         compareLocalizedString(leftRow.label, rightRow.label, [...rowPath, "label"]);
         compareTarget(leftRow.target, rightRow.target, [...rowPath, "target"]);
-        // Cell strings are locale-formatted display values; identity is held
-        // by key/parentKey/kind/target, which were compared exactly above.
-        const leftCells = leftRow.cells;
-        const rightCells = rightRow.cells;
-        const leftCellKeys = Object.keys(leftCells).sort();
-        const rightCellKeys = Object.keys(rightCells).sort();
-        if (leftCellKeys.length !== rightCellKeys.length || leftCellKeys.some((key, i) => key !== rightCellKeys[i])) {
-          throw closureInvalid([...rowPath, "cells"], "cell-table cells must have identical keys");
-        }
-        for (const key of leftCellKeys) {
-          compareLocalizedString(leftCells[key], rightCells[key], [...rowPath, "cells", key]);
-        }
+        compareCellTableRowCells(leftRow.cells, rightRow.cells, en.columns, right.columns, rowPath);
       }
       return;
     }

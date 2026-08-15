@@ -90,8 +90,11 @@ display string。原始数值、coverage、row identity、route 与状态保持�
 浏览器切换语言不会再次执行 callback。
 
 `ExperimentTable` 的列头、group / coverage 标签与 package-owned 状态展示文案，按 `Sample.locale`
-从同一份 en / zh-CN catalog 选用。row key、parentKey、route、数值、coverage 与状态在两种 locale
-中同构。
+从同一份 en / zh-CN catalog 选用。每个 locale 用自己的列头作为该行 cells 的 key。
+
+`ViewRevisionClosure` 按列下标对齐两种 locale 的 cell，不把本地化列头当跨语言 identity。
+row key、parentKey、route、target、数值、coverage 与状态仍逐字相同。任一 locale 的 row cells
+必须恰好包含该 locale 的全部 columns，不能多也不能少。
 
 已有 React 报告可以保留 `jsx: "react-jsx"`；NiceEval 会接收 React 产出的 element，但仍拒绝原生 DOM 与未包装组件。不想引入 React runtime 的报告可在自己的 `tsconfig.json` 使用 `jsx: "react-jsx"` 与 `jsxImportSource: "niceeval/report"`，改走包内受控 JSX runtime。两种写法形成同一棵 classic element tree。
 
