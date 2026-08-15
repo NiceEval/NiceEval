@@ -1,4 +1,8 @@
 // owner: docs/engineering/testing/e2e/report.md#report-source-snapshot
+// kill: 77ae005b with private `artifactPath` added to source JSON packed as
+// sha256:c396a74f9f78db1f83cdb612df43f71379bec202d4a4a8383046a6ba501c778b;
+// the public owner first failed at observe/outcome line 81 on the forbidden
+// `artifactPath` field before inspecting private path values.
 // rerun: pnpm e2e --repo report -- --run test/report-source.test.ts
 
 import { only } from "@niceeval/testkit";

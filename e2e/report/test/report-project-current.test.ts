@@ -1,5 +1,9 @@
 // owner: docs/engineering/testing/e2e/report.md#report-project-current
 // regression: 052b13bb (design: memory/current-result-single-state-ruling.md)
+// kill: 77ae005b with the current-input fingerprint comparison removed packed as
+// sha256:47e3f9a18580216922e0a3df65375bc1dc8c1b3a5a37b4bba4a22d82a94fa026;
+// the public owner first failed at observe/outcome line 126 because stale
+// `sample.experiments` was ["source"] instead of [].
 // rerun: pnpm e2e --repo report -- --run test/report-project-current.test.ts
 
 import { only } from "@niceeval/testkit";
