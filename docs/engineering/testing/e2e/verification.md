@@ -29,38 +29,48 @@ function sh(cmd: string, expected: number | "nonzero" = 0): string {
 exp --dry
   → exp
   → show --run <runId> --json
-  → show --run <runId> --page <attempt-route>
-  → view --run <runId> --out <new-directory>
+  → show --run <runId> --report <fixture-module> --page <fixture-route>
+  → view --run <runId> [--run <runId> ...] --out <new-directory>
   → 断网浏览静态站
 ```
 
-`runId` 来自本次 Invocation receipt 的公开输出。`show --json` 返回同一 `ReportExecution` 的页面索引；脚本先用签入的 Eval identity、Verdict 和 sentinel 验证这份输出，再取其中已经计划的完整 Attempt route。它不能从路径规则猜 route，也不能用 route 越过已选 Sample 打开任意 Attempt。
+`runId` 来自本次 Invocation receipt 的公开输出。测试使用签入代表 Report 的字面模块与目标 route 调用 `show --page`，再用单目标 JSON 验证该 route、page identity、固定 locale 和 marker。`show --json` 不枚举页面或提供站点索引；参数 route 也不能越过已选 Sample 打开任意 Attempt。
 
 ```ts
-sh("pnpm exec niceeval exp weather --dry --json");
-const events = sh("pnpm exec niceeval exp weather --rerun all --json");
-const runId = parseCompletedRunId(events);
+const reportModule = "./reports/site.tsx";
+const overviewRoute = "/";
+const fixtureMarker = "Report fixture static site";
 
-const report = parseShowDocument(
-  sh(`pnpm exec niceeval show --run ${runId} --json`),
+sh("pnpm exec niceeval exp main --dry --json");
+const mainEvents = sh("pnpm exec niceeval exp main --rerun all --json");
+const sourceEvents = sh("pnpm exec niceeval exp source --rerun all --json");
+const mainRunId = parseCompletedRunId(mainEvents);
+const sourceRunId = parseCompletedRunId(sourceEvents);
+
+const document = JSON.parse(
+  sh(
+    `pnpm exec niceeval show --run ${mainRunId} --report ${reportModule} --page ${overviewRoute} --json`,
+  ),
 );
-assertExpectedEvals(report, ["weather/brooklyn", "weather/hitl-reject"]);
+assert.equal(document.schema, "niceeval.report-target-execution/v1");
+assert.equal(document.locale, "en");
+assert.equal(document.page.route, overviewRoute);
+assert.equal(document.page.pageId, "overview");
+assert.ok(document.page.renderedText.includes(fixtureMarker));
 
-const attemptRoute = onlyPlannedAttemptRoute(report, "weather/brooklyn");
 const detail = sh(
-  `pnpm exec niceeval show --run ${runId} --page ${attemptRoute}`,
+  `pnpm exec niceeval show --run ${mainRunId} --report ${reportModule} --page ${overviewRoute}`,
 );
-assert.ok(detail.includes("mcp__demo-tools__get_weather"));
-assert.ok(detail.includes("Brooklyn"));
+assert.ok(detail.includes(fixtureMarker));
 
-sh(`pnpm exec niceeval view --run ${runId} --out ./report-site`);
-await assertStaticSiteWorksOffline("./report-site", attemptRoute);
+sh(`pnpm exec niceeval view --run ${mainRunId} --run ${sourceRunId} --report ${reportModule} --out ./report-site`);
+await assertStaticSiteWorksOffline("./report-site", overviewRoute);
 ```
 
 显式比较多个 Run 时重复 flag：
 
 ```sh
-pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page comparison
+pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page /comparison
 ```
 
 不带 locator 或 `--run` 的 `show` 以当前项目目标为准：扫描全部 published Run，保留每个身份仍匹配的 slot，不按时间缩成最后一个 Run。身份过期或无法验证的候选不进入当前 Sample；没有匹配结果时形成空 Sample。完整 `--run` 仍能读取历史 Run。
@@ -86,7 +96,7 @@ pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page compar
 
 ```sh
 pnpm exec niceeval exp cached --rerun all --json
-pnpm exec niceeval show --run <new-run-id> --page adoption
+pnpm exec niceeval show --run <new-run-id> --page /adoption
 ```
 
 ## 失败分类

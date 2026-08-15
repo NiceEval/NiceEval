@@ -1,27 +1,31 @@
 # Report 读数与显示语义
 
-Report 选择要显示的维度和度量，却不定义总体、分母、缺失或归并算法。这些口径由 Analysis 的 Population、Dimension、
-Measure 与 Relation 唯一拥有。Report 在 `buildSiteRevision()` 期间消费已经关闭的结果。
+Report 选择显示维度和度量，却不定义总体、分母、缺失或归并算法。这些语义只由 Analysis 的 Population、Dimension、Measure 与
+Relation 拥有。`aggregate()` 在 Page 或组合组件执行期间取得闭合结果；text、web 与静态文件随后只使用同一批值。
 
-## 从 Sample 得到 ClosedRows
+## `aggregate()` 是唯一 Analysis facade
 
 ```tsx
 import {
   aggregate,
   Bars,
-  condition,
-  costUSD,
   defineComponent,
   Grid,
   model,
   passRate,
   Table,
+  type GroupFunction,
 } from "niceeval/report";
 
-const Overview = defineComponent(async (_props, { sample }) => {
-  const rows = await aggregate(sample, {
+const condition: GroupFunction = subject =>
+  String(subject.run.experiment?.flags.condition ?? "unknown");
+
+const Overview = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
     by: { model, condition },
-    values: { passRate, costUSD },
+    values: {
+      passRate,
+    },
   });
 
   return (
@@ -33,58 +37,37 @@ const Overview = defineComponent(async (_props, { sample }) => {
 });
 ```
 
-`aggregate()` 固定在本次 Sample 上运行，返回带稳定行身份、issues 与 refs 的 ClosedRows。每个度量字段都是完整的
-MetricValue。表格、图形和静态页面共享这批 rows；它们不各自归并同一份事实。
+`ctx.scope` 是组合组件取得 Sample 的唯一字段。`aggregate()` 返回带稳定 row identity、issues 与 refs 的 `ClosedRows`；Table、图形和
+text 面读取同一组 rows，不会分别归并同一份事实。
 
-`costUSD` 是每个分组内每 logical Slot 的平均 USD 成本，适合和质量或延迟并列比较；它不是总成本。
-要显示选择范围或分组的总花费，使用 Analysis 发布的 `totalCostUSD`。它以同一固定分母、missing、issues 与
-Evidence refs 运行，但在 across-slots 阶段求和；Report 不得由 `costUSD.value × total` 反推总额。
+成本 Measure 是显式的 Report 整合：只有 `ctx.report.pricing` 非 `null` 的组件才能请求它。其 Profile 参数、Analysis 投影、
+无 Profile 呈现与 Runner estimate 的隔离由 [Report 成本投影](cost-projections/README.md) 单点定义。
 
-Report 只消费 Analysis 已发布的 Measure：`passRate`、`durationMs`、`tokens`、`costUSD` 和 `totalCostUSD`。
-领域内容由 `to*` 投影或 PageLoadContext 交出。作者可以用普通 TypeScript 组织这些关闭值，却不能从显示结果重新选择成员、
-重算统计，或取得另一种事实读取能力。
+## 作者形态与未发布形态
 
-## v0.12 作者 API 裁决
+| 作者需要 | Report 形态 | 边界 |
+|---|---|---|
+| 按固定 Sample 分组 | `aggregate(scope, { by, values })` | 委托唯一的 Analysis executor。 |
+| 固定维度 | `agent`、`model`、`attempt`、`evalId`、`experiment`、`reasoningEffort`、`flag()`、`label()` | 只读取冻结 Run context。 |
+| 自定义分组 | `GroupFunction` | 只读 `experimentId`、`evalId` 与冻结的 agent / model / flags / labels。 |
+| 固定度量 | `passRate`、`durationMs`、`tokens` 与[成本 Measure](cost-projections/library.md) | 由 Analysis 定义分母、缺失、成本 ledger 与 Evidence。 |
+| 领域读取 | `toAttemptEvidence()`、`toAttemptObservability()`、`toFileChanges()`、`toSources()`、`toSandboxHistory()` | 返回关闭 DomainView。 |
 
-保留的作者 DX 是 `aggregate(sample, …)`、内建 Dimension / Measure、`GroupFunction`、JSX Page 与组件组合：它们仍是普通
-TypeScript 值，所有统计仍由唯一的 Analysis executor 关闭。`tokens` 保留 v0.12 的「input + output」读数：它只接受完整
-Usage 中同时存在的 input 与 output bucket；cache-read、cache-write 不混入，reasoning 已在 output bucket 中而不重复计数。
-任一 bucket 或 Usage collection 缺失时，Analysis 产生真实的 missing / partial，而不是把它写成 `0`。
+`rollup()`、`metricValue()`、`totalScore`、AttemptHandle converter 与任意 Reducer 没有 `niceeval/report` export。它们不能由同名
+但较窄的 facade 冒充：两级归并、手写 MetricValue 或可读 Attempt 都会改变分母和 Evidence 语义。
 
-`rollup((attempt) => number | null | Promise<…>, { withinEval, acrossEvals, … })` **没有**在当前 Report 导出。它原本要求
-可读 `AttemptHandle`，并允许任意两级 Reducer，包括 `min`、`max`、`percentile` 与自定义函数。
+`GroupFunction` 的返回值必须是稳定 string。它不能取得 reader、Path、Scope 外数据或当前配置。零 Attempt 的 logical Slot 仍由
+Analysis 留在其既定分母中。
 
-当前固定 Analysis executor 只发布固定 Input 和有限 reducer。它没有 per-Eval 归并，也没有可传入 callback 的 closed
-Analysis Attempt。
+## MetricValue 与分母
 
-把它改成 `rollup(input, { across })` 会保持名字却改变两级分母与 callback 语义，因此也不导出。这是有意、显式的 API
-缺口，而不是兼容层。要恢复它，底层必须先发布带稳定闭合 Attempt 值、per-Eval population/relation 与可审计 reducer 的
-Analysis Measure 契约。
-
-`metricValue()` 同样不导出：手工拼 `value`、`samples`、`total` 或 locator 不能证明当前 MetricValue 的 `state`、`issues`、
-`refs` 与固定分母，因而会制造假数据。`evidenceRow({ … })` 则保留，但只接受至少一个已经由 Analysis 关闭的 MetricValue，
-并稳定去重地汇集原有 `issues` 与 `refs`；它不创建或改写任何 metric。
-
-`totalScore` 不导出。当前固定 Sample 没有 durable evaluation kind；一个没有贡献的 Score Eval 与没有 score contribution 的
-Pass Eval 不能可靠区分。不完整 score 的 lower bound 也无法表示为现有 InputProjection。以 verdict、Assertion 数量或
-零值猜测 score 都会伪造统计。恢复它需要将 evaluation kind 和完整的 score contribution/state 作为 Analysis 发布事实。
-
-当前 `to*` 是关闭 DomainView 的投影，不是旧的 AttemptHandle converters。尤其 `toAttemptSummary(attempt)`、
-`toAttemptAssertions(attempt)` 不在 `niceeval/report` 导出；`standardAttemptPage` 也不把其 render 输入变回旧 AttemptHandle。
-详情页应通过 `PageLoadContext.evidence(locator)` 或 `toAttemptEvidence(sample, locator)` 取得闭合 Assertions/Evidence。
-
-作者可以对 rows 调用 `filter()`、`toSorted()`、`slice()` 和普通 join。这些操作只组织显示。它们不能改变任何
-MetricValue 的 `total`、`state`、`issues` 或 `refs`。
-
-## 分母和状态
-
-MetricValue 的准确形状由 [Library](library.md#metricvalue) 定义。Report 只读取它，不改写其中的统计事实。
+`MetricValue` 的完整形状由 [Library](library.md#aggregate-与-metricvalue) 定义。每个度量单元都保留完整状态，而非只保留 number。
 
 | 要显示的事实 | 使用字段 | 不允许的替代 |
 |---|---|---|
-| 当前数值 | `value` | 把 `null` 猜为零。 |
+| 当前数值 | `value` | 把 `null` 当作零。 |
 | 实际贡献数 | `samples` | 用可见 row 数代替。 |
-| 既定分母 | `total` | 用筛选后 row 数缩小。 |
+| 既定分母 | `total` | 用筛选后的 row 数缩小。 |
 | 缺口或失败 | `state` 与 `issues` | 靠空字符串、颜色或隐藏行表达。 |
 | 可复核路径 | `refs` | 用显示 label 或数组下标伪造链接。 |
 
@@ -97,51 +80,38 @@ total:   100
 state:   partial
 ```
 
-页面可以显示 `80% · 20 / 100 · partial`。它不能因为只画出 20 条有值数据，就把读数改成完整的 `20 / 20`。
+页面可以显示 `80% · 20 / 100 · partial`。它不能因为只画出 20 行有值数据，就把读数写成 `20 / 20`。
 
-`available` 与 `partial` 都可以有 `value: 0`。`empty` 是输入完整但领域结果为空；`unsupported` 是 Host 缺少输入；
-`failed` 是读取或归并失败。它们都保留 issues 和 refs。
+| state | `value` | 必须保留的含义 |
+|---|---|---|
+| `available` | number | 全部预期成员按度量规则贡献。 |
+| `partial` | number 或 null | 部分成员贡献，issues 说明缺口。 |
+| `empty` | null | 输入完整，领域结果合法为空。 |
+| `unsupported` | null | Host 缺少所需 Analysis 输入。 |
+| `failed` | null | 读取或归并失败，issues 保留身份与 refs。 |
 
-## 显示层可做什么
+`available` 与 `partial` 都可以有 `value: 0`。排序、截断与筛选只能组织显示；每个保留的 `MetricValue` 仍保持原来的
+`total`、`state`、`issues` 与 `refs`。
 
-显示层可以对已经关闭的 rows 排序、截断和筛选：
+## 中立组件与领域视图
 
-```ts
-const topTen = rows
-  .filter(row => row.passRate.value !== null)
-  .toSorted((left, right) =>
-    (right.passRate.value ?? -Infinity) - (left.passRate.value ?? -Infinity),
-  )
-  .slice(0, 10);
-```
+Table、Bars、Line、Scatter 与 Stat 只理解显示输入。Table 保留 `ClosedRows` identity 和 issues；图形使用字段名选择坐标；
+Stat 接收 `formatMetricValue()` 的显示字节。外部业务数组可以进入这些组件，但不会自动取得分母、问题或 Evidence 语义。
 
-`topTen` 只改变可见项目。每一个 MetricValue 仍带原来的 `total`、`state`、`issues` 和 `refs`。它不能作为新的成员输入，
-也不能再次传给 `aggregate()`。
+每个图形必须有同一批 rows 的 text 或表格等价内容。每项至少保留 label、value、samples、total、state 与可用 Evidence link；
+颜色、hover、筛选和缩放只能增强这些内容。
 
-若用户需要排除一类 Eval 后重新计算，或改变 paired 比较的对应规则，应修改 Analysis selection、Population、Relation 或
-Measure，而不是在 Report 回调中筛选数组后重新归并。
+Attempt、会话、Source、文件差异和时序适合使用关闭 DomainView。详情组件可以理解该视图的稳定 identity 与 issues，
+却不能打开路径、读取 attachment 或让浏览器在导航时再次读取数据。
 
-## 中立组件
-
-Table、Bars、Line、Scatter 与 Stat 只理解显示形状：
-
-- Table 保留整组 ClosedRows 的 identity 与 issues，并在单元格显示 MetricValue 的完整度与 Evidence navigation。
-- Bars、Line 和 Scatter 用字段名选择坐标，不接收未执行的字段定义，也不改写数值语义。
-- Stat 接收完整 MetricValue，不接收从 `value` 拆出的 number。
-- 外部业务数组可以进入这些组件，但不会自动获得分母、问题或 Evidence 语义。
-
-图形必须能降级为同一批 rows 的文字或表格。每一项至少保留显示 label、数值、samples、total、state 与可用的复核链接。
-
-## 领域视图与全站构建
-
-Trace、Attempt、会话、Source 和文件差异不适合压成普通 rows 时，Report 通过 `to*` 投影或 PageLoadContext 取得关闭的
-领域视图。详情 Page 在完整枚举时生成，静态文件也在同一次构建中写入 ClosedSiteRevision。
-
-领域组件可以理解该视图的稳定 identity 和 issues，却不能打开路径、读取附件，或让浏览器在导航时再次读取数据。
+Source 与 Diff 如果进入全站路径，必须在构建时成为受限 page 内容或 asset。单目标 `show` 只读取所选 Page 所需的 DomainView；
+它不会为其它详情页取得数据。
 
 ## 相关阅读
 
 - [Analysis Library](../analysis/library.md)：总体、度量、分母和关闭输出的 owner。
-- [Report Library](library.md)：组件、Page 与全站构建边界。
+- [Report Library](library.md)：`aggregate()`、组件、Page 与 `MetricValue` 形状。
+- [Report 成本投影](cost-projections/README.md)：成本 Measure 的 Profile、Projection 与显示边界。
+- [Architecture](architecture.md)：单目标 show、全站 SSG 与缓存。
 - [比较质量与成本](use-case/比较质量与成本.md)：同一 rows 同时进入表格和散点图。
 - [核对数据完整度](use-case/核对数据完整度.md)：partial、empty、unsupported 与 failed 的呈现。

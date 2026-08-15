@@ -1,36 +1,64 @@
 ---
 title: "报告外观与安全边界"
 sidebarTitle: "报告外观"
-description: "理解当前报告宿主的固定样式，以及为什么 Report 不能注入主题文件、CSS 或浏览器代码。"
+description: "用 Report theme token 调整外观，同时保留唯一的产品 CSS、离线阅读与 View shell 边界。"
 ---
 
-当前 Record/Reports 契约不提供 `--theme`，也不装载任意主题文件。`show`、本机 `view` 与静态 export 消费同一份 `ReportExecution`；网页外壳由当前 NiceEval exporter 的内建 runtime、基础样式和字体完整提供。
+Report 的主题只选择 token 值。产品 CSS 仍是唯一的 reset、基础排版、组件样式和响应式布局 owner；View shell 只管理浏览器语言切换、reload 状态和 Host 提示。
 
-```sh
-niceeval view
-niceeval view --report ./reports/site.ts --out ./report-site
+```tsx
+import { chalk, defineReport, type HeadTag } from "niceeval/report";
+
+const head: readonly HeadTag[] = [{
+  tag: "style",
+  children: ".release-note { font-weight: 700; }",
+}];
+
+export default defineReport({
+  title: { en: "Release", "zh-CN": "发布" },
+  theme: chalk,
+  head,
+  pages: [{
+    id: "overview",
+    path: "/",
+    title: { en: "Overview", "zh-CN": "概览" },
+    render: () => null,
+  }],
+});
 ```
 
-## Report 可以控制什么
+官方提供 `basalt` 和 `chalk`。需要自己的 token 时，调用 `defineTheme()` 并声明颜色、字体、字号和圆角等值：
 
-Report 通过结构化 `ReportPageModel` 决定标题、内容、表格、图表数据、状态提示与文字替代。它可以组织信息和选择合适的内建组件，但不能返回 script、CSS、font、worker、WASM、网络 URL 或本地文件路径。
+```ts
+import { defineTheme } from "niceeval/report";
 
-颜色和交互只能增强已有语义。partial、unavailable、unsupported 与 invalid 必须同时有文字或表格表达，不能只靠颜色区分。
+export const brandTheme = defineTheme({
+  appearance: "light",
+  accent: "#2a78d6",
+  positive: "#087f5b",
+  negative: "#b42318",
+  page: "#fafafa",
+  surface: "#ffffff",
+  text: "#111113",
+  font: { sans: "ui-sans-serif, system-ui, sans-serif" },
+  fontSize: "14px",
+  radius: "8px",
+});
+```
 
-## 为什么不纳入任意主题注入
+## 可以声明的资源
 
-静态报告的核心承诺是自包含、可预检和断网可用。如果 Report 或 CLI 能临时装载任意 CSS/脚本/字体，export 就必须重新处理代码执行、资源闭包、网络 URL、路径逃逸和版本漂移；这会把“分享一份固定结果”变成另一套插件与构建系统。
+Report 可以通过结构化 `head` 声明 `meta`、`link`、`style` 和 `script`。内联内容、属性顺序和本地资源进入站点闭包，因此 view 与静态导出使用相同 bytes。
 
-固定宿主让导出器可以在写文件前穷尽全部资产，保证 manifest 与普通文件一一对应，也保证本机页面和静态站不会因外部主题包变化而产生不同解释。
+上例的 `head` 是结构化声明。这类样式只能服务作者自己具名的内容。不要加入全局 reset、替换 theme token、重画内建组件或修改 View shell。script 只能渐进增强；正文、导航、Evidence 和机器 JSON 不能依赖它。
 
-## 需要品牌化怎么办
+## 不会改变的边界
 
-当前选择是先把品牌化作为未来宿主能力设计，而不是让用户注入任意资源。新增能力必须仍满足：
+主题不会改变 `MetricValue`、分母、state、Evidence 或终端文字语义。`show` 仍关闭一个目标 Page；`view` 与 `view --out` 仍构建完整站点。相同 revision 的 HTTP 页面、导出页面、CSS 与 reload client bytes 一致。
 
-- 只改变外观，不改变度量、分母或状态；
-- 资源集合能在 export 前穷尽验证；
-- 不读取网络或任意用户路径；
-- 同一 `ReportExecution` 的终端文字与网页语义一致；
-- 不破坏静态站的断网与内容安全边界。
+静态目录没有 view reload 端点时，reload client 会安静停用。断开网络或禁用 JavaScript 后，页面仍要保留正文、导航、详情、问题和下载。
 
-在这套契约落地前，需要完全自定义品牌页面的产品可以消费 Report 的结构化结果，在自己的应用边界内实现宿主；NiceEval 的静态 export 仍保持固定、安全的内建外壳。
+## 下一步
+
+- [报告 API](/zh/reference/report-components)：Page、head、组件和完整站点边界。
+- [发布静态报告](/zh/tutorials/publish-report)：验证静态目录中的离线阅读。

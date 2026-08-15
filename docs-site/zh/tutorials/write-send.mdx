@@ -152,9 +152,17 @@ export default defineAgent({
     };
 ```
 
-`Usage` 的完整字段还有可选的 `cacheReadTokens` / `cacheCreationTokens`、推理 token 数 `reasoningTokens`、请求次数 `requests`，以及 `costUSD`——网关回了实测成本就填它，优先于价格表估算。每个字段只在接口真实提供时填，接口不回用量就整个不填 `usage`，其它断言不受影响。这段照抄也是过渡：下一步的官方转换器会连 `usage` 一起填好。
+`Usage` 的完整字段还有可选的 `cacheReadTokens` / `cacheCreationTokens`、推理 token 数 `reasoningTokens`、请求次数 `requests`，以及
+`costUSD`。`costUSD` 只在 provider 或 adapter 如实返回 USD observed 成本时填写；上游估算、模型目录价目表或本地计算绝不写入它。每个字段只在接口真实提供时填，接口不回用量就整个不填 `usage`，其它断言不受影响。
 
-**这一步支持**：`t.maxTokens()` / `t.maxCost()` 断言（`maxCost` 用 `costUSD` 或配置里的价格表估算），以及报告和 `niceeval view` 里的用量。
+Runner 始终从 Config/runtime price table 独立计算 `estimatedCostUSD`，即使有 observed `costUSD` 也不改变该计算；只有
+`t.maxCost()` 使用这个 estimate。Report 则只使用显式 `PricingProfile` 和 sealed Usage 进行 Analysis 成本投影，绝不消费 Runner
+estimate。
+
+当 Config/runtime price table 无法形成 Runner estimate 时，`t.maxCost()` 为 `unavailable`，绝不能把缺失当成 `0`。显式零费率实际
+算得 `estimatedCostUSD: 0` 时，`0` 是合法 estimate，仍按上限规则求值。
+
+**这一步支持**：`t.maxTokens()` / `t.maxCost()` 断言，以及报告和 `niceeval view` 里的用量。
 
 ## 第四步：把工具解析成事件
 

@@ -11,8 +11,8 @@ slots，执行或采用 Attempt，并通过 `recordHost` 封口 Core 与固定 f
 
 查看时，Report Host 在其内部经 `recordHost.openRead()` 取得 reader，再由 `analysisHost.openSample()`
 签发 Sample。Page 与组件只通过 `aggregate()` / `query()` 取得 `ClosedRows`、`SemanticFrame` 或
-`DomainView`，随后由 Report Host 闭合为 immutable `ReportExecution`。Reports runtime 只消费这份
-闭合 execution。
+`DomainView`。`show` 只关闭选中的 Page；view 与静态导出才关闭全部 Page 并形成 `ClosedSiteRevision`。
+交付后的文本、JSON 或站点 bytes 都不再持有 reader。
 
 Runner 不为页面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。页面和机器调用方按 receipt 的 `runIds` 通过 `show` / `view` 读取结果。
 

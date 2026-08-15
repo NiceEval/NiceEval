@@ -43,8 +43,9 @@ src/
 ├─ coordination/            # coordinationHost；execution claim 与 Record lease 协调
 ├─ record/                  # recordHost；持久布局 owner，definition 与 codec 保持包私有
 ├─ analysis/                # analysisHost 签发 Sample；作者定义与 query / aggregate
-├─ report/                  # 作者 DSL + reportHost；闭合树的执行、呈现与导出
-├─ show/                    # 终端呈现实现      └─ view/  网页呈现实现
+├─ report/                  # 作者 DSL + reportHost；单目标页与全站 revision 的执行、呈现与导出
+├─ show/                    # 终端命令胶水，只消费 Report Host 的单目标输出
+├─ view/                    # 浏览器 Host shell，只消费已闭合的站点 bytes
 │
 └─ cli.ts                   # CLI 入口
 ```
@@ -81,7 +82,7 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 | family 读取结果 | `available`、`not-recorded`、`unsupported`、`invalid` 四态 | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
 | Analysis | Host 签发的 Sample、Population / Dimension / Measure / Relation、`aggregate()` 与 `query()` | 新统计口径或领域视图不改变 Record 格式 | reader Scope 内按需读取；Scope 外只交付 `ClosedRows`、`SemanticFrame` 或 `DomainView` |
-| Report | `defineReport({ pages })`、组件、参数页和 `ClosedReportTree` | 新页面、renderer 或显示原语不改变 Analysis 口径 | Host 在 Sample 存活时执行 `params`、`load`、`render`，随后只呈现闭合树 |
+| Report | `defineReport({ pages })`、标准 React JSX、组件与参数页。`show` 只交付目标 Page；view/static 才拥有 `ClosedSiteRevision`。 | 新页面、renderer 或显示原语不改变 Analysis 口径 | Host 在 Sample 存活时执行 `params`、`load`、`render`。show 只执行选中 Page；view/static 枚举全部 Page 后形成 revision。 |
 
 ## 公开 Host composition SDK
 
@@ -95,7 +96,7 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 | `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
 | `niceeval/record` / `niceeval/record/host` | `recordHost.current.openRead`、`recordHost.current.createRun`、`recordHost.current.createReferenceRun`；`recordHost.maintenance.open` | Record I/O | durable layout、generic Attachment、family 或 migration registration |
 | `niceeval/analysis/host` | `analysisHost.openSample` | Sample 签发 | 作者构造 Sample、注册 AnalysisInput，或让 Report author 取得 Record reader |
-| `niceeval/report/host` | `reportHost.execute`、`reportHost.show`、`reportHost.serve`、`reportHost.export` | `show`、`view` 与静态 export | loader、renderer、watcher 或 Record reader 的可组合接口 |
+| `niceeval/report/host` | `reportHost.show`、`reportHost.serve`、`reportHost.export` | `show`、`view` 与静态 export | loader、renderer、watcher 或 Record reader 的可组合接口 |
 
 “公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
 Record definition、fixed family catalog 与 migration step factory 仍是 package-private；第三方不能注册 family
@@ -212,9 +213,9 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     最后创建 Run 完成标识并返回窄 `InvocationReceipt`。普通 `TestContext` 没有 Record 方法。
 
     Report 不参与采集或落盘。show/view 由 `reportHost` 进入，再按需经 `recordHost.openRead()` 和
-    `analysisHost.openSample()` 取得 Sample。Page 或组件只用 `aggregate()` / `query()` 得到
-    `ClosedRows`、`SemanticFrame` 或 `DomainView`；`reportHost` 把它们闭合为一次
-    `ReportExecution`，供终端、本机页面或静态导出共用。
+    `analysisHost.openSample()` 取得 Sample。Page 或组件只用 `aggregate()` 与具名 DomainView 投影取得
+    `ClosedRows` 或 `DomainView`。`show` 只执行选中 Page，形成私有 `ResolvedPage` 后交付 text 或 JSON；
+    `view` 与静态导出枚举全部 Page，校验后形成同一个 `ClosedSiteRevision`。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 

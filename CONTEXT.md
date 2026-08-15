@@ -185,11 +185,31 @@ refs 只存在于 materialized MetricValue。
 _Avoid_: Report calculation, Numeric column
 
 **Report sample**:
-Page callback 获得的受限 `ReportSample`。它绑定 frozen Sample identity、选择说明与整体问题摘要，
-但不能枚举 raw Run／Attempt、读取 Record、调用 projection 或改变 population。
-_Avoid_: AnalysisSampleHandle, Record reader
+Report Host 在当前作用域内签发给 Page 与组合组件的固定 `Sample`。它只能交给公开
+Analysis calculation 或 projection 得到闭合值，不能读取 Record、改变 population 或越过作用域保存。
+_Avoid_: ReportSample, AnalysisSampleHandle, Record reader
+
+**Target report execution**:
+在固定 Report sample 上只选择、执行并闭合一个 Page 的 Report 结果。`show` 消费它，无关 Page
+的失败不能影响该结果。
+_Avoid_: Partial site revision, Show SSG
+
+**Resolved page**:
+一个 Page 的作者 callback 与 component resolve 各执行一次后得到的 Host-private 制品。text 与 web
+只投影这一份制品；它不是作者 API、machine schema 或持久站点数据。
+_Avoid_: Semantic author tree, Machine face
+
+**Closed site revision**:
+`view` 与 static 共用的全站不可变发布单位，完整绑定所有 route、HTML、asset、download 与
+identity。它不保存 Sample、reader、callback 或延迟计算，也不是 `show` 的前置条件。
+_Avoid_: Live site, Show result
+
+**Report machine result**:
+与同一 Report sample 和 execution identity 绑定的 Host-owned 闭合机器结果。内建 Report 交付具名
+领域 schema，自定义 Report 交付目标 Page manifest；两者都不从 React、HTML 或 text 反推。
+_Avoid_: Machine component face, Semantic tree dump
 
 **Report component**:
-Report 中组合 closed Analysis rows 与既有 semantic primitives 的 component。它不读取 Record、不定义业务 measure，
-也不改变 denominator。
-_Avoid_: Analysis component, Record component
+Report 中组合 closed Analysis rows、DomainView 与 text/web 双面显示原语的 component。它不读取
+Record、不定义业务 measure，也不改变 denominator。
+_Avoid_: Generic semantic component, Analysis component, Record component

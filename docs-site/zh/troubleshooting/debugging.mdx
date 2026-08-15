@@ -58,9 +58,9 @@ Measure 和领域视图会把自己的状态与问题带进页面：
 
 ## view 没有显示新的结果
 
-`view` 每次成功 rebuild 才发布一份新的 `ReportExecution`。如果 Report、配置、主题或结果变化导致 rebuild 失败，页面继续显示上一份可用 execution，并显示本次问题。
+`view` 每次成功 rebuild 才发布一份新的完整站点。如果 Report、配置、主题或结果变化导致 rebuild 失败，页面继续显示上一份可用站点，并显示本次问题。
 
-先修复 rebuild problem，再等待下一次成功 rebuild。页面刷新本身不会绕过这个边界，也不会让旧 execution 重新读取结果。
+先修复 rebuild problem，再等待下一次成功 rebuild。页面刷新本身不会绕过这个边界，也不会让旧站点重新读取结果。
 
 ## JSON 中没有 receipt
 
@@ -70,7 +70,7 @@ Measure 和领域视图会把自己的状态与问题带进页面：
 
 ## 静态报告站无法导出
 
-`view --out` 只导出一个已经完成的 `ReportExecution`。Analysis 问题可以进入导出站并保持可见；作者 callback 抛错、非法语义树和路由冲突会让导出停止。
+`view --out` 只导出已经完成的完整站点。Analysis 问题可以进入导出站并保持可见；作者 callback 抛错、参数实例不合法、路由冲突或资源冲突会让导出停止。
 
 目标目录必须不存在。失败或中断后请使用新的输出目录，再重新导出。
 

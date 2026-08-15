@@ -87,14 +87,14 @@ installation；持久化读取由 `show` / `view` 的内部 host 完成。
 
 | 角色 | 命名 | 例子 |
 |---|---|---|
-| 从固定事实按声明口径聚合 | 名词性 Measure 值 | `passRate`、`costUSD`、`gpuEnergyJoules` |
+| 从固定事实按声明口径聚合 | 名词性 Measure 值 | `passRate`、`durationMs`、`costUSD` |
 | 按 AnalysisSample 分组计算 | 准确计算动词 | `aggregate(sample, options)` |
-| 立即投影成显示结果 | `toX` | `toAttemptRows(attempts)` |
-| 复杂算法的结果构造器 | 结果名 | `metricValue(...)`、`evidenceRow(...)` |
+| 立即投影成显示结果 | `toX` | `toMetricDetailRow(metric)`、`toAttemptObservability(sample)` |
+| 显示行构造器 | 结果名 | `evidenceRow(...)` |
 | 通用呈现组件 | PascalCase 形状名 | `Table`、`Scatter`、`Callouts` |
-| 成品装配 | 任务函数或具名 Page | `comparisonResult()`、`standardAttemptPage` |
+| 成品装配 | 任务函数或具名 Page | `standardOverviewPage`、`standardAttemptPage` |
 
-转换函数返回精确形状，例如 `AttemptRow[]`、`WaterfallNode[]` 或 `SummaryItem[]`。
+转换函数返回精确形状，例如 `MetricDetailRow`、`AttemptObservabilityDomainView` 或 `SourcesDomainView`。
 不建立适用于所有组件的 `Data` 或 `Content` 总协议；组件属性直接说出角色，例如 `rows`、`points`、`items`、`nodes` 与 `attempt`。
 
 ### 立即转换使用 `to*`
@@ -102,8 +102,8 @@ installation；持久化读取由 `show` / `view` 的内部 host 完成。
 实体投影在调用时执行，不注册名字，也不等待渲染器触发：
 
 ```ts
-const rows = toAttemptRows(attempts);
-const nodes = await toTraceNodes(sample);
+const detail = toMetricDetailRow(passRateMetric);
+const observability = await toAttemptObservability(sample);
 ```
 
 `to*` 明确表示输入值立刻转成另一种表示。
@@ -113,8 +113,8 @@ const nodes = await toTraceNodes(sample);
 
 ```ts
 await aggregate(sample, { by: { agent }, values: { passRate } });
-toExperimentRows(sample);
-await toTraceNodes(sample);
+toMetricDetailRow(passRateMetric);
+await toAttemptObservability(sample);
 
 measureRows({ ... });       // 差：像声明对象，没说明何时执行
 source.compute(sample);     // 差：把内部执行协议交给作者
@@ -175,7 +175,10 @@ getSampleSummary(...);      // 差：get 没增加可观察语义
 Record root 与选择属于 CLI 调用点；Report 作者只声明 definition：
 
 ```ts
-const report = defineReport({ id, pages });
+const report = defineReport({
+  title: "Quality",
+  pages: [{ id: "overview", path: "/", title: "Overview", render: () => null }],
+});
 
 // host boundary
 // niceeval show --record <root> --run <run-id>
@@ -184,8 +187,8 @@ const report = defineReport({ id, pages });
 
 不带 locator 或 `--run` 的命令、`--run`、可选的 `--record` 与 `--out` 在 CLI 调用处可见。默认 Record root
 与 `exp` 一致；只有读取其它 root 才需要 `--record`。host 在 frozen reader Scope 内完成 selection、Attachment I/O
-与作者 graph，形成 immutable `ReportExecution`。根入口与普通 consumer 子路径不导出 reader、selection handle 或
-`executeReport()`。
+与作者 graph。`show` 只形成目标 Page 的关闭交付；view 与静态导出才形成完整 `ClosedSiteRevision`。根入口与普通
+consumer 子路径不导出 reader、selection handle 或 `executeReport()`。
 
 需要组合 CLI 或 application main 的代码只能从 host-only 子路径导入 scoped facade，例如
 `niceeval/record/host` 与 `niceeval/report/host`。这些入口不会进入 Report 作者 callback；callback-bound

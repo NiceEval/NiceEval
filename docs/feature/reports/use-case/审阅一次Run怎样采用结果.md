@@ -33,16 +33,15 @@ niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527 --json
 ## 3. 下钻 immutable Attempt
 
 ```sh
-niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
-niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc --execution
+niceeval show @1K1P0VJAPVJ12
+niceeval show @1K1P0VJAPVJ12 --json
 ```
 
-第一个命令使用 `attempt-overview`，显示精确 Attempt 的 identity 与完整 MetricValue。第二个命令显示关闭的
-Observability Evidence。每条命令都先从自己的固定 Sample 构建完整 ClosedSiteRevision；输出阶段不会重新打开 Record
-或改变该 Sample 的分母。
+第一个命令使用选中的内建 Page，显示精确 Attempt 的 identity、完整 `MetricValue` 与该 Page 声明的关闭领域数据。
+第二个命令输出同一个单目标的内建机器文档。每条命令都只执行被选择的 Page；输出阶段不会重新打开 Record 或改变该 Sample 的分母。
 
-已知 locator 时应使用 `show @locator` 精确下钻。静态站、terminal 和 Web 都读取同一份 ClosedSiteRevision，因此
-locator、Evidence refs、issues、samples 和 total 可以在任一呈现面复核。
+已知 locator 时应使用 `show @locator` 精确下钻。要读取自定义报告的另一页，显式传入该页的 `--page <route>`。view 与静态目录读取
+同一份 `ClosedSiteRevision`；terminal 为目标 Page 生成临时 text。三种呈现面都保留同一 Sample 的 locator、Evidence refs、issues、samples 和 total。
 
 ## 4. 查看 File Changes 轨迹
 
@@ -54,4 +53,4 @@ locator、Evidence refs、issues、samples 和 total 可以在任一呈现面复
 并仍保留已经捕获的轨迹。
 
 完整空轨迹表示完整采集到零个 agent 归因变化；partial 的空安全前缀不作此断言。`not-recorded` 则说明 collector
-不适用于该 Attempt。三者和 partial limitation 都在完整构建时进入 terminal、Web 与静态站；打开详情页不会再次读取它们。
+不适用于该 Attempt。`show` 在目标详情页取得这些闭合值；view 与静态目录在全站构建中取得它们，随后打开详情页不会再次读取。

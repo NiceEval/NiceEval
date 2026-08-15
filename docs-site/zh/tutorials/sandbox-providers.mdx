@@ -162,7 +162,7 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
   Hook 只有 `progress` 和 `diagnostic` 两种反馈入口。短期状态用 `progress`，真实异常、退化或需要处理的问题才用 `diagnostic`。没有第三种通用入口可记录任意运行值；连接地址、缓存大小和版本等仅供本次运行使用的信息，留在 Hook、Sandbox 或外部服务自己的配置中。环境无法继续时直接抛出异常。
 </Warning>
 
-`progress` 和 `diagnostic` 都不能指定全局阶段、颜色或输出流。Runner 知道当前回调属于 `sandbox.setup`，会把 Human 终端中的阶段显示为 Sandbox setup。`diagnostic` 写入 Attempt-owned 诊断通道，之后可用 `niceeval show --run <runId> --page attempt-<attemptId>` 回顾。它本身不会改变判定。Sandbox 无法继续时直接抛出异常。
+`progress` 和 `diagnostic` 都不能指定全局阶段、颜色或输出流。Runner 知道当前回调属于 `sandbox.setup`，会把 Human 终端中的阶段显示为 Sandbox setup。`diagnostic` 写入 Attempt-owned 诊断通道，之后可用 `niceeval show @<attempt-locator>` 回顾。它本身不会改变判定。Sandbox 无法继续时直接抛出异常。
 
 三种 setup 各有职责。Adapter 的 `setup` 负责连接被测 Agent，例如安装 CLI 和写入鉴权配置。评估用例中 `test(t)` 开头的代码负责准备任务起始文件。Sandbox 的 `.setup()` 负责当前实验的额外环境准备。MCP server、Skill 和 model 等被测 Agent 配置仍然只从 Adapter 工厂参数传入。
 

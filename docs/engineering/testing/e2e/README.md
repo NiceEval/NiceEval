@@ -51,7 +51,7 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
   expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(128 * 1024);
 
   const document = result.json<AttemptDocument>();
-  expect(document.format).toBe("niceeval.show");
+  expect(document.schema).toBe("niceeval.show/v1");
   expect(document.data).toContainEqual(expect.objectContaining({ id: "tail-sentinel" }));
 });
 ```
@@ -64,7 +64,7 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 Journey E2E 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：
 
 ```text
-init → exp --dry → exp → show --history → show @locator --execution → view --out → 浏览器打开
+init → exp --dry → exp → show --run <runId> --json → show --page <route> → view --out → 浏览器打开
 ```
 
 只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 locator 和结果能跨域传递。
@@ -160,8 +160,8 @@ Record 目录是可复制、可进入 Git 的 opaque 产品资产，不是公开
 再用 `show`、`view` 与自定义 Report 验收公开结果；测试不得 import reader / writer，也不得扫描物理文件来反推成功。
 损坏、不完整、迁移与删除未完成 Run，只有在 CLI 能稳定制造并返回公开诊断时才由对应 CLI Journey 接管。
 
-`show --source` 的生产—读取闭环也归 Report Repo：Eval 从入口文件和嵌套断言模块声明断言，完整运行后再修改工作区源码；旧 locator
-仍必须显示运行时捕获的入口、callers、路径与内容，而不是当前磁盘内容。需要另一种 verdict、conversation、tool、timing 或源码树时，
+Source Page 的生产—读取闭环也归 Report Repo：Eval 从入口文件和嵌套断言模块声明断言，完整运行后再修改工作区源码；旧 locator
+的已生成 Source Page 仍必须显示运行时捕获的入口、callers、路径与内容，而不是当前磁盘内容。需要另一种 verdict、conversation、tool、timing 或源码树时，
 在 Report Repo 增加专用 Eval，不借用 Adapter 结果。
 
 浏览器场景先断言目标 URL / HTTP，再按 role 与实体身份操作；不要读 `.niceeval-row-hidden`、固定 sleep 或探测任意节点。

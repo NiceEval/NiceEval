@@ -17,10 +17,9 @@ Analysis：Sample + Measure + aggregate() / query()
         ↓
 ClosedRows / MetricValue / DomainView
         ↓
-Report → immutable ReportExecution
-              ├─ show
-              ├─ view
-              └─ static export
+Report
+        ├─ show：一个选中的 Page
+        └─ view / static export：完整站点
 ```
 
 ## 评估如何运行
@@ -51,15 +50,15 @@ Analysis 负责解释结果。作者用 `defineMeasure()` 声明总体、分组�
 
 Report 负责页面与显示。Page 和组件只消费这些闭合值：表格读取 rows，图表读取 points，统计卡读取完整 value。需要详情地址时，Page 使用 `params`、`load` 和 `render` 列出实例。报告不会重新计算度量或读取结果存储。
 
-一次 Report 形成一份不可变的 `ReportExecution`。它不保留可以再次读取结果的能力。`show`、`view` 与静态导出只消费这份 execution。
+`show` 在 Sample 存活时只执行选中的 Page，随后交付该页的文字或机器文档。`view` 与静态导出枚举全部 Page 与参数实例，形成一个完整的关闭站点版本。两条路径都不会让页面重新读取结果。
 
-`view` 发生变化时会构造下一份 execution。完整 rebuild 才替换正在显示的结果；rebuild 失败会保留上一份可用结果，并显示问题。
+`view` 发生变化时构建下一份完整站点。完整 rebuild 才替换正在显示的结果；rebuild 失败会保留上一份可用站点，并显示问题。
 
 ## 交付报告
 
 `niceeval show` 在终端显示报告。`niceeval view` 在本机显示网页。`niceeval view --out <目录>` 导出自包含静态报告站；需要固定历史范围时可以传一个或多个明确 `--run`。
 
-静态报告站只消费导出时完成的 `ReportExecution`。浏览器不读取源结果。发布步骤见[发布静态报告](/zh/tutorials/publish-report)。
+静态报告站只消费导出时完成的完整站点版本。浏览器不读取源结果。发布步骤见[发布静态报告](/zh/tutorials/publish-report)。
 
 ## 继续阅读
 

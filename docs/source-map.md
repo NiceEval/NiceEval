@@ -38,11 +38,13 @@ Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 
 | 目标契约 owner | 源码边界 |
 |---|---|
 | [Analysis](feature/analysis/README.md) | `src/analysis/{api,definitions,contracts,host}.ts` 拥有 Population、Dimension、Measure、Relation、Host-issued Sample、`aggregate()` 与 `query()`。 |
-| [Analysis outputs](feature/analysis/library.md#closedrowssemanticframe-与-domainview) | `src/analysis/` 与 `src/report/semantic/` 形成并校验 `ClosedRows`、`SemanticFrame` 与 `DomainView`。 |
-| [Reports](feature/reports/README.md) | `src/report/{definition,components,index}.ts` 是作者面：`defineReport({ pages })`、两种 `defineComponent()`、普通 Page 与参数 Page。 |
-| [Report Host](feature/reports/library.md#执行问题和类型化错误) | `src/report/host/{execute,from-record,presentation,static,view-session}.ts` 在 Sample Scope 内执行 `params.encode/decode/enumerate`、`load` 与 `render`，随后交付 `ReportExecution` 与 `ClosedReportTree`。 |
-| [Reports CLI](feature/reports/README.md) | `src/cli.ts` 经 `reportHost` 进入；Host 再按需调用 Record 与 Analysis Host，不直接打开物理 reader。 |
-| [静态 export](feature/reports/library.md#static-export) | `src/report/host/static.ts` 与 `src/view/` 写出页面、host-data、runtime 和 complete marker。 |
+| [Analysis outputs](feature/analysis/library.md#closedrowssemanticframe-与-domainview) | `src/analysis/` 形成并校验 `ClosedRows`、`SemanticFrame` 与 `DomainView`；`src/report/model/{aggregate,conversions}.ts` 只提供 Report facade 与具名关闭投影，不建立通用作者 semantic model。 |
+| [Reports](feature/reports/README.md) | `src/report/definition/{report,tree}.ts`、`definition/primitives/**`、`components/**`、`model/{aggregate,conversions}.ts` 与 `index.ts` 是作者面：`defineReport({ pages })`、两种 `defineComponent()`、普通 Page 与参数 Page。作者只使用标准 React JSX，不增加专属 JSX 入口。 |
+| [Report 成本投影](feature/reports/cost-projections/README.md) | `src/analysis/{cost,cost-projection,cost-decimal}.ts` 定义 Profile 验证、slot-provider ledger 与闭合 projection；`src/report/{definition/report.ts,execution/machine.ts,host/{machine,show-target,site-runtime}.ts}` 把已签发 projection 纳入 target 或 site 输出，不重新计算。 |
+| [Report 单目标 Host](feature/reports/architecture.md#两条执行路径) | `src/report/host/{execute,from-record,show-target,target-route}.ts` 与 `runtime/{resolved-page,text,web}.ts` 在固定 Sample 内解码并执行一个 Page，短存私有 `ResolvedPage` 后交付 text 或 target manifest；此路径不 `enumerate()`，不形成站点版本。 |
+| [Report 站点 Host](feature/reports/architecture.md#两条执行路径) | `src/report/execution/{model,paths}.ts` 与 `src/report/host/{execute,site-assets,site-runtime,static,view-session}.ts` 枚举所有 Page 实例、校验闭包并形成 `ClosedSiteRevision`；view 和 static 只读取这一个 revision 的 bytes。 |
+| [Reports CLI](feature/reports/cli.md) | `src/cli.ts` 经 `reportHost` 进入；Host 再按需调用 Record 与 Analysis Host，不直接打开物理 reader。 |
+| [静态 export](feature/reports/cli.md#niceeval-view---out) | `src/report/host/static.ts` 写出已验证 `ClosedSiteRevision` 的页面、asset 与下载文件；它不重新执行 Page 或 Analysis。 |
 
 实现时以对应 Feature 文档的 owner、输入和不变量为准。
 
@@ -53,6 +55,6 @@ Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 
 | Eval 与公开定义类型 | `src/{index,types}.ts`、`src/eval/` |
 | Agent 与 Adapter public API | `src/agents/`、`src/adapters/` |
 | Sandbox provider 与生命周期 | `src/sandbox/` |
-| Report text / web 组件与静态资源 | `src/report/{definition,components,assets,runtime}.ts`、`src/view/` |
+| Report text / web 组件与静态资源 | `src/report/runtime/{resolved-page,text,web}.ts` 与 `src/report/assets/`；`src/view/` 只承载 Host-owned browser shell，不能成为第二条作者 renderer 管线。 |
 
 修改任一公共行为前，先回到对应 Feature 入口确认契约，再用本页定位影响面。

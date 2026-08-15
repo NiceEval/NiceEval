@@ -1,25 +1,23 @@
 ---
 title: "编写自定义报告"
-description: "先定义 Measure，再用 Page 和组件把闭合分析结果组织成可查看、可导出的 Report。"
+description: "先定义 Analysis 统计口径，再用标准 React JSX 编写可在终端、网页和静态站阅读的 Report。"
 ---
 
-自定义 Report 有三层清楚的职责：已发布运行结果保存已经发生的事；Analysis 定义统计口径；Report 只组织页面和显示。你不需要也不能从页面读取结果文件或注册额外的数据类型。
+自定义 Report 只负责页面和显示。Record 保存已发布事实，Analysis 定义总体、分母和缺失语义；Report 组织 `ClosedRows`、`MetricValue` 与关闭的 DomainView。
 
 ```text
-已发布的运行结果
-        ↓
-Analysis：Measure + aggregate() / query()
-        ↓
-ClosedRows / MetricValue / DomainView
-        ↓
-Report：Page + component
-        ↓
-ReportExecution → show / view / export
+Record → Sample → Analysis
+                    ↓
+          ClosedRows / MetricValue / DomainView
+                    ↓
+              Report 的 Page 和组件
+             ↙                    ↘
+  show：一个目标 Page       view / --out：全部 Page
 ```
 
-## 定义一个 Measure
+## 从 Measure 开始
 
-先在报告模块之外定义可复用的统计口径。下面的度量按实验分组，并将每个逻辑位置的最新完成 Attempt 汇总为通过率。
+把业务统计口径定义在 Report 模块之外。Measure 决定分母、缺失和 Evidence；页面不应从数组长度重新计算通过率或成本。
 
 ```ts
 // reports/quality-measures.ts
@@ -58,14 +56,12 @@ export const passRate = defineMeasure({
 });
 ```
 
-`defineMeasure()` 同时固定输入、分母和缺失语义。不要在页面里从数组长度猜测通过率，也不要先取出未包装的 number 后重新包装成显示值。
+## 组织一个 Page
 
-## 让组件取得闭合行
+Report 模块是 `.tsx` 文件，并使用 TypeScript 的 `"jsx": "react-jsx"`。组合组件通过 `ctx.scope` 获得这次选择固定的 Sample。组件和 Page 不获得 Record reader、文件路径或浏览器请求能力。
 
-复合组件在执行时拿到 `Sample`。用 `aggregate()` 取得 rows 后，直接交给中立的表格和图表组件。
-
-```ts
-// reports/quality.ts
+```tsx
+// reports/quality.tsx
 import {
   aggregate,
   Bars,
@@ -76,68 +72,117 @@ import {
 } from "niceeval/report";
 import { experiment, passRate } from "./quality-measures.ts";
 
-const QualityComparison = defineComponent(async (_props, { sample }) => {
-  const rows = await aggregate(sample, {
+const QualityComparison = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
     by: { experiment },
     values: { passRate },
   });
 
-  return Grid({
-    children: [
-      Bars({ points: rows, x: "experiment", y: "passRate" }),
-      Table({ rows, caption: "实验通过率" }),
-    ],
-  });
+  return (
+    <Grid>
+      <Bars points={rows} x="experiment" y="passRate" />
+      <Table rows={rows} caption="实验通过率" />
+    </Grid>
+  );
 });
 
 export default defineReport({
-  title: "质量报告",
-  pages: [
-    {
-      id: "overview",
-      path: "/",
-      title: "概览",
-      render: () => QualityComparison({}),
-    },
-  ],
+  title: { en: "Quality", "zh-CN": "质量" },
+  pages: [{
+    id: "overview",
+    path: "/",
+    title: { en: "Overview", "zh-CN": "概览" },
+    render: () => <QualityComparison />,
+  }],
 });
 ```
 
-`rows` 保留每行的身份、问题和完整 `MetricValue`。`Table` 使用 rows，图表使用 points，`Stat` 使用完整 value。这样终端、网页和静态站显示同一份统计含义。
+`ctx.scope` 是组件取得 Sample 的唯一字段。`ctx.report` 提供只读的 Report 标题、导航 Page 摘要，以及已验证的
+`PricingProfile` 或 `null` 的 `pricing`；它不是 Config、Runner price table 或第二份价格输入。
 
-## 增加详情页或自定义原语
+`Table` 与图表使用同一批 rows。每个度量格保留完整 `MetricValue`：`samples` 是实际贡献数，`total` 是预先确定的分母，`partial`、`empty`、`unsupported` 和 `failed` 不能被隐藏或改成零。
 
-需要一组详情地址时，在同一个 Page 上声明 `params`、`load` 和 `render`。`params.enumerate(sample)` 列出静态导出的全部实例；`load` 可以用 `context.evidence(locator)` 取得一个闭合证据视图。实例的路由只来自已选范围和已关闭的值，不会在浏览器打开页面时重新读取结果。
+## 为成本声明 Profile
 
-需要新的显示原语时，`defineComponent()` 同时提供 `text` 和 `web`。可选的 `resolve()` 在两种呈现前计算一次闭合值；两种面随后读取同一个结果。不要用原始 HTML 或只存在于网页的内容替代终端面。
+成本不从 Config 派生。需要成本 Measure 时，在同一个 Report module 显式声明 USD Profile，再把同一值放进 `defineReport({ pricing })`：
+
+```tsx
+import { definePricingProfile } from "niceeval/report";
+
+const pricing = definePricingProfile({
+  currency: "USD",
+  display: { decimalPlaces: 2, rounding: "half-away-from-zero" },
+  provenance: {
+    kind: "declared-rate-card",
+    source: "https://platform.openai.com/pricing",
+    asOf: 1785542400000,
+  },
+  coverage: [{
+    coverageId: "openai-gpt-5-6-2026-08",
+    state: "priced",
+    selector: { provider: "openai", model: "gpt-5.6" },
+    effective: { startsAt: 1785542400000, endsAt: null },
+    charges: [
+      { kind: "token", bucket: "input", perMillionTokens: "1.25" },
+      { kind: "token", bucket: "output", perMillionTokens: "10" },
+      { kind: "token", bucket: "cache-read", perMillionTokens: "0.125" },
+      { kind: "token", bucket: "cache-write", perMillionTokens: "1.25" },
+      { kind: "request", requestKind: "model", ratePerRequest: "0" },
+    ],
+  }],
+});
+```
+
+在组件中只调用 `costUSD(pricing)` 或 `totalCostUSD(pricing)`；二者没有零参数形式。Analysis 计算 slot-provider ledger、exact total 和
+`numerator / denominator` mean，Report Host 只验证 Profile、捕获闭包和呈现结果。Runner `estimatedCostUSD` 即使 observed 成本存在也独立计算，
+只供 `maxCost` 使用，Report 不读取它。
+
+`aggregate(ctx.scope, { values: { cost: costUSD(pricing) } })` 的 `cost` cell 是可观察的 `CostMetricValue`，其 `cell.projection` 是
+`CostProjectionValue`。这两个类型以及 projection 的 state、basis、ledger 和 reason data types 都从 `niceeval/report` 以 type-only
+方式导出。
+
+Codex sealed Usage 含 `requestKind: "model"` observation。因此即使 model request 免费，token-priced coverage 仍要显式声明
+`{ kind: "request", requestKind: "model", ratePerRequest: "0" }`。
+四个 token charge 加这一条 zero request charge 才是完整 rate card。缺少该字段不能推断免费，严格 coverage 会让相应 slot-provider
+`unavailable`，并记录 `pricing-charge-not-found`。
+
+没有 Profile 时，Summary 显示 English `Cost unavailable — this report does not declare a PricingProfile.` 或中文
+“成本不可用——此报告未声明 PricingProfile。”；成本 × 通过率 scatter 显示 English
+`Cost × pass rate scatter unavailable — this report does not declare a PricingProfile.` 或中文
+“成本 × 通过率散点图不可用——此报告未声明 PricingProfile。”。两种组件都不请求成本 Measure、捕获 projection 或显示数字。
+
+## 添加详情与显示原语
+
+需要多个详情地址时，定义参数 Page。`pages` 是唯一的页面集合，详情页必须在此显式声明；`params.enumerate(sample)` 只在 view 或静态导出时列出全部实例，Host 不会补建详情 route。`show --page <route>` 只执行请求的一个实例，并检查 `decode()` 后再 `encode()` 得到同一 canonical key。
+
+新的显示原语使用双面 `defineComponent()`：`resolve()` 最多取得一次关闭输入，`text()` 与 `web()` 同步读取同一个值。两个面不能各自再次调用 Analysis，也不能用网页专有内容代替终端文字。
 
 ## 设成项目默认
 
-在 `niceeval.config.ts` 中导入 Report。以后不带 `--report` 的 `show` 与 `view` 使用它：
+在 `niceeval.config.ts` 中加载 Report。没有显式 `--report` 的 current-project `show` 与 `view` 使用它。
 
 ```ts
 import { defineConfig } from "niceeval";
-import quality from "./reports/quality.ts";
+import quality from "./reports/quality.tsx";
 
 export default defineConfig({
   report: quality,
 });
 ```
 
-## 处理不完整与失败
-
-Analysis 问题跟随 `MetricValue`、`ClosedRows` 和领域视图进入页面。`partial` 保留可显示的结果及完整分母；`unsupported` 和 `failed` 也保留原因，而不是被当成零或从表格中静默删除。
-
-作者 callback 抛错、参数不合法、语义树不合法或路由冲突属于 execution problem。`show` 与 `view` 显示其它成功页面；静态导出不会发布包含 execution problem 的站点。
-
-## 运行和发布
+## 运行、读取和发布
 
 ```sh
-npx niceeval show --run <run-id> --report ./reports/quality.ts
-npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
-npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
+npx niceeval show --run <run-id> --report ./reports/quality.tsx
+npx niceeval show --run <run-id> --report ./reports/quality.tsx --json
+npx niceeval view --run <run-id> --report ./reports/quality.tsx --no-open
+npx niceeval view --run <run-id> --report ./reports/quality.tsx --out ./quality-site
 ```
 
-三条命令都选择同一范围，执行同一份 Report，并得到固定 `ReportExecution`。`view` 后续成功 rebuild 会产生下一份 execution；失败时保留上一份可用结果。
+前三条命令从相同选择形成 Sample，但范围不同：`show` 和 `show --json` 只执行一个 Page，并只捕获该页的 projection closure；`view` 与 `view --out` 枚举全部 Page 后形成完整站点及 `_niceeval/data/projections.json`。该文件的 bytes 进入 revision identity。view 的成功 rebuild 原子替换当前站点；失败时保留上一份可用站点。`--out` 必须指向不存在的目录。
 
-`--out` 必须指向不存在的目录。详情见[发布静态报告](/zh/tutorials/publish-report)和[报告 API](/zh/reference/report-components)。
+## 下一步
+
+- [报告 API](/zh/reference/report-components)：完整的 Page、组件、JSON 和样式边界。
+- [查看结果](/zh/tutorials/viewing-results)：选择 Sample 与页面。
+- [发布静态报告](/zh/tutorials/publish-report)：离线检查与部署前的导出步骤。

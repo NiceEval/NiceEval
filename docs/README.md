@@ -69,6 +69,7 @@ docs/
 │   ├── record/                          已完成 Run、精确引用与固定持久事实
 │   ├── record-report/                   Record → Analysis → Report 三层总览与命令调用路径
 │   ├── reports/                         SSG-first 全站构建、show/view 与静态导出
+│   │   └── cost-projections/            Report 的 Profile、Analysis 成本投影与闭合呈现
 │   ├── sample/                          从 Record 选择 core-only 分母
 │   ├── sandbox/                         隔离运行环境
 │   ├── use-case/                        跨功能的完整用户路径
@@ -82,7 +83,6 @@ docs/
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── cost-projections/                基于 Core 与 Observability 的只读成本投影
 │   ├── report-chart-kernel/              中立图表的三面同事实语义内核
 │   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分

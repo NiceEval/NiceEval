@@ -2,7 +2,7 @@
 
 跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned Observability 的 command、timing 与 diagnostics。
 受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
-`niceeval show --run <runId> --page attempt-<attemptId>` 通过 Analysis `query()` 闭合页面声明的 DomainView，并按 timing 顺序呈现。
+`niceeval show @<attempt-locator>` 通过 Analysis `query()` 闭合页面声明的 DomainView，并按 timing 顺序呈现。
 因此「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
 
 但仍有两类问题 FileChanges 结构性地回答不了,只能靠留住活现场:

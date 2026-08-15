@@ -121,11 +121,17 @@ secret 或任意 JSON。诊断是观测事实，不自动改变 assertion outcom
 
 ## 用量、成本与时间
 
-usage 保存原子 observation，而非 Attempt 总计。token bucket、一个 request 与一笔 provider-observed
-cost 各自是一项 observation。cost 以 canonical decimal string、provider 与 currency 保存。
+usage 保存原子 observation，而非 Attempt 总计。token bucket、一个 request 与一笔 provider / adapter observed
+USD cost 各自是一项 observation。`Usage.costUSD` 只承载这项上游如实带回的事实，不承载任何估算；cost 以 canonical decimal
+string、provider 与 currency 保存。
 
-总 token、cache ratio、价格表估算、FX、跨币种汇总、command success、owner-local observed timing
-window 与 diagnostic 分组都是 Calculation。它们显式声明所需事实与完整度策略，不能回写 Record。
+总 token、cache ratio、Runner `estimatedCostUSD`、FX、跨币种汇总、command success、owner-local observed timing window 与
+diagnostic 分组都是 Calculation。
+
+Runner 始终从 Config/runtime price table 独立计算 `estimatedCostUSD`，即使已有 observed `Usage.costUSD` 也照常计算。
+只有 `maxCost` 消费这个 estimate。Report 成本投影只使用显式 PricingProfile 与 sealed Usage，绝不读取 Runner estimate。
+
+所有 Calculation 显式声明所需事实与完整度策略，不能回写 Record。
 `niceeval.observability` 在 `schemaVersion: 1` 时的 timing 没有 designated root 或完整因果边，所以不能单独
 证明 Attempt 总耗时或 critical path。需要这些读数时，必须升级既有事实契约。
 
@@ -136,8 +142,8 @@ provider 名称都不落盘。
 
 ### 用量与成本：token / 计费
 
-provider-observed cost 是 provider 当时报告的事实。价格表、模型价、货币换算与总成本属于独立
-Calculation 的输入和输出。缺少 provider cost 不得用估算金额冒充一项 observation。
+provider / adapter observed cost 是 provider 当时报告的事实。价格表、模型价、货币换算与总成本属于独立
+Calculation 的输入和输出。缺少 provider cost 不得用估算金额冒充一项 observation，也不得把 observed 值或 estimate 互相替换。
 
 ### OTLP traces-统一瀑布图
 
@@ -176,7 +182,7 @@ inline 或 blob storage。它可以组合多个已声明事实来形成 Calculat
 
 ## 结果可视化：niceeval view
 
-show、view 与静态报告只消费已形成的 ReportExecution。它们不重新打开 Record、不重跑 Adapter mapper，
+show 只消费已关闭的目标 Page；view 与静态报告只消费已形成的完整站点。它们不重新打开 Record、不重跑 Adapter mapper，
 也不访问 provider、网络或当前 worktree。
 
 ## 相关阅读

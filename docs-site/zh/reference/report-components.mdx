@@ -1,145 +1,125 @@
 ---
 title: "报告 API"
-description: "用 Measure、Page、组件与闭合执行结果编写可在终端、网页和静态站显示的报告。"
+description: "用标准 React JSX、Page 与关闭的 Analysis 值编写终端、网页和静态报告。"
 ---
 
-Report 只负责展示。先在 Analysis 定义统计口径，再在 Page 或组件中取得闭合结果。Report 作者不读取结果文件、不注册持久数据类型，也不处理迁移或存储路径。
+Report 作者只组织已经关闭的 Analysis 值。作者文件使用标准 React JSX；它不读取 Record 路径、不会取得 reader，也不需要 NiceEval 专属 JSX runtime 或 `jsxImportSource`。
 
 ```text
-已发布的运行结果
-        ↓
-Analysis：Measure + aggregate() / query()
-        ↓
-ClosedRows / MetricValue / DomainView
+已发布的 Record
+        ↓ 选择
+Sample → Analysis 的 ClosedRows / MetricValue / DomainView
         ↓
 Report：Page + component
-        ↓
-ReportExecution → show / view / static export
+        ├─ show：一个选中的 Page → terminal text 或 JSON
+        └─ view / view --out：全部 Page → 完整静态站
 ```
 
-## 先定义统计口径
+## 定义一个 Report
 
-`niceeval/analysis` 提供 NiceEval 已发布的输入。作者用 `defineMeasure()` 明确总体、归并方式、分母和缺失策略；不需要额外的输入注册步骤。
+把 Report 写成 `.tsx` 模块，并在项目的 TypeScript 配置中启用 `"jsx": "react-jsx"`。组合组件通过 `ctx.scope` 取得这次命令固定的 `Sample`，再把 `aggregate()` 返回的 `ClosedRows` 交给标准组件。
 
-```ts
-import {
-  allLogicalSlots,
-  attemptPassed,
-  defineDimension,
-  defineMeasure,
-  latestCompletedAttempt,
-  logicalSlots,
-  oneValue,
-  partial,
-  ratio,
-  retainContributingEvidence,
-} from "niceeval/analysis";
-
-export const experiment = defineDimension({
-  id: "example.experiment",
-  population: logicalSlots,
-  value: slot => slot.experimentId,
-});
-
-export const passRate = defineMeasure({
-  id: "example.pass-rate",
-  population: logicalSlots,
-  input: attemptPassed,
-  withinAttempt: oneValue<boolean>(),
-  withinSlot: latestCompletedAttempt<boolean>(),
-  acrossSlots: ratio(),
-  denominator: allLogicalSlots(),
-  missing: partial(),
-  evidence: retainContributingEvidence(),
-  unit: "ratio",
-  format: "percent",
-  better: "higher",
-});
-```
-
-`MetricValue` 会保留数值、状态、实际贡献数、固定分母、问题和证据引用。不要先取出未包装的 number，再在 Report 中重新计算或包装它。
-
-## 在 Page 或组件中读取闭合值
-
-`aggregate()` 适合按维度形成表格或图表行。它在 Page 或复合组件取得的 `Sample` 上运行，并返回可直接交给 `Table`、`Bars`、`Line` 或 `Scatter` 的 `ClosedRows`。
-
-```ts
+```tsx
 import {
   aggregate,
   Bars,
   defineComponent,
   defineReport,
   Grid,
+  model,
+  passRate,
+  Section,
   Table,
 } from "niceeval/report";
-import { experiment, passRate } from "./quality-measures.ts";
 
-const Comparison = defineComponent(async (_props, { sample }) => {
-  const rows = await aggregate(sample, {
-    by: { experiment },
+const Overview = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model },
     values: { passRate },
   });
 
-  return Grid({
-    children: [
-      Bars({ points: rows, x: "experiment", y: "passRate" }),
-      Table({ rows, caption: "各实验的通过率" }),
-    ],
-  });
+  return (
+    <Section title={ctx.report.title}>
+      <Grid>
+        <Bars points={rows} x="model" y="passRate" />
+        <Table rows={rows} />
+      </Grid>
+    </Section>
+  );
 });
 
 export default defineReport({
-  title: "质量概览",
-  pages: [
-    {
-      id: "overview",
-      path: "/",
-      title: "概览",
-      render: () => Comparison({}),
-    },
-  ],
+  title: { en: "Quality", "zh-CN": "质量" },
+  pages: [{
+    id: "overview",
+    path: "/",
+    title: { en: "Overview", "zh-CN": "概览" },
+    render: () => <Overview />,
+  }],
 });
 ```
 
-需要完整的表格请求或一个领域视图时，从 `niceeval/analysis` 导入 `query()`。例如，`attemptEvidenceView` 会返回已关闭的证据视图；它不会把读取器或原始运行数据交给组件。
+`ctx.scope` 是组件取得 Sample 的唯一字段。`ctx.report` 提供 Report 标题、导航 Page 摘要和只读的 `pricing`；后者是已验证的
+`PricingProfile` 或 `null`，与 `ReportDefinition.pricing` 是同一个值，不提供 Config、Runner price table 或第二份价格输入。`ctx.report`
+不提供当前目录、Record、主题或其它 Page 的数据读取能力。
 
-## 组件的两种形态
+成本 Measure 必须显式调用 `costUSD(profile)` 或 `totalCostUSD(profile)`，其中 `profile` 就是该 Report 的已验证 `pricing`；没有零参数
+或别名入口。Analysis 拥有 slot-provider ledger、exact total 与 `numerator / denominator` mean，Host 只闭合并呈现这些结果。
 
-复合组件在执行期间取得 `Sample`，再组合已有组件。上例的 `Comparison` 就是这种形态。
+`MetricValue` 来自 Analysis，并完整保留 `value`、`state`、`samples`、`total`、`issues` 和 `refs`。`value: 0` 是有效读数。不要从可见行数重算分母，也不要把 `null` 写成零。
 
-新显示原语同时提供文字面和网页面。可选的 `resolve()` 是唯一可以异步取得闭合值的阶段；`text` 与 `web` 读取同一个结果。
+## 两种组件形态
 
-```ts
+上例是组合组件。它可以在 Page 执行期间异步读取固定 Sample 上的关闭值。
+
+显示原语使用另一种 `defineComponent()` 形态。可选的 `resolve()` 只运行一次；同步的 `text()` 与 `web()` 读取同一个关闭结果。
+
+```tsx
 import {
   defineComponent,
+  formatMetricValue,
   Stat,
-  Text,
   type MetricValue,
 } from "niceeval/report";
 
-const PassRateState = defineComponent({
-  text: ({ value }: { readonly value: MetricValue }) =>
-    Text({ value: `通过率状态：${value.state}` }),
-  web: ({ value }) => Stat({ label: "通过率", value }),
+const MetricCard = defineComponent<
+  { readonly label: string; readonly value: MetricValue },
+  { readonly label: string; readonly value: MetricValue }
+>({
+  resolve: props => props,
+  text: data => `${data.label}: ${formatMetricValue(data.value)}`,
+  web: data => <Stat label={data.label} value={formatMetricValue(data.value)} />,
 });
 ```
 
-两个面都只能返回 NiceEval 的语义节点。不要返回 DOM、原始 HTML、浏览器副作用或另一套独立的文字结果。
+`text()` 返回文字，`web()` 返回 React JSX。两面不能再次读取 Sample、发起网络请求或各自计算统计。不要从 HTML、文字或 React element 反推机器数据。
 
-## 页面、参数和路由
+## Page、参数和页面选择
 
-`defineReport({ pages })` 是唯一的报告定义入口。普通 Page 可直接在 `render(sample)` 中读取闭合结果；需要一组详情地址时，在同一个 Page 上提供 `params`、`load` 和 `render`。`params.enumerate(sample)` 给静态导出列出全部实例，`load` 可以通过 `context.evidence(locator)` 取得一个闭合证据视图。
+普通 Page 的 `render` 可以直接接收固定 Sample，或先用 `load(sample, params, context)` 关闭输入。参数 Page 还要声明 `navigation: false` 与 `params`：
 
-Page 的 `id` 用于诊断和稳定顺序，`path` 是用户访问的基础地址。参数化 Page 必须设置 `navigation: false`，并让 `encode()` 与 `decode()` 规范往返。Report 在调用作者回调前检查页面定义、ID 与普通路径；实例化后再检查参数路由和下载路径冲突。
+- `encode(params)` 产生 canonical key；
+- `decode(key)` 必须能把同一种 key 还原；
+- `enumerate(sample)` 只为完整站点列出实例；
+- `context.evidence(locator)` 只返回当前 Sample 内的关闭证据视图。
 
-## 执行与问题
+`pages` 是 Report 唯一的页面集合，详情必须作为 Page 或参数 Page 显式声明；Host 不补建任何 route。`niceeval show --page <route>` 只 decode、load 和 render 这个目标 Page。它不会调用 `enumerate()` 或执行其它 Page。`niceeval view` 与 `niceeval view --out` 才会枚举全部普通 Page 和参数实例，并在所有路径、链接、资源和预算通过校验后形成完整站点。
 
-`show`、`view` 和静态导出在 Sample 仍可用时执行 Page 与组件，随后只保留不可变的 `ReportExecution`。它包含已完成的页面、下载项和问题；不包含可以再次读取结果的能力。
+## JSON、网页和静态站
 
-Analysis 问题会保留在 `MetricValue`、`ClosedRows` 和领域视图中。回调抛错、参数不合法、语义树不合法或路由冲突则成为 execution problem。`show` 和 `view` 继续显示其它成功页面；静态导出遇到 execution problem 不发布站点。
+`show --json` 固定输出英语 JSON。内建 Report 输出 Host 拥有的具名领域文档；自定义 Report 输出一个 Page 的 route、标题、80-column rendered text、下载摘要和问题表。两种 v2 JSON 都在顶层以相同的 `projections` 对象携带该目标 Page 的闭合成本数据；它们不包含作者树、HTML、全站路由或站点 identity。
+
+view 与静态导出使用同一份完整站点版本。同一路由的 HTTP body 与导出目录页面 body 逐字节相同。两者都携带同一个 reload client；静态目录找不到 view 的端点时，它会安静停用。禁用 JavaScript 或断开网络后，正文、导航、详情、完整度、问题和下载仍可读。
+
+## 样式和资源边界
+
+Report CSS 是唯一的产品样式 owner。它负责 reset、基础排版、theme token 与组件样式。View shell 只负责浏览器语言切换、reload 状态和 Host 提示，不重绘 Report 内容。
+
+Report 可以在 `head` 中声明结构化 `meta`、`link`、`style` 和 `script`，也可以选择 theme。脚本只能做渐进增强，不能成为正文、导航、Evidence 或机器文档的唯一入口。自定义样式不能建立第二份 reset、theme 或 View shell。
 
 ## 相关页面
 
-- [结果数据 API](/zh/reference/results-data)：选择已发布的 Analysis 输入，并读取闭合结果。
-- [编写自定义报告](/zh/tutorials/custom-reports)：从 Measure 写出一个实际 Report。
-- [发布静态报告](/zh/tutorials/publish-report)：导出并分享固定 execution。
+- [结果数据 API](/zh/reference/results-data)：选择 Analysis 输入并读取关闭数据。
+- [编写自定义报告](/zh/tutorials/custom-reports)：从统计口径到一个可运行的 Report。
+- [查看结果](/zh/tutorials/viewing-results)：选择范围、单目标 `show` 与全站 `view`。
+- [发布静态报告](/zh/tutorials/publish-report)：导出离线可读的完整站点。

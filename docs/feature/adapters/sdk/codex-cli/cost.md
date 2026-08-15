@@ -8,4 +8,4 @@ token 用量从 `codex exec --json` transcript 的逐事件 `usage`(codex-rs `To
 `reasoning_output_tokens` 已含在 `output_tokens` 里,单列进 `reasoningTokens` 只为展示,不参与桶相加。
 OpenAI 协议没有缓存写入计量,`cacheCreationTokens` 恒缺席。
 
-本 adapter 没有实测成本通道:`$` 由价格表估算(见 [Observability · 用量与成本](../../../../observability.md#用量与成本token--计费))。
+本 adapter 没有 provider / adapter observed 成本通道，因此省略 `Usage.costUSD`。它不在 adapter 内以 token 或价格表推导成本。

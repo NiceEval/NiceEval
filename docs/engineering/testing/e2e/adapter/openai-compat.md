@@ -20,7 +20,7 @@ The complete official `ChatCompletion` return value enters the converter
 unchanged. The Eval checks the native tool name and call input marker.
 
 It also checks non-empty protocol usage. The test reads the same result back
-through history and `show --execution`.
+through `show --run <run-id>` and the representative Report's execution target Page.
 
 ## Responses live
 
@@ -29,8 +29,9 @@ forces one named function with the official Responses `tool_choice` shape.
 
 The complete `Response` enters `turnFromResponses()` directly.
 
-The Eval checks the native function name, exact marker input, and usage. The
-test proves the persisted result through public history and execution output.
+- The Eval checks the native function name, exact marker input, and usage.
+- The test proves the persisted result through `show --run <run-id>`.
+- It also checks the representative Report's execution target Page.
 
 ## Cost and reliability boundary
 

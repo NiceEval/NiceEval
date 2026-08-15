@@ -4,7 +4,7 @@
 
 - [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
-- [Reports CLI](feature/reports/README.md) 定义 `show`、`view` 与静态 export 的输入和输出。
+- [Reports CLI](feature/reports/cli.md) 定义 `show`、`view` 与静态 export 的输入和输出。
 
 ## 模块边界
 
@@ -14,7 +14,7 @@
 | `experimentHost` | `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行、采用和命令计划操作。 |
 | `recordHost` | Record 的打开、创建、封口、clean 与 migrate 操作。 |
 | `analysisHost` | 由已打开 reader 和选择签发 Scope-bound Sample。 |
-| `reportHost` | Report execution、show、serve 与 export。 |
+| `reportHost` | `show` 的单目标读取，以及 `serve` / `export` 的完整站点构建。 |
 | `runner/`、`record/reader/` | 各自 Host 后的内部调度和读取实现，不是 CLI 直连面。 |
 
 `src/cli.ts` 只做 argv 读取、工作目录确定、Host 调用、进程信号接线和退出码交付。它不定义
@@ -73,18 +73,20 @@ opaque Record
 recordHost.openRead
   ↓
 analysisHost.openSample
-  ↓ aggregate / query
-ClosedRows / SemanticFrame / DomainView
-  ↓ reportHost.execute
-ReportExecution / ClosedReportTree
-  ↓
-show / view / static export
+  ↓ aggregate / 具名 DomainView 投影
+ClosedRows / DomainView
+  ↓ reportHost
+  ├─ show：选中一个 Page → 私有 ResolvedPage → terminal / target JSON
+  └─ view / static：枚举全部 Page → ClosedSiteRevision → HTTP / 文件
 ```
 
 `show` 与 `view` 只调用 `reportHost`。Report Host 在内部按需进入 Record Host 的 reader Scope，
-再由 Analysis Host 签发 Sample；它根据 Page 的 `load`、`render` 和组件回调闭合有限数据依赖，
-形成一次 immutable `ReportExecution`。reader 与 selection handle 不从包导出，也不会成为 Report
-作者输入。
+再由 Analysis Host 签发固定 Sample。`show` 只执行选中 Page 的 `load`、`render` 和组件回调，短存私有
+`ResolvedPage` 后交付 text 或机器文档。它不枚举参数页，也不形成 `ClosedSiteRevision`。
+
+`view` 与 `view --out` 执行全部普通 Page 和参数 Page 实例，校验路线与资源闭包后形成完整
+`ClosedSiteRevision`。HTTP 和静态目录只读取这一个 revision 的 bytes。reader 与 selection handle 不从包导出，
+也不会成为 Report 作者输入。
 
 Report runtime 从不打开 Record path，也不自行读取 family bytes。它只消费 Analysis 交付的闭合结果。
 

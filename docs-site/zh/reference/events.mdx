@@ -80,11 +80,14 @@ costUSD?: number;
 ```
 
 网关/adapter 实测的真实美元成本(只能由 `Turn.usage.costUSD` 显式带回,从不从
-token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表估算)是两个事实:
-存在时优先于按价格表(`defineConfig({ pricing })`)估算的成本——见 `estimateCost` 的
-`usage.costUSD ?? estimateCost(...)` 兜底顺序。
+token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表估算)是两个
+相互独立的事实,单向字段契约:本字段只存 observed 值;`estimatedCostUSD` 恒等于
+`estimateCost(model, usage, pricing)` 的估算,即使 observed 存在也照常独立计算——
+两者互不覆盖、互不兜底；observed 值从不替代或触发 estimate。
 
 {/* GENERATED:END usage-fields */}
+
+> 成本边界：`Usage.costUSD` 只表示 provider / adapter 返回的 USD observed 成本，绝不由 token、模型目录或本地价目表推导。Runner 从 Config/runtime price table 独立计算 `estimatedCostUSD`，即使 observed 成本存在也照常计算，且只有 `maxCost` 消费它。Report 成本投影只接受显式 `PricingProfile` 与 sealed Usage，不读取 Runner estimate。
 
 ## StreamEvent 变体一览
 

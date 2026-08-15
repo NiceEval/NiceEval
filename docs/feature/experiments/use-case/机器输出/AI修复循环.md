@@ -25,7 +25,7 @@ coding agent 不需要解读 TTY 重绘。
 3. 只用规范 locator 展开必要证据：
 
    ```sh
-   niceeval show --run <runId> --page attempt-01J8ZK3M6P4T7V9X2C5N8QW0RY
+   niceeval show @01J8ZK3M6P4T7V9X2C5N8QW0RY
    ```
 
 4. 修改后重新运行受影响选择。

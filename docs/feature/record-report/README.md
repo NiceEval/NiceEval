@@ -5,9 +5,9 @@ NiceEval 把不可恢复的运行事实、统计解释和结果呈现分成三�
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ ③ Report（报告层）                                          │
-│ Page / Report / Table / Bars / TraceViewer                  │
-│ terminal / Web / static renderer                            │
-│ （页面 / 报告 / 组件 / 终端 / 网页 / 静态渲染器）           │
+│ Page / Report / Table / Bars / SourceView                   │
+│ show 单目标 / view 与 static 全站                           │
+│ （页面 / 报告 / 组件 / 终端 / 网页 / 静态站）               │
 └──────────────────────────────▲───────────────────────────────┘
                                │ closed rows / MetricValue / DomainView
                                │ （闭合行 / 指标值 / 领域视图）
@@ -61,6 +61,8 @@ Record 固定这些实体的 identity（身份）、owner（归属者）、cardi
 1. Analysis：基于 NiceEval 发布的 Analysis input（分析输入）定义 Population、Dimension、Measure、Relation 或 DomainView。
 2. Report：定义怎样把闭合分析结果组成组件、页面和呈现面。
 
+Report 作者使用标准 React JSX。Host 可以在内部保留 `ResolvedPage`，但作者面不发布通用 semantic model，JSX 只交给 React 处理。
+
 外部 Adapter（适配器）可以调用 NiceEval 已发布的 OTel、事件、Artifact 或 diff collector（差异采集器），但不能注册新的 Record family（事实族）、迁移函数或物理字段。若一种新事实值得持久化，先进入 NiceEval 的领域设计与版本治理。
 
 ## 核心术语与最小例子
@@ -76,7 +78,8 @@ Record 固定这些实体的 identity（身份）、owner（归属者）、cardi
 | `Measure`（度量） | 一次声明归并、分母、缺失和证据规则的统计口径 | 通过率以 10 个预期 slot 为分母，而不是只数 8 个有结果的 slot |
 | `SemanticFrame`（语义数据帧） | 高级 `query()` 的闭合表格结果；中立组件只接收它转换后的 rows | 每行是一组维度坐标，每个度量单元仍是完整 `MetricValue` |
 | `DomainView`（领域视图） | 不能压成规则表格的闭合领域结构 | 某个 Attempt 的 span 树、事件时序或 Evidence 详情 |
-| `ClosedReportTree`（闭合报告树） | ③ Report 完成查询和页面回调后的自包含页面树 | Overview、Comparison 与 Attempt 详情页；终端、Web 和静态站都消费同一棵树 |
+| `ResolvedPage`（私有已求值页） | ③ Host 在固定 Sample 存活时短存的单目标 Page 值 | `show` 选中 Overview 或一个 Attempt 详情页后交付文字或机器文档；它不是作者 API 或站点版本 |
+| `ClosedSiteRevision`（闭合站点版本） | ③ view 与 static 在全站枚举、校验后共用的最终页面、asset 和下载 bytes | Overview、Comparison 与全部枚举的 Attempt 详情页；view HTTP 与静态目录读取相同 route body |
 
 `SemanticFrame` 不是 Record 物理表，也不是只装数字的普通 DataFrame（数据帧）。例如按模型比较通过率时，一行可以是：
 
@@ -149,7 +152,7 @@ Assertion-first（断言优先）                              │
 definePopulation / defineMeasure / query                 │
         │                                               │
 "niceeval/report"                              "niceeval/report/host"
-defineReport / defineComponent / aggregate       reportHost.execute / show / serve / export
+defineReport / defineComponent / aggregate       reportHost.show / serve / export
 Table rows / Bars points / MetricValue
 
 宿主基础能力
@@ -165,7 +168,7 @@ CLI 不经过一个包办所有命令的统一中转层。每条命令直接调�
 | Coordination 操作 | `niceeval/coordination/host` | `coordinationHost.claimExecution()`、`enterRecordRead()`、`enterRecordAppend()`、`enterRecordMaintenance()` |
 | ① Record | `niceeval/record/host` | `recordHost.openRead()`、`createRun()`、`createReferenceRun()`、`maintenance()` |
 | ② Analysis | `niceeval/analysis/host` | `analysisHost.openSample({ reader, selection })`；`query()` 仍由 `niceeval/analysis` 拥有 |
-| ③ Report | `niceeval/report/host` | `reportHost.execute()`、`show()`、`serve()`、`export()` |
+| ③ Report | `niceeval/report/host` | `reportHost.show()`、`serve()`、`export()` |
 
 三层的公开职责不同：
 
@@ -173,7 +176,7 @@ CLI 不经过一个包办所有命令的统一中转层。每条命令直接调�
 |---|---|---|
 | ① Record | 无；schema 和写入操作固定 | 惰性读取、创建独立 Run / Attempt、封口和显式迁移 |
 | ② Analysis | Population、Dimension、Measure、Relation；从已发布 `AnalysisInput` 选择输入 | `aggregate()` 与 `query()` 计算闭合 rows、`SemanticFrame` 或 `DomainView`，并共享同一套统计语义 |
-| ③ Report | 两种 `defineComponent()` 与 `defineReport({ pages })` | 中立组件消费 rows / points / `MetricValue`；Host 闭合并呈现报告树 |
+| ③ Report | 两种 `defineComponent()` 与 `defineReport({ pages })` | 中立组件消费 rows / points / `MetricValue`；show 执行目标页，view/static 构建完整站点版本 |
 
 ## 每条命令从哪里读、向哪里写
 
@@ -230,11 +233,11 @@ write ──▶ ① Record Host SDK：record.createReferenceRun(core)
 ```text
 read  ──▶ ① Record Host SDK：record.openRead() / reader.selectRuns()
           ② Analysis Host SDK：analysis.openSample({ reader, selection })
-             Analysis SDK：aggregate(sample, ...) / query(sample, ...)
-          ③ Report Host SDK：reportHost.execute() / reportHost.show()
+             Report facade：aggregate(sample, ...) / 具名 DomainView 投影
+          ③ Report Host SDK：reportHost.show()
 write ──▶ 无
 
-结果：ReportShowOutput（报告显示输出）。
+结果：ReportShowOutput（报告显示输出）。它只包含选中 route 的 text 或机器文档，不枚举参数 Page，也不形成站点版本。
 ```
 
 ### `niceeval view`
@@ -242,11 +245,11 @@ write ──▶ 无
 ```text
 read  ──▶ ① Record Host SDK：record.openRead() / reader.selectRuns()
           ② Analysis Host SDK：analysis.openSample({ reader, selection })
-             Analysis SDK：aggregate(sample, ...) / query(sample, ...)
-          ③ Report Host SDK：reportHost.execute() / reportHost.serve()
+             Report facade：aggregate(sample, ...) / 具名 DomainView 投影
+          ③ Report Host SDK：reportHost.serve()
 write ──▶ 无
 
-每次 rebuild（重建）闭合一棵报告树后关闭惰性 reader；浏览器导航只读闭合树。
+每次 rebuild（重建）先枚举全部 Page 并形成完整 `ClosedSiteRevision`，随后关闭惰性 reader；浏览器导航只读 revision bytes。
 ```
 
 ### `niceeval view --out <directory>`
@@ -254,11 +257,11 @@ write ──▶ 无
 ```text
 read  ──▶ ① Record Host SDK：record.openRead() / reader.selectRuns()
           ② Analysis Host SDK：analysis.openSample({ reader, selection })
-             Analysis SDK：aggregate(sample, ...) / query(sample, ...)
-          ③ Report Host SDK：reportHost.execute() / reportHost.export()
+             Report facade：aggregate(sample, ...) / 具名 DomainView 投影
+          ③ Report Host SDK：reportHost.export()
 write ──▶ ③ Report Host SDK：只写目标静态目录，不写 Record
 
-Record reader 在报告树闭合后关闭，随后才写目标目录。
+Record reader 在完整 `ClosedSiteRevision` 形成后关闭，随后才写目标目录；目录页面与 view HTTP body 使用相同 bytes。
 ```
 
 ### `niceeval migrate`
@@ -288,22 +291,19 @@ AttemptWriteSession → Run seal → runs/<RunId>/complete
                          reader.selectRuns(request)
                                       ▼
                           Sample
-                                      │ aggregate() / query() 按需读取
+                                      │ aggregate() / 具名 DomainView 投影按需读取
                                       │
-                       ┌──────────────┴──────────────┐
-                       ▼                             ▼
-             SemanticFrame（语义数据帧）   DomainView（领域视图）
-                       │ frame.rows                  │
-                       └──────────────┬──────────────┘
-                                      ▼
-               rows / points / MetricValue / domain value
+                       ClosedRows / MetricValue / DomainView
                                       │
                                       ▼
-                     Pages / Components / ClosedReportTree
+                              Pages / Components
                                       │
-                         ┌────────────┼────────────┐
-                         ▼            ▼            ▼
-                      terminal        Web        static site
+                 ┌────────────────────┴────────────────────┐
+                 ▼                                         ▼
+   show：selected Page → private ResolvedPage      view/static：all Page instances
+                 │                                         │
+                 ▼                                         ▼
+          terminal / target JSON                   ClosedSiteRevision → Web / static site
 ```
 
 Record 只保存无法从已有事实重新计算的内容。通过率、均值、排名、denominator（分母）、missing（缺失）汇总、图表点位与页面树都由上层按定义重新形成。
@@ -365,7 +365,7 @@ DuckDB 只能位于 `QueryPlan` 的实现阶段。它不能定义 population、d
 4. `RecordReadSession` 惰性读取；`RecordSelection` 只固定身份、分母与问题，不保存完整事实副本。
 5. Analysis 独占 population、denominator、missing、reduction 与 relation 语义。
 6. Report 中立组件只消费闭合 rows、points 与 `MetricValue`；领域组件只消费闭合领域值。
-7. terminal、Web 与 static renderer 都属于 Report，并消费同一棵 `ClosedReportTree`。
+7. `show` 只执行选中 Page；view 与 static 从同一个完整 `ClosedSiteRevision` 读取相同的 route、asset 与下载 bytes。
 8. scalar（标量）丢失 state、samples、total、basis、issues 或 refs 后，不能重新包装成 `MetricValue`。
 9. 新查询、新组件和新输出媒介不会要求 Record migration。
 

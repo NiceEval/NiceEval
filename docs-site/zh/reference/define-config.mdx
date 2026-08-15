@@ -29,7 +29,7 @@ export default defineConfig({
 #### `report`
 
 ```ts
-report?: Report;
+report?: ReportDefinition;
 ```
 
 view/show 的项目默认报告。
@@ -122,8 +122,12 @@ pricing?: globalThis.Record<string, PriceOverride>;
 
 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
 · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
-精确 key 优先于通配。只在没有网关实测成本(`usage.costUSD`)时才会用到——实测优先于估算恒成立。
+精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
+`usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。它是 runtime/config 价目表,
+不是 Report 的成本投影:Report 不消费该字段(Report 侧使用自己的 PricingProfile)。
 
 {/* GENERATED:END config-fields */}
+
+> 成本边界：这里的 `pricing` 只提供 Runner 的 Config/runtime price table 输入，Runner 会独立产生 `estimatedCostUSD`，不论是否已有 `Usage.costUSD`。`maxCost` 只使用该 estimate。Report 不读取此配置；它必须在 Report module 以 `definePricingProfile()` 显式声明自己的 USD Profile，并只对 sealed Usage 做 Analysis 投影。
 
 [NiceEval](https://niceeval.com/) 把环境准备放在普通代码里：评估用例自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 setup。`Config` 刻意没有 `sandbox` 字段，也不自动探测 provider。请在 Eval 或 Experiment 上声明 template-bearing `SandboxLayer`，让 link planning 在创建任何资源前确定它的 owner 与配对结果。

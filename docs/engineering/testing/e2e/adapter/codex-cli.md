@@ -25,6 +25,6 @@ Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]
 - `baseline` Experiment 选中本仓库的 `coding-task` / `configfile` / `session` / `usage`；原生验收脚本列全 Codex CLI 协议 Eval ID。
 - `skill` Experiment 把三个 Skill 一起装进同一个 agent。status report 与 release note 两条 Eval 各自要求只读取目标文件；decoy 只作为反选哨兵，任一正调读到它都会判红。
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`；专用 Eval 核对安装位置、真实读取行为与命令内容。
-- `show --page attempts` 逐条核验两类 ID，防止少发现/少运行后假绿。
-- **CLI 读回**：代表性 `show --execution` 只验收 coding 工具与入参投影。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取以及零 `skill.loaded` 反例全部留在 Eval 事件断言中。
-- **Timing**：独立 `show --timing` owner 读回 Codex CLI 实际跨过的 runner 阶段。`tracing.configure` 仍属 Adapter 运行契约，但本 owner 不从 execution 文本或未持久的 raw OTLP 反推它。
+- `show --page /attempts` 逐条核验两类 ID，防止少发现/少运行后假绿。
+- **CLI 读回**：代表 Evidence Page 只验收 coding 工具与入参投影，命令是 `show @locator --report <fixture-module> --page <execution-route>`。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取以及零 `skill.loaded` 反例全部留在 Eval 事件断言中。
+- **Timing Page**：独立 target Page owner 读回 Codex CLI 实际跨过的 runner 阶段。`tracing.configure` 仍属 Adapter 运行契约，但本 owner 不从 Evidence Page 文字或未持久的 raw OTLP 反推它。

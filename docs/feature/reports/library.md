@@ -1,99 +1,170 @@
 # Report Library（报告库）
 
-本页是 `niceeval/report` 作者 API 的唯一契约。Report 作者只从这个导入面取得 ReportDefinition、Page、组件、
-计算、投影和显示原语。Record reader、迁移、输出目录、watcher、模块加载和 renderer 不进入作者面。
+本页定义 `niceeval/report` 的作者 API 和 package export manifest。普通作者只导入这里列出的作者入口；Record reader、模块装载、
+watch、文件目录与 `ClosedSiteRevision` 不进入作者 callback。
 
-Host composition SDK 服务 CLI、替代 CLI 或深度应用集成。它以固定 Sample 和 ReportDefinition 调用
-`buildSiteRevision()`，得到内部 ClosedSiteRevision。普通作者不导入 Host entry，也不把 revision 当作返回值。
+## 公共出口与 API 裁决
 
-## 作者导入与调用
+Report 只发布下表中的 package path 和符号。每一项都列出最终源码 owner；未列出的 path 或符号不构成公共 API。作者入口不发布
+NiceEval JSX runtime、generic semantic author model、Record capability 或 Host 内部页值。
 
-```tsx
-import {
-  aggregate,
-  Bars,
-  defineComponent,
-  defineReport,
-  Download,
-  Grid,
-  model,
-  passRate,
-  Stat,
-  Table,
-  type MetricValue,
-  type PageEvidence,
-  type Sample,
-} from "niceeval/report";
-```
+| package path 与最终源码 owner | runtime exports | type-only exports |
+|---|---|---|
+| `niceeval/report` · `definition/report.ts` 与 `analysis/cost.ts` 的 re-export | `defineReport`、`definePricingProfile` | `ReportDefinition`、`ReportShell`、`ReportMeta`、`ReportMetaPage`、`PricingProfile`、`PricingProfileInput`、`PricingProfileContentIdentity`、`PricingCoverageId`、`PricingCoverage`、`PricedCoverage`、`UnpricedCoverage`、`PricingCoverageInput`、`PricedCoverageInput`、`UnpricedCoverageInput`、`PricingSelector`、`PricingSelectorInput`、`PricingEffectiveCondition`、`PricingEffectiveConditionInput`、`PricingCharge`、`PricingChargeInput`、`PricingDisplay`、`PricingDisplayInput`、`PricingProvenance`、`PricingProvenanceInput`、`Page`、`PlainPage`、`ParameterizedPage`、`PageParams`、`PageLoad`、`PageLoadContext`、`PageContext`、`PageEvidence`、`HeadTag`、`Sample` |
+| `niceeval/report` · `definition/tree.ts` | `defineComponent` | `ComponentContext`、`ComposeContext`、`ResolveContext`、`ComponentFaces`、`ReportComponent`、`TextContext`、`WebContext` |
+| `niceeval/report` · `model/{aggregate,metrics}.ts` 与 `analysis/**` | `aggregate`、`agent`、`attempt`、`evalId`、`experiment`、`model`、`reasoningEffort`、`flag`、`label`、`passRate`、`durationMs`、`tokens`、`costUSD`、`totalCostUSD`、`evidenceRow` | `AggregationSubject`、`GroupFunction`、`EvidenceRow`、`ClosedRows`、`MetricValue`、`MetricState`、`MeasureFormat`、`AnalysisIssue`、`EvidenceRef`、`CostMeasure`、`CostMetricValue`、`CostProjectionValue`、`CostProjectionKnown`、`CostProjectionUnavailable`、`CostProjectionState`、`CostBasis`、`CostProjectionAggregate`、`CostProjectionProfile`、`CostLedgerEntry`、`CostCoverageReason`、`CostCoverageReasonCode`、`ProjectedMoney`、`ObservedCostComponent`、`EstimatedTokenCostComponent`、`EstimatedRequestCostComponent`、`ObservedOtherCurrency` |
+| `niceeval/report` · `model/conversions.ts` 与 `analysis/domain-view.ts` | `toAttemptEvidence`、`toAttemptObservability`、`toFileChanges`、`toSources`、`toSandboxHistory`、`toEvidenceRows`、`toIssueRows`、`toIssueText`、`toMetricDetailRow` | `AttemptEvidenceDomainView`、`AttemptObservabilityDomainView`、`FileChangesDomainView`、`SourcesDomainView`、`SandboxHistoryDomainView`、`MetricDetailRow` |
+| `niceeval/report` · `theme.ts`、`presentation.ts`、`model/{format,locale,text-layout}.ts` | `defineTheme`、`basalt`、`chalk`、`presentDimension`、`shortestUniqueLabels`、`formatAxisTick`、`formatInstant`、`formatMetricValue`、`formatTimeDistance`、`missingText`、`stringWidth`、`padEnd`、`padStart`、`wrapText`、`indent`、`bar`、`columns`、`DEFAULT_REPORT_LOCALE`、`localizedTextEquals`、`resolveLocalizedText`、`resolveMetricLabel` | `ThemeDefinition`、`ReportTheme`、`ThemeColor`、`ThemeHex`、`ThemeSeries`、`MetricFormat`、`LocalizedText`、`ReportLocale`、`ColumnAlign`、`DimensionDeclaration`、`DimensionEncoding`、`PresentedDimension` |
+| `niceeval/report` · `definition/primitives.tsx` 与 `definition/primitives/**` | `Area`、`Bars`、`Callouts`、`Chart`、`Col`、`CommandEvidence`、`Conversation`、`CopyBlock`、`DiffView`、`Grid`、`Line`、`Link`、`Markdown`、`Row`、`Scatter`、`Section`、`Series`、`SourceView`、`Stat`、`Style`、`Tab`、`Table`、`Tabs`、`Text`、`Waterfall`、`applyBarsSortLimit` | `AreaProps`、`BarsProps`、`BarsSort`、`CalloutGroup`、`CalloutItem`、`CalloutLevel`、`CalloutsProps`、`ChartProps`、`ColProps`、`CommandEvidenceContent`、`CommandEvidenceItem`、`CommandEvidenceProps`、`ConversationContent`、`ConversationEntry`、`ConversationProps`、`CopyBlockContent`、`CopyBlockProps`、`DiffChange`、`DiffContent`、`DiffFile`、`DiffViewProps`、`GridProps`、`LayoutProps`、`LineProps`、`MarkdownProps`、`RowProps`、`ScatterProps`、`SectionProps`、`SeriesProps`、`SourceContent`、`SourceViewProps`、`StatProps`、`StyleProps`、`TabProps`、`TableProps`、`TabsProps`、`TextProps`、`WaterfallContent`、`WaterfallNode`、`WaterfallProps` |
+| `niceeval/report` · `definition/cell.tsx` | 无 | `Cell`、`VerdictCounts` |
+| `niceeval/report` · `components/{site-components,summaries,entity-lists,attempt-detail,experiment-detail}/**` 与 `library/details.ts` | `Hero`、`HeroCard`、`PoweredBy`、`RunNotices`、`SampleFixPrompt`、`SampleNotices`、`ExperimentScatter`、`SampleOverview`、`SampleSummary`、`StabilityOverview`、`AttemptList`、`ExperimentTable`、`FailureList`、`AttemptAssessment`、`AttemptDetails`、`AttemptSummary`、`ExperimentDetails` | `HeroProps`、`HeroCardProps`、`HeroLink`、`HeroLogo`、`RunNoticesProps`、`SampleFixPromptProps`、`SampleNoticesProps`、`ExperimentScatterProps`、`SampleOverviewProps`、`SampleSummaryProps`、`StabilityOverviewProps`、`AttemptListProps`、`ExperimentTableProps`、`FailureListProps`、`AttemptDetailsProps`、`ExperimentDetailsProps`、`AttemptDetailTarget`、`ExperimentDetailTarget`、`LibraryDetailTarget` |
+| `niceeval/report/built-in` · `built-in/standard.tsx` 与 `library/details.ts` | `standard`、`standardOverviewPage`、`standardAttemptPage`、`standardAttemptsPage`、`standardExperimentPage`、`standardTracesPage`、`attemptDetailTarget`、`attemptDetailRoute`、`experimentDetailTarget`、`experimentDetailRoute`、`libraryDetailRoute` | `AttemptDetailTarget`、`ExperimentDetailTarget`、`LibraryDetailTarget` |
+| `niceeval/report/react` · `react/index.ts`（`Cell`、`VerdictCounts` re-export 自 `definition/cell.tsx`） | `Callouts`、`Chart`、`Col`、`Conversation`、`CopyBlock`、`DiffView`、`Grid`、`Row`、`Section`、`Series`、`SourceView`、`Stat`、`Style`、`Tab`、`Table`、`Tabs`、`Text`、`Waterfall`、`HeroCard`、`PoweredBy`、`formatCellText`、`formatAxisTick`、`formatInstant`、`formatMetricValue`、`formatTimeDistance`、`DEFAULT_REPORT_LOCALE`、`localizedTextEquals`、`resolveLocalizedText`、`resolveMetricLabel` | `Cell`、`VerdictCounts`、`LocalizedText`、`ReportLocale`、`MetricValue` |
+| `niceeval/report/extension` · `extension/{define,meta,types,assets}.ts` | `defineRenderer`、`rendererMetaOf`、`isRendererComponent` | `RendererFaces`、`RendererProps`、`RendererOptions`、`RendererAssetDeclaration`、`RendererMeta`、`RendererTextContext`、`RendererWebContext` |
+| `niceeval/report/host` · `host/**` 与 `execution/**` | `reportHost` | `ClosedSiteRevision` |
+| `niceeval/report/react/styles.css` · `assets/styles.css` | Report 产品 CSS 文件 | 无 |
+| `niceeval/report/react/enhance.js` · `assets/enhance.js` | Report 渐进增强脚本 | 无 |
 
-作者调用 `defineReport()` 定义站点，调用 `defineComponent()` 定义组合组件或呈现原语。Page 和组合组件在构建期间得到
-Host 签发的 Sample。它们可调用 `aggregate()` 和已发布的 `to*` 投影，然后只把关闭值交给组件。
+`niceeval/jsx-runtime`、`niceeval/jsx-dev-runtime`、`niceeval/report/jsx-runtime` 与
+`niceeval/report/jsx-dev-runtime` 没有 package export。`ReportElement`、`ReportNode`、`ClosedReportNode` 与通用 semantic tree
+也没有作者导出。
 
-`defineReport(render)` 是单页简写。带 `pages` 的写法定义多个普通或参数化 Page。两种写法都在完整站点构建时获得同一
-Sample，并归入同一个 ClosedSiteRevision。
+`Cell` 与 `VerdictCounts` 的唯一声明 owner 是 `definition/cell.tsx`。root `niceeval/report` 以 type-only export 提供它们；
+`niceeval/report/react` 只 re-export 同一对类型，既不声明第二份类型，也不做转换。
+
+### 作者调用形状
+
+| 符号 | 最终调用形状 | 最终源码 owner |
+|---|---|---|
+| `defineReport` | 单页 callback，或 `{ title?, theme?, dimensionPins?, pricing?, head?, pages }`。 | `definition/report.ts` |
+| `definePricingProfile` | 声明 USD rate card；只能由 `ReportDefinition.pricing` 持有。 | `analysis/cost.ts`（经 `niceeval/report` re-export） |
+| `Page`、`PlainPage`、`ParameterizedPage` | 普通页的 `load?` / `render`，参数页的 `params` / `load` / `render` / `navigation: false`。 | `definition/report.ts` |
+| `defineComponent(compose)` | `(props, ctx) => ReactNode \| Promise<ReactNode>`；Sample 只从 `ctx.scope` 读取。 | `definition/tree.ts` |
+| `defineComponent(faces)` | `{ resolve?, text, web }`；`text` 与 `web` 同步读取一次关闭输入。 | `definition/tree.ts` |
+| `ctx.report` | `{ title, pricing, pages }` 的只读 `ReportMeta`。 | `definition/report.ts` 与 `definition/tree.ts` |
+| 标准 JSX | `jsx: "react-jsx"` 与 `react/jsx-runtime`。 | TypeScript / React；Report 不另发 JSX runtime。 |
+| `HeadTag` | 结构化 `meta`、`link`、`style`、`script`。 | `definition/report.ts` |
+| 原语与官方组件 | `Area` 至 `Waterfall`，以及 `Hero`、summary、entity list、Attempt / Experiment detail 组件。 | `definition/primitives/**` 与 `components/**` |
+
+`AggregationSubject` 是只读的冻结值，不提供可读 Run。它的完整公开形状如下：
 
 ```ts
-type AuthorRenderable = ReportNode | ReportElement;
+interface AggregationSubject {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly run: {
+    readonly experiment?: {
+      readonly agent: string;
+      readonly model?: string;
+      readonly reasoningEffort?: string;
+      readonly flags: Readonly<Record<string, JsonValue>>;
+      readonly labels: Readonly<Record<string, string>>;
+    };
+  };
+}
+```
+
+`GroupFunction` 只能从 `subject.run.experiment?.agent`、`model`、`reasoningEffort`、`flags` 与 `labels` 读取分组键，
+不能打开 Record、取得 AttemptHandle 或查看其它 Run 字段。
+
+`condition` 不是 `niceeval/report` 的 export。需要该维度的 Report 在自身模块中声明
+`const condition: GroupFunction = …`；MemoryBench 的 leaderboard 也以这个形态声明它。
+
+未列入上方 manifest 的符号不构成作者 API。`ReportElement`、`ReportNode`、`ClosedReportNode`、NiceEval JSX runtime、可读
+Record / Run / Sample handle、任意 reducer 以及 handle converter 都不发布。
+作者只使用标准 React JSX、关闭 DomainView 和 Analysis-issued 值。
+
+公共出口的每次变更都以最小纵向样例固定其调用点。该样例是一个普通 `.tsx` Report module，只设置
+`"jsx": "react-jsx"`。
+
+它同时使用 `defineReport()`、两种 `defineComponent()`、一个参数 Page、`aggregate()`、`MetricValue`、`ctx.scope` 与
+`ctx.report`。安装后的候选包必须以它运行 `show`、`show --json`、`view` 与 `view --out`，且不依赖特殊 tsconfig、pragma 或源码路径。
+
+## 成本投影入口
+
+`definePricingProfile()` 的唯一作者位置是 `ReportDefinition.pricing`；组件从只读 `ctx.report.pricing` 取得同一已验证值或 `null`。
+本页的 export manifest 列出作者可导入的价格与成本类型。精确的 `PricingProfileInput`、规范化输出、跨包识别、Measure 参数和成本
+投影语义由 [Report 成本投影 Library](cost-projections/library.md) 单点定义。
+
+## 标准 React JSX 与 `defineReport()`
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  }
+}
+```
+
+`defineReport()` 是 Report module 的默认导出。它接收一个单页 callback，或接收带非空 `pages` 的声明。定义阶段只校验静态形状，
+不打开 Sample 或执行 Page。`ReportDefinition.pricing` 是价格配置的唯一所属位置：对象形式从 `ReportShell.pricing` 取得已验证
+Profile，未声明时归一为 `null`；单页 callback 的 `pricing` 也是 `null`。
+
+```ts
+interface ReportShell {
+  readonly pricing?: PricingProfile;
+  readonly pages: readonly [Page, ...Page[]];
+  // title、theme、dimensionPins、head 等其它 Report 声明字段
+}
 
 interface ReportDefinition {
-  readonly title?: LocalizedText;
-  readonly theme?: ThemeDefinition;
-  readonly dimensionPins?: DimensionPins;
-  readonly head?: readonly HeadTag[];
-  readonly pages: readonly [PageDefinition, ...PageDefinition[]];
+  readonly pricing: PricingProfile | null;
+  // 已验证、归一化的 Report 声明
 }
 
 declare function defineReport(
-  definition: ReportDefinition,
-): Report;
+  render: (sample: Sample) => React.ReactNode | Promise<React.ReactNode>,
+): ReportDefinition;
 
-declare function defineReport(
-  render: (sample: Sample) => AuthorRenderable | Promise<AuthorRenderable>,
-): Report;
-
-type PageDefinition =
-  | PlainPageDefinition
-  | ParameterizedPageDefinition<JsonValue, unknown>;
+declare function defineReport(definition: ReportShell & {
+  readonly pages: readonly [Page, ...Page[]];
+}): ReportDefinition;
 ```
 
-`Report` 是 `defineReport()` 返回的验证后作者定义。`ReportDefinition` 与固定 Sample 是 Host 构建输入；它们不是
-浏览器可读取的对象。
+`head` 接收结构化标签。`HeadTag` 的 tag 是 `meta`、`link`、`style`、`script`
+闭集，`attrs` 是 `Record<string, string | true>`。Host 在形成 revision 前继续按 tag 校验允许的属性、URL 与
+内联内容；宽泛的作者推断不等于 raw HTML 或任意 DOM 注入。
 
-## Library-owned detail Pages
+```tsx
+import { defineReport, type HeadTag } from "niceeval/report";
 
-每次 `defineReport({ pages: [业务页] })` 都自动组合两张 Report library（报告库）拥有的参数化详情 Page：
-`attempt`（`/attempt/<key>`）和 `experiment`（`/experiment/<key>`）。两者固定为 `navigation: false`；业务报告只声明
-自己的 overview（概览）或业务 Page，不复制官方详情 Page、不会让 Host 私藏详情内容。
+const head: readonly HeadTag[] = [
+  { tag: "meta", attrs: { name: "robots", content: "noindex" } },
+  {
+    tag: "script",
+    attrs: {
+      src: "https://cdn.example.test/chart-enhance.js",
+      defer: true,
+      integrity: "sha384-example",
+      crossorigin: "anonymous",
+      referrerpolicy: "no-referrer",
+    },
+  },
+];
 
-- Attempt target（Attempt 目标）从固定 Sample 的去重 included Attempt locator 枚举；Experiment target（Experiment 目标）
-  从当前非 excluded Sample 成员的 Experiment identity 枚举。零 Attempt 的 Sample 合法，只是 Attempt Page 有零个实例。
-- key 是 library 定义的稳定、安全单段 route key。Attempt codec 只接受 canonical locator；Experiment key 是 opaque 的有界
-  identity digest，不把 durable identity 当作路径，也不要求 Report 了解 durable schema。
-- `load` 只读取 Sample 的 Analysis projection 或 `PageLoadContext.evidence()` 交出的 `PageEvidence` 闭合值；`render` 只消费
-  这些关闭输入并组合官方 `AttemptDetails` / `ExperimentDetails`。详情 Page 不打开 Record、不读取路径，也不在客户端 lazy-load。
-- Attempt detail 还组合官方 `AttemptTrace({ locator, mode: "execution" })`。它从同一固定 Sample 的公开 closed Observability
-  DomainView 取得 Duration、Turns、Calls、trajectory、timing、usage、commands 与 diagnostics，不复制 trace 读取或展示实现。
-- 详情链接统一由 typed route constructor 完成：先把闭合 locator 或 Experiment identity 变成 `attemptDetailTarget()` /
-  `experimentDetailTarget()`，再调用 `libraryDetailRoute()`。classic table（经典表格）等官方组件不得自行编码 href。
+export default defineReport({
+  title: { en: "Quality", "zh-CN": "质量" },
+  head,
+  pages: [{ id: "overview", path: "/", title: "Overview", render: () => null }],
+});
+```
 
-`attempt` / `/attempt` 与 `experiment` / `/experiment` 是保留 id/path。业务作者自定义其中任一 id 或 path 时，
-`defineReport()` 明确失败，不会静默产生重复 Page。兼容导出的 `standardAttemptPage` 与 `standardExperimentPage` 是同一批
-library-owned Page 的薄引用；旧报告可各显式列一次，但新报告应省略它们。Attempts 或 Traces overview 不是这项自动组合的
-一部分，因而不会被加入业务报告导航。
+内联 script 的 `children` 是明确的字符串 bytes；标签顺序、属性和 bytes 都进入站点 identity。需要价格配置时，作者按
+[Report 成本投影 Library](cost-projections/library.md) 的完整 rate-card 示例声明它，再放入同一对象的 `pricing`。
 
-`standardAttemptPage` 不是旧 `render(attempt: AttemptHandle)` 的适配器。它的 `load` 与 `render` 已固定为当前 library-owned
-闭合 Page；`{ ...standardAttemptPage, render: async attempt => … }` 中的 `attempt` 不是可读取的旧 Handle。
+`style` 必须有 `children`；带 `src` 的 script 不能同时给 `children`。script 可以加强交互，不能承担正文、导航、Evidence 或核心数据读取。
 
-当前没有 `toAttemptSummary(attempt)` 或 `toAttemptAssertions(attempt)` 作者导出。若要定制 Attempt 页面，业务 Page 必须显式
-声明自己的参数、`load(sample, params, context)`，并从 `context.evidence(params.locator)` 或本页列出的 `to*` 投影取得关闭值。
+Codex sealed Usage 的 model request observation、零费率的显式声明和严格 coverage 的结果，都由
+[Report 成本投影 Library](cost-projections/library.md) 定义。
 
 ## Page
 
-普通 Page 由一个 `render` 回调组成。省略 `path` 时，`report` Page 的路径为 `/`，其它 Page 的路径为 `/<id>`。
-参数化 Page 必须给出 `params`、`load`、`render` 与 `navigation: false`。
+`pages` 是 Report 的唯一 Page 集合；Host 不回填、推断或自动生成详情页。普通 Page 的 `load` 省略时，`render` 直接收到 Host 签发的
+Sample。参数 Page 以 `params` 表示可寻址实例，并固定为 `navigation: false`。Attempt、Experiment 或任意其它详情都必须由作者作为
+`ParameterizedPage` 显式放入 `pages`，才能成为 route 或静态输出的一部分。
 
 ```ts
-interface PlainPageDefinition<Input = Sample> {
+interface PlainPage<Input = Sample> {
   readonly id: string;
   readonly path?: string;
   readonly title: LocalizedText;
@@ -101,166 +172,184 @@ interface PlainPageDefinition<Input = Sample> {
   readonly load?: (
     sample: Sample,
     params: void,
-    context: PageLoadContext,
+    ctx: PageLoadContext,
   ) => Input | Promise<Input>;
   readonly render: (
     input: Input,
-    context: PageContext,
-  ) => AuthorRenderable | Promise<AuthorRenderable>;
+    ctx: PageContext,
+  ) => React.ReactNode | Promise<React.ReactNode>;
 }
 
-interface ParameterizedPageDefinition<Params extends JsonValue, Input> {
+interface ParameterizedPage<Params extends JsonValue, Input> {
   readonly id: string;
   readonly path?: string;
   readonly title: LocalizedText;
   readonly navigation: false;
-  readonly params: {
-    encode(params: Params): string;
-    decode(key: string): Params;
-    enumerate(sample: Sample): Iterable<Params> | Promise<Iterable<Params>>;
-  };
+  readonly params: PageParams<Params>;
   readonly load: (
     sample: Sample,
     params: Params,
-    context: PageLoadContext,
+    ctx: PageLoadContext,
   ) => Input | Promise<Input>;
   readonly render: (
     input: Input,
-    context: PageContext,
-  ) => AuthorRenderable | Promise<AuthorRenderable>;
+    ctx: PageContext,
+  ) => React.ReactNode | Promise<React.ReactNode>;
+}
+
+type Page<Params extends JsonValue | void = void, Input = Sample> =
+  [Params] extends [void]
+    ? PlainPage<Input>
+    : ParameterizedPage<Extract<Params, JsonValue>, Input>;
+```
+
+`params.encode()` 产生一个 canonical key segment；`decode()` 只接受同一形式。全站路径调用 `enumerate(sample)` 恰好一次，
+并生成每个返回值。`show --page` 只用 `decode()` 取得已请求 key，不调用 `enumerate()`。
+
+```tsx
+import {
+  defineReport,
+  type Page,
+  type PageParams,
+  Table,
+} from "niceeval/report";
+
+type SummaryParams = { readonly state: "all" | "failed" };
+
+const summaryParams: PageParams<SummaryParams> = {
+  encode: ({ state }) => state,
+  decode: key => {
+    if (key !== "all" && key !== "failed") throw new TypeError("unknown summary state");
+    return { state: key };
+  },
+  enumerate: () => [{ state: "all" }, { state: "failed" }],
+};
+
+const summaryPage: Page<SummaryParams, SummaryParams> = {
+  id: "summary",
+  path: "/summary",
+  title: "Summary",
+  navigation: false,
+  params: summaryParams,
+  load: (_sample, params) => params,
+  render: params => <Table rows={[params]} />,
+};
+
+export default defineReport({ pages: [summaryPage] });
+```
+
+若参数是 Attempt locator、identity 或其它 Sample member，`PageLoadContext.evidence(locator)` 与每个公开 DomainView 入口都只交出
+当前 Sample 内的闭合值。它们不提供 Record reader、目录、任意路径或浏览器请求能力。
+
+## 两种 `defineComponent()`
+
+组合组件的 callback 可以异步取得 Sample 上的闭合值。Sample 只从 `ctx.scope` 读取。`ctx.report` 是一个只读 `ReportMeta`，包含
+归一后的 `title`、已验证 `PricingProfile` 或 `null` 的 `pricing`，以及导航 Page 摘要；它不提供 `head`、theme、Record reader 或
+当前 route 以外的读取能力。`ctx.report.pricing` 不是第二份价格输入，也不是 Runner 配置或运行期价格表。
+
+```ts
+interface ComponentContext {
+  readonly scope: Sample;
+  readonly report: ReportMeta;
+  readonly page: PageContext;
+}
+
+interface ReportMeta {
+  readonly title: LocalizedText;
+  readonly pricing: PricingProfile | null;
+  readonly pages: readonly {
+    readonly id: string;
+    readonly title: LocalizedText;
+    readonly navigation: boolean;
+  }[];
 }
 ```
 
-`enumerate(sample)` 是参数实例的唯一输入。每次站点构建对每个参数化 Page 调用一次，再构建全部返回实例。
-`show --page`、`view --page`、HTTP 导航和浏览器刷新都不能跳过这个步骤，或为一个新 key 调用 `load`。
+```tsx
+import {
+  aggregate,
+  Bars,
+  defineComponent,
+  Grid,
+  model,
+  passRate,
+  Section,
+  Table,
+} from "niceeval/report";
 
-`encode` 产生一个规范的 key segment，`decode` 只接受同一规范。Host 对所有枚举值要求
-`encode(decode(key)) === key`。重复 key、坏 key、抛出的回调和路径冲突都会使整个 revision 失败。
+const Overview = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model },
+    values: { passRate },
+  });
+
+  return (
+    <Section title={ctx.report.title}>
+      <Grid>
+        <Bars points={rows} x="model" y="passRate" />
+        <Table rows={rows} />
+      </Grid>
+    </Section>
+  );
+});
+```
+
+双面组件适合已有关闭数据的显示原语。可选 `resolve` 字段只在 Page 执行时调用一次；`text()` 和 `web()` 必须同步，且都只读取
+这个关闭值。它们不能读取 Sample、发网络请求或各自计算统计。
 
 ```tsx
-const EvidenceSummary = defineComponent(
-  ({ evidence }: { readonly evidence: PageEvidence }) =>
-    <Table
-      caption="Evidence"
-      rows={evidence.entries.map(entry => ({
-        attempt: entry.attempt.locator,
-        state: entry.state,
-      }))}
-    />,
-);
+import {
+  defineComponent,
+  formatMetricValue,
+  Stat,
+  type MetricValue,
+} from "niceeval/report";
 
-export default defineReport({
-  title: "Experiment report",
-  pages: [
-    {
-      id: "overview",
-      title: "Overview",
-      render: async sample => {
-        const rows = await aggregate(sample, {
-          by: { model },
-          values: { passRate },
-        });
-        return <Table rows={rows} />;
-      },
-    },
-    {
-      id: "attempt",
-      path: "/attempt",
-      title: "Attempt",
-      navigation: false,
-      params: attemptParams,
-      load: async (_sample, params, context) =>
-        await context.evidence(params.locator),
-      render: evidence => <EvidenceSummary evidence={evidence} />,
-    },
-  ],
+const MetricCard = defineComponent<{ readonly label: string; readonly value: MetricValue }, {
+  readonly label: string;
+  readonly value: MetricValue;
+}>({
+  resolve: (props, ctx) => {
+    const reportTitle = typeof ctx.report.title === "string"
+      ? ctx.report.title
+      : (ctx.report.title.en ?? "Report");
+    return { label: `${reportTitle}: ${props.label}`, value: props.value };
+  },
+  text: data => `${data.label}: ${formatMetricValue(data.value)}`,
+  web: data => <Stat label={data.label} value={formatMetricValue(data.value)} />,
 });
 ```
 
-`PageLoadContext.evidence(locator)` 只在构建期按 canonical locator 交出已关闭的 Evidence。它验证 locator 属于当前
-Sample，却不提供 Record reader、source root、任意路径或浏览器端请求能力。
+第一种形态适合组织 Page；第二种形态适合定义 text/web 一致的显示原语。两者返回的组件都能放进标准 React JSX。
 
-## Sample 与关闭的输入
+## `aggregate()` 与 `MetricValue`
 
-Sample 表示固定 selection 和只在当前构建中可用的受限读取能力。作者不能构造它、改变它的 Record root、把它保存到
-构建外，或用它改变总体和分母。
+`aggregate()` 是 Analysis executor 的 Report facade。它只接收 Host 签发的 Sample，返回 `ClosedRows`；它不是第二套 reducer，
+也不接受可读 Attempt、Record root 或手写分母。
 
-```ts
-const rows = await aggregate(sample, {
-  by: { model },
-  values: { passRate },
+```tsx
+import { aggregate, defineComponent, model, passRate, Table } from "niceeval/report";
+
+const QualityTable = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model },
+    values: { passRate },
+  });
+
+  return <Table rows={rows} />;
 });
 ```
 
-上例的 `rows` 是 ClosedRows。它有稳定 row identity 与全局 issues；每行的 `passRate` 是完整 MetricValue。
-普通外部数组可交给中立组件，但不会自动获得 Evidence navigation、分母或问题语义。
+`GroupFunction` 只观察冻结 Run context 中的 `experimentId`、`evalId`、`agent`、`model`、`reasoningEffort`、`flags` 与 `labels`。
+它不能取得 reader、AttemptHandle 或重新打开 Record。`rollup()`、`metricValue()`、`totalScore`、Attempt converter 和任意 reducer
+没有 Report export。
 
-`agent`、`model` 与 `reasoningEffort` 是 Analysis Dimension。它们只读取 Sample 已关闭的
-RunContext，而不读取当前配置。
-
-`attempt` 是一个 Analysis-backed Dimension。included logical Slot 返回已关闭的 Attempt locator，
-其余 Slot 返回 `null`；因此可与 `experiment`、`evalId` 一起按真实 Attempt 分组。
-
-需要保留 v0.12 自定义分组时，`aggregate()` 也接受 `GroupFunction`。callback 获得的
-`AggregationSubject` 只含 `experimentId`、`evalId` 和冻结的
-`run.experiment.{agent,model,reasoningEffort,flags,labels}`。
-
-Report 把该 callback 适配进同一条 Analysis grouping 路径。因此，零 Attempt 的 logical Slot
-仍留在对应组的分母中。callback 不能取得 reader 或通过 ID 重开 Record。
-
-```ts
-import type { GroupFunction } from "niceeval/report";
-
-const memory: GroupFunction = subject =>
-  String(subject.run.experiment?.flags.memory ?? "unknown");
-
-const rows = await aggregate(sample, {
-  by: { memory },
-  values: { passRate },
-});
-```
-
-`flag(name)` 与 `label(name)` 是可直接交给 `aggregate({ by })` 的 Analysis Dimension。它们分别读取同一份已关闭 RunContext 的
-`execution.flags[name]` 与 `labels[name]`：缺失为 `null`，绝不读取当前配置。`flag()` 只接受 string、boolean、有限 number
-或 `null` 的 scalar 值；数组和对象没有可验证的 Analysis Dimension 坐标，必须由作者用 `GroupFunction` 明确投影为 string，
-而不是由 Report 猜测其显示或排序语义。
-
-```ts
-const rows = await aggregate(sample, {
-  by: { memory: flag("memory"), cohort: label("cohort") },
-  values: { passRate, tokens },
-});
-```
-
-固定 Measure 是 `passRate`、`durationMs`、`tokens`、`costUSD` 与 `totalCostUSD`。其中 `tokens` 是每 logical Slot 的已采集
-input + output token 平均值；`totalCostUSD` 是固定分母上的成本求和。
-
-当前 Report 没有 `rollup()`。v0.12 的 callback 可读 AttemptHandle，且可给 `withinEval` / `acrossEvals` 传任意两级 Reducer。
-当前唯一 Analysis executor 尚未发布相同的 per-Eval 归并和闭合 Attempt input，因此不能用同名但不同签名的 shim 代替。详见
-[读数与显示语义](calculations.md#v012-作者-api-裁决)。
-
-领域内容由以下 `to*` 投影在 Page 构建时关闭；可选 locator 必须是当前 Sample 内的 canonical Attempt locator：
-
-- `toAttemptEvidence(sample, locator?)`：Assertions / Evidence 和权威折叠的 verdict。
-- `toAttemptObservability(sample, locator?)`：conversation、commands、usage、timing 与 diagnostics。
-- `toFileChanges(sample, locator?)`：Attempt-owned 文件差异。
-- `toSources(sample, locator?)`：origin Run 的 Source 视图。
-- `toSandboxHistory(sample, locator?)`：Observability 中 sandbox-only 的命令、计时与诊断。
-
-它们返回 Analysis 的关闭 DomainView；作者不能把未完成读取、Promise、Stream、callback、reader 或原始 Record payload 交给组件。
-`toMetricDetailRow()`、`toIssueRows()`、`toEvidenceRows()` 与 `toIssueText()` 只把已有关闭值变成显示行或文字，并不重新读取事实。
-
-## MetricValue
+`MetricValue` 由 Analysis 生成，Report 只 re-export 它的类型：
 
 ```ts
 interface MetricValue {
   readonly value: number | null;
-  readonly state:
-    | "available"
-    | "partial"
-    | "empty"
-    | "unsupported"
-    | "failed";
+  readonly state: "available" | "partial" | "empty" | "unsupported" | "failed";
   readonly samples: number;
   readonly total: number;
   readonly basis: "attempt" | "eval" | "run" | "pair" | "slot";
@@ -273,128 +362,52 @@ interface MetricValue {
 }
 ```
 
-`value` 是 number 或 `null`。`samples` 是实际贡献数，`total` 是该分组坐标的固定分母。合法零值保持
-`value: 0`；它不是 `empty`。`partial` 可以有 `value: null`，但只能表示分母成员缺失且没有贡献值。
+`value: 0` 是合法读数。`partial` 保留既定 `total`、`issues` 与 `refs`；显示排序、筛选和截断只改变可见项目，不能改写任一
+`MetricValue` 字段。完整状态语义由 [读数与显示语义](calculations.md) 拥有。
 
-| state | value | 必须保留的含义 |
-|---|---|---|
-| `available` | number | 所有预期成员按该度量规则贡献。 |
-| `partial` | number 或 null | 部分成员贡献，issues 说明缺口。 |
-| `empty` | null | 输入完整，领域结果合法为空。 |
-| `unsupported` | null | Host 缺少所需 Analysis 输入。 |
-| `failed` | null | 读取或归并失败，issues 保留身份与引用。 |
+## 成本 Measure 整合
 
-显示组件不得只取 `value`。它们保留 state、samples、total、issues 和 refs。排序、筛选与 limit 只改变可见项，
-不能重算 MetricValue 或缩小 total。
+成本组件只在 `ctx.report.pricing` 非 `null` 时请求成本 Measure。export manifest 中的 `CostMetricValue` 与
+`CostProjectionValue` 是作者可观察类型。`aggregate(costUSD(profile))` 的 cell 以 `cell.projection` 提供关闭投影；state、basis、
+ledger 与 reason data types 同样仅以 type-only export 提供。精确调用形状、无 Profile 呈现、Analysis 数学与 machine 读数由
+[Report 成本投影 Library](cost-projections/library.md) 和 [CLI](cost-projections/cli.md) 定义。
 
-## defineComponent()
+## 中立组件与官方组合组件
 
-`defineComponent()` 有两种作者形态。组合组件可异步取得关闭数据，再组合已有组件。它得到的 context 同时有
-`sample` 和同值兼容别名 `scope`。
+`Table` 接收 `rows`，`Bars`、`Line` 与 `Scatter` 接收 `points`，`Stat` 接收 format 后的显示值。它们不知道值来自 Analysis、
+业务数组或已关闭领域视图，也不会自行读取数据。
 
-```tsx
-const Leaderboard = defineComponent(async (_props, { sample }) => {
-  const rows = await aggregate(sample, {
-    by: { model },
-    values: { passRate },
-  });
+`Hero`、`SampleOverview`、`AttemptDetails`、`ExperimentDetails`、`Conversation`、`DiffView`、`SourceView` 与 `Waterfall` 是
+官方组合组件。它们只接收关闭数据，详情 route 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
+`libraryDetailRoute()` 建立。
 
-  return (
-    <Grid>
-      <Bars points={rows} x="model" y="passRate" />
-      <Table rows={rows} />
-    </Grid>
-  );
-});
-```
+下载文件属于 Host 的站点闭包：view 与静态写出只读取已关闭的 bytes。作者入口不发布一个 generic `Download` 组件或
+`DownloadFile` 类型；这避免把尚无最终 primitive owner 的 generic semantic API 写进公共契约。
 
-新显示原语定义 text 与 web 两面。可选的 `resolve()` 只在构建期求值一次；`text()` 与 `web()` 同步读取同一个关闭值。
-它们不能从浏览器请求数据或各自重新计算。
+## 跨重复包的描述符身份
 
-```ts
-interface ComponentFaces<Props extends object, Data = Props> {
-  readonly resolve?: (
-    props: Props,
-    context: AuthorResolveContext,
-  ) => Data | Promise<Data>;
-  readonly text: (data: Data, context: TextContext) => TextFaceNode;
-  readonly web: (data: Data, context: WebContext) => WebFaceNode;
-}
+`defineReport()`、`defineComponent()` 和 `defineRenderer()` 的运行时 descriptor 使用版本化 `Symbol.for` key。
+对应 key 是：
 
-declare function defineComponent<Props extends object, Data = Props>(
-  faces: ComponentFaces<Props, Data>,
-): ReportComponent<Props>;
-```
+- Report definition：`niceeval.report.definition/v2`
+- component faces：`niceeval.report.component/v1`
+- extension metadata：`niceeval.report.renderer/v1`
 
-Page 和组件可返回受支持的 JSX/React element。Host 在 Sample 仍可用时解释 element，再把它关闭为站点页面内容。
-DOM handle、任意 HTML、event handler 与浏览器副作用不进入 ClosedSiteRevision。
+应用依赖图中出现两份 NiceEval 时，Host 仍能识别同一版本的作者定义与组件 descriptor。PricingProfile 的
+`pricing-profile/v1` descriptor 以及它与 `definition/v2` 的重验关系由
+[Report 成本投影 Architecture](cost-projections/architecture.md) 定义；不得依赖 `instanceof`、对象地址或模块私有 symbol。
 
-## 中立组件与下载
+## Host 边界
 
-| 组件 | 唯一数据入口 | 不做什么 |
-|---|---|---|
-| `Table` | `rows` | 不读取 Analysis 或重新归并。 |
-| `Bars`、`Line`、`Scatter` | `points` | 不改变 MetricValue 或分母。可选 `color`、`series`、`point` 与 `layout` 只选择显示通道、点身份字段或柱向。 |
-| `Stat` | 完整 `value` | 不把 `value` 拆成未包装 number。 |
-| `Grid`、`Stack`、`Callout`、`Text` | children 或普通文本 | 不引入读取能力。 |
+普通作者不调用 `reportHost`。高级 Host 只能从 `niceeval/report/host` 调用它：`show()` 是单目标执行，`serve()` 与 `export()`
+只消费完整站点闭包。这个出口不泄漏 loader、watcher 或 reader，也不把 `ClosedSiteRevision` 交给作者 callback。
 
-图形必须在关闭页面内容中保留文字或表格等价信息。颜色、hover 与交互只能增强这些已有内容。
-
-Download 接收构建期已经得到的 bytes：
-
-```tsx
-<Download
-  file={{
-    path: "quality.csv",
-    mediaType: "text/csv; charset=utf-8",
-    bytes: qualityCsv,
-  }}
->
-  Download quality data
-</Download>
-```
-
-Host 把这些 bytes 放进 ClosedSiteRevision，并对 route、下载、静态文件与 manifest 使用同一个冲突集合。下载不会在
-HTTP 请求或静态导出时再次计算。
-
-## head 与 Style
-
-`ReportShell.head` 只声明结构化、非执行 metadata。`<Style>` 只声明 inline CSS。本地静态文件必须在构建期写入
-ClosedSiteRevision。
-
-inline 或 external executable script、功能性网络依赖、动态 CSS 读取与任意 HTML 都被拒绝。组件 props、下载、rows、
-领域视图和 JSON 不能注入 head、style 或可执行内容。
-
-## Host 边界与失败
-
-Host 的构建边界是：
-
-```text
-ReportDefinition + fixed Sample
-          │
-          ▼
-buildSiteRevision()
-          │
-          ▼
-ClosedSiteRevision
-```
-
-普通作者不调用这条 API。CLI 和高级 Host 在完成 selection 后调用它；show、JSON、view 和静态导出只消费结果的不同投影。
-
-构建前校验 id、路径与 Page 形状。构建中校验参数 key、关闭页面内容、链接、下载、HTML、静态文件、全站冲突和固定限额。
-Analysis issue 留在可见数据中。任何作者回调、枚举、页面关闭或全站校验错误都阻止 revision 形成。
-
-## 固定限额与缓存
-
-每次站点构建最多包含 20,000 个 Page、每页 20,000 个文档节点、每页 32 层深度、1,000 个下载和单个
-33,554,432-byte 下载文件。
-
-页面级缓存只能保存完全关闭的页面值。若 Host 使用它，key 必须包含 Sample、Report、renderer、Page 与 params identity。
-缓存不能改变 Evidence、分母、issues、最终 bytes 或 revision identity。
+构建错误、坏参数 key、route 冲突、asset 冲突或限额超出阻止相应交付。Analysis 数据问题继续作为 `MetricValue`、领域视图和
+问题表的一部分显示。
 
 ## 相关阅读
 
-- [Reports README](README.md)：SSG-first 心智与四个入口。
-- [数值与显示语义](calculations.md)：MetricValue、分母与显示边界。
-- [Architecture](architecture.md)：全站 builder、revision 与发布不变量。
-- [CLI](cli.md)：用户命令的构建与投影。
+- [Reports README](README.md)：两条执行路径与产品范围。
+- [读数与显示语义](calculations.md)：统计口径、MetricValue 与 DomainView。
+- [Architecture](architecture.md)：站点版本、CSS、reload、缓存与预算。
+- [CLI](cli.md)：route 选择、机器输出、view 与静态导出。

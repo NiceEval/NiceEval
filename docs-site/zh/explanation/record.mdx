@@ -29,7 +29,7 @@ ClosedRows / MetricValue / DomainView
         ↓
 Report
         ↓
-immutable ReportExecution → show / view / static export
+show：一个选中的 Page；view / static export：完整站点
 ```
 
 不带 locator 或 `--run` 的命令选择仍匹配当前项目的结果；使用 locator 或 `--run` 可以查看明确的历史结果。`Sample` 保留完整分母，并标出 `included`、`not-recorded`、`core-invalid` 与 `excluded`，但它不会把底层结果读取能力交给页面。
@@ -47,4 +47,4 @@ NiceEval 负责识别已支持的结果格式。需要迁移时运行 `niceeval 
 - [查看结果](/zh/tutorials/viewing-results)：选择 Sample，并查看 `show` 与 `view` 的结果。
 - [结果数据 API](/zh/reference/results-data)：在 Report 中使用 Measure 和闭合结果。
 - [报告 API](/zh/reference/report-components)：定义 Page、组件与 Report。
-- [发布静态报告](/zh/tutorials/publish-report)：分享一个已完成的 `ReportExecution`。
+- [发布静态报告](/zh/tutorials/publish-report)：分享一份已关闭的完整报告站。

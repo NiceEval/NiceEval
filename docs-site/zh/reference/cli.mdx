@@ -28,7 +28,7 @@ description: "NiceEval CLI 参考：exp、debug、show、view、init、list 和 
     在终端执行报告。不带 locator 或 `--run` 的命令读取当前项目结果；精确 Attempt 定位符或 Run ID 用于审计历史。
   </Card>
   <Card title="npx niceeval view" icon="eye">
-    打开固定 ReportExecution 的网页结果。选择与 `show` 相同；要看编辑后的 Record，结束后重新运行。
+    构建完整报告站并在浏览器中托管。它与 `show` 共享选择规则，但会枚举全部页面。
   </Card>
 </CardGroup>
 
@@ -166,7 +166,7 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--orphans` | boolean | `sandbox list` 专用:核对强杀(`SIGKILL` / 断电)路径留下的无主沙箱实例(docker + e2b;vercel 无按元数据检索实例的通道,不参与)。只读,不清理;销毁走 `niceeval sandbox prune`。 |
 | `--tag` | string | 只运行带有该 tag 的 eval(见 `defineEval` 的 `tags`)。 |
 | `--junit` | string | 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 |
-| `--json` | boolean | `exp` 运行在 stdout 输出单一有序的 NDJSON 事件流；`exp --dry` 与 `debug` 输出各自的单个 JSON 计划文档。`show` 输出同一 ReportExecution 的宿主数据与状态，不打开第二条取数路径。 |
+| `--json` | boolean | `exp` 运行在 stdout 输出单一有序的 NDJSON 事件流；`exp --dry` 与 `debug` 输出各自的单个 JSON 计划文档。`show` 输出 Host 拥有的内建或自定义单目标机器文档，不形成完整站点或打开第二条取数路径。 |
 | `--smoke` | boolean | `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 |
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
@@ -233,13 +233,13 @@ npx niceeval view @01H...
 npx niceeval view --host 192.168.0.199
 ```
 
-打开本地结果查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。NiceEval 随后形成 Sample、取得 Report 所需的闭合分析值，并执行一次 Report。
+打开本地结果查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。NiceEval 随后形成固定 Sample、枚举全部 Page 与参数实例，并构建完整站点。
 
 没有显式 `--report` 时，`--run` 使用内建 `run-membership-overview`，精确 locator 使用 `attempt-overview`。`project-current` 才使用配置里的 Report，并在没有配置时回退到通用 `default-overview`。显式 `--report` 始终优先。Config 仍会为 Theme 和 `view` rebuild 加载；这里只说明配置里的 Report 不参与显式 Run 的默认选择。
 
 省略 `--host` 时，`view` 只监听 `127.0.0.1`。传入具体 hostname / IP 会显式监听该地址；只写 `--host` 时则监听全部 IPv4 接口。wildcard listener 先打印 loopback URL，再打印可用接口 URL；`--page` 应用到每条 URL，自动打开浏览器只使用第一条。
 
-非 loopback 模式是无认证、无加密的开发服务器。所有网络可达客户端都能读取报告、execution JSON 和 downloads，所以只能在可信网络使用；启动时也会打印同样的警告。server 只接受已公布的 Host authority 与只读 `GET` / `HEAD` 请求；未来写端点必须另行设计认证与 CSRF 边界。
+非 loopback 模式是无认证、无加密的开发服务器。所有网络可达客户端都能读取报告页面、下载和公开 JSON 文档，所以只能在可信网络使用；启动时也会打印同样的警告。server 只接受已公布的 Host authority 与只读 `GET` / `HEAD` 请求；未来写端点必须另行设计认证与 CSRF 边界。
 
 此前的局部执行可能让部分 slot 以 `reference` 采用已有 Attempt。这些是当时的采用事实，不是补跑状态。同一份 `Sample` 不会在页面请求时重新选择。`--experiment` 可按完整 ID 收窄当前项目目标；`--record` 只在主动读取其它 Record root 时使用。
 
@@ -250,17 +250,14 @@ npx niceeval show
 npx niceeval show --run 01H...
 npx niceeval show --run 01H... --run 01J...
 npx niceeval show @01H...
-npx niceeval show @01H... --source
-npx niceeval show @01H... --execution
-npx niceeval show @01H... --timing
-npx niceeval show @01H... --timing=full
-npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
-npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
+npx niceeval show --run 01H... --page /
+npx niceeval show --run 01H... --report ./reports/summary.tsx --page /overview
+npx niceeval show --run 01H... --report ./reports/summary.tsx --json
 ```
 
-`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。精确 `@<AttemptLocator>` 默认显示该 Attempt 的 Evaluation identity、evaluation kind、四态 Verdict、Assertions 和适用的 Score。
+`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。省略 `--page` 时选择默认 Page；提供 `--page <route>` 时只执行这个精确 route。
 
-加 `--source`、`--execution` 或 `--timing` 可查看对应的专用证据面。`--timing` 默认显示精简阶段树；`--timing=full` 还显示 interval identity、parent 和 offset。三种证据面互斥，并且都要求一个精确 Attempt 定位符。
+参数 Page 的 show 路径只对请求 key 调用 `decode()`、canonical `encode()`、`load()` 与 `render()`。它不调用 `enumerate()`，也不为了查找成员资格而执行其它 Page。通过 Page 的关闭 Evidence 边界验证的 locator、identity 或 key 不属于当前 Sample 时，命令返回类型化错误。
 
 不带 locator 或 `--run` 的 `show` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、Eval、Attempt 序号、evaluation kind、input identity 与 config identity 仍匹配的 slot 才进入 Sample；命令不会按时间只留一个 Run。没有匹配结果时显示空 Sample，过期结果仍可用完整 `--run` 读取。
 
@@ -280,11 +277,11 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 `membershipOutcome` 是内建报告给出的来源结果，值为 `carried`、`accepted`、`executed`、`not-dispatched` 或 `interrupted`。它用于说明本次位置如何得到结果。内建表是 bounded summary；已知 Attempt 的身份与证据用 `show @<AttemptLocator>` 下钻，需要其它 Run 字段时显式选择自定义 Report。
 
-选择完成后，`show` 用 Sample 执行 Report 所使用的 Measure 和领域视图，并形成一次 `ReportExecution`。`partial`、`unsupported`、`failed` 等 Analysis 状态会随结果显示；未使用的数据问题不影响当前页面。完整契约见[查看结果](/zh/tutorials/viewing-results)。
+选择完成后，`show` 只执行目标 Page 需要的 Measure 与领域视图。`partial`、`unsupported`、`failed` 等 Analysis 状态会随结果显示；未使用的数据问题不影响当前页面。`show --json` 是同一个单目标读取：内建 Report 返回 Host-owned 领域文档，自定义 Report 返回一个 Page 的 rendered text manifest。完整契约见[查看结果](/zh/tutorials/viewing-results)。
 
-`view --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。导出完成后，站点即可独立查看。导出过程不会把底层结果存储交给用户 Report。
+`view --out <目录>`（或显式 `--run`）构建完整自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验。导出完成后，站点即可独立查看。导出过程不会把底层结果存储交给用户 Report。
 
-命令在 Sample 可用时完成所需 Analysis 操作和 Report execution。返回的 ReportExecution 不再访问已发布结果。运行中的 `view` 对变化构造新的固定 execution；成功后替换当前 revision，失败保留 last-good execution。静态 export 只消费已经完成的 execution。
+view 与静态导出都从同一完整站点版本读取 bytes。运行中的 view 对变化构造候选站点；成功后原子替换当前 revision，失败保留 last-good。静态 export 只写出已完成的完整站点。
 
 ## `--early-exit`
 

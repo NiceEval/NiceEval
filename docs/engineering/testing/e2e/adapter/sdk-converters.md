@@ -42,9 +42,9 @@ Every Journey runs this command:
 
 It then reads the result through public commands:
 
-- `niceeval show --exp`
-- `niceeval show ... --history`
-- `niceeval show @locator --execution`
+- `niceeval show --run <run-id>`
+- `niceeval show --run <run-id> --json`
+- `niceeval show @locator --report <fixture-module> --page <execution-route>`
 
 The `// owner:` first line of each corresponding test points at its stable
 anchor below.

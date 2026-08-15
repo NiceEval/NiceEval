@@ -50,8 +50,8 @@ shell 退出后 Sandbox 重新停驻，Provider 到期时间从本次使用刷�
 Verdict 时的 Agent 行为、归因 diff 与命令证据仍从 Record 读取：
 
 ```bash
-niceeval show @1efw5… --execution
-niceeval show @1efw5… --diff
+niceeval show @1efw5…
+niceeval show @1efw5… --json
 ```
 
 如果 cleanup 已删除目标状态，retained environment 不补造它。

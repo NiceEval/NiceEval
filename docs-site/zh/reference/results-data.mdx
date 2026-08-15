@@ -1,90 +1,65 @@
 ---
 title: "在 Report 中读取结果数据"
 sidebarTitle: "结果数据 API"
-description: "在 Page 或组件中使用 Sample、Measure、aggregate() 和 query() 读取可显示的分析结果。"
+description: "在 Page 或组合组件中用固定 Sample、aggregate() 和具名领域投影读取关闭的 Analysis 结果。"
 ---
 
-结果查看从已发布的 Run 开始。NiceEval 选择范围后，才在 Report 的 Page 或组件回调中提供 `Sample`。应用代码不打开结果存储，也不能构造一个 `Sample`。
-
-要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和组件，请阅读[报告 API](/zh/reference/report-components)。
+结果查看从已发布 Run 开始。NiceEval 先形成 `Sample`，再只在 Page 或组合组件执行期间通过 `ctx.scope` 提供它。应用代码不能构造 Sample、打开结果目录或持有 reader。
 
 ## Sample 保留已选范围
 
-`Sample` 固定本次选择的 Run、逻辑位置和分母。它的快照会保留每个位置的状态：
+Sample 固定本次选择的 Run、logical Slot 与分母。每个位置保留 `included`、`not-recorded`、`core-invalid` 或 `excluded` 状态。
 
-| 状态 | 含义 |
-| --- | --- |
-| `included` | 有可分析的 Attempt。 |
-| `not-recorded` | 计划中的位置没有结果。 |
-| `core-invalid` | 该位置的身份或引用无法可靠读取。 |
-| `excluded` | 当前选择明确排除了该位置。 |
+`--run` 保留指定 Run 的完整计划范围。`project-current` 只保留仍与当前项目身份匹配的范围。两种选择都不会因为某个度量缺少输入而缩小分母。
 
-`--run` 保留指定 Run 的完整计划范围。`project-current` 只保留仍匹配当前项目的范围。两种选择都不会因为某个度量缺数据而悄悄缩小分母。
+Sample 只能在 `load()`、Page 或组合组件执行期间传给 Report facade。回调结束后，页面只保留已经关闭的值，不能再次读取结果。
 
-`Sample` 只在 Page、`load()` 或复合组件正在执行时可用于 `aggregate()`、`query()` 和 `narrowSample()`。回调结束后，页面只保留已经得到的闭合值，不能再次发起读取。
+## 用 `aggregate()` 取得 rows
 
-## 使用已发布的 Analysis 输入
+`niceeval/report` 重新导出 Report 所需的 Analysis facade。`aggregate()` 返回带稳定 identity、issues、refs 和完整 `MetricValue` 的 `ClosedRows`。
 
-`niceeval/analysis` 导出 NiceEval 已发布的输入和领域视图请求。作者可以把这些输入用于 `defineMeasure()`，但不能注册任意数据源、持久数据类型或读取器。
-
-```ts
+```tsx
 import {
-  attemptEvidenceView,
-  query,
-} from "niceeval/analysis";
-import { defineComponent, Text } from "niceeval/report";
-
-const EvidenceCount = defineComponent(async (_props, { sample }) => {
-  const evidence = await query(sample, {
-    kind: "domain-view",
-    view: attemptEvidenceView,
-  });
-
-  return Text({ value: `可查看的证据项：${evidence.entries.length}` });
-});
-```
-
-`attemptPassed`、`attemptLatencyMs` 和 `attemptToolFailure` 是当前公开的度量输入。`attemptEvidenceView`、`attemptObservabilityView`、`fileChangesView`、`sourcesView` 与 `sandboxHistoryView` 提供不能压成表格的闭合领域视图。
-
-需要新的长期结果时，先确认 NiceEval 是否已有适合的 Eval、Experiment、Adapter 或分析能力。回调没有通用写入或注册 API；任意 JSON、网络响应或当前文件不能作为新的分析输入。
-
-## 用 aggregate() 取得表格和图表行
-
-`aggregate()` 以既定的 Dimension 和 Measure 形成 `ClosedRows`。每一行保留稳定身份，每个度量格都是完整的 `MetricValue`。
-
-```ts
-import { aggregate } from "niceeval/analysis";
-import { defineComponent, Table } from "niceeval/report";
+  aggregate,
+  defineComponent,
+  Table,
+} from "niceeval/report";
 import { experiment, passRate } from "./quality-measures.ts";
 
-const ResultTable = defineComponent(async (_props, { sample }) => {
-  const rows = await aggregate(sample, {
+const ResultTable = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
     by: { experiment },
     values: { passRate },
   });
 
-  return Table({ rows });
+  return <Table rows={rows} />;
 });
 ```
 
-`Table` 读取 `rows`，`Bars`、`Line` 和 `Scatter` 读取 `points`，`Stat` 读取完整的 `MetricValue`。显示层可以排序、限制或过滤可见行，但不能用显示后的数组重算度量或减少 `MetricValue.total`。
+`Table` 使用 rows，图表使用 points，`Stat` 使用格式化后的完整度量。显示层可以排序、限制或过滤行，但不能用显示后的数组重算数值或减少 `MetricValue.total`。
 
-## 读懂闭合状态
+## 取得关闭领域数据
 
-一个度量的 `MetricValue.state` 描述结果是否完整：
+Attempt Evidence、Observability、File Changes、Sources 和 Sandbox history 都有具名 Report facade。
+它们分别使用 `toAttemptEvidence()`、`toAttemptObservability()`、`toFileChanges()`、`toSources()` 和 `toSandboxHistory()`。
+这些 facade 只接收固定 Sample 和可选的 Attempt locator，并返回关闭 DomainView。
 
-| 状态 | 含义 |
+参数 Page 使用 `context.evidence(locator)` 取得目标详情的关闭 Evidence。Host 验证 locator 属于当前 Sample；它不会把路径、原始 Record payload 或任意查询能力交给页面。
+
+## 读懂 `MetricValue`
+
+| 字段 | 含义 |
 | --- | --- |
-| `available` | 全部分母成员按该度量规则贡献。 |
-| `partial` | 有可显示的结果，但部分成员没有贡献。 |
-| `empty` | 输入完整，领域结果合法为空。 |
-| `unsupported` | 当前环境不支持该输入。 |
-| `failed` | 读取、关联或归并失败。 |
+| `value` | 当前数值；`0` 是有效值。 |
+| `samples` | 实际贡献成员数。 |
+| `total` | Measure 预先确定的分母。 |
+| `state` 与 `issues` | 缺口、不可用或失败的原因。 |
+| `refs` | 可复核的 Evidence 定位。 |
 
-`value: 0` 仍然是有效读数，不是 `empty`。`samples` 是实际贡献数，`total` 是 Measure 预先确定的分母。问题和证据引用跟随 `MetricValue`、`ClosedRows` 与领域视图进入 Report。
+`available`、`partial`、`empty`、`unsupported` 和 `failed` 都是不同状态。不要把 `null` 当成零，也不要用只剩下的可见行数替换总分母。
 
 ## 相关页面
 
-- [Record](/zh/explanation/record)：理解已发布结果为何可以安全查看和分享。
-- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 选择结果。
-- [报告 API](/zh/reference/report-components)：把闭合结果组织成 Report。
+- [报告 API](/zh/reference/report-components)：Page、组件、JSON 和全站构建边界。
+- [编写自定义报告](/zh/tutorials/custom-reports)：从 Measure 到 Report 的完整路径。
+- [查看结果](/zh/tutorials/viewing-results)：通过 CLI 选择 Sample。
