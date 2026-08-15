@@ -3,6 +3,7 @@
 // 实例还活着)。provider 名的行为分支只允许出现在 sandbox/ 内(见 docs/architecture.md);
 // 运行器与评分路径不感知 provider 名。
 
+import { Clock, Effect } from "effect";
 import type { Sandbox } from "../types.ts";
 import { DEFAULT_LEDGER_GIT_DIR } from "./ledger-paths.ts";
 import { sandboxCapabilities } from "./backend.ts";
@@ -218,63 +219,128 @@ export async function wakeDetached(provider: string, sandboxId: string): Promise
   }
 }
 
-async function waitForDetachedDockerReadiness(
-  container: {
-    exec(options: globalThis.Record<string, unknown>): Promise<{
-      start(options: globalThis.Record<string, unknown>): Promise<NodeJS.ReadableStream>;
-      inspect(): Promise<{ ExitCode?: number | null }>;
-    }>;
-  },
+interface DockerInfoContainer {
+  exec(options: globalThis.Record<string, unknown>): Promise<{
+    start(options: globalThis.Record<string, unknown>): Promise<NodeJS.ReadableStream>;
+    inspect(): Promise<{ ExitCode?: number | null }>;
+  }>;
+}
+
+type DockerInfoExecution = Awaited<ReturnType<DockerInfoContainer["exec"]>>;
+
+type DockerInfoProbeOutcome =
+  | { readonly _tag: "completed"; readonly exitCode: number | null | undefined }
+  | { readonly _tag: "timed-out" }
+  | { readonly _tag: "failed" };
+
+async function waitForDetachedDockerReadiness(container: DockerInfoContainer, user: string): Promise<void> {
+  return Effect.runPromise(waitForDetachedDockerReadinessEffect(container, user));
+}
+
+/**
+ * 轮询是 NiceEval 内部策略:deadline 用 `Clock.currentTimeMillis`、间隔与竞速用 `Clock.sleep`,
+ * 与原来 `Date.now()` + `setTimeout` 的 30s 窗口 / 250ms 间隔 / 剩余量封顶公式完全一致。
+ * 超时或中断都在 Effect fiber 上收束,不再手工管理 timer 或 stream 之外的计时器。
+ */
+function waitForDetachedDockerReadinessEffect(
+  container: DockerInfoContainer,
   user: string,
-): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  let lastExit: number | null | undefined;
-  while (Date.now() <= deadline) {
-    try {
-      const execution = await container.exec({
-        Cmd: ["docker", "info"],
-        User: user,
-        AttachStdout: true,
-        AttachStderr: true,
-      });
-      const stream = await execution.start({});
-      const destroyStream = () => (stream as NodeJS.ReadableStream & { destroy(): void }).destroy();
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) {
-        destroyStream();
-        break;
-      }
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const completed = new Promise<"completed">((resolvePromise, reject) => {
-        stream.on("end", () => resolvePromise("completed"));
-        stream.on("error", reject);
-        stream.resume();
-      });
-      const timedOut = new Promise<"timed-out">((resolvePromise) => {
-        timer = setTimeout(() => {
-          destroyStream();
-          resolvePromise("timed-out");
-        }, remaining);
-      });
-      let outcome: "completed" | "timed-out";
-      try {
-        outcome = await Promise.race([completed, timedOut]);
-      } finally {
-        if (timer !== undefined) clearTimeout(timer);
-      }
-      if (outcome === "timed-out") break;
-      lastExit = (await execution.inspect()).ExitCode;
-      if (lastExit === 0) return;
-    } catch {
-      lastExit = undefined;
+): Effect.Effect<void, Error> {
+  const readinessError = (lastExit: number | null | undefined): Error =>
+    new Error(
+      `Docker DinD sandbox did not become ready after wake as user ${JSON.stringify(user)}` +
+        (lastExit === undefined ? "" : ` (docker info exit ${lastExit ?? "unknown"})`),
+    );
+
+  const pollAgain = (deadline: number, lastExit: number | null | undefined): Effect.Effect<void, Error> =>
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) => {
+        const remaining = deadline - now;
+        if (remaining <= 0) return Effect.fail(readinessError(lastExit));
+        return Clock.sleep(Math.min(250, remaining)).pipe(Effect.zipRight(attempt(deadline, lastExit)));
+      }),
+    );
+
+  const attempt = (deadline: number, lastExit: number | null | undefined): Effect.Effect<void, Error> =>
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) => {
+        if (now > deadline) return Effect.fail(readinessError(lastExit));
+        return dockerInfoProbe(container, user, deadline - now).pipe(
+          Effect.flatMap((outcome) => {
+            if (outcome._tag === "timed-out") return Effect.fail(readinessError(lastExit));
+            if (outcome._tag === "failed") return pollAgain(deadline, undefined);
+            if (outcome.exitCode === 0) return Effect.succeed(undefined);
+            return pollAgain(deadline, outcome.exitCode);
+          }),
+        );
+      }),
+    );
+
+  return Clock.currentTimeMillis.pipe(Effect.flatMap((now) => attempt(now + 30_000, undefined)));
+}
+
+/**
+ * 单轮探测:exec `docker info` → 起 stream → 与剩余时间竞速。exec/stream/inspect 都是 dockerode
+ * (Node 进程/stream 叶子),留在 Promise 面由 `tryPromise`/`async` 适配;只有「等多久」和
+ * 「到点后做什么」是 NiceEval 内部的,走 Effect Clock + 中断。
+ */
+function dockerInfoProbe(
+  container: DockerInfoContainer,
+  user: string,
+  timeoutMs: number,
+): Effect.Effect<DockerInfoProbeOutcome, never> {
+  const startProbe: Effect.Effect<{ readonly execution: DockerInfoExecution; readonly stream: NodeJS.ReadableStream }, unknown> =
+    Effect.tryPromise({
+      try: () =>
+        container
+          .exec({
+            Cmd: ["docker", "info"],
+            User: user,
+            AttachStdout: true,
+            AttachStderr: true,
+          })
+          .then((execution) => execution.start({}).then((stream) => ({ execution, stream }))),
+      catch: (cause) => cause,
+    });
+
+  const probeOne = (
+    execution: DockerInfoExecution,
+    stream: NodeJS.ReadableStream,
+  ): Effect.Effect<DockerInfoProbeOutcome, never> => {
+    const destroyStream = (): void => (stream as NodeJS.ReadableStream & { destroy(): void }).destroy();
+    if (timeoutMs <= 0) {
+      destroyStream();
+      return Effect.succeed({ _tag: "timed-out" } as const);
     }
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, Math.min(250, remaining)));
-  }
-  throw new Error(
-    `Docker DinD sandbox did not become ready after wake as user ${JSON.stringify(user)}` +
-    (lastExit === undefined ? "" : ` (docker info exit ${lastExit ?? "unknown"})`),
+    const completed: Effect.Effect<"completed" | "failed", never> = Effect.async((resume) => {
+      stream.on("end", () => resume(Effect.succeed("completed")));
+      stream.on("error", () => resume(Effect.succeed("failed")));
+      stream.resume();
+    });
+    const timedOut: Effect.Effect<"timed-out", never> = Clock.sleep(timeoutMs).pipe(
+      Effect.map(() => {
+        destroyStream();
+        return "timed-out" as const;
+      }),
+    );
+    return Effect.race(completed, timedOut).pipe(
+      Effect.flatMap((outcome): Effect.Effect<DockerInfoProbeOutcome, never> => {
+        if (outcome === "timed-out") return Effect.succeed({ _tag: "timed-out" } as const);
+        if (outcome === "failed") return Effect.succeed({ _tag: "failed" } as const);
+        return Effect.tryPromise({
+          try: () => execution.inspect(),
+          catch: (cause) => cause,
+        }).pipe(
+          Effect.map((info) => ({ _tag: "completed" as const, exitCode: info.ExitCode })),
+          Effect.catchAll(() => Effect.succeed({ _tag: "failed" } as const)),
+        );
+      }),
+    );
+  };
+
+  return startProbe.pipe(
+    Effect.flatMap(({ execution, stream }) => probeOne(execution, stream)),
+    Effect.catchAll(() => Effect.succeed({ _tag: "failed" } as const)),
   );
 }
 

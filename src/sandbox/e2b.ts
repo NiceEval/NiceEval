@@ -6,6 +6,7 @@
 //       codex/claude-code/bub 的 "niceeval-agents")见 sandbox/e2b/。
 
 import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitError } from "e2b";
+import { Clock, Effect } from "effect";
 import { randomUUID } from "node:crypto";
 import { t } from "../i18n/index.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -322,27 +323,41 @@ export async function reconcileProvision(token: string): Promise<void> {
   }
 }
 
+type E2BReconcilePaginator = ReturnType<typeof E2BSdkSandbox.list>;
+type E2BReconcileListPage = Awaited<ReturnType<E2BReconcilePaginator["nextItems"]>>;
+
 /**
  * `nextItems()` 按类型契约总是 resolve 成数组(SDK 内部对空响应也兜了 `?? []`),但对账这条
  * 路径线上真实撞见过它 resolve 成非数组的一次——没能复现出确切成因,不排它,原样让下面的
- * `for...of` 抛出,但换一句能定位的诊断,而不是留一条裸的 "X is not iterable"。
+ * 类型守卫抛出,但换一句能定位的诊断,而不是留一条裸的 "X is not iterable"。
+ *
+ * 重试是 NiceEval 内部策略(attempt 数、delay 公式与错误分类和原来完全一致):
+ * 等待用 `Effect.sleep`(Clock)、SDK Promise 在 `tryPromise` 边界适配一次,
+ * 原始错误对象原样留在失败通道,耗尽重试时抛回的是同一个对象。
  */
-async function fetchNextItemsWithRetry(
-  paginator: ReturnType<typeof E2BSdkSandbox.list>,
-): Promise<Awaited<ReturnType<typeof paginator.nextItems>>> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      const items = await paginator.nextItems();
-      if (!Array.isArray(items)) {
-        throw new Error(t("e2b.listNextItemsNotArray", { type: typeof items }));
-      }
-      return items;
-    } catch (e) {
-      const kind = classifyProvisionErrorFallback(e);
-      if (attempt >= RECONCILE_LIST_MAX_ATTEMPTS - 1 || !isRetryableProvisionError(kind)) throw e;
-      await new Promise((resolve) => setTimeout(resolve, RECONCILE_LIST_RETRY_DELAY_MS * 2 ** attempt));
-    }
-  }
+function fetchNextItemsWithRetryEffect(
+  paginator: E2BReconcilePaginator,
+): Effect.Effect<E2BReconcileListPage, unknown> {
+  const attempt = (n: number): Effect.Effect<E2BReconcileListPage, unknown> =>
+    Effect.tryPromise({
+      try: () => paginator.nextItems(),
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.flatMap((items) => {
+        if (Array.isArray(items)) return Effect.succeed(items);
+        return Effect.fail(new Error(t("e2b.listNextItemsNotArray", { type: typeof items })));
+      }),
+      Effect.catchAll((error) => {
+        const kind = classifyProvisionErrorFallback(error);
+        if (n >= RECONCILE_LIST_MAX_ATTEMPTS - 1 || !isRetryableProvisionError(kind)) return Effect.fail(error);
+        return Clock.sleep(RECONCILE_LIST_RETRY_DELAY_MS * 2 ** n).pipe(Effect.zipRight(attempt(n + 1)));
+      }),
+    );
+  return attempt(0);
+}
+
+async function fetchNextItemsWithRetry(paginator: E2BReconcilePaginator): Promise<E2BReconcileListPage> {
+  return Effect.runPromise(fetchNextItemsWithRetryEffect(paginator));
 }
 
 export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
