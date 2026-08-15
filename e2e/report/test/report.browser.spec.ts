@@ -7,6 +7,7 @@
 // - inverse = static templates omit English or apply only the article, leaving English nav
 // - inverse = recorded-data fallback bypasses the semantic bilingual report shell
 // - inverse = formatCellText renders verdict labels from raw status strings, ignoring locale
+// - inverse = SampleSummary's package-owned result and coverage copy stays English in zh-CN
 // - inverse = ranked-bar/scatter/tree-table headers stay English in zh-CN
 // - inverse = static classic chrome omits visible fixed-page hrefs
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
@@ -152,6 +153,12 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await expect(page.getByRole("button", { name: "中文" })).toHaveAttribute("aria-pressed", "true");
         await expect(page.getByRole("tablist", { name: "报告页面" })).toBeVisible();
         await expect(page.getByRole("term").filter({ hasText: /^通过率$/ })).toBeVisible();
+        await expect(page.getByText(/^运行范围 · /).first()).toBeVisible();
+        await expect(page.getByRole("term").filter({ hasText: /^题目结果$/ })).toBeVisible();
+        await expect(page.getByText("1 通过 · 1 失败 · 1 已计分 · 1 出错", { exact: true })).toBeVisible();
+        await expect(
+          page.getByRole("definition").filter({ hasText: /成本已提供 2\/4 次尝试$/ }),
+        ).toBeVisible();
         await expect(page.getByRole("columnheader", { name: "实验", exact: true })).toBeVisible();
         await expect(page.getByRole("columnheader", { name: "平均耗时", exact: true })).toBeVisible();
         await expect(page.getByRole("img", { name: "costUSD 与 passRate" })).toBeVisible();

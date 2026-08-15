@@ -24,6 +24,7 @@ import {
   reportCaseArtifacts,
   reportE2E,
   runReportPty,
+  terminalBoxColumnText,
   terminalBoxContaining,
   terminalBoxRows,
   terminalTextSequence,
@@ -486,21 +487,13 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
         },
       );
       expect(skippedSummary.exitCode, skippedSummary.diagnostic()).toBe(0);
-      const skippedSummaryRows = terminalBoxRows(
-        terminalBoxContaining(closedTerminalBoxes(skippedSummary.stdout), ["Pass rate", "Eval results"]),
+      const skippedSummaryBox = terminalBoxContaining(
+        closedTerminalBoxes(skippedSummary.stdout),
+        ["Pass rate", "Eval results"],
       );
-      const resultHeader = only(
-        skippedSummaryRows,
-        (row) => row.includes("Eval results"),
-        skippedSummary.diagnostic(),
+      expect(terminalBoxColumnText(skippedSummaryBox, "Eval results")).toBe(
+        "0 passed · 1 failed · 1 scored · 1 errored · 1 skipped",
       );
-      const resultColumn = resultHeader.indexOf("Eval results");
-      expect(resultColumn).toBeGreaterThanOrEqual(0);
-      const resultCells = skippedSummaryRows
-        .slice(skippedSummaryRows.indexOf(resultHeader) + 1)
-        .map((row) => row[resultColumn] ?? "")
-        .filter((cell) => cell.length > 0);
-      expect(resultCells.join(" ")).toBe("0 passed · 1 failed · 1 scored · 1 errored · 1 skipped");
 
       await writeFile(join(projectRoot, "evals", "score.eval.ts"), [
         'import { defineEval } from "niceeval";',

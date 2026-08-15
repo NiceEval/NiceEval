@@ -5,9 +5,6 @@
 // - inverse = accept a missing or extra cell-table key, skip iterative hierarchy
 //   depth validation, or retain declared page order; outcome = public show
 //   loses its failed-page / depth evidence or public HTTP loses tab order.
-// - inverse = keep SampleSummary's package-owned result and coverage copy in
-//   English; outcome = the closed zh-CN fragment retains English labels despite
-//   serving the corresponding localized execution.
 // rerun: pnpm e2e --repo report -- --run test/report-execution.test.ts
 
 import { only, pollUntil, waitForOutput } from "@niceeval/testkit";
@@ -104,13 +101,6 @@ interface ExecutionShowDocument {
       }>;
     };
   };
-}
-
-interface LocaleSwitchPayload {
-  readonly revision: number;
-  readonly locale: "en" | "zh-CN";
-  readonly title: string;
-  readonly html: string;
 }
 
 test("show --execution 呈现本轮 conversation 与工具入参", async () => {
@@ -364,63 +354,6 @@ test("低层 Report 的 cell-table 闭合、层级深度与 navigation 都从公
         }
       }
 
-      const classicView = niceeval.start(
-        [
-          "view",
-          "--report",
-          "./reports/site.tsx",
-          "--host",
-          "127.0.0.1",
-          "--port",
-          "0",
-          "--no-open",
-        ],
-        { timeoutMs: 60_000 },
-      );
-      try {
-        const startup = await waitForOutput(
-          classicView,
-          "stdout",
-          /http:\/\/127\.0\.0\.1:\d+\//,
-          { timeoutMs: 30_000, label: "classic locale view URL" },
-        );
-        const origin = startup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
-        expect(origin, startup).toBeDefined();
-        const authorUrl = new URL("/author-api", origin!).toString();
-        const html = await pollUntil(
-          async () => {
-            try {
-              const response = await fetch(authorUrl);
-              return response.status === 200 ? await response.text() : undefined;
-            } catch {
-              return undefined;
-            }
-          },
-          { timeoutMs: 15_000, intervalMs: 100, label: "classic locale view readiness" },
-        );
-        const revision = html.match(/<meta name="niceeval-report-revision" content="(\d+)">/)?.[1];
-        expect(revision, html).toBeDefined();
-        if (revision === undefined) {
-          throw new Error("classic locale view HTML did not contain a report revision");
-        }
-        const zhCN = await fetch(authorUrl, {
-          headers: {
-            "x-niceeval-report-fragment": revision,
-            "x-niceeval-report-locale": "zh-CN",
-          },
-        });
-        expect(zhCN.status).toBe(200);
-        const payload = await zhCN.json() as LocaleSwitchPayload;
-        expect(payload).toMatchObject({ locale: "zh-CN", title: "报告示例" });
-        const payloadText = payload.html.replace(/<[^>]+>/g, "");
-        expect(payloadText).toContain("运行范围");
-        expect(payloadText).toContain("题目结果");
-        expect(payloadText).toContain("1 通过 · 1 失败 · 1 已计分 · 1 出错");
-        expect(payloadText).toContain("成本已提供 2/4 次尝试");
-        expect(payload.html).not.toContain("Cost available for");
-      } finally {
-        await classicView.dispose();
-      }
     },
   );
 });

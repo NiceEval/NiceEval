@@ -224,6 +224,25 @@ export function terminalBoxRows(box: string): readonly (readonly string[])[] {
   }));
 }
 
+/** Read one logical data value from a named terminal table column across physical wraps. */
+export function terminalBoxColumnText(box: string, header: string): string {
+  if (header.length === 0 || header.trim() !== header) {
+    throw new TypeError("terminal box column header must be non-empty and trimmed");
+  }
+  const rows = terminalBoxRows(box);
+  const headerRows = rows.filter((row) => row.includes(header));
+  if (headerRows.length !== 1) {
+    throw new Error(`expected one terminal column ${JSON.stringify(header)}, found ${headerRows.length}`);
+  }
+  const headerRow = headerRows[0]!;
+  const column = headerRow.indexOf(header);
+  return rows
+    .slice(rows.indexOf(headerRow) + 1)
+    .map((row) => row[column] ?? "")
+    .filter((cell) => cell.length > 0)
+    .join(" ");
+}
+
 /**
  * Select one adjacent sequence of visible terminal lines. Blank layout rows,
  * indentation, CRLF, and ANSI styling are mechanics; the owner supplies every
