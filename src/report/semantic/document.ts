@@ -885,7 +885,11 @@ function validateCellTable(
     }
     const cells = plainRecord(field(rowRecord, "cells"), state, pathFor(rowPath, "cells"));
     if (cells === undefined) return;
-    for (const key of Object.keys(cells)) {
+    const cellKeys = Object.keys(cells);
+    if (cellKeys.length !== keys.size || cellKeys.some((key) => !keys.has(key))) {
+      issue(state, "table", pathFor(rowPath, "cells"), "cell-table row cells must exactly match the columns");
+    }
+    for (const key of cellKeys) {
       validateString(field(cells, key), state, pathFor(pathFor(rowPath, "cells"), key));
     }
   });
@@ -936,14 +940,22 @@ function validateCellTableHierarchy(
       issue(state, "table", pathFor(rowPath, "parentKey"), `a ${row.kind} hierarchy row cannot be parented by ${parent.kind}`);
     }
     const seen = new Set<string>([row.key]);
-    let current: typeof parent | undefined = parent;
-    while (current !== undefined) {
-      if (seen.has(current.key)) {
+    let current: typeof row = row;
+    let depth = 0;
+    while (current.parentKey !== undefined) {
+      const ancestor = byKey.get(current.parentKey);
+      if (ancestor === undefined) break;
+      if (seen.has(ancestor.key)) {
         issue(state, "cycle", pathFor(rowPath, "parentKey"), "cell-table hierarchy rows must be acyclic");
         break;
       }
-      seen.add(current.key);
-      current = current.parentKey === undefined ? undefined : byKey.get(current.parentKey);
+      seen.add(ancestor.key);
+      depth += 1;
+      if (depth > REPORT_DOCUMENT_DEPTH_MAX) {
+        issue(state, "limit", pathFor(rowPath, "parentKey"), `a document may be at most ${REPORT_DOCUMENT_DEPTH_MAX} nodes deep`);
+        break;
+      }
+      current = ancestor;
     }
   }
 }
