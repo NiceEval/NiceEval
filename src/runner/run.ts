@@ -347,9 +347,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // attempt-major lane。先按 lane 深度铺成全 Invocation 的 wave，保证任一 lane 的下一槽位
   // 都不会排到其它 lane 的首槽位之前。carried 槽位先从 lane 删除，不占 wave 也不触发 Sandbox。
   const attempts: Attempt[] = [];
-  const groupedPredecessors = new WeakMap<Attempt, Promise<void>>();
-  const groupedReleases = new WeakMap<Attempt, () => void>();
-  const groupedTails = new Map<AgentRun, Map<string, Promise<void>>>();
+  // Group 串行链与 wave 闸都是 Effect Deferred 协调:等待是 Deferred.await 的 Effect,
+  // 释放是 Deferred 结算 Effect,不再经过裸 Promise resolve。
+  const groupedPredecessors = new WeakMap<Attempt, Effect.Effect<void>>();
+  const groupedReleases = new WeakMap<Attempt, Effect.Effect<void>>();
+  const groupedTails = new Map<AgentRun, Map<string, Effect.Effect<void>>>();
   const dispatchWaveNumbers = new WeakMap<Attempt, number>();
   type SchedulingSlot = {
     readonly run: AgentRun;
@@ -456,42 +458,45 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         if (evalDef.evalGroup !== undefined) {
           let tails = groupedTails.get(run);
           if (tails === undefined) groupedTails.set(run, (tails = new Map()));
-          const predecessor = tails.get(evalDef.evalGroup.id) ?? Promise.resolve();
-          let release!: () => void;
-          const settled = new Promise<void>((resolve) => { release = resolve; });
+          const predecessor = tails.get(evalDef.evalGroup.id) ?? Effect.void;
+          const settled = yield* Deferred.make<void>();
           groupedPredecessors.set(attempt, predecessor);
-          groupedReleases.set(attempt, release);
-          tails.set(evalDef.evalGroup.id, settled);
+          groupedReleases.set(attempt, Deferred.succeed(settled, undefined).pipe(Effect.asVoid));
+          tails.set(evalDef.evalGroup.id, Deferred.await(settled));
         }
   }
 
   // wave N+1 只有在 wave N 的每条槽位都至少拿到过一次全局并发位（或在此前确定不派发）
   // 后才可排队。这样不依赖 Effect Semaphore 的内部唤醒顺序，也不会让同一 lane 的后续槽位
   // 持续重排到其它 Group / 未分组 Eval 的首槽位之前。
-  const dispatchWaveReady = new WeakMap<Attempt, Promise<void>>();
-  const dispatchWaveArrive = new WeakMap<Attempt, () => void>();
+  // wave 闸与 grouped 串行链同一种协调:previousWave 是前一波全部成员都抵达过的
+  // Deferred.await,arrive 是逐 attempt 幂等的 Deferred 结算 Effect(同一 attempt 在派发
+  // 与 ensuring 两处到达,只算一次;最后一员结算本波 Deferred)。
+  const dispatchWaveReady = new WeakMap<Attempt, Effect.Effect<void>>();
+  const dispatchWaveArrive = new WeakMap<Attempt, Effect.Effect<void>>();
   const attemptsByWave = new Map<number, Attempt[]>();
   for (const attempt of attempts) {
     const wave = dispatchWaveNumbers.get(attempt)!;
     attemptsByWave.set(wave, [...(attemptsByWave.get(wave) ?? []), attempt]);
   }
-  let previousWave = Promise.resolve();
+  let previousWave: Effect.Effect<void> = Effect.void;
   for (const wave of [...attemptsByWave.keys()].sort((left, right) => left - right)) {
     const members = attemptsByWave.get(wave)!;
     let remaining = members.length;
-    let resolveWave!: () => void;
-    const settled = new Promise<void>((resolve) => { resolveWave = resolve; });
+    const settled = yield* Deferred.make<void>();
     for (const attempt of members) {
       dispatchWaveReady.set(attempt, previousWave);
       let arrived = false;
-      dispatchWaveArrive.set(attempt, () => {
+      dispatchWaveArrive.set(attempt, Effect.gen(function* () {
         if (arrived) return;
         arrived = true;
         remaining -= 1;
-        if (remaining === 0) resolveWave();
-      });
+        if (remaining === 0) {
+          yield* Deferred.succeed(settled, undefined);
+        }
+      }));
     }
-    previousWave = settled;
+    previousWave = Deferred.await(settled);
   }
 
   // 预检 judge:验证 API key + 端点可达,避免跑完 agent 才发现 judge 不通。
@@ -2561,7 +2566,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const arriveAtDispatchWave = dispatchWaveArrive.get(a)!;
         const dispatch = withGlobalSlot(haltAwait(a), (slot) =>
           Effect.gen(function* () {
-            arriveAtDispatchWave();
+            yield* arriveAtDispatchWave;
             // 拿到位子的这一刻再问一次闸:排在独占 provider 锁 / 实验闸本地信号量上的那段等待
             // 不在上面的竞速覆盖范围里(竞速只包全局位),闸可能正是在那段时间落下的。
             if (checkDispatchHalt(a).halted) return { kind: "recheck" } as const;
@@ -2626,12 +2631,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             yield* outcome.window;
           }
         });
-        const waveReady = dispatchWaveReady.get(a) ?? Promise.resolve();
-        const wavePipeline = Effect.promise(() => waveReady).pipe(Effect.flatMap(() => pipeline));
+        const waveReady = dispatchWaveReady.get(a) ?? Effect.void;
+        const wavePipeline = waveReady.pipe(Effect.flatMap(() => pipeline));
         const predecessor = groupedPredecessors.get(a);
         const orderedPipeline = predecessor === undefined
           ? wavePipeline
-          : Effect.promise(() => predecessor).pipe(Effect.flatMap(() => wavePipeline));
+          : predecessor.pipe(Effect.flatMap(() => wavePipeline));
         // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
         // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
@@ -2651,11 +2656,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
             );
         const withWaveLifecycle = withCaseLifecycle.pipe(
-          Effect.ensuring(Effect.sync(arriveAtDispatchWave)),
+          Effect.ensuring(arriveAtDispatchWave),
         );
         if (predecessor === undefined) return withWaveLifecycle;
         const releaseSuccessor = groupedReleases.get(a)!;
-        return withWaveLifecycle.pipe(Effect.ensuring(Effect.sync(releaseSuccessor)));
+        return withWaveLifecycle.pipe(Effect.ensuring(releaseSuccessor));
       },
       { concurrency: opts.maxConcurrency, discard: true },
     ).pipe(
