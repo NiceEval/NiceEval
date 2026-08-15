@@ -51,13 +51,13 @@ merge commit 或 PR event SHA 代替它；不要调用 `checkout_pr`，因为它
 除读取 PR 与生成结构化 review 结果所需的工具外，不要从 shell 发起网络请求或获取任意外部内容。
 
 审查输出采用**单一最终态评论**，而不是 GitHub Review 或源码行评论。Pullfrog 本轮只生成
-结构化结果，`.github/workflows/pullfrog.yml` 在同一 review job 中用确定性的 publish step 创建或覆盖评论。
-严格遵守以下交接协议：
+结构化结果；`.github/workflows/pullfrog.yml` 的只读 review job 校验并把这份结果放进短期 artifact，
+独立的最小写权限 publish job 再确定性地创建或覆盖评论。严格遵守以下交接协议：
 
 - 检查阶段不发布进度、草稿或单项问题。禁止调用 `create_issue_comment`、
   `edit_issue_comment`、`report_progress`、`create_pull_request_review`、
   `reply_to_review_comment`，禁止创建 inline/file comment、回复或 resolve thread。
-- 完整 Review body 不包含任何工作流 marker。它由 publish step 加上固定第一行
+- 完整 Review body 不包含任何工作流 marker。它由 publish job 的确定性 upsert step 加上固定第一行
   `<!-- niceeval-pullfrog-final-review-v2 -->`，并只把该首行与 `github-actions[bot]`
   共同匹配的评论视为当前 canonical。旧版 marker 与 `pullfrog[bot]` 评论属于历史，不参与 v2 计数。
 - 记录本轮锁定的 PR number 与完整 head SHA。Review body 写完后，最后且只调用一次
@@ -66,11 +66,12 @@ merge commit 或 PR event SHA 代替它；不要调用 `checkout_pr`，因为它
   不把对象包进 `value` 字符串，不添加额外字段；成功后立即结束本轮，不再调用任何 GitHub 或输出写入工具。
 - `review_body` 必须非空且不超过 60000 字符，每次生成完整当前最终态，不在旧正文后追加日志。
   PR number、head SHA 或正文无法可靠生成时让 `pullfrog_set_output` 的 schema 校验失败，不改用评论解释错误。
-- context job 从 GitHub PR metadata 锁定可信 PR number、base SHA 与 head SHA，publish step 再校验结构化结果；它会在
-  临写前复核 PR 仍为 open 且 base/head 仍与锁定值一致。过期结果零写入，候选重复或 API 失败时
-  fail closed，update 失败绝不退回 create。
-- v2 评论由按可信 PR number 串行的 review job 中的 publish step 管理。同一 base/head 的重复 run 依次 create/update；旧 base
-  或 head 不能覆盖新结论。这里保证的是仓库成功路径协议；Pullfrog 上游 MCP 仍暴露写工具，仓库无法提供能力层隔离。
+- context job 从 GitHub PR metadata 锁定可信 PR number、base SHA 与 head SHA；review job 校验结构化结果并仅上传
+  一份短期 artifact，publish job 下载后重新校验同一 envelope。publish job 在临写前复核 PR 仍为 open 且
+  base/head 仍与锁定值一致。过期结果零写入，artifact 畸形、候选重复或 API 失败时 fail closed，update 失败绝不退回 create。
+- v2 评论由按可信 PR number 串行的 publish job 管理。同一 base/head 的重复 run 依次 create/update；旧 base
+  或 head 不能覆盖新结论。review job 不持有评论写权限，publish job 不运行审查模型。这里保证的是仓库成功路径协议；
+  Pullfrog 上游 MCP 仍暴露写工具，仓库无法提供能力层隔离。
 - 上线验收必须在同一个真实 PR 上连续完成首轮 create 与次轮 update，确认两轮成功态只有一条 v2
   canonical、第二轮沿用同一个 comment id 且正文只对应最新锁定 head。未取得这份收据前，只能宣称静态
   配置完成；若 Pullfrog 仍自行发布额外 review 评论，此方案不通过，需上报 Pullfrog 上游。
