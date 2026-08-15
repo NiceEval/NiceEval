@@ -11,8 +11,10 @@ import {
   type ScoringComposition,
 } from "./aggregate.ts";
 import { formatCellText, type Cell } from "./cell.ts";
+import { classicTableCopy, type ClassicLocale } from "./localize.ts";
 import type { MetricValue } from "./metric.ts";
 import { classicAttemptLocator, type ClassicEvalUnit, type Sample } from "./sample.ts";
+import { REPORT_DOCUMENT_DEPTH_MAX } from "../semantic/document.ts";
 
 export interface ExperimentTableColumn {
   readonly key: string;
@@ -86,17 +88,23 @@ interface ExperimentItem {
   readonly evalRows: readonly EvalRow[];
 }
 
-const HEADER = {
-  entity: "Experiment",
-  model: "Model",
-  agent: "Agent",
-  durationMs: "Avg. time",
-  passRate: "Pass rate",
-  totalScore: "Total score",
-  tokens: "Tokens",
-  costUSD: "Cost",
-  record: "Record",
-} as const;
+function hierarchyLimit(observedAtLeast: number): Error {
+  return Object.assign(
+    new Error(`a document may be at most ${REPORT_DOCUMENT_DEPTH_MAX} nodes deep`),
+    {
+      code: "report-limit-exceeded" as const,
+      limit: "document-depth" as const,
+      maximum: REPORT_DOCUMENT_DEPTH_MAX,
+      observedAtLeast,
+    },
+  );
+}
+
+function assertHierarchyDepth(depth: number): void {
+  if (depth > REPORT_DOCUMENT_DEPTH_MAX) {
+    throw hierarchyLimit(depth);
+  }
+}
 
 function measureCell(value: MetricValue): Cell {
   return { kind: "metric", metric: value };
@@ -153,14 +161,14 @@ function attemptMetricValue(value: number | null, unit: "ms" | "$"): MetricValue
   };
 }
 
-function attemptCells(item: AttemptItem): Record<string, Cell> {
+function attemptCells(item: AttemptItem, locale: ClassicLocale): Record<string, Cell> {
   if (item.evaluationKind === "score") {
     return {
       entity: { kind: "locator", locator: item.locator },
       totalScore: measureCell(item.score),
       record: item.scoreStatus === undefined
         ? { kind: "missing", code: "scoreEvidenceUnavailable" }
-        : textCell(item.scoreStatus),
+        : textCell(classicTableCopy(locale, item.scoreStatus)),
       durationMs: measureCell(item.durationMs),
       costUSD: measureCell(item.costUSD),
     };
@@ -178,7 +186,7 @@ function attemptCells(item: AttemptItem): Record<string, Cell> {
   };
 }
 
-function scoreStatusCell(attempts: readonly AttemptItem[]): Cell {
+function scoreStatusCell(attempts: readonly AttemptItem[], locale: ClassicLocale): Cell {
   const counts = { scored: 0, errored: 0, skipped: 0, unavailable: 0 };
   for (const attempt of attempts) {
     const status = attempt.scoreStatus;
@@ -188,20 +196,24 @@ function scoreStatusCell(attempts: readonly AttemptItem[]): Cell {
   return {
     kind: "composition",
     segments: [
-      { label: "scored", count: counts.scored },
-      { label: "errored", count: counts.errored },
-      { label: "skipped", count: counts.skipped },
-      { label: "unavailable", count: counts.unavailable },
+      { label: classicTableCopy(locale, "scored"), count: counts.scored },
+      { label: classicTableCopy(locale, "errored"), count: counts.errored },
+      { label: classicTableCopy(locale, "skipped"), count: counts.skipped },
+      { label: classicTableCopy(locale, "unavailable"), count: counts.unavailable },
     ],
   };
 }
 
-function attemptRow(item: AttemptItem, columns: readonly ColumnSpec[]): TableContentRow {
+function attemptRow(
+  item: AttemptItem,
+  columns: readonly ColumnSpec[],
+  locale: ClassicLocale,
+): TableContentRow {
   return {
     key: item.locator,
     kind: "attempt",
     label: item.locator,
-    cells: projectCells(attemptCells(item), columns),
+    cells: projectCells(attemptCells(item, locale), columns),
   };
 }
 
@@ -284,8 +296,8 @@ function groupPassRate(evalRows: readonly EvalRow[]): MetricValue {
   };
 }
 
-function groupEntityDetail(evals: number): string {
-  return `${evals} evals`;
+function groupEntityDetail(evals: number, locale: ClassicLocale): string {
+  return `${evals} ${classicTableCopy(locale, "evals")}`;
 }
 
 function groupMetricValue(evalRows: readonly EvalRow[], cell: MetricValue): Cell {
@@ -293,7 +305,12 @@ function groupMetricValue(evalRows: readonly EvalRow[], cell: MetricValue): Cell
   return measureCell(cell);
 }
 
-function evalRow(row: EvalRow, columns: readonly ColumnSpec[], label: string): TableContentRow {
+function evalRow(
+  row: EvalRow,
+  columns: readonly ColumnSpec[],
+  label: string,
+  locale: ClassicLocale,
+): TableContentRow {
   const bag: Record<string, Cell> = {
     entity: textCell(label),
     ...(row.evaluationKind === "pass"
@@ -303,7 +320,7 @@ function evalRow(row: EvalRow, columns: readonly ColumnSpec[], label: string): T
       }
       : {
         totalScore: measureCell(row.totalScore),
-        record: scoreStatusCell(row.attempts),
+        record: scoreStatusCell(row.attempts, locale),
       }),
     durationMs: measureCell(row.durationMs),
     costUSD: measureCell(row.costUSD),
@@ -313,7 +330,7 @@ function evalRow(row: EvalRow, columns: readonly ColumnSpec[], label: string): T
     kind: "eval",
     label,
     cells: projectCells(bag, columns),
-    subRows: row.attempts.map((a) => attemptRow(a, columns)),
+    subRows: row.attempts.map((a) => attemptRow(a, columns, locale)),
   };
 }
 
@@ -343,11 +360,12 @@ function groupTableRow(
   members: readonly LeafMember[],
   childRows: readonly TableContentRow[],
   columns: readonly ColumnSpec[],
+  locale: ClassicLocale,
 ): TableContentRow {
   const evalRows = members.map((member) => member.row);
   const composition = evalRowsComposition(evalRows);
   const bag: Record<string, Cell> = {
-    entity: identityCell(segment, groupEntityDetail(evalRows.length)),
+    entity: identityCell(segment, groupEntityDetail(evalRows.length, locale)),
     durationMs: groupMetricValue(evalRows, meanCells(evalRows.map((row) => row.durationMs), "ms")),
     ...(composition === "score" ? {} : { passRate: groupMetricValue(evalRows, groupPassRate(evalRows)) }),
     ...(composition === "pass"
@@ -358,7 +376,7 @@ function groupTableRow(
     record: evalRows.length === 0
       ? { kind: "missing", code: "noSamples" }
       : composition === "score"
-        ? scoreStatusCell(evalRows.flatMap((row) => row.attempts))
+        ? scoreStatusCell(evalRows.flatMap((row) => row.attempts), locale)
         : verdictCell(tallyVerdicts(
           evalRows.filter((row) => row.evaluationKind === "pass")
             .flatMap((row) => row.attempts.map((attempt) => attempt.verdict)),
@@ -367,24 +385,39 @@ function groupTableRow(
   return {
     key: `group:${pathKey}`,
     kind: "group",
-    label: `${segment} (${evalRows.length} evals)`,
+    label: `${segment} (${evalRows.length} ${classicTableCopy(locale, "evals")})`,
     variant: "group",
     cells: projectCells(bag, columns),
     subRows: childRows,
   };
 }
 
-function nestLevel(
+type NestFrame =
+  | {
+      readonly kind: "expand";
+      readonly members: readonly LeafMember[];
+      readonly dirPrefix: string;
+      readonly labelPrefix: string;
+      readonly depth: number;
+    }
+  | {
+      readonly kind: "assemble";
+      readonly depth: number;
+      readonly labelPrefix: string;
+      readonly groups: readonly {
+        readonly segment: string;
+        readonly pathKey: string;
+        readonly members: readonly LeafMember[];
+      }[];
+      readonly leaves: readonly LeafMember[];
+    };
+
+function partitionMembers(
   members: readonly LeafMember[],
   dirPrefix: string,
-  labelPrefix: string,
-  columns: readonly ColumnSpec[],
-): TableContentRow[] {
-  if (members.length === 0) return [];
-
+): { leaves: LeafMember[]; groups: Map<string, LeafMember[]> } {
   const leaves: LeafMember[] = [];
   const groups = new Map<string, LeafMember[]>();
-
   for (const member of members) {
     const remaining = relativeLabel(memberEvalId(member), dirPrefix).split("/").filter(Boolean);
     if (remaining.length <= 1) {
@@ -396,50 +429,130 @@ function nestLevel(
     if (list) list.push(member);
     else groups.set(head, [member]);
   }
-
-  const collapse =
-    groups.size === 0
-    || (groups.size === 1 && leaves.length === 0)
-    || [...groups.values()].every((group) => group.length === 1);
-
-  if (collapse) {
-    if (groups.size === 1 && leaves.length === 0) {
-      const head = [...groups.keys()][0]!;
-      return nestLevel(members, joinPath(dirPrefix, head), labelPrefix, columns);
-    }
-    return members
-      .slice()
-      .sort((a, b) => memberEvalId(a).localeCompare(memberEvalId(b)))
-      .map((member) => evalRow(member.row, columns, relativeLabel(memberEvalId(member), labelPrefix)));
-  }
-
-  const groupEntries = [...groups.entries()].map(([segment, groupMembers]) => ({
-    segment,
-    groupMembers,
-    primary: groupPrimaryValue(groupMembers.map((member) => member.row)),
-  }));
-  groupEntries.sort((a, b) => {
-    if (a.primary === null && b.primary === null) return a.segment.localeCompare(b.segment);
-    if (a.primary === null) return 1;
-    if (b.primary === null) return -1;
-    return b.primary - a.primary || a.segment.localeCompare(b.segment);
-  });
-
-  const rows: TableContentRow[] = groupEntries.map((entry) => {
-    const pathKey = joinPath(dirPrefix, entry.segment);
-    const childRows = nestLevel(entry.groupMembers, pathKey, pathKey, columns);
-    return groupTableRow(entry.segment, pathKey, entry.groupMembers, childRows, columns);
-  });
-
-  const flat = leaves
-    .slice()
-    .sort((a, b) => memberEvalId(a).localeCompare(memberEvalId(b)))
-    .map((member) => evalRow(member.row, columns, relativeLabel(memberEvalId(member), labelPrefix)));
-
-  return [...rows, ...flat];
+  return { leaves, groups };
 }
 
-function coverageRow(item: ExperimentItem, columns: readonly ColumnSpec[]): TableContentRow {
+function shouldCollapse(
+  leaves: readonly LeafMember[],
+  groups: ReadonlyMap<string, readonly LeafMember[]>,
+): boolean {
+  return groups.size === 0
+    || (groups.size === 1 && leaves.length === 0)
+    || [...groups.values()].every((group) => group.length === 1);
+}
+
+function sortedEvalRows(
+  members: readonly LeafMember[],
+  columns: readonly ColumnSpec[],
+  labelPrefix: string,
+  locale: ClassicLocale,
+  depth: number,
+): TableContentRow[] {
+  assertHierarchyDepth(depth);
+  if (members.some((member) => member.row.attempts.length > 0)) {
+    assertHierarchyDepth(depth + 1);
+  }
+  return members
+    .slice()
+    .sort((a, b) => memberEvalId(a).localeCompare(memberEvalId(b)))
+    .map((member) => evalRow(member.row, columns, relativeLabel(memberEvalId(member), labelPrefix), locale));
+}
+
+function nestLevel(
+  members: readonly LeafMember[],
+  columns: readonly ColumnSpec[],
+  locale: ClassicLocale,
+): TableContentRow[] {
+  const stack: NestFrame[] = [{
+    kind: "expand",
+    members,
+    dirPrefix: "",
+    labelPrefix: "",
+    depth: 1,
+  }];
+  const results: TableContentRow[][] = [];
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!;
+    if (frame.kind === "assemble") {
+      const childRows = results.splice(results.length - frame.groups.length, frame.groups.length);
+      const rows = frame.groups.map((group, index) =>
+        groupTableRow(group.segment, group.pathKey, group.members, childRows[index] ?? [], columns, locale)
+      );
+      results.push([
+        ...rows,
+        ...sortedEvalRows(frame.leaves, columns, frame.labelPrefix, locale, frame.depth),
+      ]);
+      continue;
+    }
+
+    assertHierarchyDepth(frame.depth);
+    if (frame.members.length === 0) {
+      results.push([]);
+      continue;
+    }
+
+    let dirPrefix = frame.dirPrefix;
+    let partitioned = partitionMembers(frame.members, dirPrefix);
+    while (
+      shouldCollapse(partitioned.leaves, partitioned.groups)
+      && partitioned.groups.size === 1
+      && partitioned.leaves.length === 0
+    ) {
+      const head = [...partitioned.groups.keys()][0]!;
+      dirPrefix = joinPath(dirPrefix, head);
+      partitioned = partitionMembers(frame.members, dirPrefix);
+    }
+
+    if (shouldCollapse(partitioned.leaves, partitioned.groups)) {
+      results.push(sortedEvalRows(frame.members, columns, frame.labelPrefix, locale, frame.depth));
+      continue;
+    }
+
+    const groupEntries = [...partitioned.groups.entries()].map(([segment, groupMembers]) => ({
+      segment,
+      groupMembers,
+      primary: groupPrimaryValue(groupMembers.map((member) => member.row)),
+    }));
+    groupEntries.sort((a, b) => {
+      if (a.primary === null && b.primary === null) return a.segment.localeCompare(b.segment);
+      if (a.primary === null) return 1;
+      if (b.primary === null) return -1;
+      return b.primary - a.primary || a.segment.localeCompare(b.segment);
+    });
+
+    stack.push({
+      kind: "assemble",
+      depth: frame.depth,
+      labelPrefix: frame.labelPrefix,
+      groups: groupEntries.map((entry) => ({
+        segment: entry.segment,
+        pathKey: joinPath(dirPrefix, entry.segment),
+        members: entry.groupMembers,
+      })),
+      leaves: partitioned.leaves,
+    });
+    for (let index = groupEntries.length - 1; index >= 0; index -= 1) {
+      const entry = groupEntries[index]!;
+      const pathKey = joinPath(dirPrefix, entry.segment);
+      stack.push({
+        kind: "expand",
+        members: entry.groupMembers,
+        dirPrefix: pathKey,
+        labelPrefix: pathKey,
+        depth: frame.depth + 1,
+      });
+    }
+  }
+
+  return results[0] ?? [];
+}
+
+function coverageRow(
+  item: ExperimentItem,
+  columns: readonly ColumnSpec[],
+  locale: ClassicLocale,
+): TableContentRow {
   let fresh = 0;
   let historical = 0;
   let unavailable = 0;
@@ -456,23 +569,27 @@ function coverageRow(item: ExperimentItem, columns: readonly ColumnSpec[]): Tabl
     record: {
       kind: "composition",
       segments: [
-        { label: "fresh", count: fresh },
-        { label: "historical", count: historical },
-        { label: "unavailable", count: unavailable },
+        { label: classicTableCopy(locale, "fresh"), count: fresh },
+        { label: classicTableCopy(locale, "historical"), count: historical },
+        { label: classicTableCopy(locale, "unavailable"), count: unavailable },
       ],
     },
   };
   return {
     key: `coverage:${item.experimentId}`,
     kind: "summary",
-    label: "Record coverage",
+    label: classicTableCopy(locale, "recordCoverage"),
     cells: projectCells(bag, columns),
   };
 }
 
-function experimentRow(item: ExperimentItem, columns: readonly ColumnSpec[]): TableContentRow {
+function experimentRow(
+  item: ExperimentItem,
+  columns: readonly ColumnSpec[],
+  locale: ClassicLocale,
+): TableContentRow {
   const members: LeafMember[] = item.evalRows.map((row) => ({ kind: "eval" as const, row }));
-  const nested = nestLevel(members, "", "", columns);
+  const nested = nestLevel(members, columns, locale);
   const bag: Record<string, Cell> = {
     entity: textCell(item.experimentId),
     model: item.model ? textCell(item.model) : { kind: "notApplicable" },
@@ -483,7 +600,7 @@ function experimentRow(item: ExperimentItem, columns: readonly ColumnSpec[]): Ta
     tokens: measureCell(item.tokens),
     costUSD: measureCell(item.costUSD),
     record: item.scoring === "score"
-      ? scoreStatusCell(item.evalRows.flatMap((row) => row.attempts))
+      ? scoreStatusCell(item.evalRows.flatMap((row) => row.attempts), locale)
       : verdictCell(item.evalVerdicts),
   };
   return {
@@ -491,25 +608,25 @@ function experimentRow(item: ExperimentItem, columns: readonly ColumnSpec[]): Ta
     kind: "experiment",
     label: item.experimentId,
     cells: projectCells(bag, columns),
-    subRows: members.length > 0 ? [...nested, coverageRow(item, columns)] : nested,
+    subRows: members.length > 0 ? [...nested, coverageRow(item, columns, locale)] : nested,
   };
 }
 
-function experimentColumns(composition: ScoringComposition): ColumnSpec[] {
+function experimentColumns(composition: ScoringComposition, locale: ClassicLocale): ColumnSpec[] {
   return [
-    { key: "entity", header: HEADER.entity },
-    { key: "model", header: HEADER.model },
-    { key: "agent", header: HEADER.agent },
-    { key: "durationMs", better: "lower", header: HEADER.durationMs },
+    { key: "entity", header: classicTableCopy(locale, "entity") },
+    { key: "model", header: classicTableCopy(locale, "model") },
+    { key: "agent", header: classicTableCopy(locale, "agent") },
+    { key: "durationMs", better: "lower", header: classicTableCopy(locale, "durationMs") },
     ...(composition === "score"
       ? []
-      : [{ key: "passRate", better: "higher" as const, header: HEADER.passRate }]),
+      : [{ key: "passRate", better: "higher" as const, header: classicTableCopy(locale, "passRate") }]),
     ...(composition === "pass"
       ? []
-      : [{ key: "totalScore", better: "higher" as const, header: HEADER.totalScore }]),
-    { key: "tokens", better: "lower", header: HEADER.tokens },
-    { key: "costUSD", better: "lower", header: HEADER.costUSD },
-    { key: "record", header: HEADER.record },
+      : [{ key: "totalScore", better: "higher" as const, header: classicTableCopy(locale, "totalScore") }]),
+    { key: "tokens", better: "lower", header: classicTableCopy(locale, "tokens") },
+    { key: "costUSD", better: "lower", header: classicTableCopy(locale, "costUSD") },
+    { key: "record", header: classicTableCopy(locale, "record") },
   ];
 }
 
@@ -602,34 +719,51 @@ function experimentItems(sample: Sample): ExperimentItem[] {
 }
 
 function flattenRows(
-  row: TableContentRow,
+  root: TableContentRow,
   columns: readonly ColumnSpec[],
   rootKey: string,
   locale: Sample["locale"],
-  parentKey?: string,
 ): ExperimentTableRow[] {
-  const cells: Record<string, string> = {};
-  for (const column of columns) {
-    cells[column.key] = formatCellText(row.cells[column.key], locale);
-  }
-  const key = parentKey === undefined
-    ? rootKey
-    : JSON.stringify([rootKey, row.kind, row.key]);
-  return [
-    {
+  const out: ExperimentTableRow[] = [];
+  const stack: Array<{
+    readonly row: TableContentRow;
+    readonly parentKey?: string;
+    readonly depth: number;
+  }> = [{ row: root, depth: 0 }];
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!;
+    assertHierarchyDepth(frame.depth);
+    const cells: Record<string, string> = {};
+    for (const column of columns) {
+      cells[column.key] = formatCellText(frame.row.cells[column.key], locale);
+    }
+    const key = frame.parentKey === undefined
+      ? rootKey
+      : JSON.stringify([rootKey, frame.row.kind, frame.row.key]);
+    out.push({
       key,
-      sourceKey: row.key,
-      kind: row.kind,
-      label: row.label,
-      ...(parentKey === undefined ? {} : { parentKey }),
+      sourceKey: frame.row.key,
+      kind: frame.row.kind,
+      label: frame.row.label,
+      ...(frame.parentKey === undefined ? {} : { parentKey: frame.parentKey }),
       cells,
-    },
-    ...(row.subRows ?? []).flatMap((child) => flattenRows(child, columns, rootKey, locale, key)),
-  ];
+    });
+    const children = frame.row.subRows ?? [];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({
+        row: children[index]!,
+        parentKey: key,
+        depth: frame.depth + 1,
+      });
+    }
+  }
+  return out;
 }
 
 export function experimentTableContent(sample: Sample): ExperimentTableContent {
-  const columns = experimentColumns(scoringComposition(sample.units));
+  const locale = sample.locale;
+  const columns = experimentColumns(scoringComposition(sample.units), locale);
   const items = experimentItems(sample);
   return {
     columns: columns.map((column) => ({
@@ -638,7 +772,7 @@ export function experimentTableContent(sample: Sample): ExperimentTableContent {
       align: column.better === undefined ? "left" : "right",
     })),
     rows: items.flatMap((item) =>
-      flattenRows(experimentRow(item, columns), columns, item.experimentId, sample.locale)
+      flattenRows(experimentRow(item, columns, locale), columns, item.experimentId, locale)
     ),
   };
 }

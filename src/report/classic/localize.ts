@@ -54,3 +54,33 @@ export function resolveLocalizedText(
 export function resolveClassicLocale(locale: ClassicLocale | undefined): ClassicLocale {
   return locale ?? "en";
 }
+
+/** Package-owned ExperimentTable display strings. Identity and status stay isomorphic. */
+export const CLASSIC_TABLE_COPY = {
+  entity: { en: "Experiment", "zh-CN": "实验" },
+  model: { en: "Model", "zh-CN": "模型" },
+  agent: { en: "Agent", "zh-CN": "Agent" },
+  durationMs: { en: "Avg. time", "zh-CN": "平均耗时" },
+  passRate: { en: "Pass rate", "zh-CN": "通过率" },
+  totalScore: { en: "Total score", "zh-CN": "总分" },
+  tokens: { en: "Tokens", "zh-CN": "Tokens" },
+  costUSD: { en: "Cost", "zh-CN": "成本" },
+  record: { en: "Record", "zh-CN": "记录" },
+  recordCoverage: { en: "Record coverage", "zh-CN": "记录覆盖" },
+  evals: { en: "evals", "zh-CN": "题目" },
+  scored: { en: "scored", "zh-CN": "已计分" },
+  errored: { en: "errored", "zh-CN": "出错" },
+  skipped: { en: "skipped", "zh-CN": "跳过" },
+  unavailable: { en: "unavailable", "zh-CN": "不可用" },
+  fresh: { en: "fresh", "zh-CN": "新跑" },
+  historical: { en: "historical", "zh-CN": "历史" },
+} as const satisfies Record<string, LocalizedText>;
+
+export type ClassicTableCopyKey = keyof typeof CLASSIC_TABLE_COPY;
+
+export function classicTableCopy(
+  locale: ClassicLocale,
+  key: ClassicTableCopyKey,
+): string {
+  return resolveLocalizedText(CLASSIC_TABLE_COPY[key], locale);
+}

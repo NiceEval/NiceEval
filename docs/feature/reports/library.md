@@ -89,6 +89,10 @@ classic 的 page / Section 标题、Hero 的 title / description / link label �
 display string。原始数值、coverage、row identity、route 与状态保持同构。
 浏览器切换语言不会再次执行 callback。
 
+`ExperimentTable` 的列头、group / coverage 标签与 package-owned 状态展示文案，按 `Sample.locale`
+从同一份 en / zh-CN catalog 选用。row key、parentKey、route、数值、coverage 与状态在两种 locale
+中同构。
+
 已有 React 报告可以保留 `jsx: "react-jsx"`；NiceEval 会接收 React 产出的 element，但仍拒绝原生 DOM 与未包装组件。不想引入 React runtime 的报告可在自己的 `tsconfig.json` 使用 `jsx: "react-jsx"` 与 `jsxImportSource: "niceeval/report"`，改走包内受控 JSX runtime。两种写法形成同一棵 classic element tree。
 
 ```tsx
@@ -152,7 +156,7 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 | `SampleSummary` | 当前 Sample 概况：实验、Eval、attempt 与 coverage。 |
 | `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图，points 来自 `aggregate` 行。`color` 指向的具名 series 形成与柱体纹理、颜色一致的可访问图例。 |
 | `ExperimentScatter` | 按 Experiment 的散点；`input={sample}` 传入同一份闭合 Sample。对应 experiment 页已展开时点可下钻，否则保持纯图形。 |
-| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。输出显式的 Experiment → group/eval → Attempt 父子拓扑与可选实体 target；终端缩进只是该拓扑的呈现结果。 |
+| `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。输出显式的 Experiment → group/eval → Attempt 父子拓扑与可选实体 target；终端缩进只是该拓扑的呈现结果。列头与 group / coverage / status 文案随 locale 本地化，row key 与 parentKey 不随语言变化。深层 Eval identity 迭代展开，超过 `REPORT_DOCUMENT_DEPTH_MAX` 时形成结构化 problem，而不是栈溢出。 |
 | `Grid` / `Stat` / `Table` | 排版原语：格网、读数格、单元格表。 |
 | `SampleNotices` | 选择提示。默认读取 `ctx.scope`，也接受旧作者使用的 `input={sample}`。partial Sample 输出一条 `selection-profile-unavailable` warning；current-declaration Sample 不输出提示。 |
 | `RunNotices` | 保留 0.12 作者组合与导入位置。当前闭合 Sample 不携带 Run diagnostics projection，因此组件不输出区块，也不把缺失诊断伪造成空事实。 |
@@ -751,6 +755,9 @@ interface ReportCellTable {
 `ReportHero`、`ReportSummary`、`ReportRankedBars`、`ReportScatter`、`ReportTreeTable` 与 `ReportCellTable` 对应 classic facade 的内置组件。低层 API 可以直接构造它们。
 
 `ExperimentTable` 使用 `ReportCellTable` 的 `hierarchy: true` 形状表达 Experiment → group / Eval → Attempt。每行用稳定 `key`、`parentKey`、`kind` 与 `label` 描述拓扑，renderer 只负责把这份拓扑呈现成 disclosure。Experiment 与 Attempt 行的可选 target 是 execution 求得的 ordinary exact route，不由 renderer 根据 label 或 locator 猜测。
+
+深层合法 Eval identity 必须先迭代展开，再交给现有 document / hierarchy depth 上限。超过
+`REPORT_DOCUMENT_DEPTH_MAX` 时形成结构化 execution problem，不能先因无界递归抛出 `RangeError`。
 
 精确树形状之外还必须做 relational validation：
 
