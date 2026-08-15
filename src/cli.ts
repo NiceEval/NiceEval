@@ -49,7 +49,7 @@ import {
   executionShowJsonReport,
   timingEvidenceReport,
 } from "./report/built-in/execution.ts";
-import { sourceEvidenceReport } from "./report/built-in/source.ts";
+import { sourceEvidenceReportForTerminal } from "./report/built-in/source.ts";
 import { publicLeaderboardReport } from "./report/built-in/leaderboard.ts";
 import {
   calculationValue,
@@ -376,7 +376,7 @@ const FLAG_OPTIONS = {
   /** `view` 命令专用:指定监听地址；省略时为 127.0.0.1，只写 `--host` 时为 0.0.0.0。非 loopback 监听无认证或 TLS，会向所有可达客户端暴露报告数据。 */
   host: { type: "string" },
   // 以下旧 show 切片只为实现收敛期间保留解析位置，不属于目标公开 CLI，也不进入参考页。
-  /** `show` 专用：按一个 exact Attempt locator 展示已记录的 source snapshot。 */
+  /** `show @<AttemptLocator> --source[=full|<captured-path>]`：呈现已记录的 source snapshot。 */
   source: { type: "boolean" },
   /** `show @<AttemptLocator> --execution`：从公开 Record projection 呈现该 Attempt 的 transcript、tool 与 command evidence。 */
   execution: { type: "boolean" },
@@ -2343,7 +2343,10 @@ function parseReportCliRequest(input: {
       throw usageError("niceeval show --source requires one current Record Attempt locator.\n");
     }
     const parsedLocator = parseCurrentAttemptLocator(locator);
-    const report = sourceEvidenceReport(sourceEvidenceOptions(input.flags.source, input.flags.json));
+    const report = sourceEvidenceReportForTerminal(
+      sourceEvidenceOptions(input.flags.source, input.flags.json),
+      showTerminalColumns(),
+    );
     return Object.freeze({
       command: input.command,
       cwd: input.cwd,
@@ -2427,6 +2430,16 @@ function sourceEvidenceOptions(source: Flags["source"], json = false): {
   if (source === "full") return Object.freeze({ mode: "full" as const });
   if (typeof source === "string") return Object.freeze({ mode: "file" as const, file: source });
   return Object.freeze({ mode: json ? "full" as const : "default" as const });
+}
+
+/** Match the Report host's stdout.columns → COLUMNS → 80 width precedence. */
+function showTerminalColumns(): number {
+  const columns = process.stdout.columns;
+  if (typeof columns === "number" && columns > 0) return columns;
+  const raw = process.env.COLUMNS;
+  if (raw === undefined || !/^[1-9][0-9]*$/.test(raw)) return 80;
+  const fromEnvironment = Number(raw);
+  return Number.isSafeInteger(fromEnvironment) ? Math.max(40, fromEnvironment) : 80;
 }
 
 function publicShowJsonRequest(request: ReportCliRequest): ReportCliRequest {

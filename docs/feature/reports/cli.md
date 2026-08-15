@@ -135,6 +135,11 @@ Calculation 或 projection 失败时，`data` 是 `execution-failed`，人读面
 
 Source view 的 text 与 JSON 只公开已选 Attempt 的 canonical locator、Evaluation coordinate 与捕获内容。它不输出 Record path、blob path、`sources.json` 文件名或其它私有布局；source Attachment 不可用时仍保留已知 locator，并返回显式 unavailable。
 
+`show @<AttemptLocator> --source` 使用 `default` source mode。`--source=full` 展开可显示的 project
+调用。`--source=<captured-path>` 映射为 `{ mode: "file", file: <captured-path> }`，只显示匹配的
+captured source。终端 text 先取 `stdout.columns`，再取 `COLUMNS`，最后用 80 列；这个宽度只影响
+text 截断，不进入 Calculation value 或 JSON data envelope。
+
 `--report` 的 text 面与 live view、static export 消费同一份 `ReportExecution`。Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 observed/denominator。通过率等业务统计只有在 Calculation value 自己提供时才显示。unavailable、unsupported、invalid 与 execution-failed 必须保留状态及 problem reference，不能替换成零、空字符串或省略行。
 
 Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，interruption 保持 Cause。

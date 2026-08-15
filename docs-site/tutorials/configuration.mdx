@@ -56,7 +56,7 @@ export default defineConfig({
 | Field | What it does |
 | --- | --- |
 | `name` | Project name shown at the top of `niceeval view`; can be given per language |
-| `report` | Default report definition, loaded by a bare `show` / `view` (see [custom reports](/tutorials/custom-reports#set-it-as-the-project-default)) |
+| `report` | Default Report definition, loaded by a bare `show` / `view`; without it they use built-in `standard`, and `--report overview` explicitly opens Record slot diagnostics (see [custom reports](/tutorials/custom-reports#set-it-as-the-project-default)) |
 | `judge` | Default judge configuration: `model`, `baseUrl`, `apiKeyEnv` |
 | `workspace` | Workspace root uploaded into the sandbox |
 | `reporters` | Default reporter list (write to disk, push to an experiment platform) |

@@ -60,6 +60,25 @@ export interface SourceEvidenceReportOptions {
  * they never dump package or node_modules file texts.
  */
 export function sourceEvidenceReport(input: SourceEvidenceReportOptions = {}): Report {
+  return makeSourceEvidenceReport(input, 80);
+}
+
+/**
+ * CLI-only factory: the host supplies its already-resolved terminal width.
+ * It stays out of the public built-in entry so source presentation has no
+ * ambient process dependency inside the Report graph.
+ */
+export function sourceEvidenceReportForTerminal(
+  input: SourceEvidenceReportOptions,
+  terminalWidth: number,
+): Report {
+  return makeSourceEvidenceReport(input, terminalWidth);
+}
+
+function makeSourceEvidenceReport(
+  input: SourceEvidenceReportOptions,
+  terminalWidth: number,
+): Report {
   const options = Object.freeze({
     mode: input.mode ?? "default",
     ...(input.file === undefined ? {} : { file: input.file }),
@@ -79,6 +98,7 @@ export function sourceEvidenceReport(input: SourceEvidenceReportOptions = {}): R
     render: ({ calculations, inputs }) => sourceEvidenceDocument(
       calculations.sourceJson,
       options.mode === "default" ? firstAssertionAttachment(inputs.assertions) : undefined,
+      terminalWidth,
     ),
   });
   return defineReport({
@@ -128,6 +148,7 @@ function sourceEvidenceDocument(
     | { readonly state: "available"; readonly value: SourceShowJson }
     | { readonly state: "data-unavailable" | "execution-failed"; readonly problemIds: readonly number[] },
   assertions: ProjectedRecordAttachmentResult<unknown> | undefined,
+  terminalWidth: number,
 ) {
   if (result.state !== "available") {
     return reportDocument({
@@ -160,7 +181,7 @@ function sourceEvidenceDocument(
     children: [
       ...(assertions === undefined ? [] : [attachmentStatus("Assertions", assertions)]),
       reportCodeBlock({
-        value: renderPresentedSource(value.source, terminalColumns()),
+        value: renderPresentedSource(value.source, terminalWidth),
       }),
     ],
   });
@@ -346,11 +367,4 @@ function availableAttemptSlot(
     }
   }
   return undefined;
-}
-
-function terminalColumns(): number {
-  const raw = typeof process === "undefined" ? undefined : process.env.COLUMNS;
-  if (raw === undefined || !/^[1-9][0-9]*$/.test(raw)) return 80;
-  const columns = Number(raw);
-  return Number.isSafeInteger(columns) ? Math.max(40, columns) : 80;
 }

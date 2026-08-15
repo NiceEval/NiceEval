@@ -623,6 +623,8 @@ type ReportInline =
 interface ReportDocument {
   readonly title: string;
   readonly children: readonly ReportBlock[];
+  readonly presentation?: "classic-dashboard" | "evidence-text";
+  readonly metadataOrigin?: "current-declaration" | "partial";
 }
 
 type ReportBlock =
@@ -673,6 +675,8 @@ interface ReportHero {
     readonly label: string;
     readonly target: { readonly kind: "external"; readonly href: string };
   }[];
+  readonly lastRunAt?: number | null;
+  readonly runCount?: number;
 }
 interface ReportSummary {
   readonly type: "summary";
@@ -933,6 +937,21 @@ selection 不会因此扩大 Attachment 读取范围。
 它的稳定表契约、row 值域与截断边界见 [CLI](cli.md#内建-run-membership-概览)。Report 只读取公开
 projector 的 `MembershipAction.outcome`，不读取 persisted raw action。Core Member、provenance 与
 Verdict 作为三组独立事实并列显示。
+
+`sourceEvidenceReport(options?)` 是 recorded source 的普通 Report。它只消费公开 source-navigation
+projection，不接收 Record reader、路径或文件系统 capability。
+
+```ts
+interface SourceEvidenceReportOptions {
+  readonly mode?: "default" | "full" | "file";
+  readonly file?: string;
+}
+
+declare const sourceEvidenceReport: (options?: SourceEvidenceReportOptions) => Report;
+```
+
+`default` 显示主文件与需要注意的调用。`full` 展开所有可显示的 project 调用。
+`file` 只显示 `file` 指定的 captured source。`file` 不是 Record path，也不授权读取当前工作树。
 
 `niceeval/report/built-in` 的 `defaultSandboxHistoryReport` 是一份普通、无额外 reader capability 的
 history Report。调用点先用公开的 all-runs Analysis selection 形成 Sample；Report 只声明并消费

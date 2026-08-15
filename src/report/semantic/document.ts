@@ -1062,6 +1062,12 @@ function validateHero(
   if (hasField(record, "logo")) {
     validateHeroLogo(field(record, "logo"), state, pathFor(path, "logo"));
   }
+  if (hasField(record, "lastRunAt")) {
+    validateEpochMillisOrNull(field(record, "lastRunAt"), state, pathFor(path, "lastRunAt"));
+  }
+  if (hasField(record, "runCount") && !isCount(field(record, "runCount"))) {
+    issue(state, "number", pathFor(path, "runCount"), "runCount must be a non-negative safe integer");
+  }
   validateString(field(record, "description"), state, pathFor(path, "description"));
   forEachArray(field(record, "links"), state, pathFor(path, "links"), (link, index) => {
     const linkPath = pathFor(pathFor(path, "links"), index);

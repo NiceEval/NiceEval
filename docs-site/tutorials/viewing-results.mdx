@@ -47,7 +47,7 @@ Use a complete `--run` ID to audit those historical results.
 
 ## Inspect results in the terminal
 
-`show` renders the default Report as text. An explicit `--run` without `--report` uses the built-in membership Report. Current-project results use the configured project Report; without one, bare `show` falls back to classic `standard`. Supplying a page or custom Report still creates one execution from the same selection.
+`show` renders the default Report as text. An explicit `--run` without `--report` uses the built-in membership Report. Current-project results use the configured project Report; without one, bare `show` falls back to built-in `standard`. `--report overview` explicitly opens Record slot diagnostics. Supplying a page or custom Report still creates one execution from the same selection.
 
 ```sh
 npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
@@ -55,6 +55,15 @@ npx niceeval show --experiment checkout --json
 ```
 
 Plain `show --json` emits the `niceeval.show` data envelope for the same execution. It carries view-specific data plus the selection, run and slot counts, sample denominator, and problem table. An explicit `--run` without `--report` keeps the membership Report and emits its `niceeval.report-show/v1` provenance document, the report tree JSON. `--json` cannot combine with `--page` or `--report`. It does not create another data path.
+
+### Inspect captured source
+
+For one exact Attempt locator, `--source` shows compact captured source, `--source=full` opens every displayable project call, and `--source=<captured-path>` selects one captured source file. The terminal renderer uses the host width in this order: `stdout.columns`, `COLUMNS`, then 80 columns.
+
+```sh
+npx niceeval show @01H... --source=full
+npx niceeval show @01H... --source=evals/checkout.eval.ts
+```
 
 ## Inspect results in the browser
 

@@ -214,6 +214,27 @@ export default defineReport({
 | recorded-data problem | 显示问题，并保留其它成功内容。 | 可以导出，问题必须可见。 |
 | execution problem | 保留其它成功页面，并显示问题。 | 不导出。 |
 
+## 内建 source evidence Report
+
+`sourceEvidenceReport()` 是一份普通 Report，只消费公开的 source-navigation projection。它不会拿到 Record reader、Record path 或文件系统访问能力。
+
+```ts
+import { sourceEvidenceReport } from "niceeval/report/built-in";
+
+const compact = sourceEvidenceReport();
+const expanded = sourceEvidenceReport({ mode: "full" });
+const oneFile = sourceEvidenceReport({
+  mode: "file",
+  file: "evals/checkout.eval.ts",
+});
+```
+
+`default` 显示入口文件与需要注意的调用。`full` 展开每个可显示的项目调用。`file` 只选择一份捕获的 source。`file` 不是 Record path，也不能读取当前工作区。
+
+### 迁移 source options
+
+把历史的 `{ path: "evals/checkout.eval.ts" }` 调用替换成 `{ mode: "file", file: "evals/checkout.eval.ts" }`。显式 mode 把文件筛选与 compact、full 呈现分开。
+
 ## view 与静态导出
 
 `view` 每次 rebuild 构造新的固定 `ReportExecution`。完整成功后才替换当前 revision；失败保留 last-good execution，并显示 bounded rebuild problem。

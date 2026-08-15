@@ -18,7 +18,7 @@ export default defineConfig({
 });
 ```
 
-`report` takes the `defineReport` product itself (import your own report file), not a path string. `niceeval show` and `niceeval view` load it when `--report` is absent, and fall back to the built-in default report when it is not set; `--report` overrides it per run, and `--report standard` goes back to the built-in one. Writing reports is covered in [Write a custom report](/tutorials/custom-reports#set-it-as-the-project-default).
+`report` takes the `defineReport` product itself (import your own report file), not a path string. `niceeval show` and `niceeval view` load it when `--report` is absent; without it, they use built-in `standard`. `--report overview` explicitly opens Record slot diagnostics, while `--report standard` returns to the built-in Report. Writing reports is covered in [Write a custom report](/tutorials/custom-reports#set-it-as-the-project-default).
 
 ## Config fields
 

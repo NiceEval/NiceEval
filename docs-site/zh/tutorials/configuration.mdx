@@ -60,7 +60,7 @@ export default defineConfig({
 | 字段 | 放什么 |
 | --- | --- |
 | `name` | 项目名，显示在 `niceeval view` 顶部。可按语言给多份 |
-| `report` | 默认报告定义，不带 `--report` 的 `show` / `view` 装载它（见[自定义报告](/zh/tutorials/custom-reports#设成项目默认)） |
+| `report` | 默认 Report 定义，不带 `--report` 的 `show` / `view` 装载它；没写时使用内建 `standard`，`--report overview` 显式查看 Record slot 诊断（见[自定义报告](/zh/tutorials/custom-reports#设成项目默认)） |
 | `judge` | 默认裁判配置：`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs`（判分调用等待上限，默认 180_000） |
 | `workspace` | 上传进 Sandbox 的工作区根目录 |
 | `reporters` | 默认 reporter 列表（落盘、上报实验平台） |

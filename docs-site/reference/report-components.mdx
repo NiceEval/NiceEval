@@ -272,6 +272,27 @@ Each projection, Calculation, PageFamily, page instance, and Download runs at mo
 | Recorded-data problem | Shows the problem and keeps other successful content. | Can export, and the problem remains visible. |
 | Execution problem | Shows the problem and keeps other successful pages. | Does not export that execution. |
 
+## Built-in source evidence Report
+
+`sourceEvidenceReport()` is a normal Report over the public source-navigation projections. It never receives a Record reader, a Record path, or filesystem access.
+
+```ts
+import { sourceEvidenceReport } from "niceeval/report/built-in";
+
+const compact = sourceEvidenceReport();
+const expanded = sourceEvidenceReport({ mode: "full" });
+const oneFile = sourceEvidenceReport({
+  mode: "file",
+  file: "evals/checkout.eval.ts",
+});
+```
+
+`default` shows the entry file and calls that need attention. `full` opens every displayable project call. `file` selects one captured source file. The `file` value is not a Record path and cannot read the current workspace.
+
+### Migrate source options
+
+Replace a historical `{ path: "evals/checkout.eval.ts" }` call with `{ mode: "file", file: "evals/checkout.eval.ts" }`. The explicit mode keeps a file filter separate from compact and full presentation.
+
 ## `view` and static export
 
 Each `view` rebuild creates a new immutable `ReportExecution`. NiceEval replaces the current revision only after a complete success; a failed rebuild retains the last good execution and shows a bounded rebuild problem.

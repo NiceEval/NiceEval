@@ -251,6 +251,8 @@ npx niceeval show --run 01H...
 npx niceeval show --run 01H... --run 01J...
 npx niceeval show @01H...
 npx niceeval show @01H... --source
+npx niceeval show @01H... --source=full
+npx niceeval show @01H... --source=evals/checkout.eval.ts
 npx niceeval show @01H... --execution
 npx niceeval show @01H... --timing
 npx niceeval show @01H... --timing=full
@@ -262,7 +264,9 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 项目没有配置 `report` 时，不带选项的 `show` 使用内建 `standard`，输出经典 Hero、汇总、Experiment 图表、明细表与详情页面。`--report overview` 用于查看 Record slot 诊断，不是默认用户界面；`--report standard` 可按次忽略项目自定义报告。
 
-加 `--source`、`--execution` 或 `--timing` 可查看对应的专用证据面。`--timing` 默认显示精简阶段树；`--timing=full` 还显示 interval identity、parent 和 offset。三种证据面互斥，并且都要求一个精确 Attempt 定位符。
+加 `--source`、`--execution` 或 `--timing` 可查看对应的专用证据面。`--source` 显示精简内容，`--source=full` 展开全部可显示的项目调用，`--source=<captured-path>` 只显示一份已捕获的 source 文件。
+
+source 文本宽度依次使用 `stdout.columns`、`COLUMNS` 与 80 列。`--timing` 默认显示精简阶段树；`--timing=full` 还显示 interval identity、parent 和 offset。三种证据面互斥，并且都要求一个精确 Attempt 定位符。
 
 不带 locator 或 `--run` 的 `show` 规划当前项目身份，并扫描默认 Record 中全部 published Run。只有 Experiment、Eval、Attempt 序号、evaluation kind、input identity 与 config identity 仍匹配的 slot 才进入 Sample；命令不会按时间只留一个 Run。没有匹配结果时显示空 Sample，过期结果仍可用完整 `--run` 读取。
 

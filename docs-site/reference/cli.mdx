@@ -245,6 +245,8 @@ npx niceeval show --run 01H...
 npx niceeval show --run 01H... --run 01J...
 npx niceeval show @01H...
 npx niceeval show @01H... --source
+npx niceeval show @01H... --source=full
+npx niceeval show @01H... --source=evals/checkout.eval.ts
 npx niceeval show @01H... --execution
 npx niceeval show @01H... --timing
 npx niceeval show @01H... --timing=full
@@ -256,7 +258,9 @@ npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 
 When the project does not configure `report`, bare `show` uses built-in `standard`: the classic Hero, sample summary, Experiment chart, detail table, and detail pages. `--report overview` explicitly selects Record slot diagnostics; it is not the zero-configuration user interface. `--report standard` bypasses a project Report for one invocation.
 
-Add `--source`, `--execution`, or `--timing` to inspect its dedicated evidence surface. `--timing` shows a compact phase tree by default. `--timing=full` adds interval identity, parent, and offset. These three surfaces are mutually exclusive and each requires one exact Attempt locator.
+Add `--source`, `--execution`, or `--timing` to inspect its dedicated evidence surface. `--source` is compact, `--source=full` opens every displayable project call, and `--source=<captured-path>` selects one captured source file. Its terminal width comes from `stdout.columns`, then `COLUMNS`, then 80 columns.
+
+`--timing` shows a compact phase tree by default. `--timing=full` adds interval identity, parent, and offset. These three surfaces are mutually exclusive and each requires one exact Attempt locator.
 
 Without a locator or `--run`, `show` plans current-project identity and scans every published Run in the default Record. It includes only slots whose Experiment, Eval, attempt ordinal, evaluation kind, input identity, and config identity still match the current project. It does not retain only one Run by time. When no result matches, it shows an empty Sample. Stale results remain available through a complete `--run` ID.
 

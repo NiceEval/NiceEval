@@ -276,6 +276,10 @@ function compareBlockList(
  * and numbers can never differ between locales.
  */
 function compareBlock(en: ReportBlock, zhCN: ReportBlock, path: readonly string[]): void {
+  if (en.type === "hero" && zhCN.type === "hero") {
+    compareOptionalExactField(en, zhCN, "lastRunAt", path);
+    compareOptionalExactField(en, zhCN, "runCount", path);
+  }
   const enKeys = Object.keys(en).sort();
   const zhCNKeys = Object.keys(zhCN).sort();
   if (enKeys.length !== zhCNKeys.length || enKeys.some((key, index) => key !== zhCNKeys[index])) {
@@ -559,6 +563,7 @@ function compareDocumentShape(en: unknown, zhCN: unknown, path: readonly string[
   const enPresentation = Reflect.get(en, "presentation");
   const zhCNPresentation = Reflect.get(zhCN, "presentation");
   compareExact(enPresentation, zhCNPresentation, [...path, "presentation"]);
+  compareOptionalExactField(en, zhCN, "metadataOrigin", path);
   const enTitle = Reflect.get(en, "title");
   const zhCNTitle = Reflect.get(zhCN, "title");
   compareLocalizedString(enTitle, zhCNTitle, [...path, "title"]);
@@ -568,6 +573,23 @@ function compareDocumentShape(en: unknown, zhCN: unknown, path: readonly string[
     throw closureInvalid([...path, "children"], "a document must carry block children in both locales");
   }
   compareBlocks(enChildren as ReportBlock[], zhCNChildren as ReportBlock[], [...path, "children"]);
+}
+
+/** An optional business field must be absent on both sides or exactly equal. */
+function compareOptionalExactField(
+  en: object,
+  zhCN: object,
+  key: string,
+  path: readonly string[],
+): void {
+  const enHas = Object.hasOwn(en, key);
+  const zhCNHas = Object.hasOwn(zhCN, key);
+  if (enHas !== zhCNHas) {
+    throw closureInvalid([...path, key], "business field presence must match between locales");
+  }
+  if (enHas) {
+    compareExact(Reflect.get(en, key), Reflect.get(zhCN, key), [...path, key]);
+  }
 }
 
 function compareProjections(en: ReportExecution, zhCN: ReportExecution): void {

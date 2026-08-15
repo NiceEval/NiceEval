@@ -238,13 +238,14 @@ export const en = {
     "        --experiment <id> is repeatable and narrows that current target\n" +
     "      --run <run-id> is repeatable and audits complete historical ids only\n" +
     "      --record <root> selects the actual Record root (default: .niceeval/record)\n" +
-    "      --report overview (or omit it) uses the built-in overview; --page <route-or-page-id>\n" +
-    "        selects an exact Report route or a uniquely matching expanded page id; --json emits one Report show document\n" +
+    "      omitting --report loads the project Report, then built-in standard; --report overview diagnoses Record slots\n" +
+    "      --page <route-or-page-id> selects an exact Report route or a uniquely matching expanded page id\n" +
+    "      ordinary --json emits one niceeval.show data envelope; explicit --run without --report emits niceeval.report-show/v1 membership\n" +
     "  niceeval list                                       list discovered evals\n" +
     "  niceeval session list [--all] [experiment-prefix]    query Sessions (read-only)\n" +
     "  niceeval session show <sessionId>                   show one Session (read-only)\n" +
     "  niceeval view [--run <run-id>...] [--out dir] [--port n] [--no-open]\n" +
-    "      uses the same Record selection and built-in overview as show; live mode\n" +
+    "      uses the same Record selection and Report choice as show; live mode\n" +
     "      binds loopback only and rebuilds fixed ReportExecutions on Record changes\n" +
     "      --out <dir> exports one completed static site and starts no server\n" +
     "  niceeval sandbox list|enter|history|diff|stop  inspect & destroy sandboxes kept by --keep-sandbox\n" +

@@ -50,6 +50,15 @@ npx niceeval show --experiment checkout --json
 
 JSON 表达事实，不是 Report 页面树。`show --json` 不能与 `--report` 或 `--page` 合用；这些组合会在读取 Record 前返回用法错误。
 
+### 查看已捕获的 source
+
+针对一个精确 Attempt 定位符，`--source` 显示精简的已捕获 source，`--source=full` 展开全部可显示的项目调用，`--source=<captured-path>` 只显示一份已捕获 source 文件。终端按 `stdout.columns`、`COLUMNS`、80 列的顺序决定文本宽度。
+
+```sh
+npx niceeval show @01H... --source=full
+npx niceeval show @01H... --source=evals/checkout.eval.ts
+```
+
 下面是一条人工采用结果的终端输出。`reference` 表示这个 Run 引用源 Attempt，`accepted` 表示这个 Run 的 membership provenance 记录了人工采用：
 
 ```text

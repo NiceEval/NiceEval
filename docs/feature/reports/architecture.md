@@ -50,6 +50,9 @@ host 不把这个 closure、locale 配对或构造过程暴露给 Report 作者�
 实体 target、数值、coverage、状态与 problems。只有 `LocalizedText` 和 package-owned 文案可以随 locale
 变化。任何缺页、route 冲突、业务载荷差异或 callback 失败都使本次 rebuild 失败。
 
+`ReportDocument.metadataOrigin` 与 Hero 的 `lastRunAt`、`runCount` 都是业务载荷。closure 要求三者的
+存在性和值完全一致；它们不是 locale 文案。
+
 host 只在两份 execution 完成并通过验证后，原子替换 current revision。失败时 current revision 保持
 last-good，页面只增加有界的 rebuild problem；host 不发布单语言、半完成或混合 revision。
 
@@ -180,6 +183,8 @@ classic facade 的受控 JSX 与低层页面 API 都汇入闭合的 `ReportDocum
 树包含 Hero、summary、`ranked-bars`、scatter 与 `tree-table` 节点。`tree-table` 表达 Experiment → Eval → Attempt 层级；Attempt 行保留公开 locator target，由 host 按呈现面解释，不声明额外详情页面。
 
 精确树形状验证之外，host 验证 number、Unicode、table keys、chart 长度、ranked-bars / scatter 的 finite 数值、cycle、深度、nodes、strings 与 link target。Hero 外链只接受绝对 https，host 只序列化不 fetch；http、javascript、data、file 与 relative 拒绝。缺失 cost / timing 保持 null，不补 0。HTML 按 context escape，terminal 把控制字符转成可见文本；不存在 raw HTML 逃逸口。
+
+Hero 的 `lastRunAt` 只能是 `null` 或非负 safe Unix-epoch millisecond。`runCount` 只能是非负 safe integer。
 
 inline link 必须属于同一 execution closure。scatter point 与 tree-table row 的合法 route target 是可选实体导航：目标 route 未展开时删除 target 并退化为纯展示；已展开但随后失效时仍沿反向依赖传播失败。
 
