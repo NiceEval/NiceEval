@@ -2,7 +2,7 @@
 // Link 只消费 template 的纯数据 identity；planner callback 保存在 WeakMap 中，不进入声明或指纹。
 
 import { isAbsolute, resolve } from "node:path";
-import { Data, Effect, Option } from "effect";
+import { Data, Effect, Option, type Scope } from "effect";
 import type { JsonValue } from "../shared/types.ts";
 import type { ScopedFeedback } from "../shared/types.ts";
 import type {
@@ -418,7 +418,7 @@ export interface SandboxProviderModule<Plan> {
   readonly materialize: (
     plan: Plan,
     context: SandboxRuntimeMaterializeContext,
-  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError>;
+  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
   readonly collectBuildPreparation: (
     plan: Plan,
     published: SandboxProviderPlan,
@@ -432,7 +432,7 @@ export interface SandboxProviderBinding {
   readonly capabilities: SandboxProviderCapabilities;
   readonly materialize: (
     context: SandboxRuntimeMaterializeContext,
-  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError>;
+  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
   readonly collectBuildPreparation: (
     evalId: string,
   ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;

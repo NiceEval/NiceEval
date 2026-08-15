@@ -353,24 +353,23 @@ function normalizeMaterialized(
   return Object.freeze({ ...materialized, sandbox, group });
 }
 
-function materializationEffect(
+function materializationEffect<R>(
   context: SandboxRuntimeMaterializeContext,
-  acquire: () => Promise<MaterializedSandboxCase>,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return Effect.tryPromise({
-    try: acquire,
-    catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
-  });
+  acquire: Effect.Effect<MaterializedSandboxCase, unknown, R>,
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, R> {
+  return acquire.pipe(
+    Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
+  );
 }
 
 export function materializeDockerComposeProviderPlan(
   plan: DockerComposeProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   const materialize = context.services._tag === "Live"
     ? materializeDockerComposeProviderCase
     : context.services.materializeCompose;
-  return materializationEffect(context, async () => normalizeMaterialized(await materialize({
+  return materializationEffect(context, materialize({
     evalId: context.evalId,
     profile: context.evalId,
     mainService: plan.workspaceService,
@@ -391,7 +390,7 @@ export function materializeDockerComposeProviderPlan(
     feedback: context.feedback,
     provisionSlot: boundProvisionSlot(context),
     lifetimeMs: configuredLifetime(plan.lifetime),
-  }), context));
+  }).pipe(Effect.map((materialized) => normalizeMaterialized(materialized, context))));
 }
 
 export function materializeDockerfileProviderPlan(
@@ -414,16 +413,17 @@ export function materializeDockerfileProviderPlan(
         resolveDockerfileAgentImage(plan, context, locator).pipe(
           Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
         ),
-        (resolved) => materializationEffect(context, async () => {
-            const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
+        (resolved) => materializationEffect(context, Effect.gen(function* () {
+            const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
+              () => import("./docker.ts"),
+            );
             const managed = plan.profileBinding === undefined
               ? undefined
-              : await managedContainerSession(plan.profileBinding, plan.resources);
+              : yield* providerBoundaryEffect(() => managedContainerSession(plan.profileBinding!, plan.resources));
             const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
-            let backend: DockerSandbox;
-            try {
-              backend = await withProvisionRetry(
-                () => DockerSandbox.create({
+            return yield* Effect.gen(function* () {
+              const backend = yield* withProvisionRetry(
+                providerBoundaryEffect(() => DockerSandbox.create({
                   ...deadlineOptions(context.deadline),
                   runtime: "node24",
                   image: resolved.locator,
@@ -447,25 +447,26 @@ export function materializeDockerfileProviderPlan(
                     },
                     afterStop: managed?.finish,
                   }),
-                }),
+                })),
                 classifyProvisionError,
                 boundProvisionSlot(context),
                 context.feedback,
-                () => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath),
+                providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath)),
               );
               if (managed !== undefined) {
-                await commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
+                yield* providerBoundaryEffect(() => commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
                   containerId: backend.sandboxId,
                   ...(backend.managedNetworkId === undefined ? {} : { networkId: backend.managedNetworkId }),
                   attemptId: context.evalId,
-                });
+                }));
               }
-            } catch (error) {
-              await managed?.finish().catch(() => undefined);
-              throw error;
-            }
-            return wrapSingleSandbox(backend, context, { image: resolved.locator });
-          }),
+              return wrapSingleSandbox(backend, context, { image: resolved.locator });
+            }).pipe(
+              Effect.onError(() => managed === undefined
+                ? Effect.void
+                : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore)),
+            );
+          })),
       ),
   });
 }
@@ -615,16 +616,17 @@ export function materializeDockerImageProviderPlan(
   plan: DockerImageProviderPlan,
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return materializationEffect(context, async () => {
-    const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
+  return materializationEffect(context, Effect.gen(function* () {
+    const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
+      () => import("./docker.ts"),
+    );
     const managed = plan.profileBinding === undefined
       ? undefined
-      : await managedContainerSession(plan.profileBinding, plan.resources);
+      : yield* providerBoundaryEffect(() => managedContainerSession(plan.profileBinding!, plan.resources));
     const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
-    let backend: DockerSandbox;
-    try {
-      backend = await withProvisionRetry(
-        () => DockerSandbox.create({
+    return yield* Effect.gen(function* () {
+      const backend = yield* withProvisionRetry(
+        providerBoundaryEffect(() => DockerSandbox.create({
         ...deadlineOptions(context.deadline),
         runtime: "node24",
         image: plan.image,
@@ -648,37 +650,40 @@ export function materializeDockerImageProviderPlan(
           },
           afterStop: managed?.finish,
         }),
-      }),
+      })),
       classifyProvisionError,
       boundProvisionSlot(context),
       context.feedback,
-        () => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath),
+        providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath)),
       );
       if (managed !== undefined) {
-        await commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
+        yield* providerBoundaryEffect(() => commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
           containerId: backend.sandboxId,
           ...(backend.managedNetworkId === undefined ? {} : { networkId: backend.managedNetworkId }),
           attemptId: context.evalId,
-        });
+        }));
       }
-    } catch (error) {
-      await managed?.finish().catch(() => undefined);
-      throw error;
-    }
-    return wrapSingleSandbox(backend, context, { image: plan.image });
-  });
+      return wrapSingleSandbox(backend, context, { image: plan.image });
+    }).pipe(
+      Effect.onError(() => managed === undefined
+        ? Effect.void
+        : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore)),
+    );
+  }));
 }
 
 export function materializeE2BProviderPlan(
   plan: E2BProviderPlan,
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return materializationEffect(context, async () => {
+  return materializationEffect(context, Effect.gen(function* () {
     const lifetime = e2bLifetimeRequest(plan.lifetime, context.deadline);
-    const { E2BSandbox, classifyProvisionError, reconcileProvision } = await import("./e2b.ts");
+    const { E2BSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
+      () => import("./e2b.ts"),
+    );
     const provisionToken = randomUUID();
-    const backend = await withProvisionRetry(
-      () => E2BSandbox.create({
+    const backend = yield* withProvisionRetry(
+      providerBoundaryEffect(() => E2BSandbox.create({
         ...deadlineOptions(context.deadline),
         runtime: "node24",
         template: plan.template,
@@ -687,55 +692,57 @@ export function materializeE2BProviderPlan(
         pathPrepend: plan.pathPrepend,
         provisionToken,
         runIdentity: currentRunIdentity(),
-      }),
+      })),
       classifyProvisionError,
       boundProvisionSlot(context),
       context.feedback,
-      () => reconcileProvision(provisionToken),
+      providerBoundaryEffect(() => reconcileProvision(provisionToken)),
     );
     return wrapSingleSandbox(backend, context, { template: plan.template });
-  });
+  }));
 }
 
 export function materializeVercelProviderPlan(
   plan: VercelProviderPlan,
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return materializationEffect(context, async () => {
-    const { VercelSandbox, classifyProvisionError } = await import("./vercel.ts");
-    const backend = await withProvisionRetry(
-      () => VercelSandbox.create({
+  return materializationEffect(context, Effect.gen(function* () {
+    const { VercelSandbox, classifyProvisionError } = yield* providerBoundaryEffect(
+      () => import("./vercel.ts"),
+    );
+    const backend = yield* withProvisionRetry(
+      providerBoundaryEffect(() => VercelSandbox.create({
         ...deadlineOptions(context.deadline),
         runtime: "node24",
         snapshotId: plan.snapshotId,
         lifetimeMs: configuredLifetime(plan.lifetime),
         pathPrepend: plan.pathPrepend,
         feedback: context.feedback,
-      }),
+      })),
       classifyProvisionError,
       boundProvisionSlot(context),
       context.feedback,
     );
     return wrapSingleSandbox(backend, context, { snapshotId: plan.snapshotId });
-  });
+  }));
 }
 
 export function materializeLocalProviderPlan(
   plan: LocalProviderPlan,
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return materializationEffect(context, async () => {
-    const { LocalSandbox } = await import("./local.ts");
+  return materializationEffect(context, Effect.gen(function* () {
+    const { LocalSandbox } = yield* providerBoundaryEffect(() => import("./local.ts"));
     return wrapSingleSandbox(
-      await LocalSandbox.create({
+      yield* providerBoundaryEffect(() => LocalSandbox.create({
         ...deadlineOptions(context.deadline),
         dir: plan.directory,
         pathPrepend: plan.pathPrepend,
-      }),
+      })),
       context,
       { directory: plan.directory },
     );
-  });
+  }));
 }
 
 export function materializeCustomProviderPlan(

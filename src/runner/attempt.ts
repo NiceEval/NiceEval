@@ -575,8 +575,8 @@ export function runAttemptEffect<
       // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
       const provisionSlot = {
-        release: () => assertFirst.requestEffect(sandboxSem.release(1)).then(() => {}),
-        reacquire: () => assertFirst.requestEffect(sandboxSem.take(1)).then(() => {}),
+        release: sandboxSem.release(1),
+        reacquire: sandboxSem.take(1),
       };
       // Sample release(receiver close + provider stop)整段计成 sandbox.stop:先加的 finalizer
       // 后跑(LIFO),所以「先加的」在 release 链末尾打终点戳、「后加的」在 release 开始前打起点戳;

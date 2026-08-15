@@ -7,7 +7,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Docker from "dockerode";
-import { Effect } from "effect";
+import { Effect, Exit, Scope } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   collectComposeBuilds,
@@ -51,6 +51,7 @@ describe("Docker Compose provider real cleanup", () => {
     );
 
     let projectName: string | undefined;
+    const materializationScope = await Effect.runPromise(Scope.make());
     try {
       const collection = await Effect.runPromise(
         collectComposeBuilds({ file: composePath, mainService: "client" }),
@@ -72,14 +73,14 @@ describe("Docker Compose provider real cleanup", () => {
         identity,
       };
       const attempt = new AbortController();
-      const materialized = await materializeDockerComposeProviderCase(plan, {
+      const materialized = await Effect.runPromise(Scope.extend(materializeDockerComposeProviderCase(plan, {
         ctx: {
           evalId: plan.evalId,
           profile: plan.profile,
           signal: attempt.signal,
           buildLocators: new Map(),
         },
-      });
+      }), materializationScope));
       projectName = (materialized.facts as { projectName: string }).projectName;
       const container = docker.getContainer((await docker.listContainers({
         all: true,
@@ -107,6 +108,7 @@ describe("Docker Compose provider real cleanup", () => {
       await expect(docker.getVolume(owned!).inspect()).rejects.toMatchObject({ statusCode: 404 });
       await expect(docker.getVolume(externalVolume).inspect()).resolves.toMatchObject({ Name: externalVolume });
     } finally {
+      await Effect.runPromise(Scope.close(materializationScope, Exit.void));
       if (projectName !== undefined) {
         await runDockerCompose(["-p", projectName, "-f", composePath, "down", "--volumes", "--remove-orphans"], {
           cwd: root,
