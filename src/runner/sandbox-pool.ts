@@ -318,19 +318,47 @@ export class ReusableSandboxPool {
       entry.lifecycle = { _tag: "Leased" };
       entry.ordinal += 1;
       applyCommandDeadline(entry.sandbox, deadlineAt);
-      // 每次租借在当前 Attempt Scope 新建 executor 与 author facade:Scope 关闭统一中断在飞
-      // 请求、拒绝后续调用;上一轮 facade/executor 不跨租借复用,不把旧 Runtime 带进新 Attempt。
+      let lifecycle: LeaseLifecycle = {
+        _tag: "Open",
+        release: { _tag: "Uncommitted" },
+      };
+      // 先登记 release/reset finalizer:executor/facade 的封闭 finalizer 在其后登记,Scope
+      // 关闭时按 LIFO 先中断在飞请求、封闭旧 facade,再对资源面执行 reset/retire——reset
+      // 期间不会再有旧 facade 的请求借道写入 ledger/workdir。
+      yield* Effect.addFinalizer(() => Effect.gen(this, function* () {
+        if (lifecycle._tag === "Finalized") return;
+        const settled = lifecycle;
+        lifecycle = { _tag: "Finalized" };
+        const release: ReusableLeaseRelease = settled.release._tag === "Committed"
+          ? settled.release.release
+          : { _tag: "Retire" };
+        if (release._tag === "Retire") {
+          yield* this.retire(entry);
+        } else if (entry.lifecycle._tag !== "Retired") {
+          const reset = yield* Effect.either(externalPromise(() => entry.ledger.resetToAnchor()));
+          if (Either.isLeft(reset)) {
+            this.runtimeFailures.push(Object.freeze({ stage: "sandbox.reset", error: reset.left }));
+            this.feedback.diagnostic({
+              code: "sandbox-reset-failed",
+              level: "warning",
+              message: `Sandbox #${entry.reuseSandbox} reset to anchor failed, retiring the instance: ${firstLine(formatThrown(reset.left))}`,
+            });
+            yield* this.retire(entry);
+          } else {
+            entry.lifecycle = { _tag: "Idle" };
+          }
+        }
+        this.wake();
+      }));
+      // 每次租借在当前 Attempt Scope 新建 executor 与 author facade:上一轮 facade/executor
+      // 不跨租借复用,不把旧 Runtime 带进新 Attempt。
       const executor = yield* makeSandboxRequestExecutor();
       const authorSandbox = makeSandboxAuthorFacade(
         entry.authorBackend,
         executor,
         this.plan.providerPlan.provider,
       );
-      let lifecycle: LeaseLifecycle = {
-        _tag: "Open",
-        release: { _tag: "Uncommitted" },
-      };
-      const lease: ReusableSandboxLease = {
+      return {
         sandbox: authorSandbox,
         reuseSandbox: entry.reuseSandbox,
         reuseOrdinal: entry.ordinal,
@@ -339,31 +367,6 @@ export class ReusableSandboxPool {
           lifecycle = { ...lifecycle, release: { _tag: "Committed", release } };
         }),
       };
-      return yield* Effect.addFinalizer(() => Effect.gen(this, function* () {
-          if (lifecycle._tag === "Finalized") return;
-          const settled = lifecycle;
-          lifecycle = { _tag: "Finalized" };
-          const release: ReusableLeaseRelease = settled.release._tag === "Committed"
-            ? settled.release.release
-            : { _tag: "Retire" };
-          if (release._tag === "Retire") {
-            yield* this.retire(entry);
-          } else if (entry.lifecycle._tag !== "Retired") {
-            const reset = yield* Effect.either(externalPromise(() => entry.ledger.resetToAnchor()));
-            if (Either.isLeft(reset)) {
-              this.runtimeFailures.push(Object.freeze({ stage: "sandbox.reset", error: reset.left }));
-              this.feedback.diagnostic({
-                code: "sandbox-reset-failed",
-                level: "warning",
-                message: `Sandbox #${entry.reuseSandbox} reset to anchor failed, retiring the instance: ${firstLine(formatThrown(reset.left))}`,
-              });
-              yield* this.retire(entry);
-            } else {
-              entry.lifecycle = { _tag: "Idle" };
-            }
-          }
-          this.wake();
-        })).pipe(Effect.as(lease));
     });
   }
 
