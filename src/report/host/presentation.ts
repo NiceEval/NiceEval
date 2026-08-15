@@ -22,6 +22,7 @@ import {
   type PanelMode,
 } from "../model/panel.ts";
 import { indentBlock, renderAlignedRows } from "../model/text-layout.ts";
+import { unsupportedReportBlock, unsupportedReportInline } from "./cell-table-hierarchy.ts";
 import {
   renderClassicBlockText as renderClassicDashboardBlockText,
   renderClassicDashboardDocument,
@@ -404,8 +405,7 @@ function renderEvidenceOrDashboardDocument(
   if (document.presentation === "evidence-text") {
     return document.children.flatMap((block) => {
       if (block.type === "code-block") return block.value.split("\n");
-      const rendered = renderClassicDashboardBlockText(block, { width, mode, sectionBoxedDepth: 0 });
-      return rendered.length > 0 ? rendered : renderBlockText(block, "");
+      return renderClassicDashboardBlockText(block, { width, mode, sectionBoxedDepth: 0 });
     });
   }
   return renderClassicDashboardDocument(document, width, mode);
@@ -433,8 +433,7 @@ function columnsFromEnv(): number {
 
 
 function renderClassicBlockText(block: ReportBlock, width: number, mode: PanelMode): string[] {
-  const rendered = renderClassicDashboardBlockText(block, { width, mode, sectionBoxedDepth: 0 });
-  return rendered.length > 0 ? rendered : renderBlockText(block, "");
+  return renderClassicDashboardBlockText(block, { width, mode, sectionBoxedDepth: 0 });
 }
 
 function renderBlockText(block: ReportBlock, indent: string): string[] {
@@ -506,6 +505,8 @@ function renderBlockText(block: ReportBlock, indent: string): string[] {
     case "stat":
     case "cell-table":
       return renderClassicBlockText(block, 80, "plain").map((line) => `${indent}${line}`);
+    default:
+      return unsupportedReportBlock((block as { readonly type?: unknown }).type);
   }
 }
 
@@ -521,6 +522,8 @@ function renderInlineText(children: readonly ReportInline[]): string {
         return `*${renderInlineText(child.children)}*`;
       case "link":
         return `${renderInlineText(child.label)} (${linkTargetText(child.target)})`;
+      default:
+        return unsupportedReportInline((child as { readonly type?: unknown }).type);
     }
   }).join("");
 }
@@ -535,6 +538,8 @@ function linkTargetText(target: ReportLinkTarget): string {
       return visibleText(target.href);
     case "attempt":
       return visibleText(target.locator);
+    default:
+      return unsupportedReportInline((target as { readonly kind?: unknown }).kind);
   }
 }
 

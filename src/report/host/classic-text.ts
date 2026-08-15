@@ -21,12 +21,21 @@ import {
   type ColumnAlign,
 } from "../model/text-layout.ts";
 import { formatAxisTick, formatDateTimeMinute, shortestUniqueLabels } from "../classic/format.ts";
-import type {
-  ReportBlock,
-  ReportHero,
-  ReportRankedBars,
-  ReportScatter,
+import {
+  REPORT_DOCUMENT_DEPTH_MAX,
+  type ReportBlock,
+  type ReportHero,
+  type ReportInline,
+  type ReportLinkTarget,
+  type ReportRankedBars,
+  type ReportScalar,
+  type ReportScatter,
 } from "../semantic/document.ts";
+import {
+  cellTableHierarchyDepths as hierarchyDepthsFromRows,
+  unsupportedReportBlock,
+  unsupportedReportInline,
+} from "./cell-table-hierarchy.ts";
 
 export interface ClassicTextContext {
   readonly width: number;
@@ -189,30 +198,16 @@ function indentHierarchyCells(
   depth: number,
 ): Readonly<Record<string, string>> {
   const first = cells[firstColumn];
-  if (depth === 0 || first === undefined || first === "—") return cells;
-  return Object.freeze({ ...cells, [firstColumn]: `${"  ".repeat(depth)}${first}` });
+  const visualDepth = Math.min(depth, REPORT_DOCUMENT_DEPTH_MAX);
+  if (visualDepth === 0 || first === undefined || first === "—") return cells;
+  return Object.freeze({ ...cells, [firstColumn]: `${"  ".repeat(visualDepth)}${first}` });
 }
 
 function cellTableHierarchyDepths(
   block: Extract<ReportBlock, { readonly type: "cell-table" }>,
 ): ReadonlyMap<string, number> {
   if (block.hierarchy !== true) return new Map();
-  const rows = new Map(block.rows.map((row) => [row.key, row]));
-  const depths = new Map<string, number>();
-  const depthFor = (key: string): number => {
-    const known = depths.get(key);
-    if (known !== undefined) return known;
-    const row = rows.get(key);
-    if (row === undefined || row.parentKey === undefined) {
-      depths.set(key, 0);
-      return 0;
-    }
-    const depth = depthFor(row.parentKey) + 1;
-    depths.set(key, depth);
-    return depth;
-  };
-  for (const row of block.rows) depthFor(row.key);
-  return depths;
+  return hierarchyDepthsFromRows(block.rows);
 }
 
 function indentDepth(cell: string): number {
@@ -451,10 +446,149 @@ export function renderClassicBlockText(block: ReportBlock, ctx: ClassicTextConte
     case "cell-table":
       return renderCellTableText(block, ctx);
     case "paragraph":
-      return wrapDisplay(block.children.map((child) => child.type === "text" ? child.value : "").join(""), ctx.width);
+      return wrapDisplay(renderClassicInlineText(block.children), ctx.width);
+    case "list":
+      return renderListText(block, ctx);
+    case "table":
+      return renderLowLevelTableText(block, ctx);
+    case "metric":
+      return [
+        `${visibleText(block.label)}: ${scalarText(block.value)}${
+          block.unit === undefined ? "" : ` ${visibleText(block.unit)}`
+        }`,
+      ];
+    case "status":
+      return [
+        `[${block.tone}] ${visibleText(block.label)}${
+          block.detail === undefined ? "" : `: ${renderClassicInlineText(block.detail)}`
+        }`,
+      ];
+    case "code-block":
+      return block.value.split("\n").map((line) => visibleText(line));
+    case "chart":
+      return renderChartText(block, ctx);
+    case "summary":
+      return renderSummaryText(block, ctx);
+    case "tree-table":
+      return renderTreeTableText(block, ctx);
     default:
-      return [];
+      return unsupportedReportBlock((block as { readonly type?: unknown }).type);
   }
+}
+
+function renderListText(
+  block: Extract<ReportBlock, { readonly type: "list" }>,
+  ctx: ClassicTextContext,
+): string[] {
+  const lines: string[] = [];
+  const childCtx: ClassicTextContext = { ...ctx, width: Math.max(1, ctx.width - 2) };
+  for (const [index, item] of block.items.entries()) {
+    const marker = block.ordered ? `${index + 1}. ` : "- ";
+    const rendered = item.flatMap((child) => renderClassicBlockText(child, childCtx));
+    if (rendered.length === 0) {
+      lines.push(marker.trimEnd());
+      continue;
+    }
+    lines.push(`${marker}${rendered[0]!}`);
+    lines.push(...rendered.slice(1).map((line) => `  ${line}`));
+  }
+  return lines;
+}
+
+function renderLowLevelTableText(
+  block: Extract<ReportBlock, { readonly type: "table" }>,
+  ctx: ClassicTextContext,
+): string[] {
+  const headings = block.columns.map((column) => visibleText(column.label)).join(" | ");
+  const rows = block.rows.map((row) =>
+    block.columns.map((column) => scalarText(row[column.key]!)).join(" | ")
+  );
+  return [
+    visibleText(block.caption),
+    headings,
+    ...rows,
+  ].flatMap((line) => wrapDisplay(line, ctx.width));
+}
+
+function renderChartText(
+  block: Extract<ReportBlock, { readonly type: "chart" }>,
+  ctx: ClassicTextContext,
+): string[] {
+  const lines = [`${visibleText(block.title)} (${visibleText(block.categoryLabel)})`];
+  for (const series of block.series) {
+    const values = block.categories.map((category, index) =>
+      `${visibleText(category)}=${scalarText(series.values[index] ?? null)}`
+    );
+    lines.push(`${visibleText(series.label)}: ${values.join(", ")}`);
+  }
+  return lines.flatMap((line) => wrapDisplay(line, ctx.width));
+}
+
+function renderSummaryText(
+  block: Extract<ReportBlock, { readonly type: "summary" }>,
+  ctx: ClassicTextContext,
+): string[] {
+  return block.metrics.flatMap((metric) =>
+    wrapDisplay(`${visibleText(metric.label)}: ${visibleText(metric.display)}`, ctx.width)
+  );
+}
+
+function renderTreeTableText(
+  block: Extract<ReportBlock, { readonly type: "tree-table" }>,
+  ctx: ClassicTextContext,
+): string[] {
+  const lines = [visibleText(block.caption)];
+  for (const row of block.rows) {
+    const cells = block.columns.map((column) => {
+      const value = row.cells[column.key];
+      if (value === null || typeof value !== "object") return scalarText(value ?? null);
+      return visibleText(value.display);
+    }).join(" | ");
+    lines.push(`${"  ".repeat(row.depth)}${row.kind} · ${visibleText(row.label)}${cells.length === 0 ? "" : ` ${cells}`}`);
+  }
+  return lines.flatMap((line) => wrapDisplay(line, ctx.width));
+}
+
+function renderClassicInlineText(children: readonly ReportInline[]): string {
+  return children.map((child) => {
+    switch (child.type) {
+      case "text":
+        return visibleText(child.value);
+      case "code":
+        return `\`${visibleText(child.value)}\``;
+      case "emphasis":
+        return `*${renderClassicInlineText(child.children)}*`;
+      case "link":
+        return `${renderClassicInlineText(child.label)} (${linkTargetText(child.target)})`;
+      default:
+        return unsupportedReportInline((child as { readonly type?: unknown }).type);
+    }
+  }).join("");
+}
+
+function linkTargetText(target: ReportLinkTarget): string {
+  switch (target.kind) {
+    case "route":
+      return visibleText(target.route);
+    case "download":
+      return visibleText(target.path);
+    case "external":
+      return visibleText(target.href);
+    case "attempt":
+      return visibleText(target.locator);
+    default:
+      return unsupportedReportInline((target as { readonly kind?: unknown }).kind);
+  }
+}
+
+function scalarText(value: ReportScalar): string {
+  return typeof value === "string" ? visibleText(value) : String(value);
+}
+
+function visibleText(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, (character) =>
+    `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`
+  );
 }
 
 export function renderClassicDashboardDocument(

@@ -6,6 +6,10 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
+  SHOW_COPY_BLOCK_TEXT,
+  SHOW_HIERARCHY_RENDERED,
+} from "../reports/show-visibility-copy.ts";
+import {
   closedTerminalBoxes,
   reportCaseArtifacts,
   reportE2E,
@@ -117,6 +121,7 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
 
       const result = run.expReceipt();
       expect(result).toMatchObject({ completion: "completed" });
+      const runId = only(result.runIds, () => true, run.diagnostic());
       const evals = run.ndjson<ExpEvent>().filter((event) => event.event === "eval");
       expect(evals.map((event) => [event.evalId, event.verdict]).sort()).toEqual([
         ["deliberate-error", "errored"],
@@ -331,6 +336,38 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(customAuthor.exitCode, customAuthor.diagnostic()).toBe(0);
       const primitiveSequence = ["Primitive children", "primitive-alpha", "42", "primitive-omega"];
       expect(terminalTextSequence(customAuthor.stdout, primitiveSequence)).toEqual(primitiveSequence);
+
+      const partialVisibility = await niceeval.run([
+        "show",
+        "--run",
+        runId,
+        "--report",
+        "./reports/show-visibility.tsx",
+      ]);
+      expect(partialVisibility.exitCode, partialVisibility.diagnostic()).toBe(0);
+      expect(partialVisibility.stderr).not.toMatch(/RangeError|Maximum call stack size exceeded/);
+      const selectionNotice = [
+        "Selection notice",
+        "[warning] this Report selection does not include a current project declaration profile: selection-profile-unavailable",
+      ];
+      expect(terminalTextSequence(partialVisibility.stdout, selectionNotice)).toEqual(selectionNotice);
+      const copyBlock = ["Copy", SHOW_COPY_BLOCK_TEXT];
+      expect(terminalTextSequence(partialVisibility.stdout, copyBlock)).toEqual(copyBlock);
+
+      const deepHierarchy = await niceeval.run([
+        "show",
+        "--run",
+        runId,
+        "--report",
+        "./reports/show-visibility.tsx",
+        "--page",
+        "deep-hierarchy",
+      ]);
+      expect(deepHierarchy.stderr).not.toMatch(/RangeError|Maximum call stack size exceeded/);
+      expect(deepHierarchy.exitCode, deepHierarchy.diagnostic()).toBe(0);
+      expect(terminalTextSequence(deepHierarchy.stdout, [`[neutral] ${SHOW_HIERARCHY_RENDERED}`])).toEqual([
+        `[neutral] ${SHOW_HIERARCHY_RENDERED}`,
+      ]);
 
       const invalidLocale = await niceeval.run([
         "show",

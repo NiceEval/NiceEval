@@ -20,6 +20,12 @@ import type {
   ReportTreeTable,
 } from "../semantic/document.ts";
 import {
+  cellTableHierarchyChildren,
+  cellTableHierarchyPostOrder,
+  unsupportedReportBlock,
+  unsupportedReportInline,
+} from "./cell-table-hierarchy.ts";
+import {
   REPORT_ENHANCE_SCRIPT,
   REPORT_FRAGMENT_HEADER,
   REPORT_LOCALE_HEADER,
@@ -577,6 +583,8 @@ function renderBlock(block: ReportBlock, ctx: RenderContext, headingLevel: numbe
       ).join("");
       return `<div class="niceeval-report__table-wrap"><table class="niceeval-report__table"><thead><tr>${headings}</tr></thead><tbody>${rows}</tbody></table></div>`;
     }
+    default:
+      return unsupportedReportBlock((block as { readonly type?: unknown }).type);
   }
 }
 
@@ -592,15 +600,9 @@ function renderCellTableHierarchy(
   block: Extract<ReportBlock, { readonly type: "cell-table" }>,
   ctx: RenderContext,
 ): string {
-  const children = new Map<string | undefined, typeof block.rows>();
-  for (const row of block.rows) {
-    const siblings = children.get(row.parentKey) ?? [];
-    children.set(row.parentKey, Object.freeze([...siblings, row]));
-  }
-  const headings = block.columns.map((column) =>
-    `<span role="columnheader">${escapeHtml(column)}</span>`
-  ).join("");
-  const renderRow = (row: typeof block.rows[number]): string => {
+  const children = cellTableHierarchyChildren(block.rows);
+  const rendered = new Map<string, string>();
+  for (const row of cellTableHierarchyPostOrder(block.rows)) {
     const descendants = children.get(row.key) ?? [];
     const cells = block.columns.map((column, index) => {
       const label = index === 0 ? row.label ?? row.cells[column] ?? "—" : row.cells[column] ?? "—";
@@ -611,23 +613,33 @@ function renderCellTableHierarchy(
     }).join("");
     const rowContent = `<span role="row" class="niceeval-report__hierarchy-row" data-kind="${escapeHtml(row.kind ?? "item")}">${cells}</span>`;
     if (descendants.length === 0) {
-      return `<span${hierarchyItemAttributes(row, ctx)}>${rowContent}</span>`;
+      rendered.set(row.key, `<span${hierarchyItemAttributes(row, ctx)}>${rowContent}</span>`);
+      continue;
     }
     const label = row.label ?? row.key;
-    return `<details class="niceeval-report__hierarchy-node"${hierarchyItemAttributes(row, ctx)}><summary role="button" aria-label="${escapeHtml(label)}">${rowContent}</summary><div role="rowgroup" aria-label="${escapeHtml(packageCopy(ctx.locale).children(label))}" class="niceeval-report__hierarchy-children">${
-      descendants.map(renderRow).join("")
-    }</div></details>`;
-  };
+    rendered.set(
+      row.key,
+      `<details class="niceeval-report__hierarchy-node"${hierarchyItemAttributes(row, ctx)}><summary role="button" aria-label="${escapeHtml(label)}">${rowContent}</summary><div role="rowgroup" aria-label="${escapeHtml(packageCopy(ctx.locale).children(label))}" class="niceeval-report__hierarchy-children">${
+        descendants.map((child) => rendered.get(child.key) ?? "").join("")
+      }</div></details>`,
+    );
+  }
   const roots = children.get(undefined) ?? [];
   const trailingColumns = Math.max(0, block.columns.length - 1);
   const hierarchyName = packageCopy(ctx.locale).experimentHierarchy;
-  const table = `<div role="table" aria-label="${escapeHtml(hierarchyName)}" class="niceeval-report__hierarchy-table" style="--niceeval-hierarchy-template:minmax(15rem,2fr) repeat(${trailingColumns},minmax(7rem,1fr))"><div role="rowgroup"><div role="row" class="niceeval-report__hierarchy-row niceeval-report__hierarchy-header">${headings}</div></div><div role="rowgroup">${
-    roots.map(renderRow).join("")
+  const table = `<div role="table" aria-label="${escapeHtml(hierarchyName)}" class="niceeval-report__hierarchy-table" style="--niceeval-hierarchy-template:minmax(15rem,2fr) repeat(${trailingColumns},minmax(7rem,1fr))"><div role="rowgroup"><div role="row" class="niceeval-report__hierarchy-row niceeval-report__hierarchy-header">${headingsOf(block)}</div></div><div role="rowgroup">${
+    roots.map((row) => rendered.get(row.key) ?? "").join("")
   }</div></div>`;
   const scroll = `<div class="niceeval-report__table-wrap${ctx.classic ? " niceeval-report__hierarchy-scroll" : ""}" role="region" aria-label="${escapeHtml(hierarchyName)}" tabindex="0">${table}</div>`;
   if (!ctx.classic) return scroll;
   const copy = packageCopy(ctx.locale);
   return `<div class="niceeval-report__hierarchy" data-niceeval-hierarchy><div class="niceeval-report__hierarchy-toolbar"><input type="search" role="searchbox" aria-label="${escapeHtml(copy.filter)}" data-niceeval-filter autocomplete="off" /><button type="button" data-niceeval-filter-clear>${escapeHtml(copy.clear)}</button></div><p role="status" data-niceeval-filter-status hidden></p>${scroll}</div>`;
+}
+
+function headingsOf(block: Extract<ReportBlock, { readonly type: "cell-table" }>): string {
+  return block.columns.map((column) =>
+    `<span role="columnheader">${escapeHtml(column)}</span>`
+  ).join("");
 }
 
 function hierarchyItemAttributes(
@@ -974,6 +986,8 @@ function renderInlines(children: readonly ReportInline[], ctx: RenderContext): s
         return `<em>${renderInlines(child.children, ctx)}</em>`;
       case "link":
         return `<a ${reportLinkAttributes(ctx, child.target)}>${renderInlines(child.label, ctx)}</a>`;
+      default:
+        return unsupportedReportInline((child as { readonly type?: unknown }).type);
     }
   }).join("");
 }
