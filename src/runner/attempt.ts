@@ -12,6 +12,8 @@ import {
 } from "../sandbox/runtime.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
+import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
+import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
@@ -673,7 +675,15 @@ export function runAttemptEffect<
                       }),
                     },
                   });
-                  return materialized.sandbox;
+                  // fresh Attempt:author facade 在当前 Attempt Scope 内构建。executor 捕获本
+                  // Scope 的 Runtime,Scope 关闭时统一中断在飞请求并拒绝新调用;release closure
+                  // 继续用 materialized.sandbox(资源面 facade),两者生命周期互不借用。
+                  const executor = yield* makeSandboxRequestExecutor();
+                  return makeSandboxAuthorFacade(
+                    materialized.authorBackend,
+                    executor,
+                    runtimeCapabilities.provider,
+                  );
                 }),
               );
             })

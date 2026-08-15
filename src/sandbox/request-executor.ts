@@ -26,15 +26,6 @@ export interface SandboxRequestExecutor {
   readonly inFlight: () => number;
 }
 
-function fiberPromise<A>(fiber: Fiber.RuntimeFiber<A, unknown>): Promise<A> {
-  return new Promise<A>((resolve, reject) => {
-    fiber.addObserver((exit) => {
-      if (Exit.isSuccess(exit)) resolve(exit.value);
-      else reject(Cause.squash(exit.cause));
-    });
-  });
-}
-
 /**
  * 只能在所属 Effect 内创建(需要当前 Runtime 与 owner Scope)。返回的 executor 供
  * Promise facade 边界同步调用;Effect 运行只经由捕获的 Runtime 与 Scope,不落默认 Runtime。

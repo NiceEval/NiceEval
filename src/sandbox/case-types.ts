@@ -4,6 +4,7 @@
 
 import type { JsonValue } from "../shared/types.ts";
 import type { CommandResult, Sandbox } from "./types.ts";
+import type { SandboxProviderBackend } from "./backend.ts";
 import type { BuildKey, CaseKey, SandboxCaseKind } from "./identity.ts";
 
 export type { SandboxCaseKind };
@@ -47,6 +48,11 @@ export interface SandboxResourceGroup {
 export interface MaterializedSandboxCase {
   /** 唯一主 Sandbox:Agent / Eval / 文件 API / workdir / 分类账 / diff 都观察它。 */
   readonly sandbox: Sandbox;
+  /**
+   * provider 原始 backend:author facade 的唯一构建输入。只服务 runner 的 attempt-scope
+   * 请求执行,不进公共 Sandbox API,也不进 registry / stop / suspend / ledger 等资源流程。
+   */
+  readonly authorBackend: SandboxProviderBackend;
   readonly services?: ServiceController;
   readonly group: SandboxResourceGroup;
   readonly caseKind: SandboxCaseKind;

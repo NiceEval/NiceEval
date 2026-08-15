@@ -311,6 +311,7 @@ function wrapSingleSandbox(
   };
   return Object.freeze({
     sandbox,
+    authorBackend: backend,
     group,
     caseKind: context.plan.providerPlan.caseKind,
     caseKey: context.plan.providerPlan.build.caseKey,
@@ -785,6 +786,9 @@ export function materializeCustomCaseProviderPlan(
       const result = validateCustomCaseMaterializeResult(rawResult, plan.services);
       return normalizeMaterialized({
         sandbox: result.sandbox,
+        // 自定义 case 的显式适配点:author 返回的公共 Sandbox 在这里降成 provider backend,
+        // 供 attempt-scope author facade 使用;resource facade 仍由 normalizeMaterialized 归一。
+        authorBackend: customSandboxBackend(result.sandbox),
         ...(result.services._tag === "Available" ? { services: result.services.value } : {}),
         group: result.group,
         caseKind: "custom",

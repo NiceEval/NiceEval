@@ -38,6 +38,8 @@ import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from ".
 import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
 import type { CommandResult } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
+import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
+import type { DockerSandbox } from "./docker.ts";
 import { dockerfileBaseIdentity } from "./dockerfile-identity.ts";
 
 /**
@@ -1380,6 +1382,12 @@ export function materializeDockerComposeProviderCase(
 
       const materialized: MaterializedSandboxCase = {
         sandbox,
+        // 生产路径 attach 返回 raw DockerSandbox(自带 provider backend capabilities),直接作为
+        // author backend;测试 hook 注入的普通 Sandbox 走 customSandboxBackend 显式适配,不回读
+        // provider 私有成员。
+        authorBackend: opts._testHooks?.attachMain === undefined
+          ? (sandbox as DockerSandbox)
+          : customSandboxBackend(sandbox),
         services,
         group,
         caseKind: "compose",
