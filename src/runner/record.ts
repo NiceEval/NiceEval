@@ -996,6 +996,9 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
       attempt: Attempt,
     ): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError<AttachmentError>> =>
       locatorMutex.withPermits(1)(Effect.gen(function* () {
+        // Keep mutex acquisition and this coordinator preflight interruptible.
+        // Once the draft exists, its locator and the coordinator's reservation
+        // state must become visible as one hand-off before cancellation can run.
         const targetSlot = targetSlotForAttempt(attempt);
         if (
           targetSlot === undefined
@@ -1006,41 +1009,54 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           return yield* Effect.fail(attemptInvalid());
         }
 
-        const draft = yield* targetSlot.recordRun.draft.createAttempt({
-          slotId: targetSlot.slotId,
-        });
-        const locator = encodeAttemptLocator(draft.attemptId);
-        const issued: RunnerRecordAttempt = Object.freeze({
-          slotId: targetSlot.slotId,
-          attemptId: draft.attemptId,
-          locator,
-        });
-        targetSlot.recordRun.attempts.set(targetSlot.slotId, {
-          attempt,
-          draft,
-          public: issued,
-          completed: false,
-        });
-        targetSlot.recordRun.gapActions.set(targetSlot.slotId, "reserved");
+        const issued = yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            const draft = yield* targetSlot.recordRun.draft.createAttempt({
+              slotId: targetSlot.slotId,
+            }).pipe(
+              // The typed create failure has to win over a pending interruption:
+              // it belongs to the same durable hand-off as the successful state
+              // updates below. The outer tapError still records ordinary
+              // preflight, scan, and collision failures.
+              Effect.tapError((error) => Effect.sync(() => noteWriteFailure(error))),
+            );
+            const locator = encodeAttemptLocator(draft.attemptId);
+            const issued: RunnerRecordAttempt = Object.freeze({
+              slotId: targetSlot.slotId,
+              attemptId: draft.attemptId,
+              locator,
+            });
+            targetSlot.recordRun.attempts.set(targetSlot.slotId, {
+              attempt,
+              draft,
+              public: issued,
+              completed: false,
+            });
+            targetSlot.recordRun.gapActions.set(targetSlot.slotId, "reserved");
+            return issued;
+          }),
+        );
 
-        const existing = yield* resolveAttemptLocator(session.view, locator);
+        // The frozen-view scan and collision checks deliberately regain normal
+        // interruptibility after the durable reservation hand-off.
+        const existing = yield* resolveAttemptLocator(session.view, issued.locator);
         if (existing.kind !== "not-found") {
           const same = existing.kind === "found"
             && existing.attempt.originRunId === targetSlot.recordRun.draft.runId
-            && existing.attempt.attemptId === draft.attemptId;
-          if (!same) return yield* Effect.fail(locatorCollision(locator));
+            && existing.attempt.attemptId === issued.attemptId;
+          if (!same) return yield* Effect.fail(locatorCollision(issued.locator));
         }
-        const local = invocationLocators.get(locator);
+        const local = invocationLocators.get(issued.locator);
         if (
           local !== undefined
           && (local.originRunId !== targetSlot.recordRun.draft.runId
-            || local.attemptId !== draft.attemptId)
+            || local.attemptId !== issued.attemptId)
         ) {
-          return yield* Effect.fail(locatorCollision(locator));
+          return yield* Effect.fail(locatorCollision(issued.locator));
         }
-        invocationLocators.set(locator, Object.freeze({
+        invocationLocators.set(issued.locator, Object.freeze({
           originRunId: targetSlot.recordRun.draft.runId,
-          attemptId: draft.attemptId,
+          attemptId: issued.attemptId,
         }));
         return issued;
       })).pipe(

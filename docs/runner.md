@@ -52,6 +52,12 @@ receipt 只标识这次调用及其 Run。它不是第二份结果文件，也�
 
 Runner 先展开 expected slots，再以全局和 Experiment 范围的并发限制派发。等待并发名额的 slot 没有 Attempt，也不会占用执行资源。同一 root 不存在跨 Invocation 的逐 Eval 锁或运行中重读。
 
+### Attempt identity hand-off
+
+获准派发的 gap 在任何 Attempt-owned Sandbox、Agent 或 Eval 工作之前先保留一个 provisional Attempt draft，并取得其 locator。locator mutex 的取得和目标 Slot 的 coordinator preflight 都可被中断；随后只有 `createAttempt → locator 编码 → coordinator 的 attempts / reserved 状态` 是不可中断的交接。该交接内也记住 `createAttempt` 的 typed 写入失败，不能让取消把它改写成普通的 interrupted gap。
+
+交接完成后，针对 frozen view 的 locator 扫描、collision 检查和 invocation-local locator 登记恢复可中断；它们的失败仍按普通 Record 写入失败处理。因而取消可以发生在保留前，或发生在已完整登记的保留后，但不能留下已创建的 draft 而 coordinator 尚未知道它是 `reserved` 的裂缝。
+
 首过即停、预算耗尽、用户中断和已声明的停止派发条件都保留 expected slot。未派发 slot 没有 Member，因此 Sample 把它显示为 `not-recorded`；Runner 不制造虚构的 Attempt 或 Verdict。
 
 受控用户中断会先停稳 Attempt 与生命周期，再删除尚未完成的 provisional Attempt draft。Runner 随后可发布一个完整 Run：已经完成的 slot 保留 Member，未完成的 expected slot 没有 Member，并在 membership provenance 中标为 `interrupted`。强杀、writer failure 或 rollback failure 仍不发布该 Run。
