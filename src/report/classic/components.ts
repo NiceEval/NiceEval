@@ -200,6 +200,17 @@ export const SampleNotices = defineComponent<ClassicSampleNoticesProps>((props, 
 );
 SampleNotices.displayName = "SampleNotices";
 
+export type ClassicRunNoticesProps = ClassicSampleNoticesProps;
+
+/**
+ * Preserves the classic author composition seam. The closed classic Sample
+ * currently carries selection notices but no run-diagnostic projection, so an
+ * empty RunNotices node is the only honest rendering until that projection is
+ * part of the Sample contract.
+ */
+export const RunNotices = defineComponent<ClassicRunNoticesProps>(() => null);
+RunNotices.displayName = "RunNotices";
+
 /** The one host-recognized status for an explicit-run Sample without profiles. */
 export function classicSelectionNotice(sample: Sample): ReportStatus | null {
   if (sample.metadataOrigin !== "partial") {

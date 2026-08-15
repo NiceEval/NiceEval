@@ -86,6 +86,16 @@ trusted module 本身不是沙箱。NiceEval 只保证组件拿不到 reader、E
 | `Bars` | 柱状图；`layout="horizontal"` 呈现横向柱状图。 |
 | `ExperimentScatter` | 按 Experiment 的散点；传入 `input={sample}`。当前 Report 展开对应 experiment 页时点可下钻，否则保持纯图形。 |
 | `ExperimentTable` | 实验级读数表；传入 `input={sample}`。 |
+| `SampleNotices` | 从闭合 Sample 呈现 partial selection warning。 |
+| `RunNotices` | 保留 0.12 作者导入与组合位置。当前闭合 Sample 没有 Run diagnostics projection，因此组件不输出区块，也不伪造一份空诊断结果。 |
+
+官方主题继续支持两个经典导入位置：
+
+```ts
+import { basalt, chalk } from "niceeval/report/built-in";
+```
+
+它们与 `niceeval/report` 根入口导出的同名 `ThemeDefinition` 是同一份值。
 
 ### aggregate 与 passRate
 

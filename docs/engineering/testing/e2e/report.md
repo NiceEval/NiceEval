@@ -142,5 +142,9 @@ classic `defineReport`、package JSX runtime、`aggregate` 与经典组件。这
 `aria-valuenow` 保持不变。owner 因此守护组件导出、上下文、旧显式 input、host 去重与层级导航，不只守护
 TSX loader。
 
+同一共享 fixture 从 `niceeval/report/built-in` 导入 `basalt` / `chalk`，并在作者树组合
+`RunNotices input={sample}`。这两项守护 0.12 下游的真实静态导入与作者组合形状；当前闭合 Sample
+没有 Run diagnostics projection，所以 `RunNotices` 的长期结果是可组合且不生成虚假诊断区块。
+
 禁 JavaScript 的 `file:` 页面必须保留 static export 的内容、表格与原生 disclosure。移动 viewport 的
 文档不能横向溢出。owner 不依赖私有 selector、computed style、像素或 golden。

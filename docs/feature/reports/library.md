@@ -155,6 +155,7 @@ trusted TS module 本身不是 sandbox；module 仍可以 import `node:fs` 或�
 | `ExperimentTable` | 实验级读数表；`input={sample}` 传入同一份闭合 Sample。输出显式的 Experiment → group/eval → Attempt 父子拓扑与可选实体 target；终端缩进只是该拓扑的呈现结果。 |
 | `Grid` / `Stat` / `Table` | 排版原语：格网、读数格、单元格表。 |
 | `SampleNotices` | 选择提示。默认读取 `ctx.scope`，也接受旧作者使用的 `input={sample}`。partial Sample 输出一条 `selection-profile-unavailable` warning；current-declaration Sample 不输出提示。 |
+| `RunNotices` | 保留 0.12 作者组合与导入位置。当前闭合 Sample 不携带 Run diagnostics projection，因此组件不输出区块，也不把缺失诊断伪造成空事实。 |
 | `CopyBlock` | 可复制文本。 |
 | `AttemptSummary` / `AttemptAssessment` | Attempt 详情页组合件。 |
 
@@ -927,6 +928,9 @@ Verdict 作为三组独立事实并列显示。
 `niceeval/report/built-in` 的 `defaultSandboxHistoryReport` 是一份普通、无额外 reader capability 的
 history Report。调用点先用公开的 all-runs Analysis selection 形成 Sample；Report 只声明并消费
 evaluation plan、Verdict 与 Sandbox 三条 public projection。
+
+0.12 作者也可以继续从 `niceeval/report/built-in` 导入官方 `basalt` 与 `chalk`；它们与
+`niceeval/report` 根入口的同名导出是同一份 ThemeDefinition，不建立第二套主题身份。
 
 它按 exact origin `(runId, attemptId)` 去重。reference Member 只在同一 origin 的 Slot coordinate
 列表中出现，不复制 Sandbox Attachment。

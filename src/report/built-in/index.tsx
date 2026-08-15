@@ -1,5 +1,6 @@
 // Public built-ins are ordinary author-API Reports over projections and
 // closed semantic documents.
+export { basalt, chalk } from "../host/theme.ts";
 export {
   defaultOverviewReport,
   overview,

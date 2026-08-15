@@ -11,6 +11,7 @@ import {
   ExperimentScatter,
   ExperimentTable,
   Hero,
+  RunNotices,
   SampleNotices,
   SampleSummary,
   Section,
@@ -119,6 +120,7 @@ const authorApi = {
         />
         <Section title="Selection notice">
           <SampleNotices input={sample} />
+          <RunNotices input={sample} />
         </Section>
         <Section title="Primitive children">
           {"primitive-alpha"}

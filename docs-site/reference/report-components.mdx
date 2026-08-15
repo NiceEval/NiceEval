@@ -130,6 +130,16 @@ A trusted TypeScript module is not a sandbox. It can still import `node:fs` or r
 | `Bars` | A bar chart. Set `layout="horizontal"` for horizontal bars. |
 | `ExperimentScatter` | A scatter plot by Experiment. Pass `input={sample}` to use an explicit Sample. A point links to its Experiment page only when the current Report expands that page. |
 | `ExperimentTable` | An Experiment-level readings table. Pass `input={sample}` to use an explicit Sample. |
+| `SampleNotices` | Renders the partial-selection warning from the closed Sample. |
+| `RunNotices` | Preserves the 0.12 author import and composition position. The current closed Sample has no Run-diagnostics projection, so this component renders no block rather than inventing an empty diagnostic result. |
+
+Official themes remain available from both classic import locations:
+
+```ts
+import { basalt, chalk } from "niceeval/report/built-in";
+```
+
+These are the same `ThemeDefinition` values exported from `niceeval/report`.
 
 ### `aggregate`, `passRate`, and `costUSD`
 
