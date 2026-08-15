@@ -50,6 +50,9 @@ export interface AuthorExportManifest {
   readonly subpaths: readonly string[];
   readonly report: readonly string[];
   readonly builtIn: readonly string[];
+  readonly react: readonly string[];
+  readonly extension: readonly string[];
+  readonly host: readonly string[];
 }
 
 /**
@@ -64,10 +67,16 @@ export async function installedAuthorExportManifest(cwd: string): Promise<Author
     'const pkg = JSON.parse(await readFile(join(process.cwd(), "node_modules", "niceeval", "package.json"), "utf8"));',
     'const report = await import("niceeval/report");',
     'const builtIn = await import("niceeval/report/built-in");',
+    'const react = await import("niceeval/report/react");',
+    'const extension = await import("niceeval/report/extension");',
+    'const host = await import("niceeval/report/host");',
     'process.stdout.write(JSON.stringify({',
     '  subpaths: Object.keys(pkg.exports ?? {}).sort(),',
     '  report: Object.keys(report).sort(),',
     '  builtIn: Object.keys(builtIn).sort(),',
+    '  react: Object.keys(react).sort(),',
+    '  extension: Object.keys(extension).sort(),',
+    '  host: Object.keys(host).sort(),',
     '}));',
   ].join("\n");
   const receipt = await runProcess([process.execPath, "--input-type=module", "--eval", source], {
@@ -78,6 +87,21 @@ export async function installedAuthorExportManifest(cwd: string): Promise<Author
     throw new Error(`installed author export manifest failed\n\n${receipt.diagnostic()}`);
   }
   return JSON.parse(receipt.stdout) as AuthorExportManifest;
+}
+
+/**
+ * Compile the copied consumer against the installed candidate declarations.
+ * Runtime-only E2E execution deliberately transpiles TypeScript, so it cannot
+ * otherwise detect a public author signature that rejects the fixture.
+ */
+export async function typecheckInstalledReportConsumer(cwd: string): Promise<void> {
+  const receipt = await runProcess(
+    [join(cwd, "node_modules", ".bin", "tsc"), "--noEmit"],
+    { cwd, timeoutMs: 60_000 },
+  );
+  if (receipt.exitCode !== 0) {
+    throw new Error(`installed Report consumer typecheck failed\n\n${receipt.diagnostic()}`);
+  }
 }
 
 /**

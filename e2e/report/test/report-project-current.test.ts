@@ -15,26 +15,53 @@ interface ExpEvent {
   reused?: number;
 }
 
-interface ShowOverview {
-  format: "niceeval.show";
-  schemaVersion: 1;
-  view: "leaderboard";
-  sample: {
-    selection:
-      | {
-          policy: "project-current";
-          experimentIds: "all" | string[];
-          selectedRunIds: string[];
-        }
-      | {
-          policy: "explicit-runs";
-          runIds: string[];
-        };
-    runCount: number;
-    slotCount: number;
-    denominator: number;
-  };
+interface MetricValueJson {
+  readonly value: number | null;
+  readonly state: string;
+  readonly samples: number;
+  readonly total: number;
+  readonly issues: readonly unknown[];
+  readonly refs: readonly unknown[];
 }
+
+interface LeaderboardRow {
+  readonly key: string;
+  readonly passRate: MetricValueJson;
+}
+
+interface ReportProblem {
+  readonly code: string;
+  readonly path: readonly string[];
+  readonly refs: readonly string[];
+  readonly summary?: string;
+}
+
+interface ShowOverview {
+  readonly schema: "niceeval.show/v2";
+  readonly locale: "en";
+  readonly selection:
+    | {
+        readonly kind: "project-current";
+        readonly sampleIdentity: string;
+        readonly experimentIds: readonly string[];
+      }
+    | {
+        readonly kind: "explicit-runs";
+        readonly sampleIdentity: string;
+        readonly runIds: readonly string[];
+      };
+  readonly page: { readonly route: string; readonly pageId: string };
+  readonly data: { readonly kind: "leaderboard"; readonly rows: readonly LeaderboardRow[] };
+  readonly problems: readonly ReportProblem[];
+}
+
+const PROJECT_EXPERIMENT_IDS = [
+  "classic/baseline",
+  "classic/memory-a",
+  "classic/memory-b",
+  "main",
+  "source",
+] as const;
 
 test("项目未变时复用结果，Eval 源码变化后重新执行并读回新结果", async () => {
   await reportE2E.case(
@@ -61,26 +88,25 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
       const initialDocument = initialShow.json<ShowOverview>();
       expect(initialDocument).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "leaderboard",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [initialRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
+        schema: "niceeval.show/v2",
+        locale: "en",
+        selection: {
+          kind: "project-current",
+          experimentIds: [...PROJECT_EXPERIMENT_IDS],
         },
+        page: { route: "/", pageId: "overview" },
+        data: { kind: "leaderboard" },
       });
-      expect(initialDocument.sample.selection.experimentIds).toEqual([
-        "classic/baseline",
-        "classic/memory-a",
-        "classic/memory-b",
-        "main",
-        "source",
-      ]);
+      expect(initialDocument.problems.length).toBeGreaterThan(0);
+      expect(initialDocument.problems).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "analysis-missing", path: ["page", "overview"] }),
+      ]));
+      expect(initialDocument.data.rows).toHaveLength(1);
+      expect(initialDocument.data.rows[0]!.passRate).toMatchObject({
+        state: "available",
+        samples: 1,
+        total: 1,
+      });
 
       const unchangedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(unchangedRun.exitCode, unchangedRun.diagnostic()).toBe(0);
@@ -92,22 +118,16 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
           unchangedRun.diagnostic(),
         ),
       ).toMatchObject({ event: "start", reused: 1 });
-      const unchangedRunId = only(
-        unchangedRun.expReceipt().runIds,
-        () => true,
-        unchangedRun.diagnostic(),
-      );
 
       const accumulatedShow = await niceeval.run(["show", "--json"]);
       expect(accumulatedShow.exitCode, accumulatedShow.diagnostic()).toBe(0);
-      expect(accumulatedShow.json<ShowOverview>().sample).toMatchObject({
-        selection: {
-          policy: "project-current",
-          selectedRunIds: [initialRunId, unchangedRunId].sort(),
-        },
-        runCount: 2,
-        slotCount: 2,
-        denominator: 2,
+      const accumulatedDocument = accumulatedShow.json<ShowOverview>();
+      expect(accumulatedDocument.selection).toMatchObject({ kind: "project-current" });
+      expect(accumulatedDocument.data.rows).toHaveLength(1);
+      expect(accumulatedDocument.data.rows[0]!.passRate).toMatchObject({
+        state: "available",
+        samples: 2,
+        total: 2,
       });
 
       const evalPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
@@ -122,36 +142,23 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const staleShow = await niceeval.run(["show", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
       expect(staleShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "leaderboard",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [],
-          },
-          runCount: 0,
-          slotCount: 0,
-          denominator: 0,
-        },
+        schema: "niceeval.show/v2",
+        selection: { kind: "project-current" },
+        data: { kind: "leaderboard", rows: [] },
+        problems: [],
       });
 
       const staleHistory = await niceeval.run(["show", "--run", initialRunId, "--json"]);
       expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
       expect(staleHistory.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "leaderboard",
-        sample: {
-          selection: {
-            policy: "explicit-runs",
-            runIds: [initialRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
+        schema: "niceeval.show/v2",
+        selection: {
+          kind: "explicit-runs",
+          runIds: [initialRunId],
         },
+        data: { kind: "leaderboard" },
       });
+      expect(staleHistory.json<ShowOverview>().data.rows[0]!.passRate.state).toBe("available");
 
       const changedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(changedRun.exitCode, changedRun.diagnostic()).toBe(0);
@@ -170,27 +177,18 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
           changedRun.diagnostic(),
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
-      const changedRunId = only(
-        changedRun.expReceipt().runIds,
-        () => true,
-        changedRun.diagnostic(),
-      );
 
       const refreshedShow = await niceeval.run(["show", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
       expect(refreshedShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "leaderboard",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [changedRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
-        },
+        schema: "niceeval.show/v2",
+        selection: { kind: "project-current" },
+        data: { kind: "leaderboard" },
+      });
+      expect(refreshedShow.json<ShowOverview>().data.rows[0]!.passRate).toMatchObject({
+        state: "available",
+        samples: 1,
+        total: 1,
       });
 
       const removedLatest = await niceeval.run(["show", "--latest"]);

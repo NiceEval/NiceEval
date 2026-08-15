@@ -10,6 +10,7 @@ import {
   aggregate,
   costUSD,
   defineComponent,
+  definePricingProfile,
   defineReport,
   experiment,
   passRate,
@@ -25,6 +26,29 @@ const logo = `data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1f6feb"/><text x="32" y="40" text-anchor="middle" font-size="22" fill="white" font-family="sans-serif">MB</text></svg>',
 )}`;
 
+const classicPricing = definePricingProfile({
+  currency: "USD",
+  display: { decimalPlaces: 6, rounding: "half-away-from-zero" },
+  provenance: {
+    kind: "declared-rate-card",
+    source: "deterministic report E2E fixture",
+    asOf: 1786345368000,
+  },
+  coverage: [{
+    coverageId: "classic-memory-gpt-5-6-luna",
+    state: "priced",
+    selector: { provider: "classic-memory", model: "gpt-5.6-luna" },
+    effective: { startsAt: 1786345368000, endsAt: null },
+    charges: [
+      { kind: "token", bucket: "input", perMillionTokens: "0.2" },
+      { kind: "token", bucket: "output", perMillionTokens: "1.2" },
+      { kind: "token", bucket: "cache-read", perMillionTokens: "0.02" },
+      { kind: "token", bucket: "cache-write", perMillionTokens: "0.25" },
+      { kind: "request", requestKind: "model", ratePerRequest: "0" },
+    ],
+  }],
+});
+
 const MemoryBenchHero = defineComponent(() => (
   <Hero
     title="MemoryBench Classic"
@@ -35,9 +59,12 @@ const MemoryBenchHero = defineComponent(() => (
 ));
 
 const Leaderboard = defineComponent(async (_props, ctx) => {
+  const pricing = ctx.report.pricing;
   const leaderboard = await aggregate(ctx.scope, {
     by: { experiment },
-    values: { passRate, costUSD },
+    values: pricing === null
+      ? { passRate }
+      : { passRate, costUSD: costUSD(pricing) },
   });
   const ranked = [...leaderboard].toSorted(
     (a, b) => (b.passRate.value ?? Number.NEGATIVE_INFINITY) - (a.passRate.value ?? Number.NEGATIVE_INFINITY),
@@ -63,14 +90,37 @@ function classicOverview() {
       <Section title={{ en: "Leaderboard", "zh-CN": "排行榜" }}>
         <Leaderboard />
       </Section>
-      <ExperimentScatter />
-      <ExperimentTable />
+      <Section title={{ en: "Experiment comparison", "zh-CN": "实验对比" }}>
+        <ExperimentScatter />
+      </Section>
+      <Section title={{ en: "Experiments", "zh-CN": "实验" }}>
+        <ExperimentTable />
+      </Section>
     </Col>
   );
 }
 
 export default defineReport({
   title: { en: "MemoryBench Classic", "zh-CN": "MemoryBench Classic" },
+  pricing: classicPricing,
+  head: [
+    {
+      tag: "meta",
+      attrs: {
+        name: "description",
+        content: "Deterministic installed-candidate Report author fixture.",
+      },
+    },
+    ...(process.env.NICEEVAL_E2E_AUTHOR_HEAD === "1"
+      ? [{
+          tag: "script" as const,
+          attrs: {
+            src: "https://example.test/report-author-fixture.js",
+            crossorigin: "anonymous",
+          },
+        }]
+      : []),
+  ],
   pages: [
     {
       id: "overview",

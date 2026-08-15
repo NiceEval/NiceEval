@@ -40,10 +40,10 @@ const PASSES: Record<ClassicMemory, ReadonlySet<string>> = {
   ]),
 };
 
-const USAGE: Record<ClassicMemory, { inputTokens: number; outputTokens: number; costUSD: number }> = {
-  baseline: { inputTokens: 80, outputTokens: 20, costUSD: 0.004 },
-  "memory-a": { inputTokens: 140, outputTokens: 36, costUSD: 0.007 },
-  "memory-b": { inputTokens: 190, outputTokens: 48, costUSD: 0.009 },
+const USAGE: Record<ClassicMemory, { inputTokens: number; outputTokens: number }> = {
+  baseline: { inputTokens: 80, outputTokens: 20 },
+  "memory-a": { inputTokens: 140, outputTokens: 36 },
+  "memory-b": { inputTokens: 190, outputTokens: 48 },
 };
 
 export function classicExpectedVerdict(memory: ClassicMemory, evalId: string): "passed" | "failed" {
@@ -78,7 +78,6 @@ export function classicMemoryAgent() {
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
           requests: 1,
-          costUSD: usage.costUSD,
         },
         events: [
           {

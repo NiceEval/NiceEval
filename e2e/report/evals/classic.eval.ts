@@ -6,7 +6,7 @@ function recallEval(topic: string, prompt: string) {
     description: `classic/${topic}: deterministic MemoryBench-like recall`,
     async test(t) {
       const turn = await t.send(prompt);
-      await turn.succeeded().stopOnFailure();
+      await turn.succeeded().orStop();
       t.check(t.reply, includes("RECALL_OK"));
     },
   });
@@ -24,7 +24,7 @@ export default {
     description: "classic/tool-note: deterministic tool evidence plus recall",
     async test(t) {
       const turn = await t.send("Write a memory note, then recall it.");
-      await turn.succeeded().stopOnFailure();
+      await turn.succeeded().orStop();
       turn.calledTool("write_note", { count: 1 });
       t.check(t.reply, includes("RECALL_OK"));
     },

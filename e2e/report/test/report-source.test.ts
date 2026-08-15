@@ -8,37 +8,33 @@ import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
+  readonly event: string;
+  readonly evalId?: string;
+  readonly locator?: string;
 }
 
-interface SourceShowDocument {
-  readonly format: "niceeval.show";
-  readonly schemaVersion: 1;
-  readonly view: "source";
-  readonly data: unknown;
-}
-
-interface SourceCalculation {
-  readonly state: "available" | "data-unavailable" | "execution-failed";
-  readonly inputState?: "complete" | "partial";
-  readonly problemIds: readonly number[];
-  readonly value?: {
-    readonly locator: string;
-    readonly source: unknown | null;
-    readonly unavailable?: string;
+interface SourceShowManifest {
+  readonly schema: "niceeval.report-target-execution/v2";
+  readonly locale: "en";
+  readonly page: {
+    readonly route: string;
+    readonly pageId: string;
+    readonly title: string | Record<string, string>;
+    readonly renderedText: string;
   };
+  readonly downloads: readonly unknown[];
+  readonly problems: readonly unknown[];
 }
 
-test("show --source 从本轮 Record 呈现入口与导入断言快照", async () => {
+test("选中的 Source Page 从本轮 Record 呈现入口与导入断言快照", async () => {
   await reportE2E.case(
     "source",
     { artifacts: reportCaseArtifacts() },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const attempt = only(
+      const runId = only(run.expReceipt().runIds, () => true, run.diagnostic());
+      only(
         run.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "source-snapshot" && event.locator !== undefined,
         run.diagnostic(),
@@ -58,75 +54,42 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       );
 
       const shown = await niceeval.run(
-        ["show", attempt.locator!, "--source"],
+        ["show", "--run", runId, "--report", "./reports/site.tsx", "--page", "/source"],
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      expect(shown.stdout).toContain("Source fixture detail");
       expect(shown.stdout).toContain("evals/source-snapshot.eval.ts");
       expect(shown.stdout).toContain("evals/source-snapshot/assertions.ts");
       expect(shown.stdout).toContain("ENTRY_SNAPSHOT_BEFORE");
       expect(shown.stdout).toContain("IMPORTED_ASSERTION_SNAPSHOT_BEFORE");
-      expect(shown.stdout).toContain("Assertions: available");
       expect(shown.stdout).not.toContain("ENTRY_SNAPSHOT_AFTER");
       expect(shown.stdout).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
-      expect(shown.stdout).not.toContain("@unknown");
       expect(shown.stdout).not.toContain(".niceeval/");
       expect(shown.stdout).not.toContain("sources.json");
 
-      const json = await niceeval.run(["show", attempt.locator!, "--source", "--json"]);
+      const json = await niceeval.run(
+        ["show", "--run", runId, "--report", "./reports/site.tsx", "--page", "/source", "--json"],
+      );
       expect(json.exitCode, json.diagnostic()).toBe(0);
-      const recordRoot = join(projectRoot, ".niceeval", "record");
       expect(json.stdout).not.toContain(projectRoot);
-      expect(json.stdout).not.toContain(recordRoot);
-      expect(json.stdout).not.toContain("artifactPath");
       expect(json.stdout).not.toContain(".niceeval/");
       expect(json.stdout).not.toContain("sources.json");
-      const document = json.json<SourceShowDocument>();
+      const document = json.json<SourceShowManifest>();
       expect(document).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "source",
-        data: {
-          state: "available",
-          inputState: "complete",
-          problemIds: [],
-          value: { locator: attempt.locator },
+        schema: "niceeval.report-target-execution/v2",
+        locale: "en",
+        page: {
+          route: "/source",
+          pageId: "source",
+          renderedText: expect.stringContaining("Source fixture detail"),
         },
+        downloads: [],
+        problems: [],
       });
-      const payload = JSON.stringify(document.data);
-      expect(payload).toContain("ENTRY_SNAPSHOT_BEFORE");
-      expect(payload).toContain("IMPORTED_ASSERTION_SNAPSHOT_BEFORE");
-      expect(payload).not.toContain("ENTRY_SNAPSHOT_AFTER");
-      expect(payload).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
-      expect(payload).not.toContain("@unknown");
-
-      const missingText = await niceeval.run([
-        "show",
-        attempt.locator!,
-        "--source=evals/not-captured.ts",
-      ]);
-      expect(missingText.exitCode, missingText.diagnostic()).toBe(0);
-      expect(missingText.stdout).toContain(
-        "Captured source file not found in annotated source tree: evals/not-captured.ts",
-      );
-      expect(missingText.stdout).toContain(attempt.locator!);
-
-      const missingJson = await niceeval.run([
-        "show",
-        attempt.locator!,
-        "--source=evals/not-captured.ts",
-        "--json",
-      ]);
-      expect(missingJson.exitCode, missingJson.diagnostic()).toBe(0);
-      expect(missingJson.json<SourceShowDocument>().data as SourceCalculation).toMatchObject({
-        state: "available",
-        inputState: "complete",
-        problemIds: [],
-        value: {
-          locator: attempt.locator,
-          source: null,
-          unavailable: "Captured source file not found in annotated source tree: evals/not-captured.ts",
-        },
-      });
+      expect(document.page.renderedText).toContain("ENTRY_SNAPSHOT_BEFORE");
+      expect(document.page.renderedText).toContain("IMPORTED_ASSERTION_SNAPSHOT_BEFORE");
+      expect(document.page.renderedText).not.toContain("ENTRY_SNAPSHOT_AFTER");
+      expect(document.page.renderedText).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
     },
   );
 });

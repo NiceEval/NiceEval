@@ -10,7 +10,6 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "niceeval/report",
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },

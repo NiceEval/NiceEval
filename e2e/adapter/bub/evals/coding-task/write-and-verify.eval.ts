@@ -11,6 +11,10 @@ export default defineEval({
   description: "agent 先写一个文件,再串行 shell 读回来验证",
 
   async test(t) {
+    const requireObservedCost = t.flags.requireObservedCost;
+    if (typeof requireObservedCost !== "boolean") {
+      throw new TypeError("Bub coding-task requires a boolean requireObservedCost experiment flag");
+    }
     const turn = await t.send(
       `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}请分两个独立的工具调用完成,不要合并成一条命令:\n` +
         `第一步:用你的文件写入工具在工作目录下创建 notes.txt,内容为精确的这一行:bub e2e ok\n` +
@@ -51,17 +55,28 @@ export default defineEval({
       turn.usage,
       satisfies(
         "usage within 50_000 tokens",
-        (usage) =>
-          usage !== undefined &&
-          (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) <= 50_000,
+        (usage) => {
+          if (usage === undefined) return false;
+          const reported = [usage.inputTokens, usage.outputTokens].filter(
+            (tokens): tokens is number => tokens !== undefined,
+          );
+          return reported.length > 0 && reported.reduce((total, tokens) => total + tokens, 0) <= 50_000;
+        },
       ),
     );
-    t.check(
-      turn.usage,
-      satisfies(
-        "cost within $0.5",
-        (usage) => usage !== undefined && (usage.costUSD ?? 0) <= 0.5,
-      ),
-    );
+    if (requireObservedCost) {
+      t.check(
+        turn.usage,
+        satisfies(
+          "observed cost within $0.5",
+          (usage) =>
+            usage !== undefined &&
+            typeof usage.costUSD === "number" &&
+            Number.isFinite(usage.costUSD) &&
+            usage.costUSD >= 0 &&
+            usage.costUSD <= 0.5,
+        ),
+      );
+    }
   },
 });

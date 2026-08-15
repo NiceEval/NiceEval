@@ -11,7 +11,7 @@ import { reportCaseArtifacts, reportE2E } from "./support.ts";
 function withLiveViewConfig(config: string): string {
   const imported = config.replace(
     'import { defineConfig } from "niceeval";',
-    'import { defineConfig } from "niceeval";\nimport report from "./reports/config-reload.ts";\nimport alternateReport from "./reports/config-reload-alternate.ts";\nimport theme from "./themes/config-reload.ts";',
+    'import { defineConfig } from "niceeval";\nimport report from "./reports/config-reload.tsx";\nimport alternateReport from "./reports/config-reload-alternate.tsx";\nimport theme from "./themes/config-reload.ts";',
   );
   if (imported === config) throw new Error("report fixture config no longer has its defineConfig import");
   const configured = imported.replace("  timeoutMs: 60_000,", "  report,\n  theme,\n  timeoutMs: 60_000,");
@@ -21,13 +21,22 @@ function withLiveViewConfig(config: string): string {
 
 async function htmlWithMarkers(url: string, ...markers: string[]): Promise<string | undefined> {
   try {
-    const response = await fetch(url);
-    if (response.status !== 200) return undefined;
-    const html = await response.text();
-    return markers.every((marker) => html.includes(marker)) ? html : undefined;
+    const [response, themeResponse] = await Promise.all([
+      fetch(url),
+      fetch(new URL("_niceeval/theme.css", url)),
+    ]);
+    if (response.status !== 200 || themeResponse.status !== 200) return undefined;
+    const [html, theme] = await Promise.all([response.text(), themeResponse.text()]);
+    return markers.every((marker) => html.includes(marker) || theme.includes(marker)) ? html : undefined;
   } catch {
     return undefined;
   }
+}
+
+async function themeCss(url: string): Promise<string> {
+  const response = await fetch(new URL("_niceeval/theme.css", url));
+  expect(response.status).toBe(200);
+  return response.text();
 }
 
 test("view 重建项目模块、配置与 Record；last-good 保留且 latest intent 获胜", async () => {
@@ -44,8 +53,8 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
       const initialSlotMarker = `SLOTS_${initialSlots}`;
 
       const configPath = join(projectRoot, "niceeval.config.ts");
-      const reportPath = join(projectRoot, "reports", "config-reload.ts");
-      const componentPath = join(projectRoot, "reports", "config-reload-content.ts");
+      const reportPath = join(projectRoot, "reports", "config-reload.tsx");
+      const componentPath = join(projectRoot, "reports", "config-reload-content.tsx");
       const themePath = join(projectRoot, "themes", "config-reload.ts");
       const config = await readFile(configPath, "utf8");
       const report = await readFile(reportPath, "utf8");
@@ -85,7 +94,7 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
       expect(first).toContain("REPORT_FIRST");
       expect(first).toContain("INDIRECT_FIRST");
       expect(first).toContain(initialSlotMarker);
-      expect(first).toContain("#123456");
+      expect(await themeCss(origin!)).toContain("#123456");
       expect(first).not.toContain("INDIRECT_SECOND");
 
       await writeFile(componentPath, component.replace("INDIRECT_FIRST", "INDIRECT_SECOND"), "utf8");
@@ -100,7 +109,8 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
         () => htmlWithMarkers(origin!, "INDIRECT_SECOND", "#654321"),
         { timeoutMs: 15_000, intervalMs: 100, label: "theme reload" },
       );
-      expect(themed).not.toContain("#123456");
+      expect(themed).toContain("INDIRECT_SECOND");
+      expect(await themeCss(origin!)).not.toContain("#123456");
 
       const alternateConfig = liveConfig.replace("  report,", "  report: alternateReport,");
       expect(alternateConfig).not.toBe(liveConfig);
@@ -128,9 +138,8 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
             if (response.status !== 200) return undefined;
             const body = await response.text();
             observedIntentBodies.push(body);
-            return body.includes("REPORT_FIRST") && body.includes("INTENT_LATEST") && body.includes("#654321")
-              ? body
-              : undefined;
+            if (!body.includes("REPORT_FIRST") || !body.includes("INTENT_LATEST")) return undefined;
+            return (await themeCss(origin!)).includes("#654321") ? body : undefined;
           } catch {
             return undefined;
           }
@@ -146,7 +155,6 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
       ]));
       for (const body of observedIntentBodies) {
         expect(body).toContain("REPORT_FIRST");
-        expect(body).toContain("#654321");
         expect(body.includes("INDIRECT_SECOND") || body.includes("INTENT_LATEST")).toBe(true);
       }
       const lastGoodBeforeConfigFailure = Buffer.from(await (await fetch(origin!)).arrayBuffer());

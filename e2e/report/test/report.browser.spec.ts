@@ -2,7 +2,7 @@
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
 // The Journey uses only the installed candidate CLI, exported files, real HTTP,
-// href navigation, browser-visible content, and download bytes. It deliberately
+// href navigation, and browser-visible content. It deliberately
 // does not inspect renderer classes, layout, paint, CSS selectors, or Record files.
 
 import { pollUntil, waitForOutput } from "@niceeval/testkit";
@@ -16,24 +16,27 @@ interface ExpEvent {
   readonly event: string;
 }
 
-type DetailKind = "Source" | "Trace" | "Diff";
+type DetailKind = "Source" | "Diff" | "Slot";
 
-test("静态站与 view 对同一用户路由交付相同字节，且离线无 JavaScript 仍可浏览和下载", async ({ browser }) => {
+test("静态站与 view 对同一用户路由交付相同字节，且离线无 JavaScript 仍可浏览", async ({ browser }) => {
   test.setTimeout(120_000);
 
   await reportE2E.case(
     "browser-static-site",
     { artifacts: reportCaseArtifacts(["site-export"]) },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-      expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
-      const slotCount = run.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
-      expect(slotCount, run.diagnostic()).toBeGreaterThan(0);
+      const mainRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(mainRun.expReceipt(), mainRun.diagnostic()).toMatchObject({ completion: "completed" });
+      const sourceRun = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
+      expect(sourceRun.expReceipt(), sourceRun.diagnostic()).toMatchObject({ completion: "completed" });
+      const slotCount = mainRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length
+        + sourceRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
+      expect(slotCount, mainRun.diagnostic()).toBeGreaterThan(0);
 
       const exported = await niceeval.run([
         "view",
         "--report",
-        "./reports/site.ts",
+        "./reports/site.tsx",
         "--out",
         "site-export",
         "--no-open",
@@ -44,7 +47,7 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
         [
           "view",
           "--report",
-          "./reports/site.ts",
+          "./reports/site.tsx",
           "--host",
           "127.0.0.1",
           "--port",
@@ -64,34 +67,40 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
       const staticRoot = pathToFileURL(join(projectRoot, "site-export", "index.html"));
       await expectSameBody(staticRoot, new URL(origin!));
 
-      const offline = await browser.newContext({ acceptDownloads: true, javaScriptEnabled: false });
+      const offline = await browser.newContext({ javaScriptEnabled: false });
       try {
         await offline.setOffline(true);
         const page = await offline.newPage();
         await page.goto(staticRoot.href);
-        await expect(page.getByRole("heading", { name: "Report fixture", level: 1 })).toBeVisible();
-        await expect(page.getByText("Fixture data download", { exact: true })).toBeVisible();
-        const chart = page.getByRole("figure", { name: /Fixture model scores/ });
-        await expect(chart.getByRole("img", { name: /Fixture model scores/ })).toBeVisible();
-        const chartData = chart.getByRole("table");
-        await expect(chartData).toBeVisible();
-        await expect(chartData.getByRole("columnheader", { name: "model" })).toBeVisible();
-        await expect(chartData.getByRole("columnheader", { name: "score" })).toBeVisible();
-        await expect(chartData.getByRole("row", { name: /North.*72/ })).toBeVisible();
-        await expect(chartData.getByRole("row", { name: /South.*91/ })).toBeVisible();
-        await expect(page.getByText("Fixture overview tab content", { exact: true })).toBeVisible();
-        await expect(page.getByText("Fixture details tab content", { exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Fixture overview" })).toBeVisible();
+        const staticSiteText = visibleText(page, "Report fixture static site");
+        await expect(staticSiteText).toHaveCount(1);
+        await expect(staticSiteText).toBeVisible();
+        const overviewTabText = visibleText(page, "Fixture overview tab content");
+        await expect(overviewTabText).toHaveCount(1);
+        await expect(overviewTabText).toBeVisible();
+        // Native disclosure: only the first tab is open without JavaScript.
+        const fixtureDetailsTab = page.locator("details").filter({
+          hasText: "Fixture details tab content",
+        }).filter({ visible: true });
+        await expect(fixtureDetailsTab).toHaveCount(1);
+        await expect(visibleText(page, "Fixture details tab content")).toHaveCount(0);
+        await fixtureDetailsTab.locator(":scope > summary").click();
+        await expect(fixtureDetailsTab).toHaveAttribute("open", "");
+        const expandedDetailsText = visibleText(page, "Fixture details tab content");
+        await expect(expandedDetailsText).toHaveCount(1);
+        await expect(expandedDetailsText).toBeVisible();
 
         const detailLinks = await Promise.all(
-          (await page.getByRole("link", { name: /^(Source|Trace|Diff) detail / }).all()).map(async (link) => {
+          (await page.getByRole("link", { name: /^(?:Source|Diff) detail$|^Slot detail / }).all()).map(async (link) => {
             const href = await link.getAttribute("href");
             if (href === null) throw new Error("a visible static detail link has no href");
             return { href, label: await link.innerText() };
           }),
         );
-        expect(detailLinks).toHaveLength(slotCount * 3);
+        expect(detailLinks.filter(({ label }) => detailKind(label) === "Slot")).toHaveLength(slotCount);
         expect([...new Set(detailLinks.map(({ label }) => detailKind(label)))].sort()).toEqual(
-          ["Diff", "Source", "Trace"],
+          ["Diff", "Slot", "Source"],
         );
 
         for (const detail of detailLinks) {
@@ -102,30 +111,16 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
 
           // The href is a shareable exported location, not an in-memory router state.
           await page.goto(staticUrl.href);
-          await expect(page.getByRole("heading", { name: `${kind} fixture`, level: 1 })).toBeVisible();
-          await expect(page.getByText(new RegExp(`^${kind} fixture detail `))).toBeVisible();
+          const heading = kind === "Slot"
+            ? page.getByRole("heading", { name: /^Slot fixture detail slot-/ })
+            : page.getByRole("heading", { name: new RegExp(`^${kind} fixture detail$`) });
+          await expect(heading).toBeVisible();
           const sharedUrl = page.url();
           await page.reload();
           expect(page.url()).toBe(sharedUrl);
-          await expect(page.getByRole("heading", { name: `${kind} fixture`, level: 1 })).toBeVisible();
+          await expect(heading).toBeVisible();
         }
 
-        await page.goto(staticRoot.href);
-        const downloadLink = page.getByRole("link", { name: /^Download fixture\.csv/ }).first();
-        await expect(downloadLink).toBeVisible();
-        const downloadHref = await downloadLink.getAttribute("href");
-        if (downloadHref === null) throw new Error("the visible fixture download has no href");
-        await expectSameBody(new URL(downloadHref, staticRoot), new URL(downloadHref, origin!));
-        const [download] = await Promise.all([
-          page.waitForEvent("download"),
-          downloadLink.click(),
-        ]);
-        expect(download.suggestedFilename()).toBe("fixture.csv");
-        const stream = await download.createReadStream();
-        expect(stream).not.toBeNull();
-        const chunks: Buffer[] = [];
-        for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
-        expect(Buffer.concat(chunks).toString("utf8")).toBe("id,status\nfixture,ready\n");
       } finally {
         await offline.close();
       }
@@ -138,8 +133,7 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
         await blockedTransport.route(/^https?:\/\//, (route) => route.abort("failed"));
         const page = await blockedTransport.newPage();
         await page.goto(staticRoot.href);
-        await expect(page.getByRole("heading", { name: "Report fixture", level: 1 })).toBeVisible();
-        await expect(page.getByText("Fixture data download", { exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Fixture overview" })).toBeVisible();
       } finally {
         await blockedTransport.close();
       }
@@ -151,22 +145,46 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
       try {
         const page = await liveBrowser.newPage();
         await page.goto(origin!);
-        await expect(page.getByText("niceeval report fixture copy text", { exact: true })).toBeVisible();
-        const tablist = page.getByRole("tablist");
-        await expect(tablist).toBeVisible();
-        const overviewTab = tablist.getByRole("tab", { name: "Fixture overview", selected: true });
-        const detailsTab = tablist.getByRole("tab", { name: "Fixture details" });
-        await expect(overviewTab).toBeVisible();
-        await detailsTab.click();
-        await expect(tablist.getByRole("tab", { name: "Fixture details", selected: true })).toBeVisible();
-        await expect(page.getByText("Fixture details tab content", { exact: true })).toBeVisible();
-        await expect(page.getByText("Fixture overview tab content", { exact: true })).toBeHidden();
-        await detailsTab.press("ArrowLeft");
-        await expect(tablist.getByRole("tab", { name: "Fixture overview", selected: true })).toBeVisible();
-        await expect(page.getByText("Fixture overview tab content", { exact: true })).toBeVisible();
-        await expect(page.getByText("Fixture details tab content", { exact: true })).toBeHidden();
+        const slotDetail = page.getByRole("link", { name: /^Slot detail / }).first().filter({ visible: true });
+        await expect(slotDetail).toBeVisible();
+        await slotDetail.click();
+        const dialog = page.getByRole("dialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole("heading", { name: /^Slot fixture detail slot-/ })).toBeVisible();
+        const nestedSource = dialog.getByRole("link", { name: "Source from slot detail" });
+        const sourceUrl = new URL("/source/index.html", origin!).href;
+        // This is a relative href in the fetched slot document. The dialog
+        // must preserve that detail document as the base before insertion.
+        await expect(nestedSource).toHaveAttribute("href", sourceUrl);
+        await Promise.all([
+          page.waitForURL(sourceUrl),
+          nestedSource.click(),
+        ]);
+        await expect(page.getByRole("heading", { name: "Source fixture detail" })).toBeVisible();
 
-        const componentPath = join(projectRoot, "reports", "site-copy-block.ts");
+        await page.goto(origin!);
+        const initialCopy = visibleText(page, "niceeval report fixture copy text");
+        await expect(initialCopy).toHaveCount(1);
+        await expect(initialCopy).toBeVisible();
+        const overviewTab = page.locator("details").filter({
+          hasText: "Fixture overview tab content",
+        }).filter({ visible: true });
+        const detailsTab = page.locator("details").filter({
+          hasText: "Fixture details tab content",
+        }).filter({ visible: true });
+        await expect(overviewTab).toHaveCount(1);
+        await expect(overviewTab).toHaveAttribute("open", "");
+        await expect(detailsTab).toHaveCount(1);
+        await expect(detailsTab).not.toHaveAttribute("open", "");
+        await detailsTab.locator(":scope > summary").click();
+        await expect(detailsTab).toHaveAttribute("open", "");
+        await expect(overviewTab).not.toHaveAttribute("open", "");
+        const selectedDetailsText = visibleText(page, "Fixture details tab content");
+        await expect(selectedDetailsText).toHaveCount(1);
+        await expect(selectedDetailsText).toBeVisible();
+        await expect(visibleText(page, "Fixture overview tab content")).toHaveCount(0);
+
+        const componentPath = join(projectRoot, "reports", "site-copy-block.tsx");
         const component = await readFile(componentPath, "utf8");
         const refreshedMarker = "live view refresh marker 981";
         const refreshedComponent = component.replace("niceeval report fixture copy text", refreshedMarker);
@@ -175,7 +193,9 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
         }
         await writeFile(componentPath, refreshedComponent, "utf8");
 
-        await expect(page.getByText(refreshedMarker, { exact: true })).toBeVisible({ timeout: 15_000 });
+        const refreshedCopy = visibleText(page, refreshedMarker);
+        await expect(refreshedCopy).toHaveCount(1, { timeout: 15_000 });
+        await expect(refreshedCopy).toBeVisible();
       } finally {
         await liveBrowser.close();
       }
@@ -221,40 +241,84 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
         await page.goto(new URL("/overview", origin!).href);
         await expect(page.getByRole("heading", { name: "MemoryBench Classic" })).toBeVisible();
 
-        const filter = page.getByRole("searchbox").first();
+        const filter = page.getByRole("searchbox").filter({ visible: true });
+        await expect(filter).toHaveCount(1);
         await expect(filter).toBeVisible();
+        const experimentTable = filter.locator("..").getByRole("table");
+        await expect(experimentTable).toHaveCount(1);
         await filter.fill("classic/memory-a");
-        await expect(page.locator("summary").filter({ hasText: "classic/memory-a" }).first()).toBeVisible();
-        await expect(page.locator("summary").filter({ hasText: "classic/baseline" }).first()).toBeHidden();
+        const memoryA = experimentTable.locator("summary").filter({
+          hasText: "classic/memory-a",
+        }).filter({ visible: true });
+        await expect(memoryA).toHaveCount(1);
+        await expect(memoryA).toBeVisible();
+        const baseline = experimentTable.locator("summary").filter({
+          hasText: "classic/baseline",
+        }).filter({ visible: true });
+        await expect(baseline).toHaveCount(0);
         await filter.fill("");
 
-        const group = page.locator("details").filter({
-          has: page.locator("summary").filter({ hasText: "classic/memory-a" }),
-        }).first();
+        const group = experimentTable.locator("details").filter({
+          hasText: "classic/memory-a",
+        }).filter({ visible: true });
+        await expect(group).toHaveCount(1);
         await expect(group).toBeVisible();
         const groupSummary = group.locator(":scope > summary");
         await groupSummary.focus();
         await groupSummary.press("Space");
         await expect(group).toHaveAttribute("open", "");
 
-        const evalGroup = group.locator("details").first();
+        const evalGroupSummary = group.locator("summary").filter({
+          hasText: "classic (8 evals)",
+        }).filter({ visible: true });
+        await expect(evalGroupSummary).toHaveCount(1);
+        const evalGroup = evalGroupSummary.locator("..");
+        await expect(evalGroup).toHaveCount(1);
         await expect(evalGroup).toBeVisible();
-        const evalSummary = evalGroup.locator(":scope > summary");
-        await evalSummary.focus();
-        await evalSummary.press("Space");
+        await evalGroupSummary.focus();
+        await evalGroupSummary.press("Space");
         await expect(evalGroup).toHaveAttribute("open", "");
 
-        const attemptLink = evalGroup.locator("a").first();
+        const evalRowSummary = evalGroup.locator("summary").filter({
+          hasText: "recall-constraint",
+        }).filter({ visible: true });
+        await expect(evalRowSummary).toHaveCount(1);
+        const evalRow = evalRowSummary.locator("..");
+        await expect(evalRow).toHaveCount(1);
+        await evalRowSummary.focus();
+        await evalRowSummary.press("Space");
+        await expect(evalRow).toHaveAttribute("open", "");
+
+        const attemptLink = evalRow.getByRole("link").filter({
+          visible: true,
+        });
+        await expect(attemptLink).toHaveCount(1);
         await expect(attemptLink).toBeVisible();
         const href = await attemptLink.getAttribute("href");
         if (href === null) throw new Error("an expanded attempt row has no detail href");
         const detail = new URL(href, page.url());
         expect(detail.pathname).toMatch(/^\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}\/index\.html$/);
-        await Promise.all([page.waitForURL(detail.href), attemptLink.click()]);
-        await expect(page.getByRole("heading", { name: /^Attempt @/ })).toBeVisible();
+
+        // The JavaScript enhancement opens the Host-owned detail dialog around
+        // the same href instead of leaving the overview page.
+        await attemptLink.click();
+        const dialog = page.getByRole("dialog");
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole("heading", { name: /^Attempt · @/ })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(dialog).not.toBeVisible();
+
+        // The href stays a real standalone route: direct navigation reads the
+        // same closed detail document.
+        await page.goto(detail.href);
+        await expect(page.getByRole("heading", { name: /^Attempt · @/ })).toBeVisible();
 
         await page.goto(new URL("/overview", origin!).href);
-        const zhButton = page.getByRole("button", { name: "中文" }).first();
+        const scatter = page.getByRole("img", { name: "costUSD × passRate" }).filter({ visible: true });
+        await expect(scatter).toHaveCount(1);
+        await expect(scatter).toContainText("classic/memory-a");
+        const zhButton = page.getByRole("button", { name: "中文" }).filter({ visible: true });
+        await expect(zhButton).toHaveCount(1);
         await expect(zhButton).toBeVisible();
         await zhButton.click();
         await expect(page.getByText("总览", { exact: true })).toBeVisible();
@@ -276,7 +340,7 @@ async function expectSameBody(staticUrl: URL, liveUrl: URL): Promise<void> {
 }
 
 function detailKind(label: string): DetailKind {
-  const matched = /^(Source|Trace|Diff) detail /.exec(label);
+  const matched = /^(Source|Diff|Slot) detail(?: |$)/.exec(label);
   if (matched === null) throw new Error(`unexpected static detail link label: ${JSON.stringify(label)}`);
   return matched[1] as DetailKind;
 }
@@ -292,4 +356,8 @@ async function waitForHttp(origin: string, label: string): Promise<void> {
     },
     { timeoutMs: 15_000, intervalMs: 100, label },
   );
+}
+
+function visibleText(page: import("@playwright/test").Page, text: string) {
+  return page.getByText(text, { exact: true }).filter({ visible: true });
 }

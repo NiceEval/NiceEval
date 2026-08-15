@@ -17,84 +17,101 @@ interface ExpEvent {
   readonly verdict?: string;
 }
 
-interface Evidence<Value> {
-  readonly state: string;
-  readonly value?: Value;
+interface ReportProblem {
+  readonly code: string;
+  readonly path: readonly string[];
+  readonly refs: readonly string[];
+  readonly summary?: string;
 }
 
-interface AttemptShowDocument {
-  readonly format: "niceeval.show";
-  readonly schemaVersion: 1;
-  readonly view: "attempt";
-  readonly problemTable: readonly unknown[];
-  readonly data: {
-    readonly state: "available";
-    readonly inputState: "complete";
-    readonly problemIds: readonly number[];
-    readonly value: {
-      readonly kind: "attempt";
-      readonly identity: {
+interface ReportProjections {
+  readonly schema: "niceeval.report-projections/v1";
+  readonly pricingProfile: Record<string, unknown> | null;
+  readonly costs: readonly {
+    readonly page: { readonly pageId: string; readonly route: string };
+    readonly measureId: string;
+    readonly row: { readonly key: string; readonly dimensions: Record<string, unknown> };
+    readonly profileIdentity: string;
+    readonly projection: Record<string, unknown>;
+  }[];
+}
+
+/** The documented built-in machine document (docs/feature/reports/cli.md). */
+interface BuiltInShowDocument {
+  readonly schema: "niceeval.show/v2";
+  readonly locale: "en";
+  readonly selection:
+    | {
+        readonly kind: "project-current";
+        readonly sampleIdentity: string;
+        readonly experimentIds: readonly string[];
+      }
+    | {
+        readonly kind: "explicit-runs";
+        readonly sampleIdentity: string;
+        readonly runIds: readonly string[];
+      }
+    | {
+        readonly kind: "attempt-locator";
+        readonly sampleIdentity: string;
         readonly locator: string;
-        readonly selectedRunId: string;
-        readonly originRunId: string;
-        readonly slotId: string;
-        readonly memberRelation: "origin";
       };
-      readonly evaluation: Evidence<{
-        readonly experimentId: string;
-        readonly evalId: string;
-        readonly attempt: number;
-        readonly kind: string;
-      }>;
-      readonly assertions: Evidence<{
-        readonly entries: readonly { readonly entry?: { readonly result?: { readonly state?: string } } }[];
-      }>;
-      readonly verdict: Evidence<string>;
-      readonly score: Evidence<unknown>;
-      readonly conversation: Evidence<{
-        readonly collection: { readonly state: string };
-        readonly items: readonly { readonly kind?: string; readonly role?: string; readonly text?: string }[];
-      }>;
-      readonly commands: Evidence<{
-        readonly collection: { readonly state: string };
-        readonly commands: readonly unknown[];
-      }>;
-      readonly usage: Evidence<{ readonly collection: { readonly state: string } }>;
-      readonly timing: Evidence<{ readonly collection: { readonly state: string } }>;
-      readonly diagnostics: Evidence<{ readonly collection: { readonly state: string } }>;
+  readonly report: { readonly token: string; readonly identity: string };
+  readonly page: { readonly route: string; readonly pageId: string; readonly title: string | Record<string, string> };
+  readonly data:
+    | { readonly kind: "leaderboard"; readonly rows: readonly unknown[] }
+    | {
+        readonly kind: "attempt";
+        readonly evidence: unknown;
+        readonly observability: unknown;
+      readonly fileChanges: unknown;
     };
-  };
+  readonly projections: ReportProjections;
+  readonly problems: readonly ReportProblem[];
 }
 
-interface HistoryShowDocument {
-  readonly format: "niceeval.show";
-  readonly schemaVersion: 1;
-  readonly view: "leaderboard";
-  readonly sample: {
-    readonly selection: {
-      readonly policy: "explicit-runs";
-      readonly runIds: readonly string[];
-    };
-    readonly runCount: number;
-    readonly slotCount: number;
-    readonly denominator: number;
+/** The documented custom single-target manifest (docs/feature/reports/cli.md). */
+interface CustomTargetExecutionManifest {
+  readonly schema: "niceeval.report-target-execution/v2";
+  readonly locale: "en";
+  readonly selection: { readonly kind: "project-current"; readonly sampleIdentity: string; readonly experimentIds: readonly string[] };
+  readonly report: { readonly identity: string; readonly title: string | Record<string, string> };
+  readonly page: {
+    readonly route: string;
+    readonly pageId: string;
+    readonly title: string | Record<string, string>;
+    readonly renderedText: string;
   };
+  readonly downloads: readonly { readonly path: string; readonly mediaType: string; readonly bytes: number }[];
+  readonly projections: ReportProjections;
+  readonly problems: readonly ReportProblem[];
 }
 
-test("show 将固定 execution 的文本和机器概览交付给调用方", async () => {
+function expectCanonicalProblemTable(problems: readonly ReportProblem[], pageId: string): void {
+  for (const problem of problems) {
+    expect(problem).toMatchObject({
+      code: expect.any(String),
+      path: ["page", pageId],
+      refs: expect.any(Array),
+    });
+    expect(problem.refs).toEqual([...new Set(problem.refs)].sort());
+    if (problem.summary !== undefined) expect(problem.summary).toEqual(expect.any(String));
+  }
+  const keys = problems.map((problem) => JSON.stringify([
+    problem.code,
+    problem.path,
+    problem.refs,
+    problem.summary ?? "",
+  ]));
+  expect(keys).toEqual([...keys].sort());
+}
+
+test("show 将固定 execution 的文本和单目标机器文档交付给调用方", async () => {
   await reportE2E.case(
     "show-overview",
     { artifacts: reportCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
-      const run = await niceeval.run([
-        "exp",
-        "main",
-        "--rerun",
-        "all",
-        "--json",
-        "--junit",
-        "junit/main.xml",
-      ]);
+      const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       expect(run.expReceipt()).toMatchObject({ completion: "completed" });
       const evals = run.ndjson<ExpEvent>().filter((event) => event.event === "eval");
@@ -107,21 +124,31 @@ test("show 将固定 execution 的文本和机器概览交付给调用方", asyn
 
       const text = await niceeval.run(["show"]);
       expect(text.exitCode, text.diagnostic()).toBe(0);
-      expect(text.stdout).toContain("NiceEval");
       expect(text.stdout).toContain("Pass rate");
-      expect(text.stdout).toContain("Experiment");
-      expect(text.stdout).not.toContain("Report default-overview");
+      expect(text.stdout).toContain("main");
 
       const json = await niceeval.run(["show", "--json"]);
       expect(json.exitCode, json.diagnostic()).toBe(0);
-      expect(json.json<HistoryShowDocument>()).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "leaderboard",
-        sample: { runCount: 1, slotCount: 4, denominator: 4 },
+      const document = json.json<BuiltInShowDocument>();
+      expect(document).toMatchObject({
+        schema: "niceeval.show/v2",
+        locale: "en",
+        selection: {
+          kind: "project-current",
+          experimentIds: ["classic/baseline", "classic/memory-a", "classic/memory-b", "main", "source"],
+        },
+        page: { route: "/", pageId: "overview" },
       });
-      expect(json.stderr).toBe("");
-      expect(json.stdout).not.toContain("Loading");
+      expectCanonicalProblemTable(document.problems, "overview");
+      expect(document.selection.sampleIdentity).toEqual(expect.any(String));
+      expect(document.report.token).toEqual(expect.any(String));
+      expect(document.report.identity).toEqual(expect.any(String));
+      expect(document.data.kind).toBe("leaderboard");
+      expect(document.projections).toEqual({
+        schema: "niceeval.report-projections/v1",
+        pricingProfile: null,
+        costs: [],
+      });
     },
   );
 });
@@ -138,45 +165,27 @@ test("show 对 immutable Attempt 交付精确 evidence JSON", async () => {
         (event) => event.event === "eval" && event.evalId === "deliberate-fail" && event.locator !== undefined,
         run.diagnostic(),
       );
+
       const attempt = await niceeval.run(["show", failed.locator!, "--json"]);
       expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
-      const document = attempt.json<AttemptShowDocument>();
+      const document = attempt.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "attempt",
-        problemTable: [],
-        data: {
-          state: "available",
-          inputState: "complete",
-          problemIds: [],
-          value: {
-            kind: "attempt",
-            identity: { locator: failed.locator, memberRelation: "origin" },
-            evaluation: {
-              state: "available",
-              value: { experimentId: "main", evalId: "deliberate-fail", attempt: 0, kind: "pass" },
-            },
-            verdict: { state: "available", value: "failed" },
-            score: { state: "not-applicable" },
-            conversation: { state: "available", value: { collection: { state: "complete" } } },
-            commands: { state: "available", value: { collection: { state: "complete" }, commands: [] } },
-            usage: { state: "available", value: { collection: { state: "complete" } } },
-            timing: { state: "available", value: { collection: { state: "complete" } } },
-            diagnostics: { state: "available", value: { collection: { state: "complete" } } },
-          },
-        },
+        schema: "niceeval.show/v2",
+        locale: "en",
+        selection: { kind: "attempt-locator", locator: failed.locator },
+        page: { route: "/", pageId: "attempt-overview", title: "Attempt overview" },
       });
-      expect(document.data.value.identity.selectedRunId).toBe(document.data.value.identity.originRunId);
-      expect(document.data.value.identity.slotId).toMatch(/^slot-/);
-      expect(document.data.value.assertions.value?.entries.map((entry) => entry.entry?.result?.state)).toContain(
-        "mismatched",
-      );
-      // This fixture only evaluates an assertion and never calls t.send(). Its
-      // Observability collection is complete, but there is no Agent message to
-      // invent. The tool-call journey owns non-empty conversation evidence.
-      expect(document.data.value.conversation.value?.items).toEqual([]);
+      expectCanonicalProblemTable(document.problems, "attempt-overview");
+      expect(document.data.kind).toBe("attempt");
+      expect(document.projections).toEqual({
+        schema: "niceeval.report-projections/v1",
+        pricingProfile: null,
+        costs: [],
+      });
 
+      const payload = JSON.stringify(document.data);
+      expect(payload).toContain(failed.locator!);
+      expect(payload).toContain("mismatched");
     },
   );
 });
@@ -200,16 +209,21 @@ test("show --run 保留 deterministic classic World 的历史 Run 与 Attempt �
         "--json",
       ]);
       expect(historical.exitCode, historical.diagnostic()).toBe(0);
-      expect(historical.json<HistoryShowDocument>()).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "leaderboard",
-        sample: {
-          selection: { policy: "explicit-runs", runIds: [...historyRunIds].sort() },
-          runCount: 4,
-          slotCount: 36,
-          denominator: 36,
+      const document = historical.json<BuiltInShowDocument>();
+      expect(document).toMatchObject({
+        schema: "niceeval.show/v2",
+        locale: "en",
+        selection: {
+          kind: "explicit-runs",
+          runIds: [...historyRunIds].sort(),
         },
+        page: { route: "/", pageId: "run-membership" },
+      });
+      expectCanonicalProblemTable(document.problems, "run-membership");
+      expect(document.projections).toEqual({
+        schema: "niceeval.report-projections/v1",
+        pricingProfile: null,
+        costs: [],
       });
     },
   );
@@ -226,7 +240,7 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
       const piped = await niceeval.run(["show"]);
       expect(piped.exitCode, piped.diagnostic()).toBe(0);
       expect(piped.stdout).toContain("Pass rate");
-      expect(piped.stdout).toContain("tool-call");
+      expect(piped.stdout).toContain("main");
 
       const terminal = await runReportPty(
         ["show"],
@@ -241,26 +255,118 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
       expect(terminal.exitCode, terminal.diagnostic()).toBe(0);
       const visible = stripVTControlCharacters(terminal.stdout);
       expect(visible).toContain("Pass rate");
-      expect(visible).toContain("Experiment");
-      expect(visible).toContain("tool-call");
+      expect(visible).toContain("main");
     },
   );
 });
 
-test("show 不渲染不完整的 locale map，而是在公开问题面保留可诊断错误", async () => {
+test("自定义 Report 的 show 是单目标阅读面，JSON 只含 target-execution manifest", async () => {
   await reportE2E.case(
-    "show-invalid-locale",
+    "show-custom-fixture",
+    { artifacts: reportCaseArtifacts() },
+    async ({ commands: { niceeval } }) => {
+      for (const experimentId of ["main", "source"] as const) {
+        const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
+        expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+      }
+
+      // This makes the unrelated parameter Page's enumerate() fail. A target
+      // show must still succeed because only view/static build the whole site.
+      const targetOnlyEnv = { NICEEVAL_E2E_FAIL_UNRELATED_ENUMERATE: "1" };
+
+      const shown = await niceeval.run(
+        ["show", "--report", "./reports/site.tsx"],
+        { env: targetOnlyEnv },
+      );
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      expect(shown.stdout).toContain("Report fixture static");
+      expect(shown.stdout).toMatch(/Fixture pass rate is\s+partial \(\d+\/\d+\)/);
+      expect(shown.stdout).toContain("Source detail");
+      expect(shown.stdout).toContain("Diff detail");
+      const unwrapped = shown.stdout.replace(/\s+/gu, " ");
+      expect(unwrapped).toContain("Cost unavailable — this report does not declare a PricingProfile.");
+      expect(unwrapped).toContain("Cost × pass rate scatter unavailable — this report does not declare a PricingProfile.");
+
+      const json = await niceeval.run(
+        ["show", "--report", "./reports/site.tsx", "--json"],
+        { env: targetOnlyEnv },
+      );
+      expect(json.exitCode, json.diagnostic()).toBe(0);
+      const manifest = json.json<CustomTargetExecutionManifest>();
+      expect(manifest).toMatchObject({
+        schema: "niceeval.report-target-execution/v2",
+        locale: "en",
+        selection: {
+          kind: "project-current",
+          experimentIds: ["classic/baseline", "classic/memory-a", "classic/memory-b", "main", "source"],
+        },
+        report: { title: "Report fixture" },
+        page: {
+          route: "/",
+          pageId: "overview",
+          title: "Report fixture",
+          renderedText: expect.stringContaining("Report fixture static"),
+        },
+        downloads: [],
+      });
+      expectCanonicalProblemTable(manifest.problems, "overview");
+      expect(manifest.report.identity).toEqual(expect.any(String));
+      expect(manifest.selection.sampleIdentity).toEqual(expect.any(String));
+      expect(manifest.projections).toEqual({
+        schema: "niceeval.report-projections/v1",
+        pricingProfile: null,
+        costs: [],
+      });
+    },
+  );
+});
+
+test("参数化 show 按规范 key 读取详情页，并对非成员 key 返回单目标错误", async () => {
+  await reportE2E.case(
+    "show-parameterized",
     { artifacts: reportCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
 
-      const shown = await niceeval.run(["show", "--report", "./reports/invalid-localized-text.tsx"]);
-      expect(shown.exitCode, shown.diagnostic()).not.toBe(0);
-      expect(shown.stderr).toContain("report-site-execution-problem");
-      expect(shown.stderr).toContain("semantic-tree-invalid");
-      expect(shown.stderr).toContain("a localized text map must provide text for en and zh-CN");
-      expect(shown.stdout).not.toContain("Incomplete locale map must not render");
+      const json = await niceeval.run(["show", "--report", "./reports/site.tsx", "--json"]);
+      expect(json.exitCode, json.diagnostic()).toBe(0);
+      const manifest = json.json<CustomTargetExecutionManifest>();
+      const slotId = /Slot detail (slot-[a-zA-Z0-9_-]+)/.exec(manifest.page.renderedText);
+      expect(slotId, "the overview must expose at least one slot detail target").not.toBeNull();
+      const slotKey = slotId![1];
+
+      const detail = await niceeval.run([
+        "show",
+        "--report",
+        "./reports/site.tsx",
+        "--page",
+        `/slot/${slotKey}`,
+        "--json",
+      ]);
+      expect(detail.exitCode, detail.diagnostic()).toBe(0);
+      const detailManifest = detail.json<CustomTargetExecutionManifest>();
+      expect(detailManifest).toMatchObject({
+        schema: "niceeval.report-target-execution/v2",
+        page: {
+          route: `/slot/${slotKey}`,
+          pageId: "slot",
+          renderedText: expect.stringContaining(`Slot fixture detail ${slotKey}`),
+        },
+        problems: [],
+      });
+      expect(detailManifest.downloads, "a single target carries only its own downloads").toEqual([]);
+      expect(detailManifest.projections.costs, "show carries only the selected Page capture").toEqual([]);
+
+      const missing = await niceeval.run([
+        "show",
+        "--report",
+        "./reports/site.tsx",
+        "--page",
+        "/slot/not-a-member-slot",
+      ]);
+      expect(missing.exitCode, missing.diagnostic()).not.toBe(0);
+      expect(missing.stdout, missing.diagnostic()).not.toContain("Slot fixture detail");
     },
   );
 });

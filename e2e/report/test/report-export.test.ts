@@ -19,21 +19,25 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
     "export",
     { artifacts: reportCaseArtifacts(["site-export", "attempt-export"]) },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-      expect(run.exitCode, run.diagnostic()).not.toBe(0);
-      const slotCount = run.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
-      expect(slotCount, run.diagnostic()).toBeGreaterThan(0);
+      const mainRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(mainRun.expReceipt(), mainRun.diagnostic()).toMatchObject({ completion: "completed" });
+      const sourceRun = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
+      expect(sourceRun.expReceipt(), sourceRun.diagnostic()).toMatchObject({ completion: "completed" });
+      const mainSlots = mainRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
+      const sourceSlots = sourceRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
+      expect(mainSlots, "main must seal four logical slots").toBe(4);
+      expect(mainSlots + sourceSlots, "the fixture Sample must stay small").toBe(5);
       const failed = only(
-        run.ndjson<ExpEvent>(),
+        mainRun.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "deliberate-fail" && event.locator !== undefined,
-        run.diagnostic(),
+        mainRun.diagnostic(),
       );
 
       const exported = await niceeval.run(
         [
           "view",
           "--report",
-          "./reports/site.ts",
+          "./reports/site.tsx",
           "--out",
           "site-export",
           "--no-open",
@@ -49,15 +53,59 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       // The authored hrefs, rather than a hand-built output path, reveal every
       // parameterized instance that static export had to close.
       const staticRoot = pathToFileURL(join(projectRoot, "site-export", "index.html"));
-      const detailHrefs = [...new Set(
-        [...index.matchAll(/href="([^"]*(?:source|trace|diff)\/[^"]*)"/g)].map((match) => match[1]!),
+      const slotHrefs = [...new Set(
+        [...index.matchAll(/href="([^"]*slot\/slot-[^"]+)"/g)].map((match) => match[1]!),
       )];
-      expect(detailHrefs).toHaveLength(slotCount * 3);
-      for (const href of detailHrefs) {
-        const kind = detailKind(href);
+      expect(slotHrefs, "static export must close every slot detail instance").toHaveLength(
+        mainSlots + sourceSlots,
+      );
+      for (const href of slotHrefs) {
         const detail = await readFile(fileURLToPath(new URL(href, staticRoot)), "utf8");
-        expect(detail).toContain(`${kind} fixture detail`);
+        expect(detail).toMatch(/Slot fixture detail slot-/);
       }
+
+      const source = await readFile(fileURLToPath(new URL("source/index.html", staticRoot)), "utf8");
+      expect(source).toContain("Source fixture detail");
+      expect(source).toContain("evals/source-snapshot.eval.ts");
+      expect(source).toContain("evals/source-snapshot/assertions.ts");
+
+      // The author declares only slot/source/diff Pages; the standard Attempt
+      // and Experiment detail Pages are explicitly composed into this Report,
+      // so every declared instance is a readable closed document.
+      const manifest = JSON.parse(
+        await readFile(join(projectRoot, "site-export", "_niceeval", "manifest.json"), "utf8"),
+      ) as {
+        readonly pages: readonly { readonly pageId: string; readonly route: string; readonly path: string }[];
+        readonly projections: string;
+      };
+      expect(manifest.projections).toBe("_niceeval/data/projections.json");
+      const projections = JSON.parse(
+        await readFile(join(projectRoot, "site-export", manifest.projections), "utf8"),
+      ) as {
+        readonly schema: string;
+        readonly pricingProfile: unknown;
+        readonly costs: readonly unknown[];
+      };
+      expect(projections).toEqual({
+        schema: "niceeval.report-projections/v1",
+        pricingProfile: null,
+        costs: [],
+      });
+      const attemptPages = manifest.pages.filter((page) => page.pageId === "attempt");
+      const experimentPages = manifest.pages.filter((page) => page.pageId === "experiment");
+      expect(attemptPages, "the declared standard Attempt Page must close every included Slot").toHaveLength(
+        mainSlots + sourceSlots,
+      );
+      expect(experimentPages, "the declared standard Experiment Page must close every Sample Experiment")
+        .not.toHaveLength(0);
+      for (const entry of [...attemptPages, ...experimentPages]) {
+        const detail = await readFile(fileURLToPath(new URL(entry.path, staticRoot)), "utf8");
+        expect(detail).toMatch(entry.pageId === "attempt" ? /Attempt · @/ : /Experiment · /);
+      }
+
+      const diff = await readFile(fileURLToPath(new URL("diff/index.html", staticRoot)), "utf8");
+      expect(diff).toContain("Diff fixture detail");
+      expect(diff).toContain("Diff entries: not-recorded");
 
       const complete = await stat(join(projectRoot, "site-export", "_niceeval", "complete"));
       expect(complete.size).toBe(0);
@@ -66,7 +114,7 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
         [
           "view",
           "--report",
-          "./reports/site.ts",
+          "./reports/site.tsx",
           "--out",
           "site-export",
           "--no-open",
@@ -88,19 +136,12 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
 
       const attemptIndex = await readFile(join(projectRoot, "attempt-export", "index.html"), "utf8");
       expect(attemptIndex).toContain("Attempt overview");
-      expect(attemptIndex).toContain("0 ratio · 1 / 1 slot");
-      expect(attemptIndex).toContain("Attempt identity");
-      expect(attemptIndex).toContain("Closed evidence");
+      expect(attemptIndex).toContain(failed.locator!);
+      expect(attemptIndex).not.toContain(projectRoot);
+      expect(attemptIndex).not.toContain(".niceeval/");
 
       const attemptComplete = await stat(join(projectRoot, "attempt-export", "_niceeval", "complete"));
       expect(attemptComplete.size).toBe(0);
     },
   );
 });
-
-function detailKind(href: string): "Source" | "Trace" | "Diff" {
-  if (href.includes("source/")) return "Source";
-  if (href.includes("trace/")) return "Trace";
-  if (href.includes("diff/")) return "Diff";
-  throw new Error(`unexpected static detail href: ${JSON.stringify(href)}`);
-}
