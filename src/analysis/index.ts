@@ -14,6 +14,7 @@ export {
 export {
   allLogicalSlots,
   attemptLatencyMs,
+  attemptTokens,
   attemptPassed,
   attemptToolFailure,
   costUSD,
@@ -31,6 +32,8 @@ export {
   requireSameProducer,
   retainContributingEvidence,
   sum,
+  sumAcrossSlots,
+  totalCostUSD,
 } from "./definitions.ts";
 
 export {
@@ -118,6 +121,8 @@ export type {
   AnalysisCurrentSlotIdentity,
   AnalysisSlotOccurrenceIdentity,
   AnalysisRun,
+  AnalysisRunContext,
+  AnalysisRunExecution,
   AnalysisSelectionRequest,
   AnalysisSelectionSummary,
   EvalId,

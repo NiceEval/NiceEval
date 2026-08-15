@@ -31,7 +31,7 @@ import {
   Stack,
   Table,
   Text,
-} from "../author/index.ts";
+} from "../components.ts";
 import type { ReportNode } from "../semantic/closed.ts";
 
 const SLOT_ROWS_MAX = 200;
@@ -70,6 +70,7 @@ function attemptTraceNode(
         snapshot,
         observability,
         props.mode === "timing" ? "Timing" : "Observability",
+        props.locator,
       ),
       ...(entries.length === 0
         ? [Callout({
@@ -680,10 +681,16 @@ function attemptSlotTable(
   snapshot: SampleSnapshot,
   observability: AttemptObservabilityDomainView,
   label: string,
+  locator?: AttemptLocator,
 ): ReportNode {
   const byLocator = indexEntriesByLocator(observability.entries);
-  const slots = snapshot.slots.slice(0, SLOT_ROWS_MAX);
-  const omitted = snapshot.slots.length - slots.length;
+  const selected = locator === undefined
+    ? snapshot.slots
+    : snapshot.slots.filter((slot) =>
+      slot.state === "included" && slot.attempt.locator === locator
+    );
+  const slots = selected.slice(0, SLOT_ROWS_MAX);
+  const omitted = selected.length - slots.length;
   return Stack({
     children: [
       Table({

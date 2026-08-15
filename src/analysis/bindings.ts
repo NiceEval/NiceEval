@@ -252,6 +252,54 @@ export const publishedAnalysisInputBindings = Object.freeze({
       });
     },
   }),
+  /**
+   * The v0.12 `tokens` reading was `inputTokens + outputTokens`. Keep that
+   * exact, non-overlapping pair from the fixed Usage family: cache buckets
+   * are separately accounted input and reasoning is already included in the
+   * output bucket, so neither belongs in this compatibility total.
+   */
+  attemptTokens: Object.freeze({
+    id: "niceeval.attempt-input-output-tokens",
+    family: attemptObservabilityFamily,
+    project: ({ payload }: {
+      readonly member: LogicalSlot;
+      readonly core: ClosedAttemptCore;
+      readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
+    }): InputProjection<number> => {
+      const usage = payload.usage;
+      if (usage.collection.state !== "complete") {
+        return collectionProjection(usage.collection, "usage", "usage collection is incomplete");
+      }
+      let input = 0;
+      let output = 0;
+      let hasInput = false;
+      let hasOutput = false;
+      for (const observation of usage.observations) {
+        if (observation.kind !== "token-bucket") continue;
+        if (observation.bucket === "input") {
+          input += observation.tokens;
+          hasInput = true;
+        } else if (observation.bucket === "output") {
+          output += observation.tokens;
+          hasOutput = true;
+        }
+      }
+      if (!hasInput || !hasOutput) {
+        return Object.freeze({
+          state: "missing" as const,
+          message: "recorded usage does not contain both input and output token buckets",
+        });
+      }
+      const total = input + output;
+      if (!Number.isSafeInteger(total)) {
+        return Object.freeze({
+          state: "failed" as const,
+          message: "recorded input plus output tokens exceed the safe integer range",
+        });
+      }
+      return Object.freeze({ state: "value" as const, value: total });
+    },
+  }),
   attemptToolFailure: Object.freeze({
     id: "niceeval.attempt-tool-failure",
     family: attemptObservabilityFamily,

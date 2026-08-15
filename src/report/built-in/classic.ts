@@ -5,16 +5,21 @@ import {
   type PlainPageDefinition,
 } from "../author/index.ts";
 import {
-  AttemptDetails,
   AttemptList,
   DataList,
-  ExperimentTable,
   IssueSummary,
   MetricSummary,
   SampleOverview,
-  StabilityOverview,
 } from "../classic/components.ts";
 import { Col, Section } from "../classic/primitives.ts";
+import {
+  libraryAttemptDetailPage,
+  libraryExperimentDetailPage,
+} from "../library/details.ts";
+import type {
+  LibraryAttemptDetailPage,
+  LibraryExperimentDetailPage,
+} from "../library/details.ts";
 import {
   loadBuiltInSummaryRows,
   type BuiltInSummaryRows,
@@ -59,28 +64,9 @@ export const standardTracesPage = {
   }),
 } satisfies PlainPageDefinition<Sample>;
 
-export const standardAttemptPage = {
-  id: "attempt",
-  title: "Attempt detail",
-  render: () => AttemptDetails({
-    title: "Attempt detail",
-    sections: [{
-      title: "Closed evidence",
-      children: [Text({ value: "Select a generated evidence detail route for one included Attempt." })],
-    }],
-  }),
-} satisfies PlainPageDefinition<Sample>;
-
-export const standardExperimentPage = {
-  id: "experiment",
-  title: "Experiment detail",
-  render: (sample: Sample) => Col({
-    children: [
-      ExperimentTable({ input: sample, title: "Experiments" }),
-      StabilityOverview({ input: sample, title: "Stability" }),
-    ],
-  }),
-} satisfies PlainPageDefinition<Sample>;
+/** Compatibility aliases for callers that still list library-owned detail Pages. */
+export const standardAttemptPage: LibraryAttemptDetailPage = libraryAttemptDetailPage;
+export const standardExperimentPage: LibraryExperimentDetailPage = libraryExperimentDetailPage;
 
 /**
  * A v0.12-style overview rebuilt on today's Sample and MetricValue boundary.
@@ -98,8 +84,6 @@ export const standard = defineReport({
     standardOverviewPage,
     standardAttemptsPage,
     standardTracesPage,
-    standardAttemptPage,
-    standardExperimentPage,
   ],
 });
 

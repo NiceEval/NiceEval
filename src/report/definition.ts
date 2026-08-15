@@ -2,11 +2,18 @@ import type { AttemptEvidenceDomainView, JsonValue, Sample } from "../analysis/i
 import type { AttemptLocator } from "../attempt-locator.ts";
 import type { LocalizedText } from "../shared/types.ts";
 import type { PageContext } from "./components.ts";
-import type { AuthorReportNode } from "./author/element.ts";
+import type {
+  ReportRenderable,
+} from "./author/element.ts";
 import {
   isThemeDefinition,
   type ThemeDefinition,
 } from "./host/theme.ts";
+import {
+  isLibraryDetailPage,
+  libraryDetailPageReservations,
+  libraryDetailPages,
+} from "./library/details.ts";
 import { hasCompleteReportLocaleMap } from "./classic/locale.ts";
 import type { ReportNode } from "./semantic/closed.ts";
 
@@ -26,15 +33,47 @@ export const DEFAULT_PAGE_TITLE: LocalizedText = "Report";
 export type HeadAttributeValue = string | true;
 export type HeadAttributes = Readonly<Record<string, HeadAttributeValue>>;
 
+export type ScriptCrossOrigin = "anonymous" | "use-credentials";
+export type ScriptReferrerPolicy =
+  | "no-referrer"
+  | "no-referrer-when-downgrade"
+  | "origin"
+  | "origin-when-cross-origin"
+  | "same-origin"
+  | "strict-origin"
+  | "strict-origin-when-cross-origin"
+  | "unsafe-url";
+
+/** The deliberately small attribute set for structured external or inline scripts. */
+export type ScriptHeadAttributes = Readonly<{
+  readonly src?: string;
+  readonly type?: string;
+  readonly async?: true;
+  readonly defer?: true;
+  readonly integrity?: string;
+  readonly crossorigin?: ScriptCrossOrigin;
+  readonly referrerpolicy?: ScriptReferrerPolicy;
+}> & Readonly<Partial<Record<`data-${string}`, string>>>;
+
 /**
- * Safe document metadata only. Script and resource-loading link relations are
- * intentionally absent: a Report must not acquire a functional network
- * dependency outside its closed Host output.
+ * Structured document declarations. Script is a deliberate, closed shell
+ * channel rather than arbitrary HTML: it is validated before Page callbacks
+ * begin and serialized from the same revision for view and static output.
  */
 export type HeadTag =
   | Readonly<{ readonly tag: "meta"; readonly attrs: HeadAttributes; readonly children?: never }>
   | Readonly<{ readonly tag: "link"; readonly attrs: HeadAttributes; readonly children?: never }>
-  | Readonly<{ readonly tag: "style"; readonly attrs?: HeadAttributes; readonly children: string }>;
+  | Readonly<{ readonly tag: "style"; readonly attrs?: HeadAttributes; readonly children: string }>
+  | Readonly<{
+    readonly tag: "script";
+    readonly attrs: ScriptHeadAttributes & Readonly<{ readonly src: string }>;
+    readonly children?: never;
+  }>
+  | Readonly<{
+    readonly tag: "script";
+    readonly attrs?: Omit<ScriptHeadAttributes, "src"> & Readonly<{ readonly src?: never }>;
+    readonly children: string;
+  }>;
 
 export type StyleDeclaration = Extract<HeadTag, { readonly tag: "style" }>;
 
@@ -89,7 +128,7 @@ export type PageLoad<Params, Input> = (
 export type PageRender<Input> = (
   input: Input,
   context: PageContext,
-) => AuthorReportNode | Promise<AuthorReportNode>;
+) => ReportRenderable | Promise<ReportRenderable>;
 
 export interface PageParams<Params extends JsonValue> {
   encode(params: Params): string;
@@ -285,7 +324,44 @@ function normalizePages(value: unknown): NonEmptyArray<NormalizedPageDefinition>
     throw new TypeError("defineReport requires a non-empty pages array");
   }
   assertArray(value, "Report pages");
-  const pages = value.map((page, index) => normalizePage(page, index));
+  const libraryReferences = new Set<object>();
+  const declared = value.filter((page) => {
+    if (!isLibraryDetailPage(page)) return true;
+    if (libraryReferences.has(page)) {
+      throw new TypeError("a library-owned detail Page may be supplied explicitly at most once");
+    }
+    libraryReferences.add(page);
+    return false;
+  });
+  const pages = declared.map((page, index) => normalizePage(page, index));
+  assertNoLibraryDetailReservation(pages);
+  const composed = [
+    ...pages,
+    ...libraryDetailPages.map((page, index) => normalizePage(page, declared.length + index)),
+  ];
+  return normalizePageSet(composed);
+}
+
+function assertNoLibraryDetailReservation(pages: readonly NormalizedPageDefinition[]): void {
+  for (const page of pages) {
+    for (const reservation of libraryDetailPageReservations) {
+      const idConflict = page.id === reservation.id;
+      const pathConflict = page.path === reservation.path;
+      if (!idConflict && !pathConflict) continue;
+      const fields = [
+        ...(idConflict ? [`id ${JSON.stringify(reservation.id)}`] : []),
+        ...(pathConflict ? [`path ${JSON.stringify(reservation.path)}`] : []),
+      ];
+      throw new TypeError(
+        `Report Page ${fields.join(" and ")} is reserved by the library-owned ${reservation.name} detail Page; omit the manual Page or supply the compatibility export exactly once`,
+      );
+    }
+  }
+}
+
+function normalizePageSet(
+  pages: readonly NormalizedPageDefinition[],
+): NonEmptyArray<NormalizedPageDefinition> {
   const ids = new Set<string>();
   const plainPaths = new Set<string>();
   for (const page of pages) {
@@ -444,9 +520,23 @@ function normalizeDimensionPins(value: unknown): DimensionPins {
 
 const HEAD_ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9:._-]*$/;
 const SAFE_LINK_RELATIONS = new Set(["alternate", "author", "canonical", "license"]);
+const SCRIPT_DATA_ATTRIBUTE_NAME = /^data-[a-z][a-z0-9_.:-]*$/;
+const SCRIPT_REFERRER_POLICIES = new Set<ScriptReferrerPolicy>([
+  "no-referrer",
+  "no-referrer-when-downgrade",
+  "origin",
+  "origin-when-cross-origin",
+  "same-origin",
+  "strict-origin",
+  "strict-origin-when-cross-origin",
+  "unsafe-url",
+]);
+const SCRIPT_INTEGRITY_TOKEN = /^(?:sha256|sha384|sha512)-[A-Za-z0-9+/_-]+={0,2}(?:\?[A-Za-z0-9_-]+)?$/;
+const SCRIPT_TYPE = /^(?:module|importmap|speculationrules|[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+(?:\s*;\s*[A-Za-z0-9!#$&^_.+-]+=[A-Za-z0-9!#$&^_.+-]+)*)$/;
+const INLINE_SCRIPT_BYTES_MAX = 65_536;
 
 function normalizeHead(value: unknown): readonly HeadTag[] {
-  if (!Array.isArray(value)) throw new TypeError("Report head must be an array of safe meta, link, or style declarations");
+  if (!Array.isArray(value)) throw new TypeError("Report head must be an array of structured meta, link, style, or script declarations");
   assertArray(value, "Report head");
   return Object.freeze(value.map((entry, index) => normalizeHeadTag(entry, `Report head[${index}]`)));
 }
@@ -455,10 +545,32 @@ function normalizeHeadTag(value: unknown, label: string): HeadTag {
   const fields = ownFields(value, label);
   const tag = fields.get("tag");
   if (tag === "script") {
-    throw new TypeError(`${label} cannot declare script: Report head never permits executable code`);
+    assertOnlyFields(fields, ["tag", "attrs", "children"], label, ["attrs", "children"]);
+    const attrs = fields.has("attrs")
+      ? normalizeScriptAttributes(fields.get("attrs"), `${label}.attrs`)
+      : undefined;
+    const source = attrs?.src;
+    const hasInline = fields.has("children");
+    if ((source === undefined) === !hasInline) {
+      throw new TypeError(`${label} script must declare exactly one of attrs.src or inline children`);
+    }
+    if (hasInline) {
+      const children = fields.get("children");
+      if (typeof children !== "string") throw new TypeError(`${label}.children must be inline script text`);
+      assertInlineScript(children, `${label}.children`);
+      return Object.freeze({
+        tag,
+        ...(attrs === undefined ? {} : { attrs: withoutScriptSource(attrs) }),
+        children,
+      }) as Extract<HeadTag, { readonly tag: "script"; readonly children: string }>;
+    }
+    return Object.freeze({
+      tag,
+      attrs: attrs as ScriptHeadAttributes & Readonly<{ readonly src: string }>,
+    }) as Extract<HeadTag, { readonly tag: "script"; readonly children?: never }>;
   }
   if (tag !== "meta" && tag !== "link" && tag !== "style") {
-    throw new TypeError(`${label}.tag must be \"meta\", \"link\", or \"style\"; scripts and other executable tags are forbidden`);
+    throw new TypeError(`${label}.tag must be \"meta\", \"link\", \"style\", or \"script\"`);
   }
   if (tag === "style") {
     assertOnlyFields(fields, ["tag", "attrs", "children"], label, ["attrs"]);
@@ -486,6 +598,108 @@ function normalizeHeadTag(value: unknown, label: string): HeadTag {
     assertLocalHeadReference(href, `${label}.attrs.href`);
   }
   return Object.freeze({ tag, attrs });
+}
+
+function normalizeScriptAttributes(value: unknown, label: string): ScriptHeadAttributes {
+  const fields = ownFields(value, label);
+  const copy: Record<string, string | true> = Object.create(null) as Record<string, string | true>;
+  for (const [name, attribute] of fields) {
+    const lower = name.toLowerCase();
+    if (lower.startsWith("on") || lower === "nonce") {
+      throw new TypeError(`${label}.${name} is not permitted on a Report script`);
+    }
+    if (SCRIPT_DATA_ATTRIBUTE_NAME.test(name)) {
+      if (typeof attribute !== "string") {
+        throw new TypeError(`${label}.${name} must be a string data-* value`);
+      }
+      copy[name] = attribute;
+      continue;
+    }
+    switch (name) {
+      case "src":
+        if (typeof attribute !== "string") throw new TypeError(`${label}.src must be a string`);
+        assertScriptSource(attribute, `${label}.src`);
+        copy.src = attribute;
+        break;
+      case "type":
+        if (typeof attribute !== "string" || !SCRIPT_TYPE.test(attribute)) {
+          throw new TypeError(`${label}.type must be a supported script type or MIME type`);
+        }
+        copy.type = attribute;
+        break;
+      case "async":
+      case "defer":
+        if (attribute !== true) throw new TypeError(`${label}.${name} must be true when supplied`);
+        copy[name] = true;
+        break;
+      case "integrity":
+        if (typeof attribute !== "string" || attribute.length === 0 ||
+          !attribute.split(/\s+/u).every((token) => SCRIPT_INTEGRITY_TOKEN.test(token))) {
+          throw new TypeError(`${label}.integrity must contain one or more sha256/384/512 SRI tokens`);
+        }
+        copy.integrity = attribute;
+        break;
+      case "crossorigin":
+        if (attribute !== "anonymous" && attribute !== "use-credentials") {
+          throw new TypeError(`${label}.crossorigin must be \"anonymous\" or \"use-credentials\"`);
+        }
+        copy.crossorigin = attribute;
+        break;
+      case "referrerpolicy":
+        if (typeof attribute !== "string" || !SCRIPT_REFERRER_POLICIES.has(attribute as ScriptReferrerPolicy)) {
+          throw new TypeError(`${label}.referrerpolicy must be a recognized referrer policy`);
+        }
+        copy.referrerpolicy = attribute;
+        break;
+      default:
+        throw new TypeError(`${label}.${name} is not a supported Report script attribute`);
+    }
+  }
+  return Object.freeze(copy) as ScriptHeadAttributes;
+}
+
+function withoutScriptSource(value: ScriptHeadAttributes): Omit<ScriptHeadAttributes, "src"> {
+  const { src: _source, ...attrs } = value;
+  return Object.freeze(attrs);
+}
+
+function assertScriptSource(value: string, label: string): void {
+  if (value.length === 0 || value.startsWith("//") || value.includes("\\") || /[\u0000-\u001F\u007F]/u.test(value)) {
+    throw new TypeError(`${label} must be a revision-local path, HTTPS URL, or loopback HTTP URL`);
+  }
+  if (!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)) {
+    const pathname = value.split(/[?#]/, 1)[0] ?? "";
+    if (pathname.length === 0 || pathname.split("/").some((segment) => segment === "..")) {
+      throw new TypeError(`${label} must stay within the closed site revision`);
+    }
+    return;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new TypeError(`${label} must be a valid HTTPS or loopback HTTP URL`);
+  }
+  if (parsed.username.length > 0 || parsed.password.length > 0) {
+    throw new TypeError(`${label} cannot contain URL credentials`);
+  }
+  if (parsed.protocol === "https:") return;
+  if (parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname)) return;
+  throw new TypeError(`${label} must use HTTPS or HTTP only for a loopback hostname`);
+}
+
+function isLoopbackHostname(value: string): boolean {
+  const hostname = value.toLowerCase().replace(/^\[|\]$/g, "");
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function assertInlineScript(value: string, label: string): void {
+  if (encoder.encode(value).byteLength > INLINE_SCRIPT_BYTES_MAX) {
+    throw new TypeError(`${label} may contain at most ${INLINE_SCRIPT_BYTES_MAX} UTF-8 bytes`);
+  }
+  if (/<\/script\b/i.test(value)) {
+    throw new TypeError(`${label} cannot contain </script`);
+  }
 }
 
 function normalizeHeadAttributes(
@@ -524,8 +738,8 @@ function assertSafeStyle(value: string, label: string): void {
 /** Creates a safe inline declaration for `defineReport({ head: [...] })`. */
 export function Style(css: string): StyleDeclaration;
 /** `<Style>` returns an author-time node that the Host collects and scopes. */
-export function Style(props: StyleProps): AuthorReportNode;
-export function Style(input: string | StyleProps): StyleDeclaration | AuthorReportNode {
+export function Style(props: StyleProps): ReportRenderable;
+export function Style(input: string | StyleProps): StyleDeclaration | ReportRenderable {
   if (typeof input === "string") {
     return normalizeHeadTag({ tag: "style" as const, children: input }, "Style") as StyleDeclaration;
   }
@@ -539,7 +753,7 @@ export function Style(input: string | StyleProps): StyleDeclaration | AuthorRepo
     type: "style" as const,
     css: style.children,
     ...(style.attrs === undefined ? {} : { attrs: style.attrs }),
-  }) as unknown as AuthorReportNode;
+  }) as unknown as ReportRenderable;
 }
 
 function normalizeLocalizedText(value: unknown, label: string): LocalizedText {

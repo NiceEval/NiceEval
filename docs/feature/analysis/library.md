@@ -181,6 +181,7 @@ declare function oneValue<Value>(): WithinAttemptReduction<Value, Value>;
 declare function sum(): WithinAttemptReduction<number, number>;
 declare function latestCompletedAttempt<Value>(): WithinSlotReduction<Value, Value>;
 declare function mean(): AcrossSlotsReduction<number, number>;
+declare function sumAcrossSlots(): AcrossSlotsReduction<number, number>;
 declare function ratio(): AcrossSlotsReduction<boolean, number>;
 declare function allLogicalSlots<Member>(): Denominator<Member>;
 declare function partial(): MissingPolicy;
@@ -240,6 +241,11 @@ interface SampleCoverage {
   readonly excluded: number;
 }
 ```
+
+每个 `AnalysisRun` 还关闭该 Run Core 的 `context`：`execution.agentId`、`model`、
+`reasoningEffort`、secret-free JSON `flags` 与 string `labels`。这些值在 Snapshot 中递归冻结，
+可由 `LogicalSlot.run` 供 Dimension 读取；它们不是 reader、当前项目配置或重新打开 Record 的能力。若
+selection 后该 Run Core 已不可读，`context` 为 `null`，Analysis 不伪造历史配置。
 
 `frameTotal === selected + excluded`，而 `selected === included + notRecorded + coreInvalid`。coverage
 审计的是 Sample 的选择框架，不是任一 Measure 的业务分母；每个 Measure 仍独立声明自己的

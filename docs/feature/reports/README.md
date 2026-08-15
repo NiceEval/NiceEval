@@ -38,8 +38,9 @@ ReportDefinition + fixed Sample
 
 ## 作者心智
 
-作者沿用 v0.12 风格：用 `defineReport()` 声明 Page，用 `defineComponent()` 组合组件，用 JSX 写页面，并在构建阶段自由调用
-Analysis API。作者不构造 `Sample`，不接触 Record reader，也不需要理解 `ClosedSiteRevision` 的文件结构。
+作者保留 v0.12 最有价值的 DX：用 `defineReport()` 声明 Page，用 `defineComponent()` 组合组件，用 JSX 写页面，并在构建阶段调用
+Analysis API。作者不构造 `Sample`，不接触 Record reader，也不需要理解 `ClosedSiteRevision` 的文件结构；旧的 Record-handle
+回调不会被伪装成同名 API。
 
 ```tsx
 import {
@@ -73,8 +74,9 @@ export default defineReport({
 });
 ```
 
-这里的 `sample` 是 Host 交给 Page 或组件的固定 `Sample`。它只能在当前构建中交给 `aggregate()`、`rollup()` 或 `to*`
-投影；作者可以排序、筛选和组合返回值，却不能扩大成员范围或改变分母。
+这里的 `sample` 是 Host 交给 Page 或组件的固定 `Sample`。它只能在当前构建中交给 `aggregate()` 或已发布的 `to*`
+投影；作者可以排序、筛选和组合返回值，却不能扩大成员范围或改变分母。任意旧式 `rollup((attempt) => …)` 不是当前
+Report API，详见 [读数与显示语义](calculations.md#v012-作者-api-裁决)。
 
 中立组件的输入固定而窄：`Table` 接收 `rows`，`Bars`、`Line` 和 `Scatter` 接收 `points`，`Stat` 接收完整
 `value`。它们不知道数据来自 Analysis、业务数组还是内建领域视图。

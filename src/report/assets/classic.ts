@@ -62,6 +62,101 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
 }
 
 /* Classic chrome: only a document which actually contains a classic root is changed. */
+.niceeval-report:has(.niceeval-classic) {
+  padding: 0;
+  background: var(--niceeval-color-page, #050505);
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  min-height: 3.25rem;
+  padding: 0.55rem clamp(1rem, 4vw, 2rem);
+  border-bottom: 1px solid var(--niceeval-color-border, #262626);
+  background: color-mix(in oklch, var(--niceeval-color-page, #050505), black 18%);
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__brand {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  color: var(--niceeval-color-text, #ededed);
+  font-weight: 740;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__brand-mark {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__site-navigation ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__site-navigation a {
+  color: var(--niceeval-color-text-secondary, #a1a1aa);
+  font-size: 0.86em;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__site-navigation a[aria-current="page"],
+.niceeval-report:has(.niceeval-classic) .niceeval-report__site-navigation a:hover {
+  color: var(--niceeval-color-text, #ededed);
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__language {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.15rem;
+  border: 1px solid var(--niceeval-color-border, #262626);
+  border-radius: 0.4rem;
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__language > button {
+  appearance: none;
+  min-block-size: 1.7rem;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: 0.28rem;
+  background: transparent;
+  color: var(--niceeval-color-text-secondary, #a1a1aa);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78em;
+  font-weight: 720;
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__language > button[aria-pressed="true"] {
+  background: var(--niceeval-color-surface, #0b0b0b);
+  color: var(--niceeval-color-text, #ededed);
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__document {
+  width: min(100%, 72rem);
+  margin: 0 auto;
+  padding: clamp(1rem, 4vw, 2.25rem) clamp(1rem, 4vw, 2rem) 4rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__document-header {
+  display: none;
+}
+
 .niceeval-report:has(.niceeval-classic) .niceeval-report__navigation {
   margin: 0 0 clamp(1.1rem, 3vw, 2rem);
   padding: 0.55rem 0;
@@ -220,9 +315,30 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
   text-align: center;
 }
 
-.niceeval-report__author .niceeval-classic-hero :is(h2, h3, h4, h5, h6) {
-  max-width: 16ch;
+.niceeval-report__author .niceeval-classic-hero :is(h1, h2, h3, h4, h5, h6),
+.niceeval-report__author .niceeval-classic-hero :is(h1, h2, h3, h4, h5, h6) .niceeval-report__paragraph {
+  max-width: 18ch;
+  margin: 0 auto;
+  color: var(--classic-text);
+  font-size: clamp(2rem, 6vw, 4.4rem);
+  font-weight: 790;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__author > .niceeval-report__stack > .niceeval-report__stack:first-child:not([class*="niceeval-classic"]) {
+  margin: 0 0 clamp(1.5rem, 5vw, 3.5rem);
+  text-align: center;
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__author > .niceeval-report__stack > .niceeval-report__stack:first-child:not([class*="niceeval-classic"]) > .niceeval-report__paragraph {
+  max-width: 42rem;
   margin-inline: auto;
+  color: var(--niceeval-color-text-secondary, #a1a1aa);
+}
+
+.niceeval-report:has(.niceeval-classic) .niceeval-report__author > .niceeval-report__stack > .niceeval-report__stack:first-child:not([class*="niceeval-classic"]) > .niceeval-report__paragraph:first-child {
+  color: var(--niceeval-color-text, #ededed);
   font-size: clamp(2rem, 6vw, 4.4rem);
   font-weight: 790;
   letter-spacing: -0.055em;
@@ -240,12 +356,75 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
   margin-top: 1.1rem;
 }
 
-.niceeval-report__author .niceeval-classic-powered-by {
+.niceeval-report__author .niceeval-classic-hero-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem;
+  margin: 1.35rem 0 0;
+}
+
+.niceeval-report__author .niceeval-classic-fresh-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem;
+  color: var(--classic-muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.niceeval-report__author .niceeval-classic-fresh-only .niceeval-classic-stale {
+  display: none;
+}
+
+.niceeval-report__author .niceeval-classic-hero-links .niceeval-report__link,
+.niceeval-report__author .niceeval-classic-hero-link,
+.niceeval-report__author .niceeval-classic-hero-link .niceeval-report__link,
+.niceeval-report__author a.niceeval-classic-hero-link {
+  display: inline-flex;
+  min-block-size: 2.45rem;
+  align-items: center;
+  padding: 0 1rem;
+  border: 1px solid color-mix(in oklch, var(--classic-accent), var(--classic-line) 55%);
+  border-radius: var(--classic-radius);
+  background: color-mix(in oklch, var(--classic-accent), transparent 90%);
+  color: var(--classic-text);
+  font-size: 0.92rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.niceeval-report__author .niceeval-classic-hero-links .niceeval-report__paragraph {
+  margin: 0;
+}
+
+.niceeval-report__author .niceeval-classic-hero-meta,
+.niceeval-report__author .niceeval-classic-summary-range {
+  margin: 1rem 0 0;
+  color: var(--classic-muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.niceeval-report__author .niceeval-classic-powered-by,
+.niceeval-report__author .niceeval-classic-powered-by .niceeval-report__link,
+.niceeval-report__author .niceeval-classic-powered-by-link {
   margin: 1.25rem 0 0;
   color: var(--classic-soft);
   font-size: 0.8rem;
   letter-spacing: 0.02em;
   text-align: center;
+  text-decoration: none;
+}
+
+.niceeval-report__author .niceeval-classic-powered-by-link:hover {
+  color: var(--classic-text);
+  text-decoration: underline;
+}
+
+.niceeval-report__author .niceeval-classic-notices-empty {
+  display: none;
 }
 
 .niceeval-report__author .niceeval-classic-notices .niceeval-report__callout {
@@ -310,8 +489,72 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
   padding: 0;
 }
 
-.niceeval-report__author .niceeval-classic-summary .niceeval-report__grid {
+.niceeval-report__author .niceeval-classic-summary-title,
+.niceeval-report__author .niceeval-classic-summary-title .niceeval-report__paragraph {
+  margin: 0 0 0.75rem;
+  color: var(--classic-muted);
+  font-size: 0.76rem;
+  font-weight: 760;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.niceeval-report__author .niceeval-classic-summary .niceeval-report__grid,
+.niceeval-report__author .niceeval-classic-summary .niceeval-classic-grid {
   margin-block: 0.75rem 1rem;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+}
+
+/* A summary Stat is already the grid cell. Flatten the generic Stat panel so
+ * six KPIs read as one compact strip instead of six nested cards. Incomplete
+ * metrics still retain the Host-rendered status line below their value. */
+.niceeval-report__author .niceeval-classic-summary .niceeval-classic-stat-metric > .niceeval-report__metric {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.niceeval-report__author .niceeval-classic-summary .niceeval-classic-stat-metric .niceeval-report__metric-details {
+  min-height: 1.15em;
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.niceeval-report__author .niceeval-classic-stat {
+  min-width: 0;
+  padding: clamp(0.85rem, 2vw, 1.1rem);
+  border: 0;
+  background: var(--classic-panel);
+}
+
+.niceeval-report__author .niceeval-classic-stat-label,
+.niceeval-report__author .niceeval-classic-stat-label .niceeval-report__paragraph {
+  color: var(--classic-soft);
+  font-size: 0.72rem;
+  font-weight: 720;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.niceeval-report__author .niceeval-classic-stat-value,
+.niceeval-report__author .niceeval-classic-stat-value .niceeval-report__paragraph {
+  margin: 0.35rem 0 0;
+  color: var(--classic-text);
+  font-size: clamp(1.05rem, 2.1vw, 1.55rem);
+  font-weight: 760;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.niceeval-report__author .niceeval-classic-stat-value .niceeval-report__paragraph {
+  max-width: none;
 }
 
 /* Tables, rows, values ---------------------------------------------------- */
@@ -450,6 +693,143 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
   box-shadow: none;
 }
 
+/* Horizontal Bars use an HTML leaderboard so labels, values, and the legend
+ * retain the visual hierarchy of classic even before optional enhancement. */
+.niceeval-report__author .niceeval-classic .niceeval-report__chart--classic-horizontal {
+  gap: 0.95rem;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bars > ol {
+  display: grid;
+  gap: 0.52rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) minmax(7rem, 1fr) minmax(4.5rem, max-content);
+  gap: 0.72rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--classic-text);
+  font-size: 0.84rem;
+  font-weight: 640;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-track {
+  display: block;
+  min-width: 0;
+  block-size: 0.92rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--classic-line), transparent 16%);
+  border-radius: 999px;
+  background-color: color-mix(in oklch, var(--classic-panel-raised), var(--classic-line) 24%);
+  box-shadow: inset 0 1px 1px color-mix(in oklch, black, transparent 90%);
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-fill,
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-legend-swatch {
+  --classic-chart-series-color: var(--classic-c0);
+  display: block;
+  background-color: var(--classic-chart-series-color);
+  background-image: none;
+  background-repeat: repeat;
+  background-size: auto;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-fill {
+  min-inline-size: 0;
+  block-size: 100%;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 color-mix(in oklch, white, transparent 72%);
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-end {
+  display: grid;
+  justify-items: end;
+  gap: 0.12rem;
+  min-width: 0;
+  color: var(--classic-text);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-end > data {
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-status {
+  color: var(--classic-muted);
+  font-size: 0.7rem;
+  font-weight: 550;
+  line-height: 1.25;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem 0.85rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  color: var(--classic-muted);
+  font-size: 0.76rem;
+  list-style: none;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-legend > li {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-legend-swatch {
+  inline-size: 0.72rem;
+  block-size: 0.72rem;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in oklch, var(--classic-line-strong), transparent 32%);
+  border-radius: 0.16rem;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-c0 { --classic-chart-series-color: var(--classic-c0); }
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-c1 { --classic-chart-series-color: var(--classic-c1); }
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-c2 { --classic-chart-series-color: var(--classic-c2); }
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-c3 { --classic-chart-series-color: var(--classic-c3); }
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-c4 { --classic-chart-series-color: var(--classic-c4); }
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-c5 { --classic-chart-series-color: var(--classic-c5); }
+
+/* Keep color and texture in separate longhand declarations. A later
+ * `background` shorthand would reset background-image and make series variants
+ * indistinguishable in computed style. */
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-v2 {
+  background-color: var(--classic-chart-series-color);
+  background-image: repeating-linear-gradient(135deg, transparent 0 0.25rem, color-mix(in oklch, white, transparent 68%) 0.25rem 0.5rem);
+  background-size: 0.72rem 0.72rem;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-v3 {
+  background-color: var(--classic-chart-series-color);
+  background-image: repeating-linear-gradient(0deg, transparent 0 0.2rem, color-mix(in oklch, white, transparent 64%) 0.2rem 0.32rem);
+  background-size: 0.68rem 0.68rem;
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-classic-chart-series-v4 {
+  background-color: var(--classic-chart-series-color);
+  background-image: radial-gradient(circle at 0.16rem 0.16rem, color-mix(in oklch, white, transparent 52%) 0 0.09rem, transparent 0.1rem);
+  background-size: 0.55rem 0.55rem;
+}
+
 /* The Host closes SVG geometry at build time; classic only supplies its token skin. */
 .niceeval-report__author .niceeval-classic .niceeval-report__chart-svg {
   border-color: var(--classic-line);
@@ -476,6 +856,195 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
 
 .niceeval-report__author .niceeval-classic .niceeval-report__chart-data > summary {
   color: var(--classic-muted);
+}
+
+.niceeval-report__author .niceeval-classic .niceeval-report__chart-kind,
+.niceeval-report__author .niceeval-classic .niceeval-report__evidence,
+.niceeval-report__author .niceeval-classic .niceeval-report__issue-refs,
+.niceeval-report__author .niceeval-classic .niceeval-report__metric-details,
+.niceeval-report__author .niceeval-classic .niceeval-report__metric-meta,
+.niceeval-report__author .niceeval-classic-chart .niceeval-report__row-issues,
+.niceeval-report__author .niceeval-classic-chart .niceeval-report__issues {
+  display: none;
+}
+
+.niceeval-report__author .niceeval-classic-filter,
+.niceeval-report__author .niceeval-classic input[data-niceeval-filter] {
+  display: block;
+  width: min(100%, 17.5rem);
+  height: 2.15rem;
+  margin: 0 0 0.75rem auto;
+  padding: 0 0.7rem;
+  border: 1px solid var(--classic-line);
+  border-radius: var(--classic-radius);
+  background: var(--classic-panel);
+  color: var(--classic-text);
+  font: inherit;
+}
+
+.niceeval-report__author .niceeval-classic th[data-niceeval-sort],
+.niceeval-report__author .niceeval-classic-table-head [data-niceeval-sort] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.niceeval-report__author .niceeval-classic-table-head [data-niceeval-sort] {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  text-transform: inherit;
+}
+
+.niceeval-report__author .niceeval-classic-table-head [data-niceeval-sort].niceeval-classic-table-end {
+  text-align: end;
+}
+
+.niceeval-report__author .niceeval-classic-table-head [data-niceeval-sort]:focus-visible {
+  outline: 2px solid var(--classic-accent, var(--report-focus, currentColor));
+  outline-offset: 2px;
+}
+
+.niceeval-report__author .niceeval-classic th[data-niceeval-sort]::after,
+.niceeval-report__author .niceeval-classic-table-head [data-niceeval-sort]::after {
+  color: var(--classic-soft);
+  content: " ↕";
+  font-size: 0.72em;
+  opacity: 0.55;
+}
+
+.niceeval-report__author .niceeval-classic th.niceeval-sort-asc::after,
+.niceeval-report__author .niceeval-classic-table-head [data-niceeval-sort].niceeval-sort-asc::after { content: " ↑"; color: var(--classic-text); }
+.niceeval-report__author .niceeval-classic th.niceeval-sort-desc::after,
+.niceeval-report__author .niceeval-classic-table-head [data-niceeval-sort].niceeval-sort-desc::after { content: " ↓"; color: var(--classic-text); }
+.niceeval-report__author .niceeval-classic .niceeval-row-hidden { display: none; }
+
+.niceeval-report__author .niceeval-classic-table-tree {
+  display: grid;
+  gap: 0;
+  overflow: auto;
+  border: 1px solid var(--classic-line);
+  border-radius: var(--classic-radius);
+  background: var(--classic-panel);
+}
+
+.niceeval-report__author .niceeval-classic-table-caption,
+.niceeval-report__author .niceeval-classic-table-caption .niceeval-report__paragraph {
+  padding: 0.85rem 1rem 0.55rem;
+  color: var(--classic-muted);
+  font-size: 0.76rem;
+  font-weight: 760;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.niceeval-report__author .niceeval-classic-table-head,
+.niceeval-report__author .niceeval-classic-table-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.6fr) repeat(4, minmax(5.5rem, 1fr));
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+}
+
+.niceeval-report__author .niceeval-classic-table-head {
+  border-bottom: 1px solid var(--classic-line);
+  background: var(--classic-panel-raised);
+  color: var(--classic-muted);
+  font-size: 0.7rem;
+  font-weight: 760;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.niceeval-report__author .niceeval-classic-table-group,
+.niceeval-report__author .niceeval-classic-table-row {
+  border-bottom: 1px solid var(--classic-line);
+}
+
+.niceeval-report__author .niceeval-classic-table-group > summary.niceeval-classic-table-row {
+  cursor: pointer;
+  list-style: none;
+}
+
+.niceeval-report__author .niceeval-classic-table-group > summary.niceeval-classic-table-row::-webkit-details-marker {
+  display: none;
+}
+
+.niceeval-report__author .niceeval-classic-table-group > summary.niceeval-classic-table-row > .niceeval-classic-table-cell:first-child,
+.niceeval-report__author .niceeval-classic-table-group > summary.niceeval-classic-table-row > .niceeval-classic-table-cell:first-child .niceeval-report__paragraph {
+  padding-inline-start: 1.15rem;
+}
+
+.niceeval-report__author .niceeval-classic-table-group > summary.niceeval-classic-table-row > .niceeval-classic-table-cell:first-child::before {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-inline-end: 0.55rem;
+  border-right: 1.5px solid var(--classic-muted);
+  border-bottom: 1.5px solid var(--classic-muted);
+  transform: rotate(-45deg);
+  content: "";
+}
+
+.niceeval-report__author .niceeval-classic-table-group[open] > summary.niceeval-classic-table-row > .niceeval-classic-table-cell:first-child::before {
+  transform: rotate(45deg);
+}
+
+.niceeval-report__author .niceeval-classic-table-children {
+  background: color-mix(in oklch, var(--classic-panel-raised), var(--classic-panel) 35%);
+}
+
+.niceeval-report__author .niceeval-classic-table-cell .niceeval-report__link {
+  color: var(--classic-accent);
+  font-weight: 650;
+}
+
+.niceeval-report__author .niceeval-classic-table-child {
+  padding-inline-start: 1.6rem;
+}
+
+.niceeval-report__author .niceeval-classic-table-end,
+.niceeval-report__author .niceeval-classic-table-end .niceeval-report__paragraph {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.niceeval-report__author .niceeval-classic-table-cell .niceeval-report__paragraph {
+  margin: 0;
+  max-width: none;
+}
+
+.niceeval-tooltip {
+  position: absolute;
+  z-index: 8;
+  min-width: 8rem;
+  max-width: 18rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--classic-line, #262626);
+  border-radius: 0.4rem;
+  background: var(--classic-panel, #0b0b0b);
+  box-shadow: 0 0.75rem 2rem color-mix(in oklch, black, transparent 55%);
+  color: var(--classic-text, #ededed);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 0.55rem));
+}
+
+.niceeval-tooltip-meta {
+  color: var(--classic-muted, #a1a1aa);
 }
 
 /* Tab panels, callouts and copy blocks ----------------------------------- */
@@ -814,8 +1383,9 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
 
 /* Desktop density --------------------------------------------------------- */
 @media (min-width: 58rem) {
-  .niceeval-report__author .niceeval-classic-summary .niceeval-report__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .niceeval-report__author .niceeval-classic-summary .niceeval-report__grid,
+  .niceeval-report__author .niceeval-classic-summary .niceeval-classic-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .niceeval-report__author .niceeval-classic-experiment-table .niceeval-report__table,
@@ -825,6 +1395,13 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
 
   .niceeval-report__author .niceeval-classic-tabs {
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  }
+}
+
+@media (min-width: 44.01rem) and (max-width: 57.99rem) {
+  .niceeval-report__author .niceeval-classic-summary .niceeval-report__grid,
+  .niceeval-report__author .niceeval-classic-summary .niceeval-classic-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -853,8 +1430,38 @@ export const classicStylesheet = String.raw`/* NiceEval classic Report baseline 
     padding: 1.55rem 1rem;
   }
 
-  .niceeval-report__author .niceeval-classic-hero :is(h2, h3, h4, h5, h6) {
+  .niceeval-report__author .niceeval-classic-hero :is(h1, h2, h3, h4, h5, h6),
+  .niceeval-report:has(.niceeval-classic) .niceeval-report__author > .niceeval-report__stack > .niceeval-report__stack:first-child:not([class*="niceeval-classic"]) > .niceeval-report__paragraph:first-child {
     font-size: clamp(2rem, 12vw, 3.05rem);
+  }
+
+  .niceeval-report__author .niceeval-classic-summary .niceeval-report__grid,
+  .niceeval-report__author .niceeval-classic-summary .niceeval-classic-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-row {
+    grid-template-columns: minmax(6.2rem, 0.9fr) minmax(4rem, 1fr) minmax(3.7rem, max-content);
+    gap: 0.45rem;
+  }
+
+  .niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-label {
+    font-size: 0.78rem;
+  }
+
+  .niceeval-report__author .niceeval-classic .niceeval-classic-chart-bar-status {
+    max-inline-size: 7.5rem;
+    font-size: 0.65rem;
+  }
+
+  .niceeval-report__author .niceeval-classic-table-head,
+  .niceeval-report__author .niceeval-classic-table-row {
+    grid-template-columns: minmax(8rem, 1.4fr) repeat(2, minmax(4.5rem, 1fr));
+  }
+
+  .niceeval-report__author .niceeval-classic-table-head > :nth-child(n + 4),
+  .niceeval-report__author .niceeval-classic-table-row > :nth-child(n + 4) {
+    display: none;
   }
 
   .niceeval-report__author .niceeval-classic .niceeval-report__callout {

@@ -36,13 +36,42 @@ const Overview = defineComponent(async (_props, { sample }) => {
 `aggregate()` 固定在本次 Sample 上运行，返回带稳定行身份、issues 与 refs 的 ClosedRows。每个度量字段都是完整的
 MetricValue。表格、图形和静态页面共享这批 rows；它们不各自归并同一份事实。
 
-复杂读数由 `rollup()` 交出，领域内容由 `to*` 投影或 PageLoadContext 交出。作者可以用普通 TypeScript 组织这些
-关闭值，却不能从显示结果重新选择成员或取得另一种事实读取能力。
+`costUSD` 是每个分组内每 logical Slot 的平均 USD 成本，适合和质量或延迟并列比较；它不是总成本。
+要显示选择范围或分组的总花费，使用 Analysis 发布的 `totalCostUSD`。它以同一固定分母、missing、issues 与
+Evidence refs 运行，但在 across-slots 阶段求和；Report 不得由 `costUSD.value × total` 反推总额。
 
-## v0.12 作者调用
+Report 只消费 Analysis 已发布的 Measure：`passRate`、`durationMs`、`tokens`、`costUSD` 和 `totalCostUSD`。
+领域内容由 `to*` 投影或 PageLoadContext 交出。作者可以用普通 TypeScript 组织这些关闭值，却不能从显示结果重新选择成员、
+重算统计，或取得另一种事实读取能力。
 
-v0.12 的 `aggregate(sample, ...)`、`rollup(...)`、`metricValue(...)`、`evidenceRow(...)` 与 `to*` 投影继续以普通
-TypeScript 值工作。新的 Sample 将这些调用连接到 Analysis，完整 MetricValue 保留既有字段并带状态与问题。
+## v0.12 作者 API 裁决
+
+保留的作者 DX 是 `aggregate(sample, …)`、内建 Dimension / Measure、`GroupFunction`、JSX Page 与组件组合：它们仍是普通
+TypeScript 值，所有统计仍由唯一的 Analysis executor 关闭。`tokens` 保留 v0.12 的「input + output」读数：它只接受完整
+Usage 中同时存在的 input 与 output bucket；cache-read、cache-write 不混入，reasoning 已在 output bucket 中而不重复计数。
+任一 bucket 或 Usage collection 缺失时，Analysis 产生真实的 missing / partial，而不是把它写成 `0`。
+
+`rollup((attempt) => number | null | Promise<…>, { withinEval, acrossEvals, … })` **没有**在当前 Report 导出。它原本要求
+可读 `AttemptHandle`，并允许任意两级 Reducer，包括 `min`、`max`、`percentile` 与自定义函数。
+
+当前固定 Analysis executor 只发布固定 Input 和有限 reducer。它没有 per-Eval 归并，也没有可传入 callback 的 closed
+Analysis Attempt。
+
+把它改成 `rollup(input, { across })` 会保持名字却改变两级分母与 callback 语义，因此也不导出。这是有意、显式的 API
+缺口，而不是兼容层。要恢复它，底层必须先发布带稳定闭合 Attempt 值、per-Eval population/relation 与可审计 reducer 的
+Analysis Measure 契约。
+
+`metricValue()` 同样不导出：手工拼 `value`、`samples`、`total` 或 locator 不能证明当前 MetricValue 的 `state`、`issues`、
+`refs` 与固定分母，因而会制造假数据。`evidenceRow({ … })` 则保留，但只接受至少一个已经由 Analysis 关闭的 MetricValue，
+并稳定去重地汇集原有 `issues` 与 `refs`；它不创建或改写任何 metric。
+
+`totalScore` 不导出。当前固定 Sample 没有 durable evaluation kind；一个没有贡献的 Score Eval 与没有 score contribution 的
+Pass Eval 不能可靠区分。不完整 score 的 lower bound 也无法表示为现有 InputProjection。以 verdict、Assertion 数量或
+零值猜测 score 都会伪造统计。恢复它需要将 evaluation kind 和完整的 score contribution/state 作为 Analysis 发布事实。
+
+当前 `to*` 是关闭 DomainView 的投影，不是旧的 AttemptHandle converters。尤其 `toAttemptSummary(attempt)`、
+`toAttemptAssertions(attempt)` 不在 `niceeval/report` 导出；`standardAttemptPage` 也不把其 render 输入变回旧 AttemptHandle。
+详情页应通过 `PageLoadContext.evidence(locator)` 或 `toAttemptEvidence(sample, locator)` 取得闭合 Assertions/Evidence。
 
 作者可以对 rows 调用 `filter()`、`toSorted()`、`slice()` 和普通 join。这些操作只组织显示。它们不能改变任何
 MetricValue 的 `total`、`state`、`issues` 或 `refs`。

@@ -27,7 +27,7 @@ import {
 ```
 
 作者调用 `defineReport()` 定义站点，调用 `defineComponent()` 定义组合组件或呈现原语。Page 和组合组件在构建期间得到
-Host 签发的 Sample。它们可调用 `aggregate()`、`rollup()` 和 `to*` 投影，然后只把关闭值交给组件。
+Host 签发的 Sample。它们可调用 `aggregate()` 和已发布的 `to*` 投影，然后只把关闭值交给组件。
 
 `defineReport(render)` 是单页简写。带 `pages` 的写法定义多个普通或参数化 Page。两种写法都在完整站点构建时获得同一
 Sample，并归入同一个 ClosedSiteRevision。
@@ -58,6 +58,34 @@ type PageDefinition =
 
 `Report` 是 `defineReport()` 返回的验证后作者定义。`ReportDefinition` 与固定 Sample 是 Host 构建输入；它们不是
 浏览器可读取的对象。
+
+## Library-owned detail Pages
+
+每次 `defineReport({ pages: [业务页] })` 都自动组合两张 Report library（报告库）拥有的参数化详情 Page：
+`attempt`（`/attempt/<key>`）和 `experiment`（`/experiment/<key>`）。两者固定为 `navigation: false`；业务报告只声明
+自己的 overview（概览）或业务 Page，不复制官方详情 Page、不会让 Host 私藏详情内容。
+
+- Attempt target（Attempt 目标）从固定 Sample 的去重 included Attempt locator 枚举；Experiment target（Experiment 目标）
+  从当前非 excluded Sample 成员的 Experiment identity 枚举。零 Attempt 的 Sample 合法，只是 Attempt Page 有零个实例。
+- key 是 library 定义的稳定、安全单段 route key。Attempt codec 只接受 canonical locator；Experiment key 是 opaque 的有界
+  identity digest，不把 durable identity 当作路径，也不要求 Report 了解 durable schema。
+- `load` 只读取 Sample 的 Analysis projection 或 `PageLoadContext.evidence()` 交出的 `PageEvidence` 闭合值；`render` 只消费
+  这些关闭输入并组合官方 `AttemptDetails` / `ExperimentDetails`。详情 Page 不打开 Record、不读取路径，也不在客户端 lazy-load。
+- Attempt detail 还组合官方 `AttemptTrace({ locator, mode: "execution" })`。它从同一固定 Sample 的公开 closed Observability
+  DomainView 取得 Duration、Turns、Calls、trajectory、timing、usage、commands 与 diagnostics，不复制 trace 读取或展示实现。
+- 详情链接统一由 typed route constructor 完成：先把闭合 locator 或 Experiment identity 变成 `attemptDetailTarget()` /
+  `experimentDetailTarget()`，再调用 `libraryDetailRoute()`。classic table（经典表格）等官方组件不得自行编码 href。
+
+`attempt` / `/attempt` 与 `experiment` / `/experiment` 是保留 id/path。业务作者自定义其中任一 id 或 path 时，
+`defineReport()` 明确失败，不会静默产生重复 Page。兼容导出的 `standardAttemptPage` 与 `standardExperimentPage` 是同一批
+library-owned Page 的薄引用；旧报告可各显式列一次，但新报告应省略它们。Attempts 或 Traces overview 不是这项自动组合的
+一部分，因而不会被加入业务报告导航。
+
+`standardAttemptPage` 不是旧 `render(attempt: AttemptHandle)` 的适配器。它的 `load` 与 `render` 已固定为当前 library-owned
+闭合 Page；`{ ...standardAttemptPage, render: async attempt => … }` 中的 `attempt` 不是可读取的旧 Handle。
+
+当前没有 `toAttemptSummary(attempt)` 或 `toAttemptAssertions(attempt)` 作者导出。若要定制 Attempt 页面，业务 Page 必须显式
+声明自己的参数、`load(sample, params, context)`，并从 `context.evidence(params.locator)` 或本页列出的 `to*` 投影取得关闭值。
 
 ## Page
 
@@ -167,8 +195,60 @@ const rows = await aggregate(sample, {
 上例的 `rows` 是 ClosedRows。它有稳定 row identity 与全局 issues；每行的 `passRate` 是完整 MetricValue。
 普通外部数组可交给中立组件，但不会自动获得 Evidence navigation、分母或问题语义。
 
-复杂数值由 `rollup()` 交出；Attempt、Trace、Source 和文件差异等领域内容由 `to*` 投影交出。它们必须在 Page
-构建时关闭。作者不能把未完成读取、Promise、Stream、callback、reader 或原始 Record payload 交给组件。
+`agent`、`model` 与 `reasoningEffort` 是 Analysis Dimension。它们只读取 Sample 已关闭的
+RunContext，而不读取当前配置。
+
+`attempt` 是一个 Analysis-backed Dimension。included logical Slot 返回已关闭的 Attempt locator，
+其余 Slot 返回 `null`；因此可与 `experiment`、`evalId` 一起按真实 Attempt 分组。
+
+需要保留 v0.12 自定义分组时，`aggregate()` 也接受 `GroupFunction`。callback 获得的
+`AggregationSubject` 只含 `experimentId`、`evalId` 和冻结的
+`run.experiment.{agent,model,reasoningEffort,flags,labels}`。
+
+Report 把该 callback 适配进同一条 Analysis grouping 路径。因此，零 Attempt 的 logical Slot
+仍留在对应组的分母中。callback 不能取得 reader 或通过 ID 重开 Record。
+
+```ts
+import type { GroupFunction } from "niceeval/report";
+
+const memory: GroupFunction = subject =>
+  String(subject.run.experiment?.flags.memory ?? "unknown");
+
+const rows = await aggregate(sample, {
+  by: { memory },
+  values: { passRate },
+});
+```
+
+`flag(name)` 与 `label(name)` 是可直接交给 `aggregate({ by })` 的 Analysis Dimension。它们分别读取同一份已关闭 RunContext 的
+`execution.flags[name]` 与 `labels[name]`：缺失为 `null`，绝不读取当前配置。`flag()` 只接受 string、boolean、有限 number
+或 `null` 的 scalar 值；数组和对象没有可验证的 Analysis Dimension 坐标，必须由作者用 `GroupFunction` 明确投影为 string，
+而不是由 Report 猜测其显示或排序语义。
+
+```ts
+const rows = await aggregate(sample, {
+  by: { memory: flag("memory"), cohort: label("cohort") },
+  values: { passRate, tokens },
+});
+```
+
+固定 Measure 是 `passRate`、`durationMs`、`tokens`、`costUSD` 与 `totalCostUSD`。其中 `tokens` 是每 logical Slot 的已采集
+input + output token 平均值；`totalCostUSD` 是固定分母上的成本求和。
+
+当前 Report 没有 `rollup()`。v0.12 的 callback 可读 AttemptHandle，且可给 `withinEval` / `acrossEvals` 传任意两级 Reducer。
+当前唯一 Analysis executor 尚未发布相同的 per-Eval 归并和闭合 Attempt input，因此不能用同名但不同签名的 shim 代替。详见
+[读数与显示语义](calculations.md#v012-作者-api-裁决)。
+
+领域内容由以下 `to*` 投影在 Page 构建时关闭；可选 locator 必须是当前 Sample 内的 canonical Attempt locator：
+
+- `toAttemptEvidence(sample, locator?)`：Assertions / Evidence 和权威折叠的 verdict。
+- `toAttemptObservability(sample, locator?)`：conversation、commands、usage、timing 与 diagnostics。
+- `toFileChanges(sample, locator?)`：Attempt-owned 文件差异。
+- `toSources(sample, locator?)`：origin Run 的 Source 视图。
+- `toSandboxHistory(sample, locator?)`：Observability 中 sandbox-only 的命令、计时与诊断。
+
+它们返回 Analysis 的关闭 DomainView；作者不能把未完成读取、Promise、Stream、callback、reader 或原始 Record payload 交给组件。
+`toMetricDetailRow()`、`toIssueRows()`、`toEvidenceRows()` 与 `toIssueText()` 只把已有关闭值变成显示行或文字，并不重新读取事实。
 
 ## MetricValue
 
@@ -254,7 +334,7 @@ DOM handle、任意 HTML、event handler 与浏览器副作用不进入 ClosedSi
 | 组件 | 唯一数据入口 | 不做什么 |
 |---|---|---|
 | `Table` | `rows` | 不读取 Analysis 或重新归并。 |
-| `Bars`、`Line`、`Scatter` | `points` | 不改变 MetricValue 或分母。 |
+| `Bars`、`Line`、`Scatter` | `points` | 不改变 MetricValue 或分母。可选 `color`、`series`、`point` 与 `layout` 只选择显示通道、点身份字段或柱向。 |
 | `Stat` | 完整 `value` | 不把 `value` 拆成未包装 number。 |
 | `Grid`、`Stack`、`Callout`、`Text` | children 或普通文本 | 不引入读取能力。 |
 

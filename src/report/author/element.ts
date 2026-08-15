@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ReportNode } from "../semantic/closed.ts";
 
 /**
@@ -19,6 +20,13 @@ export interface ReportElement {
   readonly props: Readonly<Record<string, unknown>>;
   readonly key?: unknown;
 }
+
+/**
+ * The public author return boundary is React-compatible data, not NiceEval's
+ * later semantic tree.  The Host accepts this value only while it is closing
+ * a Page or registered component and then discards every React object.
+ */
+export type ReportRenderable = ReactNode;
 
 /**
  * The value a Page or compose component may author. ClosedReportNode is a

@@ -1,8 +1,23 @@
 import type {
   AnalysisIssue,
+  AttemptEvidenceDomainView,
+  AttemptObservabilityDomainView,
   EvidenceRef,
+  FileChangesDomainView,
   MetricValue,
+  Sample,
+  SandboxHistoryDomainView,
+  SourcesDomainView,
 } from "../../analysis/index.ts";
+import {
+  attemptEvidenceView,
+  attemptObservabilityView,
+  fileChangesView,
+  query,
+  sandboxHistoryView,
+  sourcesView,
+} from "../../analysis/index.ts";
+import type { AttemptLocator } from "../../attempt-locator.ts";
 import { analysisIssueText, evidenceRefText, presentMetric } from "../classic/format.ts";
 import type { ReportLocale } from "../classic/locale.ts";
 
@@ -56,4 +71,64 @@ export function toEvidenceRows(refs: readonly EvidenceRef[]): readonly Readonly<
 /** One string for constrained text surfaces; it includes all references. */
 export function toIssueText(issue: AnalysisIssue): string {
   return analysisIssueText(issue);
+}
+
+/** Closes Assertions / Evidence through the one published Analysis DomainView. */
+export function toAttemptEvidence(
+  sample: Sample,
+  locator?: AttemptLocator,
+): Promise<AttemptEvidenceDomainView> {
+  return query(sample, {
+    kind: "domain-view",
+    view: attemptEvidenceView,
+    ...(locator === undefined ? {} : { locator }),
+  });
+}
+
+/** Closes conversation, commands, usage, timing and diagnostics for selected Attempts. */
+export function toAttemptObservability(
+  sample: Sample,
+  locator?: AttemptLocator,
+): Promise<AttemptObservabilityDomainView> {
+  return query(sample, {
+    kind: "domain-view",
+    view: attemptObservabilityView,
+    ...(locator === undefined ? {} : { locator }),
+  });
+}
+
+/** Closes the fixed Attempt file-change DomainView. */
+export function toFileChanges(
+  sample: Sample,
+  locator?: AttemptLocator,
+): Promise<FileChangesDomainView> {
+  return query(sample, {
+    kind: "domain-view",
+    view: fileChangesView,
+    ...(locator === undefined ? {} : { locator }),
+  });
+}
+
+/** Closes the origin-Run Sources DomainView for selected Attempts. */
+export function toSources(
+  sample: Sample,
+  locator?: AttemptLocator,
+): Promise<SourcesDomainView> {
+  return query(sample, {
+    kind: "domain-view",
+    view: sourcesView,
+    ...(locator === undefined ? {} : { locator }),
+  });
+}
+
+/** Closes sandbox-only command, timing and diagnostic history. */
+export function toSandboxHistory(
+  sample: Sample,
+  locator?: AttemptLocator,
+): Promise<SandboxHistoryDomainView> {
+  return query(sample, {
+    kind: "domain-view",
+    view: sandboxHistoryView,
+    ...(locator === undefined ? {} : { locator }),
+  });
 }

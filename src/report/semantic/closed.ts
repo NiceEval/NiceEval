@@ -8,13 +8,16 @@ import { hasCompleteReportLocaleMap } from "../classic/locale.ts";
 import type { ReportClosedValue } from "./value.ts";
 
 export const REPORT_DOCUMENT_NODES_MAX = 20_000;
+/** A complete SSG revision may contain many independently bounded Pages. */
+const REPORT_SITE_NODES_MAX = 1_000_000;
 export const REPORT_DOCUMENT_DEPTH_MAX = 32;
 
 export type ReportTone = "neutral" | "positive" | "warning" | "negative";
 
 export interface ReportTextNode {
   readonly type: "text";
-  readonly value: string;
+  /** Language-neutral text or a complete closed browser-locale map. */
+  readonly value: LocalizedText;
 }
 
 export interface ReportStackNode {
@@ -62,6 +65,10 @@ export interface ReportChartNode {
   readonly y: string;
   readonly color?: string;
   readonly series?: string;
+  /** Display-only point identity field; it does not change chart statistics. */
+  readonly point?: string;
+  /** Display-only orientation for bar charts. */
+  readonly layout?: "horizontal" | "vertical";
   readonly identity?: ClosedRowsIdentity;
   readonly issues?: readonly AnalysisIssue[];
 }
@@ -113,7 +120,8 @@ export type ReportNode =
 
 export interface ClosedTextNode {
   readonly type: "text";
-  readonly value: string;
+  /** Language-neutral text or a complete closed browser-locale map. */
+  readonly value: LocalizedText;
 }
 
 export interface ClosedStackNode {
@@ -150,6 +158,10 @@ export interface ClosedChartNode {
   readonly y: string;
   readonly color?: string;
   readonly series?: string;
+  /** Display-only point identity field; it does not change chart statistics. */
+  readonly point?: string;
+  /** Display-only orientation for bar charts. */
+  readonly layout?: "horizontal" | "vertical";
   readonly identity?: ClosedRowsIdentity;
   readonly issues?: readonly AnalysisIssue[];
 }
@@ -173,6 +185,7 @@ export type ClosedElementTag =
   | "aside"
   | "blockquote"
   | "code"
+  | "details"
   | "div"
   | "em"
   | "footer"
@@ -206,7 +219,7 @@ export interface ClosedElementNode {
   readonly children: readonly ClosedReportNode[];
 }
 
-/** An authored link may only target an already-local Report route or fragment. */
+/** A closed link targets a local route/fragment or an explicit HTTPS navigation. */
 export interface ClosedLinkNode {
   readonly type: "link";
   readonly href: string;
@@ -327,6 +340,34 @@ export interface ClosedReportNodeValidation {
   readonly nodeCount: number;
 }
 
+/** The only two link navigation capabilities a closed Report may carry. */
+export type ClosedLinkTarget = "local" | "https";
+
+/**
+ * Classifies a renderer-safe user navigation without performing any request.
+ * Local paths/fragment identifiers remain same-origin; an external target is
+ * accepted only when it is explicitly a fully qualified HTTPS URL.
+ */
+export function closedLinkTarget(value: unknown): ClosedLinkTarget | undefined {
+  if (typeof value !== "string" || !hasOnlyUnicodeScalars(value)) return undefined;
+  if (isLocalReportHref(value)) return "local";
+  if (!/^https:\/\//i.test(value) || hasUrlUserInfo(value)) return undefined;
+  try {
+    const target = new URL(value);
+    return target.protocol === "https:" && target.hostname.length > 0 &&
+      target.username.length === 0 && target.password.length === 0
+      ? "https"
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function hasUrlUserInfo(value: string): boolean {
+  const authority = value.slice(value.indexOf("://") + 3).split(/[/?#]/, 1)[0] ?? "";
+  return authority.includes("@");
+}
+
 const encoder = new TextEncoder();
 const MAX_ISSUES = 64;
 const CLOSED_HEAD_ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9:._-]*$/;
@@ -352,14 +393,17 @@ export function validateClosedReportNode(value: unknown): ClosedReportNodeValida
 
 /** Validates a complete execution tree, including pages and static assets. */
 export function validateClosedReportTree(value: unknown): ClosedReportNodeValidation {
-  const state = validationState();
+  const state = validationState(REPORT_SITE_NODES_MAX);
   const tree = enterRecord(value, state, [], 0);
   if (tree !== undefined) {
     try {
       exactFields(tree, ["pages", "downloads", "problemTable"], state, []);
-      forEachArray(field(tree, "pages"), state, ["pages"], (page, index) =>
-        validatePage(page, state, ["pages", index]),
-      );
+      forEachArray(field(tree, "pages"), state, ["pages"], (page, index) => {
+        if (state.nodeCount > state.nodeLimit) return;
+        const pageState = validationState();
+        validatePage(page, pageState, ["pages", index]);
+        mergeValidationState(state, pageState, ["pages", index]);
+      });
       forEachArray(field(tree, "downloads"), state, ["downloads"], (download, index) =>
         validateDownload(download, state, ["downloads", index]),
       );
@@ -394,11 +438,28 @@ export function freezeClosedReportTree(value: unknown): ClosedReportTree {
 interface ValidationState {
   readonly issues: ReportSemanticIssue[];
   readonly active: Set<object>;
+  readonly nodeLimit: number;
   nodeCount: number;
 }
 
-function validationState(): ValidationState {
-  return { issues: [], active: new Set<object>(), nodeCount: 0 };
+function validationState(nodeLimit = REPORT_DOCUMENT_NODES_MAX): ValidationState {
+  return { issues: [], active: new Set<object>(), nodeLimit, nodeCount: 0 };
+}
+
+function mergeValidationState(
+  target: ValidationState,
+  source: ValidationState,
+  path: readonly (string | number)[],
+): void {
+  const before = target.nodeCount;
+  target.nodeCount += source.nodeCount;
+  if (before <= target.nodeLimit && target.nodeCount > target.nodeLimit) {
+    issue(target, "limit", path, `a Report site may contain at most ${target.nodeLimit} nodes`);
+  }
+  for (const entry of source.issues) {
+    if (target.issues.length >= MAX_ISSUES) return;
+    target.issues.push(entry);
+  }
 }
 
 function validationResult(state: ValidationState): ClosedReportNodeValidation {
@@ -573,7 +634,7 @@ function validateNode(
     switch (field(node, "type")) {
       case "text":
         exactFields(node, ["type", "value"], state, path);
-        validateString(field(node, "value"), state, append(path, "value"));
+        validateLocalizedText(field(node, "value"), state, append(path, "value"));
         return;
       case "stack":
       case "grid":
@@ -611,7 +672,7 @@ function validateNode(
         return;
       case "link":
         exactFields(node, ["type", "href", "children"], state, path);
-        validateLocalHref(field(node, "href"), state, append(path, "href"));
+        validateLinkHref(field(node, "href"), state, append(path, "href"));
         validateChildren(field(node, "children"), state, append(path, "children"), depth + 1);
         return;
       case "primitive":
@@ -656,14 +717,22 @@ function validateElement(
   validateChildren(field(node, "children"), state, append(path, "children"), depth + 1);
 }
 
-function validateLocalHref(
+function validateLinkHref(
   value: unknown,
   state: ValidationState,
   path: readonly (string | number)[],
 ): void {
-  if (typeof value !== "string" || !hasOnlyUnicodeScalars(value) ||
-    !(value.startsWith("/") || value.startsWith("#"))) {
-    issue(state, "unsafe-capability", path, "a closed Report link must be a local route or fragment");
+  if (closedLinkTarget(value) === undefined) {
+    issue(state, "unsafe-capability", path, "a closed Report link must be a local route, fragment, or explicit HTTPS URL");
+  }
+}
+
+function isLocalReportHref(value: string): boolean {
+  if (!(value.startsWith("/") || value.startsWith("#"))) return false;
+  try {
+    return new URL(value, "https://niceeval.invalid/").origin === "https://niceeval.invalid";
+  } catch {
+    return false;
   }
 }
 
@@ -764,17 +833,21 @@ function validateChart(
   state: ValidationState,
   path: readonly (string | number)[],
 ): void {
-  exactFields(chart, ["type", "title", "points", "x", "y", "color", "series", "identity", "issues"], state, path);
+  exactFields(chart, ["type", "title", "points", "x", "y", "color", "series", "point", "layout", "identity", "issues"], state, path);
   optionalLocalizedText(chart, "title", state, path);
   const x = validateAxis(field(chart, "x"), state, append(path, "x"));
   const y = validateAxis(field(chart, "y"), state, append(path, "y"));
   const color = optionalAxis(chart, "color", state, path);
   const series = optionalAxis(chart, "series", state, path);
+  const pointField = optionalAxis(chart, "point", state, path);
+  if (Object.hasOwn(chart, "layout") && field(chart, "layout") !== "horizontal" && field(chart, "layout") !== "vertical") {
+    issue(state, "chart", append(path, "layout"), "a chart layout must be horizontal or vertical");
+  }
   const points = validateRows(field(chart, "points"), state, append(path, "points"));
   optionalRowsMetadata(chart, state, path);
   for (const [index, point] of points.entries()) {
     const pointPath = append(append(path, "points"), index);
-    for (const axis of [x, y, color, series]) {
+    for (const axis of [x, y, color, series, pointField]) {
       if (axis === undefined) continue;
       if (!Object.hasOwn(point, axis)) {
         issue(state, "chart", pointPath, `chart field ${JSON.stringify(axis)} is absent from a point`);
@@ -1106,8 +1179,8 @@ function enterRecord(
     }
   }
   state.nodeCount += 1;
-  if (state.nodeCount > REPORT_DOCUMENT_NODES_MAX) {
-    issue(state, "limit", path, `a Report tree may contain at most ${REPORT_DOCUMENT_NODES_MAX} nodes`);
+  if (state.nodeCount > state.nodeLimit) {
+    issue(state, "limit", path, `a Report tree may contain at most ${state.nodeLimit} nodes`);
     return undefined;
   }
   state.active.add(value);
@@ -1142,8 +1215,8 @@ function enterArray(
     }
   }
   state.nodeCount += 1;
-  if (state.nodeCount > REPORT_DOCUMENT_NODES_MAX) {
-    issue(state, "limit", path, `a Report tree may contain at most ${REPORT_DOCUMENT_NODES_MAX} nodes`);
+  if (state.nodeCount > state.nodeLimit) {
+    issue(state, "limit", path, `a Report tree may contain at most ${state.nodeLimit} nodes`);
     return undefined;
   }
   state.active.add(value);
@@ -1191,6 +1264,7 @@ function exactFields(
 
 function optionalField(key: string): boolean {
   return key === "title" || key === "caption" || key === "align" || key === "color" || key === "series" ||
+    key === "point" || key === "layout" ||
     key === "dimensions" || key === "unit" || key === "format" || key === "better" || key === "bounds" ||
     key === "min" || key === "max" || key === "identity" || key === "issues" || key === "classes";
 }
@@ -1433,7 +1507,7 @@ function isTone(value: unknown): value is ReportTone {
 
 function isClosedElementTag(value: unknown): value is ClosedElementTag {
   return value === "article" || value === "aside" || value === "blockquote" || value === "code" ||
-    value === "div" || value === "em" || value === "footer" || value === "header" ||
+    value === "details" || value === "div" || value === "em" || value === "footer" || value === "header" ||
     value === "h1" || value === "h2" || value === "h3" || value === "h4" || value === "h5" ||
     value === "h6" || value === "li" || value === "main" || value === "ol" || value === "p" ||
     value === "pre" || value === "section" || value === "small" || value === "span" ||

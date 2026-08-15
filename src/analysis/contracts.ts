@@ -106,9 +106,31 @@ export type AnalysisSelectionSummary =
 export interface AnalysisRun {
   readonly runId: RunId;
   readonly experimentId: ExperimentId;
+  /**
+   * The safe, immutable portion of the selected Run's Core context. A later
+   * Core read can be unavailable after selection, in which case no context is
+   * invented for that Run.
+   */
+  readonly context: AnalysisRunContext | null;
   readonly startedAt: UtcMillis;
   readonly completedAt: UtcMillis;
   readonly expectedSlots: readonly SlotId[];
+}
+
+/**
+ * Display- and grouping-safe Run configuration retained by a Sample. It has
+ * no Record capability and is recursively JSON-only.
+ */
+export interface AnalysisRunContext {
+  readonly execution: AnalysisRunExecution;
+  readonly labels: Readonly<Record<string, string>>;
+}
+
+export interface AnalysisRunExecution {
+  readonly agentId: string;
+  readonly model: string | null;
+  readonly reasoningEffort: string | null;
+  readonly flags: Readonly<Record<string, JsonValue>>;
 }
 
 export interface AnalysisSlotRef {

@@ -238,8 +238,8 @@ function sortedProblemIds(ids: readonly number[]): readonly number[] {
   return Object.freeze([...ids].map(Number).sort((left, right) => left - right));
 }
 
-function renderPageText(page: ClosedReportPage): readonly string[] {
-  const title = visibleText(localizedText(page.title));
+function renderPageText(page: ClosedReportPage, locale = "en"): readonly string[] {
+  const title = visibleText(localizedText(page.title, locale));
   const lines = [
     `Page ${visibleText(page.route)}`,
     `  ${title}`,
@@ -250,7 +250,7 @@ function renderPageText(page: ClosedReportPage): readonly string[] {
   for (const metadata of page.head.metadata) {
     lines.push(`  ${metadata.tag} ${visibleText(canonicalJson(metadata.attrs))}`);
   }
-  lines.push(...renderNodeText(page.node, "  ", "text"));
+  lines.push(...renderNodeText(page.node, "  ", "text", locale));
   return lines;
 }
 
@@ -264,6 +264,7 @@ export function renderNodeText(
   value: unknown,
   indent = "",
   face: RenderFace = "text",
+  locale = "en",
 ): readonly string[] {
   const node = dataRecord(value);
   if (node === undefined || typeof node.type !== "string") {
@@ -271,35 +272,35 @@ export function renderNodeText(
   }
   switch (node.type) {
     case "text":
-      return Object.freeze([`${indent}${visibleText(stringValue(node.value))}`]);
+      return Object.freeze([`${indent}${visibleText(localizedUnknownText(node.value, locale))}`]);
     case "stack":
     case "grid":
-      return renderChildrenText(node.children, indent, face);
+      return renderChildrenText(node.children, indent, face, locale);
     case "callout": {
       const tone = knownTone(node.tone);
-      const title = node.title === undefined ? "" : ` ${visibleText(localizedUnknownText(node.title))}`;
+      const title = node.title === undefined ? "" : ` ${visibleText(localizedUnknownText(node.title, locale))}`;
       return Object.freeze([
         `${indent}[${tone}]${title}`,
-        ...renderChildrenText(node.children, `${indent}  `, face),
+        ...renderChildrenText(node.children, `${indent}  `, face, locale),
       ]);
     }
     case "table":
-      return renderTableText(node, indent);
+      return renderTableText(node, indent, locale);
     case "bars":
     case "line":
     case "scatter":
-      return renderChartText(node, indent);
+      return renderChartText(node, indent, locale);
     case "stat":
-      return renderStatText(node, indent);
+      return renderStatText(node, indent, locale);
     case "download":
-      return renderDownloadText(node, indent, face);
+      return renderDownloadText(node, indent, face, locale);
     case "element":
-      return renderElementText(node, indent, face);
+      return renderElementText(node, indent, face, locale);
     case "link":
-      return renderLinkText(node, indent, face);
+      return renderLinkText(node, indent, face, locale);
     case "primitive": {
       const selected = face === "text" ? node.text : node.web;
-      return renderNodeText(selected, indent, face);
+      return renderNodeText(selected, indent, face, locale);
     }
     default:
       return Object.freeze([`${indent}[unsupported Report node: ${visibleText(node.type)}]`]);
@@ -310,9 +311,10 @@ function renderElementText(
   node: Readonly<Record<string, unknown>>,
   indent: string,
   face: RenderFace,
+  locale: string,
 ): readonly string[] {
   const tag = typeof node.tag === "string" ? node.tag : "element";
-  const children = renderChildrenText(node.children, indent, face);
+  const children = renderChildrenText(node.children, indent, face, locale);
   if (/^h[1-6]$/.test(tag)) {
     return Object.freeze([`${indent}${"#".repeat(Number(tag.slice(1)))} ${children.map((line) => line.trim()).join(" ")}`]);
   }
@@ -324,20 +326,21 @@ function renderLinkText(
   node: Readonly<Record<string, unknown>>,
   indent: string,
   face: RenderFace,
+  locale: string,
 ): readonly string[] {
-  const children = renderChildrenText(node.children, indent, face);
+  const children = renderChildrenText(node.children, indent, face, locale);
   const href = typeof node.href === "string" ? visibleText(node.href) : "[unsupported link]";
   return Object.freeze([...children, `${indent}  → ${href}`]);
 }
 
-function renderChildrenText(value: unknown, indent: string, face: RenderFace): readonly string[] {
+function renderChildrenText(value: unknown, indent: string, face: RenderFace, locale: string): readonly string[] {
   if (!Array.isArray(value)) return Object.freeze([`${indent}[unsupported Report children]`]);
-  return Object.freeze(value.flatMap((child) => renderNodeText(child, indent, face)));
+  return Object.freeze(value.flatMap((child) => renderNodeText(child, indent, face, locale)));
 }
 
-function renderTableText(node: Readonly<Record<string, unknown>>, indent: string): readonly string[] {
-  const columns = tableColumns(node.columns);
-  const caption = node.caption === undefined ? "Table" : localizedUnknownText(node.caption);
+function renderTableText(node: Readonly<Record<string, unknown>>, indent: string, locale: string): readonly string[] {
+  const columns = tableColumns(node.columns, locale);
+  const caption = node.caption === undefined ? "Table" : localizedUnknownText(node.caption, locale);
   const lines = [`${indent}${visibleText(caption)}`];
   if (columns.length === 0) {
     lines.push(`${indent}  [unsupported table columns]`);
@@ -360,11 +363,11 @@ function renderTableText(node: Readonly<Record<string, unknown>>, indent: string
   return Object.freeze(lines);
 }
 
-function renderChartText(node: Readonly<Record<string, unknown>>, indent: string): readonly string[] {
+function renderChartText(node: Readonly<Record<string, unknown>>, indent: string, locale: string): readonly string[] {
   const type = node.type === "bars" ? "Bars" : node.type === "line" ? "Line" : "Scatter";
-  const title = node.title === undefined ? type : localizedUnknownText(node.title);
+  const title = node.title === undefined ? type : localizedUnknownText(node.title, locale);
   const points = Array.isArray(node.points) ? node.points : [];
-  const preferred = [node.x, node.y, node.color, node.series]
+  const preferred = [node.x, node.y, node.color, node.series, node.point]
     .filter((value): value is string => typeof value === "string" && value.length > 0);
   const fields = orderedPointFields(points, preferred);
   const lines = [`${indent}${visibleText(title)} (${type})`];
@@ -388,8 +391,8 @@ function renderChartText(node: Readonly<Record<string, unknown>>, indent: string
   return Object.freeze(lines);
 }
 
-function renderStatText(node: Readonly<Record<string, unknown>>, indent: string): readonly string[] {
-  const label = localizedUnknownText(node.label);
+function renderStatText(node: Readonly<Record<string, unknown>>, indent: string, locale: string): readonly string[] {
+  const label = localizedUnknownText(node.label, locale);
   const metric = metricValue(node.value);
   if (metric === undefined) return Object.freeze([`${indent}${visibleText(label)}: [unsupported metric]`]);
   return Object.freeze([
@@ -402,11 +405,12 @@ function renderDownloadText(
   node: Readonly<Record<string, unknown>>,
   indent: string,
   face: RenderFace,
+  locale: string,
 ): readonly string[] {
   const id = typeof node.id === "string" ? node.id : "[unsupported download]";
   return Object.freeze([
     `${indent}Download: ${visibleText(id)}`,
-    ...renderChildrenText(node.children, `${indent}  `, face),
+    ...renderChildrenText(node.children, `${indent}  `, face, locale),
   ]);
 }
 
@@ -526,13 +530,13 @@ function isMetricValue(value: unknown): value is MetricValue {
     (record.bounds === undefined || isMetricBounds(record.bounds));
 }
 
-function tableColumns(value: unknown): readonly { readonly key: string; readonly label: string }[] {
+function tableColumns(value: unknown, locale: string): readonly { readonly key: string; readonly label: string }[] {
   if (!Array.isArray(value)) return Object.freeze([]);
   const columns: Array<{ readonly key: string; readonly label: string }> = [];
   for (const candidate of value) {
     const record = dataRecord(candidate);
     if (record === undefined || typeof record.key !== "string" || record.key.length === 0) continue;
-    columns.push(Object.freeze({ key: record.key, label: localizedUnknownText(record.label) }));
+    columns.push(Object.freeze({ key: record.key, label: localizedUnknownText(record.label, locale) }));
   }
   return Object.freeze(columns);
 }
@@ -623,10 +627,6 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function knownTone(value: unknown): string {
   return value === "positive" || value === "warning" || value === "negative" ? value : "neutral";
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "[unsupported text]";
 }
 
 function jsonLocalizedText(value: LocalizedText): unknown {

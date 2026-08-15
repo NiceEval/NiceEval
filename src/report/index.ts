@@ -1,56 +1,85 @@
 /**
- * `niceeval/report` is the complete Report author surface.  It restores the
- * familiar v0.12 vocabulary while delegating statistics to `niceeval/analysis`
- * and leaving Record readers, revisions, and renderer ownership with Host.
+ * `niceeval/report` is the complete Report author surface. It keeps the
+ * v0.12 vocabulary whose semantics the current Analysis contract can close,
+ * while leaving Record readers, revisions, and renderer ownership with Host.
  */
 
 export {
-  aggregate,
   attemptEvidenceView,
+  attemptLatencyMs,
   attemptObservabilityView,
+  attemptPassed,
+  attemptTokens,
+  attemptToolFailure,
   costUSD,
   fileChangesView,
   query,
   sandboxHistoryView,
   sourcesView,
+  totalCostUSD,
 } from "../analysis/index.ts";
 export type {
   AggregateRequest,
   AggregateRow,
+  AnalysisIssue,
+  AttemptEvidenceDomainView,
+  AttemptObservabilityDomainView,
   ClosedRows,
   Dimension,
   DomainView,
   DomainViewQuery,
   DomainViewRequest,
+  EvidenceRef,
+  FileChangesDomainView,
   Measure,
+  MeasureFormat,
   MetricValue,
   Sample,
+  SandboxHistoryDomainView,
   SemanticFrame,
+  SourcesDomainView,
 } from "../analysis/index.ts";
 
 export {
   agent,
+  aggregate,
+  attempt,
   durationMs,
+  evidenceRow,
   evalId,
   experiment,
+  flag,
   hasMetricValue,
+  isMetricValue,
+  label,
   metricCoverage,
   metricFacts,
   model,
   passRate,
+  reasoningEffort,
   sortRowsByMetric,
+  tokens,
 } from "./model/calculation.ts";
 export type {
+  AggregationSubject,
+  EvidenceRow,
+  GroupFunction,
   MetricFacts,
+  ReportAggregateRow,
   ReportDimension,
   ReportMeasure,
 } from "./model/calculation.ts";
 
 export {
   toEvidenceRows,
+  toAttemptEvidence,
+  toAttemptObservability,
+  toFileChanges,
   toIssueRows,
   toIssueText,
   toMetricDetailRow,
+  toSandboxHistory,
+  toSources,
 } from "./model/conversions.ts";
 export type { MetricDetailRow } from "./model/conversions.ts";
 

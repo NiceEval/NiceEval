@@ -2,6 +2,8 @@ import type {
   ClosedReportPage,
   ClosedReportTree,
 } from "../execution/model.ts";
+import type { LocalizedText } from "../../shared/types.ts";
+import { REPORT_SUPPORTED_LOCALES } from "../classic/locale.ts";
 import {
   staticPathForDownload as staticOutputPathForDownload,
   staticPathForRoute as staticOutputPathForRoute,
@@ -14,6 +16,7 @@ import type {
   EvidenceRef,
   MetricValue,
 } from "../semantic/value.ts";
+import { closedLinkTarget } from "../semantic/closed.ts";
 import {
   closedDownloadPath,
   compareUtf8,
@@ -22,7 +25,6 @@ import {
   localizedUnknownText,
   metricValue,
   reportClosedValueText,
-  reportMetricText,
 } from "./presentation.ts";
 import {
   basalt,
@@ -33,13 +35,22 @@ import {
   REPORT_CLASSIC_STYLESHEET_PATH,
   REPORT_REFRESH_RUNTIME_PATH,
 } from "./site-assets.ts";
-import { renderStaticChartSvg } from "./chart-svg.ts";
+import {
+  renderClassicHorizontalBarsHtml,
+  renderStaticChartSvg,
+} from "./chart-svg.ts";
+import {
+  compactMetricNumber,
+  metricDisplayUnit,
+} from "../classic/format.ts";
 
 /** Metadata comes from a fixed view revision, never a Report callback. */
 export interface ReportHtmlHostMetadata {
   readonly revision?: number;
   readonly lastRebuildProblem?: string;
 }
+
+type ReportSiteLocale = typeof REPORT_SUPPORTED_LOCALES[number];
 
 const HEAD_ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9:._-]*$/;
 const HEAD_META_ATTRIBUTES = new Set(["content", "itemprop", "name", "property"]);
@@ -54,12 +65,15 @@ export type RenderReportHtmlInput =
   | {
     readonly tree: ClosedReportTree;
     readonly page: ClosedReportPage;
+    /** Report identity is closed data used by the Host-owned document chrome. */
+    readonly reportTitle?: LocalizedText;
     readonly theme?: ThemeDefinition;
     readonly hostMetadata?: ReportHtmlHostMetadata;
   }
   | {
     readonly tree: ClosedReportTree;
     readonly surface: "problems";
+    readonly reportTitle?: LocalizedText;
     readonly theme?: ThemeDefinition;
     readonly hostMetadata?: ReportHtmlHostMetadata;
   }
@@ -67,12 +81,14 @@ export type RenderReportHtmlInput =
     readonly tree: ClosedReportTree;
     /** A host-owned index used only when no authored page owns `/`. */
     readonly surface: "index";
+    readonly reportTitle?: LocalizedText;
     readonly theme?: ThemeDefinition;
     readonly hostMetadata?: ReportHtmlHostMetadata;
   }
   | {
     /** Reserved host surfaces may use a fully escaped text projection. */
     readonly text: string;
+    readonly reportTitle?: LocalizedText;
     readonly theme?: ThemeDefinition;
     readonly hostMetadata?: ReportHtmlHostMetadata;
   };
@@ -86,26 +102,53 @@ export function renderReportHtml(input: RenderReportHtmlInput): string {
   const theme = input.theme ?? basalt;
   const page = "page" in input ? input.page : undefined;
   const surface = "surface" in input ? input.surface : undefined;
-  const title = "text" in input
+  const fallbackTitle: LocalizedText = "text" in input
     ? "NiceEval report"
     : page === undefined
       ? surface === "problems" ? "NiceEval report problems" : "NiceEval report"
-      : localizedText(page.title);
-  const content = "text" in input
-    ? `<pre class="niceeval-report__text">${escapeHtmlText(input.text)}</pre>`
-    : page === undefined
-      ? surface === "problems" ? renderProblemsSurface(input.tree) : renderIndexSurface(input.tree)
-      : renderPageSurface(input.tree, page);
+      : page.title;
+  const siteTitle = input.reportTitle ?? fallbackTitle;
+  const title = localizedText(siteTitle, "en");
+  const pageRoute = page?.route ?? (surface === "problems" ? "/_niceeval/problems" : "/");
+  const localeContent = REPORT_SUPPORTED_LOCALES.map((locale) => {
+    const content = "text" in input
+      ? `<pre class="niceeval-report__text">${escapeHtmlText(input.text)}</pre>`
+      : page === undefined
+        ? surface === "problems" ? renderProblemsSurface(input.tree, locale) : renderIndexSurface(input.tree, locale)
+        : renderPageSurface(input.tree, page, locale);
+    return renderReportSiteShell({
+      tree: "text" in input ? undefined : input.tree,
+      locale,
+      route: pageRoute,
+      content,
+      ...(locale === "en" ? {} : { hidden: true }),
+    });
+  }).join("");
   const authorHead = page === undefined ? "" : renderPageHead(page);
   const outputDirectory = page === undefined
     ? surface === "problems" ? ["_niceeval", "problems"] : []
     : staticOutputPathForRoute(page.route).segments.slice(0, -1);
   const stylesheetHref = reportHostAssetHref(outputDirectory, REPORT_CLASSIC_STYLESHEET_PATH);
   const runtimeHref = reportHostAssetHref(outputDirectory, REPORT_REFRESH_RUNTIME_PATH);
+  const titleAttributes = REPORT_SUPPORTED_LOCALES.map((locale) =>
+    ` data-niceeval-title-${locale.toLowerCase()}="${escapeHtmlAttribute(localizedText(siteTitle, locale))}"`
+  ).join("");
   // A live view must return exactly the bytes that export writes. Revision and
   // rebuild state therefore live in transport headers/probes, never in this
   // immutable page body.
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtmlText(title)}</title>${authorHead}<style>${themeStylesheet(theme)}${REPORT_HTML_STYLESHEET}</style><link rel="stylesheet" href="${escapeHtmlAttribute(stylesheetHref)}"><script src="${escapeHtmlAttribute(runtimeHref)}" defer></script></head><body><main class="niceeval-report">${content}</main></body></html>`;
+  return `<!doctype html><html lang="en"${titleAttributes}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtmlText(title)}</title>${authorHead}<style>${themeStylesheet(theme)}${REPORT_HTML_STYLESHEET}</style><link rel="stylesheet" href="${escapeHtmlAttribute(stylesheetHref)}"><script src="${escapeHtmlAttribute(runtimeHref)}" defer></script></head><body>${localeContent}</body></html>`;
+}
+
+function renderReportSiteShell(input: {
+  readonly tree: ClosedReportTree | undefined;
+  readonly locale: ReportSiteLocale;
+  readonly route: string;
+  readonly content: string;
+  readonly hidden?: true;
+}): string {
+  const chrome = siteChrome(input.locale);
+  const navigation = input.tree === undefined ? "" : renderNavigation(input.tree, input.route, input.locale);
+  return `<div class="niceeval-report" data-niceeval-locale="${input.locale}"${input.hidden === true ? " hidden" : ""}><header class="niceeval-report__topbar"><a class="niceeval-report__brand" href="https://niceeval.com/?utm_source=report&amp;utm_medium=brand" target="_blank" rel="noopener noreferrer"><span class="niceeval-report__brand-mark" aria-hidden="true"></span><span>NiceEval</span></a><nav class="niceeval-report__site-navigation" aria-label="${escapeHtmlAttribute(chrome.navigationLabel)}">${navigation}</nav><div class="niceeval-report__language" aria-label="${escapeHtmlAttribute(chrome.languageLabel)}"><button type="button" data-niceeval-locale-button="en" aria-pressed="${input.locale === "en"}">EN</button><button type="button" data-niceeval-locale-button="zh-CN" aria-pressed="${input.locale === "zh-CN"}">中文</button></div></header><main class="niceeval-report__site-main">${input.content}</main></div>`;
 }
 
 function renderPageHead(page: ClosedReportPage): string {
@@ -161,32 +204,73 @@ function renderClosedHeadAttributes(
   return rendered.join("");
 }
 
-function renderPageSurface(tree: ClosedReportTree, page: ClosedReportPage): string {
+function renderPageSurface(
+  tree: ClosedReportTree,
+  page: ClosedReportPage,
+  locale: ReportSiteLocale,
+): string {
   const route = page.route;
-  return `<article class="niceeval-report__document"><nav class="niceeval-report__navigation" aria-label="Report pages">${renderNavigation(tree, route)}</nav><header class="niceeval-report__document-header"><p class="niceeval-report__route">${escapeHtmlText(route)}</p><h1>${escapeHtmlText(localizedText(page.title))}</h1></header><section class="niceeval-report__author">${renderNodeHtml(page.node, tree, route, "web", 2)}</section>${renderPageProblems(tree, page, route)}${renderDownloads(tree, route)}</article>`;
+  return `<article class="niceeval-report__document"><section class="niceeval-report__author">${renderNodeHtml(page.node, tree, route, "web", 2, locale)}</section>${renderPageProblems(tree, page, route, locale)}${renderDownloads(tree, route, locale)}</article>`;
 }
 
-function renderProblemsSurface(tree: ClosedReportTree): string {
+function renderProblemsSurface(tree: ClosedReportTree, locale: ReportSiteLocale): string {
   const route = "/_niceeval/problems";
-  return `<article class="niceeval-report__document"><nav class="niceeval-report__navigation" aria-label="Report pages">${renderNavigation(tree, route)}</nav><header class="niceeval-report__document-header"><h1>Report problems</h1><p>Analysis issues remain visible. Execution problems are shown here and prevent a complete static export.</p></header>${renderProblemList(tree.problemTable, tree, route)}${renderDownloads(tree, route)}</article>`;
+  const chrome = siteChrome(locale);
+  return `<article class="niceeval-report__document"><header class="niceeval-report__document-header"><h1>${escapeHtmlText(chrome.problemsTitle)}</h1><p>${escapeHtmlText(chrome.problemsDescription)}</p></header>${renderProblemList(tree.problemTable, tree, route, locale)}${renderDownloads(tree, route, locale)}</article>`;
 }
 
-function renderIndexSurface(tree: ClosedReportTree): string {
-  return `<article class="niceeval-report__document"><nav class="niceeval-report__navigation" aria-label="Report pages">${renderNavigation(tree, "/")}</nav><header class="niceeval-report__document-header"><h1>NiceEval report</h1><p>Choose a closed report page. This site remains readable without JavaScript or network access.</p></header>${renderProblemList(tree.problemTable, tree, "/")}${renderDownloads(tree, "/")}</article>`;
+function renderIndexSurface(tree: ClosedReportTree, locale: ReportSiteLocale): string {
+  const chrome = siteChrome(locale);
+  return `<article class="niceeval-report__document"><header class="niceeval-report__document-header"><h1>${escapeHtmlText(chrome.indexTitle)}</h1><p>${escapeHtmlText(chrome.indexDescription)}</p></header>${renderProblemList(tree.problemTable, tree, "/", locale)}${renderDownloads(tree, "/", locale)}</article>`;
 }
 
-function renderNavigation(tree: ClosedReportTree, sourceRoute: string): string {
+function renderNavigation(tree: ClosedReportTree, sourceRoute: string, locale: ReportSiteLocale): string {
   const pages = [...tree.pages].filter((page) => page.navigation).sort(comparePages);
   const links = pages.map((page) => {
-    const label = localizedText(page.title);
+    const label = localizedText(page.title, locale);
     const current = page.route === sourceRoute ? " aria-current=\"page\"" : "";
     return `<li><a href="${escapeHtmlAttribute(reportHref(sourceRoute, { kind: "route", route: page.route }))}"${current}>${escapeHtmlText(label)}</a></li>`;
   });
   const problems = reportHref(sourceRoute, { kind: "problems" });
-  return `<ul>${links.join("")}<li><a href="${escapeHtmlAttribute(problems)}">Problems</a></li></ul>`;
+  const problemLink = tree.problemTable.length === 0
+    ? ""
+    : `<li><a href="${escapeHtmlAttribute(problems)}">${escapeHtmlText(siteChrome(locale).problemsLink)}</a></li>`;
+  return `<ul>${links.join("")}${problemLink}</ul>`;
+}
+
+function siteChrome(locale: ReportSiteLocale): Readonly<{
+  readonly navigationLabel: string;
+  readonly languageLabel: string;
+  readonly problemsLink: string;
+  readonly problemsTitle: string;
+  readonly problemsDescription: string;
+  readonly indexTitle: string;
+  readonly indexDescription: string;
+}> {
+  if (locale === "zh-CN") {
+    return {
+      navigationLabel: "报告页面",
+      languageLabel: "语言",
+      problemsLink: "问题",
+      problemsTitle: "报告问题",
+      problemsDescription: "Analysis 问题仍会显示。执行问题会阻止形成完整的静态导出。",
+      indexTitle: "NiceEval 报告",
+      indexDescription: "请选择一个已闭合的报告页面。即使禁用 JavaScript 或网络，本站仍可阅读。",
+    };
+  }
+  return {
+    navigationLabel: "Report pages",
+    languageLabel: "Language",
+    problemsLink: "Problems",
+    problemsTitle: "Report problems",
+    problemsDescription: "Analysis issues remain visible. Execution problems are shown here and prevent a complete static export.",
+    indexTitle: "NiceEval report",
+    indexDescription: "Choose a closed report page. This site remains readable without JavaScript or network access.",
+  };
 }
 
 type RenderFace = "text" | "web";
+type RenderPresentation = "default" | "classic";
 
 /** Renders a validated node recursively; unknown nodes become explicit text. */
 export function renderNodeHtml(
@@ -195,6 +279,9 @@ export function renderNodeHtml(
   route: string,
   face: RenderFace = "web",
   headingLevel = 2,
+  locale: ReportSiteLocale = "en",
+  inlineText = false,
+  presentation: RenderPresentation = "default",
 ): string {
   const node = dataRecord(value);
   if (node === undefined || typeof node.type !== "string") {
@@ -202,29 +289,31 @@ export function renderNodeHtml(
   }
   switch (node.type) {
     case "text":
-      return `<p class="niceeval-report__paragraph">${escapeHtmlText(stringValue(node.value))}</p>`;
+      return inlineText
+        ? `<span class="niceeval-report__inline-text">${escapeHtmlText(localizedUnknownText(node.value, locale))}</span>`
+        : `<p class="niceeval-report__paragraph">${escapeHtmlText(localizedUnknownText(node.value, locale))}</p>`;
     case "stack":
-      return `<section class="niceeval-report__stack">${renderChildrenHtml(node.children, tree, route, face, headingLevel)}</section>`;
+      return `<section class="niceeval-report__stack">${renderChildrenHtml(node.children, tree, route, face, headingLevel, locale, false, presentation)}</section>`;
     case "grid":
-      return `<section class="niceeval-report__grid">${renderChildrenHtml(node.children, tree, route, face, headingLevel)}</section>`;
+      return `<section class="niceeval-report__grid">${renderChildrenHtml(node.children, tree, route, face, headingLevel, locale, false, presentation)}</section>`;
     case "callout":
-      return renderCalloutHtml(node, tree, route, face, headingLevel);
+      return renderCalloutHtml(node, tree, route, face, headingLevel, locale, presentation);
     case "table":
-      return renderTableHtml(node, tree, route);
+      return renderTableHtml(node, tree, route, locale, presentation);
     case "bars":
     case "line":
     case "scatter":
-      return renderChartHtml(node, tree, route);
+      return renderChartHtml(node, tree, route, locale, presentation);
     case "stat":
-      return renderStatHtml(node, tree, route);
+      return renderStatHtml(node, tree, route, locale, presentation);
     case "download":
-      return renderDownloadHtml(node, tree, route, face, headingLevel);
+      return renderDownloadHtml(node, tree, route, face, headingLevel, locale, presentation);
     case "element":
-      return renderElementHtml(node, tree, route, face, headingLevel);
+      return renderElementHtml(node, tree, route, face, headingLevel, locale, inlineText, presentation);
     case "link":
-      return renderLinkHtml(node, tree, route, face, headingLevel);
+      return renderLinkHtml(node, tree, route, face, headingLevel, locale, inlineText, presentation);
     case "primitive":
-      return renderNodeHtml(face === "text" ? node.text : node.web, tree, route, face, headingLevel);
+      return renderNodeHtml(face === "text" ? node.text : node.web, tree, route, face, headingLevel, locale, inlineText, presentation);
     default:
       return unsupportedNodeHtml(`unsupported Report node: ${node.type}`);
   }
@@ -236,12 +325,18 @@ function renderElementHtml(
   route: string,
   face: RenderFace,
   headingLevel: number,
+  locale: ReportSiteLocale,
+  inlineText: boolean,
+  presentation: RenderPresentation,
 ): string {
   const tag = safeElementTag(node.tag);
   if (tag === undefined) return unsupportedNodeHtml("unsupported closed JSX tag");
   const classes = closedElementClasses(node.classes);
   const classAttribute = classes.length === 0 ? "" : ` class="${escapeHtmlAttribute(classes.join(" "))}"`;
-  return `<${tag}${classAttribute}>${renderChildrenHtml(node.children, tree, route, face, headingLevel + 1)}</${tag}>`;
+  const childPresentation = presentation === "classic" || classes.includes("niceeval-classic")
+    ? "classic"
+    : "default";
+  return `<${tag}${classAttribute}>${renderChildrenHtml(node.children, tree, route, face, headingLevel + 1, locale, inlineText || tag === "summary", childPresentation)}</${tag}>`;
 }
 
 function renderLinkHtml(
@@ -250,11 +345,17 @@ function renderLinkHtml(
   route: string,
   face: RenderFace,
   headingLevel: number,
+  locale: ReportSiteLocale,
+  inlineText: boolean,
+  presentation: RenderPresentation,
 ): string {
-  const href = typeof node.href === "string" && isLocalHref(node.href)
-    ? node.href.startsWith("#") ? node.href : reportHref(route, { kind: "route", route: node.href })
-    : "#";
-  return `<a class="niceeval-report__link" href="${escapeHtmlAttribute(href)}">${renderChildrenHtml(node.children, tree, route, face, headingLevel + 1)}</a>`;
+  const hrefValue = typeof node.href === "string" ? node.href : undefined;
+  const target = closedLinkTarget(hrefValue);
+  const href = target === "local" && hrefValue !== undefined
+    ? hrefValue.startsWith("#") ? hrefValue : reportHref(route, { kind: "route", route: hrefValue })
+    : target === "https" && hrefValue !== undefined ? hrefValue : "#";
+  const external = target === "https" ? " target=\"_blank\" rel=\"noopener noreferrer\"" : "";
+  return `<a class="niceeval-report__link" href="${escapeHtmlAttribute(href)}"${external}>${renderChildrenHtml(node.children, tree, route, face, headingLevel + 1, locale, inlineText, presentation)}</a>`;
 }
 
 function renderChildrenHtml(
@@ -263,9 +364,12 @@ function renderChildrenHtml(
   route: string,
   face: RenderFace,
   headingLevel: number,
+  locale: ReportSiteLocale,
+  inlineText = false,
+  presentation: RenderPresentation = "default",
 ): string {
   if (!Array.isArray(value)) return unsupportedNodeHtml("unsupported Report children");
-  return value.map((child) => renderNodeHtml(child, tree, route, face, headingLevel + 1)).join("");
+  return value.map((child) => renderNodeHtml(child, tree, route, face, headingLevel + 1, locale, inlineText, presentation)).join("");
 }
 
 function renderCalloutHtml(
@@ -274,21 +378,25 @@ function renderCalloutHtml(
   route: string,
   face: RenderFace,
   headingLevel: number,
+  locale: ReportSiteLocale,
+  presentation: RenderPresentation,
 ): string {
   const tone = knownTone(node.tone);
-  const title = node.title === undefined ? "" : `<h${Math.min(headingLevel, 6)}>${escapeHtmlText(localizedUnknownText(node.title))}</h${Math.min(headingLevel, 6)}>`;
-  return `<section class="niceeval-report__callout niceeval-report__callout--${tone}" data-tone="${tone}" role="status">${title}${renderChildrenHtml(node.children, tree, route, face, headingLevel + 1)}</section>`;
+  const title = node.title === undefined ? "" : `<h${Math.min(headingLevel, 6)}>${escapeHtmlText(localizedUnknownText(node.title, locale))}</h${Math.min(headingLevel, 6)}>`;
+  return `<section class="niceeval-report__callout niceeval-report__callout--${tone}" data-tone="${tone}" role="status">${title}${renderChildrenHtml(node.children, tree, route, face, headingLevel + 1, locale, false, presentation)}</section>`;
 }
 
 function renderTableHtml(
   node: Readonly<Record<string, unknown>>,
   tree: ClosedReportTree,
   route: string,
+  locale: ReportSiteLocale,
+  presentation: RenderPresentation,
 ): string {
-  const columns = tableColumns(node.columns);
-  const caption = node.caption === undefined ? "" : `<caption>${escapeHtmlText(localizedUnknownText(node.caption))}</caption>`;
+  const columns = tableColumns(node.columns, locale);
+  const caption = node.caption === undefined ? "" : `<caption>${escapeHtmlText(localizedUnknownText(node.caption, locale))}</caption>`;
   if (columns.length === 0 || !Array.isArray(node.rows)) {
-    return `${unsupportedNodeHtml("unsupported table shape")}${renderRowsIssuesHtml(node.issues, tree, route)}`;
+    return `${unsupportedNodeHtml("unsupported table shape")}${renderRowsIssuesHtml(node.issues, tree, route, locale)}`;
   }
   const header = columns.map((column) =>
     `<th scope="col" class="niceeval-report__align-${column.align}">${escapeHtmlText(column.label)}</th>`
@@ -299,33 +407,37 @@ function renderTableHtml(
       return `<tr><td colspan="${columns.length}" data-label="Row">Unsupported table row</td></tr>`;
     }
     return `<tr>${columns.map((column) =>
-      `<td class="niceeval-report__align-${column.align}" data-label="${escapeHtmlAttribute(column.label)}">${renderCellHtml(record[column.key], tree, route)}</td>`
+      `<td class="niceeval-report__align-${column.align}" data-label="${escapeHtmlAttribute(column.label)}">${renderCellHtml(record[column.key], locale, presentation)}</td>`
     ).join("")}</tr>`;
   }).join("");
-  return `<section class="niceeval-report__table-section"><div class="niceeval-report__table-wrap"><table class="niceeval-report__table">${caption}<thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>${renderRowsIssuesHtml(node.issues, tree, route)}</section>`;
+  return `<section class="niceeval-report__table-section"><div class="niceeval-report__table-wrap"><table class="niceeval-report__table">${caption}<thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>${renderRowsIssuesHtml(node.issues, tree, route, locale)}</section>`;
 }
 
 function renderChartHtml(
   node: Readonly<Record<string, unknown>>,
   tree: ClosedReportTree,
   route: string,
+  locale: ReportSiteLocale,
+  presentation: RenderPresentation,
 ): string {
   const kind = node.type === "bars" ? "Bars" : node.type === "line" ? "Line" : "Scatter";
-  const title = node.title === undefined ? kind : localizedUnknownText(node.title);
+  const title = node.title === undefined ? kind : localizedUnknownText(node.title, locale);
   const points = Array.isArray(node.points) ? node.points : [];
-  const channels = [node.x, node.y, node.color, node.series]
+  const channels = [node.x, node.y, node.color, node.series, node.point]
     .filter((value): value is string => typeof value === "string" && value.length > 0);
   const fields = orderedPointFields(points, channels);
   if (fields.length === 0) {
-    return `<figure class="niceeval-report__chart" data-chart="${kind.toLowerCase()}"><figcaption>${escapeHtmlText(title)} (${kind})</figcaption>${unsupportedNodeHtml("chart has no text-equivalent points")}${renderRowsIssuesHtml(node.issues, tree, route)}</figure>`;
+    return `<figure class="niceeval-report__chart" data-chart="${kind.toLowerCase()}"><figcaption>${escapeHtmlText(title)} (${kind})</figcaption>${unsupportedNodeHtml("chart has no text-equivalent points")}${renderRowsIssuesHtml(node.issues, tree, route, locale)}</figure>`;
   }
   const header = fields.map((field) => `<th scope="col">${escapeHtmlText(field)}</th>`).join("");
   const body = points.map((point) => {
     const record = dataRecord(point);
     if (record === undefined) return `<tr><td colspan="${fields.length}" data-label="Chart point">Unsupported chart point</td></tr>`;
-    return `<tr>${fields.map((field) => `<td data-label="${escapeHtmlAttribute(field)}">${renderCellHtml(record[field], tree, route)}</td>`).join("")}</tr>`;
+    return `<tr>${fields.map((field) => `<td data-label="${escapeHtmlAttribute(field)}">${renderCellHtml(record[field], locale, presentation)}</td>`).join("")}</tr>`;
   }).join("");
-  const svg = renderStaticChartSvg({
+  const xBetter = typeof node.x === "string" ? chartMetricDirection(points, node.x) : undefined;
+  const yBetter = typeof node.y === "string" ? chartMetricDirection(points, node.y) : undefined;
+  const chartInput = {
     type: node.type === "bars" || node.type === "line" || node.type === "scatter" ? node.type : "bars",
     title,
     points,
@@ -333,22 +445,61 @@ function renderChartHtml(
     y: typeof node.y === "string" ? node.y : "y",
     ...(typeof node.color === "string" ? { color: node.color } : {}),
     ...(typeof node.series === "string" ? { series: node.series } : {}),
-  });
-  const visual = svg ?? `<p class="niceeval-report__chart-empty">No plottable numeric ${escapeHtmlText(typeof node.y === "string" ? node.y : "y")} values. The closed data table remains available below.</p>`;
-  return `<figure class="niceeval-report__chart niceeval-report__chart--${kind.toLowerCase()}" data-chart="${kind.toLowerCase()}"><figcaption><span>${escapeHtmlText(title)}</span><span class="niceeval-report__chart-kind">${kind} · static SVG</span></figcaption>${visual}<details class="niceeval-report__chart-data" open><summary>Data table</summary><div class="niceeval-report__table-wrap"><table class="niceeval-report__table"><caption>${escapeHtmlText(`${title} data table`)}</caption><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div></details>${renderRowsIssuesHtml(node.issues, tree, route)}</figure>`;
+    ...(typeof node.point === "string" ? { point: node.point } : {}),
+    ...(node.layout === "horizontal" || node.layout === "vertical"
+      ? { layout: node.layout }
+      : {}),
+    ...(xBetter === undefined ? {} : { xBetter }),
+    ...(yBetter === undefined ? {} : { yBetter }),
+    ...(presentation === "classic" ? { formatMetrics: true as const, locale } : {}),
+  };
+  const leaderboard = presentation === "classic"
+    ? renderClassicHorizontalBarsHtml(chartInput)
+    : undefined;
+  const svg = leaderboard === undefined ? renderStaticChartSvg(chartInput) : undefined;
+  const visual = leaderboard ?? svg ?? `<p class="niceeval-report__chart-empty">No plottable numeric ${escapeHtmlText(typeof node.y === "string" ? node.y : "y")} values. The closed data table remains available below.</p>`;
+  const kindText = leaderboard === undefined ? `${kind} · static SVG` : `${kind} · ranked bars`;
+  const classicLeaderboard = leaderboard === undefined ? "" : " niceeval-report__chart--classic-horizontal";
+  return `<figure class="niceeval-report__chart niceeval-report__chart--${kind.toLowerCase()}${classicLeaderboard}" data-chart="${kind.toLowerCase()}"><figcaption><span>${escapeHtmlText(title)}</span><span class="niceeval-report__chart-kind">${kindText}</span></figcaption>${visual}<details class="niceeval-report__chart-data"><summary>Data table</summary><div class="niceeval-report__table-wrap"><table class="niceeval-report__table"><caption>${escapeHtmlText(`${title} data table`)}</caption><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div></details>${renderRowsIssuesHtml(node.issues, tree, route, locale)}</figure>`;
+}
+
+function chartMetricDirection(
+  points: readonly unknown[],
+  field: string,
+): MetricValue["better"] | undefined {
+  let direction: MetricValue["better"] | undefined;
+  for (const point of points) {
+    const record = dataRecord(point);
+    const candidate = record === undefined ? undefined : metricValue(record[field])?.better;
+    if (candidate === undefined) continue;
+    if (direction !== undefined && direction !== candidate) return undefined;
+    direction = candidate;
+  }
+  return direction;
 }
 
 function renderStatHtml(
   node: Readonly<Record<string, unknown>>,
   tree: ClosedReportTree,
   route: string,
+  locale: ReportSiteLocale,
+  presentation: RenderPresentation,
 ): string {
-  const label = localizedUnknownText(node.label);
+  const label = localizedUnknownText(node.label, locale);
   const metric = metricValue(node.value);
   if (metric === undefined) return unsupportedNodeHtml(`${label}: unsupported metric`);
-  const value = metric.value === null ? "—" : String(metric.value);
-  const unit = metric.unit === undefined ? "" : ` <span class="niceeval-report__metric-unit">${escapeHtmlText(metric.unit)}</span>`;
-  return `<dl class="niceeval-report__metric"><div><dt>${escapeHtmlText(label)}</dt><dd><data value="${escapeHtmlAttribute(value)}">${escapeHtmlText(value)}</data>${unit}</dd><dd class="niceeval-report__metric-details">${escapeHtmlText(reportMetricText(metric))}${renderMetricDetailsHtml(metric, tree, route)}</dd></div></dl>`;
+  const value = metric.value === null
+    ? "—"
+    : presentation === "classic"
+      ? compactMetricNumber(metric, locale)
+      : String(metric.value);
+  const displayUnit = presentation === "classic" ? metricDisplayUnit(metric) : metric.unit === undefined ? "" : ` ${metric.unit}`;
+  const unit = displayUnit.length === 0 ? "" : `<span class="niceeval-report__metric-unit">${escapeHtmlText(displayUnit)}</span>`;
+  const details = presentation === "classic"
+    ? classicMetricCoverageSummary(metric, locale)
+    : metricCoverageSummary(metric, locale);
+  const detailsHtml = details.length === 0 ? "" : `<dd class="niceeval-report__metric-details">${escapeHtmlText(details)}</dd>`;
+  return `<dl class="niceeval-report__metric"><div><dt>${escapeHtmlText(label)}</dt><dd><data value="${escapeHtmlAttribute(metric.value === null ? "" : String(metric.value))}">${escapeHtmlText(value)}</data>${unit}</dd>${detailsHtml}</div></dl>`;
 }
 
 function renderDownloadHtml(
@@ -357,6 +508,8 @@ function renderDownloadHtml(
   route: string,
   face: RenderFace,
   headingLevel: number,
+  locale: ReportSiteLocale,
+  presentation: RenderPresentation,
 ): string {
   const id = typeof node.id === "string" ? node.id : undefined;
   const download = id === undefined ? undefined : tree.downloads.find((candidate) => candidate.id === id);
@@ -364,46 +517,93 @@ function renderDownloadHtml(
   const path = closedDownloadPath(download);
   const href = reportHref(route, { kind: "download", path });
   const label = `Download ${path} (${download.mediaType}, ${download.bytes.byteLength} bytes)`;
-  return `<section class="niceeval-report__download"><a href="${escapeHtmlAttribute(href)}" download>${escapeHtmlText(label)}</a>${renderChildrenHtml(node.children, tree, route, face, headingLevel + 1)}</section>`;
+  return `<section class="niceeval-report__download"><a href="${escapeHtmlAttribute(href)}" download>${escapeHtmlText(label)}</a>${renderChildrenHtml(node.children, tree, route, face, headingLevel + 1, locale, false, presentation)}</section>`;
 }
 
-function renderCellHtml(value: unknown, tree: ClosedReportTree, route: string): string {
+function renderCellHtml(
+  value: unknown,
+  locale: ReportSiteLocale,
+  presentation: RenderPresentation = "default",
+): string {
   const metric = metricValue(value);
   if (metric === undefined) return `<span class="niceeval-report__scalar">${escapeHtmlText(reportClosedValueText(value))}</span>`;
-  const numeric = metric.value === null ? "—" : String(metric.value);
-  const unit = metric.unit === undefined ? "" : ` <span class="niceeval-report__metric-unit">${escapeHtmlText(metric.unit)}</span>`;
-  return `<span class="niceeval-report__metric-value"><data value="${escapeHtmlAttribute(numeric)}">${escapeHtmlText(numeric)}</data>${unit}<span class="niceeval-report__metric-meta">${escapeHtmlText(`${metric.samples} / ${metric.total} ${metric.basis} · ${metric.state}`)}</span>${renderMetricDetailsHtml(metric, tree, route)}</span>`;
+  const numeric = metric.value === null
+    ? "—"
+    : presentation === "classic"
+      ? compactMetricNumber(metric, locale)
+      : String(metric.value);
+  const displayUnit = presentation === "classic" ? metricDisplayUnit(metric) : metric.unit === undefined ? "" : ` ${metric.unit}`;
+  const unit = displayUnit.length === 0 ? "" : `<span class="niceeval-report__metric-unit">${escapeHtmlText(displayUnit)}</span>`;
+  const details = presentation === "classic"
+    ? classicMetricCoverageSummary(metric, locale)
+    : metricCoverageSummary(metric, locale);
+  const detailsHtml = details.length === 0 ? "" : `<span class="niceeval-report__metric-meta">${escapeHtmlText(details)}</span>`;
+  return `<span class="niceeval-report__metric-value"><data value="${escapeHtmlAttribute(metric.value === null ? "" : String(metric.value))}">${escapeHtmlText(numeric)}</data>${unit}${detailsHtml}</span>`;
 }
 
-function renderMetricDetailsHtml(metric: MetricValue, tree: ClosedReportTree, route: string): string {
-  const issues = metric.issues.length === 0
-    ? ""
-    : `<ul class="niceeval-report__issues" aria-label="Metric issues">${metric.issues.map((issue) => `<li>${renderIssueHtml(issue, tree, route)}</li>`).join("")}</ul>`;
-  const refs = metric.refs.length === 0
-    ? ""
-    : `<ul class="niceeval-report__evidence" aria-label="Evidence">${metric.refs.map((reference) => `<li>${renderEvidenceRefHtml(reference, tree, route)}</li>`).join("")}</ul>`;
-  return `${issues}${refs}`;
+function metricCoverageSummary(
+  metric: MetricValue,
+  locale: ReportSiteLocale,
+): string {
+  const summary = [`${metric.samples} / ${metric.total} ${metric.basis} · ${metric.state}`];
+  if (metric.issues.length > 0) {
+    summary.push(locale === "zh-CN" ? `${metric.issues.length} 个问题` : `${metric.issues.length} issue${metric.issues.length === 1 ? "" : "s"}`);
+  }
+  if (metric.refs.length > 0) {
+    summary.push(locale === "zh-CN" ? `${metric.refs.length} 条证据` : `${metric.refs.length} evidence ref${metric.refs.length === 1 ? "" : "s"}`);
+  }
+  return summary.join(" · ");
 }
 
-function renderRowsIssuesHtml(value: unknown, tree: ClosedReportTree, route: string): string {
+/**
+ * A normal classic KPI is deliberately quiet. Its denominator, state, issues,
+ * and evidence are still rendered whenever availability is not complete, so a
+ * compact strip never turns a partial or unsupported measure into a claim.
+ */
+function classicMetricCoverageSummary(
+  metric: MetricValue,
+  locale: ReportSiteLocale,
+): string {
+  if (metric.state === "available" && metric.issues.length === 0) return "";
+  return metricCoverageSummary(metric, locale);
+}
+
+function renderRowsIssuesHtml(
+  value: unknown,
+  tree: ClosedReportTree,
+  route: string,
+  locale: ReportSiteLocale,
+): string {
   const issues = rowsIssues(value);
   if (issues.length === 0) return "";
-  return `<aside class="niceeval-report__row-issues" aria-label="Rows issues"><h2>Rows issues</h2><ul>${issues.map((issue) => `<li>${renderIssueHtml(issue, tree, route)}</li>`).join("")}</ul></aside>`;
+  const label = locale === "zh-CN" ? "行问题" : "Rows issues";
+  return `<aside class="niceeval-report__row-issues" aria-label="${label}"><h2>${label}</h2><ul>${issues.map((issue) => `<li>${renderIssueHtml(issue, tree, route, locale)}</li>`).join("")}</ul></aside>`;
 }
 
-function renderIssueHtml(issue: AnalysisIssue, tree: ClosedReportTree, route: string): string {
+function renderIssueHtml(
+  issue: AnalysisIssue,
+  tree: ClosedReportTree,
+  route: string,
+  locale: ReportSiteLocale,
+): string {
   const refs = issue.refs.length === 0
     ? ""
-    : ` <span class="niceeval-report__issue-refs">${issue.refs.map((reference) => renderEvidenceRefHtml(reference, tree, route)).join(", ")}</span>`;
+    : ` <span class="niceeval-report__issue-refs">${issue.refs.map((reference) => renderEvidenceRefHtml(reference, tree, route, locale)).join(", ")}</span>`;
   return `<strong>${escapeHtmlText(issue.code)}</strong>: ${escapeHtmlText(issue.message)}${refs}`;
 }
 
 /** Evidence can navigate only to an already closed page; no renderer opens it. */
-function renderEvidenceRefHtml(reference: EvidenceRef, tree: ClosedReportTree, sourceRoute: string): string {
+function renderEvidenceRefHtml(
+  reference: EvidenceRef,
+  tree: ClosedReportTree,
+  sourceRoute: string,
+  locale: ReportSiteLocale,
+): string {
   const label = evidenceRefText(reference);
   const target = evidencePageRoute(reference, tree);
   if (target === undefined) return `<code class="niceeval-report__evidence-id">${escapeHtmlText(label)}</code>`;
-  return `<a class="niceeval-report__evidence-link" href="${escapeHtmlAttribute(reportHref(sourceRoute, { kind: "route", route: target }))}">Evidence ${escapeHtmlText(label)}</a>`;
+  const prefix = locale === "zh-CN" ? "证据" : "Evidence";
+  return `<a class="niceeval-report__evidence-link" href="${escapeHtmlAttribute(reportHref(sourceRoute, { kind: "route", route: target }))}">${prefix} ${escapeHtmlText(label)}</a>`;
 }
 
 function evidencePageRoute(reference: EvidenceRef, tree: ClosedReportTree): string | undefined {
@@ -416,14 +616,20 @@ function evidencePageRoute(reference: EvidenceRef, tree: ClosedReportTree): stri
   return tree.pages.find((page) => page.route.endsWith(`/${encoded}`) || page.route.endsWith(`/${id}`))?.route;
 }
 
-function renderPageProblems(tree: ClosedReportTree, page: ClosedReportPage, route: string): string {
+function renderPageProblems(
+  tree: ClosedReportTree,
+  page: ClosedReportPage,
+  route: string,
+  locale: ReportSiteLocale,
+): string {
   const ids = new Set(page.problemIds.map(Number));
   const entries = tree.problemTable.filter((entry) => ids.has(Number(entry.id)));
   if (entries.length === 0) return "";
-  return `<aside class="niceeval-report__page-problems" aria-label="Page problems"><h2>Page problems</h2>${renderProblemList(entries, tree, route)}</aside>`;
+  const label = locale === "zh-CN" ? "页面问题" : "Page problems";
+  return `<aside class="niceeval-report__page-problems" aria-label="${label}"><h2>${label}</h2>${renderProblemList(entries, tree, route, locale)}</aside>`;
 }
 
-function renderDownloads(tree: ClosedReportTree, sourceRoute: string): string {
+function renderDownloads(tree: ClosedReportTree, sourceRoute: string, locale: ReportSiteLocale): string {
   if (tree.downloads.length === 0) return "";
   const downloads = [...tree.downloads]
     .sort((left, right) => compareUtf8(closedDownloadPath(left), closedDownloadPath(right)) || compareUtf8(left.id, right.id))
@@ -434,15 +640,19 @@ function renderDownloads(tree: ClosedReportTree, sourceRoute: string): string {
       return `<li><a href="${escapeHtmlAttribute(href)}" download>${escapeHtmlText(label)}</a></li>`;
     })
     .join("");
-  return `<aside class="niceeval-report__downloads" aria-label="Downloads"><h2>Downloads</h2><ul>${downloads}</ul></aside>`;
+  const label = locale === "zh-CN" ? "下载" : "Downloads";
+  return `<aside class="niceeval-report__downloads" aria-label="${label}"><h2>${label}</h2><ul>${downloads}</ul></aside>`;
 }
 
 function renderProblemList(
   entries: readonly ReportProblemTableEntry[],
   tree: ClosedReportTree,
   route: string,
+  locale: ReportSiteLocale,
 ): string {
-  if (entries.length === 0) return `<p class="niceeval-report__no-problems">No problems.</p>`;
+  if (entries.length === 0) {
+    return `<p class="niceeval-report__no-problems">${locale === "zh-CN" ? "没有问题。" : "No problems."}</p>`;
+  }
   return `<ol class="niceeval-report__problems">${[...entries]
     .sort((left, right) => Number(left.id) - Number(right.id))
     .map((entry) => `<li id="problem-${Number(entry.id)}"><code>#${Number(entry.id)}</code> ${renderProblemHtml(entry)}</li>`)
@@ -508,7 +718,10 @@ function relativePath(fromDirectory: readonly string[], target: readonly string[
   ].join("/");
 }
 
-function tableColumns(value: unknown): readonly { readonly key: string; readonly label: string; readonly align: "start" | "end" }[] {
+function tableColumns(
+  value: unknown,
+  locale: ReportSiteLocale,
+): readonly { readonly key: string; readonly label: string; readonly align: "start" | "end" }[] {
   if (!Array.isArray(value)) return Object.freeze([]);
   const columns: Array<{ readonly key: string; readonly label: string; readonly align: "start" | "end" }> = [];
   for (const candidate of value) {
@@ -516,7 +729,7 @@ function tableColumns(value: unknown): readonly { readonly key: string; readonly
     if (record === undefined || typeof record.key !== "string" || record.key.length === 0) continue;
     columns.push(Object.freeze({
       key: record.key,
-      label: localizedUnknownText(record.label),
+      label: localizedUnknownText(record.label, locale),
       align: record.align === "end" ? "end" : "start",
     }));
   }
@@ -557,7 +770,7 @@ function knownTone(value: unknown): string {
 function safeElementTag(value: unknown): string | undefined {
   return typeof value === "string" && new Set([
     "article", "aside", "blockquote", "code", "div", "em", "footer", "header",
-    "h1", "h2", "h3", "h4", "h5", "h6", "li", "main", "ol", "p", "pre",
+    "details", "h1", "h2", "h3", "h4", "h5", "h6", "li", "main", "ol", "p", "pre",
     "section", "small", "span", "strong", "summary", "ul",
   ]).has(value) ? value : undefined;
 }
@@ -571,10 +784,6 @@ function closedElementClasses(value: unknown): readonly string[] {
   return Object.freeze(classes);
 }
 
-function isLocalHref(value: string): boolean {
-  return value.startsWith("/") || value.startsWith("#");
-}
-
 function isLocalHeadReference(value: string): boolean {
   return value.length > 0 && !value.startsWith("//") &&
     !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value);
@@ -585,10 +794,6 @@ function isScopedClosedCss(value: string): boolean {
     !/url\s*\(|expression\s*\(|!important/i.test(value) &&
     value.split("}").filter((rule) => rule.trim().length > 0)
       .every((rule) => rule.trimStart().startsWith(".niceeval-report__author "));
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "[unsupported text]";
 }
 
 function unsupportedNodeHtml(message: string): string {
@@ -626,8 +831,8 @@ export function escapeHtmlAttribute(value: string): string {
 const REPORT_HTML_STYLESHEET = `
 html { min-height: 100%; background: var(--niceeval-color-page, #050505); }
 body { min-height: 100vh; margin: 0; background: var(--niceeval-color-page, #050505); color: var(--niceeval-color-text, #ededed); }
-.niceeval-report, .niceeval-report * { box-sizing: border-box; }
-.niceeval-report {
+.niceeval-report[data-niceeval-locale], .niceeval-report[data-niceeval-locale] * { box-sizing: border-box; }
+.niceeval-report[data-niceeval-locale] {
   --report-page: var(--niceeval-color-page, #050505);
   --report-panel: var(--niceeval-color-surface, #0b0b0b);
   --report-panel-raised: var(--niceeval-color-surface-subtle, #111111);
@@ -642,40 +847,58 @@ body { min-height: 100vh; margin: 0; background: var(--niceeval-color-page, #050
   --report-warn: var(--niceeval-color-warning, #e8b84a);
   --report-bad: var(--niceeval-color-negative, #ff6b6b);
   min-height: 100vh;
-  padding: clamp(1rem, 4vw, 4rem);
-  background:
-    radial-gradient(circle at 50% -18rem, color-mix(in oklch, var(--report-accent), transparent 90%), transparent 42rem),
-    var(--report-page);
+  background: var(--report-page);
   color: var(--report-text);
-  font-family: var(--niceeval-font-sans, ui-sans-serif, system-ui, sans-serif);
+  font-family: var(--niceeval-font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", sans-serif);
   font-size: var(--niceeval-font-size, 14px);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
-.niceeval-report :focus-visible { outline: 2px solid var(--report-focus); outline-offset: 3px; }
-.niceeval-report a { color: var(--report-accent); text-decoration-thickness: .08em; text-underline-offset: .16em; }
+.niceeval-report[data-niceeval-locale] :focus-visible { outline: 2px solid var(--report-focus); outline-offset: 3px; }
+.niceeval-report[data-niceeval-locale] a { color: inherit; text-decoration-thickness: .08em; text-underline-offset: .16em; }
+.niceeval-report__topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  min-height: 64px;
+  padding: 0 clamp(20px, 5vw, 80px);
+  border-bottom: 1px solid var(--report-line);
+  background: var(--report-page);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.niceeval-report__brand {
+  display: inline-flex;
+  align-items: baseline;
+  justify-self: start;
+  gap: .75rem;
+  color: var(--report-text) !important;
+  font-size: 1.25rem;
+  font-weight: 690;
+  text-decoration: none;
+}
+.niceeval-report__brand-mark { width: 18px; height: 18px; border: 1.25px solid currentColor; transform: rotate(45deg); }
+.niceeval-report__site-navigation { min-width: 0; }
+.niceeval-report__site-navigation ul { display: flex; align-items: center; justify-content: center; gap: 1.35rem; margin: 0; padding: 0; list-style: none; }
+.niceeval-report__site-navigation a { display: inline-flex; min-block-size: 2rem; align-items: center; color: var(--report-muted) !important; font-size: .875rem; font-weight: 600; text-decoration: none; }
+.niceeval-report__site-navigation a:hover, .niceeval-report__site-navigation a[aria-current="page"] { color: var(--report-text) !important; }
+.niceeval-report__language { display: inline-flex; align-items: center; justify-self: end; overflow: hidden; border: 1px solid var(--report-line); background: var(--report-panel); }
+.niceeval-report__language button { min-width: 44px; height: 30px; border: 0; border-inline-end: 1px solid var(--report-line); background: transparent; color: var(--report-muted); font: inherit; font-size: .75rem; line-height: 1; cursor: pointer; }
+.niceeval-report__language button:last-child { border-inline-end: 0; }
+.niceeval-report__language button:hover, .niceeval-report__language button[aria-pressed="true"] { background: var(--report-panel-raised); color: var(--report-text); font-weight: 620; }
+.niceeval-report__site-main { width: min(1120px, calc(100vw - 40px)); margin: 0 auto; padding: clamp(52px, 7vw, 82px) 0 72px; }
 .niceeval-report__document, .niceeval-report__text {
   display: block;
-  width: min(100%, 76rem);
+  width: 100%;
   margin: 0 auto;
 }
-.niceeval-report__document {
-  padding: clamp(1rem, 3vw, 2.5rem);
-  border: 1px solid var(--report-line);
-  border-radius: max(.5rem, var(--niceeval-radius, .5rem));
-  background: var(--report-panel);
-  box-shadow: 0 1px 2px color-mix(in oklch, black, transparent 88%), 0 1.25rem 3.5rem color-mix(in oklch, black, transparent 94%);
-}
 .niceeval-report__text { max-width: 96ch; white-space: pre-wrap; font-family: var(--niceeval-font-mono, ui-monospace, monospace); }
-.niceeval-report__navigation { margin-bottom: clamp(1.15rem, 3vw, 2rem); padding-bottom: .7rem; border-bottom: 1px solid var(--report-line); }
-.niceeval-report__navigation ul { display: flex; flex-wrap: wrap; gap: .35rem .85rem; margin: 0; padding: 0; list-style: none; }
-.niceeval-report__navigation a { display: inline-flex; align-items: center; min-block-size: 2rem; color: var(--report-muted); font-size: .86em; font-weight: 650; text-decoration: none; }
-.niceeval-report__navigation a:hover, .niceeval-report__navigation a[aria-current="page"] { color: var(--report-accent); text-decoration: underline; text-underline-offset: .24em; }
 .niceeval-report__document-header { max-width: 76ch; padding-bottom: clamp(1.4rem, 4vw, 3rem); }
-.niceeval-report__route { display: inline-flex; margin: 0 0 .65rem; padding: .18rem .52rem; border: 1px solid var(--report-line); border-radius: 999px; color: var(--report-muted); font-family: var(--niceeval-font-mono, ui-monospace, monospace); font-size: .78em; }
-.niceeval-report h1, .niceeval-report h2, .niceeval-report h3, .niceeval-report h4, .niceeval-report h5, .niceeval-report h6 { margin: 0; color: var(--report-text); line-height: 1.15; }
-.niceeval-report h1 { font-size: clamp(2rem, 5vw, 3.65rem); letter-spacing: -.04em; }
-.niceeval-report h2 { font-size: clamp(1.08rem, 2vw, 1.32rem); }
+.niceeval-report[data-niceeval-locale] h1, .niceeval-report[data-niceeval-locale] h2, .niceeval-report[data-niceeval-locale] h3, .niceeval-report[data-niceeval-locale] h4, .niceeval-report[data-niceeval-locale] h5, .niceeval-report[data-niceeval-locale] h6 { margin: 0; color: var(--report-text); line-height: 1.15; }
+.niceeval-report[data-niceeval-locale] h1 { font-size: clamp(2rem, 5vw, 3.65rem); letter-spacing: -.04em; }
+.niceeval-report[data-niceeval-locale] h2 { font-size: clamp(1.08rem, 2vw, 1.32rem); }
 .niceeval-report__author { display: grid; gap: clamp(.85rem, 2vw, 1.25rem); }
 .niceeval-report__paragraph { max-width: 76ch; margin: 0; color: var(--report-text); white-space: pre-wrap; }
 .niceeval-report__stack { display: grid; gap: clamp(.7rem, 1.8vw, 1.1rem); }
@@ -711,7 +934,7 @@ body { min-height: 100vh; margin: 0; background: var(--niceeval-color-page, #050
 .niceeval-report__chart-svg { display: block; width: 100%; min-height: 13rem; overflow: visible; border: 1px solid var(--report-line); border-radius: calc(max(.45rem, var(--niceeval-radius, .5rem)) * .8); background: color-mix(in oklch, var(--report-panel-raised), var(--report-panel) 54%); }
 .niceeval-report__chart-grid-line { stroke: var(--report-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .niceeval-report__chart-axis { stroke: var(--report-line-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.niceeval-report__chart-tick, .niceeval-report__chart-axis-title, .niceeval-report__chart-legend-item text { fill: var(--report-muted); font-family: var(--niceeval-font-sans, ui-sans-serif, system-ui, sans-serif); font-size: 11px; }
+.niceeval-report__chart-tick, .niceeval-report__chart-axis-title, .niceeval-report__chart-legend-item text, .niceeval-report__chart-better-hint { fill: var(--report-muted); font-family: var(--niceeval-font-sans, ui-sans-serif, system-ui, sans-serif); font-size: 11px; }
 .niceeval-report__chart-axis-title { font-size: 12px; font-weight: 650; }
 .niceeval-report__chart-legend-marker, .niceeval-report__chart-bar { fill: var(--report-muted); }
 .niceeval-report__chart-line { fill: none; stroke: var(--report-muted); stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
@@ -734,9 +957,10 @@ body { min-height: 100vh; margin: 0; background: var(--niceeval-color-page, #050
 .niceeval-report__problems { margin: 0; padding-inline-start: 1.5rem; }
 .niceeval-report__problems li + li { margin-top: .75rem; }
 @media (max-width: 44rem) {
-  .niceeval-report { padding: .75rem; }
-  .niceeval-report__document { padding: 1rem; border-radius: max(.4rem, var(--niceeval-radius, .5rem)); }
-  .niceeval-report__navigation ul { flex-wrap: nowrap; overflow-x: auto; padding-bottom: .15rem; }
+  .niceeval-report__topbar { grid-template-columns: minmax(0, 1fr) auto; padding-inline: 20px; }
+  .niceeval-report__site-navigation { display: none; }
+  .niceeval-report__language button { min-width: 40px; }
+  .niceeval-report__site-main { width: min(1120px, calc(100vw - 28px)); padding-top: 42px; }
   .niceeval-report__grid { grid-template-columns: minmax(0, 1fr); }
   .niceeval-report__table-wrap { overflow-x: visible; border: 0; }
   .niceeval-report__table { display: block; min-width: 0; }

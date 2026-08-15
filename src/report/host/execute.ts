@@ -32,6 +32,7 @@ import {
 } from "../definition.ts";
 import { hasCompleteReportLocaleMap } from "../classic/locale.ts";
 import {
+  closedLinkTarget,
   freezeClosedReportNode,
   validateClosedReportNode,
   type ClosedElementTag,
@@ -238,6 +239,7 @@ const REACT_HOST_TAGS = new Set<string>([
   "aside",
   "blockquote",
   "code",
+  "details",
   "div",
   "em",
   "footer",
@@ -988,14 +990,14 @@ function resolveReactHostElement(
       classes = closed;
       continue;
     }
-    if (type === "a" && key === "href" && typeof value === "string" && isLocalHref(value)) {
+    if (type === "a" && key === "href" && typeof value === "string" && closedLinkTarget(value) !== undefined) {
       href = value;
       continue;
     }
     return Effect.succeed(reactNodeFailure(resolver, `unsupported React ${type} prop: ${key}`));
   }
   if (type === "a" && href === undefined) {
-    return Effect.succeed(reactNodeFailure(resolver, "a React link needs a local href"));
+    return Effect.succeed(reactNodeFailure(resolver, "a React link needs a local route, fragment, or explicit HTTPS URL"));
   }
   return Effect.map(resolveReactChildren(element.props.children, resolver), (children): NodeResult => {
     if (children.state === "failed") return children;
@@ -1241,10 +1243,6 @@ function closeClassNames(value: string): readonly string[] | undefined {
     !/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/.test(entry) || entry.startsWith("niceeval-report")
   )) return undefined;
   return Object.freeze(classes);
-}
-
-function isLocalHref(value: string): boolean {
-  return hasOnlyUnicodeScalars(value) && (value.startsWith("/") || value.startsWith("#"));
 }
 
 function isLocalHeadReference(value: string): boolean {

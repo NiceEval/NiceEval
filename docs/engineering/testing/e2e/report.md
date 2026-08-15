@@ -88,7 +88,7 @@ owner 接管对应检查；没有 `report-author-compat`、`report-json-v2` 或�
 
 | 功能命题 | 接管的既有 owner | 保留的公开观察 |
 |---|---|---|
-| v0.12 作者源码以固定 Sample 构建完整站点。 | `report-execution-evidence` | `defineReport`、计算、投影、组件和下载形成全站 JSON 页面集合。 |
+| v0.12 作者源码以固定 Sample 构建完整站点。 | `report-execution-evidence` | 近原样 classic 作者源码可构建；show JSON 枚举 built-in Attempt 和 Experiment 参数页；overview 有 Hero HTTPS anchor、KPI/图表/层级文字、详情 href，且不暴露 raw Attempt DTO。 |
 | show 是独立的终端阅读面。 | `report-show` 与 `report-project-current` | selector、阅读 route、文字、完整 MetricValue 与 project-current 身份。 |
 | JSON 是完整 revision 的机器阅读面。 | `report-show-json` | canonical order、全路由集合、identity、metadata 与 problem table。 |
 | view 是同一 revision 的本机 HTTP 面。 | `report-config-reload` 与 `report-browser-journey` | last-good、最新 intent、固定响应、HTTP 边界和可访问内容。 |
@@ -123,7 +123,9 @@ owner 接管对应检查；没有 `report-author-compat`、`report-json-v2` 或�
 ### report-execution-evidence
 
 `report-execution.test.ts` 通过 `show --execution` 与 `show --timing` 验证已停稳构建证据。它也接管 v0.12 作者模块
-在固定 Sample 上构建全站、再把关闭 revision 交给各产品面的功能命题。
+在固定 Sample 上构建全站、再把关闭 revision 交给各产品面的功能命题。classic 全站命题要求 built-in Attempt 和
+Experiment 详情页在 show JSON 中枚举参数实例。overview 保留 Hero HTTPS anchor、KPI、图表与原生层级文字，
+提供实际详情 href，且正文不序列化 raw Attempt DTO。
 
 ### report-static-export
 
@@ -140,3 +142,5 @@ owner 接管对应检查；没有 `report-author-compat`、`report-json-v2` 或�
 ### report-browser-journey
 
 `report.browser.spec.ts` 通过真实 href、HTTP、可访问身份、可见内容和断网禁用 JavaScript 的 route 阅读验证浏览器 Journey。
+经典旅程通过真实浏览器完成筛选、原生 `details` 展开、Attempt href 下钻与中文切换。它只锁 role、text、href 和
+原生标签语义，不锁 CSS class、像素或精确颜色。

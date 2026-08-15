@@ -82,6 +82,7 @@ export namespace JSX {
     readonly aside: ContentProps;
     readonly blockquote: ContentProps;
     readonly code: ContentProps;
+    readonly details: ContentProps;
     readonly div: ContentProps;
     readonly em: ContentProps;
     readonly footer: ContentProps;

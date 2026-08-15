@@ -2,7 +2,8 @@
 
 show、show --json、view 与 view --out 使用一条 SSG-first 管线。每条命令先选择 Record，再由 Analysis Host 打开固定
 Sample，再由 Report Host 用 ReportDefinition 调用 `buildSiteRevision()`。作者 Page 在这一步调用 `aggregate()`、
-`rollup()` 或 `to*` 投影；命令的呈现阶段不再调用这些 API。
+Analysis query（分析查询）或 `to*` closed projection（闭合投影）；命令的呈现阶段不再调用这些 API。旧式
+`rollup((attempt) => …)` 不在当前作者面，原因与替代边界见 [Calculations](calculations.md)。
 
 ```text
 CLI selection

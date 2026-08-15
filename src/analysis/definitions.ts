@@ -8,6 +8,7 @@ import {
   type PublishedAnalysisInputBinding,
 } from "./bindings.ts";
 import type {
+  AnalysisRun,
   SampleClosedError,
   AttemptEvidenceIdentity,
   EvalId,
@@ -29,6 +30,11 @@ export type DimensionValue = string | number | boolean | null;
 export interface LogicalSlot {
   /** Exact occurrence identity in one selected Run. */
   readonly runId: RunId;
+  /**
+   * The selected Run's closed Core projection. It carries configuration
+   * dimensions without exposing a Record reader or reopening selection.
+   */
+  readonly run: AnalysisRun;
   readonly slotId: SlotId;
   /** Derived Sample identity from the Run that owns this occurrence. */
   readonly experimentId: ExperimentId;
@@ -387,6 +393,11 @@ export function mean(): AcrossSlotsReduction<number, number> {
   return reduction<AcrossSlotsReduction<number, number>>("across-slots-reduction", "mean");
 }
 
+/** Sums numeric values across the fixed logical-Slot denominator. */
+export function sumAcrossSlots(): AcrossSlotsReduction<number, number> {
+  return reduction<AcrossSlotsReduction<number, number>>("across-slots-reduction", "sum");
+}
+
 export function ratio(): AcrossSlotsReduction<boolean, number> {
   return reduction<AcrossSlotsReduction<boolean, number>>("across-slots-reduction", "ratio");
 }
@@ -482,6 +493,11 @@ export const attemptLatencyMs = createPublishedInput(publishedAnalysisInputBindi
 
 const attemptCostUSD = createPublishedInput(publishedAnalysisInputBindings.attemptCostUSD);
 
+/** Recorded input plus output tokens for one selected logical Slot. */
+export const attemptTokens = createPublishedInput(
+  publishedAnalysisInputBindings.attemptTokens,
+);
+
 export const attemptToolFailure = createPublishedInput(publishedAnalysisInputBindings.attemptToolFailure);
 
 /** Mean recorded USD provider cost per selected logical Slot. */
@@ -492,6 +508,21 @@ export const costUSD = defineMeasure({
   withinAttempt: oneValue<number>(),
   withinSlot: latestCompletedAttempt<number>(),
   acrossSlots: mean(),
+  denominator: allLogicalSlots(),
+  missing: partial(),
+  evidence: retainContributingEvidence(),
+  format: "currency-usd",
+  better: "lower",
+});
+
+/** Total recorded USD provider cost across the selected logical Slots. */
+export const totalCostUSD = defineMeasure({
+  id: "niceeval.total-cost-usd",
+  population: logicalSlots,
+  input: attemptCostUSD,
+  withinAttempt: oneValue<number>(),
+  withinSlot: latestCompletedAttempt<number>(),
+  acrossSlots: sumAcrossSlots(),
   denominator: allLogicalSlots(),
   missing: partial(),
   evidence: retainContributingEvidence(),

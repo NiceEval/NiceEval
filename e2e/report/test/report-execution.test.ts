@@ -2,6 +2,8 @@
 // rerun: pnpm e2e --repo report -- --run test/report-execution.test.ts
 
 import { only } from "@niceeval/testkit";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { installedAuthorExportManifest, reportCaseArtifacts, reportE2E } from "./support.ts";
 
@@ -225,7 +227,7 @@ test("show --timing 呈现本轮的阶段树", async () => {
 test("未改写的 0.12 classic 作者 fixture 通过安装候选的 author export manifest 执行", async () => {
   await reportE2E.case(
     "classic-author",
-    { artifacts: reportCaseArtifacts() },
+    { artifacts: reportCaseArtifacts(["classic-export"]) },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const manifest = await installedAuthorExportManifest(projectRoot);
       expect(manifest.subpaths).toEqual(expect.arrayContaining(["./report", "./report/built-in"]));
@@ -262,6 +264,54 @@ test("未改写的 0.12 classic 作者 fixture 通过安装候选的 author expo
       expect(shown.stdout).toContain("MemoryBench Classic");
       expect(shown.stdout).toContain("Leaderboard");
       expect(shown.stdout).toContain("classic/memory-b");
+
+      const json = await niceeval.run(["show", "--report", "./reports/classic.tsx", "--json"]);
+      expect(json.exitCode, json.diagnostic()).toBe(0);
+      const summaries = json.json<{
+        readonly pageSummaries: readonly {
+          readonly pageId: string;
+          readonly kind: string;
+          readonly instanceCount: number;
+        }[];
+      }>().pageSummaries;
+      for (const pageId of ["attempt", "experiment"] as const) {
+        const summary = only(summaries, (entry) => entry.pageId === pageId, json.diagnostic());
+        expect(summary.kind, `classic ${pageId} detail page ${json.diagnostic()}`).toBe("parameterized");
+        expect(summary.instanceCount, `classic ${pageId} detail page ${json.diagnostic()}`).toBeGreaterThan(1);
+      }
+
+      const exported = await niceeval.run([
+        "view",
+        "--report",
+        "./reports/classic.tsx",
+        "--out",
+        "classic-export",
+        "--no-open",
+      ]);
+      expect(exported.exitCode, exported.diagnostic()).toBe(0);
+
+      const overview = await readFile(join(projectRoot, "classic-export", "overview", "index.html"), "utf8");
+      for (const marker of [
+        "Deterministic 0.12 classic report:",
+        "Eval results",
+        "Total cost",
+        "Run range",
+        "Leaderboard",
+        "Experiment comparison",
+        "Experiments",
+      ] as const) {
+        expect(overview, `classic overview marker ${JSON.stringify(marker)}`).toContain(marker);
+      }
+      expect(overview, "classic Hero external link must be an anchor")
+        .toMatch(/<a\b[^>]*\bhref="https:\/\/github\.com\/NiceEval\/NiceEval"/);
+      expect(overview, "classic hierarchy must keep native disclosure semantics")
+        .toMatch(/<details\b[\s\S]*<summary\b/);
+      expect(overview, "classic overview must not serialize internal attempt evidence into visible text")
+        .not.toContain('{"kind":"attempt"');
+      expect(overview, "classic overview must link into attempt detail instances")
+        .toMatch(/<a\b[^>]*\bhref="[^"]*\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}\/index\.html"/);
+      expect(overview, "classic overview must link into experiment detail instances")
+        .toMatch(/<a\b[^>]*\bhref="[^"]*\/experiment\/e1[a-f0-9]{24}\/index\.html"/);
     },
   );
 });

@@ -216,10 +216,58 @@ const REFRESH_PROBE_RUNTIME = `(() => {
 })();
 `;
 
+/**
+ * The locale picker changes only among already-closed document copies. It has
+ * no Report callback, HTTP request, or browser-side Analysis capability.
+ */
+const LOCALE_SWITCH_RUNTIME = `(() => {
+  "use strict";
+  const locales = ["en", "zh-CN"];
+  const views = Array.from(document.querySelectorAll("[data-niceeval-locale]"));
+  const buttons = Array.from(document.querySelectorAll("[data-niceeval-locale-button]"));
+  if (views.length === 0 || buttons.length === 0) return;
+
+  const stored = () => {
+    try {
+      const value = localStorage.getItem("niceeval:view:locale");
+      return locales.includes(value) ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const preferred = () => {
+    const candidates = typeof navigator === "undefined" ? [] : [navigator.language, ...(navigator.languages || [])];
+    return candidates.some((value) => String(value).toLowerCase().startsWith("zh")) ? "zh-CN" : "en";
+  };
+  const select = (locale, persist) => {
+    if (!locales.includes(locale)) return;
+    for (const view of views) view.hidden = view.dataset.niceevalLocale !== locale;
+    for (const button of buttons) {
+      const active = button.dataset.niceevalLocaleButton === locale;
+      button.setAttribute("aria-pressed", String(active));
+      button.classList.toggle("is-active", active);
+    }
+    document.documentElement.lang = locale;
+    const title = document.documentElement.getAttribute("data-niceeval-title-" + locale.toLowerCase());
+    if (title !== null) document.title = title;
+    if (!persist) return;
+    try {
+      localStorage.setItem("niceeval:view:locale", locale);
+    } catch {
+      // A locked-down static browser still receives the selected closed view.
+    }
+  };
+  for (const button of buttons) {
+    button.addEventListener("click", () => select(button.dataset.niceevalLocaleButton, true));
+  }
+  select(stored() || preferred(), false);
+})();
+`;
+
 // Package-owned browser behavior is closed into the same runtime byte that
 // every generated document already references. The asset lives beside this
 // compiled Host graph, so it never reaches into an author project or network.
-const CLASSIC_TABS_ENHANCER = readFileSync(new URL("../react/enhance.js", import.meta.url), "utf8");
+const CLASSIC_ENHANCER = readFileSync(new URL("../react/enhance.js", import.meta.url), "utf8");
 
 function buildSiteFiles(
   execution: ReportExecution,
@@ -262,7 +310,12 @@ function buildStaticFiles(
     paths.push(output);
     files.push(staticTextFile(
       output.posix,
-      renderReportHtml({ tree: execution.tree, page, theme }),
+      renderReportHtml({
+        tree: execution.tree,
+        page,
+        ...(execution.report.title === undefined ? {} : { reportTitle: execution.report.title }),
+        theme,
+      }),
     ));
   }
 
@@ -274,6 +327,7 @@ function buildStaticFiles(
     files.push(staticTextFile(index.posix, renderReportHtml({
       tree: execution.tree,
       surface: "index",
+      ...(execution.report.title === undefined ? {} : { reportTitle: execution.report.title }),
       theme,
     })));
   }
@@ -307,12 +361,13 @@ function buildStaticFiles(
     staticTextFile(problemsPath.posix, renderReportHtml({
       tree: execution.tree,
       surface: "problems",
+      ...(execution.report.title === undefined ? {} : { reportTitle: execution.report.title }),
       theme,
     }), "text/html; charset=utf-8"),
     staticTextFile(stylesheetPath.posix, classicStylesheet, "text/css; charset=utf-8"),
     staticTextFile(
       runtimePath.posix,
-      `${REFRESH_PROBE_RUNTIME}\n${CLASSIC_TABS_ENHANCER}`,
+      `${REFRESH_PROBE_RUNTIME}\n${LOCALE_SWITCH_RUNTIME}\n${CLASSIC_ENHANCER}`,
       "text/javascript; charset=utf-8",
     ),
   );

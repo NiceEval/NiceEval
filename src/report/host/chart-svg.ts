@@ -2,6 +2,8 @@ import {
   metricValue,
   reportClosedValueText,
 } from "./presentation.ts";
+import { compactMetricNumber } from "../classic/format.ts";
+import type { ReportLocale } from "../classic/locale.ts";
 
 /**
  * A deliberately small static SVG projection of an already-closed chart node.
@@ -15,6 +17,16 @@ export interface StaticChartSvgInput {
   readonly y: string;
   readonly color?: string;
   readonly series?: string;
+  /** Display-only point identity field used by tooltip/label text. */
+  readonly point?: string;
+  /** Display-only closed Chart intent; it never changes the points or metrics. */
+  readonly layout?: "horizontal" | "vertical";
+  /** Metric directions orient numeric axes so better values remain upper-right. */
+  readonly xBetter?: "higher" | "lower" | "neutral";
+  readonly yBetter?: "higher" | "lower" | "neutral";
+  /** Classic uses Analysis-owned semantic number formatting in its visual face. */
+  readonly formatMetrics?: boolean;
+  readonly locale?: ReportLocale;
 }
 
 interface ChartPoint {
@@ -22,7 +34,10 @@ interface ChartPoint {
   readonly xKey: string;
   readonly xLabel: string;
   readonly xNumeric: number | undefined;
+  readonly xValue: unknown;
   readonly y: number;
+  readonly yValue: unknown;
+  readonly pointLabel: string;
   readonly categoryKey: string;
   readonly categoryLabel: string;
 }
@@ -72,13 +87,91 @@ export function renderStaticChartSvg(input: StaticChartSvgInput): string | undef
   const legend = chartLegend(categories);
   const plot = plotBox(legend.rows);
   const body = input.type === "bars"
-    ? renderBars(points, categories, plot, input)
+    ? input.layout === "horizontal"
+      ? renderHorizontalBars(points, categories, plot, input)
+      : renderBars(points, categories, plot, input)
     : input.type === "line"
       ? renderLine(points, categories, plot, input)
       : renderScatter(points, categories, plot, input);
   const label = `${input.title} ${chartKind(input.type)} chart`;
   const description = `${points.length} closed point${points.length === 1 ? "" : "s"} with ${input.x} on the x axis and ${input.y} on the y axis. The complete data table follows the chart.`;
-  return `<svg class="niceeval-report__chart-svg" viewBox="0 0 ${SVG_WIDTH} ${SVG_HEIGHT}" role="img" aria-label="${escapeXmlAttribute(label)}" preserveAspectRatio="xMidYMid meet"><title>${escapeXmlText(label)}</title><desc>${escapeXmlText(description)}</desc>${legend.markup}${body}</svg>`;
+  return `<svg class="niceeval-report__chart-svg" viewBox="0 0 ${SVG_WIDTH} ${SVG_HEIGHT}" role="img" aria-label="${escapeXmlAttribute(label)}" preserveAspectRatio="xMidYMid meet"><title>${escapeXmlText(label)}</title><desc>${escapeXmlText(description)}</desc>${legend.markup}${renderBetterHint(input, plot)}${body}</svg>`;
+}
+
+/**
+ * Classic's horizontal Bars face is intentionally HTML rather than a tiny
+ * generic SVG. It projects the closed points as supplied: it never sorts,
+ * aggregates, or substitutes a missing metric. The complete source table is
+ * still rendered by the Host immediately after this compact overview.
+ */
+export function renderClassicHorizontalBarsHtml(input: StaticChartSvgInput): string | undefined {
+  if (input.type !== "bars" || input.layout !== "horizontal") return undefined;
+  const categoryField = input.series ?? input.color;
+  const rows: Array<{
+    readonly label: string;
+    readonly value: number | undefined;
+    readonly valueText: string;
+    readonly status: string | undefined;
+    readonly categoryKey: string;
+    readonly categoryLabel: string;
+    readonly categoryIndex: number;
+  }> = [];
+  const categoryIndexes = new Map<string, number>();
+  let boundsMaximum: number | undefined;
+
+  for (const point of input.points) {
+    const record = dataRecord(point);
+    if (record === undefined) continue;
+    const yValue = record[input.y];
+    const metric = metricValue(yValue);
+    const value = chartNumber(yValue);
+    // Non-metric, non-numeric cells have no visual bar. Their closed source
+    // remains visible in the text-equivalent data table.
+    if (value === undefined && metric === undefined) continue;
+    const categoryValue = categoryField === undefined ? undefined : record[categoryField];
+    const categoryKey = categoryField === undefined ? "" : valueKey(categoryValue);
+    let categoryIndex = categoryIndexes.get(categoryKey);
+    if (categoryIndex === undefined) {
+      categoryIndex = categoryIndexes.size;
+      categoryIndexes.set(categoryKey, categoryIndex);
+    }
+    if (metric?.bounds?.max !== undefined && Number.isFinite(metric.bounds.max)) {
+      boundsMaximum = Math.max(boundsMaximum ?? Number.NEGATIVE_INFINITY, metric.bounds.max);
+    }
+    rows.push(Object.freeze({
+      label: chartValueText(record[input.x], input),
+      value,
+      valueText: chartValueText(yValue, input),
+      status: metric === undefined ? undefined : classicMetricStatusText(metric, input.locale),
+      categoryKey,
+      categoryLabel: categoryField === undefined ? "" : chartValueText(categoryValue, input),
+      categoryIndex,
+    }));
+  }
+
+  if (rows.length === 0) return undefined;
+  const largestMagnitude = Math.max(
+    boundsMaximum ?? 0,
+    ...rows.map((row) => row.value === undefined ? 0 : Math.abs(row.value)),
+  );
+  const maximum = largestMagnitude > 0 ? largestMagnitude : 1;
+  const legend = categoryField === undefined
+    ? ""
+    : `<ul class="niceeval-classic-chart-legend" aria-label="${escapeXmlAttribute(input.series === undefined ? "Color legend" : "Series legend")}">${[...categoryIndexes.entries()].map(([key, index]) => {
+      const row = rows.find((candidate) => candidate.categoryKey === key);
+      if (row === undefined) return "";
+      const className = classicSeriesClass(index);
+      return `<li><span class="niceeval-classic-chart-legend-swatch ${className}" aria-hidden="true"></span><span>${escapeXmlText(row.categoryLabel)}</span></li>`;
+    }).join("")}</ul>`;
+  const bars = rows.map((row) => {
+    const width = row.value === undefined ? 0 : Math.min(100, Math.abs(row.value) / maximum * 100);
+    const className = classicSeriesClass(row.categoryIndex);
+    const state = row.status === undefined ? "" : `<small class="niceeval-classic-chart-bar-status">${escapeXmlText(row.status)}</small>`;
+    const negative = row.value !== undefined && row.value < 0 ? " data-negative=\"true\"" : "";
+    const title = [row.label, row.valueText, row.categoryLabel, row.status].filter((part): part is string => part !== undefined && part.length > 0).join(" · ");
+    return `<li class="niceeval-classic-chart-bar-row"${negative}><span class="niceeval-classic-chart-bar-label" title="${escapeXmlAttribute(row.label)}">${escapeXmlText(row.label)}</span><span class="niceeval-classic-chart-bar-track"><span class="niceeval-classic-chart-bar-fill ${className}" style="inline-size:${coordinate(width)}%" title="${escapeXmlAttribute(title)}"></span></span><span class="niceeval-classic-chart-bar-end"><data value="${escapeXmlAttribute(row.value === undefined ? "" : String(row.value))}">${escapeXmlText(row.valueText)}</data>${state}</span></li>`;
+  }).join("");
+  return `<div class="niceeval-classic-chart-bars" aria-label="${escapeXmlAttribute(`${input.title} ranked bars`)}"><ol>${bars}</ol>${legend}</div>`;
 }
 
 function chartPoints(input: StaticChartSvgInput): readonly ChartPoint[] {
@@ -87,18 +180,24 @@ function chartPoints(input: StaticChartSvgInput): readonly ChartPoint[] {
   for (const [index, point] of input.points.entries()) {
     const row = dataRecord(point);
     if (row === undefined) continue;
-    const y = chartNumber(row[input.y]);
+    const yValue = row[input.y];
+    const y = chartNumber(yValue);
     if (y === undefined) continue;
     const xValue = row[input.x];
+    const xLabel = chartValueText(xValue, input);
+    const identityValue = input.point === undefined ? xValue : row[input.point];
     const categoryValue = categoryField === undefined ? undefined : row[categoryField];
     points.push(Object.freeze({
       index,
       xKey: valueKey(xValue),
-      xLabel: chartValueText(xValue),
+      xLabel,
       xNumeric: chartNumber(xValue),
+      xValue,
       y,
+      yValue,
+      pointLabel: input.point === undefined ? xLabel : chartValueText(identityValue, input),
       categoryKey: categoryField === undefined ? "" : valueKey(categoryValue),
-      categoryLabel: categoryField === undefined ? "" : chartValueText(categoryValue),
+      categoryLabel: categoryField === undefined ? "" : chartValueText(categoryValue, input),
     }));
   }
   return Object.freeze(points);
@@ -169,7 +268,7 @@ function renderBars(
   input: StaticChartSvgInput,
 ): string {
   const groups = groupedBy(points, (point) => point.xKey);
-  const yScale = numericScale(points.map((point) => point.y), plot.bottom, plot.top, true);
+  const yScale = numericScaleForBetter(points.map((point) => point.y), plot.bottom, plot.top, true, input.yBetter);
   const categoryLookup = new Map(categories.map((category) => [category.key, category]));
   const bars: string[] = [];
   for (const [groupIndex, group] of [...groups.values()].entries()) {
@@ -185,11 +284,41 @@ function renderBars(
       const category = categoryLookup.get(point.categoryKey);
       const className = chartSeriesClass(category);
       const detail = point.categoryLabel === "" ? "" : ` · ${point.categoryLabel}`;
-      bars.push(`<rect class="niceeval-report__chart-bar${className}" x="${coordinate(start + barIndex * barWidth + 0.5)}" y="${coordinate(top)}" width="${coordinate(Math.max(0.5, barWidth - 1))}" height="${coordinate(height)}" rx="2"><title>${escapeXmlText(`${point.xLabel}: ${formatNumber(point.y)}${detail}`)}</title></rect>`);
+      bars.push(`<rect class="niceeval-report__chart-bar${className}" x="${coordinate(start + barIndex * barWidth + 0.5)}" y="${coordinate(top)}" width="${coordinate(Math.max(0.5, barWidth - 1))}" height="${coordinate(height)}" rx="2"><title>${escapeXmlText(`${point.pointLabel}: ${chartPointValueText(point, "y", input)}${detail}`)}</title></rect>`);
     }
   }
   const xLabels = [...groups.values()].map((group) => group[0]!.xLabel);
-  return `${renderYAxis(yScale, plot, input.y)}${renderCategoricalXAxis(xLabels, plot, input.x, true)}<g class="niceeval-report__chart-marks">${bars.join("")}</g>`;
+  return `${renderYAxis(yScale, plot, input.y, input)}${renderCategoricalXAxis(xLabels, plot, input.x, true)}<g class="niceeval-report__chart-marks">${bars.join("")}</g>`;
+}
+
+function renderHorizontalBars(
+  points: readonly ChartPoint[],
+  categories: readonly ChartCategory[],
+  plot: PlotBox,
+  input: StaticChartSvgInput,
+): string {
+  const groups = groupedBy(points, (point) => point.xKey);
+  const xScale = numericScaleForBetter(points.map((point) => point.y), plot.left, plot.right, true, input.yBetter);
+  const categoryLookup = new Map(categories.map((category) => [category.key, category]));
+  const bars: string[] = [];
+  for (const [groupIndex, group] of [...groups.values()].entries()) {
+    const groupHeight = plot.height / groups.size;
+    const usableHeight = Math.max(1, groupHeight * 0.76);
+    const barHeight = Math.max(1, usableHeight / group.length);
+    const start = plot.top + groupIndex * groupHeight + (groupHeight - usableHeight) / 2;
+    for (const [barIndex, point] of group.entries()) {
+      const baseline = xScale.map(0);
+      const x = xScale.map(point.y);
+      const left = Math.min(x, baseline);
+      const width = Math.max(0.75, Math.abs(baseline - x));
+      const category = categoryLookup.get(point.categoryKey);
+      const className = chartSeriesClass(category);
+      const detail = point.categoryLabel === "" ? "" : ` · ${point.categoryLabel}`;
+      bars.push(`<rect class="niceeval-report__chart-bar${className}" x="${coordinate(left)}" y="${coordinate(start + barIndex * barHeight + 0.5)}" width="${coordinate(width)}" height="${coordinate(Math.max(0.5, barHeight - 1))}" rx="2"><title>${escapeXmlText(`${point.pointLabel}: ${chartPointValueText(point, "y", input)}${detail}`)}</title></rect>`);
+    }
+  }
+  const labels = [...groups.values()].map((group) => group[0]!.xLabel);
+  return `${renderCategoricalYAxis(labels, plot, input.x)}${renderNumericXAxis(xScale, plot, input.y, input)}<g class="niceeval-report__chart-marks">${bars.join("")}</g>`;
 }
 
 function renderLine(
@@ -199,8 +328,8 @@ function renderLine(
   input: StaticChartSvgInput,
 ): string {
   const categoryLookup = new Map(categories.map((category) => [category.key, category]));
-  const x = xProjection(points, plot);
-  const y = numericScale(points.map((point) => point.y), plot.bottom, plot.top);
+  const x = xProjection(points, plot, input.xBetter);
+  const y = numericScaleForBetter(points.map((point) => point.y), plot.bottom, plot.top, false, input.yBetter);
   const groups = groupedBy(points, (point) => point.categoryKey);
   const marks: string[] = [];
   for (const group of groups.values()) {
@@ -213,10 +342,10 @@ function renderLine(
     }
     for (const point of ordered) {
       const detail = point.categoryLabel === "" ? "" : ` · ${point.categoryLabel}`;
-      marks.push(`<circle class="niceeval-report__chart-point${className}" cx="${coordinate(x.map(point))}" cy="${coordinate(y.map(point.y))}" r="3.6"><title>${escapeXmlText(`${point.xLabel}: ${formatNumber(point.y)}${detail}`)}</title></circle>`);
+      marks.push(`<circle class="niceeval-report__chart-point${className}" cx="${coordinate(x.map(point))}" cy="${coordinate(y.map(point.y))}" r="3.6"><title>${escapeXmlText(`${point.pointLabel}: ${chartPointValueText(point, "y", input)}${detail}`)}</title></circle>`);
     }
   }
-  return `${renderYAxis(y, plot, input.y)}${renderXAxis(x, plot, input.x)}<g class="niceeval-report__chart-marks">${marks.join("")}</g>`;
+  return `${renderYAxis(y, plot, input.y, input)}${renderXAxis(x, plot, input.x, input)}<g class="niceeval-report__chart-marks">${marks.join("")}</g>`;
 }
 
 function renderScatter(
@@ -226,18 +355,22 @@ function renderScatter(
   input: StaticChartSvgInput,
 ): string {
   const categoryLookup = new Map(categories.map((category) => [category.key, category]));
-  const x = xProjection(points, plot);
-  const y = numericScale(points.map((point) => point.y), plot.bottom, plot.top);
+  const x = xProjection(points, plot, input.xBetter);
+  const y = numericScaleForBetter(points.map((point) => point.y), plot.bottom, plot.top, false, input.yBetter);
   const marks = points.map((point) => {
     const category = categoryLookup.get(point.categoryKey);
     const className = chartSeriesClass(category);
     const detail = point.categoryLabel === "" ? "" : ` · ${point.categoryLabel}`;
-    return `<circle class="niceeval-report__chart-point${className}" cx="${coordinate(x.map(point))}" cy="${coordinate(y.map(point.y))}" r="4"><title>${escapeXmlText(`${point.xLabel}: ${formatNumber(point.y)}${detail}`)}</title></circle>`;
+    return `<circle class="niceeval-report__chart-point${className}" cx="${coordinate(x.map(point))}" cy="${coordinate(y.map(point.y))}" r="4"><title>${escapeXmlText(`${point.pointLabel}: ${chartPointValueText(point, "y", input)}${detail}`)}</title></circle>`;
   }).join("");
-  return `${renderYAxis(y, plot, input.y)}${renderXAxis(x, plot, input.x)}<g class="niceeval-report__chart-marks">${marks}</g>`;
+  return `${renderYAxis(y, plot, input.y, input)}${renderXAxis(x, plot, input.x, input)}<g class="niceeval-report__chart-marks">${marks}</g>`;
 }
 
-function xProjection(points: readonly ChartPoint[], plot: PlotBox): {
+function xProjection(
+  points: readonly ChartPoint[],
+  plot: PlotBox,
+  better: StaticChartSvgInput["xBetter"],
+): {
   readonly map: (point: ChartPoint) => number;
   readonly sort: (left: ChartPoint, right: ChartPoint) => number;
   readonly axis: "numeric" | "categorical";
@@ -245,7 +378,7 @@ function xProjection(points: readonly ChartPoint[], plot: PlotBox): {
   readonly labels?: readonly string[];
 } {
   if (points.every((point) => point.xNumeric !== undefined)) {
-    const scale = numericScale(points.map((point) => point.xNumeric!), plot.left, plot.right);
+    const scale = numericScaleForBetter(points.map((point) => point.xNumeric!), plot.left, plot.right, false, better);
     return Object.freeze({
       map: (point) => scale.map(point.xNumeric!),
       sort: (left, right) => left.xNumeric! - right.xNumeric! || left.index - right.index,
@@ -269,30 +402,80 @@ function xProjection(points: readonly ChartPoint[], plot: PlotBox): {
   });
 }
 
+function numericScaleForBetter(
+  values: readonly number[],
+  start: number,
+  end: number,
+  includeZero: boolean,
+  better: StaticChartSvgInput["xBetter"] | StaticChartSvgInput["yBetter"],
+): NumericScale {
+  return better === "lower"
+    ? numericScale(values, end, start, includeZero)
+    : numericScale(values, start, end, includeZero);
+}
+
+function renderBetterHint(input: StaticChartSvgInput, plot: PlotBox): string {
+  const x = input.xBetter !== undefined && input.xBetter !== "neutral";
+  const y = input.yBetter !== undefined && input.yBetter !== "neutral";
+  const label = input.type === "bars" && y
+    ? input.layout === "horizontal" ? "better →" : "better ↑"
+    : x && y ? "better → upper right"
+    : x ? "better →"
+    : y ? "better ↑"
+    : undefined;
+  return label === undefined
+    ? ""
+    : `<text class="niceeval-report__chart-better-hint" x="${coordinate(plot.right)}" y="${coordinate(plot.top + 14)}" text-anchor="end">${label}</text>`;
+}
+
 function renderXAxis(
   projection: ReturnType<typeof xProjection>,
   plot: PlotBox,
   label: string,
+  input: StaticChartSvgInput,
 ): string {
-  if (projection.axis === "numeric") return renderNumericXAxis(projection.scale!, plot, label);
+  if (projection.axis === "numeric") return renderNumericXAxis(projection.scale!, plot, label, input);
   return renderCategoricalXAxis(projection.labels ?? Object.freeze([]), plot, label);
 }
 
-function renderYAxis(scale: NumericScale, plot: PlotBox, label: string): string {
+function renderYAxis(
+  scale: NumericScale,
+  plot: PlotBox,
+  label: string,
+  input: StaticChartSvgInput,
+): string {
   const ticks = linearTicks(scale);
   const grid = ticks.map((tick) => {
     const y = scale.map(tick);
-    return `<g><line class="niceeval-report__chart-grid-line" x1="${coordinate(plot.left)}" y1="${coordinate(y)}" x2="${coordinate(plot.right)}" y2="${coordinate(y)}"></line><text class="niceeval-report__chart-tick" x="${coordinate(plot.left - 9)}" y="${coordinate(y + 4)}" text-anchor="end">${escapeXmlText(formatNumber(tick))}</text></g>`;
+    return `<g><line class="niceeval-report__chart-grid-line" x1="${coordinate(plot.left)}" y1="${coordinate(y)}" x2="${coordinate(plot.right)}" y2="${coordinate(y)}"></line><text class="niceeval-report__chart-tick" x="${coordinate(plot.left - 9)}" y="${coordinate(y + 4)}" text-anchor="end">${escapeXmlText(formatChartAxisValue(tick, input, "y"))}</text></g>`;
   }).join("");
   const titleY = plot.top + plot.height / 2;
   return `<g class="niceeval-report__chart-axes">${grid}<line class="niceeval-report__chart-axis" x1="${coordinate(plot.left)}" y1="${coordinate(plot.top)}" x2="${coordinate(plot.left)}" y2="${coordinate(plot.bottom)}"></line><text class="niceeval-report__chart-axis-title" x="16" y="${coordinate(titleY)}" text-anchor="middle" transform="rotate(-90 16 ${coordinate(titleY)})">${escapeXmlText(label)}</text></g>`;
 }
 
-function renderNumericXAxis(scale: NumericScale, plot: PlotBox, label: string): string {
+function renderCategoricalYAxis(labels: readonly string[], plot: PlotBox, label: string): string {
+  if (labels.length === 0) return "";
+  const visible = tickIndexes(labels.length, 9);
+  const height = plot.height / labels.length;
+  const ticks = visible.map((index) => {
+    const y = plot.top + (index + 0.5) * height;
+    const text = truncate(labels[index] ?? "", 14);
+    return `<g><line class="niceeval-report__chart-grid-line" x1="${coordinate(plot.left)}" y1="${coordinate(y)}" x2="${coordinate(plot.right)}" y2="${coordinate(y)}"></line><text class="niceeval-report__chart-tick" x="${coordinate(plot.left - 9)}" y="${coordinate(y + 4)}" text-anchor="end"><title>${escapeXmlText(labels[index] ?? "")}</title>${escapeXmlText(text)}</text></g>`;
+  }).join("");
+  const titleY = plot.top + plot.height / 2;
+  return `<g class="niceeval-report__chart-axes">${ticks}<line class="niceeval-report__chart-axis" x1="${coordinate(plot.left)}" y1="${coordinate(plot.top)}" x2="${coordinate(plot.left)}" y2="${coordinate(plot.bottom)}"></line><text class="niceeval-report__chart-axis-title" x="16" y="${coordinate(titleY)}" text-anchor="middle" transform="rotate(-90 16 ${coordinate(titleY)})">${escapeXmlText(label)}</text></g>`;
+}
+
+function renderNumericXAxis(
+  scale: NumericScale,
+  plot: PlotBox,
+  label: string,
+  input: StaticChartSvgInput,
+): string {
   const ticks = linearTicks(scale);
   const labels = ticks.map((tick) => {
     const x = scale.map(tick);
-    return `<g><line class="niceeval-report__chart-axis" x1="${coordinate(x)}" y1="${coordinate(plot.bottom)}" x2="${coordinate(x)}" y2="${coordinate(plot.bottom + 4)}"></line><text class="niceeval-report__chart-tick" x="${coordinate(x)}" y="${coordinate(plot.bottom + 18)}" text-anchor="middle">${escapeXmlText(formatNumber(tick))}</text></g>`;
+    return `<g><line class="niceeval-report__chart-axis" x1="${coordinate(x)}" y1="${coordinate(plot.bottom)}" x2="${coordinate(x)}" y2="${coordinate(plot.bottom + 4)}"></line><text class="niceeval-report__chart-tick" x="${coordinate(x)}" y="${coordinate(plot.bottom + 18)}" text-anchor="middle">${escapeXmlText(formatChartAxisValue(tick, input, "x"))}</text></g>`;
   }).join("");
   return `<g class="niceeval-report__chart-axes"><line class="niceeval-report__chart-axis" x1="${coordinate(plot.left)}" y1="${coordinate(plot.bottom)}" x2="${coordinate(plot.right)}" y2="${coordinate(plot.bottom)}"></line>${labels}<text class="niceeval-report__chart-axis-title" x="${coordinate(plot.left + plot.width / 2)}" y="${coordinate(SVG_HEIGHT - 12)}" text-anchor="middle">${escapeXmlText(label)}</text></g>`;
 }
@@ -385,14 +568,68 @@ function chartNumber(value: unknown): number | undefined {
   return typeof number === "number" && Number.isFinite(number) ? number : undefined;
 }
 
-function chartValueText(value: unknown): string {
+function chartValueText(value: unknown, input: StaticChartSvgInput): string {
   const metric = metricValue(value);
   if (metric !== undefined) {
+    if (input.formatMetrics === true) return compactMetricNumber(metric, input.locale);
     const valueText = metric.value === null ? "—" : formatNumber(metric.value);
     const unit = metric.unit === undefined || metric.unit === "" ? "" : ` ${metric.unit}`;
     return `${valueText}${unit}`;
   }
   return truncate(reportClosedValueText(value), 72);
+}
+
+function chartPointValueText(
+  point: ChartPoint,
+  axis: "x" | "y",
+  input: StaticChartSvgInput,
+): string {
+  return chartValueText(axis === "x" ? point.xValue : point.yValue, input);
+}
+
+function formatChartAxisValue(
+  value: number,
+  input: StaticChartSvgInput,
+  axis: "x" | "y",
+): string {
+  if (input.formatMetrics !== true) return formatNumber(value);
+  const metric = metricForField(input.points, axis === "x" ? input.x : input.y);
+  return metric === undefined
+    ? formatNumber(value)
+    : compactMetricNumber({ ...metric, value }, input.locale);
+}
+
+function metricForField(points: readonly unknown[], field: string) {
+  for (const point of points) {
+    const record = dataRecord(point);
+    const metric = record === undefined ? undefined : metricValue(record[field]);
+    if (metric !== undefined) return metric;
+  }
+  return undefined;
+}
+
+function classicMetricStatusText(
+  metric: NonNullable<ReturnType<typeof metricValue>>,
+  locale: ReportLocale | undefined,
+): string | undefined {
+  if (metric.state === "available" && metric.issues.length === 0) return undefined;
+  const coverage = `${metric.samples} / ${metric.total} ${metric.basis}`;
+  const problems = metric.issues.length === 0
+    ? ""
+    : locale === "zh-CN"
+      ? ` · ${metric.issues.length} 个问题`
+      : ` · ${metric.issues.length} issue${metric.issues.length === 1 ? "" : "s"}`;
+  const evidence = metric.refs.length === 0
+    ? ""
+    : locale === "zh-CN"
+      ? ` · ${metric.refs.length} 条证据`
+      : ` · ${metric.refs.length} evidence ref${metric.refs.length === 1 ? "" : "s"}`;
+  return `${coverage} · ${metric.state}${problems}${evidence}`;
+}
+
+function classicSeriesClass(index: number): string {
+  const normalized = ((index % 24) + 24) % 24;
+  return `niceeval-classic-chart-series-c${normalized % SERIES_COLORS} niceeval-classic-chart-series-v${Math.floor(normalized / SERIES_COLORS) + 1}`;
 }
 
 function valueKey(value: unknown): string {

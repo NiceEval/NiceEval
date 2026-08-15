@@ -183,6 +183,89 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
   );
 });
 
+test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语言切换", async ({ browser }) => {
+  test.setTimeout(180_000);
+
+  await reportE2E.case(
+    "browser-classic-surface",
+    { artifacts: reportCaseArtifacts() },
+    async ({ commands: { niceeval } }) => {
+      for (const experimentId of ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const) {
+        const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
+        expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+      }
+
+      const view = niceeval.start(
+        [
+          "view",
+          "--report",
+          "./reports/classic.tsx",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "0",
+          "--no-open",
+        ],
+        { timeoutMs: 60_000 },
+      );
+      const startup = await waitForOutput(view, "stdout", /http:\/\/127\.0\.0\.1:\d+\//, {
+        timeoutMs: 30_000,
+        label: "classic surface view URL",
+      });
+      const origin = startup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
+      expect(origin, startup).toBeDefined();
+      await waitForHttp(origin!, "classic surface view readiness");
+
+      const page = await browser.newPage();
+      try {
+        await page.goto(new URL("/overview", origin!).href);
+        await expect(page.getByRole("heading", { name: "MemoryBench Classic" })).toBeVisible();
+
+        const filter = page.getByRole("searchbox").first();
+        await expect(filter).toBeVisible();
+        await filter.fill("classic/memory-a");
+        await expect(page.locator("summary").filter({ hasText: "classic/memory-a" }).first()).toBeVisible();
+        await expect(page.locator("summary").filter({ hasText: "classic/baseline" }).first()).toBeHidden();
+        await filter.fill("");
+
+        const group = page.locator("details").filter({
+          has: page.locator("summary").filter({ hasText: "classic/memory-a" }),
+        }).first();
+        await expect(group).toBeVisible();
+        const groupSummary = group.locator(":scope > summary");
+        await groupSummary.focus();
+        await groupSummary.press("Space");
+        await expect(group).toHaveAttribute("open", "");
+
+        const evalGroup = group.locator("details").first();
+        await expect(evalGroup).toBeVisible();
+        const evalSummary = evalGroup.locator(":scope > summary");
+        await evalSummary.focus();
+        await evalSummary.press("Space");
+        await expect(evalGroup).toHaveAttribute("open", "");
+
+        const attemptLink = evalGroup.locator("a").first();
+        await expect(attemptLink).toBeVisible();
+        const href = await attemptLink.getAttribute("href");
+        if (href === null) throw new Error("an expanded attempt row has no detail href");
+        const detail = new URL(href, page.url());
+        expect(detail.pathname).toMatch(/^\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}\/index\.html$/);
+        await Promise.all([page.waitForURL(detail.href), attemptLink.click()]);
+        await expect(page.getByRole("heading", { name: /^Attempt @/ })).toBeVisible();
+
+        await page.goto(new URL("/overview", origin!).href);
+        const zhButton = page.getByRole("button", { name: "中文" }).first();
+        await expect(zhButton).toBeVisible();
+        await zhButton.click();
+        await expect(page.getByText("总览", { exact: true })).toBeVisible();
+        await expect(zhButton).toHaveAttribute("aria-pressed", "true");
+      } finally {
+        await page.close();
+      }
+    },
+  );
+});
+
 async function expectSameBody(staticUrl: URL, liveUrl: URL): Promise<void> {
   const expected = await readFile(fileURLToPath(staticUrl));
   const response = await fetch(liveUrl);

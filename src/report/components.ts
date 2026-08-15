@@ -4,12 +4,17 @@ import type {
   MetricValue,
   Sample,
 } from "../analysis/index.ts";
+import type { ReactNode } from "react";
 import {
   closedRowsMetadata,
   isClosedRows,
 } from "../analysis/contracts.ts";
 import type { LocalizedText } from "../shared/types.ts";
-import type { AuthorReportNode } from "./author/element.ts";
+import type {
+  AuthorReportNode,
+  ReportRenderable,
+} from "./author/element.ts";
+import type { ReportMeta } from "./definition.ts";
 import {
   reportComponentNode,
   type DimensionDeclarations,
@@ -26,8 +31,6 @@ import {
   type ReportTableNode,
   type ReportTextNode,
   type ReportTone,
-  type TextFaceNode,
-  type WebFaceNode,
 } from "./semantic/closed.ts";
 
 const reportComponentTypeId: unique symbol = Symbol("@niceeval/report/ReportComponent");
@@ -46,6 +49,8 @@ export interface ComposeContext {
   /** v0.12 spelling; it is the exact same Sample capability as `sample`. */
   readonly scope: Sample;
   readonly page: PageContext;
+  /** A closed, normalized view of the current Report declaration. */
+  readonly report: ReportMeta;
 }
 
 /** resolve() has the same live capability boundary as a compose callback. */
@@ -64,6 +69,7 @@ interface HostComposeContext {
   readonly sample: Sample;
   readonly scope?: Sample;
   readonly page: PageContext;
+  readonly report: ReportMeta;
 }
 
 interface HostResolveContext extends HostComposeContext {}
@@ -88,18 +94,20 @@ export interface ComponentFaces<Props extends object, Resolved = Props> {
     data: Resolved,
     props: Props,
   ) => DimensionDeclarations;
-  readonly text: (data: Resolved, context: TextContext) => TextFaceNode;
-  readonly web: (data: Resolved, context: WebContext) => WebFaceNode;
+  readonly text: (data: Resolved, context: TextContext) => ReportRenderable;
+  readonly web: (data: Resolved, context: WebContext) => ReportRenderable;
 }
 
 /**
- * A Report component is a node constructor, not a React component. Calling it
- * records an opaque invocation for the host to resolve exactly once.
+ * A Report component is a React-compatible function at the author boundary.
+ * Its returned JSX element is interpreted once by the Report Host and never
+ * reaches a React reconciler or renderer.
  */
 export interface ReportComponent<Props extends object> {
-  /** Direct invocation remains a semantic component node for existing authors. */
-  (props: Props): ReportNode;
+  (props: Props): ReportRenderable;
   readonly [reportComponentTypeId]: true;
+  /** Optional debug/presentation label; it never enters execution identity. */
+  displayName?: string;
 }
 
 export interface ComposeComponentDescriptor {
@@ -120,14 +128,23 @@ export interface PrimitiveComponentDescriptor {
     data: unknown,
     props: Readonly<Record<string, unknown>>,
   ) => DimensionDeclarations;
-  readonly text: (data: unknown, context: TextContext) => TextFaceNode;
-  readonly web: (data: unknown, context: WebContext) => WebFaceNode;
+  readonly text: (data: unknown, context: TextContext) => ReactNode;
+  readonly web: (data: unknown, context: WebContext) => ReactNode;
 }
 
 export type ReportComponentDescriptor =
   | ComposeComponentDescriptor
   | PrimitiveComponentDescriptor;
 
+const REPORT_COMPONENT_DESCRIPTOR = Symbol.for("niceeval.report.component.descriptor.v1");
+const REPORT_COMPONENT_DESCRIPTOR_VERSION = 1;
+
+interface ReportComponentDescriptorEnvelope {
+  readonly version: 1;
+  readonly descriptor: ReportComponentDescriptor;
+}
+
+/** A process-local cache only; cross-instance recognition reads the Symbol.for property below. */
 const descriptors = new WeakMap<object, ReportComponentDescriptor>();
 
 /** Defines a composition component that can asynchronously obtain closed data. */
@@ -135,7 +152,7 @@ export function defineComponent<Props extends object>(
   compose: (
     props: Props,
     context: AuthorComposeContext,
-  ) => AuthorReportNode | Promise<AuthorReportNode>,
+  ) => ReportRenderable | Promise<ReportRenderable>,
 ): ReportComponent<Props>;
 
 /** Defines a dual-face primitive with one shared optional resolve phase. */
@@ -145,30 +162,45 @@ export function defineComponent<Props extends object, Resolved = Props>(
 
 export function defineComponent<Props extends object>(
   input:
-    | ((props: Props, context: AuthorComposeContext) => AuthorReportNode | Promise<AuthorReportNode>)
+    | ((props: Props, context: AuthorComposeContext) => ReportRenderable | Promise<ReportRenderable>)
     | ComponentFaces<Props, unknown>,
 ): ReportComponent<Props> {
   const descriptor = typeof input === "function"
     ? composeDescriptor(input)
     : primitiveDescriptor(input);
   const component = ((props: Props): ReportNode =>
-    reportComponentNode(component, copyProps(props))) as ReportComponent<Props>;
+    reportComponentNode(component, copyProps(props))) as unknown as ReportComponent<Props>;
   Object.defineProperty(component, reportComponentTypeId, {
     value: true,
     enumerable: false,
     writable: false,
     configurable: false,
   });
+  // v0.12 Report modules use this React-compatible label for diagnostics. It
+  // stays mutable while the identity brand and descriptor remain sealed.
+  Object.defineProperty(component, "displayName", {
+    value: undefined,
+    enumerable: false,
+    writable: true,
+    configurable: false,
+  });
+  Object.defineProperty(component, REPORT_COMPONENT_DESCRIPTOR, {
+    value: Object.freeze({
+      version: REPORT_COMPONENT_DESCRIPTOR_VERSION,
+      descriptor,
+    } satisfies ReportComponentDescriptorEnvelope),
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
   descriptors.set(component, descriptor);
-  return Object.freeze(component);
+  Object.seal(component);
+  return component;
 }
 
 /** @internal Host bridge for the exact component factory returned by defineComponent(). */
 export function reportComponentDescriptor(component: unknown): ReportComponentDescriptor {
-  if ((typeof component !== "object" && typeof component !== "function") || component === null) {
-    throw new TypeError("a Report component must be created by defineComponent");
-  }
-  const descriptor = descriptors.get(component);
+  const descriptor = descriptorFor(component);
   if (descriptor === undefined) {
     throw new TypeError("a Report component must be created by defineComponent");
   }
@@ -183,12 +215,53 @@ export function isReportComponentInvocation(
   const node = value as Partial<ReportComponentInvocation>;
   return node.type === "component" &&
     (typeof node.component === "object" || typeof node.component === "function") &&
-    node.component !== null && descriptors.has(node.component) && isPlainObject(node.props);
+    node.component !== null && descriptorFor(node.component) !== undefined && isPlainObject(node.props);
 }
 
-/** A neutral text node. Text remains data and never becomes raw HTML. */
-export function Text(input: { readonly value: string }): ReportTextNode {
-  return Object.freeze({ type: "text" as const, value: input.value });
+/** @internal Tests a React element type without invoking an arbitrary function component. */
+export function isReportComponent(component: unknown): component is ReportComponent<object> {
+  return descriptorFor(component) !== undefined;
+}
+
+function descriptorFor(component: unknown): ReportComponentDescriptor | undefined {
+  if ((typeof component !== "object" && typeof component !== "function") || component === null) {
+    return undefined;
+  }
+  const cached = descriptors.get(component);
+  if (cached !== undefined) return cached;
+  const property = Object.getOwnPropertyDescriptor(component, REPORT_COMPONENT_DESCRIPTOR);
+  if (property === undefined || !("value" in property)) return undefined;
+  const envelope = property.value;
+  if (!isDescriptorEnvelope(envelope)) return undefined;
+  descriptors.set(component, envelope.descriptor);
+  return envelope.descriptor;
+}
+
+function isDescriptorEnvelope(value: unknown): value is ReportComponentDescriptorEnvelope {
+  if (!isPlainObject(value) || !hasOnlyFields(value, ["version", "descriptor"]) || value.version !== REPORT_COMPONENT_DESCRIPTOR_VERSION) {
+    return false;
+  }
+  return isReportComponentDescriptor(value.descriptor);
+}
+
+function isReportComponentDescriptor(value: unknown): value is ReportComponentDescriptor {
+  if (!isPlainObject(value) || typeof value.kind !== "string") return false;
+  if (value.kind === "compose") {
+    return hasOnlyFields(value, ["kind", "compose"]) && typeof value.compose === "function";
+  }
+  if (value.kind !== "primitive" || typeof value.text !== "function" || typeof value.web !== "function") {
+    return false;
+  }
+  if (!Object.keys(value).every((key) => ["kind", "resolve", "dimensions", "text", "web"].includes(key))) {
+    return false;
+  }
+  return (value.resolve === undefined || typeof value.resolve === "function") &&
+    (value.dimensions === undefined || typeof value.dimensions === "function");
+}
+
+/** A neutral text node. It retains translations as data and never becomes raw HTML. */
+export function Text(input: { readonly value: LocalizedText }): ReportTextNode {
+  return Object.freeze({ type: "text" as const, value: cloneLocalizedText(input.value) });
 }
 
 /** Groups child nodes vertically without attaching a renderer callback. */
@@ -277,7 +350,11 @@ export interface ChartProps<Row extends RowRecord> {
   readonly y: ChartAxisKey<Row>;
   readonly color?: ChartDimensionKey<Row>;
   readonly series?: ChartDimensionKey<Row>;
+  /** Display-only point identity field; it does not change closed chart statistics. */
+  readonly point?: ChartDimensionKey<Row>;
   readonly title?: LocalizedText;
+  /** Display-only bar orientation; it does not change closed chart points. */
+  readonly layout?: "horizontal" | "vertical";
 }
 
 /** A neutral bar chart; the Host later verifies every requested field. */
@@ -311,17 +388,15 @@ function composeDescriptor<Props extends object>(
   compose: (
     props: Props,
     context: AuthorComposeContext,
-  ) => AuthorReportNode | Promise<AuthorReportNode>,
+  ) => ReportRenderable | Promise<ReportRenderable>,
 ): ComposeComponentDescriptor {
   if (typeof compose !== "function") {
     throw new TypeError("defineComponent(compose) requires a compose callback");
   }
   return Object.freeze({
     kind: "compose" as const,
-    compose: (props: Readonly<Record<string, unknown>>, context: HostComposeContext) => compose(
-      props as Props,
-      authorComposeContext(context),
-    ),
+    compose: (props: Readonly<Record<string, unknown>>, context: HostComposeContext) =>
+      compose(props as Props, authorComposeContext(context)) as unknown as AuthorReportNode | Promise<AuthorReportNode>,
   });
 }
 
@@ -374,7 +449,12 @@ function authorComposeContext(context: HostComposeContext): AuthorComposeContext
   if (context.scope !== undefined && context.scope !== context.sample) {
     throw new TypeError("Report compose context scope and sample must be the same Sample capability");
   }
-  return Object.freeze({ sample: context.sample, scope: context.sample, page: context.page });
+  return Object.freeze({
+    sample: context.sample,
+    scope: context.sample,
+    page: context.page,
+    report: context.report,
+  });
 }
 
 function chartNode<Row extends RowRecord>(
@@ -389,6 +469,8 @@ function chartNode<Row extends RowRecord>(
     y: input.y,
     ...(input.color === undefined ? {} : { color: input.color }),
     ...(input.series === undefined ? {} : { series: input.series }),
+    ...(input.point === undefined ? {} : { point: input.point }),
+    ...(input.layout === undefined ? {} : { layout: input.layout }),
     ...rowsMetadata(input.points),
   });
 }
@@ -500,6 +582,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function hasOnlyFields(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === allowed.length && allowed.every((key) => Object.hasOwn(value, key));
 }
 
 function freezeArray<Value>(values: readonly Value[]): readonly Value[] {

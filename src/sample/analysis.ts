@@ -10,6 +10,12 @@ import {
 } from "../record/codec/identifiers.ts";
 import type { RecordSlotIdentity } from "../record/model/core.ts";
 import { compareCanonicalIdentity } from "../record/model/identifiers.ts";
+import {
+  canonicalizeRunContext,
+  type RunContext,
+  type RunContextJsonObject,
+  type RunContextJsonValue,
+} from "../record/model/run-context.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import type {
   ReadableRun,
@@ -22,6 +28,7 @@ import type {
   ActiveAnalysisSlot,
   AnalysisIssue,
   AnalysisRun,
+  AnalysisRunContext,
   AnalysisSlotOccurrenceIdentity,
   SampleIdentity,
   AnalysisSelectionProblem,
@@ -342,6 +349,7 @@ function closeRun(run: ReadableRun, expectedSlots: readonly RecordSlotIdentity[]
   return Object.freeze({
     runId: run.document.runId,
     experimentId: run.document.experimentId,
+    context: closeRunContext(run.document.context),
     startedAt: run.document.startedAt,
     completedAt: run.document.completedAt,
     expectedSlots: Object.freeze(expectedSlots.map((slot) => slot.slotId)),
@@ -352,10 +360,67 @@ function closeRunFacts(facts: RecordSelection["runFacts"][number]): AnalysisRun 
   return Object.freeze({
     runId: facts.run.runId,
     experimentId: facts.experimentId,
+    context: null,
     startedAt: facts.startedAt,
     completedAt: facts.completedAt,
     expectedSlots: Object.freeze(facts.expectedSlots.map((slot) => slot.slotId)),
   });
+}
+
+/**
+ * Context is Core, but Sample owns an independent value-only closure rather
+ * than retaining a reference to a Record read result. Canonical key ordering
+ * keeps the Snapshot identity stable before it reaches JSON encoding.
+ */
+function closeRunContext(context: RunContext): AnalysisRunContext {
+  return Object.freeze({
+    execution: Object.freeze({
+      agentId: context.execution.agentId,
+      model: context.execution.model,
+      reasoningEffort: context.execution.reasoningEffort,
+      flags: closeJsonObject(context.execution.flags),
+    }),
+    labels: closeStringRecord(context.labels),
+  });
+}
+
+function closeStringRecord(value: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
+  const result: Record<string, string> = Object.create(null) as Record<string, string>;
+  for (const key of Object.keys(value).sort(compareCanonicalIdentity)) {
+    Object.defineProperty(result, key, {
+      value: value[key],
+      enumerable: true,
+      configurable: false,
+      writable: false,
+    });
+  }
+  return Object.freeze(result);
+}
+
+function closeJsonObject(value: RunContextJsonObject): Readonly<Record<string, JsonValue>> {
+  const result: Record<string, JsonValue> = Object.create(null) as Record<string, JsonValue>;
+  for (const key of Object.keys(value).sort(compareCanonicalIdentity)) {
+    Object.defineProperty(result, key, {
+      value: closeJsonValue(value[key]!),
+      enumerable: true,
+      configurable: false,
+      writable: false,
+    });
+  }
+  return Object.freeze(result);
+}
+
+function closeJsonValue(value: RunContextJsonValue): JsonValue {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) return Object.freeze(value.map(closeJsonValue));
+  if (isRunContextJsonObject(value)) return closeJsonObject(value);
+  throw new TypeError("RunContext JSON value must be an object after scalar and array cases");
+}
+
+function isRunContextJsonObject(value: RunContextJsonValue): value is RunContextJsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function membersBySlot(run: ReadableRun): ReadonlyMap<SlotId, ReadableRun["members"][number] | "duplicate"> {
@@ -589,6 +654,15 @@ function snapshotJson(snapshot: SampleSnapshot): JsonValue {
     runs: Object.freeze(snapshot.runs.map((run) => Object.freeze({
       runId: run.runId,
       experimentId: run.experimentId,
+      context: run.context === null ? null : Object.freeze({
+        execution: Object.freeze({
+          agentId: run.context.execution.agentId,
+          model: run.context.execution.model,
+          reasoningEffort: run.context.execution.reasoningEffort,
+          flags: closeJsonObject(run.context.execution.flags),
+        }),
+        labels: closeStringRecord(run.context.labels),
+      }),
       startedAt: run.startedAt,
       completedAt: run.completedAt,
       expectedSlots: Object.freeze([...run.expectedSlots]),
@@ -788,7 +862,7 @@ function decodeRuns(
 }
 
 function decodeRun(value: unknown, path: readonly string[]): Either.Either<AnalysisRun, SampleSnapshotCodecError> {
-  if (!isExactObject(value, ["runId", "experimentId", "startedAt", "completedAt", "expectedSlots"])) {
+  if (!isExactObject(value, ["runId", "experimentId", "context", "startedAt", "completedAt", "expectedSlots"])) {
     return Either.left(codecError(path, "contains unsupported fields"));
   }
   const runId = decodeRunId(valueAt(value, "runId"), [...path, "runId"]);
@@ -798,16 +872,38 @@ function decodeRun(value: unknown, path: readonly string[]): Either.Either<Analy
   const slots = decodeArray(valueAt(value, "expectedSlots"), [...path, "expectedSlots"], decodeSlotId);
   if (Either.isLeft(runId)) return Either.left(runId.left);
   if (Either.isLeft(experimentId)) return Either.left(experimentId.left);
+  const context = decodeRunContext(valueAt(value, "context"), experimentId.right, [...path, "context"]);
+  if (Either.isLeft(context)) return Either.left(context.left);
   if (Either.isLeft(startedAt)) return Either.left(startedAt.left);
   if (Either.isLeft(completedAt)) return Either.left(completedAt.left);
   if (Either.isLeft(slots)) return Either.left(slots.left);
   return Either.right(Object.freeze({
     runId: runId.right,
     experimentId: experimentId.right,
+    context: context.right,
     startedAt: startedAt.right,
     completedAt: completedAt.right,
     expectedSlots: Object.freeze(uniqueSorted(slots.right)),
   }));
+}
+
+function decodeRunContext(
+  value: unknown,
+  experimentId: ExperimentId,
+  path: readonly string[],
+): Either.Either<AnalysisRunContext | null, SampleSnapshotCodecError> {
+  if (value === null) return Either.right(null);
+  if (!isExactObject(value, ["execution", "labels"])) {
+    return Either.left(codecError(path, "must contain exactly execution and labels"));
+  }
+  const decoded = canonicalizeRunContext({
+    experimentId,
+    execution: valueAt(value, "execution"),
+    labels: valueAt(value, "labels"),
+  });
+  return Either.isLeft(decoded)
+    ? Either.left(codecError(path, "is not a valid closed Run context"))
+    : Either.right(closeRunContext(decoded.right));
 }
 
 function decodeSlots(

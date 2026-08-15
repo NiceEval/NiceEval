@@ -19,6 +19,8 @@ import type {
 import type { LogicalSlot } from "../analysis/definitions.ts";
 import { sampleCapabilityTypeId } from "../analysis/contracts.ts";
 import type {
+  ActiveAnalysisSlot,
+  AnalysisRun,
   AttemptEvidenceIdentity,
   AnalysisIssue,
   AnalysisSelectionRequest,
@@ -429,35 +431,15 @@ export function recordAnalysisIssues(
 export function logicalSlotMembersForSample(
   sample: Sample,
 ): Effect.Effect<readonly LogicalSlot[], SampleClosedError> {
-  return Effect.map(assertSampleOpen(sample), () => Object.freeze(
-    sample.snapshot.slots.flatMap((slot): readonly LogicalSlot[] => {
+  return Effect.map(assertSampleOpen(sample), () => {
+    const runsById = new Map(sample.snapshot.runs.map((run) => [run.runId, run] as const));
+    return Object.freeze(sample.snapshot.slots.flatMap((slot): readonly LogicalSlot[] => {
       if (slot.state === "excluded") return [];
-      if (slot.state === "included") {
-        return [Object.freeze({
-          runId: slot.runId,
-          slotId: slot.slotId,
-          experimentId: slot.experimentId,
-          evalId: slot.evalId,
-          attemptOrdinal: slot.attemptOrdinal,
-          executionIdentityDigest: slot.executionIdentityDigest,
-          state: slot.state,
-          action: slot.action,
-          relation: slot.relation,
-          attempt: slot.attempt,
-        })];
-      }
-      return [Object.freeze({
-        runId: slot.runId,
-        slotId: slot.slotId,
-        experimentId: slot.experimentId,
-        evalId: slot.evalId,
-        attemptOrdinal: slot.attemptOrdinal,
-        executionIdentityDigest: slot.executionIdentityDigest,
-        state: slot.state,
-        action: slot.action,
-      })];
-    }),
-  ));
+      const run = runsById.get(slot.runId);
+      if (run === undefined) throw new Error("SampleSnapshot Slot has no selected AnalysisRun");
+      return [logicalSlotFromActiveSlot(slot, run)];
+    }));
+  });
 }
 
 /**
@@ -646,7 +628,8 @@ function readDomainEntry<
   SampleClosedError
 > {
   const operation = Effect.gen(function* () {
-    const resolved = yield* resolveAttempt(sample, binding, logicalSlotFromIncluded(slot));
+    const run = analysisRunForSlot(sample.snapshot, slot);
+    const resolved = yield* resolveAttempt(sample, binding, logicalSlotFromIncluded(slot, run));
     const cached = yield* readFixedFamily<Payload, Family>(sample, binding, resolved.attempt, domain.family);
     if (cached.state === "read-failed") {
       return domainFailure<Kind>(
@@ -702,9 +685,39 @@ function domainAvailable<Kind extends BuiltinDomainViewKind>(
   });
 }
 
-function logicalSlotFromIncluded(slot: IncludedAnalysisSlot): LogicalSlot & { readonly attempt: AttemptEvidenceIdentity } {
+function logicalSlotFromActiveSlot(slot: ActiveAnalysisSlot, run: AnalysisRun): LogicalSlot {
+  const base = {
+    runId: slot.runId,
+    run,
+    slotId: slot.slotId,
+    experimentId: slot.experimentId,
+    evalId: slot.evalId,
+    attemptOrdinal: slot.attemptOrdinal,
+    executionIdentityDigest: slot.executionIdentityDigest,
+  };
+  if (slot.state === "included") {
+    return Object.freeze({
+      ...base,
+      state: "included" as const,
+      action: slot.action,
+      relation: slot.relation,
+      attempt: slot.attempt,
+    });
+  }
+  return Object.freeze({
+    ...base,
+    state: slot.state,
+    action: slot.action,
+  });
+}
+
+function logicalSlotFromIncluded(
+  slot: IncludedAnalysisSlot,
+  run: AnalysisRun,
+): LogicalSlot & { readonly attempt: AttemptEvidenceIdentity } {
   return Object.freeze({
     runId: slot.runId,
+    run,
     slotId: slot.slotId,
     experimentId: slot.experimentId,
     evalId: slot.evalId,
@@ -715,6 +728,12 @@ function logicalSlotFromIncluded(slot: IncludedAnalysisSlot): LogicalSlot & { re
     relation: slot.relation,
     attempt: slot.attempt,
   });
+}
+
+function analysisRunForSlot(snapshot: SampleSnapshot, slot: IncludedAnalysisSlot): AnalysisRun {
+  const run = snapshot.runs.find((candidate) => candidate.runId === slot.runId);
+  if (run === undefined) throw new Error("SampleSnapshot Slot has no selected AnalysisRun");
+  return run;
 }
 
 function domainFamilyState<Kind extends BuiltinDomainViewKind, Payload>(

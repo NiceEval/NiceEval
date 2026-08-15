@@ -32,6 +32,18 @@ import type {
   FileChangesTrajectoryProps,
 } from "./file-changes.ts";
 import {
+  attemptDetailRoute,
+  attemptDetailTarget,
+  experimentDetailRoute,
+  experimentDetailTarget,
+  libraryDetailRoute,
+} from "../library/details.ts";
+import type {
+  AttemptDetailTarget,
+  ExperimentDetailTarget,
+  LibraryDetailTarget,
+} from "../library/details.ts";
+import {
   classicOverviewReport,
   standard,
   standardAttemptPage,
@@ -64,10 +76,18 @@ export {
   sourceEvidenceReport,
   timingEvidenceReport,
   FileChangesTrajectory,
+  attemptDetailRoute,
+  attemptDetailTarget,
+  experimentDetailRoute,
+  experimentDetailTarget,
+  libraryDetailRoute,
 };
 
 export type {
+  AttemptDetailTarget,
+  ExperimentDetailTarget,
   FileChangesTrajectoryProps,
+  LibraryDetailTarget,
 };
 
 export { default } from "./overview.ts";
