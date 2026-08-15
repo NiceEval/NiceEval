@@ -423,6 +423,11 @@ export interface EvalResult {
   /** 自动重试吸收的物理 send 失败，按发生顺序完整保留。 */
   retryAttempts?: RetryAttemptRecord[];
   usage?: Usage;
+  /**
+   * 价目表估算成本,恒等于 `estimateCost(model, usage, config.pricing)`——永远独立计算,
+   * 与 `usage.costUSD`(网关/adapter 显式回报的 observed 成本)是两个并存事实,互不覆盖、
+   * 互不兜底:observed 存在时 estimatedCostUSD 也照常按 Profile/config 估算。
+   */
   estimatedCostUSD?: number;
   /** 使 attempt 进入 `errored` 的唯一致命执行错误(结构化);默认报告显示 `error.message` 一层原因。 */
   error?: AttemptError;
@@ -537,7 +542,9 @@ export interface InvocationSummary {
   /** 环境、超时、adapter、agent runtime 等执行错误数量;与 failed 互斥。 */
   errored: number;
   durationMs: number;
+  /** 本次 Invocation fresh 结果的 token 汇总(只折叠 input/outputTokens);observed costUSD 不在这里汇总,逐条留在 `results[].usage.costUSD`。 */
   usage?: Usage;
+  /** 本次 Invocation fresh 结果的 `estimatedCostUSD` 累计(价目表估算口径,见 EvalResult.estimatedCostUSD);observed cost 不进入本字段。 */
   estimatedCostUSD?: number;
   /** Current Record readbacks adopted by this invocation; these are never recreated EvalResults. */
   reusedAttempts: readonly CurrentReusedAttemptReadback[];
@@ -1099,7 +1106,8 @@ export interface Config {
   /**
    * 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
    * · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
-   * 精确 key 优先于通配。只在没有网关实测成本(`usage.costUSD`)时才会用到——实测优先于估算恒成立。
+   * 精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
+   * `usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
 }
@@ -1539,6 +1547,7 @@ export interface RunFeedbackState {
   elapsedMs: number;
   /** 仅本次实际派发 attempt 的 token；carry 结果的历史 usage 不进入这里。 */
   newTokenCount?: number;
+  /** 仅本次实际派发 attempt 的 `estimatedCostUSD` 累计(价目表估算口径,与 newTokenCount 同口径);observed cost 不进入这里。 */
   estimatedCostUSD?: number;
   active: ReadonlyMap<AttemptKey, ActiveAttempt>;
   /** 在飞的 judge 预检运行级行(见 `DurableFeedbackEvent` 的 "precheck" 变体):`started` 置位、
@@ -1610,6 +1619,7 @@ export type AttemptLifecycleEvent =
       verdict: Verdict;
       /** 本次 attempt 的输入 + 输出 token；缺失表示 provider 未报告。 */
       tokenCount?: number;
+      /** 本次 attempt 的价目表估算成本(`EvalResult.estimatedCostUSD` 口径);observed cost 不携带。 */
       estimatedCostUSD?: number;
     }
   | { type: "attempt:early-exit"; at: number; identity: AttemptRef; who: string };

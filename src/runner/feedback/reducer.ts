@@ -138,7 +138,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       const estimatedCostUSD =
         event.estimatedCostUSD === undefined
           ? state.estimatedCostUSD
-          : (state.estimatedCostUSD ?? 0) + event.estimatedCostUSD;
+          : state.estimatedCostUSD === undefined
+            ? event.estimatedCostUSD
+            : state.estimatedCostUSD + event.estimatedCostUSD;
       const newTokenCount =
         event.tokenCount === undefined
           ? state.newTokenCount

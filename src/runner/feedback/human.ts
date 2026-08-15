@@ -633,13 +633,19 @@ function buildReceiptLines(
   return renderPanel({ title: t("feedback.human.nextHeader"), rows, width: panel.width, mode: panel.mode });
 }
 
+/** estimated cost 展示:金额前加 `~`,明确是价目表估算(observed 只留在 result.usage.costUSD)。 */
+function formatEstimatedCost(value: number | undefined): string {
+  const cost = formatCost(value);
+  return cost === "—" ? cost : `~${cost}`;
+}
+
 /** tok/cost 一行(不含时长——时长已经嵌在面板上边框右侧的 meta 里,不在正文里重复一遍)。 */
 function formatSummaryCostLine(state: RunFeedbackState): string {
   const fullReuse = state.total > 0 && state.total === state.reused;
   if (fullReuse) return "0 new tok · $0.00";
   const parts: string[] = [];
   if (state.newTokenCount !== undefined) parts.push(`${formatTokenCount(state.newTokenCount)} new tok`);
-  const cost = formatCost(state.estimatedCostUSD);
+  const cost = formatEstimatedCost(state.estimatedCostUSD);
   if (cost !== "—") parts.push(cost);
   return parts.join(" · ");
 }
@@ -753,7 +759,7 @@ function countsText(state: RunFeedbackState): string {
 function formatCounts(state: RunFeedbackState): string {
   const counts = countsText(state);
   if (state.estimatedCostUSD === undefined || state.estimatedCostUSD <= 0) return counts;
-  return `${counts}  ${formatCost(state.estimatedCostUSD)}`;
+  return `${counts}  ${formatEstimatedCost(state.estimatedCostUSD)}`;
 }
 
 /** 定宽格式化:内容按 `width` 左对齐补空格对齐后面的列;超宽时尾部截断补 `…`(cli.md
@@ -790,7 +796,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     return { evalWidth: Math.min(maxEvalIdWidth, evalCap), whoWidth: Math.min(maxWhoWidth, whoCap) };
   }
 
-  /** 上边框标题 = 本次命令、meta = 已运行时长;下边框 footerCommand = 本次新派发的累计成本
+  /** 上边框标题 = 本次命令、meta = 已运行时长;下边框 footerCommand = 本次新派发的累计估算成本
    *  (docs/feature/experiments/cli.md「运行中的 live 面板」)。ACTIVE 是嵌套 Section 的
    *  同构体裁——一条贯穿框宽的横隔,不是独立的框;非 boxed(非 TTY 或 NO_COLOR)时
    *  panel.ts 自动降级成无框文本,dashboard 的覆盖重画机制不因此改变,只是重画的内容
@@ -911,7 +917,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       }
     }
     const footerCommand =
-      state.estimatedCostUSD !== undefined && state.estimatedCostUSD > 0 ? formatCost(state.estimatedCostUSD) : undefined;
+      state.estimatedCostUSD !== undefined && state.estimatedCostUSD > 0 ? formatEstimatedCost(state.estimatedCostUSD) : undefined;
     return renderPanel({
       title: command,
       meta: formatElapsed(state.elapsedMs),

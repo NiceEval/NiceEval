@@ -1769,6 +1769,8 @@ async function runAttemptBody(
       } }),
       model: run.model,
       reasoningEffort: run.reasoningEffort,
+      // maxCost 断言的估算价目表;与 observed usage.costUSD 互不兜底。
+      pricing: config.pricing,
       flags: run.flags,
       experimentId: run.experimentId,
       judge: a.judge,
@@ -2091,9 +2093,11 @@ async function runAttemptBody(
     recorder.closeCurrent();
     const durationMs = recorder.offsetNow();
     const o11y = buildO11ySummary(events);
-    // 实测成本(网关带回)优先,缺则按 model + 用量查价格表估算(见 o11y/cost.ts)。
+    // 单向字段契约:estimatedCostUSD 恒为 estimateCost(run.model, usage, config.pricing)
+    // 的 Profile/config 估算,永远独立计算;observed 成本(网关/adapter 显式回报)只留在
+    // usage.costUSD,两者互不覆盖、互不兜底——即使 observed 存在也照常估算。
     // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/record/architecture.md「o11y.json」)。
-    const cost = usage.costUSD ?? estimateCost(run.model, usage, config.pricing);
+    const estimatedCostUSD = estimateCost(run.model, usage, config.pricing);
 
     // Assert-first entries carry no legacy source graph. Session events and the
     // captured entry module still provide the stable source artifact surface.
@@ -2122,7 +2126,7 @@ async function runAttemptBody(
       evaluationKind: evalDef.evaluationKind ?? "pass",
       ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
       usage,
-      estimatedCostUSD: cost,
+      estimatedCostUSD,
       error,
       skipReason,
       events,

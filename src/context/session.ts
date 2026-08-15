@@ -660,5 +660,7 @@ function accumulateUsage(acc: Usage, add: Usage): void {
   if (add.cacheCreationTokens !== undefined) acc.cacheCreationTokens = (acc.cacheCreationTokens ?? 0) + add.cacheCreationTokens;
   if (add.reasoningTokens !== undefined) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + add.reasoningTokens;
   if (add.requests !== undefined) acc.requests = (acc.requests ?? 0) + add.requests;
-  if (add.costUSD !== undefined) acc.costUSD = (acc.costUSD ?? 0) + add.costUSD;
+  if (add.costUSD !== undefined) {
+    acc.costUSD = acc.costUSD === undefined ? add.costUSD : acc.costUSD + add.costUSD;
+  }
 }

@@ -193,6 +193,8 @@ export function toBraintrustEvent(
     if (reasoningTokens !== undefined) metrics.reasoning_tokens = reasoningTokens;
     if (requests !== undefined) metrics.requests = requests;
   }
+  // estimated_cost_usd 恒为价目表估算(EvalResult.estimatedCostUSD,见 estimateCost);
+  // observed 成本单独留在 result.usage.costUSD,不混入本指标。
   if (result.estimatedCostUSD !== undefined) metrics.estimated_cost_usd = result.estimatedCostUSD;
 
   const metadata: globalThis.Record<string, JsonValue> = {

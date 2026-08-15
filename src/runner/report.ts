@@ -128,7 +128,7 @@ export function summarize(
     counts[r.verdict] += 1;
     inTok += r.usage?.inputTokens ?? 0;
     outTok += r.usage?.outputTokens ?? 0;
-    cost += r.estimatedCostUSD ?? 0;
+    if (r.estimatedCostUSD !== undefined) cost += r.estimatedCostUSD;
   }
   for (const attempt of reusedAttempts) {
     counts[attempt.verdict] += 1;
@@ -143,7 +143,7 @@ export function summarize(
     errored: counts.errored,
     durationMs,
     usage: { inputTokens: inTok, outputTokens: outTok },
-    estimatedCostUSD: cost || undefined,
+    estimatedCostUSD: cost === 0 ? undefined : cost,
     reusedAttempts: Object.freeze([...reusedAttempts]),
     results,
   };

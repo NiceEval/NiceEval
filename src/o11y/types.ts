@@ -26,9 +26,10 @@ export interface Usage {
   requests?: number;
   /**
    * 网关/adapter 实测的真实美元成本(只能由 `Turn.usage.costUSD` 显式带回,从不从
-   * token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表估算)是两个事实:
-   * 存在时优先于按价格表(`defineConfig({ pricing })`)估算的成本——见 `estimateCost` 的
-   * `usage.costUSD ?? estimateCost(...)` 兜底顺序。
+   * token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表估算)是两个
+   * 相互独立的事实,单向字段契约:本字段只存 observed 值;`estimatedCostUSD` 恒等于
+   * `estimateCost(model, usage, pricing)` 的估算,即使 observed 存在也照常独立计算——
+   * 两者互不覆盖、互不兜底,不存在 `usage.costUSD ?? estimateCost(...)` 之类的回退。
    */
   costUSD?: number;
 }
@@ -371,8 +372,9 @@ export interface TraceSpan {
 /**
  * 给人与宿主侧行为断言(`t.o11y`)看的 o11y 摘要。从 `events.json` 派生的
  * 行为计数缓存,不是权威——同一 niceeval 版本写读,删除后可从 `events.json` 重算。token 用量、
- * 成本与耗时不在这里:权威唯一在 `result.json` 的 `Usage` / `estimatedCostUSD` 与 `durationMs`
- * / `phases`(见 docs/feature/record/architecture.md「o11y.json」)。
+ * 成本与耗时不在这里:observed cost 权威唯一在 `result.json` 的 `Usage.costUSD`,
+ * 估算成本与耗时在 `estimatedCostUSD` 与 `durationMs`/`phases`
+ * (见 docs/feature/record/architecture.md「o11y.json」)。
  */
 export interface O11ySummary {
   totalTurns: number;
