@@ -175,7 +175,7 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--record` | string | `show` / `view` / `accept` / `sandbox enter\|list\|stop` 共用:指定实际 Record root;CLI 不补接 `.niceeval/record` 或其它后缀。 |
 | `--run` | string[] | `show` / `view` 可重复传入 `--run`;每次按完整 RunId 增加一个显式 Run,重复 identity 去重。 |
 | `--report` | string | `show` / `view` 命令专用：内建 `standard` / `overview` 或受信任的 Report module 路径。省略时先用项目配置，未配置则用经典 `standard`。 |
-| `--page` | string | 人读 `show` / `view` 专用：用 exact route 或已展开的 page id 选择页面；`show --json` 不接受。未命中时按用法错误退出并列出可用 page id。 |
+| `--page` | string | 人读 `show` / `view` 专用：用 exact route 或唯一匹配的已展开 page id 选择页面；`show --json` 不接受。未命中或 page id 有歧义时按用法错误退出并列出完整 route。 |
 | `--teardown` | boolean | `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 |
 | `--dry` | boolean | 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 |
 | `--force` | boolean | `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 |
