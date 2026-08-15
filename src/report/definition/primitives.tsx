@@ -53,7 +53,7 @@ import {
   type TableContentRow,
 } from "./cell.tsx";
 import { formatMetricScalar, missingText, verdictMark } from "../model/format.ts";
-import { formatCostProjectionCellText, isCostMetricValue } from "../model/pricing.ts";
+import { isCostMetricValue } from "../model/pricing.ts";
 
 
 function childArray(children: ReportNode): ReportNode[] {
@@ -842,10 +842,12 @@ function MetricCellView({
 }): ReactNode {
   const loc = locale ?? "en";
   if (isCostMetricValue(cell)) {
-    const closed = formatCostProjectionCellText(cell, loc);
+    const text = cell.value === null
+      ? missingText("noSamples", loc)
+      : formatMetricScalar(cell.value, cell.unit, cell.format, loc);
     return (
       <span className="niceeval-cell">
-        <span className="niceeval-value">{closed.text}</span>
+        <span className="niceeval-value">{text}</span>
       </span>
     );
   }
