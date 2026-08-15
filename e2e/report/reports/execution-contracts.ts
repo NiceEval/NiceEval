@@ -1,7 +1,6 @@
 import { Either } from "effect";
 import {
   REPORT_DOCUMENT_DEPTH_MAX,
-  REPORT_DOCUMENT_NODES_MAX,
   definePage,
   defineReport,
   reportComponentId,
@@ -131,7 +130,7 @@ function deepHierarchyTable(): ReportBlock {
     label: "Root",
     cells: cellsFor("exact"),
   }];
-  for (let index = 1; index <= REPORT_DOCUMENT_NODES_MAX; index += 1) {
+  for (let index = 1; index <= REPORT_DOCUMENT_DEPTH_MAX + 1; index += 1) {
     rows.push({
       key: `group-${index}`,
       kind: "group",
