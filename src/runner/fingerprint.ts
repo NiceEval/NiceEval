@@ -370,11 +370,16 @@ export function planProjectTarget(
       ...(options.keepSandbox === undefined ? {} : { keepSandbox: options.keepSandbox }),
       ...(configTimeoutMs === undefined ? {} : { configTimeoutMs }),
     }),
-    (preparedPairs) => planProjectTargetPrepared(preparedPairs, options),
+    (preparedPairs) => planPreparedProjectTarget(preparedPairs, options),
   );
 }
 
-function planProjectTargetPrepared(
+/**
+ * Freezes identity and fingerprint planning for already linked physical pairs.
+ * Project-current reads and explicit adoption share this seam so neither can
+ * rebuild the effective Experiment identity with a different projection.
+ */
+export function planPreparedProjectTarget(
   preparedPairs: readonly PreparedRunPair[],
   options: {
     readonly configJudge?: import("../types.ts").JudgeConfig;

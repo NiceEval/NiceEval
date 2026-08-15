@@ -11,7 +11,7 @@
 | --- | --- | --- | --- | --- |
 | [`#runner-carry-partial-reuse`](#runner-carry-partial-reuse) | 改变一个 Eval 只重新派发其 identity，未改变的 Eval 继续携带 | Journey E2E | `e2e/runner/test/carry-partial-reuse.test.ts` | PR |
 | [`#runner-history-dedup`](#runner-history-dedup) | 强制重跑追加历史 identity，carry 不复制已有 attempt | Journey E2E | `e2e/runner/test/history-dedup.test.ts` | PR |
-| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅变更后 accept 旧结果，新结果重锚并可继续 carry，且保留审计 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
+| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅变更后 accept 旧结果，新 Run 立即进入 project-current，但不获得未来 carry 许可，并保留审计 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
 
 ## 验收命题
 
@@ -34,6 +34,9 @@ Human `--dry` 对 identity gap 必须关联具名差异原因、旧 Attempt 的 
 accept 在新 Run 写入 reference Member，locator 仍是同一 source Attempt identity，不生成或改写
 Attempt。用户用返回的 Run ID 执行 `show --run`，公开读回保留源 Attempt 的 verdict / evidence；
 目标 Member 的 action 说明本次采用，不另建 provenance family。
+
+同一 Journey 随后执行无 `--run` 的 `show --json`。默认 `project-current` 必须选中刚创建的 accepted Run，且分母只包含它的当前 Slot。
+这证明 accept 与普通 current planning 使用同一份 link 后 Experiment、physical plan、fingerprint 与 config identity，而不只是证明历史 Run 可被 explicit selector 打开。
 
 `accepted` 只解释该 Run 当时为何采用这个 Attempt，不是未来复用许可。后续 `--dry` 仍按当前 reuse
 policy 重新判断；原来的 identity gap 不会因为历史上执行过 accept 而被静默改成 carried。

@@ -56,7 +56,6 @@ import {
 import type { RecordReaderOpenError, RecordReaderReadError } from "../record/reader/errors.ts";
 import type { RecordWriteError } from "../record/writer/types.ts";
 import type { SandboxPlanningServices } from "../sandbox/plan.ts";
-import { configIdentityForRun } from "./config-identity.ts";
 import {
   discoverEvals,
   discoverExperiments,
@@ -64,11 +63,8 @@ import {
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import { slotExecutionIdentityDigestHex } from "./execution-identity.ts";
 import {
-  createFingerprintSourceCache,
-  fingerprintWithManifest,
-  hashConfigIdentity,
+  planPreparedProjectTarget,
 } from "./fingerprint.ts";
-import { resolveJudge } from "./judge-config.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
 import { resolveAttemptTimeout, resolveRunTimeout } from "./timeout.ts";
 import type {
@@ -511,62 +507,53 @@ export function prepareCurrentAdoptionTarget(input: {
       ));
     }
 
-    const sourceCache = createFingerprintSourceCache();
-    const plannedPairs = yield* Effect.forEach(
-      pairs,
-      (pair): Effect.Effect<CurrentTargetPair, ExplicitAdoptionError> =>
-        Effect.gen(function* () {
-          const identity = yield* Effect.try({
-            try: () => configIdentityForRun(
-              run,
-              pair.plan,
-              resolveJudge(run.judge, pair.evalDef.judge, input.project.config.judge),
-            ),
-            catch: (cause) => adoptionError(
-              "adoption-target-invalid",
-              `Current configuration identity for "${pair.evalDef.id}" failed: ${safeMessage(cause)}`,
-            ),
-          });
-          const fingerprint = yield* fingerprintWithManifest(pair, sourceCache, {
-              _tag: "Current",
-              identity,
-            }).pipe(Effect.mapError((cause) => adoptionError(
-              "adoption-target-invalid",
-              `Current input identity for "${pair.evalDef.id}" failed: ${safeMessage(cause)}`,
-            )));
-          const timeout = resolveAttemptTimeout(
-            run,
-            pair.evalDef,
-            input.project.config,
-          );
-          if (timeout !== undefined && !Number.isFinite(timeout.timeoutMs)) {
-            return yield* Effect.fail(adoptionError(
-              "adoption-target-invalid",
-              `Current timeout for "${pair.evalDef.id}" is invalid.`,
-            ));
-          }
-          return Object.freeze({
-            pair,
-            inputIdentity: Object.freeze({
-              domain: ADOPTION_INPUT_IDENTITY_DOMAIN,
-              value: fingerprint.fingerprint,
-            }),
-            configIdentity: Object.freeze({
-              domain: ADOPTION_CONFIG_IDENTITY_DOMAIN,
-              value: hashConfigIdentity(identity),
-            }),
-            ...(timeout === undefined
-              ? {}
-              : {
-                  timeout: Object.freeze({
-                    domain: EXECUTION_DURATION_DOMAIN,
-                    milliseconds: timeout.timeoutMs,
-                  }),
-                }),
-          });
+    const projectPlan = yield* planPreparedProjectTarget(pairs, {
+      configJudge: input.project.config.judge,
+    }).pipe(Effect.mapError((cause) => adoptionError(
+      "adoption-target-planning-failed",
+      `Current identity planning for "${experiment.id}" failed: ${safeMessage(cause)}`,
+    )));
+    const plannedPairs: CurrentTargetPair[] = [];
+    for (const pair of pairs) {
+      const fingerprint = projectPlan.plannedFingerprints.get(pair.key);
+      const configHash = projectPlan.plannedConfigHashes.get(pair.key);
+      if (fingerprint === undefined || configHash === undefined) {
+        return yield* Effect.fail(adoptionError(
+          "adoption-target-planning-failed",
+          `Current identity planning omitted Eval "${pair.evalDef.id}".`,
+        ));
+      }
+      const timeout = resolveAttemptTimeout(
+        run,
+        pair.evalDef,
+        input.project.config,
+      );
+      if (timeout !== undefined && !Number.isFinite(timeout.timeoutMs)) {
+        return yield* Effect.fail(adoptionError(
+          "adoption-target-invalid",
+          `Current timeout for "${pair.evalDef.id}" is invalid.`,
+        ));
+      }
+      plannedPairs.push(Object.freeze({
+        pair,
+        inputIdentity: Object.freeze({
+          domain: ADOPTION_INPUT_IDENTITY_DOMAIN,
+          value: fingerprint,
         }),
-      { concurrency: 4 },
-    );
+        configIdentity: Object.freeze({
+          domain: ADOPTION_CONFIG_IDENTITY_DOMAIN,
+          value: configHash,
+        }),
+        ...(timeout === undefined
+          ? {}
+          : {
+              timeout: Object.freeze({
+                domain: EXECUTION_DURATION_DOMAIN,
+                milliseconds: timeout.timeoutMs,
+              }),
+            }),
+      }));
+    }
 
     const pairByEval = new Map<string, CurrentTargetPair>();
     for (const planned of plannedPairs) {

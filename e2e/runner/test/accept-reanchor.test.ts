@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-accept-reanchor
+// regression: memory/accept-source-run-diverges-from-project-current-identity.md
 // rerun: pnpm e2e --repo runner -- --run test/accept-reanchor.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -61,6 +62,20 @@ interface RunMembershipShow {
     denominator: number;
   };
   tree: { pages: Array<{ pageId: string; route: string; node: ReportBlock }> };
+}
+
+interface ProjectCurrentShow {
+  format: "niceeval.report-show/v1";
+  sample: {
+    selection: {
+      policy: "project-current";
+      experimentIds: "all" | string[];
+      selectedRunIds: string[];
+    };
+    runCount: number;
+    slotCount: number;
+    denominator: number;
+  };
 }
 
 const RUN_MEMBERSHIP_COLUMN_KEYS = [
@@ -188,6 +203,23 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       memberRelation: "reference",
       sourceAttemptLocator: oldLocator,
       evidenceState: "available",
+    });
+
+    // Explicit --run proves the durable reference, while the default read proves
+    // accept used the same current target identity as project-current planning.
+    const projectCurrent = await niceeval.run(["show", "--json"]);
+    expect(projectCurrent.exitCode, projectCurrent.diagnostic()).toBe(0);
+    expect(projectCurrent.json<ProjectCurrentShow>()).toMatchObject({
+      format: "niceeval.report-show/v1",
+      sample: {
+        selection: {
+          policy: "project-current",
+          selectedRunIds: [acceptedRunId],
+        },
+        runCount: 1,
+        slotCount: 1,
+        denominator: 1,
+      },
     });
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);
