@@ -1,8 +1,8 @@
 import { metricValue, type MetricBetter, type MetricFormat, type MetricValue } from "./metric.ts";
-import type { ClassicAttemptHandle } from "./attempt.ts";
+import { classicAttemptHandleFromRow, type ClassicAttemptHandle } from "./attempt.ts";
 import {
-  classicAttemptLocator,
   type AggregationSubject,
+  type ClassicAttemptRow,
   type ClassicEvalUnit,
   type Sample,
 } from "./sample.ts";
@@ -276,8 +276,25 @@ export function scoreStatus(
 ): ScoreStatus | undefined {
   if (attempt.evaluationKind !== "score") return undefined;
   if (attempt.verdict === "skipped") return "skipped";
-  if (attempt.verdict === "errored" || attempt.score?.state !== "complete") return "errored";
-  return "scored";
+  if (attempt.verdict === "errored") return "errored";
+  if (attempt.scoreEvidence.state !== "available") return undefined;
+  if (attempt.score?.state === "complete") return "scored";
+  return "errored";
+}
+
+/** Pass verdicts and Score-kind scored/errored Attempts. Skipped and missing stay out. */
+export function resultBearingAttemptCount(
+  attempts: readonly ClassicAttemptRow[],
+): number {
+  return attempts.filter((attempt) => {
+    if (attempt.evaluationKind === "score") {
+      const status = scoreStatus(attempt);
+      return status === "scored" || status === "errored";
+    }
+    return attempt.verdict === "passed"
+      || attempt.verdict === "failed"
+      || attempt.verdict === "errored";
+  }).length;
 }
 
 /** Equal-weight Eval mean of per-Eval attempt means. Missing Attempt values stay out. */
@@ -347,7 +364,7 @@ export function totalAttempts(
     value: scores.length === 0 ? null : scores.reduce((sum, score) => sum + score, 0),
     samples: scores.length,
     total,
-    basis: "eval",
+    basis: "attempt",
     ...(options.unit === undefined ? {} : { unit: options.unit }),
     ...(options.better === undefined ? {} : { better: options.better }),
     refs,
@@ -511,7 +528,7 @@ async function computeRollup(
   for (const unit of units) {
     const attemptValues: number[] = [];
     for (const attempt of unit.attempts) {
-      const handle = attemptHandle(attempt);
+      const handle = classicAttemptHandleFromRow(undefined, attempt);
       if (handle === undefined) {
         continue;
       }
@@ -536,26 +553,6 @@ async function computeRollup(
     ...(calculation.better === undefined ? {} : { better: calculation.better }),
     ...(calculation.bounds === undefined ? {} : { bounds: calculation.bounds }),
     refs,
-  });
-}
-
-function attemptHandle(
-  attempt: ClassicEvalUnit["attempts"][number],
-): ClassicAttemptHandle | undefined {
-  const locator = classicAttemptLocator(attempt);
-  if (locator === undefined) {
-    return undefined;
-  }
-  return Object.freeze({
-    locator,
-    experimentId: attempt.experimentId,
-    evalId: attempt.evalId,
-    result: Object.freeze({
-      verdict: attempt.verdict ?? "unreadable",
-      assertions: Object.freeze([]),
-      durationMs: attempt.durationMs,
-      costUSD: attempt.costUSD,
-    }),
   });
 }
 

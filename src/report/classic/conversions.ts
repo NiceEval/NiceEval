@@ -1,4 +1,4 @@
-import { passRate, totalAttempts } from "./aggregate.ts";
+import { passRate, resultBearingAttemptCount, totalAttempts } from "./aggregate.ts";
 import type {
   AttemptEvidence,
   AttemptListItem,
@@ -10,9 +10,6 @@ import { classicAttemptLocator, type Sample } from "./sample.ts";
 
 export async function toSummaryItems(sample: Sample): Promise<SampleSummaryContent> {
   const experiments = new Set(sample.units.map((unit) => unit.experimentId));
-  const scored = sample.attempts.filter((attempt) =>
-    attempt.verdict === "passed" || attempt.verdict === "failed" || attempt.verdict === "errored"
-  );
   const overall = passRate.compute(sample.units);
   return Object.freeze({
     range: Object.freeze({
@@ -21,7 +18,7 @@ export async function toSummaryItems(sample: Sample): Promise<SampleSummaryConte
     }),
     experiments: experiments.size,
     evals: sample.units.length,
-    attempts: scored.length,
+    attempts: resultBearingAttemptCount(sample.attempts),
     endToEndPassRate: Object.freeze({
       ...overall,
       unit: "%",
@@ -38,24 +35,41 @@ export async function toAttemptListRows(sample: Sample): Promise<readonly Attemp
       if (locator === undefined) {
         return [];
       }
+      const failures = assertionFailures(attempt.assertions);
       return [Object.freeze({
         experimentId: attempt.experimentId,
         evalId: attempt.evalId,
         attempt: attempt.attempt,
-        agent: sample.profiles[attempt.experimentId]?.agent ?? "unknown",
-        evaluationKind: "pass" as const,
-        verdict: attempt.verdict ?? "skipped",
-        failureSummary: attempt.verdict === "failed" || attempt.verdict === "errored"
-          ? attempt.verdict
-          : null,
-        moreFailures: 0,
+        agent: sample.profiles[attempt.experimentId]?.agent ?? null,
+        evaluationKind: attempt.evaluationKind,
+        verdict: attempt.verdict ?? "unavailable",
+        failureSummary: failures === undefined
+          ? (attempt.verdict === "failed" || attempt.verdict === "errored" ? attempt.verdict : null)
+          : failures[0] ?? (attempt.verdict === "failed" || attempt.verdict === "errored" ? attempt.verdict : null),
+        moreFailures: failures === undefined
+          ? null
+          : Math.max(0, failures.length - 1),
         durationMs: attempt.durationMs,
         costUSD: attempt.costUSD,
-        historical: false,
+        historical: attempt.historical,
         locator,
       })];
     }),
   );
+}
+
+function assertionFailures(
+  assertions: Sample["attempts"][number]["assertions"],
+): readonly string[] | undefined {
+  if (assertions.state !== "available") {
+    return undefined;
+  }
+  return assertions.value.flatMap((assertion) => {
+    if (assertion.outcome !== "failed" && assertion.outcome !== "errored") {
+      return [];
+    }
+    return [assertion.label ?? assertion.key ?? assertion.outcome];
+  });
 }
 
 export async function toAttemptSummary(attempt: AttemptEvidence): Promise<AttemptSummaryData> {

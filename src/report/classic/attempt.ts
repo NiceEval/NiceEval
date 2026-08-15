@@ -1,14 +1,19 @@
-import { classicAttemptLocator, type ClassicVerdict, type Sample } from "./sample.ts";
+import type { EvaluationKind } from "../../eval/record/evaluation.ts";
+import type { Score } from "../../eval/record/score.ts";
+import {
+  classicAttemptLocator,
+  type ClassicAssertionView,
+  type ClassicEvidence,
+  type ClassicVerdict,
+  type Sample,
+} from "./sample.ts";
 import type { MetricValue } from "./metric.ts";
+
+export type { ClassicEvidence };
 
 export type AttemptLocator = string;
 
-export interface AttemptAssertionView {
-  readonly severity?: "soft" | "hard" | string;
-  readonly outcome?: "passed" | "failed" | "unavailable" | string;
-  readonly points?: number;
-  readonly score: number;
-}
+export type AttemptAssertionView = ClassicAssertionView;
 
 /**
  * Closed Attempt view for `rollup` and `page.render(attempt)`.
@@ -19,9 +24,12 @@ export interface ClassicAttemptHandle {
   readonly experimentId: string;
   readonly evalId: string;
   readonly agent?: string;
+  readonly evaluationKind: EvaluationKind | "unavailable";
+  readonly historical: boolean | null;
   readonly result: {
     readonly verdict?: ClassicVerdict | "unreadable";
-    readonly assertions: readonly AttemptAssertionView[];
+    readonly assertions: ClassicEvidence<readonly AttemptAssertionView[]>;
+    readonly score: ClassicEvidence<Score>;
     readonly durationMs?: number | null;
     readonly costUSD?: number | null;
   };
@@ -41,14 +49,14 @@ export interface AttemptListItem {
   readonly experimentId: string;
   readonly evalId: string;
   readonly attempt: number;
-  readonly agent: string;
-  readonly evaluationKind: "pass" | "points";
-  readonly verdict: ClassicVerdict;
+  readonly agent: string | null;
+  readonly evaluationKind: EvaluationKind;
+  readonly verdict: ClassicVerdict | "unavailable";
   readonly failureSummary: string | null;
-  readonly moreFailures: number;
+  readonly moreFailures: number | null;
   readonly durationMs: number | null;
   readonly costUSD: number | null;
-  readonly historical: boolean;
+  readonly historical: boolean | null;
   readonly locator: AttemptLocator;
 }
 
@@ -78,24 +86,42 @@ export function copyBlockText(content: CopyBlockContent): string {
 }
 
 export function classicAttemptHandleFromRow(
-  sample: Sample,
+  sample: Sample | undefined,
   row: Sample["attempts"][number],
 ): ClassicAttemptHandle | undefined {
   const locator = classicAttemptLocator(row);
   if (locator === undefined) {
     return undefined;
   }
-  const profile = sample.profiles[row.experimentId];
+  const agent = sample?.profiles[row.experimentId]?.agent;
   return Object.freeze({
     locator,
     experimentId: row.experimentId,
     evalId: row.evalId,
+    evaluationKind: row.evaluationKind,
+    historical: row.historical,
     result: Object.freeze({
       verdict: row.verdict ?? "unreadable",
-      assertions: Object.freeze([]),
+      assertions: row.assertions,
+      score: row.scoreEvidence,
       durationMs: row.durationMs,
       costUSD: row.costUSD,
     }),
-    agent: profile?.agent,
+    ...(agent === undefined ? {} : { agent }),
+  });
+}
+
+export function unavailableAttemptEvidence(): ClassicAttemptHandle {
+  return Object.freeze({
+    locator: "",
+    experimentId: "",
+    evalId: "",
+    evaluationKind: "unavailable" as const,
+    historical: null,
+    result: Object.freeze({
+      verdict: "unreadable" as const,
+      assertions: Object.freeze({ state: "unavailable" as const }),
+      score: Object.freeze({ state: "unavailable" as const }),
+    }),
   });
 }

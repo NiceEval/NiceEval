@@ -12,6 +12,23 @@ export type ClassicAttemptTarget = Extract<ReportLinkTarget, { readonly kind: "a
 
 export type ClassicVerdict = "passed" | "failed" | "errored" | "skipped";
 
+export type ClassicEvidence<Value> =
+  | { readonly state: "available"; readonly value: Value }
+  | { readonly state: "unavailable" }
+  | { readonly state: "not-applicable" }
+  | { readonly state: "invalid" }
+  | { readonly state: "migration-required" }
+  | { readonly state: "migration-unavailable" }
+  | { readonly state: "unsupported" };
+
+export interface ClassicAssertionView {
+  readonly key?: string;
+  readonly label?: string;
+  readonly outcome: "passed" | "failed" | "errored" | "unavailable" | "not-applicable";
+  readonly points?: number;
+  readonly earned?: number;
+}
+
 export interface ClassicRunView {
   readonly runId: RunId;
   readonly startedAt: UtcMillis;
@@ -49,6 +66,10 @@ export interface ClassicAttemptRow {
   readonly evaluationKind: EvaluationKind;
   readonly verdict?: ClassicVerdict;
   readonly score?: Score;
+  readonly scoreEvidence: ClassicEvidence<Score>;
+  readonly assertions: ClassicEvidence<readonly ClassicAssertionView[]>;
+  readonly relation?: "origin" | "reference";
+  readonly historical: boolean | null;
   readonly durationMs: number | null;
   readonly costUSD: number | null;
   readonly tokens: number | null;

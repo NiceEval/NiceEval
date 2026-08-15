@@ -15,8 +15,10 @@ import {
   classicAttemptTarget,
   slotKey,
   unitKey,
+  type ClassicAssertionView,
   type ClassicAttemptRow,
   type ClassicEvalUnit,
+  type ClassicEvidence,
   type ClassicExperimentView,
   type ClassicRunView,
   type ClassicSample,
@@ -26,6 +28,7 @@ import {
 export interface ClassicProjectedInputs {
   readonly verdict?: ProjectedSample<ProjectionAccess, unknown>;
   readonly score?: ProjectedSample<ProjectionAccess, unknown>;
+  readonly assertions?: ProjectedSample<ProjectionAccess, unknown>;
   readonly timing?: ProjectedSample<ProjectionAccess, unknown>;
   readonly usage?: ProjectedSample<ProjectionAccess, unknown>;
 }
@@ -42,6 +45,7 @@ export function buildClassicSample(input: {
   const runsById = new Map(runs.map((run) => [run.runId, run]));
   const verdicts = attemptSlotIndex(input.projections.verdict);
   const scores = attemptSlotIndex(input.projections.score);
+  const assertions = attemptSlotIndex(input.projections.assertions);
   const timings = attemptSlotIndex(input.projections.timing);
   const usages = attemptSlotIndex(input.projections.usage);
   const units = new Map<string, {
@@ -74,6 +78,7 @@ export function buildClassicSample(input: {
     if (existing === undefined) {
       units.set(key, group);
     }
+    const keyForSlot = slotKey(slot.runId, slot.slotId);
     group.attempts.push(projectAttempt({
       slot,
       run,
@@ -81,10 +86,11 @@ export function buildClassicSample(input: {
       evalId: identity.evalId,
       attempt: identity.attempt,
       evaluationKind: identity.kind,
-      verdict: asVerdict(verdicts.get(slotKey(slot.runId, slot.slotId))),
-      score: asScore(scores.get(slotKey(slot.runId, slot.slotId))),
-      timing: asTiming(timings.get(slotKey(slot.runId, slot.slotId))),
-      usage: asUsage(usages.get(slotKey(slot.runId, slot.slotId))),
+      verdict: asVerdict(verdicts.get(keyForSlot)),
+      score: scores.get(keyForSlot),
+      assertions: assertions.get(keyForSlot),
+      timing: asTiming(timings.get(keyForSlot)),
+      usage: asUsage(usages.get(keyForSlot)),
     }));
   }
 
@@ -139,12 +145,19 @@ function projectAttempt(input: {
   readonly attempt: number;
   readonly evaluationKind: EvaluationKind;
   readonly verdict?: Verdict;
-  readonly score?: Score;
+  readonly score?: ProjectedRecordAttachmentResult<unknown>;
+  readonly assertions?: ProjectedRecordAttachmentResult<unknown>;
   readonly timing?: AttemptTimingView;
   readonly usage?: UsageView;
 }): ClassicAttemptRow {
-  const attemptId = input.slot.state === "included" ? input.slot.attempt.attemptId : undefined;
-  const verdict = input.slot.state === "included" ? asClassicVerdict(input.verdict) : undefined;
+  const included = input.slot.state === "included";
+  const attemptId = included ? input.slot.attempt.attemptId : undefined;
+  const verdict = included ? asClassicVerdict(input.verdict) : undefined;
+  const relation = included ? input.slot.relation : undefined;
+  const scoreEvidence = projectScoreEvidence(input.evaluationKind, included, input.score);
+  const assertions = included
+    ? projectAssertionEvidence(input.assertions)
+    : Object.freeze({ state: "unavailable" as const });
   return Object.freeze({
     experimentId: input.experimentId,
     evalId: input.evalId,
@@ -155,7 +168,11 @@ function projectAttempt(input: {
     ...(attemptId === undefined ? {} : { attemptId, target: classicAttemptTarget(attemptId) }),
     evaluationKind: input.evaluationKind,
     ...(verdict === undefined ? {} : { verdict }),
-    ...(input.score === undefined ? {} : { score: input.score }),
+    ...(scoreEvidence.state === "available" ? { score: scoreEvidence.value } : {}),
+    scoreEvidence,
+    assertions,
+    ...(relation === undefined ? {} : { relation }),
+    historical: relation === undefined ? null : relation === "reference",
     durationMs: input.timing === undefined ? null : durationMsFromTiming(input.timing),
     costUSD: input.usage === undefined ? null : costUSDFromUsage(input.usage),
     tokens: input.usage === undefined ? null : tokensFromUsage(input.usage),
@@ -240,11 +257,107 @@ function asVerdict(attachment: ProjectedRecordAttachmentResult<unknown> | undefi
   return undefined;
 }
 
-function asScore(attachment: ProjectedRecordAttachmentResult<unknown> | undefined): Score | undefined {
-  if (attachment?.state !== "available" || !isScore(attachment.value)) {
+function projectScoreEvidence(
+  evaluationKind: EvaluationKind,
+  included: boolean,
+  attachment: ProjectedRecordAttachmentResult<unknown> | undefined,
+): ClassicEvidence<Score> {
+  if (evaluationKind === "pass") {
+    return Object.freeze({ state: "not-applicable" as const });
+  }
+  if (!included) {
+    return Object.freeze({ state: "unavailable" as const });
+  }
+  if (attachment === undefined) {
+    return Object.freeze({ state: "unavailable" as const });
+  }
+  if (attachment.state === "available") {
+    return isScore(attachment.value)
+      ? Object.freeze({ state: "available" as const, value: attachment.value })
+      : Object.freeze({ state: "invalid" as const });
+  }
+  return Object.freeze({ state: attachment.state });
+}
+
+function projectAssertionEvidence(
+  attachment: ProjectedRecordAttachmentResult<unknown> | undefined,
+): ClassicEvidence<readonly ClassicAssertionView[]> {
+  if (attachment === undefined) {
+    return Object.freeze({ state: "unavailable" as const });
+  }
+  if (attachment.state !== "available") {
+    return Object.freeze({ state: attachment.state });
+  }
+  const views = assertionViews(attachment.value);
+  if (views === undefined) {
+    return Object.freeze({ state: "invalid" as const });
+  }
+  return Object.freeze({ state: "available" as const, value: views });
+}
+
+function assertionViews(value: unknown): readonly ClassicAssertionView[] | undefined {
+  if (typeof value !== "object" || value === null) {
     return undefined;
   }
-  return attachment.value;
+  const entries = Reflect.get(value, "entries");
+  if (!Array.isArray(entries)) {
+    return undefined;
+  }
+  return Object.freeze(entries.map(assertionView));
+}
+
+function assertionView(entry: unknown): ClassicAssertionView {
+  if (typeof entry !== "object" || entry === null) {
+    return Object.freeze({ outcome: "unavailable" as const });
+  }
+  const payload = Reflect.get(entry, "entry");
+  if (typeof payload !== "object" || payload === null) {
+    return Object.freeze({ outcome: "unavailable" as const });
+  }
+  const display = Reflect.get(payload, "display");
+  const result = Reflect.get(payload, "result");
+  const score = typeof result === "object" && result !== null
+    ? Reflect.get(result, "score")
+    : undefined;
+  const key = typeof display === "object" && display !== null
+    ? Reflect.get(display, "key")
+    : undefined;
+  const label = typeof display === "object" && display !== null
+    ? Reflect.get(display, "label")
+    : undefined;
+  const points = typeof score === "object" && score !== null
+    ? Reflect.get(score, "points")
+    : undefined;
+  const earned = typeof score === "object" && score !== null
+    ? Reflect.get(score, "earned")
+    : undefined;
+  return Object.freeze({
+    ...(typeof key === "string" ? { key } : {}),
+    ...(typeof label === "string" ? { label } : {}),
+    outcome: assertionOutcome(result),
+    ...(typeof points === "number" && Number.isFinite(points) ? { points } : {}),
+    ...(typeof earned === "number" && Number.isFinite(earned) ? { earned } : {}),
+  });
+}
+
+function assertionOutcome(result: unknown): ClassicAssertionView["outcome"] {
+  if (typeof result !== "object" || result === null) {
+    return "unavailable";
+  }
+  switch (Reflect.get(result, "state")) {
+    case "matched":
+      return "passed";
+    case "mismatched":
+      return "failed";
+    case "errored":
+      return "errored";
+    case "not-applicable":
+      return "not-applicable";
+    case "unavailable":
+      return "unavailable";
+    default:
+      return "unavailable";
+  }
 }
 
 function isScore(value: unknown): value is Score {

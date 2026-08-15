@@ -29,6 +29,7 @@ export function classicProjectedInputs(
   return Object.freeze({
     verdict: inputs.verdict,
     score: inputs.score,
+    assertions: inputs.assertions,
     timing: inputs.timing,
     usage: inputs.usage,
   });

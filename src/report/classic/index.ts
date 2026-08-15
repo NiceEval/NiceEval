@@ -15,6 +15,7 @@ export {
   tokens,
   totalScore,
   totalAttempts,
+  resultBearingAttemptCount,
 } from "./aggregate.ts";
 export type {
   AggregateRow,
@@ -136,9 +137,11 @@ export type { ClassicProjectedInputs } from "./project.ts";
 export { classicAttemptTarget, slotKey, unitKey } from "./sample.ts";
 export type {
   AggregationSubject,
+  ClassicAssertionView,
   ClassicAttemptRow,
   ClassicAttemptTarget,
   ClassicEvalUnit,
+  ClassicEvidence,
   ClassicExperimentView,
   ClassicMetadataOrigin,
   ClassicRunView,

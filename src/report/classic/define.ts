@@ -1,5 +1,6 @@
 import { Either } from "effect";
 import {
+  assertionsProjector,
   attemptSlotProjection,
   attemptTimingProjector,
   attemptUsageProjector,
@@ -36,7 +37,11 @@ import {
   type ReportComponentId,
   type ReportId,
 } from "../author/identity.ts";
-import type { AttemptEvidence } from "./attempt.ts";
+import {
+  classicAttemptHandleFromRow,
+  unavailableAttemptEvidence,
+  type AttemptEvidence,
+} from "./attempt.ts";
 import {
   classicAttemptInstanceKey,
   classicAttemptRoute,
@@ -50,7 +55,7 @@ import { classicSampleFromProjectedInputs } from "./from-context.ts";
 import { markClassicIdentityInput } from "./identity.ts";
 import { evaluateClassicTree } from "./jsx.ts";
 import { isLocalizedText, resolveLocalizedText, type LocalizedText } from "./localize.ts";
-import { classicAttemptLocator, type Sample } from "./sample.ts";
+import type { Sample } from "./sample.ts";
 
 export type ClassicPageRender = (
   sample: Sample,
@@ -102,6 +107,7 @@ export const classicDataPlan: NonEmptyReportDataPlan = reportInputs({
   "evaluation-plan": reportEvaluationPlanProjection,
   verdict: attemptSlotProjection(verdictProjector),
   score: reportScoreProjection,
+  assertions: attemptSlotProjection(assertionsProjector),
   timing: attemptSlotProjection(attemptTimingProjector),
   usage: attemptSlotProjection(attemptUsageProjector),
 });
@@ -219,7 +225,10 @@ function defineClassicReport(definition: ClassicReportDefinition): Report {
         route: (attempt) => classicAttemptRoute(attempt.attemptId!),
         render: async ({ instance, sample, inputs }) => {
           const closed = classicSampleFromProjectedInputs({ sample, inputs });
-          const evidence = attemptEvidenceFromRow(closed, instance);
+          const evidence = classicAttemptHandleFromRow(closed, instance);
+          if (evidence === undefined) {
+            throw new TypeError("classic Attempt page requires a locatable Attempt");
+          }
           return renderClassicTree({
             title: page.title,
             tree: await renderAttempt(evidence),
@@ -332,34 +341,9 @@ function isClassicPageDefinition(value: unknown): value is ClassicReportPageDefi
 function firstAttemptEvidence(sample: Sample): AttemptEvidence {
   const first = sample.attempts.find((attempt) => attempt.target !== undefined || attempt.attemptId !== undefined);
   if (first === undefined) {
-    return Object.freeze({
-      locator: "@unknown",
-      experimentId: "unknown",
-      evalId: "unknown",
-      result: Object.freeze({
-        verdict: "unreadable" as const,
-        assertions: Object.freeze([]),
-      }),
-    });
+    return unavailableAttemptEvidence();
   }
-  return attemptEvidenceFromRow(sample, first);
-}
-
-function attemptEvidenceFromRow(
-  sample: Sample,
-  attempt: Sample["attempts"][number],
-): AttemptEvidence {
-  return Object.freeze({
-    locator: classicAttemptLocator(attempt) ?? "@unknown",
-    experimentId: attempt.experimentId,
-    evalId: attempt.evalId,
-    result: Object.freeze({
-      verdict: attempt.verdict ?? "unreadable",
-      assertions: Object.freeze([]),
-      durationMs: attempt.durationMs,
-      costUSD: attempt.costUSD,
-    }),
-  });
+  return classicAttemptHandleFromRow(sample, first) ?? unavailableAttemptEvidence();
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
