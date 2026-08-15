@@ -124,11 +124,15 @@ export function summarize(
   let inTok = 0;
   let outTok = 0;
   let cost = 0;
+  let hasEstimatedCost = false;
   for (const r of results) {
     counts[r.verdict] += 1;
     inTok += r.usage?.inputTokens ?? 0;
     outTok += r.usage?.outputTokens ?? 0;
-    if (r.estimatedCostUSD !== undefined) cost += r.estimatedCostUSD;
+    if (r.estimatedCostUSD !== undefined) {
+      cost += r.estimatedCostUSD;
+      hasEstimatedCost = true;
+    }
   }
   for (const attempt of reusedAttempts) {
     counts[attempt.verdict] += 1;
@@ -143,7 +147,8 @@ export function summarize(
     errored: counts.errored,
     durationMs,
     usage: { inputTokens: inTok, outputTokens: outTok },
-    estimatedCostUSD: cost === 0 ? undefined : cost,
+    // 0 是合法估算值:至少一条 fresh 结果带 estimatedCostUSD 就输出累计值(可为 0),全缺才省略。
+    estimatedCostUSD: hasEstimatedCost ? cost : undefined,
     reusedAttempts: Object.freeze([...reusedAttempts]),
     results,
   };

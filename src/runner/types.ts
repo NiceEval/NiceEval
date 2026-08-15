@@ -426,7 +426,7 @@ export interface EvalResult {
   /**
    * 价目表估算成本,恒等于 `estimateCost(model, usage, config.pricing)`——永远独立计算,
    * 与 `usage.costUSD`(网关/adapter 显式回报的 observed 成本)是两个并存事实,互不覆盖、
-   * 互不兜底:observed 存在时 estimatedCostUSD 也照常按 Profile/config 估算。
+   * 互不兜底:observed 存在时 estimatedCostUSD 也照常按 runtime/config price table 估算。
    */
   estimatedCostUSD?: number;
   /** 使 attempt 进入 `errored` 的唯一致命执行错误(结构化);默认报告显示 `error.message` 一层原因。 */
@@ -1107,7 +1107,8 @@ export interface Config {
    * 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
    * · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
    * 精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
-   * `usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。
+   * `usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。它是 runtime/config 价目表,
+   * 不是 Report 的成本投影:Report 不消费该字段(Report 侧使用自己的 PricingProfile)。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
 }
