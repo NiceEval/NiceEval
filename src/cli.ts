@@ -2892,7 +2892,7 @@ function isLoopbackViewHost(host: string): boolean {
 }
 
 function viewPort(value: number | undefined): number {
-  const port = value ?? 4173;
+  const port = value ?? 0;
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw usageError(`--port must be an integer from 0 through 65535, got ${port}.\n`);
   }

@@ -27,7 +27,7 @@ niceeval view [selection] [report options] --out <directory>
 | `--experiment <id>` | 可重复；按完整 ExperimentId 收窄不带 locator 或 `--run` 的当前项目目标。 |
 | `--report <module>` | 选择内建 Report 或受信任的 Report module。 |
 | `--page <route>` | 选择一个已经展开的 exact route。 |
-| `--port <port>` | `view` 监听端口；默认 4173。 |
+| `--port <port>` | `view` 监听端口；省略时由操作系统分配一个空闲端口。 |
 | `--host <address>` | `view` 监听地址；省略时为 `127.0.0.1`，只写 `--host` 时等价于 `0.0.0.0`。 |
 | `--no-open` | 阻止 `view` 自动打开浏览器。 |
 | `--json` | 让 `show` 输出固定 JSON。 |

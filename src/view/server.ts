@@ -231,7 +231,7 @@ export function openViewServer<Requirements>(
     if (host.includes("%")) {
       return yield* Effect.fail(serverError("open", "scoped IPv6 view hosts are not supported"));
     }
-    const port = options.port ?? 4173;
+    const port = options.port ?? 0;
     if (!Number.isInteger(port) || port < 0 || port > 65_535) {
       return yield* Effect.fail(serverError("open", `view port must be an integer from 0 through 65535, got ${port}`));
     }
