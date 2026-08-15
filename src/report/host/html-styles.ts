@@ -746,12 +746,28 @@ body {
 }
 
 .niceeval-report--classic .niceeval-report__tabs {
+  display: flex;
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
   margin: 0;
+  gap: 0.25rem;
   justify-content: center;
+  overflow-x: auto;
   border-bottom: 0;
+}
+
+.niceeval-report--classic .niceeval-report__tabs a {
+  flex: 0 0 auto;
+  padding: 0.7rem 1rem;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.niceeval-report--classic .niceeval-report__tabs a[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
 }
 
 .niceeval-report--classic .niceeval-report__language {

@@ -61,6 +61,15 @@ export interface ReportHtmlLocaleDocument {
   readonly document: ReportDocument;
 }
 
+/**
+ * Visible fixed-page navigation for a static HTML page. Hosts pass author
+ * declaration order; this renderer never invents routes or includes PageFamily.
+ */
+export interface ReportHtmlNavigationItem {
+  readonly title: string;
+  readonly route: ReportRoute;
+}
+
 export type RenderReportHtmlInput =
   | {
     readonly document: ReportDocument;
@@ -76,6 +85,11 @@ export type RenderReportHtmlInput =
      * Existing single-execution callers omit this and stay English-only.
      */
     readonly localeDocuments?: readonly ReportHtmlLocaleDocument[];
+    /**
+     * Visible rendered fixed pages for the static chrome. Two or more items
+     * become ordinary relative hrefs; a single page or omission emits no nav.
+     */
+    readonly navigation?: readonly ReportHtmlNavigationItem[];
   }
   | {
     /** Reserved host surfaces may use a safe text projection. */
@@ -299,7 +313,8 @@ export function renderReportHtml(input: RenderReportHtmlInput): string {
   const styles = `${themeStylesheet(theme)}${REPORT_HTML_STYLESHEET}${classic ? REPORT_CLASSIC_STYLESHEET : ""}`;
   const enhance = classic ? `<script>${REPORT_ENHANCE_SCRIPT}</script>` : "";
   if (classic) {
-    return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>${metadata}<style>${styles}</style></head><body><div class="niceeval-report niceeval-report--classic">${renderClassicBanner(locale)}<main>${content}</main>${templates}</div>${enhance}</body></html>`;
+    const pageNav = renderStaticPageLinks(input.route, input.navigation ?? [], locale);
+    return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>${metadata}<style>${styles}</style></head><body><div class="niceeval-report niceeval-report--classic">${renderClassicBanner(locale, pageNav)}<main>${content}</main>${templates}</div>${enhance}</body></html>`;
   }
   return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>${metadata}<style>${styles}</style></head><body><main class="niceeval-report">${content}</main>${enhance}</body></html>`;
 }
@@ -430,7 +445,7 @@ export function renderReportLiveHtml(input: RenderReportLiveHtmlInput): string {
   const close = `<button type="button" data-niceeval-dialog-close data-niceeval-copy="close">${escapeHtml(copy.close)}</button>`;
   const shell = classic
     ? `<div class="niceeval-report niceeval-report--live niceeval-report--classic">${
-      renderClassicBanner(locale, tabs)
+      renderClassicBanner(locale, renderLiveTablist(tabs, locale))
     }<main>${panels}${direct}<dialog class="niceeval-report__dialog" aria-modal="true"><div data-niceeval-dialog-content></div>${close}</dialog></main>${localePayloads}</div>`
     : `<main class="niceeval-report niceeval-report--live"><div role="tablist" aria-label="${escapeHtml(copy.reportPages)}" class="niceeval-report__tabs" data-niceeval-copy="reportPages">${tabs}</div>${panels}${direct}<dialog class="niceeval-report__dialog" aria-modal="true"><div data-niceeval-dialog-content></div>${close}</dialog></main>`;
   return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>${metadata}<style>${styles}</style></head><body>${shell}<script>${REPORT_ENHANCE_SCRIPT}</script></body></html>`;
@@ -462,12 +477,34 @@ function renderNavigationBody(
   return `<article class="niceeval-report__document"><header class="niceeval-report__document-header"><h1>${escapeHtml(item.title)}</h1></header><p role="status">${escapeHtml(packageCopy(locale).pageState(item.state))}</p></article>`;
 }
 
-function renderClassicBanner(locale: ReportViewLocale, tabs = ""): string {
+function renderClassicBanner(locale: ReportViewLocale, pagesChrome = ""): string {
   const copy = packageCopy(locale);
-  const tablist = tabs.length === 0
-    ? ""
-    : `<div role="tablist" aria-label="${escapeHtml(copy.reportPages)}" class="niceeval-report__tabs" data-niceeval-copy="reportPages">${tabs}</div>`;
-  return `<header role="banner" class="niceeval-report__banner"><a class="niceeval-report__brand" href="${BRAND_HREF}" target="_blank" rel="noopener"><span class="niceeval-report__brand-mark" aria-hidden="true"></span><span>NiceEval</span></a>${tablist}<div class="niceeval-report__language" role="group" aria-label="${escapeHtml(copy.language)}" data-niceeval-copy="language"><button type="button" data-niceeval-locale="en" aria-pressed="${locale === "en"}">EN</button><button type="button" data-niceeval-locale="zh-CN" aria-pressed="${locale === "zh-CN"}">中文</button></div></header>`;
+  return `<header role="banner" class="niceeval-report__banner"><a class="niceeval-report__brand" href="${BRAND_HREF}" target="_blank" rel="noopener"><span class="niceeval-report__brand-mark" aria-hidden="true"></span><span>NiceEval</span></a>${pagesChrome}<div class="niceeval-report__language" role="group" aria-label="${escapeHtml(copy.language)}" data-niceeval-copy="language"><button type="button" data-niceeval-locale="en" aria-pressed="${locale === "en"}">EN</button><button type="button" data-niceeval-locale="zh-CN" aria-pressed="${locale === "zh-CN"}">中文</button></div></header>`;
+}
+
+function renderLiveTablist(tabs: string, locale: ReportViewLocale): string {
+  if (tabs.length === 0) return "";
+  const copy = packageCopy(locale);
+  return `<div role="tablist" aria-label="${escapeHtml(copy.reportPages)}" class="niceeval-report__tabs" data-niceeval-copy="reportPages">${tabs}</div>`;
+}
+
+/**
+ * Static chrome uses ordinary relative hrefs so file: and no-JavaScript
+ * readers can reach every visible fixed page. Live keeps role=tab buttons.
+ */
+function renderStaticPageLinks(
+  sourceRoute: ReportRoute,
+  navigation: readonly ReportHtmlNavigationItem[],
+  locale: ReportViewLocale,
+): string {
+  if (navigation.length < 2) return "";
+  const copy = packageCopy(locale);
+  const links = navigation.map((item) => {
+    const href = reportHref(sourceRoute, { kind: "route", route: item.route }, "relative");
+    const current = item.route === sourceRoute ? ' aria-current="page"' : "";
+    return `<a href="${escapeHtml(href)}"${current}>${escapeHtml(item.title)}</a>`;
+  }).join("");
+  return `<nav class="niceeval-report__tabs" aria-label="${escapeHtml(copy.reportPages)}" data-niceeval-copy="reportPages">${links}</nav>`;
 }
 
 function isClassicDocument(document: ReportDocument): boolean {

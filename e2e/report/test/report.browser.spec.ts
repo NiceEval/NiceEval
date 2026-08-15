@@ -6,6 +6,7 @@
 // - inverse = static locale document omits its document title, leaving title and body divergent
 // - inverse = recorded-data fallback bypasses the semantic bilingual report shell
 // - inverse = formatCellText renders verdict labels from raw status strings, ignoring locale
+// - inverse = static classic chrome omits visible fixed-page hrefs
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
 // 浏览器 owner 自己完成 exp → view --out → 真正的 niceeval view server → browser，
@@ -243,6 +244,25 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
           const noJsPage = await noJsContext.newPage();
           const noJsIndex = pathToFileURL(index).href;
           await noJsPage.goto(noJsIndex);
+          // kill: inverse = static classic chrome omits visible fixed-page hrefs.
+          // invoke: open the exported index over file: with JavaScript disabled.
+          // observe: Report pages nav exposes ordinary hrefs; following Attempts
+          // then Report reaches those pages. PageFamily titles stay out of nav.
+          const staticPages = noJsPage.getByRole("navigation", { name: "Report pages" });
+          await expect(staticPages).toBeVisible();
+          const attemptsNav = staticPages.getByRole("link", { name: "Attempts", exact: true });
+          await expect(attemptsNav).toBeVisible();
+          await expect(staticPages.getByRole("link", { name: "Traces", exact: true })).toBeVisible();
+          await expect(staticPages.getByRole("link", { name: "Report", exact: true })).toBeVisible();
+          await expect(staticPages.getByRole("link", { name: "main", exact: true })).toHaveCount(0);
+          expect(await attemptsNav.getAttribute("href")).toBeTruthy();
+          await attemptsNav.click();
+          await expect(noJsPage.getByRole("heading", { name: "Attempts", level: 1 })).toBeVisible();
+          const attemptsPages = noJsPage.getByRole("navigation", { name: "Report pages" });
+          await expect(attemptsPages.getByRole("link", { name: "main", exact: true })).toHaveCount(0);
+          const reportNav = attemptsPages.getByRole("link", { name: "Report", exact: true });
+          expect(await reportNav.getAttribute("href")).toBeTruthy();
+          await reportNav.click();
           await expect(noJsPage.getByRole("heading", { name: "NiceEval", level: 1 })).toBeVisible();
           await expect(noJsPage.getByRole("table", { name: "Experiment hierarchy" })).toBeVisible();
           const noJsHierarchy = noJsPage.getByRole("table", { name: "Experiment hierarchy" });

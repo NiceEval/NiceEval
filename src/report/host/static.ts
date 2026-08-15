@@ -13,6 +13,7 @@ import {
 import {
   renderReportHtml,
   type ReportHtmlLocaleDocument,
+  type ReportHtmlNavigationItem,
 } from "./html.ts";
 import { reportFallbackPage } from "./fallback.ts";
 import { basalt, type ThemeDefinition } from "./theme.ts";
@@ -246,6 +247,7 @@ function renderedStaticFiles(
     try: () => {
       const files: StaticFile[] = [];
       let wroteRootPage = false;
+      const navigation = staticNavigation(execution);
       for (const page of [...execution.pages].sort(comparePages)) {
         if (page.state !== "rendered") continue;
         if (page.route === "/") wroteRootPage = true;
@@ -257,6 +259,7 @@ function renderedStaticFiles(
             route: page.route,
             locale: execution.locale,
             theme,
+            ...(navigation.length === 0 ? {} : { navigation }),
             ...(localeDocument === undefined
               ? {}
               : { localeDocuments: Object.freeze([localeDocument]) }),
@@ -276,6 +279,7 @@ function renderedStaticFiles(
             route: fallback.route,
             locale: execution.locale,
             theme,
+            ...(navigation.length === 0 ? {} : { navigation }),
             ...(fallbackLocaleDocument === undefined
               ? {}
               : { localeDocuments: Object.freeze([fallbackLocaleDocument]) }),
@@ -306,6 +310,17 @@ function renderedStaticFiles(
       operation: "render",
     }),
   });
+}
+
+function staticNavigation(execution: ReportExecution): readonly ReportHtmlNavigationItem[] {
+  return Object.freeze(
+    execution.navigation
+      .filter((item) => item.visible && item.state === "rendered")
+      .map((item) => Object.freeze({
+        title: item.title,
+        route: item.route,
+      })),
+  );
 }
 
 function comparePages(
