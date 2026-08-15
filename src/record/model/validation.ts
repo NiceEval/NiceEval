@@ -11,7 +11,7 @@ import {
 } from "./run-context.ts";
 import type {
   AttemptDocument,
-  MemberDocument,
+  MembershipAction,
   RecordAttemptRef,
   RecordCore,
   RecordSlotIdentity,
@@ -96,9 +96,10 @@ export function validateRunDocument(
 }
 
 /** Validates the action/reference coupling in one durable Member document. */
-export function validateMemberDocument(
-  member: MemberDocument,
-): readonly RecordIssue[] {
+export function validateMemberDocument(member: {
+  readonly action: MembershipAction;
+  readonly attempt: RecordAttemptRef | null;
+}): readonly RecordIssue[] {
   const requiresAttempt =
     member.action === "executed" ||
     member.action === "carried" ||

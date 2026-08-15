@@ -52,14 +52,18 @@ reasoning effort、声明 flags 与 labels，而不会读取今天的配置。
 
 ## 固定定义与当前五个 family
 
-NiceEval 的 package-private（包私有）Record definition（Record 定义）驱动全部 Core 与 Attachment 的编解码、
-读写和校验。`defineRecordProperty`、`defineRecordValue`、`defineRecordCore` 与
-`defineRecordAttachment` 只供 NiceEval 自用，不是应用、Adapter、Plugin 或第三方的 API。
+NiceEval 的 package-private（包私有）Record 作者模型只使用
+`defineRecordCore` 与 `defineRecordAttachment`。两者驱动 Core 与 Attachment 的编解码、读写和校验，
+不是应用、Adapter、Plugin 或第三方的 API。
 
-一个 property（属性）同时有 property token id（属性令牌身份）、TS field（TypeScript 字段）和 durableKey
-（持久键）。property input 只接受 `{ id, durableKey, schema }`；TS field 是
-`defineRecordCore` / `defineRecordValue` 的 `properties` map key。三者分别用于内部定义身份、内存对象访问
-和 JSON 键；任何一个都不能代替另一个。
+`defineRecordCore({ schema, limits })` 接收一个 Effect Schema。`Schema.Type` 定义内存字段，
+`Schema.Encoded` 定义 durable JSON 字段。字段名和 durable JSON 键不同时，Schema 在字段处使用
+`Schema.propertySignature(...).pipe(Schema.fromKey(...))` 声明该映射。`AnalysisInput.id` 仍是分析投影身份，
+与 Record 的 durable JSON 键无关。
+
+`defineRecordAttachment` 把 stable `family` 与 `current` 分开。`current` 包含 `schemaVersion` 和所有 owner；
+每个 owner 相邻声明 `schema`、`limits` 及 `blobs: { refs, budget, verify }`。可选 `maintenance` 是 async 的 lazy
+历史 codec 与相邻 migration 描述。
 
 NiceEval current 固定 Attachment catalog 有以下五个 family（附件族）。一个 family 只有一个定义入口；多个 owner
 写在同一 `owners` map，不复制 family 或另立版本名称。
@@ -72,6 +76,9 @@ NiceEval current 固定 Attachment catalog 有以下五个 family（附件族）
 | `niceeval.sources` | `{ run }` | 当时源码闭包的 manifest 与 own blob |
 | `niceeval.artifacts` | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
 
+每个 family 的模块把自己的 declaration、复杂 payload Schema、durable JSON 键、limits 与 blob closure / integrity
+相邻放置。总 catalog 只列这五个 declaration，不重新描述任何 payload。
+
 Adapter 与 collector 只能提交 NiceEval 提供的固定输入。没有调用方可用的 generic definition、family、
 registration point 或 migration registration。此前未保存且不可恢复的事实必须经过 NiceEval 裁决，
 要么扩展既有 family，要么由 NiceEval 增加新的 fixed family definition。它不能成为调用方定义的第三方
@@ -82,8 +89,8 @@ definition、`owners` map 与 schemaVersion，不升级 Core。较早 reader 保
 忽略它并继续读取 Core 与认识的 family；只有请求 energy 的 AnalysisInput 或 DomainView 才得到
 `unsupported`。
 
-Core 的每个 leaf 都是 JSON，禁止 blob ref。Attachment owner value 固定使用 `json-with-blob-refs` leaf；它的
-payload 仍是 exact JSON，只在需要时含 definition 认可的 ref。一个 ref 只能指向同 owner、同 family 下的一份
+Core 的 `Schema.Encoded` 只允许 exact JSON，禁止 blob ref。Attachment owner 的 encoded side 仍是 exact JSON，
+但可含由该 owner 的 declaration 唯一 mint 的 `RecordBlobRef`。一个 ref 只能指向同 owner、同 family 下的一份
 own blob。完整 payload 与 closure 校验成功后才形成可用值。
 
 ## File Changes：保留按 send 区间的轨迹

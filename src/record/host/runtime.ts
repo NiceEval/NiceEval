@@ -41,6 +41,7 @@ import {
   encodeFixedRecordAttachmentEnvelope,
   NiceEvalRecordFamilyCatalog,
   type FixedRecordFamilyDescriptor,
+  type NiceEvalFamily,
 } from "../family/catalog.ts";
 import {
   observabilitySourceFrameIntegrityIssues,
@@ -245,7 +246,7 @@ interface FixedAttachmentRuntime {
   readonly name: string;
   readonly base: ReturnType<typeof recordPortablePath>;
   readonly descriptor: FixedRecordFamilyDescriptor<
-    import("../family/common.ts").NiceEvalFamily,
+    NiceEvalFamily,
     RecordAttachmentOwner,
     unknown
   >;
@@ -736,7 +737,7 @@ function scanSelection(
 }
 
 function readFixedFamily<
-  Family extends import("../family/common.ts").NiceEvalFamily,
+  Family extends NiceEvalFamily,
   Owner extends RecordAttachmentOwner,
   Payload,
 >(input: {
@@ -808,7 +809,7 @@ function readFixedFamily<
 
 function isObservabilityDescriptor(
   descriptor: FixedRecordFamilyDescriptor<
-    import("../family/common.ts").NiceEvalFamily,
+    NiceEvalFamily,
     RecordAttachmentOwner,
     unknown
   >,
@@ -1329,7 +1330,7 @@ function assertAttemptCollecting(
 }
 
 function writeFixedAttachment<
-  Family extends import("../family/common.ts").NiceEvalFamily,
+  Family extends NiceEvalFamily,
   Owner extends RecordAttachmentOwner,
   Payload,
   E,
@@ -1437,7 +1438,7 @@ function writeFixedAttachment<
               stream: blob.stream,
               maximumBytes: Math.min(
                 MAXIMUM_ATTACHMENT_BLOB_BYTES,
-                input.descriptor.blobBudget.maximumBlobBytes,
+                input.descriptor.write.budget.maximumBlobBytes,
               ),
               mode: "exclusive",
             });
@@ -1535,7 +1536,7 @@ function validateAndSyncFixedAttachments(
 }
 
 function writeRunFamily<
-  Family extends import("../family/common.ts").NiceEvalFamily,
+  Family extends NiceEvalFamily,
   Payload,
   E,
   R,
@@ -1555,7 +1556,7 @@ function writeRunFamily<
 }
 
 function writeAttemptFamily<
-  Family extends import("../family/common.ts").NiceEvalFamily,
+  Family extends NiceEvalFamily,
   Payload,
   E,
   R,

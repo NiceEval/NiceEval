@@ -2,12 +2,11 @@ import { Either, Schema } from "effect";
 import {
   canonicalRecordJsonText,
   defineRecordCore,
-  defineRecordProperty,
   type RecordJson,
   type RecordJsonObject,
-  type RecordValueFailure,
-  type RecordValueLimits,
+  type RecordSchemaLimits,
 } from "../definition/index.ts";
+import type { RecordSchemaFailure } from "../definition/schema-codec.ts";
 import { ExperimentIdSchema } from "../codec/identifiers.ts";
 import {
   nonEmptyRecordIssues,
@@ -18,7 +17,7 @@ import {
 import type { ExperimentId } from "./identifiers.ts";
 
 /** The complete budget for one immutable, self-explaining Run context. */
-export const RunContextLimits: RecordValueLimits = Object.freeze({
+export const RunContextLimits: RecordSchemaLimits = Object.freeze({
   maximumJsonBytes: 256 * 1024,
   maximumDepth: 8,
   maximumNodes: 4_096,
@@ -46,17 +45,31 @@ export interface RunContext {
   readonly labels: Readonly<Record<string, string>>;
 }
 
-function isJsonObject(value: unknown): value is RunContextJsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+/**
+ * `flags` is intentionally an open v1 JSON object. Keep its recursive exact
+ * JSON shape in Schema rather than reducing it to an opaque runtime guard.
+ */
+const RunContextJsonValueSchema: Schema.Schema<RunContextJsonValue> = Schema.suspend(
+  () => Schema.Union(
+    Schema.Null,
+    Schema.Boolean,
+    Schema.JsonNumber,
+    Schema.String,
+    Schema.Array(RunContextJsonValueSchema),
+    Schema.Record({ key: Schema.String, value: RunContextJsonValueSchema }),
+  ),
+);
 
-const JsonObjectSchema: Schema.Schema<RunContextJsonObject> = Schema.declare(isJsonObject);
+const RunContextJsonObjectSchema: Schema.Schema<RunContextJsonObject> = Schema.Record({
+  key: Schema.String,
+  value: RunContextJsonValueSchema,
+});
 
 const RunExecutionContextSchema: Schema.Schema<RunExecutionContext> = Schema.Struct({
   agentId: Schema.String.pipe(Schema.minLength(1)),
   model: Schema.NullOr(Schema.String),
   reasoningEffort: Schema.NullOr(Schema.String),
-  flags: JsonObjectSchema,
+  flags: RunContextJsonObjectSchema,
 });
 
 const RunLabelsSchema: Schema.Schema<Readonly<Record<string, string>>> = Schema.Record({
@@ -64,37 +77,21 @@ const RunLabelsSchema: Schema.Schema<Readonly<Record<string, string>>> = Schema.
   value: Schema.String,
 });
 
-/**
- * These token ids are Record-internal identities. They are not AnalysisInput
- * ids, and the object field names remain independently renameable.
- */
-const RunContextProperties = Object.freeze({
-  experimentId: defineRecordProperty({
-    id: "niceeval.record.run-context.experiment",
-    durableKey: "experimentId",
-    schema: ExperimentIdSchema,
-  }),
-  execution: defineRecordProperty({
-    id: "niceeval.record.run-context.execution",
-    durableKey: "execution",
-    schema: RunExecutionContextSchema,
-  }),
-  labels: defineRecordProperty({
-    id: "niceeval.record.run-context.labels",
-    durableKey: "labels",
-    schema: RunLabelsSchema,
-  }),
+const RunContextCurrentSchema = Schema.Struct({
+  experimentId: ExperimentIdSchema,
+  execution: RunExecutionContextSchema,
+  labels: RunLabelsSchema,
 });
 
-/** Run Context is Core, not an Attachment; it shares only the value primitive. */
+/** Run Context is Core, not an Attachment. */
 const RunContextDefinition = defineRecordCore({
-  properties: RunContextProperties,
+  schema: RunContextCurrentSchema,
   limits: RunContextLimits,
 });
 
-export const RunContextSchema: Schema.Schema<RunContext> = RunContextDefinition.schema;
+export const RunContextSchema = RunContextDefinition.schema;
 
-function issuesFromFailure(failure: RecordValueFailure): NonEmptyRecordIssues {
+function issuesFromFailure(failure: RecordSchemaFailure): NonEmptyRecordIssues {
   const issue: RecordIssue = failure.kind === "canonical"
     ? recordIssue(
       failure.failure.code === "record-json-limit-exceeded"
@@ -102,9 +99,7 @@ function issuesFromFailure(failure: RecordValueFailure): NonEmptyRecordIssues {
         : "record-run-context-invalid",
       failure.failure.path,
     )
-    : failure.kind === "refine"
-      ? recordIssue("record-run-context-invalid", failure.issues[0]?.path ?? [])
-      : recordIssue("record-run-context-invalid");
+    : recordIssue("record-run-context-invalid");
   const issues = nonEmptyRecordIssues([issue]);
   if (issues === undefined) throw new Error("Run context failure must contain one issue");
   return issues;

@@ -1,26 +1,23 @@
-import type { RecordValueLimits } from "./canonical.ts";
+import type { Schema } from "effect";
 import {
-  defineRecordValue,
-  type RecordPropertyMap,
-  type RecordValueDefinition,
-  type RecordValueIssue,
-  type RecordValueOf,
-} from "./value.ts";
+  compileRecordSchemaCodec,
+  type RecordSchemaCodec,
+  type RecordSchemaLimits,
+} from "./schema-codec.ts";
 
-export type RecordCoreDefinition<Properties extends RecordPropertyMap> =
-  RecordValueDefinition<Properties, "json"> & { readonly kind: "core" };
+export type RecordCoreDefinition<
+  Value,
+  SourceSchema extends Schema.Schema.AnyNoContext = Schema.Schema.AnyNoContext,
+> = RecordSchemaCodec<Value, never, SourceSchema> & { readonly kind: "core" };
 
-/** Core can contain only plain JSON. Blob refs are exclusive to fixed Attachments. */
-export function defineRecordCore<const Properties extends RecordPropertyMap>(input: {
-  readonly properties: Properties;
-  readonly limits: RecordValueLimits;
-  readonly refine?: (value: RecordValueOf<Properties>) => readonly RecordValueIssue[];
-}): RecordCoreDefinition<Properties> {
-  const value = defineRecordValue({
-    properties: input.properties,
-    leaf: "json" as const,
+/** Core can contain only canonical JSON. Blob refs are exclusive to fixed Attachments. */
+export function defineRecordCore<const SourceSchema extends Schema.Schema.AnyNoContext>(input: {
+  readonly schema: SourceSchema;
+  readonly limits: RecordSchemaLimits;
+}): RecordCoreDefinition<Schema.Schema.Type<SourceSchema>, SourceSchema> {
+  const codec = compileRecordSchemaCodec({
+    schema: input.schema,
     limits: input.limits,
-    refine: input.refine,
   });
-  return Object.freeze({ ...value, kind: "core" as const });
+  return Object.freeze({ ...codec, kind: "core" as const });
 }

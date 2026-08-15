@@ -1,38 +1,18 @@
 import { Either, Schema } from "effect";
 import { RecordExactParseOptions } from "../codec/core.ts";
-import type { RecordBlobRef } from "../attachment/types.ts";
 
-/** The only durable business-fact families accepted by Record v1. */
-export const NICE_EVAL_FAMILIES = Object.freeze([
-  "niceeval.assertions",
-  "niceeval.observability",
-  "niceeval.file-changes",
-  "niceeval.sources",
-  "niceeval.artifacts",
-] as const);
-
-export type NiceEvalFamily = (typeof NICE_EVAL_FAMILIES)[number];
-
-export const NiceEvalFamilySchema: Schema.Schema<NiceEvalFamily> = Schema.Literal(
-  "niceeval.assertions",
-  "niceeval.observability",
-  "niceeval.file-changes",
-  "niceeval.sources",
-  "niceeval.artifacts",
-);
+/** Shared current payload envelope; individual families tighten it only when their contract requires it. */
+export const FixedAttachmentValueLimits = Object.freeze({
+  maximumJsonBytes: 16 * 1024 * 1024,
+  maximumDepth: 32,
+  maximumNodes: 200_000,
+  maximumObjectKeys: 50_000,
+  maximumArrayItems: 100_000,
+  maximumKeyUtf8Bytes: 256,
+  maximumStringUtf8Bytes: 1024 * 1024,
+});
 
 export type FixedRecordAttachmentOwner = "run" | "attempt";
-
-/**
- * Blob handles are minted by Record's fixed collectors. This schema describes
- * the in-memory seam only; storage replaces it with its own owner-local key.
- */
-export const RecordBlobRefPositionSchema: Schema.Schema<
-  RecordBlobRef,
-  RecordBlobRef
-> = Schema.declare<RecordBlobRef>(
-  (value): value is RecordBlobRef => typeof value === "object" && value !== null,
-);
 
 export const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
   Schema.filter(
@@ -112,7 +92,7 @@ export const CollectionLimitationSchema = Schema.Union(
   }),
 );
 
-export const EmptyArraySchema = Schema.Array(Schema.Unknown).pipe(
+export const EmptyArraySchema = Schema.Tuple().pipe(
   Schema.filter(
     (values): values is readonly [] => values.length === 0,
     {

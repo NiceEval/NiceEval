@@ -2,6 +2,7 @@ import { Either, Schema } from "effect";
 import {
   AssertionEntryIdSchema,
   AssertionsExactParseOptions,
+  isAssertionsRawDataGraph,
 } from "./codec.ts";
 import type {
   AssertionDisplay,
@@ -106,6 +107,9 @@ export function createAssertionsDocumentBuilder<BlobRef, Encoded>(input: {
       const document: AssertionsDocument<BlobRef> = Object.freeze({
         entries: Object.freeze([...entries]),
       });
+      if (!isAssertionsRawDataGraph(document)) {
+        return Either.left({ code: "assertions-document-invalid" });
+      }
       const encoded = Schema.encodeUnknownEither(
         input.documentSchema,
         AssertionsExactParseOptions,

@@ -1,21 +1,21 @@
 import { Either, Schema } from "effect";
 import {
-  RecordDefinitionParseOptions,
+  type RecordJson,
   type RecordJsonObject,
-  type RecordPropertyMap,
-  type RecordValueDefinition,
-  type RecordValueFailure,
-  type RecordValueLeaf,
-  type RecordValueOf,
-} from "../definition/index.ts";
+} from "../definition/canonical.ts";
+import {
+  RecordSchemaParseOptions,
+  type RecordSchemaCodec,
+  type RecordSchemaFailure,
+} from "../definition/schema-codec.ts";
 import {
   nonEmptyRecordIssues,
+  RecordIssueCodeSchema,
   recordCodecError,
   recordIssue,
   type RecordCodecDocument,
   type RecordCodecError,
   type RecordIssue,
-  RecordIssueCodeSchema,
 } from "../errors/record-errors.ts";
 import {
   AttemptDocumentDefinition,
@@ -48,7 +48,7 @@ import type {
 import { RunContextSchema } from "../model/run-context.ts";
 
 /** Kept as the one exact Schema options object for nearby non-Core codecs. */
-export const RecordExactParseOptions = RecordDefinitionParseOptions;
+export const RecordExactParseOptions = RecordSchemaParseOptions;
 
 export type RecordDocumentEncoded = RecordJsonObject;
 export type RunDocumentEncoded = RecordJsonObject;
@@ -64,16 +64,15 @@ export interface RecordAttachmentEnvelopeEncoded {
   readonly schemaVersion: number;
 }
 
-export const RecordAttemptRefSchema: Schema.Schema<RecordAttemptRef> =
-  CurrentRecordAttemptRefSchema;
-export const RecordDocumentSchema: Schema.Schema<RecordDocument> = CurrentRecordDocumentSchema;
-export const RecordSlotIdentitySchema: Schema.Schema<RecordSlotIdentity> =
-  CurrentRecordSlotIdentitySchema;
-export const RunDocumentSchema: Schema.Schema<RunDocument> = CurrentRunDocumentSchema;
-export const MemberDocumentSchema: Schema.Schema<MemberDocument> = CurrentMemberDocumentSchema;
-export const AttemptDocumentSchema: Schema.Schema<AttemptDocument> = CurrentAttemptDocumentSchema;
-export const RunCoreSchema: Schema.Schema<RunCore> = CurrentRunCoreSchema;
-export const RecordCoreSchema: Schema.Schema<RecordCore> = CurrentRecordCoreSchema;
+/** Keep each source Schema's exact encoded side (notably branded IDs -> string). */
+export const RecordAttemptRefSchema = CurrentRecordAttemptRefSchema;
+export const RecordDocumentSchema = CurrentRecordDocumentSchema;
+export const RecordSlotIdentitySchema = CurrentRecordSlotIdentitySchema;
+export const RunDocumentSchema = CurrentRunDocumentSchema;
+export const MemberDocumentSchema = CurrentMemberDocumentSchema;
+export const AttemptDocumentSchema = CurrentAttemptDocumentSchema;
+export const RunCoreSchema = CurrentRunCoreSchema;
+export const RecordCoreSchema = CurrentRecordCoreSchema;
 export const RunContextCurrentSchema = RunContextSchema;
 
 /** These small domain literals are composition helpers, not durable codec truth sources. */
@@ -122,50 +121,52 @@ function invariantFailure(
   });
 }
 
-function failureFromDefinition(
+function failureFromSchemaCodec(
   document: RecordCodecDocument,
-  failure: RecordValueFailure,
+  failure: RecordSchemaFailure,
 ): RecordCodecError {
-  if (failure.kind === "refine") {
-    const issues = failure.issues.map((issue) => {
-      const code = Schema.decodeUnknownEither(RecordIssueCodeSchema)(issue.code);
-      return Either.isLeft(code)
-        ? recordIssue("record-schema-invalid", issue.path)
-        : recordIssue(code.right, issue.path);
+  if (failure.kind === "schema") {
+    const isIssueCode = Schema.is(RecordIssueCodeSchema);
+    const issues = failure.issues.flatMap((issue): readonly RecordIssue[] => {
+      if (
+        issue.message === "record-schema-invalid" ||
+        !isIssueCode(issue.message) ||
+        issue.path.some((segment) => typeof segment === "symbol")
+      ) {
+        return [];
+      }
+      return [recordIssue(issue.message, issue.path.map(String))];
     });
-    return invariantFailure(document, issues);
+    if (issues.length > 0) return invariantFailure(document, issues);
   }
   return schemaFailure(document);
 }
 
-function decodeDefinition<
-  Properties extends RecordPropertyMap,
-  Leaf extends RecordValueLeaf,
-  Blob extends object,
->(
+function decodeDefinition<Value>(
   document: RecordCodecDocument,
-  definition: Pick<RecordValueDefinition<Properties, Leaf, Blob>, "decode">,
+  definition: Pick<RecordSchemaCodec<Value>, "decode">,
   input: unknown,
-): Either.Either<RecordValueOf<Properties>, RecordCodecError> {
+): Either.Either<Value, RecordCodecError> {
   const decoded = definition.decode(input);
   return Either.isLeft(decoded)
-    ? Either.left(failureFromDefinition(document, decoded.left))
+    ? Either.left(failureFromSchemaCodec(document, decoded.left))
     : Either.right(decoded.right);
 }
 
-function encodeDefinition<
-  Properties extends RecordPropertyMap,
-  Leaf extends RecordValueLeaf,
-  Blob extends object,
->(
+function isRecordJsonObject(value: RecordJson): value is RecordJsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function encodeDefinition<Value>(
   document: RecordCodecDocument,
-  definition: Pick<RecordValueDefinition<Properties, Leaf, Blob>, "encode">,
-  value: RecordValueOf<Properties>,
+  definition: Pick<RecordSchemaCodec<Value>, "encode">,
+  value: Value,
 ): Either.Either<RecordJsonObject, RecordCodecError> {
   const encoded = definition.encode(value);
-  return Either.isLeft(encoded)
-    ? Either.left(failureFromDefinition(document, encoded.left))
-    : Either.right(encoded.right as RecordJsonObject);
+  if (Either.isLeft(encoded)) return Either.left(failureFromSchemaCodec(document, encoded.left));
+  return isRecordJsonObject(encoded.right)
+    ? Either.right(encoded.right)
+    : Either.left(schemaFailure(document));
 }
 
 function decodeExact<A, I>(

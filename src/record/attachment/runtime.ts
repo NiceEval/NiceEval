@@ -1,6 +1,16 @@
 import { Either, Stream } from "effect";
-import { isRecordValueDefinition } from "../definition/value.ts";
+import {
+  isRecordAttachmentOwnerDefinition,
+  type RecordAttachmentOwnerDefinition,
+} from "../definition/attachment.ts";
 import type { RecordAttachmentOwner } from "../model/core.ts";
+import {
+  getRecordBlobRefBuilderOwner,
+  isRecordBlobRef,
+  makeRecordBlobRef,
+  makeRecordBlobRefBuilderOwner,
+  type RecordBlobRefBuilderOwner,
+} from "./blob-ref.ts";
 import {
   recordAttachmentClosureInvalid,
   recordAttachmentDefinitionInvalid,
@@ -15,19 +25,16 @@ import {
   fixedAttachmentWriteSpecBrand,
   recordAttachmentBlobBuilderBrand,
   recordAttachmentBlobDraftBrand,
-  recordAttachmentBlobRefBrand,
   recordAttachmentBlobSourceBrand,
   recordAttachmentTypeWitness,
   recordAttachmentWriteBrand,
   type FixedAttachmentWriteSpec,
-  type RecordAttachmentBlobBudget,
   type RecordAttachmentBlobBuild,
   type RecordAttachmentBlobBuilder,
   type RecordAttachmentBlobDraft,
   type RecordAttachmentBlobs,
   type RecordAttachmentJson,
   type RecordAttachmentMaterializedBlob,
-  type RecordAttachmentMaterializedRefine,
   type RecordAttachmentPayloadSnapshot,
   type RecordAttachmentWrite,
   type RecordBlobDrafts,
@@ -39,15 +46,12 @@ import {
 
 type ObjectRecord = Record<PropertyKey, unknown>;
 
-interface BlobRefRuntime {
-  readonly builder: BuilderRuntime | undefined;
-}
-
 interface BlobSourceRuntime {
   readonly stream: Stream.Stream<Uint8Array, unknown, unknown>;
 }
 
 interface BuilderRuntime {
+  readonly owner: RecordBlobRefBuilderOwner;
   readonly drafts: RecordAttachmentBlobDraft<unknown, unknown>[];
 }
 
@@ -63,7 +67,6 @@ interface WriteRuntime {
   readonly build: { readonly payload: unknown; readonly blobs: unknown } | undefined;
 }
 
-const blobRefs = new WeakMap<object, BlobRefRuntime>();
 const blobSources = new WeakMap<object, BlobSourceRuntime>();
 const blobDrafts = new WeakMap<object, DraftRuntime>();
 const writes = new WeakMap<object, WriteRuntime>();
@@ -91,16 +94,6 @@ function freezeArray<Value>(items: readonly Value[]): readonly Value[] {
   return Object.freeze([...items]);
 }
 
-function validOwner(value: unknown): value is RecordAttachmentOwner {
-  return value === "run" || value === "attempt";
-}
-
-function validFamily(value: unknown): value is string {
-  return typeof value === "string" &&
-    /^niceeval\.[a-z0-9][a-z0-9.-]*$/.test(value) &&
-    !value.includes("/");
-}
-
 function payloadInvalid(path: readonly string[] = ["payload"]): RecordAttachmentPayloadInvalid {
   return recordAttachmentPayloadInvalid([
     recordAttachmentIssue("record-attachment-schema-invalid", path),
@@ -119,30 +112,7 @@ function fixedSpecInvalid(): RecordAttachmentDefinitionError {
   ]);
 }
 
-function validBlobBudget(value: unknown): value is RecordAttachmentBlobBudget {
-  if (typeof value !== "object" || value === null) return false;
-  const budget = value as Record<string, unknown>;
-  return [budget.maximumBlobs, budget.maximumBlobBytes, budget.maximumTotalBytes]
-    .every((limit) => Number.isSafeInteger(limit) && (limit as number) > 0);
-}
-
-/** @internal Fixed Record definitions use this guard for canonical blob refs. */
-export function isRecordBlobRef(value: unknown): value is RecordBlobRef {
-  return isObject(value) && blobRefs.has(value);
-}
-
-function makeBlobRef(builder: BuilderRuntime | undefined): RecordBlobRef {
-  const ref = {
-    [recordAttachmentBlobRefBrand]: () => recordAttachmentTypeWitness<void>(),
-  } as unknown as RecordBlobRef;
-  blobRefs.set(ref, Object.freeze({ builder }));
-  return Object.freeze(ref);
-}
-
-/** @internal Reader/storage integration mints hydrated refs without disk keys. */
-export function makeRecordBlobRef(): RecordBlobRef {
-  return makeBlobRef(undefined);
-}
+export { isRecordBlobRef, makeRecordBlobRef } from "./blob-ref.ts";
 
 /** Build a source capability from an Effect stream; raw bytes never enter this API. */
 export function makeRecordBlobSource<E, R>(
@@ -158,11 +128,11 @@ export function makeRecordBlobSource<E, R>(
 }
 
 function makeBuilder(): { readonly builder: RecordAttachmentBlobBuilder; readonly runtime: BuilderRuntime } {
-  const runtime: BuilderRuntime = { drafts: [] };
+  const runtime: BuilderRuntime = { owner: makeRecordBlobRefBuilderOwner(), drafts: [] };
   const builder = {
     add<E, R>(source: RecordBlobSource<E, R>): RecordAttachmentBlobDraft<E, R> {
       const sourceRuntime = isObject(source) ? blobSources.get(source) : undefined;
-      const ref = makeBlobRef(runtime);
+      const ref = makeRecordBlobRef(runtime.owner);
       const draft = {
         ref,
         [recordAttachmentBlobDraftBrand]: () =>
@@ -188,7 +158,7 @@ function isJsonArrayIndex(key: string): boolean {
   return Number.isSafeInteger(index) && index >= 0 && index < 4_294_967_295;
 }
 
-/** Defends the storage bridge in addition to RecordValueDefinition canonicalization. */
+/** Defends the storage bridge in addition to RecordSchemaCodec canonicalization. */
 function isAttachmentJson(value: unknown, active = new WeakSet<object>()): value is RecordAttachmentJson {
   if (isRecordBlobRef(value)) return true;
   switch (typeof value) {
@@ -261,22 +231,22 @@ function deepFreezePayload<Payload>(
   return value as RecordAttachmentPayloadSnapshot<Payload>;
 }
 
-function encodeThroughValue<Payload>(
-  value: FixedAttachmentWriteSpec<RecordAttachmentOwner, Payload>["value"],
+function encodeThroughCodec<Payload>(
+  ownerDefinition: RecordAttachmentOwnerDefinition<RecordAttachmentOwner, Payload>,
   payload: Payload,
 ): Either.Either<RecordAttachmentJson, RecordAttachmentPayloadInvalid> {
-  const encoded = value.encode(payload as never);
+  const encoded = ownerDefinition.codec.encode(payload);
   if (Either.isLeft(encoded)) return Either.left(payloadInvalid());
   return isAttachmentJson(encoded.right)
     ? Either.right(encoded.right)
     : Either.left(payloadInvalid());
 }
 
-function decodeThroughValue<Payload>(
-  value: FixedAttachmentWriteSpec<RecordAttachmentOwner, Payload>["value"],
+function decodeThroughCodec<Payload>(
+  ownerDefinition: RecordAttachmentOwnerDefinition<RecordAttachmentOwner, Payload>,
   input: unknown,
 ): Either.Either<Payload, RecordAttachmentPayloadInvalid> {
-  const decoded = value.decode(input);
+  const decoded = ownerDefinition.codec.decode(input);
   if (Either.isLeft(decoded)) return Either.left(payloadInvalid());
   return Either.right(decoded.right as Payload);
 }
@@ -289,39 +259,23 @@ function decodeThroughValue<Payload>(
 export function makeFixedAttachmentWriteSpec<
   Owner extends RecordAttachmentOwner,
   Payload,
->(input: {
-  readonly owner: Owner;
-  readonly family: string;
-  readonly schemaVersion: number;
-  readonly value: FixedAttachmentWriteSpec<Owner, Payload>["value"];
-  readonly blobRefs: (payload: Payload) => readonly RecordBlobRef[];
-  readonly blobBudget: RecordAttachmentBlobBudget;
-  readonly materializedRefine: RecordAttachmentMaterializedRefine<Payload>;
-}): Either.Either<FixedAttachmentWriteSpec<Owner, Payload>, RecordAttachmentDefinitionError> {
-  if (
-    !validOwner(input.owner) ||
-    !validFamily(input.family) ||
-    !Number.isSafeInteger(input.schemaVersion) ||
-    input.schemaVersion <= 0 ||
-    !isRecordValueDefinition(input.value) ||
-    input.value.leaf !== "json-with-blob-refs" ||
-    typeof input.blobRefs !== "function" ||
-    !validBlobBudget(input.blobBudget) ||
-    typeof input.materializedRefine !== "function"
-  ) {
+>(ownerDefinition: RecordAttachmentOwnerDefinition<Owner, Payload>): Either.Either<
+  FixedAttachmentWriteSpec<Owner, Payload>,
+  RecordAttachmentDefinitionError
+> {
+  if (!isRecordAttachmentOwnerDefinition(ownerDefinition)) {
     return Either.left(fixedSpecInvalid());
   }
-  const value = input.value;
+  const exactOwner = ownerDefinition as RecordAttachmentOwnerDefinition<RecordAttachmentOwner, Payload>;
   const spec = {
-    owner: input.owner,
-    family: input.family,
-    schemaVersion: input.schemaVersion,
-    value,
-    encodePayload: (payload: Payload) => encodeThroughValue(value, payload),
-    decodePayload: (inputValue: unknown) => decodeThroughValue<Payload>(value, inputValue),
-    blobRefs: input.blobRefs,
-    blobBudget: Object.freeze({ ...input.blobBudget }),
-    materializedRefine: input.materializedRefine,
+    owner: ownerDefinition.owner,
+    family: ownerDefinition.family,
+    schemaVersion: ownerDefinition.schemaVersion,
+    encodePayload: (payload: Payload) => encodeThroughCodec(exactOwner, payload),
+    decodePayload: (inputValue: unknown) => decodeThroughCodec<Payload>(exactOwner, inputValue),
+    refs: ownerDefinition.refs,
+    budget: Object.freeze({ ...ownerDefinition.budget }),
+    verify: ownerDefinition.verify,
     [fixedAttachmentWriteSpecBrand]: () =>
       recordAttachmentTypeWitness<{ readonly owner: Owner; readonly payload: Payload }>(),
   } as unknown as FixedAttachmentWriteSpec<Owner, Payload>;
@@ -343,8 +297,8 @@ function validateProjectedRefs(
   const refs: RecordBlobRef[] = [];
   const seen = new Set<RecordBlobRef>();
   for (const [index, ref] of projected.entries()) {
-    const runtime = isObject(ref) ? blobRefs.get(ref) : undefined;
-    if (runtime === undefined || (builder !== undefined && runtime.builder !== builder)) {
+    const builderOwner = isRecordBlobRef(ref) ? getRecordBlobRefBuilderOwner(ref) : undefined;
+    if (!isRecordBlobRef(ref) || (builder !== undefined && builderOwner !== builder.owner)) {
       issues.push(recordAttachmentIssue("record-attachment-blob-ref-illegal", ["payload", String(index)]));
       continue;
     }
@@ -369,8 +323,8 @@ function validateWriteRuntime(runtime: WriteRuntime): Either.Either<void, Record
   } else if (!isAttachmentJson(encoded.right)) {
     issues.push(recordAttachmentIssue("record-attachment-json-invalid", ["payload"]));
   }
-  const projected = validateProjectedRefs(runtime.fixed.blobRefs, runtime.build.payload, runtime.builder, issues);
-  if (projected !== undefined && projected.length > runtime.fixed.blobBudget.maximumBlobs) {
+  const projected = validateProjectedRefs(runtime.fixed.refs, runtime.build.payload, runtime.builder, issues);
+  if (projected !== undefined && projected.length > runtime.fixed.budget.maximumBlobs) {
     issues.push(recordAttachmentIssue("record-attachment-blob-budget-exceeded", ["blobs"]));
   }
   const projectedSet = new Set<RecordBlobRef>(projected ?? []);
@@ -512,7 +466,7 @@ function validateMaterializedClosure<Owner extends RecordAttachmentOwner, Payloa
   if (Either.isLeft(decoded)) throw new Error("Fixed Record owner value encoded a payload it cannot decode");
   const issues: RecordAttachmentIssue[] = [];
   const projected = validateProjectedRefs(
-    fixed.blobRefs as (payload: unknown) => readonly RecordBlobRef[],
+    fixed.refs as (payload: unknown) => readonly RecordBlobRef[],
     decoded.right,
     undefined,
     issues,
@@ -534,11 +488,11 @@ function validateMaterializedClosure<Owner extends RecordAttachmentOwner, Payloa
         issues.push(recordAttachmentIssue("record-attachment-snapshot-bytes-invalid", ["blobs", String(index), "bytes"]));
         continue;
       }
-      if (bytes.byteLength > fixed.blobBudget.maximumBlobBytes) {
+      if (bytes.byteLength > fixed.budget.maximumBlobBytes) {
         issues.push(recordAttachmentIssue("record-attachment-blob-budget-exceeded", ["blobs", String(index), "bytes"]));
       }
       totalBytes += bytes.byteLength;
-      if (totalBytes > fixed.blobBudget.maximumTotalBytes) {
+      if (totalBytes > fixed.budget.maximumTotalBytes) {
         issues.push(recordAttachmentIssue("record-attachment-blob-budget-exceeded", ["blobs"]));
       }
       if (materialized.has(ref)) {
@@ -554,7 +508,7 @@ function validateMaterializedClosure<Owner extends RecordAttachmentOwner, Payloa
       issues.push(recordAttachmentIssue("record-attachment-blob-ref-missing", ["payload", String(index)]));
     }
   }
-  if (materialized.size > fixed.blobBudget.maximumBlobs) {
+  if (materialized.size > fixed.budget.maximumBlobs) {
     issues.push(recordAttachmentIssue("record-attachment-blob-budget-exceeded", ["blobs"]));
   }
   if (issues.length === 0) {
@@ -563,7 +517,7 @@ function validateMaterializedClosure<Owner extends RecordAttachmentOwner, Payloa
         ref,
         bytes: new Uint8Array(bytes),
       })));
-      issues.push(...fixed.materializedRefine(decoded.right, snapshot));
+      issues.push(...fixed.verify(decoded.right, snapshot));
     } catch {
       issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["payload"]));
     }

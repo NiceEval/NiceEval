@@ -4,9 +4,9 @@
 公开、受支持的高级 Host composition SDK，供 NiceEval CLI、替代 CLI / Web host 或深度应用集成使用。
 普通 Eval、Analysis 与 Report 作者不导入它，不读取 Record directory，也不把这些类型当作作者协议。
 
-Record definition 的 factory、固定 family definition 与 migration steps 都是 package-private。外部没有
-`defineRecordProperty`、`defineRecordValue`、`defineRecordCore` 或 `defineRecordAttachment`，也没有
-generic family、definition 或 migration registration。
+Record definition 的两个 package-private 作者入口是 `defineRecordCore` 与 `defineRecordAttachment`。它们、
+固定 family declaration 与 migration steps 都不向外部导出；外部没有 generic family、definition 或 migration
+registration。`compileRecordSchemaCodec` 是消费已声明 Schema 的实现叶子，不是作者入口、扩展点或 barrel 导出。
 
 Library 是 Effect v3 API。它不在内部调用 `Effect.runPromise`；CLI 或 Host 边界只在最外层组合 Node
 Layer 并运行一次 Effect。typed error、defect 与 interruption 在到达这个边界前保持分离。

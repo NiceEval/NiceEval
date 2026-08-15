@@ -60,8 +60,8 @@ import type { LogicalSlot } from "./definitions.ts";
 export type FixedFamilyOwnerRequirement = "attempt" | "origin-run";
 
 /**
- * Static only: each binding retains the exact declaration-owned descriptor
- * and its property tokens. There is no runtime family lookup surface.
+ * Static only: each binding retains the exact declaration-owned descriptor.
+ * There is no runtime family lookup or field-token surface.
  */
 export interface FixedFamilyBinding<
   Owner extends FixedFamilyOwnerRequirement,
@@ -69,12 +69,10 @@ export interface FixedFamilyBinding<
   Descriptor extends {
     readonly family: string;
     readonly owner: "attempt" | "run";
-    readonly properties: object;
   },
 > {
   readonly owner: Owner;
   readonly descriptor: Descriptor;
-  readonly properties: Descriptor["properties"];
   readonly read: (
     reader: RecordReadSession,
     owner: SelectedOwnerRef,
@@ -137,10 +135,9 @@ function fixedFamilyBinding<
   Descriptor extends {
     readonly family: string;
     readonly owner: "attempt" | "run";
-    readonly properties: object;
   },
->(input: Omit<FixedFamilyBinding<Owner, Payload, Descriptor>, "properties">): FixedFamilyBinding<Owner, Payload, Descriptor> {
-  return Object.freeze({ ...input, properties: input.descriptor.properties });
+>(input: FixedFamilyBinding<Owner, Payload, Descriptor>): FixedFamilyBinding<Owner, Payload, Descriptor> {
+  return Object.freeze({ ...input });
 }
 
 const assertionsFamily = fixedFamilyBinding({

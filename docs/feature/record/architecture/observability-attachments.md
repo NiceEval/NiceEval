@@ -11,84 +11,72 @@ Analysis 见 [Observability](../../../observability.md)。
 ## 一个固定 family，一个 `owners` map
 
 每个 origin Attempt 恰有一份 Attempt payload；每个 Run 恰有一份 Run payload。reference Member
-沿精确 origin Attempt 读取，不复制 payload。NiceEval internal definition 以一个入口声明两个 owner，
-不是外部可调用的 Attachment factory：
+沿精确 origin Attempt 读取，不复制 payload。NiceEval 以一个 package-private 作者入口声明两个 owner：
 
 ```ts
-// NiceEval internal only. Each map key is the TS field; each property carries
-// a separate token id and durable JSON key.
-const attemptObservabilityProperties = {
-  owner: defineRecordProperty({
-    id: "niceeval.observability.attempt.owner",
-    durableKey: "owner-kind",
-    schema: Schema.Literal("attempt"),
-  }),
-  conversation: defineRecordProperty({
-    id: "niceeval.observability.attempt.conversation",
-    durableKey: "conversation-data",
-    schema: ConversationCollectionSchema,
-  }),
-  commands: defineRecordProperty({
-    id: "niceeval.observability.attempt.commands",
-    durableKey: "commands-data",
-    schema: CommandsCollectionSchema,
-  }),
-  usage: defineRecordProperty({
-    id: "niceeval.observability.attempt.usage",
-    durableKey: "usage-data",
-    schema: UsageCollectionSchema,
-  }),
-  timing: defineRecordProperty({
-    id: "niceeval.observability.attempt.timing",
-    durableKey: "timing-data",
-    schema: AttemptTimingCollectionSchema,
-  }),
-  diagnostics: defineRecordProperty({
-    id: "niceeval.observability.attempt.diagnostics",
-    durableKey: "diagnostics-data",
-    schema: AttemptDiagnosticsCollectionSchema,
-  }),
-} as const;
+// NiceEval internal only; not an importable author API.
+const AttemptObservabilitySchema = Schema.Struct({
+  owner: Schema.propertySignature(Schema.Literal("attempt")).pipe(
+    Schema.fromKey("owner-kind"),
+  ),
+  conversation: Schema.propertySignature(ConversationCollectionSchema).pipe(
+    Schema.fromKey("conversation-data"),
+  ),
+  commands: Schema.propertySignature(CommandsCollectionSchema).pipe(
+    Schema.fromKey("commands-data"),
+  ),
+  usage: Schema.propertySignature(UsageCollectionSchema).pipe(
+    Schema.fromKey("usage-data"),
+  ),
+  timing: Schema.propertySignature(AttemptTimingCollectionSchema).pipe(
+    Schema.fromKey("timing-data"),
+  ),
+  diagnostics: Schema.propertySignature(AttemptDiagnosticsCollectionSchema).pipe(
+    Schema.fromKey("diagnostics-data"),
+  ),
+});
 
-const runObservabilityProperties = {
-  owner: defineRecordProperty({
-    id: "niceeval.observability.run.owner",
-    durableKey: "owner-kind",
-    schema: Schema.Literal("run"),
-  }),
-  timing: defineRecordProperty({
-    id: "niceeval.observability.run.timing",
-    durableKey: "timing-data",
-    schema: RunTimingCollectionSchema,
-  }),
-  diagnostics: defineRecordProperty({
-    id: "niceeval.observability.run.diagnostics",
-    durableKey: "diagnostics-data",
-    schema: RunDiagnosticsCollectionSchema,
-  }),
-} as const;
+const RunObservabilitySchema = Schema.Struct({
+  owner: Schema.propertySignature(Schema.Literal("run")).pipe(
+    Schema.fromKey("owner-kind"),
+  ),
+  timing: Schema.propertySignature(RunTimingCollectionSchema).pipe(
+    Schema.fromKey("timing-data"),
+  ),
+  diagnostics: Schema.propertySignature(RunDiagnosticsCollectionSchema).pipe(
+    Schema.fromKey("diagnostics-data"),
+  ),
+});
 
 const observability = defineRecordAttachment({
   family: "niceeval.observability",
   current: {
     schemaVersion: 1,
     owners: {
-      attempt: defineRecordValue({
-        properties: attemptObservabilityProperties,
-        leaf: "json-with-blob-refs",
+      attempt: {
+        schema: AttemptObservabilitySchema,
         limits: AttemptObservabilityLimits,
-        isBlobRef: isRecordBlobRef,
-        refine: refineAttemptObservability,
-      }),
-      run: defineRecordValue({
-        properties: runObservabilityProperties,
-        leaf: "json-with-blob-refs",
+        blobs: {
+          refs: AttemptObservabilityBlobRefs,
+          budget: AttemptObservabilityBlobBudget,
+          verify: verifyAttemptObservability,
+        },
+      },
+      run: {
+        schema: RunObservabilitySchema,
         limits: RunObservabilityLimits,
-        isBlobRef: isRecordBlobRef,
-        refine: refineRunObservability,
-      }),
+        blobs: {
+          refs: RunObservabilityBlobRefs,
+          budget: RunObservabilityBlobBudget,
+          verify: verifyRunObservability,
+        },
+      },
     },
   },
+  maintenance: async () => ({
+    historicalCodecs: [],
+    adjacentMigrations: [],
+  }),
 });
 ```
 
@@ -115,10 +103,9 @@ type RunObservabilityAttachment = {
 };
 ```
 
-owner discriminator（归属判别）和五个 Attempt data field 都是同一 Attachment 中的固定 property，不是
-额外的 durable family。Attempt 即使确知没有 command、usage 或 timing interval，也写 `complete` 的空
-collection。Run 的 properties map 没有 conversation、commands 和 usage；它们不会以 null、空 object 或
-自定义 metadata 出现。
+owner discriminator（归属判别）和五个 Attempt data field 都是同一 Attachment 中的固定字段，不是额外的
+durable family。Attempt 即使确知没有 command、usage 或 timing interval，也写 `complete` 的空 collection。
+Run Schema 没有 conversation、commands 和 usage；它们不会以 null、空 object 或自定义 metadata 出现。
 
 所有 payload 都是 exact JSON。array 按每种实体的 identity canonical 排序并拒绝重复。文本上限按
 UTF-8 bytes 计。`SafeText` 已脱敏、没有 NUL 或 C0 control（换行除外）；它不是 raw Error 或任意

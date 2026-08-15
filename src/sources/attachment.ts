@@ -129,7 +129,7 @@ export function createSourcesAttachmentWrite(
       });
     });
     candidateItems.sort((left, right) => left.sourceItemId.localeCompare(right.sourceItemId));
-    const decoded = Schema.decodeUnknownEither(
+    const decoded = Schema.validateEither(
       SourcesAttachmentSchema,
       RecordExactParseOptions,
     )(Object.freeze({ items: Object.freeze(candidateItems) }));

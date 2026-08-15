@@ -6,18 +6,22 @@ import {
   Sha256DigestSchema,
   SourceItemIdSchema,
 } from "../codec/identifiers.ts";
-import type { RecordBlobRef } from "../attachment/types.ts";
+import {
+  RecordBlobRefSchema,
+  type RecordBlobRef,
+} from "../attachment/blob-ref.ts";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../attachment/errors.ts";
+import { defineRecordAttachment } from "../definition/index.ts";
 import type { SourcesAttachment } from "./sources.ts";
 import {
   MAX_COMMAND_INLINE_STREAM_BYTES,
   MAX_COMMAND_STREAM_BYTES,
 } from "../../o11y/record/limits.ts";
 import {
+  FixedAttachmentValueLimits,
   NonNegativeSafeIntegerSchema,
   EmptyArraySchema,
   PositiveSafeIntegerSchema,
-  RecordBlobRefPositionSchema,
   SafeIdentifierSchema,
   SafeTextSchema,
   isCanonicalIdentitySequence,
@@ -188,7 +192,7 @@ export const AttemptConversationCollectionSchema = Schema.Struct({
 const CommandStreamSchema = Schema.Struct({
   storage: Schema.Union(
     Schema.Struct({ kind: Schema.Literal("inline"), text: SafeTextSchema }),
-    Schema.Struct({ kind: Schema.Literal("blob"), ref: RecordBlobRefPositionSchema }),
+    Schema.Struct({ kind: Schema.Literal("blob"), ref: RecordBlobRefSchema }),
   ),
   retainedBytes: NonNegativeSafeIntegerSchema,
   totalSafeUtf8Bytes: NonNegativeSafeIntegerSchema,
@@ -588,19 +592,37 @@ export const RunDiagnosticsCollectionSchema = diagnosticsCollectionSchema(
 
 /** Exact Attempt owner payload for the one fixed Observability family. */
 export const AttemptObservabilityAttachmentSchema = Schema.Struct({
-  owner: Schema.Literal("attempt"),
-  conversation: AttemptConversationCollectionSchema,
-  commands: AttemptCommandsCollectionSchema,
-  usage: AttemptUsageCollectionSchema,
-  timing: AttemptTimingCollectionSchema,
-  diagnostics: AttemptDiagnosticsCollectionSchema,
+  owner: Schema.propertySignature(Schema.Literal("attempt")).pipe(
+    Schema.fromKey("owner-kind"),
+  ),
+  conversation: Schema.propertySignature(AttemptConversationCollectionSchema).pipe(
+    Schema.fromKey("conversation-data"),
+  ),
+  commands: Schema.propertySignature(AttemptCommandsCollectionSchema).pipe(
+    Schema.fromKey("commands-data"),
+  ),
+  usage: Schema.propertySignature(AttemptUsageCollectionSchema).pipe(
+    Schema.fromKey("usage-data"),
+  ),
+  timing: Schema.propertySignature(AttemptTimingCollectionSchema).pipe(
+    Schema.fromKey("timing-data"),
+  ),
+  diagnostics: Schema.propertySignature(AttemptDiagnosticsCollectionSchema).pipe(
+    Schema.fromKey("diagnostics-data"),
+  ),
 });
 
 /** Exact Run owner payload for the same fixed Observability family. */
 export const RunObservabilityAttachmentSchema = Schema.Struct({
-  owner: Schema.Literal("run"),
-  timing: RunTimingCollectionSchema,
-  diagnostics: RunDiagnosticsCollectionSchema,
+  owner: Schema.propertySignature(Schema.Literal("run")).pipe(
+    Schema.fromKey("owner-kind"),
+  ),
+  timing: Schema.propertySignature(RunTimingCollectionSchema).pipe(
+    Schema.fromKey("timing-data"),
+  ),
+  diagnostics: Schema.propertySignature(RunDiagnosticsCollectionSchema).pipe(
+    Schema.fromKey("diagnostics-data"),
+  ),
 });
 
 export type AttemptObservabilityAttachment = Schema.Schema.Type<
@@ -723,3 +745,43 @@ export function observabilitySourceFrameIntegrityIssues(
   }
   return Object.freeze(issues);
 }
+
+const AttemptObservabilityBlobBudget = Object.freeze({
+  maximumBlobs: 4_000,
+  maximumBlobBytes: 16 * 1024 * 1024,
+  maximumTotalBytes: 64 * 1024 * 1024,
+});
+
+const RunObservabilityBlobBudget = Object.freeze({
+  maximumBlobs: 256,
+  maximumBlobBytes: 16 * 1024 * 1024,
+  maximumTotalBytes: 16 * 1024 * 1024,
+});
+
+/** One family declaration owns both Observability owner payloads. */
+export const observabilityRecordAttachment = defineRecordAttachment({
+  family: "niceeval.observability",
+  current: {
+    schemaVersion: 1,
+    owners: {
+      attempt: {
+        schema: AttemptObservabilityAttachmentSchema,
+        limits: FixedAttachmentValueLimits,
+        blobs: {
+          refs: observabilityBlobRefs,
+          budget: AttemptObservabilityBlobBudget,
+          verify: observabilityAttachmentIntegrityIssues,
+        },
+      },
+      run: {
+        schema: RunObservabilityAttachmentSchema,
+        limits: FixedAttachmentValueLimits,
+        blobs: {
+          refs: observabilityBlobRefs,
+          budget: RunObservabilityBlobBudget,
+          verify: observabilityAttachmentIntegrityIssues,
+        },
+      },
+    },
+  },
+});

@@ -6,11 +6,15 @@ import {
   Sha256DigestSchema,
   SourceItemIdSchema,
 } from "../codec/identifiers.ts";
-import type { RecordBlobRef } from "../attachment/types.ts";
-import { recordAttachmentIssue, type RecordAttachmentIssue } from "../attachment/errors.ts";
 import {
+  RecordBlobRefSchema,
+  type RecordBlobRef,
+} from "../attachment/blob-ref.ts";
+import { recordAttachmentIssue, type RecordAttachmentIssue } from "../attachment/errors.ts";
+import { defineRecordAttachment } from "../definition/index.ts";
+import {
+  FixedAttachmentValueLimits,
   NonNegativeSafeIntegerSchema,
-  RecordBlobRefPositionSchema,
   isCanonicalIdentitySequence,
 } from "./common.ts";
 
@@ -20,7 +24,7 @@ export const SourceItemSchema = Schema.Struct({
   path: CanonicalProjectRelativePathSchema,
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-  content: RecordBlobRefPositionSchema,
+  content: RecordBlobRefSchema,
 });
 
 export type SourceItem = Schema.Schema.Type<typeof SourceItemSchema>;
@@ -30,7 +34,9 @@ export type SourceItem = Schema.Schema.Type<typeof SourceItemSchema>;
  * neither a path, digest, array index, nor blob-key derivation.
  */
 export const SourcesAttachmentSchema = Schema.Struct({
-  items: Schema.Array(SourceItemSchema),
+  items: Schema.propertySignature(Schema.Array(SourceItemSchema)).pipe(
+    Schema.fromKey("items-data"),
+  ),
 }).pipe(
   Schema.filter(
     (document) =>
@@ -82,3 +88,28 @@ export function sourcesAttachmentIntegrityIssues(
   }
   return Object.freeze(issues);
 }
+
+const SourcesBlobBudget = Object.freeze({
+  maximumBlobs: 20_000,
+  maximumBlobBytes: 16 * 1024 * 1024,
+  maximumTotalBytes: 128 * 1024 * 1024,
+});
+
+/** The sole current declaration for the Run-owned Sources family. */
+export const sourcesRecordAttachment = defineRecordAttachment({
+  family: "niceeval.sources",
+  current: {
+    schemaVersion: 1,
+    owners: {
+      run: {
+        schema: SourcesAttachmentSchema,
+        limits: FixedAttachmentValueLimits,
+        blobs: {
+          refs: sourcesBlobRefs,
+          budget: SourcesBlobBudget,
+          verify: sourcesAttachmentIntegrityIssues,
+        },
+      },
+    },
+  },
+});

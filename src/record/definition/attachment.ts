@@ -1,28 +1,72 @@
-import { isRecordValueDefinition, type RecordValueLeaf } from "./value.ts";
+import type { Schema } from "effect";
+import {
+  RecordBlobRefSchema,
+  isRecordBlobRef,
+  type RecordBlobRef,
+} from "../attachment/blob-ref.ts";
 import type {
   RecordAttachmentBlobBudget,
+  RecordAttachmentBlobRefs,
   RecordAttachmentMaterializedRefine,
-} from "../attachment/types.ts";
+} from "../attachment/blob-policy.ts";
+import type { RecordAttachmentOwner } from "../model/core.ts";
+import {
+  compileRecordSchemaCodec,
+  type RecordSchemaCodec,
+  type RecordSchemaLimits,
+} from "./schema-codec.ts";
 
-export type RecordAttachmentOwner = "attempt" | "run";
+const recordAttachmentOwnerDefinitionTypeId: unique symbol = Symbol(
+  "@niceeval/record/RecordAttachmentOwnerDefinition",
+);
 
-type AttachmentOwnerValue = Readonly<{ readonly leaf: Extract<RecordValueLeaf, "json-with-blob-refs"> }>;
+const compiledOwners = new WeakSet<object>();
 
-export type RecordAttachmentOwnerValues = Readonly<{
-  readonly attempt?: AttachmentOwnerValue;
-  readonly run?: AttachmentOwnerValue;
-}>;
+export type { RecordAttachmentOwner } from "../model/core.ts";
 
-/** Per-owner materialization policy is part of the static fixed declaration. */
-export interface RecordAttachmentOwnerMaterialization {
-  readonly blobBudget: RecordAttachmentBlobBudget;
-  readonly materializedRefine: RecordAttachmentMaterializedRefine<unknown>;
+export interface RecordAttachmentOwnerInput<
+  SourceSchema extends Schema.Schema.AnyNoContext = Schema.Schema.AnyNoContext,
+> {
+  readonly schema: SourceSchema;
+  readonly limits: RecordSchemaLimits;
+  readonly blobs: Readonly<{
+    readonly refs: RecordAttachmentBlobRefs<Schema.Schema.Type<SourceSchema>>;
+    readonly budget: RecordAttachmentBlobBudget;
+    readonly verify: RecordAttachmentMaterializedRefine<Schema.Schema.Type<SourceSchema>>;
+  }>;
 }
 
-export type RecordAttachmentOwnerMaterializations<Owners extends RecordAttachmentOwnerValues> =
-  Readonly<{
-    readonly [Owner in Extract<keyof Owners, RecordAttachmentOwner>]: RecordAttachmentOwnerMaterialization;
-  }>;
+export type RecordAttachmentOwnerInputs = Readonly<Partial<Record<
+  RecordAttachmentOwner,
+  RecordAttachmentOwnerInput<Schema.Schema.AnyNoContext>
+>>>;
+
+/** One owner compiled exactly once from a fixed family declaration. */
+export interface RecordAttachmentOwnerDefinition<
+  Owner extends RecordAttachmentOwner,
+  Payload,
+  SourceSchema extends Schema.Schema.AnyNoContext = Schema.Schema.AnyNoContext,
+> {
+  readonly family: string;
+  readonly schemaVersion: number;
+  readonly owner: Owner;
+  readonly codec: RecordSchemaCodec<Payload, RecordBlobRef, SourceSchema>;
+  readonly refs: RecordAttachmentBlobRefs<Payload>;
+  readonly budget: RecordAttachmentBlobBudget;
+  readonly verify: RecordAttachmentMaterializedRefine<Payload>;
+  readonly [recordAttachmentOwnerDefinitionTypeId]: () => void;
+}
+
+type OwnerDefinitionFor<Owner extends RecordAttachmentOwner, Input> =
+  Input extends RecordAttachmentOwnerInput<infer SourceSchema>
+    ? RecordAttachmentOwnerDefinition<Owner, Schema.Schema.Type<SourceSchema>, SourceSchema>
+    : never;
+
+export type RecordAttachmentOwnerDefinitions<Owners extends RecordAttachmentOwnerInputs> = Readonly<{
+  readonly [Owner in keyof Owners]: Owner extends RecordAttachmentOwner
+    ? OwnerDefinitionFor<Owner, Owners[Owner]>
+    : never;
+}>;
 
 /** Historical codecs stay opaque to the current import graph until maintenance asks for them. */
 export interface RecordAttachmentHistoricalCodec {
@@ -51,13 +95,12 @@ export interface RecordAttachmentMaintenanceFacet {
 
 export interface RecordAttachmentDefinition<
   out Family extends string = string,
-  out Owners extends RecordAttachmentOwnerValues = RecordAttachmentOwnerValues,
+  Owners extends RecordAttachmentOwnerInputs = RecordAttachmentOwnerInputs,
 > {
   readonly family: Family;
   readonly current: Readonly<{
     readonly schemaVersion: number;
-    readonly owners: Owners;
-    readonly materialization: RecordAttachmentOwnerMaterializations<Owners>;
+    readonly owners: RecordAttachmentOwnerDefinitions<Owners>;
   }>;
   readonly maintenance: (() => Promise<RecordAttachmentMaintenanceFacet>) | undefined;
   readonly adjacentMigrationLinks: readonly RecordAttachmentAdjacentMigrationLink[];
@@ -67,19 +110,78 @@ function validFamily(value: string): boolean {
   return /^niceeval\.[a-z0-9][a-z0-9.-]*$/.test(value) && !value.includes("/");
 }
 
+function validBlobBudget(value: unknown): value is RecordAttachmentBlobBudget {
+  if (typeof value !== "object" || value === null) return false;
+  const budget = value as Record<string, unknown>;
+  return [budget.maximumBlobs, budget.maximumBlobBytes, budget.maximumTotalBytes]
+    .every((limit) => Number.isSafeInteger(limit) && (limit as number) > 0);
+}
+
+function compileOwner<
+  Owner extends RecordAttachmentOwner,
+  SourceSchema extends Schema.Schema.AnyNoContext,
+>(
+  family: string,
+  schemaVersion: number,
+  owner: Owner,
+  input: RecordAttachmentOwnerInput<SourceSchema>,
+): RecordAttachmentOwnerDefinition<Owner, Schema.Schema.Type<SourceSchema>, SourceSchema> {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    typeof input.blobs !== "object" ||
+    input.blobs === null ||
+    typeof input.blobs.refs !== "function" ||
+    !validBlobBudget(input.blobs.budget) ||
+    typeof input.blobs.verify !== "function"
+  ) {
+    throw new TypeError("Record Attachment owners must declare a bounded blob policy");
+  }
+  const codec = compileRecordSchemaCodec({
+    schema: input.schema,
+    limits: input.limits,
+    blobRef: {
+      schema: RecordBlobRefSchema,
+      isBlobRef: isRecordBlobRef,
+    },
+  });
+  const definition: RecordAttachmentOwnerDefinition<
+    Owner,
+    Schema.Schema.Type<SourceSchema>,
+    SourceSchema
+  > = {
+    family,
+    schemaVersion,
+    owner,
+    codec,
+    refs: input.blobs.refs,
+    budget: Object.freeze({ ...input.blobs.budget }),
+    verify: input.blobs.verify,
+    [recordAttachmentOwnerDefinitionTypeId]: () => undefined,
+  };
+  compiledOwners.add(definition);
+  return Object.freeze(definition);
+}
+
+/** @internal Runtime factories accept only owners minted by defineRecordAttachment. */
+export function isRecordAttachmentOwnerDefinition(
+  value: unknown,
+): value is RecordAttachmentOwnerDefinition<RecordAttachmentOwner, unknown> {
+  return typeof value === "object" && value !== null && compiledOwners.has(value);
+}
+
 /**
  * NiceEval-only fixed-family declaration. It stores no registry and exposes no
  * plugin hook: the static catalog is assembled by package code alone.
  */
 export function defineRecordAttachment<
   const Family extends string,
-  const Owners extends RecordAttachmentOwnerValues,
+  const Owners extends RecordAttachmentOwnerInputs,
 >(input: {
   readonly family: Family;
   readonly current: {
     readonly schemaVersion: number;
     readonly owners: Owners;
-    readonly materialization: RecordAttachmentOwnerMaterializations<Owners>;
   };
   readonly maintenance?: () => Promise<RecordAttachmentMaintenanceFacet>;
   readonly adjacentMigrationLinks?: readonly RecordAttachmentAdjacentMigrationLink[];
@@ -118,49 +220,23 @@ export function defineRecordAttachment<
   ) {
     throw new TypeError("Record Attachment owners may contain only attempt and run");
   }
-  const owners = input.current.owners as RecordAttachmentOwnerValues;
-  const materialization = input.current.materialization as Partial<
-    Record<RecordAttachmentOwner, RecordAttachmentOwnerMaterialization>
-  >;
+  const owners = input.current.owners as RecordAttachmentOwnerInputs;
+  const compiled: Partial<Record<RecordAttachmentOwner, RecordAttachmentOwnerDefinition<
+    RecordAttachmentOwner,
+    unknown
+  >>> = {};
   for (const key of keys as readonly RecordAttachmentOwner[]) {
-    const owner = owners[key];
-    if (
-      owner === undefined ||
-      !isRecordValueDefinition(owner) ||
-      owner.leaf !== "json-with-blob-refs"
-    ) {
-      throw new TypeError("Record Attachment owners must use the json-with-blob-refs leaf");
+    const ownerInput = owners[key];
+    if (ownerInput === undefined) {
+      throw new TypeError("Record Attachment owners must have one schema and blob policy");
     }
-    const policy = materialization[key];
-    if (
-      policy === undefined ||
-      typeof policy.materializedRefine !== "function" ||
-      !Number.isSafeInteger(policy.blobBudget.maximumBlobs) || policy.blobBudget.maximumBlobs <= 0 ||
-      !Number.isSafeInteger(policy.blobBudget.maximumBlobBytes) || policy.blobBudget.maximumBlobBytes <= 0 ||
-      !Number.isSafeInteger(policy.blobBudget.maximumTotalBytes) || policy.blobBudget.maximumTotalBytes <= 0
-    ) {
-      throw new TypeError("Record Attachment owners must declare a bounded materialization policy");
-    }
-  }
-  if (Reflect.ownKeys(materialization).some((key) => !keys.includes(key))) {
-    throw new TypeError("Record Attachment materialization may contain only declared owners");
+    compiled[key] = compileOwner(input.family, input.current.schemaVersion, key, ownerInput);
   }
   return Object.freeze({
     family: input.family,
     current: Object.freeze({
       schemaVersion: input.current.schemaVersion,
-      owners: Object.freeze({ ...input.current.owners }) as Owners,
-      materialization: Object.freeze(
-        Object.fromEntries(
-          (keys as readonly RecordAttachmentOwner[]).map((key) => [
-            key,
-            Object.freeze({
-              blobBudget: Object.freeze({ ...materialization[key]!.blobBudget }),
-              materializedRefine: materialization[key]!.materializedRefine,
-            }),
-          ]),
-        ),
-      ) as RecordAttachmentOwnerMaterializations<Owners>,
+      owners: Object.freeze(compiled) as RecordAttachmentOwnerDefinitions<Owners>,
     }),
     maintenance: input.maintenance,
     adjacentMigrationLinks: Object.freeze(adjacentMigrationLinks.map((link) => Object.freeze({ ...link }))),

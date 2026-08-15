@@ -12,8 +12,8 @@ import type {
 import { decodeRecordAttachmentEnvelope } from "../codec/core.ts";
 import type {
   FixedRecordFamilyDescriptor,
+  NiceEvalFamily,
 } from "../family/catalog.ts";
-import type { NiceEvalFamily } from "../family/common.ts";
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import type { AttemptId, RunId } from "../model/identifiers.ts";
 import {
@@ -294,14 +294,14 @@ export function readFixedRecordAttachment<
     const blobs = yield* readBlobDirectory(
       input.fileSystem,
       attachmentPath(input.root, input.location, input.descriptor.family, "blobs"),
-      input.descriptor.blobBudget.maximumBlobs,
+      input.descriptor.write.budget.maximumBlobs,
     );
     if (blobs.state === "invalid") return attachmentInvalid<Payload>(["blobs"]);
 
     const hydrated = hydrateDurablePayload(payloadDocument.value);
     if (hydrated.invalid) return attachmentInvalid<Payload>(["payload.json"]);
     const entries = blobs.state === "available" ? blobs.entries : [];
-    if (entries.length > input.descriptor.blobBudget.maximumBlobs) {
+    if (entries.length > input.descriptor.write.budget.maximumBlobs) {
       return attachmentInvalid<Payload>(["blobs"]);
     }
     const entriesByKey = new Map(entries.map((entry) => [entry.name, entry] as const));
@@ -318,11 +318,11 @@ export function readFixedRecordAttachment<
       const bytes = yield* readBlob(
         input.fileSystem,
         attachmentPath(input.root, input.location, input.descriptor.family, "blobs", key),
-        input.descriptor.blobBudget.maximumBlobBytes,
+        input.descriptor.write.budget.maximumBlobBytes,
       );
       if (bytes === undefined) return attachmentInvalid<Payload>(["blobs", key]);
       totalBytes += bytes.byteLength;
-      if (totalBytes > input.descriptor.blobBudget.maximumTotalBytes) {
+      if (totalBytes > input.descriptor.write.budget.maximumTotalBytes) {
         return attachmentInvalid<Payload>(["blobs", key]);
       }
       materialized.push(Object.freeze({ ref, bytes }));

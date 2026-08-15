@@ -221,11 +221,11 @@ function fixedRunDiagnostic(diagnostic: RunDiagnostic): unknown {
 }
 
 function decodeAttempt(value: unknown): Either.Either<Schema.Schema.Type<typeof AttemptObservabilityAttachmentSchema>, ObservabilityAttachmentBuildError> {
-  const decoded = Schema.decodeUnknownEither(AttemptObservabilityAttachmentSchema, RecordExactParseOptions)(value);
+  const decoded = Schema.validateEither(AttemptObservabilityAttachmentSchema, RecordExactParseOptions)(value);
   return Either.isLeft(decoded) ? Either.left(invalid()) : Either.right(decoded.right);
 }
 function decodeRun(value: unknown): Either.Either<Schema.Schema.Type<typeof RunObservabilityAttachmentSchema>, ObservabilityAttachmentBuildError> {
-  const decoded = Schema.decodeUnknownEither(RunObservabilityAttachmentSchema, RecordExactParseOptions)(value);
+  const decoded = Schema.validateEither(RunObservabilityAttachmentSchema, RecordExactParseOptions)(value);
   return Either.isLeft(decoded) ? Either.left(invalid()) : Either.right(decoded.right);
 }
 

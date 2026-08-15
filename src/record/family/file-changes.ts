@@ -7,13 +7,17 @@ import {
   Sha256DigestSchema,
 } from "../codec/identifiers.ts";
 import { compareCanonicalIdentity } from "../model/identifiers.ts";
-import type { RecordBlobRef } from "../attachment/types.ts";
+import {
+  RecordBlobRefSchema,
+  type RecordBlobRef,
+} from "../attachment/blob-ref.ts";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../attachment/errors.ts";
+import { defineRecordAttachment } from "../definition/index.ts";
 import {
   EmptyArraySchema,
+  FixedAttachmentValueLimits,
   NonNegativeSafeIntegerSchema,
   PositiveSafeIntegerSchema,
-  RecordBlobRefPositionSchema,
 } from "./common.ts";
 
 /** Immutable per-Attempt budgets for the fixed File Changes family. */
@@ -28,6 +32,12 @@ export const FileChangesLimits = Object.freeze({
   maximumPayloadJsonBytes: 16 * 1024 * 1024,
   maximumPolicyEntries: 256,
   maximumPolicyEntryUtf8Bytes: 4096,
+});
+
+/** File Changes preserves more endpoint nodes than the shared owner envelope. */
+const FileChangesAttachmentValueLimits = Object.freeze({
+  ...FixedAttachmentValueLimits,
+  maximumNodes: 500_000,
 });
 
 const encoder = new TextEncoder();
@@ -189,7 +199,7 @@ export const FileRevisionSchema = Schema.Union(
     content: Schema.Union(
       Schema.Struct({
         state: Schema.Literal("available"),
-        ref: RecordBlobRefPositionSchema,
+        ref: RecordBlobRefSchema,
       }),
       Schema.Struct({
         state: Schema.Literal("omitted"),
@@ -269,9 +279,15 @@ export type FileChangesWindow = Schema.Schema.Type<typeof FileChangesWindowSchem
 
 /** Attempt-owned sandbox facts, preserving each send window rather than a net path summary. */
 export const FileChangesAttachmentSchema = Schema.Struct({
-  attribution: FileChangesAttributionSchema,
-  collection: FileChangesCollectionStateSchema,
-  windows: Schema.Array(FileChangesWindowSchema),
+  attribution: Schema.propertySignature(FileChangesAttributionSchema).pipe(
+    Schema.fromKey("attribution-data"),
+  ),
+  collection: Schema.propertySignature(FileChangesCollectionStateSchema).pipe(
+    Schema.fromKey("collection-data"),
+  ),
+  windows: Schema.propertySignature(Schema.Array(FileChangesWindowSchema)).pipe(
+    Schema.fromKey("windows-data"),
+  ),
 }).pipe(
   Schema.filter(
     (payload) => {
@@ -374,3 +390,28 @@ export function fileChangesAttachmentIntegrityIssues(
   }
   return Object.freeze(issues);
 }
+
+const FileChangesBlobBudget = Object.freeze({
+  maximumBlobs: FileChangesLimits.maximumBlobs,
+  maximumBlobBytes: FileChangesLimits.maximumBlobBytes,
+  maximumTotalBytes: FileChangesLimits.maximumTotalBlobBytes,
+});
+
+/** The sole current declaration for the Attempt-owned File Changes family. */
+export const fileChangesRecordAttachment = defineRecordAttachment({
+  family: "niceeval.file-changes",
+  current: {
+    schemaVersion: 1,
+    owners: {
+      attempt: {
+        schema: FileChangesAttachmentSchema,
+        limits: FileChangesAttachmentValueLimits,
+        blobs: {
+          refs: fileChangesBlobRefs,
+          budget: FileChangesBlobBudget,
+          verify: fileChangesAttachmentIntegrityIssues,
+        },
+      },
+    },
+  },
+});

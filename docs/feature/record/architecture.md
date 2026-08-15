@@ -52,76 +52,61 @@ record/
 它之后永不修改这个 Run。没有 `complete` 的目录不进入选择、Sample 或 reuse，并产生
 `incomplete-run` warning。
 
-## NiceEval 内部的 definition 驱动模型
+## NiceEval 内部的 Effect Schema 作者模型
 
-NiceEval 以一个 package-private definition 集合描述 root、Core 与 current catalog 的五个固定 Attachment。它是读取、
-写入、校验、canonical encode 和 migration 的共同输入；不存在另一份手写的“当前模型”。以下函数不从
-任何公开 package 导出：
+NiceEval 以 package-private Schema declaration 描述 root、Core 与 current catalog 的五个固定 Attachment。
+它是读取、写入、校验、canonical encode 与 migration 的共同输入；不存在另一份手写的当前模型。
 
-- `defineRecordProperty`
-- `defineRecordValue`
-- `defineRecordCore`
-- `defineRecordAttachment`
+唯一的作者入口是 `defineRecordCore` 与 `defineRecordAttachment`。两者不从公开 package 导出，也不是
+Plugin、Adapter 或应用作者可调用的 extension point。没有公开 generic family、declaration、registration point
+或 migration registry。
 
-它们也不是 Plugin、Adapter 或应用作者可调用的 extension point。没有公开 generic
-`RecordDefinition`、`RecordFamily`、`RecordAttachment`、registration point 或 migration registry。
+`compileRecordSchemaCodec` 消费已声明的 Schema 并执行编解码。它是 package-private 的实现叶子，既不是
+作者入口，也不是扩展点或 barrel 导出。
 
-### property 的三个身份
+### Core Schema
 
-每个 property 分开声明 property token id、TS field 和 durableKey。TS field 不是 property input 的成员；
-它是 `defineRecordCore` 或 `defineRecordValue` 的 `properties` map key。即使 map key 与 `durableKey`
-的拼写碰巧相同，它们仍是三个不同角色，定义和编码不能以字符串相等把它们合并。
+`defineRecordCore({ schema, limits })` 声明一个 Core document。`Schema.Type` 是内存字段形状，
+`Schema.Encoded` 是 durable JSON 形状。字段名和 durable JSON 键不同，由同一个 Schema 显式声明：
 
 ```ts
 // NiceEval internal only; not an importable author API.
-const runStartedAt = defineRecordProperty({
-  id: "niceeval.record.property.run-started-at",
-  durableKey: "started-at-ms",
-  schema: UtcMillisSchema,
+const RunTimingSchema = Schema.Struct({
+  startedAt: Schema.propertySignature(UtcMillisSchema).pipe(
+    Schema.fromKey("started-at-ms"),
+  ),
 });
 
 const runTiming = defineRecordCore({
-  properties: {
-    startedAt: runStartedAt,
-  },
+  schema: RunTimingSchema,
   limits: RunTimingLimits,
 });
+
+type RunTiming = Schema.Type<typeof RunTimingSchema>;
+type EncodedRunTiming = Schema.Encoded<typeof RunTimingSchema>;
 ```
 
-| 名称 | 示例 | 用途 |
-|---|---|---|
-| property token id | `niceeval.record.property.run-started-at` | definition 图中的内部令牌与缓存身份 |
-| TS field | `startedAt`，即 `properties` map key | 已验证内存对象的字段访问 |
-| durableKey | `started-at-ms` | durable JSON 的 canonical key |
+`RunTiming` 使用 `startedAt`，`EncodedRunTiming` 使用 `started-at-ms`。这项键映射不引入独立身份。
+`AnalysisInput.id` 仍命名统计投影，例如 `niceeval.analysis.attempt-latency-ms`，与 Record durable JSON 键无关。
 
-`AnalysisInput.id` 是另一类身份。它命名统计投影，例如 `niceeval.analysis.attempt-latency-ms`，既不是
-property token id，也不是 durableKey，不能拿 Record JSON key 代替。
+### current、maintenance 与 fixed family
 
-### current 与 maintenance facet
-
-内部集合有两个固定 facet：
+内部集合有 `current` 与 `maintenance` 两个固定 facet。`current` 是 ordinary reader 与 writer 唯一可用的
+完整 Schema。`maintenance` 拥有 format inspection、Git preflight 与固定相邻 migration；ordinary reader
+既不调用它，也不在读取时改盘。
 
 ```ts
-// NiceEval internal only; the shape explains ownership, not a public factory.
+// NiceEval internal only; the shape explains ownership, not a public API.
 const recordDefinition = {
   current: {
     root: defineRecordCore({
-      properties: recordDocumentProperties,
+      schema: RecordDocumentSchema,
       limits: RecordDocumentLimits,
-      refine: refineRecordDocument,
     }),
-    core: defineRecordCore({
-      properties: runMemberAttemptProperties,
-      limits: RecordCoreLimits,
-      refine: refineRecordCore,
-    }),
-    attachments: {
-      assertions: /* one fixed definition */,
-      observability: /* one fixed definition */,
-      fileChanges: /* one fixed definition */,
-      sources: /* one fixed definition */,
-      artifacts: /* one fixed definition */,
-    },
+    run: defineRecordCore({ schema: RunDocumentSchema, limits: RunDocumentLimits }),
+    member: defineRecordCore({ schema: MemberDocumentSchema, limits: MemberDocumentLimits }),
+    attempt: defineRecordCore({ schema: AttemptDocumentSchema, limits: AttemptDocumentLimits }),
+    attachments: currentAttachmentCatalog,
   },
   maintenance: {
     adjacentMigrations: [],
@@ -129,132 +114,93 @@ const recordDefinition = {
 } as const;
 ```
 
-`current` 是 ordinary reader 与 writer 唯一可用的完整 schema。`maintenance` 只拥有 format inspection、
-Git preflight 与固定相邻迁移。普通 reader 不调用 maintenance，也不在读历史时自动改盘。
-
-### Core 与 Attachment 的 leaf 类型
-
-`defineRecordCore({ properties, limits, refine? })` 固定使用 `json` leaf。它的输出绝不含 blob ref；根、
-Run、Member 与 Attempt 因此能在不 materialize 大内容的情况下独立验证。
-
-Attachment owner value 用
-`defineRecordValue({ properties, leaf: "json-with-blob-refs", limits, isBlobRef?, refine? })` 声明。它仍是
-exact JSON，但只可用由该 definition 认可的 blob ref 指向 own closure。generic writer 不能接受任意 JSON、
-path、bytes 或手写 ref。
-
-固定 family 只由 NiceEval 用
-`defineRecordAttachment({ family, current: { schemaVersion, owners }, maintenance? })` 声明。`maintenance` 是
-延迟取得历史 codec 与相邻迁移的内部 facet；它不是普通 reader 或第三方 registration 的入口。
+一个 `defineRecordAttachment` 调用定义 stable `family` 与 `current`。`current` 包含数值 `schemaVersion` 和
+全部 owner。每个 owner 相邻声明 payload Schema、limits 及 `blobs: { refs, budget, verify }`。`maintenance`
+是 async 的 lazy 历史 codec 与相邻 migration 描述；它不提供历史兼容读取。
 
 ```ts
-// NiceEval internal only. Map keys are TS fields; each value has its own token
-// and durableKey instead of one monolithic payload schema.
-const attemptObservabilityProperties = {
-  conversation: defineRecordProperty({
-    id: "niceeval.observability.attempt.conversation",
-    durableKey: "conversation-data",
-    schema: ConversationCollectionSchema,
-  }),
-  commands: defineRecordProperty({
-    id: "niceeval.observability.attempt.commands",
-    durableKey: "commands-data",
-    schema: CommandsCollectionSchema,
-  }),
-} as const;
-
-const runObservabilityProperties = {
-  timing: defineRecordProperty({
-    id: "niceeval.observability.run.timing",
-    durableKey: "timing-data",
-    schema: RunTimingCollectionSchema,
-  }),
-  diagnostics: defineRecordProperty({
-    id: "niceeval.observability.run.diagnostics",
-    durableKey: "diagnostics-data",
-    schema: RunDiagnosticsCollectionSchema,
-  }),
-} as const;
-
+// NiceEval internal only.
 const observability = defineRecordAttachment({
   family: "niceeval.observability",
   current: {
     schemaVersion: 1,
     owners: {
-      attempt: defineRecordValue({
-        properties: attemptObservabilityProperties,
-        leaf: "json-with-blob-refs",
+      attempt: {
+        schema: AttemptObservabilitySchema,
         limits: AttemptObservabilityLimits,
-        isBlobRef: isRecordBlobRef,
-        refine: refineAttemptObservability,
-      }),
-      run: defineRecordValue({
-        properties: runObservabilityProperties,
-        leaf: "json-with-blob-refs",
+        blobs: {
+          refs: AttemptObservabilityBlobRefs,
+          budget: AttemptObservabilityBlobBudget,
+          verify: verifyAttemptObservability,
+        },
+      },
+      run: {
+        schema: RunObservabilitySchema,
         limits: RunObservabilityLimits,
-        isBlobRef: isRecordBlobRef,
-        refine: refineRunObservability,
-      }),
+        blobs: {
+          refs: RunObservabilityBlobRefs,
+          budget: RunObservabilityBlobBudget,
+          verify: verifyRunObservability,
+        },
+      },
     },
   },
+  maintenance: async () => ({
+    historicalCodecs: [],
+    adjacentMigrations: [],
+  }),
 });
+
+const currentAttachmentCatalog = [
+  assertions,
+  observability,
+  fileChanges,
+  sources,
+  artifacts,
+] as const;
 ```
 
-Observability 有一个 family 入口，owner-specific shape 位于 `owners.attempt` 与 `owners.run`。Artifacts
-也有一个入口：
+每个 family 模块包含自己的 declaration、复杂 payload Schema、encoded-side durable JSON 键、limits、blob
+closure 与 integrity 验证。当前每个 family 文件恰有一个 `defineRecordAttachment` 调用。复杂 family 可拆成目录，
+但只有 `definition.ts` 保留该入口。总 catalog 只列五个 declaration，不复制 owner shape 或 payload Schema。
+Observability 与 Artifacts 各有一个 family declaration；`owners.attempt` 与 `owners.run` 不会形成第二个 family。
 
-```ts
-// NiceEval internal only.
-const artifacts = defineRecordAttachment({
-  family: "niceeval.artifacts",
-  current: {
-    schemaVersion: 1,
-    owners: {
-      attempt: defineRecordValue({
-        properties: attemptArtifactProperties,
-        leaf: "json-with-blob-refs",
-        limits: AttemptArtifactLimits,
-        isBlobRef: isRecordBlobRef,
-        refine: refineAttemptArtifacts,
-      }),
-      run: defineRecordValue({
-        properties: runArtifactProperties,
-        leaf: "json-with-blob-refs",
-        limits: RunArtifactLimits,
-        isBlobRef: isRecordBlobRef,
-        refine: refineRunArtifacts,
-      }),
-    },
-  },
-});
-```
+未知 stable family 保留其目录与 bytes，跳过 payload / blob 解码，继续读取 Core 与已知 family。请求它的
+AnalysisInput 或 DomainView 才得到 `unsupported`。已知 family 的旧 schemaVersion 则走显式 migration。
 
-Observability 与 Artifacts 都不是两个 family，也不会因 owner 增加第二个 schema 名称。
+### Schema 允许集
+
+传给两个作者入口的 Effect Schema 都必须有 `R = never`。Core 的 encoded side 只能是 exact JSON。
+Attachment 的 encoded side 也只能是 exact JSON，外加 owner declaration 唯一 mint 的 `RecordBlobRef`。
+每个 ref 只能指向同 owner、同 family 的一份 own blob。
+
+允许字段到 durable JSON 键的映射与 Schema refinement。拒绝任意 transform、需要 Effect context 的 schema、
+effectful schema 和历史兼容变换。旧版本只经过 maintenance 的显式相邻 migration 形成 current bytes。
+generic writer 不接受任意 JSON、path、bytes 或手写 ref。
 
 ## Exact codec、canonical form 与预算
 
-每个 definition 以同一条顺序处理 bytes。object key 先按 definition 的 durableKey canonical order
-重建；identity array 不自动排序。array 的领域 refine 要求它已按声明 identity canonical order 排列，
-并拒绝重复或非规范顺序。
+每个 declaration 以同一条顺序处理 bytes。object key 先按 `Schema.Encoded` 的 canonical durable JSON 键顺序
+重建；identity array 不自动排序。Schema refinement 与 owner `verify` 要求数组已按声明的 identity canonical
+顺序排列，并拒绝重复或非规范顺序。
 
 ```text
 decode
-bytes → JSON parse → canonicalize object keys → Effect Schema exact → local refine
-                                                           │
-                                                           ▼
-                                              Core cross-document refine
+bytes → JSON parse → canonicalize Schema.Encoded object keys → Effect Schema exact decode
+      → local Schema refinement / owner verify → Core cross-document verification
 
 encode
-refined value → Core cross-document refine → local refine → Effect Schema encode
-                                                    → canonical durableKey order → bytes
+verified value → Core cross-document verification → local Schema refinement / owner verify
+               → Effect Schema encode → canonical Schema.Encoded durable JSON key order → bytes
 ```
 
-Effect Schema exact 拒绝未知、缺失或错误 shape。local refine 负责数值范围、identity 唯一性、owner、
-blob closure 和 family 的局部关系。Core cross-document refine 在 root、Run、Member 和 Attempt 都解码后
+Effect Schema exact 拒绝未知、缺失或错误 shape。Schema refinement 与 owner `verify` 负责数值范围、identity
+唯一性、owner、blob closure 和 family 的局部关系。Core 跨文档验证在 root、Run、Member 和 Attempt 都解码后
 检查引用、expected Slot 与 origin 关系；单个 document 通过 Schema 不能取代这一步。
 
-每个 property/value definition 自己声明 JSON、identity array 与 blob 的预算。封口和读取都执行同一预算，
-不以一个全局宽松上限绕过 family 的边界。encode 是 decode 的反向受控边界：只有已经 refined 的值可以
-编码，输出 object key 始终依 durableKey canonical order。
+每份 Core declaration 和每个 Attachment owner declaration 都声明 JSON、identity array 与 blob 预算。封口和
+读取都执行同一预算，不以一个全局宽松上限绕过 family 的边界。encode 是受控反向边界：只有已验证值可以编码，
+输出 object key 始终服从 `Schema.Encoded` 的 canonical durable JSON 键顺序。
 
 ## Current root 与 Core
 

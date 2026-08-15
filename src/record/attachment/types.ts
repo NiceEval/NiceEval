@@ -1,6 +1,12 @@
 import type { Either, Stream } from "effect";
-import type { RecordValueDefinition } from "../definition/value.ts";
 import type { RecordAttachmentOwner } from "../model/core.ts";
+import type {
+  RecordAttachmentBlobBudget,
+  RecordAttachmentBlobRefs,
+  RecordAttachmentMaterializedBlob,
+  RecordAttachmentMaterializedRefine,
+} from "./blob-policy.ts";
+import type { RecordBlobRef } from "./blob-ref.ts";
 import type {
   RecordAttachmentClosureInvalid,
   RecordAttachmentDefinitionError,
@@ -8,15 +14,12 @@ import type {
   RecordAttachmentPayloadInvalid,
 } from "./errors.ts";
 
-const recordBlobRefTypeId: unique symbol = Symbol("@niceeval/record/RecordBlobRef");
 const recordBlobSourceTypeId: unique symbol = Symbol("@niceeval/record/RecordBlobSource");
 const recordAttachmentBlobDraftTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentBlobDraft");
 const recordAttachmentBlobBuilderTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentBlobBuilder");
 const recordAttachmentWriteTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentWrite");
 const fixedAttachmentWriteSpecTypeId: unique symbol = Symbol("@niceeval/record/FixedAttachmentWriteSpec");
 
-/** @internal Runtime factories need these symbols; WeakMap membership is authority. */
-export const recordAttachmentBlobRefBrand = recordBlobRefTypeId;
 /** @internal */
 export const recordAttachmentBlobSourceBrand = recordBlobSourceTypeId;
 /** @internal */
@@ -33,33 +36,13 @@ export function recordAttachmentTypeWitness<T>(): T {
   throw new Error("RecordAttachment runtime type witnesses are never callable.");
 }
 
-/** A package-minted, owner-local blob handle. It deliberately exposes no key. */
-export interface RecordBlobRef {
-  readonly [recordBlobRefTypeId]: () => void;
-}
-
-/** Static per-owner resource envelope for a fixed family closure. */
-export interface RecordAttachmentBlobBudget {
-  readonly maximumBlobs: number;
-  readonly maximumBlobBytes: number;
-  readonly maximumTotalBytes: number;
-}
-
-/** Bytes are exposed only to the sealed reader/writer materialization boundary. */
-export interface RecordAttachmentMaterializedBlob {
-  readonly ref: RecordBlobRef;
-  readonly bytes: Uint8Array;
-}
-
-/**
- * Family-owned relation checks that need the exact materialized closure, such
- * as byte length and digest claims. They cannot be truthfully established by
- * payload shape validation alone.
- */
-export type RecordAttachmentMaterializedRefine<Payload> = (
-  payload: Payload,
-  blobs: readonly RecordAttachmentMaterializedBlob[],
-) => readonly RecordAttachmentIssue[];
+export type { RecordBlobRef } from "./blob-ref.ts";
+export type {
+  RecordAttachmentBlobBudget,
+  RecordAttachmentBlobRefs,
+  RecordAttachmentMaterializedBlob,
+  RecordAttachmentMaterializedRefine,
+} from "./blob-policy.ts";
 
 export interface RecordBlobSource<out E, out R> {
   readonly stream: Stream.Stream<Uint8Array, E, R>;
@@ -125,10 +108,6 @@ export type RecordAttachmentJson =
   | readonly RecordAttachmentJson[]
   | { readonly [key: string]: RecordAttachmentJson };
 
-export type RecordAttachmentBlobRefs<Payload> = {
-  bivarianceHack(payload: Payload): readonly RecordBlobRef[];
-}["bivarianceHack"];
-
 /**
  * A static owner codec and closure primitive, minted from exactly one
  * `defineRecordAttachment(...).current.owners[owner]` value. It contains no
@@ -141,20 +120,15 @@ export interface FixedAttachmentWriteSpec<
   readonly owner: Owner;
   readonly family: string;
   readonly schemaVersion: number;
-  readonly value: RecordValueDefinition<
-    any,
-    "json-with-blob-refs",
-    RecordBlobRef
-  >;
   readonly encodePayload: (
     payload: Payload,
   ) => Either.Either<RecordAttachmentJson, RecordAttachmentPayloadInvalid>;
   readonly decodePayload: (
     input: unknown,
   ) => Either.Either<Payload, RecordAttachmentPayloadInvalid>;
-  readonly blobRefs: (payload: Payload) => readonly RecordBlobRef[];
-  readonly blobBudget: RecordAttachmentBlobBudget;
-  readonly materializedRefine: RecordAttachmentMaterializedRefine<Payload>;
+  readonly refs: (payload: Payload) => readonly RecordBlobRef[];
+  readonly budget: RecordAttachmentBlobBudget;
+  readonly verify: RecordAttachmentMaterializedRefine<Payload>;
   readonly [fixedAttachmentWriteSpecTypeId]: () => {
     readonly owner: Owner;
     readonly payload: Payload;

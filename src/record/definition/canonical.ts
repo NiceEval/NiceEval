@@ -28,7 +28,7 @@ export type RecordJsonWithBlobRefs<Blob extends object> =
   | RecordJsonWithBlobRefsObject<Blob>;
 
 /** Every durable value declares all of these budgets at its definition site. */
-export interface RecordValueLimits {
+export interface RecordSchemaLimits {
   readonly maximumJsonBytes: number;
   readonly maximumDepth: number;
   readonly maximumNodes: number;
@@ -139,7 +139,7 @@ function enter(
   value: unknown,
   depth: number,
   path: readonly string[],
-  limits: RecordValueLimits,
+  limits: RecordSchemaLimits,
   state: CanonicalizationState,
 ): boolean {
   if (depth > limits.maximumDepth) {
@@ -167,7 +167,7 @@ function enter(
 function sortedObjectKeys(
   value: object,
   path: readonly string[],
-  limits: RecordValueLimits,
+  limits: RecordSchemaLimits,
   state: CanonicalizationState,
 ): readonly string[] | undefined {
   const keys = Reflect.ownKeys(value);
@@ -211,7 +211,7 @@ function canonicalArray<Blob extends object>(
   value: readonly unknown[],
   depth: number,
   path: readonly string[],
-  limits: RecordValueLimits,
+  limits: RecordSchemaLimits,
   options: RecordCanonicalizationOptions<Blob>,
   state: CanonicalizationState,
 ): readonly RecordJsonWithBlobRefs<Blob>[] | undefined {
@@ -248,7 +248,7 @@ function canonicalObject<Blob extends object>(
   value: Record<string, unknown>,
   depth: number,
   path: readonly string[],
-  limits: RecordValueLimits,
+  limits: RecordSchemaLimits,
   options: RecordCanonicalizationOptions<Blob>,
   state: CanonicalizationState,
 ): RecordJsonWithBlobRefsObject<Blob> | undefined {
@@ -271,7 +271,7 @@ function canonicalizeValue<Blob extends object>(
   input: unknown,
   depth: number,
   path: readonly string[],
-  limits: RecordValueLimits,
+  limits: RecordSchemaLimits,
   options: RecordCanonicalizationOptions<Blob>,
   state: CanonicalizationState,
 ): CanonicalRecordValue<Blob> | undefined {
@@ -341,7 +341,7 @@ function jsonBytes(value: RecordJson): number | undefined {
  */
 export function canonicalizeRecordValue<Blob extends object = never>(
   input: unknown,
-  limits: RecordValueLimits,
+  limits: RecordSchemaLimits,
   options: RecordCanonicalizationOptions<Blob> = {},
 ): Either.Either<CanonicalRecordValue<Blob>, RecordCanonicalizationFailure> {
   const state: CanonicalizationState = {
@@ -367,7 +367,7 @@ export function canonicalizeRecordValue<Blob extends object = never>(
 
 export function canonicalizeRecordJson(
   input: unknown,
-  limits: RecordValueLimits,
+  limits: RecordSchemaLimits,
 ): Either.Either<RecordJson, RecordCanonicalizationFailure> {
   const result = canonicalizeRecordValue(input, limits);
   return Either.isLeft(result)

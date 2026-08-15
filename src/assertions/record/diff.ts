@@ -8,6 +8,7 @@ import {
   type RecordAttachmentBlobDraft,
   type RecordAttachmentWrite,
 } from "../../record/attachment/index.ts";
+import { makeRecordBlobRef } from "../../record/attachment/internal.ts";
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
 import { fileChangesRecordFamily } from "../../record/family/catalog.ts";
 import {
@@ -98,6 +99,7 @@ const encoder = new TextEncoder();
 const blobBudgetProjection = Object.freeze({
   "$niceeval.record.blob-ref": true,
 });
+const captureSchemaBlobRef = makeRecordBlobRef();
 
 function compareAscii(left: string, right: string): number {
   return left === right ? 0 : left < right ? -1 : 1;
@@ -669,16 +671,16 @@ function assertFileChangesCaptureSchema(capture: FileChangesCapture): void {
         kind: change.kind,
         before: durableEndpoint(change.before, () => Object.freeze({
           state: "available" as const,
-          ref: blobBudgetProjection,
+          ref: captureSchemaBlobRef,
         })),
         after: durableEndpoint(change.after, () => Object.freeze({
           state: "available" as const,
-          ref: blobBudgetProjection,
+          ref: captureSchemaBlobRef,
         })),
       }))),
     }))),
   });
-  const decoded = Schema.decodeUnknownEither(
+  const decoded = Schema.validateEither(
     FileChangesAttachmentSchema,
     RecordExactParseOptions,
   )(preview);
@@ -725,7 +727,7 @@ export function createFileChangesCaptureAttachmentWrite(
           }))),
         }))),
       });
-      const decoded = Schema.decodeUnknownEither(
+      const decoded = Schema.validateEither(
         FileChangesAttachmentSchema,
         RecordExactParseOptions,
       )(payload);

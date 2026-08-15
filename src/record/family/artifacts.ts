@@ -5,13 +5,17 @@ import {
   ArtifactIdSchema,
   Sha256DigestSchema,
 } from "../codec/identifiers.ts";
-import type { RecordBlobRef } from "../attachment/types.ts";
+import {
+  RecordBlobRefSchema,
+  type RecordBlobRef,
+} from "../attachment/blob-ref.ts";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../attachment/errors.ts";
+import { defineRecordAttachment } from "../definition/index.ts";
 import {
   CollectionStateSchema,
+  FixedAttachmentValueLimits,
   MediaTypeSchema,
   NonNegativeSafeIntegerSchema,
-  RecordBlobRefPositionSchema,
   SafeTextSchema,
   isCanonicalIdentitySequence,
 } from "./common.ts";
@@ -22,15 +26,19 @@ export const ArtifactSchema = Schema.Struct({
   label: SafeTextSchema,
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-  content: RecordBlobRefPositionSchema,
+  content: RecordBlobRefSchema,
 });
 
 export type Artifact = Schema.Schema.Type<typeof ArtifactSchema>;
 
 /** One owner-local, typed file collection. Owner may be an origin Run or Attempt. */
 export const ArtifactsAttachmentSchema = Schema.Struct({
-  collection: CollectionStateSchema,
-  artifacts: Schema.Array(ArtifactSchema),
+  collection: Schema.propertySignature(CollectionStateSchema).pipe(
+    Schema.fromKey("collection-data"),
+  ),
+  artifacts: Schema.propertySignature(Schema.Array(ArtifactSchema)).pipe(
+    Schema.fromKey("artifacts-data"),
+  ),
 }).pipe(
   Schema.filter(
     (payload) =>
@@ -76,3 +84,37 @@ export function artifactsAttachmentIntegrityIssues(
   }
   return Object.freeze(issues);
 }
+
+const ArtifactsBlobBudget = Object.freeze({
+  maximumBlobs: 4_000,
+  maximumBlobBytes: 64 * 1024 * 1024,
+  maximumTotalBytes: 128 * 1024 * 1024,
+});
+
+/** One family declaration owns both Attempt- and Run-owned artifacts. */
+export const artifactsRecordAttachment = defineRecordAttachment({
+  family: "niceeval.artifacts",
+  current: {
+    schemaVersion: 1,
+    owners: {
+      attempt: {
+        schema: ArtifactsAttachmentSchema,
+        limits: FixedAttachmentValueLimits,
+        blobs: {
+          refs: artifactBlobRefs,
+          budget: ArtifactsBlobBudget,
+          verify: artifactsAttachmentIntegrityIssues,
+        },
+      },
+      run: {
+        schema: ArtifactsAttachmentSchema,
+        limits: FixedAttachmentValueLimits,
+        blobs: {
+          refs: artifactBlobRefs,
+          budget: ArtifactsBlobBudget,
+          verify: artifactsAttachmentIntegrityIssues,
+        },
+      },
+    },
+  },
+});

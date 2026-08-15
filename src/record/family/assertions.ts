@@ -4,18 +4,22 @@ import { Schema } from "effect";
 import { assertionBlobRefs } from "../../assertions/record/attachment.ts";
 import {
   AssertionEntryIdSchema,
+  MAX_ASSERTION_DOCUMENT_BYTES,
   createAssertionsRecordSchemas,
 } from "../../assertions/record/codec.ts";
-import type { AssertionsDocumentOuter } from "../../assertions/record/model.ts";
-import type { RecordBlobRef } from "../attachment/types.ts";
+import {
+  RecordBlobRefSchema,
+  type RecordBlobRef,
+} from "../attachment/blob-ref.ts";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../attachment/errors.ts";
+import { defineRecordAttachment } from "../definition/index.ts";
 import {
   Sha256DigestSchema,
   SourceItemIdSchema,
 } from "../codec/identifiers.ts";
 import {
+  FixedAttachmentValueLimits,
   PositiveSafeIntegerSchema,
-  RecordBlobRefPositionSchema,
 } from "./common.ts";
 
 const AssertionSourceRoleSchema = Schema.Literal(
@@ -51,15 +55,20 @@ export type AssertionSourceSite = Schema.Schema.Type<
 >;
 
 const assertionSchemas = createAssertionsRecordSchemas(
-  RecordBlobRefPositionSchema,
+  RecordBlobRefSchema,
 );
 
-/** Property-level owner value schema; the full attachment schema refines both fields together. */
+/** Reuse the existing v1 entry schema inside the one direct attachment schema. */
 export const AssertionsEntriesSchema = assertionSchemas.entries;
 export const AssertionSourceSitesSchema = Schema.Array(AssertionSourceSiteSchema);
 
 function hasNoLegacyAttachmentMaterial(
-  document: AssertionsDocumentOuter<RecordBlobRef>,
+  document: {
+    readonly entries: readonly {
+      readonly subject: { readonly kind: string };
+      readonly evidence: readonly { readonly kind: string }[];
+    }[];
+  },
 ): boolean {
   const materialIsAllowed = (material: { readonly kind: string }): boolean =>
     material.kind !== "record-attachment";
@@ -86,16 +95,48 @@ function hasCanonicalSourceSites(payload: {
   return true;
 }
 
+function hasUniqueAssertionEntryIds(document: {
+  readonly entries: readonly { readonly entryId: string }[];
+}): boolean {
+  const entryIds = new Set<string>();
+  for (const entry of document.entries) {
+    if (entryIds.has(entry.entryId)) return false;
+    entryIds.add(entry.entryId);
+  }
+  return true;
+}
+
+function isAssertionsDocumentWithinSizeLimit(value: unknown): boolean {
+  try {
+    const serialized = JSON.stringify(value);
+    return typeof serialized === "string" &&
+      new TextEncoder().encode(serialized).byteLength <= MAX_ASSERTION_DOCUMENT_BYTES;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * `sourceSites` is embedded in the fixed Assertions payload. The former
  * `niceeval.assertion-source-sites/v1` family is not part of Record v1.
  */
-export const AssertionsAttachmentSchema = assertionSchemas.outerDocument.pipe(
-  Schema.extend(
-    Schema.Struct({
-      sourceSites: AssertionSourceSitesSchema,
-    }),
+/** One direct current schema: Type fields and durable keys share all v1 filters. */
+export const AssertionsAttachmentSchema = Schema.Struct({
+  entries: Schema.propertySignature(AssertionsEntriesSchema).pipe(
+    Schema.fromKey("entries-data"),
   ),
+  sourceSites: Schema.propertySignature(AssertionSourceSitesSchema).pipe(
+    Schema.fromKey("source-sites-data"),
+  ),
+}).pipe(
+  Schema.filter(hasUniqueAssertionEntryIds, {
+    identifier: "AssertionsUniqueEntryIds",
+    description: "unique attachment-local assertion entry IDs",
+  }),
+  Schema.filter(isAssertionsDocumentWithinSizeLimit, {
+    identifier: "AssertionsDocumentSize",
+    description: "a JSON document no larger than 4 MiB",
+  }),
   Schema.filter(hasNoLegacyAttachmentMaterial, {
     identifier: "AssertionsNoLegacyAttachmentMaterial",
     description: "Assertions do not reference retired attachment families",
@@ -151,3 +192,28 @@ export function assertionsAttachmentIntegrityIssues(
   }
   return Object.freeze(issues);
 }
+
+const AssertionsBlobBudget = Object.freeze({
+  maximumBlobs: 20_000,
+  maximumBlobBytes: 16 * 1024 * 1024,
+  maximumTotalBytes: 64 * 1024 * 1024,
+});
+
+/** The sole current declaration for the Attempt-owned Assertions family. */
+export const assertionsRecordAttachment = defineRecordAttachment({
+  family: "niceeval.assertions",
+  current: {
+    schemaVersion: 1,
+    owners: {
+      attempt: {
+        schema: AssertionsAttachmentSchema,
+        limits: FixedAttachmentValueLimits,
+        blobs: {
+          refs: assertionsBlobRefs,
+          budget: AssertionsBlobBudget,
+          verify: assertionsAttachmentIntegrityIssues,
+        },
+      },
+    },
+  },
+});

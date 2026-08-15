@@ -629,7 +629,7 @@ function artifactsWrite<Owner extends "attempt" | "run">(input: {
         content: draft.ref,
       });
     }).sort((left, right) => left.artifactId.localeCompare(right.artifactId));
-    const decoded = Schema.decodeUnknownEither(
+    const decoded = Schema.validateEither(
       ArtifactsAttachmentSchema,
       RecordExactParseOptions,
     )(

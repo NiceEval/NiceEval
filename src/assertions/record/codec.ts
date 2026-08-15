@@ -1,4 +1,5 @@
 import { Either, Schema } from "effect";
+import { isRecordBlobRef } from "../../record/attachment/blob-ref.ts";
 import { Sha256DigestSchema } from "../../record/codec/identifiers.ts";
 import { assertionRuntimeLimits } from "../limits.ts";
 import {
@@ -232,7 +233,7 @@ function isBoundedJsonValue(value: unknown): value is BoundedJsonValue {
   return isBoundedJsonValueAt(value, 0, new WeakSet());
 }
 
-function isBoundedJsonObject(value: unknown): value is BoundedJsonObject {
+export function isBoundedJsonObject(value: unknown): value is BoundedJsonObject {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -241,11 +242,97 @@ function isBoundedJsonObject(value: unknown): value is BoundedJsonObject {
   );
 }
 
-export const BoundedJsonValueSchema: Schema.Schema<BoundedJsonValue> =
-  Schema.declare<BoundedJsonValue>(isBoundedJsonValue);
+/** @internal Raw descriptor preflight for direct Assertions Schema boundaries. */
+export function isAssertionsRawDataGraph(
+  value: unknown,
+  active = new WeakSet<object>(),
+): boolean {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "string" ||
+    (typeof value === "number" && Number.isFinite(value))
+  ) {
+    return true;
+  }
+  if (typeof value !== "object" || active.has(value)) return false;
+  if (isRecordBlobRef(value)) return true;
+  active.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const expected = new Set<string>(["length"]);
+      for (let index = 0; index < value.length; index += 1) expected.add(String(index));
+      const keys = Reflect.ownKeys(value);
+      if (keys.length !== expected.size || keys.some((key) => typeof key !== "string" || !expected.has(key))) {
+        return false;
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (
+          descriptor === undefined ||
+          descriptor.enumerable !== true ||
+          !("value" in descriptor) ||
+          !isAssertionsRawDataGraph(descriptor.value, active)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return false;
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (
+        descriptor === undefined ||
+        descriptor.enumerable !== true ||
+        !("value" in descriptor) ||
+        !isAssertionsRawDataGraph(descriptor.value, active)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    active.delete(value);
+  }
+}
 
-export const BoundedJsonObjectSchema: Schema.Schema<BoundedJsonObject> =
-  Schema.declare<BoundedJsonObject>(isBoundedJsonObject);
+const BoundedJsonValueNodeSchema: Schema.Schema<BoundedJsonValue> = Schema.suspend(
+  (): Schema.Schema<BoundedJsonValue> => Schema.Union(
+    Schema.Null,
+    Schema.Boolean,
+    Schema.JsonNumber,
+    BoundedJsonStringSchema,
+    Schema.Array(BoundedJsonValueNodeSchema),
+    Schema.Record({
+      key: BoundedJsonStringSchema,
+      value: BoundedJsonValueNodeSchema,
+    }),
+  ),
+);
+
+/** Recursive JSON shape plus the Assertions-specific depth and collection budgets. */
+export const BoundedJsonValueSchema: Schema.Schema<BoundedJsonValue> =
+  BoundedJsonValueNodeSchema.pipe(
+    Schema.filter(isBoundedJsonValue, {
+      identifier: "AssertionsBoundedJsonValue",
+      description: "a recursive JSON value within the Assertions limits",
+    }),
+  );
+
+export const BoundedJsonObjectSchema: Schema.Schema<BoundedJsonObject> = Schema.Record({
+  key: BoundedJsonStringSchema,
+  value: BoundedJsonValueNodeSchema,
+}).pipe(
+  Schema.filter(isBoundedJsonObject, {
+    identifier: "AssertionsBoundedJsonObject",
+    description: "a recursive JSON object within the Assertions limits",
+  }),
+);
 
 export const AssertionEntryIdSchema: Schema.Schema<AssertionEntryId, string> =
   Schema.String.pipe(
@@ -595,6 +682,7 @@ export function decodeAssertionsDocumentOuter<BlobRef, Encoded>(
   schema: Schema.Schema<AssertionsDocumentOuter<BlobRef>, Encoded>,
   input: unknown,
 ): Either.Either<AssertionsDocumentOuter<BlobRef>, AssertionsRecordCodecError> {
+  if (!isAssertionsRawDataGraph(input)) return Either.left(assertionsDocumentInvalid);
   const decoded = Schema.decodeUnknownEither(
     schema,
     AssertionsExactParseOptions,
@@ -608,6 +696,7 @@ export function decodeAssertionsDocument<BlobRef, Encoded>(
   schema: Schema.Schema<AssertionsDocument<BlobRef>, Encoded>,
   input: unknown,
 ): Either.Either<AssertionsDocument<BlobRef>, AssertionsRecordCodecError> {
+  if (!isAssertionsRawDataGraph(input)) return Either.left(assertionsDocumentInvalid);
   const decoded = Schema.decodeUnknownEither(
     schema,
     AssertionsExactParseOptions,

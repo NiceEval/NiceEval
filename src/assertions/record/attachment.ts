@@ -30,6 +30,7 @@ import {
   AssertionsExactParseOptions,
   BoundedJsonObjectSchema,
   createAssertionsRecordSchemas,
+  isBoundedJsonObject,
   projectAssertionsDocument,
   type ThirdPartyCriterionRegistry,
 } from "./codec.ts";
@@ -479,6 +480,11 @@ function materializeMaterial<E, R>(
 function outerCriterion(
   criterion: AssertionEntry<AssertionsProvisionalBlobRef>["criterion"],
 ): AssertionEntryOuter<RecordBlobRef>["criterion"] {
+  // Effect's structural decoder reads fields before a trailing filter. Keep
+  // the descriptor-aware raw check in front so accessors are never executed.
+  if (!isBoundedJsonObject(criterion)) {
+    throw new Error("An Assertions v1 writer criterion must be bounded JSON");
+  }
   const decoded = Schema.decodeUnknownEither(
     BoundedJsonObjectSchema,
     AssertionsExactParseOptions,
