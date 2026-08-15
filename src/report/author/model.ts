@@ -174,7 +174,10 @@ interface PageContents extends ComponentContents {
   readonly render: AuthorCallback;
 }
 
-export type ReportPageNavigationTitle = string | Readonly<Record<string, string>>;
+export type ReportPageNavigationTitle = string | {
+  readonly en: string;
+  readonly "zh-CN": string;
+};
 
 export interface ReportPageNavigationDefinition {
   readonly title: ReportPageNavigationTitle;

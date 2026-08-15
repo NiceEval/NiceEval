@@ -1199,8 +1199,9 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
           );
         },
         { concurrency: 1, discard: true },
-      );
-    });
+      ),
+      { concurrency: 1, discard: true },
+    );
 
     const membershipActionsFor = (
       recordRun: RunnerRecordRun<AttachmentError, AttachmentRequirements>,
@@ -1381,7 +1382,7 @@ export function openRunnerRecordCoordinator<AttachmentError, AttachmentRequireme
             yield* recordRun.draft.record(provenance.right);
           }
           return yield* Effect.forEach(
-            publishableRuns,
+            [...byRun.values()],
             (recordRun) => recordRun.draft.publish({ completedAt: asUtcMillis(completedAt) }),
             { concurrency: 1 },
           );

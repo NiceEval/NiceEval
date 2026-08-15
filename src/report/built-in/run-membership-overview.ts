@@ -12,7 +12,6 @@ import {
   type ProjectedSample,
   type Verdict,
 } from "../../projection/index.ts";
-import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import { compareCanonicalIdentity } from "../../record/model/identifiers.ts";
 import {
   definePage,
