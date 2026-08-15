@@ -46,6 +46,17 @@ interface E2BCommandOutputState {
   invalidMarkerPayload?: string;
 }
 
+/** SDK/event Promises stay at the boundary; Effect owns which outcome wins and interrupts its waiter fibers. */
+function raceCommandOutcomes<const Outcomes extends readonly [Promise<unknown>, ...Promise<unknown>[]]>(
+  outcomes: Outcomes,
+): Promise<Awaited<Outcomes[number]>> {
+  const effects = outcomes.map((outcome) => Effect.promise(() => outcome)) as [
+    Effect.Effect<unknown>,
+    ...Effect.Effect<unknown>[],
+  ];
+  return Effect.runPromise(Effect.raceAll(effects)) as Promise<Awaited<Outcomes[number]>>;
+}
+
 /**
  * 把 marker 编成 bash 的 printf `%b` 输入。wrapper 源码与 xtrace 诊断因此不会直接包含
  * 可被 parser 当成一整帧的 prefix/suffix；实际字节仍由同一个 bash supervisor 生成。
@@ -585,7 +596,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         (handle) => ({ _tag: "HandleReady" as const, handle }),
         (error: unknown) => ({ _tag: "HandleFailed" as const, error }),
       );
-      const startOutcome = await Promise.race([
+      const startOutcome = await raceCommandOutcomes([
         commandStartOutcome,
         ...(abortOutcome ? [abortOutcome] : []),
       ]);
@@ -597,7 +608,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         (result) => ({ _tag: "SdkStreamEnded" as const, result }),
         (error: unknown) => ({ _tag: "SdkStreamFailed" as const, error }),
       );
-      const outcome = await Promise.race([
+      const outcome = await raceCommandOutcomes([
         completionOutcome,
         streamOutcome,
         ...(abortOutcome ? [abortOutcome] : []),
