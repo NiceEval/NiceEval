@@ -307,6 +307,9 @@ function routeIssue(
       return pathIssue(kind, "a path segment cannot be a Windows device name");
     }
   }
+  if (kind === "route" && segments[0] === "_niceeval") {
+    return pathIssue("route", "the first route segment is reserved for the Report host");
+  }
   return undefined;
 }
 

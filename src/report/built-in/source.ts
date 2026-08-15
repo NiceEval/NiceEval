@@ -138,6 +138,7 @@ function sourceEvidenceDocument(
         label: result.state === "execution-failed"
           ? "Source evidence calculation/projection failed"
           : "Source evidence data unavailable",
+        detail: [reportText(`state: ${result.state}; problemIds: ${result.problemIds.join(", ")}`)],
       })],
     });
   }

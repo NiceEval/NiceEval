@@ -8,6 +8,7 @@ import {
   totalScore,
   type ScoringComposition,
 } from "../classic/aggregate.ts";
+import type { MetricValue } from "../classic/metric.ts";
 import type { Sample } from "../classic/sample.ts";
 import {
   defineCalculation,
@@ -22,17 +23,18 @@ import { reportCodeBlock, reportDocument } from "../semantic/index.ts";
 export interface LeaderboardShowRow {
   readonly experimentId: string;
   readonly scoring?: ScoringComposition;
-  readonly passRate: number | null;
-  readonly totalScore?: number | null;
-  readonly costUSD: number | null;
+  readonly passRate: MetricValue;
+  readonly totalScore: MetricValue;
+  readonly costUSD: MetricValue;
   readonly evals: number;
 }
 
 export interface LeaderboardShowJson {
   readonly experiments: readonly LeaderboardShowRow[];
   readonly scoring?: ScoringComposition;
-  readonly passRate: number | null;
-  readonly totalScore?: number | null;
+  readonly passRate: MetricValue;
+  readonly totalScore: MetricValue;
+  readonly costUSD: MetricValue;
   readonly evals: number;
   readonly attempts: number;
 }
@@ -80,16 +82,17 @@ function leaderboardShowJson(sample: Sample): LeaderboardShowJson {
     .map(([experimentId, units]) => Object.freeze({
       experimentId,
       scoring: scoringComposition(units),
-      passRate: scoringComposition(units) === "score" ? null : passRate.compute(units).value,
-      totalScore: scoringComposition(units) === "pass" ? null : totalScore.compute(units).value,
-      costUSD: costUSD.compute(units).value,
+      passRate: passRate.compute(units),
+      totalScore: totalScore.compute(units),
+      costUSD: costUSD.compute(units),
       evals: units.length,
     }));
   return Object.freeze({
     experiments: Object.freeze(experiments),
     scoring: scoringComposition(sample.units),
-    passRate: scoringComposition(sample.units) === "score" ? null : passRate.compute(sample.units).value,
-    totalScore: scoringComposition(sample.units) === "pass" ? null : totalScore.compute(sample.units).value,
+    passRate: passRate.compute(sample.units),
+    totalScore: totalScore.compute(sample.units),
+    costUSD: costUSD.compute(sample.units),
     evals: sample.units.length,
     attempts: sample.attempts.length,
   });
@@ -100,9 +103,19 @@ function renderLeaderboardText(value: LeaderboardShowJson): string {
     `experiments ${value.experiments.length}`,
     `evals ${value.evals}`,
     `attempts ${value.attempts}`,
+    `passRate ${renderMetric(value.passRate)}`,
+    `totalScore ${renderMetric(value.totalScore)}`,
+    `costUSD ${renderMetric(value.costUSD)}`,
     ...value.experiments.map((row) =>
-      `${row.experimentId}  ${row.scoring === "score" ? `totalScore=${row.totalScore ?? "—"}` : `passRate=${row.passRate ?? "—"}`}  costUSD=${row.costUSD ?? "—"}`
+      `${row.experimentId}  passRate=${renderMetric(row.passRate)}  totalScore=${renderMetric(row.totalScore)}  costUSD=${renderMetric(row.costUSD)}`
     ),
   ];
   return lines.join("\n");
+}
+
+function renderMetric(value: MetricValue): string {
+  const coverage = `${value.samples}/${value.total} ${value.basis}`;
+  return `value=${value.value ?? "null"}; samples=${value.samples}; total=${value.total}; basis=${value.basis}; refs=[${value.refs.join(", ")}]; coverage=${coverage}${
+    value.samples === value.total ? "" : " partial"
+  }`;
 }
