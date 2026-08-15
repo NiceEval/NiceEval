@@ -37,6 +37,10 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       expect(run.expReceipt()).toMatchObject({ completion: "completed" });
+      const initialSlots = run.ndjson<{ readonly event: string }>()
+        .filter((event) => event.event === "eval").length;
+      expect(initialSlots, run.diagnostic()).toBeGreaterThan(0);
+      const initialSlotMarker = `SLOTS_${initialSlots}`;
 
       const configPath = join(projectRoot, "niceeval.config.ts");
       const reportPath = join(projectRoot, "reports", "config-reload.ts");
@@ -79,13 +83,13 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       const first = await firstResponse.text();
       expect(first).toContain("REPORT_FIRST");
       expect(first).toContain("INDIRECT_FIRST");
-      expect(first).toContain("SLOTS_3");
+      expect(first).toContain(initialSlotMarker);
       expect(first).toContain("#123456");
       expect(first).not.toContain("INDIRECT_SECOND");
 
       await writeFile(componentPath, component.replace("INDIRECT_FIRST", "INDIRECT_SECOND"), "utf8");
       const indirect = await pollUntil(
-        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", "SLOTS_3"),
+        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", initialSlotMarker),
         { timeoutMs: 15_000, intervalMs: 100, label: "indirect report component reload" },
       );
       expect(indirect).not.toContain("INDIRECT_FIRST");
@@ -153,11 +157,15 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
       // Record root 写入新结果；view 不重启也要读到它。
       const newRecord = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
       expect(newRecord.exitCode, newRecord.diagnostic()).toBe(0);
+      const addedSlots = newRecord.ndjson<{ readonly event: string }>()
+        .filter((event) => event.event === "eval").length;
+      expect(addedSlots, newRecord.diagnostic()).toBeGreaterThan(0);
+      const reloadedSlotMarker = `SLOTS_${initialSlots + addedSlots}`;
       const withNewRecord = await pollUntil(
-        () => htmlWithMarkers(origin!, "SLOTS_4", "REPORT_FIRST", "INDIRECT_SECOND"),
+        () => htmlWithMarkers(origin!, reloadedSlotMarker, "REPORT_FIRST", "INDIRECT_SECOND"),
         { timeoutMs: 15_000, intervalMs: 100, label: "record reload" },
       );
-      expect(withNewRecord).not.toContain("SLOTS_3");
+      expect(withNewRecord).not.toContain(initialSlotMarker);
 
       await writeFile(reportPath, 'throw new Error("BROKEN_REPORT");\nexport default {};\n', "utf8");
       await waitForOutput(view, "stderr", /view rebuild failed:/, {
@@ -174,7 +182,7 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
           const body = await response.text();
           return body.includes("REPORT_FIRST")
             && body.includes("INDIRECT_SECOND")
-            && body.includes("SLOTS_4")
+            && body.includes(reloadedSlotMarker)
             && body.includes("niceeval-last-rebuild-problem")
             ? body
             : undefined;
@@ -190,7 +198,7 @@ test("view 重建项目模块、配置与 Record，失败时保留 last-good exe
             origin!,
             "REPORT_RECOVERED",
             "INDIRECT_SECOND",
-            "SLOTS_4",
+            reloadedSlotMarker,
             "#654321",
           ),
         { timeoutMs: 15_000, intervalMs: 100, label: "report recovery" },

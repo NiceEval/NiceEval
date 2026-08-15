@@ -1,17 +1,49 @@
 // owner: docs/engineering/testing/e2e/report.md#report-show-json
 // rerun: pnpm e2e --repo report -- --run test/report-show.test.ts
 
-import { only, runProcess } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { closedTerminalBoxes, reportCaseArtifacts, reportE2E } from "./support.ts";
+import {
+  closedTerminalBoxes,
+  reportCaseArtifacts,
+  reportE2E,
+  runReportPty,
+  terminalBoxContaining,
+  terminalBoxRows,
+} from "./support.ts";
 
 interface ExpEvent {
   event: string;
   evalId?: string;
   locator?: string;
   verdict?: string;
+}
+
+interface MetricDocument {
+  readonly value: number | null;
+  readonly samples: number;
+  readonly total: number;
+  readonly basis: "eval" | "attempt";
+  readonly refs: readonly string[];
+}
+
+interface LeaderboardDocument {
+  readonly scoring: "pass" | "score" | "mixed";
+  readonly passRate: MetricDocument;
+  readonly totalScore: MetricDocument;
+  readonly costUSD: MetricDocument;
+  readonly evals: number;
+  readonly attempts: number;
+  readonly experiments: readonly ({
+    readonly experimentId: string;
+    readonly scoring: "pass" | "score" | "mixed";
+    readonly passRate: MetricDocument;
+    readonly totalScore: MetricDocument;
+    readonly costUSD: MetricDocument;
+    readonly evals: number;
+  })[];
 }
 
 interface ShowDocument {
@@ -88,6 +120,7 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(evals.map((event) => [event.evalId, event.verdict]).sort()).toEqual([
         ["deliberate-error", "errored"],
         ["deliberate-fail", "failed"],
+        ["score", "passed"],
         ["tool-call", "passed"],
       ]);
 
@@ -97,6 +130,12 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
         run.diagnostic(),
       );
       expect(failed.locator, run.diagnostic()).toBeTruthy();
+      const scored = only(
+        run.ndjson<ExpEvent>(),
+        (event) => event.event === "eval" && event.evalId === "score" && event.locator !== undefined,
+        run.diagnostic(),
+      );
+      expect(scored.locator, run.diagnostic()).toBeTruthy();
       const junit = await readFile(join(projectRoot, "junit", "main.xml"), "utf8");
       expect(junit).toContain("<failure");
       expect(junit).toContain("<error");
@@ -111,16 +150,11 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(overview.stdout).not.toMatch(/[╭╰]/);
 
       const niceevalBin = join(projectRoot, "node_modules", ".bin", "niceeval");
-      const terminal = await runProcess(
-        [
-          "script",
-          "-q",
-          "-e",
-          "-c",
-          `stty cols 120 rows 40; exec ${shellQuote(niceevalBin)} show`,
-          "/dev/null",
-        ],
+      const terminal = await runReportPty(
+        [niceevalBin, "show"],
         {
+          columns: 120,
+          rows: 40,
           cwd: projectRoot,
           env: { TERM: "dumb", NO_COLOR: undefined, FORCE_COLOR: undefined },
           timeoutMs: 60_000,
@@ -128,14 +162,16 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       );
       expect(terminal.exitCode, terminal.diagnostic()).toBe(0);
       const boxes = closedTerminalBoxes(terminal.stdout);
-      const summaryBox = boxes.find((box) => box.includes("Pass rate") && box.includes("Eval results"));
-      const experimentsBox = boxes.find(
-        (box) => box.includes("Experiment") && box.includes("Model") && box.includes("Record"),
-      );
-      expect(summaryBox, terminal.diagnostic()).toBeDefined();
-      expect(summaryBox).toContain("1 passed · 1 failed · 1 errored");
-      expect(experimentsBox, terminal.diagnostic()).toBeDefined();
+      const summaryBox = terminalBoxContaining(boxes, ["Pass rate", "Eval results"]);
+      const experimentsBox = terminalBoxContaining(boxes, ["Experiment", "Model", "Record"]);
+      expect(summaryBox).toContain("1 passed · 1 failed · 1");
+      expect(summaryBox).toContain("scored · 1 errored");
+      expect(terminalBoxRows(summaryBox)).toEqual(expect.arrayContaining([
+        ["Attempts", "Eval results", "Total cost"],
+        ["4", expect.stringContaining("1 passed · 1 failed"), "$0.04"],
+      ]));
       expect(experimentsBox).toContain("deliberate-fail");
+      expect(experimentsBox).toContain("score");
       expect(experimentsBox).toContain("tool-call");
 
       const attempt = await niceeval.run(
@@ -203,6 +239,20 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
         }),
       ]));
 
+      const classicAttempt = await niceeval.run([
+        "show",
+        scored.locator!,
+        "--report",
+        "./reports/classic-attempt.tsx",
+      ]);
+      expect(classicAttempt.exitCode, classicAttempt.diagnostic()).toBe(0);
+      const compactAttempt = classicAttempt.stdout.replace(/\s/g, "");
+      expect(compactAttempt).toContain('"evaluationKind":"score"');
+      expect(compactAttempt).toContain('"historical":false');
+      expect(compactAttempt).toContain('"assertions":{"state":"available"');
+      expect(compactAttempt).toContain('"label":"deterministicreportscore"');
+      expect(compactAttempt).toContain('"score":{"state":"available","value":{"state":"complete","earned":7');
+
       const shown = await niceeval.run(
         ["show", "--json"],
       );
@@ -212,9 +262,30 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(document.schemaVersion).toBe(1);
       expect(document.view).toBe("leaderboard");
       expect(document.sample?.experiments).toEqual(["main"]);
-      expect(document.sample?.denominator).toBe(3);
-      expect(document.sample?.slotCount).toBe(3);
+      expect(document.sample?.denominator).toBe(4);
+      expect(document.sample?.slotCount).toBe(4);
       expect(document.problemTable).toEqual([]);
+      const leaderboard = document.data as LeaderboardDocument;
+      expect(leaderboard).toMatchObject({
+        scoring: "mixed",
+        evals: 4,
+        attempts: 4,
+        passRate: { value: 1 / 3, samples: 3, total: 3, basis: "eval" },
+        totalScore: { value: 7, samples: 1, total: 1, basis: "eval" },
+        costUSD: { samples: 2, total: 4, basis: "eval" },
+        experiments: [{
+          experimentId: "main",
+          scoring: "mixed",
+          evals: 4,
+          passRate: { value: 1 / 3, samples: 3, total: 3, basis: "eval" },
+          totalScore: { value: 7, samples: 1, total: 1, basis: "eval" },
+          costUSD: { samples: 2, total: 4, basis: "eval" },
+        }],
+      });
+      const locators = evals.flatMap((event) => event.locator === undefined ? [] : [event.locator]);
+      expect([...leaderboard.costUSD.refs].sort()).toEqual([...locators].sort());
+      expect(leaderboard.totalScore.refs).toEqual([scored.locator]);
+      expect(leaderboard.passRate.refs).not.toContain(scored.locator);
 
       const forbidden = await niceeval.run(
         ["show", "--report", "./reports/site.tsx", "--json"],
@@ -248,10 +319,37 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(custom.exitCode, custom.diagnostic()).toBe(0);
       expect(custom.stdout).toContain("Report fixture");
       expect(custom.stdout).toContain("Fixture copy block");
+
+      const customAuthor = await niceeval.run([
+        "show",
+        "--report",
+        "./reports/site.tsx",
+        "--page",
+        "author-api",
+      ]);
+      expect(customAuthor.exitCode, customAuthor.diagnostic()).toBe(0);
+      const primitiveOrder = ["primitive-alpha", "42", "primitive-omega"]
+        .map((value) => customAuthor.stdout.indexOf(value));
+      expect(primitiveOrder.every((index) => index >= 0)).toBe(true);
+      expect(primitiveOrder).toEqual([...primitiveOrder].sort((left, right) => left - right));
+
+      const invalidLocale = await niceeval.run([
+        "show",
+        "--report",
+        "./reports/invalid-localized-text.tsx",
+      ]);
+      expect(invalidLocale.exitCode, invalidLocale.diagnostic()).toBe(0);
+      expect(invalidLocale.stdout).toContain("page-execution-failed");
+      expect(invalidLocale.stdout).not.toContain("Incomplete locale map must not render");
+
+      const reservedRoute = await niceeval.run([
+        "show",
+        "--report",
+        "./reports/reserved-route.ts",
+      ]);
+      expect(reservedRoute.exitCode, reservedRoute.diagnostic()).not.toBe(0);
+      expect(reservedRoute.stderr).toContain("ReportModuleLoadError");
+      expect(reservedRoute.stderr).not.toContain("RESERVED_ROUTE_AUTHOR_CALLBACK_RAN");
     },
   );
 });
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}

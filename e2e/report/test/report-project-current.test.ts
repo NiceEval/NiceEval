@@ -23,7 +23,13 @@ interface ShowOverview {
   };
   readonly data: {
     readonly experiments: readonly { readonly experimentId: string; readonly evals: number }[];
-    readonly passRate?: number | null;
+    readonly passRate?: {
+      readonly value: number | null;
+      readonly samples: number;
+      readonly total: number;
+      readonly basis: "eval";
+      readonly refs: readonly string[];
+    };
     readonly evals: number;
     readonly attempts: number;
   };
@@ -120,7 +126,13 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       expect(staleDocument.sample.experiments).toEqual([]);
       expect(staleDocument.data).toMatchObject({
         experiments: [],
-        passRate: null,
+        passRate: {
+          value: null,
+          samples: 0,
+          total: 0,
+          basis: "eval",
+          refs: [],
+        },
         evals: 0,
         attempts: 0,
       });

@@ -12,7 +12,7 @@ import { pollUntil, waitForOutput } from "@niceeval/testkit";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, test, type Route } from "@playwright/test";
+import { expect, test, type ElementHandle, type Route } from "@playwright/test";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 test("Report browser Journey：经典界面与自定义报告共用固定执行、导航和热重载", async ({ page }) => {
@@ -289,6 +289,23 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         await authorApi.click();
         const authorHeading = page.getByRole("heading", { name: "Classic author surface", level: 1 });
         await expect(authorHeading).toBeVisible();
+        const primitiveChildren = ["primitive-alpha", "42", "primitive-omega"] as const;
+        const primitiveHandles: ElementHandle<HTMLElement>[] = [];
+        for (const text of primitiveChildren) {
+          const child = page.getByText(text, { exact: true });
+          await expect(child).toBeVisible();
+          const handle = await child.elementHandle();
+          if (handle === null) throw new Error(`primitive child ${text} disappeared before order check`);
+          primitiveHandles.push(handle);
+        }
+        expect(await primitiveHandles[0]!.evaluate(
+          (first, second) => (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          primitiveHandles[1]!,
+        )).toBe(true);
+        expect(await primitiveHandles[1]!.evaluate(
+          (second, third) => (second.compareDocumentPosition(third) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          primitiveHandles[2]!,
+        )).toBe(true);
         const selectionNotice = page.getByRole("status").filter({
           hasText: "selection-profile-unavailable",
         });

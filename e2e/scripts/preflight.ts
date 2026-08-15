@@ -282,9 +282,9 @@ const browsers = JSON.parse(process.argv[1]);
 (async () => {
   let playwright;
   try {
-    playwright = require("playwright");
+    playwright = require("@playwright/test");
   } catch (error) {
-    console.error("Playwright is not installed for this browser requirement:", error instanceof Error ? error.message : String(error));
+    console.error("Playwright Test is not installed for this browser requirement:", error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
   for (const browser of browsers) {

@@ -19,6 +19,17 @@ interface ShowDocument {
   data?: unknown;
 }
 
+interface SourceCalculation {
+  readonly state: "available" | "data-unavailable" | "execution-failed";
+  readonly inputState?: "complete" | "partial";
+  readonly problemIds: readonly number[];
+  readonly value?: {
+    readonly locator: string;
+    readonly source: unknown | null;
+    readonly unavailable?: string;
+  };
+}
+
 test("show --source 从本轮 Record 呈现入口与导入断言快照", async () => {
   await reportE2E.case(
     "source",
@@ -74,6 +85,12 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
       const document = json.json<ShowDocument>();
       expect(document.format).toBe("niceeval.show");
       expect(document.view).toBe("source");
+      expect(document.data).toMatchObject({
+        state: "available",
+        inputState: "complete",
+        problemIds: [],
+        value: { locator },
+      });
       const payload = JSON.stringify(document.data);
       expect(payload).toContain("ENTRY_SNAPSHOT_BEFORE");
       expect(payload).toContain("IMPORTED_ASSERTION_SNAPSHOT_BEFORE");
@@ -94,10 +111,16 @@ test("show --source 从本轮 Record 呈现入口与导入断言快照", async (
         ["show", locator, "--source=evals/not-captured.ts", "--json"],
       );
       expect(missingSourceJson.exitCode, missingSourceJson.diagnostic()).toBe(0);
-      expect(missingSourceJson.json<ShowDocument>().data).toMatchObject({
-        locator,
-        source: null,
-        unavailable: "Captured source file not found in annotated source tree: evals/not-captured.ts",
+      const missingSourceData = missingSourceJson.json<ShowDocument>().data as SourceCalculation;
+      expect(missingSourceData).toMatchObject({
+        state: "available",
+        inputState: "complete",
+        problemIds: [],
+        value: {
+          locator,
+          source: null,
+          unavailable: "Captured source file not found in annotated source tree: evals/not-captured.ts",
+        },
       });
     },
   );

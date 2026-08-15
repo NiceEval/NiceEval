@@ -120,6 +120,11 @@ const authorApi = {
         <Section title="Selection notice">
           <SampleNotices input={sample} />
         </Section>
+        <Section title="Primitive children">
+          {"primitive-alpha"}
+          {42}
+          {"primitive-omega"}
+        </Section>
         <SampleSummary input={sample} />
         <FixtureLeaderboard />
         <FixtureLocaleMetric />
