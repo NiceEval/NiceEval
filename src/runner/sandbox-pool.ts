@@ -182,9 +182,9 @@ export class ReusableSandboxPool {
           this.groupPlugins.slice(0, this.activatedGroupPlugins).reverse(),
           (entry) => entry.teardown === undefined
             ? Effect.void
-            : cleanupCallback(() => (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
+            : cleanupCallback((signal) => (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
                 ...this.groupPluginContext!,
-                signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS),
+                signal,
               })).pipe(Effect.catchAll((cause) => Effect.sync(() => this.feedback.diagnostic({
                 code: "plugin-lifecycle-teardown-failed",
                 level: "warning",

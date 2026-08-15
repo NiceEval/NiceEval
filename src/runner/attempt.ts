@@ -912,10 +912,9 @@ export function runAttemptEffect<
                   }));
                   if (node) recorder.pushParent(node);
                   try {
-                    const cleanupSignal = AbortSignal.timeout(CLEANUP_TIMEOUT_MS);
-                    await assertFirst.requestEffect(cleanupCallback(() => cleanup.command(commandTarget, {
+                    await assertFirst.requestEffect(cleanupCallback((signal) => cleanup.command(commandTarget, {
                       ...cleanup.context,
-                      signal: cleanupSignal,
+                      signal,
                     })));
                   } catch (error) {
                     if (node) node.failed = true;
@@ -2182,10 +2181,20 @@ async function runAttemptBody(
             // AgentTeardown | DirectAgentTeardown 混成无法调用的签名。
             if (run.agent.kind === "sandbox") {
               const teardown = run.agent.teardown;
-              if (teardown) await assertFirst.requestEffect(cleanupCallback(() => teardown(sandbox, sandboxAttemptCtx)));
+              if (teardown) {
+                await assertFirst.requestEffect(cleanupCallback((signal) => teardown(sandbox, {
+                  ...sandboxAttemptCtx,
+                  signal,
+                })));
+              }
             } else {
               const teardown = run.agent.teardown;
-              if (teardown) await assertFirst.requestEffect(cleanupCallback(() => teardown(attemptCtx)));
+              if (teardown) {
+                await assertFirst.requestEffect(cleanupCallback((signal) => teardown({
+                  ...attemptCtx,
+                  signal,
+                })));
+              }
             }
           } catch (e) {
             declareFailure("agent.teardown", e);
@@ -2198,10 +2207,10 @@ async function runAttemptBody(
     for (const lifecycle of evalPluginLifecycles.slice(0, activatedEvalPlugins).reverse()) {
       if (lifecycle.teardown === undefined) continue;
       try {
-        await Effect.runPromise(cleanupCallback(() =>
+        await assertFirst.requestEffect(cleanupCallback((signal) =>
           (lifecycle.teardown as (context: EvalPluginContext) => void | Promise<void>)({
             ...evalPluginContext,
-            signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS),
+            signal,
           })
         ));
       } catch (error) {
