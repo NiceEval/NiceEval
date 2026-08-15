@@ -54,7 +54,6 @@ import { publicLeaderboardReport } from "./report/built-in/leaderboard.ts";
 import {
   calculationValue,
   calculationData,
-  requireCalculationValue,
   renderShowJson,
   buildShowSample,
   type ShowJson,
@@ -2496,7 +2495,7 @@ function publicShowEnvelope(
         view,
         sample,
         problemTable,
-        data: requireCalculationValue<LeaderboardShowJson>(execution, "leaderboard"),
+        data: calculationData<LeaderboardShowJson>(execution, "leaderboard"),
       });
     case "attempt":
       return Object.freeze({

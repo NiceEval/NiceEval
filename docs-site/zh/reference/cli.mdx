@@ -276,6 +276,8 @@ source 文本宽度依次使用 `stdout.columns`、`COLUMNS` 与 80 列。`--tim
 外层同时保留同一次 execution 的 selection、run / slot count、Sample-wide denominator 与 canonical problem table。
 显式 `--run` 且没有 `--report` 时继续输出 membership Report 的 `niceeval.report-show/v1` provenance 文档。
 
+默认 leaderboard view 的 `data` 是 `ShowJsonCalculationData<LeaderboardShowJson>`。available 时带 `state`、`inputState`、`problemIds` 与 leaderboard `value`。`data-unavailable` 或 `execution-failed` 时只保留 `state` 与 `problemIds`，不带 `value`。外层的 `problemTable` 在两种结果中都保持 canonical 表。
+
 精确 Attempt 的 `show @<AttemptLocator> --json` 输出 `view: "attempt"`；加 `--execution` 后输出
 `view: "execution"`。两者的 `data` 都是固定 Calculation 的结果。
 

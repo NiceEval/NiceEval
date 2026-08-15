@@ -51,7 +51,10 @@ export type ShowJsonCalculationData<Value> =
     };
 
 export type ShowJson =
-  | (ShowJsonBase & { readonly view: "leaderboard"; readonly data: LeaderboardShowJson })
+  | (ShowJsonBase & {
+      readonly view: "leaderboard";
+      readonly data: ShowJsonCalculationData<LeaderboardShowJson>;
+    })
   | (ShowJsonBase & {
       readonly view: "attempt";
       readonly data: ShowJsonCalculationData<PublicAttemptEvidenceJson>;

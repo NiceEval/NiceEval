@@ -62,6 +62,13 @@ interface LeaderboardDocument {
   })[];
 }
 
+interface LeaderboardCalculation {
+  readonly state: "available";
+  readonly inputState: "complete" | "partial";
+  readonly problemIds: readonly number[];
+  readonly value: LeaderboardDocument;
+}
+
 interface ShowDocument {
   format: string;
   schemaVersion?: number;
@@ -72,7 +79,7 @@ interface ShowDocument {
     slotCount?: number;
   };
   problemTable?: readonly unknown[];
-  data?: AttemptCalculation | unknown;
+  data?: AttemptCalculation | LeaderboardCalculation | unknown;
 }
 
 interface Evidence<Value> {
@@ -287,7 +294,14 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(document.sample?.denominator).toBe(4);
       expect(document.sample?.slotCount).toBe(4);
       expect(document.problemTable).toEqual([]);
-      const leaderboard = document.data as LeaderboardDocument;
+      const leaderboardCalculation = document.data as LeaderboardCalculation;
+      expect(leaderboardCalculation).toMatchObject({
+        state: "available",
+        inputState: "complete",
+        problemIds: [],
+      });
+      expect("value" in leaderboardCalculation).toBe(true);
+      const leaderboard = leaderboardCalculation.value;
       expect(leaderboard).toMatchObject({
         scoring: "mixed",
         evals: 4,

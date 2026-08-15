@@ -19,24 +19,43 @@ interface ExpEvent {
   reused?: number;
 }
 
+interface LeaderboardValue {
+  readonly experiments: readonly { readonly experimentId: string; readonly evals: number }[];
+  readonly passRate?: {
+    readonly value: number | null;
+    readonly samples: number;
+    readonly total: number;
+    readonly basis: "eval";
+    readonly refs: readonly string[];
+  };
+  readonly evals: number;
+  readonly attempts: number;
+}
+
+interface AvailableLeaderboardCalculation {
+  readonly state: "available";
+  readonly inputState: "complete" | "partial";
+  readonly problemIds: readonly number[];
+  readonly value: LeaderboardValue;
+}
+
 interface ShowOverview {
   readonly format: "niceeval.show";
   readonly view: string;
   readonly sample: {
     readonly experiments: readonly string[];
   };
-  readonly data: {
-    readonly experiments: readonly { readonly experimentId: string; readonly evals: number }[];
-    readonly passRate?: {
-      readonly value: number | null;
-      readonly samples: number;
-      readonly total: number;
-      readonly basis: "eval";
-      readonly refs: readonly string[];
-    };
-    readonly evals: number;
-    readonly attempts: number;
-  };
+  readonly data: AvailableLeaderboardCalculation;
+}
+
+function availableLeaderboardValue(document: ShowOverview): LeaderboardValue {
+  expect(document.data).toMatchObject({
+    state: "available",
+    inputState: "complete",
+    problemIds: [],
+  });
+  expect("value" in document.data).toBe(true);
+  return document.data.value;
 }
 
 interface ExplicitRunShow {
@@ -81,7 +100,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const initialDocument = initialShow.json<ShowOverview>();
       expect(initialDocument.view).toBe("leaderboard");
       expect(initialDocument.sample.experiments).toEqual(["source"]);
-      expect(initialDocument.data).toMatchObject({
+      expect(availableLeaderboardValue(initialDocument)).toMatchObject({
         experiments: [{ experimentId: "source", evals: 1 }],
         evals: 1,
         attempts: 1,
@@ -108,7 +127,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const accumulatedDocument = accumulatedShow.json<ShowOverview>();
       expect(accumulatedDocument.view).toBe("leaderboard");
       expect(accumulatedDocument.sample.experiments).toEqual(["source"]);
-      expect(accumulatedDocument.data).toMatchObject({
+      expect(availableLeaderboardValue(accumulatedDocument)).toMatchObject({
         experiments: [{ experimentId: "source", evals: 1 }],
         evals: 1,
         attempts: 2,
@@ -128,7 +147,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const staleDocument = staleShow.json<ShowOverview>();
       expect(staleDocument.view).toBe("leaderboard");
       expect(staleDocument.sample.experiments).toEqual([]);
-      expect(staleDocument.data).toMatchObject({
+      expect(availableLeaderboardValue(staleDocument)).toMatchObject({
         experiments: [],
         passRate: {
           value: null,
@@ -183,7 +202,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const refreshedDocument = refreshedShow.json<ShowOverview>();
       expect(refreshedDocument.view).toBe("leaderboard");
       expect(refreshedDocument.sample.experiments).toEqual(["source"]);
-      expect(refreshedDocument.data).toMatchObject({
+      expect(availableLeaderboardValue(refreshedDocument)).toMatchObject({
         experiments: [{ experimentId: "source", evals: 1 }],
         evals: 1,
         attempts: 1,
