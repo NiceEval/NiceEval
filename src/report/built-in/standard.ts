@@ -280,7 +280,7 @@ function attemptDocument(attempt: ClassicAttemptRow, sample: Sample): ReportDocu
               { field: "evaluation", value: attempt.evaluationKind },
               ...(attempt.evaluationKind === "score"
                 ? [
-                  { field: "score status", value: scoreStatus(attempt) ?? "errored" },
+                  { field: "score status", value: scoreStatus(attempt) ?? "unavailable" },
                   {
                     field: "score",
                     value: attempt.score?.state === "complete"

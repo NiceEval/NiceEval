@@ -57,7 +57,7 @@ interface AttemptItem {
   readonly scoreStatus?: ScoreStatus;
   readonly durationMs: MetricValue;
   readonly costUSD: MetricValue;
-  readonly historical: boolean;
+  readonly historical: boolean | null;
 }
 
 interface EvalRow {
@@ -158,7 +158,9 @@ function attemptCells(item: AttemptItem): Record<string, Cell> {
     return {
       entity: { kind: "locator", locator: item.locator },
       totalScore: measureCell(item.score),
-      record: textCell(item.scoreStatus ?? "errored"),
+      record: item.scoreStatus === undefined
+        ? { kind: "missing", code: "scoreEvidenceUnavailable" }
+        : textCell(item.scoreStatus),
       durationMs: measureCell(item.durationMs),
       costUSD: measureCell(item.costUSD),
     };
@@ -177,10 +179,11 @@ function attemptCells(item: AttemptItem): Record<string, Cell> {
 }
 
 function scoreStatusCell(attempts: readonly AttemptItem[]): Cell {
-  const counts = { scored: 0, errored: 0, skipped: 0 };
+  const counts = { scored: 0, errored: 0, skipped: 0, unavailable: 0 };
   for (const attempt of attempts) {
     const status = attempt.scoreStatus;
-    if (status !== undefined) counts[status] += 1;
+    if (status === undefined) counts.unavailable += 1;
+    else counts[status] += 1;
   }
   return {
     kind: "composition",
@@ -188,6 +191,7 @@ function scoreStatusCell(attempts: readonly AttemptItem[]): Cell {
       { label: "scored", count: counts.scored },
       { label: "errored", count: counts.errored },
       { label: "skipped", count: counts.skipped },
+      { label: "unavailable", count: counts.unavailable },
     ],
   };
 }
@@ -437,8 +441,15 @@ function nestLevel(
 
 function coverageRow(item: ExperimentItem, columns: readonly ColumnSpec[]): TableContentRow {
   let fresh = 0;
+  let historical = 0;
+  let unavailable = 0;
   for (const row of item.evalRows) {
-    if (row.attempts.some((a) => !a.historical)) fresh += 1;
+    if (row.attempts.some((attempt) => attempt.historical === false)) fresh += 1;
+    else if (row.attempts.length > 0 && row.attempts.every((attempt) => attempt.historical === true)) {
+      historical += 1;
+    } else {
+      unavailable += 1;
+    }
   }
   const bag: Record<string, Cell> = {
     entity: { kind: "notApplicable" },
@@ -446,7 +457,8 @@ function coverageRow(item: ExperimentItem, columns: readonly ColumnSpec[]): Tabl
       kind: "composition",
       segments: [
         { label: "fresh", count: fresh },
-        { label: "historical", count: item.evalRows.length - fresh },
+        { label: "historical", count: historical },
+        { label: "unavailable", count: unavailable },
       ],
     },
   };
@@ -508,24 +520,25 @@ function computeOn(units: readonly ClassicEvalUnit[], calculation: ClassicCalcul
 function attemptItem(unit: ClassicEvalUnit, attempt: ClassicEvalUnit["attempts"][number]): AttemptItem | undefined {
   const locator = classicAttemptLocator(attempt);
   if (locator === undefined) return undefined;
+  const status = scoreStatus(attempt);
   return {
     locator,
     evaluationKind: unit.evaluationKind,
     verdict: attempt.verdict ?? "skipped",
     score: {
-      value: attempt.score?.state === "complete" && scoreStatus(attempt) === "scored"
+      value: attempt.score?.state === "complete" && status === "scored"
         ? attempt.score.earned
         : null,
       basis: "eval",
-      samples: attempt.score?.state === "complete" && scoreStatus(attempt) === "scored" ? 1 : 0,
+      samples: attempt.score?.state === "complete" && status === "scored" ? 1 : 0,
       total: unit.evaluationKind === "score" ? 1 : 0,
       refs: [locator],
       better: "higher",
     },
-    ...(unit.evaluationKind === "score" ? { scoreStatus: scoreStatus(attempt) ?? "errored" } : {}),
+    ...(unit.evaluationKind === "score" && status !== undefined ? { scoreStatus: status } : {}),
     durationMs: attemptMetricValue(attempt.durationMs, "ms"),
     costUSD: attemptMetricValue(attempt.costUSD, "$"),
-    historical: false,
+    historical: attempt.historical,
   };
 }
 

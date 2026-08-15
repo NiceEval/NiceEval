@@ -102,11 +102,18 @@ export function renderGridText(block: Extract<ReportBlock, { readonly type: "gri
     const rest = columnWidths.slice(col);
     return rest.reduce((sum, w) => sum + w, 0) + TEXT_GRID_SEPARATOR.length * (rest.length - 1);
   });
+  // Measuring can shrink columns below the width used for the first render.
+  // Reflow every cell against its final fitted width before framing it;
+  // otherwise a spanning last-row cell can retain an over-wide line and open
+  // the right border even though the border itself uses the fitted width.
+  const fittedBlocks = block.cells.map((cell, i) =>
+    renderClassicBlockText(cell, childCtxFor(fittedWidths[i]!)).join("\n")
+  );
   const out: string[] = [];
   let previousRow = 0;
   let lastRowWidths: readonly number[] = plan.contentWidths;
-  for (let start = 0; start < blocks.length; start += plan.columns) {
-    const rowBlocks = blocks.slice(start, start + plan.columns);
+  for (let start = 0; start < fittedBlocks.length; start += plan.columns) {
+    const rowBlocks = fittedBlocks.slice(start, start + plan.columns);
     const rowWidths = fittedWidths.slice(start, start + rowBlocks.length);
     if (!lines) {
       if (start > 0) out.push("");
