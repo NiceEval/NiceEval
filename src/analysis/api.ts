@@ -349,6 +349,9 @@ interface FrameGroup {
   readonly issues: AnalysisIssue[];
 }
 
+/** Bound independent Record reads without serializing large Report Samples. */
+const ANALYSIS_READ_CONCURRENCY = 32;
+
 type Reduced<Value> = {
   readonly state: "value" | "empty" | "missing" | "unsupported" | "failed";
   readonly value?: Value;
@@ -379,8 +382,15 @@ function executeFrame<By extends object, Measures extends object>(
 
       for (const group of groups) {
         const row: Record<string, unknown> = { key: group.key, ...group.coordinates };
-        for (const [name, measure] of normalized.measures) {
-          const value = yield* evaluateMeasure(context, normalized.population, group.members, measure);
+        const values = yield* Effect.forEach(
+          normalized.measures,
+          ([name, measure]) => Effect.map(
+            evaluateMeasure(context, normalized.population, group.members, measure),
+            (value) => [name, value] as const,
+          ),
+          { concurrency: ANALYSIS_READ_CONCURRENCY },
+        );
+        for (const [name, value] of values) {
           row[name] = value;
           frameIssues.push(...value.issues);
           frameRefs.push(...value.refs);
@@ -553,28 +563,37 @@ function evaluateMeasure(
     const resolved: Reduced<unknown>[] = [];
     const targetMembers: unknown[] = [];
 
-    for (const sourceMember of sourceMembers) {
-      const target = yield* resolveMember(context, sourcePopulation, sourceMember, measure.population);
+    const targets = yield* Effect.forEach(
+      sourceMembers,
+      (sourceMember) => resolveMember(context, sourcePopulation, sourceMember, measure.population),
+      { concurrency: ANALYSIS_READ_CONCURRENCY },
+    );
+    for (const target of targets) {
       if (target.member === undefined) {
         resolved.push(failedReduced(target.issues));
       } else {
         targetMembers.push(target.member);
       }
     }
-
     const expectedMembers = denominator.members(targetMembers);
-    for (const member of expectedMembers) {
-      const observation = yield* analysisInputState(state.input).read(context.sample, member);
-      const withinAttempt = reduce(
-        reductionState(state.withinAttempt).kind,
-        [fromObservation(observation)],
-      );
-      const withinSlot = reduce(
-        reductionState(state.withinSlot).kind,
-        [withinAttempt],
-      );
-      resolved.push(withinSlot);
-    }
+    const observations = yield* Effect.forEach(
+      expectedMembers,
+      (member) => Effect.map(
+        analysisInputState(state.input).read(context.sample, member),
+        (observation) => {
+          const withinAttempt = reduce(
+            reductionState(state.withinAttempt).kind,
+            [fromObservation(observation)],
+          );
+          return reduce(
+            reductionState(state.withinSlot).kind,
+            [withinAttempt],
+          );
+        },
+      ),
+      { concurrency: ANALYSIS_READ_CONCURRENCY },
+    );
+    resolved.push(...observations);
 
     const across = reduce(
       reductionState(state.acrossSlots).kind,

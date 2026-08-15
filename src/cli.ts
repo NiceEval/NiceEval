@@ -199,8 +199,19 @@ export function renderCliFailure(failure: CliFailure): string {
   if (isReportCliOperation(failure.operation)) {
     const code = failureCode(failure.cause);
     if (code !== undefined) {
-      const reason = failure.cause instanceof ReportModuleLoadError ? `: ${failure.cause.reason}` : "";
-      return `${code}${reason}\n`;
+      if (failure.cause instanceof ReportModuleLoadError) {
+        return `${code}: ${failure.cause.reason}\n`;
+      }
+      const reason = stringProperty(failure.cause, "reason");
+      const operation = stringProperty(failure.cause, "operation");
+      if (reason !== undefined) {
+        const stage = operation === undefined ? "" : `${operation}: `;
+        const retry = code === "report-view-server-failed" && operation === "listen"
+          ? "\nChoose another port with --port <port>, or stop the process already listening there."
+          : "";
+        return `${code}: ${stage}${reason}${retry}\n`;
+      }
+      return `${code}\n`;
     }
   }
   return t("cli.error", { error: formatThrown(failure.cause) });
