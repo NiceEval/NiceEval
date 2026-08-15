@@ -12,13 +12,15 @@
 // - inverse = standard Attempts/Traces nav and Traces/Attempt package copy stay English in zh-CN
 // - inverse = empty conversation stays "available" and raw attachment.state leaks in zh-CN
 // - inverse = static classic chrome omits visible fixed-page hrefs
+// - inverse = standard Experiment pages reuse raw/lowercased ids as routes;
+//   outcome = legal case/Unicode/device/overlong ids lose or collide links.
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
 // 浏览器 owner 自己完成 exp → view --out → 真正的 niceeval view server → browser，
 // 不消费 Vitest 预先生成的 site-export，也不用 Testkit 静态服务器冒充产品 server。
 
 import { pollUntil, waitForOutput } from "@niceeval/testkit";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test, type ElementHandle } from "@playwright/test";
@@ -29,7 +31,7 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
 
   await reportE2E.case(
     "browser",
-    { artifacts: reportCaseArtifacts(["site-export", "classic-export", "fallback-export"]) },
+    { artifacts: reportCaseArtifacts(["site-export", "classic-export", "fallback-export", "route-export"]) },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
@@ -39,6 +41,7 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
 
       await verifyClassicReport();
       await verifyCustomReport();
+      await verifyPortableExperimentRoutes();
 
       async function verifyClassicReport(): Promise<void> {
         const exported = await niceeval.run([
@@ -648,6 +651,165 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
         expect(page.url()).toBe(liveUrl);
       }
 
+      async function verifyPortableExperimentRoutes(): Promise<void> {
+        const overlongSegment = "x".repeat(140);
+        const experimentIdA = `Route Case/CON/Café/${overlongSegment}`;
+        const experimentIdB = `route case/con/Cafe\u0301/${overlongSegment}`;
+        const experimentModule = [
+          'import { defineExperiment } from "niceeval";',
+          'import { deterministicAgent } from "../../../../agents/deterministic.ts";',
+          "",
+          "export default defineExperiment({",
+          '  description: "portable Experiment route fixture",',
+          '  agent: deterministicAgent("report-route-fixture"),',
+          '  model: "report-route-fixture-v1",',
+          '  evals: ["score"],',
+          "});",
+          "",
+        ].join("\n");
+
+        const experimentDirectoryA = join(projectRoot, "experiments", "Route Case", "CON", "Café");
+        const experimentDirectoryB = join(projectRoot, "experiments", "route case", "con", "Cafe\u0301");
+        await mkdir(experimentDirectoryA, { recursive: true });
+        await mkdir(experimentDirectoryB, { recursive: true });
+        await writeFile(join(experimentDirectoryA, `${overlongSegment}.ts`), experimentModule, "utf8");
+        await writeFile(join(experimentDirectoryB, `${overlongSegment}.ts`), experimentModule, "utf8");
+
+        const runIds: string[] = [];
+        for (const experimentId of [experimentIdA, experimentIdB]) {
+          const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
+          expect(run.exitCode, run.diagnostic()).toBe(0);
+          expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+          expect(run.expReceipt().runIds, run.diagnostic()).toHaveLength(1);
+          runIds.push(run.expReceipt().runIds[0]!);
+        }
+
+        let pathA = "";
+        let pathB = "";
+        const routeView = niceeval.start(
+          [
+            "view",
+            "--run",
+            runIds[0]!,
+            "--run",
+            runIds[1]!,
+            "--report",
+            "standard",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--no-open",
+          ],
+          { timeoutMs: 60_000 },
+        );
+        try {
+          const startup = await waitForOutput(
+            routeView,
+            "stdout",
+            /http:\/\/127\.0\.0\.1:\d+\//,
+            { timeoutMs: 30_000, label: "portable Experiment route view URL" },
+          );
+          const origin = startup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
+          expect(origin, startup).toBeDefined();
+          await waitForHttp(origin!, "portable Experiment route readiness");
+
+          await page.goto(origin!);
+          const reportUrl = page.url();
+          const hierarchy = page.getByRole("table", { name: "Experiment hierarchy" });
+          const linkA = hierarchy.getByRole("link", { name: experimentIdA, exact: true });
+          const linkB = hierarchy.getByRole("link", { name: experimentIdB, exact: true });
+          await expect(linkA).toBeVisible();
+          await expect(linkB).toBeVisible();
+          const hrefA = await linkA.getAttribute("href");
+          const hrefB = await linkB.getAttribute("href");
+          expect(hrefA).toBeTruthy();
+          expect(hrefB).toBeTruthy();
+          pathA = semanticHrefPath(hrefA!, origin!);
+          pathB = semanticHrefPath(hrefB!, origin!);
+          expect(pathA).toMatch(/^\/experiment-v1\/[0-9a-f]{64}$/);
+          expect(pathB).toMatch(/^\/experiment-v1\/[0-9a-f]{64}$/);
+          expect(pathA).not.toBe(pathB);
+          expect((await page.request.get(new URL(hrefA!, origin!).href)).status()).toBe(200);
+          expect((await page.request.get(new URL(hrefB!, origin!).href)).status()).toBe(200);
+
+          await linkA.click();
+          const dialogA = page.locator("dialog[open]");
+          await expect(dialogA).toHaveAttribute("aria-label", experimentIdA);
+          await expect(dialogA.getByRole("heading", { name: experimentIdA, level: 1 })).toBeVisible();
+          expect(page.url()).toBe(reportUrl);
+          await dialogA.getByRole("button", { name: "Close" }).click();
+          await expect(page.locator("dialog[open]")).toHaveCount(0);
+
+          await linkB.click();
+          const dialogB = page.locator("dialog[open]");
+          await expect(dialogB).toHaveAttribute("aria-label", experimentIdB);
+          await expect(dialogB.getByRole("heading", { name: experimentIdB, level: 1 })).toBeVisible();
+          expect(page.url()).toBe(reportUrl);
+          await dialogB.getByRole("button", { name: "Close" }).click();
+          await expect(page.locator("dialog[open]")).toHaveCount(0);
+
+          await page.getByRole("button", { name: "中文" }).click();
+          const zhHierarchy = page.getByRole("table", { name: "实验层级" });
+          await expect(page.getByRole("button", { name: "中文" })).toHaveAttribute("aria-pressed", "true");
+          expect(await zhHierarchy.getByRole("link", { name: experimentIdA, exact: true }).getAttribute("href")).toBe(hrefA);
+          expect(await zhHierarchy.getByRole("link", { name: experimentIdB, exact: true }).getAttribute("href")).toBe(hrefB);
+          await page.getByRole("button", { name: "EN" }).click();
+          const enHierarchy = page.getByRole("table", { name: "Experiment hierarchy" });
+          await expect(page.getByRole("button", { name: "EN" })).toHaveAttribute("aria-pressed", "true");
+          expect(await enHierarchy.getByRole("link", { name: experimentIdA, exact: true }).getAttribute("href")).toBe(hrefA);
+          expect(await enHierarchy.getByRole("link", { name: experimentIdB, exact: true }).getAttribute("href")).toBe(hrefB);
+        } finally {
+          await routeView.dispose();
+        }
+
+        const exported = await niceeval.run([
+          "view",
+          "--run",
+          runIds[0]!,
+          "--run",
+          runIds[1]!,
+          "--report",
+          "standard",
+          "--out",
+          "route-export",
+          "--no-open",
+        ]);
+        expect(exported.exitCode, exported.diagnostic()).toBe(0);
+        expect((await stat(join(projectRoot, "route-export", "_niceeval", "complete"))).size).toBe(0);
+
+        const browser = page.context().browser();
+        expect(browser).not.toBeNull();
+        const noJsContext = await browser!.newContext({ javaScriptEnabled: false });
+        try {
+          const noJsPage = await noJsContext.newPage();
+          const noJsIndex = pathToFileURL(join(projectRoot, "route-export", "index.html")).href;
+          await noJsPage.goto(noJsIndex);
+          const noJsHierarchy = noJsPage.getByRole("table", { name: "Experiment hierarchy" });
+          const noJsLinkA = noJsHierarchy.getByRole("link", { name: experimentIdA, exact: true });
+          const noJsLinkB = noJsHierarchy.getByRole("link", { name: experimentIdB, exact: true });
+          await expect(noJsLinkA).toBeVisible();
+          await expect(noJsLinkB).toBeVisible();
+          const noJsHrefA = await noJsLinkA.getAttribute("href");
+          const noJsHrefB = await noJsLinkB.getAttribute("href");
+          expect(noJsHrefA).toBeTruthy();
+          expect(noJsHrefB).toBeTruthy();
+          expect(noJsHrefA).not.toBe(noJsHrefB);
+          expect(semanticHrefPath(noJsHrefA!, noJsIndex).endsWith(pathA)).toBe(true);
+          expect(semanticHrefPath(noJsHrefB!, noJsIndex).endsWith(pathB)).toBe(true);
+          await noJsLinkA.click();
+          await expect(noJsPage.getByRole("heading", { name: experimentIdA, level: 1 })).toBeVisible();
+
+          await noJsPage.goto(noJsIndex);
+          const secondLink = noJsPage.getByRole("table", { name: "Experiment hierarchy" })
+            .getByRole("link", { name: experimentIdB, exact: true });
+          await secondLink.click();
+          await expect(noJsPage.getByRole("heading", { name: experimentIdB, level: 1 })).toBeVisible();
+        } finally {
+          await noJsContext.close();
+        }
+      }
+
       async function waitForHttp(origin: string, label: string): Promise<void> {
         await pollUntil(
           async () => {
@@ -659,6 +821,13 @@ test("Report browser Journey：经典界面与自定义报告共用固定执行�
           },
           { timeoutMs: 15_000, intervalMs: 100, label },
         );
+      }
+
+      function semanticHrefPath(href: string, base: string): string {
+        const pathname = new URL(href, base).pathname;
+        return pathname.endsWith("/index.html")
+          ? pathname.slice(0, -"/index.html".length)
+          : pathname;
       }
     },
   );
