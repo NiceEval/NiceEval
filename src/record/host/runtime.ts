@@ -198,6 +198,7 @@ interface ReaderRuntime {
   readonly owners: WeakMap<SelectedOwnerRef, SelectedOwnerRuntime>;
   readonly runsById: Map<RunId, SelectedRunRef>;
   readonly attemptsByKey: Map<string, SelectedAttemptRef>;
+  sealedCoreSnapshot: Deferred.Deferred<SealedCoreSnapshot, RecordFileSystemError> | undefined;
 }
 
 interface AttemptRuntime {
@@ -525,7 +526,7 @@ type SealedCoreSnapshot =
  * the same `RecordCoreDefinition` refine used by the writer's seal boundary,
  * so a marker cannot promote a partial Member denominator to availability.
  */
-function readSealedCoreSnapshot(
+function loadSealedCoreSnapshot(
   runtime: ReaderRuntime,
   fileSystem: RecordFileSystemService,
 ): Effect.Effect<SealedCoreSnapshot, RecordFileSystemError> {
@@ -566,6 +567,35 @@ function readSealedCoreSnapshot(
       byRunId: new Map(ordered.map((core) => [core.run.runId, core] as const)),
     });
   });
+}
+
+/**
+ * A read session holds the Record read lease, so its published Core cannot
+ * change underneath it. Share one exact snapshot across selection and all
+ * subsequent Run / Attempt reads instead of rebuilding the whole aggregate
+ * for every capability lookup.
+ */
+function readSealedCoreSnapshot(
+  runtime: ReaderRuntime,
+  fileSystem: RecordFileSystemService,
+): Effect.Effect<SealedCoreSnapshot, RecordFileSystemError> {
+  return Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      const fresh = yield* Deferred.make<SealedCoreSnapshot, RecordFileSystemError>();
+      const flight = yield* Effect.sync(() => {
+        if (runtime.sealedCoreSnapshot !== undefined) {
+          return { _tag: "Follower" as const, deferred: runtime.sealedCoreSnapshot };
+        }
+        runtime.sealedCoreSnapshot = fresh;
+        return { _tag: "Leader" as const, deferred: fresh };
+      });
+      if (flight._tag === "Follower") return yield* restore(Deferred.await(flight.deferred));
+
+      const completed = yield* Effect.exit(restore(loadSealedCoreSnapshot(runtime, fileSystem)));
+      yield* Deferred.done(flight.deferred, completed);
+      return yield* Deferred.await(flight.deferred);
+    })
+  );
 }
 
 function makeRunRef(runtime: ReaderRuntime, document: RunDocument): SelectedRunRef {
@@ -1049,6 +1079,7 @@ function openCurrentRead(input: {
       owners: new WeakMap(),
       runsById: new Map(),
       attemptsByKey: new Map(),
+      sealedCoreSnapshot: undefined,
     };
     yield* Effect.addFinalizer(() => Effect.sync(() => { lifecycle.closed = true; }));
     return makeReadSession(runtime, fileSystem);
