@@ -111,12 +111,12 @@ const PRODUCT_ENHANCER = readFileSync(new URL("../assets/enhance.js", import.met
 
 /**
  * Host-owned parameterized-Page dialog for the shared view/static runtime.
- * A click on a same-site `<pageId>/<key>/index.html` href opens a native
- * `<dialog>` filled with the standalone detail document's own slot bytes;
- * no-JS, direct hrefs, and the exported directory keep reading that same
- * document.  The route list comes from the revision's closed pages, not from
- * any author declaration.  The report content inside the dialog is styled by
- * the existing product stylesheet; only the dialog chrome is styled here.
+ * A click on a same-site `<pageId>/<key>/index.html` href writes the legacy
+ * hash deep link and opens a native `<dialog>` filled with that standalone
+ * detail document's own slot bytes. No-JS and direct hrefs keep reading the
+ * same document. The route list comes from the revision's closed pages, not
+ * from any author declaration. The report content inside the dialog is styled
+ * by the existing product stylesheet; only the dialog chrome is styled here.
  */
 const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
   "use strict";
@@ -126,6 +126,7 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
     .split(" ")
     .filter((value) => value.length > 0);
   if (routes.length === 0) return;
+  const siteRoot = document.documentElement.getAttribute("data-niceeval-site-root") || "index.html";
 
   function closest(target, selector) {
     return target && target.closest ? target.closest(selector) : null;
@@ -146,7 +147,8 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
   function matchTarget(url) {
     if (url.origin !== location.origin) return null;
     for (const prefix of routes) {
-      const pattern = new RegExp("^/" + escapeRegExp(prefix) + "/([^/]+)/index\\\\.html$");
+      const root = new URL(siteRoot, document.baseURI);
+      const pattern = new RegExp("^" + escapeRegExp(new URL(prefix + "/", root).pathname) + "([^/]+)/index\\\\.html$");
       const match = pattern.exec(url.pathname);
       if (!match) continue;
       let key;
@@ -156,9 +158,24 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
         return null;
       }
       if (!key || key.includes("/")) return null;
-      return { key };
+      return { prefix, key, url };
     }
     return null;
+  }
+
+  function targetFromHash() {
+    const match = location.hash.startsWith("#/") ? location.hash.slice(2).split("/") : [];
+    if (match.length !== 2 || !routes.includes(match[0]) || !match[1]) return null;
+    const root = new URL(siteRoot, document.baseURI);
+    return {
+      prefix: match[0],
+      key: match[1],
+      url: new URL(match[0] + "/" + encodeURIComponent(match[1]) + "/index.html", root),
+    };
+  }
+
+  function hashForTarget(target) {
+    return "#/" + target.prefix + "/" + target.key;
   }
 
   function currentLocale() {
@@ -195,6 +212,8 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
 
   let dialog = null;
   let ownsHistory = false;
+  let requestRevision = 0;
+  let requestedTarget = null;
 
   function ensureDialog() {
     if (dialog !== null) return;
@@ -222,7 +241,6 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
       if (event.target === dialog) closeFromUi();
     });
     dialog.addEventListener("cancel", (event) => {
-      if (!ownsHistory) return;
       event.preventDefault();
       closeFromUi();
     });
@@ -231,25 +249,31 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
 
   function closeFromUi() {
     if (dialog === null || !dialog.open) return;
+    requestedTarget = null;
+    requestRevision++;
     if (!ownsHistory) {
       dialog.close();
+      history.replaceState(null, "", location.pathname + location.search);
       return;
     }
     ownsHistory = false;
     history.back();
   }
 
-  function openTarget(url) {
+  function openTarget(target, nextOwnsHistory) {
     ensureDialog();
-    fetch(url.href, { credentials: "same-origin" })
+    requestedTarget = target;
+    const revision = ++requestRevision;
+    fetch(target.url.href, { credentials: "same-origin" })
       .then((response) => {
         if (!response.ok) throw new Error("http " + response.status);
-        return response.text().then((html) => ({ html, responseUrl: response.url || url.href }));
+        return response.text().then((html) => ({ html, responseUrl: response.url || target.url.href }));
       })
       .then(({ html, responseUrl }) => {
+        if (revision !== requestRevision || requestedTarget !== target) return;
         const extracted = extractDocument(html, currentLocale(), responseUrl);
         if (extracted === null) {
-          location.href = url.href;
+          location.href = target.url.href;
           return;
         }
         dialog.querySelector(".niceeval-view-dialog-title").textContent = extracted.title;
@@ -259,19 +283,31 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
         );
         dialog.querySelector(".niceeval-view-dialog-body").innerHTML = extracted.content;
         if (!dialog.open) dialog.showModal();
-        if (!ownsHistory) {
-          history.pushState({ niceevalDialog: true }, "");
-          ownsHistory = true;
-        }
+        ownsHistory = nextOwnsHistory;
       })
       .catch(() => {
-        location.href = url.href;
+        if (revision === requestRevision && requestedTarget === target) location.href = target.url.href;
       });
   }
 
-  window.addEventListener("popstate", () => {
+  function onHashChange() {
+    const target = targetFromHash();
+    if (target !== null) {
+      openTarget(target, true);
+      return;
+    }
+    requestedTarget = null;
+    requestRevision++;
     ownsHistory = false;
     if (dialog !== null && dialog.open) dialog.close();
+  }
+
+  const initialTarget = targetFromHash();
+  if (initialTarget !== null) openTarget(initialTarget, false);
+  window.addEventListener("hashchange", onHashChange);
+  window.addEventListener("popstate", () => {
+    if (location.hash) return;
+    onHashChange();
   });
 
   document.addEventListener("click", (event) => {
@@ -279,8 +315,8 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const anchor = closest(event.target, "a[href]");
     if (!anchor) return;
-    const target = anchor.getAttribute("target");
-    if (target !== null && target !== "_self") return;
+    const anchorTarget = anchor.getAttribute("target");
+    if (anchorTarget !== null && anchorTarget !== "_self") return;
     if (anchor.hasAttribute("download")) return;
     let url;
     try {
@@ -288,9 +324,10 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
     } catch {
       return;
     }
-    if (matchTarget(url) === null) return;
+    const target = matchTarget(url);
+    if (target === null) return;
     event.preventDefault();
-    openTarget(url);
+    location.hash = hashForTarget(target);
   });
 })();`;
 
@@ -550,7 +587,8 @@ function renderPage(site: ClosedReportSite, entry: ClosedSitePage, paramRoutes: 
   const paramRoutesAttr = paramRoutes.length === 0
     ? ""
     : ` data-niceeval-param-routes="${escapeAttribute(paramRoutes.join(" "))}"`;
-  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}"${paramRoutesAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav><div class="niceeval-view-locale" aria-label="Language"><button class="is-active" type="button" data-niceeval-locale-button="en" aria-pressed="true">EN</button><button type="button" data-niceeval-locale-button="zh-CN" aria-pressed="false">中文</button></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div><noscript><p class="niceeval-view-noscript">This report remains readable without JavaScript; language selection is unavailable.</p></noscript></main></body></html>`;
+  const siteRootHref = relativeHref(output, "index.html");
+  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}" data-niceeval-site-root="${escapeAttribute(siteRootHref)}"${paramRoutesAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav><div class="niceeval-view-locale" aria-label="Language"><button class="is-active" type="button" data-niceeval-locale-button="en" aria-pressed="true">EN</button><button type="button" data-niceeval-locale-button="zh-CN" aria-pressed="false">中文</button></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div><noscript><p class="niceeval-view-noscript">This report remains readable without JavaScript; language selection is unavailable.</p></noscript></main></body></html>`;
 }
 
 function renderNavigation(

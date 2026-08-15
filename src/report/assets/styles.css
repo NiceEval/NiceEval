@@ -1887,20 +1887,20 @@ html.niceeval-view-document body {
    keeps the same closed product markup and the same stylesheet as its direct
    route; the runtime injects no second CSS owner. */
 .niceeval-view-dialog {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1120px, calc(100vw - 48px));
   max-width: none;
-  height: auto;
-  max-height: 88vh;
+  max-height: min(86vh, 820px);
   margin: auto;
   padding: 0;
-  overflow: auto;
-  border: 1px solid var(--niceeval-color-border, #262626);
+  overflow: hidden;
+  border: 1px solid var(--niceeval-color-border-strong, #343434);
   border-radius: var(--niceeval-radius, 0);
   color: var(--niceeval-color-text, #ededed);
-  background: var(--niceeval-color-page, #050505);
+  background: var(--niceeval-color-surface, #0b0b0b);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
 }
 
-.niceeval-view-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.niceeval-view-dialog::backdrop { background: rgb(0 0 0 / 90%); }
 
 .niceeval-view-dialog-head {
   position: sticky;
@@ -1908,43 +1908,53 @@ html.niceeval-view-document body {
   z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
+  justify-content: flex-end;
+  padding: 16px 28px 12px;
   border-bottom: 1px solid var(--niceeval-color-border, #262626);
   background: var(--niceeval-color-surface, #0b0b0b);
 }
 
 .niceeval-view-dialog-title {
-  min-width: 0;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 600;
-  text-overflow: ellipsis;
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+  border: 0;
 }
 
 .niceeval-view-dialog-close {
-  padding: 4px 8px;
-  border: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: var(--niceeval-radius, 0);
   color: var(--niceeval-color-text-secondary, #a1a1aa);
   background: none;
   font: inherit;
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
 
-.niceeval-view-dialog-close:hover { color: var(--niceeval-color-text, #ededed); }
+.niceeval-view-dialog-close:hover {
+  border-color: var(--niceeval-color-border, #262626);
+  color: var(--niceeval-color-text, #ededed);
+  background: var(--niceeval-color-surface-subtle, #111);
+}
 .niceeval-view-dialog-close:focus-visible {
   outline: 1px solid var(--niceeval-color-focus, #cbd6dc);
   outline-offset: 2px;
 }
 
 .niceeval-view-dialog-body {
+  flex: 1;
   margin: 0;
-  padding: 20px 24px 32px;
+  padding: 8px 28px 28px;
+  overflow-y: auto;
 }
 
 .niceeval-view-problems {

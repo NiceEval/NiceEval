@@ -86,6 +86,10 @@ client 先读取两边都存在且 bytes 相同的自身 runtime 文件；只有
 View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和访问入口。它不读取 Analysis、不调整报告组件的数据含义、
 不注入第二份产品 CSS，也不重绘已关闭的 Report 内容。
 
+浏览器启用 JavaScript 时，站内参数 Page 的普通详情 href 会渐进增强为 Host modal，并把当前位置写成
+`#/<page-route-prefix>/<key>`。该 hash 可复制、首次打开和刷新后恢复同一详情；Escape、关闭按钮和浏览器返回会关闭 modal 并恢复
+前一地址。禁用 JavaScript、在新标签页打开或静态导出时，href 仍直接打开同一份独立详情文档。
+
 ## SSG 预算
 
 下列预算作用于一次全站构建。Host 在分配无界集合前检查可知数量，并在收集页面、节点和 bytes 时累计；超过任一上限时，

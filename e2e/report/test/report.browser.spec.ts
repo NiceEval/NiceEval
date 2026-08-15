@@ -305,7 +305,21 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
         await expect(dialog.getByRole("heading", { name: /^Attempt · @/ })).toBeVisible();
+        const deepLink = page.url();
+        expect(new URL(deepLink).hash).toMatch(/^#\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}$/);
         await page.keyboard.press("Escape");
+        await expect(dialog).not.toBeVisible();
+        expect(new URL(page.url()).hash).toBe("");
+
+        // The legacy URL contract survives the new closed-site host: opening
+        // its hash directly restores the same dialog, and reload keeps it.
+        await page.goto(deepLink);
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole("heading", { name: /^Attempt · @/ })).toBeVisible();
+        await page.reload();
+        expect(page.url()).toBe(deepLink);
+        await expect(dialog).toBeVisible();
+        await page.goBack();
         await expect(dialog).not.toBeVisible();
 
         // The href stays a real standalone route: direct navigation reads the
