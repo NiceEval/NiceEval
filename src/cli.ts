@@ -404,7 +404,7 @@ const FLAG_OPTIONS = {
   report: { type: "string" },
   /** `show` / `view` 命令专用：内建 Theme 或受信任的闭合 Theme module 路径。 */
   theme: { type: "string" },
-  /** 人读 `show` / `view` 专用：用 exact route 或已展开的 page id 选择页面；`show --json` 不接受。未命中时按用法错误退出并列出可用 page id。 */
+  /** 人读 `show` / `view` 专用：用 exact route 或唯一匹配的已展开 page id 选择页面；`show --json` 不接受。未命中或 page id 有歧义时按用法错误退出并列出完整 route。 */
   page: { type: "string" },
   /** `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 */
   teardown: { type: "boolean" },
@@ -2590,15 +2590,6 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
   return found?.[0];
 }
 
-function parseReportRoute(value: string | undefined): ReportRoute | undefined {
-  if (value === undefined) return undefined;
-  const parsed = reportRoute(value);
-  if (Either.isLeft(parsed)) {
-    throw usageError(`Invalid --page route "${value}": ${parsed.left.reason}.\n`);
-  }
-  return parsed.right;
-}
-
 function reportSelection(cwd: string, value: string | undefined): ReportSelection {
   if (value === undefined) return Object.freeze({ kind: "config" as const });
   if (value === "standard") return Object.freeze({ kind: "built-in" as const, name: "standard" as const });
@@ -2920,42 +2911,57 @@ function requireKnownReportPage(
 ): Effect.Effect<ReportRoute | undefined, CliUsageError> {
   if (page === undefined) return Effect.succeed(undefined);
   const resolved = resolveShowPage(execution, page);
-  if (resolved !== undefined) return Effect.succeed(resolved);
-  const available = availableShowPageIds(execution).join(", ");
+  if (resolved.kind === "route") return Effect.succeed(resolved.route);
+  const available = availableShowPages(execution);
+  const listedPages = available.length === 0
+    ? "    none"
+    : available.map((candidate) => `    ${candidate.route} (${candidate.pageId})`).join("\n");
+  if (resolved.kind === "ambiguous") {
+    return Effect.fail(usageError(
+      `page "${page}" is ambiguous; use an exact route.\n` +
+      `  Matching routes:\n${resolved.routes.map((route) => `    ${route}`).join("\n")}\n` +
+      `  Available pages (exact route → page id):\n${listedPages}\n`,
+    ));
+  }
   return Effect.fail(usageError(
-    `page "${page}" not found\n  Available pages: ${available || "none"}\n`,
+    `page "${page}" not found\n  Available pages (exact route → page id):\n${listedPages}\n`,
   ));
 }
 
 function resolveShowPage(
   execution: ReportExecution,
   page: string,
-): ReportRoute | undefined {
-  const byId = execution.pages.find((candidate) => candidate.pageId === page && candidate.route !== undefined);
-  if (byId?.route !== undefined) return byId.route;
-  const routeText = page.startsWith("/") ? page : `/${page}`;
-  const parsed = reportRoute(routeText);
+):
+  | { readonly kind: "route"; readonly route: ReportRoute }
+  | { readonly kind: "ambiguous"; readonly routes: readonly ReportRoute[] }
+  | { readonly kind: "not-found" } {
+  const parsed = reportRoute(page);
   if (Either.isRight(parsed)) {
     const byRoute = execution.pages.find((candidate) => candidate.route === parsed.right);
-    if (byRoute?.route !== undefined) return byRoute.route;
+    if (byRoute?.route !== undefined) return Object.freeze({ kind: "route" as const, route: byRoute.route });
   }
-  return undefined;
+  const matchingRoutes = execution.pages.flatMap((candidate) =>
+    candidate.pageId === page && candidate.route !== undefined ? [candidate.route] : []
+  );
+  if (matchingRoutes.length === 1) {
+    return Object.freeze({ kind: "route" as const, route: matchingRoutes[0]! });
+  }
+  if (matchingRoutes.length > 1) {
+    return Object.freeze({
+      kind: "ambiguous" as const,
+      routes: Object.freeze(matchingRoutes),
+    });
+  }
+  return Object.freeze({ kind: "not-found" as const });
 }
 
-function availableShowPageIds(execution: ReportExecution): readonly string[] {
-  const ids = new Set<string>();
-  for (const page of execution.pages) {
-    if (!isNavigableShowPage(page)) continue;
-    ids.add(page.pageId);
-  }
-  return Object.freeze([...ids].sort());
-}
-
-function isNavigableShowPage(page: ReportExecution["pages"][number]): boolean {
-  if (page.route === undefined) return false;
-  if (page.pageId === "attempt" || page.pageId === "experiment") return false;
-  const rest = page.route.replace(/^\//, "");
-  return rest === "" || rest === page.pageId;
+function availableShowPages(execution: ReportExecution): readonly {
+  readonly pageId: string;
+  readonly route: ReportRoute;
+}[] {
+  return Object.freeze(execution.pages.flatMap((page) =>
+    page.route === undefined ? [] : [Object.freeze({ pageId: page.pageId, route: page.route })]
+  ));
 }
 
 const cliReportConsole = Object.freeze({

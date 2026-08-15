@@ -3,14 +3,11 @@
 // - inverse = unwrap timing JSON to bare PublicTimingJson; outcome = the
 //   expected Calculation envelope fails before any phase assertion can pass.
 // - inverse = accept a missing or extra cell-table key, skip iterative hierarchy
-//   depth validation, or retain declared page order; outcome = the public
-//   execution JSON loses its failed Page, structured depth error, or canonical
-//   page/navigation distinction.
+//   depth validation, or retain declared page order; outcome = public show
+//   loses its failed-page / depth evidence or public HTTP loses tab order.
 // rerun: pnpm e2e --repo report -- --run test/report-execution.test.ts
 
 import { only, pollUntil, waitForOutput } from "@niceeval/testkit";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
@@ -104,48 +101,6 @@ interface ExecutionShowDocument {
       }>;
     };
   };
-}
-
-interface ReportExecutionPageJson {
-  readonly state: "rendered" | "data-unavailable" | "execution-failed";
-  readonly pageId: string;
-  readonly route?: string;
-  readonly problemIds: readonly number[];
-  readonly document?: {
-    readonly children: readonly ReportExecutionBlockJson[];
-  };
-}
-
-interface ReportExecutionBlockJson {
-  readonly type: string;
-}
-
-interface ReportExecutionCellTableJson extends ReportExecutionBlockJson {
-  readonly type: "cell-table";
-  readonly columns: readonly string[];
-  readonly hierarchy?: true;
-  readonly rows: readonly {
-    readonly key: string;
-    readonly cells: Readonly<Record<string, string>>;
-  }[];
-}
-
-interface ReportExecutionJson {
-  readonly format: "niceeval.report-show/v1";
-  readonly pages: readonly ReportExecutionPageJson[];
-  readonly navigation: readonly {
-    readonly pageId: string;
-    readonly route: string;
-    readonly order: number;
-  }[];
-  readonly problemTable: readonly {
-    readonly id: number;
-    readonly problem: {
-      readonly category: string;
-      readonly code: string;
-      readonly consumerId: string;
-    };
-  }[];
 }
 
 test("show --execution 呈现本轮 conversation 与工具入参", async () => {
@@ -304,56 +259,34 @@ test("show --timing 在当前真实 Runner 中公开可用阶段 timing", async 
   );
 });
 
-test("低层 Report 的 cell-table 闭合、层级深度与 execution 页顺序都是公开契约", async () => {
+test("低层 Report 的 cell-table 闭合、层级深度与 navigation 都从公开 CLI/HTTP 交付", async () => {
   await reportE2E.case(
     "execution-contracts",
-    { artifacts: reportCaseArtifacts(["execution-contracts", "execution-navigation"]) },
-    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+    { artifacts: reportCaseArtifacts() },
+    async ({ commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
 
-      const closure = await liveExecutionJson("closure");
-      expect(closure.format).toBe("niceeval.report-show/v1");
-      const rejectedById = new Map(
-        closure.pages
-          .filter((page) => page.state === "execution-failed")
-          .map((page) => [page.pageId, page]),
-      );
       for (const pageId of ["normal-missing", "normal-extra", "hierarchy-missing", "hierarchy-extra"]) {
-        const page = rejectedById.get(pageId);
-        expect(page, `missing rejected ${pageId} page`).toMatchObject({
-          state: "execution-failed",
-          route: `/${pageId}`,
-          problemIds: [expect.any(Number)],
-        });
+        const rejected = await niceeval.run(
+          ["show", "--report", "./reports/execution-contracts.ts", "--page", `/${pageId}`],
+          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "closure" } },
+        );
+        expect(rejected.exitCode, rejected.diagnostic()).toBe(0);
+        expect(rejected.stdout).toContain(`Page /${pageId} · execution-failed`);
+        expect(rejected.stdout).toContain(`semantic-document-invalid in ${pageId}`);
       }
-      expect(
-        closure.problemTable
-          .map(({ problem }) => [problem.category, problem.code, problem.consumerId])
-          .sort((left, right) => left[2]!.localeCompare(right[2]!)),
-      ).toEqual([
-        ["execution", "semantic-document-invalid", "hierarchy-extra"],
-        ["execution", "semantic-document-invalid", "hierarchy-missing"],
-        ["execution", "semantic-document-invalid", "normal-extra"],
-        ["execution", "semantic-document-invalid", "normal-missing"],
-      ]);
 
-      const valid = await exportExecutionJson("valid", "execution-contracts");
-      expect(valid.pages.map((page) => [page.pageId, page.route])).toEqual([
-        ["root", "/"],
-        ["alpha", "/alpha"],
-        ["zulu", "/zulu"],
-      ]);
-      const root = valid.pages.find((page) => page.pageId === "root");
-      expect(root).toMatchObject({ state: "rendered", route: "/" });
-      const tables = cellTables(root!);
-      expect(tables).toHaveLength(3);
-      expect(tables.map((table) => table.hierarchy === true)).toEqual([false, true, true]);
-      for (const table of tables) {
-        for (const row of table.rows) {
-          expect(Object.keys(row.cells).sort()).toEqual([...table.columns].sort());
-        }
-      }
+      const valid = await niceeval.run(
+        ["show", "--report", "./reports/execution-contracts.ts", "--page", "/"],
+        { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "valid" } },
+      );
+      expect(valid.exitCode, valid.diagnostic()).toBe(0);
+      expect(valid.stdout).toContain("Exact cell-table closure");
+      expect(valid.stdout).toContain("Name");
+      expect(valid.stdout).toContain("State");
+      expect(valid.stdout).toContain("cell-table");
+      expect(valid.stdout).toContain("Problems\n  none");
 
       const deep = await niceeval.run(
         ["show", "--report", "./reports/execution-contracts.ts", "--page", "/"],
@@ -363,19 +296,20 @@ test("低层 Report 的 cell-table 闭合、层级深度与 execution 页顺序�
       expect(deep.stderr).toContain("report-limit-exceeded");
       expect(deep.stderr).not.toMatch(/RangeError|Maximum call stack size exceeded/);
 
-      const navigation = await exportExecutionJson("navigation", "execution-navigation");
-      expect(navigation.pages.map((page) => [page.pageId, page.route])).toEqual([
-        ["zulu", "/"],
-        ["alpha", "/alpha"],
-        ["zebra", "/zebra"],
-      ]);
-      expect(navigation.navigation.map((item) => [item.pageId, item.route, item.order])).toEqual([
-        ["zulu", "/", 0],
-        ["zebra", "/zebra", 1],
-        ["alpha", "/alpha", 2],
-      ]);
+      for (const [route, body] of [
+        ["/", "zulu public route body"],
+        ["/zebra", "zebra public route body"],
+        ["/alpha", "alpha public route body"],
+      ] as const) {
+        const selected = await niceeval.run(
+          ["show", "--report", "./reports/execution-contracts.ts", "--page", route],
+          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "navigation" } },
+        );
+        expect(selected.exitCode, selected.diagnostic()).toBe(0);
+        expect(selected.stdout).toContain(body);
+      }
 
-      async function liveExecutionJson(scenario: string): Promise<ReportExecutionJson> {
+      for (const theme of ["basalt", "chalk"] as const) {
         const view = niceeval.start(
           [
             "view",
@@ -386,9 +320,11 @@ test("低层 Report 的 cell-table 闭合、层级深度与 execution 页顺序�
             "--port",
             "0",
             "--no-open",
+            "--theme",
+            theme,
           ],
           {
-            env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: scenario },
+            env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "navigation" },
             timeoutMs: 60_000,
           },
         );
@@ -397,47 +333,32 @@ test("低层 Report 的 cell-table 闭合、层级深度与 execution 页顺序�
             view,
             "stdout",
             /http:\/\/127\.0\.0\.1:\d+\//,
-            { timeoutMs: 30_000, label: `${scenario} execution JSON view URL` },
+            { timeoutMs: 30_000, label: `${theme} navigation view URL` },
           );
           const origin = startup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
           expect(origin, startup).toBeDefined();
-          return await pollUntil(
+          const html = await pollUntil(
             async () => {
               try {
-                const response = await fetch(`${origin!}_niceeval/execution.json`);
-                return response.status === 200 ? await response.json() as ReportExecutionJson : undefined;
+                const response = await fetch(origin!);
+                return response.status === 200 ? await response.text() : undefined;
               } catch {
                 return undefined;
               }
             },
-            { timeoutMs: 15_000, intervalMs: 100, label: `${scenario} execution JSON readiness` },
+            { timeoutMs: 15_000, intervalMs: 100, label: `${theme} navigation page readiness` },
           );
+          expect(tabNamesFromLiveHtml(html)).toEqual(["Zebra first", "Zebra second", "Alpha last"]);
         } finally {
           await view.dispose();
         }
-      }
-
-      async function exportExecutionJson(scenario: string, out: string): Promise<ReportExecutionJson> {
-        const exported = await niceeval.run(
-          ["view", "--report", "./reports/execution-contracts.ts", "--out", out, "--no-open"],
-          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: scenario } },
-        );
-        expect(exported.exitCode, exported.diagnostic()).toBe(0);
-        return JSON.parse(
-          await readFile(join(projectRoot, out, "_niceeval", "execution.json"), "utf8"),
-        ) as ReportExecutionJson;
       }
     },
   );
 });
 
-function cellTables(page: ReportExecutionPageJson): readonly ReportExecutionCellTableJson[] {
-  if (page.state !== "rendered" || page.document === undefined) {
-    throw new Error(`expected rendered execution page, got ${page.state}`);
-  }
-  return page.document.children.filter(isCellTable);
-}
-
-function isCellTable(block: ReportExecutionBlockJson): block is ReportExecutionCellTableJson {
-  return block.type === "cell-table";
+function tabNamesFromLiveHtml(html: string): readonly string[] {
+  return Object.freeze(
+    [...html.matchAll(/<button\b[^>]*\brole="tab"[^>]*>([^<]+)<\/button>/g)].map((match) => match[1]!),
+  );
 }

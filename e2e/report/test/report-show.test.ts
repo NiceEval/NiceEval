@@ -1,4 +1,9 @@
 // owner: docs/engineering/testing/e2e/report.md#report-show-json
+// kill:
+// - inverse = resolve --page by the first expanded PageFamily id before trying
+//   an exact route; invoke = the fixture expands two attempt and two experiment
+//   pages, then calls show --page <family-id>; outcome = the old resolver exits
+//   successfully with its canonical first page instead of the usage error below.
 // rerun: pnpm e2e --repo report -- --run test/report-show.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -154,6 +159,11 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(overview.stdout).not.toContain("Report default-overview");
       expect(overview.stdout).not.toContain("Slot denominator");
       expect(overview.stdout).not.toMatch(/[╭╰]/);
+
+      const help = await niceeval.run(["--help"]);
+      expect(help.exitCode, help.diagnostic()).toBe(0);
+      expect(help.stdout).toContain("--page <route-or-page-id>");
+      expect(help.stdout).toContain("a uniquely matching expanded page id");
 
       const niceevalBin = join(projectRoot, "node_modules", ".bin", "niceeval");
       const terminal = await runReportPty(
@@ -336,6 +346,28 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
       expect(customAuthor.exitCode, customAuthor.diagnostic()).toBe(0);
       const primitiveSequence = ["Primitive children", "primitive-alpha", "42", "primitive-omega"];
       expect(terminalTextSequence(customAuthor.stdout, primitiveSequence)).toEqual(primitiveSequence);
+
+      for (const family of ["attempt", "experiment"] as const) {
+        const ambiguous = await niceeval.run(
+          ["show", "--report", "./reports/execution-contracts.ts", "--page", family],
+          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "page-selection" } },
+        );
+        expect(ambiguous.exitCode, ambiguous.diagnostic()).not.toBe(0);
+        expect(ambiguous.stderr).toContain(`page "${family}" is ambiguous`);
+        expect(ambiguous.stderr).toContain("use an exact route");
+        expect(ambiguous.stderr).toContain(`/${family}/first`);
+        expect(ambiguous.stderr).toContain(`/${family}/second`);
+        expect(ambiguous.stderr).toContain(`/${family}/first (${family})`);
+
+        const exactRoute = await niceeval.run(
+          ["show", "--report", "./reports/execution-contracts.ts", "--page", `/${family}/second`],
+          { env: { NICEEVAL_REPORT_EXECUTION_CONTRACT: "page-selection" } },
+        );
+        expect(exactRoute.exitCode, exactRoute.diagnostic()).toBe(0);
+        expect(exactRoute.stdout).toContain(`Page /${family}/second`);
+        expect(exactRoute.stdout).toContain(`${family} second exact route`);
+        expect(exactRoute.stdout).not.toContain(`${family} first exact route`);
+      }
 
       const partialVisibility = await niceeval.run([
         "show",

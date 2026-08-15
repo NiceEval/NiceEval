@@ -1,11 +1,12 @@
 import { Either } from "effect";
 import {
-  REPORT_DOCUMENT_DEPTH_MAX,
   definePage,
+  definePageFamily,
   defineReport,
   reportComponentId,
   reportDocument,
   reportId,
+  reportInstanceKey,
   reportRoute,
   type ReportBlock,
   type ReportDocument,
@@ -13,10 +14,18 @@ import {
 
 type CellShape = "exact" | "missing" | "extra";
 
+// Public Report contract: a document permits at most 32 hierarchy hops.
+// Keep this fixture independent of the production validator implementation.
+const MAXIMUM_LEGAL_HIERARCHY_DEPTH = 32;
+
 const scenario = process.env.NICEEVAL_REPORT_EXECUTION_CONTRACT;
 const columns = ["Name", "State"] as const;
 
-export default scenario === "navigation" ? navigationReport() : lowLevelReport();
+export default scenario === "navigation"
+  ? navigationReport()
+  : scenario === "page-selection"
+  ? pageSelectionReport()
+  : lowLevelReport();
 
 function lowLevelReport() {
   if (scenario === "deep") {
@@ -57,10 +66,31 @@ function navigationReport() {
   return defineReport({
     title: "Execution navigation",
     pages: [
-      { id: "zulu", title: "Zebra first", render: () => "Zebra first" },
-      { id: "zebra", title: "Zebra second", render: () => "Zebra second" },
-      { id: "alpha", title: "Alpha last", render: () => "Alpha last" },
+      { id: "zulu", title: "Zebra first", render: () => "zulu public route body" },
+      { id: "zebra", title: "Zebra second", render: () => "zebra public route body" },
+      { id: "alpha", title: "Alpha last", render: () => "alpha public route body" },
     ],
+  });
+}
+
+function pageSelectionReport() {
+  return defineReport({
+    id: reportIdValue("execution-contracts-page-selection"),
+    pages: [
+      lowLevelPage("root", "/", emptyDocument("Page selection root")),
+      repeatedFamily("attempt"),
+      repeatedFamily("experiment"),
+    ],
+  });
+}
+
+function repeatedFamily(id: "attempt" | "experiment") {
+  return definePageFamily({
+    id: componentIdValue(id),
+    instances: () => ["first", "second"],
+    key: (instance) => instanceKeyValue(`${id}-${instance}`),
+    route: (instance) => reportRouteValue(`/${id}/${instance}`),
+    render: ({ instance }) => emptyDocument(`${id} ${instance} exact route`),
   });
 }
 
@@ -130,7 +160,7 @@ function deepHierarchyTable(): ReportBlock {
     label: "Root",
     cells: cellsFor("exact"),
   }];
-  for (let index = 1; index <= REPORT_DOCUMENT_DEPTH_MAX + 1; index += 1) {
+  for (let index = 1; index <= MAXIMUM_LEGAL_HIERARCHY_DEPTH + 1; index += 1) {
     rows.push({
       key: `group-${index}`,
       kind: "group",
@@ -149,7 +179,7 @@ function hierarchyAtDepthLimitTable(): ReportBlock {
     label: "Root",
     cells: cellsFor("exact"),
   }];
-  for (let index = 1; index <= REPORT_DOCUMENT_DEPTH_MAX; index += 1) {
+  for (let index = 1; index <= MAXIMUM_LEGAL_HIERARCHY_DEPTH; index += 1) {
     rows.push({
       key: `group-${index}`,
       kind: "group",
@@ -182,4 +212,8 @@ function reportIdValue(value: string) {
 
 function reportRouteValue(value: string) {
   return Either.getOrThrow(reportRoute(value));
+}
+
+function instanceKeyValue(value: string) {
+  return Either.getOrThrow(reportInstanceKey(value));
 }

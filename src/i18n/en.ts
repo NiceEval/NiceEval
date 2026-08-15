@@ -238,8 +238,8 @@ export const en = {
     "        --experiment <id> is repeatable and narrows that current target\n" +
     "      --run <run-id> is repeatable and audits complete historical ids only\n" +
     "      --record <root> selects the actual Record root (default: .niceeval/record)\n" +
-    "      --report overview (or omit it) uses the built-in overview; --page <route>\n" +
-    "        selects an exact Report route; --json emits one Report show document\n" +
+    "      --report overview (or omit it) uses the built-in overview; --page <route-or-page-id>\n" +
+    "        selects an exact Report route or a uniquely matching expanded page id; --json emits one Report show document\n" +
     "  niceeval list                                       list discovered evals\n" +
     "  niceeval session list [--all] [experiment-prefix]    query Sessions (read-only)\n" +
     "  niceeval session show <sessionId>                   show one Session (read-only)\n" +
