@@ -6,6 +6,11 @@ CLI 以 `reportHost` 组合这条管线：show 调用 `execute()` 后调用 `sho
 `serve()`，view --out 调用 `execute()` 后调用 `export()`。`reportHost` 在其边界内经 `recordHost` 打开 Record、
 经 `analysisHost` 签发 Sample；Report author 从不取得 reader。
 
+命令执行时在 stderr 显示当前 loading 阶段，并在每段结束时保留耗时。阶段至少区分项目与作者模块加载、
+Record 打开、Run / Attempt 选择、Sample 签发、Report 执行与最终呈现；`view` 另显示 HTTP server 和 watcher
+启动。这里的“Record 打开”只指打开并校验 Record，不代表 Report 后续按需读取全部事实的总耗时。
+`show --json` 的 canonical JSON 仍独占 stdout，阶段反馈不会进入机器输出。
+
 ## 共同选择项
 
 ```sh

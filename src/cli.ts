@@ -14,7 +14,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { parseArgs as nodeParseArgs } from "node:util";
-import { Data, Effect, Either, Schema } from "effect";
+import { Cause, Clock, Data, Effect, Either, Exit, Schema } from "effect";
 import {
   parseAttemptLocator,
   type AttemptLocator,
@@ -47,6 +47,12 @@ import { reportRoute, type ReportRoute } from "./report/author/identity.ts";
 import type { Report } from "./report/definition.ts";
 import type { ReportExecution, ReportTargetSelection } from "./report/execution/model.ts";
 import { reportHost } from "./report/host/index.ts";
+import {
+  ReportHostProgressObserver,
+  type ReportHostPhase,
+  type ReportHostProgressEvent,
+  type ReportHostProgressObserverService,
+} from "./report/host/progress.ts";
 import { ReportConsole } from "./report/host/presentation.ts";
 import { ReportFileSystem } from "./report/host/static.ts";
 import {
@@ -2674,6 +2680,71 @@ const cliReportConsole = Object.freeze({
   }),
 });
 
+const reportHostPhaseLabels: Readonly<Record<ReportHostPhase, string>> = Object.freeze({
+  "record-open": "Open Record",
+  "selection": "Select runs and attempts",
+  "sample-open": "Open analysis Sample",
+  "report-execution": "Execute Report and read requested facts",
+});
+
+function formatReportProgressDuration(durationMs: number): string {
+  if (durationMs < 1_000) return `${Math.round(durationMs)}ms`;
+  return `${(durationMs / 1_000).toFixed(1)}s`;
+}
+
+function writeReportProgress(text: string): void {
+  try {
+    process.stderr.write(text);
+  } catch {
+    // Progress is diagnostic only; it must never alter Report execution.
+  }
+}
+
+function makeCliReportProgress(rootPath: string): ReportHostProgressObserverService {
+  return Object.freeze({
+    report: (event: ReportHostProgressEvent) => {
+      const label = event.phase === "record-open"
+        ? `${reportHostPhaseLabels[event.phase]} (${rootPath})`
+        : reportHostPhaseLabels[event.phase];
+      if (event.type === "start") {
+        writeReportProgress(`⠋ ${label}…\n`);
+        return;
+      }
+      const marker = event.outcome === "success" ? "✓" : "×";
+      const outcome = event.outcome === "success" ? "" : ` · ${event.outcome}`;
+      writeReportProgress(`${marker} ${label} (${formatReportProgressDuration(event.durationMs)}${outcome})\n`);
+    },
+  });
+}
+
+function cliPhaseOutcome<E>(exit: Exit.Exit<unknown, E>): "success" | "failure" | "defect" | "interrupted" {
+  if (Exit.isSuccess(exit)) return "success";
+  if (Cause.isInterruptedOnly(exit.cause)) return "interrupted";
+  return Cause.defects(exit.cause).pipe((defects) => defects.length > 0) ? "defect" : "failure";
+}
+
+function withCliReportPhase<A, E, R>(
+  label: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> {
+  return Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeNanos;
+    yield* Effect.sync(() => writeReportProgress(`⠋ ${label}…\n`));
+    return yield* effect.pipe(
+      Effect.onExit((exit) => Effect.gen(function* () {
+        const completedAt = yield* Clock.currentTimeNanos;
+        const durationMs = Math.max(0, Number(completedAt - startedAt) / 1_000_000);
+        const outcome = cliPhaseOutcome(exit);
+        const marker = outcome === "success" ? "✓" : "×";
+        const detail = outcome === "success" ? "" : ` · ${outcome}`;
+        yield* Effect.sync(() => writeReportProgress(
+          `${marker} ${label} (${formatReportProgressDuration(durationMs)}${detail})\n`,
+        ));
+      })),
+    );
+  });
+}
+
 function runShowCommand(
   cwd: string,
   positionals: readonly string[],
@@ -2684,17 +2755,19 @@ function runShowCommand(
       try: () => parseReportCliRequest({ command: "show", cwd, positionals, flags }),
       catch: (cause) => cliFailure("parse show arguments", cause),
     });
-    const inputs = yield* loadCliReportInputs(request);
-    const execution = yield* executeCliReport(request, inputs, reportShowTarget(request.page));
+    const inputs = yield* withCliReportPhase("Load project, config, Report, and Theme", loadCliReportInputs(request));
+    const execution = yield* executeCliReport(request, inputs, reportShowTarget(request.page)).pipe(
+      Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath)),
+    );
     yield* requireKnownReportPage(execution, request.page);
-    yield* reportHost.show({
+    yield* withCliReportPhase("Render terminal report", reportHost.show({
       execution,
       ...(flags.json ? { format: "json" as const } : {}),
       ...(request.page === undefined ? {} : { page: request.page }),
     }).pipe(
       Effect.provideService(ReportConsole, cliReportConsole),
       Effect.mapError((error) => cliFailure("render Report show output", error)),
-    );
+    ));
     return 0;
   });
 }
@@ -2720,29 +2793,36 @@ function runViewCommand(
       if (request.page !== undefined) {
         return yield* Effect.fail(usageError("view --out does not accept --page.\n"));
       }
-      const inputs = yield* loadCliReportInputs(request);
-      const execution = yield* executeCliReport(request, inputs, staticReportTarget);
-      const receipt = yield* reportHost.export({
+      const inputs = yield* withCliReportPhase("Load project, config, Report, and Theme", loadCliReportInputs(request));
+      const execution = yield* executeCliReport(request, inputs, staticReportTarget).pipe(
+        Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath)),
+      );
+      const receipt = yield* withCliReportPhase("Export static report site", reportHost.export({
         execution,
         out: resolvePath(cwd, flags.out),
         theme: inputs.theme,
       }).pipe(
         Effect.provideService(ReportFileSystem, makeNodeReportFileSystem()),
         Effect.mapError((error) => staticExportFailure(error, resolvePath(cwd, flags.out!))),
-      );
+      ));
       yield* writeStdout(`Exported static report site: ${receipt.out}\n`);
       return 0;
     }
 
-    const initialInputs = yield* loadCliReportInputs(request);
-    const initial = yield* executeCliReport(request, initialInputs, reportViewTarget(request.page));
+    const initialInputs = yield* withCliReportPhase(
+      "Load project, config, Report, and Theme",
+      loadCliReportInputs(request),
+    );
+    const initial = yield* executeCliReport(request, initialInputs, reportViewTarget(request.page)).pipe(
+      Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath)),
+    );
     yield* requireKnownReportPage(initial, request.page);
 
     const { host, port } = yield* Effect.try({
       try: () => ({ host: viewHost(flags.host), port: viewPort(flags.port) }),
       catch: (cause) => cliFailure("parse view server arguments", cause),
     });
-    const server = yield* reportHost.serve({
+    const server = yield* withCliReportPhase("Start HTTP server and file watcher", reportHost.serve({
       url: `http://${host.includes(":") ? `[${host}]` : host}:${port}/`,
       theme: initialInputs.theme,
       watchInputs: initialInputs.watchInputs,
@@ -2750,7 +2830,7 @@ function runViewCommand(
       rebuild: () => rebuildReportView(request),
       host,
       port,
-    }).pipe(Effect.mapError((error) => cliFailure("open report view", error)));
+    }).pipe(Effect.mapError((error) => cliFailure("open report view", error))));
     const urls = server.urls.map((url) => request.page === undefined ? url : new URL(request.page, url).toString());
     const url = urls[0]!;
     if (!isLoopbackViewHost(host)) {

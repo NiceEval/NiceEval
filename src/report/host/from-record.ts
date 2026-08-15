@@ -22,6 +22,7 @@ import { builtInDefaultReportTarget } from "../built-in/index.tsx";
 import type { Report } from "../definition.ts";
 import type { ReportExecution, ReportTargetSelection } from "../execution/model.ts";
 import { executeReport, type ReportExecutionError } from "./execute.ts";
+import { withReportHostPhase } from "./progress.ts";
 
 export type ExecuteReportFromRecordError =
   | RecordReaderOpenError
@@ -59,32 +60,35 @@ export function executeReportFromRecord(input: {
 > {
   return Effect.scoped(
     Effect.gen(function* () {
-      const reader = yield* recordHost.current.openRead({ root: input.root });
-      const selected = yield* reader.selectRuns(
+      const reader = yield* withReportHostPhase(
+        "record-open",
+        recordHost.current.openRead({ root: input.root }),
+      );
+      const selected = yield* withReportHostPhase("selection", reader.selectRuns(
         input.selection.policy === "explicit-runs"
           ? { runIds: input.selection.runIds }
           : undefined,
-      );
+      ));
       const filtered = input.selection.policy === "project-current"
         && input.selection.experimentIds !== undefined
         ? yield* filterSelectionByExperiment(selected, input.selection.experimentIds)
         : selected;
-      const opened = yield* analysisHost.openSample({
+      const opened = yield* withReportHostPhase("sample-open", analysisHost.openSample({
         reader,
         selection: filtered,
         selectionRequest: input.selection,
-      });
+      }));
       const sample = input.selection.policy === "project-current"
         ? narrowSampleByCurrentIdentity(
             opened,
             matchingOccurrencesForCurrentIdentity(filtered, input.selection.currentSlots),
           )
         : opened;
-      return yield* executeReport({
+      return yield* withReportHostPhase("report-execution", executeReport({
         sample,
         report: input.report ?? defaultReportForSelection(input.selection),
         target: input.target ?? { kind: "show" },
-      });
+      }));
     }),
   );
 }
@@ -105,13 +109,18 @@ export function executeReportForAttemptFromRecord(input: {
 > {
   return Effect.scoped(
     Effect.gen(function* () {
-      const reader = yield* recordHost.current.openRead({ root: input.root });
-      const selected = yield* reader.selectRuns();
-      const resolved = yield* resolveAttemptLocator({
-        reader,
-        selection: selected,
-        locator: input.locator,
-      });
+      const reader = yield* withReportHostPhase(
+        "record-open",
+        recordHost.current.openRead({ root: input.root }),
+      );
+      const resolved = yield* withReportHostPhase("selection", Effect.gen(function* () {
+        const selected = yield* reader.selectRuns();
+        return yield* resolveAttemptLocator({
+          reader,
+          selection: selected,
+          locator: input.locator,
+        });
+      }));
       if (resolved.kind === "not-found") {
         return yield* Effect.fail({
           code: "sample-attempt-locator-not-found" as const,
@@ -129,20 +138,20 @@ export function executeReportForAttemptFromRecord(input: {
         runIds: Object.freeze([resolved.run.runId]),
       });
       const selectedRun = yield* reader.selectRuns({ runIds: selectionRequest.runIds });
-      const sample = yield* analysisHost.openSample({
+      const sample = yield* withReportHostPhase("sample-open", analysisHost.openSample({
         reader,
         selection: selectedRun,
         selectionRequest,
-      });
+      }));
       const narrowed = narrowSample(sample, {
         runIds: [resolved.run.runId],
         slotIds: [resolved.slotId],
       });
-      return yield* executeReport({
+      return yield* withReportHostPhase("report-execution", executeReport({
         sample: narrowed,
         report: input.report ?? builtInDefaultReportTarget("attempt-locator").report,
         target: input.target ?? { kind: "show" },
-      });
+      }));
     }),
   );
 }
