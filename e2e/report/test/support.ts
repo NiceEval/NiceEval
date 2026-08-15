@@ -173,3 +173,33 @@ export function terminalBoxRows(box: string): readonly (readonly string[])[] {
     return [Object.freeze(line.slice(1, -1).split("│").map((cell) => cell.trim()))];
   }));
 }
+
+/**
+ * Select one adjacent sequence of visible terminal lines. Blank layout rows,
+ * indentation, CRLF, and ANSI styling are mechanics; the owner supplies every
+ * business label. Matching a sequence avoids false positives from an earlier
+ * dynamic value such as a timestamp that happens to contain the same text.
+ */
+export function terminalTextSequence(
+  output: string,
+  expectedLines: readonly string[],
+): readonly string[] {
+  if (expectedLines.length === 0 || expectedLines.some((line) => line.length === 0 || line.trim() !== line)) {
+    throw new TypeError("terminal text sequence requires non-empty, trimmed expected lines");
+  }
+  const lines = stripVTControlCharacters(output)
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  for (let start = 0; start <= lines.length - expectedLines.length; start += 1) {
+    if (expectedLines.every((line, offset) => lines[start + offset] === line)) {
+      return Object.freeze(lines.slice(start, start + expectedLines.length));
+    }
+  }
+  throw new Error(
+    `expected adjacent visible terminal lines ${JSON.stringify(expectedLines)}\n${
+      lines.map((line, index) => `${index + 1}: ${line}`).join("\n")
+    }`,
+  );
+}

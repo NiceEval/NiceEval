@@ -12,6 +12,7 @@ import {
   runReportPty,
   terminalBoxContaining,
   terminalBoxRows,
+  terminalTextSequence,
 } from "./support.ts";
 
 interface ExpEvent {
@@ -328,10 +329,8 @@ test("show 从一次固定 ReportExecution 呈现内建与自定义报告", asyn
         "author-api",
       ]);
       expect(customAuthor.exitCode, customAuthor.diagnostic()).toBe(0);
-      const primitiveOrder = ["primitive-alpha", "42", "primitive-omega"]
-        .map((value) => customAuthor.stdout.indexOf(value));
-      expect(primitiveOrder.every((index) => index >= 0)).toBe(true);
-      expect(primitiveOrder).toEqual([...primitiveOrder].sort((left, right) => left - right));
+      const primitiveSequence = ["Primitive children", "primitive-alpha", "42", "primitive-omega"];
+      expect(terminalTextSequence(customAuthor.stdout, primitiveSequence)).toEqual(primitiveSequence);
 
       const invalidLocale = await niceeval.run([
         "show",
