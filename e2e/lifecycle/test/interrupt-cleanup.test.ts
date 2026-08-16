@@ -19,6 +19,7 @@ interface ExpEvent {
   experimentId?: string;
   evalId?: string;
   verdict?: string;
+  locator?: string;
 }
 interface ProgressEvent {
   event: "progress";
@@ -184,16 +185,21 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
           completion: "interrupted",
         });
         // The selected `interrupts/` directory creates two Runs. The sibling
-        // has settled before SIGINT, while the in-flight Run has a reserved
-        // Attempt; only the independently sealed sibling appears here.
-        expect(interruptedReceipt.runIds, interrupted.diagnostic()).toHaveLength(1);
-        expect(
-          only(
-            events,
-            (event) => event.event === "eval" && event.experimentId === interruptedExperimentId,
-            interrupted.diagnostic(),
-          ),
-        ).toMatchObject({ event: "eval", experimentId: interruptedExperimentId, evalId: "interrupt", verdict: "passed" });
+        // has settled before SIGINT; the other Run keeps its completed first
+        // Attempt and closes the reserved second Attempt as interrupted.
+        expect(interruptedReceipt.runIds, interrupted.diagnostic()).toHaveLength(2);
+        const completedBeforeInterrupt = only(
+          events,
+          (event) => event.event === "eval" && event.experimentId === interruptedExperimentId,
+          interrupted.diagnostic(),
+        );
+        expect(completedBeforeInterrupt).toMatchObject({
+          event: "eval",
+          experimentId: interruptedExperimentId,
+          evalId: "interrupt",
+          verdict: "passed",
+          locator: expect.stringMatching(/^@1[0-9A-HJKMNP-TV-Z]{12}$/),
+        });
         expect(
           only(
             events,
@@ -211,6 +217,18 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
             interrupted.diagnostic(),
           ),
         ).toMatchObject({ status: "done" });
+
+        const completedAttempt = await niceeval.run([
+          "show",
+          completedBeforeInterrupt.locator!,
+          "--json",
+        ], { cwd: root });
+        expect(completedAttempt.exitCode, completedAttempt.diagnostic()).toBe(0);
+        expect(completedAttempt.json<{ data: { kind: string } }>().data.kind).toBe("attempt");
+
+        const visibleInventory = await niceeval.run(["show", "--json"], { cwd: root });
+        expect(visibleInventory.exitCode, visibleInventory.diagnostic()).toBe(0);
+        expect(visibleInventory.stdout).toContain(completedBeforeInterrupt.locator!);
 
         return {
           invocationPid,

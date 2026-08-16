@@ -586,6 +586,7 @@ open → sealing → sealed
 2. `createAttempt()` 为每个实际执行的 Attempt 排他创建目录；fixed collector 在内存收集并封口其 family。
 3. `referenceAttempt()` 只写 Member reference，不复制历史 Attempt 或 Attachment。
 4. `recordTerminalMember()` 为 `not-dispatched` 或 `interrupted` 显式写入 `attempt: null`。
+   受控中断时，已经 reserved 的 Attempt 则以 Attempt Core `outcome: "interrupted"` 关闭，不改写成空 Member。
 5. `seal()` 拒绝新 mutation，等待既有 Attempt 和 collector 停稳，并用 current definition 验证
    `RunDocument.context`、其余 Core、references、family 与 closure。
    验证完成后，它把已验证的 context 写入 `run.json`。
@@ -594,6 +595,8 @@ open → sealing → sealed
 第 6 步前的 typed failure、defect、interruption 或进程退出都不发布 Run。directory 保留为 incomplete，
 以便 `niceeval clean` 明确处理。第 6 步后 Run 已发布；即使 receipt 未被观察到，也不会撤销事实。finalizer
 只释放 lease 和 handle，绝不删除目录。
+
+Runner 收到可处理的 `SIGINT` 后会先停止派发并关闭每个已知 Slot，再调用同一个 `seal()`。这条路径没有部分读取协议：Run 要么以 `complete` 发布，已完成 Attempt 可按 locator 使用；要么因收尾写入失败保持整体 incomplete，并继续由 warning 与 `clean` 处理。
 
 ## Maintenance、兼容性与相邻迁移
 

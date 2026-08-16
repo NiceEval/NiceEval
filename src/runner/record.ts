@@ -1022,20 +1022,21 @@ export function openRunnerRecordCoordinator(input: {
         || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "reserved"
         || active === undefined
         || active.attempt !== attempt
-        || active.sealed === undefined
         || active.completed
       ) {
         return Effect.fail(attemptInvalid());
       }
-      const assertions = assertionsWrite(active.sealed);
-      if (Either.isLeft(assertions)) return Effect.fail(assertions.left);
+      const assertions = active.sealed === undefined ? undefined : assertionsWrite(active.sealed);
+      if (assertions !== undefined && Either.isLeft(assertions)) return Effect.fail(assertions.left);
       return Effect.sync(() => {
         // Sources is Run-owned, so its exact closure and the dependent
         // Assertion source-site joins can only be fixed after all concurrent
         // origins in this Run have finished. The real Attempt is still
         // completed only after its fixed writes have been accepted below.
         active.result = result;
-        active.assertionEntryIds = assertions.right.entryIds;
+        if (assertions !== undefined && Either.isRight(assertions)) {
+          active.assertionEntryIds = assertions.right.entryIds;
+        }
         active.completed = true;
         targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
         return active.public;
@@ -1044,6 +1045,7 @@ export function openRunnerRecordCoordinator(input: {
 
     const writeFixedFamiliesForRun = (
       recordRun: RunnerRecordRun,
+      mode: "normal" | "interrupted",
     ): Effect.Effect<void, RunnerRecordWriteError> => Effect.gen(function* () {
       const origins = [] as {
         readonly slotId: SlotId;
@@ -1052,20 +1054,20 @@ export function openRunnerRecordCoordinator(input: {
         readonly sealed: SealedAttemptAssertions;
         readonly assertionEntryIds: readonly AssertionEntryId[];
       }[];
+      const terminalAttempts: Array<{
+        readonly slotId: SlotId;
+        readonly active: ActiveRunnerRecordAttempt;
+        readonly result: EvalResult | undefined;
+      }> = [];
       for (const [slotId, state] of recordRun.gapActions) {
-        if (state !== "executed") continue;
+        if (state !== "executed" && !(mode === "interrupted" && state === "reserved")) continue;
         const active = recordRun.attempts.get(slotId);
-        const result = active?.result;
+        if (active === undefined) return yield* Effect.fail(membershipStateInvalid(slotId));
+        const result = active.result;
+        terminalAttempts.push(Object.freeze({ slotId, active, result }));
         const sealed = active?.sealed;
         const assertionEntryIds = active?.assertionEntryIds;
-        if (
-          active === undefined
-          || result === undefined
-          || sealed === undefined
-          || assertionEntryIds === undefined
-        ) {
-          return yield* Effect.fail(membershipStateInvalid(slotId));
-        }
+        if (result === undefined || sealed === undefined || assertionEntryIds === undefined) continue;
         origins.push(Object.freeze({ slotId, active, result, sealed, assertionEntryIds }));
       }
 
@@ -1082,7 +1084,19 @@ export function openRunnerRecordCoordinator(input: {
       }
       yield* recordRun.session.writeSources(sources.right.runWrite);
 
-      for (const { slotId, active, result, sealed, assertionEntryIds } of origins) {
+      const richBySlot = new Map(origins.map((origin) => [origin.slotId, origin] as const));
+      for (const terminal of terminalAttempts) {
+        const { slotId, active, result } = terminal;
+        const rich = richBySlot.get(slotId);
+        if (rich === undefined) {
+          if (result === undefined && mode !== "interrupted") {
+            return yield* Effect.fail(membershipStateInvalid(slotId));
+          }
+          yield* active.session.complete(result === undefined ? "interrupted" : outcomeFor(result));
+          recordRun.gapActions.set(slotId, "executed");
+          continue;
+        }
+        const { result: richResult, sealed, assertionEntryIds } = rich;
         const assertions = assertionsWrite(sealed, {
           entryIds: assertionEntryIds,
           sourceSites: sources.right.sourceSitesBySlot.get(slotId) ?? Object.freeze([]),
@@ -1090,7 +1104,7 @@ export function openRunnerRecordCoordinator(input: {
         if (Either.isLeft(assertions)) return yield* Effect.fail(assertions.left);
         yield* active.session.writeAssertions(assertions.right.write);
 
-        const observability = yield* attemptObservabilityWrite({ result, sealed });
+        const observability = yield* attemptObservabilityWrite({ result: richResult, sealed });
         yield* active.session.writeAttemptObservability(observability);
 
         const observabilityContents = recordAttachmentWriteContents(observability);
@@ -1102,7 +1116,7 @@ export function openRunnerRecordCoordinator(input: {
           }));
         }
         const navigation = createRunnerSourceNavigationWrite({
-          result,
+          result: richResult,
           sources: sources.right.sources,
           observability: observabilityContents.right.payload as AttemptObservabilityAttachment,
         });
@@ -1114,19 +1128,20 @@ export function openRunnerRecordCoordinator(input: {
         }
         yield* active.session.writeSourceNavigation(navigation.right);
 
-        const fileChangesCapture = runnerAttemptFileChangesCaptureForResult(result);
+        const fileChangesCapture = runnerAttemptFileChangesCaptureForResult(richResult);
         if (fileChangesCapture !== undefined) {
           yield* active.session.writeFileChanges(
             createFileChangesCaptureAttachmentWrite(fileChangesCapture),
           );
         }
 
-        const artifacts = attemptArtifactsWrite(result);
+        const artifacts = attemptArtifactsWrite(richResult);
         if (Either.isLeft(artifacts)) return yield* Effect.fail(artifacts.left);
         if (artifacts.right !== undefined) {
           yield* active.session.writeAttemptArtifacts(artifacts.right);
         }
-        yield* active.session.complete(outcomeFor(result));
+        yield* active.session.complete(outcomeFor(richResult));
+        recordRun.gapActions.set(slotId, "executed");
       }
 
       const observability = yield* runObservabilityWrite(recordRun.run);
@@ -1135,20 +1150,6 @@ export function openRunnerRecordCoordinator(input: {
       if (Either.isLeft(artifacts)) return yield* Effect.fail(artifacts.left);
       yield* recordRun.session.writeRunArtifacts(artifacts.right);
     });
-
-    /**
-     * A `reserved` slot owns a real Attempt directory. It remains unsettled
-     * until `completeAttempt` has accepted the final Eval result. Keep this
-     * distinct from a `pending` gap: the latter has never reserved an Attempt
-     * and may become an interrupted terminal Member after SIGINT.
-     */
-    const hasUnsettledAttempt = (recordRun: RunnerRecordRun): boolean => {
-      for (const [slotId, state] of recordRun.gapActions) {
-        const active = recordRun.attempts.get(slotId);
-        if (state === "reserved" || (active !== undefined && !active.completed)) return true;
-      }
-      return false;
-    };
 
     const pendingGap = (recordRun: RunnerRecordRun): SlotId | undefined => {
       for (const [slotId, state] of recordRun.gapActions) {
@@ -1198,15 +1199,12 @@ export function openRunnerRecordCoordinator(input: {
         const completion = asUtcMillis(completedAt);
         if (Either.isLeft(completion)) return yield* Effect.fail(completion.left);
 
-        // Freeze this before terminalizing pending gaps. A reserved/inflight
-        // Attempt or a Run-local writer failure is a non-publishable Run, so
-        // it must remain wholly incomplete on SIGINT; it must never be
-        // relabeled as an interrupted Member merely because a sibling Run can
-        // close. An un-attributable writer failure above remains global.
+        // A controlled interruption closes every reserved Attempt as
+        // `interrupted` and every never-started gap as an interrupted terminal
+        // Member. Only a Run-local writer failure remains non-publishable.
+        // Abrupt process loss still has no opportunity to create `complete`.
         const incompleteRuns = mode === "interrupted"
-          ? new Set(recordRuns.filter((recordRun) =>
-            hasUnsettledAttempt(recordRun) || writeFailuresByRun.has(recordRun),
-          ))
+          ? new Set(recordRuns.filter((recordRun) => writeFailuresByRun.has(recordRun)))
           : new Set<RunnerRecordRun>();
 
         if (mode === "normal") {
@@ -1237,7 +1235,7 @@ export function openRunnerRecordCoordinator(input: {
           RecordSealReceipt,
           RunnerRecordWriteError
         > => Effect.gen(function* () {
-          yield* writeFixedFamiliesForRun(recordRun);
+          yield* writeFixedFamiliesForRun(recordRun, mode);
           for (const [slotId, state] of recordRun.gapActions) {
             if (state === "not-dispatched" || state === "interrupted") {
               yield* recordRun.session.recordTerminalMember({ slotId, action: state });

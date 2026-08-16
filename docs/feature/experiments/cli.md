@@ -196,9 +196,7 @@ interface InvocationReceipt {
 
 receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs` analysis selection，或调用 `niceeval show --run <runId>`。
 
-`runIds` 只包含已经以 `complete` 发布的 Run。一次 Invocation 没有总发布点。收到 `SIGINT` 时，含 reserved /
-inflight Attempt（已预留 / 正在运行 Attempt）的 Run 保持 incomplete（未发布不完整）；其它已闭合 Run 仍可出现在
-`completion: "interrupted"` receipt 中。正常收尾遇到 reserved / pending Attempt（已预留 / 待结算 Attempt）则严格失败，不能把它伪装成已发布结果。
+`runIds` 只包含已经以 `complete` 发布的 Run。一次 Invocation 没有总发布点。收到 `SIGINT` 时，Runner 关闭已完成 Attempt、把仍在飞的 reserved Attempt 记为 `interrupted`，并把未 reserved slot 记为 `interrupted` Member。成功 seal 的 Run 出现在 `completion: "interrupted"` receipt 中；收尾写入失败的 Run 保持 incomplete。正常收尾遇到没有 execution outcome 的 reserved / pending Attempt 则严格失败，不能把它伪装成已发布结果。
 
 ## `--json`
 

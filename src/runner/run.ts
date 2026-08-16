@@ -466,37 +466,35 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         }
   }
 
-  // wave N+1 只有在 wave N 的每条槽位都至少拿到过一次全局并发位（或在此前确定不派发）
-  // 后才可排队。这样不依赖 Effect Semaphore 的内部唤醒顺序，也不会让同一 lane 的后续槽位
-  // 持续重排到其它 Group / 未分组 Eval 的首槽位之前。
-  // wave 闸与 grouped 串行链同一种协调:previousWave 是前一波全部成员都抵达过的
-  // Deferred.await,arrive 是逐 attempt 幂等的 Deferred 结算 Effect(同一 attempt 在派发
-  // 与 ensuring 两处到达,只算一次;最后一员结算本波 Deferred)。
+  // 公平闸只保护每条 lane 的首槽位：任一 lane 的后续槽位都要等所有 lane 的首槽位
+  // 至少拿到过一次全局并发位（或在此前确定不派发）。首波以后不再跨 lane 组 wave；
+  // Group 自己的 predecessor 已经保证 lane 内串行，继续要求第 N 波全部抵达会让慢 lane
+  // 尚未完成的当前槽挡住快 lane 的空闲后继，制造真实空闲和时间轴空白。
+  // arrive 同时挂在派发点与 ensuring，保持未派发/中断路径也能结算首波。
   const dispatchWaveReady = new WeakMap<Attempt, Effect.Effect<void>>();
   const dispatchWaveArrive = new WeakMap<Attempt, Effect.Effect<void>>();
-  const attemptsByWave = new Map<number, Attempt[]>();
+  const firstWave = attempts.filter((attempt) => dispatchWaveNumbers.get(attempt) === 0);
+  let firstWaveRemaining = firstWave.length;
+  const firstWaveSettled = yield* Deferred.make<void>();
+  const firstWaveReady = firstWaveRemaining === 0
+    ? Effect.void
+    : Deferred.await(firstWaveSettled);
   for (const attempt of attempts) {
-    const wave = dispatchWaveNumbers.get(attempt)!;
-    attemptsByWave.set(wave, [...(attemptsByWave.get(wave) ?? []), attempt]);
-  }
-  let previousWave: Effect.Effect<void> = Effect.void;
-  for (const wave of [...attemptsByWave.keys()].sort((left, right) => left - right)) {
-    const members = attemptsByWave.get(wave)!;
-    let remaining = members.length;
-    const settled = yield* Deferred.make<void>();
-    for (const attempt of members) {
-      dispatchWaveReady.set(attempt, previousWave);
-      let arrived = false;
-      dispatchWaveArrive.set(attempt, Effect.gen(function* () {
-        if (arrived) return;
-        arrived = true;
-        remaining -= 1;
-        if (remaining === 0) {
-          yield* Deferred.succeed(settled, undefined);
-        }
-      }));
+    const isFirst = dispatchWaveNumbers.get(attempt) === 0;
+    dispatchWaveReady.set(attempt, isFirst ? Effect.void : firstWaveReady);
+    if (!isFirst) {
+      dispatchWaveArrive.set(attempt, Effect.void);
+      continue;
     }
-    previousWave = Deferred.await(settled);
+    let arrived = false;
+    dispatchWaveArrive.set(attempt, Effect.gen(function* () {
+      if (arrived) return;
+      arrived = true;
+      firstWaveRemaining -= 1;
+      if (firstWaveRemaining === 0) {
+        yield* Deferred.succeed(firstWaveSettled, undefined);
+      }
+    }));
   }
 
   // 预检 judge:验证 API key + 端点可达,避免跑完 agent 才发现 judge 不通。
@@ -2431,7 +2429,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             }
             return Object.freeze({
               result: evaluated,
-              executed: failedBeforeDispatch === undefined,
             });
             }));
             // Reset/finalizer failures belong to the physical Group instance and
@@ -2441,19 +2438,18 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 recordEvalGroupPhysicalFailure(a, failure.stage, failure.error);
               }
             }
-            const { result, executed } = completed;
+            const { result } = completed;
             // A never-started blocked Slot has no origin Attempt. A reserved
-            // but unsealed failure keeps its ID in the incomplete draft.
+            // setup/lease failure still closes its origin Attempt with the
+            // errored result, without inventing unavailable rich families.
             let locator: string | undefined;
             if (reservedRecordAttempt !== undefined) {
               locator = reservedRecordAttempt.locator;
               result.locator = locator;
-              if (executed) {
-                const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
-                if (recordAttempt !== undefined) {
-                  locator = recordAttempt.locator;
-                  result.locator = locator;
-                }
+              const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
+              if (recordAttempt !== undefined) {
+                locator = recordAttempt.locator;
+                result.locator = locator;
               }
             } else if (!reservationAttempted) {
               recordCoordinator.markNotDispatched(a);

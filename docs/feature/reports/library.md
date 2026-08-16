@@ -382,6 +382,8 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 官方组合组件。它们只接收关闭数据，详情 route 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
 `libraryDetailRoute()` 建立。
 
+`AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。展开该行后，`Conversation` 以 Session log 显示总 duration、turn 数和 call 数，再按因果顺序列出 user、assistant、thinking、tool、subagent 与其它事件；有详情的 call 使用原生 `details` 继续展开。没有精确 source mapping 的 turn 保留在页面级 Session log，不按源码顺序猜测归属。
+
 下载文件属于 Host 的站点闭包：view 与静态写出只读取已关闭的 bytes。作者入口不发布一个 generic `Download` 组件或
 `DownloadFile` 类型；这避免把尚无最终 primitive owner 的 generic semantic API 写进公共契约。
 

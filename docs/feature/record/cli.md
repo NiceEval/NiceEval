@@ -38,6 +38,8 @@ They are not readable or reusable.
 Inspect and remove them with: niceeval clean
 ```
 
+受控 `SIGINT` 会先把已完成 Attempt、仍在飞的 Attempt 和未派发 Member 分别封口，再发布完整 Run，因此这类 Run 不触发 incomplete warning。warning 只报告进程来不及收尾、写入失败或 seal 失败后没有 `complete` 的 directory；reader 不从这些 draft 中拼装部分事实。
+
 一个 query 只在其 `AnalysisInput` 或 `DomainView` 真正需要时读取对应的 Attachment 和 blob。未持久化的
 fixed family 显示 `not-recorded`；closure 或 exact payload 无效显示 `invalid`。这些局部问题不把其它有效
 Run 从 selection 中移除。
@@ -73,6 +75,8 @@ Core shape，并要求 `context.experimentId === experimentId`；它在 `seal()`
 Run `seal()` 等待本 Run 的 Attempt 与 collector 停稳，验证 Core、reference、固定 family 和 blob
 closure，关闭并 flush 内容后才创建 `complete`。完成标识前的退出、I/O failure 或 interruption 留下
 incomplete directory；完成标识后即使 receipt 尚未输出，Run 也已 durable 发布。
+
+Runner 对受控 `SIGINT` 的调用会在进入 `seal()` 前关闭仍在飞的 Attempt 与未派发 Member。已完成 Attempt 的 locator 和固定事实随同一个完整 Run 发布；reader 仍只读取带 `complete` 的 Run，不建立 draft 读取旁路。
 
 `niceeval exp --dry` 不创建 Run、Attempt 或 append lease。它只用 read session 形成计划和 reuse
 判断；新的 Run 在它的 selection 形成后封口时，不会反向改变该计划。

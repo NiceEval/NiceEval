@@ -76,6 +76,8 @@ directory。
 
 Runner 先展开 expected slots，再以全局和 Experiment 范围的并发限制派发。等待并发名额的 slot 没有 Attempt，也不会占用执行资源。跨 Invocation 的 execution claim 与同一 Experiment dispatch claim 由 Coordination 决定，不由 Record writer、Run directory 或 reader 决定。
 
+调度器先让每条独立 lane 的首槽位至少获得一次全局并发机会，再允许任一 lane 的后继槽位进入派发。首槽公平完成后，lane 只受自己的 predecessor、全局限制和 Experiment 限制约束；快 lane 不等待慢 lane 的下一槽位进入同一 wave。
+
 首过即停、预算耗尽和已声明的停止派发条件都保留 expected slot。正常停止前从未 reserved 的 slot 写作 `not-dispatched` Member，Sample 将它呈现为 `not-recorded`；Runner 不制造虚构的 Attempt 或 Verdict。
 
 运行中发生的短状态、计数和进度只显示给当前进程。Run 或 Attempt 范围的诊断、阶段、计时、
@@ -87,11 +89,9 @@ Runner 先展开 expected slots，再以全局和 Experiment 范围的并发限�
 （已预留 / 正在运行 / 待结算 Attempt）时才能 seal。`complete` 是这个 Run 的独立原子发布点；其它 Run
 不等待它，也不会与它组成 Invocation 级发布。
 
-收到 `SIGINT` 时，Runner 停止新的派发。含 reserved 或 inflight Attempt 的 Run 保持没有 `complete` 的
-incomplete directory（未发布不完整目录），reader 永远忽略它。已经闭合的其它 Run 仍独立发布，
-`completion: "interrupted"` receipt 的 `runIds` 只包含这些已发布 Run。
+收到 `SIGINT` 时，Runner 停止新的派发并等待资源 finalizer。已有执行 outcome 的 Attempt 原样封口；仍在飞的 reserved Attempt 以 Core `interrupted` outcome 封口，尚未 reserved 的 slot 写作 `interrupted` Member。随后 Run 通过普通 seal 发布，因此中断前已经完成的兄弟 Attempt 可以立即用 locator 读取。若这段受控收尾本身写入失败，Run 才保留为 incomplete directory。
 
-正常、非中断收尾若发现 reserved 或 pending Attempt，必须严格失败。Runner 不得把它降格成
+正常、非中断收尾若发现没有 execution outcome 的 reserved 或 pending Attempt，必须严格失败。Runner 不得把它降格成
 `not-dispatched` 或 `interrupted` Member，也不得发布该 Run。先前已经独立发布的 Run 保持可读；失败 receipt
 同样只可列出已发布 Run。
 

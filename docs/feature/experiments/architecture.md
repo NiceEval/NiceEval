@@ -118,9 +118,12 @@ reference Member 的永久 Core 保存：
 - `carried` 或 `accepted` action。
 
 正常停止派发且从未 reserved 的 slot 以 Core `not-dispatched` action 封口；有执行 outcome 的 slot 是 Core
-origin Member。SIGINT 或正常收尾中仍有 reserved / inflight / pending Attempt 的 Run 不发布，具体见
-[Invocation receipt 与退出](#invocation-receipt-与退出)。writer seal 验证这些 Core action、reference 与
-expected membership 的关系。任何 read-side comparison、policy identity 或 operator note 都只是当前操作的瞬时说明，不能形成第六类持久事实。
+origin Member。SIGINT 把仍在飞的 reserved Attempt 封为 `interrupted` origin，并把未 reserved slot 封为
+`interrupted` Member。正常收尾不允许遗留无 outcome 的 reserved / pending Attempt，具体见
+[Invocation receipt 与退出](#invocation-receipt-与退出)。
+
+writer seal 验证这些 Core action、reference 与 expected membership 的关系。任何 read-side comparison、
+policy identity 或 operator note 都只是当前操作的瞬时说明，不能形成第六类持久事实。
 
 新的 reuse planning 必须从 Core combined execution identity、Attempt outcome，以及固定 Assertions 和 Observability 重新校验，不能只信历史 action。
 
@@ -145,11 +148,9 @@ receipt 不复制 locator、Verdict、Usage、cost、Attempt 计数或 Report �
 `runIds` 只列出已经创建 `complete` 的 Run。它不表示一次 Invocation 的整体提交，也不会列出没有发布的
 directory。
 
-收到 `SIGINT` 时，Runner 停止新的派发。仍有 reserved / inflight Attempt（已预留 / 正在运行的 Attempt）的
-Run 不执行 seal，保留为没有 `complete` 的 incomplete directory（未发布不完整目录）。已经闭合的其它 Run
-仍各自发布；`completion: "interrupted"` 的 receipt 只列出这些已发布 Run。
+收到 `SIGINT` 时，Runner 停止新的派发并关闭当前 Run。已经完成的 Attempt 保留原 outcome 与固定事实；仍在飞的 reserved Attempt 以 `interrupted` outcome 关闭，未 reserved slot 写作 `interrupted` Member。Run 完成普通 seal 后进入 `completion: "interrupted"` receipt，使中断前完成的 Attempt 可以按 locator 读取。写入或 seal 失败的 Run 不在 receipt 中，并保留为 incomplete directory。
 
-正常、非中断的收尾若发现 reserved / pending Attempt（已预留 / 待结算 Attempt），必须严格失败。它不能把
+正常、非中断的收尾若发现没有 execution outcome 的 reserved / pending Attempt（已预留 / 待结算 Attempt），必须严格失败。它不能把
 这些状态改写成已关闭 Member，也不能发布该 Run；已经独立发布的其它 Run 保持可读。
 
 ## 相关阅读

@@ -900,15 +900,57 @@ table.niceeval-report,
 .niceeval-conversation {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--panel), black 4%);
+}
+.niceeval-conversation .niceeval-conversation-session-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel), white 2%);
+}
+.niceeval-conversation .niceeval-conversation-session-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 680;
+}
+.niceeval-conversation .niceeval-conversation-session-stats {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+}
+.niceeval-conversation .niceeval-conversation-session-stats > div {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 5px;
+  align-items: baseline;
+}
+.niceeval-conversation .niceeval-conversation-session-stats dt {
+  color: var(--soft);
+  font-size: 10px;
+}
+.niceeval-conversation .niceeval-conversation-session-stats dd {
+  margin: 0;
+  color: var(--muted);
+  font: 11px/1.2 var(--font-mono);
 }
 .niceeval-conversation .niceeval-conversation-turn {
-  border: 1px solid var(--line);
-  border-left-width: 3px;
-  border-radius: var(--radius);
-  background: var(--panel);
-  padding: 10px 12px;
+  position: relative;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 14px 12px 16px;
 }
+.niceeval-conversation .niceeval-conversation-turn:last-child { border-bottom: 0; }
 .niceeval-conversation .niceeval-conversation-turn--passed { border-left-color: var(--good); }
 .niceeval-conversation .niceeval-conversation-turn--failed { border-left-color: var(--bad); }
 .niceeval-conversation .niceeval-conversation-turn--errored { border-left-color: var(--bad); }
@@ -924,6 +966,10 @@ table.niceeval-report,
   font-weight: 650;
   font-size: 13px;
 }
+.niceeval-conversation .niceeval-conversation-turn-duration {
+  color: var(--muted);
+  font: 11px/1.2 var(--font-mono);
+}
 .niceeval-conversation .niceeval-conversation-turn-verdict {
   color: var(--muted);
   font-size: 11px;
@@ -931,12 +977,23 @@ table.niceeval-report,
   letter-spacing: 0.04em;
 }
 .niceeval-conversation .niceeval-conversation-entries {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
+  margin-left: 5px;
+  padding-left: 16px;
+}
+.niceeval-conversation .niceeval-conversation-entries::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 4px;
+  width: 1px;
+  background: var(--line);
 }
 .niceeval-conversation .niceeval-conversation-entry,
 .niceeval-conversation .niceeval-conversation-entry > summary {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5em;
@@ -944,6 +1001,23 @@ table.niceeval-report,
   font-size: 12px;
   line-height: 1.45;
 }
+.niceeval-conversation .niceeval-conversation-entry {
+  min-height: 30px;
+  padding: 6px 0;
+}
+.niceeval-conversation .niceeval-conversation-entry::before {
+  content: "";
+  position: absolute;
+  top: 13px;
+  left: -16px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid color-mix(in oklch, var(--panel), white 8%);
+  border-radius: 50%;
+  background: var(--soft);
+  box-sizing: border-box;
+}
+.niceeval-conversation .niceeval-conversation-entry--failed::before { background: var(--bad); }
 .niceeval-conversation .niceeval-conversation-entry--expandable > summary {
   cursor: pointer;
   list-style: none;
@@ -967,6 +1041,16 @@ table.niceeval-report,
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px dashed var(--line);
+}
+@media (max-width: 640px) {
+  .niceeval-conversation .niceeval-conversation-session-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .niceeval-conversation .niceeval-conversation-session-stats {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 .niceeval-conversation .niceeval-conversation-failed-command { border-left-color: var(--bad); }
 .niceeval-conversation .niceeval-conversation-failed-display {

@@ -283,6 +283,7 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
       return {
         kind: "tool",
         preview: `${reply.name}(${jsonPreview(reply.inputSummary)})`,
+        callPhase: reply.outputSummary === undefined ? "started" : "finished",
         ...(reply.failed === true ? { failed: true } : {}),
         ...(output ? { detail: <Text>{`${reply.outcome ?? "completed"}\n${output}`}</Text> } : {}),
       };
@@ -326,7 +327,8 @@ export function attemptConversationContent(data: AttemptConversationData | null)
   if (data === null || data.rounds.length === 0) return null;
   const turns: ConversationTurn[] = data.rounds.map((round) => ({
     key: round.turnId,
-    label: `Turn ${round.sequence}${round.durationMs === undefined ? "" : ` · ${formatDurationMs(round.durationMs)}`}`,
+    label: `Turn ${round.sequence}`,
+    ...(round.durationMs === undefined ? {} : { durationMs: round.durationMs }),
     verdict: turnVerdictOf(round.outcome),
     entries: round.replies.map(conversationEntryOf),
   }));

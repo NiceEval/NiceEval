@@ -21,11 +21,14 @@ export interface ConversationEntry {
   preview: LocalizedText;
   detail?: ReportNode;
   failed?: boolean;
+  /** Tool lifecycle hint used by the session summary; omitted for non-call rows. */
+  callPhase?: "started" | "finished";
 }
 
 export interface ConversationTurn {
   key: string;
   label: LocalizedText;
+  durationMs?: number;
   verdict?: "passed" | "failed" | "errored" | "skipped";
   entries: readonly ConversationEntry[];
 }
@@ -96,6 +99,9 @@ function validateEntry(value: unknown, path: string): string | null {
   if (value.failed !== undefined && typeof value.failed !== "boolean") {
     return `"${path}.failed" must be a boolean`;
   }
+  if (value.callPhase !== undefined && value.callPhase !== "started" && value.callPhase !== "finished") {
+    return `"${path}.callPhase" must be started | finished`;
+  }
   return null;
 }
 
@@ -103,6 +109,12 @@ function validateTurn(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object`;
   if (typeof value.key !== "string") return `"${path}.key" must be a string`;
   if (!isLocalizedText(value.label)) return `"${path}.label" must be a LocalizedText`;
+  if (
+    value.durationMs !== undefined
+    && (typeof value.durationMs !== "number" || !Number.isFinite(value.durationMs) || value.durationMs < 0)
+  ) {
+    return `"${path}.durationMs" must be a non-negative number`;
+  }
   if (
     value.verdict !== undefined &&
     value.verdict !== "passed" &&
@@ -195,10 +207,42 @@ function TurnCard({ turn, locale }: { turn: ConversationTurn; locale: ReportLoca
     <article className={cx("niceeval-conversation-turn", turn.verdict && `niceeval-conversation-turn--${turn.verdict}`)}>
       <header className="niceeval-conversation-turn-head">
         <span className="niceeval-conversation-turn-label">{resolveLocalizedText(turn.label, locale)}</span>
+        {turn.durationMs !== undefined ? (
+          <span className="niceeval-conversation-turn-duration">{formatSessionDuration(turn.durationMs)}</span>
+        ) : null}
         {turn.verdict ? <span className="niceeval-conversation-turn-verdict">{turn.verdict}</span> : null}
       </header>
       <ConversationEntries entries={turn.entries} locale={locale} />
     </article>
+  );
+}
+
+function formatSessionDuration(durationMs: number): string {
+  if (durationMs < 1_000) return `${Math.round(durationMs)}ms`;
+  const seconds = Math.round(durationMs / 1_000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s`;
+}
+
+function SessionSummary({ content }: { content: ConversationContent }): ReactElement {
+  const durations = content.turns.flatMap((turn) => turn.durationMs === undefined ? [] : [turn.durationMs]);
+  const calls = content.turns.reduce(
+    (count, turn) => count + turn.entries.filter((entry) => entry.callPhase === "started").length,
+    0,
+  );
+  const duration = durations.length === 0
+    ? "—"
+    : formatSessionDuration(durations.reduce((total, value) => total + value, 0));
+  return (
+    <header className="niceeval-conversation-session-head">
+      <span className="niceeval-conversation-session-title">Session log</span>
+      <dl className="niceeval-conversation-session-stats">
+        <div><dt>Duration</dt><dd>{duration}</dd></div>
+        <div><dt>Turns</dt><dd>{content.turns.length}</dd></div>
+        <div><dt>Calls</dt><dd>{calls}</dd></div>
+      </dl>
+    </header>
   );
 }
 
@@ -336,6 +380,7 @@ export const Conversation = defineComponent<ConversationProps, ResolvedConversat
     const loc = locale ?? ctx.locale;
     return (
       <div className={cx("niceeval-report", "niceeval-conversation", className)}>
+        <SessionSummary content={content!} />
         {content!.turns.map((turn) => (
           <TurnCard key={turn.key} turn={turn} locale={loc} />
         ))}
