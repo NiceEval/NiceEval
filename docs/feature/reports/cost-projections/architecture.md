@@ -26,7 +26,10 @@ Runner 的 `estimatedCostUSD` 是另一条运行期 Calculation。它从 Config/
 
 ## selector 与费率
 
-Profile selector 以 Usage 的 `provider` 与 Core 中持久化的 execution `model` 匹配；origin Run start 只由 coverage `effective` 的
+Profile selector 始终以 Core 中持久化的 execution `model` 匹配；显式存在 `provider` 时再与 Usage observation provider 合取。内置目录
+coverage 有意省略 provider，因为当前 observation provider 是生产该 Usage 的 adapter/agent 身份，不是可靠的 billing provider。
+
+origin Run start 只由 coverage `effective` 的
 `startsAt` / `endsAt` 半开区间匹配。origin model 为 `null` 时不能猜测 model。`executionIdentityDigest`、`agentId` 与
 `reasoningEffort` 只有显式出现时才作为额外合取条件。它们不提供优先级，也不从当前配置补值。
 
@@ -96,7 +99,7 @@ Profile 在 Report module 装载时规范化，并在每个 target execution 或
 ## 不变量
 
 - Usage `costUSD` 只保留 provider/adapter observed USD 成本；它从不由 Report 或 Runner estimate 回填。
-- Profile 只从 `ReportDefinition.pricing` 进入 Report，`ctx.report.pricing` 只读且可为 `null`。
+- Profile 只从 `ReportDefinition.pricing` 进入 Report；省略声明时 `defineReport` 固定使用 `builtInPricingProfile`，`ctx.report.pricing` 只读。
 - `costUSD(profile)` 与 `totalCostUSD(profile)` 都要求显式的已声明 Profile。
 - 每个 slot-provider 在 observed、estimated 与 unavailable 之间恰有一种 ledger 状态。
 - `show` 只交付目标 Page 的 projection closure；view 与 static 交付所有声明 Page 的 closure。

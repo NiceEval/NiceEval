@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   createOpaqueMeasure,
@@ -48,6 +50,8 @@ const CostMeasureDescriptor: unique symbol = Symbol.for(
   "niceeval.analysis.cost-measure/v1",
 ) as never;
 
+const validatedPricingProfiles = new WeakSet<object>();
+
 declare const pricingProfileContentIdentityTypeId: unique symbol;
 declare const pricingCoverageIdTypeId: unique symbol;
 
@@ -88,7 +92,8 @@ export interface PricingProvenanceInput {
  * inferred from current Report source, the selected target Run, or a provider.
  */
 export interface PricingSelector {
-  readonly provider: SafeIdentifier;
+  /** Omitted only by a model catalog entry whose quote is provider-neutral. */
+  readonly provider?: SafeIdentifier;
   readonly model: string;
   readonly agentId?: string;
   readonly reasoningEffort?: string | null;
@@ -96,7 +101,7 @@ export interface PricingSelector {
 }
 
 export interface PricingSelectorInput {
-  readonly provider: string;
+  readonly provider?: string;
   readonly model: string;
   readonly agentId?: string;
   readonly reasoningEffort?: string | null;
@@ -403,15 +408,110 @@ export function definePricingProfile(input: PricingProfileInput): PricingProfile
     writable: false,
   });
   Object.freeze(profile);
+  validatedPricingProfiles.add(profile);
   return profile;
 }
 
+interface BuiltInPriceEntry {
+  readonly in: number;
+  readonly out: number;
+  readonly cacheRead?: number;
+  readonly cacheWrite?: number;
+}
+
+const builtInCatalog = loadBuiltInCatalog();
+
+/**
+ * Identity-bearing Profile for NiceEval's complete vendored model catalog.
+ * Resolution matches an exact model identifier and does not infer a billing
+ * provider from an agent name. Missing models and buckets remain unpriced.
+ */
+export const builtInPricingProfile: PricingProfile = definePricingProfile({
+  currency: "USD",
+  display: { decimalPlaces: 6, rounding: "half-away-from-zero" },
+  provenance: {
+    kind: "declared-rate-card",
+    source: `NiceEval vendored models.dev catalog ${builtInCatalog.digest}`,
+    asOf: builtInCatalog.asOf,
+  },
+  coverage: [{
+    coverageId: `niceeval-catalog-${builtInCatalog.digest.slice("sha256:".length)}`,
+    state: "unpriced",
+    selector: { model: "niceeval:built-in-catalog" },
+    effective: { startsAt: 0, endsAt: null },
+    reason: "rate-not-published",
+  }],
+});
+
+/** @internal Resolves one exact model from the catalog named by the built-in Profile. */
+export function builtInPricingCoverage(model: string): PricedCoverage | undefined {
+  const price = builtInCatalog.prices[model];
+  if (price === undefined) return undefined;
+  return normalizeCoverage({
+    coverageId: `niceeval-catalog-model-${createHash("sha256").update(model).digest("hex")}`,
+    state: "priced",
+    selector: { model },
+    effective: { startsAt: 0, endsAt: null },
+    charges: catalogCharges(price, builtInCatalog.modelRequest),
+  }, 0) as PricedCoverage;
+}
+
+function catalogCharges(
+  price: BuiltInPriceEntry,
+  modelRequest: number,
+): readonly [PricingChargeInput, ...PricingChargeInput[]] {
+  return [
+    { kind: "token", bucket: "input", perMillionTokens: decimalFromPrice(price.in) },
+    { kind: "token", bucket: "output", perMillionTokens: decimalFromPrice(price.out) },
+    ...(price.cacheRead === undefined
+      ? []
+      : [{ kind: "token" as const, bucket: "cache-read", perMillionTokens: decimalFromPrice(price.cacheRead) }]),
+    ...(price.cacheWrite === undefined
+      ? []
+      : [{ kind: "token" as const, bucket: "cache-write", perMillionTokens: decimalFromPrice(price.cacheWrite) }]),
+    { kind: "request", requestKind: "model", ratePerRequest: decimalFromPrice(modelRequest) },
+  ];
+}
+
+function loadBuiltInCatalog(): {
+  readonly digest: string;
+  readonly asOf: number;
+  readonly modelRequest: number;
+  readonly prices: Record<string, BuiltInPriceEntry>;
+} {
+  const raw = readFileSync(fileURLToPath(new URL("../o11y/prices.json", import.meta.url)), "utf8");
+  const parsed = JSON.parse(raw) as {
+    readonly $asOf?: number;
+    readonly $modelRequest?: number;
+    readonly prices?: Record<string, BuiltInPriceEntry>;
+  };
+  if (parsed.prices === undefined || Object.keys(parsed.prices).length === 0 ||
+    typeof parsed.$asOf !== "number" || !isUtcMillis(parsed.$asOf) ||
+    typeof parsed.$modelRequest !== "number") {
+    throw pricingError("built-in pricing catalog metadata is invalid");
+  }
+  return Object.freeze({
+    digest: `sha256:${createHash("sha256").update(raw).digest("hex")}`,
+    asOf: parsed.$asOf,
+    modelRequest: parsed.$modelRequest,
+    prices: parsed.prices,
+  });
+}
+
+function decimalFromPrice(value: number): string {
+  if (!Number.isFinite(value) || value < 0) throw pricingError("built-in catalog price must be non-negative and finite");
+  const decimal = String(value);
+  if (!isCanonicalDecimal(decimal)) throw pricingError(`built-in catalog price ${decimal} is not canonical`);
+  return decimal;
+}
+
 /** @internal
- * Cross-package validation never trusts a local WeakSet alone. It verifies
- * the global Symbol data descriptor, recursive freezing, canonical content,
- * and SHA-256 identity before accepting an externally created value.
+ * Locally created or already revalidated Profiles use a WeakSet fast path.
+ * A value from another package graph must first pass the global Symbol data
+ * descriptor, recursive freezing, canonical content, and SHA-256 checks.
  */
 export function isPricingProfile(value: unknown): value is PricingProfile {
+  if (typeof value === "object" && value !== null && validatedPricingProfiles.has(value)) return true;
   if (!isPlainObject(value) || !isDeeplyFrozen(value)) return false;
   if (!hasExactOwnKeys(value, ["contentIdentity", "currency", "display", "provenance", "coverage"], [PricingProfileDescriptor])) {
     return false;
@@ -430,6 +530,7 @@ export function isPricingProfile(value: unknown): value is PricingProfile {
     });
     if (canonicalJson(content) !== canonicalJson(descriptor.content)) return false;
     if (contentIdentityFor(content) !== value.contentIdentity) return false;
+    validatedPricingProfiles.add(value);
     return true;
   } catch {
     return false;
@@ -699,7 +800,7 @@ export function pricingCoverageMatches(
   },
 ): boolean {
   const selector = coverage.selector;
-  return selector.provider === input.provider
+  return (selector.provider === undefined || selector.provider === input.provider)
     && selector.model === input.origin.execution.model
     && (selector.agentId === undefined || selector.agentId === input.origin.execution.agentId)
     && (selector.reasoningEffort === undefined || selector.reasoningEffort === input.origin.execution.reasoningEffort)
@@ -839,13 +940,13 @@ function normalizeSelector(value: unknown, index: number): PricingSelector {
     value,
     ["provider", "model", "agentId", "reasoningEffort", "executionIdentityDigest"],
     `coverage ${index} selector`,
-    ["agentId", "reasoningEffort", "executionIdentityDigest"],
+    ["provider", "agentId", "reasoningEffort", "executionIdentityDigest"],
   );
-  if (typeof value.provider !== "string" || !isSafeIdentifier(value.provider)) {
+  if (value.provider !== undefined && (typeof value.provider !== "string" || !isSafeIdentifier(value.provider))) {
     throw pricingError(`coverage ${index} selector provider must be a SafeIdentifier`);
   }
   return Object.freeze({
-    provider: value.provider,
+    ...(value.provider === undefined ? {} : { provider: value.provider }),
     model: normalizeText(value.model, `coverage ${index} selector model`),
     ...(value.agentId === undefined
       ? {}
@@ -928,19 +1029,27 @@ function normalizeText(value: unknown, name: string): string {
 }
 
 function rejectOverlappingCoverage(coverage: readonly PricingCoverage[]): void {
-  for (let left = 0; left < coverage.length; left += 1) {
-    for (let right = left + 1; right < coverage.length; right += 1) {
-      const first = coverage[left]!;
-      const second = coverage[right]!;
-      if (selectorsCanMatchSameOrigin(first.selector, second.selector) && effectiveIntervalsOverlap(first.effective, second.effective)) {
-        throw pricingError(`coverage ${first.coverageId} overlaps ${second.coverageId} for a selector that can match the same origin`);
+  const byModel = new Map<string, PricingCoverage[]>();
+  for (const entry of coverage) {
+    const entries = byModel.get(entry.selector.model);
+    if (entries === undefined) byModel.set(entry.selector.model, [entry]);
+    else entries.push(entry);
+  }
+  for (const entries of byModel.values()) {
+    for (let left = 0; left < entries.length; left += 1) {
+      for (let right = left + 1; right < entries.length; right += 1) {
+        const first = entries[left]!;
+        const second = entries[right]!;
+        if (selectorsCanMatchSameOrigin(first.selector, second.selector) && effectiveIntervalsOverlap(first.effective, second.effective)) {
+          throw pricingError(`coverage ${first.coverageId} overlaps ${second.coverageId} for a selector that can match the same origin`);
+        }
       }
     }
   }
 }
 
 function selectorsCanMatchSameOrigin(left: PricingSelector, right: PricingSelector): boolean {
-  return left.provider === right.provider
+  return optionalSelectorDimensionOverlaps(left.provider, right.provider)
     && left.model === right.model
     && optionalSelectorDimensionOverlaps(left.agentId, right.agentId)
     && optionalSelectorDimensionOverlaps(left.reasoningEffort, right.reasoningEffort)

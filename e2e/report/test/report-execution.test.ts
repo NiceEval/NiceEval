@@ -50,6 +50,7 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
         "Table",
         "Text",
         "aggregate",
+        "builtInPricingProfile",
         "costUSD",
         "definePricingProfile",
         "defineComponent",
@@ -119,7 +120,11 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
         readonly schema: "niceeval.report-target-execution/v2";
         readonly projections: {
           readonly schema: "niceeval.report-projections/v1";
-          readonly pricingProfile: { readonly currency: string; readonly contentIdentity: string };
+          readonly pricingProfile: {
+            readonly currency: string;
+            readonly contentIdentity: string;
+            readonly provenance: { readonly source: string };
+          };
           readonly costs: readonly {
             readonly page: { readonly pageId: string; readonly route: string };
             readonly measureId: string;
@@ -136,7 +141,10 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
       }>();
       expect(projectionManifest.schema).toBe("niceeval.report-target-execution/v2");
       expect(projectionManifest.projections.schema).toBe("niceeval.report-projections/v1");
-      expect(projectionManifest.projections.pricingProfile).toMatchObject({ currency: "USD" });
+      expect(projectionManifest.projections.pricingProfile).toMatchObject({
+        currency: "USD",
+        provenance: { source: expect.stringMatching(/^NiceEval vendored models\.dev catalog sha256:[a-f0-9]{64}$/) },
+      });
       expect(Object.keys(projectionManifest.projections.pricingProfile).sort()).toEqual([
         "contentIdentity",
         "coverage",

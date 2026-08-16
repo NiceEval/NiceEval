@@ -10,7 +10,6 @@ import {
   aggregate,
   costUSD,
   defineComponent,
-  definePricingProfile,
   defineReport,
   experiment,
   passRate,
@@ -25,29 +24,6 @@ import {
 const logo = `data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1f6feb"/><text x="32" y="40" text-anchor="middle" font-size="22" fill="white" font-family="sans-serif">MB</text></svg>',
 )}`;
-
-const classicPricing = definePricingProfile({
-  currency: "USD",
-  display: { decimalPlaces: 6, rounding: "half-away-from-zero" },
-  provenance: {
-    kind: "declared-rate-card",
-    source: "deterministic report E2E fixture",
-    asOf: 1786345368000,
-  },
-  coverage: [{
-    coverageId: "classic-memory-gpt-5-6-luna",
-    state: "priced",
-    selector: { provider: "classic-memory", model: "gpt-5.6-luna" },
-    effective: { startsAt: 1786345368000, endsAt: null },
-    charges: [
-      { kind: "token", bucket: "input", perMillionTokens: "0.2" },
-      { kind: "token", bucket: "output", perMillionTokens: "1.2" },
-      { kind: "token", bucket: "cache-read", perMillionTokens: "0.02" },
-      { kind: "token", bucket: "cache-write", perMillionTokens: "0.25" },
-      { kind: "request", requestKind: "model", ratePerRequest: "0" },
-    ],
-  }],
-});
 
 const MemoryBenchHero = defineComponent(() => (
   <Hero
@@ -102,7 +78,6 @@ function classicOverview() {
 
 export default defineReport({
   title: { en: "MemoryBench Classic", "zh-CN": "MemoryBench Classic" },
-  pricing: classicPricing,
   head: [
     {
       tag: "meta",

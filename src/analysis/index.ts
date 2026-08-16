@@ -35,6 +35,7 @@ export {
 } from "./definitions.ts";
 
 export {
+  builtInPricingProfile,
   costUSD,
   definePricingProfile,
   totalCostUSD,

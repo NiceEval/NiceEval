@@ -81,7 +81,7 @@ export type {
   ProjectedMoney,
 } from "../analysis/index.ts";
 
-export { definePricingProfile } from "../analysis/index.ts";
+export { builtInPricingProfile, definePricingProfile } from "../analysis/index.ts";
 export type {
   PricedCoverage,
   PricedCoverageInput,

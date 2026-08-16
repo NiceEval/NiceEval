@@ -109,6 +109,10 @@ _Avoid_: Reuse guess, Cache reason
 **Pricing profile**:
 带内容身份与 coverage 的价格规则集合，只供 Report Calculation 投影成本。它不覆盖 Record 中的 observed
 usage 或 cost。
+
+**Built-in pricing catalog**:
+NiceEval 随包发布的完整模型价格 Profile。Report 未显式声明 Pricing profile 时自动使用；目录 coverage 只按完整
+model 字面值匹配，不把 Usage provider 当作计费商，也不做去前缀、去日期或缺桶回退。
 _Avoid_: Record repricing, Mutable price table
 
 **Experiment display name**:

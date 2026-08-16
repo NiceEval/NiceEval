@@ -38,7 +38,7 @@ jobs:
                         + (if ($c.cache_write|type) == "number" then {cacheWrite: $c.cache_write} else {} end))
                     else . end))
             | (to_entries | sort_by(.key) | from_entries) as $prices
-            | {"$source": "models.dev", "$note": "per-1M-token USD prices; regenerated in CI (.github/workflows/prices.yml)", prices: $prices}
+            | {"$source": "models.dev", "$asOf": (now * 1000 | floor), "$modelRequest": 0, "$note": "per-1M-token USD prices; regenerated in CI (.github/workflows/prices.yml)", prices: $prices}
           ' > src/o11y/prices.json
 
       - name: Commit if changed

@@ -19,7 +19,7 @@ interface PricingProvenanceInput {
 }
 
 interface PricingSelectorInput {
-  readonly provider: string;
+  readonly provider?: string;
   readonly model: string;
   readonly agentId?: string;
   readonly reasoningEffort?: string | null;
@@ -95,6 +95,7 @@ interface PricingProfile {
 }
 
 declare function definePricingProfile(input: PricingProfileInput): PricingProfile;
+declare const builtInPricingProfile: PricingProfile;
 ```
 
 `currency` 固定为 `"USD"`。价格配置不做货币换算，也不收另一种货币的费率。Token bucket 只有四个 durable hyphen literal；
@@ -102,9 +103,16 @@ declare function definePricingProfile(input: PricingProfileInput): PricingProfil
 `"half-away-from-zero"`。`UtcMillis` 是安全的毫秒 epoch number；`asOf`、`effective.startsAt` 与 `effective.endsAt` 不使用 ISO
 字符串。
 
-每个 selector 必须以持久化的 `provider` 与 execution `model` 为基础；`model` 缺失时不会匹配。可选的
-`executionIdentityDigest`、`agentId` 与 `reasoningEffort` 只会进一步收窄同一组持久化 origin 事实，不能替代前两项，也不能读取今天的
-Experiment 或配置。`effective` 唯一以 origin Run 的 started-at 作为时间基准：半开区间 `[startsAt, endsAt)`，`endsAt: null` 表示没有上界。
+每个 selector 必须以 execution `model` 为基础；`model` 缺失时不会匹配。作者声明的 rate card 通常同时固定 `provider`。
+NiceEval 的 `builtInPricingProfile` 省略 provider，表示一个明确的 provider-neutral model quote，而不是从 agent 名推断计费商。可选的
+`executionIdentityDigest`、`agentId` 与 `reasoningEffort` 只会进一步收窄同一组持久化 origin 事实，不能替代 model，也不能读取今天的
+Experiment 或配置。
+
+`effective` 唯一以 origin Run 的 started-at 作为时间基准：半开区间 `[startsAt, endsAt)`，`endsAt: null` 表示没有上界。
+
+`defineReport()` 未收到 `pricing` 时自动保留 `builtInPricingProfile`。目录包含随当前 NiceEval 包发布的全部模型条目，只做 exact model
+匹配；未知 model、未发布 token bucket 与 tool request 都不会 fallback。作者仍可用 `definePricingProfile()` 声明私有网关、折扣或
+其它明确 rate card，并通过 `pricing` 整体替换默认目录。
 
 对一个 slot-provider，所有 selector 与 effective 条件合取后必须恰好命中一条 coverage。零条或多条命中都不是自动挑选费率的机会。
 `coverageId` 在 Profile 内唯一；`priced` coverage 必有非空 `charges`，`unpriced` coverage 是明确的未定价状态，其投影原因只能是
@@ -284,7 +292,8 @@ ledger 中的缺口。`unavailable` 表示没有可报告的 USD entry。合法�
 
 ## Report 绑定与跨包身份
 
-Profile 只能放在 `ReportDefinition.pricing`。同一个值以只读 `ctx.report.pricing` 提供给组件；没有配置时该字段是 `null`。它不是
+Profile 只能放在 `ReportDefinition.pricing`。同一个值以只读 `ctx.report.pricing` 提供给组件；没有配置时该字段是
+`builtInPricingProfile`。它不是
 Config、Host 或运行期价格表的别名。`costUSD(profile)` 与 `totalCostUSD(profile)` 必须传入该 Report 已声明的同一 Profile；没有零参数
 形式，也没有别名入口。Report Host 只重验 Profile、捕获 Report 闭包、闭合输入并呈现 Analysis 已签发的投影；它不计算费率、ledger、
 total 或 mean。

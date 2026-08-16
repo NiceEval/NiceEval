@@ -1,5 +1,7 @@
 {
   "$source": "models.dev",
+  "$asOf": 1786538400000,
+  "$modelRequest": 0,
   "$note": "per-1M-token USD prices; regenerated in CI (.github/workflows/prices.yml)",
   "prices": {
     "@cf/aisingapore/gemma-sea-lion-v4-27b-it": {

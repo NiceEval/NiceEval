@@ -10,7 +10,7 @@ NiceEval JSX runtime、generic semantic author model、Record capability 或 Hos
 
 | package path 与最终源码 owner | runtime exports | type-only exports |
 |---|---|---|
-| `niceeval/report` · `definition/report.ts` 与 `analysis/cost.ts` 的 re-export | `defineReport`、`definePricingProfile` | `ReportDefinition`、`ReportShell`、`ReportMeta`、`ReportMetaPage`、`PricingProfile`、`PricingProfileInput`、`PricingProfileContentIdentity`、`PricingCoverageId`、`PricingCoverage`、`PricedCoverage`、`UnpricedCoverage`、`PricingCoverageInput`、`PricedCoverageInput`、`UnpricedCoverageInput`、`PricingSelector`、`PricingSelectorInput`、`PricingEffectiveCondition`、`PricingEffectiveConditionInput`、`PricingCharge`、`PricingChargeInput`、`PricingDisplay`、`PricingDisplayInput`、`PricingProvenance`、`PricingProvenanceInput`、`Page`、`PlainPage`、`ParameterizedPage`、`PageParams`、`PageLoad`、`PageLoadContext`、`PageContext`、`PageEvidence`、`HeadTag`、`Sample` |
+| `niceeval/report` · `definition/report.ts` 与 `analysis/cost.ts` 的 re-export | `defineReport`、`definePricingProfile`、`builtInPricingProfile` | `ReportDefinition`、`ReportShell`、`ReportMeta`、`ReportMetaPage`、`PricingProfile`、`PricingProfileInput`、`PricingProfileContentIdentity`、`PricingCoverageId`、`PricingCoverage`、`PricedCoverage`、`UnpricedCoverage`、`PricingCoverageInput`、`PricedCoverageInput`、`UnpricedCoverageInput`、`PricingSelector`、`PricingSelectorInput`、`PricingEffectiveCondition`、`PricingEffectiveConditionInput`、`PricingCharge`、`PricingChargeInput`、`PricingDisplay`、`PricingDisplayInput`、`PricingProvenance`、`PricingProvenanceInput`、`Page`、`PlainPage`、`ParameterizedPage`、`PageParams`、`PageLoad`、`PageLoadContext`、`PageContext`、`PageEvidence`、`HeadTag`、`Sample` |
 | `niceeval/report` · `definition/tree.ts` | `defineComponent` | `ComponentContext`、`ComposeContext`、`ResolveContext`、`ComponentFaces`、`ReportComponent`、`TextContext`、`WebContext` |
 | `niceeval/report` · `model/{aggregate,metrics}.ts` 与 `analysis/**` | `aggregate`、`agent`、`attempt`、`evalId`、`experiment`、`model`、`reasoningEffort`、`flag`、`label`、`passRate`、`durationMs`、`tokens`、`costUSD`、`totalCostUSD`、`evidenceRow` | `AggregationSubject`、`GroupFunction`、`EvidenceRow`、`ClosedRows`、`MetricValue`、`MetricState`、`MeasureFormat`、`AnalysisIssue`、`EvidenceRef`、`CostMeasure`、`CostMetricValue`、`CostProjectionValue`、`CostProjectionKnown`、`CostProjectionUnavailable`、`CostProjectionState`、`CostBasis`、`CostProjectionAggregate`、`CostProjectionProfile`、`CostLedgerEntry`、`CostCoverageReason`、`CostCoverageReasonCode`、`ProjectedMoney`、`ObservedCostComponent`、`EstimatedTokenCostComponent`、`EstimatedRequestCostComponent`、`ObservedOtherCurrency` |
 | `niceeval/report` · `model/conversions.ts` 与 `analysis/domain-view.ts` | `toAttemptEvidence`、`toAttemptObservability`、`toFileChanges`、`toSources`、`toSandboxHistory`、`toEvidenceRows`、`toIssueRows`、`toIssueText`、`toMetricDetailRow` | `AttemptEvidenceDomainView`、`AttemptObservabilityDomainView`、`FileChangesDomainView`、`SourcesDomainView`、`SandboxHistoryDomainView`、`MetricDetailRow` |
@@ -82,7 +82,8 @@ Record / Run / Sample handle、任意 reducer 以及 handle converter 都不发�
 
 ## 成本投影入口
 
-`definePricingProfile()` 的唯一作者位置是 `ReportDefinition.pricing`；组件从只读 `ctx.report.pricing` 取得同一已验证值或 `null`。
+`definePricingProfile()` 的唯一作者位置是 `ReportDefinition.pricing`；省略时 `defineReport()` 使用 `builtInPricingProfile`。组件从只读
+`ctx.report.pricing` 取得最终已验证值。
 本页的 export manifest 列出作者可导入的价格与成本类型。精确的 `PricingProfileInput`、规范化输出、跨包识别、Measure 参数和成本
 投影语义由 [Report 成本投影 Library](cost-projections/library.md) 单点定义。
 
@@ -98,7 +99,7 @@ Record / Run / Sample handle、任意 reducer 以及 handle converter 都不发�
 
 `defineReport()` 是 Report module 的默认导出。它接收一个单页 callback，或接收带非空 `pages` 的声明。定义阶段只校验静态形状，
 不打开 Sample 或执行 Page。`ReportDefinition.pricing` 是价格配置的唯一所属位置：对象形式从 `ReportShell.pricing` 取得已验证
-Profile，未声明时归一为 `null`；单页 callback 的 `pricing` 也是 `null`。
+Profile；未声明时归一为随包 `builtInPricingProfile`，单页 callback 取得同一默认值。
 
 ```ts
 interface ReportShell {
@@ -367,7 +368,7 @@ interface MetricValue {
 
 ## 成本 Measure 整合
 
-成本组件只在 `ctx.report.pricing` 非 `null` 时请求成本 Measure。export manifest 中的 `CostMetricValue` 与
+成本组件使用 `ctx.report.pricing` 请求成本 Measure；旧的跨包 `null` 防御只用于拒绝或降级非当前定义。export manifest 中的 `CostMetricValue` 与
 `CostProjectionValue` 是作者可观察类型。`aggregate(costUSD(profile))` 的 cell 以 `cell.projection` 提供关闭投影；state、basis、
 ledger 与 reason data types 同样仅以 type-only export 提供。精确调用形状、无 Profile 呈现、Analysis 数学与 machine 读数由
 [Report 成本投影 Library](cost-projections/library.md) 和 [CLI](cost-projections/cli.md) 定义。

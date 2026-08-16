@@ -27,6 +27,8 @@ import {
   type DecimalCoefficient,
 } from "./cost-decimal.ts";
 import {
+  builtInPricingCoverage,
+  builtInPricingProfile,
   closeCostProjectionProfile,
   pricingCoverageMatches,
   type CostBasis,
@@ -293,7 +295,11 @@ function matchingCoverage(
   if (matches.length > 1) {
     throw new Error("PricingProfile validation allowed multiple matching coverage entries");
   }
-  return matches[0];
+  if (matches[0] !== undefined) return matches[0];
+  const model = core.origin.execution.model;
+  return profile.contentIdentity === builtInPricingProfile.contentIdentity && model !== null
+    ? builtInPricingCoverage(model)
+    : undefined;
 }
 
 function estimateProvider(

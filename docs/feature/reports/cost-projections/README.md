@@ -4,7 +4,7 @@
 
 ## 要解决的问题
 
-Report 要在固定 Sample 中说明已观测费用和按已声明 rate card 得到的估算，同时不把缺口、另一种币种或运行器护栏伪装成 USD 成本。
+Report 要在固定 Sample 中说明已观测费用和按随包目录或显式 rate card 得到的估算，同时不把缺口、另一种币种或运行器护栏伪装成 USD 成本。
 每个读数都必须能回到 sealed Usage、持久化 origin 或 Report 模块中的已验证 Profile。
 
 ## 核心心智
@@ -25,7 +25,8 @@ Runner config/runtime price table ─► estimatedCostUSD ─► maxCost
                                       not a Report input
 ```
 
-`PricingProfile` 是 Report source closure 中的不可变值。它固定 USD、rate-card provenance、coverage 与 content identity。
+`PricingProfile` 是 Report source closure 中的不可变值。它固定 USD、rate-card provenance、coverage 与 content identity。Report
+省略 `pricing` 时使用 NiceEval 随包发布的完整 `builtInPricingProfile`；作者无需选择模型或复制公开费率。
 它不会修改 Record，也不会读取当前网络、今天的价格或 Runner estimate。
 
 sealed Usage 保留 provider/adapter observed `costUSD`、token bucket 和 request 的原子事实。origin Core 提供 provider 的匹配坐标所需的
@@ -34,9 +35,13 @@ model、Run `startedAt` 和可选 narrow facts。Analysis 从这两类 sealed �
 
 ## 一条方向
 
-价格配置只在 `ReportDefinition.pricing` 声明，组件只从只读 `ctx.report.pricing` 读取同一值或 `null`。成本 Measure 必须显式传入这份
-Profile。没有 Profile 的 Report 可以显示质量和其它 Analysis 值，却不产生成本 Measure，也不从 Config、Host 或 Runner 取得另一份
-价格输入。
+价格输入只从 `ReportDefinition.pricing` 进入，组件从只读 `ctx.report.pricing` 读取同一值。未声明时，`defineReport` 固定填入
+`builtInPricingProfile`；显式声明的 Profile 整体替换默认目录。成本 Measure 仍显式传入最终 Profile，不从 Config、Host 或 Runner
+取得另一份价格输入。
+
+内置目录的 coverage 只按完整 execution model 字面值匹配。它不把 Usage 的 observation provider 当作 billing provider，不去掉
+provider 前缀或日期，不用 input 价格填补 cache bucket。未知 model 或目录未声明的 bucket 保持 unavailable；每个目录条目显式声明
+model request 的零费率，因此零不是运行时 fallback。
 
 每个 slot-provider 的 ledger 只有 `observed`、`estimated` 或 `unavailable`。任一 sealed `provider-cost` 会锁定 observed 路径；
 没有该事实时，匹配到的 Profile 才可解释 token 与 request。不能匹配、缺少费率、非 USD observed cost 或 Usage 问题都会留下有限 reason。

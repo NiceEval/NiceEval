@@ -29,14 +29,7 @@ openai · slot 14  unavailable · pricing-charge-not-found
 
 `partial` 与 `unavailable` 不是颜色、空白或零的别名。非 USD observed cost、Usage 问题和不适用 rate 都显示各自的有限 reason。
 
-没有 Profile 时，Report 仍可成功显示非成本内容。官方成本组件不请求 Measure、不捕获 projection，也不显示数字。
-
-- Summary EN：`Cost unavailable — this report does not declare a PricingProfile.`
-- Summary ZH：`成本不可用——此报告未声明 PricingProfile。`
-- Scatter EN：`Cost × pass rate scatter unavailable — this report does not declare a PricingProfile.`
-- Scatter ZH：`成本 × 通过率散点图不可用——此报告未声明 PricingProfile。`
-
-它不显示任何成本，也不读取 Runner estimate。
+默认 Report 总有随包 Profile。目录没有相应 model 或 bucket 时，Report 仍成功显示非成本内容，并以 unavailable 呈现成本缺口；它不读取 Runner estimate。
 
 ## machine、view 与静态输出
 
@@ -52,8 +45,8 @@ openai · slot 14  unavailable · pricing-charge-not-found
 同一 key 的 entry 只有 `row.dimensions` 和 `projection` 都为 byte-identical canonical JSON 时才去重。任一字段不同都以
 `report-cost-projection-conflict` typed conflict 失败。
 
-`pricingProfile` 是 Report 顶层已关闭的 `PricingProfile`，未声明 Profile 时为 `null`。每个 cost entry 的 `profileIdentity` 与
-`projection.profile.contentIdentity` 都必须等于顶层 `pricingProfile.contentIdentity`；没有 Profile 时，`costs` 必须为空。不会内联
+`pricingProfile` 是 Report 顶层已关闭的最终 `PricingProfile`；未声明时是 `builtInPricingProfile`。每个 cost entry 的 `profileIdentity` 与
+`projection.profile.contentIdentity` 都必须等于顶层 `pricingProfile.contentIdentity`。不会内联
 Usage payload、Runner estimate 或任何当前价格。
 
 `show` 只放入目标 Page 已关闭的 projections。`view` 与静态导出闭合所有已声明 Page 的 projections，并在

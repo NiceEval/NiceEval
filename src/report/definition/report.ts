@@ -10,7 +10,7 @@ import type {
   PricingProfile,
   Sample as AnalysisSample,
 } from "../../analysis/index.ts";
-import { isPricingProfile } from "../../analysis/cost.ts";
+import { builtInPricingProfile, isPricingProfile } from "../../analysis/cost.ts";
 import type { AttemptLocator } from "../../attempt-locator.ts";
 import type { LocalizedText } from "../model/locale.ts";
 import {
@@ -307,7 +307,7 @@ export function defineReport(input: unknown): ReportDefinition {
     : undefined;
   const head = fields.has("head") ? normalizeHead(fields.get("head")) : Object.freeze([]) as readonly HeadTag[];
   const pages = normalizePages(fields.get("pages"));
-  const pricing = fields.has("pricing") ? normalizePricingProfile(fields.get("pricing")) : null;
+  const pricing = fields.has("pricing") ? normalizePricingProfile(fields.get("pricing")) : builtInPricingProfile;
 
   const report: Record<string | symbol, unknown> = {
     kind: "report",
