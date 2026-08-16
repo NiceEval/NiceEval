@@ -104,6 +104,8 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
         const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
         expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       }
+      const mainRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(mainRun.expReceipt(), mainRun.diagnostic()).toMatchObject({ completion: "completed" });
 
       const shown = await niceeval.run(["show", "--report", "./reports/classic.tsx"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
@@ -260,6 +262,13 @@ export default Object.freeze(report);
         .toMatch(/<a\b[^>]*\bhref="https:\/\/github\.com\/NiceEval\/NiceEval"/);
       expect(overview, "classic hierarchy must keep native disclosure semantics")
         .toMatch(/<details\b[\s\S]*<summary\b/);
+      const deliberateErrorRows = [...overview.matchAll(/<summary\b[^>]*>[\s\S]*?<\/summary>/g)]
+        .map(([summary]) => summary)
+        .filter((summary) => summary.includes("deliberate-error"));
+      expect(deliberateErrorRows, "errored attempt rows must be present in both locale surfaces").toHaveLength(2);
+      for (const row of deliberateErrorRows) {
+        expect(row, "an errored attempt keeps the cost of completed agent work").toContain("$0.02");
+      }
       expect(overview, "classic overview must not serialize internal attempt evidence into visible text")
         .not.toContain('{"kind":"attempt"');
       const attempts = await readFile(join(projectRoot, "classic-export", "attempts", "index.html"), "utf8");
