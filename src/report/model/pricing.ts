@@ -36,6 +36,24 @@ export interface CostProjectionCellText {
   readonly detail?: string;
 }
 
+/** Compact table-cell amount copied from the Analysis-closed projection. */
+export function formatCostProjectionAmountText(
+  cell: CostMetricValue,
+  locale: ReportLocale,
+): string {
+  switch (cell.projection.state) {
+    case "available":
+    case "partial":
+      return `$${cell.projection.combined.amount}`;
+    case "unavailable":
+      return localeText(locale, "costProjection.unavailable");
+    default: {
+      const exhaustive: never = cell.projection;
+      return exhaustive;
+    }
+  }
+}
+
 /**
  * Produces a compact display from the closed projection. Amount strings pass
  * through verbatim: Report deliberately does not parse, round, or otherwise

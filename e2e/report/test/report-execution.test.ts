@@ -267,7 +267,7 @@ export default Object.freeze(report);
         .filter((summary) => summary.includes("deliberate-error"));
       expect(deliberateErrorRows, "errored attempt rows must be present in both locale surfaces").toHaveLength(2);
       for (const row of deliberateErrorRows) {
-        expect(row, "an errored attempt keeps the cost of completed agent work").toContain("$0.02");
+        expect(row, "an errored attempt keeps the exact cost of completed agent work").toContain("$0.00002");
       }
       expect(overview, "classic overview must not serialize internal attempt evidence into visible text")
         .not.toContain('{"kind":"attempt"');
