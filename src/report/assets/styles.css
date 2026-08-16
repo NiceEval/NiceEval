@@ -1887,6 +1887,12 @@ html.niceeval-view-document body {
    keeps the same closed product markup and the same stylesheet as its direct
    route; the runtime injects no second CSS owner. */
 .niceeval-view-dialog {
+  /* Matches the old Radix DialogContent utility contract:
+     `flex ... flex-col overflow-hidden`. Without this, a long closed detail
+     document is laid out at its full height and then clipped by max-height,
+     instead of giving its body the old independently-scrollable viewport. */
+  display: flex;
+  flex-direction: column;
   width: min(1120px, calc(100vw - 48px));
   max-width: none;
   max-height: min(86vh, 820px);
@@ -1900,9 +1906,15 @@ html.niceeval-view-document body {
   box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
 }
 
+/* An author display declaration overrides the browser's default
+   `dialog:not([open]) { display: none }` rule. Preserve the legacy Radix
+   unmount result when native dialog.close() removes [open]. */
+.niceeval-view-dialog:not([open]) { display: none; }
+
 .niceeval-view-dialog::backdrop { background: rgb(0 0 0 / 90%); }
 
 .niceeval-view-dialog-head {
+  flex: 0 0 auto;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -1952,6 +1964,7 @@ html.niceeval-view-document body {
 
 .niceeval-view-dialog-body {
   flex: 1;
+  min-height: 0;
   margin: 0;
   padding: 8px 28px 28px;
   overflow-y: auto;

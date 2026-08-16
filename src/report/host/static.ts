@@ -228,7 +228,10 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
     close.type = "button";
     close.className = "niceeval-view-dialog-close";
     close.setAttribute("aria-label", "Close");
-    close.textContent = "\\u00d7";
+    // Keep the static host visually identical to the legacy React/Radix
+    // dialog. The old DialogClose renders a literal x, rather than the
+    // typographic multiplication sign.
+    close.textContent = "x";
     close.addEventListener("click", closeFromUi);
     head.appendChild(title);
     head.appendChild(close);
