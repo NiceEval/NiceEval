@@ -74,31 +74,6 @@ function renderReportNode(node: ReportNode): ReactNode {
   return createElement(el.type as never, el.props);
 }
 
-const TS_HL_RE =
-  /(\/\/[^\n]*)|(\/\*[^]*?\*\/)|(`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(import|from|export|default|const|let|var|async|await|function|return|if|else|for|of|in|new|class|extends|typeof|void|true|false|null|undefined)\b|\b(\d[\d_.]*)\b|([A-Za-z_$][\w$]*)(?=\s*\()/g;
-
-function highlightTs(line: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  let last = 0;
-  let i = 0;
-  let match: RegExpExecArray | null;
-  TS_HL_RE.lastIndex = 0;
-  while ((match = TS_HL_RE.exec(line))) {
-    if (match.index > last) out.push(line.slice(last, match.index));
-    const tokenClass =
-      match[1] || match[2] ? "tok-comment" : match[3] ? "tok-str" : match[4] ? "tok-kw" : match[5] ? "tok-num" : "tok-fn";
-    out.push(
-      <span key={i++} className={tokenClass}>
-        {match[0]}
-      </span>,
-    );
-    last = match.index + match[0].length;
-    if (match[0].length === 0) TS_HL_RE.lastIndex++;
-  }
-  if (last < line.length) out.push(line.slice(last));
-  return out;
-}
-
 function validateBlock(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object`;
   if (typeof value.path !== "string") return `"${path}.path" must be a string`;
@@ -204,7 +179,7 @@ function LineSummary({ line, locale }: { line: SourceLine; locale: ReportLocale 
   return (
     <span className="niceeval-source-line-summary">
       <Gutter line={line} />
-      <span className="niceeval-source-code">{highlightTs(line.text)}</span>
+      <span className="niceeval-source-code">{line.text}</span>
       <span className="niceeval-source-meta">
         {line.pill !== undefined ? (
           <span className="niceeval-source-pill">{resolveLocalizedText(line.pill, locale)}</span>

@@ -291,6 +291,7 @@ export function attemptSummaryData(input: {
   readonly experimentId: string;
   readonly identity: AttemptIdentityView;
   readonly verdict: VerdictState | "unknown";
+  readonly startedAt?: string;
   readonly durationMs: number | null;
   readonly observedCostUSD?: number;
   readonly capabilities: AttemptCapabilitiesView;
@@ -301,6 +302,7 @@ export function attemptSummaryData(input: {
     experimentId: input.experimentId,
     identity: input.identity,
     verdict: input.verdict,
+    ...(input.startedAt === undefined ? {} : { startedAt: input.startedAt }),
     durationMs: input.durationMs,
     ...(input.observedCostUSD === undefined ? {} : { observedCostUSD: input.observedCostUSD }),
     capabilities: input.capabilities,

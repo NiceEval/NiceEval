@@ -304,7 +304,10 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
         await attemptLink.click();
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole("heading", { name: /^Attempt · @/ })).toBeVisible();
+        await expect(dialog.getByText(/^@[0-9A-Z]+$/).first()).toBeVisible();
+        await expect(dialog.getByText(/^source · execution · timing(?: · diff)?$/).filter({ visible: true })).toBeVisible();
+        await expect(dialog.getByText("Assessment evidence", { exact: true })).toHaveCount(0);
+        await expect(dialog.getByText(/^\{\"groupPath\":/)).toHaveCount(0);
         const deepLink = page.url();
         expect(new URL(deepLink).hash).toMatch(/^#\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}$/);
         await page.keyboard.press("Escape");
@@ -315,7 +318,7 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
         // its hash directly restores the same dialog, and reload keeps it.
         await page.goto(deepLink);
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole("heading", { name: /^Attempt · @/ })).toBeVisible();
+        await expect(dialog.getByText(/^@[0-9A-Z]+$/).first()).toBeVisible();
         await page.reload();
         expect(page.url()).toBe(deepLink);
         await expect(dialog).toBeVisible();
@@ -325,7 +328,8 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
         // The href stays a real standalone route: direct navigation reads the
         // same closed detail document.
         await page.goto(detail.href);
-        await expect(page.getByRole("heading", { name: /^Attempt · @/ })).toBeVisible();
+        await expect(page.getByText(/^@[0-9A-Z]+$/).first()).toBeVisible();
+        await expect(page.getByText(/^source · execution · timing(?: · diff)?$/).filter({ visible: true })).toBeVisible();
 
         await page.goto(new URL("/overview", origin!).href);
         const scatter = page.getByRole("img", { name: "costUSD × passRate" }).filter({ visible: true });

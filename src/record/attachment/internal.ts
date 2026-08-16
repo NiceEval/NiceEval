@@ -6,7 +6,7 @@ export {
   isRecordBlobRef,
   makeFixedAttachmentWriteSpec,
   makeFixedRecordAttachmentWrite,
-  makeFixedRecordAttachmentValue,
+  makeFixedRecordAttachmentValueFromDecoded,
   makeRecordBlobRef,
   recordAttachmentWriteContents,
 } from "./runtime.ts";

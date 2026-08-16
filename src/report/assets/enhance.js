@@ -1,6 +1,6 @@
 // niceeval 报告的渐进增强 runtime:纯 vanilla JS、零依赖、IIFE、幂等。
-// 只作用于 .niceeval-report DOM 与 data-niceeval-* 属性;五个行为——Tabs 单选切换、表格排序、
-// 行过滤、SVG 点 tooltip、警告命令复制。全部只改浏览状态,不改数据、指标口径或初始 HTML 数值。
+// 只作用于 .niceeval-report DOM 与 data-niceeval-* 属性;六个行为——Tabs 单选切换、表格排序、
+// 行过滤、SVG 点 tooltip、警告命令复制、源码语法着色。全部只改浏览状态,不改数据、指标口径或初始 HTML 数值。
 // 静态 HTML 无 JS 时内容完整可读是硬约束:排序有数据侧预排、tooltip 退化为原生 <title>、
 // 过滤输入框静默无功能、Tabs 退化为原生 <details> 手风琴、命令块退化为点击全选。
 // 全部经 document 级事件委托绑定,重复注入本文件只在首次生效(window.__nreEnhanced 守卫),
@@ -18,6 +18,57 @@
   function closest(target, selector) {
     return target && target.closest ? target.closest(selector) : null;
   }
+
+  // ───────────────────────── SourceView:客户端语法着色 ─────────────────────────
+  // 静态 HTML 只保留完整、已转义的源码文本，避免全站构建为每个 token、每种 locale
+  // 预先创建 React 节点。浏览器只给当前打开的文档着色；无 JS 时源码仍完整可读。
+  // MutationObserver 覆盖 attempt 文档被 Host modal 插入后的同一行为。
+
+  var sourceTokenPattern =
+    /(\/\/[^\n]*)|(\/\*[^]*?\*\/)|(`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(import|from|export|default|const|let|var|async|await|function|return|if|else|for|of|in|new|class|extends|typeof|void|true|false|null|undefined)\b|\b(\d[\d_.]*)\b|([A-Za-z_$][\w$]*)(?=\s*\()/g;
+
+  function highlightSourceCode(code) {
+    if (code.hasAttribute("data-niceeval-highlighted")) return;
+    var line = code.textContent || "";
+    var fragment = document.createDocumentFragment();
+    var last = 0;
+    var match;
+    sourceTokenPattern.lastIndex = 0;
+    while ((match = sourceTokenPattern.exec(line))) {
+      if (match.index > last) fragment.appendChild(document.createTextNode(line.slice(last, match.index)));
+      var token = document.createElement("span");
+      token.className = match[1] || match[2]
+        ? "tok-comment"
+        : match[3]
+          ? "tok-str"
+          : match[4]
+            ? "tok-kw"
+            : match[5]
+              ? "tok-num"
+              : "tok-fn";
+      token.textContent = match[0];
+      fragment.appendChild(token);
+      last = match.index + match[0].length;
+      if (match[0].length === 0) sourceTokenPattern.lastIndex++;
+    }
+    if (last < line.length) fragment.appendChild(document.createTextNode(line.slice(last)));
+    code.replaceChildren(fragment);
+    code.setAttribute("data-niceeval-highlighted", "");
+  }
+
+  function highlightSources(root) {
+    if (!root || (root.nodeType !== 1 && root.nodeType !== 9 && root.nodeType !== 11)) return;
+    if (root.nodeType === 1 && root.matches(".niceeval-source-code")) highlightSourceCode(root);
+    var codes = root.querySelectorAll ? root.querySelectorAll(".niceeval-source-code") : [];
+    for (var i = 0; i < codes.length; i++) highlightSourceCode(codes[i]);
+  }
+
+  highlightSources(document);
+  new MutationObserver(function (records) {
+    for (var i = 0; i < records.length; i++) {
+      for (var j = 0; j < records[i].addedNodes.length; j++) highlightSources(records[i].addedNodes[j]);
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
 
   // ───────────────────────── Tabs:[data-niceeval-tabs] 单选切换 ─────────────────────────
   // 静态 HTML 每 tab 一个 <details> 且仅首个 open;点击 summary 时接管原生 toggle:

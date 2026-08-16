@@ -203,14 +203,6 @@ function isAttachmentJson(value: unknown, active = new WeakSet<object>()): value
   }
 }
 
-function cloneAttachmentJson(value: RecordAttachmentJson): RecordAttachmentJson {
-  if (isRecordBlobRef(value) || value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return Object.freeze(value.map(cloneAttachmentJson));
-  const output: Record<string, RecordAttachmentJson> = Object.create(null) as Record<string, RecordAttachmentJson>;
-  for (const [key, child] of Object.entries(value)) output[key] = cloneAttachmentJson(child);
-  return Object.freeze(output);
-}
-
 function deepFreezePayload<Payload>(
   value: Payload,
   seen = new WeakSet<object>(),
@@ -452,7 +444,7 @@ function isUint8Array(value: unknown): value is Uint8Array {
   return value instanceof Uint8Array;
 }
 
-function validateMaterializedClosure<Owner extends RecordAttachmentOwner, Payload>(
+function validateDecodedMaterializedClosure<Owner extends RecordAttachmentOwner, Payload>(
   fixed: FixedAttachmentWriteSpec<Owner, Payload>,
   payload: Payload,
   blobs: unknown,
@@ -460,14 +452,10 @@ function validateMaterializedClosure<Owner extends RecordAttachmentOwner, Payloa
   { readonly payload: Payload; readonly refs: readonly RecordBlobRef[]; readonly bytes: ReadonlyMap<RecordBlobRef, Uint8Array> },
   RecordAttachmentPayloadInvalid | RecordAttachmentClosureInvalid
 > {
-  const encoded = fixed.encodePayload(payload);
-  if (Either.isLeft(encoded) || !isAttachmentJson(encoded.right)) return Either.left(payloadInvalid());
-  const decoded = fixed.decodePayload(cloneAttachmentJson(encoded.right));
-  if (Either.isLeft(decoded)) throw new Error("Fixed Record owner value encoded a payload it cannot decode");
   const issues: RecordAttachmentIssue[] = [];
   const projected = validateProjectedRefs(
     fixed.refs as (payload: unknown) => readonly RecordBlobRef[],
-    decoded.right,
+    payload,
     undefined,
     issues,
   );
@@ -499,7 +487,7 @@ function validateMaterializedClosure<Owner extends RecordAttachmentOwner, Payloa
         issues.push(recordAttachmentIssue("record-attachment-blob-ref-duplicate", ["blobs", String(index)]));
         continue;
       }
-      materialized.set(ref, new Uint8Array(bytes));
+      materialized.set(ref, bytes);
       if (!expected.has(ref)) issues.push(recordAttachmentIssue("record-attachment-blob-ref-extra", ["blobs", String(index)]));
     }
   }
@@ -513,31 +501,35 @@ function validateMaterializedClosure<Owner extends RecordAttachmentOwner, Payloa
   }
   if (issues.length === 0) {
     try {
-      const snapshot = Object.freeze([...materialized.entries()].map(([ref, bytes]) => Object.freeze({
-        ref,
-        bytes: new Uint8Array(bytes),
-      })));
-      issues.push(...fixed.verify(decoded.right, snapshot));
+      const snapshot = Object.freeze([...materialized.entries()].map(([ref, bytes]) => Object.freeze({ ref, bytes })));
+      issues.push(...fixed.verify(payload, snapshot));
     } catch {
       issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["payload"]));
     }
   }
   return issues.length === 0
-    ? Either.right(Object.freeze({ payload: decoded.right, refs: freezeArray(projected ?? []), bytes: materialized }))
+    ? Either.right(Object.freeze({ payload, refs: freezeArray(projected ?? []), bytes: materialized }))
     : Either.left(recordAttachmentClosureInvalid(issues));
 }
 
-/** Materialize one value through the exact current fixed owner primitive. */
-export function makeFixedRecordAttachmentValue<Owner extends RecordAttachmentOwner, Payload>(
+/**
+ * Materialize a payload that the fixed owner's exact decoder has just accepted.
+ *
+ * The reader already performed bytes -> canonical JSON -> exact decode. Re-encoding,
+ * cloning, and decoding that same value here neither strengthens the disk trust
+ * boundary nor adds an owner check. Blob closure, budgets, owner verification, and
+ * the final immutable snapshot remain mandatory.
+ */
+export function makeFixedRecordAttachmentValueFromDecoded<Owner extends RecordAttachmentOwner, Payload>(
   fixed: FixedAttachmentWriteSpec<Owner, Payload>,
   payload: Payload,
   blobs: readonly RecordAttachmentMaterializedBlob[],
 ): Either.Either<FixedMaterializedAttachment<Payload>, RecordAttachmentPayloadInvalid | RecordAttachmentClosureInvalid> {
   if (!isObject(fixed) || !fixedWriteSpecs.has(fixed)) return Either.left(payloadInvalid());
-  const checked = validateMaterializedClosure(fixed, payload, blobs);
+  const checked = validateDecodedMaterializedClosure(fixed, payload, blobs);
   if (Either.isLeft(checked)) return Either.left(checked.left);
   const snapshotBytes = new Map<RecordBlobRef, Uint8Array>();
-  for (const [ref, bytes] of checked.right.bytes) snapshotBytes.set(ref, bytes);
+  for (const [ref, bytes] of checked.right.bytes) snapshotBytes.set(ref, new Uint8Array(bytes));
   const refs = freezeArray(checked.right.refs);
   const snapshotBlobs: RecordAttachmentBlobs = Object.freeze({
     refs: () => freezeArray(refs),

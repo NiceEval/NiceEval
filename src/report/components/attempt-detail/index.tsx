@@ -131,7 +131,7 @@ export const AttemptSummary = defineComponent<SummaryProps>({
           {d.totalScore !== undefined ? <Kpi label="Score" value={formatPoints(d.totalScore)} /> : null}
           {d.startedAt ? <Kpi label="Started" value={formatInstant(d.startedAt, ctx.locale)} /> : null}
           <Kpi label="Duration" value={d.durationMs === null ? "—" : formatDurationMs(d.durationMs)} />
-          {d.observedCostUSD !== undefined ? <Kpi label="Observed provider cost" value={formatUSD(d.observedCostUSD)} /> : null}
+          {d.observedCostUSD !== undefined ? <Kpi label="Cost" value={formatUSD(d.observedCostUSD)} /> : null}
         </Grid>
         {caps.length > 0 ? (
           <p className="niceeval-attempt-summary-caps">
@@ -387,11 +387,14 @@ async function assembleAttemptDetails(
   const observedCost = observabilityDetail === undefined
     ? undefined
     : observedCostUSD(observabilityDetail.usage.observations);
+  const originRunId = evidenceEntry?.attempt.originRunId ?? slot.attempt.originRunId;
+  const startedAt = ctx.scope.snapshot.runs.find((run) => run.runId === originRunId)?.startedAt;
   const summary = attemptSummaryData({
     locator,
     experimentId: slot.experimentId,
     identity: { runId: slot.runId, evalId: slot.evalId, attempt: slot.attemptOrdinal },
     verdict,
+    ...(startedAt === undefined ? {} : { startedAt: new Date(Number(startedAt)).toISOString() }),
     durationMs,
     ...(observedCost === undefined ? {} : { observedCostUSD: observedCost }),
     capabilities,

@@ -16,13 +16,9 @@ import type {
   PageEvidence,
 } from "../definition/report.ts";
 import { Col } from "../definition/primitives.tsx";
+import { AttemptDetails } from "../components/attempt-detail/index.tsx";
 import { Hero, type HeroData } from "../components/site-components/index.tsx";
-import {
-  toAttemptObservability,
-  toFileChanges,
-  toSandboxHistory,
-  toSources,
-} from "../model/conversions.ts";
+import { toAttemptObservability } from "../model/conversions.ts";
 import {
   attemptDetailParams,
   experimentDetailParams,
@@ -41,7 +37,6 @@ import {
   type BuiltInSummaryRows,
 } from "./analysis-values.ts";
 import {
-  AttemptDetailResultView,
   AttemptTrace,
   ExperimentDetailResultView,
   StandardAttemptsResultView,
@@ -74,14 +69,8 @@ interface StandardTracesPageInput {
 }
 
 interface StandardAttemptPageInput {
-  readonly hero: HeroData;
-  readonly locator: AttemptDetailTarget["locator"];
-  readonly members: readonly MembershipRow[];
+  readonly target: AttemptDetailTarget;
   readonly evidence: PageEvidence;
-  readonly observability: Awaited<ReturnType<typeof toAttemptObservability>>;
-  readonly fileChanges: Awaited<ReturnType<typeof toFileChanges>>;
-  readonly sources: Awaited<ReturnType<typeof toSources>>;
-  readonly sandbox: Awaited<ReturnType<typeof toSandboxHistory>>;
 }
 
 interface StandardExperimentPageInput {
@@ -182,26 +171,12 @@ export const standardAttemptPage = {
   title: "Attempt",
   navigation: false,
   params: attemptDetailParams,
-  load: async (sample: Sample, params: AttemptDetailTarget, context) => {
-    const [evidence, observability, fileChanges, sources, sandbox] = await Promise.all([
-      context.evidence(params.locator),
-      toAttemptObservability(sample, params.locator),
-      toFileChanges(sample, params.locator),
-      toSources(sample, params.locator),
-      toSandboxHistory(sample, params.locator),
-    ]);
-    return Object.freeze({
-      hero: heroData(sample.snapshot),
-      locator: params.locator,
-      members: membershipRows(sample.snapshot, { locator: params.locator }),
-      evidence,
-      observability,
-      fileChanges,
-      sources,
-      sandbox,
-    });
-  },
-  render: (input: StandardAttemptPageInput) => <AttemptDetailResultView {...input} />,
+  load: async (_sample: Sample, params: AttemptDetailTarget, context): Promise<StandardAttemptPageInput> =>
+    Object.freeze({
+      target: params,
+      evidence: await context.evidence(params.locator),
+    }),
+  render: (input: StandardAttemptPageInput) => <AttemptDetails attempt={input} />,
 } satisfies Page<AttemptDetailTarget, StandardAttemptPageInput>;
 
 function experimentForTarget(sample: Sample, target: ExperimentDetailTarget): ExperimentId {

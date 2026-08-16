@@ -1,6 +1,6 @@
 import { Effect, Either } from "effect";
 import {
-  makeFixedRecordAttachmentValue,
+  makeFixedRecordAttachmentValueFromDecoded,
   makeRecordBlobRef,
   type RecordAttachmentMaterializedBlob,
 } from "../attachment/internal.ts";
@@ -328,7 +328,11 @@ export function readFixedRecordAttachment<
       materialized.push(Object.freeze({ ref, bytes }));
     }
 
-    const materializedValue = makeFixedRecordAttachmentValue(input.descriptor.write, payload.right, materialized);
+    const materializedValue = makeFixedRecordAttachmentValueFromDecoded(
+      input.descriptor.write,
+      payload.right,
+      materialized,
+    );
     if (Either.isLeft(materializedValue)) return attachmentInvalid<Payload>(["payload.json"]);
     return Object.freeze({ state: "available" as const, ...materializedValue.right });
   });
