@@ -312,6 +312,15 @@ export interface RunnerRecordCoordinator {
   >;
   readonly runIdsByExperiment: ReadonlyMap<string, string>;
   readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
+  readonly adoptLatePublishedAttempt: (
+    attempt: Attempt,
+  ) => Effect.Effect<
+    boolean,
+    RecordReaderOpenError | RecordReaderReadError | ProjectTargetReusePlanInvalid | RunnerRecordWriteError,
+    import("effect").Scope.Scope
+      | import("../record/platform/services.ts").RecordFileSystem
+      | import("../coordination/record-leases.ts").RecordCoordination
+  >;
   readonly reserveAttempt: (
     attempt: Attempt,
   ) => Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError>;
@@ -915,6 +924,32 @@ export function openRunnerRecordCoordinator(input: {
       return plan === undefined ? undefined : { recordRun, slotId: entry.slot.slotId, plan };
     };
 
+    const adoptLatePublishedAttempt = (attempt: Attempt) => lock.withPermits(1)(Effect.gen(function* () {
+      const current = targetForAttempt(attempt);
+      if (
+        current === undefined
+        || current.plan.state !== "gap"
+        || current.recordRun.gapActions.get(current.slotId) !== "pending"
+      ) return false;
+      const freshReader = yield* recordHost.current.openRead({ root: input.recordRoot });
+      const refreshed = yield* planProjectTargetReuse({
+        reader: freshReader,
+        target,
+        policy: input.reuse.policy,
+      });
+      const replacement = refreshed.slots.find((slot) =>
+        slot.runId === current.recordRun.target.runId && slot.slotId === current.slotId);
+      if (replacement?.state !== "reuse") return false;
+      yield* current.recordRun.session.referenceAttempt({
+        slotId: current.slotId,
+        action: "carried",
+        attempt: replacement.source.attempt,
+      });
+      current.recordRun.planSlots.set(current.slotId, replacement);
+      current.recordRun.gapActions.delete(current.slotId);
+      return true;
+    }));
+
     const reserveAttempt = (attempt: Attempt): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError> => {
       const targetSlot = targetForAttempt(attempt);
       return lock.withPermits(1)(Effect.gen(function* () {
@@ -1105,6 +1140,7 @@ export function openRunnerRecordCoordinator(input: {
       carriedAttemptsByKey: new Map([...carriedAttemptsByKey].map(([key, attempts]) =>
         [key, new Set(attempts)] as const,
       )),
+      adoptLatePublishedAttempt,
       reserveAttempt,
       noteSealedOrMarkIncomplete,
       completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult) => completeAttempt(attempt, result).pipe(

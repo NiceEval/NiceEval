@@ -1,6 +1,9 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-history-dedup
+// regression: memory/multi-open-residual-window-closed-by-narrow-read.md
 // rerun: pnpm e2e --repo runner -- --run test/history-dedup.test.ts
-import { only } from "@niceeval/testkit";
+import { only, pollUntil, withTempDir } from "@niceeval/testkit";
+import { access, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
@@ -91,6 +94,67 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     const forcedEvidence = await niceeval.run(["show", forcedLocator, "--execution"]);
     expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);
     expect(forcedEvidence.stdout).toContain("runner-fixture-ok");
+    },
+  );
+});
+
+test("两次同时运行同一实验时，后开始的那次不重复跑已经完成的题目", async () => {
+  await runnerE2E.case(
+    "history-dedup-concurrent",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval } }) => {
+      await withTempDir("niceeval-runner-concurrent-", async (barrierRoot) => {
+        const first = niceeval.start(["exp", "concurrent", "--json"], {
+          env: { NICEEVAL_CONCURRENCY_BARRIER: barrierRoot, NICEEVAL_CONCURRENCY_ROLE: "A" },
+          timeoutMs: 60_000,
+        });
+        await pollUntil(
+          async () => {
+            try {
+              await access(join(barrierRoot, "first-run-started-alpha"));
+              return true;
+            } catch {
+              return undefined;
+            }
+          },
+          { timeoutMs: 30_000, intervalMs: 10, label: "first run starts the eval" },
+        );
+
+        const second = niceeval.start(["exp", "concurrent", "--json"], {
+          env: { NICEEVAL_CONCURRENCY_BARRIER: barrierRoot, NICEEVAL_CONCURRENCY_ROLE: "B" },
+          timeoutMs: 60_000,
+        });
+        const secondState = await pollUntil(
+          async () => {
+            if (/"event":"lock_wait".*"status":"started"/.test(second.bufferedStdout)) return "waited";
+            try {
+              await access(join(barrierRoot, "second-run-started-alpha"));
+              return "ran-again";
+            } catch {
+              return undefined;
+            }
+          },
+          { timeoutMs: 30_000, intervalMs: 10, label: "second run either waits or starts the same eval again" },
+        );
+        expect(secondState).toBe("waited");
+        await writeFile(join(barrierRoot, "release-first-run"), "");
+
+        const [firstResult, secondResult] = await Promise.all([first.done, second.done]);
+        expect(firstResult.exitCode, firstResult.diagnostic()).toBe(0);
+        expect(secondResult.exitCode, secondResult.diagnostic()).toBe(0);
+        const firstRunId = only(firstResult.expReceipt().runIds, () => true, firstResult.diagnostic());
+        const secondRunId = only(secondResult.expReceipt().runIds, () => true, secondResult.diagnostic());
+
+        await expect(access(join(barrierRoot, "second-run-started-alpha"))).rejects.toThrow();
+        const secondRun = await niceeval.run([
+          "show",
+          "--run",
+          secondRunId,
+          "--json",
+        ]);
+        expect(secondRun.exitCode, secondRun.diagnostic()).toBe(0);
+        expect(secondRun.stdout).toContain(firstRunId);
+      });
     },
   );
 });

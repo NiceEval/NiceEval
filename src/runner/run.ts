@@ -1751,6 +1751,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     inElsewhere: number;
   }
   const caseLocks = new Map<string, CaseLockState>();
+  const caseClaimsAwaitingPublication: CaseLockEffectClaim[] = [];
   for (const a of attempts) {
     if (!a.run.experimentId) continue;
     const key = cacheKey(a.run, a.evalDef.id);
@@ -1831,9 +1832,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       attempts: st.inElsewhere,
     });
 
-    const completion = yield* Deferred.make<void>();
-    const window = Deferred.await(completion);
-    st.suspension = window;
     const poll = Effect.gen(function* () {
       for (;;) {
         const stopped = yield* Effect.raceFirst(
@@ -1849,18 +1847,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }).pipe(
       Effect.ensuring(Effect.sync(() => resolveCaseWaitWithoutCarry(st, startedAt))),
     );
-    // 登记窗口、启动唯一 poller、返回给许可链三步处在同一个 mask 内。poller 本身恢复为可中断，
-    // 结算则重新进入 mask：无论用户中断、兄弟 defect 还是 Scope 收尾，所有 follower 都收到原始 Exit，
-    // 且 `lock_wait resolved` 与 suspension 清理一定发生。
-    const settle = Effect.uninterruptibleMask((restorePoll) =>
-      Effect.exit(restorePoll(poll)).pipe(
-        Effect.flatMap((exit) => Deferred.done(completion, exit)),
-        Effect.ensuring(Effect.sync(() => {
-          if (st.suspension === window) st.suspension = undefined;
-        })),
-      )
-    );
-    yield* Effect.forkScoped(restore(settle));
+    // 等待本身就是挂起窗口。它不绑定刚归还的全局位 Scope；同组后到者拿到同一 Effect，
+    // 每个等待者都可被取消，而任一一次完成都会清掉下一轮重新试锁所读的窗口。
+    const window: Effect.Effect<void> = poll.pipe(Effect.ensuring(Effect.sync(() => {
+      if (st.suspension === window) st.suspension = undefined;
+    })));
+    st.suspension = window;
     return window;
   }));
 
@@ -1952,7 +1944,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       st.claim = undefined;
       return claim;
     }).pipe(
-      Effect.flatMap((claim) => claim === undefined ? Effect.void : claim.release.pipe(Effect.ignore)),
+      Effect.tap((claim) => Effect.sync(() => {
+        if (claim !== undefined) caseClaimsAwaitingPublication.push(claim);
+      })),
     );
 
   /**
@@ -2576,6 +2570,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             if (caseState) {
               const outcome = yield* tryAcquireCase(caseState);
               if (outcome.kind === "busy") return { kind: "suspend", window: outcome.window } as const;
+              if (yield* recordCoordinator.adoptLatePublishedAttempt(a)) {
+                return { kind: "done" } as const;
+              }
             }
             const proceed = yield* preflight;
             if (!proceed) return { kind: "done" } as const;
@@ -2803,6 +2800,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         completion: interrupted ? "interrupted" : "completed",
       } satisfies InvocationReceipt);
     }),
+  ).pipe(
+    Effect.ensuring(
+      Effect.forEach(caseClaimsAwaitingPublication, (claim) => claim.release.pipe(Effect.ignore), {
+        concurrency: 1,
+        discard: true,
+      }),
+    ),
   );
 
   // Experiment 收尾协议(docs/runner.md):每个真正出现在这次 Invocation 里的 experimentId
