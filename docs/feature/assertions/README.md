@@ -2,7 +2,7 @@
 
 Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 1`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Analysis 只读取已封口的事实，不重新执行 matcher 或作者代码。
 
-Record v1 的 durable catalog 只有 Assertions、Observability、FileChanges、Sources 与 Artifacts 五个固定 family。第三方可以提供 Assertion criterion 的解释 schema，却不能增加 family、字段 writer 或自己的持久化通道。完整 catalog、owner 与 closure 规则见 [Record architecture](../record/architecture.md)。
+Record v1 的 durable catalog 有 Assertions、Observability、FileChanges、Source Navigation、Sources 与 Artifacts 六个固定 family。第三方可以提供 Assertion criterion 的解释 schema，却不能增加 family、字段 writer 或自己的持久化通道。完整 catalog、owner 与 closure 规则见 [Record architecture](../record/architecture.md)。
 
 ## Assertions v1 持久化什么
 
@@ -31,12 +31,12 @@ Record v1 的 durable catalog 只有 Assertions、Observability、FileChanges、
 
 ## 源码导航
 
-源码导航不是第六 family。`sourceSites` 是 `niceeval.assertions` payload（envelope `schemaVersion: 1`）的一部分。
+Assertion source site 不是 Source Navigation 的 row。`sourceSites` 仍是 `niceeval.assertions` payload（envelope `schemaVersion: 1`）的一部分。
 每一行只用本 Attachment 内的 `entryId` 关联一个已执行、role-tagged 的 source site，并以 `sourceItemId` 与 digest join 到 origin Run 的既有 Sources snapshot。它不复制 criterion、result、points、gate、source path、source blob 或控制流。
 
 一个 entry 有多个 source site 也不形成多条 check 或 score contribution；权威 result 与 points 始终按 `entryId` 只计算一次。Sources 内容仍只属于 `niceeval.sources` family 的 own closure（envelope `schemaVersion: 1`），不能用同 path、digest 或 item identity 假装配对另一个 Run。
 
-source navigation 由 [Analysis Library](../analysis/library.md) 的 `query()` 以已发布的 `DomainView` 读取。它不会把 Record path、blob capability 或当前 worktree 交给 consumer。没有 matching site、Sources 不能形成可用值，或 join／坐标不能验证时，DomainView 把该位置标为 `unmapped`；这只是视图的局部结果，不能改变 Assertion、Verdict 或 Score。
+Assertion source site 与物理 send navigation 分别由 [Analysis Library](../analysis/library.md) 的 `query()` 以已发布的 `DomainView` 读取。它不会把 Record path、blob capability 或当前 worktree 交给 consumer。没有 matching site、Sources 不能形成可用值，或 join／坐标不能验证时，DomainView 把该位置标为 `unmapped`；这只是视图的局部结果，不能改变 Assertion、Verdict 或 Score。
 
 ## family Host 与 entry 局部隔离
 
@@ -91,6 +91,6 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— Assertions payload 内的源码位置与 Sources join。
 - [Type reference](reference/README.md) —— 可编译的作者类型边界。
-- [Record architecture](../record/architecture.md) —— 五个 fixed family、closure 与四态 Host。
+- [Record architecture](../record/architecture.md) —— 六个 fixed family、closure 与四态 Host。
 - [Verdict architecture](../verdict/architecture.md) —— 每个 Attempt 的四态折叠。
 - [Analysis Library](../analysis/library.md) —— `Sample`、`query()` 与 `DomainView`。

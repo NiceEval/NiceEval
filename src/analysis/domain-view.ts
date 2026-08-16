@@ -13,6 +13,7 @@ export type BuiltinDomainViewKind =
   | "attempt-evidence"
   | "attempt-observability"
   | "file-changes"
+  | "source-navigation"
   | "sources"
   | "sandbox-history";
 
@@ -362,9 +363,45 @@ export interface SourcesDomainDetail {
   }[];
 }
 
+/** Closed physical-send navigation rows; mapped frames retain exact digest joins. */
+export interface SourceNavigationDomainDetail {
+  readonly collection: {
+    readonly state: "complete" | "partial";
+    readonly limitations: readonly {
+      readonly code: "collection-cap-reached" | "capture-unrecoverable";
+      /** Distinguishes retained-row omission from a missing timing identity. */
+      readonly target: "navigation-row" | "timing-link";
+      readonly omittedAtLeast: number;
+    }[];
+  };
+  readonly rows: readonly {
+    readonly turnId: string;
+    readonly sourceOrder: number | null;
+    readonly source:
+      | {
+          readonly state: "mapped";
+          readonly sourceItemId: string;
+          readonly sha256: string;
+          readonly start: { readonly line: number; readonly column: number };
+          readonly end: { readonly line: number; readonly column: number };
+        }
+      | {
+          readonly state: "unmapped";
+          readonly reason:
+            | "location-not-captured"
+            | "source-snapshot-not-recorded"
+            | "position-unrepresentable";
+        };
+    readonly timing:
+      | { readonly state: "linked"; readonly intervalId: string }
+      | { readonly state: "unavailable"; readonly reason: "timing-not-recorded" };
+  }[];
+}
+
 export type BuiltinDomainDetail<Kind extends BuiltinDomainViewKind> =
   Kind extends "attempt-evidence" ? AttemptEvidenceDomainDetail
     : Kind extends "attempt-observability" | "sandbox-history" ? AttemptObservabilityDomainDetail
     : Kind extends "file-changes" ? FileChangesDomainDetail
+    : Kind extends "source-navigation" ? SourceNavigationDomainDetail
     : Kind extends "sources" ? SourcesDomainDetail
     : never;

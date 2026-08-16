@@ -10,10 +10,12 @@ import {
   assertionsRecordFamily,
   attemptObservabilityRecordFamily,
   fileChangesRecordFamily,
+  sourceNavigationRecordFamily,
   sourcesRecordFamily,
 } from "../record/family/catalog.ts";
 import type { FileChangesAttachment } from "../record/family/file-changes.ts";
 import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import type { SourceNavigationAttachment } from "../record/family/source-navigation.ts";
 import type { SourcesAttachment } from "../record/family/sources.ts";
 import type {
   FixedFamilyRead,
@@ -42,6 +44,7 @@ import type {
   ClosedTraceCollection,
   ClosedUsageDetail,
   FileChangesDomainDetail,
+  SourceNavigationDomainDetail,
   SourcesDomainDetail,
 } from "./domain-view.ts";
 import {
@@ -157,6 +160,12 @@ const fileChangesFamily = fixedFamilyBinding({
   owner: "attempt" as const,
   descriptor: fileChangesRecordFamily,
   read: (reader, owner) => reader.readFileChanges(owner),
+});
+
+const sourceNavigationFamily = fixedFamilyBinding({
+  owner: "attempt" as const,
+  descriptor: sourceNavigationRecordFamily,
+  read: (reader, owner) => reader.readSourceNavigation(owner),
 });
 
 const originSourcesFamily = fixedFamilyBinding({
@@ -329,6 +338,20 @@ export const fileChangesDomainBinding = Object.freeze({
   typeof fileChangesFamily
 >;
 
+export const sourceNavigationDomainBinding = Object.freeze({
+  id: "niceeval.domain.source-navigation",
+  kind: "source-navigation" as const,
+  family: sourceNavigationFamily,
+  project: ({ payload }: {
+    readonly payload: RecordAttachmentPayloadSnapshot<SourceNavigationAttachment>;
+    readonly blobs: RecordAttachmentBlobs;
+  }): SourceNavigationDomainDetail => closeSourceNavigation(payload),
+}) satisfies BuiltinDomainViewBinding<
+  "source-navigation",
+  SourceNavigationAttachment,
+  typeof sourceNavigationFamily
+>;
+
 export const sourcesDomainBinding = Object.freeze({
   id: "niceeval.domain.sources",
   kind: "sources" as const,
@@ -361,6 +384,7 @@ export const builtinDomainViewBindings = Object.freeze({
   "attempt-evidence": attemptEvidenceDomainBinding,
   "attempt-observability": attemptObservabilityDomainBinding,
   "file-changes": fileChangesDomainBinding,
+  "source-navigation": sourceNavigationDomainBinding,
   sources: sourcesDomainBinding,
   "sandbox-history": sandboxHistoryDomainBinding,
 });
@@ -369,6 +393,7 @@ export type AnyBuiltinDomainViewBinding =
   | typeof attemptEvidenceDomainBinding
   | typeof attemptObservabilityDomainBinding
   | typeof fileChangesDomainBinding
+  | typeof sourceNavigationDomainBinding
   | typeof sourcesDomainBinding
   | typeof sandboxHistoryDomainBinding;
 
@@ -394,6 +419,37 @@ function closeAssertions(
       evidence: Object.freeze(entry.evidence.map(closeAssertionMaterial)),
     }))),
     sourceSites: Object.freeze(payload.sourceSites.map(closeJson)),
+  });
+}
+
+function closeSourceNavigation(
+  payload: RecordAttachmentPayloadSnapshot<SourceNavigationAttachment>,
+): SourceNavigationDomainDetail {
+  return Object.freeze({
+    collection: Object.freeze({
+      state: payload.collection.state,
+      limitations: Object.freeze(payload.collection.limitations.map((limitation) => Object.freeze({
+        code: limitation.code,
+        target: limitation.target,
+        omittedAtLeast: limitation.omittedAtLeast,
+      }))),
+    }),
+    rows: Object.freeze(payload.rows.map((row) => Object.freeze({
+      turnId: row.turnId,
+      sourceOrder: row.sourceOrder,
+      source: row.source.state === "mapped"
+        ? Object.freeze({
+            state: "mapped" as const,
+            sourceItemId: row.source.sourceItemId,
+            sha256: row.source.sha256,
+            start: Object.freeze({ line: row.source.start.line, column: row.source.start.column }),
+            end: Object.freeze({ line: row.source.end.line, column: row.source.end.column }),
+          })
+        : Object.freeze({ state: "unmapped" as const, reason: row.source.reason }),
+      timing: row.timing.state === "linked"
+        ? Object.freeze({ state: "linked" as const, intervalId: row.timing.intervalId })
+        : Object.freeze({ state: "unavailable" as const, reason: row.timing.reason }),
+    }))),
   });
 }
 

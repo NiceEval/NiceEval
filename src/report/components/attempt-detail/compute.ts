@@ -22,6 +22,7 @@ import type {
   ClosedUsageObservation,
   FileChangesDomainDetail,
   JsonValue,
+  SourceNavigationDomainDetail,
 } from "../../../analysis/index.ts";
 import type { DiffFile, DiffFileWindow } from "../../definition/primitives/diff-lines.ts";
 
@@ -178,6 +179,7 @@ export interface AttemptConversationRound {
   readonly turnId: string;
   readonly sequence: number;
   readonly outcome: "completed" | "failed" | "cancelled" | "interrupted";
+  readonly durationMs?: number;
   readonly replies: readonly AttemptConversationReply[];
 }
 
@@ -270,8 +272,10 @@ export interface AttemptSourceItemView {
 
 export interface AttemptSourceSiteView {
   readonly entryId: string;
+  readonly sourceOrder: number;
   readonly role: string;
   readonly sourceItemId: string;
+  readonly sha256: string;
   readonly startLine: number;
   readonly endLine: number;
 }
@@ -282,6 +286,7 @@ export interface AttemptSourceData {
   readonly items: readonly AttemptSourceItemView[];
   readonly sites: readonly AttemptSourceSiteView[];
   readonly entries: readonly AttemptAssertionView[];
+  readonly navigation?: SourceNavigationDomainDetail;
 }
 
 // ───────────────────────── AttemptSummary ─────────────────────────
@@ -734,21 +739,34 @@ function conversationReplyOf(item: ClosedConversationItem): AttemptConversationR
   }
 }
 
-function roundsOf(detail: ClosedConversationDetail): readonly AttemptConversationRound[] {
+function roundsOf(
+  detail: ClosedConversationDetail,
+  timing?: ClosedTimingDetail,
+  navigation?: SourceNavigationDomainDetail,
+): readonly AttemptConversationRound[] {
   const itemsByTurn = new Map<string, ClosedConversationItem[]>();
   for (const item of detail.items) {
     const items = itemsByTurn.get(item.turnId) ?? [];
     items.push(item);
     itemsByTurn.set(item.turnId, items);
   }
-  return [...detail.turns].sort(compareTurns).map((turn) => ({
-    turnId: turn.turnId,
-    sequence: turn.sequence,
-    outcome: turn.outcome,
-    replies: Object.freeze(
-      [...(itemsByTurn.get(turn.turnId) ?? [])].sort(compareItems).map(conversationReplyOf),
-    ),
-  }));
+  const intervalById = new Map((timing?.intervals ?? []).map((interval) => [interval.intervalId, interval] as const));
+  const navigationByTurn = new Map((navigation?.rows ?? []).map((row) => [row.turnId, row] as const));
+  return [...detail.turns].sort(compareTurns).map((turn) => {
+    const navigationRow = navigationByTurn.get(turn.turnId);
+    const interval = navigationRow?.timing.state === "linked"
+      ? intervalById.get(navigationRow.timing.intervalId)
+      : undefined;
+    return {
+      turnId: turn.turnId,
+      sequence: turn.sequence,
+      outcome: turn.outcome,
+      ...(interval === undefined ? {} : { durationMs: interval.durationMs }),
+      replies: Object.freeze(
+        [...(itemsByTurn.get(turn.turnId) ?? [])].sort(compareItems).map(conversationReplyOf),
+      ),
+    };
+  });
 }
 
 function compareTurns(left: ClosedConversationDetail["turns"][number], right: ClosedConversationDetail["turns"][number]): number {
@@ -762,9 +780,11 @@ function compareItems(left: ClosedConversationItem, right: ClosedConversationIte
 export function attemptConversationData(
   detail: ClosedConversationDetail | undefined,
   locator: AttemptLocator,
+  timing?: ClosedTimingDetail,
+  navigation?: SourceNavigationDomainDetail,
 ): AttemptConversationData | null {
   if (detail === undefined || (detail.turns.length === 0 && detail.items.length === 0)) return null;
-  return { locator, collection: detail.collection, rounds: roundsOf(detail) };
+  return { locator, collection: detail.collection, rounds: roundsOf(detail, timing, navigation) };
 }
 
 // ───────────────────────── AttemptCommandEvidence ─────────────────────────
@@ -1029,17 +1049,27 @@ function siteViewOf(value: JsonValue): AttemptSourceSiteView | undefined {
   const record = value as Readonly<Record<string, unknown>>;
   const entryId = record["entryId"];
   const role = record["role"];
+  const sourceOrder = record["sourceOrder"];
   const sourceItemId = record["sourceItemId"];
+  const sha256 = record["sha256"];
   const start = record["start"];
   const end = record["end"];
-  if (typeof entryId !== "string" || typeof role !== "string" || typeof sourceItemId !== "string") return undefined;
+  if (
+    typeof entryId !== "string" ||
+    typeof sourceOrder !== "number" ||
+    !Number.isSafeInteger(sourceOrder) ||
+    sourceOrder < 1 ||
+    typeof role !== "string" ||
+    typeof sourceItemId !== "string" ||
+    typeof sha256 !== "string"
+  ) return undefined;
   if (typeof start !== "object" || start === null || Array.isArray(start)) return undefined;
   if (typeof end !== "object" || end === null || Array.isArray(end)) return undefined;
   const startLine = (start as Readonly<Record<string, unknown>>)["line"];
   const endLine = (end as Readonly<Record<string, unknown>>)["line"];
   if (typeof startLine !== "number" || typeof endLine !== "number") return undefined;
   if (startLine < 1 || endLine < startLine) return undefined;
-  return { entryId, role, sourceItemId, startLine, endLine };
+  return { entryId, sourceOrder, role, sourceItemId, sha256, startLine, endLine };
 }
 
 export function attemptSourceData(input: {
@@ -1052,16 +1082,38 @@ export function attemptSourceData(input: {
   }[];
   readonly sourceSites: readonly JsonValue[];
   readonly entries: readonly AttemptAssertionView[];
+  readonly navigation?: SourceNavigationDomainDetail;
 }): AttemptSourceData | null {
-  const { locator, items, sourceSites, entries } = input;
+  const { locator, items, sourceSites, entries, navigation } = input;
   if (items.length === 0) return null;
   const knownEntryIds = new Set(entries.map((entry) => entry.entryId));
   const sites = sourceSites
     .map(siteViewOf)
     .filter((site): site is AttemptSourceSiteView => site !== undefined && knownEntryIds.has(site.entryId));
+  const firstOrderByItem = new Map<string, number>();
+  for (const site of sites) {
+    const key = `${site.sourceItemId}:${site.sha256}`;
+    const current = firstOrderByItem.get(key);
+    if (current === undefined || site.sourceOrder < current) firstOrderByItem.set(key, site.sourceOrder);
+  }
+  for (const row of navigation?.rows ?? []) {
+    if (row.source.state !== "mapped" || row.sourceOrder === null) continue;
+    const key = `${row.source.sourceItemId}:${row.source.sha256}`;
+    const current = firstOrderByItem.get(key);
+    if (current === undefined || row.sourceOrder < current) firstOrderByItem.set(key, row.sourceOrder);
+  }
+  const referencedItems = items
+    .filter((item) => firstOrderByItem.has(`${item.sourceItemId}:${item.sha256}`))
+    .sort((left, right) =>
+      firstOrderByItem.get(`${left.sourceItemId}:${left.sha256}`)! -
+        firstOrderByItem.get(`${right.sourceItemId}:${right.sha256}`)! ||
+      compareText(left.path, right.path) ||
+      compareText(left.sourceItemId, right.sourceItemId)
+    );
+  if (referencedItems.length === 0) return null;
   return {
     locator,
-    items: items.map((item) => ({
+    items: referencedItems.map((item) => ({
       sourceItemId: item.sourceItemId,
       path: item.path,
       sha256: item.sha256,
@@ -1070,6 +1122,7 @@ export function attemptSourceData(input: {
     })),
     sites,
     entries,
+    ...(navigation === undefined ? {} : { navigation }),
   };
 }
 

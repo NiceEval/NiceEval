@@ -5,6 +5,7 @@ import {
   attemptObservabilityDomainBinding,
   fileChangesDomainBinding,
   sandboxHistoryDomainBinding,
+  sourceNavigationDomainBinding,
   sourcesDomainBinding,
   type BuiltinDomainViewBinding,
   type FixedFamilyBinding,
@@ -166,6 +167,7 @@ export interface BuiltinDomainView<Kind extends BuiltinDomainViewKind> extends D
 export type AttemptEvidenceDomainView = BuiltinDomainView<"attempt-evidence">;
 export type AttemptObservabilityDomainView = BuiltinDomainView<"attempt-observability">;
 export type FileChangesDomainView = BuiltinDomainView<"file-changes">;
+export type SourceNavigationDomainView = BuiltinDomainView<"source-navigation">;
 export type SourcesDomainView = BuiltinDomainView<"sources">;
 export type SandboxHistoryDomainView = BuiltinDomainView<"sandbox-history">;
 
@@ -212,6 +214,9 @@ export const attemptObservabilityView = publishedDomainViewRequest(attemptObserv
 
 /** Closed attempt-owned FileChanges projection. */
 export const fileChangesView = publishedDomainViewRequest(fileChangesDomainBinding);
+
+/** Closed physical send-to-source and send-to-timing navigation rows. */
+export const sourceNavigationView = publishedDomainViewRequest(sourceNavigationDomainBinding);
 
 /** Closed origin-run Sources projection for each included Attempt. */
 export const sourcesView = publishedDomainViewRequest(sourcesDomainBinding);

@@ -1,7 +1,7 @@
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
-import { Effect } from "effect";
+import { Cause, Effect, Exit, Option } from "effect";
 
 import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import type { AgentOtelChannel, TurnSpans } from "../o11y/otlp/turn-otel.ts";
@@ -156,6 +156,10 @@ export interface SessionDeps {
     turnIndex: number;
     /** Exact terminal label allocated by this SessionManager. */
     label: string;
+    /** One physical public send is sealed with this exact terminal outcome. */
+    outcome: "completed" | "failed" | "interrupted";
+    /** The exact user event plus terminal provider events for this send only. */
+    events: readonly StreamEvent[];
     startOffsetMs: number;
     durationMs: number;
     failed?: boolean;
@@ -424,48 +428,68 @@ export class SessionManager {
         reportRetry: (message: string) => ctx.progress({ message }),
         signal: ctx.signal,
       };
-      const send = sendWithTurnRetry(sendOnce, retryDeps).pipe(
-        Effect.tapError((error) => Effect.sync(() => {
-          // 最终失败的物理尝试没有进入 retryAttempts，但已经真实花掉的 usage 仍计入顶层聚合。
-          if (isSendFailure(error) && error.usage) {
-            accumulateUsage(this.usage, error.usage);
-            accumulateUsage(session.usage, error.usage);
-          }
-          this.deps.onTurn?.({
-            sessionIndex: session.index,
-            turnIndex,
-            label: windowLabel,
-            startOffsetMs,
-            durationMs: Math.max(0, timingNow() - startOffsetMs),
-            failed: true,
-            ...(loc === undefined ? {} : { loc }),
-            ...(sourceOrder === undefined ? {} : { sourceOrder }),
-            ...(isSendFailure(error) && error.usage !== undefined ? { usage: error.usage } : {}),
-          });
-        })),
-        Effect.flatMap(({ turn, traceId, attribution, window }) => Effect.sync(() => {
-          const timingActivity = this.deps.onTurn?.({
-            sessionIndex: session.index,
-            turnIndex,
-            label: windowLabel,
-            startOffsetMs,
-            durationMs: Math.max(0, timingNow() - startOffsetMs),
-            failed: turn.status === "failed" ? true : undefined,
-            ...(loc === undefined ? {} : { loc }),
-            ...(sourceOrder === undefined ? {} : { sourceOrder }),
-            ...(attribution !== "none" && traceId !== undefined ? { traceId } : {}),
-            traceAttribution: attribution,
-            otelWindow: window,
-            usage: turn.usage,
-          });
-          if (window !== undefined) {
-            this.otelTurnRecords.push({
-              window,
-              activity: timingActivity,
-              hasSpans: attribution !== "none",
-            });
-          }
-
+      const send = Effect.uninterruptibleMask((restore) =>
+        Effect.flatMap(
+          Effect.exit(restore(sendWithTurnRetry(sendOnce, retryDeps))),
+          (exit) => Effect.flatMap(
+            Effect.sync(() => {
+              const durationMs = Math.max(0, timingNow() - startOffsetMs);
+              if (Exit.isSuccess(exit)) {
+                const { turn, traceId, attribution, window } = exit.value;
+                const traceAttribution = attribution ?? "none";
+                const terminalEvents = Object.freeze([userEvent, ...turn.events]);
+                const timingActivity = this.deps.onTurn?.({
+                  sessionIndex: session.index,
+                  turnIndex,
+                  label: windowLabel,
+                  outcome: turn.status === "failed" ? "failed" : "completed",
+                  events: terminalEvents,
+                  startOffsetMs,
+                  durationMs,
+                  failed: turn.status === "failed" ? true : undefined,
+                  ...(loc === undefined ? {} : { loc }),
+                  ...(sourceOrder === undefined ? {} : { sourceOrder }),
+                  ...(traceAttribution !== "none" && traceId !== undefined ? { traceId } : {}),
+                  traceAttribution,
+                  otelWindow: window,
+                  usage: turn.usage,
+                });
+                if (window !== undefined) {
+                  this.otelTurnRecords.push({
+                    window,
+                    activity: timingActivity,
+                    hasSpans: traceAttribution !== "none",
+                  });
+                }
+                return;
+              }
+              const failure = Option.getOrUndefined(Cause.failureOption(exit.cause));
+              const sendFailure = failure !== undefined && isSendFailure(failure) ? failure : undefined;
+              if (sendFailure?.usage !== undefined) {
+                accumulateUsage(this.usage, sendFailure.usage);
+                accumulateUsage(session.usage, sendFailure.usage);
+              }
+              this.deps.onTurn?.({
+                sessionIndex: session.index,
+                turnIndex,
+                label: windowLabel,
+                outcome: Cause.isInterruptedOnly(exit.cause) ? "interrupted" : "failed",
+                events: Object.freeze([userEvent, ...(sendFailure?.events ?? [])]),
+                startOffsetMs,
+                durationMs,
+                failed: true,
+                ...(loc === undefined ? {} : { loc }),
+                ...(sourceOrder === undefined ? {} : { sourceOrder }),
+                ...(sendFailure?.usage !== undefined ? { usage: sendFailure.usage } : {}),
+              });
+            }),
+            () => Exit.isSuccess(exit)
+              ? Effect.succeed(exit.value)
+              : Effect.failCause(exit.cause),
+          ),
+        ),
+      ).pipe(
+        Effect.flatMap(({ turn }) => Effect.sync(() => {
           this.allEvents.push(...turn.events);
           session.events.push(...turn.events);
           session.pendingInputRequests.push(

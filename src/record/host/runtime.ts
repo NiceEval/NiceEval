@@ -45,8 +45,17 @@ import {
 } from "../family/catalog.ts";
 import {
   observabilitySourceFrameIntegrityIssues,
+  type AttemptObservabilityAttachment,
   type ObservabilityAttachment,
 } from "../family/observability.ts";
+import {
+  assertionsSourceSiteIntegrityIssues,
+  type AssertionsAttachment,
+} from "../family/assertions.ts";
+import {
+  sourceNavigationIntegrityIssues,
+  type SourceNavigationAttachment,
+} from "../family/source-navigation.ts";
 import type { SourcesAttachment } from "../family/sources.ts";
 import type {
   AttemptDocument,
@@ -155,6 +164,7 @@ import {
   type SelectedOwnerRef,
   type SelectedRunRef,
   type SourcesWrite,
+  type SourceNavigationWrite,
 } from "./types.ts";
 
 const MAXIMUM_RUN_ENTRIES = 100_000;
@@ -760,16 +770,17 @@ function readFixedFamily<
         location: Object.freeze({ owner: "run" as const, runId: owner.runId }),
         descriptor,
       }).pipe(Effect.flatMap((value): Effect.Effect<FixedFamilyRead<Payload>, RecordFileSystemError> => {
-        if (value.state !== "available" || !isObservabilityDescriptor(descriptor as never)) {
+        if (value.state !== "available") {
           return Effect.succeed(value.state === "unavailable"
             ? Object.freeze({ state: "not-recorded" as const })
             : value);
         }
-        return validateObservabilitySourceFrameJoin({
+        return validateFixedCrossFamilyJoin({
           fileSystem: input.fileSystem,
           root: input.runtime.root,
           runId: owner.runId,
-          payload: value.value as ObservabilityAttachment,
+          descriptor: descriptor as FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>,
+          payload: value.value,
         }).pipe(Effect.map((joined): FixedFamilyRead<Payload> =>
           joined
             ? value
@@ -788,16 +799,18 @@ function readFixedFamily<
       }),
       descriptor,
     }).pipe(Effect.flatMap((value): Effect.Effect<FixedFamilyRead<Payload>, RecordFileSystemError> => {
-      if (value.state !== "available" || !isObservabilityDescriptor(descriptor as never)) {
+      if (value.state !== "available") {
         return Effect.succeed(value.state === "unavailable"
           ? Object.freeze({ state: "not-recorded" as const })
           : value);
       }
-      return validateObservabilitySourceFrameJoin({
+      return validateFixedCrossFamilyJoin({
         fileSystem: input.fileSystem,
         root: input.runtime.root,
         runId: owner.ref.originRunId,
-        payload: value.value as ObservabilityAttachment,
+        attemptId: owner.ref.attemptId,
+        descriptor: descriptor as FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>,
+        payload: value.value,
       }).pipe(Effect.map((joined): FixedFamilyRead<Payload> =>
         joined
           ? value
@@ -816,6 +829,18 @@ function isObservabilityDescriptor(
 ): boolean {
   return descriptor === NiceEvalRecordFamilyCatalog.observability.attempt ||
     descriptor === NiceEvalRecordFamilyCatalog.observability.run;
+}
+
+function isAssertionsDescriptor(
+  descriptor: FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>,
+): boolean {
+  return descriptor === NiceEvalRecordFamilyCatalog.assertions;
+}
+
+function isSourceNavigationDescriptor(
+  descriptor: FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>,
+): boolean {
+  return descriptor === NiceEvalRecordFamilyCatalog.sourceNavigation;
 }
 
 function hasSourceFrames(payload: ObservabilityAttachment): boolean {
@@ -843,6 +868,79 @@ function validateObservabilitySourceFrameJoin(input: {
       sources.value as SourcesAttachment,
     ).length === 0;
   });
+}
+
+function hasMappedNavigationRows(payload: SourceNavigationAttachment): boolean {
+  return payload.rows.some((row) => row.source.state === "mapped");
+}
+
+/**
+ * The fixed catalog's only cross-family boundary.  All joins use explicit
+ * durable IDs and digests; absent siblings fail closed instead of falling
+ * back to path lookup or array order.
+ */
+function validateFixedCrossFamilyJoin(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly runId: RunId;
+  readonly attemptId?: AttemptId;
+  readonly descriptor: FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>;
+  readonly payload: unknown;
+}): Effect.Effect<boolean, RecordFileSystemError> {
+  if (isObservabilityDescriptor(input.descriptor)) {
+    return validateObservabilitySourceFrameJoin({
+      fileSystem: input.fileSystem,
+      root: input.root,
+      runId: input.runId,
+      payload: input.payload as ObservabilityAttachment,
+    });
+  }
+  if (isAssertionsDescriptor(input.descriptor)) {
+    const payload = input.payload as AssertionsAttachment;
+    if (payload.sourceSites.length === 0) return Effect.succeed(true);
+    return Effect.gen(function* () {
+      const sources = yield* readFixedRecordAttachment({
+        fileSystem: input.fileSystem,
+        root: input.root,
+        location: Object.freeze({ owner: "run" as const, runId: input.runId }),
+        descriptor: NiceEvalRecordFamilyCatalog.sources,
+      });
+      return sources.state === "available" &&
+        assertionsSourceSiteIntegrityIssues(payload, sources.value as SourcesAttachment).length === 0;
+    });
+  }
+  if (isSourceNavigationDescriptor(input.descriptor)) {
+    const payload = input.payload as SourceNavigationAttachment;
+    if (input.attemptId === undefined) return Effect.succeed(false);
+    return Effect.gen(function* () {
+      const observability = yield* readFixedRecordAttachment({
+        fileSystem: input.fileSystem,
+        root: input.root,
+        location: Object.freeze({
+          owner: "attempt" as const,
+          runId: input.runId,
+          attemptId: input.attemptId!,
+        }),
+        descriptor: NiceEvalRecordFamilyCatalog.observability.attempt,
+      });
+      if (observability.state !== "available") return false;
+      const sources = hasMappedNavigationRows(payload)
+        ? yield* readFixedRecordAttachment({
+            fileSystem: input.fileSystem,
+            root: input.root,
+            location: Object.freeze({ owner: "run" as const, runId: input.runId }),
+            descriptor: NiceEvalRecordFamilyCatalog.sources,
+          })
+        : undefined;
+      if (sources !== undefined && sources.state !== "available") return false;
+      return sourceNavigationIntegrityIssues({
+        payload,
+        observability: observability.value as AttemptObservabilityAttachment,
+        sources: sources?.state === "available" ? sources.value as SourcesAttachment : undefined,
+      }).length === 0;
+    });
+  }
+  return Effect.succeed(true);
 }
 
 function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemService): RecordReadSession {
@@ -949,6 +1047,13 @@ function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemSer
         fileSystem,
         owner,
         descriptor: NiceEvalRecordFamilyCatalog.fileChanges,
+      }),
+    readSourceNavigation: (owner: SelectedOwnerRef) =>
+      readFixedFamily({
+        runtime,
+        fileSystem,
+        owner,
+        descriptor: NiceEvalRecordFamilyCatalog.sourceNavigation,
       }),
     readAttemptArtifacts: (owner: SelectedOwnerRef) =>
       readFixedFamily({
@@ -1497,15 +1602,14 @@ function validateAndSyncFixedAttachment(
     if (materialized.state !== "available") {
       return yield* Effect.fail(fixedFamilyWriteInvalid());
     }
-    if (
-      isObservabilityDescriptor(attachment.descriptor) &&
-      !(yield* validateObservabilitySourceFrameJoin({
-        fileSystem: run.fileSystem,
-        root: run.root,
-        runId: run.runId,
-        payload: materialized.value as ObservabilityAttachment,
-      }))
-    ) {
+    if (!(yield* validateFixedCrossFamilyJoin({
+      fileSystem: run.fileSystem,
+      root: run.root,
+      runId: run.runId,
+      ...(attachment.owner === "attempt" ? { attemptId: attachment.attemptId } : {}),
+      descriptor: attachment.descriptor,
+      payload: materialized.value,
+    }))) {
       return yield* Effect.fail(fixedFamilyWriteInvalid());
     }
   });
@@ -1713,6 +1817,17 @@ function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
         ? writeAttemptFamily({
             attempt,
             descriptor: NiceEvalRecordFamilyCatalog.fileChanges,
+            value,
+          })
+        : Effect.fail(recordWriterClosed());
+    },
+    writeSourceNavigation<E, R>(
+      value: SourceNavigationWrite<E, R>,
+    ): Effect.Effect<void, RecordWriteError | E, R> {
+      return attemptSessions.get(this) === attempt
+        ? writeAttemptFamily({
+            attempt,
+            descriptor: NiceEvalRecordFamilyCatalog.sourceNavigation,
             value,
           })
         : Effect.fail(recordWriterClosed());

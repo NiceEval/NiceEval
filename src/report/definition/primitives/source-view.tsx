@@ -22,6 +22,10 @@ export type SourceLineTone = "send" | "passed" | "gate-fail" | "soft-fail" | "un
 export interface SourceLine {
   number: number;
   text: string;
+  /** A recorded interaction belongs to this line independently of assertion tone. */
+  interaction?: "send";
+  /** Exact closed navigation identities consumed by the Attempt composition. */
+  turnIds?: readonly string[];
   tone?: SourceLineTone;
   pill?: LocalizedText;
   aborted?: boolean;
@@ -61,6 +65,42 @@ function cx(...parts: (string | undefined | false)[]): string {
 
 const REACT_FRAGMENT = Symbol.for("react.fragment");
 
+// Keep the lightweight v0.12 source presentation. Source snapshots are display
+// text, so highlighting remains a pure renderer concern and never reparses the
+// source to infer navigation or evidence.
+const TS_HL_RE =
+  /(\/\/[^\n]*)|(\/\*[^]*?\*\/)|(`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(import|from|export|default|const|let|var|async|await|function|return|if|else|for|of|in|new|class|extends|typeof|void|true|false|null|undefined)\b|\b(\d[\d_.]*)\b|([A-Za-z_$][\w$]*)(?=\s*\()/g;
+
+function highlightTs(line: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  let last = 0;
+  let index = 0;
+  let match: RegExpExecArray | null;
+  TS_HL_RE.lastIndex = 0;
+  while ((match = TS_HL_RE.exec(line))) {
+    if (match.index > last) out.push(line.slice(last, match.index));
+    const tokenClass =
+      match[1] || match[2]
+        ? "tok-comment"
+        : match[3]
+          ? "tok-str"
+          : match[4]
+            ? "tok-kw"
+            : match[5]
+              ? "tok-num"
+              : "tok-fn";
+    out.push(
+      <span key={index++} className={tokenClass}>
+        {match[0]}
+      </span>,
+    );
+    last = match.index + match[0].length;
+    if (match[0].length === 0) TS_HL_RE.lastIndex++;
+  }
+  if (last < line.length) out.push(line.slice(last));
+  return out;
+}
+
 function renderReportNode(node: ReportNode): ReactNode {
   if (node === null || node === undefined || typeof node === "boolean") return null;
   if (Array.isArray(node)) {
@@ -83,6 +123,15 @@ function validateBlock(value: unknown, path: string): string | null {
     if (!isObject(line)) return `"${path}.lines[${i}]" must be an object`;
     if (typeof line.number !== "number") return `"${path}.lines[${i}].number" must be a number`;
     if (typeof line.text !== "string") return `"${path}.lines[${i}].text" must be a string`;
+    if (line.interaction !== undefined && line.interaction !== "send") {
+      return `"${path}.lines[${i}].interaction" must be send`;
+    }
+    if (
+      line.turnIds !== undefined &&
+      (!Array.isArray(line.turnIds) || line.turnIds.some((turnId) => typeof turnId !== "string"))
+    ) {
+      return `"${path}.lines[${i}].turnIds" must be an array of strings`;
+    }
     if (line.pill !== undefined && !isLocalizedText(line.pill)) {
       return `"${path}.lines[${i}].pill" must be a LocalizedText`;
     }
@@ -159,7 +208,7 @@ const MARK_LABELS: Record<SourceLineTone, string> = {
 
 /** 行号位:普通行显示行号,有状态的行用标记图标顶替行号。 */
 function Gutter({ line }: { line: SourceLine }): ReactElement {
-  const tone = lineTone(line);
+  const tone = line.interaction === "send" ? "send" : lineTone(line);
   if (tone === undefined) return <span className="niceeval-source-gutter">{line.number}</span>;
   return (
     <span
@@ -179,7 +228,7 @@ function LineSummary({ line, locale }: { line: SourceLine; locale: ReportLocale 
   return (
     <span className="niceeval-source-line-summary">
       <Gutter line={line} />
-      <span className="niceeval-source-code">{line.text}</span>
+      <span className="niceeval-source-code">{highlightTs(line.text)}</span>
       <span className="niceeval-source-meta">
         {line.pill !== undefined ? (
           <span className="niceeval-source-pill">{resolveLocalizedText(line.pill, locale)}</span>
@@ -251,6 +300,7 @@ function SourceBlock({
             (line.calls !== undefined && line.calls.length > 0);
           const lineClass = cx(
             "niceeval-source-line",
+            line.interaction === "send" && "niceeval-source-line--send",
             toneClass(lineTone(line)),
             unreached && "niceeval-source-line-unreached",
           );
@@ -262,7 +312,11 @@ function SourceBlock({
             );
           }
           return (
-            <details key={line.number} className={lineClass} open={line.number === firstAttention}>
+            <details
+              key={line.number}
+              className={lineClass}
+              open={line.interaction !== "send" && line.number === firstAttention}
+            >
               <summary>
                 <LineSummary line={line} locale={locale} />
               </summary>
@@ -284,9 +338,11 @@ export function sourceViewText(data: SourceContent, ctx: TextContext, locale: Re
   const lines: string[] = [];
   const collect = (block: SourceBlockContent) => {
     for (const line of block.lines) {
-      if (!line.tone && !line.aborted) continue;
+      if (!line.interaction && !line.tone && !line.aborted) continue;
       const pill = line.pill !== undefined ? ` ${resolveLocalizedText(line.pill, locale)}` : "";
-      lines.push(`${block.path}:${line.number} [${line.tone ?? "aborted"}]${pill}`);
+      const states = [line.interaction, line.tone, line.aborted ? "aborted" : undefined]
+        .filter((state): state is string => state !== undefined);
+      lines.push(`${block.path}:${line.number} [${states.join("+")}]${pill}`);
     }
   };
   collect(data.spine);

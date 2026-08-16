@@ -78,7 +78,7 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 | 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
 |---|---|---|---|
 | Host composition SDK | `experimentHost`、`coordinationHost`、`recordHost`、`analysisHost` 与 `reportHost` 各拥有窄操作面 | CLI、替代 CLI / Web host 与深度应用集成只组合这些入口，不穿透到 Runner、reader、路径或 loader | 在 Host 边界组合 Layer、Scope、typed error 与 interruption |
-| Record Core 与固定 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、完成标识和五个固定事实 family | Core 或某个固定 family 的持久语义变化时发布相邻 schema migration | 精确解码、closure 校验、lease、flush 与 Scope-bound I/O |
+| Record Core 与固定 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、完成标识和六个固定事实 family | Core 或某个固定 family 的持久语义变化时发布相邻 schema migration | 精确解码、closure 校验、lease、flush 与 Scope-bound I/O |
 | family 读取结果 | `available`、`not-recorded`、`unsupported`、`invalid` 四态 | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
 | Analysis | Host 签发的 Sample、Population / Dimension / Measure / Relation、`aggregate()` 与 `query()` | 新统计口径或领域视图不改变 Record 格式 | reader Scope 内按需读取；Scope 外只交付 `ClosedRows`、`SemanticFrame` 或 `DomainView` |
@@ -209,7 +209,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin
     anchor；采用动作是 Member Core 事实，不另设 provenance family。
 
-    固定 collector 先封口所属事实，再由 `recordHost` 验证 Core、五个固定 family 的 closure 与引用，
+    固定 collector 先封口所属事实，再由 `recordHost` 验证 Core、六个固定 family 的 closure 与引用，
     最后创建 Run 完成标识并返回窄 `InvocationReceipt`。普通 `TestContext` 没有 Record 方法。
 
     Report 不参与采集或落盘。show/view 由 `reportHost` 进入，再按需经 `recordHost.openRead()` 和

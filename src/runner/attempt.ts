@@ -98,6 +98,7 @@ import {
   captureRunnerCommandResult,
   captureRunnerCommandStart,
   captureRunnerCommandTimeout,
+  captureRunnerPhysicalConversationTurn,
   captureRunnerTurnUsage,
   createRunnerAttemptObservabilityRuntime,
   type RunnerAttemptObservabilityRuntime,
@@ -1808,7 +1809,12 @@ async function runAttemptBody(
       // 才带(show `--execution`/`--timing` 的 turn 头行读 TimingNode.usage,见 docs/feature/
       // results/architecture.md「result.json」TimingNode.usage)。
       onTurn: (info) => {
-        sourceCapture.onTurn(info);
+        const turnId = captureRunnerPhysicalConversationTurn({
+          runtime: observabilityRuntime,
+          outcome: info.outcome,
+          events: info.events,
+        });
+        sourceCapture.onTurn({ ...info, ...(turnId === undefined ? {} : { turnId }) });
         if (info.usage !== undefined) {
           captureRunnerTurnUsage(observabilityRuntime, info.usage);
         }
@@ -1819,6 +1825,7 @@ async function runAttemptBody(
           ...(info.failed ? { failed: true as const } : {}),
           sessionIndex: info.sessionIndex,
           turnIndex: info.turnIndex,
+          ...(turnId === undefined ? {} : { turnId }),
           ...(info.traceId !== undefined ? { traceId: info.traceId } : {}),
           ...(info.traceAttribution !== undefined ? { traceAttribution: info.traceAttribution } : {}),
           ...(info.usage !== undefined ? { usage: info.usage } : {}),

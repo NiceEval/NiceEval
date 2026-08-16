@@ -16,7 +16,7 @@ import type {
 import type { WaterfallContent, WaterfallNode } from "../../definition/primitives/waterfall.tsx";
 import type { TableContent, TableContentRow } from "../../definition/cell.ts";
 import type { ClosedTimingInterval } from "../../../analysis/index.ts";
-import { formatPointsSuffix } from "../../model/format.ts";
+import { formatDurationMs, formatPointsSuffix } from "../../model/format.ts";
 import { localizedMessage } from "../../model/locale.ts";
 import { normalizeTurnLabel } from "../../../shared/turn-label.ts";
 import type {
@@ -118,9 +118,22 @@ function sourceItemBlock(
         sum + (binding.entry.score?.state === "earned" ? binding.entry.score.earned ?? 0 : 0), 0);
     const hasPoints = bound.some((binding) => binding.role === "score" && binding.entry.score !== undefined);
     const tone = lineToneOf(assertions);
+    const turnIds = (data.navigation?.rows ?? [])
+      .filter((row) =>
+        row.source.state === "mapped" &&
+        row.source.sourceItemId === item.sourceItemId &&
+        row.source.sha256 === item.sha256 &&
+        row.source.start.line === line
+      )
+      .sort((left, right) =>
+        (left.sourceOrder ?? Number.MAX_SAFE_INTEGER) - (right.sourceOrder ?? Number.MAX_SAFE_INTEGER) ||
+        (left.turnId < right.turnId ? -1 : left.turnId > right.turnId ? 1 : 0)
+      )
+      .map((row) => row.turnId);
     return {
       number: line,
       text,
+      ...(turnIds.length > 0 ? { interaction: "send" as const, turnIds } : {}),
       ...(tone !== undefined ? { tone } : {}),
       ...(hasPoints ? { pill: formatPointsSuffix(points) } : {}),
       ...(details.length > 0 ? { details } : {}),
@@ -313,7 +326,7 @@ export function attemptConversationContent(data: AttemptConversationData | null)
   if (data === null || data.rounds.length === 0) return null;
   const turns: ConversationTurn[] = data.rounds.map((round) => ({
     key: round.turnId,
-    label: `Turn ${round.sequence}`,
+    label: `Turn ${round.sequence}${round.durationMs === undefined ? "" : ` · ${formatDurationMs(round.durationMs)}`}`,
     verdict: turnVerdictOf(round.outcome),
     entries: round.replies.map(conversationEntryOf),
   }));
@@ -391,68 +404,32 @@ export function attemptNoticesContent(
 
 // ───────────────────────── Conversation 嵌入源码 ─────────────────────────
 
-type SendLineRef = {
-  key: string;
-  line: SourceLine;
-};
-
-function collectSendLines(source: SourceContent): SendLineRef[] {
-  const lines: SendLineRef[] = [];
-  const visitBlock = (block: SourceBlockContent): void => {
-    for (const line of block.lines) {
-      if (line.tone === "send") lines.push({ key: `${block.path}:${line.number}`, line });
-    }
-  };
-  visitBlock(source.spine);
-  for (const block of source.detached) visitBlock(block);
-  return lines;
-}
-
 /**
- * 将 Conversation 轮嵌入源码 send 行;没有对应源码行的轮留在页尾。
- * 当前闭合视图不携带 send 行标记；没有 send 行时整体原样放行（对话全部留在
- * 页面级 Conversation）。
+ * 只按已验证的 navigation turnId 将 Conversation 轮嵌入源码 send 行；没有
+ * mapped row 的轮留在页尾。这里禁止按标签、源码顺序或数组位置补配。
  */
 export function embedConversationInSource(
   source: SourceContent | null,
   conversation: ConversationContent | null,
 ): { source: SourceContent | null; conversation: ConversationContent | null } {
-  const sendLines = source === null ? [] : collectSendLines(source);
-  const sendLinesByKey = new Map<string, SendLineRef[]>();
-  for (const sendLine of sendLines) {
-    const bucket = sendLinesByKey.get(sendLine.key);
-    if (bucket) bucket.push(sendLine);
-    else sendLinesByKey.set(sendLine.key, [sendLine]);
-  }
-
-  const occupied = new Set<SourceLine>();
-  const turnsByLine = new Map<SourceLine, ConversationTurn>();
   const turns = conversation?.turns ?? [];
-  const mappedTurnIndexes = new Set<number>();
-  const assign = (turnIndex: number, target: SendLineRef): void => {
-    const turn = turns[turnIndex]!;
-    occupied.add(target.line);
-    turnsByLine.set(target.line, turn);
-    mappedTurnIndexes.add(turnIndex);
-  };
-
-  for (const [turnIndex, turn] of turns.entries()) {
-    const labeledCandidates = typeof turn.label === "string" ? sendLinesByKey.get(turn.label) : undefined;
-    const labeled = labeledCandidates?.find((candidate) => !occupied.has(candidate.line));
-    if (labeled) assign(turnIndex, labeled);
-  }
-  for (const [turnIndex] of turns.entries()) {
-    if (mappedTurnIndexes.has(turnIndex)) continue;
-    const target = sendLines.find((candidate) => !occupied.has(candidate.line));
-    if (target) assign(turnIndex, target);
-  }
+  const turnById = new Map(turns.map((turn) => [turn.key, turn] as const));
+  const mappedTurnIds = new Set<string>();
 
   const cloneLine = (line: SourceLine): SourceLine => {
-    const turn = turnsByLine.get(line);
+    const lineTurns = (line.turnIds ?? []).flatMap((turnId) => {
+      const turn = turnById.get(turnId);
+      if (turn === undefined) return [];
+      mappedTurnIds.add(turnId);
+      return [turn];
+    });
     const details =
-      line.details === undefined && turn === undefined
+      line.details === undefined && lineTurns.length === 0
         ? undefined
-        : [...(line.details ?? []), ...(turn === undefined ? [] : [<Conversation data={{ turns: [turn] }} />])];
+        : [
+            ...(line.details ?? []),
+            ...(lineTurns.length === 0 ? [] : [<Conversation data={{ turns: lineTurns }} />]),
+          ];
     return {
       ...line,
       ...(details === undefined ? {} : { details }),
@@ -470,7 +447,7 @@ export function embedConversationInSource(
         spine: cloneBlock(source.spine),
         detached: source.detached.map(cloneBlock),
       };
-  const remainingTurns = turns.filter((_turn, turnIndex) => !mappedTurnIndexes.has(turnIndex));
+  const remainingTurns = turns.filter((turn) => !mappedTurnIds.has(turn.key));
   const remainingConversation = conversation === null || remainingTurns.length === 0
     ? null
     : { ...conversation, turns: remainingTurns };

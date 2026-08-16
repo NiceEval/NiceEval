@@ -416,6 +416,19 @@ declare function query<View extends DomainView>(
 File Changes family 缺席时，DomainView 保留 `not-recorded`；完整空轨迹与 partial 的空安全前缀仍分别保留自己的
 collection 状态。它们都不是 query 失败，也不等同于 `net` 的 reliable 空结果。
 
+### Source Navigation DomainView
+
+`sourceNavigationView` 只在请求时读取 Attempt-owned `niceeval.source-navigation`。它关闭 collection 与每个
+`turnId`、`sourceOrder`。mapped frame 保留 `sourceItemId`、`sha256` 和坐标；linked timing 保留 `agent.send`
+interval。
+
+它保留 `unmapped` 的精确原因和 unavailable timing 的 `timing-not-recorded`。limitation 的
+`navigation-row` 表示遗漏的行，`timing-link` 表示遗漏的 timing link。它不复制 outcome 或 duration。
+
+Host 已在 family read 前验证 Navigation 对同一 Attempt Observability 与 exact origin Sources 的显式 join。
+Analysis 因而不扫描 source blob、不重建 sourceOrder，也不以数组位置拼 turn、source 或 timing；它只交付闭合
+值。若 family 缺席，entry 保留 `not-recorded`，不能伪造成一条 unmapped send。
+
 `attempt-evidence` 是一个闭合的非表格视图。Sample 在同一次成功读取 `ReadableAttempt` 时取得 Core `outcome`。
 
 它将该 Outcome 和已验证 Assertions 交给权威 fold，形成 detail 的派生 `verdict`。Outcome 是执行终态，Verdict

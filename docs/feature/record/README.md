@@ -50,7 +50,7 @@ Record 不保存 session、锁或 cache。它也不保存作者 API、matcher、
 `context.experimentId` 必须与 Run 的顶层 `experimentId` 相同；它让离线读取能解释实际 agent、model、
 reasoning effort、声明 flags 与 labels，而不会读取今天的配置。
 
-## 固定定义与当前五个 family
+## 固定定义与当前六个 family
 
 NiceEval 的 package-private（包私有）Record 作者模型只使用
 `defineRecordCore` 与 `defineRecordAttachment`。两者驱动 Core 与 Attachment 的编解码、读写和校验，
@@ -65,7 +65,7 @@ NiceEval 的 package-private（包私有）Record 作者模型只使用
 每个 owner 相邻声明 `schema`、`limits` 及 `blobs: { refs, budget, verify }`。可选 `maintenance` 是 async 的 lazy
 历史 codec 与相邻 migration 描述。
 
-NiceEval current 固定 Attachment catalog 有以下五个 family（附件族）。一个 family 只有一个定义入口；多个 owner
+NiceEval current 固定 Attachment catalog 有以下六个 family（附件族）。一个 family 只有一个定义入口；多个 owner
 写在同一 `owners` map，不复制 family 或另立版本名称。
 
 | family | `owners` | 保存的事实 |
@@ -73,11 +73,12 @@ NiceEval current 固定 Attachment catalog 有以下五个 family（附件族）
 | `niceeval.assertions` | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
 | `niceeval.observability` | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
 | `niceeval.file-changes` | `{ attempt }` | 归因策略、采集状态与按 send 区间排序的文件变化轨迹 |
+| `niceeval.source-navigation` | `{ attempt }` | 每个物理 `t.send` 的 turn、源码 frame 与 timing identity join |
 | `niceeval.sources` | `{ run }` | 当时源码闭包的 manifest 与 own blob |
 | `niceeval.artifacts` | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
 
 每个 family 的模块把自己的 declaration、复杂 payload Schema、durable JSON 键、limits 与 blob closure / integrity
-相邻放置。总 catalog 只列这五个 declaration，不重新描述任何 payload。
+相邻放置。总 catalog 只列这六个 declaration，不重新描述任何 payload。
 
 Adapter 与 collector 只能提交 NiceEval 提供的固定输入。没有调用方可用的 generic definition、family、
 registration point 或 migration registration。此前未保存且不可恢复的事实必须经过 NiceEval 裁决，
@@ -92,6 +93,28 @@ definition、`owners` map 与 schemaVersion，不升级 Core。较早 reader 保
 Core 的 `Schema.Encoded` 只允许 exact JSON，禁止 blob ref。Attachment owner 的 encoded side 仍是 exact JSON，
 但可含由该 owner 的 declaration 唯一 mint 的 `RecordBlobRef`。一个 ref 只能指向同 owner、同 family 下的一份
 own blob。完整 payload 与 closure 校验成功后才形成可用值。
+
+## Source Navigation：每个物理 send 的无 blob join
+
+`niceeval.source-navigation` 的 envelope 固定为
+`{ family: "niceeval.source-navigation", schemaVersion: 1 }`。它是 Attempt-owned 的 package-private family。
+它没有 blob closure，最多保存 256 行。每一行只保存 `turnId`、`sourceOrder | null`、一个 mapped 或 unmapped
+source frame，以及 linked 或 unavailable timing。它不复制 Conversation outcome、duration、source text、path 或
+blob ref。
+
+Producer 在每个物理 `t.send` 的 Effect `Exit` 边界封口一个 ConversationTurn。成功、typed failure、defect
+与 interruption 都产生不同 turn；多 session、多次 send 和同一源码行的重复 send 不合并。Navigation 按
+ConversationTurn 的显式 `sequence` 保留同一行序，并以 `turnId` 一对一 join，不能按 payload 数组位置猜测关系。
+
+mapped frame 必须以 exact origin Run Sources 的 `sourceItemId`、`sha256` 和坐标验证。unmapped 保留
+`location-not-captured`、`source-snapshot-not-recorded` 或 `position-unrepresentable`。linked timing 只能引用
+同一 Attempt Observability 中 phase 为 `agent.send` 的 `intervalId`；否则保留
+`timing-not-recorded`，不补写 duration。
+
+超过 256 行时，Conversation 与 Navigation 都保留相同的确定性物理 send 前缀。两者都标为 `partial`，并以
+`collection-cap-reached` / `navigation-row` 的正 `omittedAtLeast` 说明至少遗漏的行。不可恢复的 timing capture
+同样保留已有前缀，但以 `capture-unrecoverable` / `timing-link` 和正 `omittedAtLeast` 标记至少缺失的 timing link；
+两个 target 使数量的边界明确且不可混淆。Host 不扫描 source、当前 worktree 或数组顺序来补全。
 
 ## File Changes：保留按 send 区间的轨迹
 

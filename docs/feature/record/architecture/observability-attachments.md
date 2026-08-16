@@ -1,6 +1,6 @@
 # Observability Attachment
 
-`niceeval.observability` 是 Record 的五个固定 Attachment family 之一。它的 envelope 固定为
+`niceeval.observability` 是 Record 的六个固定 Attachment family 之一。它的 envelope 固定为
 `{ family: "niceeval.observability", schemaVersion: 1 }`。它保存已封口 Run 或 origin Attempt 的运行观察；
 它不保存终端进度、raw provider frame、raw OTLP、Error stack、绝对路径、secret 或任意扩展 object。
 
@@ -245,6 +245,11 @@ type ConversationItem =
 turn 和 item `sequence` 在各自集合中唯一。每个 item 指向已有 turn；一个 tool-result 指向同一
 Attachment 中恰一个 tool-call。`tool` 保留 source-native name，不能被 runtime canonical kind 替换。
 无法安全归一的输入以 limitation 表示，而不是透传 raw frame。
+
+每个物理 `t.send` 在 SessionManager 的 Effect `Exit` 边界恰好封口一个 ConversationTurn。成功、typed
+failure、defect 与 interruption 都保留各自终态；多 session、同一源码行的重复 send 和多次 send 都不合并。
+Conversation 不从最终 aggregate event array 推断 turn。它仍是单一 `niceeval.observability` v1 payload 的字段，
+不会拆成另一份 conversation、command、usage、timing 或 diagnostic family。
 
 ## Commands
 

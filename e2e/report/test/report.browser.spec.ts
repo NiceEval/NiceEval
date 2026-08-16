@@ -308,6 +308,12 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
         await expect(dialog.getByText(/^source · execution · timing(?: · diff)?$/).filter({ visible: true })).toBeVisible();
         await expect(dialog.getByText("Assessment evidence", { exact: true })).toHaveCount(0);
         await expect(dialog.getByText(/^\{\"groupPath\":/)).toHaveCount(0);
+        const sendLine = dialog.locator("details.niceeval-source-line--send").filter({ visible: true });
+        await expect(sendLine).toHaveCount(1);
+        await expect(sendLine).not.toHaveAttribute("open", "");
+        await sendLine.locator(":scope > summary").click();
+        await expect(sendLine).toHaveAttribute("open", "");
+        await expect(sendLine.locator(".niceeval-conversation-turn-head")).toBeVisible();
         const deepLink = page.url();
         expect(new URL(deepLink).hash).toMatch(/^#\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}$/);
         await page.keyboard.press("Escape");

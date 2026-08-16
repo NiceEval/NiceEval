@@ -21,6 +21,9 @@ import type {
   SourcesAttachment,
 } from "../family/sources.ts";
 import type {
+  SourceNavigationAttachment,
+} from "../family/source-navigation.ts";
+import type {
   AttemptDocument,
   MemberDocument,
   RecordSlotIdentity,
@@ -102,7 +105,7 @@ export type FixedFamilyRead<Payload> =
 /**
  * These aliases are deliberately owner- and method-specific. Runtime checks
  * additionally require the one installed static descriptor for each method,
- * so a caller cannot introduce a sixth family through this boundary.
+ * so a caller cannot introduce another family through this boundary.
  */
 export type SourcesWrite<E = never, R = never> = RecordAttachmentWrite<
   "run",
@@ -130,6 +133,11 @@ export type AttemptObservabilityWrite<E = never, R = never> = RecordAttachmentWr
   R
 >;
 export type FileChangesWrite<E = never, R = never> = RecordAttachmentWrite<
+  "attempt",
+  E,
+  R
+>;
+export type SourceNavigationWrite<E = never, R = never> = RecordAttachmentWrite<
   "attempt",
   E,
   R
@@ -237,6 +245,9 @@ export interface RecordReadSession {
   readonly readFileChanges: (
     owner: SelectedOwnerRef,
   ) => Effect.Effect<FixedFamilyRead<FileChangesAttachment>, RecordReaderReadError>;
+  readonly readSourceNavigation: (
+    owner: SelectedOwnerRef,
+  ) => Effect.Effect<FixedFamilyRead<SourceNavigationAttachment>, RecordReaderReadError>;
   readonly readAttemptArtifacts: (
     owner: SelectedOwnerRef,
   ) => Effect.Effect<FixedFamilyRead<ArtifactsAttachment>, RecordReaderReadError>;
@@ -289,6 +300,9 @@ export interface AttemptWriteSession {
   ) => Effect.Effect<void, RecordWriteError | E, R>;
   readonly writeFileChanges: <E, R>(
     value: FileChangesWrite<E, R>,
+  ) => Effect.Effect<void, RecordWriteError | E, R>;
+  readonly writeSourceNavigation: <E, R>(
+    value: SourceNavigationWrite<E, R>,
   ) => Effect.Effect<void, RecordWriteError | E, R>;
   readonly writeAttemptArtifacts: <E, R>(
     value: AttemptArtifactsWrite<E, R>,

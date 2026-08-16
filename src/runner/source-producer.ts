@@ -21,6 +21,12 @@ import {
 } from "../record/family/assertions.ts";
 import type { SourcesAttachment } from "../record/family/sources.ts";
 import {
+  createSourceNavigationAttachmentWrite,
+  type SourceNavigationRow,
+} from "../record/family/source-navigation.ts";
+import { sourceNavigationRecordFamily } from "../record/family/catalog.ts";
+import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import {
   assertionsRuntimeSourceCaptureSnapshot,
   attachAssertionsRuntimeSourceCapture,
   markAssertionsRuntimeSourceCaptureInterrupted,
@@ -29,6 +35,8 @@ import {
 } from "../assertions/runtime.ts";
 import type { AssertionsRuntime } from "../assertions/api.ts";
 import type { AssertionEntryId } from "../assertions/identity.ts";
+import type { TurnId } from "../o11y/record/model.ts";
+import { runnerAttemptConversationTimingForResult } from "../o11y/record/runner-producer.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import type { SourceArtifact, SourceLoc, SourcePathFrame } from "../shared/types.ts";
 import { createSourcesAttachmentWrite } from "../sources/attachment.ts";
@@ -38,24 +46,17 @@ import {
 } from "../sources/codec.ts";
 import type { EvalResult } from "./types.ts";
 
-interface CapturedSite {
-  readonly location: SourceLoc;
-  readonly sourceOrder: number;
-}
-
 interface CapturedSend {
-  readonly site: CapturedSite;
-  readonly terminal: {
-    readonly label: string;
-    readonly status: "completed" | "failed";
-    readonly durationMs: number;
-  };
+  readonly turnId: TurnId;
+  readonly sourceOrder: number | null;
+  readonly location: SourceLoc | undefined;
 }
 
 /** Package-internal runtime facts retained outside the public sealed value. */
 export interface RunnerAttemptSourceCaptureSnapshot {
   readonly entries: AssertionsRuntimeSourceCaptureSnapshot["entries"];
   readonly sends: readonly CapturedSend[];
+  readonly omittedAtLeast: number;
 }
 
 export interface RunnerAttemptSourceCapture {
@@ -65,7 +66,11 @@ export interface RunnerAttemptSourceCapture {
   readonly attachAssertions: (runtime: AssertionsRuntime<"pass" | "score">) => void;
   /** Receives the exact Runner turn terminal fact, never reconstructs one from events. */
   readonly onTurn: (input: {
+    /** Undefined means Conversation hit its shared 256-row cap. */
+    readonly turnId?: TurnId;
     readonly label: string;
+    readonly outcome: "completed" | "failed" | "interrupted";
+    readonly events: readonly import("../types.ts").StreamEvent[];
     readonly durationMs: number;
     readonly failed?: boolean;
     readonly loc?: SourceLoc;
@@ -131,6 +136,7 @@ export function createRunnerAttemptSourceCapture(
 ): RunnerAttemptSourceCapture {
   let sourceOrder = 0;
   const sends: CapturedSend[] = [];
+  let omittedAtLeast = 0;
   let assertionsRuntime: AssertionsRuntime<"pass" | "score"> | undefined;
   const nextSourceOrder = (): number => ++sourceOrder;
 
@@ -148,24 +154,23 @@ export function createRunnerAttemptSourceCapture(
       assertionsRuntime = runtime;
     },
     onTurn(input: {
+      readonly turnId?: TurnId;
       readonly label: string;
+      readonly outcome: "completed" | "failed" | "interrupted";
+      readonly events: readonly import("../types.ts").StreamEvent[];
       readonly durationMs: number;
       readonly failed?: boolean;
       readonly loc?: SourceLoc;
       readonly sourceOrder?: number;
     }) {
-      if (input.loc === undefined || input.sourceOrder === undefined) return;
-      const site: CapturedSite = Object.freeze({
-        location: cloneLocation(input.loc),
-        sourceOrder: input.sourceOrder,
-      });
+      if (input.turnId === undefined) {
+        omittedAtLeast += 1;
+        return;
+      }
       sends.push(Object.freeze({
-        site,
-        terminal: Object.freeze({
-          label: input.label,
-          status: input.failed ? "failed" : "completed",
-          durationMs: input.durationMs,
-        }),
+        turnId: input.turnId,
+        sourceOrder: input.sourceOrder ?? null,
+        location: input.loc === undefined ? undefined : cloneLocation(input.loc),
       }));
     },
     markInterrupted() {
@@ -179,10 +184,8 @@ export function createRunnerAttemptSourceCapture(
         : assertionsRuntimeSourceCaptureSnapshot(assertionsRuntime);
       return Object.freeze({
         entries: assertions?.entries ?? Object.freeze([]),
-        sends: Object.freeze(sends.map((send) => Object.freeze({
-          site: send.site,
-          terminal: send.terminal,
-        }))),
+        sends: Object.freeze(sends.map((send) => Object.freeze({ ...send }))),
+        omittedAtLeast,
       });
     },
   });
@@ -197,6 +200,8 @@ export interface RunnerSourceOriginInput {
 
 export interface RunnerSourceWritePlan {
   readonly runWrite: RecordAttachmentWrite<"run", never, never>;
+  /** Exact decoded manifest shared by assertion and send navigation joins. */
+  readonly sources: SourcesAttachment;
   readonly sourceSitesBySlot: ReadonlyMap<SlotId, readonly AssertionSourceSite[]>;
 }
 
@@ -206,7 +211,8 @@ export interface RunnerSourceProducerInvalid {
     | "origin-slot-duplicate"
     | "sources-write-invalid"
     | "sources-closure-invalid"
-    | "source-sites-invalid";
+    | "source-sites-invalid"
+    | "source-navigation-invalid";
 }
 
 function invalid(
@@ -423,6 +429,125 @@ export function createRunnerSourceWritePlan(
 
   return Either.right(Object.freeze({
     runWrite: sourcesWrite.right,
+    sources: sourceContents.right.payload,
     sourceSitesBySlot: new Map(sourceSitesBySlot),
   }));
+}
+
+function localSourceTexts(result: EvalResult): ReadonlyMap<CanonicalProjectRelativePath, string> {
+  const files = new Map<CanonicalProjectRelativePath, string>();
+  for (const artifact of result.sources ?? []) {
+    const snapshot = sourceSnapshot(artifact);
+    if (snapshot !== undefined && !files.has(snapshot.path)) files.set(snapshot.path, snapshot.text);
+  }
+  return files;
+}
+
+function sourceNavigationFrame(input: {
+  readonly capture: CapturedSend;
+  readonly local: ReadonlyMap<CanonicalProjectRelativePath, string>;
+  readonly sources: SourcesAttachment;
+}): SourceNavigationRow["source"] {
+  if (input.capture.location === undefined) {
+    return Object.freeze({ state: "unmapped" as const, reason: "location-not-captured" as const });
+  }
+  const path = canonicalPath(input.capture.location.file);
+  if (path === undefined) {
+    return Object.freeze({ state: "unmapped" as const, reason: "position-unrepresentable" as const });
+  }
+  const text = input.local.get(path);
+  const item = input.sources.items.find((candidate) => candidate.path === path);
+  if (text === undefined || item === undefined) {
+    return Object.freeze({ state: "unmapped" as const, reason: "source-snapshot-not-recorded" as const });
+  }
+  const position = coordinateFor(text, input.capture.location.line, input.capture.location.column);
+  if (position === undefined) {
+    return Object.freeze({ state: "unmapped" as const, reason: "position-unrepresentable" as const });
+  }
+  return Object.freeze({
+    state: "mapped" as const,
+    sourceItemId: item.sourceItemId,
+    sha256: item.sha256,
+    start: position,
+    end: position,
+  });
+}
+
+/**
+ * Assembles the Attempt-owned no-blob navigation payload only after the
+ * same-seal Observability writer has fixed physical turn IDs and timing IDs.
+ */
+export function createRunnerSourceNavigationWrite(input: {
+  readonly result: EvalResult;
+  readonly sources: SourcesAttachment;
+  readonly observability: AttemptObservabilityAttachment;
+}): Either.Either<RecordAttachmentWrite<"attempt", never, never>, RunnerSourceProducerInvalid> {
+  const capture = sourceCaptureForResult(input.result);
+  const timingByTurn = runnerAttemptConversationTimingForResult(input.result);
+  if (capture === undefined || timingByTurn === undefined) {
+    return Either.left(invalid("source-navigation-invalid"));
+  }
+  const turns = [...input.observability.conversation.turns]
+    .sort((left, right) => left.sequence - right.sequence);
+  if (turns.length !== capture.sends.length) {
+    return Either.left(invalid("source-navigation-invalid"));
+  }
+  const local = localSourceTexts(input.result);
+  const rows: SourceNavigationRow[] = [];
+  let missingTiming = 0;
+  for (const [index, turn] of turns.entries()) {
+    const captured = capture.sends[index];
+    if (captured === undefined || captured.turnId !== turn.turnId) {
+      return Either.left(invalid("source-navigation-invalid"));
+    }
+    const intervalId = timingByTurn.get(captured.turnId);
+    if (intervalId === undefined) missingTiming += 1;
+    rows.push(Object.freeze({
+      turnId: captured.turnId,
+      sourceOrder: captured.sourceOrder,
+      source: sourceNavigationFrame({ capture: captured, local, sources: input.sources }),
+      timing: intervalId === undefined
+        ? Object.freeze({ state: "unavailable" as const, reason: "timing-not-recorded" as const })
+        : Object.freeze({ state: "linked" as const, intervalId }),
+    }));
+  }
+  const limitations = [] as (
+    | {
+      readonly code: "collection-cap-reached";
+      readonly target: "navigation-row";
+      readonly omittedAtLeast: number;
+    }
+    | {
+      readonly code: "capture-unrecoverable";
+      readonly target: "timing-link";
+      readonly omittedAtLeast: number;
+    }
+  )[];
+  if (capture.omittedAtLeast > 0) {
+    limitations.push(Object.freeze({
+      code: "collection-cap-reached" as const,
+      target: "navigation-row" as const,
+      omittedAtLeast: capture.omittedAtLeast,
+    }));
+  }
+  if (missingTiming > 0) {
+    limitations.push(Object.freeze({
+      code: "capture-unrecoverable" as const,
+      target: "timing-link" as const,
+      omittedAtLeast: missingTiming,
+    }));
+  }
+  limitations.sort((left, right) =>
+    `${left.code}\u0000${left.target}\u0000${left.omittedAtLeast}`.localeCompare(
+      `${right.code}\u0000${right.target}\u0000${right.omittedAtLeast}`,
+    )
+  );
+  const payload = Object.freeze({
+    collection: limitations.length === 0
+      ? Object.freeze({ state: "complete" as const, limitations: Object.freeze([]) })
+      : Object.freeze({ state: "partial" as const, limitations: Object.freeze([...limitations]) }),
+    rows: Object.freeze(rows),
+  });
+  const write = createSourceNavigationAttachmentWrite(payload, sourceNavigationRecordFamily.write);
+  return Either.isLeft(write) ? Either.left(invalid("source-navigation-invalid")) : Either.right(write.right);
 }

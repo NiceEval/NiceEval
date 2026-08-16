@@ -8,6 +8,7 @@ export {
   fileChangesView,
   query,
   sandboxHistoryView,
+  sourceNavigationView,
   sourcesView,
 } from "./api.ts";
 
@@ -65,6 +66,7 @@ export type {
   SandboxHistoryDomainView,
   SemanticFrame,
   SemanticRow,
+  SourceNavigationDomainView,
   SourcesDomainView,
 } from "./api.ts";
 
@@ -144,6 +146,7 @@ export type {
   ClosedUsageObservation,
   FileChangesDomainDetail,
   FileChangesNet,
+  SourceNavigationDomainDetail,
   SourcesDomainDetail,
 } from "./domain-view.ts";
 

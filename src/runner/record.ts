@@ -19,6 +19,7 @@ import {
   type RecordAttachmentBlobDraft,
   type RecordAttachmentWrite,
 } from "../record/attachment/index.ts";
+import { recordAttachmentWriteContents } from "../record/attachment/internal.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
 import {
   attemptArtifactsRecordFamily,
@@ -26,6 +27,7 @@ import {
   runArtifactsRecordFamily,
 } from "../record/family/catalog.ts";
 import type { AssertionSourceSite } from "../record/family/assertions.ts";
+import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
 import { ArtifactsAttachmentSchema } from "../record/family/artifacts.ts";
 import type { ArtifactsAttachment } from "../record/family/artifacts.ts";
 import {
@@ -99,6 +101,7 @@ import {
   type CurrentReuseReadbackPlanInvalid,
 } from "./reuse-readback.ts";
 import {
+  createRunnerSourceNavigationWrite,
   createRunnerSourceWritePlan,
   type RunnerSourceProducerInvalid,
 } from "./source-producer.ts";
@@ -1089,6 +1092,27 @@ export function openRunnerRecordCoordinator(input: {
 
         const observability = yield* attemptObservabilityWrite({ result, sealed });
         yield* active.session.writeAttemptObservability(observability);
+
+        const observabilityContents = recordAttachmentWriteContents(observability);
+        if (Either.isLeft(observabilityContents)) {
+          return yield* Effect.fail(Object.freeze({
+            code: "runner-record-observability-invalid" as const,
+            owner: "attempt" as const,
+            stage: "attachment" as const,
+          }));
+        }
+        const navigation = createRunnerSourceNavigationWrite({
+          result,
+          sources: sources.right.sources,
+          observability: observabilityContents.right.payload as AttemptObservabilityAttachment,
+        });
+        if (Either.isLeft(navigation)) {
+          return yield* Effect.fail(Object.freeze({
+            code: "runner-record-sources-invalid" as const,
+            issue: navigation.left,
+          }));
+        }
+        yield* active.session.writeSourceNavigation(navigation.right);
 
         const fileChangesCapture = runnerAttemptFileChangesCaptureForResult(result);
         if (fileChangesCapture !== undefined) {

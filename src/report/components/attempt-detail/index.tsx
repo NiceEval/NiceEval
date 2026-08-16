@@ -11,6 +11,7 @@ import type {
   ClosedUsageObservation,
   FileChangesDomainView,
   SampleSnapshot,
+  SourceNavigationDomainView,
   SourcesDomainView,
 } from "../../../analysis/index.ts";
 import type { AttemptLocator } from "../../../attempt-locator.ts";
@@ -41,6 +42,7 @@ import {
   toAttemptEvidence,
   toAttemptObservability,
   toFileChanges,
+  toSourceNavigation,
   toSources,
 } from "../../model/conversions.ts";
 import {
@@ -253,6 +255,7 @@ function entryOf<View extends { readonly entries: readonly { readonly attempt: {
 type AttemptObservabilityEntry = AttemptObservabilityDomainView["entries"][number];
 type AttemptEvidenceEntry = AttemptEvidenceDomainView["entries"][number];
 type FileChangesEntry = FileChangesDomainView["entries"][number];
+type SourceNavigationEntry = SourceNavigationDomainView["entries"][number];
 type SourcesEntry = SourcesDomainView["entries"][number];
 
 function capabilitiesOf(
@@ -274,6 +277,7 @@ function closedViewNotices(input: {
   readonly evidence: AttemptEvidenceEntry | undefined;
   readonly observability: AttemptObservabilityEntry | undefined;
   readonly fileChanges: FileChangesEntry | undefined;
+  readonly sourceNavigation: SourceNavigationEntry | undefined;
   readonly diffData: AttemptDiffData | null;
 }): readonly CalloutGroup[] {
   const groups: CalloutGroup[] = [];
@@ -298,6 +302,23 @@ function closedViewNotices(input: {
       items: [{ level: "warning", message: `File changes entry state: ${state}.` }],
     });
   }
+  if (input.sourceNavigation === undefined || input.sourceNavigation.state !== "available") {
+    const state = input.sourceNavigation?.state ?? "missing";
+    groups.push({
+      title: "Source navigation",
+      items: [{
+        level: "warning",
+        message: state === "not-recorded"
+          ? "Source navigation was not recorded for this historical Attempt; conversation remains page-level."
+          : `Source navigation entry state: ${state}; conversation remains page-level.`,
+      }],
+    });
+  } else if (input.sourceNavigation.detail.collection.state === "partial") {
+    groups.push({
+      title: "Source navigation",
+      items: [{ level: "warning", message: "Source navigation is partial; unmapped turns remain page-level." }],
+    });
+  }
   if (input.diffData !== null && input.diffData.collection.state === "partial") {
     groups.push({
       title: "File changes collection",
@@ -305,21 +326,6 @@ function closedViewNotices(input: {
     });
   }
   return groups;
-}
-
-const COMMAND_CLOSING_PHASES = new Set(["attempt.teardown"]);
-
-function commandEvidenceSections(data: CommandEvidenceContent | null): {
-  before: CommandEvidenceContent | null;
-  after: CommandEvidenceContent | null;
-} {
-  if (data === null || data.commands.length === 0) return { before: null, after: null };
-  const beforeCommands = data.commands.filter((command) => !COMMAND_CLOSING_PHASES.has(command.phase));
-  const afterCommands = data.commands.filter((command) => COMMAND_CLOSING_PHASES.has(command.phase));
-  return {
-    before: beforeCommands.length > 0 ? { ...data, commands: beforeCommands } : null,
-    after: afterCommands.length > 0 ? { ...data, commands: afterCommands } : null,
-  };
 }
 
 interface AttemptDetailsAssembly {
@@ -337,7 +343,7 @@ interface AttemptDetailsAssembly {
 }
 
 /**
- * 组合层的唯一取数装配:固定 Sample 存活期间把四份 DomainView 关闭一次,之后全是纯投影。
+ * 组合层的唯一取数装配:固定 Sample 存活期间把五份 DomainView 关闭一次,之后全是纯投影。
  * 不建立第二套统计,不重算分母,不缓存跨页值。
  */
 async function assembleAttemptDetails(
@@ -346,9 +352,10 @@ async function assembleAttemptDetails(
 ): Promise<AttemptDetailsAssembly> {
   const locator = locatorOf(props, ctx);
   const evidence = props.attempt?.evidence ?? await toAttemptEvidence(ctx.scope, locator);
-  const [observability, fileChanges, sources] = await Promise.all([
+  const [observability, fileChanges, sourceNavigation, sources] = await Promise.all([
     toAttemptObservability(ctx.scope, locator),
     toFileChanges(ctx.scope, locator),
+    toSourceNavigation(ctx.scope, locator),
     toSources(ctx.scope, locator),
   ]);
   const slot = includedSlotOf(ctx.scope.snapshot, locator);
@@ -356,6 +363,7 @@ async function assembleAttemptDetails(
   const evidenceEntry = entryOf(evidence, locator);
   const observabilityEntry = entryOf(observability, locator);
   const fileChangesEntry = entryOf(fileChanges, locator);
+  const sourceNavigationEntry = entryOf(sourceNavigation, locator);
   const sourcesEntry = entryOf(sources, locator);
 
   const evidenceDetail: AttemptEvidenceDomainDetail | undefined =
@@ -366,9 +374,17 @@ async function assembleAttemptDetails(
 
   const assertions = attemptAssertionsData(evidenceDetail);
   const assertionsView = assertions?.attention ?? [];
+  const sourceAssertions = assertions === null
+    ? []
+    : [...assertions.attention, ...assertions.passedGroups.flatMap((group) => group.items)];
   const commandData = attemptCommandEvidenceData(observabilityDetail?.commands, locator);
   const commandContent = attemptCommandEvidenceContent(commandData);
-  const conversationData = attemptConversationData(observabilityDetail?.conversation, locator);
+  const conversationData = attemptConversationData(
+    observabilityDetail?.conversation,
+    locator,
+    observabilityDetail?.timing,
+    sourceNavigationEntry?.state === "available" ? sourceNavigationEntry.detail : undefined,
+  );
   const conversation = attemptConversationContent(conversationData);
   const diagnostics = attemptDiagnosticsData(observabilityDetail?.diagnostics);
   const errorData = attemptErrorData({
@@ -423,11 +439,20 @@ async function assembleAttemptDetails(
       locator,
       items: sourcesEntry.detail.items,
       sourceSites: evidenceDetail.sourceSites,
-      entries: assertions?.attention ?? [],
+      entries: sourceAssertions,
+      ...(sourceNavigationEntry?.state === "available"
+        ? { navigation: sourceNavigationEntry.detail }
+        : {}),
     })
     : null;
   const source = projectedSourceContent(sourceData, locator);
-  const viewNotices = closedViewNotices({ evidence: evidenceEntry, observability: observabilityEntry, fileChanges: fileChangesEntry, diffData });
+  const viewNotices = closedViewNotices({
+    evidence: evidenceEntry,
+    observability: observabilityEntry,
+    fileChanges: fileChangesEntry,
+    sourceNavigation: sourceNavigationEntry,
+    diffData,
+  });
   const notices = attemptNoticesContent(errorData, diagnostics);
   return {
     summary,
@@ -474,13 +499,11 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
   const hasSource = data.source !== null;
   const assertionsTable: TableContent | null = hasSource ? null : attemptAssertionsContent(data.assertions);
   const embedded = embedConversationInSource(data.source, data.conversation);
-  const commandSections = commandEvidenceSections(data.commandContent);
   return (
     <Col className={props.className}>
       <AttemptSummary data={data.summary} />
       <Col>
         <Callouts items={data.notices ?? []} />
-        <CommandEvidence data={commandSections.before} />
         {embedded.source !== null ? (
           <SourceView data={embedded.source} />
         ) : assertionsTable !== null ? (
@@ -500,7 +523,7 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
       ) : (
         null
       )}
-      <CommandEvidence data={commandSections.after} />
+      <CommandEvidence data={data.commandContent} />
       <DiffView files={data.diff} />
     </Col>
   );

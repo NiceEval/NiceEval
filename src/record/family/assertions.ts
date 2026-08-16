@@ -21,6 +21,7 @@ import {
   FixedAttachmentValueLimits,
   PositiveSafeIntegerSchema,
 } from "./common.ts";
+import type { SourcesAttachment } from "./sources.ts";
 
 const AssertionSourceRoleSchema = Schema.Literal(
   "declaration",
@@ -188,6 +189,28 @@ export function assertionsAttachmentIntegrityIssues(
     validateMaterial(entry.subject, ["entries", String(index), "subject"]);
     for (const [evidenceIndex, material] of entry.evidence.entries()) {
       validateMaterial(material, ["entries", String(index), "evidence", String(evidenceIndex)]);
+    }
+  }
+  return Object.freeze(issues);
+}
+
+/**
+ * Host-only semantic join to the exact origin Sources manifest.  The row owns
+ * neither source bytes nor a blob capability, so this check deliberately
+ * compares only the explicit item identity, digest, and stored coordinates.
+ */
+export function assertionsSourceSiteIntegrityIssues(
+  payload: AssertionsAttachment,
+  sources: SourcesAttachment,
+): readonly RecordAttachmentIssue[] {
+  const sourceById = new Map(sources.items.map((item) => [item.sourceItemId, item] as const));
+  const issues: RecordAttachmentIssue[] = [];
+  for (const [index, site] of payload.sourceSites.entries()) {
+    const source = sourceById.get(site.sourceItemId);
+    const startsAfterEnd = site.start.line > site.end.line ||
+      (site.start.line === site.end.line && site.start.column > site.end.column);
+    if (source === undefined || source.sha256 !== site.sha256 || startsAfterEnd) {
+      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["sourceSites", String(index)]));
     }
   }
   return Object.freeze(issues);

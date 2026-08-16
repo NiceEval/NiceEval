@@ -2,7 +2,7 @@
 
 `niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 1`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
 
-它是 [Record architecture](../record/architecture.md) 定义的五个固定 durable family 之一。Record v1 不提供第三方 family、字段 writer 或 schema registry：第三方只能在 Assertions entry 内提供可解释的 criterion schema。Verdict、earned score 和源码导航视图都从 Core、Assertions 与既有固定 family 的 sealed 事实读侧形成，不能各自变成新的持久 family。
+它是 [Record architecture](../record/architecture.md) 定义的六个固定 durable family 之一。Record v1 不提供第三方 family、字段 writer 或 schema registry：第三方只能在 Assertions entry 内提供可解释的 criterion schema。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与既有固定 family 的 sealed 事实读侧形成，不能各自变成新的持久 family。
 
 ## 版本边界
 
@@ -22,7 +22,7 @@ author calls / evaluator internals / producer control flow
           closed analysis or report output
 ```
 
-`sourceSites` 是 Assertions payload 的字段，不是另一个 Attachment。它只保存已执行 entry 的 source mapping；源码内容仍属于 origin Run-owned Sources family。精确 join 与显示规则见 [Source sites](architecture/source-sites.md)。
+`sourceSites` 是 Assertions payload 的字段，不是物理 send Navigation Attachment。它只保存已执行 entry 的 source mapping；源码内容仍属于 origin Run-owned Sources family。精确 join 与显示规则见 [Source sites](architecture/source-sites.md)。
 
 ## v1 外层 payload
 
@@ -317,5 +317,5 @@ Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Sco
 - [Source sites](architecture/source-sites.md) —— Assertions 内嵌 mapping 与 Sources join。
 - [Score Eval](library/score-points.md) —— score state、points 与 rubric。
 - [Verdict architecture](../verdict/architecture.md) —— 四态折叠。
-- [Record architecture](../record/architecture.md) —— owner、closure、五个 fixed family 与四态 Host。
+- [Record architecture](../record/architecture.md) —— owner、closure、六个 fixed family 与四态 Host。
 - [Analysis Library](../analysis/library.md) —— `query()` 与 `DomainView`。

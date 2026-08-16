@@ -18,6 +18,7 @@ import {
 } from "./common.ts";
 import { fileChangesRecordAttachment } from "./file-changes.ts";
 import { observabilityRecordAttachment } from "./observability.ts";
+import { sourceNavigationRecordAttachment } from "./source-navigation.ts";
 import { sourcesRecordAttachment } from "./sources.ts";
 
 /** The catalog lists declarations only; family identities come from them. */
@@ -25,6 +26,7 @@ export const NiceEvalRecordAttachments = Object.freeze({
   assertions: assertionsRecordAttachment,
   observability: observabilityRecordAttachment,
   fileChanges: fileChangesRecordAttachment,
+  sourceNavigation: sourceNavigationRecordAttachment,
   sources: sourcesRecordAttachment,
   artifacts: artifactsRecordAttachment,
 });
@@ -33,6 +35,7 @@ export const NICE_EVAL_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.assertions.family,
   NiceEvalRecordAttachments.observability.family,
   NiceEvalRecordAttachments.fileChanges.family,
+  NiceEvalRecordAttachments.sourceNavigation.family,
   NiceEvalRecordAttachments.sources.family,
   NiceEvalRecordAttachments.artifacts.family,
 ] as const);
@@ -126,6 +129,7 @@ export const assertionsRecordFamily = fixedFamily(NiceEvalRecordAttachments.asse
 export const attemptObservabilityRecordFamily = fixedFamily(NiceEvalRecordAttachments.observability, "attempt");
 export const runObservabilityRecordFamily = fixedFamily(NiceEvalRecordAttachments.observability, "run");
 export const fileChangesRecordFamily = fixedFamily(NiceEvalRecordAttachments.fileChanges, "attempt");
+export const sourceNavigationRecordFamily = fixedFamily(NiceEvalRecordAttachments.sourceNavigation, "attempt");
 export const sourcesRecordFamily = fixedFamily(NiceEvalRecordAttachments.sources, "run");
 export const attemptArtifactsRecordFamily = fixedFamily(NiceEvalRecordAttachments.artifacts, "attempt");
 export const runArtifactsRecordFamily = fixedFamily(NiceEvalRecordAttachments.artifacts, "run");
@@ -138,6 +142,7 @@ export const NiceEvalRecordFamilyCatalog = Object.freeze({
     run: runObservabilityRecordFamily,
   }),
   fileChanges: fileChangesRecordFamily,
+  sourceNavigation: sourceNavigationRecordFamily,
   sources: sourcesRecordFamily,
   artifacts: Object.freeze({
     attempt: attemptArtifactsRecordFamily,
@@ -189,6 +194,7 @@ export type FixedRecordFamilyPayload =
   | DescriptorPayload<typeof attemptObservabilityRecordFamily>
   | DescriptorPayload<typeof runObservabilityRecordFamily>
   | DescriptorPayload<typeof fileChangesRecordFamily>
+  | DescriptorPayload<typeof sourceNavigationRecordFamily>
   | DescriptorPayload<typeof sourcesRecordFamily>
   | DescriptorPayload<typeof attemptArtifactsRecordFamily>
   | DescriptorPayload<typeof runArtifactsRecordFamily>;

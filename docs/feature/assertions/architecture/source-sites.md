@@ -1,14 +1,15 @@
 # Assertions —— source sites
 
-本页拥有 Assertions 的源码导航字段与 Sources join 规则。源码导航不是独立 durable family：持久位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。两者当前 envelope 的 `schemaVersion` 都是 `1`，并且都保存已经发生的审计事实，不保存可执行的作者调用图。
+本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。两者当前 envelope 的 `schemaVersion` 都是 `1`，并且都保存已经发生的审计事实，不保存可执行的作者调用图。
 
-Record v1 的 catalog 固定为五个 family，第三方不能通过 source navigation 增加第六种 family。完整 owner、closure 与 Sources manifest 规则见 [Record architecture](../../record/architecture.md)。
+Record v1 的 catalog 固定为六个 family。Attempt-owned `niceeval.source-navigation` 只拥有物理 send 到 source/timing 的 join，不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources manifest 规则见 [Record architecture](../../record/architecture.md)。
 
 ## owner 与 semantic join
 
 | family | owner | 精确事实 |
 |---|---|---|
 | `niceeval.assertions` | Attempt | `entryId`、criterion、material、sealed result，以及 `sourceSites` row。 |
+| `niceeval.source-navigation` | Attempt | `turnId`、source frame 与 `agent.send` timing join；不含 `entryId`。 |
 | `niceeval.sources` | origin Run | 当时源码闭包的 item manifest 与本 family own blobs。 |
 
 `sourceSites` 的 `entryId` 只能 join 同一 Attempt 的 Assertions entry。`sourceItemId` 与 `sha256` 只能 join 该 Attempt exact origin Run 的 Sources manifest。这些字段是 immutable semantic join，不是 blob ref、Attachment address、Record path、owner handle 或读取 capability。
@@ -68,7 +69,7 @@ type AssertionsAttachmentV1 = {
 
 Sources family 拥有 `sourceItemId`、path、byteLength、sha256 与 content blob；`sourceItemId` 不是 path、digest、数组下标或 blob key 的函数。Assertions row 只能引用 item identity 与 digest，不能取得或借用 Sources blob capability。
 
-因此源码导航同时需要两种已验证 family value：Assertions 提供 entry 与位置 join，Sources 提供用于展示的 origin snapshot。当前 `schemaVersion: 1` 的导航内容只能使用 Assertions 的 `sourceSites` 与 Sources 已有 manifest／blob；不能另建附件族。
+因此 Assertion source site 需要两种已验证 family value：Assertions 提供 entry 与位置 join，Sources 提供用于展示的 origin snapshot。物理 send navigation 另由 `niceeval.source-navigation` 使用同一 exact Sources manifest；两个 family 不复制对方的 result、turn、duration 或 blob capability。
 
 ## Analysis DomainView 与局部 unmapped
 
@@ -86,6 +87,6 @@ family Host 仍只有 `available`、`not-recorded`、`unsupported` 与 `invalid`
 
 - [Assertions architecture](../architecture.md) —— entry、criterion、result 与内嵌 sourceSites。
 - [Evidence](evidence.md) —— 受限 material 与 own closure。
-- [Record architecture](../../record/architecture.md) —— Sources manifest、五个 fixed family 与四态 Host。
+- [Record architecture](../../record/architecture.md) —— Sources manifest、六个 fixed family 与四态 Host。
 - [Verdict architecture](../../verdict/architecture.md) —— Core 与 Assertions 的读侧 fold。
 - [Analysis Library](../../analysis/library.md) —— `Sample`、`query()` 与 `DomainView`。

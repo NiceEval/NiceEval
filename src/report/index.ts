@@ -113,6 +113,7 @@ export {
   toIssueText,
   toMetricDetailRow,
   toSandboxHistory,
+  toSourceNavigation,
   toSources,
 } from "./model/conversions.ts";
 export type { MetricDetailRow } from "./model/conversions.ts";
@@ -121,6 +122,7 @@ export type {
   AttemptObservabilityDomainView,
   FileChangesDomainView,
   SandboxHistoryDomainView,
+  SourceNavigationDomainView,
   SourcesDomainView,
 } from "../analysis/index.ts";
 

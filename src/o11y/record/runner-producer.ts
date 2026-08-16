@@ -14,6 +14,7 @@ import type {
   TimingActivity,
   TimingOrigin,
 } from "../../runner/types.ts";
+import type { StreamEvent } from "../../types.ts";
 import type { Usage } from "../types.ts";
 import {
   makeAttemptObservabilityCaptureIdentity,
@@ -492,11 +493,22 @@ interface RunnerAttemptObservabilityRuntimeState {
   readonly commandLimitations: RunnerCollectionLimitations;
   readonly usage: UsageObservation[];
   readonly usageLimitations: RunnerCollectionLimitations;
+  /** One immutable record is allocated at each physical SessionManager send exit. */
+  readonly conversationTurns: CapturedConversationTurn[];
+  readonly conversationLimitations: RunnerCollectionLimitations;
   failure?: RunnerObservabilityProducerError;
+}
+
+interface CapturedConversationTurn {
+  readonly turnId: TurnId;
+  readonly sequence: PositiveSafeInteger;
+  readonly outcome: ConversationTurn["outcome"];
+  readonly events: readonly StreamEvent[];
 }
 
 const runnerAttemptRuntimeStates = new WeakMap<object, RunnerAttemptObservabilityRuntimeState>();
 const runnerAttemptResultStates = new WeakMap<object, RunnerAttemptObservabilityRuntimeState>();
+const runnerAttemptResultTurnIntervals = new WeakMap<object, ReadonlyMap<TurnId, IntervalId>>();
 const runnerCommandHandleStates = new WeakMap<object, {
   readonly runtime: RunnerAttemptObservabilityRuntimeState;
   readonly command: CapturedCommandRuntime;
@@ -696,6 +708,8 @@ export function createRunnerAttemptObservabilityRuntime(input: {
     commandLimitations: new RunnerCollectionLimitations(),
     usage: [],
     usageLimitations: new RunnerCollectionLimitations(),
+    conversationTurns: [],
+    conversationLimitations: new RunnerCollectionLimitations(),
   });
   return runtime;
 }
@@ -717,6 +731,43 @@ export function bindRunnerAttemptObservabilityCapture(
     return;
   }
   runnerAttemptResultStates.set(result, state);
+}
+
+/** Exact physical-turn timing joins produced during the same final seal. */
+export function runnerAttemptConversationTimingForResult(
+  result: EvalResult,
+): ReadonlyMap<TurnId, IntervalId> | undefined {
+  return runnerAttemptResultTurnIntervals.get(result);
+}
+
+/**
+ * Captures the terminal fact of one physical public `t.send` at the exact
+ * Effect Exit boundary. IDs are minted here, not reconstructed from the
+ * later aggregate event stream, so repeated source locations remain distinct.
+ */
+export function captureRunnerPhysicalConversationTurn(input: {
+  readonly runtime: RunnerAttemptObservabilityRuntime;
+  readonly outcome: ConversationTurn["outcome"];
+  readonly events: readonly StreamEvent[];
+}): TurnId | undefined {
+  const runtime = runtimeState(input.runtime);
+  if (runtime === undefined || runtime.failure !== undefined) return undefined;
+  if (runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) {
+    runtime.conversationLimitations.addCap(
+      "conversation-item",
+      runtime.conversationTurns.length,
+    );
+    return undefined;
+  }
+  const turnId = mintRuntimeEntity(runtime, "turn");
+  if (turnId === undefined) return undefined;
+  runtime.conversationTurns.push(Object.freeze({
+    turnId,
+    sequence: requiredPositive(runtime.conversationTurns.length + 1),
+    outcome: input.outcome,
+    events: Object.freeze([...input.events]),
+  }));
+  return turnId;
 }
 
 /**
@@ -1051,30 +1102,6 @@ export function captureRunnerTurnUsage(
   }
 }
 
-function attemptConversationOutcome(
-  result: EvalResult,
-  sealed: SealedAttemptAssertions,
-): ConversationTurn["outcome"] {
-  if (sealed.evaluation.explicitlySkipped) return "cancelled";
-  return result.error === undefined && sealed.evaluation.execution === "completed"
-    ? "completed"
-    : "failed";
-}
-
-function standardEventUnavailable(
-  result: EvalResult,
-  limitations: RunnerCollectionLimitations,
-): boolean {
-  if (result.events === undefined) {
-    limitations.addCaptureFailed("adapter", "conversation-item");
-    return true;
-  }
-  if (result.evidenceCoverage.events.status !== "complete") {
-    limitations.addCaptureFailed("adapter", "conversation-item");
-  }
-  return false;
-}
-
 function safeIdentifier(value: string): SafeIdentifier | undefined {
   return makeSafeIdentifier(value);
 }
@@ -1133,16 +1160,11 @@ function appendConversationTextLimitation(
 }
 
 function normalizeConversation(input: {
-  readonly result: EvalResult;
-  readonly sealed: SealedAttemptAssertions;
   readonly mint: AttemptEntityMinter;
   readonly runtime: RunnerAttemptObservabilityRuntimeState;
 }): Effect.Effect<NormalizedAttemptObservabilityCapture["conversation"], RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    const limitations = new RunnerCollectionLimitations();
-    if (standardEventUnavailable(input.result, limitations)) {
-      return Object.freeze({ collection: limitations.collection(), turns: Object.freeze([]), items: Object.freeze([]) });
-    }
+    const limitations = input.runtime.conversationLimitations;
 
     const items: ConversationItem[] = [];
     let turnId: TurnId | undefined;
@@ -1151,17 +1173,7 @@ function normalizeConversation(input: {
 
     const ensureTurn = (): Effect.Effect<TurnId | undefined, RunnerObservabilityProducerError> => {
       if (turnId !== undefined) return Effect.succeed(turnId);
-      if (!hasConversationCapacity({
-        itemCount: items.length,
-        hasTurn: false,
-        limitations,
-      })) {
-        return Effect.succeed(undefined);
-      }
-      return Effect.map(input.mint("turn"), (id) => {
-        turnId = id;
-        return id;
-      });
+      return Effect.succeed(undefined);
     };
 
     const appendItem = (
@@ -1192,7 +1204,9 @@ function normalizeConversation(input: {
       });
     };
 
-    for (const event of input.result.events ?? []) {
+    for (const capturedTurn of input.runtime.conversationTurns) {
+      turnId = capturedTurn.turnId;
+      for (const event of capturedTurn.events) {
       if (eventCannotBePersisted(event, limitations)) continue;
       switch (event.type) {
         case "message": {
@@ -1384,19 +1398,20 @@ function normalizeConversation(input: {
           limitations.addUnsupported("conversation-item");
           break;
       }
+      }
     }
 
     if (openTools.size > 0 || openSubagents.size > 0) {
       limitations.addUnsupported("conversation-item", openTools.size + openSubagents.size);
     }
-    const turns: readonly ConversationTurn[] = turnId === undefined
-      ? Object.freeze([])
-      : Object.freeze([Object.freeze({
-          turnId,
-          sequence: requiredPositive(1),
-          outcome: attemptConversationOutcome(input.result, input.sealed),
-          refs: Object.freeze([]),
-        })]);
+    const turns: readonly ConversationTurn[] = Object.freeze(
+      input.runtime.conversationTurns.map((capturedTurn) => Object.freeze({
+        turnId: capturedTurn.turnId,
+        sequence: capturedTurn.sequence,
+        outcome: capturedTurn.outcome,
+        refs: Object.freeze([]),
+      })),
+    );
     return Object.freeze({
       collection: limitations.collection(),
       turns,
@@ -1761,16 +1776,30 @@ function timingSpanContains(input: {
   );
 }
 
+interface NormalizedAttemptTimingWithTurnIntervals {
+  readonly timing: NormalizedAttemptObservabilityCapture["timing"];
+  readonly intervalByTurnId: ReadonlyMap<TurnId, IntervalId>;
+}
+
 function normalizeAttemptTiming(input: {
   readonly result: EvalResult;
   readonly mint: AttemptEntityMinter;
-}): Effect.Effect<NormalizedAttemptObservabilityCapture["timing"], RunnerObservabilityProducerError> {
+  readonly turns: readonly CapturedConversationTurn[];
+}): Effect.Effect<NormalizedAttemptTimingWithTurnIntervals, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
     const limitations = new RunnerCollectionLimitations();
+    const turnsById = new Map<string, CapturedConversationTurn>(
+      input.turns.map((turn) => [turn.turnId, turn] as const),
+    );
+    const intervalByTurnId = new Map<TurnId, IntervalId>();
+    const ambiguousTurnIntervals = new Set<TurnId>();
     const phases = input.result.phases;
     if (phases === undefined) {
       limitations.addCaptureFailed("timing-capture", "timing-interval");
-      return Object.freeze({ collection: limitations.collection(), intervals: Object.freeze([]) });
+      return Object.freeze({
+        timing: Object.freeze({ collection: limitations.collection(), intervals: Object.freeze([]) }),
+        intervalByTurnId: new Map(),
+      });
     }
 
     const intervals: AttemptTimingInterval[] = [];
@@ -1838,6 +1867,17 @@ function normalizeAttemptTiming(input: {
           outcome: activity.failed ? "failed" as const : "completed" as const,
           refs: Object.freeze([]),
         }));
+        if (activity.key === "agent.turn" && activity.turnId !== undefined) {
+          const turnId = turnsById.get(activity.turnId)?.turnId;
+          if (turnId !== undefined) {
+            if (intervalByTurnId.has(turnId) || ambiguousTurnIntervals.has(turnId)) {
+              intervalByTurnId.delete(turnId);
+              ambiguousTurnIntervals.add(turnId);
+            } else {
+              intervalByTurnId.set(turnId, intervalId);
+            }
+          }
+        }
         const nextAncestors = new Set(ancestors);
         nextAncestors.add(activity);
         yield* appendActivities(
@@ -1905,14 +1945,17 @@ function normalizeAttemptTiming(input: {
       }
     }
     return Object.freeze({
-      collection: limitations.collection(),
-      // The durable timing family canonically orders by opaque entity id; the
-      // offsets retain the Runner's actual lifecycle order.
-      intervals: Object.freeze(
-        [...intervals].sort((left, right) =>
-          compareObservabilityText(left.intervalId, right.intervalId),
+      timing: Object.freeze({
+        collection: limitations.collection(),
+        // The durable timing family canonically orders by opaque entity id; the
+        // offsets retain the Runner's actual lifecycle order.
+        intervals: Object.freeze(
+          [...intervals].sort((left, right) =>
+            compareObservabilityText(left.intervalId, right.intervalId),
+          ),
         ),
-      ),
+      }),
+      intervalByTurnId: new Map(intervalByTurnId),
     });
   });
 }
@@ -2130,21 +2173,27 @@ export function createRunnerAttemptObservabilityCapture(input: {
     const minter = makeAttemptEntityMinter(runtime);
     const commands = normalizeCommands(runtime);
     const usage = normalizeUsage({ result: input.result, runtime });
-    const conversation = yield* normalizeConversation({
+    const timingNormalization = yield* normalizeAttemptTiming({
       result: input.result,
-      sealed: input.sealed,
+      mint: minter.mint,
+      turns: runtime.conversationTurns,
+    });
+    if (runtime.conversationTurns.some((turn) => !timingNormalization.intervalByTurnId.has(turn.turnId))) {
+      runtime.conversationLimitations.addCaptureFailed("timing-capture", "conversation-item");
+    }
+    const conversation = yield* normalizeConversation({
       mint: minter.mint,
       runtime,
     });
-    const timing = yield* normalizeAttemptTiming({ result: input.result, mint: minter.mint });
     const diagnostics = yield* normalizeAttemptDiagnostics({ result: input.result, mint: minter.mint });
     if (runtime.failure !== undefined) return yield* Effect.fail(runtime.failure);
     if (!minter.seal()) return yield* Effect.fail(producerCaptureSealInvalid("attempt"));
+    runnerAttemptResultTurnIntervals.set(input.result, new Map(timingNormalization.intervalByTurnId));
     return Object.freeze({
       conversation,
       commands,
       usage,
-      timing,
+      timing: timingNormalization.timing,
       diagnostics,
     });
   });

@@ -286,12 +286,22 @@ export const CommandEvidence = defineComponent<CommandEvidenceProps, { data: Com
   resolve(props) {
     return { data: props.data ?? null, className: props.className };
   },
-  web({ data, className }) {
+  web({ data, className }, ctx) {
     const content = assertCommandEvidenceContent(data);
     if (content === null || content.commands.length === 0) return null;
     return (
       <section className={cx("niceeval-report", "niceeval-command-evidence", className)}>
-        {content.commands.map((command) => <CommandEvidenceCard key={command.key} command={command} />)}
+        <details className="niceeval-command-evidence-region">
+          <summary className="niceeval-command-evidence-summary">
+            {resolveLocalizedText(
+              { en: `Commands · ${content.commands.length}`, "zh-CN": `命令证据 · ${content.commands.length}` },
+              ctx.locale,
+            )}
+          </summary>
+          <div className="niceeval-command-evidence-cards">
+            {content.commands.map((command) => <CommandEvidenceCard key={command.key} command={command} />)}
+          </div>
+        </details>
       </section>
     );
   },

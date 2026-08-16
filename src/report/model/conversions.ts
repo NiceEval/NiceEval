@@ -7,6 +7,7 @@ import type {
   MetricValue,
   Sample,
   SandboxHistoryDomainView,
+  SourceNavigationDomainView,
   SourcesDomainView,
 } from "../../analysis/index.ts";
 import {
@@ -15,6 +16,7 @@ import {
   fileChangesView,
   query,
   sandboxHistoryView,
+  sourceNavigationView,
   sourcesView,
 } from "../../analysis/index.ts";
 import type { AttemptLocator } from "../../attempt-locator.ts";
@@ -113,6 +115,18 @@ export function toFileChanges(
   return query(sample, {
     kind: "domain-view",
     view: fileChangesView,
+    ...(locator === undefined ? {} : { locator }),
+  });
+}
+
+/** Closes exact physical send-to-source and send-to-timing navigation. */
+export function toSourceNavigation(
+  sample: Sample,
+  locator?: AttemptLocator,
+): Promise<SourceNavigationDomainView> {
+  return query(sample, {
+    kind: "domain-view",
+    view: sourceNavigationView,
     ...(locator === undefined ? {} : { locator }),
   });
 }

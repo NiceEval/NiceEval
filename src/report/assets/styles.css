@@ -991,9 +991,38 @@ table.niceeval-report,
   overflow-wrap: anywhere;
 }
 .niceeval-command-evidence {
+  display: block;
+}
+.niceeval-command-evidence-region {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.niceeval-command-evidence-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.niceeval-command-evidence-summary::-webkit-details-marker { display: none; }
+.niceeval-command-evidence-summary::after {
+  content: "›";
+  float: right;
+  color: var(--soft);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.14s ease;
+}
+.niceeval-command-evidence-region[open] > .niceeval-command-evidence-summary::after {
+  transform: rotate(90deg);
+}
+.niceeval-command-evidence-cards {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 0 10px 10px;
 }
 .niceeval-command-evidence-card {
   border: 1px solid var(--line);
@@ -1450,9 +1479,8 @@ table.niceeval-report,
   overflow-wrap: anywhere;
   box-shadow: inset 2px 0 0 var(--line-tone, transparent);
 }
-/* 展开区内容:判定摘要一行、细节正文等宽、给分记录一行。轮次回复复用 Conversation 的条目
-   呈现,轮头在这里收起——源码行本身就是那次 send,标签与 sent prompt 不重复一遍。 */
-.niceeval-source-view .niceeval-source-line-detail .niceeval-conversation-turn-head { display: none; }
+/* 展开区内容:判定摘要一行、细节正文等宽、给分记录一行。同行重复 send
+   复用 Conversation 的完整轮卡；轮头必须保留，才能区分 outcome 与 duration。 */
 .niceeval-source-view .niceeval-source-line-detail .niceeval-conversation-turn { border-left: 0; padding-left: 0; }
 .niceeval-source-view .niceeval-source-line-detail > * + * { margin-top: 6px; }
 .niceeval-source-view .niceeval-source-assertion {

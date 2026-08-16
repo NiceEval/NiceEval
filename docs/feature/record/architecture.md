@@ -54,7 +54,7 @@ record/
 
 ## NiceEval 内部的 Effect Schema 作者模型
 
-NiceEval 以 package-private Schema declaration 描述 root、Core 与 current catalog 的五个固定 Attachment。
+NiceEval 以 package-private Schema declaration 描述 root、Core 与 current catalog 的六个固定 Attachment。
 它是读取、写入、校验、canonical encode 与 migration 的共同输入；不存在另一份手写的当前模型。
 
 唯一的作者入口是 `defineRecordCore` 与 `defineRecordAttachment`。两者不从公开 package 导出，也不是
@@ -155,6 +155,7 @@ const currentAttachmentCatalog = [
   assertions,
   observability,
   fileChanges,
+  sourceNavigation,
   sources,
   artifacts,
 ] as const;
@@ -162,7 +163,7 @@ const currentAttachmentCatalog = [
 
 每个 family 模块包含自己的 declaration、复杂 payload Schema、encoded-side durable JSON 键、limits、blob
 closure 与 integrity 验证。当前每个 family 文件恰有一个 `defineRecordAttachment` 调用。复杂 family 可拆成目录，
-但只有 `definition.ts` 保留该入口。总 catalog 只列五个 declaration，不复制 owner shape 或 payload Schema。
+但只有 `definition.ts` 保留该入口。总 catalog 只列六个 declaration，不复制 owner shape 或 payload Schema。
 Observability 与 Artifacts 各有一个 family declaration；`owners.attempt` 与 `owners.run` 不会形成第二个 family。
 
 未知 stable family 保留其目录与 bytes，跳过 payload / blob 解码，继续读取 Core 与已知 family。请求它的
@@ -287,7 +288,7 @@ Core refine 强制以下不变量：
 Experiment、RunContext、Eval、Slot identity、execution identity digest 与 Member action 是离线解释不可缺的
 Core 历史事实。matcher、当前输入、cache hit、通行率、排名与页面模型不进入 Core。
 
-## 五个固定 Attachment family
+## 六个固定 Attachment family
 
 每个 owner 对每个 family 至多有一个 envelope。`attachment.json` 使用稳定 family identity 与数值版本：
 
@@ -305,8 +306,59 @@ type AttachmentEnvelope = {
 | `niceeval.assertions` | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口 criterion、material、Evidence 与 result |
 | `niceeval.observability` | `{ attempt, run }` | `AttemptObservabilityAttachment` / `RunObservabilityAttachment` | collector 封口对话、命令、用量、时间、诊断与 OTel |
 | `niceeval.file-changes` | `{ attempt }` | `FileChangesAttachment` | Sandbox collector 封口归因策略与 send 区间文件变化轨迹 |
+| `niceeval.source-navigation` | `{ attempt }` | `SourceNavigationAttachment` | Runner 封口每个物理 send 的 source/timing join |
 | `niceeval.sources` | `{ run }` | `SourcesAttachment` | Runner 封口源码闭包 manifest 与 own blobs |
 | `niceeval.artifacts` | `{ attempt, run }` | `ArtifactsAttachment` | artifact collector 封口有类型文件 |
+
+`niceeval.source-navigation` 只有 Attempt owner，schemaVersion 固定为 `1`，并且 `blobs.refs()` 永远为空。
+它不拆分或改写 `niceeval.observability` 的 v1 payload。
+
+```ts
+type SourceNavigationAttachment = {
+  readonly collection:
+    | { readonly state: "complete"; readonly limitations: readonly [] }
+    | {
+        readonly state: "partial";
+        readonly limitations: readonly (
+          | {
+              readonly code: "collection-cap-reached";
+              readonly target: "navigation-row";
+              readonly omittedAtLeast: PositiveSafeInteger;
+            }
+          | {
+              readonly code: "capture-unrecoverable";
+              readonly target: "timing-link";
+              readonly omittedAtLeast: PositiveSafeInteger;
+            }
+        )[];
+      };
+  readonly rows: readonly SourceNavigationRow[];
+};
+
+type SourceNavigationRow = {
+  readonly turnId: TurnId;
+  readonly sourceOrder: PositiveSafeInteger | null;
+  readonly source:
+    | { readonly state: "mapped"; readonly sourceItemId: SourceItemId; readonly sha256: Sha256Digest; readonly start: SourcePosition; readonly end: SourcePosition }
+    | { readonly state: "unmapped"; readonly reason: "location-not-captured" | "source-snapshot-not-recorded" | "position-unrepresentable" };
+  readonly timing:
+    | { readonly state: "linked"; readonly intervalId: IntervalId }
+    | { readonly state: "unavailable"; readonly reason: "timing-not-recorded" };
+};
+```
+
+`rows` 最多 256 条，`turnId`、非 null `sourceOrder` 与 linked `intervalId` 各自唯一。row order 必须与同一
+Attempt ConversationTurn 的显式 `sequence` 完全相同，且两边 `turnId` 集合相同。
+
+Host 只接受 mapped row 对 exact origin Sources 的 `sourceItemId`、`sha256` 和有序坐标 join。linked row 只接受
+同一 Attempt 的 `agent.send` interval。它不扫描 source blob，也不按数组位置、path、digest 或时间接近度补配。
+
+cap 或不可恢复 capture 时，Conversation 与 Navigation 保留同一确定性前缀并各自 `partial`。cap 的两个
+`omittedAtLeast` 必须相等。Navigation 的 `collection-cap-reached` 固定 target 为 `navigation-row`，所以它的
+`omittedAtLeast` 只表示遗漏的行。
+
+无法形成 timing identity 时，Navigation 以 `capture-unrecoverable` / `timing-link` 表示遗漏的 timing link。
+它绝不把两种遗漏混写。
 
 Assertions 的 criterion、Evidence 与局部错误规则由 [Assertions architecture](../assertions/architecture.md)
 拥有。Observability 的精确 shape 由 [Observability Attachment](architecture/observability-attachments.md)
