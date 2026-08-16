@@ -1,850 +1,416 @@
-# Reports Library
+# Report Library（报告库）
 
-本页以 `niceeval/report` 作为唯一公开作者入口。它导出 Report DSL、Theme 与官方 opaque
-projector，也导出 projection declaration constructors 与需要的纯 Analysis / Projection 类型。
-Record selection、reader-bound handle 与 projection interpreter 属于 CLI 的内部 Report host。
-loader、watcher、文件系统、server 与 execution 调度也留在内部，不导出
-`niceeval/report/host` 或 `niceeval/report/host/node`。
+本页定义 `niceeval/report` 的作者 API 和 package export manifest。普通作者只导入这里列出的作者入口；Record reader、模块装载、
+watch、文件目录与 `ClosedSiteRevision` 不进入作者 callback。
 
-依赖方向固定为：
+## 公共出口与 API 裁决
 
-```text
-internal Record
-      ↓
-internal selection
-      ↓
-internal projection runtime
-      ↓
-niceeval/report
-      ↓
-internal Report host
-      ↓
-CLI / Node runtime
-```
+Report 只发布下表中的 package path 和符号。每一项都列出最终源码 owner；未列出的 path 或符号不构成公共 API。作者入口不发布
+NiceEval JSX runtime、generic semantic author model、Record capability 或 Host 内部页值。
 
-Report 作者只理解两件事：需要哪些 `RecordProjection`，以及怎样把 projected values / derived values 包装成页面或下载。作者 callback 看不到 `RecordReader`、root、Scope、Effect、path、owner lookup、compiled plan 或 route expansion。
+| package path 与最终源码 owner | runtime exports | type-only exports |
+|---|---|---|
+| `niceeval/report` · `definition/report.ts` 与 `analysis/cost.ts` 的 re-export | `defineReport`、`definePricingProfile`、`builtInPricingProfile` | `ReportDefinition`、`ReportShell`、`ReportMeta`、`ReportMetaPage`、`PricingProfile`、`PricingProfileInput`、`PricingProfileContentIdentity`、`PricingCoverageId`、`PricingCoverage`、`PricedCoverage`、`UnpricedCoverage`、`PricingCoverageInput`、`PricedCoverageInput`、`UnpricedCoverageInput`、`PricingSelector`、`PricingSelectorInput`、`PricingEffectiveCondition`、`PricingEffectiveConditionInput`、`PricingCharge`、`PricingChargeInput`、`PricingDisplay`、`PricingDisplayInput`、`PricingProvenance`、`PricingProvenanceInput`、`Page`、`PlainPage`、`ParameterizedPage`、`PageParams`、`PageLoad`、`PageLoadContext`、`PageContext`、`PageEvidence`、`HeadTag`、`Sample` |
+| `niceeval/report` · `definition/tree.ts` | `defineComponent` | `ComponentContext`、`ComposeContext`、`ResolveContext`、`ComponentFaces`、`ReportComponent`、`TextContext`、`WebContext` |
+| `niceeval/report` · `model/{aggregate,metrics}.ts` 与 `analysis/**` | `aggregate`、`agent`、`attempt`、`evalId`、`experiment`、`model`、`reasoningEffort`、`flag`、`label`、`passRate`、`durationMs`、`tokens`、`costUSD`、`totalCostUSD`、`evidenceRow` | `AggregationSubject`、`GroupFunction`、`EvidenceRow`、`ClosedRows`、`MetricValue`、`MetricState`、`MeasureFormat`、`AnalysisIssue`、`EvidenceRef`、`CostMeasure`、`CostMetricValue`、`CostProjectionValue`、`CostProjectionKnown`、`CostProjectionUnavailable`、`CostProjectionState`、`CostBasis`、`CostProjectionAggregate`、`CostProjectionProfile`、`CostLedgerEntry`、`CostCoverageReason`、`CostCoverageReasonCode`、`ProjectedMoney`、`ObservedCostComponent`、`EstimatedTokenCostComponent`、`EstimatedRequestCostComponent`、`ObservedOtherCurrency` |
+| `niceeval/report` · `model/conversions.ts` 与 `analysis/domain-view.ts` | `toAttemptEvidence`、`toAttemptObservability`、`toFileChanges`、`toSources`、`toSandboxHistory`、`toEvidenceRows`、`toIssueRows`、`toIssueText`、`toMetricDetailRow` | `AttemptEvidenceDomainView`、`AttemptObservabilityDomainView`、`FileChangesDomainView`、`SourcesDomainView`、`SandboxHistoryDomainView`、`MetricDetailRow` |
+| `niceeval/report` · `theme.ts`、`presentation.ts`、`model/{format,locale,text-layout}.ts` | `defineTheme`、`basalt`、`chalk`、`presentDimension`、`shortestUniqueLabels`、`formatAxisTick`、`formatInstant`、`formatMetricValue`、`formatTimeDistance`、`missingText`、`stringWidth`、`padEnd`、`padStart`、`wrapText`、`indent`、`bar`、`columns`、`DEFAULT_REPORT_LOCALE`、`localizedTextEquals`、`resolveLocalizedText`、`resolveMetricLabel` | `ThemeDefinition`、`ReportTheme`、`ThemeColor`、`ThemeHex`、`ThemeSeries`、`MetricFormat`、`LocalizedText`、`ReportLocale`、`ColumnAlign`、`DimensionDeclaration`、`DimensionEncoding`、`PresentedDimension` |
+| `niceeval/report` · `definition/primitives.tsx` 与 `definition/primitives/**` | `Area`、`Bars`、`Callouts`、`Chart`、`Col`、`CommandEvidence`、`Conversation`、`CopyBlock`、`DiffView`、`Grid`、`Line`、`Link`、`Markdown`、`Row`、`Scatter`、`Section`、`Series`、`SourceView`、`Stat`、`Style`、`Tab`、`Table`、`Tabs`、`Text`、`Waterfall`、`applyBarsSortLimit` | `AreaProps`、`BarsProps`、`BarsSort`、`CalloutGroup`、`CalloutItem`、`CalloutLevel`、`CalloutsProps`、`ChartProps`、`ColProps`、`CommandEvidenceContent`、`CommandEvidenceItem`、`CommandEvidenceProps`、`ConversationContent`、`ConversationEntry`、`ConversationProps`、`CopyBlockContent`、`CopyBlockProps`、`DiffChange`、`DiffContent`、`DiffFile`、`DiffViewProps`、`GridProps`、`LayoutProps`、`LineProps`、`MarkdownProps`、`RowProps`、`ScatterProps`、`SectionProps`、`SeriesProps`、`SourceContent`、`SourceViewProps`、`StatProps`、`StyleProps`、`TabProps`、`TableProps`、`TabsProps`、`TextProps`、`WaterfallContent`、`WaterfallNode`、`WaterfallProps` |
+| `niceeval/report` · `definition/cell.tsx` | 无 | `Cell`、`VerdictCounts` |
+| `niceeval/report` · `components/{site-components,summaries,entity-lists,attempt-detail,experiment-detail}/**` 与 `library/details.ts` | `Hero`、`HeroCard`、`PoweredBy`、`RunNotices`、`SampleFixPrompt`、`SampleNotices`、`ExperimentScatter`、`SampleOverview`、`SampleSummary`、`StabilityOverview`、`AttemptList`、`ExperimentTable`、`FailureList`、`AttemptAssessment`、`AttemptDetails`、`AttemptSummary`、`ExperimentDetails` | `HeroProps`、`HeroCardProps`、`HeroLink`、`HeroLogo`、`RunNoticesProps`、`SampleFixPromptProps`、`SampleNoticesProps`、`ExperimentScatterProps`、`SampleOverviewProps`、`SampleSummaryProps`、`StabilityOverviewProps`、`AttemptListProps`、`ExperimentTableProps`、`FailureListProps`、`AttemptDetailsProps`、`ExperimentDetailsProps`、`AttemptDetailTarget`、`ExperimentDetailTarget`、`LibraryDetailTarget` |
+| `niceeval/report/built-in` · `built-in/standard.tsx` 与 `library/details.ts` | `standard`、`standardOverviewPage`、`standardAttemptPage`、`standardAttemptsPage`、`standardExperimentPage`、`standardTracesPage`、`attemptDetailTarget`、`attemptDetailRoute`、`experimentDetailTarget`、`experimentDetailRoute`、`libraryDetailRoute` | `AttemptDetailTarget`、`ExperimentDetailTarget`、`LibraryDetailTarget` |
+| `niceeval/report/react` · `react/index.ts`（`Cell`、`VerdictCounts` re-export 自 `definition/cell.tsx`） | `Callouts`、`Chart`、`Col`、`Conversation`、`CopyBlock`、`DiffView`、`Grid`、`Row`、`Section`、`Series`、`SourceView`、`Stat`、`Style`、`Tab`、`Table`、`Tabs`、`Text`、`Waterfall`、`HeroCard`、`PoweredBy`、`formatCellText`、`formatAxisTick`、`formatInstant`、`formatMetricValue`、`formatTimeDistance`、`DEFAULT_REPORT_LOCALE`、`localizedTextEquals`、`resolveLocalizedText`、`resolveMetricLabel` | `Cell`、`VerdictCounts`、`LocalizedText`、`ReportLocale`、`MetricValue` |
+| `niceeval/report/extension` · `extension/{define,meta,types,assets}.ts` | `defineRenderer`、`rendererMetaOf`、`isRendererComponent` | `RendererFaces`、`RendererProps`、`RendererOptions`、`RendererAssetDeclaration`、`RendererMeta`、`RendererTextContext`、`RendererWebContext` |
+| `niceeval/report/host` · `host/**` 与 `execution/**` | `reportHost` | `ClosedSiteRevision` |
+| `niceeval/report/react/styles.css` · `assets/styles.css` | Report 产品 CSS 文件 | 无 |
+| `niceeval/report/react/enhance.js` · `assets/enhance.js` | Report 渐进增强脚本 | 无 |
 
-## 最小作者调用面
+`niceeval/jsx-runtime`、`niceeval/jsx-dev-runtime`、`niceeval/report/jsx-runtime` 与
+`niceeval/report/jsx-dev-runtime` 没有 package export。`ReportElement`、`ReportNode`、`ClosedReportNode` 与通用 semantic tree
+也没有作者导出。
+
+`Cell` 与 `VerdictCounts` 的唯一声明 owner 是 `definition/cell.tsx`。root `niceeval/report` 以 type-only export 提供它们；
+`niceeval/report/react` 只 re-export 同一对类型，既不声明第二份类型，也不做转换。
+
+### 作者调用形状
+
+| 符号 | 最终调用形状 | 最终源码 owner |
+|---|---|---|
+| `defineReport` | 单页 callback，或 `{ title?, theme?, dimensionPins?, pricing?, head?, pages }`。 | `definition/report.ts` |
+| `definePricingProfile` | 声明 USD rate card；只能由 `ReportDefinition.pricing` 持有。 | `analysis/cost.ts`（经 `niceeval/report` re-export） |
+| `Page`、`PlainPage`、`ParameterizedPage` | 普通页的 `load?` / `render`，参数页的 `params` / `load` / `render` / `navigation: false`。 | `definition/report.ts` |
+| `defineComponent(compose)` | `(props, ctx) => ReactNode \| Promise<ReactNode>`；Sample 只从 `ctx.scope` 读取。 | `definition/tree.ts` |
+| `defineComponent(faces)` | `{ resolve?, text, web }`；`text` 与 `web` 同步读取一次关闭输入。 | `definition/tree.ts` |
+| `ctx.report` | `{ title, pricing, pages }` 的只读 `ReportMeta`。 | `definition/report.ts` 与 `definition/tree.ts` |
+| 标准 JSX | `jsx: "react-jsx"` 与 `react/jsx-runtime`。 | TypeScript / React；Report 不另发 JSX runtime。 |
+| `HeadTag` | 结构化 `meta`、`link`、`style`、`script`。 | `definition/report.ts` |
+| 原语与官方组件 | `Area` 至 `Waterfall`，以及 `Hero`、summary、entity list、Attempt / Experiment detail 组件。 | `definition/primitives/**` 与 `components/**` |
+
+`AggregationSubject` 是只读的冻结值，不提供可读 Run。它的完整公开形状如下：
 
 ```ts
-import { Effect, Either } from "effect";
+interface AggregationSubject {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly run: {
+    readonly experiment?: {
+      readonly agent: string;
+      readonly model?: string;
+      readonly reasoningEffort?: string;
+      readonly flags: Readonly<Record<string, JsonValue>>;
+      readonly labels: Readonly<Record<string, string>>;
+    };
+  };
+}
+```
 
-const verdicts = attemptSlotProjection(verdictProjector);
-const evaluations = selectedRunProjection(evaluationsProjector);
-const passInputs = reportInputs({ verdicts, evaluations });
+`GroupFunction` 只能从 `subject.run.experiment?.agent`、`model`、`reasoningEffort`、`flags` 与 `labels` 读取分组键，
+不能打开 Record、取得 AttemptHandle 或查看其它 Run 字段。
 
-const passRate = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("pass-rate")),
-  inputs: passInputs,
-  completeness: "allow-partial",
-  calculate: ({ sample, inputs }) =>
-    calculatePassRate(sample, inputs.verdicts, inputs.evaluations),
-});
+`condition` 不是 `niceeval/report` 的 export。需要该维度的 Report 在自身模块中声明
+`const condition: GroupFunction = …`；MemoryBench 的 leaderboard 也以这个形态声明它。
 
-const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
-  calculations: { passRate },
-  render: ({ calculations }) => {
-    const result = calculations.passRate;
-    return reportDocument({
-      title: "Summary",
-      children: [
-        reportMetric({
-          label: "Pass rate",
-          value: result.state === "available" ? result.value.rate : null,
-        }),
-      ],
-    });
+未列入上方 manifest 的符号不构成作者 API。`ReportElement`、`ReportNode`、`ClosedReportNode`、NiceEval JSX runtime、可读
+Record / Run / Sample handle、任意 reducer 以及 handle converter 都不发布。
+作者只使用标准 React JSX、关闭 DomainView 和 Analysis-issued 值。
+
+公共出口的每次变更都以最小纵向样例固定其调用点。该样例是一个普通 `.tsx` Report module，只设置
+`"jsx": "react-jsx"`。
+
+它同时使用 `defineReport()`、两种 `defineComponent()`、一个参数 Page、`aggregate()`、`MetricValue`、`ctx.scope` 与
+`ctx.report`。安装后的候选包必须以它运行 `show`、`show --json`、`view` 与 `view --out`，且不依赖特殊 tsconfig、pragma 或源码路径。
+
+## 成本投影入口
+
+`definePricingProfile()` 的唯一作者位置是 `ReportDefinition.pricing`；省略时 `defineReport()` 使用 `builtInPricingProfile`。组件从只读
+`ctx.report.pricing` 取得最终已验证值。
+本页的 export manifest 列出作者可导入的价格与成本类型。精确的 `PricingProfileInput`、规范化输出、跨包识别、Measure 参数和成本
+投影语义由 [Report 成本投影 Library](cost-projections/library.md) 单点定义。
+
+## 标准 React JSX 与 `defineReport()`
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  }
+}
+```
+
+`defineReport()` 是 Report module 的默认导出。它接收一个单页 callback，或接收带非空 `pages` 的声明。定义阶段只校验静态形状，
+不打开 Sample 或执行 Page。`ReportDefinition.pricing` 是价格配置的唯一所属位置：对象形式从 `ReportShell.pricing` 取得已验证
+Profile；未声明时归一为随包 `builtInPricingProfile`，单页 callback 取得同一默认值。
+
+```ts
+interface ReportShell {
+  readonly pricing?: PricingProfile;
+  readonly pages: readonly [Page, ...Page[]];
+  // title、theme、dimensionPins、head 等其它 Report 声明字段
+}
+
+interface ReportDefinition {
+  readonly pricing: PricingProfile | null;
+  // 已验证、归一化的 Report 声明
+}
+
+declare function defineReport(
+  render: (sample: Sample) => React.ReactNode | Promise<React.ReactNode>,
+): ReportDefinition;
+
+declare function defineReport(definition: ReportShell & {
+  readonly pages: readonly [Page, ...Page[]];
+}): ReportDefinition;
+```
+
+`head` 接收结构化标签。`HeadTag` 的 tag 是 `meta`、`link`、`style`、`script`
+闭集，`attrs` 是 `Record<string, string | true>`。Host 在形成 revision 前继续按 tag 校验允许的属性、URL 与
+内联内容；宽泛的作者推断不等于 raw HTML 或任意 DOM 注入。
+
+```tsx
+import { defineReport, type HeadTag } from "niceeval/report";
+
+const head: readonly HeadTag[] = [
+  { tag: "meta", attrs: { name: "robots", content: "noindex" } },
+  {
+    tag: "script",
+    attrs: {
+      src: "https://cdn.example.test/chart-enhance.js",
+      defer: true,
+      integrity: "sha384-example",
+      crossorigin: "anonymous",
+      referrerpolicy: "no-referrer",
+    },
   },
-});
+];
 
 export default defineReport({
-  id: Either.getOrThrow(reportId("summary")),
-  calculations: { passRate },
-  pages: [overview],
+  title: { en: "Quality", "zh-CN": "质量" },
+  head,
+  pages: [{ id: "overview", path: "/", title: "Overview", render: () => null }],
 });
 ```
 
-公开领域对象只叫 `Report`。`ReportDefinition` 不存在于 public API；`ReportPlan`、`ReportInput`、binding、matrix、prepare、materialize 与 route expansion receipt 都是 host 编译机械，不进入作者签名、教程或 Concepts。
+内联 script 的 `children` 是明确的字符串 bytes；标签顺序、属性和 bytes 都进入站点 identity。需要价格配置时，作者按
+[Report 成本投影 Library](cost-projections/library.md) 的完整 rate-card 示例声明它，再放入同一对象的 `pricing`。
 
-## 数据计划
+`style` 必须有 `children`；带 `src` 的 script 不能同时给 `children`。script 可以加强交互，不能承担正文、导航、Evidence 或核心数据读取。
 
-Report 直接复用 [Projection Library](../projection/library.md) 的声明与穷尽结果。`reportInputs` 把具名 projection 形状变成 `ReportDataPlan`，并让每个 key 精确推导出 `ProjectedSample<Access, Value>`：
+Codex sealed Usage 的 model request observation、零费率的显式声明和严格 coverage 的结果，都由
+[Report 成本投影 Library](cost-projections/library.md) 定义。
+
+## Page
+
+`pages` 是 Report 的唯一 Page 集合；Host 不回填、推断或自动生成详情页。普通 Page 的 `load` 省略时，`render` 直接收到 Host 签发的
+Sample。参数 Page 以 `params` 表示可寻址实例，并固定为 `navigation: false`。Attempt、Experiment 或任意其它详情都必须由作者作为
+`ParameterizedPage` 显式放入 `pages`，才能成为 route 或静态输出的一部分。
 
 ```ts
-type AnyRecordProjection = RecordProjection<any, any>;
-
-declare const ReportDataPlanTypeId: unique symbol;
-
-interface ReportDataPlan<
-  out Shape extends Readonly<Record<string, AnyRecordProjection>> =
-    Readonly<Record<string, AnyRecordProjection>>,
-> {
-  readonly [ReportDataPlanTypeId]: { readonly _Shape: () => Shape };
+interface PlainPage<Input = Sample> {
+  readonly id: string;
+  readonly path?: string;
+  readonly title: LocalizedText;
+  readonly navigation?: boolean;
+  readonly load?: (
+    sample: Sample,
+    params: void,
+    ctx: PageLoadContext,
+  ) => Input | Promise<Input>;
+  readonly render: (
+    input: Input,
+    ctx: PageContext,
+  ) => React.ReactNode | Promise<React.ReactNode>;
 }
 
-declare const reportInputs: <
-  const Shape extends Readonly<Record<string, AnyRecordProjection>>,
->(shape: Shape) => ReportDataPlan<Shape>;
-
-type ReportDataShape<Plan extends ReportDataPlan> =
-  Plan extends ReportDataPlan<infer Shape> ? Shape : never;
-
-type ReportProjectedValues<Plan extends ReportDataPlan> = {
-  readonly [Key in keyof ReportDataShape<Plan>]:
-    ReportDataShape<Plan>[Key] extends RecordProjection<infer Access, infer Value>
-      ? ProjectedSample<Access, Value>
-      : never;
-};
-```
-
-`any` 只用于 package declaration 内部表达 existential `RecordProjection`；作者 callback 的每个 key 仍精确推导 `Access` 与 `Value`。普通 named interface 不需要 index signature、显式 generic 或 `as`。
-
-`reportInputs` 是输入 key 的唯一 constructor。Key 满足 `[a-z][a-z0-9_-]*` 且 UTF-8 最多 64 bytes；constructor 拒绝 symbol、accessor、non-plain object 与非法 key。返回 plan 由 package-private WeakMap 持有 projection objects，不能靠复制 brand 伪造；host 从 canonical plan 生成 bounded numeric `ReportProjectionId`。
-
-三个 factory 的基数分别是：
-
-- `attemptSlotProjection(projector)`：对 `sample.slots` 每项一条；
-- `attemptOriginRunProjection(projector)`：仍是每个 slot 一条，只把 included slot 的 owner 定位为该 Attempt 的 origin Run；
-- `selectedRunProjection(projector)`：对 `sample.runs` 每项一条。
-
-excluded、not-recorded 与 core-invalid 不会从 projected sample 消失。十个 slot 指向同一 origin Run 时仍有十条公开 logical entries；物理去重只属于 host telemetry。
-
-每个 `RecordAttachmentProjector` 解释一个 owner 类型与一个 `RecordAttachmentFamily`。Projector callback 只在 Attachment `available` 时执行，同步消费完整 `RecordAttachmentValue` 并返回 view value，不能执行额外 Record I/O。callback throw 在 direct API 是 defect。Report host 在消费边界把它记为引用该 projection 的 consumer 的 execution problem，其它页面继续。
-
-`ProjectedSample<Access, Value>` 只有两个 generic 参数：`sample`、`access`、`entries` 与 `coverage`。Attachment result 使用 `ProjectedRecordAttachmentResult<Value>` 的六态 union。
-
-六态是 available、unavailable、migration-required、migration-unavailable、unsupported 与 invalid；available 保存 projector 从完整 Attachment 值返回的 view value。host 不引入第三个 failure generic、output codec 或 portable envelope。
-
-`migration-required` 只表示存在相邻 converter 的完整迁移链，command 提示运行 `niceeval migrate`。`migration-unavailable` 表示旧 schema 的已知路径碰到 `not-losslessly-migratable`，明确没有无损 converter。因此它不提示再次运行 `niceeval migrate`，只呈现 reason；二者不能混淆。
-
-## Report、Calculation 与组件
-
-```ts
-interface Report {
-  readonly id: ReportId;
-  readonly calculations: ReportCalculationSet;
-  readonly pages: readonly (ReportPage | ReportPageFamily)[];
-  readonly downloads: readonly ReportDownload[];
+interface ParameterizedPage<Params extends JsonValue, Input> {
+  readonly id: string;
+  readonly path?: string;
+  readonly title: LocalizedText;
+  readonly navigation: false;
+  readonly params: PageParams<Params>;
+  readonly load: (
+    sample: Sample,
+    params: Params,
+    ctx: PageLoadContext,
+  ) => Input | Promise<Input>;
+  readonly render: (
+    input: Input,
+    ctx: PageContext,
+  ) => React.ReactNode | Promise<React.ReactNode>;
 }
 
-declare const defineReport: (definition: {
-  readonly id: ReportId;
-  readonly calculations?: ReportCalculationSet;
-  readonly pages: readonly (ReportPage | ReportPageFamily)[];
-  readonly downloads?: readonly ReportDownload[];
-}) => Report;
+type Page<Params extends JsonValue | void = void, Input = Sample> =
+  [Params] extends [void]
+    ? PlainPage<Input>
+    : ParameterizedPage<Extract<Params, JsonValue>, Input>;
 ```
 
-`defineReport` 校验 ID 唯一性，并验证 Page / PageFamily / Download 引用的 Calculation object 都在同一个 Report 的 `calculations` 中注册。引用按 object identity，不按 string lookup；作者不能在 callback 中动态增加 Calculation 或 I/O。
+`params.encode()` 产生一个 canonical key segment；`decode()` 只接受同一形式。全站路径调用 `enumerate(sample)` 恰好一次，
+并生成每个返回值。`show --page` 只用 `decode()` 取得已请求 key，不调用 `enumerate()`。
 
-### Completeness
+```tsx
+import {
+  defineReport,
+  type Page,
+  type PageParams,
+  Table,
+} from "niceeval/report";
 
-```ts
-type ReportCompleteness = "allow-partial" | "require-complete";
-```
+type SummaryParams = { readonly state: "all" | "failed" };
 
-任何直接消费 `RecordProjection` 的 Calculation、Page、PageFamily 或 Download 都必须显式声明 completeness：
-
-- `require-complete`：任一 required projected input 不完整时不调用作者 callback，形成 `data-unavailable` result。不完整包括 not-recorded、core-invalid、unavailable、migration-required、migration-unavailable、unsupported 与 invalid；
-- `allow-partial`：调用 callback，交付穷尽 `ProjectedSample`、coverage 与 issues；host-owned problems surface 仍保留全部问题；
-- projection callback throw 不是 partial data。Calculation、fixed Page 与 Download 不执行。`allow-partial` PageFamily 仍可收到穷尽 entries，只从成功的 `attachment-result` 展开实例，但 family/execution problem 不可隐藏，零实例也必须可见。static export 对任一 execution problem fail closed；
-- 只消费 `ReportCalculationResult` 的组件总是收到 result union，可以呈现 unavailable，不把它改名为 execution failure。
-
-### Calculation
-
-Calculation 只从静态声明的 projections 派生一个值，不依赖另一个 Calculation。复用公式使用普通纯函数。
-
-```ts
-interface ReportCalculation<Inputs extends ReportDataPlan, out Value> {
-  readonly id: ReportComponentId;
-  readonly inputs: Inputs;
-  readonly completeness: ReportCompleteness;
-  readonly calculate: (context: {
-    readonly sample: AnalysisSample;
-    readonly inputs: ReportProjectedValues<Inputs>;
-  }) => Value;
-}
-
-type AnyReportCalculation = ReportCalculation<any, any>;
-type ReportCalculationSet = Readonly<Record<string, AnyReportCalculation>>;
-
-type ReportCalculationResults<Set extends ReportCalculationSet> = {
-  readonly [Key in keyof Set]:
-    Set[Key] extends ReportCalculation<any, infer Value>
-      ? ReportCalculationResult<Value>
-      : never;
+const summaryParams: PageParams<SummaryParams> = {
+  encode: ({ state }) => state,
+  decode: key => {
+    if (key !== "all" && key !== "failed") throw new TypeError("unknown summary state");
+    return { state: key };
+  },
+  enumerate: () => [{ state: "all" }, { state: "failed" }],
 };
 
-declare const defineCalculation: <
-  Inputs extends ReportDataPlan,
-  Value,
->(definition: {
-  readonly id: ReportComponentId;
-  readonly inputs: Inputs;
-  readonly completeness: ReportCompleteness;
-  readonly calculate: (context: {
-    readonly sample: AnalysisSample;
-    readonly inputs: ReportProjectedValues<Inputs>;
-  }) => Value;
-}) => ReportCalculation<Inputs, Value>;
-```
-
-`Value` 没有 JSON、codec 或 portability 约束。普通 named interface 可以直接作为结果；execution 在进程内保存原值，host 不重新编码。Callback throw 形成 `calculation-callback-defect`，不是 unavailable、invalid 或 data-unavailable；interruption 保持 Cause。
-
-```ts
-interface ReportDataState {
-  readonly state: "complete" | "partial";
-}
-
-type ReportCalculationResult<Value> =
-  | {
-      readonly state: "available";
-      readonly value: Value;
-      readonly inputState: ReportDataState;
-    }
-  | {
-      readonly state: "data-unavailable";
-      readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
-    }
-  | {
-      readonly state: "execution-failed";
-      readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
-    };
-```
-
-`inputState` 只声明 required inputs 是否完整，不携带分母。业务 `observed` / `denominator` 属于 Calculation value；host 不从 coverage、entry 数或 access count 推导。
-
-组件共享同一个 context 形状：
-
-```ts
-type ReportComponentContext<
-  Inputs extends ReportDataPlan | {} = {},
-  Calculations extends ReportCalculationSet = {},
-> = {
-  readonly sample: AnalysisSample;
-  readonly inputs: Inputs extends ReportDataPlan
-    ? ReportProjectedValues<Inputs>
-    : {};
-  readonly calculations: ReportCalculationResults<Calculations>;
-};
-```
-
-### Fixed Page
-
-```ts
-declare const definePage: {
-  <Calculations extends ReportCalculationSet = {}>(definition: {
-    readonly id: ReportComponentId;
-    readonly route: ReportRoute;
-    readonly inputs?: never;
-    readonly completeness?: never;
-    readonly calculations?: Calculations;
-    readonly render: (
-      context: ReportComponentContext<{}, Calculations>,
-    ) => ReportDocument;
-  }): ReportPage;
-
-  <Inputs extends ReportDataPlan, Calculations extends ReportCalculationSet = {}>(definition: {
-    readonly id: ReportComponentId;
-    readonly route: ReportRoute;
-    readonly inputs: Inputs;
-    readonly completeness: ReportCompleteness;
-    readonly calculations?: Calculations;
-    readonly render: (
-      context: ReportComponentContext<Inputs, Calculations>,
-    ) => ReportDocument;
-  }): ReportPage;
-};
-```
-
-Fixed Page 的 route 在任何 I/O 前已知。若 `inputs` 非空，TypeScript overload 要求 `completeness`；只消费 Calculation 时不要求虚假的 completeness。
-
-### PageFamily
-
-PageFamily 可以用它静态声明的 projected values 和已注册 Calculation results 纯内存展开动态 route，但不能请求新 I/O。
-
-```ts
-declare const definePageFamily: {
-  <Instance, Calculations extends ReportCalculationSet = {}>(definition: {
-    readonly id: ReportComponentId;
-    readonly inputs?: never;
-    readonly completeness?: never;
-    readonly calculations?: Calculations;
-    readonly instances: (
-      context: ReportComponentContext<{}, Calculations>,
-    ) => Iterable<Instance>;
-    readonly key: (instance: Instance) => ReportInstanceKey;
-    readonly route: (instance: Instance) => ReportRoute;
-    readonly render: (
-      context: ReportComponentContext<{}, Calculations> & {
-        readonly instance: Instance;
-      },
-    ) => ReportDocument;
-  }): ReportPageFamily;
-
-  <Inputs extends ReportDataPlan, Instance, Calculations extends ReportCalculationSet = {}>(definition: {
-    readonly id: ReportComponentId;
-    readonly inputs: Inputs;
-    readonly completeness: ReportCompleteness;
-    readonly calculations?: Calculations;
-    readonly instances: (
-      context: ReportComponentContext<Inputs, Calculations>,
-    ) => Iterable<Instance>;
-    readonly key: (instance: Instance) => ReportInstanceKey;
-    readonly route: (instance: Instance) => ReportRoute;
-    readonly render: (
-      context: ReportComponentContext<Inputs, Calculations> & {
-        readonly instance: Instance;
-      },
-    ) => ReportDocument;
-  }): ReportPageFamily;
-};
-```
-
-标准用法包括：每个 Assertion 一页、每个 conversation turn / tool call 一页，以及先由 Calculation 聚合 diagnostics category、再由 PageFamily 展开分类页。Assertion 页的 route 依赖 Assertions Attachment 的 durable `entryId`。若坏 payload 无法提供 durable item key，host 只能保留列表页与问题，不能用数组下标伪造稳定 detail route。
-
-`Instance` 是进程内私有值，不要求 `{ key }` 或 portability；`key(instance)` 单独提供稳定 identity。`key` / `route` callback throw 与 duplicate key 都形成具名 execution problem。family 即使产生零个 instance，也必须在 `ReportExecution.families` 留一条 result；作者不能靠 `flatMap` 或空 family 让坏输入从内建 problems surface 消失。
-
-### Download
-
-```ts
-interface ReportDownloadFile {
-  readonly path: ReportDownloadPath;
-  readonly mediaType: string;
-  readonly bytes: Uint8Array;
-}
-
-declare const defineDownload: {
-  <Calculations extends ReportCalculationSet = {}>(definition: {
-    readonly id: ReportComponentId;
-    readonly inputs?: never;
-    readonly completeness?: never;
-    readonly calculations?: Calculations;
-    readonly build: (
-      context: ReportComponentContext<{}, Calculations>,
-    ) => Iterable<ReportDownloadFile>;
-  }): ReportDownload;
-
-  <Inputs extends ReportDataPlan, Calculations extends ReportCalculationSet = {}>(definition: {
-    readonly id: ReportComponentId;
-    readonly inputs: Inputs;
-    readonly completeness: ReportCompleteness;
-    readonly calculations?: Calculations;
-    readonly build: (
-      context: ReportComponentContext<Inputs, Calculations>,
-    ) => Iterable<ReportDownloadFile>;
-  }): ReportDownload;
-};
-```
-
-Download bytes 在 execution 中自包含，随静态站一起写出。
-
-## 路由、实例 key 与静态路径
-
-```ts
-declare const ReportIdTypeId: unique symbol;
-declare const ReportComponentIdTypeId: unique symbol;
-declare const ReportRouteTypeId: unique symbol;
-declare const ReportInstanceKeyTypeId: unique symbol;
-declare const ReportDownloadPathTypeId: unique symbol;
-
-type ReportId = string & { readonly [ReportIdTypeId]: true };
-type ReportComponentId = string & { readonly [ReportComponentIdTypeId]: true };
-type ReportRoute = string & { readonly [ReportRouteTypeId]: true };
-type ReportInstanceKey = string & { readonly [ReportInstanceKeyTypeId]: true };
-type ReportDownloadPath = string & { readonly [ReportDownloadPathTypeId]: true };
-
-type ReportPathIssue = {
-  readonly code: "report-path-invalid";
-  readonly kind: "report-id" | "component-id" | "route" | "instance-key" | "download";
-  readonly reason: string;
+const summaryPage: Page<SummaryParams, SummaryParams> = {
+  id: "summary",
+  path: "/summary",
+  title: "Summary",
+  navigation: false,
+  params: summaryParams,
+  load: (_sample, params) => params,
+  render: params => <Table rows={[params]} />,
 };
 
-declare const reportId: (input: string) => Either.Either<ReportId, ReportPathIssue>;
-declare const reportComponentId: (input: string) => Either.Either<ReportComponentId, ReportPathIssue>;
-declare const reportRoute: (input: string) => Either.Either<ReportRoute, ReportPathIssue>;
-declare const reportInstanceKey: (input: string) => Either.Either<ReportInstanceKey, ReportPathIssue>;
-declare const reportDownloadPath: (input: string) => Either.Either<ReportDownloadPath, ReportPathIssue>;
-
-declare const reportInstanceKeyFromRecordId: (input: {
-  readonly kind: "run" | "attempt" | "slot";
-  readonly value: RunId | AttemptId | SlotId;
-}) => ReportInstanceKey;
-
-declare const reportRouteFromKeys: (
-  keys: readonly [ReportInstanceKey, ...ReportInstanceKey[]],
-) => Either.Either<ReportRoute, ReportPathIssue>;
+export default defineReport({ pages: [summaryPage] });
 ```
 
-Route 是 `/`，或 `/` 加 1–32 个 lowercase ASCII segments。Download 是相同语法的 relative segments。Segment 满足 `[a-z0-9][a-z0-9._~-]*`，最多 128 bytes，整条最多 1,024 bytes。它拒绝 percent、query、fragment、backslash、空 segment、`.`、`..`、尾随 `/`、尾点/空格，以及 Windows device name。
+若参数是 Attempt locator、identity 或其它 Sample member，`PageLoadContext.evidence(locator)` 与每个公开 DomainView 入口都只交出
+当前 Sample 内的闭合值。它们不提供 Record reader、目录、任意路径或浏览器请求能力。
 
-Report / component ID 与 Instance key 满足 `[a-z0-9][a-z0-9_-]*`，最多 128 bytes；纯十进制 ordinal 非法，不能用数组下标冒充 durable identity。所有 definition arrays 与结果表按 branded ID 的 UTF-8 bytes 排序；同 ID 冲突在任何作者 callback 前返回 definition invalid，不能依赖 JavaScript object iteration order。
+## 两种 `defineComponent()`
 
-Record 的 `RunId` / `AttemptId` / `SlotId` 不能直接拼入 lowercase route。`reportInstanceKeyFromRecordId` 使用 `run-` / `attempt-` / `slot-` domain tag 加可逆 lowercase Crockford；decode/display 仍恢复并显示原 Record ID。`reportRouteFromKeys` 是唯一把这些 key 组成 route 的 public adapter。Assertions Attachment 的 durable `entryId` 经同一 adapter 进入 per-Assertion route。
-
-Static mapping 唯一且跨平台：
-
-```text
-/           → index.html
-/a/b        → a/b/index.html
-download x  → downloads/x
-```
-
-Route outputs、downloads、host-data、built-in runtime 与 manifest 进入同一个 collision set。Host 拒绝 exact collision、ASCII case-fold collision、file/directory prefix collision、Windows device / trailing-dot-space collision 与长度超限。
-
-Static link 不直接写 semantic `/a/b`。Host codec 从当前页面 output 的 POSIX dirname 到 target output file 计算 relative path，separator 固定 `/`，并始终显式包含 `index.html`。Host files 使用保留 namespace `_niceeval`，不属于 author route grammar。
-
-## Closed semantic report tree
-
-页面返回闭合语义树，不返回任意 JSON、HTML、DOM、React element、CSS 或 parallel `textAlternative`。
+组合组件的 callback 可以异步取得 Sample 上的闭合值。Sample 只从 `ctx.scope` 读取。`ctx.report` 是一个只读 `ReportMeta`，包含
+归一后的 `title`、已验证 `PricingProfile` 或 `null` 的 `pricing`，以及导航 Page 摘要；它不提供 `head`、theme、Record reader 或
+当前 route 以外的读取能力。`ctx.report.pricing` 不是第二份价格输入，也不是 Runner 配置或运行期价格表。
 
 ```ts
-type ReportScalar = null | boolean | number | string;
-
-type ReportInline =
-  | { readonly type: "text"; readonly value: string }
-  | { readonly type: "code"; readonly value: string }
-  | { readonly type: "emphasis"; readonly children: readonly ReportInline[] }
-  | {
-      readonly type: "link";
-      readonly label: readonly ReportInline[];
-      readonly target:
-        | { readonly kind: "route"; readonly route: ReportRoute }
-        | { readonly kind: "download"; readonly path: ReportDownloadPath };
-    };
-
-interface ReportDocument {
-  readonly title: string;
-  readonly children: readonly ReportBlock[];
+interface ComponentContext {
+  readonly scope: Sample;
+  readonly report: ReportMeta;
+  readonly page: PageContext;
 }
 
-type ReportBlock =
-  | ReportSection
-  | ReportParagraph
-  | ReportList
-  | ReportTable
-  | ReportMetric
-  | ReportStatus
-  | ReportCode
-  | ReportChart;
-
-interface ReportSection { readonly type: "section"; readonly heading: string; readonly children: readonly ReportBlock[]; }
-interface ReportParagraph { readonly type: "paragraph"; readonly children: readonly ReportInline[]; }
-interface ReportList { readonly type: "list"; readonly ordered: boolean; readonly items: readonly (readonly ReportBlock[])[]; }
-interface ReportTable {
-  readonly type: "table";
-  readonly caption: string;
-  readonly columns: readonly { readonly key: string; readonly label: string; readonly align?: "start" | "end" }[];
-  readonly rows: readonly Readonly<Record<string, ReportScalar>>[];
-}
-interface ReportMetric { readonly type: "metric"; readonly label: string; readonly value: ReportScalar; readonly unit?: string; }
-interface ReportStatus { readonly type: "status"; readonly tone: "neutral" | "positive" | "warning" | "negative"; readonly label: string; readonly detail?: readonly ReportInline[]; }
-interface ReportCode { readonly type: "code-block"; readonly value: string; readonly language?: string; }
-interface ReportChart {
-  readonly type: "chart";
-  readonly chart: "bar" | "line";
-  readonly title: string;
-  readonly categoryLabel: string;
-  readonly categories: readonly string[];
-  readonly series: readonly { readonly label: string; readonly values: readonly (number | null)[] }[];
+interface ReportMeta {
+  readonly title: LocalizedText;
+  readonly pricing: PricingProfile | null;
+  readonly pages: readonly {
+    readonly id: string;
+    readonly title: LocalizedText;
+    readonly navigation: boolean;
+  }[];
 }
 ```
 
-精确树形状之外还必须做 relational validation：
+```tsx
+import {
+  aggregate,
+  Bars,
+  defineComponent,
+  Grid,
+  model,
+  passRate,
+  Section,
+  Table,
+} from "niceeval/report";
 
-- number 全部 finite；
-- string 只含 Unicode scalar values；
-- table column key 非空唯一，row keys 与 columns 恰好相等；
-- chart series 长度与 categories 相等；
-- route / download link 必须存在于本 execution 的 closure；
-- depth、node、string 与 bytes limits 在 active recursion stack 中执行；
-- HTML 按 context escape，terminal 把控制字符转成可见文本；renderer 穷尽 union，未知节点类型返回 unsupported。
+const Overview = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model },
+    values: { passRate },
+  });
 
-Web、terminal 与 static text 都从同一棵树派生。Chart 的 label、categories 与 series 足以形成 table/text；颜色、hover 与图形不能承载唯一语义。通过率等统计口径必须由 Calculation value 自己定义；host 不替作者公式猜 `observed` / `denominator`。
+  return (
+    <Section title={ctx.report.title}>
+      <Grid>
+        <Bars points={rows} x="model" y="passRate" />
+        <Table rows={rows} />
+      </Grid>
+    </Section>
+  );
+});
+```
 
-## 数据问题、执行问题与不可隐藏 surface
+双面组件适合已有关闭数据的显示原语。可选 `resolve` 字段只在 Page 执行时调用一次；`text()` 和 `web()` 必须同步，且都只读取
+这个关闭值。它们不能读取 Sample、发网络请求或各自计算统计。
+
+```tsx
+import {
+  defineComponent,
+  formatMetricValue,
+  Stat,
+  type MetricValue,
+} from "niceeval/report";
+
+const MetricCard = defineComponent<{ readonly label: string; readonly value: MetricValue }, {
+  readonly label: string;
+  readonly value: MetricValue;
+}>({
+  resolve: (props, ctx) => {
+    const reportTitle = typeof ctx.report.title === "string"
+      ? ctx.report.title
+      : (ctx.report.title.en ?? "Report");
+    return { label: `${reportTitle}: ${props.label}`, value: props.value };
+  },
+  text: data => `${data.label}: ${formatMetricValue(data.value)}`,
+  web: data => <Stat label={data.label} value={formatMetricValue(data.value)} />,
+});
+```
+
+第一种形态适合组织 Page；第二种形态适合定义 text/web 一致的显示原语。两者返回的组件都能放进标准 React JSX。
+
+## `aggregate()` 与 `MetricValue`
+
+`aggregate()` 是 Analysis executor 的 Report facade。它只接收 Host 签发的 Sample，返回 `ClosedRows`；它不是第二套 reducer，
+也不接受可读 Attempt、Record root 或手写分母。
+
+```tsx
+import { aggregate, defineComponent, model, passRate, Table } from "niceeval/report";
+
+const QualityTable = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model },
+    values: { passRate },
+  });
+
+  return <Table rows={rows} />;
+});
+```
+
+`GroupFunction` 只观察冻结 Run context 中的 `experimentId`、`evalId`、`agent`、`model`、`reasoningEffort`、`flags` 与 `labels`。
+它不能取得 reader、AttemptHandle 或重新打开 Record。`rollup()`、`metricValue()`、`totalScore`、Attempt converter 和任意 reducer
+没有 Report export。
+
+`MetricValue` 由 Analysis 生成，Report 只 re-export 它的类型：
 
 ```ts
-interface ReportRecordedDataProblem {
-  readonly category: "recorded-data";
-  readonly code:
-    | "unavailable"
-    | "migration-required"
-    | "migration-unavailable"
-    | "unsupported"
-    | "invalid";
-  readonly consumerId: ReportComponentId;
-  readonly inputKey?: string;
-  readonly slotId?: SlotId;
-  readonly runId?: RunId;
-}
-
-interface ReportExecutionProblem {
-  readonly category: "execution";
-  readonly code:
-    | "projection-callback-defect"
-    | "calculation-callback-defect"
-    | "page-family-instances-defect"
-    | "page-family-key-defect"
-    | "page-family-key-conflict"
-    | "page-execution-failed"
-    | "download-execution-failed"
-    | "semantic-document-invalid"
-    | "route-conflict";
-  readonly consumerId: ReportComponentId;
-  readonly summary: string;
-}
-
-type ReportProblem = ReportRecordedDataProblem | ReportExecutionProblem;
-
-type ReportProblemId = number & Brand<"ReportProblemId">;
-
-interface ReportProblemTableEntry {
-  readonly id: ReportProblemId;
-  readonly problem: ReportProblem;
+interface MetricValue {
+  readonly value: number | null;
+  readonly state: "available" | "partial" | "empty" | "unsupported" | "failed";
+  readonly samples: number;
+  readonly total: number;
+  readonly basis: "attempt" | "eval" | "run" | "pair" | "slot";
+  readonly issues: readonly AnalysisIssue[];
+  readonly refs: readonly EvidenceRef[];
+  readonly unit?: string;
+  readonly format?: MeasureFormat;
+  readonly better?: "higher" | "lower" | "neutral";
+  readonly bounds?: { readonly min?: number; readonly max?: number };
 }
 ```
 
-`summary` 是固定、bounded 的错误摘要，不携带 payload、secret、Record path 或 raw system cause。Projector 问题在 unique projection cache boundary 只生成一次；logical references 只引用同一个 problem ID。Effect interruption 不编码成 `ReportProblem`。
+`value: 0` 是合法读数。`partial` 保留既定 `total`、`issues` 与 `refs`；显示排序、筛选和截断只改变可见项目，不能改写任一
+`MetricValue` 字段。完整状态语义由 [读数与显示语义](calculations.md) 拥有。
 
-Host 在作者 callback 之前从完整 Sample / projected results 汇总 recorded-data problems，在 callback 边界再追加 execution problems。唯一 canonical `problemTable` 去重保存问题；projection、Calculation、Page、Family 与 Download results 只保存 problem ID 引用。show、view 与 static renderer 都从这张表生成不可关闭的 built-in problems surface。作者过滤 entries、返回零 instance 或不画 problem node，都不能删除它。
+## 成本 Measure 整合
 
-Recorded-data problems 是可呈现事实，允许形成成功 static export。Projector / author defect、非法 semantic tree 或 route collision 是 execution problem。show/view 可以保留成功页面并显示问题；static export 对任一 execution problem fail closed。
+成本组件使用 `ctx.report.pricing` 请求成本 Measure；旧的跨包 `null` 防御只用于拒绝或降级非当前定义。export manifest 中的 `CostMetricValue` 与
+`CostProjectionValue` 是作者可观察类型。`aggregate(costUSD(profile))` 的 cell 以 `cell.projection` 提供关闭投影；state、basis、
+ledger 与 reason data types 同样仅以 type-only export 提供。精确调用形状、无 Profile 呈现、Analysis 数学与 machine 读数由
+[Report 成本投影 Library](cost-projections/library.md) 和 [CLI](cost-projections/cli.md) 定义。
 
-problems surface 必须区分 `migration-required` 与 `migration-unavailable`：前者提示运行 `niceeval migrate`，后者只呈现 reason，不得反复提示迁移命令。
+## 中立组件与官方组合组件
 
-## 一次 ReportExecution
+`Table` 接收 `rows`，`Bars`、`Line` 与 `Scatter` 接收 `points`，`Stat` 接收 format 后的显示值。它们不知道值来自 Analysis、
+业务数组或已关闭领域视图，也不会自行读取数据。
 
-```ts
-interface ReportProjectionSummary {
-  readonly projectionId: ReportProjectionId;
-  readonly inputKey: string;
-  readonly coverage: ProjectionCoverage;
-  readonly problemIds: readonly ReportProblemId[];
-}
+`Hero`、`SampleOverview`、`AttemptDetails`、`ExperimentDetails`、`Conversation`、`DiffView`、`SourceView` 与 `Waterfall` 是
+官方组合组件。它们只接收关闭数据，详情 route 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
+`libraryDetailRoute()` 建立。
 
-type ReportCalculationExecutionResult =
-  | {
-      readonly state: "available";
-      readonly calculationId: ReportComponentId;
-      readonly value: unknown;
-      readonly inputState: ReportDataState;
-      readonly problemIds: readonly ReportProblemId[];
-    }
-  | {
-      readonly state: "data-unavailable" | "execution-failed";
-      readonly calculationId: ReportComponentId;
-      readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
-    };
+`AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。展开该行后，`Conversation` 以 Session log 显示总 duration、turn 数和 call 数，再按因果顺序列出 user、assistant、thinking、tool、subagent 与其它事件；有详情的 call 使用原生 `details` 继续展开。没有精确 source mapping 的 turn 保留在页面级 Session log，不按源码顺序猜测归属。
 
-interface ReportPageFamilyResult {
-  readonly familyId: ReportComponentId;
-  readonly state: "expanded" | "data-unavailable" | "execution-failed";
-  readonly instanceCount: number;
-  readonly problemIds: readonly ReportProblemId[];
-}
+下载文件属于 Host 的站点闭包：view 与静态写出只读取已关闭的 bytes。作者入口不发布一个 generic `Download` 组件或
+`DownloadFile` 类型；这避免把尚无最终 primitive owner 的 generic semantic API 写进公共契约。
 
-type ReportPageResult =
-  | {
-      readonly state: "rendered";
-      readonly pageId: ReportComponentId;
-      readonly route: ReportRoute;
-      readonly document: ReportDocument;
-      readonly problemIds: readonly ReportProblemId[];
-    }
-  | {
-      readonly state: "data-unavailable" | "execution-failed";
-      readonly pageId: ReportComponentId;
-      readonly route?: ReportRoute;
-      readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
-    };
+## 跨重复包的描述符身份
 
-type ReportDownloadResult =
-  | {
-      readonly state: "built";
-      readonly downloadId: ReportComponentId;
-      readonly files: readonly ReportDownloadFile[];
-      readonly problemIds: readonly ReportProblemId[];
-    }
-  | {
-      readonly state: "data-unavailable" | "execution-failed";
-      readonly downloadId: ReportComponentId;
-      readonly problemIds: readonly [ReportProblemId, ...ReportProblemId[]];
-    };
+`defineReport()`、`defineComponent()` 和 `defineRenderer()` 的运行时 descriptor 使用版本化 `Symbol.for` key。
+对应 key 是：
 
-interface ReportExecution {
-  readonly reportId: ReportId;
-  readonly sample: AnalysisSample;
-  readonly projections: readonly ReportProjectionSummary[];
-  readonly calculations: readonly ReportCalculationExecutionResult[];
-  readonly families: readonly ReportPageFamilyResult[];
-  readonly pages: readonly ReportPageResult[];
-  readonly downloads: readonly ReportDownloadResult[];
-  readonly problemTable: readonly ReportProblemTableEntry[];
-}
-```
+- Report definition：`niceeval.report.definition/v2`
+- component faces：`niceeval.report.component/v1`
+- extension metadata：`niceeval.report.renderer/v1`
 
-Execution 不含 reader、root、path、Scope、Stream、callback 或 projector token。Calculation value 以原值保存在同一进程的 execution 中；host 不重新编码、不引入 wire 形状。页面与 download renderer 按 component ID 取回 typed result。
+应用依赖图中出现两份 NiceEval 时，Host 仍能识别同一版本的作者定义与组件 descriptor。PricingProfile 的
+`pricing-profile/v1` descriptor 以及它与 `definition/v2` 的重验关系由
+[Report 成本投影 Architecture](cost-projections/architecture.md) 定义；不得依赖 `instanceof`、对象地址或模块私有 symbol。
 
-`ReportProjectionId` 与 `ReportProblemId` 都是 bounded uint32、从 0 开始连续。Projection IDs 按 canonical declaration traversal 分配；problem IDs 按 stable execution traversal 第一次发现问题的顺序分配。同一 unique projection cache problem 只分配一次。`projections`、`calculations`、`families`、`pages`、`downloads` 分别按 canonical ID / route / path 排序，不能用 object iteration 猜顺序。
+## Host 边界
 
-每个 declared projection、Calculation、PageFamily、page instance 与 Download 在一个 execution 中最多执行一次。Author graph 的内部 intermediate values 不持久化，也不进入 Record。
+普通作者不调用 `reportHost`。高级 Host 只能从 `niceeval/report/host` 调用它：`show()` 是单目标执行，`serve()` 与 `export()`
+只消费完整站点闭包。这个出口不泄漏 loader、watcher 或 reader，也不把 `ClosedSiteRevision` 交给作者 callback。
 
-## Built-in Reports
-
-`niceeval/report/built-in` 导出 `defaultRunMembershipOverviewReport` 与 factory
-`runMembershipOverviewReport()`。这份普通 Report 供一个或多个 explicit Run 形成 bounded
-membership 概览。它声明
-`selectedRunProjection(membershipProvenanceProjector)` 与
-`attemptSlotProjection(verdictProjector)`。CLI 在显式 `--run` 且没有 `--report` 时使用它；其它
-selection 不会因此扩大 Attachment 读取范围。
-
-它的稳定表契约、row 值域与截断边界见 [CLI](cli.md#内建-run-membership-概览)。Report 只读取公开
-projector 的 `MembershipAction.outcome`，不读取 persisted raw action。Core Member、provenance 与
-Verdict 作为三组独立事实并列显示。
-
-`niceeval/report/built-in` 的 `defaultSandboxHistoryReport` 是一份普通、无额外 reader capability 的
-history Report。调用点先用公开的 all-runs Analysis selection 形成 Sample；Report 只声明并消费
-evaluation plan、Verdict 与 Sandbox 三条 public projection。
-
-它按 exact origin `(runId, attemptId)` 去重。reference Member 只在同一 origin 的 Slot coordinate
-列表中出现，不复制 Sandbox Attachment。
-
-每个 origin 显示 origin locator、Verdict、provider、source-native sandbox ID、fresh／pooled 状态。
-pooled origin 额外显示 sandbox number 与 ordinal。每条 coordinate 显示当前 Run 的 experiment、eval 与
-attempt。
-
-missing coordinate、slot state 和六态 Attachment read result 都留在 Report 的 partial / problems 语义中，
-不能被聚合成空历史。
-
-## Effect-native execution
-
-```ts
-declare const executeReport: (input: {
-  readonly sampleHandle: AnalysisSampleHandle;
-  readonly report: Report;
-}) => Effect.Effect<ReportExecution, ReportExecutionError, never>;
-```
-
-`executeReport` 只能在创建 `AnalysisSampleHandle` 的原 reader Scope 仍存活时调用。capability 已在 handle 的 package-private WeakMap binding 内，不额外写一个 `Scope.Scope` R；R 是 `never`。Pure `AnalysisSample` 不能传入这个入口。reader 关闭、伪造 handle 或另一 reader 的 handle 返回 typed `RecordReadError`；WeakMap 内部错配是 defect。
-
-Library 不调用 `Effect.runPromise`，也不建立私有 runtime。CLI / application main provide Layers 后只在外层调用一次 `Effect.runPromiseExit`；内部不存在 nested `runPromise`。
-
-```ts
-const execution = yield* executeReport({ sampleHandle, report });
-
-yield* showReport({ execution });
-yield* exportStaticReport({ execution, out });
-```
-
-### 从 current Record 直接执行
-
-需要默认产品路径时，host 还提供一次性组合入口。它在内部打开 current reader、形成
-`AnalysisSampleHandle` 并完成 execution。
-
-`Effect.scoped` 在返回前释放 reader 与其 maintenance lease。返回的 `ReportExecution`
-可以在 Scope 外继续交给 show、view 或 static export。
-
-```ts
-declare const executeReportFromRecord: (input: {
-  readonly root: RecordRoot;
-  readonly selection: AnalysisSelectionRequest;
-  readonly report?: Report;
-}) => Effect.Effect<
-  ReportExecution,
-  RecordReaderOpenError | AnalysisSelectionError | ReportExecutionError,
-  RecordFileSystem | RecordMaintenanceLock
->;
-```
-
-这个入口不自行安装 `NodeRecordLive`，也不提供 Promise facade；应用边界负责为精确的
-`RecordFileSystem | RecordMaintenanceLock` 需求提供自己的 Layer。默认概览 Report 可从
-`niceeval/report/built-in` 的 default export 取得；省略 `report` 时这个组合入口也使用它。它
-显示 selected runs、slot denominator、四种 slot state 与 bounded slot problem list，且只返回
-closed semantic document。
-
-## show
-
-```ts
-declare const showReport: (input: {
-  readonly execution: ReportExecution;
-  readonly format?: "text" | "json";
-  readonly page?: ReportRoute;
-}) => Effect.Effect<void, ReportShowError, ReportConsole>;
-```
-
-Text 与 JSON 都从同一 semantic tree、problems 与 execution 派生。`showReport` 不要求 filesystem、server 或 watcher，也不 watch。
-
-`--json` 输出一个固定 schema：reportId、pageSelection、sample 摘要、projections、calculations、families、pages 与 problemTable。Download 部分只含 path / mediaType / byteLength / SHA-256 metadata。它不内联 Download bytes，也不输出第二条 projection 路径。
-
-没有 `--page` 时 pages 按 route 输出全部；有 `--page` 时只输出 exact 选中的一页。sample / projections / calculations / family summaries / download metadata 与 problemTable 仍完整。arrays 按 canonical order，object keys 按 UTF-8 bytes 排序，stdout 是 UTF-8 canonical JSON。
-
-Host 只显示每个 input 的 complete/partial 与 problem IDs，不替作者公式猜 `observed` / `denominator`。Broken pipe 是正常 CLI 退出，其它 console failure 是 typed error，interruption 保持 Cause。
-
-## Node 热重载 host
-
-热重载只在 `niceeval/report/host/node`。它是独立 scoped host service；loader 与 watcher 的具体实现属于该 host，本契约只声明行为。
-
-```ts
-interface ReportViewState {
-  readonly current: ReportViewRevision;
-  readonly lastProblem?: { readonly summary: string };
-}
-
-interface ReportViewSession {
-  readonly url: string;
-  readonly snapshot: Effect.Effect<ReportViewState, ReportViewSessionClosed>;
-  readonly refresh: Effect.Effect<void, ReportViewSessionClosed>;
-}
-
-class NodeReportViewHost extends Context.Tag(
-  "@niceeval/report/NodeReportViewHost",
-)<NodeReportViewHost, { readonly open: (
-  request: ReportViewRequest,
-) => Effect.Effect<ReportViewSession, ReportViewOpenError, Scope.Scope> }>() {}
-
-declare const openNodeReportView: (
-  request: ReportViewRequest,
-) => Effect.Effect<
-  ReportViewSession,
-  ReportViewOpenError,
-  Scope.Scope | NodeReportViewHost
->;
-```
-
-热重载行为：
-
-- 每次 rebuild 产生一份新的 fixed `ReportExecution`；
-- 完整成功后才替换 current revision，并清除 lastProblem；
-- 失败保留 last-good execution，替换 bounded lastProblem；
-- 每个 revision 仍是固定的一次 `ReportExecution`。热重载因为变化会创建下一份 execution，而不是让同一份 execution 偷偷重读；
-- watch 的输入闭集是 Record root、Report / Theme module 及其静态 import、`niceeval.config.ts`。
-
-`NodeReportViewHost` 是可替换的高层 service。官方 Live Layer 内部组合 watcher、server 与 module loader；父调用者不提供或传入 Worker 的 Record service object。Current-process `executeReport` 仍支持调用方自己的 Record Layers。Node ESM module cache 与 watcher 细节由 host 决定，本契约不指定 Worker、bundler 或 wire 形状。
-
-## Static export
-
-```ts
-declare const exportStaticReport: (input: {
-  readonly execution: ReportExecution;
-  readonly out: AbsoluteDirectoryPath;
-}) => Effect.Effect<
-  ReportStaticExportReceipt,
-  ReportExportError,
-  ReportFileSystem
->;
-```
-
-Static exporter 只消费一个已完成 execution：
-
-1. preflight execution problems、semantic tree、route、download、limits 与 closure；任一 execution problem 整体不发布；
-2. 对这一次 invocation 唯一地 prepare `out`：不存在时创建空目录；
-3. 已存在（包括前次失败留下、没有 `complete` 的目录）在写出首字节前返回 `target-exists`；
-4. 向 `out` 写出 HTML、host-data、downloads、manifest 与 built-in runtime，host files 落在保留 namespace `_niceeval`；
-5. 全部文件写出后，最后写入零字节 `complete` marker；
-6. sync 目录后返回 receipt。
-
-Recorded-data problems 可以导出，并由所有页面不可关闭的 built-in problems surface 显示。目标已存在返回 `target-exists`，不删除或替换既有内容。
-
-中断或失败可能留下没有 `complete` marker 的目录。host 以缺失的 marker 识别 incomplete output，提示用户删除后重试。本契约不承诺原子目录发布，也不依赖原生 rename 原语。
-
-```ts
-interface ReportFileSystemService {
-  readonly prepareOutput: (
-    out: AbsoluteDirectoryPath,
-  ) => Effect.Effect<void, ReportFileSystemFailure>;
-  readonly writeFile: (input: {
-    readonly out: AbsoluteDirectoryPath;
-    readonly path: ReportHostOutputPath;
-    readonly bytes: Uint8Array;
-  }) => Effect.Effect<void, ReportFileSystemFailure>;
-  readonly writeCompleteMarker: (
-    out: AbsoluteDirectoryPath,
-  ) => Effect.Effect<void, ReportFileSystemFailure>;
-  readonly syncDirectory: (out: AbsoluteDirectoryPath) => Effect.Effect<void, ReportFileSystemFailure>;
-}
-
-class ReportFileSystem extends Context.Tag(
-  "@niceeval/report/ReportFileSystem",
-)<ReportFileSystem, ReportFileSystemService>() {}
-```
-
-`ReportFileSystemFailure` 是 `{ readonly code: "report-export-target-exists" }` 与
-`ReportFileSystemError` 的联合。
-
-`prepareOutput` 是 export invocation 的唯一 target-create/check 操作；exporter 在所有 preflight
-通过后、首个 `writeFile` 前恰好调用一次。实现不得缓存一次成功的 prepare 结果：同一个
-`ReportFileSystemService` 的下一次 export 仍须检查目录；前次失败留下的无 `complete` 目录也返回
-`target-exists`，用户删除后才可重试。
-
-`ReportHostOutputPath` 是 `niceeval/report/host` 平台边界类型，不从 author package 导出 constructor。host 用同一 codec 把 route HTML、Download、host-data 与 runtime 变成 canonical segments；Author `ReportDownloadPath` 只是其中一种输入。
-
-## Limits
-
-| 常量 | maximum | 计数范围 |
-|---|---:|---|
-| `REPORT_PAGES_MAX` | 20,000 | fixed + family-expanded pages |
-| `REPORT_DOCUMENT_NODES_MAX` | 20,000 | 每份 semantic document |
-| `REPORT_DOCUMENT_DEPTH_MAX` | 32 | 每份 semantic document |
-| `REPORT_DOWNLOAD_FILES_MAX` | 1,000 | 全部 downloads |
-| `REPORT_DOWNLOAD_FILE_BYTES_MAX` | 33,554,432 | 单一 normalized file buffer |
-
-Logical entries 上限 250,000 由 Projection Library 拥有，Report 不复述。Host 在分配 fixed collection 前检查已知 count，在 Iterable 与 semantic traversal 中累计其余 limits。降低任一 maximum 是 breaking contract，必须发布新 profile；实现不能散落匿名 magic numbers。
-
-```ts
-interface ReportLimitExceeded {
-  readonly code: "report-limit-exceeded";
-  readonly limit: "pages" | "document-nodes" | "document-depth" | "download-files" | "download-file-bytes";
-  readonly maximum: number;
-  readonly observedAtLeast: number;
-}
-```
-
-## Typed errors
-
-```ts
-type ReportExecutionError =
-  | RecordReadError
-  | ProjectionLimitError
-  | ReportLimitExceeded
-  | { readonly code: "report-definition-invalid"; readonly issues: readonly string[] };
-
-type ReportShowError =
-  | ReportConsoleError
-  | { readonly code: "report-show-render-failed"; readonly operation: string };
-
-type ReportViewOpenError =
-  | ReportExecutionError
-  | { readonly code: "report-view-open-failed"; readonly reason: string };
-
-type ReportExportError =
-  | ReportLimitExceeded
-  | { readonly code: "report-export-execution-problem"; readonly problems: readonly ReportExecutionProblem[] }
-  | { readonly code: "report-export-target-exists" }
-  | { readonly code: "report-export-write-failed"; readonly operation: string };
-```
-
-Typed failure、defect 与 interruption 始终分开。公开错误不泄露 payload、secret、任意 filesystem path 或 raw system cause；diagnostic log 可以在显式 debug policy 下写出安全 redaction 后的内部 cause。
-
-## 冻结验收
-
-本契约不能只用 Markdown lint 验收。实现前必须用仓库锁定的 TypeScript 与 `effect@3.22.1` 编译 `fixture/compile.ts`，至少证明：
-
-- 普通 named interface 可以成为 Attachment projector view 与 Calculation value，不需要 index signature、显式 generic 或 `as`；
-- wrong owner、projected Value 或 access kind 不能赋值；private TypeId / variance 真实参与 generic structure；
-- `reportInputs` 的 key 形状精确推导出 `ProjectedSample<Access, Value>`，不引入第三个 generic 参数；
-- 四态 completeness（allow-partial / require-complete）与 data-unavailable / execution-failed 可以区分；
-- PageFamily 的 `Instance` 由 `instances` 回调推断，key / route / render 可以消费它；
-- `executeReport` 的 R 是 `never`，`showReport` 只要求 `ReportConsole`，`exportStaticReport` 只要求 `ReportFileSystem`；
-- `Effect.gen` 组合上述入口、`Either.getOrThrow` 处理 branded constructor 均可编译。
+构建错误、坏参数 key、route 冲突、asset 冲突或限额超出阻止相应交付。Analysis 数据问题继续作为 `MetricValue`、领域视图和
+问题表的一部分显示。
 
 ## 相关阅读
 
-- [Reports README](README.md)：用户心智与功能边界。
-- [Architecture](architecture.md)：Record → Analysis → Projection → Report → host 的层次。
-- [Calculations](calculations.md)：通过率、score 与 completeness。
-- [Projection Library](../projection/library.md)：`RecordProjection`、`ProjectedSample` 与 coverage。
-- [Sample Library](../sample/library.md)：Sample、slot 状态与 live handle。
-- [Record Library](../record/library.md)：Attachment family 与读取状态。
+- [Reports README](README.md)：两条执行路径与产品范围。
+- [读数与显示语义](calculations.md)：统计口径、MetricValue 与 DomainView。
+- [Architecture](architecture.md)：站点版本、CSS、reload、缓存与预算。
+- [CLI](cli.md)：route 选择、机器输出、view 与静态导出。

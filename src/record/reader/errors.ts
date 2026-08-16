@@ -1,7 +1,7 @@
 import { Schema } from "effect";
+import type { RecordCoordinationError } from "../../coordination/record-leases.ts";
 import type {
   RecordFileSystemError,
-  RecordMaintenanceLockError,
 } from "../platform/errors.ts";
 
 /** `record.json` could not be safely recognized as a usable Record root. */
@@ -52,7 +52,7 @@ export class RecordHandleInvalid extends Schema.TaggedError<RecordHandleInvalid>
 }) {}
 
 export type RecordReaderOpenError =
-  | RecordMaintenanceLockError
+  | RecordCoordinationError
   | RecordBootstrapInvalid
   | RecordMigrationRequired
   | RecordFormatUnsupported

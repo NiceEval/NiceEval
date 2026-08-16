@@ -238,6 +238,14 @@ t.check(t.reply, jsonValid());
 
 Custom matchers compose with the same chain methods as built-ins: `.gate()`, `.atLeast(0.7)`.
 
+## Results stay structured
+
+An `AssertionResult` stores more than pass or fail. Every entry follows the same `check(a, b)` model: safe structured subject content or a stable reference for `a`; the evaluator or Match identity and complete safe configuration for `b`; and the evaluation, policy, and structured result needed for display. Explicit `t.check(a, b)` supplies both values. `loadedSkill`, `calledTool`, `succeeded`, and Judge recipes only obtain `a` and construct `b` for the author.
+
+For example, `t.check(await t.sandbox.runCommand(...), commandSucceeded())` retains the evaluated command, arguments, exit status, duration, and redacted stdout and stderr content or references. `calledTool(...)` retains normalized occurrence context in its scope. When nothing matches, it retains the observation scope and candidate occurrence references rather than only `false`.
+
+`show`, `view`, JSON, export, and source can organize copy and interfaces offline from these structured AssertionResults. They do not rerun a Match or call a Judge. `expected` and `received` are reading-surface copy derived from `a`, `b`, and the evaluation, not the only two saved strings. Assertion defines what must remain; Record decides how to persist it. When the subject data needed to evaluate safely cannot be retained, the result must be `unavailable` rather than leaving only `matched` or `mismatched`.
+
 ## Related reading
 
 - [Drive](/explanation/drive) — `t.send()`, `t.newSession()`, and HITL: how you produce the Turn data these assertions read from.

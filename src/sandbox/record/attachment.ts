@@ -1,22 +1,13 @@
-import { Either } from "effect";
-import {
-  decodeJsonRecordAttachmentPayload,
-  defineRecordAttachmentFamily,
-  makeRecordAttachmentWrite,
-  validateRecordAttachmentWrite,
-  type RecordAttachmentBlobDraft,
-  type RecordAttachmentFamily,
-  type RecordAttachmentWrite,
-} from "../../record/attachment/index.ts";
-import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/internal.ts";
-import { SandboxAttachmentPayloadV1Schema } from "./codec.ts";
-import type {
-  SandboxAttachmentPayloadV1,
-  SandboxReuseV1,
-} from "./model.ts";
+import { Either, Schema } from "effect";
+import { SandboxAttachmentPayloadSchema } from "./codec.ts";
+import type { SandboxAttachmentPayload, SandboxReuse } from "./model.ts";
 
-/** The public input is a domain fact, never a raw Record envelope or payload. */
-export type SandboxAttachmentInput =
+/**
+ * Sandbox assignment is execution coordination, not a Record family. The
+ * only durable sandbox-produced facts are File Changes captured by the fixed
+ * `niceeval.file-changes` collector.
+ */
+export type SandboxCaptureInput =
   | { readonly state: "not-used" }
   | {
       readonly state: "assigned";
@@ -24,60 +15,18 @@ export type SandboxAttachmentInput =
       readonly sandboxId: string;
       readonly reuse:
         | { readonly kind: "fresh" }
-        | {
-            readonly kind: "pooled";
-            readonly sandbox: number;
-            readonly ordinal: number;
-          };
+        | { readonly kind: "pooled"; readonly sandbox: number; readonly ordinal: number };
     };
 
-export type SandboxAttachmentWriteError = {
-  readonly code: "sandbox-attachment-input-invalid";
+export type SandboxCaptureInputError = {
+  readonly code: "sandbox-capture-input-invalid";
 };
 
-const SANDBOX_ATTACHMENT_NAME = "niceeval.sandbox" as const;
-const SANDBOX_ATTACHMENT_SCHEMA_ID = "niceeval.sandbox/v1" as const;
-const noSandboxAttachmentBlobDrafts: readonly RecordAttachmentBlobDraft<
-  never,
-  never
->[] = Object.freeze([]);
-const sandboxAttachmentInputInvalid: SandboxAttachmentWriteError = Object.freeze({
-  code: "sandbox-attachment-input-invalid" as const,
+const invalid: SandboxCaptureInputError = Object.freeze({
+  code: "sandbox-capture-input-invalid" as const,
 });
 
-function requireAttachmentCapability<Result, Failure>(
-  result: Either.Either<Result, Failure>,
-  message: string,
-): Result {
-  if (Either.isLeft(result)) throw new Error(message);
-  return result.right;
-}
-
-/** Package-owned definition for the sole Attempt-owned Sandbox fact. */
-export const sandboxAttachmentDefinition = requireAttachmentCapability(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: SANDBOX_ATTACHMENT_NAME,
-    schemaId: SANDBOX_ATTACHMENT_SCHEMA_ID,
-    schema: SandboxAttachmentPayloadV1Schema,
-    blobRefs: () => Object.freeze([]),
-  }),
-  "Sandbox RecordAttachment definition must be valid",
-);
-
-/** The current family has no legacy compatibility or alternate durable schema. */
-export const sandboxAttachmentFamily: RecordAttachmentFamily<
-  "attempt",
-  SandboxAttachmentPayloadV1
-> = requireAttachmentCapability(
-  defineRecordAttachmentFamily({
-    current: sandboxAttachmentDefinition,
-    migrations: [],
-  }),
-  "Sandbox RecordAttachment family must be valid",
-);
-
-function freezeReuse(reuse: SandboxReuseV1): SandboxReuseV1 {
+function freezeReuse(reuse: SandboxReuse): SandboxReuse {
   return reuse.kind === "fresh"
     ? Object.freeze({ kind: "fresh" as const })
     : Object.freeze({
@@ -87,46 +36,23 @@ function freezeReuse(reuse: SandboxReuseV1): SandboxReuseV1 {
       });
 }
 
-/** Copy decoded fields into the package-owned shape before retaining a write. */
-function freezePayload(
-  payload: SandboxAttachmentPayloadV1,
-): SandboxAttachmentPayloadV1 {
-  return payload.state === "not-used"
-    ? Object.freeze({ state: "not-used" as const })
-    : Object.freeze({
-        state: "assigned" as const,
-        provider: payload.provider,
-        sandboxId: payload.sandboxId,
-        reuse: freezeReuse(payload.reuse),
-      });
-}
-
-/**
- * Creates the sole zero-blob write for one actual Attempt. Invalid, missing,
- * or extra input never becomes a durable `not-used` claim.
- */
-export function createSandboxAttachmentWrite(
-  input: SandboxAttachmentInput,
-): Either.Either<
-  RecordAttachmentWrite<"attempt", never, never>,
-  SandboxAttachmentWriteError
-> {
-  const decoded = decodeJsonRecordAttachmentPayload(
-    sandboxAttachmentDefinition,
-    input,
+/** Validates a transient capture value without producing a Record write. */
+export function normalizeSandboxCapture(
+  input: SandboxCaptureInput,
+): Either.Either<SandboxAttachmentPayload, SandboxCaptureInputError> {
+  const decoded = Schema.decodeUnknownEither(SandboxAttachmentPayloadSchema, {
+    errors: "all",
+    onExcessProperty: "error",
+  })(input);
+  if (Either.isLeft(decoded)) return Either.left(invalid);
+  return Either.right(
+    decoded.right.state === "not-used"
+      ? Object.freeze({ state: "not-used" as const })
+      : Object.freeze({
+          state: "assigned" as const,
+          provider: decoded.right.provider,
+          sandboxId: decoded.right.sandboxId,
+          reuse: freezeReuse(decoded.right.reuse),
+        }),
   );
-  if (Either.isLeft(decoded)) return Either.left(sandboxAttachmentInputInvalid);
-
-  const payload = freezePayload(decoded.right);
-  const write = makeRecordAttachmentWrite(sandboxAttachmentFamily, () =>
-    Object.freeze({
-      payload,
-      blobs: noSandboxAttachmentBlobDrafts,
-    }),
-  );
-  const closure = validateRecordAttachmentWrite(write);
-  if (Either.isLeft(closure)) {
-    throw new Error("Sandbox RecordAttachment write violated its zero-blob closure");
-  }
-  return Either.right(write);
 }

@@ -11,13 +11,12 @@ import {
 } from "node:fs/promises";
 import type { Dir } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { hostname } from "node:os";
 import { Either, Effect, Layer, Stream } from "effect";
+import { NodeRecordCoordinationLive } from "../../coordination/platform/node.ts";
 import { isPortableSegment } from "../model/identifiers.ts";
 import {
   RecordGitCommandError,
   RecordIoError,
-  RecordMaintenanceBusy,
   RecordPathAlreadyExists,
   RecordPathInvalid,
   RecordPathTypeInvalid,
@@ -25,39 +24,29 @@ import {
   RecordResourceLimitExceeded,
   RecordResourceLimitInvalid,
   RecordRootInvalid,
-  RecordWriterBusy,
   type RecordFileSystemError,
   type RecordGitError,
-  type RecordMaintenanceLockError,
   type RecordPathKind,
   type RecordPlatformOperation,
   type RecordPlatformResource,
-  type RecordWriterLockError,
 } from "./errors.ts";
 import { recordRootPaths } from "./root.ts";
 import {
   RecordEntropy,
   RecordFileSystem,
   RecordGit,
-  RecordMaintenanceLock,
-  RecordWriterLock,
   recordPortablePath,
   type RecordBackupState,
   type RecordDirectoryEntry,
   type RecordFileSystemService,
   type RecordIncompleteRunDelete,
-  type RecordMaintenanceLockHandle,
-  type RecordMaintenanceLockService,
   type RecordPortablePath,
   type RecordWriteFileStreamInput,
-  type RecordWriterLease,
-  type RecordWriterLockService,
 } from "./services.ts";
 
 const DEFAULT_STREAM_CHUNK_BYTES = 64 * 1024;
 const GIT_MAX_OUTPUT_BYTES = 1024 * 1024;
 const GIT_MAX_STATUS_ENTRIES = 10_000;
-const lockEncoder = new TextEncoder();
 
 function nodeErrorCode(cause: unknown): string | undefined {
   if (typeof cause !== "object" || cause === null) {
@@ -213,13 +202,6 @@ function resolvePortablePath(
   }
 
   return Effect.succeed(join(paths.portableRoot, ...segments));
-}
-
-function rootLocalStatePath(root: unknown): Effect.Effect<string, RecordRootInvalid> {
-  const paths = recordRootPaths(root);
-  return paths === undefined
-    ? Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }))
-    : Effect.succeed(paths.localStateRoot);
 }
 
 /**
@@ -533,7 +515,7 @@ function directoryEntriesAt(
 
 function removeFileIfPresentAt(
   path: string,
-  operation: "remove-path" | "release-maintenance-lock" | "release-writer-lock",
+  operation: "remove-path",
 ): Effect.Effect<void, RecordIoError | RecordPermissionError> {
   return Effect.tryPromise({
     try: async () => {
@@ -778,206 +760,6 @@ const nodeFileSystem: RecordFileSystemService = {
     }),
 };
 
-interface NodeLockLayout {
-  readonly maintenanceSharedDirectory: string;
-  readonly maintenanceExclusive: string;
-  readonly writerExclusive: string;
-}
-
-function nodeLockLayout(root: unknown): Effect.Effect<NodeLockLayout, RecordRootInvalid> {
-  return Effect.map(rootLocalStatePath(root), (localStateRoot) => {
-    const lockDirectory = join(localStateRoot, "locks");
-    const maintenanceDirectory = join(lockDirectory, "maintenance");
-    return Object.freeze({
-      maintenanceSharedDirectory: join(maintenanceDirectory, "shared"),
-      maintenanceExclusive: join(maintenanceDirectory, "exclusive.lock"),
-      writerExclusive: join(lockDirectory, "writer.lock"),
-    });
-  });
-}
-
-function lockPayload(): Uint8Array {
-  return lockEncoder.encode(
-    JSON.stringify({ host: hostname(), pid: process.pid, nonce: randomUUID() }),
-  );
-}
-
-function createCooperativeLock(
-  path: string,
-): Effect.Effect<"created" | "exists", RecordFileSystemError> {
-  // Lock ownership is an exclusive-create file plus fsync, not an advisory
-  // in-process mutex. It therefore remains on Record's durable file path.
-  return writeBytesAt({
-    path,
-    bytes: lockPayload(),
-    maximumBytes: 512,
-    mode: "exclusive",
-  }).pipe(
-    Effect.matchEffect({
-      onFailure: (error) =>
-        error instanceof RecordPathAlreadyExists
-          ? Effect.succeed<"exists">("exists")
-          : Effect.fail(error),
-      onSuccess: () => Effect.succeed<"created">("created"),
-    }),
-  );
-}
-
-function localPathPresent(path: string): Effect.Effect<boolean, RecordIoError | RecordPermissionError> {
-  return Effect.map(pathKindAt(path), (kind) => kind !== "missing");
-}
-
-function sharedLockCount(path: string): Effect.Effect<number, RecordFileSystemError> {
-  return Effect.gen(function* () {
-    yield* ensureDirectoryAt(path);
-    const entries = yield* directoryEntriesAt(path, GIT_MAX_STATUS_ENTRIES);
-    return entries.length;
-  });
-}
-
-const maintenanceLeasePaths = new WeakMap<RecordMaintenanceLockHandle, string>();
-const writerLeasePaths = new WeakMap<RecordWriterLease, string>();
-
-function makeMaintenanceHandle(
-  mode: "shared" | "exclusive",
-  path: string,
-): RecordMaintenanceLockHandle {
-  const handle: RecordMaintenanceLockHandle = Object.freeze({ mode });
-  maintenanceLeasePaths.set(handle, path);
-  return handle;
-}
-
-function makeWriterHandle(path: string): RecordWriterLease {
-  const handle: RecordWriterLease = Object.freeze({ _tag: "RecordWriterLease" });
-  writerLeasePaths.set(handle, path);
-  return handle;
-}
-
-function acquireSharedMaintenance(
-  root: unknown,
-): Effect.Effect<RecordMaintenanceLockHandle, RecordMaintenanceLockError> {
-  return Effect.gen(function* () {
-    const layout = yield* nodeLockLayout(root);
-    yield* ensureDirectoryAt(layout.maintenanceSharedDirectory);
-    if (yield* localPathPresent(layout.maintenanceExclusive)) {
-      return yield* Effect.fail(
-        new RecordMaintenanceBusy({
-          code: "record-maintenance-busy",
-          requested: "shared",
-        }),
-      );
-    }
-
-    const path = join(
-      layout.maintenanceSharedDirectory,
-      `${process.pid}-${randomUUID()}.lock`,
-    );
-    if ((yield* createCooperativeLock(path)) !== "created") {
-      return yield* Effect.fail(
-        new RecordMaintenanceBusy({
-          code: "record-maintenance-busy",
-          requested: "shared",
-        }),
-      );
-    }
-
-    if (yield* localPathPresent(layout.maintenanceExclusive)) {
-      yield* removeFileIfPresentAt(path, "release-maintenance-lock");
-      return yield* Effect.fail(
-        new RecordMaintenanceBusy({
-          code: "record-maintenance-busy",
-          requested: "shared",
-        }),
-      );
-    }
-
-    return makeMaintenanceHandle("shared", path);
-  });
-}
-
-function acquireExclusiveMaintenance(
-  root: unknown,
-): Effect.Effect<RecordMaintenanceLockHandle, RecordMaintenanceLockError> {
-  return Effect.gen(function* () {
-    const layout = yield* nodeLockLayout(root);
-    yield* ensureDirectoryAt(layout.maintenanceSharedDirectory);
-    if (
-      (yield* createCooperativeLock(layout.maintenanceExclusive)) !== "created"
-    ) {
-      return yield* Effect.fail(
-        new RecordMaintenanceBusy({
-          code: "record-maintenance-busy",
-          requested: "exclusive",
-        }),
-      );
-    }
-
-    if ((yield* sharedLockCount(layout.maintenanceSharedDirectory)) > 0) {
-      yield* removeFileIfPresentAt(
-        layout.maintenanceExclusive,
-        "release-maintenance-lock",
-      );
-      return yield* Effect.fail(
-        new RecordMaintenanceBusy({
-          code: "record-maintenance-busy",
-          requested: "exclusive",
-        }),
-      );
-    }
-
-    return makeMaintenanceHandle("exclusive", layout.maintenanceExclusive);
-  });
-}
-
-const nodeMaintenanceLock: RecordMaintenanceLockService = {
-  acquireShared: (root) =>
-    Effect.acquireRelease(
-      acquireSharedMaintenance(root),
-      (handle) => {
-        const path = maintenanceLeasePaths.get(handle);
-        return path === undefined
-          ? Effect.die("Record maintenance lock handle was not issued by this platform")
-          : removeFileIfPresentAt(path, "release-maintenance-lock").pipe(Effect.orDie);
-      },
-    ),
-
-  acquireExclusive: (root) =>
-    Effect.acquireRelease(
-      acquireExclusiveMaintenance(root),
-      (handle) => {
-        const path = maintenanceLeasePaths.get(handle);
-        return path === undefined
-          ? Effect.die("Record maintenance lock handle was not issued by this platform")
-          : removeFileIfPresentAt(path, "release-maintenance-lock").pipe(Effect.orDie);
-      },
-    ),
-};
-
-function acquireWriter(
-  root: unknown,
-): Effect.Effect<RecordWriterLease, RecordWriterLockError> {
-  return Effect.gen(function* () {
-    const layout = yield* nodeLockLayout(root);
-    yield* ensureDirectoryAt(dirname(layout.writerExclusive));
-    if (
-      (yield* createCooperativeLock(layout.writerExclusive)) !== "created"
-    ) {
-      return yield* Effect.fail(new RecordWriterBusy({ code: "record-writer-busy" }));
-    }
-    return makeWriterHandle(layout.writerExclusive);
-  });
-}
-
-const nodeWriterLock: RecordWriterLockService = {
-  acquire: (root) =>
-    Effect.acquireRelease(acquireWriter(root), (handle) => {
-      const path = writerLeasePaths.get(handle);
-      return path === undefined
-        ? Effect.die("Record writer lock handle was not issued by this platform")
-        : removeFileIfPresentAt(path, "release-writer-lock").pipe(Effect.orDie);
-    }),
-};
-
 interface GitOutput {
   readonly stdout: string;
   readonly stderr: string;
@@ -1129,16 +911,6 @@ export const NodeRecordFileSystemLive = Layer.succeed(
   nodeFileSystem,
 );
 
-export const NodeRecordMaintenanceLockLive = Layer.succeed(
-  RecordMaintenanceLock,
-  nodeMaintenanceLock,
-);
-
-export const NodeRecordWriterLockLive = Layer.succeed(
-  RecordWriterLock,
-  nodeWriterLock,
-);
-
 export const NodeRecordEntropyLive = Layer.succeed(RecordEntropy, {
   uuid: Effect.sync(randomUUID),
 });
@@ -1151,8 +923,7 @@ export const NodeRecordGitLive = Layer.succeed(RecordGit, nodeGit);
  */
 export const NodeRecordLive = Layer.mergeAll(
   NodeRecordFileSystemLive,
-  NodeRecordMaintenanceLockLive,
-  NodeRecordWriterLockLive,
+  NodeRecordCoordinationLive,
   NodeRecordEntropyLive,
   NodeRecordGitLive,
 );

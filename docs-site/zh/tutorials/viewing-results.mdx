@@ -1,19 +1,19 @@
 ---
 title: "查看 NiceEval 结果"
 sidebarTitle: "查看结果"
-description: "用 show 或 view 从已发布的 Record 选择 Sample，并查看固定的 ReportExecution。"
+description: "用 show 或 view 从已发布的 Record 选择固定 Sample，并读取一个页面或完整报告站。"
 ---
 
-运行结束后，通常从这两条命令开始。两条命令默认从 `exp` 写入的 `.niceeval/record` 读取，不需要传 `--record`：
+运行结束后，从下面两条命令开始：
 
 ```sh
-npx niceeval show  # 在终端查看当前项目的全部匹配结果
-npx niceeval view  # 在浏览器查看同一批结果
+npx niceeval show
+npx niceeval view
 ```
 
-`show` 和 `view` 读取相同的已发布结果，只是呈现位置不同。需要指定某次运行时，用 `--run`；下面说明怎样选择。想了解 Record、Sample 和报告如何组织数据，再读[评估与报告路径](/zh/explanation/overview)。
+两条命令用相同选择规则形成固定 `Sample`，但执行范围不同。`show` 只读取一个目标 Page；`view` 会先构建完整站点，再把它托管在浏览器中。
 
-## 选择要看的 Run
+## 选择要看的结果
 
 选择一个明确 Run：
 
@@ -21,109 +21,72 @@ npx niceeval view  # 在浏览器查看同一批结果
 npx niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 ```
 
-普通运行可从 `exp --json` 最后一条 receipt 的 `runIds` 读取 Run ID。TTY 完成反馈也显示相同 ID：
+普通运行可从 `exp --json` 最后一条 receipt 的 `runIds` 读取 Run ID：
 
 ```json
 {"type":"receipt","receipt":{"invocationId":"11c8fc15-8a9b-49a0-bb93-68205b52ffab","runIds":["7b8d2ea4-b840-4870-9840-f85a436a5527"],"startedAt":"2026-08-14T10:00:00.000Z","completedAt":"2026-08-14T10:01:00.000Z","completion":"completed"}}
 ```
 
-`accept` 会在成功反馈中显示它建立的新 Run ID 和保持不变的 Attempt locator。这是供操作者复制的人读反馈，不是 JSON receipt 或稳定正则接口。
+不带 locator、`--run` 或 `--experiment` 时，命令使用 `project-current`：它保留全部仍与当前项目身份匹配的已发布结果，而不是只选最新一条。需要阅读历史结果时，传入完整 `--run`；要限制当前项目结果时，重复传入完整的 `--experiment <id>`。
 
-要查看所有仍匹配当前项目源码与配置的结果，直接运行 `show`。`--experiment` 可按完整 ID 收窄当前项目目标：
-
-```sh
-npx niceeval show --experiment checkout
-```
-
-不带 locator 或 `--run` 的命令使用 `project-current`：它扫描全部已发布 Run，保留身份仍匹配的所有结果，不按时间只留最后一条。源码或配置变化后，过期结果不会进入当前 Sample；它们没有被删除，仍可使用完整 `--run` ID 查看。
-
-## 在终端查看
-
-`show` 呈现默认 Report 的文字内容。显式 `--run` 默认使用内建 `run-membership-overview`；不带 selector 的当前项目结果使用配置里的 Report，没有配置时才使用通用 overview。指定页面或自定义 Report 时，命令仍从同一份 selection 建立一次 execution。
-
-```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
-npx niceeval show --experiment checkout --json
-```
-
-`--json` 输出同一份 execution 的页面、计算、投影摘要和问题。它不建立另一条取数路径。
-
-下面是一条人工采用结果的终端输出。`reference` 表示这个 Run 引用源 Attempt，`accepted` 表示这个 Run 的 membership provenance 记录了人工采用：
-
-```text
-Report run-membership-overview
-Sample: 1 run(s), 1 slot(s)
-
-Page /
-  Run membership overview
-  Run membership
-  Run | Slot | Slot state | Member relation | Source Attempt | Membership state | Membership outcome | Verdict state | Verdict
-  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @91ddc61b-ae96-4a23-8578-ddc1b83306dc | available | accepted | available | passed
-  [neutral] Omitted rows: 0
-  [neutral] Unmatched membership actions: 0
-
-Problems
-  none
-```
-
-同一次命令加 `--json` 后，相关 row 使用稳定键：
-
-```json
-{
-  "memberRelation": "reference",
-  "membershipOutcome": "accepted",
-  "membershipState": "available",
-  "runId": "7b8d2ea4-b840-4870-9840-f85a436a5527",
-  "slotId": "slot-00b400bd-ba81-4850-8803-09ba802896e5",
-  "slotState": "included",
-  "sourceAttemptLocator": "@91ddc61b-ae96-4a23-8578-ddc1b83306dc",
-  "verdict": "passed",
-  "verdictState": "available"
-}
-```
-
-Run 回答“这一轮怎样纳入结果”，Attempt 回答“这份结果记录了什么”。继续沿 locator 查看同一个 immutable Attempt：
-
-```sh
-npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc
-npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc --execution
-```
-
-第一个命令显示 Attempt identity、判定、Assertions 与 Score。第二个命令显示 execution evidence。它们不会重写源 Attempt，也不会把采用 Run 的 provenance 冒充 Attempt 事实。
-
-## 在浏览器查看
-
-```sh
-npx niceeval view --experiment checkout --no-open
-```
-
-`view` 的每次成功 rebuild 都构造一份新的固定 `ReportExecution`，再替换正在显示的 revision。Report、配置、主题或 Record 的变化触发下一次 rebuild；失败时保留 last-good execution，并显示这次 rebuild 的问题。
-
-页面打开、导航和刷新不会让已经固定的 execution 偷偷重读 Record。需要看到新发布的 Run 时，让 `view` 完成下一次 rebuild，或重新运行命令。需要读取其它 Record root 时才显式传 `--record <root>`。
-
-## 读懂分母与 Attachment 状态
-
-`--run` 选择的 Sample 保留具名 Run 的完整 expected-slot 分母；`project-current` 则只把身份仍匹配当前目标的 slots 纳入 Sample。在 selection 已建立的框架内，一个 slot 可能是：
+Sample 记录每个位置的状态：
 
 | 状态 | 含义 |
 | --- | --- |
-| `included` | 有合法 Member 与可读取的 Attempt。 |
-| `not-recorded` | 计划中的 slot 没有 Member。 |
-| `core-invalid` | Member、Attempt 或核心引用不能可靠读取。 |
-| `excluded` | 本次选择排除了该项。 |
+| `included` | 有可分析的 Attempt。 |
+| `not-recorded` | 计划中的位置没有结果。 |
+| `core-invalid` | 该位置的身份或引用不能可靠读取。 |
+| `excluded` | 本次选择排除了该位置。 |
 
-页面和 Calculation 还会显示请求的 Attachment 状态。`unavailable` 表示没有该 Attachment；`migration-required` 或 `migration-unavailable` 表示需要处理历史 schema；`unsupported` 表示当前功能不认识它；`invalid` 表示 envelope、payload 或 blob 无效。
+这些状态和 Measure 的分母在选择时固定。页面不能因为数据缺失、筛选或只显示一部分行而缩小 `total`。
 
-这些是数据状态，不会在 selection 之后偷偷缩小 Sample 分母。未请求的坏 Attachment 不影响无关页面。每个 Calculation 自己定义业务 `observed` 与 `denominator`，不能从读到多少个 Attachment 推测。
+## 在终端读取一个 Page
 
-## Record 的发布边界
+```sh
+npx niceeval show --run <run-id>
+npx niceeval show --run <run-id> --page /
+npx niceeval show @<attempt-locator>
+npx niceeval show --run <run-id> --report ./reports/quality.tsx --json
+```
 
-Record 只保存已发布的事实。已发布的 Run 不可修改；需要不同结果时，运行新的 Invocation，生成新的 Run。
+省略 `--page` 时，`show` 使用 Report 的默认可导航页面。提供 `--page` 时，它只 decode、load、render 和关闭这一个精确 route。参数 Page 不会因此调用 `enumerate()`；其它 Page、Analysis 查询和作者 callback 也不会执行。
 
-没有 `complete` 的目录不属于 Sample。reader 冻结一次可见的已发布 Run 集合；之后完成的新 Run 需要重新打开 reader 才会出现。
+`show --json` 仍是同一个单目标操作。内建 Report 返回 Host 拥有的具名领域 JSON；自定义 Report 返回该 Page 的 route、标题、固定英语 80-column rendered text、下载摘要和问题表。
+两种 v2 JSON 都在顶层带有同一形状的 `projections` 对象，只包含目标 Page 捕获的闭合投影。
+
+每个成本 entry 都是 `{ page: { pageId, route }, measureId, row: { key, dimensions }, profileIdentity, projection }`。
+成本数组的 canonical key 是 `route`→`pageId`→`measureId`→`row.key`→`profileIdentity`。它只按这五项的 UTF-8 顺序排序；
+`dimensions` 与 `projection` 都不是额外排序键。
+
+同一 key 的 entry 只有 `row.dimensions` 和 `projection` 都为 byte-identical canonical JSON 时才去重。任一字段不同都以
+`report-cost-projection-conflict` typed conflict 失败。
+
+`pricingProfile` 是 Report 顶层已关闭的 `PricingProfile`，未声明 Profile 时为 `null`。每个 cost entry 的 `profileIdentity` 与
+`projection.profile.contentIdentity` 都必须等于顶层 `pricingProfile.contentIdentity`；没有 Profile 时，`costs` 必须为空。
+
+JSON 不包含其它 Page、HTML、React tree、站点 identity 或 Record 读取能力。
+
+## 在浏览器读取完整站点
+
+```sh
+npx niceeval view --experiment checkout --no-open
+npx niceeval view --run <run-id> --page / --no-open
+```
+
+view 在启动 server 前枚举所有显式声明的普通 Page 与参数 Page 的全部实例，并验证路径、链接、资源、下载、`_niceeval/data/projections.json` 和预算。`pages` 是唯一页面集合，Host 不会补建详情 route。`--page` 只决定初始打开的已存在 route，不能缩小构建范围。全站 projections 文件的 bytes 属于 revision identity。
+
+每次成功 rebuild 才原子替换当前完整站点。Report、主题、配置或已发布结果变化后，view 构建候选站点；失败时继续提供上一份可用内容。页面导航、刷新与 Source、Diff、Trace、下载都只读取已经生成的 bytes，不会让浏览器重新打开 Record 或调用 Analysis。
+
+浏览器 Report chrome 可以切换中文和英语。它只切换已交付的 LocalizedText 和浏览器词典，不改变 Sample、机器 JSON 或站点内容的事实含义。
+
+## 读懂不完整数据
+
+`MetricValue` 的 `samples` 是实际贡献数，`total` 是既定分母，`state` 和 `issues` 说明为什么数据不完整。`partial` 可以有数值；`empty`、`unsupported` 与 `failed` 不是零。Evidence refs 保留可复核的定位信息。
+
+Analysis 数据问题继续作为页面内容显示。相反，选中 Page 的 callback、参数 key 或成员资格失败会让 `show` 返回单目标错误；任何全站 Page、路径、资源或预算失败都会阻止新的站点发布。
 
 ## 下一步
 
-- [排查失败](/zh/troubleshooting/debugging)：根据可见症状定位问题。
-- [重跑与沿用](/zh/tutorials/rerun-and-cache)：检查哪个 slot 会执行或被采用。
-- [发布静态报告](/zh/tutorials/publish-report)：把选中的结果导出为离线可看的站点。
+- [报告 API](/zh/reference/report-components)：编写 Page、组件与机器输出。
+- [发布静态报告](/zh/tutorials/publish-report)：导出完整站点给离线读者。
+- [排查结果与报告问题](/zh/troubleshooting/debugging)：根据选择、数据状态和 rebuild 反馈定位问题。

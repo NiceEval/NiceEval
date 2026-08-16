@@ -178,7 +178,7 @@ Docker 是 Repo 的 backend / sandbox 依赖，不属于 executor 类型。host 
 - CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `show --json` 读取；
 - Report 从 `show`、`view --out`、HTTP 和浏览器读取；
 - Record 目录只作为 opaque 整体由 CLI 产生、复制或进入 Git，不通过 Library API 读取内部结构或写入；
-- Adapter 从公开运行流和 `show --execution/--timing/--json` 读取；
+- Adapter 从公开运行流、签入代表 Report 的 `show --page <route>` 与 `show --json` 读取；
 - 不直接扫描 `.niceeval/` 私有布局；无法通过 CLI / Report 观察的事实属于呈现缺口，不以测试绕过；
 - 不 import 候选内部类型给测试手写 expected。
 
@@ -237,8 +237,8 @@ Eval / Experiment 集：
 
 “把所有 Eval 跑完且 exit 0”不够。测试必须列出期望 Eval ID，并对每个必要结果或关键事件作断言，防止 discovery 少排后假绿。
 
-Adapter Repo 中出现 `exp`、`show` 或 `--execution` 不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
-公开读面的最短路径；同一 CLI flag、Report 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
+Adapter Repo 中出现 `exp`、`show` 或代表 Report Page 不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
+公开读面的最短路径；同一 CLI 选择、Report 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
 
 只有 converter 的 SDK 可以拥有受限 live consumer glue，但边界是机械的：raw SDK frame 原样进入候选包的公开 converter；
 Repo 不构造 `StreamEvent`，不手写 SDK 字段映射，不自行计算 canonical tool、usage 或终局。Glue 只处理 SDK invocation、

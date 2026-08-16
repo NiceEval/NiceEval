@@ -8,3 +8,5 @@ fail.xml
 error.xml
 logs/
 *.log
+classic-export/
+attempt-export/

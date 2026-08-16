@@ -8,6 +8,10 @@ test("createLangGraphEventStream 接收真实 v3 GraphRunStream 与官方 core E
     experimentId: "langgraph-core",
     evalId: "langgraph-core",
     caseName: "langgraph-core",
+    source: {
+      file: "evals/langgraph-core.eval.ts",
+      content: "export default defineEval({",
+    },
     executionMarkers: ["langgraph-runtime-methods:lifecycle", "graph_lookup", "langgraph-core-tool-output"],
   });
 });

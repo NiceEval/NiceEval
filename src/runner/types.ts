@@ -23,14 +23,13 @@ import type {
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../attempt-locator.ts";
-import type { RecordAttachmentWrite } from "../record/attachment/index.ts";
-import type { SealedAttemptAssertions } from "../assertions/api.ts";
+import type { RecordRoot } from "../record/platform/root.ts";
 import type { CurrentReusedAttemptReadback } from "./reuse-readback.ts";
 import type { PluginInstance, PluginOnUnavailable } from "../plugin/contracts.ts";
 // Report 的公开子路径是独立预编译单元；这里依赖作者 API 的公开 aggregate，避免把
 // host implementation 或旧的 JSX renderer type 拉回 runner 边界。
-import type { Report } from "../report/index.ts";
-import type { ThemeDefinition } from "../report/host/theme.ts";
+import type { ReportDefinition } from "../report/index.ts";
+import type { ThemeDefinition } from "../report/theme.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
 
@@ -203,6 +202,8 @@ export interface SandboxBuildRecord {
 /** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/record/architecture.md)。 */
 export interface PhaseTiming {
   name: LifecyclePhase;
+  /** 相对本 attempt 单调时钟起点的阶段起点；与 children 使用同一量化时钟。 */
+  startOffsetMs: number;
   /** 阶段耗时;失败阶段计到抛错或超时中断时。 */
   durationMs: number;
   /** 该阶段抛错或被超时中断。主链至多一条,其后无主链条目;收尾阶段各自独立标记,不改判定。 */
@@ -422,17 +423,16 @@ export interface EvalResult {
   /** 自动重试吸收的物理 send 失败，按发生顺序完整保留。 */
   retryAttempts?: RetryAttemptRecord[];
   usage?: Usage;
+  /**
+   * 价目表估算成本,恒等于 `estimateCost(model, usage, config.pricing)`——永远独立计算,
+   * 与 `usage.costUSD`(网关/adapter 显式回报的 observed 成本)是两个并存事实,互不覆盖、
+   * 互不兜底:observed 存在时 estimatedCostUSD 也照常按 runtime/config price table 估算。
+   */
   estimatedCostUSD?: number;
   /** 使 attempt 进入 `errored` 的唯一致命执行错误(结构化);默认报告显示 `error.message` 一层原因。 */
   error?: AttemptError;
   /** 本 attempt 的诊断(与 verdict 独立);teardown / cleanup 失败等挂在这里,不改判定。 */
   diagnostics?: readonly DiagnosticRecord[];
-  /**
-   * sandbox hook / agent setup·send·teardown 经 `ctx.fact()` 上报的运行事实(同 attempt 内
-   * 后写覆盖先写)。中性环境观测,不参与 verdict / 评分 / 指纹。见
-   * docs/feature/record/architecture.md#facts运行事实。
-   */
-  facts?: globalThis.Record<string, string | number | boolean>;
   /** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/record/architecture.md)。 */
   phases?: PhaseTiming[];
   skipReason?: string;
@@ -542,7 +542,9 @@ export interface InvocationSummary {
   /** 环境、超时、adapter、agent runtime 等执行错误数量;与 failed 互斥。 */
   errored: number;
   durationMs: number;
+  /** 本次 Invocation fresh 结果的 token 汇总(只折叠 input/outputTokens);observed costUSD 不在这里汇总,逐条留在 `results[].usage.costUSD`。 */
   usage?: Usage;
+  /** 本次 Invocation fresh 结果的 `estimatedCostUSD` 累计(价目表估算口径,见 EvalResult.estimatedCostUSD);observed cost 不进入本字段。 */
   estimatedCostUSD?: number;
   /** Current Record readbacks adopted by this invocation; these are never recreated EvalResults. */
   reusedAttempts: readonly CurrentReusedAttemptReadback[];
@@ -629,8 +631,6 @@ export type ReporterEvent =
       reusedAttempts: readonly CurrentReusedAttemptReadback[];
       /** 该 Experiment 域产生的全部诊断;空集合传空数组,不省略字段。 */
       diagnostics: readonly DiagnosticRecord[];
-      /** 该 Experiment 域经 `ctx.fact()` 累计的运行事实(experiment.setup / .teardown,含收尾自愈路径);省略 = 没有上报过。 */
-      facts?: Readonly<globalThis.Record<string, string | number | boolean>>;
       /** Run 级共享工作时间树;与 completedAt 同批封口。省略 = 本 Run 没有共享 activity。 */
       timings?: readonly TimingActivity[];
       /** 共享构建 provenance;与 timings 经 timingNodeId 关联。省略 = 本 Run 没有查询或构建过 BuildKey。 */
@@ -881,14 +881,6 @@ export interface ExperimentHookContext extends ScopedFeedback {
   readonly selectedEvalIds: readonly string[];
   /** 用户中断(Ctrl+C / kill)时 abort;长启动的 setup 应观察它提前退出。 */
   readonly signal: AbortSignal;
-  /**
-   * 写入本 Run 的 generic custom fact document。name 使用反向域格式且不能以 `niceeval.` 开头；
-   * 同一 owner/name 只允许写一次，第二次写入是 typed error。value 可以是任意 JsonValue；`{ observedAt, value }` 经
-   * JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出 `record-custom-fact-too-large`，
-   * 且不留下部分文件。不影响判定、评分或指纹。形状与归属语义见
-   * docs/feature/record/architecture.md#通用自定义事实。
-   */
-  fact(key: string, value: string | number | boolean): void;
 }
 
 /** Shared lifecycle callback shape for author and Experiment Plugin hooks. */
@@ -1080,7 +1072,7 @@ export interface EvalDescriptor {
 
 export interface Config {
   /** view/show 的项目默认报告。 */
-  report?: Report;
+  report?: ReportDefinition;
   /** view 的 host-owned closed visual token declaration. */
   theme?: ThemeDefinition;
   /**
@@ -1114,7 +1106,9 @@ export interface Config {
   /**
    * 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
    * · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
-   * 精确 key 优先于通配。只在没有网关实测成本(`usage.costUSD`)时才会用到——实测优先于估算恒成立。
+   * 精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
+   * `usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。它是 runtime/config 价目表,
+   * 不是 Report 的成本投影:Report 不消费该字段(Report 侧使用自己的 PricingProfile)。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
 }
@@ -1208,26 +1202,6 @@ export interface AgentRun {
   readonly classifyFailure?: AttemptFailureClassifier;
 }
 
-/**
- * Linked plugin writes enter the Evaluation Record contract as opaque typed
- * producer values. The Runner never sees attachment names, payloads, or blob
- * paths; the generic writer retains that authority.
- */
-export interface RunnerRecordAttachmentProducers<Error = never, Requirements = never> {
-  readonly runWrites?: (input: {
-    readonly run: AgentRun;
-    readonly evals: readonly DiscoveredEval[];
-  }) => readonly RecordAttachmentWrite<"run", Error, Requirements>[];
-  readonly attemptWrites?: (input: {
-    readonly attempt: Attempt;
-    /** The already sealed runner result; its source snapshot is historical input, never a Record value. */
-    readonly result: EvalResult;
-    readonly sealed: SealedAttemptAssertions;
-    /** Convenience view of the exact material captured before result sealing. */
-    readonly sources: readonly SourceArtifact[];
-  }) => readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
-}
-
 export interface RunOptions<RecordError = never, RecordRequirements = never> {
   config: Config;
   evals: readonly DiscoveredEval[];
@@ -1242,8 +1216,16 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   rerun?: "failed" | "all";
   /** `--accept` 本次授权跨过的差异 selector(`config:<字段路径>` 等)。 */
   accept?: readonly string[];
-  /** 结果根目录(.niceeval;留存注册表 `.niceeval/sandboxes/` 挂在它下面)。省略 = cwd/.niceeval。 */
-  niceevalRoot?: string;
+  /**
+   * 本地协调根（默认 `cwd/.niceeval`）。session、execution lock、teardown 登记和
+   * kept-sandbox registry 都在这里；它不是 portable Record 的一部分。
+   */
+  coordinationRoot?: string;
+  /**
+   * 已签发的实际 portable Record root。Record lease sidecar 由这个 root 推导到
+   * `.niceeval/coordination/records/<recordKey>`，不能由 Runner 的执行协调目录代替。
+   */
+  recordRoot: RecordRoot;
   /** CLI 为 `niceeval exp` 提供的持久 Session 索引；只观察调度事件，不参与锁/闸判定。 */
   session?: import("./session.ts").SessionTracker;
   /**
@@ -1268,8 +1250,6 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   /** Run 级 Sandbox 镜像 lookup/build 并发；省略时安全默认 2。 */
   maxBuildConcurrency?: number;
   signal?: AbortSignal;
-  /** Linked plugin RecordAttachment producers for this invocation. */
-  recordAttachments?: RunnerRecordAttachmentProducers<RecordError, RecordRequirements>;
   /**
    * 非沙箱 tracing agent 的 run 级共享 OTLP 接收池(runEvals 创建并回收;
    * 每个 agent 一个 receiver,attempt 之间共享 —— 被测应用是长驻进程,端点不能随 attempt 换)。
@@ -1469,9 +1449,6 @@ export interface FailureDetail {
   code?: string;
   /** 完整时间归属；attempt 形态同时投影上面的 phase，run 形态保留共享 timing node。 */
   origin?: TimingOrigin;
-  /** 该 attempt 的 `AttemptRecord.facts` 键数；缺失或为空对象时省略。结束反馈的 FAILURES 面板
-   *  只据此给一条行内提示(有才提示),完整键值表留给 `niceeval show @<locator>`。 */
-  factsCount?: number;
 }
 
 /** 带发生时间的失败通知；复用失败以 FailureDetail 静态进入 plan，不伪装成刚发生的事件。 */
@@ -1571,6 +1548,7 @@ export interface RunFeedbackState {
   elapsedMs: number;
   /** 仅本次实际派发 attempt 的 token；carry 结果的历史 usage 不进入这里。 */
   newTokenCount?: number;
+  /** 仅本次实际派发 attempt 的 `estimatedCostUSD` 累计(价目表估算口径,与 newTokenCount 同口径);observed cost 不进入这里。 */
   estimatedCostUSD?: number;
   active: ReadonlyMap<AttemptKey, ActiveAttempt>;
   /** 在飞的 judge 预检运行级行(见 `DurableFeedbackEvent` 的 "precheck" 变体):`started` 置位、
@@ -1642,6 +1620,7 @@ export type AttemptLifecycleEvent =
       verdict: Verdict;
       /** 本次 attempt 的输入 + 输出 token；缺失表示 provider 未报告。 */
       tokenCount?: number;
+      /** 本次 attempt 的价目表估算成本(`EvalResult.estimatedCostUSD` 口径);observed cost 不携带。 */
       estimatedCostUSD?: number;
     }
   | { type: "attempt:early-exit"; at: number; identity: AttemptRef; who: string };

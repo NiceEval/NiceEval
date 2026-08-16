@@ -1,18 +1,12 @@
-import { Effect, Ref } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Ref } from "effect";
 import type * as Scope from "effect/Scope";
-import { isReportExecution, type ReportExecution } from "../execution/model.ts";
-import { basalt, isThemeDefinition, type ThemeDefinition } from "./theme.ts";
+import type { ClosedSiteRevision } from "../execution/model.ts";
 
+/** One immutable byte-complete site published by the live transport. */
 export interface ReportViewRevision {
   readonly revision: number;
-  readonly execution: ReportExecution;
-  /** Theme snapshot for this view revision; it never becomes Report author data. */
-  readonly theme: ThemeDefinition;
-  /**
-   * Recoverable Node watch set published with this revision. `fs.watch` is only
-   * a hint; the next rebuild re-reads its own loader closure. Failure keeps the
-   * last-good set so the entry (and prior static edges) remain recoverable.
-   */
+  readonly site: ClosedSiteRevision;
+  /** The successful candidate's next recoverable watcher closure. */
   readonly watchInputs: readonly string[];
 }
 
@@ -39,50 +33,45 @@ export interface ReportViewRebuildFailure {
   readonly summary: string;
 }
 
-/** A successful rebuild that also replaced the fixed ReportExecution. */
-export interface ReportViewExecutionRebuild {
-  readonly kind: "execution";
-  readonly execution: ReportExecution;
-  /** Omit when the previous Theme source snapshot remains current. */
-  readonly theme?: ThemeDefinition;
-  /**
-   * On success, atomically replaces the next-round watch set. Omit to keep the
-   * last-good recoverable set (at least the prior entry edges).
-   */
+/** A successful candidate always contains a new SSG-complete revision. */
+export interface ReportViewSiteRebuild {
+  readonly kind: "site";
+  readonly site: ClosedSiteRevision;
+  /** Omit to keep the prior recoverable set after a host-only rebuild. */
   readonly watchInputs?: readonly string[];
 }
 
-/** A Theme-only rebuild keeps the exact immutable execution and changes presentation only. */
-export interface ReportViewThemeRebuild {
-  readonly kind: "theme-only";
-  readonly theme: ThemeDefinition;
-  /** Same atomic watch-set rule as an execution rebuild. */
-  readonly watchInputs?: readonly string[];
-}
-
-export type ReportViewRebuild =
-  | ReportExecution
-  | ReportViewExecutionRebuild
-  | ReportViewThemeRebuild;
+export type ReportViewRebuild = ReportViewSiteRebuild;
 
 export interface ReportViewSession<Requirements = never> {
   readonly url: string;
   readonly snapshot: Effect.Effect<ReportViewState, ReportViewSessionClosed>;
-  readonly refresh: Effect.Effect<void, ReportViewSessionClosed, Requirements>;
+  /**
+   * Records a new user/watch intent and starts its candidate immediately.
+   * A later intent interrupts or abandons any earlier candidate; callers do
+   * not wait for author callbacks before the latest intent is registered.
+   */
+  readonly refresh: Effect.Effect<ReportViewRefreshIntent, ReportViewSessionClosed, Requirements>;
+}
+
+export type ReportViewPublicationOutcome =
+  | { readonly state: "published"; readonly revision: ReportViewRevision }
+  | { readonly state: "failed" }
+  | { readonly state: "superseded" }
+  | { readonly state: "interrupted" };
+
+/** A registered intent returns promptly; its outcome completes exactly once. */
+export interface ReportViewRefreshIntent {
+  readonly token: number;
+  readonly outcome: Effect.Effect<ReportViewPublicationOutcome>;
 }
 
 export interface OpenReportViewSessionInput<Requirements = never> {
   readonly url: string;
-  /** The initial Theme source snapshot; basalt is the host default. */
-  readonly theme?: ThemeDefinition;
-  /**
-   * Initial recoverable watch set for the opening revision. A successful
-   * rebuild may replace it atomically with the next loader closure.
-   */
   readonly watchInputs?: readonly string[];
-  /** The opening execution must be complete; no last-good revision exists yet. */
-  readonly initial: Effect.Effect<ReportExecution, ReportViewOpenError, Requirements>;
-  /** Each invocation publishes a new execution or a Theme-only revision. */
+  /** The opening revision is already a complete byte map. */
+  readonly initial: Effect.Effect<ClosedSiteRevision, ReportViewOpenError, Requirements>;
+  /** Each invocation captures one complete Sample/Report/Theme intent. */
   readonly rebuild: () => Effect.Effect<ReportViewRebuild, ReportViewRebuildFailure, Requirements>;
 }
 
@@ -95,22 +84,25 @@ const closedError: ReportViewSessionClosed = Object.freeze({
 });
 
 /**
- * Builds the immutable-revision state machine used by a Node watcher/server.
- * A successful refresh atomically publishes a new fixed execution and the next
- * recoverable watch set; a typed failed refresh only updates the bounded
- * last-good problem and leaves the prior watch set intact. Defects and
- * interruption intentionally remain in the Effect cause and do not masquerade
- * as a recoverable rebuild result.
+ * Latest-intent-wins state machine. A candidate has no authority to publish
+ * until it proves that its intent token is still current while holding the
+ * small publication mutex. Failed, superseded, and interrupted candidates
+ * retain the last-good revision and its watcher closure.
  */
 export function openReportViewSession<Requirements>(
   input: OpenReportViewSessionInput<Requirements>,
 ): Effect.Effect<ReportViewSession<Requirements>, ReportViewOpenError, Scope.Scope | Requirements> {
   return Effect.gen(function* () {
+    const sessionScope = yield* Effect.scope;
     const initial = yield* input.initial;
-    const initialState: ReportViewState = Object.freeze({
-      current: revision(0, initial, input.theme ?? basalt, freezeWatchInputs(input.watchInputs)),
-    });
-    const cell = yield* Ref.make<SessionCell>(Object.freeze({ state: "open", value: initialState }));
+    const cell = yield* Ref.make<SessionCell>(Object.freeze({
+      state: "open",
+      value: Object.freeze({
+        current: makeRevision(0, initial, freezeWatchInputs(input.watchInputs)),
+      }),
+    }));
+    const intent = yield* Ref.make(0);
+    const active = yield* Ref.make<ActiveCandidate | undefined>(undefined);
     const mutex = yield* Effect.makeSemaphore(1);
 
     const snapshot: Effect.Effect<ReportViewState, ReportViewSessionClosed> = Effect.flatMap(
@@ -120,78 +112,109 @@ export function openReportViewSession<Requirements>(
         : Effect.fail(closedError),
     );
 
-    const refresh: Effect.Effect<void, ReportViewSessionClosed, Requirements> = mutex.withPermits(1)(
-      Effect.flatMap(Ref.get(cell), (before) => {
-        if (before.state === "closed") return Effect.fail(closedError);
-        return input.rebuild().pipe(
-          Effect.flatMap((rebuilt) => {
-            const next: ReportViewState = Object.freeze({
-              current: revisionFromRebuild(before.value.current, rebuilt),
-            });
-            return Ref.set(cell, Object.freeze({ state: "open", value: next }));
-          }),
-          Effect.catchAll((failure) => {
-            // Keep last-good execution, theme, and recoverable watch set.
-            const next: ReportViewState = Object.freeze({
-              current: before.value.current,
-              lastProblem: boundedProblem(failure),
-            });
-            return Ref.set(cell, Object.freeze({ state: "open", value: next }));
-          }),
+    const refresh: Effect.Effect<ReportViewRefreshIntent, ReportViewSessionClosed, Requirements> = mutex.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* Ref.get(cell);
+        if (current.state === "closed") return yield* Effect.fail(closedError);
+        const nextIntent = yield* Ref.updateAndGet(intent, (value) => value + 1);
+        const prior = yield* Ref.get(active);
+        // Do not wait for arbitrary author Promise cleanup. The token below
+        // still prevents a late completion from publishing if interruption is
+        // not observed by an external callback.
+        if (prior !== undefined) {
+          yield* Deferred.succeed(prior.outcome, Object.freeze({ state: "superseded" as const }));
+          yield* Fiber.interruptFork(prior.fiber);
+        }
+        const outcome = yield* Deferred.make<ReportViewPublicationOutcome>();
+        const candidate = yield* Effect.forkIn(
+          closeCandidate({ input, cell, intent, mutex, token: nextIntent, outcome }),
+          sessionScope,
         );
+        yield* Ref.set(active, Object.freeze({ token: nextIntent, fiber: candidate, outcome }));
+        return Object.freeze({ token: nextIntent, outcome });
       }),
     );
 
     const session: ReportViewSession<Requirements> = Object.freeze({ url: input.url, snapshot, refresh });
     return yield* Effect.acquireRelease(
       Effect.succeed(session),
-      // Closing participates in the same critical section as refresh. Without
-      // this, a refresh could observe `open`, the enclosing Scope could close,
-      // and the refresh could publish a new open value after the finalizer.
-      () => mutex.withPermits(1)(Ref.set(cell, Object.freeze({ state: "closed" }))),
+      () => mutex.withPermits(1)(Effect.gen(function* () {
+        const prior = yield* Ref.get(active);
+        if (prior !== undefined) {
+          yield* Deferred.succeed(prior.outcome, Object.freeze({ state: "interrupted" as const }));
+          yield* Fiber.interruptFork(prior.fiber);
+        }
+        yield* Ref.set(cell, Object.freeze({ state: "closed" }));
+      })),
     );
   });
 }
 
-function revision(
-  revisionNumber: number,
-  execution: ReportExecution,
-  theme: ThemeDefinition,
+function closeCandidate<Requirements>(input: {
+  readonly input: OpenReportViewSessionInput<Requirements>;
+  readonly cell: Ref.Ref<SessionCell>;
+  readonly intent: Ref.Ref<number>;
+  readonly mutex: Effect.Semaphore;
+  readonly token: number;
+  readonly outcome: Deferred.Deferred<ReportViewPublicationOutcome>;
+}): Effect.Effect<void, never, Requirements> {
+  return Effect.exit(input.input.rebuild()).pipe(
+    Effect.flatMap((exit) => input.mutex.withPermits(1)(
+      publishCandidate({ ...input, exit }),
+    )),
+  );
+}
+
+function publishCandidate<Requirements>(input: {
+  readonly cell: Ref.Ref<SessionCell>;
+  readonly intent: Ref.Ref<number>;
+  readonly token: number;
+  readonly exit: Exit.Exit<ReportViewRebuild, ReportViewRebuildFailure>;
+  readonly outcome: Deferred.Deferred<ReportViewPublicationOutcome>;
+}): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    const currentIntent = yield* Ref.get(input.intent);
+    const current = yield* Ref.get(input.cell);
+    if (current.state === "closed" || currentIntent !== input.token) {
+      return yield* Deferred.succeed(input.outcome, Object.freeze({ state: "superseded" as const }));
+    }
+    if (Exit.isSuccess(input.exit)) {
+      const revision = makeRevision(
+          current.value.current.revision + 1,
+          input.exit.value.site,
+          input.exit.value.watchInputs ?? current.value.current.watchInputs,
+        );
+      const next: ReportViewState = Object.freeze({ current: revision });
+      yield* Ref.set(input.cell, Object.freeze({ state: "open", value: next }));
+      return yield* Deferred.succeed(input.outcome, Object.freeze({ state: "published" as const, revision }));
+    }
+    // Intentional cancellation has no user-visible error. A typed failure or
+    // defect merely annotates last-good; neither can replace its bytes/watch set.
+    if (Cause.isInterruptedOnly(input.exit.cause)) {
+      return yield* Deferred.succeed(input.outcome, Object.freeze({ state: "interrupted" as const }));
+    }
+    const typed = Option.getOrUndefined(Cause.failureOption(input.exit.cause));
+    const next: ReportViewState = Object.freeze({
+      current: current.value.current,
+      lastProblem: boundedProblem(typed ?? { summary: "Report rebuild failed" }),
+    });
+    yield* Ref.set(input.cell, Object.freeze({ state: "open", value: next }));
+    return yield* Deferred.succeed(input.outcome, Object.freeze({ state: "failed" as const }));
+  });
+}
+
+interface ActiveCandidate {
+  readonly token: number;
+  readonly fiber: Fiber.RuntimeFiber<void, never>;
+  readonly outcome: Deferred.Deferred<ReportViewPublicationOutcome>;
+}
+
+function makeRevision(
+  revision: number,
+  site: ClosedSiteRevision,
   watchInputs: readonly string[],
 ): ReportViewRevision {
-  if (!isThemeDefinition(theme)) {
-    throw new TypeError("a Report view revision requires a ThemeDefinition from defineTheme");
-  }
-  return Object.freeze({
-    revision: revisionNumber,
-    execution,
-    theme,
-    watchInputs: freezeWatchInputs(watchInputs),
-  });
-}
-
-function revisionFromRebuild(
-  previous: ReportViewRevision,
-  rebuilt: ReportViewRebuild,
-): ReportViewRevision {
-  if (isReportExecution(rebuilt)) {
-    // Legacy bare execution rebuilds keep the prior recoverable watch set.
-    return revision(previous.revision + 1, rebuilt, previous.theme, previous.watchInputs);
-  }
-  if (rebuilt.kind === "execution") {
-    return revision(
-      previous.revision + 1,
-      rebuilt.execution,
-      rebuilt.theme ?? previous.theme,
-      rebuilt.watchInputs ?? previous.watchInputs,
-    );
-  }
-  return revision(
-    previous.revision + 1,
-    previous.execution,
-    rebuilt.theme,
-    rebuilt.watchInputs ?? previous.watchInputs,
-  );
+  return Object.freeze({ revision, site, watchInputs: freezeWatchInputs(watchInputs) });
 }
 
 function freezeWatchInputs(inputs: readonly string[] | undefined): readonly string[] {

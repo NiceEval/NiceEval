@@ -35,7 +35,6 @@ export type SandboxProgress = (update: {
 }) => void;
 
 export type SandboxDiagnosticSink = (input: DiagnosticInput) => void;
-export type SandboxFactsWriter = (key: string, value: string | number | boolean) => void;
 
 export type SandboxCleanupCommand = (
   sandbox: SandboxCommandTarget,
@@ -58,7 +57,6 @@ export interface SandboxCommandContext {
   readonly signal: AbortSignal;
   readonly progress: SandboxProgress;
   readonly diagnostic: SandboxDiagnosticSink;
-  readonly facts: SandboxFactsWriter;
   onCleanup(command: SandboxCleanupCommand): void;
 }
 

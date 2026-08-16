@@ -8,6 +8,10 @@ test("createLangGraphEventStream 以新实例覆盖真实 interrupt/Command resu
     experimentId: "langgraph-hitl",
     evalId: "langgraph-hitl",
     caseName: "langgraph-hitl",
+    source: {
+      file: "evals/langgraph-hitl.eval.ts",
+      content: "export default defineEval({",
+    },
     executionMarkers: [
       "approve_change",
       "langgraph-hitl-approved-marker",

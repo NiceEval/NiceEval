@@ -10,7 +10,7 @@ type Agent = SandboxAgent | DirectAgent;
 interface SandboxAgent {
   readonly name: string;
   readonly kind: "sandbox";
-  /** Adapter 常态证据覆盖声明；六通道必填，可用 completeEvidenceCoverage。见 evidence.md。 */
+  /** Adapter 常态证据覆盖声明；六类证据面必填，可用 completeEvidenceCoverage。见 evidence.md。 */
   readonly evidenceCoverage: EvidenceCoverage;
   /** Agent CLI 与所需运行时是否达到声明 identity；每条 probe 只读、可重复调用。 */
   readonly ensure: AgentEnsure | readonly AgentEnsure[];
@@ -85,7 +85,6 @@ interface AgentContext {
   readonly experimentId?: string;
   progress(update: { message: string; current?: number; total?: number }): void;
   diagnostic(input: DiagnosticInput): void;
-  fact(name: string, value: JsonValue): void;
   log(msg: string): void;
 }
 
@@ -94,17 +93,16 @@ interface SandboxAgentContext extends AgentContext {
 }
 ```
 
-`fact(name, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈入口：它以反向域 name 写入本 Attempt 的中性 JSON document，完整 document 上限为 65,536 UTF-8 bytes。
-同一 owner/name 只允许写一次；第二次写入是 typed error，不替换也不追加。它作为 Attempt-owned custom channel 保存，成为一等观测量。
-它不影响 Turn status 或 verdict，精确形状与写入语义见 [Record · Architecture](../../record/architecture.md)。
+`AgentContext` 不是 Record writer。Adapter 不取得任意 JSON 的 durable 写入、family、schema、blob、查询或 migration 权限。运行时观测只有通过 NiceEval 已发布的 typed collector 或 Adapter 能力，且符合该能力的既有语义时，才能进入固定的 Observability、FileChanges、Assertions、Sources 或 Artifacts。
+未发布 collector 的第三方值不自动持久化或查询。
 
 `ctx` 是驱动 Agent 的低层上下文,eval 的 `t` 是运行器构造的断言视图。
 二者共享 experiment 输入、signal 与作用域反馈能力,但只有 `ctx` 暴露 Agent 会话状态,只有 `t` 暴露断言和 judge。
 
 - runner 为 `setup`、每次 `send` 与 `teardown` 分别构造上下文,同名 `progress/diagnostic` 会自动绑定到当前 `agent.setup`、`agent.run` 或 `agent.teardown` operation。
 - Adapter 不能传 phase/scope,也不能把上下文保存到另一个回调复用。
-- `progress` 是 Human active 行可覆写的短期状态;`diagnostic` 是永久 warning/error,但不改变 Turn status 或 attempt verdict。
-- `log(msg)` 是 `progress({ message: msg })` 的便捷别名,不是第三条通道。
+- `progress` 是 Human active 行可覆写的短期状态;`diagnostic` 是结构化 warning/error,但不改变 Turn status 或 attempt verdict。
+- `log(msg)` 是 `progress({ message: msg })` 的便捷别名，不是持久化 API。
   它同样绑定当前生命周期阶段,只是省去构造 update 对象;超时失败时最近若干行会并入结果的 error 信息,方便定位 Adapter 卡在哪一步。
 完整用法见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
 

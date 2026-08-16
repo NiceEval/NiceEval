@@ -12,6 +12,23 @@ interface ExpEvent {
   verdict?: string;
 }
 
+interface LeaderboardShow {
+  format: "niceeval.show";
+  schemaVersion: 1;
+  view: "leaderboard";
+  sample: { denominator: number };
+  problemTable: readonly unknown[];
+  data: {
+    state: "available";
+    inputState: "complete" | "partial";
+    problemIds: readonly number[];
+    value: {
+      kind: "leaderboard";
+      attempts: readonly unknown[];
+    };
+  };
+}
+
 test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
   await evalE2E.case(
     "score",
@@ -67,12 +84,21 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       const shown = await niceeval.run(["show", "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(run.ndjson<ExpEvent>().filter((event) => event.verdict === "failed")).toEqual([]);
-      const document = shown.json<{
-        sample: { denominator: number };
-        problemTable: readonly unknown[];
-      }>();
-      expect(document.sample.denominator).toBe(8);
+      const document = shown.json<LeaderboardShow>();
+      expect(document).toMatchObject({
+        format: "niceeval.show",
+        schemaVersion: 1,
+        view: "leaderboard",
+        sample: { denominator: 8 },
+        data: {
+          state: "available",
+          inputState: "complete",
+          problemIds: [],
+          value: { kind: "leaderboard" },
+        },
+      });
       expect(document.problemTable).toEqual([]);
+      expect(document.data.value.attempts).toHaveLength(8);
     },
   );
 });

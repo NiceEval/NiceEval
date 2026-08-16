@@ -8,18 +8,18 @@ import type {
 } from "./identity.ts";
 
 /** A package-relative portable display path inside a source package. */
-export const CANONICAL_SOURCE_PATH_V1_BRAND =
-  "@niceeval/sources/CanonicalSourcePathV1" as const;
+export const CANONICAL_SOURCE_PATH__BRAND =
+  "@niceeval/sources/CanonicalSourcePath" as const;
 
-export type CanonicalSourcePathV1 =
-  string & Brand.Brand<typeof CANONICAL_SOURCE_PATH_V1_BRAND>;
+export type CanonicalSourcePath =
+  string & Brand.Brand<typeof CANONICAL_SOURCE_PATH__BRAND>;
 
-export interface SourcePackageItemRefV1 {
+export interface SourcePackageItemRef {
   readonly kind: "package";
   readonly packageItemId: SourcePackageItemId;
 }
 
-export interface SourceFileItemRefV1 {
+export interface SourceFileItemRef {
   readonly kind: "file";
   readonly packageItemId: SourcePackageItemId;
   readonly fileItemId: SourceFileItemId;
@@ -27,54 +27,54 @@ export interface SourceFileItemRefV1 {
 }
 
 /** A persisted source file carries its bytes only through this Attachment's closure. */
-export interface SourceFileV1<BlobRef = RecordBlobRef> {
+export interface SourceFile<BlobRef = RecordBlobRef> {
   readonly fileItemId: SourceFileItemId;
-  readonly path: CanonicalSourcePathV1;
+  readonly path: CanonicalSourcePath;
   readonly sha256: Sha256Digest;
   readonly blob: BlobRef;
 }
 
 /** A source package is a display grouping, never a cross-Run lookup key. */
-export interface SourcePackageV1<BlobRef = RecordBlobRef> {
+export interface SourcePackage<BlobRef = RecordBlobRef> {
   readonly packageItemId: SourcePackageItemId;
   readonly label: string;
-  readonly files: readonly SourceFileV1<BlobRef>[];
+  readonly files: readonly SourceFile<BlobRef>[];
 }
 
 /** The Run-owned durable Sources payload. */
-export interface SourcesDocumentV1<BlobRef = RecordBlobRef> {
-  readonly packages: readonly SourcePackageV1<BlobRef>[];
+export interface SourcesDocument<BlobRef = RecordBlobRef> {
+  readonly packages: readonly SourcePackage<BlobRef>[];
 }
 
-export interface SourceCoordinateV1 {
+export interface SourceCoordinate {
   readonly line: number;
   readonly column: number;
 }
 
-export interface AssertionSourcePackageFrameV1 {
-  readonly target: SourcePackageItemRefV1;
+export interface AssertionSourcePackageFrame {
+  readonly target: SourcePackageItemRef;
 }
 
-export interface AssertionSourceFileFrameV1 {
-  readonly target: SourceFileItemRefV1;
-  readonly coordinate: SourceCoordinateV1;
+export interface AssertionSourceFileFrame {
+  readonly target: SourceFileItemRef;
+  readonly coordinate: SourceCoordinate;
 }
 
-export type AssertionSourceFrameV1 =
-  | AssertionSourcePackageFrameV1
-  | AssertionSourceFileFrameV1;
+export type AssertionSourceFrame =
+  | AssertionSourcePackageFrame
+  | AssertionSourceFileFrame;
 
-export interface AssertionSourceTraceV1 {
+export interface AssertionSourceTrace {
   readonly frames:
-    | readonly [AssertionSourceFileFrameV1]
+    | readonly [AssertionSourceFileFrame]
     | readonly [
-        AssertionSourceFileFrameV1,
-        ...AssertionSourceFrameV1[],
-        AssertionSourceFileFrameV1,
+        AssertionSourceFileFrame,
+        ...AssertionSourceFrame[],
+        AssertionSourceFileFrame,
       ];
 }
 
-export type AssertionSourceRoleV1 =
+export type AssertionSourceRole =
   | "declaration"
   | "threshold"
   | "score"
@@ -82,10 +82,10 @@ export type AssertionSourceRoleV1 =
   | "optional"
   | "stop";
 
-export type AssertionSourceOccurrenceV1 =
+export type AssertionSourceOccurrence =
   | {
       readonly sourceOrder: number;
-      readonly role: Exclude<AssertionSourceRoleV1, "stop">;
+      readonly role: Exclude<AssertionSourceRole, "stop">;
     }
   | {
       readonly sourceOrder: number;
@@ -93,41 +93,41 @@ export type AssertionSourceOccurrenceV1 =
       readonly outcome: "continued" | "stopped" | "interrupted";
     };
 
-export interface AssertionSourceSiteV1 {
-  readonly trace: AssertionSourceTraceV1;
+export interface AssertionSourceSite {
+  readonly trace: AssertionSourceTrace;
   readonly occurrences: readonly [
-    AssertionSourceOccurrenceV1,
-    ...AssertionSourceOccurrenceV1[],
+    AssertionSourceOccurrence,
+    ...AssertionSourceOccurrence[],
   ];
 }
 
-export interface AssertionSourceSitesEntryV1 {
+export interface AssertionSourceSitesEntry {
   readonly entryId: AssertionEntryId;
-  readonly sites: readonly [AssertionSourceSiteV1, ...AssertionSourceSiteV1[]];
+  readonly sites: readonly [AssertionSourceSite, ...AssertionSourceSite[]];
 }
 
-export type AssertionSourceSendStatusV1 =
+export type AssertionSourceSendStatus =
   | "completed"
   | "failed"
   | "interrupted";
 
-export interface AssertionSourceSendOccurrenceV1 {
+export interface AssertionSourceSendOccurrence {
   readonly sourceOrder: number;
   readonly label: string;
-  readonly status: AssertionSourceSendStatusV1;
+  readonly status: AssertionSourceSendStatus;
   readonly durationMs: number;
 }
 
-export interface AssertionSourceSendSiteV1 {
-  readonly trace: AssertionSourceTraceV1;
+export interface AssertionSourceSendSite {
+  readonly trace: AssertionSourceTrace;
   readonly occurrences: readonly [
-    AssertionSourceSendOccurrenceV1,
-    ...AssertionSourceSendOccurrenceV1[],
+    AssertionSourceSendOccurrence,
+    ...AssertionSourceSendOccurrence[],
   ];
 }
 
 /** The Attempt-owned semantic join to the exact origin Run Sources snapshot. */
-export interface AssertionSourceSitesDocumentV1 {
-  readonly entries: readonly AssertionSourceSitesEntryV1[];
-  readonly sendSites: readonly AssertionSourceSendSiteV1[];
+export interface AssertionSourceSitesDocument {
+  readonly entries: readonly AssertionSourceSitesEntry[];
+  readonly sendSites: readonly AssertionSourceSendSite[];
 }

@@ -88,7 +88,7 @@ export default defineConfig({
 <包管理器> exec niceeval view                 # 查看器里看对比结果
 ```
 
-按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)用 `niceeval show` 加 `--source`、`--execution`、`--timing`、`--diff` 完成运行、观察、修改和重跑。查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对。`t.succeeded()` 不过 → 应用回了非成功状态。只有内容断言不过 → 接入已经通了，调断言或调应用。
+按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)用 `niceeval show` 和明确的 `--page <route>` 完成运行、观察、修改和重跑。需要机器读取时使用 `show --json`。查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对。`t.succeeded()` 不过 → 应用回了非成功状态。只有内容断言不过 → 接入已经通了，调断言或调应用。
 
 ## 第 5 步：收尾，告诉用户做了什么
 

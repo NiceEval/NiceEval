@@ -1,155 +1,104 @@
 import { Either, Schema } from "effect";
 import {
+  type RecordJson,
+  type RecordJsonObject,
+} from "../definition/canonical.ts";
+import {
+  RecordSchemaParseOptions,
+  type RecordSchemaCodec,
+  type RecordSchemaFailure,
+} from "../definition/schema-codec.ts";
+import {
   nonEmptyRecordIssues,
+  RecordIssueCodeSchema,
   recordCodecError,
   recordIssue,
   type RecordCodecDocument,
   type RecordCodecError,
   type RecordIssue,
 } from "../errors/record-errors.ts";
+import {
+  AttemptDocumentDefinition,
+  AttemptDocumentSchema as CurrentAttemptDocumentSchema,
+  MemberDocumentDefinition,
+  MemberDocumentSchema as CurrentMemberDocumentSchema,
+  RecordAttemptRefSchema as CurrentRecordAttemptRefSchema,
+  RecordCoreDefinition,
+  RecordCoreSchema as CurrentRecordCoreSchema,
+  RecordDocumentDefinition,
+  RecordDocumentSchema as CurrentRecordDocumentSchema,
+  RecordSlotIdentitySchema as CurrentRecordSlotIdentitySchema,
+  RunCoreSchema as CurrentRunCoreSchema,
+  RunDocumentDefinition,
+  RunDocumentSchema as CurrentRunDocumentSchema,
+} from "../model/definition.ts";
 import type {
-  AttemptDocumentV1,
-  MemberDocumentV1,
-  RecordAttachmentEnvelopeV1,
+  AttemptDocument,
+  AttemptOutcome,
+  MemberDocument,
+  MembershipAction,
+  RecordAttachmentEnvelope,
   RecordAttemptRef,
-  RecordCoreV1,
-  RecordDocumentV1,
-  RunCoreV1,
-  RunDocumentV1,
+  RecordCore,
+  RecordDocument,
+  RecordSlotIdentity,
+  RunCore,
+  RunDocument,
 } from "../model/core.ts";
-import {
-  validateRecordAttachmentEnvelopeV1,
-  validateRecordCoreV1,
-  validateRunDocumentV1,
-} from "../model/validation.ts";
-import {
-  AttemptIdSchema,
-  RecordAttachmentNameSchema,
-  RecordAttachmentSchemaIdSchema,
-  RecordFormatV1Schema,
-  RecordIdSchema,
-  RunIdSchema,
-  SlotIdSchema,
-  UtcMillisSchema,
-} from "./identifiers.ts";
+import { RunContextSchema } from "../model/run-context.ts";
 
-/** All durable Record document codecs must aggregate failures and reject extras. */
-export const RecordExactParseOptions = Object.freeze({
-  errors: "all" as const,
-  onExcessProperty: "error" as const,
-});
+/** Kept as the one exact Schema options object for nearby non-Core codecs. */
+export const RecordExactParseOptions = RecordSchemaParseOptions;
 
-export interface RecordDocumentV1Encoded {
-  readonly format: "niceeval.record/v1";
-  readonly recordId: string;
+export type RecordDocumentEncoded = RecordJsonObject;
+export type RunDocumentEncoded = RecordJsonObject;
+export type RecordSlotIdentityEncoded = RecordJsonObject;
+export type RecordAttemptRefEncoded = RecordJsonObject;
+export type MemberDocumentEncoded = RecordJsonObject;
+export type AttemptDocumentEncoded = RecordJsonObject;
+export type RunCoreEncoded = RecordJsonObject;
+export type RecordCoreEncoded = RecordJsonObject;
+
+export interface RecordAttachmentEnvelopeEncoded {
+  readonly family: string;
+  readonly schemaVersion: number;
 }
 
-export interface RunDocumentV1Encoded {
-  readonly runId: string;
-  readonly startedAt: number;
-  readonly completedAt: number;
-  readonly expectedSlots: readonly string[];
-}
+/** Keep each source Schema's exact encoded side (notably branded IDs -> string). */
+export const RecordAttemptRefSchema = CurrentRecordAttemptRefSchema;
+export const RecordDocumentSchema = CurrentRecordDocumentSchema;
+export const RecordSlotIdentitySchema = CurrentRecordSlotIdentitySchema;
+export const RunDocumentSchema = CurrentRunDocumentSchema;
+export const MemberDocumentSchema = CurrentMemberDocumentSchema;
+export const AttemptDocumentSchema = CurrentAttemptDocumentSchema;
+export const RunCoreSchema = CurrentRunCoreSchema;
+export const RecordCoreSchema = CurrentRecordCoreSchema;
+export const RunContextCurrentSchema = RunContextSchema;
 
-export interface RecordAttemptRefEncoded {
-  readonly originRunId: string;
-  readonly attemptId: string;
-}
+/** These small domain literals are composition helpers, not durable codec truth sources. */
+export const AttemptOutcomeSchema: Schema.Schema<AttemptOutcome> = Schema.Literal(
+  "completed",
+  "errored",
+  "cancelled",
+  "interrupted",
+);
+export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literal(
+  "executed",
+  "carried",
+  "accepted",
+  "not-dispatched",
+  "interrupted",
+);
 
-export interface MemberDocumentV1Encoded {
-  readonly slotId: string;
-  readonly attempt: RecordAttemptRefEncoded;
-}
-
-export interface AttemptDocumentV1Encoded {
-  readonly attemptId: string;
-  readonly originRunId: string;
-}
-
-export interface RecordAttachmentEnvelopeV1Encoded {
-  readonly name: string;
-  readonly schemaId: string;
-}
-
-export interface RunCoreV1Encoded {
-  readonly run: RunDocumentV1Encoded;
-  readonly members: readonly MemberDocumentV1Encoded[];
-  readonly attempts: readonly AttemptDocumentV1Encoded[];
-}
-
-export interface RecordCoreV1Encoded {
-  readonly record: RecordDocumentV1Encoded;
-  readonly runs: readonly RunCoreV1Encoded[];
-}
-
-export const RecordAttemptRefSchema: Schema.Schema<
-  RecordAttemptRef,
-  RecordAttemptRefEncoded
+export const RecordAttachmentEnvelopeSchema: Schema.Schema<
+  RecordAttachmentEnvelope,
+  RecordAttachmentEnvelopeEncoded
 > = Schema.Struct({
-  originRunId: RunIdSchema,
-  attemptId: AttemptIdSchema,
+  family: Schema.String.pipe(Schema.minLength(1)),
+  schemaVersion: Schema.Int.pipe(Schema.positive()),
 });
 
-export const RecordDocumentV1Schema: Schema.Schema<
-  RecordDocumentV1,
-  RecordDocumentV1Encoded
-> = Schema.Struct({
-  format: RecordFormatV1Schema,
-  recordId: RecordIdSchema,
-});
-
-export const RunDocumentV1Schema: Schema.Schema<
-  RunDocumentV1,
-  RunDocumentV1Encoded
-> = Schema.Struct({
-  runId: RunIdSchema,
-  startedAt: UtcMillisSchema,
-  completedAt: UtcMillisSchema,
-  expectedSlots: Schema.Array(SlotIdSchema),
-});
-
-export const MemberDocumentV1Schema: Schema.Schema<
-  MemberDocumentV1,
-  MemberDocumentV1Encoded
-> = Schema.Struct({
-  slotId: SlotIdSchema,
-  attempt: RecordAttemptRefSchema,
-});
-
-export const AttemptDocumentV1Schema: Schema.Schema<
-  AttemptDocumentV1,
-  AttemptDocumentV1Encoded
-> = Schema.Struct({
-  attemptId: AttemptIdSchema,
-  originRunId: RunIdSchema,
-});
-
-export const RecordAttachmentEnvelopeV1Schema: Schema.Schema<
-  RecordAttachmentEnvelopeV1,
-  RecordAttachmentEnvelopeV1Encoded
-> = Schema.Struct({
-  name: RecordAttachmentNameSchema,
-  schemaId: RecordAttachmentSchemaIdSchema,
-});
-
-export const RunCoreV1Schema: Schema.Schema<RunCoreV1, RunCoreV1Encoded> =
-  Schema.Struct({
-    run: RunDocumentV1Schema,
-    members: Schema.Array(MemberDocumentV1Schema),
-    attempts: Schema.Array(AttemptDocumentV1Schema),
-  });
-
-export const RecordCoreV1Schema: Schema.Schema<
-  RecordCoreV1,
-  RecordCoreV1Encoded
-> = Schema.Struct({
-  record: RecordDocumentV1Schema,
-  runs: Schema.Array(RunCoreV1Schema),
-});
-
-function schemaFailure(
-  document: RecordCodecDocument,
-): RecordCodecError {
+function schemaFailure(document: RecordCodecDocument): RecordCodecError {
   return recordCodecError({
     code: "record-schema-invalid",
     document,
@@ -172,6 +121,54 @@ function invariantFailure(
   });
 }
 
+function failureFromSchemaCodec(
+  document: RecordCodecDocument,
+  failure: RecordSchemaFailure,
+): RecordCodecError {
+  if (failure.kind === "schema") {
+    const isIssueCode = Schema.is(RecordIssueCodeSchema);
+    const issues = failure.issues.flatMap((issue): readonly RecordIssue[] => {
+      if (
+        issue.message === "record-schema-invalid" ||
+        !isIssueCode(issue.message) ||
+        issue.path.some((segment) => typeof segment === "symbol")
+      ) {
+        return [];
+      }
+      return [recordIssue(issue.message, issue.path.map(String))];
+    });
+    if (issues.length > 0) return invariantFailure(document, issues);
+  }
+  return schemaFailure(document);
+}
+
+function decodeDefinition<Value>(
+  document: RecordCodecDocument,
+  definition: Pick<RecordSchemaCodec<Value>, "decode">,
+  input: unknown,
+): Either.Either<Value, RecordCodecError> {
+  const decoded = definition.decode(input);
+  return Either.isLeft(decoded)
+    ? Either.left(failureFromSchemaCodec(document, decoded.left))
+    : Either.right(decoded.right);
+}
+
+function isRecordJsonObject(value: RecordJson): value is RecordJsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function encodeDefinition<Value>(
+  document: RecordCodecDocument,
+  definition: Pick<RecordSchemaCodec<Value>, "encode">,
+  value: Value,
+): Either.Either<RecordJsonObject, RecordCodecError> {
+  const encoded = definition.encode(value);
+  if (Either.isLeft(encoded)) return Either.left(failureFromSchemaCodec(document, encoded.left));
+  return isRecordJsonObject(encoded.right)
+    ? Either.right(encoded.right)
+    : Either.left(schemaFailure(document));
+}
+
 function decodeExact<A, I>(
   document: RecordCodecDocument,
   schema: Schema.Schema<A, I>,
@@ -179,9 +176,7 @@ function decodeExact<A, I>(
   validate: (value: A) => readonly RecordIssue[],
 ): Either.Either<A, RecordCodecError> {
   const decoded = Schema.decodeUnknownEither(schema, RecordExactParseOptions)(input);
-  if (Either.isLeft(decoded)) {
-    return Either.left(schemaFailure(document));
-  }
+  if (Either.isLeft(decoded)) return Either.left(schemaFailure(document));
   const issues = validate(decoded.right);
   return issues.length === 0
     ? Either.right(decoded.right)
@@ -195,93 +190,84 @@ function encodeExact<A, I>(
   validate: (value: A) => readonly RecordIssue[],
 ): Either.Either<I, RecordCodecError> {
   const issues = validate(value);
-  if (issues.length > 0) {
-    return Either.left(invariantFailure(document, issues));
-  }
+  if (issues.length > 0) return Either.left(invariantFailure(document, issues));
   const encoded = Schema.encodeUnknownEither(schema, RecordExactParseOptions)(value);
+  return Either.isLeft(encoded) ? Either.left(schemaFailure(document)) : Either.right(encoded.right);
+}
+
+/** Current Core codecs are thin adapters over the current definition declarations. */
+export function decodeRecordDocument(input: unknown): Either.Either<RecordDocument, RecordCodecError> {
+  return decodeDefinition("record", RecordDocumentDefinition, input);
+}
+
+export function encodeRecordDocument(
+  value: RecordDocument,
+): Either.Either<RecordDocumentEncoded, RecordCodecError> {
+  return encodeDefinition("record", RecordDocumentDefinition, value);
+}
+
+export function decodeRunDocument(input: unknown): Either.Either<RunDocument, RecordCodecError> {
+  return decodeDefinition("run", RunDocumentDefinition, input);
+}
+
+export function encodeRunDocument(
+  value: RunDocument,
+): Either.Either<RunDocumentEncoded, RecordCodecError> {
+  return encodeDefinition("run", RunDocumentDefinition, value);
+}
+
+export function decodeMemberDocument(input: unknown): Either.Either<MemberDocument, RecordCodecError> {
+  return Either.map(
+    decodeDefinition("member", MemberDocumentDefinition, input),
+    (value) => value as MemberDocument,
+  );
+}
+
+export function encodeMemberDocument(
+  value: MemberDocument,
+): Either.Either<MemberDocumentEncoded, RecordCodecError> {
+  return encodeDefinition("member", MemberDocumentDefinition, value);
+}
+
+export function decodeAttemptDocument(input: unknown): Either.Either<AttemptDocument, RecordCodecError> {
+  return decodeDefinition("attempt", AttemptDocumentDefinition, input);
+}
+
+export function encodeAttemptDocument(
+  value: AttemptDocument,
+): Either.Either<AttemptDocumentEncoded, RecordCodecError> {
+  return encodeDefinition("attempt", AttemptDocumentDefinition, value);
+}
+
+export function decodeRecordCore(input: unknown): Either.Either<RecordCore, RecordCodecError> {
+  return decodeDefinition("record-core", RecordCoreDefinition, input);
+}
+
+export function encodeRecordCore(value: RecordCore): Either.Either<RecordCoreEncoded, RecordCodecError> {
+  return encodeDefinition("record-core", RecordCoreDefinition, value);
+}
+
+/** Fixed-family migration is intentionally outside this current-Core implementation turn. */
+export function decodeRecordAttachmentEnvelope(
+  input: unknown,
+): Either.Either<RecordAttachmentEnvelope, RecordCodecError> {
+  const decoded = Schema.decodeUnknownEither(
+    RecordAttachmentEnvelopeSchema,
+    RecordExactParseOptions,
+  )(input);
+  return Either.isLeft(decoded)
+    ? Either.left(schemaFailure("attachment-envelope"))
+    : Either.right(decoded.right);
+}
+
+export function encodeRecordAttachmentEnvelope(
+  value: RecordAttachmentEnvelope,
+): Either.Either<RecordAttachmentEnvelopeEncoded, RecordCodecError> {
+  const encoded = Schema.encodeUnknownEither(
+    RecordAttachmentEnvelopeSchema,
+    RecordExactParseOptions,
+  )(value);
   return Either.isLeft(encoded)
-    ? Either.left(schemaFailure(document))
+    ? Either.left(schemaFailure("attachment-envelope"))
     : Either.right(encoded.right);
-}
-
-export function decodeRecordDocumentV1(
-  input: unknown,
-): Either.Either<RecordDocumentV1, RecordCodecError> {
-  return decodeExact("record", RecordDocumentV1Schema, input, () => []);
-}
-
-export function encodeRecordDocumentV1(
-  value: RecordDocumentV1,
-): Either.Either<RecordDocumentV1Encoded, RecordCodecError> {
-  return encodeExact("record", RecordDocumentV1Schema, value, () => []);
-}
-
-export function decodeRunDocumentV1(
-  input: unknown,
-): Either.Either<RunDocumentV1, RecordCodecError> {
-  return decodeExact("run", RunDocumentV1Schema, input, validateRunDocumentV1);
-}
-
-export function encodeRunDocumentV1(
-  value: RunDocumentV1,
-): Either.Either<RunDocumentV1Encoded, RecordCodecError> {
-  return encodeExact("run", RunDocumentV1Schema, value, validateRunDocumentV1);
-}
-
-export function decodeMemberDocumentV1(
-  input: unknown,
-): Either.Either<MemberDocumentV1, RecordCodecError> {
-  return decodeExact("member", MemberDocumentV1Schema, input, () => []);
-}
-
-export function encodeMemberDocumentV1(
-  value: MemberDocumentV1,
-): Either.Either<MemberDocumentV1Encoded, RecordCodecError> {
-  return encodeExact("member", MemberDocumentV1Schema, value, () => []);
-}
-
-export function decodeAttemptDocumentV1(
-  input: unknown,
-): Either.Either<AttemptDocumentV1, RecordCodecError> {
-  return decodeExact("attempt", AttemptDocumentV1Schema, input, () => []);
-}
-
-export function encodeAttemptDocumentV1(
-  value: AttemptDocumentV1,
-): Either.Either<AttemptDocumentV1Encoded, RecordCodecError> {
-  return encodeExact("attempt", AttemptDocumentV1Schema, value, () => []);
-}
-
-export function decodeRecordAttachmentEnvelopeV1(
-  input: unknown,
-): Either.Either<RecordAttachmentEnvelopeV1, RecordCodecError> {
-  return decodeExact(
-    "attachment-envelope",
-    RecordAttachmentEnvelopeV1Schema,
-    input,
-    validateRecordAttachmentEnvelopeV1,
-  );
-}
-
-export function encodeRecordAttachmentEnvelopeV1(
-  value: RecordAttachmentEnvelopeV1,
-): Either.Either<RecordAttachmentEnvelopeV1Encoded, RecordCodecError> {
-  return encodeExact(
-    "attachment-envelope",
-    RecordAttachmentEnvelopeV1Schema,
-    value,
-    validateRecordAttachmentEnvelopeV1,
-  );
-}
-
-export function decodeRecordCoreV1(
-  input: unknown,
-): Either.Either<RecordCoreV1, RecordCodecError> {
-  return decodeExact("record-core", RecordCoreV1Schema, input, validateRecordCoreV1);
-}
-
-export function encodeRecordCoreV1(
-  value: RecordCoreV1,
-): Either.Either<RecordCoreV1Encoded, RecordCodecError> {
-  return encodeExact("record-core", RecordCoreV1Schema, value, validateRecordCoreV1);
 }

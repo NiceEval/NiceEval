@@ -43,10 +43,12 @@ export {
   buildFailureOrigin,
 } from "./build-coordinator.ts";
 export { createCheckpoint, restoreCheckpoint } from "./checkpoint.ts";
-export { createSandboxAttachmentWrite } from "./record/attachment.ts";
+export {
+  normalizeSandboxCapture,
+} from "./record/attachment.ts";
 export type {
-  SandboxAttachmentInput,
-  SandboxAttachmentWriteError,
+  SandboxCaptureInput,
+  SandboxCaptureInputError,
 } from "./record/attachment.ts";
 export {
   NICEEVAL_BUB_DOCKER_IMAGE,

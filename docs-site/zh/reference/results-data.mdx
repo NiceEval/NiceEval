@@ -1,75 +1,65 @@
 ---
 title: "在 Report 中读取结果数据"
 sidebarTitle: "结果数据 API"
-description: "通过 niceeval/report 的 AnalysisSample 与官方 opaque projector 声明读取结果。"
+description: "在 Page 或组合组件中用固定 Sample、aggregate() 和具名领域投影读取关闭的 Analysis 结果。"
 ---
 
-Record 是 `.niceeval/record/` 下可携带、可进入 Git 的 opaque 目录。应用代码不读取内部结构或写入
-其中的文件，也不 import Record reader / writer。选择运行和执行 projection 由 `niceeval show`
-与 `niceeval view` 的内部 host 完成。
+结果查看从已发布 Run 开始。NiceEval 先形成 `Sample`，再只在 Page 或组合组件执行期间通过 `ctx.scope` 提供它。应用代码不能构造 Sample、打开结果目录或持有 reader。
 
-要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和
-计算，请阅读[报告 API](/zh/reference/report-components)。
+## Sample 保留已选范围
 
-## Report callback 收到 AnalysisSample
+Sample 固定本次选择的 Run、logical Slot 与分母。每个位置保留 `included`、`not-recorded`、`core-invalid` 或 `excluded` 状态。
 
-Report 的 Calculation、Page 与 PageFamily callback 收到一份纯 `AnalysisSample`。它保存
-selection 已建立的每个 expected slot 和完整分母，不包含路径、reader、文件句柄或延迟 I/O。
-`--run` 使用具名 Run 的完整 expected slots；`project-current` 只把身份仍匹配当前目标的 slots 纳入 Sample：
+`--run` 保留指定 Run 的完整计划范围。`project-current` 只保留仍与当前项目身份匹配的范围。两种选择都不会因为某个度量缺少输入而缩小分母。
 
-| 状态 | 含义 |
-| --- | --- |
-| `included` | 有合法 Member，指向精确 Attempt。 |
-| `not-recorded` | expected slot 没有 Member。 |
-| `core-invalid` | Member、Attempt 或核心引用不能可靠读取。 |
-| `excluded` | host 在已有 Sample 上明确排除了该项。 |
+Sample 只能在 `load()`、Page 或组合组件执行期间传给 Report facade。回调结束后，页面只保留已经关闭的值，不能再次读取结果。
 
-作者可以从 `niceeval/report` 导入必要的 Sample / identity 类型，也可以对已有 Sample 使用纯
-`narrowAnalysisSample`。这些值不能恢复 Record I/O。
+## 用 `aggregate()` 取得 rows
 
-## 用官方 projector 声明数据
+`niceeval/report` 重新导出 Report 所需的 Analysis facade。`aggregate()` 返回带稳定 identity、issues、refs 和完整 `MetricValue` 的 `ClosedRows`。
 
-Report 作者选择 NiceEval 提供的 opaque projector，再声明它怎样与 Sample 对齐：
-
-```ts
+```tsx
 import {
-  attemptSlotProjection,
-  selectedRunProjection,
-  evaluationsProjector,
-  verdictProjector,
+  aggregate,
+  defineComponent,
+  Table,
 } from "niceeval/report";
+import { experiment, passRate } from "./quality-measures.ts";
 
-const verdicts = attemptSlotProjection(verdictProjector);
-const evaluations = selectedRunProjection(evaluationsProjector);
+const ResultTable = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { experiment },
+    values: { passRate },
+  });
+
+  return <Table rows={rows} />;
+});
 ```
 
-`attemptSlotProjection` 对每个 slot 形成 entry。`attemptOriginRunProjection` 仍对每个 slot
-形成 entry，但使用 Attempt 的 origin Run。`selectedRunProjection` 对每个 selected Run
-形成 entry。
+`Table` 使用 rows，图表使用 points，`Stat` 使用格式化后的完整度量。显示层可以排序、限制或过滤行，但不能用显示后的数组重算数值或减少 `MetricValue.total`。
 
-作者不能定义 raw Attachment family/projector，不能接收 payload 或 blob capability，也不能
-直接调用 projection runtime。需要新的持久事实时，由 NiceEval 提供新的高层 projector 或
-未来独立设计的 Eval / Experiment / Plugin 能力。
+## 取得关闭领域数据
 
-## Projection 结果保持穷尽
+Attempt Evidence、Observability、File Changes、Sources 和 Sandbox history 都有具名 Report facade。
+它们分别使用 `toAttemptEvidence()`、`toAttemptObservability()`、`toFileChanges()`、`toSources()` 和 `toSandboxHistory()`。
+这些 facade 只接收固定 Sample 和可选的 Attempt locator，并返回关闭 DomainView。
 
-前两种 slot projection 保留 `excluded`、`not-recorded`、`core-invalid` 与
-`attachment-result`。Attachment result 再表达：
+参数 Page 使用 `context.evidence(locator)` 取得目标详情的关闭 Evidence。Host 验证 locator 属于当前 Sample；它不会把路径、原始 Record payload 或任意查询能力交给页面。
 
-| 状态 | 含义 |
+## 读懂 `MetricValue`
+
+| 字段 | 含义 |
 | --- | --- |
-| `available` | 官方 projector 已形成 typed value。 |
-| `unavailable` | owner 没有请求的事实。 |
-| `migration-required` | 需要运行 `niceeval migrate`。 |
-| `migration-unavailable` | 历史事实不能无损形成当前值。 |
-| `unsupported` | 当前 NiceEval 不认识该事实版本。 |
-| `invalid` | 已记录的数据无法可靠解释。 |
+| `value` | 当前数值；`0` 是有效值。 |
+| `samples` | 实际贡献成员数。 |
+| `total` | Measure 预先确定的分母。 |
+| `state` 与 `issues` | 缺口、不可用或失败的原因。 |
+| `refs` | 可复核的 Evidence 定位。 |
 
-这些是 Report 可显示的数据状态，不会改变 Sample 的 Core 状态。I/O、权限、reader Scope 与
-raw schema errors 留在内部 host；公开作者面只收到自包含值和结构化 Report problem。
+`available`、`partial`、`empty`、`unsupported` 和 `failed` 都是不同状态。不要把 `null` 当成零，也不要用只剩下的可见行数替换总分母。
 
 ## 相关页面
 
-- [Record](/zh/explanation/record)：理解为什么 Record 是 opaque 产品资产。
-- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 选择结果。
-- [报告 API](/zh/reference/report-components)：消费 `ProjectedSample` 并生成 Report。
+- [报告 API](/zh/reference/report-components)：Page、组件、JSON 和全站构建边界。
+- [编写自定义报告](/zh/tutorials/custom-reports)：从 Measure 到 Report 的完整路径。
+- [查看结果](/zh/tutorials/viewing-results)：通过 CLI 选择 Sample。

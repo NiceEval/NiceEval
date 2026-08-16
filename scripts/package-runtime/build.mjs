@@ -26,10 +26,39 @@ const PUBLIC_ENTRIES = [
   ["./reporters", "runner/reporters/index.ts"],
   ["./loaders", "loaders/index.ts"],
   ["./analysis", "analysis/index.ts"],
-  ["./projection", "projection/index.ts"],
+  ["./experiment/host", "experiment/host/index.ts"],
+  ["./coordination/host", "coordination/host/index.ts"],
+  ["./record", "record/index.ts"],
+  ["./record/host", "record/host/index.ts"],
+  ["./analysis/host", "analysis/host.ts"],
   ["./report", "report/index.ts"],
+  ["./report/host", "report/host/index.ts"],
   ["./report/built-in", "report/built-in/index.tsx"],
+  ["./report/react", "report/react/index.ts"],
+  ["./report/extension", "report/extension/index.ts"],
 ];
+
+// These entries are copied verbatim by copyRuntimeAssets rather than emitted
+// as CJS/ESM facades. Keep them in the public-closure check nonetheless.
+const PUBLIC_ASSET_ENTRIES = [
+  "./report/react/styles.css",
+  "./report/react/enhance.js",
+];
+
+async function assertPublicEntryClosure() {
+  const manifest = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
+  const packageEntries = Object.keys(manifest.exports ?? {}).sort();
+  const facadeEntries = [...PUBLIC_ENTRIES.map(([entry]) => entry), ...PUBLIC_ASSET_ENTRIES].sort();
+  const missingFacades = packageEntries.filter((entry) => !facadeEntries.includes(entry));
+  const undeclaredFacades = facadeEntries.filter((entry) => !packageEntries.includes(entry));
+  if (missingFacades.length > 0 || undeclaredFacades.length > 0) {
+    throw new Error(
+      "Public package entry closure mismatch: " +
+      `missing facades [${missingFacades.join(", ")}], ` +
+      `undeclared facades [${undeclaredFacades.join(", ")}].`,
+    );
+  }
+}
 
 function isRuntimeSource(file) {
   return (file.endsWith(".ts") || file.endsWith(".tsx")) &&
@@ -248,6 +277,24 @@ async function copyRuntimeAssets(outputRoot) {
   }
 }
 
+/**
+ * Public asset paths are aliases of the package-owned product assets.  Copy
+ * bytes verbatim so the Host, view, static export, and direct package export
+ * cannot drift into separate CSS or enhancement runtimes.
+ */
+async function writeReportPublicAssets(outputRoot) {
+  const publicDirectory = join(outputRoot, "report", "react");
+  await mkdir(publicDirectory, { recursive: true });
+  await cp(
+    join(outputRoot, "report", "assets", "styles.css"),
+    join(publicDirectory, "styles.css"),
+  );
+  await cp(
+    join(outputRoot, "report", "assets", "enhance.js"),
+    join(publicDirectory, "enhance.js"),
+  );
+}
+
 async function buildRemarkVendor(outputRoot) {
   await esbuild.build({
     entryPoints: {
@@ -267,6 +314,7 @@ async function buildRemarkVendor(outputRoot) {
 }
 
 async function build() {
+  await assertPublicEntryClosure();
   const temp = await mkdtemp(join(tmpdir(), "niceeval-package-runtime-"));
   const outputRoot = join(temp, "dist");
   const rawTypes = join(temp, "types");
@@ -328,6 +376,7 @@ async function build() {
     }
 
     await copyRuntimeAssets(outputRoot);
+    await writeReportPublicAssets(outputRoot);
     await writeDualDeclarations(rawTypes, outputRoot);
     // 旧的仓库内测试和工具会直接读 dist/report/*.js；这些兼容文件仍只是 CJS 主图的
     // ESM façade，绝不重新编译出第二份 report runtime。

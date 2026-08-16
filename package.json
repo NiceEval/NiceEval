@@ -116,14 +116,54 @@
         "default": "./dist/analysis/index.cjs"
       }
     },
-    "./projection": {
+    "./experiment/host": {
       "import": {
-        "types": "./dist/projection/index.d.mts",
-        "default": "./dist/projection/index.mjs"
+        "types": "./dist/experiment/host/index.d.mts",
+        "default": "./dist/experiment/host/index.mjs"
       },
       "require": {
-        "types": "./dist/projection/index.d.cts",
-        "default": "./dist/projection/index.cjs"
+        "types": "./dist/experiment/host/index.d.cts",
+        "default": "./dist/experiment/host/index.cjs"
+      }
+    },
+    "./coordination/host": {
+      "import": {
+        "types": "./dist/coordination/host/index.d.mts",
+        "default": "./dist/coordination/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/coordination/host/index.d.cts",
+        "default": "./dist/coordination/host/index.cjs"
+      }
+    },
+    "./record": {
+      "import": {
+        "types": "./dist/record/index.d.mts",
+        "default": "./dist/record/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/index.d.cts",
+        "default": "./dist/record/index.cjs"
+      }
+    },
+    "./record/host": {
+      "import": {
+        "types": "./dist/record/host/index.d.mts",
+        "default": "./dist/record/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/host/index.d.cts",
+        "default": "./dist/record/host/index.cjs"
+      }
+    },
+    "./analysis/host": {
+      "import": {
+        "types": "./dist/analysis/host.d.mts",
+        "default": "./dist/analysis/host.mjs"
+      },
+      "require": {
+        "types": "./dist/analysis/host.d.cts",
+        "default": "./dist/analysis/host.cjs"
       }
     },
     "./report": {
@@ -136,6 +176,16 @@
         "default": "./dist/report/index.cjs"
       }
     },
+    "./report/host": {
+      "import": {
+        "types": "./dist/report/host/index.d.mts",
+        "default": "./dist/report/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/host/index.d.cts",
+        "default": "./dist/report/host/index.cjs"
+      }
+    },
     "./report/built-in": {
       "import": {
         "types": "./dist/report/built-in/index.d.mts",
@@ -145,7 +195,29 @@
         "types": "./dist/report/built-in/index.d.cts",
         "default": "./dist/report/built-in/index.cjs"
       }
-    }
+    },
+    "./report/react": {
+      "import": {
+        "types": "./dist/report/react/index.d.mts",
+        "default": "./dist/report/react/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/react/index.d.cts",
+        "default": "./dist/report/react/index.cjs"
+      }
+    },
+    "./report/extension": {
+      "import": {
+        "types": "./dist/report/extension/index.d.mts",
+        "default": "./dist/report/extension/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/extension/index.d.cts",
+        "default": "./dist/report/extension/index.cjs"
+      }
+    },
+    "./report/react/styles.css": "./dist/report/react/styles.css",
+    "./report/react/enhance.js": "./dist/report/react/enhance.js"
   },
   "files": [
     "INDEX.md",
@@ -155,7 +227,7 @@
     "docs-site/images"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc -p docs/roadmap/assertion-authoring/reference/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc -p docs/feature/assertions/reference/tsconfig.json",
     "lint": "vitest run --project lint-docs --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",
     "lint:docs": "vitest run --project lint-docs",
     "lint:docs-site": "vitest run --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",

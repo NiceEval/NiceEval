@@ -1,6 +1,6 @@
 // agent 归因 diff 的派生视图:从落盘事实(DiffWindow[])派生文件级摘要与终态读取。
 // 派生物可随时重算、不落盘——符合「聚合在消费方」铁律(docs/feature/record/architecture.md「diff.json」)。
-// 本文件同时承载 Sandbox 事实(docs/roadmap/assertion-authoring/architecture.md「Sandbox diff collector」)
+// 本文件同时承载 Sandbox 事实(docs/feature/sandbox/architecture.md「变更归因:send 区间与分类账」)
 // 的纯证据解析:exact touched-path set、noChanges 同源、同一 change entry 的 before/after 候选。
 // 这里只做证据解析与候选分类,不消费 BooleanMatch——matcher 应用留在接线层,避免复制 Match 内核。
 
@@ -197,8 +197,8 @@ export type TouchedPathsOutcome =
   | { readonly outcome: "unavailable"; readonly reason: string };
 
 /**
- * exact touched-path set 的三值求值(docs/roadmap/assertion-authoring/architecture.md
- * 「Sandbox diff collector」):
+ * exact touched-path set 的三值求值(docs/feature/sandbox/architecture.md
+ * 「变更归因:send 区间与分类账」):
  * - 已观察到 expected 外的确定 path,立即 failed(partial 也如此,不会被后续窗口推翻);
  * - collector complete 时,集合相等 passed,不等 failed;
  * - collector partial 且尚无矛盾(observed ⊆ expected)时 unavailable。

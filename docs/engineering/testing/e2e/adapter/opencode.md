@@ -32,5 +32,5 @@ OpenCode Adapter 当前只公开 `skills` 扩展配置；契约明确不接受 C
 
 - coding 任务提示词显式点名文件写入 / 文件编辑工具，避免 OpenCode 习惯性用 bash 完成文件操作。
 - `ci` Experiment 选中 coding、会话与 usage 通用 Eval；`skill` 与 `go` 各自只选一条专用 Eval。原生验收脚本分别执行三条配置线，防止少发现/少运行后假绿。
-- **CLI 读回**：代表性 `show --execution` 只验收 coding 工具调用及 input 投影可达。Skill 正反选择只由 Eval 内的 `skill.loaded` 断言判分。
+- **CLI 读回**：代表 Evidence Page 只验收 coding 工具调用及 input 投影可达，命令是 `show @locator --report <fixture-module> --page <execution-route>`。Skill 正反选择只由 Eval 内的 `skill.loaded` 断言判分。
 - **OTel**：适配器复用 canonical OTel mapper；时间轨缺失只影响 timing 注释，不影响事件流断言。

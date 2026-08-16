@@ -1,6 +1,6 @@
-# PLAN-1：七个逻辑 Observability families
+# PLAN-1：七个官方逻辑 Observability families
 
-七个 owner-specific entries 继续作为独立 RecordAttachment family。每个 family 拥有自己的 schema、limit、
+七个官方 owner-specific entries 继续作为独立 RecordAttachment family。每个 family 拥有自己的 schema、limit、
 collection state 与 owner-local migration。
 
 ## 契约
@@ -16,20 +16,28 @@ collection state 与 owner-local migration。
 | Run | `niceeval.diagnostics` | `niceeval.diagnostics/v1` |
 
 - producer 在 seal 前完成需要的跨 family identity 与联合验证。
-- Projection 每次通过一个 `PackageAccess` 读取一个 family，并把六态映射到公共
-  `PackageReadResult`；本方案不产生 capture-expectation。
-- Report 需要 OTel operation 的 usage、timing 与 conversation 时，分别投影对应 family，再交给
+- 每个 family 只有一个 owner-bound collector 和一个写入 occurrence。Adapter 与 OTel bridge 只提交受限 capture
+  input，不直接写 Attachment。
+- Projection 每次通过一个 `RecordProjection` 读取一个 family，并把六态保留在公共
+  `ProjectedSample`；本方案不产生 capture-expectation。
+- Report 需要 operation 的 usage、timing 与 conversation 时，分别投影对应 family，再交给
   Relations；不能把数组位置或时间邻近当 join evidence。
-- 新 family 可以独立增加，不改变 Record major。
+- 新官方 family 只能由 NiceEval core 增加，不改变 Record major。普通第三方使用固定 Metric、Score 或 Artifact envelope。
 
-Projection handoff 使用现有 `RecordAttachmentFamily`、`RecordAttachmentLocator`，并把
-`PackageReadResult<Payload, never>` 作为读取结果。每个 access 绑定一个 family 和 exact owner；不存在
-Receipt、representation selection 或跨 family fallback。
+OTel 是 timing collector 的一种内存输入，不是 `niceeval.timing/v1` 中的 durable source。只有已经绑定 exact
+owner、经过验证的 owner-clock domain、稳定 phase / label 与 capture-time anchor 的输入才能形成 interval。
+raw epoch、clock / owner / phase / label / ref 不可证或重复冲突的 span 被舍弃，并使 collection 带
+`unsupported-input` limitation。
+
+Projection handoff 使用现有 `RecordAttachmentReader`、`RecordAttachmentProjector` 与 `RecordProjection`。
+每个 declaration 绑定一个 family，执行时再按 logical slot 定位 exact owner；`ProjectedSample` 原样保留 Attachment
+六态。不存在 Receipt、representation selection 或跨 family fallback。
 
 ## 生命周期与失败
 
-每个 family 由自己的 producer collect、validate、seal，再由 Run publisher 与其它已完成 attachments 一起
-发布。family 可以独立 complete、partial 或失败；Run publish 只接收已经 seal 的 closure。
+每个 family 由唯一 producer collect、validate、seal，再由 Run publisher 与其它已完成 attachments 一起发布。
+官方执行的 Attempt 即使没有 interval 也写 complete-empty timing。已承诺的输入丢失、无法归一、重复、冲突或被
+截断时，timing 是 partial；只有历史或第三方 owner 没有写这份 family 时才是 unavailable。
 
 unavailable、migration-required、migration-unavailable、unsupported 与 invalid 保持 RecordAttachment data。
 真实 I/O 与 permission 是 reader typed error。联合验证失败必须阻止相关 families 发布，不能在 Projection
@@ -47,12 +55,14 @@ unavailable、migration-required、migration-unavailable、unsupported 与 inval
 
 ## Cases
 
-- O1：Agent event 与 OTel facts 分别进入既有 family，并保存同一个 issuer-minted anchor。
-- O2：OTel unavailable 不改变 Assertions available；本方案无法区分 unsupported 与 not-enabled，除非对应
-  family 自己已有可靠状态。
+- O1：Agent event 与 OTel timing input 可以共享 issuer-minted anchor；唯一 timing collector 决定 canonical
+  interval，不能可靠归一的输入进入 limitation。
+- O2：OTel bridge 初始化失败不改变 Assertions available；timing collector 写 partial `capture-failed`。已知采集域
+  确实为空时才写 complete-empty。
 - O3：旧数据与新数据使用同一 family inventory，不需要 representation selection。
 
 ## Limits 与扩展
 
-每个 family 独立声明 payload、items 与 closure bounds。新增事实权威时可以新增 family；合并旧 families
-需要新的跨 family maintenance 设计，不能使用 owner-local converter 假装原子迁移。
+每个 family 独立声明 payload、items 与 closure bounds。新增官方事实权威时，NiceEval core 可以新增 family；普通第三方不得
+注册 family、schema 或 converter。合并旧 families 需要新的跨 family maintenance 设计，不能使用 owner-local converter 假装
+原子迁移。

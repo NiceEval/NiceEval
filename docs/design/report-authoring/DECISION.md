@@ -1,46 +1,93 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md)
 
 ## 裁决
 
-采纳 [PLAN-5](PLAN-5/README.md)。
-作者面是“静态 page + 普通函数 + 普通结果值 + 按形状命名的组件”。
+采纳 [PLAN-7](PLAN-7/README.md)。
 
-- page 清单静态可见，page render 拥有异步、按页失败隔离与缓存。
-- `rollup()` / `aggregate()` 保障两级聚合、coverage 与 refs。
-- 复杂算法通过 `metricValue()` / `evidenceRow()` 交出证据结果。
-- 实体投影是 `to*` 立即转换，复用区块是普通函数。
-- 组件只接 `rows`、`points`、`items`、`nodes`、`value` 或 `attempt`。
-- 只有新增显示形状时才定义 text / web 双面 renderer。
+作者面是 nominal Analysis fields、受限 `ReportSample`、`await aggregate(sample, ...)`、普通 async component 与 closed
+semantic components。
 
-## 为什么替换 PLAN-2
+- Analysis package 在 nominal population 上定义 Dimension、Measure 与具名 relation。
+- `aggregate(sample, { by, values })` 只组合同一 population fields，并返回 closed typed rows。
+- `ReportSample` 不枚举 raw Run / Attempt，不读 Record，不调用 projection，也不改变 population。
+- 每次 `aggregate()` 调用编译自己的有限 field DAG；同一次 execution 按 exact field identity memoize。
+- Page / component callback 每个 instance 只执行一次，不 dry-run。
+- callback 可以依据 closed rows 分支，再调用另一组 `aggregate()`。
+- `MetricValue` 保留 value、state、observed / denominator、issues、refs、unit、format、better 与 producer compatibility。
+- callback 完成后只留下 closed semantic tree，供 terminal、Web 与 static face 共用。
+- custom component 只组合既有 primitives；新增 primitive 必须同时定义三种 face 与无 JavaScript 降级。
 
-PLAN-2 正确识别了两级聚合、涵盖范围、证据下钻与双面一致这些硬约束，但把内部运行阶段投影成了三个作者概念。
+## 不可能三角
 
-Source 让作者理解声明何时 compute；Composition 让作者理解 page context 与树读取；Component 的 source / data 双入口让调用点无法直接说出值的角色。
+普通 data-dependent JavaScript callback 无法同时满足：
 
-这些协议没有增加表达力。
-普通函数已经能完成异步、组合、并行、join、排序与复用。
-正确性应由 `aggregate()` 和证据结果构造器约束，不应由整条查询运行时约束。
+1. callback 只执行一次，并可根据已算结果分支；
+2. callback 前预编译整份 Report 的全部依赖；
+3. 只执行请求 Page，并隔离其它 Page 的失败。
+
+选择保留第 1、3 项，放弃第 2 项：
+
+```text
+request Page
+  → run callback once
+      → aggregate A: compile + execute finite field DAG
+      → optional branch
+      → aggregate B: compile + execute finite field DAG
+  → close semantic tree
+  → render
+```
+
+这是从 PLAN-6 翻转的关键点。whole-report precompile 不是保留 0.12.1 DX 的必要条件；field-level identity、within-execution cache、
+frozen Sample 与 closed output 已足以保留数据正确性和交付边界。
+
+## 为什么替换 PLAN-6
+
+PLAN-6 把 `aggregate()` 变成 static `ReportData` declaration，并要求 callback 只组合 descriptors。它守住全局预编译，却产生三项
+作者成本：
+
+- 调用形状偏离普通 async TypeScript；
+- rows 不能在 callback 中检查或用于数据依赖分支；
+- 为了提前知道全部依赖，Page 定义必须承担额外 declaration protocol。
+
+PLAN-7 保留 PLAN-6 的 Analysis fields、MetricValue、stable identity 与 once-per-execution cache。renderer input 仍然 closed，
+依赖发现在实际 `aggregate()` call 发生，而不是 whole-report definition phase。
 
 ## 为什么仍否决其它方案
 
-- PLAN-1 按领域问题增加组件，双面实现和 props 会随问题数增长。
-- PLAN-3 把两级聚合、coverage 与 refs 交还给每条 SQL。
-- PLAN-4 让同一报告出现两套正确性强度，较弱路径会成为事实标准。
+- PLAN-1 的专用组件数与用户问题数共同增长。
+- PLAN-2 的通用 async Source 没有统一 population、denominator 与 Evidence contract。
+- PLAN-3 把聚合层数、missing 与 refs 交给每条 SQL。
+- PLAN-4 让较弱 SQL 路径成为事实标准，并维持两套读取语义。
+- PLAN-5 的 projection / Calculation plumbing 继续作为内部实现材料，不作为普通作者 API。
+- PLAN-6 的 static field compiler 继续作为局部 `aggregate()` executor 的实现材料，不再支配 Page authoring protocol。
 
-PLAN-5 保留通用原语与 TypeScript 组合，同时不建立第二门查询语言。
+## 确定性边界
 
-## 契约落点
+硬保证只到一次 `ReportExecution`：
 
-- 作者 API、page 与普通转换：[Library](../../feature/reports/README.md)。
-- 聚合与准入边界：[Calculations](../../feature/reports/README.md)。
-- 求值、缓存和双面：[Architecture](../../feature/reports/README.md)。
-- 组件具体属性：[Components](../../feature/reports/README.md)。
+- 每个 Page / component instance 最多执行一次；
+- 所有 field reads 绑定同一 frozen Sample；
+- cache key 使用 nominal descriptor / dependency identity；
+- 同一次 execution 的 terminal、Web 与 static face 消费同一 closed tree；
+- static export 可以跨本次枚举的 Page instances 复用 field results。
 
-## 风险
+不同 execution 不承诺 cache reuse。普通 callback 的跨 execution 纯度是 trusted-author contract；provenance 保存 Report module
+fingerprint、Sample identity、selection 与 host version。若产品要求不信任作者时仍机械确定，应新增 restricted declaration /
+isolate，而不是削弱普通 callback。
 
-- page 是比单查询更粗的增量边界；性能靠 benchmark 与内部透明缓存守护。
-- 双面自定义 renderer 仍有一面能力漂移风险；两面必填和 fixture 验收是门槛。
-- 报告旁算法只能保证证据完整，不能自动证明公式正确；重复出现且满足准入判据后才提升进公共内核。
+## 当前契约落点
+
+- 三层总纲：[Record → Analysis → Report](../../feature/record-report/README.md)。
+- 统计口径与闭合值：[Analysis Library](../../feature/analysis/library.md)。
+- Report 作者 API：[Report Library](../../feature/reports/library.md)。
+- 执行与闭合边界：[Report Architecture](../../feature/reports/architecture.md)。
+
+## 风险与明确牺牲
+
+- host 无法在 callback 前展示整份 Report 的完整 dependency inventory。
+- 未请求 Page 的 dependency error 延迟到该 Page 执行。
+- trusted callback 可能读取时钟、随机数或网络，因此跨 execution 不承诺逐字节相同。
+- closed rows 的 display-only JavaScript 处理不能由 TypeScript 完全证明不改变业务口径。
+- 普通用户不能注册任意 visual primitive；这换来 terminal、Web 与 static 不分裂。

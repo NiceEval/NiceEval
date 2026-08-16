@@ -52,6 +52,14 @@ function num(obj: unknown, ...keys: string[]): number {
   return 0;
 }
 
+function optionalNum(obj: unknown, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = get(obj, key);
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
 function coerceArgs(value: unknown): JsonValue {
   if (typeof value === "string") {
     try {
@@ -82,7 +90,8 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheCreationTokens = 0;
-  let costUSD = 0;
+  let observedCostUSD = 0;
+  let hasObservedCostUSD = false;
   let requests = 0;
   let parseSuccess = true;
   let synth = 0;
@@ -99,9 +108,13 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
     outputTokens += num(obj, "output_tokens", "outputTokens");
     cacheReadTokens += num(obj, "cache_read_tokens", "cacheReadTokens");
     cacheCreationTokens += num(obj, "cache_write_tokens", "cacheWriteTokens", "cacheCreationTokens");
-    const actual = num(obj, "actual_cost_usd", "actualCostUsd");
-    const estimated = num(obj, "estimated_cost_usd", "estimatedCostUsd");
-    costUSD += actual || estimated;
+    // estimated_cost_usd is an estimate owned by Hermes and is deliberately
+    // not relabeled as provider-observed Usage.costUSD.
+    const actual = optionalNum(obj, "actual_cost_usd", "actualCostUsd");
+    if (actual !== undefined) {
+      observedCostUSD += actual;
+      hasObservedCostUSD = true;
+    }
     const apiCalls = num(obj, "api_call_count", "apiCallCount");
     if (apiCalls) requests += apiCalls;
   };
@@ -203,7 +216,7 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
   if (outputTokens) usage.outputTokens = outputTokens;
   if (cacheReadTokens) usage.cacheReadTokens = cacheReadTokens;
   if (cacheCreationTokens) usage.cacheCreationTokens = cacheCreationTokens;
-  if (costUSD) usage.costUSD = costUSD;
+  if (hasObservedCostUSD) usage.costUSD = observedCostUSD;
   if (requests) usage.requests = requests;
 
   return { events, usage, compactions: 0, parseSuccess };

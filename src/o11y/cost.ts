@@ -1,10 +1,13 @@
-// 价格表兜底估算:agent 没带回网关实测成本时,用 token 用量 × vendored 单价估一个。
+// 价格表估算:token 用量 × vendored 单价,与 observed 成本无关。
 // 数据来自 src/o11y/prices.json(models.dev,见 scripts/sync-prices.ts);per-1M USD。
 // 用户可在 `defineConfig({ pricing })` 里覆盖 / 补充(见 Observability · 用量与成本),
 // 精确 model key 和 `provider/*` 通配都查用户表在先,查不到才落回内置快照。
 //
-// 与 types.ts 的约定一致:usage.costUSD(实测)优先,这里只在缺实测时兜底,
-// 查不到价就返回 undefined —— 显示 "—" 而不是骗人的 $0。
+// estimateCost 是 EvalResult.estimatedCostUSD 的唯一来源,永远独立计算:即使
+// usage.costUSD(网关/adapter 显式回报的 observed 成本)存在也照常按 model + usage +
+// pricing 估算,两者互不覆盖、互不兜底——observed 只留在 result.usage.costUSD,
+// estimated 只在 result.estimatedCostUSD。查不到价就返回 undefined —— 显示 "—"
+// 而不是骗人的 $0。
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -67,15 +70,21 @@ export function estimateCost(
   overrides?: globalThis.Record<string, PriceOverride>,
 ): number | undefined {
   if (!model) return undefined;
-  const p = lookupOverride(model, overrides) ?? lookupBuiltin(model);
+  const override = lookupOverride(model, overrides);
+  const p = override === undefined ? lookupBuiltin(model) : override;
   if (!p) return undefined;
+  const hasBillableUsage = usage.inputTokens !== undefined ||
+    usage.outputTokens !== undefined ||
+    usage.cacheReadTokens !== undefined ||
+    usage.cacheCreationTokens !== undefined;
+  if (!hasBillableUsage) return undefined;
   const bucket = (tokens: number | undefined, price: number | undefined, fallback: number): number =>
-    tokens ? tokens * (price ?? fallback) : 0;
+    tokens === undefined ? 0 : tokens * (price === undefined ? fallback : price);
   const usd =
     (bucket(usage.inputTokens, p.in, p.in) +
       bucket(usage.outputTokens, p.out, p.out) +
       bucket(usage.cacheReadTokens, p.cacheRead, p.in) +
       bucket(usage.cacheCreationTokens, p.cacheWrite, p.in)) /
     1e6;
-  return usd > 0 ? usd : undefined;
+  return usd;
 }

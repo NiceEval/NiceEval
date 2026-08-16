@@ -2,7 +2,7 @@
 // timeout, retry, and interruption inside the owning Effect.
 
 import { ClosedQA, Factuality, Summary } from "autoevals";
-import { Effect } from "effect";
+import { Clock, Effect, Random } from "effect";
 import OpenAI from "openai";
 
 import { summaryText } from "./display.ts";
@@ -86,13 +86,13 @@ function headerValue(headers: unknown, name: string): string | undefined {
   return undefined;
 }
 
-function retryAfterMs(headers: unknown): number | undefined {
+function retryAfterMs(headers: unknown, nowMs: number): number | undefined {
   const raw = headerValue(headers, "retry-after")?.trim();
   if (!raw) return undefined;
   const seconds = Number(raw);
   if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
   const timestamp = Date.parse(raw);
-  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : undefined;
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - nowMs) : undefined;
 }
 
 function isTransientJudgeStatus(status: number | undefined): boolean {
@@ -254,7 +254,7 @@ function probeAttempt(
     if (response.response.ok) return undefined;
 
     if (isTransientJudgeStatus(response.response.status) && attempt < PROBE_MAX_ATTEMPTS) {
-      const delay = retryAfterMs(response.response.headers);
+      const delay = retryAfterMs(response.response.headers, yield* Clock.currentTimeMillis);
       if (delay !== undefined) yield* Effect.sleep(delay);
       return retryProbe;
     }
@@ -409,19 +409,20 @@ function evaluateJudgeRecipe(
                 ...(typeof rationale === "string" && rationale.trim() !== "" ? { explanation: summaryText(rationale) } : {}),
               });
             }),
-            Effect.catchAll((failure: JudgeProviderFailure): Effect.Effect<JudgeMeasurementResult> => {
-              const error = failure.error;
-              if (!isTransportFailure(error)) return Effect.succeed(evaluatorError("judge-evaluator-error", errorSummary(error)));
-              if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
-                return Effect.succeed(unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried)));
-              }
-              const retryAfter = retryAfterMs(objectField(error, "headers"));
-              const delay = retryAfter ?? (input.random ?? Math.random)() * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt;
-              retried = true;
-              return judgeSleep(delay).pipe(
-                Effect.zipRight(evaluate(attempt + 1)),
-              );
-            }),
+            Effect.catchAll((failure: JudgeProviderFailure): Effect.Effect<JudgeMeasurementResult> =>
+              Effect.gen(function* () {
+                const error = failure.error;
+                if (!isTransportFailure(error)) return evaluatorError("judge-evaluator-error", errorSummary(error));
+                if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
+                  return unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried));
+                }
+                const retryAfter = retryAfterMs(objectField(error, "headers"), yield* Clock.currentTimeMillis);
+                const delay = retryAfter ?? (input.random ? input.random() : yield* Random.next) * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt;
+                retried = true;
+                yield* judgeSleep(delay);
+                return yield* evaluate(attempt + 1);
+              }),
+            ),
           ),
         ),
       );

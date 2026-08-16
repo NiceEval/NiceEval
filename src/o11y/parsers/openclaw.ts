@@ -99,7 +99,6 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheCreationTokens = 0;
-  let costUSD = 0;
   let requests = 0;
   let compactions = 0;
   let parseSuccess = true;
@@ -113,18 +112,19 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
 
   const addUsage = (usage: unknown): void => {
     if (!usage || typeof usage !== "object") return;
-    // pi 系简写(input/output/cacheRead/cacheWrite/cost.total)与 snake_case 变体都认。
+    // OpenClaw's transcript cost is session-derived from a price catalog, not
+    // provider billing. Preserve its token facts but never relabel that
+    // estimate as observed Usage.costUSD.
+    // pi 系简写(input/output/cacheRead/cacheWrite)与 snake_case 变体都认。
     const input = num(usage, "input", "input_tokens", "inputTokens", "prompt_tokens");
     const output = num(usage, "output", "output_tokens", "outputTokens", "completion_tokens");
     const cacheRead = num(usage, "cacheRead", "cache_read_input_tokens", "cacheReadTokens");
     const cacheCreation = num(usage, "cacheWrite", "cache_creation_input_tokens", "cacheCreationTokens");
-    const cost = num(usage, "cost") || num(get(usage, "cost"), "total");
-    if (input === 0 && output === 0 && cacheRead === 0 && cacheCreation === 0 && cost === 0) return;
+    if (input === 0 && output === 0 && cacheRead === 0 && cacheCreation === 0) return;
     inputTokens += input;
     outputTokens += output;
     cacheReadTokens += cacheRead;
     cacheCreationTokens += cacheCreation;
-    costUSD += cost;
     requests += 1;
   };
 
@@ -225,7 +225,6 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
   if (cacheReadTokens > 0) usage.cacheReadTokens = cacheReadTokens;
   if (cacheCreationTokens > 0) usage.cacheCreationTokens = cacheCreationTokens;
   if (requests > 0) usage.requests = requests;
-  if (costUSD > 0) usage.costUSD = costUSD;
 
   return { events, usage, compactions, parseSuccess };
 }
@@ -306,8 +305,6 @@ export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJso
       usage = { inputTokens: input, outputTokens: output };
       const cacheRead = num(rawUsage, "cacheRead", "cache_read_input_tokens", "cacheReadTokens");
       if (cacheRead > 0) usage.cacheReadTokens = cacheRead;
-      const cost = num(rawUsage, "cost") || num(get(rawUsage, "cost"), "total");
-      if (cost > 0) usage.costUSD = cost;
     }
   }
 

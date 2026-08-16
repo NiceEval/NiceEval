@@ -180,7 +180,6 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 组按条数降序；超过 10 组收进 `+K more kinds — niceeval view` 尾行；总数与形态数嵌上边框 meta。
   - 人读运行中每个诊断 `code` 至多完整打印一次，同 `code` 后续静默计数；结束时 `WARNINGS` 面板每 code 一行（`! <code> ×N` + 首条 message 截断），无诊断不出面板。
   - 区分力：205 条同 matcher 失败聚成一行且代表 locator 是首现那条；1 条失败展开成完整身份两行；`--json` 的 `failure`/`warning` 事件仍逐条。
-  - **facts 摘要提示**：失败 attempt 的 `AttemptRecord.facts` 非空时，组行（size > 1）与身份行（size = 1）行尾各追加一次 `facts ×N`（N = 键数）。没有 facts 时不追加，面板密度不变，完整键值表留给 `niceeval show @<locator>`，不在这里展开。`failureDetailFromResult` 是数据源：有 facts 时 `factsCount` 等于键数，facts 缺失或为空对象时该字段整个省略。区分力：同一失败形态两条 attempt，一条有 facts 一条没有，只有前者的行尾出现提示。
 - **live 面板的键盘接管与自愈重绘（`runner/feedback/input-guard.ts` + coordinator 接线）**：契约见 [CLI · 键盘输入与画面自愈](../../../feature/experiments/cli.md#键盘输入与画面自愈)。
   - stdin 与 stderr 都是 TTY 时，live 期间 stdin 进入 raw mode 且不回显，普通字节不透传。
   - 收到 `\r` / `\n` 触发 clear → 整帧重绘且绕过「同帧不写」判断。收到 `\x03` 走与 SIGINT 相同的中断路径。
@@ -230,10 +229,6 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **Experiment 收尾协议**：`experiment:complete` 事件在该 Experiment `teardown`（若声明）完成之后、`invocation:summary` 之前恰好触发一次。携带的 `experimentId` / `completedAt` / `carriedResults` / `diagnostics` 与该 Experiment 实际的收尾结果一致。
 - 多 Experiment 的一次 Invocation 里各自的 `experiment:complete` 独立触发、顺序与各自完成时点一致，不等到全部 Experiment 收尾才批量触发。
 - 实验域诊断（teardown 失败、budget 不可执行等）经 `ExperimentDiagnosticInput` 累积进正确的 experimentId 桶，不同 Experiment 的诊断不串桶，相同 `dedupeKey` 只在同一个 Experiment 内折叠计数。
-- **`ctx.fact()` 的作用域归属**：sandbox hook / agent setup·send·teardown 经 `ctx.fact()` 上报的落进对应 attempt 的 `EvalResult.facts`（不落进任何其它 attempt）。
-- experiment setup/teardown（含收尾自愈路径 `recoverOrphanedTeardownRegistration`）经 `ctx.fact()` 上报的累积进该 Experiment 的 `experiment:complete` 事件 `facts` 字段。按 experimentId 分桶，不同 Experiment 不串桶。
-- 两级互不混淆，runner 按当前回调所处生命周期自动归属，调用方不能指定层级。同一作用域内同 key 后写替换先写（跨 setup/send/teardown 三个不同回调仍是同一 attempt 作用域）。
-- key 不匹配 `[a-z0-9._-]{1,64}` 或 value 非标量（对象/数组/`null`/`undefined`）时抛错，错误信息带上具体 key/value 与修正提示；合法调用不受影响。
 - **用例锁与并发 Invocation**：
 
   - 派发时刻逐用例非阻塞取锁。排队用例不持锁；全携带用例不取锁；等锁用例不触发实验级 setup。

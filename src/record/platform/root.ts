@@ -1,5 +1,5 @@
 import { Either } from "effect";
-import { dirname, isAbsolute, join, normalize, basename } from "node:path";
+import { isAbsolute, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -24,25 +24,10 @@ export type RecordRootConstructionError =
 export interface RecordRootPaths {
   /** The portable `<project>/.niceeval/record`-style directory. */
   readonly portableRoot: string;
-  /** Local-only locks and operation state; never written inside portableRoot. */
-  readonly localStateRoot: string;
 }
 
 const recordRootTypeId: unique symbol = Symbol("@niceeval/record/RecordRoot");
 const roots = new WeakMap<object, RecordRootPaths>();
-
-function localStateRootFor(portableRoot: string): string {
-  const parent = dirname(portableRoot);
-
-  // Preserve the documented default separation exactly. Custom roots still get
-  // a sibling local directory rather than silently placing locks in the
-  // portable Record tree.
-  if (basename(portableRoot) === "record" && basename(parent) === ".niceeval") {
-    return join(dirname(parent), ".niceeval-local", "record");
-  }
-
-  return join(parent, `.${basename(portableRoot)}.niceeval-local`);
-}
 
 function makeRoot(portableRoot: string): RecordRoot {
   const issued: RecordRoot = {
@@ -54,7 +39,6 @@ function makeRoot(portableRoot: string): RecordRoot {
     root,
     Object.freeze({
       portableRoot,
-      localStateRoot: localStateRootFor(portableRoot),
     }),
   );
 

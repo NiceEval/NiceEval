@@ -1,42 +1,42 @@
 import type { SlotId } from "../../record/model/identifiers.ts";
 import {
-  projectEvaluationsPayloadV1,
-  type EvaluationSlotProjectionV1,
-  type EvaluationsPayloadIssueV1,
-  type EvaluationsPayloadV1,
-  validateEvaluationsPayloadV1,
+  projectEvaluationsPayload,
+  type EvaluationSlotProjection,
+  type EvaluationsPayloadIssue,
+  type EvaluationsPayload,
+  validateEvaluationsPayload,
 } from "./evaluation.ts";
 import {
-  type ScoreCoherenceIssueV1,
-  type ScorePayloadV1,
-  validateScoreCoherenceV1,
+  type ScoreCoherenceIssue,
+  type ScorePayload,
+  validateScoreCoherence,
 } from "./score.ts";
-import type { EvaluationAttemptFactsV1 } from "./sealed-assertion.ts";
+import type { EvaluationAttemptFacts } from "./sealed-assertion.ts";
 import {
-  type VerdictCoherenceIssueV1,
-  type VerdictPayloadV1,
-  validateVerdictCoherenceV1,
+  type VerdictCoherenceIssue,
+  type VerdictPayload,
+  validateVerdictCoherence,
 } from "./verdict.ts";
 
 /** One origin Attempt's facts before Record's generic writer owns the writes. */
-export interface EvaluationRecordAttemptV1 {
+export interface EvaluationRecordAttempt {
   readonly slotId: SlotId;
-  readonly facts: EvaluationAttemptFactsV1;
-  readonly verdict: VerdictPayloadV1;
-  readonly score?: ScorePayloadV1;
+  readonly facts: EvaluationAttemptFacts;
+  readonly verdict: VerdictPayload;
+  readonly score?: ScorePayload;
 }
 
 /**
  * The domain aggregate validated before the generic Record writer checks only
  * owner, exact schemas, references, and owner-local blob closure.
  */
-export interface EvaluationRecordCoherenceInputV1 {
+export interface EvaluationRecordCoherenceInput {
   readonly expectedSlots: readonly SlotId[];
-  readonly evaluations: EvaluationsPayloadV1;
-  readonly attempts: readonly EvaluationRecordAttemptV1[];
+  readonly evaluations: EvaluationsPayload;
+  readonly attempts: readonly EvaluationRecordAttempt[];
 }
 
-export type EvaluationRecordCoherenceIssueV1 =
+export type EvaluationRecordCoherenceIssue =
   | {
       readonly code: "evaluation-record-expected-slot-duplicate";
       readonly slotId: SlotId;
@@ -67,24 +67,24 @@ export type EvaluationRecordCoherenceIssueV1 =
     }
   | {
       readonly code: "evaluation-record-evaluations-invalid";
-      readonly issue: EvaluationsPayloadIssueV1;
+      readonly issue: EvaluationsPayloadIssue;
     }
   | {
       readonly code: "evaluation-record-verdict-invalid";
       readonly slotId: SlotId;
-      readonly issue: VerdictCoherenceIssueV1;
+      readonly issue: VerdictCoherenceIssue;
     }
   | {
       readonly code: "evaluation-record-score-invalid";
       readonly slotId: SlotId;
-      readonly issue: ScoreCoherenceIssueV1;
+      readonly issue: ScoreCoherenceIssue;
     };
 
 function evaluationBySlot(
-  evaluations: EvaluationsPayloadV1,
-): ReadonlyMap<string, EvaluationSlotProjectionV1> {
-  const projection = projectEvaluationsPayloadV1(evaluations);
-  const bySlot = new Map<string, EvaluationSlotProjectionV1>();
+  evaluations: EvaluationsPayload,
+): ReadonlyMap<string, EvaluationSlotProjection> {
+  const projection = projectEvaluationsPayload(evaluations);
+  const bySlot = new Map<string, EvaluationSlotProjection>();
   for (const definition of evaluations.evaluations) {
     for (const slot of definition.slots) {
       const entry = projection.evaluationForSlot(slot.slotId);
@@ -100,10 +100,10 @@ function evaluationBySlot(
  * same sealed Assertion facts. Missing outcomes remain legal—those Slots have
  * no Member in the published Run.
  */
-export function validateEvaluationRecordCoherenceV1(
-  input: EvaluationRecordCoherenceInputV1,
-): readonly EvaluationRecordCoherenceIssueV1[] {
-  const issues: EvaluationRecordCoherenceIssueV1[] = [];
+export function validateEvaluationRecordCoherence(
+  input: EvaluationRecordCoherenceInput,
+): readonly EvaluationRecordCoherenceIssue[] {
+  const issues: EvaluationRecordCoherenceIssue[] = [];
   const expectedSlots = new Set<string>();
 
   for (const slotId of input.expectedSlots) {
@@ -118,7 +118,7 @@ export function validateEvaluationRecordCoherenceV1(
     expectedSlots.add(slotId);
   }
 
-  for (const issue of validateEvaluationsPayloadV1(input.evaluations)) {
+  for (const issue of validateEvaluationsPayload(input.evaluations)) {
     issues.push(
       Object.freeze({
         code: "evaluation-record-evaluations-invalid" as const,
@@ -174,7 +174,7 @@ export function validateEvaluationRecordCoherenceV1(
       continue;
     }
 
-    for (const issue of validateVerdictCoherenceV1({
+    for (const issue of validateVerdictCoherence({
       payload: attempt.verdict,
       fold: attempt.facts,
     })) {
@@ -209,7 +209,7 @@ export function validateEvaluationRecordCoherenceV1(
       continue;
     }
 
-    for (const issue of validateScoreCoherenceV1({
+    for (const issue of validateScoreCoherence({
       payload: attempt.score,
       fold: attempt.facts,
     })) {

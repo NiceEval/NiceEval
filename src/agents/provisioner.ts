@@ -14,16 +14,11 @@ import { isRegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SandboxCommandContext, SandboxCommandTarget } from "../sandbox/commands.ts";
 import type {
   AgentArtifactPlatform,
-  AgentEnsureOutcome,
   AgentEnsure,
   AgentIdentity,
   AgentInstaller,
   AgentStagedArtifact,
 } from "./types.ts";
-
-/** attempt facts:`agent.ensure` / `agent.version.actual`。 */
-export const AGENT_ENSURE_FACT = "agent.ensure" as const;
-export const AGENT_VERSION_ACTUAL_FACT = "agent.version.actual" as const;
 
 /** Run 级开放 activity key;落盘形状由 Record timing 线拥有。 */
 export const AGENT_ARTIFACT_PREPARE_ACTIVITY = "agent.artifact.prepare" as const;
@@ -41,8 +36,6 @@ export interface ArtifactPrepareTimingHook {
 }
 
 export interface AgentEnsureContext {
-  /** 上报 attempt facts(`ctx.fact`)。 */
-  fact(key: string, value: string | number | boolean): void;
   /** Run 级 prepare 协调器;多 attempt 应共享同一实例。 */
   readonly coordinator: Option.Option<ArtifactPrepareCoordinator>;
   /** ProviderPlan 已经确定的目标平台；实际 uname/ldd 只负责验证它，不反向决定制品。 */
@@ -424,7 +417,6 @@ export function runAgentEnsure(
         if (ensure.progress?.ready !== undefined) {
           context.progress({ message: ensure.progress.ready });
         }
-        reportFacts(context.fact, "hit");
         results.push({ outcome: "hit", identity: ensure.identity });
         continue;
       }
@@ -523,19 +515,9 @@ export function runAgentEnsure(
           targetPlatform: platform,
         });
       }
-      reportFacts(context.fact, "installed");
     }
     return results;
   });
-}
-
-function reportFacts(
-  fact: AgentEnsureContext["fact"],
-  outcome: AgentEnsureOutcome,
-  actualVersion?: string,
-): void {
-  fact(AGENT_ENSURE_FACT, outcome);
-  if (actualVersion !== undefined) fact(AGENT_VERSION_ACTUAL_FACT, actualVersion);
 }
 
 function sameIdentity(a: AgentIdentity, b: AgentIdentity): boolean {
@@ -556,7 +538,6 @@ function probeMatches(
       signal: context.signal,
       progress: context.progress,
       diagnostic: () => {},
-      facts: () => {},
       onCleanup: () => {},
     } satisfies SandboxCommandContext)).then(() => true),
     catch: (cause) => cause,

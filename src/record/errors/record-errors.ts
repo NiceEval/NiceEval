@@ -3,17 +3,30 @@ import { Schema } from "effect";
 export const RecordIssueCodeSchema = Schema.Literal(
   "record-schema-invalid",
   "record-run-time-order-invalid",
+  "record-run-context-invalid",
+  "record-run-context-size-exceeded",
+  "record-run-context-experiment-mismatch",
+  "record-run-order-invalid",
   "record-expected-slot-order-invalid",
   "record-expected-slot-duplicate",
   "record-run-duplicate",
+  "record-member-slot-order-invalid",
   "record-member-slot-duplicate",
   "record-member-slot-unexpected",
+  "record-member-slot-missing",
+  "record-member-action-invalid",
+  "record-attempt-order-invalid",
   "record-attempt-duplicate",
   "record-attempt-owner-invalid",
+  "record-attempt-slot-unexpected",
+  "record-attempt-slot-mismatch",
+  "record-attempt-eval-mismatch",
+  "record-attempt-digest-mismatch",
   "record-attempt-reference-missing",
   "record-origin-member-missing",
   "record-origin-member-duplicate",
   "record-attachment-schema-id-mismatch",
+  "record-fixed-family-owner-invalid",
 );
 
 export type RecordIssueCode = Schema.Schema.Type<typeof RecordIssueCodeSchema>;
@@ -77,7 +90,7 @@ export type RecordCodecErrorCode = Schema.Schema.Type<
   typeof RecordCodecErrorCodeSchema
 >;
 
-/** Stable failure returned by exact Schema codecs before any filesystem access. */
+/** Stable failure returned by exact Schema codecs before filesystem access. */
 export class RecordCodecError extends Schema.TaggedError<RecordCodecError>(
   "@niceeval/record/RecordCodecError",
 )("RecordCodecError", {

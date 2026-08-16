@@ -1,968 +1,338 @@
 import { randomBytes } from "node:crypto";
-
-import { Effect, Either, Schema } from "effect";
+import { Effect, Either } from "effect";
 import {
-  assertionsAttachmentDefinitionV1,
-  createAssertionsAttachmentProducerV1,
-  encodeAssertionResultV1,
-  encodeSealedAssertionEntryV1,
+  createAssertionsAttachmentProducer,
+  encodeSealedAssertionEntry,
 } from "../../assertions/record/attachment.ts";
+import { createAgentWorkspaceDiffAttachmentWrite } from "../../assertions/record/diff.ts";
+import type { SealedAttemptAssertions } from "../../assertions/api.ts";
+import type { AssertionsProducerError } from "../../assertions/record/producer.ts";
+import { recordAttachmentWriteContents } from "../../record/attachment/internal.ts";
+import type { RecordAttachmentClosureInvalid, RecordAttachmentWrite } from "../../record/attachment/index.ts";
 import {
-  agentWorkspaceDiffAttachmentDefinitionV1,
-  createAgentWorkspaceDiffAttachmentWriteV1,
-} from "../../assertions/record/diff.ts";
-import type {
-  SealedAssertionEvaluation,
-  SealedAttemptAssertions,
-} from "../../assertions/api.ts";
-import type { AssertionsProducerErrorV1 } from "../../assertions/record/producer.ts";
-import type {
-  AgentWorkspaceDiffDocumentV1,
-} from "../../assertions/record/diff-model.ts";
-import type {
-  AssertionsDocumentOuterV1,
-  SealedAssertionResultV1,
-} from "../../assertions/record/model.ts";
-import {
-  recordAttachmentWriteContents,
-} from "../../record/attachment/internal.ts";
-import type {
-  RecordAttachmentClosureInvalid,
-  RecordAttachmentWrite,
-  RecordBlobRef,
-} from "../../record/attachment/index.ts";
-import type { SlotId, UtcMillis } from "../../record/model/identifiers.ts";
+  assertionsRecordFamily,
+  attemptArtifactsRecordFamily,
+  attemptObservabilityRecordFamily,
+  fileChangesRecordFamily,
+  runArtifactsRecordFamily,
+  runObservabilityRecordFamily,
+  sourcesRecordFamily,
+  type AssertionSourceSite,
+} from "../../record/family/index.ts";
+import type { RecordSlotIdentity } from "../../record/model/core.ts";
+import type { RunContext } from "../../record/model/run-context.ts";
+import type { ExperimentId, SlotId, UtcMillis } from "../../record/model/identifiers.ts";
 import type { FrozenRecordAttempt } from "../../record/reader/types.ts";
 import type {
-  RecordPublishReceipt,
   RecordAttemptDraft,
+  RecordPublishReceipt,
   RecordRunDraft,
   RecordWriteError,
   RecordWriteSession,
 } from "../../record/writer/types.ts";
-import {
-  ExactRecordAttachmentParseOptions,
-} from "./attachment.ts";
-import {
-  validateEvaluationRecordCoherenceV1,
-  type EvaluationRecordCoherenceIssueV1,
-} from "./coherence.ts";
-import {
-  buildEvaluationsAttachmentWriteV1,
-  buildEvaluationsPayloadV1,
-  type EvaluationsPayloadBuildErrorV1,
-  type EvaluationsPayloadV1,
-} from "./evaluation.ts";
-import {
-  EvaluationAttemptFactsV1Schema,
-  type EvaluationAttemptFactsV1,
-} from "./sealed-assertion.ts";
-import {
-  createScoreAttachmentWriteV1,
-  decodeScorePayloadV1,
-  type ScorePayloadV1,
-  ScorePayloadV1Schema,
-} from "./score.ts";
-import {
-  createVerdictAttachmentWriteV1,
-  decodeVerdictPayloadV1,
-  type VerdictPayloadV1,
-  VerdictPayloadV1Schema,
-} from "./verdict.ts";
 
-/**
- * A completed origin's producer facts. The Assertions write is intentionally
- * separate from generic Attempt writes: it is the durable peer of `facts` and
- * is verified as the built-in Assertions v1 Attachment before a plan exists.
- */
-export interface EvaluationRecordOriginAttemptInputV1<
-  Error = never,
-  Requirements = never,
-> {
+/** A sealed origin only brings fixed-family writes to Record v1. */
+export interface EvaluationRecordOriginAttemptInput<Error = never, Requirements = never> {
   readonly slotId: SlotId;
-  readonly facts: EvaluationAttemptFactsV1;
   readonly assertions: RecordAttachmentWrite<"attempt", Error, Requirements>;
-  readonly verdict: VerdictPayloadV1;
-  readonly score?: ScorePayloadV1;
-  /** Domain-neutral Attempt Attachments already constructed by their owner. */
-  readonly writes?: readonly RecordAttachmentWrite<
-    "attempt",
-    Error,
-    Requirements
-  >[];
+  readonly writes?: readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
+}
+
+export interface EvaluationRecordReferenceInput {
+  readonly slotId: SlotId;
+  readonly action: "carried" | "accepted";
+  readonly attempt: FrozenRecordAttempt;
 }
 
 /**
- * Runtime assertions reach durable storage only here. This adapter owns both
- * entry-ID allocation and the v1 Attachment codecs; Runner keeps only the
- * schema-independent sealed value.
+ * Evaluation/evaluation-plan are not durable families. The immutable plan
+ * identity is supplied as Core expectedSlots and only fixed attachments may
+ * cross this sealing boundary.
  */
+export interface EvaluationRecordPlanInput<Error = never, Requirements = never> {
+  readonly experimentId: ExperimentId;
+  readonly context: RunContext;
+  readonly startedAt: UtcMillis;
+  readonly completedAt: UtcMillis;
+  readonly expectedSlots: readonly RecordSlotIdentity[];
+  readonly originAttempts: readonly EvaluationRecordOriginAttemptInput<Error, Requirements>[];
+  readonly references?: readonly EvaluationRecordReferenceInput[];
+  readonly runWrites?: readonly RecordAttachmentWrite<"run", Error, Requirements>[];
+}
+
 export type SealedAssertionsOriginEncodingError =
-  | {
-      readonly code: "assertions-attachment-invalid";
-      readonly issue: AssertionsProducerErrorV1;
-    }
-  | {
-      readonly code: "sealed-verdict-payload-invalid";
-      readonly message: string;
-    }
-  | {
-      readonly code: "sealed-score-payload-invalid";
-      readonly message: string;
-    }
-  | {
-      readonly code: "workspace-diff-attachment-invalid";
-      readonly message: string;
-    };
+  | { readonly code: "assertions-attachment-invalid"; readonly issue: AssertionsProducerError }
+  | { readonly code: "workspace-diff-attachment-invalid"; readonly message: string };
 
 function assertionEntryId(): string {
   return `ae_${randomBytes(10).toString("hex")}`;
 }
 
-function evaluationFactsFromSealedAssertions(
-  evaluation: SealedAssertionEvaluation,
-): EvaluationAttemptFactsV1 {
-  return Object.freeze({
-    execution: evaluation.execution,
-    explicitlySkipped: evaluation.explicitlySkipped,
-    assertions: Object.freeze(evaluation.assertions.map((assertion) => Object.freeze({
-      required: assertion.required,
-      result: encodeAssertionResultV1(assertion.result),
-    }))),
-  });
-}
-
-function encodingErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /**
- * The runtime fold is already frozen at seal time. The Record boundary maps it
- * into the exact durable shape, then leaves facts-vs-payload agreement to the
- * independent Evaluation Record coherence check.
- */
-function encodeSealedVerdictPayload(
-  verdict: SealedAttemptAssertions["verdict"],
-): Either.Either<VerdictPayloadV1, SealedAssertionsOriginEncodingError> {
-  const decoded = Schema.decodeUnknownEither(
-    VerdictPayloadV1Schema,
-    ExactRecordAttachmentParseOptions,
-  )(Object.freeze({ state: verdict.state }));
-  return Either.isLeft(decoded)
-    ? Either.left(Object.freeze({
-        code: "sealed-verdict-payload-invalid" as const,
-        message: encodingErrorMessage(decoded.left),
-      }))
-    : Either.right(decoded.right);
-}
-
-function encodeSealedScorePayload(
-  score: NonNullable<SealedAttemptAssertions["score"]>,
-): Either.Either<ScorePayloadV1, SealedAssertionsOriginEncodingError> {
-  const candidate = (() => {
-    switch (score.state) {
-      case "complete":
-        return Object.freeze({
-          state: "complete" as const,
-          earned: score.earned,
-        });
-      case "partial":
-        return Object.freeze({
-          state: "partial" as const,
-          earned: score.earned,
-          reasons: Object.freeze([...score.reasons]),
-        });
-      case "unavailable":
-        return Object.freeze({
-          state: "unavailable" as const,
-          reasons: Object.freeze([...score.reasons]),
-        });
-    }
-  })();
-  const decoded = Schema.decodeUnknownEither(
-    ScorePayloadV1Schema,
-    ExactRecordAttachmentParseOptions,
-  )(candidate);
-  return Either.isLeft(decoded)
-    ? Either.left(Object.freeze({
-        code: "sealed-score-payload-invalid" as const,
-        message: encodingErrorMessage(decoded.left),
-      }))
-    : Either.right(decoded.right);
-}
-
-/**
- * Encodes an already sealed runtime value at the Evaluation Record boundary.
- * No author/runtime or Runner module receives an Attachment write or durable
- * document while constructing the semantic attempt result.
+ * The runtime Assertion fold is mapped directly into the fixed Assertions
+ * family. A workspace diff, when collected, is its own fixed File Changes
+ * write; Assertions never carry a cross-family blob/reference capability.
  */
 export function evaluationRecordOriginInputFromSealedAssertions(
   slotId: SlotId,
   sealed: SealedAttemptAssertions,
-): Either.Either<
-  EvaluationRecordOriginAttemptInputV1,
-  SealedAssertionsOriginEncodingError
-> {
-  const producer = createAssertionsAttachmentProducerV1<never, never>({
+  input?: { readonly sourceSites?: readonly AssertionSourceSite[] },
+): Either.Either<EvaluationRecordOriginAttemptInput, SealedAssertionsOriginEncodingError> {
+  const producer = createAssertionsAttachmentProducer<never, never>({
     entryIds: { next: assertionEntryId },
+    write: assertionsRecordFamily.write,
   });
   for (const entry of sealed.entries) {
-    const appended = producer.append(encodeSealedAssertionEntryV1(entry));
+    const appended = producer.append(encodeSealedAssertionEntry(entry));
     if (Either.isLeft(appended)) {
-      return Either.left(Object.freeze({
-        code: "assertions-attachment-invalid" as const,
-        issue: appended.left,
-      }));
+      return Either.left(Object.freeze({ code: "assertions-attachment-invalid" as const, issue: appended.left }));
     }
   }
-  const assertions = producer.seal();
+  const assertions = producer.seal(input);
   if (Either.isLeft(assertions)) {
+    return Either.left(Object.freeze({ code: "assertions-attachment-invalid" as const, issue: assertions.left }));
+  }
+  if (sealed.workspaceDiff === undefined) {
+    return Either.right(Object.freeze({ slotId, assertions: assertions.right }));
+  }
+  try {
+    return Either.right(Object.freeze({
+      slotId,
+      assertions: assertions.right,
+      writes: Object.freeze([createAgentWorkspaceDiffAttachmentWrite(sealed.workspaceDiff)]),
+    }));
+  } catch (error) {
     return Either.left(Object.freeze({
-      code: "assertions-attachment-invalid" as const,
-      issue: assertions.left,
+      code: "workspace-diff-attachment-invalid" as const,
+      message: error instanceof Error ? error.message : String(error),
     }));
   }
-
-  const facts = evaluationFactsFromSealedAssertions(sealed.evaluation);
-  const verdict = encodeSealedVerdictPayload(sealed.verdict);
-  if (Either.isLeft(verdict)) return Either.left(verdict.left);
-
-  let score: ScorePayloadV1 | undefined;
-  if (sealed.score !== undefined) {
-    const encodedScore = encodeSealedScorePayload(sealed.score);
-    if (Either.isLeft(encodedScore)) return Either.left(encodedScore.left);
-    score = encodedScore.right;
-  }
-
-  let writes: readonly RecordAttachmentWrite<"attempt", never, never>[] = Object.freeze([]);
-  if (sealed.workspaceDiff !== undefined) {
-    try {
-      writes = Object.freeze([
-        createAgentWorkspaceDiffAttachmentWriteV1(sealed.workspaceDiff),
-      ]);
-    } catch (error) {
-      return Either.left(Object.freeze({
-        code: "workspace-diff-attachment-invalid" as const,
-        message: error instanceof Error ? error.message : String(error),
-      }));
-    }
-  }
-
-  return Either.right(Object.freeze({
-    slotId,
-    facts,
-    assertions: assertions.right,
-    verdict: verdict.right,
-    ...(score === undefined ? {} : { score }),
-    ...(writes.length === 0 ? {} : { writes }),
-  }));
 }
 
-/** A reference Member explicitly carries the exact frozen source capability. */
-export interface EvaluationRecordReferenceInputV1 {
-  readonly slotId: SlotId;
-  readonly attempt: FrozenRecordAttempt;
-}
+export type EvaluationRecordContractIssue =
+  | { readonly code: "evaluation-record-write-closure-invalid"; readonly owner: "run" | "attempt"; readonly slotId?: SlotId; readonly issue: RecordAttachmentClosureInvalid }
+  | { readonly code: "evaluation-record-family-not-fixed"; readonly owner: "run" | "attempt"; readonly slotId?: SlotId }
+  | { readonly code: "evaluation-record-family-duplicate"; readonly owner: "run" | "attempt"; readonly family: string; readonly slotId?: SlotId }
+  | { readonly code: "evaluation-record-assertions-write-invalid"; readonly slotId: SlotId }
+  | { readonly code: "evaluation-record-member-slot-unexpected"; readonly slotId: SlotId }
+  | { readonly code: "evaluation-record-member-slot-duplicate"; readonly slotId: SlotId };
 
-/**
- * Input to the Evaluation producer's one-Run contract. Extra writes retain
- * their owner-specific payload and closure authority. The generic writer
- * consumes those already-constructed typed writes without learning their
- * business names.
- */
-export interface EvaluationRecordPlanInputV1<
-  Error = never,
-  Requirements = never,
-> {
-  readonly startedAt: UtcMillis;
-  readonly completedAt: UtcMillis;
-  readonly expectedSlots: readonly SlotId[];
-  readonly evaluations: EvaluationsPayloadV1;
-  readonly originAttempts: readonly EvaluationRecordOriginAttemptInputV1<
-    Error,
-    Requirements
-  >[];
-  readonly references?: readonly EvaluationRecordReferenceInputV1[];
-  /** Domain-neutral Run Attachments already constructed by their owner. */
-  readonly runWrites?: readonly RecordAttachmentWrite<
-    "run",
-    Error,
-    Requirements
-  >[];
-}
-
-export type EvaluationRecordContractIssueV1 =
-  | {
-      readonly code: "evaluation-record-evaluations-build-invalid";
-      readonly issue: EvaluationsPayloadBuildErrorV1;
-    }
-  | {
-      readonly code: "evaluation-record-attempt-facts-invalid";
-      readonly slotId: SlotId;
-    }
-  | {
-      readonly code: "evaluation-record-assertions-write-invalid";
-      readonly slotId: SlotId;
-      readonly reason:
-        | "closure-invalid"
-        | "definition-invalid"
-        | "facts-mismatch"
-        | "record-attachment-reference-missing"
-        | "record-attachment-coverage-incoherent";
-      readonly issue?: RecordAttachmentClosureInvalid;
-    }
-  | {
-      readonly code: "evaluation-record-verdict-payload-invalid";
-      readonly slotId: SlotId;
-    }
-  | {
-      readonly code: "evaluation-record-score-payload-invalid";
-      readonly slotId: SlotId;
-    }
-  | {
-      readonly code: "evaluation-record-coherence-invalid";
-      readonly issue: EvaluationRecordCoherenceIssueV1;
-    }
-  | {
-      readonly code: "evaluation-record-reference-slot-unexpected";
-      readonly slotId: SlotId;
-    }
-  | {
-      readonly code: "evaluation-record-member-slot-duplicate";
-      readonly slotId: SlotId;
-    };
-
-/** All Evaluation-domain invalidity is settled before a generic draft exists. */
-export interface EvaluationRecordContractInvalidV1 {
+export interface EvaluationRecordContractInvalid {
   readonly code: "evaluation-record-contract-invalid";
-  readonly issues: readonly EvaluationRecordContractIssueV1[];
+  readonly issues: readonly EvaluationRecordContractIssue[];
 }
+export interface EvaluationRecordPlanInvalid { readonly code: "evaluation-record-plan-invalid"; }
+export interface EvaluationRecordOriginDraftMissing { readonly code: "evaluation-record-origin-draft-missing"; readonly slotId: SlotId; }
 
-/** A copied object cannot be used in place of a package-created plan. */
-export interface EvaluationRecordPlanInvalidV1 {
-  readonly code: "evaluation-record-plan-invalid";
-}
-
-/** A pre-created origin draft did not match the plan's exact Slot. */
-export interface EvaluationRecordOriginDraftMissingV1 {
-  readonly code: "evaluation-record-origin-draft-missing";
-  readonly slotId: SlotId;
-}
-
-const evaluationRecordPlanBrand: unique symbol = Symbol(
-  "@niceeval/eval/EvaluationRecordPlanV1",
-);
-
-/**
- * Opaque result of a successful EvaluationRecordContractV1 preflight. Its
- * operational contents live in a private WeakMap, not on the public object.
- */
-export interface EvaluationRecordPlanV1<Error = never, Requirements = never> {
+const evaluationRecordPlanBrand: unique symbol = Symbol("@niceeval/eval/EvaluationRecordPlan");
+export interface EvaluationRecordPlan<Error = never, Requirements = never> {
   readonly [evaluationRecordPlanBrand]: () => void;
 }
 
-interface PreparedOriginAttemptV1<Error, Requirements> {
-  readonly slotId: SlotId;
-  readonly facts: EvaluationAttemptFactsV1;
-  readonly assertions: RecordAttachmentWrite<"attempt", Error, Requirements>;
-  readonly verdict: VerdictPayloadV1;
-  readonly score: ScorePayloadV1 | undefined;
-  readonly writes: readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
-}
-
-interface PlannedOriginAttemptV1<Error, Requirements> {
-  readonly slotId: SlotId;
-  readonly assertions: RecordAttachmentWrite<"attempt", Error, Requirements>;
-  readonly verdict: RecordAttachmentWrite<"attempt", never, never>;
-  readonly score: RecordAttachmentWrite<"attempt", never, never> | undefined;
-  readonly additionalWrites: readonly RecordAttachmentWrite<
-    "attempt",
-    Error,
-    Requirements
-  >[];
-}
-
-interface EvaluationRecordPlanRuntimeV1<Error, Requirements> {
+interface EvaluationRecordPlanRuntime<Error, Requirements> {
+  readonly experimentId: ExperimentId;
+  readonly context: RunContext;
   readonly startedAt: UtcMillis;
   readonly completedAt: UtcMillis;
-  readonly expectedSlots: readonly SlotId[];
+  readonly expectedSlots: readonly RecordSlotIdentity[];
   readonly runWrites: readonly RecordAttachmentWrite<"run", Error, Requirements>[];
-  readonly originAttempts: readonly PlannedOriginAttemptV1<Error, Requirements>[];
-  readonly references: readonly EvaluationRecordReferenceInputV1[];
+  readonly originAttempts: readonly {
+    readonly slotId: SlotId;
+    readonly writes: readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
+  }[];
+  readonly references: readonly EvaluationRecordReferenceInput[];
 }
-
 const planRuntimes = new WeakMap<object, unknown>();
 
-function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
-  return Object.freeze([...values]);
-}
-
-function contractInvalid(
-  issues: readonly EvaluationRecordContractIssueV1[],
-): EvaluationRecordContractInvalidV1 {
-  return Object.freeze({
-    code: "evaluation-record-contract-invalid" as const,
-    issues: freezeArray(issues),
-  });
-}
-
-function planInvalid(): EvaluationRecordPlanInvalidV1 {
+function planInvalid(): EvaluationRecordPlanInvalid {
   return Object.freeze({ code: "evaluation-record-plan-invalid" as const });
 }
-
-function sameScoreContribution(
-  left: SealedAssertionResultV1["score"],
-  right: SealedAssertionResultV1["score"],
-): boolean {
-  if (left.state !== right.state) return false;
-  switch (left.state) {
-    case "not-scored":
-      return true;
-    case "earned":
-      return right.state === "earned"
-        && left.points === right.points
-        && left.earned === right.earned;
-    case "unavailable":
-      return right.state === "unavailable"
-        && left.points === right.points
-        && left.reason === right.reason;
-  }
+function contractInvalid(issues: readonly EvaluationRecordContractIssue[]): EvaluationRecordContractInvalid {
+  return Object.freeze({ code: "evaluation-record-contract-invalid" as const, issues: Object.freeze([...issues]) });
+}
+function planRuntime<Error, Requirements>(plan: EvaluationRecordPlan<Error, Requirements>): EvaluationRecordPlanRuntime<Error, Requirements> | undefined {
+  const value = planRuntimes.get(plan);
+  return value as EvaluationRecordPlanRuntime<Error, Requirements> | undefined;
 }
 
-function sameSealedAssertionResult(
-  left: SealedAssertionResultV1,
-  right: SealedAssertionResultV1,
-): boolean {
-  if (left.state !== right.state || left.gate !== right.gate) return false;
-  if (!sameScoreContribution(left.score, right.score)) return false;
-  switch (left.state) {
-    case "matched":
-      return right.state === "matched";
-    case "mismatched":
-      return right.state === "mismatched" && left.reason === right.reason;
-    case "unavailable":
-      return right.state === "unavailable" && left.reason === right.reason;
-    case "errored":
-      return right.state === "errored" && left.reason === right.reason;
-    case "not-applicable":
-      return right.state === "not-applicable" && left.reason === right.reason;
-  }
+function fixedAttemptFamily(fixed: unknown): string | undefined {
+  if (fixed === assertionsRecordFamily.write) return assertionsRecordFamily.family;
+  if (fixed === attemptObservabilityRecordFamily.write) return attemptObservabilityRecordFamily.family;
+  if (fixed === fileChangesRecordFamily.write) return fileChangesRecordFamily.family;
+  if (fixed === attemptArtifactsRecordFamily.write) return attemptArtifactsRecordFamily.family;
+  return undefined;
 }
-
-function assertionsMatchFacts(
-  document: AssertionsDocumentOuterV1<RecordBlobRef>,
-  facts: EvaluationAttemptFactsV1,
-): boolean {
-  return document.entries.length === facts.assertions.length
-    && document.entries.every((entry, index) => {
-      const assertion = facts.assertions[index];
-      return assertion !== undefined
-        && sameSealedAssertionResult(entry.result, assertion.result);
-    });
-}
-
-function hasWorkspaceDiffReference(
-  document: AssertionsDocumentOuterV1<RecordBlobRef>,
-): boolean {
-  const isReference = (material: (typeof document.entries)[number]["subject"]): boolean =>
-    material.kind === "record-attachment" && material.schemaId === "niceeval.diff/v1";
-  return document.entries.some((entry) =>
-    isReference(entry.subject) || entry.evidence.some(isReference));
-}
-
-function workspaceDiffDocuments<Error, Requirements>(
-  writes: readonly RecordAttachmentWrite<"attempt", Error, Requirements>[],
-): readonly AgentWorkspaceDiffDocumentV1[] {
-  const documents: AgentWorkspaceDiffDocumentV1[] = [];
-  for (const write of writes) {
-    const contents = recordAttachmentWriteContents<
-      "attempt",
-      AgentWorkspaceDiffDocumentV1,
-      Error,
-      Requirements
-    >(write);
-    if (
-      Either.isRight(contents)
-      && contents.right.definition === agentWorkspaceDiffAttachmentDefinitionV1
-    ) {
-      documents.push(contents.right.payload);
-    }
-  }
-  return Object.freeze(documents);
-}
-
-function hasCoherentWorkspaceDiffCoverage(
-  document: AssertionsDocumentOuterV1<RecordBlobRef>,
-  facts: EvaluationAttemptFactsV1,
-  documents: readonly AgentWorkspaceDiffDocumentV1[],
-): boolean {
-  const hasSingleWrite = documents.length === 1;
-  for (const [index, entry] of document.entries.entries()) {
-    const referencesDiff = entry.subject.kind === "record-attachment"
-      && entry.subject.schemaId === "niceeval.diff/v1"
-      || entry.evidence.some(
-        (material) => material.kind === "record-attachment"
-          && material.schemaId === "niceeval.diff/v1",
-      );
-    if (!referencesDiff) continue;
-    const determined = entry.result.state === "matched" || entry.result.state === "mismatched";
-    if (determined && (!hasSingleWrite || entry.coverage.state === "unavailable")) return false;
-    // Required references must name the same Attempt's actual write. Optional
-    // unavailable observations can remain durable facts without independently
-    // blocking the Verdict when collection never produced an Attachment.
-    if (facts.assertions[index]?.required === true && !hasSingleWrite) return false;
-  }
-  return true;
-}
-
-function decodeFacts(
-  facts: EvaluationAttemptFactsV1,
-): Either.Either<EvaluationAttemptFactsV1, "invalid"> {
-  const decoded = Schema.decodeUnknownEither(
-    EvaluationAttemptFactsV1Schema,
-    ExactRecordAttachmentParseOptions,
-  )(facts);
-  return Either.isLeft(decoded)
-    ? Either.left("invalid")
-    : Either.right(decoded.right);
-}
-
-function validateAssertionsWrite<Error, Requirements>(input: {
-  readonly slotId: SlotId;
-  readonly facts: EvaluationAttemptFactsV1;
-  readonly write: RecordAttachmentWrite<"attempt", Error, Requirements>;
-  readonly writes: readonly RecordAttachmentWrite<"attempt", Error, Requirements>[];
-}): EvaluationRecordContractIssueV1 | undefined {
-  const contents = recordAttachmentWriteContents<
-    "attempt",
-    AssertionsDocumentOuterV1<RecordBlobRef>,
-    Error,
-    Requirements
-  >(input.write);
-  if (Either.isLeft(contents)) {
-    return Object.freeze({
-      code: "evaluation-record-assertions-write-invalid" as const,
-      slotId: input.slotId,
-      reason: "closure-invalid" as const,
-      issue: contents.left,
-    });
-  }
-  if (contents.right.definition !== assertionsAttachmentDefinitionV1) {
-    return Object.freeze({
-      code: "evaluation-record-assertions-write-invalid" as const,
-      slotId: input.slotId,
-      reason: "definition-invalid" as const,
-    });
-  }
-  if (!assertionsMatchFacts(contents.right.payload, input.facts)) {
-    return Object.freeze({
-      code: "evaluation-record-assertions-write-invalid" as const,
-      slotId: input.slotId,
-      reason: "facts-mismatch" as const,
-    });
-  }
-  const referencesDiff = hasWorkspaceDiffReference(contents.right.payload);
-  const documents = workspaceDiffDocuments(input.writes);
-  if (referencesDiff && !hasCoherentWorkspaceDiffCoverage(contents.right.payload, input.facts, documents)) {
-    return Object.freeze({
-      code: "evaluation-record-assertions-write-invalid" as const,
-      slotId: input.slotId,
-      reason: documents.length === 1
-        ? "record-attachment-coverage-incoherent" as const
-        : "record-attachment-reference-missing" as const,
-    });
-  }
+function fixedRunFamily(fixed: unknown): string | undefined {
+  if (fixed === runObservabilityRecordFamily.write) return runObservabilityRecordFamily.family;
+  if (fixed === sourcesRecordFamily.write) return sourcesRecordFamily.family;
+  if (fixed === runArtifactsRecordFamily.write) return runArtifactsRecordFamily.family;
   return undefined;
 }
 
-function planRuntime<Error, Requirements>(
-  plan: EvaluationRecordPlanV1<Error, Requirements>,
-): EvaluationRecordPlanRuntimeV1<Error, Requirements> | undefined {
-  const runtime = planRuntimes.get(plan);
-  return runtime === undefined
-    ? undefined
-    : runtime as EvaluationRecordPlanRuntimeV1<Error, Requirements>;
+function validateFixedWrites<Owner extends "run" | "attempt", Error, Requirements>(input: {
+  readonly owner: Owner;
+  readonly slotId?: SlotId;
+  readonly writes: readonly RecordAttachmentWrite<Owner, Error, Requirements>[];
+}): readonly EvaluationRecordContractIssue[] {
+  const issues: EvaluationRecordContractIssue[] = [];
+  const seen = new Set<string>();
+  for (const write of input.writes) {
+    const contents = recordAttachmentWriteContents(write);
+    if (Either.isLeft(contents)) {
+      issues.push(Object.freeze({ code: "evaluation-record-write-closure-invalid" as const, owner: input.owner, ...(input.slotId === undefined ? {} : { slotId: input.slotId }), issue: contents.left }));
+      continue;
+    }
+    const family = input.owner === "attempt"
+      ? fixedAttemptFamily(contents.right.fixed)
+      : fixedRunFamily(contents.right.fixed);
+    if (family === undefined) {
+      issues.push(Object.freeze({ code: "evaluation-record-family-not-fixed" as const, owner: input.owner, ...(input.slotId === undefined ? {} : { slotId: input.slotId }) }));
+      continue;
+    }
+    if (seen.has(family)) {
+      issues.push(Object.freeze({ code: "evaluation-record-family-duplicate" as const, owner: input.owner, family, ...(input.slotId === undefined ? {} : { slotId: input.slotId }) }));
+    }
+    seen.add(family);
+  }
+  return Object.freeze(issues);
 }
 
-/**
- * Validates the Evaluation aggregate and captures generated domain writes plus
- * already-constructed owner writes into an opaque plan. This is pure: it opens
- * no writer and creates no Run directory.
- */
-export function createEvaluationRecordPlanV1<Error, Requirements>(
-  input: EvaluationRecordPlanInputV1<Error, Requirements>,
-): Either.Either<
-  EvaluationRecordPlanV1<Error, Requirements>,
-  EvaluationRecordContractInvalidV1
-> {
-  const issues: EvaluationRecordContractIssueV1[] = [];
-  const builtEvaluations = buildEvaluationsPayloadV1(input.evaluations);
-  if (Either.isLeft(builtEvaluations)) {
-    issues.push(
-      Object.freeze({
-        code: "evaluation-record-evaluations-build-invalid" as const,
-        issue: builtEvaluations.left,
-      }),
-    );
-    return Either.left(contractInvalid(issues));
+export function createEvaluationRecordPlan<Error, Requirements>(
+  input: EvaluationRecordPlanInput<Error, Requirements>,
+): Either.Either<EvaluationRecordPlan<Error, Requirements>, EvaluationRecordContractInvalid> {
+  const issues: EvaluationRecordContractIssue[] = [];
+  const expected = new Set<string>();
+  for (const slot of input.expectedSlots) {
+    if (expected.has(slot.slotId)) issues.push(Object.freeze({ code: "evaluation-record-member-slot-duplicate" as const, slotId: slot.slotId }));
+    expected.add(slot.slotId);
   }
 
-  const evaluationsWrite = buildEvaluationsAttachmentWriteV1(
-    builtEvaluations.right,
-  );
-  if (Either.isLeft(evaluationsWrite)) {
-    issues.push(
-      Object.freeze({
-        code: "evaluation-record-evaluations-build-invalid" as const,
-        issue: evaluationsWrite.left,
-      }),
-    );
-    return Either.left(contractInvalid(issues));
-  }
-
-  const preparedAttempts: PreparedOriginAttemptV1<Error, Requirements>[] = [];
+  const occupied = new Set<string>();
+  const origins: { readonly slotId: SlotId; readonly writes: readonly RecordAttachmentWrite<"attempt", Error, Requirements>[] }[] = [];
   for (const origin of input.originAttempts) {
-    const facts = decodeFacts(origin.facts);
-    if (Either.isLeft(facts)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-attempt-facts-invalid" as const,
-          slotId: origin.slotId,
-        }),
-      );
+    if (!expected.has(origin.slotId)) {
+      issues.push(Object.freeze({ code: "evaluation-record-member-slot-unexpected" as const, slotId: origin.slotId }));
       continue;
     }
-
-    const verdict = decodeVerdictPayloadV1(origin.verdict);
-    if (Either.isLeft(verdict)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-verdict-payload-invalid" as const,
-          slotId: origin.slotId,
-        }),
-      );
+    if (occupied.has(origin.slotId)) {
+      issues.push(Object.freeze({ code: "evaluation-record-member-slot-duplicate" as const, slotId: origin.slotId }));
       continue;
     }
-
-    const score = origin.score === undefined
-      ? undefined
-      : decodeScorePayloadV1(origin.score);
-    if (score !== undefined && Either.isLeft(score)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-score-payload-invalid" as const,
-          slotId: origin.slotId,
-        }),
-      );
-      continue;
+    occupied.add(origin.slotId);
+    const writes = Object.freeze([origin.assertions, ...(origin.writes ?? [])]);
+    const assertion = recordAttachmentWriteContents(origin.assertions);
+    if (Either.isLeft(assertion) || assertion.right.fixed !== assertionsRecordFamily.write) {
+      issues.push(Object.freeze({ code: "evaluation-record-assertions-write-invalid" as const, slotId: origin.slotId }));
     }
-
-    const assertionsIssue = validateAssertionsWrite({
-      slotId: origin.slotId,
-      facts: facts.right,
-      write: origin.assertions,
-      writes: origin.writes ?? [],
-    });
-    if (assertionsIssue !== undefined) {
-      issues.push(assertionsIssue);
-      continue;
-    }
-
-    preparedAttempts.push(
-      Object.freeze({
-        slotId: origin.slotId,
-        facts: facts.right,
-        assertions: origin.assertions,
-        verdict: verdict.right,
-        score: score === undefined ? undefined : score.right,
-        writes: freezeArray(origin.writes ?? []),
-      }),
-    );
+    issues.push(...validateFixedWrites({ owner: "attempt", slotId: origin.slotId, writes }));
+    origins.push(Object.freeze({ slotId: origin.slotId, writes }));
   }
 
-  if (issues.length > 0) return Either.left(contractInvalid(issues));
-
-  for (const issue of validateEvaluationRecordCoherenceV1({
-    expectedSlots: input.expectedSlots,
-    evaluations: builtEvaluations.right,
-    attempts: preparedAttempts.map((attempt) =>
-      Object.freeze({
-        slotId: attempt.slotId,
-        facts: attempt.facts,
-        verdict: attempt.verdict,
-        ...(attempt.score === undefined ? {} : { score: attempt.score }),
-      })),
-  })) {
-    issues.push(
-      Object.freeze({
-        code: "evaluation-record-coherence-invalid" as const,
-        issue,
-      }),
-    );
-  }
-  if (issues.length > 0) return Either.left(contractInvalid(issues));
-
-  const plannedOrigins: PlannedOriginAttemptV1<Error, Requirements>[] = [];
-  for (const origin of preparedAttempts) {
-    const verdictWrite = createVerdictAttachmentWriteV1(origin.verdict);
-    const scoreWrite = origin.score === undefined
-      ? undefined
-      : createScoreAttachmentWriteV1(origin.score);
-    plannedOrigins.push(
-      Object.freeze({
-        slotId: origin.slotId,
-        assertions: origin.assertions,
-        verdict: verdictWrite,
-        score: scoreWrite,
-        additionalWrites: origin.writes,
-      }),
-    );
-  }
-  if (issues.length > 0) return Either.left(contractInvalid(issues));
-
-  const expectedSlots = new Set<string>(input.expectedSlots);
-  const memberSlots = new Set<string>(preparedAttempts.map((attempt) => attempt.slotId));
-  const references: EvaluationRecordReferenceInputV1[] = [];
+  const references: EvaluationRecordReferenceInput[] = [];
   for (const reference of input.references ?? []) {
-    if (!expectedSlots.has(reference.slotId)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-reference-slot-unexpected" as const,
-          slotId: reference.slotId,
-        }),
-      );
+    if (!expected.has(reference.slotId)) {
+      issues.push(Object.freeze({ code: "evaluation-record-member-slot-unexpected" as const, slotId: reference.slotId }));
       continue;
     }
-    if (memberSlots.has(reference.slotId)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-member-slot-duplicate" as const,
-          slotId: reference.slotId,
-        }),
-      );
+    if (occupied.has(reference.slotId)) {
+      issues.push(Object.freeze({ code: "evaluation-record-member-slot-duplicate" as const, slotId: reference.slotId }));
       continue;
     }
-    memberSlots.add(reference.slotId);
-    references.push(
-      Object.freeze({ slotId: reference.slotId, attempt: reference.attempt }),
-    );
+    occupied.add(reference.slotId);
+    references.push(Object.freeze({ ...reference }));
   }
 
+  const runWrites = Object.freeze([...(input.runWrites ?? [])]);
+  issues.push(...validateFixedWrites({ owner: "run", writes: runWrites }));
   if (issues.length > 0) return Either.left(contractInvalid(issues));
 
-  const plan: EvaluationRecordPlanV1<Error, Requirements> = Object.freeze({
-    [evaluationRecordPlanBrand]: () => undefined,
-  });
-  const runtime: EvaluationRecordPlanRuntimeV1<Error, Requirements> =
-    Object.freeze({
-      startedAt: input.startedAt,
-      completedAt: input.completedAt,
-      expectedSlots: freezeArray(input.expectedSlots),
-      runWrites: freezeArray([evaluationsWrite.right, ...(input.runWrites ?? [])]),
-      originAttempts: freezeArray(plannedOrigins),
-      references: freezeArray(references),
-    });
-  planRuntimes.set(plan, runtime);
+  const plan: EvaluationRecordPlan<Error, Requirements> = Object.freeze({ [evaluationRecordPlanBrand]: () => undefined });
+  planRuntimes.set(plan, Object.freeze({
+    experimentId: input.experimentId,
+    context: input.context,
+    startedAt: input.startedAt,
+    completedAt: input.completedAt,
+    expectedSlots: Object.freeze([...input.expectedSlots]),
+    runWrites,
+    originAttempts: Object.freeze(origins),
+    references: Object.freeze(references),
+  } satisfies EvaluationRecordPlanRuntime<Error, Requirements>));
   return Either.right(plan);
 }
 
-/** Effect form for callers that compose preflight directly into a producer flow. */
-export function prepareEvaluationRecordPlanV1<Error, Requirements>(
-  input: EvaluationRecordPlanInputV1<Error, Requirements>,
-): Effect.Effect<
-  EvaluationRecordPlanV1<Error, Requirements>,
-  EvaluationRecordContractInvalidV1
-> {
+export function prepareEvaluationRecordPlan<Error, Requirements>(input: EvaluationRecordPlanInput<Error, Requirements>): Effect.Effect<EvaluationRecordPlan<Error, Requirements>, EvaluationRecordContractInvalid> {
   return Effect.suspend(() => {
-    const plan = createEvaluationRecordPlanV1(input);
+    const plan = createEvaluationRecordPlan(input);
     return Either.isLeft(plan) ? Effect.fail(plan.left) : Effect.succeed(plan.right);
   });
 }
 
-/**
- * Consumes a package-created plan through the generic Record writer. No domain
- * fold or raw Attachment construction remains on this path, and interruption
- * is deliberately left to the writer's normal incomplete-draft semantics.
- */
-export function writeEvaluationRecordPlanV1<Error, Requirements>(
-  session: RecordWriteSession,
-  plan: EvaluationRecordPlanV1<Error, Requirements>,
-): Effect.Effect<
-  RecordPublishReceipt,
-  | EvaluationRecordPlanInvalidV1
-  | EvaluationRecordOriginDraftMissingV1
-  | RecordWriteError
-  | Error,
-  Requirements
-> {
-  return Effect.suspend<
-    RecordPublishReceipt,
-    | EvaluationRecordPlanInvalidV1
-    | EvaluationRecordOriginDraftMissingV1
-    | RecordWriteError
-    | Error,
-    Requirements
-  >(() => {
+export function writeEvaluationRecordPlan<Error, Requirements>(session: RecordWriteSession, plan: EvaluationRecordPlan<Error, Requirements>): Effect.Effect<RecordPublishReceipt, EvaluationRecordPlanInvalid | EvaluationRecordOriginDraftMissing | RecordWriteError | Error, Requirements> {
+  return Effect.suspend(() => {
     const runtime = planRuntime(plan);
     if (runtime === undefined) return Effect.fail(planInvalid());
-    return Effect.gen(function* () {
-      const draft = yield* session.createRun({
-        startedAt: runtime.startedAt,
-        expectedSlots: runtime.expectedSlots,
-      });
-      return yield* writeEvaluationRecordPlanToDraftV1(draft, plan);
-    });
+    return Effect.flatMap(session.createRun({
+      experimentId: runtime.experimentId,
+      context: runtime.context,
+      startedAt: runtime.startedAt,
+      expectedSlots: runtime.expectedSlots,
+    }),
+      (draft) => writeEvaluationRecordPlanToDraft(draft, plan));
   });
 }
 
-/**
- * Applies an already-validated Evaluation plan to a draft created before
- * expensive execution begins. The Runner uses this to leave an incomplete
- * directory behind on interruption while keeping the Evaluation contract as
- * the only path that turns sealed facts into generic Record mutations.
- */
-export function writeEvaluationRecordPlanToDraftV1<Error, Requirements>(
-  draft: RecordRunDraft,
-  plan: EvaluationRecordPlanV1<Error, Requirements>,
-): Effect.Effect<
-  RecordPublishReceipt,
-  | EvaluationRecordPlanInvalidV1
-  | EvaluationRecordOriginDraftMissingV1
-  | RecordWriteError
-  | Error,
-  Requirements
-> {
-  return Effect.suspend<
-    RecordPublishReceipt,
-    | EvaluationRecordPlanInvalidV1
-    | EvaluationRecordOriginDraftMissingV1
-    | RecordWriteError
-    | Error,
-    Requirements
-  >(() => {
+export function writeEvaluationRecordPlanToDraft<Error, Requirements>(draft: RecordRunDraft, plan: EvaluationRecordPlan<Error, Requirements>): Effect.Effect<RecordPublishReceipt, EvaluationRecordPlanInvalid | EvaluationRecordOriginDraftMissing | RecordWriteError | Error, Requirements> {
+  return Effect.gen(function* () {
     const runtime = planRuntime(plan);
-    if (runtime === undefined) return Effect.fail(planInvalid());
-    return Effect.gen(function* () {
-      yield* writeEvaluationRecordPlanRunToDraftV1(draft, plan);
-      const attempts = new Map<SlotId, RecordAttemptDraft>();
-      for (const origin of runtime.originAttempts) {
-        const attempt = yield* draft.createAttempt({ slotId: origin.slotId });
-        attempts.set(origin.slotId, attempt);
+    if (runtime === undefined) return yield* Effect.fail(planInvalid());
+    yield* writeEvaluationRecordPlanRunToDraft(draft, plan);
+    const attempts = new Map<SlotId, RecordAttemptDraft>();
+    for (const origin of runtime.originAttempts) attempts.set(origin.slotId, yield* draft.createAttempt({ slotId: origin.slotId }));
+    yield* writeEvaluationRecordPlanOriginsToAttempts(attempts, plan);
+    yield* writeEvaluationRecordPlanReferencesToDraft(draft, plan);
+    return yield* draft.publish({ completedAt: runtime.completedAt });
+  });
+}
+
+export function writeEvaluationRecordPlanRunToDraft<Error, Requirements>(draft: RecordRunDraft, plan: EvaluationRecordPlan<Error, Requirements>): Effect.Effect<void, EvaluationRecordPlanInvalid | RecordWriteError | Error, Requirements> {
+  return Effect.gen(function* () {
+    const runtime = planRuntime(plan);
+    if (runtime === undefined) return yield* Effect.fail(planInvalid());
+    yield* Effect.forEach(runtime.runWrites, (write) => draft.record(write), { discard: true });
+  });
+}
+
+export function writeEvaluationRecordPlanOriginsToAttempts<Error, Requirements>(attempts: ReadonlyMap<SlotId, RecordAttemptDraft>, plan: EvaluationRecordPlan<Error, Requirements>): Effect.Effect<void, EvaluationRecordPlanInvalid | EvaluationRecordOriginDraftMissing | RecordWriteError | Error, Requirements> {
+  return Effect.gen(function* () {
+    const runtime = planRuntime(plan);
+    if (runtime === undefined) return yield* Effect.fail(planInvalid());
+    for (const origin of runtime.originAttempts) {
+      const attempt = attempts.get(origin.slotId);
+      if (attempt === undefined) {
+        return yield* Effect.fail<EvaluationRecordOriginDraftMissing>({
+          code: "evaluation-record-origin-draft-missing",
+          slotId: origin.slotId,
+        });
       }
-      yield* writeEvaluationRecordPlanOriginsToAttemptsV1(attempts, plan);
-      yield* writeEvaluationRecordPlanReferencesToDraftV1(draft, plan);
-      return yield* draft.publish({ completedAt: runtime.completedAt });
-    });
+      for (const write of origin.writes) yield* attempt.record(write);
+    }
   });
 }
 
-/**
- * Writes only the Run-owned portion of a validated Evaluation plan. This is
- * intentionally narrow: a Runner can establish the denominator and linked
- * Run attachments before dispatch without creating an Attempt for an
- * unstarted Slot.
- */
-export function writeEvaluationRecordPlanRunToDraftV1<Error, Requirements>(
-  draft: RecordRunDraft,
-  plan: EvaluationRecordPlanV1<Error, Requirements>,
-): Effect.Effect<
-  void,
-  EvaluationRecordPlanInvalidV1 | RecordWriteError | Error,
-  Requirements
-> {
-  return Effect.suspend<
-    void,
-    EvaluationRecordPlanInvalidV1 | RecordWriteError | Error,
-    Requirements
-  >(() => {
+export function writeEvaluationRecordPlanReferencesToDraft<Error, Requirements>(draft: RecordRunDraft, plan: EvaluationRecordPlan<Error, Requirements>): Effect.Effect<void, EvaluationRecordPlanInvalid | RecordWriteError> {
+  return Effect.gen(function* () {
     const runtime = planRuntime(plan);
-    if (runtime === undefined) return Effect.fail(planInvalid());
-    return Effect.forEach(runtime.runWrites, (write) => draft.record(write), {
-      discard: true,
-    });
+    if (runtime === undefined) return yield* Effect.fail(planInvalid());
+    yield* Effect.forEach(runtime.references, (reference) => draft.reference(reference), { discard: true });
   });
 }
 
-/**
- * Writes sealed origin facts into Attempts that were allocated at dispatch.
- * It never calls `createAttempt`: the caller must present the exact draft for
- * each Slot, which keeps the AttemptId used during execution identical to the
- * Member published later.
- */
-export function writeEvaluationRecordPlanOriginsToAttemptsV1<
-  Error,
-  Requirements,
->(
-  attempts: ReadonlyMap<SlotId, RecordAttemptDraft>,
-  plan: EvaluationRecordPlanV1<Error, Requirements>,
-): Effect.Effect<
-  void,
-  | EvaluationRecordPlanInvalidV1
-  | EvaluationRecordOriginDraftMissingV1
-  | RecordWriteError
-  | Error,
-  Requirements
-> {
-  return Effect.suspend<
-    void,
-    | EvaluationRecordPlanInvalidV1
-    | EvaluationRecordOriginDraftMissingV1
-    | RecordWriteError
-    | Error,
-    Requirements
-  >(() => {
-    const runtime = planRuntime(plan);
-    if (runtime === undefined) return Effect.fail(planInvalid());
-    return Effect.gen(function* () {
-      for (const origin of runtime.originAttempts) {
-        const attempt = attempts.get(origin.slotId);
-        if (attempt === undefined) {
-          return yield* Effect.fail<EvaluationRecordOriginDraftMissingV1>({
-            code: "evaluation-record-origin-draft-missing",
-            slotId: origin.slotId,
-          });
-        }
-        yield* attempt.record(origin.assertions);
-        yield* attempt.record(origin.verdict);
-        if (origin.score !== undefined) yield* attempt.record(origin.score);
-        for (const write of origin.additionalWrites) yield* attempt.record(write);
-      }
-    });
-  });
-}
-
-/** Writes only exact reference Members already validated by the opaque plan. */
-export function writeEvaluationRecordPlanReferencesToDraftV1<
-  Error,
-  Requirements,
->(
-  draft: RecordRunDraft,
-  plan: EvaluationRecordPlanV1<Error, Requirements>,
-): Effect.Effect<
-  void,
-  EvaluationRecordPlanInvalidV1 | RecordWriteError,
-  never
-> {
-  return Effect.suspend<
-    void,
-    EvaluationRecordPlanInvalidV1 | RecordWriteError,
-    never
-  >(() => {
-    const runtime = planRuntime(plan);
-    if (runtime === undefined) return Effect.fail(planInvalid());
-    return Effect.forEach(runtime.references, (reference) => draft.reference(reference), {
-      discard: true,
-    });
-  });
-}
-
-/** The internal Evaluation-specific contract, not a generic Record abstraction. */
-export const EvaluationRecordContractV1 = Object.freeze({
-  createPlan: createEvaluationRecordPlanV1,
-  preparePlan: prepareEvaluationRecordPlanV1,
-  writePlan: writeEvaluationRecordPlanV1,
-  writePlanToDraft: writeEvaluationRecordPlanToDraftV1,
-  writePlanRunToDraft: writeEvaluationRecordPlanRunToDraftV1,
-  writePlanOriginsToAttempts: writeEvaluationRecordPlanOriginsToAttemptsV1,
-  writePlanReferencesToDraft: writeEvaluationRecordPlanReferencesToDraftV1,
+export const EvaluationRecordContract = Object.freeze({
+  createPlan: createEvaluationRecordPlan,
+  preparePlan: prepareEvaluationRecordPlan,
+  writePlan: writeEvaluationRecordPlan,
+  writePlanToDraft: writeEvaluationRecordPlanToDraft,
+  writePlanRunToDraft: writeEvaluationRecordPlanRunToDraft,
+  writePlanOriginsToAttempts: writeEvaluationRecordPlanOriginsToAttempts,
+  writePlanReferencesToDraft: writeEvaluationRecordPlanReferencesToDraft,
 });

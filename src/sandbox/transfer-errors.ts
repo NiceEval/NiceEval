@@ -11,6 +11,7 @@
 
 import { stat, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { Effect } from "effect";
 import { t } from "../i18n/index.ts";
 
 /** 一次传输的可描述对象:沙箱侧路径 + 本地侧来源(有则给)+ 字节数(知道才给)。 */
@@ -55,15 +56,53 @@ export async function withTransferErrors<T>(target: TransferTarget, operation: (
   } catch (error) {
     if (!isTransferTimeout(error)) throw error;
     const bytes = target.bytes ?? (target.localPath ? await measureLocalBytes(target.localPath) : undefined);
-    throw new Error(
-      t("sandbox.transferTimeout", {
-        provider: target.provider ?? "sandbox",
-        operation: target.operation,
-        object: describeTransferObject({ ...target, ...(bytes !== undefined ? { bytes } : {}) }),
-      }),
-      { cause: error },
-    );
+    throw transferTimeoutError({ ...target, ...(bytes !== undefined ? { bytes } : {}) }, error);
   }
+}
+
+/**
+ * 纯错误映射:超时形态 → 带三要素的 Error(原始错误进 `cause`)。不含字节量测与任何
+ * IO,调用方(含 Effect 组合器)在失败路径上自行补齐 bytes 后再调它。
+ */
+export function transferTimeoutError(target: TransferTarget, error: unknown): Error {
+  return new Error(
+    t("sandbox.transferTimeout", {
+      provider: target.provider ?? "sandbox",
+      operation: target.operation,
+      object: describeTransferObject(target),
+    }),
+    { cause: error },
+  );
+}
+
+/** 失败路径专用的字节量测 Effect:已有 bytes 或没有本地来源时不测,量不到就当不知道。 */
+function measureTransferBytes(target: TransferTarget): Effect.Effect<number | undefined> {
+  const localPath = target.localPath;
+  if (target.bytes !== undefined || localPath === undefined) return Effect.succeed(undefined);
+  return Effect.tryPromise({
+    try: () => measureLocalBytes(localPath),
+    catch: (error) => error,
+  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+}
+
+/**
+ * Effect 组合器:retry 耗尽后的**终局失败**上做一次 transfer 超时 enrichment。
+ *
+ * 必须排在 withSandboxIoRetry 之外、之后:重试分类只看到 raw provider 失败(分类器按
+ * 原始错误形态判定),只有不再重试的失败才替换成带三要素的超时 Error。非超时错误原样
+ * 透传,defect / interruption 不经过这里(它们在 Cause 里,不进 typed failure 通道)。
+ */
+export function enrichTransferErrors<A, E>(
+  target: TransferTarget,
+): (self: Effect.Effect<A, E>) => Effect.Effect<A, E | Error> {
+  return (self) =>
+    Effect.catchAll(self, (error): Effect.Effect<never, E | Error> =>
+      isTransferTimeout(error)
+        ? Effect.flatMap(measureTransferBytes(target), (bytes) =>
+          Effect.fail(transferTimeoutError({ ...target, ...(bytes !== undefined ? { bytes } : {}) }, error)),
+        )
+        : Effect.fail<E>(error),
+    );
 }
 
 /** 「对什么对象」:沙箱侧路径、本地来源与字节数拼成一句可定位的描述。 */

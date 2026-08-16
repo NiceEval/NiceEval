@@ -135,4 +135,4 @@ SVG 共用样式段。反向（先改 CSS 再回填主题）不成立，守护�
 
 ## 设计输入
 
-[Vercel 报告网站设计研究](docs/research/vercel-report-websites.md)提供了读者任务、证据构图与验收方法的外部对照。NiceEval 吸收可迁移的方法，不采用 Vercel 品牌资产、Geist、固定网格、品牌外壳或 `vbg-*` CSS API。
+[Vercel 报告网站设计研究](docs/research/record-to-report/vercel/README.md)提供了读者任务、证据构图与验收方法的外部对照。NiceEval 吸收可迁移的方法，不采用 Vercel 品牌资产、Geist、固定网格、品牌外壳或 `vbg-*` CSS API。

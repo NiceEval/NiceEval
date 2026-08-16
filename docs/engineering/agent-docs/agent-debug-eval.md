@@ -31,9 +31,9 @@ fixture 还应含有有区分度的 usage、timing、conversation、tool 与 dia
 示例命令：
 
 ```sh
-niceeval show --experiment compare --page overview
-niceeval show --run <baseline> --run <candidate> --page comparison
-niceeval show --run <runId> --page attempt-<attemptId>
+niceeval show --experiment compare --page /overview
+niceeval show --run <baseline> --run <candidate> --page /comparison
+niceeval show @<attempt-locator>
 ```
 
 Attempt route 必须来自已计划页面索引；不能用独立 Attempt selector 越过 Sample 直接打开任意 Attempt。

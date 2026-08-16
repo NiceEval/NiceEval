@@ -40,7 +40,8 @@ group，确保没有残留子进程。
 `t.sessionId` 必须已经由 `system/init` 捕获。第二轮要求模型引用首轮随机哨兵，证明 SDK `resume`
 真正取回首轮会话。
 
-测试随后只通过公开 CLI 调用 `show`、`show --json`、`show @locator --execution` 与
-`show @locator --timing` 读回通过结果、session assertion、完整原始 `Bash` 名和 marker；不读取
-私有结果文件。Experiment 固定 `attempts: 1`，Vitest `retry: 0`，不配置 Judge。缺少任一声明 secret
+测试只通过公开 CLI 的 `show`、`show --json` 和代表 Report 的 execution / timing target Page 读回通过结果。
+target Page 使用 `show @locator --report <fixture-module> --page <route>`。
+它检查 session assertion、完整原始 `Bash` 名和 marker，不读取私有结果文件。
+Experiment 固定 `attempts: 1`，Vitest `retry: 0`，不配置 Judge。缺少任一声明 secret
 是 configuration failure，不会 skip。

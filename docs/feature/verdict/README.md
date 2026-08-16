@@ -1,17 +1,17 @@
 # Verdict
 
-Verdict 是 Attempt-owned `RecordAttachment` 中的终态业务数据。Attachment 名称是 `niceeval.verdict`，首个精确 payload schema 是 `niceeval.verdict/v1`；它的值只有 `passed`、`failed`、`errored` 和 `skipped`。
+Verdict 是一个 Attempt 的读侧终态解释。它把 Core `outcome`、sealed Assertions 和显式 skip 折叠为 `passed`、`failed`、`errored` 或 `skipped`。
 
-Verdict 从 execution outcome 和已封口的 `AssertionResult` projection 离线折叠。它不重新运行 Match、
+折叠从 execution outcome 和已封口的 Assertion facts 离线进行。它不重新运行 Match、
 不根据最后一个 Turn 推断，也不为 Judge 建立例外。
 
-通过制与计分制的每个 Attempt 都写入这个四态 Verdict。Score Eval 的 Attempt 另有独立 `niceeval.score/v1` Attachment；Verdict 与 score 并存，互不推导。Assertions 的 `points` 只是 Score Eval 内的挣分，不是 `evaluationKind`。
+通过制与计分制都按同一输入折叠四态 Verdict。Score Eval 的 earned score、complete、partial 或 unavailable 都是 sealed Assertions 的 score facts；Verdict 与 score 都从各自的源事实读取。Assertions 的 `points` 只是 Score Eval 内的挣分，不是 `evaluationKind`。
 
-`niceeval.verdict/v1` 是独立于 Record Core 的事实 schema。未来相邻版本必须提供精确 migration，或声明 `not-losslessly-migratable`；普通读取不自动迁移。是否复用由具名 reuse planning 的 schema/domain accept set 决定。
+Core 是 execution outcome 的 owner，Assertions 是 condition 与 score facts 的 owner。是否复用由具名 reuse planning 在读取这些事实后，再比较 Core combined execution identity 与真实 Observability duration 决定；缺失或不完整事实形成 gap。
 
 ## 从哪里开始
 
-- [Architecture](architecture.md)：Severity、四态折叠、Attachment 数据和读取规则。
+- [Architecture](architecture.md)：四态折叠、事实 owner 和读取规则。
 - [Assertions](../assertions/README.md)：断言怎样形成输入。
-- [缓存与携带](../experiments/cache.md)：planner 怎样使用 Verdict 与 eligibility。
+- [缓存与携带](../experiments/cache.md)：planner 怎样使用 Verdict 折叠与真实时长。
 - [Reports](../reports/README.md)：页面怎样呈现状态和完整度。

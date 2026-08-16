@@ -31,7 +31,7 @@ Attempt 总超时或取消时，当前打开阶段在中断时刻封口为 faile
 默认 Report 通过内建 timing projection 请求数据。Attempt timing 详情是已选 Sample 中的参数化页面，例如：
 
 ```sh
-niceeval show --run <runId> --page attempt-<attemptId>
+niceeval show @<attempt-locator>
 ```
 
 跨 Run 比较重复选择显式 Run，并由 Calculation 按稳定阶段名聚合：

@@ -49,6 +49,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [group-wave-barrier-starves-fast-lanes](group-wave-barrier-starves-fast-lanes.md) — 连续跨 lane wave 闸让慢 Group 的下一槽挡住快 Group 后继，出现真实空闲与 timing 空白；公平闸收窄为只保护各 lane 首槽
+- 已修 [interrupted-run-completed-attempt-hidden](interrupted-run-completed-attempt-hidden.md) — 同 Run 的快 Attempt 已完成并有 locator，慢 Attempt 在飞时 SIGINT 却让整 Run 无 complete、全部不可见；受控中断改为关闭在飞 Attempt 后正常 seal
 - [compose-project-namespace-escape-destabilizes-case-identity](compose-project-namespace-escape-destabilizes-case-identity.md) — 10 个 Terminal-Bench Compose Eval 把逐次随机容器名塞进 fingerprinted env,导致 CaseKey/private identity 每次规划漂移；修法是 Provider 规划期拒绝受管资源逃逸 project namespace,下游删除 `container_name` nonce
 - [reuse-ensure-lifetime-generic-bookkeeping-fake](reuse-ensure-lifetime-generic-bookkeeping-fake.md) — resolve.ts 通用 ensureLifetime 本地时钟记账,e2b/vercel 对 lifetimeMs 零引用,E2B 30 分钟杀实例而 runner 一路 ready:true;修法=删通用包装,未实现 provider 派发前硬失败(reuse.md 契约已在)
 - [e2b-deadline-lifetime-default](e2b-deadline-lifetime-default.md) — bounded E2B Attempt 未声明 lifetimeMs 时曾落到 SDK 五分钟默认并在 diff/cleanup 前消失；修为 deadline + 30s 收尾预留的创建请求，显式较短值创建前失败，reuse/fresh 共用强类型解析入口
@@ -162,6 +164,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [group-or-stop-dispatch-starvation](group-or-stop-dispatch-starvation.md) — MemoryBench 曾见 `.orStop()` 后低并发；真实 CLI E2E 已排除“停止全部 Eval”假设，并守护独立 Group lane 继续派发
+
 - 已修 [incomplete-summary-hides-unstarted](incomplete-summary-hides-unstarted.md) — 止损闸后 human 结论只显示 `INCOMPLETE`、隐藏 `completion.unstarted`，计划与 verdict 平白少数；修为结论行显式列 `N unstarted`，保持「未执行」身份不冒充 skipped
 - 已修 [experiment-fatal-presented-as-user-interrupt](experiment-fatal-presented-as-user-interrupt.md) — 多实验并跑时一条泳道的 `ExperimentFatalError` 正文被吞、只剩 interrupted+130 与 Ctrl+C 无法区分,且无关实验一并被拖垮(2026-07-31 真机,曾被误诊为用户手滑);根因两处叠加:复用池 `acquire()` 的拒绝经 `Effect.promise` 变成 defect 炸穿 forEach,`Cause.isInterrupted` 又把「die + 兄弟 interrupt」的合成 cause 当成用户中断;修法=租借失败接回本地走空间轴回执 + `errored`,判中断改 `isInterruptedOnly`(`src/runner/run.ts`、`src/runner/attempt.ts` 新导出 `attemptFailureDeclaration`)
 - 已修 [multi-source-field-resolution-order](multi-source-field-resolution-order.md) — eval 级 `timeoutMs` 被 config 静默吃掉(35min 声明按 20min 掐死、两格全灭):`cli.ts` 把 config 兜底提前物化成 run 值,`attempt.ts` 的 `??` 链第一段就短路;根因是四层来源当时 docs 里没有任何一处定义解析顺序,typecheck 与单层配置的 fixture 全绿;修法=docs 单点定链(config 是缺省底不是覆盖层,已落)+ 去掉那层 `??` + 「上层缺省 + 下层显式」区分力测试 + 超时消息带 `from <层>`(后三项未落地,2026-07-30 MemoryBench 0.11.3 真机复撞)
@@ -213,6 +217,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 被后续裁决替代 [schema-bump-invalidates-all-history](schema-bump-invalidates-all-history.md) — 旧 Results 曾用全局升版让存量整体失效；新 Record 改为稳定 core、局部 channel schema 与 carry fence，见本区新裁决
 - 被新格式边界消解 [linked-dev-tree-producer-version-placeholder](linked-dev-tree-producer-version-placeholder.md) — 旧 Results 的 `producer.version` 占位号曾让恢复提示不可执行；新 Record 不读取旧 Results，也不以该字段拼恢复命令
 - 已修 [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-judge-from-fingerprint.md) — `accept` 重算指纹时对 judge 用默认单层投影(缺 eval/config 级),与 `planCarry` 完整 `resolveJudge` 链口径不同,带 eval 级 judge 的结果 accept 后立刻又被判 stale;修为 `prepareAcceptLocator` 改走同一份 `configIdentityForRun(...resolvedJudge)` 身份(`src/runner/accept.ts`)
+- 已修 [accept-source-run-diverges-from-project-current-identity](accept-source-run-diverges-from-project-current-identity.md) — `accept` 曾用 Plugin link 前的 source Run 重算当前身份，导致 reference Run 可被 explicit `--run` 读到却立即被无参 `show` 排除；修为 accept 与 show/dry 共用 prepared project planning，并在既有 Journey 同时守住 project-current 可见与未来 dry 仍为 gap
 - 已修 [accept-batch-per-locator-planning-oom](accept-batch-per-locator-planning-oom.md) — 批量 `acceptLocators` 曾让每条 locator 各自并发重跑一遍完整 discovery + sandbox planning,137 条撑爆 4GB 堆;修为 discovery 只 hoist 一次、sandbox planning 按 experiment 记忆化、指纹计算共享 sourceCache、prepare 阶段加 8 并发小池(`src/runner/accept.ts`)
 - 已修 [config-delta-value-truncated-before-diff](config-delta-value-truncated-before-diff.md) — `configDeltas`/`manifestDeltas` 在构造点就把差异值截到 80 字符,长值公共前缀相同时两侧被截成同一份省略串(`config:sandboxLayer changed`/`plan:physical changed` 真机复现,`--dry --json` 与 accept 落盘同样受影响);修为构造侧只做完整值字符串投影,有界呈现搬到人读渲染点 `formatDryDelta` 的 `windowChangedDeltaValues`(对齐差异点的有界窗口)(`src/runner/config-identity.ts`、`src/runner/manifest.ts`、`src/runner/feedback/human.ts`)
 - 已修 [config-hash-forks-per-eval-judge-declaration](config-hash-forks-per-eval-judge-declaration.md) — run.json 的 Run 级 `configHash` 落盘校验曾直接拿逐 eval、含完整 judge 解析链的 `plannedConfigHashes` 断言"同 experiment 下必须逐 eval相等",一条 eval 自己声明 `judge` 就让规划期直接抛错(MemoryBench `toggl-cli/04-billing-doc` 真机复现,一度错疑是同日 `pathPrepend` 序列化不一致,已证伪);修为改用不带 judge 覆盖的 `computeConfigHash` 重算 Run 级值,逐 attempt 的 `result.configHash` 不变;顺带落地「可选字段缺省值不进身份序列化」通用规则,`pathPrepend` 空数组不再序列化进身份(`src/runner/run.ts`、`src/sandbox/layer.ts`)

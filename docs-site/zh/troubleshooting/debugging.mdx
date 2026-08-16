@@ -1,38 +1,38 @@
 ---
-title: "排查 Record 与报告问题"
+title: "排查结果与报告问题"
 sidebarTitle: "排查手册"
-description: "根据可见错误、Sample 状态、Attachment 状态和 rebuild 反馈，定位查看、重跑与导出问题。"
+description: "根据可见错误、Sample 状态和 rebuild 反馈，定位查看、重跑与导出问题。"
 ---
 
 先用明确 Run 读取问题，不要从目录名或时间猜测目标。
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
+npx niceeval show --run <run-id>
+npx niceeval view --run <run-id> --no-open
 ```
 
-Record reader 只看已经带 `complete` 的 Run。它冻结本次可见的集合；正在写入的目录不会混进 Sample。
+这两条命令从同一范围形成 Sample，并执行同一份 Report。先确定选择是否正确，再检查页面中的度量和问题。
 
-## 找不到或无法打开 Record
+## 找不到或无法打开结果
 
 | 可见错误 | 含义 | 下一步 |
 | --- | --- | --- |
-| `record-root-missing` | 指定的 Record 根目录不存在。 | 检查项目目录或 `--record` 参数。 |
-| `record-migration-required` | Core 是已知旧 major。 | 运行 `niceeval migrate`。 |
-| `record-format-unsupported` | 当前 NiceEval 不认识该 Core major。 | 安装支持该格式的 NiceEval。 |
-| `core-invalid` | 已完成 Run 的 Core 或引用不能可靠读取。 | 查看具名 issue；不要把它当成缺失结果。 |
+| `record-root-missing` | 指定的结果集不存在。 | 检查项目目录或 `--record` 参数。 |
+| `record-migration-required` | 已发布结果需要迁移。 | 运行 `niceeval migrate`。 |
+| `record-format-unsupported` | 当前 NiceEval 不认识该结果格式。 | 安装支持该格式的 NiceEval。 |
+| `core-invalid` | 某个位置的身份或引用不能可靠读取。 | 阅读具名问题；不要把它当成缺失结果。 |
 
-不要用空值替代这些结果。已发布的 Record 不提供手工编辑修复路径；需要不同事实时创建新的 Run。格式迁移使用 `niceeval migrate`，未完成目录使用 `niceeval clean`。
+已发布结果不提供手工编辑修复路径。需要不同事实时创建新的 Run；需要清理未完成残留时运行 `niceeval clean`。
 
 ## Sample 中缺少预期结果
 
-Sample 会保留 Run 的 expected-slot 分母。查看页面上每个 slot 的状态：
+Sample 会保留 Run 的预期分母。查看页面上每个位置的状态：
 
 | 状态 | 含义 | 下一步 |
 | --- | --- | --- |
-| `included` | Member 和 Attempt 可读。 | 检查需要的 Attachment。 |
-| `not-recorded` | expected slot 没有 Member。 | 检查 Invocation 是否完成，或重新运行该范围。 |
-| `core-invalid` | Member、Attempt 或引用有问题。 | 处理具名 issue，不要把它当成未采集。 |
+| `included` | 有可分析的 Attempt。 | 检查报告显示的度量或证据。 |
+| `not-recorded` | 计划中的位置没有结果。 | 检查 Invocation 是否完成，或重新运行该范围。 |
+| `core-invalid` | 该位置的身份或引用有问题。 | 处理具名问题，不要把它当成未采集。 |
 | `excluded` | 本次选择排除了该项。 | 检查 `--experiment`、`--eval` 或其他选择条件。 |
 
 需要判断下一次运行会做什么时，先执行：
@@ -41,27 +41,26 @@ Sample 会保留 Run 的 expected-slot 分母。查看页面上每个 slot 的�
 npx niceeval exp checkout --dry
 ```
 
-输出会显示每个 slot 会执行还是沿用已有 Attempt，并列出沿用条件不满足的原因。
+输出会显示每个位置会执行还是沿用已有 Attempt，并列出沿用条件不满足的原因。
 
-## Attachment 显示不可用
+## 度量或详情显示不完整
 
-一个 RecordAttachment 的状态只影响请求它的 Page、PageFamily、Calculation 或 Download：
+Measure 和领域视图会把自己的状态与问题带进页面：
 
 | 状态 | 含义 | 下一步 |
 | --- | --- | --- |
-| `unavailable` | owner 没有这个 Attachment。 | 确认它是否适用于这次运行。 |
-| `migration-required` | 有完整相邻 converter 链。 | 运行 `niceeval migrate`。 |
-| `migration-unavailable` | 不能从历史事实无损形成当前值。 | 使用能读取历史值的功能，或发布新的 Run。 |
-| `unsupported` | 当前功能不认识该 schema。 | 安装 owning plugin，或查看不依赖它的页面。 |
-| `invalid` | envelope、payload 或 blob 无效。 | 阅读具名 issue；其它 Attachment 仍可读取。 |
+| `partial` | 有可显示结果，但部分分母成员没有贡献。 | 检查问题和分母，不要把它当成完整结果。 |
+| `empty` | 输入完整，领域结果合法为空。 | 确认这个空结果是否符合任务。 |
+| `unsupported` | 当前环境不支持所需输入。 | 使用支持该能力的环境，或查看不依赖它的页面。 |
+| `failed` | 读取、关联或归并失败。 | 阅读具名问题并修复原因。 |
 
-未请求的坏 Attachment 不会阻止无关页面。`require-complete` consumer 显示 data-unavailable；`allow-partial` consumer 可显示完整分母与问题。
+需要迁移的历史结果先运行 `niceeval migrate`。度量问题不会改变 Sample 的既定分母，也不会阻止无关页面显示。
 
 ## view 没有显示新的结果
 
-`view` 每次成功 rebuild 才发布一份新的 `ReportExecution`。如果 Report、配置、主题或 Record 的变化导致 rebuild 失败，页面继续显示 last-good execution，并显示本次问题。
+`view` 每次成功 rebuild 才发布一份新的完整站点。如果 Report、配置、主题或结果变化导致 rebuild 失败，页面继续显示上一份可用站点，并显示本次问题。
 
-先修复 rebuild problem，再等待下一次成功 rebuild。页面刷新本身不会绕过这个边界，也不会让旧 execution 重新读取 Record。
+先修复 rebuild problem，再等待下一次成功 rebuild。页面刷新本身不会绕过这个边界，也不会让旧站点重新读取结果。
 
 ## JSON 中没有 receipt
 
@@ -71,8 +70,8 @@ npx niceeval exp checkout --dry
 
 ## 静态报告站无法导出
 
-`view --out` 只导出一个已经完成的 `ReportExecution`。recorded-data problem 可以进入导出站并保持可见；projector 或作者 callback defect、非法 semantic tree 和 route conflict 会让导出停止。
+`view --out` 只导出已经完成的完整站点。Analysis 问题可以进入导出站并保持可见；作者 callback 抛错、参数实例不合法、路由冲突或资源冲突会让导出停止。
 
-目标目录必须不存在。写入在最后留下 `complete` marker；失败或中断可能留下没有 marker 的目录。删除那个未完成目录后重试。
+目标目录必须不存在。失败或中断后请使用新的输出目录，再重新导出。
 
 更多操作步骤见[查看结果](/zh/tutorials/viewing-results)和[发布静态报告](/zh/tutorials/publish-report)。

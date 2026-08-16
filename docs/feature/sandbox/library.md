@@ -391,25 +391,18 @@ const layer = e2bSandbox({ template: "niceeval-agents" })
   });
 ```
 
-三条通道语义互斥,调用方只能把一次观测归入其中一类:
+两条反馈通道语义互斥,调用方只能把一次观测归入其中一类:
 
 - `progress` 是当前 prepare 的短期状态,例如正在检查、下载或预热;它不进入最终结果。
 - `diagnostic` 是真实异常、退化或需要处理的问题,会进入永久输出。
   正常容量、缓存大小、版本和命中状态本身是中性观测,不能无条件伪装成 warning。
-  只有达到明确且可解释的风险条件时才上报 diagnostic。
-- `fact` 是中性运行事实，例如本次实际使用的版本、缓存大小和命中状态。它写入 owner-local 自定义 JSON document，不参与 eligibility identity。
+  只有达到明确且可解释的风险条件时才上报 diagnostic。若某条受管命令实际观察到中性值，值只随该命令的有界
+  Observability capture 留存；不会另建可携带值。
 
 反馈通道不能指定 phase——runner 从当前 command 的 owner 自动得出阶段。
-反馈也不替代控制流：上例明确选择降级继续。如果 Sandbox 或当前操作无法继续，应直接抛出原错误，让 Runner 写具名执行错误通道，并据此形成 `errored` Verdict。Attempt lifecycle 仍只收敛到 `completed` 或 `abandoned`。
+反馈也不替代控制流：上例明确选择降级继续。如果 Sandbox 或当前操作无法继续，应直接抛出原错误，让 Runner 写具名 Observability execution diagnostic，并据此形成 `errored` Verdict。Attempt lifecycle 仍只收敛到 `completed` 或 `abandoned`。
 
-`context.fact(name, value)` 上报运行时事实。name 使用反向域 namespace；value 与 `observedAt` 组成单值 JSON document，并受 65,536 UTF-8 bytes 上限约束。
 计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。
-key/value 形状、合并与复用边界见 [Record · Architecture](../record/architecture.md):
-
-```typescript
-context.fact("com.example.build-cache-bytes", cacheBytes);
-context.fact("com.example.build-cache-hit", cacheHit);
-```
 
 自定义 provider 在 `create` options 上取得绑定到 `sandbox.create` 的 `feedback`:
 

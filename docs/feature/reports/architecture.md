@@ -1,190 +1,171 @@
-# Reports 架构
+# Report 架构
 
-Reports 把一份 reader-bound analysis selection 和一个 `Report` 执行成 immutable、self-contained `ReportExecution`。它可以计算通过率、展开 Assertion / conversation 详情页并交给 terminal、Node view 或 static exporter；它不拥有 Record、reuse planning 或评估事实。
+Report 有单目标终端路径与全站 SSG 路径。两条路径共享 ReportDefinition、固定 Sample、Analysis 口径和 text/web 组件，
+但只由全站路径形成 `ClosedSiteRevision`（闭合站点版本）。
 
-## 唯一分层
-
-```text
-portable Record
-  Core + independent immutable RecordAttachment
-          │
-          ├─ analysis selection（只读 Core）
-          ▼
-AnalysisSampleHandle
-  .sample = selection-established expected-slot framework
-  capability = same frozen reader view
-          │
-          ├─ RecordProjection declarations
-          ▼
-ProjectedSample（exhaustive logical entries + coverage + Attachment states）
-          │
-          ├─ Calculation（跨 owner 派生）
-          ├─ Page / PageFamily / Download（包装结果）
-          ▼
-ReportExecution（host-owned、immutable、self-contained）
-          ├─ show
-          ├─ one fixed view revision
-          └─ static export
-```
-
-这条链包含三种不同派生：
-
-- analysis selection 选择 Run，并建立 Sample-wide slot denominator；它不叫 projector；
-- `RecordAttachmentProjector` 只把一个 owner 的一份 Attachment payload 形成 typed view；
-- Calculation 跨 owner / Attachment 聚合通过率、成本或诊断分布。
-
-Execution 的 reuse / gap 判定属于 Experiments reuse planning，也不叫 projector。只有 single-owner / single-Attachment 的 typed adapter 保留 projector 这个术语。
-
-## 静态数据依赖，动态页面 topology
-
-Report 作者可以按 Assertion、conversation turn、tool call 或 diagnostics category 生成动态页面。这些 item identity 只存在于 Attachment value，不能为了页面方便膨胀 Record Core。
-
-Host 内部执行两段，但不把阶段类型暴露给作者：
-
-1. 从 `Report` 收集有限 `RecordProjection` 集合，在任何 Record I/O 前闭合全部 effectful dependencies；
-2. projection 与 Calculation 完成后，PageFamily 从已有内存值展开 instances、routes 与 documents。
-
-第二段不能返回新的 `RecordProjection`、请求 owner / Attachment、读 reader 或触发 I/O。它只改变输出 topology。
-
-| 场景 | 静态数据声明 | 内存展开依据 |
-|---|---|---|
-| 每个 Assertion 详情页 | attempt-slot Assertions projection | Assertions Attachment 的 durable `entryId` |
-| 每个 turn / tool-call 详情页 | attempt-slot conversation projection | turn / tool durable key |
-| diagnostics 分类页 | diagnostics projection + registered Calculation | normalized category key |
-
-没有 durable item key 时只能生成列表页；数组下标不能冒充稳定 route identity。
-
-## 穷尽 logical entries 与一次 projection
-
-`attemptSlotProjection` 与 `attemptOriginRunProjection` 对 Sample 每个 slot 都形成一条 logical entry；excluded、not-recorded 与 core-invalid 不消失。`selectedRunProjection` 对每个 selected Run 一条。相同物理 owner 被十个 slot 引用仍有十条公开 entries。
-
-Host 按 projection declaration identity 执行并缓存至多一次。Projector callback defect 在 unique 执行边界只形成一次 execution problem，再让所有引用它的 consumer 引用同一个 problem ID。Physical read/cache count 不进入 `ProjectionCoverage` 或 `ReportExecution` 语义。Coverage 分开统计：
-
-- Sample slot framework 与 slot states；
-- logical access count；
-- 按 logical entries 统计的 Attachment result states。
-
-通过率等业务读数必须由 Calculation value 自己定义 `observed` 与 `denominator`，host 不从 coverage、entry 数或 access count 推导。
-
-## Completeness 与局部隔离
-
-not-recorded、core-invalid、excluded 是 slot states。unavailable、migration-required、migration-unavailable、unsupported、invalid 是 Attachment data states。projector / Calculation / 组件 callback throw 是 execution problem。interruption 是 Effect Cause。四者不能互相改名。
-
-直接消费 projection 的组件显式选择：
-
-- `require-complete`：required data 不完整时不调用 callback，形成 data-unavailable result；
-- `allow-partial`：callback 收到穷尽 ProjectedSample、coverage 与 issues，可以继续包装成功 entries。
-
-Projection execution failure 不是 partial data。Calculation 不执行；Page/PageFamily 可以在 host 的逐 consumer 隔离后显示其它成功 entries，但 execution problem 仍存在。Static export 对任何 execution problem fail closed。
-
-Host 在作者 callback 之前汇总 recorded-data problems，并在 callback 边界追加 execution problems。`ReportExecution.problemTable`、family-level results 与所有 built-in problems surface 不可关闭。作者过滤 entries、返回零 instance 或省略 problem node 都不能让问题消失。
-
-因此：
-
-- recorded-data problem 允许成功 show、view 与 static export，且必须显式呈现；
-- 未请求的坏 Attachment 不读取、不影响 execution；
-- callback defect、非法 semantic tree 或 route conflict 允许 show/view 保留其它页面，但 static 整体不发布；
-- Record read、permission、closed selection 与全局 limit 留在 Effect typed error；
-- interruption 始终传播并触发 finalizer。
-
-## 作者 API 与 host 编译机械
-
-作者只拿到：
-
-- `Report` / `defineReport`；
-- `RecordProjection` factory；
-- `defineCalculation`、`definePage`、`definePageFamily`、`defineDownload`；
-- route / instance-key 构造器；
-- closed semantic document builders。
-
-作者看不到 reader、root、Scope、Effect、owner lookup、compiled plan、route-expansion receipt 或 staging。`ReportDefinition`、`ReportPlan`、`ReportInput`、binding、matrix、prepare、materialize 都不进入 public API、作者签名、教程或 Concepts。
-
-这些 callback 的参数缩窄不是 JavaScript security boundary。受信任 module 仍可 import `node:fs` 或读 env。当前契约不提供 untrusted Report 的沙箱。
-
-## Calculation 与分母
-
-Calculation 从完整 Sample 与已声明 ProjectedSample 派生一个值，不依赖另一个 Calculation；共享公式用普通纯函数。
+## 两条执行路径
 
 ```text
-pass rate
-observed:    20
-denominator: 100
-state:       partial
+niceeval show
+  │ select one exact route
+  ▼
+open fixed Sample → execute selected Page → private `ResolvedPage` → text / JSON → close Sample
+
+niceeval view / niceeval view --out
+  │ open fixed Sample
+  ▼
+enumerate every Page instance → execute every Page → validate site → ClosedSiteRevision
+                                                               │
+                                                   ┌───────────┴───────────┐
+                                                   ▼                       ▼
+                                                 view                    static
 ```
 
-`allow-partial` 可以显示 `20 / 100 · partial`，但不能把 20 改写成完整总体。
+`show` 只执行目标 Page。省略 `--page` 时使用 Report 的默认 route；带 `--page` 时使用精确 route。它不枚举参数 Page，
+不执行其它 Page，也不创建 site revision。
 
-`sample.denominator` 与 `coverage.sample.denominator` 只是 Sample-wide 的 slot denominator，不因 Attachment 状态改变。它不是所有 Calculation 的业务 denominator。每个 Calculation 的 `observed` 与 `denominator` 都是作者返回的 domain value；host 不从 transport coverage、entry 数或 access count 推导它们。
+`view` 和 `view --out` 都先枚举全部普通 Page 与参数 Page 实例。只有所有页面、route、链接、下载、asset、问题表和预算通过校验，
+Host 才形成一个 revision。view 只托管它；static 只写出它。
 
-## Closed semantic tree 与路径
+`pages` 是唯一的 Page 集合。详情页同样必须作为 `Page` 或 `ParameterizedPage` 由作者明确列出；Host 不由 locator、组件或
+导航推断并回填 route。若 Page 请求成本投影，其 Profile、Analysis 闭合与 target / full-site 范围由
+[Report 成本投影 Architecture](cost-projections/architecture.md) 定义。
 
-Page 输出闭合的 `ReportDocument` ADT，不是任意 JSON、HTML、React DOM、CSS 或用户 renderer。Web、terminal 与 static 从同一棵树派生；没有平行 `textAlternative`。
+## 参数 Page 的单目标读取
 
-精确树形状验证之外，host 验证 number、Unicode、table keys、chart 长度、cycle、深度、nodes、strings 与 route/download links。HTML 按 context escape，terminal 把控制字符转成可见文本；不存在 raw HTML 逃逸口。
+参数 Page 的 show 路径严格按以下顺序工作：
 
-Semantic route 与 filesystem path 分开。Route / download constructor 固定 lowercase ASCII grammar；static host 把 author route 映射到 `a/b/index.html`，再从当前页面 output path 计算相对 href。所有 author outputs 与 host files 进入同一 collision set。
+1. 从目标 route 取 key，调用该 Page 的 `params.decode(key)`。
+2. 对得到的 params 调用 `params.encode(params)`，结果必须与原 key 完全相同。
+3. 调用这个 Page 的 `load(sample, params, ctx)` 与 `render(input, ctx)`。
+4. 关闭该页的 text 或机器输出，随后关闭 Sample。
 
-## 一次 immutable execution
+这条路径不调用 `enumerate()`。`PageLoadContext` 与每个公开 DomainView 入口必须验证 params 所指 locator、identity 或 key 属于
+当前 Sample；不属于 Sample 的值以类型化错误结束。该成员资格检查不能借由执行其它 Page 获得。
 
-`executeReport({ sampleHandle, report })` 在 bound sample handle 仍活时完成全部 Attachment I/O 与作者 graph。返回前：
+全站路径仍对每个参数 Page 调用一次 `enumerate(sample)`。每个枚举值都要经过 encode、decode、再 encode 的规范检查，
+然后成为 revision 中唯一可服务的 route。
 
-- 全部投影结果与 Calculation 值已形成；
-- PageFamily instances、routes、documents 与 downloads 已固定；
-- 每个 projection、Calculation、family、page instance 与 download 最多执行一次；
-- execution 不再持有 callback 或 resource capability。
+## 私有页值与闭合站点版本
 
-`ReportExecution` 不含 Record root、reader、Scope、path 或 projector token。show / view / static export 只消费它。
+作者 callback 返回标准 React element。Host 在 Sample Scope 内完成组件组合、数据读取和两面呈现；私有
+`ResolvedPage` 短暂保存已经关闭的 Page 投影。React element 只留在关闭 Page 的短生命周期中；`ResolvedPage` 既不是作者 API，也不进入机器输出或 revision。
 
-## Effect 边界与精确 Tags
+公共作者面不定义 `ReportNode`、`ReportElement`、`ClosedReportNode` 或其它通用 semantic tree。Host 也不从 React、HTML 或
+terminal text 反推机器数据。
 
-Record / Analysis / Projection / Report host 内部一路返回 Effect。内部 `executeReport` 使用 selection handle 中已有的 frozen capability，R 是 `never`。`showReport` 只要求 `ReportConsole`；static export 只要求 `ReportFileSystem`。Node 热重载是内部 scoped host service，不形成公开 package 子路径。
+`ClosedSiteRevision` 是 Host API 的不透明闭合值；作者不读取其字段。它至少绑定每个 route 的最终 HTML body、rendered text、CSS、
+reload client、作者 asset、下载文件、`_niceeval/data/projections.json` 与 Host 问题表的 canonical bytes。
 
-Library 不调用 `Effect.runPromise`，也不建立私有 runtime。CLI / application main 只在外层调用一次 `Effect.runPromiseExit`。
+revision 不保存 Sample、Record reader、Promise、callback、React element、组件函数、文件 capability 或未解释的 Record payload。
+它的 identity 绑定 Sample、Report、renderer、页面、asset、download、`_niceeval/data/projections.json` 与问题表的 canonical bytes。
 
-## 热重载 = 一系列 fixed executions
+`show` 的内部单目标页值没有 `ClosedSiteRevision.identity`。自定义 `show --json` 只从这个单目标执行生成
+target-execution manifest；它不能借用或伪造 revision identity。
 
-```text
-watch hint / manual refresh
-            │
-            ▼
-load exact Report / Config / Theme closure（Node host 负责 loader）
-select + project + calculate + render once
-            │
-     ┌──────┴────────┐
-     │ failed        │ succeeded
-     ▼               ▼
-keep last-good   atomically replace
-show problem     current revision
-```
+## 字节合同、reload client 与脚本
 
-Node ESM 模块缓存与 watcher 的具体处理是内部 Node host 的实现责任，本契约只声明行为：
+同一 `ClosedSiteRevision` 中，每个 route、CSS、作者 asset、下载文件、`_niceeval/data/projections.json` 与 Host reload client 都有最终 bytes。view 的 HTTP body 和
+static 目录的对应 body 必须相同；HTTP header、连接和刷新通知不改变 body。
 
-- 每次 rebuild 产生一份新的 fixed `ReportExecution`；
-- 完整成功后才替换 current revision 与 watcher closure；
-- 失败保留 last-good execution，并显示 bounded rebuild problem；
-- 每个 revision 仍是固定的一次 `ReportExecution`。热重载因为变化会创建下一份 execution，而不是让同一份 execution 偷偷重读。
+每份 revision 都放入同一个 reload client，路径和 bytes 固定。view 提供版本探测和通知端点，client 收到新 revision 后才重新载入。
+client 先读取两边都存在且 bytes 相同的自身 runtime 文件；只有 live view 的 HTTP header 带 revision 标记时才探测刷新端点。
+静态目录没有刷新端点时，client 因此安静停用：不制造 404、不显示提示、不写 console error、不请求 Analysis，也不影响离线阅读。
 
-## Static export
+`head` 的结构化 script 与本地 asset 进入同一资源闭包。外部 script 标签的属性进入 HTML bytes；远端响应不冒充站点 bytes。
+作者 script 和 Host reload client 使用不同命名空间，不能互相替换或依赖对方取得报告数据。
 
-Static exporter 只消费一个已完成 execution：
+## CSS、theme 与 View shell
 
-1. preflight execution problems、semantic tree、route、download、limits 与 closure；
-2. 在 target 写入 HTML、host-data、downloads、manifest 与 built-in runtime；
-3. 逐文件写出后，最后写入零字节 `complete` marker；
-4. 返回 receipt。
+`src/report/assets/styles.css` 是 Report 产品 CSS 的唯一 owner。它拥有 scoped reset、基础排版、表格、图形、详情页、响应式布局和
+官方组件 selector。报告组件不各自带一份 reset，也没有第二条 classic 或 generic renderer CSS 管线。
 
-Recorded-data problems 可导出；任一 execution problem 整体不发布。目标已存在返回 `target-exists`。
+`theme.ts` 只定义 theme token 与 token 值；它不新增 reset、布局 selector 或组件样式。`styles.css` 是 token 的唯一消费者。
+作者通过结构化 `head` 提供的样式只能服务自己的具名内容，不能建立另一套 reset、theme 或 View shell。
 
-中断或失败可能留下没有 marker 的目录。host 以缺失的 `complete` marker 识别 incomplete output，提示用户删除后重试；本契约不承诺原生原子目录发布。
+View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和访问入口。它不读取 Analysis、不调整报告组件的数据含义、
+不注入第二份产品 CSS，也不重绘已关闭的 Report 内容。
+
+浏览器启用 JavaScript 时，站内参数 Page 的普通详情 href 会渐进增强为 Host modal，并把当前位置写成
+`#/<page-route-prefix>/<key>`。该 hash 可复制、首次打开和刷新后恢复同一详情；Escape、关闭按钮和浏览器返回会关闭 modal 并恢复
+前一地址。禁用 JavaScript、在新标签页打开或静态导出时，href 仍直接打开同一份独立详情文档。
+
+## SSG 预算
+
+下列预算作用于一次全站构建。Host 在分配无界集合前检查可知数量，并在收集页面、节点和 bytes 时累计；超过任一上限时，
+构建以 `report-build-budget-exceeded` 失败，view 保留 last-good revision。
+
+| 项目 | 最大值 | 计数范围 |
+|---|---:|---|
+| 页面数 | 20,000 | 全部普通 Page 与参数 Page 实例。 |
+| 单页文档节点数 | 20,000 | 一个关闭页面。 |
+| 单页文档深度 | 32 | 一个关闭页面。 |
+| 单页 HTML | 16 MiB | 一个 route 的双语最终 HTML bytes。 |
+| 全站 HTML | 256 MiB | 一次 revision 的全部 route HTML。 |
+| 全站构建时间 | 120 秒 | 从固定 Sample 打开到 revision bytes 完成。 |
+| 构建 RSS 增量 | 1.25 GiB | 单次全站构建相对启动参照值的最大常驻内存增量。 |
+| 下载文件数 | 1,000 | 一次 revision。 |
+| 单个下载文件 | 32 MiB | 一个规范化下载文件。 |
+| 单个 Source asset | 8 MiB | 一个 Source 文件的站点 asset。 |
+| 单个 Diff asset | 4 MiB | 一个 Diff 文件的站点 asset。 |
+| 全部 Source 与 Diff asset | 128 MiB | 一次 revision 的这两类 asset 合计。 |
+| 全部静态 asset | 256 MiB | CSS、script、Source、Diff 与作者 asset 合计。 |
+
+RSS 启动参照值在 Host 打开本次 Record-backed 固定 Sample 之前取得；同一个参照值持续约束 Sample 打开、全部 Page closure 与最终 revision bytes，
+直到签名完成。预算比较的是本次构建造成的 RSS 增量，而不是把 CLI 启动、模块装载及同进程其它既存常驻内存误算为报告输出；
+错误中的 `observedAtLeast` 给出已观测到的增量 bytes。
+该上限以完整 MemoryBench dogfood 的线性 Page closure 为大型 Sample 参照结果，并保留运行时与平台差异余量；它不能通过缩小 selector、
+跳过 Page 或把 payload 延后到浏览器读取来满足。
+
+Source 与 Diff 不会因达到某个阈值而被偷偷改成浏览器按需读取。默认组件把受限摘要和允许内联的正文直接关闭进 Page HTML；
+`DiffView` 的 patch 内联上限固定为单文件 64 KiB、单个组件 512 KiB，超过上限的文件保留摘要与公开下钻命令。只有 Page closure
+明确产出 `kind: "source"` 或 `kind: "diff"` 的关闭 asset 时，它才成为独立静态文件，并分别受 8 MiB、4 MiB 与合计 128 MiB
+上限约束。无论哪种形态，浏览器都不能回读 Record 或 Analysis；超过 HTML 或 asset 上限时整站构建失败。
+
+## watch、缓存与发布
+
+watcher 观察 Record root、Report module、项目内静态 import、theme 与配置。每个变化信号形成 build intent；最新 intent 具有发布权，
+较早 intent 可以中止，或在结束后丢弃。
+
+Record snapshot identity、selection、Report module closure、renderer、theme 与 locale 共同组成 build fingerprint。
+Profile content identity、asset 集合和 projection bytes 也锁入该 fingerprint。若 Record 信号对应的 snapshot identity 与当前
+revision 相同，Host 保留当前 revision，不重新打开 Sample，也不再次调用 Analysis。
+
+Report 或 theme 发生变化而 Record snapshot 未变时，Host 可复用已关闭的 Analysis 查询值。缓存 key 包含 snapshot identity、
+selection 和完整查询请求；新请求才读取 Analysis。页面缓存只保存完成的 text、HTML 与 asset bytes，key 还包含 Report、renderer、
+Page、params、locale 与 theme identity。缓存不保存开放 Scope、callback 或私有 `ResolvedPage`。
+
+只有最新 intent 完整通过校验，Host 才原子替换 current revision。失败保留 last-good；一个 HTTP request 在开始时固定 revision 引用，
+响应期间不会混入另一版本的页面、asset 或下载 bytes。
+
+## 机器数据的 owner
+
+内建报告的机器数据由 Host 在同一次目标执行中以具名领域结果生成。自定义报告只能得到 target-execution manifest：它包含选中 Page
+的 route、标题、rendered text、下载摘要和问题表，不含 React tree、site revision、revision identity 或任意作者数据对象。
+其中 rendered text 固定为该 Page 已关闭的英语 80-column text projection；它不随 TTY 或浏览器宽度变化，也不会触发第二次执行。
+
+CLI 固定这些文档的 schema、locale、目标选择和 canonical order；详见 [CLI](cli.md#niceeval-show---json)。机器数据不是组件第三面。
+
+## 仓库 E2E 与候选包 dogfood
+
+仓库 E2E 使用小型代表 fixture：两个 sealed Run、五个 logical Slot、一个 partial MetricValue、一个参数详情页、一个 Source Page 和
+一个 Diff Page。它证明标准 React JSX、`show` 单目标调用次数、参数成员资格、内建与自定义 JSON、全站 route 集、
+view/static bytes、reload 静默停用与 last-good。
+
+完整 MemoryBench 只用于安装后的候选包 dogfood。它在隔离 consumer 中安装同一候选包，再经公开 `show`、`view` 和 static 路径阅读；
+它不作为仓库 E2E fixture，不从相邻源码读取 Report，也不替代小型代表 fixture。
 
 ## 不变量
 
-- Record recorded claim、Analysis selection、Attachment projector、Calculation 与 Report host 是不同层。
-- effectful data dependency 在读取前闭合；projected value 只能展开纯输出 topology。
-- ProjectedSample 穷尽 logical entries；physical optimization 不进入结果语义。
-- data problem、execution problem、typed failure、defect 与 interruption 不互相冒充。
-- 作者只声明数据与包装结果，不理解 host 编译机械。
-- 每个 ReportExecution immutable，所有 declaration / consumer 最多执行一次。
-- 热重载发布新 revision，不修改旧 execution。
-- web / text / static 从同一 closed semantic tree 与 host-owned problems 派生。
-- Sample denominator 不是 Calculation 的业务 denominator；业务口径由 Calculation value 返回。
+- `show` 只执行一个已选择 Page，且不产生 revision。
+- 参数化 show 先完成 decode 与 canonical encode，并在 `load` / DomainView 边界验证 Sample 成员资格。
+- view 与 static 从同一个完整 `ClosedSiteRevision` 读取相同 route、HTML、CSS、reload client、asset 和下载 bytes。
+- `ResolvedPage` 只在 Host 内部短存；公开作者面没有 generic semantic tree。
+- 同一 Record snapshot 不会因 watch 信号重复执行已缓存的 Analysis 查询。
+- 失败不会替换 last-good revision；数据问题保持可见，构建错误不会发布部分站点。
+
+## 相关阅读
+
+- [Report Library](library.md)：公开 export manifest、Page、组件与作者边界。
+- [Reports CLI](cli.md)：选择、单目标 show、JSON、view 与静态导出。
+- [分享静态报告站](use-case/分享静态报告站.md)：断网阅读与完整目录。

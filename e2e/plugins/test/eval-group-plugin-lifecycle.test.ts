@@ -1,4 +1,4 @@
-// owner: docs/roadmap/plugins/README.md#v1-owner-matrix
+// owner: docs/feature/plugins/README.md#v1-owner-matrix
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";

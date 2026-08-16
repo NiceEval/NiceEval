@@ -7,6 +7,6 @@
 - [Goals](GOALS.md)
 - [Limits](LIMITS.md)
 - [Cases](CASES.md)
-- [PLAN-1：runtime direct calls](PLAN-1/README.md)
+- [PLAN-1（推荐）：runtime direct calls](PLAN-1/README.md)
 - [PLAN-2：static finite graph](PLAN-2/README.md)
 - [Decision](DECISION.md)

@@ -1,15 +1,16 @@
 # Sandbox —— CLI:留存现场与销毁
 
-跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned command 与 timing RecordAttachment。
+跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned Observability 的 command、timing 与 diagnostics。
 受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
-`niceeval show --run <runId> --page attempt-<attemptId>` 只读取该页面声明的 RecordAttachment，并按 timing 顺序呈现。
+`niceeval show @<attempt-locator>` 通过 Analysis `query()` 闭合页面声明的 DomainView，并按 timing 顺序呈现。
 因此「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
-但仍有两类问题 artifact 结构性地回答不了,只能靠留住活现场:
 
-- **agent diff 之外是盲区**——artifact 采的是 workdir 内按 send 区间归因的变更;全局装了什么、`$HOME` 下写了什么配置、PATH 实际长什么样,采不到。
+但仍有两类问题 FileChanges 结构性地回答不了,只能靠留住活现场:
+
+- **agent diff 之外是盲区**——FileChanges 采的是 workdir 内按 send 区间归因的变更;全局装了什么、`$HOME` 下写了什么配置、PATH 实际长什么样,采不到。
 - **复现成本是分钟级**——冷启动 + 安装每轮几分钟,每验证一个假设(如换一条命令参数重试)重跑一轮太慢;留下的现场把这个循环压到秒级。
 
-真正没有留下命令证据的宿主运行条件类 `errored` Verdict，仍只有结构化执行错误事件与 timing RecordAttachment。
+真正没有留下命令证据的宿主运行条件类 `errored` Verdict，仍只有 Observability diagnostics 与 timing。
 例如 Agent CLI 进程本身没起来、SDK / 网络传输失败，而不是某条受管命令非零退出。
 这类场景仍最需要进现场里手动重跑一遍命令。
 
@@ -117,7 +118,7 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 
 ### 回放留存现场的变更历史:sandbox history / diff
 
-Attempt-owned diff 通道是折叠后的 agent 归因增量;留存现场里还保有完整的逐区间账本,这两条命令是它的公开出口(现场休眠中同样先唤醒、读完送回休眠;现场销毁后账本随之消失,Record 通道不受影响):
+origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场里还保有完整的逐区间账本,这两条命令是它的公开出口(现场休眠中同样先唤醒、读完送回休眠;现场销毁后账本随之消失,已封口的五族 closure 不受影响):
 
 ```text
 $ niceeval sandbox history a3f9c2d1
@@ -139,7 +140,7 @@ A notes/decision-log.md · window turn2
 +…
 ```
 
-区间标签与 Attempt 详情页中 timing、execution 和 diff 通道的[轮标签](../assertions/library/display.md#turntsend的展示)是同一枚 token。`--window` 按字符串等值匹配打印出的标签；省略时输出全部区间的串联视图。`--path` 省略时输出该区间的全部文件。
+区间标签与 Attempt 详情页中 Observability、Assertions 和 FileChanges DomainView 的[轮标签](../assertions/library/display.md#turntsend的展示)是同一枚 token。`--window` 按字符串等值匹配打印出的标签；省略时输出全部区间的串联视图。`--path` 省略时输出该区间的全部文件。
 
 ### `sandbox list`
 
@@ -211,9 +212,9 @@ pruned 2 orphan sandboxes
 - 幂等:实例已不存在不算错误;某台销毁失败时如实列出并退出 1,其余照常处理,不能把仍活着的资源从核对面隐藏掉。
 - 与 `list` / `stop` 同一纪律:不读 config、不执行用户代码,按运行标识里的 provider 名路由 detached 销毁。
 
-## 与 artifact 的分工
+## 与五个固定 family 的分工
 
-留存现场不替代 Record。判定、断言、diff、事件与计时仍以 owner-local 通道为准，可从 Attempt 参数化页面或 `view` 读取。现场只回答落盘之外的问题，例如命令当时怎样失败、Agent 向 workdir 外写了什么。
+留存现场不替代 Record。Assertions 保存判定与 Evidence refs，FileChanges 保存 agent 归因文件变化，Observability 保存命令、事件、计时与诊断，Sources 保存源码闭包，Artifacts 保存大型具类型对象。它们都经 Analysis `query()` 的 DomainView 读取。现场只回答落盘之外的问题，例如命令当时怎样失败、Agent 向 workdir 外写了什么。
 
 留存的 Sandbox 不是可续跑状态，也没有续跑或重评语义。Provider 的休眠唤醒只恢复现场供人检查，不恢复 eval 运行。
 

@@ -182,62 +182,70 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | Transcript | Transcript | Adapter 的临时逐事件输入；归一后可供本次 Attempt 消费，但不是持久 Record 格式 | [Observability](observability.md) |
 | 标准事件流 | StreamEvent / events | Transcript 或 `send` 返回归一化成的临时统一事件模型 | [Events](feature/adapters/architecture/events.md) |
-| o11y 摘要 | o11y summary | 从已声明 observability projection 形成的临时派生读数；不拥有 Attachment，也不改变 Sample 分母 | [Observability](observability.md) |
 | trace 瀑布图 | Trace waterfall | 从 owner-monotonic timing interval 投影的时间关系；OTLP 只可补充本次采集 | [Observability](observability.md) |
 | 用量 | Usage | token bucket、单个 request 或 provider-observed cost 的原子 observation；不是 Attempt 总计 | [Observability](observability.md) |
 | 成本 | Cost | provider-observed cost 是事实；价格表估算、FX 与跨币种汇总是 Calculation | [Observability](observability.md) |
 | 采集状态 | Collection | 一个已写入 Attachment 的 complete 或 partial 完备度；不是 reader 的 unavailable 或 invalid 状态 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | 采集限制 | limitation | partial collection 必有的 closed、非空原因；表达上限、截断、脱敏或采集不足 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | owner-local identity | owner-local identity | producer 为 Attachment 内 turn、item、call、command、usage、interval 与 diagnostic mint 的稳定身份 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
-| Observability 联合契约 | `ObservabilityRecordContractV1` | whole-Run publish 前验证每个 Attempt 的五份与 Run 的两份官方 Attachment 的联合契约 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | 报告器 | Reporter | 运行中流式消费结果的插件;与运行后的 Report 不同 | [Observability](observability.md) |
 
 ### 结果落盘
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Record | Record | `.niceeval/record/` 中可整体复制、进入 Git，并只由 CLI / Report 解释的 opaque portable 事实集 | [Record](feature/record/README.md) |
-| maintenance lock | maintenance lock | reader/writer 取得 shared；migration 取得 exclusive 的跨进程维护锁 | [Record](feature/record/architecture.md#reader锁与-effect) |
-| Record reader（内部） | `RecordReader` | CLI / runner 内部只打开 current Core major，并冻结当时已完成 Run 集合的 scoped view；不从包导出 | [Record library](feature/record/library.md#reader) |
-| Record write session（内部） | `RecordWriteSession` | runner 内部读取 frozen history、写入 Run draft并最后创建完成标识的 Scope-bound 能力；不从包导出 | [Record library](feature/record/library.md#write-session) |
-| Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record](feature/record/architecture.md#完成标识与局部隔离) |
-| Run 完成标识 | Run completion marker | writer 最后创建的 zero-byte `complete`；只表示写入结束，不是 hash 或完整性证明 | [Record](feature/record/architecture.md#durable-record-布局) |
-| 未完成 Run | Incomplete Run | 没有完成标识的中断写入；不是 Record 事实，只产生 warning 并可由 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md#clean) |
-| Member | Member | 一个 Run Slot 对精确 Attempt 的引用；不保存采用原因 | [Record](feature/record/architecture.md#core-v1) |
-| Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续采用不复制 | [Record](feature/record/architecture.md#core-v1) |
-| Record 附件 | `RecordAttachment` | 一个 Run 或 Attempt owner 下具名、schema-identified 的 immutable payload closure | [Record](feature/record/architecture.md#recordattachment) |
-| Record 附件 envelope | `RecordAttachmentEnvelopeV1` | 保存 name 与 schemaId | [Record](feature/record/architecture.md#recordattachment) |
-| Record 附件 schema identity | `RecordAttachmentSchemaId` | 冻结 Attachment payload 的精确 shape 与语义 | [Record](feature/record/architecture.md#三个演进边界) |
-| Record 附件 migration | RecordAttachment migration | Attachment owner 提供的相邻 `vN → vN+1` converter 或明确不可迁移声明 | [Record](feature/record/architecture.md#migration-definition) |
-| 中立 Record 附件 projector | neutral RecordAttachmentProjector | 只把一个明确 owner 的 available Attachment 变为 typed view；不聚合、不选择 Run、不读另一 family | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
-| 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources/v1`；保存当时 source closure 的 manifest 与 own blobs | [Sources manifest](feature/record/architecture.md#sources-manifest) |
-| 源码项 | source item | Sources snapshot 中由非数组 `SourceItemId`、canonical project-relative path、SHA-256 与 own blob 标识的一项源码 | [Sources manifest](feature/record/architecture.md#sources-manifest) |
-| 断言源码位置 | Assertion source site | Attempt-owned source-sites 中，一个 Assertions `entryId` 的 role-tagged runtime source site 与 occurrence | [Source sites](feature/assertions/architecture/source-sites.md) |
+| Record | Record | `.niceeval/record/` 中可整体复制、进入 Git，并只由 NiceEval CLI / Report 解释的 opaque portable 事实集 | [Record](feature/record/README.md) |
+| Coordination SDK | Coordination SDK | execution claim、session 与 gate 位于项目 `.niceeval/`；Record 的 read / append / maintenance lease 位于 `.niceeval/coordination/records/<recordKey>/`（custom Record 位于其 parent 的同形目录），均不进入 portable Record | [三层总览](feature/record-report/README.md) |
+| Record 宿主 SDK | `RecordHostSDK` | 提供 `openRead()`、`createRun()`、`createReferenceRun()` 与 `maintenance()` 的窄宿主能力 | [Record Library](feature/record/library.md) |
+| Record 读取会话 | `RecordReadSession` | Scope-bound 惰性 reader；先选择已封口 Run，再按需读取和验证 Run、Attempt、Attachment 或 blob | [Record Library](feature/record/library.md) |
+| Record 选择 | `RecordSelection` | 一次扫描后固定的 Run、Slot、预期分母与问题；不含完整 payload，也不携带 reader | [Record Library](feature/record/library.md) |
+| Run 写会话 | `RunWriteSession` | 只创建并封口一个新 RunId 的 Scope-bound 能力；不同 writer 不修改同一个 Run | [Record Library](feature/record/library.md) |
+| Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
+| Run 完成标识 | Run completion marker | writer 在内容校验与刷盘后最后排他创建的 zero-byte `complete`，是 Run 对 reader 可见的发布点 | [Record Architecture](feature/record/architecture.md) |
+| 未完成 Run | Incomplete Run | 没有 `complete` 的中断目录；不是已发布事实，只能由取得独占维护 lease 的 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md) |
+| Member | Member | 一个 Run Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
+| Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
+| Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 NiceEval 固定定义的 immutable payload 与 owner-local blob closure | [Record Architecture](feature/record/architecture.md) |
+| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、Observability、FileChanges、Sources 与 Artifacts 五类封闭联合；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
+| Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、Git safety 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
+| Record migration receipt | `RecordMigrationReceipt` | migration 完整校验并刷盘后返回的 immutable outcome；第一版协议只会产生 `already-current` | [Record Library](feature/record/library.md) |
+| 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources`（envelope `schemaVersion: 1`）；保存当时 source closure 的 manifest 与 own blobs | [Record Architecture](feature/record/architecture.md) |
+| 源码项 | source item | Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-256 与 own blob 标识的一项源码 | [Record Architecture](feature/record/architecture.md) |
 | 未映射 | `unmapped` | 可读 Assertion 没有可用 source navigation；不改变 Assertion、Verdict 或 Score | [Source sites](feature/assertions/architecture/source-sites.md#局部-unmapped-与-assertion-隔离) |
-| 源码身份迁移组 | Source identity migration group | 同步迁移 Sources item identity 与该 origin Run 全部 source-sites 的相邻 migration unit | [Record Library](feature/record/library.md#source-identity-migration-group) |
-| Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的进程返回值 | [Record library](feature/record/library.md#write-session) |
-| Attempt 定位符 | AttemptLocator | 完整 `attemptId` 的人读别名：`@1` 加 SHA-256 前 60 bit 的 12 字符规范大写 Crockford 编码 | [Record](feature/record/architecture.md) |
+| Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的进程返回值 | [Record Library](feature/record/library.md#write-session) |
+| Attempt 定位符 | AttemptLocator | 完整 `attemptId` 的确定性人读别名：`@1` 加 SHA-256 前 60 bit 的 12 字符规范大写 Crockford 编码；碰撞时返回 `ambiguous` | [Record](feature/record/architecture.md) |
 
 ### 分析选择与执行沿用
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 分析选择请求 | `AnalysisSelectionRequest` | 选择哪些已发布 Run 的纯配置，不携带 reader 或 I/O 能力 | [Sample](feature/sample/library.md#analysis-selection) |
-| 分析样本 | `AnalysisSample` | 从已发布 Run 形成的 portable core-only 选择，保留完整 expected-slot 分母 | [Sample](feature/sample/README.md) |
-| 分析选择（内部） | Analysis selection | CLI host 从明确 Run，或从身份匹配当前项目的全部结果形成纯 AnalysisSample；作者通过 `show` / `view` 选择 | [Sample](feature/sample/README.md) |
+| 分析选择请求 | `AnalysisSelectionRequest` | 选择哪些已发布 Run 的纯配置，不携带 reader 或 I/O 能力 | [Analysis Library](feature/analysis/library.md) |
+| 分析样本 | `Sample` | host 从固定 `RecordSelection` 形成的 Scope-bound 作者输入；常驻身份与完整分母，重 payload 按需读取 | [Analysis](feature/analysis/README.md) |
+| Population | `Population` | Measure 解释的完整成员集合，拥有稳定 identity 与分母规则 | [Analysis Library](feature/analysis/library.md) |
+| Dimension | `Dimension` | 属于一个 Population、用于分组或稳定标识成员的 typed field | [Analysis Library](feature/analysis/library.md) |
+| Measure | `Measure` | 一次声明归并、denominator、missing 与 Evidence policy 的 typed 统计口径 | [Analysis Library](feature/analysis/library.md) |
+| Relation | `Relation` | 由 Analysis 定义、穷尽对齐两个 Population 的具名纯关系 | [Analysis Library](feature/analysis/library.md) |
+| Analysis 输入 | `AnalysisInput` | NiceEval 从当前 Record schema 发布的 nominal、只读 typed input；Measure 作者可以选择但不能构造 | [Analysis Library](feature/analysis/library.md) |
+| Analysis 执行计划 | `QueryPlan` | typed query 编译出的 engine-neutral 有限计划；不包含 SQL、组件 props 或 renderer 配置 | [Analysis Library](feature/analysis/library.md) |
+| Analysis executor | `AnalysisExecutor` | 执行 `QueryPlan` 的能力；backend 不拥有 Population、denominator、missing 或 Evidence 口径 | [Analysis Library](feature/analysis/library.md) |
+| 指标值 | `MetricValue` | `aggregate()` 或 `query()` 产生的闭合度量单元；携带 value、state、samples、total、basis、issues 与 refs | [Analysis Library](feature/analysis/library.md) |
+| 闭合行 | `ClosedRows` | Analysis mint 的只读显示行集合；保留行 identity 与全局 issues，中立组件只把它当 rows / points 消费 | [Analysis Library](feature/analysis/library.md) |
+| 语义数据帧 | `SemanticFrame` | 高级 `query()` 返回的闭合表格结果；每个度量单元仍是完整 `MetricValue` | [Analysis Library](feature/analysis/library.md) |
+| 领域视图 | `DomainView` | 为 Trace、Attempt 或 Evidence 形成的闭合树、时序或详情结构 | [Analysis Library](feature/analysis/library.md) |
 | 执行沿用计划 | `ExecutionReusePlan` | reuse policy 把当前 `ExecutionTarget` 的每个 Slot 穷尽判为 reuse 或 gap | [Cache](feature/experiments/cache.md#公开形状) |
 | 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
-| 收窄 | Narrowing | 在既有 `AnalysisSample` 上显式排除范围，不重新读取 Record | [Sample](feature/sample/library.md#构造入口) |
+| 收窄 | Narrowing | 在既有 Sample 上显式排除范围，同时保留状态与分母问题 | [Analysis Library](feature/analysis/library.md) |
 
 ### 报告
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 报告 | `Report` | `defineReport` 返回的作者定义；只声明所需数据、Calculation 与 Page / PageFamily / Download 展示 | [Reports](feature/reports/README.md) |
-| 计算 | Report Calculation | 从已声明 projection 形成派生值；通过率、成本与诊断分布都属于这一层 | [Reports](feature/reports/README.md) |
-| 页 | Report Page | 从已声明数据或 Calculation 形成 closed semantic document 的呈现单位 | [Reports](feature/reports/README.md) |
-| 报告执行 | `ReportExecution` | 一次 immutable、自包含的 Report 结果；show、view revision 与 static export 共同消费 | [Reports](feature/reports/README.md) |
-| 静态报告 | Static report | 无网络、无源 Record、带精确 runtime 的自包含目录 | [Reports architecture](feature/reports/README.md#自包含静态-export) |
+| 报告 | `Report` | `defineReport({ pages })` 返回的标准 React JSX 作者定义；作者面没有通用 semantic model，JSX 只交给 React 处理 | [Report Library](feature/reports/library.md) |
+| 页 | Report Page | 直接写在 `defineReport({ pages })` 中，以 `params / load / render` 形成可寻址页面；`show` 只执行选中页，站点路径才枚举全部实例 | [Report Library](feature/reports/library.md) |
+| 报告组件 | Report component | `defineComponent()` 定义组合组件或 text / web 双面原语；双面原语先调用一次 `resolve()` 取得关闭输入，再由两面同步消费 | [Report Library](feature/reports/library.md) |
+| 已求值页（私有） | `ResolvedPage` | Host 在固定 Sample 存活时短存的单目标页值；不是作者 API、机器文档或站点版本的一部分 | [Reports architecture](feature/reports/architecture.md#私有页值与闭合站点版本) |
+| 闭合站点版本 | `ClosedSiteRevision` | view 与 static 在全站枚举、校验和资源闭包后共用的最终页面、asset 与下载 bytes 集合；show 不形成它 | [Reports architecture](feature/reports/architecture.md#私有页值与闭合站点版本) |
+| 静态报告 | Static report | 由完整 `ClosedSiteRevision` 写出的无源 Record 离线目录；每个 route 的页面 body 与 view 相同 | [Reports CLI](feature/reports/cli.md#niceeval-view---out) |
 
 ### 配置与 CLI
 
@@ -252,6 +260,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
+| Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Analysis Library](feature/analysis/library.md) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
 | Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
 | Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生新的不可变 grading claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
@@ -259,21 +268,20 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingresult) |
 | SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、ExecutionGraph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#samplemanifest-与-current) |
 | Pilot 选择 | Pilot selection | 在 attempts 展开前按共同 Eval ID 总体执行 first 或固定 seed sample，并保留 non-final coverage | [Experiment Pilot 抽样](roadmap/experiment-pilot-sampling/README.md) |
-| 具名 Experiment 族 | Experiment family (`defineExperiments`) | 用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID | [具名 Experiment 族](roadmap/experiment-families/README.md) |
-| Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-fixture-content/README.md) |
-| Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回 measurement、理由与引用，不拥有 Verdict 或 score policy | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
-| Eval Group | Eval Group (`defineEvalGroup`) | 由无业务顺序的 Eval 闭集组成；Runner 按规范化 Eval ID 串行复用一台物理 Sandbox，不同 Group 可以并行 | [Eval Group](roadmap/eval-groups/README.md) |
-| Plugin | Plugin | 挂在 Eval、Experiment 或 Eval Group 上的不可变条件蓝图；组合既有 owner contribution，不选择 Agent 或建立新运行时 | [Plugins](roadmap/plugins/README.md) |
+| 具名 Experiment 族 | Experiment family (`defineExperiments`) | 用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID | [具名 Experiment 族](roadmap/experiment-authoring/families/README.md) |
+| Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-prepare/fixture-content/README.md) |
+| Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回 measurement、理由与引用，不拥有 Verdict 或 score policy | [Agent Judge](roadmap/judge-runtimes/agent/README.md) |
+| Eval Group | Eval Group (`defineEvalGroup`) | 由无业务顺序的 Eval 闭集组成；Runner 按规范化 Eval ID 串行复用一台物理 Sandbox，不同 Group 可以并行 | [Eval Group](feature/eval-groups/README.md) |
+| Plugin | Plugin | 挂在 Eval、Experiment 或 Eval Group 上的不可变条件蓝图；组合既有 owner contribution，不选择 Agent 或建立新运行时 | [Plugins](feature/plugins/README.md) |
 | 准入健康 | Admission health | 每条 fresh slot 在 Agent 进入前，对 producer occurrence 做一次健康裁决；结果归 Run，不形成 Assertion | [准入健康](roadmap/admission-health/README.md) |
 | 状态 Cohort | State cohort | State Provider 颁发身份的一条持久状态 lineage，约束 Checkpoint、Region 与 schema 的共同归属 | [持久状态](roadmap/state/README.md) |
 | 状态 Checkpoint | State checkpoint | State cohort 内由 Provider 发布的 immutable exact 状态点；Comparable 状态必须带内容摘要 | [持久状态](roadmap/state/README.md) |
 | Eval Trajectory | Eval trajectory | 由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG | [Eval Trajectory](roadmap/eval-trajectories/README.md) |
 | Workspace 访问证据 | Workspace access evidence | 可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合 | [Workspace 访问证据](roadmap/workspace-access-evidence/README.md) |
 | 发现边界 | Discovery boundary | 显式目录入口拥有的递归 Eval discovery 范围；父级扫描在入口处停止向内发现 | [发现边界](roadmap/discovery-boundaries/README.md) |
-| 执行沿用说明 | Reuse explanation | frozen execution plan 对某个 slot 的 carried、gap 或 excluded 决策给出的同源理由与 prior locator | [结果携带与 Sandbox 复用反馈](roadmap/reuse-feedback/README.md) |
-| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Report Calculation 投影成本的价格规则集合 | [成本投影](roadmap/cost-projections/README.md) |
-| Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-display-names/README.md) |
-| Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不构造 Sample 或推导最新结果 | [运行交接与 Record 库存](roadmap/run-handoff-and-inventory/README.md) |
+| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Report Calculation 投影成本的价格规则集合 | [成本投影](feature/reports/cost-projections/README.md) |
+| Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-authoring/display-names/README.md) |
+| Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不构造 Sample 或推导最新结果 | [Record 库存](roadmap/record-inventory/README.md) |
 
 ## 禁用写法
 

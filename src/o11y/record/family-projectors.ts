@@ -1,190 +1,101 @@
 import { Either } from "effect";
 import type {
+  RecordAttachmentBlobs,
   RecordAttachmentPayloadSnapshot,
-  RecordAttachmentValue,
 } from "../../record/attachment/index.ts";
 import {
-  defineRecordAttachmentProjector,
-  type RecordAttachmentProjector,
-} from "../../projection/projector.ts";
-import { isSafeTextV1, type CommandsReferencesV1, type NonNegativeSafeInteger } from "./model.ts";
-import {
-  type AttemptDiagnosticsAttachmentV1,
-  type AttemptTimingAttachmentV1,
-  type CommandManifestV1,
-  type CommandObservationV1,
-  type CommandResultV1,
-  type CommandsAttachmentV1,
-  type CommandStreamV1,
-  type ConversationAttachmentV1,
-  type RunDiagnosticsAttachmentV1,
-  type RunTimingAttachmentV1,
-  type UsageAttachmentV1,
-} from "./families.ts";
-import {
-  attemptCommandsAttachmentV1,
-  attemptConversationAttachmentV1,
-  attemptDiagnosticsAttachmentV1,
-  attemptTimingAttachmentV1,
-  attemptUsageAttachmentV1,
-  runDiagnosticsAttachmentV1,
-  runTimingAttachmentV1,
-} from "./family-writers.ts";
+  attemptObservabilityRecordFamily,
+  runObservabilityRecordFamily,
+} from "../../record/family/catalog.ts";
+import type {
+  AttemptObservabilityAttachment,
+  RunObservabilityAttachment,
+} from "../../record/family/observability.ts";
 
-/**
- * Semantic view names deliberately omit a disk-version suffix. A projector
- * owns one current family definition; a later schema migration may keep this
- * semantic view or publish a separately named view without forcing callers to
- * reason about envelope versions.
- *
- * The public neutral view keeps each durable source-native tool name verbatim.
- * Canonical grouping, when a consumer needs it, is a derived view concern and
- * never replaces the projected name.
- */
-export type ConversationView = RecordAttachmentPayloadSnapshot<ConversationAttachmentV1>;
+/** Neutral projections stay within one available fixed Observability value. */
+type AttemptPayload = RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
+type RunPayload = RecordAttachmentPayloadSnapshot<RunObservabilityAttachment>;
+
+export type ConversationView = AttemptPayload["conversation"];
 export type ObservabilityLimitationView = ConversationView["collection"]["limitations"][number];
-export type UsageView = RecordAttachmentPayloadSnapshot<UsageAttachmentV1>;
-export type AttemptTimingView = RecordAttachmentPayloadSnapshot<AttemptTimingAttachmentV1>;
-export type RunTimingView = RecordAttachmentPayloadSnapshot<RunTimingAttachmentV1>;
-export type AttemptDiagnosticsView = RecordAttachmentPayloadSnapshot<
-  AttemptDiagnosticsAttachmentV1
->;
-export type RunDiagnosticsView = RecordAttachmentPayloadSnapshot<RunDiagnosticsAttachmentV1>;
+export type UsageView = AttemptPayload["usage"];
+export type AttemptTimingView = AttemptPayload["timing"];
+export type RunTimingView = RunPayload["timing"];
+export type AttemptDiagnosticsView = AttemptPayload["diagnostics"];
+export type RunDiagnosticsView = RunPayload["diagnostics"];
 
 export interface CommandStreamView {
   readonly text: string;
-  readonly retainedBytes: NonNegativeSafeInteger;
-  readonly totalSafeUtf8Bytes: NonNegativeSafeInteger;
+  readonly retainedBytes: number;
+  readonly totalSafeUtf8Bytes: number;
 }
-
 export interface CommandsView {
-  readonly collection: RecordAttachmentPayloadSnapshot<CommandsAttachmentV1["collection"]>;
+  readonly collection: AttemptPayload["commands"]["collection"];
   readonly commands: readonly {
-    readonly commandId: RecordAttachmentPayloadSnapshot<CommandObservationV1["commandId"]>;
-    readonly manifest: RecordAttachmentPayloadSnapshot<CommandManifestV1>;
+    readonly commandId: string;
+    readonly manifest: AttemptPayload["commands"]["commands"][number]["manifest"];
     readonly result: {
-      readonly outcome: RecordAttachmentPayloadSnapshot<CommandResultV1["outcome"]>;
+      readonly outcome: AttemptPayload["commands"]["commands"][number]["result"]["outcome"];
       readonly stdout: CommandStreamView;
       readonly stderr: CommandStreamView;
     };
-    readonly refs: RecordAttachmentPayloadSnapshot<readonly CommandsReferencesV1[]>;
   }[];
 }
 
-function detachedPayload<Payload>(
-  value: RecordAttachmentValue<Payload>,
-): RecordAttachmentPayloadSnapshot<Payload> {
-  return value.payload;
-}
-
-function projectCommandStreamV1(
-  stream: RecordAttachmentPayloadSnapshot<CommandStreamV1>,
-  blobs: RecordAttachmentValue<CommandsAttachmentV1>["blobs"],
+function projectCommandStream(
+  stream: AttemptPayload["commands"]["commands"][number]["result"]["stdout"],
+  blobs: RecordAttachmentBlobs,
 ): CommandStreamView {
   if (stream.storage.kind === "inline") {
-    return Object.freeze({
-      text: stream.storage.text,
-      retainedBytes: stream.retainedBytes,
-      totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes,
-    });
+    return Object.freeze({ text: stream.storage.text, retainedBytes: stream.retainedBytes, totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes });
   }
   const bytes = blobs.bytes(stream.storage.ref);
-  if (Either.isLeft(bytes)) {
-    throw new Error("Commands Attachment blob closure lost a projected stream");
-  }
+  if (Either.isLeft(bytes)) throw new Error("Observability command blob closure is invalid");
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.right);
   } catch {
-    throw new Error("Commands Attachment blob is not valid UTF-8");
+    throw new Error("Observability command blob is not UTF-8");
   }
-  if (
-    !isSafeTextV1(text) ||
-    new TextEncoder().encode(text).byteLength !== stream.retainedBytes
-  ) {
-    throw new Error("Commands Attachment blob does not match its retained stream metadata");
+  if (new TextEncoder().encode(text).byteLength !== stream.retainedBytes) {
+    throw new Error("Observability command blob length does not match metadata");
   }
-  return Object.freeze({
-    text,
-    retainedBytes: stream.retainedBytes,
-    totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes,
-  });
+  return Object.freeze({ text, retainedBytes: stream.retainedBytes, totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes });
 }
 
-function projectCommandsV1(
-  value: RecordAttachmentValue<CommandsAttachmentV1>,
+export function projectAttemptObservabilityAttachment(
+  value: AttemptPayload,
+): AttemptPayload {
+  return value;
+}
+export function projectRunObservabilityAttachment(
+  value: RunPayload,
+): RunPayload {
+  return value;
+}
+export function projectAttemptCommands(
+  value: AttemptPayload,
+  blobs: RecordAttachmentBlobs,
 ): CommandsView {
   return Object.freeze({
-    collection: value.payload.collection,
-    commands: Object.freeze(
-      value.payload.commands.map((command) =>
-        Object.freeze({
-          commandId: command.commandId,
-          manifest: command.manifest,
-          result: Object.freeze({
-            outcome: command.result.outcome,
-            stdout: projectCommandStreamV1(command.result.stdout, value.blobs),
-            stderr: projectCommandStreamV1(command.result.stderr, value.blobs),
-          }),
-          refs: command.refs,
-        }),
-      ),
-    ),
+    collection: value.commands.collection,
+    commands: Object.freeze(value.commands.commands.map((command) => Object.freeze({
+      commandId: command.commandId,
+      manifest: command.manifest,
+      result: Object.freeze({
+        outcome: command.result.outcome,
+        stdout: projectCommandStream(command.result.stdout, blobs),
+        stderr: projectCommandStream(command.result.stderr, blobs),
+      }),
+    }))),
   });
 }
 
-export const attemptConversationProjector: RecordAttachmentProjector<
-  "attempt",
-  ConversationView
-> = defineRecordAttachmentProjector({
-  attachment: attemptConversationAttachmentV1,
-  project: detachedPayload,
-});
-
-export const attemptCommandsProjector: RecordAttachmentProjector<
-  "attempt",
-  CommandsView
-> = defineRecordAttachmentProjector({
-  attachment: attemptCommandsAttachmentV1,
-  project: projectCommandsV1,
-});
-
-export const attemptUsageProjector: RecordAttachmentProjector<
-  "attempt",
-  UsageView
-> = defineRecordAttachmentProjector({
-  attachment: attemptUsageAttachmentV1,
-  project: detachedPayload,
-});
-
-export const attemptTimingProjector: RecordAttachmentProjector<
-  "attempt",
-  AttemptTimingView
-> = defineRecordAttachmentProjector({
-  attachment: attemptTimingAttachmentV1,
-  project: detachedPayload,
-});
-
-export const attemptDiagnosticsProjector: RecordAttachmentProjector<
-  "attempt",
-  AttemptDiagnosticsView
-> = defineRecordAttachmentProjector({
-  attachment: attemptDiagnosticsAttachmentV1,
-  project: detachedPayload,
-});
-
-export const runTimingProjector: RecordAttachmentProjector<
-  "run",
-  RunTimingView
-> = defineRecordAttachmentProjector({
-  attachment: runTimingAttachmentV1,
-  project: detachedPayload,
-});
-
-export const runDiagnosticsProjector: RecordAttachmentProjector<
-  "run",
-  RunDiagnosticsView
-> = defineRecordAttachmentProjector({
-  attachment: runDiagnosticsAttachmentV1,
-  project: detachedPayload,
-});
+/** Compatibility-shaped fixed descriptors; each reads the single family once. */
+export const attemptConversationProjector = Object.freeze({ write: attemptObservabilityRecordFamily.write, project: (value: AttemptPayload) => value.conversation });
+export const attemptCommandsProjector = Object.freeze({ write: attemptObservabilityRecordFamily.write, project: projectAttemptCommands });
+export const attemptUsageProjector = Object.freeze({ write: attemptObservabilityRecordFamily.write, project: (value: AttemptPayload) => value.usage });
+export const attemptTimingProjector = Object.freeze({ write: attemptObservabilityRecordFamily.write, project: (value: AttemptPayload) => value.timing });
+export const attemptDiagnosticsProjector = Object.freeze({ write: attemptObservabilityRecordFamily.write, project: (value: AttemptPayload) => value.diagnostics });
+export const runTimingProjector = Object.freeze({ write: runObservabilityRecordFamily.write, project: (value: RunPayload) => value.timing });
+export const runDiagnosticsProjector = Object.freeze({ write: runObservabilityRecordFamily.write, project: (value: RunPayload) => value.diagnostics });

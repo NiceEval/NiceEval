@@ -35,7 +35,7 @@ niceeval 不要求被测对象实现统一协议；每个 Adapter 负责驱动�
 | 配置 coding-agent Skills / Plugins | [Coding Agent 扩展](library/coding-agent-extensions.md) |
 | 理解 Agent 怎样被 探测 与安装 | [Agent Ensure](architecture/agent-ensure.md) |
 | 查看外部协议与生态调研 | [Research](../../research/adapters/README.md) |
-| 查看已经定稿、等待外部接口满足准入条件的接入目标 | [Roadmap](../../roadmap/adapters/README.md) |
+| 查看已经定稿、等待外部接口满足准入条件的接入目标 | [Roadmap](../../roadmap/README.md#adapter-准入目标) |
 
 ## 目录索引
 

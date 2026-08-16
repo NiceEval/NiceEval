@@ -1,6 +1,6 @@
 # 报告作者面：组件粒度与取数形态
 
-**相关文档**：[GOALS](GOALS.md) ·[LIMITS](LIMITS.md) ·[PLAN-1](PLAN-1/README.md) ·[PLAN-2](PLAN-2/README.md) ·[PLAN-3](PLAN-3/README.md) ·[PLAN-4](PLAN-4/README.md) ·[PLAN-5](PLAN-5/README.md) ·[DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
 
 写一份自定义报告的人先撞上两个选择，这里把它们摊开比较。
 
@@ -19,12 +19,16 @@
 | 专用组件 | [PLAN-1](PLAN-1/README.md) | 与 PLAN-1 同格：取数不进作者视野 |
 
 [PLAN-4](PLAN-4/README.md) 是双轨：类型化数据源作默认，SQL 作逃生舱。
-[PLAN-5](PLAN-5/README.md)（推荐）保留通用原语与类型化聚合，但把取数和组合收敛成普通函数与普通结果值。
+[PLAN-5](PLAN-5/README.md) 曾保留通用原语与 closed values，却把 projection／Calculation plumbing 暴露给作者。
+[PLAN-6](PLAN-6/README.md) 在同一个静态内核上恢复 typed Analysis fields 与 descriptor components，但保留 static
+`ReportData`。
+[PLAN-7](PLAN-7/README.md)（推荐）保留 fields 与 closed output，并恢复受限 `ReportSample`、async callback 与
+`await aggregate(sample, ...)`。
 
 这层选择值得单独比较，因为它一旦定下就写进每一份用户报告文件。
 改读数口径只动库，改作者面要动所有人的报告。
 
-## 同一个问题的五种写法
+## 同一个问题的七种写法
 
 问题：**按 agent 看通过率与成本，通过率高的排前面。**
 
@@ -76,20 +80,64 @@ PLAN-4，默认写法同 PLAN-2，官方数据源答不了时才落到 SQL：
 <Table source={sql`select … from attempts …`} />
 ```
 
-PLAN-5，在 page render 中调用普通聚合函数：
+PLAN-5，用静态 input、普通 Calculation 与 Page 组合：
 
-```tsx
-export default defineReport(async (sample) => {
-  const rows = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
+```ts
+import { Either } from "effect";
 
-  return <Table rows={rows} />;
+const performance = defineCalculation({
+  id: Either.getOrThrow(reportComponentId("performance")),
+  inputs: reportInputs({ verdicts, usage }),
+  completeness: "allow-partial",
+  calculate: ({ sample, inputs }) => derivePerformance(sample, inputs),
+});
+
+const overview = definePage({
+  id: Either.getOrThrow(reportComponentId("overview")),
+  route: Either.getOrThrow(reportRoute("/")),
+  calculations: { performance },
+  render: ({ calculations }) => renderPerformance(calculations.performance),
 });
 ```
 
-四段代码的差别不在长度，在于**谁承担了容易写错的那部分**。
+PLAN-6，用同一 population 的 fields 形成静态 `ReportData`，再交给显示形状：
+
+```tsx
+const performance = aggregate({
+  by: { agent },
+  values: { passRate, costUSD },
+});
+
+const overview = {
+  id: "overview",
+  route: "/",
+  render: () => (
+    <Table
+      rows={performance}
+      sort={{ field: "passRate", direction: "desc" }}
+    />
+  ),
+};
+```
+
+PLAN-7，在 Page callback 中从受限 `ReportSample` 取得 closed rows：
+
+```tsx
+const overview = definePage({
+  id: "overview",
+  route: "/",
+  render: async ({ sample }) => {
+    const rows = await aggregate(sample, {
+      by: { agent },
+      values: { passRate, costUSD },
+    });
+
+    return <Table rows={rows} sort={{ field: "passRate", direction: "desc" }} />;
+  },
+});
+```
+
+七段代码的差别不在长度，在于**谁承担了容易写错的那部分**。
 
 | 写法 | 谁决定两级聚合 | 谁保住证据下钻 | 谁给数值语义与显示文案 |
 |---|---|---|---|
@@ -97,6 +145,9 @@ export default defineReport(async (sample) => {
 | PLAN-2 | `Measure.perEval` / `acrossEvals` | Source 折 `Cell` 时 | Measure 声明数值语义，Component 声明文案 |
 | PLAN-3 | 作者的 `group by` 层数 | 作者的 `array_agg` | 查询旁边的第二张表 |
 | PLAN-4 | 两者各一份 | 数据源必然、SQL 可选 | 两者各一份 |
+| PLAN-5 | reusable pure Calculation function | 具名结果值的 refs 与 Sample-aligned rows | Calculation value 声明数值语义，semantic block 声明文案 |
+| PLAN-6 | Analysis Measure 的 rollup／denominator policy | materialized MetricValue 与稳定 ReportRowKey | Measure 声明数值语义，component 声明文案 |
+| PLAN-7 | Analysis Measure 的 rollup／denominator policy | closed row 的 MetricValue 与稳定 row key | Measure 声明数值语义，component 声明文案 |
 
 PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过率的数，只是重试多的题悄悄拿到了更大权重。
 这类错误没有类型系统拦得住。
@@ -105,6 +156,6 @@ PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过�
 
 - 要求与判据：[GOALS](GOALS.md)。
 - 三个候选项各自的现状与硬约束：[LIMITS](LIMITS.md)。
-- 逐个方案的完整写法与代价：[PLAN-1](PLAN-1/README.md) 到 [PLAN-5](PLAN-5/README.md)。
+- 逐个方案的完整写法与代价：[PLAN-1](PLAN-1/README.md) 到 [PLAN-7](PLAN-7/README.md)。
 - 裁决与否决理由：[DECISION](DECISION.md)。
-- 定稿后的产品契约：[Reports · 组件树](../../feature/reports/README.md)。
+- 当前目标契约：[Report Library](../../feature/reports/library.md)。

@@ -1,4 +1,5 @@
 import type { AssertionEntryId } from "../identity.ts";
+import type { Sha256Digest } from "../../record/model/identifiers.ts";
 
 /**
  * `entryId` is only stable inside one Assertions Attachment. It is not an
@@ -9,46 +10,46 @@ export {
 } from "../identity.ts";
 export type { AssertionEntryId } from "../identity.ts";
 
-export type BoundedJsonPrimitiveV1 = null | boolean | number | string;
+export type BoundedJsonPrimitive = null | boolean | number | string;
 
-export interface BoundedJsonObjectV1 {
-  readonly [key: string]: BoundedJsonValueV1;
+export interface BoundedJsonObject {
+  readonly [key: string]: BoundedJsonValue;
 }
 
 /** JSON-only material that is bounded by the Assertions v1 decoder. */
-export type BoundedJsonValueV1 =
-  | BoundedJsonPrimitiveV1
-  | readonly BoundedJsonValueV1[]
-  | BoundedJsonObjectV1;
+export type BoundedJsonValue =
+  | BoundedJsonPrimitive
+  | readonly BoundedJsonValue[]
+  | BoundedJsonObject;
 
-export interface AssertionDisplayV1 {
+export interface AssertionDisplay {
   readonly key?: string;
   readonly label?: string;
   readonly groupPath: readonly string[];
 }
 
 /** The outer builtin shape deliberately preserves an unknown future id. */
-export interface BuiltInCriterionEnvelopeV1 {
+export interface BuiltInCriterionEnvelope {
   readonly kind: "builtin";
   readonly id: string;
-  readonly data: BoundedJsonValueV1;
+  readonly data: BoundedJsonValue;
 }
 
 /** Third-party data is exact JSON owned by the named third-party schema. */
-export interface ThirdPartyCriterionV1 {
+export interface ThirdPartyCriterion {
   readonly name: string;
   readonly schemaId: string;
-  readonly data: BoundedJsonValueV1;
+  readonly data: BoundedJsonValue;
 }
 
 /** Raw identity envelope used by the reader's second decode phase. */
-export type CriterionEnvelopeV1 =
-  | BuiltInCriterionEnvelopeV1
-  | ThirdPartyCriterionV1;
+export type CriterionEnvelope =
+  | BuiltInCriterionEnvelope
+  | ThirdPartyCriterion;
 
-export type CriterionOuterEnvelopeV1 = CriterionEnvelopeV1;
+export type CriterionOuterEnvelope = CriterionEnvelope;
 
-export type BuiltInCriterionV1 =
+export type BuiltInCriterion =
   | {
       readonly kind: "builtin";
       readonly id: "value-match/v1";
@@ -134,33 +135,24 @@ export type BuiltInCriterionV1 =
     };
 
 /** A v1 writer may only emit a known builtin or a versioned third-party schema. */
-export type WritableCriterionEnvelopeV1 = BuiltInCriterionV1 | ThirdPartyCriterionV1;
+export type WritableCriterionEnvelope = BuiltInCriterion | ThirdPartyCriterion;
 
-export type AssertionMaterialV1<BlobRef> =
+export type AssertionMaterial<BlobRef> =
   | {
       readonly kind: "snapshot";
-      readonly value: BoundedJsonValueV1;
+      readonly value: BoundedJsonValue;
     }
   | {
       readonly kind: "blob";
       readonly ref: BlobRef;
       readonly encoding: "utf-8" | "binary";
       readonly byteLength: number;
-      readonly preview: string;
-    }
-  /**
-   * An Assertion can name an exact, same-owner Attachment without receiving a
-   * storage handle.  v1 deliberately exposes no hash, path, blob ref, or
-   * evidence id here: the Evaluation Record contract verifies the matching
-   * Attempt write before a complete marker can be published.
-   */
-  | {
-      readonly kind: "record-attachment";
-      readonly schemaId: "niceeval.diff/v1";
+      /** SHA-256 of the exact retained blob bytes. */
+      readonly sha256: Sha256Digest;
       readonly preview: string;
     };
 
-export type AssertionCoverageV1 =
+export type AssertionCoverage =
   | { readonly state: "complete" }
   | {
       readonly state: "partial";
@@ -175,7 +167,7 @@ export type AssertionCoverageV1 =
       readonly reason: "optional-material" | "unsupported-subject";
     };
 
-export type AssertionLimitationV1 =
+export type AssertionLimitation =
   | { readonly kind: "redacted"; readonly fieldCount: number }
   | {
       readonly kind: "sampled";
@@ -185,24 +177,24 @@ export type AssertionLimitationV1 =
   | { readonly kind: "truncated"; readonly omittedBytes: number }
   | { readonly kind: "provider-limited" };
 
-export type GateDispositionV1 =
+export type GateDisposition =
   | "not-gate"
   | "satisfied"
   | "failed"
   | "unavailable"
   | "not-applicable";
 
-export interface NoScoreContributionV1 {
+export interface NoScoreContribution {
   readonly state: "not-scored";
 }
 
-export interface EarnedScoreContributionV1 {
+export interface EarnedScoreContribution {
   readonly state: "earned";
   readonly points: number;
   readonly earned: number;
 }
 
-export interface UnavailableScoreContributionV1 {
+export interface UnavailableScoreContribution {
   readonly state: "unavailable";
   readonly points: number;
   readonly reason:
@@ -211,58 +203,58 @@ export interface UnavailableScoreContributionV1 {
     | "not-applicable";
 }
 
-export type ScoreContributionV1 =
-  | NoScoreContributionV1
-  | EarnedScoreContributionV1
-  | UnavailableScoreContributionV1;
+export type ScoreContribution =
+  | NoScoreContribution
+  | EarnedScoreContribution
+  | UnavailableScoreContribution;
 
-export type SealedAssertionResultV1 =
+export type SealedAssertionResult =
   | {
       readonly state: "matched";
       readonly gate: "not-gate" | "satisfied";
-      readonly score: NoScoreContributionV1 | EarnedScoreContributionV1;
+      readonly score: NoScoreContribution | EarnedScoreContribution;
       /** Bounded evaluator diagnostics, including ToolMatch evidence paths. */
-      readonly diagnostic?: BoundedJsonObjectV1;
+      readonly diagnostic?: BoundedJsonObject;
     }
   | {
       readonly state: "mismatched";
       readonly reason: "condition-not-met";
       readonly gate: "not-gate" | "failed";
-      readonly score: NoScoreContributionV1 | EarnedScoreContributionV1;
-      readonly diagnostic?: BoundedJsonObjectV1;
+      readonly score: NoScoreContribution | EarnedScoreContribution;
+      readonly diagnostic?: BoundedJsonObject;
     }
   | {
       readonly state: "unavailable";
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
       readonly gate: "not-gate" | "unavailable";
-      readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
-      readonly diagnostic?: BoundedJsonObjectV1;
+      readonly score: NoScoreContribution | UnavailableScoreContribution;
+      readonly diagnostic?: BoundedJsonObject;
     }
   | {
       readonly state: "errored";
       readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
       readonly gate: "not-gate" | "unavailable";
-      readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
-      readonly diagnostic?: BoundedJsonObjectV1;
+      readonly score: NoScoreContribution | UnavailableScoreContribution;
+      readonly diagnostic?: BoundedJsonObject;
     }
   | {
       readonly state: "not-applicable";
       readonly reason: "coverage-not-applicable";
       readonly gate: "not-gate" | "not-applicable";
-      readonly score: NoScoreContributionV1 | UnavailableScoreContributionV1;
-      readonly diagnostic?: BoundedJsonObjectV1;
+      readonly score: NoScoreContribution | UnavailableScoreContribution;
+      readonly diagnostic?: BoundedJsonObject;
     };
 
 /** The exact v1 value that a producer is allowed to seal. */
-export interface AssertionEntryV1<BlobRef> {
+export interface AssertionEntry<BlobRef> {
   readonly entryId: AssertionEntryId;
-  readonly display: AssertionDisplayV1;
-  readonly criterion: WritableCriterionEnvelopeV1;
-  readonly subject: AssertionMaterialV1<BlobRef>;
-  readonly evidence: readonly AssertionMaterialV1<BlobRef>[];
-  readonly coverage: AssertionCoverageV1;
-  readonly limitations: readonly AssertionLimitationV1[];
-  readonly result: SealedAssertionResultV1;
+  readonly display: AssertionDisplay;
+  readonly criterion: WritableCriterionEnvelope;
+  readonly subject: AssertionMaterial<BlobRef>;
+  readonly evidence: readonly AssertionMaterial<BlobRef>[];
+  readonly coverage: AssertionCoverage;
+  readonly limitations: readonly AssertionLimitation[];
+  readonly result: SealedAssertionResult;
 }
 
 /**
@@ -270,38 +262,38 @@ export interface AssertionEntryV1<BlobRef> {
  * lets a bad plugin or future criterion affect its entry only after every
  * other entry boundary has already been verified.
  */
-export interface AssertionEntryOuterV1<BlobRef> {
+export interface AssertionEntryOuter<BlobRef> {
   readonly entryId: AssertionEntryId;
-  readonly display: AssertionDisplayV1;
-  readonly criterion: BoundedJsonObjectV1;
-  readonly subject: AssertionMaterialV1<BlobRef>;
-  readonly evidence: readonly AssertionMaterialV1<BlobRef>[];
-  readonly coverage: AssertionCoverageV1;
-  readonly limitations: readonly AssertionLimitationV1[];
-  readonly result: SealedAssertionResultV1;
+  readonly display: AssertionDisplay;
+  readonly criterion: BoundedJsonObject;
+  readonly subject: AssertionMaterial<BlobRef>;
+  readonly evidence: readonly AssertionMaterial<BlobRef>[];
+  readonly coverage: AssertionCoverage;
+  readonly limitations: readonly AssertionLimitation[];
+  readonly result: SealedAssertionResult;
 }
 
-export interface AssertionsDocumentV1<BlobRef> {
-  readonly entries: readonly AssertionEntryV1<BlobRef>[];
+export interface AssertionsDocument<BlobRef> {
+  readonly entries: readonly AssertionEntry<BlobRef>[];
 }
 
-export interface AssertionsDocumentOuterV1<BlobRef> {
-  readonly entries: readonly AssertionEntryOuterV1<BlobRef>[];
+export interface AssertionsDocumentOuter<BlobRef> {
+  readonly entries: readonly AssertionEntryOuter<BlobRef>[];
 }
 
-export type AssertionEntryReadV1<BlobRef> =
-  | { readonly state: "available"; readonly entry: AssertionEntryV1<BlobRef> }
+export type AssertionEntryRead<BlobRef> =
+  | { readonly state: "available"; readonly entry: AssertionEntry<BlobRef> }
   | {
       readonly state: "unsupported";
-      readonly entry: AssertionEntryOuterV1<BlobRef>;
+      readonly entry: AssertionEntryOuter<BlobRef>;
       readonly reason: "builtin-unknown" | "third-party-schema-unavailable";
     }
   | {
       readonly state: "invalid";
-      readonly entry: AssertionEntryOuterV1<BlobRef>;
+      readonly entry: AssertionEntryOuter<BlobRef>;
       readonly reason: "criterion-envelope-invalid" | "criterion-data-invalid";
     };
 
-export interface AssertionsProjectionV1<BlobRef> {
-  readonly entries: readonly AssertionEntryReadV1<BlobRef>[];
+export interface AssertionsProjection<BlobRef> {
+  readonly entries: readonly AssertionEntryRead<BlobRef>[];
 }

@@ -21,6 +21,9 @@ export default defineExperiment({
   // (预算见 docs/engineering/testing/e2e/adapter/README.md「仓库 Eval 预算」),
   // 其余行为已由 ci.ts 在默认版本上证明。
   model: "gpt-5.6-luna",
+  // Republic 0.5.x only retains token/request usage. This lane must not claim
+  // a provider-cost fact that its tape protocol cannot carry.
+  flags: { requireObservedCost: false },
   sandbox,
   attempts: 1,
   evals: ["coding-task/write-and-verify"],

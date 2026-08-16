@@ -16,9 +16,3 @@ export const ExperimentIdSchema = Schema.String.pipe(
 );
 
 export type ExperimentId = Schema.Schema.Type<typeof ExperimentIdSchema>;
-
-/** @internal Current Evaluation producer bridge for Analysis selection. */
-export {
-  EVALUATIONS_ATTACHMENT_NAME_V1 as evaluationsAttachmentName,
-  evaluationsAttachmentFamilyV1 as evaluationsAttachmentFamily,
-} from "./record/evaluation.ts";

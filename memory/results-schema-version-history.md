@@ -42,15 +42,19 @@ commit、日期与主题由 `git show -s --format='%h %cs %s' <commit>` 复核�
 
 旧 Results 把 root、Run、Attempt、assertion、commands、diff、timing、source 与 coverage 放在一个兼容域里。任一业务 API 或 artifact 字段变化都只能递增全局整数；reader 又只接受与自己完全相同的版本，因此“一处领域变化”会让所有页面、carry 和诊断同时失去整份历史。7/10 的跳号和 main/branch 16–18 的重叠，也说明整数本身没有表达变化属于哪个领域。
 
-## 新 Record 怎样切断连锁
+## 新 Record 的正式起点
 
-目标设计把兼容性拆成四个独立机制：
+`{ format: "niceeval.record", schemaVersion: 1 }` 是 Record 首次正式公开的格式身份。它没有已发布
+predecessor：旧 `niceeval.results`、未合并 `polish-assert` 的 16–18，以及尚未正式发布的 main 或工作树格式，
+都不是 Record migration source。完整 current Record 的 `migrate` 返回 `already-current`，不改 portable bytes。
 
-1. `niceeval.record/v1` 只冻结 root、Run、Member、Attempt、identity、origin、descriptor 与 whole-Run 原子发布；只有这些边界变化才需要完整 `record/v2`。发布 `record/v2` 不授权删除 v1 reader，也不把 v2 对象混写进 v1 root。
-2. 业务事实用稳定 `ChannelName` 表示语义，用完整 `ChannelSchemaId` 表示精确 bytes shape。Assertions、usage、commands 或 source payload 改变只新增自己的 `/vN` decoder；未知 schema 只让该 fact `unsupported`，不会让整个 Record 无法打开。
-3. 每个正式 `FactRequirement<A>` identity 不可变且自带版本。normalized 输出类型升级时发布新 identity；旧 identity 与输出类型永久保留，调用方按 identity 得到对应代的 normalized 值。
-4. carry 不靠“reader 能展示旧值”推断安全。execution-required eligibility 带 mandatory `reuseContract` equality token；新增或改变 gate 必须切换 domain，旧 policy/旧 schema 形成 gap，不会误 carry。
+Record 用稳定 `format` 和数值 `schemaVersion` 表达格式身份，不使用带斜杠的版本名称。未来正式发布
+schemaVersion `2` 时，maintenance 才同时提供固定 `1 → 2` migration；该步骤只能从
+已保存的 schemaVersion `1` Record bytes 形成正式 schemaVersion `2` bytes，不能把旧 Results 或未发布格式转换为
+Record。
 
-built-in registry 在 core v1 生命周期内永久保留已发布 decoder 与 normalized FactRequirement。这样 API 可以重构、normalized model 可以演进、旧 channel 仍可被具名读取；兼容成本留在发生变化的领域，而不再扩散成 1→18 式全局重写。
+新的 Record 将 root / Core 与每个 fixed family 的兼容性分开：已知 root、Core 或 family 的旧 schemaVersion
+只在存在固定相邻步骤时显式 migration；独立 future family 则保持 opaque，只有依赖它的 Analysis 请求得到
+`unsupported`，不影响其它闭合结果。这样兼容成本留在实际变化的格式边界，而不再扩散成 1→18 式全局重写。
 
 当前目标契约见 [`docs/feature/record/architecture.md`](../docs/feature/record/architecture.md)；durable/local/cache 与 immutable publication 的翻案原因见 [`record-durable-local-boundary.md`](record-durable-local-boundary.md)。

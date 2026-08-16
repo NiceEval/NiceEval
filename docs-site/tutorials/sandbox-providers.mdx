@@ -149,7 +149,7 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
 ```
 
 <Warning>
-  `progress`, `diagnostic`, and `fact` are mutually exclusive feedback channels. Use `progress` for short-lived status, `diagnostic` only for a real exception, degradation, or problem that needs attention, and `ctx.fact(...)` for neutral runtime facts. A fact uses a reverse-domain name and its complete JSON document is limited to 65,536 UTF-8 bytes. Normal capacity, cache size, version, and hit status are not warnings by default; emit a diagnostic only when a clear, explainable risk condition is met. If the environment cannot continue, throw.
+  Hooks have two feedback APIs: `progress` and `diagnostic`. Use `progress` for short-lived status. Use `diagnostic` only for a real exception, degradation, or problem that needs attention. There is no third general API for recording arbitrary runtime values. Keep per-run connection addresses, cache sizes, and versions in the Hook, Sandbox, or external service's own configuration. If the environment cannot continue, throw.
 </Warning>
 
 Neither `progress` nor `diagnostic` can pick a global phase, a color, or an output stream. The Runner knows the current callback belongs to `sandbox.setup` and shows the phase as Sandbox setup in the human terminal. A `diagnostic` is written to an Attempt-owned diagnostics channel and can later be reviewed with `niceeval show --run <runId> --page attempt-<attemptId>`. It does not change the Verdict by itself. Throw when the Sandbox cannot continue.

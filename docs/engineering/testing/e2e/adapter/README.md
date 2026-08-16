@@ -39,10 +39,13 @@
 2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、不带命名空间的工具名）、调用与结果按 call ID 配对、HITL 产生 `input.requested`、usage 逐轮到位。
    - 工具断言**连名带参**：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
-3. **用一条代表证据核验 execution 投影**：每个 Adapter Repo 从本轮 Eval event 直接取一个通过 Attempt 的 locator，在独立 test 中执行 `niceeval show @locator --execution`。只断言一个能区分该协议投影是否可达的工具或入参 sentinel；工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 CLI 文本重复评分。
-4. **每个 Adapter 独立核验 timing**：同一个通过 Attempt 由另一个 test 执行 `niceeval show @locator --timing`。Runner 在 OTel 之前就会写入该 Attempt **实际跨过**的 owner-monotonic 阶段 interval。
+3. **用一条代表 Evidence Page 核验公开投影**：每个 Adapter Repo 从本轮 Eval event 直接取一个通过 Attempt 的 locator。
+   独立 test 执行 `niceeval show @locator --report <fixture-module> --page <execution-route>`。
+   route 是签入小型代表 Report 的字面 route，只断言一个可区分协议投影是否可达的工具或入参 sentinel。
+   工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 Page text 重复评分。
+4. **每个 Adapter 独立核验 timing Page**：同一个通过 Attempt 由另一个 test 选择同一代表 Report 的 `<timing-route>`。Runner 在 OTel 之前就会写入该 Attempt **实际跨过**的 owner-monotonic 阶段 interval。
 
-   成功的 `t.send()` 至少证明 `eval.run` 与首轮 turn。只有确实声明并执行 setup 的 Adapter 才要求 `agent.setup`。Adapter owner 不再于 timing test 内重跑 `--execution`，也不用 execution 文本反推 Skill 或 tracing。不能用另一个 Adapter 或 Report Repo 的 `--timing` 通过代替本 Adapter。
+   成功的 `t.send()` 至少证明 `eval.run` 与首轮 turn。只有确实声明并执行 setup 的 Adapter 才要求 `agent.setup`。Adapter owner 不再于 timing Page test 内重跑 Evidence Page，也不用其文字反推 Skill 或 tracing。不能用另一个 Adapter 或 Report Repo 的 timing Page 通过代替本 Adapter。
    trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见[Observability](../../../../observability.md)）。
 
 一次 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict、execution 与 timing 三个独立 test 只读共用。
@@ -107,7 +110,7 @@ Plugin、Subagent、OTel 或该协议独有的失败面按实际能力取有区�
 也不由根 runner 注入共享 Eval / profile。
 
 Eval 可以使用公开 Assertion API 判定协议事实，但完整 Assertion、Context、Judge 与 Sandbox assertion 契约由
-[Eval 功能 Repo](../eval.md)验收一次。Adapter 的代表性 `show --execution` 只证明协议 evidence 经公开读面可达；每个 Adapter 的 `show --timing` 拥有它自己的 tracing 配置、mapper 和 correlation 结果。它们都不接管 Report 的格式与 flag 矩阵。一个协议 case 缺少判分证据时，在对应 Adapter Repo 增加本地 Eval，不向 CLI 文本断言或其它 Adapter 扩散。
+[Eval 功能 Repo](../eval.md)验收一次。Adapter 的代表 Evidence Page 只证明协议 evidence 经公开读面可达；每个 Adapter 的 timing Page 拥有它自己的 tracing 配置、mapper 和 correlation 结果。它们都不接管 Report 的格式与 route 矩阵。一个协议 case 缺少判分证据时，在对应 Adapter Repo 增加本地 Eval，不向 Page text 断言或其它 Adapter 扩散。
 
 Live 运行出现结构化外部故障时不判 pass。可以由同一 candidate、同一上游版本的 AI 通过真实生产入口完成兼容性验收；
 PR Test impact 保存动作、公开观察和未守护风险。Live 结果与 AI 真实验收都没有时，该兼容性状态是“未证明”。

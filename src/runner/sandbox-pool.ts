@@ -1,5 +1,7 @@
 import { applyCommandDeadline } from "../sandbox/deadline.ts";
-import { sandboxReuseCapability } from "../sandbox/backend.ts";
+import { sandboxReuseCapability, type SandboxProviderBackend } from "../sandbox/backend.ts";
+import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
+import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
 import {
@@ -40,7 +42,10 @@ type EntryLifecycle =
   | { readonly _tag: "Retired" };
 
 interface Entry {
+  /** 资源面 Sandbox:registry / stop / suspend / ledger / lifetime / deadline 都用它。 */
   sandbox: Sandbox;
+  /** 物化时的 raw provider backend:只用于逐次租借构建 author facade,不保存 facade/executor。 */
+  authorBackend: SandboxProviderBackend;
   scope: Scope.CloseableScope;
   /** provider 自己实现的寿命确认;没有这条能力的实例根本进不来(见 create)。 */
   lifetime: SandboxReuseCapability;
@@ -182,9 +187,9 @@ export class ReusableSandboxPool {
           this.groupPlugins.slice(0, this.activatedGroupPlugins).reverse(),
           (entry) => entry.teardown === undefined
             ? Effect.void
-            : cleanupCallback(() => (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
+            : cleanupCallback((signal) => (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
                 ...this.groupPluginContext!,
-                signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS),
+                signal,
               })).pipe(Effect.catchAll((cause) => Effect.sync(() => this.feedback.diagnostic({
                 code: "plugin-lifecycle-teardown-failed",
                 level: "warning",
@@ -292,6 +297,7 @@ export class ReusableSandboxPool {
         : this.nextReuseSandboxNumber();
       return {
         sandbox,
+        authorBackend: materialized.authorBackend,
         scope: entryScope,
         lifetime,
         ledger,
@@ -308,23 +314,18 @@ export class ReusableSandboxPool {
     entry: Entry,
     deadlineAt: number | undefined,
   ): Effect.Effect<ReusableSandboxLease, never, Scope.Scope> {
-    entry.lifecycle = { _tag: "Leased" };
-    entry.ordinal += 1;
-    applyCommandDeadline(entry.sandbox, deadlineAt);
-    let lifecycle: LeaseLifecycle = {
-      _tag: "Open",
-      release: { _tag: "Uncommitted" },
-    };
-    const lease: ReusableSandboxLease = {
-      sandbox: entry.sandbox,
-      reuseSandbox: entry.reuseSandbox,
-      reuseOrdinal: entry.ordinal,
-      commit: (release) => Effect.sync(() => {
-        if (lifecycle._tag !== "Open") return;
-        lifecycle = { ...lifecycle, release: { _tag: "Committed", release } };
-      }),
-    };
-    return Effect.addFinalizer(() => Effect.gen(this, function* () {
+    return Effect.gen(this, function* () {
+      entry.lifecycle = { _tag: "Leased" };
+      entry.ordinal += 1;
+      applyCommandDeadline(entry.sandbox, deadlineAt);
+      let lifecycle: LeaseLifecycle = {
+        _tag: "Open",
+        release: { _tag: "Uncommitted" },
+      };
+      // 先登记 release/reset finalizer:executor/facade 的封闭 finalizer 在其后登记,Scope
+      // 关闭时按 LIFO 先中断在飞请求、封闭旧 facade,再对资源面执行 reset/retire——reset
+      // 期间不会再有旧 facade 的请求借道写入 ledger/workdir。
+      yield* Effect.addFinalizer(() => Effect.gen(this, function* () {
         if (lifecycle._tag === "Finalized") return;
         const settled = lifecycle;
         lifecycle = { _tag: "Finalized" };
@@ -348,7 +349,25 @@ export class ReusableSandboxPool {
           }
         }
         this.wake();
-      })).pipe(Effect.as(lease));
+      }));
+      // 每次租借在当前 Attempt Scope 新建 executor 与 author facade:上一轮 facade/executor
+      // 不跨租借复用,不把旧 Runtime 带进新 Attempt。
+      const executor = yield* makeSandboxRequestExecutor();
+      const authorSandbox = makeSandboxAuthorFacade(
+        entry.authorBackend,
+        executor,
+        this.plan.providerPlan.provider,
+      );
+      return {
+        sandbox: authorSandbox,
+        reuseSandbox: entry.reuseSandbox,
+        reuseOrdinal: entry.ordinal,
+        commit: (release) => Effect.sync(() => {
+          if (lifecycle._tag !== "Open") return;
+          lifecycle = { ...lifecycle, release: { _tag: "Committed", release } };
+        }),
+      };
+    });
   }
 
   /** 淘汰一台实例:停资源组并移出池——留在池里会占满容量,

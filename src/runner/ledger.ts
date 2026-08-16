@@ -46,6 +46,30 @@ const DEFAULT_EXCLUDES = [
   "__pycache__",
 ];
 
+const MAX_POLICY_ENTRIES = 256;
+const MAX_POLICY_ENTRY_UTF8_BYTES = 4096;
+const policyEncoder = new TextEncoder();
+
+function compareAscii(left: string, right: string): number {
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
+/** Reject an unrecordable policy before the collector starts, then freeze its canonical evidence form. */
+function canonicalPolicyEntries(entries: readonly string[], name: "include" | "ignore"): readonly string[] {
+  if (entries.length > MAX_POLICY_ENTRIES) {
+    throw new Error(`defineEval({ diff }).${name} may contain at most ${MAX_POLICY_ENTRIES} entries`);
+  }
+  for (const [index, entry] of entries.entries()) {
+    if (typeof entry !== "string") {
+      throw new TypeError(`defineEval({ diff }).${name}[${index}] must be a string`);
+    }
+    if (policyEncoder.encode(entry).byteLength > MAX_POLICY_ENTRY_UTF8_BYTES) {
+      throw new Error(`defineEval({ diff }).${name}[${index}] exceeds ${MAX_POLICY_ENTRY_UTF8_BYTES} UTF-8 bytes`);
+    }
+  }
+  return Object.freeze([...new Set(entries)].sort(compareAscii));
+}
+
 /**
  * 单个 send 窗口的证据安全上限。越界必须让 workspace.diff 失败,不能产出误导性的空窗口。
  * 字节预算只数**真正要传输的文本** before/after:二进制与超过单文件阈值的文本不内联内容、
@@ -258,8 +282,9 @@ function gitignorePathspecs(pattern: string, exclude: boolean): string[] {
 
 /** 打分类账锚点(workspace.baseline 阶段,环境层钩子之后):git init + 冻结排除清单 + 首笔 commit。 */
 export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions): Promise<ChangeLedger> {
-  const excludes = [...DEFAULT_EXCLUDES, ...(opts?.ignore ?? [])];
-  const includes = opts?.include ?? [];
+  const includes = canonicalPolicyEntries(opts?.include ?? [], "include");
+  const ignored = canonicalPolicyEntries(opts?.ignore ?? [], "ignore");
+  const excludes = [...DEFAULT_EXCLUDES, ...ignored];
   // 多数 provider 用固定的宿主内私有路径(每实例全新隔离文件系统,天然不冲突);宿主本身即
   // 工作树的 provider(如 local)按 sandboxId 登记专属路径,避免同机多次运行互相踩踏
   // (见 sandbox/ledger-paths.ts —— 这里不认 provider 名,只问登记表)。
@@ -310,9 +335,9 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   return {
     rootExecutionIdentity: ordinaryUid === "0",
     attribution: Object.freeze({
-      defaultPolicy: "niceeval-default-excludes" as const,
-      include: Object.freeze([...includes]),
-      ignore: Object.freeze([...(opts?.ignore ?? [])]),
+      defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1" as const,
+      include: includes,
+      ignore: ignored,
     }),
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。

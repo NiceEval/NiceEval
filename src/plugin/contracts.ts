@@ -3,7 +3,6 @@
 // resource handles stay with their existing owners.
 
 import type { ExperimentHookContext } from "../runner/types.ts";
-import type { FactValue } from "../shared/facts.ts";
 import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
 import type { Sandbox, SandboxHookContext } from "../sandbox/types.ts";
 
@@ -25,7 +24,6 @@ export interface GroupPluginContext extends ScopedFeedback {
   readonly experimentId: string;
   readonly evalGroupId: string;
   readonly signal: AbortSignal;
-  fact(key: string, value: FactValue): void;
 }
 
 export interface EvalPluginContext extends ScopedFeedback {
@@ -34,7 +32,6 @@ export interface EvalPluginContext extends ScopedFeedback {
   readonly attempt: number;
   readonly evalGroupId?: string;
   readonly signal: AbortSignal;
-  fact(key: string, value: FactValue): void;
 }
 
 export type ExperimentPluginContext = ExperimentHookContext;

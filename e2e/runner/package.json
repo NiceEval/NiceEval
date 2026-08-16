@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "dockerode": "^4.0.2",
     "niceeval": "^0.12.0"
   },
   "devDependencies": {

@@ -3,7 +3,10 @@
 // 写 sandbox.build timings 与 sandboxBuilds provenance;失败按依赖集合扇出。
 // 契约单源:docs/feature/sandbox/case.md「Run 级构建协调」;
 // 落盘形状:docs/feature/record/architecture.md「sandboxBuilds」。
+// 内部是 Effect 协调:逐 key 结算用 Deferred、整批收工用 Fiber 观察、退避用 Clock.sleep、
+// 并发闸用 Semaphore;公开 RunningSandboxBuilds 保持 Promise ABI,只在方法边界 runPromise。
 
+import { Deferred, Duration, Effect, Exit, Fiber, FiberId, Random } from "effect";
 import type { JsonValue } from "../shared/types.ts";
 import type { RunTimingRecorder } from "../runner/timing.ts";
 import type { SandboxBuildRecord, TimingActivity } from "../runner/types.ts";
@@ -148,44 +151,54 @@ export function startSandboxBuilds(
     opts.prepareBudgetMs !== undefined ? AbortSignal.timeout(opts.prepareBudgetMs) : undefined,
   ]);
 
-  const gate = createConcurrencyGate(maxConcurrency);
-  // 逐 key 的结算 promise:key 一结算就 resolve,依赖它的 attempt 当场放行,
+  // 逐 key 的结算 Deferred:key 一结算就 settle,依赖它的 attempt 当场放行,
   // 不等同批其它 key(single-flight 仍靠这张表,同 key 的第二个 work 复用同一条)。
-  const perKey = new Map<BuildKey, Promise<void>>();
-
-  const runOne = async (work: SandboxBuildWork): Promise<void> => {
-    await gate.acquire();
-    try {
-      await prepareOne(work, {
-        timing: opts.timing,
-        provider: opts.provider,
-        buildTimeoutMs: opts.buildTimeoutMs,
-        signal: prepareSignal,
-        locators,
-        records,
-        failures,
-        onActivity: opts.onActivity,
-        buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
-        buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
-      });
-    } finally {
-      gate.release();
-    }
-  };
-
+  // 在方法边界同步创建,settled() 在任意时刻调用都拿到同一结果;
+  // Deferred 结算后状态保持,迟到等待方同样立即放行。
+  const perKey = new Map<BuildKey, Deferred.Deferred<void, never>>();
   for (const work of unique) {
-    if (!perKey.has(work.buildKey)) perKey.set(work.buildKey, runOne(work));
+    perKey.set(work.buildKey, Deferred.unsafeMake(FiberId.unsafeMake()));
   }
 
-  const done = Promise.all([...perKey.values()]).then(
-    (): SandboxBuildPreparation => ({ locators, records, failures }),
-  );
+  const ctx = {
+    timing: opts.timing,
+    provider: opts.provider,
+    buildTimeoutMs: opts.buildTimeoutMs,
+    signal: prepareSignal,
+    locators,
+    records,
+    failures,
+    onActivity: opts.onActivity,
+    buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
+    buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
+  };
+
+  // 整段准备是一个 Effect 程序:每 key 一条 gate 保护的 fiber,结算挂在 ensuring 上
+  // (失败/中断同样放行等待方);收尾逐 fiber 观察 exit,先到先报缺陷——与 Promise.all
+  // 的失败传播一致,且观察不打断兄弟 fiber,一条出事后其余 key 照常结算。
+  const coordination = Effect.gen(function* () {
+    const gate = yield* Effect.makeSemaphore(maxConcurrency);
+    const fibers = yield* Effect.forEach(unique, (work) =>
+      Effect.fork(
+        gate.withPermits(1)(prepareOne(work, ctx)).pipe(
+          Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.buildKey)!, undefined))),
+        ),
+      ));
+    const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
+    const failed = exits.find(Exit.isFailure);
+    if (failed !== undefined && Exit.isFailure(failed)) return yield* Effect.failCause(failed.cause);
+    return { locators, records, failures } satisfies SandboxBuildPreparation;
+  });
+  // 边界:唯一一次把 Effect 驱动进公开 Promise ABI。
+  const done = Effect.runPromise(coordination);
 
   return {
     locators,
     failures,
     async settled(buildKey) {
-      await perKey.get(buildKey);
+      const deferred = perKey.get(buildKey);
+      if (deferred === undefined) return;
+      await Effect.runPromise(Deferred.await(deferred));
     },
     done,
   };
@@ -214,7 +227,7 @@ function dedupeWorks(works: readonly SandboxBuildWork[]): SandboxBuildWork[] {
   return [...seen.values()];
 }
 
-async function prepareOne(
+function prepareOne(
   work: SandboxBuildWork,
   ctx: {
     timing: RunTimingRecorder;
@@ -228,105 +241,120 @@ async function prepareOne(
     buildAttempts: number;
     buildRetryBaseMs: number;
   },
-): Promise<void> {
-  const label = work.label ?? `build ${work.buildKey.slice(0, 12)}`;
-  const startOffsetMs = ctx.timing.offsetNow();
-  const parent = ctx.timing.child({
-    key: SANDBOX_BUILD_ACTIVITY,
-    label,
-    startOffsetMs,
-    durationMs: 0,
-  });
-  ctx.onActivity?.({
-    status: "started",
-    buildKey: work.buildKey,
-    id: parent.id,
-    key: SANDBOX_BUILD_ACTIVITY,
-    label,
-  });
-
-  const keySignal = combineSignals([
-    ctx.signal,
-    ctx.buildTimeoutMs !== undefined ? AbortSignal.timeout(ctx.buildTimeoutMs) : undefined,
-  ]);
-
-  const finish = (status: SandboxBuildRecord["status"], locator?: JsonValue, error?: SandboxBuildRecord["error"]) => {
-    parent.durationMs = Math.max(0, ctx.timing.offsetNow() - startOffsetMs);
-    if (status === "failed" || status === "cancelled") parent.failed = true;
-    const record: SandboxBuildRecord = {
-      buildKey: work.buildKey,
-      provider: work.provider,
-      status,
-      timingNodeId: parent.id,
-      inputs: work.inputs,
-      ...(locator !== undefined ? { locator } : {}),
-      ...(error !== undefined ? { error } : {}),
-    };
-    ctx.records.push(record);
-    if (locator !== undefined && (status === "hit" || status === "built")) {
-      ctx.locators.set(work.buildKey, locator);
-    }
-    if (error !== undefined && (status === "failed" || status === "cancelled")) {
-      ctx.failures.set(work.buildKey, {
-        buildKey: work.buildKey,
-        timingNodeId: parent.id,
-        status,
-        error,
-      });
-    }
+  // 失败通道来自 provider 边界 tryPromise 的 unknown;gen 内部的实际错误都收进 finish 落账,
+  // 不会逃出这个 Effect(只有缺陷会通过 defect 通道冒泡)。
+): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    const label = work.label ?? `build ${work.buildKey.slice(0, 12)}`;
+    const startOffsetMs = ctx.timing.offsetNow();
+    const parent = ctx.timing.child({
+      key: SANDBOX_BUILD_ACTIVITY,
+      label,
+      startOffsetMs,
+      durationMs: 0,
+    });
     ctx.onActivity?.({
-      status: status === "failed" || status === "cancelled" ? "failed" : "done",
+      status: "started",
       buildKey: work.buildKey,
       id: parent.id,
       key: SANDBOX_BUILD_ACTIVITY,
       label,
-      durationMs: parent.durationMs,
     });
-  };
 
-  if (keySignal.aborted) {
-    finish("cancelled", undefined, abortError(keySignal, work.buildKey));
-    return;
-  }
+    const keySignal = combineSignals([
+      ctx.signal,
+      ctx.buildTimeoutMs !== undefined ? AbortSignal.timeout(ctx.buildTimeoutMs) : undefined,
+    ]);
 
-  try {
-    const hit = await ctx.provider.lookup(work, keySignal);
-    if (hit !== undefined) {
-      finish("hit", hit);
+    const finish = (status: SandboxBuildRecord["status"], locator?: JsonValue, error?: SandboxBuildRecord["error"]) => {
+      parent.durationMs = Math.max(0, ctx.timing.offsetNow() - startOffsetMs);
+      if (status === "failed" || status === "cancelled") parent.failed = true;
+      const record: SandboxBuildRecord = {
+        buildKey: work.buildKey,
+        provider: work.provider,
+        status,
+        timingNodeId: parent.id,
+        inputs: work.inputs,
+        ...(locator !== undefined ? { locator } : {}),
+        ...(error !== undefined ? { error } : {}),
+      };
+      ctx.records.push(record);
+      if (locator !== undefined && (status === "hit" || status === "built")) {
+        ctx.locators.set(work.buildKey, locator);
+      }
+      if (error !== undefined && (status === "failed" || status === "cancelled")) {
+        ctx.failures.set(work.buildKey, {
+          buildKey: work.buildKey,
+          timingNodeId: parent.id,
+          status,
+          error,
+        });
+      }
+      ctx.onActivity?.({
+        status: status === "failed" || status === "cancelled" ? "failed" : "done",
+        buildKey: work.buildKey,
+        id: parent.id,
+        key: SANDBOX_BUILD_ACTIVITY,
+        label,
+        durationMs: parent.durationMs,
+      });
+    };
+
+    if (keySignal.aborted) {
+      finish("cancelled", undefined, abortError(keySignal, work.buildKey));
+      return;
+    }
+
+    const finishFailure = (e: unknown): Effect.Effect<void> => Effect.gen(function* () {
+      if (keySignal.aborted || isAbortError(e)) {
+        const cancel = ctx.provider.cancel;
+        if (cancel !== undefined) {
+          yield* Effect.tryPromise({
+            try: () => cancel(work),
+            catch: () => undefined,
+          }).pipe(Effect.ignore);
+        }
+        finish("cancelled", undefined, abortError(keySignal, work.buildKey, e));
+        return;
+      }
+      finish("failed", undefined, failedError(work.buildKey, e));
+    });
+
+    const lookup = yield* Effect.either(Effect.tryPromise({
+      try: () => ctx.provider.lookup(work, keySignal),
+      catch: (error) => error,
+    }));
+    if (lookup._tag === "Left") return yield* finishFailure(lookup.left);
+    if (lookup.right !== undefined) {
+      finish("hit", lookup.right);
       return;
     }
 
     // 瞬时构建失败(基线镜像拉取限流、传输层中断)退避重试:构建产物是镜像与 template,
     // 没有计费实例的泄漏面,歧义类同样可重试(case.md「Run 级构建协调」第 5 条)。
-    let locator: JsonValue | undefined;
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        locator = await ctx.provider.build(work, {
+    const build = (attempt: number): Effect.Effect<JsonValue, unknown> =>
+      Effect.tryPromise({
+        try: () => ctx.provider.build(work, {
           signal: keySignal,
           timing: ctx.timing,
           parent,
-        });
-        break;
-      } catch (e) {
+        }),
+        catch: (error) => error,
+      }).pipe(Effect.catchAll((error) => {
         const last = attempt >= ctx.buildAttempts - 1;
-        if (last || keySignal.aborted || isAbortError(e) || !isTransientBuildError(e)) throw e;
-        await sleep(backoffDelay(ctx.buildRetryBaseMs, attempt), keySignal);
-        if (keySignal.aborted) throw e;
-      }
-    }
-    finish("built", locator);
-  } catch (e) {
-    if (keySignal.aborted || isAbortError(e)) {
-      try {
-        await ctx.provider.cancel?.(work);
-      } catch {
-        // 取消失败不掩盖原 abort;远端残留由后续 registry 认领。
-      }
-      finish("cancelled", undefined, abortError(keySignal, work.buildKey, e));
-      return;
-    }
-    finish("failed", undefined, failedError(work.buildKey, e));
-  }
+        if (last || keySignal.aborted || isAbortError(error) || !isTransientBuildError(error)) {
+          return Effect.fail(error);
+        }
+        return Random.next.pipe(
+          Effect.map((jitter) => backoffDelay(ctx.buildRetryBaseMs, attempt, jitter)),
+          Effect.flatMap((delayMs) => sleep(delayMs, keySignal)),
+          Effect.flatMap(() => keySignal.aborted ? Effect.fail(error) : build(attempt + 1)),
+        );
+      }));
+    const built = yield* Effect.either(build(0));
+    if (built._tag === "Left") return yield* finishFailure(built.left);
+    finish("built", built.right);
+  });
 }
 
 /** 首次尝试 + 2 次重试:与 provisioning 同一种「封顶次数」纪律,构建单次耗时更长所以更浅。 */
@@ -334,23 +362,24 @@ const DEFAULT_BUILD_ATTEMPTS = 3;
 const DEFAULT_BUILD_RETRY_BASE_MS = 1000;
 
 /** 指数退避 + 全抖动(0.5x~1.5x),避免同一批被限流的构建同时醒来再次撞限流。 */
-function backoffDelay(baseMs: number, attempt: number): number {
-  return baseMs * 2 ** attempt * (0.5 + Math.random());
+function backoffDelay(baseMs: number, attempt: number, jitter: number): number {
+  return baseMs * 2 ** attempt * (0.5 + jitter);
 }
 
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    function onAbort(): void {
-      clearTimeout(timer);
-      resolve();
+/** 退避睡眠:Clock 驱动的 Effect.sleep(TestClock 可验证时序),abort 时提前放行。 */
+function sleep(ms: number, signal: AbortSignal): Effect.Effect<void, never> {
+  if (ms <= 0) return Effect.void;
+  const timer = Effect.sleep(Duration.millis(ms));
+  const abort = Effect.async<void>((resume) => {
+    if (signal.aborted) {
+      resume(Effect.void);
+      return;
     }
+    const onAbort = () => resume(Effect.void);
     signal.addEventListener("abort", onAbort, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", onAbort));
   });
+  return Effect.raceFirst(timer, abort);
 }
 
 /**
@@ -420,25 +449,4 @@ function combineSignals(signals: Array<AbortSignal | undefined>): AbortSignal {
   if (active.length === 0) return new AbortController().signal;
   if (active.length === 1) return active[0]!;
   return AbortSignal.any(active);
-}
-
-function createConcurrencyGate(limit: number): { acquire(): Promise<void>; release(): void } {
-  let available = limit;
-  const waiters: Array<() => void> = [];
-  return {
-    async acquire() {
-      if (available > 0) {
-        available -= 1;
-        return;
-      }
-      await new Promise<void>((resolve) => {
-        waiters.push(resolve);
-      });
-    },
-    release() {
-      const next = waiters.shift();
-      if (next) next();
-      else available += 1;
-    },
-  };
 }

@@ -1,55 +1,42 @@
-// This is the platform-neutral current-process host boundary. Node loaders,
-// watchers, and filesystem services live at niceeval/report/host/node.
-export { executeReport } from "./execute.ts";
-export type {
-  ReportAuthoringInvalid,
-  ReportExecutionError,
-} from "./execute.ts";
-export {
-  executeReportForAttemptFromRecord,
-  executeReportFromRecord,
-} from "./from-record.ts";
-export type {
-  ExecuteReportForAttemptFromRecordError,
-  ExecuteReportFromRecordError,
-  ExecuteReportFromRecordRequirements,
-} from "./from-record.ts";
-export type { ReportExecution } from "../execution/model.ts";
-export {
-  ReportConsole,
-  renderReportExecutionProblemsText,
-  renderReportExecutionText,
-  showReport,
-} from "./presentation.ts";
-export type {
-  ReportConsoleError,
-  ReportConsoleService,
-  ReportShowError,
-  ReportShowRenderError,
-  ShowReportInput,
-} from "./presentation.ts";
-export { openReportViewSession } from "./view-session.ts";
-export type {
-  OpenReportViewSessionInput,
-  ReportViewOpenError,
-  ReportViewProblem,
-  ReportViewRebuildFailure,
-  ReportViewExecutionRebuild,
-  ReportViewRebuild,
-  ReportViewRevision,
-  ReportViewSession,
-  ReportViewSessionClosed,
-  ReportViewState,
-  ReportViewThemeRebuild,
-} from "./view-session.ts";
-export { exportStaticReport, ReportFileSystem } from "./static.ts";
-export type {
-  ReportExportError,
-  ReportExportExecutionProblem,
-  ReportExportTargetExists,
-  ReportFileSystemError,
-  ReportFileSystemFailure,
-  ReportFileSystemService,
-  ReportHostOutputPath,
-  ReportStaticExportReceipt,
-} from "./static.ts";
+import { Effect } from "effect";
+
+import { openViewServer } from "../../view/server.ts";
+import type { ClosedSiteRevision } from "../execution/model.ts";
+import { showReportFromRecord } from "./from-record.ts";
+import { exportStaticReport } from "./static.ts";
+import { openReportViewSession } from "./view-session.ts";
+import type { OpenReportViewSessionInput } from "./view-session.ts";
+
+function serve<Requirements>(
+  input: OpenReportViewSessionInput<Requirements> & {
+    readonly host: string;
+    readonly port: number;
+  },
+) {
+  return Effect.gen(function* () {
+    const session = yield* openReportViewSession({
+      url: input.url,
+      watchInputs: input.watchInputs,
+      initial: input.initial,
+      rebuild: input.rebuild,
+    });
+    return yield* openViewServer({
+      session,
+      host: input.host,
+      port: input.port,
+    });
+  });
+}
+
+/**
+ * The complete public Report Host facade. `show` opens one fixed Sample and
+ * executes one target. `serve` and `export` consume complete opaque revisions;
+ * loaders, watchers, Record readers, and private Page values stay unexported.
+ */
+export const reportHost = Object.freeze({
+  show: showReportFromRecord,
+  serve,
+  export: exportStaticReport,
+});
+
+export type { ClosedSiteRevision };

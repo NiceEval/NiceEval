@@ -25,7 +25,7 @@ coding agent 不需要解读 TTY 重绘。
 3. 只用规范 locator 展开必要证据：
 
    ```sh
-   niceeval show --run <runId> --page attempt-01J8ZK3M6P4T7V9X2C5N8QW0RY
+   niceeval show @01J8ZK3M6P4T7V9X2C5N8QW0RY
    ```
 
 4. 修改后重新运行受影响选择。
@@ -36,7 +36,7 @@ coding agent 不需要解读 TTY 重绘。
 
 ## 边界
 
-- 运行流不是第二套结果格式。业务事实从 receipt 的 `runIds` 选择 Sample，再由 `show` 或 Report 读取。
+- 运行流不是第二套结果格式。业务事实从 receipt 的 `runIds` 选择 Sample，再由 `show` 或 Report 读取；`SIGINT` receipt 也只列已发布 Run。
 - progress 只是当前进程状态，不能当作 Record 事实。
 - failure 的完整 assertion、conversation、diff 与 usage 按需经 Record reader 读取，不把整段执行内容塞回 NDJSON。
 

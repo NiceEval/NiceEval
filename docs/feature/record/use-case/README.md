@@ -1,16 +1,43 @@
 # Record 用例
 
-这里按写入者和维护者的目标串起完整路径。字段、目录、读取状态和错误的唯一契约分别在 [Architecture](../architecture.md)、[Library](../library.md) 与 [CLI](../cli.md)。
+契约单源始终在 [Record Library](../library.md)、[Architecture](../architecture.md) 与
+[CLI](../cli.md)。本目录只组合这些契约，不重新定义字段、错误或磁盘格式。
 
-| 用户目标 | 进入 |
+## 两个实验并行追加
+
+两个 shell 可以同时运行不同条件：
+
+```text
+shell A: niceeval exp memory-off
+shell B: niceeval exp memory-on
+```
+
+两者各自以 shared append lease 创建新 RunId，并排他创建自己的目录：
+
+```text
+.niceeval/record/runs/
+├─ 01K...A/   writer A only
+└─ 01K...B/   writer B only
+```
+
+它们不会更新 root manifest、计数器、`latest` 或共享 summary，所以不互相阻塞。每个 Run 只等待
+自己的 Attempt 和 collector；`complete` 出现后，下一次 `selectRuns()` 才能整体看到该 Run。
+
+同一 logical Slot 的跨 Invocation 去重不靠 Record writer lock。Experiment 在 dispatch 时取得
+execution claim，重新读取已封口历史，再决定引用或执行。承载新 Attempt 的 Run durable seal 后才
+释放 claim，避免另一个 Invocation 在 marker 出现前重复执行。
+
+## 按目标进入
+
+| 用户目标 | 用例 |
 |---|---|
-| 让内部 Runner / 官方 producer 发布一轮完整 Run | [发布完整 Run](发布完整运行.md) |
-| 给持久能力选择 RecordAttachment、projector 或 Record major | [选择正确的演进边界](未来功能不扩张核心格式.md) |
-| 调整 Assertion evaluator、Plugin 或 Report 而不扩张 Core | [上层变化不改持久格式](上层变化不改持久格式.md) |
-| 理解 source、conversation 与 timing 等运行事实怎样落盘 | [RecordAttachment 怎样保存运行事实](RecordAttachment怎样保存运行事实.md) |
-| 把旧 Core 与 RecordAttachment 显式迁移到 current version | [显式 migration](显式迁移Record-major.md) |
-| 让多个 Attempt 读取同一个 origin Run 源码快照 | [多个 Attempt 怎样共用源码快照](多个Attempt怎样共用源码快照.md) |
-| 保存调用本地评分函数的 Eval 源码闭包 | [跨文件 Eval 怎样进入源码闭包](跨文件Eval怎样进入源码闭包.md) |
-| 在不伪造历史事实的前提下升级源码 RecordAttachment | [源码 RecordAttachment 怎样安全演进](源码Attachment怎样安全演进.md) |
+| 内部 producer 创建 Attempt、收集固定事实并发布 Run | [发布完整 Run](发布完整运行.md) |
+| 理解五个固定 family、owner-local closure、File Changes 轨迹和惰性读取 | [Attachment 怎样保存运行事实](RecordAttachment怎样保存运行事实.md) |
+| 调整 matcher、Analysis 或 Report 而不扩张 Record | [上层变化不改持久格式](上层变化不改持久格式.md) |
+| 选择 Analysis、固定 family 或 Core 的正确边界 | [未来功能不扩张核心格式](未来功能不扩张核心格式.md) |
+| 让多个 Attempt 和 reference Run 读取同一源码快照 | [多个 Attempt 怎样共用源码快照](多个Attempt怎样共用源码快照.md) |
+| 把本地 import 与 loader 输入纳入源码闭包 | [跨文件 Eval 怎样进入源码闭包](跨文件Eval怎样进入源码闭包.md) |
+| 演进 Sources 而不伪造历史事实 | [源码 Attachment 怎样安全演进](源码Attachment怎样安全演进.md) |
+| 识别格式、运行 migration 或用 Git 从中断中恢复 | [显式 migration](显式迁移Record-major.md) |
 
-选择可比较对象进入 [Sample](../../sample/README.md)。typed projection 与终端、网页呈现分别进入 [Projection](../../projection/README.md) 与 [Reports](../../reports/README.md)。
+统计解释进入 Analysis；终端、网页与静态呈现进入 [Reports](../../reports/README.md)。

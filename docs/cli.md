@@ -2,62 +2,93 @@
 
 `niceeval` 把命令输入分到运行、读取与恢复三条路径。面向用户的命令和选项由各 Feature 的 CLI 页定义；本页只定义入口模块的责任边界。
 
-- [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`accept`、机器反馈和 Invocation receipt。
+- [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
-- [Reports CLI](feature/reports/README.md) 定义 `show`、`view` 与静态 export 的输入和输出。
+- [Reports CLI](feature/reports/cli.md) 定义 `show`、`view` 与静态 export 的输入和输出。
 
 ## 模块边界
 
 | 区域 | 职责 |
 |---|---|
 | `src/cli.ts` | argv、命令分派、信号与退出状态。 |
-| `runner/` | 发现、调度、Sandbox 生命周期和 Invocation receipt。 |
-| `record/` | writer、reader、RecordAttachment 读取与数据规范化。 |
-| `sample/` | Run 选择、分母和 slot 状态。 |
-| `report/` | ReportExecution、Calculation 和渲染。 |
-| `show/`、`view/` | 终端、本机网页和静态 export 宿主。 |
+| `experimentHost` | `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行、采用和命令计划操作。 |
+| `recordHost` | Record 的打开、创建、封口、clean 与 migrate 操作。 |
+| `analysisHost` | 由已打开 reader 和选择签发 Scope-bound Sample。 |
+| `reportHost` | `show` 的单目标读取，以及 `serve` / `export` 的完整站点构建。 |
+| `runner/`、`record/reader/` | 各自 Host 后的内部调度和读取实现，不是 CLI 直连面。 |
 
-`src/cli.ts` 只做 argv 读取、工作目录确定、命令分派、进程信号接线和退出码交付。它不定义 Record 文件语义，不计算报告读数，也不把终端文本当作业务事实。
+`src/cli.ts` 只做 argv 读取、工作目录确定、Host 调用、进程信号接线和退出码交付。它不定义
+Record 文件语义，不计算报告读数，也不把终端文本当作业务事实。CLI 不直接构造 Runner、reader、
+Sample、页面或物理路径。
 
 ## 三条数据路径
 
 ### 运行
 
-~~~text
+```text
 argv
   ↓
-Experiment discovery and scheduling
+experimentHost.plan / run
   ↓
-RecordWriteSession
+Runner（Host 内部）→ recordHost.createRun
   ↓ validate + flush
 complete marker
   ↓
 InvocationReceipt
-~~~
+```
 
-`exp` 为每个选中的 Experiment 建立 Run 和 expected slots。Runner 把 Attempt 的业务事实写到 owner-local RecordAttachment，并用 Member 把 slot 连接到精确 Attempt。
+`exp` 为每个选中的 Experiment 建立 Run 和 expected slots。CLI 只调用 `experimentHost`；Host
+内部的 Runner 再使用 `recordHost` 封口 Attempt 的固定事实，并用 Member 把 slot 连接到精确
+Attempt。
 
-reuse 与 explicit adoption 形成 reference Member，实际执行形成 origin Attempt。采用原因写入 `niceeval.membership-provenance`。
+reuse 与 explicit adoption 形成 reference Member，实际执行形成 origin Attempt。Member 的 action
+说明采用或执行的原因；它不是单独的 durable family。
 
-Run 全部内容 flush 后，writer 最后创建零字节 `complete` 完成标识。命令只返回 `InvocationReceipt`；调用方按 receipt 的 `runIds` 从已发布 Record 读取 Verdict、用量、耗时和详情。
+Run 全部内容 flush 后，writer 最后创建零字节 `complete` 完成标识。命令只返回
+`InvocationReceipt`。调用方按 receipt 的 `runIds` 从已发布 Record 读取 Verdict、用量、耗时和详情。
+
+### 生命周期命令计划
+
+```text
+argv
+  ↓
+experimentHost.debug()
+  ↓
+唯一 Experiment × Eval 选择 → link → physical planning
+  ↓
+commandPlan
+  ↓
+debug terminal / JSON
+```
+
+`niceeval debug` 只调用具名只读 `experimentHost.debug()` 操作。Host 在内部完成发现、选择、link
+与 physical planning；CLI 只接收闭合的 commandPlan，不构造或直连 Runner。该操作不创建
+Invocation、Run、Record、lease、Sandbox 或 build。
 
 ### 查看与导出
 
-~~~text
+```text
 opaque Record
   ↓
-analysis selection
+recordHost.openRead
   ↓
-AnalysisSample
-  ↓ Report declarations
-ReportExecution
-  ↓
-show / view / static export
-~~~
+analysisHost.openSample
+  ↓ aggregate / 具名 DomainView 投影
+ClosedRows / DomainView
+  ↓ reportHost
+  ├─ show：选中一个 Page → 私有 ResolvedPage → terminal / target JSON
+  └─ view / static：枚举全部 Page → ClosedSiteRevision → HTTP / 文件
+```
 
-`show` 与 `view` 的内部 host 使用持有 shared maintenance lease 的 frozen reader，可以和 writer 并发。它先由 analysis selection 形成纯 `AnalysisSample`，再按 Report 声明闭合数据依赖，形成一次 immutable `ReportExecution`。reader 与 selection handle 不从包导出。
+`show` 与 `view` 只调用 `reportHost`。Report Host 在内部按需进入 Record Host 的 reader Scope，
+再由 Analysis Host 签发固定 Sample。`show` 只执行选中 Page 的 `load`、`render` 和组件回调，短存私有
+`ResolvedPage` 后交付 text 或机器文档。它不枚举参数页，也不形成 `ClosedSiteRevision`。
 
-Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes。
+`view` 与 `view --out` 执行全部普通 Page 和参数 Page 实例，校验路线与资源闭包后形成完整
+`ClosedSiteRevision`。HTTP 和静态目录只读取这一个 revision 的 bytes。reader 与 selection handle 不从包导出，
+也不会成为 Report 作者输入。
+
+Report runtime 从不打开 Record path，也不自行读取 family bytes。它只消费 Analysis 交付的闭合结果。
 
 `--run` 映射到 `explicit-runs` analysis selection。不带 locator 或 `--run` 的 `show` / `view` 使用 `project-current`，从默认 Record 的全部 Run 中保留身份仍匹配当前项目的结果。CLI 不按目录名、时间或显示文本猜测对象，也不改写历史 Run。`view --out` 写出自包含站点；浏览器只读取站点自己的文件。
 
@@ -65,7 +96,9 @@ Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes�
 
 中断发生在完成标识创建前时，不发布该 Run。reader 忽略它的目录并给出 `incomplete-run` warning；用户用 `niceeval clean` 删除。Record 没有按 orphan 猜测的 clean、局部 edit 或 delete 命令。
 
-`niceeval migrate --record <root>` 取得 exclusive maintenance lease，并把已知可迁移的 source major 原地转换到 current major。普通命令遇到 source major 时只返回 `record-migration-required`。
+`niceeval migrate --record <root>` 通过 `recordHost.maintenance()` 取得 exclusive maintenance lease，
+并把已知可迁移的 source major 原地转换到 current major。普通 Record open 遇到可迁移的 source
+major 时返回 `record-migration-required` 并指向这条命令；它不是某个 family 的读取状态。
 
 迁移没有 compat read、output root 或 rollback command。Git 与用户备份负责回退。
 
@@ -73,7 +106,8 @@ Reports runtime 从不打开 Record path，也不自行读取 Attachment bytes�
 
 一次 Invocation 的 TTY 面板、NDJSON progress 和诊断只服务当前进程。它们可替换、合并或丢弃，不能成为 Record 的持久化协议。
 
-持久化的业务事实由 Runner 分别写入 Run 或 Attempt RecordAttachment。终端与 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
+持久化的业务事实由 Experiment Host 内部的 Runner 写入 Record Core 或五个固定 family。终端与
+`--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
 
 `exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `show --json` 与 `runIds` 读取业务数据。
 

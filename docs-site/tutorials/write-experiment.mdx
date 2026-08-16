@@ -130,6 +130,31 @@ Useful for troubleshooting one configuration at a time — confirming whether a 
 | `setup` | Experiment-level hook: runs once for the whole experiment, on your own machine, to start services shared by every attempt (see below) |
 | `teardown` | Experiment-level hook paired with `setup`: runs once after all attempts finish, if and only if `setup`'s point has already been reached (see below) |
 
+## Pass a runtime address without invalidating cache
+
+`flags` holds experiment conditions, and the whole object participates in cache eligibility. Do not put a tunnel address in `flags`. A tunnel often receives a new URL when it restarts, so doing so would invalidate every completed result on every restart.
+
+This address becomes available only when `setup` runs. Keep it in the lifecycle closure, then let the Agent factory or Sandbox Hook use it. It is not an experiment condition, and no general API writes it as a Report field.
+
+```ts
+let endpoint: string | undefined;
+
+export default defineExperiment({
+  agent: nowledgeAgent(() => ({ url: endpoint! })),
+  sandbox: e2bSandbox({ template: "niceeval-agents" })
+    .setup(async sandbox => {
+      await sandbox.writeText(".nowledge/env", `NMEM_URL=${endpoint!}\n`);
+    }),
+  async setup(ctx) {
+    endpoint = (await nowledgeTunnel({ signal: ctx.signal })).url;
+  },
+});
+```
+
+When the URL changes, completed results remain eligible for reuse. Only missing work runs. A reused result is not rewritten with this run's new URL. Long-lived conditions that you need to compare belong in stable experiment configuration.
+
+A service version is different. Write `flags: { memoryVersion: "0.10.39" }` when a changed version can change behavior and should rerun results. The test is whether the value is a comparable experiment condition. If it is, use `flags`. If it is only this run's connection coordinate, keep it in lifecycle code or external-service configuration. No general callback, custom data family, or registration point can write arbitrary values into results. Use `labels` for annotations that neither an Adapter nor an Eval needs to read and that only group reports.
+
 ## Start experiment-shared services
 
 Some resources are "one per experiment, shared by all attempts": a tunnel to an internal memory service, an experiment-specific mock server, a license lease. Resources like these go into a pair of experiment-level hooks, `setup` and `teardown`, each running at most once for the whole run. `setup` runs before the first attempt this experiment is about to dispatch; `teardown` runs after all attempts finish (it also runs if the run is interrupted), and it fires if and only if `setup`'s point has already been reached — `setup` throwing still leads to `teardown` running, so the teardown code must defend against variables that may not have been assigned. When every previous result gets reused and this experiment doesn't need to actually run a single attempt, neither `setup` nor `teardown` runs:

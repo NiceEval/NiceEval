@@ -33,4 +33,5 @@ Adapter 或 transport 不能给出可信 snapshot 时，Attempt 是 execution er
 ## 停止
 
 scoped Boolean handle 可 `await .orStop()`。mismatch 会设置 authoring stop latch；已登记 scope Assertion
-仍结算，未执行到的源码不会凭空产生结果。详细控制流见 [Assertions · `.orStop()`](../README.md#orstop)。
+仍结算，未执行到的源码不会凭空产生结果。`stop` 的持久 source site 只保存实际执行的位置；详细的
+handle 规则见 [Assertions Library](../library.md#handle-配置)。

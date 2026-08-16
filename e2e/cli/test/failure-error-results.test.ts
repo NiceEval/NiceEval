@@ -88,7 +88,9 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         ".niceeval/record",
       ]);
       expect(shownRun.exitCode, shownRun.diagnostic()).toBe(0);
-      expect(shownRun.stdout).toContain("Sample: 1 run(s), 1 slot(s)");
+      expect(shownRun.stdout).toContain("Run membership overview");
+      expect(shownRun.stdout).toContain(erroredEval.locator!);
+      expect(shownRun.stdout).toContain("errored");
 
       const shownAttempt = await niceeval.run([
         "show",
@@ -97,10 +99,14 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         ".niceeval/record",
       ]);
       expect(shownAttempt.exitCode, shownAttempt.diagnostic()).toBe(0);
-      expect(shownAttempt.stdout).toContain("Verdict: errored");
+      expect(shownAttempt.stdout).toContain("Attempt overview");
+      expect(shownAttempt.stdout).toContain(erroredEval.locator!);
+      expect(shownAttempt.stdout).toContain("errored");
       expect(shownAttempt.stdout).toContain("sandbox.prepare");
       expect(shownAttempt.stdout).toContain("code 17");
-      expect(shownAttempt.stdout).toContain("deliberate pre-context sandbox prepare failure");
+      expect(shownAttempt.stdout.replace(/\s+/gu, " ")).toContain(
+        "deliberate pre-context sandbox prepare failure",
+      );
       expect(shownAttempt.stdout).not.toContain("[object Object]");
     },
   );

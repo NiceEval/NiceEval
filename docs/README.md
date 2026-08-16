@@ -21,8 +21,9 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 现在要做什么 | 从哪里开始 |
 |---|---|
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
+| 组合或替代 CLI / Web host | [Architecture](architecture.md#公开-host-composition-sdk) → 对应 Feature Library |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解当前数据怎样落盘、只读导航并交给 Sample/Reports | [Record](feature/record/README.md) |
+| 理解当前运行事实怎样经过 Record、Analysis 到 Report | [Record → Analysis → Report](feature/record-report/README.md) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
@@ -56,43 +57,41 @@ docs/
 │
 ├── feature/                             已采用的唯一当前目标契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
-│   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
-│   ├── eval/                            编写 Eval：defineEval
-│   ├── experiments/                     组织运行配置：defineExperiment
-│   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
-│   ├── sandbox/                         隔离运行环境
-│   ├── state/                           跨 Attempt checkpoint:固定 revision 与滚动序列
+│   ├── analysis/                        从 Record 选择事实、定义统计口径并形成闭合结果
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
+│   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
+│   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
+│   ├── eval/                            编写 Eval：defineEval
+│   ├── eval-groups/                     按封闭成员集组织的组内 Sandbox 复用与组间并行
+│   ├── experiments/                     组织运行配置：defineExperiment
 │   ├── judge/                           裁判模型配置、调用与 unavailable
-│   ├── verdict/                         Severity、严格模式与四态折叠
-│   ├── record/                          已完成 Run、精确引用与具名 RecordAttachment
+│   ├── plugins/                         带稳定身份的生命周期组合语法
+│   ├── record/                          已完成 Run、精确引用与固定持久事实
+│   ├── record-report/                   Record → Analysis → Report 三层总览与命令调用路径
+│   ├── reports/                         SSG-first 全站构建、show/view 与静态导出
+│   │   └── cost-projections/            Report 的 Profile、Analysis 成本投影与闭合呈现
 │   ├── sample/                          从 Record 选择 core-only 分母
-│   └── reports/                         一次 execution、show/view 与静态导出
+│   ├── sandbox/                         隔离运行环境
+│   ├── use-case/                        跨功能的完整用户路径
+│   └── verdict/                         Severity、严格模式与四态折叠
 │
 ├── roadmap/                             已定稿、尚未采用为当前契约的方向
 │   ├── admission-health/                Agent 进入前的 producer occurrence 健康探测
-│   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
-│   ├── assertion-authoring/             Assertion-first 作者面、Verdict 与 score、统一 Match
-│   ├── cost-projections/                由 Report Calculation 形成可审计成本投影
 │   ├── discovery-boundaries/            目录入口拥有的递归发现边界
 │   ├── eval-trajectories/               依赖 DAG 的 exact Checkpoint 暂停与恢复
-│   ├── experiment-display-names/        不参与 identity 的 Experiment 人类展示名
-│   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
+│   ├── experiment-authoring/             展示名与具名 Experiment 族
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
-│   ├── experiment-families/             keyed record 展开稳定 Experiment ID
-│   ├── git-checkout-isolation/          `checkout()` 的 commit closure 与隔离边界
-│   ├── run-handoff-and-inventory/       精确 Run 交接与只读 Record 库存
-│   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
-│   ├── state/                           provider-issued Cohort 与 exact Checkpoint
-│   ├── workspace-access-evidence/       Agent Workspace 文件操作证据与 Assertion
-│   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
+│   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── eval-selection/                  Experiment 与 CLI 的统一 Eval 过滤语义
-│   ├── eval-groups/                     按封闭成员集组织的组内 Sandbox 复用与组间并行
-│   ├── record-attachment-authoring/      已退役 raw Record 作者方案与永久边界结论
+│   ├── report-chart-kernel/              中立图表的三面同事实语义内核
+│   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
+│   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
+│   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期
+│   ├── sandbox-prepare/                 checkout、Fixture 内容与官方命令瞬时重试
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
-│   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
-│   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
+│   ├── sandbox-reuse-feedback/          Sandbox 物理复用的运行级摘要
+│   ├── state/                           provider-issued Cohort 与 exact Checkpoint
+│   └── workspace-access-evidence/       Agent Workspace 文件操作证据与 Assertion
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策
 │   ├── agent-install-recipe/            Agent 安装配方与底座的组合形态:中间件拆分与支持面
@@ -109,11 +108,15 @@ docs/
 │   ├── record-to-report-stack.md         Record 到 Report 的依赖、组合与决策地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
-│   ├── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
-│   ├── eve-assertion-dx.md              Eve 断言 DX 与真实回归题的逐项能力审视
-│   ├── adapters/                         Agent 接入、事件协议与 OTel 生态调研
-│   ├── experiments/                      外部 Experiment 运行矩阵参照
-│   └── assertion-api-dx/                评估断言 API、语法与作者 DX 横向研究
+│   ├── ori-eval.md                      Eval authoring：Ori Eval、Skill 与完整评估工作流
+│   ├── adapters/                        Adapter：Agent 接入、事件协议与 OTel 生态
+│   ├── assertion-api-dx/                Assertion：API、语法、评分与作者 DX
+│   ├── eve-assertion-dx.md              Assertion：Eve 与真实回归题
+│   ├── experiments/                     Experiment：外部运行矩阵参照
+│   ├── record-to-report/                Record → Report：运行事实的查看、查询、比较与报告呈现
+│   ├── docker-sandbox-process-models.md Sandbox：容器启动、keeper、命令执行与 DinD
+│   ├── cli-testing/                     Testing：复杂 CLI 的测试体系
+│   └── framework-e2e/                   Testing：框架工具自身的 E2E 体系
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
@@ -124,7 +127,7 @@ docs/
 │
 └── 未归入 feature/ 的设计入口
     ├── concepts.md                      术语与心智模型
-    ├── architecture.md                  核心边界:一次运行怎么产生结果
+    ├── architecture.md                  核心边界、一次运行与公开 Host composition SDK
     ├── origin-integration.md            Origin 应用接入
     ├── observability.md                 Observability
     ├── runner.md                        执行引擎

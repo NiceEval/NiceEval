@@ -8,11 +8,12 @@
 // 并发 register 会死锁,整进程串行化 namespaced import。
 
 import * as NodeModule from "node:module";
+import { Effect } from "effect";
 import { register, type NamespacedUnregister } from "tsx/esm/api";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 let generation = 0;
-let chain: Promise<void> = Promise.resolve();
+const generationGate = Effect.runSync(Effect.makeSemaphore(1));
 
 const canonicalRequire = NodeModule.createRequire(import.meta.url);
 const canonicalizeNiceEval = fileURLToPath(import.meta.url).endsWith(".cjs");
@@ -224,11 +225,10 @@ async function importFromNamespace(
  * module identity; close releases both tsx and canonical runtime hooks.
  */
 export async function createFreshImportGeneration(): Promise<FreshImportGeneration> {
-  let releaseQueue!: () => void;
-  const turn = new Promise<void>((resolve) => { releaseQueue = resolve; });
-  const previous = chain;
-  chain = previous.then(() => turn, () => turn);
-  await previous;
+  await Effect.runPromise(generationGate.take(1));
+
+  const releaseGeneration = (): Promise<void> =>
+    Effect.runPromise(generationGate.release(1)).then(() => undefined);
 
   const namespace = `niceeval-fresh-${++generation}`;
   let ns: NamespacedUnregister | undefined;
@@ -238,7 +238,7 @@ export async function createFreshImportGeneration(): Promise<FreshImportGenerati
     ns = register({ namespace });
     unregisterCanonicalRuntimeResolution = registerCanonicalRuntimeResolution(namespace);
   } catch (cause) {
-    releaseQueue();
+    await releaseGeneration();
     throw cause;
   }
 
@@ -261,7 +261,7 @@ export async function createFreshImportGeneration(): Promise<FreshImportGenerati
         try {
           await active?.unregister();
         } finally {
-          releaseQueue();
+          await releaseGeneration();
         }
       }
     },

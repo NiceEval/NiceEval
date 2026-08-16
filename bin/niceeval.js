@@ -14,5 +14,20 @@ const { register: registerEsm } = await import("tsx/esm/api");
 registerCjs();
 registerEsm();
 
+// The CLI is a production renderer even when the caller did not set NODE_ENV.
+// Preload React's production server/runtime branches before the Report graph is
+// imported, then restore the author's environment immediately. This avoids the
+// development JSX validators and element metadata for every static Report node
+// without making NODE_ENV="production" observable to config, report, or eval code.
+if (process.env.NODE_ENV === undefined) {
+  process.env.NODE_ENV = "production";
+  await Promise.all([
+    import("react"),
+    import("react/jsx-runtime"),
+    import("react-dom/server"),
+  ]);
+  delete process.env.NODE_ENV;
+}
+
 const cliUrl = new URL("../dist/cli/bootstrap.cjs", import.meta.url);
 await import(cliUrl.href);

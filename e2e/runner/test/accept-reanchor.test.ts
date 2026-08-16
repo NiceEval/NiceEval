@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-accept-reanchor
+// regression: memory/accept-source-run-diverges-from-project-current-identity.md
 // rerun: pnpm e2e --repo runner -- --run test/accept-reanchor.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -35,72 +36,51 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
-type ReportScalar = null | boolean | number | string;
-
-interface ReportTableBlock {
-  type: "table";
-  caption: string;
-  columns: Array<{ key: string; label: string }>;
-  rows: Array<Record<string, ReportScalar>>;
+interface LeaderboardAttempt {
+  identity: {
+    locator: string;
+    selectedRunId: string;
+    originRunId: string;
+    slotId: string;
+    memberRelation: "origin" | "reference";
+  };
+  evaluation: {
+    state: "available";
+    value: {
+      experimentId: string;
+      evalId: string;
+      attempt: number;
+      kind: "pass" | "score";
+    };
+  };
+  verdict: { state: "available"; value: string };
 }
 
-interface ReportBlock {
-  type: string;
-  children?: ReportBlock[];
-  caption?: string;
-  columns?: Array<{ key: string; label: string }>;
-  rows?: Array<Record<string, ReportScalar>>;
-}
-
-interface RunMembershipShow {
-  format: "niceeval.report-show/v1";
-  reportId: string;
+interface LeaderboardShow {
+  format: "niceeval.show";
+  schemaVersion: 1;
+  view: "leaderboard";
   sample: {
-    selection: { policy: string; runIds?: string[] };
+    selection: {
+      policy: "explicit-runs" | "project-current";
+      runIds?: string[];
+      experimentIds?: "all" | string[];
+      selectedRunIds?: string[];
+    };
     runCount: number;
     slotCount: number;
     denominator: number;
   };
-  pages: Array<{
-    state: string;
-    pageId: string;
-    route?: string;
-    document?: { title: string; children: ReportBlock[] };
-  }>;
-}
-
-const RUN_MEMBERSHIP_COLUMN_KEYS = [
-  "runId",
-  "slotId",
-  "slotState",
-  "memberRelation",
-  "sourceAttemptLocator",
-  "membershipState",
-  "membershipOutcome",
-  "verdictState",
-  "verdict",
-] as const;
-
-function reportTables(blocks: ReportBlock[]): ReportTableBlock[] {
-  const tables: ReportTableBlock[] = [];
-  const visit = (block: ReportBlock): void => {
-    if (
-      block.type === "table" &&
-      block.caption !== undefined &&
-      block.columns !== undefined &&
-      block.rows !== undefined
-    ) {
-      tables.push({
-        type: "table",
-        caption: block.caption,
-        columns: block.columns,
-        rows: block.rows,
-      });
-    }
-    for (const child of block.children ?? []) visit(child);
+  problemTable: readonly unknown[];
+  data: {
+    state: "available";
+    inputState: "complete" | "partial";
+    problemIds: readonly number[];
+    value: {
+      kind: "leaderboard";
+      attempts: readonly LeaderboardAttempt[];
+    };
   };
-  for (const block of blocks) visit(block);
-  return tables;
 }
 
 test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
@@ -164,42 +144,72 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
 
     const acceptedCurrent = await niceeval.run(["show", "--run", acceptedRunId, "--json"]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
-    const acceptedShow = acceptedCurrent.json<RunMembershipShow>();
+    const acceptedShow = acceptedCurrent.json<LeaderboardShow>();
     expect(acceptedShow).toMatchObject({
-      format: "niceeval.report-show/v1",
-      reportId: "run-membership-overview",
+      format: "niceeval.show",
+      schemaVersion: 1,
+      view: "leaderboard",
       sample: {
         selection: { policy: "explicit-runs", runIds: [acceptedRunId] },
         runCount: 1,
         slotCount: 1,
         denominator: 1,
       },
-      pages: [{ state: "rendered", pageId: "run-membership", route: "/" }],
+      problemTable: [],
+      data: {
+        state: "available",
+        inputState: "complete",
+        problemIds: [],
+        value: { kind: "leaderboard" },
+      },
     });
-    const runMembershipPage = acceptedShow.pages.find((page) => page.pageId === "run-membership");
-    expect(runMembershipPage?.document).toBeDefined();
-    const matchingTables = reportTables(runMembershipPage!.document!.children).filter((table) =>
-      table.columns.map((column) => column.key).join("\u0000") === RUN_MEMBERSHIP_COLUMN_KEYS.join("\u0000")
+    const acceptedAttempts = acceptedShow.data.value.attempts.filter((attempt) =>
+      attempt.identity.selectedRunId === acceptedRunId
     );
-    expect(matchingTables).toHaveLength(1);
-    const acceptedRunRows = matchingTables[0]!.rows.filter((row) => row.runId === acceptedRunId);
-    expect(acceptedRunRows).toHaveLength(1);
-    const acceptedSlotId = acceptedRunRows[0]!.slotId;
-    expect(typeof acceptedSlotId).toBe("string");
-    const acceptedRow = matchingTables[0]!.rows.find((row) =>
-      row.runId === acceptedRunId && row.slotId === acceptedSlotId
-    );
-    expect(acceptedRow).toEqual({
-      runId: acceptedRunId,
-      slotId: acceptedSlotId,
-      slotState: "included",
-      memberRelation: "reference",
-      sourceAttemptLocator: oldLocator,
-      membershipState: "available",
-      membershipOutcome: "accepted",
-      verdictState: "available",
-      verdict: "passed",
+    expect(acceptedAttempts).toHaveLength(1);
+    const acceptedAttempt = acceptedAttempts[0]!;
+    expect(acceptedAttempt).toMatchObject({
+      identity: {
+        locator: oldLocator,
+        selectedRunId: acceptedRunId,
+        memberRelation: "reference",
+      },
+      evaluation: {
+        state: "available",
+        value: {
+          experimentId: "accept",
+          evalId: "accept/accept-target",
+          attempt: 0,
+          kind: "pass",
+        },
+      },
+      verdict: { state: "available", value: "passed" },
     });
+    expect(acceptedAttempt.identity.slotId).toMatch(/^slot-[0-9a-f]{64}$/);
+    expect(acceptedAttempt.identity.originRunId).not.toBe(acceptedRunId);
+
+    // Explicit --run proves the durable reference, while the default read proves
+    // accept used the same current target identity as project-current planning.
+    const projectCurrent = await niceeval.run(["show", "--json"]);
+    expect(projectCurrent.exitCode, projectCurrent.diagnostic()).toBe(0);
+    const projectCurrentShow = projectCurrent.json<LeaderboardShow>();
+    expect(projectCurrentShow).toMatchObject({
+      format: "niceeval.show",
+      schemaVersion: 1,
+      view: "leaderboard",
+      sample: {
+        selection: {
+          policy: "project-current",
+          selectedRunIds: [acceptedRunId],
+        },
+        runCount: 1,
+        slotCount: 1,
+        denominator: 1,
+      },
+    });
+    expect(projectCurrentShow.data.value.attempts.map((attempt) => attempt.identity.selectedRunId)).toEqual([
+      acceptedRunId,
+    ]);
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);
     expect(currentEvidence.exitCode, currentEvidence.diagnostic()).toBe(0);

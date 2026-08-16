@@ -568,25 +568,18 @@ function failureShapeOf(failure: FailureNotice): { key: string; shapeText: strin
   };
 }
 
-/** 行内 facts 摘要提示(cli.md「人看的结束反馈」):有 `ctx.fact()` 上报的运行事实才提示,
- *  只给键数,不展开值——完整键值表留给 receipt 指向的 Record Run,面板保持密度不展开。 */
-function factsHint(factsCount: number | undefined): string {
-  return factsCount !== undefined && factsCount > 0 ? `  ${t("feedback.human.failureFacts", { count: factsCount })}` : "";
-}
-
 function buildMultiFailureGroupRow(group: FailureShapeGroup, countWidth: number): PanelRow {
   const countToken = padStartDisplay(`${FAILURE_SYMBOL} ×${group.size}`, countWidth);
   return {
     kind: "line",
-    text: `${countToken}  ${group.shapeText}  ${t("feedback.human.exampleLocator", { locator: group.representative.locator })}${factsHint(group.representative.factsCount)}`,
+    text: `${countToken}  ${group.shapeText}  ${t("feedback.human.exampleLocator", { locator: group.representative.locator })}`,
   };
 }
 
 /** size = 1 组的两行:身份行(`✗ @locator  evalId  [who]`)+ 悬挂到身份内容起始列的单行压缩
- *  摘要——与 `buildFailureFactLine` 共用同一套 info 组装逻辑,只是拆成两行而不是塞进一行。
- *  facts 摘要提示挂在身份行尾(有 facts 才出现)。 */
+ *  摘要——与 `buildFailureFactLine` 共用同一套 info 组装逻辑,只是拆成两行而不是塞进一行。 */
 function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: number): PanelRow[] {
-  const identityLine = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]${factsHint(failure.factsCount)}`;
+  const identityLine = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]`;
   const indent = stringWidth(`${FAILURE_SYMBOL} `);
   const budget = Math.max(0, contentWidth - indent);
   const info = failure.fact
@@ -640,13 +633,19 @@ function buildReceiptLines(
   return renderPanel({ title: t("feedback.human.nextHeader"), rows, width: panel.width, mode: panel.mode });
 }
 
+/** estimated cost 展示:金额前加 `~`,明确是价目表估算(observed 只留在 result.usage.costUSD)。 */
+function formatEstimatedCost(value: number | undefined): string {
+  const cost = formatCost(value);
+  return cost === "—" ? cost : `~${cost}`;
+}
+
 /** tok/cost 一行(不含时长——时长已经嵌在面板上边框右侧的 meta 里,不在正文里重复一遍)。 */
 function formatSummaryCostLine(state: RunFeedbackState): string {
   const fullReuse = state.total > 0 && state.total === state.reused;
   if (fullReuse) return "0 new tok · $0.00";
   const parts: string[] = [];
   if (state.newTokenCount !== undefined) parts.push(`${formatTokenCount(state.newTokenCount)} new tok`);
-  const cost = formatCost(state.estimatedCostUSD);
+  const cost = formatEstimatedCost(state.estimatedCostUSD);
   if (cost !== "—") parts.push(cost);
   return parts.join(" · ");
 }
@@ -760,7 +759,7 @@ function countsText(state: RunFeedbackState): string {
 function formatCounts(state: RunFeedbackState): string {
   const counts = countsText(state);
   if (state.estimatedCostUSD === undefined || state.estimatedCostUSD <= 0) return counts;
-  return `${counts}  ${formatCost(state.estimatedCostUSD)}`;
+  return `${counts}  ${formatEstimatedCost(state.estimatedCostUSD)}`;
 }
 
 /** 定宽格式化:内容按 `width` 左对齐补空格对齐后面的列;超宽时尾部截断补 `…`(cli.md
@@ -797,7 +796,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     return { evalWidth: Math.min(maxEvalIdWidth, evalCap), whoWidth: Math.min(maxWhoWidth, whoCap) };
   }
 
-  /** 上边框标题 = 本次命令、meta = 已运行时长;下边框 footerCommand = 本次新派发的累计成本
+  /** 上边框标题 = 本次命令、meta = 已运行时长;下边框 footerCommand = 本次新派发的累计估算成本
    *  (docs/feature/experiments/cli.md「运行中的 live 面板」)。ACTIVE 是嵌套 Section 的
    *  同构体裁——一条贯穿框宽的横隔,不是独立的框;非 boxed(非 TTY 或 NO_COLOR)时
    *  panel.ts 自动降级成无框文本,dashboard 的覆盖重画机制不因此改变,只是重画的内容
@@ -918,7 +917,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       }
     }
     const footerCommand =
-      state.estimatedCostUSD !== undefined && state.estimatedCostUSD > 0 ? formatCost(state.estimatedCostUSD) : undefined;
+      state.estimatedCostUSD !== undefined && state.estimatedCostUSD > 0 ? formatEstimatedCost(state.estimatedCostUSD) : undefined;
     return renderPanel({
       title: command,
       meta: formatElapsed(state.elapsedMs),

@@ -6,6 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import Docker from "dockerode";
+import { Clock, Effect } from "effect";
 import type {
   CommandResult,
   CommandOptions,
@@ -650,73 +651,93 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   /** Docker start 只代表 PID 1 存活；Docker access 先证明默认端点，再跑作者 readiness。 */
-  private async waitForReadiness(): Promise<void> {
+  private waitForReadiness(): Promise<void> {
+    return Effect.runPromise(this.waitForReadinessEffect());
+  }
+
+  private waitForReadinessEffect(): Effect.Effect<void, unknown> {
     const readiness = this.readiness;
-    if (readiness === undefined) return;
-    const deadline = Date.now() + readiness.timeoutMs;
+    if (readiness === undefined) return Effect.void;
     const readinessUser = readiness.user ?? this.userOverride ??
       (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
-    if (this.dockerAccess !== undefined) {
-      await this.waitForReadinessProbe({
-        command: DOCKER_ACCESS_COMPATIBILITY_COMMAND,
+    return Effect.gen(this, function* () {
+      const deadline = (yield* Clock.currentTimeMillis) + readiness.timeoutMs;
+      if (this.dockerAccess !== undefined) {
+        yield* this.waitForReadinessProbeEffect({
+          command: DOCKER_ACCESS_COMPATIBILITY_COMMAND,
+          user: readinessUser,
+          intervalMs: readiness.intervalMs,
+          deadline,
+          phase: "Docker access compatibility",
+          timeoutMs: readiness.timeoutMs,
+        });
+      }
+      yield* this.waitForReadinessProbeEffect({
+        command: readiness.command,
         user: readinessUser,
         intervalMs: readiness.intervalMs,
         deadline,
-        phase: "Docker access compatibility",
+        phase: "Docker sandbox readiness",
         timeoutMs: readiness.timeoutMs,
       });
-    }
-    await this.waitForReadinessProbe({
-      command: readiness.command,
-      user: readinessUser,
-      intervalMs: readiness.intervalMs,
-      deadline,
-      phase: "Docker sandbox readiness",
-      timeoutMs: readiness.timeoutMs,
     });
   }
 
-  private async waitForReadinessProbe(input: {
+  private waitForReadinessProbeEffect(input: {
     readonly command: readonly [string, ...string[]];
     readonly user: string | undefined;
     readonly intervalMs: number | undefined;
     readonly deadline: number;
     readonly phase: string;
     readonly timeoutMs: number;
-  }): Promise<void> {
+  }): Effect.Effect<void, unknown> {
     const [command, ...args] = input.command;
     let lastFailure = "probe has not run";
-    while (Date.now() <= input.deadline) {
-      const state = await this.container?.inspect();
+    const attempt: Effect.Effect<void, unknown> = Effect.gen(this, function* () {
+      const now = yield* Clock.currentTimeMillis;
+      if (now > input.deadline) return yield* timedOut();
+      const state = yield* Effect.tryPromise({
+        try: () => Promise.resolve(this.container?.inspect()),
+        catch: (error) => error,
+      });
       if (state?.State?.Running !== true) {
-        throw new Error(
+        return yield* Effect.fail(new Error(
           `Docker sandbox exited before ${input.phase.toLowerCase()} completed ` +
           `(state=${state?.State?.Status ?? "missing"})`,
-        );
+        ));
       }
-      try {
-        const result = await this.execCommand(command, args, {
+      const probeNow = yield* Clock.currentTimeMillis;
+      const result = yield* Effect.either(Effect.tryPromise({
+        try: () => this.execCommand(command, args, {
           user: input.user,
-          timeoutMs: Math.max(1, input.deadline - Date.now()),
+          timeoutMs: Math.max(1, input.deadline - probeNow),
           timeoutRetirement: "stop",
-        });
-        if (result.exitCode === 0) return;
-        lastFailure = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
-      } catch (error) {
-        lastFailure = error instanceof Error ? error.message : String(error);
+        }),
+        catch: (error) => error,
+      }));
+      if (result._tag === "Right") {
+        if (result.right.exitCode === 0) return;
+        lastFailure = result.right.stderr.trim() || result.right.stdout.trim() || `exit ${result.right.exitCode}`;
+      } else {
+        lastFailure = result.left instanceof Error ? result.left.message : String(result.left);
       }
-      const remaining = input.deadline - Date.now();
-      if (remaining <= 0) break;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(input.intervalMs ?? 250, remaining)));
-    }
-    const diagnosticUser = input.user ?? this.imageDefaultUser ?? ROOT_USER;
-    const permissionHelp = this.dockerAccess?.mode === "dind" && /permission denied/i.test(lastFailure)
-      ? `; DinD user ${JSON.stringify(diagnosticUser)} must belong to the docker group ` +
-        `(the inner socket remains root:docker 0660)`
-      : "";
-    throw new Error(
-      `${input.phase} timed out after ${input.timeoutMs}ms: ${lastFailure}${permissionHelp}`,
-    );
+      const afterAttempt = yield* Clock.currentTimeMillis;
+      const remaining = input.deadline - afterAttempt;
+      if (remaining <= 0) return yield* timedOut();
+      yield* Effect.sleep(Math.min(input.intervalMs ?? 250, remaining));
+      return yield* attempt;
+    });
+    const timedOut = (): Effect.Effect<never, Error> => {
+      const diagnosticUser = input.user ?? this.imageDefaultUser ?? ROOT_USER;
+      const permissionHelp = this.dockerAccess?.mode === "dind" && /permission denied/i.test(lastFailure)
+        ? `; DinD user ${JSON.stringify(diagnosticUser)} must belong to the docker group ` +
+          `(the inner socket remains root:docker 0660)`
+        : "";
+      return Effect.fail(new Error(
+        `${input.phase} timed out after ${input.timeoutMs}ms: ${lastFailure}${permissionHelp}`,
+      ));
+    };
+    return attempt;
   }
 
   /**

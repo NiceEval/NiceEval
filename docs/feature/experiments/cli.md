@@ -1,6 +1,13 @@
 # Experiments —— CLI 反馈模型
 
-`niceeval exp` 选择已签入的 Experiment，建立一个 `invocationId`，并为每个选中的 Experiment 建立 Run。命令结束时返回轻量的 `InvocationReceipt`；完整结果通过 receipt 的 `runIds` 从 Record 读取。
+`niceeval exp` 选择已签入的 Experiment，建立一个 `invocationId`，并为每个选中的 Experiment 建立 Run。多个
+Invocation 可以向同一 Record root 并发追加。命令结束时返回轻量的 `InvocationReceipt`；完整结果通过
+receipt 的 `runIds` 从 Record 读取。
+
+CLI 以 `experimentHost.list()`、`plan()` 与 `run()` 实现 `exp`，以具名只读 `experimentHost.debug()` 实现
+`debug`，以 `experimentHost.accept()` 实现 `accept`。运行时 dispatch claim 与 Record lease 经
+`coordinationHost`，Record I/O 经 `recordHost`。这些都是 CLI 的 Host composition；Experiment 作者 API
+不取得这些协作或持久化能力。
 
 Record 不保存可恢复的 Invocation、live session 或第二套聚合结果。运行中的面板只是当前进程内的反馈。
 
@@ -23,7 +30,8 @@ niceeval debug <experiment-selector> <eval-selector> [--json]
 
 ### `--dry`
 
-`--dry` 用取得 shared maintenance lease 的 frozen reader 运行 `project-target/v1`，展示 policy identity、effective options，以及每个目标成员的 reuse 或 gap：
+`--dry` 用 shared read lease（共享读取租约）与 weak scan（弱扫描）运行 `project-target/v1`，展示 policy
+identity、effective options，以及每个目标成员的 reuse 或 gap：
 
 ```text
 PLAN
@@ -31,11 +39,20 @@ compare/codex  memory/commit0  ordinal 0  reuse/carried @1K1P0VJAPVJ12
 compare/codex  memory/commit0  ordinal 1  gap: identity-mismatch
 ```
 
-reuse planning 先要求受支持的 eligibility schema 与匹配的 `reuseContract` domain，再比较 input/config identity。缺失、损坏、不支持或 domain 不同都形成带真实 issues 的具名 gap；不会猜成“从未运行”。`--dry` 不建立 Invocation、不写 Record，也不取得 writer lock。
+reuse planning 先精确比较当前与历史 Core expected slot 的组合 `executionIdentityDigest`，并要求历史 Core
+Attempt outcome 为 `completed`。它从 Assertions 折叠可采用 Verdict，再从 Observability 读取完整真实 timing。
+
+Assertions/Observability 缺失、partial、损坏或不支持，或 timing 超过当前 timeout，都会形成带真实 issues
+的具名 gap。它不会猜成“从未运行”或 duration `0`。
+
+`--dry` 不建立 Invocation、不写 Record，也不取得 append lease（追加租约）。它只看已发布 Run；并发封口的
+Run 可以整体进入或留在本次扫描之外。
 
 ### `debug`
 
-`debug` 独立显示一个 `Eval × Experiment` 配对的生命周期命令计划，不附带 dry matrix、reuse 或 carry。两个 selector 都必须唯一：精确 ID 优先，否则允许唯一前缀；零命中或多命中会在 physical planning 前列出排序后的精确候选。
+`debug` 通过具名只读 `experimentHost.debug()` 显示一个 `Eval × Experiment` 配对的生命周期命令计划。CLI
+不直连 Runner，也不附带 dry matrix、reuse 或 carry。两个 selector 都必须唯一：精确 ID 优先，否则允许唯一
+前缀；零命中或多命中会在 physical planning 前列出排序后的精确候选。
 
 ```sh
 niceeval debug compare/codex memory/commit0
@@ -118,7 +135,7 @@ niceeval accept @1K1P0VJAPVJ12
 niceeval accept @1K1P0VJAPVJ12 @1MEMY3VCQ6B5B
 ```
 
-accept 用 `explicit-adoption/v1` 对全部 locator 与当前 target 做完整预检。任一项失败都零业务写入，不能降级成 execution gap。通过后为关联 Experiment 建立 Run，用 reference Member 引用源 Attempt，并在 `niceeval.membership-provenance` 保存 accepted、配置差异、policy identity 与操作者理由；执行事实不复制。
+accept 对全部 locator 与当前 target 做完整预检：它使用 Core combined execution identity、真实 Attempt outcome 加 Assertions 的 Verdict 折叠，以及 Observability 的完整 timing。任一项失败都零业务写入，不能降级成 execution gap。通过后为关联 Experiment 建立 Run，以 Core reference Member 引用源 Attempt，并以 Core `accepted` action 持久复核路径；执行事实不复制。
 
 | 错误 | 反馈 |
 |---|---|
@@ -131,17 +148,17 @@ accept 用 `explicit-adoption/v1` 对全部 locator 与当前 target 做完整�
 
 ## 运行中反馈
 
-Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换，阶段与计数可以更新。持久业务事实则写入 Run 或 Attempt 的通道。
+Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换，阶段与计数可以更新。持久业务事实只能进入 Core 或 NiceEval 固定的 Attachment；没有通用持久化 writer。
 
 | 信息 | 当前进程 | Record |
 |---|---|---|
 | counters、active Attempt、短 detail | 更新 | 不单独保存 |
 | `progress()` | 合并或丢弃 | 不保存 |
-| diagnostic、运行时观测、phase event | 显示 | 写入相应事件通道 |
-| assertion、Verdict、usage | 显示摘要 | 写入具名 Attempt 通道 |
+| diagnostic、运行时观测、phase event | 显示 | 只有 NiceEval 已发布 collector 支持的值才进入 Observability |
+| assertion、Verdict、usage | 显示摘要 | Core outcome 加固定 Assertions / Observability |
 | Invocation 结束 | 显示终态 | API 返回 receipt |
 
-进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经进入 Record 通道；需要分享则生成静态 Report。
+进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入固定 Record 事实；第三方任意值不会自动持久化或查询。需要分享则生成静态 Report。
 
 ### Attempt 阶段
 
@@ -159,7 +176,9 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `assertions.evaluate` | evaluating assertions |
 | `sandbox.cleanup` / `sandbox.stop` | releasing sandbox |
 
-Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 已有其它写 Invocation 时，命令以 `record-writer-busy` 失败；它不等待或读取对方 local session。只读命令仍可读取已发布 Run。
+Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record root 的其它写 Invocation 可以继续追加自己
+的 Run。执行去重、同一 Experiment 的 dispatch claim 与并发名额由 Coordination 处理，而不是由 Record
+writer 互斥。只读命令只惰性读取已发布 Run。
 
 ## 结束反馈与 receipt
 
@@ -176,6 +195,8 @@ interface InvocationReceipt {
 ```
 
 receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要这些值时，以 `runIds` 运行 `explicit-runs` analysis selection，或调用 `niceeval show --run <runId>`。
+
+`runIds` 只包含已经以 `complete` 发布的 Run。一次 Invocation 没有总发布点。收到 `SIGINT` 时，Runner 关闭已完成 Attempt、把仍在飞的 reserved Attempt 记为 `interrupted`，并把未 reserved slot 记为 `interrupted` Member。成功 seal 的 Run 出现在 `completion: "interrupted"` receipt 中；收尾写入失败的 Run 保持 incomplete。正常收尾遇到没有 execution outcome 的 reserved / pending Attempt 则严格失败，不能把它伪装成已发布结果。
 
 ## `--json`
 
@@ -206,7 +227,7 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 
 ## 相关阅读
 
-- [Architecture](architecture.md) —— Invocation、Run、Member 与锁。
+- [Architecture](architecture.md) —— Invocation、Run、Member 与 Coordination 分工。
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
 - [Record CLI](../record/cli.md) —— `show`、locator 与 Record 维护命令。
-- [Record Library](../record/library.md) —— receipt、reader、writer 与通道。
+- [Record Library](../record/library.md) —— receipt、reader、writer 与固定 Attachment。

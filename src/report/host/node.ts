@@ -28,17 +28,14 @@ export {
   defineTheme,
   isThemeDefinition,
   themeStylesheet,
-} from "./node/theme.ts";
+} from "../theme.ts";
 export type {
   ReportTheme,
   ThemeColor,
   ThemeDefinition,
-  ThemeFontSize,
-  ThemeFontTokens,
   ThemeHex,
-  ThemeRadius,
   ThemeSeries,
-} from "./node/theme.ts";
+} from "../theme.ts";
 
 export {
   loadTrustedReportConfig,
@@ -62,9 +59,7 @@ export type {
 } from "../../view/server.ts";
 export type {
   OpenReportViewSessionInput,
-  ReportViewExecutionRebuild,
   ReportViewRebuild,
-  ReportViewThemeRebuild,
 } from "./view-session.ts";
 
 /** Node host request after its loader/watcher has closed over all live inputs. */

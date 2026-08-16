@@ -1,86 +1,104 @@
-# Reports：把 AnalysisSample 变成可交付视图
+# ③ Report（报告层）
 
-Reports 把 [`AnalysisSample`](../sample/README.md) 与官方 opaque projection 变成终端输出、热重载页面或可分享的静态站。它负责 projection 之后的计算与呈现，不拥有评估事实。
+Report（报告层）把固定 Sample（样本）的闭合 Analysis（分析）值组织成标准 React JSX 页面，并交付给终端或离线可读站点。作者只声明
+`defineReport()`、Page（页面）和组件；Record reader、文件路径、watcher 与 renderer 都留在 Host（宿主）边界。
+
+Report 有两条明确不同的执行路径。它们共享同一份作者定义与 Analysis 口径，却不把快速终端读取伪装成全站生成。
+
+| 用户入口 | 执行范围 | 交付值 |
+|---|---|---|
+| `niceeval show`、`niceeval show --json` | 一个已选择的 route。普通页只执行该页；参数页只解码并执行给定 key。 | 临时关闭的单页 text，或 Host 持有的机器文档。 |
+| `niceeval view`、`niceeval view --out` | 所有普通 Page 与每个参数 Page 的全部枚举实例。 | 一个完整的 `ClosedSiteRevision`（闭合站点版本）。 |
 
 ```text
-opaque Record
-    │ CLI 内部 selection / projection
-    ▼
-AnalysisSample
-    │ niceeval/report declarations
-    ▼
-ProjectedSample
-    │ Calculation + Page / PageFamily
-    ▼
-immutable ReportExecution
-    ├─ show
-    ├─ view revision
-    └─ static export
+                    ReportDefinition + fixed Sample
+                               │
+              ┌────────────────┴────────────────┐
+              ▼                                 ▼
+  show: select one exact route       site: enumerate every Page instance
+              │                                 │
+     private `ResolvedPage`              validate the complete site
+              │                                 │
+      terminal text / JSON              ClosedSiteRevision
+                                                │
+                                  ┌─────────────┴─────────────┐
+                                  ▼                           ▼
+                                view                     view --out
 ```
 
-## 核心心智
+`show` 不调用参数 Page 的 `enumerate()`，不建立 `ClosedSiteRevision`，也不为未选 route 执行作者 callback。
+`view` 与静态导出则必须完成全站枚举、链接校验、资源闭包和限额检查；它们只从同一个 revision 读取最终 bytes。
 
-- analysis selection 决定成员范围与 Sample-wide slot denominator；
-- 官方 projector 把内部 Attachment 形成作者可消费的 typed view；作者不能定义 raw family reader；
-- Calculation 跨 owner 聚合，例如通过率、成本或诊断分布；`observed` 与 `denominator` 由 Calculation value 自己返回；
-- Page 与 PageFamily 把这些结果包装成闭合语义树；
-- host 把同一棵树渲染成 text、web 或 static HTML。
+[Report 成本投影](cost-projections/README.md) 是完整的成本契约。它只经 `ReportDefinition.pricing` 接入 Report，并以同一只读值暴露为
+`ctx.report.pricing`；Config、Host 与 Runner price table 不能提供第二份价格。这个入口也定义成本 Page 在单目标 `show` 与全站
+`view` / `view --out` 中的闭合范围。
 
-通过率不是 Record 字段，也不是 Attachment projector。它由 Calculation 从投影结果派生，口径属于 Calculation value。
+## 作者心智
 
-## 作者只声明数据与包装结果
+报告文件使用标准 React JSX。项目只需 TypeScript 的 `jsx: "react-jsx"`，由 `react/jsx-runtime` 处理 JSX；没有 NiceEval JSX
+runtime、pragma 或 `jsxImportSource`。
 
-Report 作者用 `attemptSlotProjection(projector)`、`selectedRunProjection(projector)` 或 `attemptOriginRunProjection(projector)` 声明数据。然后用 `defineCalculation`、`definePage`、`definePageFamily` 和 `defineDownload` 包装结果。
+```tsx
+import { aggregate, Bars, defineComponent, defineReport, Grid, model, passRate, Table } from "niceeval/report";
 
-作者只从 `niceeval/report` 导入 Report DSL、Theme、官方 projector、声明 constructor 与必要的纯数据类型。
-作者看不到 reader、path、raw family/value、owner lookup、compiled plan 或 route expansion。宿主从 definition 与 Sample 在 I/O 前闭合全部投影依赖，每个投影最多执行一次。
+const Overview = defineComponent(async (_props, ctx) => {
+  const rows = await aggregate(ctx.scope, { by: { model }, values: { passRate } });
+  return <Grid><Bars points={rows} x="model" y="passRate" /><Table rows={rows} /></Grid>;
+});
 
-projected values 可以展开动态页面：
+export default defineReport({
+  title: "Quality",
+  pages: [{ id: "overview", path: "/", title: "Overview", render: () => <Overview /> }],
+});
+```
 
-- 每个 Assertion 一页，route 依赖 Assertions Attachment 的 durable `entryId`；
-- 每个 conversation turn 或 tool call 一页；
-- 每个 diagnostics category 一页。
+上例只说明组合形态。`aggregate()`、`MetricValue`、两种 `defineComponent()`、Page 与 `ctx.report` 的精确形状由
+[Library](library.md) 定义。Analysis 拥有总体、分母、缺口、Evidence（证据）与计算；Report 只能组织其闭合返回值。
 
-PageFamily 只能从已声明的 projected / calculated 内存值展开 route，不能追加新的 Attachment I/O。
+组件有组合形态和 text/web 双面形态。组合形态可在 Sample 存活时取得闭合数据；双面形态先取得一次关闭输入，再让同步的
+`text()` 与 `web()` 分别呈现同一值。网页、终端和静态目录不会再次调用 Analysis。
 
-## 完整度与局部失败
+## 站点版本与离线阅读
 
-每个直接消费 projection 的 Calculation、Page、PageFamily 或 Download 声明 `allow-partial` 或 `require-complete`。未请求的坏 Attachment 不读取也不影响 execution。
+`ClosedSiteRevision` 包含每个 route 的最终 HTML body bytes、rendered text、CSS、reload client、作者声明的 asset、下载文件、
+`_niceeval/data/projections.json` 和 Host 问题表。`projections.json` 的 bytes 属于 revision identity。它不包含 Sample、Record reader、
+Promise、callback、React element 或组件函数。
 
-Recorded-data problem 允许成功呈现，并进入不可关闭的 problems surface。它包括 unavailable、migration-required、migration-unavailable、unsupported 与 invalid。projector / 作者 callback defect 是该 consumer 的 execution problem，其它页面继续；static export 对任一 execution problem fail closed。
+`view` 托管一个已验证 revision；`view --out` 写出同一 revision。相同 route 的 HTTP body 与目录页面 body 必须相同。HTML header、
+连接和更新通知不改变这些 bytes。
 
-只有 `migration-required` 提示运行 `niceeval migrate`；`migration-unavailable` 只呈现原因，不提示迁移命令。
+两种站点都携带同一个 Host-owned reload client。view 为它提供版本探测与通知端点；静态目录没有这些端点时，client 安静停用，
+不显示错误、不发起 Analysis，也不影响阅读。禁用 JavaScript 或断开网络后，正文、导航、详情、完整度、问题和下载仍可用。
 
-## 一次 execution、热重载与静态分享
+## 结构化 head 与站点资产
 
-一个 `ReportExecution` 永远 immutable，每个 projection、Calculation、Page、PageFamily instance 与 Download 最多执行一次。
+作者通过 `head` 声明 `meta`、`link`、`style` 与 `script`。script 是结构化标签而非 raw HTML；内联 bytes、属性顺序与本地 asset
+都进入 revision identity。外部 `src` 可以带 `integrity`、`crossorigin` 与 `referrerpolicy`，但远端响应不属于 revision bytes。
 
-`niceeval view` 保留热重载：每次 rebuild 产生一份新的 fixed `ReportExecution`，成功后原子替换 last-good，失败保留 last-good 并显示问题。loader 与 watcher 的具体实现属于 Node host，不进入本契约。
+脚本可以提供统计或渐进增强，不能成为正文、导航、Evidence 或机器文档的唯一入口。Host reload 与作者 script 属于不同命名空间，
+view 不注入只在本机有效的作者脚本。
 
-static export 先预检，再写出完整 closure，最后写入完成标记。中断可能留下未完成的目录；host 以缺失的完成标记识别并提示删除。本契约不承诺原子目录发布。
+## 数据、机器输出与样式边界
 
-## 范围
+`MetricValue` 始终保留 `value`、`state`、`samples`、`total`、`issues` 与 `refs`。合法零值不是空值；显示组件不得靠筛选行数
+重写分母或隐藏问题。完整数值语义见[读数与显示语义](calculations.md)。
 
-Reports 包含：
+`show --json` 的内建报告和自定义报告各有固定 schema。内建报告输出 Host-owned 领域数据；自定义报告输出单目标执行 manifest 与
+选中 Page 的已呈现文字，不序列化通用作者树或 site revision。schema、locale、route 选择与 canonical order 由 [CLI](cli.md) 定义。
 
-- typed `RecordProjection` declarations、穷尽 `ProjectedSample` 与一次 unique projection；
-- Calculation、fixed Page、value-dependent PageFamily 与 Download；
-- closed semantic report tree；
-- terminal show、热重载 view 与 self-contained static export；
-- unavailable、unsupported、invalid 等数据问题与 data-unavailable、execution-failed 的一致反馈。
+报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 只负责浏览器语言切换、
+更新状态与 Host 提示，不重绘 Report 内容。完整边界见 [Architecture](architecture.md#css、theme-与-view-shell)。
 
-Reports 不包含：
+## 范围与入口
 
-- Record 格式、写入、migration、reuse planning 或 analysis selection 算法；
-- 浏览器端任意 script、style、font、worker、WASM、网络 URL 或路径 loader；
-- 不受信任 JavaScript module 的安全沙箱；
-- durable Report result、snapshot、revision 或第二种 Record；
-- Worker、RPC、bundler、wire codec 或原生原子发布等 host 实现细节。
+Report 包含作者 DSL、Analysis facade、标准 React 组件、单页终端读取、全站 SSG、view、静态目录与下载文件。`pages` 是唯一 Page 集合；
+详情页必须在其中显式声明，Host 不补建任何详情 route。
+Report 不包含 Record 格式、浏览器端 Analysis、任意文件读取、通用 semantic author model 或第二条 CSS / renderer 管线。
 
-## 入口
-
-- [Architecture](architecture.md)：分层、静态数据依赖、动态页面、热重载与不变量。
-- [Library](library.md)：作者 DSL、Effect host、semantic tree 与 typed errors。
-- [Calculations](calculations.md)：完整度、分母与聚合算法。
-- [CLI](cli.md)：`show`、`view` 与 `view --out`。
-- [Use case](use-case/README.md)：常见报告任务。
+- [Library](library.md)：公开 export manifest、作者 API、Page、组件与闭合值。
+- [成本投影](cost-projections/README.md)：Profile、Analysis 成本读数与 machine / site 闭合。
+- [读数与显示语义](calculations.md)：MetricValue、分母、GroupFunction 与领域投影。
+- [Architecture](architecture.md)：两条执行路径、revision、CSS、reload、缓存与预算。
+- [CLI](cli.md)：选择、`show`、JSON、`view` 与静态导出。
+- [Use case](use-case/README.md)：比较、完整度、静态分享与无 JavaScript 阅读。
+- [Reference](reference/README.md)：外部材料入口。

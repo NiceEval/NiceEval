@@ -3,7 +3,10 @@
 一套统一的失败分类词表,回答两个正交的决策问题:**换个时机重做,能不能过**(时间轴 `retryable`,驱动 attempt 内的有界重试),以及**这个死因波及多远**(空间轴 `scope`,驱动 eval / experiment 粒度的止损机制)。
 turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失败](../sandbox/architecture.md#provisioning-失败与重试)说同一种语言;声明点随知识所在地分布,消费策略单点在框架。
 
-本文的 `passed` / `failed` / `errored` / `skipped` 始终指 `niceeval.verdict` RecordAttachment 中的 Verdict 值，不是 Attempt state。Attempt lifecycle 只有 `active` / `completed` / `abandoned`；执行错误、重试证据、分类和断言分别进入自己的 owner-local RecordAttachment。
+本文的 `passed` / `failed` / `errored` / `skipped` 始终指 Core `outcome`、sealed Assertions 与显式 skip
+在读侧折叠出的 Verdict 值，不是 Attempt state。失败分类只处理终局执行错误与 `FailureClass`，不读取
+Verdict。Attempt lifecycle 只有 `active` / `completed` / `abandoned`；执行错误、重试证据和分类保留在各自的
+diagnostic 事实中。Assertion 与 score facts 封口在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 中。
 
 ![失败分类的两轴与两个执行体](assets/two-axes-executors.svg)
 

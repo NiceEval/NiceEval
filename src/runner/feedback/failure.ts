@@ -48,7 +48,6 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
   // 只在真正的结构化执行错误（没有主 Fact 摘要）上携带 `code`。Fact unavailable/errored
   // 已经有更具体的结构化摘要，不需要也没有这个字段。
   const code = result.verdict === "errored" && fact === undefined ? fallbackError?.code : undefined;
-  const factsCount = result.facts === undefined ? undefined : Object.keys(result.facts).length;
 
   return {
     locator,
@@ -60,7 +59,6 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     ...(phase !== undefined ? { phase } : {}),
     ...(code !== undefined ? { code } : {}),
     ...(origin !== undefined ? { origin } : {}),
-    ...(factsCount !== undefined && factsCount > 0 ? { factsCount } : {}),
   };
 }
 

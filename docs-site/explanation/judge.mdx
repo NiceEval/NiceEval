@@ -119,6 +119,10 @@ Point `judge.baseUrl` explicitly at your gateway or OpenAI-compatible proxy — 
   When the model or key does not resolve, the judge assertion is recorded as `unavailable` (with a reason) rather than vanishing: unless you explicitly chain `.optional()`, an assertion that cannot be evaluated makes the attempt `errored` — a verdict nobody could reach is neither a pass nor the agent's fault. After configuring keys, run one eval with `t.judge` and confirm the judge score appears in `niceeval view`.
 </Warning>
 
+## Read Judge results
+
+`niceeval show`, web Reports, and failure feedback summarize the same closed assertion results. Failed or unavailable entries appear first. A configured measurement shows its actual value and required threshold. Judge does not have a separate assertion-result type or display branch.
+
 ## Severity: judge defaults to soft
 
 Judge calls are assertions, so they follow the same mechanics described in [Assert · Gate vs soft severity](/explanation/assert#gate-vs-soft-severity) — but their **default** is different from most value matchers:

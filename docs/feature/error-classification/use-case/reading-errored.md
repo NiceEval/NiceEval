@@ -9,7 +9,7 @@
 ## 全流程
 
 1. **取证**。
-   用 `niceeval show --run <runId> --page attempt-<attemptId>` 打开该 Attempt 页面，看结构化错误的 message 有没有重试摘要后缀，再进入对应分支。
+   用 `niceeval show @<attempt-locator>` 打开该 Attempt 页面，看结构化错误的 message 有没有重试摘要后缀，再进入对应分支。
 
 2. **有后缀:重试耗尽的失败**。
    典型是高并发批跑撞限流——`--max-concurrency 12` 时十几个 attempt 同时开 turn,几个撞上入场拒绝(`Concurrency limit exceeded for user, please retry later`)。

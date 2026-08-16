@@ -1,15 +1,13 @@
 import type { Effect } from "effect";
+import type {
+  RecordCoordination,
+  RecordCoordinationError,
+} from "../../coordination/record-leases.ts";
 import type { RunId } from "../model/identifiers.ts";
 import type { RecordIncompleteRunWarning } from "../model/read-state.ts";
-import type {
-  RecordMaintenanceLockError,
-  RecordWriterLockError,
-} from "../platform/errors.ts";
 import type { RecordRoot } from "../platform/root.ts";
 import type {
   RecordFileSystem,
-  RecordMaintenanceLock,
-  RecordWriterLock,
 } from "../platform/services.ts";
 
 /**
@@ -30,19 +28,16 @@ export interface RecordCleanReceipt {
 }
 
 /** Scan failures come only from the real filesystem or shared maintenance lock. */
-export type RecordIncompleteRunScanError = RecordMaintenanceLockError;
+export type RecordIncompleteRunScanError = RecordCoordinationError;
 
-/** Clean adds the real writer-lock acquisition failure channel. */
-export type RecordCleanError =
-  | RecordMaintenanceLockError
-  | RecordWriterLockError;
+export type RecordCleanError = RecordCoordinationError;
 
 export type InspectIncompleteRuns = (input: {
   readonly root: RecordRoot;
 }) => Effect.Effect<
   readonly RecordIncompleteRun[],
   RecordIncompleteRunScanError,
-  RecordFileSystem | RecordMaintenanceLock
+  RecordFileSystem | RecordCoordination
 >;
 
 export type InspectIncompleteRunWarnings = (input: {
@@ -50,7 +45,7 @@ export type InspectIncompleteRunWarnings = (input: {
 }) => Effect.Effect<
   readonly RecordIncompleteRunWarning[],
   RecordIncompleteRunScanError,
-  RecordFileSystem | RecordMaintenanceLock
+  RecordFileSystem | RecordCoordination
 >;
 
 export type CleanIncompleteRuns = (input: {
@@ -59,5 +54,5 @@ export type CleanIncompleteRuns = (input: {
 }) => Effect.Effect<
   RecordCleanReceipt,
   RecordCleanError,
-  RecordFileSystem | RecordMaintenanceLock | RecordWriterLock
+  RecordFileSystem | RecordCoordination
 >;
