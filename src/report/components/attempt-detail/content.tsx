@@ -1,7 +1,7 @@
 // Attempt 详情 Content 投影：compute 领域结果 → 原语 Content 形状。
 // 输入全部是当前闭合 DomainView 派生的普通值。
 
-import { Conversation, Text } from "../../definition/primitives.tsx";
+import { Text, TurnTrace } from "../../definition/primitives.tsx";
 import type { ReportNode } from "../../definition/tree.ts";
 import type { CalloutGroup, CalloutItem } from "../../definition/primitives/callouts-logic.ts";
 import type { CopyBlockContent } from "../../definition/primitives/copy-block.tsx";
@@ -430,7 +430,7 @@ export function embedConversationInSource(
         ? undefined
         : [
             ...(line.details ?? []),
-            ...(lineTurns.length === 0 ? [] : [<Conversation data={{ turns: lineTurns }} />]),
+            ...(lineTurns.length === 0 ? [] : [<TurnTrace data={{ turns: lineTurns }} />]),
           ];
     return {
       ...line,

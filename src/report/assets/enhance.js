@@ -213,6 +213,62 @@
     }
   });
 
+  // ───────────────────────── TurnTrace:事件 inspector ─────────────────────────
+  // 静态 HTML 里事件内容仍完整留在账本中；增强态点击事件行，把该行的摘要与详情克隆到
+  // 同一 TurnTrace 的右侧 inspector。关闭只改变浏览状态，不删除或改写证据。
+
+  function closeTurnInspector(trace) {
+    if (!trace) return;
+    var inspector = trace.querySelector("[data-niceeval-turn-inspector]");
+    if (inspector) inspector.hidden = true;
+    var selected = trace.querySelectorAll("[data-niceeval-turn-entry][aria-selected='true']");
+    for (var i = 0; i < selected.length; i++) selected[i].removeAttribute("aria-selected");
+  }
+
+  function openTurnInspector(entry) {
+    var trace = entry.closest("[data-niceeval-turn-trace]");
+    if (!trace) return;
+    var inspector = trace.querySelector("[data-niceeval-turn-inspector]");
+    var title = trace.querySelector("[data-niceeval-turn-inspector-title]");
+    var body = trace.querySelector("[data-niceeval-turn-inspector-body]");
+    if (!inspector || !title || !body) return;
+    var selected = trace.querySelectorAll("[data-niceeval-turn-entry][aria-selected='true']");
+    for (var i = 0; i < selected.length; i++) selected[i].removeAttribute("aria-selected");
+    entry.setAttribute("aria-selected", "true");
+    var kind = entry.querySelector(".niceeval-conversation-entry-kind");
+    var preview = entry.querySelector(".niceeval-conversation-entry-preview");
+    title.textContent = kind && kind.textContent ? kind.textContent : "Event details";
+    body.replaceChildren();
+    if (preview) {
+      var summary = document.createElement("p");
+      summary.className = "niceeval-turn-trace-inspector-summary";
+      summary.textContent = preview.textContent || "";
+      body.appendChild(summary);
+    }
+    var detail = entry.querySelector(".niceeval-conversation-entry-detail");
+    if (detail) body.appendChild(detail.cloneNode(true));
+    inspector.hidden = false;
+  }
+
+  document.addEventListener("click", function (e) {
+    var close = closest(e.target, "[data-niceeval-turn-inspector-close]");
+    if (close) {
+      closeTurnInspector(close.closest("[data-niceeval-turn-trace]"));
+      return;
+    }
+    var entry = closest(e.target, "[data-niceeval-turn-entry]");
+    if (entry && entry.closest("[data-niceeval-turn-trace]")) openTurnInspector(entry);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    var entry = closest(e.target, "[data-niceeval-turn-entry]");
+    if (!entry || !entry.closest("[data-niceeval-turn-trace]")) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openTurnInspector(entry);
+    }
+  });
+
   // ───────────────────────── tooltip:.niceeval-chart-dot ─────────────────────────
   // 首次 hover 时把点内 <title> 的内容搬进 data-niceeval-title(避免与原生 tooltip 重影),
   // 渲染样式化 tooltip div(定位在点上方,挂在所属 figure 里)。无 JS 时 <title> 原样生效。
