@@ -104,7 +104,7 @@ function statusFor(entry: ConversationEntry, locale: ReportLocale): string {
 
 function traceEventsOf(content: ConversationContent, locale: ReportLocale): readonly TraceEvent[] {
   return content.turns.flatMap((turn, turnIndex) => turn.entries.map((entry, entryIndex) => {
-    const raw = resolveLocalizedText(entry.preview, locale);
+    const raw = entry.raw ?? resolveLocalizedText(entry.preview, locale);
     return {
       // Keep IDs safe for HTML data attributes without relying on selector
       // escaping in the enhancement runtime.  `:` separates the encoded turn
@@ -348,6 +348,9 @@ function TraceEvidence({ event, locale }: { event: TraceEvent; locale: ReportLoc
           <div><dt>{text(locale, "Total duration", "总时长")}</dt><dd>{duration === undefined ? text(locale, "Not recorded", "未记录") : durationLabel(duration)}</dd></div>
           {event.entry.callPhase === undefined ? null : (
             <div><dt>{text(locale, "Call phase", "调用阶段")}</dt><dd>{event.entry.callPhase}</dd></div>
+          )}
+          {event.entry.callId === undefined ? null : (
+            <div><dt>{text(locale, "Call ID", "调用 ID")}</dt><dd>{event.entry.callId}</dd></div>
           )}
         </dl>
         <div className="niceeval-trace-evidence-tabs" role="tablist" aria-label={text(locale, "Record detail tabs", "记录详情标签")}>

@@ -20,9 +20,13 @@ export interface ConversationEntry {
   kind: string;
   preview: LocalizedText;
   detail?: ReportNode;
+  /** Exact retained evidence behind the compact preview. */
+  raw?: string;
   failed?: boolean;
   /** Tool lifecycle hint used by the session summary; omitted for non-call rows. */
   callPhase?: "started" | "finished";
+  /** Stable provider call identity when this row belongs to a tool lifecycle. */
+  callId?: string;
 }
 
 export interface ConversationTurn {
@@ -107,6 +111,8 @@ function validateEntry(value: unknown, path: string): string | null {
   if (value.failed !== undefined && typeof value.failed !== "boolean") {
     return `"${path}.failed" must be a boolean`;
   }
+  if (value.raw !== undefined && typeof value.raw !== "string") return `"${path}.raw" must be a string`;
+  if (value.callId !== undefined && typeof value.callId !== "string") return `"${path}.callId" must be a string`;
   if (value.callPhase !== undefined && value.callPhase !== "started" && value.callPhase !== "finished") {
     return `"${path}.callPhase" must be started | finished`;
   }

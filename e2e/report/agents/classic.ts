@@ -85,15 +85,23 @@ export function classicMemoryAgent() {
             operationId,
             operation: {
               kind: "tool" as const,
-              name: "write_note",
-              input: { path: "memory-note.txt", topic: evalId, recalled },
+              name: "command_execution",
+              input: {
+                command: `printf '${evalId}: recalled=${recalled}\\n' > memory-note.txt`,
+                cwd: ".",
+              },
             },
           },
           {
             type: "operation.finished" as const,
             operationId,
             kind: "tool" as const,
-            output: { written: true, recalled },
+            output: {
+              output: `wrote memory-note.txt\n${evalId}: recalled=${recalled}\n`,
+              exit_code: 0,
+              written: true,
+              recalled,
+            },
             status: "completed" as const,
           },
           {

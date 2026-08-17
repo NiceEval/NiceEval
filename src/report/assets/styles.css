@@ -1536,6 +1536,56 @@ table.niceeval-report,
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.niceeval-tool-evidence {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+}
+.niceeval-tool-evidence-context {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 18px;
+  color: var(--soft);
+  font: 10px/1.35 var(--font-mono);
+}
+.niceeval-tool-evidence-context code,
+.niceeval-tool-evidence-context strong {
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+}
+.niceeval-tool-evidence-context strong[data-failed="true"] { color: var(--bad); }
+.niceeval-tool-evidence-section { min-width: 0; }
+.niceeval-tool-evidence-section > h5 {
+  margin: 0 0 5px;
+  color: var(--soft);
+  font: 9px/1.2 var(--font-mono);
+  font-weight: 650;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.niceeval-tool-evidence-code {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  max-height: 36rem;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel), black 8%);
+  color: var(--muted);
+  font: 11px/1.5 var(--font-mono);
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.niceeval-tool-evidence-code--error {
+  border-color: color-mix(in oklch, var(--bad), transparent 58%);
+  color: color-mix(in oklch, var(--bad), var(--text) 38%);
+}
 .niceeval-js .niceeval-turn-trace .niceeval-trace-evidence > summary { display: none; }
 .niceeval-js .niceeval-turn-trace .niceeval-trace-evidence[open] { padding-bottom: 8px; }
 .niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs {

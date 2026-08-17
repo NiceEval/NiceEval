@@ -202,6 +202,7 @@ function conversationReplyProblem(value: unknown, path: string): string | null {
       if (typeof value.text !== "string") return `"${path}.text" must be a string`;
       return null;
     case "tool":
+      if (typeof value.callId !== "string") return `"${path}.callId" must be a string`;
       if (typeof value.name !== "string") return `"${path}.name" must be a string`;
       if (typeof value.inputSummary !== "string") return `"${path}.inputSummary" must be a string`;
       if (value.outputSummary !== undefined && typeof value.outputSummary !== "string") {

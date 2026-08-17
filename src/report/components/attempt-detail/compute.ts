@@ -155,6 +155,7 @@ export type AttemptConversationReply =
   | { readonly kind: "compaction"; readonly text: string }
   | {
       readonly kind: "tool";
+      readonly callId: string;
       readonly name: string;
       readonly inputSummary: string;
       readonly outputSummary?: string;
@@ -692,23 +693,29 @@ export function attemptTraceData(
 
 // ───────────────────────── AttemptConversation ─────────────────────────
 
-function conversationReplyOf(item: ClosedConversationItem): AttemptConversationReply {
+function conversationReplyOf(
+  item: ClosedConversationItem,
+  callsById: ReadonlyMap<string, Extract<ClosedConversationItem, { kind: "tool-call" }>>,
+): AttemptConversationReply {
   switch (item.kind) {
     case "message":
       return item.role === "assistant"
         ? { kind: "assistant", text: item.text }
         : { kind: "user", text: item.text };
     case "tool-call":
-      return { kind: "tool", name: item.tool, inputSummary: item.inputSummary };
-    case "tool-result":
+      return { kind: "tool", callId: item.callId, name: item.tool, inputSummary: item.inputSummary };
+    case "tool-result": {
+      const call = callsById.get(item.callId);
       return {
         kind: "tool",
-        name: item.callId,
-        inputSummary: "",
+        callId: item.callId,
+        name: call?.tool ?? item.callId,
+        inputSummary: call?.inputSummary ?? "",
         outputSummary: item.outputSummary,
         outcome: item.outcome,
         failed: item.outcome === "failed" || item.outcome === "rejected",
       };
+    }
     case "thinking-summary":
       return { kind: "thinking", text: item.summary };
     case "compaction":
@@ -745,10 +752,12 @@ function roundsOf(
   navigation?: SourceNavigationDomainDetail,
 ): readonly AttemptConversationRound[] {
   const itemsByTurn = new Map<string, ClosedConversationItem[]>();
+  const callsById = new Map<string, Extract<ClosedConversationItem, { kind: "tool-call" }>>();
   for (const item of detail.items) {
     const items = itemsByTurn.get(item.turnId) ?? [];
     items.push(item);
     itemsByTurn.set(item.turnId, items);
+    if (item.kind === "tool-call") callsById.set(item.callId, item);
   }
   const intervalById = new Map((timing?.intervals ?? []).map((interval) => [interval.intervalId, interval] as const));
   const navigationByTurn = new Map((navigation?.rows ?? []).map((row) => [row.turnId, row] as const));
@@ -763,7 +772,9 @@ function roundsOf(
       outcome: turn.outcome,
       ...(interval === undefined ? {} : { durationMs: interval.durationMs }),
       replies: Object.freeze(
-        [...(itemsByTurn.get(turn.turnId) ?? [])].sort(compareItems).map(conversationReplyOf),
+        [...(itemsByTurn.get(turn.turnId) ?? [])]
+          .sort(compareItems)
+          .map((item) => conversationReplyOf(item, callsById)),
       ),
     };
   });

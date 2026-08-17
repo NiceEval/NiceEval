@@ -6,6 +6,7 @@ import type { ReportNode } from "../../definition/tree.ts";
 import type { CalloutGroup, CalloutItem } from "../../definition/primitives/callouts-logic.ts";
 import type { CopyBlockContent } from "../../definition/primitives/copy-block.tsx";
 import type { CommandEvidenceContent, ConversationContent, ConversationEntry, ConversationTurn } from "../../definition/primitives/conversation.tsx";
+import { ToolEvidence } from "../../definition/primitives/tool-evidence.tsx";
 import type { DiffContent } from "../../definition/primitives/diff-lines.ts";
 import type {
   SourceBlockContent,
@@ -279,13 +280,27 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
     case "context":
       return { kind: "context", preview: reply.text };
     case "tool": {
-      const output = jsonPreview(reply.outputSummary);
+      const finished = reply.outputSummary !== undefined;
+      const raw = finished ? reply.outputSummary : reply.inputSummary;
       return {
         kind: "tool",
-        preview: `${reply.name}(${jsonPreview(reply.inputSummary)})`,
-        callPhase: reply.outputSummary === undefined ? "started" : "finished",
+        preview: finished
+          ? `${reply.name} result`
+          : `${reply.name}(${jsonPreview(reply.inputSummary)})`,
+        raw,
+        callId: reply.callId,
+        callPhase: finished ? "finished" : "started",
         ...(reply.failed === true ? { failed: true } : {}),
-        ...(output ? { detail: <Text>{`${reply.outcome ?? "completed"}\n${output}`}</Text> } : {}),
+        detail: (
+          <ToolEvidence content={{
+            phase: finished ? "finished" : "started",
+            tool: reply.name,
+            callId: reply.callId,
+            inputSummary: reply.inputSummary,
+            ...(reply.outputSummary === undefined ? {} : { outputSummary: reply.outputSummary }),
+            ...(reply.outcome === undefined ? {} : { outcome: reply.outcome }),
+          }} />
+        ),
       };
     }
     case "subagent":
