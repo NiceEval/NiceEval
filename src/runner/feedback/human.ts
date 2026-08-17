@@ -24,7 +24,7 @@
 import { t } from "../../i18n/index.ts";
 import { formatCost } from "../../shared/format.ts";
 import { compactAssertionSummary, fitCompactAssertionSummary } from "../../assertions/display.ts";
-import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
+import { COORDINATION_RECOVERED_CODE, encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import {
   panelCapabilityOf as panelCapability,
   panelContentWidth,
@@ -381,10 +381,12 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
   // 人读运行中流对每个 code 至多完整打印一次(见 cli.md「什么动态更新,什么逐条追加」):
   // 第一条给标题与 message 两行,同 code 的后续条目(哪怕 dedupeKey 不同)一律静默 ——
   // 跨用例撞上同一类状况时,读者需要的是「这类事发生了 N 次」,不是 N 段几乎相同的文字;
-  // 逐 code 的次数与首条 message 由结束反馈的 WARNINGS 面板汇总(buildWarningsPanelRows)。
+  // 逐 code 的次数与首条 message 由结束反馈的 WARNINGS / RECOVERY 面板汇总。
+  const code = event.code ?? event.key;
+  const firstForCode = state.diagnostics.find((d) => (d.code ?? d.key) === code);
   const count = state.diagnostics.find((d) => d.key === event.key)?.count ?? 1;
-  if (count > 1) return [];
-  const sym = event.severity === "error" ? "✗" : "!";
+  if (count > 1 || firstForCode?.key !== event.key) return [];
+  const sym = event.severity === "error" ? "✗" : event.severity === "warning" ? "!" : "i";
   if (event.code === HALT_DIAGNOSTIC_CODE) {
     // 止损闸落闸:一行 error 级通知,文案已经是完整的一句话(`experiment halted
     // (dispatch-halted): <message>` / `eval halted: <message>`,见 docs/feature/
@@ -396,9 +398,9 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
   // 阶段标签走与 buildFailureFactLine 不同的投影:诊断标题用人读短语 `phaseLabel()`(散文),
   // 失败行的 errored 信息段用未翻译的原始 LifecyclePhase 字面量(对照机器面)——两者故意不同。
   // attempt 级诊断的 phase 由运行器写进 `data`(见 attempt.ts 的 recordDiagnostic);运行级诊断
-  // (止损闸、锁接管、budget)不属于任何单条 attempt,天然没有 phase,标题退化成只有 code 一段。
+  // (止损闸、协调恢复、budget)不属于任何单条 attempt,天然没有 phase,标题退化成只有 code 一段。
   const phase = typeof event.data?.phase === "string" ? (event.data.phase as LifecyclePhase) : undefined;
-  const heading = phase !== undefined ? `${phaseLabel(phase)} · ${event.code ?? event.key}` : (event.code ?? event.key);
+  const heading = phase !== undefined ? `${phaseLabel(phase)} · ${code}` : code;
   return [`${sym} ${heading}`, `  ${event.message}`];
 }
 
@@ -489,6 +491,13 @@ function buildSummaryLines(
   if (warningsRows) {
     blocks.push(
       renderPanel({ title: t("feedback.human.warningsHeader"), rows: warningsRows, width: panel.width, mode: panel.mode }),
+    );
+  }
+
+  const recoveryRows = buildRecoveryPanelRows(state.diagnostics);
+  if (recoveryRows) {
+    blocks.push(
+      renderPanel({ title: t("feedback.human.recoveryHeader"), rows: recoveryRows, width: panel.width, mode: panel.mode }),
     );
   }
 
@@ -592,12 +601,12 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
 }
 
 /** `WARNINGS` 面板:`state.diagnostics` 已经按去重 key 折叠,这里再按对外稳定词法 `code` 二次
- *  聚合(同一 code 可能有多个不同折叠 key,如逐用例的锁接管);没有诊断时返回 undefined,
- *  调用方据此不画空面板。 */
+ *  聚合。info 由自己的完成面板消费；没有 warning/error 时返回 undefined。 */
 function buildWarningsPanelRows(diagnostics: readonly DiagnosticNotice[]): PanelRow[] | undefined {
   if (diagnostics.length === 0) return undefined;
   const byCode = new Map<string, { count: number; message: string; severity: "warning" | "error" }>();
   for (const d of diagnostics) {
+    if (d.severity === "info") continue;
     const code = d.code ?? d.key;
     const existing = byCode.get(code);
     if (existing) {
@@ -607,11 +616,28 @@ function buildWarningsPanelRows(diagnostics: readonly DiagnosticNotice[]): Panel
     }
   }
   const entries = [...byCode.entries()];
+  if (entries.length === 0) return undefined;
   const labelWidth = Math.max(0, ...entries.map(([code, v]) => stringWidth(warningCodeLabel(code, v.count))));
   return entries.map(([code, v]) => ({
     kind: "line",
     text: `${v.severity === "error" ? "✗" : "!"} ${padDisplay(warningCodeLabel(code, v.count), labelWidth)}  ${v.message}`,
   }));
+}
+
+function buildRecoveryPanelRows(diagnostics: readonly DiagnosticNotice[]): PanelRow[] | undefined {
+  let slots = 0;
+  let locks = 0;
+  for (const d of diagnostics) {
+    if (d.severity !== "info" || d.code !== COORDINATION_RECOVERED_CODE) continue;
+    if (d.data?.resource === "concurrency-slot") slots += d.count;
+    if (d.data?.resource === "case-lock") locks += d.count;
+  }
+  if (slots === 0 && locks === 0) return undefined;
+  const summary = t("feedback.human.coordinationRecoveredSummary", {
+    slots: pluralUnit(slots, "feedback.human.unit.concurrencySlot", "feedback.human.unit.concurrencySlots"),
+    locks: pluralUnit(locks, "feedback.human.unit.caseLock", "feedback.human.unit.caseLocks"),
+  });
+  return [{ kind: "line", text: `i ${COORDINATION_RECOVERED_CODE}  ${summary}` }];
 }
 
 function warningCodeLabel(code: string, count: number): string {

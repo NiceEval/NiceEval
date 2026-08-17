@@ -197,12 +197,10 @@ export const en = {
     "experiment {{experimentId}}'s teardown was not triggered by the normal countdown path; it has been executed by the end-of-run sweep instead. Record are unaffected; seeing this line means an unlocated intermittent scheduling issue fired — please record this run in the memory ledger.\n",
   "runner.teardownRegistrationWriteFailed":
     "writing the crash-recovery teardown registration for experiment {{experimentId}} failed: {{message}}. The run continues normally, but a SIGKILL during this run cannot be recovered via `niceeval exp --teardown` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.\n",
-  "runner.lockTakenOver":
-    "took over an expired case lock for {{experimentId}}/{{evalId}} (previously held by pid {{pid}} on {{host}}; its heartbeat expired) — that run likely died without releasing it; this run now owns dispatching this case.\n",
-  "runner.gateLeaseTakenOver":
-    "took over an expired concurrency-slot lease for experiment {{experimentId}} (slot {{slot}}, previously held by pid {{pid}} on {{host}}; its heartbeat expired) — that run likely died without releasing it; this run now owns the slot.\n",
+  "runner.coordinationRecovered":
+    "recovered expired coordination state for {{experimentId}}; this run continues. Further recoveries are summarized at completion.\n",
   "runner.gateLeaseWaiting":
-    "waiting on another run for experiment {{experimentId}}'s concurrency slots: all {{effectiveN}} in use ({{holders}}). Concurrent runs share this experiment's slots, and the smallest maxConcurrency in play wins — this run declared {{declaredN}}. Nothing dispatches until a slot frees up; the other run's slots release when its attempts finish, or 30s after it dies.\n",
+    "waiting on another run for experiment {{experimentId}}'s concurrency slots: all {{effectiveN}} in use ({{holders}}). Concurrent runs share this experiment's slots, and the smallest maxConcurrency in play wins — this run declared {{declaredN}}. This run will dispatch when a slot is released or its owner's heartbeat expires.\n",
   "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
   "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":
@@ -390,6 +388,12 @@ export const en = {
   "feedback.human.resultIncomplete": "INCOMPLETE",
   "feedback.human.resultInterrupted": "INTERRUPTED",
   "feedback.human.resultPassed": "PASSED",
+  "feedback.human.recoveryHeader": "RECOVERY",
+  "feedback.human.coordinationRecoveredSummary": "{{slots}} · {{locks}}",
+  "feedback.human.unit.concurrencySlot": "concurrency slot",
+  "feedback.human.unit.concurrencySlots": "concurrency slots",
+  "feedback.human.unit.caseLock": "case lock",
+  "feedback.human.unit.caseLocks": "case locks",
   "feedback.human.resultsHeader": "RESULTS",
   "feedback.human.resultsMore": "… {{count}} more",
   "feedback.human.reuse": "{{reused}} of {{total}} carried in from cache · {{toRun}} to run",

@@ -133,6 +133,20 @@ export interface WarningEvent {
   evalId?: string;
 }
 
+export interface NoticeEvent {
+  event: "notice";
+  code: string;
+  level: "info";
+  message: string;
+  phase?: LifecyclePhase;
+  experimentId?: string;
+  evalId?: string;
+  resource?: "concurrency-slot" | "case-lock";
+  slot?: number;
+  previousPid?: number;
+  previousHost?: string;
+}
+
 export interface BudgetExhaustedEvent {
   event: "budget_exhausted";
   experimentId: string;
@@ -196,6 +210,7 @@ export type ExpEvent =
   | ErrorEvent
   | EvalEvent
   | KeptEvent
+  | NoticeEvent
   | WarningEvent
   | BudgetExhaustedEvent
   | ReporterErrorEvent
@@ -261,8 +276,8 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           noteCheckpoint(event.at);
           if (!isFirstOccurrence(state, event.key)) return; // 去重后只追加一次(cli.md)
           const phase = lifecyclePhaseField(event.data?.phase);
-          // `code` 是 cli.md `WarningEvent` 里那个稳定词法(`lock-taken-over` / `dispatch-halted`),
-          // **不是**去重 key:去重 key 常把折叠身份编进去(`lock-taken-over:<exp>|<eval>`),原样
+          // `code` 是 cli.md notice/warning 事件的稳定词法(`coordination-recovered` /
+          // `dispatch-halted`),**不是**去重 key:去重 key 常把折叠身份编进去,原样
           // 透出会让消费方拿到一个每次运行都不同的 code、没法按值分支。折叠到哪一条实验/用例
           // 由下面的 experimentId/evalId 两个具名字段回答。
           const code = event.code ?? event.key;
@@ -271,15 +286,30 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           // "diagnostic" 变体的 identity 注释)。
           const experimentId = event.identity?.experimentId ?? stringField(event.data?.experimentId);
           const evalId = event.identity?.evalId ?? stringField(event.data?.evalId);
-          writeEvent(io, {
-            event: "warning",
+          const common = {
             code,
-            level: event.severity,
             message: event.message,
             ...(phase !== undefined ? { phase } : {}),
             ...(experimentId !== undefined ? { experimentId } : {}),
             ...(evalId !== undefined ? { evalId } : {}),
-          });
+          };
+          if (event.severity === "info") {
+            const resource = coordinationResourceField(event.data?.resource);
+            const slot = numberField(event.data?.slot);
+            const previousPid = numberField(event.data?.previousPid);
+            const previousHost = stringField(event.data?.previousHost);
+            writeEvent(io, {
+              event: "notice",
+              level: "info",
+              ...common,
+              ...(resource !== undefined ? { resource } : {}),
+              ...(slot !== undefined ? { slot } : {}),
+              ...(previousPid !== undefined ? { previousPid } : {}),
+              ...(previousHost !== undefined ? { previousHost } : {}),
+            });
+          } else {
+            writeEvent(io, { event: "warning", level: event.severity, ...common });
+          }
           return;
         }
 
@@ -433,7 +463,15 @@ function stringField(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** 诊断 data 是 JSON 边界；只有全局 LifecyclePhase 闭集成员才能进入 WarningEvent.phase。 */
+function numberField(value: JsonValue | undefined): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function coordinationResourceField(value: JsonValue | undefined): NoticeEvent["resource"] {
+  return value === "concurrency-slot" || value === "case-lock" ? value : undefined;
+}
+
+/** 通知 data 是 JSON 边界；只有全局 LifecyclePhase 闭集成员才能进入 notice/warning phase。 */
 function lifecyclePhaseField(value: JsonValue | undefined): LifecyclePhase | undefined {
   switch (value) {
     case "judge.precheck":

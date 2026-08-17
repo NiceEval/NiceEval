@@ -58,7 +58,7 @@ import {
   reportRunActivity,
 } from "./feedback/sink.ts";
 import { failureDetailFromCurrentReusedAttempt, failureDetailFromResult } from "./feedback/failure.ts";
-import { EVALUATION_ALGORITHM, runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
+import { COORDINATION_RECOVERED_CODE, EVALUATION_ALGORITHM, runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { liveSandboxRuntimeServices } from "../sandbox/runtime.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
@@ -1897,27 +1897,18 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 // 会让 heartbeat/held 已启动、CaseLockState 却没有 release 句柄。
                 st.claim = claim;
                 if (takenOver) {
-                  const message = t("runner.lockTakenOver", {
-                    experimentId,
-                    evalId,
-                    pid: priorHolder?.pid ?? "?",
-                    host: priorHolder?.host ?? "?",
-                  }).trimEnd();
+                  const message = t("runner.coordinationRecovered", { experimentId }).trimEnd();
                   reportDiagnostic({
-                    key: `lock-taken-over:${experimentId}|${evalId}`,
-                    code: "lock-taken-over",
-                    severity: "warning",
+                    key: `${COORDINATION_RECOVERED_CODE}:case-lock:${experimentId}|${evalId}`,
+                    code: COORDINATION_RECOVERED_CODE,
+                    severity: "info",
                     message,
-                    data: { experimentId, evalId },
-                  });
-                  recordExperimentDiagnostic({
-                    experimentId,
-                    code: "lock-taken-over",
-                    level: "warning",
-                    message,
-                    phase: "eval.run",
-                    dedupeKey: `lock-taken-over:${experimentId}|${evalId}`,
-                    data: { experimentId, evalId },
+                    data: {
+                      experimentId,
+                      evalId,
+                      resource: "case-lock",
+                      ...(priorHolder !== undefined ? { previousPid: priorHolder.pid, previousHost: priorHolder.host } : {}),
+                    },
                   });
                 }
                 // V1 does not convert late legacy rows into carried Members. The frozen writer view is
@@ -1953,7 +1944,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
    * 的 attempt 不占别的实验的并发位。返回 undefined 表示等待期间被中断,这条 attempt 就此放弃。
    */
   /**
-   * 撞满实验闸名额时报一条 warning:名额域跨 Invocation,所以「等」的对象是别的进程,用户无从
+   * 撞满实验闸名额时报一条 info:名额域跨 Invocation,所以「等」的对象是别的进程,用户无从
    * 从本进程的面板推断。生效名额与本次声明分开报——两者不等就是 min-N 夹低了(别的运行声明了
    * 更小的 maxConcurrency),这是「我明明写了 3 却只跑 1 条」的唯一解释,不说清就只能去翻锁目录。
    * 按实验折叠:同一实验的一堆 attempt 会前后脚撞上同一批持有者,不该刷屏。
@@ -1968,7 +1959,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     reportDiagnostic({
       key: `gate-lease-waiting:${experimentId}`,
       code: "gate-lease-waiting",
-      severity: "warning",
+      severity: "info",
       message: t("runner.gateLeaseWaiting", { experimentId, effectiveN, declaredN, holders: who }).trimEnd(),
       data: { experimentId, effectiveN, declaredN },
     });
@@ -1993,22 +1984,20 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       )).pipe(
         Effect.map(({ claim, takenOver, takenOverFrom }) => {
           if (takenOver) {
-            const message = t("runner.gateLeaseTakenOver", {
-              experimentId,
-              slot: claim.slot,
-              pid: takenOverFrom?.pid ?? "?",
-              host: takenOverFrom?.host ?? "?",
-            }).trimEnd();
-            const dedupeKey = `gate-lease-taken-over:${experimentId}`;
-            reportDiagnostic({ key: dedupeKey, code: "gate-lease-taken-over", severity: "warning", message, data: { experimentId } });
-            recordExperimentDiagnostic({
-              experimentId,
-              code: "gate-lease-taken-over",
-              level: "warning",
+            const message = t("runner.coordinationRecovered", { experimentId }).trimEnd();
+            reportDiagnostic({
+              key: `${COORDINATION_RECOVERED_CODE}:concurrency-slot:${experimentId}|${claim.slot}`,
+              code: COORDINATION_RECOVERED_CODE,
+              severity: "info",
               message,
-              phase: "eval.run",
-              dedupeKey,
-              data: { experimentId, slot: claim.slot },
+              data: {
+                experimentId,
+                resource: "concurrency-slot",
+                slot: claim.slot,
+                ...(takenOverFrom !== undefined
+                  ? { previousPid: takenOverFrom.pid, previousHost: takenOverFrom.host }
+                  : {}),
+              },
             });
           }
           return claim;

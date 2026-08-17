@@ -1457,7 +1457,7 @@ export interface FailureNotice extends FailureDetail {
 }
 
 /**
- * 去重后的诊断通知(warning/error):相同 `key` 的诊断只保留一条,`count` 累加受影响次数
+ * 去重后的即时通知(info/warning/error):相同 `key` 的通知只保留一条,`count` 累加受影响次数
  *(见 docs/feature/experiments/cli.md「什么动态更新,什么逐条追加」的去重规则)。
  * `data` 携带结构化字段(如 budget 的 experimentId/spent/unstarted),renderer 直接读取,
  * 不解析 `message`(`message` 只是 human 展示用的一句话)。
@@ -1468,14 +1468,17 @@ export interface FailureNotice extends FailureDetail {
  * profile 的 renderer 共用这一个常量,谁都不在自己这边再写一遍字面量。
  */
 export const HALT_DIAGNOSTIC_CODE = "dispatch-halted";
+export const COORDINATION_RECOVERED_CODE = "coordination-recovered";
+
+export type DiagnosticSeverity = "info" | "warning" | "error";
 
 export interface DiagnosticNotice {
   at: number;
   key: string;
-  /** 对外的稳定词法(`--json` 的 `warning.code`、human 诊断行标题);省略 = 与 `key` 相同。
+  /** 对外的稳定词法(`--json` 的 notice/warning `code`、human 通知行标题);省略 = 与 `key` 相同。
    *  `key` 可以把折叠身份(experimentId / evalId)编进去,`code` 恒是干净字面量。 */
   code?: string;
-  severity: "warning" | "error";
+  severity: DiagnosticSeverity;
   message: string;
   /** 相同 key 累计出现的次数,由 reducer 去重时递增。 */
   count: number;
@@ -1674,7 +1677,7 @@ export type DurableFeedbackEvent =
       key: string;
       /** 对外稳定词法(见 `DiagnosticNotice.code`);省略 = 与 `key` 相同。 */
       code?: string;
-      severity: "warning" | "error";
+      severity: DiagnosticSeverity;
       message: string;
       /** attempt 级诊断的归属身份。运行级诊断(实验闸 / eval 闸这类不属于任何单条 attempt 的
        *  事实)不许伪造 identity——它们的 experimentId / evalId 走 `data` 的同名字段,

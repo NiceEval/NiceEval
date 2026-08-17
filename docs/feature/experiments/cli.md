@@ -180,6 +180,43 @@ Experiment `setup` 与 `teardown` 显示为 Run 范围活动。同一 Record roo
 的 Run。执行去重、同一 Experiment 的 dispatch claim 与并发名额由 Coordination 处理，而不是由 Record
 writer 互斥。只读命令只惰性读取已发布 Run。
 
+### 协调等待与恢复
+
+有效 owner 持有 Experiment 并发槽时，等待方以 `i gate-lease-waiting` 显示当前运行状态。该信息不改变
+completion 或退出码。名额释放或 owner heartbeat 过期后，调度器继续派发。
+
+过期的并发槽 lease 或 case lock 被原子接管时，当前 Invocation 产生 info 级
+`coordination-recovered` notice。成功接管不形成 warning，也不写入 Run diagnostic。Human 运行流只完整
+展开同一 code 的第一条，结束时在 `RECOVERY` 面板按 `concurrency slots` 与 `case locks` 汇总；机器流为每次接管保留结构化 notice。
+
+```text
+i coordination-recovered
+  recovered expired coordination state for compare/codex; this run continues. Further recoveries are summarized at completion.
+
+╭─ RECOVERY ───────────────────────────────────────────────────────────╮
+│ i coordination-recovered  3 concurrency slots · 18 case locks       │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+机器 notice 的稳定字段如下；`resource` 决定资源专属字段是否存在：
+
+```ts
+interface CoordinationRecoveredNotice {
+  event: "notice";
+  code: "coordination-recovered";
+  level: "info";
+  message: string;
+  resource: "concurrency-slot" | "case-lock";
+  experimentId: string;
+  evalId?: string;
+  slot?: number;
+  previousPid?: number;
+  previousHost?: string;
+}
+```
+
+完整恢复路径见[恢复中断运行留下的协调状态](use-case/并发/恢复中断运行.md)。
+
 ## 结束反馈与 receipt
 
 TTY 结束反馈显示 Invocation completion、Run ID、终态计数和下一步命令。它不持久化成另一份结果文档。
@@ -204,7 +241,7 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 
 ```json
 {"type":"progress","invocationId":"01J8...","message":"running","current":1,"total":3}
-{"type":"diagnostic","invocationId":"01J8...","code":"sandbox-retry","level":"warning","message":"retrying"}
+{"event":"warning","code":"sandbox-retry","level":"warning","message":"retrying"}
 {"type":"receipt","receipt":{"invocationId":"01J8...","runIds":["01J9..."],"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
 ```
 

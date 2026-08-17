@@ -26,6 +26,9 @@ incomplete（未发布不完整），不会被读取、展示或沿用。
 是否让两个 Invocation 派发同一 logical slot，由 Coordination 的 execution deduplication（执行去重）和
 dispatch claim（派发占用）决定。它们使用 `.niceeval/` 的本地状态，不读取另一个 writer 的目录或 local build。
 
+有效 owner 仍在运行时，等待方把占位显示为运行状态。owner 被强杀且 heartbeat 过期时，等待方接管本地
+协调状态并继续派发；成功接管属于恢复信息，不形成 warning。完整输出见[恢复中断运行](恢复中断运行.md)。
+
 ## 外部共享状态
 
 同一或不同 Record root 的 Invocation 都可能访问同一数据库或 checkpoint。此时 `sharedState.key` 只保护
