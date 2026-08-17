@@ -128,9 +128,9 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 `requires.runtimes`、`docker`、`browsers`、platform 与 secret 在 test 前有结构化 preflight。
 `externalNetwork: true` 在 receipt 中写为“声明但未主动预检”。通用探测不能替代 Repo 自己拥有的 provider/network 行为。
 
-自动 CI 在 plan 阶段使用 `--exclude-external-network` 排除这些 live Repo；只有人工确认 provider
-额度与端点可用后，才通过 workflow dispatch 的 `live_providers` 显式纳入。显式 `--repo` 点名 live Repo
-却同时排除 external network 属于配置错误，不能变成空计划假绿。
+同仓可信 PR、main push 与 schedule 会纳入这些 live Repo，并按 manifest 白名单注入已登记 secret；
+Fork 与 Dependabot 使用无密钥 lane。人工 workflow dispatch 通过 `live_providers` 明确选择是否纳入。
+显式 `--repo` 点名 live Repo 却同时排除 external network 属于配置错误，不能变成空计划假绿。
 
 `id` 是 canonical 相对路径。它允许 `adapter/ai-sdk`，但不允许绝对路径、空段、dot traversal、反斜杠或控制符。
 `artifacts` 只允许 canonical `dir/**` 或顶层文件 glob。非法形状使 discovery 聚合报错。

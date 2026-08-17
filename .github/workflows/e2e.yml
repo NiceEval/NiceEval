@@ -10,10 +10,10 @@ name: e2e
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
 #
 # Lane: 同仓可信 PR / push main=main | fork / Dependabot PR=pr(无 secret)
-#       schedule=nightly | dispatch=输入。自动触发只跑无需公网 provider 的确定性 Repo；
-#       dispatch 只有显式 live_providers=true 才把 externalNetwork Repo 纳入计划。
-# 只有显式启用 live provider 的 dispatch 才挂同名 GitHub Environment 并读取
-# manifest 白名单 secret；自动触发的确定性计划不读取 provider secret。
+#       schedule=nightly | dispatch=输入。同仓可信 PR、main push 与 schedule 跑 lane 全集；
+#       fork / Dependabot PR 无 secret，dispatch 由 live_providers 显式选择。
+# 可信自动触发与显式启用 live provider 的 dispatch 按 manifest 白名单读取 secret；
+# 同仓 PR 使用仓库级 secret，其它可信 lane 挂同名 GitHub Environment。
 
 on:
   pull_request:
@@ -93,7 +93,7 @@ jobs:
               if [ "$PR_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY" ] \
                 && [ "$PR_AUTHOR" != "dependabot[bot]" ]; then
                 lane=main
-                inject=false
+                inject=true
                 environment=
               else
                 lane=pr
@@ -103,17 +103,19 @@ jobs:
               ;;
             schedule)
               lane=nightly
-              inject=false
-              environment=
+              inject=true
+              environment=nightly
               ;;
             workflow_dispatch)
               lane="${DISPATCH_LANE:-main}"
+              inject=false
+              environment=
               ;;
             push)
               if [ "$GITHUB_REF" = "refs/heads/main" ]; then
                 lane=main
-                inject=false
-                environment=
+                inject=true
+                environment=main
               else
                 lane=pr
                 inject=false
@@ -126,7 +128,7 @@ jobs:
               environment=
               ;;
           esac
-          include_live=false
+          include_live="$inject"
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             case "$lane" in
               pr)
@@ -254,8 +256,8 @@ jobs:
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ${{ matrix.requires.docker == true && 'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 4
-    # 自动触发不挂 Environment、不读取 provider secret；只有显式启用 live
-    # provider 的 dispatch 才按 manifest 白名单注入同名 Environment secret。
+    # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
+    # 同名 Environment。所有路径都只注入 manifest 白名单中的 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
     strategy:
       fail-fast: false

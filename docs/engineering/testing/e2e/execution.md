@@ -181,26 +181,26 @@ backend、container 与 browser 都必须登记 owned handle；`finally` 做有�
 | 触发 | Lane | Secret | 内容 |
 |---|---|---|---|
 | 本地默认 | `pr` | 无 | 无密钥功能与确定性 Adapter Repo |
-| 同仓可信 `pull_request` | `main` | 不注入 live provider secret | 排除 `externalNetwork` 的确定性 Repo |
+| 同仓可信 `pull_request` | `main` | 仓库级 Actions secrets，按 manifest 白名单注入 | lane 全集，包含 live provider Repo |
 | Fork / Dependabot `pull_request` | `pr` | 无 | 无密钥功能与确定性 Adapter Repo |
-| `push main` | `main` | 不注入 live provider secret | 排除 `externalNetwork` 的确定性 Repo |
-| `schedule` | `nightly` | 不注入 live provider secret | 排除 `externalNetwork` 的确定性 Repo |
+| `push main` | `main` | main Environment，按 manifest 白名单注入 | lane 全集，包含 live provider Repo |
+| `schedule` | `nightly` | nightly Environment，按 manifest 白名单注入 | lane 全集，包含 live provider Repo |
 | release preflight | `release` | 仓库级 Actions secrets + release Environment | 精确待发布 tarball + 确定性 blocking 矩阵 + live 结果或 AI 真实验收 |
 | `workflow_dispatch` | 显式 | `live_providers=true` 时按 manifest 白名单注入 | 默认确定性 Repo；显式开关后包含 live Repo |
 
 同仓 PR 只有在 `head.repo.full_name` 等于当前仓库且 PR 作者不是 Dependabot 时才进入可信 `main` lane。
-这只决定确定性 Repo 的 lane 选择范围，不向 PR 注入 provider secret。Fork 与 Dependabot 固定进入无密钥 `pr` lane。
+它直接使用仓库级 Actions secret，并只向声明对应名称的 Repo 注入。Fork 与 Dependabot 固定进入无密钥 `pr` lane。
 禁止用 `pull_request_target` 或 `workflow_run` 让不可信 PR 代码接触 secret。
 
-自动触发始终向 plan 传 `--exclude-external-network`；它不会创建 live provider matrix job，也不会用一次
-synthetic API 请求猜测额度。`workflow_dispatch` 只有显式设置 `live_providers=true` 才执行 live Repo；此时
-401、额度不足、429、5xx 与 timeout 都由真实 owner 如实判定，不能转成 skip 或 pass。
+同仓可信 PR、main push 与 schedule 不向 plan 传 `--exclude-external-network`，所以有已登记密钥的 live owner
+必须真实执行；401、额度不足、429、5xx 与 timeout 都由 owner 如实判定，不能转成 skip 或 pass。Fork、Dependabot
+与 `pr` lane 仍无密钥。`workflow_dispatch` 只有显式设置 `live_providers=true` 才纳入 live Repo。
 
 可信 lane 的 workflow 只能显式引用已登记的 secret 白名单；禁止 `toJSON(secrets)` 或其它全量枚举。
 Repo manifest 声明了白名单外的名称时，在注入前失败，不动态读取其它仓库 secret。
 
-确定性 portfolio 可以频繁全量运行。live compatibility 只在人工确认 provider 可用后运行，或由同一 candidate 的
-AI 真实验收替代；不能用一次失败探测把未运行的 live owner 记成 pass。
+确定性与 live portfolio 在可信自动触发中都运行；provider 故障可以使该次 CI 失败，不能用探测、skip 或 AI 真实验收
+把未运行的 live owner 记成 pass。人工 dispatch 仍可用开关选择只跑确定性 Repo。
 
 ## GitHub Actions 形状
 
@@ -224,7 +224,8 @@ Cache key 至少区分 pnpm 版本、OS / 架构和 Docker image digest。包管
 其它候选测试文件带回来的宽泛 restore key。Nightly 定期跑 cold cell，防止日常 cache 掩盖缺失依赖或镜像初始化问题。
 
 GitHub Actions 固定向 plan 传 `--no-diff`，因此每次执行所选 lane 中符合本次 network 策略的全集。
-自动触发排除 `externalNetwork`；显式 `--repo` 只用于人工单 Repo 复现。
+同仓可信 PR、main push 与 schedule 包含 `externalNetwork`；Fork / Dependabot 无密钥 lane 不含 live Repo。
+显式 `--repo` 只用于人工单 Repo 复现。
 manifest `paths` 与 diff filter 只保留给本地诊断选择，不参与线上完整验收。
 候选包的以下输入变化也执行整条 lane：
 
