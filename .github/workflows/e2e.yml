@@ -255,7 +255,8 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ${{ matrix.requires.docker == true && 'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-2vcpu-ubuntu-2404' }}
-    timeout-minutes: 4
+    # 覆盖 runner/action 启动、依赖安装及并行 live Repo；单 Repo 的产品预算仍由 manifest 收紧。
+    timeout-minutes: 15
     # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
     # 同名 Environment。所有路径都只注入 manifest 白名单中的 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}

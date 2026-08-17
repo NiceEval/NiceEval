@@ -217,6 +217,10 @@ matrix jobs：下载同一 candidate.tgz
 
 Workflow 只准备 Node / pnpm / Docker / browser、下发矩阵、缓存 store / image layer、上传 artifact。
 它不自己改 dependency、分类错误、实现重试、决定 expected 或维护另一份 Repo 清单。
+
+matrix job 的 15 分钟上限包含 runner/action 启动、依赖安装与同 cell 的并行 live Repo；每个 Repo 的产品执行预算仍由
+manifest 自己收紧，不能用 job 上限放宽 provider timeout。
+
 每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；Repo batch 的 artifact root 下仍按 Repo ID 分目录并
 保存独立 receipt，batch summary 列全该格 Repo。GitHub 原生汇总 matrix 成败，不再启动一个 job 下载并复述所有 cell 的结果。
 
