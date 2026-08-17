@@ -173,3 +173,5 @@ This project was inspired by — or had its code learned by AI from — the proj
 
 Thanks to the following communities
 - WIP
+
+We also thank Linux Do for their support and feedback during the project's early development.

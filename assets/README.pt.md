@@ -173,3 +173,5 @@ Este projeto foi inspirado pelos projetos abaixo, ou teve trechos de código esc
 
 Agradecimentos às seguintes comunidades
 - WIP
+
+Também agradecemos à Linux Do pelo apoio e feedback durante os estágios iniciais do desenvolvimento do projeto.

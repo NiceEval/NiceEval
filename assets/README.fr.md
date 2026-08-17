@@ -175,3 +175,5 @@ Ce projet s'inspire des projets suivants, ou a été écrit par une IA après av
 
 Merci aux communautés suivantes
 - WIP
+
+Nous remercions également Linux Do pour son soutien et ses retours durant les premières étapes du développement du projet.

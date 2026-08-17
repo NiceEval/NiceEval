@@ -173,3 +173,5 @@ Este proyecto está inspirado en los siguientes proyectos, o fue escrito por una
 
 Gracias a las siguientes comunidades
 - WIP
+
+También agradecemos a Linux Do su apoyo y sus comentarios durante las primeras etapas del desarrollo del proyecto.

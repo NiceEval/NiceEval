@@ -172,3 +172,5 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 
 Благодарим следующие сообщества
 - WIP
+
+Мы также благодарим Linux Do за поддержку и обратную связь на ранних этапах разработки проекта.

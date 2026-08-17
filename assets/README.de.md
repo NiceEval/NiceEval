@@ -175,3 +175,5 @@ Dieses Projekt wurde von den folgenden Projekten inspiriert, bzw. die KI hat aus
 
 Danke an die folgenden Communities
 - WIP
+
+Wir danken außerdem Linux Do für die Unterstützung und das Feedback während der frühen Entwicklungsphase des Projekts.
