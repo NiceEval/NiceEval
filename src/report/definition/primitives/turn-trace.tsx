@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 import { defineComponent } from "../tree.ts";
 import {
   Conversation,
+  conversationText,
   type ConversationContent,
   type ConversationTurn,
 } from "./conversation.tsx";
@@ -15,6 +16,12 @@ export type TurnTraceProps = ValueProps<
   ConversationContent | null,
   { locale?: ReportLocale; className?: string }
 >;
+
+type ResolvedTurnTraceProps = {
+  data: ConversationContent | null;
+  locale?: ReportLocale;
+  className?: string;
+};
 
 function durationLabel(durationMs: number | undefined): string {
   if (durationMs === undefined) return "timing unavailable";
@@ -59,33 +66,47 @@ function renderTimeline(turns: readonly ConversationTurn[]): ReactElement {
   );
 }
 
-export const TurnTrace = defineComponent<TurnTraceProps>(async (props) => {
-  const data = props.data ?? null;
-  if (data === null || data.turns.length === 0) return null;
-  return (
-    <section className={`niceeval-report niceeval-turn-trace ${props.className ?? ""}`} data-niceeval-turn-trace>
-      {renderTimeline(data.turns)}
-      <div className="niceeval-turn-trace-body">
-        <Conversation
-          data={data}
-          locale={props.locale}
-          title={{ en: "Turn trace", "zh-CN": "Turn 轨迹" }}
-        />
-        <aside className="niceeval-turn-trace-inspector" data-niceeval-turn-inspector hidden>
-          <header className="niceeval-turn-trace-inspector-head">
-            <div>
-              <span className="niceeval-turn-trace-inspector-kicker">Selected event</span>
-              <h3 data-niceeval-turn-inspector-title>Event details</h3>
+export const TurnTrace = defineComponent<TurnTraceProps, ResolvedTurnTraceProps>({
+  dimensions: () => ({}),
+  resolve(props) {
+    return {
+      data: props.data ?? null,
+      locale: props.locale,
+      className: props.className,
+    };
+  },
+  web({ data, locale, className }) {
+    if (data === null || data.turns.length === 0) return null;
+    return (
+      <section className={`niceeval-report niceeval-turn-trace ${className ?? ""}`} data-niceeval-turn-trace>
+        {renderTimeline(data.turns)}
+        <div className="niceeval-turn-trace-body">
+          <Conversation
+            data={data}
+            locale={locale}
+            title={{ en: "Turn trace", "zh-CN": "Turn 轨迹" }}
+          />
+          <aside className="niceeval-turn-trace-inspector" data-niceeval-turn-inspector hidden>
+            <header className="niceeval-turn-trace-inspector-head">
+              <div>
+                <span className="niceeval-turn-trace-inspector-kicker">Selected event</span>
+                <h3 data-niceeval-turn-inspector-title>Event details</h3>
+              </div>
+              <button type="button" data-niceeval-turn-inspector-close aria-label="Close event details">×</button>
+            </header>
+            <div className="niceeval-turn-trace-inspector-body" data-niceeval-turn-inspector-body>
+              Select an event to inspect its captured evidence.
             </div>
-            <button type="button" data-niceeval-turn-inspector-close aria-label="Close event details">×</button>
-          </header>
-          <div className="niceeval-turn-trace-inspector-body" data-niceeval-turn-inspector-body>
-            Select an event to inspect its captured evidence.
-          </div>
-        </aside>
-      </div>
-    </section>
-  );
+          </aside>
+        </div>
+      </section>
+    );
+  },
+  text({ data, locale }, ctx) {
+    return data === null || data.turns.length === 0
+      ? ""
+      : conversationText(data, ctx, locale ?? ctx.locale);
+  },
 });
 
 TurnTrace.displayName = "TurnTrace";
