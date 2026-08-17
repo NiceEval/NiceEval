@@ -1,5 +1,5 @@
 // TurnTrace: compact, server-rendered trajectory ledger.  The browser only
-// filters, folds, selects, and switches pre-rendered inspector tabs; every
+// filters, folds, selects, and switches pre-rendered inline evidence tabs; every
 // event and its captured evidence is present in the static report body.
 
 import type { CSSProperties, ReactElement } from "react";
@@ -337,12 +337,37 @@ function TraceTimeline({
 
 function TraceEvidence({ event, locale }: { event: TraceEvent; locale: ReportLocale }): ReactElement {
   const detail = event.entry.detail === undefined ? null : renderConversationDetail(event.entry.detail);
+  const duration = turnDuration(event.turn);
   return (
-    <details className="niceeval-trace-evidence">
+    <details className="niceeval-trace-evidence" data-niceeval-trace-evidence={event.id}>
       <summary>{text(locale, "Evidence", "证据")}</summary>
       <div className="niceeval-trace-evidence-body">
-        <pre className="niceeval-trace-evidence-raw">{event.raw}</pre>
-        {detail === null ? null : <div className="niceeval-trace-evidence-detail">{detail}</div>}
+        <dl className="niceeval-trace-evidence-meta">
+          <div><dt>{text(locale, "Source", "来源")}</dt><dd>{resolveLocalizedText(event.turn.label, locale)}</dd></div>
+          <div><dt>{text(locale, "Status", "状态")}</dt><dd>{statusFor(event.entry, locale)}</dd></div>
+          <div><dt>{text(locale, "Total duration", "总时长")}</dt><dd>{duration === undefined ? text(locale, "Not recorded", "未记录") : durationLabel(duration)}</dd></div>
+          {event.entry.callPhase === undefined ? null : (
+            <div><dt>{text(locale, "Call phase", "调用阶段")}</dt><dd>{event.entry.callPhase}</dd></div>
+          )}
+        </dl>
+        <div className="niceeval-trace-evidence-tabs" role="tablist" aria-label={text(locale, "Record detail tabs", "记录详情标签")}>
+          <button type="button" role="tab" data-niceeval-trace-evidence-tab="preview" aria-selected="true">
+            {text(locale, "Preview", "预览")}
+          </button>
+          <button type="button" role="tab" data-niceeval-trace-evidence-tab="raw" aria-selected="false">
+            {text(locale, "Raw", "原始")}
+          </button>
+        </div>
+        <section className="niceeval-trace-evidence-panel" data-niceeval-trace-evidence-panel="preview" role="tabpanel" aria-label={text(locale, "Preview", "预览")} data-active="true">
+          <h4>{text(locale, "Preview", "预览")}</h4>
+          {detail === null
+            ? <pre className="niceeval-trace-evidence-raw">{event.raw}</pre>
+            : <div className="niceeval-trace-evidence-detail">{detail}</div>}
+        </section>
+        <section className="niceeval-trace-evidence-panel" data-niceeval-trace-evidence-panel="raw" role="tabpanel" aria-label={text(locale, "Raw", "原始")} data-active="false">
+          <h4>{text(locale, "Raw", "原始")}</h4>
+          <pre className="niceeval-trace-evidence-raw">{event.raw}</pre>
+        </section>
       </div>
     </details>
   );
@@ -368,6 +393,7 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
         className="niceeval-trace-event-select"
         data-niceeval-trace-select={event.id}
         aria-pressed="false"
+        aria-expanded="false"
         aria-label={`${event.entry.kind}: ${event.summary || text(locale, "captured event", "已捕获事件")}`}
       >
         <span className="niceeval-trace-event-kind" data-lane={event.lane}>{event.entry.kind}</span>
@@ -434,78 +460,6 @@ function TraceTurn({
   );
 }
 
-function InspectorSummary({ event, locale }: { event: TraceEvent; locale: ReportLocale }): ReactElement {
-  const duration = turnDuration(event.turn);
-  return (
-    <dl className="niceeval-trace-inspector-summary">
-      <div><dt>{text(locale, "Source", "来源")}</dt><dd>{resolveLocalizedText(event.turn.label, locale)}</dd></div>
-      <div><dt>{text(locale, "Status", "状态")}</dt><dd>{statusFor(event.entry, locale)}</dd></div>
-      <div><dt>{text(locale, "Total duration", "总时长")}</dt><dd>{duration === undefined ? text(locale, "Not recorded", "未记录") : durationLabel(duration)}</dd></div>
-      <div>
-        <dt>{text(locale, "Timing", "计时")}</dt>
-        <dd>{duration === undefined
-          ? text(locale, "No per-event timing captured", "未捕获逐事件时长")
-          : text(locale, "Turn-level duration", "轮次级时长")}</dd>
-      </div>
-      {event.entry.callPhase === undefined ? null : (
-        <div><dt>{text(locale, "Call phase", "调用阶段")}</dt><dd>{event.entry.callPhase}</dd></div>
-      )}
-    </dl>
-  );
-}
-
-function InspectorRecord({ event, locale }: { event: TraceEvent; locale: ReportLocale }): ReactElement {
-  const detail = event.entry.detail === undefined ? null : renderConversationDetail(event.entry.detail);
-  const tabPrefix = `niceeval-trace-${event.turnIndex}-${event.entryIndex}`;
-  return (
-    <article
-      className="niceeval-trace-inspector-record"
-      data-niceeval-trace-inspector-record={event.id}
-      hidden
-    >
-      <div className="niceeval-trace-inspector-tabs" role="tablist" aria-label={text(locale, "Record detail tabs", "记录详情标签")}>
-        <button type="button" role="tab" id={`${tabPrefix}-summary-tab`} data-niceeval-trace-inspector-tab="summary" aria-selected="true">
-          {text(locale, "Summary", "摘要")}
-        </button>
-        <button type="button" role="tab" id={`${tabPrefix}-preview-tab`} data-niceeval-trace-inspector-tab="preview" aria-selected="false">
-          {text(locale, "Preview", "预览")}
-        </button>
-        <button type="button" role="tab" id={`${tabPrefix}-raw-tab`} data-niceeval-trace-inspector-tab="raw" aria-selected="false">
-          {text(locale, "Raw", "原始")}
-        </button>
-      </div>
-      <section className="niceeval-trace-inspector-panel" data-niceeval-trace-inspector-panel="summary" role="tabpanel" aria-labelledby={`${tabPrefix}-summary-tab`}>
-        <InspectorSummary event={event} locale={locale} />
-      </section>
-      <section className="niceeval-trace-inspector-panel" data-niceeval-trace-inspector-panel="preview" role="tabpanel" aria-labelledby={`${tabPrefix}-preview-tab`} hidden>
-        {detail === null
-          ? <pre className="niceeval-trace-inspector-raw">{event.raw}</pre>
-          : <div className="niceeval-trace-inspector-preview">{detail}</div>}
-      </section>
-      <section className="niceeval-trace-inspector-panel" data-niceeval-trace-inspector-panel="raw" role="tabpanel" aria-labelledby={`${tabPrefix}-raw-tab`} hidden>
-        <pre className="niceeval-trace-inspector-raw">{event.raw}</pre>
-      </section>
-    </article>
-  );
-}
-
-function TraceInspector({ events, locale }: { events: readonly TraceEvent[]; locale: ReportLocale }): ReactElement {
-  return (
-    <aside className="niceeval-trace-inspector" data-niceeval-turn-inspector hidden aria-label={text(locale, "Selected trajectory event", "选中的轨迹事件")}>
-      <header className="niceeval-trace-inspector-head">
-        <div>
-          <span className="niceeval-trace-inspector-kicker">{text(locale, "Selected record", "选中的记录")}</span>
-          <h3 data-niceeval-turn-inspector-title>{text(locale, "Event details", "事件详情")}</h3>
-        </div>
-        <button type="button" data-niceeval-turn-inspector-close aria-label={text(locale, "Close event details", "关闭事件详情")}>×</button>
-      </header>
-      <div className="niceeval-trace-inspector-body" data-niceeval-turn-inspector-body>
-        {events.map((event) => <InspectorRecord key={event.id} event={event} locale={locale} />)}
-      </div>
-    </aside>
-  );
-}
-
 export const TurnTrace = defineComponent<TurnTraceProps, ResolvedTurnTraceProps>({
   dimensions: () => ({}),
   resolve(props) {
@@ -527,18 +481,15 @@ export const TurnTrace = defineComponent<TurnTraceProps, ResolvedTurnTraceProps>
       >
         <TraceToolbar content={data} events={events} locale={loc} />
         <TraceTimeline content={data} events={events} locale={loc} />
-        <div className="niceeval-turn-trace-body">
-          <div className="niceeval-trace-ledger" data-niceeval-trace-ledger>
-            {data.turns.map((turn, turnIndex) => (
-              <TraceTurn
-                key={turn.key}
-                turn={turn}
-                events={events.filter((event) => event.turnIndex === turnIndex)}
-                locale={loc}
-              />
-            ))}
-          </div>
-          <TraceInspector events={events} locale={loc} />
+        <div className="niceeval-trace-ledger" data-niceeval-trace-ledger>
+          {data.turns.map((turn, turnIndex) => (
+            <TraceTurn
+              key={turn.key}
+              turn={turn}
+              events={events.filter((event) => event.turnIndex === turnIndex)}
+              locale={loc}
+            />
+          ))}
         </div>
       </section>
     );

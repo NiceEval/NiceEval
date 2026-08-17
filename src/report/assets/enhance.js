@@ -213,9 +213,9 @@
     }
   });
 
-  // ───────────────────────── TurnTrace:trajectory toolbar + inspector ─────────────────────────
-  // 每个 ledger row、timeline span 和 inspector panel 都在 SSR 时生成。这里仅把
-  // 它们按稳定 data id 联动：不 cloneNode、不搬动 evidence、也不依赖 CSS.escape。
+  // ───────────────────────── TurnTrace:trajectory toolbar + row accordion ─────────────────────────
+  // 每个 ledger row、timeline span 和行内 evidence 都在 SSR 时生成。这里仅把
+  // 它们按稳定 data id 联动：单开折叠，不 cloneNode、不搬动 evidence、也不依赖 CSS.escape。
 
   function traceByElement(element) {
     return element ? element.closest("[data-niceeval-turn-trace]") : null;
@@ -235,55 +235,52 @@
     return elements.length === 0 ? null : elements[0];
   }
 
-  function activateTurnTraceTab(record, tab) {
-    if (!record) return;
-    var buttons = record.querySelectorAll("[data-niceeval-trace-inspector-tab]");
-    var panels = record.querySelectorAll("[data-niceeval-trace-inspector-panel]");
+  function activateTurnTraceEvidenceTab(evidence, tab) {
+    if (!evidence) return;
+    var buttons = evidence.querySelectorAll("[data-niceeval-trace-evidence-tab]");
+    var panels = evidence.querySelectorAll("[data-niceeval-trace-evidence-panel]");
     for (var i = 0; i < buttons.length; i++) {
-      var active = buttons[i].getAttribute("data-niceeval-trace-inspector-tab") === tab;
+      var active = buttons[i].getAttribute("data-niceeval-trace-evidence-tab") === tab;
       buttons[i].setAttribute("aria-selected", active ? "true" : "false");
     }
     for (var j = 0; j < panels.length; j++) {
-      panels[j].hidden = panels[j].getAttribute("data-niceeval-trace-inspector-panel") !== tab;
+      var panelActive = panels[j].getAttribute("data-niceeval-trace-evidence-panel") === tab;
+      panels[j].setAttribute("data-active", panelActive ? "true" : "false");
     }
   }
 
-  function closeTurnInspector(trace) {
+  function closeTurnTraceEvidence(trace) {
     if (!trace) return;
-    var inspector = trace.querySelector("[data-niceeval-turn-inspector]");
-    if (inspector) inspector.hidden = true;
-    var records = trace.querySelectorAll("[data-niceeval-trace-inspector-record]");
-    for (var i = 0; i < records.length; i++) records[i].hidden = true;
+    var evidence = trace.querySelectorAll("[data-niceeval-trace-evidence]");
+    for (var i = 0; i < evidence.length; i++) evidence[i].open = false;
     var selected = trace.querySelectorAll("[data-niceeval-trace-select][aria-pressed='true'], [data-niceeval-trace-timeline-event][aria-pressed='true']");
-    for (var j = 0; j < selected.length; j++) selected[j].setAttribute("aria-pressed", "false");
+    for (var j = 0; j < selected.length; j++) {
+      selected[j].setAttribute("aria-pressed", "false");
+      if (selected[j].hasAttribute("data-niceeval-trace-select")) selected[j].setAttribute("aria-expanded", "false");
+    }
   }
 
-  function openTurnInspector(trace, eventId) {
+  function toggleTurnTraceEvidence(trace, eventId, reveal) {
     if (!trace || !eventId) return;
-    var inspector = trace.querySelector("[data-niceeval-turn-inspector]");
-    var title = trace.querySelector("[data-niceeval-turn-inspector-title]");
-    var record = traceElementById(trace, "data-niceeval-trace-inspector-record", eventId);
     var row = traceElementById(trace, "data-niceeval-trace-event", eventId);
-    if (!inspector || !record || !row) return;
+    var evidence = traceElementById(trace, "data-niceeval-trace-evidence", eventId);
+    if (!evidence || !row) return;
+    var wasOpen = evidence.open;
 
-    var selected = trace.querySelectorAll("[data-niceeval-trace-select][aria-pressed='true'], [data-niceeval-trace-timeline-event][aria-pressed='true']");
-    for (var i = 0; i < selected.length; i++) selected[i].setAttribute("aria-pressed", "false");
-    var previousRecords = trace.querySelectorAll("[data-niceeval-trace-inspector-record]");
-    for (var j = 0; j < previousRecords.length; j++) previousRecords[j].hidden = previousRecords[j] !== record;
+    closeTurnTraceEvidence(trace);
+    if (wasOpen) return;
+    var turn = row.closest("[data-niceeval-trace-turn]");
+    if (turn) setTurnCollapsed(turn, false);
+    evidence.open = true;
     var rowSelectors = traceElementsById(trace, "data-niceeval-trace-select", eventId);
     var timelineSelectors = traceElementsById(trace, "data-niceeval-trace-timeline-event", eventId);
-    for (var k = 0; k < rowSelectors.length; k++) rowSelectors[k].setAttribute("aria-pressed", "true");
-    for (var m = 0; m < timelineSelectors.length; m++) timelineSelectors[m].setAttribute("aria-pressed", "true");
-
-    var kind = row.querySelector(".niceeval-trace-event-kind");
-    var summary = row.querySelector(".niceeval-trace-event-summary");
-    if (title) {
-      var kindText = kind && kind.textContent ? kind.textContent.trim() : "Event";
-      var summaryText = summary && summary.textContent ? summary.textContent.trim() : "";
-      title.textContent = summaryText ? kindText + " · " + summaryText : kindText + " details";
+    for (var k = 0; k < rowSelectors.length; k++) {
+      rowSelectors[k].setAttribute("aria-pressed", "true");
+      rowSelectors[k].setAttribute("aria-expanded", "true");
     }
-    activateTurnTraceTab(record, "summary");
-    inspector.hidden = false;
+    for (var m = 0; m < timelineSelectors.length; m++) timelineSelectors[m].setAttribute("aria-pressed", "true");
+    activateTurnTraceEvidenceTab(evidence, "preview");
+    if (reveal && row.scrollIntoView) row.scrollIntoView({ block: "nearest" });
   }
 
   function setTurnCollapsed(turn, collapsed) {
@@ -365,14 +362,9 @@
   }
 
   document.addEventListener("click", function (e) {
-    var close = closest(e.target, "[data-niceeval-turn-inspector-close]");
-    if (close) {
-      closeTurnInspector(traceByElement(close));
-      return;
-    }
-    var tab = closest(e.target, "[data-niceeval-trace-inspector-tab]");
+    var tab = closest(e.target, "[data-niceeval-trace-evidence-tab]");
     if (tab) {
-      activateTurnTraceTab(tab.closest("[data-niceeval-trace-inspector-record]"), tab.getAttribute("data-niceeval-trace-inspector-tab"));
+      activateTurnTraceEvidenceTab(tab.closest("[data-niceeval-trace-evidence]"), tab.getAttribute("data-niceeval-trace-evidence-tab"));
       return;
     }
     var duration = closest(e.target, "[data-niceeval-trace-duration]");
@@ -398,12 +390,12 @@
     }
     var recordSelect = closest(e.target, "[data-niceeval-trace-select]");
     if (recordSelect) {
-      openTurnInspector(traceByElement(recordSelect), recordSelect.getAttribute("data-niceeval-trace-select"));
+      toggleTurnTraceEvidence(traceByElement(recordSelect), recordSelect.getAttribute("data-niceeval-trace-select"), false);
       return;
     }
     var timelineSelect = closest(e.target, "[data-niceeval-trace-timeline-event]");
     if (timelineSelect) {
-      openTurnInspector(traceByElement(timelineSelect), timelineSelect.getAttribute("data-niceeval-trace-timeline-event"));
+      toggleTurnTraceEvidence(traceByElement(timelineSelect), timelineSelect.getAttribute("data-niceeval-trace-timeline-event"), true);
     }
   });
 
@@ -415,7 +407,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     var trace = traceByElement(e.target);
-    if (trace) closeTurnInspector(trace);
+    if (trace) closeTurnTraceEvidence(trace);
   });
 
   // ───────────────────────── tooltip:.niceeval-chart-dot ─────────────────────────

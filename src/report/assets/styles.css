@@ -1075,10 +1075,10 @@ table.niceeval-report,
   overflow-wrap: anywhere;
 }
 
-/* ---- TurnTrace:紧凑 trajectory ledger + pre-rendered inspector ----
+/* ---- TurnTrace:紧凑 trajectory ledger + inline evidence accordion ----
    版式借鉴 ui-trajectory 的 toolbar / 50px 三 lane overview / 30px ledger
    rhythm；颜色只消费 Report token。静态页保持完整 ledger 和每条 evidence，
-   .niceeval-js 下的 selector 只打开预渲染的细节面板、过滤和折叠。 */
+   .niceeval-js 下的 selector 只打开原位细节、过滤和折叠。 */
 .niceeval-turn-trace {
   --trace-toolbar-height: 32px;
   overflow: clip;
@@ -1315,12 +1315,6 @@ table.niceeval-report,
 
 /* Ledger:turn rail + compact kind tag + one-line summary。evidence 默认在行内
    <details>，所以关 JavaScript 时页面仍是完整的可读正文。 */
-.niceeval-turn-trace .niceeval-turn-trace-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  background: var(--panel);
-}
 .niceeval-turn-trace .niceeval-trace-ledger { min-width: 0; }
 .niceeval-turn-trace .niceeval-trace-turn {
   position: relative;
@@ -1491,8 +1485,7 @@ table.niceeval-report,
   gap: 8px;
   padding: 0 0 10px;
 }
-.niceeval-turn-trace .niceeval-trace-evidence-raw,
-.niceeval-turn-trace .niceeval-trace-inspector-raw {
+.niceeval-turn-trace .niceeval-trace-evidence-raw {
   max-width: 100%;
   margin: 0;
   overflow: auto;
@@ -1507,141 +1500,80 @@ table.niceeval-report,
 }
 .niceeval-turn-trace .niceeval-trace-evidence-detail {
   min-width: 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
 }
-
-/* Enhanced state:split panel only appears after a record selection. Its panels
-   are all emitted by SSR; JS never copies the ledger DOM into the inspector. */
-.niceeval-js .niceeval-turn-trace:has(.niceeval-trace-inspector:not([hidden])) .niceeval-turn-trace-body {
-  grid-template-columns: minmax(300px, 1fr) minmax(300px, 38%);
-}
-.niceeval-turn-trace .niceeval-trace-inspector {
-  position: sticky;
-  top: var(--trace-toolbar-height);
-  align-self: start;
-  max-height: calc(100vh - var(--trace-toolbar-height));
-  min-width: 0;
-  border-left: 1px solid var(--line);
-  background: color-mix(in oklch, var(--panel), black 5%);
-  overflow: hidden;
-}
-.niceeval-turn-trace .niceeval-trace-inspector-head {
-  position: sticky;
-  z-index: 2;
-  top: var(--trace-toolbar-height);
+.niceeval-turn-trace .niceeval-trace-evidence-meta {
   display: flex;
-  min-height: 43px;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 0;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel-2), var(--panel) 38%);
+  font-size: 10px;
 }
-.niceeval-turn-trace .niceeval-trace-inspector-kicker {
-  display: block;
+.niceeval-turn-trace .niceeval-trace-evidence-meta > div { display: flex; min-width: 0; gap: 6px; }
+.niceeval-turn-trace .niceeval-trace-evidence-meta dt { color: var(--soft); }
+.niceeval-turn-trace .niceeval-trace-evidence-meta dd { min-width: 0; margin: 0; color: var(--text); }
+.niceeval-turn-trace .niceeval-trace-evidence-tabs { display: none; }
+.niceeval-turn-trace .niceeval-trace-evidence-panel {
+  min-width: 0;
+  padding: 9px 10px 10px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel), black 5%);
+}
+.niceeval-turn-trace .niceeval-trace-evidence-panel + .niceeval-trace-evidence-panel { margin-top: 8px; }
+.niceeval-turn-trace .niceeval-trace-evidence-panel > h4 {
+  margin: 0 0 7px;
   color: var(--soft);
-  font: 9px/1.1 var(--font-mono);
-  letter-spacing: .06em;
+  font: 10px/1.2 var(--font-mono);
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
-.niceeval-turn-trace .niceeval-trace-inspector-head h3 {
-  margin: 3px 0 0;
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.2;
-}
-.niceeval-turn-trace .niceeval-trace-inspector-head button {
-  width: 24px;
-  height: 24px;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  padding: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-}
-.niceeval-turn-trace .niceeval-trace-inspector-head button:hover,
-.niceeval-turn-trace .niceeval-trace-inspector-head button:focus-visible {
-  outline: 0;
-  border-color: var(--line);
-  color: var(--text);
-}
-.niceeval-turn-trace .niceeval-trace-inspector-body {
-  min-height: 0;
-  max-height: min(640px, calc(100vh - 110px));
-  overflow: auto;
-}
-.niceeval-turn-trace .niceeval-trace-inspector-record { min-width: 0; }
-.niceeval-turn-trace .niceeval-trace-inspector-tabs {
-  display: flex;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--line);
-  padding: 0 8px;
-  background: var(--panel);
-}
-.niceeval-turn-trace .niceeval-trace-inspector-tabs button {
-  position: relative;
-  height: 30px;
-  flex: none;
-  border: 0;
-  padding: 0 7px;
-  background: transparent;
-  color: var(--soft);
-  cursor: pointer;
-  font-size: 11px;
-}
-.niceeval-turn-trace .niceeval-trace-inspector-tabs button:hover { color: var(--text); }
-.niceeval-turn-trace .niceeval-trace-inspector-tabs button[aria-selected="true"] { color: var(--text); }
-.niceeval-turn-trace .niceeval-trace-inspector-tabs button[aria-selected="true"]::after {
-  position: absolute;
-  right: 7px;
-  bottom: -1px;
-  left: 7px;
-  height: 1px;
-  background: var(--accent);
-  content: "";
-}
-.niceeval-turn-trace .niceeval-trace-inspector-tabs button:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
-.niceeval-turn-trace .niceeval-trace-inspector-panel { min-width: 0; padding: 10px; }
-.niceeval-turn-trace .niceeval-trace-inspector-summary {
-  margin: 0;
-  padding: 0;
-  font-size: 11px;
-}
-.niceeval-turn-trace .niceeval-trace-inspector-summary > div {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  min-height: 23px;
-  align-items: baseline;
-  gap: 8px;
-}
-.niceeval-turn-trace .niceeval-trace-inspector-summary dt { color: var(--soft); }
-.niceeval-turn-trace .niceeval-trace-inspector-summary dd {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.niceeval-turn-trace .niceeval-trace-inspector-preview { min-width: 0; }
-.niceeval-turn-trace .niceeval-trace-inspector-preview > *:first-child { margin-top: 0; }
-.niceeval-turn-trace .niceeval-trace-inspector-preview .niceeval-text {
+.niceeval-turn-trace .niceeval-trace-evidence-panel .niceeval-text {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.niceeval-turn-trace .niceeval-trace-inspector-preview .niceeval-conversation-entry-detail {
-  min-width: 0;
-  overflow-wrap: anywhere;
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence > summary { display: none; }
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence[open] { padding-bottom: 8px; }
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs {
+  display: flex;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-top: 0;
+  padding: 0 6px;
+  background: var(--panel);
 }
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button {
+  position: relative;
+  height: 30px;
+  flex: none;
+  border: 0;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--soft);
+  cursor: pointer;
+  font-size: 11px;
+}
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button:hover,
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button[aria-selected="true"] { color: var(--text); }
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button[aria-selected="true"]::after {
+  position: absolute;
+  right: 8px;
+  bottom: -1px;
+  left: 8px;
+  height: 1px;
+  background: var(--accent);
+  content: "";
+}
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs button:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-panel { margin-top: 0; border-top: 0; }
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-panel[data-active="false"] { display: none; }
+.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-panel > h4 { display: none; }
 
 /* Toolbar-driven collapse/search remains additive to static HTML. */
-.niceeval-js .niceeval-turn-trace .niceeval-trace-evidence { display: none; }
 .niceeval-js .niceeval-turn-trace .niceeval-trace-turn[data-collapsed="true"] .niceeval-trace-turn-events { display: none; }
 .niceeval-js .niceeval-turn-trace .niceeval-trace-turn[data-collapsed="true"][data-search-active="true"] .niceeval-trace-turn-events { display: block; }
 .niceeval-js .niceeval-turn-trace[data-calls-collapsed="true"] .niceeval-trace-event-row[data-tool-row="true"] { display: none; }
@@ -1649,11 +1581,6 @@ table.niceeval-report,
 .niceeval-js .niceeval-turn-trace .niceeval-trace-event-row.niceeval-row-hidden { display: none; }
 .niceeval-js .niceeval-turn-trace .niceeval-trace-turn[data-search-empty="true"] { display: none; }
 
-@media (max-width: 820px) {
-  .niceeval-js .niceeval-turn-trace:has(.niceeval-trace-inspector:not([hidden])) .niceeval-turn-trace-body { grid-template-columns: minmax(0, 1fr); }
-  .niceeval-turn-trace .niceeval-trace-inspector { position: static; max-height: none; border-top: 1px solid var(--line); border-left: 0; }
-  .niceeval-turn-trace .niceeval-trace-inspector-body { max-height: none; }
-}
 @media (max-width: 600px) {
   .niceeval-turn-trace .niceeval-trace-toolbar { align-items: stretch; flex-wrap: wrap; padding: 5px 6px; }
   .niceeval-turn-trace .niceeval-trace-toolbar-main { width: 100%; overflow-x: auto; }
