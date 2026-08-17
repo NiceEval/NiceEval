@@ -59,7 +59,7 @@ export interface CommandEvidenceContent {
 
 export type ConversationProps = ValueProps<
   ConversationContent | null,
-  { locale?: ReportLocale; className?: string }
+  { locale?: ReportLocale; className?: string; title?: LocalizedText }
 >;
 
 type ResolvedConversationProps = {
@@ -67,6 +67,7 @@ type ResolvedConversationProps = {
   drillDown?: string;
   locale?: ReportLocale;
   className?: string;
+  title?: LocalizedText;
 };
 
 function cx(...parts: (string | undefined | false)[]): string {
@@ -168,7 +169,12 @@ function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportL
   const detail = entry.detail !== undefined ? renderReportNode(entry.detail) : null;
   if (detail === null || detail === undefined || detail === false) {
     return (
-      <div className={cx("niceeval-conversation-entry", entry.failed && "niceeval-conversation-entry--failed")}>{head}</div>
+      <div
+        className={cx("niceeval-conversation-entry", entry.failed && "niceeval-conversation-entry--failed")}
+        data-niceeval-turn-entry
+        role="button"
+        tabIndex={0}
+      >{head}</div>
     );
   }
   return (
@@ -178,6 +184,7 @@ function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportL
         "niceeval-conversation-entry--expandable",
         entry.failed && "niceeval-conversation-entry--failed",
       )}
+      data-niceeval-turn-entry
     >
       <summary className="niceeval-conversation-entry-summary">{head}</summary>
       <div className="niceeval-conversation-entry-detail">{detail}</div>
@@ -225,7 +232,15 @@ function formatSessionDuration(durationMs: number): string {
   return `${minutes}m ${seconds % 60}s`;
 }
 
-function SessionSummary({ content }: { content: ConversationContent }): ReactElement {
+function SessionSummary({
+  content,
+  title,
+  locale,
+}: {
+  content: ConversationContent;
+  title?: LocalizedText;
+  locale: ReportLocale;
+}): ReactElement {
   const durations = content.turns.flatMap((turn) => turn.durationMs === undefined ? [] : [turn.durationMs]);
   const calls = content.turns.reduce(
     (count, turn) => count + turn.entries.filter((entry) => entry.callPhase === "started").length,
@@ -236,7 +251,9 @@ function SessionSummary({ content }: { content: ConversationContent }): ReactEle
     : formatSessionDuration(durations.reduce((total, value) => total + value, 0));
   return (
     <header className="niceeval-conversation-session-head">
-      <span className="niceeval-conversation-session-title">Session log</span>
+      <span className="niceeval-conversation-session-title">
+        {title === undefined ? "Session log" : resolveLocalizedText(title, locale)}
+      </span>
       <dl className="niceeval-conversation-session-stats">
         <div><dt>Duration</dt><dd>{duration}</dd></div>
         <div><dt>Turns</dt><dd>{content.turns.length}</dd></div>
@@ -372,15 +389,16 @@ export const Conversation = defineComponent<ConversationProps, ResolvedConversat
       drillDown: undefined,
       locale: props.locale,
       className: props.className,
+      title: props.title,
     };
   },
-  web({ data, className, locale }, ctx) {
+  web({ data, className, locale, title }, ctx) {
     const content = assertConversationContent(data);
     if (isEmptyConversation(content)) return null;
     const loc = locale ?? ctx.locale;
     return (
       <div className={cx("niceeval-report", "niceeval-conversation", className)}>
-        <SessionSummary content={content!} />
+        <SessionSummary content={content!} title={title} locale={loc} />
         {content!.turns.map((turn) => (
           <TurnCard key={turn.key} turn={turn} locale={loc} />
         ))}

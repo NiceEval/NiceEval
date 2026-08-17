@@ -20,7 +20,7 @@ import {
   Callouts,
   Col,
   CommandEvidence,
-  Conversation,
+  TurnTrace,
   CopyBlock,
   DiffView,
   Grid,
@@ -519,7 +519,7 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
       {data.conversation === null ? (
         <Callouts items={executionEvidenceUnavailableCallouts} />
       ) : embedded.conversation !== null ? (
-        <Conversation data={embedded.conversation} />
+        <TurnTrace data={embedded.conversation} />
       ) : (
         null
       )}

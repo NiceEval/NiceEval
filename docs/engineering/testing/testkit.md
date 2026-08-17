@@ -130,6 +130,19 @@ export function assertExpEvalOutcomes(
   diagnostic?: string | (() => string),
 ): ExpEvalEvent[];
 
+export function retryFailedExpEvalsOnce(options: {
+  events: readonly ExpEvalEvent[];
+  targets: readonly ExpEvalEvent[];
+  runRetry: (target: ExpEvalEvent) => Promise<ProcessReceipt>;
+}): Promise<{
+  events: readonly ExpEvalEvent[];
+  retries: readonly {
+    target: ExpEvalEvent;
+    event: ExpEvalEvent;
+    receipt: ProcessReceipt;
+  }[];
+}>;
+
 export function runProcess(
   argv: Argv,
   options?: {
@@ -158,6 +171,11 @@ Testkit 直接导出公开原始 `ExpEvent`、`ExpReceiptEvent` 与精确的 `In
 - `completion` 是 `"completed" | "interrupted" | "failed"`。
 
 `expReceipt()` 返回末行的内层 `InvocationReceipt`。它不检查退出码，也不折叠 Verdict 或 Attempt。
+
+`retryFailedExpEvalsOnce()` 是 live Adapter 固定容错的机械设施，不是测试级自动 retry。调用方先从首轮公开
+Eval events 明确选出 `verdict: "failed"` 且 `attempts: 1` 的 targets，并在 `runRetry` 回调中保留完整产品 argv、
+timeout 与 selector 预检。Testkit 只串行执行每个 target，要求补跑产生唯一同身份 `passed` event 和零退出码，
+再返回首轮事件按身份替换后的 effective events；首轮 receipt、排除项、最终 expected 和日志仍归 owner。
 
 业务 Verdict 和 Attempt 只能从中间的 `event: "eval"` 读取，或按 `receipt.runIds` 读取 Record；receipt 本身不复制这些
 业务事实。`expEvalEvents()` 严格解码所有公开 Eval 终局事件，并拒绝字段非法的 Eval event。

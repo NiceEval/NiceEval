@@ -4,6 +4,7 @@ export {
   Chart,
   Col,
   Conversation,
+  TurnTrace,
   CopyBlock,
   DiffView,
   Grid,

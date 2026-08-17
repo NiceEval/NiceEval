@@ -1295,6 +1295,7 @@ export { DiffView, diffViewText } from "./primitives/diff-view.tsx";
 export type { DiffChange, DiffContent, DiffFile, DiffFileWindow, DiffViewProps } from "./primitives/diff-view.tsx";
 
 export { CommandEvidence, Conversation, ConversationEntries, conversationText, sanitizeConversationPreview } from "./primitives/conversation.tsx";
+export { TurnTrace, type TurnTraceProps } from "./primitives/turn-trace.tsx";
 export type {
   CommandEvidenceContent,
   CommandEvidenceItem,
