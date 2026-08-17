@@ -97,6 +97,7 @@ interface E2ERepoManifest {
   lanes: readonly ("pr" | "main" | "nightly" | "release")[];
   executor: Executor;
   command: readonly [string, ...string[]];
+  /** Maximum runtime for one test invocation; all CI E2E invocations use 2 minutes. */
   timeoutMinutes: number;
   harness?: {
     testkit?: boolean;

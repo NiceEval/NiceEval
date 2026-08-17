@@ -225,7 +225,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 150
+    timeout-minutes: 2
     # 同仓可信 PR 不挂 Environment；push / schedule / dispatch 的可信 lane
     # 才挂同名 Environment。两者都只注入 manifest 声明的仓库级 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}

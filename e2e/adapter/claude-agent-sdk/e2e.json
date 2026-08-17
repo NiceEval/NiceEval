@@ -6,7 +6,7 @@
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 15,
+  "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"],
   "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },

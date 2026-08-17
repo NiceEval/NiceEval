@@ -6,7 +6,7 @@
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["node", "scripts/run-native.mjs"],
-  "timeoutMinutes": 10,
+  "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
   "requires": {
