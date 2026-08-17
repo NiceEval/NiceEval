@@ -271,6 +271,10 @@ GitHub runner 或 Docker daemon 故障。测试超时、parse 失败、cleanup �
   制造 `RecordWriterBusy`。主 Invocation 内部与不同 Repo batch 仍按各自并发配置运行；
 - 两次 Invocation、receipt 与 Attempt 全部保留，并在 CI 日志标出 retry 后通过。
 
+Owner 从首轮 events 明确选择 targets，并把带完整 argv 的 `runRetry` 回调交给 Testkit
+`retryFailedExpEvalsOnce()`。Testkit 只串行执行、核对唯一同身份 `passed` event 与零退出码，再返回替换后的
+effective events；selector 唯一性、排除项、timeout、首轮日志和最终 expected matrix 仍留在 owner 正文。
+
 这不是 Vitest / Playwright retry，也不能计入确定性 owner 的可靠性接管。
 验证 Sandbox reuse 等刻意运行多条 Attempt 的生命周期 owner 不使用这项容错。
 
