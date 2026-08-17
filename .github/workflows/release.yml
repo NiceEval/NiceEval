@@ -138,8 +138,8 @@ jobs:
   release-e2e:
     name: release e2e (${{ matrix.id }})
     needs: prepare-release
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 2
+    runs-on: ${{ matrix.requires.docker == true && 'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 4
     environment: release
     strategy:
       fail-fast: false

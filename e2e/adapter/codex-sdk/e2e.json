@@ -6,7 +6,7 @@
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 2,
+  "timeoutMinutes": 3,
   "harness": { "testkit": true },
   "secrets": ["CODEX_API_KEY", "CODEX_BASE_URL"],
   "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },

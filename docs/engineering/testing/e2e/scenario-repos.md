@@ -97,7 +97,7 @@ interface E2ERepoManifest {
   lanes: readonly ("pr" | "main" | "nightly" | "release")[];
   executor: Executor;
   command: readonly [string, ...string[]];
-  /** Maximum runtime for one test invocation; all CI E2E invocations use 2 minutes. */
+  /** Maximum runtime for one test invocation; deterministic Repo 2 minutes, live provider Repo 3 minutes. */
   timeoutMinutes: number;
   harness?: {
     testkit?: boolean;
@@ -127,6 +127,10 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 多个显式 Repo 中任一个不在所选 lane 时，命令必须非零退出并列出该 Repo 的可用 lane。
 `requires.runtimes`、`docker`、`browsers`、platform 与 secret 在 test 前有结构化 preflight。
 `externalNetwork: true` 在 receipt 中写为“声明但未主动预检”。通用探测不能替代 Repo 自己拥有的 provider/network 行为。
+
+自动 CI 在 plan 阶段使用 `--exclude-external-network` 排除这些 live Repo；只有人工确认 provider
+额度与端点可用后，才通过 workflow dispatch 的 `live_providers` 显式纳入。显式 `--repo` 点名 live Repo
+却同时排除 external network 属于配置错误，不能变成空计划假绿。
 
 `id` 是 canonical 相对路径。它允许 `adapter/ai-sdk`，但不允许绝对路径、空段、dot traversal、反斜杠或控制符。
 `artifacts` 只允许 canonical `dir/**` 或顶层文件 glob。非法形状使 discovery 聚合报错。

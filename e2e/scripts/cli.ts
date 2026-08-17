@@ -58,6 +58,8 @@ Commands:
 Root run options:
   --repo <id>          Select a repository (repeatable)
   --lane <lane>        Select a manifest lane
+  --exclude-external-network
+                       Omit live provider repositories during planning
   --repo-concurrency N Run up to N selected repositories concurrently
   --keep-workdir       Retain the isolated scratch tree for local diagnosis
   --help, -h           Print this help without planning, packing, or running
