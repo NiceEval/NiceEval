@@ -74,15 +74,22 @@ function cx(...parts: (string | undefined | false)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
-function renderReportNode(node: ReportNode): ReactNode {
+/**
+ * Render an already-closed entry detail inside another report primitive.
+ *
+ * Conversation and TurnTrace deliberately share this small bridge instead of
+ * asking the browser to recover evidence from an existing DOM row.  The
+ * caller still emits every evidence surface during SSR.
+ */
+export function renderConversationDetail(node: ReportNode): ReactNode {
   if (node === null || node === undefined || typeof node === "boolean") return null;
   if (Array.isArray(node)) {
-    return node.map((child, i) => <Fragment key={i}>{renderReportNode(child)}</Fragment>);
+    return node.map((child, i) => <Fragment key={i}>{renderConversationDetail(child)}</Fragment>);
   }
   if (typeof node === "string" || typeof node === "number") return null;
   const el = node as { type: unknown; props: globalThis.Record<string, unknown> };
   if (el.type === REACT_FRAGMENT) {
-    return createElement(Fragment, null, renderReportNode(el.props.children as ReportNode));
+    return createElement(Fragment, null, renderConversationDetail(el.props.children as ReportNode));
   }
   return createElement(el.type as never, el.props);
 }
@@ -166,7 +173,7 @@ function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportL
       <span className="niceeval-conversation-entry-preview">{preview}</span>
     </>
   );
-  const detail = entry.detail !== undefined ? renderReportNode(entry.detail) : null;
+  const detail = entry.detail !== undefined ? renderConversationDetail(entry.detail) : null;
   if (detail === null || detail === undefined || detail === false) {
     return (
       <div

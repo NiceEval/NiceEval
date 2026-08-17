@@ -213,60 +213,209 @@
     }
   });
 
-  // ───────────────────────── TurnTrace:事件 inspector ─────────────────────────
-  // 静态 HTML 里事件内容仍完整留在账本中；增强态点击事件行，把该行的摘要与详情克隆到
-  // 同一 TurnTrace 的右侧 inspector。关闭只改变浏览状态，不删除或改写证据。
+  // ───────────────────────── TurnTrace:trajectory toolbar + inspector ─────────────────────────
+  // 每个 ledger row、timeline span 和 inspector panel 都在 SSR 时生成。这里仅把
+  // 它们按稳定 data id 联动：不 cloneNode、不搬动 evidence、也不依赖 CSS.escape。
+
+  function traceByElement(element) {
+    return element ? element.closest("[data-niceeval-turn-trace]") : null;
+  }
+
+  function traceElementsById(trace, attribute, id) {
+    var nodes = trace.querySelectorAll("[" + attribute + "]");
+    var found = [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute(attribute) === id) found.push(nodes[i]);
+    }
+    return found;
+  }
+
+  function traceElementById(trace, attribute, id) {
+    var elements = traceElementsById(trace, attribute, id);
+    return elements.length === 0 ? null : elements[0];
+  }
+
+  function activateTurnTraceTab(record, tab) {
+    if (!record) return;
+    var buttons = record.querySelectorAll("[data-niceeval-trace-inspector-tab]");
+    var panels = record.querySelectorAll("[data-niceeval-trace-inspector-panel]");
+    for (var i = 0; i < buttons.length; i++) {
+      var active = buttons[i].getAttribute("data-niceeval-trace-inspector-tab") === tab;
+      buttons[i].setAttribute("aria-selected", active ? "true" : "false");
+    }
+    for (var j = 0; j < panels.length; j++) {
+      panels[j].hidden = panels[j].getAttribute("data-niceeval-trace-inspector-panel") !== tab;
+    }
+  }
 
   function closeTurnInspector(trace) {
     if (!trace) return;
     var inspector = trace.querySelector("[data-niceeval-turn-inspector]");
     if (inspector) inspector.hidden = true;
-    var selected = trace.querySelectorAll("[data-niceeval-turn-entry][aria-selected='true']");
-    for (var i = 0; i < selected.length; i++) selected[i].removeAttribute("aria-selected");
+    var records = trace.querySelectorAll("[data-niceeval-trace-inspector-record]");
+    for (var i = 0; i < records.length; i++) records[i].hidden = true;
+    var selected = trace.querySelectorAll("[data-niceeval-trace-select][aria-pressed='true'], [data-niceeval-trace-timeline-event][aria-pressed='true']");
+    for (var j = 0; j < selected.length; j++) selected[j].setAttribute("aria-pressed", "false");
   }
 
-  function openTurnInspector(entry) {
-    var trace = entry.closest("[data-niceeval-turn-trace]");
-    if (!trace) return;
+  function openTurnInspector(trace, eventId) {
+    if (!trace || !eventId) return;
     var inspector = trace.querySelector("[data-niceeval-turn-inspector]");
     var title = trace.querySelector("[data-niceeval-turn-inspector-title]");
-    var body = trace.querySelector("[data-niceeval-turn-inspector-body]");
-    if (!inspector || !title || !body) return;
-    var selected = trace.querySelectorAll("[data-niceeval-turn-entry][aria-selected='true']");
-    for (var i = 0; i < selected.length; i++) selected[i].removeAttribute("aria-selected");
-    entry.setAttribute("aria-selected", "true");
-    var kind = entry.querySelector(".niceeval-conversation-entry-kind");
-    var preview = entry.querySelector(".niceeval-conversation-entry-preview");
-    title.textContent = kind && kind.textContent ? kind.textContent : "Event details";
-    body.replaceChildren();
-    if (preview) {
-      var summary = document.createElement("p");
-      summary.className = "niceeval-turn-trace-inspector-summary";
-      summary.textContent = preview.textContent || "";
-      body.appendChild(summary);
+    var record = traceElementById(trace, "data-niceeval-trace-inspector-record", eventId);
+    var row = traceElementById(trace, "data-niceeval-trace-event", eventId);
+    if (!inspector || !record || !row) return;
+
+    var selected = trace.querySelectorAll("[data-niceeval-trace-select][aria-pressed='true'], [data-niceeval-trace-timeline-event][aria-pressed='true']");
+    for (var i = 0; i < selected.length; i++) selected[i].setAttribute("aria-pressed", "false");
+    var previousRecords = trace.querySelectorAll("[data-niceeval-trace-inspector-record]");
+    for (var j = 0; j < previousRecords.length; j++) previousRecords[j].hidden = previousRecords[j] !== record;
+    var rowSelectors = traceElementsById(trace, "data-niceeval-trace-select", eventId);
+    var timelineSelectors = traceElementsById(trace, "data-niceeval-trace-timeline-event", eventId);
+    for (var k = 0; k < rowSelectors.length; k++) rowSelectors[k].setAttribute("aria-pressed", "true");
+    for (var m = 0; m < timelineSelectors.length; m++) timelineSelectors[m].setAttribute("aria-pressed", "true");
+
+    var kind = row.querySelector(".niceeval-trace-event-kind");
+    var summary = row.querySelector(".niceeval-trace-event-summary");
+    if (title) {
+      var kindText = kind && kind.textContent ? kind.textContent.trim() : "Event";
+      var summaryText = summary && summary.textContent ? summary.textContent.trim() : "";
+      title.textContent = summaryText ? kindText + " · " + summaryText : kindText + " details";
     }
-    var detail = entry.querySelector(".niceeval-conversation-entry-detail");
-    if (detail) body.appendChild(detail.cloneNode(true));
+    activateTurnTraceTab(record, "summary");
     inspector.hidden = false;
+  }
+
+  function setTurnCollapsed(turn, collapsed) {
+    if (!turn) return;
+    turn.setAttribute("data-collapsed", collapsed ? "true" : "false");
+    var toggle = turn.querySelector("[data-niceeval-trace-turn-toggle]");
+    if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+
+  function toggleAllTurns(trace) {
+    var turns = trace.querySelectorAll("[data-niceeval-trace-turn]");
+    if (turns.length === 0) return;
+    var allCollapsed = true;
+    for (var i = 0; i < turns.length; i++) {
+      if (turns[i].getAttribute("data-collapsed") !== "true") {
+        allCollapsed = false;
+        break;
+      }
+    }
+    for (var j = 0; j < turns.length; j++) setTurnCollapsed(turns[j], !allCollapsed);
+    var control = trace.querySelector("[data-niceeval-trace-turns]");
+    if (control) {
+      control.setAttribute("aria-pressed", allCollapsed ? "false" : "true");
+      var glyph = control.querySelector(".niceeval-trace-toolbar-glyph");
+      if (glyph) glyph.textContent = allCollapsed ? "⊟" : "⊞";
+    }
+  }
+
+  function toggleAllCalls(trace) {
+    var collapsed = trace.getAttribute("data-calls-collapsed") === "true";
+    trace.setAttribute("data-calls-collapsed", collapsed ? "false" : "true");
+    var control = trace.querySelector("[data-niceeval-trace-calls]");
+    if (control) {
+      control.setAttribute("aria-pressed", collapsed ? "false" : "true");
+      var glyph = control.querySelector(".niceeval-trace-toolbar-glyph");
+      if (glyph) glyph.textContent = collapsed ? "⊟" : "⊞";
+    }
+  }
+
+  function toggleTraceDuration(trace, control) {
+    if (!trace || !control || control.disabled) return;
+    var timeline = trace.querySelector("[data-niceeval-trace-timeline]");
+    // Incomplete timing must remain equal-width sequence; never infer event clocks.
+    if (!timeline || timeline.getAttribute("data-timing-complete") !== "true") return;
+    var duration = trace.getAttribute("data-niceeval-duration-mode") === "duration";
+    trace.setAttribute("data-niceeval-duration-mode", duration ? "sequence" : "duration");
+    control.setAttribute("aria-pressed", duration ? "false" : "true");
+  }
+
+  function filterTurnTrace(input) {
+    var trace = traceByElement(input);
+    if (!trace) return;
+    var query = (input.value || "").trim().toLowerCase();
+    var events = trace.querySelectorAll("[data-niceeval-trace-event]");
+    for (var i = 0; i < events.length; i++) {
+      var event = events[i];
+      var match = query === "" || (event.textContent || "").toLowerCase().indexOf(query) !== -1;
+      event.classList.toggle("niceeval-row-hidden", !match);
+      event.setAttribute("data-search-match", match ? "true" : "false");
+      var id = event.getAttribute("data-niceeval-trace-event");
+      if (!id) continue;
+      var spans = traceElementsById(trace, "data-niceeval-trace-timeline-event", id);
+      for (var j = 0; j < spans.length; j++) spans[j].setAttribute("data-search-match", match ? "true" : "false");
+    }
+    var turns = trace.querySelectorAll("[data-niceeval-trace-turn]");
+    for (var k = 0; k < turns.length; k++) {
+      var rows = turns[k].querySelectorAll("[data-niceeval-trace-event]");
+      var hasMatch = false;
+      for (var m = 0; m < rows.length; m++) {
+        if (rows[m].getAttribute("data-search-match") === "true") {
+          hasMatch = true;
+          break;
+        }
+      }
+      turns[k].setAttribute("data-search-empty", hasMatch ? "false" : "true");
+      if (query !== "" && hasMatch) turns[k].setAttribute("data-search-active", "true");
+      else turns[k].removeAttribute("data-search-active");
+    }
   }
 
   document.addEventListener("click", function (e) {
     var close = closest(e.target, "[data-niceeval-turn-inspector-close]");
     if (close) {
-      closeTurnInspector(close.closest("[data-niceeval-turn-trace]"));
+      closeTurnInspector(traceByElement(close));
       return;
     }
-    var entry = closest(e.target, "[data-niceeval-turn-entry]");
-    if (entry && entry.closest("[data-niceeval-turn-trace]")) openTurnInspector(entry);
+    var tab = closest(e.target, "[data-niceeval-trace-inspector-tab]");
+    if (tab) {
+      activateTurnTraceTab(tab.closest("[data-niceeval-trace-inspector-record]"), tab.getAttribute("data-niceeval-trace-inspector-tab"));
+      return;
+    }
+    var duration = closest(e.target, "[data-niceeval-trace-duration]");
+    if (duration) {
+      toggleTraceDuration(traceByElement(duration), duration);
+      return;
+    }
+    var turns = closest(e.target, "[data-niceeval-trace-turns]");
+    if (turns) {
+      toggleAllTurns(traceByElement(turns));
+      return;
+    }
+    var calls = closest(e.target, "[data-niceeval-trace-calls]");
+    if (calls) {
+      toggleAllCalls(traceByElement(calls));
+      return;
+    }
+    var turnToggle = closest(e.target, "[data-niceeval-trace-turn-toggle]");
+    if (turnToggle) {
+      var turn = turnToggle.closest("[data-niceeval-trace-turn]");
+      setTurnCollapsed(turn, turn && turn.getAttribute("data-collapsed") !== "true");
+      return;
+    }
+    var recordSelect = closest(e.target, "[data-niceeval-trace-select]");
+    if (recordSelect) {
+      openTurnInspector(traceByElement(recordSelect), recordSelect.getAttribute("data-niceeval-trace-select"));
+      return;
+    }
+    var timelineSelect = closest(e.target, "[data-niceeval-trace-timeline-event]");
+    if (timelineSelect) {
+      openTurnInspector(traceByElement(timelineSelect), timelineSelect.getAttribute("data-niceeval-trace-timeline-event"));
+    }
+  });
+
+  document.addEventListener("input", function (e) {
+    var input = closest(e.target, "input[data-niceeval-trace-search]");
+    if (input) filterTurnTrace(input);
   });
 
   document.addEventListener("keydown", function (e) {
-    var entry = closest(e.target, "[data-niceeval-turn-entry]");
-    if (!entry || !entry.closest("[data-niceeval-turn-trace]")) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      openTurnInspector(entry);
-    }
+    if (e.key !== "Escape") return;
+    var trace = traceByElement(e.target);
+    if (trace) closeTurnInspector(trace);
   });
 
   // ───────────────────────── tooltip:.niceeval-chart-dot ─────────────────────────
