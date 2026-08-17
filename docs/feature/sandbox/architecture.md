@@ -76,7 +76,7 @@ export default defineEval({
     await t.send("把 src/app.ts 改成 async/await。");
     //  send 窗口:从进入到返回的全部 workspace 变化落一笔 agent 归因
 
-    t.sandbox.fileChanged("src/app.ts", { after: excludes(/callback/) });
+    t.sandbox.fileChanged("src/app.ts", { after: not(pattern(/callback/)) });
     //  读的是最后一笔包含该路径的 agent delta 的 after 端点;其间的 eval 写入不会被算进 agent 的账
   },
 });

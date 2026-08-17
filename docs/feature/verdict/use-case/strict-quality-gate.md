@@ -37,7 +37,7 @@ turn.judge.autoevals.closedQA("说明是否清晰？")
    ```
 
 5. `--strict` 下红掉的题就是质量退化清单,照常拿 locator 下钻;确认阈值和断言都可信后,把该断言改成
-   `.atLeast(x).gate()`,从此不依赖 flag、任何模式都执法。
+   `.gate(x)`,从此不依赖 flag、任何模式都执法。
 
 ## 边界
 

@@ -50,7 +50,7 @@ const policy = defineEvalRunPolicy({
 test("Claude Code 交付每个声明坐标的预期终局", async () => {
   const result = await expectEvalRun(policy);
 
-  const denied = result.first.require("locked-down", "websearch-denied");
+  const denied = result.first.get("locked-down", "websearch-denied");
   await expectFailedAssertion(denied, "turn.succeeded");
 });
 ```

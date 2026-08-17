@@ -17,7 +17,7 @@ describe("公开文档的 API 示例", () => {
       "example.ts",
       [
         't.judge.autoevals.closedQA("rubric").atLeast(0.7);',
-        't.judge.autoevals.closedQA("rubric").gate();',
+        't.judge.autoevals.closedQA("rubric").gate(0.7);',
         't.judge.autoevals.closedQA("rubric").points(2);',
         't.check(t.reply, similarity(expected).atLeast(0.7));',
         't.sandbox.fileChanged("src/app.ts").points(2);',
@@ -25,7 +25,6 @@ describe("公开文档的 API 示例", () => {
     );
 
     expect(hits.map((hit) => hit.rule)).toEqual([
-      "ordinary-fact.gate",
       "ordinary-fact.points",
       "ordinary-fact.points",
     ]);

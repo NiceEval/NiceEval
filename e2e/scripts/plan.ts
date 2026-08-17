@@ -21,6 +21,8 @@ export interface SelectionOptions {
   diffPaths?: readonly string[];
   /** Matches a manifest area (the manifest's capability vocabulary). */
   capability?: string;
+  /** Excludes live repos that require outbound network/provider access. */
+  excludeExternalNetwork?: boolean;
 }
 
 export interface PlanEntry {
@@ -51,6 +53,8 @@ export interface PlanCli {
   /** Explicitly disable both supplied and implicit working-tree path filtering. */
   noDiff: boolean;
   capability?: string;
+  /** Explicitly omit repos whose manifest requires external network access. */
+  excludeExternalNetwork: boolean;
   /** Group selected repos by their explicit manifest batch placement key. */
   batch: boolean;
   json: boolean;
@@ -181,6 +185,15 @@ export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOp
     }
   }
 
+  if (options.excludeExternalNetwork === true && explicitlyRequested.length > 0) {
+    const live = explicitlyRequested.filter((repo) => repo.manifest.requires?.externalNetwork === true);
+    if (live.length > 0) {
+      throw new Error(
+        `--repo selection requires external network but --exclude-external-network was set: ${live.map((repo) => repo.manifest.id).join(", ")}`,
+      );
+    }
+  }
+
   const requestedIds = repoIds.length > 0 ? new Set(repoIds) : undefined;
   const requestedDiffPaths = options.diffPaths && options.diffPaths.length > 0 ? options.diffPaths : undefined;
   const diffPaths = repoIds.length === 0 && requestedDiffPaths !== undefined && !hasGlobalImpact(requestedDiffPaths)
@@ -192,6 +205,7 @@ export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOp
     if (options.lane !== undefined && !manifest.lanes.includes(options.lane)) return false;
     if (requestedIds !== undefined && !requestedIds.has(manifest.id)) return false;
     if (options.capability !== undefined && !manifest.areas.some((area) => area === options.capability)) return false;
+    if (options.excludeExternalNetwork === true && manifest.requires?.externalNetwork === true) return false;
     // An explicit --repo is an operator decision, not a path-filter hint.
     // Never turn it into a false-green empty plan merely because an unrelated
     // --diff-path happened to be supplied by a caller.
@@ -255,6 +269,7 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
       diff: { type: "string", multiple: true },
       "no-diff": { type: "boolean", default: false },
       capability: { type: "string" },
+      "exclude-external-network": { type: "boolean", default: false },
       batch: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
     },
@@ -276,6 +291,7 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
     diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
     noDiff,
     capability,
+    excludeExternalNetwork: values["exclude-external-network"] === true,
     batch: values.batch === true,
     json: values.json === true,
   };
@@ -423,6 +439,7 @@ export function resolvePlan(argv: readonly string[]): ResolvedPlan {
         repoIds: cli.repoIds,
         diffPaths,
         capability: cli.capability,
+        excludeExternalNetwork: cli.excludeExternalNetwork,
       },
       cli.batch,
     ),

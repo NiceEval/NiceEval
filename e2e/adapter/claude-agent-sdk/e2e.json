@@ -6,10 +6,10 @@
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 15,
+  "timeoutMinutes": 3,
   "harness": { "testkit": true },
   "secrets": ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"],
-  "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },
+  "requires": { "externalNetwork": true, "runtimes": ["node>=24"] },
   "paths": ["e2e/adapter/claude-agent-sdk/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**"]
 }

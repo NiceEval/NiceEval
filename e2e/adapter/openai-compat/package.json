@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Live OpenAI SDK compatibility owners for NiceEval response converters",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "e2e": "tsc --noEmit && vitest run",
@@ -17,7 +17,7 @@
     "openai": "6.49.0"
   },
   "devDependencies": {
-    "@types/node": "22.10.0",
+    "@types/node": "^24.0.0",
     "typescript": "5.7.2",
     "vitest": "4.1.9"
   }

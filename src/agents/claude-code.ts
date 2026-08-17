@@ -366,7 +366,15 @@ export async function installPlugins(
       const source = marketplace.ref
         ? await cloneRepo(sb, marketplace.source, marketplace.ref)
         : marketplace.source;
-      const add = await sb.runShell(`${shared.agentBin("claude")} plugin marketplace add ${shared.shellQuote(source)}`);
+      const addCommand = `${shared.agentBin("claude")} plugin marketplace add ${shared.shellQuote(source)}`;
+      let add = await sb.runShell(addCommand);
+      // The native CLI fetches remote marketplace metadata during add. A
+      // transient connection failure must not discard an otherwise reusable
+      // Sandbox, but every retry starts from the same declared empty state.
+      for (let attempt = 1; add.exitCode !== 0 && attempt < 3; attempt += 1) {
+        await dropRegisteredMarketplace(sb, marketplace.name);
+        add = await sb.runShell(addCommand);
+      }
       if (add.exitCode !== 0) {
         throw new Error(
           t("plugin.marketplaceFailed", {

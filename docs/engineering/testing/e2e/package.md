@@ -1,7 +1,7 @@
 # Package：安装后的外部消费
 
 Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界。根 runner 把待发布 tarball 安装进仓库外副本；测试只从
-安装后的 `niceeval` binary 与 package exports 进入，不引用 checkout 源码或构建目录。NiceEval 的 CI 只使用 Node 22，
+安装后的 `niceeval` binary 与 package exports 进入，不引用 checkout 源码或构建目录。NiceEval 的 CI 只使用 Node 24，
 不建立跨 Node 版本兼容矩阵。
 
 ## Owner 表

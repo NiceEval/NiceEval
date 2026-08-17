@@ -6,10 +6,10 @@
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 15,
+  "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": { "runtimes": ["node>=22"] },
+  "requires": { "runtimes": ["node>=24"] },
   "paths": [
     "e2e/adapter/local-protocol/**",
     "package.json",

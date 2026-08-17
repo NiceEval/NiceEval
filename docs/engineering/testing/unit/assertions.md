@@ -69,7 +69,7 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
 
 - **内置 matcher**：每个 matcher 都要证明会改变得分的等价类（命中/未命中/非法类型输入）、默认 severity、niceeval 附加语义（去重、行首识别、深相等、归一化范围）。
   不测试 JavaScript 标准库本身；`makeAssertion`的错误捕获与文本回退（stack 优先、非 Error 值字符串化）单独证明。
-- **值断言入口**：`check` 写入后继续；两种题型的 `require` 都等价于 `check(...).gate().stopOnFailure()`，失败保留已写条目并中止、通过透传原引用。
+- **值断言入口**：`check` 调用即登记并继续；需要硬判定时链 `.gate()`，需要停止当前 continuation 时 `await .orStop()`。失败保留已写条目并中止、通过透传原引用。
   `group` 只组织报告不改变语义；值断言只评显式传入的值，不隐式读取 scope 证据。`CommandResult` 失败摘要的构成：首行、尾部段、evidence 取命令行。
 - **ToolMatch/SubagentMatch 的 match 小语言**：`calledTool`/`notCalledTool`/`calledSubagent` 的 `match` 参数各字段独立形态与命中语义。
   - `input`：顶层给对象是深度部分匹配、给 RegExp 是测序列化后的完整输入、给谓词函数是拿原始值自行判断，三种形态互不退化（回归：RegExp 实例误落深比对分支、枚举其自身空可枚举属性、静默匹配一切调用，必须锁死为不匹配）。
@@ -86,25 +86,21 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - 五种评分输入进入同一个 Collector。
     判定只消费已声明字段。
   - Assertion result 的判别联合提供有界预览；值为 `undefined` 时也不能崩溃。
-  - 无参 `.soft()` 把断言降为纯写入，并清除已有 threshold。
-  - `.soft()`、`.gate()` 与 `.atLeast()` 共用一份 `RecordHandle` 契约测试，不按 matcher 重复。
-  - `.stopOnFailure()` 在链的位置立即结算且只对 failed 中止；通过返回原句柄，失败结果带 `stopOnFailure: true` 并以 `EvalRequirementFailed` 退出。值、t、session 与 turn 句柄在两种题型共用这套语义；无线 soft 单独链时报清晰作者错误。
-- **`.soft()` 对判定的影响**：分数照实形成 Assertion result（`score` 保留原始分，不因降级为 soft 被抹掉）；`outcome` 恒为 `passed`（`computePassed` 对 threshold undefined 的 soft 恒返回 true）。`computeVerdict` 无论 `strict` 是否为真都不会因这条断言形成 `failed` Verdict。`--strict` 只翻转「有阈值的 soft」；无阈值的 soft 没有阈值可比较，不受这个旋钮影响。
-- **计分制给分链路（`.points(n)` / `t.score(label, n)`）**：`RecordHandle.points(n)` 把权重挂上 spec。`finalize` 把声明值 `n` 独立写进 Assertion result 的 `pointsAvailable`，并按 `n × score` 写进其 `points`。
+- **可选与硬判定**：Pass Eval 的 Assertion 默认 required；`.optional()` 只把 unavailable/errored 从 Verdict 的独立错误中排除，`.gate()` 把 Boolean 或 thresholded measurement 纳入 failed fold。
+- **`.orStop()`** 在链的位置立即结算且只对 condition 未满足时中止当前 continuation；通过返回原引用，已登记结果仍会封口。它不是第二条 Assertion。
+- **计分制给分链路（`.score(n)` / `t.score(n)`）**：Score Eval 的 handle `.score(n)` 把 points 挂上 entry；`finalize` 保存声明值与 earned contribution，按 `measurement × points` 计算 earned。
   - 0/1 断言通过挣 `n`、不过挣 0；连续打分断言按比例。failed 与 unavailable 都保留 `pointsAvailable`，unavailable 没有实得 `points`；`n <= 0` 或非有限数立即抛错（不是记一条失败断言）。
   - `AssertionCollector.score(label, n)` 立即形成一条 Score contribution（不像断言那样等 finalize
     求值），`n < 0` 或非有限数立即抛错；`groupPath` 跟随当前 `t.group` 栈，与断言同一份分组约定。
-  - 未链 `.points()` 的 Assertion result `points` 省略（不是 `0`）——省略与 0 分是两个读数，省略表示这条断言不参与计分。
-  - 得分点落盘为 `severity: "soft"` + 有 `points`，丢分不改 verdict。`.points()` 之后不暴露 `.soft()` / `.atLeast()`，但可链 `.gate().stopOnFailure()`；给分、严重度和控制流三个字段互不替换（类型层证明，见 typecheck fixture）。
-- **控制流与严重度正交**：`.gate()` 在两种题型都只把断言放进硬判定面、不中止后续；`.atLeast(x)` 保持 soft。只有显式 `.stopOnFailure()` 才在该位置用实时 AssertionEvaluationContext 求值；failed 时截断其后断言与 Score contribution，已产生的贡献照实保留，finalize 复用该快照，不因后续事件或文件变化重算。
-  - `.gate().stopOnFailure()` 是硬前置，`.atLeast(x).stopOnFailure()` 会中止但仍是 soft；matcher 默认通过线也允许直接 stop。未 await 的调用由下一个异步 `t.*` 入口与 runner 收尾补做结算。
-  - 计分制 matcher 自带的默认 gate 仍只贡献观测通过线；句柄显式 `.gate()` 才变成硬要求，但无论哪种 severity 都不会隐式改变控制流。
+  - 未链 `.score()` 的 Assertion 不贡献 score；缺失与 `0` 是不同读数。
+  - Score Eval 没有 gate/optional policy；丢分本身不改 Verdict，缺少必要 score material 才会使结果不可比较。
+- **控制流与判定正交**：`.gate()` 只改变 Verdict fold；`.orStop()` 才在调用位置求值并中止当前 continuation。已产生的 contribution 照实保留，sealed result 不因后续事件或文件变化重算。
 - **证据完整性**：负断言与上限断言在「完整且找到 / 完整且确认无 / 不完整」三态矩阵下的结果——不完整时绝不给出可信 passed。正断言缺数据时失败不猜；不用 OTel span 补写行为事件。
   这一族的 fixture 必须让完整性是显式字段。
 - **Severity 与 Verdict**：`computeVerdict` 用决策表直接断言冲突输入的最终优先级（errored > failed > skipped > passed）。
-  - 计分制丢分本身不改 verdict，显式 gate 失败仍产生 failed；`--strict` 在两种题型都把带线 soft 翻为 gate，但不添加 `.stopOnFailure()`；无阈值 soft 永不影响判定。
-  - `.atLeast` 的 strict 四象限与恰好达标边界；执行异常是 errored 不是 failed；skip 的优先级。
-  - `computePassed` 在 gate 省略阈值时的默认通过线是满分（`score >= 1`）：0/1 matcher（如 `equals`/`includes`，命中即 1、不命中即 0）不受这条默认线影响；连续打分的 gate 断言（省略阈值的 judge 类）未达满分即 fail、恰好满分才 pass。
+  - 计分制丢分本身不改 Verdict；Pass Eval 只有显式 `.gate()` 才把不满足条件折叠为 `failed`。
+  - `.atLeast` 的阈值与恰好达标边界；执行异常是 errored 不是 failed；skip 的优先级。
+  - `gate()` 对 Boolean 结果按 matched/mismatched 折叠；measurement 使用 `gate(n)` 直接设置阈值并进入 failed。
 - **摘要投影（display）**：控制字节剥离的保留/去除边界、单值收口的折行与上限、宽度预算下的让位优先级。`+N more failures` 的独立尾行不变量、作用域前缀规则。
   全部是纯函数字符串语义，输入输出直接断言。
 - **judge**：缺模型/缺 key 形成 `unavailable` Assertion result（`judge-model-unresolved`），非 optional 使 Attempt 形成 `errored` Verdict、绝不静默消失；默认 soft 与链式提级。
@@ -131,7 +127,7 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
 
 ## 不这样测
 
-- 不给每个 matcher 都重复测试 `.gate()`；链式分级在共享 collector 契约测试一次。
+- 不给每个 matcher 都重复测试 `.gate()`；句柄策略在共享 Assertions 契约测试一次。
 - 不断言 `computeVerdict` 内部先执行哪个 `if`，只断言冲突输入的最终优先级。
 - 不用所有 scope 都会通过的事件 fixture。
 - 不把 judge HTTP client 的 mock 返回值原样断言成 score；要验证请求材料、错误分类、缺 key 和 score 归一。

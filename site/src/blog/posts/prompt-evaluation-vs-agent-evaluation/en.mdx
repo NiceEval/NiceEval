@@ -67,16 +67,16 @@ Here's the code:
 
 ```ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { pattern, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description: "Test that the agent looks up the account, confirms entitlements, and executes cancellation correctly in a subscription-cancellation scenario",
   async test(t) {
     const turn = await t.send("I want to cancel my Pro subscription");
 
-    t.toolOrder(["lookup_account", "get_subscription", "cancel_subscription"]);
+    t.toolOrder([toolMatch("lookup_account"), toolMatch("get_subscription"), toolMatch("cancel_subscription")]);
 
-    t.check(turn.message, includes(/cancel|refund|subscription/i));
+    t.check(turn.message, pattern(/cancel|refund|subscription/i));
 
     t.judge.autoevals
       .closedQA("Did the assistant confirm the refund amount and entitlement changes with the user before executing the cancellation?")

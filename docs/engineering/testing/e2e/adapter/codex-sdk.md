@@ -2,7 +2,7 @@
 
 ## adapter-codex-sdk-live-compatibility
 
-Repo ID 是 `adapter/codex-sdk`。它在 host 上以 external network 和 Node 22+ 运行，锁定
+Repo ID 是 `adapter/codex-sdk`。它在 host 上以 external network 和 Node 24+ 运行，锁定
 `@openai/codex-sdk` 版本，并只接收 `CODEX_API_KEY` 与 `CODEX_BASE_URL` 两个 live secret。
 每次 Experiment 只有一次 Attempt；Vitest 没有 retry，也没有 Judge。
 

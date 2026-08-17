@@ -88,14 +88,14 @@ export default defineExperiment({
 ```ts
 // evals/refund-policy.eval.ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { pattern } from "niceeval/expect";
 
 export default defineEval({
   description: "退款政策问答",
   async test(t) {
     await t.send("你们的退款政策是什么?");
     t.succeeded();
-    t.check(t.reply, includes(/30\s*天|一个月/));  // 措辞会变，用等价正则而不是单一精确短语
+    t.check(t.reply, pattern(/30\s*天|一个月/));  // 措辞会变，用等价正则而不是单一精确短语
   },
 });
 ```

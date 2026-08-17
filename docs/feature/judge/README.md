@@ -10,7 +10,7 @@ const quality = turn.judge.autoevals.closedQA("回答是否解释了风险？")
   .label("风险说明质量");
 ```
 
-Pass Eval 必须为 Judge measurement 调用 `.atLeast(n)`。Score Eval 可直接 `.score(n)`，也可添加
+Pass Eval 必须为 Judge measurement 调用 `.gate(n)`。Score Eval 可直接 `.score(n)`，也可添加
 `.atLeast(n)` 作为局部 condition。两种配置都只执行一次 Judge evaluator，写一条 AssertionResult。
 
 | 目的 | 入口 |

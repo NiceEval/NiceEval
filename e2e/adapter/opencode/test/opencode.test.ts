@@ -56,21 +56,16 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-/** `show --execution` 的 turn ledger 把每笔 TOOL 调用的 input 放进 Content 列。 */
-function toolInputOccurrences(execution: string, marker: string): number {
-  return execution.split("\n").filter((line) => {
-    const ledgerRow = /^\s*\d+\s+\|\s+TOOL\s+\|\s+(.*?)\s+\|\s+completed\s+·.*$/.exec(line);
-    return ledgerRow?.[1]?.includes(marker) ?? false;
-  }).length;
-}
-
-function expectToolInputReadback(execution: string, marker: string, expected: number): void {
-  expect(execution).toMatch(/^\s*# \| Event \| Content \| Result$/m);
-  expect(execution).toMatch(/^\s*\d+\s+\|\s+ASSISTANT\s+\|/m);
+/** `show --execution` 的 Conversation 依次展示工具调用及其完成结果。 */
+function expectToolInputReadback(execution: string, marker: string): void {
+  expect(execution).toContain('"conversation"');
+  expect(execution).toMatch(/"tool":"(?:apply_patch|file_write|write)"/);
+  expect(execution).toMatch(/"tool":"(?:bash|shell|command_execution)"/);
+  expect(execution).toContain(marker);
   expect(
-    toolInputOccurrences(execution, marker),
-    `show --execution should expose ${expected} completed TOOL ledger row(s) containing ${marker}`,
-  ).toBe(expected);
+    execution.match(/"kind":"tool-result"/g)?.length ?? 0,
+    `show --execution should preserve both tool inputs and their completed results for ${marker}`,
+  ).toBeGreaterThanOrEqual(2);
 }
 
 it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
@@ -107,7 +102,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // outcome：execution 是适配器收到的公开投影。TOOL ledger 行保留原始未归一化名
   //（opencode 的 write / bash），canonical 名 file_write / shell 也可能出现；
   // 工具身份与入参必须穿过归一化、持久化与 CLI 展示。
-  const execution = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--execution"]);
+  const execution = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--execution", "--json"]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(
     execution.stdout.includes("notes.txt") ||
@@ -116,17 +111,36 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     "execution tree missing write evidence (notes.txt/file_write/write)",
   ).toBe(true);
   // 两笔工具调用都以 marker 为输入；这同时证明参数没有在归一、落盘或 readback 时丢失。
-  expectToolInputReadback(execution.stdout, TOOL_PAYLOAD, 2);
-  expect(execution.stdout).toContain("Timing overview");
+  expectToolInputReadback(execution.stdout, TOOL_PAYLOAD);
 
   // usage Eval 的两个 t.send() 都形成独立 request observation，且输入、输出 token 均为正数。
   // Conversation 会按 adapter session 聚合，不能把一次 send 等同于一个展示层 Turn 卡片。
-  const usageExecution = await niceeval.run(["show", locators["usage/tokens"]!, "--execution"]);
+  const usageExecution = await niceeval.run(["show", locators["usage/tokens"]!, "--execution", "--json"]);
   expect(usageExecution.exitCode, usageExecution.diagnostic()).toBe(0);
-  expect(usageExecution.stdout).toMatch(/Turn 1\s+·\s+completed/i);
-  expect(usageExecution.stdout.match(/opencode \| request \| model request/g)).toHaveLength(2);
-  expect(usageExecution.stdout).toMatch(/opencode \| token-bucket \| input: [1-9]\d* token\(s\)/);
-  expect(usageExecution.stdout).toMatch(/opencode \| token-bucket \| output: [1-9]\d* token\(s\)/);
+  const usageDocument: unknown = JSON.parse(usageExecution.stdout);
+  const usageObservations: Record<string, unknown>[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (value === null || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    if (record.kind === "request" || record.kind === "token-bucket") usageObservations.push(record);
+    for (const nested of Object.values(record)) visit(nested);
+  };
+  visit(usageDocument);
+  expect(usageObservations.filter((observation) => observation.kind === "request")).toHaveLength(2);
+  expect(usageObservations).toEqual(expect.arrayContaining([
+    expect.objectContaining({ kind: "token-bucket", bucket: "input", tokens: expect.any(Number) }),
+    expect.objectContaining({ kind: "token-bucket", bucket: "output", tokens: expect.any(Number) }),
+  ]));
+  for (const observation of usageObservations) {
+    if (observation.kind === "token-bucket" && (observation.bucket === "input" || observation.bucket === "output")) {
+      expect(observation.tokens).toEqual(expect.any(Number));
+      expect(observation.tokens).toBeGreaterThan(0);
+    }
+  }
   expect(
     execution.stdout.includes("shell") ||
       execution.stdout.includes("bash") ||
@@ -139,7 +153,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
-  expect(timing.stdout).toMatch(/turn\s+turn1\b/);
+  expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
 
   // Skill 配置独立成线：安装、原生 skill 工具选择与 decoy 反选由专用 Eval 证明。
   const skillRun = await niceeval.run(

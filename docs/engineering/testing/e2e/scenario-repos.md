@@ -97,6 +97,7 @@ interface E2ERepoManifest {
   lanes: readonly ("pr" | "main" | "nightly" | "release")[];
   executor: Executor;
   command: readonly [string, ...string[]];
+  /** Maximum runtime for one test invocation; deterministic Repo 2 minutes, live provider Repo 3 minutes. */
   timeoutMinutes: number;
   harness?: {
     testkit?: boolean;
@@ -126,6 +127,10 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 多个显式 Repo 中任一个不在所选 lane 时，命令必须非零退出并列出该 Repo 的可用 lane。
 `requires.runtimes`、`docker`、`browsers`、platform 与 secret 在 test 前有结构化 preflight。
 `externalNetwork: true` 在 receipt 中写为“声明但未主动预检”。通用探测不能替代 Repo 自己拥有的 provider/network 行为。
+
+同仓可信 PR、main push 与 schedule 会纳入这些 live Repo，并按 manifest 白名单注入已登记 secret；
+Fork 与 Dependabot 使用无密钥 lane。人工 workflow dispatch 通过 `live_providers` 明确选择是否纳入。
+显式 `--repo` 点名 live Repo 却同时排除 external network 属于配置错误，不能变成空计划假绿。
 
 `id` 是 canonical 相对路径。它允许 `adapter/ai-sdk`，但不允许绝对路径、空段、dot traversal、反斜杠或控制符。
 `artifacts` 只允许 canonical `dir/**` 或顶层文件 glob。非法形状使 discovery 聚合报错。

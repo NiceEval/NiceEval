@@ -14,7 +14,7 @@ interface ExpEvent {
 }
 
 interface SourceShowManifest {
-  readonly schema: "niceeval.report-target-execution/v2";
+  readonly schema: "niceeval.report-target-execution/v1";
   readonly locale: "en";
   readonly page: {
     readonly route: string;
@@ -76,7 +76,7 @@ test("选中的 Source Page 从本轮 Record 呈现入口与导入断言快照",
       expect(json.stdout).not.toContain("sources.json");
       const document = json.json<SourceShowManifest>();
       expect(document).toMatchObject({
-        schema: "niceeval.report-target-execution/v2",
+        schema: "niceeval.report-target-execution/v1",
         locale: "en",
         page: {
           route: "/source",

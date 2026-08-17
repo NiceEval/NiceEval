@@ -40,10 +40,9 @@ test("当前 producer 的持久化结果可由独立 candidate show 进程读取
       const shown = await candidate.run(["show", "--run", receipt.runIds[0]!, "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const selection = shown
-        .json<{ sample: { selection: { runIds: readonly string[] } } }>()
-        .sample.selection;
+        .json<{ selection: { kind: "explicit-runs"; runIds: readonly string[] } }>()
+        .selection;
       expect(selection.runIds, shown.diagnostic()).toEqual([receipt.runIds[0]!]);
-      expect(shown.stdout, shown.diagnostic()).toContain('"included"');
     },
   );
 });

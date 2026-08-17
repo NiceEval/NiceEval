@@ -3,7 +3,7 @@
 ## adapter-claude-agent-sdk-live-compatibility
 
 Repo ID 是 `adapter/claude-agent-sdk`。它在 host 上锁定
-`@anthropic-ai/claude-agent-sdk@0.3.226`。它声明 Node 22、external network 与 main / nightly /
+`@anthropic-ai/claude-agent-sdk@0.3.226`。它声明 Node 24、external network 与 main / nightly /
 release lanes。它且仅声明 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_BASE_URL` 两项 secret。
 它验证候选包公开的 `createClaudeSdkEventStream()` 能消费真实 SDK 的原生 `SDKMessage`；它不新增
 NiceEval public factory。

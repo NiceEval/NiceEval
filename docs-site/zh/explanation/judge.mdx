@@ -10,7 +10,7 @@ Judge 用独立裁判模型评估难以用精确 Match 表达的质量，例如�
 ```ts
 const turn = await t.send("用两句话说明这项变更的风险。");
 turn.judge.autoevals.closedQA("回答是否清楚说明了风险？")
-  .atLeast(0.8)
+  .gate(0.8)
   .label("风险说明质量");
 ```
 
@@ -37,7 +37,7 @@ const notes = await t.sandbox.readText("NOTES.md");
 t.judge.autoevals.closedQA("文档是否说明了安装和回滚？", {
   input: "安装服务并在 NOTES.md 中说明安装和回滚。",
   output: notes,
-}).atLeast(0.8).label("操作说明");
+}).gate(0.8).label("操作说明");
 ```
 
 文件先经公开 Sandbox API 读取成字符串。Judge API 不接收路径、`{ on }`、隐式最后一条输入或单次模型覆盖。`session.judge` 也不是公开 API；跨 session 的材料由作者显式组合。
@@ -51,7 +51,7 @@ export default defineEval({
   judge: true,
   async test(t) {
     const turn = await t.send("总结需求。");
-    turn.judge.autoevals.summarizes("原始需求").atLeast(0.8).label("总结质量");
+    turn.judge.autoevals.summarizes("原始需求").gate(0.8).label("总结质量");
   },
 });
 ```
@@ -77,11 +77,11 @@ export default defineConfig({
 
 ## 阈值与分数
 
-Pass Eval 必须用 `.atLeast(n)` 把 Judge measurement 封口成 Boolean condition。measurement 低于阈值时 Attempt 为 `failed`。
+Pass Eval 用 `.gate(n)` 把 Judge measurement 纳入 failed；`.atLeast(n)` 只记录局部 condition。
 
 ```ts
 const quality = turn.judge.autoevals.closedQA("回答是否准确且完整？")
-  .atLeast(0.8)
+  .gate(0.8)
   .label("回答质量");
 await quality.orStop();
 ```

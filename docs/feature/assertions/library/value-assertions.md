@@ -33,6 +33,6 @@ config.name.toUpperCase();
 
 ## measurement
 
-连续 Match 返回 finite `[0,1]` measurement。Pass Eval 必须 `.atLeast(n)`；Score Eval 可直接
+连续 Match 返回 finite `[0,1]` measurement。Pass Eval 用 `.gate(n)` 才让低于阈值的结果进入 failed；`.atLeast(n)` 只保存局部 condition。Score Eval 可直接
 `.score(points)`，并可额外 `.atLeast(n)` 保存局部 condition。Score Eval 没有 gate；
 具体计分见 [Score Eval](score-points.md)。

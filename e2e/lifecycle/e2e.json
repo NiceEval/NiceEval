@@ -6,10 +6,10 @@
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 10,
+  "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": { "runtimes": ["node>=22"], "docker": true },
+  "requires": { "runtimes": ["node>=24"], "docker": true },
   "paths": [
     "e2e/lifecycle/**",
     "src/cli.ts",

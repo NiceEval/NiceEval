@@ -526,8 +526,8 @@ class BooleanHandle extends HandleBase {
     return this;
   }
 
-  gate(): this {
-    this.runtime.configureGate(this.entry);
+  gate(value?: number): this {
+    this.runtime.configureGate(this.entry, value);
     return this;
   }
 
@@ -635,8 +635,8 @@ class MeasurementHandle extends HandleBase {
     return this;
   }
 
-  gate(): this {
-    this.runtime.configureGate(this.entry);
+  gate(value: number): this {
+    this.runtime.configureGate(this.entry, value);
     return this;
   }
 
@@ -866,14 +866,19 @@ class AssertionsRuntimeImplementation {
     this.recordSourceOccurrence(entry, "optional");
   }
 
-  configureGate(entry: AssertionEntry): void {
+  configureGate(entry: AssertionEntry, threshold?: number): void {
     this.assertMutable(entry, "gate()");
     if (this.evaluationKind === "score") {
       throw new TypeError("gate() is not available in a Score Eval; normal scoring always passes");
     }
     if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot be a gate");
-    if (entry.kind === "measurement" && entry.threshold === undefined) {
-      throw new TypeError("A measurement Assertion requires atLeast() before gate()");
+    if (entry.kind === "measurement") {
+      if (threshold === undefined) {
+        throw new TypeError("A measurement Assertion requires gate(threshold)");
+      }
+      assertUnitInterval(threshold, "gate() threshold");
+      if (entry.threshold !== undefined) throw new Error("An Assertion threshold is already configured");
+      entry.threshold = threshold;
     }
     if (entry.gateConfigured) throw new Error("An Assertion gate policy is already configured");
     entry.gateConfigured = true;
@@ -1401,8 +1406,7 @@ class AssertionsRuntimeImplementation {
 
   private isGate(entry: AssertionEntry): boolean {
     if (entry.gateConfigured) return true;
-    return this.evaluationKind === "pass"
-      && (entry.kind === "boolean" || (entry.kind === "measurement" && entry.threshold !== undefined));
+    return this.evaluationKind === "pass" && entry.kind === "boolean";
   }
 
   private gateForMatched(entry: AssertionEntry): "not-gate" | "satisfied" {

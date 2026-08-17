@@ -12,7 +12,7 @@ import { includes } from "niceeval/expect";
 t.check(turn.message, includes("完成")).label("回复说明完成");
 turn.succeeded().label("Turn 完成");
 turn.calledTool("get_weather", { count: 1 }).label("查询天气");
-turn.judge.autoevals.closedQA("回答是否具体且礼貌？").atLeast(0.8).label("回答质量");
+turn.judge.autoevals.closedQA("回答是否具体且礼貌？").gate(0.8).label("回答质量");
 ```
 
 每条 Assertion 的 `key` 与 `label` 最多各配置一次。重复配置即使写入同一个值也是作者错误。
@@ -45,11 +45,11 @@ turn.calledTool("read_file", { count: 2 }).label("读取两次");
 
 ## 两种 Eval
 
-`defineEval` 创建 Pass Eval。Boolean `matched` 进入 Attempt Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止后续检查继续登记。连续 evaluator 与 Judge recipe 给出 `[0,1]` measurement；Pass Eval 必须用 `.atLeast(n)` 把它封口成 Boolean condition，未设 threshold 的 measurement 是作者错误。
+`defineEval` 创建 Pass Eval。Boolean `matched` 进入 Attempt Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止后续检查继续登记。连续 evaluator 与 Judge recipe 给出 `[0,1]` measurement；Pass Eval 使用 `.gate(n)` 才把它纳入 failed；`.atLeast(n)` 只记录局部 condition。
 
 ```ts
 turn.judge.autoevals.closedQA("回答是否给出可执行步骤？")
-  .atLeast(0.8)
+  .gate(0.8)
   .label("步骤可执行");
 ```
 
@@ -78,7 +78,7 @@ const search = await t.check(turn.message, includes("结论")).orStop();
 
 ## Judge
 
-Judge recipe 调用时直接登记 measurement Assertion。Pass Eval 对同一 handle 用 `.atLeast(n)`，Score Eval 用 `.score(n)`；两种配置都只运行一次 Judge evaluator。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
+Judge recipe 调用时直接登记 measurement Assertion。Pass Eval 对同一 handle 用 `.gate(n)`，Score Eval 用 `.score(n)`；两种配置都只运行一次 Judge evaluator。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
 
 ## 不可用与读取
 

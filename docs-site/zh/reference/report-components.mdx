@@ -107,7 +107,7 @@ const MetricCard = defineComponent<
 
 ## JSON、网页和静态站
 
-`show --json` 固定输出英语 JSON。内建 Report 输出 Host 拥有的具名领域文档；自定义 Report 输出一个 Page 的 route、标题、80-column rendered text、下载摘要和问题表。两种 v2 JSON 都在顶层以相同的 `projections` 对象携带该目标 Page 的闭合成本数据；它们不包含作者树、HTML、全站路由或站点 identity。
+`show --json` 固定输出英语 JSON。内建 Report 输出 Host 拥有的具名领域文档；自定义 Report 输出一个 Page 的 route、标题、80-column rendered text、下载摘要和问题表。两种 v1 JSON 都在顶层以相同的 `projections` 对象携带该目标 Page 的闭合成本数据；它们不包含作者树、HTML、全站路由或站点 identity。
 
 view 与静态导出使用同一份完整站点版本。同一路由的 HTTP body 与导出目录页面 body 逐字节相同。两者都携带同一个 reload client；静态目录找不到 view 的端点时，它会安静停用。禁用 JavaScript 或断开网络后，正文、导航、详情、完整度、问题和下载仍可读。
 

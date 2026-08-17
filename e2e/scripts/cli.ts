@@ -45,6 +45,22 @@ function removeRootFlag(argv: readonly string[], flag: string): string[] {
   return separator < 0 ? [...before] : [...before, "--", ...argv.slice(separator + 1)];
 }
 
+function takeRootOption(argv: readonly string[], flag: string): { argv: string[]; value: string | undefined } {
+  const separator = argv.indexOf("--");
+  const before = [...(separator < 0 ? argv : argv.slice(0, separator))];
+  const index = before.indexOf(flag);
+  if (index < 0) return { argv: [...argv], value: undefined };
+  const value = before[index + 1];
+  if (value === undefined || value.startsWith("-")) {
+    throw new Error(`${flag} requires a value`);
+  }
+  before.splice(index, 2);
+  return {
+    argv: separator < 0 ? before : [...before, "--", ...argv.slice(separator + 1)],
+    value,
+  };
+}
+
 function printHelp(): void {
   console.log(`Usage: pnpm e2e [command] [options] [-- native-test-args]
 
@@ -58,6 +74,8 @@ Commands:
 Root run options:
   --repo <id>          Select a repository (repeatable)
   --lane <lane>        Select a manifest lane
+  --exclude-external-network
+                       Omit live provider repositories during planning
   --repo-concurrency N Run up to N selected repositories concurrently
   --keep-workdir       Retain the isolated scratch tree for local diagnosis
   --help, -h           Print this help without planning, packing, or running
@@ -70,11 +88,13 @@ export function buildDefaultRunArgs(
   plannedRepoIds: readonly string[],
   nativeArgs: readonly string[],
   keepWorkdir = false,
+  repoConcurrency?: string,
 ): string[] {
   return [
     "--candidate",
     candidatePath,
     ...(keepWorkdir ? ["--keep-workdir"] : []),
+    ...(repoConcurrency === undefined ? [] : ["--repo-concurrency", repoConcurrency]),
     ...plannedRepoIds.flatMap((id) => ["--repo", id]),
     ...(nativeArgs.length === 0 ? [] : ["--", ...nativeArgs]),
   ];
@@ -98,7 +118,8 @@ export async function executeDefault(
   dependencies: DefaultFlowDependencies,
 ): Promise<boolean> {
   const keepWorkdir = hasRootFlag(argv, "--keep-workdir");
-  const { selectionArgs, nativeArgs } = splitNativeArgs(removeRootFlag(argv, "--keep-workdir"));
+  const concurrency = takeRootOption(removeRootFlag(argv, "--keep-workdir"), "--repo-concurrency");
+  const { selectionArgs, nativeArgs } = splitNativeArgs(concurrency.argv);
   const selected = await dependencies.plan(selectionArgs);
   if (selected.length === 0) return false;
   const candidate = await dependencies.pack(dependencies.candidatePath);
@@ -107,6 +128,7 @@ export async function executeDefault(
     selected.flatMap((entry) => entry.repoIds),
     nativeArgs,
     keepWorkdir,
+    concurrency.value,
   ));
   return true;
 }

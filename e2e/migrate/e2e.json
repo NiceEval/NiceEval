@@ -6,10 +6,10 @@
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "run", "e2e"],
-  "timeoutMinutes": 10,
+  "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": { "externalNetwork": false, "runtimes": ["node>=22"] },
+  "requires": { "externalNetwork": false, "runtimes": ["node>=24"] },
   "paths": ["e2e/migrate/**", "src/record/**", "src/show/**", "src/cli/**", "e2e/scripts/**"],
   "artifacts": [".e2e-artifacts/**", "junit.xml"]
 }

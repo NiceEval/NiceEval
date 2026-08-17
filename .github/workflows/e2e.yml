@@ -10,9 +10,10 @@ name: e2e
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
 #
 # Lane: 同仓可信 PR / push main=main | fork / Dependabot PR=pr(无 secret)
-#       schedule=nightly | dispatch=输入。CI 每次执行所选 lane 全集。
-# 只有非 PR 的可信 lane 挂同名 GitHub Environment；同仓 PR 直接使用仓库级
-# Actions secrets，避免把 Environment 误当成 PR 代码无法外传 secret 的边界。
+#       schedule=nightly | dispatch=输入。同仓可信 PR、main push 与 schedule 跑 lane 全集；
+#       fork / Dependabot PR 无 secret，dispatch 由 live_providers 显式选择。
+# 可信自动触发与显式启用 live provider 的 dispatch 按 manifest 白名单读取 secret；
+# 同仓 PR 使用仓库级 secret，其它可信 lane 挂同名 GitHub Environment。
 
 on:
   pull_request:
@@ -36,6 +37,11 @@ on:
         description: "只跑一个 Repo id（留空=该 lane 全集）"
         required: false
         type: string
+      live_providers:
+        description: "包含会调用真实公网 provider 的 Repo"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -66,7 +72,7 @@ jobs:
       - name: Set up pnpm and Node
         uses: pnpm/setup@v1
         with:
-          runtime: node@22
+          runtime: node@24
           cache: true
           install: false
 
@@ -77,6 +83,7 @@ jobs:
         id: lane
         env:
           DISPATCH_LANE: ${{ github.event.inputs.lane }}
+          DISPATCH_LIVE_PROVIDERS: ${{ github.event.inputs.live_providers }}
           PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
@@ -101,6 +108,8 @@ jobs:
               ;;
             workflow_dispatch)
               lane="${DISPATCH_LANE:-main}"
+              inject=false
+              environment=
               ;;
             push)
               if [ "$GITHUB_REF" = "refs/heads/main" ]; then
@@ -119,6 +128,7 @@ jobs:
               environment=
               ;;
           esac
+          include_live="$inject"
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             case "$lane" in
               pr)
@@ -134,22 +144,42 @@ jobs:
                 exit 1
                 ;;
             esac
+            if [ "${DISPATCH_LIVE_PROVIDERS:-false}" = "true" ]; then
+              if [ "$lane" = "pr" ]; then
+                echo "::error::live_providers=true is unavailable in the secret-free pr lane"
+                exit 1
+              fi
+              include_live=true
+              inject=true
+              environment="$lane"
+            else
+              inject=false
+              environment=
+            fi
           fi
           {
             echo "lane=${lane}"
+            echo "include-live=${include_live}"
             echo "inject-secrets=${inject}"
             echo "environment=${environment}"
           } >> "$GITHUB_OUTPUT"
-          echo "[e2e] lane=${lane} inject-secrets=${inject} environment=${environment:-"(none)"}"
+          echo "[e2e] lane=${lane} include-live=${include_live} inject-secrets=${inject} environment=${environment:-"(none)"}"
 
       - name: Run e2e plan --json
         id: plan
         env:
           LANE: ${{ steps.lane.outputs.lane }}
           DISPATCH_REPO: ${{ github.event.inputs.repo }}
+          INCLUDE_LIVE_PROVIDERS: ${{ steps.lane.outputs.include-live }}
         run: |
           set -euo pipefail
           args=(--lane "$LANE" --no-diff --json --batch)
+          include_live=false
+          if [ "$INCLUDE_LIVE_PROVIDERS" = "true" ]; then
+            include_live=true
+          else
+            args+=(--exclude-external-network)
+          fi
           repo="$(printf '%s' "${DISPATCH_REPO:-}" | tr -d '[:space:]')"
           if [ -n "$repo" ]; then
             args+=(--repo "$repo")
@@ -176,7 +206,7 @@ jobs:
             echo "::error::batched plan contains duplicate Repo ids"
             exit 1
           fi
-          echo "[e2e] plan lane=${LANE} selected ${repo_count} Repo(s) in ${count} cell(s): $(jq -r '[.[].repoIds[]] | join(", ")' "$plan_file")"
+          echo "[e2e] plan lane=${LANE} live_providers=${include_live} selected ${repo_count} Repo(s) in ${count} cell(s): $(jq -r '[.[].repoIds[]] | join(", ")' "$plan_file")"
 
       - name: Typecheck Testkit
         if: steps.plan.outputs.has-jobs == 'true'
@@ -224,10 +254,11 @@ jobs:
     name: e2e (${{ matrix.id }})
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 150
-    # 同仓可信 PR 不挂 Environment；push / schedule / dispatch 的可信 lane
-    # 才挂同名 Environment。两者都只注入 manifest 声明的仓库级 secret。
+    runs-on: ${{ matrix.requires.docker == true && 'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-2vcpu-ubuntu-2404' }}
+    # 覆盖 runner/action 启动、依赖安装及并行 live Repo；单 Repo 的产品预算仍由 manifest 收紧。
+    timeout-minutes: 15
+    # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
+    # 同名 Environment。所有路径都只注入 manifest 白名单中的 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
     strategy:
       fail-fast: false
@@ -257,7 +288,7 @@ jobs:
       - name: Set up pnpm and Node
         uses: pnpm/setup@v1
         with:
-          runtime: node@22
+          runtime: node@24
           cache: true
           cache-dependency-path: ${{ steps.dependency-cache.outputs.paths }}
           install: false

@@ -337,7 +337,7 @@ export class ArtifactPrepareCoordinator {
     cacheKey: string,
   ): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
     const prepared = Effect.tryPromise({
-      // Node >=22 的 AbortSignal.any 保留数组中第一个已中断 signal 的 reason。
+      // Node 24 的 AbortSignal.any 保留数组中第一个已中断 signal 的 reason。
       // 调用方 signal 排在前面，Effect runtime signal 则确保 fiber interruption 能取消 SDK Promise。
       try: (runtimeSignal) => Promise.resolve(installer.prepareArtifact({
         targetPlatform: platform,

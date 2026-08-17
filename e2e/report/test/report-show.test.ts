@@ -38,7 +38,7 @@ interface ReportProjections {
 
 /** The documented built-in machine document (docs/feature/reports/cli.md). */
 interface BuiltInShowDocument {
-  readonly schema: "niceeval.show/v2";
+  readonly schema: "niceeval.show/v1";
   readonly locale: "en";
   readonly selection:
     | {
@@ -72,7 +72,7 @@ interface BuiltInShowDocument {
 
 /** The documented custom single-target manifest (docs/feature/reports/cli.md). */
 interface CustomTargetExecutionManifest {
-  readonly schema: "niceeval.report-target-execution/v2";
+  readonly schema: "niceeval.report-target-execution/v1";
   readonly locale: "en";
   readonly selection: { readonly kind: "project-current"; readonly sampleIdentity: string; readonly experimentIds: readonly string[] };
   readonly report: { readonly identity: string; readonly title: string | Record<string, string> };
@@ -106,6 +106,17 @@ function expectCanonicalProblemTable(problems: readonly ReportProblem[], pageId:
   expect(keys).toEqual([...keys].sort());
 }
 
+function expectBuiltInPricingProfile(projections: ReportProjections): void {
+  expect(projections).toMatchObject({
+    schema: "niceeval.report-projections/v1",
+    pricingProfile: {
+      contentIdentity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      currency: "USD",
+      provenance: { kind: "declared-rate-card" },
+    },
+  });
+}
+
 test("show 将固定 execution 的文本和单目标机器文档交付给调用方", async () => {
   await reportE2E.case(
     "show-overview",
@@ -131,7 +142,7 @@ test("show 将固定 execution 的文本和单目标机器文档交付给调用�
       expect(json.exitCode, json.diagnostic()).toBe(0);
       const document = json.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
-        schema: "niceeval.show/v2",
+        schema: "niceeval.show/v1",
         locale: "en",
         selection: {
           kind: "project-current",
@@ -144,11 +155,8 @@ test("show 将固定 execution 的文本和单目标机器文档交付给调用�
       expect(document.report.token).toEqual(expect.any(String));
       expect(document.report.identity).toEqual(expect.any(String));
       expect(document.data.kind).toBe("leaderboard");
-      expect(document.projections).toEqual({
-        schema: "niceeval.report-projections/v1",
-        pricingProfile: null,
-        costs: [],
-      });
+      expectBuiltInPricingProfile(document.projections);
+      expect(document.projections.costs).toEqual([]);
     },
   );
 });
@@ -170,18 +178,15 @@ test("show 对 immutable Attempt 交付精确 evidence JSON", async () => {
       expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
       const document = attempt.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
-        schema: "niceeval.show/v2",
+        schema: "niceeval.show/v1",
         locale: "en",
         selection: { kind: "attempt-locator", locator: failed.locator },
         page: { route: "/", pageId: "attempt-overview", title: "Attempt overview" },
       });
       expectCanonicalProblemTable(document.problems, "attempt-overview");
       expect(document.data.kind).toBe("attempt");
-      expect(document.projections).toEqual({
-        schema: "niceeval.report-projections/v1",
-        pricingProfile: null,
-        costs: [],
-      });
+      expectBuiltInPricingProfile(document.projections);
+      expect(document.projections.costs).toEqual([]);
 
       const payload = JSON.stringify(document.data);
       expect(payload).toContain(failed.locator!);
@@ -211,7 +216,7 @@ test("show --run 保留 deterministic classic World 的历史 Run 与 Attempt �
       expect(historical.exitCode, historical.diagnostic()).toBe(0);
       const document = historical.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
-        schema: "niceeval.show/v2",
+        schema: "niceeval.show/v1",
         locale: "en",
         selection: {
           kind: "explicit-runs",
@@ -220,11 +225,8 @@ test("show --run 保留 deterministic classic World 的历史 Run 与 Attempt �
         page: { route: "/", pageId: "run-membership" },
       });
       expectCanonicalProblemTable(document.problems, "run-membership");
-      expect(document.projections).toEqual({
-        schema: "niceeval.report-projections/v1",
-        pricingProfile: null,
-        costs: [],
-      });
+      expectBuiltInPricingProfile(document.projections);
+      expect(document.projections.costs).toEqual([]);
     },
   );
 });
@@ -284,8 +286,8 @@ test("自定义 Report 的 show 是单目标阅读面，JSON 只含 target-execu
       expect(shown.stdout).toContain("Source detail");
       expect(shown.stdout).toContain("Diff detail");
       const unwrapped = shown.stdout.replace(/\s+/gu, " ");
-      expect(unwrapped).toContain("Cost unavailable — this report does not declare a PricingProfile.");
-      expect(unwrapped).toContain("Cost × pass rate scatter unavailable — this report does not declare a PricingProfile.");
+      expect(unwrapped).toContain("Total known cost");
+      expect(unwrapped).toContain("costUSD");
 
       const json = await niceeval.run(
         ["show", "--report", "./reports/site.tsx", "--json"],
@@ -294,7 +296,7 @@ test("自定义 Report 的 show 是单目标阅读面，JSON 只含 target-execu
       expect(json.exitCode, json.diagnostic()).toBe(0);
       const manifest = json.json<CustomTargetExecutionManifest>();
       expect(manifest).toMatchObject({
-        schema: "niceeval.report-target-execution/v2",
+        schema: "niceeval.report-target-execution/v1",
         locale: "en",
         selection: {
           kind: "project-current",
@@ -312,11 +314,13 @@ test("自定义 Report 的 show 是单目标阅读面，JSON 只含 target-execu
       expectCanonicalProblemTable(manifest.problems, "overview");
       expect(manifest.report.identity).toEqual(expect.any(String));
       expect(manifest.selection.sampleIdentity).toEqual(expect.any(String));
-      expect(manifest.projections).toEqual({
-        schema: "niceeval.report-projections/v1",
-        pricingProfile: null,
-        costs: [],
-      });
+      expectBuiltInPricingProfile(manifest.projections);
+      expect(manifest.projections.costs).toHaveLength(3);
+      expect(manifest.projections.costs.map((entry) => entry.page)).toEqual([
+        { pageId: "overview", route: "/" },
+        { pageId: "overview", route: "/" },
+        { pageId: "overview", route: "/" },
+      ]);
     },
   );
 });
@@ -347,7 +351,7 @@ test("参数化 show 按规范 key 读取详情页，并对非成员 key 返回�
       expect(detail.exitCode, detail.diagnostic()).toBe(0);
       const detailManifest = detail.json<CustomTargetExecutionManifest>();
       expect(detailManifest).toMatchObject({
-        schema: "niceeval.report-target-execution/v2",
+        schema: "niceeval.report-target-execution/v1",
         page: {
           route: `/slot/${slotKey}`,
           pageId: "slot",

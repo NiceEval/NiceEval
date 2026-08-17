@@ -74,7 +74,7 @@
 改 `docs-site/` 后，从仓库根目录运行：
 
 ```sh
-PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm lint
+PATH=/opt/homebrew/opt/node@24/bin:$PATH pnpm lint
 ```
 
 这一条统一执行 `lint/docs/` 与 `lint/docs-site/` 下的规则、Mintlify 构建校验和 Mintlify 断链检查。后两步调 Mint CLI，需要 LTS Node，所以要带

@@ -38,7 +38,7 @@ manifest collector 携带到 durable root；它不获得 durable root。直接�
 不是身份、缓存键或稳定性承诺。Testkit 不发布 npm、不采用独立 semver/tag/workflow，也不对仓外消费者建立 API 承诺。
 若未来要对外提供测试库，应作为新产品重新设计，不复用本内部包的假公开面。
 
-Testkit 与根 E2E harness 统一使用 Node 22，不维护独立的 Node 兼容矩阵。内部包同时提供 ESM、CJS 与对应类型入口；
+Testkit 与根 E2E harness 统一使用 Node 24，不维护独立的 Node 兼容矩阵。内部包同时提供 ESM、CJS 与对应类型入口；
 构建必须直接输出到新的 staging package，再在同一 scratch filesystem 原子
 发布；不得读取、删除或写入共享 `packages/testkit/dist`。runner 校验 package
 metadata/exports，并在 install 前、install 后和副本 cleanup 后核对 snapshot

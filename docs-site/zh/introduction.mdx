@@ -36,7 +36,7 @@ export default defineEval({
     t.check(second.message, includes("上海")).label("第二轮回答上海");
 
     turn.judge.autoevals.closedQA("助手是否基于工具返回的天气数据作答？")
-      .atLeast(0.7)
+      .gate(0.7)
       .label("回答有依据");
   },
 });

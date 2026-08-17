@@ -106,27 +106,21 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
 });
 
 it("show --execution 读回 Codex SDK converter 的代表性证据", async () => {
-  const execution = await niceeval.run(["show", locator, "--execution"], { env });
+  const execution = await niceeval.run(["show", locator, "--execution", "--json"], { env });
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  // The public projection is a turn-aware ledger. Keep the original command,
-  // converted tool identity, completed result, and resumed assistant response
-  // distinguishable rather than accepting any generic TOOL presentation.
-  expect(execution.stdout).toContain("Turn 1 ledger");
-  expect(execution.stdout).toMatch(
-    new RegExp(
-      `^\\s*\\d+ \\| TOOL \\| command_execution\\([^\\r\\n]*printf '%s[^\\r\\n]*${marker}[^\\r\\n]*\\| completed · [^\\r\\n]*${marker}[^\\r\\n]*$`,
-      "m",
-    ),
-  );
-  expect(execution.stdout).toMatch(
-    new RegExp("^\\s*\\d+ \\| ASSISTANT \\| `?" + sentinel + "`? \\|\\s*$", "m"),
-  );
+  // Conversation keeps the original command, converted tool identity,
+  // completed result, and resumed assistant response in the public machine view.
+  expect(execution.stdout).toContain('"conversation"');
+  expect(execution.stdout).toContain('"tool":"command_execution"');
+  expect(execution.stdout).toContain('"kind":"tool-result"');
+  expect(execution.stdout).toContain(marker);
+  expect(execution.stdout).toContain(sentinel);
 });
 
 it("show --timing 读回 Codex SDK converter 的 runner 阶段", async () => {
   const timing = await niceeval.run(["show", locator, "--timing"], { env });
   expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
 
 });

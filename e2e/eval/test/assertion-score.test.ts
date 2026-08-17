@@ -13,19 +13,19 @@ interface ExpEvent {
 }
 
 interface LeaderboardShow {
-  format: "niceeval.show";
-  schemaVersion: 1;
-  view: "leaderboard";
-  sample: { denominator: number };
-  problemTable: readonly unknown[];
+  schema: "niceeval.show/v1";
+  selection: { kind: "project-current"; sampleIdentity: string };
   data: {
-    state: "available";
-    inputState: "complete" | "partial";
-    problemIds: readonly number[];
-    value: {
-      kind: "leaderboard";
-      attempts: readonly unknown[];
-    };
+    kind: "leaderboard";
+    rows: readonly {
+      experiment: string;
+      passRate: {
+        state: string;
+        samples: number;
+        total: number;
+        refs: readonly { identity: { kind: "attempt"; locator: string } }[];
+      };
+    }[];
   };
 }
 
@@ -86,19 +86,20 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       expect(run.ndjson<ExpEvent>().filter((event) => event.verdict === "failed")).toEqual([]);
       const document = shown.json<LeaderboardShow>();
       expect(document).toMatchObject({
-        format: "niceeval.show",
-        schemaVersion: 1,
-        view: "leaderboard",
-        sample: { denominator: 8 },
+        schema: "niceeval.show/v1",
+        selection: { kind: "project-current" },
         data: {
-          state: "available",
-          inputState: "complete",
-          problemIds: [],
-          value: { kind: "leaderboard" },
+          kind: "leaderboard",
+          rows: [{
+            experiment: "assertion-score",
+            passRate: { state: "partial", samples: 6, total: 8 },
+          }],
         },
       });
-      expect(document.problemTable).toEqual([]);
-      expect(document.data.value.attempts).toHaveLength(8);
+      const [row] = document.data.rows;
+      expect(row).toBeDefined();
+      expect(row!.passRate.refs).toHaveLength(8);
+      expect(row!.passRate.refs.map((ref) => ref.identity.locator)).toContain(scoredEvent.locator);
     },
   );
 });

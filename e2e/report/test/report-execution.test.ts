@@ -117,7 +117,7 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
       const projected = await niceeval.run(["show", "--report", "./reports/classic.tsx", "--json"]);
       expect(projected.exitCode, projected.diagnostic()).toBe(0);
       const projectionManifest = projected.json<{
-        readonly schema: "niceeval.report-target-execution/v2";
+        readonly schema: "niceeval.report-target-execution/v1";
         readonly projections: {
           readonly schema: "niceeval.report-projections/v1";
           readonly pricingProfile: {
@@ -139,7 +139,7 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
           }[];
         };
       }>();
-      expect(projectionManifest.schema).toBe("niceeval.report-target-execution/v2");
+      expect(projectionManifest.schema).toBe("niceeval.report-target-execution/v1");
       expect(projectionManifest.projections.schema).toBe("niceeval.report-projections/v1");
       expect(projectionManifest.projections.pricingProfile).toMatchObject({
         currency: "USD",
@@ -206,7 +206,7 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
         const duplicate = await niceeval.run(["show", "--report", `./reports/${module}`, "--json"]);
         expect(duplicate.exitCode, duplicate.diagnostic()).toBe(0);
         expect(duplicate.json<{ schema: string; data: { kind: string } }>()).toMatchObject({
-          schema: "niceeval.show/v2",
+          schema: "niceeval.show/v1",
           data: { kind: "leaderboard" },
         });
       }
