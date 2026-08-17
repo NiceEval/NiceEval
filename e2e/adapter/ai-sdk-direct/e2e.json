@@ -9,7 +9,7 @@
   "timeoutMinutes": 3,
   "harness": { "testkit": true },
   "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
-  "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },
+  "requires": { "externalNetwork": true, "runtimes": ["node>=24"] },
   "paths": ["e2e/adapter/ai-sdk-direct/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**", "junit.xml"]
 }

@@ -9,6 +9,7 @@
   "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
+  "requires": { "runtimes": ["node>=24"] },
   "paths": ["e2e/cli/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [
     ".e2e-artifacts/**"

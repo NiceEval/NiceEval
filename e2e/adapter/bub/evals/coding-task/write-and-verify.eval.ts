@@ -17,7 +17,8 @@ export default defineEval({
     }
     const turn = await t.send(
       `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}请分两个独立的工具调用完成,不要合并成一条命令:\n` +
-        `第一步:用你的文件写入工具在工作目录下创建 notes.txt,内容为精确的这一行:bub e2e ok\n` +
+        `第一步:必须调用文件写入工具(不是 shell)在工作目录下创建 notes.txt,` +
+        `内容为精确的这一行:bub e2e ok。禁止用 shell 创建或修改文件。\n` +
         `第二步:作为单独一步,用 shell 命令(例如 \`cat notes.txt\`)把 notes.txt 读回来,` +
         `并把它打印的内容原样告诉我。`,
     );

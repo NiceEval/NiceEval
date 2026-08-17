@@ -9,7 +9,7 @@
   "timeoutMinutes": 3,
   "harness": { "testkit": true },
   "secrets": ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"],
-  "requires": { "runtimes": ["node>=22"], "docker": true, "externalNetwork": true },
+  "requires": { "runtimes": ["node>=24"], "docker": true, "externalNetwork": true },
   "paths": ["e2e/adapter/claude-code/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**", "junit.xml"]
 }

@@ -5,4 +5,7 @@ import { defineConfig } from "niceeval";
 export default defineConfig({
   timeoutMs: 60_000,
   maxConcurrency: 4,
+  pricing: {
+    "eval-deterministic": { inputPerMTok: 0, outputPerMTok: 0 },
+  },
 });

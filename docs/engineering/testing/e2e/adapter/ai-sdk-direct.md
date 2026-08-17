@@ -2,7 +2,7 @@
 
 ## adapter-ai-sdk-direct-live-compatibility
 
-Repo ID 是 `adapter/ai-sdk-direct`；manifest 声明 `areas: ["adapter"]`、live lanes、Node 22 与 external network。
+Repo ID 是 `adapter/ai-sdk-direct`；manifest 声明 `areas: ["adapter"]`、live lanes、Node 24 与 external network。
 被测公开入口是 `aiSdkAgent()`：Experiment 直接把真实 AI SDK `generateText()` 交给候选包的完整 Direct Agent factory，
 不经过 HTTP、UI Message Stream 或 Repo 自写协议转换。
 

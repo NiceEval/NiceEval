@@ -86,11 +86,15 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
         readonly pricingProfile: unknown;
         readonly costs: readonly unknown[];
       };
-      expect(projections).toEqual({
+      expect(projections).toMatchObject({
         schema: "niceeval.report-projections/v1",
-        pricingProfile: null,
-        costs: [],
+        pricingProfile: {
+          contentIdentity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+          currency: "USD",
+          provenance: { kind: "declared-rate-card" },
+        },
       });
+      expect(projections.costs).toHaveLength(3);
       const attemptPages = manifest.pages.filter((page) => page.pageId === "attempt");
       const experimentPages = manifest.pages.filter((page) => page.pageId === "experiment");
       expect(attemptPages, "the declared standard Attempt Page must close every included Slot").toHaveLength(
@@ -100,7 +104,7 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
         .not.toHaveLength(0);
       for (const entry of [...attemptPages, ...experimentPages]) {
         const detail = await readFile(fileURLToPath(new URL(entry.path, staticRoot)), "utf8");
-        expect(detail).toMatch(entry.pageId === "attempt" ? /Attempt · @/ : /Experiment · /);
+        expect(detail).toMatch(entry.pageId === "attempt" ? /@[0-9A-HJKMNP-TV-Z]{13}/ : /Experiment · /);
       }
 
       const diff = await readFile(fileURLToPath(new URL("diff/index.html", staticRoot)), "utf8");

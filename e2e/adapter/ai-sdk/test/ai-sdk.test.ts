@@ -116,7 +116,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       const timing = await niceeval.run(["show", toolLocator, "--timing"]);
       expect(timing.exitCode, timing.diagnostic()).toBe(0);
       expect(timing.stdout).toContain("eval.run");
-      expect(timing.stdout).toMatch(/turn\s+turn1\b/);
+      expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
     },
   );
 });

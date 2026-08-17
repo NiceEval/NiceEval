@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.0.0",
     "niceeval": "file:../../../..",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

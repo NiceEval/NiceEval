@@ -9,7 +9,7 @@
   "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": {},
+  "requires": { "runtimes": ["node>=24"] },
   "paths": ["e2e/package/**", "package.json", "pnpm-lock.yaml"],
   "artifacts": []
 }

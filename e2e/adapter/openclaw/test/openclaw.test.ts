@@ -97,6 +97,6 @@ it("show --timing 读回 OpenClaw 的 runner 阶段", async () => {
   );
   const timing = await niceeval.run(["show", event.locator!, "--timing"]);
   expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout).toMatch(/turn\s+turn1\b/);
+  expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
 
 });

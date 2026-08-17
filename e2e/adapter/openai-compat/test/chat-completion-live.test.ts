@@ -55,6 +55,6 @@ test("show --timing 读回 OpenAI Chat Completion 的 runner 阶段", async () =
   ]);
   expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
 
 });

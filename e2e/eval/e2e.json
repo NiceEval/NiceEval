@@ -9,7 +9,7 @@
   "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": { "runtimes": ["node>=22"] },
+  "requires": { "runtimes": ["node>=24"] },
   "paths": [
     "e2e/eval/**",
     "src/context/**",

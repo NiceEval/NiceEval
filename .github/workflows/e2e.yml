@@ -72,7 +72,7 @@ jobs:
       - name: Set up pnpm and Node
         uses: pnpm/setup@v1
         with:
-          runtime: node@22
+          runtime: node@24
           cache: true
           install: false
 
@@ -285,7 +285,7 @@ jobs:
       - name: Set up pnpm and Node
         uses: pnpm/setup@v1
         with:
-          runtime: node@22
+          runtime: node@24
           cache: true
           cache-dependency-path: ${{ steps.dependency-cache.outputs.paths }}
           install: false

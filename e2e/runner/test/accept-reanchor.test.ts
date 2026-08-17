@@ -36,50 +36,23 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
-interface LeaderboardAttempt {
-  identity: {
-    locator: string;
-    selectedRunId: string;
-    originRunId: string;
-    slotId: string;
-    memberRelation: "origin" | "reference";
-  };
-  evaluation: {
-    state: "available";
-    value: {
-      experimentId: string;
-      evalId: string;
-      attempt: number;
-      kind: "pass" | "score";
-    };
-  };
-  verdict: { state: "available"; value: string };
-}
-
 interface LeaderboardShow {
-  format: "niceeval.show";
-  schemaVersion: 1;
-  view: "leaderboard";
-  sample: {
-    selection: {
-      policy: "explicit-runs" | "project-current";
-      runIds?: string[];
-      experimentIds?: "all" | string[];
-      selectedRunIds?: string[];
-    };
-    runCount: number;
-    slotCount: number;
-    denominator: number;
-  };
-  problemTable: readonly unknown[];
+  schema: "niceeval.show/v1";
+  selection:
+    | { kind: "explicit-runs"; sampleIdentity: string; runIds: readonly string[] }
+    | { kind: "project-current"; sampleIdentity: string; experimentIds: readonly string[] };
   data: {
-    state: "available";
-    inputState: "complete" | "partial";
-    problemIds: readonly number[];
-    value: {
-      kind: "leaderboard";
-      attempts: readonly LeaderboardAttempt[];
-    };
+    kind: "leaderboard";
+    rows: readonly {
+      experiment: string;
+      passRate: {
+        state: string;
+        value: number | null;
+        samples: number;
+        total: number;
+        refs: readonly { identity: { kind: "attempt"; locator: string } }[];
+      };
+    }[];
   };
 }
 
@@ -146,47 +119,19 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
     const acceptedShow = acceptedCurrent.json<LeaderboardShow>();
     expect(acceptedShow).toMatchObject({
-      format: "niceeval.show",
-      schemaVersion: 1,
-      view: "leaderboard",
-      sample: {
-        selection: { policy: "explicit-runs", runIds: [acceptedRunId] },
-        runCount: 1,
-        slotCount: 1,
-        denominator: 1,
-      },
-      problemTable: [],
+      schema: "niceeval.show/v1",
+      selection: { kind: "explicit-runs", runIds: [acceptedRunId] },
       data: {
-        state: "available",
-        inputState: "complete",
-        problemIds: [],
-        value: { kind: "leaderboard" },
+        kind: "leaderboard",
+        rows: [{
+          experiment: "accept",
+          passRate: { state: "available", value: 1, samples: 1, total: 1 },
+        }],
       },
     });
-    const acceptedAttempts = acceptedShow.data.value.attempts.filter((attempt) =>
-      attempt.identity.selectedRunId === acceptedRunId
-    );
-    expect(acceptedAttempts).toHaveLength(1);
-    const acceptedAttempt = acceptedAttempts[0]!;
-    expect(acceptedAttempt).toMatchObject({
-      identity: {
-        locator: oldLocator,
-        selectedRunId: acceptedRunId,
-        memberRelation: "reference",
-      },
-      evaluation: {
-        state: "available",
-        value: {
-          experimentId: "accept",
-          evalId: "accept/accept-target",
-          attempt: 0,
-          kind: "pass",
-        },
-      },
-      verdict: { state: "available", value: "passed" },
-    });
-    expect(acceptedAttempt.identity.slotId).toMatch(/^slot-[0-9a-f]{64}$/);
-    expect(acceptedAttempt.identity.originRunId).not.toBe(acceptedRunId);
+    expect(acceptedShow.data.rows[0]!.passRate.refs).toEqual([
+      { identity: { kind: "attempt", locator: oldLocator } },
+    ]);
 
     // Explicit --run proves the durable reference, while the default read proves
     // accept used the same current target identity as project-current planning.
@@ -194,21 +139,18 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     expect(projectCurrent.exitCode, projectCurrent.diagnostic()).toBe(0);
     const projectCurrentShow = projectCurrent.json<LeaderboardShow>();
     expect(projectCurrentShow).toMatchObject({
-      format: "niceeval.show",
-      schemaVersion: 1,
-      view: "leaderboard",
-      sample: {
-        selection: {
-          policy: "project-current",
-          selectedRunIds: [acceptedRunId],
-        },
-        runCount: 1,
-        slotCount: 1,
-        denominator: 1,
+      schema: "niceeval.show/v1",
+      selection: { kind: "project-current" },
+      data: {
+        kind: "leaderboard",
+        rows: [{
+          experiment: "accept",
+          passRate: { state: "available", value: 1, samples: 1, total: 1 },
+        }],
       },
     });
-    expect(projectCurrentShow.data.value.attempts.map((attempt) => attempt.identity.selectedRunId)).toEqual([
-      acceptedRunId,
+    expect(projectCurrentShow.data.rows[0]!.passRate.refs).toEqual([
+      { identity: { kind: "attempt", locator: oldLocator } },
     ]);
 
     const currentEvidence = await niceeval.run(["show", newLocator, "--execution"]);

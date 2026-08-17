@@ -74,7 +74,7 @@ Record 或 Analysis 读取路径。
 
 ```ts
 interface BuiltInShowDocument {
-  readonly schema: "niceeval.show/v2";
+  readonly schema: "niceeval.show/v1";
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: { readonly token: BuiltInReportToken; readonly identity: ContentAddress };
@@ -97,7 +97,7 @@ interface BuiltInShowDocument {
 
 ```ts
 interface CustomTargetExecutionManifest {
-  readonly schema: "niceeval.report-target-execution/v2";
+  readonly schema: "niceeval.report-target-execution/v1";
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: { readonly identity: ContentAddress; readonly title: LocalizedText };
@@ -113,7 +113,7 @@ interface CustomTargetExecutionManifest {
 }
 ```
 
-`projections` 是两种 v2 文档完全相同的顶层对象。它的 closed Profile、cost entry、target-Page 范围和排除项由
+`projections` 是两种 v1 文档完全相同的顶层对象。它的 closed Profile、cost entry、target-Page 范围和排除项由
 [Report 成本投影 CLI](cost-projections/cli.md) 定义；`report.identity` 标识加载的作者定义，不标识站点版本。
 
 `renderedText` 固定取该 Page 已关闭的英语 text projection，宽度固定为 80 个 display columns。它不读取 TTY 或浏览器宽度，

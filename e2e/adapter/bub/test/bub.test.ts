@@ -129,6 +129,6 @@ it("show --timing 分别读回 Bub 当前版与 legacy runner 阶段", async () 
     const timing = await niceeval.run(["show", event.locator!, "--timing"]);
     expect(timing.exitCode, timing.diagnostic()).toBe(0);
     expect(timing.stdout, receipt.diagnostic()).toContain("eval.run");
-    expect(timing.stdout, receipt.diagnostic()).toMatch(/turn\s+turn1\b/);
+    expect(timing.stdout, receipt.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
   }
 });

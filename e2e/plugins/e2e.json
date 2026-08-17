@@ -9,7 +9,7 @@
   "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": { "runtimes": ["node>=22"], "docker": true },
+  "requires": { "runtimes": ["node>=24"], "docker": true },
   "paths": [
     "e2e/plugins/**",
     "src/plugin/**",

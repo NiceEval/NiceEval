@@ -306,7 +306,7 @@ async function buildRemarkVendor(outputRoot) {
     bundle: true,
     format: "cjs",
     platform: "node",
-    target: ["node22"],
+    target: ["node24"],
     sourcemap: true,
     outExtension: { ".js": ".cjs" },
     logLevel: "silent",

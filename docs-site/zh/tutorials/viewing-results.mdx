@@ -52,7 +52,7 @@ npx niceeval show --run <run-id> --report ./reports/quality.tsx --json
 省略 `--page` 时，`show` 使用 Report 的默认可导航页面。提供 `--page` 时，它只 decode、load、render 和关闭这一个精确 route。参数 Page 不会因此调用 `enumerate()`；其它 Page、Analysis 查询和作者 callback 也不会执行。
 
 `show --json` 仍是同一个单目标操作。内建 Report 返回 Host 拥有的具名领域 JSON；自定义 Report 返回该 Page 的 route、标题、固定英语 80-column rendered text、下载摘要和问题表。
-两种 v2 JSON 都在顶层带有同一形状的 `projections` 对象，只包含目标 Page 捕获的闭合投影。
+两种 v1 JSON 都在顶层带有同一形状的 `projections` 对象，只包含目标 Page 捕获的闭合投影。
 
 每个成本 entry 都是 `{ page: { pageId, route }, measureId, row: { key, dimensions }, profileIdentity, projection }`。
 成本数组的 canonical key 是 `route`→`pageId`→`measureId`→`row.key`→`profileIdentity`。它只按这五项的 UTF-8 顺序排序；

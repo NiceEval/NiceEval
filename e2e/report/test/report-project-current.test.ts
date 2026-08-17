@@ -37,7 +37,7 @@ interface ReportProblem {
 }
 
 interface ShowOverview {
-  readonly schema: "niceeval.show/v2";
+  readonly schema: "niceeval.show/v1";
   readonly locale: "en";
   readonly selection:
     | {
@@ -88,7 +88,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
       const initialDocument = initialShow.json<ShowOverview>();
       expect(initialDocument).toMatchObject({
-        schema: "niceeval.show/v2",
+        schema: "niceeval.show/v1",
         locale: "en",
         selection: {
           kind: "project-current",
@@ -142,7 +142,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const staleShow = await niceeval.run(["show", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
       expect(staleShow.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v2",
+        schema: "niceeval.show/v1",
         selection: { kind: "project-current" },
         data: { kind: "leaderboard", rows: [] },
         problems: [],
@@ -151,7 +151,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const staleHistory = await niceeval.run(["show", "--run", initialRunId, "--json"]);
       expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
       expect(staleHistory.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v2",
+        schema: "niceeval.show/v1",
         selection: {
           kind: "explicit-runs",
           runIds: [initialRunId],
@@ -181,7 +181,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const refreshedShow = await niceeval.run(["show", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
       expect(refreshedShow.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v2",
+        schema: "niceeval.show/v1",
         selection: { kind: "project-current" },
         data: { kind: "leaderboard" },
       });

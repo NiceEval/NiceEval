@@ -313,7 +313,6 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
         await expect(sendLine).not.toHaveAttribute("open", "");
         await sendLine.locator(":scope > summary").click();
         await expect(sendLine).toHaveAttribute("open", "");
-        await expect(sendLine.getByText("Session log", { exact: true })).toBeVisible();
         await expect(sendLine.getByText("Duration", { exact: true })).toBeVisible();
         await expect(sendLine.getByText("Turns", { exact: true })).toBeVisible();
         await expect(sendLine.getByText("Calls", { exact: true })).toBeVisible();

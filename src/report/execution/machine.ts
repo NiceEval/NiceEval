@@ -19,8 +19,8 @@ import { resolvedPageText } from "../runtime/text.ts";
 export type ContentAddress = string;
 
 /** The exact machine schemas in docs/feature/reports/cli.md. */
-export const BUILT_IN_SHOW_SCHEMA = "niceeval.show/v2";
-export const CUSTOM_TARGET_EXECUTION_SCHEMA = "niceeval.report-target-execution/v2";
+export const BUILT_IN_SHOW_SCHEMA = "niceeval.show/v1";
+export const CUSTOM_TARGET_EXECUTION_SCHEMA = "niceeval.report-target-execution/v1";
 export const REPORT_PROJECTIONS_SCHEMA = "niceeval.report-projections/v1";
 
 export type BuiltInReportToken = string;

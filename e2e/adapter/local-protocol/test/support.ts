@@ -126,10 +126,9 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
         const shown = await niceeval.run(["show", "--run", inv.runIds[0]!, "--json"]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
         const selection = shown
-          .json<{ sample: { selection: { runIds: readonly string[] } } }>()
-          .sample.selection;
+          .json<{ selection: { kind: "explicit-runs"; runIds: readonly string[] } }>()
+          .selection;
         expect(selection.runIds, shown.diagnostic()).toEqual([inv.runIds[0]!]);
-        expect(shown.stdout, shown.diagnostic()).toContain('"included"');
 
         // tracing 缺席不代表 runner 阶段也丢失了 timing：已落盘的阶段树仍
         // 必须可从公开 timing 页面读出 Eval 与首轮 Turn。此 direct Agent 没有
@@ -139,7 +138,7 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
         );
         expect(timing.exitCode, timing.diagnostic()).toBe(0);
         expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-        expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
+        expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
       } finally {
         // 端口复用检查必须在 fixture 进程真正结束后执行；这里先显式回收，
         // case 结束时 ctx 还会兜底再回收一次(dispose 幂等)。

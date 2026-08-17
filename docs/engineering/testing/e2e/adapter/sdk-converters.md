@@ -10,7 +10,7 @@ The E2E runner installs the candidate NiceEval tarball. It injects
 
 The scenario uses its own locked `pnpm-lock.yaml`.
 
-Its `pr`, `main`, `nightly`, and `release` lanes require Node 22+. They use no
+Its `pr`, `main`, `nightly`, and `release` lanes require Node 24+. They use no
 secret and no external network.
 
 Each owner has one fixture, one Eval, one Experiment, and one test file. The
