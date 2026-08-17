@@ -323,7 +323,7 @@ export interface PassMeasurementAssertionHandle<
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
   atLeast(value: number): PassMeasurementAssertionHandle<true>;
-  gate(this: PassMeasurementAssertionHandle<true>): this;
+  gate(value: number): PassMeasurementAssertionHandle<true>;
   orStop(
     this: PassMeasurementAssertionHandle<true>,
   ): Promise<number>;

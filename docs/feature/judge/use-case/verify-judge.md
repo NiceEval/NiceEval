@@ -21,7 +21,7 @@ export default defineEval({
     t.judge.autoevals.closedQA("文本是否表达成功？", {
       input: "operation completed successfully",
       output: "operation completed successfully",
-    }).atLeast(0.8).label("成功表达");
+    }).gate(0.8).label("成功表达");
   },
 });
 ```

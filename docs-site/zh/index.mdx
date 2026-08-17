@@ -88,7 +88,7 @@ export default defineEval({
     });
 
     turn.judge.autoevals.closedQA("助手是否基于工具返回的天气数据作答？")
-      .atLeast(0.7)
+      .gate(0.7)
       .label("回答有依据");
   },
 });

@@ -76,13 +76,13 @@ await t
 ## 验证文件和代码
 
 ```ts
-import { includes, excludes } from "niceeval/expect";
+import { not, pattern } from "niceeval/expect";
 
 const code = await t.sandbox.readText("src/config/env.ts");
 
-t.check(code, includes(/z\.object\s*\(/));
-t.check(code, includes(/EnvSchema\.parse\s*\(\s*process\.env/));
-t.check(code, excludes(/process\.env\.\w+\s*\?\?/));
+t.check(code, pattern(/z\.object\s*\(/));
+t.check(code, pattern(/EnvSchema\.parse\s*\(\s*process\.env/));
+t.check(code, not(pattern(/process\.env\.\w+\s*\?\?/)));
 t.sandbox.fileChanged("src/config/env.ts");
 ```
 
@@ -110,7 +110,7 @@ await t.sandbox.writeText(
 );
 
 const result = await t.sandbox.runCommand("python3", ["_test_traversal.py"]);
-t.check(result.stdout.trim(), includes(/ok/));
+t.check(result.stdout.trim(), pattern(/ok/));
 ```
 
 也可以运行项目自己的 test/lint/build 脚本：

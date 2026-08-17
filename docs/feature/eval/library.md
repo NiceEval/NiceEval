@@ -33,7 +33,7 @@ export default defineEval({
 ## 两种 Eval
 
 `defineEval` 创建 Pass Eval。Boolean condition 是 gate；Verdict 在 Assertion 封口后由 Core `outcome`、
-sealed Assertions 与显式 skip 读侧折叠。continuous measurement 必须 `.atLeast(n)`，context 没有 `t.score`
+sealed Assertions 与显式 skip 读侧折叠。continuous measurement 用 `.gate(n)` 才进入 failed，context 没有 `t.score`
 或 handle `.score`。
 
 `defineScoreEval` 创建 Score Eval。Assertion 默认 record-only；用 `.score(points)` 或 `t.score(points)`

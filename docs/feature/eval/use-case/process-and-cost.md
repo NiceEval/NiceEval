@@ -11,7 +11,7 @@ t.notCalledTool("raw_record_reader").label("未直接读取记录");
 工具的名称、输入与状态在 `calledTool` 的 options 中表达；确切次数用 `{ count }`。需要验证相对顺序时，把工具名按顺序传给 `toolOrder`：
 
 ```typescript
-turn.toolOrder(["read_file", "write_file"]).label("先读后写");
+   turn.toolOrder([toolMatch("read_file"), toolMatch("write_file")]).label("先读后写");
 ```
 
 成本、token 和事件遵循同一规则：调用即登记 Assertion。Pass Eval 的 Boolean condition 默认是 gate，

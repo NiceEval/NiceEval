@@ -443,7 +443,7 @@ export default defineSandbox({
 - 减少 fixture 依赖体积。
 - 对动态内容使用小而明确的缓存或预检。
 - 控制 `maxConcurrency`（experiment 字段或 `--max-concurrency`），避免本地 Docker 资源耗尽。
-- 把慢测试拆成必要的 gate 和可选的 soft 检查。
+- 把慢测试拆成必要的 gate 和可选的 `.optional()` 检查。
 
 ### 让公共准备只付一次
 

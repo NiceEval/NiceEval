@@ -28,15 +28,15 @@ Boolean `matched` 进入 Verdict；`mismatched` 使最终 Verdict 为 `failed`�
 
 ## 连续质量线
 
-`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。通过制评估必须用 `.atLeast(n)` 给它阈值：
+`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。通过制评估用 `.gate(n)` 给它 hard 阈值：
 
 ```ts
 t.check(turn.message, similarity(expected))
-  .atLeast(0.8)
+  .gate(0.8)
   .label("回答接近期望内容");
 ```
 
-低于 `atLeast` 时，这项要求失败。只想留下不影响判定的说明时用 `t.diagnostic(...)`，不要登记无消费的测量值。
+低于 `gate` 阈值时，这项要求失败；`.atLeast(n)` 只记录局部 condition。只想留下不影响判定的说明时用 `t.diagnostic(...)`，不要登记无消费的测量值。
 
 ## 走完三步也要记三分
 

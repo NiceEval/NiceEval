@@ -5,7 +5,7 @@ AssertionHandle；没有需要交给另一条 `check`、require 或 score API �
 
 ```ts
 const correctness = turn.judge.autoevals.factuality("Brooklyn 的天气是晴朗。")
-  .atLeast(0.9)
+  .gate(0.9)
   .label("天气事实");
 
 const summary = t.judge.autoevals.summarizes("原始需求", {
@@ -14,7 +14,7 @@ const summary = t.judge.autoevals.summarizes("原始需求", {
 }).score(10).label("摘要质量");
 ```
 
-上例的第一条属于 Pass Eval，第二条属于 Score Eval。Pass measurement 必须 threshold；Score measurement
+上例的第一条属于 Pass Eval，第二条属于 Score Eval。Pass measurement 用 gate(threshold)；Score measurement
 可以贡献 score，threshold 只增加局部 condition。
 
 ## Capability 与配置
@@ -47,7 +47,7 @@ const source = await t.sandbox.readText("README.md");
 t.judge.autoevals.closedQA("文档是否说明安装步骤？", {
   input: source,
   output: t.reply,
-}).atLeast(0.8).label("安装说明");
+}).gate(0.8).label("安装说明");
 ```
 
 `turn.judge` 在调用时冻结该 Turn 的原始 input 与 output。没有 `session.judge`、路径猜测、隐式 last

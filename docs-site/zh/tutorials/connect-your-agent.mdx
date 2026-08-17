@@ -90,7 +90,7 @@ export default defineEval({
     turn.succeeded().label("请求成功");
     t.check(turn.message, includes("30")).label("说明退款期限");
     turn.judge.autoevals.closedQA("回答是否说明了退款期限？")
-      .atLeast(0.7)
+      .gate(0.7)
       .label("退款政策质量");
   },
 });

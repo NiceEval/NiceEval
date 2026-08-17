@@ -9,9 +9,11 @@ scope、policy 或运行控制。
 measurement。它不能保存 subject identity、callsite、groupPath、`key`、`label`、score 或 threshold。
 
 ```ts
-const hasRequiredFields = defineValueMatch((value: unknown) =>
-  isRecord(value) && typeof value.id === "string" && typeof value.title === "string",
-);
+const hasRequiredFields = defineValueMatch({
+  name: "has-required-fields",
+  evaluate: (value: unknown) =>
+    isRecord(value) && typeof value.id === "string" && typeof value.title === "string",
+});
 
 t.check(payload, hasRequiredFields).label("返回必填字段");
 ```
@@ -21,17 +23,20 @@ Assertion；handle 再配置同一 entry。
 
 ## 连续 evaluator
 
-连续 Match 返回 finite `[0,1]` measurement。Pass Eval 必须把它 `.atLeast(n)`；Score Eval 可以直接
+连续 Match 返回 finite `[0,1]` measurement。Pass Eval 用 `.gate(n)` 才把它纳入 failed；`.atLeast(n)` 只保存局部 condition。Score Eval 可以直接
 `.score(points)`，也可以同时添加局部 threshold。
 
 ```ts
-const similarity = defineScoreMatch((actual: string) => compare(actual, expected));
+const similarity = defineScoreMatch({
+  name: "answer-similarity",
+  score: (actual: string) => compare(actual, expected),
+});
 
 pass.check(reply, similarity).atLeast(0.8);
 score.check(reply, similarity).score(5).atLeast(0.8);
 ```
 
-`atLeast`、`gate`、`score` 和 `orStop` 都不属于 Match。它们是登记后的 AssertionHandle 配置。
+`atLeast`、`gate`、`score` 和 `orStop` 都不属于 Match。它们是登记后的 AssertionHandle 配置；其中只有 Pass 的 `gate(n)` 改变 Verdict。
 
 ## 第三方 criterion
 

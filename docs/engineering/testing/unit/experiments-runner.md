@@ -88,12 +88,12 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈。
   template 配对 link 的同源消费(check / --dry / 正常运行同一 linker),以及 conflict / missing 的全矩阵前置报错。
   选择类契约的每条规则都要有"命中"与"不误配"两面。
-- **`EvalDescriptor.evaluationKind` 投影与混型保真**：`evalDescriptorOf` 对 `defineEval` 返回的定义值投影 `evaluationKind: "pass"`，对 `defineScoreEval` 返回的定义值投影 `"points"`。
+- **`EvalDescriptor.evaluationKind` 投影与混型保真**：`evalDescriptorOf` 对 `defineEval` 返回的定义值投影 `evaluationKind: "pass"`，对 `defineScoreEval` 返回的定义值投影 `"score"`。
   未经两个定义函数处理的未包装对象缺少 `evaluationKind` 时，discovery 明确拒绝；不能用默认 `"pass"` 猜它原本想调用哪个 factory。
   同一 Experiment 选择混合题型时，两类 Eval 全部进入调度、写入与携带，不能在启动期拒绝或静默删掉一类。报告按题型分列通过率与总分，绝不把两种无共同单位的数相加。
-- **计分制 attempt 落盘**：`runAttemptEffect` 对 `evaluationKind: "points"` 的 eval 把 `.points(n)` 的声明值与挣分分别写进 `EvalResult.assertions[].pointsAvailable` / `.points`。`t.score(label, n)` 正确写进 `EvalResult.scoreEntries`（不只是 collector 单元层的孤立证明，这里证明 runner 真的把 collector 的输出接上了落盘字段）。
+- **计分制 attempt 落盘**：`runAttemptEffect` 对 `evaluationKind: "score"` 的 eval 把 `.score(n)` 的声明值与 earned 分别写进 sealed Assertions。`t.score(n)` 也登记一条 direct-score Assertion（不走旁路字段）。
 - 同一 attempt 内 user send、断言、直接给分的 `sourceOrder` 来自同一条单调序列，跨三个存储分区仍能恢复真实发生顺序。
-- 前置 `.gate()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已写入，不是执行异常）；中止前已经产生的 `scoreEntries` 照实保留，中止后的 `test()` 代码不再执行（后续 `.points()` / `t.score()` 调用不出现在结果里）。
+- 前置 `.gate().orStop()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已写入，不是执行异常）；中止前已经产生的 score contribution 照实保留，中止后的 `test()` 代码不再执行（后续 `.score()` / `t.score()` 调用不出现在结果里）。
 - 没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为 `passed`——计分制的 `failed` 只有中止一个出处。
 - **调度项优先级**：CLI flag → experiment → config → 内置默认的替换链逐层可区分；agent/model/flags 只属 experiment，CLI 替换报用法错误；labels 的值域校验与 Run 投影。
   **这条链里没有进程变量层**（[边界](../../../architecture.md)）。

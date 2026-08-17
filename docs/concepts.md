@@ -56,7 +56,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Pass Eval | Pass Eval (`defineEval`) | 以 Boolean condition 折叠 Attempt Verdict 的评测类型；measurement 必须有 `atLeast(n)` | [Assertions](./feature/assertions/README.md#pass-eval) |
+| Pass Eval | Pass Eval (`defineEval`) | 以 Boolean condition 折叠 Attempt Verdict 的评测类型；measurement 用 `gate(n)` 才进入 failed | [Assertions](./feature/assertions/README.md#pass-eval) |
 | Score Eval | Score Eval (`defineScoreEval`) | 以显式 score contribution 累计正式 score 的评测类型；没有 Attempt Verdict 或总分 | [Score Eval](./feature/assertions/library/score-points.md) |
 | 单项贡献分数 | score contribution (`scoreContribution`) | 一个已登记 Assertion 或直接 `t.score(n)` 对 Score Eval 累计 score 的数值贡献 | [Score Eval](./feature/assertions/library/score-points.md#显式贡献) |
 | threshold | threshold (`atLeast`) | 把 measurement 与有限 `[0,1]` 下限比较得到局部 Boolean condition；Pass Eval 必须配置它 | [Assertions](./feature/assertions/README.md#pass-eval) |

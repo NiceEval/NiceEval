@@ -9,10 +9,13 @@ interface AssertionHandleBase {
   readonly [assertionHandleBrand]: true;
   key(value: string): this;
   label(value: string): this;
+  group(title: string): this;
 }
 
 interface PassBooleanHandle<out R = void> extends AssertionHandleBase {
   readonly kind: "pass-boolean";
+  optional(): this;
+  gate(): this;
   orStop(): Promise<R>;
 }
 
@@ -28,6 +31,7 @@ interface PassMeasurementHandle<Thresholded extends boolean = false> extends Ass
   readonly kind: "pass-measurement";
   readonly [measurementStateBrand]: { readonly threshold: Thresholded };
   atLeast(value: number): PassMeasurementHandle<true>;
+  gate(value: number): PassMeasurementHandle<true>;
   orStop(this: PassMeasurementHandle<true>): Promise<number>;
 }
 
@@ -159,7 +163,7 @@ async function positiveAuthoringShapes(): Promise<void> {
   passTurn.calledTool("write_file", { count: { atLeast: 1 } }).label("写入文件");
   pass.maxTokens(4_000).ifCovered().label("token 可读取");
 
-  const thresholded = pass.check(reply, quality).atLeast(0.8).label("最低质量");
+  const thresholded = pass.check(reply, quality).gate(0.8).label("最低质量");
   await thresholded.orStop();
   finalizePass(pass.succeeded(), thresholded);
 
@@ -185,9 +189,9 @@ function negativeAuthoringShapes(): void {
   // @ts-expect-error An AssertionHandle cannot become a new subject.
   pass.check(passBoolean, isTrue);
 
-  // @ts-expect-error A Pass measurement must have a threshold before finalize.
+  // @ts-expect-error A Pass measurement must be gated before finalize.
   finalizePass(passMeasurement);
-  // @ts-expect-error A Pass measurement without atLeast cannot stop control flow.
+  // @ts-expect-error A Pass measurement without gate cannot stop control flow.
   passMeasurement.orStop();
   // @ts-expect-error Pass contexts have no direct score API.
   pass.score(1);

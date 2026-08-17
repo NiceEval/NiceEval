@@ -35,8 +35,8 @@ scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。
 |---|---|---|
 | `.key(value)` | 所有 Assertion | 设置人读的稳定展示 key。 |
 | `.label(value)` | 所有 Assertion | 设置人读标签。 |
-| `.atLeast(n)` | measurement | 设置有限 `[0,1]` threshold。 |
-| `.gate()` | Pass Eval 中有 threshold 或 Boolean result 的 Assertion | 让不满足条件参与 [Verdict](../verdict/architecture.md) 四态 fold。 |
+| `.atLeast(n)` | measurement | 设置局部有限 `[0,1]` condition，不单独改变 Verdict。 |
+| `.gate(n)` | Pass Eval 的 measurement | 设置 threshold 并让不满足条件参与 [Verdict](../verdict/architecture.md) 四态 fold。Boolean Assertion 仍用 `.gate()`。 |
 | `.score(points)` | Score Eval 的已有 Assertion | 让该 entry 把 points／earned contribution 封口到 Assertions。 |
 | `.ifCovered()` | Usage Assertion | 已声明不可用时保留为 not-applicable。 |
 | `.orStop()` | Boolean 或已 threshold 的 measurement | 等待同一 entry，并停止当前 continuation。 |
@@ -45,11 +45,11 @@ scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。
 
 ## 两种 Eval
 
-`defineEval` 创建 Pass Eval。Boolean condition 默认是 gate；measurement 必须 `.atLeast(n)`，Pass context 不提供 `t.score` 或 handle `.score`。
+`defineEval` 创建 Pass Eval。Boolean condition 默认是 gate；measurement 用 `.gate(n)` 才进入 failed Verdict，`.atLeast(n)` 只保留局部 condition。Pass context 不提供 `t.score` 或 handle `.score`。
 
 ```ts
 turn.judge.autoevals.closedQA("回答是否可执行？")
-  .atLeast(0.8)
+  .gate(0.8)
   .label("可执行性");
 ```
 
