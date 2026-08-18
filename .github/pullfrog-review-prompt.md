@@ -80,7 +80,7 @@ merge commit 或 PR event SHA 代替它；不要调用 `checkout_pr`，因为它
 在同一次当前最终态审查中分两个阶段完成工作：
 
 1. 检查：先收集并交叉核对锁定 PR metadata、完整 base→head diff、完整实现、调用方、契约、package scripts 和测试证据；此阶段不要急于撰写结论。
-2. 报告：只依据检查阶段确认的证据填写规定的 Review body，把必要问题纳入正文的问题清单，并按结构化结果协议交给工作流发布。报告必须覆盖所有规定小节；没有变化时明确写“无”，不要靠猜测补全。
+2. 报告：只依据检查阶段确认的证据填写规定的 Review body，把必要问题纳入正文的问题清单，并按结构化结果协议交给工作流发布。变化清单只保留有实际条目的方向；某个产品面没有任何变化时省略整节，不要用“无”占位或靠猜测补全。固定 receipt 与结论类小节仍按模板要求填写。
 
 重点完成以下审计：
 
@@ -114,7 +114,7 @@ merge commit 或 PR event SHA 代替它；不要调用 `checkout_pr`，因为它
 
 公开身份被替换时，在对应产品面下分别列为一项 Removed 和一项 Added，不合并成 Changed。仅内部实现变化且公共形状与可观察语义不变时，不列入这些公开变化小节。现有证据不足时明确写出缺失证据并据此裁决，不增加 `uncertain` 分类。NiceEval 处于 beta，移除或不兼容变化不自动构成缺陷；只有变化与 PR 意图不符，或契约、实现、文档、测试、迁移说明彼此不一致时才形成问题。
 
-Review body 必须使用中文并严格采用以下结构。PR 标题与范围必须依据完整锁定 base→head 填写；Public API、CLI、Report、可观察行为与数据、Record schema 与存量升级、环境变量和 Package scripts 是一级产品面；需要方向清单的产品面下面都必须依次保留 Removed、Added、Changed 三个小节，没有对应变化时写“无”。不得在命令、符号或行为条目下面再写 `breaking`、`additive`、`behavior-change`、`internal-only` 或 `uncertain`：
+Review body 必须使用中文并采用以下结构。PR 标题与范围必须依据完整锁定 base→head 填写；Public API、CLI、Report、可观察行为与数据、环境变量和 Package scripts 是按需出现的一级产品面：只保留有实际条目的 Removed、Added、Changed 方向，空方向不展示，三个方向都为空时省略整个产品面。Record schema 与存量升级是固定 receipt，不因不受影响而省略。不得在命令、符号或行为条目下面再写 `breaking`、`additive`、`behavior-change`、`internal-only` 或 `uncertain`：
 
 ```markdown
 ## 变更概述
@@ -324,7 +324,7 @@ Review body 必须使用中文并严格采用以下结构。PR 标题与范围�
 - 用户工作流影响：<开发、CI、文档或发布变化>
 - 证据：<base 与 PR 中可核查的文件、符号或 diff>
 
-每个方向有多项时重复对应 entry；没有变化时直接写“无”，不要保留占位符。Public API、CLI 和 Report 的示例必须分别是可复制的 TypeScript、命令和 TSX。可观察行为与数据只保存用户可见的前后结果；Record 的版本、读取与迁移裁决放在专门 receipt 中，必要时交叉引用，不复制两套清单。其余可观察数据必须覆盖 runtime、缓存身份、provider、report/show/view 或错误反馈的前后结果。固定常量、单次调用参数、typed config、CLI flag、受管 descriptor 或 service 配置能够表达时，不接受仅以“方便”为理由新增环境变量。
+每个方向有多项时重复对应 entry；没有变化的方向连同标题一起省略，一个产品面没有任何条目时连同一级标题一起省略，不写“无”或保留占位符。Public API、CLI 和 Report 的示例必须分别是可复制的 TypeScript、命令和 TSX。可观察行为与数据只保存用户可见的前后结果；Record 的版本、读取与迁移裁决放在专门 receipt 中，必要时交叉引用，不复制两套清单。其余可观察数据必须覆盖 runtime、缓存身份、provider、report/show/view 或错误反馈的前后结果。固定常量、单次调用参数、typed config、CLI flag、受管 descriptor 或 service 配置能够表达时，不接受仅以“方便”为理由新增环境变量。
 
 ## 审查问题
 

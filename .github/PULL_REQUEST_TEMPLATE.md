@@ -9,14 +9,17 @@ an internal mechanism such as its registry, protocol, or storage model. Keep one
 dominant outcome and aim for 72 characters or fewer. Write the PR title and
 description in the language of the user's latest request.
 
-Keep every product-surface section below. Inside each surface, inventory
-Removed, Added, and Changed as separate subsections; write "None" when a
-direction has no entry. Do not put a change classification beneath an
-individual command or symbol. Repeat the entry block as needed. Every entry
-needs a concrete before example, after example, and user impact. Usage examples
-must include the public owner that consumes the value; do not show an isolated
-factory result when real usage belongs inside `defineEval()`,
-`defineExperiment()`, report JSX, CLI invocation, or a package script.
+Keep only product-surface sections that contain a real change. Inside each
+included surface, inventory Removed, Added, and Changed as separate
+subsections, but delete every direction that has no entry; when all three
+directions are empty, delete the entire product-surface section. Never render
+"None" merely to preserve an empty inventory heading. Do not put a change
+classification beneath an individual command or symbol. Repeat the entry block
+as needed. Every entry needs a concrete before example, after example, and user
+impact. Usage examples must include the public owner that consumes the value;
+do not show an isolated factory result when real usage belongs inside
+`defineEval()`, `defineExperiment()`, report JSX, CLI invocation, or a package
+script.
 
 The product-surface inventory does not replace Use cases. Surface entries show
 what changed; Use cases show how a user completes a task across the affected
