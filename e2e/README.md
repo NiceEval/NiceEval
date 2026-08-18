@@ -33,6 +33,8 @@ pnpm e2e plan --lane pr --json
 pnpm e2e plan --lane release --no-diff --json
 pnpm e2e pack --out /tmp/niceeval-candidate.tgz
 pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo cli
+pnpm e2e run --candidate /tmp/niceeval-candidate.tgz \
+  --plan /tmp/e2e-plan.json --cell repo-batch-docker-1
 pnpm e2e takeover --candidate /tmp/niceeval-candidate.tgz --repo report \
   -- --run test/report.browser.spec.ts -t "打开"
 pnpm e2e verify-release --plan /tmp/release-plan.json --candidate /tmp/niceeval-candidate.tgz \

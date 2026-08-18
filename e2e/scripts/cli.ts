@@ -77,6 +77,8 @@ Root run options:
   --exclude-external-network
                        Omit live provider repositories during planning
   --repo-concurrency N Run up to N selected repositories concurrently
+  --plan <path>        Execute a previously emitted batched JSON plan
+  --cell <id>          Run exactly one cell from --plan
   --keep-workdir       Retain the isolated scratch tree for local diagnosis
   --help, -h           Print this help without planning, packing, or running
 

@@ -41,8 +41,6 @@ export interface PlanEntry {
   capabilities: readonly Area[];
   /** Stable diagnostic shard identity. */
   shard: string;
-  /** Number of isolated repos the root runner may execute concurrently. */
-  repoConcurrency: number;
   requires?: RepoRequires;
 }
 
@@ -308,7 +306,6 @@ function singletonEntry(repo: DiscoveredRepo, root: string): PlanEntry {
     executor: repo.manifest.executor,
     capabilities: repo.manifest.areas,
     shard: repo.manifest.id,
-    repoConcurrency: 1,
     ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }),
   };
 }
@@ -345,7 +342,6 @@ function repoBatch(entries: readonly PlanEntry[], index: number): PlanEntry {
   const batch = entries[0].batch;
   const id = `repo-batch-${batch}`;
   const requires = mergedRequires(entries);
-  const repoCount = entries.reduce((sum, entry) => sum + entry.repoIds.length, 0);
   return {
     id,
     repoIds: entries.flatMap((entry) => entry.repoIds),
@@ -354,12 +350,6 @@ function repoBatch(entries: readonly PlanEntry[], index: number): PlanEntry {
     executor: entries[0].executor,
     capabilities: [...new Set(entries.flatMap((entry) => entry.capabilities))],
     shard: id,
-    // CI batch runners provide 2 vCPU for host work and 4 vCPU for Docker work.
-    // Running every Repo at once makes install, typecheck, Docker and live CLI
-    // processes contend until their product-level timeout expires. Two concurrent
-    // Repos keeps the shared machine busy without turning resource pressure into
-    // a false product regression.
-    repoConcurrency: Math.min(repoCount, 2),
     ...(requires === undefined ? {} : { requires }),
   };
 }
@@ -416,7 +406,7 @@ function printHumanPlan(entries: readonly PlanEntry[], lane: Lane): void {
   console.log(`${entries.length} e2e shard(s) selected for lane ${lane}:\n`);
   for (const entry of entries) {
     console.log(`- ${entry.id}  [${entry.capabilities.join(", ")}]  executor=host`);
-    console.log(`    repos: ${entry.repoIds.join(", ")}  concurrency: ${entry.repoConcurrency}`);
+    console.log(`    repos: ${entry.repoIds.join(", ")}  concurrency: all`);
     console.log(`    dirs: ${entry.dirs.join(", ")}  shard: ${entry.shard}`);
   }
 }
