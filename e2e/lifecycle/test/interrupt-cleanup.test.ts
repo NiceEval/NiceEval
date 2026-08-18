@@ -10,6 +10,7 @@ import {
   withProjectCopy,
 } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import { siblingCompleteMarker } from "../experiments/interrupts/complete.ts";
 
 interface BackendInfo { pid: number; port: number }
 interface ProcessReceipt { diagnostic(): string }
@@ -37,6 +38,15 @@ async function backendInfo(path: string): Promise<BackendInfo | undefined> {
   try {
     const value = JSON.parse(await readFile(path, "utf8")) as BackendInfo;
     return typeof value.pid === "number" && typeof value.port === "number" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fileExists(path: string): Promise<true | undefined> {
+  try {
+    await readFile(path);
+    return true;
   } catch {
     return undefined;
   }
@@ -112,6 +122,7 @@ async function waitForSecondReuseAttempt(pid: number, cwd: string): Promise<void
 test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源，下一消费者仍可运行", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const infoPath = join(root, ".niceeval-lifecycle-backend.json");
+    const siblingMarkerPath = join(root, siblingCompleteMarker);
     const owned = await withProcess(
       [binary, "exp", "interrupts", "--rerun", "all", "--json"],
       {
@@ -132,11 +143,18 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         );
         await waitForHealth(info.port, controlled.done);
         const invocationPid = defined(controlled.pid, "niceeval invocation did not expose a pid");
+        await whileRunning(
+          pollUntil(() => fileExists(siblingMarkerPath), {
+            timeoutMs: 60_000,
+            intervalMs: 100,
+            label: "sibling Experiment completion marker",
+          }),
+          controlled.done,
+          "the sibling Experiment completed",
+        );
         // The second-attempt marker proves that attempt 1 settled and released
-        // the reused sandbox. The interrupted public event stream below must
-        // also contain the completed sibling Eval, so the fixture does not rely
-        // on a 30-second progress heartbeat that may occur before cold Docker
-        // provisioning has reached the state being observed.
+        // the reused sandbox. Together the two fixture seams define when to send
+        // SIGINT without depending on a sampled progress heartbeat.
         await waitForSecondReuseAttempt(invocationPid, root);
         expect(controlled.signal("SIGINT")).toBe(true);
 
