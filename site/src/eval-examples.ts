@@ -1,7 +1,7 @@
 // Landing page 的 eval 示例卡数据。每个示例自包含：meta(行号 -> 注解 key)对 en/zh 共用，
 // 所以 en/zh 两份代码必须逐行对应——改任何一份的行数时，另一份和 meta.highlights 要一起改。
 //
-// 三种可点开的行：replyKeys 里的 key 是发送的消息(点开看模拟回复)，其余是断言(点开看解释)。
+// 三种可点开的行：replyKeys 里的 key 是发送的消息(点开看这一轮 Session log)，其余是断言(点开看解释)。
 // 新增示例只需要在这里加一个对象，组件与 i18n copy 不用动。
 
 export type EvalExampleLocale = {
@@ -9,8 +9,23 @@ export type EvalExampleLocale = {
   tag: string;
   lines: string[];
   notes: Record<string, string>;
+  traces: Record<string, EvalExampleTrace>;
   timingRows: Array<{ label: string; value: string }>;
   timingTotal: string;
+};
+
+export type EvalExampleTraceEvent = {
+  lane: "input" | "model" | "tools";
+  kind: string;
+  summary: string;
+  status: string;
+  tool?: boolean;
+};
+
+export type EvalExampleTrace = {
+  duration: string;
+  calls: number;
+  events: EvalExampleTraceEvent[];
 };
 
 export type EvalExample = {
@@ -25,7 +40,7 @@ export type EvalExample = {
   zh: EvalExampleLocale;
 };
 
-const multiTurnImage = {
+const multiTurnImage: EvalExample = {
   id: "multi-turn-image",
   // 改编自 examples/zh/ai-sdk/evals/multi-turn-image.eval.ts
   meta: {
@@ -71,14 +86,25 @@ const multiTurnImage = {
       "});",
     ],
     notes: {
-      turn1: "The image shows a blue background with a white square in the middle.",
-      turn2: "The background is blue.",
-      turn3: "The shape in the middle is white.",
       succeeded: "succeeded() confirms turn 1 went through cleanly — no failures and no stall waiting on a human-in-the-loop prompt.",
       noTools: "first.usedNoTools() confirms turn 1 answered straight from the image — no tool call was needed.",
       recognize: "second.messageIncludes() is a turn-scoped assertion — it only checks turn 2's own reply, unlike the run-level scan below.",
       followup: "This assertion runs at the run level — it scans every assistant message across all three turns, not just the last reply.",
       gate: "A closedQA judge checks whether the assistant kept grounding every answer in turn one's image; the run only passes with a score at or above 0.7.",
+    },
+    traces: {
+      turn1: { duration: "2.1s", calls: 0, events: [
+        { lane: "input", kind: "user", summary: "What is in this image? · sample.png", status: "captured" },
+        { lane: "model", kind: "assistant", summary: "The image shows a blue background with a white square in the middle.", status: "captured" },
+      ] },
+      turn2: { duration: "1.3s", calls: 0, events: [
+        { lane: "input", kind: "user", summary: "What color is the background?", status: "captured" },
+        { lane: "model", kind: "assistant", summary: "The background is blue.", status: "captured" },
+      ] },
+      turn3: { duration: "1.5s", calls: 0, events: [
+        { lane: "input", kind: "user", summary: "What color is the shape in the middle?", status: "captured" },
+        { lane: "model", kind: "assistant", summary: "The shape in the middle is white.", status: "captured" },
+      ] },
     },
     timingRows: [
       { label: "Turn 1 · sendFile(image)", value: "2.1s" },
@@ -116,14 +142,25 @@ const multiTurnImage = {
       "});",
     ],
     notes: {
-      turn1: "图片是一个蓝色背景，中间有一个白色方块。",
-      turn2: "背景是蓝色。",
-      turn3: "中间的形状是白色。",
       succeeded: "succeeded() 确认第一轮收发正常，没有失败，也没有卡在人工介入(HITL)。",
       noTools: "first.usedNoTools() 确认第一轮是直接看图作答，没有调用任何工具。",
       recognize: "second.messageIncludes() 是轮次级断言——只检查第二轮自己的回复，跟下面的 run 级扫描不一样。",
       followup: "这是 run 级断言——会扫描整次运行里所有 assistant 消息，而不只是最后一轮回复。",
       gate: "closedQA judge 检查助手是否全程都基于第一轮的图片作答；分数达到 0.7 才算通过。",
+    },
+    traces: {
+      turn1: { duration: "2.1s", calls: 0, events: [
+        { lane: "input", kind: "用户", summary: "这张图片里有什么？ · sample.png", status: "已捕获" },
+        { lane: "model", kind: "助手", summary: "图片是一个蓝色背景，中间有一个白色方块。", status: "已捕获" },
+      ] },
+      turn2: { duration: "1.3s", calls: 0, events: [
+        { lane: "input", kind: "用户", summary: "图片里的背景是什么颜色？", status: "已捕获" },
+        { lane: "model", kind: "助手", summary: "背景是蓝色。", status: "已捕获" },
+      ] },
+      turn3: { duration: "1.5s", calls: 0, events: [
+        { lane: "input", kind: "用户", summary: "中间那个形状是什么颜色的？", status: "已捕获" },
+        { lane: "model", kind: "助手", summary: "中间的形状是白色。", status: "已捕获" },
+      ] },
     },
     timingRows: [
       { label: "第 1 轮 · sendFile(图片)", value: "2.1s" },
@@ -135,7 +172,7 @@ const multiTurnImage = {
   },
 };
 
-const weatherTool = {
+const weatherTool: EvalExample = {
   id: "weather-tool",
   // 改编自 examples/zh/ai-sdk-v7/evals/weather-tool.eval.ts
   meta: {
@@ -183,13 +220,20 @@ const weatherTool = {
       "});",
     ],
     notes: {
-      turn1: "It's sunny in Beijing right now — around 31°C with a light breeze.",
       calledTool: "calledTool() asserts the agent actually invoked get_weather with the right arguments — not just claimed it did.",
       notCalledTool: "Negative assertions are trustworthy because the adapter reports the full event stream — no silent web_search fallback slips through.",
       eventOrder: "eventOrder() checks the sequence: the tool call fired, the result came back, and only then did the user get an answer.",
       message: "The reply must show visible evidence of the weather data — calling the tool but never answering the user also fails.",
       budget: "Budget assertions cap tool calls and cost, so a passing run is also an affordable run.",
       gate: "A closedQA judge scores whether the answer contains concrete weather data; the run needs at least 0.7 to pass.",
+    },
+    traces: {
+      turn1: { duration: "1.8s", calls: 1, events: [
+        { lane: "input", kind: "user", summary: "What's the weather in Beijing today?", status: "captured" },
+        { lane: "tools", kind: "tool", summary: "get_weather({ city: \"Beijing\" })", status: "started", tool: true },
+        { lane: "tools", kind: "tool", summary: "get_weather result · sunny, 31°C, light breeze", status: "completed", tool: true },
+        { lane: "model", kind: "assistant", summary: "It's sunny in Beijing right now — around 31°C with a light breeze.", status: "captured" },
+      ] },
     },
     timingRows: [
       { label: "Turn 1 · send(question)", value: "1.8s" },
@@ -229,13 +273,20 @@ const weatherTool = {
       "});",
     ],
     notes: {
-      turn1: "北京现在是晴天，气温约 31°C，微风。",
       calledTool: "calledTool() 断言 agent 真的以正确参数调用了 get_weather，而不是嘴上说调了。",
       notCalledTool: "负断言之所以可信，是因为 adapter 上报了完整事件流——不存在偷偷走 web_search 的情况。",
       eventOrder: "eventOrder() 检查事件序：先发起工具调用、拿到结果，然后才回复用户。",
       message: "回复里必须出现天气数据的可见证据——只调工具不回答用户也算失败。",
       budget: "预算断言限制工具调用次数和成本，通过的 run 同时也是省钱的 run。",
       gate: "closedQA judge 给「是否给出具体天气数据」打分，达到 0.7 才算通过。",
+    },
+    traces: {
+      turn1: { duration: "1.8s", calls: 1, events: [
+        { lane: "input", kind: "用户", summary: "北京今天天气怎么样？", status: "已捕获" },
+        { lane: "tools", kind: "工具", summary: "get_weather({ city: \"北京\" })", status: "已开始", tool: true },
+        { lane: "tools", kind: "工具", summary: "get_weather 结果 · 晴，31°C，微风", status: "已完成", tool: true },
+        { lane: "model", kind: "助手", summary: "北京现在是晴天，气温约 31°C，微风。", status: "已捕获" },
+      ] },
     },
     timingRows: [
       { label: "第 1 轮 · send(提问)", value: "1.8s" },
@@ -246,7 +297,7 @@ const weatherTool = {
   },
 };
 
-const sandboxArtifact = {
+const sandboxArtifact: EvalExample = {
   id: "sandbox-artifact",
   // 改编自 https://github.com/CorrectRoadH/coding-agent-skill 的 evals/ponytail-csv-sum.eval.ts。
   // notes / timing 取自一次真实运行(claude-code+ponytail / claude-sonnet-4-6,
@@ -294,10 +345,19 @@ const sandboxArtifact = {
     ],
     notes: {
       sandbox: "The whole eval runs inside an isolated sandbox — writeFiles() seeded sales.csv, and the agent's first move was to Read it (id, product, amount).",
-      turn1: "Output `351.0` — 100.5 + 200.0 + 50.5.",
       fileChanged: "The agent really wrote sum_sales.py via the Write tool — 8 lines, csv.DictReader summing the amount column. fileChanged() asserts that artifact, not the reply text.",
       stdout: "The graded evidence is real: python3 sum_sales.py printed `351.0` inside the sandbox, and /^351(\\.0)?$/ matched it.",
       gate: "The closedQA judge scored the generated source 1 (threshold 0.7): csv stdlib, no pandas, 8 lines.",
+    },
+    traces: {
+      turn1: { duration: "16s", calls: 4, events: [
+        { lane: "input", kind: "user", summary: "Write sum_sales.py that prints the total of the amount column.", status: "captured" },
+        { lane: "tools", kind: "tool", summary: "Read sales.csv", status: "completed", tool: true },
+        { lane: "tools", kind: "tool", summary: "Write sum_sales.py", status: "completed", tool: true },
+        { lane: "tools", kind: "tool", summary: "python3 sum_sales.py", status: "completed", tool: true },
+        { lane: "tools", kind: "tool", summary: "command result · 351.0", status: "completed", tool: true },
+        { lane: "model", kind: "assistant", summary: "Created sum_sales.py and verified that it outputs 351.0.", status: "captured" },
+      ] },
     },
     timingRows: [
       { label: "Turn 1 · send(task) · 4 tool calls", value: "16s" },
@@ -335,10 +395,19 @@ const sandboxArtifact = {
     ],
     notes: {
       sandbox: "整个 eval 在隔离沙箱里运行——writeFiles() 播种了 sales.csv，agent 的第一步就是 Read 它（id、product、amount 三列）。",
-      turn1: "输出 `351.0` — 100.5 + 200.0 + 50.5。",
       fileChanged: "agent 真的用 Write 工具写出了 sum_sales.py——8 行，csv.DictReader 累加 amount 列。fileChanged() 断言的是这个产物，不是回复里的说法。",
       stdout: "评分证据是真实的：沙箱里 python3 sum_sales.py 打印出 `351.0`，/^351(\\.0)?$/ 匹配通过。",
       gate: "closedQA judge 给生成的源码打了 1 分（阈值 0.7）：csv 标准库、没有 pandas、8 行。",
+    },
+    traces: {
+      turn1: { duration: "16s", calls: 4, events: [
+        { lane: "input", kind: "用户", summary: "写一个 sum_sales.py，打印 amount 列的总和。", status: "已捕获" },
+        { lane: "tools", kind: "工具", summary: "读取 sales.csv", status: "已完成", tool: true },
+        { lane: "tools", kind: "工具", summary: "写入 sum_sales.py", status: "已完成", tool: true },
+        { lane: "tools", kind: "工具", summary: "python3 sum_sales.py", status: "已完成", tool: true },
+        { lane: "tools", kind: "工具", summary: "命令结果 · 351.0", status: "已完成", tool: true },
+        { lane: "model", kind: "助手", summary: "已创建 sum_sales.py，并验证输出为 351.0。", status: "已捕获" },
+      ] },
     },
     timingRows: [
       { label: "第 1 轮 · send(任务) · 4 次工具调用", value: "16s" },
