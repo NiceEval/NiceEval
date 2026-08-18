@@ -345,6 +345,7 @@ function repoBatch(entries: readonly PlanEntry[], index: number): PlanEntry {
   const batch = entries[0].batch;
   const id = `repo-batch-${batch}`;
   const requires = mergedRequires(entries);
+  const repoCount = entries.reduce((sum, entry) => sum + entry.repoIds.length, 0);
   return {
     id,
     repoIds: entries.flatMap((entry) => entry.repoIds),
@@ -353,7 +354,12 @@ function repoBatch(entries: readonly PlanEntry[], index: number): PlanEntry {
     executor: entries[0].executor,
     capabilities: [...new Set(entries.flatMap((entry) => entry.capabilities))],
     shard: id,
-    repoConcurrency: entries.reduce((sum, entry) => sum + entry.repoIds.length, 0),
+    // CI batch runners provide 2 vCPU for host work and 4 vCPU for Docker work.
+    // Running every Repo at once makes install, typecheck, Docker and live CLI
+    // processes contend until their product-level timeout expires. Two concurrent
+    // Repos keeps the shared machine busy without turning resource pressure into
+    // a false product regression.
+    repoConcurrency: Math.min(repoCount, 2),
     ...(requires === undefined ? {} : { requires }),
   };
 }

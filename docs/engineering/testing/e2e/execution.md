@@ -212,11 +212,15 @@ prepare job
              │
              ▼
 matrix jobs：下载同一 candidate.tgz
-  └─ Repo batch：同一 checkout / Testkit 下并发 run 多个独立 --repo <id>
+  └─ Repo batch：同一 checkout / Testkit 下最多并发 run 两个独立 --repo <id>
 ```
 
 Workflow 只准备 Node / pnpm / Docker / browser、下发矩阵、缓存 store / image layer、上传 artifact。
 它不自己改 dependency、分类错误、实现重试、决定 expected 或维护另一份 Repo 清单。
+
+batch plan 的 `repoConcurrency` 上限为 2。host cell 使用 2 vCPU，Docker cell 使用 4 vCPU；每个 Repo 还会执行安装、
+typecheck、Docker Sandbox 或 live CLI，因此不能让同一 batch 的全部 Repo 同时占用共享 runner。该上限只约束共机调度，
+不放宽任何 Repo 自己的 `timeoutMinutes`，也不改变 lane 的精确 Repo 集。
 
 matrix job 的 15 分钟上限包含 runner/action 启动、依赖安装与同 cell 的并行 live Repo；每个 Repo 的产品执行预算仍由
 manifest 自己收紧，不能用 job 上限放宽 provider timeout。
