@@ -23,7 +23,7 @@
 // counts, and must never parse a repo's .niceeval/ for pass/fail.
 
 import { join, resolve } from "node:path";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
@@ -59,6 +59,41 @@ interface Cli {
   nativeArgs: string[];
   keepWorkdir: boolean;
   repoConcurrency: number;
+  planPath?: string;
+  cellId?: string;
+}
+
+interface RunPlanCell {
+  repoIds: readonly string[];
+}
+
+function readRunPlanCell(planPath: string, cellId: string): RunPlanCell {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(planPath, "utf8"));
+  } catch (error) {
+    throw new Error(`could not parse E2E plan ${planPath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error("E2E plan must be a non-empty JSON array emitted by `pnpm e2e plan --batch --json`");
+  }
+  const matches = raw.filter((entry): entry is Record<string, unknown> =>
+    typeof entry === "object" && entry !== null && !Array.isArray(entry) && entry.id === cellId
+  );
+  if (matches.length !== 1) {
+    throw new Error(`E2E plan must contain exactly one cell ${JSON.stringify(cellId)}, found ${matches.length}`);
+  }
+  const entry = matches[0]!;
+  const repoIds = entry.repoIds;
+  if (
+    !Array.isArray(repoIds) ||
+    repoIds.length === 0 ||
+    !repoIds.every((id) => typeof id === "string" && id.length > 0) ||
+    new Set(repoIds).size !== repoIds.length
+  ) {
+    throw new Error(`E2E plan cell ${JSON.stringify(cellId)} must contain unique non-empty string repoIds`);
+  }
+  return { repoIds: repoIds as string[] };
 }
 
 function splitNativeArgs(argv: readonly string[]): { optionArgs: readonly string[]; nativeArgs: string[] } {
@@ -79,7 +114,9 @@ export function parseRunCli(argv: readonly string[]): Cli {
       "artifact-root": { type: "string" },
       "diff-path": { type: "string", multiple: true },
       "keep-workdir": { type: "boolean", default: false },
-      "repo-concurrency": { type: "string", default: "1" },
+      "repo-concurrency": { type: "string" },
+      plan: { type: "string" },
+      cell: { type: "string" },
     },
     allowPositionals: false,
     strict: true,
@@ -94,17 +131,43 @@ export function parseRunCli(argv: readonly string[]): Cli {
     throw new Error(`--lane must be one of ${LANES.join("|")}, got ${JSON.stringify(laneValue)}`);
   }
 
-  const repoIds = Array.isArray(values.repo) ? values.repo.filter((value): value is string => typeof value === "string") : [];
+  let repoIds = Array.isArray(values.repo) ? values.repo.filter((value): value is string => typeof value === "string") : [];
   const diffPaths = Array.isArray(values["diff-path"])
     ? values["diff-path"].filter((value): value is string => typeof value === "string")
     : [];
-  const concurrencyValue = values["repo-concurrency"];
-  if (typeof concurrencyValue !== "string" || !/^\d+$/.test(concurrencyValue)) {
-    throw new Error(`--repo-concurrency must be a positive integer, got ${JSON.stringify(concurrencyValue)}`);
+  const planValue = values.plan;
+  const cellValue = values.cell;
+  if ((planValue === undefined) !== (cellValue === undefined)) {
+    throw new Error("--plan and --cell must be supplied together");
   }
-  const repoConcurrency = Number(concurrencyValue);
-  if (!Number.isSafeInteger(repoConcurrency) || repoConcurrency < 1) {
-    throw new Error(`--repo-concurrency must be a positive integer, got ${JSON.stringify(concurrencyValue)}`);
+  let repoConcurrency = 1;
+  let planPath: string | undefined;
+  let cellId: string | undefined;
+  if (typeof planValue === "string" && typeof cellValue === "string") {
+    if (
+      repoIds.length > 0 ||
+      values.lane !== undefined ||
+      values.capability !== undefined ||
+      values["diff-path"] !== undefined ||
+      values["repo-concurrency"] !== undefined
+    ) {
+      throw new Error("--plan/--cell cannot be combined with selection options or --repo-concurrency");
+    }
+    if (planValue.length === 0 || cellValue.length === 0) throw new Error("--plan and --cell require non-empty values");
+    planPath = resolve(planValue);
+    cellId = cellValue;
+    const planned = readRunPlanCell(planPath, cellId);
+    repoIds = [...planned.repoIds];
+    repoConcurrency = planned.repoIds.length;
+  } else {
+    const concurrencyValue = values["repo-concurrency"] ?? "1";
+    if (!/^\d+$/.test(concurrencyValue)) {
+      throw new Error(`--repo-concurrency must be a positive integer, got ${JSON.stringify(concurrencyValue)}`);
+    }
+    repoConcurrency = Number(concurrencyValue);
+    if (!Number.isSafeInteger(repoConcurrency) || repoConcurrency < 1) {
+      throw new Error(`--repo-concurrency must be a positive integer, got ${JSON.stringify(concurrencyValue)}`);
+    }
   }
   return {
     repoIds,
@@ -118,6 +181,8 @@ export function parseRunCli(argv: readonly string[]): Cli {
     nativeArgs,
     keepWorkdir: values["keep-workdir"] === true,
     repoConcurrency,
+    ...(planPath === undefined ? {} : { planPath }),
+    ...(cellId === undefined ? {} : { cellId }),
   };
 }
 
@@ -329,6 +394,9 @@ export async function main(
       const activeScratchRoot = scratchRoot;
       const activeArtifactRoot = artifactRoot;
 
+      if (cli.cellId !== undefined) {
+        console.log(`[e2e] plan cell: ${cli.cellId} (${cli.planPath})`);
+      }
       console.log(`[e2e] repo concurrency: ${Math.min(cli.repoConcurrency, selected.length)}`);
       results.push(...await runRepoPool(selected, cli.repoConcurrency, execution, async (repo) => {
         console.log(`\n[e2e] === ${repo.manifest.id} ===`);

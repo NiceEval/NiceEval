@@ -5,7 +5,7 @@ name: e2e
 #
 # prepare → plan matrix、Testkit typecheck、pack 一次 NiceEval tgz + sha256
 # e2e     → 并行 cell 下载并重算 candidate digest；所有独立 Repo 按 manifest batch 共机并发；
-#           pnpm e2e run --candidate <exact> --repo <id>...
+#           pnpm e2e run --candidate <exact> --plan <exact-plan> --cell <matrix-id>
 #           （runner 在当前 checkout 为声明的 consumer clean-build Testkit 并注入目录依赖）
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
 #
@@ -233,6 +233,7 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$candidate_sha256" > "${candidate_path}.sha256"
+          cp "${RUNNER_TEMP}/e2e-plan.json" "${out_dir}/e2e-plan.json"
           {
             echo "candidate_sha256=${candidate_sha256}"
             echo "candidate_path=${candidate_path}"
@@ -247,6 +248,7 @@ jobs:
           path: |
             ${{ steps.pack.outputs.candidate_path }}
             ${{ steps.pack.outputs.candidate_path }}.sha256
+            ${{ runner.temp }}/niceeval-e2e-candidate/e2e-plan.json
           if-no-files-found: error
           retention-days: 14
 
@@ -255,8 +257,8 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ubuntu-24.04
-    # 覆盖 runner/action 启动、依赖安装及并行 live Repo；单 Repo 的产品预算仍由 manifest 收紧。
-    timeout-minutes: 15
+    # 四分钟是完整 matrix cell 的性能门槛；通过拆 batch 并行达成，不以限流或放宽预算换绿。
+    timeout-minutes: 4
     # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
     # 同名 Environment。所有路径都只注入 manifest 白名单中的 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
@@ -294,7 +296,9 @@ jobs:
           install: false
 
       - name: Install orchestrator dependencies
-        run: pnpm install --frozen-lockfile
+        # prepare 已从同一 checkout 构建并封装 exact candidate；matrix 只需要根 CLI 的
+        # JS 依赖，不能为每个 cell 重跑根 prepare 的 report/index 构建。
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Derive safe artifact id
         id: safe
@@ -329,7 +333,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Playwright browsers
+      - name: Restore Playwright browser cache
+        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
         if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
         env:
           BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}
@@ -423,21 +434,16 @@ jobs:
       - name: Run e2e for ${{ matrix.id }}
         env:
           CANDIDATE: ${{ steps.candidate.outputs.candidate }}
-          REPO_IDS_JSON: ${{ toJSON(matrix.repoIds) }}
-          REPO_CONCURRENCY: ${{ matrix.repoConcurrency }}
+          PLAN: ${{ runner.temp }}/niceeval-e2e-candidate/e2e-plan.json
+          CELL_ID: ${{ matrix.id }}
           ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
         run: |
           set -euo pipefail
           mkdir -p "$ARTIFACT_ROOT"
-          mapfile -t repo_ids < <(jq -r '.[]' <<< "$REPO_IDS_JSON")
-          repo_args=()
-          for repo_id in "${repo_ids[@]}"; do
-            repo_args+=(--repo "$repo_id")
-          done
           pnpm e2e run \
             --candidate "$CANDIDATE" \
-            "${repo_args[@]}" \
-            --repo-concurrency "$REPO_CONCURRENCY" \
+            --plan "$PLAN" \
+            --cell "$CELL_ID" \
             --artifact-root "$ARTIFACT_ROOT"
 
       - name: Redact secrets in artifactRoot

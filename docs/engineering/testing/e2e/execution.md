@@ -34,6 +34,8 @@ pnpm e2e plan --lane pr --json
 pnpm e2e plan --lane main --no-diff --exclude-external-network --json
 pnpm e2e plan --lane release --no-diff --json
 pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report --artifact-root artifacts/e2e/report
+pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
+  --plan artifacts/e2e-plan.json --cell repo-batch-docker-1 --artifact-root artifacts/e2e/docker-1
 
 # Owner 接管可靠性收据：target 必须在 -- 后给出原生文件/标题参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo report \
@@ -50,7 +52,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 - `run` 在选中 Testkit consumer 时构建当前 workspace Testkit 的 invocation-local scratch snapshot 一次；
 - 无 Repo 被选择或 manifest 非法时不 pack、不 build；
 - CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
-- matrix run 消费 candidate artifact 与当前 checkout，不再下载第二份 Testkit artifact；
+- matrix run 消费 candidate artifact、同一次生成的 plan 与当前 checkout，通过 `--plan/--cell` 精确执行该格；它不再把 Repo 列表和并发数翻译成 workflow shell，也不下载第二份 Testkit artifact；
 - `plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；显式 `run --candidate` 不重新 pack。
 
 `verify-release` 只接受非空的 `plan --json` 数组、candidate `.tgz`、receipt root 与 tag。
@@ -212,18 +214,18 @@ prepare job
              │
              ▼
 matrix jobs：下载同一 candidate.tgz
-  └─ Repo batch：同一 checkout / Testkit 下最多并发 run 两个独立 --repo <id>
+  └─ run --plan <同一 plan> --cell <id>：同格独立 Repo 全部并发启动
 ```
 
 Workflow 只准备 Node / pnpm / Docker / browser、下发矩阵、缓存 store / image layer、上传 artifact。
 它不自己改 dependency、分类错误、实现重试、决定 expected 或维护另一份 Repo 清单。
 
-batch plan 的 `repoConcurrency` 上限为 2。host cell 使用 2 vCPU，Docker cell 使用 4 vCPU；每个 Repo 还会执行安装、
-typecheck、Docker Sandbox 或 live CLI，因此不能让同一 batch 的全部 Repo 同时占用共享 runner。该上限只约束共机调度，
-不放宽任何 Repo 自己的 `timeoutMinutes`，也不改变 lane 的精确 Repo 集。
+batch 是共机放置单位，不是限流单位；plan 不携带 CI 限流参数，同格所有独立 Repo 立即并发启动。
+资源竞争、OOM 或尾延迟通过把 manifest 显式拆到 `docker-1`、`docker-2`、`docker-3` 等更多 matrix cell 处理，
+不能通过让同格 Repo 排队来换取通过；拆分不改变 lane 的精确 Repo 集。
 
-matrix job 的 15 分钟上限包含 runner/action 启动、依赖安装与同 cell 的并行 live Repo；每个 Repo 的产品执行预算仍由
-manifest 自己收紧，不能用 job 上限放宽 provider timeout。
+matrix cell 的 4 分钟上限包含 runner/action 启动、依赖安装与同 cell 的并行 live Repo；这是 E2E 关键路径的性能门槛。
+每个 Repo 的产品执行预算仍由 manifest 自己收紧，不能用 job 上限放宽 provider timeout。
 
 每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；Repo batch 的 artifact root 下仍按 Repo ID 分目录并
 保存独立 receipt，batch summary 列全该格 Repo。GitHub 原生汇总 matrix 成败，不再启动一个 job 下载并复述所有 cell 的结果。

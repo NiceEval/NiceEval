@@ -139,9 +139,8 @@ jobs:
     name: release e2e (${{ matrix.id }})
     needs: prepare-release
     runs-on: ubuntu-24.04
-    # 与 testing execution 契约一致：覆盖 action/setup、安装与有界 Repo batch；
-    # 单 Repo 的产品预算仍由各自 manifest 收紧。
-    timeout-minutes: 15
+    # 四分钟是完整 matrix cell 的性能门槛；通过拆 batch 并行达成，不以限流或放宽预算换绿。
+    timeout-minutes: 4
     environment: release
     strategy:
       fail-fast: false
@@ -179,7 +178,9 @@ jobs:
           cache-dependency-path: ${{ steps.dependency-cache.outputs.paths }}
 
       - name: Install orchestrator dependencies
-        run: pnpm install --frozen-lockfile
+        # release candidate 已由 prepare-release 从同一 checkout 构建；matrix 只安装
+        # orchestrator 所需依赖，不重复执行根 prepare。
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Resolve cell manifests
         id: cell
@@ -203,7 +204,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Playwright browsers
+      - name: Restore Playwright browser cache
+        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
         if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
         env:
           BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}
@@ -291,20 +299,15 @@ jobs:
         env:
           ARTIFACT_ROOT: ${{ steps.paths.outputs.artifact-root }}
           CANDIDATE: ${{ steps.candidate.outputs.path }}
-          REPO_IDS_JSON: ${{ toJSON(matrix.repoIds) }}
-          REPO_CONCURRENCY: ${{ matrix.repoConcurrency }}
+          PLAN: ${{ runner.temp }}/niceeval-release-candidate/release-plan.json
+          CELL_ID: ${{ matrix.id }}
         run: |
           set -euo pipefail
           mkdir -p "$ARTIFACT_ROOT"
-          mapfile -t repo_ids < <(jq -r '.[]' <<< "$REPO_IDS_JSON")
-          repo_args=()
-          for repo_id in "${repo_ids[@]}"; do
-            repo_args+=(--repo "$repo_id")
-          done
           pnpm e2e run \
             --candidate "$CANDIDATE" \
-            "${repo_args[@]}" \
-            --repo-concurrency "$REPO_CONCURRENCY" \
+            --plan "$PLAN" \
+            --cell "$CELL_ID" \
             --artifact-root "$ARTIFACT_ROOT"
 
       - name: Redact release secrets in receipts

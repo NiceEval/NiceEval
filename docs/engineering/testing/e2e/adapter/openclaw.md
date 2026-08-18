@@ -16,7 +16,7 @@ Repo ID 是 `adapter/openclaw`；manifest 声明 `areas: ["adapter", "sandbox"]`
 
 ## 仓库验收
 
-- `ci` Experiment 选中本仓库的 Skill 工具轨、会话与 usage Eval；原生验收脚本列全 OpenClaw 协议 Eval ID，防止少发现/少运行后假绿。三条 live Eval 在同一 Repo 内串行，避免同一 embedded agent / compat provider 的突发并发把原生 120 秒退出误判成 adapter 回归；Repo 仍与 batch 中的其它 Repo 并行。Live Adapter 不用非确定性的通用 coding 任务重复承担产品可靠性。
+- `ci` Experiment 选中本仓库的 Skill 工具轨、会话与 usage Eval；原生验收脚本列全 OpenClaw 协议 Eval ID，防止少发现/少运行后假绿。三条彼此独立的 live Eval 在同一 Repo 内同轮启动，直接验证 adapter / compat provider 的真实并发能力，不把单次 120 秒尾延迟固化成永久串行；Repo 仍与 batch 中的其它 Repo 并行。Live Adapter 不用非确定性的通用 coding 任务重复承担产品可靠性。
 - **Eval 结果**：原生验收只断言通过数与未通过数。Skill 读取与 decoy 反选都留在 Eval 的事件流断言中。
 - **Evidence Page**：独立 `show @locator --execution` test 只读回 Skill Eval 的代表性 shell 工具证据，不用 Page text 再给 Skill 判分。
 - **Timing Page**：独立 target Page test 验收 OpenClaw 的阶段树，不在该 owner 内重复 Evidence Page 断言。
