@@ -138,7 +138,7 @@ jobs:
   release-e2e:
     name: release e2e (${{ matrix.id }})
     needs: prepare-release
-    runs-on: ${{ matrix.requires.docker == true && 'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ubuntu-24.04
     # 与 testing execution 契约一致：覆盖 action/setup、安装与有界 Repo batch；
     # 单 Repo 的产品预算仍由各自 manifest 收紧。
     timeout-minutes: 15

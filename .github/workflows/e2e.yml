@@ -53,7 +53,7 @@ concurrency:
 jobs:
   prepare:
     name: prepare e2e
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -254,7 +254,7 @@ jobs:
     name: e2e (${{ matrix.id }})
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
-    runs-on: ${{ matrix.requires.docker == true && 'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ubuntu-24.04
     # 覆盖 runner/action 启动、依赖安装及并行 live Repo；单 Repo 的产品预算仍由 manifest 收紧。
     timeout-minutes: 15
     # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
@@ -505,7 +505,7 @@ jobs:
     name: e2e gate
     needs: [prepare, e2e]
     if: always()
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     steps:
       - name: Require the complete selected matrix
         env:
