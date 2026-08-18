@@ -59,6 +59,7 @@ import {
   type ShowSelection,
 } from "../execution/machine.ts";
 import { renderResolvedPageText } from "../runtime/text.ts";
+import type { PanelMode } from "../model/panel.ts";
 import type { ThemeDefinition } from "../theme.ts";
 import {
   executeReportSite,
@@ -133,6 +134,7 @@ export type ReportRecordTarget = SelectionTarget | AttemptTarget;
 export type ShowReportFromRecordInput = ReportRecordTarget & {
   readonly route?: string;
   readonly format?: "text" | "json";
+  readonly textProjection?: { readonly width: number; readonly panelMode: PanelMode };
 };
 
 export type BuildReportSiteFromRecordInput = ReportRecordTarget & {
@@ -199,6 +201,7 @@ export function reportSnapshotIdentityFromRecord(
 function showSelectionFromRecord(input: SelectionTarget & {
   readonly route?: string;
   readonly format?: "text" | "json";
+  readonly textProjection?: { readonly width: number; readonly panelMode: PanelMode };
 }) {
   return Effect.scoped(Effect.gen(function* () {
     const sample = yield* openSelectionSample(input.root, input.selection);
@@ -209,6 +212,7 @@ function showSelectionFromRecord(input: SelectionTarget & {
       report,
       selection,
       ...(input.route === undefined ? {} : { route: input.route }),
+      ...(input.textProjection === undefined ? {} : { textProjection: input.textProjection }),
       format: input.format ?? "text",
     });
   }));
@@ -217,6 +221,7 @@ function showSelectionFromRecord(input: SelectionTarget & {
 function showAttemptFromRecord(input: AttemptTarget & {
   readonly route?: string;
   readonly format?: "text" | "json";
+  readonly textProjection?: { readonly width: number; readonly panelMode: PanelMode };
 }) {
   return Effect.scoped(Effect.gen(function* () {
     const sample = yield* openAttemptSample(input.root, input.locator);
@@ -231,6 +236,7 @@ function showAttemptFromRecord(input: AttemptTarget & {
       report,
       selection,
       ...(input.route === undefined ? {} : { route: input.route }),
+      ...(input.textProjection === undefined ? {} : { textProjection: input.textProjection }),
       format: input.format ?? "text",
     });
   }));
@@ -249,6 +255,7 @@ function presentShowTarget(input: {
   readonly selection: ShowSelection;
   readonly route?: string;
   readonly format: "text" | "json";
+  readonly textProjection?: { readonly width: number; readonly panelMode: PanelMode };
 }): Effect.Effect<string, ExecuteReportFromRecordError, Scope.Scope> {
   if (input.format === "json") {
     const descriptor = builtInMachineDescriptorOf(input.report);
@@ -267,6 +274,7 @@ function presentShowTarget(input: {
       sample: input.sample,
       report: input.report,
       ...(input.route === undefined ? {} : { route: input.route }),
+      ...(input.textProjection === undefined ? {} : { textProjection: input.textProjection }),
     }));
     return yield* presentTarget({
       sample: input.sample,
@@ -274,6 +282,7 @@ function presentShowTarget(input: {
       execution,
       selection: input.selection,
       format: input.format,
+      ...(input.textProjection === undefined ? {} : { textProjection: input.textProjection }),
     });
   });
 }
@@ -513,6 +522,7 @@ function presentTarget(input: {
   readonly execution: ClosedTargetExecution;
   readonly selection: ShowSelection;
   readonly format: "text" | "json";
+  readonly textProjection?: { readonly width: number; readonly panelMode: PanelMode };
 }): Effect.Effect<
   string,
   ReportShowPresentationFailed,
@@ -522,7 +532,8 @@ function presentTarget(input: {
     return Effect.try({
       try: () => withTrailingNewline(renderResolvedPageText(input.execution.page, {
         locale: "en",
-        width: SHOW_TEXT_WIDTH,
+        width: input.textProjection?.width ?? SHOW_TEXT_WIDTH,
+        panelMode: input.textProjection?.panelMode ?? "plain",
       })),
       catch: (cause): ReportShowPresentationFailed => presentationFailure("text", cause),
     });

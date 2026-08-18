@@ -65,6 +65,7 @@ import {
   materializeRendererAssets,
 } from "../extension/assets.ts";
 import { resolveLocalizedText } from "../model/locale.ts";
+import type { PanelMode } from "../model/panel.ts";
 import {
   type ResolvedPage,
   type ResolvedPageAssetOutput,
@@ -152,6 +153,7 @@ export function executeReportTarget(input: {
   readonly sample: Sample;
   readonly report: ReportDefinition;
   readonly route?: string;
+  readonly textProjection?: { readonly width: number; readonly panelMode: PanelMode };
 }): Effect.Effect<ClosedTargetExecution, ReportExecutionError, Scope.Scope> {
   const request = showTargetRequestForRoute(input.report, input.route);
   if (isReportTargetRouteInvalid(request)) return Effect.fail(request);
@@ -407,6 +409,7 @@ function executeTarget(input: {
   readonly pages: readonly ReportPageDefinition[];
   readonly request: ShowTargetRequest;
   readonly capture: AnalysisIssueCapture;
+  readonly textProjection?: { readonly width: number; readonly panelMode: PanelMode };
 }): Effect.Effect<ResolvedPage, ReportExecutionError, Scope.Scope> {
   return executeShowTarget<ReportPageExecutionFailed, never>({
     definition: { pages: input.pages },
@@ -426,6 +429,7 @@ function executeTarget(input: {
       hrefPages: input.pages,
       page: context.page,
       route: context.target.route,
+      ...(input.textProjection === undefined ? {} : { textProjection: input.textProjection }),
     }),
   });
 }
@@ -440,6 +444,7 @@ function closeRenderedPage(input: {
   readonly hrefPages: readonly ReportPageDefinition[];
   readonly page: PageContext;
   readonly route: string;
+  readonly textProjection?: { readonly width: number; readonly panelMode: PanelMode };
 }): Effect.Effect<ResolvedPageOutput, ReportPageExecutionFailed> {
   return Effect.tryPromise({
     try: () => input.capture.run(async (): Promise<ResolvedPageOutput> => {
@@ -451,20 +456,29 @@ function closeRenderedPage(input: {
       validateReportTree(resolved);
       assertDocumentBudget(resolved, input.page.id, input.page.path);
 
-      const text = WEB_LOCALES.map((locale) => {
+      const requestedTextProjections = [
+        { width: TEXT_WIDTH, panelMode: "plain" as const },
+        ...(input.textProjection === undefined ||
+          (input.textProjection.width === TEXT_WIDTH && input.textProjection.panelMode === "plain")
+          ? []
+          : [input.textProjection]),
+      ];
+      const text = WEB_LOCALES.flatMap((locale) => requestedTextProjections.map((projection) => {
         const pageDimensions = collectPageDimensions(resolved, input.report.dimensionPins, "text");
         const context = createTextContext({
-          width: TEXT_WIDTH,
+          width: projection.width,
           locale,
+          panelMode: projection.panelMode,
           pageDimensions,
           command: (target) => commandForTarget(input.hrefPages, target),
         });
         return Object.freeze({
           locale,
-          width: TEXT_WIDTH,
+          width: projection.width,
+          panelMode: projection.panelMode,
           text: renderNodeToText(resolved, context),
         });
-      });
+      }));
 
       const web = WEB_LOCALES.map((locale) => {
         const pageDimensions = collectPageDimensions(resolved, input.report.dimensionPins, "web");

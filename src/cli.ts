@@ -56,6 +56,7 @@ import {
 import { reportDefinitionIdentity } from "./report/host/execute.ts";
 import { validateReportRoute } from "./report/execution/paths.ts";
 import { reportHost } from "./report/host/index.ts";
+import { panelCapabilityOf } from "./report/model/panel.ts";
 import {
   ReportHostProgressObserver,
   type ReportHostPhase,
@@ -2895,12 +2896,19 @@ function runShowCommand(
       "Load project, config, Report, and Theme",
       loadCliReportInputs(request),
     );
+    const textProjection = flags.json
+      ? undefined
+      : panelCapabilityOf({
+          isTTY: process.stdout.isTTY,
+          width: process.stdout.columns,
+        });
     const show = request.target.kind === "attempt"
       ? reportHost.show({
           root: request.root,
           locator: request.target.locator,
           report: inputs.report,
           ...(request.page === undefined ? {} : { route: request.page }),
+          ...(textProjection === undefined ? {} : { textProjection: { width: textProjection.width, panelMode: textProjection.mode } }),
           format: flags.json ? "json" as const : "text" as const,
         })
       : reportHost.show({
@@ -2910,6 +2918,7 @@ function runShowCommand(
             : inputs.projectCurrentSelection!,
           report: inputs.report,
           ...(request.page === undefined ? {} : { route: request.page }),
+          ...(textProjection === undefined ? {} : { textProjection: { width: textProjection.width, panelMode: textProjection.mode } }),
           format: flags.json ? "json" as const : "text" as const,
         });
     const output = yield* show.pipe(

@@ -557,7 +557,7 @@ export function customTargetExecutionManifest(input: {
   if (!isPositiveSafeInteger(input.textWidth)) {
     throw new TypeError("custom target execution textWidth must be a positive safe integer");
   }
-  const text = resolvedPageText(input.page, { locale: "en", width: input.textWidth });
+  const text = resolvedPageText(input.page, { locale: "en", width: input.textWidth, panelMode: "plain" });
   if (!("state" in text) || text.state !== "rendered") {
     throw new TypeError("the selected Page lacks a closed English text projection at the requested width");
   }

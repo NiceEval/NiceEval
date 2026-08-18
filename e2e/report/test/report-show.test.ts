@@ -243,6 +243,7 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
       expect(piped.exitCode, piped.diagnostic()).toBe(0);
       expect(piped.stdout).toContain("Pass rate");
       expect(piped.stdout).toContain("main");
+      expect(piped.stdout).not.toMatch(/[╭╮╰╯├┤]/u);
 
       const terminal = await runReportPty(
         ["show"],
@@ -250,7 +251,7 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
           columns: 120,
           rows: 40,
           cwd: projectRoot,
-          env: { TERM: "dumb", NO_COLOR: undefined, FORCE_COLOR: undefined },
+          env: { TERM: "dumb", NO_COLOR: "1", FORCE_COLOR: undefined },
           timeoutMs: 60_000,
         },
       );
@@ -258,6 +259,8 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
       const visible = stripVTControlCharacters(terminal.stdout);
       expect(visible).toContain("Pass rate");
       expect(visible).toContain("main");
+      expect(visible).toMatch(/^╭.*╮$/mu);
+      expect(visible).toMatch(/^╰.*╯$/mu);
     },
   );
 });

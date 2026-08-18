@@ -7,6 +7,7 @@ import {
   type SampleIdentity,
 } from "../../analysis/contracts.ts";
 import type { LocalizedText } from "../../shared/types.ts";
+import type { PanelMode } from "../model/panel.ts";
 
 /** A closed page has no route back to an author callback or a live Sample. */
 export const RESOLVED_PAGE_FORMAT = "niceeval.report.resolved-page/v1";
@@ -21,6 +22,7 @@ export interface ResolvedPageTarget {
 export interface ResolvedPageTextProjection {
   readonly locale: string;
   readonly width: number;
+  readonly panelMode: PanelMode;
   readonly text: string;
 }
 
@@ -166,10 +168,12 @@ export function resolvePage<Rendered, Error, Requirements>(
 /** Finds an already-built terminal projection. It never invokes a renderer. */
 export function resolvedPageTextProjection(
   page: ResolvedPage,
-  input: { readonly locale: string; readonly width: number },
+  input: { readonly locale: string; readonly width: number; readonly panelMode: PanelMode },
 ): ResolvedPageTextProjection | undefined {
   return page.text.find((projection) =>
-    projection.locale === input.locale && projection.width === input.width
+    projection.locale === input.locale &&
+    projection.width === input.width &&
+    projection.panelMode === input.panelMode
   );
 }
 
@@ -275,16 +279,24 @@ function freezeTextProjections(
     if (rejectLiveCapability(projection, sample, ["text", String(index)])) {
       throw new TypeError(`text[${index}] retains a live Sample capability`);
     }
-    if (!isNonEmptyString(projection.locale) || !isPositiveSafeInteger(projection.width) || typeof projection.text !== "string") {
-      throw new TypeError(`text[${index}] must contain locale, positive width, and text`);
+    if (!isNonEmptyString(projection.locale) || !isPositiveSafeInteger(projection.width) ||
+      (projection.panelMode !== "boxed" && projection.panelMode !== "plain") || typeof projection.text !== "string") {
+      throw new TypeError(`text[${index}] must contain locale, positive width, panel mode, and text`);
     }
-    const key = `${projection.locale}\u0000${projection.width}`;
+    const key = `${projection.locale}\u0000${projection.width}\u0000${projection.panelMode}`;
     if (seen.has(key)) throw new TypeError(`text projection ${JSON.stringify(key)} is duplicated`);
     seen.add(key);
-    return Object.freeze({ locale: projection.locale, width: projection.width, text: projection.text });
+    return Object.freeze({
+      locale: projection.locale,
+      width: projection.width,
+      panelMode: projection.panelMode,
+      text: projection.text,
+    });
   });
   return Object.freeze(closed.sort((left, right) =>
-    compareUtf8(left.locale, right.locale) || left.width - right.width
+    compareUtf8(left.locale, right.locale) ||
+    left.width - right.width ||
+    compareUtf8(left.panelMode, right.panelMode)
   ));
 }
 
