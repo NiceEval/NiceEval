@@ -85,7 +85,7 @@ it("show --execution 读回 OpenClaw 的代表性工具证据", async () => {
   );
   const execution = await niceeval.run(["show", event.locator!, "--execution"]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  expect(execution.stdout).toContain(".agents/skills/niceeval-status-report/SKILL.md");
+  expect(execution.stdout).toContain("status-report.txt");
 });
 
 it("show --timing 读回 OpenClaw 的 runner 阶段", async () => {
