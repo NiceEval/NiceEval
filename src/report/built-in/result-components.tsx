@@ -46,6 +46,7 @@ const SOURCE_TEXT_MAX = 12_000;
 export interface OverviewCounts {
   readonly experiments: number;
   readonly attempts: number;
+  readonly expectedResults: number;
 }
 
 /** Display-safe membership facts prepared by the Page loader from Snapshot. */
@@ -141,6 +142,10 @@ function metricCell(metric: MetricValue): Cell {
   return { kind: "metric", metric };
 }
 
+function metricValueOnlyCell(metric: MetricValue): Cell {
+  return { kind: "metric", metric, showCoverage: false };
+}
+
 function limited<Row>(rows: readonly Row[], maximum = DETAIL_ROWS_MAX): readonly Row[] {
   return rows.slice(0, maximum);
 }
@@ -176,14 +181,26 @@ function heroAndKpis(input: StandardOverviewResult) {
     <>
       <Hero data={input.hero} />
       <Grid>
-        {hasPassSummary ? <Stat label="Pass rate" value={summary === undefined ? null : metricCell(summary.passRate)} /> : null}
+        {hasPassSummary ? <Stat label="Pass rate" value={summary === undefined ? null : metricValueOnlyCell(summary.passRate)} /> : null}
         {hasScore ? <Stat label="Mean score" value={meanScore} /> : null}
-        <Stat label="Mean duration" value={summary === undefined ? null : metricCell(summary.durationMs)} />
-        <Stat label="Mean tokens" value={summary === undefined ? null : metricCell(summary.tokens)} />
+        <Stat label="Mean duration" value={summary === undefined ? null : metricValueOnlyCell(summary.durationMs)} />
+        <Stat label="Mean tokens" value={summary === undefined ? null : metricValueOnlyCell(summary.tokens)} />
         <Stat label="Experiments" value={input.counts.experiments} />
         <Stat label="Included attempts" value={input.counts.attempts} />
       </Grid>
     </>
+  );
+}
+
+function resultCoverageSection(counts: OverviewCounts) {
+  if (counts.attempts >= counts.expectedResults) return null;
+  return (
+    <Section
+      title="Result coverage"
+      meta={`${counts.attempts} of ${counts.expectedResults} results available`}
+    >
+      <Text>Some expected results do not have an analyzable Attempt. Result coverage is not a score or pass rate.</Text>
+    </Section>
   );
 }
 
@@ -210,9 +227,17 @@ function standardOverviewTree(input: StandardOverviewResult) {
     { field: "durationMs", label: "Mean duration" },
     { field: "tokens", label: "Mean tokens" },
   ];
+  const tableRows = input.experiments.map((row) => ({
+    ...row,
+    passRate: row.passRate === null ? null : metricValueOnlyCell(row.passRate),
+    totalScore: row.totalScore ?? null,
+    durationMs: metricValueOnlyCell(row.durationMs),
+    tokens: metricValueOnlyCell(row.tokens),
+  }));
   return (
     <Col>
       {heroAndKpis(input)}
+      {resultCoverageSection(input.counts)}
       <Section title="Experiment results" meta={`${input.experiments.length} experiments`}>
         {input.experiments.length === 0 ? <Text>No experiment rows are available for this selection.</Text> : !hasPass ? null : (
           <Col>
@@ -228,7 +253,7 @@ function standardOverviewTree(input: StandardOverviewResult) {
           </Col>
         )}
         <Table
-          rows={input.experiments}
+          rows={tableRows}
           columns={columns}
         />
       </Section>

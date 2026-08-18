@@ -82,6 +82,9 @@ state:   partial
 
 页面可以显示 `80% · 20 / 100 · partial`。它不能因为只画出 20 行有值数据，就把读数写成 `20 / 20`。
 
+自定义 Report 可以按上面的紧凑形态把完整度放在读数旁边。内建 Overview 把两者分开：指标单元格只显示业务值，缺少结果时另用一个
+有标题的 `Result coverage` Section 显示可用结果数与预期结果数。这个 Section 只改变信息层级，不删除或重算底层 `MetricValue`。
+
 | state | `value` | 必须保留的含义 |
 |---|---|---|
 | `available` | number | 全部预期成员按度量规则贡献。 |

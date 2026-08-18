@@ -60,7 +60,9 @@ Attempt Evidence、Observability、File Changes、Sources 和 Sandbox history �
 
 `available`、`partial`、`empty`、`unsupported` 和 `failed` 都是不同状态。不要把 `null` 当成零，也不要用只剩下的可见行数替换总分母。
 
-例如 `2 / 4 slot · partial` 表示四个已选 occurrence 中只有两个提供该 Measure 的输入。这组计数只描述覆盖率；它不是 earned score、通过率或工作完成比例。Measure 自己的 `value` 才是读数，题型决定默认报告选择通过率还是 Score。
+例如 `formatMetricValue()` 输出的 `2 / 4 slot · partial` 表示四个已选 occurrence 中只有两个提供该 Measure 的输入。这组计数只描述覆盖率；它不是 earned score、通过率或工作完成比例。Measure 自己的 `value` 才是读数。
+
+默认 Overview 不把这组计数重复追加到每个指标单元格。它按题型显示通过率或 earned score，并在结果不完整时用独立的 `Result coverage` 区域显示可用结果数。终端把这个区域渲染成有标题的边框；底层 `MetricValue` 的字段保持不变。
 
 ## 相关页面
 

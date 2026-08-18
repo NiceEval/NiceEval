@@ -72,7 +72,7 @@ npx niceeval accept @1K1P0VJAPVJ12
 
 新 Run 保留该 Experiment 当前完整的 expected-slot 分母。命令中选中的 slot 写作 `accepted`，同 Run 中没有被选中的 sibling slot 写作 `not-dispatched`。因此一次只接受一个 locator 时，这个 Run 的其它位置可能没有指标输入。
 
-每次 `accept` 调用都会发布新 Run，不会修改或合并上一次调用。连续接受同一 Experiment 的多个 locator 后，`project-current` 会保留这些仍匹配的 Run occurrence，报告可能显示 `2 / 4 slot · partial`。这里的 `2 / 4` 是指标覆盖率，不是通过率或 score。
+每次 `accept` 调用都会发布新 Run，不会修改或合并上一次调用。连续接受同一 Experiment 的多个 locator 后，`project-current` 会保留这些仍匹配的 Run occurrence。默认 Overview 会在有边框的 `Result coverage` 区域提示只有部分预期结果可用；这里的可用数是结果覆盖率，不是通过率或 score。
 
 需要接受同一 Experiment 的多个结果时，把 locator 放进同一条命令：
 
