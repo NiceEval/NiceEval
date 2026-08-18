@@ -3,14 +3,13 @@ import { deepSeekHarnessAgent } from "niceeval/adapter";
 import { sandbox } from "../sandbox.ts";
 
 const agent = deepSeekHarnessAgent({
-  apiKey: process.env.BUB_API_KEY,
-  baseUrl: process.env.BUB_API_BASE,
+  apiKey: process.env.DEEPSEEK_API_KEY,
 });
 
 export default defineExperiment({
   description: "DeepSeek Harness adapter 的目标兼容性闭环",
   agent,
-  model: "gpt-5.6-luna",
+  model: "deepseek-v4-flash",
   sandbox,
   evals: ["message"],
   attempts: 1,
