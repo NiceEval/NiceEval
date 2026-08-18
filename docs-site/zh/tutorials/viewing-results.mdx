@@ -29,6 +29,8 @@ pnpm exec niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 
 不带 locator、`--run` 或 `--experiment` 时，命令使用 `project-current`：它保留全部仍与当前项目身份匹配的已发布结果，而不是只选最新一条。需要阅读历史结果时，传入完整 `--run`；要限制当前项目结果时，重复传入完整的 `--experiment <id>`。
 
+`project-current` 按 Run 中的 slot occurrence 保留结果。它不会把多个 Run 里同名的 Experiment、评估用例和 Attempt 序号合并成一个位置。重复运行或分多次执行 `accept` 都可能增加当前 `Sample` 的分母。
+
 Sample 记录每个位置的状态：
 
 | 状态 | 含义 |
@@ -66,6 +68,22 @@ pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx --json
 
 JSON 不包含其它 Page、HTML、React tree、站点 identity 或 Record 读取能力。
 
+## 按题型读取主读数
+
+默认报告按评估类型选择主读数：
+
+- Pass Eval 显示通过率。
+- Score Eval 显示 earned score。
+- mixed Experiment 显示 Score，并在 Pass Eval 子行显示通过率，不把两者合成百分比。
+
+Score Eval 上声明的 `points` 是评分项的贡献权重，不是 Experiment 的固定满分。动态执行、条件分支或不可用材料可能让评分项集合不同，因此默认报告不会自动把 earned score 除以所有源码里声明的 `points`。
+
+项目没有配置 Report 时，`project-current` 使用单页 `default-overview`。显式传入 `--report standard` 会使用相同的题型主读数，并额外提供 Attempts、Traces、Experiment 和 Attempt 详情页。增加详情页不会改变 Score 或通过率的计算口径。
+
+默认 Overview 让主读数保持独立：Score 只显示 earned score，耗时和 token 也只显示各自的值。它不会在这些单元格后面追加容易与分数混淆的 `2 / 4 slot · partial`。
+
+如果部分预期结果不可用，Overview 会在 KPI 和实验表之外显示独立的 `Result coverage` 区域。终端中的这个区域有边框，标题行直接写出“多少个结果可用”；它说明结果完整度，不表示分数、通过率或工作完成比例。结果完整时不显示这个区域。
+
 ## 在浏览器读取完整站点
 
 ```sh
@@ -81,7 +99,7 @@ view 在启动 server 前枚举所有显式声明的普通 Page 与参数 Page �
 
 ## 读懂不完整数据
 
-`MetricValue` 的 `samples` 是实际贡献数，`total` 是既定分母，`state` 和 `issues` 说明为什么数据不完整。`partial` 可以有数值；`empty`、`unsupported` 与 `failed` 不是零。Evidence refs 保留可复核的定位信息。
+`MetricValue` 的 `samples` 是实际贡献数，`total` 是既定分母，`state` 和 `issues` 说明为什么数据不完整。自定义 Report 使用 `formatMetricValue()` 时仍可得到 `2 / 4 slot · partial` 这类紧凑格式；它表示四个已选位置中有两个提供该指标，不是 score，也不是“完成了一半”。默认 Overview 改用上面的独立覆盖区域。`partial` 可以有数值；`empty`、`unsupported` 与 `failed` 不是零。Evidence refs 保留可复核的定位信息。
 
 Analysis 数据问题继续作为页面内容显示。相反，选中 Page 的 callback、参数 key 或成员资格失败会让 `show` 返回单目标错误；任何全站 Page、路径、资源或预算失败都会阻止新的站点发布。
 

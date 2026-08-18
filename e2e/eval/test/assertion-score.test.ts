@@ -19,12 +19,8 @@ interface LeaderboardShow {
     kind: "leaderboard";
     rows: readonly {
       experiment: string;
-      passRate: {
-        state: string;
-        samples: number;
-        total: number;
-        refs: readonly { identity: { kind: "attempt"; locator: string } }[];
-      };
+      passRate: null;
+      totalScore: number;
     }[];
   };
 }
@@ -92,14 +88,13 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
           kind: "leaderboard",
           rows: [{
             experiment: "assertion-score",
-            passRate: { state: "partial", samples: 6, total: 8 },
+            passRate: null,
           }],
         },
       });
       const [row] = document.data.rows;
       expect(row).toBeDefined();
-      expect(row!.passRate.refs).toHaveLength(8);
-      expect(row!.passRate.refs.map((ref) => ref.identity.locator)).toContain(scoredEvent.locator);
+      expect(row!.totalScore).toEqual(expect.any(Number));
     },
   );
 });

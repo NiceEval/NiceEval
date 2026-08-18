@@ -6,7 +6,7 @@
 
 ## 版本边界
 
-`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `1`。`AssertionsAttachmentV1` 只标识这份精确持久 schema 与跨进程 wire codec；它不进入 Assertion、handle、Report 或其它作者 ABI 的名字。当前 `schemaVersion: 1` 是首个支持的 Record 形状，没有需兼容的既有 Assertions bytes。格式边界由 Record owner 统一维护，Assertions producer 不自行注册转换步骤。
+`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `1`。`AssertionsAttachmentV1` 只标识这份精确持久 schema与跨进程 wire codec；它不进入 Assertion、handle、Report 或其它作者 ABI 的名字。当前 `schemaVersion: 1` 是首个支持的 Record 形状，没有需兼容的既有 Assertions bytes。格式边界由 Record owner 统一维护，Assertions producer 不自行注册转换步骤。
 
 ```text
 author calls / evaluator internals / producer control flow

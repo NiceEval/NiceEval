@@ -46,6 +46,7 @@ const SOURCE_TEXT_MAX = 12_000;
 export interface OverviewCounts {
   readonly experiments: number;
   readonly attempts: number;
+  readonly expectedResults: number;
 }
 
 /** Display-safe membership facts prepared by the Page loader from Snapshot. */
@@ -59,6 +60,20 @@ export interface MembershipRow {
   readonly state: string;
   readonly relation: string | null;
   readonly locator: string | null;
+  readonly outcome?: string | null;
+  readonly phase?: string | null;
+  readonly error?: string | null;
+  readonly sharedFailure?: string | null;
+}
+
+export interface RunErrorRow {
+  readonly key: string;
+  readonly failure: string;
+  readonly phase: string;
+  readonly affected: string;
+  readonly error: string;
+  readonly message: string;
+  readonly fix: string | null;
 }
 
 export interface StandardOverviewResult {
@@ -95,6 +110,7 @@ export interface RunMembershipResult {
   readonly hero: HeroData;
   readonly summary: BuiltInSummaryRows;
   readonly members: readonly MembershipRow[];
+  readonly errors: readonly RunErrorRow[];
   readonly evidence: AttemptEvidenceDomainView;
 }
 
@@ -126,6 +142,10 @@ function metricCell(metric: MetricValue): Cell {
   return { kind: "metric", metric };
 }
 
+function metricValueOnlyCell(metric: MetricValue): Cell {
+  return { kind: "metric", metric, showCoverage: false };
+}
+
 function limited<Row>(rows: readonly Row[], maximum = DETAIL_ROWS_MAX): readonly Row[] {
   return rows.slice(0, maximum);
 }
@@ -153,13 +173,18 @@ function issueSection(view: { readonly issues: readonly { readonly code: string;
 
 function heroAndKpis(input: StandardOverviewResult) {
   const summary = input.summary[0];
+  const hasScore = input.experiments.some((row) => row.evaluationKind !== "pass");
+  const hasPassSummary = input.experiments.length > 0 && input.experiments.every((row) => row.evaluationKind === "pass");
+  const scores = input.experiments.flatMap((row) => row.totalScore === undefined ? [] : [row.totalScore]);
+  const meanScore = scores.length === 0 ? null : scores.reduce((sum, score) => sum + score, 0) / scores.length;
   return (
     <>
       <Hero data={input.hero} />
       <Grid>
-        <Stat label="Pass rate" value={summary === undefined ? null : metricCell(summary.passRate)} />
-        <Stat label="Mean duration" value={summary === undefined ? null : metricCell(summary.durationMs)} />
-        <Stat label="Mean tokens" value={summary === undefined ? null : metricCell(summary.tokens)} />
+        {hasPassSummary ? <Stat label="Pass rate" value={summary === undefined ? null : metricValueOnlyCell(summary.passRate)} /> : null}
+        {hasScore ? <Stat label="Mean score" value={meanScore} /> : null}
+        <Stat label="Mean duration" value={summary === undefined ? null : metricValueOnlyCell(summary.durationMs)} />
+        <Stat label="Mean tokens" value={summary === undefined ? null : metricValueOnlyCell(summary.tokens)} />
         <Stat label="Experiments" value={input.counts.experiments} />
         <Stat label="Included attempts" value={input.counts.attempts} />
       </Grid>
@@ -167,10 +192,22 @@ function heroAndKpis(input: StandardOverviewResult) {
   );
 }
 
+function resultCoverageSection(counts: OverviewCounts) {
+  if (counts.attempts >= counts.expectedResults) return null;
+  return (
+    <Section
+      title="Result coverage"
+      meta={`${counts.attempts} of ${counts.expectedResults} results available`}
+    >
+      <Text>Some expected results do not have an analyzable Attempt. Result coverage is not a score or pass rate.</Text>
+    </Section>
+  );
+}
+
 function experimentPoints(rows: BuiltInExperimentRows) {
-  return rows.map((row) => evidenceRow({
+  return rows.filter((row) => row.passRate !== null).map((row) => evidenceRow({
     experiment: String(row.experiment),
-    passRate: row.passRate,
+    passRate: row.passRate!,
     durationMs: row.durationMs,
   }));
 }
@@ -180,12 +217,29 @@ function experimentTarget(experiment: string) {
 }
 
 function standardOverviewTree(input: StandardOverviewResult) {
+  const hasScore = input.experiments.some((row) => row.evaluationKind !== "pass");
+  const hasPass = input.experiments.some((row) => row.evaluationKind === "pass");
   const points = experimentPoints(input.experiments);
+  const columns = [
+    { field: "experiment", label: "Experiment" },
+    ...(hasPass ? [{ field: "passRate", label: "Pass rate" }] : []),
+    ...(hasScore ? [{ field: "totalScore", label: "Score" }] : []),
+    { field: "durationMs", label: "Mean duration" },
+    { field: "tokens", label: "Mean tokens" },
+  ];
+  const tableRows = input.experiments.map((row) => ({
+    ...row,
+    passRate: row.passRate === null ? null : metricValueOnlyCell(row.passRate),
+    totalScore: row.totalScore ?? null,
+    durationMs: metricValueOnlyCell(row.durationMs),
+    tokens: metricValueOnlyCell(row.tokens),
+  }));
   return (
     <Col>
       {heroAndKpis(input)}
+      {resultCoverageSection(input.counts)}
       <Section title="Experiment results" meta={`${input.experiments.length} experiments`}>
-        {points.length === 0 ? <Text>No experiment rows are available for this selection.</Text> : (
+        {input.experiments.length === 0 ? <Text>No experiment rows are available for this selection.</Text> : !hasPass ? null : (
           <Col>
             <Bars
               points={points}
@@ -199,13 +253,8 @@ function standardOverviewTree(input: StandardOverviewResult) {
           </Col>
         )}
         <Table
-          rows={input.experiments}
-          columns={[
-            { field: "experiment", label: "Experiment" },
-            { field: "passRate", label: "Pass rate" },
-            { field: "durationMs", label: "Mean duration" },
-            { field: "tokens", label: "Mean tokens" },
-          ]}
+          rows={tableRows}
+          columns={columns}
         />
       </Section>
       {issueSection(input.experiments)}
@@ -249,20 +298,46 @@ export const StandardAttemptsResultView = defineComponent<StandardAttemptsResult
 StandardAttemptsResultView.displayName = "StandardAttemptsResultView";
 
 function membershipTable(rows: readonly MembershipRow[]) {
+  const normalized = rows.map((row) => ({
+    ...row,
+    outcome: row.outcome ?? null,
+    phase: row.phase ?? null,
+    error: row.error ?? null,
+    sharedFailure: row.sharedFailure ?? null,
+  }));
   return (
     <Table
-      rows={rows}
+      rows={normalized}
       columns={[
         { field: "experiment", label: "Experiment" },
         { field: "eval", label: "Eval" },
         { field: "attempt", label: "Attempt" },
+        { field: "state", label: "Membership" },
+        { field: "outcome", label: "Outcome" },
+        { field: "error", label: "Error" },
+        { field: "phase", label: "Phase" },
+        { field: "sharedFailure", label: "Shared failure" },
         { field: "locator", label: "Attempt locator" },
         { field: "selectedRun", label: "Selected run" },
         { field: "slot", label: "Slot" },
-        { field: "state", label: "Membership" },
         { field: "relation", label: "Relation" },
       ]}
     />
+  );
+}
+
+function runErrorsSection(rows: readonly RunErrorRow[]) {
+  return rows.length === 0 ? null : (
+    <Section title="Run errors" meta={`${rows.length} shared failure${rows.length === 1 ? "" : "s"}`}>
+      {rows.map((row) => (
+        <Section key={row.key} title={`${row.error} · ${row.failure}`}>
+          <Text>{`phase: ${row.phase}`}</Text>
+          <Text>{`affected: ${row.affected}`}</Text>
+          <Text>{row.message}</Text>
+          {row.fix === null ? null : <Text>{`fix: ${row.fix}`}</Text>}
+        </Section>
+      ))}
+    </Section>
   );
 }
 
@@ -631,6 +706,7 @@ function runMembershipTree(input: RunMembershipResult) {
         {membershipTable(limited(input.members))}
         {omittedText(input.members.length, Math.min(input.members.length, DETAIL_ROWS_MAX), "membership rows")}
       </Section>
+      {runErrorsSection(input.errors)}
       <AttemptEvidenceResultView view={input.evidence} />
       {issueSection(input.summary)}
     </Col>
@@ -662,11 +738,20 @@ AttemptDetailResultView.displayName = "AttemptDetailResultView";
 
 function experimentDetailTree(input: ExperimentDetailResult) {
   const rows = input.rows.filter((row) => String(row.experiment) === input.experiment);
+  const hasScore = rows.some((row) => row.evaluationKind !== "pass");
+  const hasPass = rows.some((row) => row.evaluationKind === "pass");
+  const columns = [
+    "experiment",
+    ...(hasPass ? ["passRate"] : []),
+    ...(hasScore ? ["totalScore"] : []),
+    "durationMs",
+    "tokens",
+  ];
   return (
     <Col>
       <Hero data={input.hero} />
       <Section title={`Experiment · ${input.experiment}`}>
-        <Table rows={rows} columns={["experiment", "passRate", "durationMs", "tokens"]} />
+        <Table rows={rows} columns={columns} />
       </Section>
       <Section title="Experiment members" meta={`${input.members.length} slots`}>
         {membershipTable(limited(input.members))}

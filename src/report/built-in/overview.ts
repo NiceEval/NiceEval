@@ -28,6 +28,7 @@ interface OverviewPageInput {
   readonly counts: {
     readonly experiments: number;
     readonly attempts: number;
+    readonly expectedResults: number;
   };
 }
 
@@ -58,6 +59,7 @@ const overviewPage = {
       counts: Object.freeze({
         experiments: experiments.length,
         attempts: sample.snapshot.slots.filter((slot) => slot.state === "included").length,
+        expectedResults: sample.snapshot.slots.filter((slot) => slot.state !== "excluded").length,
       }),
     });
   },

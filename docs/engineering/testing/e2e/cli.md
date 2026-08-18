@@ -26,13 +26,14 @@
 
 #### cli-failure-error-results
 
-仓库包含三个 Experiment，验收脚本把预期非零退出转换为仓库级成功：
+仓库包含四个 Experiment，验收脚本把预期非零退出转换为仓库级成功：
 
 | Experiment       | 内容                    | 预期                                                            |
 | ---------------- | ----------------------- | --------------------------------------------------------------- |
 | 正常             | 断言通过的 Eval         | 按 Eval 级折叠后退出 `0`                                        |
 | deliberate-fail  | 断言必然不通过的 Eval   | Attempt 的 Verdict 为 `failed`，进程非零退出                          |
 | deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`，`show @<locator>` 显示阶段、退出码与摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
+| deliberate-score | 确定性的 Score Eval       | Human 结束标题为 `SCORED`，`RESULTS` 显示实际 `2 score · 1/1 complete`，不冒充 `passed` |
 
 ### 缓存
 
