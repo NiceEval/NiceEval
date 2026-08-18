@@ -1,0 +1,160 @@
+---
+title: "在 NixOS 上配置 Managed DinD"
+sidebarTitle: "NixOS Managed DinD"
+description: "使用 NiceEval 的 NixOS module 部署 managed rootless Docker profile，并通过 doctor 验证宿主环境。"
+---
+
+Managed rootless DinD 适合在共享 NixOS 宿主上运行不可信 Agent。NiceEval 的 NixOS module 会创建专用
+系统用户、rootless Docker daemon、容量受限的数据盘、资源 slice 和 watchdog。日常运行 NiceEval
+不需要 `sudo`，但首次部署和更新系统配置需要管理员权限。
+
+如果任务可以信任 Agent，或者只在一次性 VM 中运行，先阅读[让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker)
+选择 Docker socket 或 raw privileged DinD。它们不需要本页的宿主 profile。
+
+## 前置条件
+
+开始前确认：
+
+- NixOS 使用 flake 管理系统配置；
+- 宿主使用 systemd 和 cgroup v2；
+- 你知道日常运行 NiceEval 的 NixOS 用户名；
+- 宿主有足够的 CPU、内存和磁盘留给评估容器。
+
+下面假设系统配置仓库已经有 `flake.nix`，配置名是 `my-host`，日常用户名是 `alice`。请把它们替换成
+自己的值。
+
+## 引入 NiceEval module
+
+在系统配置的 `flake.nix` 中加入 NiceEval input，并把 module 放进主机的 `modules`：
+
+```nix title="flake.nix"
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    niceeval.url = "github:NiceEval/NiceEval";
+  };
+
+  outputs = { self, nixpkgs, niceeval, ... }: {
+    nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        niceeval.nixosModules.default
+        ./configuration.nix
+      ];
+    };
+  };
+}
+```
+
+第一次运行 Nix 命令后，Nix 会把 NiceEval 的具体 commit 写进你的 `flake.lock`。提交这份锁文件，避免
+不同机器在未确认的时间使用不同 module 版本。
+
+## 声明 profile
+
+在 NixOS 配置中声明一个名为 `default` 的 profile：
+
+```nix title="configuration.nix"
+{ ... }:
+{
+  services.niceeval.dockerProfiles.default = {
+    enable = true;
+    accessUsers = [ "alice" ];
+
+    capacity = {
+      cpus = 4;
+      memory = "8G";
+      pids = 4096;
+      maxContainers = 2;
+      maxBuilds = 1;
+    };
+
+    aggregate = {
+      cpus = 6;
+      memory = "12G";
+      pids = 6144;
+    };
+
+    storage = {
+      size = "30G";
+      backing = "loop-ext4";
+    };
+  };
+}
+```
+
+`capacity` 是 NiceEval 可以分配给评估任务的预算。`aggregate` 是 daemon、构建进程、watchdog 和评估
+容器共同受到的硬限制，因此每一项都不能小于 `capacity`。两者之间的余量留给宿主侧开销。
+
+`loop-ext4` 会在 `/var/lib/niceeval/docker-profiles/default.img` 创建稀疏镜像，并挂载为 Docker
+data root。`size` 是这个 profile 的磁盘上限，不代表 rebuild 时立即占用同等物理空间。
+
+## 应用系统配置
+
+先检查配置能够求值，再切换系统：
+
+```bash
+nix flake check
+sudo nixos-rebuild switch --flake .#my-host
+```
+
+module 会把 `alice` 加入 profile 的 access group。rebuild 完成后退出当前登录会话并重新登录，让新组
+成员身份生效。只在旧 shell 中重新运行命令不会刷新 supplementary groups。
+
+重新登录后检查服务：
+
+```bash
+systemctl status niceeval-docker-profile-default.service
+systemctl status niceeval-docker-profile-watchdog-default.service
+```
+
+两个服务都应显示 `active (running)`。失败时读取对应 unit 的日志：
+
+```bash
+journalctl -u niceeval-docker-profile-default.service -b
+journalctl -u niceeval-docker-profile-watchdog-default.service -b
+```
+
+## 验证 profile
+
+进入已经安装 NiceEval 的评估项目，以日常用户运行：
+
+```bash
+pnpm exec niceeval docker profile list
+pnpm exec niceeval docker profile doctor default --smoke
+```
+
+`list` 应显示 `default`。`doctor --smoke` 会检查 descriptor、Unix socket、cgroup、容量和 watchdog，
+然后启动一个受限的外层容器及一个内层 Alpine 容器。所有项目都通过后，宿主 profile 才可以用于正式
+评估。
+
+不要用 `sudo pnpm exec niceeval ...` 绕过权限错误。日常用户无法访问 profile 时，先确认用户名已经写入
+`accessUsers`，再重新登录并重跑 doctor。
+
+## 在 Experiment 中使用
+
+宿主通过验收后，在 Experiment 的 Docker Sandbox 中引用同一个别名：
+
+```ts
+dockerAccess: {
+  mode: "dind",
+  isolation: "managed-rootless",
+  profile: "default",
+},
+```
+
+Experiment 还必须声明单容器 CPU、内存、PID、只读 rootfs 和 tmpfs。完整配置见
+[让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker#managed-rootless-dind)。先用较小的
+`maxConcurrency` 运行一次，再根据 profile 的 `capacity` 增加并发。
+
+## 更新 module
+
+需要更新 NiceEval module 时，在系统配置仓库更新对应 input，检查 diff 后重新构建：
+
+```bash
+nix flake update niceeval
+nix flake check
+sudo nixos-rebuild switch --flake .#my-host
+```
+
+更新会改变宿主服务，不能只更新评估项目里的 npm 依赖。保留旧 generation，确认 doctor 和实际评估都
+通过后再清理 NixOS generation。

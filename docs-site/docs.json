@@ -676,6 +676,7 @@
                   "zh/tutorials/install-custom-sandbox-agent",
                   "zh/tutorials/sandbox-providers",
                   "zh/tutorials/docker-in-docker",
+                  "zh/tutorials/nixos-managed-dind",
                   "zh/tutorials/sandbox-reuse"
                 ]
               },
