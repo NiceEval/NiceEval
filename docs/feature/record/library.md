@@ -142,15 +142,17 @@ root / Core 不兼容时，若 maintenance 有固定相邻步骤则返回 `migra
 
 ## fixed family 与内部读取
 
-current catalog 的五个 fixed family 由 definition 关闭：
+current catalog 的七个 fixed family 由 definition 关闭：
 
 | family | `owners` |
 |---|---|
 | `niceeval.assertions` | `{ attempt }` |
 | `niceeval.observability` | `{ attempt, run }` |
 | `niceeval.file-changes` | `{ attempt }` |
+| `niceeval.source-navigation` | `{ attempt }` |
 | `niceeval.sources` | `{ run }` |
 | `niceeval.artifacts` | `{ attempt, run }` |
+| `niceeval.experiment-presentation` | `{ run }` |
 
 Attachment envelope 的 shape 是 `{ family, schemaVersion }`。family 是稳定 identity，schemaVersion 是数值。
 Observability 与 Artifacts 各自只有一个 package-private definition；其 owner-specific payload 位于同一
@@ -256,6 +258,10 @@ interface RunWriteSession {
     value: RunObservabilityWrite,
   ) => Effect.Effect<void, RecordWriteError>;
 
+  readonly writeExperimentPresentation: (
+    value: ExperimentPresentationWrite,
+  ) => Effect.Effect<void, RecordWriteError>;
+
   readonly attachArtifact: (
     value: ArtifactWrite,
   ) => Effect.Effect<ArtifactRef, RecordWriteError>;
@@ -271,6 +277,7 @@ interface ReferenceRunWriteSession {
   readonly recordAcceptedMembership: RunWriteSession["recordAcceptedMembership"];
   readonly recordTerminalMember: RunWriteSession["recordTerminalMember"];
   readonly writeRunObservability: RunWriteSession["writeRunObservability"];
+  readonly writeExperimentPresentation: RunWriteSession["writeExperimentPresentation"];
   readonly attachArtifact: RunWriteSession["attachArtifact"];
   readonly seal: RunWriteSession["seal"];
 }
@@ -319,6 +326,11 @@ interface AttemptWriteSession {
 这些是 fixed collector 的窄入口，不是 generic Attachment writer。它们把输入交给内部 definition，
 不会暴露 raw JSON、path、blob key、`family`、schemaVersion 或写入 schema。`writeRunObservability()` 与
 `attachArtifact()` 分别写入同一个 Observability 或 Artifacts definition 的 `owners.run` branch。
+
+`writeExperimentPresentation()` 只接受已校验的 authored displayName，或与该 Run Core `experimentId` 完全
+相等的 fallback。它写入 `niceeval.experiment-presentation` 的 `owners.run` branch。
+
+每个新 Run（包括 reference Run）在 `seal()` 前必须恰好写入一次。缺失、重复或与 Core ID 不一致都会拒绝 seal。
 
 `referenceAttempt()` 只接受当前 reader selection 中已封口的精确 Attempt。它不猜 latest、不引用本 Run
 尚未封口的 Attempt，也不复制历史 Attachment。`recordAcceptedMembership()` 是 explicit adoption 的具名写入：

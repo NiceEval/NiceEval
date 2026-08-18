@@ -84,5 +84,5 @@ NiceEval 不创建 staging、backup、rollback、root replacement 或自己的�
 ## 相关阅读
 
 - [Record CLI](../cli.md#migrate)
-- [固定 family 与 closure](../architecture.md#五个固定-attachment-family)
+- [固定 family 与 closure](../architecture.md#七个固定-attachment-family)
 - [源码 Attachment 怎样安全演进](源码Attachment怎样安全演进.md)

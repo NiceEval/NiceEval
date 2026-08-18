@@ -26,7 +26,7 @@ Report loader。Host 内部才取得 Scope、Layer、lease、reader、writer 或
 | Experiment 发现、调度、并发、Sandbox 生命周期、reuse 与 receipt | `src/runner/`；由 `experimentHost` 调用 |
 | execution claim 与 Record lease 协调 | `src/coordination/` 与 `src/record/` 的 Host 实现 |
 | Record Core、Run、Member、Attempt 与 migration 编解码 | `src/record/{model,codec,migration,host}/` |
-| 六个固定 family 与各自 collector / decoder | `src/record/family/`、`src/assertions/record/`、`src/o11y/record/`、`src/sandbox/record/`、`src/runner/source-producer.ts` 与 `src/sources/` |
+| 七个固定 family 与各自 collector / decoder | `src/record/family/`、`src/assertions/record/`、`src/o11y/record/`、`src/sandbox/record/`、`src/runner/source-producer.ts` 与 `src/sources/` |
 | Scope-bound reader 与按需读取 | `src/record/reader/`；只能经 `recordHost` 到达 |
 
 Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 解释，不另建 durable family。

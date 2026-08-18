@@ -57,6 +57,11 @@ Attempt 时读取 `niceeval.observability`，把已验证结果以 `{ owner, fix
 Sample 不解释该 family 的 bytes。它把这个请求闭合为 `unsupported`，并继续计算不依赖它的
 Measure。未知 family 不把 Core、其它 Attachment 或 Report 的闭合输出变成全局失败。
 
+`experimentPresentationView` 惰性读取 Run-owned Experiment Presentation family。任一 published Run 的缺失
+关闭为 `fallback-missing` 并使用完整 Experiment ID；invalid 或 unsupported Attachment 关闭为带 issues 的
+`unavailable`。root/Core、已知 family 的 migration-required、I/O 或 open 失败阻断查询，不降级为局部状态。
+这份视图只服务展示，不进入选择、分母或 grouping。
+
 ```text
 attemptLatencyMs ──▶ Sample cache ──▶ attempt / niceeval.observability
                                                      │

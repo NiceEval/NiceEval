@@ -69,6 +69,7 @@ interface EvalDescriptor {
 }
 
 export default defineExperiment({
+  displayName?: string;                       // 一行人类展示值；不参与 identity、选择或 reuse
   description?: string;                       // 人读
   agent: Agent;                              // 跑哪个 agent(adapter 实例)
   model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
@@ -93,6 +94,10 @@ export default defineExperiment({
   teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;  // 全部 attempt 收尾后执行;setup 时点走到过才触发
 });
 ```
+
+`displayName` 与 `experimentId`、`description` 彼此独立。路径生成的完整 `experimentId` 仍是选择、Run 归属与审计身份；
+`displayName` 只进入列表、运行反馈和 Run 自己的展示快照。省略时使用完整 `experimentId`，重复名称合法且不能作为 selector。
+完整输入、输出与历史 Run fallback 见 [Experiment 展示名称](display-names/README.md)。
 
 `evals` 可以同时选择通过制与计分制 eval。
 题型由 `EvalDescriptor.evaluationKind` 给报告：通过制读 Verdict 的通过率，计分制读 sealed Assertions 的
@@ -182,6 +187,7 @@ id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/code
 
 - [用例手册](use-case/README.md) —— 规则难懂先查这里:并发怎么配、预置放哪层、flags 还是 labels、选哪些 eval,以及各 CLI 输入面的全流程用例。
 - [Library](library.md) —— model/flags 怎么透传、怎样选择 eval、路径怎样形成 id、与 config 的关系。
+- [Experiment 展示名称](display-names/README.md) —— 名称、ID、description、Run 快照与各输出面的边界。
 - [缓存与携带](cache.md) —— 上一轮的结果哪些还算数:指纹算什么、携带要过哪几道门、`--rerun` 三档。
 - [Sandbox 生命周期](../sandbox/lifecycle.md) —— 记忆库与 checkpoint 怎样在物理 Sandbox 边界恢复与回存。
 - [计分粒度](../assertions/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读 earned score)；混合时两种读数各算各的。

@@ -203,6 +203,49 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 - 真实派发的 Attempt 仍完整封入 prepare、命令、计时与诊断的 Observability。Sandbox 编号、承接序号与
   租借状态是调度和留存注册表数据，不成为 portable Record family；它们不会因 Attempt 提前终结而伪造一份状态值。
 
+## 运行级复用反馈
+
+`sandboxReuse` 是当前 Invocation 的进度值，不属于 frozen reuse plan。Runner 按 Experiment 与物理复用范围维护：
+
+```ts
+type SandboxReuseGroup =
+  | { readonly kind: "experiment" }
+  | { readonly kind: "eval-group"; readonly evalGroupId: string };
+
+interface SandboxReuseSummary {
+  readonly experimentId: ExperimentId;
+  readonly displayName: string;
+  readonly group: SandboxReuseGroup;
+  readonly active: number;
+  readonly created: number;
+  readonly assignments: number;
+  readonly replacements: number;
+}
+```
+
+- `active` 从实例取得首条 assignment 起计数，直到实例 retired 或进入 draining；busy 与 idle 实例都计入。
+- `created` 在一个实例首次成功取得 assignment 时加一；只建立但从未成功租借的实例不计。
+- `assignments` 在 Slot 取得实例租约时加一，即使租借后的 prepare 失败或超时。
+- `replacements` 是 `created` 的子集：上一实例退出后，为未开始 Slot 建立的新实例在首次成功取得 assignment
+  时加一；同一时刻也增加 `created`。
+
+`created`、`assignments` 与 `replacements` 只增不减，且 `replacements <= created <= assignments`。
+`active` 可以随实例进入或退出复用池增减，但不能为负数。
+
+每个被选择且计划复用的范围都产生一行，即使其 Slot 全部 carried，四个计数仍为 `0`。普通物理复用范围按
+Experiment 聚合；Eval Group 范围按精确 `evalGroupId` 分行。carried、过滤掉的 Slot、early-exit 未开始 Slot、
+create 失败且从未取得租约的实例，以及退出后没有未开始 Slot 的情况都不增加计数。替代实例不会重新派发
+已经开始的 Attempt。
+
+结束摘要在 Invocation pool teardown 完成后冻结，因此所有行的 terminal `active` 都为 `0`；stop 失败通过既有
+diagnostic 报告，不能保留一个伪 active 实例。其余三个字段是本次 Invocation 的累计值。数组按
+`experimentId`、group kind、`evalGroupId` 的 UTF-8 bytes 规范排序。
+
+TTY live 面板与结束反馈投影这四项汇总。实例编号、承接序号与租借状态仍是当前 Runner 的瞬时调度状态；
+Record 不保存逐实例事实，`show` 与 `view` 也不从其它事实反推。汇总不改变 Member relation、Attempt origin、
+Verdict、结果携带资格或 `carried` provenance。
+完整 Human 与 JSON 输出见 [Experiments CLI](../experiments/cli.md#sandbox-复用汇总)。
+
 ## 复用污染的可观察性
 
 「prepare 可重复执行、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。

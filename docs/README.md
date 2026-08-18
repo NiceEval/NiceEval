@@ -64,6 +64,7 @@ docs/
 │   ├── eval/                            编写 Eval：defineEval
 │   ├── eval-groups/                     按封闭成员集组织的组内 Sandbox 复用与组间并行
 │   ├── experiments/                     组织运行配置：defineExperiment
+│   │   └── display-names/               与 identity 分离的 Experiment 展示名称
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── plugins/                         带稳定身份的生命周期组合语法
 │   ├── record/                          已完成 Run、精确引用与固定持久事实
@@ -79,7 +80,7 @@ docs/
 │   ├── admission-health/                Agent 进入前的 producer occurrence 健康探测
 │   ├── discovery-boundaries/            目录入口拥有的递归发现边界
 │   ├── eval-trajectories/               依赖 DAG 的 exact Checkpoint 暂停与恢复
-│   ├── experiment-authoring/             展示名与具名 Experiment 族
+│   ├── experiment-authoring/             具名 Experiment 族
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
@@ -89,7 +90,6 @@ docs/
 │   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期
 │   ├── sandbox-prepare/                 checkout、Fixture 内容与官方命令瞬时重试
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
-│   ├── sandbox-reuse-feedback/          Sandbox 物理复用的运行级摘要
 │   ├── state/                           provider-issued Cohort 与 exact Checkpoint
 │   └── workspace-access-evidence/       Agent Workspace 文件操作证据与 Assertion
 │

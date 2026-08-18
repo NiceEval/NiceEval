@@ -7,12 +7,13 @@ Experiment 是可签入的运行配置。它选择 Eval、声明 Agent 和调度
 ```text
 Invocation
   └─ Run（Core）：一个已求值的 Experiment
+      ├─ Experiment presentation：Run 保存的 displayName
       ├─ expected slot（Core）
       │   └─ Member：slot → exact Attempt
       │       ├─ relation：origin | reference（由关系推导）
       │       ├─ action：executed / carried / accepted / not-dispatched / interrupted
       │       └─ Attempt（Core outcome）
-      └─ 固定五类事实：Assertions、Observability、FileChanges、Sources、Artifacts
+      └─ Attempt 固定五类事实：Assertions、Observability、FileChanges、Sources、Artifacts
 ```
 
 Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experiment 分配尚未发布的
@@ -24,6 +25,10 @@ Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experimen
 没有 `complete`，不会成为自己的 source barrier。不存在全局 Record writer lock（写入锁）。
 
 Invocation receipt 以 `runIds` 关联本次调用，但不是可扩展的 Record 事实面。Run/Member/Attempt 的身份、分母、action、reference 与 outcome 由 Core 唯一保存。Assertions、Observability、FileChanges、Sources 和 Artifacts 各自保存固定事实。`points` 只在 Assertion 的 score facts 中出现，Report 只能从这些既有事实投影，不能另存 evaluation 或 verdict 家族。
+
+Experiment presentation 是 Run-owned 展示快照，不属于 Attempt 的五类运行事实，也不取得 Core identity。
+它保存规范化后的 `displayName`，让历史 Run 不受当前源码改名影响；缺少该 Attachment 的历史 Run 固定回落到完整
+`experimentId`。完整 owner、发布与失败语义见 [Experiment 展示名称 Architecture](display-names/architecture.md)。
 
 Run 的 expected membership 是本次分母。每个 slot 最多有一个 Member；任何 Member 都无条件表示该 slot 由一个精确 Attempt 完整占据。Member 不保存会持续扩张的业务 kind。
 
@@ -43,6 +48,9 @@ Attempt 的 `origin.runId` 永远指向实际执行它的 Run。当当前 Member
 `judge` 按字段合并。Experiment 只能配置 Judge 的执行条件；rubric、评分材料、Severity 与 threshold 仍由 Eval 的 assertion 定义。
 
 `apiKeyEnv` 只声明凭据位置，不进入可比性身份，也不写入 Record。所有消费者使用同一份已求值配置；调度、fingerprint、Core execution identity 与反馈不能各算一份。
+
+`displayName` 与 `description` 走独立 presentation 路径，不参加配置求值链、selector、reuse planning 或调度。
+discovery 在 Provider I/O 前规范化名称；正式 Run 在同一次 seal 中发布自己的 presentation Attachment。
 
 ## Coordination（协调）与 Run 级共享准备
 
@@ -159,5 +167,6 @@ directory。
 - [Library](library.md) —— 配置透传、Hook 与反馈入口。
 - [缓存与携带](cache.md) —— fingerprint、carry 与 accept 资格。
 - [实验改名](rename.md) —— 以 Core reference Member + `accepted` action 表达 Experiment 身份变化。
+- [Experiment 展示名称](display-names/architecture.md) —— identity 与 presentation 两条路径、Run 快照和迁移边界。
 - [CLI](cli.md) —— Invocation、accept、查询与机器输出。
 - [Record](../record/README.md) —— Run、Member、Attempt 与 receipt 的 owner。

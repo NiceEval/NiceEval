@@ -54,7 +54,7 @@ record/
 
 ## NiceEval 内部的 Effect Schema 作者模型
 
-NiceEval 以 package-private Schema declaration 描述 root、Core 与 current catalog 的六个固定 Attachment。
+NiceEval 以 package-private Schema declaration 描述 root、Core 与 current catalog 的七个固定 Attachment。
 它是读取、写入、校验、canonical encode 与 migration 的共同输入；不存在另一份手写的当前模型。
 
 唯一的作者入口是 `defineRecordCore` 与 `defineRecordAttachment`。两者不从公开 package 导出，也不是
@@ -151,6 +151,21 @@ const observability = defineRecordAttachment({
   }),
 });
 
+const experimentPresentation = defineRecordAttachment({
+  family: "niceeval.experiment-presentation",
+  current: {
+    schemaVersion: 1,
+    owners: {
+      run: {
+        schema: ExperimentPresentationAttachmentV1Schema,
+        limits: ExperimentPresentationLimits,
+        blobs: noRecordBlobs,
+      },
+    },
+  },
+  maintenance: async () => ({ historicalCodecs: [], adjacentMigrations: [] }),
+});
+
 const currentAttachmentCatalog = [
   assertions,
   observability,
@@ -158,12 +173,13 @@ const currentAttachmentCatalog = [
   sourceNavigation,
   sources,
   artifacts,
+  experimentPresentation,
 ] as const;
 ```
 
 每个 family 模块包含自己的 declaration、复杂 payload Schema、encoded-side durable JSON 键、limits、blob
 closure 与 integrity 验证。当前每个 family 文件恰有一个 `defineRecordAttachment` 调用。复杂 family 可拆成目录，
-但只有 `definition.ts` 保留该入口。总 catalog 只列六个 declaration，不复制 owner shape 或 payload Schema。
+但只有 `definition.ts` 保留该入口。总 catalog 只列七个 declaration，不复制 owner shape 或 payload Schema。
 Observability 与 Artifacts 各有一个 family declaration；`owners.attempt` 与 `owners.run` 不会形成第二个 family。
 
 未知 stable family 保留其目录与 bytes，跳过 payload / blob 解码，继续读取 Core 与已知 family。请求它的
@@ -288,7 +304,7 @@ Core refine 强制以下不变量：
 Experiment、RunContext、Eval、Slot identity、execution identity digest 与 Member action 是离线解释不可缺的
 Core 历史事实。matcher、当前输入、cache hit、通行率、排名与页面模型不进入 Core。
 
-## 六个固定 Attachment family
+## 七个固定 Attachment family
 
 每个 owner 对每个 family 至多有一个 envelope。`attachment.json` 使用稳定 family identity 与数值版本：
 
@@ -309,9 +325,18 @@ type AttachmentEnvelope = {
 | `niceeval.source-navigation` | `{ attempt }` | `SourceNavigationAttachment` | Runner 封口每个物理 send 的 source/timing join |
 | `niceeval.sources` | `{ run }` | `SourcesAttachment` | Runner 封口源码闭包 manifest 与 own blobs |
 | `niceeval.artifacts` | `{ attempt, run }` | `ArtifactsAttachment` | artifact collector 封口有类型文件 |
+| `niceeval.experiment-presentation` | `{ run }` | `ExperimentPresentationAttachmentV1` | Experiment writer 封口规范化展示名称与 Core identity 交叉校验 |
 
 `niceeval.source-navigation` 只有 Attempt owner，schemaVersion 固定为 `1`，并且 `blobs.refs()` 永远为空。
 它不拆分或改写 `niceeval.observability` 的 v1 payload。
+
+`niceeval.experiment-presentation` 只有 Run owner，schemaVersion 固定为 `1`，并且 `blobs.refs()` 永远为空。
+payload 的 `experimentId` 必须与同一 Run Core 相等；新 writer 缺少该 family 时拒绝 seal。任一已发布 Run
+缺少该 family 时，展示层以 Core 的完整 `experimentId` 回落。Record v1 没有 family inventory，不能区分较早
+writer 省略与发布后删除。
+
+无效或不支持的 Attachment 保留局部 Record problem；root/Core、已知 family 的
+migration-required、I/O 或 open 失败则阻断读取。任何状态都不能读取当前源码回填 Run 名称。
 
 ```ts
 type SourceNavigationAttachment = {

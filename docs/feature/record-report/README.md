@@ -307,7 +307,7 @@ AttemptWriteSession → Run seal → runs/<RunId>/complete
 ```
 
 Record 只保存无法从已有事实重新计算的内容。通过率、均值、排名、denominator（分母）、missing（缺失）汇总、图表点位与页面树都由上层按定义重新形成。
-六个固定 family 名是稳定 identity；下表 Attachment envelope 的 `schemaVersion` 均为 `1`。
+七个固定 family 名是稳定 identity；下表 Attachment envelope 的 `schemaVersion` 均为 `1`。
 
 ## Record 数据边界
 
@@ -319,14 +319,15 @@ Record 只保存无法从已有事实重新计算的内容。通过率、均值�
 | 物理 send 导航 | Runner 在每个 `t.send` Exit 封口 | 固定 `niceeval.source-navigation` Attachment；无 blob，只 join turn、source 与 timing |
 | 源码闭包 | Runner 在 origin Run 封口前采集 | 固定 `niceeval.sources` Attachment 与自身 blob closure |
 | 大型文件 | NiceEval 发布的 Artifact collector | 固定 `niceeval.artifacts` Attachment 保存媒体类型、身份与 blob 引用 |
+| Experiment 展示名称 | Experiment writer 在 Run 封口时保存 | 固定 `niceeval.experiment-presentation` Attachment；不参与 identity、分母或 reuse |
 
 Adapter 只能向 NiceEval 已发布的 collector 提交合法值，不能借此建立第三方 schema。
 
-Record 固定每个事实族的 payload shape（载荷形状）、owner（所有者）与语义。改变字段类型、scope（作用域）、cardinality（基数）、单位或坐标域必须发布下一 Record 版本和具体 migration。显示名、格式、颜色、统计口径和组件配置不属于持久 schema。
+Record 固定每个事实族的 payload shape（载荷形状）、owner（所有者）与语义。改变字段类型、scope（作用域）、cardinality（基数）、单位或坐标域必须发布下一 Record 版本和具体 migration。Report 页面标题、格式、颜色、统计口径和组件配置不属于持久 schema。
 
 ## Migration（迁移）边界
 
-Record 只向上层提供当前 schema。`Record Core v1` 与六个 fixed family 的 `schemaVersion: 1` 构成第一版正式协议，当前 migration chain（迁移链）为空。
+Record 只向上层提供当前 schema。`Record Core v1` 与七个 fixed family 的 `schemaVersion: 1` 构成当前正式协议，当前 migration chain（迁移链）为空。
 
 ```text
 Record v1（第一版正式事实集）
