@@ -4,6 +4,8 @@
 @layer theme, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source("../");
+/* 首页会话轨迹直接消费产品 TurnTrace 的官方 stylesheet，避免颜色与交互状态另起一套。 */
+@import "../../src/report/assets/styles.css";
 
 /* 站点观感与产品面同源:令牌值抄 DESIGN.md 的单源主题 basalt(src/report/host/theme.ts),
    短名与 src/view/styles.css 的宿主 chrome 对齐。站点只有暗色一套,不做浅色切换。 */
@@ -859,302 +861,19 @@ h1 {
   color: var(--good);
 }
 
-/* send/sendFile 展开当前产品面的 Session log，而不是只露出一条模拟回复。 */
+/* send/sendFile 原位展开产品面的真实 TurnTrace 结构。 */
 .code-note-trace {
   display: block;
   padding: 8px 14px 12px 42px;
 }
 
-.site-trace {
+.site-example-trace {
   width: 100%;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--text);
-  font-family: var(--font-sans);
-  white-space: normal;
 }
 
-.site-trace button,
-.site-trace input {
-  font: inherit;
-}
-
-.site-trace-toolbar {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 7px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel-2);
-}
-
-.site-trace-toolbar-main {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  color: var(--soft);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  white-space: nowrap;
-}
-
-.site-trace-toolbar-main > strong {
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.site-trace-toolbar-main b {
-  color: var(--text);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.site-trace-toolbar-main button {
-  border: 0;
-  padding: 2px 0;
-  background: transparent;
-  color: var(--soft);
-  cursor: pointer;
-}
-
-.site-trace-toolbar-main button:hover,
-.site-trace-toolbar-main button:focus-visible,
-.site-trace-toolbar-main button[aria-pressed="true"] {
-  outline: 0;
-  color: var(--text);
-}
-
-.site-trace-toolbar-main button:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-
-.site-trace-search {
-  display: flex;
-  width: 116px;
-  min-width: 0;
-  align-items: center;
-  margin-left: auto;
-  gap: 4px;
-  border: 1px solid var(--line);
-  padding: 2px 6px;
-  color: var(--soft);
-  background: var(--panel-2);
-}
-
-.site-trace-search:focus-within {
-  border-color: var(--accent);
-  background: var(--panel);
-}
-
-.site-trace-search input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 10px;
-}
-
-.site-trace-search input::placeholder {
-  color: var(--soft);
-}
-
-.site-trace-timeline {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  border-bottom: 1px solid var(--line);
-  background: var(--panel-2);
-}
-
-.site-trace-labels {
-  display: grid;
-  grid-template-rows: repeat(3, 14px);
-  padding: 4px 5px;
-  border-right: 1px solid var(--line);
-  color: var(--soft);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  line-height: 14px;
-  text-align: right;
-}
-
-.site-trace-labels span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.site-trace-track {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(var(--trace-columns), minmax(3px, 1fr));
-  grid-template-rows: repeat(3, 14px);
-  gap: 0 2px;
-  align-content: center;
-  padding: 4px 3px;
-}
-
-.site-trace-track::before,
-.site-trace-track::after {
-  position: absolute;
-  right: 0;
-  left: 0;
-  height: 1px;
-  background: var(--line);
-  content: "";
-}
-
-.site-trace-track::before { top: 18px; }
-.site-trace-track::after { top: 32px; }
-
-.site-trace-track > span {
-  z-index: 1;
-  grid-column: var(--trace-column);
-  align-self: center;
-  height: 7px;
-  background: var(--muted);
-}
-
-.site-trace-track > span[data-lane="input"] {
-  grid-row: 1;
-  background: var(--accent);
-}
-
-.site-trace-track > span[data-lane="model"] {
-  grid-row: 2;
-  background: var(--text);
-}
-
-.site-trace-track > span[data-lane="tools"] {
-  grid-row: 3;
-  background: var(--warn);
-}
-
-.site-trace-timeline > p {
-  grid-column: 1 / -1;
+.code-note-trace .niceeval-turn-trace {
   margin: 0;
-  padding: 3px 7px 4px 64px;
-  border-top: 1px solid var(--line);
-  color: var(--soft);
-  font-size: 9px;
-  line-height: 1.35;
-}
-
-.site-trace-turn-head {
-  display: flex;
-  width: 100%;
-  min-height: 29px;
-  align-items: center;
-  gap: 7px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  padding: 0 8px;
-  background: var(--panel-2);
-  color: var(--soft);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  text-align: left;
-}
-
-.site-trace-turn-head:hover,
-.site-trace-turn-head:focus-visible {
-  outline: 0;
-  background: var(--panel);
-}
-
-.site-trace-turn-head strong {
-  color: var(--accent);
-  font-family: var(--font-sans);
-  font-size: 11px;
-}
-
-.site-trace-chevron {
-  color: var(--soft);
-  font-size: 14px;
-  line-height: 1;
-  transition: transform 140ms ease;
-}
-
-.site-trace-chevron.open {
-  transform: rotate(90deg);
-}
-
-.site-trace-events {
-  display: grid;
-}
-
-.site-trace-event {
-  display: grid;
-  grid-template-columns: 60px minmax(0, 1fr) 42px 52px;
-  min-height: 30px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 8px 0 20px;
-  border-bottom: 1px solid var(--line);
-  font-size: 10px;
-}
-
-.site-trace-event:last-child {
-  border-bottom: 0;
-}
-
-.site-trace-event.tool {
-  padding-left: 34px;
-}
-
-.site-trace-event > span {
-  overflow: hidden;
-  color: var(--soft);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.site-trace-event > span[data-lane="input"] { color: var(--accent); }
-.site-trace-event > span[data-lane="model"] { color: var(--text); }
-.site-trace-event > span[data-lane="tools"] { color: var(--warn); }
-
-.site-trace-event p {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.site-trace-event time,
-.site-trace-event em {
-  overflow: hidden;
-  color: var(--soft);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-style: normal;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  clip-path: inset(50%);
+  font-size: 12px;
 }
 
 .eval-more {
@@ -1856,43 +1575,6 @@ h1 {
   .code-note-trace {
     padding-right: 8px;
     padding-left: 26px;
-  }
-
-  .site-trace-toolbar {
-    align-items: stretch;
-    flex-wrap: wrap;
-  }
-
-  .site-trace-toolbar-main {
-    width: 100%;
-    overflow-x: auto;
-  }
-
-  .site-trace-search {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .site-trace-timeline {
-    grid-template-columns: 50px minmax(0, 1fr);
-  }
-
-  .site-trace-timeline > p {
-    padding-left: 50px;
-  }
-
-  .site-trace-event {
-    grid-template-columns: 48px minmax(0, 1fr) 36px;
-    gap: 5px;
-    padding-left: 14px;
-  }
-
-  .site-trace-event.tool {
-    padding-left: 24px;
-  }
-
-  .site-trace-event em {
-    display: none;
   }
 
   .terminal-body {

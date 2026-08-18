@@ -1,11 +1,12 @@
 "use client";
 
-import React, { type KeyboardEvent, useMemo, useState } from "react";
+import React, { type KeyboardEvent, useState } from "react";
 import { Highlight, themes } from "prism-react-renderer";
 import { CheckCircle2, ChevronRight, MessageCircle } from "lucide-react";
 import { track } from "../src/analytics";
-import { evalExamples, type EvalExample, type EvalExampleTrace } from "../src/eval-examples";
+import { evalExamples, type EvalExample } from "../src/eval-examples";
 import type { Dictionary, Locale } from "../lib/content";
+import ExampleTurnTrace from "./site-example-turn-trace";
 
 const codeTheme = {
   ...themes.vsDark,
@@ -137,7 +138,7 @@ function EvalCard({
                     {noteKey && open ? (
                       isReply ? (
                         <div className="code-note code-note-trace">
-                          <ExampleSessionTrace trace={card.traces[noteKey]} locale={locale} />
+                          <ExampleTurnTrace trace={card.traces[noteKey]} locale={locale} />
                         </div>
                       ) : (
                         <div className="code-note">
@@ -181,68 +182,5 @@ function EvalCard({
         </div>
       ) : null}
     </div>
-  );
-}
-
-function ExampleSessionTrace({ trace, locale }: { trace: EvalExampleTrace; locale: Locale }) {
-  const [turnOpen, setTurnOpen] = useState(true);
-  const [callsOpen, setCallsOpen] = useState(true);
-  const [query, setQuery] = useState("");
-  const calls = trace.calls;
-  const visibleEvents = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase(locale === "zh" ? "zh-CN" : "en");
-    return trace.events.filter((event) => {
-      if (!callsOpen && event.tool) return false;
-      return normalized.length === 0 || `${event.kind} ${event.summary} ${event.status}`.toLocaleLowerCase().includes(normalized);
-    });
-  }, [callsOpen, locale, query, trace.events]);
-  const copy = locale === "zh"
-    ? { title: "会话日志", duration: "时长", turns: "轮次", calls: "调用", search: "搜索", input: "输入 / 用户", model: "模型 / 助手", tools: "工具 / 工具", turn: "Turn 1", events: "事件", note: "时长模式投影已捕获的轮次时长；没有逐事件时间戳时，事件在轮次内保持等宽顺序。" }
-    : { title: "Session log", duration: "Duration", turns: "Turns", calls: "Calls", search: "Search", input: "Input / User", model: "Model / Assistant", tools: "Tools / Tool", turn: "Turn 1", events: "events", note: "Duration projects captured turn duration; without per-event timestamps, events remain evenly sequenced within the turn." };
-
-  return (
-    <section className="site-trace" aria-label={copy.title}>
-      <header className="site-trace-toolbar">
-        <div className="site-trace-toolbar-main">
-          <strong>{copy.title}</strong>
-          <span>{copy.duration} <b>{trace.duration}</b></span>
-          <button type="button" aria-pressed={!turnOpen} onClick={() => setTurnOpen((open) => !open)}>⊟ {copy.turns} <b>1</b></button>
-          <button type="button" aria-pressed={!callsOpen} disabled={calls === 0} onClick={() => setCallsOpen((open) => !open)}>⊟ {copy.calls} <b>{calls}</b></button>
-        </div>
-        <label className="site-trace-search">
-          <span aria-hidden="true">⌕</span>
-          <span className="sr-only">{copy.search}</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder={copy.search} />
-        </label>
-      </header>
-      <div className="site-trace-timeline">
-        <div className="site-trace-labels" aria-hidden="true"><span>{copy.input}</span><span>{copy.model}</span><span>{copy.tools}</span></div>
-        <div className="site-trace-track" style={{ "--trace-columns": trace.events.length } as React.CSSProperties}>
-          {trace.events.map((event, index) => <span key={`${event.kind}-${index}`} data-lane={event.lane} style={{ "--trace-column": index + 1 } as React.CSSProperties} />)}
-        </div>
-        <p>{copy.note}</p>
-      </div>
-      <div className="site-trace-turn">
-        <button type="button" className="site-trace-turn-head" aria-expanded={turnOpen} onClick={() => setTurnOpen((open) => !open)}>
-          <span className={turnOpen ? "site-trace-chevron open" : "site-trace-chevron"}>›</span>
-          <strong>{copy.turn}</strong>
-          <span>{trace.duration}</span>
-          <span>{trace.events.length} {copy.events}</span>
-          {calls > 0 ? <span>{calls} {copy.calls.toLocaleLowerCase()}</span> : null}
-        </button>
-        {turnOpen ? (
-          <div className="site-trace-events">
-            {visibleEvents.map((event, index) => (
-              <div key={`${event.kind}-${index}`} className={event.tool ? "site-trace-event tool" : "site-trace-event"}>
-                <span data-lane={event.lane}>{event.kind}</span>
-                <p>{event.summary}</p>
-                <time>{trace.duration}</time>
-                <em>{event.status}</em>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </section>
   );
 }

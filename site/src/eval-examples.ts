@@ -20,6 +20,10 @@ export type EvalExampleTraceEvent = {
   summary: string;
   status: string;
   tool?: boolean;
+  callPhase?: "started" | "finished";
+  callId?: string;
+  detail?: string;
+  raw?: string;
 };
 
 export type EvalExampleTrace = {
@@ -94,16 +98,16 @@ const multiTurnImage: EvalExample = {
     },
     traces: {
       turn1: { duration: "2.1s", calls: 0, events: [
-        { lane: "input", kind: "user", summary: "What is in this image? · sample.png", status: "captured" },
-        { lane: "model", kind: "assistant", summary: "The image shows a blue background with a white square in the middle.", status: "captured" },
+        { lane: "input", kind: "user", summary: "What is in this image? · sample.png", status: "captured", detail: "What is in this image? Attached file: evals/sample.png", raw: "What is in this image?\n\n[attachment: evals/sample.png]" },
+        { lane: "model", kind: "assistant", summary: "The image shows a blue background with a white square in the middle.", status: "captured", raw: "The image shows a blue background with a white square in the middle." },
       ] },
       turn2: { duration: "1.3s", calls: 0, events: [
-        { lane: "input", kind: "user", summary: "What color is the background?", status: "captured" },
-        { lane: "model", kind: "assistant", summary: "The background is blue.", status: "captured" },
+        { lane: "input", kind: "user", summary: "What color is the background?", status: "captured", raw: "What color is the background?" },
+        { lane: "model", kind: "assistant", summary: "The background is blue.", status: "captured", raw: "The background is blue." },
       ] },
       turn3: { duration: "1.5s", calls: 0, events: [
-        { lane: "input", kind: "user", summary: "What color is the shape in the middle?", status: "captured" },
-        { lane: "model", kind: "assistant", summary: "The shape in the middle is white.", status: "captured" },
+        { lane: "input", kind: "user", summary: "What color is the shape in the middle?", status: "captured", raw: "What color is the shape in the middle?" },
+        { lane: "model", kind: "assistant", summary: "The shape in the middle is white.", status: "captured", raw: "The shape in the middle is white." },
       ] },
     },
     timingRows: [
@@ -150,16 +154,16 @@ const multiTurnImage: EvalExample = {
     },
     traces: {
       turn1: { duration: "2.1s", calls: 0, events: [
-        { lane: "input", kind: "用户", summary: "这张图片里有什么？ · sample.png", status: "已捕获" },
-        { lane: "model", kind: "助手", summary: "图片是一个蓝色背景，中间有一个白色方块。", status: "已捕获" },
+        { lane: "input", kind: "用户", summary: "这张图片里有什么？ · sample.png", status: "已捕获", detail: "这张图片里有什么？附件：evals/sample.png", raw: "这张图片里有什么？\n\n[附件：evals/sample.png]" },
+        { lane: "model", kind: "助手", summary: "图片是一个蓝色背景，中间有一个白色方块。", status: "已捕获", raw: "图片是一个蓝色背景，中间有一个白色方块。" },
       ] },
       turn2: { duration: "1.3s", calls: 0, events: [
-        { lane: "input", kind: "用户", summary: "图片里的背景是什么颜色？", status: "已捕获" },
-        { lane: "model", kind: "助手", summary: "背景是蓝色。", status: "已捕获" },
+        { lane: "input", kind: "用户", summary: "图片里的背景是什么颜色？", status: "已捕获", raw: "图片里的背景是什么颜色？" },
+        { lane: "model", kind: "助手", summary: "背景是蓝色。", status: "已捕获", raw: "背景是蓝色。" },
       ] },
       turn3: { duration: "1.5s", calls: 0, events: [
-        { lane: "input", kind: "用户", summary: "中间那个形状是什么颜色的？", status: "已捕获" },
-        { lane: "model", kind: "助手", summary: "中间的形状是白色。", status: "已捕获" },
+        { lane: "input", kind: "用户", summary: "中间那个形状是什么颜色的？", status: "已捕获", raw: "中间那个形状是什么颜色的？" },
+        { lane: "model", kind: "助手", summary: "中间的形状是白色。", status: "已捕获", raw: "中间的形状是白色。" },
       ] },
     },
     timingRows: [
@@ -177,15 +181,15 @@ const weatherTool: EvalExample = {
   // 改编自 examples/zh/ai-sdk-v7/evals/weather-tool.eval.ts
   meta: {
     gateBadge: "1/0.7",
-    gateLine: 22,
+    gateLine: 23,
     highlights: {
-      7: "turn1",
-      10: "calledTool",
-      11: "notCalledTool",
-      12: "eventOrder",
-      13: "message",
-      15: "budget",
-      22: "gate",
+      8: "turn1",
+      11: "calledTool",
+      12: "notCalledTool",
+      13: "eventOrder",
+      14: "message",
+      16: "budget",
+      23: "gate",
     },
     replyKeys: ["turn1"],
   },
@@ -229,10 +233,10 @@ const weatherTool: EvalExample = {
     },
     traces: {
       turn1: { duration: "1.8s", calls: 1, events: [
-        { lane: "input", kind: "user", summary: "What's the weather in Beijing today?", status: "captured" },
-        { lane: "tools", kind: "tool", summary: "get_weather({ city: \"Beijing\" })", status: "started", tool: true },
-        { lane: "tools", kind: "tool", summary: "get_weather result · sunny, 31°C, light breeze", status: "completed", tool: true },
-        { lane: "model", kind: "assistant", summary: "It's sunny in Beijing right now — around 31°C with a light breeze.", status: "captured" },
+        { lane: "input", kind: "user", summary: "What's the weather in Beijing today?", status: "captured", raw: "What's the weather in Beijing today?" },
+        { lane: "tools", kind: "tool", summary: "get_weather({ city: \"Beijing\" })", status: "started", tool: true, callPhase: "started", callId: "weather-1", detail: "get_weather started with city = Beijing", raw: "{\n  \"name\": \"get_weather\",\n  \"input\": { \"city\": \"Beijing\" }\n}" },
+        { lane: "tools", kind: "tool", summary: "get_weather result · sunny, 31°C, light breeze", status: "completed", tool: true, callPhase: "finished", callId: "weather-1", detail: "get_weather completed: sunny, 31°C, light breeze", raw: "{\n  \"condition\": \"sunny\",\n  \"temperatureC\": 31,\n  \"wind\": \"light breeze\"\n}" },
+        { lane: "model", kind: "assistant", summary: "It's sunny in Beijing right now — around 31°C with a light breeze.", status: "captured", raw: "It's sunny in Beijing right now — around 31°C with a light breeze." },
       ] },
     },
     timingRows: [
@@ -282,10 +286,10 @@ const weatherTool: EvalExample = {
     },
     traces: {
       turn1: { duration: "1.8s", calls: 1, events: [
-        { lane: "input", kind: "用户", summary: "北京今天天气怎么样？", status: "已捕获" },
-        { lane: "tools", kind: "工具", summary: "get_weather({ city: \"北京\" })", status: "已开始", tool: true },
-        { lane: "tools", kind: "工具", summary: "get_weather 结果 · 晴，31°C，微风", status: "已完成", tool: true },
-        { lane: "model", kind: "助手", summary: "北京现在是晴天，气温约 31°C，微风。", status: "已捕获" },
+        { lane: "input", kind: "用户", summary: "北京今天天气怎么样？", status: "已捕获", raw: "北京今天天气怎么样？" },
+        { lane: "tools", kind: "工具", summary: "get_weather({ city: \"北京\" })", status: "已开始", tool: true, callPhase: "started", callId: "weather-1", detail: "get_weather 已开始，city = 北京", raw: "{\n  \"name\": \"get_weather\",\n  \"input\": { \"city\": \"北京\" }\n}" },
+        { lane: "tools", kind: "工具", summary: "get_weather 结果 · 晴，31°C，微风", status: "已完成", tool: true, callPhase: "finished", callId: "weather-1", detail: "get_weather 已完成：晴，31°C，微风", raw: "{\n  \"condition\": \"晴\",\n  \"temperatureC\": 31,\n  \"wind\": \"微风\"\n}" },
+        { lane: "model", kind: "助手", summary: "北京现在是晴天，气温约 31°C，微风。", status: "已捕获", raw: "北京现在是晴天，气温约 31°C，微风。" },
       ] },
     },
     timingRows: [
