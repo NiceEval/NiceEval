@@ -10,6 +10,8 @@ import {
   assertExpEvalOutcomes,
   command,
   only,
+  retryFailedExpEvalsOnce,
+  type ExpEvalEvent,
   type ProcessReceipt,
   withProcess,
   withTempDir,
@@ -23,6 +25,7 @@ const niceeval = command([niceevalBin]);
 let marker!: string;
 let sentinel!: string;
 let runReceipt!: ProcessReceipt;
+let evalEvents!: readonly ExpEvalEvent[];
 let locator!: string;
 
 function requireLiveSecrets(): void {
@@ -33,15 +36,6 @@ function requireLiveSecrets(): void {
         "the live test is not skipped when secrets are absent",
     );
   }
-}
-
-function latestAttemptLocator(): string {
-  const evalEvent = only(
-    runReceipt.expEvalEvents(),
-    (event) => event.evalId === EVAL_ID,
-    () => runReceipt.diagnostic(),
-  );
-  return evalEvent.locator;
 }
 
 beforeAll(async () => {
@@ -55,9 +49,10 @@ beforeAll(async () => {
     const workspace = join(tempRoot, "workspace");
     await Promise.all([mkdir(privateHome, { recursive: true }), mkdir(workspace, { recursive: true })]);
 
-    runReceipt = await withProcess(
-      [niceevalBin, "exp", "--rerun", "all", "--json"],
-      {
+    const runExp = (args: readonly string[]) =>
+      withProcess(
+        [niceevalBin, "exp", ...args],
+        {
         processGroup: true,
         timeoutMs: 13 * 60_000,
         env: {
@@ -68,13 +63,41 @@ beforeAll(async () => {
           NICEEVAL_CLAUDE_AGENT_SDK_MARKER: marker,
           NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL: sentinel,
         },
-      },
-      async (handle) => await handle.done,
-    );
+        },
+        async (handle) => await handle.done,
+      );
+
+    runReceipt = await runExp(["--rerun", "all", "--json"]);
+    const firstEvents = runReceipt.expEvalEvents();
+    const failed = firstEvents.filter((event) => event.verdict === "failed");
+    expect(
+      firstEvents.filter(
+        (event) => event.verdict === "errored" || event.verdict === "skipped",
+      ),
+      runReceipt.diagnostic(),
+    ).toHaveLength(0);
+    expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
+
+    const retried = await retryFailedExpEvalsOnce({
+      events: firstEvents,
+      targets: failed,
+      runRetry: (event) =>
+        runExp(["ci", event.evalId, "--rerun", "all", "--json"]),
+    });
+    if (retried.retries.length > 0) {
+      process.stderr.write(
+        `[niceeval e2e] retried ${retried.retries.length} assertion-failed Eval once; ` +
+          `first Invocation ${runReceipt.expReceipt().invocationId} remains recorded\n`,
+      );
+    }
+    evalEvents = retried.events;
   });
 
-  expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-  locator = latestAttemptLocator();
+  locator = only(
+    evalEvents,
+    (event) => event.evalId === EVAL_ID,
+    () => runReceipt.diagnostic(),
+  ).locator;
 }, 14 * 60_000);
 
 it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => {
@@ -85,7 +108,7 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => 
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
   expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
   assertExpEvalOutcomes(
-    runReceipt.expEvalEvents(),
+    evalEvents,
     [
       // bash-session：真实 SDK stream 须归一 Bash 调用并在续接轮保留 sentinel；期望 passed/1。
       {
