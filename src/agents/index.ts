@@ -128,6 +128,8 @@ export { bubAgent } from "./bub.ts";
 export { openCodeAgent } from "./opencode.ts";
 export { hermesAgent } from "./hermes.ts";
 export { openClawAgent } from "./openclaw.ts";
+export { ompAgent } from "./omp.ts";
+export { deepSeekHarnessAgent } from "./deepseek-harness.ts";
 export type { ClaudeCodeConfig, ClaudeCodePluginSpec } from "./claude-code.ts";
 export type { CodexConfig, CodexPluginSpec } from "./codex.ts";
 export type { BubConfig, PythonPluginSpec } from "./bub.ts";
