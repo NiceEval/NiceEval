@@ -34,49 +34,49 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "e89b8f166bb75b01e455d98498b996416d964761"
+      "baseTree": "3c8c8c0de59ea2d33d5ccbcf42d2f3c369cfdce6"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "caa4e925c31ad0f54e7271bcb824662b76d3a0b5"
+      "baseTree": "cbcde6233df31a4828dcac6b721625c0b57133ae"
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "537c53d2dd620352bee0b44e2651f0dcc4b2c1cd"
+      "baseTree": "163b26135741eaafee59a4f7ba947288f3a0a293"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "015a245747f40e647bd62de270baa00341e59f02"
+      "baseTree": "a0bb64378f38ae138f9020d6049557600f20f488"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "0d89bad060aca12ae6590a21d1cd6845f33a4cf1"
+      "baseTree": "51b9e2a156ebc509d7eca7d96cefbfa377d38e32"
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "5c935a82f74d87e8601083909adaedfdcbf14c7f"
+      "baseTree": "e77a0b6e5f167824e44f2c4c59492290181f1fed"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "0f019403e7fd7e88c5c026b5131ac0001cbb7c25"
+      "baseTree": "45a6e41911af870e4f9856a1af6f81e8f0673c6c"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "d91e44ba2b8139769ee62a88998a6157852dfea1"
+      "baseTree": "ad56a6b4586db284597e3b29f4348e4469670ec3"
     }
   ]
 }
