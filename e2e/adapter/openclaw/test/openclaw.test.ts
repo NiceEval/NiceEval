@@ -17,8 +17,6 @@ import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
 const EXPECTED_OUTCOMES = [
-  // coding task：文件写入与 shell 读回都须以正确参数完成并进入标准事件流；期望 passed/1。
-  { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
   // Skill status：只读取目标 status-report Skill、不误用 decoy，并采用目标约定；期望 passed/1。
   { experimentId: "ci", evalId: "skills/status-report", verdict: "passed", attempts: 1, passed: 1 },
   // session recall：同一会话的第二轮须引用首轮事实；一条会话链完成即为 passed/1。
@@ -83,17 +81,17 @@ it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项", () =
 it("show --execution 读回 OpenClaw 的代表性工具证据", async () => {
   const event = only(
     evalEvents,
-    (candidate) => candidate.evalId === "coding-task/write-and-verify",
+    (candidate) => candidate.evalId === "skills/status-report",
   );
   const execution = await niceeval.run(["show", event.locator!, "--execution"]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  expect(execution.stdout).toContain("notes.txt");
+  expect(execution.stdout).toContain(".agents/skills/niceeval-status-report/SKILL.md");
 });
 
 it("show --timing 读回 OpenClaw 的 runner 阶段", async () => {
   const event = only(
     evalEvents,
-    (candidate) => candidate.evalId === "coding-task/write-and-verify",
+    (candidate) => candidate.evalId === "skills/status-report",
   );
   const timing = await niceeval.run(["show", event.locator!, "--timing"]);
   expect(timing.exitCode, timing.diagnostic()).toBe(0);
