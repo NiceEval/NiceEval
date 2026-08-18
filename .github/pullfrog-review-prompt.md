@@ -80,7 +80,7 @@ merge commit 或 PR event SHA 代替它；不要调用 `checkout_pr`，因为它
 在同一次当前最终态审查中分两个阶段完成工作：
 
 1. 检查：先收集并交叉核对锁定 PR metadata、完整 base→head diff、完整实现、调用方、契约、package scripts 和测试证据；此阶段不要急于撰写结论。
-2. 报告：只依据检查阶段确认的证据填写规定的 Review body，把必要问题纳入正文的问题清单，并按结构化结果协议交给工作流发布。变化清单只保留有实际条目的方向；某个产品面没有任何变化时省略整节，不要用“无”占位或靠猜测补全。固定 receipt 与结论类小节仍按模板要求填写。
+2. 报告：只依据检查阶段确认的证据填写规定的 Review body，把必要问题纳入正文的问题清单，并按结构化结果协议交给工作流发布。变化清单只保留有实际条目的方向；某个产品面或 receipt 没有受到影响时省略整节，不要用“无”“不受影响”占位或靠猜测补全。结论类小节仍按模板要求填写。
 
 重点完成以下审计：
 
@@ -89,7 +89,7 @@ merge commit 或 PR event SHA 代替它；不要调用 `checkout_pr`，因为它
 3. CLI：检查 `bin/niceeval.js`、`src/cli.ts`、`src/i18n/en.ts`、`src/i18n/zh-CN.ts` 及相关命令实现。识别 command、位置参数、flag、组合约束、默认值、stdout/stderr、退出码、`--json` schema 和帮助文本的变化，并核对中英文帮助与真实 parser/行为一致。
 4. Report components：检查 `niceeval/report` 的公开入口、组件、props、children、默认组合、转换函数与渲染结果。每项变化都给出可复制的 TSX before/after example，并说明报告作者和最终读者看到的变化；没有 report 变化时不添加虚假的 report 条目。
 5. 可观察契约：检查运行语义、record/schema、缓存身份、provider、report/show/view 输出和错误反馈是否变化。字段丢失、旧记录读取、配置身份或结果 stale 风险不能只按类型检查通过处理。每项变化都给出同一输入在变化前后的具体结果与用户影响。
-6. Record schema 与存量升级：从 base 和 PR 最终版本独立比较持久化变化，并先分类为公开 Record Format 或私有持久化实现。公开格式包括稳定的 `format` / `schemaVersion` / `producer` 识别头，公开 reader/writer 承诺的文件名与存在性规则、artifact、source blob、attachment、envelope、跨文件引用、判别字段、字段类型与字段含义；私有 cache、index、临时文件和目录布局不会仅因落盘就成为 schema，但仍要审计数据丢失与公开可观察影响。只对公开格式核对 `RECORD_SCHEMA_VERSION`、Record 架构和 `memory/results-schema-version-history.md`。PR 的 Record schema receipt 即使写“无”也必须与 diff 一致；Record 受影响时必须链接架构，只有升版时才必须追加版本历史。版本不变时，逐项证明旧 reader 读新数据与新 reader 读旧数据都不会误读；纯新增可选字段、未知旁文件或开放 variant 不应顺手升版。版本递增时，指出造成不兼容的精确变化、为何值得让全部旧 Record 失配，以及每份存量数据的直接读取、迁移或拒绝路径。当前权威契约没有跨版本迁移，因此默认行为是新旧 reader 双向拒绝，并提示用 `producer.version` 对应的 NiceEval 命令查看；只有同一 PR 先修改权威 Record 架构并实现公共迁移边界，才可声明真实迁移。若引入迁移，再核对 from/to 版本、公开触发、数据保存、原子性、幂等性、中断恢复和数据丢失边界。漏升版本、无必要升版、history/契约未同步或迁移声明与实现不符时，列为阻塞问题。公开 Record Format 受影响且公共 owner 的旧/新字面量 fixture 与真实 Record 验收证据两类都缺失时，也列为阻塞问题；Record 不受影响或仅私有持久化实现变化时，不要求这份旧/新 Record 证据。
+6. Record schema 与存量升级：从 base 和 PR 最终版本独立比较持久化变化，并先分类为公开 Record Format 或私有持久化实现。公开格式包括稳定的 `format` / `schemaVersion` / `producer` 识别头，公开 reader/writer 承诺的文件名与存在性规则、artifact、source blob、attachment、envelope、跨文件引用、判别字段、字段类型与字段含义；私有 cache、index、临时文件和目录布局不会仅因落盘就成为 schema，但仍要审计数据丢失与公开可观察影响。只对公开格式核对 `RECORD_SCHEMA_VERSION`、Record 架构和 `memory/results-schema-version-history.md`。只有公开格式或私有持久化实现实际受影响时才输出 Record receipt，并删掉其中不适用的类别，不写“无”或“不受影响”；Record 受影响时必须链接架构，只有升版时才必须追加版本历史。版本不变时，逐项证明旧 reader 读新数据与新 reader 读旧数据都不会误读；纯新增可选字段、未知旁文件或开放 variant 不应顺手升版。版本递增时，指出造成不兼容的精确变化、为何值得让全部旧 Record 失配，以及每份存量数据的直接读取、迁移或拒绝路径。当前权威契约没有跨版本迁移，因此默认行为是新旧 reader 双向拒绝，并提示用 `producer.version` 对应的 NiceEval 命令查看；只有同一 PR 先修改权威 Record 架构并实现公共迁移边界，才可声明真实迁移。若引入迁移，再核对 from/to 版本、公开触发、数据保存、原子性、幂等性、中断恢复和数据丢失边界。漏升版本、无必要升版、history/契约未同步或迁移声明与实现不符时，列为阻塞问题。公开 Record Format 受影响且公共 owner 的旧/新字面量 fixture 与真实 Record 验收证据两类都缺失时，也列为阻塞问题；Record 不受影响或仅私有持久化实现变化时，不要求这份旧/新 Record 证据。
 7. 同步面：公共 API、CLI、Report component 或可观察行为变化时，核对对应 Feature 契约、`docs-site/` 中英文用户文档、示例和声明过的最小测试是否同步。不要要求无关的全量测试或机械格式修改。
 8. 跨仓影响：若改动会影响 `terminal-bench`、`MemoryBench` 或 `NiceEval-Eval`，只陈述能从当前仓库证据确认的上游契约影响；证据不足时写明缺少的证据，不臆测下游状态或增加一项 `uncertain` 分类。
 9. Package scripts：比较 base 与 PR 最终版本的 `package.json` scripts，列出新增、删除、重命名或命令内容改变的 script。说明每项命令的用途、调用的实际入口，以及 CI、文档或开发流程是否同步；给出变化前后的可复制命令和用户工作流影响，不要把仅有依赖变化误报为 script 变化。
@@ -114,7 +114,7 @@ merge commit 或 PR event SHA 代替它；不要调用 `checkout_pr`，因为它
 
 公开身份被替换时，在对应产品面下分别列为一项 Removed 和一项 Added，不合并成 Changed。仅内部实现变化且公共形状与可观察语义不变时，不列入这些公开变化小节。现有证据不足时明确写出缺失证据并据此裁决，不增加 `uncertain` 分类。NiceEval 处于 beta，移除或不兼容变化不自动构成缺陷；只有变化与 PR 意图不符，或契约、实现、文档、测试、迁移说明彼此不一致时才形成问题。
 
-Review body 必须使用中文并采用以下结构。PR 标题与范围必须依据完整锁定 base→head 填写；Public API、CLI、Report、可观察行为与数据、环境变量和 Package scripts 是按需出现的一级产品面：只保留有实际条目的 Removed、Added、Changed 方向，空方向不展示，三个方向都为空时省略整个产品面。Record schema 与存量升级是固定 receipt，不因不受影响而省略。不得在命令、符号或行为条目下面再写 `breaking`、`additive`、`behavior-change`、`internal-only` 或 `uncertain`：
+Review body 必须使用中文并采用以下结构。PR 标题与范围必须依据完整锁定 base→head 填写；Public API、CLI、Report、可观察行为与数据、环境变量和 Package scripts 是按需出现的一级产品面：只保留有实际条目的 Removed、Added、Changed 方向，空方向不展示，三个方向都为空时省略整个产品面。Record schema 与存量升级同样按需出现：公开格式和私有持久化实现都不受影响时省略整节，出现变化时删除不适用的类别。不得在命令、符号或行为条目下面再写 `breaking`、`additive`、`behavior-change`、`internal-only` 或 `uncertain`：
 
 ```markdown
 ## 变更概述
@@ -250,15 +250,15 @@ Review body 必须使用中文并采用以下结构。PR 标题与范围必须�
 
 ## Record schema 与存量升级
 
-- 受影响公开 Record Format：<无，或具体文件、attachment、envelope、判别字段、字段类型与含义>
-- 私有持久化实现影响：<无，或 cache、index、临时/目录布局及其可观察或数据丢失影响>
-- 版本裁决：<不受影响 | 保持 N | N → M>
+- 受影响公开 Record Format：<具体文件、attachment、envelope、判别字段、字段类型与含义；公开格式不受影响时删除本行>
+- 私有持久化实现影响：<cache、index、临时/目录布局及其可观察或数据丢失影响；私有持久化不受影响时删除本行>
+- 版本裁决：<保持 N | N → M；公开格式不受影响时删除本行及后续只适用于公开格式的行>
 - 裁决理由：<为何双向可读而不升版，或哪项不兼容变化必须升版及其必要性>
 - 存量 Record 行为：<新 reader 如何处理旧数据，旧 reader 如何处理新数据>
 - 迁移或恢复路径：<不适用及理由，或 from/to、公开触发/命令和用户可见结果>
 - 迁移安全：<数据保存、原子性、幂等性、中断恢复与已知数据丢失；不迁移时说明拒绝边界>
 - 契约证据：<Record 受影响时的架构链接、base/PR 常量及实现位置；否则“不适用”>
-- 版本历史：<升版时的历史条目；版本不变或不受影响时“不适用”>
+- 版本历史：<升版时的历史条目；版本不变时删除本行>
 - 验证证据：<公共 owner 的旧/新字面量 fixture，或经公共 writer、reader/CLI 验收的真实旧/新 Record；命令和实际结果；缺失时明确写缺口>
 
 ## 环境变量
@@ -324,7 +324,7 @@ Review body 必须使用中文并采用以下结构。PR 标题与范围必须�
 - 用户工作流影响：<开发、CI、文档或发布变化>
 - 证据：<base 与 PR 中可核查的文件、符号或 diff>
 
-每个方向有多项时重复对应 entry；没有变化的方向连同标题一起省略，一个产品面没有任何条目时连同一级标题一起省略，不写“无”或保留占位符。Public API、CLI 和 Report 的示例必须分别是可复制的 TypeScript、命令和 TSX。可观察行为与数据只保存用户可见的前后结果；Record 的版本、读取与迁移裁决放在专门 receipt 中，必要时交叉引用，不复制两套清单。其余可观察数据必须覆盖 runtime、缓存身份、provider、report/show/view 或错误反馈的前后结果。固定常量、单次调用参数、typed config、CLI flag、受管 descriptor 或 service 配置能够表达时，不接受仅以“方便”为理由新增环境变量。
+每个方向有多项时重复对应 entry；没有变化的方向连同标题一起省略，一个产品面没有任何条目时连同一级标题一起省略，不写“无”“不受影响”或保留占位符。Record receipt 也只在实际受影响时出现，并删除不适用的类别或行。Public API、CLI 和 Report 的示例必须分别是可复制的 TypeScript、命令和 TSX。可观察行为与数据只保存用户可见的前后结果；Record 的版本、读取与迁移裁决放在专门 receipt 中，必要时交叉引用，不复制两套清单。其余可观察数据必须覆盖 runtime、缓存身份、provider、report/show/view 或错误反馈的前后结果。固定常量、单次调用参数、typed config、CLI flag、受管 descriptor 或 service 配置能够表达时，不接受仅以“方便”为理由新增环境变量。
 
 ## 审查问题
 
@@ -346,10 +346,10 @@ Review body 必须使用中文并采用以下结构。PR 标题与范围必须�
 | 变化 | 测试 | Owner 与预算裁决 | 代表场景 | 旧测试会放走什么 | 新测试证明什么 | 可靠性或不自动化证据 | 用户影响 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 
-逐项报告新增、删除、重命名或实质改写的测试、fixture、expected 与集中 harness；选择不自动化的行为也单列一行，即使测试 diff
-为空。代表场景必须包含具体输入、动作与预期结果；
+仅当存在新增、删除、重命名或实质改写的测试、fixture、expected、集中 harness，或受影响产品行为明确选择不自动化时，才保留本节；否则连同标题和表头一起省略。逐项报告实际变化；选择不自动化的受影响产品行为也单列一行，即使测试 diff
+为空，但不要把 lint、类型检查或验证命令本身写成 `not automated` 测试项。代表场景必须包含具体输入、动作与预期结果；
 Owner 与预算裁决必须写“预算内”或“超预算”，并给出契约证据，不能只复述 PR 描述。说明它属于产品行为覆盖、回归测试、
-测试稳健性修复、测试退役还是证据不足；若属于稳健性修复，写明原风险与新写法如何消除或约束风险。没有变化时写“无”。
+测试稳健性修复、测试退役还是证据不足；若属于稳健性修复，写明原风险与新写法如何消除或约束风险。
 
 ## Review 结论
 

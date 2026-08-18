@@ -21,9 +21,11 @@ do not show an isolated factory result when real usage belongs inside
 `defineEval()`, `defineExperiment()`, report JSX, CLI invocation, or a package
 script.
 
-The product-surface inventory does not replace Use cases. Surface entries show
-what changed; Use cases show how a user completes a task across the affected
-owners and where the workflow fails or stops being supported.
+When the PR changes a NiceEval user workflow, the product-surface inventory does
+not replace Use cases. Surface entries show what changed; Use cases show how a
+user completes a task across the affected owners and where the workflow fails
+or stops being supported. Contributor mechanics such as authoring or reviewing
+a PR are not NiceEval product use cases.
 
 Use Removed when an entry that existed at the PR base no longer exists, Added
 when the final PR introduces a new entry, and Changed when the same entry exists
@@ -41,16 +43,19 @@ configuration file, argument, or constant whenever the value does not need an
 ambient deployment boundary. "Convenient" is not sufficient justification for
 a new environment variable.
 
-Complete the Record schema section for every PR, including when the answer is
-"not affected". Public Record files, attachments, envelopes, discriminators,
-field meanings, and public reader/writer behavior belong to the versioned
-format. Private caches, indexes, temporary files, and directory organization do
-not become public schema merely because they persist; inventory their data-loss
-or observable impact separately. A version bump must identify the incompatible
-public-format change and the stored-data upgrade path; a version that stays
-unchanged must explain why the public format remains readable in both
-directions. "No migration" is a valid decision only when the resulting reader
-behavior and concrete user command for historical Records are stated.
+Include the Record schema section only when the PR changes the public Record
+format or a private persisted implementation. Public Record files,
+attachments, envelopes, discriminators, field meanings, and public
+reader/writer behavior belong to the versioned format. Private caches, indexes,
+temporary files, and directory organization do not become public schema merely
+because they persist; inventory their data-loss or observable impact
+separately. Within an included receipt, delete rows for an unaffected category
+instead of filling them with "None" or "not affected". A version bump must
+identify the incompatible public-format change and the stored-data upgrade
+path; a version that stays unchanged must explain why the public format remains
+readable in both directions. "No migration" is a valid decision only when the
+resulting reader behavior and concrete user command for historical Records are
+stated.
 -->
 
 ## Problem
@@ -63,6 +68,10 @@ behavior and concrete user command for historical Records are stated.
 ## Use cases
 
 <!--
+Delete this entire section when the PR does not change a NiceEval product use
+case. Do not turn implementation, documentation, CI, PR authoring, or review
+mechanics into a user workflow merely to keep the section.
+
 Describe complete user workflows, not API symbols. Repeat the block below for
 every materially distinct user goal. Link every added or changed
 `docs/**/use-case/**` leaf. Keep the canonical long example in the contract
@@ -197,8 +206,9 @@ boundaries.
 ## Record schema and stored-data upgrade
 
 <!--
-Always complete this receipt. If Record is unaffected, write "None" for the
-affected surfaces and "not affected" for the remaining fields. Otherwise:
+Delete this entire section when neither the public Record format nor a private
+persisted implementation changes. When either category is affected, complete
+the applicable receipt and delete rows for the unaffected category:
 
 - Name every public persisted surface whose shape or meaning changes, including
   run/attempt metadata, events, artifacts, attachments, and envelopes. List
@@ -226,9 +236,9 @@ affected surfaces and "not affected" for the remaining fields. Otherwise:
   Do not write only "migrated" or "handled".
 -->
 
-- Affected public Record Format surfaces: <`None` or exact files, attachments, fields, discriminators, and meanings>
-- Private persisted implementation impact: <`None` or caches, indexes, temporary/layout changes and their observable or data-loss effect>
-- Version decision: <`not affected` | `unchanged at N` | `N -> M`>
+- Affected public Record Format surfaces: <exact files, attachments, fields, discriminators, and meanings; delete when public format is unaffected>
+- Private persisted implementation impact: <caches, indexes, temporary/layout changes and their observable or data-loss effect; delete when private persistence is unaffected>
+- Version decision: <`unchanged at N` | `N -> M`; delete this and the remaining public-format rows when public format is unaffected>
 - Version reason: <why the change is compatible without a bump, or the exact incompatibility that requires one>
 - Existing Record behavior: <what the new reader does with old data and what the old reader does with new data>
 - Migration or recovery path: <`not applicable` with reason, or exact from/to versions, trigger/command, and user-visible result>
@@ -295,6 +305,14 @@ affected surfaces and "not affected" for the remaining fields. Otherwise:
 - User impact: <development, CI, documentation, or release workflow change>
 
 ## Tests
+
+<!--
+Delete this entire section when no test, fixture, expected result, or harness
+changes and no changed product behavior requires a deliberate no-automation
+receipt. A lint or validation command by itself is verification, not a test
+change. Keep `not automated` only for an affected product behavior whose manual
+acceptance and unprotected risk must be preserved under the testing contract.
+-->
 
 ### `<test file, named owner, or manually verified behavior>`
 
