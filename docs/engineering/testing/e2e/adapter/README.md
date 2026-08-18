@@ -68,13 +68,8 @@ Verdict test 在 owner 文件中逐条声明 `(experimentId, evalId, verdict, at
 | OpenCode | `adapter/opencode` | Docker + external network | `openCodeAgent` | [opencode.md](opencode.md) |
 | Hermes | `adapter/hermes` | Docker + external network | `hermesAgent` | [hermes.md](hermes.md) |
 | OpenClaw | `adapter/openclaw` | Docker + external network | `openClawAgent` | [openclaw.md](openclaw.md) |
-
-下面两项正在以 TDD 红灯建立候选 owner，尚未取得 live compatibility，不进入上面的 covered 清单：
-
-| 候选适配器 | Repo ID | 目标入口 | 当前状态 | 验收说明 |
-|---|---|---|---|---|
-| Oh My Pi (OMP) | `adapter/omp` | `ompAgent` | `unproven`；工厂仍是构造期 sentinel | [omp.md](omp.md) |
-| DeepSeek Harness | `adapter/deepseek-harness` | `deepSeekHarnessAgent` | `unproven`；工厂仍是构造期 sentinel | [deepseek-harness.md](deepseek-harness.md) |
+| Oh My Pi (OMP) | `adapter/omp` | Docker + external network | `ompAgent` | [omp.md](omp.md) |
+| DeepSeek Harness | `adapter/deepseek-harness` | Docker + external network | `deepSeekHarnessAgent` | [deepseek-harness.md](deepseek-harness.md) |
 
 官方工厂清单以[SDK 与 Agent 接入](../../../../feature/adapters/sdk/README.md)为准：只有公开完整 Agent 工厂的对象才能进入上表。
 协议归一（事件转换、session、usage、证据完整性）的产品 owner 是确定性协议 Repo 的真实运行，不以单元层 wire fixture 替代。
@@ -109,8 +104,8 @@ Verdict test 在 owner 文件中逐条声明 `(experimentId, evalId, verdict, at
 | `openCodeAgent` | covered | `adapter/opencode` live |
 | `hermesAgent` | covered | `adapter/hermes` live |
 | `openClawAgent` | covered | `adapter/openclaw` live |
-| `ompAgent` | unproven | `adapter/omp` 只有 TDD 红灯；真实 CLI、send 与公开读回尚无有效收据 |
-| `deepSeekHarnessAgent` | unproven | `adapter/deepseek-harness` 只有 TDD 红灯；真实 CLI、send 与公开读回尚无有效收据 |
+| `ompAgent` | covered | `adapter/omp` live target compatibility + `adapter/sdk-converters` pi 确定性转换 |
+| `deepSeekHarnessAgent` | covered | `adapter/deepseek-harness` live target compatibility；headless 未提供的 actions/usage 明确 unavailable |
 
 ## 仓库 Eval 预算
 

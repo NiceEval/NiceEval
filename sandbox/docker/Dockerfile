@@ -19,7 +19,7 @@
 # docs/feature/sandbox/library/prebuilt-environments.md「跨 provider 基线工具面」）：
 # 包管理器只保证 npm 与 corepack，不预装 yarn 实体；系统 python3 保证存在；
 # /usr/local/bin 与 /usr/local/lib/node_modules 对运行用户（node）可写。三条都在 base 里
-# 一次性落地，六个 target 全部继承，是发布前的构建自检项之一（见 ../../.github/workflows/docker-image.yml）。
+# 一次性落地，八个 target 全部继承，是发布前的构建自检项之一（见 ../../.github/workflows/docker-image.yml）。
 
 FROM node:24-slim AS base
 
@@ -40,7 +40,7 @@ RUN rm -rf /opt/yarn-v* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 # node 身份的 corepack enable / npm install -g 会直接 EACCES —— 与 E2B 侧
 # withNodeToolContract 已经把同名目录 chown 给运行用户的现状不一致(Node 工具契约见
 # docs/feature/sandbox/library/prebuilt-environments.md「跨 provider 基线工具面」)。
-# 统一方向是 Docker base 也在构建期一次性 chown 给 node,六个 target(含只用
+# 统一方向是 Docker base 也在构建期一次性 chown 给 node,八个 target(含只用
 # $HOME/.local 的 bub / hermes)全部继承同一份可写性,不必各自补。
 RUN chown node:node /usr/local/bin /usr/local/lib/node_modules
 
@@ -78,6 +78,21 @@ ARG OPENCLAW_VERSION=2026.7.1-2
 RUN npm install -g openclaw@${OPENCLAW_VERSION}
 USER node
 RUN openclaw --version
+
+FROM base AS omp
+
+ARG BUN_VERSION
+ARG OMP_VERSION
+RUN npm install -g bun@${BUN_VERSION} @oh-my-pi/pi-coding-agent@${OMP_VERSION}
+USER node
+RUN bun --version && omp --version
+
+FROM base AS deepseek-harness
+
+ARG DEEPSEEK_HARNESS_VERSION
+RUN npm install -g @deepseek-ai/dsh@${DEEPSEEK_HARNESS_VERSION}
+USER node
+RUN dsh --version
 
 FROM base AS hermes
 

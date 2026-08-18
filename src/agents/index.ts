@@ -136,6 +136,8 @@ export type { BubConfig, PythonPluginSpec } from "./bub.ts";
 export type { OpenCodeConfig } from "./opencode.ts";
 export type { HermesConfig } from "./hermes.ts";
 export type { OpenClawConfig } from "./openclaw.ts";
+export type { OmpConfig } from "./omp.ts";
+export type { DeepSeekHarnessConfig } from "./deepseek-harness.ts";
 
 export type {
   Agent,

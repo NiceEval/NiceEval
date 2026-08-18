@@ -11,6 +11,8 @@ export const NICEEVAL_DOCKER_IMAGE_NAME: globalThis.Record<CodingAgentBaseline, 
   opencode: "niceeval/opencode",
   hermes: "niceeval/hermes",
   openclaw: "niceeval/openclaw",
+  omp: "niceeval/omp",
+  "deepseek-harness": "niceeval/deepseek-harness",
 };
 
 /**
@@ -35,3 +37,5 @@ export const NICEEVAL_BUB_DOCKER_IMAGE = niceevalDockerImage("bub");
 export const NICEEVAL_OPENCODE_DOCKER_IMAGE = niceevalDockerImage("opencode");
 export const NICEEVAL_HERMES_DOCKER_IMAGE = niceevalDockerImage("hermes");
 export const NICEEVAL_OPENCLAW_DOCKER_IMAGE = niceevalDockerImage("openclaw");
+export const NICEEVAL_OMP_DOCKER_IMAGE = niceevalDockerImage("omp");
+export const NICEEVAL_DEEPSEEK_HARNESS_DOCKER_IMAGE = niceevalDockerImage("deepseek-harness");
