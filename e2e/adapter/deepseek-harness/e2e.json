@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 2,
+  "id": "adapter/deepseek-harness",
+  "batch": "docker-1",
+  "areas": ["adapter", "sandbox"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "exec", "vitest", "run"],
+  "timeoutMinutes": 3,
+  "harness": { "testkit": true },
+  "secrets": ["DEEPSEEK_API_KEY"],
+  "requires": { "docker": true, "externalNetwork": true, "runtimes": ["node>=24"] },
+  "paths": ["e2e/adapter/deepseek-harness/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [".niceeval/**", "junit.xml"]
+}
