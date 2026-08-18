@@ -178,7 +178,9 @@ jobs:
           cache-dependency-path: ${{ steps.dependency-cache.outputs.paths }}
 
       - name: Install orchestrator dependencies
-        run: pnpm install --frozen-lockfile
+        # release candidate 已由 prepare-release 从同一 checkout 构建；matrix 只安装
+        # orchestrator 所需依赖，不重复执行根 prepare。
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Resolve cell manifests
         id: cell
@@ -202,7 +204,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Playwright browsers
+      - name: Restore Playwright browser cache
+        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
         if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
         env:
           BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}

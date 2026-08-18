@@ -296,7 +296,9 @@ jobs:
           install: false
 
       - name: Install orchestrator dependencies
-        run: pnpm install --frozen-lockfile
+        # prepare 已从同一 checkout 构建并封装 exact candidate；matrix 只需要根 CLI 的
+        # JS 依赖，不能为每个 cell 重跑根 prepare 的 report/index 构建。
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Derive safe artifact id
         id: safe
@@ -331,7 +333,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Playwright browsers
+      - name: Restore Playwright browser cache
+        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
         if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
         env:
           BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "eval",
-  "batch": "host-1",
+  "batch": "host-3",
   "areas": ["eval"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },

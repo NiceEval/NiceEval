@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "adapter/sdk-converters",
-  "batch": "host-1",
+  "batch": "host-3",
   "areas": ["adapter"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
