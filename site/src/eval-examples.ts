@@ -198,7 +198,7 @@ const weatherTool: EvalExample = {
     tag: "tool calls",
     lines: [
       'import { defineEval } from "niceeval";',
-      'import { eventMatch } from "niceeval/expect";',
+      'import { eventMatch, jsonMatch, toolMatch } from "niceeval/expect";',
       "",
       "export default defineEval({",
       '  description: "Live weather must go through get_weather — no making it up",',
@@ -207,7 +207,7 @@ const weatherTool: EvalExample = {
       '    const turn = await t.send("What\'s the weather in Beijing today?");',
       "    turn.expectOk();",
       "",
-      '    t.calledTool("get_weather", { input: { city: "Beijing" } });',
+      '    t.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));',
       '    t.notCalledTool("web_search");',
       '    t.eventOrder([eventMatch("operation.started"), eventMatch("operation.finished"), eventMatch("message")]);',
       "    t.messageIncludes(/°C|sunny|cloudy|rain/i);",
@@ -224,7 +224,7 @@ const weatherTool: EvalExample = {
       "});",
     ],
     notes: {
-      calledTool: "calledTool() asserts the agent actually invoked get_weather with the right arguments — not just claimed it did.",
+      calledTool: "toolMatch() selects the get_weather occurrence and jsonMatch() checks its captured input, so this proves the agent really called it with city = Beijing rather than merely claiming it did.",
       notCalledTool: "Negative assertions are trustworthy because the adapter reports the full event stream — no silent web_search fallback slips through.",
       eventOrder: "eventOrder() checks the sequence: the tool call fired, the result came back, and only then did the user get an answer.",
       message: "The reply must show visible evidence of the weather data — calling the tool but never answering the user also fails.",
@@ -251,7 +251,7 @@ const weatherTool: EvalExample = {
     tag: "工具调用",
     lines: [
       'import { defineEval } from "niceeval";',
-      'import { eventMatch } from "niceeval/expect";',
+      'import { eventMatch, jsonMatch, toolMatch } from "niceeval/expect";',
       "",
       "export default defineEval({",
       '  description: "实时天气必须走 get_weather 工具，不许编造",',
@@ -260,7 +260,7 @@ const weatherTool: EvalExample = {
       '    const turn = await t.send("北京今天天气怎么样？");',
       "    turn.expectOk();",
       "",
-      '    t.calledTool("get_weather", { input: { city: "北京" } });',
+      '    t.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "北京" }) }));',
       '    t.notCalledTool("web_search");',
       '    t.eventOrder([eventMatch("operation.started"), eventMatch("operation.finished"), eventMatch("message")]);',
       "    t.messageIncludes(/°C|晴|多云|雨/);",
@@ -277,7 +277,7 @@ const weatherTool: EvalExample = {
       "});",
     ],
     notes: {
-      calledTool: "calledTool() 断言 agent 真的以正确参数调用了 get_weather，而不是嘴上说调了。",
+      calledTool: "toolMatch() 选中 get_weather occurrence，jsonMatch() 检查其中已捕获的 input；因此这里证明 agent 确实以 city = 北京 发起了调用，而不只是嘴上说调了。",
       notCalledTool: "负断言之所以可信，是因为 adapter 上报了完整事件流——不存在偷偷走 web_search 的情况。",
       eventOrder: "eventOrder() 检查事件序：先发起工具调用、拿到结果，然后才回复用户。",
       message: "回复里必须出现天气数据的可见证据——只调工具不回答用户也算失败。",
