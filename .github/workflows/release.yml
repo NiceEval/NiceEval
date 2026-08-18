@@ -470,8 +470,8 @@ jobs:
           if [[ "$VERSION" == *-* ]]; then
             PRERELEASE_FLAG="--prerelease"
           fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "GitHub Release $TAG already exists; exact npm candidate was verified"
           else
-            gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE_FLAG
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes $PRERELEASE_FLAG
           fi
