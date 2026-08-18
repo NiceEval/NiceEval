@@ -295,7 +295,7 @@
     "motion": "^12.42.2",
     "next": "16.3.0",
     "prism-react-renderer": "^2.4.1",
-    "react-grab": "^0.1.48",
+    "react-grab": "^0.2.0",
     "shiki": "^4.3.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.1",
