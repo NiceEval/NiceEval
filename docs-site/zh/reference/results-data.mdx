@@ -12,6 +12,8 @@ Sample 固定本次选择的 Run、logical Slot 与分母。每个位置保留 `
 
 `--run` 保留指定 Run 的完整计划范围。`project-current` 只保留仍与当前项目身份匹配的范围。两种选择都不会因为某个度量缺少输入而缩小分母。
 
+`project-current` 的成员单位是匹配的 Run slot occurrence，不是去重后的 `(experiment, eval, ordinal)`。同一位置出现在多个匹配 Run 中时，每个 occurrence 都进入 `MetricValue.total`。重复运行或逐条 `accept` 因此可能增加分母。
+
 Sample 只能在 `load()`、Page 或组合组件执行期间传给 Report facade。回调结束后，页面只保留已经关闭的值，不能再次读取结果。
 
 ## 用 `aggregate()` 取得 rows
@@ -57,6 +59,8 @@ Attempt Evidence、Observability、File Changes、Sources 和 Sandbox history �
 | `refs` | 可复核的 Evidence 定位。 |
 
 `available`、`partial`、`empty`、`unsupported` 和 `failed` 都是不同状态。不要把 `null` 当成零，也不要用只剩下的可见行数替换总分母。
+
+例如 `2 / 4 slot · partial` 表示四个已选 occurrence 中只有两个提供该 Measure 的输入。这组计数只描述覆盖率；它不是 earned score、通过率或工作完成比例。Measure 自己的 `value` 才是读数，题型决定默认报告选择通过率还是 Score。
 
 ## 相关页面
 
