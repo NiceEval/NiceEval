@@ -185,7 +185,7 @@ export const en = {
   "cli.flag.outputRemoved":
     "error: unknown option '--output'\n  fix: run without a flag for human text; use --json for the machine feed\n",
   "cli.flag.strictRemoved":
-    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.require(...) in the Eval source.\n",
+    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.check(...).orStop() in the Eval source.\n",
   "runner.budgetUnenforceable":
     "budget for {{budgetKey}}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.\n",
   "runner.experimentTeardownFailed":
@@ -441,7 +441,7 @@ export const en = {
   "hitl.invalidOption": "Answer \"{{optionId}}\" is not an option of request {{requestId}} ({{options}}).",
   "hitl.noOptions": "this request has no options",
   "hitl.requestMissingId": "This input.requested request has no stable id, so a response cannot be built — the adapter must give every pending request a stable id.",
-  "hitl.respondAllEmpty": "There is no pending input.requested request; respond() / respondAll() cannot work. Confirm the turn parked with t.parked(), then answer via t.requireInputRequest() or t.respond().",
+  "hitl.respondAllEmpty": "There is no pending input.requested request; respond() / respondAll() cannot work. Confirm the turn has status waiting, then answer via t.requireInputRequest() or t.respond().",
   "hitl.respondEmpty": "t.respond(...) requires at least one answer.",
   "hitl.stringAmbiguous": "There are {{count}} pending input requests; a plain-string answer cannot be matched to one. Use the { request, optionId } or { request, text } object form to name it explicitly.",
   "judge.apiKeyMissing": "judge is missing an API key: set NICEEVAL_JUDGE_KEY, or point judge.apiKeyEnv at another environment variable.",

@@ -168,7 +168,7 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
     if (content?.trim() && role !== "user" && role !== "system") {
       events.push({ type: "message", role: "assistant", text: content });
     } else if (content?.trim() && role === "user" && !Array.isArray(toolCallsRaw)) {
-      // 用户消息不进行为断言主路径;保留会污染 messageIncludes。跳过。
+      // 用户消息不进行为断言主路径；保留会污染显式 message 值断言。跳过。
     }
 
     const reasoning = str(msg.reasoning) ?? str(msg.reasoning_content);

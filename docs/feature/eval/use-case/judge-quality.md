@@ -13,7 +13,7 @@ LLM-as-judge 的三个 recipe 都直接登记 measurement Assertion：封闭式�
      async test(t) {
        const turn = await t.send("帮我拟一封跟进邮件。");
        turn.judge.autoevals.closedQA("语气是否专业？")
-         .atLeast(0.8)
+         .gate(0.8)
          .label("专业语气");
      },
    });

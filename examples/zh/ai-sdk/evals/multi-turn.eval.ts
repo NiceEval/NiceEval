@@ -16,7 +16,7 @@ export default defineEval({
 
     const second = await t.send("北京今天天气怎么样？");
     t.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "北京" }) }));
-    second.messageIncludes("北京");
+    t.check(second.message, includes("北京"));
 
     // 「是否调了天气工具」由上面的 t.calledTool 确定性把关；Judge 只读取显式提供的对话材料，
     // 不要求它验证工具使用。

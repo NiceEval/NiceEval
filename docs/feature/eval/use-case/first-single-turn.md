@@ -13,7 +13,7 @@
    ```typescript
    // evals/weather/brooklyn.eval.ts → id: weather/brooklyn
    import { defineEval } from "niceeval";
-   import { includes, jsonMatch, toolMatch } from "niceeval/expect";
+   import { equals, includes, jsonMatch, matches, toolMatch } from "niceeval/expect";
 
    export default defineEval({
      description: "布鲁克林天气查询",
@@ -44,7 +44,8 @@
 
    ```typescript
    const turn = await t.send("查布鲁克林天气,返回 JSON。");
-   turn.outputEquals({ city: "Brooklyn", unit: "F" });   // 或 turn.outputMatches(zodSchema)
+   t.check(turn.data, equals({ city: "Brooklyn", unit: "F" }));
+   t.check(turn.data, matches(zodSchema));
    ```
 
 ## 边界

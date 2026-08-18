@@ -89,25 +89,27 @@ Retrouvez le glossaire complet dans l'[aperçu de l'architecture](https://niceev
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
+import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "Vérifie que l'agent appelle correctement l'outil et répond à partir du résultat pour une question météo en temps réel",
 
   async test(t) {
     const turn = await t.send("Quel temps fait-il aujourd'hui à Beijing ?");
-    t.succeeded();
+    turn.succeeded();
 
     await t.group("Appelle get_weather avec la bonne ville", () => {
-      t.calledTool("get_weather", { input: { city: "Beijing" } });
-      t.messageIncludes(/°C|ensoleillé|nuageux|pluie|température/);
+      turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));
+      t.check(turn.message, pattern(/°C|ensoleillé|nuageux|pluie|température/));
     });
 
     const second = await t.send("Et demain à Shanghai ?");
-    second.messageIncludes("Shanghai");
+    t.check(second.message, includes("Shanghai"));
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("L'assistant répond-il à partir des données météo renvoyées par l'outil, plutôt que d'inventer une température ?")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```

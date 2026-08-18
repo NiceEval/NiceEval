@@ -82,7 +82,7 @@ real SDK denial response. The Eval checks:
 Removing or corrupting the normal call ID/result kills the completed
 `inventory_lookup` assertion.
 
-Removing the SDK approval part kills `parked()` and `requireInputRequest`.
+Removing the SDK approval part kills the `t.check(turn.status, equals("waiting"))` and `requireInputRequest` path.
 
 Changing its response-message tool result kills the completed/rejected branch
 assertions.

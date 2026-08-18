@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { includes, excludes } from "niceeval/expect";
+import { includes, excludes, pattern } from "niceeval/expect";
 
 // 这条 eval 专门验证会话续接的两半承诺:同一 thread 里第二轮记得住第一轮说的事
 // (codex.resumeThread 续接成功);t.newSession() 造出的新 thread 不共享历史。
@@ -14,7 +14,7 @@ export default defineEval({
   async test(t) {
     await t.send("我最喜欢的颜色是蓝色,记住这个偏好。这轮不用跑命令也不用建文件。");
     const recall = await t.send("我刚才说我最喜欢的颜色是什么?");
-    recall.messageIncludes(/蓝/);
+    t.check(recall.message, pattern(/蓝/));
     t.check(t.reply, includes("蓝"));
 
     const fresh = t.newSession();

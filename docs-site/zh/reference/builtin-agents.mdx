@@ -10,17 +10,17 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 
 | 能力 | 对应的断言 / API |
 |---|---|
-| 收发消息（基础契约） | `t.send()`（可多次调用）、`t.reply`、`turn.outputEquals` / `outputMatches`、按状态判断的 `t.succeeded()` |
-| 事件流完整性 | `calledTool` / `toolOrder` / `usedNoTools` / `maxToolCalls` / `messageIncludes` / `noFailedActions` / `event` / `eventOrder` 等整套作用域断言。**负断言（`notCalledTool` 等）有完整事件流才可信** |
+| 收发消息（基础契约） | `t.send()`（可多次调用）、`t.reply`、`t.check(turn.data, equals(...))` / `matches(...)`、按状态判断的 `t.succeeded()` |
+| 事件流完整性 | `calledTool` / `usedNoTools` / `maxToolCalls` / `noFailedActions` / `event` 等作用域断言；`toolOrder` / `eventOrder` 只在 Turn 或 Session 上接收 matcher。消息用 `t.check(turn.message, includes(...))` 或 `t.check(turn.message, pattern(...))`。**负断言（`notCalledTool` 等）有完整事件流才可信** |
 | 会话续接 | 跨轮记忆断言、`t.newSession()` 会话隔离 |
-| HITL（人工介入） | `t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()` |
+| HITL（人工介入） | `t.check(turn.status, equals("waiting"))`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()` |
 | `tracing` | trace decoding、`niceeval view` 的调用瀑布图 |
 
 ## 三个内置 agent 分别做到哪
 
 | Agent | 收发 | 事件流 | 会话续接 | HITL | tracing | 备注 |
 |---|---|---|---|---|---|---|
-| `claude-code` | ✅ | ✅ | ✅（`claude --resume <id>`） | ❌ | ✅（`http/protobuf` → OTLP，beta 开关） | 内置 parser 自动吐 `compaction` 事件，`t.event("compaction")` 可用 |
+| `claude-code` | ✅ | ✅ | ✅（`claude --resume <id>`） | ❌ | ✅（`http/protobuf` → OTLP，beta 开关） | 内置 parser 自动吐 `compaction` 原始事件，供报告和诊断读取；当前没有公开 `eventMatch` selector |
 | `codex` | ✅ | ✅ | ✅（`codex exec resume <id>`） | ❌ | ✅（`http/json` → OTLP） | 内置 parser 自动吐 `compaction` 事件 |
 | `bub` | ✅ | ✅ | ✅（`--session-id` + tape 续接） | ❌ | ✅（`http/protobuf` → OTLP） | 内置 parser 自动吐 `compaction` 事件 |
 

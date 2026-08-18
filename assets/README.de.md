@@ -89,25 +89,27 @@ Das vollständige Glossar findest du in der [Architektur-Übersicht](https://nic
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
+import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "Testet, ob der Agent bei Fragen zum aktuellen Wetter korrekt ein Tool aufruft und seine Antwort auf dem Ergebnis aufbaut",
 
   async test(t) {
     const turn = await t.send("Wie ist das Wetter heute in Beijing?");
-    t.succeeded();
+    turn.succeeded();
 
     await t.group("ruft get_weather mit der richtigen Stadt auf", () => {
-      t.calledTool("get_weather", { input: { city: "Beijing" } });
-      t.messageIncludes(/°C|Temperatur|Wetter|sonnig|bewölkt|Regen/);
+      turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));
+      t.check(turn.message, pattern(/°C|Temperatur|Wetter|sonnig|bewölkt|Regen/));
     });
 
     const second = await t.send("Wie wird das Wetter morgen in Shanghai?");
-    second.messageIncludes("Shanghai");
+    t.check(second.message, includes("Shanghai"));
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("Stützt sich der Assistent bei seiner Antwort auf die vom Tool gelieferten Wetterdaten, statt sich die Temperatur auszudenken?")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```

@@ -200,14 +200,14 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 | `message` | agent（或用户）说了一段话 | `turn.message`、`turn.event(eventMatch("message", ...))`、Judge 的材料 |
 | `operation.started`（`kind: "tool"`） | 发起一次工具调用 | `turn.calledTool(...)`、`turn.toolOrder(...)`、`turn.event(...)` |
 | `operation.finished`（`kind: "tool"`） | 该次工具调用的结果 | 带状态条件的 `ToolMatch` |
-| `operation.started`（`kind: "subagent"`） | 委派一个子 agent | `turn.event(eventMatch("operation.started", ...))` |
-| `operation.finished`（`kind: "subagent"`） | 子 agent 返回 | `turn.event(eventMatch("operation.finished", ...))` |
-| `input.requested` | 停下来等人输入（HITL） | `t.requireInputRequest()`、`turn.event(...)` |
-| `thinking` | 思考文本 | `turn.event(eventMatch("thinking", ...))`、view 展示 |
-| `compaction` | 上下文被压缩 | `turn.event(eventMatch("compaction"))` |
-| `error` | 本轮出错 | `turn.event(eventMatch("error", ...))`、view 展示 |
+| `operation.started`（`kind: "subagent"`） | 委派一个子 agent | 原始事件与报告；当前没有子 agent 专用断言 |
+| `operation.finished`（`kind: "subagent"`） | 子 agent 返回 | 原始事件与报告；失败会进入 `noFailedActions()` 的汇总事实 |
+| `input.requested` | 停下来等人输入（HITL） | `t.check(turn.status, equals("waiting"))`、`t.requireInputRequest()` |
+| `thinking` | 思考文本 | view 展示；当前没有 `eventMatch` selector |
+| `compaction` | 上下文被压缩 | view 展示；当前没有 `eventMatch` selector |
+| `error` | 本轮出错 | view 展示；当前没有 `eventMatch` selector |
 
-事件断言共用三个入口：`event(match)`、`notEvent(match)` 与 `eventOrder(matches)`；它们都接收 `eventMatch(...)`，不另造 selector object 或匿名事件 predicate。
+事件断言共用三个入口：`event(match)`、`notEvent(match)` 与 `eventOrder(matches)`；它们都接收 `eventMatch(...)`，不另造 selector object 或匿名事件 predicate。当前 `eventMatch` 只有 `message`、工具 `operation.started` 与工具 `operation.finished` 三种形状，不能把全部原始 `StreamEvent` 当成可断言 selector。
 
 ## 逐事件说明
 
@@ -280,7 +280,7 @@ events.push({
   output?: JsonValue, status: "completed" | "failed" }
 ```
 
-被测系统把任务委派给子 agent（等它返回）时吐这一对，`operationId` 配对规则同上。评估作者用 `eventMatch("operation.started", ...)` / `eventMatch("operation.finished", ...)` 比较对应事件。
+被测系统把任务委派给子 agent（等它返回）时吐这一对，`operationId` 配对规则同上。它们会保留在原始事件流与报告中，但当前公开 Assert-first API 没有 `calledSubagent`，`eventMatch(...)` 也不能选择子 agent operation；不要凭空换成另一个 selector。
 
 ### `input.requested` —— 停下等人（HITL）
 
@@ -304,11 +304,11 @@ agent 停轮等人时，每个待回答的问题吐一条，同时该 Turn 的 `
 { type: "error", message: string }
 ```
 
-有就吐，没有不硬造。`compaction` 主要来自 coding agent CLI（上下文满了自动压缩）。
+有就吐，没有不硬造。`compaction` 主要来自 coding agent CLI（上下文满了自动压缩）。这几种原始事件保留给报告与诊断；当前公开 `eventMatch` 不能选择它们。
 
 ## 映射的三条纪律
 
-1. **时序即事实**：事件按真实发生顺序排。`toolOrder` / `eventOrder` 用单调 cursor 匹配不同 occurrence 的子序列，顺序错了断言就失真。
+1. **时序即事实**：事件按真实发生顺序排。`toolOrder` / `eventOrder` 用单调 cursor 匹配不同 occurrence 的子序列，顺序错了断言就失真。`eventOrder` 只排公开 `eventMatch` 支持的事件。
 2. **`operationId` 配对**：每个 started operation 都要有同 `kind`、同 id 的 finished operation。只有配对完成，框架才能把状态与 input 归到同一个逻辑工具 occurrence。
 3. **完整性必须显式**：官方转换器按实际 adapter 能力声明 evidence coverage。负向断言在相关输入或 action coverage 不完整时是 `unavailable`，不会把“没观察到”冒充“没有发生”。手工映射同样要如实声明覆盖范围，见[能力位参考](/zh/reference/capabilities)。
 
