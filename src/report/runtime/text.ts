@@ -2,12 +2,15 @@ import {
   resolvedPageTextProjection,
   type ResolvedPage,
 } from "./resolved-page.ts";
+import type { PanelMode } from "../model/panel.ts";
 
 export interface RenderResolvedPageTextOptions {
   /** Explicit: a machine or terminal caller must never inherit process locale. */
   readonly locale: string;
   /** Explicit: closed terminal output is only reusable at the requested width. */
   readonly width: number;
+  /** Explicit: callers select a pre-closed terminal or plain-text projection. */
+  readonly panelMode: PanelMode;
 }
 
 export interface ResolvedPageTextProjectionMissing {
@@ -16,6 +19,7 @@ export interface ResolvedPageTextProjectionMissing {
   readonly route: string;
   readonly locale: string;
   readonly width: number;
+  readonly panelMode: PanelMode;
 }
 
 /**
@@ -51,5 +55,6 @@ function textProjectionMissing(
     route: page.target.route,
     locale: options.locale,
     width: options.width,
+    panelMode: options.panelMode,
   });
 }
