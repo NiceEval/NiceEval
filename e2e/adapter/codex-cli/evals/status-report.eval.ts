@@ -1,4 +1,4 @@
-// 协议行为:Skills——Skill 写入可发现目录后,验证走**读取行为**(事件流中出现对 Skill 文件
+// 协议行为:Skills——status-report Skill 写入可发现目录后,验证走**读取行为**(事件流中出现对 Skill 文件
 // 的读取)或 Skill 特有结果——不假设存在 Claude Code 式的自动加载事件(见
 // docs/engineering/testing/e2e/adapter/codex-cli.md)。
 //

@@ -17,7 +17,7 @@ export default defineExperiment({
   agent,
   model: "gpt-5.6-luna",
   sandbox,
-  evals: ["skill", "skill-release-note"],
+  evals: ["status-report", "skill-release-note"],
   attempts: 1,
   budget: 3,
 });

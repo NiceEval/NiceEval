@@ -31,8 +31,8 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "configfile", evalId: "configfile", verdict: "passed", attempts: 1, passed: 1 },
   // mcp：stdio 求和与远程 DeepWiki 两种 MCP 调用都须出现且入参正确；期望 passed/1。
   { experimentId: "mcp", evalId: "mcp", verdict: "passed", attempts: 1, passed: 1 },
-  // skill：目标 status-report Skill 须被读取并影响文件内容，且不能伪造 skill.loaded；期望 passed/1。
-  { experimentId: "skill", evalId: "skill", verdict: "passed", attempts: 1, passed: 1 },
+  // status-report：目标 Skill 须被读取并影响文件内容，且不能伪造 skill.loaded；期望 passed/1。
+  { experimentId: "skill", evalId: "status-report", verdict: "passed", attempts: 1, passed: 1 },
   // skill-release-note：只读取 release-note Skill、不误读 status/decoy，并采用其约定；期望 passed/1。
   { experimentId: "skill", evalId: "skill-release-note", verdict: "passed", attempts: 1, passed: 1 },
   // repo-skill：钉定 Git 来源的 Skill 须安装、读取并影响产出；一次完整验证期望 passed/1。
