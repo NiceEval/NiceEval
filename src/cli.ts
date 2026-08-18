@@ -2659,7 +2659,9 @@ function reportExecutionFailure(error: unknown): CliFailure {
     case "record-bootstrap-invalid":
       return usageError("record-bootstrap-invalid\nPass --record <actual-record-root> or create a current NiceEval Record.\n");
     case "record-format-unsupported":
-      return usageError("record-format-unsupported\nUse a NiceEval version that supports this Record format.\n");
+      return usageError(
+        "record-format-unsupported\nThis Record was created by a NiceEval version that is no longer supported. Remove .niceeval (for example, rm -rf .niceeval) and rerun the evaluation.\n",
+      );
     case "record-migration-interrupted":
       return usageError("record-migration-interrupted\nRestore the Record from Git or a backup before retrying.\n");
     case "report-route-invalid":
