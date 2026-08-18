@@ -71,13 +71,15 @@ function canonicalPolicyEntries(entries: readonly string[], name: "include" | "i
 }
 
 /**
- * 单个 send 窗口的证据安全上限。越界必须让 workspace.diff 失败,不能产出误导性的空窗口。
+ * 单个 send 窗口的导出扫描安全上限。File Changes 的 10,000-change durable 上限由 collector
+ * 保留确定性前缀并写 collection-cap-reached；导出层必须先把更大的候选集合交给 collector，
+ * 不能在同一个 10,000 边界提前把已知 partial 证据降格成 unavailable。
  * 字节预算只数**真正要传输的文本** before/after:二进制与超过单文件阈值的文本不内联内容、
  * 只记字节数(WindowChange.elided),因此不占预算——编译产物型窗口(成百上千个 .o 加几个大
  * 文本)不该因为「按尺寸计」被判越界。
  */
-const MAX_WINDOW_PATHS = 10_000;
-const MAX_WINDOW_TEXT_BYTES = 64 * 1024 * 1024;
+const MAX_EXPORTED_WINDOW_PATHS = 100_000;
+const MAX_EXPORTED_WINDOW_TEXT_BYTES = 256 * 1024 * 1024;
 /** 单个文本 blob 的内联阈值:任一侧超过它,该条目按二进制同款处理(记字节数、内容省略)。 */
 const MAX_FILE_TEXT_BYTES = 1024 * 1024;
 
@@ -116,7 +118,7 @@ function buildExportScript(exportDir: string): string {
     // 非 -z 的 diff-tree 把特殊路径引号转义成单行,一行 = 一个条目:wc -l 即路径数,awk 列取 sha 不碰路径。
     '  git diff-tree -r --no-renames "$hash^" "$hash" > "$D/dt.txt"',
     '  n=$(($(wc -l < "$D/dt.txt")))',
-    `  [ "$n" -le ${MAX_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; limit is ${MAX_WINDOW_PATHS}"`,
+    `  [ "$n" -le ${MAX_EXPORTED_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; export scan limit is ${MAX_EXPORTED_WINDOW_PATHS}; narrow defineEval({ diff }) include/ignore rules"`,
     '  git diff-tree -r --no-renames --numstat "$hash^" "$hash" > "$D/ns.txt"',
     // 全部 blob 出现次数(before + after,零 sha = 无此侧,排除)→ 逐次尺寸核算。
     "  awk '$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }' \"$D/dt.txt\" > \"$D/occ.txt\"",
@@ -128,7 +130,7 @@ function buildExportScript(exportDir: string): string {
     // 也不计入窗口预算——它们只出字节数(宿主据同一份 sizes 判成 elided)。
     `  awk -v LIMIT=${MAX_FILE_TEXT_BYTES} -v TOTAL="$D/total.txt" 'NR==FNR { sz[$1] = $3; next } $1 == "T" { b = $2; a = $3; if (b !~ /^0+$/ && sz[b] > LIMIT) next; if (a !~ /^0+$/ && sz[a] > LIMIT) next; if (b !~ /^0+$/ && !(b in seen)) { seen[b] = 1; total += sz[b]; print b } if (a !~ /^0+$/ && !(a in seen)) { seen[a] = 1; total += sz[a]; print a } } END { print total+0 > TOTAL }' "$D/sizes.txt" "$D/entries.txt" > "$D/text.txt"`,
     '  bytes=$(cat "$D/total.txt")',
-    `  [ "$bytes" -le ${MAX_WINDOW_TEXT_BYTES} ] || fail "niceeval diff window transfers $bytes text blob bytes; limit is ${MAX_WINDOW_TEXT_BYTES}; narrow defineEval({ diff }) include/ignore rules"`,
+    `  [ "$bytes" -le ${MAX_EXPORTED_WINDOW_TEXT_BYTES} ] || fail "niceeval diff window transfers $bytes text blob bytes; export scan limit is ${MAX_EXPORTED_WINDOW_TEXT_BYTES}; narrow defineEval({ diff }) include/ignore rules"`,
     '  git cat-file --batch < "$D/text.txt" > "$D/blobs.bin"',
     '  git diff-tree -r --no-renames -z "$hash^" "$hash" > "$D/dtz.bin"',
     '  git diff-tree -r --no-renames --numstat -z "$hash^" "$hash" > "$D/nsz.bin"',

@@ -33,6 +33,7 @@ import {
   AssertionEntryIdSchema,
   AssertionsExactParseOptions,
   BoundedJsonObjectSchema,
+  BoundedJsonValueSchema,
   MAX_ASSERTION_DOCUMENT_BYTES,
   createAssertionsRecordSchemas,
   isBoundedJsonObject,
@@ -265,7 +266,11 @@ function encodeMaterial(
     case "snapshot": {
       const value = encodeSnapshotValue(material.value);
       const bytes = new TextEncoder().encode(JSON.stringify(value));
-      if (bytes.byteLength > 32 * 1_024) {
+      const inline = Schema.decodeUnknownEither(
+        BoundedJsonValueSchema,
+        AssertionsExactParseOptions,
+      )(value);
+      if (bytes.byteLength > 32 * 1_024 || Either.isLeft(inline)) {
         const digest = Schema.decodeUnknownEither(Sha256DigestSchema)(
           createHash("sha256").update(bytes).digest("hex"),
         );
@@ -283,7 +288,7 @@ function encodeMaterial(
       }
       return Object.freeze({
         kind: "snapshot" as const,
-        value,
+        value: inline.right,
       });
     }
     case "record-attachment":

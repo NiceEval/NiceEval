@@ -561,7 +561,20 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const failedByKey = new Map<string, string>();
       for (const target of targets) {
         const err = yield* probeJudgeEffect(target.judge, opts.signal);
-        if (err) failedByKey.set(target.key, err);
+        if (err) {
+          failedByKey.set(target.key, err);
+          // A pre-dispatch failure deliberately has no Attempt and therefore no
+          // locator. Surface the endpoint failure through the run-level
+          // diagnostic channel instead of relying on an Attempt failure event
+          // that cannot exist for this Slot.
+          reportDiagnostic({
+            key: `judge-precheck-failed:${target.key}`,
+            code: "judge-precheck-failed",
+            severity: "error",
+            message: err,
+            data: { phase: "judge.precheck" },
+          });
+        }
       }
       for (const [pairKey, key] of evalKeys) {
         const err = failedByKey.get(key);

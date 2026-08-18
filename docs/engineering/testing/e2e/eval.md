@@ -49,6 +49,9 @@ Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoi
 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试经
 `show` 或 Report 的已发布 DomainView 读取闭合 diff，不读私有落盘、固定 family bytes 或旧的投影声明。
 
+同一 owner 还让第二个 send 区间超过路径保留上限，证明 collector 发布带 `collection-cap-reached`
+的确定性 partial File Changes，而不是把证据降格成 `workspace-diff-unavailable`。
+
 ## eval-assertion-judge-unavailable
 
 未配置 Judge 时，声明 capability 后 required Judge Assertion 保留 `unavailable` 并报告 model unresolved。

@@ -63,6 +63,9 @@ thresholded measurement 可以 `await .orStop()`。below 触发 authoring stop l
 
 没有 model、key 或 provider 时不发网络预检，Assertion 为 `unavailable` 并保留机器可读 reason。完整配置
 的 endpoint 预检失败是 setup error，受影响 Attempt 不执行 Agent，也不伪造 AssertionResult。
+Runner 通过 `judge-precheck-failed` 运行级 diagnostic 交付端点、模型与 provider 返回的有界错误。
+这类 Slot 从未派发，没有 origin Attempt 或 locator。JSON 不为它伪造 locator-addressable `eval` 事件，
+最终计数仍把它记为 `errored`。
 
 模型请求后的传输失败是 `unavailable`。无效响应、非有限数值和区间外数值是 `errored`。理由写入
 explanation 或 Judge rationale，evidence 只保存裁剪与脱敏后的材料。

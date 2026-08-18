@@ -95,7 +95,8 @@ export default defineEval({
 - **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 区间的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧校验。provider 往返数与区间数、文件数都无关,不能退化成逐文件或逐区间的远端调用,也不把大证据灌进命令 stdout 通道。
 - 导出对 Sandbox 侧的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。
 
-- **固定限额与确定前缀。** 最多保留 256 个 send 区间。每个 send 区间最多 10,000 个 changes，整份 Attachment 也最多 10,000 个 changes。完整 text revision 与单个 blob 最多 1 MiB；最多保留 20,000 个 blobs、128 MiB blob bytes 和 16 MiB payload JSON。归因 policy 的 `include` 与 `ignore` 各最多 256 项，每项最多 4,096 UTF-8 bytes。
+- **路径与区间上限。** 导出阶段单个 send 区间最多扫描 100,000 个路径；File Changes 最多保留 256 个 send 区间。每个 send 区间与整份 Attachment 都最多保留 10,000 个 changes。超过保留上限但未超过扫描上限时，collector 保存确定性前缀并写 `collection-cap-reached`，不能把 partial 证据报告为 diff unavailable。
+- **内容与 policy 上限。** 导出阶段单个 send 区间最多扫描 256 MiB 去重文本；File Changes 最多保留 20,000 个 blobs、128 MiB blob bytes 和 16 MiB payload JSON。完整 text revision 与单个 blob 最多 1 MiB。超过保留上限但未超过扫描上限时由 collector 省略后续 content 并写 partial limitation。归因 policy 的 `include` 与 `ignore` 各最多 256 项，每项最多 4,096 UTF-8 bytes。
 - **固定截断顺序。** collector 先按 send sequence，再按同一 send 区间内 path 的 ASCII 字节序处理。达到任一采集上限时，它停止在第一个放不下的候选，不跳过该项去采后面的项。已捕获的安全前缀连同 `collection-cap-reached` limitation 写成 `partial`。
 - **内容形态不偷换。** 二进制或超过 1 MiB 的 text revision 写为 `elided`，带 `binary` 或 `oversized-text` 原因与 byteLength；这本身是完整采集。content blob 碰到 collection cap 时，text content 写为 `omitted(collection-cap)` 并形成 partial。尺寸在传输前核算。内容被省略时，路径与状态断言仍可确定，依赖文本的断言如实成为 `unavailable`。
 
