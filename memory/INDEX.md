@@ -390,6 +390,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ## 写 eval · scoring · 断言 · judge
 
 - [retry-reacquire-delays-interruption](retry-reacquire-delays-interruption.md) — turn 重试退避被中断后仍须重新取得释放的 permit，当前以并发记账守恒优先于中断及时性
+- 已修 [assertion-diagnostic-tree-overflows-record](assertion-diagnostic-tree-overflows-record.md) — 上百个 occurrence × 组合 matcher 的完整诊断树撑破递归/4 MiB 边界，使已完成 Run 无法发布；collection 改存 witness + 8 个样本，runtime/document 双层有界化，大材料自动进 Assertions blob
 
 - 已修 [brief-crashes-on-preview-undefined](brief-crashes-on-preview-undefined.md) — `JSON.stringify(undefined)` 返回值 undefined 不是字符串,`brief()` 不兜底会让断言预览 undefined 字段值时抛 TypeError 而不是显示 "undefined"(修在 `src/util.ts`)
 - [judge-missing-key-unavailable-not-silent](judge-missing-key-unavailable-not-silent.md) — 设计裁决:judge 缺 key 记 unavailable 断言(gate → errored;2026-07-14),推翻「静默不记录 + CI 自查」;unavailable 态同时承载证据覆盖缺口

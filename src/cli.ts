@@ -221,6 +221,8 @@ export function renderCliFailure(failure: CliFailure): string {
   if (failure._tag === "CliUsageError") return failure.message;
   if (failure.cause instanceof SandboxLayerLinkError) return `${formatSandboxLayerLinkError(failure.cause)}\n`;
   if (failure.cause instanceof SandboxPhysicalPlanningError) return `${formatSandboxPhysicalPlanningError(failure.cause)}\n`;
+  const assertionsMessage = runnerAssertionsMessage(failure.cause);
+  if (assertionsMessage !== undefined) return `niceeval error: ${assertionsMessage}\n`;
   if (isReportCliOperation(failure.operation)) {
     const code = failureCode(failure.cause);
     if (code !== undefined) {
@@ -257,6 +259,16 @@ function failureCode(value: unknown): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const code = Reflect.get(value, "code");
   return typeof code === "string" ? code : undefined;
+}
+
+function runnerAssertionsMessage(value: unknown): string | undefined {
+  if (failureCode(value) !== "runner-record-assertions-invalid" || typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const issue = Reflect.get(value, "issue");
+  if (typeof issue !== "object" || issue === null) return undefined;
+  const message = Reflect.get(issue, "message");
+  return typeof message === "string" && message.length > 0 ? message : undefined;
 }
 
 export interface Flags {

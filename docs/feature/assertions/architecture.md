@@ -24,6 +24,10 @@ author calls / evaluator internals / producer control flow
 
 `sourceSites` 是 Assertions payload 的字段，不是物理 send Navigation Attachment。它只保存已执行 entry 的 source mapping；源码内容仍属于 origin Run-owned Sources family。精确 join 与显示规则见 [Source sites](architecture/source-sites.md)。
 
+matcher diagnostic 在求值时只保留 8 个代表候选与决定结果的 witness／counterexample，并在进入 payload 前限制为 64 个节点与 64 KiB。超限时保留根匹配状态、定位器与已捕获样本，并写入 `diagnostic-truncated` 摘要；截断只影响解释材料，不改变已封口的 matched、mismatched、gate 或 score 结果。
+
+4 MiB 是 Assertions JSON framing 的上限，不是一次 Assertion 求值可观察材料的上限。超过 32 KiB 的 subject 或 evidence snapshot 自动成为本 Attachment 自己的 blob；若紧凑 diagnostics 合计仍会使 framing 超限，producer 先降为 root summary，再降为最小 truncation marker。它不拆出重复 Assertions document，也不因解释材料过多丢弃 entry 或改变语义结果。只有 criterion、identity 等不可外置的语义 framing 自身超限时才拒绝发布，并点明应外置的大材料。
+
 ## v1 外层 payload
 
 writer 产出的 v1 payload 是 `AssertionsAttachmentV1`。所有契约拥有的 object 都 exact decode；不在下列形状中的字段一律拒绝。`BoundedJsonValueV1` 是唯一允许任意 JSON key 的值域，只用于 snapshot 或 criterion 的 raw `data`，不是开放 metadata。decoder 限制深度为 8、对象键数为 64、数组项数为 256、单字符串为 8 KiB，且整个 payload 最多 4 MiB。
