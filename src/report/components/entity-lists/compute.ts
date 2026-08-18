@@ -34,15 +34,11 @@ import {
   experimentDetailTarget,
   libraryDetailRoute,
 } from "../../library/details.ts";
+import { assertionEntryViewOf } from "../attempt-detail/compute.ts";
 
 type UtcMillis = Sample["snapshot"]["runs"][number]["startedAt"];
 type ClosedAttemptEvidenceEntry = AttemptEvidenceDomainView["entries"][number];
 
-/**
- * 当前 Analysis 只发布通过制读数（没有总分 Measure），题型构成恒为
- * "pass"。未来 Analysis 发布计分制 Measure 时，这里与 content.ts 的列集一起按
- * 同一构成判据扩展。
- */
 export type EvaluationKindComposition = "pass" | "points" | "mixed";
 
 /** 一个层级共用的四枚 Analysis-owned 读数。 */
@@ -67,6 +63,9 @@ export interface AttemptListItem {
    * display 标签;closed 数据没有可读摘录时为 null(渲染成 "—",不发明文案)。
    */
   readonly failureSummary: string | null;
+  readonly evaluationKind: "pass" | "points";
+  /** Complete earned score for this Attempt; absent for pass or incomplete score evidence. */
+  readonly totalScore?: number;
   readonly passRate: MetricValue<number>;
   readonly durationMs: MetricValue<number>;
   /** Present only when the owning Report declares a PricingProfile. */
@@ -81,6 +80,9 @@ export interface AttemptListItem {
 /** experiment 层级表里一道 Eval 的闭合行;attempts 是它的可见子行。 */
 export interface ExperimentListEvalRow {
   readonly evalId: EvalId;
+  readonly evaluationKind: "pass" | "points";
+  /** Mean of complete Attempt scores for this Eval. */
+  readonly totalScore?: number;
   readonly endToEndPassRate: MetricValue<number>;
   readonly durationMs: MetricValue<number>;
   readonly costUSD?: CostMetricValue;
@@ -95,8 +97,9 @@ export interface ExperimentListItem {
   readonly agent: string | null;
   readonly model: string | null;
   readonly flags: Readonly<Record<string, JsonValue>> | null;
-  /** 占位默认值,见 EvaluationKindComposition 注释。 */
   readonly evaluationKind: EvaluationKindComposition;
+  /** Sum of the visible per-Eval score cells; absent when no complete Score Eval exists. */
+  readonly totalScore?: number;
   readonly endToEndPassRate: MetricValue<number>;
   readonly durationMs: MetricValue<number>;
   readonly costUSD?: CostMetricValue;
@@ -190,6 +193,8 @@ function layoutLevel(members: readonly EvalId[], dirPrefix: string): readonly Ev
 interface AttemptFact {
   readonly verdict: Verdict | null;
   readonly failureSummary: string | null;
+  readonly evaluationKind: "pass" | "points";
+  readonly totalScore?: number;
 }
 
 interface SlotSelection {
@@ -225,9 +230,21 @@ async function evidenceFacts(sample: Sample): Promise<ReadonlyMap<AttemptLocator
   const facts = new Map<AttemptLocator, AttemptFact>();
   for (const entry of view.entries) {
     const locator = entry.attempt.locator;
+    const assertions = entry.state === "available"
+      ? entry.detail.entries.map(assertionEntryViewOf).filter((item) => item !== undefined)
+      : [];
+    const scoreContributions = assertions
+      .map((item) => item.result.score)
+      .filter((score) => score.state !== "not-scored");
+    const completeScore = scoreContributions.length > 0 &&
+      scoreContributions.every((score) => score.state === "earned" && score.earned !== undefined)
+      ? scoreContributions.reduce((sum, score) => sum + (score.earned ?? 0), 0)
+      : undefined;
     facts.set(locator, Object.freeze({
       verdict: entry.state === "available" ? (entry.detail.verdict as Verdict) : null,
       failureSummary: closedFailureSummary(entry),
+      evaluationKind: scoreContributions.length > 0 ? "points" : "pass",
+      ...(completeScore === undefined ? {} : { totalScore: completeScore }),
     }));
   }
   return facts;
@@ -432,7 +449,11 @@ export async function attemptListData(
   ]);
   const selections = selectedSlots(sample);
   return Object.freeze(selections.map((selection): AttemptListItem => {
-    const fact = facts.get(selection.locator) ?? Object.freeze({ verdict: null, failureSummary: null });
+    const fact: AttemptFact = facts.get(selection.locator) ?? Object.freeze({
+      verdict: null,
+      failureSummary: null,
+      evaluationKind: "pass" as const,
+    });
     const metric = requireMetrics(
       metrics.get(metricsKey(selection.experimentId, selection.evalId, selection.locator)),
       `attempt ${JSON.stringify(selection.locator)}`,
@@ -444,6 +465,8 @@ export async function attemptListData(
       attemptOrdinal: selection.attemptOrdinal,
       verdict: fact.verdict,
       failureSummary: fact.failureSummary,
+      evaluationKind: fact.evaluationKind,
+      ...(fact.totalScore === undefined ? {} : { totalScore: fact.totalScore }),
       passRate: metric.passRate,
       durationMs: metric.durationMs,
       ...(metric.costUSD === undefined ? {} : { costUSD: metric.costUSD }),
@@ -529,8 +552,14 @@ export async function experimentListData(
         evalMetrics.get(metricsKey(experimentId, evalIdValue)),
         `experiment/eval ${JSON.stringify(experimentId)}/${JSON.stringify(evalIdValue)}`,
       );
+      const evaluationKind = sorted.some((attempt) => attempt.evaluationKind === "points") ? "points" : "pass";
+      const completeScores = sorted.flatMap((attempt) => attempt.totalScore === undefined ? [] : [attempt.totalScore]);
       evalRows.push(Object.freeze({
         evalId: evalIdValue,
+        evaluationKind,
+        ...(completeScores.length === 0
+          ? {}
+          : { totalScore: completeScores.reduce((sum, score) => sum + score, 0) / completeScores.length }),
         endToEndPassRate: metrics.passRate,
         durationMs: metrics.durationMs,
         ...(metrics.costUSD === undefined ? {} : { costUSD: metrics.costUSD }),
@@ -549,12 +578,19 @@ export async function experimentListData(
       const metric = groupMetrics.get(metricsKey(experimentId, prefix));
       if (metric !== undefined) groupMetricsForItem.set(prefix, metric);
     }
+    const evaluationKind = evalRows.some((row) => row.evaluationKind === "points")
+      ? evalRows.some((row) => row.evaluationKind === "pass") ? "mixed" : "points"
+      : "pass";
+    const completeEvalScores = evalRows.flatMap((row) => row.totalScore === undefined ? [] : [row.totalScore]);
     items.push(Object.freeze({
       experimentId,
       agent: watermark?.agent ?? null,
       model: watermark?.model ?? null,
       flags: watermark?.flags ?? null,
-      evaluationKind: "pass",
+      evaluationKind,
+      ...(completeEvalScores.length === 0
+        ? {}
+        : { totalScore: completeEvalScores.reduce((sum, score) => sum + score, 0) }),
       endToEndPassRate: experimentMetric.passRate,
       durationMs: experimentMetric.durationMs,
       ...(experimentMetric.costUSD === undefined ? {} : { costUSD: experimentMetric.costUSD }),
@@ -565,7 +601,12 @@ export async function experimentListData(
       href: experimentHref(experimentId),
     }));
   }
-  items.sort(byMetricDescThenId((item) => item.endToEndPassRate.value));
+  const composition = items.some((item) => item.evaluationKind !== "pass")
+    ? items.some((item) => item.evaluationKind !== "points") ? "mixed" : "points"
+    : "pass";
+  items.sort(byMetricDescThenId((item) => composition !== "pass"
+    ? item.totalScore ?? null
+    : item.endToEndPassRate.value));
   return Object.freeze(items);
 }
 

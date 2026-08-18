@@ -13,6 +13,7 @@ import {
   type ExperimentListItem,
 } from "./compute.ts";
 import { attemptListContent, experimentListContent } from "./content.ts";
+import { experimentListEvaluationKindComposition } from "../../model/format.ts";
 
 export {
   attemptListData,
@@ -86,7 +87,7 @@ export interface ExperimentTableProps {
   readonly input?: Sample;
   /** 已闭合的行;省略时按 `input` 计算。 */
   readonly rows?: readonly ExperimentListItem[];
-  /** 显示排序列;省略时按列表自身主读数(当前 facade 恒为 passRate)降序。 */
+  /** 显示排序列;省略时按列表自身题型选择 passRate 或 totalScore。 */
   readonly sort?: string;
   readonly searchable?: boolean;
   readonly locale?: ReportLocale;
@@ -96,8 +97,10 @@ export interface ExperimentTableProps {
 export const ExperimentTable = defineComponent<ExperimentTableProps>(async (props, ctx) => {
   const sample = props.input ?? ctx.scope;
   const rows = props.rows ?? await experimentListData(sample, ctx.report.pricing);
-  // 当前 facade 只发布通过制读数,默认排序恒为 passRate 降序(数据本身已按此排好)。
-  const defaultSort = "passRate";
+  const composition = experimentListEvaluationKindComposition(
+    rows.map((row) => ({ evaluationKind: row.evaluationKind, attempts: row.evalRows.length })),
+  );
+  const defaultSort = composition === "pass" ? "passRate" : "totalScore";
   return <TableContentView
     data={experimentListContent(rows)}
     sort={props.sort ?? defaultSort}

@@ -114,6 +114,43 @@ function feedbackIdentity(a: Attempt): AttemptRef {
 function feedbackWho(a: Attempt): string {
   return runWho({ agentName: a.run.agent.name, model: a.run.model, experimentId: a.run.experimentId });
 }
+
+const SHARED_BUILD_FAILURE_DIAGNOSTIC = "sandbox-build-failed";
+
+function sharedBuildFailureRoot(error: AttemptError): { readonly code: string; readonly message: string } {
+  const codeMatch = /\bERR_[A-Z0-9_]+\b/u.exec(error.message);
+  const code = codeMatch?.[0] ?? error.code;
+  const focused = codeMatch === null
+    ? error.message.slice(-600)
+    : error.message.slice(codeMatch.index, codeMatch.index + 600);
+  return { code, message: focused.trim() || error.message.slice(-600).trim() || error.code };
+}
+
+function sharedBuildFailureDetail(a: Attempt, error: AttemptError): string {
+  const failureId = error.origin.scope === "run"
+    ? error.origin.timingNodeId
+    : `${error.code}:${a.evalDef.id}`;
+  const root = sharedBuildFailureRoot(error);
+  let message = root.message;
+  const encode = () => JSON.stringify({
+      schema: "niceeval.shared-build-failure/v1",
+      failureId,
+      evalId: a.evalDef.id,
+      attemptOrdinal: a.attempt,
+      phase: "sandbox.image.build",
+      errorCode: root.code,
+      message,
+      ...(root.code === "ERR_PNPM_IGNORED_BUILDS"
+        ? { remediation: "pnpm-allow-builds" }
+        : {}),
+    });
+  let encoded = encode();
+  while (new TextEncoder().encode(encoded).byteLength > 1_000 && message.length > 0) {
+    message = message.slice(0, Math.floor(message.length * 0.75));
+    encoded = encode();
+  }
+  return encoded;
+}
 function attemptIdentityKey(
   experimentId: string | undefined,
   agentName: string,
@@ -2261,6 +2298,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   ? buildFailure
                   : undefined;
             if (blockedError !== undefined) cancelReuseAttempt(a, true);
+            if (buildFailure !== undefined) {
+              recordExperimentDiagnostic({
+                experimentId: a.run.experimentId,
+                code: SHARED_BUILD_FAILURE_DIAGNOSTIC,
+                level: "error",
+                message: sharedBuildFailureDetail(a, buildFailure),
+                phase: "sandbox.queue",
+              });
+            }
 
             // A scheduler-admitted Attempt owns a durable identity before any
             // attempt-owned sandbox, Agent, or Eval work begins. Reservation
