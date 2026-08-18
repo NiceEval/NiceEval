@@ -15,8 +15,10 @@ It can evaluate Plugins, Hooks, and Skills for Claude Code / Codex, and it can a
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
+import { jsonMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "Verify the agent calls the weather tool correctly for a live weather question and answers from its result",
 
   async test(t) {
@@ -24,7 +26,7 @@ export default defineEval({
     t.succeeded();
 
     await t.group("calls get_weather with the right city", () => {
-      t.calledTool("get_weather", { input: { city: "Beijing" } });
+      t.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));
       t.messageIncludes(/°C|sunny|cloudy|rain/);
     });
 
@@ -32,8 +34,11 @@ export default defineEval({
     second.messageIncludes("Shanghai");
 
     t.judge.autoevals
-      .closedQA("Does the assistant answer from the tool's weather data instead of making up a temperature?")
-      .atLeast(0.7);
+      .closedQA("Does the assistant answer from the tool's weather data instead of making up a temperature?", {
+        input: "Answer weather questions for Beijing today and Shanghai tomorrow.",
+        output: [turn.message, second.message].join("\n"),
+      })
+      .gate(0.7);
   },
 });
 ```

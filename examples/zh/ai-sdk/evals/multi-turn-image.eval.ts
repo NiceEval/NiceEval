@@ -15,15 +15,16 @@ function conversationText(events: readonly StreamEvent[]): string {
 // 第一轮发送蓝底白方块图片并询问内容；第二、三轮只用文字追问背景和形状颜色。
 // 如果后两轮还能答出蓝色背景、白色方块，就说明图片内容进入了会话上下文。
 export default defineEval({
+  judge: true,
   description: "测试 agent 在多轮对话中基于图片内容作答的能力",
 
   async test(t) {
-    await (await t.sendFile("evals/sample.png", "这张图片里有什么？")).succeeded().stopOnFailure();
-    await (await t.send("图片里的背景是什么颜色？")).succeeded().stopOnFailure();
-    await (await t.send("中间那个形状是什么颜色的？")).succeeded().stopOnFailure();
+    await (await t.sendFile("evals/sample.png", "这张图片里有什么？")).succeeded().orStop();
+    await (await t.send("图片里的背景是什么颜色？")).succeeded().orStop();
+    await (await t.send("中间那个形状是什么颜色的？")).succeeded().orStop();
 
     await t.group("三轮都正常收发", () => {
-      // 每轮 send 已各自 succeeded().stopOnFailure()；succeeded() 再确认整次运行没有失败或卡在 HITL。
+      // 每轮 send 已各自 succeeded().orStop()；succeeded() 再确认整次运行没有失败或卡在 HITL。
       // 事件流现在也含 user 消息，不再用 event("message",{count}) 数 assistant 轮数。
       t.succeeded();
     });
@@ -39,7 +40,8 @@ export default defineEval({
 
     t.judge.autoevals
       .closedQA("助手是否在三轮对话中始终基于第一轮发送的图片内容作答，而不是凭空发挥？", {
-        on: conversationText(t.events),
+        input: "用户先询问一张蓝底白色方块图片，再追问背景和中间形状的颜色。",
+        output: conversationText(t.events),
       })
       .gate(0.7);
   },

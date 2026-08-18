@@ -10,14 +10,17 @@ description: "评估用例是一个测试用例：描述和 test 函数，agent-
 
 ```ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { includes, jsonMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description: "Brooklyn weather query",
   async test(t) {
     await t.send("What's the weather like in Brooklyn today?");
     t.succeeded();
-    t.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });
+    t.calledTool(
+      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
+      { count: 1 },
+    );
     t.check(t.reply, includes("sunny"));
   },
 });

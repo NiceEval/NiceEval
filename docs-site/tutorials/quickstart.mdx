@@ -88,7 +88,7 @@ export default defineEval({
   description: "Refund policy question",
   async test(t) {
     const turn = await t.send("What is your refund policy?");
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
     t.check(t.reply, includes("30 days"));
   },
 });

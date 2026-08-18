@@ -1,4 +1,5 @@
 import { defineEval } from "niceeval";
+import { toolMatch } from "niceeval/expect";
 
 // deny 分支:人否决和工具故障是两回事——calledTool 的 status 应该是 "rejected",
 // noFailedActions() 依然通过(拒绝是预期路径,不是执行错误)。
@@ -13,7 +14,7 @@ export default defineEval({
 
     const denied = await t.respond("deny");
     denied.succeeded();
-    t.calledTool("calculate", { status: "rejected" });
+    t.calledTool(toolMatch("calculate", { status: "rejected" }));
     t.noFailedActions();
   },
 });

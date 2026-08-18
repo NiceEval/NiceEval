@@ -188,7 +188,9 @@ await t.respondAll("approve");
 //                 { requestId: "req_2", optionId: "approve" }] }
 ```
 
-Adapter 侧的对应义务：按 `requestId` 把裁决交回应用（不要按顺序猜）。被人拒绝的调用把 tool `operation.finished` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，这样 `noFailedActions()` 不误伤，`calledTool(..., { status: "rejected" })` 可精确断言。
+Adapter 侧按 `requestId` 把裁决交回应用，不按顺序猜。被人拒绝的调用把 tool `operation.finished` 的 `status` 置 `"rejected"`，而不是 `"failed"`。
+
+拒绝是人的决定，不是工具故障。这样 `noFailedActions()` 不会误伤，`calledTool(toolMatch(..., { status: "rejected" }))` 也能精确断言。
 
 ### 上下文：`AgentContext`
 

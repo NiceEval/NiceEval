@@ -66,9 +66,7 @@ interface MeasurementMatch<in T> {
 type Subject<T> = T extends AssertionHandleBase ? never : T;
 
 interface CalledToolOptions {
-  readonly input?: unknown;
   readonly count?: number | { readonly atLeast: number };
-  readonly status?: "completed" | "failed" | "rejected" | "pending";
 }
 
 interface PassScope {

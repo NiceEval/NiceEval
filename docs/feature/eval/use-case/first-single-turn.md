@@ -13,7 +13,7 @@
    ```typescript
    // evals/weather/brooklyn.eval.ts → id: weather/brooklyn
    import { defineEval } from "niceeval";
-   import { includes } from "niceeval/expect";
+   import { includes, jsonMatch, toolMatch } from "niceeval/expect";
 
    export default defineEval({
      description: "布鲁克林天气查询",
@@ -21,7 +21,10 @@
        await t.send("布鲁克林今天天气怎么样?");
 
        t.succeeded();
-       t.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });
+       t.calledTool(
+         toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
+         { count: 1 },
+       );
        t.check(t.reply, includes("晴"));
      },
    });

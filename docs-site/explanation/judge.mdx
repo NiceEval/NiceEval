@@ -7,10 +7,10 @@ description: "How t.judge and turn.judge use a separate judge model to score fac
 Judge assertions are the fifth assertion mechanism, alongside the four covered in [Assert](/explanation/assert). Use them when correctness cannot be expressed as a rule — for open-ended prose, tone, factual consistency, or summarization quality. The Judge model is **entirely separate** from the agent under test, which prevents self-evaluation bias: the same model grading its own output would be prone to rating itself generously.
 
 ```ts
-t.judge.autoevals.factuality(reference).atLeast(0.8);   // factual consistency with a reference text
-t.judge.autoevals.closedQA("Is the response appropriate for a 10-year-old?");
-t.judge.autoevals.summarizes(sourceDocument);            // faithful summarization check
-turn.judge.autoevals.closedQA("Custom evaluation rubric description");  // bound to the turn's material
+turn.judge.autoevals.factuality(reference).gate(0.8);   // factual consistency with a reference text
+turn.judge.autoevals.closedQA("Is the response appropriate for a 10-year-old?");
+turn.judge.autoevals.summarizes(sourceDocument);        // faithful summarization check
+turn.judge.autoevals.closedQA("Custom evaluation rubric description");
 ```
 
 ## The three judge shapes
@@ -47,7 +47,7 @@ t.judge.autoevals
     input: "Identify the object in the image from turn 1 and describe it.",
     output: "turn 2 and turn 3 answers",
   })
-  .atLeast(0.7);
+  .gate(0.7);
 
 turn3.judge.autoevals.closedQA("Does this turn answer the shape's color?").gate();
 ```
@@ -59,7 +59,7 @@ const src = await t.sandbox.readText("src/handler.ts");
 t.judge.autoevals.closedQA("Is the generated code idiomatic TypeScript?", {
   input: "Rewrite src/handler.ts to idiomatic TypeScript.",
   output: src,
-}).atLeast(0.7);
+}).gate(0.7);
 
 t.sandbox.fileChanged("src/handler.ts");   // attribution: did the Agent change this file?
 ```
@@ -84,7 +84,8 @@ defineConfig({ judge: { model: "anthropic/claude-haiku-4-5" } });
 defineEval({
   judge: { model: "anthropic/claude-opus-4-8" },
   async test(t) {
-    t.judge.autoevals.factuality(reference);  // uses claude-opus-4-8 for this eval
+    const turn = await t.send("Check this claim.");
+    turn.judge.autoevals.factuality(reference);  // uses claude-opus-4-8 for this eval
   },
 });
 ```

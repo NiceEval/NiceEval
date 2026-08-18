@@ -4,12 +4,17 @@
 直接登记 Assertion。`defineEval` 各字段见 [README](README.md)。
 
 ```ts
+import { jsonMatch, toolMatch } from "niceeval/expect";
+
 export default defineEval({
   description: "布鲁克林天气查询",
   async test(t) {
     const turn = await t.send("布鲁克林今天天气怎么样？");
     turn.succeeded().label("Turn 完成");
-    turn.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });
+    turn.calledTool(
+      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
+      { count: 1 },
+    );
     t.check(turn.message, includes("晴")).label("回答天气");
   },
 });

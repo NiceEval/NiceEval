@@ -312,7 +312,7 @@ export default defineAgent({
 
 不需要 HITL 的接口，删掉停轮现场相关的三处（`Pending`、`hold`、开头的 `take` 分支）即可，其余不变。停轮 / 回答 / 续跑的完整心智模型见 [HITL](/zh/explanation/hitl)。
 
-**这一步支持**：`t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()`，以及 `calledTool(..., { status: "rejected" })` 的精确断言。
+**这一步支持**：`t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()`，以及 `calledTool(toolMatch(..., { status: "rejected" }))` 的精确断言。
 
 ## 第六步：接上 OTel trace
 

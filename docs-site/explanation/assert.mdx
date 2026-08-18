@@ -128,7 +128,7 @@ Scoped assertions only appear on `t` if the agent has declared the corresponding
 ### Run / session dimension
 
 ```ts
-await t.succeeded().stopOnFailure(); // run completed; stop dependent checks if it did not
+await t.succeeded().orStop();    // run completed; stop dependent checks if it did not
 t.parked();                     // cleanly stopped on a HITL input.requested event
 t.messageIncludes("Regards,");  // all message events concatenated contain this string/regex
 ```
@@ -136,8 +136,10 @@ t.messageIncludes("Regards,");  // all message events concatenated contain this 
 ### Tool / action dimension
 
 ```ts
-t.calledTool("bash", { input: { command: /^pwd/ }, count: 1 });
-t.notCalledTool("shell", { input: { command: /npm i/ } });
+import { commandMatch } from "niceeval/expect";
+
+t.calledTool(commandMatch("pwd"), { count: 1 });
+t.notCalledTool(commandMatch("npm", { argsStart: ["install"] }));
 t.toolOrder(["read_file", "write_file"]);   // relative order of tool calls
 t.usedNoTools();
 t.maxToolCalls(5);
@@ -146,7 +148,7 @@ t.calledSubagent("researcher", { remoteUrl: /api\.example/ });
 t.noFailedActions();                       // no tool, subagent, or skill has status "failed"
 ```
 
-The `input` argument to `calledTool` and `notCalledTool` supports a small matching language: a plain object performs deep partial matching, a `RegExp` matches against the serialized input, and a predicate function receives the raw input value.
+The second argument to `calledTool` only controls `count`. Put input, output, and status constraints in a managed matcher such as `toolMatch`, `jsonMatch`, or `commandMatch`. `notCalledTool` takes the matcher directly.
 
 ### Event stream dimension (low-level escape hatch)
 

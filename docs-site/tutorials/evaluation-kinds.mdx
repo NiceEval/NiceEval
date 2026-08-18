@@ -44,8 +44,8 @@ These check facts about the whole run, usually from the standard event stream or
 ## LLM-as-judge
 
 ```ts
-t.judge.autoevals.factuality("Refunds are available within 30 days.", { on: t.reply }).atLeast(0.8);
-t.judge.autoevals.closedQA("The answer is specific, polite, and does not invent policy.", { on: t.reply }).atLeast(0.75);
+turn.judge.autoevals.factuality("Refunds are available within 30 days.").gate(0.8);
+turn.judge.autoevals.closedQA("The answer is specific, polite, and does not invent policy.").gate(0.75);
 ```
 
 Judge checks fit semantic quality, but they don't replace every deterministic assertion. Prefer exact checks wherever you can make them.

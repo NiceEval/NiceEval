@@ -12,9 +12,11 @@
    停在审批上的那笔工具调用状态是 `pending`——「停下了」和「停在正确的调用上」各一条断言：
 
    ```typescript
+   import { toolMatch } from "niceeval/expect";
+
    const draft = await t.send("先拟稿,发出前让我确认。");
    draft.parked();
-   draft.calledTool("send_email", { status: "pending", count: 1 });
+   draft.calledTool(toolMatch("send_email", { status: "pending" }), { count: 1 });
    ```
 
 2. 用 `requireInputRequest` 要求**恰好一个**匹配的待处理请求。
@@ -39,8 +41,8 @@
 
    ```typescript
    await t.respond({ request, optionId: "reject" });
-   t.calledTool("send_email", { status: "rejected" });
-   t.notCalledTool("send_email", { status: "completed" });
+   t.calledTool(toolMatch("send_email", { status: "rejected" }));
+   t.notCalledTool(toolMatch("send_email", { status: "completed" }));
    ```
 
 5. 同类请求一批并停、且都选同一个选项时，用 `respondAll(optionId)` 一次答完：

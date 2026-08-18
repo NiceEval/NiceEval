@@ -102,8 +102,10 @@ Running one eval needs two files: the eval itself (what to test) and an experime
 ```ts
 // evals/weather-tool.eval.ts
 import { defineEval } from "niceeval";
+import { jsonMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "Verify that the agent calls the right tool for a live weather question and answers from the result",
 
   async test(t) {
@@ -111,13 +113,13 @@ export default defineEval({
     turn.succeeded();
 
     await t.group("Calls get_weather with the correct city", () => {
-      t.calledTool("get_weather", { input: { city: "Beijing" } });
+      t.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));
       t.messageIncludes(/°C|temperature|weather|sunny|cloudy|rain/);
     });
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("Does the assistant answer using the weather data returned by the tool, rather than making up a temperature?")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```

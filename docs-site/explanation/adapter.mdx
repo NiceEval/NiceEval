@@ -187,7 +187,7 @@ await t.respondAll("approve");
 //                 { requestId: "req_2", optionId: "approve" }] }
 ```
 
-The Adapter's corresponding obligations: hand the verdict back to the application by `requestId` (don't guess by order); for calls a human rejected, set the tool `operation.finished` event's `status` to `"rejected"` rather than `"failed"` — rejection is a human decision, not a tool failure, so `noFailedActions()` doesn't misfire and `calledTool(..., { status: "rejected" })` can assert it precisely.
+The Adapter's corresponding obligations: hand the verdict back to the application by `requestId` (don't guess by order); for calls a human rejected, set the tool `operation.finished` event's `status` to `"rejected"` rather than `"failed"` — rejection is a human decision, not a tool failure, so `noFailedActions()` doesn't misfire and `calledTool(toolMatch(..., { status: "rejected" }))` can assert it precisely.
 
 ### Context: `AgentContext`
 

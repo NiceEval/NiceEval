@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
+import { equals, toolMatch } from "niceeval/expect";
 
 // calculate 工具经 LangChain HumanInTheLoopMiddleware 挂了审批(见 agents/langgraph.ts、
 // origin src/backend/agent.py)。这条验证批准分支:approve 之后工具正常执行。
@@ -18,7 +18,7 @@ export default defineEval({
 
     const approved = await t.respond("approve");
     approved.succeeded();
-    t.calledTool("calculate", { status: "completed" });
+    t.calledTool(toolMatch("calculate", { status: "completed" }));
     t.messageIncludes(/126/);
   },
 });

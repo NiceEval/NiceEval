@@ -13,7 +13,7 @@ export default defineEval({
   description: "Brooklyn weather query",
   async test(t) {
     const turn = await t.send("What's the weather like in Brooklyn today?");
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
   },
 });
 ```
@@ -345,18 +345,18 @@ Asserts the default session's cumulative assistant replies contain `token` (acro
 #### `calledTool`
 
 ```ts
-calledTool(name: string, match?: ToolMatch): AssertionHandle;
+calledTool(match: ToolMatch | string, options?: CalledToolOptions): AssertionHandle;
 ```
 
-Asserts the default session has cumulatively called the named tool; `match` can constrain arguments / count / status.
+Asserts the default session has cumulatively called the selected tool. `options` only controls `count`; put input, output, and status constraints in `ToolMatch`.
 
 #### `notCalledTool`
 
 ```ts
-notCalledTool(name: string, match?: ToolMatch): AssertionHandle;
+notCalledTool(match: ToolMatch | string): AssertionHandle;
 ```
 
-Asserts the default session has not cumulatively called the named tool (or not under the `match` condition).
+Asserts the default session has no matching tool occurrence. Use `ToolMatch` when the name alone is not enough.
 
 #### `toolOrder`
 
@@ -483,13 +483,13 @@ The available judge namespace (`t.judge.autoevals.*`).
 ## Judge assertions
 
 ```ts
-t.judge.autoevals.factuality(expected, { on: t.reply }).atLeast(0.8);
-t.judge.autoevals.closedQA(question, { on: t.reply }).atLeast(0.7);
-t.judge.autoevals.closedQA(rubric, { on: t.reply }).atLeast(0.75);
-t.judge.autoevals.summarizes(sourceText, { on: t.reply }).atLeast(0.7);
+turn.judge.autoevals.factuality(expected).gate(0.8);
+turn.judge.autoevals.closedQA(question).gate(0.7);
+t.judge.autoevals.closedQA(rubric, { input: request, output: reply }).gate(0.75);
+t.judge.autoevals.summarizes(sourceText, { input: request, output: reply }).gate(0.7);
 ```
 
-`t.judge.autoevals` currently has three methods: `factuality` (whether the reply is consistent with the `expected` facts), `closedQA` (whether the reply satisfies the given question or rubric), and `summarizes` (whether the reply is a valid summary of the given source text `source`). All three directly use scorers from the [autoevals](https://github.com/braintrustdata/autoevals) (braintrust) library; `{ on: t.reply }` specifies the text being scored.
+The three methods are `factuality`, `closedQA`, and `summarizes`. `turn.judge` freezes that Turn's input and output. Root-level `t.judge` requires explicit `{ input, output }` material.
 
 ## `Turn` return type
 
@@ -590,18 +590,18 @@ Asserts this turn is stuck on an HITL input request (status is "waiting").
 #### `calledTool`
 
 ```ts
-calledTool(name: string, match?: ToolMatch): AssertionHandle;
+calledTool(match: ToolMatch | string, options?: CalledToolOptions): AssertionHandle;
 ```
 
-Asserts this turn called the named tool; `match` can further constrain arguments / count / status.
+Asserts this turn called the selected tool. `options` only controls `count`; put input, output, and status constraints in `ToolMatch`.
 
 #### `notCalledTool`
 
 ```ts
-notCalledTool(name: string, match?: ToolMatch): AssertionHandle;
+notCalledTool(match: ToolMatch | string): AssertionHandle;
 ```
 
-Asserts this turn did not call the named tool (or not under the `match` condition).
+Asserts this turn has no matching tool occurrence. Use `ToolMatch` when the name alone is not enough.
 
 #### `toolOrder`
 

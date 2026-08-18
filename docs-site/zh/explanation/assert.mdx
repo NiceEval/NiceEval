@@ -41,7 +41,7 @@ turn.calledTool("shell").label("使用 shell");
 turn.calledTool("read_file", { count: 2 }).label("读取两次");
 ```
 
-`calledTool(name, options)` 的选项包括 `input` 与 `count`。输入使用递归 JSON 匹配：对象部分匹配、数组逐项匹配，任意层可用 `RegExp` 或动态谓词。
+`calledTool` 的第二参数只控制 `count`。`input`、`output` 与 `status` 条件写进 `toolMatch`；JSON 结构交给 `jsonMatch`，命令 token 交给 `commandMatch`。`notCalledTool` 直接接收同一类 matcher。
 
 ## 两种 Eval
 

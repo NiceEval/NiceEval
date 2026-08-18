@@ -6,11 +6,12 @@ import { defineEval } from "niceeval";
 // 经 adapter 转给被测 app；AI 模式交给多模态模型，mock 模式返回固定描述。
 // 断言只看图片里的具体特征，避免“我看不到图片”这类泛泛回复误通过。
 export default defineEval({
+  judge: true,
   description: "测试 agent 在图片理解上的能力",
 
   async test(t) {
     const turn = await t.sendFile("evals/fixtures/sample.png", "这张图片里有什么？主要是什么颜色？");
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
 
     await t.group("助手描述出图片内容", () => {
       t.succeeded();
@@ -19,7 +20,7 @@ export default defineEval({
       t.messageIncludes(/白|方块|square/i);
     });
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("助手是否描述了这张图片的内容(蓝色背景、中间一个白色方块),而不是答非所问？")
       .gate(0.7);
   },

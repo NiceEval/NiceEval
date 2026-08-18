@@ -83,12 +83,13 @@ import { defineEval } from "niceeval";
 import { includes } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "Refund policy Q&A",
   async test(t) {
     const turn = await t.send("What is your refund policy?");
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
     t.check(t.reply, includes("30 days"));
-    t.judge.autoevals.closedQA("Does the answer explain the refund window?").atLeast(0.7);
+    turn.judge.autoevals.closedQA("Does the answer explain the refund window?").gate(0.7);
   },
 });
 ```

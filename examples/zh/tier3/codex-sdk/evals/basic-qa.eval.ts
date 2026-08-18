@@ -9,7 +9,7 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("1+1 等于几?用一句话回答就好,不用跑命令也不用建文件。");
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
 
     await t.group("正常收发", () => {
       t.succeeded();

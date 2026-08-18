@@ -299,7 +299,7 @@ export default defineAgent({
 
 For interfaces that don't need HITL, delete the three parts related to the held pause-scene (`Pending`, its session slot, and the opening `take` branch) — the rest stays the same. For the complete mental model of pausing / answering / resuming, see [HITL](/explanation/hitl).
 
-**This step unlocks**: `t.parked()`, `t.requireInputRequest()`, `t.respond()` / `t.respondAll()`, and the precise assertion `calledTool(..., { status: "rejected" })`.
+**This step unlocks**: `t.parked()`, `t.requireInputRequest()`, `t.respond()` / `t.respondAll()`, and the precise assertion `calledTool(toolMatch(..., { status: "rejected" }))`.
 
 ## Step 6: hook up OTel traces
 

@@ -36,13 +36,15 @@ HITL（human-in-the-loop，人工介入）指 agent 在执行中间停下来，�
 ## 评估侧：三个动作
 
 ```ts
+import { toolMatch } from "niceeval/expect";
+
 const draft = await t.send("给老板发一封周报邮件。");
 draft.parked();                                          // ① 断言这一轮停下了
 
 const req = t.requireInputRequest({ action: "send_email" });   // ② 取出待答请求
 
 await t.respond({ request: req, optionId: "approve" });  // ③ 替人回答,发出下一轮
-t.calledTool("send_email", { status: "completed" });
+t.calledTool(toolMatch("send_email", { status: "completed" }));
 ```
 
 - `t.parked()` 断言这一轮确实以 waiting 停下。反过来 `t.succeeded()` 在 waiting 轮上会失败——停轮是显式状态，不会被当成"跑完了"。
@@ -65,7 +67,7 @@ HITL 对 Adapter 的全部要求就三件事——前两件发生在停下的那
 
 ## 拒绝不是故障
 
-人否决和工具报错是两回事，事件流里用不同的 `status` 区分：被人拒绝的调用，tool `operation.finished` 的 `status` 是 `"rejected"` 而不是 `"failed"`。这样 `t.noFailedActions()` 不会被一次正当的人工否决误伤，而 `t.calledTool("deploy", { status: "rejected" })` 可以精确断言"发起了调用、被人拦下了"——这正是拒绝分支的评估用例要写的断言。
+人否决和工具报错是两回事，事件流里用不同的 `status` 区分：被人拒绝的调用，tool `operation.finished` 的 `status` 是 `"rejected"` 而不是 `"failed"`。这样 `t.noFailedActions()` 不会被一次正当的人工否决误伤，而 `t.calledTool(toolMatch("deploy", { status: "rejected" }))` 可以精确断言“发起了调用、被人拦下了”——这正是拒绝分支的评估用例要写的断言。
 
 ## 哪些 agent 用不到 HITL
 

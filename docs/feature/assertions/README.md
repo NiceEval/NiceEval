@@ -27,7 +27,7 @@ Record v1 的 durable catalog 有 Assertions、Observability、FileChanges、Sou
 
 作者调用图、evaluator 内部实现、memoization、求值控制流、未执行的源码和当前 worktree 都不属于 Assertions payload。它们可以变化；只要已保存 criterion、材料、coverage 与 sealed result 的含义不变，Assertions 事实不变。
 
-`.orStop()`、`stopOnFailure` 和 detached async 都不改变 entry 的 sealed result，也不会凭空产生 `notReached` 条目或补零。已经执行的 assertion modifier 位置可作为 `sourceSites` row 保存；未执行源码不是持久事实。
+`.orStop()` 和 detached async 都不改变 entry 的 sealed result，也不会凭空产生 `notReached` 条目或补零。已经执行的 assertion modifier 位置可作为 `sourceSites` row 保存；未执行源码不是持久事实。
 
 ## 源码导航
 

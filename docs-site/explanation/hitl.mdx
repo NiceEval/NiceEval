@@ -34,13 +34,15 @@ Two easy mistakes to avoid:
 ## On the eval side: three actions
 
 ```ts
+import { toolMatch } from "niceeval/expect";
+
 const draft = await t.send("Send a weekly status email to my manager.");
 draft.parked();                                          // ① assert that this turn paused
 
 const req = t.requireInputRequest({ action: "send_email" });   // ② take out the pending request
 
 await t.respond({ request: req, optionId: "approve" });  // ③ answer for the human, emit the next turn
-t.calledTool("send_email", { status: "completed" });
+t.calledTool(toolMatch("send_email", { status: "completed" }));
 ```
 
 - `t.parked()` asserts that the turn really stopped in `waiting`; conversely, `t.succeeded()` fails on a waiting turn — a pause is an explicit state, never mistaken for "it finished".
@@ -63,7 +65,7 @@ Like the rest of [NiceEval](https://niceeval.com/)'s capabilities, HITL is not d
 
 ## Rejection is not a failure
 
-A human veto and a tool error are two different things, and the event stream marks them with different statuses: a call a human rejects gets a tool `operation.finished` with `status: "rejected"`, not `"failed"`. That way `t.noFailedActions()` is not falsely tripped by a legitimate human rejection, and `t.calledTool("deploy", { status: "rejected" })` can precisely assert "the call was made, and a human blocked it" — which is exactly the assertion the rejection-branch eval needs to write.
+A human veto and a tool error are two different things, and the event stream marks them with different statuses: a call a human rejects gets a tool `operation.finished` with `status: "rejected"`, not `"failed"`. That way `t.noFailedActions()` is not falsely tripped by a legitimate human rejection, and `t.calledTool(toolMatch("deploy", { status: "rejected" }))` can precisely assert "the call was made, and a human blocked it" — which is exactly the assertion the rejection-branch eval needs to write.
 
 ## Which agents do not need HITL
 

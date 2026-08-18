@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
+import { equals, toolMatch } from "niceeval/expect";
 
 // calculate 工具经 canUseTool 挂了审批(见 agents/claude-sdk.ts、origin src/backend/agent.ts)。
 // 这条验证批准分支:approve 之后工具正常执行,calledTool 的 status 是 "completed"。
@@ -17,7 +17,7 @@ export default defineEval({
 
     const approved = await t.respond("approve");
     approved.succeeded();
-    t.calledTool("mcp__demo-tools__calculate", { status: "completed" });
+    t.calledTool(toolMatch("mcp__demo-tools__calculate", { status: "completed" }));
     t.messageIncludes(/126/);
   },
 });

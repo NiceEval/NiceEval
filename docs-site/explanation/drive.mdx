@@ -55,7 +55,7 @@ Every `await t.send(...)` is a new turn on the same conversation. Keep each retu
 const draft = await t.send("Draft a follow-up email.");
 draft.succeeded();
 t.check(draft.message, includes("Best"));
-draft.judge.autoevals.closedQA("Is the tone professional?").atLeast(0.6);
+draft.judge.autoevals.closedQA("Is the tone professional?").gate(0.6);
 
 await t.send("Looks good, send it.");
 t.calledTool("send_email");

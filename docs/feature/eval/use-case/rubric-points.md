@@ -8,7 +8,7 @@ Assertion 贡献分数。分数从 0 累加，作者为每个计分项写出分�
 
 ```typescript
 import { defineScoreEval } from "niceeval";
-import { commandSucceeded, includes } from "niceeval/expect";
+import { commandMatch, commandSucceeded, includes } from "niceeval/expect";
 
 export default defineScoreEval({
   description: "安装并启动 DB-GPT",
@@ -19,10 +19,10 @@ export default defineScoreEval({
       .score(1)
       .label("已克隆仓库");
 
-    t.calledTool("shell", { input: { command: /pip install/ } })
+    t.calledTool(commandMatch("pip", { argsStart: ["install"] }))
       .score(1)
       .label("安装依赖");
-    t.calledTool("shell", { input: { command: /dbgpt start/ } })
+    t.calledTool(commandMatch("dbgpt", { argsStart: ["start"] }))
       .score(1)
       .label("启动服务");
 
