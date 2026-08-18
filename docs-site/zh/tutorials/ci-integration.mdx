@@ -50,7 +50,7 @@ with:
 成功建立 Invocation 后，NDJSON 的最后一行包含 receipt。后续脚本可以读取它的 `runIds`，用明确 Run 选择查看或导出报告：
 
 ```sh
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
   --out ./report-site \
   --no-open
 ```

@@ -267,7 +267,7 @@ events.push({
 });
 ```
 
-`commandProjection()` 保留 Adapter 已确认的 original tokens，并调用同一份 `normalizeLogicalCommand()` 生成 `logical-command/v1` 投影。`pnpm exec niceeval show` 和 `npx niceeval show` 因此都能由 `commandMatch("niceeval", { argsStart: ["show"] })` 精确匹配。
+`commandProjection()` 保留 Adapter 已确认的 original tokens，并调用同一份 `normalizeLogicalCommand()` 生成 `logical-command/v1` 投影。`pnpm exec niceeval show` 能由 `commandMatch("niceeval", { argsStart: ["show"] })` 精确匹配。
 
 只有原生协议已经给出 argv，或协议 grammar 能无歧义地产生单一 invocation，才能把 original 标为 available。协议只给 shell source、内容已截断或脱敏时使用 `opaqueCommandProjection(reason)`；能确认不是 command 时使用 `notCommandProjection()`。无法确认 command / not-command 时降低 actions coverage，不能从 tool name、input 或 shell 文本猜测。
 

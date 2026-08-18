@@ -107,8 +107,8 @@ export default defineExperiment({
 
 ```sh
 npx niceeval exp local weather-tool
-npx niceeval show       # 终端读取结果，失败项可继续下钻
-npx niceeval view       # 网页交互浏览
+pnpm exec niceeval show       # 终端读取结果，失败项可继续下钻
+pnpm exec niceeval view       # 网页交互浏览
 ```
 
 如果被测对象是需要隔离工作区的 coding agent（Codex、Claude Code 插件/Skill），评估用例里改用 `t.sandbox.uploadDirectory()` 铺工作区。检查文件变化用 `t.sandbox.fileChanged()` 等归因断言。`t.sandbox.runCommand()` 跑测试。参考独立仓库 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)。

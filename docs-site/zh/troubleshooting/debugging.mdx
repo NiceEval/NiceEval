@@ -7,8 +7,8 @@ description: "根据可见错误、Sample 状态和 rebuild 反馈，定位查�
 先用明确 Run 读取问题，不要从目录名或时间猜测目标。
 
 ```sh
-npx niceeval show --run <run-id>
-npx niceeval view --run <run-id> --no-open
+pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval view --run <run-id> --no-open
 ```
 
 这两条命令从同一范围形成 Sample，并执行同一份 Report。先确定选择是否正确，再检查页面中的度量和问题。

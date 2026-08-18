@@ -173,10 +173,10 @@ export default defineConfig({
 ## 运行、读取和发布
 
 ```sh
-npx niceeval show --run <run-id> --report ./reports/quality.tsx
-npx niceeval show --run <run-id> --report ./reports/quality.tsx --json
-npx niceeval view --run <run-id> --report ./reports/quality.tsx --no-open
-npx niceeval view --run <run-id> --report ./reports/quality.tsx --out ./quality-site
+pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx
+pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx --json
+pnpm exec niceeval view --run <run-id> --report ./reports/quality.tsx --no-open
+pnpm exec niceeval view --run <run-id> --report ./reports/quality.tsx --out ./quality-site
 ```
 
 前三条命令从相同选择形成 Sample，但范围不同：`show` 和 `show --json` 只执行一个 Page，并只捕获该页的 projection closure；`view` 与 `view --out` 枚举全部 Page 后形成完整站点及 `_niceeval/data/projections.json`。该文件的 bytes 进入 revision identity。view 的成功 rebuild 原子替换当前站点；失败时保留上一份可用站点。`--out` 必须指向不存在的目录。

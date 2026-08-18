@@ -7,7 +7,7 @@ description: "用 view --out 导出可离线打开、与源 Record 脱离且包�
 `niceeval view --out <目录>` 从已发布结果形成固定 Sample，再构建完整报告站。它不是把当前浏览器页面保存为文件：`pages` 中显式声明的所有普通 Page、参数 Page 实例、资源和下载都必须先关闭并通过校验；Host 不补建详情页。
 
 ```sh
-npx niceeval view --experiment checkout \
+pnpm exec niceeval view --experiment checkout \
   --out ./report-site \
   --no-open
 ```
@@ -15,7 +15,7 @@ npx niceeval view --experiment checkout \
 需要固定到本次运行时，从 receipt 的 `runIds` 取得 Run ID：
 
 ```sh
-npx niceeval view --run <run-id> \
+pnpm exec niceeval view --run <run-id> \
   --out ./report-site \
   --no-open
 ```
@@ -47,14 +47,14 @@ Analysis 的 `partial`、`empty`、`unsupported` 与 `failed` 是可显示的数
 
 ```sh
 # 成功时写入全新目录
-npx niceeval view --run <run-id> --out ./report-site-2026-08-15
+pnpm exec niceeval view --run <run-id> --out ./report-site-2026-08-15
 ```
 
 ## 在 CI 中生成
 
 ```sh
 npx niceeval exp ci --json
-npx niceeval view --experiment ci --out ./report-site --no-open
+pnpm exec niceeval view --experiment ci --out ./report-site --no-open
 ```
 
 若 CI 必须发布刚完成的那次运行，读取第一条命令最后一行 receipt 的 `runIds`，并使用 `view --run <run-id>`。不要让托管平台读取源 Record；它只应部署生成目录。

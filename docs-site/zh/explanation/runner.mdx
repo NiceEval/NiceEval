@@ -66,8 +66,8 @@ Reporter 只接入当前 Invocation。它可以把当前进程已知的结果交
 Runner 结束后，用明确 Run 选择查看结果：
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
 不带 locator 或 `--run` 的 `show` 和 `view` 读取身份仍匹配当前项目的全部结果；locator 与 `--run` 读取指定历史事实。NiceEval 形成 `Sample`，再按选中 Page 或完整站点所需的 Measure 与领域视图取得闭合值。

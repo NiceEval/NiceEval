@@ -47,7 +47,7 @@ npx niceeval exp checkout --json
 `--json` 输出当前进程的 NDJSON。最后一条 receipt 包含 `invocationId`、`runIds`、开始时间、结束时间和 completion。外部自动化可以保留 receipt，再根据 `runIds` 选择要查看的 Report。
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
 不要把 progress 或 diagnostic 行当作长期结果格式。它们服务当前 Invocation，完整业务事实属于停稳 Record。

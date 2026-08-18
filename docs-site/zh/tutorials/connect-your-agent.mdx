@@ -101,10 +101,10 @@ export default defineEval({
 ```bash
 npx niceeval exp my-agent        # 跑这个 experiment 下的全部 eval
 npx niceeval exp my-agent refund # 只跑 ID 以 refund 开头的
-npx niceeval view --experiment my-agent  # 本地查看器里看结果
+pnpm exec niceeval view --experiment my-agent  # 本地查看器里看结果
 ```
 
-**验证运行结果**：终端会显示动态 dashboard，完成和排队数量在原位更新。失败、错误和 warning 会保留在输出中。运行结束后会打印摘要和 receipt；用其中的 Run ID 也可以执行 `npx niceeval view --run <runId>`，查看每条评估用例逐轮的输入、事件和评分明细。
+**验证运行结果**：终端会显示动态 dashboard，完成和排队数量在原位更新。失败、错误和 warning 会保留在输出中。运行结束后会打印摘要和 receipt；用其中的 Run ID 也可以执行 `pnpm exec niceeval view --run <runId>`，查看每条评估用例逐轮的输入、事件和评分明细。
 
 没跑通时，按报错的位置分三类排查：
 

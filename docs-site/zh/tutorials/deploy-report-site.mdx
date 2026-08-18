@@ -7,7 +7,7 @@ description: "将 view --out 生成的完整自包含报告目录部署到任意
 先生成完整报告站，再部署输出目录。托管平台不读取源 Record，也不需要安装或运行 NiceEval。
 
 ```sh
-npx niceeval view --experiment checkout \
+pnpm exec niceeval view --experiment checkout \
   --out ./report-site \
   --no-open
 ```
@@ -15,7 +15,7 @@ npx niceeval view --experiment checkout \
 要部署一次明确运行，请从 receipt 读取 Run ID：
 
 ```sh
-npx niceeval view --run <run-id> --out ./report-site --no-open
+pnpm exec niceeval view --run <run-id> --out ./report-site --no-open
 ```
 
 ## CI 流程
@@ -30,7 +30,7 @@ GitHub Actions 的构建任务示例：
 
 ```yaml
 - name: 生成报告站
-  run: npx niceeval view --experiment checkout --out ./report-site --no-open
+  run: pnpm exec niceeval view --experiment checkout --out ./report-site --no-open
 
 - name: 上传静态站点目录
   uses: actions/upload-pages-artifact@v3

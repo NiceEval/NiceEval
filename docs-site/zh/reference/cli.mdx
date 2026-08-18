@@ -24,10 +24,10 @@ description: "NiceEval CLI 参考：exp、debug、show、view、init、list 和 
   <Card title="npx niceeval clean" icon="trash">
     删除明确 writer 留下的 Record 临时目录，不删除正式 Run 或 Attempt。
   </Card>
-  <Card title="npx niceeval show [--run]" icon="terminal">
+  <Card title="pnpm exec niceeval show [--run]" icon="terminal">
     在终端执行报告。不带 locator 或 `--run` 的命令读取当前项目结果；精确 Attempt 定位符或 Run ID 用于审计历史。
   </Card>
-  <Card title="npx niceeval view" icon="eye">
+  <Card title="pnpm exec niceeval view" icon="eye">
     构建完整报告站并在浏览器中托管。它与 `show` 共享选择规则，但会枚举全部页面。
   </Card>
 </CardGroup>
@@ -205,7 +205,7 @@ npx niceeval exp compare-models weather-tool
 
 运行命名 experiment，用矩阵比较 agents、models 或 flags。第二个参数开始是评估用例 ID 前缀过滤。
 
-`show` 与 `view` 是顶层命令，应写成 `npx niceeval show`、`npx niceeval view`。误写成 `npx niceeval exp show` / `exp view` 且没有同名 experiment 时，CLI 会在“不存在的实验”错误后提示正确命令。仓库确实存在同名 experiment 时仍按合法 id 执行。
+`show` 与 `view` 是顶层命令，应写成 `pnpm exec niceeval show`、`pnpm exec niceeval view`。误写成 `pnpm exec niceeval exp show` / `exp view` 且没有同名 experiment 时，CLI 会在“不存在的实验”错误后提示正确命令。仓库确实存在同名 experiment 时仍按合法 id 执行。
 
 ## 两种输出：人读文本与 `--json`
 
@@ -227,10 +227,10 @@ npx niceeval exp compare --junit ./artifacts/niceeval-junit.xml
 ## `view`
 
 ```bash
-npx niceeval view
-npx niceeval view --run 01H...
-npx niceeval view @01H...
-npx niceeval view --host 192.168.0.199
+pnpm exec niceeval view
+pnpm exec niceeval view --run 01H...
+pnpm exec niceeval view @01H...
+pnpm exec niceeval view --host 192.168.0.199
 ```
 
 打开本地结果查看器。它和 `show` 共用默认 Report 与选择规则。不带 locator 或 `--run` 的命令读取所有身份仍匹配当前项目的结果；精确 `@<AttemptLocator>` 显示该 Attempt 的默认概览；`--run` 读取指定历史 Run。NiceEval 随后形成固定 Sample、枚举全部 Page 与参数实例，并构建完整站点。
@@ -246,13 +246,13 @@ npx niceeval view --host 192.168.0.199
 ## `show`
 
 ```bash
-npx niceeval show
-npx niceeval show --run 01H...
-npx niceeval show --run 01H... --run 01J...
-npx niceeval show @01H...
-npx niceeval show --run 01H... --page /
-npx niceeval show --run 01H... --report ./reports/summary.tsx --page /overview
-npx niceeval show --run 01H... --report ./reports/summary.tsx --json
+pnpm exec niceeval show
+pnpm exec niceeval show --run 01H...
+pnpm exec niceeval show --run 01H... --run 01J...
+pnpm exec niceeval show @01H...
+pnpm exec niceeval show --run 01H... --page /
+pnpm exec niceeval show --run 01H... --report ./reports/summary.tsx --page /overview
+pnpm exec niceeval show --run 01H... --report ./reports/summary.tsx --json
 ```
 
 `show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择。省略 `--page` 时选择默认 Page；提供 `--page <route>` 时只执行这个精确 route。

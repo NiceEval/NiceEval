@@ -7,8 +7,8 @@ description: "用 show 或 view 从已发布的 Record 选择固定 Sample，并
 运行结束后，从下面两条命令开始：
 
 ```sh
-npx niceeval show
-npx niceeval view
+pnpm exec niceeval show
+pnpm exec niceeval view
 ```
 
 两条命令用相同选择规则形成固定 `Sample`，但执行范围不同。`show` 只读取一个目标 Page；`view` 会先构建完整站点，再把它托管在浏览器中。
@@ -18,7 +18,7 @@ npx niceeval view
 选择一个明确 Run：
 
 ```sh
-npx niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
+pnpm exec niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 ```
 
 普通运行可从 `exp --json` 最后一条 receipt 的 `runIds` 读取 Run ID：
@@ -43,10 +43,10 @@ Sample 记录每个位置的状态：
 ## 在终端读取一个 Page
 
 ```sh
-npx niceeval show --run <run-id>
-npx niceeval show --run <run-id> --page /
-npx niceeval show @<attempt-locator>
-npx niceeval show --run <run-id> --report ./reports/quality.tsx --json
+pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show --run <run-id> --page /
+pnpm exec niceeval show @<attempt-locator>
+pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx --json
 ```
 
 省略 `--page` 时，`show` 使用 Report 的默认可导航页面。提供 `--page` 时，它只 decode、load、render 和关闭这一个精确 route。参数 Page 不会因此调用 `enumerate()`；其它 Page、Analysis 查询和作者 callback 也不会执行。
@@ -69,8 +69,8 @@ JSON 不包含其它 Page、HTML、React tree、站点 identity 或 Record 读�
 ## 在浏览器读取完整站点
 
 ```sh
-npx niceeval view --experiment checkout --no-open
-npx niceeval view --run <run-id> --page / --no-open
+pnpm exec niceeval view --experiment checkout --no-open
+pnpm exec niceeval view --run <run-id> --page / --no-open
 ```
 
 view 在启动 server 前枚举所有显式声明的普通 Page 与参数 Page 的全部实例，并验证路径、链接、资源、下载、`_niceeval/data/projections.json` 和预算。`pages` 是唯一页面集合，Host 不会补建详情 route。`--page` 只决定初始打开的已存在 route，不能缩小构建范围。全站 projections 文件的 bytes 属于 revision identity。

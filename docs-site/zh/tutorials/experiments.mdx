@@ -75,8 +75,8 @@ api-validation   claude-code             pass@3 = 1/3 (33%)    mean 41s
 除了 pass rate，还应该看平均耗时、token、成本和失败类型。
 
 ```bash
-npx niceeval show --experiment models
-npx niceeval view --experiment models
+pnpm exec niceeval show --experiment models
+pnpm exec niceeval view --experiment models
 ```
 
 每个 experiment 用自己的 `evals` 选择评估用例。函数形式会遍历所有已发现的评估用例：
