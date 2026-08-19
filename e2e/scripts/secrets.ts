@@ -66,5 +66,13 @@ export function buildChildEnv(
       env[name] = value;
     }
   }
+  if (
+    thisRepoSecrets.length > 0 &&
+    thisRepoSecrets.every((name) => typeof baseEnv[name] === "string" && baseEnv[name]!.length > 0)
+  ) {
+    env.NICEEVAL_E2E_DECLARED_SECRETS_READY = "1";
+  } else {
+    delete env.NICEEVAL_E2E_DECLARED_SECRETS_READY;
+  }
   return env;
 }

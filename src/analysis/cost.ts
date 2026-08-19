@@ -221,7 +221,7 @@ export interface PricingProfileInput {
   readonly coverage: readonly PricingCoverageInput[];
 }
 
-export type CostProjectionState = "available" | "partial" | "unavailable";
+export type CostProjectionState = "available" | "partial" | "migration-required" | "unavailable";
 export type CostBasis = "observed" | "estimated" | "mixed" | "unavailable";
 
 export interface ProjectedMoney {
@@ -359,7 +359,18 @@ export interface CostProjectionUnavailable extends CostProjectionCommon {
   readonly combined: null;
 }
 
-export type CostProjectionValue = CostProjectionKnown | CostProjectionUnavailable;
+export interface CostProjectionMigrationRequired extends CostProjectionCommon {
+  readonly state: "migration-required";
+  readonly basis: "unavailable";
+  readonly observed: null;
+  readonly estimated: null;
+  readonly combined: null;
+}
+
+export type CostProjectionValue =
+  | CostProjectionKnown
+  | CostProjectionMigrationRequired
+  | CostProjectionUnavailable;
 
 /** A normal MetricValue with a closed cost domain value attached. */
 export interface CostMetricValue extends MetricValue<number> {
@@ -557,7 +568,7 @@ export function isCostProjectionValue(value: unknown): value is CostProjectionVa
     !projection.ledger.every((entry) => isCostLedgerEntry(entry, profile))) {
     return false;
   }
-  if (projection.state === "unavailable") {
+  if (projection.state === "unavailable" || projection.state === "migration-required") {
     return projection.basis === "unavailable" && projection.observed === null &&
       projection.estimated === null && projection.combined === null;
   }

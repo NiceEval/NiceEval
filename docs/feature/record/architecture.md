@@ -606,6 +606,7 @@ ordinary reader 按下表区分不兼容和局部
 |---|---|---|
 | root 或 Core schemaVersion 不匹配 | `migration-required`（有相邻步骤）或 `unsupported-format`；不形成 session | 只运行静态定义的相邻 step |
 | 已知 family 的旧 schemaVersion | `migration-required`；ordinary read 不兼容 | 显式迁移该已知 family 的 definition |
+| 已知 family 的 future/无链 schemaVersion | `unsupported` | `unsupported-format`；提示使用写出该版本的 NiceEval |
 | 未知的独立 future family | 保留 directory、payload 与 blob bytes；不解释，继续读取 Core / 已知 family | 不迁移、也不删除 |
 | current catalog family 缺失 | 按请求得到 `not-recorded` | 不补写历史事实 |
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format`；不得按未知 family 容忍 | 不进入迁移链 |
@@ -624,9 +625,12 @@ converter，也不从当前 worktree、网络或运行时算法补写历史事�
 identity、HEAD、Record path、`recordId`、source inventory 与 NiceEval migration implementation identity。
 
 迁移在 exclusive maintenance lease 下原地逐步执行，完整校验 Core、所有认识的 fixed family 与它们的
-blob closure 后才结束。未知 future family 保持逐字节不动。NiceEval 不创建 staging、backup、rollback、
-root replacement 或恢复日志。中断或失败后，用户以 Git 完整恢复 `.niceeval/record` 的历史 bytes，再重新
-运行 `niceeval migrate`；恢复前不会创建 reader。
+blob closure 后才结束。未知 future family 保持逐字节不动。NiceEval 不创建 staging、backup、rollback 或
+root replacement。
+
+首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。中断或失败后，CLI
+给出限定到 Record root 的精确 Git restore 与 tracked-byte 验证命令；验证 worktree/index 等于该 commit 后
+才清除 sentinel 并重试 `niceeval migrate`。恢复前不会创建 reader。
 
 ## 变化归属
 

@@ -2,7 +2,7 @@
 // regression: memory/results-schema-version-history.md#observability-family-1--2
 
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createE2EContext } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -18,7 +18,7 @@ const e2e = createE2EContext({
     omitTopLevel: [".e2e-artifacts", ".niceeval", "node_modules", "test"],
     links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
   },
-  commands: { candidate: installedNiceeval },
+  commands: { candidate: installedNiceeval, producer: installedNiceeval },
 });
 
 function sha256(path: string): string {
@@ -29,7 +29,7 @@ test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读
   await e2e.case(
     "observability-v1",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ paths, commands: { candidate }, run }) => {
+    async ({ paths, commands: { candidate, producer }, run }) => {
       const recordRoot = join(paths.projectRoot, ".niceeval", "record");
       cpSync(join(paths.sourceRoot, "fixtures", "observability-v1-record"), recordRoot, {
         recursive: true,
@@ -101,6 +101,34 @@ test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读
       expect(blockedNavigation.stdout, blockedNavigation.diagnostic()).not.toContain(
         "source-navigation:invalid",
       );
+      const blockedCost = await candidate.run([
+        "show",
+        "--run",
+        RUN_ID,
+        "--report",
+        "./reports/cost-state.tsx",
+        "--page",
+        "/cost-state",
+      ]);
+      expect(blockedCost.exitCode, blockedCost.diagnostic()).toBe(0);
+      expect(blockedCost.stdout, blockedCost.diagnostic()).toContain("cost:migration-required:0/1");
+
+      const currentRun = await producer.run(["exp", "handoff", "--rerun", "all", "--json"]);
+      expect(currentRun.exitCode, currentRun.diagnostic()).toBe(0);
+      const currentRunId = currentRun.expReceipt().runIds[0]!;
+      const mixedCost = await candidate.run([
+        "show",
+        "--run",
+        RUN_ID,
+        "--run",
+        currentRunId,
+        "--report",
+        "./reports/cost-state.tsx",
+        "--page",
+        "/cost-state",
+      ]);
+      expect(mixedCost.exitCode, mixedCost.diagnostic()).toBe(0);
+      expect(mixedCost.stdout, mixedCost.diagnostic()).toContain("cost:partial:1/2");
 
       for (const args of [
         ["init", "-q"],
@@ -168,11 +196,40 @@ test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读
       expect(idempotent.exitCode, idempotent.diagnostic()).toBe(0);
       expect(idempotent.stdout, idempotent.diagnostic()).toContain("already-current");
 
-      mkdirSync(join(recordRoot, "migration.in-progress"), { recursive: false });
+      writeFileSync(
+        join(recordRoot, "migration.in-progress"),
+        `${JSON.stringify({ restoreCommit: restoreCommit.stdout.trim() })}\n`,
+      );
       const interrupted = await candidate.run(["migrate", "--yes"]);
       expect(interrupted.exitCode, interrupted.diagnostic()).toBe(1);
       expect(interrupted.stderr, interrupted.diagnostic()).toContain("record-migration-interrupted");
-      rmSync(join(recordRoot, "migration.in-progress"), { recursive: true });
+      expect(interrupted.stderr, interrupted.diagnostic()).toContain(
+        `git -C '${recordRoot}' restore --source='${restoreCommit.stdout.trim()}' --staged --worktree -- .`,
+      );
+      const restored = await run([
+        "git",
+        "-C",
+        recordRoot,
+        "restore",
+        `--source=${restoreCommit.stdout.trim()}`,
+        "--staged",
+        "--worktree",
+        "--",
+        ".",
+      ]);
+      expect(restored.exitCode, restored.diagnostic()).toBe(0);
+      const verifiedWorktree = await run([
+        "git", "-C", recordRoot, "diff", "--quiet", restoreCommit.stdout.trim(), "--", ".",
+      ]);
+      expect(verifiedWorktree.exitCode, verifiedWorktree.diagnostic()).toBe(0);
+      const verifiedIndex = await run([
+        "git", "-C", recordRoot, "diff", "--cached", "--quiet", restoreCommit.stdout.trim(), "--", ".",
+      ]);
+      expect(verifiedIndex.exitCode, verifiedIndex.diagnostic()).toBe(0);
+      rmSync(join(recordRoot, "migration.in-progress"));
+      const retried = await candidate.run(["migrate", "--yes"]);
+      expect(retried.exitCode, retried.diagnostic()).toBe(0);
+      expect(retried.stdout, retried.diagnostic()).toContain("Record migration migrated.");
     },
   );
 
@@ -213,13 +270,78 @@ test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读
     ), "utf8"))).toEqual({ family: "niceeval.observability", schemaVersion: 1 });
   });
 
-  for (const [caseName, invalidLabel] of [
-    ["main-session-alias", "session1/turn1"],
-    ["session-overflow", "session999999999999999999999/turn1"],
-    ["turn-overflow", "turn999999999999999999999"],
-    ["leading-zero", "turn01"],
+  await e2e.case("invalid-cross-family-join", async ({ paths, commands: { candidate }, run }) => {
+    const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+    cpSync(join(paths.sourceRoot, "fixtures", "observability-v1-record"), recordRoot, {
+      recursive: true,
+    });
+    const navigationPath = join(
+      recordRoot,
+      "runs",
+      RUN_ID,
+      "attempts",
+      ATTEMPT_ID,
+      "attachments",
+      "niceeval.source-navigation",
+      "payload.json",
+    );
+    const navigation = JSON.parse(readFileSync(navigationPath, "utf8")) as {
+      "rows-data": Array<{ turnId: string }>;
+    };
+    navigation["rows-data"][0]!.turnId = "turn_00000000000000000000000000";
+    writeFileSync(navigationPath, `${JSON.stringify(navigation)}\n`);
+    for (const args of [
+      ["init", "-q"],
+      ["config", "user.email", "e2e@niceeval.local"],
+      ["config", "user.name", "NiceEval E2E"],
+      ["add", "-f", ".niceeval/record"],
+      ["commit", "-qm", "fixture: invalid cross-family join"],
+    ] as const) {
+      const git = await run(["git", ...args]);
+      expect(git.exitCode, git.diagnostic()).toBe(0);
+    }
+
+    const rejected = await candidate.run(["migrate", "--yes"]);
+    expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
+    expect(rejected.stderr, rejected.diagnostic()).toContain("record-migration-invalid");
+    expect(rejected.stderr, rejected.diagnostic()).toContain("Restore command: git -C");
+    expect(existsSync(join(recordRoot, "migration.in-progress"))).toBe(true);
+  });
+
+  await e2e.case("future-known-family", async ({ paths, commands: { candidate } }) => {
+    const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+    cpSync(join(paths.sourceRoot, "fixtures", "observability-v1-record"), recordRoot, {
+      recursive: true,
+    });
+    writeFileSync(
+      join(
+        recordRoot,
+        "runs",
+        RUN_ID,
+        "attempts",
+        ATTEMPT_ID,
+        "attachments",
+        "niceeval.observability",
+        "attachment.json",
+      ),
+      '{"family":"niceeval.observability","schemaVersion":3}\n',
+    );
+
+    const rejected = await candidate.run(["migrate", "--yes"]);
+    expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
+    expect(rejected.stderr, rejected.diagnostic()).toContain("record-format-unsupported");
+    expect(rejected.stderr, rejected.diagnostic()).toContain(
+      "Install a NiceEval version that supports this Record format.",
+    );
+    expect(rejected.stderr, rejected.diagnostic()).not.toContain("record-migration-invalid");
+    expect(existsSync(join(recordRoot, "migration.in-progress"))).toBe(false);
+  });
+
+  for (const [caseName, historicalLabel] of [
+    ["historical-leading-zero-label", "turn01"],
+    ["historical-large-integer-label", "turn999999999999999999999"],
   ] as const) {
-    await e2e.case(caseName, async ({ paths, commands: { candidate } }) => {
+    await e2e.case(caseName, async ({ paths, commands: { candidate }, run }) => {
       const recordRoot = join(paths.projectRoot, ".niceeval", "record");
       cpSync(join(paths.sourceRoot, "fixtures", "observability-v1-record"), recordRoot, {
         recursive: true,
@@ -240,27 +362,37 @@ test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读
         "attachments",
         "niceeval.observability",
       );
-      writeFileSync(
-        join(attemptAttachment, "attachment.json"),
-        '{"family":"niceeval.observability","schemaVersion":2}\n',
-      );
-      writeFileSync(
-        join(runAttachment, "attachment.json"),
-        '{"family":"niceeval.observability","schemaVersion":2}\n',
-      );
       const payloadPath = join(attemptAttachment, "payload.json");
       const payload = JSON.parse(readFileSync(payloadPath, "utf8")) as {
         "timing-data": { intervals: Array<{ phase: string; label: string }> };
       };
       const send = payload["timing-data"].intervals.find((interval) => interval.phase === "agent.send");
       expect(send).toBeDefined();
-      send!.label = invalidLabel;
+      send!.label = historicalLabel;
       writeFileSync(payloadPath, `${JSON.stringify(payload)}\n`);
+      const payloadBefore = sha256(payloadPath);
 
-      const shown = await candidate.run(["show", "--run", RUN_ID, "--json"]);
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.stdout, shown.diagnostic()).toContain("niceeval.attempt-latency-ms is invalid");
-      expect(shown.stdout, shown.diagnostic()).not.toContain('"state":"migration-required"');
+      for (const args of [
+        ["init", "-q"],
+        ["config", "user.email", "e2e@niceeval.local"],
+        ["config", "user.name", "NiceEval E2E"],
+        ["add", "-f", ".niceeval/record"],
+        ["commit", "-qm", `fixture: ${caseName}`],
+      ] as const) {
+        const git = await run(["git", ...args]);
+        expect(git.exitCode, git.diagnostic()).toBe(0);
+      }
+
+      const migrated = await candidate.run(["migrate", "--yes"]);
+      expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
+      expect(sha256(payloadPath)).toBe(payloadBefore);
+      expect(JSON.parse(readFileSync(payloadPath, "utf8"))["timing-data"].intervals).toContainEqual(
+        expect.objectContaining({ phase: "agent.send", label: historicalLabel }),
+      );
+      expect(JSON.parse(readFileSync(join(runAttachment, "attachment.json"), "utf8"))).toEqual({
+        family: "niceeval.observability",
+        schemaVersion: 2,
+      });
     });
   }
 });

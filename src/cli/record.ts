@@ -67,7 +67,7 @@ function recordErrorNextStep(code: string): string | undefined {
     case "record-migration-required":
       return "Run: niceeval migrate";
     case "record-migration-interrupted":
-      return "Restore the Record from Git; do not rerun migrate on mixed bytes.";
+      return "Restore the complete Record from the recorded Git commit; do not rerun migrate on mixed bytes.";
     case "record-migration-plan-stale":
       return "Review the new migration plan and rerun migrate.";
     case "record-migration-git-restore-required":
@@ -84,13 +84,42 @@ function recordErrorNextStep(code: string): string | undefined {
   }
 }
 
-function recordErrorOutput(error: unknown, stdout = ""): RecordCliCommandOutput {
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function recoveryCommands(restoreCommit: string, recordPath: string): string {
+  const root = shellQuote(recordPath);
+  const commit = shellQuote(restoreCommit);
+  const sentinel = shellQuote(resolve(recordPath, "migration.in-progress"));
+  return [
+    `Restore command: git -C ${root} restore --source=${commit} --staged --worktree -- .`,
+    `Verify command: git -C ${root} diff --quiet ${commit} -- . && git -C ${root} diff --cached --quiet ${commit} -- .`,
+    `Clear sentinel after verification: rm -f -- ${sentinel}`,
+  ].join("\n") + "\n";
+}
+
+function interruptedRecovery(error: unknown, recordPath: string | undefined): string {
+  if (typeof error !== "object" || error === null || recordPath === undefined) return "";
+  const restoreCommit = Reflect.get(error, "restoreCommit");
+  return typeof restoreCommit === "string" && /^[0-9a-f]{40,64}$/.test(restoreCommit)
+    ? recoveryCommands(restoreCommit, recordPath)
+    : "";
+}
+
+function recordErrorOutput(
+  error: unknown,
+  stdout = "",
+  recordPath?: string,
+): RecordCliCommandOutput {
   const code = recordErrorCode(error);
   const next = recordErrorNextStep(code);
   return output({
     exitCode: 1,
     stdout,
-    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}`,
+    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}${
+      code === "record-migration-interrupted" ? interruptedRecovery(error, recordPath) : ""
+    }`,
   });
 }
 
@@ -98,13 +127,16 @@ function recordMigrationErrorOutput(
   error: unknown,
   stdout: string,
   restoreCommit: string,
+  recordPath: string,
 ): RecordCliCommandOutput {
   const code = recordErrorCode(error);
   const next = recordErrorNextStep(code);
   return output({
     exitCode: 1,
     stdout,
-    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}Restore commit: ${restoreCommit}\n`,
+    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}Restore commit: ${restoreCommit}\n${
+      recoveryCommands(restoreCommit, recordPath)
+    }`,
   });
 }
 
@@ -153,6 +185,7 @@ function cleanCommand(input: {
 
 function migrateCommand(input: {
   readonly root: RecordRoot;
+  readonly recordPath: string;
   readonly yes: boolean;
 }) {
   return Effect.scoped(Effect.gen(function* () {
@@ -187,7 +220,7 @@ function migrateCommand(input: {
     const migrated = yield* Effect.either(session.applyMigrate(plan));
     if (Either.isLeft(migrated)) {
       return plan.state === "migration-required" && plan.backup.state === "git-restore-point"
-        ? recordMigrationErrorOutput(migrated.left, planText, plan.backup.commit)
+        ? recordMigrationErrorOutput(migrated.left, planText, plan.backup.commit, input.recordPath)
         : recordErrorOutput(migrated.left, planText);
     }
     const receipt = migrated.right;
@@ -214,8 +247,9 @@ export function runRecordCliCommand(
       Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error))),
     );
   }
-  return migrateCommand({ root: root.right, yes: input.yes }).pipe(
+  const recordPath = resolve(input.cwd, input.record ?? ".niceeval/record");
+  return migrateCommand({ root: root.right, recordPath, yes: input.yes }).pipe(
     Effect.provide(NodeRecordCliLive),
-    Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error))),
+    Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error, "", recordPath))),
   );
 }

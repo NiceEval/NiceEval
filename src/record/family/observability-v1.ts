@@ -2,33 +2,22 @@ import { Either, Schema } from "effect";
 import { RecordExactParseOptions } from "../codec/core.ts";
 import type { RecordAttachmentMaintenanceFacet } from "../definition/attachment.ts";
 import {
-  AttemptObservabilityAttachmentSchema,
+  AttemptObservabilityAttachmentV1Schema,
   RunObservabilityAttachmentSchema,
 } from "./observability.ts";
 
 const ObservabilityV1PayloadSchema = Schema.Union(
-  AttemptObservabilityAttachmentSchema,
+  AttemptObservabilityAttachmentV1Schema,
   RunObservabilityAttachmentSchema,
 );
 
-/**
- * v1 differs only in that every timing label was a SafeIdentifier. The v2
- * decoder accepts that complete subset; reject the one v2-only slash form so
- * maintenance still proves the original bytes against the historical shape.
- */
+/** v1 differs only in that every timing label was a SafeIdentifier. */
 function decodeObservabilityV1(value: unknown): unknown {
   const decoded = Schema.decodeUnknownEither(
     ObservabilityV1PayloadSchema,
     RecordExactParseOptions,
   )(value);
   if (Either.isLeft(decoded)) throw new Error("Observability v1 payload is invalid");
-  if (
-    decoded.right.timing.intervals.some(
-      (interval) => interval.phase === "agent.send" && interval.label.includes("/"),
-    )
-  ) {
-    throw new Error("Observability v1 agent.send labels cannot contain a slash");
-  }
   // Historical validation must not normalize, clone, or project the durable
   // object. The only v1 -> v2 write is the envelope version; returning the
   // original value lets the adjacent step prove that invariant explicitly.

@@ -182,7 +182,7 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--rerun` | boolean | `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 |
 | `--early-exit` / `--no-early-exit` | boolean | 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 |
 | `--open` / `--no-open` | boolean | `view` 命令专用:启动后自动打开浏览器(默认行为)。 |
-| `--yes` | boolean | `clean` / `migrate` 专用：确认不可逆 maintenance 动作或没有 Git restore point 的 migration。 |
+| `--yes` | boolean | `clean` / `migrate` 专用：确认不可逆 maintenance 动作或在 clean Git restore point 下执行 migration。 |
 | `--help` | boolean | 打印用法说明并退出。 |
 | `--version` | boolean | 打印 niceeval 的版本号并退出。 |
 

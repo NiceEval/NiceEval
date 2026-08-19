@@ -663,13 +663,6 @@ const CanonicalTurnLabelSchema = Schema.String.pipe(
   ),
 );
 
-const NonCoordinateStableLabelSchema = StableLabelSchema.pipe(
-  Schema.filter(
-    (value) => !/^(?:turn|session)\d/.test(value),
-    { identifier: "NonCoordinateStableLabel" },
-  ),
-);
-
 const AttemptTimingIntervalBase = {
   intervalId: IntervalIdSchema,
   startOffsetMs: NonNegativeSafeIntegerSchema,
@@ -682,7 +675,7 @@ const AttemptTimingIntervalBase = {
 const AttemptTimingIntervalStructuralSchema = Schema.Struct({
   ...AttemptTimingIntervalBase,
   phase: AttemptTimingPhaseSchema,
-  label: Schema.Union(NonCoordinateStableLabelSchema, CanonicalTurnLabelSchema),
+  label: Schema.Union(StableLabelSchema, CanonicalTurnLabelSchema),
 });
 
 export const AttemptTimingIntervalSchema = AttemptTimingIntervalStructuralSchema.pipe(

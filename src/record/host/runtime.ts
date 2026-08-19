@@ -302,9 +302,10 @@ function handleInvalid(): RecordHandleInvalid {
   return new RecordHandleInvalid({ code: "record-handle-invalid" });
 }
 
-function migrationInterrupted(): RecordMigrationInterruptedState {
+function migrationInterrupted(restoreCommit?: string): RecordMigrationInterruptedState {
   return new RecordMigrationInterruptedState({
     code: "record-migration-interrupted",
+    ...(restoreCommit === undefined ? {} : { restoreCommit }),
   });
 }
 
@@ -2682,6 +2683,12 @@ function planAttachmentMigration(input: {
         targets.push(migrationTarget(location));
         continue;
       }
+      if (read.state === "unsupported") {
+        return yield* Effect.fail(new RecordFormatUnsupported({
+          code: "record-format-unsupported",
+          format: `${read.family}@${read.schemaVersion}`,
+        }));
+      }
       return yield* Effect.fail(migrationInvalid(location.descriptor.family));
     }
     return Object.freeze(targets);
@@ -2813,7 +2820,9 @@ function validateCurrentKnownAttachments(input: {
         descriptor: location.descriptor,
         payload: read.value,
       });
-      if (!joined) return yield* Effect.fail(migrationInvalid(location.descriptor.family));
+      if (joined.state !== "joined") {
+        return yield* Effect.fail(migrationInvalid(location.descriptor.family));
+      }
     }
   });
 }
@@ -2831,7 +2840,8 @@ function openMaintenance(input: {
     const git = yield* RecordGit;
     yield* coordination.enterRecordMaintenance(input.root);
     if (yield* fileSystem.migrationSentinelPresent(input.root)) {
-      return yield* Effect.fail(migrationInterrupted());
+      const restoreCommit = yield* fileSystem.readMigrationSentinelRestoreCommit(input.root);
+      return yield* Effect.fail(migrationInterrupted(restoreCommit));
     }
     const inspect = () => currentFormatInspection(fileSystem, input.root);
     const planMigrate = () => migrationPlan({ fileSystem, root: input.root, git });
@@ -2863,7 +2873,7 @@ function openMaintenance(input: {
 
           // The sentinel is the first portable write. Any later failure or
           // interruption intentionally leaves it behind for Git recovery.
-          yield* fileSystem.createMigrationSentinel(input.root);
+          yield* fileSystem.createMigrationSentinel(input.root, currentPlan.backup.commit);
           for (const target of currentPlan.attachments) {
             yield* migrateObservabilityAttachment({ fileSystem, root: input.root, target });
           }

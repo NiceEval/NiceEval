@@ -47,6 +47,8 @@ export function formatCostProjectionAmountText(
       return `$${cell.projection.combined.amount}`;
     case "unavailable":
       return localeText(locale, "costProjection.unavailable");
+    case "migration-required":
+      return localeText(locale, "costProjection.migrationRequired");
     default: {
       const exhaustive: never = cell.projection;
       return exhaustive;
@@ -64,6 +66,12 @@ export function formatCostProjectionCellText(
   locale: ReportLocale,
 ): CostProjectionCellText {
   const projection = cell.projection;
+  if (projection.state === "migration-required") {
+    return Object.freeze({
+      text: localeText(locale, "costProjection.migrationRequired"),
+      detail: formatCostProjectionCellDetail(cell, locale),
+    });
+  }
   if (projection.state === "unavailable" || projection.combined === null) {
     return Object.freeze({
       text: localeText(locale, "costProjection.unavailable"),

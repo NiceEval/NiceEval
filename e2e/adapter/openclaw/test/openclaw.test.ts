@@ -8,6 +8,7 @@ import {
   assertExpEvalOutcomes,
   command,
   only,
+  requireDeclaredLiveSecrets,
   type ExpEvalEvent,
   type ExpEvalOutcomeExpectation,
   type ProcessReceipt,
@@ -25,21 +26,9 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "ci", evalId: "usage/tokens", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
-const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
-
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 let run!: ProcessReceipt;
 let evalEvents!: ExpEvalEvent[];
-
-function requireLiveSecrets(): void {
-  const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
-  if (missing.length > 0) {
-    throw new Error(
-      `[configuration] live openclaw E2E requires ${missing.join(", ")}; ` +
-        "the live test is not skipped when secrets are absent",
-    );
-  }
-}
 
 async function requireDocker(): Promise<void> {
   const docker = await command(["docker"]).run(["info"]);
@@ -52,7 +41,7 @@ async function requireDocker(): Promise<void> {
 }
 
 beforeAll(async () => {
-  requireLiveSecrets();
+  requireDeclaredLiveSecrets("openclaw");
   await requireDocker();
 
   rmSync(".niceeval", { recursive: true, force: true });

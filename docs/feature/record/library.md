@@ -370,8 +370,8 @@ schemaVersion `1` 的 current root / Core 没有已发布 predecessor。所有 f
 root / Core 不相容时，`inspect()` 返回 `migration-required` 或 `unsupported-format`。已知 family 的旧
 schemaVersion 同样需要显式 migration。
 
-未知 independent future family 保持 bytes 不动，不进入 migration plan。未发布的斜杠版本草案返回
-`unsupported-format`，不会被猜测成迁移源。
+未知 independent future family 保持 bytes 不动，不进入 migration plan。known family 的 future/无链版本和
+未发布的斜杠版本草案返回 `unsupported-format`，不会被猜测成损坏数据或 migration source。
 
 Observability schemaVersion `2` 同批在 maintenance facet 内提供固定 `1 → 2` step。它只从已保存的两个
 owner payload 和 own blob closure 形成目标 bytes，不能读取当前 worktree、网络、第三方 converter 或运行时
@@ -383,10 +383,11 @@ Record。
 
 迁移只允许 Record 已纳入 Git 且 worktree/index 干净时执行。它在 exclusive maintenance lease 下原地
 逐步改写，并完整校验 current Core、认识的 fixed family 与 blob closure。未知 independent future family
-保持原有 directory 与 bytes。NiceEval 不创建 staging、backup、rollback、root replacement 或恢复日志。
+保持原有 directory 与 bytes。NiceEval 不创建 staging、backup、rollback 或 root replacement。
 
-失败或中断后，用户通过 Git 完整恢复 `.niceeval/record`，再重新形成计划；恢复完成前 `current.openRead()`
-不产生 session。`clean` 同样取得 maintenance lease。它只删除取得 lease 后重验仍没有 `complete` 的目录；
+首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。失败或中断后，CLI 给出限定到 Record
+root 的精确 Git restore 与 tracked-byte 验证命令；验证 worktree/index 都等于该 commit 后才清除 sentinel，
+再重新形成计划。恢复完成前 `current.openRead()` 不产生 session。`clean` 同样取得 maintenance lease。它只删除取得 lease后重验仍没有 `complete` 的目录；
 已封口但 Core invalid 的 Run 不是 clean 的对象。
 
 ## Typed error、Cause 与 Stream 边界

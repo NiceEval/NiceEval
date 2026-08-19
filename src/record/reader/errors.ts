@@ -36,6 +36,7 @@ export class RecordMigrationInterruptedState extends Schema.TaggedError<RecordMi
   "@niceeval/record/RecordMigrationInterruptedState",
 )("RecordMigrationInterruptedState", {
   code: Schema.Literal("record-migration-interrupted"),
+  restoreCommit: Schema.optional(Schema.String),
 }) {}
 
 /** A previously shown migration plan no longer matches the leased Record. */

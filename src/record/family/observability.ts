@@ -507,17 +507,9 @@ const CanonicalTurnLabelSchema = Schema.String.pipe(
   ),
 );
 
-const NonCoordinateSafeLabelSchema = SafeIdentifierSchema.pipe(
-  Schema.filter(
-    (value) => !/^(?:turn|session)\d/.test(value),
-    {
-      identifier: "NonCoordinateSafeLabel",
-      description: "an opaque label that cannot masquerade as a turn coordinate",
-    },
-  ),
-);
-
-function attemptTimingCollectionSchema() {
+function attemptTimingCollectionSchema<Label extends Schema.Schema.AnyNoContext>(
+  agentSendLabel: Label,
+) {
   const intervalBase = {
     intervalId: SafeIdentifierSchema,
     startOffsetMs: NonNegativeSafeIntegerSchema,
@@ -529,7 +521,7 @@ function attemptTimingCollectionSchema() {
     Schema.Struct({
       ...intervalBase,
       phase: Schema.Literal("agent.send"),
-      label: Schema.Union(NonCoordinateSafeLabelSchema, CanonicalTurnLabelSchema),
+      label: agentSendLabel,
     }),
     Schema.Struct({
       ...intervalBase,
@@ -557,7 +549,11 @@ function attemptTimingCollectionSchema() {
   );
 }
 
-export const AttemptTimingCollectionSchema = attemptTimingCollectionSchema();
+export const AttemptTimingCollectionSchema = attemptTimingCollectionSchema(
+  Schema.Union(SafeIdentifierSchema, CanonicalTurnLabelSchema),
+);
+/** Exact historical v1 timing shape: every label was a SafeIdentifier. */
+export const AttemptTimingCollectionV1Schema = attemptTimingCollectionSchema(SafeIdentifierSchema);
 export const RunTimingCollectionSchema = timingCollectionSchema(RunTimingPhaseSchema);
 
 const SourceFrameSchema = Schema.Struct({
@@ -670,6 +666,28 @@ export const AttemptObservabilityAttachmentSchema = Schema.Struct({
     Schema.fromKey("usage-data"),
   ),
   timing: Schema.propertySignature(AttemptTimingCollectionSchema).pipe(
+    Schema.fromKey("timing-data"),
+  ),
+  diagnostics: Schema.propertySignature(AttemptDiagnosticsCollectionSchema).pipe(
+    Schema.fromKey("diagnostics-data"),
+  ),
+});
+
+/** Exact historical v1 payload; only the agent.send label domain differs from v2. */
+export const AttemptObservabilityAttachmentV1Schema = Schema.Struct({
+  owner: Schema.propertySignature(Schema.Literal("attempt")).pipe(
+    Schema.fromKey("owner-kind"),
+  ),
+  conversation: Schema.propertySignature(AttemptConversationCollectionSchema).pipe(
+    Schema.fromKey("conversation-data"),
+  ),
+  commands: Schema.propertySignature(AttemptCommandsCollectionSchema).pipe(
+    Schema.fromKey("commands-data"),
+  ),
+  usage: Schema.propertySignature(AttemptUsageCollectionSchema).pipe(
+    Schema.fromKey("usage-data"),
+  ),
+  timing: Schema.propertySignature(AttemptTimingCollectionV1Schema).pipe(
     Schema.fromKey("timing-data"),
   ),
   diagnostics: Schema.propertySignature(AttemptDiagnosticsCollectionSchema).pipe(

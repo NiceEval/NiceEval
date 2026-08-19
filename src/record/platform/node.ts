@@ -47,6 +47,7 @@ import {
 const DEFAULT_STREAM_CHUNK_BYTES = 64 * 1024;
 const GIT_MAX_OUTPUT_BYTES = 1024 * 1024;
 const GIT_MAX_STATUS_ENTRIES = 10_000;
+const MIGRATION_SENTINEL_MAXIMUM_BYTES = 256;
 
 function nodeErrorCode(cause: unknown): string | undefined {
   if (typeof cause !== "object" || cause === null) {
@@ -706,14 +707,36 @@ const nodeFileSystem: RecordFileSystemService = {
       (kind) => kind !== "missing",
     ),
 
-  createMigrationSentinel: (root) =>
+  createMigrationSentinel: (root, restoreCommit) =>
     Effect.uninterruptible(
       nodeFileSystem.writeFile({
         file: recordPortablePath(root, "migration.in-progress"),
-        bytes: new Uint8Array(),
-        maximumBytes: 0,
+        bytes: new TextEncoder().encode(`${JSON.stringify({ restoreCommit })}\n`),
+        maximumBytes: MIGRATION_SENTINEL_MAXIMUM_BYTES,
         mode: "exclusive",
       }),
+    ),
+
+  readMigrationSentinelRestoreCommit: (root) =>
+    Effect.map(
+      nodeFileSystem.readFile({
+        file: recordPortablePath(root, "migration.in-progress"),
+        maximumBytes: MIGRATION_SENTINEL_MAXIMUM_BYTES,
+      }),
+      (bytes) => {
+        if (bytes === undefined) return undefined;
+        try {
+          const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+          if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+          const keys = Object.keys(value);
+          const restoreCommit = Reflect.get(value, "restoreCommit");
+          return keys.length === 1 && typeof restoreCommit === "string" && /^[0-9a-f]{40,64}$/.test(restoreCommit)
+            ? restoreCommit
+            : undefined;
+        } catch {
+          return undefined;
+        }
+      },
     ),
 
   removeMigrationSentinel: (root) =>
