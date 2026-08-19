@@ -32,6 +32,8 @@
 
 确定性 Direct Agent 真实执行一次 `setup` 与一次 `send`。owner 从安装后 CLI 运行 `timing` Experiment，
 再对其唯一 Attempt 执行 `niceeval show @<locator> --timing --json`。
+返回文档必须只有该 Attempt 一项，其 locator 等于 Eval event 的 locator，origin Run 等于本次
+Experiment receipt 的唯一 Run；不能从额外 entry 中宽松挑一项继续断言。
 
 公开 receipt 必须各有一个 completed 的 `eval.run` / `eval.run`、`attempt.setup` / `agent.setup` 与
 `agent.send` / `turn1`。前两项是各自 lifecycle phase 的 root；`agent.send` 的 `parentIntervalId`
