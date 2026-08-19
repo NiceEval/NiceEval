@@ -8,6 +8,7 @@ import type { Argv } from "./process.js";
 export const DEFAULT_GRACE_MS = 2000;
 
 const PROCESS_GROUP_POLL_MS = 25;
+const PROCESS_GROUP_TERMINAL_CONFIRMATIONS = 3;
 
 function linuxProcessGroupHasLiveMembers(groupId: number): boolean | undefined {
   if (process.platform !== "linux") return undefined;
@@ -187,13 +188,6 @@ export class ProcessHandle {
     if (!this.processGroup || this.pid === undefined) {
       return false;
     }
-    // A zombie has already exited and cannot retain ports, files, or compute.
-    // Container PID 1 may reap it late (or never), while kill(-pgid, 0) keeps
-    // reporting that historical group as present. On Linux, inspect /proc so
-    // cleanup waits only for members that can still run; retain the portable,
-    // conservative signal probe everywhere else.
-    const hasLiveLinuxMember = linuxProcessGroupHasLiveMembers(this.pid);
-    if (hasLiveLinuxMember !== undefined) return hasLiveLinuxMember;
     try {
       process.kill(-this.pid, 0);
       return true;
@@ -204,9 +198,23 @@ export class ProcessHandle {
     }
   }
 
-  private async waitForOwnedGroupExit(timeoutMs: number): Promise<boolean> {
+  private async waitForOwnedGroupExit(
+    timeoutMs: number,
+    acceptConfirmedNoLiveMembers = false,
+  ): Promise<boolean> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
+    let terminalConfirmations = 0;
     while (this.ownedGroupExists()) {
+      if (
+        acceptConfirmedNoLiveMembers
+        && this.pid !== undefined
+        && linuxProcessGroupHasLiveMembers(this.pid) === false
+      ) {
+        terminalConfirmations += 1;
+        if (terminalConfirmations >= PROCESS_GROUP_TERMINAL_CONFIRMATIONS) return true;
+      } else {
+        terminalConfirmations = 0;
+      }
       const remaining = deadline - Date.now();
       if (remaining <= 0) return false;
       await new Promise<void>((resolve) => {
@@ -225,7 +233,11 @@ export class ProcessHandle {
     this.sendTermination("SIGTERM");
     if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
       this.sendTermination("SIGKILL");
-      if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
+      // Signal 0 keeps seeing a zombie-only group until container PID 1 reaps
+      // it. Only after KILL has made the group unable to fork do three bounded
+      // /proc snapshots count as terminal evidence. A single snapshot can race
+      // with a child that forks and exits while the directory is being read.
+      if (!(await this.waitForOwnedGroupExit(this.graceMs, true))) {
         throw new Error(
           `process group ${this.pid} still exists after SIGTERM and SIGKILL`,
         );

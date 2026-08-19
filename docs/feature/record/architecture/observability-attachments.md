@@ -410,8 +410,14 @@ duration unavailable。
 v1 不为 Runner 的内部 lifecycle 增加新的持久 phase：`sandbox.queue` 投影为 `attempt.setup`，
 `workspace.diff` 与 `telemetry.collect` 投影为 `attempt.teardown`，同时保留原稳定 lifecycle label。因此这三类
 正常完成的阶段不会单独把 timing collection 变成 partial。`workspace.diff.export` activity 同样投影为
-`attempt.teardown`。标准 activity 的人读 label 不符合 `StableLabel` 时，持久值回退为它自己的稳定 key；
-未知 activity 仍使 collection partial。
+`attempt.teardown`。
+
+`agent.turn` 的持久 timing label 从 session / turn coordinate 形成。主 session 写 `turnN`，额外 session 写
+`sessionN.turnN`。这里的点号是 Observability v1 `StableLabel` 对 send window `sessionN/turnN` 的兼容编码，
+不改变 window ID。
+
+其它标准 activity 的人读 label 不符合 `StableLabel` 时，持久值回退为它自己的稳定 key。未知 activity 仍使
+collection partial。
 
 `judge.precheck`、`experiment.setup`、`experiment.teardown` 与 `agent.run` 都是已知的 Attempt 域外 phase。
 writer 在原始 Runner clock 中继续累计它们，以便换算 child activity。持久 Attempt clock 则跳过它们，

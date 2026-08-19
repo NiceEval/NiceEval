@@ -30,6 +30,11 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () =
         evalId: "context-scopes",
         verdict: "passed",
       });
+      const timing = await niceeval.run(["show", attemptEvent.locator!, "--timing"]);
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+session2\.turn1\b/);
+      expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+session2\.turn2\b/);
+      expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+session3\.turn1\b/);
     },
   );
 });

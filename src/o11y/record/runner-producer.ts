@@ -1752,7 +1752,10 @@ function timingActivityProjection(
     activity.key === "agent.turn"
       && activity.sessionIndex !== undefined
       && activity.turnIndex !== undefined
-      ? formatTurnLabel(activity.sessionIndex, activity.turnIndex)
+      // Window labels use `session2/turn1`, but Observability v1 StableLabel
+      // deliberately excludes `/`. Preserve the same coordinates with `.` so
+      // old v1 readers accept the value instead of falling back to agent.turn.
+      ? formatTurnLabel(activity.sessionIndex, activity.turnIndex).replace("/", ".")
       : activity.label;
   const label = stableLabel(canonicalLabel) ?? stableLabel(activity.key);
   if (label === undefined) return undefined;

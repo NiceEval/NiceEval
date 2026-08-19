@@ -9,6 +9,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 
+const PROCESS_GROUP_TERMINAL_CONFIRMATIONS = 3;
+
 export type OwnedProcessOutput = "capture" | "inherit";
 export type OwnedTermination = "timeout" | "cancelled";
 
@@ -282,12 +284,6 @@ class ActiveOwnedProcess {
 
   private groupPresence(): "alive" | "gone" | "unknown" {
     if (!this.processGroupOwned || this.groupId === undefined) return "unknown";
-    // A zombie cannot retain runtime resources, but container PID 1 may leave
-    // it visible indefinitely. Treat a Linux group with no non-zombie members
-    // as terminal; otherwise kill(-pgid, 0) would make cleanup impossible to
-    // confirm even after KILL. Other hosts keep the conservative probe below.
-    const hasLiveLinuxMember = linuxProcessGroupHasLiveMembers(this.groupId);
-    if (hasLiveLinuxMember !== undefined) return hasLiveLinuxMember ? "alive" : "gone";
     try {
       // Signal 0 is a presence/permission probe. It targets only the negative
       // pid of the detached group created by this object; no caller-supplied
@@ -299,11 +295,25 @@ class ActiveOwnedProcess {
     }
   }
 
-  private async waitForGroupGone(timeoutMs: number): Promise<"alive" | "gone" | "unknown"> {
+  private async waitForGroupGone(
+    timeoutMs: number,
+    acceptConfirmedNoLiveMembers = false,
+  ): Promise<"alive" | "gone" | "unknown"> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
+    let terminalConfirmations = 0;
     while (true) {
       const presence = this.groupPresence();
       if (presence !== "alive") return presence;
+      if (
+        acceptConfirmedNoLiveMembers
+        && this.groupId !== undefined
+        && linuxProcessGroupHasLiveMembers(this.groupId) === false
+      ) {
+        terminalConfirmations += 1;
+        if (terminalConfirmations >= PROCESS_GROUP_TERMINAL_CONFIRMATIONS) return "gone";
+      } else {
+        terminalConfirmations = 0;
+      }
       const remaining = deadline - Date.now();
       if (remaining <= 0) return "alive";
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(100, remaining)));
@@ -377,7 +387,10 @@ class ActiveOwnedProcess {
     // forwarded cancellation/timeout grace. `forceKill` still targets exactly
     // this object's negative group id and is idempotent.
     this.forceKill();
-    const afterKill = await this.waitForGroupGone(this.graceMs);
+    // KILL prevents any surviving member from forking after the signal. Linux
+    // can then close a zombie-only group after three consecutive /proc scans;
+    // one scan alone can miss a concurrently created grandchild.
+    const afterKill = await this.waitForGroupGone(this.graceMs, true);
     if (afterKill === "gone") {
       this.markGroupGone(`owned process group ${this.groupId} required KILL after leader close`);
       return;
