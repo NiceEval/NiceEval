@@ -105,20 +105,23 @@ type ExpEventV2 =
   | ProgressEventV2
   | SandboxReuseFinalEvent
   | ExperimentScopedExpEventV2
+  | KeptEventV1
   | GlobalExpEventV1;
 ```
 
 `ExperimentPlanRowV4` 与各个 `*EventV1` 名称表示 v4/v1 中同名 variant 的完整既有字段；上面的 `Omit` / 交叉
 只替换或增加展示字段，不能删除、重命名或放宽其它字段。
 
-`GlobalExpEventV1` 穷尽 start 之外没有单个 Experiment subject 的 Judge precheck、interrupted、reporter error
-与 receipt。`ProgressEventV2` 和 `SandboxReuseFinalEvent` 的精确增量由
+`KeptEventV1` 保留 v1 的 `event`、`locator`、`evalId`、`attempt`、`verdict`、`provider`、`sandboxId`
+与 `enter` 完整字段。它报告已经原子登记的 Sandbox 现场，没有可审计的单个 Experiment subject，因此不补
+`experimentId` 或 `displayName`。`GlobalExpEventV1` 穷尽 start 之外没有单个 Experiment subject 的 Judge
+precheck、interrupted、reporter error 与 receipt。`ProgressEventV2` 和 `SandboxReuseFinalEvent` 的精确增量由
 [Experiments CLI](../cli.md#sandbox-复用汇总)唯一拥有。
 
 首行只能是 `ExpStreamStartEventV2`。其后只能是同一 `ExpEventV2` 联合的非 start variant，最后恰好一条 receipt。
 
 `niceeval.exp` v2 的 failure、error、eval、budget、Experiment hook、lock-wait，以及带 Experiment identity 的
-notice / warning 都使用 `ExperimentOutputFieldsV1`。start、全局 progress、Judge precheck、interrupted、
+notice / warning 都使用 `ExperimentOutputFieldsV1`。start、全局 progress、kept、Judge precheck、interrupted、
 reporter error 与 receipt 没有单个 Experiment subject，不添加顶层名称。progress 内的 Sandbox 复用汇总按
 [Sandbox 复用](../../sandbox/reuse.md#运行级复用反馈)自己的穷尽形状携带名称。
 
