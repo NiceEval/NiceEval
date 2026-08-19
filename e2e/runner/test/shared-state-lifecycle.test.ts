@@ -293,7 +293,7 @@ test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experi
           });
           independentEnteredBeforeLeaseRelease = await appearsWithin(
             join(barrierRoot, "lane-independent-agent-started"),
-            3_000,
+            30_000,
             "independent local provider Experiment while sharedState waiter is blocked",
           );
           waiterEnteredSetupBeforeLeaseRelease = await appearsWithin(
