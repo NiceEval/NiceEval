@@ -106,9 +106,8 @@ This protocol does not promise to preserve the startup semantics of an arbitrary
 
 ### Prepare an Attempt runtime in setup
 
-The Dockerfile should bake only fixed tools, read-only archives, and project starting files. Put operations that need the inner daemon in Sandbox-level
-`setup`, not in the image `ENTRYPOINT`. The setup below can import an offline image, copy project starting files to a writable
-workspace, and run the project's own smoke check:
+The Dockerfile should bake fixed tools and project starting files. Put operations that need the inner daemon in Sandbox-level
+`setup`, not in the image `ENTRYPOINT`. This self-contained setup creates a writable workspace and verifies the inner daemon. Add `docker load`, file-copy, or project smoke-check commands here only when the corresponding archives and files are baked into your image:
 
 ```ts title="lib/dind-sandbox.ts"
 import { dockerSandbox } from "niceeval/sandbox";
@@ -130,7 +129,11 @@ export const dindSandbox = dockerSandbox({
   },
 }).setup(async (sandbox, ctx) => {
   ctx.progress({ message: "Preparing the inner Docker runtime" });
-  const result = await sandbox.runCommand("prepare-inner-runtime", [], {
+  const result = await sandbox.runCommand("sh", ["-lc", [
+    "set -eu",
+    "mkdir -p /workspace",
+    "docker info >/dev/null",
+  ].join("\n")], {
     user: "root",
     stream: true,
   });

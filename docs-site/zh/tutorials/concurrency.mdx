@@ -65,6 +65,7 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
 | --- | --- | --- | --- |
 | 全局并发位 | `--max-concurrency`，或 `niceeval.config.ts` 的 `maxConcurrency` | 本次运行的总吞吐 | 各算各的，两个终端的值相加 |
 | 实验并发上限 | 实验文件的 `maxConcurrency` | 这一个实验同时跑几条 | 各算各的，两个终端的值相加 |
+| 共享状态租约 | 实验文件的 `sharedState.key` | 同一 checkpoint 的完整恢复、执行与回存区间 | 同 key 的区间串行 |
 
 全局值的解析顺序是 `--max-concurrency` → 配置里的 `maxConcurrency` → 当前 Sandbox Provider 的推荐默认值（`docker` 10、`e2b` 20、`vercel` 1、`local` 1）。推荐值反映的是 Provider 侧的约束。你自己 Agent 接口的限速用 `--max-concurrency` 压。
 
@@ -141,11 +142,14 @@ export default defineExperiment({
   agent: codexAgent(),
   sandboxReuse: true,
   maxConcurrency: 1,   // 本 Invocation 内一条接一条
+  sharedState: { key: "mempal/codex/cohort-a" },
   // ...
 });
 ```
 
-`maxConcurrency: 1` 只串行本 Invocation 的 Attempt。NiceEval 当前没有跨 Invocation 的共享状态租约。另一个终端也可能碰同一 checkpoint 时，用外部编排或分布式锁串行命令，或者为每个 Invocation 使用独立 checkpoint cohort。回存要保持原子性；强杀留下半次写入后，换新 checkpoint 并从干净 cohort 重建。
+`maxConcurrency: 1` 只串行本 Invocation 的 Attempt。`sharedState.key` 会在同一项目 Coordination 域内保护跨 Invocation 的同一 checkpoint。租约在 Experiment 与 Sandbox `setup` 前取得，直到 Sandbox `teardown`、Provider finalizer 和 Experiment `teardown` 全部完成才释放。等待方不会提前创建 Sandbox；拿到租约后继续自己的计划，不读取或沿用另一个 Run 的结果。
+
+`sharedState` 只提供互斥，不负责 checkpoint 存储、原子提交、回滚或强杀后的半次写入恢复。能原子回存时应原子回存，否则换新 key，从干净 cohort 重建。跨机器协调仍归外部编排。
 
 只有一个 Agent 服务频繁限流时，同样在这个实验上设 `maxConcurrency: N`，不要去降全局上限——降全局会连累同批其它实验。实验级并发上限退避时不放行第 N+1 条，所以服务不会在已经限流时继续被加压。
 
@@ -205,7 +209,7 @@ niceeval exp compare --record .niceeval/record --max-concurrency 2
 
 - 两边的 CLI 上限会相加，Provider 容量不会。配额紧张时把两边都调低。
 - 实验自己的 `maxConcurrency` 也是每个终端各算各的：两条命令都声明 3 时，合计最多跑六条。
-- 两个终端的 Sandbox 池也各自独立。共享外部 checkpoint 时必须外部串行，或为每个 Invocation 使用独立 checkpoint。
+- 两个终端的 Sandbox 池也各自独立。只有确实共享外部 checkpoint 时才声明 `sharedState.key`；它不会合并 Record。
 - 并发 append writer 可以共用 root。Record maintenance 仍然独占；遇到 `record-maintenance-busy` 时，先停掉 reader 和 writer 再重试。
 
 ## 边界

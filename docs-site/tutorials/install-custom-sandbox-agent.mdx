@@ -13,10 +13,12 @@ For a Node.js CLI, use `createNpmCliInstaller`. This example connects the npm pa
 ```ts
 // agents/my-agent.ts
 import {
-  completeEvidenceCoverage,
   createNpmCliInstaller,
   defineSandboxAgent,
   agentBin,
+  responsesEvidenceCoverage,
+  turnFromResponses,
+  type ResponseLike,
 } from "niceeval/adapter";
 
 const { ensure, installer } = createNpmCliInstaller({
@@ -36,7 +38,7 @@ const { ensure, installer } = createNpmCliInstaller({
 
 export default defineSandboxAgent({
   name: "my-agent",
-  evidenceCoverage: completeEvidenceCoverage,
+  evidenceCoverage: responsesEvidenceCoverage,
   ensure,
   installers: [installer],
 
@@ -54,10 +56,12 @@ export default defineSandboxAgent({
     if (result.exitCode !== 0) {
       throw new Error(`my-agent exited with code ${result.exitCode}: ${result.stderr}`);
     }
-    return parseTurn(result.stdout);
+    return turnFromResponses(JSON.parse(result.stdout) as ResponseLike);
   },
 });
 ```
+
+This example defines `my-agent run --json` to print one OpenAI Responses-compatible JSON object. `turnFromResponses` converts its `output` items and usage into NiceEval's `Turn`; if your CLI emits another schema, replace that line with an explicit mapping to `events`, `status`, and `usage`.
 
 `identity.version` is the CLI's exact version. When the installation steps for that version change, update `identity.revision` too. Do not use `latest` here.
 

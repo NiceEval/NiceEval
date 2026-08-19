@@ -125,6 +125,7 @@ This is useful for per-configuration debugging. You can confirm whether one cell
 | `timeoutMs` | Timeout for one Attempt. |
 | `budget` | Budget ceiling for this configuration cell. |
 | `maxConcurrency` | Concurrency ceiling for this configuration cell. |
+| `sharedState` | An exclusive key for a checkpoint shared across Invocations. It coordinates state; it does not provide storage. |
 | `sandbox` | One `SandboxLayer`. Its factory declares a Provider-native template once and can chain `.prepare()` / `.setup()` / `.teardown()`. |
 | `plugins` | Explicitly attached NiceEval Plugin occurrences; reuse a complete condition consisting of identity, flags, Sandbox commands, lifecycles, or an Agent Extension. |
 | `setup` | An Experiment-level Hook that runs once on your own machine and starts services all Attempts share. See below. |
@@ -216,10 +217,11 @@ export default defineExperiment({
     .teardown(mempalTeardown("codex")), // Save state back
   sandboxReuse: true,
   maxConcurrency: 1,                    // Serial within this Invocation
+  sharedState: { key: "mempal/codex/cohort-a" },
 });
 ```
 
-`maxConcurrency: 1` does not serialize another Invocation. If these Hooks load and save one external checkpoint, use external orchestration or a distributed lock around the complete command, or assign each Invocation a separate checkpoint.
+`maxConcurrency: 1` serializes only this Invocation. `sharedState.key` protects the checkpoint across Invocations in the same project Coordination domain. The lease starts before Experiment and Sandbox setup and ends after all Sandbox teardown, Provider finalizers, and Experiment teardown. It provides mutual exclusion only; storage, atomic write-back, forced-kill recovery, and cross-machine coordination remain the author's responsibility.
 
 Bake fixed Agent CLIs, system packages, and large model caches into an image, template, or snapshot first. `.setup()` should not recreate the same environment for every Attempt. For how to derive a prebuilt environment from official Docker images, E2B templates, or a Vercel runtime, see [Sandbox Provider: Build on the Official Baselines to Speed Things Up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
 
@@ -242,6 +244,7 @@ export default defineExperiment({
   agent: nowledgeAgent(() => ({ url: tunnel.url, apiKey: tunnel.apiKey })),
   evals: ["memory/"],
   maxConcurrency: 1,
+  sharedState: { key: "nowledge/claude/cohort-a" },
   sandbox: e2bSandbox({ template: "niceeval-agents" })
     .setup(async (sandbox, ctx) => {
       // Once per Sandbox, after Experiment-level setup: write host-side coordinates into the Sandbox.

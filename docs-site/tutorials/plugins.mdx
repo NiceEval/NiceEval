@@ -39,6 +39,15 @@ export const memory = definePlugin<MemoryOptions>({
     teardown: (_sandbox, ctx) => ctx.progress({ message: "Disconnecting the current Sandbox" }),
   }),
 });
+
+export const telemetry = definePlugin({
+  name: "acme.telemetry",
+  behaviorRevision: "1",
+  experiment: () => ({
+    setup: (ctx) => ctx.progress({ message: "Starting telemetry collection" }),
+    teardown: (ctx) => ctx.progress({ message: "Stopping telemetry collection" }),
+  }),
+});
 ```
 
 `name` names the Plugin family. `instanceKey(options)` distinguishes configurations within one family. Raise `behaviorRevision` when implementation semantics change so old results are no longer adopted exactly.
@@ -50,6 +59,11 @@ A family with no options can omit `instanceKey`; its fixed instance key is `"def
 `plugins` always accepts an array:
 
 ```ts
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+import { memory, telemetry } from "./shared/memory.ts";
+
 export default defineExperiment({
   agent: codexAgent({
     skills: [{ kind: "local", path: ".agents/skills/memory" }],

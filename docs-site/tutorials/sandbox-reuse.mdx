@@ -53,7 +53,7 @@ Sandbox reuse occurs only within one Invocation. When two terminals run one Expe
 
 Record maintenance is exclusive. If `clean` or another maintenance operation reports `record-maintenance-busy`, stop the readers and writers using that root, then retry the maintenance command. Do not split normal concurrent runs into separate Record roots merely to avoid a writer conflict.
 
-When a Sandbox retains only its own temporary state, both terminals can run different Evals at the same time. If Sandbox Hooks restore and save an external checkpoint, `maxConcurrency: 1` serializes access only inside the current Invocation:
+When a Sandbox retains only its own temporary state, both terminals can run different Evals at the same time. When Sandbox Hooks restore and save the same external checkpoint, declare a stable, non-secret key for the Experiment:
 
 ```typescript
 export default defineExperiment({
@@ -62,10 +62,13 @@ export default defineExperiment({
     .teardown(saveMempal),
   sandboxReuse: true,
   maxConcurrency: 1,
+  sharedState: { key: "mempal/codex/cohort-a" },
 });
 ```
 
-NiceEval does not currently coordinate that checkpoint across Invocations. Do not run two commands against the same mutable checkpoint at once: serialize them with external orchestration or a distributed lock, or give each Invocation a separate checkpoint cohort. This boundary is independent of the Record root, whose normal append writers may run concurrently.
+NiceEval acquires this key before Experiment setup or Sandbox creation, and releases it only after Sandbox `teardown`, the Provider finalizer, and Experiment `teardown`. A waiter creates no Sandbox. After the lease is released, it continues its own plan; it does not read or adopt results from the other Run.
+
+The key enters the result's configuration identity. Changing it starts a different state cohort, so old results do not mix in. This lease protects only the external checkpoint; it is independent of the Record root, whose normal append writers may run concurrently. Different machines or working copies still need an external distributed lock.
 
 ## Lifecycles: how often each runs
 

@@ -93,6 +93,7 @@ export default defineExperiment({
     .setup(mempalSetup("codex"))        // preflight, write hooks, load state
     .teardown(mempalTeardown("codex")), // save state back
   maxConcurrency: 1,                    // no concurrency between load and save — declare serial execution
+  sharedState: { key: "mempal/codex/cohort-a" },
 });
 ```
 
@@ -343,7 +344,8 @@ await restoreCheckpoint(nextSandbox, data);
 This suits runtime caches. It does not create a publishable image/template/snapshot, and it does not manage sharing, versions, or expiry. A failed archive or restore throws.
 
 When these directories or checkpoints must persist across Attempts, put `restoreCheckpoint()` in `SandboxLayer.setup()` and its paired `createCheckpoint()` in `teardown()`. Because `setup()` restores after a physical Sandbox is created, a new run follows the same boundary. `teardown()` saves state back as the instance retires, before the Provider finalizer.
-`sandboxReuse: true` only keeps one physical instance alive within the current Invocation. NiceEval does not currently lock a checkpoint across Invocations. When several commands could read and write the same checkpoint, serialize them with external orchestration or a distributed lock, or give each Invocation a separate checkpoint.
+
+`sandboxReuse: true` only keeps one physical instance alive within the current Invocation. When several Invocations read and write the same checkpoint, declare `sharedState: { key }` at the Experiment top level. NiceEval acquires that lease before Experiment setup or Sandbox creation and releases it after checkpoint save, the Provider finalizer, and Experiment teardown. It provides mutual exclusion, not checkpoint storage, transaction recovery, or cross-machine coordination.
 
 ## Transient error retries
 

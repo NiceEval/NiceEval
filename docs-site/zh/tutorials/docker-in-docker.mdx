@@ -111,9 +111,8 @@ Agent 仍以 `user: "node"` 运行。上面 Dockerfile 在构建期把 `node` �
 
 ### 在 setup 中准备 Attempt 运行时
 
-Dockerfile 只烘焙固定工具、只读归档和项目初始文件。需要 inner daemon 的操作放进 Sandbox 级
-`setup`，不要放进镜像 `ENTRYPOINT`。下面的 setup 可以导入离线 image、把项目初始文件复制到可写
-workspace，并运行项目自己的 smoke check：
+Dockerfile 只烘焙固定工具和项目初始文件。需要 inner daemon 的操作放进 Sandbox 级
+`setup`，不要放进镜像 `ENTRYPOINT`。下面这个完整 setup 会创建可写 workspace 并验证 inner daemon；只有镜像确实烘焙了对应归档和文件时，才在这里加入 `docker load`、文件复制或项目 smoke-check 命令：
 
 ```ts title="lib/dind-sandbox.ts"
 import { dockerSandbox } from "niceeval/sandbox";
@@ -135,7 +134,11 @@ export const dindSandbox = dockerSandbox({
   },
 }).setup(async (sandbox, ctx) => {
   ctx.progress({ message: "准备 inner Docker 运行时" });
-  const result = await sandbox.runCommand("prepare-inner-runtime", [], {
+  const result = await sandbox.runCommand("sh", ["-lc", [
+    "set -eu",
+    "mkdir -p /workspace",
+    "docker info >/dev/null",
+  ].join("\n")], {
     user: "root",
     stream: true,
   });
