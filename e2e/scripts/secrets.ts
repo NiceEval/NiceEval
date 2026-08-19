@@ -66,13 +66,10 @@ export function buildChildEnv(
       env[name] = value;
     }
   }
-  if (
-    thisRepoSecrets.length > 0 &&
-    thisRepoSecrets.every((name) => typeof baseEnv[name] === "string" && baseEnv[name]!.length > 0)
-  ) {
-    env.NICEEVAL_E2E_DECLARED_SECRETS_READY = "1";
-  } else {
-    delete env.NICEEVAL_E2E_DECLARED_SECRETS_READY;
-  }
+  // Live product owners name the CLI-native variables they exercise. Repos
+  // that declare the unified gateway receive these test-only aliases from the
+  // one harness seam; workflows and manifests no longer require old secrets.
+  if (env.OPENAI_API_KEY !== undefined) env.BUB_API_KEY = env.OPENAI_API_KEY;
+  if (env.OPENAI_BASE_URL !== undefined) env.BUB_API_BASE = env.OPENAI_BASE_URL;
   return env;
 }
