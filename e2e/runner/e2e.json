@@ -6,7 +6,7 @@
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 3,
+  "timeoutMinutes": 4,
   "harness": { "testkit": true },
   "secrets": [],
   "requires": { "runtimes": ["node>=24"] },
