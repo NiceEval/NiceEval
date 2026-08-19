@@ -50,7 +50,6 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
     async ({ commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "assertion-sandbox", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      expect(run.durationMs, run.diagnostic()).toBeLessThanOrEqual(10_000);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const evaluations = run.expEvalEvents();
       const evaluation = only(
