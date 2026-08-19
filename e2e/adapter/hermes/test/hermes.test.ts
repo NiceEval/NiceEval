@@ -82,8 +82,8 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async ()
       );
       const execution = await niceeval.run(["show", event.locator, "--execution"]);
       expect(execution.exitCode, execution.diagnostic()).toBe(0);
-      expect(execution.stdout).toContain("file_write");
-      expect(execution.stdout).toContain("shell");
+      expect(execution.stdout).toContain("write_file");
+      expect(execution.stdout).toContain("terminal");
       expect(execution.stdout).toContain("niceeval-hermes-tool-input-914");
     },
   );
