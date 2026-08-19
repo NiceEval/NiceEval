@@ -98,7 +98,7 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 - [预制实例](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从中启动。
 - [Docker 执行配置](docker-profiles/README.md) —— 官方 Docker Sandbox 的 profile、rootless privileged 单容器 DinD、硬配额与故障回收。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
-- [Sandbox 复用](reuse.md) —— Experiment 声明多条 Attempt 共用 Sandbox，Provider 声明存活时间，运行反馈显示实例创建、分配与替换。
+- [Sandbox 复用](reuse.md) —— Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox；Provider 用 `lifetimeMs` 单独声明 Sandbox 存活时间。
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 的用户用例全流程。
 - [操作 Sandbox](library/operations.md) —— eval 里怎样读写文件和运行命令。
 - [断言 Sandbox 结果](library/asserting-results.md) —— 怎样判断 diff、文件和 shell 行为。

@@ -3,7 +3,7 @@
 NiceEval 不把运行事实放进开放 JSON bag。每份事实都属于一个固定 Attachment family、一个 owner 和一个
 exact payload。调用方不能追加字段或改变 durable shape，更不能定义自己的 family。
 
-契约单源始终在 [七个固定 Attachment family](../architecture.md#七个固定-attachment-family) 与
+契约单源始终在 [五个固定 Attachment family](../architecture.md#五个固定-attachment-family) 与
 [Record Library](../library.md#固定-attachment-family-与-blob-closure)。
 
 ## 先选 owner 与 family
@@ -13,10 +13,8 @@ exact payload。调用方不能追加字段或改变 durable shape，更不能�
 | AssertionResult、Evidence 与 sealed result | `niceeval.assertions` | `owners.attempt` | 来自一次实际检查 |
 | 对话、OTel、事件、命令、用量、时间与诊断 | `niceeval.observability` | `owners.attempt` 或 `owners.run` | 由对应 owner 的 collector 封口 |
 | Sandbox 观察到的 send 区间文件变化轨迹 | `niceeval.file-changes` | Attempt | 保留 agent 归因、策略与时序 |
-| 每个物理 send 的源码与 timing join | `niceeval.source-navigation` | Attempt | 连接运行时 turn 与静态 source site |
 | Eval 与 loader 的源码闭包 | `niceeval.sources` | origin Run | 同 Run 的 Attempt 共用当时源码 |
 | 有媒体类型的大型文件 | `niceeval.artifacts` | `owners.attempt` 或 `owners.run` | 归属由文件生命周期决定 |
-| Experiment 展示名称 | `niceeval.experiment-presentation` | Run | 固定历史 Run 的人类标题，不改变 Core identity |
 
 owner 不是展示层的选择。它决定目录、identity、reference 和 blob closure。reference Member 不产生新
 Attempt，也不复制任何 Attachment；读取时沿精确 origin Attempt 和 origin Run 追溯。

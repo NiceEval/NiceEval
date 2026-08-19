@@ -1,6 +1,6 @@
 # Observability Attachment
 
-`niceeval.observability` 是 Record 的七个固定 Attachment family 之一。它的 envelope 固定为
+`niceeval.observability` 是 Record 的六个固定 Attachment family 之一。它的 envelope 固定为
 `{ family: "niceeval.observability", schemaVersion: 2 }`。它保存已封口 Run 或 origin Attempt 的运行观察；
 它不保存终端进度、raw provider frame、raw OTLP、Error stack、绝对路径、secret 或任意扩展 object。
 

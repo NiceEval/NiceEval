@@ -28,7 +28,23 @@ const GO_EVAL = "provider/go-routing";
 const TOOL_PAYLOAD = "niceeval-opencode-tool-input-907";
 const GO_LIVE_MARKER = "OPENCODE-GO-DEEPSEEK-V4-FLASH-E2E-731";
 
+const REQUIRED_LIVE_SECRETS = [
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "OPENCODE_API_KEY",
+] as const;
+
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
+
+function requireLiveSecrets(): void {
+  const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
+  if (missing.length > 0) {
+    throw new Error(
+      `[configuration] live opencode E2E requires ${missing.join(", ")}; ` +
+        "the live test is not skipped when secrets are absent",
+    );
+  }
+}
 
 async function requireDocker(): Promise<void> {
   const docker = await command(["docker"]).run(["info"]);
@@ -53,6 +69,7 @@ function expectToolInputReadback(execution: string, marker: string): void {
 }
 
 it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
+  requireLiveSecrets();
   await requireDocker();
 
   rmSync(".niceeval", { recursive: true, force: true });

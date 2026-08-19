@@ -385,6 +385,6 @@ folder eval 的测试文件与构建输入共址时，materializer 与普通上�
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Library](library.md) —— provider 选择、生命周期 Hook、自定义 provider。
 - [Architecture](architecture.md) —— 生命周期时序、留存注册表、孤儿核对、重试。
-- [Record Architecture](../record/architecture.md) —— 七个固定 family 的 owner、closure 与 maintenance 边界。
+- [Record Architecture](../record/architecture.md) —— 五个固定 family 的 owner、closure 与 maintenance 边界。
 - [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md) —— case 产出主 Sandbox 之后,Agent 怎样检查与安装。
 - [Experiments · 缓存与携带](../experiments/cache.md) —— CaseKey 怎样进入指纹与携带门。

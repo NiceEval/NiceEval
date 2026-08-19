@@ -32,7 +32,7 @@ execution claim，重新读取已封口历史，再决定引用或执行。承�
 | 用户目标 | 用例 |
 |---|---|
 | 内部 producer 创建 Attempt、收集固定事实并发布 Run | [发布完整 Run](发布完整运行.md) |
-| 理解七个固定 family、owner-local closure、File Changes 轨迹和惰性读取 | [Attachment 怎样保存运行事实](RecordAttachment怎样保存运行事实.md) |
+| 理解五个固定 family、owner-local closure、File Changes 轨迹和惰性读取 | [Attachment 怎样保存运行事实](RecordAttachment怎样保存运行事实.md) |
 | 调整 matcher、Analysis 或 Report 而不扩张 Record | [上层变化不改持久格式](上层变化不改持久格式.md) |
 | 选择 Analysis、固定 family 或 Core 的正确边界 | [未来功能不扩张核心格式](未来功能不扩张核心格式.md) |
 | 让多个 Attempt 和 reference Run 读取同一源码快照 | [多个 Attempt 怎样共用源码快照](多个Attempt怎样共用源码快照.md) |

@@ -429,46 +429,6 @@ Host 已在 family read 前验证 Navigation 对同一 Attempt Observability 与
 Analysis 因而不扫描 source blob、不重建 sourceOrder，也不以数组位置拼 turn、source 或 timing；它只交付闭合
 值。若 family 缺席，entry 保留 `not-recorded`，不能伪造成一条 unmapped send。
 
-### Experiment Presentation DomainView
-
-`experimentPresentationView` 只在请求时读取 Run-owned `niceeval.experiment-presentation`。它为每个选中 Run
-返回一项，并按 canonical Run ID 排序：
-
-```ts
-type ExperimentPresentationEntry =
-  | {
-      readonly runId: RunId;
-      readonly experimentId: ExperimentId;
-      readonly displayName: string;
-      readonly state: "recorded";
-      readonly issues: readonly [];
-    }
-  | {
-      readonly runId: RunId;
-      readonly experimentId: ExperimentId;
-      readonly displayName: string;
-      readonly state: "fallback-missing";
-      readonly issues: readonly [];
-    }
-  | {
-      readonly runId: RunId;
-      readonly experimentId: ExperimentId;
-      readonly displayName: string;
-      readonly state: "unavailable";
-      readonly issues: readonly [AnalysisIssue, ...AnalysisIssue[]];
-    };
-```
-
-`recorded` 使用 Run 保存的 immutable 值。`fallback-missing` 只表示已发布 Run 缺少该 fixed family，
-`displayName` 等于完整 `experimentId`；Record v1 无 family inventory，无法区分较早 writer 省略与发布后删除。
-
-`unavailable` 只涵盖 invalid 或 unsupported Attachment，同样以完整 ID 填充 `displayName`，同时保留非空
-issues。root/Core、已知 family 的 migration-required、I/O 或 open 失败阻断 DomainView，不降级为局部状态。
-Analysis 不读取当前 Experiment 源码回填 Run 名称。
-
-这份视图只关闭 presentation facts，不改变 Sample selection、Population、denominator、grouping 或 reuse。
-内建 Report 的 Run summary 从它投影；Report 不取得 Record reader 或 Attachment。
-
 `attempt-evidence` 是一个闭合的非表格视图。Sample 在同一次成功读取 `ReadableAttempt` 时取得 Core `outcome`。
 
 它将该 Outcome 和已验证 Assertions 交给权威 fold，形成 detail 的派生 `verdict`。Outcome 是执行终态，Verdict

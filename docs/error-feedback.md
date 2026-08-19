@@ -7,7 +7,7 @@ NiceEval 将持久事实、读取问题和面向读者的文字分开。这样�
 
 | 层 | owner | 内容 |
 |---|---|---|
-| 持久事实 | Record Core 与七个固定 family | 身份、Member action、Assertion、诊断、采集状态、展示名称与关联身份。 |
+| 持久事实 | Record Core 与五个固定 family | 身份、Member action、Assertion、诊断、采集状态与关联身份。 |
 | 读取 | `recordHost`、Analysis Sample | 机器可读的 root error、family read state、selection state 与 Analysis issue。 |
 | 呈现 | CLI 或 Report Host | 人读标题、说明、下一步和退出状态。 |
 

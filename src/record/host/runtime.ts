@@ -420,9 +420,13 @@ function isSealedRun(
   root: RecordRoot,
   runId: RunId,
 ): Effect.Effect<boolean, RecordFileSystemError> {
-  return Effect.map(
-    fileSystem.pathKind(runPath(root, runId, "complete")),
-    (kind) => kind === "file",
+  return fileSystem.readFile({
+    file: runPath(root, runId, "complete"),
+    maximumBytes: 0,
+  }).pipe(
+    Effect.map((bytes) => bytes !== undefined && bytes.byteLength === 0),
+    Effect.catchTag("RecordResourceLimitExceeded", () => Effect.succeed(false)),
+    Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(false)),
   );
 }
 
@@ -547,6 +551,20 @@ function readRunAttempts(
 type SealedCoreSnapshot =
   | { readonly state: "available"; readonly byRunId: ReadonlyMap<RunId, RunCore> }
   | { readonly state: "core-invalid"; readonly issues: NonEmptyRecordIssues };
+
+function maintenanceReaderRuntime(root: RecordRoot, record: RecordDocument): ReaderRuntime {
+  return {
+    root,
+    record,
+    lifecycle: { closed: false },
+    runs: new WeakMap(),
+    attempts: new WeakMap(),
+    owners: new WeakMap(),
+    runsById: new Map(),
+    attemptsByKey: new Map(),
+    sealedCoreSnapshot: undefined,
+  };
+}
 
 /**
  * The reader deliberately reconstructs the complete published aggregate only
@@ -2538,6 +2556,9 @@ function knownMigrationAttachments(
       if (entry.kind !== "directory") continue;
       const runId = decodeRunId(entry.name);
       if (runId === undefined) continue;
+      // Draft directories are not Runs and belong exclusively to `niceeval
+      // clean`; maintenance must preserve every byte beneath them.
+      if (!(yield* isSealedRun(fileSystem, root, runId))) continue;
 
       for (const descriptor of runMigrationDescriptors) {
         const location: KnownMigrationAttachment = Object.freeze({
@@ -2650,10 +2671,8 @@ function migrationPlan(input: {
   readonly git: RecordGitService;
 }): Effect.Effect<RecordMigrationPlan, RecordMaintenanceError> {
   return Effect.gen(function* () {
-    const inspection = yield* currentFormatInspection(input.fileSystem, input.root);
-    if (inspection.state === "unsupported-format") {
-      return Object.freeze({ state: "unsupported-format" as const, format: inspection.format });
-    }
+    const current = yield* readCurrentRecordFormat(input.fileSystem, input.root);
+    yield* validateSealedCoreForMigration(input.fileSystem, input.root, current.document);
     const attachments = yield* planAttachmentMigration(input);
     if (attachments.length === 0) {
       return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
@@ -2666,6 +2685,19 @@ function migrationPlan(input: {
       attachments,
     });
   });
+}
+
+function validateSealedCoreForMigration(
+  fileSystem: RecordFileSystemService,
+  root: RecordRoot,
+  record: RecordDocument,
+): Effect.Effect<void, RecordMaintenanceError> {
+  return Effect.flatMap(
+    loadSealedCoreSnapshot(maintenanceReaderRuntime(root, record), fileSystem),
+    (snapshot) => snapshot.state === "available"
+      ? Effect.void
+      : Effect.fail(migrationInvalid("niceeval.core")),
+  );
 }
 
 function loadObservabilityV1Maintenance(): Effect.Effect<
@@ -2750,6 +2782,15 @@ function validateCurrentKnownAttachments(input: {
       if (read.state !== "available") {
         return yield* Effect.fail(migrationInvalid(location.descriptor.family));
       }
+      const joined = yield* validateFixedCrossFamilyJoin({
+        fileSystem: input.fileSystem,
+        root: input.root,
+        runId: location.runId,
+        ...(location.attemptId === undefined ? {} : { attemptId: location.attemptId }),
+        descriptor: location.descriptor,
+        payload: read.value,
+      });
+      if (!joined) return yield* Effect.fail(migrationInvalid(location.descriptor.family));
     }
   });
 }
@@ -2803,6 +2844,8 @@ function openMaintenance(input: {
           for (const target of currentPlan.attachments) {
             yield* migrateObservabilityAttachment({ fileSystem, root: input.root, target });
           }
+          const current = yield* readCurrentRecordFormat(fileSystem, input.root);
+          yield* validateSealedCoreForMigration(fileSystem, input.root, current.document);
           yield* validateCurrentKnownAttachments({ fileSystem, root: input.root });
           yield* fileSystem.removeMigrationSentinel(input.root);
           return Object.freeze({ state: "migrated" as const, format: RECORD_FORMAT });

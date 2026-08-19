@@ -2,7 +2,7 @@
 
 本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。两者当前 envelope 的 `schemaVersion` 都是 `1`，并且都保存已经发生的审计事实，不保存可执行的作者调用图。
 
-Record v1 的 current catalog 固定为七个 family。Attempt-owned `niceeval.source-navigation` 只拥有物理 send 到 source/timing 的 join，不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources manifest 规则见 [Record architecture](../../record/architecture.md)。
+Record v1 的 catalog 固定为六个 family。Attempt-owned `niceeval.source-navigation` 只拥有物理 send 到 source/timing 的 join，不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources manifest 规则见 [Record architecture](../../record/architecture.md)。
 
 ## owner 与 semantic join
 
@@ -87,6 +87,6 @@ family Host 仍只有 `available`、`not-recorded`、`unsupported` 与 `invalid`
 
 - [Assertions architecture](../architecture.md) —— entry、criterion、result 与内嵌 sourceSites。
 - [Evidence](evidence.md) —— 受限 material 与 own closure。
-- [Record architecture](../../record/architecture.md) —— Sources manifest、七个 fixed family 与四态 Host。
+- [Record architecture](../../record/architecture.md) —— Sources manifest、六个 fixed family 与四态 Host。
 - [Verdict architecture](../../verdict/architecture.md) —— Core 与 Assertions 的读侧 fold。
 - [Analysis Library](../../analysis/library.md) —— `Sample`、`query()` 与 `DomainView`。

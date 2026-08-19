@@ -84,11 +84,10 @@ Record 或 Analysis 读取路径。
 
 ```ts
 interface BuiltInShowDocument {
-  readonly schema: "niceeval.show/v2";
+  readonly schema: "niceeval.show/v1";
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: { readonly token: BuiltInReportToken; readonly identity: ContentAddress };
-  readonly runPresentations: readonly ReportRunSummaryV1[];
   readonly page: { readonly route: string; readonly pageId: string; readonly title: LocalizedText };
   readonly data:
     | { readonly kind: "leaderboard"; readonly rows: JsonValue }
@@ -98,18 +97,6 @@ interface BuiltInShowDocument {
     | { readonly kind: "timing"; readonly timing: JsonValue };
   readonly projections: ReportProjections;
   readonly problems: readonly ReportProblem[];
-}
-```
-
-Reports 拥有内建 Run summary 的封闭形状：
-
-```ts
-interface ReportRunSummaryV1 extends ExperimentOutputFieldsV1 {
-  readonly runId: RunId;
-  readonly displayNameState:
-    | "recorded"
-    | "fallback-missing"
-    | "unavailable";
 }
 ```
 
@@ -136,7 +123,7 @@ interface CustomTargetExecutionManifest {
 }
 ```
 
-`projections` 是内建 v2 与自定义 v1 文档完全相同的顶层对象。它的 closed Profile、cost entry、target-Page 范围和排除项由
+`projections` 是两种 v1 文档完全相同的顶层对象。它的 closed Profile、cost entry、target-Page 范围和排除项由
 [Report 成本投影 CLI](cost-projections/cli.md) 定义；`report.identity` 标识加载的作者定义，不标识站点版本。
 
 `renderedText` 固定取该 Page 已关闭的英语 text projection，宽度固定为 80 个 display columns。它不读取 TTY 或浏览器宽度，
@@ -153,12 +140,6 @@ type ShowSelection =
 
 `selection` 只说明固定 Sample 的选择；`page` 是唯一的 Page 选择，恰好含一个 `route` 与一个 `pageId`。两种 schema 都没有全站
 pages 数组或 site identity。
-
-内建 Run summary 使用 [Experiment 展示名称](../experiments/display-names/cli.md#json-与协议版本)定义的
-`ReportRunSummaryV1`。它从 Analysis `experimentPresentationView` 投影，并由 show、view 与 static 共用。
-新增 required `runPresentations` 使内建文档从 `niceeval.show/v1` 升为 `niceeval.show/v2`；数组按 canonical
-Run ID 排序，并为每个 selected Run 恰好保留一项。selection 继续只含 Experiment ID 或 Run ID，不接受展示
-名称。自定义 `niceeval.report-target-execution/v1` 不承载该字段，版本保持不变。
 
 `ContentAddress` 与 `BuiltInReportToken` 都是非空 string。两种 schema 共用下列问题形状：
 

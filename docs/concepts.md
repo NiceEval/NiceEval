@@ -126,7 +126,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 实验 | Experiment | 可签入的运行配置:Agent、model、judge 执行配置、flags、运行次数与预算；不定义 rubric、阈值或其它评分规则 | [Experiments](feature/experiments/README.md) |
-| Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](feature/experiments/display-names/README.md) |
 | 裁判执行配置 | JudgeConfig | 裁判 model、端点、凭据变量名与超时；可由 Experiment 做 A/B，不包含 rubric 或 severity | [Judge](feature/judge/library.md#模型与鉴权) |
 | 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [实验值归属](feature/experiments/use-case/实验值归属/) |
 | 运行时观测 | Runtime observation | 运行时才知道、由 producer-owned typed RecordAttachment 保存的值；不自动进入 eligibility identity 或 Attempt Core | [实验值归属](feature/experiments/use-case/实验值归属/) |
@@ -208,7 +207,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 NiceEval 固定定义的 immutable payload 与 owner-local blob closure | [Record Architecture](feature/record/architecture.md) |
-| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、Observability、FileChanges、Source Navigation、Sources、Artifacts 与 Experiment Presentation 七个固定 family；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
+| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、Observability、FileChanges、Sources 与 Artifacts 五类封闭联合；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
 | Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、Git safety 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
 | Record migration receipt | `RecordMigrationReceipt` | migration 完整校验并刷盘后返回的 immutable outcome；第一版协议只会产生 `already-current` | [Record Library](feature/record/library.md) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources`（envelope `schemaVersion: 1`）；保存当时 source closure 的 manifest 与 own blobs | [Record Architecture](feature/record/architecture.md) |
@@ -282,6 +281,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Workspace 访问证据 | Workspace access evidence | 可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合 | [Workspace 访问证据](roadmap/workspace-access-evidence/README.md) |
 | 发现边界 | Discovery boundary | 显式目录入口拥有的递归 Eval discovery 范围；父级扫描在入口处停止向内发现 | [发现边界](roadmap/discovery-boundaries/README.md) |
 | 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Report Calculation 投影成本的价格规则集合 | [成本投影](feature/reports/cost-projections/README.md) |
+| Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-authoring/display-names/README.md) |
 | Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不构造 Sample 或推导最新结果 | [Record 库存](roadmap/record-inventory/README.md) |
 
 ## 禁用写法

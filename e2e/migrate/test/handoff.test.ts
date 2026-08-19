@@ -1,9 +1,14 @@
-// owner: docs/engineering/testing/e2e/migrate.md#current-to-current-handoff-bootstrap
+// owner: docs/engineering/testing/e2e/migrate.md#observability-v1-to-v2
+// regression: memory/results-schema-version-history.md#observability-family-1--2
 
-import { createE2EContext, type ExpEvalEvent, type ExpEvent } from "@niceeval/testkit";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { createE2EContext } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
+const RUN_ID = "2ce48d15-5278-46f7-a512-7235a3362c24";
+const ATTEMPT_ID = "ae2047b7-d0ef-4f1d-8a2f-ae2b27e7b4ad";
 const installedNiceeval = [join(process.cwd(), "node_modules", ".bin", "niceeval")] as const;
 const e2e = createE2EContext({
   repoId: "migrate",
@@ -13,36 +18,162 @@ const e2e = createE2EContext({
     omitTopLevel: [".e2e-artifacts", ".niceeval", "node_modules", "test"],
     links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
   },
-  // Both identities intentionally point at the current candidate today. A future
-  // compatibility owner replaces only producer's prefix with an attested old build.
-  commands: {
-    producer: installedNiceeval,
-    candidate: installedNiceeval,
-  },
+  commands: { candidate: installedNiceeval },
 });
 
-test("当前 producer 的持久化结果可由独立 candidate show 进程读取", async () => {
-  await e2e.case(
-    "current-handoff",
-    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { producer, candidate } }) => {
-      const run = await producer.run(["exp", "handoff", "--rerun", "all", "--json"]);
-      expect(run.exitCode, run.diagnostic()).toBe(0);
-      const receipt = run.expReceipt();
-      expect(receipt.completion, run.diagnostic()).toBe("completed");
-      expect(receipt.runIds, run.diagnostic()).toHaveLength(1);
-      const evalEvent = run.ndjson<ExpEvent>().find(
-        (event): event is ExpEvalEvent =>
-          "event" in event && event.event === "eval" && event.evalId === "handoff",
-      );
-      expect(evalEvent, run.diagnostic()).toMatchObject({ verdict: "passed" });
+function sha256(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
 
-      const shown = await candidate.run(["show", "--run", receipt.runIds[0]!, "--json"]);
+test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读取", async () => {
+  await e2e.case(
+    "observability-v1",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ paths, commands: { candidate }, run }) => {
+      const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+      cpSync(join(paths.sourceRoot, "fixtures", "observability-v1-record"), recordRoot, {
+        recursive: true,
+      });
+
+      const attemptAttachment = join(
+        recordRoot,
+        "runs",
+        RUN_ID,
+        "attempts",
+        ATTEMPT_ID,
+        "attachments",
+        "niceeval.observability",
+      );
+      const runAttachment = join(
+        recordRoot,
+        "runs",
+        RUN_ID,
+        "attachments",
+        "niceeval.observability",
+      );
+      const attemptPayloadBefore = sha256(join(attemptAttachment, "payload.json"));
+      const runPayloadBefore = sha256(join(runAttachment, "payload.json"));
+      const unknownPath = join(recordRoot, "runs", RUN_ID, "attachments", "example.future", "opaque.txt");
+      const unknownBefore = readFileSync(unknownPath, "utf8");
+      const draftEnvelope = join(
+        recordRoot,
+        "runs",
+        "draft-run",
+        "attachments",
+        "niceeval.observability",
+        "attachment.json",
+      );
+      const draftBefore = readFileSync(draftEnvelope, "utf8");
+
+      const blockedRead = await candidate.run(["show", "--run", RUN_ID, "--json"]);
+      expect(blockedRead.exitCode, blockedRead.diagnostic()).toBe(0);
+      expect(blockedRead.stdout, blockedRead.diagnostic()).toContain('"state":"migration-required"');
+      expect(blockedRead.stdout, blockedRead.diagnostic()).toContain(
+        '"code":"analysis-migration-required"',
+      );
+
+      for (const args of [
+        ["init", "-q"],
+        ["config", "user.email", "e2e@niceeval.local"],
+        ["config", "user.name", "NiceEval E2E"],
+        ["add", "-f", ".niceeval/record"],
+        ["commit", "-qm", "fixture: observability v1"],
+      ] as const) {
+        const git = await run(["git", ...args]);
+        expect(git.exitCode, git.diagnostic()).toBe(0);
+      }
+
+      const confirmation = await candidate.run(["migrate"]);
+      expect(confirmation.exitCode, confirmation.diagnostic()).toBe(1);
+      expect(confirmation.stdout, confirmation.diagnostic()).toContain("attachments: 2");
+      expect(confirmation.stdout, confirmation.diagnostic()).toContain("backup: git-restore-point");
+      expect(confirmation.stderr, confirmation.diagnostic()).toContain(
+        "record-migration-confirmation-required",
+      );
+
+      writeFileSync(join(recordRoot, "dirty-proof.txt"), "dirty\n");
+      const dirty = await candidate.run(["migrate", "--yes"]);
+      expect(dirty.exitCode, dirty.diagnostic()).toBe(1);
+      expect(dirty.stderr, dirty.diagnostic()).toContain("record-migration-git-restore-required");
+      rmSync(join(recordRoot, "dirty-proof.txt"));
+
+      const migrated = await candidate.run(["migrate", "--yes"]);
+      expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
+      expect(migrated.stdout, migrated.diagnostic()).toContain("Record migration migrated.");
+
+      expect(JSON.parse(readFileSync(join(attemptAttachment, "attachment.json"), "utf8"))).toEqual({
+        family: "niceeval.observability",
+        schemaVersion: 2,
+      });
+      expect(JSON.parse(readFileSync(join(runAttachment, "attachment.json"), "utf8"))).toEqual({
+        family: "niceeval.observability",
+        schemaVersion: 2,
+      });
+      expect(sha256(join(attemptAttachment, "payload.json"))).toBe(attemptPayloadBefore);
+      expect(sha256(join(runAttachment, "payload.json"))).toBe(runPayloadBefore);
+      expect(readFileSync(unknownPath, "utf8")).toBe(unknownBefore);
+      expect(readFileSync(draftEnvelope, "utf8")).toBe(draftBefore);
+
+      const changed = await run(["git", "diff", "--name-only"]);
+      expect(changed.exitCode, changed.diagnostic()).toBe(0);
+      expect(changed.stdout.trim().split("\n").sort()).toEqual([
+        `.niceeval/record/runs/${RUN_ID}/attachments/niceeval.observability/attachment.json`,
+        `.niceeval/record/runs/${RUN_ID}/attempts/${ATTEMPT_ID}/attachments/niceeval.observability/attachment.json`,
+      ].sort());
+
+      const shown = await candidate.run(["show", "--run", RUN_ID, "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      const selection = shown
-        .json<{ selection: { kind: "explicit-runs"; runIds: readonly string[] } }>()
-        .selection;
-      expect(selection.runIds, shown.diagnostic()).toEqual([receipt.runIds[0]!]);
+      expect(
+        shown.json<{ selection: { runIds: readonly string[] } }>().selection.runIds,
+        shown.diagnostic(),
+      ).toEqual([RUN_ID]);
+
+      const idempotent = await candidate.run(["migrate", "--yes"]);
+      expect(idempotent.exitCode, idempotent.diagnostic()).toBe(0);
+      expect(idempotent.stdout, idempotent.diagnostic()).toContain("already-current");
+
+      mkdirSync(join(recordRoot, "migration.in-progress"), { recursive: false });
+      const interrupted = await candidate.run(["migrate", "--yes"]);
+      expect(interrupted.exitCode, interrupted.diagnostic()).toBe(1);
+      expect(interrupted.stderr, interrupted.diagnostic()).toContain("record-migration-interrupted");
+      rmSync(join(recordRoot, "migration.in-progress"), { recursive: true });
     },
   );
+
+  await e2e.case("invalid-sealed-core", async ({ paths, commands: { candidate }, run }) => {
+    const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+    cpSync(join(paths.sourceRoot, "fixtures", "observability-v1-record"), recordRoot, {
+      recursive: true,
+    });
+    rmSync(join(
+      recordRoot,
+      "runs",
+      RUN_ID,
+      "members",
+      "slot-0323498ddabf9c4811f59cf08612c5ce40dab60a267271cefdad41aae4add5a8.json",
+    ));
+    for (const args of [
+      ["init", "-q"],
+      ["config", "user.email", "e2e@niceeval.local"],
+      ["config", "user.name", "NiceEval E2E"],
+      ["add", "-f", ".niceeval/record"],
+      ["commit", "-qm", "fixture: invalid sealed core"],
+    ] as const) {
+      const git = await run(["git", ...args]);
+      expect(git.exitCode, git.diagnostic()).toBe(0);
+    }
+
+    const rejected = await candidate.run(["migrate", "--yes"]);
+    expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
+    expect(rejected.stderr, rejected.diagnostic()).toContain("record-migration-invalid");
+    expect(existsSync(join(recordRoot, "migration.in-progress"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(
+      recordRoot,
+      "runs",
+      RUN_ID,
+      "attachments",
+      "niceeval.observability",
+      "attachment.json",
+    ), "utf8"))).toEqual({ family: "niceeval.observability", schemaVersion: 1 });
+  });
 });

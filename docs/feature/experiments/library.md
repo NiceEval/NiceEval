@@ -31,20 +31,6 @@ export default defineExperiment({
 Coordination（协调）处理。它们使用 `.niceeval/` 中 Record 外的本地状态；每个 Run writer 仍只追加自己的
 `RunId` directory。
 
-## 展示名称不参与身份
-
-```ts
-export default defineExperiment({
-  displayName: "Codex · memory enabled",
-  description: "使用 RecallKit 的发布候选对照组。",
-  agent: codexAgent(),
-});
-```
-
-路径形成的完整 `experimentId` 仍负责 discovery、选择、Run 归属与 reuse。`displayName` 是一行展示值，
-`description` 是较长的定义说明；两者都不进入 selector 或执行 identity。省略 `displayName` 时使用完整 ID，
-重复名称合法。完整校验、Run 快照和输出形状见 [Experiment 展示名称](display-names/library.md)。
-
 ## 选择 Eval
 
 ```ts
@@ -77,10 +63,7 @@ export default defineExperiment({
 
 隧道 URL、临时服务地址和实际服务版本在运行时才知道，因此不写进 `flags` 或 `labels`。Hook 可以通过闭包把它交给后续的 Agent factory 或 Sandbox command；这不授予 Hook 通用 Record writer。
 
-运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入对应的 fixed family。
-每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。第三方任意 JSON、URL 或版本值没有已发布
-collector 时，不会自动持久化，也不能从 Record、Sample 或 Report 查询；需要成为产品事实时，先进入 NiceEval
-的领域设计与版本治理。
+运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入固定的 Assertions、Observability、FileChanges、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能从 Record、Sample 或 Report 查询；需要成为产品事实时，先进入 NiceEval 的领域设计与版本治理。
 
 | 值 | 何时决定 | 入口 | 结果 |
 |---|---|---|---|
@@ -172,5 +155,4 @@ experiments/agents/claude/coding.ts  -> agents/claude/coding
 - [README](README.md) —— `defineExperiment` 的公开配置。
 - [Architecture](architecture.md) —— Invocation、Run、Member 与共享状态。
 - [CLI](cli.md) —— 选择、临时反馈、receipt 与 accept。
-- [Experiment 展示名称](display-names/library.md) —— 展示输入、规范化输出与 identity 隔离。
 - [Record Library](../record/library.md) —— writer、reader、固定 Attachment 与 receipt。

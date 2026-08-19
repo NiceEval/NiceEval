@@ -50,7 +50,7 @@ Record 不保存 session、锁或 cache。它也不保存作者 API、matcher、
 `context.experimentId` 必须与 Run 的顶层 `experimentId` 相同；它让离线读取能解释实际 agent、model、
 reasoning effort、声明 flags 与 labels，而不会读取今天的配置。
 
-## 固定定义与当前七个 family
+## 固定定义与当前六个 family
 
 NiceEval 的 package-private（包私有）Record 作者模型只使用
 `defineRecordCore` 与 `defineRecordAttachment`。两者驱动 Core 与 Attachment 的编解码、读写和校验，
@@ -65,7 +65,7 @@ NiceEval 的 package-private（包私有）Record 作者模型只使用
 每个 owner 相邻声明 `schema`、`limits` 及 `blobs: { refs, budget, verify }`。可选 `maintenance` 是 async 的 lazy
 历史 codec 与相邻 migration 描述。
 
-NiceEval current 固定 Attachment catalog 有以下七个 family（附件族）。一个 family 只有一个定义入口；多个 owner
+NiceEval current 固定 Attachment catalog 有以下六个 family（附件族）。一个 family 只有一个定义入口；多个 owner
 写在同一 `owners` map，不复制 family 或另立版本名称。
 
 | family | current | `owners` | 保存的事实 |
@@ -76,10 +76,9 @@ NiceEval current 固定 Attachment catalog 有以下七个 family（附件族）
 | `niceeval.source-navigation` | 1 | `{ attempt }` | 每个物理 `t.send` 的 turn、源码 frame 与 timing identity join |
 | `niceeval.sources` | 1 | `{ run }` | 当时源码闭包的 manifest 与 own blob |
 | `niceeval.artifacts` | 1 | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
-| `niceeval.experiment-presentation` | 1 | `{ run }` | 与 Experiment identity 分离的规范化展示名称 |
 
 每个 family 的模块把自己的 declaration、复杂 payload Schema、durable JSON 键、limits 与 blob closure / integrity
-相邻放置。总 catalog 只列这七个 declaration，不重新描述任何 payload。
+相邻放置。总 catalog 只列这六个 declaration，不重新描述任何 payload。
 
 Adapter 与 collector 只能提交 NiceEval 提供的固定输入。没有调用方可用的 generic definition、family、
 registration point 或 migration registration。此前未保存且不可恢复的事实必须经过 NiceEval 裁决，

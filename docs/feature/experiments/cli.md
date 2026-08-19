@@ -24,14 +24,9 @@ niceeval debug <experiment-selector> <eval-selector> [--json]
 
 ### `exp list`
 
-`exp list` 只做发现和配置求值，不建立 Invocation、不取锁、不启动 Sandbox，也不写 Record。每行以展示名称为主标题，
-同时显示完整 Experiment ID、Agent、model、attempts、已选 Eval 数和 labels；不打印凭据或完整 flags。
+`exp list` 只做发现和配置求值，不建立 Invocation、不取锁、不启动 Sandbox，也不写 Record。每行显示 Experiment、Agent、model、attempts、已选 Eval 数和 labels；不打印凭据或完整 flags。
 
 精确 Experiment ID 优先。否则目录段精确匹配，最后一段允许前缀匹配。Experiment 零命中与 Eval 零命中都是具名错误，不降级为空 Invocation。
-
-Experiment-scoped 的 Human list、dry 与运行反馈同时保留完整 ID 和展示名称。机器字段只出现在
-[Experiment 展示名称 CLI](display-names/cli.md#json-与协议版本)穷尽声明的版本化位置；debug plan、receipt、
-selection 与 map key 保持 ID-only。
 
 ### `--dry`
 
@@ -127,34 +122,6 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 | Invocation 结束 | 显示终态 | API 返回 receipt |
 
 进程退出后不能用后台监看或 session 查询重建这块 live 状态。需要长期查看的内容必须已经通过 NiceEval 已发布 collector 进入固定 Record 事实；第三方任意值不会自动持久化或查询。需要分享则生成静态 Report。
-
-### Sandbox 复用汇总
-
-`niceeval exp` 的 live 面板按 Experiment 与 Eval Group 分别显示 `active`、`created` 和 `assignments`；
-`replacements` 只有非零才显示。结束反馈显示四项最终值，不把多个 group 合成一个总数。
-
-`niceeval.exp` v2 的全局 progress heartbeat 若出现，会携带当前复用快照；一次 Invocation 可以在首个 heartbeat
-之前完成，所以终态不依赖 progress。只要计划中存在至少一个 Experiment 或 Eval Group 复用范围，机器流就在
-Invocation pool teardown 完成后、receipt 前恰好输出一条终态事件；其中每行 `active` 都为 `0`：
-
-```ts
-interface ProgressEvent {
-  readonly event: "progress";
-  // 既有 elapsedMs、total、running 与 Verdict counters
-  readonly sandboxReuse: readonly SandboxReuseSummary[];
-}
-
-interface SandboxReuseFinalEvent {
-  readonly event: "sandbox_reuse";
-  readonly final: true;
-  readonly sandboxReuse: readonly SandboxReuseSummary[];
-}
-```
-
-`SandboxReuseSummary` 的字段与计数边界由 [Sandbox 复用](../sandbox/reuse.md#运行级复用反馈)定义。
-数组按 `experimentId`、group kind 与 `evalGroupId` 的 UTF-8 bytes 规范排序，每个计划复用范围恰有一项；
-没有实际 assignment 的范围仍以四个 `0` 出现。carried、过滤掉和 early-exit 未开始的 Slot 不产生 assignment。
-这个进程内汇总不进入 frozen reuse plan，也不写入 Record。
 
 ### Attempt 阶段
 
@@ -272,13 +239,10 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 
 ## `--json`
 
-`exp --json` 输出 `niceeval.exp` v2 NDJSON 反馈，首行声明流版本，最后恰好一条 receipt。完整形态见
-[NDJSON 输出案例](output/json-stream.md)。闭合事件联合与 Experiment-scoped 展示字段由
-[Experiment 展示名称 CLI](display-names/cli.md#json-与协议版本)唯一拥有：
+`exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt：
 
 ```json
-{"format":"niceeval.exp","schemaVersion":2,"event":"start","total":3,"configs":1,"concurrency":1,"reused":0}
-{"event":"progress","elapsedMs":30000,"total":3,"reused":0,"running":1,"elsewhere":0,"queued":2,"passed":0,"failed":0,"errored":0,"skipped":0,"sandboxReuse":[]}
+{"type":"progress","invocationId":"01J8...","message":"running","current":1,"total":3}
 {"event":"warning","code":"sandbox-retry","level":"warning","message":"retrying"}
 {"type":"receipt","receipt":{"invocationId":"01J8...","runIds":["01J9..."],"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
 ```
@@ -308,4 +272,3 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
 - [Record CLI](../record/cli.md) —— `show`、locator 与 Record 维护命令。
 - [Record Library](../record/library.md) —— receipt、reader、writer 与固定 Attachment。
-- [Experiment 展示名称 CLI](display-names/cli.md) —— list、dry、运行、show 与 view 怎样成对显示名称和 ID。
