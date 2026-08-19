@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { ProcessReceipt, ProcessStartError } from "./process.js";
 import type { Argv } from "./process.js";
@@ -7,6 +8,30 @@ import type { Argv } from "./process.js";
 export const DEFAULT_GRACE_MS = 2000;
 
 const PROCESS_GROUP_POLL_MS = 25;
+
+function linuxProcessGroupHasLiveMembers(groupId: number): boolean | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    for (const entry of readdirSync("/proc", { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+      let stat: string;
+      try {
+        stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+      } catch (error) {
+        if (errorCode(error) === "ENOENT") continue;
+        return undefined;
+      }
+      const match = /^\d+ \(.*\) (\S) \d+ (-?\d+) /.exec(stat);
+      if (match === null) return undefined;
+      if (Number(match[2]) === groupId && match[1] !== "Z" && match[1] !== "X") {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return undefined;
+  }
+}
 
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
@@ -162,6 +187,13 @@ export class ProcessHandle {
     if (!this.processGroup || this.pid === undefined) {
       return false;
     }
+    // A zombie has already exited and cannot retain ports, files, or compute.
+    // Container PID 1 may reap it late (or never), while kill(-pgid, 0) keeps
+    // reporting that historical group as present. On Linux, inspect /proc so
+    // cleanup waits only for members that can still run; retain the portable,
+    // conservative signal probe everywhere else.
+    const hasLiveLinuxMember = linuxProcessGroupHasLiveMembers(this.pid);
+    if (hasLiveLinuxMember !== undefined) return hasLiveLinuxMember;
     try {
       process.kill(-this.pid, 0);
       return true;

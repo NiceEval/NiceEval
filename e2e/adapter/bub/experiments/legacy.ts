@@ -14,6 +14,8 @@ const LEGACY_OTEL_PLUGIN =
 export default defineExperiment({
   description: "bub:往回钉一代(0.3.9 + 同代 OTel 插件)仍跑通协议路径与时间轨",
   agent: bubAgent({
+    apiKey: process.env.OPENAI_API_KEY,
+    apiBase: process.env.OPENAI_BASE_URL,
     version: "0.3.9",
     otelPlugin: LEGACY_OTEL_PLUGIN,
   }),

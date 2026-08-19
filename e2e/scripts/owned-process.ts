@@ -7,6 +7,7 @@
 // that policy and forwards cancellation through this supervisor.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
 
 export type OwnedProcessOutput = "capture" | "inherit";
 export type OwnedTermination = "timeout" | "cancelled";
@@ -57,7 +58,7 @@ export interface OwnedProcessGroupCleanup {
   groupId?: number;
   /** Signals successfully sent only to the owned negative-pid group. */
   signalsSent: readonly NodeJS.Signals[];
-  /** True only when the runner confirmed that the owned group disappeared. */
+  /** True only when the runner confirmed that the owned group has no live members. */
   gone: boolean | null;
   detail: string;
 }
@@ -71,6 +72,36 @@ function noOwnedGroupCleanup(detail: string): OwnedProcessGroupCleanup {
     gone: null,
     detail,
   };
+}
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : undefined;
+}
+
+function linuxProcessGroupHasLiveMembers(groupId: number): boolean | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    for (const entry of readdirSync("/proc", { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+      let stat: string;
+      try {
+        stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+      } catch (error) {
+        if (errorCode(error) === "ENOENT") continue;
+        return undefined;
+      }
+      const match = /^\d+ \(.*\) (\S) \d+ (-?\d+) /.exec(stat);
+      if (match === null) return undefined;
+      if (Number(match[2]) === groupId && match[1] !== "Z" && match[1] !== "X") {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return undefined;
+  }
 }
 
 /** A successful command must also leave no process in a group the runner owns. */
@@ -251,6 +282,12 @@ class ActiveOwnedProcess {
 
   private groupPresence(): "alive" | "gone" | "unknown" {
     if (!this.processGroupOwned || this.groupId === undefined) return "unknown";
+    // A zombie cannot retain runtime resources, but container PID 1 may leave
+    // it visible indefinitely. Treat a Linux group with no non-zombie members
+    // as terminal; otherwise kill(-pgid, 0) would make cleanup impossible to
+    // confirm even after KILL. Other hosts keep the conservative probe below.
+    const hasLiveLinuxMember = linuxProcessGroupHasLiveMembers(this.groupId);
+    if (hasLiveLinuxMember !== undefined) return hasLiveLinuxMember ? "alive" : "gone";
     try {
       // Signal 0 is a presence/permission probe. It targets only the negative
       // pid of the detached group created by this object; no caller-supplied
@@ -300,7 +337,7 @@ class ActiveOwnedProcess {
     this.groupChecked = true;
     if (initial === "gone") {
       this.groupAliveAfterLeaderClose = false;
-      this.markGroupGone(`owned process group ${this.groupId} was absent after command leader close`);
+      this.markGroupGone(`owned process group ${this.groupId} had no live members after command leader close`);
       return;
     }
     if (initial === "unknown") {
