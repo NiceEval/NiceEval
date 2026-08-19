@@ -9,17 +9,14 @@ an internal mechanism such as its registry, protocol, or storage model. Keep one
 dominant outcome and aim for 72 characters or fewer. Write the PR title and
 description in the language of the user's latest request.
 
-Keep only product-surface sections that contain a real change. Inside each
-included surface, inventory Removed, Added, and Changed as separate
-subsections, but delete every direction that has no entry; when all three
-directions are empty, delete the entire product-surface section. Never render
-"None" merely to preserve an empty inventory heading. Do not put a change
-classification beneath an individual command or symbol. Repeat the entry block
-as needed. Every entry needs a concrete before example, after example, and user
-impact. Usage examples must include the public owner that consumes the value;
-do not show an isolated factory result when real usage belongs inside
-`defineEval()`, `defineExperiment()`, report JSX, CLI invocation, or a package
-script.
+Keep only product-surface sections that contain a real change. Delete empty
+directions and sections instead of writing "None". Under each included
+direction, present every change as a named user case with a concrete Before
+example, After example, and User impact. The case is the explanation: do not
+replace it with prose about a "contract", implementation mechanism, or change
+classification. Usage examples must begin at the public owner that consumes
+the value: `defineEval()`, `defineExperiment()`, report JSX, a CLI invocation,
+or a package script.
 
 When the PR changes a NiceEval user workflow, the product-surface inventory does
 not replace Use cases. Surface entries show what changed; Use cases show how a
@@ -49,13 +46,11 @@ attachments, envelopes, discriminators, field meanings, and public
 reader/writer behavior belong to the versioned format. Private caches, indexes,
 temporary files, and directory organization do not become public schema merely
 because they persist; inventory their data-loss or observable impact
-separately. Within an included receipt, delete rows for an unaffected category
-instead of filling them with "None" or "not affected". A version bump must
-identify the incompatible public-format change and the stored-data upgrade
-path; a version that stays unchanged must explain why the public format remains
-readable in both directions. "No migration" is a valid decision only when the
-resulting reader behavior and concrete user command for historical Records are
-stated.
+separately. Show persisted-data behavior as public cases: writing new data,
+reading existing data, and upgrading or recovering it. A version bump must
+identify the incompatible public-format result and the upgrade path. An
+unchanged version must show both reader directions. Do not replace these cases
+with an abstract schema checklist.
 -->
 
 ## Problem
@@ -103,7 +98,7 @@ boundaries.
 
 ### Removed
 
-#### `<package entry or symbol>`
+#### Case: `<package entry or symbol>`
 
 - Before usage or result: <copyable TypeScript example and observed result>
 - After usage or result: `removed`
@@ -111,7 +106,7 @@ boundaries.
 
 ### Added
 
-#### `<package entry or symbol>`
+#### Case: `<package entry or symbol>`
 
 - Before usage or result: `not available`
 - After usage or result: <copyable TypeScript example and observed result>
@@ -119,17 +114,17 @@ boundaries.
 
 ### Changed
 
-#### `<package entry or symbol>`
+#### Case: `<package entry or symbol>`
 
 - Before usage or result: <copyable TypeScript example and observed result>
 - After usage or result: <copyable replacement example and observed result>
 - User impact: <compatibility and migration effects>
 
-## CLI commands
+## CLI
 
 ### Removed
 
-#### `<command or flag>`
+#### Case: `<command or flag>`
 
 - Before usage or result: <copyable shell command and observed result>
 - After usage or result: `removed`
@@ -137,7 +132,7 @@ boundaries.
 
 ### Added
 
-#### `<command or flag>`
+#### Case: `<command or flag>`
 
 - Before usage or result: `not available`
 - After usage or result: <copyable shell command and observed result>
@@ -145,7 +140,7 @@ boundaries.
 
 ### Changed
 
-#### `<command or flag>`
+#### Case: `<command or flag>`
 
 - Before usage or result: <copyable shell command and observed result>
 - After usage or result: <the same command, or its replacement, and the observed result>
@@ -155,7 +150,7 @@ boundaries.
 
 ### Removed
 
-#### `<component, prop, or report entry>`
+#### Case: `<component, prop, or report entry>`
 
 - Before usage or result: <copyable TSX example and rendered result>
 - After usage or result: `removed`
@@ -163,7 +158,7 @@ boundaries.
 
 ### Added
 
-#### `<component, prop, or report entry>`
+#### Case: `<component, prop, or report entry>`
 
 - Before usage or result: `not available`
 - After usage or result: <copyable TSX example and rendered result>
@@ -171,7 +166,7 @@ boundaries.
 
 ### Changed
 
-#### `<component, prop, or report entry>`
+#### Case: `<component, prop, or report entry>`
 
 - Before usage or result: <copyable TSX example and rendered result>
 - After usage or result: <copyable replacement TSX and rendered result>
@@ -181,7 +176,7 @@ boundaries.
 
 ### Removed
 
-#### `<runtime behavior, record/schema, cache, provider, or output>`
+#### Case: `<runtime behavior, record/schema, cache, provider, or output>`
 
 - Before usage or result: <concrete input and observed result>
 - After usage or result: `removed`
@@ -189,7 +184,7 @@ boundaries.
 
 ### Added
 
-#### `<runtime behavior, record/schema, cache, provider, or output>`
+#### Case: `<runtime behavior, record/schema, cache, provider, or output>`
 
 - Before usage or result: `not available`
 - After usage or result: <concrete input and observed result>
@@ -197,7 +192,7 @@ boundaries.
 
 ### Changed
 
-#### `<runtime behavior, record/schema, cache, provider, or output>`
+#### Case: `<runtime behavior, record/schema, cache, provider, or output>`
 
 - Before usage or result: <concrete input and observed result>
 - After usage or result: <the same input, or its replacement, and the observed result>
@@ -207,20 +202,17 @@ boundaries.
 
 <!--
 Delete this entire section when neither the public Record format nor a private
-persisted implementation changes. When either category is affected, complete
-the applicable receipt and delete rows for the unaffected category:
+persisted implementation changes. Otherwise show only the applicable cases:
 
 - Name every public persisted surface whose shape or meaning changes, including
   run/attempt metadata, events, artifacts, attachments, and envelopes. List
   private persisted implementation changes separately; they do not by
   themselves justify a public schema version bump.
-- Explicitly check the stable `format` / `schemaVersion` / `producer`
-  recognition header; public file names and file-presence rules; artifact and
-  source-blob shapes; and every cross-file reference whose interpretation
-  changes.
-- Use `unchanged at <N>` or `<N> -> <M>` for the version decision.
-- If the version is unchanged, explain why old readers remain correct on new
-  data and new readers remain correct on old data.
+- The new-write case includes the stable `format` / `schemaVersion` / `producer`
+  header and changed files, attachments, references, or meanings.
+- The existing-read case shows the public command or reader and its result.
+- Use `N -> N` or `N -> M` in the upgrade case. Show both reader directions when
+  the version stays unchanged.
 - If the version changes, identify the exact incompatible field/meaning and
   link the version-history entry that records why invalidating old Records is
   necessary.
@@ -231,27 +223,43 @@ the applicable receipt and delete rows for the unaffected category:
   recovery command. Explicit or automatic migration is valid only when the same
   PR first changes the canonical Record contract and implements that public
   migration boundary; the receipt cannot invent migration by itself.
-- For a real migration, name the from/to versions, public trigger, preservation
+- For a real migration, the upgrade case names the public trigger, preservation
   rules, atomicity, idempotence, interruption recovery, and data-loss boundary.
-  Do not write only "migrated" or "handled".
 -->
 
-- Affected public Record Format surfaces: <exact files, attachments, fields, discriminators, and meanings; delete when public format is unaffected>
-- Private persisted implementation impact: <caches, indexes, temporary/layout changes and their observable or data-loss effect; delete when private persistence is unaffected>
-- Version decision: <`unchanged at N` | `N -> M`; delete this and the remaining public-format rows when public format is unaffected>
-- Version reason: <why the change is compatible without a bump, or the exact incompatibility that requires one>
-- Existing Record behavior: <what the new reader does with old data and what the old reader does with new data>
-- Migration or recovery path: <`not applicable` with reason, or exact from/to versions, trigger/command, and user-visible result>
-- Migration safety: <preservation, atomicity, idempotence, interruption recovery, and known data loss, or why no migration runs>
-- Contract: <Record architecture link whenever Record is affected, or `not applicable`>
-- Version history: <schema-version history entry when the version changes, otherwise `not applicable`>
-- Verification: <literal old/new fixtures at the public Record owner, or real old/new Records exercised through the public writer, reader, or CLI; include exact commands and observed results>
+### Case: write a new Record
+
+- Action: <public writer or CLI command>
+- Result: <literal recognition header plus changed files, attachments, fields, references, or meanings>
+
+### Case: read an existing Record
+
+- Action: <public reader or CLI command, including the historical producer version when needed>
+- Result: <direct read, migration, or exact rejection/recovery diagnostic>
+
+### Case: upgrade or recover stored data
+
+- Version: `<N -> N | N -> M>`
+- Before: <what happens to existing data before this PR>
+- After: <what happens after this PR; include both reader directions when N -> N>
+- Safety: <preservation, atomicity, idempotence, interruption recovery, and known data loss; or why no migration runs>
+- User impact: <required action and observable result>
+- Evidence: <Record architecture; version history when N -> M; exact public verification command and result>
+
+### Private persisted data
+
+<!-- Delete when private persistence is unaffected. -->
+
+- Case: <cache, index, temporary file, or layout scenario>
+- Before: <observable behavior or data-loss boundary>
+- After: <observable behavior or data-loss boundary>
+- User impact: <required action, recovery, or no action with concrete reason>
 
 ## Environment variables
 
 ### Removed
 
-#### `<VARIABLE_NAME>`
+#### Case: `<VARIABLE_NAME>`
 
 - Before usage or result: <copyable shell/config example and observed result>
 - After usage or result: `removed`
@@ -260,7 +268,7 @@ the applicable receipt and delete rows for the unaffected category:
 
 ### Added
 
-#### `<VARIABLE_NAME>`
+#### Case: `<VARIABLE_NAME>`
 
 - Before usage or result: `not available`
 - After usage or result: <copyable shell/config example, default, and observed result>
@@ -270,7 +278,7 @@ the applicable receipt and delete rows for the unaffected category:
 
 ### Changed
 
-#### `<VARIABLE_NAME>`
+#### Case: `<VARIABLE_NAME>`
 
 - Before usage or result: <copyable shell/config example, default, and observed result>
 - After usage or result: <copyable shell/config example, default, and observed result>
@@ -282,7 +290,7 @@ the applicable receipt and delete rows for the unaffected category:
 
 ### Removed
 
-#### `<pnpm script>`
+#### Case: `<pnpm script>`
 
 - Before usage or result: <copyable command and observed result>
 - After usage or result: `removed`
@@ -290,7 +298,7 @@ the applicable receipt and delete rows for the unaffected category:
 
 ### Added
 
-#### `<pnpm script>`
+#### Case: `<pnpm script>`
 
 - Before usage or result: `not available`
 - After usage or result: <copyable command and observed result>
@@ -298,7 +306,7 @@ the applicable receipt and delete rows for the unaffected category:
 
 ### Changed
 
-#### `<pnpm script>`
+#### Case: `<pnpm script>`
 
 - Before usage or result: <copyable command and observed result>
 - After usage or result: <copyable command and observed result>
@@ -308,28 +316,54 @@ the applicable receipt and delete rows for the unaffected category:
 
 <!--
 Delete this entire section when no test, fixture, expected result, or harness
-changes and no changed product behavior requires a deliberate no-automation
-receipt. A lint or validation command by itself is verification, not a test
-change. Keep `not automated` only for an affected product behavior whose manual
-acceptance and unprotected risk must be preserved under the testing contract.
+changes and no changed product behavior deliberately remains unautomated.
+
+For every added or modified test file, paste its complete final source exactly
+once, including owner, regression, rerun, and reliability comments. Introduce
+it with only two lines: Purpose says whether it proves a feature, prevents a bug
+regression, or both; Protects names the public behavior that would escape if the
+test disappeared. Do not describe a test as "changed", "rewritten", or a list
+of receipt fields.
+
+List deleted tests separately with their replacement or the reason the owner no
+longer exists. After the source files, keep one compact Verification receipt for
+the shared candidate and run conditions. A lint or validation command is
+verification, not a test file. A deliberately unautomated behavior records the
+real public action, observation, and remaining risk instead of fake source.
 -->
 
-### `<test file, named owner, or manually verified behavior>`
+### `<added-or-modified-test-file>`
 
-- Change: `added | removed | renamed | substantially rewritten | not automated`
-- Change class: `public-contract | internal-refactor | new-journey | bug-regression | test-retirement | not-automated`
-- Disposition: `retain | delete | replace | not automated`
-- Candidate identity: <Git SHA and NiceEval tarball SHA-256, or "not applicable">
-- Contract and owner: `<docs path#anchor, or "no long-term automated owner">`
-- Stability budget: <why this exact test file is inside the observable contract diff; list the replaced or deleted owner when applicable>
-- Example scenario: <representative input, action, and expected result>
-- Before: <the regression or contract violation that could escape>
-- After: <what the test now proves>
-- Distinguishing evidence: <historical fix parent, mutation, or contract-preserving perturbation reference and observed result>
-- Verification: <exact commands and earliest failing prepare/invoke/observe/outcome/cleanup stage>
-- Fixed conditions: <lockfile, fixture, seed, clock policy, and image digest or "not applicable">
-- Repeatability: <isolated copies 1/2/3, same-copy runs 1/2, default parallel, file/title isolation, and resource cleanup results>
-- Unit exception or no automation: <why E2E cannot distinguish this risk through a stable boundary, or the AI manual verification conditions and unprotected risk>
-- Unit count: <`pnpm test` Tests; total must be 200 or fewer; Testkit has no independent Unit suite>
-- Manual observation: <real runtime/version, production entry, AI actions, public result, and unprotected risk; "not applicable" for automation>
-- User impact: <the user-visible behavior protected by this test>
+- Purpose: `feature | bug regression | feature + bug regression`
+- Protects: <public behavior and the bug that would escape if this test were removed>
+
+```ts
+<complete final file, with comments>
+```
+
+### Deleted test files
+
+<!-- Delete when no test file was removed. Repeat the block for each file. -->
+
+#### `<deleted-test-file>`
+
+- Previous owner: <public behavior>
+- Replacement or reason: <new owner path, or why the behavior no longer exists>
+
+### Verification receipt
+
+- Candidate: <Git SHA and NiceEval tarball SHA-256>
+- Red: <for a bug, old candidate or minimal mutation plus earliest failing stage; otherwise delete>
+- Green: <exact public E2E command and result>
+- Repeatability: <required takeover matrix and cleanup result, or why this live owner uses one authorized run>
+- Fixed conditions: <checkout, lockfile, fixture, seed/clock policy, and image/provider identity>
+- Unit count: <`pnpm test` Tests, or `not applicable — no Unit changed`>
+
+### Deliberately not automated
+
+<!-- Delete when every affected behavior has an automated owner. -->
+
+- Case: <affected public behavior>
+- Public action: <real production entry and runtime/version>
+- Observation: <what the AI observed>
+- Remaining risk: <what can still regress without an owner>
