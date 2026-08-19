@@ -1,6 +1,6 @@
 # 功能域 · Runner
 
-本域回答一个问题：**确定性 Runner 项目在真实候选包上是否正确计划、携带与去重历史 attempt。**
+本域回答一个问题：**确定性 Runner 项目在真实候选包上是否正确计划、携带与去重历史 attempt，并公开读回通用执行 timing。**
 它由 `e2e/runner/` 功能 Repo 承担；manifest 的 `areas` 包含 `runner`，并进入无密钥 PR lane。
 
 仓库使用签入的确定性 Agent fixture，不依赖真实 provider、网络或凭据。每条会修改 Eval 或结果的 case 都在自己的项目副本中运行；公开观察只通过安装后的 `niceeval exp` 与 `niceeval show` 完成。
@@ -26,6 +26,14 @@
 同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 不能复制新的公开 Attempt locator。不带 locator 或 `--run` 的 `show` 必须列出全部身份仍匹配的 Run，包括两次 origin Run 与 carry Run。
 
 两个终端同时运行同一个实验时，后开始的命令会等前一个命令完成发布。它随后直接使用前一个命令已经完成的题目结果，不会再次调用 agent、sandbox 或 judge 去跑同一题目。
+
+同一 owner 对这轮强制重跑的 Attempt 运行 `niceeval show @<locator> --timing --json`。
+它只从公开 timing receipt 取 `eval.run` / `eval.run` 与其子项 `agent.send` / `turn1`。
+
+两项均须为 `completed`。`eval.run` 是 root，`agent.send` 的 `parentIntervalId` 必须指向它的 `intervalId`。
+
+这条是 `eval.run`、`agent.setup`、`agent.send` 等通用 Runner timing 的唯一 E2E owner。
+它不比较 duration、offset 或随机 interval ID，也不把 Adapter 的 execution/session/protocol 结果重复写成 timing 测试。
 
 ### runner-group-or-stop-dispatch
 

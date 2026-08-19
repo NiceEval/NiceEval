@@ -148,13 +148,6 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
     "execution tree missing shell evidence (shell/bash/command_execution)",
   ).toBe(true);
 
-  // timing 独立读回 runner 的实际阶段树，不重复 execution 或 Skill 断言。
-  const timing = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout).toContain("eval.run");
-  expect(timing.stdout).toContain("agent.setup");
-  expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
-
   // Skill 配置独立成线：安装、原生 skill 工具选择与 decoy 反选由专用 Eval 证明。
   const skillRun = await niceeval.run(
     ["exp", "skill", SKILL_EVAL, "--rerun", "all", "--json"],

@@ -137,11 +137,3 @@ it("show --execution 读回 Codex CLI 的代表性工具证据", async () => {
   ).toBe(true);
   expect(execution.stdout).toContain("niceeval-e2e-run-914");
 });
-
-it("show --timing 读回 Codex CLI 的 runner 阶段", async () => {
-  const codingTaskLocator = locatorFor("coding-task");
-  const timing = await niceeval.run(["show", codingTaskLocator, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
-});
