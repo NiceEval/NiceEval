@@ -96,6 +96,12 @@ interface CaptureDocumentSource {
 }
 
 const encoder = new TextEncoder();
+// Producer retention is deliberately tighter than the v1 decoder ceiling.
+// Existing Records with up to 10,000 changes remain readable, while new
+// captures avoid multiplying schema encode/write/read validation work during
+// publication.
+const MAXIMUM_PRODUCED_CHANGES_PER_WINDOW = 1_000;
+const MAXIMUM_PRODUCED_CHANGES_PER_ATTACHMENT = 1_000;
 const blobBudgetProjection = Object.freeze({
   "$niceeval.record.blob-ref": true,
 });
@@ -379,21 +385,21 @@ function structuralCapture(
       }
     }
     const prepared = changes.map(prepareChange);
-    if (prepared.length > FileChangesLimits.maximumChangesPerWindow) {
+    if (prepared.length > MAXIMUM_PRODUCED_CHANGES_PER_WINDOW) {
       limitations.push(capLimitation(
         "change",
-        prepared.length - FileChangesLimits.maximumChangesPerWindow,
+        prepared.length - MAXIMUM_PRODUCED_CHANGES_PER_WINDOW,
         windowId,
       ));
     }
     preparedWindows.push(Object.freeze({
       windowId,
       sequence: index + 1,
-      changes: freezeArray(prepared.slice(0, FileChangesLimits.maximumChangesPerWindow)),
+      changes: freezeArray(prepared.slice(0, MAXIMUM_PRODUCED_CHANGES_PER_WINDOW)),
     }));
   }
 
-  let remainingChanges = FileChangesLimits.maximumRetainedChanges;
+  let remainingChanges = MAXIMUM_PRODUCED_CHANGES_PER_ATTACHMENT;
   const capturedWindows = preparedWindows.map((window) => {
     const retained = Math.min(window.changes.length, remainingChanges);
     if (retained < window.changes.length) {
