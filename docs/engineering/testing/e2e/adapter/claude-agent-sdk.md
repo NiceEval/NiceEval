@@ -43,7 +43,7 @@ group，确保没有残留子进程。
 测试只通过公开 CLI 的 `show`、`show --json` 和代表 Report 的 execution target Page 读回通过结果。
 target Page 使用 `show @locator --report <fixture-module> --page <route>`。
 它检查 session assertion、完整原始 `Bash` 名和 marker，不读取私有结果文件。
-通用 Runner timing 由 [`runner-history-dedup`](../runner.md#runner-history-dedup) 唯一读回；本 Repo 不重复断言。
+通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回；本 Repo 不重复断言。
 
 Experiment 固定 `attempts: 1`，Vitest `retry: 0`，不配置 Judge。首次 Invocation 若产生结构化
 `verdict: failed`，原生 owner 只精确补跑该 Eval 一次，并保留首次 Invocation；`errored`、`skipped`、

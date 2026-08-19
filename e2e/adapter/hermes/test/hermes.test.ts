@@ -14,9 +14,13 @@ import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 
 const EXPECTED_OUTCOMES = [
+  // coding task：带可区分入参的文件写入与 shell 读回都须归一完成；单次执行期望 passed/1。
   { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
+  // Skill selection：只加载 incident-report Skill、不加载 decoy，并采用目标约定；期望 passed/1。
   { experimentId: "ci", evalId: "skills/selected", verdict: "passed", attempts: 1, passed: 1 },
+  // session recall：同一会话的第二轮须引用首轮事实；一条会话链完成即为 passed/1。
   { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
+  // usage：两个独立 turn 都须读到正的 input/output token；全部断言成立时为 passed/1。
   { experimentId: "ci", evalId: "usage/tokens", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
@@ -76,6 +80,11 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async ()
         evalEvents,
         (candidate) => candidate.evalId === "coding-task/write-and-verify",
       );
+      const execution = await niceeval.run(["show", event.locator, "--execution"]);
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
+      expect(execution.stdout).toContain("file_write");
+      expect(execution.stdout).toContain("shell");
+      expect(execution.stdout).toContain("niceeval-hermes-tool-input-914");
     },
   );
 }, 38 * 60_000);

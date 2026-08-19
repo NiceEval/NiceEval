@@ -34,4 +34,4 @@ Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes
 - **OTel 写入**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`）。span 按 `src/topology.ts` 的固定 endpoint 发到 `niceeval.config.ts` 的 `telemetry.port`。
 - **OTel 生命周期**：UI stream 关闭 HTTP response 前显式 `forceFlush()`，进程终结时 `shutdown()` provider。验收不用固定延时竞速 BatchSpanProcessor。
 - **OTel 观察边界**：当前公开 Record / `show` 不能把 mapper 与单个 Adapter 明确归因，因此本 Repo 不声称 mapper-specific OTel 已被验收，也不以日志、私有结果或通用 timing 代替。
-- OTel 不成为事件出处。判分断言只读事件流；通用 Runner timing 由 [`runner-history-dedup`](../runner.md#runner-history-dedup) 唯一读回。
+- OTel 不成为事件出处。判分断言只读事件流；通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回。

@@ -46,7 +46,7 @@ It then reads the result through public commands:
 - `niceeval show @locator --execution --json`
 
 Generic `eval.run`, `agent.setup`, and `agent.send` timing belongs only to the
-[Runner owner](../runner.md#runner-history-dedup).
+[Runner owner](../runner.md#runner-generic-timing).
 
 - Record / `show` currently has no mapper-specific OTel attribution seam for a converter.
 - This owner therefore has no public observation for that claim.

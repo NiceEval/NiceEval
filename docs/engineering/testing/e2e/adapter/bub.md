@@ -43,4 +43,4 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 - `ci` Experiment 选中本仓库的 coding、Skill、plugin / postSetup、会话和 usage Eval；原生验收脚本列全协议 Eval ID，防止少发现/少运行后假绿。
 - **Eval 结果**：原生验收分别核对当前版与 legacy 版的通过数、未通过数；工具、Skill 与 plugin 细节由 Eval 判分。
 - **Evidence Page**：独立 `show @locator --report <fixture-module> --page <execution-route>` test 只读回 coding Eval 的代表性工具证据。
-- **Timing / OTel 边界**：通用 Runner timing 由 [`runner-history-dedup`](../runner.md#runner-history-dedup) 唯一读回。当前公开读面不能归因 Bub 的 mapper-specific OTel，本 Repo 不用通用 timing 或日志冒充该证据。
+- **Timing / OTel 边界**：通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回。当前公开读面不能归因 Bub 的 mapper-specific OTel，本 Repo 不用通用 timing 或日志冒充该证据。

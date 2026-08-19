@@ -11,6 +11,7 @@
 | --- | --- | --- | --- | --- |
 | [`#runner-carry-partial-reuse`](#runner-carry-partial-reuse) | 改变一个 Eval 只重新派发其 identity，未改变的 Eval 继续携带 | Journey E2E | `e2e/runner/test/carry-partial-reuse.test.ts` | PR |
 | [`#runner-history-dedup`](#runner-history-dedup) | 强制重跑或同时运行同一实验时，不重复执行已经完成的题目 | Journey E2E | `e2e/runner/test/history-dedup.test.ts` | PR |
+| [`#runner-generic-timing`](#runner-generic-timing) | 公开 timing 保留 setup、run 与 send 的完成关系 | 单边界 E2E | `e2e/runner/test/timing.test.ts` | PR |
 | [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅变更后 accept 旧结果，新 Run 立即进入 project-current，但不获得未来 carry 许可，并保留审计 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
 | [`#runner-group-or-stop-dispatch`](#runner-group-or-stop-dispatch) | 一个 Eval 的 `.orStop()` 不饿死其它 Eval Group lane | Journey E2E | `e2e/runner/test/group-or-stop-dispatch.test.ts` | PR |
 | [`#runner-group-wave-gap-dispatch`](#runner-group-wave-gap-dispatch) | 慢 Group lane 不阻塞已有空闲资源的快 lane 后继 | Journey E2E | `e2e/runner/test/group-wave-gap-dispatch.test.ts` | PR |
@@ -27,13 +28,17 @@
 
 两个终端同时运行同一个实验时，后开始的命令会等前一个命令完成发布。它随后直接使用前一个命令已经完成的题目结果，不会再次调用 agent、sandbox 或 judge 去跑同一题目。
 
-同一 owner 对这轮强制重跑的 Attempt 运行 `niceeval show @<locator> --timing --json`。
-它只从公开 timing receipt 取 `eval.run` / `eval.run` 与其子项 `agent.send` / `turn1`。
+### runner-generic-timing
 
-两项均须为 `completed`。`eval.run` 是 root，`agent.send` 的 `parentIntervalId` 必须指向它的 `intervalId`。
+确定性 Direct Agent 真实执行一次 `setup` 与一次 `send`。owner 从安装后 CLI 运行 `timing` Experiment，
+再对其唯一 Attempt 执行 `niceeval show @<locator> --timing --json`。
 
-这条是 `eval.run`、`agent.setup`、`agent.send` 等通用 Runner timing 的唯一 E2E owner。
-它不比较 duration、offset 或随机 interval ID，也不把 Adapter 的 execution/session/protocol 结果重复写成 timing 测试。
+公开 receipt 必须各有一个 completed 的 `eval.run` / `eval.run`、`attempt.setup` / `agent.setup` 与
+`agent.send` / `turn1`。前两项是各自 lifecycle phase 的 root；`agent.send` 的 `parentIntervalId`
+必须指向 `eval.run` 的 `intervalId`。
+
+这条是上述通用 Runner timing 的唯一 E2E owner。它不比较 duration、offset 或随机 interval ID，
+也不把 Adapter 的 execution/session/protocol 结果重复写成 timing 测试。
 
 ### runner-group-or-stop-dispatch
 

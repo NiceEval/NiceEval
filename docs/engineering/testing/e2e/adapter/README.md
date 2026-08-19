@@ -48,7 +48,7 @@
 按标题单项运行时，`beforeAll` 仍必须现场产生本轮 evidence。
 
 `eval.run`、`agent.setup` 与 `agent.send` 是通用 Runner timing，只由
-[Runner owner](../runner.md#runner-history-dedup)通过公开 JSON 读回。Adapter 不重复 `show --timing`，也不把
+[Runner owner](../runner.md#runner-generic-timing)通过公开 JSON 读回。Adapter 不重复 `show --timing`，也不把
 它当作 execution、session 或 protocol 事实。当前公开 Record / `show` 没有可把 OTel mapper 明确归因给单个 Adapter
 的 seam；mapper-specific OTel 没有可核查的公开证据，不得以日志、私有 `.niceeval` 目录文件、`telemetry.collect` 或通用
 `agent.send` 代替。

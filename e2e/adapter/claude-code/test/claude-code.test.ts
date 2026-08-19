@@ -18,18 +18,29 @@ import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
 const EXPECTED_OUTCOMES = [
+  // coding-task：文件写入、编辑与 shell 调用都须完成；单次基线 Attempt 全部断言成立才是 passed/1。
   { experimentId: "coding", evalId: "coding-task", verdict: "passed", attempts: 1, passed: 1 },
+  // session-resume：原生 --resume 须带回首轮事实且两轮 usage 可用；一次会话链完成即为 passed/1。
   { experimentId: "coding", evalId: "session-resume", verdict: "passed", attempts: 1, passed: 1 },
+  // WebSearch 正例：coding 开启 webResearch，必须调用 web_search 且不调用 web_fetch，因此期望 passed/1。
   { experimentId: "coding", evalId: "websearch-denied", verdict: "passed", attempts: 1, passed: 1 },
+  // skill-used：只加载目标本地 Skill，并在回答中采用其独有 marker；单次正调应为 passed/1。
   { experimentId: "skill", evalId: "skill-used", verdict: "passed", attempts: 1, passed: 1 },
+  // skill-checklist：只加载 checklist Skill、不误载 marker/decoy；反选断言同时成立才是 passed/1。
   { experimentId: "skill", evalId: "skill-checklist", verdict: "passed", attempts: 1, passed: 1 },
+  // skill-unused：普通对话不得加载任何已安装 Skill 或调用工具；这个反例成立时仍是 passed/1。
   { experimentId: "skill", evalId: "skill-unused", verdict: "passed", attempts: 1, passed: 1 },
+  // repo-skill：钉定 Git 来源的 Skill 必须安装、原生加载并影响输出；一次完整验证期望 passed/1。
   { experimentId: "repo-skill", evalId: "repo-skill", verdict: "passed", attempts: 1, passed: 1 },
+  // mcp-tools：stdio 与 Streamable HTTP 两个 MCP 工具都须以正确入参完成；因此期望 passed/1。
   { experimentId: "mcp", evalId: "mcp-tools", verdict: "passed", attempts: 1, passed: 1 },
+  // plugin-mcp：官方 Context7 Plugin 的远程 MCP 必须接线并成功调用；单次安装路径期望 passed/1。
   { experimentId: "plugin", evalId: "plugin-mcp", verdict: "passed", attempts: 1, passed: 1 },
   // plugin-reuse：四个 Sandbox 承接两波共八次复用，八次都须调用 Context7 成功，所以是 passed/8。
   { experimentId: "plugin-reuse", evalId: "plugin-mcp", verdict: "passed", attempts: 8, passed: 8 },
+  // remote-plugin：远程 marketplace 文件须安装，随 Plugin 的 Skill 须被加载并完成请求；期望 passed/1。
   { experimentId: "remote-plugin", evalId: "remote-plugin", verdict: "passed", attempts: 1, passed: 1 },
+  // WebSearch 反例：locked-down settings 禁止 WebSearch/WebFetch，零调用才通过，因此期望 passed/1。
   { experimentId: "locked-down", evalId: "websearch-denied", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 

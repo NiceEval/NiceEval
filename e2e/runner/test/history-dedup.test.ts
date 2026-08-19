@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-history-dedup
 // regression: memory/multi-open-residual-window-closed-by-narrow-read.md
 // rerun: pnpm e2e --repo runner -- --run test/history-dedup.test.ts
-import { decodeShowTiming, only, pollUntil, withTempDir, type ExpEvent } from "@niceeval/testkit";
+import { only, pollUntil, withTempDir, type ExpEvent } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -84,28 +84,6 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
       expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);
       expect(forcedEvidence.stdout).toContain("runner-fixture-ok");
 
-      const timing = await niceeval.run(["show", forcedLocator, "--timing", "--json"]);
-      expect(timing.exitCode, timing.diagnostic()).toBe(0);
-      const availableTiming = only(
-        decodeShowTiming(timing).data.timing,
-        (entry) => entry.state === "available",
-        timing.diagnostic(),
-      );
-      if (availableTiming.state !== "available") throw new Error(timing.diagnostic());
-      const evalRun = only(
-        availableTiming.timing.intervals,
-        (interval) => interval.phase === "eval.run" && interval.label === "eval.run",
-        timing.diagnostic(),
-      );
-      expect(evalRun.parentIntervalId, timing.diagnostic()).toBeNull();
-      expect(evalRun.outcome, timing.diagnostic()).toBe("completed");
-      const firstSend = only(
-        availableTiming.timing.intervals,
-        (interval) => interval.phase === "agent.send" && interval.label === "turn1",
-        timing.diagnostic(),
-      );
-      expect(firstSend.parentIntervalId, timing.diagnostic()).toBe(evalRun.intervalId);
-      expect(firstSend.outcome, timing.diagnostic()).toBe("completed");
     },
   );
 });
