@@ -17,11 +17,10 @@ checkout
   lfs        rejected
 ```
 
-执行失败显示命令阶段与安全修法，不回显 credential、私有 cache 路径、完整 transport stderr 或 Agent 不可见对象名。
+执行失败显示安全有界的真实错误，不回显 credential、私有 cache 路径、完整 transport stderr 或 Agent 不可见对象名。
 
 ```text
-ERROR checkout.submodule-present
-  declared commit contains a gitlink; declare one self-contained repository
+error: The declared commit contains a Git submodule, which this checkout does not support.
 ```
 
 ## JSON

@@ -23,7 +23,7 @@
 
 import { t } from "../../i18n/index.ts";
 import { formatCost } from "../../shared/format.ts";
-import { compactAssertionSummary, fitCompactAssertionSummary } from "../../assertions/display.ts";
+import { compactAssertionSummary, fitCompactAssertionSummary, stripControl } from "../../assertions/display.ts";
 import { COORDINATION_RECOVERED_CODE, encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import {
   panelCapabilityOf as panelCapability,
@@ -32,7 +32,7 @@ import {
   type PanelMode,
   type PanelRow,
 } from "../../report/model/panel.ts";
-import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth } from "../../report/model/text-layout.ts";
+import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth, wrapDisplay } from "../../report/model/text-layout.ts";
 import type {
   CommandPlan,
   CommandPlanLane,
@@ -53,7 +53,10 @@ import type {
   DurableFeedbackEvent,
   RunFeedbackPlan,
   RunFeedbackState,
+  EvalResult,
+  TimingOrigin,
 } from "../types.ts";
+import type { CurrentReusedAttemptReadback } from "../reuse-readback.ts";
 import type { FeedbackRenderer } from "./renderer.ts";
 import type { FeedbackIO } from "./io.ts";
 import type { JsonValue } from "../../shared/types.ts";
@@ -107,8 +110,7 @@ function panelCapabilityForFeedback(io: FeedbackIO): { mode: PanelMode; width: n
 const HUMAN_FAILURE_CAP = 10;
 /** live 面板 FAILURES 分节滚动保留的条数(见 cli.md「运行中的 live 面板」)。 */
 const LIVE_FAILURES_VISIBLE = 5;
-/** 结束反馈 FAILURES 面板按失败形态聚合后,展开的组数上限;超出收进
- *  `+K more kinds — niceeval view` 尾行(见 cli.md「人看的结束反馈」)。 */
+/** 结束反馈中断言失败形态的展开上限；execution error 必须逐条保留自己的 message，不受此上限折叠。 */
 const FAILURE_GROUPS_CAP = 10;
 /** 非 TTY / `--json` 没有可依赖的终端宽度,失败单行投影用固定预算(见
  *  docs/feature/assertions/library/display.md「一条摘要怎样排版」)。 */
@@ -118,6 +120,156 @@ const NON_TTY_HEARTBEAT_IDLE_MS = 30_000;
 /** dashboard 高度预留:避免最后一行触发终端自动滚动(与 live.ts 旧实现的 `rows - 2` 同一动机,
  *  这里只需要给「下一帧」留出一行余地,不需要额外的表头/尾行预留)。 */
 const DASHBOARD_ROW_RESERVE = 1;
+const HUMAN_RESULTS_EXPERIMENT_CAP = 5;
+const HUMAN_ERROR_TEXT_MAX_BYTES = 240;
+
+type HumanResultItem = {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly evaluationKind: "pass" | "score";
+  readonly verdict: import("../../shared/types.ts").Verdict;
+  readonly scoreState?: "complete" | "partial" | "unavailable";
+  readonly earned?: number;
+};
+
+function freshHumanResult(result: EvalResult): HumanResultItem {
+  const score = result.scoreResult;
+  const scoreState = score === undefined
+    ? undefined
+    : score.status === "scored"
+      ? "complete" as const
+      : score.earnedScore > 0
+        ? "partial" as const
+        : "unavailable" as const;
+  return {
+    experimentId: result.experimentId ?? "default",
+    evalId: result.id,
+    evaluationKind: result.evaluationKind,
+    verdict: result.verdict,
+    ...(scoreState === undefined || score === undefined ? {} : { scoreState, earned: score.earnedScore }),
+  };
+}
+
+function reusedHumanResult(result: CurrentReusedAttemptReadback): HumanResultItem {
+  const attachment = result.score.state === "applicable" && result.score.attachment.state === "available"
+    ? result.score.attachment.value
+    : undefined;
+  return {
+    experimentId: result.target.experimentId,
+    evalId: result.target.evalId,
+    evaluationKind: result.source.evaluationKind,
+    verdict: result.verdict,
+    ...(attachment === undefined
+      ? {}
+      : {
+          scoreState: attachment.state,
+          ...(attachment.earned === undefined ? {} : { earned: attachment.earned }),
+        }),
+  };
+}
+
+function humanResultItems(summary: import("../types.ts").InvocationSummary): readonly HumanResultItem[] {
+  return [
+    ...summary.results.map(freshHumanResult),
+    ...summary.reusedAttempts.map(reusedHumanResult),
+  ];
+}
+
+function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
+  const byExperiment = new Map<string, HumanResultItem[]>();
+  for (const item of items) {
+    const group = byExperiment.get(item.experimentId);
+    if (group) group.push(item);
+    else byExperiment.set(item.experimentId, [item]);
+  }
+  const groups = [...byExperiment.entries()];
+  const rows: PanelRow[] = [];
+  for (const [experimentId, members] of groups.slice(0, HUMAN_RESULTS_EXPERIMENT_CAP)) {
+    rows.push({ kind: "line", text: experimentId });
+    const byEval = new Map<string, HumanResultItem[]>();
+    for (const member of members) {
+      const evalGroup = byEval.get(member.evalId);
+      if (evalGroup) evalGroup.push(member);
+      else byEval.set(member.evalId, [member]);
+    }
+    for (const [evalId, attempts] of byEval) {
+      if (attempts.some((attempt) => attempt.evaluationKind === "score")) {
+        const complete = attempts.filter((attempt) => attempt.scoreState === "complete" && attempt.earned !== undefined);
+        const partial = attempts.filter((attempt) => attempt.scoreState === "partial" && attempt.earned !== undefined);
+        const reading = complete.length > 0
+          ? `${complete.reduce((sum, attempt) => sum + attempt.earned!, 0) / complete.length} score · ${complete.length}/${attempts.length} complete`
+          : partial.length > 0
+            ? `≥${partial.map((attempt) => attempt.earned).join(", ≥")} score · partial`
+            : "score unavailable";
+        rows.push({ kind: "line", text: `  ${evalId}  ${reading}` });
+      } else {
+        const passed = attempts.filter((attempt) => attempt.verdict === "passed").length;
+        rows.push({ kind: "line", text: `  ${evalId}  ${passed}/${attempts.length} passed` });
+      }
+    }
+  }
+  if (groups.length > HUMAN_RESULTS_EXPERIMENT_CAP) {
+    rows.push({
+      kind: "line",
+      text: t("feedback.human.resultsMore", { count: groups.length - HUMAN_RESULTS_EXPERIMENT_CAP }),
+    });
+  }
+  return rows;
+}
+
+function buildPreAttemptErrorRows(
+  results: readonly EvalResult[],
+  runIdsByExperiment: ReadonlyMap<string, string>,
+  panel: { mode: PanelMode; width: number },
+): { readonly rows: PanelRow[]; readonly slots: number } | undefined {
+  const errored = results.filter((result) =>
+    result.verdict === "errored" && result.locator === undefined && result.error !== undefined
+  );
+  if (errored.length === 0) return undefined;
+  const groups = new Map<string, EvalResult[]>();
+  for (const result of errored) {
+    const error = result.error!;
+    const runId = result.experimentId === undefined
+      ? undefined
+      : runIdsByExperiment.get(result.experimentId);
+    // Run timing node IDs are local identities. The same `n1` in another Run
+    // names a different physical failure and must not absorb its message.
+    const failureId = error.origin.scope === "run"
+      ? `${runId ?? result.experimentId ?? "default"}\u0000${error.origin.timingNodeId}`
+      : `${result.experimentId ?? "default"}\u0000${error.code}:${error.message}`;
+    const members = groups.get(failureId);
+    if (members) members.push(result);
+    else groups.set(failureId, [result]);
+  }
+  const rows: PanelRow[] = [];
+  const contentWidth = panelContentWidth(panel.width, panel.mode);
+  for (const members of groups.values()) {
+    const representative = members[0]!;
+    const error = representative.error!;
+    rows.push({
+      kind: "line",
+      text: `${FAILURE_SYMBOL} ${representative.experimentId ?? "default"} · ${preAttemptErrorTitle(error.origin)}`,
+    });
+    rows.push({
+      kind: "line",
+      text: `  affected: ${members.map((member) => `${member.experimentId ?? "default"}/${member.id}`).join(", ")}`,
+    });
+    rows.push(...labelledWrappedRows("error", boundedHumanError(error.message), contentWidth));
+  }
+  return { rows, slots: errored.length };
+}
+
+function preAttemptErrorTitle(origin: TimingOrigin): string {
+  if (origin.scope === "run") return "Sandbox image build failed";
+  const phase = origin.phase;
+  switch (phase) {
+    case "judge.precheck": return "Judge precheck failed";
+    case "experiment.setup": return "Experiment setup failed";
+    case "sandbox.queue": return "Sandbox queue failed";
+    case "sandbox.create": return "Sandbox provisioning failed";
+    default: return `${phaseLabel(phase)} failed`;
+  }
+}
 
 export interface HumanRendererOptions {
   io: FeedbackIO;
@@ -251,7 +403,7 @@ export function renderDurableLines(
     case "summary":
       return buildSummaryLines(event, state, panel);
     case "receipt":
-      return buildReceiptLines(event, panel);
+      return buildReceiptLines(event, state, panel);
     default: {
       // 穷尽性检查:新增 DurableFeedbackEvent 变体时这里编译期报错提醒补上对应分支。
       const exhaustive: never = event;
@@ -342,20 +494,8 @@ function buildFailureFactLine(failure: FailureFact, maxWidth: number): string {
   const budget = Math.max(0, maxWidth - stringWidth(prefix));
   const info = failure.fact
     ? fitCompactAssertionSummary(failure.fact, budget)
-    : buildErroredInfo(failure.phase, failure.code, failure.reason);
+    : `error: ${boundedHumanError(failure.reason)}`;
   return prefix + clipDisplayWidth(info, budget);
-}
-
-/**
- * errored 且没有主 Fact 摘要（真正的结构化执行错误）时的信息段:
- * `errored · <phase> · <code>`,余量够再接 `: <message>`。`phase`/`code` 用未翻译的原始字面量
- * (`LifecyclePhase` 枚举值 / `AttemptError.code`),不走 `phaseLabel()` 的人读短语 —— 这一段
- * 是给读者对照 `--json` `error` 事件、`result.json` 与 `show` 里同一个字面量用的,不是散文。
- */
-function buildErroredInfo(phase: LifecyclePhase | undefined, code: string | undefined, reason: string): string {
-  const parts = ["errored", ...(phase ? [phase] : []), ...(code ? [code] : [])];
-  const base = parts.join(" · ");
-  return reason ? `${base}: ${reason}` : base;
 }
 
 /** 按显示列硬夹紧,超宽尾部截断补 `…`。`fitCompactAssertionSummary` 的截断口径是字符数,不是
@@ -383,6 +523,10 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
   // 跨用例撞上同一类状况时,读者需要的是「这类事发生了 N 次」,不是 N 段几乎相同的文字;
   // 逐 code 的次数与首条 message 由结束反馈的 WARNINGS / RECOVERY 面板汇总。
   const code = event.code ?? event.key;
+  // Judge precheck already has a live lifecycle row and a terminal pre-Attempt
+  // error block. Repeating its machine code in Human output adds no fact and
+  // exposes machine vocabulary in the default profile.
+  if (code === "judge-precheck-failed") return [];
   const firstForCode = state.diagnostics.find((d) => (d.code ?? d.key) === code);
   const count = state.diagnostics.find((d) => d.key === event.key)?.count ?? 1;
   if (count > 1 || firstForCode?.key !== event.key) return [];
@@ -415,22 +559,45 @@ function buildSummaryLines(
 ): string[] {
   const { summary, completion } = event;
   const fullReuse = state.total > 0 && state.total === state.reused;
+  const resultItems = humanResultItems(summary);
+  const hasScore = resultItems.some((item) => item.evaluationKind === "score");
+  const hasPass = resultItems.some((item) => item.evaluationKind === "pass");
+  const scored = resultItems.filter((item) =>
+    item.evaluationKind === "score" && item.scoreState === "complete"
+  ).length;
   // required reporter(显式 --junit)写失败必须让这行判红——它不是
   // CompletionStatus 的第四个值(那个枚举只有 complete/incomplete/interrupted 三态),但必须
   // 避免人看到一句会被误读成"全绿"的 PASSED、进程却以非零退出。
   const verdictWord =
     completion.status === "interrupted"
       ? t("feedback.human.resultInterrupted")
-      : completion.status === "incomplete"
-        ? t("feedback.human.resultIncomplete")
-        : summary.failed > 0 || summary.errored > 0 || completion.reporterErrors.some((e) => e.required)
-          ? t("feedback.human.resultFailed")
-          : t("feedback.human.resultPassed");
+      : summary.errored > 0
+        ? t("feedback.human.resultErrored")
+        : completion.status === "incomplete"
+          ? t("feedback.human.resultIncomplete")
+          : completion.reporterErrors.some((e) => e.required)
+            ? t("feedback.human.resultFailed")
+            : hasScore && !hasPass
+              ? t("feedback.human.resultScored")
+              : hasScore && hasPass
+                ? summary.failed > 0
+                  ? t("feedback.human.resultFailed")
+                  : t("feedback.human.resultCompleted")
+                : summary.failed > 0
+                  ? t("feedback.human.resultFailed")
+                  : t("feedback.human.resultPassed");
 
   const summaryRows: PanelRow[] = [
     {
       kind: "line",
-      text: t(completion.unstarted > 0
+      text: hasScore && !hasPass
+        ? t("feedback.human.scoreSummaryLine", {
+          scored,
+          skipped: summary.skipped,
+          errored: summary.errored,
+          reused: state.reused,
+        })
+        : t(completion.unstarted > 0
         ? "feedback.human.summaryIncompleteLine"
         : fullReuse
           ? "feedback.human.summaryAllReusedLine"
@@ -447,6 +614,27 @@ function buildSummaryLines(
   const blocks: string[][] = [
     renderPanel({ title: verdictWord, meta: formatElapsed(summary.durationMs), rows: summaryRows, width: panel.width, mode: panel.mode }),
   ];
+
+  if (resultItems.length > 0) {
+    blocks.push(renderPanel({
+      title: t("feedback.human.resultsHeader"),
+      meta: `${new Set(resultItems.map((item) => item.experimentId)).size} configs`,
+      rows: buildResultsPanelRows(resultItems),
+      width: panel.width,
+      mode: panel.mode,
+    }));
+  }
+
+  const preAttemptErrors = buildPreAttemptErrorRows(summary.results, state.runIdsByExperiment, panel);
+  if (preAttemptErrors !== undefined) {
+    blocks.push(renderPanel({
+      title: t("feedback.human.errorsHeader"),
+      meta: `${preAttemptErrors.slots} attempt${preAttemptErrors.slots === 1 ? "" : "s"} not started`,
+      rows: preAttemptErrors.rows,
+      width: panel.width,
+      mode: panel.mode,
+    }));
+  }
 
   // 全通过时(state.failures 为空)不留空 FAILURES 面板。fresh 失败来自 durable event，carry
   // 失败由 plan 静态注入；reducer 把两者按 locator 收进同一清单，这里不从 InvocationSummary 再造 ——
@@ -487,7 +675,16 @@ function buildSummaryLines(
   // `WARNINGS`(有诊断才出现,位于 FAILURES 与 NEXT 之间,见 cli.md「人看的结束反馈」):
   // 按 code 汇总本次去重后的诊断,运行中同 code 只完整打印过第一条,这里是「这类事一共
   // 发生了几次」的权威答案。
-  const warningsRows = buildWarningsPanelRows(state.diagnostics);
+  const preAttemptCodes = new Set(summary.results.flatMap((result) =>
+    result.verdict === "errored" && result.locator === undefined && result.error !== undefined
+      ? [result.error.code]
+      : []
+  ));
+  const warningsRows = buildWarningsPanelRows(
+    state.diagnostics.filter((diagnostic) =>
+      diagnostic.severity !== "error" || !preAttemptCodes.has(diagnostic.code ?? diagnostic.key)
+    ),
+  );
   if (warningsRows) {
     blocks.push(
       renderPanel({ title: t("feedback.human.warningsHeader"), rows: warningsRows, width: panel.width, mode: panel.mode }),
@@ -517,7 +714,13 @@ function buildFailuresPanelRows(
 ): { rows: PanelRow[]; meta: string } {
   const groups = groupFailuresByShape(failures);
   const contentWidth = panelContentWidth(panel.width, panel.mode);
-  const shown = groups.slice(0, FAILURE_GROUPS_CAP);
+  let shownAssertionKinds = 0;
+  const shown = groups.filter((group) => {
+    if (group.representative.fact === undefined) return true;
+    shownAssertionKinds += 1;
+    return shownAssertionKinds <= FAILURE_GROUPS_CAP;
+  });
+  const omitted = groups.length - shown.length;
   const multi = shown.filter((g) => g.size > 1);
   const countWidth = Math.max(0, ...multi.map((g) => stringWidth(`${FAILURE_SYMBOL} ×${g.size}`)));
 
@@ -529,10 +732,10 @@ function buildFailuresPanelRows(
       rows.push(buildMultiFailureGroupRow(group, countWidth));
     }
   }
-  if (groups.length > FAILURE_GROUPS_CAP) {
+  if (omitted > 0) {
     rows.push({
       kind: "line",
-      text: t("feedback.human.moreFailureKinds", { count: groups.length - FAILURE_GROUPS_CAP }),
+      text: t("feedback.human.moreFailureKinds", { count: omitted }),
     });
   }
   return { rows, meta: t("feedback.human.failuresTotalKinds", { total: failures.length, kinds: groups.length }) };
@@ -563,18 +766,14 @@ function groupFailuresByShape(failures: readonly FailureNotice[]): FailureShapeG
     .sort((a, b) => b.size - a.size);
 }
 
-/** 组 key 与形态摘要文本共用同一个"剥掉 received 的断言摘要"投影(有主断言摘要时,`failed`
- *  与 Fact unavailable 造成的 `errored` 都走这条);没有主 Fact 摘要的 `errored`（真正的
- *  结构化执行错误)按 `phase · code` 分组,摘要文本复用 `buildErroredInfo`(不带 message)。 */
+/** 断言按稳定形态聚合；execution error 的 key 包含 locator，确保不同 Attempt 不会因共享
+ * phase/code 而吞掉各自的 Provider message。 */
 function failureShapeOf(failure: FailureNotice): { key: string; shapeText: string } {
   if (failure.fact) {
     const shapeText = compactAssertionSummary({ ...failure.fact, received: undefined, additionalFailures: 0 });
     return { key: `fact\u0000${failure.fact.title}\u0000${failure.fact.matcher ?? ""}`, shapeText };
   }
-  return {
-    key: `errored\u0000${failure.phase ?? "?"}\u0000${failure.code ?? "?"}`,
-    shapeText: buildErroredInfo(failure.phase, failure.code, ""),
-  };
+  return { key: `errored\u0000${failure.locator}`, shapeText: "error" };
 }
 
 function buildMultiFailureGroupRow(group: FailureShapeGroup, countWidth: number): PanelRow {
@@ -591,13 +790,14 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
   const identityLine = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]`;
   const indent = stringWidth(`${FAILURE_SYMBOL} `);
   const budget = Math.max(0, contentWidth - indent);
-  const info = failure.fact
-    ? fitCompactAssertionSummary(failure.fact, budget)
-    : buildErroredInfo(failure.phase, failure.code, failure.reason);
-  return [
-    { kind: "line", text: identityLine },
-    { kind: "line", text: `${" ".repeat(indent)}${clipDisplayWidth(info, budget)}` },
-  ];
+  const rows: PanelRow[] = [{ kind: "line", text: identityLine }];
+  if (failure.fact) {
+    rows.push({ kind: "line", text: `${" ".repeat(indent)}${clipDisplayWidth(fitCompactAssertionSummary(failure.fact, budget), budget)}` });
+  } else {
+    rows.push(...labelledWrappedRows("error", boundedHumanError(failure.reason), contentWidth));
+  }
+  rows.push(...labelledWrappedRows("details", `niceeval show ${failure.locator}`, contentWidth));
+  return rows;
 }
 
 /** `WARNINGS` 面板:`state.diagnostics` 已经按去重 key 折叠,这里再按对外稳定词法 `code` 二次
@@ -647,16 +847,83 @@ function warningCodeLabel(code: string, count: number): string {
 /** `NEXT` 面板只由 receipt 的真实 Run ID 给出 Record 读取命令。 */
 function buildReceiptLines(
   event: DurableFeedbackEvent & { type: "receipt" },
+  state: RunFeedbackState,
   panel: { mode: PanelMode; width: number },
 ): string[] {
   const rows: PanelRow[] = [];
+  const published = new Set(event.receipt.runIds);
+  const emitted = new Set<string>();
+  for (const [experimentId, runId] of state.runIdsByExperiment) {
+    if (!published.has(runId)) continue;
+    rows.push({ kind: "line", text: experimentId });
+    rows.push(...labelledWrappedRows("details", `niceeval show --run ${runId}`, panelContentWidth(panel.width, panel.mode)));
+    emitted.add(runId);
+  }
   for (const runId of event.receipt.runIds) {
-    rows.push({ kind: "line", text: `niceeval show --run ${runId}` });
+    if (!emitted.has(runId)) rows.push({ kind: "line", text: `details: niceeval show --run ${runId}` });
   }
   if (rows.length === 0) {
     rows.push({ kind: "line", text: "No published Record Runs are available for this invocation." });
   }
   return renderPanel({ title: t("feedback.human.nextHeader"), rows, width: panel.width, mode: panel.mode });
+}
+
+function boundedHumanError(message: string): string {
+  const safe = stripControl(message).replace(/\s+/gu, " ").trim();
+  const signalIndexes = [
+    safe.search(/\b[1-5]\d{2}\s+[A-Z][A-Za-z -]{2,40}(?:\s+[—·:-]\s+[A-Z][A-Z0-9_-]+)?/u),
+    safe.search(/\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+){1,}\b/u),
+  ].filter((index) => index >= 0);
+  // Wrappers often prepend a long command or transport path before the
+  // Provider's safe status/code. Focus the Human budget at that first stable
+  // signal; the full structured error remains available through details.
+  const focused = signalIndexes.length === 0 ? safe : safe.slice(Math.min(...signalIndexes));
+  if (utf8Bytes(focused) <= HUMAN_ERROR_TEXT_MAX_BYTES) return focused;
+  const separator = " … ";
+  const available = HUMAN_ERROR_TEXT_MAX_BYTES - utf8Bytes(separator);
+  const head = Math.ceil(available / 2);
+  const tail = available - head;
+  return `${utf8Prefix(focused, head)}${separator}${utf8Suffix(focused, tail)}`;
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function utf8Prefix(value: string, maximumBytes: number): string {
+  let bytes = 0;
+  let result = "";
+  for (const character of value) {
+    const nextBytes = utf8Bytes(character);
+    if (bytes + nextBytes > maximumBytes) break;
+    result += character;
+    bytes += nextBytes;
+  }
+  return result;
+}
+
+function utf8Suffix(value: string, maximumBytes: number): string {
+  let bytes = 0;
+  const result: string[] = [];
+  const characters = Array.from(value);
+  for (let index = characters.length - 1; index >= 0; index -= 1) {
+    const character = characters[index]!;
+    const nextBytes = utf8Bytes(character);
+    if (bytes + nextBytes > maximumBytes) break;
+    result.push(character);
+    bytes += nextBytes;
+  }
+  return result.reverse().join("");
+}
+
+function labelledWrappedRows(label: string, text: string, contentWidth: number): PanelRow[] {
+  const prefix = `  ${label}: `;
+  const continuation = " ".repeat(stringWidth(prefix));
+  const lines = wrapDisplay(text, Math.max(4, contentWidth - stringWidth(prefix)));
+  return lines.map((line, index) => ({
+    kind: "line" as const,
+    text: `${index === 0 ? prefix : continuation}${line}`,
+  }));
 }
 
 /** estimated cost 展示:金额前加 `~`,明确是价目表估算(observed 只留在 result.usage.costUSD)。 */

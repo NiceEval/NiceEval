@@ -173,7 +173,4 @@ This project was inspired by — or had its code learned by AI from — the proj
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-Thanks to the following communities
-- WIP
-
-We also thank Linux Do for their support and feedback during the project's early development.
+Thanks to [Linux.do](https://linux.do/) for their support and feedback during the project's early development.

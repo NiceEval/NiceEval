@@ -48,25 +48,23 @@ npx niceeval show --experiment checkout --json
 
 `--json` emits pages, Measure results, and problems from that same execution. It does not create another data path.
 
-Here is terminal output for a manually accepted result. `reference` means this Run refers to the source Attempt. `accepted` means this Run's membership provenance recorded a manual acceptance:
+Here is terminal output for a Run with one completed Attempt:
 
 ```text
 Report run-membership-overview
 Sample: 1 run(s), 1 slot(s)
 
 Page /
-  Run membership overview
-  Run membership
-  Run | Slot | Slot state | Member relation | Source Attempt | Membership state | Membership outcome | Verdict state | Verdict
-  7b8d2ea4-b840-4870-9840-f85a436a5527 | slot-00b400bd-ba81-4850-8803-09ba802896e5 | included | reference | @91ddc61b-ae96-4a23-8578-ddc1b83306dc | available | accepted | available | passed
-  [neutral] Omitted rows: 0
-  [neutral] Unmatched membership actions: 0
+  Run results
+  Planned attempts
+  Experiment | Eval | Attempt | Result | Details
+  checkout | checkout/basic | #1 | using result @91DDC61BAE96 | @91DDC61BAE96
 
 Problems
   none
 ```
 
-With `--json` on the same command, the related row uses stable keys:
+With `--json` on the same command, the related machine row still uses stable membership keys:
 
 ```json
 {
@@ -82,7 +80,7 @@ With `--json` on the same command, the related row uses stable keys:
 }
 ```
 
-A Run answers how a result entered this run. An Attempt answers what that result recorded. Continue through the locator to inspect the same immutable Attempt:
+A Run answers which Attempts were planned and which results are available. An Attempt answers what that result recorded. Continue through the locator to inspect the same immutable Attempt:
 
 ```sh
 npx niceeval show @91ddc61b-ae96-4a23-8578-ddc1b83306dc

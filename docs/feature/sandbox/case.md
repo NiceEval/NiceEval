@@ -207,8 +207,9 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 4. cache miss 才调用 provider 原生构建 API;成功后以 BuildKey 登记 locator,再放行依赖它的 attempt。放行逐 key 发生:一条 attempt 只等自己引用的那几个 key,不等同批其它 key 收工,不引用任何 BuildKey 的 attempt 从第一秒就可派发。
 5. 瞬时构建失败(基础镜像拉取限流、传输层中断)由 builder 按 [Provisioning 的性质分类](architecture.md#provisioning-失败与重试)指数退避重试、封顶次数。构建结果是镜像与 template,没有计费实例的泄漏面,歧义类失败同样可重试——一次镜像拉取的 EOF 不该让整批依赖该 key 的 Attempt 形成 `errored` Verdict。
 6. 重试耗尽或确定性构建失败（构建定义错误、基础镜像不存在）按共享该 key 的范围止损。
-   失败的 BuildKey 只执行一次；每个依赖它、本应 fresh 执行的 Attempt 都引用同一 Run-owned Observability diagnostic，并形成自己的 `errored` Verdict。
-   同一 Run-owned Observability timing 承载构建的归属。
+   失败的 BuildKey 只执行一次；每个依赖它、本应 fresh 执行的 Slot 保持 `not-dispatched`，不制造 Attempt。
+   Runner 在既有 Run-owned Observability diagnostics 中为这些 Slot 保存同一 shared failure identity；Analysis
+   据此显示 slot outcome `errored`。历史 Record 没有采集该诊断时只保留 membership，不反推错误。
 
 预算分两层,口径不混:
 

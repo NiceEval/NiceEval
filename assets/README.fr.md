@@ -175,7 +175,4 @@ Ce projet s'inspire des projets suivants, ou a été écrit par une IA après av
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-Merci aux communautés suivantes
-- WIP
-
-Nous remercions également Linux Do pour son soutien et ses retours durant les premières étapes du développement du projet.
+Nous remercions [Linux.do](https://linux.do/) pour son soutien et ses retours durant les premières étapes du développement du projet.

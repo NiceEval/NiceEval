@@ -27,7 +27,8 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 ## 边界
 
 - `--junit` 不是终端格式开关,与输出形态正交;它是 required reporter,写失败必须判红,不降级成 warning。
-- 只有连形态都没能确定的 argv / 配置加载错误走 `stderr`(人读 `error:` + `fix:` 两行)。
+- 只有连形态都没能确定的 argv / 配置加载错误走 `stderr`。Human 显示真实 `error:`；有限且确定的命令语法
+  错误可以附 `usage:`，不为外部服务或宿主运行条件枚举 `fix:`。
 - budget 到顶时，正常闭合的 Invocation 仍是 `completion: "completed"`，但退出码为 `1`，不伪装全绿——流程见 [`--budget` 用例](../预算上限.md)。
 - `--dry` 不创建 Invocation、Run、Member、Attempt 或 JUnit。
 

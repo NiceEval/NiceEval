@@ -22,15 +22,14 @@ WORKSPACE ACCESS  partial · best-effort
 required 的不完整 evidence 显示为执行错误，而不是普通 Assertion mismatch：
 
 ```text
-ERROR workspace-access.collection-incomplete
-  required workspace access evidence became partial: stream-lost
+error: Required workspace access evidence is incomplete because collection ended early.
+details: niceeval show @<locator>
 ```
 
 required Provider 不支持时，link 在任何 Agent 启动前失败：
 
 ```text
-ERROR sandbox.workspace-access-unsupported
-  this provider cannot collect required workspace access evidence
+error: This Sandbox Provider cannot collect the required workspace access evidence.
 ```
 
 路径只以工作目录相对、symlink 后的规范形式显示。人类输出不显示宿主绝对路径、cache 位置、private asset 名称或原始 syscall 参数。

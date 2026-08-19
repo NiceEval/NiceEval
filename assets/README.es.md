@@ -173,7 +173,4 @@ Este proyecto está inspirado en los siguientes proyectos, o fue escrito por una
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-Gracias a las siguientes comunidades
-- WIP
-
-También agradecemos a Linux Do su apoyo y sus comentarios durante las primeras etapas del desarrollo del proyecto.
+Agradecemos a [Linux.do](https://linux.do/) su apoyo y sus comentarios durante las primeras etapas del desarrollo del proyecto.

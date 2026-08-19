@@ -201,9 +201,10 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Record 选择 | `RecordSelection` | 一次扫描后固定的 Run、Slot、预期分母与问题；不含完整 payload，也不携带 reader | [Record Library](feature/record/library.md) |
 | Run 写会话 | `RunWriteSession` | 只创建并封口一个新 RunId 的 Scope-bound 能力；不同 writer 不修改同一个 Run | [Record Library](feature/record/library.md) |
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
+| 执行槽位 | Slot | Run 在调度前展开的一个预期位置；最多对应一个 Member，并作为分析分母。它不是并发位，默认 Human CLI 也不把它作为列名展示 | [Record Architecture](feature/record/architecture.md) |
 | Run 完成标识 | Run completion marker | writer 在内容校验与刷盘后最后排他创建的 zero-byte `complete`，是 Run 对 reader 可见的发布点 | [Record Architecture](feature/record/architecture.md) |
 | 未完成 Run | Incomplete Run | 没有 `complete` 的中断目录；不是已发布事实，只能由取得独占维护 lease 的 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md) |
-| Member | Member | 一个 Run Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
+| Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 NiceEval 固定定义的 immutable payload 与 owner-local blob closure | [Record Architecture](feature/record/architecture.md) |
 | 固定 Attachment catalog | `BuiltinAttachment` | Assertions、Observability、FileChanges、Source Navigation、Sources、Artifacts 与 Experiment Presentation 七个固定 family；第三方不能增加 durable family | [Record Library](feature/record/library.md) |

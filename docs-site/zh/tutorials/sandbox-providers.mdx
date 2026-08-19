@@ -182,11 +182,13 @@ Docker image、Vercel 沙箱快照和 E2B template 的凭据、构建上下文�
 
 稳定、体积大、每个 Attempt 都相同的内容——系统包、Agent CLI、编译好的二进制、大模型缓存——应在跑评估用例之前烘焙进 provider 的可发布构建输出，让每个 Attempt 从预制环境启动、跳过运行时安装。三个内置 provider 都能从官方基线继续派生，不必从空白环境装 Agent。但它们的构建工具、凭据和发布语义不同，NiceEval 只统一**消费**产物 ID（`image` / `snapshotId` / `template`），不伪造跨 provider 的构建 DSL。
 
-Adapter 与 Sandbox 不互相猜配置：Adapter 负责检查所需 CLI，Sandbox spec 负责选择 provider 和构建输出。Claude Code 与 Codex 缺少 CLI 时会回退到运行时安装（构建输出在题面网络之外准备，经文件 API 送入），所以烘焙纯粹是提速。Codex 送进去的是该平台自带运行时的原生包，任务镜像不带 Node 也能装，Claude Code 仍要求镜像里有 npm。Bub 还会核对版本、OTel 插件和 Python 插件集合的安装指纹，不能仅凭 `command -v bub` 跳过安装，必须用预制环境。三个 provider 的构建都只在环境依赖变化时跑一次，产物换一个版本化名字，不要写入每个 Attempt 的 `.setup()`。
+Adapter 与 Sandbox 不互相猜配置：Adapter 负责检查所需 CLI，Sandbox spec 负责选择 provider 和构建输出。Claude Code 与 Codex 缺少 CLI 时会回退到运行时安装（构建输出在题面网络之外准备，经文件 API 送入），所以烘焙纯粹是提速。Codex 送进去的是该平台自带运行时的原生包，任务镜像不带 Node 也能装，Claude Code 仍要求镜像里有 npm。
+
+默认 Bub 0.4.0 配方除 OTel 插件外，还固定 `any-llm-sdk==1.17.0` 和 `openai==2.31.0`。安装指纹同时覆盖 Bub requirement、这两个 client override、OTel 插件和规范化后的 Python 插件集，不能仅凭 `command -v bub` 跳过安装。旧 marker 的预制环境会重装一次；显式选择其它 Bub 版本时，传递依赖闭包仍由调用方负责。三个 provider 的构建都只在环境依赖变化时跑一次，产物换一个版本化名字，不要写入每个 Attempt 的 `.setup()`。
 
 #### E2B：从官方与公共模板派生
 
-E2B 已提供 Claude Code 的 `claude` template 和 Codex 的 `codex` template。NiceEval 提供一个 E2B 专属的薄封装，让你从这两个官方起点继续链原生 E2B API。E2B 暂无 Bub 官方 template，因此 Bub 分支使用 NiceEval 固定版本的安装配方（Bub 版本 + 同代 OTel 插件）：
+E2B 已提供 Claude Code 的 `claude` template 和 Codex 的 `codex` template。NiceEval 提供一个 E2B 专属的薄封装，让你从这两个官方起点继续链原生 E2B API。E2B 暂无 Bub 官方 template，因此默认 Bub 分支与 `bubAgent()` 使用同一份完整 client 闭包和 OTel 插件：
 
 NiceEval 同时发布了三份任何 E2B Team 都能引用的公共模板。完整 namespace 与版本由 NiceEval 自己维护，
 下游直接取完整引用：
@@ -203,7 +205,7 @@ e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
 e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-这些基线都实际启动验证过：Claude Code `2.1.207`、Codex `0.144.1`、Bub `0.4.0`（安装指纹随版本与 OTel 插件 pin 一起变）。模板的版本号跟着它装的那个 Agent 走（形如 `0.144.1-r1`：Agent 版本 + NiceEval 配方修订号），三个 Agent 各自独立发版，NiceEval 库自己的版本不参与命名。所以业务仓库直接用常量，不复制这些字符串、也不跟踪版本。派生模板需要记录 base 身份时，同样用常量的值。
+这些基线都实际启动验证过：Claude Code `2.1.207`、Codex `0.144.1`、Bub `0.4.0`（安装指纹随 Bub requirement、client override、OTel 插件和 Python 插件 pin 一起变）。模板的版本号跟着它装的那个 Agent 走（形如 `0.144.1-r1`：Agent 版本 + NiceEval 配方修订号），三个 Agent 各自独立发版，NiceEval 库自己的版本不参与命名。所以业务仓库直接用常量，不复制这些字符串、也不跟踪版本。派生模板需要记录 base 身份时，同样用常量的值。
 
 当前这批公共模板中，Claude Code 模板沿用 E2B 官方 `/usr` npm prefix，普通用户不能直接写全局模块。需要在运行时追加 pnpm、yarn 等全局 Node 工具时，显式把它们装到两个模板都已加入 PATH 的 `/usr/local`：
 

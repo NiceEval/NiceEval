@@ -27,6 +27,7 @@ import { evalConclusionKey } from "./eval-conclusions.ts";
 /** reducer 的起始状态:一个尚未收到任何事件的 run。 */
 export function createInitialRunFeedbackState(): RunFeedbackState {
   return {
+    runIdsByExperiment: new Map(),
     total: 0,
     reused: 0,
     running: 0,
@@ -59,6 +60,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       // 多次 run 也不会把上一次的残留状态带进新 run(正常用法下 plan 本来就应是第一个事件)。
       return {
         ...state,
+        runIdsByExperiment: new Map(event.plan.shape.runIds ?? []),
         total,
         reused,
         // 全部非携入 attempt 在此刻就已知会被派发,先计入 queued;后续 attempt:start

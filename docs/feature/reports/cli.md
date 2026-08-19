@@ -61,6 +61,12 @@ key 完全相同。`show` 不调用 `enumerate()`，却要求 `PageLoadContext` 
 `Section` 显示区域框，`Grid` 与 `Table` 显示数据格线；非 TTY 或过窄终端选择 plain projection，组件、数据状态与顺序不变。
 `NO_COLOR` 只禁用颜色，不删除表达组件边界的结构框。`show --json` 的 `renderedText` 始终读取固定 80 列 plain projection，不继承 TTY。
 
+`default-overview` 与标准报告的 Overview 按题型显示主读数：Pass Eval 显示通过率，Score Eval 只显示 earned score，不声明满分或百分比。
+主读数、耗时和 token 的单元格不追加 `samples / total · partial`。当 Sample 中有预期结果没有可分析的 Attempt 时，Overview 在 KPI
+与实验表之外显示独立的 `Result coverage` Section。TTY 中它是区域框，标题行写明多少结果可用，正文说明这是结果完整度而不是分数。
+
+完整 Sample 不显示这个 Section。Analysis 仍保留原始 `MetricValue` 的 state、samples、total、issues 与 refs，机器文档也不因此改写数据。
+
 ### locale
 
 CLI 与 Node runtime 的人读文案固定为英语。`show` 和 `show --json` 固定写 `locale: "en"`；没有 CLI locale flag、
@@ -229,6 +235,12 @@ niceeval view --run 01H... --out ./shared-site --no-open
 | 未知或非规范 route | 用法错误，说明可用 route 或参数格式。 |
 | 输出目录已存在 | 返回 `report-export-target-exists`，不改动目录。 |
 | 静态写入失败 | 返回 `report-export-write-failed`，不泄露任意系统路径或内部 cause。 |
+
+表中的内建 Report ID 用于选择实现，不作为 Human 标题或列名。默认 `show --run` 使用 Experiment、Eval、
+`Attempt #N`、结果、历史 Attempt locator 和 `details:` 命令表达同一事实。
+
+`Membership`、`Slot`、`Relation`、`Selected run`、shared failure ID 与空 Analysis note 只保留在机器文档或
+明确的高级诊断面。
 
 ## 相关阅读
 

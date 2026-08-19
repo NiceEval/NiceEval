@@ -55,8 +55,9 @@ Attempt 的错误。
 
 ## 即时 CLI 错误
 
-argv、配置、模块装载和 selector 错误发生在 Invocation 之前。CLI 以 `error:` 说明失败，以 `fix:`
-给出下一步，并以非零状态结束；此时没有 receipt，也没有需要写入的 Record 事实。
+argv、配置、模块装载和 selector 错误发生在 Invocation 之前。CLI 以 `error:` 说明实际失败，并以非零状态结束；
+此时没有 receipt，也没有需要写入的 Record 事实。只有有限且确定的命令语法错误才附 `usage:`，有对应公开说明时
+可以附 `docs:`；不得为 Provider、凭据、网络或宿主运行条件错误枚举或猜测 `fix:`。
 
 已经建立 Invocation 后，当前进程可以显示 progress 和诊断。该反馈不形成持久化协议；长期查看
 必须经 `reportHost` 读取已经发布的 Run。

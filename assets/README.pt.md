@@ -173,7 +173,4 @@ Este projeto foi inspirado pelos projetos abaixo, ou teve trechos de código esc
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-Agradecimentos às seguintes comunidades
-- WIP
-
-Também agradecemos à Linux Do pelo apoio e feedback durante os estágios iniciais do desenvolvimento do projeto.
+Agradecemos à [Linux.do](https://linux.do/) pelo apoio e feedback durante os estágios iniciais do desenvolvimento do projeto.

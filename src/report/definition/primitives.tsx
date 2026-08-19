@@ -687,7 +687,13 @@ function plainRowsToTableContent(
     throw new Error("Table needs at least one column: pass columns, or provide a non-empty rows array with fields.");
   }
   const columns: ColumnSpec[] = columnSpecs.map((spec) => {
-    const sample = rows.map((row) => row[spec.field]).find(isMetricValue);
+    const sample = rows
+      .map((row) => {
+        const value = row[spec.field];
+        if (isMetricValue(value)) return value;
+        return isPlainCellValue(value) && value.kind === "metric" ? value.metric : undefined;
+      })
+      .find((value): value is MetricValue => value !== undefined);
     // 语义适配:当前 MetricValue.better 含 "neutral";列排序方向只认 higher/lower。
     const better = sample?.better === "higher" || sample?.better === "lower" ? sample.better : undefined;
     return {
@@ -987,6 +993,7 @@ function renderCellWeb(
           cell={cell.metric}
           href={ctx.showMeasureRefs === false ? undefined : ctx.href}
           locale={ctx.locale}
+          showCoverage={cell.showCoverage !== false}
         />
       );
     default: {

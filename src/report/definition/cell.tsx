@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../attempt-locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { MetricValue } from "../../analysis/index.ts";
-import { formatMetricValue, missingText, verdictMark } from "../model/format.ts";
+import { formatMetricScalar, formatMetricValue, missingText, verdictMark } from "../model/format.ts";
 import { formatCostProjectionCellText, isCostMetricValue } from "../model/pricing.ts";
 import {
   DEFAULT_REPORT_LOCALE,
@@ -29,7 +29,12 @@ export interface VerdictCounts {
  * - summary 的文本已在上游折好。
  */
 export type Cell =
-  | { readonly kind: "metric"; readonly metric: MetricValue }
+  | {
+      readonly kind: "metric";
+      readonly metric: MetricValue;
+      /** Hide the compact samples/total suffix only when an adjacent region presents coverage. */
+      readonly showCoverage?: boolean;
+    }
   | {
       readonly kind: "verdict";
       readonly verdict?: Verdict | "skipped";
@@ -133,6 +138,14 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       if (isCostMetricValue(cell.metric)) {
         const closed = formatCostProjectionCellText(cell.metric, locale ?? DEFAULT_REPORT_LOCALE);
         return closed.detail ? `${closed.text}\n  ${closed.detail}` : closed.text;
+      }
+      if (cell.showCoverage === false) {
+        return formatMetricScalar(
+          cell.metric.value,
+          cell.metric.unit,
+          cell.metric.format,
+          locale ?? DEFAULT_REPORT_LOCALE,
+        );
       }
       return formatMetricValue(cell.metric, locale ?? DEFAULT_REPORT_LOCALE);
     }

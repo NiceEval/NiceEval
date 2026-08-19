@@ -14,6 +14,17 @@ export const DEFAULT_BUB_OTEL_PLUGIN =
 /** 装哪一版 Bub：`uv tool install` 的 requirement，版本单源在 `coding-cli-versions.ts`。 */
 export const DEFAULT_BUB_REQUIREMENT = bubRequirement(DEFAULT_BUB_VERSION);
 
+/**
+ * Bub 0.4.0 的上游 lockfile 所验证的模型客户端闭包。
+ *
+ * Bub 自己的 PyPI metadata 没有限定这两个传递依赖；若只钉 `bub==0.4.0`，每次安装仍会
+ * 解析当天最新的客户端，使同一实验在没有配置变更时改变请求协议。
+ */
+export const DEFAULT_BUB_DEPENDENCY_OVERRIDES = [
+  "any-llm-sdk==1.17.0",
+  "openai==2.31.0",
+] as const;
+
 export const BUB_CHECKPOINT_SUBDIRS = [".local"] as const;
 export const BUB_INSTALL_MARKER = ".local/share/niceeval/bub-install-hash";
 
@@ -35,16 +46,22 @@ export function bubInstallSpec(
   packages: readonly string[],
   requirement = DEFAULT_BUB_REQUIREMENT,
   otelPlugin = DEFAULT_BUB_OTEL_PLUGIN,
+  dependencyOverrides: readonly string[] = [],
 ): string {
   const normalized = normalizeBubPackages(packages);
   const plugins = normalized.length ? ` --with ${normalized.join(" --with ")}` : "";
-  return `${requirement} --with ${otelPlugin}${plugins} --checkpoint(${BUB_CHECKPOINT_SUBDIRS.join(",")})`;
+  const overrides = dependencyOverrides.length ? ` --overrides ${dependencyOverrides.join(" ")}` : "";
+  return `${requirement}${overrides} --with ${otelPlugin}${plugins} --checkpoint(${BUB_CHECKPOINT_SUBDIRS.join(",")})`;
 }
 
 export function bubInstallHash(
   packages: readonly string[],
   requirement = DEFAULT_BUB_REQUIREMENT,
   otelPlugin = DEFAULT_BUB_OTEL_PLUGIN,
+  dependencyOverrides: readonly string[] = [],
 ): string {
-  return createHash("md5").update(bubInstallSpec(packages, requirement, otelPlugin)).digest("hex").slice(0, 12);
+  return createHash("md5")
+    .update(bubInstallSpec(packages, requirement, otelPlugin, dependencyOverrides))
+    .digest("hex")
+    .slice(0, 12);
 }

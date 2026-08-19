@@ -107,6 +107,17 @@ owner discriminator（归属判别）和五个 Attempt data field 都是同一 A
 durable family。Attempt 即使确知没有 command、usage 或 timing interval，也写 `complete` 的空 collection。
 Run Schema 没有 conversation、commands 和 usage；它们不会以 null、空 object 或自定义 metadata 出现。
 
+Run diagnostic code `sandbox-build-failed` 保存 Attempt 创建前的共享构建失败。其有界 summary 使用
+`niceeval.shared-build-failure/v1` 诊断 envelope，包含：
+
+- 同 Run 的 Eval 与 attempt ordinal；
+- shared failure identity 与 `sandbox.image.build` phase；
+- 错误码、有界安全摘要与可选 typed remediation。
+
+它仍是既有 v1 diagnostics 数组中的一项，不增加 attachment 字段、不改变 envelope schemaVersion，也不要求迁移。
+Analysis 只解码已知 code + envelope；其它诊断 summary 始终按普通文本处理。历史 Record 缺少该诊断时报告
+unavailable，不从 membership 猜原因。
+
 所有 payload 都是 exact JSON。array 按每种实体的 identity canonical 排序并拒绝重复。文本上限按
 UTF-8 bytes 计。`SafeText` 已脱敏、没有 NUL 或 C0 control（换行除外）；它不是 raw Error 或任意
 JSON 的容器。

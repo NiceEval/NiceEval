@@ -35,7 +35,7 @@ shared read 和 append lease 可并存。每个 `exp` writer 只修改自己排�
 ```text
 Warning: 2 incomplete Runs were ignored.
 They are not readable or reusable.
-Inspect and remove them with: niceeval clean
+details: niceeval clean
 ```
 
 受控 `SIGINT` 会先把已完成 Attempt、仍在飞的 Attempt 和未派发 Member 分别封口，再发布完整 Run，因此这类 Run 不触发 incomplete warning。warning 只报告进程来不及收尾、写入失败或 seal 失败后没有 `complete` 的 directory；reader 不从这些 draft 中拼装部分事实。

@@ -72,6 +72,7 @@ import {
   recordAnalysisIssues,
   readCostProjection,
   readBuiltinDomainView,
+  readRunDiagnosticsDomainView,
   runSamplePromise,
   type AnalysisIssueCaptureToken,
 } from "../sample/capability.ts";
@@ -171,6 +172,31 @@ export type SourceNavigationDomainView = BuiltinDomainView<"source-navigation">;
 export type SourcesDomainView = BuiltinDomainView<"sources">;
 export type SandboxHistoryDomainView = BuiltinDomainView<"sandbox-history">;
 
+export type ClosedRunDiagnosticsEntry =
+  | {
+      readonly runId: string;
+      readonly experimentId: string;
+      readonly state: "available";
+      readonly detail: import("./domain-view.ts").ClosedDiagnosticsDetail;
+    }
+  | {
+      readonly runId: string;
+      readonly experimentId: string;
+      readonly state: "not-recorded" | "unsupported" | "invalid";
+    }
+  | {
+      readonly runId: string;
+      readonly experimentId: string;
+      readonly state: "failed";
+      readonly detail: string;
+    };
+
+/** Closed Run-owned diagnostics, including failures that predate an Attempt. */
+export interface RunDiagnosticsDomainView extends DomainView {
+  readonly view: "run-diagnostics";
+  readonly entries: readonly ClosedRunDiagnosticsEntry[];
+}
+
 /** A NiceEval-published request for a non-tabular, already-closed DomainView. */
 export interface DomainViewRequest<View extends DomainView> {
   readonly kind: "domain-view-request";
@@ -223,6 +249,15 @@ export const sourcesView = publishedDomainViewRequest(sourcesDomainBinding);
 
 /** Sandbox command/timing/diagnostic history projected from Observability. */
 export const sandboxHistoryView = publishedDomainViewRequest(sandboxHistoryDomainBinding);
+
+export const runDiagnosticsView: DomainViewRequest<RunDiagnosticsDomainView> = Object.freeze({
+  kind: "domain-view-request" as const,
+  id: "niceeval.domain.run-diagnostics",
+  [domainViewRequestTypeId]: (value: RunDiagnosticsDomainView) => value,
+});
+publishedDomainViewBindings.set(runDiagnosticsView, Object.freeze({
+  read: (sample: Sample) => readRunDiagnosticsDomainView(sample),
+}));
 
 export interface DomainViewQuery<View extends DomainView> {
   readonly kind: "domain-view";

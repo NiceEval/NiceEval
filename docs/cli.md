@@ -117,7 +117,12 @@ major 时返回 `record-migration-required` 并指向这条命令；它不是某
 
 收到 `SIGINT` 或 `SIGTERM` 后，CLI 请求 Runner 中断。Runner 完成能够完成的收尾，保留已经发布的完整 Run；没有完成标识的未完成目录留给 `niceeval clean` 删除。命令返回 `completion: "interrupted"` 的 receipt；用户中断不是新的 Attempt 业务事实。
 
-argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:` 和 `fix:`，以非零状态结束；此时没有 receipt。
+argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，以非零状态结束；此时没有 receipt。
+只有有限且确定的命令语法错误才附 `usage:`，有对应公开说明时可以附 `docs:`。CLI 不猜测 Provider、凭据、
+网络或宿主运行条件的修复办法。
+
+所有命令组和默认 Report 的 Human 输出遵守 [CLI Human 输出设计](feature/experiments/CLI-DESIGN.md)。机器 code、
+内部身份和状态机字段只进入 JSON、Record 或明确的开发者诊断面，不能直接成为默认终端文案。
 
 ## 退出码
 

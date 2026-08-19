@@ -172,7 +172,4 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-Благодарим следующие сообщества
-- WIP
-
-Мы также благодарим Linux Do за поддержку и обратную связь на ранних этапах разработки проекта.
+Мы благодарим [Linux.do](https://linux.do/) за поддержку и обратную связь на ранних этапах разработки проекта.

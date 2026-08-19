@@ -55,6 +55,7 @@ interface StandardOverviewPageInput {
   readonly counts: {
     readonly experiments: number;
     readonly attempts: number;
+    readonly expectedResults: number;
   };
 }
 
@@ -131,6 +132,7 @@ export const standardOverviewPage = {
       counts: Object.freeze({
         experiments: experiments.length,
         attempts: includedAttemptCount(sample.snapshot),
+        expectedResults: sample.snapshot.slots.filter((slot) => slot.state !== "excluded").length,
       }),
     });
   },

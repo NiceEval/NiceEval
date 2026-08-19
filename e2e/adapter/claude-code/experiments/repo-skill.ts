@@ -1,10 +1,12 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
+import { claudeCodeProviderEnv } from "../provider.ts";
 import { sandbox } from "../sandbox.ts";
 
 const agent = claudeCodeAgent({
   apiKey: process.env.ANTHROPIC_API_KEY,
   baseUrl: process.env.ANTHROPIC_BASE_URL,
+  env: claudeCodeProviderEnv,
   skills: [
     {
       kind: "repo",

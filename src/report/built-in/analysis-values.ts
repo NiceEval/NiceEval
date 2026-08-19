@@ -17,6 +17,7 @@ import {
   passRate,
   tokens,
 } from "../model/metrics.ts";
+import { experimentListData } from "../components/entity-lists/compute.ts";
 
 export function loadBuiltInSummaryRows(sample: Sample) {
   return aggregate(sample, {
@@ -29,11 +30,26 @@ export type BuiltInSummaryRows = Awaited<ReturnType<typeof loadBuiltInSummaryRow
 export type BuiltInSummaryRow = BuiltInSummaryRows[number];
 
 /** One closed row per selected Experiment for overview charts and tables. */
-export function loadBuiltInExperimentRows(sample: Sample) {
-  return aggregate(sample, {
-    by: { experiment },
-    values: { passRate, durationMs, tokens },
-  });
+export async function loadBuiltInExperimentRows(sample: Sample) {
+  const rows = await experimentListData(sample);
+  const output = rows.map((row) => Object.freeze({
+    key: String(row.experimentId),
+    experiment: String(row.experimentId),
+    evaluationKind: row.evaluationKind,
+    ...(row.totalScore === undefined ? {} : { totalScore: row.totalScore }),
+    passRate: row.evaluationKind === "pass" ? row.endToEndPassRate : null,
+    durationMs: row.durationMs,
+    tokens: row.tokens,
+  }));
+  const issues = new Map<string, typeof rows[number]["endToEndPassRate"]["issues"][number]>();
+  for (const issue of output.flatMap((row) => [row.passRate, row.durationMs, row.tokens]
+    .filter((metric) => metric !== null)
+    .flatMap((metric) => metric.issues))) {
+    issues.set(`${issue.code}\u0000${issue.message}`, issue);
+  }
+  return Object.freeze(Object.assign(output, {
+    issues: Object.freeze([...issues.values()]),
+  }));
 }
 
 export type BuiltInExperimentRows = Awaited<ReturnType<typeof loadBuiltInExperimentRows>>;

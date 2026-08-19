@@ -23,8 +23,7 @@ count 大于或等于候选数时，全部候选都入选。
 
 ```text
 pilot selection: first 20 of 184 evals
-coverage intent: non-final
-order: eval-id/v1
+pilot result: not final · ordered by Eval ID
 ```
 
 ## `--sample`
@@ -35,8 +34,7 @@ order: eval-id/v1
 ```text
 pilot selection: sample 20 of 184 evals
 seed: 7
-algorithm: eval-id-sha256/v1
-coverage intent: non-final
+pilot result: not final
 ```
 
 ## `--dry`
@@ -50,8 +48,8 @@ niceeval exp compare --sample 20 --sample-seed 7 --dry
 人读输出列出：
 
 - 每个被选 Experiment 的候选数；
-- 共同候选 digest；
-- 选择模式、数量、seed 与算法；
+- 候选集合是否一致；
+- 选择模式、数量与 seed；
 - 选中 Eval ID；
 - 展开后的 Attempt 数与 carry 计划。
 
@@ -60,13 +58,12 @@ niceeval exp compare --sample 20 --sample-seed 7 --dry
 ## 候选集不一致
 
 ```text
-experiment.pilot-candidates-differ:
-  compare/codex has 184 candidate evals
-  compare/claude has 181 candidate evals
+error: Pilot selection needs the same Eval set for every Experiment.
+  compare/codex has 184 evals
+  compare/claude has 181 evals
   only in compare/codex: memory/windows, memory/vision, tools/docker
 
-Pilot selection requires one shared Eval ID population.
-Align the experiments' evals filters or select them in separate commands.
+usage: Align the Experiments' Eval filters, or run them separately.
 ```
 
 该错误发生在 fingerprint、Provider planning 与任何外部 I/O 之前。
@@ -77,8 +74,8 @@ Align the experiments' evals filters or select them in separate commands.
 
 ```text
 completed pilot · 20 / 184 evals selected · seed 7
-20 completed · 0 execution gaps
-non-final: 164 evals were outside this Run's selection
+20 completed · 0 attempts missing results
+pilot result is not final: 164 evals were not selected
 ```
 
 “Run 内没有执行缺口”不能改写成“选择了全部已知 Eval”。

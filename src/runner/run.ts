@@ -114,6 +114,43 @@ function feedbackIdentity(a: Attempt): AttemptRef {
 function feedbackWho(a: Attempt): string {
   return runWho({ agentName: a.run.agent.name, model: a.run.model, experimentId: a.run.experimentId });
 }
+
+const SHARED_BUILD_FAILURE_DIAGNOSTIC = "sandbox-build-failed";
+
+function sharedBuildFailureRoot(error: AttemptError): { readonly code: string; readonly message: string } {
+  const codeMatch = /\bERR_[A-Z0-9_]+\b/u.exec(error.message);
+  const code = codeMatch?.[0] ?? error.code;
+  const focused = codeMatch === null
+    ? error.message.slice(-600)
+    : error.message.slice(codeMatch.index, codeMatch.index + 600);
+  return { code, message: focused.trim() || error.message.slice(-600).trim() || error.code };
+}
+
+function sharedBuildFailureDetail(a: Attempt, error: AttemptError): string {
+  const failureId = error.origin.scope === "run"
+    ? error.origin.timingNodeId
+    : `${error.code}:${a.evalDef.id}`;
+  const root = sharedBuildFailureRoot(error);
+  let message = root.message;
+  const encode = () => JSON.stringify({
+      schema: "niceeval.shared-build-failure/v1",
+      failureId,
+      evalId: a.evalDef.id,
+      attemptOrdinal: a.attempt,
+      phase: "sandbox.image.build",
+      errorCode: root.code,
+      message,
+      ...(root.code === "ERR_PNPM_IGNORED_BUILDS"
+        ? { remediation: "pnpm-allow-builds" }
+        : {}),
+    });
+  let encoded = encode();
+  while (new TextEncoder().encode(encoded).byteLength > 1_000 && message.length > 0) {
+    message = message.slice(0, Math.floor(message.length * 0.75));
+    encoded = encode();
+  }
+  return encoded;
+}
 function attemptIdentityKey(
   experimentId: string | undefined,
   agentName: string,
@@ -317,7 +354,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     return failure === undefined ? [] : [failure];
   }));
   if (opts.onCurrentRecordReusePlan !== undefined) {
-    yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures });
+    yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures, runIds });
   } else {
     // Direct library callers have no feedback coordinator. Preserve their
     // fallback failure signal without turning a current readback into a legacy
@@ -507,6 +544,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const judgePrecheckFailures = new Map<string, string>();
   {
     const uniquePairs = [...new Map(attempts.map((a) => [cacheKey(a.run, a.evalDef.id), a])).entries()];
+    const plannedByPair = new Map<string, number>();
+    for (const attempt of attempts) {
+      const pairKey = cacheKey(attempt.run, attempt.evalDef.id);
+      plannedByPair.set(pairKey, (plannedByPair.get(pairKey) ?? 0) + 1);
+    }
     const { targets, evalKeys } = judgeProbePlan(
       uniquePairs.map(([id, a]) => ({
         id,
@@ -524,11 +566,33 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const failedByKey = new Map<string, string>();
       for (const target of targets) {
         const err = yield* probeJudgeEffect(target.judge, opts.signal);
-        if (err) failedByKey.set(target.key, err);
+        if (err) {
+          failedByKey.set(target.key, err);
+        }
       }
       for (const [pairKey, key] of evalKeys) {
         const err = failedByKey.get(key);
-        if (err !== undefined) judgePrecheckFailures.set(pairKey, err);
+        if (err === undefined) continue;
+        judgePrecheckFailures.set(pairKey, err);
+        const pair = uniquePairs.find(([candidate]) => candidate === pairKey)?.[1];
+        if (pair === undefined) continue;
+        const planned = plannedByPair.get(pairKey) ?? 1;
+        // No Attempt exists yet, so this pair-owned warning is the stable
+        // machine projection: identity and terminal counts travel in data,
+        // without fabricating a locator-addressable eval event.
+        reportDiagnostic({
+          key: `judge-precheck-failed:${pairKey}`,
+          code: "judge-precheck-failed",
+          severity: "error",
+          message: err,
+          data: {
+            phase: "judge.precheck",
+            ...(pair.run.experimentId === undefined ? {} : { experimentId: pair.run.experimentId }),
+            evalId: pair.evalDef.id,
+            planned,
+            errored: planned,
+          },
+        });
       }
       reportPrecheck({
         status: failedByKey.size > 0 ? "failed" : "done",
@@ -2261,6 +2325,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   ? buildFailure
                   : undefined;
             if (blockedError !== undefined) cancelReuseAttempt(a, true);
+            if (buildFailure !== undefined) {
+              recordExperimentDiagnostic({
+                experimentId: a.run.experimentId,
+                code: SHARED_BUILD_FAILURE_DIAGNOSTIC,
+                level: "error",
+                message: sharedBuildFailureDetail(a, buildFailure),
+                phase: "sandbox.queue",
+              });
+            }
 
             // A scheduler-admitted Attempt owns a durable identity before any
             // attempt-owned sandbox, Agent, or Eval work begins. Reservation
