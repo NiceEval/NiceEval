@@ -13,7 +13,7 @@ Record 单元层只证明可稳定隔离的格式算法和 `recordHost` 边界�
 ## Fixture 规范
 
 每例在独立 `mkdtemp` 目录写出最小 `niceeval.record/v1`。fixture 显式给出 Record、Run、expected
-slot、Member、Attempt identity，以及七个 fixed family 中被测 family 的 exact payload、owner 与 blob closure。
+slot、Member、Attempt identity，以及六个 fixed family 中被测 family 的 exact payload、owner 与 blob closure。
 builder 不代替测试生成决定结果的身份、Member action 或默认状态。
 
 大 payload fixture 使用少量真实 bytes 证明 owner-local blob closure 边界，不签入巨大黄金目录。目录、
@@ -27,8 +27,8 @@ JSON 和 blob 内容必须从已发布的 fixed family 形状构造，不能复�
 - **身份与关系**：Attempt 永属 origin Run；Member 只引用已封口 Attempt，`origin | reference` 从关系
   派生，executed/carried/accepted 是 Member action。expected slots 之外的 Member 由 Analysis 标成
   `core-invalid`，不改写分母。
-- **固定目录**：七个 fixed family 是封闭联合。Attempt owner 为 Assertions、Observability、FileChanges、
-  SourceNavigation、Artifacts。Run owner 为 Observability、Sources、Artifacts、ExperimentPresentation。
+- **固定目录**：六个 fixed family 是封闭联合。Attempt owner 为 Assertions、Observability、FileChanges、
+  SourceNavigation、Artifacts。Run owner 为 Observability、Sources、Artifacts。
   没有作者可调用的 definition、注册、schema name、migration 或任意 JSON writer；未知 family 不会成为可扩展输入。
 - **closure**：family 的 exact JSON payload 与 owner-local `blobs/**` 各做一次 round-trip。坏 envelope、
   坏 payload 或坏 closure 形成 `invalid` 并保留 issue；未请求 family 不被读取。

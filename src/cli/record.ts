@@ -94,6 +94,20 @@ function recordErrorOutput(error: unknown, stdout = ""): RecordCliCommandOutput 
   });
 }
 
+function recordMigrationErrorOutput(
+  error: unknown,
+  stdout: string,
+  restoreCommit: string,
+): RecordCliCommandOutput {
+  const code = recordErrorCode(error);
+  const next = recordErrorNextStep(code);
+  return output({
+    exitCode: 1,
+    stdout,
+    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}Restore commit: ${restoreCommit}\n`,
+  });
+}
+
 function cleanCommand(input: {
   readonly root: RecordRoot;
   readonly yes: boolean;
@@ -148,7 +162,7 @@ function migrateCommand(input: {
       ? `Record migration plan: already-current\nformat: ${plan.format}\n`
       : plan.state === "unsupported-format"
         ? `Record migration plan: unsupported-format\nformat: ${plan.format}\n`
-        : `Record migration plan: migration-required\nformat: ${plan.format}\nattachments: ${plan.attachments.length}\nbackup: ${plan.backup.state}\n`;
+        : `Record migration plan: migration-required\nformat: ${plan.format}\nattachments: ${plan.attachments.length}\nbackup: ${plan.backup.state}${plan.backup.state === "git-restore-point" ? `\nrestore commit: ${plan.backup.commit}` : ""}\n`;
     if (plan.state === "unsupported-format") {
       return output({
         exitCode: 1,
@@ -170,7 +184,13 @@ function migrateCommand(input: {
         stderr: "record-migration-confirmation-required\nReview the migration plan and rerun with --yes.\n",
       });
     }
-    const receipt = yield* session.applyMigrate(plan);
+    const migrated = yield* Effect.either(session.applyMigrate(plan));
+    if (Either.isLeft(migrated)) {
+      return plan.state === "migration-required" && plan.backup.state === "git-restore-point"
+        ? recordMigrationErrorOutput(migrated.left, planText, plan.backup.commit)
+        : recordErrorOutput(migrated.left, planText);
+    }
+    const receipt = migrated.right;
     return output({
       exitCode: 0,
       stdout: `${planText}Record migration ${receipt.state}.\n`,

@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { isCanonicalTurnLabel } from "../../shared/turn-label.ts";
 import type { RecordBlobRef } from "../../record/attachment/index.ts";
 import {
   Sha256DigestSchema,
@@ -657,8 +658,15 @@ const TimingOutcomeSchema = Schema.Literal(
 
 const CanonicalTurnLabelSchema = Schema.String.pipe(
   Schema.filter(
-    (value): value is string => /^(?:turn[1-9]\d*|session[1-9]\d*\/turn[1-9]\d*)$/.test(value),
+    (value): value is string => isCanonicalTurnLabel(value),
     { identifier: "CanonicalTurnLabel" },
+  ),
+);
+
+const NonCoordinateStableLabelSchema = StableLabelSchema.pipe(
+  Schema.filter(
+    (value) => !/^(?:turn|session)\d/.test(value),
+    { identifier: "NonCoordinateStableLabel" },
   ),
 );
 
@@ -674,7 +682,7 @@ const AttemptTimingIntervalBase = {
 const AttemptTimingIntervalStructuralSchema = Schema.Struct({
   ...AttemptTimingIntervalBase,
   phase: AttemptTimingPhaseSchema,
-  label: Schema.Union(StableLabelSchema, CanonicalTurnLabelSchema),
+  label: Schema.Union(NonCoordinateStableLabelSchema, CanonicalTurnLabelSchema),
 });
 
 export const AttemptTimingIntervalSchema = AttemptTimingIntervalStructuralSchema.pipe(

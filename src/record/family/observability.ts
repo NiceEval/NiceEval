@@ -17,6 +17,7 @@ import {
   MAX_COMMAND_INLINE_STREAM_BYTES,
   MAX_COMMAND_STREAM_BYTES,
 } from "../../o11y/record/limits.ts";
+import { isCanonicalTurnLabel } from "../../shared/turn-label.ts";
 import {
   FixedAttachmentValueLimits,
   NonNegativeSafeIntegerSchema,
@@ -498,10 +499,20 @@ function timingCollectionSchema<Phase extends Schema.Schema.AnyNoContext>(phase:
 
 const CanonicalTurnLabelSchema = Schema.String.pipe(
   Schema.filter(
-    (value) => /^(?:turn[1-9]\d*|session[1-9]\d*\/turn[1-9]\d*)$/.test(value),
+    isCanonicalTurnLabel,
     {
       identifier: "CanonicalTurnLabel",
       description: "a canonical turnN or sessionK/turnN timing label",
+    },
+  ),
+);
+
+const NonCoordinateSafeLabelSchema = SafeIdentifierSchema.pipe(
+  Schema.filter(
+    (value) => !/^(?:turn|session)\d/.test(value),
+    {
+      identifier: "NonCoordinateSafeLabel",
+      description: "an opaque label that cannot masquerade as a turn coordinate",
     },
   ),
 );
@@ -518,7 +529,7 @@ function attemptTimingCollectionSchema() {
     Schema.Struct({
       ...intervalBase,
       phase: Schema.Literal("agent.send"),
-      label: Schema.Union(SafeIdentifierSchema, CanonicalTurnLabelSchema),
+      label: Schema.Union(NonCoordinateSafeLabelSchema, CanonicalTurnLabelSchema),
     }),
     Schema.Struct({
       ...intervalBase,

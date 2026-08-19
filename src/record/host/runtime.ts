@@ -125,6 +125,7 @@ import {
 } from "../reader/format.ts";
 import {
   readFixedRecordAttachment,
+  type FixedRecordAttachmentRead,
   validateFixedRecordAttachmentMigrationSource,
 } from "../reader/runtime.ts";
 import {
@@ -816,10 +817,12 @@ function readFixedFamily<
           runId: owner.runId,
           descriptor: descriptor as FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>,
           payload: value.value,
-        }).pipe(Effect.map((joined): FixedFamilyRead<Payload> =>
-          joined
+        }).pipe(Effect.map((join): FixedFamilyRead<Payload> =>
+          join.state === "joined"
             ? value
-            : Object.freeze({ state: "invalid" as const, issues: coreInvalid().issues })),
+            : join.state === "migration-required" || join.state === "unsupported"
+              ? join
+              : Object.freeze({ state: "invalid" as const, issues: coreInvalid().issues })),
         );
       }));
     }
@@ -846,10 +849,12 @@ function readFixedFamily<
         attemptId: owner.ref.attemptId,
         descriptor: descriptor as FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>,
         payload: value.value,
-      }).pipe(Effect.map((joined): FixedFamilyRead<Payload> =>
-        joined
+      }).pipe(Effect.map((join): FixedFamilyRead<Payload> =>
+        join.state === "joined"
           ? value
-          : Object.freeze({ state: "invalid" as const, issues: coreInvalid().issues })),
+          : join.state === "migration-required" || join.state === "unsupported"
+            ? join
+            : Object.freeze({ state: "invalid" as const, issues: coreInvalid().issues })),
       );
     }));
   });
@@ -882,26 +887,40 @@ function hasSourceFrames(payload: ObservabilityAttachment): boolean {
   return payload.diagnostics.diagnostics.some((diagnostic) => diagnostic.sourceFrame !== null);
 }
 
+type FixedCrossFamilyJoin =
+  | { readonly state: "joined" }
+  | { readonly state: "invalid" }
+  | Extract<FixedFamilyRead<unknown>, { readonly state: "migration-required" | "unsupported" }>;
+
+const joinedCrossFamily = Object.freeze({ state: "joined" as const });
+const invalidCrossFamily = Object.freeze({ state: "invalid" as const });
+
+function dependentFamilyJoin(read: FixedRecordAttachmentRead<unknown>): FixedCrossFamilyJoin {
+  if (read.state === "available") return joinedCrossFamily;
+  if (read.state === "migration-required" || read.state === "unsupported") return read;
+  return invalidCrossFamily;
+}
+
 /** Common cross-family closure boundary used by both reader and writer seal. */
 function validateObservabilitySourceFrameJoin(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
   readonly runId: RunId;
   readonly payload: ObservabilityAttachment;
-}): Effect.Effect<boolean, RecordFileSystemError> {
+}): Effect.Effect<FixedCrossFamilyJoin, RecordFileSystemError> {
   return Effect.gen(function* () {
-    if (!hasSourceFrames(input.payload)) return true;
+    if (!hasSourceFrames(input.payload)) return joinedCrossFamily;
     const sources = yield* readFixedRecordAttachment({
       fileSystem: input.fileSystem,
       root: input.root,
       location: Object.freeze({ owner: "run" as const, runId: input.runId }),
       descriptor: NiceEvalRecordFamilyCatalog.sources,
     });
-    if (sources.state !== "available") return false;
+    if (sources.state !== "available") return dependentFamilyJoin(sources);
     return observabilitySourceFrameIntegrityIssues(
       input.payload,
       sources.value as SourcesAttachment,
-    ).length === 0;
+    ).length === 0 ? joinedCrossFamily : invalidCrossFamily;
   });
 }
 
@@ -921,7 +940,7 @@ function validateFixedCrossFamilyJoin(input: {
   readonly attemptId?: AttemptId;
   readonly descriptor: FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>;
   readonly payload: unknown;
-}): Effect.Effect<boolean, RecordFileSystemError> {
+}): Effect.Effect<FixedCrossFamilyJoin, RecordFileSystemError> {
   if (isObservabilityDescriptor(input.descriptor)) {
     return validateObservabilitySourceFrameJoin({
       fileSystem: input.fileSystem,
@@ -932,7 +951,7 @@ function validateFixedCrossFamilyJoin(input: {
   }
   if (isAssertionsDescriptor(input.descriptor)) {
     const payload = input.payload as AssertionsAttachment;
-    if (payload.sourceSites.length === 0) return Effect.succeed(true);
+    if (payload.sourceSites.length === 0) return Effect.succeed(joinedCrossFamily);
     return Effect.gen(function* () {
       const sources = yield* readFixedRecordAttachment({
         fileSystem: input.fileSystem,
@@ -940,13 +959,15 @@ function validateFixedCrossFamilyJoin(input: {
         location: Object.freeze({ owner: "run" as const, runId: input.runId }),
         descriptor: NiceEvalRecordFamilyCatalog.sources,
       });
-      return sources.state === "available" &&
-        assertionsSourceSiteIntegrityIssues(payload, sources.value as SourcesAttachment).length === 0;
+      if (sources.state !== "available") return dependentFamilyJoin(sources);
+      return assertionsSourceSiteIntegrityIssues(payload, sources.value as SourcesAttachment).length === 0
+        ? joinedCrossFamily
+        : invalidCrossFamily;
     });
   }
   if (isSourceNavigationDescriptor(input.descriptor)) {
     const payload = input.payload as SourceNavigationAttachment;
-    if (input.attemptId === undefined) return Effect.succeed(false);
+    if (input.attemptId === undefined) return Effect.succeed(invalidCrossFamily);
     return Effect.gen(function* () {
       const observability = yield* readFixedRecordAttachment({
         fileSystem: input.fileSystem,
@@ -958,7 +979,7 @@ function validateFixedCrossFamilyJoin(input: {
         }),
         descriptor: NiceEvalRecordFamilyCatalog.observability.attempt,
       });
-      if (observability.state !== "available") return false;
+      if (observability.state !== "available") return dependentFamilyJoin(observability);
       const sources = hasMappedNavigationRows(payload)
         ? yield* readFixedRecordAttachment({
             fileSystem: input.fileSystem,
@@ -967,15 +988,17 @@ function validateFixedCrossFamilyJoin(input: {
             descriptor: NiceEvalRecordFamilyCatalog.sources,
           })
         : undefined;
-      if (sources !== undefined && sources.state !== "available") return false;
+      if (sources !== undefined) {
+        if (sources.state !== "available") return dependentFamilyJoin(sources);
+      }
       return sourceNavigationIntegrityIssues({
         payload,
         observability: observability.value as AttemptObservabilityAttachment,
         sources: sources?.state === "available" ? sources.value as SourcesAttachment : undefined,
-      }).length === 0;
+      }).length === 0 ? joinedCrossFamily : invalidCrossFamily;
     });
   }
-  return Effect.succeed(true);
+  return Effect.succeed(joinedCrossFamily);
 }
 
 function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemService): RecordReadSession {
