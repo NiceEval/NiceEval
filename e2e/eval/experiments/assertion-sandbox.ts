@@ -13,7 +13,7 @@ export default defineExperiment({
     name: "limited-local-e2e",
     targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
     exclusive: true,
-    create: () => Effect.sync(() => createLimitedLocalSandbox()),
+    create: () => Effect.promise(() => createLimitedLocalSandbox()),
   }),
   evals: ["assertion-sandbox", "workspace-diff-cap"],
 });
