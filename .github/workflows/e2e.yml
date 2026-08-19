@@ -192,8 +192,24 @@ jobs:
             exit 1
           fi
           count="$(jq 'length' "$plan_file")"
+          playwright_version="$(node -p "require('./package.json').devDependencies['@playwright/test']")"
+          if ! [[ "$playwright_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::@playwright/test must use an exact version for the CI browser image, got ${playwright_version}"
+            exit 1
+          fi
+          playwright_image="mcr.microsoft.com/playwright:v${playwright_version}-noble"
+          matrix="$(jq -c --arg playwright_image "$playwright_image" '
+            map(. + {
+              container: (
+                if ((.requires.browsers // []) | length) > 0
+                then $playwright_image
+                else null
+                end
+              )
+            })
+          ' "$plan_file")"
           {
-            echo "matrix=$(jq -c '.' "$plan_file")"
+            echo "matrix=${matrix}"
             if [ "$count" -gt 0 ]; then
               echo "has-jobs=true"
             else
@@ -206,7 +222,8 @@ jobs:
             echo "::error::batched plan contains duplicate Repo ids"
             exit 1
           fi
-          echo "[e2e] plan lane=${LANE} live_providers=${include_live} selected ${repo_count} Repo(s) in ${count} cell(s): $(jq -r '[.[].repoIds[]] | join(", ")' "$plan_file")"
+          browser_cells="$(jq '[.[] | select(((.requires.browsers // []) | length) > 0)] | length' "$plan_file")"
+          echo "[e2e] plan lane=${LANE} live_providers=${include_live} selected ${repo_count} Repo(s) in ${count} cell(s) (${browser_cells} Playwright container): $(jq -r '[.[].repoIds[]] | join(", ")' "$plan_file")"
 
       - name: Typecheck Testkit
         if: steps.plan.outputs.has-jobs == 'true'
@@ -257,10 +274,11 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ubuntu-24.04
-    # host / docker cell 保留四分钟性能门槛。browser cache 只覆盖浏览器二进制，
-    # `playwright install --with-deps` 的 apt 系统依赖不在 cache 中。browser cell
-    # 单独保留八分钟镜像抖动余量，不把 apt mirror 卡顿误判为产品回归。
-    timeout-minutes: ${{ (contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')) && 12 || 4 }}
+    # 只有声明 browser capability 的 cell 进入精确 Playwright 版本镜像；其它 host / docker
+    # cell 的 matrix.container 为 null，仍直接运行在普通 GitHub runner。镜像已经包含 browser
+    # 与系统依赖，不在每次 job 中运行 apt / `playwright install --with-deps`。
+    container: ${{ matrix.container }}
+    timeout-minutes: ${{ matrix.container && 5 || 4 }}
     # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
     # 同名 Environment。所有路径都只注入 manifest 白名单中的 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
@@ -334,22 +352,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Restore Playwright browser cache
-        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Playwright browsers
-        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
-        env:
-          BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}
-        run: |
-          set -euo pipefail
-          mapfile -t browsers < <(jq -r '.[]' <<< "$BROWSERS_JSON")
-          pnpm exec playwright install --with-deps "${browsers[@]}"
 
       - name: Download exact NiceEval candidate
         uses: actions/download-artifact@v4
