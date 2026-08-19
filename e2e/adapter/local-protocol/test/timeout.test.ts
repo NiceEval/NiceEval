@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#timeout-owner
 // rerun: pnpm e2e --repo adapter/local-protocol -- --run test/timeout.test.ts
 
-import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
+import { assertExpEvalOutcomes, decodeShowAttemptDiagnostics, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
@@ -37,7 +37,12 @@ test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 erro
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
         const shown = await niceeval.run(["show", event.locator, "--json"]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        expect(shown.stdout, shown.diagnostic()).toContain(event.locator);
+        expect(decodeShowAttemptDiagnostics(shown)).toEqual([{
+          code: "timeout",
+          kind: "execution-error",
+          phase: "agent.send",
+          summary: "attempt timed out (4000ms, from experiment)",
+        }]);
       });
     },
   );

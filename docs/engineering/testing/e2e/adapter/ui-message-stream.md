@@ -18,9 +18,9 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 |---|---|
 | 正常 SSE | 完整帧序列归约为成功 Turn，assistant message 与公开 Evidence Page 包含 fixture 文案 |
 | HITL approval | `approval-requested` 先产生一次 `operation.started` + `input.requested`，调用处于 pending；approve / deny resume 分别以同一 call ID 唯一结束为 completed / rejected |
-| 半途断流 | fixture 收据确认断流路由已命中，运行必须非零退出并产生归属于本 Eval 的公开 `errored` 终局 |
-| timeout | fixture 收据确认挂起路由已命中，固定 Attempt deadline 后产生归属于本 Eval 的公开 `errored` 终局 |
-| HTTP 非 2xx | fixture 收据确认 HTTP 500 路由已命中，并产生归属于本 Eval 的公开 `errored` 终局 |
+| 半途断流 | fixture 收据确认断流路由已命中，公开 Attempt diagnostic 必须是 `agent-send-failed`，并点名缺少 UI Message Stream `[DONE]` 收尾 |
+| timeout | fixture 收据确认挂起路由已命中，公开 Attempt diagnostic 必须是 `agent.send` 阶段、固定 4000ms deadline 的 `timeout` |
+| HTTP 非 2xx | fixture 收据确认 HTTP 500 路由已命中，公开 Attempt diagnostic 必须是 `agent-send-failed`，并保留 500 与 fixture 错误文案 |
 
 正常 SSE 是三个负面场景的 control。
 它先证明相同 candidate、fixture、transport 与 Adapter 接线能够成功，避免把宿主运行条件或安装错误误判成故障处理正确。
@@ -41,19 +41,19 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Disconnect owner
 
-`test/disconnect.test.ts` 只拥有 fixture 确认半截 SSE 断流路由已命中，以及该 Eval 的公开 `errored` 终局。
+`test/disconnect.test.ts` 只拥有 fixture 确认半截 SSE 断流路由已命中，以及公开 Attempt diagnostic 对缺失 `[DONE]` 的精确归因。
 
 <a id="timeout-owner"></a>
 
 ### Timeout owner
 
-`test/timeout.test.ts` 只拥有 fixture 确认挂起 body 路由已命中，以及固定 attempt deadline 后该 Eval 的公开 `errored` 终局。
+`test/timeout.test.ts` 只拥有 fixture 确认挂起 body 路由已命中，以及固定 attempt deadline 后公开 `agent.send` timeout diagnostic。
 
 <a id="http-error-owner"></a>
 
 ### HTTP error owner
 
-`test/http-error.test.ts` 只拥有 fixture 确认 HTTP 500 路由已命中，以及该 Eval 的公开 `errored` 终局。
+`test/http-error.test.ts` 只拥有 fixture 确认 HTTP 500 路由已命中，以及保留 HTTP status 与响应文案的公开 diagnostic。
 
 ## 仓库验收
 

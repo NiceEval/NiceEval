@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#http-error-owner
 // rerun: pnpm e2e --repo adapter/local-protocol -- --run test/http-error.test.ts
 
-import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
+import { assertExpEvalOutcomes, decodeShowAttemptDiagnostics, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
@@ -37,7 +37,12 @@ test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async (
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
         const shown = await niceeval.run(["show", event.locator, "--json"]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        expect(shown.stdout, shown.diagnostic()).toContain(event.locator);
+        expect(decodeShowAttemptDiagnostics(shown)).toEqual([{
+          code: "agent-send-failed",
+          kind: "execution-error",
+          phase: "eval.run",
+          summary: expect.stringMatching(/failed: 500 .*local-protocol fixture deliberate 500/),
+        }]);
       });
     },
   );

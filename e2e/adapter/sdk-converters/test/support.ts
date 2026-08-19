@@ -4,6 +4,35 @@ import {
 } from "@niceeval/testkit";
 import type { Argv, E2ECaseContext } from "@niceeval/testkit";
 
+export type SdkConverterCase = E2ECaseContext<{ niceeval: Argv }>;
+
+export interface SdkConverterCaseHandle {
+  /** Resolves once the isolated project is ready for this file's shared public commands. */
+  readonly context: Promise<SdkConverterCase>;
+  /** May be called before context resolves; always releases the held project once it opens. */
+  close(): Promise<void>;
+}
+
+/** Preserve the opening/execution failure when releasing the held project also fails. */
+export async function closeSdkConverterCaseAfterFailure(
+  handle: SdkConverterCaseHandle,
+  failure: unknown,
+): Promise<never> {
+  try {
+    await handle.close();
+  } catch (cleanupError) {
+    if (cleanupError !== failure) {
+      const aggregate = new AggregateError(
+        [failure, cleanupError],
+        "SDK converter case failed and its held project also failed to close",
+      );
+      aggregate.cause = failure;
+      throw aggregate;
+    }
+  }
+  throw failure;
+}
+
 /**
  * Tests run concurrently by default. Every case gets a disposable project and
  * the retained record lands in the ctx invocation + case namespace, so no two
@@ -28,8 +57,7 @@ export const sdkConverterRecordArtifacts = {
 } as const;
 
 /** Hold one isolated project open while a file's beforeAll/tests/afterAll share frozen evidence. */
-export async function openSdkConverterCase(caseId: string) {
-  type SdkConverterCase = E2ECaseContext<{ niceeval: Argv }>;
+export function openSdkConverterCase(caseId: string): SdkConverterCaseHandle {
   let release!: () => void;
   const releaseProject = new Promise<void>((resolveRelease) => {
     release = resolveRelease;
@@ -51,10 +79,9 @@ export async function openSdkConverterCase(caseId: string) {
   );
   void heldCase.catch(rejectContext);
 
-  const context = await contextReady;
   let closed = false;
   return {
-    context,
+    context: contextReady,
     async close(): Promise<void> {
       if (closed) return;
       closed = true;

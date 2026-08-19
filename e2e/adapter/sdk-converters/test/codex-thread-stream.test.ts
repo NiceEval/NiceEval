@@ -9,7 +9,7 @@ import {
   type ProcessReceipt,
 } from "@niceeval/testkit";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { openSdkConverterCase } from "./support.ts";
+import { closeSdkConverterCaseAfterFailure, openSdkConverterCase } from "./support.ts";
 
 const EXPECTED = [{
   experimentId: "codex-thread-stream",
@@ -19,23 +19,25 @@ const EXPECTED = [{
   passed: 1,
 }] as const;
 
-let shared: Awaited<ReturnType<typeof openSdkConverterCase>> | undefined;
+let shared: ReturnType<typeof openSdkConverterCase> | undefined;
+let context!: Awaited<ReturnType<typeof openSdkConverterCase>["context"]>;
 let run!: ProcessReceipt;
 let receipt!: InvocationReceipt;
 let events!: ExpEvalEvent[];
 
 beforeAll(async () => {
-  shared = await openSdkConverterCase("codex-thread-stream");
+  shared = openSdkConverterCase("codex-thread-stream");
   try {
-    run = await shared.context.commands.niceeval.run([
+    context = await shared.context;
+    run = await context.commands.niceeval.run([
       "exp", "codex-thread-stream", "--rerun", "all", "--json",
     ]);
     events = run.expEvalEvents();
     receipt = run.expReceipt();
   } catch (error) {
-    await shared.close();
+    const failed = shared;
     shared = undefined;
-    throw error;
+    await closeSdkConverterCaseAfterFailure(failed, error);
   }
 });
 
@@ -50,7 +52,7 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 以 passed outcome 完�
 
 test("show --execution 读回 Codex command、file 与 terminal failure 标记", async () => {
   const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-  const execution = await shared!.context.commands.niceeval.run([
+  const execution = await context.commands.niceeval.run([
     "show", event.locator, "--execution", "--json",
   ]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);

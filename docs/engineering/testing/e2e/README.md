@@ -201,6 +201,15 @@ Lifecycle Repo 保留原生测试 runner 的默认并行。每条 case 按场景
 - 下一次独立消费者可以正常启动；
 - cleanup 失败不会遮蔽原始失败。
 
+<a id="process-group-cleanup"></a>
+
+### Process group cleanup
+
+`e2e/lifecycle/test/process-group-cleanup.test.ts` 是 Testkit 进程组终结的单边界 owner。它用受控 Python
+进程树分别制造会忽略 TERM 的 live descendant、只剩真实 zombie 的进程组，以及已经逃出 owned group
+但仍继承 stdout / stderr pipe 的 descendant。测试只断言进程与 pipe 的可观察终局；fixture 负责给每个 PID
+明确身份并在测试退出前回收不属于 owned group 的 controller，不复制 Testkit 的终结算法。
+
 ### Eval Group shared Sandbox
 
 `e2e/lifecycle/test/eval-group-shared-sandbox.test.ts` 是 Eval Group 物理生命周期的单边界 owner。
