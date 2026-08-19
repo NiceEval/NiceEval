@@ -13,6 +13,7 @@ import type {
 import { matchesJson } from "../shared/json-match.ts";
 import type { JsonMatch, JsonValue } from "../shared/types.ts";
 import { stripComments } from "../util.ts";
+import { assertionRuntimeLimits } from "./limits.ts";
 
 export type MatchDomain = "value" | "tool" | "event";
 
@@ -31,6 +32,13 @@ export interface MatchDiagnostic {
     | { readonly kind: "json-pointer"; readonly pointer: string }
     | { readonly kind: "tool-occurrence"; readonly id: string };
   readonly children?: readonly MatchDiagnosticChild[];
+  /** Collection matchers retain only a bounded, representative candidate set. */
+  readonly truncation?: {
+    readonly code: "diagnostic-truncated";
+    readonly reason: "sampled";
+    readonly captured: number;
+    readonly knownTotal: number;
+  };
 }
 
 export interface MatchDiagnosticChild {
@@ -186,6 +194,7 @@ function diagnostic(
     ...(options.reason === undefined ? {} : { reason: options.reason }),
     ...(options.locator === undefined ? {} : { locator: options.locator }),
     ...(options.children === undefined ? {} : { children: Object.freeze([...options.children]) }),
+    ...(options.truncation === undefined ? {} : { truncation: Object.freeze({ ...options.truncation }) }),
   });
 }
 
@@ -1474,36 +1483,72 @@ export async function evaluateToolMatchCollection(
   occurrences: readonly LogicalToolOccurrence[],
   options: ToolMatchCollectionOptions,
 ): Promise<BooleanMatchEvaluation<LogicalToolOccurrence | undefined>> {
-  const candidates: CandidateResult<LogicalToolOccurrence>[] = [];
-  for (const occurrence of occurrences) {
-    candidates.push(Object.freeze({
+  const sampledCandidates: CandidateResult<LogicalToolOccurrence>[] = [];
+  let matchCount = 0;
+  let firstMatch: CandidateResult<LogicalToolOccurrence> | undefined;
+  let firstUnavailable: CandidateResult<LogicalToolOccurrence> | undefined;
+  let exactOverage: CandidateResult<LogicalToolOccurrence> | undefined;
+  for (const [index, occurrence] of occurrences.entries()) {
+    const candidate = Object.freeze({
+      index,
       candidate: occurrence,
       result: await evaluateBooleanMatch(match, occurrence),
-    }));
+    });
+    if (sampledCandidates.length < assertionRuntimeLimits.collectionDiagnosticCandidates) {
+      sampledCandidates.push(candidate);
+    }
+    if (candidate.result.state === "matched") {
+      matchCount += 1;
+      firstMatch ??= candidate;
+      if (options.quantifier.kind === "exact" && matchCount === options.quantifier.count + 1) {
+        exactOverage = candidate;
+      }
+    } else if (candidate.result.state === "unavailable") {
+      firstUnavailable ??= candidate;
+    }
   }
-  const children = candidates.map((candidate, index) => resultChild(
-    candidate.result,
-    index,
-    `candidate ${candidate.candidate.id}`,
-  ));
-  const matches = candidates.filter((candidate) => candidate.result.state === "matched");
-  const unavailableCandidate = candidates.find((candidate) => candidate.result.state === "unavailable");
-  const unavailableReason = unavailableCandidate?.result.state === "unavailable"
-    ? unavailableCandidate.result.reason
+  const unavailableReason = firstUnavailable?.result.state === "unavailable"
+    ? firstUnavailable.result.reason
     : options.coverageReason;
   const incomplete = unavailableReason !== undefined;
-  const received = `${matches.length} definite match${matches.length === 1 ? "" : "es"}`;
+  const received = `${matchCount} definite match${matchCount === 1 ? "" : "es"}`;
   const candidateLocator = (candidate: CandidateResult<LogicalToolOccurrence> | undefined) =>
     candidate === undefined ? undefined : { kind: "tool-occurrence" as const, id: candidate.candidate.id };
+  const diagnosticSample = (
+    ...decisive: readonly (CandidateResult<LogicalToolOccurrence> | undefined)[]
+  ): Pick<MatchDiagnostic, "children" | "truncation"> => {
+    const byIndex = new Map<number, CandidateResult<LogicalToolOccurrence>>();
+    for (const candidate of [...sampledCandidates, ...decisive]) {
+      if (candidate !== undefined) byIndex.set(candidate.index, candidate);
+    }
+    const captured = [...byIndex.values()].sort((left, right) => left.index - right.index);
+    return Object.freeze({
+      children: Object.freeze(captured.map((candidate) => resultChild(
+        candidate.result,
+        candidate.index,
+        `candidate ${candidate.candidate.id}`,
+      ))),
+      ...(captured.length === occurrences.length
+        ? {}
+        : {
+            truncation: Object.freeze({
+              code: "diagnostic-truncated" as const,
+              reason: "sampled" as const,
+              captured: captured.length,
+              knownTotal: occurrences.length,
+            }),
+          }),
+    });
+  };
 
   if (options.quantifier.kind === "absent") {
-    const first = matches[0];
+    const first = firstMatch;
     if (first !== undefined) {
       return mismatched(diagnostic("tool-absence-mismatch", `notCalledTool(${match.name}) observed a matching tool`, {
         expected: `no ${match.name}`,
         received,
         locator: candidateLocator(first),
-        children,
+        ...diagnosticSample(first),
       }));
     }
     if (incomplete) {
@@ -1511,39 +1556,39 @@ export async function evaluateToolMatchCollection(
         expected: `no ${match.name}`,
         received,
         reason: unavailableReason,
-        children,
+        ...diagnosticSample(firstUnavailable),
       }));
     }
     return matched(undefined, diagnostic("tool-absence-match", `notCalledTool(${match.name}) observed no matching tool`, {
       expected: `no ${match.name}`,
       received,
-      children,
+      ...diagnosticSample(),
     }));
   }
 
   const { kind, count } = options.quantifier;
   const expected = kind === "exact" ? `exactly ${count} × ${match.name}` : `at least ${count} × ${match.name}`;
-  if (kind === "exact" && matches.length > count) {
-    const overage = matches[count];
+  if (kind === "exact" && matchCount > count) {
+    const overage = exactOverage;
     return mismatched(diagnostic("tool-count-exceeded", `calledTool(${match.name}) exceeded its exact count`, {
       expected,
       received,
       locator: candidateLocator(overage),
-      children,
+      ...diagnosticSample(overage),
     }));
   }
-  if (kind === "at-least" && matches.length >= count) {
-    return matched(matches[0]?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its lower bound`, {
+  if (kind === "at-least" && matchCount >= count) {
+    return matched(firstMatch?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its lower bound`, {
       expected,
       received,
-      children,
+      ...diagnosticSample(firstMatch),
     }));
   }
-  if (kind === "exact" && matches.length === count && !incomplete) {
-    return matched(matches[0]?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its exact count`, {
+  if (kind === "exact" && matchCount === count && !incomplete) {
+    return matched(firstMatch?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its exact count`, {
       expected,
       received,
-      children,
+      ...diagnosticSample(firstMatch),
     }));
   }
   if (incomplete) {
@@ -1551,17 +1596,18 @@ export async function evaluateToolMatchCollection(
       expected,
       received,
       reason: unavailableReason,
-      children,
+      ...diagnosticSample(firstUnavailable),
     }));
   }
   return mismatched(diagnostic("tool-count-mismatch", `calledTool(${match.name}) did not satisfy its count`, {
     expected,
     received,
-    children,
+    ...diagnosticSample(),
   }));
 }
 
 interface CandidateResult<T> {
+  readonly index: number;
   readonly candidate: T;
   readonly result: BooleanMatchEvaluation<unknown>;
 }

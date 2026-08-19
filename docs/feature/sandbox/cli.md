@@ -204,7 +204,9 @@ $ niceeval sandbox prune
 pruned 2 orphan sandboxes
   f31b9a02  docker  pid 4242@mbp dead · started 2026-07-20 14:02
   09aa41c7  docker  pid 4242@mbp dead · started 2026-07-20 14:03
-1 unverified left — inspect: niceeval sandbox list --orphans · force: niceeval sandbox prune --force
+1 could not be verified
+  details: niceeval sandbox list --orphans
+  remove after manual verification: niceeval sandbox prune --force
 ```
 
 - 只销毁判定为 `orphan` 的实例;`--force` 连 `unverified` 一起销毁。留存注册表条目永不被 prune 触碰——已登记现场的销毁是 `stop` 的职责。

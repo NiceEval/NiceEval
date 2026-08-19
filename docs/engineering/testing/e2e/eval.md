@@ -15,7 +15,7 @@
 | --- | --- | --- | --- | --- |
 | [`#eval-context`](#eval-context) | 多轮、session 与作用域 Context 只看到各自应有的真实事件和 usage | 单边界 E2E | `e2e/eval/test/context.test.ts` | PR |
 | [`#eval-assertion-values`](#eval-assertion-values) | 值 Match 登记 Assertion，并在真实 evidence 上给出 passed Verdict | 单边界 E2E | `e2e/eval/test/assertion-values.test.ts` | PR |
-| [`#eval-assertion-scopes`](#eval-assertion-scopes) | turn、session 与 attempt scope 在真实工具事件上完成断言 | 单边界 E2E | `e2e/eval/test/assertion-scopes.test.ts` | PR |
+| [`#eval-assertion-scopes`](#eval-assertion-scopes) | turn、session 与 attempt scope 在大量真实工具事件上完成断言并发布有界诊断 | 单边界 E2E | `e2e/eval/test/assertion-scopes.test.ts` | PR |
 | [`#eval-assertion-score`](#eval-assertion-score) | 计分制正常返回自动封口，Assertion 分值贡献、直接给分与空计分写入公开 Record | 单边界 E2E | `e2e/eval/test/assertion-score.test.ts` | PR |
 | [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox agent-attributed endpoint diff 与 shell evidence 由公开 Assertion、Report DomainView 和闭合读回观察 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
 | [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时 required Judge Assertion 以 unavailable 使 Attempt errored，且不进入网络路径 | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
@@ -34,7 +34,7 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 
 ## eval-assertion-scopes
 
-turn、session 与 attempt scope 必须以同一批真实工具事件完成断言；公开 execution readback 同时保留主支工具身份。
+turn、session 与 attempt scope 必须以同一批真实工具事件完成断言；候选很多时 matcher diagnostic 只保留有界解释材料，不能让已经完成的 Attempt 因 Assertions document 膨胀而无法发布。公开 execution readback 同时保留主支工具身份。
 
 ## eval-assertion-score
 
@@ -48,6 +48,9 @@ turn、session 与 attempt scope 必须以同一批真实工具事件完成断�
 Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用
 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试经
 `show` 或 Report 的已发布 DomainView 读取闭合 diff，不读私有落盘、固定 family bytes 或旧的投影声明。
+
+同一 owner 还让第二个 send 区间超过路径保留上限，证明 collector 发布带 `collection-cap-reached`
+的确定性 partial File Changes，而不是把证据降格成 `workspace-diff-unavailable`。
 
 ## eval-assertion-judge-unavailable
 

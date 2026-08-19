@@ -62,9 +62,9 @@ or `niceeval sandbox delete` to destroy.
 
 ```text
 ID        PROVIDER  STATE    CHECKPOINT                    EXPIRES
-rtn_8f3a  vercel    dormant  fresh post-teardown · @1efw5…  in 18h
-rtn_91c2  docker    dormant  pool retired · 4 assignments no provider expiry
-rtn_a10e  vercel    unknown  cleanup incomplete            recovery required
+rtn_8f3a  vercel    dormant  saved after Attempt @1efw5…   in 18h
+rtn_91c2  docker    dormant  used by 4 attempts             no provider expiry
+rtn_a10e  vercel    unknown  cleanup did not finish         check Provider console
 ```
 
 每项同时显示 cleanup complete/incomplete、最近错误、active deadline 与下一步命令。

@@ -338,7 +338,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   任缺一条哈希都会随宿主条件漂移，症状是缓存永不命中而不是结果出错，只有这一格会红。
 - **汇总与退出码**：verdict 四值互斥、failed 只统计断言不过；退出码按 `(experiment, eval)` 最终判定折叠、完整退出码矩阵（0/1/130、strict、required reporter）；分组通过率的分母口径。
 - **Session 登记与查询**：每次真实派发在启动期原子创建 Session 文件，按反馈维护 queued/running/elsewhere 计数与状态，收尾后保留完成条目；查询只读投影默认过滤已完成项，并把超过心跳阈值的活动条目放入 `expired`，`--all` 保留完成项。
-- **启动期错误格式**：coordinator 激活前的错误恒为 `error:` + `fix:` 两行、两种输出形态同形；库错误类的下一步原样透传。
+- **启动期错误格式**：coordinator 激活前的 Human 错误恒有真实 `error:`；有限且确定的语法错误可以附
+  `usage:`，有公开说明时可以附 `docs:`，不得要求通用 `fix:`。机器输出保留稳定错误结构，不要求与 Human 字节同形。
 - **用户 `.ts` 装载与宿主模块形态**（`bin/niceeval.js` + 包 `exports` 表）：CLI 装载用户 `.ts` 不受宿主 `package.json` 的 `type` 影响（契约见 [docs/cli.md「装载用户 .ts」](../../../cli.md)）。
 - 单元层以数据面守护两条不变量：exports 每个带 `import` 条件的出口同时带 `require` 条件、且两者指向真实存在的文件。
 - bin 入口同时注册 tsx 的 ESM 与 CJS 两个 hook——两者缺一，CJS 宿主（`npm init -y` 默认）下 `init` 刚生成的 config 就装载不了（`// bug: memory/tsx-dynamic-import-require-cycle.md`）。

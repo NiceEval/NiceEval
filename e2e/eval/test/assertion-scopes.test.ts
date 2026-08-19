@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-scopes
+// regression: memory/assertion-diagnostic-tree-overflows-record.md
 // rerun: pnpm e2e --repo eval -- --run test/assertion-scopes.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -12,7 +13,7 @@ interface ExpEvent {
   verdict?: string;
 }
 
-test("turn、session 与 attempt scope Eval 以 passed 终态完成", async () => {
+test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", async () => {
   await evalE2E.case(
     "scopes",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -30,6 +31,8 @@ test("turn、session 与 attempt scope Eval 以 passed 终态完成", async () =
         evalId: "assertion-scopes",
         verdict: "passed",
       });
+      const shown = await niceeval.run(["show", evaluation.locator!, "--json"]);
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
     },
   );
 });

@@ -34,6 +34,23 @@
 | deliberate-fail  | 断言必然不通过的 Eval   | Attempt 的 Verdict 为 `failed`，进程非零退出                          |
 | deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`，`show @<locator>` 显示阶段、退出码与摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
 | deliberate-score | 确定性的 Score Eval       | Human 结束标题为 `SCORED`，`RESULTS` 显示实际 `2 score · 1/1 complete`，不冒充 `passed` |
+| judge-precheck-error | 两次 Attempt 创建前 Judge endpoint 预检失败 | NDJSON warning 携带 Experiment、Eval 与 `planned: 2` / `errored: 2`，receipt 正常闭合 |
+
+#### cli-provider-error-feedback
+
+Given 同一次 Human invocation 选中四个 Experiment。两个 custom provider 在 `sandbox.create` 以相同
+phase/code、不同长 `message` 失败，分别代表 E2B 与 Vercel 外部边界。另两个 Dockerfile sandbox 在不同 Run
+中各自以局部 `n1` 和不同的长 builder stderr 于 Attempt 创建前失败；custom provider 的 `cause` 另含只存在于内部的 secret 哨兵。
+
+When 从安装后的 candidate 运行 `niceeval exp provider-error --rerun all`。
+
+Then：
+
+- 四条安全封口后的 `error:` 都可见，长文本按显示宽度折行并以 head + tail 收口；不同 message 不因 phase/code 或跨 Run 的局部 `n1` 相同而合并；
+- Human 不出现 cause secret、`n1`、BuildKey、timing node、failureId、`cause:` 或 `fix:`；
+- 两条 post-Attempt error 各自紧跟 `details: niceeval show @<locator>`；pre-Attempt error 在 receipt 后的 `NEXT`
+  按 Experiment 紧跟 `details: niceeval show --run <runId>`；
+- 测试实际执行四个 details 命令，并分别读回所属错误；两个默认 Run Human 页错误优先且不展示空 KPI、证据、分析或内部 membership 字段；旧 candidate 对上述长期结果为红，新 candidate 为绿。
 
 ### 缓存
 

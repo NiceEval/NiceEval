@@ -354,7 +354,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     return failure === undefined ? [] : [failure];
   }));
   if (opts.onCurrentRecordReusePlan !== undefined) {
-    yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures });
+    yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures, runIds });
   } else {
     // Direct library callers have no feedback coordinator. Preserve their
     // fallback failure signal without turning a current readback into a legacy
@@ -544,6 +544,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const judgePrecheckFailures = new Map<string, string>();
   {
     const uniquePairs = [...new Map(attempts.map((a) => [cacheKey(a.run, a.evalDef.id), a])).entries()];
+    const plannedByPair = new Map<string, number>();
+    for (const attempt of attempts) {
+      const pairKey = cacheKey(attempt.run, attempt.evalDef.id);
+      plannedByPair.set(pairKey, (plannedByPair.get(pairKey) ?? 0) + 1);
+    }
     const { targets, evalKeys } = judgeProbePlan(
       uniquePairs.map(([id, a]) => ({
         id,
@@ -561,11 +566,33 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const failedByKey = new Map<string, string>();
       for (const target of targets) {
         const err = yield* probeJudgeEffect(target.judge, opts.signal);
-        if (err) failedByKey.set(target.key, err);
+        if (err) {
+          failedByKey.set(target.key, err);
+        }
       }
       for (const [pairKey, key] of evalKeys) {
         const err = failedByKey.get(key);
-        if (err !== undefined) judgePrecheckFailures.set(pairKey, err);
+        if (err === undefined) continue;
+        judgePrecheckFailures.set(pairKey, err);
+        const pair = uniquePairs.find(([candidate]) => candidate === pairKey)?.[1];
+        if (pair === undefined) continue;
+        const planned = plannedByPair.get(pairKey) ?? 1;
+        // No Attempt exists yet, so this pair-owned warning is the stable
+        // machine projection: identity and terminal counts travel in data,
+        // without fabricating a locator-addressable eval event.
+        reportDiagnostic({
+          key: `judge-precheck-failed:${pairKey}`,
+          code: "judge-precheck-failed",
+          severity: "error",
+          message: err,
+          data: {
+            phase: "judge.precheck",
+            ...(pair.run.experimentId === undefined ? {} : { experimentId: pair.run.experimentId }),
+            evalId: pair.evalDef.id,
+            planned,
+            errored: planned,
+          },
+        });
       }
       reportPrecheck({
         status: failedByKey.size > 0 ? "failed" : "done",

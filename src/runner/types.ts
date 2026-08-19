@@ -1237,6 +1237,8 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   onCurrentRecordReusePlan?: (input: {
     readonly reused: number;
     readonly reusedFailures: readonly FailureDetail[];
+    /** Draft identities become Human-visible only if the final receipt confirms publication. */
+    readonly runIds: ReadonlyMap<string, string>;
   }) => Effect.Effect<void, never>;
   /**
    * 已注册的 reporter,携带 name/required 元数据(见 `ReporterRegistration`)。这是内部编排
@@ -1518,6 +1520,8 @@ export interface InvocationCompletion {
  * 断言一次)。
  */
 export interface RunFeedbackState {
+  /** Draft 期的 Experiment → Run 映射；Human 只在 receipt 确认对应 Run 已发布后使用。 */
+  runIdsByExperiment: ReadonlyMap<string, string>;
   total: number;
   reused: number;
   running: number;

@@ -18,6 +18,21 @@ export const deterministicSandboxAgent = defineSandboxAgent({
   ensure,
   async send(input, ctx) {
     if (ctx.signal.aborted) throw new Error("deterministic sandbox agent aborted");
+    if (input.text === "workspace/diff-cap") {
+      const create = await ctx.sandbox.runShell(
+        'mkdir -p bulk bulk-text && i=0; while [ "$i" -lt 10001 ]; do p=$(printf "%05d" "$i"); : > "bulk/$p.txt"; i=$((i + 1)); done && i=0; while [ "$i" -lt 68 ]; do p=$(printf "%03d" "$i"); { printf "%s" "$p"; dd if=/dev/zero bs=999997 count=1 2>/dev/null | tr "\\000" x; } > "bulk-text/$p.txt"; i=$((i + 1)); done',
+      );
+      if (create.exitCode !== 0) throw new Error(`bulk workspace fixture failed: ${create.stderr}`);
+      ctx.session.capture("eval-workspace-diff-cap");
+      return {
+        status: "completed" as const,
+        events: [
+          { type: "message" as const, role: "assistant" as const, text: "workspace-diff-cap-complete" },
+        ],
+        data: { fixture: "workspace-diff-cap", ok: true },
+        usage: { inputTokens: 2, outputTokens: 3, costUSD: 0 },
+      };
+    }
     if (input.text !== "assertion/sandbox") {
       throw new Error(`unknown deterministic Sandbox input: ${JSON.stringify(input.text)}`);
     }

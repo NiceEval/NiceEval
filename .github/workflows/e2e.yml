@@ -64,7 +64,7 @@ jobs:
       candidate_sha256: ${{ steps.pack.outputs.candidate_sha256 }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -192,8 +192,24 @@ jobs:
             exit 1
           fi
           count="$(jq 'length' "$plan_file")"
+          playwright_version="$(node -p "require('./package.json').devDependencies['@playwright/test']")"
+          if ! [[ "$playwright_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::@playwright/test must use an exact version for the CI browser image, got ${playwright_version}"
+            exit 1
+          fi
+          playwright_image="mcr.microsoft.com/playwright:v${playwright_version}-noble"
+          matrix="$(jq -c --arg playwright_image "$playwright_image" '
+            map(. + {
+              container: (
+                if ((.requires.browsers // []) | length) > 0
+                then $playwright_image
+                else null
+                end
+              )
+            })
+          ' "$plan_file")"
           {
-            echo "matrix=$(jq -c '.' "$plan_file")"
+            echo "matrix=${matrix}"
             if [ "$count" -gt 0 ]; then
               echo "has-jobs=true"
             else
@@ -206,7 +222,8 @@ jobs:
             echo "::error::batched plan contains duplicate Repo ids"
             exit 1
           fi
-          echo "[e2e] plan lane=${LANE} live_providers=${include_live} selected ${repo_count} Repo(s) in ${count} cell(s): $(jq -r '[.[].repoIds[]] | join(", ")' "$plan_file")"
+          browser_cells="$(jq '[.[] | select(((.requires.browsers // []) | length) > 0)] | length' "$plan_file")"
+          echo "[e2e] plan lane=${LANE} live_providers=${include_live} selected ${repo_count} Repo(s) in ${count} cell(s) (${browser_cells} Playwright container): $(jq -r '[.[].repoIds[]] | join(", ")' "$plan_file")"
 
       - name: Typecheck Testkit
         if: steps.plan.outputs.has-jobs == 'true'
@@ -242,7 +259,7 @@ jobs:
 
       - name: Upload exact NiceEval candidate
         if: steps.plan.outputs.has-jobs == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: niceeval-e2e-candidate
           path: |
@@ -257,10 +274,16 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ubuntu-24.04
-    # host / docker cell 保留四分钟性能门槛。browser cache 只覆盖浏览器二进制，
-    # `playwright install --with-deps` 的 apt 系统依赖不在 cache 中，给 browser cell
-    # 两分钟独立的镜像抖动余量，避免慢 apt 下载把已缓存的浏览器场景误判为 cancelled。
-    timeout-minutes: ${{ (contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')) && 6 || 4 }}
+    defaults:
+      run:
+        # GitHub defaults container jobs to /bin/sh; every script in this job
+        # relies on `set -o pipefail`, so host and container cells share Bash.
+        shell: bash
+    # 只有声明 browser capability 的 cell 进入精确 Playwright 版本镜像；其它 host / docker
+    # cell 的 matrix.container 为 null，仍直接运行在普通 GitHub runner。镜像已经包含 browser
+    # 与系统依赖，不在每次 job 中运行 apt / `playwright install --with-deps`。
+    container: ${{ matrix.container }}
+    timeout-minutes: ${{ matrix.container && 5 || 4 }}
     # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
     # 同名 Environment。所有路径都只注入 manifest 白名单中的 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
@@ -270,7 +293,7 @@ jobs:
         include: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve dependency cache inputs
         id: dependency-cache
@@ -285,7 +308,7 @@ jobs:
               lockfile="e2e/${repo_dir}/pnpm-lock.yaml"
               test -f "$lockfile"
               echo "$lockfile"
-            done < <(jq -r '.[]' <<< "$REPO_DIRS_JSON")
+            done < <(node -e 'for (const dir of JSON.parse(process.env.REPO_DIRS_JSON)) console.log(dir)')
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -315,44 +338,45 @@ jobs:
       - name: Resolve cell manifests
         id: cell
         env:
+          CELL_ID: ${{ matrix.id }}
           REPO_IDS_JSON: ${{ toJSON(matrix.repoIds) }}
           REPO_DIRS_JSON: ${{ toJSON(matrix.dirs) }}
         run: |
           set -euo pipefail
           manifests_file="${RUNNER_TEMP}/e2e-cell-manifests.json"
-          jq -n \
-            --argjson ids "$REPO_IDS_JSON" \
-            --argjson dirs "$REPO_DIRS_JSON" \
-            'if ($ids | length) != ($dirs | length) or ($ids | length) == 0 then error("invalid cell repo mapping") else [range(0; $ids | length) | {id: $ids[.], manifest: ("e2e/" + $dirs[.] + "/e2e.json")}] end' \
-            > "$manifests_file"
-          jq -e 'all(.[]; (.id | type == "string") and (.manifest | type == "string"))' "$manifests_file" >/dev/null
+          node - "$manifests_file" <<'NODE'
+          const fs = require("node:fs")
+
+          const outputPath = process.argv[2]
+          const ids = JSON.parse(process.env.REPO_IDS_JSON)
+          const dirs = JSON.parse(process.env.REPO_DIRS_JSON)
+          if (
+            !Array.isArray(ids) ||
+            !Array.isArray(dirs) ||
+            ids.length === 0 ||
+            ids.length !== dirs.length ||
+            !ids.every((id) => typeof id === "string") ||
+            !dirs.every((dir) => typeof dir === "string")
+          ) {
+            throw new Error("invalid cell repo mapping")
+          }
+          const manifests = ids.map((id, index) => ({
+            id,
+            manifest: `e2e/${dirs[index]}/e2e.json`,
+          }))
+          fs.writeFileSync(outputPath, `${JSON.stringify(manifests)}\n`)
+          console.log(`[e2e] cell ${process.env.CELL_ID}: ${ids.join(", ")}`)
+          NODE
           echo "manifests-file=${manifests_file}" >> "$GITHUB_OUTPUT"
-          echo "[e2e] cell ${{ matrix.id }}: $(jq -r '[.[].id] | join(", ")' "$manifests_file")"
 
       - name: Set up Python
         if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - name: Restore Playwright browser cache
-        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Playwright browsers
-        if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
-        env:
-          BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}
-        run: |
-          set -euo pipefail
-          mapfile -t browsers < <(jq -r '.[]' <<< "$BROWSERS_JSON")
-          pnpm exec playwright install --with-deps "${browsers[@]}"
-
       - name: Download exact NiceEval candidate
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: niceeval-e2e-candidate
           path: ${{ runner.temp }}/niceeval-e2e-candidate
@@ -451,7 +475,7 @@ jobs:
             --artifact-root "$ARTIFACT_ROOT"
 
       - name: Redact secrets in artifactRoot
-        if: always() && needs.prepare.outputs.inject-secrets == 'true'
+        if: always() && steps.safe.outcome == 'success' && steps.cell.outcome == 'success' && needs.prepare.outputs.inject-secrets == 'true'
         env:
           ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
           MANIFESTS_FILE: ${{ steps.cell.outputs.manifests-file }}
@@ -502,8 +526,8 @@ jobs:
           NODE_EOF
 
       - name: Upload cell artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: always() && steps.safe.outcome == 'success'
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-${{ steps.safe.outputs.id }}
           path: ${{ steps.safe.outputs.artifact-root }}
