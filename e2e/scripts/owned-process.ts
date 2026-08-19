@@ -7,6 +7,7 @@
 // that policy and forwards cancellation through this supervisor.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 
 export type OwnedProcessOutput = "capture" | "inherit";
 export type OwnedTermination = "timeout" | "cancelled";
@@ -60,6 +61,40 @@ export interface OwnedProcessGroupCleanup {
   /** True only when the runner confirmed that the owned group disappeared. */
   gone: boolean | null;
   detail: string;
+}
+
+interface LinuxProcessGroupMembers {
+  readonly live: readonly number[];
+  readonly zombies: readonly number[];
+}
+
+function linuxProcessGroupMembers(groupId: number): LinuxProcessGroupMembers | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const live: number[] = [];
+    const zombies: number[] = [];
+    for (const entry of readdirSync("/proc", { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) continue;
+      let stat: string;
+      try {
+        stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+      } catch {
+        continue;
+      }
+      const commandEnd = stat.lastIndexOf(")");
+      if (commandEnd < 0) continue;
+      const fields = stat.slice(commandEnd + 1).trimStart().split(/\s+/u);
+      const state = fields[0];
+      const processGroup = Number(fields[2]);
+      if (!Number.isInteger(processGroup) || processGroup !== groupId) continue;
+      const pid = Number(entry.name);
+      if (state === "Z" || state === "X") zombies.push(pid);
+      else live.push(pid);
+    }
+    return { live, zombies };
+  } catch {
+    return undefined;
+  }
 }
 
 function noOwnedGroupCleanup(detail: string): OwnedProcessGroupCleanup {
@@ -249,20 +284,23 @@ class ActiveOwnedProcess {
     }
   }
 
-  private groupPresence(): "alive" | "gone" | "unknown" {
+  private groupPresence(): "alive" | "zombie-only" | "gone" | "unknown" {
     if (!this.processGroupOwned || this.groupId === undefined) return "unknown";
     try {
       // Signal 0 is a presence/permission probe. It targets only the negative
       // pid of the detached group created by this object; no caller-supplied
       // or ambient process id is ever used here.
       process.kill(-this.groupId, 0);
-      return "alive";
+      const members = linuxProcessGroupMembers(this.groupId);
+      return members !== undefined && members.live.length === 0 && members.zombies.length > 0
+        ? "zombie-only"
+        : "alive";
     } catch (error) {
       return (error as NodeJS.ErrnoException).code === "ESRCH" ? "gone" : "unknown";
     }
   }
 
-  private async waitForGroupGone(timeoutMs: number): Promise<"alive" | "gone" | "unknown"> {
+  private async waitForGroupGone(timeoutMs: number): Promise<"alive" | "zombie-only" | "gone" | "unknown"> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
     while (true) {
       const presence = this.groupPresence();
@@ -298,6 +336,11 @@ class ActiveOwnedProcess {
 
     const initial = this.groupPresence();
     this.groupChecked = true;
+    if (initial === "zombie-only") {
+      this.groupAliveAfterLeaderClose = false;
+      this.markGroupGone(`owned process group ${this.groupId} had only non-running zombie members after command leader close`);
+      return;
+    }
     if (initial === "gone") {
       this.groupAliveAfterLeaderClose = false;
       this.markGroupGone(`owned process group ${this.groupId} was absent after command leader close`);
@@ -312,6 +355,10 @@ class ActiveOwnedProcess {
     if (this.termination === undefined) {
       this.sendSignal("SIGTERM");
       const afterTerm = await this.waitForGroupGone(this.graceMs);
+      if (afterTerm === "zombie-only") {
+        this.markGroupGone(`owned process group ${this.groupId} had only non-running zombie members after TERM`);
+        return;
+      }
       if (afterTerm === "gone") {
         this.markGroupGone(`owned process group ${this.groupId} remained after leader close and exited after TERM`);
         return;
@@ -326,6 +373,10 @@ class ActiveOwnedProcess {
       // changing a SIGINT cancellation into an immediate unrelated TERM.
       const remaining = Math.max(0, (this.terminationDeadline ?? Date.now()) - Date.now());
       const afterInitialSignal = await this.waitForGroupGone(remaining);
+      if (afterInitialSignal === "zombie-only") {
+        this.markGroupGone(`owned process group ${this.groupId} had only non-running zombie members after the existing signal grace period`);
+        return;
+      }
       if (afterInitialSignal === "gone") {
         this.markGroupGone(`owned process group ${this.groupId} exited during the existing signal grace period`);
         return;
@@ -341,6 +392,10 @@ class ActiveOwnedProcess {
     // this object's negative group id and is idempotent.
     this.forceKill();
     const afterKill = await this.waitForGroupGone(this.graceMs);
+    if (afterKill === "zombie-only") {
+      this.markGroupGone(`owned process group ${this.groupId} had only non-running zombie members after KILL; host init retains reaping responsibility`);
+      return;
+    }
     if (afterKill === "gone") {
       this.markGroupGone(`owned process group ${this.groupId} required KILL after leader close`);
       return;
