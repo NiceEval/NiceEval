@@ -1,11 +1,16 @@
-import { Text, aggregate, costUSD, defineComponent, defineReport } from "niceeval/report";
+import { Col, ExperimentScatter, Text, aggregate, costUSD, defineComponent, defineReport } from "niceeval/report";
 
 const CostState = defineComponent(async (_props: {}, ctx) => {
   const [overall] = await aggregate(ctx.scope, {
     by: {},
     values: { cost: costUSD(ctx.report.pricing!) },
   });
-  return <Text>{`cost:${overall.cost.state}:${overall.cost.samples}/${overall.cost.total}`}</Text>;
+  return (
+    <Col>
+      <Text>{`cost:${overall.cost.state}:${overall.cost.samples}/${overall.cost.total}`}</Text>
+      <ExperimentScatter />
+    </Col>
+  );
 });
 
 export default defineReport({

@@ -2981,6 +2981,15 @@ function openMaintenance(input: {
           // The sentinel is the first portable write. Any later failure or
           // interruption intentionally leaves it behind for Git recovery.
           yield* fileSystem.createMigrationSentinel(input.root, restoreCommit);
+          const sentinelOnly = yield* git.recoveryChangesAreExpected({
+            root: input.root,
+            restoreCommit,
+            expectedPaths: [recordPortablePath(input.root, "migration.in-progress")],
+          });
+          if (!sentinelOnly) {
+            yield* fileSystem.removeMigrationSentinel(input.root);
+            return yield* Effect.fail(migrationPlanStale());
+          }
           yield* Effect.gen(function* () {
             for (const source of plannedSources) {
               yield* migrateObservabilityAttachment({

@@ -37,6 +37,7 @@ test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读
       const blockedCost = await candidate.run(["show", "--run", RUN_ID, "--report", "./reports/cost-state.tsx", "--page", "/cost-state"]);
       expect(blockedCost.exitCode, blockedCost.diagnostic()).toBe(0);
       expect(blockedCost.stdout, blockedCost.diagnostic()).toContain("cost:migration-required:0/1");
+      expect(blockedCost.stdout, blockedCost.diagnostic()).toContain("cost projection requires migration — run niceeval migrate");
 
       const currentRun = await producer.run(["exp", "handoff", "--rerun", "all", "--json"]);
       expect(currentRun.exitCode, currentRun.diagnostic()).toBe(0);

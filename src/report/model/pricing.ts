@@ -148,7 +148,14 @@ export function isCostMetricValue(value: unknown): value is CostMetricValue {
   const projection = (value as { readonly projection?: unknown }).projection;
   // The Host's machine boundary additionally matches this identity against
   // the captured cost measure entry before a projection leaves the Report.
-  return isCostProjectionValue(projection) && projection.state === value.state;
+  if (!isCostProjectionValue(projection) || projection.state !== value.state) return false;
+  if (projection.state === "migration-required") {
+    const slots = new Set(projection.ledger.map((entry) =>
+      `${entry.slot.runId}\u0000${entry.slot.slotId}`
+    ));
+    return value.samples === 0 && value.total > 0 && slots.size === value.total;
+  }
+  return true;
 }
 
 function moneyText(value: { readonly currency: string; readonly amount: string }): string {
