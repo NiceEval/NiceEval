@@ -2866,7 +2866,7 @@ function migrateObservabilityAttachment(input: {
       file: envelopePath,
       bytes: jsonBytes(envelope.right),
       maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
-      mode: "replace",
+      mode: "replace-no-follow",
     });
   });
 }

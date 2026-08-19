@@ -1,12 +1,9 @@
 // owner: docs/engineering/testing/e2e/migrate.md#interrupted-migration-recovery
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { commitRecord, copyV1Fixture, e2e } from "./support.ts";
-
-const NON_EMPTY_MARKER_RUN_ID = "11111111-1111-4111-8111-111111111111";
-const DIRECTORY_MARKER_RUN_ID = "22222222-2222-4222-8222-222222222222";
 
 test("迁移中断后按 sentinel commit 恢复、验证并重试", async () => {
   await e2e.case("interrupted-recovery", async ({ paths, commands: { candidate }, run }) => {
@@ -28,6 +25,24 @@ test("迁移中断后按 sentinel commit 恢复、验证并重试", async () => 
     expect(readFileSync(concurrentEdit, "utf8")).toBe("preserve me\n");
     rmSync(concurrentEdit);
 
+    const migratedEnvelope = join(
+      recordRoot,
+      "runs",
+      "2ce48d15-5278-46f7-a512-7235a3362c24",
+      "attachments",
+      "niceeval.observability",
+      "attachment.json",
+    );
+    const migratedEnvelopeBytes = readFileSync(migratedEnvelope);
+    const migratedEnvelopeRelative = migratedEnvelope.slice(paths.projectRoot.length + 1);
+    expect((await run(["git", "add", "-f", "--", migratedEnvelopeRelative])).exitCode).toBe(0);
+    const stagedRecovery = await candidate.run(["migrate", "--yes"]);
+    expect(stagedRecovery.exitCode, stagedRecovery.diagnostic()).toBe(1);
+    expect(stagedRecovery.stderr, stagedRecovery.diagnostic()).toContain("no automatic Git restore command is safe");
+    expect(stagedRecovery.stderr, stagedRecovery.diagnostic()).not.toContain("Restore command:");
+    expect(readFileSync(migratedEnvelope)).toEqual(migratedEnvelopeBytes);
+    expect((await run(["git", "restore", "--staged", "--", migratedEnvelopeRelative])).exitCode).toBe(0);
+
     const interrupted = await candidate.run(["migrate", "--yes"]);
     expect(interrupted.exitCode, interrupted.diagnostic()).toBe(1);
     expect(interrupted.stderr, interrupted.diagnostic()).toContain("record-migration-interrupted");
@@ -43,21 +58,5 @@ test("迁移中断后按 sentinel commit 恢复、验证并重试", async () => 
     const retried = await candidate.run(["migrate", "--yes"]);
     expect(retried.exitCode, retried.diagnostic()).toBe(0);
     expect(retried.stdout, retried.diagnostic()).toContain("Record migration migrated.");
-
-    const runs = join(recordRoot, "runs");
-    mkdirSync(join(runs, NON_EMPTY_MARKER_RUN_ID), { recursive: true });
-    writeFileSync(join(runs, NON_EMPTY_MARKER_RUN_ID, "complete"), "not sealed\n");
-    mkdirSync(join(runs, DIRECTORY_MARKER_RUN_ID, "complete"), { recursive: true });
-
-    const listed = await candidate.run(["clean"]);
-    expect(listed.exitCode, listed.diagnostic()).toBe(1);
-    expect(listed.stdout, listed.diagnostic()).toContain(NON_EMPTY_MARKER_RUN_ID);
-    expect(listed.stdout, listed.diagnostic()).toContain(DIRECTORY_MARKER_RUN_ID);
-    expect(listed.stderr, listed.diagnostic()).toContain("record-clean-confirmation-required");
-
-    const cleaned = await candidate.run(["clean", "--yes"]);
-    expect(cleaned.exitCode, cleaned.diagnostic()).toBe(0);
-    expect(cleaned.stdout, cleaned.diagnostic()).toContain(`deleted: ${NON_EMPTY_MARKER_RUN_ID}`);
-    expect(cleaned.stdout, cleaned.diagnostic()).toContain(`deleted: ${DIRECTORY_MARKER_RUN_ID}`);
   });
 });

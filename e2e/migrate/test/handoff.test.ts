@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/migrate.md#observability-v1-to-v2
 // regression: memory/results-schema-version-history.md#observability-family-1--2
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { ATTEMPT_ID, commitRecord, copyV1Fixture, e2e, RUN_ID, sha256 } from "./support.ts";
@@ -45,6 +45,37 @@ test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读
       const mixedCost = await candidate.run(["show", "--run", RUN_ID, "--run", currentRunId, "--report", "./reports/cost-state.tsx", "--page", "/cost-state"]);
       expect(mixedCost.exitCode, mixedCost.diagnostic()).toBe(0);
       expect(mixedCost.stdout, mixedCost.diagnostic()).toContain("cost:partial:1/2");
+
+      const currentAttemptId = readdirSync(join(recordRoot, "runs", currentRunId, "attempts"))[0]!;
+      const currentObservability = join(
+        recordRoot,
+        "runs",
+        currentRunId,
+        "attempts",
+        currentAttemptId,
+        "attachments",
+        "niceeval.observability",
+        "payload.json",
+      );
+      const currentPayload = JSON.parse(readFileSync(currentObservability, "utf8")) as {
+        "usage-data": { observations: unknown[] };
+      };
+      currentPayload["usage-data"].observations = [];
+      writeFileSync(currentObservability, JSON.stringify(currentPayload));
+      const mixedMissing = await candidate.run([
+        "show",
+        "--run",
+        RUN_ID,
+        "--run",
+        currentRunId,
+        "--report",
+        "./reports/tokens-state.tsx",
+        "--page",
+        "/tokens-state",
+      ]);
+      expect(mixedMissing.exitCode, mixedMissing.diagnostic()).toBe(0);
+      expect(mixedMissing.stdout, mixedMissing.diagnostic()).toContain("tokens:partial:0/2");
+      expect(mixedMissing.stdout, mixedMissing.diagnostic()).not.toContain("requires migration");
 
       await commitRecord(run, "fixture: observability v1");
       const confirmation = await candidate.run(["migrate"]);

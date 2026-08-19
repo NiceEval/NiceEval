@@ -9,7 +9,7 @@ import {
   unlink,
   type FileHandle,
 } from "node:fs/promises";
-import type { Dir } from "node:fs";
+import { constants, type Dir } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { Either, Effect, Layer, Stream } from "effect";
 import { NodeRecordCoordinationLive } from "../../coordination/platform/node.ts";
@@ -308,14 +308,71 @@ function writeFileHandle(
 
 function openForWrite(
   path: string,
-  mode: "exclusive" | "replace",
+  mode: "exclusive" | "replace" | "replace-no-follow",
+  portableRoot: string,
 ): Effect.Effect<FileHandle, RecordFileSystemError> {
   // `wx` + 0600 + fsync is Record's create-exclusive publication primitive;
   // do not replace it with a high-level write that weakens those guarantees.
   return Effect.tryPromise({
-    try: () => open(path, mode === "exclusive" ? "wx" : "w", 0o600),
+    try: async () => {
+      if (mode !== "replace-no-follow") {
+        return open(path, mode === "exclusive" ? "wx" : "w", 0o600);
+      }
+
+      const relativePath = relative(portableRoot, path);
+      const segments = relativePath.split(sep);
+      let current = portableRoot;
+      const rootState = await lstat(current);
+      if (!rootState.isDirectory()) {
+        throw new RecordPathTypeInvalid({
+          code: "record-path-type-invalid",
+          path: current,
+          expected: "directory",
+          actual: rootState.isFile() ? "file" : "other",
+        });
+      }
+      for (const segment of segments.slice(0, -1)) {
+        current = join(current, segment);
+        const state = await lstat(current);
+        if (!state.isDirectory()) {
+          throw new RecordPathTypeInvalid({
+            code: "record-path-type-invalid",
+            path: current,
+            expected: "directory",
+            actual: state.isFile() ? "file" : "other",
+          });
+        }
+      }
+
+      const expected = await lstat(path);
+      if (!expected.isFile() || expected.nlink !== 1) {
+        throw new RecordPathTypeInvalid({
+          code: "record-path-type-invalid",
+          path,
+          expected: "file",
+          actual: expected.isDirectory() ? "directory" : "other",
+        });
+      }
+      const handle = await open(path, constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+      try {
+        const actual = await handle.stat();
+        if (
+          !actual.isFile() || actual.nlink !== 1 ||
+          actual.dev !== expected.dev || actual.ino !== expected.ino
+        ) {
+          throw new Error("record replace target identity changed before write");
+        }
+        await handle.truncate(0);
+        return handle;
+      } catch (cause) {
+        await handle.close().catch(() => {});
+        throw cause;
+      }
+    },
     catch: (cause) =>
-      mode === "exclusive" && isAlreadyExistsError(cause)
+      isFileSystemError(cause)
+        ? cause
+        : mode === "exclusive" && isAlreadyExistsError(cause)
         ? new RecordPathAlreadyExists({
             code: "record-path-already-exists",
             path,
@@ -328,7 +385,8 @@ function writeBytesAt(input: {
   readonly path: string;
   readonly bytes: Uint8Array;
   readonly maximumBytes: number;
-  readonly mode: "exclusive" | "replace";
+  readonly mode: "exclusive" | "replace" | "replace-no-follow";
+  readonly portableRoot: string;
 }): Effect.Effect<void, RecordFileSystemError> {
   return Effect.gen(function* () {
     yield* validateLimit("file-bytes", input.maximumBytes);
@@ -347,7 +405,7 @@ function writeBytesAt(input: {
     yield* ensureDirectoryAt(parent);
     yield* Effect.scoped(
       Effect.acquireRelease(
-        openForWrite(input.path, input.mode),
+        openForWrite(input.path, input.mode, input.portableRoot),
         (handle) => closeHandle(handle, "write-file", input.path),
       ).pipe(
         Effect.flatMap((handle) =>
@@ -622,20 +680,29 @@ const nodeFileSystem: RecordFileSystemService = {
     ),
 
   writeFile: (input) =>
-    Effect.flatMap(resolvePortablePath(input.file, true), (path) =>
-      writeBytesAt({
+    Effect.flatMap(resolvePortablePath(input.file, true), (path) => {
+      const paths = recordRootPaths(input.file.root);
+      if (paths === undefined) {
+        return Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
+      }
+      return writeBytesAt({
         path,
+        portableRoot: paths.portableRoot,
         bytes: input.bytes,
         maximumBytes: input.maximumBytes,
         mode: input.mode,
-      }),
-    ),
+      });
+    }),
 
   writeFileStream: <E, R>(
     input: RecordWriteFileStreamInput<E, R>,
   ): Effect.Effect<void, RecordFileSystemError | E, R> =>
     Effect.flatMap(resolvePortablePath(input.file, true), (path) =>
       Effect.gen(function* () {
+        const paths = recordRootPaths(input.file.root);
+        if (paths === undefined) {
+          return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
+        }
         yield* validateLimit("file-bytes", input.maximumBytes);
         const parent = dirname(path);
         yield* ensureDirectoryAt(parent);
@@ -643,7 +710,7 @@ const nodeFileSystem: RecordFileSystemService = {
 
         yield* Effect.scoped(
           Effect.acquireRelease(
-            openForWrite(path, input.mode),
+            openForWrite(path, input.mode, paths.portableRoot),
             (handle) => closeHandle(handle, "write-file", path),
           ).pipe(
             Effect.flatMap((handle) => {
@@ -860,9 +927,21 @@ function portablePathWithinWorktree(worktree: string, portableRoot: string): str
   return rootRelative === "" ? "." : rootRelative;
 }
 
-function statusEntries(stdout: string): readonly string[] {
+interface GitStatusEntry {
+  readonly status: string;
+  readonly path: string;
+}
+
+function statusEntries(stdout: string): readonly GitStatusEntry[] {
   const records = stdout.split("\0").filter((entry) => entry !== "");
-  const entries = records.map((record) => record.length > 3 ? record.slice(3) : record);
+  const entries: GitStatusEntry[] = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index]!;
+    const status = record.slice(0, 2);
+    const path = record.length > 3 ? record.slice(3) : "";
+    entries.push(Object.freeze({ status, path }));
+    if (status.includes("R") || status.includes("C")) index += 1;
+  }
   return Object.freeze(entries);
 }
 
@@ -931,7 +1010,10 @@ const nodeGit = {
       }
       return entries.length === 0
         ? ({ state: "git-restore-point", commit } satisfies RecordBackupState)
-        : ({ state: "portable-root-dirty", entries } satisfies RecordBackupState);
+        : ({
+            state: "portable-root-dirty",
+            entries: Object.freeze(entries.map((entry) => `${entry.status} ${entry.path}`)),
+          } satisfies RecordBackupState);
     }),
 
   recoveryChangesAreExpected: (input: {
@@ -968,7 +1050,13 @@ const nodeGit = {
       );
       const entries = statusEntries(status.stdout);
       if (entries.length === 0 || entries.length > GIT_MAX_STATUS_ENTRIES) return false;
-      return entries.every((entry) => expected.has(entry.split(sep).join("/")));
+      return entries.every((entry) => {
+        const normalized = entry.path.split(sep).join("/");
+        if (!expected.has(normalized)) return false;
+        return normalized.endsWith("/migration.in-progress")
+          ? entry.status === "??" || entry.status === "!!"
+          : entry.status === " M";
+      });
     }),
 };
 

@@ -851,7 +851,7 @@ function reduce(kind: import("./definitions.ts").ReductionKind, entries: readonl
     entry.state === "value"
   );
   if (values.length === 0) {
-    if (entries.some((entry) => entry.state === "migration-required")) {
+    if (entries.length > 0 && entries.every((entry) => entry.state === "migration-required")) {
       return migrationRequiredReduced(metadata.issues, metadata.refs, metadata.producers);
     }
     if (entries.some((entry) => entry.state === "missing")) {

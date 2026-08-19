@@ -41,7 +41,7 @@ export interface RecordReadFileStreamInput extends RecordReadFileInput {
   readonly chunkBytes?: number;
 }
 
-export type RecordFileWriteMode = "exclusive" | "replace";
+export type RecordFileWriteMode = "exclusive" | "replace" | "replace-no-follow";
 
 export interface RecordWriteFileInput {
   readonly file: RecordPortablePath;
