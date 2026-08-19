@@ -1,5 +1,6 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
+import { claudeCodeProviderEnv } from "../provider.ts";
 import { sandbox } from "../sandbox.ts";
 
 const MCP_HTTP_PORT = 32131;
@@ -8,6 +9,7 @@ const MCP_HTTP_PID = "/tmp/niceeval-e2e-mcp-http.pid";
 const agent = claudeCodeAgent({
   apiKey: process.env.ANTHROPIC_API_KEY,
   baseUrl: process.env.ANTHROPIC_BASE_URL,
+  env: claudeCodeProviderEnv,
   mcpServers: [
     { name: "e2e-stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"] },
     { name: "e2e-http", url: `http://127.0.0.1:${MCP_HTTP_PORT}/mcp` },

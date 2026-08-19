@@ -53,6 +53,8 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 - 无 Repo 被选择或 manifest 非法时不 pack、不 build；
 - CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
 - matrix run 消费 candidate artifact、同一次生成的 plan 与当前 checkout，通过 `--plan/--cell` 精确执行该格；它不再把 Repo 列表和并发数翻译成 workflow shell，也不下载第二份 Testkit artifact；
+- 声明 browser capability 的 matrix cell 使用与根 `@playwright/test` 精确版本相同的官方 Playwright Noble container；
+- 浏览器与 Linux 系统依赖来自镜像，不在 job 内运行 apt 或 `playwright install --with-deps`。没有 browser requirement 的 host / docker cell 仍直接运行在普通 GitHub runner；
 - `plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；显式 `run --candidate` 不重新 pack。
 
 `verify-release` 只接受非空的 `plan --json` 数组、candidate `.tgz`、receipt root 与 tag。

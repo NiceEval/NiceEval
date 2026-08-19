@@ -131,6 +131,8 @@ export interface WarningEvent {
   phase?: LifecyclePhase;
   experimentId?: string;
   evalId?: string;
+  planned?: number;
+  errored?: number;
 }
 
 export interface NoticeEvent {
@@ -286,12 +288,16 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           // "diagnostic" 变体的 identity 注释)。
           const experimentId = event.identity?.experimentId ?? stringField(event.data?.experimentId);
           const evalId = event.identity?.evalId ?? stringField(event.data?.evalId);
+          const planned = numberField(event.data?.planned);
+          const errored = numberField(event.data?.errored);
           const common = {
             code,
             message: event.message,
             ...(phase !== undefined ? { phase } : {}),
             ...(experimentId !== undefined ? { experimentId } : {}),
             ...(evalId !== undefined ? { evalId } : {}),
+            ...(planned !== undefined ? { planned } : {}),
+            ...(errored !== undefined ? { errored } : {}),
           };
           if (event.severity === "info") {
             const resource = coordinationResourceField(event.data?.resource);
@@ -554,10 +560,13 @@ function requiredExperimentId(experimentId: string | undefined, evalId: string):
 /** 一条 `eval` 事件(cli.md「runs 与首过即停怎样展示」):字段随 earlyExit 是否触发在
  *  planned/unstarted/reason 与 passed 两组间二选一,不同时出现两组字段。`rate` 是
  *  `EvalConclusionRow` 派生出的额外读数,不在 `ExpEvent` 的 `EvalEvent` 形状里,这里不透出。 */
-function evalConclusionEvent(row: EvalConclusionRow): EvalEvent {
+function evalConclusionEvent(row: EvalConclusionRow): EvalEvent | undefined {
   const experimentId = requiredExperimentId(row.experimentId, row.evalId);
   if (row.locator === undefined) {
-    throw new Error(`JSON experiment event is missing locator for eval ${row.evalId}`);
+    // Pre-dispatch failures have no origin Attempt and therefore no locator.
+    // `eval` events are locator-addressable conclusions, so the run-level
+    // diagnostic and final result counts are their public projection.
+    return undefined;
   }
   const base: EvalEventBase = {
     event: "eval",
@@ -586,7 +595,10 @@ function writeEvalConclusions(
 ): void {
   if (!pending) return;
   const rows = evalConclusionRows(pending.results, state.earlyExitByEval, state.diagnostics);
-  for (const row of rows) writeEvent(io, evalConclusionEvent(row));
+  for (const row of rows) {
+    const event = evalConclusionEvent(row);
+    if (event !== undefined) writeEvent(io, event);
+  }
 }
 
 // ───────────────────────── 退出码(CompletionStatus 驱动) ─────────────────────────

@@ -14,7 +14,7 @@ dry 只显示 declaration 和 occurrence identity 的安全摘要：
 
 ```text
 ADMISSION DECLARATIONS
-compare/codex  com.example.agent/endpoint@v1  occurrence primary  timeout 5000ms
+compare/codex  service endpoint/primary  health check · timeout 5s
 ```
 
 它不调用 `probe()`、不启动计时器、不建立 Invocation，也不写 Run。`niceeval debug` 以一个
@@ -22,17 +22,18 @@ compare/codex  com.example.agent/endpoint@v1  occurrence primary  timeout 5000ms
 
 ## 人读反馈
 
-每次真实探测结束后，TTY 显示 slot、occurrence、阶段和值。人读输出不显示请求 body、响应 body、token 或
-原始异常堆栈。
+每次真实探测结束后，TTY 显示 Experiment、Eval、Attempt 序号、受检服务和值。Human 不显示 slot、occurrence
+identity、机器 reason code、请求 body、响应 body、token 或原始异常堆栈。
 
 ```text
-admission  compare/codex memory/recall #0  endpoint/primary  healthy
-admission  compare/codex memory/recall #1  endpoint/primary  unhealthy: endpoint-rejected
-admission  endpoint/primary isolated  6 unstarted slots
+admission  compare/codex  memory/recall  Attempt #1  endpoint/primary  healthy
+admission  compare/codex  memory/recall  Attempt #2  endpoint/primary  unhealthy
+  details: niceeval show --run 01J...
+admission  endpoint/primary  6 attempts not started
 ```
 
-结束摘要以 `evaluated`、`errored`、`not-run` 三项列出完整计数。健康为 `unhealthy` 的 slot 仍归
-`evaluated`；它没有 Attempt locator 或 Verdict。
+结束摘要以 `checked`、`errors`、`not started` 三项列出完整计数。机器回执继续使用 `evaluated`、`errored`、
+`not-run`。健康为 `unhealthy` 的计划项没有 Attempt locator 或 Verdict，因此 Human 只提供 Run 下钻。
 
 ## JSON 与退出码
 
@@ -47,12 +48,12 @@ admission  endpoint/primary isolated  6 unstarted slots
 | 结果 | `niceeval exp` 退出行为 |
 |---|---|
 | 所有探测为 `healthy`，Invocation 完整且没有 `failed` / `errored` | `0` |
-| 探测不健康、超时、抛错或隔离了 slot；或有 `failed` / `errored` | `1` |
+| 探测不健康、超时、抛错或使计划中的 Attempt 未启动；或有 `failed` / `errored` | `1` |
 | argv、selector 或 admission declaration 无法建立 Invocation | `1` |
 | 未捕获崩溃 / 受控中断 | `2` / `130` |
 
 本方向继承 [CLI 的统一 `niceeval exp` 退出码](../../cli.md#退出码)，不新增 admission 专用状态码。
-退出码 `1` 不把 `unhealthy` 伪装成 Eval `failed`；机器调用方读取 Run receipt 取得每个 slot 的原因。
+退出码 `1` 不把 `unhealthy` 伪装成 Eval `failed`；机器调用方读取 Run receipt 取得每个计划项的结构化原因。
 
 ## 并发与审计边界
 

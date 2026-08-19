@@ -4,18 +4,18 @@
 
 ## 人类输出
 
-niceeval list 为每条 Eval 同时显示 discovery root、实际 entry 和截止理由：
+niceeval list 为每条 Eval 同时显示 package owner、定义文件和该文件负责的范围：
 
 ```text
-EVAL                         ROOT             ENTRY                         CUTOFF
-checkout                     project:evals    checkout.eval.ts              file entry
-payroll                      project:evals    payroll/eval.ts                payroll/ owned by folder entry
-terminal/parse-csv           terminal-bench   terminal/parse-csv/eval.tsx    terminal/parse-csv/ owned by folder entry
+EVAL                         SOURCE           DEFINITION                     SCOPE
+checkout                     project:evals    checkout.eval.ts               this file
+payroll                      project:evals    payroll/eval.ts                 payroll/ directory
+terminal/parse-csv           terminal-bench   terminal/parse-csv/eval.tsx     terminal/parse-csv/ directory
 ```
 
-file entry 的 CUTOFF 明确说明它没有目录截止。folder entry 的 CUTOFF 必须带被拥有的目录和 folder-entry-owns-descendants 原因。
+单文件定义的 SCOPE 写 `this file`。目录定义显示其负责的相对目录，不展示 `folder-entry-owns-descendants` 等机器 reason。
 
-错误同时显示 root、entry 与已经确定的 cutoff context。发现失败不输出部分成功列表，也不把一个 child entry 静默标成 skipped。
+错误同时显示 package owner、定义文件与已经确定的范围。发现失败不输出部分成功列表，也不把一个子定义静默标成 skipped。
 
 ## JSON
 

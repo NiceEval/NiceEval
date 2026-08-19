@@ -1,7 +1,8 @@
 # 审阅一次 Run 的闭合结果
 
-这个用例把固定 Run 的选择事实与 immutable Attempt 的关闭 Evidence、Observability 和 File Changes 分开阅读。前者
-说明 Sample 的分母和 Slot 坐标；后者由已生成的详情 Page 下钻。Report 不建立第三份持久状态，也不从一类事实猜出另一类事实。
+这个用例把固定 Run 的计划与结果和 immutable Attempt 的关闭 Evidence、Observability、File Changes 分开阅读。
+前者说明哪些 Attempt 已完成、未启动或使用历史结果；后者由已生成的详情 Page 下钻。Report 不建立第三份持久状态，
+也不从一类事实猜出另一类事实。
 
 ## 1. 取得 Run ID
 
@@ -20,15 +21,16 @@ niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527 --json
 ```
 
-没有显式 `--report` 时，`show --run` 使用有界 `run-membership-overview`。在目标 row 中核对：
+没有显式 `--report` 时，`show --run` 使用有界的默认 Run overview。Human row 显示：
 
-- `runId` 与 `slotId`：这个 row 的稳定坐标；
-- `slotState`：该 Slot 在固定 Sample 中的 Core 状态；
-- `memberAction`：Core 提供的动作，缺失时保持缺失；
-- `memberRelation` 与 `sourceAttemptLocator`：只有 included Slot 才提供的 origin/reference 关系和下钻定位符；
-- `evidenceState`：同一 Sample 中已关闭 Evidence 视图的可用性。
+- Experiment、Eval 与 `Attempt #N`；
+- `passed`、`failed`、`errored`、`not started` 或 `using result @<locator>`；
+- 已有 Attempt 的 `details: niceeval show @<locator>`；
+- Attempt 创建前失败时的真实 `error:` 与 `details: niceeval show --run <runId>`。
 
-这些字段不形成额外的 Report 持久化对象。每个 Run 仍拥有自己的 expected-slot 分母和 coverage。表最多显示 200 rows；需要其它字段或更大切片时，使用显式自定义 Report。
+默认 Human 不显示 `slotId`、`slotState`、`memberAction`、`memberRelation` 或 `evidenceState` 字段名。`show --json`
+仍保留这些稳定机器字段。每个 Run 仍拥有自己的完整计划和 coverage；Human 表最多显示 200 rows，需要其它字段或
+更大切片时使用显式自定义 Report。
 
 ## 3. 下钻 immutable Attempt
 

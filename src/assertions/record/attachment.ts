@@ -1,6 +1,9 @@
-import { Either, Schema } from "effect";
+import { createHash } from "node:crypto";
+
+import { Either, Schema, Stream } from "effect";
 import {
   makeFixedRecordAttachmentWrite,
+  makeRecordBlobSource,
   validateRecordAttachmentWrite,
   type FixedAttachmentWriteSpec,
   type RecordAttachmentBlobBuilder,
@@ -10,6 +13,7 @@ import {
   type RecordBlobRef,
   type RecordBlobSource,
 } from "../../record/attachment/index.ts";
+import { Sha256DigestSchema } from "../../record/codec/identifiers.ts";
 import type {
   AssertionSourceSite,
   AssertionsAttachment,
@@ -29,6 +33,8 @@ import {
   AssertionEntryIdSchema,
   AssertionsExactParseOptions,
   BoundedJsonObjectSchema,
+  BoundedJsonValueSchema,
+  MAX_ASSERTION_DOCUMENT_BYTES,
   createAssertionsRecordSchemas,
   isBoundedJsonObject,
   projectAssertionsDocument,
@@ -257,11 +263,34 @@ function encodeMaterial(
   material: AssertionMaterial,
 ): AssertionMaterialInput<never, never> {
   switch (material.kind) {
-    case "snapshot":
+    case "snapshot": {
+      const value = encodeSnapshotValue(material.value);
+      const bytes = new TextEncoder().encode(JSON.stringify(value));
+      const inline = Schema.decodeUnknownEither(
+        BoundedJsonValueSchema,
+        AssertionsExactParseOptions,
+      )(value);
+      if (bytes.byteLength > 32 * 1_024 || Either.isLeft(inline)) {
+        const digest = Schema.decodeUnknownEither(Sha256DigestSchema)(
+          createHash("sha256").update(bytes).digest("hex"),
+        );
+        if (Either.isLeft(digest)) {
+          throw new Error("Assertions snapshot produced an invalid SHA-256 digest");
+        }
+        return Object.freeze({
+          kind: "blob" as const,
+          source: makeRecordBlobSource(Stream.succeed(bytes)),
+          encoding: "utf-8" as const,
+          byteLength: bytes.byteLength,
+          sha256: digest.right,
+          preview: `JSON Assertion material stored as a ${bytes.byteLength}-byte blob`,
+        });
+      }
       return Object.freeze({
         kind: "snapshot" as const,
-        value: encodeSnapshotValue(material.value),
+        value: inline.right,
       });
+    }
     case "record-attachment":
       return Object.freeze({
         // The durable Assertions closure cannot hold a capability into the
@@ -573,7 +602,15 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
     },
     seal(sealInput: AssertionsAttachmentSealInput = {}) {
       if (sealed !== undefined) return sealed;
-      const document = documentBuilder.seal();
+      const sourceSites = Object.freeze([...(sealInput.sourceSites ?? [])]);
+      const emptyEntriesBytes = new TextEncoder().encode(JSON.stringify({ entries: [] })).byteLength;
+      const sourceSitesFramingBytes = new TextEncoder().encode(JSON.stringify({
+        entries: [],
+        sourceSites,
+      })).byteLength - emptyEntriesBytes;
+      const document = documentBuilder.seal({
+        maximumBytes: MAX_ASSERTION_DOCUMENT_BYTES - sourceSitesFramingBytes,
+      });
       if (Either.isLeft(document)) {
         sealed = Either.left(document.left);
         return sealed;
@@ -584,7 +621,7 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
           materializeDocument(
             sources,
             document.right.entries,
-            sealInput.sourceSites ?? Object.freeze([]),
+            sourceSites,
             blobs,
           ),
       );

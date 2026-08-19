@@ -100,6 +100,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [claude-code-persistent-memory-breaks-verbal-isolation](claude-code-persistent-memory-breaks-verbal-isolation.md) — claude-code 会把"帮我记住"写进磁盘 memory,newSession 后合法记得;session-isolation 反证要测 transcript 不回放历史,不测回答不含事实
 - 已修 [e2b-provision-429-duplicate-sandbox](e2b-provision-429-duplicate-sandbox.md) — E2B create 成功后的 mkdir 初始化请求撞 429 被归拒绝类盲重试,同 token 开两台、首台泄漏计费(实跑 10 evals 见 14 台);修为 create 内 kill-on-failure(e2b.ts/docker.ts)+ 重试前一律对账且对账失败不重试(retry.ts)
 - [bub-pin-moved-to-upstream-0-4-0](bub-pin-moved-to-upstream-0-4-0.md) — 裁决(2026-07-25):Bub 改装上游 PyPI `bub==0.4.0`,退役个人 fork pin,代价是 fork 里未上游的「工具调用回合记录助手文本」修复丢失(上游 0.4.0 仍是 `response_text=None`);override 文件不能删——插件 workspace 把 bub 声明成 git 源,不覆盖会静默拉主干;插件与 Bub 必须同代(0.3.10 起 vendor `bub.tape`)
+- 已修 [bub-default-client-closure-drift](bub-default-client-closure-drift.md) — 默认 `bub==0.4.0` 未锁模型客户端使重装后请求协议突变；运行时、E2B 与 Vercel 现共用三行 override 和同一 marker，旧预制品严格 miss 后重装
 - [official-baseline-versioning-follows-agent](official-baseline-versioning-follows-agent.md) — 裁决(2026-07-25):公共 E2B template 与 Docker 镜像的 tag 改为 `<Agent 版本>-r<配方修订>`，三个 Agent 独立发版，推翻「三份共用 niceeval 的 `git describe` release tag」；Docker 侧常量由版本常量派生(CI 自动发布)、E2B 侧指向 published.json 台账(手动发布)，一致性由 official-baselines.test.ts 守护
 - [e2b-agent-template-npm-global-prefix](e2b-agent-template-npm-global-prefix.md) — 裁决(2026-07-23):NiceEval 的 Claude/Codex 公共 E2B baseline 继承了两套不同 Node 布局，普通 `npm install -g` 只在 Codex 可写、Claude 整片 EACCES；目标契约统一运行用户 prefix `/usr/local` + 目录权限 + build 自检，`v0.6.1` 在新模板发布前仍需显式 `--prefix /usr/local`；失败命令原始输出应由 wrapper 在 Eval 截断前落 `commands.json`，两项实现分别见 plan
 - 已修 [ledger-gitignore-pathspec-and-gitlinks](ledger-gitignore-pathspec-and-gitlinks.md) — ledger 裸 pathspec 只排根级缓存，嵌套 repo 又静默记成 gitlink 吞掉内部 diff；修为 gitignore glob 编译 + mode 160000 fail fast
@@ -164,6 +165,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [human-error-feedback-folds-provider-messages](human-error-feedback-folds-provider-messages.md) — Human 结束面按 phase+code 把 E2B/Vercel 不同 message 合成 `×2`，共享构建又暴露 `n1` 且长单行被截；修为 execution error 逐 Attempt 展示安全 `error:` + locator details，receipt 后按 Experiment 配对 Run details，内部 failure identity 仅留机器面
 - [group-or-stop-dispatch-starvation](group-or-stop-dispatch-starvation.md) — MemoryBench 曾见 `.orStop()` 后低并发；真实 CLI E2E 已排除“停止全部 Eval”假设，并守护独立 Group lane 继续派发
 
 - 已修 [incomplete-summary-hides-unstarted](incomplete-summary-hides-unstarted.md) — 止损闸后 human 结论只显示 `INCOMPLETE`、隐藏 `completion.unstarted`，计划与 verdict 平白少数；修为结论行显式列 `N unstarted`，保持「未执行」身份不冒充 skipped
@@ -390,6 +392,9 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ## 写 eval · scoring · 断言 · judge
 
 - [retry-reacquire-delays-interruption](retry-reacquire-delays-interruption.md) — turn 重试退避被中断后仍须重新取得释放的 permit，当前以并发记账守恒优先于中断及时性
+- 已修 [assertion-diagnostic-tree-overflows-record](assertion-diagnostic-tree-overflows-record.md) — 上百个 occurrence × 组合 matcher 的完整诊断树撑破递归/4 MiB 边界，使已完成 Run 无法发布；collection 改存 witness + 8 个样本，runtime/document 双层有界化，大材料自动进 Assertions blob
+- 已修 [assertion-snapshot-shape-needs-blob-fallback](assertion-snapshot-shape-needs-blob-fallback.md) — 小型深层 subject 仍可能超出 durable inline shape；Record bridge 现按 byte size 或 schema shape 自动选择 Assertions-own blob
+- 已修 [workspace-diff-path-cap-skips-partial-capture](workspace-diff-path-cap-skips-partial-capture.md) — ledger exporter 在 10,000 路径先失败，使 File Changes 的确定性 partial collector 无法处理三万路径窗口；扫描上限与 10,000 条持久保留上限现已分离
 
 - 已修 [brief-crashes-on-preview-undefined](brief-crashes-on-preview-undefined.md) — `JSON.stringify(undefined)` 返回值 undefined 不是字符串,`brief()` 不兜底会让断言预览 undefined 字段值时抛 TypeError 而不是显示 "undefined"(修在 `src/util.ts`)
 - [judge-missing-key-unavailable-not-silent](judge-missing-key-unavailable-not-silent.md) — 设计裁决:judge 缺 key 记 unavailable 断言(gate → errored;2026-07-14),推翻「静默不记录 + CI 自查」;unavailable 态同时承载证据覆盖缺口

@@ -4,7 +4,7 @@
 signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。Eval、CLI、Runner、Record、Report、Package 与 Lifecycle 使用
 功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 协议 Repo，包括确定性产品 owner 与 live 兼容性检查。
 
-E2E 是选择自动化时的默认 owner，不是每个 Bug 的修复门禁；TDD 也不是门禁。先按[测试总纲的 Bug 验证裁决](../README.md#bug-修复的验证裁决)决定是否自动化；选择本次 AI 真实验收时，不进入本目录创建或改写 owner。
+E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../README.md#bug-修复的-e2e-tdd)让安装后的旧候选从公开入口变红，再修改生产代码。优先加强既有 owner；没有合格 owner 时新增一个最小 owner。只有文档列明的外部阻塞才改做本次 AI 真实验收。
 
 跨多个公开接缝的完整用户目标由 Journey 拥有；原子公开结果由单边界 E2E 拥有。
 只有两者无法稳定制造、穷举或区分具名错误算法时，才进入 [Unit 例外](../unit/README.md)。

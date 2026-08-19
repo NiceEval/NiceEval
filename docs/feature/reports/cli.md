@@ -217,6 +217,12 @@ niceeval view --run 01H... --out ./shared-site --no-open
 | 输出目录已存在 | 返回 `report-export-target-exists`，不改动目录。 |
 | 静态写入失败 | 返回 `report-export-write-failed`，不泄露任意系统路径或内部 cause。 |
 
+表中的内建 Report ID 用于选择实现，不作为 Human 标题或列名。默认 `show --run` 使用 Experiment、Eval、
+`Attempt #N`、结果、历史 Attempt locator 和 `details:` 命令表达同一事实。
+
+`Membership`、`Slot`、`Relation`、`Selected run`、shared failure ID 与空 Analysis note 只保留在机器文档或
+明确的高级诊断面。
+
 ## 相关阅读
 
 - [Report Library](library.md)：作者 API、Page、组件与 export manifest。

@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-values
+// regression: memory/assertion-snapshot-shape-needs-blob-fallback.md
 // rerun: pnpm e2e --repo eval -- --run test/assertion-values.test.ts
 
 import { only } from "@niceeval/testkit";

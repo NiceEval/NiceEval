@@ -3,11 +3,13 @@
 // 题间重置点，$HOME 保留上一波安装。八条 attempt 都必须调用 Context7 MCP 工具成功。
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
+import { claudeCodeProviderEnv } from "../provider.ts";
 import { sandbox } from "../sandbox.ts";
 
 const agent = claudeCodeAgent({
   apiKey: process.env.ANTHROPIC_API_KEY,
   baseUrl: process.env.ANTHROPIC_BASE_URL,
+  env: claudeCodeProviderEnv,
   plugins: [
     {
       marketplace: {

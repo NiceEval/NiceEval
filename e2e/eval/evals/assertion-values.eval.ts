@@ -75,6 +75,10 @@ export default defineEval({
       t.check(true, isTrue("explicit true"));
       t.check(false, isFalse("explicit false"));
       t.check(
+        { one: { two: { three: { four: { five: { six: { seven: { eight: { nine: true } } } } } } } } },
+        isDefined("deep fixture data"),
+      );
+      t.check(
         4,
         defineScoreMatch({
           name: "even fixture",

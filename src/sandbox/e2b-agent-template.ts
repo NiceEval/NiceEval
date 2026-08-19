@@ -1,6 +1,7 @@
 import { Template, type TemplateBuilder } from "e2b";
 import {
   BUB_INSTALL_MARKER,
+  DEFAULT_BUB_DEPENDENCY_OVERRIDES,
   DEFAULT_BUB_OTEL_PLUGIN,
   DEFAULT_BUB_REQUIREMENT,
   bubInstallHash,
@@ -175,17 +176,25 @@ export function e2bCodingAgentTemplate(
   }
 
   const packages = normalizeBubPackages(options.bubPythonPackages ?? []);
-  const installHash = bubInstallHash(packages);
+  const installHash = bubInstallHash(
+    packages,
+    DEFAULT_BUB_REQUIREMENT,
+    DEFAULT_BUB_OTEL_PLUGIN,
+    DEFAULT_BUB_DEPENDENCY_OVERRIDES,
+  );
   const withPackages = packages.map((value) => ` --with ${shellQuote(value)}`).join("");
   const marker = `/home/user/${BUB_INSTALL_MARKER}`;
   const overrideFile = "/tmp/bub-override.txt";
+  const overrides = [DEFAULT_BUB_REQUIREMENT, ...DEFAULT_BUB_DEPENDENCY_OVERRIDES]
+    .map(shellQuote)
+    .join(" ");
   return withNodeToolContract(Template().fromBaseImage())
     .runCmd("curl -LsSf https://astral.sh/uv/install.sh | sh", { user: E2B_RUN_USER })
     .runCmd(
       [
         // override 把 `bub` 钉成一个 PyPI 版本:OTel 插件所在 workspace 把 bub 声明成 git
         // 依赖,不覆盖的话构建会拉到 Bub 主干,模板里装的版本随构建时间漂移。
-        `printf '%s\\n' ${shellQuote(DEFAULT_BUB_REQUIREMENT)} > ${overrideFile}`,
+        `printf '%s\\n' ${overrides} > ${overrideFile}`,
         `$HOME/.local/bin/uv tool install --python 3.12 --prerelease allow bub --overrides ${overrideFile} --with ${shellQuote(DEFAULT_BUB_OTEL_PLUGIN)}${withPackages}`,
         `mkdir -p $(dirname ${marker}) && printf '%s' ${shellQuote(installHash)} > ${marker}`,
       ],
