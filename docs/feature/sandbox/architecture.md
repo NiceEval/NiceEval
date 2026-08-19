@@ -92,10 +92,13 @@ export default defineEval({
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
 - **agent 归因增量 = 按 send 区间排列的端点轨迹。** `workspace.diff` 阶段从分类账导出每个 send 区间自己的 before/after。collector 在 capture freeze（捕获封口）时，以此形成 origin Attempt 的 `FileChanges` closure（契约见 [Record · Architecture](../record/architecture.md)）。
 - **不做跨 send 区间压缩。** 区间之间可能夹着 Eval 写入，压缩会把 Eval 的修改夹带进 agent 的账。「创建又删除」或「改完又改回」也会丢失。持久 File Changes 不保存文件级 `net` 或 hunk。`fileChanged(path)` 与可靠的 `net` 都是读取面从轨迹派生的结果；agent 区间内发生过的改动不因 Eval 事后重写同一路径而消失。
-- **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 区间的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧校验。provider 往返数与区间数、文件数都无关,不能退化成逐文件或逐区间的远端调用,也不把大证据灌进命令 stdout 通道。
+- **导出按固定字节分段。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 区间的路径枚举、文本 blob 读取与二进制尺寸统计，再把内部 payload 自动切成不超过 4,000,000 bytes 的分段。
+  - manifest v1 原子发布，固定连续序号、每段长度与 Git blob checksum、总长度。Attempt 级 payload 最多 512 MiB、最多 135 段。
+  - 宿主在读取任何分段前先验证 manifest 边界，再按序读取并逐段校验。缺段、重复、乱序、超限、checksum 错误或 trailing bytes 都使 runtime diff unavailable，并形成现有 `capture-failed` partial File Changes。
+  - provider 往返量是 `O(totalBytes / partBytes)`，不按路径、send 区间或 blob 逐项调用，也不把大证据灌进命令 stdout。临时 manifest 与分段在成功或失败后都删除。
 - 导出对 Sandbox 侧的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。
 
-- **路径与区间上限。** 导出阶段单个 send 区间最多扫描 100,000 个路径；File Changes 最多保留 256 个 send 区间。每个 send 区间与整份 Attachment 都最多保留 10,000 个 changes。超过保留上限但未超过扫描上限时，collector 保存确定性前缀并写 `collection-cap-reached`，不能把 partial 证据报告为 diff unavailable。
+- **路径与区间上限。** 导出阶段单个 send 区间最多扫描 100,000 个路径；File Changes 最多保留 256 个 send 区间。v1 decoder 继续接受每个区间与整份 Attachment 最多 10,000 个 changes；新 producer 每个区间与整份 Attachment 只保留 1,000 个 changes。超过 producer 保留上限但未超过扫描上限时，collector 保存确定性前缀并写 `collection-cap-reached`，不能把 partial 证据报告为 diff unavailable。1,000 条只是不让 durable structural trajectory 膨胀，不承诺大文本最坏情况也满足空文件的性能门。
 - **内容与 policy 上限。** 导出阶段单个 send 区间最多扫描 256 MiB 去重文本；File Changes 最多保留 20,000 个 blobs、128 MiB blob bytes 和 16 MiB payload JSON。完整 text revision 与单个 blob 最多 1 MiB。超过保留上限但未超过扫描上限时由 collector 省略后续 content 并写 partial limitation。归因 policy 的 `include` 与 `ignore` 各最多 256 项，每项最多 4,096 UTF-8 bytes。
 - **固定截断顺序。** collector 先按 send sequence，再按同一 send 区间内 path 的 ASCII 字节序处理。达到任一采集上限时，它停止在第一个放不下的候选，不跳过该项去采后面的项。已捕获的安全前缀连同 `collection-cap-reached` limitation 写成 `partial`。
 - **内容形态不偷换。** 二进制或超过 1 MiB 的 text revision 写为 `elided`，带 `binary` 或 `oversized-text` 原因与 byteLength；这本身是完整采集。content blob 碰到 collection cap 时，text content 写为 `omitted(collection-cap)` 并形成 partial。尺寸在传输前核算。内容被省略时，路径与状态断言仍可确定，依赖文本的断言如实成为 `unavailable`。

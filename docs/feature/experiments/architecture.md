@@ -80,7 +80,9 @@ Hook 通过 `ExperimentHookContext` 上报 Run 范围的 progress 与 diagnostic
 
 Runner 在触发 `setup` 前，把 teardown 所需的稳定输入写入 `.niceeval/teardowns/`。该目录由 Runner lifecycle owner 管理，不属于 Record。
 
-正常退出时，Runner 执行 teardown 并删除对应登记。进程被强杀后，下一次启动先检查本 Experiment 的登记；确认原宿主进程已结束后，补执行一次 teardown，再进入新的 setup。
+正常退出时，Runner 执行 teardown 并删除对应登记。进程被强杀后，下一次启动先检查本 Experiment 的登记；确认原宿主进程已结束后，补执行一次 teardown，再进入新的 setup。若该 Experiment 声明 `sharedState.key`，启动自愈必须先取得该 key 的当前 exact authority，才可读取、删除或执行旧登记。active 或 recovering generation 只会让它等待，绝不自动接管、执行旧 teardown 或替换该 generation。
+
+这项启动义务独立于 `ExperimentLifecycleCell`：即使本次所有结果都 carry、没有任何 Attempt，selected Experiment 也必须等到旧登记已在同 key authority 下完成，或等操作员显式恢复；它不会借零 Attempt 跳过安全边界。
 
 `niceeval exp <selector> --teardown` 只运行这条补偿路径。它不建立 Run、Member 或 Attempt。
 
@@ -99,6 +101,8 @@ Run；weak scan 不保证同一时刻的全局快照。并发创建 `complete` �
 `sharedState.key` 保护跨 Invocation 的外部可变状态。其持有期从 Experiment setup 和 Sandbox setup 之前开始。
 最后一个 Attempt settle 后，同一 Experiment 的 reusable pool registry 先冻结，不能再创建 pool。
 
+等待 sharedState 的协调 fiber 不占有有限的 dispatch execution worker 或 Provider lane；Experiment gate、global 并发位和 Provider lane 仍约束实际 Sandbox / Agent body 的物理并发。因此同 key waiter 不会饿死当前 holder 的后继 Attempt。
+
 全部 pool 的 single-flight stop 完成 Sandbox teardown 与 Provider finalizer，之后才执行 Experiment teardown。只有所有实际
 cleanup 成功才释放 sharedState lease。setup 失败仍要等待停稳并执行后续 cleanup；不会仅因 setup 失败留下 lease。
 
@@ -108,9 +112,26 @@ sweep 不得删除。
 sharedState authority 是 owner-token-checked 的不可变 generation transition：active、recovering 与 free 都只能从
 精确前代发布下一代，旧 owner 无法删除或替换新 owner。
 
-公开 explicit recovery 先要求 selector 唯一；它的 owner-evidence inspection 保持只读。在写入 recovering 前，CLI 验证
-这个唯一 Experiment 有 `teardown`。selector 不唯一或 target 缺少 teardown 时，CLI 不进入 recovery transition，当前
-active generation 保持原样。
+正常 contention 只发不含 token 的 `state-lease-waiting` info，且不写入 Run diagnostic。cleanup-required warning 只持久化 key 与原因；owner token 只在显式 public inspection 的人读输出中显示。
+
+公开 explicit recovery 把输入 `sharedState.key` 当作恢复 authority。CLI 先从该 key 的 immutable generation 读取 owner evidence。
+
+作者后来改名或删除当前 `sharedState` 声明时，旧 key 仍保留公开 inspection 与恢复入口。
+
+随后 CLI 要求 selector 唯一，且它的 Experiment id 必须等于 immutable evidence 的 id。当前 target 的 `teardown` 必须是函数。
+selector 不唯一、Experiment 不匹配或 teardown 缺失/非函数时，CLI 不进入 recovery transition，当前 active generation 保持原样。
+
+recovery claim 后只核对由 immutable `{ experimentId, host, pid, processIdentity }` 绑定的那一条旧 teardown 登记。它绝不按
+当前声明扫描或删除同 Experiment 的其它登记。
+
+local recovery 对 PID 复用、缺失和 Linux `Z`/`X`/`x` 终态采用与 lease 相同的 identity 判定。identity 或预期登记的读取、格式
+检查失败都 fail closed。
+
+teardown 成功后，CLI 必须先原子删除这条精确登记，再发布 free generation。删除、重核或发布失败都 fail closed，recovering
+generation 保持可 inspection、可重试；waiter 只能在旧 teardown 义务已经消失后进入。
+
+若精确 token 已处于 free，CLI 不重跑 teardown，但仍仅能幂等清除可证明属于该 immutable owner 的遗留登记。不能证明或不能
+清除时非零退出。
 
 heartbeat 是按 exact owner token + generation 写入、原子替换的独立诊断 sidecar。公开读取只在这两个值仍匹配当前
 immutable head 时采用它的时间显示。sidecar 写/读失败不改变 authority，旧 owner 的 sidecar 也不能影响新 generation。

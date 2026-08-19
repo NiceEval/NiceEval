@@ -136,6 +136,10 @@ token/generation 专属的原子 sidecar 更新，且只作诊断。sidecar 不�
 一次补偿 teardown；详见 [CLI · 协调等待与恢复](cli.md#协调等待与恢复)。这个字段只提供互斥，不代替 checkpoint
 存储、原子提交或强杀恢复。
 
+#### Linux zombie owner recovery
+
+同机 Linux owner 的 `/proc/<pid>/stat` 为 `Z`、`X` 或 `x` 时已终止；状态证据无法读取或解码时，显式恢复仍 fail closed。
+
 同一 Experiment 的独立 Sandbox 不共享可变状态时省略它；两个 Experiment 确实指向同一 checkpoint 时使用同一 `key`。
 key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z0-9._/-]{0,127}`；不把 token、账号或其它凭据编进 key。
 未声明时，配置身份对象和 manifest 都不写 `sharedState` 键，保持既有 base config hash；声明、删除或改 key 分别在

@@ -1132,6 +1132,80 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     list.push(record);
     experimentDiagnostics.set(input.experimentId, list);
   };
+  /**
+   * Owner tokens are an explicit inspection capability, not ordinary Runner
+   * feedback. Keep both the live feedback event and the durable Run diagnostic
+   * limited to the key and recovery obligation; `exp --teardown` is the only
+   * public surface that renders immutable owner evidence.
+   */
+  const reportSharedStateRecoveryRequired = (input: {
+    readonly run: AgentRun;
+    readonly experimentId: string;
+    readonly reason: string;
+    readonly phase: LifecyclePhase;
+  }): void => {
+    const key = input.run.sharedState?.key ?? "";
+    const message = t("runner.sharedStateRecoveryRequired", { key }).trimEnd();
+    reportDiagnostic({
+      key: `state-lease-recovery-required:${key || input.experimentId}`,
+      code: "state-lease-recovery-required",
+      severity: "warning",
+      message,
+      data: {
+        experimentId: input.experimentId,
+        sharedStateKey: key,
+        reason: input.reason,
+      },
+    });
+    recordExperimentDiagnostic({
+      experimentId: input.run.experimentId,
+      code: "state-lease-recovery-required",
+      level: "warning",
+      message,
+      phase: input.phase,
+      data: { sharedStateKey: key, reason: input.reason },
+    });
+  };
+  /**
+   * A blocked sharedState acquisition is normal contention. It is deliberately
+   * an info notice and deliberately does not enter a Run's durable diagnostic
+   * list: there is no cleanup obligation and no owner evidence to expose.
+   */
+  const acquireSharedStateClaim = (
+    run: AgentRun,
+    experimentId: string,
+  ): Effect.Effect<SharedStateLeaseEffectClaim, unknown> => Effect.gen(function* () {
+    const sharedState = run.sharedState;
+    if (sharedState === undefined) {
+      return yield* Effect.die(new Error("Attempted to acquire an undeclared sharedState lease."));
+    }
+    const processIdentity = sharedStateProcessIdentity ?? (yield* currentProcessIdentityEffect());
+    sharedStateProcessIdentity = processIdentity;
+    const acquired = yield* acquireSharedStateLeaseEffect(
+      coordinationRoot,
+      sharedState.key,
+      {
+        experimentId,
+        pid: process.pid,
+        host: currentHost,
+        processIdentity,
+      },
+      {
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+        onWaitStart: () => {
+          const message = t("runner.sharedStateWaiting", { key: sharedState.key }).trimEnd();
+          reportDiagnostic({
+            key: `state-lease-waiting:${sharedState.key}`,
+            code: "state-lease-waiting",
+            severity: "info",
+            message,
+            data: { experimentId, sharedStateKey: sharedState.key },
+          });
+        },
+      },
+    );
+    return acquired.claim;
+  });
   // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
   // 挂在本地协调根下,与留存注册表 `.niceeval/sandboxes/` 同一个根（默认 cwd/.niceeval，
   // 与 attempt.ts 的 `coordinationRoot` 兜底同一口径）。
@@ -1200,35 +1274,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const claim = heldClaim;
         if (claim === undefined) return Effect.void;
         const experimentId = run.experimentId ?? run.agent.name;
-        const recoveryRequired = (reason: string, error?: unknown): Effect.Effect<void> => Effect.sync(() => {
-          const message = t("runner.sharedStateRecoveryRequired", {
-            key: run.sharedState?.key ?? "",
-            ownerToken: claim.ownerToken,
-          }).trimEnd();
-          reportDiagnostic({
-            key: `state-lease-recovery-required:${run.sharedState?.key ?? experimentId}`,
-            code: "state-lease-recovery-required",
-            severity: "warning",
-            message,
-            data: {
-              experimentId,
-              sharedStateKey: run.sharedState?.key ?? "",
-              ownerToken: claim.ownerToken,
-              reason,
-              ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
-            },
-          });
-          recordExperimentDiagnostic({
-            experimentId: run.experimentId,
-            code: "state-lease-recovery-required",
-            level: "warning",
-            message,
+        const recoveryRequired = (reason: string): Effect.Effect<void> => Effect.sync(() => {
+          reportSharedStateRecoveryRequired({
+            run,
+            experimentId,
+            reason,
             phase: "experiment.teardown",
-            data: {
-              sharedStateKey: run.sharedState?.key ?? "",
-              ownerToken: claim.ownerToken,
-              reason,
-            },
           });
         });
         if (!cleanupSucceeded()) {
@@ -1245,7 +1296,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // stale in-memory claim after a failed compare-owner mutation; its
         // durable record is deliberately left for explicit recovery.
         cell.sharedStateClaim = undefined;
-        return claim.release.pipe(Effect.catchAll((error) => recoveryRequired("release-failed", error)));
+        return claim.release.pipe(Effect.catchAll(() => recoveryRequired("release-failed")));
       }),
     );
   });
@@ -1431,7 +1482,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   /**
    * 启动自愈:本实验触发 setup 之前,先核对磁盘上是否有它自己的遗留登记——上一次运行同一
    * experimentId 被强杀、来不及删除。同宿主且 pid 已死才是遗留义务;pid 活或异宿主可能是
-   * 并发 run,不触碰。先原子删登记拿到执行权,再补执行一次它的 teardown(新进程语义:
+   * 并发 run,不触碰。sharedState caller 必须已先取得同 key exact authority；再原子删登记拿到执行权,
+   * 再补执行一次它的 teardown(新进程语义:
    * ctx.selectedEvalIds 从登记恢复,不依赖已丢失的 setup 产物)。失败只记诊断,不阻断、
    * 不重试本次 run 的调度——recovery 补偿的是上一次的泄漏,不是这一次的前提条件。
    */
@@ -1520,10 +1572,18 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       }
     });
   });
+  // Startup recovery can exist even when every Attempt is carried (or there
+  // are no selected Attempts), so it cannot borrow an ExperimentLifecycleCell.
+  // Each selected run instead gets an independent completion gate; the first
+  // real setup awaits the same gate before it can claim or initialize state.
+  const startupRecoveryCompletions = new Map<AgentRun, Deferred.Deferred<void, unknown>>();
+  const startupRecoveryCompletionsToAwait: Deferred.Deferred<void, unknown>[] = [];
   const ensureExperimentSetup = (a: Attempt): Effect.Effect<void, unknown> => {
     const cell = expLifecycles.get(a.run)!;
-    return Effect.uninterruptibleMask((restore) =>
-      cell.mutex.withPermits(1)(Effect.gen(function* () {
+    return Effect.uninterruptibleMask((restore) => {
+      const startupRecovery = startupRecoveryCompletions.get(a.run);
+      return (startupRecovery === undefined ? Effect.void : restore(Deferred.await(startupRecovery))).pipe(
+        Effect.zipRight(cell.mutex.withPermits(1)(Effect.gen(function* () {
         const current = cell.state;
         if (current._tag === "Active" || current._tag === "TearingDown") return current.setup;
         if (current._tag === "TornDown") return undefined;
@@ -1534,44 +1594,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const run = a.run;
         const experimentId = run.experimentId ?? run.agent.name;
         if (run.sharedState && cell.sharedStateClaim === undefined) {
-          const processIdentity = sharedStateProcessIdentity ?? (yield* currentProcessIdentityEffect());
-          sharedStateProcessIdentity = processIdentity;
-          const acquired = yield* restore(acquireSharedStateLeaseEffect(
-            coordinationRoot,
-            run.sharedState.key,
-            {
-              experimentId,
-              pid: process.pid,
-              host: currentHost,
-              processIdentity,
-            },
-            {
-              ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-              onWaitStart: (holder) => {
-                const message = t("runner.sharedStateRecoveryRequired", {
-                  key: run.sharedState!.key,
-                  ownerToken: holder.ownerToken,
-                }).trimEnd();
-                reportDiagnostic({
-                  key: `state-lease-recovery-required:${run.sharedState!.key}`,
-                  code: "state-lease-recovery-required",
-                  severity: "warning",
-                  message,
-                  data: {
-                    experimentId,
-                    sharedStateKey: holder.key,
-                    ownerToken: holder.ownerToken,
-                    host: holder.host,
-                    pid: holder.pid,
-                    processIdentity: holder.processIdentity,
-                    heartbeatAt: holder.heartbeatAt,
-                    status: holder.status,
-                  },
-                });
-              },
-            },
-          ));
-          cell.sharedStateClaim = acquired.claim;
+          cell.sharedStateClaim = yield* restore(acquireSharedStateClaim(run, experimentId));
         }
         const completion = yield* Deferred.make<void, unknown>();
         // 先写 Active、再登记和启动 worker：随后任何 attempt 或强清都会复用同一个 Effect 完成点。
@@ -1585,7 +1608,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         }
         let setupStartedAt: number | undefined;
         const setupBody = Effect.gen(function* () {
-          // 上一进程的遗留收尾先补做，再原子写入本次登记；两步都先于 setup。
+          // startup gate 已补做已有遗留收尾；sharedState 时此处已经持有同 key exact authority。
+          // 再核对一次可覆盖 gate 之后才出现的孤儿登记，随后原子写入本次登记；两步都先于 setup。
           if (run.teardown && run.experimentId) {
             yield* recoverOrphanedTeardownRegistration(run, experimentId);
             yield* writeTeardownRegistrationEffect(coordinationRoot, {
@@ -1674,19 +1698,69 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         );
         yield* restore(setupWorker).pipe(Effect.forkIn(invocationScope));
         return cell.state.setup;
-      })).pipe(
-        Effect.flatMap((setup) => setup === undefined ? Effect.void : restore(awaitSetup(setup))),
-      ),
-    );
+        })).pipe(
+          Effect.flatMap((setup) => setup === undefined ? Effect.void : restore(awaitSetup(setup))),
+        )),
+      );
+    });
   };
 
-  // 自愈是「选中实验」的启动期职责，不是首个派发 attempt 的副作用：全携带使 attempts 为空时，
-  // 仍必须补上上一进程强杀遗留的收尾。无 teardown 的新定义无法安全补执行，交由 CLI 提醒。
-  const recoveredExperimentIds = new Set<string>();
+  const hasOrphanedTeardownRegistration = (run: AgentRun): Effect.Effect<boolean, never> => Effect.suspend(() => {
+    if (!run.experimentId || !run.teardown) return Effect.succeed(false);
+    return readTeardownRegistrationsEffect(coordinationRoot).pipe(
+      Effect.map((registrations) => registrations.some(({ entry }) =>
+        entry.experimentId === run.experimentId && isOrphanedTeardownRegistration(entry, currentHost))),
+      // A missing or unreadable registration directory must never invent an
+      // orphan cleanup obligation. The normal setup path still records a
+      // diagnostic if it cannot write this Invocation's own registration.
+      Effect.catchAll(() => Effect.succeed(false)),
+    );
+  });
+  /**
+   * Startup self-heal remains a selected-Experiment responsibility even for a
+   * full-carry / zero-Attempt Invocation. For sharedState it first obtains the
+   * exact current key's authority. Thus an active or recovering generation is
+   * waited on, never implicitly torn down or replaced.
+   */
+  const recoverStartupOrphanedTeardown = (
+    run: AgentRun,
+    experimentId: string,
+  ): Effect.Effect<void, unknown> => Effect.gen(function* () {
+    if (!(yield* hasOrphanedTeardownRegistration(run))) return;
+    if (run.sharedState === undefined) {
+      yield* recoverOrphanedTeardownRegistration(run, experimentId);
+      return;
+    }
+    const claim = yield* acquireSharedStateClaim(run, experimentId);
+    yield* recoverOrphanedTeardownRegistration(run, experimentId).pipe(
+      Effect.ensuring(claim.release.pipe(Effect.catchAll(() => Effect.sync(() => {
+        reportSharedStateRecoveryRequired({
+          run,
+          experimentId,
+          reason: "startup-recovery-release-failed",
+          phase: "experiment.teardown",
+        });
+      }))),
+      ),
+    );
+  });
+  const startupRecoveryByExperimentId = new Map<string, Deferred.Deferred<void, unknown>>();
   for (const run of effectiveAgentRuns) {
-    if (!run.experimentId || !run.teardown || recoveredExperimentIds.has(run.experimentId)) continue;
-    recoveredExperimentIds.add(run.experimentId);
-    yield* recoverOrphanedTeardownRegistration(run, run.experimentId);
+    if (!run.experimentId || !run.teardown) continue;
+    let completion = startupRecoveryByExperimentId.get(run.experimentId);
+    if (completion === undefined) {
+      const createdCompletion = yield* Deferred.make<void, unknown>();
+      completion = createdCompletion;
+      startupRecoveryByExperimentId.set(run.experimentId, createdCompletion);
+      startupRecoveryCompletionsToAwait.push(createdCompletion);
+      const recovery = recoverStartupOrphanedTeardown(run, run.experimentId).pipe(
+        Effect.exit,
+        Effect.flatMap((exit) => Deferred.done(createdCompletion, exit)),
+        Effect.asVoid,
+      );
+      yield* recovery.pipe(Effect.forkIn(invocationScope));
+    }
+    startupRecoveryCompletions.set(run, completion);
   }
 
   const settleExperimentAttempt = (a: Attempt): Effect.Effect<void, unknown> => {
@@ -2314,9 +2388,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
   }
 
-  // 有界派发:forEach 的 worker 数就是 maxConcurrency，不先给全部 Slot 建 fiber。
-  // worker 内仍按止损闸、实验闸、全局 permit、用例锁的顺序取得资源；退避可以占住
-  // 这个有界 worker，避免为了补位再造一层无界 scheduler。
+  // 所有 Slot 都先成为轻量 coordination fiber。执行资源仍由实验闸、globalSem 与
+  // provider lane 严格有界；但 sharedState / predecessor / lock 等待绝不能占住一个
+  // 有限 forEach worker，否则同 key waiter 会饿死持有者的后继 Slot，形成环形等待。
+  // 因而这里必须 unbounded：它只放大 suspendable fibers，不放大 Agent、Sandbox 或
+  // provider 的物理并发。
   // runAttemptEffect 只把「执行错误」收进 EvalResult.error(不 fail),
   // 但中断(Ctrl+C / kill)照常向上传播 —— 所以一条挂掉不会中断其它 attempt,而中断能停掉全部。
   //
@@ -2891,7 +2967,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const releaseSuccessor = groupedReleases.get(a)!;
         return withWaveLifecycle.pipe(Effect.ensuring(releaseSuccessor));
       },
-      { concurrency: opts.maxConcurrency, discard: true },
+      { concurrency: "unbounded", discard: true },
     ).pipe(
       // 中断(用户 Ctrl+C):finalizer 已在中断过程中跑完(容器已停),这里只是把它咽下,
       // 好让流程走到 summarize / onInvocationComplete,用已完成的 results 出一份部分汇总,而不是抛栈。
@@ -2911,6 +2987,23 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     opts.signal === undefined
       ? dispatchEffect
       : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)),
+  );
+  // A full-carry / zero-Attempt invocation has no dispatch fiber that could
+  // await startup recovery. Seal its selected-Experiment obligation here; for
+  // normal runs the per-setup gate above has already awaited the same Deferred.
+  const startupRecoveryExit = yield* Effect.exit(
+    opts.signal === undefined
+      ? Effect.forEach(startupRecoveryCompletionsToAwait, Deferred.await, {
+          concurrency: "unbounded",
+          discard: true,
+        })
+      : Effect.raceFirst(
+          Effect.forEach(startupRecoveryCompletionsToAwait, Deferred.await, {
+            concurrency: "unbounded",
+            discard: true,
+          }),
+          interruptOnAbort(opts.signal),
+        ),
   );
   // provenance 在这里齐全:没有任何 attempt 依赖的 key 也照样跑完并留下自己那条记录,
   // 中断路径下同批构建随 signal 收束成 cancelled,不把 run.json 的 sandboxBuilds 落空。
@@ -2994,6 +3087,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       interrupted = true;
     } else {
       return yield* Effect.failCause(exit.cause).pipe(
+        Effect.ensuring(sweepExperimentTeardowns().pipe(Effect.orDie)),
+      );
+    }
+  }
+  if (Exit.isFailure(startupRecoveryExit)) {
+    if (Cause.isInterruptedOnly(startupRecoveryExit.cause)) {
+      interrupted = true;
+    } else {
+      return yield* Effect.failCause(startupRecoveryExit.cause).pipe(
         Effect.ensuring(sweepExperimentTeardowns().pipe(Effect.orDie)),
       );
     }

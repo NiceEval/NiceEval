@@ -165,6 +165,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [shared-state-zombie-owner-recovery](shared-state-zombie-owner-recovery.md) — Linux zombie 保留 starttime 却不能执行 cleanup，显式 sharedState recovery 曾误拒绝；仅将 `Z` / `X` / `x` 判为终态，其余身份不确定继续 fail closed
+- 已修 [testkit-procfs-scan-race](testkit-procfs-scan-race.md) — 单次 terminal procfs scan 可漏掉 snapshot 后 fork 的同组 descendant；per-handle snapshot handshake 固定红灯，连续 scan 与可验证 resource cleanup 收口
 - 已修 [testkit-zombie-only-process-group](testkit-zombie-only-process-group.md) — Linux 的 `kill(-pgid, 0)` 对仅含 zombie 的 owned group 仍成功，旧 cleanup 无法改变终态却在两轮信号后报残留；Lifecycle 安装后 E2E 用固定 subreaper fixture 取得旧实现红灯，procfs terminal-only 判定转绿
 - 已修 [human-error-feedback-folds-provider-messages](human-error-feedback-folds-provider-messages.md) — Human 结束面按 phase+code 把 E2B/Vercel 不同 message 合成 `×2`，共享构建又暴露 `n1` 且长单行被截；修为 execution error 逐 Attempt 展示安全 `error:` + locator details，receipt 后按 Experiment 配对 Run details，内部 failure identity 仅留机器面
 - [group-or-stop-dispatch-starvation](group-or-stop-dispatch-starvation.md) — MemoryBench 曾见 `.orStop()` 后低并发；真实 CLI E2E 已排除“停止全部 Eval”假设，并守护独立 Group lane 继续派发

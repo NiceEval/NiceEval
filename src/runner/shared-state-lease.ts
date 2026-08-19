@@ -738,8 +738,9 @@ function delayOrAbortEffect(ms: number, signal: AbortSignal | undefined): Effect
 
 /**
  * Returns a host-local process identity that distinguishes a PID reuse. Linux
- * uses the kernel start tick; other POSIX hosts use `ps`'s process start time.
- * A missing process returns undefined; inability to inspect it fails closed.
+ * uses the kernel start tick plus `/proc`'s terminal-state boundary; other
+ * POSIX hosts use `ps`'s process start time. An absent or terminal process
+ * returns undefined; unreadable or malformed identity evidence fails closed.
  */
 export function processIdentityForPidEffect(pid: number): Effect.Effect<string | undefined, unknown> {
   return Effect.tryPromise({
@@ -748,7 +749,19 @@ export function processIdentityForPidEffect(pid: number): Effect.Effect<string |
         try {
           const raw = await readFile(`/proc/${pid}/stat`, "utf8");
           const closing = raw.lastIndexOf(")");
-          const fields = closing < 0 ? [] : raw.slice(closing + 2).trim().split(/\s+/u);
+          if (closing < 0 || raw[closing + 1] !== " ") {
+            throw new Error("Could not parse /proc/<pid>/stat process identity.");
+          }
+          const fields = raw.slice(closing + 2).trim().split(/\s+/u);
+          const state = fields[0];
+          // field 3 is the task state. A zombie or either Linux dead state
+          // cannot execute the owner cleanup, even though its start tick still
+          // matches the durable lease. Treat only these exact terminal states
+          // as stopped; a missing or malformed state remains unavailable.
+          if (state === "Z" || state === "X" || state === "x") return undefined;
+          if (state === undefined || !/^[A-Za-z]$/u.test(state)) {
+            throw new Error("Could not parse /proc/<pid>/stat process state.");
+          }
           // /proc/<pid>/stat field 22 is starttime; `fields[0]` is field 3.
           const started = fields[19];
           if (started !== undefined && /^\d+$/u.test(started)) return `linux-starttime:${started}`;

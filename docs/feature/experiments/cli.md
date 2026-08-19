@@ -146,12 +146,19 @@ writer 互斥。只读命令只惰性读取已发布 Run。
 ### 协调等待与恢复
 
 Experiment `maxConcurrency` 只在本 Invocation 内限流，不产生跨 Invocation 的等待或被其它 Invocation 收紧。
-跨 Invocation 的 Eval dispatch claim 仍由 case lock 协调；声明 `sharedState.key` 的 Invocation 在拿到
+跨 Invocation 的 Eval dispatch claim 仍由 case lock 协调。声明 `sharedState.key` 的 Invocation 在拿到
 共享状态租约前不运行 Experiment Hook、不创建 Sandbox，也不持有 Eval lock 或全局并发位。
 
-过期 case lock 被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。`sharedState`
-从不自动接管：等待方不运行 Hook、不创建 Sandbox、不持有 Eval lock 或全局并发位，直到当前 owner 正常释放，或操作员
-完成显式恢复。heartbeat 是随 owner 活动更新的非权威诊断 sidecar，暂停 owner 时它可以停止前进，但绝不因超时失权。
+它也不占有限 dispatch execution worker 或 Provider lane。
+
+过期 case lock 被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。
+`sharedState` 从不自动接管：等待方不运行 Hook 或创建 Sandbox，也不持有这些执行资源，直到当前 owner
+正常释放或操作员完成显式恢复。
+
+健康等待只产生不含 owner token 的 info `state-lease-waiting`，且不进入 durable Run diagnostic。
+cleanup-required 的 warning 同样只包含 key 与原因。
+
+heartbeat 是随 owner 活动更新的非权威诊断 sidecar。暂停 owner 时它可以停止前进，但绝不因超时失权。
 
 显式 sharedState recovery 只能附在一个唯一 Experiment 的 teardown 命令上：
 
@@ -168,9 +175,12 @@ CLI 先要求 selector 最终只匹配一个 Experiment。它保留不带 token 
 target 缺少 `teardown` 都以非零状态结束，当前 active generation 保持不变，不会进入 recovering 或 free。
 
 不带 token 或确认时，该公开入口只显示 key、Experiment、owner token、host、PID、process identity 与当前 exact
-token/generation 匹配时的 heartbeat 诊断。若同机 exact process identity 仍活则拒绝；无可靠身份也 fail closed。恢复和正常 release 都只推进 exact owner
-generation，错误/旧 token 不会修改 lease，也不能删除恢复后的新 holder。成功显示 `explicitly recovered sharedState key`；
-cleanup 失败保留时显示 `state-lease-recovery-required`。
+token/generation 匹配时的 heartbeat 诊断。这是 owner token 的唯一普通可见面。
+
+若同机 exact process identity 仍活则拒绝；无可靠身份也 fail closed。恢复和正常 release 都只推进 exact owner
+generation，错误/旧 token 不会修改 lease，也不能删除恢复后的新 holder。
+
+成功显示 `explicitly recovered sharedState key`；cleanup 失败保留时显示 `state-lease-recovery-required`。
 
 显式 recovery 没有 NDJSON 或 receipt 形状。带完整 recovery 参数的 `--json` 组合在选择、读取 owner evidence 或
 改变 generation 之前以具名错误拒绝；调用方必须改用人读 recovery 流程，不能从 stderr 拼装机器接口。

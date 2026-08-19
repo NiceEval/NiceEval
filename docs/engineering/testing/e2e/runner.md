@@ -16,6 +16,10 @@
 | [`#runner-group-wave-gap-dispatch`](#runner-group-wave-gap-dispatch) | 慢 Group lane 不阻塞已有空闲资源的快 lane 后继 | Journey E2E | `e2e/runner/test/group-wave-gap-dispatch.test.ts` | PR |
 | [`#runner-max-concurrency-invocation-local`](#runner-max-concurrency-invocation-local) | 两条 Invocation 各自拥有 Experiment `maxConcurrency` 额度，不互相占用或收紧 | Journey E2E | `e2e/runner/test/max-concurrency-invocation-local.test.ts` | PR |
 | [`#runner-shared-state-lifecycle`](#runner-shared-state-lifecycle) | 相同 `sharedState.key` 的不同 Experiment 不交错外部状态生命周期 | Journey E2E | `e2e/runner/test/shared-state-lifecycle.test.ts` | PR |
+| [`#runner-provider-lane`](#runner-provider-lane) | 等待 sharedState 不占用同一 exclusive Provider lane | Journey E2E | `e2e/runner/test/provider-lane.test.ts` | PR |
+| [`#runner-shared-state-scheduler`](#runner-shared-state-scheduler) | 同 Invocation 的同 key waiter 不饿死 holder 的后继 Attempt | Journey E2E | `e2e/runner/test/shared-state-scheduler.test.ts` | PR |
+| [`#runner-shared-state-startup-authority`](#runner-shared-state-startup-authority) | 启动遗留 teardown 先取得同 key authority，健康等待不泄露 token | Journey E2E | `e2e/runner/test/shared-state-startup-authority.test.ts` | PR |
+| [`#runner-fresh-sandbox-provider-stop`](#runner-fresh-sandbox-provider-stop) | fresh custom Provider 的 group stop 失败保留 sharedState，公开输出不泄露 token | Journey E2E | `e2e/runner/test/fresh-sandbox-provider-stop.test.ts` | PR |
 | [`#runner-shared-state-recovery`](#runner-shared-state-recovery) | 暂停、崩溃或 cleanup 失败的 sharedState 只会等待或显式恢复，旧 owner 不会影响新 holder | Journey E2E | `e2e/runner/test/shared-state-recovery.test.ts` | PR |
 
 ## 验收命题
@@ -75,17 +79,28 @@ Runner Repo 增加专用 Eval；完整 fingerprint 等价类仍不在 E2E 重复
 两个不同 Experiment 声明相同 `sharedState.key`，并在各自 Experiment hook 中独占同一份外部状态。第一个 Run 从 setup
 到 teardown 尚未结束时，第二个 Run 不得进入自己的 setup；前者 teardown 完成后，后者才可取得该状态并完整运行。
 
-等待该 key 的 Experiment 即使使用同一条 exclusive Provider lane，也不占用那条 lane。另一个不依赖该 key 的
-Experiment 必须能先进入自己的 Sandbox 与 Agent body；Provider 的实际 Sandbox / Agent body 仍按 lane 串行。
-
 带 `sandboxReuse` 的切片还证明两个 Attempt 使用同一物理 Sandbox。最后一个 Attempt settle 后，Sandbox
 lifecycle/finalizer scope barrier 与 Experiment teardown barrier 都阻止第二 Invocation 的 setup。
 
 前者由 `SandboxLayer.teardown` hook 确定性阻塞。实际 provider finalizer 也由同一 `Scope.close` 等待，但 fixture
 不直接注入它。该 Journey 经安装后的 `niceeval exp` 证明等待方没有在共享状态区间内运行 Hook 或执行 Eval。
 
-未启用 `sandboxReuse` 的 fresh Sandbox 也把 lifecycle/plugin teardown 与 Provider group stop 的真实终态记入同一
-Experiment cleanup 判定。任一此类 cleanup 失败后，同 key waiter 继续等待；只有公开 explicit recovery 成功后才可进入 setup。
+### runner-provider-lane
+
+等待同 key 的 Experiment 即使使用同一条 exclusive Provider lane，也不占用那条 lane。另一个不依赖该 key 的
+Experiment 必须能先进入自己的 Sandbox 与 Agent body；Provider 的实际 Sandbox / Agent body 仍按 lane 串行。
+
+### runner-shared-state-scheduler
+
+同一 Invocation 选择两个共享同 key 的 Experiment，各自至少三条 Attempt，并以 `--max-concurrency 2` 执行。holder 的第一条 Attempt 在 public Agent boundary 等待自己的第二条；同 key waiter 不得占用有限 dispatch worker，故 holder successor 必须先启动，整次 Invocation 随后完整结束。
+
+### runner-shared-state-startup-authority
+
+强杀留下 teardown registration 与 active sharedState generation 后，下一条 Invocation 的启动自愈必须先等待同 key authority，不能抢先执行旧 teardown。公开 inspection 是 owner token 的唯一可见面；重启命令的健康 `state-lease-waiting` info 与 durable Run diagnostic 都不含 token。这个 owner 还验证 full-carry / zero-Attempt 的 selected Experiment：它也必须等待该安全边界，不能因没有 dispatch fiber 跳过。
+
+### runner-fresh-sandbox-provider-stop
+
+未启用 `sandboxReuse` 的 fresh custom Provider 让真实 `group.stop` 确定性失败。失败必须进入 Experiment cleanup 判定并保留 sharedState，后续同 key waiter 继续等待；只有公开 explicit recovery 成功后才可进入 setup。普通 CLI 输出和 `show --json` 的 Run diagnostic 都不能泄露 inspection 才显示的 owner token。
 
 ### runner-shared-state-recovery
 

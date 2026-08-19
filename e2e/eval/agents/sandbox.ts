@@ -20,7 +20,7 @@ export const deterministicSandboxAgent = defineSandboxAgent({
     if (ctx.signal.aborted) throw new Error("deterministic sandbox agent aborted");
     if (input.text === "workspace/diff-cap") {
       const create = await ctx.sandbox.runShell(
-        'mkdir -p bulk bulk-text && i=0; while [ "$i" -lt 10001 ]; do p=$(printf "%05d" "$i"); : > "bulk/$p.txt"; i=$((i + 1)); done && i=0; while [ "$i" -lt 68 ]; do p=$(printf "%03d" "$i"); { printf "%s" "$p"; dd if=/dev/zero bs=999997 count=1 2>/dev/null | tr "\\000" x; } > "bulk-text/$p.txt"; i=$((i + 1)); done',
+        'mkdir -p bulk && awk \'BEGIN { for (i = 0; i <= 30000; i++) printf "bulk/%05d.txt\\n", i }\' > /tmp/niceeval-bulk-paths.txt && xargs touch < /tmp/niceeval-bulk-paths.txt',
       );
       if (create.exitCode !== 0) throw new Error(`bulk workspace fixture failed: ${create.stderr}`);
       ctx.session.capture("eval-workspace-diff-cap");

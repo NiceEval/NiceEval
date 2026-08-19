@@ -118,11 +118,14 @@ import {
 import type { ExecutionReusePlanSlot } from "./runner/reuse-plan.ts";
 import {
   isOrphanedTeardownRegistration,
+  isExactTeardownRegistrationOwnerTerminatedEffect,
   orphanedTeardownReminderEffect,
+  readExactTeardownRegistrationEffect,
   readTeardownRegistrationsEffect,
   removeTeardownRegistrationIfPresentEffect,
+  teardownEntryId,
 } from "./runner/teardown-registry.ts";
-import type { DiscoveredExperiment, ExperimentHookContext } from "./runner/types.ts";
+import type { DiscoveredExperiment, ExperimentHook, ExperimentHookContext } from "./runner/types.ts";
 import type {
   ExperimentRenameBlocked,
   ExperimentRenamePlan,
@@ -1691,6 +1694,98 @@ function renderSharedStateRecoveryTarget(record: SharedStateLeaseRecord): string
   });
 }
 
+function experimentTeardownOf(experiment: Pick<DiscoveredExperiment, "teardown">): ExperimentHook | undefined {
+  return typeof experiment.teardown === "function" ? experiment.teardown : undefined;
+}
+
+/**
+ * A legacy free generation can exist from an interrupted pre-fix recovery:
+ * it has durable owner evidence but may still have its old teardown entry.
+ * Only the entry keyed by that exact immutable owner is eligible for removal.
+ *
+ * Claimed recovery takes the same path before publishing free. A failed or
+ * contested claim therefore leaves the recovery generation closed rather than
+ * letting a waiter enter while the old teardown could still be replayed.
+ */
+function inspectExactRecoveryTeardownRegistrationEffect(input: {
+  readonly niceevalRoot: string;
+  readonly record: SharedStateLeaseRecord;
+  readonly currentHost: string;
+}): Effect.Effect<boolean, unknown> {
+  const { niceevalRoot, record, currentHost } = input;
+  const id = teardownEntryId(record.experimentId, record.pid);
+  return Effect.gen(function* () {
+    const registration = yield* readExactTeardownRegistrationEffect(
+      niceevalRoot,
+      record.experimentId,
+      record.pid,
+    );
+    // A holder can die before its registration is durably written. There is
+    // then no old teardown obligation to clear, but no unrelated entry may be
+    // inferred from the current Experiment declaration.
+    if (registration === undefined) return false;
+    if (registration.host !== record.host) {
+      return yield* Effect.fail(new Error(
+        `teardown registration ${JSON.stringify(id)} belongs to host ${JSON.stringify(registration.host)}, ` +
+        `not immutable sharedState owner host ${JSON.stringify(record.host)}`,
+      ));
+    }
+    // The registration does not carry a process identity itself, so recovery
+    // compares it to the immutable sharedState owner. This shares the lease
+    // terminal boundary: an exact local Z/X/x owner is stopped; an unreadable
+    // or malformed identity probe fails closed instead of treating PID
+    // existence as proof that cleanup can still run.
+    const terminated = yield* isExactTeardownRegistrationOwnerTerminatedEffect({
+      registration,
+      owner: record,
+      currentHost,
+    });
+    if (!terminated) {
+      return yield* Effect.fail(new Error(
+        `teardown registration ${JSON.stringify(id)} still belongs to a live exact sharedState owner; refusing to clear it`,
+      ));
+    }
+    return true;
+  });
+}
+
+function clearExactRecoveryTeardownRegistrationEffect(input: {
+  readonly niceevalRoot: string;
+  readonly record: SharedStateLeaseRecord;
+  readonly currentHost: string;
+  /** Presence was checked after recovery claimed the immutable generation. */
+  readonly expectedRegistration: boolean;
+}): Effect.Effect<void, unknown> {
+  const { niceevalRoot, record, currentHost, expectedRegistration } = input;
+  const id = teardownEntryId(record.experimentId, record.pid);
+  return Effect.gen(function* () {
+    const present = yield* inspectExactRecoveryTeardownRegistrationEffect({
+      niceevalRoot,
+      record,
+      currentHost,
+    });
+    if (!present) {
+      if (expectedRegistration) {
+        return yield* Effect.fail(new Error(
+          `teardown registration ${JSON.stringify(id)} disappeared before this recovery could clear it`,
+        ));
+      }
+      return;
+    }
+    if (!expectedRegistration) {
+      return yield* Effect.fail(new Error(
+        `teardown registration ${JSON.stringify(id)} appeared after this recovery was claimed`,
+      ));
+    }
+    const removed = yield* removeTeardownRegistrationIfPresentEffect(niceevalRoot, id);
+    if (!removed) {
+      return yield* Effect.fail(new Error(
+        `teardown registration ${JSON.stringify(id)} changed before this recovery could clear it`,
+      ));
+    }
+  });
+}
+
 function renderDebugPlanJson(input: ExperimentHostDebugPlan): string {
   return `${JSON.stringify({
     format: "niceeval.debug-plan/v1",
@@ -1910,7 +2005,7 @@ function runEvaluationCommand(
       const teardownReminder = yield* orphanedTeardownReminderEffect(
         coordinationRoot,
         new Set(selected
-          .filter(({ experiment }) => experiment.teardown)
+          .filter(({ experiment }) => experimentTeardownOf(experiment) !== undefined)
           .map(({ experiment }) => experiment.id)),
         hostname(),
       ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
@@ -1928,19 +2023,15 @@ function runEvaluationCommand(
           readonly ownerToken: string;
           readonly recoveryId: string;
           readonly experimentId: string;
+          readonly record: SharedStateLeaseRecord;
+          readonly registrationWasPresent: boolean;
         } | undefined;
         if (flags.recoverSharedState !== undefined) {
-          if (selected.length !== 1) {
-            yield* writeStderr("sharedState recovery requires an experiment selector that resolves to exactly one Experiment.\n");
-            return 1;
-          }
-          const target = selected[0]!;
-          if (target.experiment.sharedState?.key !== flags.recoverSharedState) {
-            yield* writeStderr(
-              `Experiment ${target.experiment.id} does not declare sharedState key ${JSON.stringify(flags.recoverSharedState)}.\n`,
-            );
-            return 1;
-          }
+          // The input key is the recovery authority. Read its immutable
+          // evidence before considering today's Experiment declaration: an
+          // author may have renamed or removed sharedState after the holder
+          // crashed, but must still have a public recovery path for that old
+          // external state.
           const inspected = yield* Effect.either(readSharedStateLeaseRecoveryTargetEffect(
             niceevalRootForTeardown,
             flags.recoverSharedState,
@@ -1954,6 +2045,11 @@ function runEvaluationCommand(
             return 1;
           }
           yield* writeStderr(renderSharedStateRecoveryTarget(inspected.right));
+          if (selected.length !== 1) {
+            yield* writeStderr("sharedState recovery requires an experiment selector that resolves to exactly one Experiment.\n");
+            return 1;
+          }
+          const target = selected[0]!;
           if (inspected.right.experimentId !== target.experiment.id) {
             yield* writeStderr(
               `sharedState key ${JSON.stringify(flags.recoverSharedState)} belongs to experiment ${inspected.right.experimentId}, not ${target.experiment.id}; refusing recovery.\n`,
@@ -1975,7 +2071,7 @@ function runEvaluationCommand(
           // Inspection is read-only and remains available without a teardown.
           // Only the uniquely selected target can reach this point. Validate
           // its teardown immediately before claiming a recovery generation.
-          if (target.experiment.teardown === undefined) {
+          if (experimentTeardownOf(target.experiment) === undefined) {
             yield* writeStderr(t("cli.exp.sharedStateRecoveryTeardownRequired", {
               experimentId: target.experiment.id,
             }));
@@ -1994,6 +2090,31 @@ function runEvaluationCommand(
             return 1;
           }
           if (begun.right._tag === "AlreadyReleased") {
+            const registrationWasPresent = yield* Effect.either(inspectExactRecoveryTeardownRegistrationEffect({
+              niceevalRoot: niceevalRootForTeardown,
+              record: begun.right.record,
+              currentHost: hostname(),
+            }));
+            if (Either.isLeft(registrationWasPresent)) {
+              yield* writeStderr(t("cli.exp.sharedStateRecoveryAlreadyReleasedRegistrationFailed", {
+                key: begun.right.record.key,
+                message: errorMessage(registrationWasPresent.left),
+              }));
+              return 1;
+            }
+            const cleared = yield* Effect.either(clearExactRecoveryTeardownRegistrationEffect({
+              niceevalRoot: niceevalRootForTeardown,
+              record: begun.right.record,
+              currentHost: hostname(),
+              expectedRegistration: registrationWasPresent.right,
+            }));
+            if (Either.isLeft(cleared)) {
+              yield* writeStderr(t("cli.exp.sharedStateRecoveryAlreadyReleasedRegistrationFailed", {
+                key: begun.right.record.key,
+                message: errorMessage(cleared.left),
+              }));
+              return 1;
+            }
             yield* writeStderr(t("cli.exp.sharedStateRecoveryAlreadyReleased", { key: begun.right.record.key }));
             yield* writeStderr(t("runner.sharedStateExplicitRecovered", {
               key: begun.right.record.key,
@@ -2008,11 +2129,25 @@ function runEvaluationCommand(
             );
             return 1;
           }
+          const registrationWasPresent = yield* Effect.either(inspectExactRecoveryTeardownRegistrationEffect({
+            niceevalRoot: niceevalRootForTeardown,
+            record: begun.right.record,
+            currentHost: hostname(),
+          }));
+          if (Either.isLeft(registrationWasPresent)) {
+            yield* writeStderr(t("cli.exp.sharedStateRecoveryRegistrationFailed", {
+              key: begun.right.record.key,
+              message: errorMessage(registrationWasPresent.left),
+            }));
+            return 1;
+          }
           explicitRecovery = {
             key: begun.right.record.key,
             ownerToken: begun.right.record.ownerToken,
             recoveryId: begun.right.recoveryId,
             experimentId: begun.right.record.experimentId,
+            record: begun.right.record,
+            registrationWasPresent: registrationWasPresent.right,
           };
           selectedForTeardown = [target];
         } else if (hasSharedStateRecoveryOptions(flags)) {
@@ -2020,9 +2155,20 @@ function runEvaluationCommand(
           return 1;
         }
         let anyFailed = false;
-        const recoveredRegistrationIds: string[] = [];
         for (const { experiment, selectedEvalIds } of selectedForTeardown) {
-          if (!experiment.teardown) continue;
+          const teardown = experimentTeardownOf(experiment);
+          if (teardown === undefined) {
+            // Discovery normally reaches this branch only for an absent
+            // teardown, because defineExperiment rejects non-functions. Keep
+            // the CLI boundary equally strict for dynamically supplied
+            // definitions: a truthy or null-ish impostor must never be
+            // treated as a completed recovery hook.
+            if (experiment.teardown !== undefined) {
+              anyFailed = true;
+              yield* writeStderr(t("define.experimentTeardownNotFunction"));
+            }
+            continue;
+          }
           const ctx: ExperimentHookContext = {
             experimentId: experiment.id,
             selectedEvalIds,
@@ -2030,31 +2176,44 @@ function runEvaluationCommand(
             progress: () => {},
             diagnostic: (input) => process.stderr.write(`${input.message}\n`),
           };
+          if (explicitRecovery !== undefined) {
+            // The exact registration was inspected after the immutable
+            // recovery marker was claimed. Do not re-scan by current
+            // Experiment identity: its sharedState declaration can have
+            // changed, and broad scans could claim another run's cleanup.
+            const outcome = yield* Effect.either(cliEffect(
+              "run experiment teardown",
+              cleanupCallback(() => teardown(ctx)),
+            ));
+            if (Either.isRight(outcome)) {
+              yield* writeStderr(t("cli.exp.teardownDone", { experimentId: experiment.id }));
+            } else {
+              anyFailed = true;
+              const error = outcome.left.cause;
+              yield* writeStderr(t("cli.exp.teardownFailed", {
+                experimentId: experiment.id,
+                message: error instanceof Error ? error.message : String(error),
+              }));
+            }
+            continue;
+          }
           const registrations = yield* readTeardownRegistrationsEffect(niceevalRootForTeardown).pipe(
             Effect.catchAll(() => Effect.succeed([] as const)),
           );
           const matching = registrations.filter(({ entry }) => entry.experimentId === experiment.id);
           const orphaned = matching.filter(({ entry }) => isOrphanedTeardownRegistration(entry, hostname()));
-          const executions = explicitRecovery === undefined
-            ? Effect.all(
-                orphaned.map(({ id }) => removeTeardownRegistrationIfPresentEffect(niceevalRootForTeardown, id).pipe(
-                  Effect.catchAll(() => Effect.succeed(false)),
-                  Effect.map((claimed) => claimed ? id : undefined),
-                )),
-                { concurrency: "unbounded" },
-              ).pipe(Effect.map((claimed) =>
-                matching.length === 0 ? [undefined] : claimed.filter((id): id is string => id !== undefined)))
-            : Effect.sync(() => {
-                // A recovery marker is already durable. Remove the old
-                // registration only after this single public teardown passes;
-                // otherwise a retry still has its explicit recovery evidence.
-                recoveredRegistrationIds.push(...orphaned.map(({ id }) => id));
-                return [undefined] as const;
-              });
+          const executions = Effect.all(
+            orphaned.map(({ id }) => removeTeardownRegistrationIfPresentEffect(niceevalRootForTeardown, id).pipe(
+              Effect.catchAll(() => Effect.succeed(false)),
+              Effect.map((claimed) => claimed ? id : undefined),
+            )),
+            { concurrency: "unbounded" },
+          ).pipe(Effect.map((claimed) =>
+            matching.length === 0 ? [undefined] : claimed.filter((id): id is string => id !== undefined)));
           for (const _ of yield* executions) {
             const outcome = yield* Effect.either(cliEffect(
               "run experiment teardown",
-              cleanupCallback(() => experiment.teardown!(ctx)),
+              cleanupCallback(() => teardown(ctx)),
             ));
             if (Either.isRight(outcome)) {
               yield* writeStderr(t("cli.exp.teardownDone", { experimentId: experiment.id }));
@@ -2069,6 +2228,24 @@ function runEvaluationCommand(
           }
         }
         if (!anyFailed && explicitRecovery !== undefined) {
+          // A waiter may enter as soon as `complete...` publishes free. The
+          // old durable teardown obligation must therefore be removed first.
+          // Any read/claim failure leaves the immutable recovery marker
+          // closed, so an operator can inspect and retry instead of replaying
+          // old teardown after a new owner starts.
+          const cleared = yield* Effect.either(clearExactRecoveryTeardownRegistrationEffect({
+            niceevalRoot: niceevalRootForTeardown,
+            record: explicitRecovery.record,
+            currentHost: hostname(),
+            expectedRegistration: explicitRecovery.registrationWasPresent,
+          }));
+          if (Either.isLeft(cleared)) {
+            yield* writeStderr(t("cli.exp.sharedStateRecoveryRegistrationFailed", {
+              key: explicitRecovery.key,
+              message: errorMessage(cleared.left),
+            }));
+            return 1;
+          }
           const completed = yield* Effect.either(completeExplicitSharedStateRecoveryEffect({
             niceevalRoot: niceevalRootForTeardown,
             key: explicitRecovery.key,
@@ -2080,11 +2257,6 @@ function runEvaluationCommand(
             yield* writeStderr(`sharedState recovery could not release its exact owner token: ${errorMessage(completed.left)}\n`);
             return 1;
           }
-          yield* Effect.forEach(
-            recoveredRegistrationIds,
-            (id) => removeTeardownRegistrationIfPresentEffect(niceevalRootForTeardown, id).pipe(Effect.ignore),
-            { concurrency: "unbounded", discard: true },
-          );
           yield* writeStderr(t("runner.sharedStateExplicitRecovered", {
             key: explicitRecovery.key,
             experimentId: explicitRecovery.experimentId,

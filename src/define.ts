@@ -171,6 +171,12 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   if (def.setup !== undefined && typeof def.setup !== "function") {
     throw new Error(t("define.experimentSetupNotFunction"));
   }
+  // teardown 与 setup 是同一个 Experiment lifecycle 边界。非函数值绝不能
+  // 伪装成已声明的 cleanup，否则 explicit sharedState recovery 可能在没有
+  // 执行补偿的情况下释放 immutable owner generation。
+  if (def.teardown !== undefined && typeof def.teardown !== "function") {
+    throw new Error(t("define.experimentTeardownNotFunction"));
+  }
   // classifyFailure 是失败分类链上的实验通道(见 runner/types.ts 的 ExperimentDef.classifyFailure):
   // 传成非函数在解析时就报,不等到某条 attempt 撞死才发现这一路声明白写。
   if (def.classifyFailure !== undefined && typeof def.classifyFailure !== "function") {

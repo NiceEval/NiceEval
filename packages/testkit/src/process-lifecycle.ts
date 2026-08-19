@@ -26,7 +26,10 @@ function errorCode(error: unknown): string | undefined {
  * result before accepting it. Return undefined when procfs cannot prove the
  * membership safely.
  */
-function linuxProcessGroupHasRunningMember(groupId: number): boolean | undefined {
+function linuxProcessGroupHasRunningMember(
+  groupId: number,
+  onSnapshot?: () => void,
+): boolean | undefined {
   if (process.platform !== "linux") return undefined;
 
   let entries: Dirent<string>[];
@@ -35,6 +38,12 @@ function linuxProcessGroupHasRunningMember(groupId: number): boolean | undefined
   } catch {
     return undefined;
   }
+
+  // Keep this seam after the complete directory snapshot but before any
+  // member stat is read. It lets the Linux Lifecycle E2E make the otherwise
+  // non-atomic procfs boundary deterministic without changing production
+  // cleanup when no hook is supplied.
+  onSnapshot?.();
 
   for (const entry of entries) {
     if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
@@ -69,6 +78,8 @@ export interface StartOptions {
   processGroup?: boolean;
   timeoutMs?: number;
   graceMs?: number;
+  /** @internal Deterministic Lifecycle E2E seam after a post-TERM `/proc` snapshot. */
+  onProcessGroupProcfsSnapshot?: () => void;
 }
 
 export class ProcessHandle {
@@ -81,6 +92,7 @@ export class ProcessHandle {
   private readonly cwd: string;
   private readonly processGroup: boolean;
   private readonly graceMs: number;
+  private readonly onProcessGroupProcfsSnapshot: (() => void) | undefined;
   private readonly child: ChildProcess;
   private readonly startedAt: number;
   private readonly stdoutChunks: Buffer[];
@@ -97,6 +109,7 @@ export class ProcessHandle {
     this.cwd = options.cwd ?? process.cwd();
     this.processGroup = options.processGroup === true;
     this.graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
+    this.onProcessGroupProcfsSnapshot = options.onProcessGroupProcfsSnapshot;
     this.child = child;
     this.pid = child.pid;
     this.startedAt = Date.now();
@@ -207,13 +220,13 @@ export class ProcessHandle {
     }
   }
 
-  private ownedGroupState(): OwnedGroupState {
+  private ownedGroupState(onProcfsSnapshot?: () => void): OwnedGroupState {
     if (!this.processGroup || this.pid === undefined) {
       return "gone";
     }
     try {
       process.kill(-this.pid, 0);
-      const hasRunningMember = linuxProcessGroupHasRunningMember(this.pid);
+      const hasRunningMember = linuxProcessGroupHasRunningMember(this.pid, onProcfsSnapshot);
       if (hasRunningMember === undefined) return "unknown";
       return hasRunningMember ? "running" : "terminal";
     } catch (error) {
@@ -227,7 +240,7 @@ export class ProcessHandle {
     const deadline = Date.now() + Math.max(0, timeoutMs);
     let terminalProbePending = false;
     for (;;) {
-      const state = this.ownedGroupState();
+      const state = this.ownedGroupState(this.onProcessGroupProcfsSnapshot);
       if (state === "gone") return true;
       if (state === "terminal") {
         // /proc membership is not an atomic snapshot. A terminal-only result

@@ -152,11 +152,17 @@ export const AttemptConversationCollectionSchema = Schema.Struct({
 }).pipe(
   Schema.filter(
     (value) => {
-      if (!isCanonicalIdentitySequence(value.turns.map((turn) => turn.turnId))) return false;
-      if (!isCanonicalIdentitySequence(value.items.map((item) => item.itemId))) return false;
+      // Conversation is temporal. Producers retain turns and items in their
+      // observed sequence, so canonicality is unique identity plus a strictly
+      // increasing sequence (not lexical ordering of ids such as turn-9 and
+      // turn-10).
+      if (new Set(value.turns.map((turn) => turn.turnId)).size !== value.turns.length) return false;
+      if (new Set(value.items.map((item) => item.itemId)).size !== value.items.length) return false;
       const turnIds = new Set(value.turns.map((turn) => turn.turnId));
       if (new Set(value.turns.map((turn) => turn.sequence)).size !== value.turns.length) return false;
       if (new Set(value.items.map((item) => item.sequence)).size !== value.items.length) return false;
+      if (value.turns.some((turn, index) => index > 0 && value.turns[index - 1]!.sequence >= turn.sequence)) return false;
+      if (value.items.some((item, index) => index > 0 && value.items[index - 1]!.sequence >= item.sequence)) return false;
       const callIds = new Map<string, { readonly turnId: string; readonly sequence: number }>();
       for (const item of value.items) {
         if (!turnIds.has(item.turnId)) return false;
@@ -165,10 +171,8 @@ export const AttemptConversationCollectionSchema = Schema.Struct({
           callIds.set(item.callId, { turnId: item.turnId, sequence: item.sequence });
         }
       }
-      // Item arrays are canonically ordered by immutable item identity, not by
-      // temporal sequence. Resolve every call first, then validate results by
-      // their explicit sequence so a lexically earlier result id is not
-      // mistaken for an impossible pair.
+      // Resolve every call first, then validate results by their explicit
+      // sequence.
       const resultIds = new Set<string>();
       for (const item of value.items) {
         if (item.kind === "tool-result") {
