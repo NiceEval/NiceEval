@@ -44,17 +44,60 @@ export type ShowTimingEntry =
 
 export interface ShowTimingDocument {
   readonly schema: "niceeval.show/v1";
+  readonly locale: "en";
+  readonly selection: {
+    readonly kind: "attempt-locator";
+    readonly sampleIdentity: string;
+    readonly locator: string;
+  };
+  readonly report: {
+    readonly token: string;
+    readonly identity: string;
+  };
+  readonly page: {
+    readonly route: string;
+    readonly pageId: string;
+    readonly title: string | Readonly<Record<string, string>>;
+  };
   readonly data: {
     readonly kind: "timing";
     readonly timing: readonly ShowTimingEntry[];
   };
+  readonly projections: {
+    readonly schema: "niceeval.report-projections/v1";
+    readonly pricingProfile: unknown;
+    readonly costs: readonly unknown[];
+  };
+  readonly problems: readonly {
+    readonly code: string;
+    readonly path: readonly string[];
+    readonly refs: readonly string[];
+    readonly summary?: string;
+  }[];
 }
 
-/** Strictly decode the stable public facts from `niceeval show --timing --json`. */
+/** Strictly decode the public timing facts and their `niceeval.show/v1` envelope. */
 export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument {
   const value = receipt.json<unknown>();
-  if (!isRecord(value) || value.schema !== "niceeval.show/v1") {
-    return invalid(receipt, "schema must be niceeval.show/v1");
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "data",
+    "locale",
+    "page",
+    "problems",
+    "projections",
+    "report",
+    "schema",
+    "selection",
+  ]) || value.schema !== "niceeval.show/v1" || value.locale !== "en") {
+    return invalid(receipt, "document must be the exact niceeval.show/v1 envelope");
+  }
+  const selection = value.selection;
+  if (!isAttemptSelection(selection)) {
+    return invalid(receipt, "selection must be one canonical attempt-locator");
+  }
+  if (!isReport(value.report) || !isPage(value.page) ||
+    !isProjections(value.projections) || !isProblems(value.problems)) {
+    return invalid(receipt, "report, page, projections, or problems envelope is invalid");
   }
   if (!isRecord(value.data) || !hasExactKeys(value.data, ["kind", "timing"]) ||
     value.data.kind !== "timing" || !Array.isArray(value.data.timing)) {
@@ -65,7 +108,54 @@ export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument {
       return invalid(receipt, `data.timing[${index}] is invalid`);
     }
   }
+  if (value.data.timing.length === 0 ||
+    value.data.timing.some((entry) => entry.attempt.locator !== selection.locator)) {
+    return invalid(receipt, "timing entries must belong to the selected Attempt locator");
+  }
   return value as unknown as ShowTimingDocument;
+}
+
+function isAttemptSelection(value: unknown): value is ShowTimingDocument["selection"] {
+  return isRecord(value) && hasExactKeys(value, ["kind", "locator", "sampleIdentity"]) &&
+    value.kind === "attempt-locator" && isCanonicalLocator(value.locator) &&
+    isNonEmptyString(value.sampleIdentity);
+}
+
+function isReport(value: unknown): value is ShowTimingDocument["report"] {
+  return isRecord(value) && hasExactKeys(value, ["identity", "token"]) &&
+    isNonEmptyString(value.identity) && isNonEmptyString(value.token);
+}
+
+function isPage(value: unknown): value is ShowTimingDocument["page"] {
+  return isRecord(value) && hasExactKeys(value, ["pageId", "route", "title"]) &&
+    isNonEmptyString(value.pageId) && isNonEmptyString(value.route) && isLocalizedText(value.title);
+}
+
+function isLocalizedText(value: unknown): value is ShowTimingDocument["page"]["title"] {
+  if (typeof value === "string") return true;
+  return isRecord(value) && Object.keys(value).length > 0 &&
+    Object.entries(value).every(([locale, text]) => locale.length > 0 && typeof text === "string");
+}
+
+function isProjections(value: unknown): value is ShowTimingDocument["projections"] {
+  return isRecord(value) && hasExactKeys(value, ["costs", "pricingProfile", "schema"]) &&
+    value.schema === "niceeval.report-projections/v1" && Array.isArray(value.costs);
+}
+
+function isProblems(value: unknown): value is ShowTimingDocument["problems"] {
+  return Array.isArray(value) && value.every((problem) => {
+    if (!isRecord(problem)) return false;
+    const keys = problem.summary === undefined
+      ? ["code", "path", "refs"]
+      : ["code", "path", "refs", "summary"];
+    return hasExactKeys(problem, keys) && isNonEmptyString(problem.code) &&
+      isStringArray(problem.path) && isStringArray(problem.refs) &&
+      (problem.summary === undefined || isNonEmptyString(problem.summary));
+  });
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every(isNonEmptyString);
 }
 
 function isTimingEntry(value: unknown): value is ShowTimingEntry {
@@ -86,8 +176,12 @@ function isAttempt(value: unknown): value is ShowTimingAttempt {
   return isRecord(value) &&
     hasExactKeys(value, ["kind", "locator", "originRunId"]) &&
     value.kind === "attempt" &&
-    typeof value.locator === "string" && /^@1[0-9A-HJKMNP-TV-Z]{12}$/.test(value.locator) &&
+    isCanonicalLocator(value.locator) &&
     typeof value.originRunId === "string" && isPortableSegment(value.originRunId);
+}
+
+function isCanonicalLocator(value: unknown): value is string {
+  return typeof value === "string" && /^@1[0-9A-HJKMNP-TV-Z]{12}$/.test(value);
 }
 
 const PORTABLE_SEGMENT_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$/;
@@ -253,6 +347,10 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
