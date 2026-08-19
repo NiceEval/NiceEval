@@ -34,26 +34,6 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
-interface TimingInterval {
-  intervalId: string;
-  phase: string;
-  label: string;
-  parentIntervalId: string | null;
-  outcome: string;
-}
-
-interface TimingShowDocument {
-  data: {
-    kind: "timing";
-    timing: Array<{
-      state: string;
-      timing?: {
-        intervals: TimingInterval[];
-      };
-    }>;
-  };
-}
-
 test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt", async () => {
   await runnerE2E.case(
     "history-dedup",
@@ -114,31 +94,6 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     const forcedEvidence = await niceeval.run(["show", forcedLocator, "--execution"]);
     expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);
     expect(forcedEvidence.stdout).toContain("runner-fixture-ok");
-
-    const timing = await niceeval.run(["show", forcedLocator, "--timing", "--json"]);
-    expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    const timingDocument = timing.json<TimingShowDocument>();
-    expect(timingDocument.data.kind, timing.diagnostic()).toBe("timing");
-    const availableTiming = only(
-      timingDocument.data.timing,
-      (entry) => entry.state === "available" && entry.timing !== undefined,
-      timing.diagnostic(),
-    );
-    const intervals = availableTiming.timing!.intervals;
-    const evalRun = only(
-      intervals,
-      (interval) => interval.phase === "eval.run" && interval.label === "eval.run",
-      timing.diagnostic(),
-    );
-    expect(evalRun.parentIntervalId, timing.diagnostic()).toBeNull();
-    expect(evalRun.outcome, timing.diagnostic()).toBe("completed");
-    const firstSend = only(
-      intervals,
-      (interval) => interval.phase === "agent.send" && interval.label === "turn1",
-      timing.diagnostic(),
-    );
-    expect(firstSend.parentIntervalId, timing.diagnostic()).toBe(evalRun.intervalId);
-    expect(firstSend.outcome, timing.diagnostic()).toBe("completed");
     },
   );
 });

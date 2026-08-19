@@ -80,6 +80,10 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具与 timing 证据
         evalEvents,
         (candidate) => candidate.evalId === "coding-task/write-and-verify",
       );
+      const timing = await niceeval.run(["show", event.locator!, "--timing"]);
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
+
     },
   );
 }, 38 * 60_000);

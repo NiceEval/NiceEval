@@ -12,6 +12,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
+interface ExpEvent {
+  readonly event: string;
+}
+
 type DetailKind = "Source" | "Diff" | "Slot";
 
 test("静态站与 view 对同一用户路由交付相同字节，且离线无 JavaScript 仍可浏览", async ({ browser }) => {
@@ -25,7 +29,8 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
       expect(mainRun.expReceipt(), mainRun.diagnostic()).toMatchObject({ completion: "completed" });
       const sourceRun = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
       expect(sourceRun.expReceipt(), sourceRun.diagnostic()).toMatchObject({ completion: "completed" });
-      const slotCount = mainRun.expEvalEvents().length + sourceRun.expEvalEvents().length;
+      const slotCount = mainRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length
+        + sourceRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
       expect(slotCount, mainRun.diagnostic()).toBeGreaterThan(0);
 
       const exported = await niceeval.run([

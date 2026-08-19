@@ -32,4 +32,7 @@ it("OMP adapter 从公开工厂完成 Eval 并公开读回结果", async () => {
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain(OMP_MARKER);
 
+  const timing = await niceeval.run(["show", event.locator, "--timing"]);
+  expect(timing.exitCode, timing.diagnostic()).toBe(0);
+  expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
 }, 8 * 60_000);
