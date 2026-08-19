@@ -20,7 +20,6 @@ import type {
   SourcesDomainView,
 } from "../../analysis/index.ts";
 import type { AttemptLocator } from "../../attempt-locator.ts";
-import { normalizeTurnLabel } from "../../shared/turn-label.ts";
 import { Hero, type HeroData } from "../components/site-components/index.tsx";
 import { defineComponent } from "../definition/tree.ts";
 import {
@@ -476,7 +475,7 @@ function traceEntryTree(
   const timings = detail.timing.intervals.map((interval) => ({
     key: interval.intervalId,
     phase: interval.phase,
-    label: interval.phase === "agent.send" ? normalizeTurnLabel(interval.label) : interval.label,
+    label: interval.label,
     startMs: interval.startOffsetMs,
     durationMs: interval.durationMs,
     outcome: interval.outcome,

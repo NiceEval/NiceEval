@@ -212,7 +212,7 @@ function timingTree(intervals: readonly ClosedTimingInterval[]): readonly Waterf
         const phase = interval.phase;
         return {
           key: interval.intervalId,
-          label: phase === "agent.send" ? normalizeTurnLabel(interval.label) : interval.label,
+          label: interval.label,
           kind: phase,
           startOffsetMs: interval.startOffsetMs,
           durationMs: interval.durationMs,

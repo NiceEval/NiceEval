@@ -24,11 +24,6 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "ci", evalId: "usage/tokens", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
-const REQUIRED_LIVE_SECRETS = [
-  "OPENAI_API_KEY",
-  "OPENAI_BASE_URL",
-] as const;
-
 const e2e = createE2EContext({
   repoId: "hermes",
   project: {
@@ -42,18 +37,7 @@ const e2e = createE2EContext({
   },
 });
 
-function requireLiveSecrets(): void {
-  const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
-  if (missing.length > 0) {
-    throw new Error(
-      `[configuration] live hermes E2E requires ${missing.join(", ")}; ` +
-        "the live test is not skipped when secrets are absent",
-    );
-  }
-}
-
 it("真实 Hermes CLI adapter 完成运行并公开读回工具与 timing 证据", async () => {
-  requireLiveSecrets();
   await e2e.case(
     "live",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

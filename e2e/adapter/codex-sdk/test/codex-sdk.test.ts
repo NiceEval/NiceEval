@@ -17,7 +17,6 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);
@@ -27,18 +26,7 @@ let sentinel!: string;
 let runReceipt!: ProcessReceipt;
 let locator!: string;
 
-function requireLiveSecrets(): void {
-  const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
-  if (missing.length > 0) {
-    throw new Error(
-      `[configuration] live Codex SDK converter E2E requires ${missing.join(", ")}; ` +
-        "the live test is not skipped when secrets are absent",
-    );
-  }
-}
-
 beforeAll(async () => {
-  requireLiveSecrets();
   await rm(".niceeval", { recursive: true, force: true });
 
   await withTempDir("niceeval-codex-sdk-live-", async (tempRoot) => {

@@ -17,6 +17,7 @@ import type { FileChangesAttachment } from "../record/family/file-changes.ts";
 import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
 import type { SourceNavigationAttachment } from "../record/family/source-navigation.ts";
 import type { SourcesAttachment } from "../record/family/sources.ts";
+import { normalizeTurnLabel } from "../shared/turn-label.ts";
 import type {
   FixedFamilyRead,
   RecordReadSession,
@@ -668,7 +669,7 @@ function closeTimingInterval(
   return Object.freeze({
     intervalId: value.intervalId,
     phase: value.phase,
-    label: value.label,
+    label: value.phase === "agent.send" ? normalizeTurnLabel(value.label) : value.label,
     startOffsetMs: value.startOffsetMs,
     durationMs: value.durationMs,
     parentIntervalId: value.parentIntervalId,
