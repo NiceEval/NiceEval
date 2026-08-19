@@ -75,7 +75,6 @@ it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成", () => {
   assertExpEvalOutcomes(
     runReceipt.expEvalEvents(),
     [
-      // direct-agent：真实 generateText 须执行 remember_marker 工具并保留会话 marker；期望 passed/1。
       {
         evalId: EVAL_ID,
         experimentId: "ci",

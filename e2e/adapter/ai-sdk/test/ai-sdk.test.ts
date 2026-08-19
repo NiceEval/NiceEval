@@ -20,11 +20,8 @@ import { expect, it } from "vitest";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
 
 const EXPECTED_OUTCOMES = [
-  // tool-call：天气请求须以裸名调用 get_weather，并按 call ID 配对输出；单次请求期望 passed/1。
   { experimentId: "ci", evalId: "tool-call", verdict: "passed", attempts: 1, passed: 1 },
-  // hitl-approval：approve 须恢复 completed，独立 deny 分支须 rejected 且无工具结果；期望 passed/1。
   { experimentId: "ci", evalId: "hitl-approval", verdict: "passed", attempts: 1, passed: 1 },
-  // session-replay：同一会话须回忆首轮事实，新会话须隔离历史；两个分支成立时为 passed/1。
   { experimentId: "ci", evalId: "session-replay", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 const EXPECTED_EVALS = EXPECTED_OUTCOMES.map((outcome) => outcome.evalId);

@@ -14,11 +14,8 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 const BASELINE_OUTCOMES = [
-  // coding task：写文件与 shell 读回都须携带可区分参数并归一完成；单次执行期望 passed/1。
   { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
-  // session recall：OpenCode 同一 session 的第二轮须引用首轮事实；一条会话链期望 passed/1。
   { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
-  // usage：两个 send 都须产生正的 input/output token；全部断言成立时为 passed/1。
   { experimentId: "ci", evalId: "usage/tokens", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 const BASELINE_EVALS = BASELINE_OUTCOMES.map((outcome) => outcome.evalId);
@@ -160,7 +157,6 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   assertExpEvalOutcomes(
     skillRun.expEvalEvents(),
     [
-      // Skill：目标 status-report Skill 须安装、被选择且不误用 decoy；单次专用运行期望 passed/1。
       {
         experimentId: "skill",
         evalId: SKILL_EVAL,
@@ -192,7 +188,6 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   const goEvents = assertExpEvalOutcomes(
     goRun.expEvalEvents(),
     [
-      // Go routing：真实请求须落到 deepseek-v4-flash 并从官方 export 读回；期望 passed/1。
       {
         experimentId: "go",
         evalId: GO_EVAL,

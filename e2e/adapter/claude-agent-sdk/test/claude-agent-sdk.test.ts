@@ -110,7 +110,6 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => 
   assertExpEvalOutcomes(
     evalEvents,
     [
-      // bash-session：真实 SDK stream 须归一 Bash 调用并在续接轮保留 sentinel；期望 passed/1。
       {
         evalId: EVAL_ID,
         experimentId: "ci",

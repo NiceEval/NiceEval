@@ -14,13 +14,9 @@ import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 
 const EXPECTED_OUTCOMES = [
-  // coding task：带可区分入参的文件写入与 shell 读回都须归一完成；单次执行期望 passed/1。
   { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
-  // Skill selection：只加载 incident-report Skill、不加载 decoy，并采用目标约定；期望 passed/1。
   { experimentId: "ci", evalId: "skills/selected", verdict: "passed", attempts: 1, passed: 1 },
-  // session recall：同一会话的第二轮须引用首轮事实；一条会话链完成即为 passed/1。
   { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
-  // usage：两个独立 turn 都须读到正的 input/output token；全部断言成立时为 passed/1。
   { experimentId: "ci", evalId: "usage/tokens", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 

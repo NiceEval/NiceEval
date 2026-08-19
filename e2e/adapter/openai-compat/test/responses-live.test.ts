@@ -26,7 +26,6 @@ test("真实 OpenAI Responses 一次请求以通过 verdict 完成", () => {
   assertExpEvalOutcomes(
     evidence.evalEvents,
     [
-      // Responses：真实一次请求须调用 fixture 工具并公开读回 marker；因此期望 passed/1。
       {
         evalId: "responses-live",
         experimentId: "responses-live",

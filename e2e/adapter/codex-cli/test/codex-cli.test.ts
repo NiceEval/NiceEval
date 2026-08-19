@@ -19,25 +19,15 @@ import { beforeAll, expect, it } from "vitest";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
 const EXPECTED_OUTCOMES = [
-  // coding-task：既有文件修改与 shell 调用都须归一并配对完成；最终单次 Attempt 期望 passed/1。
   { experimentId: "baseline", evalId: "coding-task", verdict: "passed", attempts: 1, passed: 1 },
-  // configfile 正例：shell-enabled 配置下同一 prompt 必须调用 shell；分支成立时为 passed/1。
   { experimentId: "baseline", evalId: "configfile", verdict: "passed", attempts: 1, passed: 1 },
-  // session：首轮 thread ID 须捕获，第二轮 exec resume 须回忆事实；一条会话链期望 passed/1。
   { experimentId: "baseline", evalId: "session", verdict: "passed", attempts: 1, passed: 1 },
-  // usage：每轮 token usage 非空，且 session 侧写中的实际模型正确；一次验证期望 passed/1。
   { experimentId: "baseline", evalId: "usage", verdict: "passed", attempts: 1, passed: 1 },
-  // configfile 反例：shell-disabled 配置下同一 prompt 不得调用 shell；零调用成立时为 passed/1。
   { experimentId: "configfile", evalId: "configfile", verdict: "passed", attempts: 1, passed: 1 },
-  // mcp：stdio 求和与远程 DeepWiki 两种 MCP 调用都须出现且入参正确；期望 passed/1。
   { experimentId: "mcp", evalId: "mcp", verdict: "passed", attempts: 1, passed: 1 },
-  // status-report：目标 Skill 须被读取并影响文件内容，且不能伪造 skill.loaded；期望 passed/1。
   { experimentId: "skill", evalId: "status-report", verdict: "passed", attempts: 1, passed: 1 },
-  // skill-release-note：只读取 release-note Skill、不误读 status/decoy，并采用其约定；期望 passed/1。
   { experimentId: "skill", evalId: "skill-release-note", verdict: "passed", attempts: 1, passed: 1 },
-  // repo-skill：钉定 Git 来源的 Skill 须安装、读取并影响产出；一次完整验证期望 passed/1。
   { experimentId: "repo-skill", evalId: "repo-skill", verdict: "passed", attempts: 1, passed: 1 },
-  // plugin-hook：Plugin 安装痕迹与 SessionStart hook 侧写证据都须存在；单次安装路径期望 passed/1。
   { experimentId: "plugin", evalId: "plugin-hook", verdict: "passed", attempts: 1, passed: 1 },
   // plugin-reuse：四个 Sandbox 的两波共八次复用都须清理冲突残留并重装成功，所以期望 passed/8。
   { experimentId: "plugin-reuse", evalId: "plugin-hook", verdict: "passed", attempts: 8, passed: 8 },
