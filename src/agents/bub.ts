@@ -21,6 +21,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { t } from "../i18n/index.ts";
 import {
   BUB_INSTALL_MARKER,
+  DEFAULT_BUB_DEPENDENCY_OVERRIDES,
   DEFAULT_BUB_OTEL_PLUGIN,
   DEFAULT_BUB_REQUIREMENT,
   bubInstallHash,
@@ -112,12 +113,17 @@ const BUB_OVERRIDE_FILE = "/tmp/bub-override.txt";
 interface BubInstallPin {
   requirement: string;
   otelPlugin: string;
+  dependencyOverrides: readonly string[];
 }
 
 function resolvePin(config?: BubConfig): BubInstallPin {
+  const version = config?.version ?? DEFAULT_BUB_VERSION;
   return {
     requirement: config?.version ? bubRequirement(config.version) : DEFAULT_BUB_REQUIREMENT,
     otelPlugin: config?.otelPlugin ?? DEFAULT_BUB_OTEL_PLUGIN,
+    // NiceEval can reproduce the default release's upstream lock exactly. A caller-selected
+    // historical Bub version owns a different closure, so do not silently apply 0.4.0's pins.
+    dependencyOverrides: version === DEFAULT_BUB_VERSION ? DEFAULT_BUB_DEPENDENCY_OVERRIDES : [],
   };
 }
 
@@ -131,7 +137,7 @@ function normalizePackages(plugins?: readonly PythonPluginSpec[]): string[] {
 }
 
 function installHashOf(packages: readonly string[], pin: BubInstallPin): string {
-  return bubInstallHash(packages, pin.requirement, pin.otelPlugin);
+  return bubInstallHash(packages, pin.requirement, pin.otelPlugin, pin.dependencyOverrides);
 }
 
 function tapePath(workspace: string, sessionId: string, bubHome: string): string {
@@ -170,7 +176,10 @@ export function bubAgent(config?: BubConfig): Agent {
       installMode: "sandbox-network",
       install: async (sandbox) => {
         await sandbox.runShellOrThrow(`test -x ${UV} || (curl -LsSf https://astral.sh/uv/install.sh | sh)`);
-        await sandbox.writeText(BUB_OVERRIDE_FILE, `${pin.requirement}\n`);
+        await sandbox.writeText(
+          BUB_OVERRIDE_FILE,
+          `${[pin.requirement, ...pin.dependencyOverrides].join("\n")}\n`,
+        );
         const withPlugins = packages.map((pkg) => `--with ${shellQuote(pkg)}`).join(" ");
         let last = "";
         for (let attempt = 1; attempt <= 3; attempt += 1) {

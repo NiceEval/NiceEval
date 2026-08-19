@@ -8,7 +8,7 @@ Sandbox 构建在 Attempt 创建前失败时，Human 摘要说明哪些 Attempt 
 ╰──────────────────────────────────────────────────────────────────────╯
 
 ╭─ ERRORS ─────────────────────────────────── 18 attempts not started ─╮
-│ ✗ install/canary · sandbox provisioning failed                      │
+│ ✗ install/canary · Sandbox image build failed                      │
 │   affected: install/db-gpt, install/gpt-researcher, …                │
 │   error: Docker daemon unavailable: /var/run/docker.sock does not    │
 │     exist or the selected Docker context cannot reach it.            │

@@ -448,6 +448,11 @@
       "why": "HTML code tag 让简单标识多一层转义，并与仓库已经采用的 Markdown 行内代码写法混用"
     },
     {
+      "term": "Run Slot",
+      "use": "Slot / 执行槽位",
+      "why": "Slot 已经由所属 Run 定位；组合写法会让读者误以为还有另一种未定义的槽位"
+    },
+    {
       "term": "FactRequirement",
       "use": "NiceEval 固定 Attachment contract 与 AnalysisInput",
       "why": "Record 没有 Fact 领域模型；持久 payload、统计投影与 Report 闭合值由不同层拥有"

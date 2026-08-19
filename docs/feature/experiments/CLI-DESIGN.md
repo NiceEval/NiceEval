@@ -197,4 +197,4 @@ And Human 不显示 registry、lease 或 Provider SDK 的内部身份。
 
 ## 不改变的边界
 
-这套设计不改变 Record schema、Analysis domain view、JSON event schema、failure identity 或 Provider error 类型。变化只发生在 Human projection 和默认 Report presentation；机器消费者继续读取既有稳定字段。
+这套设计不改变 Record schema、Analysis domain view、failure identity 或 Provider error 类型。变化主要发生在 Human projection 和默认 Report presentation；机器消费者继续读取既有稳定字段。Attempt 创建前的 Judge 预检 warning 另补可选的 `experimentId`、`evalId`、`planned` 与 `errored`，不制造 locator。

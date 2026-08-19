@@ -107,6 +107,8 @@ interface ExpWarningEvent {
   phase?: string;
   experimentId?: string;
   evalId?: string;
+  planned?: number;
+  errored?: number;
 }
 
 interface ExpBudgetExhaustedEvent {
