@@ -15,6 +15,7 @@ import type {
   TimingOrigin,
 } from "../../runner/types.ts";
 import type { StreamEvent } from "../../types.ts";
+import { formatTurnLabel } from "../../shared/turn-label.ts";
 import type { Usage } from "../types.ts";
 import {
   makeAttemptObservabilityCaptureIdentity,
@@ -1747,7 +1748,13 @@ function timingActivityProjection(
   // Runner's activity label is human-facing and can contain spaces or other
   // SafeText punctuation. v1 persists only StableLabel, so standard activities
   // retain a stable key when their display label cannot cross that boundary.
-  const label = stableLabel(activity.label) ?? stableLabel(activity.key);
+  const canonicalLabel =
+    activity.key === "agent.turn"
+      && activity.sessionIndex !== undefined
+      && activity.turnIndex !== undefined
+      ? formatTurnLabel(activity.sessionIndex, activity.turnIndex)
+      : activity.label;
+  const label = stableLabel(canonicalLabel) ?? stableLabel(activity.key);
   if (label === undefined) return undefined;
   return Object.freeze({ phase, label });
 }
