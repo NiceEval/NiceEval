@@ -61,6 +61,7 @@ export interface MembershipRow {
   readonly relation: string | null;
   readonly locator: string | null;
   readonly outcome?: string | null;
+  readonly verdict?: string | null;
   readonly phase?: string | null;
   readonly error?: string | null;
   readonly sharedFailure?: string | null;
@@ -71,6 +72,7 @@ export interface RunErrorRow {
   readonly failure: string;
   readonly phase: string;
   readonly affected: string;
+  readonly affectedCount: number;
   readonly error: string;
   readonly message: string;
   readonly fix: string | null;
@@ -326,7 +328,8 @@ function membershipTable(rows: readonly MembershipRow[]) {
   );
 }
 
-function runErrorsSection(rows: readonly RunErrorRow[], notStarted: number) {
+function runErrorsSection(rows: readonly RunErrorRow[]) {
+  const notStarted = rows.reduce((total, row) => total + row.affectedCount, 0);
   return rows.length === 0 ? null : (
     <Section title="Run errors" meta={`${notStarted} attempt${notStarted === 1 ? "" : "s"} not started`}>
       {rows.map((row) => (
@@ -693,7 +696,6 @@ SandboxHistoryResultView.displayName = "SandboxHistoryResultView";
 
 function runMembershipTree(input: RunMembershipResult) {
   const hasAttempts = input.members.some((member) => member.locator !== null);
-  const notStarted = input.members.filter((member) => member.locator === null).length;
   const rows = input.members.map((member) => ({
     key: member.key,
     experiment: member.experiment,
@@ -701,7 +703,9 @@ function runMembershipTree(input: RunMembershipResult) {
     attempt: `#${member.attempt + 1}`,
     result: member.locator === null
       ? member.outcome === "errored" ? "errored" : "not started"
-      : member.outcome ?? member.state,
+      : member.relation === "reference" || member.state === "carried" || member.state === "accepted"
+        ? `using result ${member.locator}`
+        : member.verdict ?? member.outcome ?? member.state,
     details: member.locator === null
       ? null
       : { kind: "locator" as const, locator: member.locator as AttemptLocator },
@@ -709,7 +713,7 @@ function runMembershipTree(input: RunMembershipResult) {
   return (
     <Col>
       <Hero data={input.hero} />
-      {runErrorsSection(input.errors, notStarted)}
+      {runErrorsSection(input.errors)}
       <Section title="Planned attempts" meta={`${input.members.length} attempt${input.members.length === 1 ? "" : "s"}`}>
         <Table
           rows={limited(rows)}

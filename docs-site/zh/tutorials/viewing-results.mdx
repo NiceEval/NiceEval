@@ -53,6 +53,24 @@ pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx --json
 
 省略 `--page` 时，`show` 使用 Report 的默认可导航页面。提供 `--page` 时，它只 decode、load、render 和关闭这一个精确 route。参数 Page 不会因此调用 `enumerate()`；其它 Page、Analysis 查询和作者 callback 也不会执行。
 
+显式 `--run` 在没有指定 `--report` 时使用内建 Run 结果页。例如，某个 Run 引用了历史 Attempt 时：
+
+```text
+Report run-membership-overview
+Sample: 1 run(s), 1 slot(s)
+
+Page /
+  Run results
+  Planned attempts
+  Experiment | Eval | Attempt | Result | Details
+  checkout | checkout/basic | #1 | using result @91DDC61BAE96 | @91DDC61BAE96
+
+Problems
+  none
+```
+
+`Result` 显示 `passed`、`failed`、`errored`、`not started` 或 `using result @<locator>`；`Details` 的 locator 可继续下钻。Attempt 创建前失败时，页面另外显示 `Run errors` 和该错误真正影响的未启动 Attempt 数。Human 页不显示 Slot 等内部字段；机器 `--json` 仍保留稳定 membership keys。
+
 `show --json` 仍是同一个单目标操作。内建 Report 返回 Host 拥有的具名领域 JSON；自定义 Report 返回该 Page 的 route、标题、固定英语 80-column rendered text、下载摘要和问题表。
 两种 v1 JSON 都在顶层带有同一形状的 `projections` 对象，只包含目标 Page 捕获的闭合投影。
 

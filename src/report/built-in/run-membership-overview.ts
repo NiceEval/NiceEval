@@ -126,6 +126,7 @@ function runErrorRows(view: RunDiagnosticsDomainView): readonly RunErrorRow[] {
     failure: group.failure.failureId,
     phase: group.failure.phase,
     affected: `${group.experimentId} · ${group.affected.join(", ")}`,
+    affectedCount: group.affected.length,
     error: group.failure.errorCode,
     message: group.failure.message,
     fix: group.failure.remediation === "pnpm-allow-builds"
@@ -143,6 +144,9 @@ function membershipRows(
   const outcomes = new Map(evidence.entries.flatMap((entry) =>
     entry.state === "available" ? [[entry.attempt.locator, entry.detail.outcome] as const] : []
   ));
+  const verdicts = new Map(evidence.entries.flatMap((entry) =>
+    entry.state === "available" ? [[entry.attempt.locator, entry.detail.verdict] as const] : []
+  ));
   return Object.freeze(snapshot.slots.map((slot) => Object.freeze({
     key: `${slot.runId}:${slot.slotId}`,
     experiment: String(slot.experimentId),
@@ -154,6 +158,7 @@ function membershipRows(
     relation: slot.state === "included" ? slot.relation : null,
     locator: slot.state === "included" ? slot.attempt.locator : null,
     outcome: slot.state === "included" ? outcomes.get(slot.attempt.locator) ?? null : null,
+    verdict: slot.state === "included" ? verdicts.get(slot.attempt.locator) ?? null : null,
     phase: null,
     error: null,
     sharedFailure: null,

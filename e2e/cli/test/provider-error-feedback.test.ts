@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
-const E2B_ERROR = "401 Unauthorized — E2B rejected the sandbox request because the supplied API key is invalid for request req_e2b_feedback_123";
+const E2B_ERROR_HEAD = "401 Unauthorized — E2B";
+const E2B_ERROR_TAIL = "request req_e2b_feedback_123";
 const VERCEL_ERROR = "403 Forbidden — Vercel rejected the sandbox request because team access is required for request iad1::feedback-456";
 const PRIMARY_ERROR_HEAD = "502 Bad Gateway · DOCKER_PROVIDER_TIMEOUT";
 const PRIMARY_ERROR_TAIL = "request req_docker_primary_789";
@@ -32,7 +33,14 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       expect(result.exitCode, result.diagnostic()).toBe(1);
       expect(result.stderr).toBe("");
       const compact = result.stdout.replace(/\s+/gu, " ");
-      expect(compact).toContain(`error: ${E2B_ERROR}`);
+      expect(compact).toContain(`error: ${E2B_ERROR_HEAD}`);
+      expect(compact).toContain(E2B_ERROR_TAIL);
+      const failurePanel = compact.slice(compact.indexOf("FAILURES"));
+      const e2bHumanError = /error: (401 Unauthorized .*?request req_e2b_feedback_123) details:/u.exec(failurePanel)?.[1];
+      expect(e2bHumanError, result.diagnostic()).toBeTruthy();
+      // regression: Human 限额按 UTF-8 bytes 计算，且不在 emoji surrogate pair 中间截断。
+      expect(new TextEncoder().encode(e2bHumanError!).byteLength).toBeLessThanOrEqual(240);
+      expect(e2bHumanError).not.toContain("�");
       expect(compact).toContain(`error: ${VERCEL_ERROR}`);
       expect(compact).toContain(PRIMARY_ERROR_HEAD);
       expect(compact).toContain(PRIMARY_ERROR_TAIL);
@@ -74,6 +82,28 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
           /Pass rate|Included attempts|Assessment evidence|Analysis notes|Membership|Shared failure|Selected run|\bSlot\b|\bRelation\b|\bfix:/u,
         );
       }
+
+      const judge = await niceeval.run(
+        ["exp", "judge-precheck-error", "--rerun", "all", "--json"],
+        { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
+      );
+      expect(judge.exitCode, judge.diagnostic()).toBe(1);
+      const judgeRunId = judge.expReceipt().runIds[0]!;
+      const sandboxRunId = runDetails.find((match) => match[1] === "provider-error/sandbox")?.[2];
+      expect(sandboxRunId).toBeTruthy();
+      const combined = await niceeval.run([
+        "show",
+        "--run",
+        sandboxRunId!,
+        "--run",
+        judgeRunId,
+        "--record",
+        ".niceeval/record",
+      ]);
+      expect(combined.exitCode, combined.diagnostic()).toBe(0);
+      const combinedText = combined.stdout.replace(/\s+/gu, " ");
+      // regression: Run errors 只统计它展示的 Sandbox build 影响，不吸收另一 Run 的 Judge 未启动项。
+      expect(combinedText).toContain("Run errors 1 attempt not started");
     },
   );
 });

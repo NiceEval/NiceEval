@@ -48,15 +48,27 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         event: "eval",
         verdict: "errored",
       }));
-      only(
+      const failedEval = only(
         failedEvents,
         (event) => "event" in event && event.event === "eval" && event.evalId === "deliberate-fail/broken",
         failed.diagnostic(),
       );
-      expect(failed.expReceipt()).toMatchObject({ completion: "completed" });
+      const failedReceipt = failed.expReceipt();
+      expect(failedReceipt).toMatchObject({ completion: "completed" });
       const failedJunit = readFileSync(join(root, "junit", "failed.xml"), "utf8");
       expect(failedJunit).toContain("<failure");
       expect(failedJunit).not.toContain("<error");
+
+      const shownFailedRun = await niceeval.run([
+        "show",
+        "--run",
+        failedReceipt.runIds[0]!,
+        "--record",
+        ".niceeval/record",
+      ]);
+      expect(shownFailedRun.exitCode, shownFailedRun.diagnostic()).toBe(0);
+      expect(shownFailedRun.stdout).toContain(failedEval.locator!);
+      expect(shownFailedRun.stdout).toMatch(/deliberate-fail\/broken[\s\S]*?#1[\s\S]*?failed/u);
 
       const errored = await niceeval.run(
         ["exp", "deliberate-error", "--rerun", "all", "--json", "--junit", "junit/errored.xml"],
@@ -146,6 +158,36 @@ test("Attempt 创建前的 Judge 错误在 NDJSON 中保留用例身份与数量
         errored: 2,
       })]);
       expect(result.expReceipt()).toMatchObject({ completion: "completed" });
+
+      const human = await niceeval.run(
+        ["exp", "judge-precheck-error", "--rerun", "all"],
+        { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
+      );
+      expect(human.exitCode, human.diagnostic()).toBe(1);
+      expect(human.stdout).toContain("Judge precheck failed");
+      expect(human.stdout).not.toContain("sandbox provisioning failed");
+      expect(human.stdout).not.toContain("judge-precheck-failed");
+    },
+  );
+});
+
+// regression: Assertions writer 的具体原因曾使用与其它 CLI 运行错误不同的 `niceeval error:` 前缀。
+test("Assertions document 无法发布时使用统一 error 前缀", async () => {
+  await cliE2E.case(
+    "assertions-document-error",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval } }) => {
+      const result = await niceeval.run([
+        "exp",
+        "assertions-document-error",
+        "--rerun",
+        "all",
+      ]);
+
+      expect(result.exitCode, result.diagnostic()).toBe(1);
+      expect(result.stderr).toMatch(/^error: Assertions could not be saved/u);
+      expect(result.stderr).not.toContain("niceeval error:");
+      expect(result.stdout).not.toContain("niceeval error:");
     },
   );
 });
@@ -173,6 +215,27 @@ test("计分制与通过制 Human 结束摘要显示各自主读数", async () =
       expect(passed.stdout).toContain("RESULTS");
       expect(passed.stdout).toContain("greet/hello  1/1 passed");
       expect(passed.stdout).not.toContain("SCORED");
+
+      const freshForCarry = await niceeval.run(["exp", "normal", "greet", "--rerun", "all", "--json"]);
+      expect(freshForCarry.exitCode, freshForCarry.diagnostic()).toBe(0);
+      const freshForCarryEval = only(
+        freshForCarry.ndjson<ExpEvent>(),
+        (event) => "event" in event && event.event === "eval" && event.evalId === "greet/hello",
+        freshForCarry.diagnostic(),
+      );
+      const carried = await niceeval.run(["exp", "normal", "greet", "--json"]);
+      expect(carried.exitCode, carried.diagnostic()).toBe(0);
+      const shownCarriedRun = await niceeval.run([
+        "show",
+        "--run",
+        carried.expReceipt().runIds[0]!,
+        "--record",
+        ".niceeval/record",
+      ]);
+      expect(shownCarriedRun.exitCode, shownCarriedRun.diagnostic()).toBe(0);
+      expect(shownCarriedRun.stdout.replace(/\s+/gu, " ")).toContain(
+        `using result ${freshForCarryEval.locator}`,
+      );
     },
   );
 });
