@@ -202,7 +202,7 @@ jobs:
             map(. + {
               container: (
                 if ((.requires.browsers // []) | length) > 0
-                then $playwright_image
+                then { image: $playwright_image, options: "--init" }
                 else null
                 end
               )
