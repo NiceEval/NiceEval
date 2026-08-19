@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import {
   assertExpEvalOutcomes,
   createE2EContext,
+  startProcess,
   waitForOutput,
 } from "@niceeval/testkit";
 import { expect } from "vitest";
@@ -13,6 +14,18 @@ type OwnerKind = "transport" | "approval" | "disconnect" | "timeout" | "http-err
 interface FixtureReady {
   baseUrl: string;
   port: number;
+}
+
+export type LocalProtocolFixtureMode =
+  | "ok"
+  | "approval"
+  | "disconnect"
+  | "done-then-late"
+  | "hang"
+  | "error";
+
+interface LocalProtocolFixture extends FixtureReady {
+  readonly waitForRequest: (mode: LocalProtocolFixtureMode) => Promise<void>;
 }
 
 function parseReady(output: string): FixtureReady {
@@ -149,4 +162,63 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
       }
     },
   );
+}
+
+/** Owns only the local server's readiness, lifetime, and dynamic-port cleanup. */
+export async function withLocalProtocolFixture<T>(
+  cwd: string,
+  body: (fixture: LocalProtocolFixture) => Promise<T>,
+): Promise<T> {
+  const server = startProcess(
+    ["pnpm", "exec", "tsx", join("src", "fixture", "server.ts")],
+    { cwd, processGroup: true, timeoutMs: 90_000 },
+  );
+  let ready: FixtureReady | undefined;
+  let bodyError: unknown;
+  try {
+    const output = await waitForOutput(server, "stdout", /NICEEVAL_E2E_READY \{[^\n]+\}/, {
+      timeoutMs: 15_000,
+      label: "local-protocol fixture readiness",
+    });
+    ready = parseReady(output);
+    const health = await fetch(`${ready.baseUrl}/healthz`);
+    if (health.status !== 200) {
+      throw new Error(`local-protocol fixture health check returned ${health.status}`);
+    }
+    return await body({
+      ...ready,
+      waitForRequest: async (mode) => {
+        await waitForOutput(
+          server,
+          "stdout",
+          new RegExp(`NICEEVAL_E2E_REQUEST \\{[^\\n]*"mode":"${mode}"[^\\n]*\\}`),
+          { timeoutMs: 5_000, label: `local-protocol ${mode} request` },
+        );
+      },
+    });
+  } catch (error) {
+    bodyError = error;
+    throw error;
+  } finally {
+    let cleanupError: unknown;
+    try {
+      await server.dispose();
+      if (ready !== undefined) {
+        await assertPortReusable(ready.port);
+      }
+    } catch (error) {
+      cleanupError = error;
+    }
+    if (cleanupError !== undefined) {
+      if (bodyError !== undefined) {
+        const aggregate = new AggregateError(
+          [bodyError, cleanupError],
+          "local-protocol fixture body and cleanup both failed",
+        );
+        aggregate.cause = bodyError;
+        throw aggregate;
+      }
+      throw cleanupError;
+    }
+  }
 }
