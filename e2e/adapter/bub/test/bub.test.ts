@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/bub.md#adapter-bub-live-compatibility
 //
 // 单文件 Journey：真实 bubAgent + Docker Sandbox + live provider，
-// 同一批真实运行分别供 verdict、execution 与 timing 独立命题读取。
+// 同一批真实运行分别供 verdict 与 execution 独立命题读取。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
@@ -69,7 +69,7 @@ beforeAll(async () => {
   expect(run.exitCode, run.diagnostic()).toBe(0);
   evalEvents = run.expEvalEvents();
 
-  // legacy 版本线同时证明 version/otelPlugin pin 的 telemetry 契约。
+  // legacy 版本线证明声明的旧版组合仍能安装并完成公开协议闭环。
   legacy = await niceeval.run(
     ["exp", "legacy", "coding-task", "--rerun", "all", "--json"],
     { timeoutMs: 20 * 60_000 },

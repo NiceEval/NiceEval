@@ -22,13 +22,13 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 | 实验 | 装的 Bub | OTel 插件 | 跑哪些 Eval |
 | --- | --- | --- | --- |
 | `ci` | NiceEval 当前默认 pin | 默认 pin | 上表协议闭环，含 token / request usage 断言 |
-| `legacy` | 显式 `version: "0.3.9"` | 同代 commit（`bub-contrib` #50 之前） | 只跑 coding 任务一条；只证明 token / request usage、工具轨与时间轨 |
+| `legacy` | 显式 `version: "0.3.9"` | 同代 commit（`bub-contrib` #50 之前） | 只跑 coding 任务一条；证明 token / request usage、工具轨与旧版组合仍可安装运行 |
 
-`legacy` 证明的是**版本旋钮真的落地**：`version` / `otelPlugin` 把 Adapter 装到旧协议代上，且旧插件在旧 Bub 上仍产出 span（执行树有时间注释）。
+`legacy` 证明的是声明的旧版组合仍可安装，并完成同一条公开工具与 usage 闭环。当前没有 mapper-specific OTel 的公开归因 seam，因此本 owner 不声称旧插件 span 已被独立验收。
 它不是第二遍协议巡礼——版本线是新增的证明维度，不是新增的协议行为，所以按[仓库 Eval 预算](README.md#仓库-eval-预算)只留一条 Eval。
 
 `ci` 与 `legacy` 的 `flags.requireObservedCost` 都明确为 `false`：`BUB_API_BASE` 可以指向任意 OpenAI-compatible 网关，
-它们都不能把缺席的 provider cost 当作零或自行估算。当前两条线保留 token / request usage、归一后的工具轨和 OTel 时间轨；
+它们都不能把缺席的 provider cost 当作零或自行估算。当前两条线保留 token / request usage 与归一后的工具轨；
 `usage.cost` 存在时仍由 adapter 按 [Bub 成本契约](../../../../feature/adapters/sdk/bub/cost.md) 原样落入 `Usage.costUSD`。
 
 两代必须成对钉：Bub 0.3.10 起 vendor 了 `bub.tape`，之后的插件从那里取类型；配 0.3.9 直接 import 失败。
@@ -43,5 +43,4 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 - `ci` Experiment 选中本仓库的 coding、Skill、plugin / postSetup、会话和 usage Eval；原生验收脚本列全协议 Eval ID，防止少发现/少运行后假绿。
 - **Eval 结果**：原生验收分别核对当前版与 legacy 版的通过数、未通过数；工具、Skill 与 plugin 细节由 Eval 判分。
 - **Evidence Page**：独立 `show @locator --report <fixture-module> --page <execution-route>` test 只读回 coding Eval 的代表性工具证据。
-- **Timing Page**：adapter 的 `tracing.env` 仍注入标准 `OTEL_*` 进程变量（OTLP/protobuf）。独立 timing Page test 对当前版与 legacy 版分别读回 runner 阶段，不在同一 owner 里重复 Evidence Page 断言。
-  span mapper 只影响瀑布图——判分断言仍只读 tape 归一的事件流。
+- **Timing / OTel 边界**：通用 Runner timing 由 [`runner-history-dedup`](../runner.md#runner-history-dedup) 唯一读回。当前公开读面不能归因 Bub 的 mapper-specific OTel，本 Repo 不用通用 timing 或日志冒充该证据。

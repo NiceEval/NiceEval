@@ -27,4 +27,4 @@ input/output usage；同一 `t` 的第二轮必须从 factory 保存的消息历
 - `attempts: 1`，无测试级 retry，也不使用 Judge；缺少 `OPENAI_API_KEY` / `OPENAI_BASE_URL` 是 configuration failure。
 - `niceeval exp` 在 Testkit 拥有的独立进程组内运行；每次 Journey 使用系统临时私有 `HOME`，cleanup 后不留子进程或认证目录。
 - `show`、`show --json`、`show --run <run-id>` 与代表 Report 的 `show @locator --report <fixture-module> --page <execution-route>` 公开读回同一结果；目标 Page 必须出现工具名与哨兵入参。
-- 本 factory 未声明 tracing。独立 timing Page owner 只读回 runner 阶段，不重复 Evidence Page 或 OTel 断言。
+- 本 factory 未声明 tracing。通用 Runner timing 由 [`runner-history-dedup`](../runner.md#runner-history-dedup) 唯一读回；本 Repo 不重复断言。

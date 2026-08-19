@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-compatibility
 //
 // 单文件 Journey：真实 Claude Code + Docker Sandbox + live provider。
-// 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 另读一条代表 execution 与 timing。
+// 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 另读一条代表 execution。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
