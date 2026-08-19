@@ -33,10 +33,12 @@ export type ShowTimingEntry =
   | {
       readonly attempt: ShowTimingAttempt;
       readonly state: "not-recorded" | "unsupported" | "invalid";
+      readonly view: "attempt-observability";
     }
   | {
       readonly attempt: ShowTimingAttempt;
       readonly state: "failed";
+      readonly view: "attempt-observability";
       readonly detail: string;
     };
 
@@ -54,7 +56,8 @@ export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument {
   if (!isRecord(value) || value.schema !== "niceeval.show/v1") {
     return invalid(receipt, "schema must be niceeval.show/v1");
   }
-  if (!isRecord(value.data) || value.data.kind !== "timing" || !Array.isArray(value.data.timing)) {
+  if (!isRecord(value.data) || !hasExactKeys(value.data, ["kind", "timing"]) ||
+    value.data.kind !== "timing" || !Array.isArray(value.data.timing)) {
     return invalid(receipt, "data must be a timing document");
   }
   for (let index = 0; index < value.data.timing.length; index++) {
@@ -71,9 +74,11 @@ function isTimingEntry(value: unknown): value is ShowTimingEntry {
     return hasExactKeys(value, ["attempt", "state", "timing"]) && isTimingDetail(value.timing);
   }
   if (value.state === "failed") {
-    return hasExactKeys(value, ["attempt", "detail", "state"]) && typeof value.detail === "string";
+    return hasExactKeys(value, ["attempt", "detail", "state", "view"]) &&
+      value.view === "attempt-observability" && typeof value.detail === "string";
   }
-  return hasExactKeys(value, ["attempt", "state"]) &&
+  return hasExactKeys(value, ["attempt", "state", "view"]) &&
+    value.view === "attempt-observability" &&
     (value.state === "not-recorded" || value.state === "unsupported" || value.state === "invalid");
 }
 
@@ -81,8 +86,15 @@ function isAttempt(value: unknown): value is ShowTimingAttempt {
   return isRecord(value) &&
     hasExactKeys(value, ["kind", "locator", "originRunId"]) &&
     value.kind === "attempt" &&
-    typeof value.locator === "string" && /^@[0-9A-Z]+$/.test(value.locator) &&
-    typeof value.originRunId === "string" && value.originRunId.length > 0;
+    typeof value.locator === "string" && /^@1[0-9A-HJKMNP-TV-Z]{12}$/.test(value.locator) &&
+    typeof value.originRunId === "string" && isPortableSegment(value.originRunId);
+}
+
+const PORTABLE_SEGMENT_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$/;
+const WINDOWS_RESERVED_SEGMENT_PATTERN = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+function isPortableSegment(value: string): boolean {
+  return PORTABLE_SEGMENT_PATTERN.test(value) && !WINDOWS_RESERVED_SEGMENT_PATTERN.test(value);
 }
 
 function isTimingDetail(value: unknown): value is ShowTimingDetail {
