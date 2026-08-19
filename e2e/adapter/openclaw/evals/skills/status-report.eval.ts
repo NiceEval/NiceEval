@@ -10,11 +10,11 @@ export default defineEval({
   async test(t) {
     await t.group("原生插件已按精确 npm 版本安装并在 local runtime 加载", async () => {
       const inspected = await t.sandbox.runShell(
-        `openclaw plugins inspect fidacy --runtime --json | ` +
+        `openclaw plugins inspect brave --runtime --json | ` +
           `node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{` +
           `const x=JSON.parse(s);const ok=x.plugin?.status==="loaded"&&` +
-          `x.install?.resolvedName==="@fidacy/openclaw-plugin"&&` +
-          `x.install?.resolvedVersion==="0.9.0"&&x.diagnostics?.length===0;` +
+          `x.install?.resolvedName==="@openclaw/brave-plugin"&&` +
+          `x.install?.resolvedVersion==="2026.7.1"&&x.diagnostics?.length===0;` +
           `process.stdout.write(ok?"ready":"missing");process.exit(ok?0:1)})'`,
       );
       await t.check(inspected.exitCode, equals(0)).orStop();

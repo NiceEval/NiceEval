@@ -6,7 +6,7 @@ import { sandbox } from "../sandbox.ts";
 const agent = openClawAgent({
   apiKey: process.env.BUB_API_KEY,
   baseUrl: process.env.BUB_API_BASE,
-  plugins: ["@fidacy/openclaw-plugin@0.9.0"],
+  plugins: ["@openclaw/brave-plugin@2026.7.1"],
   skills: [
     { kind: "local", path: "skills/niceeval-status-report", name: "niceeval-status-report" },
     { kind: "local", path: "skills/niceeval-decoy", name: "niceeval-decoy" },
