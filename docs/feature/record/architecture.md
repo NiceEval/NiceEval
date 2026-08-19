@@ -630,7 +630,8 @@ root replacement。
 
 首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。中断或失败后，CLI
 给出限定到 Record root 的精确 Git restore 与 tracked-byte 验证命令；验证 worktree/index 等于该 commit 后
-才清除 sentinel 并重试 `niceeval migrate`。恢复前不会创建 reader。
+才清除 sentinel 并重试 `niceeval migrate`。只有 sentinel 创建成功后的失败进入该恢复态；计划指纹变化、第二次
+Git preflight 或 sentinel 创建失败尚未写 portable byte，不得输出旧计划的 restore 命令。恢复前不会创建 reader。
 
 ## 变化归属
 

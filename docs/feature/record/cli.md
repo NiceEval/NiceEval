@@ -124,8 +124,12 @@ maintenance lease 下原地运行每个相邻步骤，完整验证 Core、认识
 NiceEval 不创建 staging、backup、rollback 或 root replacement。首次改写前创建的
 `migration.in-progress` 只保存已通过 preflight 的 restore commit，不保存 payload。迁移失败、被 kill 或断电后，
 CLI 从 sentinel 打印限定到 Record root 的精确 `git restore`、tracked-byte 验证和 sentinel 清除命令；只有验证
-worktree 与 index 都等于该 commit 后才清除 sentinel，再重新运行 migrate。在旧格式或未恢复的迁移现场，CLI
-不创建 reader，Analysis 和 Report 也不会看到迁移执行态。
+worktree 与 index 都等于该 commit 后才清除 sentinel，再重新运行 migrate。
+
+旧格式或未恢复的迁移现场不创建 reader，Analysis 和 Report 也不会看到迁移执行态。计划指纹变化、第二次
+preflight 失败或 sentinel 创建失败都发生在首个 portable write 前，只报告原错误并保留并发编辑，绝不根据旧
+计划打印恢复命令。sentinel 成功创建后的任何失败统一返回 `record-migration-recovery-required`，同时保留原始
+`Cause` code 与恢复命令。
 
 ## 错误与下一步
 
@@ -135,6 +139,8 @@ worktree 与 index 都等于该 commit 后才清除 sentinel，再重新运行 m
 | `migration-required` | root / Core 或已知 family 有固定相邻 migration | 运行 `niceeval migrate`；ordinary reader 不改盘 |
 | `unsupported-format` | root / Core 无支持步骤、known family 是 future/无链版本，或 family 名使用未发布 `/vN` 草案 | 使用写出该格式的 NiceEval；不要按损坏数据恢复 |
 | `record-maintenance-busy` | maintenance 与 reader/writer/clean 冲突 | 关闭占用命令后重试 |
+| `record-migration-plan-stale` / `record-migration-git-restore-required` | apply 前计划或 Git 状态已变化，尚未写 portable byte | 保留当前编辑，重新检查并形成新计划；不要执行旧计划的 restore |
+| `record-migration-recovery-required` | sentinel 已创建，迁移写入或最终校验失败 | 按命令恢复到 sentinel 的 commit，验证 index/worktree 后清 sentinel |
 | `incomplete-run` | Run 没有 `complete` | 有效 Run 继续可用；用 `niceeval clean` 检查 |
 | `not-recorded` | 已封口 owner 没有请求的 fixed family | 让 query 按其 missing policy 处理 |
 | `unsupported` | input 或 view 依赖本版本不认识的 future family | 使用认识该 family 的 NiceEval；其它结果继续可用 |

@@ -113,6 +113,7 @@ import {
   RecordMigrationGitRestoreRequired,
   RecordMigrationInterruptedState,
   RecordMigrationPlanStale,
+  RecordMigrationRecoveryRequired,
   RecordReaderClosed,
   type RecordMaintenanceError,
   type RecordMaintenanceOpenError,
@@ -2637,6 +2638,12 @@ function migrationInvalid(family: string): RecordMigrationInvalid {
   return new RecordMigrationInvalid({ code: "record-migration-invalid", family });
 }
 
+function migrationFailureCode(error: unknown): string {
+  if (typeof error !== "object" || error === null) return "record-command-failed";
+  const code = Reflect.get(error, "code");
+  return typeof code === "string" ? code : "record-command-failed";
+}
+
 function migrationTarget(location: KnownMigrationAttachment): RecordAttachmentMigrationTarget {
   return Object.freeze({
     family: location.descriptor.family,
@@ -2870,17 +2877,24 @@ function openMaintenance(input: {
               code: "record-migration-git-restore-required",
             }));
           }
+          const restoreCommit = currentPlan.backup.commit;
 
           // The sentinel is the first portable write. Any later failure or
           // interruption intentionally leaves it behind for Git recovery.
-          yield* fileSystem.createMigrationSentinel(input.root, currentPlan.backup.commit);
-          for (const target of currentPlan.attachments) {
-            yield* migrateObservabilityAttachment({ fileSystem, root: input.root, target });
-          }
-          const current = yield* readCurrentRecordFormat(fileSystem, input.root);
-          yield* validateSealedCoreForMigration(fileSystem, input.root, current.document);
-          yield* validateCurrentKnownAttachments({ fileSystem, root: input.root });
-          yield* fileSystem.removeMigrationSentinel(input.root);
+          yield* fileSystem.createMigrationSentinel(input.root, restoreCommit);
+          yield* Effect.gen(function* () {
+            for (const target of currentPlan.attachments) {
+              yield* migrateObservabilityAttachment({ fileSystem, root: input.root, target });
+            }
+            const current = yield* readCurrentRecordFormat(fileSystem, input.root);
+            yield* validateSealedCoreForMigration(fileSystem, input.root, current.document);
+            yield* validateCurrentKnownAttachments({ fileSystem, root: input.root });
+            yield* fileSystem.removeMigrationSentinel(input.root);
+          }).pipe(Effect.catchAll((error) => Effect.fail(new RecordMigrationRecoveryRequired({
+            code: "record-migration-recovery-required",
+            causeCode: migrationFailureCode(error),
+            restoreCommit,
+          }))));
           return Object.freeze({ state: "migrated" as const, format: RECORD_FORMAT });
         }),
     });

@@ -387,7 +387,14 @@ Record。
 
 首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。失败或中断后，CLI 给出限定到 Record
 root 的精确 Git restore 与 tracked-byte 验证命令；验证 worktree/index 都等于该 commit 后才清除 sentinel，
-再重新形成计划。恢复完成前 `current.openRead()` 不产生 session。`clean` 同样取得 maintenance lease。它只删除取得 lease后重验仍没有 `complete` 的目录；
+再重新形成计划。
+
+这里的“失败”只指 sentinel 已成功创建后的失败；apply 前的计划指纹变化、preflight 或 create-sentinel 错误
+不携带恢复动作，并保留造成计划变化的编辑。post-sentinel 错误闭合为
+`RecordMigrationRecoveryRequired`，携带 `restoreCommit` 与原始 `causeCode`。恢复完成前
+`current.openRead()` 不产生 session。
+
+`clean` 同样取得 maintenance lease。它只删除取得 lease 后重验仍没有 `complete` 的目录；
 已封口但 Core invalid 的 Run 不是 clean 的对象。
 
 ## Typed error、Cause 与 Stream 边界

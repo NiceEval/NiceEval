@@ -569,8 +569,17 @@ export function isCostProjectionValue(value: unknown): value is CostProjectionVa
     return false;
   }
   if (projection.state === "unavailable" || projection.state === "migration-required") {
-    return projection.basis === "unavailable" && projection.observed === null &&
-      projection.estimated === null && projection.combined === null;
+    if (projection.basis !== "unavailable" || projection.observed !== null ||
+      projection.estimated !== null || projection.combined !== null) return false;
+    if (projection.state === "unavailable") return true;
+    const ledger = projection.ledger as readonly CostLedgerEntry[];
+    const reasons = projection.reasons as readonly CostCoverageReason[];
+    return ledger.length > 0 &&
+      ledger.every((entry) => entry.branch === "unavailable" && reasons.some((reason) =>
+        reason.code === "usage-migration-required" &&
+        reason.slot.runId === entry.slot.runId &&
+        reason.slot.slotId === entry.slot.slotId
+      ));
   }
   if (projection.state !== "available" && projection.state !== "partial" ||
     !isNullableProjectedMoney(projection.observed, profile) ||

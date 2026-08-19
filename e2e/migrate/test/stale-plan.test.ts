@@ -1,0 +1,36 @@
+// owner: docs/engineering/testing/e2e/migrate.md#plan-change-preserves-concurrent-edit
+
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
+import { expect, test } from "vitest";
+import { commitRecord, copyV1Fixture, e2e, RUN_ID } from "./support.ts";
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+test("plan 后出现的并发编辑触发 stale 且不提示或执行恢复", async () => {
+  await e2e.case("stale-plan", async ({ paths, commands: { candidate }, run }) => {
+    const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+    copyV1Fixture(paths.sourceRoot, recordRoot);
+    await commitRecord(run, "fixture: stale migration plan");
+    const realGit = (await run(["which", "git"])).stdout.trim();
+    const shimRoot = join(paths.projectRoot, ".git-shim");
+    const shim = join(shimRoot, "git");
+    const counter = join(shimRoot, "status-count");
+    const concurrentEdit = join(recordRoot, "concurrent-edit.txt");
+    await run(["mkdir", "-p", shimRoot]);
+    writeFileSync(shim, `#!/bin/sh\ncount_file=${shellQuote(counter)}\nif [ "$1" = "status" ]; then\n  count=0\n  [ ! -f "$count_file" ] || count=$(cat "$count_file")\n  count=$((count + 1))\n  printf '%s\\n' "$count" > "$count_file"\n  [ "$count" -ne 2 ] || printf 'preserve me\\n' > ${shellQuote(concurrentEdit)}\nfi\nexec ${shellQuote(realGit)} "$@"\n`);
+    chmodSync(shim, 0o755);
+
+    const rejected = await candidate.run(["migrate", "--yes"], {
+      env: { ...process.env, PATH: `${shimRoot}${delimiter}${process.env.PATH ?? ""}` },
+    });
+    expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
+    expect(rejected.stderr, rejected.diagnostic()).toContain("record-migration-plan-stale");
+    expect(rejected.stderr, rejected.diagnostic()).not.toContain("Restore command:");
+    expect(readFileSync(concurrentEdit, "utf8")).toBe("preserve me\n");
+    expect(existsSync(join(recordRoot, "migration.in-progress"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(recordRoot, "runs", RUN_ID, "attachments", "niceeval.observability", "attachment.json"), "utf8"))).toEqual({ family: "niceeval.observability", schemaVersion: 1 });
+  });
+});

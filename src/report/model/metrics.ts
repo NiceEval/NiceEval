@@ -177,7 +177,7 @@ export function isMetricValue(value: unknown): value is MetricValue {
     case "empty":
       return metric.value === null && metric.samples === metric.total;
     case "migration-required":
-      return metric.value === null && metric.samples === 0;
+      return metric.value === null && metric.samples === 0 && metric.total > 0;
     case "unsupported":
       return metric.value === null && metric.samples === 0;
     // Cost projections can be structurally sound while no USD contribution

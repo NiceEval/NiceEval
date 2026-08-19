@@ -61,6 +61,15 @@ export class RecordMigrationInvalid extends Schema.TaggedError<RecordMigrationIn
   family: Schema.String,
 }) {}
 
+/** The migration sentinel exists, so the Record must be restored before reuse. */
+export class RecordMigrationRecoveryRequired extends Schema.TaggedError<RecordMigrationRecoveryRequired>(
+  "@niceeval/record/RecordMigrationRecoveryRequired",
+)("RecordMigrationRecoveryRequired", {
+  code: Schema.Literal("record-migration-recovery-required"),
+  causeCode: Schema.String,
+  restoreCommit: Schema.String,
+}) {}
+
 /** A live frozen capability escaped its Effect Scope. */
 export class RecordReaderClosed extends Schema.TaggedError<RecordReaderClosed>(
   "@niceeval/record/RecordReaderClosed",
@@ -89,6 +98,7 @@ export type RecordMaintenanceError =
   | RecordMigrationPlanStale
   | RecordMigrationGitRestoreRequired
   | RecordMigrationInvalid
+  | RecordMigrationRecoveryRequired
   | RecordGitError;
 
 export type RecordReaderReadError =

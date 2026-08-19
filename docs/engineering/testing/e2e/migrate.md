@@ -17,19 +17,44 @@ producer 运行确定性 Experiment 并持久化 Record。candidate 在同一个
 
 ## Observability v1 to v2
 
-`e2e/migrate/test/handoff.test.ts` 是显式 family migration 的单边界 owner。它把签入的 literal
+`e2e/migrate/test/handoff.test.ts` 是显式 family migration 的成功 Journey owner。它把签入的 literal
 Observability v1 Record 复制到隔离消费项目，从安装后的 candidate 依次执行公开 `show` 与
 `niceeval migrate`：
 
 - migration 前 `show --json` 返回 `analysis-migration-required`，不误读旧 bytes；
-- 没有 `--yes` 时只打印包含两个 attachment 的计划，dirty portable root 即使带 `--yes` 也拒绝；
+- 没有 `--yes` 时只打印包含两个 attachment 的计划；
 - clean Git restore point 下迁移成功，两个 envelope 变成 v2，payload、未知 family 与 draft bytes 不变；
 - migration 后同一 Run 可由 `show` 读取，再次运行得到 `already-current`；
-- sentinel 存在时公开命令返回 `record-migration-interrupted`、精确 restore/verify/clear 命令；按顺序恢复后可重试成功。
-- sealed Core 缺失 Member 时在 sentinel 写入前返回 `record-migration-invalid`，不留下混合版本。
-- 单 family schema 合法但 SourceNavigation join 损坏时，post-write 校验 fail closed 并保留 sentinel。
-- known family future version 返回 `unsupported-format` 与 producer-version 提示，不误报损坏。
-- v1 合法的 `turn01` 与大整数字符串 label 逐字迁移成功；它们不是原生 v2 writer 的 coordinate。
+
+其它独立输入与修复动作各自由一个最小 owner 负责。
+
+### Interrupted migration recovery
+
+`interrupted-recovery.test.ts` 证明 sentinel 恢复、验证、清除与重试。
+
+### Plan change preserves concurrent edit
+
+`stale-plan.test.ts` 证明第二次规划发现并发编辑时保留编辑，且不输出破坏性恢复命令。
+
+### Pre-write invalid Record
+
+`prewrite-invalid.test.ts` 证明 sealed Core invalid 在首个 portable write 前拒绝且无 sentinel。
+
+### Post-write invalid Record
+
+`postwrite-invalid.test.ts` 证明 SourceNavigation join 在写入后 fail closed，返回 recovery-required 并保留 sentinel。
+
+### Future known family
+
+`future-version.test.ts` 证明 known family future version 返回 unsupported，不误报 invalid。
+
+### Historical v1 labels
+
+`historical-labels.test.ts` 证明 v1 合法 `turn01` 与大整数字符串 label 逐字迁移。
+
+### Report migration metric guard
+
+`report-guard.test.ts` 证明 Report 拒绝零分母的伪造 migration-required metric；成功 Journey 同时证明非零全迁移状态保留。
 
 fixture 的 root schemaVersion 与两个 Observability schemaVersion 都是独立字面量，不由 candidate
 生成 expected。它只验收 Record root v1 内的 Observability family 1→2，不把旧 `niceeval.results`

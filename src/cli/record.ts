@@ -68,6 +68,8 @@ function recordErrorNextStep(code: string): string | undefined {
       return "Run: niceeval migrate";
     case "record-migration-interrupted":
       return "Restore the complete Record from the recorded Git commit; do not rerun migrate on mixed bytes.";
+    case "record-migration-recovery-required":
+      return "Restore the complete Record from Git before retrying migration.";
     case "record-migration-plan-stale":
       return "Review the new migration plan and rerun migrate.";
     case "record-migration-git-restore-required":
@@ -114,28 +116,19 @@ function recordErrorOutput(
 ): RecordCliCommandOutput {
   const code = recordErrorCode(error);
   const next = recordErrorNextStep(code);
+  const causeCode = typeof error === "object" && error !== null &&
+      typeof Reflect.get(error, "causeCode") === "string"
+    ? String(Reflect.get(error, "causeCode"))
+    : undefined;
   return output({
     exitCode: 1,
     stdout,
     stderr: `${code}\n${next === undefined ? "" : `${next}\n`}${
-      code === "record-migration-interrupted" ? interruptedRecovery(error, recordPath) : ""
-    }`,
-  });
-}
-
-function recordMigrationErrorOutput(
-  error: unknown,
-  stdout: string,
-  restoreCommit: string,
-  recordPath: string,
-): RecordCliCommandOutput {
-  const code = recordErrorCode(error);
-  const next = recordErrorNextStep(code);
-  return output({
-    exitCode: 1,
-    stdout,
-    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}Restore commit: ${restoreCommit}\n${
-      recoveryCommands(restoreCommit, recordPath)
+      causeCode === undefined ? "" : `Cause: ${causeCode}\n`
+    }${
+      code === "record-migration-interrupted" || code === "record-migration-recovery-required"
+        ? interruptedRecovery(error, recordPath)
+        : ""
     }`,
   });
 }
@@ -219,9 +212,7 @@ function migrateCommand(input: {
     }
     const migrated = yield* Effect.either(session.applyMigrate(plan));
     if (Either.isLeft(migrated)) {
-      return plan.state === "migration-required" && plan.backup.state === "git-restore-point"
-        ? recordMigrationErrorOutput(migrated.left, planText, plan.backup.commit, input.recordPath)
-        : recordErrorOutput(migrated.left, planText);
+      return recordErrorOutput(migrated.left, planText, input.recordPath);
     }
     const receipt = migrated.right;
     return output({
