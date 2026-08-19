@@ -210,6 +210,62 @@ test("提前 retire 的 Sandbox lifecycle Scope 失败也会保留 sharedState�
   );
 });
 
+test("fresh Sandbox lifecycle cleanup 失败也保留 sharedState，直到公开显式恢复", async () => {
+  await runnerE2E.case(
+    "shared-state-fresh-cleanup-failure",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval } }) => {
+      await withTempDir("niceeval-runner-shared-state-fresh-cleanup-", async (barrierRoot) => {
+        const failed = await niceeval.run(
+          ["exp", "shared-state-fresh-cleanup-fails", "--rerun", "all", "--json"],
+          {
+            env: {
+              NICEEVAL_SHARED_STATE_BARRIER: barrierRoot,
+              NICEEVAL_SHARED_STATE_ROLE: "fresh-cleanup-fails",
+            },
+            timeoutMs: 90_000,
+          },
+        );
+        expect(await exists(join(barrierRoot, "fresh-sandbox-lifecycle-teardown-started")), failed.diagnostic()).toBe(true);
+
+        const waiter = niceeval.start(["exp", "shared-state-fresh-cleanup-waiter", "--rerun", "all", "--json"], {
+          env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+          timeoutMs: 60_000,
+        });
+        try {
+          expect(await appearsWithin(
+            join(barrierRoot, "fresh-cleanup-waiter-setup-attempted"),
+            3_000,
+            "waiter setup after fresh Sandbox lifecycle cleanup failure",
+          )).toBe(false);
+
+          const inspection = await niceeval.run([
+            "exp", "shared-state-fresh-cleanup-fails", "--teardown",
+            "--recover-shared-state", "runner/shared-state-fresh-cleanup",
+          ]);
+          expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
+          const ownerToken = ownerTokenFromPublicRecoveryInspection(inspection.stderr);
+
+          const recovered = await niceeval.run([
+            "exp", "shared-state-fresh-cleanup-fails", "--teardown",
+            "--recover-shared-state", "runner/shared-state-fresh-cleanup",
+            "--owner-token", ownerToken,
+            "--confirm-owner-terminated", "--confirm-remote-quiesced",
+          ], { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot }, timeoutMs: 60_000 });
+          expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
+          expect(recovered.stderr).toContain("explicitly recovered sharedState key runner/shared-state-fresh-cleanup");
+
+          const waiterResult = await waiter.done;
+          expect(waiterResult.exitCode, waiterResult.diagnostic()).toBe(0);
+          expect(await exists(join(barrierRoot, "fresh-cleanup-waiter-agent-started"))).toBe(true);
+        } finally {
+          await waiter.dispose().catch(() => undefined);
+        }
+      });
+    },
+  );
+});
+
 test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent", async () => {
   await runnerE2E.case(
     "shared-state-exclusive-provider-lane",

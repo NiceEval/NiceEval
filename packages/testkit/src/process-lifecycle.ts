@@ -10,6 +10,8 @@ export const DEFAULT_GRACE_MS = 2000;
 
 const PROCESS_GROUP_POLL_MS = 25;
 
+type OwnedGroupState = "gone" | "terminal" | "running" | "unknown";
+
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
     ? String((error as { code?: unknown }).code)
@@ -19,8 +21,10 @@ function errorCode(error: unknown): string | undefined {
 /**
  * Linux keeps a zombie in its process group until the adopting parent reaps
  * it. Signal 0 still reports that group as present, while TERM and KILL cannot
- * change the zombie. Treat a group containing only terminal kernel states as
- * gone; return undefined when procfs cannot prove the membership safely.
+ * change the zombie. This is only a point-in-time classification: callers
+ * must first send their cleanup signal and then establish a stable terminal
+ * result before accepting it. Return undefined when procfs cannot prove the
+ * membership safely.
  */
 function linuxProcessGroupHasRunningMember(groupId: number): boolean | undefined {
   if (process.platform !== "linux") return undefined;
@@ -203,23 +207,39 @@ export class ProcessHandle {
     }
   }
 
-  private ownedGroupExists(): boolean {
+  private ownedGroupState(): OwnedGroupState {
     if (!this.processGroup || this.pid === undefined) {
-      return false;
+      return "gone";
     }
     try {
       process.kill(-this.pid, 0);
-      return linuxProcessGroupHasRunningMember(this.pid) ?? true;
+      const hasRunningMember = linuxProcessGroupHasRunningMember(this.pid);
+      if (hasRunningMember === undefined) return "unknown";
+      return hasRunningMember ? "running" : "terminal";
     } catch (error) {
-      if (errorCode(error) === "ESRCH") return false;
-      if (errorCode(error) === "EPERM") return true;
+      if (errorCode(error) === "ESRCH") return "gone";
+      if (errorCode(error) === "EPERM") return "unknown";
       throw error;
     }
   }
 
   private async waitForOwnedGroupExit(timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
-    while (this.ownedGroupExists()) {
+    let terminalProbePending = false;
+    for (;;) {
+      const state = this.ownedGroupState();
+      if (state === "gone") return true;
+      if (state === "terminal") {
+        // /proc membership is not an atomic snapshot. A terminal-only result
+        // becomes safe only after TERM has covered the group and a later scan
+        // independently observes the same terminal boundary.
+        if (terminalProbePending) return true;
+        terminalProbePending = true;
+      } else {
+        // A live member, an orphan, or uncertain procfs visibility remains
+        // fail-closed and must advance through the normal grace/KILL path.
+        terminalProbePending = false;
+      }
       const remaining = deadline - Date.now();
       if (remaining <= 0) return false;
       await new Promise<void>((resolve) => {
@@ -230,11 +250,15 @@ export class ProcessHandle {
   }
 
   private async terminateOwnedGroup(): Promise<void> {
-    if (!this.ownedGroupExists()) {
+    if (this.ownedGroupState() === "gone") {
       await this.done;
       return;
     }
 
+    // Even a terminal-only procfs scan can be stale: a parent observed by
+    // readdir may fork a same-group child before it exits. TERM establishes a
+    // group-wide cleanup boundary before waitForOwnedGroupExit accepts a
+    // terminal result on two post-signal scans.
     this.sendTermination("SIGTERM");
     if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
       this.sendTermination("SIGKILL");

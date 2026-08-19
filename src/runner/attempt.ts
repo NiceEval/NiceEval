@@ -211,6 +211,13 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
   /**
+   * A fresh Sandbox owns its physical Scope inside this Attempt. Its lifecycle
+   * hooks normally turn cleanup errors into diagnostics so the remaining
+   * finalizers can run; an Experiment with sharedState must still retain that
+   * terminal cleanup fact until it decides whether releasing its lease is safe.
+   */
+  onFreshSandboxCleanupFailure?: (failure: FreshSandboxCleanupFailure) => void;
+  /**
    * Invocation coordination may consume the single sealed Assert-first result
    * here and pass it to EvaluationRecordContract. The Attempt never opens a
    * Record session or owns Record I/O itself.
@@ -224,6 +231,12 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
     reuseSandbox: number;
     reuseOrdinal: number;
   };
+}
+
+/** Internal handoff from a fresh Attempt Scope to its owning Experiment lifecycle. */
+export interface FreshSandboxCleanupFailure {
+  readonly stage: "sandbox.lifecycle" | "sandbox.stop";
+  readonly error: Error;
 }
 
 export function runAttemptEffect<
@@ -242,6 +255,7 @@ export function runAttemptEffect<
     onPhase,
     concurrencySlot,
     onFailureClass,
+    onFreshSandboxCleanupFailure,
     onSealedEvaluation,
     reusedSandbox,
   }: RunAttemptEffectOptions<SealRequirements>,
@@ -454,6 +468,46 @@ export function runAttemptEffect<
     },
     diagnostic: recordDiagnostic,
   };
+  const recordFreshSandboxCleanupFailure = (
+    stage: FreshSandboxCleanupFailure["stage"],
+    cause: unknown,
+  ): void => {
+    if (reusedSandbox !== undefined || onFreshSandboxCleanupFailure === undefined) return;
+    const rawError = cause instanceof Error ? cause : new Error(String(cause));
+    // The ledger is later surfaced as an Experiment diagnostic, outside this
+    // Attempt's normal diagnostic sink. Preserve the real cleanup outcome, but
+    // cross that boundary only after applying this Attempt's evidence redaction.
+    const error = new Error(redactSensitiveText(rawError.message, sensitiveValues));
+    // This receiver runs inside the Scope finalizer path. It must not let a
+    // bookkeeping failure replace the provider or lifecycle cleanup outcome.
+    try {
+      onFreshSandboxCleanupFailure({ stage, error });
+    } catch {
+      // The owning Experiment will still receive the original cleanup result.
+    }
+  };
+  /**
+   * Sandbox runtime deliberately keeps lifecycle cleanup diagnostic-only so it
+   * can continue other finalizers. Only this fresh-materialization wrapper
+   * observes those runtime-owned diagnostics; Eval/Agent diagnostics with the
+   * same public sink never enter the physical cleanup ledger.
+   */
+  const freshSandboxLifecycleFeedback: ScopedFeedback = {
+    progress: scopedFeedback.progress,
+    diagnostic: (input) => {
+      scopedFeedback.diagnostic(input);
+      if (
+        input.code === "sandbox-teardown-failed" ||
+        input.code === "sandbox-stop-failed" ||
+        input.code === "plugin-lifecycle-teardown-failed"
+      ) {
+        recordFreshSandboxCleanupFailure(
+          "sandbox.lifecycle",
+          new Error(redactSensitiveText(input.message, sensitiveValues)),
+        );
+      }
+    },
+  };
 
   const sealExecutionError = (): Effect.Effect<
     SealedAttemptAssertions,
@@ -624,13 +678,13 @@ export function runAttemptEffect<
                     plan: sandboxPlan,
                     evalId: evalDef.id,
                     deadline: runtimeDeadline,
-                    feedback: scopedFeedback,
+                    feedback: freshSandboxLifecycleFeedback,
                     signal,
                     hookContext: {
                       experimentId: sandboxPlan.pair.experimentId,
                       signal,
-                      progress: scopedFeedback.progress,
-                      diagnostic: scopedFeedback.diagnostic,
+                      progress: freshSandboxLifecycleFeedback.progress,
+                      diagnostic: freshSandboxLifecycleFeedback.diagnostic,
                     },
                     buildLocators,
                     agent: run.agent.kind === "sandbox" ? run.agent : undefined,
@@ -644,7 +698,13 @@ export function runAttemptEffect<
                       run: (owned) => Effect.gen(function* () {
                         const sb = owned.sandbox;
                         if (disposition !== "keep") {
-                          return yield* tryPromiseAsDefect(() => owned.group.stop());
+                          return yield* tryPromiseAsDefect(() => owned.group.stop()).pipe(
+                            Effect.onExit((exit) => Exit.isFailure(exit)
+                              ? Effect.sync(() => {
+                                  recordFreshSandboxCleanupFailure("sandbox.stop", Cause.squash(exit.cause));
+                                })
+                              : Effect.void),
+                          );
                         }
                         yield* Effect.sync(() => unregisterSandbox(sb));
                         const providerName = runtimeCapabilities.provider;

@@ -2,13 +2,24 @@
 // Rerun: pnpm e2e --repo lifecycle -- --run test/process-group-zombie-cleanup.test.ts -t "owned Linux process group"
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { defined, pollUntil, startProcess, withProcess } from "@niceeval/testkit";
+import { defined, pollUntil, startProcess, withProcess, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 interface ZombieFixture {
   readonly groupId: number;
   readonly helperPid: number;
   readonly zombiePid: number;
+}
+
+interface ProcfsScanRaceFixture {
+  readonly groupId: number;
+  readonly paddingPid: number;
+  readonly raceParentPid: number;
+}
+
+interface ProcfsScanRaceChild {
+  readonly childPid: number;
+  readonly groupId: number;
 }
 
 interface ProcessGroupMember {
@@ -45,6 +56,41 @@ function parseFixture(stdout: string): ZombieFixture {
     groupId: positiveInteger(fixture.groupId, "fixture groupId"),
     helperPid: positiveInteger(fixture.helperPid, "fixture helperPid"),
     zombiePid: positiveInteger(fixture.zombiePid, "fixture zombiePid"),
+  };
+}
+
+function parseProcfsScanRaceFixture(stdout: string): ProcfsScanRaceFixture {
+  let value: unknown;
+  try {
+    value = JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(`procfs scan race fixture did not emit JSON: ${stdout}\n${String(error)}`);
+  }
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`procfs scan race fixture did not emit an object: ${stdout}`);
+  }
+  const fixture = value as Record<string, unknown>;
+  return {
+    groupId: positiveInteger(fixture.groupId, "race fixture groupId"),
+    paddingPid: positiveInteger(fixture.paddingPid, "race fixture paddingPid"),
+    raceParentPid: positiveInteger(fixture.raceParentPid, "race fixture raceParentPid"),
+  };
+}
+
+function parseProcfsScanRaceChild(stdout: string): ProcfsScanRaceChild {
+  let value: unknown;
+  try {
+    value = JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(`procfs scan race child did not emit JSON: ${stdout}\n${String(error)}`);
+  }
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`procfs scan race child did not emit an object: ${stdout}`);
+  }
+  const child = value as Record<string, unknown>;
+  return {
+    childPid: positiveInteger(child.childPid, "race childPid"),
+    groupId: positiveInteger(child.groupId, "race child groupId"),
   };
 }
 
@@ -88,6 +134,24 @@ async function processGone(pid: number): Promise<boolean> {
   } catch (error) {
     if (errorCode(error) === "ESRCH") return true;
     throw error;
+  }
+}
+
+async function processGroupGone(groupId: number): Promise<boolean> {
+  try {
+    process.kill(-groupId, 0);
+    return false;
+  } catch (error) {
+    if (errorCode(error) === "ESRCH") return true;
+    throw error;
+  }
+}
+
+async function killProcessGroup(groupId: number): Promise<void> {
+  try {
+    process.kill(-groupId, "SIGKILL");
+  } catch (error) {
+    if (errorCode(error) !== "ESRCH") throw error;
   }
 }
 
@@ -210,4 +274,88 @@ test("ProcessHandle cleanup completes when an owned Linux process group contains
       );
     }
   }
+});
+
+// regression: PR #64 procfs process-group scan race
+test("ProcessHandle cleanup does not leave a descendant forked during its procfs terminal-state scan", async () => {
+  await withTempDir("niceeval-process-group-procfs-race-", async (tempRoot) => {
+    const statusPath = join(tempRoot, "descendant.json");
+    const handle = startProcess(
+      [
+        "python3",
+        join(process.cwd(), "fixtures", "process-group-procfs-scan-race.py"),
+        statusPath,
+      ],
+      { cwd: process.cwd(), processGroup: true, graceMs: 100, timeoutMs: 10_000 },
+    );
+    let groupId: number | undefined;
+    let paddingPid: number | undefined;
+    let raceParentPid: number | undefined;
+    let childPid: number | undefined;
+    let disposeAttempted = false;
+
+    try {
+      const root = await handle.done;
+      expect(root.exitCode, root.diagnostic()).toBe(0);
+      expect(root.signal, root.diagnostic()).toBeNull();
+
+      const fixture = parseProcfsScanRaceFixture(root.stdout);
+      groupId = defined(handle.pid, "procfs scan race root did not expose its process-group ID");
+      paddingPid = fixture.paddingPid;
+      raceParentPid = fixture.raceParentPid;
+      expect(fixture.groupId).toBe(groupId);
+
+      // This synchronously releases the group parent immediately before
+      // ProcessHandle snapshots /proc. Its child is therefore born after that
+      // snapshot, while padding keeps the parent's stale entry late in the scan.
+      process.kill(raceParentPid, "SIGUSR1");
+      disposeAttempted = true;
+      await handle.dispose();
+
+      const child = await pollUntil(
+        async () => {
+          try {
+            return parseProcfsScanRaceChild(await readFile(statusPath, "utf8"));
+          } catch (error) {
+            if (errorCode(error) === "ENOENT") return undefined;
+            throw error;
+          }
+        },
+        { timeoutMs: 5_000, intervalMs: 10, label: "procfs scan race descendant to report" },
+      );
+      childPid = child.childPid;
+      expect(child.groupId).toBe(groupId);
+
+      await pollUntil(
+        async () => await processGone(childPid!) ? true : undefined,
+        {
+          timeoutMs: 1_000,
+          intervalMs: 10,
+          label: `procfs scan race descendant ${childPid} to be terminated`,
+        },
+      );
+      await pollUntil(
+        async () => await processGroupGone(groupId!) ? true : undefined,
+        {
+          timeoutMs: 1_000,
+          intervalMs: 10,
+          label: `procfs scan race group ${groupId} to disappear`,
+        },
+      );
+    } finally {
+      if (!disposeAttempted) await handle.dispose().catch(() => {});
+      if (groupId !== undefined) await killProcessGroup(groupId).catch(() => {});
+      if (paddingPid !== undefined) await stopFixtureHelper(paddingPid).catch(() => {});
+      if (childPid !== undefined) {
+        await pollUntil(
+          async () => await processGone(childPid!) ? true : undefined,
+          {
+            timeoutMs: 5_000,
+            intervalMs: 25,
+            label: `procfs scan race descendant ${childPid} cleanup`,
+          },
+        ).catch(() => {});
+      }
+    }
+  });
 });

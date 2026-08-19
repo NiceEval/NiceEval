@@ -84,6 +84,9 @@ lifecycle/finalizer scope barrier 与 Experiment teardown barrier 都阻止第�
 前者由 `SandboxLayer.teardown` hook 确定性阻塞。实际 provider finalizer 也由同一 `Scope.close` 等待，但 fixture
 不直接注入它。该 Journey 经安装后的 `niceeval exp` 证明等待方没有在共享状态区间内运行 Hook 或执行 Eval。
 
+未启用 `sandboxReuse` 的 fresh Sandbox 也把 lifecycle/plugin teardown 与 Provider group stop 的真实终态记入同一
+Experiment cleanup 判定。任一此类 cleanup 失败后，同 key waiter 继续等待；只有公开 explicit recovery 成功后才可进入 setup。
+
 ### runner-shared-state-recovery
 
 暂停 owner 超过旧 heartbeat expiry 语义后仍持有 lease；等待方既不 setup 也不派发 Attempt，SIGINT 能及时取消，恢复 owner

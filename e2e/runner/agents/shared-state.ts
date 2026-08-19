@@ -143,6 +143,10 @@ export const sharedStateReuseSandbox = dockerSandbox({
     await mark("pool-retire-scope-finalizer-started");
     throw new Error("deterministic reusable Sandbox lifecycle teardown failure");
   }
+  if (lifecycleRole === "fresh-cleanup-fails") {
+    await mark("fresh-sandbox-lifecycle-teardown-started");
+    throw new Error("deterministic fresh Sandbox lifecycle teardown failure");
+  }
 });
 
 export const sharedStateReuseAgent = defineSandboxAgent({

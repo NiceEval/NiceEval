@@ -16,6 +16,7 @@ import {
   runAttemptEffect,
   scoreFactOutcomeForAttemptError,
   type AttemptFailureDeclaration,
+  type FreshSandboxCleanupFailure,
 } from "./attempt.ts";
 import type {
   DiagnosticRecord,
@@ -1041,6 +1042,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   interface ExperimentLifecycleCell {
     state: ExperimentLifecycle;
     readonly mutex: Effect.Semaphore;
+    /**
+     * Fresh Sandbox scopes are Attempt-owned, but their terminal cleanup
+     * outcome belongs to this Experiment whenever it owns sharedState. Keep a
+     * monotonic ledger here until the one physical cleanup decision is made.
+     */
+    readonly physicalCleanupFailures: FreshSandboxCleanupFailure[];
     sharedStateClaim?: SharedStateLeaseEffectClaim;
   }
   const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
@@ -1054,9 +1061,20 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       expLifecycles.set(a.run, {
         state: { _tag: "Dormant", pendingAttempts: new Set([a]) },
         mutex: yield* Effect.makeSemaphore(1),
+        physicalCleanupFailures: [],
       });
     }
   }
+
+  const recordFreshSandboxCleanupFailure = (
+    run: AgentRun,
+    failure: FreshSandboxCleanupFailure,
+  ): void => {
+    if (run.sharedState === undefined) return;
+    const cell = expLifecycles.get(run);
+    if (cell === undefined) return;
+    cell.physicalCleanupFailures.push(failure);
+  };
 
   // 实验域诊断累积器(docs/runner.md「实验域诊断持久化」):只接无法归属单 Attempt 的实验
   // 事实——ctx.diagnostic、teardown failed/late、budget-unenforceable。相同 dedupeKey 只在
@@ -1278,6 +1296,34 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           recordExperimentDiagnostic({
             experimentId: run.experimentId,
             code: "sandbox-reuse-cleanup-failed",
+            level: "warning",
+            message,
+            phase: "experiment.teardown",
+          });
+        }
+
+        // Fresh Sandbox Scopes close inside their owning Attempt and have
+        // therefore already reached a real terminal state by the time the
+        // final Attempt settles. Runtime converts hook/provider failures into
+        // diagnostics to preserve the remaining finalizers, so consult the
+        // Experiment cell's physical ledger before deciding whether its
+        // sharedState lease can be released.
+        if (cell.physicalCleanupFailures.length > 0) {
+          cleanupSucceeded = false;
+          const details = cell.physicalCleanupFailures
+            .map((failure) => `${failure.stage}: ${failure.error.message}`)
+            .join("; ");
+          const message = `Fresh Sandbox cleanup failed before Experiment teardown: ${details}`;
+          reportDiagnostic({
+            key: `sandbox-fresh-cleanup-failed:${experimentId}`,
+            code: "sandbox-fresh-cleanup-failed",
+            severity: "warning",
+            message,
+            data: { experimentId, failureCount: cell.physicalCleanupFailures.length },
+          });
+          recordExperimentDiagnostic({
+            experimentId: run.experimentId,
+            code: "sandbox-fresh-cleanup-failed",
             level: "warning",
             message,
             phase: "experiment.teardown",
@@ -2568,6 +2614,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                     onFailureClass: (declaration) => closeHaltGate(a, declaration),
+                    ...(a.run.sharedState !== undefined && poolSelection._tag === "Fresh"
+                      ? {
+                          onFreshSandboxCleanupFailure: (failure: FreshSandboxCleanupFailure) => {
+                            recordFreshSandboxCleanupFailure(a.run, failure);
+                          },
+                        }
+                      : {}),
                     onSealedEvaluation: (sealed) =>
                       recordCoordinator.noteSealedOrMarkIncomplete(
                         recordedAttempt,
