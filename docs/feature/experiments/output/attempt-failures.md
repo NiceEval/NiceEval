@@ -1,23 +1,24 @@
-# Attempt 失败：用 locator 下钻
+# Attempt 失败：每条错误用 locator 下钻
 
-Attempt 已经创建时，结束摘要说明失败处于哪条 Eval、哪个阶段和哪种稳定形态。每个单独展开的 Attempt 同时给出 locator 下钻命令：
+断言不通过可以按共同形态聚合。execution error 则逐 Attempt 展示安全封口后的 Provider message；即使 phase 和
+code 相同，不同 message 也不能被代表项吞掉。每条 execution error 同时给出自己的 locator 下钻命令：
 
 ```text
 ╭─ FAILED ─────────────────────────────────────────────────────── 41s ─╮
-│ 0 passed · 2 failed · 0 errored  (0 reused)                         │
+│ 0 passed · 0 failed · 2 errored  (0 reused)                         │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ FAILURES ───────────────────────────────────── 2 total · 2 kinds ─╮
-│ ✗ @1K1P0VJAPVJ12  memory/commit0  [codex · gpt-5.6]                 │
-│   expected command to succeed                                       │
-│   Inspect: niceeval show @1K1P0VJAPVJ12                              │
-│ ✗ @1MEMY3VCQ6B5B  memory/commit1  [codex · gpt-5.6]                 │
-│   expected file README.md to contain "Install"                       │
-│   Inspect: niceeval show @1MEMY3VCQ6B5B                              │
+╭─ FAILURES ────────────────────────────────────── 2 errored attempts ─╮
+│ ✗ @1K1P0VJAPVJ12  provider-errors/e2b  [fixture]                    │
+│   error: 401 Unauthorized — Invalid API key                          │
+│   details: niceeval show @1K1P0VJAPVJ12                              │
+│ ✗ @1MEMY3VCQ6B5B  provider-errors/vercel  [fixture]                 │
+│   error: 403 Forbidden — Team access is required                     │
+│   details: niceeval show @1MEMY3VCQ6B5B                              │
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
-多条 Attempt 具有相同失败形态时，摘要可以合并为 `×N` 并只给代表 locator。代表 locator 只解释一条 Attempt，
-不能替整组声明具体 message 或 received；`NEXT` 中每个 `show --run` 会列出该 Run 的全部 locator，用户再用
-`niceeval show @<locator>` 查看各自证据，需要运行轨迹时追加 `--execution`。完整语义见
+`error:` 是 typed Provider error 的 `message` 经既有敏感值脱敏、控制字符剥除和单条预算收口后的文本；
+`cause` 不回退进 Human。文本在进入 panel 前折行。完整错误、阶段和执行证据由对应 `show @<locator>` 读取。
+完整语义见
 [CLI · 结束反馈与 receipt](../cli.md#结束反馈与-receipt)。
