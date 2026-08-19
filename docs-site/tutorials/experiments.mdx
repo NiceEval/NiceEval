@@ -84,11 +84,10 @@ Every Experiment uses its own `evals` selection. A function form iterates over e
 ```ts
 evals: (eval) =>
   eval.id.startsWith("coding/") &&
-  eval.tags.includes("coding") &&
-  eval.environment !== "gpu"
+  eval.tags.includes("coding")
 ```
 
-`eval.id` is a project-local ID derived from the file path, not an absolute path, so you can test it with `startsWith` / `includes`. In the two examples under [Authoring Evals](/tutorials/authoring#tags-and-environment), `coding/fix-button` is selected and `research/gpu-literature` is not. The parsed result becomes this run's plan. The Report reads actual physical Attempts and coverage facts.
+`eval.id` is a project-local ID derived from the file path, not an absolute path, so you can test it with `startsWith` / `includes`. In [Authoring Evals](/tutorials/authoring#tags-and-sandbox), the `coding/fix-button` example satisfies both predicates. The parsed result becomes this run's plan. The Report reads actual physical Attempts and coverage facts.
 
 ## Advice for Experiment design
 

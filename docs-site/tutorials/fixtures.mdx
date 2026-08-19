@@ -106,7 +106,7 @@ await t.sandbox.writeText(
     "except (ValueError, PermissionError, AssertionError):",
     "    pass",
     "print('ok')",
-  ].join("\\n"),
+  ].join("\n"),
 );
 
 const result = await t.sandbox.runCommand("python3", ["_test_traversal.py"]);

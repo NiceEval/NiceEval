@@ -151,7 +151,7 @@ import {
   completeEvidenceCoverage,
   createNpmCliInstaller,
   defineSandboxAgent,
-  resolveAgentBin,
+  agentBin,
 } from "niceeval/adapter";
 
 const { ensure, installer } = createNpmCliInstaller({
@@ -167,8 +167,12 @@ export default defineSandboxAgent({
   installers: [installer],
   async send(input, ctx) {
     ctx.progress({ message: "运行 my-agent CLI" });
-    const bin = await resolveAgentBin(ctx.sandbox, "my-agent");
-    await ctx.sandbox.runCommand(bin, ["run", input.text, "--json-out", "agent-events.json"]);
+    await ctx.sandbox.runCommand("sh", [
+      "-lc",
+      `exec ${agentBin("my-agent")} run "$1" --json-out agent-events.json`,
+      "my-agent",
+      input.text,
+    ]);
     const transcript = await ctx.sandbox.readText("agent-events.json");
     if (transcript.trim() === "") {
       ctx.diagnostic({

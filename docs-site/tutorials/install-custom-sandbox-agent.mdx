@@ -16,7 +16,7 @@ import {
   completeEvidenceCoverage,
   createNpmCliInstaller,
   defineSandboxAgent,
-  resolveAgentBin,
+  agentBin,
 } from "niceeval/adapter";
 
 const { ensure, installer } = createNpmCliInstaller({
@@ -45,8 +45,12 @@ export default defineSandboxAgent({
   },
 
   async send(input, ctx) {
-    const bin = await resolveAgentBin(ctx.sandbox, "my-agent");
-    const result = await ctx.sandbox.runCommand(bin, ["run", "--json", input.text]);
+    const result = await ctx.sandbox.runCommand("sh", [
+      "-lc",
+      `exec ${agentBin("my-agent")} run --json "$1"`,
+      "my-agent",
+      input.text,
+    ]);
     if (result.exitCode !== 0) {
       throw new Error(`my-agent exited with code ${result.exitCode}: ${result.stderr}`);
     }

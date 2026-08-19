@@ -31,7 +31,7 @@ Core fields:
 | Field | Description |
 |---|---|
 | `description` | A human-readable description shown in reports |
-| `environment` | An optional environment-requirement profile that the Sandbox spec's `environments` table maps to a concrete prepared environment |
+| `sandbox` | An optional Sandbox layer owned by the Eval; omit it when the Experiment provides the template-bearing layer |
 | `test(t)` | The interaction and assertion logic |
 
 An Eval does not declare which Agent to run. It stays agent-neutral by default, so the same Eval can run against different Agents under different Experiments. The Experiment chooses the Agent; the CLI does not override it ad hoc.
@@ -80,10 +80,10 @@ A pass-style Eval Attempt has exactly four terminal states:
 
 <CardGroup cols={2}>
   <Card title="passed" icon="circle-check" color="#22c55e">
-    Every Boolean Assertion matched, every measurement met its `atLeast` threshold, and no execution error occurred.
+    Every Boolean Assertion matched, every gated measurement met its `.gate(n)` threshold, and no execution error occurred.
   </Card>
   <Card title="failed" icon="circle-xmark" color="#ef4444">
-    At least one Boolean condition mismatched, or a measurement fell below its threshold.
+    At least one Boolean condition mismatched, or a measurement fell below an explicit `.gate(n)` threshold.
   </Card>
   <Card title="errored" icon="triangle-exclamation" color="#f59e0b">
     An execution exception, timeout, or authoring error means this execution cannot form a trustworthy conclusion.

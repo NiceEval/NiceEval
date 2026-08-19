@@ -49,16 +49,9 @@ export default defineExperiment({
 
 ## Sandboxes are not shared between terminals
 
-Sandbox reuse occurs only within one Invocation. When two terminals run one Experiment at the same time, each has its own Run and Sandbox pool. NiceEval does not give a running Sandbox handle to another process. Only one operation can use a Record root at once; a second terminal pointing at the same root immediately gets `record-root-busy` instead of writing alongside the first.
+Sandbox reuse occurs only within one Invocation. When two terminals run one Experiment at the same time, each has its own Run and Sandbox pool. NiceEval does not give a running Sandbox handle to another process. Both Invocations may append published results to the same Record root concurrently.
 
-To run in parallel, give the terminals different Record roots:
-
-```bash
-niceeval exp experiments/mempal.ts --record .niceeval/mempal-a
-niceeval exp experiments/mempal.ts --record .niceeval/mempal-b
-```
-
-Each root forms complete results of its own. NiceEval does not merge them automatically.
+Record maintenance is exclusive. If `clean` or another maintenance operation reports `record-maintenance-busy`, stop the readers and writers using that root, then retry the maintenance command. Do not split normal concurrent runs into separate Record roots merely to avoid a writer conflict.
 
 When a Sandbox retains only its own temporary state, both terminals can run different Evals at the same time. Both restore the same checkpoint in Sandbox `setup()`, save it in `teardown()`, and declare a stable non-secret key for the Experiment:
 

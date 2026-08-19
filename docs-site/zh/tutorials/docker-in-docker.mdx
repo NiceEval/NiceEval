@@ -116,10 +116,13 @@ Dockerfile 只烘焙固定工具、只读归档和项目初始文件。需要 in
 workspace，并运行项目自己的 smoke check：
 
 ```ts title="lib/dind-sandbox.ts"
-import { dockerfileSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
-export const dindSandbox = dockerfileSandbox({
-  context: new URL("../sandbox/", import.meta.url),
+export const dindSandbox = dockerSandbox({
+  source: {
+    type: "dockerfile",
+    context: new URL("../sandbox/", import.meta.url),
+  },
   user: "node",
   dockerAccess: {
     mode: "dind",

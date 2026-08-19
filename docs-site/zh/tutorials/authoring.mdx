@@ -10,6 +10,7 @@ import { Lifecycle } from '/snippets/widgets.jsx';
 
 ```ts
 import { defineEval, type JsonValue } from "niceeval";
+import type { SandboxLayer } from "niceeval/sandbox";
 
 export default defineEval({
   description?: string;
@@ -17,34 +18,29 @@ export default defineEval({
   judge?: JudgeConfig;
   reporters?: Reporter[];
   timeoutMs?: number;
-  environment?: string;
+  sandbox?: SandboxLayer;
   metadata?: Record<string, JsonValue>;
   async setup(sandbox, ctx) { /* task fixture + progress/diagnostic */ },
   async test(t) { /* interactions + assertions */ },
 });
 ```
 
-## `tags` 与 `environment`
+## `tags` 与 `sandbox`
 
 ```ts
+import { defineEval } from "niceeval";
+import { dockerSandbox } from "niceeval/sandbox";
+
 // evals/coding/fix-button.eval.ts → id: coding/fix-button
 export default defineEval({
   description: "修复 Button 组件",
   tags: ["coding", "frontend"],
-  environment: "node-22",
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:22-slim" } }),
   async test(t) { /* coding task */ },
-});
-
-// evals/research/gpu-literature.eval.ts → id: research/gpu-literature
-export default defineEval({
-  description: "在 GPU 环境检索论文",
-  tags: ["research"],
-  environment: "gpu",
-  async test(t) { /* research task */ },
 });
 ```
 
-`tags` 可供 `--tag` 和 experiment 的 `evals` 谓词读取。`environment` 只声明环境 profile。具体 image / template 由 experiment 使用的 Sandbox 配置映射。
+`tags` 可供 `--tag` 和 Experiment 的 `evals` 谓词读取。任务本身拥有起始环境时，在评估用例上声明 `sandbox`；如果 template-bearing Sandbox layer 由 Experiment 提供，这里就省略。每个实际评估用例 × Experiment 配对必须恰好有一方提供 template-bearing layer。
 
 ## 单轮评估
 
