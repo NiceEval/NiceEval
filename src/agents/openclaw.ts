@@ -17,6 +17,14 @@ import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import { randomUUID } from "node:crypto";
 import type { Agent, AgentSetupManifest, SkillSpec, StreamEvent, TurnEvidenceCoverage } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import { shell } from "../sandbox/commands.ts";
+import { shellQuote } from "../sandbox/shell.ts";
+import type { AgentEnsure, AgentInstaller } from "./types.ts";
+import {
+  exactNpmPluginRevision,
+  normalizeExactNpmPlugins,
+  type ExactNpmPlugin,
+} from "./exact-npm-plugins.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenClaw 的 agent adapter(沙箱型)。
@@ -47,6 +55,46 @@ export interface OpenClawConfig {
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md。
    */
   skills?: SkillSpec[];
+  /** Native OpenClaw plugins as exact npm package@version declarations. */
+  plugins?: readonly string[];
+}
+
+function openClawPluginLayer(
+  cliVersion: string,
+  plugins: readonly ExactNpmPlugin[],
+): { ensure: AgentEnsure; installer: AgentInstaller } {
+  const identity = {
+    agent: "openclaw-plugins",
+    version: cliVersion,
+    revision: exactNpmPluginRevision(plugins),
+  };
+  const verifyFiles = `const fs=require("node:fs"),path=require("node:path");` +
+    `const expected=${JSON.stringify(plugins)},base=path.join(process.env.HOME,".openclaw");` +
+    `const projects=path.join(base,"npm/projects"),found=[];` +
+    `for(const dir of fs.readdirSync(projects)){const root=path.join(projects,dir),p=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));` +
+    `for(const [name,version] of Object.entries(p.dependencies||{})){const pkg=JSON.parse(fs.readFileSync(path.join(root,"node_modules",name,"package.json"),"utf8"));` +
+    `const manifest=JSON.parse(fs.readFileSync(path.join(root,"node_modules",name,"openclaw.plugin.json"),"utf8"));found.push({name,version,pkgVersion:pkg.version,id:manifest.id});}}` +
+    `if(found.length!==expected.length)process.exit(1);` +
+    `const config=JSON.parse(fs.readFileSync(path.join(base,"openclaw.json"),"utf8"));` +
+    `const ordered=expected.map(e=>found.find(x=>x.name===e.name&&x.version===e.version));` +
+    `for(const x of ordered){if(!x||x.pkgVersion!==x.version||!config.plugins?.entries?.[x.id]?.enabled||!/^[A-Za-z0-9._-]+$/.test(x.id))process.exit(1);}`;
+  return {
+    ensure: { identity, probe: shell(`node -e ${shellQuote(verifyFiles)}`) },
+    installer: {
+      identity,
+      installMode: "sandbox-network",
+      install: async (sandbox, context) => {
+        const installs = plugins
+          .map((plugin) => `openclaw plugins install --pin ${shellQuote(plugin.spec)}`)
+          .join("\n");
+        const script = `set -eu
+ids=$(openclaw plugins list --json | node -e ${shellQuote(`let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{const x=JSON.parse(s);for(const p of x.plugins||[])if(p.origin==="global")console.log(p.id)})`)})
+for id in $ids; do openclaw plugins uninstall --force "$id"; done
+${installs}`;
+        await sandbox.runShellOrThrow(script, { signal: context.signal });
+      },
+    },
+  };
 }
 
 function resolveApiKey(config?: OpenClawConfig): string {
@@ -75,6 +123,7 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
  */
 export function openClawAgent(config?: OpenClawConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
+  const plugins = normalizeExactNpmPlugins(config?.plugins, "openClawAgent plugins");
   const { ensure, installer } = createNpmCliInstaller({
       identity: {
         agent: "openclaw",
@@ -85,6 +134,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       bin: "openclaw",
   });
 
+  const pluginLayer = plugins.length === 0 ? undefined : openClawPluginLayer(version, plugins);
   return defineSandboxAgent({
     name: "openclaw",
     // e2e 已用真实 CLI 证明 session transcript 能给出工具轨 / 消息 / 用量;
@@ -93,8 +143,8 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     // OpenClaw 没有专属 span 方言 mapper:原生 span 走 canonical 通用 heuristic。
     // OTel 内容采集关闭时只影响 trace 证据面;行为轨(下面的 transcript 解析)不受影响。
     spanMapper: mapGenericSpans,
-    ensure,
-    installers: [installer],
+    ensure: pluginLayer === undefined ? ensure : [ensure, pluginLayer.ensure],
+    installers: pluginLayer === undefined ? [installer] : [installer, pluginLayer.installer],
 
     tracing: {
       protocol: "http/protobuf",
@@ -112,7 +162,15 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         // OpenAI 兼容网关走自定义 provider + openai-completions;
         // skipBootstrap 跳过首轮身份仪式,否则 agent 会先问 "Who am I"。
         // workspace 钉沙箱工作目录,文件工具写到 eval 可见的路径。
+        let persistentConfig: globalThis.Record<string, unknown> = {};
+        try {
+          const existing = await sb.runShell('cat "$HOME/.openclaw/openclaw.json"');
+          if (existing.exitCode === 0) persistentConfig = JSON.parse(existing.stdout);
+        } catch {
+          persistentConfig = {};
+        }
         const openclawConfig = {
+          ...persistentConfig,
           agents: {
             defaults: {
               skipBootstrap: true,

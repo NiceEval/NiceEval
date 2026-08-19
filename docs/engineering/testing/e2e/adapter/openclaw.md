@@ -10,13 +10,14 @@ Repo ID 是 `adapter/openclaw`；manifest 声明 `areas: ["adapter", "sandbox"]`
 | 协议行为 | Eval 断言（只读事件流） |
 | --- | --- |
 | Skills 与工具轨 | 目标 Skill 真装进 `.agents/skills/` 并被 shell 读取；session transcript 归一出工具事件并按 call ID 配对，生成文件采用 Skill 的独有 marker，同轮不读 decoy |
+| 原生插件 | `@fidacy/openclaw-plugin@0.9.0` 的原生 install record 保留精确 package/version，且 `plugins inspect --runtime` 报 loaded、无 diagnostics |
 | 会话 | 显式 session id 续轮能引用首轮事实；新 session 与旧 session 隔离 |
 | usage | transcript 或 `--json` 封包归一出每轮正的 `inputTokens` / `outputTokens` |
 | 负断言边界 | transcript 完整时设 `notCalledTool` 反例；缺失时不从最终文本猜过程 |
 
 ## 仓库验收
 
-- `ci` Experiment 选中本仓库的 Skill 工具轨、会话与 usage Eval；原生验收脚本列全 OpenClaw 协议 Eval ID，防止少发现/少运行后假绿。三条 live Eval 在同一 Repo 内串行，避免同一 embedded agent / compat provider 的突发并发把原生 120 秒退出误判成 adapter 回归；Repo 仍与 batch 中的其它 Repo 并行。Live Adapter 不用非确定性的通用 coding 任务重复承担产品可靠性。
+- `ci` Experiment 选中本仓库的 Skill 工具轨、会话与 usage Eval，并复用同一 Sandbox。第一条 Attempt 安装原生插件，后两条重新执行同一探测命令并命中已有状态；原生验收脚本列全 OpenClaw 协议 Eval ID，防止少发现/少运行后假绿。三条 live Eval 在同一 Repo 内串行，避免同一 embedded agent / compat provider 的突发并发把原生 120 秒退出误判成 adapter 回归；Repo 仍与 batch 中的其它 Repo 并行。Live Adapter 不用非确定性的通用 coding 任务重复承担产品可靠性。
 - **Eval 结果**：原生验收只断言通过数与未通过数。Skill 读取与 decoy 反选都留在 Eval 的事件流断言中。
 - **Evidence Page**：独立 `show @locator --execution` test 只读回 Skill Eval 的代表性 shell 工具证据，不用 Page text 再给 Skill 判分。
 - **Timing Page**：独立 target Page test 验收 OpenClaw 的阶段树，不在该 owner 内重复 Evidence Page 断言。

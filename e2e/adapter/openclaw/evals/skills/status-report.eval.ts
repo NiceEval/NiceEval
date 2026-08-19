@@ -8,6 +8,18 @@ const REPORT_PATH = "status-report.txt";
 export default defineEval({
   description: "Skill 正调:只读取匹配的 status-report Skill，不误用 decoy",
   async test(t) {
+    await t.group("原生插件已按精确 npm 版本安装并在 local runtime 加载", async () => {
+      const inspected = await t.sandbox.runShell(
+        `openclaw plugins inspect fidacy --runtime --json | ` +
+          `node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{` +
+          `const x=JSON.parse(s);const ok=x.plugin?.status==="loaded"&&` +
+          `x.install?.resolvedName==="@fidacy/openclaw-plugin"&&` +
+          `x.install?.resolvedVersion==="0.9.0"&&x.diagnostics?.length===0;` +
+          `process.stdout.write(ok?"ready":"missing");process.exit(ok?0:1)})'`,
+      );
+      await t.check(inspected.exitCode, equals(0)).orStop();
+      t.check(inspected.stdout, includes("ready"));
+    });
     await t.group("安装痕迹:目标与 decoy Skill 都落在可发现目录", async () => {
       const installed = await t.sandbox.runShell(`ls ${SKILL_DIR}`);
       t.check(installed.stdout, includes(SKILL_NAME));

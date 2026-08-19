@@ -1,6 +1,8 @@
 # Coding Agent 扩展边界
 
-Skills、MCP servers 和原生 Plugins 在 `agent.ensure` 相位安装。
+可持久且具有精确 npm package 身份的原生 Plugins 在 `agent.ensure` 相位收敛；Skills、MCP servers、凭据与
+本 Attempt 的模型/runtime 配置仍由 `setup` 写入。Claude Code / Codex marketplace 声明尚不能可靠证明
+远端出处与不可变版本，因此继续在每条 Attempt 保守重装，直到其探测命令能验证同等强度的 provenance。
 Record 只通过 Attempt-owned 具名通道保存安装 manifest，不理解每个 Agent 的配置目录、Marketplace 或包管理器；安装结果不进入 Attempt 核心。
 
 ## 类型边界
@@ -22,7 +24,8 @@ agent 安装后脚本和沙箱准备命令是同一类「在沙箱里跑一段�
 成对的 `preTeardown` 数组承载收尾:按逆序、先于 agent teardown 执行(LIFO 镜像)。
 它不是配置声明：factory 已有字段能表达的（MCP、Skills、Plugin）不进 Hook，Hook 只承载「安装文件就位后才能跑」的过程动作（如运行插件自带的 setup 脚本）。
 
-Native Plugin 不统一：Claude Code 和 Codex 使用各自的 PluginSpec，Bub 使用 PythonPluginSpec。
+Native Plugin 不统一：Claude Code 和 Codex 使用各自的 PluginSpec，Bub 使用 PythonPluginSpec；DSH 与
+OpenClaw 接受各自原生命令可安装的精确 npm `package@version` 字符串。
 一个 Agent 不支持的扩展类型不出现在其 config 上。
 
 原生配置是 Sandbox coding-agent Adapter 契约的标准组成，但不跨 Agent 统一字段名或数据表示。
@@ -53,7 +56,7 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 1. 从本地项目根读取官方配置文件，创建隔离的 Agent 配置目录；按官方语法校验后原样上传为完整用户层（保留键冲突在这一步报错）。
 2. 用独立层或 CLI 参数准备模型、鉴权、MCP 与 OTel 配置。
 3. 安装 Skills。
-4. 安装供应商原生 Plugin / Python package。
+4. 验证 Agent Ensure 已收敛的持久原生 Plugin；安装仍属于 Attempt 的供应商 Plugin / Python package。
 5. 写安装 manifest。
 6. 按序运行 `postSetup` Hook。
 
@@ -63,7 +66,8 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 
 ## 安装收敛：不假设沙箱空白
 
-扩展安装每条 attempt 执行一次。
+扩展状态每条 attempt 都验证一次，但可验证的持久原生 Plugin 不必每次安装：Runner 先执行只读探测命令，
+只有声明的精确 package/version、启用集合或可加载状态不匹配时，才调用 identity 精确配对的 installer，随后复检。
 Sandbox 复用下，沙箱带着上一条 attempt 的 `$HOME` 残留进场（生命周期见 [Sandbox 复用](../../sandbox/reuse.md)）。
 因此安装步骤的语义是**把沙箱状态收敛到声明**，不是在空白沙箱上追加：每一步在「目标已存在、部分存在、出处不同」的沙箱上，都要得到与空白沙箱相同的结果。
 
@@ -85,8 +89,10 @@ Adapter 用 unchecked `runCommand()` / `runShell()` 执行这类摘除，让原�
 判断两个出处等价，要理解每个 CLI 各自的出处规范化规则；按名字摘除重加只依赖名字这一个事实。
 同理，同名不同源也不当配置错误报出：它在复用沙箱上是常态，报错会让带这类脚本的插件永远无法与复用组合。
 
-Plugin 已装也不跳过重装：manifest 把安装记为本条 attempt 的事实，版本事实必须来自本条 attempt 按声明执行的安装。
-已装即跳过会把上一条 attempt 从别处装出的内容，当成本条 attempt 的安装事实。
+Claude Code / Codex marketplace Plugin 已装也不跳过重装：其当前 provenance 尚不足以安全命中。
+DSH / OpenClaw 的精确 npm Plugin 则以原生 profile/install record、实际 package version、启用集合与加载检查
+共同命中；派生镜像预装或复用 Sandbox 中的同一状态会得到 `hit`，缺失或不一致才得到 `installed`。
+插件声明顺序、精确版本、安装协议修订与安装模式都进入 Agent install identity，插件集合不同不会误用旧结果。
 
 收敛的对象只有安装文件。
 Plugin 安装目录每条 attempt 都被重装覆写：Plugin 运行期要跨 attempt 留下的数据，必须写在安装目录之外的路径。
