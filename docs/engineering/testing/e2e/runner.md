@@ -25,6 +25,9 @@
 
 同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 不能复制新的公开 Attempt locator。不带 locator 或 `--run` 的 `show` 必须列出全部身份仍匹配的 Run，包括两次 origin Run 与 carry Run。
 
+同一 owner 通过 `show <locator> --timing --json` 严格读回通用 Runner timing：`eval.run` 是 completed 根 interval，
+`agent.send` / `turn1` 是它的 completed 子 interval。Adapter 不重复拥有这组通用阶段。
+
 两个终端同时运行同一个实验时，后开始的命令会等前一个命令完成发布。它随后直接使用前一个命令已经完成的题目结果，不会再次调用 agent、sandbox 或 judge 去跑同一题目。
 
 ### runner-group-or-stop-dispatch

@@ -225,10 +225,46 @@ export class ProcessHandle {
     }
   }
 
+  private waitForDone(timeoutMs: number): Promise<boolean> {
+    if (this.settled) {
+      return this.done.then(() => true);
+    }
+    return new Promise<boolean>((resolve, reject) => {
+      let finished = false;
+      const finish = (result: { value: boolean } | { error: unknown }) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        if ("value" in result) resolve(result.value);
+        else reject(result.error);
+      };
+      const timer = setTimeout(() => finish({ value: false }), Math.max(0, timeoutMs));
+      void this.done.then(
+        () => finish({ value: true }),
+        (error: unknown) => finish({ error }),
+      );
+    });
+  }
+
+  private async settleAfterOwnedGroupExit(): Promise<void> {
+    if (await this.waitForDone(this.graceMs)) return;
+
+    // A descendant can escape the owned process group yet keep inherited pipe
+    // descriptors open. Once no live group member remains, stop waiting for
+    // those unrelated descriptors so ChildProcess can emit `close`.
+    this.child.stdout?.destroy();
+    this.child.stderr?.destroy();
+    if (await this.waitForDone(this.graceMs)) return;
+
+    throw new Error(
+      `process group ${this.pid} exited but its child process did not close within two grace periods`,
+    );
+  }
+
   private async terminateOwnedGroup(): Promise<void> {
     const initial = this.ownedGroupPresence();
     if (initial === "gone" || initial === "zombie-only") {
-      await this.done;
+      await this.settleAfterOwnedGroupExit();
       return;
     }
 
@@ -243,7 +279,7 @@ export class ProcessHandle {
         );
       }
     }
-    await this.done;
+    await this.settleAfterOwnedGroupExit();
   }
 
   private terminate(): Promise<void> {
