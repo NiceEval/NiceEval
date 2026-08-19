@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { PassThrough } from "node:stream";
 import { ProcessReceipt, ProcessStartError } from "./process.js";
 import type { Argv } from "./process.js";
@@ -12,6 +14,49 @@ function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
     ? String((error as { code?: unknown }).code)
     : undefined;
+}
+
+/**
+ * Linux keeps a zombie in its process group until the adopting parent reaps
+ * it. Signal 0 still reports that group as present, while TERM and KILL cannot
+ * change the zombie. Treat a group containing only terminal kernel states as
+ * gone; return undefined when procfs cannot prove the membership safely.
+ */
+function linuxProcessGroupHasRunningMember(groupId: number): boolean | undefined {
+  if (process.platform !== "linux") return undefined;
+
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync("/proc", { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+
+    let stat: string;
+    try {
+      stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+    } catch (error) {
+      const code = errorCode(error);
+      if (code === "ENOENT" || code === "ESRCH") continue;
+      return undefined;
+    }
+
+    const commandEnd = stat.lastIndexOf(")");
+    if (commandEnd < 0 || stat[commandEnd + 1] !== " ") return undefined;
+    const fields = stat.slice(commandEnd + 2).trim().split(/\s+/);
+    if (fields.length < 3) return undefined;
+
+    const state = fields[0];
+    const processGroup = Number(fields[2]);
+    if (!Number.isSafeInteger(processGroup)) return undefined;
+    if (processGroup !== groupId) continue;
+    if (state !== "Z" && state !== "X" && state !== "x") return true;
+  }
+
+  return false;
 }
 
 export interface StartOptions {
@@ -164,7 +209,7 @@ export class ProcessHandle {
     }
     try {
       process.kill(-this.pid, 0);
-      return true;
+      return linuxProcessGroupHasRunningMember(this.pid) ?? true;
     } catch (error) {
       if (errorCode(error) === "ESRCH") return false;
       if (errorCode(error) === "EPERM") return true;
