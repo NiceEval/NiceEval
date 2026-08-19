@@ -4,7 +4,7 @@
       "from": "examples/zh/origin/codex-sdk",
       "to": "examples/zh/tier1/codex-sdk",
       "contract": "verbatim",
-      "baseTree": "2dd88827c5b0260f4d69e823b9f2dd8f4e97b34a"
+      "baseTree": "750887ccff07b0203b1915bf6db3149ab9447011"
     },
     {
       "from": "examples/zh/origin/claude-sdk",
@@ -40,7 +40,7 @@
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "461c87cb711d6b0fe88c149fc29424e410e2f4c4"
+      "baseTree": "a32a1cf74b77676c911b8f8ba02cef22e1b96bb1"
     },
     {
       "from": "examples/zh/tier1/langgraph",
@@ -58,7 +58,7 @@
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "fbdaecc62d32519204acf52ee6a896469164e416"
+      "baseTree": "c6cc74e1543d23b117d84f0ef5b2ac28a3d54826"
     },
     {
       "from": "examples/zh/tier2/langgraph",
