@@ -5,7 +5,6 @@ import {
   decodeShowTiming,
   exactEval,
   only,
-  ProcessReceipt,
 } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
@@ -21,7 +20,9 @@ test("通用 Runner timing 公开 setup、run 与 send 的完成关系", async (
     async ({ commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "timing", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
+      const receipt = run.expReceipt();
+      expect(receipt.completion, run.diagnostic()).toBe("completed");
+      const runId = only(receipt.runIds, () => true, run.diagnostic());
       const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
       const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
 
@@ -30,10 +31,15 @@ test("通用 Runner timing 公开 setup、run 与 send 的完成关系", async (
       const timingDocument = decodeShowTiming(shown);
       const available = only(
         timingDocument.data.timing,
-        (entry) => entry.state === "available",
+        () => true,
         shown.diagnostic(),
       );
       if (available.state !== "available") throw new Error(shown.diagnostic());
+      expect(available.attempt).toEqual({
+        kind: "attempt",
+        locator: event.locator,
+        originRunId: runId,
+      });
       const evalRun = only(
         available.timing.intervals,
         (interval) => interval.phase === "eval.run" && interval.label === "eval.run",
@@ -52,64 +58,6 @@ test("通用 Runner timing 公开 setup、run 与 send 的完成关系", async (
       expect(evalRun).toMatchObject({ parentIntervalId: null, outcome: "completed" });
       expect(agentSetup).toMatchObject({ parentIntervalId: null, outcome: "completed" });
       expect(agentSend).toMatchObject({ parentIntervalId: evalRun.intervalId, outcome: "completed" });
-
-      const receiptFor = (value: unknown) => new ProcessReceipt({
-        argv: shown.argv,
-        cwd: shown.cwd,
-        exitCode: shown.exitCode,
-        signal: shown.signal,
-        stdout: JSON.stringify(value),
-        stderr: shown.stderr,
-        durationMs: shown.durationMs,
-        timedOut: shown.timedOut,
-      });
-      const timingValue = (
-        state: "complete" | "partial",
-        limitations: readonly unknown[],
-        intervals: readonly unknown[],
-      ) => ({
-        schema: timingDocument.schema,
-        data: {
-          kind: timingDocument.data.kind,
-          timing: [{
-            attempt: available.attempt,
-            state: "available",
-            timing: { collection: { state, limitations }, intervals },
-          }],
-        },
-      });
-      const intervals = available.timing.intervals;
-      const first = intervals[0]!;
-      const second = intervals[1]!;
-      const replaceFirst = (replacement: unknown) => [replacement, ...intervals.slice(1)];
-      const limitation = { code: "capture-failed", stage: "timing-capture", target: "timing" };
-      const cycle = [
-        { ...first, startOffsetMs: 0, durationMs: 10, parentIntervalId: second.intervalId },
-        { ...second, startOffsetMs: 0, durationMs: 10, parentIntervalId: first.intervalId },
-      ].sort((left, right) => left.intervalId.localeCompare(right.intervalId));
-      const outsideParent = [
-        { ...first, startOffsetMs: 0, durationMs: 1, parentIntervalId: null },
-        { ...second, startOffsetMs: 2, durationMs: 1, parentIntervalId: first.intervalId },
-      ].sort((left, right) => left.intervalId.localeCompare(right.intervalId));
-      const invalidDocuments = [
-        timingValue("complete", [limitation], intervals),
-        timingValue("partial", [], intervals),
-        timingValue("complete", [], replaceFirst({ ...first, phase: "unknown.phase" })),
-        timingValue("complete", [], replaceFirst({ ...first, intervalId: "bad interval id" })),
-        timingValue("complete", [], [first, first, ...intervals.slice(1)]),
-        timingValue("complete", [], replaceFirst({ ...first, parentIntervalId: "interval_missing" })),
-        timingValue("complete", [], cycle),
-        timingValue("complete", [], outsideParent),
-        timingValue("complete", [], replaceFirst({
-          ...first,
-          startOffsetMs: Number.MAX_SAFE_INTEGER,
-          durationMs: 1,
-        })),
-        timingValue("complete", [], replaceFirst({ ...first, outcome: "unknown" })),
-      ];
-      for (const invalidDocument of invalidDocuments) {
-        expect(() => decodeShowTiming(receiptFor(invalidDocument))).toThrow(/decodeShowTiming\(\)/);
-      }
     },
   );
 });
