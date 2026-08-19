@@ -49,18 +49,25 @@ export default defineEval({
 });
 ```
 
-When a shared service is unavailable, use `ExperimentFatalError` to stop the Experiment's remaining Attempts:
+When a shared service is unavailable, make that check inside a real Eval's `test(t)` callback. Replace `serviceHealthUrl` with your service's health endpoint, then use `ExperimentFatalError` to stop the Experiment's remaining Attempts:
 
 ```ts
-import { ExperimentFatalError } from "niceeval";
+// evals/coding/shared-service-health.eval.ts
+import { defineEval, ExperimentFatalError } from "niceeval";
 
-const health = await t.sandbox.runCommand("curl", ["-fsS", serviceHealthUrl]);
-if (health.exitCode !== 0) {
-  throw new ExperimentFatalError(
-    "The shared service is unreachable. Check the service and tunnel, then rerun the Experiment.",
-    { cause: health.stderr },
-  );
-}
+const serviceHealthUrl = "https://service.example.test/health";
+
+export default defineEval({
+  async test(t) {
+    const health = await t.sandbox.runCommand("curl", ["-fsS", serviceHealthUrl]);
+    if (health.exitCode !== 0) {
+      throw new ExperimentFatalError(
+        "The shared service is unreachable. Check the service and tunnel, then rerun the Experiment.",
+        { cause: health.stderr },
+      );
+    }
+  },
+});
 ```
 
 The error message appears in the terminal and the run record. State what happened and what the reader should do next.

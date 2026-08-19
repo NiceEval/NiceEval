@@ -163,10 +163,17 @@ niceeval exp <selector> --teardown \
   --confirm-remote-quiesced
 ```
 
+CLI 先要求 selector 最终只匹配一个 Experiment。它保留不带 token 或确认的只读 owner-evidence inspection。只有 token 与
+双确认齐全、即将开始 recovery generation 时，CLI 才检查这个唯一 Experiment 是否声明 `teardown`。selector 不唯一或
+target 缺少 `teardown` 都以非零状态结束，当前 active generation 保持不变，不会进入 recovering 或 free。
+
 不带 token 或确认时，该公开入口只显示 key、Experiment、owner token、host、PID、process identity 与当前 exact
 token/generation 匹配时的 heartbeat 诊断。若同机 exact process identity 仍活则拒绝；无可靠身份也 fail closed。恢复和正常 release 都只推进 exact owner
 generation，错误/旧 token 不会修改 lease，也不能删除恢复后的新 holder。成功显示 `explicitly recovered sharedState key`；
 cleanup 失败保留时显示 `state-lease-recovery-required`。
+
+显式 recovery 没有 NDJSON 或 receipt 形状。带完整 recovery 参数的 `--json` 组合在选择、读取 owner evidence 或
+改变 generation 之前以具名错误拒绝；调用方必须改用人读 recovery 流程，不能从 stderr 拼装机器接口。
 
 case-lock recovery notice 的稳定字段如下：
 
@@ -253,7 +260,8 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 
 ## `--json`
 
-`exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。完整形态见
+普通 `exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。显式 sharedState recovery 明确拒绝
+`--json`，因为它不建立 Invocation 或 receipt，也没有 NDJSON 形状。完整形态见
 [NDJSON 输出案例](output/json-stream.md)。
 
 progress 与 diagnostic 形状服务当前 Invocation，不是 Record 解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 Record reader 读取业务数据。

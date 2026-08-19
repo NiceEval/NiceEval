@@ -75,6 +75,9 @@ Runner Repo 增加专用 Eval；完整 fingerprint 等价类仍不在 E2E 重复
 两个不同 Experiment 声明相同 `sharedState.key`，并在各自 Experiment hook 中独占同一份外部状态。第一个 Run 从 setup
 到 teardown 尚未结束时，第二个 Run 不得进入自己的 setup；前者 teardown 完成后，后者才可取得该状态并完整运行。
 
+等待该 key 的 Experiment 即使使用同一条 exclusive Provider lane，也不占用那条 lane。另一个不依赖该 key 的
+Experiment 必须能先进入自己的 Sandbox 与 Agent body；Provider 的实际 Sandbox / Agent body 仍按 lane 串行。
+
 带 `sandboxReuse` 的切片还证明两个 Attempt 使用同一物理 Sandbox。最后一个 Attempt settle 后，Sandbox
 lifecycle/finalizer scope barrier 与 Experiment teardown barrier 都阻止第二 Invocation 的 setup。
 
@@ -92,7 +95,9 @@ owner evidence，错误 token 拒绝，exact token 加双确认才可进入。
 被拒绝；它证明 competing recovery 不能取代 live immutable generation。
 
 free generation 后新 holder 可进入，而旧 token 再次 recovery 失败，第三 waiter 仍等待新 holder。另一 case 让真实
-Experiment teardown 失败，验证 lease 留存而不是 CLI exit sweep 删除。
+Experiment teardown 失败，验证 lease 留存而不是 CLI exit sweep 删除。没有声明 teardown 的 target 则在进入 recovery
+generation 前被拒绝，后续同 key waiter 仍不能 setup；`--json` 的 explicit recovery 参数组合也会非零拒绝。根帮助与
+`exp help` 都列出完整四参数恢复用法，避免机器调用方误把人读 stderr 当成 NDJSON。
 
 ## 边界
 

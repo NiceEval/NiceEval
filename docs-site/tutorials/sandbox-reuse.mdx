@@ -89,7 +89,7 @@ Large persistent builds or caches cannot rely on unbounded growth. The author sh
 
 - **Heavy dependencies every Experiment needs**—an Agent CLI or language runtime—go into a Provider image, template, or snapshot, not any `setup`.
 - **Preparation the whole batch shares**—installing a toolchain, cloning a common repository, warming a build cache—belongs in Sandbox-level `.setup()`. It runs once per Sandbox, its output becomes part of the between-task reset point, and every task gets it for free.
-- **Material only this task needs**—its own repository, data, or dependencies—belongs in that Eval's `setup` or `test(t)`. It is replayed after every task reset, so replaying it must stay correct. When every task clones, use one temporary clone-directory name for the whole Experiment, add it to `diff.ignore`, and run `rm -rf .git <temporary-directory>` before cloning to clear the previous task's leftovers—`.git` survives a between-task reset.
+- **Material only this task needs**—its own repository, data, or dependencies—belongs in that Eval's `setup` or `test(t)`. It is replayed after every task reset, so replaying it must stay correct. When every task clones, use one named temporary clone directory for the whole Experiment, such as `.niceeval-task-clone`, and add it to `diff.ignore`. Before cloning, run `rm -rf .niceeval-task-clone` to clear only the previous task's leftovers. Never remove `workdir`'s root `.git`: NiceEval needs it for the between-task `git reset`, and it survives that reset.
 - **A background process or occupied port** must be cleaned up by the Eval's own `teardown`; the between-task reset does not kill processes.
 
 ## Idempotence is mandatory: one bad pattern and one good one

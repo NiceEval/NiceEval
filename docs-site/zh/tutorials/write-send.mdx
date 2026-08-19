@@ -155,8 +155,8 @@ export default defineAgent({
 `Usage` 的完整字段还有可选的 `cacheReadTokens` / `cacheCreationTokens`、推理 token 数 `reasoningTokens`、请求次数 `requests`，以及
 `costUSD`。`costUSD` 只在 provider 或 adapter 如实返回 USD observed 成本时填写；上游估算、模型目录价目表或本地计算绝不写入它。每个字段只在接口真实提供时填，接口不回用量就整个不填 `usage`，其它断言不受影响。
 
-Runner 始终从 Config/runtime price table 独立计算 `estimatedCostUSD`，即使有 observed `costUSD` 也不改变该计算；只有
-`t.maxCost()` 使用这个 estimate。Report 则只使用显式 `PricingProfile` 和 sealed Usage 进行 Analysis 成本投影，绝不消费 Runner
+Runner 始终从 `model`、上报的 token 用量和 Config/runtime price table 独立计算 `estimatedCostUSD`，即使有 observed `costUSD`
+也不改变该计算；Experiment budget 与 `t.maxCost()` 使用这个 estimate。Report 则只使用显式 `PricingProfile` 和 sealed Usage 进行 Analysis 成本投影，绝不消费 Runner
 estimate。
 
 当 Config/runtime price table 无法形成 Runner estimate 时，`t.maxCost()` 为 `unavailable`，绝不能把缺失当成 `0`。显式零费率实际

@@ -31,9 +31,11 @@ function roleOf(flags: Readonly<Record<string, unknown>>): string {
 function releaseMarkerFor(role: string): string | undefined {
   switch (role) {
     case "first": return "release-first-agent";
+    case "lease-holder": return "release-lease-holder";
     case "pause-holder": return "release-pause-holder";
     case "crash-holder": return "release-crash-holder";
     case "crash-waiter": return "release-crash-waiter";
+    case "recovery-without-teardown": return "release-recovery-without-teardown";
     default: return undefined;
   }
 }
@@ -89,6 +91,29 @@ export const sharedStateAgent = defineAgent({
       await waitFor(join(barrierRoot, release), ctx.signal);
     }
     return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-ok" }] };
+  },
+});
+
+/**
+ * A local-Sandbox counterpart for the provider-lane Journey. The fixture
+ * writes its externally observable marker only after the runner has entered
+ * the actual Sandbox / Agent body, rather than while it is waiting for an
+ * Experiment lifecycle lease.
+ */
+export const sharedStateExclusiveLaneAgent = defineSandboxAgent({
+  name: "runner-shared-state-exclusive-lane",
+  evidenceCoverage: {
+    ...completeEvidenceCoverage,
+    usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
+  },
+  ensure: {
+    identity: { agent: "runner-shared-state-exclusive-lane", version: "1", revision: "1" },
+    probe: shell("true"),
+  },
+  async send(_input, ctx) {
+    const role = roleOf(ctx.flags);
+    await mark(`${role}-agent-started`);
+    return { status: "completed", events: [{ type: "message", role: "assistant", text: "shared-state-lane-ok" }] };
   },
 });
 

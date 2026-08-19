@@ -83,7 +83,7 @@ The actual USD cost measured by the gateway or Adapter. It can only be explicitl
 
 {/* GENERATED:END usage-fields */}
 
-> Cost boundary: `Usage.costUSD` represents only observed USD cost returned by a Provider or Adapter. It is never derived from tokens, a model catalog, or a local price table. The Runner independently calculates `estimatedCostUSD` from the Config/runtime price table even when an observed cost exists, and only `maxCost` consumes it. A Report cost projection accepts only an explicit `PricingProfile` and sealed Usage; it does not read the Runner estimate.
+> Cost boundary: `Usage.costUSD` represents only observed USD cost returned by a Provider or Adapter. It is never derived from tokens, a model catalog, or a local price table. The Runner independently calculates `estimatedCostUSD` from the `model`, reported token usage, and the Config/runtime price table even when an observed cost exists. The Experiment budget and `t.maxCost()` consume that estimate; `Usage.costUSD` does not. A Report cost projection accepts only an explicit `PricingProfile` and sealed Usage; it does not read the Runner estimate.
 
 ## StreamEvent variants at a glance
 

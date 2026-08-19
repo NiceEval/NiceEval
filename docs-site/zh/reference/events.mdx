@@ -87,7 +87,7 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 
 {/* GENERATED:END usage-fields */}
 
-> 成本边界：`Usage.costUSD` 只表示 provider / adapter 返回的 USD observed 成本，绝不由 token、模型目录或本地价目表推导。Runner 从 Config/runtime price table 独立计算 `estimatedCostUSD`，即使 observed 成本存在也照常计算，且只有 `maxCost` 消费它。Report 成本投影只接受显式 `PricingProfile` 与 sealed Usage，不读取 Runner estimate。
+> 成本边界：`Usage.costUSD` 只表示 Provider / Adapter 返回的 USD observed 成本，绝不由 token、模型目录或本地价目表推导。Runner 即使已有 observed 成本，也会从 `model`、上报的 token 用量和 Config/runtime price table 独立计算 `estimatedCostUSD`。Experiment 的预算与 `t.maxCost()` 使用这个 estimate，`Usage.costUSD` 不驱动它。Report 成本投影只接受显式 `PricingProfile` 与 sealed Usage，不读取 Runner estimate。
 
 ## StreamEvent 变体一览
 

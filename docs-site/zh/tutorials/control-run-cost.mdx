@@ -41,9 +41,9 @@ pnpm exec niceeval exp regression --early-exit
 pnpm exec niceeval exp regression --budget 25
 ```
 
-预算按每个 Experiment ID 分别计算。已完成 Attempt 的实测花费到达上限后，NiceEval 停止派发新 Attempt；已经在运行的任务不会被中途终止。
+预算按每个 Experiment ID 分别计算。每条已完成的 Attempt，NiceEval 从 Experiment 的 `model`、上报的 token 用量和 Config/runtime price table 推得 `estimatedCostUSD`，再把这个估算累加进预算。`usage.costUSD` 是 Provider 或 Adapter 上报的 observed 值，绝不驱动预算。累计 estimate 到达上限后，NiceEval 停止派发新 Attempt；已经在运行的任务不会被中途终止。
 
-因此 `--budget` 是保护上限，不是精确账单。并发任务尚未结算时，最终花费可能短暂超过设置值。没有可用成本数据时，Runner 会给出警告，而不是假装预算仍可执行。
+因此 `--budget` 是保护上限，不是精确账单。并发任务尚未结算时，最终花费可能短暂超过设置值。缺少 model、token 用量或匹配的价格时，NiceEval 无法产生 `estimatedCostUSD`，`usage.costUSD` 也不能补上。Runner 会给出警告，而不是假装预算仍可执行。
 
 预算耗尽会留下 `budget_exhausted` diagnostic，未派发位置写成 `not-dispatched`，命令以非零状态退出。提高预算后重跑同一范围，合格的已完成 Attempt 会沿用，只补剩余位置。
 

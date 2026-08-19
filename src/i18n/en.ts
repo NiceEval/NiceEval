@@ -205,6 +205,10 @@ export const en = {
     "explicitly recovered sharedState key {{key}} for experiment {{experimentId}} (owner token {{ownerToken}}).\n",
   "cli.exp.sharedStateRecoveryFlags":
     "sharedState recovery requires `--teardown --recover-shared-state <key> --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced`.\n",
+  "cli.exp.sharedStateRecoveryJsonUnsupported":
+    "error: explicit sharedState recovery does not support --json. Retry without --json; this recovery flow has a human-only interface.\n",
+  "cli.exp.sharedStateRecoveryTeardownRequired":
+    "error: sharedState recovery requires the selected Experiment {{experimentId}} to declare teardown. The active generation was left unchanged.\n",
   "cli.exp.sharedStateRecoveryTarget":
     "sharedState recovery target:\n  key: {{key}}\n  experiment: {{experimentId}}\n  owner token: {{ownerToken}}\n  host: {{host}}\n  PID: {{pid}}\n  process identity: {{processIdentity}}\n  heartbeat: {{heartbeatAt}}\n",
   "cli.exp.sharedStateRecoveryAlreadyReleased":
@@ -237,6 +241,10 @@ export const en = {
     "      --dry   preview without writing; --record <root>   select the actual Record root; --json   one JSON document\n" +
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
+    "      explicit sharedState recovery:\n" +
+    "        niceeval exp <selector> --teardown --recover-shared-state <key>\n" +
+    "          --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced\n" +
+    "        requires the selected Experiment to declare teardown; inspect or recover with human text (not --json)\n" +
     "  niceeval debug <experiment> <eval> [--json]         show the lifecycle command plan\n" +
     "  niceeval accept @<locator>...                      accept explicit historical results\n" +
     "  niceeval show [--run <run-id>...]                    render a Report in the terminal\n" +

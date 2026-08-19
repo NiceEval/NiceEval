@@ -8,7 +8,7 @@ Before writing an assertion or Judge check, make the Agent do something. **Drive
 
 ## `t.send()` and the `Turn` it returns
 
-`t.send(input)` is the only verb. Under the hood, it calls the Adapter's `send(input, ctx)` and normalizes the result into a `Turn`:
+`t.send(input)` is the Adapter's basic execution verb. Under the hood, it calls the Adapter's `send(input, ctx)` and normalizes the result into a `Turn`:
 
 ```ts
 const turn = await t.send("What's the weather like in Brooklyn today?");

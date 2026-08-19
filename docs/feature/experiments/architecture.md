@@ -108,6 +108,10 @@ sweep 不得删除。
 sharedState authority 是 owner-token-checked 的不可变 generation transition：active、recovering 与 free 都只能从
 精确前代发布下一代，旧 owner 无法删除或替换新 owner。
 
+公开 explicit recovery 先要求 selector 唯一；它的 owner-evidence inspection 保持只读。在写入 recovering 前，CLI 验证
+这个唯一 Experiment 有 `teardown`。selector 不唯一或 target 缺少 teardown 时，CLI 不进入 recovery transition，当前
+active generation 保持原样。
+
 heartbeat 是按 exact owner token + generation 写入、原子替换的独立诊断 sidecar。公开读取只在这两个值仍匹配当前
 immutable head 时采用它的时间显示。sidecar 写/读失败不改变 authority，旧 owner 的 sidecar 也不能影响新 generation。
 heartbeat 不会过期、接管或复活持有者；PID/heartbeat 也从不是自动接管依据。

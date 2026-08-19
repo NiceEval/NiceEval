@@ -118,6 +118,6 @@ User overrides or additions to the built-in price table (`o11y/prices.json`), lo
 
 {/* GENERATED:END config-fields */}
 
-> Cost boundary: this `pricing` provides only Runner Config/runtime price-table input. The Runner produces `estimatedCostUSD` independently whether or not `Usage.costUSD` exists. Only `maxCost` uses that estimate. A Report does not read this configuration: it must explicitly declare its own USD Profile with `definePricingProfile()` in the Report module and project only sealed Usage in Analysis.
+> Cost boundary: this `pricing` provides only Runner Config/runtime price-table input. The Runner produces `estimatedCostUSD` from the `model`, reported token usage, and this table whether or not `Usage.costUSD` exists. The Experiment budget and `t.maxCost()` use that estimate; `Usage.costUSD` does not. A Report does not read this configuration: it must explicitly declare its own USD Profile with `definePricingProfile()` in the Report module and project only sealed Usage in Analysis.
 
 [NiceEval](https://niceeval.com/) keeps environment preparation in ordinary code. An Eval writes its own required files in `test(t)`, and an Agent's preparation belongs in Adapter setup. `Config` deliberately has no `sandbox` field and does not auto-detect a Provider. Declare a template-bearing `SandboxLayer` on the Eval or Experiment, so link planning can determine its owner and pairing result before it creates any resources.

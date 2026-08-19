@@ -324,3 +324,103 @@ test("实际 Experiment teardown 失败会保留 lease，等待者只能取消�
     },
   );
 });
+
+test("缺少 teardown 的显式 recovery 不改变 active generation", async () => {
+  await runnerE2E.case(
+    "shared-state-recovery-requires-declared-teardown",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval } }) => {
+      await withTempDir("niceeval-runner-shared-state-missing-teardown-", async (barrierRoot) => {
+        const holder = niceeval.start([
+          "exp", "shared-state-recovery-without-teardown", "--rerun", "all", "--json",
+        ], {
+          env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+          timeoutMs: 60_000,
+        });
+        let waiter: ReturnType<typeof niceeval.start> | undefined;
+        try {
+          await pollUntil(
+            async () => (await exists(join(barrierRoot, "recovery-without-teardown-agent-started"))) || undefined,
+            { timeoutMs: 30_000, intervalMs: 20, label: "holder without teardown reaches its Attempt" },
+          );
+          expect(holder.signal("SIGKILL")).toBe(true);
+          await holder.done;
+
+          const inspectionArgs = [
+            "exp", "shared-state-recovery-without-teardown", "--teardown",
+            "--recover-shared-state", "runner/shared-state-recovery-without-teardown",
+          ];
+          const before = await niceeval.run(inspectionArgs);
+          expect(before.exitCode, before.diagnostic()).toBe(1);
+          const ownerToken = ownerTokenFromPublicRecoveryInspection(before.stderr);
+
+          const rejected = await niceeval.run([
+            ...inspectionArgs,
+            "--owner-token", ownerToken,
+            "--confirm-owner-terminated", "--confirm-remote-quiesced",
+          ]);
+          expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
+          expect(rejected.stderr).toContain("to declare teardown");
+
+          const after = await niceeval.run(inspectionArgs);
+          expect(after.exitCode, after.diagnostic()).toBe(1);
+          expect(ownerTokenFromPublicRecoveryInspection(after.stderr)).toBe(ownerToken);
+
+          waiter = niceeval.start([
+            "exp", "shared-state-recovery-without-teardown-waiter", "--rerun", "all", "--json",
+          ], {
+            env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+            timeoutMs: 45_000,
+          });
+          expect(await appearsWithin(
+            join(barrierRoot, "recovery-without-teardown-waiter-setup-attempted"),
+            3_000,
+            "waiter setup after rejected recovery",
+          )).toBe(false);
+          expect(waiter.signal("SIGINT")).toBe(true);
+          const cancelled = await waiter.done;
+          expect(cancelled.timedOut, cancelled.diagnostic()).toBe(false);
+        } finally {
+          await writeFile(join(barrierRoot, "release-recovery-without-teardown"), "").catch(() => undefined);
+          await holder.dispose().catch(() => undefined);
+          await waiter?.dispose().catch(() => undefined);
+        }
+      });
+    },
+  );
+});
+
+test("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数", async () => {
+  await runnerE2E.case(
+    "shared-state-recovery-human-only-interface",
+    async ({ commands: { niceeval } }) => {
+      const jsonRecovery = await niceeval.run([
+        "exp", "shared-state-recovery-without-teardown", "--teardown",
+        "--recover-shared-state", "runner/shared-state-recovery-without-teardown",
+        "--owner-token", "fixture-owner-token",
+        "--confirm-owner-terminated", "--confirm-remote-quiesced", "--json",
+      ]);
+      expect(jsonRecovery.exitCode, jsonRecovery.diagnostic()).toBe(1);
+      expect(jsonRecovery.stderr).toContain("does not support --json");
+      expect(jsonRecovery.stdout).toBe("");
+
+      const [rootHelp, expHelp] = await Promise.all([
+        niceeval.run(["--help"]),
+        niceeval.run(["exp", "help"]),
+      ]);
+      const recoveryFlags = [
+        "--recover-shared-state <key>",
+        "--owner-token <token>",
+        "--confirm-owner-terminated",
+        "--confirm-remote-quiesced",
+      ];
+      expect([rootHelp, expHelp].map(({ exitCode, stdout }) => ({
+        exitCode,
+        hasFullRecoveryUsage: recoveryFlags.every((flag) => stdout.includes(flag)),
+      }))).toEqual([
+        { exitCode: 0, hasFullRecoveryUsage: true },
+        { exitCode: 0, hasFullRecoveryUsage: true },
+      ]);
+    },
+  );
+});

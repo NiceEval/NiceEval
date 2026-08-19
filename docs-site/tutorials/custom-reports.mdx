@@ -132,7 +132,7 @@ const pricing = definePricingProfile({
 });
 ```
 
-In a component, call only `costUSD(pricing)` or `totalCostUSD(pricing)`; neither has a zero-argument form. Analysis computes the slot-provider ledger, exact total, and `numerator / denominator` mean. The Report Host only validates the Profile, captures the closure, and presents the result. The Runner calculates `estimatedCostUSD` independently even when observed cost exists, and uses it only for `maxCost`; the Report does not read it.
+In a component, call only `costUSD(pricing)` or `totalCostUSD(pricing)`; neither has a zero-argument form. Analysis computes the slot-provider ledger, exact total, and `numerator / denominator` mean. The Report Host only validates the Profile, captures the closure, and presents the result. The Runner calculates `estimatedCostUSD` independently even when observed cost exists; the Experiment budget and `maxCost` use it, while the Report does not read it.
 
 The `cost` cell from `aggregate(ctx.scope, { values: { cost: costUSD(pricing) } })` is observable `CostMetricValue`, whose `cell.projection` is a `CostProjectionValue`. Both types, plus the projection's state, basis, ledger, and reason-data types, are exported type-only from `niceeval/report`.
 

@@ -779,7 +779,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     passedKeys.add(attemptGroupKey(run, readback.target.evalId));
   }
 
-  // budget 护栏:只按「已完成 attempt 的实测花费」判断,不做预测性节流。之前的实现会按
+  // budget 护栏:只按「已完成 attempt 的价目表估算成本」判断,不做预测性节流。observed
+  // usage.costUSD 不参与 budget。之前的实现会按
   // 「平均成本 × 在飞数」预扣,快到顶就让还没起飞的 attempt 排队等——这在探测阶段(还没有任何
   // 成本样本时)等价于把同一 budgetKey 的并发摁到一个很小的数,且完全没有文档承诺过这个副作用
   // (`docs-site/zh/tutorials/write-experiment.mdx` 对 `budget` 的描述只有一句「这一格配置的预算
@@ -2337,7 +2338,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
             const budget = a.run.budget;
             if (budget !== undefined) {
-              // 只看已完成 attempt 的实测花费(见上方 BudgetState 注释),到顶就跳过新 attempt,
+              // 只看已完成 attempt 的价目表估算成本(见上方 BudgetState 注释；observed
+              // usage.costUSD 不参与),到顶就跳过新 attempt,
               // 没到顶就立即放行——不等待、不做预测性节流。
               const s = budgetState(budgetKey);
               if (s.spent >= budget) {
@@ -2708,9 +2710,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             );
           });
         // ③ 全局并发位 → sharedState（如声明，先于 Eval lock）→ 派发时刻试锁 → preflight
-        // → 实验级 setup → body。
-        // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁,
-        // 包在全局位之外(见上面 exclusiveSemFor 的注释)。
+        // → 实验级 setup → provider/Sandbox/body。
+        // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁。
+        // sharedState 获取与 Experiment setup 都是宿主协调，不能让等待者占着该 Provider lane；
+        // permit 只包真正触及 provider、Sandbox 与 Attempt body 的执行段。
         const exclusiveSem = exclusiveSemFor(a.plan);
         const arriveAtDispatchWave = dispatchWaveArrive.get(a)!;
         const dispatch = withGlobalSlot(haltAwait(a), (slot) =>
@@ -2754,11 +2757,18 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               yield* ensureExperimentSetup(a);
               yield* slot.reacquire;
             }
-            yield* body(slot);
-            return { kind: "done" } as const;
+            const physicalBody = body(slot).pipe(Effect.as({ kind: "done" } as const));
+            if (exclusiveSem === undefined) return yield* physicalBody;
+            // 保持原来的物理资源获取顺序：exclusive provider → 全局位 → body。先还全局位
+            // 再等 provider，避免一个已完成 sharedState/setup 协调、却仍在排 exclusive lane 的
+            // attempt 饿死其它 provider；拿到 lane 后才回补全局位，Sandbox 与 body 因而仍在两把
+            // permit 的保护中。中断时两个作用域各自归还自己实际持有的 permit。
+            yield* slot.release;
+            return yield* exclusiveSem.withPermits(1)(
+              slot.reacquire.pipe(Effect.zipRight(physicalBody)),
+            );
           }),
         );
-        const guarded = exclusiveSem ? exclusiveSem.withPermits(1)(dispatch) : dispatch;
 
         // 许可链的循环外壳:撞锁挂起的用例解决后从 ① 重新走一遍(实验闸名额与全局位都要
         // 重新取,不能拿着别人在等的名额干等)。
@@ -2786,8 +2796,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               accountDispatchHalted(a, halt.gate);
               return;
             }
-            // ② Invocation 内实验闸 → ③ 全局位 → sharedState（如声明）→ Eval lock → body
-            const outcome = yield* withExperimentGate(a, guarded);
+            // ② Invocation 内实验闸 → ③ 全局位 → sharedState / 生命周期协调 → Eval lock
+            // → exclusive provider permit（如声明）→ body。
+            const outcome = yield* withExperimentGate(a, dispatch);
             if (outcome.kind === "done") return;
             // 许可获取被落下的闸打断:许可已随作用域归还,回到 ① 让上面的检查点记账。
             if (outcome.kind === "recheck") continue;

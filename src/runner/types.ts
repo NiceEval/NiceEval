@@ -960,8 +960,10 @@ export interface ExperimentAuthorFields {
    */
   sharedState?: SharedStateConfig;
   /**
-   * 本实验的花费上限(USD)。调度器按「已完成 attempt 的实测花费」累计,到顶后跳过这个实验
-   * 剩下未起飞的 attempt 并上报一次 `run:budgetExceeded`(已在飞的 attempt 仍会跑完)。
+   * 本实验的估算花费上限(USD)。调度器累计已完成 attempt 的 `estimatedCostUSD`；该值由
+   * model、token usage 与 runtime/config pricing table 计算，与 Provider / Adapter 回报的
+   * observed `usage.costUSD` 独立，后者不驱动 budget。估算到顶后跳过这个实验剩下未起飞的
+   * attempt 并上报一次 `run:budgetExceeded`（已在飞的 attempt 仍会跑完）。
    */
   budget?: number;
   /**

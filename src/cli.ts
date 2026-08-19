@@ -1766,6 +1766,13 @@ function runEvaluationCommand(
   interruption?: CliInterruptionOwnership,
 ) {
   return Effect.gen(function* () {
+    // Explicit recovery is intentionally human-only. It has no receipt or
+    // NDJSON contract, so accepting --json would give machine callers an
+    // apparently successful but unparseable interface.
+    if (command === "exp" && flags.recoverSharedState !== undefined && flags.json) {
+      yield* writeStderr(t("cli.exp.sharedStateRecoveryJsonUnsupported"));
+      return 1;
+    }
     // Keep project-local coordination (sessions, locks, kept sandboxes) separate
     // from the portable Record root selected by `--record` below.
     const coordinationRoot = resolvePath(cwd, ".niceeval");
@@ -1963,6 +1970,15 @@ function runEvaluationCommand(
             !flags.confirmRemoteQuiesced
           ) {
             yield* writeStderr(t("cli.exp.sharedStateRecoveryFlags"));
+            return 1;
+          }
+          // Inspection is read-only and remains available without a teardown.
+          // Only the uniquely selected target can reach this point. Validate
+          // its teardown immediately before claiming a recovery generation.
+          if (target.experiment.teardown === undefined) {
+            yield* writeStderr(t("cli.exp.sharedStateRecoveryTeardownRequired", {
+              experimentId: target.experiment.id,
+            }));
             return 1;
           }
           const begun = yield* Effect.either(beginExplicitSharedStateRecoveryEffect({
@@ -3526,6 +3542,10 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
   }
 
   if (flags.help) {
+    yield* writeStdout(t("cli.help"));
+    return 0;
+  }
+  if (command === "exp" && positionals.length === 1 && positionals[0] === "help") {
     yield* writeStdout(t("cli.help"));
     return 0;
   }

@@ -113,8 +113,9 @@ key 会进入结果的配置身份。更换 key 就是更换状态 cohort，旧�
   `.setup()`。它每个 Sandbox 只跑一次，产物成为题间重置点的一部分，每道题白拿。
 - **只有这道题要的素材**（它自己的仓库、数据、依赖）→ 评估用例自己的 `setup` 或
   `test(t)`。每题重置后重放，所以必须是重放一遍还对的代码。每题各自 clone 时，
-  临时 clone 目录整个实验统一用一个名字、加进 `diff.ignore`，clone 前先
-  `rm -rf .git <临时目录>` 清掉上一题的残留——`.git` 会活过题间重置。
+  整个 Experiment 使用同一个具名临时目录，例如 `.niceeval-task-clone`，并把它加进
+  `diff.ignore`。clone 前只运行 `rm -rf .niceeval-task-clone` 清掉上一题的残留。
+  绝不能删除 `workdir` 根的 `.git`：题间 `git reset` 依赖它，且它会活过题间重置。
 - **起了后台进程、占了端口** → 评估用例的 `teardown` 自己收，题间重置不杀进程。
 
 ## 幂等是硬要求：一反一正

@@ -41,9 +41,9 @@ An Attempt for that eval that settles after a passing sibling has triggered earl
 pnpm exec niceeval exp regression --budget 25
 ```
 
-The budget is calculated separately for each Experiment ID. When the measured cost of completed Attempts reaches the limit, NiceEval stops dispatching new Attempts; it does not terminate work already running.
+The budget is calculated separately for each Experiment ID. For each completed Attempt, NiceEval derives `estimatedCostUSD` from the Experiment's `model`, reported token usage, and the Config/runtime price table, then adds that estimate to the budget. `usage.costUSD` is observed Provider or Adapter data and never drives the budget. When the accumulated estimate reaches the limit, NiceEval stops dispatching new Attempts; it does not terminate work already running.
 
-`--budget` is therefore a protective limit, not an exact bill. Final spending can briefly exceed the setting while concurrent work is still settling. When cost data is unavailable, the Runner warns instead of pretending that the budget is still enforceable.
+`--budget` is therefore a protective limit, not an exact bill. Final spending can briefly exceed the setting while concurrent work is still settling. If NiceEval lacks a model, token usage, or matching price, it cannot form `estimatedCostUSD`; `usage.costUSD` does not fill that gap. The Runner warns instead of pretending that the budget is still enforceable.
 
 Budget exhaustion leaves a `budget_exhausted` diagnostic, writes undispatched positions as `not-dispatched`, and exits with a nonzero status. Rerun the same scope with a higher budget: eligible completed Attempts carry forward and only the remaining positions run.
 
