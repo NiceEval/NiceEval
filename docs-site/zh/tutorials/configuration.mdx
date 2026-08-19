@@ -15,7 +15,7 @@ import { ConfigLayers } from '/snippets/diagram-config-layers.jsx';
 
 ## 配置：想让这个值活多久，就写在哪一层
 
-同一个值出现在多层时，按 **CLI flag → experiment → eval → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
+同一个值出现在多层时，按 **CLI flag → experiment → 评估用例 → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
 
 <ConfigLayers />
 

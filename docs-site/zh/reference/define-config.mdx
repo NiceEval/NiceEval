@@ -130,4 +130,4 @@ pricing?: globalThis.Record<string, PriceOverride>;
 
 > 成本边界：这里的 `pricing` 只提供 Runner 的 Config/runtime price table 输入，Runner 会独立产生 `estimatedCostUSD`，不论是否已有 `Usage.costUSD`。`maxCost` 只使用该 estimate。Report 不读取此配置；它必须在 Report module 以 `definePricingProfile()` 显式声明自己的 USD Profile，并只对 sealed Usage 做 Analysis 投影。
 
-[NiceEval](https://niceeval.com/) 把环境准备放在普通代码里：评估用例自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 setup。`Config` 刻意没有 `sandbox` 字段，也不自动探测 provider。请在 Eval 或 Experiment 上声明 template-bearing `SandboxLayer`，让 link planning 在创建任何资源前确定它的 owner 与配对结果。
+[NiceEval](https://niceeval.com/) 把环境准备放在普通代码里：评估用例自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 setup。`Config` 刻意没有 `sandbox` 字段，也不自动探测 provider。请在评估用例或 Experiment 上声明 template-bearing `SandboxLayer`，让 link planning 在创建任何资源前确定它的 owner 与配对结果。

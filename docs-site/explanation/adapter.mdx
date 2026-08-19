@@ -1,26 +1,28 @@
 ---
-title: "Adapter: Connect an Agent to NiceEval"
+title: "Adapter: connect an Agent to NiceEval"
 sidebarTitle: "Adapter"
-description: "The Adapter is the adapter you write. This page explains what the send function receives and returns, how system-under-test configuration is passed in, the three integration tiers, and where the capabilities on t come from."
+description: "An Adapter is the integration layer you write. Learn what the send function receives and returns, how to pass subject configuration, the three integration tiers, and where capabilities on t come from."
 ---
 
-In [NiceEval](https://niceeval.com/), an `Adapter` is the adaptation layer between the runner and the system under test. The Adapter implements the `send` function: it forwards eval-side actions such as `t.send()` to your application, then translates the application's response into [NiceEval](https://niceeval.com/)'s standard `Turn`.
+import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
-Follow-up reading: [Write Send](/tutorials/write-send)
+In [NiceEval](https://niceeval.com/), an `Adapter` is the integration layer between the Runner and the subject under test. An Adapter implements `send`: it sends Eval-side actions such as `t.send()` to your application, then translates the application's response into NiceEval's standard `Turn`.
 
-## The adapter
+For the next step, read [Write Send](/tutorials/write-send).
 
-If the system under test speaks the standard OpenAI Chat Completions or Responses protocol, use an official adapter directly. For a homegrown frontend-backend protocol (HTTP, gRPC, WebSocket — anything works), write an Adapter: it knows how to authenticate, how to call your application, and how to translate the response into the standard event stream.
+## Adapters
 
-One full round trip of `t.send()` crosses this boundary twice:
+If the subject under test uses the standard OpenAI Chat Completions or Responses protocol, use an official Adapter directly. For a custom frontend/backend protocol—HTTP, gRPC, or WebSocket all work—write an Adapter. It knows how to authenticate, call your application, and translate the response into the standard event stream.
 
-![Full round trip of t.send: the eval calls t.send, the runner assembles TurnInput and ctx, the adapter calls your application and returns a Turn with the standard event stream.](/images/agent-turn-roundtrip-en.svg)
+One `t.send()` round trip crosses this boundary twice:
 
-Outbound: the driving verbs in the eval (`t.send` / `t.sendFile` / `t.respond`) assemble a `TurnInput` and the `ctx` for this conversation line, then call the Adapter's `send` once.
+<TurnRoundtrip />
 
-Inbound: the Adapter translates the application's raw response into a `Turn` — where `events` is an array of event objects ordered by when they happened (real values below).
+On the way out, an Eval-side drive verb—`t.send`, `t.sendFile`, or `t.respond`—builds a `TurnInput` and the session line's `ctx`, then calls the Adapter's `send` once.
 
-The system under test's URL, auth, and protocol details are passed in through the Adapter factory's configuration. `defineExperiment` receives an already configured agent instance; the Adapter consumes that configuration inside the `send` closure, and forwards per-turn dynamic values (such as `ctx.model`, `ctx.flags`, `ctx.telemetry`) to the application with each request:
+On the way back, the Adapter translates the application's raw response into a `Turn`. Its `events` are an array of event objects in their actual order; examples appear below.
+
+Pass the subject's URL, authentication, and protocol details into an Adapter factory. `defineExperiment` receives an already configured Agent instance. The Adapter consumes that configuration in its `send` closure, then forwards dynamic per-turn values such as `ctx.model`, `ctx.flags`, and `ctx.telemetry` with the request:
 
 ```ts
 // agents/web-agent.ts
@@ -96,106 +98,106 @@ export default defineExperiment({
 
 ## Integration tiers
 
-Grouped by where the Adapter connects and what extra observability data it receives, integration comes in three tiers: **Tier 1 is send only** (not a single line of application code changes, and the full assertion set is already complete at this tier), **Tier 2 is send + OTel** (the application sends spans to [NiceEval](https://niceeval.com/), buying the call waterfall in `niceeval view`), **Tier 3 is application changes + experiment flags** (feature A/B). What each tier costs, what it buys, and when to move up: see [Tier](/explanation/tier).
+Integration has three tiers based on where the Adapter connects and what additional observability data it receives: **Tier 1 connects only `send`**—without changing application code, and with the complete assertion set already available; **Tier 2 is `send` + OTel**—the application sends spans to [NiceEval](https://niceeval.com/) in return for the call waterfall in `niceeval view`; and **Tier 3 changes the application and adds Experiment flags** for feature A/B testing. See [Tier](/explanation/tier) for each tier's investment, capabilities, and when to move up.
 
-The eval-side driving API — `t.send()`, `t.sendFile()`, `t.newSession()`, and HITL's `t.respond()` / `t.respondAll()` —
-all uniformly call the Adapter's `send`.
+Every Eval-side drive API—`t.send()`, `t.sendFile()`, `t.newSession()`, and the HITL methods `t.respond()` / `t.respondAll()`—ultimately calls the Adapter's `send`.
 
-How they converge and how to handle them in `send`: see [Write Send](/tutorials/write-send).
+For how `send` receives and responds, see [Write Send](/tutorials/write-send).
 
-## The send function
+## The `send` function
 
-Whether the Adapter connects to an HTTP service or a CLI in a Sandbox, the interface exposed to the runner is exactly the same:
+Whether an Adapter connects to an HTTP service or a CLI inside a Sandbox, the interface it exposes to the Runner is identical:
 
 ```ts
 interface Agent {
   readonly name: string;
   send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
-  // Optional: setup / teardown (once-per-Sandbox lifecycle);
-  // optional observability members are not part of send — see "OTel Integration"
+  // Optional: setup / teardown (the lifecycle that runs once per Sandbox).
+  // Optional observability members do not participate in send; see “OTel Integration”.
 }
 ```
 
-`progress` is short-lived status during the run and is never persisted. `diagnostic` is a bounded warning or error saved in an Attempt-owned diagnostics channel. Neither can specify a lifecycle phase or change `Turn.status` on its own. When the connection fails or the response cannot be parsed, throw: the Runner writes a structured error and forms an `errored` Verdict in the `niceeval.verdict` channel.
+`progress` is short-lived runtime state and is not persisted. `diagnostic` is a bounded warning or error that needs review after the run and is saved with the Attempt. Neither can specify a lifecycle phase, and neither automatically changes `Turn.status`. Throw an exception when the connection fails or the response cannot be parsed. The Runner records it as `errored` and gives the terminal an inspectable locator.
 
-`send` is the only function you must implement. There are only three types in its signature; take them one at a time.
+`send` is the only function you need to implement. Its signature has three types, explained separately below.
 
 <Note>
-  The `setup` / `teardown` here are the Agent's own business of "how it connects itself" (installing a CLI, writing auth config). Environment setup that varies per experiment (installing a binary specific to one experiment, warming up, carrying state across attempts) does not belong on the Agent — it hangs off the `.setup()` / `.teardown()` chain methods of the Sandbox spec in the `sandbox` field; see [Sandbox provider · Lifecycle](/tutorials/sandbox-providers#lifecycle).
+  The `setup` / `teardown` here are private to how an Agent connects itself, such as installing a CLI or writing authentication configuration. Do not put environment preparation that varies by Experiment—installing an Experiment-specific binary, warming up, or preserving state across Attempts—on the Agent. Attach it to the `.setup()` / `.teardown()` chain on the Sandbox spec in the `sandbox` field instead. See [Sandbox providers — Lifecycle](/tutorials/sandbox-providers#lifecycle).
 </Note>
 
 ### Input: `TurnInput`
 
 ```ts
 interface TurnInput {
-  readonly text: string;                          // Every turn: the text being sent; on answer turns it's the answer text (multiple answers joined by newlines)
-  readonly files?: readonly InputFile[];          // t.sendFile turns only: attached files (base64)
-  readonly responses?: readonly InputResponse[];  // Answer turns only (t.respond / t.respondAll): one structured answer per request
-  readonly outputSchema?: JsonSchema;             // Only when this turn declares output: the structured output requirement, lowered to JSON Schema
+  readonly text: string;                          // Present on every turn: text to send. A response turn joins multiple answers with newlines.
+  readonly files?: readonly InputFile[];          // Only t.sendFile turns: attached files (base64)
+  readonly responses?: readonly InputResponse[];  // Only response turns (t.respond / t.respondAll): one structured answer per request
+  readonly outputSchema?: JsonSchema;             // Only when this turn declared output: the structured-output requirement, lowered to JSON Schema
 }
 
 interface InputFile {
-  readonly filename?: string;     // Optional, for the adapter / model to reference
-  readonly mimeType: string;      // e.g. image/png
-  readonly dataBase64: string;    // base64 content, JSON-friendly, can go straight into the request body
+  readonly filename?: string;     // Optional, for an Adapter or model to inspect
+  readonly mimeType: string;      // For example, image/png
+  readonly dataBase64: string;    // Base64 content; JSON-friendly and ready for a request body
 }
 
 interface InputResponse {
-  readonly requestId: string;    // Always present: which input.requested request this answers; used to match up when multiple requests are paused
-  readonly optionId?: string;    // Either this or text: the answer hit one of the request's option ids (approve / deny...)
-  readonly text?: string;        // Either this or optionId: a free-text answer (the request has no options, or the answer matches none)
+  readonly requestId: string;    // Required: identifies the input.requested request; aligns several simultaneous requests
+  readonly optionId?: string;    // Mutually exclusive with text: an id in the request's options (approve / deny …)
+  readonly text?: string;        // Mutually exclusive with optionId: a free-text answer when the request has no options or no option matches
 }
 ```
 
-Whether the eval side calls `t.send()`, `t.sendFile()`, or `t.respond()`, it arrives at the Adapter as one ordinary `send` — the entire difference is in the fields:
+Whether the Eval calls `t.send()`, `t.sendFile()`, or `t.respond()`, the Adapter receives an ordinary `send`. The fields are what differ:
 
 If your application interface does not accept files, ignore `files`.
 
 | Eval side | `text` | `files` | `responses` | `outputSchema` |
 |---|---|---|---|---|
-| `t.send(text)` | Sent text | — | — | Only when `output` is declared |
-| `t.sendFile(path, text?)` | Caption (may be empty string) | Present | — | Same |
+| `t.send(text)` | The sent text | — | — | Present only when `output` was declared |
+| `t.sendFile(path, text?)` | An optional note, which can be an empty string | Present | — | Same |
 | `t.respond(...)` / `t.respondAll(...)` | Answer text | — | One per request | Same |
 
-`files`: ignore it if the interface does not accept files;
-`outputSchema`: forward it if the application interface accepts a schema (Chat Completions' `response_format`, Responses' `text.format`); it's fine if it doesn't — validation happens in the runner anyway (see the `Turn.data` rule below).
+Ignore `files` if the application interface does not accept files. Forward `outputSchema` when the interface accepts a schema, such as Chat Completions `response_format` or Responses `text.format`. It is also fine when it does not: the Runner validates the result in any case, as described in the `Turn.data` rules below.
 
 #### Inputs for the different answers
 
-On HITL answer turns, the human verdict arrives in structured form via `input.responses` — the Adapter never needs to parse `text` to guess which sentence answers which request or whether it counts as approval. Every answer carries a `requestId`; `optionId` and `text` are mutually exclusive: if the answer hits one of the request's option ids it becomes `optionId` (the eval side has already validated it exists, so no typo can slip through silently); otherwise the whole sentence lands in `text` as free text. The four typical shapes:
+In a HITL response turn, a person's decision arrives structurally in `input.responses`. The Adapter does not need to parse `text` to guess which sentence answers which request or whether it approves something. Each answer has `requestId`. `optionId` and `text` are mutually exclusive: if an answer matches an id in the request's `options`, it uses `optionId`; the Eval has already verified that it exists, so a typo cannot silently pass into the application. Otherwise the full answer is in `text`. The four typical forms are:
 
 ```ts
-// 1) A single pending request, answer hits an option (approve / deny work the same, only the optionId differs)
+// ① One pending request; the answer matches an option (approve / deny differ only by optionId)
 await t.respond("approve");
 // → { text: "approve",
 //     responses: [{ requestId: "req_1", optionId: "approve" }] }
 
-// 2) Multiple requests paused at once — the object form matches them up explicitly
+// ② Several requests pause together; the object form aligns the response explicitly
 await t.respond({ request, optionId: "deny" });
 // → { text: "deny",
 //     responses: [{ requestId: request.id, optionId: "deny" }] }
 
-// 3) The answer is none of the options → free text (requests waiting for extra info look like this)
+// ③ The answer matches no option → free text (a request for more information has this form)
 await t.respond("Change the recipient to ceo@corp.com");
 // → { text: "Change the recipient to ceo@corp.com",
 //     responses: [{ requestId: "req_1", text: "Change the recipient to ceo@corp.com" }] }
 
-// 4) respondAll: one answer per pending request, same optionId
+// ④ respondAll: one answer per pending request, all with the same optionId
 await t.respondAll("approve");
 // → { text: "approve\napprove",
 //     responses: [{ requestId: "req_1", optionId: "approve" },
 //                 { requestId: "req_2", optionId: "approve" }] }
 ```
 
-The Adapter's corresponding obligations: hand the verdict back to the application by `requestId` (don't guess by order); for calls a human rejected, set the tool `operation.finished` event's `status` to `"rejected"` rather than `"failed"` — rejection is a human decision, not a tool failure, so `noFailedActions()` doesn't misfire and `calledTool(toolMatch(..., { status: "rejected" }))` can assert it precisely.
+On the Adapter side, return each decision to the application by `requestId`; do not guess by order. A call rejected by a person sets the tool `operation.finished` `status` to `"rejected"`, not `"failed"`.
+
+Rejection is a human decision, not a tool failure. That keeps `noFailedActions()` from being triggered incorrectly, while `calledTool(toolMatch(..., { status: "rejected" }))` can assert it precisely.
 
 ### Context: `AgentContext`
 
 ```ts
 interface AgentContext {
-  // Feedback and run context, present on every turn
-  readonly signal: AbortSignal;    // The runner's timeout and cancellation: pass it through to every request you make
-  readonly session: AgentSession;  // The state slot for this conversation line
+  // Feedback and runtime context present on every turn
+  readonly signal: AbortSignal;    // Runner timeout and cancellation: forward it to every request you make
+  readonly session: AgentSession;  // State slots for this session line
   progress(update: { message: string; current?: number; total?: number }): void;
   diagnostic(input: {
     code: string;
@@ -205,47 +207,49 @@ interface AgentContext {
     dedupeKey?: string;
   }): void;
 
-  // The ones that appear per integration tier (see "Integration tiers")
-  readonly model?: string;         // Tier 1 model comparison: experiment.model passed through; forward it if the application interface accepts model selection
-  readonly reasoningEffort?: string;  // Reasoning effort: experiment.reasoningEffort passed through, same ownership as model
-  readonly telemetry?: Telemetry;  // Tier 2: this turn's W3C trace context (headers, a fresh traceparent per turn)
-  readonly flags: Readonly<Record<string, JsonValue>>; // Tier 3 feature A/B: experiment.flags passed through; {} when unset
-  readonly experimentId?: string;  // The path-derived experiment id, the same source as the experimentId in results; undefined when not run through an experiment
+  // Three fields that appear by integration tier (see “Integration tiers”)
+  readonly model?: string;         // Tier 1 model comparison: experiment.model passed through. Forward it if the application interface accepts model selection.
+  readonly reasoningEffort?: string;  // Reasoning effort: experiment.reasoningEffort passed through, with the same role as model
+  readonly telemetry?: Telemetry;  // Tier 2: this turn's W3C trace context (headers, with a new traceparent each turn)
+  readonly flags: Readonly<Record<string, JsonValue>>; // Tier 3 feature A/B: experiment.flags passed through. {} when unspecified
+  readonly experimentId?: string;  // A stable ID derived from the path, shared with experimentId in results. undefined outside an Experiment
 
-  readonly sandbox: Sandbox;       // Non-sandbox Agents also receive a Sandbox (a no-op stub for Direct Agents)
+}
+
+interface SandboxAgentContext extends AgentContext {
+  readonly sandbox: Sandbox;       // Available only to an Agent constructed by defineSandboxAgent
 }
 
 interface AgentSession {
-  // Session continuation: server keeps the history (the shape for interfaces that accept a session id)
-  readonly id?: string;                      // The session id recorded for this line; undefined on a new conversation line
-  capture(id: string | undefined): void;     // Record the returned id; only lands if none has been recorded yet
+  // Server-side continuation: the shape for an interface that accepts a session id
+  readonly id?: string;                      // The session id remembered for this line. undefined on a new session line
+  capture(id: string | undefined): void;     // Save a returned id, only if none was saved already
 
-  // Adapter-private typed slots: create a slot with createSessionSlot<T>() first.
-  // take clears the slot on read — use it for a paused HITL scene.
+  // Adapter-private state: client history, a paused HITL turn, and similar values
   get<T>(slot: SessionSlot<T>): T | undefined;
   set<T>(slot: SessionSlot<T>, value: T): void;
-  take<T>(slot: SessionSlot<T>): T | undefined;
+  take<T>(slot: SessionSlot<T>): T | undefined; // Read and clear: one consumption
 }
 ```
 
-The Runner binds a lifecycle scope to the Agent's `setup`, each `send`, and `teardown` separately. The Adapter only reports progress and diagnostics from the current callback; it cannot pass a phase, color, or output stream. `progress` is never persisted. A diagnostic is committed as an event in an Attempt-owned diagnostics channel. When it cannot continue, throw: the Runner saves the structured error and forms an `errored` Verdict in the `niceeval.verdict` channel. Attempt lifecycle state is only `active` / `completed` / `abandoned`; a Verdict token is not Attempt state.
+The Runner binds a lifecycle scope separately for Agent `setup`, every `send`, and `teardown`. An Adapter reports progress and diagnostics only from the current callback; it cannot supply a phase, color, or output stream. `progress` is not persisted. `diagnostic` is published to the Record as an Attempt-owned diagnostic-channel event. Throw when work cannot continue; the Runner saves a structured error and produces an `errored` Verdict in the `niceeval.verdict` channel. An Attempt lifecycle state is only `active`, `completed`, or `abandoned`; a Verdict token is not an Attempt state.
 
-There are no flags to check on `ctx`. All three tier fields have "pass-through" semantics: `model` and `flags` are declared by the experiment and handed over verbatim by the runner — the Adapter's only job is to forward them to the application with the request, never to interpret them; `telemetry` only appears when OTel integration is configured, and inside `send` you only need to spread its `headers` into the request headers — the receiving endpoint is fixed in `defineConfig` and pointed at by the application at startup, not passed from here; see [OTel Integration](/tutorials/connect-otel). `experimentId` is a stable identifier derived from the path; the typical use is isolating cross-attempt state per experiment inside a Sandbox's environment hooks (partitioning cache directory names and sandbox snapshot tags by it); see [Sandbox provider · Lifecycle](/tutorials/sandbox-providers#lifecycle).
+`ctx` has no flag for you to inspect. The three tier fields have pass-through semantics: `model` and `flags` are declared by the Experiment and passed through unchanged by the Runner. The Adapter only forwards them with the request; it does not interpret them. `telemetry` appears only when OTel integration is configured. In `send`, spread its `headers` into request headers. The receiving endpoint is fixed in `defineConfig` and pointed to when the application starts; it is not supplied here. See [OTel Integration](/tutorials/connect-otel). `experimentId` is a stable identity derived from the path. A common use is to isolate state shared across Attempts by Experiment in a Sandbox lifecycle, for example by partitioning a cache directory or Sandbox snapshot tag. See [Sandbox providers — Lifecycle](/tutorials/sandbox-providers#lifecycle).
 
-`session` is the private state of one conversation line, and [NiceEval](https://niceeval.com/) promises exactly one thing about it: **every `send` on the same conversation line receives the same `ctx.session`, and a new conversation line (the first turn of an eval, or after `t.newSession()`) receives a brand-new one.** The continuation accessors (`id`/`capture`) and private typed slots all live on it. Create each slot once with `createSessionSlot<T>()`, then call `set(slot, value)` and `take(slot)` for a paused HITL scene; `take` clears the value on read. On a new line, `id` and every slot are unset.
+`session` is the state owned by this session line. [NiceEval](https://niceeval.com/) makes one promise: **every `send` on the same session line receives the same `ctx.session`; a new session line, either the Eval's first turn or one created by `t.newSession()`, receives a new one.** Continue server-side history with `id` / `capture`. For client-side history and paused HITL state, create a typed slot in Adapter module scope with `createSessionSlot<T>(name)`, then use `get` / `set` / `take`. `take` clears as it reads. Slots are isolated by symbol identity even when their names match.
 
 ### Return: `Turn`
 
 ```ts
 interface Turn {
-  readonly events: StreamEvent[];          // ★ The standard event stream — every Adapter's core product
-  readonly data?: JsonValue;               // This turn's structured output; only filled when input.outputSchema is present, validated by the runner against the declaration
-  readonly status: "completed" | "failed" | "waiting";  // waiting = paused for a human (HITL)
+  readonly events: StreamEvent[];          // ★ The standard event stream: every Adapter's core result
+  readonly data?: JsonValue;               // This turn's structured result. Fill it only when input.outputSchema exists; the Runner validates it against the declaration
+  readonly status: "completed" | "failed" | "waiting";  // waiting = a paused turn awaiting a person (HITL)
   readonly usage?: Usage;
 }
 ```
 
-`events` is just a **plain JS array**: one object per thing that happened this turn, in the order it actually happened. For a turn like "How warm is Beijing today?", where the agent checks the weather before answering, `events` looks like this:
+`events` is an **ordinary JavaScript array**. Each thing that happens in the turn is one object, in the order it actually happened. For example, in a turn that asks “What is the temperature in Beijing today?”, the Agent looks up weather and then answers:
 
 ```ts
 [
@@ -257,53 +261,53 @@ interface Turn {
 ]
 ```
 
-There are ten object variants in total (`message`, `operation.*`, `input.requested`… full list in the [Events Reference](/reference/events)). Assertions read this exact array: `t.calledTool("get_weather")` counts started tool operations, while `t.reply` takes the last assistant `message`. Note that each `send` returns only **this turn's** array — stitching turns into a whole conversation line is the runner's job, covered in the next section. In most cases you don't hand-write these objects either: an official converter's return value is already a complete `Turn` with `events`, `usage`, and `status` filled in — how to pick a converter is covered in [Write Send](/tutorials/write-send).
+There are ten variants in total—`message`, `operation.*`, `input.requested`, and others. See [Event Stream Reference](/reference/events) for the full list. Assertions read this array: `t.calledTool("get_weather")` counts started tool operations, and `t.reply` takes the last assistant `message`. Each `send` returns only **this turn's** array. The Runner combines turns into a complete session line; see the next section. Most of the time you do not write these objects by hand: an official converter returns a complete `Turn` with `events`, `usage`, and `status` already populated. See [Write Send](/tutorials/write-send) for choosing a converter.
 
-`data` is not a "put whatever" pocket; it has exactly one rule: **what goes in it is declared by the eval with a schema on the send; only a declaration produces data, and what you get is the declared type.**
+`data` is not a pocket for arbitrary values. It has one rule: **the Eval declares what it needs through a schema on `send`. `data` exists only after that declaration, and it has the declared type when you receive it.**
 
 ```ts
-// Eval side: the output declaration is both the requirement given to the application and the type source for turn.data
-const turn = await t.send("What's the total on this invoice?", {
+// On the Eval side, output is both an application requirement and the type source for turn.data
+const turn = await t.send("What is the total amount on this invoice?", {
   output: z.object({ amount: z.number(), currency: z.string() }),
 });
-turn.data.amount;   // Typed as number — not unknown, no manual narrowing
+turn.data.amount;   // type: number, not unknown; no manual narrowing needed
 ```
 
-The declaration, lowered to JSON Schema, reaches the Adapter via `input.outputSchema`; the Adapter puts the structured output from the application's response into `data` (e.g. `JSON.parse(reply.content)`). **Validation is enforced by the runner**: if `data` doesn't match the declaration, the turn fails immediately with the diff reported — there is no path where "a wrong object got stuffed in and the assertion silently passed". Conversely, turns with no `output` declaration have no `data`: applications that only return text never touch this field — don't copy the raw response body into it to fill space.
+The declaration is lowered to JSON Schema and reaches the Adapter as `input.outputSchema`. After the Adapter receives an application response, it puts the structured result in `data`, for example `JSON.parse(reply.content)`. **The Runner enforces validation:** if `data` does not match the declaration, the turn is immediately `failed` and reports the difference. There is no path where an Adapter puts in the wrong object and an assertion silently passes. Conversely, a turn that did not declare `output` has no `data`. An application that returns only text never needs this field; do not copy the raw response body into it to fill space.
 
-### After send returns: where the four Turn fields go
+### After `send` returns: where the four `Turn` fields go
 
-The moment `send` returns, the Adapter's work is done — everything after that is the runner's job. Each of the four fields has a definite destination:
+Once `send` returns, the Adapter's work is done. The Runner owns everything after that. Each field has a clear destination:
 
-| Turn field | What the runner does with it | Where the eval author feels it |
+| `Turn` field | What the Runner does with it | Where an Eval author sees it |
 |---|---|---|
-| `events` | Appended to this conversation line's event stream; `deriveRunFacts` folds it into facts (`toolCalls`, `parked`, `messageCount`…); the last assistant `message` also updates `t.reply` | All scoped assertions: `t.calledTool()`, `t.messageIncludes()`…; `t.events` is directly queryable |
-| `status` | Records the turn's outcome; on `"waiting"`, collects this turn's `input.requested` into the pending list | `t.succeeded()` / `t.parked()`; after `"waiting"`, continue with `t.respond()` |
-| `usage` | Accumulated per turn into the conversation line and the whole run | `maxTokens` / `maxCost` scorers, usage in reports |
-| `data` | Validated against the `output` schema declared on the send — mismatch fails the turn immediately; saved only if it passes | `turn.data` (strongly typed by the declaration), `outputEquals` |
+| `events` | Appends it to this session line and normalizes messages and logical tool occurrences. The last assistant `message` also updates `t.reply`. | Scoped assertions such as `turn.calledTool()` and `turn.event(...)`; `t.events` is also directly available |
+| `status` | Records this turn's terminal state. When it is `"waiting"`, it collects the turn's `input.requested` items as pending answers. | `t.succeeded()` or `t.check(turn.status, equals("waiting"))`; use `t.respond()` after `"waiting"` |
+| `usage` | Adds it per turn to the session line and the whole run. | `maxTokens` / `maxCost` assertions and usage in reports |
+| `data` | Validates it against the `output` schema declared on `send`; a mismatch immediately makes the turn `failed`. It saves only a passing value. | `turn.data`, strongly typed by the declaration; `t.check(turn.data, equals(...))` or `matches(...)` |
 
-The handle you get from `await t.send()` is a view onto this one Turn: turn-level assertions (things like `draft.parked()`) look only at this turn's `events`, while `t`-level assertions look at the whole conversation line's accumulation. So the Adapter never needs to "cooperate" with any assertion — fill in these four fields correctly, and assertion evaluation, verdict folding, and reporting all happen automatically downstream.
+The handle returned by `await t.send()` is your view of that turn. Turn-level assertions see only that turn's `events` and fields; root `t` assertions see all events accumulated on the session line. The Adapter does not need to cooperate with individual assertions: correctly fill these four fields and assertions, scoring, and reports happen downstream automatically.
 
 ## Where capabilities come from: proof by construction, not a questionnaire
 
+`defineAgent` constructs a Direct Agent. The Runner calls its function, SDK, or service endpoint directly; the target can be local or remote. A Direct Agent's `setup`, `send`, and `teardown` do not receive a Sandbox. `defineSandboxAgent` constructs a Sandbox Agent; only its callbacks receive a `SandboxAgentContext` with a real `sandbox`.
 
-| What unlocks on `t` | What the evidence is | What you write |
+| What becomes available on `t` | What proves it | What you write |
 |---|---|---|
-| `t.send`, `t.sendFile`, `t.check`, `t.judge`… | Every Agent has them | Nothing |
-| Multiple `t.send()`, `t.reply`, `t.newSession()` | `send` wired up `ctx.session` through a typed slot or `id` + `capture()` — without them every turn is a fresh conversation | Nothing — the accessors are right on `ctx` |
-| `t.respond()` / `t.parked()` and other HITL | send has returned `"waiting"` + an `input.requested` event | Nothing — doing it is having it |
-| `t.calledTool()` / `t.toolOrder()` and other positive assertions | paired operation events present | Nothing — having events means you can assert |
-| `t.notCalledTool()` / `t.usedNoTools()` and other negative assertions being **trustworthy** | Events come from an official converter with a completeness proof | Nothing — the proof travels with the converter's return value |
-| `t.sandbox`, `t.sandbox.fileChanged()`, etc. | Constructed by `defineSandboxAgent` | Nothing |
-| trace channel and the `niceeval view` waterfall | A `tracing` block exists (spans only feed the waterfall, never assertions) | Nothing — you were writing the block anyway |
+| `t.send`, `t.sendFile`, `t.check`, `t.judge`, … | Every Agent has it | Nothing |
+| Multiple `t.send()` calls, `t.reply`, `t.newSession()` | `send` uses a `ctx.session` continuation accessor, either a typed slot or `id` + `capture()`. Without it, each turn is a new conversation. | Nothing—the accessor is already on `ctx` |
+| `t.respond()`, status checks, and other HITL APIs | `send` has returned `"waiting"` plus an `input.requested` event | Nothing—doing it is having it |
+| Positive assertions such as `turn.calledTool()` / `turn.toolOrder()` | `events` contains paired `operation.started` / `operation.finished` items | Nothing—events make the assertion possible |
+| Negative assertions such as `t.notCalledTool()` / `t.usedNoTools()` are **trustworthy** | Events come from an official converter that proves completeness | Nothing—the proof travels with the converter result |
+| `t.sandbox`, `t.sandbox.fileChanged()`, and similar APIs | Construct with `defineSandboxAgent` | Nothing |
+| Trace channel and the `niceeval view` waterfall | A `tracing` block exists; spans go only to the waterfall, not assertions | Nothing—the block already needs to exist |
 
-The negative-assertion row is the only tiered one: `notCalledTool` asserts "it did not happen", which presupposes "the events are complete" — and that only holds when the source itself carries a completeness contract (SDK-native event stream pass-through, AI SDK's `result.steps`, Responses' `output`). Hand-written mappings carry no proof, so negative assertions warn at runtime that they are untrustworthy instead of silently passing. This also means there is no "declared but can't deliver" drift: trustworthiness follows where the events came from, not the author's self-assessment. The precise per-capability obligations are in the [Capabilities Reference](/reference/capabilities).
-
+The negative-assertion row is the only one with levels. `notCalledTool` claims that something did not happen, which requires complete events. That is trustworthy only when the source has a completeness contract, such as direct SDK event forwarding, AI SDK `result.steps`, or Responses `output`. A handwritten mapping has no proof. A negative assertion then warns at runtime that it is untrustworthy instead of silently passing. There is therefore no mismatch where an author declares a capability but cannot provide it: trust follows the event source, not author intent. See [Capability Reference](/reference/capabilities) for exact obligations by capability.
 
 ## Related reading
 
-- [Write Send](/tutorials/write-send) — The hands-on tutorial: from sending one message to a full integration, seven steps, each unlocking a set of assertions.
+- [Write Send](/tutorials/write-send) — The practical tutorial: from sending one message to a complete integration in seven incremental steps, each unlocking a set of assertions.
 - [Connect Your Agent](/tutorials/connect-your-agent) — The integration overview: minimal integration, parameter channels, and the incremental map.
-- [Drive](/explanation/drive) — The eval-side view: how to use `t.send()`, `t.newSession()`, and HITL.
-- [Assert](/explanation/assert) — The complete assertion vocabulary driven by the standard event stream.
-- [Architecture Overview](/explanation/overview) — The four layers and their boundaries.
+- [Drive](/explanation/drive) — The Eval-side view: how to use `t.send()`, `t.newSession()`, and HITL.
+- [Assert](/explanation/assert) — The full assertion vocabulary driven by the standard event stream.
+- [Architecture Overview](/explanation/overview) — The four-layer architecture and its boundaries.

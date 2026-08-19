@@ -22,7 +22,7 @@ Sandbox agent 会在隔离环境中启动 coding-agent CLI，给它 workspace �
 
 ## 运行内置 agent
 
-在 Eval 或 Experiment 上设置 `sandbox`，选择 [NiceEval](https://niceeval.com/) 在哪里创建隔离环境：
+在评估用例或 Experiment 上设置 `sandbox`，选择 [NiceEval](https://niceeval.com/) 在哪里创建隔离环境：
 
 ```ts
 // experiments/local.ts
@@ -45,7 +45,7 @@ npx niceeval exp local fixtures/button --attempts 10
 ```
 
 <Note>
-  没有对应的 CLI flag，也没有项目级默认 provider。Eval 与 Experiment 都没贡献 template-bearing layer 时，link planning 会在创建任何 Sandbox 前失败。
+  没有对应的 CLI flag，也没有项目级默认 provider。评估用例与 Experiment 都没贡献 template-bearing layer 时，link planning 会在创建任何 Sandbox 前失败。
 </Note>
 
 云端跑 coding agent 时，可以直接使用 NiceEval 已发布的 E2B 公共模板，避免每个 Attempt 安装 CLI：

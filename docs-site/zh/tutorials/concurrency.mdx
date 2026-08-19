@@ -170,7 +170,7 @@ const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void
 Attempt，并复用至多一台 Sandbox；不同组和未分组评估用例继续竞争剩余并发位。你不需要把
 整个 Experiment 设成 `maxConcurrency: 1`。
 
-`evals` 数组只声明成员，不声明业务顺序。Runner 按规范化 Eval ID 稳定串行；
+`evals` 数组只声明成员，不声明业务顺序。Runner 按规范化评估用例 ID 稳定串行；
 `attempts > 1` 时，同一成员需要真实派发的各次 Attempt 连续进入组内泳道。完整目录、
 Experiment 写法和 `--dry` 输出见[用评估组复用 Sandbox](/zh/tutorials/eval-groups)。
 

@@ -686,10 +686,10 @@ export interface EvalAuthorFields {
   tags?: string[];
   /**
    * 这道题贡献的 Sandbox 声明层。省略等价于空 command-only layer，不提供隐式 template。
-   * 每个实际 Eval x Experiment 配对必须恰好一方提供 template-bearing layer。
+   * 每个实际评估用例 × Experiment 配对必须恰好一方提供 template-bearing layer。
    */
   sandbox?: SandboxLayer;
-  /** Explicit, immutable Eval Plugin occurrences; no directory inheritance exists. */
+  /** 显式且不可变的评估用例 Plugin occurrence；不存在目录继承。 */
   plugins?: readonly PluginInstance<"eval">[];
   /** 声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。 */
   judge?: JudgeDeclaration;

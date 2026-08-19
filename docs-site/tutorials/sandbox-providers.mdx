@@ -15,14 +15,16 @@ Common Adapter operations include:
 | `runCommand(cmd, args)` | run a command |
 | `runCommandOrThrow(cmd, args)` | run a command and throw on non-zero exit |
 | `runShell(script)` | run a shell script |
+| `runShellOrThrow(script)` | run a shell script and throw on non-zero exit |
 | `readText(path)` / `readBytes(path)` | read text or exact bytes from the Sandbox |
 | `writeText(path, content)` / `writeBytes(path, content)` | write in-memory content into the Sandbox |
 | `pathExists(path)` | check whether a file or directory exists |
 | `uploadFile(source, target)` / `uploadDirectory(source, target?)` | transfer host files into the Sandbox |
-| `downloadFile(source, target)` / `downloadDirectory(source, target)` | transfer Sandbox files to the host |
 | `workdir` | the provider's real working directory; omitted `cwd` / `targetDir` resolve here |
 | `runCommand(..., { cwd })` | temporarily switch directory for one command; relative paths resolve from `workdir` |
 | `stop()` | destroy the environment |
+
+The two `OrThrow` methods include a sanitized, redacted, and truncated stderr tail in the error message. When stderr is empty, they fall back to stdout. For troubleshooting, start with that summary and read `SandboxCommandExitError.result` when you need complete output.
 
 ## Choose a provider
 
@@ -67,6 +69,10 @@ sandbox: dockerComposeSandbox({
 ```
 
 `workspaceService` names which service in the Compose file is the main Sandbox. The agent, `t.sandbox` commands and file operations, `workdir`, and the change diff all land on that one container. Every other service in the Compose file — a database, a mock server, whatever — is an accompanying resource that never goes through the `Sandbox` interface: you cannot `runCommand` against it, upload or read files on it, or see its diff. To reach an accompanying service, rely on the task's own networking — for example, reaching `db:5432` from the `client` container over Compose's built-in DNS.
+
+### Let an Agent run Docker itself
+
+When an Agent needs to run `docker build`, `docker run`, or `docker compose`, you can explicitly mount an existing Unix socket or choose raw privileged or managed rootless Docker-in-Docker. For the use cases, Dockerfiles, and complete configuration for all three modes, see [Let a Sandbox Use Docker](/tutorials/docker-in-docker).
 
 ## Lifecycle
 
@@ -152,7 +158,7 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
   Hooks have two feedback APIs: `progress` and `diagnostic`. Use `progress` for short-lived status. Use `diagnostic` only for a real exception, degradation, or problem that needs attention. There is no third general API for recording arbitrary runtime values. Keep per-run connection addresses, cache sizes, and versions in the Hook, Sandbox, or external service's own configuration. If the environment cannot continue, throw.
 </Warning>
 
-Neither `progress` nor `diagnostic` can pick a global phase, a color, or an output stream. The Runner knows the current callback belongs to `sandbox.setup` and shows the phase as Sandbox setup in the human terminal. A `diagnostic` is written to an Attempt-owned diagnostics channel and can later be reviewed with `niceeval show --run <runId> --page attempt-<attemptId>`. It does not change the Verdict by itself. Throw when the Sandbox cannot continue.
+Neither `progress` nor `diagnostic` can pick a global phase, a color, or an output stream. The Runner knows the current callback belongs to `sandbox.setup` and shows the phase as Sandbox setup in the human terminal. A `diagnostic` is written to an Attempt-owned diagnostics channel and can later be reviewed with `niceeval show @<attempt-locator>`. It does not change the Verdict by itself. Throw when the Sandbox cannot continue.
 
 Each of the three setups has its own job: the Adapter's `setup` handles connecting to the agent under test — for example, installing the CLI and writing auth config; the code at the top of `test(t)` in an eval prepares the task's starting files; the Sandbox's `.setup()` handles the current experiment's extra environment setup. MCP servers, skills, and the model — the configuration of the agent under test — still only come in through the Adapter factory arguments.
 
@@ -193,6 +199,16 @@ e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
 These baselines have been verified by actually booting them: Claude Code `2.1.207`, Codex `0.144.1`, Bub `0.4.0` (its install fingerprint moves with the Bub requirement, client overrides, OTel plugin, and Python plugin pins). A template's version follows the agent it ships (`0.144.1-r1`: agent version plus NiceEval's recipe revision); the three agents are released independently, and NiceEval's own library version never appears in the tag. So use the constants directly instead of copying these strings or tracking versions — including when a derived template needs to record which base it came from.
+
+Among this current set of public templates, the Claude Code template follows E2B's official `/usr` npm prefix, so an ordinary user cannot write global modules there directly. When you need to add global Node tools such as pnpm or yarn at runtime, explicitly install them in `/usr/local`, which both templates already put on `PATH`:
+
+```ts
+await t.sandbox.runCommand("npm", [
+  "install", "-g", "--prefix", "/usr/local", "pnpm@10.34.5",
+]);
+```
+
+Do not switch to `sudo npm install -g`. Root global packages already present in the template can conflict on files. NiceEval will unify this default prefix in a future template release. Until release notes explicitly say a new release meets that condition, keep the explicit `--prefix /usr/local`.
 
 ```ts title="scripts/build-e2b-template.ts"
 import { Template } from "e2b";
@@ -326,11 +342,14 @@ await restoreCheckpoint(nextSandbox, data);
 
 This suits runtime caches. It does not create a publishable image/template/snapshot, and it does not manage sharing, versions, or expiry. A failed archive or restore throws.
 
+When these directories or checkpoints must persist across Attempts, put `restoreCheckpoint()` in `SandboxLayer.setup()` and its paired `createCheckpoint()` in `teardown()`. Because `setup()` restores after a physical Sandbox is created, a new run follows the same boundary. `teardown()` saves state back as the instance retires, before the Provider finalizer.
+`sandboxReuse: true` only keeps one physical instance alive within the current Invocation. When several Invocations read and write the same checkpoint, declare `sharedState: { key }` at the Experiment top level so one waits before it creates a Sandbox.
+
 ## Transient error retries
 
 When a built-in provider creates a Sandbox, transient failures — rate limiting, `fetch failed`, connection resets, 5xx, temporary network unreachability — automatically retry with exponential backoff. Configuration errors, such as a missing template or missing credentials, fail on the first try. Once retries are exhausted, the attempt is recorded as `errored`. `defineSandbox`'s custom provider `create` is your own function; NiceEval does not retry it for you.
 
-`readText`, `readBytes`, `writeText`, `writeBytes`, `pathExists`, and the upload/download operations automatically make a bounded number of retries on transient transport errors: 429, 5xx, `fetch failed`, connection resets. Missing files, permission errors, cancellation, and a terminated Sandbox are not retried.
+`readText`, `readBytes`, `downloadFile`, `uploadFile`, file writes, and directory uploads automatically make a bounded number of retries on transient transport errors: 429, 5xx, `fetch failed`, and connection resets. Missing files, permission errors, cancellation, and a terminated Sandbox are not retried.
 
 `runCommand` and `runShell` do not retry automatically. A command may already have produced side effects, so retry it explicitly in a hook or an eval only when you can confirm it is safe to repeat.
 
@@ -410,4 +429,17 @@ Providers differ in what they allow around execution identity, networking, the f
 - Tune `maxConcurrency` (the experiment field or `--max-concurrency`) so local Docker does not run out of resources.
 - Split slow tests into required gates and optional soft checks.
 
-Warm pools and reuse belong to the runner / scheduler layer. See [Runner](/explanation/runner).
+### Pay for shared preparation once
+
+When cold starts—starting containers, installing dependencies, and installing an Agent CLI—dominate feedback time, declare `sandboxReuse: true` in an Experiment. Several Attempts then share one Sandbox serially: creation and Sandbox-level `setup` are paid once per Sandbox, and NiceEval resets the working directory to the state after common preparation between tasks.
+
+```ts
+export default defineExperiment({
+  agent: codexAgent(),
+  sandbox: e2bSandbox({ template: "acme-evals", lifetimeMs: 60 * 60_000 }),
+  sandboxReuse: true,
+  maxConcurrency: 3,
+});
+```
+
+This is a check-in-able Experiment semantic, not a CLI runtime mode. One Experiment cannot temporarily turn reuse on or off. For a comparison that needs a fresh Sandbox, write a separate Experiment that does not declare it. For its trade-offs, the run count of all four lifecycle layers, and the idempotence requirements for setup code, see [Reuse a Sandbox](/tutorials/sandbox-reuse).

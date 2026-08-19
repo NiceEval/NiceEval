@@ -1,94 +1,102 @@
 ---
-title: "Experiment matrix: compare agents and models with run matrices"
-sidebarTitle: "Experiments"
-description: "Use NiceEval experiments to run the same evals across multiple agents, models, and feature flags, then compare pass rate, cost, and latency."
+title: "Experiment Matrices: Compare Agents and Models with Run Matrices"
+sidebarTitle: "Experiment Matrices"
+description: "Use NiceEval Experiments to run the same evals across multiple Agents, models, and flags, then compare pass rate, cost, and latency."
 ---
 
-Experiments compare multiple run configurations. Typical questions include: which coding agent has the higher pass rate on the same task set, whether a prompt change lowers cost, and how latency trades off against quality across models.
+An Experiment compares several run configurations. Typical comparisons include the pass rates of Claude Code and Codex on the same coding-Agent tasks, the cost before and after a prompt change, and latency and quality across models.
 
 ## Basic shape
 
-**One experiment file = one configuration** (`one agent x one model`). `model` is a single string, not an array. To compare across models or agents, put multiple files in the same **experiment group directory** and keep everything else fixed:
+**One Experiment file = one configuration** (one Agent × one model). The path produces an Experiment ID and supports prefix selection:
 
 ```text
 experiments/
-  compare-models/          # experiment group
-    gpt-5.4.ts             #   one cell: pin model = gpt-5.4
-    deepseek-v4-pro.ts     #   one cell: pin model = deepseek-v4-pro
+  models/openai/gpt-5.4.ts
+  models/deepseek/v4-pro.ts
 ```
 
 ```ts
-// experiments/compare-models/gpt-5.4.ts
+// experiments/models/openai/gpt-5.4.ts
 import { defineExperiment } from "niceeval";
 import { webAgent } from "../../adapter/adapter.ts";
 
 export default defineExperiment({
   description: "gpt-5.4: comparison model",
   agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
-  model: "gpt-5.4",   // single string; copy the file and change this line for another model
-  attempts: 2,
-  earlyExit: true,
+  model: "gpt-5.4",   // A single string; copy this file and change this line for another model
+  attempts: 2,         // earlyExit is off by default; run both before comparing pass rate
 });
 ```
 
 ```bash
-npx niceeval exp compare-models   # renders a side-by-side report for every model in the group
+npx niceeval exp models
 ```
 
-Each configuration stays in its own file, which makes naming, diffing, and review straightforward. The directory structure itself explains which files belong to the same comparison.
+Put another model in another file. By default, `show` / `view` compare Experiments in the current result scope, with no extra grouping field.
 
-By default, `niceeval show` and `view` compare Experiments in the current result scope; no extra grouping field is needed.
+Nested directories provide only IDs and batch selection:
 
-When one cell's result looks off and you need to reproduce it in isolation, run just that cell by its full id (`group/filename`) instead of the whole group:
+When one cell has an unusual result and you need to reproduce it alone, run that configuration by its complete ID (`directory path/file name`). You do not need to batch-run the directory first:
 
 ```bash
-npx niceeval exp compare-models/gpt-5.4
+npx niceeval exp models/openai/gpt-5.4   # Exact ID
+npx niceeval exp models/openai           # Every Experiment under this directory level
 ```
 
-If the group also has a shared-prefix variant like `gpt-5.4-mini.ts`, you don't need to spell out both ids — running the shared prefix picks them up as a family (the exact id `compare-models/gpt-5.4` still selects only `gpt-5.4.ts` on its own):
+When the directory also contains a shared-prefix variant such as `gpt-5.4-mini.ts`, use a filename prefix to select it:
 
 ```bash
-npx niceeval exp compare-models/gpt
+npx niceeval exp models/openai/gpt
 ```
 
-See [Write Experiments](/tutorials/write-experiment) for the full `defineExperiment` field list and how `flags` flow into adapters.
+See [Write Experiments](/tutorials/write-experiment) for `defineExperiment` fields and how `flags` flow through.
 
-## What this is good for
+## Comparable run dimensions
 
-- Comparing different Adapters
-- Comparing different models. Tier 1 is enough as long as the application exposes model choice and the value is forwarded through `ctx.model`
-- Comparing prompts or feature flags. This requires Tier 3, because the application has to expose the variant as an experiment-selectable config and forward it through `flags` -> `ctx.flags`
-- Comparing different Sandbox providers
-- Comparing different runtime environment conditions (for example, whether a memory tool's binary is installed, or whether some state is pre-seeded). Write the environment difference into the `.setup()` / `.teardown()` hooks of the `sandbox` spec, one experiment file per variant. See [Sandbox providers · Lifecycle](/tutorials/sandbox-providers)
-- Measuring pass@N for the same task
+- Different Adapters.
+- Different models. Tier 1 integration is enough: the application interface exposes model choice and forwards `model` through `ctx.model`.
+- Different prompts or feature flags. This requires Tier 3 integration because the variant is internal to the application; it must expose it as an Experiment-selectable flag and forward it through `flags` → `ctx.flags`.
+- Different Sandbox Providers.
+- Different runtime environment conditions, such as whether a memory-tool binary is installed or state is preseeded. Write environment differences in the `.setup()` / `.teardown()` Hooks of the `sandbox` spec, one Experiment file per variant. See [Sandbox Providers · Lifecycle](/tutorials/sandbox-providers#lifecycle).
+- Pass@N for the same task.
 
-See [Tier](/explanation/tier) for what Tier 1, Tier 2, and Tier 3 mean.
+See [Tier](/explanation/tier) for the definition of Tier 1, Tier 2, and Tier 3.
 
-## Reading the results
+## View results
 
-Experiment output is typically shown per `(agent, model, eval)` cell:
+Experiment output usually appears by `(agent, model, eval)`:
 
 ```text
 api-validation   claude-code+zod-skill   pass@3 = 3/3 (100%)   mean 34s
 api-validation   claude-code             pass@3 = 1/3 (33%)    mean 41s
 ```
 
-Beyond pass rate, you should also compare mean time, tokens, cost, and failure types.
+Alongside pass rate, compare mean duration, tokens, cost, and failure types.
 
 ```bash
-npx niceeval show --experiment models
-npx niceeval view --experiment models
+pnpm exec niceeval show --experiment models
+pnpm exec niceeval view --experiment models
 ```
 
-Each Experiment uses its own `evals` selection to choose evals. The default current-project selection keeps every published slot whose identity still matches the current project. Use `--experiment <complete-id>` to narrow the current-project target before you compare it.
+Every Experiment uses its own `evals` selection. A function form iterates over every discovered eval:
 
-## Design advice
+```ts
+evals: (eval) =>
+  eval.id.startsWith("coding/") &&
+  eval.tags.includes("coding") &&
+  eval.environment !== "gpu"
+```
 
-- Keep the eval set stable so the comparison does not mix in extra variables.
-- Run multiple attempts per cell, especially for non-deterministic coding agents.
-- Make the budget and concurrency explicit.
-- Group failure modes instead of looking only at the total score.
+`eval.id` is a project-local ID derived from the file path, not an absolute path, so you can test it with `startsWith` / `includes`. In the two examples under [Authoring Evals](/tutorials/authoring#tags-and-environment), `coding/fix-button` is selected and `research/gpu-literature` is not. The parsed result becomes this run's plan. The Report reads actual physical Attempts and coverage facts.
+
+## Advice for Experiment design
+
+- Keep the eval set stable so a comparison does not mix in new variables.
+- Run several Attempts per cell, especially for nondeterministic coding Agents.
+- Make budget and concurrency explicit.
+- Classify failure causes instead of looking only at the total score.
 
 ## Relation to ordinary runs
 
-`npx niceeval exp <experiment>` checks whether a batch of evals passes under a given configuration; an experiment group compares multiple configurations. Both use the same evals, adapters, assertions, and artifacts.
+`npx niceeval exp <path-or-id>` runs by file identity. Each file's `evals` determines which evals it dispatches; the Run records actual physical Attempts and the known-task denominator.

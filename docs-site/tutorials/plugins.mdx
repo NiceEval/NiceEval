@@ -1,0 +1,110 @@
+---
+title: "Compose Lifecycles with Plugins"
+sidebarTitle: "Plugins"
+description: "Use definePlugin to compose multiple lifecycles for Experiments, Eval Groups, Sandboxes, and Evals."
+---
+
+A Plugin is a way to compose lifecycles with a stable identity. Use one to keep the setup and teardown a condition needs at different execution scopes together.
+
+A Plugin does not configure an Agent or provide a second Sandbox command or resource system. Agent Skills, MCP servers, native Plugins, and configuration files still go directly to the Agent factory. Sandbox images and commands still belong in the `sandbox` declaration.
+
+## Define multiple lifecycles
+
+Import every Plugin API from `niceeval/plugin`:
+
+```ts
+// experiments/shared/memory.ts
+import { definePlugin } from "niceeval/plugin";
+
+type MemoryOptions = {
+  readonly model: string;
+};
+
+export const memory = definePlugin<MemoryOptions>({
+  name: "acme.memory",
+  behaviorRevision: "1",
+  instanceKey: ({ model }) => model,
+  experiment: ({ model }) => ({
+    identity: { model },
+    setup: (ctx) => ctx.progress({ message: `Starting the ${model} memory service` }),
+    teardown: (ctx) => ctx.diagnostic({
+      code: "memory-service-stopped",
+      level: "warning",
+      message: `${model} memory service stopped`,
+    }),
+  }),
+  sandbox: ({ model }) => ({
+    identity: { model },
+    setup: (_sandbox, ctx) => ctx.progress({ message: "Connecting the current Sandbox" }),
+    teardown: (_sandbox, ctx) => ctx.progress({ message: "Disconnecting the current Sandbox" }),
+  }),
+});
+```
+
+`name` names the Plugin family. `instanceKey(options)` distinguishes configurations within one family. Raise `behaviorRevision` when implementation semantics change so old results are no longer adopted exactly.
+
+A family with no options can omit `instanceKey`; its fixed instance key is `"default"`. Each fragment can declare `identity`, and must provide at least `setup` or `teardown`.
+
+## Compose several Plugins in one place
+
+`plugins` always accepts an array:
+
+```ts
+export default defineExperiment({
+  agent: codexAgent({
+    skills: [{ kind: "local", path: ".agents/skills/memory" }],
+  }),
+  model: "gpt-5.6-luna",
+  plugins: [
+    memory({ model: "gpt-5.6-luna" }),
+    telemetry(),
+  ],
+  sandbox: dockerSandbox({
+    source: { type: "image", image: "acme/codex-memory:1" },
+  }),
+});
+```
+
+Setup runs in array order, and teardown runs in reverse order. If one Plugin's setup fails, NiceEval still calls that occurrence's teardown and continues with the other finishing callbacks.
+
+## Choose a lifecycle scope
+
+One family can declare four fragments:
+
+| Fragment | Runs |
+| --- | --- |
+| `experiment(options)` | Once for each Experiment that has real work to run |
+| `group(options)` | Once for each Experiment and Eval Group pair; it does not repeat when a Sandbox is replaced |
+| `sandbox(options)` | Once for each actual physical Sandbox; it runs again after replacement |
+| `eval(options)` | Once for each Attempt that actually runs |
+
+The caller mounts an occurrence only in the `plugins` array of `defineExperiment`, `defineEvalGroup`, or `defineEval`. If an occurrence also declares a `sandbox` fragment, NiceEval automatically applies it to that owner's physical Sandbox. `SandboxLayer` has no additional Plugin mounting syntax.
+
+```ts
+export default defineEval({
+  plugins: [fixtureLifecycle(), diagnosticsLifecycle()],
+  async test(t) {
+    const turn = await t.send("Complete the task");
+    await turn.succeeded().orStop();
+  },
+});
+```
+
+An Attempt adopted in full does not run Plugin lifecycles. During partial adoption, only scopes that actually run activate their lifecycles.
+
+## Inspect the plan first
+
+First confirm the Plugin identity and the Attempts that need to run:
+
+```bash
+npx niceeval exp codex-memory --dry
+npx niceeval exp codex-memory memory/smoke
+```
+
+When you change setup or teardown behavior, raise `behaviorRevision` too. NiceEval cannot know that an old result corresponds to changed behavior when you change only a callback function body and leave its identity unchanged.
+
+## Continue reading
+
+- [Experiments and Lifecycles](/tutorials/write-experiment) — configure an Agent, Provider, and Experiment-level lifecycle.
+- [Eval Groups](/tutorials/eval-groups) — have Attempts in one group share a Sandbox serially.
+- [Rerun and Carry Results](/tutorials/rerun-and-cache) — see how identity changes affect existing results.

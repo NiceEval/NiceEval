@@ -1,0 +1,78 @@
+---
+title: "配置并验证 Judge"
+sidebarTitle: "配置并验证 Judge"
+description: "连接 OpenAI 兼容 Judge 网关，用一条最小评估真实预检和判分，再从结果区分配置缺失、网络失败与低质量输出。"
+---
+
+Judge 适合规则难以写成精确 Match 的开放式质量判断。先用一条最小评估确认模型、密钥和端点都能真实判分，再把 Judge 加进正式题目。
+
+## 配置模型和凭据来源
+
+```ts title="niceeval.config.ts"
+import { defineConfig } from "niceeval/config";
+
+export default defineConfig({
+  judge: {
+    model: "judge-model",
+    baseUrl: "https://gateway.example.com/v1",
+    apiKeyEnv: "JUDGE_GATEWAY_KEY",
+    timeoutMs: 180_000,
+  },
+});
+```
+
+密钥只放进进程环境：
+
+```sh
+export JUDGE_GATEWAY_KEY="..."
+```
+
+配置文件只保存环境变量名，不保存密钥值。项目需要比较 Judge 模型时，在不同 Experiment 中覆盖 `judge.model`，不要添加单次 recipe model 参数。
+
+## 写一条最小真实判分
+
+```ts title="evals/judge-smoke.eval.ts"
+import { defineEval } from "niceeval";
+
+export default defineEval({
+  judge: true,
+  async test(t) {
+    t.judge.autoevals.closedQA("文本是否明确表达成功？", {
+      input: "operation completed successfully",
+      output: "operation completed successfully",
+    })
+      .gate(0.8)
+      .label("成功表达");
+  },
+});
+```
+
+`judge: true` 声明这条评估需要 Judge，并从 Experiment 与项目配置继承字段。`.gate(0.8)` 把 measurement 变成通过制要求；低于阈值时 Attempt 为 `failed`。
+
+## 只运行这条验证评估
+
+先确保一个现有 Experiment 的 `evals` 选择范围包含 `judge-smoke`，再用第二个位置参数只选择这条评估。下面以 Experiment ID `local` 为例：
+
+```sh
+pnpm exec niceeval exp local judge-smoke
+```
+
+用 `pnpm exec niceeval exp list` 查实际 Experiment ID；不要把评估用例 ID 同时当成 Experiment ID。模型和密钥都存在时，Runner 会在派发前预检 Judge 端点。预检失败属于 setup error，不会生成伪造的 Judge 分数。
+
+## 查看判分结果
+
+从完成反馈复制 Run ID：
+
+```sh
+pnpm exec niceeval show --run <run-id>
+```
+
+结果应包含 Judge measurement、threshold、condition、理由和裁剪后的材料。重点区分三类失败：
+
+| 结果 | 含义 |
+| --- | --- |
+| `judge-model-unresolved` / `judge-key-unresolved` | 配置或环境变量缺失，没有发起网络预检。 |
+| `unavailable` | 请求开始后网络或 Provider 不可用，不等于零分。 |
+| evaluator `errored` | 响应无效、分数不是有限数或超出 `[0, 1]`。 |
+
+正式题目应先用代表性结果校准 rubric 和阈值。比较两个 Judge 模型时，让两个 Experiment 选择同一批评估用例，并用不同 `labels` 标出 Judge 条件；完整矩阵写法见[实验矩阵](/zh/tutorials/experiments)。

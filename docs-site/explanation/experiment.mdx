@@ -1,41 +1,45 @@
 ---
-title: "Experiment: who to evaluate and how to run"
-sidebarTitle: "Experiment"
-description: "An experiment is a commit-ready run configuration: which agent to evaluate, which model to use, which flags to enable, and how many times to run the same eval suite. Why evals and experiments are separate — late binding lets the same eval run against different subjects."
+title: "Experiments: who to evaluate and how to run them"
+sidebarTitle: "Experiments"
+description: "An Experiment is a check-in-able run configuration: which Agent and model to use for the same Evals, which flags to enable, and how many times to run. Keeping Evals and Experiments separate provides late binding, so one Eval suite can run against different subjects."
 ---
 
-An **experiment** chooses which agent to evaluate, which model to use, which flags to enable, and how many times to run. Use it for A/B tests, model comparisons, and feature comparisons — `flags` are exactly the feature flags of an A/B test, and one experiment is one set of flag values.
+An **Experiment** specifies which Agent to evaluate, which model to use, which flags to enable, and how many times to run. Use it for A/B tests, model comparisons, and feature comparisons. `flags` are the feature flags in an A/B test; an Experiment is one set of flag values.
 
-## What an experiment contains
+## What an Experiment contains
 
-An experiment is a commit-ready TypeScript file under `experiments/`, and it comes down to a few fields:
+An Experiment is a check-in-able TypeScript file under `experiments/`. Its core fields are:
 
 ```ts
 // experiments/concise.ts
 export default defineExperiment({
-  description: "Concise prompt variant",
-  agent: webAgent({ baseUrl: "https://staging.example.com" }), // configured agent instance
-  model: "gpt-5.4",                    // forwarded to the Adapter through ctx.model
-  flags: { promptVariant: "concise" }, // forwarded through ctx.flags; visible in evals as t.flags
-  attempts: 3,                         // how many times to run each eval (to counter randomness)
+  description: "Concise Prompt variant",
+  agent: webAgent({ baseUrl: "https://staging.example.com" }),  // A configured Agent instance
+  model: "gpt-5.4",                    // Passed through to the Adapter as ctx.model
+  flags: { promptVariant: "concise" },  // Passed through as ctx.flags; t.flags in the Eval
+  attempts: 3,                         // Runs each Eval this many times to counter randomness
 });
 ```
 
-- `agent`: who to evaluate. Put a configured instance here — the subject-under-test URL and credentials go to the Adapter factory, not into other fields on the experiment.
-- `model` / `flags`: pass-through values. [NiceEval](https://niceeval.com/) does not interpret them. They are forwarded through `ctx` to the Adapter as-is, and the Adapter forwards them with the request and applies the switch as needed — this is exactly the channel [Tier](/explanation/tier) uses for model comparisons (Tier 1) and feature A/B tests (Tier 3).
-- `attempts`, `budget`, concurrency, `sandbox`, and other run parameters: how to run, and how much. See [Write experiments](/tutorials/write-experiment) for the full field list.
+- `agent`: who to evaluate. This is an already configured instance. Pass the subject's URL and authentication to the Adapter factory, not to other Experiment fields.
+- `model` / `flags`: pass-through values. [NiceEval](https://niceeval.com/) does not interpret them; it passes them through `ctx` to the Adapter, which forwards them with the request so the application can switch as needed. They are the channels for model comparison (Tier 1) and feature A/B tests (Tier 3) in [Tier](/explanation/tier).
+- Run parameters such as `attempts`, `budget`, concurrency, and `sandbox`: how to run and how much to run. See [Write Experiments](/tutorials/write-experiment) for the full field set.
 
-An experiment also has a pair of experiment-level hooks, `setup` / `teardown`. They run once for the whole experiment, on your own machine, to start and stop services shared across all attempts — for example, a tunnel to an internal service, or a mock server dedicated to the experiment. `setup` runs before the first attempt in this experiment is dispatched; `teardown` runs after all attempts finish (including on interruption), but only if `setup`'s point in the timeline was already reached. To prepare an environment inside the Sandbox on a per-experiment basis (install binaries, warm things up, carry state across attempts), attach that to the spec on the `sandbox` field instead — the object returned by factories such as `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })` can chain `.setup()` / `.teardown()`. For where the boundary between the two lies and how to write each, see [Write experiments · Start experiment-shared services](/tutorials/write-experiment#start-experiment-shared-services) and [Sandbox providers · Lifecycle](/tutorials/sandbox-providers#lifecycle).
+An Experiment also has an Experiment-level pair of `setup` / `teardown` Hooks. They run once for the entire Experiment on your own machine, so they can start and stop services shared by every Attempt, such as a tunnel to an internal service or an Experiment-specific mock server.
 
-When evals in the same experiment need different pre-built environments, an eval only declares a provider-neutral `environment` profile; the `environments` table in the sandbox spec then maps that profile to a Docker image, an E2B template, or a Vercel Sandbox snapshot. This keeps task requirements in the eval and provider artifacts in the spec, so one experiment still covers every eval and the comparison doesn't have to be split apart. See [Write experiments · Use different pre-built environments for different evals](/tutorials/write-experiment#let-different-evals-use-different-prebuilt-environments) for how to write this.
+`setup` runs before the first Attempt in this Experiment is dispatched. `teardown` runs after every Attempt finishes, including on interruption, but only if the timeline reached the point where `setup` should run.
+
+To prepare an environment inside a Sandbox for an Experiment, attach the work to the spec on the `sandbox` field. Objects returned by factories such as `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })` can chain `.setup()` / `.teardown()`. For the boundary between the two and how to write each one, see [Write Experiments — Start a service shared by an Experiment](/tutorials/write-experiment#start-a-service-shared-by-an-experiment) and [Sandbox providers — Lifecycle](/tutorials/sandbox-providers#lifecycle).
+
+When Evals in the same Experiment need different prebuilt environments, the Eval declares only a provider-neutral `environment` profile. The Sandbox spec's `environments` table maps that profile to a Docker image, E2B template, or Vercel Sandbox snapshot. This keeps task requirements in the Eval and provider artifacts in the spec, so one Experiment still covers every Eval and the comparison stays together. See [Write Experiments — Give different Evals different prebuilt environments](/tutorials/write-experiment#give-different-evals-different-prebuilt-environments).
 
 ## Matrix comparisons
 
-Write one experiment file per variant you want to compare: two models means two files that differ by one `model` line; a prompt A/B means two files that differ by one parameter. Run the same eval suite once under each experiment and you get a comparable cross-section of pass rate, cost, and latency — stack them side by side in `niceeval view`. For what's worth comparing and how to read the results, see [Experiment matrix](/tutorials/experiments).
+Write one Experiment file for every variant you want to compare. Two models mean two files differing by one `model` line; a Prompt A/B test means two files differing by one parameter. Run the same Eval suite under each Experiment to create comparable cross-sections of pass rate, cost, and latency, then compare them side by side in `niceeval view`. See [Experiment Matrix](/tutorials/experiments) for what is useful to compare and how to read the results.
 
 ## Related reading
 
-- [Write experiments](/tutorials/write-experiment) — The full `defineExperiment` field set: attempts, budget, concurrency, and sandbox.
-- [Experiment matrix](/tutorials/experiments) — How to organize comparisons across agent / model / flags, and how to read the results.
-- [Evals](/explanation/evals) — The other half: what an eval is, plus its lifecycle and verdicts.
-- [Tier](/explanation/tier) — Which tier `model` and `flags` each take effect at.
+- [Write Experiments](/tutorials/write-experiment) — The complete `defineExperiment` fields: attempts, budget, concurrency, and Sandbox.
+- [Experiment Matrix](/tutorials/experiments) — How to organize comparisons across Agent / model / flags and read the results.
+- [Evals](/explanation/evals) — The other half: what an Eval is, its lifecycle, and its Verdicts.
+- [Tier](/explanation/tier) — The tier in which `model` and `flags` each take effect.

@@ -1,0 +1,56 @@
+---
+title: "控制一次运行的成本"
+sidebarTitle: "控制运行成本"
+description: "用 attempts、首过即停、budget、并发和结果沿用分别控制统计样本、停止派发、花费保护与资源占用。"
+---
+
+控制成本前先判断你要减少什么。不同开关回答不同问题，不能互相替代。
+
+| 目标 | 使用方式 |
+| --- | --- |
+| 测完整稳定性分布 | 设置 `attempts: N`，默认跑满。 |
+| 只确认至少能成功一次 | 使用 `--early-exit`。 |
+| 给每个 Experiment 的花费加保护 | 使用 `--budget <美元>`。 |
+| 限制同时占用的资源 | 使用 `--max-concurrency <数量>`。 |
+| 跳过没有受影响的结果 | 使用默认沿用或 `--rerun`。 |
+| 分摊 Sandbox 创建和准备成本 | 使用 `sandboxReuse`。 |
+
+## 先预览运行矩阵
+
+```sh
+pnpm exec niceeval exp regression --dry
+```
+
+先确认评估用例数量、Experiment 数量和 Attempt 数量。`--dry` 不预测最终模型费用，但能在派发前发现范围选错或重复次数过大。
+
+## 只关心能否成功时首过即停
+
+```sh
+pnpm exec niceeval exp regression --early-exit
+```
+
+某条评估用例的一个 Attempt 得到 `passed` 后，尚未派发的剩余 Attempt 会写成 `not-dispatched`。已经在运行的 Attempt 会正常结束并计入结果。
+
+`failed`、`errored` 或 `skipped` 不触发首过即停。需要完整通过率分布时不要打开这个选项。
+
+## 给花费设置保护上限
+
+```sh
+pnpm exec niceeval exp regression --budget 25
+```
+
+预算按每个 Experiment ID 分别计算。已完成 Attempt 的实测花费到达上限后，NiceEval 停止派发新 Attempt；已经在运行的任务不会被中途终止。
+
+因此 `--budget` 是保护上限，不是精确账单。并发任务尚未结算时，最终花费可能短暂超过设置值。没有可用成本数据时，Runner 会给出警告，而不是假装预算仍可执行。
+
+预算耗尽会留下 `budget_exhausted` diagnostic，未派发位置写成 `not-dispatched`，命令以非零状态退出。提高预算后重跑同一范围，合格的已完成 Attempt 会沿用，只补剩余位置。
+
+## 并发只控制资源占用
+
+```sh
+pnpm exec niceeval exp regression --max-concurrency 4
+```
+
+并发上限限制同时运行的评估用例，不是费用上限。费用保护仍使用 `--budget`。Sandbox 构建并发由独立的 `--max-build-concurrency` 控制。
+
+需要进一步分摊环境准备成本时，阅读[复用 Sandbox](/zh/tutorials/sandbox-reuse)。需要选择只重跑失败项或全部重验时，阅读[重跑与沿用结果](/zh/tutorials/rerun-and-cache)。
