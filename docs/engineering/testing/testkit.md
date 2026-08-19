@@ -196,9 +196,16 @@ timeout 与 selector 预检。Testkit 只串行执行每个 target，要求补�
 它严格拒绝缺失、额外、重复身份和字段不符，并可选核对 `passed` 或 `early_exit` 字段。
 Testkit 不生成 expected、不按 exit code 推断 Verdict，也不把 `failed`、`errored` 或 `skipped` 折叠成另一状态。
 
-`decodeShowTiming()` 严格验证 `niceeval show --timing --json` 的 schema、timing data、Attempt 身份、collection
-与完整 interval 字段；malformed 时附带原始命令诊断。它不选择 interval，也不解释 phase、label、父子关系或 outcome，
-这些 expected 必须继续写在 owner 正文中。
+`decodeShowTiming()` 严格验证 `niceeval show --timing --json` 的稳定公开结构：
+
+- schema、timing data 与 Attempt 身份；
+- complete/partial collection 与完整 interval 字段；
+- Attempt phase、标识符，以及唯一且规范排序的 interval；
+- parent 存在、区间包含、无环且无安全整数溢出；
+- complete collection 不含 unknown outcome。
+
+malformed 时错误附带原始命令诊断。decoder 不选择业务所需 interval，也不替 owner 决定应出现哪个
+phase、label、父子关系或 outcome；这些 expected 必须继续写在 owner 正文中。
 
 ```ts
 const evalEvents = assertExpEvalOutcomes(

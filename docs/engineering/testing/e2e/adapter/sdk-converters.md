@@ -16,12 +16,16 @@ secret and no external network.
 Each owner has one fixture, one Eval, one Experiment, and one test file. The
 eight Vitest files retain default file parallelism.
 
-Each test file opens one isolated `withProjectCopy` case in `beforeAll`.
-It runs its Experiment once and holds that case until `afterAll`.
+Each test file has one Journey test and one isolated `withProjectCopy` case.
+The Journey runs its Experiment once. It then checks these public results in order:
 
-- The outcome and `show --execution` tests read the same frozen public result.
-- An initial run failure closes the held case immediately.
-- `afterAll` closes a successful case, stages its `.niceeval` artifact, and removes the copied project before the file settles.
+- outcome;
+- explicit Run selection;
+- recorded source;
+- converter-specific execution evidence.
+
+The case stages its `.niceeval` artifact and removes the copied project before
+the test settles. Setup and public readback failures use the same cleanup path.
 
 Tests use only the installed candidate's public adapter and CLI surfaces. They
 never inspect candidate source or a private result layout.
@@ -43,6 +47,8 @@ Every Journey runs this command:
 
 It then reads the result through public commands:
 
+- `niceeval show --run <run-id> --json`
+- `niceeval show @locator --source`
 - `niceeval show @locator --execution --json`
 
 Generic `eval.run`, `agent.setup`, and `agent.send` timing belongs only to the

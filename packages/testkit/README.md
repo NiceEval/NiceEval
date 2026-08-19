@@ -15,7 +15,8 @@ NiceEval 场景 Repo 共用的机械测试设施。它只负责进程收据、�
 Testkit 不生成 expected，也不把 `failed`、`errored`、`skipped` 互相折叠。
 
 `decodeShowTiming(receipt)` 严格解码 `niceeval show --timing --json` 的公开 timing 文档、Attempt 身份、
-collection 与 interval 字段。它返回原始稳定事实；phase、label、父子关系和 outcome 的 expected 仍由 owner 正文声明。
+collection、interval 字段、合法 phase/标识符以及无重复、无悬空、无环、区间包含且不溢出的 parent 图。
+它返回原始稳定事实；具体应出现的 phase、label、父子关系和 outcome expected 仍由 owner 正文声明。
 
 `retryFailedExpEvalsOnce({ events, targets, runRetry })` 只机械执行调用方明确选出的 live Eval 单次补跑：
 串行调用保留在 owner 正文中的完整 argv，严格核对唯一返回身份、`passed` verdict 与零退出码，再按
