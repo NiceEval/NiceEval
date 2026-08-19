@@ -246,6 +246,7 @@ export type CostCoverageReasonCode =
   | "execution-model-not-recorded"
   | "usage-not-recorded"
   | "usage-unavailable"
+  | "usage-migration-required"
   | "usage-unsupported"
   | "usage-invalid"
   | "usage-collection-partial"
@@ -593,6 +594,7 @@ const COST_COVERAGE_REASON_CODES = new Set<CostCoverageReason["code"]>([
   "execution-model-not-recorded",
   "usage-not-recorded",
   "usage-unavailable",
+  "usage-migration-required",
   "usage-unsupported",
   "usage-invalid",
   "usage-collection-partial",

@@ -60,7 +60,7 @@ export default defineExperiment({
 
 ### codex
 
-- **Auth**: `CODEX_API_KEY` (overridable with the factory option `apiKey`, not `OPENAI_API_KEY`), optional `CODEX_BASE_URL` (factory option `baseUrl`) for an OpenAI-compatible proxy.
+- **Auth**: `OPENAI_API_KEY` (overridable with the factory option `apiKey`), optional `OPENAI_BASE_URL` (factory option `baseUrl`) for an OpenAI-compatible proxy.
 - **Installing MCP servers**: the `mcpServers` option, appended during `setup` into the `[mcp_servers.<name>]` section of `~/.codex/config.toml`. The two shapes are distinguished by field: a local stdio process sets `command` (optionally with `args` / `env`); a remote Streamable HTTP endpoint sets `url` (optionally with `headers`, written as a `[mcp_servers.<name>.http_headers]` subtable). `url` must be reachable from inside the Sandbox: if the service runs on your own machine, expose it as a public address first with a tunnel like cloudflared or tailscale.
 
   <Warning>
@@ -107,7 +107,7 @@ export default defineExperiment({
 
 ### bub
 
-- **Auth**: `BUB_API_KEY` + `BUB_API_BASE` (an OpenAI-compatible proxy), overridable with the factory options `apiKey` / `apiBase`.
+- **Auth**: `OPENAI_API_KEY` + `OPENAI_BASE_URL` (an OpenAI-compatible proxy), overridable with the factory options `apiKey` / `apiBase`.
 - **Installing Skills**: `skills: SkillSpec[]`, the same type as the other two adapters. Skills land in `.agents/skills/<name>/`, with a discovery instruction written into AGENTS.md.
 - **Installing plugins**: `pythonPlugins: PythonPluginSpec[]` (`{ package }`: a PyPI package, a version specifier, or a git URL), added during `setup` to `uv tool install … --with <package>`. That type belongs to bub only; the package set is part of the install checkpoint key, so two variants with different plugins never reuse the same install cache.
 - **Prebuilt Bub**: NiceEval's E2B recipe folds Bub, the OTel plugin, and the set of Python plugins into an install fingerprint. The Adapter only reuses an environment whose fingerprint matches exactly; simply having a `bub` on `PATH` is not proof of compatibility. For where to build one, see [Sandbox providers · Build on the official baselines to speed things up](/tutorials/sandbox-providers).
@@ -135,7 +135,7 @@ export default defineExperiment({
 
 | | claude-code | codex | bub |
 |---|---|---|---|
-| Auth environment variable | `ANTHROPIC_API_KEY` | `CODEX_API_KEY` | `BUB_API_KEY` + `BUB_API_BASE` |
+| Auth environment variable | `ANTHROPIC_API_KEY` | `OPENAI_API_KEY` + optional `OPENAI_BASE_URL` | `OPENAI_API_KEY` + `OPENAI_BASE_URL` |
 | MCP server | ✅ `mcpServers` (stdio + HTTP) | ✅ `mcpServers` (stdio + HTTP) | ❌ |
 | Skill | ✅ `skills: SkillSpec[]` (native discovery) | ✅ `skills: SkillSpec[]` (+ discovery instruction) | ✅ `skills: SkillSpec[]` (+ discovery instruction) |
 | Native plugin | ✅ `plugins: ClaudeCodePluginSpec[]` | ✅ `plugins: CodexPluginSpec[]` | ❌ |

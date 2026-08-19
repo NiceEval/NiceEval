@@ -246,6 +246,7 @@ export interface AnalysisRequestError {
 
 export type AnalysisInputIssueCode =
   | "missing"
+  | "migration-required"
   | "unsupported"
   | "producer-incompatible"
   | "input-invalid"
@@ -280,7 +281,7 @@ export type SampleInputObservation<Value> =
       readonly producer?: ProducerIdentity;
     }
   | {
-      readonly state: "missing" | "unsupported" | "failed";
+      readonly state: "missing" | "migration-required" | "unsupported" | "failed";
       readonly issues: readonly AnalysisIssue[];
       readonly refs: readonly EvidenceRef[];
       readonly producer?: ProducerIdentity;
@@ -292,6 +293,7 @@ export type MetricState =
   /** A specialized closed metric may have no reportable value at all. */
   | "unavailable"
   | "empty"
+  | "migration-required"
   | "unsupported"
   | "failed";
 

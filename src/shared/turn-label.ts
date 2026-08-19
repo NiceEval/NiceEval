@@ -14,8 +14,5 @@ export function normalizeTurnLabel(label: string): string {
   if (legacyMatch !== null) {
     return formatTurnLabel(Number(legacyMatch[1]), Number(legacyMatch[2]));
   }
-  const observabilityV1Match = /^session([1-9]\d*)\.turn([1-9]\d*)$/.exec(label);
-  return observabilityV1Match === null
-    ? label
-    : formatTurnLabel(Number(observabilityV1Match[1]), Number(observabilityV1Match[2]));
+  return label;
 }

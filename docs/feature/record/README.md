@@ -68,15 +68,15 @@ NiceEval 的 package-private（包私有）Record 作者模型只使用
 NiceEval current 固定 Attachment catalog 有以下七个 family（附件族）。一个 family 只有一个定义入口；多个 owner
 写在同一 `owners` map，不复制 family 或另立版本名称。
 
-| family | `owners` | 保存的事实 |
-|---|---|---|
-| `niceeval.assertions` | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
-| `niceeval.observability` | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
-| `niceeval.file-changes` | `{ attempt }` | 归因策略、采集状态与按 send 区间排序的文件变化轨迹 |
-| `niceeval.source-navigation` | `{ attempt }` | 每个物理 `t.send` 的 turn、源码 frame 与 timing identity join |
-| `niceeval.sources` | `{ run }` | 当时源码闭包的 manifest 与 own blob |
-| `niceeval.artifacts` | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
-| `niceeval.experiment-presentation` | `{ run }` | 与 Experiment identity 分离的规范化展示名称 |
+| family | current | `owners` | 保存的事实 |
+|---|---:|---|---|
+| `niceeval.assertions` | 1 | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
+| `niceeval.observability` | 2 | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
+| `niceeval.file-changes` | 1 | `{ attempt }` | 归因策略、采集状态与按 send 区间排序的文件变化轨迹 |
+| `niceeval.source-navigation` | 1 | `{ attempt }` | 每个物理 `t.send` 的 turn、源码 frame 与 timing identity join |
+| `niceeval.sources` | 1 | `{ run }` | 当时源码闭包的 manifest 与 own blob |
+| `niceeval.artifacts` | 1 | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
+| `niceeval.experiment-presentation` | 1 | `{ run }` | 与 Experiment identity 分离的规范化展示名称 |
 
 每个 family 的模块把自己的 declaration、复杂 payload Schema、durable JSON 键、limits 与 blob closure / integrity
 相邻放置。总 catalog 只列这七个 declaration，不重新描述任何 payload。

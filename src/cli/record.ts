@@ -68,6 +68,12 @@ function recordErrorNextStep(code: string): string | undefined {
       return "Run: niceeval migrate";
     case "record-migration-interrupted":
       return "Restore the Record from Git; do not rerun migrate on mixed bytes.";
+    case "record-migration-plan-stale":
+      return "Review the new migration plan and rerun migrate.";
+    case "record-migration-git-restore-required":
+      return "Commit, restore, or otherwise obtain a clean Git restore point for this Record before migrating.";
+    case "record-migration-invalid":
+      return "Restore the Record from Git before retrying migration.";
     case "record-format-unsupported":
       return "Install a NiceEval version that supports this Record format.";
     case "record-maintenance-busy":
@@ -140,12 +146,28 @@ function migrateCommand(input: {
     const plan = yield* session.planMigrate();
     const planText = plan.state === "already-current"
       ? `Record migration plan: already-current\nformat: ${plan.format}\n`
-      : `Record migration plan: unsupported-format\nformat: ${plan.format}\n`;
-    if (plan.state !== "already-current") {
+      : plan.state === "unsupported-format"
+        ? `Record migration plan: unsupported-format\nformat: ${plan.format}\n`
+        : `Record migration plan: migration-required\nformat: ${plan.format}\nattachments: ${plan.attachments.length}\nbackup: ${plan.backup.state}\n`;
+    if (plan.state === "unsupported-format") {
       return output({
         exitCode: 1,
         stdout: planText,
         stderr: "record-format-unsupported\nInstall a NiceEval version that supports this Record format.\n",
+      });
+    }
+    if (plan.state === "migration-required" && plan.backup.state !== "git-restore-point") {
+      return output({
+        exitCode: 1,
+        stdout: planText,
+        stderr: "record-migration-git-restore-required\nA clean Git restore point is required; --yes cannot bypass this preflight.\n",
+      });
+    }
+    if (plan.state === "migration-required" && !input.yes) {
+      return output({
+        exitCode: 1,
+        stdout: planText,
+        stderr: "record-migration-confirmation-required\nReview the migration plan and rerun with --yes.\n",
       });
     }
     const receipt = yield* session.applyMigrate(plan);

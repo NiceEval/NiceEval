@@ -98,8 +98,8 @@ niceeval clean [--record <root>] [--yes]
 niceeval migrate [--record <root>] [--yes]
 ```
 
-schemaVersion `1` 没有已发布 predecessor，maintenance facet 的 migration 链为空。因此 `migrate` 对完整
-current Record 返回：
+root / Core schemaVersion `1` 没有已发布 predecessor。所有 fixed family 也处于 current 时，`migrate`
+对完整 current Record 返回：
 
 ```text
 Record is already current: niceeval.record (schemaVersion 1)
@@ -107,9 +107,10 @@ Record is already current: niceeval.record (schemaVersion 1)
 
 root / Core 不相容时，若有固定相邻步骤则返回 `migration-required`，否则 `unsupported-format`，并且不写盘。
 已知 family 的旧 schemaVersion 也经这条 maintenance 路径迁移。未发布的斜杠版本草案不是 migration source。
-未知 independent future family 不迁移，也不删除。CLI 不猜测中间格式，不接受第三方 converter。未来
-schemaVersion `2` 发布时，CLI 随之提供固定 `1 → 2` maintenance step；历史格式必须由这条显式路径完成转换，
-之后才可打开为 current reader。
+未知 independent future family 不迁移，也不删除。CLI 不猜测中间格式，不接受第三方 converter。
+
+Observability v1 由固定 `1 → 2` maintenance step 迁移；两个 owner 的 payload、label、blob refs 与 blob bytes
+逐字保留，只更新 envelope。历史格式完成或由 Git 恢复后，才可打开为 current reader。
 
 存在固定相邻步骤时，命令先做只读 Git preflight，并打印计划。预检要求：
 
@@ -128,7 +129,7 @@ NiceEval 不创建 staging、backup、rollback、root replacement 或恢复日�
 
 | code/state | 含义 | 下一步 |
 |---|---|---|
-| `already-current` | Record 是 `niceeval.record` schemaVersion `1` | 不修改 Record |
+| `already-current` | root / Core 是 schemaVersion `1`，所有 fixed family 也处于 current | 不修改 Record |
 | `migration-required` | root / Core 或已知 family 有固定相邻 migration | 运行 `niceeval migrate`；ordinary reader 不改盘 |
 | `unsupported-format` | root / Core 无支持步骤，或 family 名使用未发布 `/vN` 草案 | 使用支持该格式的 NiceEval；不要强行迁移 |
 | `record-maintenance-busy` | maintenance 与 reader/writer/clean 冲突 | 关闭占用命令后重试 |

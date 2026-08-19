@@ -492,7 +492,57 @@ function timingCollectionSchema<Phase extends Schema.Schema.AnyNoContext>(phase:
   );
 }
 
-export const AttemptTimingCollectionSchema = timingCollectionSchema(AttemptTimingPhaseSchema);
+const CanonicalTurnLabelSchema = Schema.String.pipe(
+  Schema.filter(
+    (value) => /^(?:turn[1-9]\d*|session[1-9]\d*\/turn[1-9]\d*)$/.test(value),
+    {
+      identifier: "CanonicalTurnLabel",
+      description: "a canonical turnN or sessionK/turnN timing label",
+    },
+  ),
+);
+
+function attemptTimingCollectionSchema() {
+  const intervalBase = {
+    intervalId: SafeIdentifierSchema,
+    startOffsetMs: NonNegativeSafeIntegerSchema,
+    durationMs: NonNegativeSafeIntegerSchema,
+    parentIntervalId: Schema.NullOr(SafeIdentifierSchema),
+    outcome: Schema.Literal("completed", "failed", "cancelled", "interrupted", "unknown"),
+  } as const;
+  const interval = Schema.Union(
+    Schema.Struct({
+      ...intervalBase,
+      phase: Schema.Literal("agent.send"),
+      label: Schema.Union(SafeIdentifierSchema, CanonicalTurnLabelSchema),
+    }),
+    Schema.Struct({
+      ...intervalBase,
+      phase: Schema.Literal(
+        "attempt.setup",
+        "sandbox.prepare",
+        "agent.ensure",
+        "eval.run",
+        "sandbox.command",
+        "assertion.evaluate",
+        "verdict.fold",
+        "attempt.teardown",
+      ),
+      label: SafeIdentifierSchema,
+    }),
+  );
+  return Schema.Struct({
+    collection: ObservabilityCollectionStateSchema,
+    intervals: Schema.Array(interval),
+  }).pipe(
+    Schema.filter(
+      hasCanonicalTimingCollection,
+      { identifier: "TimingCollection", description: "canonical timing intervals with valid parents" },
+    ),
+  );
+}
+
+export const AttemptTimingCollectionSchema = attemptTimingCollectionSchema();
 export const RunTimingCollectionSchema = timingCollectionSchema(RunTimingPhaseSchema);
 
 const SourceFrameSchema = Schema.Struct({
@@ -762,7 +812,7 @@ const RunObservabilityBlobBudget = Object.freeze({
 export const observabilityRecordAttachment = defineRecordAttachment({
   family: "niceeval.observability",
   current: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     owners: {
       attempt: {
         schema: AttemptObservabilityAttachmentSchema,
@@ -784,4 +834,10 @@ export const observabilityRecordAttachment = defineRecordAttachment({
       },
     },
   },
+  maintenance: () => import("./observability-v1.ts").then(
+    ({ observabilityV1Maintenance }) => observabilityV1Maintenance,
+  ),
+  adjacentMigrationLinks: Object.freeze([
+    Object.freeze({ fromSchemaVersion: 1, toSchemaVersion: 2 }),
+  ]),
 });

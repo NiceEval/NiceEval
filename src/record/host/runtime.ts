@@ -39,6 +39,7 @@ import {
 } from "../errors/record-errors.ts";
 import {
   encodeFixedRecordAttachmentEnvelope,
+  NiceEvalRecordAttachments,
   NiceEvalRecordFamilyCatalog,
   type FixedRecordFamilyDescriptor,
   type NiceEvalFamily,
@@ -97,17 +98,24 @@ import { recordRootPaths, type RecordRoot } from "../platform/root.ts";
 import {
   RecordEntropy,
   RecordFileSystem,
+  RecordGit,
   recordPortablePath,
   type RecordDirectoryEntry,
   type RecordEntropyService,
   type RecordFileSystemService,
+  type RecordGitService,
 } from "../platform/services.ts";
 import {
   RecordBootstrapInvalid,
   RecordFormatUnsupported,
   RecordHandleInvalid,
+  RecordMigrationInvalid,
+  RecordMigrationGitRestoreRequired,
   RecordMigrationInterruptedState,
+  RecordMigrationPlanStale,
   RecordReaderClosed,
+  type RecordMaintenanceError,
+  type RecordMaintenanceOpenError,
   type RecordReaderOpenError,
   type RecordReaderReadError,
 } from "../reader/errors.ts";
@@ -115,7 +123,10 @@ import {
   RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
   readCurrentRecordFormat,
 } from "../reader/format.ts";
-import { readFixedRecordAttachment } from "../reader/runtime.ts";
+import {
+  readFixedRecordAttachment,
+  validateFixedRecordAttachmentMigrationSource,
+} from "../reader/runtime.ts";
 import {
   recordAttachmentEncodeError,
   recordDraftStateError,
@@ -147,6 +158,7 @@ import {
   type ReadableRun,
   type RecordFormatInspection,
   type RecordHostSDK,
+  type RecordAttachmentMigrationTarget,
   type RecordMaintenanceSession,
   type RecordMigrationPlan,
   type RecordMigrationReceipt,
@@ -381,12 +393,17 @@ function sameRoot(left: RecordRoot, right: RecordRoot): boolean {
 function currentFormatInspection(
   fileSystem: RecordFileSystemService,
   root: RecordRoot,
-): Effect.Effect<RecordFormatInspection, RecordReaderOpenError> {
+): Effect.Effect<RecordFormatInspection, RecordMaintenanceError> {
   return readCurrentRecordFormat(fileSystem, root).pipe(
-    Effect.map(() => ({
-      state: "already-current" as const,
-      format: RECORD_FORMAT,
-    })),
+    Effect.flatMap(() =>
+      Effect.map(
+        planAttachmentMigration({ fileSystem, root }),
+        (attachments): RecordFormatInspection => ({
+          state: attachments.length === 0 ? "already-current" : "migration-required",
+          format: RECORD_FORMAT,
+        }),
+      )
+    ),
     Effect.catchAll((error) =>
       error instanceof RecordFormatUnsupported
         ? Effect.succeed({
@@ -2434,35 +2451,362 @@ function openNewReferenceRun(
   return Effect.map(openNewRuntime(request), makeReferenceRunSession);
 }
 
+type AnyMigrationDescriptor = FixedRecordFamilyDescriptor<
+  NiceEvalFamily,
+  RecordAttachmentOwner,
+  unknown
+>;
+
+interface KnownMigrationAttachment {
+  readonly owner: RecordAttachmentOwner;
+  readonly runId: RunId;
+  readonly attemptId?: AttemptId;
+  readonly descriptor: AnyMigrationDescriptor;
+}
+
+function migrationDescriptor<
+  Family extends NiceEvalFamily,
+  Owner extends RecordAttachmentOwner,
+  Payload,
+>(descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>): AnyMigrationDescriptor {
+  return descriptor as unknown as AnyMigrationDescriptor;
+}
+
+const runMigrationDescriptors = Object.freeze([
+  migrationDescriptor(NiceEvalRecordFamilyCatalog.observability.run),
+  migrationDescriptor(NiceEvalRecordFamilyCatalog.sources),
+  migrationDescriptor(NiceEvalRecordFamilyCatalog.artifacts.run),
+]);
+
+const attemptMigrationDescriptors = Object.freeze([
+  migrationDescriptor(NiceEvalRecordFamilyCatalog.assertions),
+  migrationDescriptor(NiceEvalRecordFamilyCatalog.observability.attempt),
+  migrationDescriptor(NiceEvalRecordFamilyCatalog.fileChanges),
+  migrationDescriptor(NiceEvalRecordFamilyCatalog.sourceNavigation),
+  migrationDescriptor(NiceEvalRecordFamilyCatalog.artifacts.attempt),
+]);
+
+function migrationAttachmentDirectory(
+  root: RecordRoot,
+  location: KnownMigrationAttachment,
+) {
+  return location.owner === "run"
+    ? recordPortablePath(
+        root,
+        "runs",
+        location.runId,
+        "attachments",
+        location.descriptor.family,
+      )
+    : recordPortablePath(
+        root,
+        "runs",
+        location.runId,
+        "attempts",
+        location.attemptId!,
+        "attachments",
+        location.descriptor.family,
+      );
+}
+
+function migrationReaderLocation(location: KnownMigrationAttachment) {
+  return location.owner === "run"
+    ? Object.freeze({ owner: "run" as const, runId: location.runId })
+    : Object.freeze({
+        owner: "attempt" as const,
+        runId: location.runId,
+        attemptId: location.attemptId!,
+      });
+}
+
+/**
+ * This traversal only addresses declared family directories. It deliberately
+ * never enumerates an attachment directory, so unknown families cannot enter
+ * the migration graph or be rewritten as a side effect.
+ */
+function knownMigrationAttachments(
+  fileSystem: RecordFileSystemService,
+  root: RecordRoot,
+): Effect.Effect<readonly KnownMigrationAttachment[], RecordFileSystemError> {
+  return Effect.gen(function* () {
+    const locations: KnownMigrationAttachment[] = [];
+    const runs = yield* fileSystem.listDirectory({
+      directory: recordPortablePath(root, "runs"),
+      maximumEntries: MAXIMUM_RUN_ENTRIES,
+    });
+    for (const entry of runs) {
+      if (entry.kind !== "directory") continue;
+      const runId = decodeRunId(entry.name);
+      if (runId === undefined) continue;
+
+      for (const descriptor of runMigrationDescriptors) {
+        const location: KnownMigrationAttachment = Object.freeze({
+          owner: "run" as const,
+          runId,
+          descriptor,
+        });
+        if ((yield* fileSystem.pathKind(migrationAttachmentDirectory(root, location))) !== "missing") {
+          locations.push(location);
+        }
+      }
+
+      const attempts = yield* fileSystem.listDirectory({
+        directory: recordPortablePath(root, "runs", runId, "attempts"),
+        maximumEntries: MAXIMUM_ATTEMPT_ENTRIES,
+      });
+      for (const attemptEntry of attempts) {
+        if (attemptEntry.kind !== "directory") continue;
+        const attemptId = decodeAttemptId(attemptEntry.name);
+        if (attemptId === undefined) continue;
+        for (const descriptor of attemptMigrationDescriptors) {
+          const location: KnownMigrationAttachment = Object.freeze({
+            owner: "attempt" as const,
+            runId,
+            attemptId,
+            descriptor,
+          });
+          if ((yield* fileSystem.pathKind(migrationAttachmentDirectory(root, location))) !== "missing") {
+            locations.push(location);
+          }
+        }
+      }
+    }
+    return Object.freeze(locations);
+  });
+}
+
+function readKnownMigrationAttachment(
+  fileSystem: RecordFileSystemService,
+  root: RecordRoot,
+  location: KnownMigrationAttachment,
+) {
+  return readFixedRecordAttachment({
+    fileSystem,
+    root,
+    location: migrationReaderLocation(location),
+    descriptor: location.descriptor,
+  });
+}
+
+function migrationInvalid(family: string): RecordMigrationInvalid {
+  return new RecordMigrationInvalid({ code: "record-migration-invalid", family });
+}
+
+function migrationTarget(location: KnownMigrationAttachment): RecordAttachmentMigrationTarget {
+  return Object.freeze({
+    family: location.descriptor.family,
+    owner: location.owner,
+    runId: location.runId,
+    ...(location.attemptId === undefined ? {} : { attemptId: location.attemptId }),
+    fromSchemaVersion: 1,
+    toSchemaVersion: location.descriptor.schemaVersion,
+  });
+}
+
+function sameMigrationPlan(left: RecordMigrationPlan, right: RecordMigrationPlan): boolean {
+  if (left.state !== right.state || left.format !== right.format) return false;
+  if (left.state !== "migration-required" || right.state !== "migration-required") return true;
+  if (JSON.stringify(left.backup) !== JSON.stringify(right.backup)) return false;
+  if (left.attachments.length !== right.attachments.length) return false;
+  return left.attachments.every((target, index) => {
+    const candidate = right.attachments[index];
+    return candidate !== undefined &&
+      target.family === candidate.family &&
+      target.owner === candidate.owner &&
+      target.runId === candidate.runId &&
+      target.attemptId === candidate.attemptId &&
+      target.fromSchemaVersion === candidate.fromSchemaVersion &&
+      target.toSchemaVersion === candidate.toSchemaVersion;
+  });
+}
+
+function planAttachmentMigration(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+}): Effect.Effect<readonly RecordAttachmentMigrationTarget[], RecordMaintenanceError> {
+  return Effect.gen(function* () {
+    const targets: RecordAttachmentMigrationTarget[] = [];
+    for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root)) {
+      const read = yield* readKnownMigrationAttachment(input.fileSystem, input.root, location);
+      if (read.state === "available") continue;
+      if (
+        read.state === "migration-required" &&
+        location.descriptor.family === NiceEvalRecordAttachments.observability.family &&
+        read.fromSchemaVersion === 1 &&
+        read.toSchemaVersion === 2
+      ) {
+        targets.push(migrationTarget(location));
+        continue;
+      }
+      return yield* Effect.fail(migrationInvalid(location.descriptor.family));
+    }
+    return Object.freeze(targets);
+  });
+}
+
+function migrationPlan(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly git: RecordGitService;
+}): Effect.Effect<RecordMigrationPlan, RecordMaintenanceError> {
+  return Effect.gen(function* () {
+    const inspection = yield* currentFormatInspection(input.fileSystem, input.root);
+    if (inspection.state === "unsupported-format") {
+      return Object.freeze({ state: "unsupported-format" as const, format: inspection.format });
+    }
+    const attachments = yield* planAttachmentMigration(input);
+    if (attachments.length === 0) {
+      return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
+    }
+    const backup = yield* input.git.inspectBackupState(input.root);
+    return Object.freeze({
+      state: "migration-required" as const,
+      format: RECORD_FORMAT,
+      backup,
+      attachments,
+    });
+  });
+}
+
+function loadObservabilityV1Maintenance(): Effect.Effect<
+  Awaited<ReturnType<NonNullable<typeof NiceEvalRecordAttachments.observability.maintenance>>>,
+  RecordMigrationInvalid
+> {
+  const loader = NiceEvalRecordAttachments.observability.maintenance;
+  if (loader === undefined) return Effect.fail(migrationInvalid(NiceEvalRecordAttachments.observability.family));
+  return Effect.tryPromise({
+    try: loader,
+    catch: () => migrationInvalid(NiceEvalRecordAttachments.observability.family),
+  });
+}
+
+function migrateObservabilityAttachment(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly target: RecordAttachmentMigrationTarget;
+}): Effect.Effect<void, RecordMaintenanceError> {
+  return Effect.gen(function* () {
+    if (
+      input.target.family !== NiceEvalRecordAttachments.observability.family ||
+      input.target.fromSchemaVersion !== 1 ||
+      input.target.toSchemaVersion !== 2
+    ) {
+      return yield* Effect.fail(migrationInvalid(input.target.family));
+    }
+    const descriptor = input.target.owner === "run"
+      ? migrationDescriptor(NiceEvalRecordFamilyCatalog.observability.run)
+      : migrationDescriptor(NiceEvalRecordFamilyCatalog.observability.attempt);
+    const location: KnownMigrationAttachment = input.target.owner === "run"
+      ? Object.freeze({ owner: "run" as const, runId: input.target.runId, descriptor })
+      : Object.freeze({
+          owner: "attempt" as const,
+          runId: input.target.runId,
+          attemptId: input.target.attemptId!,
+          descriptor,
+        });
+    const facet = yield* loadObservabilityV1Maintenance();
+    const historical = facet.historicalCodecs.find((codec) => codec.schemaVersion === 1);
+    const step = facet.adjacentMigrations.find(
+      (migration) => migration.fromSchemaVersion === 1 && migration.toSchemaVersion === 2,
+    );
+    if (historical === undefined || step === undefined) {
+      return yield* Effect.fail(migrationInvalid(input.target.family));
+    }
+    const valid = yield* validateFixedRecordAttachmentMigrationSource({
+      fileSystem: input.fileSystem,
+      root: input.root,
+      location: migrationReaderLocation(location),
+      descriptor,
+      fromSchemaVersion: 1,
+      decodeHistorical: historical.decode,
+      migrate: step.migrate,
+    });
+    if (!valid) return yield* Effect.fail(migrationInvalid(input.target.family));
+    const envelope = encodeFixedRecordAttachmentEnvelope({
+      family: NiceEvalRecordAttachments.observability.family,
+      schemaVersion: 2,
+    });
+    if (Either.isLeft(envelope)) return yield* Effect.fail(migrationInvalid(input.target.family));
+    yield* input.fileSystem.writeFile({
+      file: recordPortablePath(
+        input.root,
+        ...migrationAttachmentDirectory(input.root, location).segments,
+        "attachment.json",
+      ),
+      bytes: jsonBytes(envelope.right),
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+      mode: "replace",
+    });
+  });
+}
+
+function validateCurrentKnownAttachments(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+}): Effect.Effect<void, RecordMaintenanceError> {
+  return Effect.gen(function* () {
+    for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root)) {
+      const read = yield* readKnownMigrationAttachment(input.fileSystem, input.root, location);
+      if (read.state !== "available") {
+        return yield* Effect.fail(migrationInvalid(location.descriptor.family));
+      }
+    }
+  });
+}
+
 function openMaintenance(input: {
   readonly root: RecordRoot;
 }): Effect.Effect<
   RecordMaintenanceSession,
-  RecordReaderOpenError,
-  import("effect").Scope.Scope | RecordFileSystem | RecordCoordination
+  RecordMaintenanceOpenError,
+  import("effect").Scope.Scope | RecordFileSystem | RecordGit | RecordCoordination
 > {
   return Effect.gen(function* () {
     const coordination = yield* RecordCoordination;
     const fileSystem = yield* RecordFileSystem;
+    const git = yield* RecordGit;
     yield* coordination.enterRecordMaintenance(input.root);
     if (yield* fileSystem.migrationSentinelPresent(input.root)) {
       return yield* Effect.fail(migrationInterrupted());
     }
     const inspect = () => currentFormatInspection(fileSystem, input.root);
+    const planMigrate = () => migrationPlan({ fileSystem, root: input.root, git });
     return Object.freeze({
       inspect,
-      planMigrate: () => Effect.map(inspect(), (inspection): RecordMigrationPlan =>
-        inspection.state === "already-current"
-          ? Object.freeze({ state: "already-current", format: inspection.format })
-          : Object.freeze({ state: "unsupported-format", format: inspection.format }),
-      ),
-      applyMigrate: (plan: RecordMigrationPlan): Effect.Effect<RecordMigrationReceipt, RecordReaderOpenError> =>
-        plan.state === "already-current" && plan.format === RECORD_FORMAT
-          ? Effect.succeed(Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT }))
-          : Effect.fail(new RecordFormatUnsupported({
+      planMigrate,
+      applyMigrate: (plan: RecordMigrationPlan): Effect.Effect<RecordMigrationReceipt, RecordMaintenanceError> =>
+        Effect.gen(function* () {
+          const currentPlan = yield* planMigrate();
+          if (!sameMigrationPlan(plan, currentPlan)) {
+            return yield* Effect.fail(new RecordMigrationPlanStale({
+              code: "record-migration-plan-stale",
+            }));
+          }
+          if (currentPlan.state === "already-current") {
+            return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
+          }
+          if (currentPlan.state === "unsupported-format") {
+            return yield* Effect.fail(new RecordFormatUnsupported({
               code: "record-format-unsupported",
-              format: plan.format,
-            })),
+              format: currentPlan.format,
+            }));
+          }
+          if (currentPlan.backup.state !== "git-restore-point") {
+            return yield* Effect.fail(new RecordMigrationGitRestoreRequired({
+              code: "record-migration-git-restore-required",
+            }));
+          }
+
+          // The sentinel is the first portable write. Any later failure or
+          // interruption intentionally leaves it behind for Git recovery.
+          yield* fileSystem.createMigrationSentinel(input.root);
+          for (const target of currentPlan.attachments) {
+            yield* migrateObservabilityAttachment({ fileSystem, root: input.root, target });
+          }
+          yield* validateCurrentKnownAttachments({ fileSystem, root: input.root });
+          yield* fileSystem.removeMigrationSentinel(input.root);
+          return Object.freeze({ state: "migrated" as const, format: RECORD_FORMAT });
+        }),
     });
   });
 }

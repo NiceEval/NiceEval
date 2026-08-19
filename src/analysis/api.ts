@@ -146,7 +146,7 @@ export type ClosedDomainEntry<Kind extends BuiltinDomainViewKind = BuiltinDomain
     }
   | {
       readonly attempt: AttemptEvidenceIdentity;
-      readonly state: "not-recorded" | "unsupported" | "invalid";
+      readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid";
       readonly view: Kind;
     }
   | {
@@ -182,7 +182,7 @@ export type ClosedRunDiagnosticsEntry =
   | {
       readonly runId: string;
       readonly experimentId: string;
-      readonly state: "not-recorded" | "unsupported" | "invalid";
+      readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid";
     }
   | {
       readonly runId: string;
@@ -413,7 +413,7 @@ interface FrameGroup {
 const ANALYSIS_READ_CONCURRENCY = 32;
 
 type Reduced<Value> = {
-  readonly state: "value" | "empty" | "missing" | "unsupported" | "failed";
+  readonly state: "value" | "empty" | "missing" | "migration-required" | "unsupported" | "failed";
   readonly value?: Value;
   readonly issues: readonly AnalysisIssue[];
   readonly refs: readonly EvidenceRef[];
@@ -851,6 +851,9 @@ function reduce(kind: import("./definitions.ts").ReductionKind, entries: readonl
     entry.state === "value"
   );
   if (values.length === 0) {
+    if (entries.some((entry) => entry.state === "migration-required")) {
+      return migrationRequiredReduced(metadata.issues, metadata.refs, metadata.producers);
+    }
     if (entries.some((entry) => entry.state === "missing")) {
       return missingReduced(metadata.issues, metadata.refs, metadata.producers);
     }
@@ -925,16 +928,20 @@ function metricValue(input: {
     return Object.freeze({ value: null, state: "empty" as const, ...common });
   }
   const values = input.slots.filter((slot) => slot.state === "value");
+  const migrationRequired = input.slots.filter((slot) => slot.state === "migration-required");
   const unsupported = input.slots.filter((slot) => slot.state === "unsupported");
   const missing = input.slots.filter((slot) => slot.state === "missing");
   const empty = input.slots.filter((slot) => slot.state === "empty");
+  if (values.length === 0 && migrationRequired.length === input.total) {
+    return Object.freeze({ value: null, state: "migration-required" as const, ...common });
+  }
   if (values.length === 0 && unsupported.length === input.total) {
     return Object.freeze({ value: null, state: "unsupported" as const, ...common });
   }
   if (values.length === 0 && empty.length === input.total) {
     return Object.freeze({ value: null, state: "empty" as const, ...common });
   }
-  if (samples < input.total || missing.length > 0 || unsupported.length > 0) {
+  if (samples < input.total || missing.length > 0 || migrationRequired.length > 0 || unsupported.length > 0) {
     return Object.freeze({
       value: input.across.state === "value" ? input.across.value! : null,
       state: "partial" as const,
@@ -943,6 +950,9 @@ function metricValue(input: {
   }
   if (input.across.state === "empty") {
     return Object.freeze({ value: null, state: "empty" as const, ...common });
+  }
+  if (input.across.state === "migration-required") {
+    return Object.freeze({ value: null, state: "migration-required" as const, ...common });
   }
   if (input.across.state === "unsupported") {
     return Object.freeze({ value: null, state: "unsupported" as const, ...common });
@@ -988,6 +998,19 @@ function missingReduced(
   producers: readonly ProducerIdentity[] = [],
 ): Reduced<never> {
   return Object.freeze({ state: "missing" as const, issues: freezeIssues(issues), refs: dedupeRefs(refs), producers });
+}
+
+function migrationRequiredReduced(
+  issues: readonly AnalysisIssue[],
+  refs: readonly EvidenceRef[] = [],
+  producers: readonly ProducerIdentity[] = [],
+): Reduced<never> {
+  return Object.freeze({
+    state: "migration-required" as const,
+    issues: freezeIssues(issues),
+    refs: dedupeRefs(refs),
+    producers,
+  });
 }
 
 function unsupportedReduced(

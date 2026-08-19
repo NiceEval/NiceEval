@@ -219,7 +219,7 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 共享构建不属于任一 attempt,不计入任何 attempt 的 `executionMs`;一次十分钟的冷构建在整份 Record 里只出现一次时间。
 构建命令、计时与失败诊断都由 Run-owned Observability 收口；用于解释构建输入的源码 closure 归 Sources，需要保留的大型构建输出归 Artifacts。
 每个 BuildKey 是一个可并发 activity 实例,内部可挂 `provider.image.pull`、`provider.build.execute` 等开放子 key。
-五族的 exact durable shape 只由 [Record Architecture](../record/architecture.md) 定义。
+六族运行事实的 exact durable shape 只由 [Record Architecture](../record/architecture.md) 定义。
 
 这个前置阶段不是无预算后台工作:Ctrl+C 停止新构建并调用 provider 的 build cancellation;无法取消的远端 build 进入可核对 registry,后续按 provider locator 认领或销毁。
 不依赖失败 BuildKey 的 attempt 继续执行,除非失败分类触发 eval / experiment scope 止损;carried attempt 不因查看历史结果触发构建,也不引用本 Run 不存在的 build。

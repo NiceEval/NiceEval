@@ -62,7 +62,7 @@ type UsageSnapshot = RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachm
 /** @internal Builds a missing denominator Slot without inventing a provider. */
 export function unavailableCostSlot(
   member: LogicalSlot,
-  code: Extract<CostCoverageReason["code"], "member-not-recorded" | "core-invalid" | "origin-run-unavailable" | "usage-not-recorded" | "usage-unavailable" | "usage-unsupported" | "usage-invalid">,
+  code: Extract<CostCoverageReason["code"], "member-not-recorded" | "core-invalid" | "origin-run-unavailable" | "usage-not-recorded" | "usage-unavailable" | "usage-migration-required" | "usage-unsupported" | "usage-invalid">,
   refs: readonly EvidenceRef[] = [],
 ): CostSlotProjection {
   const slot = closeSlot(member);

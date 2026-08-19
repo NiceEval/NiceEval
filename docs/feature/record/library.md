@@ -144,15 +144,15 @@ root / Core 不兼容时，若 maintenance 有固定相邻步骤则返回 `migra
 
 current catalog 的七个 fixed family 由 definition 关闭：
 
-| family | `owners` |
-|---|---|
-| `niceeval.assertions` | `{ attempt }` |
-| `niceeval.observability` | `{ attempt, run }` |
-| `niceeval.file-changes` | `{ attempt }` |
-| `niceeval.source-navigation` | `{ attempt }` |
-| `niceeval.sources` | `{ run }` |
-| `niceeval.artifacts` | `{ attempt, run }` |
-| `niceeval.experiment-presentation` | `{ run }` |
+| family | current | `owners` |
+|---|---:|---|
+| `niceeval.assertions` | 1 | `{ attempt }` |
+| `niceeval.observability` | 2 | `{ attempt, run }` |
+| `niceeval.file-changes` | 1 | `{ attempt }` |
+| `niceeval.source-navigation` | 1 | `{ attempt }` |
+| `niceeval.sources` | 1 | `{ run }` |
+| `niceeval.artifacts` | 1 | `{ attempt, run }` |
+| `niceeval.experiment-presentation` | 1 | `{ run }` |
 
 Attachment envelope 的 shape 是 `{ family, schemaVersion }`。family 是稳定 identity，schemaVersion 是数值。
 Observability 与 Artifacts 各自只有一个 package-private definition；其 owner-specific payload 位于同一
@@ -371,13 +371,12 @@ interface RecordMaintenanceSession {
   readonly planMigrate: () => Effect.Effect<RecordMigrationPlan, RecordMaintenanceError>;
   readonly applyMigrate: (
     plan: RecordMigrationPlan,
-    authorization: RecordMigrationAuthorization,
   ) => Effect.Effect<RecordMigrationReceipt, RecordMigrationError>;
 }
 ```
 
-schemaVersion `1` 的 current root / Core 没有已发布 predecessor。`inspect()` 与 `planMigrate()` 对完整
-current Record 返回 `already-current`；`applyMigrate()` 不运行，也不写 portable byte。
+schemaVersion `1` 的 current root / Core 没有已发布 predecessor。所有 fixed family 也处于 current 时，
+`inspect()` 与 `planMigrate()` 返回 `already-current`；`applyMigrate()` 不运行，也不写 portable byte。
 
 root / Core 不相容时，`inspect()` 返回 `migration-required` 或 `unsupported-format`。已知 family 的旧
 schemaVersion 同样需要显式 migration。
@@ -385,8 +384,8 @@ schemaVersion 同样需要显式 migration。
 未知 independent future family 保持 bytes 不动，不进入 migration plan。未发布的斜杠版本草案返回
 `unsupported-format`，不会被猜测成迁移源。
 
-未来 schemaVersion `2` 发布时，NiceEval 同批在 maintenance facet 内提供固定 `1 → 2` step。每一步只从
-已保存 payload 和 own blob closure 形成目标 bytes，不能读取当前 worktree、网络、第三方 converter 或运行时
+Observability schemaVersion `2` 同批在 maintenance facet 内提供固定 `1 → 2` step。它只从已保存的两个
+owner payload 和 own blob closure 形成目标 bytes，不能读取当前 worktree、网络、第三方 converter 或运行时
 算法。没有无损步骤时，maintenance 在改盘前拒绝计划；它不伪造新事实。
 
 计划绑定 Git repository、HEAD、Record path、`recordId`、current format、portable-byte inventory 与
@@ -430,9 +429,11 @@ type RecordWriteError =
 type RecordMigrationError =
   | RecordIoError
   | RecordPermissionError
-  | RecordMigrationPlanChanged
-  | RecordMigrationStepFailed
-  | RecordMigrationInterrupted;
+  | RecordGitCommandError
+  | RecordMigrationGitRestoreRequired
+  | RecordMigrationPlanStale
+  | RecordMigrationInvalid
+  | RecordMigrationInterruptedState;
 ```
 
 每个 typed error 只有稳定 `code` 和有界安全上下文。raw filesystem error、Schema tree、stack、secret 和

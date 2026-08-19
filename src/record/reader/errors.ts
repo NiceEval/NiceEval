@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import type { RecordCoordinationError } from "../../coordination/record-leases.ts";
 import type {
   RecordFileSystemError,
+  RecordGitError,
 } from "../platform/errors.ts";
 
 /** `record.json` could not be safely recognized as a usable Record root. */
@@ -37,6 +38,28 @@ export class RecordMigrationInterruptedState extends Schema.TaggedError<RecordMi
   code: Schema.Literal("record-migration-interrupted"),
 }) {}
 
+/** A previously shown migration plan no longer matches the leased Record. */
+export class RecordMigrationPlanStale extends Schema.TaggedError<RecordMigrationPlanStale>(
+  "@niceeval/record/RecordMigrationPlanStale",
+)("RecordMigrationPlanStale", {
+  code: Schema.Literal("record-migration-plan-stale"),
+}) {}
+
+/** In-place migration is permitted only with a clean Git restore point. */
+export class RecordMigrationGitRestoreRequired extends Schema.TaggedError<RecordMigrationGitRestoreRequired>(
+  "@niceeval/record/RecordMigrationGitRestoreRequired",
+)("RecordMigrationGitRestoreRequired", {
+  code: Schema.Literal("record-migration-git-restore-required"),
+}) {}
+
+/** A known historical attachment cannot be proven safe to advance in place. */
+export class RecordMigrationInvalid extends Schema.TaggedError<RecordMigrationInvalid>(
+  "@niceeval/record/RecordMigrationInvalid",
+)("RecordMigrationInvalid", {
+  code: Schema.Literal("record-migration-invalid"),
+  family: Schema.String,
+}) {}
+
 /** A live frozen capability escaped its Effect Scope. */
 export class RecordReaderClosed extends Schema.TaggedError<RecordReaderClosed>(
   "@niceeval/record/RecordReaderClosed",
@@ -57,6 +80,15 @@ export type RecordReaderOpenError =
   | RecordMigrationRequired
   | RecordFormatUnsupported
   | RecordMigrationInterruptedState;
+
+export type RecordMaintenanceOpenError = RecordReaderOpenError;
+
+export type RecordMaintenanceError =
+  | RecordMaintenanceOpenError
+  | RecordMigrationPlanStale
+  | RecordMigrationGitRestoreRequired
+  | RecordMigrationInvalid
+  | RecordGitError;
 
 export type RecordReaderReadError =
   | RecordFileSystemError

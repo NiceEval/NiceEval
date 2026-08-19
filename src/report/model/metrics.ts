@@ -176,6 +176,8 @@ export function isMetricValue(value: unknown): value is MetricValue {
       return metric.total > 0 && metric.samples < metric.total;
     case "empty":
       return metric.value === null && metric.samples === metric.total;
+    case "migration-required":
+      return metric.value === null && metric.samples === 0;
     case "unsupported":
       return metric.value === null && metric.samples === 0;
     // Cost projections can be structurally sound while no USD contribution
@@ -244,7 +246,7 @@ function isMetricCount(value: unknown): value is number {
 }
 
 function isMetricState(value: unknown): value is MetricValue["state"] {
-  return value === "available" || value === "partial" || value === "empty" ||
+  return value === "available" || value === "partial" || value === "empty" || value === "migration-required" ||
     value === "unsupported" || value === "unavailable" || value === "failed";
 }
 

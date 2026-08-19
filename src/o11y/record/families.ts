@@ -62,6 +62,7 @@ import {
   RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS,
   compareObservabilityText,
   isSafeText,
+  isStableLabel,
   jsonUtf8ByteLength,
   limitationTarget,
   type AttemptDiagnosticsReferences,
@@ -654,16 +655,37 @@ const TimingOutcomeSchema = Schema.Literal(
   "unknown",
 );
 
-export const AttemptTimingIntervalSchema = Schema.Struct({
+const CanonicalTurnLabelSchema = Schema.String.pipe(
+  Schema.filter(
+    (value): value is string => /^(?:turn[1-9]\d*|session[1-9]\d*\/turn[1-9]\d*)$/.test(value),
+    { identifier: "CanonicalTurnLabel" },
+  ),
+);
+
+const AttemptTimingIntervalBase = {
   intervalId: IntervalIdSchema,
-  phase: AttemptTimingPhaseSchema,
-  label: StableLabelSchema,
   startOffsetMs: NonNegativeSafeIntegerSchema,
   durationMs: NonNegativeSafeIntegerSchema,
   parentIntervalId: Schema.NullOr(IntervalIdSchema),
   outcome: TimingOutcomeSchema,
   refs: AttemptTimingReferencesSchema,
+} as const;
+
+const AttemptTimingIntervalStructuralSchema = Schema.Struct({
+  ...AttemptTimingIntervalBase,
+  phase: AttemptTimingPhaseSchema,
+  label: Schema.Union(StableLabelSchema, CanonicalTurnLabelSchema),
 });
+
+export const AttemptTimingIntervalSchema = AttemptTimingIntervalStructuralSchema.pipe(
+  Schema.filter(
+    (interval) => interval.phase === "agent.send" || isStableLabel(interval.label),
+    {
+      identifier: "AttemptTimingInterval",
+      description: "canonical turn labels are reserved for agent.send intervals",
+    },
+  ),
+);
 
 export const RunTimingIntervalSchema = Schema.Struct({
   intervalId: IntervalIdSchema,

@@ -625,6 +625,7 @@ export function readPublishedInput<
       payload: cached.read.value,
     });
     if (projected.state === "value") return valueObservation(projected.value, evidenceRefs(included));
+    if (projected.state === "migration-required") return migrationRequiredObservation(included, projected.message);
     if (projected.state === "unsupported") return unsupportedObservation(included, projected.message);
     if (projected.state === "failed") return failedObservation(included, projected.message);
     return missingObservation(included, projected.message);
@@ -724,7 +725,13 @@ export function readRunDiagnosticsDomainView(
           entry = Object.freeze({
             runId,
             experimentId,
-            state: observability.right.state === "not-recorded" ? "not-recorded" as const : "unsupported" as const,
+            state: observability.right.state === "not-recorded"
+              ? "not-recorded" as const
+              : observability.right.state === "migration-required"
+                ? "migration-required" as const
+                : observability.right.state === "unsupported"
+                  ? "unsupported" as const
+                  : "invalid" as const,
           });
         } else {
           const diagnostics = observability.right.value.diagnostics;
@@ -887,8 +894,9 @@ function readCostSlot(
       case "not-recorded":
         return unavailableCostSlot(included, "usage-not-recorded", refs);
       case "unsupported":
-      case "migration-required":
         return unavailableCostSlot(included, "usage-unsupported", refs);
+      case "migration-required":
+        return unavailableCostSlot(included, "usage-migration-required", refs);
       case "invalid":
         return unavailableCostSlot(included, "usage-invalid", refs);
     }
@@ -1033,8 +1041,20 @@ function domainFamilyState<Kind extends BuiltinDomainViewKind, Payload>(
   view: Kind,
   read: Exclude<FixedFamilyRead<Payload>, { readonly state: "available" }>,
 ): { readonly value: ClosedDomainEntry<Kind>; readonly issues: readonly AnalysisIssue[] } {
-  const state = read.state === "not-recorded" ? "not-recorded" : read.state === "unsupported" ? "unsupported" : "invalid";
-  const code = state === "not-recorded" ? "missing" : state === "unsupported" ? "unsupported" : "input-invalid";
+  const state = read.state === "not-recorded"
+    ? "not-recorded"
+    : read.state === "migration-required"
+      ? "migration-required"
+      : read.state === "unsupported"
+        ? "unsupported"
+        : "invalid";
+  const code = state === "not-recorded"
+    ? "missing"
+    : state === "migration-required"
+      ? "migration-required"
+      : state === "unsupported"
+        ? "unsupported"
+        : "input-invalid";
   const issue = analysisIssue(code, `${view} is ${state}`, [evidenceRef(identity)]);
   const value: ClosedDomainEntry<Kind> = Object.freeze({ attempt: identity, state, view });
   return Object.freeze({
@@ -1067,6 +1087,9 @@ function observationFromFamily<Payload>(
   label: string,
 ): SampleInputObservation<never> {
   if (read.state === "not-recorded") return missingObservation(member);
+  if (read.state === "migration-required") {
+    return migrationRequiredObservation(member, `${label} requires migration`);
+  }
   if (read.state === "unsupported") return unsupportedObservation(member, `${label} is unsupported`);
   return invalidObservation(member, `${label} is invalid`);
 }
@@ -1102,6 +1125,10 @@ function unsupportedObservation(member: LogicalSlot, message: string): SampleInp
   return issueObservation("unsupported", member, message);
 }
 
+function migrationRequiredObservation(member: LogicalSlot, message: string): SampleInputObservation<never> {
+  return issueObservation("migration-required", member, message);
+}
+
 function failedObservation(member: LogicalSlot, message: string): SampleInputObservation<never> {
   return issueObservation("reduction-failed", member, message);
 }
@@ -1113,7 +1140,13 @@ function issueObservation(
 ): SampleInputObservation<never> {
   const refs = evidenceRefs(member);
   return Object.freeze({
-    state: code === "missing" ? "missing" as const : code === "unsupported" ? "unsupported" as const : "failed" as const,
+    state: code === "missing"
+      ? "missing" as const
+      : code === "migration-required"
+        ? "migration-required" as const
+        : code === "unsupported"
+          ? "unsupported" as const
+          : "failed" as const,
     issues: Object.freeze([analysisIssue(code, message, refs)]),
     refs,
   });

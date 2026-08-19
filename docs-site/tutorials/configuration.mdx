@@ -75,10 +75,8 @@ These are all the environment variables NiceEval reads. Each agent, sandbox, and
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | `claudeCodeAgent()`, `openClawAgent()` | Overridable with the factory option `apiKey` |
 | `ANTHROPIC_BASE_URL` | `claudeCodeAgent()` | Gateway address, overridable with `baseUrl` |
-| `CODEX_API_KEY` | `codexAgent()` | Not `OPENAI_API_KEY`; overridable with `apiKey` |
-| `CODEX_BASE_URL` | `codexAgent()` | OpenAI-compatible proxy address, overridable with `baseUrl` |
-| `BUB_API_KEY` | `bubAgent()` | Overridable with `apiKey` |
-| `BUB_API_BASE` | `bubAgent()` | Overridable with `apiBase` |
+| `OPENAI_API_KEY` | `codexAgent()`, `bubAgent()` | Overridable with `apiKey` |
+| `OPENAI_BASE_URL` | `codexAgent()`, `bubAgent()` | OpenAI-compatible proxy address; overridable with `baseUrl` / `apiBase` |
 | `NICEEVAL_JUDGE_KEY` | judge | The judge's default key variable |
 | `E2B_API_KEY` | `e2bSandbox()` | |
 | `VERCEL_API_TOKEN` | `vercelSandbox()` | |
@@ -140,7 +138,7 @@ NICEEVAL_JUDGE_KEY=sk-...
 | `NICEEVAL_JUDGE_BASE` | `judge.baseUrl` in config or on an eval |
 | `NICEEVAL_OTLP_HOST` / `NICEEVAL_OTLP_PORT` | `telemetry: { host, port }` in config |
 
-The judge also no longer borrows a key from `CODEX_API_KEY` / `OPENAI_API_KEY` or guesses its endpoint from `OPENAI_BASE_URL`. When the app under test repurposes the standard `OPENAI_*` names for something else, the judge no longer gets dragged along.
+The judge also does not borrow `OPENAI_API_KEY` or guess its endpoint from `OPENAI_BASE_URL`. When the app under test uses the standard `OPENAI_*` names, the judge remains isolated from that configuration.
 
 ## Next
 

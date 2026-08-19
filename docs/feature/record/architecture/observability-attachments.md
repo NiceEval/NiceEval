@@ -1,7 +1,7 @@
 # Observability Attachment
 
 `niceeval.observability` 是 Record 的七个固定 Attachment family 之一。它的 envelope 固定为
-`{ family: "niceeval.observability", schemaVersion: 1 }`。它保存已封口 Run 或 origin Attempt 的运行观察；
+`{ family: "niceeval.observability", schemaVersion: 2 }`。它保存已封口 Run 或 origin Attempt 的运行观察；
 它不保存终端进度、raw provider frame、raw OTLP、Error stack、绝对路径、secret 或任意扩展 object。
 
 本页拥有这个 family 的唯一 durable schema。通用 envelope、blob closure、`complete` 和 migration
@@ -51,7 +51,7 @@ const RunObservabilitySchema = Schema.Struct({
 const observability = defineRecordAttachment({
   family: "niceeval.observability",
   current: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     owners: {
       attempt: {
         schema: AttemptObservabilitySchema,
@@ -73,10 +73,8 @@ const observability = defineRecordAttachment({
       },
     },
   },
-  maintenance: async () => ({
-    historicalCodecs: [],
-    adjacentMigrations: [],
-  }),
+  adjacentMigrationLinks: [{ fromSchemaVersion: 1, toSchemaVersion: 2 }],
+  maintenance: async () => loadObservabilityMaintenanceV2(),
 });
 ```
 
@@ -114,7 +112,7 @@ Run diagnostic code `sandbox-build-failed` 保存 Attempt 创建前的共享构�
 - shared failure identity 与 `sandbox.image.build` phase；
 - 错误码、有界安全摘要与可选 typed remediation。
 
-它仍是既有 v1 diagnostics 数组中的一项，不增加 attachment 字段、不改变 envelope schemaVersion，也不要求迁移。
+它仍是既有 v2 diagnostics 数组中的一项，不增加 attachment 字段、不改变 envelope schemaVersion，也不要求迁移。
 Analysis 只解码已知 code + envelope；其它诊断 summary 始终按普通文本处理。历史 Record 缺少该诊断时报告
 unavailable，不从 membership 猜原因。
 
@@ -180,10 +178,10 @@ type ObservabilityTarget =
 ```
 
 `partial` 表示这份已写入 Attachment 的事实有明确缺口，不表示没有发生。`not-recorded` 与 `invalid`
-是 Record reader 的外层结果，不是 payload state，不能被当成空数组。envelope 的 family 或
-schemaVersion 不匹配 current definition 时，Observability 是已知 family 的旧 schema，ordinary reader
-返回 `migration-required`，不产生局部兼容读。未知 independent future family 适用另一条规则：reader 保留
-其 bytes、跳过解释，继续读取 Observability 与其它认识的 family。
+是 Record reader 的外层结果，不是 payload state，不能被当成空数组。Observability v1 是 current family 的
+已知旧 schema，ordinary reader 返回 `migration-required`，不产生局部兼容读。没有固定迁移路径的其它版本
+局部 `unsupported`。未知 independent future family 适用另一条规则：reader 保留其 bytes、跳过解释，继续读取
+其它认识的 family。
 
 producer 为 turn、item、call、command、usage observation、interval 和 diagnostic mint 不可推导的
 family-local identity。identity 不得由数组下标、文本、时间、provider、path 或目录名计算。
@@ -259,7 +257,7 @@ Attachment 中恰一个 tool-call。`tool` 保留 source-native name，不能被
 
 每个物理 `t.send` 在 SessionManager 的 Effect `Exit` 边界恰好封口一个 ConversationTurn。成功、typed
 failure、defect 与 interruption 都保留各自终态；多 session、同一源码行的重复 send 和多次 send 都不合并。
-Conversation 不从最终 aggregate event array 推断 turn。它仍是单一 `niceeval.observability` v1 payload 的字段，
+Conversation 不从最终 aggregate event array 推断 turn。它仍是单一 `niceeval.observability` v2 payload 的字段，
 不会拆成另一份 conversation、command、usage、timing 或 diagnostic family。
 
 ## Commands
@@ -356,6 +354,8 @@ Run 与 Attempt 各自使用 owner-monotonic clock。offset 的零点不含 epoc
 相减或拼接。OTel bridge 只能在事件发生时证明 exact owner、同一 clock、稳定 phase 和 label 后提交
 interval；raw OTLP 不落盘。
 
+`CanonicalTurnLabel` 只包含 `turnN` 或 `sessionK/turnN`，其中 session 与 turn 序号均为正安全整数。
+
 ```ts
 type AttemptTimingCollection = {
   readonly collection: CollectionState<ObservabilityLimitation>;
@@ -370,7 +370,7 @@ type RunTimingCollection = {
 type TimingInterval<Phase> = {
   readonly intervalId: IntervalId;
   readonly phase: Phase;
-  readonly label: StableLabel;
+  readonly label: Phase extends "agent.send" ? StableLabel | CanonicalTurnLabel : StableLabel;
   readonly startOffsetMs: NonNegativeSafeInteger;
   readonly durationMs: NonNegativeSafeInteger;
   readonly parentIntervalId: IntervalId | null;
@@ -397,7 +397,7 @@ type RunTimingPhase =
 ```
 
 decoder 拒绝负数、不安全整数、重复 intervalId、缺失 parent、cycle、overflow 和 parent containment
-violation。`unknown` outcome 必须使用 partial collection。schemaVersion `1` 不声明 designated root 或完整
+violation。`unknown` outcome 必须使用 partial collection。schemaVersion `2` 不声明 designated root 或完整
 causal edge。因此 observed interval window 不能自动成为 Attempt total duration 或 critical path。
 
 标准 activity 有可信的测量值、但不能证明 parent containment 时，writer 保留其原始区间为 root，不把它伪造成
@@ -407,16 +407,15 @@ reuse 的 execution duration 只读取 complete collection 的 root 区间并集
 开始；后续段的 start 不得大于当前 covered end。重叠合法且只把 covered end 扩至较大终点，真正 gap 才使该
 duration unavailable。
 
-v1 不为 Runner 的内部 lifecycle 增加新的持久 phase：`sandbox.queue` 投影为 `attempt.setup`，
+v2 不为 Runner 的内部 lifecycle 增加新的持久 phase：`sandbox.queue` 投影为 `attempt.setup`，
 `workspace.diff` 与 `telemetry.collect` 投影为 `attempt.teardown`，同时保留原稳定 lifecycle label。因此这三类
 正常完成的阶段不会单独把 timing collection 变成 partial。`workspace.diff.export` activity 同样投影为
 `attempt.teardown`。
 
-`agent.turn` 的持久 timing label 从 session / turn coordinate 形成。主 session 写 `turnN`，额外 session 写
-`sessionN.turnN`。这里的点号是 Observability v1 `StableLabel` 对 send window `sessionN/turnN` 的兼容编码，
-不改变 window ID。Analysis / Report 的公开投影把该内部编码还原为 `sessionN/turnN`，因此 `show --timing`、
-Report 与其它公开读面始终展示同一枚 canonical turn token；Record reader 读取原始 attachment 时仍可观察到
-持久的点号编码。
+`agent.turn` 的持久 timing label 从 session / turn coordinate 形成。原生 v2 writer 对主 session 直接写
+`turnN`，对额外 session 直接写 `sessionN/turnN`；它不保存需要 reader 二次解释的私有点号编码。v2 schema
+仍接受 `StableLabel`，只用于逐字承接显式迁移后的 v1 历史 label。Analysis、Report 与 Record reader 都按原值
+解释 label，不把 `agent.turn`、`session2.turn1` 或其它历史点号值追溯猜成 session / turn coordinate。
 
 其它标准 activity 的人读 label 不符合 `StableLabel` 时，持久值回退为它自己的稳定 key。未知 activity 仍使
 collection partial。
@@ -500,8 +499,10 @@ Host 只把完整的 `available` internal snapshot 交给 Analysis。读取命�
 统一 inline 与 blob storage；选择 Run、汇总 command success、计算成本或连接另一份 Attachment 仍属于
 Analysis Calculation，不能回写 Record。Report 不取得这个 snapshot、reader 或 blob capability。
 
-schemaVersion `1` 没有已发布 predecessor，`niceeval migrate` 返回 `already-current`。未发布的带 `/vN`
-后缀的 Observability 草案返回 `unsupported-format`。未来 schemaVersion `2` 发布时，NiceEval 在
-maintenance facet 中提供固定 `1 → 2` step。该步骤先完成或恢复，之后才允许 ordinary read；它不成为
-family read、Analysis 或 Report 的状态。独立未知 future family 不触发这条 migration，也不污染可读的
-Observability 事实。
+schemaVersion `2` 的 maintenance facet 提供固定 `1 → 2` step。ordinary reader 遇到 v1 只返回
+`migration-required`；v1 codec 仅在显式 maintenance 中 lazy 加载，不形成局部兼容读。迁移逐字保留两个 owner
+的 payload、label、blob refs 与 blob bytes，只把 envelope 升为 v2；它不把旧 label 猜成新 coordinate。
+
+较早 reader 遇到 v2 时，在解码 payload 前把 Observability 局部标为 `unsupported`。Core 和不依赖该 family
+的事实仍可读；依赖 Observability 的 Analysis 与 Report 必须传播 `unsupported` 或 `migration-required`，
+不能折成 `invalid`、`not-recorded` 或错误展示。独立未知 future family 不触发这条 migration。

@@ -42,13 +42,13 @@ None of the three built-in sandbox agents currently support HITL: their `send` o
 ### codex
 
 - Connection: runs `codex exec --json` in the Sandbox (`codex exec resume <id> --json` when continuing), using stdout JSONL as the transcript. The command carries `--dangerously-bypass-approvals-and-sandbox` and `--dangerously-bypass-hook-trust`: nobody in the Sandbox can answer codex's interactive approval prompts, so hooks installed by a plugin or `postSetup` take effect without needing interactive trust confirmation.
-- Auth: `CODEX_API_KEY` (not `OPENAI_API_KEY`), optional `CODEX_BASE_URL` for OpenAI-compatible proxies; configuration options are listed under `CodexConfig` below.
+- Auth: `OPENAI_API_KEY`, with optional `OPENAI_BASE_URL` for OpenAI-compatible proxies; configuration options are listed under `CodexConfig` below.
 - `tracing` is configured through the `[otel.trace_exporter.otlp-http]` section of `~/.codex/config.toml`, protocol `http/json`.
 
 ### bub
 
 - Connection: runs `bub run` + `--session-id` in the Sandbox and reads the tape from `~/.bub/tapes/<hash>.jsonl` as the transcript.
-- Auth: `BUB_API_KEY` + `BUB_API_BASE` (OpenAI-compatible proxy); configuration options are listed under `BubConfig` below.
+- Auth: `OPENAI_API_KEY` + `OPENAI_BASE_URL` (OpenAI-compatible proxy); configuration options are listed under `BubConfig` below.
 - `tracing` is injected via environment variables (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, etc.), protocol `http/protobuf`.
 - Installed via `uv tool install` (not an npm package); the first install builds a checkpoint cache to speed up later Sandboxes.
 
@@ -159,7 +159,7 @@ See "Running scripts after install" in docs/feature/adapters/library/coding-agen
 apiKey?: string;
 ```
 
-Proxy / OpenAI API key. Falls back to the `CODEX_API_KEY` env var if omitted.
+Proxy / OpenAI API key. Falls back to the `OPENAI_API_KEY` env var if omitted.
 
 #### `baseUrl`
 
@@ -167,7 +167,7 @@ Proxy / OpenAI API key. Falls back to the `CODEX_API_KEY` env var if omitted.
 baseUrl?: string;
 ```
 
-OpenAI-compatible proxy base URL (e.g. `https://s2a.example.com/v1`). Falls back to the `CODEX_BASE_URL` env var if omitted.
+OpenAI-compatible proxy base URL (e.g. `https://s2a.example.com/v1`). Falls back to the `OPENAI_BASE_URL` env var if omitted.
 
 #### `mcpServers`
 
@@ -244,7 +244,7 @@ See "Running scripts after install" in docs/feature/adapters/library/coding-agen
 apiKey?: string;
 ```
 
-API key for the OpenAI-compatible proxy. Falls back to the `BUB_API_KEY` env var if omitted.
+API key for the OpenAI-compatible proxy. Falls back to the `OPENAI_API_KEY` env var if omitted.
 
 #### `apiBase`
 
@@ -252,7 +252,7 @@ API key for the OpenAI-compatible proxy. Falls back to the `BUB_API_KEY` env var
 apiBase?: string;
 ```
 
-Base URL for the OpenAI-compatible proxy. Falls back to the `BUB_API_BASE` env var if omitted.
+Base URL for the OpenAI-compatible proxy. Falls back to the `OPENAI_BASE_URL` env var if omitted.
 
 #### `skills`
 

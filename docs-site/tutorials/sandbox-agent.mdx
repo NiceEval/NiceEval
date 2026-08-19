@@ -13,7 +13,7 @@ A Sandbox Agent starts a coding-agent CLI in an isolated environment, gives it a
     Runs the Anthropic Claude Code CLI and requires `ANTHROPIC_API_KEY`.
   </Card>
   <Card title="codex" icon="terminal">
-    Runs the OpenAI Codex CLI and requires `CODEX_API_KEY`.
+    Runs the OpenAI Codex CLI and requires `OPENAI_API_KEY`.
   </Card>
   <Card title="bub" icon="robot">
     Runs the bub coding agent and follows bub's own authentication rules.
@@ -95,7 +95,7 @@ export default defineExperiment({
 | Agent | Required variable |
 | --- | --- |
 | `claude-code` | `ANTHROPIC_API_KEY` |
-| `codex` | `CODEX_API_KEY` |
+| `codex` | `OPENAI_API_KEY` |
 | `bub` | Follow the bub CLI's authentication rules. |
 
 ## Workflow

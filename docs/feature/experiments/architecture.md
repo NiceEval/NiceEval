@@ -13,7 +13,8 @@ Invocation
       │       ├─ relation：origin | reference（由关系推导）
       │       ├─ action：executed / carried / accepted / not-dispatched / interrupted
       │       └─ Attempt（Core outcome）
-      └─ Attempt 固定五类事实：Assertions、Observability、FileChanges、Sources、Artifacts
+      ├─ Attempt 固定事实：Assertions、Observability、FileChanges、SourceNavigation、Artifacts
+      └─ Run 固定事实：Observability、Sources、Artifacts、ExperimentPresentation
 ```
 
 Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experiment 分配尚未发布的
@@ -24,9 +25,9 @@ Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experimen
 每个 `RunWriteSession`（Run 写入会话）只排他创建并写入自己的 `runs/<RunId>/`。目标 Run 在规划完成前
 没有 `complete`，不会成为自己的 source barrier。不存在全局 Record writer lock（写入锁）。
 
-Invocation receipt 以 `runIds` 关联本次调用，但不是可扩展的 Record 事实面。Run/Member/Attempt 的身份、分母、action、reference 与 outcome 由 Core 唯一保存。Assertions、Observability、FileChanges、Sources 和 Artifacts 各自保存固定事实。`points` 只在 Assertion 的 score facts 中出现，Report 只能从这些既有事实投影，不能另存 evaluation 或 verdict 家族。
+Invocation receipt 以 `runIds` 关联本次调用，但不是可扩展的 Record 事实面。Run/Member/Attempt 的身份、分母、action、reference 与 outcome 由 Core 唯一保存。Assertions、Observability、FileChanges、SourceNavigation、Sources、Artifacts 与 ExperimentPresentation 按 Record catalog 的 owner 各自保存固定事实。`points` 只在 Assertion 的 score facts 中出现，Report 只能从这些既有事实投影，不能另存 evaluation 或 verdict 家族。
 
-Experiment presentation 是 Run-owned 展示快照，不属于 Attempt 的五类运行事实，也不取得 Core identity。
+Experiment presentation 是 Run-owned 展示快照，不属于 Attempt-owned 运行事实，也不取得 Core identity。
 它保存规范化后的 `displayName`，让历史 Run 不受当前源码改名影响；缺少该 Attachment 的历史 Run 固定回落到完整
 `experimentId`。完整 owner、发布与失败语义见 [Experiment 展示名称 Architecture](display-names/architecture.md)。
 
@@ -82,7 +83,7 @@ Eval 需要按需构建 Sandbox 时，BuildKey 构建、共享拉取与发布属
 
 只要 `setup` 的调用时点已经到达，`teardown` 就必须尝试一次。`setup` 抛错时不派发 Attempt，但仍执行 `teardown`。
 
-Hook 通过 `ExperimentHookContext` 上报 Run 范围的 progress 与 diagnostic，并以闭包管理运行时资源。它没有通用 durable writer；运行时观测只有经 NiceEval 已发布的 typed collector 或 Adapter 能力进入固定五类事实。它不能创建 Attempt Verdict，也不能把错误 diagnostic 当成失败判定。
+Hook 通过 `ExperimentHookContext` 上报 Run 范围的 progress 与 diagnostic，并以闭包管理运行时资源。它没有通用 durable writer；运行时观测只有经 NiceEval 已发布的 typed collector 或 Adapter 能力进入 Record catalog 中具名且 owner 固定的 family。它不能创建 Attempt Verdict，也不能把错误 diagnostic 当成失败判定。
 
 ## 强杀后的收尾
 

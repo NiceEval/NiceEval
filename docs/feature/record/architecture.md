@@ -123,7 +123,7 @@ const recordDefinition = {
 const observability = defineRecordAttachment({
   family: "niceeval.observability",
   current: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     owners: {
       attempt: {
         schema: AttemptObservabilitySchema,
@@ -145,10 +145,8 @@ const observability = defineRecordAttachment({
       },
     },
   },
-  maintenance: async () => ({
-    historicalCodecs: [],
-    adjacentMigrations: [],
-  }),
+  adjacentMigrationLinks: [{ fromSchemaVersion: 1, toSchemaVersion: 2 }],
+  maintenance: async () => loadObservabilityMaintenanceV2(),
 });
 
 const experimentPresentation = defineRecordAttachment({
@@ -317,18 +315,18 @@ type AttachmentEnvelope = {
 
 其它 fixed family 使用自己的稳定 `family` literal，但相同的 envelope 规则。family 名称不包含版本。
 
-| family | `owners` map | exact payload root | 写入语义 |
-|---|---|---|---|
-| `niceeval.assertions` | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口 criterion、material、Evidence 与 result |
-| `niceeval.observability` | `{ attempt, run }` | `AttemptObservabilityAttachment` / `RunObservabilityAttachment` | collector 封口对话、命令、用量、时间、诊断与 OTel |
-| `niceeval.file-changes` | `{ attempt }` | `FileChangesAttachment` | Sandbox collector 封口归因策略与 send 区间文件变化轨迹 |
-| `niceeval.source-navigation` | `{ attempt }` | `SourceNavigationAttachment` | Runner 封口每个物理 send 的 source/timing join |
-| `niceeval.sources` | `{ run }` | `SourcesAttachment` | Runner 封口源码闭包 manifest 与 own blobs |
-| `niceeval.artifacts` | `{ attempt, run }` | `ArtifactsAttachment` | artifact collector 封口有类型文件 |
-| `niceeval.experiment-presentation` | `{ run }` | `ExperimentPresentationAttachmentV1` | Experiment writer 封口规范化展示名称与 Core identity 交叉校验 |
+| family | current | `owners` map | exact payload root | 写入语义 |
+|---|---:|---|---|---|
+| `niceeval.assertions` | 1 | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口 criterion、material、Evidence 与 result |
+| `niceeval.observability` | 2 | `{ attempt, run }` | `AttemptObservabilityAttachment` / `RunObservabilityAttachment` | collector 封口对话、命令、用量、时间、诊断与 OTel |
+| `niceeval.file-changes` | 1 | `{ attempt }` | `FileChangesAttachment` | Sandbox collector 封口归因策略与 send 区间文件变化轨迹 |
+| `niceeval.source-navigation` | 1 | `{ attempt }` | `SourceNavigationAttachment` | Runner 封口每个物理 send 的 source/timing join |
+| `niceeval.sources` | 1 | `{ run }` | `SourcesAttachment` | Runner 封口源码闭包 manifest 与 own blobs |
+| `niceeval.artifacts` | 1 | `{ attempt, run }` | `ArtifactsAttachment` | artifact collector 封口有类型文件 |
+| `niceeval.experiment-presentation` | 1 | `{ run }` | `ExperimentPresentationAttachmentV1` | Experiment writer 封口规范化展示名称与 Core identity 交叉校验 |
 
 `niceeval.source-navigation` 只有 Attempt owner，schemaVersion 固定为 `1`，并且 `blobs.refs()` 永远为空。
-它不拆分或改写 `niceeval.observability` 的 v1 payload。
+它不拆分或改写 `niceeval.observability` 的 v2 payload。
 
 `niceeval.experiment-presentation` 只有 Run owner，schemaVersion 固定为 `1`，并且 `blobs.refs()` 永远为空。
 payload 的 `experimentId` 必须与同一 Run Core 相等；新 writer 缺少该 family 时拒绝 seal。任一已发布 Run
@@ -625,7 +623,8 @@ Runner 收到可处理的 `SIGINT` 后会先停止派发并关闭每个已知 Sl
 
 ## Maintenance、兼容性与相邻迁移
 
-schemaVersion `1` 是当前 root / Core 的唯一可读、可写版本。ordinary reader 按下表区分不兼容和局部
+schemaVersion `1` 是当前 root / Core 的唯一可读、可写版本；fixed family 各自拥有 current 版本。
+ordinary reader 按下表区分不兼容和局部
 未知数据：
 
 | 发现的内容 | ordinary reader | maintenance |
@@ -641,9 +640,9 @@ schemaVersion `1` 是当前 root / Core 的唯一可读、可写版本。ordinar
 `DomainViewRequest` 依赖它时，只返回 `unsupported`；其它 Analysis 结果和 Report
 闭合输出不受污染。
 
-未来发布 schemaVersion `2` 时，`maintenance` facet 必须提供固定 `1 → 2` step。step 只依赖已保存的
-Core、fixed family payload 与 own blob closure；它不调用第三方 converter，也不从当前 worktree、网络或
-运行时算法补写历史事实。
+Observability schemaVersion `2` 由 `maintenance` facet 提供固定 `1 → 2` step。step 只依赖已保存的
+两个 owner payload 与 own blob closure，并逐字保留 label、blob refs 与 blob bytes。它不调用第三方
+converter，也不从当前 worktree、网络或运行时算法补写历史事实。
 
 有相邻步骤时，maintenance 在首次写 portable byte 前完成 Git preflight：Record 位于 Git worktree，
 完整 portable inventory 由 HEAD 跟踪，index 与 worktree 对该 inventory 干净。计划还绑定 repository
