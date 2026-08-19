@@ -701,6 +701,16 @@ const nodeFileSystem: RecordFileSystemService = {
       }),
     ),
 
+  isCompleteMarker: ({ root, runId }) =>
+    nodeFileSystem.readFile({
+      file: recordPortablePath(root, "runs", runId, "complete"),
+      maximumBytes: 0,
+    }).pipe(
+      Effect.map((bytes) => bytes !== undefined && bytes.byteLength === 0),
+      Effect.catchTag("RecordResourceLimitExceeded", () => Effect.succeed(false)),
+      Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(false)),
+    ),
+
   migrationSentinelPresent: (root) =>
     Effect.map(
       nodeFileSystem.pathKind(recordPortablePath(root, "migration.in-progress")),
@@ -766,11 +776,7 @@ const nodeFileSystem: RecordFileSystemService = {
         );
       }
 
-      const completePath = yield* resolvePortablePath(
-        recordPortablePath(root, "runs", runId, "complete"),
-        true,
-      );
-      if ((yield* pathKindAt(completePath)) !== "missing") {
+      if (yield* nodeFileSystem.isCompleteMarker({ root, runId })) {
         return { state: "skipped-complete" } satisfies RecordIncompleteRunDelete;
       }
 
@@ -926,6 +932,43 @@ const nodeGit = {
       return entries.length === 0
         ? ({ state: "git-restore-point", commit } satisfies RecordBackupState)
         : ({ state: "portable-root-dirty", entries } satisfies RecordBackupState);
+    }),
+
+  recoveryChangesAreExpected: (input: {
+    readonly root: unknown;
+    readonly restoreCommit: string;
+    readonly expectedPaths: readonly RecordPortablePath[];
+  }): Effect.Effect<boolean, RecordGitError | RecordFileSystemError> =>
+    Effect.gen(function* () {
+      const paths = recordRootPaths(input.root);
+      if (paths === undefined) {
+        return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
+      }
+      const location = yield* Effect.either(
+        runGit("locate-worktree", ["rev-parse", "--show-toplevel"], dirname(paths.portableRoot)),
+      );
+      if (Either.isLeft(location)) return false;
+      const worktree = location.right.stdout.trim();
+      const rootRelative = portablePathWithinWorktree(worktree, paths.portableRoot);
+      if (rootRelative === undefined) return false;
+      const head = yield* runGit("read-head", ["rev-parse", "--verify", "HEAD"], worktree);
+      if (head.stdout.trim() !== input.restoreCommit) return false;
+
+      const expected = new Set<string>();
+      for (const path of input.expectedPaths) {
+        const resolved = yield* resolvePortablePath(path, true);
+        const relativePath = portablePathWithinWorktree(worktree, resolved);
+        if (relativePath === undefined) return false;
+        expected.add(relativePath.split(sep).join("/"));
+      }
+      const status = yield* runGit(
+        "inspect-status",
+        ["status", "--porcelain=v1", "-z", "--ignored", "--untracked-files=all", "--", rootRelative],
+        worktree,
+      );
+      const entries = statusEntries(status.stdout);
+      if (entries.length === 0 || entries.length > GIT_MAX_STATUS_ENTRIES) return false;
+      return entries.every((entry) => expected.has(entry.split(sep).join("/")));
     }),
 };
 

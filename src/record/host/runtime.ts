@@ -303,10 +303,14 @@ function handleInvalid(): RecordHandleInvalid {
   return new RecordHandleInvalid({ code: "record-handle-invalid" });
 }
 
-function migrationInterrupted(restoreCommit?: string): RecordMigrationInterruptedState {
+function migrationInterrupted(
+  restoreCommit?: string,
+  restoreSafe?: boolean,
+): RecordMigrationInterruptedState {
   return new RecordMigrationInterruptedState({
     code: "record-migration-interrupted",
     ...(restoreCommit === undefined ? {} : { restoreCommit }),
+    ...(restoreSafe === undefined ? {} : { restoreSafe }),
   });
 }
 
@@ -402,7 +406,7 @@ function currentFormatInspection(
       Effect.map(
         planAttachmentMigration({ fileSystem, root }),
         (attachments): RecordFormatInspection => ({
-          state: attachments.length === 0 ? "already-current" : "migration-required",
+          state: attachments.targets.length === 0 ? "already-current" : "migration-required",
           format: RECORD_FORMAT,
         }),
       )
@@ -423,14 +427,7 @@ function isSealedRun(
   root: RecordRoot,
   runId: RunId,
 ): Effect.Effect<boolean, RecordFileSystemError> {
-  return fileSystem.readFile({
-    file: runPath(root, runId, "complete"),
-    maximumBytes: 0,
-  }).pipe(
-    Effect.map((bytes) => bytes !== undefined && bytes.byteLength === 0),
-    Effect.catchTag("RecordResourceLimitExceeded", () => Effect.succeed(false)),
-    Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(false)),
-  );
+  return fileSystem.isCompleteMarker({ root, runId });
 }
 
 function readRunDocument(
@@ -2638,6 +2635,10 @@ function migrationInvalid(family: string): RecordMigrationInvalid {
   return new RecordMigrationInvalid({ code: "record-migration-invalid", family });
 }
 
+function migrationPlanStale(): RecordMigrationPlanStale {
+  return new RecordMigrationPlanStale({ code: "record-migration-plan-stale" });
+}
+
 function migrationFailureCode(error: unknown): string {
   if (typeof error !== "object" || error === null) return "record-command-failed";
   const code = Reflect.get(error, "code");
@@ -2653,6 +2654,28 @@ function migrationTarget(location: KnownMigrationAttachment): RecordAttachmentMi
     fromSchemaVersion: 1,
     toSchemaVersion: location.descriptor.schemaVersion,
   });
+}
+
+interface PlannedMigrationSource {
+  readonly target: RecordAttachmentMigrationTarget;
+  readonly envelopeBytes: Uint8Array;
+}
+
+const migrationPlanSources = new WeakMap<object, readonly PlannedMigrationSource[]>();
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index]);
+}
+
+function migrationEnvelopePath(
+  root: RecordRoot,
+  location: KnownMigrationAttachment,
+) {
+  return recordPortablePath(
+    root,
+    ...migrationAttachmentDirectory(root, location).segments,
+    "attachment.json",
+  );
 }
 
 function sameMigrationPlan(left: RecordMigrationPlan, right: RecordMigrationPlan): boolean {
@@ -2675,9 +2698,13 @@ function sameMigrationPlan(left: RecordMigrationPlan, right: RecordMigrationPlan
 function planAttachmentMigration(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
-}): Effect.Effect<readonly RecordAttachmentMigrationTarget[], RecordMaintenanceError> {
+}): Effect.Effect<{
+  readonly targets: readonly RecordAttachmentMigrationTarget[];
+  readonly sources: readonly PlannedMigrationSource[];
+}, RecordMaintenanceError> {
   return Effect.gen(function* () {
     const targets: RecordAttachmentMigrationTarget[] = [];
+    const sources: PlannedMigrationSource[] = [];
     for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root)) {
       const read = yield* readKnownMigrationAttachment(input.fileSystem, input.root, location);
       if (read.state === "available") continue;
@@ -2687,7 +2714,16 @@ function planAttachmentMigration(input: {
         read.fromSchemaVersion === 1 &&
         read.toSchemaVersion === 2
       ) {
-        targets.push(migrationTarget(location));
+        const target = migrationTarget(location);
+        const envelopeBytes = yield* input.fileSystem.readFile({
+          file: migrationEnvelopePath(input.root, location),
+          maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+        });
+        if (envelopeBytes === undefined) {
+          return yield* Effect.fail(migrationInvalid(location.descriptor.family));
+        }
+        targets.push(target);
+        sources.push(Object.freeze({ target, envelopeBytes }));
         continue;
       }
       if (read.state === "unsupported") {
@@ -2698,7 +2734,10 @@ function planAttachmentMigration(input: {
       }
       return yield* Effect.fail(migrationInvalid(location.descriptor.family));
     }
-    return Object.freeze(targets);
+    return Object.freeze({
+      targets: Object.freeze(targets),
+      sources: Object.freeze(sources),
+    });
   });
 }
 
@@ -2711,16 +2750,18 @@ function migrationPlan(input: {
     const current = yield* readCurrentRecordFormat(input.fileSystem, input.root);
     yield* validateSealedCoreForMigration(input.fileSystem, input.root, current.document);
     const attachments = yield* planAttachmentMigration(input);
-    if (attachments.length === 0) {
+    if (attachments.targets.length === 0) {
       return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
     }
     const backup = yield* input.git.inspectBackupState(input.root);
-    return Object.freeze({
+    const plan = Object.freeze({
       state: "migration-required" as const,
       format: RECORD_FORMAT,
       backup,
-      attachments,
+      attachments: attachments.targets,
     });
+    migrationPlanSources.set(plan, attachments.sources);
+    return plan;
   });
 }
 
@@ -2753,6 +2794,7 @@ function migrateObservabilityAttachment(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
   readonly target: RecordAttachmentMigrationTarget;
+  readonly expectedEnvelopeBytes: Uint8Array;
 }): Effect.Effect<void, RecordMaintenanceError> {
   return Effect.gen(function* () {
     if (
@@ -2781,6 +2823,14 @@ function migrateObservabilityAttachment(input: {
     if (historical === undefined || step === undefined) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
+    const envelopePath = migrationEnvelopePath(input.root, location);
+    const sourceBeforeValidation = yield* input.fileSystem.readFile({
+      file: envelopePath,
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+    });
+    if (sourceBeforeValidation === undefined || !bytesEqual(sourceBeforeValidation, input.expectedEnvelopeBytes)) {
+      return yield* Effect.fail(migrationPlanStale());
+    }
     const valid = yield* validateFixedRecordAttachmentMigrationSource({
       fileSystem: input.fileSystem,
       root: input.root,
@@ -2790,18 +2840,30 @@ function migrateObservabilityAttachment(input: {
       decodeHistorical: historical.decode,
       migrate: step.migrate,
     });
-    if (!valid) return yield* Effect.fail(migrationInvalid(input.target.family));
+    if (!valid) {
+      const sourceAfterInvalid = yield* input.fileSystem.readFile({
+        file: envelopePath,
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+      });
+      if (sourceAfterInvalid === undefined || !bytesEqual(sourceAfterInvalid, input.expectedEnvelopeBytes)) {
+        return yield* Effect.fail(migrationPlanStale());
+      }
+      return yield* Effect.fail(migrationInvalid(input.target.family));
+    }
     const envelope = encodeFixedRecordAttachmentEnvelope({
       family: NiceEvalRecordAttachments.observability.family,
       schemaVersion: 2,
     });
     if (Either.isLeft(envelope)) return yield* Effect.fail(migrationInvalid(input.target.family));
+    const sourceBeforeWrite = yield* input.fileSystem.readFile({
+      file: envelopePath,
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+    });
+    if (sourceBeforeWrite === undefined || !bytesEqual(sourceBeforeWrite, input.expectedEnvelopeBytes)) {
+      return yield* Effect.fail(migrationPlanStale());
+    }
     yield* input.fileSystem.writeFile({
-      file: recordPortablePath(
-        input.root,
-        ...migrationAttachmentDirectory(input.root, location).segments,
-        "attachment.json",
-      ),
+      file: envelopePath,
       bytes: jsonBytes(envelope.right),
       maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
       mode: "replace",
@@ -2834,6 +2896,37 @@ function validateCurrentKnownAttachments(input: {
   });
 }
 
+function migrationRecoveryIsSafe(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly git: RecordGitService;
+  readonly root: RecordRoot;
+  readonly restoreCommit: string;
+}): Effect.Effect<boolean> {
+  return Effect.gen(function* () {
+    const encoded = encodeFixedRecordAttachmentEnvelope({
+      family: NiceEvalRecordAttachments.observability.family,
+      schemaVersion: 2,
+    });
+    if (Either.isLeft(encoded)) return false;
+    const currentEnvelopeBytes = jsonBytes(encoded.right);
+    const expectedPaths = [recordPortablePath(input.root, "migration.in-progress")];
+    for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root)) {
+      if (location.descriptor.family !== NiceEvalRecordAttachments.observability.family) continue;
+      const path = migrationEnvelopePath(input.root, location);
+      const bytes = yield* input.fileSystem.readFile({
+        file: path,
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+      });
+      if (bytes !== undefined && bytesEqual(bytes, currentEnvelopeBytes)) expectedPaths.push(path);
+    }
+    return yield* input.git.recoveryChangesAreExpected({
+      root: input.root,
+      restoreCommit: input.restoreCommit,
+      expectedPaths,
+    });
+  }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+}
+
 function openMaintenance(input: {
   readonly root: RecordRoot;
 }): Effect.Effect<
@@ -2848,7 +2941,10 @@ function openMaintenance(input: {
     yield* coordination.enterRecordMaintenance(input.root);
     if (yield* fileSystem.migrationSentinelPresent(input.root)) {
       const restoreCommit = yield* fileSystem.readMigrationSentinelRestoreCommit(input.root);
-      return yield* Effect.fail(migrationInterrupted(restoreCommit));
+      const restoreSafe = restoreCommit === undefined
+        ? false
+        : yield* migrationRecoveryIsSafe({ fileSystem, git, root: input.root, restoreCommit });
+      return yield* Effect.fail(migrationInterrupted(restoreCommit, restoreSafe));
     }
     const inspect = () => currentFormatInspection(fileSystem, input.root);
     const planMigrate = () => migrationPlan({ fileSystem, root: input.root, git });
@@ -2859,9 +2955,7 @@ function openMaintenance(input: {
         Effect.gen(function* () {
           const currentPlan = yield* planMigrate();
           if (!sameMigrationPlan(plan, currentPlan)) {
-            return yield* Effect.fail(new RecordMigrationPlanStale({
-              code: "record-migration-plan-stale",
-            }));
+            return yield* Effect.fail(migrationPlanStale());
           }
           if (currentPlan.state === "already-current") {
             return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
@@ -2878,23 +2972,49 @@ function openMaintenance(input: {
             }));
           }
           const restoreCommit = currentPlan.backup.commit;
+          const plannedSources = migrationPlanSources.get(currentPlan);
+          if (plannedSources === undefined || plannedSources.length !== currentPlan.attachments.length) {
+            return yield* Effect.fail(migrationInvalid(NiceEvalRecordAttachments.observability.family));
+          }
+          let portableTargetWritten = false;
 
           // The sentinel is the first portable write. Any later failure or
           // interruption intentionally leaves it behind for Git recovery.
           yield* fileSystem.createMigrationSentinel(input.root, restoreCommit);
           yield* Effect.gen(function* () {
-            for (const target of currentPlan.attachments) {
-              yield* migrateObservabilityAttachment({ fileSystem, root: input.root, target });
+            for (const source of plannedSources) {
+              yield* migrateObservabilityAttachment({
+                fileSystem,
+                root: input.root,
+                target: source.target,
+                expectedEnvelopeBytes: source.envelopeBytes,
+              });
+              portableTargetWritten = true;
             }
             const current = yield* readCurrentRecordFormat(fileSystem, input.root);
             yield* validateSealedCoreForMigration(fileSystem, input.root, current.document);
             yield* validateCurrentKnownAttachments({ fileSystem, root: input.root });
             yield* fileSystem.removeMigrationSentinel(input.root);
-          }).pipe(Effect.catchAll((error) => Effect.fail(new RecordMigrationRecoveryRequired({
-            code: "record-migration-recovery-required",
-            causeCode: migrationFailureCode(error),
-            restoreCommit,
-          }))));
+          }).pipe(Effect.catchAll((error) => {
+            const recoveryRequired = () => Effect.flatMap(
+              migrationRecoveryIsSafe({ fileSystem, git, root: input.root, restoreCommit }),
+              (restoreSafe) => Effect.fail(new RecordMigrationRecoveryRequired({
+                code: "record-migration-recovery-required",
+                causeCode: migrationFailureCode(error),
+                restoreCommit,
+                restoreSafe,
+              })),
+            );
+            if (error instanceof RecordMigrationPlanStale && !portableTargetWritten) {
+              return fileSystem.removeMigrationSentinel(input.root).pipe(
+                Effect.matchEffect({
+                  onFailure: () => recoveryRequired(),
+                  onSuccess: () => Effect.fail(error),
+                }),
+              );
+            }
+            return recoveryRequired();
+          }));
           return Object.freeze({ state: "migrated" as const, format: RECORD_FORMAT });
         }),
     });

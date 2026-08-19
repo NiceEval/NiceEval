@@ -35,7 +35,7 @@ Record
       └─ own blobs（只属于这一 owner 和 family）
 ```
 
-没有 `complete` 的 Run directory 不是 Record 事实。reader 不读取、不展示也不沿用它，只返回
+缺少 `complete`，或该路径不是零字节普通文件的 Run directory，不是 Record 事实。reader 不读取、不展示也不沿用它，只返回
 `incomplete-run` warning；用户可以用 `niceeval clean` 删除。
 
 Record Core（核心身份）只保存完整 `attemptId`。面向人的 locator 是上层确定性别名：`@1` 加

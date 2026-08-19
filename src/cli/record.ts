@@ -104,7 +104,8 @@ function recoveryCommands(restoreCommit: string, recordPath: string): string {
 function interruptedRecovery(error: unknown, recordPath: string | undefined): string {
   if (typeof error !== "object" || error === null || recordPath === undefined) return "";
   const restoreCommit = Reflect.get(error, "restoreCommit");
-  return typeof restoreCommit === "string" && /^[0-9a-f]{40,64}$/.test(restoreCommit)
+  return Reflect.get(error, "restoreSafe") === true &&
+      typeof restoreCommit === "string" && /^[0-9a-f]{40,64}$/.test(restoreCommit)
     ? recoveryCommands(restoreCommit, recordPath)
     : "";
 }
@@ -115,7 +116,12 @@ function recordErrorOutput(
   recordPath?: string,
 ): RecordCliCommandOutput {
   const code = recordErrorCode(error);
-  const next = recordErrorNextStep(code);
+  const automaticRestoreUnsafe =
+    (code === "record-migration-interrupted" || code === "record-migration-recovery-required") &&
+    (typeof error !== "object" || error === null || Reflect.get(error, "restoreSafe") !== true);
+  const next = automaticRestoreUnsafe
+    ? "Inspect and preserve concurrent Record edits before choosing a manual recovery; no automatic Git restore command is safe."
+    : recordErrorNextStep(code);
   const causeCode = typeof error === "object" && error !== null &&
       typeof Reflect.get(error, "causeCode") === "string"
     ? String(Reflect.get(error, "causeCode"))

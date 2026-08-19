@@ -18,9 +18,9 @@ test("plan 后出现的并发编辑触发 stale 且不提示或执行恢复", as
     const shimRoot = join(paths.projectRoot, ".git-shim");
     const shim = join(shimRoot, "git");
     const counter = join(shimRoot, "status-count");
-    const concurrentEdit = join(recordRoot, "concurrent-edit.txt");
+    const concurrentEdit = join(recordRoot, "runs", RUN_ID, "attachments", "niceeval.observability", "attachment.json");
     await run(["mkdir", "-p", shimRoot]);
-    writeFileSync(shim, `#!/bin/sh\ncount_file=${shellQuote(counter)}\nif [ "$1" = "status" ]; then\n  count=0\n  [ ! -f "$count_file" ] || count=$(cat "$count_file")\n  count=$((count + 1))\n  printf '%s\\n' "$count" > "$count_file"\n  [ "$count" -ne 2 ] || printf 'preserve me\\n' > ${shellQuote(concurrentEdit)}\nfi\nexec ${shellQuote(realGit)} "$@"\n`);
+    writeFileSync(shim, `#!/bin/sh\ncount_file=${shellQuote(counter)}\nif [ "$1" = "status" ]; then\n  count=0\n  [ ! -f "$count_file" ] || count=$(cat "$count_file")\n  count=$((count + 1))\n  printf '%s\\n' "$count" > "$count_file"\n  if [ "$count" -eq 2 ]; then\n    ${shellQuote(realGit)} "$@"\n    result=$?\n    printf '%s\\n' '{"family":"niceeval.observability","schemaVersion":9}' > ${shellQuote(concurrentEdit)}\n    exit "$result"\n  fi\nfi\nexec ${shellQuote(realGit)} "$@"\n`);
     chmodSync(shim, 0o755);
 
     const rejected = await candidate.run(["migrate", "--yes"], {
@@ -29,8 +29,7 @@ test("plan 后出现的并发编辑触发 stale 且不提示或执行恢复", as
     expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
     expect(rejected.stderr, rejected.diagnostic()).toContain("record-migration-plan-stale");
     expect(rejected.stderr, rejected.diagnostic()).not.toContain("Restore command:");
-    expect(readFileSync(concurrentEdit, "utf8")).toBe("preserve me\n");
+    expect(JSON.parse(readFileSync(concurrentEdit, "utf8"))).toEqual({ family: "niceeval.observability", schemaVersion: 9 });
     expect(existsSync(join(recordRoot, "migration.in-progress"))).toBe(false);
-    expect(JSON.parse(readFileSync(join(recordRoot, "runs", RUN_ID, "attachments", "niceeval.observability", "attachment.json"), "utf8"))).toEqual({ family: "niceeval.observability", schemaVersion: 1 });
   });
 });

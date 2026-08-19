@@ -82,10 +82,7 @@ export const inspectIncompleteRuns: InspectIncompleteRuns = ({ root }) =>
           continue;
         }
 
-        const completeKind = yield* fileSystem.pathKind(
-          recordPortablePath(root, "runs", decoded.right, "complete"),
-        );
-        if (completeKind === "missing") {
+        if (!(yield* fileSystem.isCompleteMarker({ root, runId: decoded.right }))) {
           incomplete.push(incompleteRun(decoded.right));
         }
       }

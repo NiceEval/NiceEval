@@ -239,13 +239,9 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 
 ## `--json`
 
-`exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt：
+`exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。完整形态见
+[NDJSON 输出案例](output/json-stream.md)。
 
-```json
-{"type":"progress","invocationId":"01J8...","message":"running","current":1,"total":3}
-{"event":"warning","code":"sandbox-retry","level":"warning","message":"retrying"}
-{"type":"receipt","receipt":{"invocationId":"01J8...","runIds":["01J9..."],"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
-```
 progress 与 diagnostic 形状服务当前 Invocation，不是 Record 解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 Record reader 读取业务数据。
 
 CI 用退出状态判断门禁，使用 `--junit` 输出平台注解。JUnit 由临时文件原子替换生成，不成为 Record 的事实 owner。

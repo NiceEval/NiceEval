@@ -37,6 +37,7 @@ export class RecordMigrationInterruptedState extends Schema.TaggedError<RecordMi
 )("RecordMigrationInterruptedState", {
   code: Schema.Literal("record-migration-interrupted"),
   restoreCommit: Schema.optional(Schema.String),
+  restoreSafe: Schema.optional(Schema.Boolean),
 }) {}
 
 /** A previously shown migration plan no longer matches the leased Record. */
@@ -68,6 +69,7 @@ export class RecordMigrationRecoveryRequired extends Schema.TaggedError<RecordMi
   code: Schema.Literal("record-migration-recovery-required"),
   causeCode: Schema.String,
   restoreCommit: Schema.String,
+  restoreSafe: Schema.Boolean,
 }) {}
 
 /** A live frozen capability escaped its Effect Scope. */

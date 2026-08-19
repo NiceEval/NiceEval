@@ -227,7 +227,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
 |---|---|---|
 | **Attempt 配置**(`timeoutMs`、Judge) | CLI flag → experiment → eval → `niceeval.config.ts` → 内置默认 | eval 可以声明自己的完成条件；config 只是默认出处 |
 | **其它运行配置**(attempts、并发、预算、报告、Adapter 与 Sandbox 参数) | 按所属专题声明的层级求值 | 没有进程变量层；`--dry` 打印的求值结果就是真正生效的值 |
-| **凭据**(API key、provider token) | 进程变量,变量名由代码声明 | `bubAgent()`、`codexAgent()` 统一读取 `OPENAI_API_KEY` 与可选 `OPENAI_BASE_URL`；OMP 保留其已有的 OpenAI-compatible fallback；其它 adapter / sandbox 工厂读取各自声明的变量名(`ANTHROPIC_API_KEY`、`E2B_API_KEY`、`VERCEL_API_TOKEN` 等)。judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。不跨无关 provider 家族回落，也不做"进程变量里有哪个 key 就用哪个"的探测 |
+| **凭据**(API key、provider token) | 进程变量,变量名由代码声明 | `bubAgent()` 读取必需的 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`；`codexAgent()` 读取必需的 `OPENAI_API_KEY` 与可选的 `OPENAI_BASE_URL`。OMP 保留其已有的 OpenAI-compatible fallback；其它 adapter / sandbox 工厂读取各自声明的变量名(`ANTHROPIC_API_KEY`、`E2B_API_KEY`、`VERCEL_API_TOKEN` 等)。judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。不跨无关 provider 家族回落，也不做"进程变量里有哪个 key 就用哪个"的探测 |
 | **终端输出事实**(`NO_COLOR`、TTY) | 进程变量 | 这些描述的是"输出到哪个终端",不是 niceeval 的配置 |
 
 CLI 与 Node runtime 的人读文案是英语。浏览器 view 自己提供中英切换，不读 `niceeval.config.ts`，也不读系统 locale。

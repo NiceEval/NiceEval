@@ -48,8 +48,8 @@ record/
 `manifest.json`、递增编号、权威 `latest` 或共享 summary。可删除重建的索引只能是 local cache，不能决定
 事实是否存在。
 
-`complete` 是零字节、排他创建的唯一发布信号。writer 在它之前关闭并 flush 本 Run 的每份文件和目录；
-它之后永不修改这个 Run。没有 `complete` 的目录不进入选择、Sample 或 reuse，并产生
+`complete` 是零字节普通文件，也是排他创建的唯一发布信号。writer 在它之前关闭并 flush 本 Run 的每份文件和目录；
+它之后永不修改这个 Run。缺少它，或该路径为非空文件、目录、symlink 等其它形态的 Run 不进入选择、Sample 或 reuse，并产生
 `incomplete-run` warning。
 
 ## NiceEval 内部的 Effect Schema 作者模型
@@ -628,10 +628,11 @@ identity、HEAD、Record path、`recordId`、source inventory 与 NiceEval migra
 blob closure 后才结束。未知 future family 保持逐字节不动。NiceEval 不创建 staging、backup、rollback 或
 root replacement。
 
-首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。中断或失败后，CLI
-给出限定到 Record root 的精确 Git restore 与 tracked-byte 验证命令；验证 worktree/index 等于该 commit 后
-才清除 sentinel 并重试 `niceeval migrate`。只有 sentinel 创建成功后的失败进入该恢复态；计划指纹变化、第二次
-Git preflight 或 sentinel 创建失败尚未写 portable byte，不得输出旧计划的 restore 命令。恢复前不会创建 reader。
+计划同时绑定每个目标 envelope 的 exact source bytes。首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。
+
+中断或失败后，maintenance 先证明 HEAD 未变化，且 dirty path 只有 sentinel 与 canonical v2 计划目标。证明成立时，CLI 才给出限定到 Record root 的 Git restore 与 tracked-byte 验证命令；否则只要求人工检查并保留并发编辑。验证 worktree/index 等于该 commit 后才清除 sentinel 并重试 `niceeval migrate`。
+
+只有 sentinel 创建成功后的失败进入该恢复态。首个目标改写前发现 source bytes 变化、计划指纹变化、第二次 Git preflight 或 sentinel 创建失败时，不得输出旧计划的 restore 命令。恢复前不会创建 reader。
 
 ## 变化归属
 

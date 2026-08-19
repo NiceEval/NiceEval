@@ -57,6 +57,10 @@ async function requireDocker(): Promise<void> {
 
 beforeAll(async () => {
   requireLiveSecrets();
+  // The Bub owner must not receive harness aliases: otherwise an implementation
+  // that still reads only BUB_* would pass while the public OPENAI_* contract is broken.
+  expect(process.env.BUB_API_KEY).toBeUndefined();
+  expect(process.env.BUB_API_BASE).toBeUndefined();
   await requireDocker();
 
   rmSync(".niceeval", { recursive: true, force: true });

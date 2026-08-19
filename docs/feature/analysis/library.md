@@ -68,6 +68,16 @@ Host 只在 Measure 或 DomainView 实际需要一个 member 时执行 binding�
 `{ owner, package-private attachment definition }` 缓存完整的 lazy read；同一 Scope 中的后续请求复用结果，
 但不会预读没有请求的 family、也不会把 cache 交给 Report。
 
+binding 对一个 member 的闭合观察只有以下五种状态：
+
+| state | value | 含义 |
+|---|---|---|
+| `value` | 有 | current input 已验证并形成值 |
+| `missing` | 无 | current catalog 中应有的事实缺席 |
+| `migration-required` | 无 | 已知旧 schemaVersion 有固定迁移路径；issue code 同为 `migration-required` |
+| `unsupported` | 无 | reader 不认识所需的 future family，或 producer 不支持该 input |
+| `failed` | 无 | 读取、验证或 pure projection 失败 |
+
 较早 reader 若不认识 binding 需要的独立 future family，例如 `niceeval.energy`，保留该 family 的磁盘 bytes
 而不解码它。Sample 把这一次 input / view request 形成 `unsupported`，不影响不依赖它的
 Measure、Core selection 或闭合 Report 输出。这个局部结果不同于 current catalog family 缺失的
@@ -448,7 +458,9 @@ interface MetricValue<Value = number> {
   readonly state:
     | "available"
     | "partial"
+    | "unavailable"
     | "empty"
+    | "migration-required"
     | "unsupported"
     | "failed";
   readonly samples: number;
@@ -467,7 +479,9 @@ interface MetricValue<Value = number> {
 |---|---|---|---|
 | `available` | 非 null | `samples === total` 且 `total > 0` | 全部预期成员按该 Measure 的规则贡献 |
 | `partial` | 有贡献时非 null；零贡献时为 null | `samples < total` 且 `total > 0` | 每个未贡献成员都有 missing、unsupported 或可恢复的数据问题 |
+| `unavailable` | null | 由专门的闭合投影定义 | 该投影没有可报告值；原因由它自己的闭合 reason union 说明 |
 | `empty` | null | `samples === total` | Measure 的领域结果合法为空，且没有缺失、unsupported 或失败问题 |
+| `migration-required` | null | `samples === 0` 且 `total > 0` | 全部预期输入，或 across reduction，都只因已知旧 schemaVersion 而不可读；先运行 `niceeval migrate` |
 | `unsupported` | null | 没有可形成结果的 current 输入 | host / producer 未提供 input，或 reader 不认识它依赖的 future family |
 | `failed` | null | 已贡献数可小于或等于 total | 读取、验证、relation、producer 或 reduction 出现阻断性失败 |
 
@@ -479,6 +493,7 @@ value 的成员，`total` 只数该分组坐标中 Measure 已固定的预期成
 interface AnalysisIssue {
   readonly code:
     | "missing"
+    | "migration-required"
     | "unsupported"
     | "producer-incompatible"
     | "input-invalid"
