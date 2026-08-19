@@ -34,28 +34,30 @@ exact ref 的安全摘要和封闭 reasons，仍不探测 provider 或创建 han
 
 ## 人读 handoff
 
-每段结束都显示 Run、execution、完整 frontier、expected slot 摘要和状态交接。下列四种可交接输出穷尽 planned
-breakpoint / controlled interruption 与 comparable / debug 的组合：
+每段结束都显示 Run、当前节点结果、完成/可继续/等待的节点数量和状态交接。execution ID、完整 frontier 与 expected
+slots 只保留在机器 receipt。下列四种可交接输出穷尽 planned breakpoint / controlled interruption 与
+comparable / debug 的组合：
 
 | 终结原因 | comparability | human 输出的必有字段 | exit |
 |---|---|---|---|
-| planned breakpoint | comparable | `segment paused`、`run`、`execution`、`frontier`、`resume locator` | `0` 或 `1` |
-| planned breakpoint | debug | 上述字段、`debug`、非空 `reasons`、`resume locator` | `0` 或 `1` |
-| controlled interruption | comparable | `segment interrupted`、`run`、`execution`、`frontier`、`resume locator` | `130` |
-| controlled interruption | debug | 上述字段、`debug`、非空 `reasons`、`resume locator` | `130` |
+| planned breakpoint | comparable | `segment paused`、`run`、节点数量、`resume locator` | `0` 或 `1` |
+| planned breakpoint | debug | 上述字段、普通语言的 debug 原因、`resume locator` | `0` 或 `1` |
+| controlled interruption | comparable | `segment interrupted`、`run`、节点数量、`resume locator` | `130` |
+| controlled interruption | debug | 上述字段、普通语言的 debug 原因、`resume locator` | `130` |
 
 例如：
 
 ```text
 trajectory memory/recall  node recall  failed  state committed
-segment paused at memory/recall/inspect  run 01J…  execution te_4…
-frontier completed=2 ready=1 pending=0
-debug reasons: content-digest-unavailable
+segment paused at memory/recall/inspect  run 01J…
+nodes: 2 completed · 1 ready · 0 waiting
+debug: Content identity was unavailable, so this segment is not comparable.
 resume locator: trr1.<opaque>
 ```
 
-没有 locator 时，输出必须点名阻断原因，例如 `errored`、`dirty`、`cleanup-failed`、`isolation-failed`、
-`commit-indeterminate` 或 `debug-flag-required`。不得以较早 checkpoint 替换它。
+没有 locator 时，Human 展示安全有界的真实 `error:`，并说明没有可恢复位置。它不打印内部 reason code，也不得
+以较早 checkpoint 替换失败位置。JSON 保留稳定 code，供机器区分运行错误、Provider finalizer 未完成、隔离失败、commit 状态不明
+或缺少 `--debug` 等分支。
 
 ## JSON 与退出码
 

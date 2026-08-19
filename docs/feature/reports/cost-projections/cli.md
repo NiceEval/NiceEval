@@ -14,17 +14,17 @@ Sample、Profile 和关闭投影。
 ## 人类输出
 
 成本组件显示 USD、Profile content identity、declared-rate-card provenance、`available` / `partial` / `unavailable` 状态、total、mean
-和 slot-provider reasons。它不会以一个 basis 标签替代 ledger。
+和每条 Attempt 的 Provider 计价状态。它不会以一个 basis 标签替代 ledger。
 
 ```text
 Cost · partial · USD
 Pricing profile sha256:4a…91
 Rate card https://platform.openai.com/pricing · asOf 1785542400000
-Known total     USD 4.28 · 18 / 20 slots
-Mean per slot   USD 0.237777…
-openai · slot 12  observed  USD 0.24
-openai · slot 13  estimated USD 0.18
-openai · slot 14  unavailable · pricing-charge-not-found
+Known total       USD 4.28 · 18 / 20 attempts
+Mean per attempt  USD 0.237777…
+openai · Attempt #12  observed  USD 0.24
+openai · Attempt #13  estimated USD 0.18
+openai · Attempt #14  unavailable · pricing information unavailable
 ```
 
 `partial` 与 `unavailable` 不是颜色、空白或零的别名。非 USD observed cost、Usage 问题和不适用 rate 都显示各自的有限 reason。

@@ -31,13 +31,14 @@ persistence intentional  sandbox-path 1  external-resource 0
 
 ```text
 state restore  cohort co_7R…  region rg_2A…  checkpoint ck_91…  content-digest 8ae1…
-state commit   commit cm_1K…  predecessor ck_91…  checkpoint ck_B2…  fence accepted
-state debug    reason fencing-guarantee-unavailable  execution remains debug
-state mutation intentional-state  boundary sb_6H…
-state mutation unexpected-mutation  isolation issue si_3M…
+state commit   checkpoint ck_B2… saved
+state debug    Provider could not guarantee exclusive state access; results are not comparable.
+state change   expected change recorded
+state change   unexpected change detected
 ```
 
-debug execution 明确逐项显示 `StateDebugReason`。它不是成功恢复比较能力的提示，也不能被终端摘要隐藏。
+debug execution 在 Human 中逐项显示普通语言原因，在 JSON 中保留 `StateDebugReason`。它不是成功恢复比较能力的提示，
+也不能被终端摘要隐藏。
 
 ## JSON 与退出码
 

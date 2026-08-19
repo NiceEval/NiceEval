@@ -8,7 +8,7 @@
 │ 18.4k new tok · ~$0.12                                               │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ RESULTS ──────────────────────────────────────────────── 1 configs ─╮
+╭─ RESULTS ───────────────────────────────────── 1 run configuration ─╮
 │ compare/codex                                                        │
 │   memory/commit0  1/1 passed                                         │
 │   memory/commit1  1/1 passed                                         │
