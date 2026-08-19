@@ -5,6 +5,7 @@
 ```json
 {"type":"progress","invocationId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","message":"running","current":1,"total":3}
 {"event":"warning","code":"sandbox-retry","level":"warning","message":"retrying"}
+{"event":"warning","code":"judge-precheck-failed","level":"error","message":"Judge precheck failed…","phase":"judge.precheck","experimentId":"compare/openai","evalId":"qa/basic","planned":2,"errored":2}
 {"type":"receipt","receipt":{"invocationId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","runIds":["8f3d6f62-1d34-4cf3-99c7-84ba3c483706"],"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
 ```
 

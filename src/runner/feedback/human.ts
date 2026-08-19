@@ -54,6 +54,7 @@ import type {
   RunFeedbackPlan,
   RunFeedbackState,
   EvalResult,
+  TimingOrigin,
 } from "../types.ts";
 import type { CurrentReusedAttemptReadback } from "../reuse-readback.ts";
 import type { FeedbackRenderer } from "./renderer.ts";
@@ -120,7 +121,7 @@ const NON_TTY_HEARTBEAT_IDLE_MS = 30_000;
  *  这里只需要给「下一帧」留出一行余地,不需要额外的表头/尾行预留)。 */
 const DASHBOARD_ROW_RESERVE = 1;
 const HUMAN_RESULTS_EXPERIMENT_CAP = 5;
-const HUMAN_ERROR_TEXT_MAX_CHARS = 240;
+const HUMAN_ERROR_TEXT_MAX_BYTES = 240;
 
 type HumanResultItem = {
   readonly experimentId: string;
@@ -218,6 +219,7 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
 
 function buildPreAttemptErrorRows(
   results: readonly EvalResult[],
+  runIdsByExperiment: ReadonlyMap<string, string>,
   panel: { mode: PanelMode; width: number },
 ): { readonly rows: PanelRow[]; readonly slots: number } | undefined {
   const errored = results.filter((result) =>
@@ -227,7 +229,14 @@ function buildPreAttemptErrorRows(
   const groups = new Map<string, EvalResult[]>();
   for (const result of errored) {
     const error = result.error!;
-    const failureId = error.origin.scope === "run" ? error.origin.timingNodeId : `${error.code}:${error.message}`;
+    const runId = result.experimentId === undefined
+      ? undefined
+      : runIdsByExperiment.get(result.experimentId);
+    // Run timing node IDs are local identities. The same `n1` in another Run
+    // names a different physical failure and must not absorb its message.
+    const failureId = error.origin.scope === "run"
+      ? `${runId ?? result.experimentId ?? "default"}\u0000${error.origin.timingNodeId}`
+      : `${result.experimentId ?? "default"}\u0000${error.code}:${error.message}`;
     const members = groups.get(failureId);
     if (members) members.push(result);
     else groups.set(failureId, [result]);
@@ -237,7 +246,10 @@ function buildPreAttemptErrorRows(
   for (const members of groups.values()) {
     const representative = members[0]!;
     const error = representative.error!;
-    rows.push({ kind: "line", text: `${FAILURE_SYMBOL} ${representative.experimentId ?? "default"} · sandbox provisioning failed` });
+    rows.push({
+      kind: "line",
+      text: `${FAILURE_SYMBOL} ${representative.experimentId ?? "default"} · ${preAttemptErrorTitle(error.origin)}`,
+    });
     rows.push({
       kind: "line",
       text: `  affected: ${members.map((member) => `${member.experimentId ?? "default"}/${member.id}`).join(", ")}`,
@@ -245,6 +257,18 @@ function buildPreAttemptErrorRows(
     rows.push(...labelledWrappedRows("error", boundedHumanError(error.message), contentWidth));
   }
   return { rows, slots: errored.length };
+}
+
+function preAttemptErrorTitle(origin: TimingOrigin): string {
+  if (origin.scope === "run") return "Sandbox image build failed";
+  const phase = origin.phase;
+  switch (phase) {
+    case "judge.precheck": return "Judge precheck failed";
+    case "experiment.setup": return "Experiment setup failed";
+    case "sandbox.queue": return "Sandbox queue failed";
+    case "sandbox.create": return "Sandbox provisioning failed";
+    default: return `${phaseLabel(phase)} failed`;
+  }
 }
 
 export interface HumanRendererOptions {
@@ -499,6 +523,10 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
   // 跨用例撞上同一类状况时,读者需要的是「这类事发生了 N 次」,不是 N 段几乎相同的文字;
   // 逐 code 的次数与首条 message 由结束反馈的 WARNINGS / RECOVERY 面板汇总。
   const code = event.code ?? event.key;
+  // Judge precheck already has a live lifecycle row and a terminal pre-Attempt
+  // error block. Repeating its machine code in Human output adds no fact and
+  // exposes machine vocabulary in the default profile.
+  if (code === "judge-precheck-failed") return [];
   const firstForCode = state.diagnostics.find((d) => (d.code ?? d.key) === code);
   const count = state.diagnostics.find((d) => d.key === event.key)?.count ?? 1;
   if (count > 1 || firstForCode?.key !== event.key) return [];
@@ -597,11 +625,11 @@ function buildSummaryLines(
     }));
   }
 
-  const preAttemptErrors = buildPreAttemptErrorRows(summary.results, panel);
+  const preAttemptErrors = buildPreAttemptErrorRows(summary.results, state.runIdsByExperiment, panel);
   if (preAttemptErrors !== undefined) {
     blocks.push(renderPanel({
       title: t("feedback.human.errorsHeader"),
-      meta: `${preAttemptErrors.slots} slots`,
+      meta: `${preAttemptErrors.slots} attempt${preAttemptErrors.slots === 1 ? "" : "s"} not started`,
       rows: preAttemptErrors.rows,
       width: panel.width,
       mode: panel.mode,
@@ -647,7 +675,16 @@ function buildSummaryLines(
   // `WARNINGS`(有诊断才出现,位于 FAILURES 与 NEXT 之间,见 cli.md「人看的结束反馈」):
   // 按 code 汇总本次去重后的诊断,运行中同 code 只完整打印过第一条,这里是「这类事一共
   // 发生了几次」的权威答案。
-  const warningsRows = buildWarningsPanelRows(state.diagnostics);
+  const preAttemptCodes = new Set(summary.results.flatMap((result) =>
+    result.verdict === "errored" && result.locator === undefined && result.error !== undefined
+      ? [result.error.code]
+      : []
+  ));
+  const warningsRows = buildWarningsPanelRows(
+    state.diagnostics.filter((diagnostic) =>
+      diagnostic.severity !== "error" || !preAttemptCodes.has(diagnostic.code ?? diagnostic.key)
+    ),
+  );
   if (warningsRows) {
     blocks.push(
       renderPanel({ title: t("feedback.human.warningsHeader"), rows: warningsRows, width: panel.width, mode: panel.mode }),
@@ -833,8 +870,50 @@ function buildReceiptLines(
 
 function boundedHumanError(message: string): string {
   const safe = stripControl(message).replace(/\s+/gu, " ").trim();
-  if (safe.length <= HUMAN_ERROR_TEXT_MAX_CHARS) return safe;
-  return `…${safe.slice(-(HUMAN_ERROR_TEXT_MAX_CHARS - 1))}`;
+  const signalIndexes = [
+    safe.search(/\b[1-5]\d{2}\s+[A-Z][A-Za-z -]{2,40}(?:\s+[—·:-]\s+[A-Z][A-Z0-9_-]+)?/u),
+    safe.search(/\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+){1,}\b/u),
+  ].filter((index) => index >= 0);
+  // Wrappers often prepend a long command or transport path before the
+  // Provider's safe status/code. Focus the Human budget at that first stable
+  // signal; the full structured error remains available through details.
+  const focused = signalIndexes.length === 0 ? safe : safe.slice(Math.min(...signalIndexes));
+  if (utf8Bytes(focused) <= HUMAN_ERROR_TEXT_MAX_BYTES) return focused;
+  const separator = " … ";
+  const available = HUMAN_ERROR_TEXT_MAX_BYTES - utf8Bytes(separator);
+  const head = Math.ceil(available / 2);
+  const tail = available - head;
+  return `${utf8Prefix(focused, head)}${separator}${utf8Suffix(focused, tail)}`;
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function utf8Prefix(value: string, maximumBytes: number): string {
+  let bytes = 0;
+  let result = "";
+  for (const character of value) {
+    const nextBytes = utf8Bytes(character);
+    if (bytes + nextBytes > maximumBytes) break;
+    result += character;
+    bytes += nextBytes;
+  }
+  return result;
+}
+
+function utf8Suffix(value: string, maximumBytes: number): string {
+  let bytes = 0;
+  const result: string[] = [];
+  const characters = Array.from(value);
+  for (let index = characters.length - 1; index >= 0; index -= 1) {
+    const character = characters[index]!;
+    const nextBytes = utf8Bytes(character);
+    if (bytes + nextBytes > maximumBytes) break;
+    result.push(character);
+    bytes += nextBytes;
+  }
+  return result.reverse().join("");
 }
 
 function labelledWrappedRows(label: string, text: string, contentWidth: number): PanelRow[] {

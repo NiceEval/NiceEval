@@ -140,7 +140,7 @@ export default defineEval({
 
 Patterns use Git-ignore syntax relative to the workdir root. A pattern without `/` matches a name at every depth; one with `/` starts at the workdir root; a trailing `/` denotes a directory. The project's own `.gitignore` does not participate, so project-ignored files are still recorded. NiceEval freezes the list at the first snapshot; a later Agent edit to `.gitignore` cannot affect it.
 
-One `t.send()` window can collect at most 10,000 paths and 64 MiB of content. Exceeding either limit is an execution error, not an empty change set that could let a file assertion pass.
+One `t.send()` window can scan at most 100,000 paths and 256 MiB of deduplicated text. Within that scan, File Changes retains at most 10,000 changes; when the candidate set is larger, it saves the deterministic prefix and marks the collection `partial` with `collection-cap-reached`. Exceeding the scan limit is an execution error, never an empty change set that could let a file assertion pass. Narrow unusually large workspaces with `diff.include` or `diff.ignore`.
 
 Lifecycle callbacks (`.setup()` and `.teardown()`) belong to the Experiment's `sandbox` specification. Use them for environment setup that changes by Experiment: install an Experiment-specific binary, warm a cache, or load and save state across Attempts. Files they write are environment state, not part of the Agent diff. See [Sandbox Providers: Lifecycle](/tutorials/sandbox-providers#lifecycle) for the API and rules.
 

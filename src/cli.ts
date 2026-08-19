@@ -222,7 +222,7 @@ export function renderCliFailure(failure: CliFailure): string {
   if (failure.cause instanceof SandboxLayerLinkError) return `${formatSandboxLayerLinkError(failure.cause)}\n`;
   if (failure.cause instanceof SandboxPhysicalPlanningError) return `${formatSandboxPhysicalPlanningError(failure.cause)}\n`;
   const assertionsMessage = runnerAssertionsMessage(failure.cause);
-  if (assertionsMessage !== undefined) return `niceeval error: ${assertionsMessage}\n`;
+  if (assertionsMessage !== undefined) return `error: ${assertionsMessage}\n`;
   if (isReportCliOperation(failure.operation)) {
     const code = failureCode(failure.cause);
     if (code !== undefined) {
