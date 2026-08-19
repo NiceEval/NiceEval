@@ -71,7 +71,9 @@ test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并�
           probeEnteredBeforeRelease = await pollUntil(
             async () => (await exists(join(barrierRoot, "probe-agent-entered"))) || undefined,
             {
-              timeoutMs: 3_000,
+              // The contract is entry before the holders are released. Leave enough
+              // startup headroom for the Runner repo's default parallel test load.
+              timeoutMs: 20_000,
               intervalMs: 10,
               label: "smaller Invocation enters its independent Agent before holders release",
             },
