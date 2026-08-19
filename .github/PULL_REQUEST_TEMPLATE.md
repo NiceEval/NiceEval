@@ -51,6 +51,12 @@ reading existing data, and upgrading or recovering it. A version bump must
 identify the incompatible public-format result and the upgrade path. An
 unchanged version must show both reader directions. Do not replace these cases
 with an abstract schema checklist.
+
+Always keep the Terminology section. Inventory terms added to or removed from
+the project's preferred vocabulary, including a rename as one Removed term and
+one Added term. Define each term in plain language and link its canonical entry
+in `docs/concepts.md`. If terminology is unchanged, write `None` under both
+directions.
 -->
 
 ## Problem
@@ -311,6 +317,53 @@ persisted implementation changes. Otherwise show only the applicable cases:
 - Before usage or result: <copyable command and observed result>
 - After usage or result: <copyable command and observed result>
 - User impact: <development, CI, documentation, or release workflow change>
+
+## Terminology
+
+<!--
+Keep this section even when terminology is unchanged. A term is a preferred
+domain word recorded in docs/concepts.md, not every new identifier in source.
+For a rename, list the old term under Removed and the replacement under Added.
+-->
+
+### Added terms
+
+#### Case: `<new preferred term>`
+
+##### Before
+
+```md
+<a concrete sentence using the previous wording, or `No preferred term.`>
+```
+
+##### After
+
+```md
+<the same sentence rewritten with the new preferred term>
+```
+
+In one short paragraph, explain what the new term means, what readers can now
+distinguish, and link its canonical `docs/concepts.md#<anchor>` entry.
+
+### Removed terms
+
+#### Case: `<removed preferred term>`
+
+##### Before
+
+```md
+<a concrete sentence using the removed preferred term>
+```
+
+##### After
+
+```md
+<the replacement sentence, or `Concept removed.`>
+```
+
+In one short paragraph, explain what the old term meant, why it disappeared,
+and the documentation, API, CLI, or migration impact. Link the replacement
+`docs/concepts.md#<anchor>` entry when one exists.
 
 ## Tests
 

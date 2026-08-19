@@ -326,15 +326,13 @@ function membershipTable(rows: readonly MembershipRow[]) {
   );
 }
 
-function runErrorsSection(rows: readonly RunErrorRow[]) {
+function runErrorsSection(rows: readonly RunErrorRow[], notStarted: number) {
   return rows.length === 0 ? null : (
-    <Section title="Run errors" meta={`${rows.length} shared failure${rows.length === 1 ? "" : "s"}`}>
+    <Section title="Run errors" meta={`${notStarted} attempt${notStarted === 1 ? "" : "s"} not started`}>
       {rows.map((row) => (
-        <Section key={row.key} title={`${row.error} · ${row.failure}`}>
-          <Text>{`phase: ${row.phase}`}</Text>
+        <Section key={row.key} title="Sandbox image build failed">
           <Text>{`affected: ${row.affected}`}</Text>
-          <Text>{row.message}</Text>
-          {row.fix === null ? null : <Text>{`fix: ${row.fix}`}</Text>}
+          <Text>{`error: ${row.message}`}</Text>
         </Section>
       ))}
     </Section>
@@ -694,21 +692,39 @@ export const SandboxHistoryResultView = defineComponent<SandboxHistoryResultProp
 SandboxHistoryResultView.displayName = "SandboxHistoryResultView";
 
 function runMembershipTree(input: RunMembershipResult) {
-  const summary = input.summary[0];
+  const hasAttempts = input.members.some((member) => member.locator !== null);
+  const notStarted = input.members.filter((member) => member.locator === null).length;
+  const rows = input.members.map((member) => ({
+    key: member.key,
+    experiment: member.experiment,
+    eval: member.eval,
+    attempt: `#${member.attempt + 1}`,
+    result: member.locator === null
+      ? member.outcome === "errored" ? "errored" : "not started"
+      : member.outcome ?? member.state,
+    details: member.locator === null
+      ? null
+      : { kind: "locator" as const, locator: member.locator as AttemptLocator },
+  }));
   return (
     <Col>
       <Hero data={input.hero} />
-      <Grid>
-        <Stat label="Pass rate" value={summary === undefined ? null : metricCell(summary.passRate)} />
-        <Stat label="Included attempts" value={input.members.filter((member) => member.state === "included").length} />
-      </Grid>
-      <Section title="Run membership" meta={`${input.members.length} slots`}>
-        {membershipTable(limited(input.members))}
-        {omittedText(input.members.length, Math.min(input.members.length, DETAIL_ROWS_MAX), "membership rows")}
+      {runErrorsSection(input.errors, notStarted)}
+      <Section title="Planned attempts" meta={`${input.members.length} attempt${input.members.length === 1 ? "" : "s"}`}>
+        <Table
+          rows={limited(rows)}
+          columns={[
+            { field: "experiment", label: "Experiment" },
+            { field: "eval", label: "Eval" },
+            { field: "attempt", label: "Attempt" },
+            { field: "result", label: "Result" },
+            { field: "details", label: "Details" },
+          ]}
+        />
+        {omittedText(rows.length, Math.min(rows.length, DETAIL_ROWS_MAX), "planned attempts")}
       </Section>
-      {runErrorsSection(input.errors)}
-      <AttemptEvidenceResultView view={input.evidence} />
-      {issueSection(input.summary)}
+      {hasAttempts ? <AttemptEvidenceResultView view={input.evidence} /> : null}
+      {hasAttempts ? issueSection(input.summary) : null}
     </Col>
   );
 }

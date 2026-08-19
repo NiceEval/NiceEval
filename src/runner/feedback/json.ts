@@ -131,6 +131,8 @@ export interface WarningEvent {
   phase?: LifecyclePhase;
   experimentId?: string;
   evalId?: string;
+  planned?: number;
+  errored?: number;
 }
 
 export interface NoticeEvent {
@@ -286,12 +288,16 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           // "diagnostic" 变体的 identity 注释)。
           const experimentId = event.identity?.experimentId ?? stringField(event.data?.experimentId);
           const evalId = event.identity?.evalId ?? stringField(event.data?.evalId);
+          const planned = numberField(event.data?.planned);
+          const errored = numberField(event.data?.errored);
           const common = {
             code,
             message: event.message,
             ...(phase !== undefined ? { phase } : {}),
             ...(experimentId !== undefined ? { experimentId } : {}),
             ...(evalId !== undefined ? { evalId } : {}),
+            ...(planned !== undefined ? { planned } : {}),
+            ...(errored !== undefined ? { errored } : {}),
           };
           if (event.severity === "info") {
             const resource = coordinationResourceField(event.data?.resource);

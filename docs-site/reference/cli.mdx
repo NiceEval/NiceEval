@@ -264,6 +264,10 @@ Repeat `--run` to read only explicit historical Runs. Repeat `--experiment <id>`
 
 `project-current` changes only Report selection. It does not migrate the Record or change its version.
 
+For an explicit `--run`, the default Human page uses `Experiment`, `Eval`, `Attempt`, `Result`, and `Details`.
+If a Run failed before creating any Attempt, `Run errors` and `N attempts not started` come first; empty pass-rate,
+evidence, analysis, and internal membership fields are omitted. `show --json` keeps the stable machine membership fields.
+
 After selection, `show` executes the Measures and domain views the Report uses from the Sample and forms one `ReportExecution`. Analysis states such as `partial`, `unsupported`, and `failed` remain visible with the result. A data problem outside the inputs a page uses does not affect it. `show --json` emits the same execution as `niceeval.report-show/v1`. See [Viewing Results](/tutorials/viewing-results) for the full contract.
 
 `view --out <directory>` (or an explicit `--run`) prerenders the same ReportExecution as a self-contained static site. The target directory must not exist. NiceEval validates every page, download, and static asset path first. When export completes, the site can be viewed independently. It never gives a user Report underlying result storage.

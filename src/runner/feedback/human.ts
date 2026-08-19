@@ -218,6 +218,7 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
 
 function buildPreAttemptErrorRows(
   results: readonly EvalResult[],
+  runIdsByExperiment: ReadonlyMap<string, string>,
   panel: { mode: PanelMode; width: number },
 ): { readonly rows: PanelRow[]; readonly slots: number } | undefined {
   const errored = results.filter((result) =>
@@ -227,7 +228,14 @@ function buildPreAttemptErrorRows(
   const groups = new Map<string, EvalResult[]>();
   for (const result of errored) {
     const error = result.error!;
-    const failureId = error.origin.scope === "run" ? error.origin.timingNodeId : `${error.code}:${error.message}`;
+    const runId = result.experimentId === undefined
+      ? undefined
+      : runIdsByExperiment.get(result.experimentId);
+    // Run timing node IDs are local identities. The same `n1` in another Run
+    // names a different physical failure and must not absorb its message.
+    const failureId = error.origin.scope === "run"
+      ? `${runId ?? result.experimentId ?? "default"}\u0000${error.origin.timingNodeId}`
+      : `${result.experimentId ?? "default"}\u0000${error.code}:${error.message}`;
     const members = groups.get(failureId);
     if (members) members.push(result);
     else groups.set(failureId, [result]);
@@ -597,11 +605,11 @@ function buildSummaryLines(
     }));
   }
 
-  const preAttemptErrors = buildPreAttemptErrorRows(summary.results, panel);
+  const preAttemptErrors = buildPreAttemptErrorRows(summary.results, state.runIdsByExperiment, panel);
   if (preAttemptErrors !== undefined) {
     blocks.push(renderPanel({
       title: t("feedback.human.errorsHeader"),
-      meta: `${preAttemptErrors.slots} slots`,
+      meta: `${preAttemptErrors.slots} attempt${preAttemptErrors.slots === 1 ? "" : "s"} not started`,
       rows: preAttemptErrors.rows,
       width: panel.width,
       mode: panel.mode,
@@ -833,8 +841,20 @@ function buildReceiptLines(
 
 function boundedHumanError(message: string): string {
   const safe = stripControl(message).replace(/\s+/gu, " ").trim();
-  if (safe.length <= HUMAN_ERROR_TEXT_MAX_CHARS) return safe;
-  return `…${safe.slice(-(HUMAN_ERROR_TEXT_MAX_CHARS - 1))}`;
+  const signalIndexes = [
+    safe.search(/\b[1-5]\d{2}\s+[A-Z][A-Za-z -]{2,40}(?:\s+[—·:-]\s+[A-Z][A-Z0-9_-]+)?/u),
+    safe.search(/\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+){1,}\b/u),
+  ].filter((index) => index >= 0);
+  // Wrappers often prepend a long command or transport path before the
+  // Provider's safe status/code. Focus the Human budget at that first stable
+  // signal; the full structured error remains available through details.
+  const focused = signalIndexes.length === 0 ? safe : safe.slice(Math.min(...signalIndexes));
+  if (focused.length <= HUMAN_ERROR_TEXT_MAX_CHARS) return focused;
+  const separator = " … ";
+  const available = HUMAN_ERROR_TEXT_MAX_CHARS - separator.length;
+  const head = Math.ceil(available / 2);
+  const tail = available - head;
+  return `${focused.slice(0, head)}${separator}${focused.slice(-tail)}`;
 }
 
 function labelledWrappedRows(label: string, text: string, contentWidth: number): PanelRow[] {

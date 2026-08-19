@@ -105,6 +105,7 @@ merge commit 或 PR event SHA 代替它；不要调用 `checkout_pr`，因为它
    任何超出预算、缺少唯一 owner、复制已有矩阵，或因内部实现小改而连带修改的测试，都形成问题，并把 Review 结论设为“需要修改”。
 12. 测试形态与可靠性：Bug 修复固定从公开入口 E2E TDD 开始；非 Bug 变更再按长期区分收益、稳定性、可靠性与维护成本裁决 owner。之后从产品契约零基推导用户结果，按“Journey E2E → 单边界 E2E → 最小 Unit 例外”检查，现有测试与 owner 没有保留推定。每条新增、保留或实质改写的 Unit 都必须先说明真实 E2E 为何不能直接、稳定地制造输入并观察同一错误结果；与其它 Unit 不重复、算法重要、分支独有或便于定位均不是理由。缺少具体 E2E 不可行证据时要求删除 Unit，必要时由 E2E 接管。核对 `pnpm test` 报告的 Tests 数，超过 200 时形成问题；Testkit 不设独立 Unit 套件。`test.each` 的展开 case 逐条计数，不接受把独立命题合并进大测试规避上限。新增、接管或实质修改的自动化 owner 必须在同一 candidate digest、checkout、lockfile 与运行条件下完成三份隔离副本、同副本连续两次、Repo 默认并行、文件与标题单跑及资源终结收据；测试级 retry 后转绿不算可靠。Snapshot 大面积变化时只接受 owner 已声明的稳定表示发生变化，不接受批量确认。依赖兄弟测试顺序、共享可变结果、`serial` 或“必须最后”才能通过，均视为可靠性失败。Bug 只有无法固定的外部条件、安全限制或 Provider 阻塞才可不自动化，并须保存相称的真实验收和未守护风险；Docker-in-Docker 的宿主内核、daemon 权限和嵌套网络无法固定时可采用此处置。安全或发布关键行为既无可靠自动化、又无本次真实验收时形成问题。
 13. 可读的 Tests 收据：从 diff 独立列出所有新增、删除和实质修改的测试文件。PR 的 Tests section 对每个新增或修改文件只出现一次，并粘贴与 head 完全一致的完整最终源码，保留 owner、regression、rerun 和可靠性注释；源码前只用 Purpose 标明 `feature | bug regression | feature + bug regression`，并用 Protects 说明删掉该测试会放走的公开错误。不得要求作者为每个文件重复 `Change`、`Disposition`、candidate、固定条件等元数据。删除项单列旧 owner 与替代路径或删除理由。共享证据集中在一份简短 Verification receipt：candidate Git SHA 与 NiceEval tarball digest、Bug 的旧候选或 mutation 及最早失败阶段、实际绿色命令、固定 checkout / lockfile / fixture / seed / 时钟 / 镜像或 provider 身份、适用的接管矩阵与 cleanup、Unit 总数。不自动化项保存真实运行条件与版本、生产入口、AI 动作、公开观察、cleanup 和未守护风险。源码不完整或与 head 不一致、Purpose / Protects 无法说明功能或回归价值、必要共享证据缺失时形成问题，并把结论设为“需要修改”。
+14. 术语增减：从 base 与 head 的 `docs/concepts.md`、Feature 契约、公开 API、CLI 和默认 Human 输出独立找出新增、移除或替换的首选术语。重命名拆成一项 Removed 和一项 Added，不用“文案优化”代替。每项都核对一句话含义、具体句子中的前后用法、用户影响和 `docs/concepts.md` 的唯一词条。源码中的临时变量或不进入正文词汇的标识符不算术语。PR 的 Terminology section 遗漏实际增减、含义不可区分或未与 Concepts 同步时形成问题。
 
 变化清单只使用三个方向，不再叠加第二套兼容性分类：
 
@@ -339,6 +340,46 @@ Review body 必须使用中文并采用以下结构。PR 标题与范围必须�
 - 证据：<base 与 PR 中可核查的文件、符号或 diff>
 
 每个方向有多项时重复对应 Case；没有变化的方向连同标题一起省略，一个产品面没有任何条目时连同一级标题一起省略，不写“无”“不受影响”或保留占位符。Record 只在实际受影响时出现，并按写新数据、读存量数据、升级或恢复的公开场景展示；不要输出抽象字段清单。Public API、CLI 和 Report 的示例必须分别是可复制的 TypeScript、命令和 TSX。可观察行为与数据只保存用户可见的前后结果；Record 的版本、读取与迁移裁决放在专门 Case 中，必要时交叉引用，不复制两套清单。其余可观察数据必须覆盖 runtime、缓存身份、provider、report/show/view 或错误反馈的前后结果。固定常量、单次调用参数、typed config、CLI flag、受管 descriptor 或 service 配置能够表达时，不接受仅以“方便”为理由新增环境变量。
+
+## 术语增减
+
+### Added
+
+#### Case: `<新增首选术语>`
+
+##### 变化前
+
+```md
+<使用原有写法的具体句子，或“没有首选术语。”>
+```
+
+##### 变化后
+
+```md
+<使用新术语改写后的同一句话>
+```
+
+用一小段说清新术语的含义、读者现在能区分什么，并链接 `docs/concepts.md` 的唯一词条。段落末尾给出 base 与 head 中可核查的证据。
+
+### Removed
+
+#### Case: `<移除的首选术语>`
+
+##### 变化前
+
+```md
+<使用被移除术语的具体句子>
+```
+
+##### 变化后
+
+```md
+<替换后的同一句话，或“该概念已移除。”>
+```
+
+用一小段说清旧术语原先的含义、它为什么消失，以及文档、API、CLI 或迁移影响。有替代词时链接 `docs/concepts.md` 的唯一词条，并在段落末尾给出 base 与 head 中可核查的证据。
+
+有多项时重复对应 Case；没有新增或移除时，对应方向写“无”。
 
 ## 审查问题
 

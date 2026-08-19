@@ -172,7 +172,7 @@ function membershipRows(
 const runMembershipPage = {
   id: "run-membership",
   path: "/",
-  title: "Run membership overview",
+  title: "Run results",
   load: async (sample: Sample): Promise<RunMembershipPageInput> => {
     const [summary, evidence, diagnostics] = await Promise.all([
       loadBuiltInSummaryRows(sample),
@@ -193,7 +193,7 @@ const runMembershipPage = {
 /** The bounded default for explicit historical Run selectors. */
 export function runMembershipOverviewReport() {
   return defineBuiltInReport(builtInMachineProducerIds.runMembershipOverview, {
-    title: "Run membership overview",
+    title: "Run results",
     pages: [runMembershipPage],
   });
 }

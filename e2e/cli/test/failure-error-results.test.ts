@@ -7,6 +7,16 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
+interface JudgePrecheckWarning {
+  event: "warning";
+  code: string;
+  experimentId?: string;
+  evalId?: string;
+  planned?: number;
+  errored?: number;
+}
+
+// feature: 同一次公开 CLI 旅程中核对 failed / errored 的机器输出与人读详情。
 test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", async () => {
   await cliE2E.case(
     "failure-error-results",
@@ -88,9 +98,11 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         ".niceeval/record",
       ]);
       expect(shownRun.exitCode, shownRun.diagnostic()).toBe(0);
-      expect(shownRun.stdout).toContain("Run membership overview");
+      expect(shownRun.stdout).toContain("Run results");
+      expect(shownRun.stdout).toContain("Planned attempts");
       expect(shownRun.stdout).toContain(erroredEval.locator!);
       expect(shownRun.stdout).toContain("errored");
+      expect(shownRun.stdout).not.toContain("Membership");
 
       const shownAttempt = await niceeval.run([
         "show",
@@ -112,6 +124,33 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
   );
 });
 
+// regression: Judge 预检失败曾只输出通用消息，无法定位受影响的用例和次数。
+test("Attempt 创建前的 Judge 错误在 NDJSON 中保留用例身份与数量", async () => {
+  await cliE2E.case(
+    "judge-precheck-error",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval } }) => {
+      const result = await niceeval.run(
+        ["exp", "judge-precheck-error", "--rerun", "all", "--json"],
+        { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
+      );
+
+      expect(result.exitCode, result.diagnostic()).toBe(1);
+      const warnings = result.ndjson<JudgePrecheckWarning>().filter(
+        (event) => event.event === "warning" && event.code === "judge-precheck-failed",
+      );
+      expect(warnings).toEqual([expect.objectContaining({
+        experimentId: "judge-precheck-error",
+        evalId: "judge-precheck/unreachable",
+        planned: 2,
+        errored: 2,
+      })]);
+      expect(result.expReceipt()).toMatchObject({ completion: "completed" });
+    },
+  );
+});
+
+// feature: Human 结束摘要按 Eval 类型展示 score 或 pass 主读数。
 test("计分制与通过制 Human 结束摘要显示各自主读数", async () => {
   await cliE2E.case(
     "score-human-results",
