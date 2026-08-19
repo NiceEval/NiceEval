@@ -274,6 +274,11 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        # GitHub defaults container jobs to /bin/sh; every script in this job
+        # relies on `set -o pipefail`, so host and container cells share Bash.
+        shell: bash
     # 只有声明 browser capability 的 cell 进入精确 Playwright 版本镜像；其它 host / docker
     # cell 的 matrix.container 为 null，仍直接运行在普通 GitHub runner。镜像已经包含 browser
     # 与系统依赖，不在每次 job 中运行 apt / `playwright install --with-deps`。
