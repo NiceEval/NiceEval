@@ -585,8 +585,11 @@ function renderPage(site: ClosedReportSite, entry: ClosedSitePage, paramRoutes: 
   const bodyZh = projection(page, "zh-CN");
   const navigationEn = renderNavigation(site.pages, page.target.route, output, "en");
   const navigationZh = renderNavigation(site.pages, page.target.route, output, "zh-CN");
-  const problemsEn = renderProblems(site.problems, "en");
-  const problemsZh = renderProblems(site.problems, "zh-CN");
+  const pageProblems = site.problems.filter((problem) =>
+    problem.path.length === 0 || (problem.path[0] === "page" && problem.path[1] === page.target.pageId)
+  );
+  const problemsEn = renderProblems(pageProblems, "en");
+  const problemsZh = renderProblems(pageProblems, "zh-CN");
   const paramRoutesAttr = paramRoutes.length === 0
     ? ""
     : ` data-niceeval-param-routes="${escapeAttribute(paramRoutes.join(" "))}"`;
