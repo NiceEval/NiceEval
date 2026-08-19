@@ -177,6 +177,10 @@ The following table is generated from the CLI flag-parsing table. Any Flag outsi
 | `--report` | string | `show` / `view` only: built-in `overview` or a trusted Report module path. |
 | `--page` | string | `show` / `view` only: selects the Report's initial Page. `show` renders the Page and appends an index of other Pages; `view` uses it as the initial route. An unknown Page ID exits as a usage error and lists available Page IDs. |
 | `--teardown` | boolean | `exp` only: completes experiment-level teardown interrupted by a forced kill. It runs teardown once for each selected Experiment with new-process semantics, dispatches no Attempt, and runs no setup. It also runs when no leftover registration exists. Combining it with Eval-prefix positional arguments is a usage error. |
+| `--recover-shared-state` | string | `exp --teardown` only: explicitly recovers a shared-state lease that is never taken over automatically. Requires `--owner-token`, `--confirm-owner-terminated`, and `--confirm-remote-quiesced`. |
+| `--owner-token` | string | `--recover-shared-state` only: supplies the immutable owner token to recover. A wrong or stale token does not modify the lease. |
+| `--confirm-owner-terminated` | boolean | `--recover-shared-state` only: confirms that the original owner has terminated. |
+| `--confirm-remote-quiesced` | boolean | `--recover-shared-state` only: confirms that the remote external state is quiescent. |
 | `--dry` | boolean | Prints only the Eval × run-configuration pairs that would match. It does not execute them; output is Human text or a single `--json` document. See "How machines read: `--json`". |
 | `--force` | boolean | `sandbox prune` only: destroys `unverified` instances as well as `orphan` instances. `exp` explicitly rejects it; rerun failures or everything with `--rerun` / `--rerun all`. |
 | `--rerun` | boolean | `exp` only: reruns failures (bare / `failed`) or all items (`all`) without changing the long-lived fingerprint. |

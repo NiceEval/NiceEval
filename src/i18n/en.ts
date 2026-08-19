@@ -199,8 +199,16 @@ export const en = {
     "writing the crash-recovery teardown registration for experiment {{experimentId}} failed: {{message}}. The run continues normally, but a SIGKILL during this run cannot be recovered via `niceeval exp --teardown` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.\n",
   "runner.coordinationRecovered":
     "recovered expired coordination state for {{experimentId}}; this run continues. Further recoveries are summarized at completion.\n",
-  "runner.sharedStateLeaseTakenOver":
-    "recovered the expired shared-state lease for {{key}}; this run continues with its own plan.\n",
+  "runner.sharedStateRecoveryRequired":
+    "sharedState key {{key}} remains owned by token {{ownerToken}}; this Invocation will not take it over automatically. Complete cleanup or use the explicit `niceeval exp <selector> --teardown` recovery flow.\n",
+  "runner.sharedStateExplicitRecovered":
+    "explicitly recovered sharedState key {{key}} for experiment {{experimentId}} (owner token {{ownerToken}}).\n",
+  "cli.exp.sharedStateRecoveryFlags":
+    "sharedState recovery requires `--teardown --recover-shared-state <key> --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced`.\n",
+  "cli.exp.sharedStateRecoveryTarget":
+    "sharedState recovery target:\n  key: {{key}}\n  experiment: {{experimentId}}\n  owner token: {{ownerToken}}\n  host: {{host}}\n  PID: {{pid}}\n  process identity: {{processIdentity}}\n  heartbeat: {{heartbeatAt}}\n",
+  "cli.exp.sharedStateRecoveryAlreadyReleased":
+    "sharedState key {{key}} was already released after its cleanup; its immutable recovery generation is already complete.\n",
   "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
   "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":

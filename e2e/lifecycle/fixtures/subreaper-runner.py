@@ -9,7 +9,6 @@ reap children immediately.
 
 import ctypes
 import os
-import signal
 import sys
 
 
@@ -34,23 +33,31 @@ def main() -> int:
         os.execvp(command[0], command)
 
     child_status: int | None = None
-
-    def reap_children(_signal: int, _frame: object) -> None:
-        nonlocal child_status
-        while True:
-            try:
-                pid, status = os.waitpid(-1, os.WNOHANG)
-            except ChildProcessError:
-                return
-            if pid == 0:
-                return
-            if pid == child_pid:
-                child_status = status
-
-    signal.signal(signal.SIGCHLD, reap_children)
-    reap_children(0, None)
+    # A blocking waitpid is the wakeup: it atomically observes an exited child
+    # or sleeps until one exits.  SIGCHLD + check-then-pause can lose the
+    # signal after the check and leave this supervisor paused forever.
     while child_status is None:
-        signal.pause()
+        try:
+            pid, status = os.waitpid(-1, 0)
+        except InterruptedError:
+            continue
+        except ChildProcessError as error:
+            raise RuntimeError("subreaper lost its command child wait status") from error
+        if pid == child_pid:
+            child_status = status
+
+    # Keep the old handler's best-effort reaping of any fixture child that
+    # became waitable alongside the command child, without waiting on a live
+    # fixture after the native test command has completed.
+    while True:
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except InterruptedError:
+            continue
+        except ChildProcessError:
+            break
+        if pid == 0:
+            break
     return os.waitstatus_to_exitcode(child_status)
 
 

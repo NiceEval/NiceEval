@@ -85,6 +85,7 @@ import {
 } from "./lock.ts";
 import {
   acquireSharedStateLeaseEffect,
+  currentProcessIdentityEffect,
   type SharedStateLeaseEffectClaim,
 } from "./shared-state-lease.ts";
 import {
@@ -815,6 +816,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const sandboxSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
   // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
   const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
+  /** A terminal Experiment freezes its own registry before physical stop. */
+  const frozenReusePoolRuns = new Set<AgentRun>();
   // A physical Sandbox number is Run-wide, not pool-local: distinct Eval
   // Groups may materialize identical provider plans concurrently and must not
   // both report `reuseSandbox: 1` for different instances.
@@ -853,6 +856,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     const key = reusePoolKeyOf(a);
     if (key === undefined || a.plan._tag !== "Sandbox") {
       return Effect.succeed({ _tag: "Fresh" });
+    }
+    if (frozenReusePoolRuns.has(a.run)) {
+      return Effect.die(new Error("Sandbox reuse registry was frozen before this Attempt could acquire a pool."));
     }
     let bySpec = reusePools.get(a.run);
     if (bySpec === undefined) {
@@ -896,6 +902,38 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }
     return Effect.succeed({ _tag: "Reuse", pool });
   };
+
+  /**
+   * Pool ownership is Experiment-scoped, not Invocation-scoped. The last
+   * Attempt settlement freezes this registry before stop starts, so no late
+   * acquire can create another physical Sandbox between pool stop and the
+   * Experiment hook's checkpoint/teardown work.
+   */
+  const freezeReusablePoolsForRun = (run: AgentRun): Effect.Effect<void> =>
+    Effect.sync(() => {
+      frozenReusePoolRuns.add(run);
+    }).pipe(
+      Effect.zipRight(Effect.forEach(
+        [...(reusePools.get(run)?.values() ?? [])],
+        (pool) => pool.freeze(),
+        { concurrency: "unbounded", discard: true },
+      )),
+    );
+
+  const stopReusablePoolsForRun = (run: AgentRun): Effect.Effect<void, unknown> => Effect.gen(function* () {
+    const exits = yield* Effect.forEach(
+      [...(reusePools.get(run)?.values() ?? [])],
+      (pool) => Effect.exit(pool.stop()),
+      { concurrency: "unbounded" },
+    );
+    const failures: unknown[] = [];
+    for (const exit of exits) {
+      if (Exit.isFailure(exit)) failures.push(Cause.squash(exit.cause));
+    }
+    if (failures.length > 0) {
+      return yield* Effect.fail(new AggregateError(failures, "Sandbox reuse pool cleanup failed."));
+    }
+  });
 
   // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。两者都只
   // 属于本 Invocation；跨 Invocation 的共享外部状态由 sharedState 租约另行保护，不能把
@@ -1079,6 +1117,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 挂在本地协调根下,与留存注册表 `.niceeval/sandboxes/` 同一个根（默认 cwd/.niceeval，
   // 与 attempt.ts 的 `coordinationRoot` 兜底同一口径）。
   const currentHost = hostname();
+  // Establish process identity lazily: only a configured sharedState opts in
+  // to this fail-closed cross-process coordination requirement.
+  let sharedStateProcessIdentity: string | undefined;
   const makeExperimentHookContext = (run: AgentRun, phase: LifecyclePhase): ExperimentHookContext => {
     const experimentId = run.experimentId;
     return {
@@ -1129,17 +1170,66 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     if (setup._tag !== "InProgress") return setup;
     throw new Error("Experiment setup completed without recording its terminal outcome.");
   };
-  const releaseSharedStateLease = (cell: ExperimentLifecycleCell): Effect.Effect<void> =>
-    Effect.sync(() => {
-      const claim = cell.sharedStateClaim;
-      cell.sharedStateClaim = undefined;
-      return claim;
-    }).pipe(
-      Effect.flatMap((claim) => claim === undefined ? Effect.void : claim.release),
-      // A failed unlink must not skip Experiment teardown or change already-produced verdicts; the
-      // underlying lease remains protected by its heartbeat/expiry recovery path.
-      Effect.ignore,
+  const releaseSharedStateLease = (
+    run: AgentRun,
+    cell: ExperimentLifecycleCell,
+    cleanupSucceeded: () => boolean,
+  ): Effect.Effect<void> => Effect.suspend(() => {
+    const claim = cell.sharedStateClaim;
+    return Effect.sync(() => claim).pipe(
+      Effect.flatMap((heldClaim) => {
+        const claim = heldClaim;
+        if (claim === undefined) return Effect.void;
+        const experimentId = run.experimentId ?? run.agent.name;
+        const recoveryRequired = (reason: string, error?: unknown): Effect.Effect<void> => Effect.sync(() => {
+          const message = t("runner.sharedStateRecoveryRequired", {
+            key: run.sharedState?.key ?? "",
+            ownerToken: claim.ownerToken,
+          }).trimEnd();
+          reportDiagnostic({
+            key: `state-lease-recovery-required:${run.sharedState?.key ?? experimentId}`,
+            code: "state-lease-recovery-required",
+            severity: "warning",
+            message,
+            data: {
+              experimentId,
+              sharedStateKey: run.sharedState?.key ?? "",
+              ownerToken: claim.ownerToken,
+              reason,
+              ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
+            },
+          });
+          recordExperimentDiagnostic({
+            experimentId: run.experimentId,
+            code: "state-lease-recovery-required",
+            level: "warning",
+            message,
+            phase: "experiment.teardown",
+            data: {
+              sharedStateKey: run.sharedState?.key ?? "",
+              ownerToken: claim.ownerToken,
+              reason,
+            },
+          });
+        });
+        if (!cleanupSucceeded()) {
+          // A retained lease is a durable recovery obligation, not a reason
+          // to leave a daemon heartbeat/timer behind after this Invocation.
+          // `abandon` cannot delete or rewrite the record.
+          cell.sharedStateClaim = undefined;
+          return claim.abandon.pipe(
+            Effect.catchAll(() => Effect.void),
+            Effect.zipRight(recoveryRequired("cleanup-failed")),
+          );
+        }
+        // Once release starts its heartbeat is interrupted. Do not retain a
+        // stale in-memory claim after a failed compare-owner mutation; its
+        // durable record is deliberately left for explicit recovery.
+        cell.sharedStateClaim = undefined;
+        return claim.release.pipe(Effect.catchAll((error) => recoveryRequired("release-failed", error)));
+      }),
     );
+  });
   const runExperimentTeardown = (
     run: AgentRun,
     cell: ExperimentLifecycleCell,
@@ -1162,51 +1252,83 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         setup: current.setup,
         completion,
       };
+      let cleanupSucceeded = true;
       const teardown = Effect.gen(function* () {
-        // 强清可能先取得收尾执行权；必须等 setup 的 Effect 结算后再清理。
-        yield* awaitSetup(current.setup);
-        if (!run.teardown) return;
-        reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
-        const startedAt = Date.now();
-        const ctx = makeExperimentHookContext(run, "experiment.teardown");
-        yield* cleanupCallback(() => run.teardown!(ctx)).pipe(Effect.matchEffect({
-          onSuccess: () => Effect.sync(() => {
-            reportExperimentHook({
-              experimentId,
-              hook: "teardown",
-              status: "done",
-              durationMs: Date.now() - startedAt,
-            });
-          }),
-          onFailure: (error) => Effect.sync(() => {
-            reportExperimentHook({
-              experimentId,
-              hook: "teardown",
-              status: "failed",
-              durationMs: Date.now() - startedAt,
-            });
-            // teardown 失败只作运行级诊断，不改任何已产出的 verdict。
-            const message = t("runner.experimentTeardownFailed", {
-              experimentId,
-              message: error instanceof Error ? error.message : String(error),
-            }).trimEnd();
-            reportDiagnostic({
-              key: `experiment-teardown-failed:${experimentId}`,
-              code: "experiment-teardown-failed",
-              severity: "warning",
-              message,
-              data: { experimentId },
-            });
-            recordExperimentDiagnostic({
-              experimentId: run.experimentId,
-              code: "experiment-teardown-failed",
-              level: "warning",
-              message,
-              phase: "experiment.teardown",
-            });
-          }),
-        }));
-        // 这个 Experiment 真正走完 teardown（不论成败）的时刻。
+        // A failed setup still has teardown obligations. Capture its outcome
+        // rather than short-circuiting the physical pool/provider cleanup.
+        yield* Effect.exit(awaitSetup(current.setup));
+
+        // Last Attempt settle -> freeze registry -> stop every reusable pool
+        // (Sandbox lifecycle teardown + provider finalizer) -> author hook.
+        // Stop failures are recorded but never skip later cleanup.
+        const pools = yield* Effect.exit(
+          freezeReusablePoolsForRun(run).pipe(Effect.zipRight(stopReusablePoolsForRun(run))),
+        );
+        if (Exit.isFailure(pools)) {
+          cleanupSucceeded = false;
+          const message = `Sandbox reuse cleanup failed before Experiment teardown: ${String(Cause.squash(pools.cause))}`;
+          reportDiagnostic({
+            key: `sandbox-reuse-cleanup-failed:${experimentId}`,
+            code: "sandbox-reuse-cleanup-failed",
+            severity: "warning",
+            message,
+            data: { experimentId },
+          });
+          recordExperimentDiagnostic({
+            experimentId: run.experimentId,
+            code: "sandbox-reuse-cleanup-failed",
+            level: "warning",
+            message,
+            phase: "experiment.teardown",
+          });
+        }
+
+        if (run.teardown) {
+          reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
+          const startedAt = Date.now();
+          const ctx = makeExperimentHookContext(run, "experiment.teardown");
+          yield* cleanupCallback(() => run.teardown!(ctx)).pipe(Effect.matchEffect({
+            onSuccess: () => Effect.sync(() => {
+              reportExperimentHook({
+                experimentId,
+                hook: "teardown",
+                status: "done",
+                durationMs: Date.now() - startedAt,
+              });
+            }),
+            onFailure: (error) => Effect.sync(() => {
+              cleanupSucceeded = false;
+              reportExperimentHook({
+                experimentId,
+                hook: "teardown",
+                status: "failed",
+                durationMs: Date.now() - startedAt,
+              });
+              // Teardown failure never skips subsequent release handling, but
+              // it makes automatic lease release unsafe.
+              const message = t("runner.experimentTeardownFailed", {
+                experimentId,
+                message: error instanceof Error ? error.message : String(error),
+              }).trimEnd();
+              reportDiagnostic({
+                key: `experiment-teardown-failed:${experimentId}`,
+                code: "experiment-teardown-failed",
+                severity: "warning",
+                message,
+                data: { experimentId },
+              });
+              recordExperimentDiagnostic({
+                experimentId: run.experimentId,
+                code: "experiment-teardown-failed",
+                level: "warning",
+                message,
+                phase: "experiment.teardown",
+              });
+            }),
+          }));
+        }
+        // This Experiment has reached its terminal cleanup point whether its
+        // individual cleanup steps succeeded or failed.
         experimentCompletedAt.set(experimentId, new Date().toISOString());
       }).pipe(
         Effect.ensuring(
@@ -1227,15 +1349,33 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             }
           })),
         ),
-        // The state lease covers user teardown and all prior Sandbox/provider finalizers. Release
-        // only after this lifecycle has become terminal, never at an individual Attempt boundary.
-        Effect.ensuring(releaseSharedStateLease(cell)),
+        // Include both the cleanup body and its lifecycle-registration
+        // finalizer in this decision. A failure while unregistering the
+        // teardown ownership is still an incomplete cleanup and must retain
+        // the sharedState lease; release itself remains outside this check.
+        Effect.onExit((exit) => Exit.isFailure(exit)
+          ? Effect.sync(() => {
+              cleanupSucceeded = false;
+            })
+          : Effect.void),
+        // Lease release happens only when all prior cleanup was successful.
+        // Otherwise the durable owner token remains for the public explicit
+        // recovery command; the CLI exit sweep is not allowed to erase it.
+        // Read `cleanupSucceeded` only when this finalizer executes. Passing
+        // its current boolean while constructing the pipeline would capture
+        // the initial `true` and could release after a later teardown failure.
+        Effect.ensuring(Effect.suspend(() => releaseSharedStateLease(run, cell, () => cleanupSucceeded))),
       );
-      const settle = Effect.exit(restore(teardown)).pipe(
+      // The initiating waiter may be interrupted, but the one published
+      // cleanup fiber must still advance through every later cleanup stage.
+      // `cleanupCallback` remains explicitly interruptible for its own
+      // bounded timeout; this mask only prevents a caller's cancellation from
+      // skipping pool stop or Experiment teardown entirely.
+      const settle = Effect.exit(Effect.uninterruptible(teardown)).pipe(
         Effect.flatMap((exit) => Deferred.done(completion, exit)),
         Effect.asVoid,
       );
-      yield* restore(settle).pipe(Effect.forkIn(invocationScope));
+      yield* settle.pipe(Effect.forkIn(invocationScope));
       return completion;
     })).pipe(
       Effect.flatMap((completion) => completion === undefined ? Effect.void : restore(Deferred.await(completion))),
@@ -1347,31 +1487,44 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const run = a.run;
         const experimentId = run.experimentId ?? run.agent.name;
         if (run.sharedState && cell.sharedStateClaim === undefined) {
+          const processIdentity = sharedStateProcessIdentity ?? (yield* currentProcessIdentityEffect());
+          sharedStateProcessIdentity = processIdentity;
           const acquired = yield* restore(acquireSharedStateLeaseEffect(
             coordinationRoot,
             run.sharedState.key,
-            lockIdentity,
-            opts.signal === undefined ? {} : { signal: opts.signal },
+            {
+              experimentId,
+              pid: process.pid,
+              host: currentHost,
+              processIdentity,
+            },
+            {
+              ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+              onWaitStart: (holder) => {
+                const message = t("runner.sharedStateRecoveryRequired", {
+                  key: run.sharedState!.key,
+                  ownerToken: holder.ownerToken,
+                }).trimEnd();
+                reportDiagnostic({
+                  key: `state-lease-recovery-required:${run.sharedState!.key}`,
+                  code: "state-lease-recovery-required",
+                  severity: "warning",
+                  message,
+                  data: {
+                    experimentId,
+                    sharedStateKey: holder.key,
+                    ownerToken: holder.ownerToken,
+                    host: holder.host,
+                    pid: holder.pid,
+                    processIdentity: holder.processIdentity,
+                    heartbeatAt: holder.heartbeatAt,
+                    status: holder.status,
+                  },
+                });
+              },
+            },
           ));
           cell.sharedStateClaim = acquired.claim;
-          if (acquired.takenOver) {
-            const message = t("runner.sharedStateLeaseTakenOver", { key: run.sharedState.key }).trimEnd();
-            reportDiagnostic({
-              key: `state-lease-taken-over:${run.sharedState.key}`,
-              code: "state-lease-taken-over",
-              severity: "info",
-              message,
-              data: { experimentId, sharedStateKey: run.sharedState.key },
-            });
-            recordExperimentDiagnostic({
-              experimentId: run.experimentId,
-              code: "state-lease-taken-over",
-              level: "warning",
-              message,
-              phase: "experiment.setup",
-              data: { sharedStateKey: run.sharedState.key },
-            });
-          }
         }
         const completion = yield* Deferred.make<void, unknown>();
         // 先写 Active、再登记和启动 worker：随后任何 attempt 或强清都会复用同一个 Effect 完成点。

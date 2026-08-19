@@ -96,7 +96,26 @@ Run；weak scan 不保证同一时刻的全局快照。并发创建 `complete` �
 `clean` 与 `migrate` 属于 maintenance（维护）。它们取得 exclusive maintenance lease（排他维护租约），
 因此仍与 reader、append writer 和其它 maintenance 操作互斥。冲突返回 `record-maintenance-busy`。
 
-`sharedState.key` 保护跨 Invocation 的外部可变状态。其持有期从 Experiment setup 和 Sandbox setup 之前开始，到所有 teardown 与 finalizer 结束。
+`sharedState.key` 保护跨 Invocation 的外部可变状态。其持有期从 Experiment setup 和 Sandbox setup 之前开始。
+最后一个 Attempt settle 后，同一 Experiment 的 reusable pool registry 先冻结，不能再创建 pool。
+
+全部 pool 的 single-flight stop 完成 Sandbox teardown 与 Provider finalizer，之后才执行 Experiment teardown。只有所有实际
+cleanup 成功才释放 sharedState lease。setup 失败仍要等待停稳并执行后续 cleanup；不会仅因 setup 失败留下 lease。
+
+若任何实际 cleanup、finalizer 或 teardown 失败、超时或中断，Runner 继续尝试余下收尾。lease 留给公开显式恢复，退出
+sweep 不得删除。
+
+sharedState authority 是 owner-token-checked 的不可变 generation transition：active、recovering 与 free 都只能从
+精确前代发布下一代，旧 owner 无法删除或替换新 owner。
+
+heartbeat 是按 exact owner token + generation 写入、原子替换的独立诊断 sidecar。公开读取只在这两个值仍匹配当前
+immutable head 时采用它的时间显示。sidecar 写/读失败不改变 authority，旧 owner 的 sidecar 也不能影响新 generation。
+heartbeat 不会过期、接管或复活持有者；PID/heartbeat 也从不是自动接管依据。
+
+链只接受 `free → active`、`active/recovering → recovering` 与 `active/recovering → free`。连续 recovery 必须保留原始
+owner evidence，并更换 recovery id 与 actor。free 的 `previous` 必须与真实前代完整相等；其它相邻状态一律 fail closed。
+
+v2 legacy 仅可作为 generation 1 的 exact-owner recovering 迁移前代。
 
 `sharedState.key` 只协调外部可变状态，不提供 Record revision 或写事务。whole-root copy、Git checkout 或外部修改前必须停止相关 Invocation 和 reader；已经释放 reader 的 Report execute 或站点写入不访问该 root。
 

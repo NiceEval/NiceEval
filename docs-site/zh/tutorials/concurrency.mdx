@@ -151,6 +151,8 @@ export default defineExperiment({
 
 `sharedState` 只提供互斥，不负责 checkpoint 存储、原子提交、回滚或强杀后的半次写入恢复。能原子回存时应原子回存，否则换新 key，从干净 cohort 重建。跨机器协调仍归外部编排。
 
+NiceEval 不会根据超时、PID 或 heartbeat 自动接管租约。原 owner 暂停时仍然拥有租约；强杀或 cleanup 失败后，等待方继续阻塞，避免两条 Invocation 同时改同一份状态。确认原 owner 已终止、外部状态已静止后，按[运行被强杀后恢复](/zh/troubleshooting/recover-after-kill#恢复共享状态租约)里的公开命令检查 owner token，并显式恢复。
+
 只有一个 Agent 服务频繁限流时，同样在这个实验上设 `maxConcurrency: N`，不要去降全局上限——降全局会连累同批其它实验。实验级并发上限退避时不放行第 N+1 条，所以服务不会在已经限流时继续被加压。
 
 ### Hook 里的状态按 Sandbox 存

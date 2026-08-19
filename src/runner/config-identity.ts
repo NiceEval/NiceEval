@@ -17,8 +17,8 @@ import type { AgentRun } from "./types.ts";
  * 一次运行的**配置身份**:`computeConfigHash` 的哈希输入,字段集合与
  * docs/feature/experiments/cache.md「指纹:两个哈希嵌套」逐字对应。
  *
- * 键恒存在(值可以是 `undefined`):稳定序列化把键本身也算进字节,少一个键就是另一个哈希。
- * 新增公开配置字段时只在这里裁决一次「进不进 configHash」。
+ * 可选配置必须真的省略键，而不是写入 `undefined` 或一个 Omitted 哨兵；否则未声明配置会
+ * 无端改变基础 configHash。新增公开配置字段时只在这里裁决一次「进不进 configHash」。
  */
 export interface ConfigIdentity {
   readonly agent: string;
@@ -29,7 +29,7 @@ export interface ConfigIdentity {
   readonly plugins: JsonValue;
   readonly sandboxReuse: boolean;
   /** Stable public key for the shared-state mutex, never a secret or stored state. */
-  readonly sharedState: DeclaredConfigValue<string>;
+  readonly sharedState?: string;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   readonly sandboxLayer: JsonValue;
   readonly judge: JudgeConfigIdentity;
@@ -95,13 +95,14 @@ function freezeJson<Value extends JsonValue>(value: Value): Value {
 }
 
 function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
+  const { sharedState, ...withoutSharedState } = identity;
   return Object.freeze({
-    ...identity,
+    ...withoutSharedState,
     model: Object.freeze(identity.model),
     reasoningEffort: Object.freeze(identity.reasoningEffort),
     flags: freezeJson({ ...identity.flags }),
     plugins: freezeJson(identity.plugins),
-    sharedState: Object.freeze(identity.sharedState),
+    ...(sharedState === undefined ? {} : { sharedState }),
     sandboxLayer: freezeJson(identity.sandboxLayer),
     judge: identity.judge._tag === "Unconfigured"
       ? Object.freeze({ _tag: "Unconfigured" as const })
@@ -181,7 +182,7 @@ export function configIdentityForRun(
     flags: run.flags,
     plugins: run.pluginBehavior ?? [],
     sandboxReuse: run.sandboxReuse ?? false,
-    sharedState: declaredString(run.sharedState?.key),
+    ...(run.sharedState === undefined ? {} : { sharedState: run.sharedState.key }),
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     judge: judgeIdentity(judge),
     agentInstalls: agentInstallPlansForRun(run),
@@ -202,7 +203,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     flags: exp.flags ?? {},
     plugins: exp.plugins ?? [],
     sandboxReuse: exp.sandboxReuse ?? false,
-    sharedState: declaredString(exp.sharedState?.key),
+    ...(exp.sharedState === undefined ? {} : { sharedState: exp.sharedState.key }),
     sandboxLayer: exp.sandboxLayer,
     judge: judgeIdentity(exp.judge),
     agentInstalls: exp.agentInstalls,
@@ -210,7 +211,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
 }
 
 /**
- * 身份 → 字段路径表。可省略配置先归一为完整 ADT，再由 `_tag` 决定是否产生字段路径。
+ * 身份 → 字段路径表。真正未声明的配置不会生成对象键或字段路径。
  */
 function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   const out = new Map<string, JsonValue>();
@@ -222,7 +223,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   putDeclared("model", identity.model);
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
-  putDeclared("sharedState.key", identity.sharedState);
+  if (identity.sharedState !== undefined) put("sharedState.key", identity.sharedState);
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("plugins", identity.plugins);
   put("sandboxLayer", identity.sandboxLayer);
@@ -316,6 +317,7 @@ export function counterfactualConfigIdentity(
     else if (group === "judge") judge = historical.judge;
     else agentInstalls = historical.agentInstalls;
   }
+  const sharedState = accepted.has("config:sharedState.key") ? historical.sharedState : current.sharedState;
   return freezeConfigIdentity({
     agent: accepted.has("config:agent") ? historical.agent : current.agent,
     model: accepted.has("config:model") ? historical.model : current.model,
@@ -325,7 +327,7 @@ export function counterfactualConfigIdentity(
     flags,
     plugins,
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,
-    sharedState: accepted.has("config:sharedState.key") ? historical.sharedState : current.sharedState,
+    ...(sharedState === undefined ? {} : { sharedState }),
     sandboxLayer,
     judge,
     agentInstalls,

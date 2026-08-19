@@ -1,9 +1,8 @@
 // owner: docs/engineering/testing/e2e/README.md#process-group-terminal-state
-// regression: memory/testkit-zombie-only-process-group.md
 // Rerun: pnpm e2e --repo lifecycle -- --run test/process-group-zombie-cleanup.test.ts -t "owned Linux process group"
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { defined, pollUntil, startProcess } from "@niceeval/testkit";
+import { defined, pollUntil, startProcess, withProcess } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 interface ZombieFixture {
@@ -104,6 +103,66 @@ async function stopFixtureHelper(pid: number): Promise<void> {
   );
 }
 
+// This controls the exact lost-wakeup boundary: the legacy SIGCHLD + pause
+// loop releases its child after checking status, while the waitpid loop
+// releases only after Linux reports that it is blocked in do_wait.
+const subreaperWakeupProbe = String.raw`
+import os
+from pathlib import Path
+import signal
+import sys
+import threading
+import time
+
+runner = sys.argv[1]
+release_read, release_write = os.pipe()
+os.set_inheritable(release_read, True)
+child = (
+    "import os; "
+    "fd = int(os.environ['SUBREAPER_RACE_RELEASE_FD']); "
+    "os.read(fd, 1); "
+    "os._exit(17)"
+)
+
+def release_when_waitpid_blocks() -> None:
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if Path("/proc/self/wchan").read_text().strip() == "do_wait":
+            os.write(release_write, b"x")
+            return
+        time.sleep(0.001)
+
+threading.Thread(target=release_when_waitpid_blocks, daemon=True).start()
+original_pause = signal.pause
+
+def release_inside_old_pause() -> None:
+    os.write(release_write, b"x")
+    time.sleep(0.05)
+    return original_pause()
+
+signal.pause = release_inside_old_pause
+os.environ["SUBREAPER_RACE_RELEASE_FD"] = str(release_read)
+source = Path(runner).read_text()
+sys.argv = [runner, sys.executable, "-c", child]
+namespace = {"__name__": "__main__", "__file__": runner}
+exec(compile(source, runner, "exec"), namespace)
+`;
+
+test("Lifecycle subreaper returns a child exit observed at its blocking wait boundary", async () => {
+  const runner = join(process.cwd(), "fixtures", "subreaper-runner.py");
+  await withProcess(
+    ["python3", "-c", subreaperWakeupProbe, runner],
+    { cwd: process.cwd(), processGroup: true, graceMs: 100, timeoutMs: 2_000 },
+    async (probe) => {
+      const result = await probe.done;
+      expect(result.exitCode, result.diagnostic()).toBe(17);
+      expect(result.signal, result.diagnostic()).toBeNull();
+      expect(result.timedOut, result.diagnostic()).toBe(false);
+    },
+  );
+});
+
+// regression: memory/testkit-zombie-only-process-group.md
 test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies", async () => {
   const handle = startProcess(
     ["python3", join(process.cwd(), "fixtures", "zombie-only-process-group.py")],

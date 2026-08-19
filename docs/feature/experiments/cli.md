@@ -149,9 +149,24 @@ Experiment `maxConcurrency` 只在本 Invocation 内限流，不产生跨 Invoca
 跨 Invocation 的 Eval dispatch claim 仍由 case lock 协调；声明 `sharedState.key` 的 Invocation 在拿到
 共享状态租约前不运行 Experiment Hook、不创建 Sandbox，也不持有 Eval lock 或全局并发位。
 
-过期 case lock 被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。过期
-`sharedState` 租约被接管时，产生 `state-lease-taken-over` info notice，并在所属 Run 留下诊断；它只
-说明互斥已恢复，不能证明强杀前的外部状态已回滚。完整形态见[协调恢复输出案例](output/coordination-recovery.md)。
+过期 case lock 被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。`sharedState`
+从不自动接管：等待方不运行 Hook、不创建 Sandbox、不持有 Eval lock 或全局并发位，直到当前 owner 正常释放，或操作员
+完成显式恢复。heartbeat 是随 owner 活动更新的非权威诊断 sidecar，暂停 owner 时它可以停止前进，但绝不因超时失权。
+
+显式 sharedState recovery 只能附在一个唯一 Experiment 的 teardown 命令上：
+
+```bash
+niceeval exp <selector> --teardown \
+  --recover-shared-state <key> \
+  --owner-token <token> \
+  --confirm-owner-terminated \
+  --confirm-remote-quiesced
+```
+
+不带 token 或确认时，该公开入口只显示 key、Experiment、owner token、host、PID、process identity 与当前 exact
+token/generation 匹配时的 heartbeat 诊断。若同机 exact process identity 仍活则拒绝；无可靠身份也 fail closed。恢复和正常 release 都只推进 exact owner
+generation，错误/旧 token 不会修改 lease，也不能删除恢复后的新 holder。成功显示 `explicitly recovered sharedState key`；
+cleanup 失败保留时显示 `state-lease-recovery-required`。
 
 case-lock recovery notice 的稳定字段如下：
 

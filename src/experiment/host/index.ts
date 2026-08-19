@@ -160,7 +160,7 @@ function debugAgentRun(experiment: DiscoveredExperiment, evalId: string): AgentR
     earlyExit: experiment.earlyExit ?? false,
     sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
-    sharedState: experiment.sharedState,
+    ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
     judge: experiment.judge,
     ...resolveRunTimeout(undefined, experiment.timeoutMs),
     budget: experiment.budget,

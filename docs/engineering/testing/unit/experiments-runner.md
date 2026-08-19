@@ -244,7 +244,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 租约在 Experiment setup、Sandbox create 和 lifecycle setup 前取得，在 Sandbox teardown、Provider finalizer 与 Experiment teardown 后释放。
   - 等待方不占全局位、不创建 Sandbox、不提前持有 Eval 锁。释放后先重做整个 Experiment 的携带规划。
   - 证明全携带不取新租约，以及仍有工作时取得租约两面。同 Invocation 的两个 Experiment id 共用 key 也串行；不同 key 可并行。
-  - 心跳过期后接管产生 `state-lease-taken-over` diagnostic，但不伪造外部状态已回滚的事实。`--rerun all` 不跳过租约。
+  - sharedState heartbeat 只提供诊断，永不触发接管。强杀或 cleanup 失败保留 owner evidence，等待方只能保持阻塞或走公开的显式恢复；`--rerun all` 不跳过租约。
   - `state_lease_wait` 起止事件与 `elsewhere` 计数归约进反馈状态。字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
   - 锁文件走隔离 `niceevalRoot` 下的真实文件系统（每例独立临时根，不许写进真实仓库的 `.niceeval/`），时间推进用 `TestClock`，不做真实等待。
   - 逐条目原子文件原语（命名、tmp→fsync→rename→fsync 目录写、损坏跳过的全目录扫描、rename 墓碑认领互斥）抽在 `src/shared/entry-file-store.ts`（用例锁、收尾登记、留存清单三个消费方共用）。由 `src/shared/entry-file-store.test.ts` 独立证明：写入/读取往返、全目录扫描跳过损坏条目与点文件、缺失目录不抛错、认领在两个并发调用者之间互斥（恰一个拿到 `true`）。

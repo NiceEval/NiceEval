@@ -122,11 +122,24 @@ Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
 `sharedState: { key }` 声明该 Experiment 会恢复、修改并回存一份跨 Invocation 共享的可变状态。
 Runner 通过同一项目 Coordination 域内的 `key` 独占整个状态区间。同一 Record root 的多个
 Invocation 也使用这条规则；Record 自身不提供这个互斥。
-区间从 Experiment `setup` 与任何 Sandbox lifecycle `setup()` 之前开始，直到所有 Sandbox `teardown()`、Provider finalizer 与 Experiment `teardown` 完成。
-这个字段只提供互斥，不代替 checkpoint 存储、原子提交或强杀恢复。
+
+区间从 Experiment `setup` 与任何 Sandbox lifecycle `setup()` 之前开始。最后一个 Attempt settle 后，Runner
+先冻结该 Experiment 的 reusable Sandbox pool registry。随后它只停止一次全部 pool，包括 Sandbox teardown 与
+Provider finalizer，最后执行 Experiment `teardown`。
+
+只有整条 cleanup 链全部成功才释放租约。setup 失败仍要等待停稳并继续 cleanup；它本身不会把成功的 cleanup
+变成遗留 lease。任何实际 cleanup、finalizer 或 teardown 的失败、超时或中断都会保留 lease，CLI exit sweep 不会删除它。
+
+sharedState 没有 heartbeat 过期接管或 PID 自动接管。owner token 与 generation 都不可变；heartbeat 以 exact
+token/generation 专属的原子 sidecar 更新，且只作诊断。sidecar 不能改变 authority，也不会让旧 owner 影响新 generation。
+确认原 owner 已终止且远端状态已静默后，操作员才可用公开的 `niceeval exp <selector> --teardown` recovery flow 运行
+一次补偿 teardown；详见 [CLI · 协调等待与恢复](cli.md#协调等待与恢复)。这个字段只提供互斥，不代替 checkpoint
+存储、原子提交或强杀恢复。
 
 同一 Experiment 的独立 Sandbox 不共享可变状态时省略它；两个 Experiment 确实指向同一 checkpoint 时使用同一 `key`。
 key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z0-9._/-]{0,127}`；不把 token、账号或其它凭据编进 key。
+未声明时，配置身份对象和 manifest 都不写 `sharedState` 键，保持既有 base config hash；声明、删除或改 key 分别在
+`--dry` 的具名差异中显示为 `config:sharedState.key` 的 added、removed 或 changed。
 
 `classifyFailure` 是实验作者识别共享基建死因的纯分类器。
 它只声明失败是否可重试、以及死因波及 attempt、eval 还是整个 experiment，不配置重试次数或退避策略，也不参与 fingerprint。

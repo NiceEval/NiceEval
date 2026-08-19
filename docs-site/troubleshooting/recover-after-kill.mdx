@@ -1,6 +1,6 @@
 ---
 title: "Recover After a Forced Kill"
-description: "After kill -9, a CI timeout, or a power loss stops a process, rerun from published work, clean incomplete Run remnants, reclaim leftover Sandboxes, and finish experiment cleanup."
+description: "After kill -9, a CI timeout, or a power loss stops a process, rerun from published work, reclaim leftover Sandboxes, finish experiment cleanup, and explicitly recover shared-state leases."
 ---
 
 When `niceeval exp` is directly killed midway by `kill -9`, a CI time limit, or power loss, the process has no chance to clean up. You can be left with three kinds of residue: unfinished Evals, Sandbox instances that still consume Provider resources, and external services started by experiment `setup` but not shut down (tunnels, shared services, or license seats). Each has its own recovery entry point. You do not need to inspect Docker or a cloud console manually.
@@ -59,7 +59,37 @@ niceeval exp compare/bub-e2b --teardown
 - You can run it at any time; it does not depend on records left by the previous run. `teardown` itself must tolerate repeated execution.
 - The original process's memory is gone after a forced kill. In `teardown`, recover resources to stop from durable information such as a container name, PID file, or idempotent shutdown script. Do not depend on an object that `setup` kept in memory.
 
+## Recover a shared-state lease
+
+An Experiment that declares `sharedState.key` holds its lease until Sandbox teardown, Provider finalizers, and Experiment `teardown` all succeed. A forced kill or cleanup failure leaves the lease in place. A new Invocation with the same key keeps waiting; NiceEval never takes over because of a PID check, timeout, or heartbeat age.
+
+First use the public inspection command without a token or confirmation flags:
+
+```bash
+niceeval exp compare/bub-e2b --teardown \
+  --recover-shared-state mempal/codex/cohort-a
+```
+
+The inspection prints the key, Experiment, owner token, host, PID, process identity, and latest heartbeat, then exits nonzero without changing the lease. First confirm that the original owner has terminated. Then confirm that its checkpoint, remote service, and write-back path are quiescent. Explicit recovery runs compensating Experiment `teardown`; it cannot roll back partially written business state.
+
+After those checks, copy the complete owner token exactly as the inspection printed it and confirm both conditions explicitly:
+
+```bash
+niceeval exp compare/bub-e2b --teardown \
+  --recover-shared-state mempal/codex/cohort-a \
+  --owner-token <displayed-token> \
+  --confirm-owner-terminated \
+  --confirm-remote-quiesced
+```
+
+- NiceEval refuses recovery while the original local process remains alive. A process stopped with `SIGSTOP` is still alive.
+- A wrong or stale token changes nothing and cannot release a later owner's lease.
+- When two recovery commands compete, only one can claim recovery ownership.
+- If compensating `teardown` fails, the lease remains held. Fix the teardown problem, inspect again, and retry with the currently displayed token.
+- Only after successful recovery can a waiting Invocation with the same key acquire the lease and start Experiment setup or create a Sandbox.
+
 ## Prevention: make the next forced kill harmless
 
 - When a long task runs in a time-limited environment such as CI or an external watchdog, leave enough time for the Run to reach its `complete` publication point. Later runs can adopt only results that were published by a complete Run.
 - Make experiment `teardown` idempotent: repeated execution must not fail, and an already-stopped target must count as success. That is a prerequisite for the cleanup-recovery mechanism to work correctly.
+- When using `sharedState.key`, make checkpoint write-back atomic or compensatable. Explicit lease recovery cannot repair a partial business write.
