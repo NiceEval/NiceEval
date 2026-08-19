@@ -85,7 +85,7 @@ export interface CommandOptions {
    *
    * 语义跨 provider 一致,各 provider 映射到自己的原生机制(docker:`exec --user`;E2B:
    * `{ user }`;Vercel:只认 `"root"`,映射 `{ sudo: true }`,其它值报错;local:任何值都报错)。
-   * 本就全程 root 的 provider视作 no-op;完全无法换身份的 provider 可不支持(抛错)—— 但**省略与
+   * 本就全程 root 的 provider 视作 no-op；完全无法换身份的 provider 可不支持（抛错）——但**省略与
    * 显式值的语义保持一致**,不因 provider 而变。
    */
   readonly user?: string;

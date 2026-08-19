@@ -255,6 +255,8 @@ TERM → grace period → KILL 结束 owned process。正文已经让进程退�
 
 POSIX 上的 `dispose()` 在根进程已退出后仍检查它创建的 process group；同组后代仍存活时继续执行 TERM → grace → KILL，
 并等待整组消失。Windows 没有等价的负 PID group signal，`processGroup: true` 会在 spawn 前明确失败，不静默退化成只杀根进程。
+Linux 上被 PID 1 接管但尚未 reap 的 zombie 仍会让 signal 0 报告 process group 存在，而 TERM / KILL 已不可能改变它。
+Testkit 会通过 procfs 区分成员状态：只有仍含非 zombie 成员的组才算存活；procfs 无法可靠读取时保持 fail-closed，不把未知状态当作进程组已经终止。
 
 正文和 cleanup 同时失败时抛 `AggregateError([bodyError, cleanupError])`，主错误排第一并作为 cause。只有 cleanup 失败时，
 直接抛 cleanup error。

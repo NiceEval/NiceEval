@@ -85,8 +85,8 @@ baseUrl?: string;
 env?: Readonly<globalThis.Record<string, string>>;
 ```
 
-Extra process environment for Claude Code. Values stay private runtime data and do not enter carry identity.
-Mirror behavior-changing non-secret values into Experiment flags or the owning Plugin identity.
+Claude Code 进程的额外环境变量。值只保留在运行时，不进入结果沿用身份。
+会改变行为的非敏感值应同时写入 Experiment flags 或所属 Plugin 的身份。
 
 #### `maxTurns`
 

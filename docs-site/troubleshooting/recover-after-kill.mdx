@@ -1,0 +1,95 @@
+---
+title: "Recover After a Forced Kill"
+description: "After kill -9, a CI timeout, or a power loss stops a process, rerun from published work, reclaim leftover Sandboxes, finish experiment cleanup, and explicitly recover shared-state leases."
+---
+
+When `niceeval exp` is directly killed midway by `kill -9`, a CI time limit, or power loss, the process has no chance to clean up. You can be left with three kinds of residue: unfinished Evals, Sandbox instances that still consume Provider resources, and external services started by experiment `setup` but not shut down (tunnels, shared services, or license seats). Each has its own recovery entry point. You do not need to inspect Docker or a cloud console manually.
+
+Normal Ctrl+C and SIGTERM are outside this page's scope. On those paths, NiceEval completes all cleanup itself and leaves no residue.
+
+## Rerun from published work
+
+Only Attempts from a successfully sealed, published Run are Record facts. A rerun can adopt those eligible results without spending Agent or Sandbox cost again. An incomplete Run directory left by the force-killed Invocation is ignored: its draft Attempts are not displayed, referenced, or reused.
+
+```bash
+niceeval exp compare/bub-e2b memory/commit0
+```
+
+- If another complete Run has already published three eligible Attempts for an `--attempts 5` target, only two more run. If the three drafts existed only inside the force-killed Run before its `complete` publication point, none are reused and all five positions may run again.
+- When a force-killed experiment has unfinished cleanup, a rerun first completes experiment-level `teardown` once, then starts. Leaks do not accumulate.
+- Attempts with an `errored` Verdict are not reused; they run again as usual.
+- Add `--rerun all` to start everything over.
+
+After confirming that no live Invocation owns the Record root, run `niceeval clean` to remove incomplete Run remnants. Cleaning does not turn draft Attempts into reusable results.
+
+## Reclaim uncleaned Sandbox instances
+
+First check which instances belong to a dead run:
+
+```bash
+niceeval sandbox list --orphans
+```
+
+```text
+ID        PROVIDER  OWNER              STARTED            STATE
+f31b9a02  docker    pid 4242@mbp dead  2026-07-20 14:02   orphan
+```
+
+After confirmation, reclaim them with one command:
+
+```bash
+niceeval sandbox prune
+```
+
+- `orphan` means that the owner process has been confirmed dead, so the instance is safe to destroy. Instances from a run that is still executing never appear in the list.
+- Companion containers and networks for a multi-container (Compose) Eval are listed and destroyed as a group with the main instance. You do not need to finish with a manual `docker rm`.
+- Instances created on another machine or that cannot be verified are marked `unverified` and are left alone by default. After confirmation, use `niceeval sandbox prune --force`.
+- Vercel Sandbox cannot be verified from metadata. It is automatically reclaimed after the Provider retention period and needs no action.
+- A retained environment from `--keep-sandbox` is unaffected by `prune`; keep managing it with `niceeval sandbox stop`.
+
+## Finish experiment cleanup
+
+External services started by experiment `setup` must be stopped by experiment `teardown`. If you do not want to rerun a force-killed run yet, complete cleanup separately:
+
+```bash
+niceeval exp compare/bub-e2b --teardown
+```
+
+- This runs only the selected experiment's `teardown`. It runs no Eval and no `setup`.
+- You can run it at any time; it does not depend on records left by the previous run. `teardown` itself must tolerate repeated execution.
+- The original process's memory is gone after a forced kill. In `teardown`, recover resources to stop from durable information such as a container name, PID file, or idempotent shutdown script. Do not depend on an object that `setup` kept in memory.
+
+## Recover a shared-state lease
+
+An Experiment that declares `sharedState.key` holds its lease until Sandbox teardown, Provider finalizers, and Experiment `teardown` all succeed. A forced kill or cleanup failure leaves the lease in place. A new Invocation with the same key keeps waiting; NiceEval never takes over because of a PID check, timeout, or heartbeat age.
+
+First use the public inspection command without a token or confirmation flags:
+
+```bash
+niceeval exp compare/bub-e2b --teardown \
+  --recover-shared-state mempal/codex/cohort-a
+```
+
+The inspection prints the key, Experiment, owner token, host, PID, process identity, and latest heartbeat, then exits nonzero without changing the lease. First confirm that the original owner has terminated. Then confirm that its checkpoint, remote service, and write-back path are quiescent. Explicit recovery runs compensating Experiment `teardown`; it cannot roll back partially written business state.
+
+After those checks, copy the complete owner token exactly as the inspection printed it and confirm both conditions explicitly:
+
+```bash
+niceeval exp compare/bub-e2b --teardown \
+  --recover-shared-state mempal/codex/cohort-a \
+  --owner-token <displayed-token> \
+  --confirm-owner-terminated \
+  --confirm-remote-quiesced
+```
+
+- NiceEval refuses recovery while the original local process remains alive. A process stopped with `SIGSTOP` is still alive.
+- A wrong or stale token changes nothing and cannot release a later owner's lease.
+- When two recovery commands compete, only one can claim recovery ownership.
+- If compensating `teardown` fails, the lease remains held. Fix the teardown problem, inspect again, and retry with the currently displayed token.
+- Only after successful recovery can a waiting Invocation with the same key acquire the lease and start Experiment setup or create a Sandbox.
+
+## Prevention: make the next forced kill harmless
+
+- When a long task runs in a time-limited environment such as CI or an external watchdog, leave enough time for the Run to reach its `complete` publication point. Later runs can adopt only results that were published by a complete Run.
+- Make experiment `teardown` idempotent: repeated execution must not fail, and an already-stopped target must count as success. That is a prerequisite for the cleanup-recovery mechanism to work correctly.
+- When using `sharedState.key`, make checkpoint write-back atomic or compensatable. Explicit lease recovery cannot repair a partial business write.

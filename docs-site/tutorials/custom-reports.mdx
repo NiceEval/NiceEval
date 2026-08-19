@@ -1,26 +1,23 @@
 ---
-title: "Write a Custom Report"
-sidebarTitle: "Custom Reports"
-description: "Define a Measure first, then use Pages and components to organize closed analysis results into a Report you can view and export."
+title: "Write Custom Reports"
+description: "Define Analysis statistics first, then use standard React JSX to write a Report that can be read in the terminal, web, and static site."
 ---
 
-A custom Report has three clear responsibilities. Published run results preserve what happened. Analysis defines statistical meaning. Report organizes pages and display. You neither need nor can read result files from a page or register extra data types.
+A custom Report is responsible only for pages and presentation. The Record stores published facts, Analysis defines population, denominator, and missing-data meaning, and the Report organizes `ClosedRows`, `MetricValue`, and closed `DomainView` values.
 
 ```text
-Published run results
-        ↓
-Analysis: Measure + aggregate() / query()
-        ↓
-ClosedRows / MetricValue / DomainView
-        ↓
-Report: Page + component
-        ↓
-ReportExecution → show / view / export
+Record → Sample → Analysis
+                    ↓
+          ClosedRows / MetricValue / DomainView
+                    ↓
+              Report Pages and components
+             ↙                    ↘
+  show: one target Page       view / --out: every Page
 ```
 
-## Define a Measure
+## Start with a Measure
 
-Define reusable statistical meaning outside the Report module. This Measure groups by Experiment and aggregates the latest completed Attempt for each logical position into a pass rate.
+Define business statistical meaning outside the Report module. A Measure decides the denominator, missing-data behavior, and Evidence. A Page must not recalculate a pass rate or cost from array length.
 
 ```ts
 // reports/quality-measures.ts
@@ -59,14 +56,12 @@ export const passRate = defineMeasure({
 });
 ```
 
-`defineMeasure()` fixes the input, denominator, and missing-data semantics together. Do not infer a pass rate from an array length in a Page, or unwrap a number and wrap it again for display.
+## Organize a Page
 
-## Let a component obtain closed rows
+A Report module is a `.tsx` file and uses TypeScript's `"jsx": "react-jsx"`. Composite components obtain the Sample fixed for this selection through `ctx.scope`. Components and Pages do not receive a Record reader, file paths, or browser-request capability.
 
-A composite component receives a `Sample` while it executes. Use `aggregate()` to obtain rows, then pass them directly to neutral table and chart components.
-
-```ts
-// reports/quality.ts
+```tsx
+// reports/quality.tsx
 import {
   aggregate,
   Bars,
@@ -77,68 +72,107 @@ import {
 } from "niceeval/report";
 import { experiment, passRate } from "./quality-measures.ts";
 
-const QualityComparison = defineComponent(async (_props, { sample }) => {
-  const rows = await aggregate(sample, {
+const QualityComparison = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
     by: { experiment },
     values: { passRate },
   });
 
-  return Grid({
-    children: [
-      Bars({ points: rows, x: "experiment", y: "passRate" }),
-      Table({ rows, caption: "Experiment pass rate" }),
-    ],
-  });
+  return (
+    <Grid>
+      <Bars points={rows} x="experiment" y="passRate" />
+      <Table rows={rows} caption="Experiment pass rate" />
+    </Grid>
+  );
 });
 
 export default defineReport({
-  title: "Quality report",
-  pages: [
-    {
-      id: "overview",
-      path: "/",
-      title: "Overview",
-      render: () => QualityComparison({}),
-    },
-  ],
+  title: { en: "Quality", "zh-CN": "质量" },
+  pages: [{
+    id: "overview",
+    path: "/",
+    title: { en: "Overview", "zh-CN": "概览" },
+    render: () => <QualityComparison />,
+  }],
 });
 ```
 
-`rows` retain each row's identity, problems, and complete `MetricValue`. `Table` consumes rows, charts consume points, and `Stat` consumes a complete value. Terminal, web, and static sites therefore display the same statistical meaning.
+`ctx.scope` is the component's only way to obtain a Sample. `ctx.report` provides the read-only Report title, navigation Page summaries, and verified `PricingProfile` or `null` `pricing`; it is not Config, the Runner price table, or a second price input.
 
-## Add detail pages or a custom primitive
+`Table` and charts use the same rows. Every Measure cell retains its full `MetricValue`: `samples` is the number that actually contributes, `total` is the predetermined denominator, and `partial`, `empty`, `unsupported`, and `failed` must not be hidden or changed to zero.
 
-For a family of detail addresses, declare `params`, `load`, and `render` on the same Page. `params.enumerate(sample)` lists every instance for static export. `load` can use `context.evidence(locator)` to obtain a closed evidence view. Instance routes come only from the selected scope and closed values; opening a page in a browser never reads results again.
+## Declare a Profile for cost
 
-For a new display primitive, `defineComponent()` provides both `text` and `web`. Its optional `resolve()` computes one closed value before both renderers. The two surfaces then read that same result. Do not replace the terminal surface with raw HTML or content that exists only on the web.
+Cost does not derive from Config. When you need a cost Measure, explicitly declare a USD Profile in the same Report module, then pass that same value to `defineReport({ pricing })`:
+
+```tsx
+import { definePricingProfile } from "niceeval/report";
+
+const pricing = definePricingProfile({
+  currency: "USD",
+  display: { decimalPlaces: 2, rounding: "half-away-from-zero" },
+  provenance: {
+    kind: "declared-rate-card",
+    source: "https://platform.openai.com/pricing",
+    asOf: 1785542400000,
+  },
+  coverage: [{
+    coverageId: "openai-gpt-5-6-2026-08",
+    state: "priced",
+    selector: { provider: "openai", model: "gpt-5.6" },
+    effective: { startsAt: 1785542400000, endsAt: null },
+    charges: [
+      { kind: "token", bucket: "input", perMillionTokens: "1.25" },
+      { kind: "token", bucket: "output", perMillionTokens: "10" },
+      { kind: "token", bucket: "cache-read", perMillionTokens: "0.125" },
+      { kind: "token", bucket: "cache-write", perMillionTokens: "1.25" },
+      { kind: "request", requestKind: "model", ratePerRequest: "0" },
+    ],
+  }],
+});
+```
+
+In a component, call only `costUSD(pricing)` or `totalCostUSD(pricing)`; neither has a zero-argument form. Analysis computes the slot-provider ledger, exact total, and `numerator / denominator` mean. The Report Host only validates the Profile, captures the closure, and presents the result. The Runner calculates `estimatedCostUSD` independently even when observed cost exists; the Experiment budget and `maxCost` use it, while the Report does not read it.
+
+The `cost` cell from `aggregate(ctx.scope, { values: { cost: costUSD(pricing) } })` is observable `CostMetricValue`, whose `cell.projection` is a `CostProjectionValue`. Both types, plus the projection's state, basis, ledger, and reason-data types, are exported type-only from `niceeval/report`.
+
+Codex sealed Usage contains a `requestKind: "model"` observation. Therefore, even when a model request is free, token-priced coverage must declare `{ kind: "request", requestKind: "model", ratePerRequest: "0" }` explicitly.
+The four token charges plus that zero request charge form a complete rate card. Missing it does not imply free: strict coverage makes the relevant slot-provider `unavailable` and records `pricing-charge-not-found`.
+
+Without a Profile, Summary displays English `Cost unavailable — this report does not declare a PricingProfile.` or Chinese `成本不可用——此报告未声明 PricingProfile。`; a cost × pass-rate scatter displays English `Cost × pass rate scatter unavailable — this report does not declare a PricingProfile.` or Chinese `成本 × 通过率散点图不可用——此报告未声明 PricingProfile。`. Neither component requests a cost Measure, captures a projection, or displays a number.
+
+## Add detail pages and display primitives
+
+When you need several detail addresses, define a parameterized Page. `pages` is the sole page collection, so detail pages must be explicitly declared there. `params.enumerate(sample)` lists every instance only for `view` or static export; the Host does not build additional detail routes. `show --page <route>` executes only one requested instance and checks that `decode()` followed by `encode()` produces the same canonical key.
+
+A new display primitive uses two surfaces through `defineComponent()`: `resolve()` obtains closed input at most once, then `text()` and `web()` read the same value. The two surfaces must not separately call Analysis again or substitute web-only content for terminal text.
 
 ## Set it as the project default
 
-Import the Report in `niceeval.config.ts`. Later `show` and `view` commands use it when `--report` is absent:
+Load the Report in `niceeval.config.ts`. Current-project `show` and `view` without an explicit `--report` use it:
 
 ```ts
 import { defineConfig } from "niceeval";
-import quality from "./reports/quality.ts";
+import quality from "./reports/quality.tsx";
 
 export default defineConfig({
   report: quality,
 });
 ```
 
-## Handle partial data and failures
-
-Analysis problems travel with `MetricValue`, `ClosedRows`, and domain views into a page. `partial` retains a displayable result and its complete denominator. `unsupported` and `failed` retain their reason instead of becoming zero or silently disappearing from a table.
-
-An author callback that throws, invalid parameters, an invalid semantic tree, or a route conflict is an execution problem. `show` and `view` display other successful pages. Static export does not publish a site with an execution problem.
-
-## Run and publish
+## Run, read, and publish
 
 ```sh
-npx niceeval show --run <run-id> --report ./reports/quality.ts
-npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
-npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
+pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx
+pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx --json
+pnpm exec niceeval view --run <run-id> --report ./reports/quality.tsx --no-open
+pnpm exec niceeval view --run <run-id> --report ./reports/quality.tsx --out ./quality-site
 ```
 
-All three commands select the same scope, execute the same Report, and produce a fixed `ReportExecution`. A later successful `view` rebuild produces the next execution. A failure keeps the previous usable result.
+All commands form a Sample from the same selection, but their scope differs: `show` and `show --json` execute one Page and capture only that Page's projection closure; `view` and `view --out` enumerate every Page, then form a complete site and `_niceeval/data/projections.json`. The bytes of that file are part of revision identity. A successful `view` rebuild atomically replaces the current site; failure retains the previous usable site. `--out` must point to a directory that does not exist.
 
-`--out` must point to a directory that does not exist. See [Publish a Static Report](/tutorials/publish-report) and [Report API](/reference/report-components) for details.
+## Next
+
+- [Report API](/reference/report-components): the complete boundaries for Pages, components, JSON, and styles.
+- [View Results](/tutorials/viewing-results): select a Sample and Pages.
+- [Publish a Static Report](/tutorials/publish-report): export steps for offline inspection and deployment.

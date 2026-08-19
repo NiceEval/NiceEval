@@ -62,29 +62,15 @@ npx niceeval exp checkout --rerun all
 
 ## 明确接受已有 Attempt
 
-当自动采用条件不满足，但你确认某个已有 Attempt 仍可用时，使用完整 locator：
+身份变化不一定表示历史结果已经失效，但 NiceEval 不会替操作者猜测。先从 dry run 或结果页取得完整 locator，核对候选 Attempt；确认它在新配置下仍然成立时，明确接受它：
 
 ```sh
 npx niceeval accept @1K1P0VJAPVJ12
 ```
 
-`accept` 先检查所有输入，再发布一个以 `reference` 采用该 Attempt 的新 Run。操作者理由、差异和资格会随该 Run 保存。它不会修改源 Attempt，也不会复制源 Attempt 的业务值。
+`accept` 会发布一个新的采用 Run，不会修改原 Attempt。一次需要接受多个结果时，把全部 locator 放在同一条命令中；NiceEval 会先原子预检所有输入，避免只接受一半。
 
-新 Run 保留该 Experiment 当前完整的 expected-slot 分母。命令中选中的 slot 写作 `accepted`，同 Run 中没有被选中的 sibling slot 写作 `not-dispatched`。因此一次只接受一个 locator 时，这个 Run 的其它位置可能没有指标输入。
-
-每次 `accept` 调用都会发布新 Run，不会修改或合并上一次调用。连续接受同一 Experiment 的多个 locator 后，`project-current` 会保留这些仍匹配的 Run occurrence。默认 Overview 会在有边框的 `Result coverage` 区域提示只有部分预期结果可用；这里的可用数是结果覆盖率，不是通过率或 score。
-
-需要接受同一 Experiment 的多个结果时，把 locator 放进同一条命令：
-
-```sh
-npx niceeval accept @1K1P0VJAPVJ12 @1K1P0VJAPVJ13
-```
-
-同一次调用会为该 Experiment 发布一个 Run，并让两个目标 slot 都成为 `accepted`。需要核对某次接受的精确分母时，复制成功反馈中的 Run ID：
-
-```sh
-npx niceeval show --run <accepted-run-id>
-```
+候选 locator 的取得方式、审阅项目、原子预检和失败处理见[审阅并采用历史 Attempt](/zh/tutorials/accept-results)。
 
 ## 发布后不可修改
 

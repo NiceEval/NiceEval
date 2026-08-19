@@ -143,8 +143,7 @@ export interface NoticeEvent {
   phase?: LifecyclePhase;
   experimentId?: string;
   evalId?: string;
-  resource?: "concurrency-slot" | "case-lock";
-  slot?: number;
+  resource?: "case-lock";
   previousPid?: number;
   previousHost?: string;
 }
@@ -301,7 +300,6 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           };
           if (event.severity === "info") {
             const resource = coordinationResourceField(event.data?.resource);
-            const slot = numberField(event.data?.slot);
             const previousPid = numberField(event.data?.previousPid);
             const previousHost = stringField(event.data?.previousHost);
             writeEvent(io, {
@@ -309,7 +307,6 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
               level: "info",
               ...common,
               ...(resource !== undefined ? { resource } : {}),
-              ...(slot !== undefined ? { slot } : {}),
               ...(previousPid !== undefined ? { previousPid } : {}),
               ...(previousHost !== undefined ? { previousHost } : {}),
             });
@@ -474,7 +471,7 @@ function numberField(value: JsonValue | undefined): number | undefined {
 }
 
 function coordinationResourceField(value: JsonValue | undefined): NoticeEvent["resource"] {
-  return value === "concurrency-slot" || value === "case-lock" ? value : undefined;
+  return value === "case-lock" ? value : undefined;
 }
 
 /** 通知 data 是 JSON 边界；只有全局 LifecyclePhase 闭集成员才能进入 notice/warning phase。 */
