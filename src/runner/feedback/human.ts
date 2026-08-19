@@ -23,7 +23,7 @@
 
 import { t } from "../../i18n/index.ts";
 import { formatCost } from "../../shared/format.ts";
-import { compactAssertionSummary, fitCompactAssertionSummary } from "../../assertions/display.ts";
+import { compactAssertionSummary, fitCompactAssertionSummary, stripControl } from "../../assertions/display.ts";
 import { COORDINATION_RECOVERED_CODE, encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import {
   panelCapabilityOf as panelCapability,
@@ -32,7 +32,7 @@ import {
   type PanelMode,
   type PanelRow,
 } from "../../report/model/panel.ts";
-import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth } from "../../report/model/text-layout.ts";
+import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth, wrapDisplay } from "../../report/model/text-layout.ts";
 import type {
   CommandPlan,
   CommandPlanLane,
@@ -109,8 +109,7 @@ function panelCapabilityForFeedback(io: FeedbackIO): { mode: PanelMode; width: n
 const HUMAN_FAILURE_CAP = 10;
 /** live 面板 FAILURES 分节滚动保留的条数(见 cli.md「运行中的 live 面板」)。 */
 const LIVE_FAILURES_VISIBLE = 5;
-/** 结束反馈 FAILURES 面板按失败形态聚合后,展开的组数上限;超出收进
- *  `+K more kinds — niceeval view` 尾行(见 cli.md「人看的结束反馈」)。 */
+/** 结束反馈中断言失败形态的展开上限；execution error 必须逐条保留自己的 message，不受此上限折叠。 */
 const FAILURE_GROUPS_CAP = 10;
 /** 非 TTY / `--json` 没有可依赖的终端宽度,失败单行投影用固定预算(见
  *  docs/feature/assertions/library/display.md「一条摘要怎样排版」)。 */
@@ -121,6 +120,7 @@ const NON_TTY_HEARTBEAT_IDLE_MS = 30_000;
  *  这里只需要给「下一帧」留出一行余地,不需要额外的表头/尾行预留)。 */
 const DASHBOARD_ROW_RESERVE = 1;
 const HUMAN_RESULTS_EXPERIMENT_CAP = 5;
+const HUMAN_ERROR_TEXT_MAX_CHARS = 240;
 
 type HumanResultItem = {
   readonly experimentId: string;
@@ -216,7 +216,10 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
   return rows;
 }
 
-function buildPreAttemptErrorRows(results: readonly EvalResult[]): { readonly rows: PanelRow[]; readonly slots: number } | undefined {
+function buildPreAttemptErrorRows(
+  results: readonly EvalResult[],
+  panel: { mode: PanelMode; width: number },
+): { readonly rows: PanelRow[]; readonly slots: number } | undefined {
   const errored = results.filter((result) =>
     result.verdict === "errored" && result.locator === undefined && result.error !== undefined
   );
@@ -230,24 +233,16 @@ function buildPreAttemptErrorRows(results: readonly EvalResult[]): { readonly ro
     else groups.set(failureId, [result]);
   }
   const rows: PanelRow[] = [];
-  for (const [failureId, members] of groups) {
+  const contentWidth = panelContentWidth(panel.width, panel.mode);
+  for (const members of groups.values()) {
     const representative = members[0]!;
     const error = representative.error!;
-    const codeMatch = /\bERR_[A-Z0-9_]+\b/u.exec(error.message);
-    const errorCode = codeMatch?.[0] ?? error.code;
-    const focusedMessage = codeMatch === null ? error.message.slice(-600) : error.message.slice(codeMatch.index);
     rows.push({ kind: "line", text: `${FAILURE_SYMBOL} ${representative.experimentId ?? "default"} · sandbox provisioning failed` });
-    rows.push({ kind: "line", text: `  phase: ${error.origin.scope === "run" ? "sandbox.image.build" : error.origin.phase}` });
-    rows.push({ kind: "line", text: `  affected: ${members.map((member) => member.id).join(", ")}` });
-    rows.push({ kind: "line", text: `  shared failure: ${failureId}` });
-    rows.push({ kind: "line", text: `  ${errorCode}` });
-    for (const line of focusedMessage.split(/\r?\n/u).slice(0, 6)) {
-      const text = line.trimEnd();
-      if (text.length > 0) rows.push({ kind: "line", text: `  ${text}` });
-    }
-    if (errorCode === "ERR_PNPM_IGNORED_BUILDS") {
-      rows.push({ kind: "line", text: "  fix: Review these dependencies and configure pnpm allowBuilds." });
-    }
+    rows.push({
+      kind: "line",
+      text: `  affected: ${members.map((member) => `${member.experimentId ?? "default"}/${member.id}`).join(", ")}`,
+    });
+    rows.push(...labelledWrappedRows("error", boundedHumanError(error.message), contentWidth));
   }
   return { rows, slots: errored.length };
 }
@@ -384,7 +379,7 @@ export function renderDurableLines(
     case "summary":
       return buildSummaryLines(event, state, panel);
     case "receipt":
-      return buildReceiptLines(event, panel);
+      return buildReceiptLines(event, state, panel);
     default: {
       // 穷尽性检查:新增 DurableFeedbackEvent 变体时这里编译期报错提醒补上对应分支。
       const exhaustive: never = event;
@@ -475,20 +470,8 @@ function buildFailureFactLine(failure: FailureFact, maxWidth: number): string {
   const budget = Math.max(0, maxWidth - stringWidth(prefix));
   const info = failure.fact
     ? fitCompactAssertionSummary(failure.fact, budget)
-    : buildErroredInfo(failure.phase, failure.code, failure.reason);
+    : `error: ${boundedHumanError(failure.reason)}`;
   return prefix + clipDisplayWidth(info, budget);
-}
-
-/**
- * errored 且没有主 Fact 摘要（真正的结构化执行错误）时的信息段:
- * `errored · <phase> · <code>`,余量够再接 `: <message>`。`phase`/`code` 用未翻译的原始字面量
- * (`LifecyclePhase` 枚举值 / `AttemptError.code`),不走 `phaseLabel()` 的人读短语 —— 这一段
- * 是给读者对照 `--json` `error` 事件、`result.json` 与 `show` 里同一个字面量用的,不是散文。
- */
-function buildErroredInfo(phase: LifecyclePhase | undefined, code: string | undefined, reason: string): string {
-  const parts = ["errored", ...(phase ? [phase] : []), ...(code ? [code] : [])];
-  const base = parts.join(" · ");
-  return reason ? `${base}: ${reason}` : base;
 }
 
 /** 按显示列硬夹紧,超宽尾部截断补 `…`。`fitCompactAssertionSummary` 的截断口径是字符数,不是
@@ -614,7 +597,7 @@ function buildSummaryLines(
     }));
   }
 
-  const preAttemptErrors = buildPreAttemptErrorRows(summary.results);
+  const preAttemptErrors = buildPreAttemptErrorRows(summary.results, panel);
   if (preAttemptErrors !== undefined) {
     blocks.push(renderPanel({
       title: t("feedback.human.errorsHeader"),
@@ -694,7 +677,13 @@ function buildFailuresPanelRows(
 ): { rows: PanelRow[]; meta: string } {
   const groups = groupFailuresByShape(failures);
   const contentWidth = panelContentWidth(panel.width, panel.mode);
-  const shown = groups.slice(0, FAILURE_GROUPS_CAP);
+  let shownAssertionKinds = 0;
+  const shown = groups.filter((group) => {
+    if (group.representative.fact === undefined) return true;
+    shownAssertionKinds += 1;
+    return shownAssertionKinds <= FAILURE_GROUPS_CAP;
+  });
+  const omitted = groups.length - shown.length;
   const multi = shown.filter((g) => g.size > 1);
   const countWidth = Math.max(0, ...multi.map((g) => stringWidth(`${FAILURE_SYMBOL} ×${g.size}`)));
 
@@ -706,10 +695,10 @@ function buildFailuresPanelRows(
       rows.push(buildMultiFailureGroupRow(group, countWidth));
     }
   }
-  if (groups.length > FAILURE_GROUPS_CAP) {
+  if (omitted > 0) {
     rows.push({
       kind: "line",
-      text: t("feedback.human.moreFailureKinds", { count: groups.length - FAILURE_GROUPS_CAP }),
+      text: t("feedback.human.moreFailureKinds", { count: omitted }),
     });
   }
   return { rows, meta: t("feedback.human.failuresTotalKinds", { total: failures.length, kinds: groups.length }) };
@@ -740,18 +729,14 @@ function groupFailuresByShape(failures: readonly FailureNotice[]): FailureShapeG
     .sort((a, b) => b.size - a.size);
 }
 
-/** 组 key 与形态摘要文本共用同一个"剥掉 received 的断言摘要"投影(有主断言摘要时,`failed`
- *  与 Fact unavailable 造成的 `errored` 都走这条);没有主 Fact 摘要的 `errored`（真正的
- *  结构化执行错误)按 `phase · code` 分组,摘要文本复用 `buildErroredInfo`(不带 message)。 */
+/** 断言按稳定形态聚合；execution error 的 key 包含 locator，确保不同 Attempt 不会因共享
+ * phase/code 而吞掉各自的 Provider message。 */
 function failureShapeOf(failure: FailureNotice): { key: string; shapeText: string } {
   if (failure.fact) {
     const shapeText = compactAssertionSummary({ ...failure.fact, received: undefined, additionalFailures: 0 });
     return { key: `fact\u0000${failure.fact.title}\u0000${failure.fact.matcher ?? ""}`, shapeText };
   }
-  return {
-    key: `errored\u0000${failure.phase ?? "?"}\u0000${failure.code ?? "?"}`,
-    shapeText: buildErroredInfo(failure.phase, failure.code, ""),
-  };
+  return { key: `errored\u0000${failure.locator}`, shapeText: "error" };
 }
 
 function buildMultiFailureGroupRow(group: FailureShapeGroup, countWidth: number): PanelRow {
@@ -768,13 +753,14 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
   const identityLine = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]`;
   const indent = stringWidth(`${FAILURE_SYMBOL} `);
   const budget = Math.max(0, contentWidth - indent);
-  const info = failure.fact
-    ? fitCompactAssertionSummary(failure.fact, budget)
-    : buildErroredInfo(failure.phase, failure.code, failure.reason);
-  return [
-    { kind: "line", text: identityLine },
-    { kind: "line", text: `${" ".repeat(indent)}${clipDisplayWidth(info, budget)}` },
-  ];
+  const rows: PanelRow[] = [{ kind: "line", text: identityLine }];
+  if (failure.fact) {
+    rows.push({ kind: "line", text: `${" ".repeat(indent)}${clipDisplayWidth(fitCompactAssertionSummary(failure.fact, budget), budget)}` });
+  } else {
+    rows.push(...labelledWrappedRows("error", boundedHumanError(failure.reason), contentWidth));
+  }
+  rows.push(...labelledWrappedRows("details", `niceeval show ${failure.locator}`, contentWidth));
+  return rows;
 }
 
 /** `WARNINGS` 面板:`state.diagnostics` 已经按去重 key 折叠,这里再按对外稳定词法 `code` 二次
@@ -824,16 +810,41 @@ function warningCodeLabel(code: string, count: number): string {
 /** `NEXT` 面板只由 receipt 的真实 Run ID 给出 Record 读取命令。 */
 function buildReceiptLines(
   event: DurableFeedbackEvent & { type: "receipt" },
+  state: RunFeedbackState,
   panel: { mode: PanelMode; width: number },
 ): string[] {
   const rows: PanelRow[] = [];
+  const published = new Set(event.receipt.runIds);
+  const emitted = new Set<string>();
+  for (const [experimentId, runId] of state.runIdsByExperiment) {
+    if (!published.has(runId)) continue;
+    rows.push({ kind: "line", text: experimentId });
+    rows.push(...labelledWrappedRows("details", `niceeval show --run ${runId}`, panelContentWidth(panel.width, panel.mode)));
+    emitted.add(runId);
+  }
   for (const runId of event.receipt.runIds) {
-    rows.push({ kind: "line", text: `niceeval show --run ${runId}` });
+    if (!emitted.has(runId)) rows.push({ kind: "line", text: `details: niceeval show --run ${runId}` });
   }
   if (rows.length === 0) {
     rows.push({ kind: "line", text: "No published Record Runs are available for this invocation." });
   }
   return renderPanel({ title: t("feedback.human.nextHeader"), rows, width: panel.width, mode: panel.mode });
+}
+
+function boundedHumanError(message: string): string {
+  const safe = stripControl(message).replace(/\s+/gu, " ").trim();
+  if (safe.length <= HUMAN_ERROR_TEXT_MAX_CHARS) return safe;
+  return `…${safe.slice(-(HUMAN_ERROR_TEXT_MAX_CHARS - 1))}`;
+}
+
+function labelledWrappedRows(label: string, text: string, contentWidth: number): PanelRow[] {
+  const prefix = `  ${label}: `;
+  const continuation = " ".repeat(stringWidth(prefix));
+  const lines = wrapDisplay(text, Math.max(4, contentWidth - stringWidth(prefix)));
+  return lines.map((line, index) => ({
+    kind: "line" as const,
+    text: `${index === 0 ? prefix : continuation}${line}`,
+  }));
 }
 
 /** estimated cost 展示:金额前加 `~`,明确是价目表估算(observed 只留在 result.usage.costUSD)。 */

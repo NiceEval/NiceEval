@@ -1,0 +1,6 @@
+#!/bin/sh
+if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+  exit 1
+fi
+printf '%s\n' 'sandbox builder transport failed while contacting unix:///fixture/docker.sock: provider feedback sentinel appears at the end of this deliberately long single-line stderr' >&2
+exit 42

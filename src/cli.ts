@@ -2123,6 +2123,7 @@ function runEvaluationCommand(
       session: sessionTracker,
       onCurrentRecordReusePlan: (current) => Effect.sync(() => coordinator.start({
         ...plan,
+        shape: { ...plan.shape, runIds: current.runIds },
         reused: current.reused,
         ...(current.reusedFailures.length === 0 ? {} : { reusedFailures: current.reusedFailures }),
       })),

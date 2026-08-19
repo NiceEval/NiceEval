@@ -354,7 +354,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     return failure === undefined ? [] : [failure];
   }));
   if (opts.onCurrentRecordReusePlan !== undefined) {
-    yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures });
+    yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures, runIds });
   } else {
     // Direct library callers have no feedback coordinator. Preserve their
     // fallback failure signal without turning a current readback into a legacy

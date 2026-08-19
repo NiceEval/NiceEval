@@ -35,6 +35,22 @@
 | deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`，`show @<locator>` 显示阶段、退出码与摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
 | deliberate-score | 确定性的 Score Eval       | Human 结束标题为 `SCORED`，`RESULTS` 显示实际 `2 score · 1/1 complete`，不冒充 `passed` |
 
+#### cli-provider-error-feedback
+
+Given 同一次 Human invocation 选中三个 Experiment。两个 custom provider 在 `sandbox.create` 以相同
+phase/code、不同长 `message` 失败，分别代表 E2B 与 Vercel 外部边界。第三个 Dockerfile sandbox 在 Attempt
+创建前以确定性 builder stderr 失败；custom provider 的 `cause` 另含只存在于内部的 secret 哨兵。
+
+When 从安装后的 candidate 运行 `niceeval exp provider-error --rerun all`。
+
+Then：
+
+- 三条安全封口后的 `error:` 都可见，长文本按显示宽度折行并按单条预算收口；不同 message 不因 phase/code 相同而合并；
+- Human 不出现 cause secret、`n1`、BuildKey、timing node、failureId、`cause:` 或 `fix:`；
+- 两条 post-Attempt error 各自紧跟 `details: niceeval show @<locator>`；pre-Attempt error 在 receipt 后的 `NEXT`
+  按 Experiment 紧跟 `details: niceeval show --run <runId>`；
+- 测试实际执行这三个 details 命令，并分别读回所属错误；旧 candidate 对上述长期结果为红，新 candidate 为绿。
+
 ### 缓存
 
 1. 首次带 `--rerun all` 执行并保存对照 Run。
