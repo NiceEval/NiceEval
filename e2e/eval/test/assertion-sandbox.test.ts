@@ -6,6 +6,13 @@ import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
+interface ExpEvent {
+  event: string;
+  evalId?: string;
+  locator?: string;
+  verdict?: string;
+}
+
 interface ShowDocument {
   readonly data: {
     readonly kind: string;
@@ -51,10 +58,9 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       const run = await niceeval.run(["exp", "assertion-sandbox", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
-      const evaluations = run.expEvalEvents();
       const evaluation = only(
-        evaluations,
-        (event) => event.evalId === "assertion-sandbox",
+        run.ndjson<ExpEvent>(),
+        (event) => event.event === "eval" && event.evalId === "assertion-sandbox" && event.locator !== undefined,
         run.diagnostic(),
       );
       expect(evaluation).toMatchObject({
@@ -64,12 +70,12 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       });
       expect(`${run.stdout}\n${run.stderr}`).not.toContain("workspace-diff-unavailable");
       const bulkEvaluation = only(
-        evaluations,
-        (event) => event.evalId === "workspace-diff-cap",
+        run.ndjson<ExpEvent>(),
+        (event) => event.event === "eval" && event.evalId === "workspace-diff-cap" && event.locator !== undefined,
         run.diagnostic(),
       );
       expect(bulkEvaluation).toMatchObject({ verdict: "passed" });
-      const shown = await niceeval.run(["show", bulkEvaluation.locator, "--json"]);
+      const shown = await niceeval.run(["show", bulkEvaluation.locator!, "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const document = shown.json<ShowDocument>();
       expect(document.data.kind).toBe("attempt");
@@ -83,7 +89,7 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
           omittedAtLeast: 29_001,
         }],
       });
-      const timing = await niceeval.run(["show", bulkEvaluation.locator, "--timing=full", "--json"]);
+      const timing = await niceeval.run(["show", bulkEvaluation.locator!, "--timing=full", "--json"]);
       expect(timing.exitCode, timing.diagnostic()).toBe(0);
       const timingDocument = timing.json<TimingDocument>();
       expect(timingDocument.data.kind).toBe("timing");
