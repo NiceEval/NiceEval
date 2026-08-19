@@ -414,7 +414,9 @@ v1 不为 Runner 的内部 lifecycle 增加新的持久 phase：`sandbox.queue` 
 
 `agent.turn` 的持久 timing label 从 session / turn coordinate 形成。主 session 写 `turnN`，额外 session 写
 `sessionN.turnN`。这里的点号是 Observability v1 `StableLabel` 对 send window `sessionN/turnN` 的兼容编码，
-不改变 window ID。
+不改变 window ID。Analysis / Report 的公开投影把该内部编码还原为 `sessionN/turnN`，因此 `show --timing`、
+Report 与其它公开读面始终展示同一枚 canonical turn token；Record reader 读取原始 attachment 时仍可观察到
+持久的点号编码。
 
 其它标准 activity 的人读 label 不符合 `StableLabel` 时，持久值回退为它自己的稳定 key。未知 activity 仍使
 collection partial。

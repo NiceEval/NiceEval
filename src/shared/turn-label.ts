@@ -10,6 +10,12 @@ export function formatTurnLabel(sessionIndex: number, turnIndex: number): string
 
 /** 把旧 artifact 的坐标标签归一成当前展示格式；其它 opaque label 原样保留。 */
 export function normalizeTurnLabel(label: string): string {
-  const match = /^s([1-9]\d*)\/t([1-9]\d*)$/.exec(label);
-  return match === null ? label : formatTurnLabel(Number(match[1]), Number(match[2]));
+  const legacyMatch = /^s([1-9]\d*)\/t([1-9]\d*)$/.exec(label);
+  if (legacyMatch !== null) {
+    return formatTurnLabel(Number(legacyMatch[1]), Number(legacyMatch[2]));
+  }
+  const observabilityV1Match = /^session([1-9]\d*)\.turn([1-9]\d*)$/.exec(label);
+  return observabilityV1Match === null
+    ? label
+    : formatTurnLabel(Number(observabilityV1Match[1]), Number(observabilityV1Match[2]));
 }
