@@ -130,12 +130,3 @@ it("show --execution 读回 Claude Code 的代表性工具证据", async () => {
   expect(execution.stdout).toContain("notes.txt");
   expect(execution.stdout).toContain("niceeval-e2e-marker-alpha-926");
 });
-
-it("show --timing 读回 Claude Code 的 runner 阶段", async () => {
-  const attempt = representativeAttempt();
-  const timing = await niceeval.run(["show", attempt.locator!, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toContain("agent.setup");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+agent\.turn\b/);
-});

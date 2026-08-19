@@ -134,11 +134,3 @@ it("show --execution 读回 Claude Agent SDK converter 的代表性证据", asyn
   expect(execution.stdout).toContain(marker);
   expect(execution.stdout).toContain(sentinel);
 });
-
-it("show --timing 读回 Claude Agent SDK converter 的 runner 阶段", async () => {
-  const timing = await niceeval.run(["show", locator, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
-
-});

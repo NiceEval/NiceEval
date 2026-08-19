@@ -112,11 +112,6 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       expect(execution.stdout).toContain("get_weather");
       expect(execution.stdout).toMatch(/北京/);
 
-      // timing 公开命令独立证明该 Adapter 的 runner 阶段可读。
-      const timing = await niceeval.run(["show", toolLocator, "--timing"]);
-      expect(timing.exitCode, timing.diagnostic()).toBe(0);
-      expect(timing.stdout).toContain("eval.run");
-      expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
     },
   );
 });

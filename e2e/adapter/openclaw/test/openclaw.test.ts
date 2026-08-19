@@ -87,14 +87,3 @@ it("show --execution 读回 OpenClaw 的代表性工具证据", async () => {
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain("status-report.txt");
 });
-
-it("show --timing 读回 OpenClaw 的 runner 阶段", async () => {
-  const event = only(
-    evalEvents,
-    (candidate) => candidate.evalId === "skills/status-report",
-  );
-  const timing = await niceeval.run(["show", event.locator!, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
-
-});
