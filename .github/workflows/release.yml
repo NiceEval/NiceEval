@@ -128,7 +128,7 @@ jobs:
           echo "[release] candidate sha256=$candidate_sha256"
 
       - name: Upload exact release candidate and plan
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: niceeval-release-candidate
           path: ${{ runner.temp }}/niceeval-release-candidate
@@ -202,13 +202,13 @@ jobs:
 
       - name: Set up Python
         if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Restore Playwright browser cache
         if: contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -223,7 +223,7 @@ jobs:
           pnpm exec playwright install --with-deps "${browsers[@]}"
 
       - name: Download exact release candidate
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: niceeval-release-candidate
           path: ${{ runner.temp }}/niceeval-release-candidate
@@ -352,7 +352,7 @@ jobs:
 
       - name: Upload release Repo receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: niceeval-release-e2e-${{ steps.paths.outputs.safe }}
           path: ${{ steps.paths.outputs.artifact-root }}
@@ -382,13 +382,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download exact release candidate and plan
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: niceeval-release-candidate
           path: ${{ runner.temp }}/niceeval-release-candidate
 
       - name: Download all release Repo receipts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: niceeval-release-e2e-*
           path: ${{ runner.temp }}/niceeval-release-receipts
@@ -416,7 +416,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Download verified release candidate
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: niceeval-release-candidate
           path: ${{ runner.temp }}/niceeval-release-candidate

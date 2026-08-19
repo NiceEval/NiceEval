@@ -64,7 +64,7 @@ jobs:
       candidate_sha256: ${{ steps.pack.outputs.candidate_sha256 }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -259,7 +259,7 @@ jobs:
 
       - name: Upload exact NiceEval candidate
         if: steps.plan.outputs.has-jobs == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: niceeval-e2e-candidate
           path: |
@@ -288,7 +288,7 @@ jobs:
         include: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve dependency cache inputs
         id: dependency-cache
@@ -303,7 +303,7 @@ jobs:
               lockfile="e2e/${repo_dir}/pnpm-lock.yaml"
               test -f "$lockfile"
               echo "$lockfile"
-            done < <(jq -r '.[]' <<< "$REPO_DIRS_JSON")
+            done < <(node -e 'for (const dir of JSON.parse(process.env.REPO_DIRS_JSON)) console.log(dir)')
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -349,12 +349,12 @@ jobs:
 
       - name: Set up Python
         if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Download exact NiceEval candidate
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: niceeval-e2e-candidate
           path: ${{ runner.temp }}/niceeval-e2e-candidate
@@ -453,7 +453,7 @@ jobs:
             --artifact-root "$ARTIFACT_ROOT"
 
       - name: Redact secrets in artifactRoot
-        if: always() && needs.prepare.outputs.inject-secrets == 'true'
+        if: always() && steps.safe.outcome == 'success' && steps.cell.outcome == 'success' && needs.prepare.outputs.inject-secrets == 'true'
         env:
           ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
           MANIFESTS_FILE: ${{ steps.cell.outputs.manifests-file }}
@@ -504,8 +504,8 @@ jobs:
           NODE_EOF
 
       - name: Upload cell artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: always() && steps.safe.outcome == 'success'
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-${{ steps.safe.outputs.id }}
           path: ${{ steps.safe.outputs.artifact-root }}
