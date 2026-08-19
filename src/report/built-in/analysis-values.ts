@@ -6,12 +6,7 @@
  */
 
 import type { Sample } from "../../analysis/index.ts";
-import {
-  aggregate,
-  attempt,
-  evalId,
-  experiment,
-} from "../model/aggregate.ts";
+import { aggregate } from "../model/aggregate.ts";
 import {
   durationMs,
   passRate,
@@ -54,13 +49,3 @@ export async function loadBuiltInExperimentRows(sample: Sample) {
 
 export type BuiltInExperimentRows = Awaited<ReturnType<typeof loadBuiltInExperimentRows>>;
 export type BuiltInExperimentRow = BuiltInExperimentRows[number];
-
-/** One closed row per selected logical Attempt; used only by the Attempts Page. */
-export function loadBuiltInAttemptRows(sample: Sample) {
-  return aggregate(sample, {
-    by: { experiment, evalId, attempt },
-    values: { passRate, durationMs, tokens },
-  });
-}
-
-export type BuiltInAttemptRows = Awaited<ReturnType<typeof loadBuiltInAttemptRows>>;

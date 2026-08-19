@@ -2,10 +2,8 @@
 export {
   standard,
   standardAttemptPage,
-  standardAttemptsPage,
   standardExperimentPage,
   standardOverviewPage,
-  standardTracesPage,
 } from "./standard.tsx";
 
 export {

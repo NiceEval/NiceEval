@@ -157,7 +157,11 @@ function chartFieldLabel(field: string, meta: DatasetField, locale: RL): string 
     tokens: "experimentList.tokens",
   };
   const base = dictionary[field] ? localeText(locale, dictionary[field]!) : field;
-  return meta.unit ? `${base}(${meta.unit})` : base;
+  return meta.unit && meta.format !== "percent" ? `${base}(${meta.unit})` : base;
+}
+
+function chartTickUnit(meta: DatasetField): string | undefined {
+  return meta.format === "percent" ? "%" : meta.unit;
 }
 
 /** 解析点所属 series 句柄与下标;单系列隐式图不声明视觉身份。 */
@@ -598,7 +602,7 @@ function renderChartWeb(
             <text key={`ay${tick}`} className="niceeval-chart-tick" x={MARGIN.left - 8} y={yScale.scale(tick) + 3} textAnchor="end">
               {axes.yMeta.kind === "dimension"
                 ? drawable.find((point) => point.y === tick)?.yLabel
-                : formatAxisTick(tick, tickStepOf(yScale.ticks), axes.yMeta.unit)}
+                : formatAxisTick(tick, tickStepOf(yScale.ticks), chartTickUnit(axes.yMeta))}
             </text>
           ))}
         </g>
@@ -610,7 +614,7 @@ function renderChartWeb(
             <text key={`ax${tick}`} className="niceeval-chart-tick" x={xScale.scale(tick)} y={MARGIN.top + PLOT_H + 16} textAnchor="middle">
               {axes.xMeta.kind === "dimension"
                 ? drawable.find((point) => point.x === tick)?.xLabel
-                : formatAxisTick(tick, tickStepOf(xScale.ticks), axes.xMeta.unit)}
+                : formatAxisTick(tick, tickStepOf(xScale.ticks), chartTickUnit(axes.xMeta))}
             </text>
           ))}
         </g>
@@ -853,11 +857,11 @@ function chartText(
     formatX: (v) =>
       axes.xMeta.kind === "dimension"
         ? (points.find((point) => point.x === Math.round(v))?.xLabel ?? "")
-        : formatAxisTick(v, tickStepOf(ticksInDomain(xDomain[0], xDomain[1], 5)), axes.xMeta.unit),
+        : formatAxisTick(v, tickStepOf(ticksInDomain(xDomain[0], xDomain[1], 5)), chartTickUnit(axes.xMeta)),
     formatY: (v) =>
       axes.yMeta.kind === "dimension"
         ? (points.find((point) => point.y === Math.round(v))?.yLabel ?? "")
-        : formatAxisTick(v, tickStepOf(ticksInDomain(yDomain[0], yDomain[1], 5)), axes.yMeta.unit),
+        : formatAxisTick(v, tickStepOf(ticksInDomain(yDomain[0], yDomain[1], 5)), chartTickUnit(axes.yMeta)),
     invertX: axes.xMeta.better === "lower",
     invertY: axes.yMeta.better === "lower",
   });

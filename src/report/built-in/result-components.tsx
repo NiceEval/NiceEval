@@ -12,7 +12,6 @@ import type {
   ClosedCommandEntry,
   ClosedConversationItem,
   ClosedUsageObservation,
-  ExperimentId,
   FileChangesDomainView,
   JsonValue,
   MetricValue,
@@ -23,7 +22,6 @@ import type { AttemptLocator } from "../../attempt-locator.ts";
 import { Hero, type HeroData } from "../components/site-components/index.tsx";
 import { defineComponent } from "../definition/tree.ts";
 import {
-  Bars,
   Col,
   Grid,
   Section,
@@ -32,22 +30,13 @@ import {
   Text,
 } from "../definition/primitives.tsx";
 import type { Cell } from "../definition/cell.tsx";
-import { evidenceRow } from "../model/metrics.ts";
-import { experimentDetailTarget } from "../library/details.ts";
 import type {
-  BuiltInAttemptRows,
   BuiltInExperimentRows,
   BuiltInSummaryRows,
 } from "./analysis-values.ts";
 
 const DETAIL_ROWS_MAX = 200;
 const SOURCE_TEXT_MAX = 12_000;
-
-export interface OverviewCounts {
-  readonly experiments: number;
-  readonly attempts: number;
-  readonly expectedResults: number;
-}
 
 /** Display-safe membership facts prepared by the Page loader from Snapshot. */
 export interface MembershipRow {
@@ -74,18 +63,6 @@ export interface RunErrorRow {
   readonly error: string;
   readonly message: string;
   readonly fix: string | null;
-}
-
-export interface StandardOverviewResult {
-  readonly hero: HeroData;
-  readonly summary: BuiltInSummaryRows;
-  readonly experiments: BuiltInExperimentRows;
-  readonly counts: OverviewCounts;
-}
-
-export interface StandardAttemptsResult {
-  readonly hero: HeroData;
-  readonly attempts: BuiltInAttemptRows;
 }
 
 export interface ExperimentDetailResult {
@@ -142,10 +119,6 @@ function metricCell(metric: MetricValue): Cell {
   return { kind: "metric", metric };
 }
 
-function metricValueOnlyCell(metric: MetricValue): Cell {
-  return { kind: "metric", metric, showCoverage: false };
-}
-
 function limited<Row>(rows: readonly Row[], maximum = DETAIL_ROWS_MAX): readonly Row[] {
   return rows.slice(0, maximum);
 }
@@ -170,132 +143,6 @@ function issueSection(view: { readonly issues: readonly { readonly code: string;
     </Section>
   );
 }
-
-function heroAndKpis(input: StandardOverviewResult) {
-  const summary = input.summary[0];
-  const hasScore = input.experiments.some((row) => row.evaluationKind !== "pass");
-  const hasPassSummary = input.experiments.length > 0 && input.experiments.every((row) => row.evaluationKind === "pass");
-  const scores = input.experiments.flatMap((row) => row.totalScore === undefined ? [] : [row.totalScore]);
-  const meanScore = scores.length === 0 ? null : scores.reduce((sum, score) => sum + score, 0) / scores.length;
-  return (
-    <>
-      <Hero data={input.hero} />
-      <Grid>
-        {hasPassSummary ? <Stat label="Pass rate" value={summary === undefined ? null : metricValueOnlyCell(summary.passRate)} /> : null}
-        {hasScore ? <Stat label="Mean score" value={meanScore} /> : null}
-        <Stat label="Mean duration" value={summary === undefined ? null : metricValueOnlyCell(summary.durationMs)} />
-        <Stat label="Mean tokens" value={summary === undefined ? null : metricValueOnlyCell(summary.tokens)} />
-        <Stat label="Experiments" value={input.counts.experiments} />
-        <Stat label="Included attempts" value={input.counts.attempts} />
-      </Grid>
-    </>
-  );
-}
-
-function resultCoverageSection(counts: OverviewCounts) {
-  if (counts.attempts >= counts.expectedResults) return null;
-  return (
-    <Section
-      title="Result coverage"
-      meta={`${counts.attempts} of ${counts.expectedResults} results available`}
-    >
-      <Text>Some expected results do not have an analyzable Attempt. Result coverage is not a score or pass rate.</Text>
-    </Section>
-  );
-}
-
-function experimentPoints(rows: BuiltInExperimentRows) {
-  return rows.filter((row) => row.passRate !== null).map((row) => evidenceRow({
-    experiment: String(row.experiment),
-    passRate: row.passRate!,
-    durationMs: row.durationMs,
-  }));
-}
-
-function experimentTarget(experiment: string) {
-  return { page: "experiment", params: experimentDetailTarget(experiment as ExperimentId) };
-}
-
-function standardOverviewTree(input: StandardOverviewResult) {
-  const hasScore = input.experiments.some((row) => row.evaluationKind !== "pass");
-  const hasPass = input.experiments.some((row) => row.evaluationKind === "pass");
-  const points = experimentPoints(input.experiments);
-  const columns = [
-    { field: "experiment", label: "Experiment" },
-    ...(hasPass ? [{ field: "passRate", label: "Pass rate" }] : []),
-    ...(hasScore ? [{ field: "totalScore", label: "Score" }] : []),
-    { field: "durationMs", label: "Mean duration" },
-    { field: "tokens", label: "Mean tokens" },
-  ];
-  const tableRows = input.experiments.map((row) => ({
-    ...row,
-    passRate: row.passRate === null ? null : metricValueOnlyCell(row.passRate),
-    totalScore: row.totalScore ?? null,
-    durationMs: metricValueOnlyCell(row.durationMs),
-    tokens: metricValueOnlyCell(row.tokens),
-  }));
-  return (
-    <Col>
-      {heroAndKpis(input)}
-      {resultCoverageSection(input.counts)}
-      <Section title="Experiment results" meta={`${input.experiments.length} experiments`}>
-        {input.experiments.length === 0 ? <Text>No experiment rows are available for this selection.</Text> : !hasPass ? null : (
-          <Col>
-            <Bars
-              points={points}
-              x="experiment"
-              y="passRate"
-              point="experiment"
-              pointTarget={(point) => experimentTarget(point.key)}
-              sort={{ field: "passRate", direction: "desc" }}
-              layout="horizontal"
-            />
-          </Col>
-        )}
-        <Table
-          rows={tableRows}
-          columns={columns}
-        />
-      </Section>
-      {issueSection(input.experiments)}
-    </Col>
-  );
-}
-
-/** The default product overview: Hero, exactly six KPIs, Bars, Scatter, and Table. */
-export const StandardOverviewResultView = defineComponent<StandardOverviewResult>((input) => standardOverviewTree(input));
-StandardOverviewResultView.displayName = "StandardOverviewResultView";
-
-function standardAttemptsTree(input: StandardAttemptsResult) {
-  const rows = input.attempts.map((row) => ({
-    ...row,
-    attempt: typeof row.attempt === "string"
-      ? { kind: "locator" as const, locator: row.attempt as AttemptLocator }
-      : row.attempt,
-  }));
-  return (
-    <Col>
-      <Hero data={input.hero} />
-      <Section title="Attempts" meta={`${input.attempts.length} attempts`}>
-        <Table
-          rows={rows}
-          columns={[
-            { field: "experiment", label: "Experiment" },
-            { field: "evalId", label: "Eval" },
-            { field: "attempt", label: "Attempt" },
-            { field: "passRate", label: "Pass rate" },
-            { field: "durationMs", label: "Mean duration" },
-            { field: "tokens", label: "Mean tokens" },
-          ]}
-        />
-      </Section>
-      {issueSection(input.attempts)}
-    </Col>
-  );
-}
-
-export const StandardAttemptsResultView = defineComponent<StandardAttemptsResult>((input) => standardAttemptsTree(input));
-StandardAttemptsResultView.displayName = "StandardAttemptsResultView";
 
 function membershipTable(rows: readonly MembershipRow[]) {
   const normalized = rows.map((row) => ({

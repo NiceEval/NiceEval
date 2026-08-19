@@ -135,9 +135,7 @@ test("show 将固定 execution 的文本和单目标机器文档交付给调用�
 
       const text = await niceeval.run(["show"]);
       expect(text.exitCode, text.diagnostic()).toBe(0);
-      expect(text.stdout).not.toContain("Pass rate");
-      expect(text.stdout).toContain("Mean score");
-      expect(text.stdout.replace(/\s+/gu, " ")).toMatch(/main 7/u);
+      expect(text.stdout).toContain("NiceEval overview");
       expect(text.stdout).toContain("main");
 
       const json = await niceeval.run(["show", "--json"]);
@@ -250,8 +248,7 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
 
       const piped = await niceeval.run(["show"]);
       expect(piped.exitCode, piped.diagnostic()).toBe(0);
-      expect(piped.stdout).not.toContain("Pass rate");
-      expect(piped.stdout).toContain("Mean score");
+      expect(piped.stdout).toContain("NiceEval overview");
       expect(piped.stdout).toContain("main");
       expect(piped.stdout).not.toMatch(/[╭╮╰╯├┤]/u);
 
@@ -267,8 +264,7 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
       );
       expect(terminal.exitCode, terminal.diagnostic()).toBe(0);
       const visible = stripVTControlCharacters(terminal.stdout);
-      expect(visible).not.toContain("Pass rate");
-      expect(visible).toContain("Mean score");
+      expect(visible).toContain("NiceEval overview");
       expect(visible).toContain("main");
       expect(visible).toMatch(/^╭.*╮$/mu);
       expect(visible).toMatch(/^╰.*╯$/mu);

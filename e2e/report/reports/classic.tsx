@@ -16,9 +16,7 @@ import {
 } from "niceeval/report";
 import {
   standardAttemptPage,
-  standardAttemptsPage,
   standardExperimentPage,
-  standardTracesPage,
 } from "niceeval/report/built-in";
 
 const logo = `data:image/svg+xml,${encodeURIComponent(
@@ -102,8 +100,6 @@ export default defineReport({
       title: { en: "Overview", "zh-CN": "总览" },
       render: classicOverview,
     },
-    standardAttemptsPage,
-    standardTracesPage,
     standardAttemptPage,
     standardExperimentPage,
   ],

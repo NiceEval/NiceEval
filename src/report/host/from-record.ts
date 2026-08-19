@@ -37,8 +37,8 @@ import { defaultAttemptOverviewReport } from "../built-in/attempt-overview.ts";
 import {
   builtInMachineProducerIds,
 } from "../built-in/machine.ts";
-import { defaultOverviewReport } from "../built-in/overview.ts";
 import { defaultRunMembershipOverviewReport } from "../built-in/run-membership-overview.ts";
+import { standard } from "../built-in/standard.tsx";
 import {
   resolveReportTitle,
   type ReportDefinition,
@@ -603,8 +603,6 @@ function machineProblems(
 
 function builtInToken(producerId: string): string {
   switch (producerId) {
-    case builtInMachineProducerIds.defaultOverview:
-      return "default-overview";
     case builtInMachineProducerIds.runMembershipOverview:
       return "run-membership-overview";
     case builtInMachineProducerIds.attemptOverview:
@@ -635,7 +633,7 @@ function showSelectionForRequest(sample: Sample, selection: AnalysisSelectionReq
 function defaultReportForSelection(selection: AnalysisSelectionRequest): ReportDefinition {
   return selection.policy === "explicit-runs"
     ? defaultRunMembershipOverviewReport
-    : defaultOverviewReport;
+    : standard;
 }
 
 function matchingOccurrencesForCurrentIdentity(

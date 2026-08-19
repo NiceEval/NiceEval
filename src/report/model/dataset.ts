@@ -219,7 +219,13 @@ function isDatasetRow(value: unknown): value is DatasetRow {
 }
 
 function fieldValueMatches(field: DatasetField, value: unknown): value is DatasetValue {
-  if (field.kind === "metric") return isMetricValue(value);
+  // A neutral Dataset also backs explicit external/scalar charts. ClosedRows
+  // still pass through closeRow(), which requires an Analysis MetricValue;
+  // the general Dataset validator must additionally accept the finite scalar
+  // and null forms already supported by pointsToDataset() and chart-map.ts.
+  if (field.kind === "metric") {
+    return isMetricValue(value) || value === null || (typeof value === "number" && Number.isFinite(value));
+  }
   if (value === null) return true;
   switch (field.valueType) {
     case "string":

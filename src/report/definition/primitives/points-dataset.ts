@@ -29,7 +29,7 @@ function readAxisField(
 ): {
   kind: AxisKind;
   cell: DatasetValue;
-  meta: Pick<DatasetField, "unit" | "better" | "bounds">;
+  meta: Pick<DatasetField, "unit" | "format" | "better" | "bounds">;
 } {
   const raw = row[field];
   if (isMetricValue(raw)) {
@@ -43,6 +43,7 @@ function readAxisField(
       cell: raw,
       meta: {
         ...(raw.unit !== undefined ? { unit: raw.unit } : {}),
+        ...(raw.format !== undefined ? { format: raw.format } : {}),
         ...(raw.better !== undefined ? { better: raw.better } : {}),
         ...(raw.bounds !== undefined ? { bounds: raw.bounds } : {}),
       },
@@ -118,8 +119,8 @@ export function pointsToDataset(
     throw new Error('Chart "points" must be an array');
   }
 
-  const xMetaAcc: Pick<DatasetField, "unit" | "better" | "bounds"> = {};
-  const yMetaAcc: Pick<DatasetField, "unit" | "better" | "bounds"> = {};
+  const xMetaAcc: Pick<DatasetField, "unit" | "format" | "better" | "bounds"> = {};
+  const yMetaAcc: Pick<DatasetField, "unit" | "format" | "better" | "bounds"> = {};
   let xKind: AxisKind = "metric";
   let yKind: AxisKind = "metric";
   const dimNames = new Set<string>();

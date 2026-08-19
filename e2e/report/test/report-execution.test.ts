@@ -95,10 +95,8 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
         "libraryDetailRoute",
         "standard",
         "standardAttemptPage",
-        "standardAttemptsPage",
         "standardExperimentPage",
         "standardOverviewPage",
-        "standardTracesPage",
       ]));
 
       for (const experimentId of ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const) {
@@ -279,8 +277,7 @@ export default Object.freeze(report);
       }
       expect(overview, "classic overview must not serialize internal attempt evidence into visible text")
         .not.toContain('{"kind":"attempt"');
-      const attempts = await readFile(join(projectRoot, "classic-export", "attempts", "index.html"), "utf8");
-      expect(attempts, "classic attempts index must link into attempt detail instances")
+      expect(overview, "classic overview must link into attempt detail instances")
         .toMatch(/<a\b[^>]*\bhref="[^"]*\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}\/index\.html"/);
       expect(overview, "classic overview must link into experiment detail instances")
         .toMatch(/<a\b[^>]*\bhref="[^"]*\/experiment\/e1[a-f0-9]{24}\/index\.html"/);

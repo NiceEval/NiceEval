@@ -61,11 +61,12 @@ key 完全相同。`show` 不调用 `enumerate()`，却要求 `PageLoadContext` 
 `Section` 显示区域框，`Grid` 与 `Table` 显示数据格线；非 TTY 或过窄终端选择 plain projection，组件、数据状态与顺序不变。
 `NO_COLOR` 只禁用颜色，不删除表达组件边界的结构框。`show --json` 的 `renderedText` 始终读取固定 80 列 plain projection，不继承 TTY。
 
-`default-overview` 与标准报告的 Overview 按题型显示主读数：Pass Eval 显示通过率，Score Eval 只显示 earned score，不声明满分或百分比。
-主读数、耗时和 token 的单元格不追加 `samples / total · partial`。当 Sample 中有预期结果没有可分析的 Attempt 时，Overview 在 KPI
-与实验表之外显示独立的 `Result coverage` Section。TTY 中它是区域框，标题行写明多少结果可用，正文说明这是结果完整度而不是分数。
+`standard` 的 Overview 使用同一个 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。Pass Eval 显示通过率，Score Eval 只显示
+earned score，不声明满分或百分比；mixed Experiment 同时保留两种子行。每个 Experiment 可逐层展开到 Eval 与 Attempt，Attempt locator
+链接到同一份 `standard` 显式声明的详情 Page。Analysis 的 `MetricValue` 仍完整保留 state、samples、total、issues 与 refs。
 
-完整 Sample 不显示这个 Section。Analysis 仍保留原始 `MetricValue` 的 state、samples、total、issues 与 refs，机器文档也不因此改写数据。
+`ExperimentScatter` 使用同一题型判断：通过制画成本 × 通过率，分数制画成本 × 总分；同一 Sample 同时包含两种题型时分成两张图，
+不把 points 和 ratio 混在同一纵轴。通过率轴以百分比刻度显示，`ratio` 只保留为内部量纲，不进入轴标题或刻度文案。
 
 ### locale
 
@@ -204,7 +205,7 @@ niceeval view --run 01H... --out ./shared-site --no-open
 
 | selector | 没有显式 `--report` | 有显式 `--report` |
 |---|---|---|
-| 不带 selector 的 `project-current` | `niceeval.config.ts` 的 `report`；没有配置时使用 `default-overview` | 显式 Report |
+| 不带 selector 的 `project-current` | `niceeval.config.ts` 的 `report`；没有配置时使用 `standard` | 显式 Report |
 | 一个或多个 `--run` | `run-membership-overview` | 显式 Report |
 | 精确 `@<locator>` | `attempt-overview` | 显式 Report |
 
