@@ -137,5 +137,5 @@ it("show --timing 读回 Claude Code 的 runner 阶段", async () => {
   expect(timing.exitCode, timing.diagnostic()).toBe(0);
   expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
   expect(timing.stdout, timing.diagnostic()).toContain("agent.setup");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
+  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+agent\.turn\b/);
 });
