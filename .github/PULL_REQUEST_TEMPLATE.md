@@ -377,7 +377,7 @@ source remains the default. When a long file would make the PR materially harder
 to read, omit only unchanged code that is unrelated to this PR's claimed
 behavior. Every omission must be replaced in the code block by one precise
 marker:
-`// … omitted: file=<path>; before=<unique exact final-source anchor>; after=<unique exact final-source anchor>; contents=<omitted code>; reason=<unrelated reason>`.
+`// … omitted: file=<path>; before=<unique exact final-source anchor>; after=<unique exact final-source anchor>; reason=<unrelated reason>`.
 The two anchors must occur exactly once in the final file. The reviewer verifies
 the locked base→head merge-base diff has zero changed lines strictly between
 them. The retained fragments must be exact final source, not rewritten excerpts,
@@ -409,7 +409,7 @@ real public action, observation, and remaining risk instead of fake source.
 - Asserts: <independent expected outcomes checked by this file>
 
 ```ts
-<complete final file, or exact final-source fragments with file/unique-before/unique-after/contents/reason omission markers>
+<complete final file, or exact final-source fragments with file/unique-before/unique-after/reason omission markers>
 ```
 
 ### Deleted test files
