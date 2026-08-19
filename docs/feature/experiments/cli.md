@@ -31,13 +31,8 @@ niceeval debug <experiment-selector> <eval-selector> [--json]
 ### `--dry`
 
 `--dry` 用 shared read lease（共享读取租约）与 weak scan（弱扫描）运行 `project-target/v1`，展示 policy
-identity、effective options，以及每个目标成员的 reuse 或 gap：
-
-```text
-PLAN
-compare/codex  memory/commit0  ordinal 0  reuse/carried @1K1P0VJAPVJ12
-compare/codex  memory/commit0  ordinal 1  gap: identity-mismatch
-```
+identity、effective options，以及每个目标成员的 reuse 或 gap。完整人读形态见
+[dry plan 输出案例](output/dry-plan.md)。
 
 reuse planning 先精确比较当前与历史 Core expected slot 的组合 `executionIdentityDigest`，并要求历史 Core
 Attempt outcome 为 `completed`。它从 Assertions 折叠可采用 Verdict，再从 Observability 读取完整真实 timing。
@@ -66,43 +61,11 @@ Eval selector 只能在 Experiment 自己的 `evals` 封闭范围内匹配。选
 - Experiment、Group、Eval Plugin lifecycle 与 Sandbox Plugin lifecycle；
 - author hook、prepare、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。
 
-TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane、slot 与每个 lifecycle step 都分别使用全仓统一的圆角区域框；各框按计划顺序堆叠，框内列出 position、owner、label、template、命令或不可检查原因、条件与脱敏项。这样每个 Plugin occurrence 和每条 Shell 都有自己的可复制边界：
+TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane、slot 与每个 lifecycle step 都分别使用全仓统一的圆角区域框；各框按计划顺序堆叠，框内列出 position、owner、label、template、命令或不可检查原因、条件与脱敏项。这样每个 Plugin occurrence 和每条 Shell 都有自己的可复制边界。完整形态见
+[command plan 输出案例](output/debug-command-plan.md)。
 
-```text
-╭─ COMMAND PLAN ───────────────────── PARTIAL · 8 opaque · 2 redacted ─╮
-│ Guaranteed order is per lane.                                        │
-╰──────────────────────────────────────────────────────────────────────╯
-
-╭─ sandbox.materialize ─────────────────────────────────────── OPAQUE ─╮
-│ position: lane eval-group:group · physical lifecycle template enter  │
-│ owner: provider:docker                                               │
-│ template: docker:image                                               │
-│ template owner: experiment:suite/one                                 │
-│ configured locator: exact · image="node@sha256:cd849..."             │
-│ reason: provider materialization is a runtime operation              │
-╰──────────────────────────────────────────────────────────────────────╯
-
-╭─ sandbox.prepare ──────────────────────────────────────────── EXACT ─╮
-│ position: lane eval-group:group · slot group/first #0                │
-│ owner: eval:group/first                                              │
-│ command: shell "printf fixture-ready"                                │
-╰──────────────────────────────────────────────────────────────────────╯
-```
-
-多行 Shell 不折成带 `\n` 的单行 JSON 字符串。框内代码区显示原始行数，并用固定 gutter 保留缩进、空行和末尾换行。单行过宽时，续行仍从同一个 gutter 开始；tab、回车、ESC 与其它终端控制字符显示为转义文本：
-
-```text
-╭─ sandbox.prepare ──────────────────────────────────────────────────── EXACT ─╮
-│ position: lane eval:group/first · slot group/first #0                        │
-│ owner: eval:group/first                                                      │
-│ command: shell · 5 lines                                                     │
-│   │ set -eu                                                                  │
-│   │   pnpm install                                                           │
-│   │                                                                          │
-│   │   pnpm test                                                              │
-│   │                                                                          │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
+多行 Shell 不折成带 `\n` 的单行 JSON 字符串。框内代码区显示原始行数，并用固定 gutter 保留缩进、空行和末尾换行。单行过宽时，续行仍从同一个 gutter 开始；tab、回车、ESC 与其它终端控制字符显示为转义文本。完整形态见
+[多行 Shell 输出案例](output/debug-multiline-shell.md)。
 
 非 TTY、`NO_COLOR` 或过窄终端按同一 Panel 契约逐框降级为无框的标题与正文；节点、字段和顺序不变。`--json` 不携带框线，继续输出同一棵计划树的机器形状。
 
@@ -187,16 +150,8 @@ completion 或退出码。名额释放或 owner heartbeat 过期后，调度器�
 
 过期的并发槽 lease 或 case lock 被原子接管时，当前 Invocation 产生 info 级
 `coordination-recovered` notice。成功接管不形成 warning，也不写入 Run diagnostic。Human 运行流只完整
-展开同一 code 的第一条，结束时在 `RECOVERY` 面板按 `concurrency slots` 与 `case locks` 汇总；机器流为每次接管保留结构化 notice。
-
-```text
-i coordination-recovered
-  recovered expired coordination state for compare/codex; this run continues. Further recoveries are summarized at completion.
-
-╭─ RECOVERY ───────────────────────────────────────────────────────────╮
-│ i coordination-recovered  3 concurrency slots · 18 case locks       │
-╰──────────────────────────────────────────────────────────────────────╯
-```
+展开同一 code 的第一条，结束时在 `RECOVERY` 面板按 `concurrency slots` 与 `case locks` 汇总；机器流为每次接管保留结构化 notice。完整形态见
+[协调恢复输出案例](output/coordination-recovery.md)。
 
 机器 notice 的稳定字段如下；`resource` 决定资源专属字段是否存在：
 
@@ -220,6 +175,7 @@ interface CoordinationRecoveredNotice {
 ## 结束反馈与 receipt
 
 TTY 结束反馈显示 Invocation completion、Run ID、终态计数、`RESULTS` 和下一步命令。它不持久化成另一份结果文档。
+完整的通过场景见[正常完成输出案例](output/completed-run.md)。
 
 结果标题是人类结果摘要，不是 `InvocationReceipt.completion` 的别名。正常发布后的优先级固定为：
 
@@ -238,6 +194,11 @@ Pass 未通过、execution error、结果缺口、中断和发布失败均保持
 按 Eval 分 cell 或续行，显示 complete attempts 的 earned mean 与 `complete / total`。partial 只显示已知下界，
 unavailable 不制造数字。
 
+Attempt 已经创建时，结束摘要可以按稳定失败形态聚合，但聚合行只概括共同形态，不把代表 Attempt 的 message
+当成整组原因。单条失败给出精确 `niceeval show @<locator>`；多条聚合至少给出代表 locator，并由 `NEXT` 中各
+Run 的 `niceeval show --run <runId>` 枚举每条 Attempt，供用户继续选择 locator。完整形态见
+[Attempt 失败输出案例](output/attempt-failures.md)。
+
 Human 最多显示五个 config block；其余项显示准确省略数，并在 `NEXT` 给出能包含被省略 Run 的精确
 `niceeval show --run <runId>` 命令。
 合法零分必须显示成 `0 score · complete`，不能省略或当成 unavailable。
@@ -247,6 +208,14 @@ Attempt 创建前的共享构建失败另列 `ERRORS`，按共享 failure 分组
 `niceeval show --run <runId>` 在对应 Slot 行同时显示 `outcome: errored`、phase、error 和 shared failure。
 这组事实复用现有 Run-owned Observability diagnostic，不改变 Record 或 attachment schema；历史 Run 没有采集时
 继续只显示 membership，不能补造错误原因。
+
+shared failure identity 只在所属 Run 内关联同一次物理失败，不是错误码或跨 Run 身份。Human 必须按
+`(runId, failureId)` 分组；两个 Run 即使都使用 `n1` 也不能合并。每组显示所属 Run，并给出精确
+`niceeval show --run <runId>`；Attempt 创建前不存在 locator，不能伪造 `show @<locator>` 引导。
+
+共享失败的 Human 摘要把可执行根因放在构建命令之前。根因按 panel 的显示宽度折行，不能因为原始 stderr
+没有换行而被行尾截断；完整命令可以中段省略。识别出安全、确定的修复动作时，摘要另给 `fix:`，但不把推测写成修复。
+完整形态见[共享 Sandbox 构建失败输出案例](output/shared-sandbox-build-failure.md)。
 
 ```ts
 interface InvocationReceipt {
@@ -264,13 +233,8 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 
 ## `--json`
 
-`exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt：
-
-```json
-{"type":"progress","invocationId":"01J8...","message":"running","current":1,"total":3}
-{"event":"warning","code":"sandbox-retry","level":"warning","message":"retrying"}
-{"type":"receipt","receipt":{"invocationId":"01J8...","runIds":["01J9..."],"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
-```
+`exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。完整形态见
+[NDJSON 输出案例](output/json-stream.md)。
 
 progress 与 diagnostic 形状服务当前 Invocation，不是 Record 解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 Record reader 读取业务数据。
 
@@ -291,6 +255,7 @@ argv、配置发现或 selector 无法形成 Invocation 时，命令以非零状
 
 ## 相关阅读
 
+- [输出案例索引](output/README.md) —— 每个公开反馈场景的完整 Human 或 JSON 形态。
 - [Architecture](architecture.md) —— Invocation、Run、Member 与 Coordination 分工。
 - [缓存与携带](cache.md) —— carried / accepted 的资格和写入。
 - [Record CLI](../record/cli.md) —— `show`、locator 与 Record 维护命令。
