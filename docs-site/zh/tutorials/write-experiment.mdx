@@ -125,7 +125,6 @@ npx niceeval exp prompts/concise
 | `timeoutMs` | 单个 attempt 的超时 |
 | `budget` | 这一格配置的预算上限 |
 | `maxConcurrency` | 这一格配置的并发上限 |
-| `sharedState` | 跨 Invocation 共享 checkpoint 的独占 key。只协调状态，不提供存储 |
 | `sandbox` | 一条 `SandboxLayer`。具体 factory 一次声明 provider 原生 template，并可链 `.prepare()` / `.setup()` / `.teardown()` |
 | `plugins` | 显式附着的 NiceEval Plugin occurrence；把一套 identity、flags、Sandbox 命令、生命周期或 Agent Extension 作为完整条件复用 |
 | `setup` | 实验级 Hook：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
@@ -216,9 +215,10 @@ export default defineExperiment({
     .teardown(mempalTeardown("codex")), // 回存状态
   sandboxReuse: true,
   maxConcurrency: 1,                    // 本 Invocation 内串行
-  sharedState: { key: "mempal/codex/cohort-a" },
 });
 ```
+
+`maxConcurrency: 1` 不会串行另一个 Invocation。这些 Hook 会载入、回存同一个外部 checkpoint 时，用外部编排或分布式锁包住完整命令，或者为每个 Invocation 分配独立 checkpoint。
 
 固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot。`.setup()` 不应在每个 Attempt 重建同一套环境。从官方 Docker 镜像、E2B 模板或 Vercel runtime 派生预制环境的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
 
@@ -241,7 +241,6 @@ export default defineExperiment({
   agent: nowledgeAgent(() => ({ url: tunnel.url, apiKey: tunnel.apiKey })),
   evals: ["memory/"],
   maxConcurrency: 1,
-  sharedState: { key: "nowledge/claude/cohort-a" },
   sandbox: e2bSandbox({ template: "niceeval-agents" })
     .setup(async (sandbox, ctx) => {
       // 每沙箱一次，晚于实验级 setup：把宿主机侧坐标写进沙箱

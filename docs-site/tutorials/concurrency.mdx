@@ -65,7 +65,6 @@ When a run feels slow, concurrency is only one control. First identify where the
 | --- | --- | --- | --- |
 | Global concurrency slots | `--max-concurrency`, or `maxConcurrency` in `niceeval.config.ts` | Total throughput for this invocation | Counted separately; values from two terminals add together |
 | Experiment concurrency cap | `maxConcurrency` in the Experiment file | How many Attempts this Experiment runs at the same time | Counted separately; values from two terminals add together |
-| Shared-state lease | `sharedState.key` in the Experiment file | Full restore, execution, and write-back for the same checkpoint | Windows with the same key run serially |
 
 Global precedence is `--max-concurrency` → `maxConcurrency` in config → the current Sandbox Provider's recommended default (`docker` 10, `e2b` 20, `vercel` 1, `local` 1). The recommendation reflects Provider-side constraints. Use `--max-concurrency` to cap the rate of your own Agent interface.
 
@@ -142,15 +141,11 @@ export default defineExperiment({
   agent: codexAgent(),
   sandboxReuse: true,
   maxConcurrency: 1,   // One at a time within this Invocation
-  sharedState: { key: "mempal/codex/cohort-a" },
   // ...
 });
 ```
 
-`maxConcurrency: 1` serializes only Attempts within this Invocation. `sharedState.key` is what protects the same checkpoint across terminals.
-The lease is acquired before Experiment and Sandbox `setup`, then released only after Sandbox `teardown`, the Provider finalizer, and Experiment `teardown` finish. Waiters do not create Sandboxes. Once the lease is released, a waiting invocation continues with its planned work; it does not read or carry results from another Record.
-
-`sharedState` provides mutual exclusion only. It does not store the checkpoint for you, and it cannot roll back a partial write after a forced kill. When you cannot write back atomically, use a new key and rebuild a clean cohort from scratch.
+`maxConcurrency: 1` serializes only Attempts within this Invocation. NiceEval does not currently provide a cross-Invocation shared-state lease. If another terminal could touch the same checkpoint, serialize the commands with external orchestration or a distributed lock, or give every Invocation a separate checkpoint cohort. Write back atomically; after a forced kill leaves a partial write, use a new checkpoint and rebuild a clean cohort.
 
 When only one Agent service rate-limits frequently, set `maxConcurrency: N` on that Experiment instead of lowering the global cap. Lowering the global cap harms other Experiments in the batch. During backoff, an Experiment cap does not admit the N+1 Attempt, so a rate-limited service is not put under even more pressure.
 
@@ -189,23 +184,23 @@ export default defineExperiment({
 });
 ```
 
-## Isolate Records when opening another terminal
+## Open another terminal against the same Record
 
-One Record root does not let two Invocations divide work automatically. When the machine, Provider, and Agent service all have remaining capacity, give a second terminal a different root:
+One Record root accepts concurrent append writers, but it does not let two Invocations divide work automatically. When the machine, Provider, and Agent service all have remaining capacity, both terminals may use the same root:
 
 ```bash
-niceeval exp compare --record .niceeval/record-a --max-concurrency 2
-niceeval exp compare --record .niceeval/record-b --max-concurrency 2
+niceeval exp compare --record .niceeval/record --max-concurrency 2
+niceeval exp compare --record .niceeval/record --max-concurrency 2
 ```
 
-Each side plans its complete selection independently. They can execute the same evals twice, but they do not read or incorporate the other invocation's running Attempts. Each root produces independent Runs, Samples, and Reports; NiceEval does not merge them automatically.
+Each side plans its complete selection independently. They can execute the same Evals twice because neither side reads the other's in-progress Attempts. Completed Runs are published atomically into the shared Record. Use different roots only when you intentionally need isolated Runs, Samples, and Reports; NiceEval does not merge separate roots automatically.
 
 There are four boundaries:
 
 - The two CLI caps add together; Provider capacity does not. Lower both when capacity is tight.
 - An Experiment's `maxConcurrency` also counts separately per terminal: if both commands declare 3, up to six Attempts run in total.
-- The two Sandbox pools are independent too. Declare `sharedState.key` only when an external checkpoint is genuinely shared; it does not merge Records.
-- A second command pointed at the same root fails immediately. It does not wait, take over, or read the first command's intermediate data.
+- The two Sandbox pools are independent too. A shared external checkpoint requires external serialization or a distinct checkpoint per Invocation.
+- Concurrent append writers are allowed. Record maintenance remains exclusive; stop readers and writers before retrying a `record-maintenance-busy` operation.
 
 ## Boundaries
 

@@ -189,7 +189,7 @@ export default defineSandboxAgent({
 });
 ```
 
-`createNpmCliInstaller` prepares the npm package on the host, then sends it into the Sandbox. The Sandbox does not need Node.js or npm. The complete workflow is in [Create a Custom Sandbox Agent](#create-a-custom-sandbox-agent).
+`createNpmCliInstaller` prepares the npm package on the host, sends it into the Sandbox, and installs an ordinary package there with npm. Such a Sandbox needs Node.js and npm; only a self-contained `platformPackage` can omit them. The complete workflow is in [Create a Custom Sandbox Agent](#create-a-custom-sandbox-agent).
 
 `setup`, every `send`, and `teardown` each receive feedback methods for their own scope:
 

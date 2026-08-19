@@ -53,7 +53,7 @@ Sandbox reuse occurs only within one Invocation. When two terminals run one Expe
 
 Record maintenance is exclusive. If `clean` or another maintenance operation reports `record-maintenance-busy`, stop the readers and writers using that root, then retry the maintenance command. Do not split normal concurrent runs into separate Record roots merely to avoid a writer conflict.
 
-When a Sandbox retains only its own temporary state, both terminals can run different Evals at the same time. Both restore the same checkpoint in Sandbox `setup()`, save it in `teardown()`, and declare a stable non-secret key for the Experiment:
+When a Sandbox retains only its own temporary state, both terminals can run different Evals at the same time. If Sandbox Hooks restore and save an external checkpoint, `maxConcurrency: 1` serializes access only inside the current Invocation:
 
 ```typescript
 export default defineExperiment({
@@ -62,13 +62,10 @@ export default defineExperiment({
     .teardown(saveMempal),
   sandboxReuse: true,
   maxConcurrency: 1,
-  sharedState: { key: "mempal/codex/cohort-a" },
 });
 ```
 
-NiceEval exclusively holds this key before creating a Sandbox, and releases it only after Sandbox `teardown`, the Provider finalizer, and Experiment `teardown`. A waiter creates no Sandbox. After the lease is released, it continues its established plan; it does not read or adopt results from the other Record.
-
-The key enters the result's configuration identity. Changing it means changing the state cohort, so old results do not mix in. This lease protects only the external checkpoint through `sharedState.key`; it does not replace exclusive access to a Record root. Different machines or working copies need an external distributed lock.
+NiceEval does not currently coordinate that checkpoint across Invocations. Do not run two commands against the same mutable checkpoint at once: serialize them with external orchestration or a distributed lock, or give each Invocation a separate checkpoint cohort. This boundary is independent of the Record root, whose normal append writers may run concurrently.
 
 ## Lifecycles: how often each runs
 
@@ -122,9 +119,9 @@ You still own two things:
 
 Convergence is not free: Plugin installation is still paid for on every Attempt. Reuse saves Sandbox creation and Sandbox-level `setup`. If a marketplace fetch is too slow, use `sparse` to fetch only the Plugin path, or bake the Plugin into the template and remove its declaration from `plugins`. The cost is that the installation manifest no longer records the Plugin and resolved version.
 
-## A batch with different environments
+## A batch with different Sandbox layers
 
-When selected Evals resolve `environment` to different prebuilt artifacts, you do not need to split the command. The Runner groups work by resolved environment profile: one Sandbox accepts only Attempts from the same group, each group builds its own between-task reset point, and groups share neither Sandboxes nor Sandbox-level setup output. An Experiment's `maxConcurrency` limits all groups together.
+When selected Evals declare different template-bearing `sandbox` layers, you do not need to split the command. Link planning resolves each Eval × Experiment pair independently. Attempts with different physical Sandbox identities share neither Sandboxes nor Sandbox-level setup output, while the Experiment's `maxConcurrency` limits all selected work together.
 
 ## A typical rhythm
 

@@ -361,7 +361,7 @@ await restoreCheckpoint(nextSandbox, data);
 这适合运行时缓存，不会创建可发布的 image/template/snapshot，也不管理共享、版本和过期。归档或恢复失败会直接抛错。
 
 如果这些目录或快照要跨 Attempt 延续，把 `restoreCheckpoint()` 放进 `SandboxLayer.setup()`，把 `createCheckpoint()` 放进配对的 `teardown()`。`setup()` 在实际 Sandbox 创建后恢复，因此新 run 也走同一边界。`teardown()` 在实例退休、Provider finalizer 前回存。
-`sandboxReuse: true` 只让同一个物理实例在本 Invocation 内继续存在。多个 Invocation 读写同一 checkpoint 时，在 Experiment 顶层声明 `sharedState: { key }`，让另一边在创建 Sandbox 前等待。
+`sandboxReuse: true` 只让同一个物理实例在本 Invocation 内继续存在。NiceEval 当前不会跨 Invocation 锁住 checkpoint。多条命令可能读写同一 checkpoint 时，用外部编排或分布式锁串行，或者为每个 Invocation 使用独立 checkpoint。
 
 ## 瞬时错误重试
 

@@ -76,7 +76,7 @@ import myAgent from "../agents/my-agent.ts";
 export default defineExperiment({
   agent: myAgent,
   model: "acme-model-v2",
-  sandbox: dockerSandbox({ source: { type: "image", image: "debian:bookworm-slim" } }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:22-slim" } }),
 });
 ```
 
@@ -84,7 +84,7 @@ export default defineExperiment({
 npx niceeval exp my-agent fixtures/button
 ```
 
-The Sandbox does not need Node.js or npm. `createNpmCliInstaller` downloads the npm package on the host, then installs it through the Sandbox file API. If the Sandbox already has the correct version, NiceEval uses it directly.
+For an ordinary npm package, the Sandbox must provide Node.js and npm. `createNpmCliInstaller` packs and uploads the package from the host, then runs `npm install -g` inside the Sandbox. If the Sandbox already has the correct version, NiceEval uses it directly. Only a real self-contained `platformPackage` can omit this runtime requirement.
 
 ## Inspect installation failures
 

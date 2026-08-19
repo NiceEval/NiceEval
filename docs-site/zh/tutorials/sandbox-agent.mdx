@@ -189,7 +189,7 @@ export default defineSandboxAgent({
 });
 ```
 
-`createNpmCliInstaller` 会在宿主机准备 npm 包，再把它送入 Sandbox。Sandbox 里不需要安装 Node.js 或 npm。完整步骤见[为自定义 Sandbox Agent 安装 CLI](/zh/tutorials/install-custom-sandbox-agent)。
+`createNpmCliInstaller` 会在宿主机准备 npm 包、送入 Sandbox，再用 npm 安装普通包。这类 Sandbox 需要 Node.js 与 npm；只有自包含的 `platformPackage` 才能省掉它们。完整步骤见[为自定义 Sandbox Agent 安装 CLI](/zh/tutorials/install-custom-sandbox-agent)。
 
 `setup`、每次 `send` 和 `teardown` 都拿到各自作用域的反馈方法：
 
