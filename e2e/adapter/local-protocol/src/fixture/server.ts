@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 
 const FIXTURE_HOST = "127.0.0.1";
 
-type Mode = "ok" | "approval" | "disconnect" | "hang" | "error";
+type Mode = "ok" | "approval" | "disconnect" | "done-then-late" | "hang" | "error";
 
 const APPROVAL_MESSAGE_ID = "local-approval-message";
 const APPROVAL_CALL_ID = "local-approval-call";
@@ -19,7 +19,7 @@ const APPROVAL_TOOL = "calculate";
 
 function modeFromPath(pathname: string): Mode | undefined {
   // /modes/<mode>/api/chat
-  const match = pathname.match(/^\/modes\/(ok|approval|disconnect|hang|error)\/api\/chat\/?$/);
+  const match = pathname.match(/^\/modes\/(ok|approval|disconnect|done-then-late|hang|error)\/api\/chat\/?$/);
   return match?.[1] as Mode | undefined;
 }
 
@@ -134,6 +134,19 @@ function writeDisconnectStream(res: ServerResponse): void {
   });
 }
 
+/** 先宣告协议结束，再发送一条完整消息；终止后的帧不得补成成功 Turn。 */
+function writeDoneThenLateStream(res: ServerResponse): void {
+  const messageId = `msg_${randomUUID()}`;
+  const textId = `text_${randomUUID()}`;
+  res.write("data: [DONE]\n\n");
+  writeSse(res, { type: "start", messageId });
+  writeSse(res, { type: "text-start", id: textId });
+  writeSse(res, { type: "text-delta", id: textId, delta: "late-content" });
+  writeSse(res, { type: "text-end", id: textId });
+  writeSse(res, { type: "finish" });
+  res.end();
+}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -199,6 +212,11 @@ const server = createServer((req, res) => {
         res.writeHead(200, sseHeaders());
         if (mode === "disconnect") {
           writeDisconnectStream(res);
+          return;
+        }
+
+        if (mode === "done-then-late") {
+          writeDoneThenLateStream(res);
           return;
         }
 

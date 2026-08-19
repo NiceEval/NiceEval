@@ -132,7 +132,11 @@ function drainSseEvents(
     const payload = line.slice("data: ".length);
     if (payload === "[DONE]") {
       onDone();
-      continue;
+      // `[DONE]` is the protocol terminal, not an advisory event. Closing the
+      // reducer input here prevents frames later in the same network chunk (or
+      // later chunks) from manufacturing a successful Turn after termination.
+      controller.terminate();
+      return "";
     }
     const chunk = JSON.parse(payload) as UIMessageChunkLike;
     onChunk(chunk);

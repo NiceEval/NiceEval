@@ -11,7 +11,7 @@ AI SDK 应用按被测边界接入：应用部署为 HTTP 服务时用 `uiMessag
 `uiMessageStreamAgent` 管理 SSE reducer、全量历史重发和 tool approval 改写重发，适用于 AI SDK `useChat` 后端。
 
 一条完整响应必须以 AI SDK 的 `data: [DONE]` SSE 帧结束。标准 AI SDK endpoint 会写出该标记；自定义兼容 endpoint 也必须保留它。
-如果连接在 `[DONE]` 前结束，Adapter 不接受已经收到的部分 assistant 内容，而是返回 send failure。公开诊断会说明响应被截断或 endpoint 没有实现完整协议。
+`[DONE]` 是 reducer 的协议终点，后续帧不会再成为 Turn 的一部分。如果连接在 `[DONE]` 前结束，Adapter 不接受已经收到的部分 assistant 内容，而是返回 send failure。公开诊断会说明响应被截断或 endpoint 没有实现完整协议。
 
 UI Message Stream 不携带 command 分类。Endpoint owner 如需可信的工具负断言与 command 断言，可以传
 `projectToolCommand({ name, input })`，逐笔返回 `commandProjection(...)`、

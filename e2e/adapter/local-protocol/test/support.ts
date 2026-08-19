@@ -16,7 +16,13 @@ interface FixtureReady {
   port: number;
 }
 
-export type LocalProtocolFixtureMode = "ok" | "approval" | "disconnect" | "hang" | "error";
+export type LocalProtocolFixtureMode =
+  | "ok"
+  | "approval"
+  | "disconnect"
+  | "done-then-late"
+  | "hang"
+  | "error";
 
 interface LocalProtocolFixture extends FixtureReady {
   readonly waitForRequest: (mode: LocalProtocolFixtureMode) => Promise<void>;
