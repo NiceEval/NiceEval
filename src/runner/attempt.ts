@@ -2661,6 +2661,7 @@ export function experimentRunInfo(
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     sandboxPlansByEval: { ...sandboxPlansByEval },
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
+    ...(run.sharedState === undefined ? {} : { sharedState: { key: run.sharedState.key } }),
     ...(judge
       ? { judge: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs } }
       : {}),

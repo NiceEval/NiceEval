@@ -12,6 +12,7 @@ import type {
   EvalDefinitionFields,
   ExperimentDefinition,
   ExperimentInput,
+  SharedStateConfig,
   SandboxAgent,
   SandboxAgentDef,
   ScoreEvalInput,
@@ -183,7 +184,8 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
       if (!ok) throw new Error(t("define.experimentLabelInvalid", { key }));
     }
   }
-  const { id: _derivedId, ...author } = def;
+  const sharedState = normalizeSharedState(def.sharedState);
+  const { id: _derivedId, sharedState: _sharedState, ...author } = def;
   return brandExperimentDefinition({
     ...author,
     flags: decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
@@ -192,8 +194,28 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     earlyExit: def.earlyExit ?? false,
     evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
     sandboxReuse: def.sandboxReuse === true,
+    ...(sharedState === undefined ? {} : { sharedState }),
     plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
   });
+}
+
+const SharedStateKeyPattern = /^[a-z0-9][a-z0-9._/-]{0,127}$/u;
+
+function normalizeSharedState(value: unknown): SharedStateConfig | undefined {
+  if (value === undefined) return undefined;
+  const candidate = value as { key?: unknown };
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !Object.hasOwn(value, "key") ||
+    Object.keys(value).length !== 1 ||
+    typeof candidate.key !== "string" ||
+    !SharedStateKeyPattern.test(candidate.key)
+  ) {
+    throw new TypeError(t("define.experimentSharedStateInvalid"));
+  }
+  return Object.freeze({ key: candidate.key });
 }
 
 function normalizeEvalFields<

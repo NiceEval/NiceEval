@@ -29,7 +29,9 @@ pnpm exec niceeval exp regression --dry
 pnpm exec niceeval exp regression --early-exit
 ```
 
-某条评估用例的一个 Attempt 得到 `passed` 后，尚未派发的剩余 Attempt 会写成 `not-dispatched`。已经在运行的 Attempt 会正常结束并计入结果。
+某条评估用例的一个 Attempt 得到 `passed` 后，尚未派发的剩余 Attempt 会写成 `not-dispatched`。同一评估用例已经在运行的 Attempt 会通过 `ctx.signal` 收到取消信号；Adapter 是否及时观察它，决定这个 Attempt 能否尽快结束。
+
+一次通过触发首过即停后才返回的同一评估用例 Attempt 不会进入结果。
 
 `failed`、`errored` 或 `skipped` 不触发首过即停。需要完整通过率分布时不要打开这个选项。
 

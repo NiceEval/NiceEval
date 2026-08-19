@@ -825,18 +825,13 @@ function buildWarningsPanelRows(diagnostics: readonly DiagnosticNotice[]): Panel
 }
 
 function buildRecoveryPanelRows(diagnostics: readonly DiagnosticNotice[]): PanelRow[] | undefined {
-  let slots = 0;
   let locks = 0;
   for (const d of diagnostics) {
     if (d.severity !== "info" || d.code !== COORDINATION_RECOVERED_CODE) continue;
-    if (d.data?.resource === "concurrency-slot") slots += d.count;
     if (d.data?.resource === "case-lock") locks += d.count;
   }
-  if (slots === 0 && locks === 0) return undefined;
-  const summary = t("feedback.human.coordinationRecoveredSummary", {
-    slots: pluralUnit(slots, "feedback.human.unit.concurrencySlot", "feedback.human.unit.concurrencySlots"),
-    locks: pluralUnit(locks, "feedback.human.unit.caseLock", "feedback.human.unit.caseLocks"),
-  });
+  if (locks === 0) return undefined;
+  const summary = pluralUnit(locks, "feedback.human.unit.caseLock", "feedback.human.unit.caseLocks");
   return [{ kind: "line", text: `i ${COORDINATION_RECOVERED_CODE}  ${summary}` }];
 }
 

@@ -199,8 +199,8 @@ export const en = {
     "writing the crash-recovery teardown registration for experiment {{experimentId}} failed: {{message}}. The run continues normally, but a SIGKILL during this run cannot be recovered via `niceeval exp --teardown` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.\n",
   "runner.coordinationRecovered":
     "recovered expired coordination state for {{experimentId}}; this run continues. Further recoveries are summarized at completion.\n",
-  "runner.gateLeaseWaiting":
-    "waiting on another run for experiment {{experimentId}}'s concurrency slots: all {{effectiveN}} in use ({{holders}}). Concurrent runs share this experiment's slots, and the smallest maxConcurrency in play wins — this run declared {{declaredN}}. This run will dispatch when a slot is released or its owner's heartbeat expires.\n",
+  "runner.sharedStateLeaseTakenOver":
+    "recovered the expired shared-state lease for {{key}}; this run continues with its own plan.\n",
   "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
   "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":
@@ -352,6 +352,7 @@ export const en = {
   "define.experimentAgentRequired": "defineExperiment requires agent.",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} is not JSON-serializable (functions / undefined / cycles / bigint are not allowed); flags are persisted verbatim into result runs and must be plain JSON.",
   "define.experimentLabelInvalid": "experiment.labels.{{key}} must be a string or a finite number; labels are report-side grouping coordinates persisted verbatim into result runs.",
+  "define.experimentSharedStateInvalid": "experiment.sharedState must be exactly { key }, where key is a stable, non-secret string matching [a-z0-9][a-z0-9._/-]{0,127}.",
   "define.experimentSetupNotFunction": "experiment.setup must be a function ((ctx) => void); use experiment.teardown for cleanup; to prepare the in-sandbox environment per experiment, chain .setup() hooks on the sandbox spec instead.",
   "define.experimentClassifyFailureNotFunction": "experiment.classifyFailure must be a function ((failure) => FailureClass | undefined); it classifies failures that surface as third-party errors and must return undefined for anything it does not recognize.",
   "define.experimentIdRejected": "defineExperiment does not accept id; ids are derived from file paths.",
@@ -392,9 +393,6 @@ export const en = {
   "feedback.human.resultErrored": "ERRORED",
   "feedback.human.resultCompleted": "COMPLETED",
   "feedback.human.recoveryHeader": "RECOVERY",
-  "feedback.human.coordinationRecoveredSummary": "{{slots}} · {{locks}}",
-  "feedback.human.unit.concurrencySlot": "concurrency slot",
-  "feedback.human.unit.concurrencySlots": "concurrency slots",
   "feedback.human.unit.caseLock": "case lock",
   "feedback.human.unit.caseLocks": "case locks",
   "feedback.human.resultsHeader": "RESULTS",

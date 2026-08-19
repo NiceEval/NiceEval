@@ -84,10 +84,9 @@ import {
   type CaseLockRecord,
 } from "./lock.ts";
 import {
-  acquireGateSlotEffect,
-  type GateLeaseEffectClaim,
-  type GateLeaseRecord,
-} from "./gate-lease.ts";
+  acquireSharedStateLeaseEffect,
+  type SharedStateLeaseEffectClaim,
+} from "./shared-state-lease.ts";
 import {
   openRunnerRecordCoordinator,
   prepareRunnerRecordReuse,
@@ -898,20 +897,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     return Effect.succeed({ _tag: "Reuse", pool });
   };
 
-  // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。
-  // 实验级闸让「有共享状态、必须串行」的实验(如跨 eval 累积记忆,maxConcurrency: 1)只在
-  // 自己内部排队,同批其它实验照常并发。它的名额域跨 Invocation 共用(见 gate-lease.ts 与
-  // docs/feature/experiments/architecture.md「并发 Invocation:用例锁」末条),所以名额不是
-  // 进程内信号量而是磁盘上的逐槽租约——多开不叠加 N,`maxConcurrency: 1` 的临界区声明在
-  // 多开下同样成立。全局位反过来是每条 Invocation 私有的吞吐旋钮,仍是进程内信号量。
+  // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。两者都只
+  // 属于本 Invocation；跨 Invocation 的共享外部状态由 sharedState 租约另行保护，不能把
+  // `maxConcurrency` 误当成跨进程临界区。
   const globalSem = yield* Effect.makeSemaphore(opts.maxConcurrency);
-  // 实验闸在进程内先垫一层同名额的信号量,再去取租约。两个原因:
-  // ① 名额在本进程内部交接是即时的(Effect 信号量把 permit 直接递给排队的下一个 attempt),
-  //    不必等租约轮询的下一个周期——单开是绝大多数场景,不该为跨进程协调付整整一个轮询周期
-  //    的空转;② 同实验同时去拍磁盘的 attempt 至多 N 个,不让 runs 展开出的一大批兄弟一起
-  //    轮询。它只会更严、不会更松:permit 数恒等于该实验 resolved 的 N,真正的名额权威仍是
-  //    租约(跨 Invocation 共用、min-N 收紧)。裸 run(没有 experimentId、没有可共享的名额域)
-  //    就只有这一层,不产生任何跨进程协调。
+  // 实验闸是 Invocation 内信号量：同实验的 attempt 即时交接 permit，同批其它实验不受影响。
   const gateLocalSems = new Map<AgentRun, Effect.Semaphore>();
   for (const run of effectiveAgentRuns) {
     if (run.maxConcurrency !== undefined) {
@@ -1012,10 +1002,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   interface ExperimentLifecycleCell {
     state: ExperimentLifecycle;
     readonly mutex: Effect.Semaphore;
+    sharedStateClaim?: SharedStateLeaseEffectClaim;
   }
   const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
   for (const a of attempts) {
-    if (!a.run.setup && !a.run.teardown) continue;
+    if (!a.run.setup && !a.run.teardown && !a.run.sharedState) continue;
     const cell = expLifecycles.get(a.run);
     if (cell) {
       if (cell.state._tag !== "Dormant") throw new Error("Experiment lifecycle initialized after dispatch.");
@@ -1138,6 +1129,17 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     if (setup._tag !== "InProgress") return setup;
     throw new Error("Experiment setup completed without recording its terminal outcome.");
   };
+  const releaseSharedStateLease = (cell: ExperimentLifecycleCell): Effect.Effect<void> =>
+    Effect.sync(() => {
+      const claim = cell.sharedStateClaim;
+      cell.sharedStateClaim = undefined;
+      return claim;
+    }).pipe(
+      Effect.flatMap((claim) => claim === undefined ? Effect.void : claim.release),
+      // A failed unlink must not skip Experiment teardown or change already-produced verdicts; the
+      // underlying lease remains protected by its heartbeat/expiry recovery path.
+      Effect.ignore,
+    );
   const runExperimentTeardown = (
     run: AgentRun,
     cell: ExperimentLifecycleCell,
@@ -1225,6 +1227,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             }
           })),
         ),
+        // The state lease covers user teardown and all prior Sandbox/provider finalizers. Release
+        // only after this lifecycle has become terminal, never at an individual Attempt boundary.
+        Effect.ensuring(releaseSharedStateLease(cell)),
       );
       const settle = Effect.exit(restore(teardown)).pipe(
         Effect.flatMap((exit) => Deferred.done(completion, exit)),
@@ -1341,6 +1346,33 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
         const run = a.run;
         const experimentId = run.experimentId ?? run.agent.name;
+        if (run.sharedState && cell.sharedStateClaim === undefined) {
+          const acquired = yield* restore(acquireSharedStateLeaseEffect(
+            coordinationRoot,
+            run.sharedState.key,
+            lockIdentity,
+            opts.signal === undefined ? {} : { signal: opts.signal },
+          ));
+          cell.sharedStateClaim = acquired.claim;
+          if (acquired.takenOver) {
+            const message = t("runner.sharedStateLeaseTakenOver", { key: run.sharedState.key }).trimEnd();
+            reportDiagnostic({
+              key: `state-lease-taken-over:${run.sharedState.key}`,
+              code: "state-lease-taken-over",
+              severity: "info",
+              message,
+              data: { experimentId, sharedStateKey: run.sharedState.key },
+            });
+            recordExperimentDiagnostic({
+              experimentId: run.experimentId,
+              code: "state-lease-taken-over",
+              level: "warning",
+              message,
+              phase: "experiment.setup",
+              data: { sharedStateKey: run.sharedState.key },
+            });
+          }
+        }
         const completion = yield* Deferred.make<void, unknown>();
         // 先写 Active、再登记和启动 worker：随后任何 attempt 或强清都会复用同一个 Effect 完成点。
         cell.state = {
@@ -1348,7 +1380,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           pendingAttempts: current.pendingAttempts,
           setup: { _tag: "InProgress", completion },
         };
-        if (run.teardown) {
+        if (run.teardown || run.sharedState) {
           yield* registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
         }
         let setupStartedAt: number | undefined;
@@ -2002,73 +2034,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       })),
     );
 
-  /**
-   * 实验闸的取位:声明了 `maxConcurrency` 的实验从**跨 Invocation 共用**的逐槽租约取名额
-   * (gate-lease.ts);未声明的实验不走租约、不产生任何跨进程协调。取位在全局位之前——等名额
-   * 的 attempt 不占别的实验的并发位。返回 undefined 表示等待期间被中断,这条 attempt 就此放弃。
-   */
-  /**
-   * 撞满实验闸名额时报一条 info:名额域跨 Invocation,所以「等」的对象是别的进程,用户无从
-   * 从本进程的面板推断。生效名额与本次声明分开报——两者不等就是 min-N 夹低了(别的运行声明了
-   * 更小的 maxConcurrency),这是「我明明写了 3 却只跑 1 条」的唯一解释,不说清就只能去翻锁目录。
-   * 按实验折叠:同一实验的一堆 attempt 会前后脚撞上同一批持有者,不该刷屏。
-   */
-  const reportGateLeaseWait = (
-    experimentId: string,
-    declaredN: number,
-    holders: readonly GateLeaseRecord[],
-  ): void => {
-    const effectiveN = holders.reduce((n, h) => Math.min(n, h.declaredN), declaredN);
-    const who = [...new Set(holders.map((h) => `pid ${h.pid}@${h.host}`))].join(", ") || "another run";
-    reportDiagnostic({
-      key: `gate-lease-waiting:${experimentId}`,
-      code: "gate-lease-waiting",
-      severity: "info",
-      message: t("runner.gateLeaseWaiting", { experimentId, effectiveN, declaredN, holders: who }).trimEnd(),
-      data: { experimentId, effectiveN, declaredN },
-    });
-  };
-
-  const acquireGateLease = (
-    experimentId: string,
-    maxConcurrency: number,
-  ): Effect.Effect<GateLeaseEffectClaim, unknown> =>
-    Effect.uninterruptibleMask((restore) =>
-      restore(acquireGateSlotEffect(
-        coordinationRoot,
-        experimentId,
-        maxConcurrency,
-        lockIdentity,
-        {
-          // 撞满名额只发生在「别的 Invocation 正占着这个实验的位子」——本进程自己的并发早被
-          // gateLocalSems 挡在这一层之前了。不报的话面板就只剩 `0 running · N queued` 干等,
-          // 看不出在等什么、等谁,也看不出生效名额被对方更小的声明夹低了(min-N)。
-          onWaitStart: (holders) => reportGateLeaseWait(experimentId, maxConcurrency, holders),
-        },
-      )).pipe(
-        Effect.map(({ claim, takenOver, takenOverFrom }) => {
-          if (takenOver) {
-            const message = t("runner.coordinationRecovered", { experimentId }).trimEnd();
-            reportDiagnostic({
-              key: `${COORDINATION_RECOVERED_CODE}:concurrency-slot:${experimentId}|${claim.slot}`,
-              code: COORDINATION_RECOVERED_CODE,
-              severity: "info",
-              message,
-              data: {
-                experimentId,
-                resource: "concurrency-slot",
-                slot: claim.slot,
-                ...(takenOverFrom !== undefined
-                  ? { previousPid: takenOverFrom.pid, previousHost: takenOverFrom.host }
-                  : {}),
-              },
-            });
-          }
-          return claim;
-        }),
-      ),
-    );
-
   /** 派发链一轮的结局:`done` = 这条 attempt 已经了结(跑完 / 被跳过 / 携入 / 中断),
    *  `suspend` = 撞上别人持有的用例锁,许可全部归还、挂进 `window` 这个 elsewhere 窗口后重来,
    *  `recheck` = 许可获取被止损闸打断,许可全部归还、回到许可链 ① 重新过闸(记账在那里做)。
@@ -2129,36 +2094,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         );
     });
 
-  /**
-   * 实验闸(② 道许可)的持有作用域:名额与 attempt **同生命周期**——从这里持有到执行体收尾
-   * (teardown 链、沙箱销毁)之后才归还,turn 退避等内部等待一律不释放
-   * (docs/runner.md「调度:有界并发」)。撞用例锁挂起是唯一的例外:那时执行体以 `suspend`
-   * 正常返回,作用域退出、名额归还,挂起结束后重新取——挂起的用例不占名额,否则同实验的
-   * 持锁方(可能就在另一条 Invocation 里)会被自己的等待方饿死。
-   */
+  /** Invocation 内实验闸的持有作用域。它只限制此 Invocation 的 attempt，不取得任何
+   * 跨进程资源；共享外部状态必须由 `sharedState` 生命周期租约保护。 */
   const withExperimentGate = <E, R>(
     a: Attempt,
     use: Effect.Effect<DispatchOutcome, E, R>,
   ): Effect.Effect<DispatchOutcome, E | unknown, R> => {
-    const { maxConcurrency, experimentId } = a.run;
     const localSem = gateLocalSems.get(a.run);
-    if (maxConcurrency === undefined || localSem === undefined) return use;
-    if (experimentId === undefined) return localSem.withPermits(1)(use);
-    const leased = Effect.uninterruptibleMask((restore) =>
-      Effect.raceFirst(
-        restore(acquireGateLease(experimentId, maxConcurrency)).pipe(
-          Effect.map((claim) => ({ kind: "acquired" as const, claim })),
-        ),
-        restore(haltAwait(a)).pipe(Effect.as({ kind: "halted" as const })),
-      ).pipe(
-        Effect.flatMap((lease) =>
-          lease.kind === "halted"
-            ? Effect.succeed<DispatchOutcome>({ kind: "recheck" })
-            : restore(use).pipe(Effect.ensuring(lease.claim.release.pipe(Effect.ignore))),
-        ),
-      ),
-    );
-    return localSem.withPermits(1)(leased);
+    return localSem === undefined ? use : localSem.withPermits(1)(use);
   };
 
   // earlyExit:为每个 key 各建一个 AbortController。某 attempt 通过或 errored 时 abort 它,
@@ -2611,7 +2554,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               emitReporterEvent(reporters, { type: "eval:complete", result }),
             );
           });
-        // ③ 全局并发位 → ④ 派发时刻试锁 → preflight → 实验级 setup → body。
+        // ③ 全局并发位 → sharedState（如声明，先于 Eval lock）→ 派发时刻试锁 → preflight
+        // → 实验级 setup → body。
         // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁,
         // 包在全局位之外(见上面 exclusiveSemFor 的注释)。
         const exclusiveSem = exclusiveSemFor(a.plan);
@@ -2622,20 +2566,33 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // 拿到位子的这一刻再问一次闸:排在独占 provider 锁 / 实验闸本地信号量上的那段等待
             // 不在上面的竞速覆盖范围里(竞速只包全局位),闸可能正是在那段时间落下的。
             if (checkDispatchHalt(a).halted) return { kind: "recheck" } as const;
+            // sharedState 的等待不得先占 Eval lock 或全局并发位，也不得运行 setup / 创建
+            // Sandbox。拿到租约后这个 Invocation 仍继续自己在本轮已形成的 plan，不采用别的
+            // Run 在等待期间发布的 attempt。
+            if (a.run.sharedState) {
+              const proceed = yield* preflight;
+              if (!proceed) return { kind: "done" } as const;
+              authorizedReuseAttempts.add(a);
+              yield* slot.release;
+              yield* ensureExperimentSetup(a);
+              yield* slot.reacquire;
+            }
             // 派发时刻取锁:授位之后才试,非阻塞。撞上别人持有的新鲜锁就把这个位子连同实验闸
             // 名额一起还回去(返回 "suspend"),由外层转入 elsewhere 挂起;位子当场空出来,
             // 排队中的下一条没被锁的用例接手。
             if (caseState) {
               const outcome = yield* tryAcquireCase(caseState);
               if (outcome.kind === "busy") return { kind: "suspend", window: outcome.window } as const;
-              if (yield* recordCoordinator.adoptLatePublishedAttempt(a)) {
+              if (!a.run.sharedState && (yield* recordCoordinator.adoptLatePublishedAttempt(a))) {
                 return { kind: "done" } as const;
               }
             }
-            const proceed = yield* preflight;
-            if (!proceed) return { kind: "done" } as const;
-            authorizedReuseAttempts.add(a);
-            if (a.run.setup || a.run.teardown) {
+            if (!a.run.sharedState) {
+              const proceed = yield* preflight;
+              if (!proceed) return { kind: "done" } as const;
+              authorizedReuseAttempts.add(a);
+            }
+            if (!a.run.sharedState && (a.run.setup || a.run.teardown)) {
               // 实验级 setup:第一个通过派发许可的 attempt 真正执行,其余等同一个 memoized
               // Effect completion（作者 setup 失败收进 lc.setupFailed，由 body 合成 errored 结果）。
               // 等它的时候让出全局并发位(docs/runner.md「调度:有界并发」——内部等待一律让位,
@@ -2676,7 +2633,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               accountDispatchHalted(a, halt.gate);
               return;
             }
-            // ② 实验闸 → ③ 全局位 → ④ 用例锁 → preflight → body
+            // ② Invocation 内实验闸 → ③ 全局位 → sharedState（如声明）→ Eval lock → body
             const outcome = yield* withExperimentGate(a, guarded);
             if (outcome.kind === "done") return;
             // 许可获取被落下的闸打断:许可已随作用域归还,回到 ① 让上面的检查点记账。
@@ -2692,11 +2649,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const orderedPipeline = predecessor === undefined
           ? wavePipeline
           : predecessor.pipe(Effect.flatMap(() => wavePipeline));
-        // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
+        // 实验级 teardown / sharedState lease 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
         // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
         const withExpLifecycle =
-          !a.run.setup && !a.run.teardown
+          !a.run.setup && !a.run.teardown && !a.run.sharedState
             ? orderedPipeline
             : orderedPipeline.pipe(
                 Effect.ensuring(settleExperimentAttempt(a).pipe(Effect.orDie)),

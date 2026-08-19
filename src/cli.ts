@@ -99,7 +99,7 @@ import {
   isCaseLockExpired,
   readCaseLockEffect,
 } from "./runner/lock.ts";
-import { drainHeldGateLeasesEffect } from "./runner/gate-lease.ts";
+import { drainHeldSharedStateLeasesEffect } from "./runner/shared-state-lease.ts";
 import { cleanupCallback } from "./runner/cleanup-timeout.ts";
 import {
   closeReportPageBytes,
@@ -1473,12 +1473,15 @@ function writeStderr(text: string): Effect.Effect<void> {
 
 /** Idempotent application-level sweep for resources owned by this invocation. */
 function releaseCliResources(): Effect.Effect<void> {
-  return Effect.all([
-    cliPromise("stop remaining sandboxes", () => stopAllSandboxes()).pipe(Effect.ignore),
-    drainExperimentTeardowns().pipe(Effect.ignore),
-    drainHeldCaseLocksEffect().pipe(Effect.ignore),
-    drainHeldGateLeasesEffect().pipe(Effect.ignore),
-  ], { concurrency: "unbounded" }).pipe(Effect.asVoid);
+  // A shared-state lease must outlive provider/Sandbox finalizers and the Experiment teardown.
+  // Keep the shutdown sweep ordered; the generic case-lock fallback comes last because the
+  // shared-state implementation intentionally reuses that underlying lock primitive.
+  return cliPromise("stop remaining sandboxes", () => stopAllSandboxes()).pipe(
+    Effect.ignore,
+    Effect.zipRight(drainExperimentTeardowns().pipe(Effect.ignore)),
+    Effect.zipRight(drainHeldSharedStateLeasesEffect().pipe(Effect.ignore)),
+    Effect.zipRight(drainHeldCaseLocksEffect().pipe(Effect.ignore)),
+  );
 }
 
 function errorMessage(cause: unknown): string {
@@ -1616,6 +1619,7 @@ function agentRunFromExperiment(
     earlyExit: overrides.earlyExit ?? experiment.earlyExit ?? false,
     sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
+    sharedState: experiment.sharedState,
     judge: experiment.judge,
     ...resolveRunTimeout(overrides.timeout, experiment.timeoutMs),
     budget: overrides.budget ?? experiment.budget,

@@ -57,6 +57,8 @@ export interface ExperimentRunInfo {
   sandboxPlansByEval: globalThis.Record<string, JsonValue>;
   /** Sandbox 是否在同一次 Run 内复用。 */
   sandboxReuse?: boolean;
+  /** 跨 Invocation 共享外部状态的互斥声明；只记录稳定、非凭据 key。 */
+  sharedState?: SharedStateConfig;
   /** 解析后的 Judge 执行身份；只记录凭据选择器名，不记录凭据。 */
   judge?: Pick<JudgeConfig, "model" | "baseUrl" | "apiKeyEnv" | "timeoutMs">;
   /**
@@ -886,6 +888,14 @@ export interface ExperimentHookContext extends ScopedFeedback {
 /** Shared lifecycle callback shape for author and Experiment Plugin hooks. */
 export type ExperimentHook = (ctx: ExperimentHookContext) => void | Promise<void>;
 
+/**
+ * 保护同一项目内共享的外部可变状态的互斥声明。它只提供跨 Invocation 的独占，不存储
+ * 状态、不提供事务，也不协调不同机器；`key` 必须稳定且不含凭据，并进入配置身份。
+ */
+export interface SharedStateConfig {
+  readonly key: string;
+}
+
 /** Experiment 作者自行选择的字段；不包含路径 id 与 factory 品牌。 */
 export interface ExperimentAuthorFields {
   /** 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。 */
@@ -943,17 +953,25 @@ export interface ExperimentAuthorFields {
   /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
   sandboxReuse?: boolean;
   /**
+   * 声明本 Experiment 需要独占的共享外部状态。相同 key 的 Invocation 在同一项目
+   * Coordination 域内从 Experiment/Sandbox setup 前一直互斥到 Sandbox teardown、
+   * provider finalizer 与 Experiment teardown 全部完成；等待者不会先创建 Sandbox，
+   * 取得租约后继续自己的 plan。它不是状态存储、事务或跨机器锁。
+   */
+  sharedState?: SharedStateConfig;
+  /**
    * 本实验的花费上限(USD)。调度器按「已完成 attempt 的实测花费」累计,到顶后跳过这个实验
    * 剩下未起飞的 attempt 并上报一次 `run:budgetExceeded`(已在飞的 attempt 仍会跑完)。
    */
   budget?: number;
   /**
-   * 本实验自己的并发上限:调度器只对这个实验的 attempt 限流,同批其它实验不受影响,
+   * 本 Invocation 内本实验自己的并发上限:调度器只对这个实验的 attempt 限流,同批其它实验不受影响,
    * 仍按全局并发(CLI / env / config / 沙箱默认)跑。用于串行化有共享状态的实验
    * (如跨 eval 累积记忆:`maxConcurrency: 1` 保证 attempt 按 eval 顺序一个个跑),
    * 或给撞 provider 限额的实验单独降速。名额与 attempt 同生命周期:从沙箱创建前一直握到
    * teardown 与沙箱销毁完成才归还,中途任何等待(含 turn 重试退避)都不松手——
    * `maxConcurrency: 1` 因此是严格的临界区,不会被同实验的下一个 attempt 提前闯入。
+   * 它不跨 Invocation；跨 Invocation 的共享外部状态请声明 `sharedState`。
    */
   maxConcurrency?: number;
   /**
@@ -1007,6 +1025,7 @@ export interface ExperimentDefinition {
   readonly sandbox?: SandboxLayer;
   readonly plugins: readonly PluginInstance<"experiment">[];
   readonly sandboxReuse: boolean;
+  readonly sharedState?: SharedStateConfig;
   readonly budget?: number;
   readonly maxConcurrency?: number;
   readonly classifyFailure?: AttemptFailureClassifier;
@@ -1161,6 +1180,8 @@ export interface AgentRun {
   /** Canonical, credential-free Experiment Plugin behavior projection. */
   readonly pluginBehavior?: JsonValue;
   readonly sandboxReuse?: boolean;
+  /** 跨 Invocation 共享外部状态的互斥声明；值进入 configHash。 */
+  readonly sharedState?: SharedStateConfig;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
   readonly judge?: JudgeConfig;
   /**

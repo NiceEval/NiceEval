@@ -28,6 +28,8 @@ export interface ConfigIdentity {
   /** Credential-free Experiment Plugin and receiver behavior. */
   readonly plugins: JsonValue;
   readonly sandboxReuse: boolean;
+  /** Stable public key for the shared-state mutex, never a secret or stored state. */
+  readonly sharedState: DeclaredConfigValue<string>;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   readonly sandboxLayer: JsonValue;
   readonly judge: JudgeConfigIdentity;
@@ -99,6 +101,7 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
     reasoningEffort: Object.freeze(identity.reasoningEffort),
     flags: freezeJson({ ...identity.flags }),
     plugins: freezeJson(identity.plugins),
+    sharedState: Object.freeze(identity.sharedState),
     sandboxLayer: freezeJson(identity.sandboxLayer),
     judge: identity.judge._tag === "Unconfigured"
       ? Object.freeze({ _tag: "Unconfigured" as const })
@@ -178,6 +181,7 @@ export function configIdentityForRun(
     flags: run.flags,
     plugins: run.pluginBehavior ?? [],
     sandboxReuse: run.sandboxReuse ?? false,
+    sharedState: declaredString(run.sharedState?.key),
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     judge: judgeIdentity(judge),
     agentInstalls: agentInstallPlansForRun(run),
@@ -198,6 +202,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     flags: exp.flags ?? {},
     plugins: exp.plugins ?? [],
     sandboxReuse: exp.sandboxReuse ?? false,
+    sharedState: declaredString(exp.sharedState?.key),
     sandboxLayer: exp.sandboxLayer,
     judge: judgeIdentity(exp.judge),
     agentInstalls: exp.agentInstalls,
@@ -217,6 +222,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   putDeclared("model", identity.model);
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
+  putDeclared("sharedState.key", identity.sharedState);
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("plugins", identity.plugins);
   put("sandboxLayer", identity.sandboxLayer);
@@ -319,6 +325,7 @@ export function counterfactualConfigIdentity(
     flags,
     plugins,
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,
+    sharedState: accepted.has("config:sharedState.key") ? historical.sharedState : current.sharedState,
     sandboxLayer,
     judge,
     agentInstalls,

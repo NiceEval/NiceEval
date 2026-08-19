@@ -1,0 +1,154 @@
+// owner: docs/engineering/testing/e2e/README.md#process-group-terminal-state
+// regression: memory/testkit-zombie-only-process-group.md
+// Rerun: pnpm e2e --repo lifecycle -- --run test/process-group-zombie-cleanup.test.ts -t "owned Linux process group"
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { defined, pollUntil, startProcess } from "@niceeval/testkit";
+import { expect, test } from "vitest";
+
+interface ZombieFixture {
+  readonly groupId: number;
+  readonly helperPid: number;
+  readonly zombiePid: number;
+}
+
+interface ProcessGroupMember {
+  readonly pid: number;
+  readonly processGroup: number;
+  readonly state: string;
+}
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : undefined;
+}
+
+function positiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive integer, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+function parseFixture(stdout: string): ZombieFixture {
+  let value: unknown;
+  try {
+    value = JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(`zombie fixture did not emit JSON: ${stdout}\n${String(error)}`);
+  }
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`zombie fixture did not emit an object: ${stdout}`);
+  }
+  const fixture = value as Record<string, unknown>;
+  return {
+    groupId: positiveInteger(fixture.groupId, "fixture groupId"),
+    helperPid: positiveInteger(fixture.helperPid, "fixture helperPid"),
+    zombiePid: positiveInteger(fixture.zombiePid, "fixture zombiePid"),
+  };
+}
+
+function parseLinuxStat(pid: number, stat: string): ProcessGroupMember {
+  const commandEnd = stat.lastIndexOf(")");
+  if (commandEnd < 0 || stat[commandEnd + 1] !== " ") {
+    throw new Error(`cannot parse /proc/${pid}/stat`);
+  }
+  const fields = stat.slice(commandEnd + 2).trim().split(/\s+/);
+  const state = fields[0];
+  const processGroup = Number(fields[2]);
+  if (state === undefined || !Number.isSafeInteger(processGroup)) {
+    throw new Error(`cannot parse process state/group from /proc/${pid}/stat`);
+  }
+  return { pid, state, processGroup };
+}
+
+async function processGroupMembers(groupId: number): Promise<readonly ProcessGroupMember[]> {
+  const entries = await readdir("/proc", { withFileTypes: true });
+  const observed = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
+      .map(async (entry) => {
+        const pid = Number(entry.name);
+        try {
+          const member = parseLinuxStat(pid, await readFile(`/proc/${entry.name}/stat`, "utf8"));
+          return member.processGroup === groupId ? member : undefined;
+        } catch (error) {
+          if (errorCode(error) === "ENOENT" || errorCode(error) === "ESRCH") return undefined;
+          throw error;
+        }
+      }),
+  );
+  return observed.filter((member): member is ProcessGroupMember => member !== undefined);
+}
+
+async function processGone(pid: number): Promise<boolean> {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    if (errorCode(error) === "ESRCH") return true;
+    throw error;
+  }
+}
+
+async function stopFixtureHelper(pid: number): Promise<void> {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (error) {
+    if (errorCode(error) !== "ESRCH") throw error;
+  }
+  await pollUntil(
+    async () => await processGone(pid) ? true : undefined,
+    { timeoutMs: 5_000, intervalMs: 25, label: `zombie fixture helper ${pid} to exit` },
+  );
+}
+
+test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies", async () => {
+  const handle = startProcess(
+    ["python3", join(process.cwd(), "fixtures", "zombie-only-process-group.py")],
+    { cwd: process.cwd(), processGroup: true, graceMs: 100, timeoutMs: 10_000 },
+  );
+  let groupId: number | undefined;
+  let helperPid: number | undefined;
+  let disposeAttempted = false;
+
+  try {
+    const root = await handle.done;
+    expect(root.exitCode, root.diagnostic()).toBe(0);
+    expect(root.signal, root.diagnostic()).toBeNull();
+
+    const fixture = parseFixture(root.stdout);
+    groupId = defined(handle.pid, "zombie fixture root did not expose its process-group ID");
+    helperPid = fixture.helperPid;
+    expect(fixture.groupId).toBe(groupId);
+
+    const onlyMember = await pollUntil(
+      async () => {
+        const members = await processGroupMembers(groupId!);
+        return members.length === 1 && members[0]?.state === "Z" ? members[0] : undefined;
+      },
+      { timeoutMs: 5_000, intervalMs: 25, label: `owned process group ${groupId} to contain only a zombie` },
+    );
+    expect(onlyMember).toEqual({
+      pid: fixture.zombiePid,
+      processGroup: groupId,
+      state: "Z",
+    });
+    // signal 0 is the old implementation's only liveness probe. It still sees
+    // the kernel's terminal zombie even though TERM and KILL cannot change it.
+    expect(() => process.kill(-groupId, 0)).not.toThrow();
+
+    disposeAttempted = true;
+    await handle.dispose();
+  } finally {
+    if (!disposeAttempted) await handle.dispose().catch(() => {});
+    if (helperPid !== undefined) await stopFixtureHelper(helperPid);
+    if (groupId !== undefined) {
+      await pollUntil(
+        async () => (await processGroupMembers(groupId!)).length === 0 ? true : undefined,
+        { timeoutMs: 5_000, intervalMs: 25, label: `owned process group ${groupId} to be physically reaped` },
+      );
+    }
+  }
+});

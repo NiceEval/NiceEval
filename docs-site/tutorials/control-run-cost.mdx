@@ -29,7 +29,9 @@ Confirm the number of evals, Experiments, and Attempts first. `--dry` does not p
 pnpm exec niceeval exp regression --early-exit
 ```
 
-After one Attempt for an eval passes, its remaining undispatched Attempts are written as `not-dispatched`. Attempts that are already running finish normally and contribute to the result.
+After one Attempt for an eval passes, its remaining undispatched Attempts are written as `not-dispatched`. In-flight Attempts for the same eval receive cancellation through `ctx.signal`. They stop promptly only when the Adapter observes that signal.
+
+An Attempt for that eval that settles after a passing sibling has triggered early exit is excluded from the results.
 
 `failed`, `errored`, and `skipped` do not trigger early exit. Do not enable it when you need the complete pass-rate distribution.
 

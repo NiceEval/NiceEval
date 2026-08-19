@@ -200,6 +200,13 @@ Lifecycle Repo 保留原生测试 runner 的默认并行。每条 case 按场景
 - 下一次独立消费者可以正常启动；
 - cleanup 失败不会遮蔽原始失败。
 
+### process-group-terminal-state
+
+`e2e/lifecycle/test/process-group-zombie-cleanup.test.ts` 是安装后 Testkit `ProcessHandle` 的 Linux process-group
+终态 owner。它在 `PR_SET_CHILD_SUBREAPER` 固定的 Linux 场景中制造一组唯一成员为 `Z` 的 owned child：`signal 0`
+仍报告该组存在，但 TERM 和 KILL 都不能改变这个终态。`dispose()` 必须把它视为已经终止；fixture 随后自行 reap 并核对该组物理消失。
+有非终态成员、真正 orphan 或无法读取 procfs 时不属于这条例外，仍按 Testkit 的 TERM → grace → KILL 与 fail-closed 规则处理。
+
 ### Eval Group shared Sandbox
 
 `e2e/lifecycle/test/eval-group-shared-sandbox.test.ts` 是 Eval Group 物理生命周期的单边界 owner。

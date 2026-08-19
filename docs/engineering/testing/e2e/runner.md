@@ -14,6 +14,7 @@
 | [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅变更后 accept 旧结果，新 Run 立即进入 project-current，但不获得未来 carry 许可，并保留审计 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
 | [`#runner-group-or-stop-dispatch`](#runner-group-or-stop-dispatch) | 一个 Eval 的 `.orStop()` 不饿死其它 Eval Group lane | Journey E2E | `e2e/runner/test/group-or-stop-dispatch.test.ts` | PR |
 | [`#runner-group-wave-gap-dispatch`](#runner-group-wave-gap-dispatch) | 慢 Group lane 不阻塞已有空闲资源的快 lane 后继 | Journey E2E | `e2e/runner/test/group-wave-gap-dispatch.test.ts` | PR |
+| [`#runner-shared-state-lifecycle`](#runner-shared-state-lifecycle) | 相同 `sharedState.key` 的不同 Experiment 不交错外部状态生命周期 | Journey E2E | `e2e/runner/test/shared-state-lifecycle.test.ts` | PR |
 
 ## 验收命题
 
@@ -55,6 +56,12 @@ policy 重新判断；原来的 identity gap 不会因为历史上执行过 acce
 
 本 Journey 不签入 `.niceeval`、不手写 manifest，也不从 accept 中段开始。不同资格、差异或错误分支需要独立输入时，可以在
 Runner Repo 增加专用 Eval；完整 fingerprint 等价类仍不在 E2E 重复穷举。
+
+### runner-shared-state-lifecycle
+
+两个不同 Experiment 声明相同 `sharedState.key`，并在各自 Experiment hook 中独占同一份外部状态。第一个 Run 从 setup
+到 teardown 尚未结束时，第二个 Run 不得进入自己的 setup；前者 teardown 完成后，后者才可取得该状态并完整运行。
+该 Journey 经安装后的 `niceeval exp` 证明等待方没有在共享状态区间内运行 Hook 或执行 Eval。
 
 ## 边界
 

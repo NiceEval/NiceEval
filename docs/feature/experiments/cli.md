@@ -145,15 +145,15 @@ writer 互斥。只读命令只惰性读取已发布 Run。
 
 ### 协调等待与恢复
 
-有效 owner 持有 Experiment 并发槽时，等待方以 `i gate-lease-waiting` 显示当前运行状态。该信息不改变
-completion 或退出码。名额释放或 owner heartbeat 过期后，调度器继续派发。
+Experiment `maxConcurrency` 只在本 Invocation 内限流，不产生跨 Invocation 的等待或被其它 Invocation 收紧。
+跨 Invocation 的 Eval dispatch claim 仍由 case lock 协调；声明 `sharedState.key` 的 Invocation 在拿到
+共享状态租约前不运行 Experiment Hook、不创建 Sandbox，也不持有 Eval lock 或全局并发位。
 
-过期协调状态被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。成功接管不形成
-warning，也不写入 Run diagnostic。Human 只说明 NiceEval 已恢复中断运行留下的状态并继续执行，不展示
-lease、lock 或协调器内部计数；机器流为每次接管保留结构化 notice。完整形态见
-[协调恢复输出案例](output/coordination-recovery.md)。
+过期 case lock 被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。过期
+`sharedState` 租约被接管时，产生 `state-lease-taken-over` info notice，并在所属 Run 留下诊断；它只
+说明互斥已恢复，不能证明强杀前的外部状态已回滚。完整形态见[协调恢复输出案例](output/coordination-recovery.md)。
 
-机器 notice 的稳定字段如下；`resource` 决定资源专属字段是否存在：
+case-lock recovery notice 的稳定字段如下：
 
 ```ts
 interface CoordinationRecoveredNotice {
@@ -161,10 +161,9 @@ interface CoordinationRecoveredNotice {
   code: "coordination-recovered";
   level: "info";
   message: string;
-  resource: "concurrency-slot" | "case-lock";
+  resource: "case-lock";
   experimentId: string;
   evalId?: string;
-  slot?: number;
   previousPid?: number;
   previousHost?: string;
 }
