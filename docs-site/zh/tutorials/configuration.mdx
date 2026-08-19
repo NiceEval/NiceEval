@@ -86,7 +86,7 @@ export default defineConfig({
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | key 省略时依次回落 `OPENROUTER_API_KEY`、`ANTHROPIC_API_KEY` |
-| `OPENAI_API_KEY` | Judge | Judge 的默认 key 变量，用 `judge.apiKeyEnv` 指到别的名字 |
+| `NICEEVAL_JUDGE_KEY` | Judge | Judge 的默认 key 变量，用 `judge.apiKeyEnv` 指到别的名字 |
 | `E2B_API_KEY` | `e2bSandbox()` | |
 | `VERCEL_API_TOKEN` | `vercelSandbox()` | |
 | `VERCEL_TEAM_ID` | `vercelSandbox()` | |
@@ -124,7 +124,7 @@ export default defineConfig({
 ```bash
 # .env
 ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
+NICEEVAL_JUDGE_KEY=sk-...
 ```
 
 `.env` 是投递密钥的地方，不是第二个配置文件——往里写 `NICEEVAL_TIMEOUT` 这种东西不会有任何效果。CI 里同样只传密钥：
@@ -148,7 +148,7 @@ OPENAI_API_KEY=sk-...
 | Judge 模型与端点 | config 或评估用例的 `judge.model` / `judge.baseUrl` |
 | OTel 接收地址 | config 的 `telemetry: { host, port }` |
 
-Judge 默认从 `OPENAI_API_KEY` 读取 key，也可以改读 `judge.apiKeyEnv` 指定的变量；端点只从 `judge.baseUrl` 读。被测应用把标准的 `OPENAI_*` 挪作它用时，用 `judge.apiKeyEnv` 为 Judge 配置独立的 key 名称。
+Judge 默认从 `NICEEVAL_JUDGE_KEY` 读取 key，也可以改读 `judge.apiKeyEnv` 指定的变量；端点只从 `judge.baseUrl` 读。它不会借用被测应用的 `OPENAI_API_KEY`。
 
 ## 接着看
 

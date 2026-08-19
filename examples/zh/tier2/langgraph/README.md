@@ -74,7 +74,7 @@ messages 与 status 完整，协议未提供的 usage 和 adapter 未产生的 `
 cd examples/zh/tier2/langgraph
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # 只需要建一次
 pnpm install
-cp .env.example .env   # 填 OPENAI_API_KEY(这里挪用给 DeepSeek,见 niceeval.config.ts 注释)
+cp .env.example .env   # 填应用的 OPENAI_API_KEY 和 Judge 的 NICEEVAL_JUDGE_KEY
 
 # 终端 1:起应用(注意 langsmith SDK 要完整路径,端点带 /v1/traces 尾巴;
 # niceeval 的接收端口钉在 4318,被占时改 niceeval.config.ts 的 telemetry.port 并同步这里)

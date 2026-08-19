@@ -58,5 +58,5 @@ Change `datepicker_test.test.tsx` and run the same command again. Only this eval
 ## Notes
 
 - **`loadText` must be at module top level.** Cache reuse is decided before execution. Reading it inside `test(t)` happens too late, so NiceEval reports an error telling you to move it to the top level.
-- **Read Agent output with `t.sandbox`, not `loadText`.** Files created by the Agent inside the Sandbox are evidence for this run and vary each time; they do not belong in the fingerprint. Read them with assertions such as `t.sandbox.file(...)`.
+- **Read Agent output with `t.sandbox`, not `loadText`.** Files created by the Agent inside the Sandbox are evidence for this run and vary each time; they do not belong in the fingerprint. Read them with `await t.sandbox.readText(path)`, then pass the returned string to `t.check`.
 - Use `loadYaml` / `loadJson` when criteria are structured data such as a case table. See [Data-driven Testing](/tutorials/dataset-fanout).

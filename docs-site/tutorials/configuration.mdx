@@ -86,7 +86,7 @@ The following table is every environment variable NiceEval reads. Each Agent, Sa
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | When the key is absent, it falls back to `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | When the key is absent, it falls back to `ANTHROPIC_API_KEY` |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | When the key is absent, it falls back in order to `OPENROUTER_API_KEY`, then `ANTHROPIC_API_KEY` |
-| `OPENAI_API_KEY` | Judge | Default key variable for the Judge; use `judge.apiKeyEnv` to point to another name |
+| `NICEEVAL_JUDGE_KEY` | Judge | Default key variable for the Judge; use `judge.apiKeyEnv` to point to another name |
 | `E2B_API_KEY` | `e2bSandbox()` | |
 | `VERCEL_API_TOKEN` | `vercelSandbox()` | |
 | `VERCEL_TEAM_ID` | `vercelSandbox()` | |
@@ -124,7 +124,7 @@ Locally, put secrets in `.env` under the current working directory. The CLI load
 ```bash
 # .env
 ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
+NICEEVAL_JUDGE_KEY=sk-...
 ```
 
 `.env` delivers secrets; it is not a second configuration file. Writing something such as `NICEEVAL_TIMEOUT` there has no effect. In CI, pass secrets the same way:
@@ -148,7 +148,7 @@ Configuration has no environment-variable layer, so every item below has only on
 | Judge model and endpoint | `judge.model` / `judge.baseUrl` in config or on the eval |
 | OTel receiver address | `telemetry: { host, port }` in config |
 
-The Judge reads its key from `OPENAI_API_KEY` by default, or from the variable specified by `judge.apiKeyEnv`, and reads its endpoint only from `judge.baseUrl`. When the system under test repurposes standard `OPENAI_*` variables, configure a separate key name with `judge.apiKeyEnv`.
+The Judge reads its key from `NICEEVAL_JUDGE_KEY` by default, or from the variable specified by `judge.apiKeyEnv`, and reads its endpoint only from `judge.baseUrl`. It never borrows the system under test's `OPENAI_API_KEY`.
 
 ## Continue reading
 
