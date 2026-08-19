@@ -25,8 +25,8 @@ const EXPECTED_OUTCOMES = [
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
 const REQUIRED_LIVE_SECRETS = [
-  "BUB_API_KEY",
-  "BUB_API_BASE",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
 ] as const;
 
 const e2e = createE2EContext({

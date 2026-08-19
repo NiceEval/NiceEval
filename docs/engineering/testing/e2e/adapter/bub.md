@@ -27,7 +27,7 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 `legacy` 证明的是**版本旋钮真的落地**：`version` / `otelPlugin` 把 Adapter 装到旧协议代上，且旧插件在旧 Bub 上仍产出 span（执行树有时间注释）。
 它不是第二遍协议巡礼——版本线是新增的证明维度，不是新增的协议行为，所以按[仓库 Eval 预算](README.md#仓库-eval-预算)只留一条 Eval。
 
-`ci` 与 `legacy` 的 `flags.requireObservedCost` 都明确为 `false`：`BUB_API_BASE` 可以指向任意 OpenAI-compatible 网关，
+`ci` 与 `legacy` 的 `flags.requireObservedCost` 都明确为 `false`：`OPENAI_BASE_URL` 可以指向任意 OpenAI-compatible 网关，
 它们都不能把缺席的 provider cost 当作零或自行估算。当前两条线保留 token / request usage、归一后的工具轨和 OTel 时间轨；
 `usage.cost` 存在时仍由 adapter 按 [Bub 成本契约](../../../../feature/adapters/sdk/bub/cost.md) 原样落入 `Usage.costUSD`。
 

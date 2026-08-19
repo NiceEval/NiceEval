@@ -9,7 +9,7 @@ Repo ID 是 `adapter/opencode`；manifest 声明 `areas: ["adapter", "sandbox"]`
 
 | 实验 | 鉴权与 provider | 模型 | 跑哪些 Eval |
 | --- | --- | --- | --- |
-| `ci` | 显式 `BUB_API_KEY` + `BUB_API_BASE`，注册 `compat` provider | `gpt-5.6-luna` | coding、会话、usage 三条通用协议闭环 |
+| `ci` | 显式 `OPENAI_API_KEY` + `OPENAI_BASE_URL`，注册 `compat` provider | `gpt-5.6-luna` | coding、会话、usage 三条通用协议闭环 |
 | `skill` | 与 `ci` 相同的 compat provider，额外声明 status-report 与 decoy 两个 Skill | `gpt-5.6-luna` | 只跑 `skills/status-report` 专用 Eval |
 | `go` | 显式 `OPENCODE_API_KEY`，不配置自定义 base URL，使用 OpenCode Go 原生 provider | `opencode-go/deepseek-v4-flash` | 只跑 `provider/go-routing` 专用 Eval |
 

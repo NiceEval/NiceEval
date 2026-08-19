@@ -248,10 +248,6 @@ jobs:
           MANIFESTS_FILE: ${{ steps.cell.outputs.manifests-file }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          BUB_API_BASE: ${{ secrets.BUB_API_BASE }}
-          BUB_API_KEY: ${{ secrets.BUB_API_KEY }}
-          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
-          CODEX_BASE_URL: ${{ secrets.CODEX_BASE_URL }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           NICEEVAL_JUDGE_KEY: ${{ secrets.NICEEVAL_JUDGE_KEY }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
@@ -264,10 +260,6 @@ jobs:
           const allowed = new Set([
             "ANTHROPIC_API_KEY",
             "ANTHROPIC_BASE_URL",
-            "BUB_API_BASE",
-            "BUB_API_KEY",
-            "CODEX_API_KEY",
-            "CODEX_BASE_URL",
             "DEEPSEEK_API_KEY",
             "NICEEVAL_JUDGE_KEY",
             "OPENCODE_API_KEY",

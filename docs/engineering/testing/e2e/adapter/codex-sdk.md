@@ -3,7 +3,7 @@
 ## adapter-codex-sdk-live-compatibility
 
 Repo ID 是 `adapter/codex-sdk`。它在 host 上以 external network 和 Node 24+ 运行，锁定
-`@openai/codex-sdk` 版本，并只接收 `CODEX_API_KEY` 与 `CODEX_BASE_URL` 两个 live secret。
+`@openai/codex-sdk` 版本，并只接收 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL` 两个 live secret。
 每次 Experiment 只有一次 Attempt；Vitest 没有 retry，也没有 Judge。
 
 本仓库证明候选包的公共 `createCodexThreadEventStream()` 能消费真实 Codex SDK 的原始

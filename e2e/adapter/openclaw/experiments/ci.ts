@@ -4,8 +4,8 @@ import { sandbox } from "../sandbox.ts";
 
 // 与 bub 同源的 OpenAI 兼容网关:写 baseUrl 时 Adapter 注册 compat provider。
 const agent = openClawAgent({
-  apiKey: process.env.BUB_API_KEY,
-  baseUrl: process.env.BUB_API_BASE,
+  apiKey: process.env.OPENAI_API_KEY,
+  baseUrl: process.env.OPENAI_BASE_URL,
   skills: [
     { kind: "local", path: "skills/niceeval-status-report", name: "niceeval-status-report" },
     { kind: "local", path: "skills/niceeval-decoy", name: "niceeval-decoy" },

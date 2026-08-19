@@ -27,7 +27,7 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
-const REQUIRED_LIVE_SECRETS = ["BUB_API_KEY", "BUB_API_BASE"] as const;
+const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 let run!: ProcessReceipt;

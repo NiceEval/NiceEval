@@ -27,7 +27,7 @@ export default defineExperiment({
   // 网关(s2a.niceeval.com)不识别 bub 的默认模型别名;显式钉一个网关确认可用的便宜档模型
   // (README「secrets 与真实服务」:PR 门禁用便宜模型与小样本)。
   model: "gpt-5.6-luna",
-  // BUB_API_BASE is a caller-selected OpenAI-compatible gateway. Its usage
+  // OPENAI_BASE_URL is a caller-selected OpenAI-compatible gateway. Its usage
   // response is required to carry token/request facts, but provider-observed
   // cost remains optional by the adapter contract and must never be inferred.
   flags: { requireObservedCost: false },

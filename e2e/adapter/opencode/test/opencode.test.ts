@@ -29,8 +29,8 @@ const TOOL_PAYLOAD = "niceeval-opencode-tool-input-907";
 const GO_LIVE_MARKER = "OPENCODE-GO-DEEPSEEK-V4-FLASH-E2E-731";
 
 const REQUIRED_LIVE_SECRETS = [
-  "BUB_API_KEY",
-  "BUB_API_BASE",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
   "OPENCODE_API_KEY",
 ] as const;
 

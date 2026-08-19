@@ -17,7 +17,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-const REQUIRED_LIVE_SECRETS = ["CODEX_API_KEY", "CODEX_BASE_URL"] as const;
+const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);

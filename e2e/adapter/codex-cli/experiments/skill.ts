@@ -3,8 +3,8 @@ import { codexAgent } from "niceeval/adapter";
 import { sandbox } from "../sandbox.ts";
 
 const agent = codexAgent({
-  apiKey: process.env.CODEX_API_KEY,
-  baseUrl: process.env.CODEX_BASE_URL,
+  apiKey: process.env.OPENAI_API_KEY,
+  baseUrl: process.env.OPENAI_BASE_URL,
   skills: [
     { kind: "local", path: "skills/niceeval-status-report", name: "niceeval-status-report" },
     { kind: "local", path: "skills/niceeval-release-note", name: "niceeval-release-note" },
