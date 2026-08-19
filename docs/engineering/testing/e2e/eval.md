@@ -57,8 +57,9 @@ Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoi
 这个 Experiment 使用公开 custom Sandbox provider，其 `readBytes()` 对超过 4,000,000 bytes 的单次读取报错。
 旧版 5,430,371-byte 整包导出因此红灯，候选必须靠自动分段通过。
 
-公开 Timing Page 中的 `workspace.diff` 阶段必须在 9 秒内完成，整条 `exp` 命令必须在 10 秒内返回。Repo 的 2 分钟预算仍包含安装、两次
-`show`、发布和资源回收，不把测试总时长误当成 Experiment 性能。
+公开 Timing Page 中的 `workspace.diff` 阶段必须在 9 秒内完成。Repo 的 2 分钟预算包含整条
+`exp`、安装、两次 `show`、发布和资源回收；该生命周期预算负责发现卡死，不把共享 runner 的调度与进程回收时间
+误当成 Experiment 或 `workspace.diff` 的性能。
 
 ## eval-assertion-judge-unavailable
 
