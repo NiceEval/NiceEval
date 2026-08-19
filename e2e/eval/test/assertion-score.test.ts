@@ -5,13 +5,6 @@ import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
-  verdict?: string;
-}
-
 interface LeaderboardShow {
   schema: "niceeval.show/v1";
   selection: { kind: "project-current"; sampleIdentity: string };
@@ -34,10 +27,10 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       const run = await niceeval.run(["exp", "assertion-score", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+      const evaluations = run.expEvalEvents();
       const scoredEvent = only(
-        run.ndjson<ExpEvent>(),
-        (event) =>
-          event.event === "eval" && event.evalId === "assertion-score/scored" && event.locator !== undefined,
+        evaluations,
+        (event) => event.evalId === "assertion-score/scored",
         run.diagnostic(),
       );
       expect(scoredEvent).toMatchObject({
@@ -46,9 +39,8 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         verdict: "passed",
       });
       const emptyEvent = only(
-        run.ndjson<ExpEvent>(),
-        (event) =>
-          event.event === "eval" && event.evalId === "assertion-score/empty" && event.locator !== undefined,
+        evaluations,
+        (event) => event.evalId === "assertion-score/empty",
         run.diagnostic(),
       );
       expect(emptyEvent).toMatchObject({
@@ -57,9 +49,8 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         verdict: "passed",
       });
       const stoppedEvent = only(
-        run.ndjson<ExpEvent>(),
-        (event) =>
-          event.event === "eval" && event.evalId === "assertion-score/stopped" && event.locator !== undefined,
+        evaluations,
+        (event) => event.evalId === "assertion-score/stopped",
         run.diagnostic(),
       );
       expect(stoppedEvent).toMatchObject({
@@ -68,9 +59,8 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         verdict: "passed",
       });
       const skippedEvent = only(
-        run.ndjson<ExpEvent>(),
-        (event) =>
-          event.event === "eval" && event.evalId === "assertion-score/skipped" && event.locator !== undefined,
+        evaluations,
+        (event) => event.evalId === "assertion-score/skipped",
         run.diagnostic(),
       );
       expect(skippedEvent).toMatchObject({
@@ -80,7 +70,7 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       });
       const shown = await niceeval.run(["show", "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(run.ndjson<ExpEvent>().filter((event) => event.verdict === "failed")).toEqual([]);
+      expect(evaluations.filter((event) => event.verdict === "failed")).toEqual([]);
       const document = shown.json<LeaderboardShow>();
       expect(document).toMatchObject({
         schema: "niceeval.show/v1",

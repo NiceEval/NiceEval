@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/cli.md#cli-failure-error-results
 // rerun: pnpm e2e --repo cli -- --run test/failure-error-results.test.ts
 
-import { only, type ExpEvent } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -40,7 +40,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       expect(failed.exitCode, failed.diagnostic()).toBe(1);
       expect(failed.stderr).toBe("");
       expect(failed.stdout).not.toMatch(/[\x1b\x08]/);
-      const failedEvents = failed.ndjson<ExpEvent>();
+      const failedEvents = failed.expEvalEvents();
       expect(failedEvents).toContainEqual(expect.objectContaining({
         event: "eval",
         evalId: "deliberate-fail/broken",
@@ -54,7 +54,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       }));
       const failedEval = only(
         failedEvents,
-        (event) => "event" in event && event.event === "eval" && event.evalId === "deliberate-fail/broken",
+        (event) => event.evalId === "deliberate-fail/broken",
         failed.diagnostic(),
       );
       const failedReceipt = failed.expReceipt();
@@ -89,7 +89,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       expect(errored.stderr).toBe("");
       expect(errored.stdout).not.toMatch(/[\x1b\x08]/);
       expect(errored.stdout).not.toContain("[object Object]");
-      const erroredEvents = errored.ndjson<ExpEvent>();
+      const erroredEvents = errored.expEvalEvents();
       expect(erroredEvents).toContainEqual(expect.objectContaining({
         event: "eval",
         evalId: "deliberate-error/crash",
@@ -103,7 +103,7 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       }));
       const erroredEval = only(
         erroredEvents,
-        (event) => "event" in event && event.event === "eval" && event.evalId === "deliberate-error/crash",
+        (event) => event.evalId === "deliberate-error/crash",
         errored.diagnostic(),
       );
       const erroredReceipt = errored.expReceipt();
@@ -254,8 +254,8 @@ test("计分制与通过制 Human 结束摘要显示各自主读数", async () =
       const freshForCarry = await niceeval.run(["exp", "normal", "greet", "--rerun", "all", "--json"]);
       expect(freshForCarry.exitCode, freshForCarry.diagnostic()).toBe(0);
       const freshForCarryEval = only(
-        freshForCarry.ndjson<ExpEvent>(),
-        (event) => "event" in event && event.event === "eval" && event.evalId === "greet/hello",
+        freshForCarry.expEvalEvents(),
+        (event) => event.evalId === "greet/hello",
         freshForCarry.diagnostic(),
       );
       const carried = await niceeval.run(["exp", "normal", "greet", "--json"]);
