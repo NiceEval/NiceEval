@@ -124,6 +124,8 @@ export interface ProcessReceipt {
   expEvalEvents(): ExpEvalEvent[];
 }
 
+export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument;
+
 export function assertExpEvalOutcomes(
   actual: readonly ExpEvalEvent[],
   expected: readonly ExpEvalOutcomeExpectation[],
@@ -183,6 +185,10 @@ timeout 与 selector 预检。Testkit 只串行执行每个 target，要求补�
 `assertExpEvalOutcomes()` 要求调用方在测试文件中逐条提供 `experimentId`、`evalId`、Verdict 与 Attempt 数。
 它严格拒绝缺失、额外、重复身份和字段不符，并可选核对 `passed` 或 `early_exit` 字段。
 Testkit 不生成 expected、不按 exit code 推断 Verdict，也不把 `failed`、`errored` 或 `skipped` 折叠成另一状态。
+
+`decodeShowTiming()` 严格验证 `niceeval show --timing --json` 的 schema、timing data、Attempt 身份、collection
+与完整 interval 字段；malformed 时附带原始命令诊断。它不选择 interval，也不解释 phase、label、父子关系或 outcome，
+这些 expected 必须继续写在 owner 正文中。
 
 ```ts
 const evalEvents = assertExpEvalOutcomes(

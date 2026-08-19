@@ -1,22 +1,11 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-history-dedup
 // regression: memory/multi-open-residual-window-closed-by-narrow-read.md
 // rerun: pnpm e2e --repo runner -- --run test/history-dedup.test.ts
-import { only, pollUntil, withTempDir } from "@niceeval/testkit";
+import { decodeShowTiming, only, pollUntil, withTempDir, type ExpEvent } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
-
-interface ExpEvent {
-  event: string;
-  total?: number;
-  reused?: number;
-  locator?: string;
-  evalId?: string;
-  verdict?: string;
-  attempts?: number;
-  passed?: number;
-}
 
 interface DryTarget {
   experimentId: string;
@@ -34,111 +23,89 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
-interface TimingInterval {
-  intervalId: string;
-  phase: string;
-  label: string;
-  parentIntervalId: string | null;
-  outcome: string;
-}
-
-interface TimingShowDocument {
-  data: {
-    kind: "timing";
-    timing: Array<{
-      state: string;
-      timing?: {
-        intervals: TimingInterval[];
-      };
-    }>;
-  };
-}
-
 test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt", async () => {
   await runnerE2E.case(
     "history-dedup",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval }, paths }) => {
       const root = paths.projectRoot;
-    const first = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
-    expect(first.exitCode, first.diagnostic()).toBe(0);
-    const firstEval = only(first.ndjson<ExpEvent>(), (event) => event.event === "eval", first.diagnostic());
-    expect(firstEval).toMatchObject({
-      event: "eval",
-      evalId: "suite/stable",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    });
-    const firstLocator = firstEval.locator!;
-    expect(firstLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
+      const first = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
+      expect(first.exitCode, first.diagnostic()).toBe(0);
+      const firstEval = only(first.expEvalEvents(), () => true, first.diagnostic());
+      expect(firstEval).toMatchObject({
+        event: "eval",
+        evalId: "suite/stable",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      });
+      const firstLocator = firstEval.locator;
+      expect(firstLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
 
-    const forced = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
-    expect(forced.exitCode, forced.diagnostic()).toBe(0);
-    const forcedEval = only(forced.ndjson<ExpEvent>(), (event) => event.event === "eval", forced.diagnostic());
-    expect(forcedEval).toMatchObject({
-      event: "eval",
-      evalId: "suite/stable",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    });
-    const forcedLocator = forcedEval.locator!;
-    expect(forcedLocator).not.toBe(firstLocator);
+      const forced = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
+      expect(forced.exitCode, forced.diagnostic()).toBe(0);
+      const forcedEval = only(forced.expEvalEvents(), () => true, forced.diagnostic());
+      expect(forcedEval).toMatchObject({
+        event: "eval",
+        evalId: "suite/stable",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      });
+      const forcedLocator = forcedEval.locator;
+      expect(forcedLocator).not.toBe(firstLocator);
 
-    const currentDry = await niceeval.run(["exp", "history", "--dry", "--json"]);
-    expect(currentDry.exitCode, currentDry.diagnostic()).toBe(0);
-    const currentPlan = currentDry.json<DryPlan>();
-    expect(currentPlan).toMatchObject({ total: 1, reused: 1 });
-    const currentTarget = currentPlan.matrix.find((row) => row.evalId === "suite/stable");
-    expect(currentTarget).toBeDefined();
-    expect(currentTarget!.slots.map((slot) => slot.state)).toEqual(["reused"]);
-    expect(currentTarget!.readbacks).toHaveLength(1);
-    expect(currentTarget!.readbacks[0]!.source.locator).toBe(forcedLocator);
-    expect(currentTarget!.readbacks[0]!.verdict).toBe("passed");
+      const currentDry = await niceeval.run(["exp", "history", "--dry", "--json"]);
+      expect(currentDry.exitCode, currentDry.diagnostic()).toBe(0);
+      const currentPlan = currentDry.json<DryPlan>();
+      expect(currentPlan).toMatchObject({ total: 1, reused: 1 });
+      const currentTarget = currentPlan.matrix.find((row) => row.evalId === "suite/stable");
+      expect(currentTarget).toBeDefined();
+      expect(currentTarget!.slots.map((slot) => slot.state)).toEqual(["reused"]);
+      expect(currentTarget!.readbacks).toHaveLength(1);
+      expect(currentTarget!.readbacks[0]!.source.locator).toBe(forcedLocator);
+      expect(currentTarget!.readbacks[0]!.verdict).toBe("passed");
 
-    const carried = await niceeval.run(["exp", "history", "--json"]);
-    expect(carried.exitCode, carried.diagnostic()).toBe(0);
-    const carriedEvents = carried.ndjson<ExpEvent>();
-    const carriedStart = only(carriedEvents, (event) => event.event === "start", carried.diagnostic());
-    expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
-    const carriedReceipt = carried.expReceipt();
-    expect(carriedReceipt).toMatchObject({ completion: "completed" });
-    expect(carriedReceipt.runIds).toHaveLength(1);
+      const carried = await niceeval.run(["exp", "history", "--json"]);
+      expect(carried.exitCode, carried.diagnostic()).toBe(0);
+      const carriedEvents = carried.ndjson<ExpEvent>();
+      const carriedStart = only(carriedEvents, (event) => event.event === "start", carried.diagnostic());
+      expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
+      const carriedReceipt = carried.expReceipt();
+      expect(carriedReceipt).toMatchObject({ completion: "completed" });
+      expect(carriedReceipt.runIds).toHaveLength(1);
 
-    const current = await niceeval.run(["show", "--json"]);
-    expect(current.exitCode, current.diagnostic()).toBe(0);
-    expect(current.stdout).toContain(first.expReceipt().runIds[0]!);
-    expect(current.stdout).toContain(forced.expReceipt().runIds[0]!);
-    expect(current.stdout).toContain(carriedReceipt.runIds[0]!);
-    const forcedEvidence = await niceeval.run(["show", forcedLocator, "--execution"]);
-    expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);
-    expect(forcedEvidence.stdout).toContain("runner-fixture-ok");
+      const current = await niceeval.run(["show", "--json"]);
+      expect(current.exitCode, current.diagnostic()).toBe(0);
+      expect(current.stdout).toContain(first.expReceipt().runIds[0]!);
+      expect(current.stdout).toContain(forced.expReceipt().runIds[0]!);
+      expect(current.stdout).toContain(carriedReceipt.runIds[0]!);
+      const forcedEvidence = await niceeval.run(["show", forcedLocator, "--execution"]);
+      expect(forcedEvidence.exitCode, forcedEvidence.diagnostic()).toBe(0);
+      expect(forcedEvidence.stdout).toContain("runner-fixture-ok");
 
-    const timing = await niceeval.run(["show", forcedLocator, "--timing", "--json"]);
-    expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    const timingDocument = timing.json<TimingShowDocument>();
-    expect(timingDocument.data.kind, timing.diagnostic()).toBe("timing");
-    const availableTiming = only(
-      timingDocument.data.timing,
-      (entry) => entry.state === "available" && entry.timing !== undefined,
-      timing.diagnostic(),
-    );
-    const intervals = availableTiming.timing!.intervals;
-    const evalRun = only(
-      intervals,
-      (interval) => interval.phase === "eval.run" && interval.label === "eval.run",
-      timing.diagnostic(),
-    );
-    expect(evalRun.parentIntervalId, timing.diagnostic()).toBeNull();
-    expect(evalRun.outcome, timing.diagnostic()).toBe("completed");
-    const firstSend = only(
-      intervals,
-      (interval) => interval.phase === "agent.send" && interval.label === "turn1",
-      timing.diagnostic(),
-    );
-    expect(firstSend.parentIntervalId, timing.diagnostic()).toBe(evalRun.intervalId);
-    expect(firstSend.outcome, timing.diagnostic()).toBe("completed");
+      const timing = await niceeval.run(["show", forcedLocator, "--timing", "--json"]);
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      const availableTiming = only(
+        decodeShowTiming(timing).data.timing,
+        (entry) => entry.state === "available",
+        timing.diagnostic(),
+      );
+      if (availableTiming.state !== "available") throw new Error(timing.diagnostic());
+      const evalRun = only(
+        availableTiming.timing.intervals,
+        (interval) => interval.phase === "eval.run" && interval.label === "eval.run",
+        timing.diagnostic(),
+      );
+      expect(evalRun.parentIntervalId, timing.diagnostic()).toBeNull();
+      expect(evalRun.outcome, timing.diagnostic()).toBe("completed");
+      const firstSend = only(
+        availableTiming.timing.intervals,
+        (interval) => interval.phase === "agent.send" && interval.label === "turn1",
+        timing.diagnostic(),
+      );
+      expect(firstSend.parentIntervalId, timing.diagnostic()).toBe(evalRun.intervalId);
+      expect(firstSend.outcome, timing.diagnostic()).toBe("completed");
     },
   );
 });

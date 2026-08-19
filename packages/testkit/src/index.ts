@@ -2,6 +2,7 @@ export * from "./process.js";
 export * from "./exp-eval-outcomes.js";
 export * from "./live-exp-retry.js";
 export * from "./process-lifecycle.js";
+export * from "./show-timing.js";
 export * from "./primitives.js";
 export * from "./temp.js";
 export * from "./project-copy.js";
