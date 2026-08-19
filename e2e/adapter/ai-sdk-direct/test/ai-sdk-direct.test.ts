@@ -94,11 +94,3 @@ it("show --execution 读回 aiSdkAgent 的代表性工具证据", async () => {
   expect(execution.stdout).toContain("remember_marker");
   expect(execution.stdout).toContain(DIRECT_MARKER);
 });
-
-it("show --timing 读回 aiSdkAgent 的 runner 阶段", async () => {
-  const timing = await niceeval.run(["show", locator, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
-
-});

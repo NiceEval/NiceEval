@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { ProcessReceipt, ProcessStartError } from "./process.js";
 import type { Argv } from "./process.js";
@@ -7,6 +8,42 @@ import type { Argv } from "./process.js";
 export const DEFAULT_GRACE_MS = 2000;
 
 const PROCESS_GROUP_POLL_MS = 25;
+
+type ProcessGroupPresence = "alive" | "zombie-only" | "gone" | "unknown";
+
+interface LinuxProcessGroupMembers {
+  readonly live: readonly number[];
+  readonly zombies: readonly number[];
+}
+
+function linuxProcessGroupMembers(groupId: number): LinuxProcessGroupMembers | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const live: number[] = [];
+    const zombies: number[] = [];
+    for (const entry of readdirSync("/proc", { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) continue;
+      let stat: string;
+      try {
+        stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+      } catch {
+        continue;
+      }
+      const commandEnd = stat.lastIndexOf(")");
+      if (commandEnd < 0) continue;
+      const fields = stat.slice(commandEnd + 1).trimStart().split(/\s+/u);
+      const state = fields[0];
+      const processGroup = Number(fields[2]);
+      if (!Number.isInteger(processGroup) || processGroup !== groupId) continue;
+      const pid = Number(entry.name);
+      if (state === "Z" || state === "X") zombies.push(pid);
+      else live.push(pid);
+    }
+    return { live, zombies };
+  } catch {
+    return undefined;
+  }
+}
 
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
@@ -158,42 +195,49 @@ export class ProcessHandle {
     }
   }
 
-  private ownedGroupExists(): boolean {
+  private ownedGroupPresence(): ProcessGroupPresence {
     if (!this.processGroup || this.pid === undefined) {
-      return false;
+      return "gone";
     }
     try {
       process.kill(-this.pid, 0);
-      return true;
+      const members = linuxProcessGroupMembers(this.pid);
+      return members !== undefined && members.live.length === 0 && members.zombies.length > 0
+        ? "zombie-only"
+        : "alive";
     } catch (error) {
-      if (errorCode(error) === "ESRCH") return false;
-      if (errorCode(error) === "EPERM") return true;
+      if (errorCode(error) === "ESRCH") return "gone";
+      if (errorCode(error) === "EPERM") return "unknown";
       throw error;
     }
   }
 
-  private async waitForOwnedGroupExit(timeoutMs: number): Promise<boolean> {
+  private async waitForOwnedGroupExit(timeoutMs: number): Promise<ProcessGroupPresence> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
-    while (this.ownedGroupExists()) {
+    for (;;) {
+      const presence = this.ownedGroupPresence();
+      if (presence !== "alive") return presence;
       const remaining = deadline - Date.now();
-      if (remaining <= 0) return false;
+      if (remaining <= 0) return "alive";
       await new Promise<void>((resolve) => {
         setTimeout(resolve, Math.min(PROCESS_GROUP_POLL_MS, remaining));
       });
     }
-    return true;
   }
 
   private async terminateOwnedGroup(): Promise<void> {
-    if (!this.ownedGroupExists()) {
+    const initial = this.ownedGroupPresence();
+    if (initial === "gone" || initial === "zombie-only") {
       await this.done;
       return;
     }
 
     this.sendTermination("SIGTERM");
-    if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
+    const afterTerm = await this.waitForOwnedGroupExit(this.graceMs);
+    if (afterTerm === "alive" || afterTerm === "unknown") {
       this.sendTermination("SIGKILL");
-      if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
+      const afterKill = await this.waitForOwnedGroupExit(this.graceMs);
+      if (afterKill === "alive" || afterKill === "unknown") {
         throw new Error(
           `process group ${this.pid} still exists after SIGTERM and SIGKILL`,
         );

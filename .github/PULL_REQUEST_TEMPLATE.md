@@ -375,13 +375,17 @@ For every added or modified test file, paste review-complete final source once,
 including owner, regression, rerun, and reliability comments. Complete final
 source remains the default. When a long file would make the PR materially harder
 to read, omit only unchanged code that is unrelated to this PR's claimed
-behavior. Every omission must be replaced in the code block by a precise
-`// … omitted: <what and why it is unrelated>` marker. The retained fragments
-must be exact final source, not rewritten excerpts, and must include every added
-or modified line, every affected test title, the complete public actions that
-exercise the change, and every assertion that protects it. Never omit setup,
-cleanup, helper behavior, or expected values needed to understand why the shown
-test is independent and distinguishing.
+behavior. Every omission must be replaced in the code block by one precise
+marker:
+`// … omitted: file=<path>; before=<unique exact final-source anchor>; after=<unique exact final-source anchor>; contents=<omitted code>; reason=<unrelated reason>`.
+The two anchors must occur exactly once in the final file. The reviewer verifies
+the locked base→head merge-base diff has zero changed lines strictly between
+them. The retained fragments must be exact final source, not rewritten excerpts,
+and must include every added or modified line, every affected test title, the
+complete public actions that exercise the change, and every assertion that
+protects it. Never omit owner/regression/rerun comments, setup, cleanup, helper
+behavior, expected values, public actions, or assertions needed to understand why
+the shown test is independent and distinguishing.
 
 Introduce each source block with four lines. Purpose says whether it proves a
 feature, prevents a bug regression, or both. Protects names the public behavior
@@ -405,7 +409,7 @@ real public action, observation, and remaining risk instead of fake source.
 - Asserts: <independent expected outcomes checked by this file>
 
 ```ts
-<complete final file, or exact final-source fragments with precise omission markers>
+<complete final file, or exact final-source fragments with file/unique-before/unique-after/contents/reason omission markers>
 ```
 
 ### Deleted test files
