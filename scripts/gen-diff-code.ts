@@ -205,6 +205,7 @@ const PAIRS: DiffPair[] = [
       "",
       "**接入方式**：内置的 `uiMessageStreamAgent` 可以直接连接 AI SDK UI Message Stream，也就是 `useChat` 后端使用的标准 SSE 协议。",
       "Adapter 只需填写接口地址，并说明如何把 `model` 放进请求体。NiceEval 会处理会话重放、HITL 审批，以及工具和消息事件。",
+      "Endpoint 必须像标准 AI SDK 实现一样用 `data: [DONE]` 结束响应。自定义兼容 endpoint 若省略该标记，NiceEval 会把响应视为截断并返回 send failure；升级前请补上结束记录。",
       "",
       "这个协议不提供用量数据，因此示例没有用量断言。接入过程没有修改应用的 `src/backend/*`。",
       "",

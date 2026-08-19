@@ -120,6 +120,7 @@ function drainSseEvents(
   buffer: string,
   controller: TransformStreamDefaultController<UIMessageChunkLike>,
   onChunk: (chunk: UIMessageChunkLike) => void,
+  onDone: () => void,
 ): string {
   for (;;) {
     const sepIndex = buffer.indexOf("\n\n");
@@ -129,7 +130,14 @@ function drainSseEvents(
     const line = rawEvent.split("\n").find((candidate) => candidate.startsWith("data: "));
     if (!line) continue;
     const payload = line.slice("data: ".length);
-    if (payload === "[DONE]") continue;
+    if (payload === "[DONE]") {
+      onDone();
+      // `[DONE]` is the protocol terminal, not an advisory event. Closing the
+      // reducer input here prevents frames later in the same network chunk (or
+      // later chunks) from manufacturing a successful Turn after termination.
+      controller.terminate();
+      return "";
+    }
     const chunk = JSON.parse(payload) as UIMessageChunkLike;
     onChunk(chunk);
     controller.enqueue(chunk);
@@ -144,17 +152,18 @@ function drainSseEvents(
 function toChunkStream(
   body: ReadableStream<Uint8Array>,
   onChunk: (c: UIMessageChunkLike) => void,
+  onDone: () => void,
 ): ReadableStream<UIMessageChunkLike> {
   const decoder = new TextDecoder();
   let buffer = "";
   return body.pipeThrough(new TransformStream<Uint8Array, UIMessageChunkLike>({
     transform(value, controller) {
       buffer += decoder.decode(value, { stream: true });
-      buffer = drainSseEvents(buffer, controller, onChunk);
+      buffer = drainSseEvents(buffer, controller, onChunk, onDone);
     },
     flush(controller) {
       // Keep the original protocol rule: only a completed `\n\n` record is observable.
-      buffer = drainSseEvents(buffer, controller, onChunk);
+      buffer = drainSseEvents(buffer, controller, onChunk, onDone);
     },
   }));
 }
@@ -469,9 +478,14 @@ function uiMessageStreamSendEffect(
         );
       }
 
-      const streamState: { sawError: string | undefined } = { sawError: undefined };
+      const streamState: { sawDone: boolean; sawError: string | undefined } = {
+        sawDone: false,
+        sawError: undefined,
+      };
       const chunkStream = toChunkStream(responseBody, (chunk) => {
         if (chunk.type === "error") streamState.sawError = chunk.errorText;
+      }, () => {
+        streamState.sawDone = true;
       });
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => transport.abort()).pipe(
@@ -483,6 +497,14 @@ function uiMessageStreamSendEffect(
         chunkStream,
         transport,
       );
+      if (!streamState.sawDone) {
+        return yield* Effect.fail(
+          makeSendFailure({
+            acceptance: "unknown",
+            message: `POST ${url} ended before the UI Message Stream [DONE] marker. The response was truncated or the endpoint does not speak the complete UI Message Stream protocol.`,
+          }),
+        );
+      }
       if (!finalMessage) {
         return yield* Effect.fail(
           makeSendFailure({
