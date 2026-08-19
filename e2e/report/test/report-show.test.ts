@@ -10,13 +10,6 @@ import {
   runReportPty,
 } from "./support.ts";
 
-interface ExpEvent {
-  readonly event: string;
-  readonly evalId?: string;
-  readonly locator?: string;
-  readonly verdict?: string;
-}
-
 interface ReportProblem {
   readonly code: string;
   readonly path: readonly string[];
@@ -125,7 +118,7 @@ test("show 将固定 execution 的文本和单目标机器文档交付给调用�
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       expect(run.expReceipt()).toMatchObject({ completion: "completed" });
-      const evals = run.ndjson<ExpEvent>().filter((event) => event.event === "eval");
+      const evals = run.expEvalEvents();
       expect(evals.map((event) => [event.evalId, event.verdict]).sort()).toEqual([
         ["deliberate-error", "errored"],
         ["deliberate-fail", "failed"],
@@ -178,12 +171,12 @@ test("show 对 immutable Attempt 交付精确 evidence JSON", async () => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       const failed = only(
-        run.ndjson<ExpEvent>(),
-        (event) => event.event === "eval" && event.evalId === "deliberate-fail" && event.locator !== undefined,
+        run.expEvalEvents(),
+        (event) => event.evalId === "deliberate-fail",
         run.diagnostic(),
       );
 
-      const attempt = await niceeval.run(["show", failed.locator!, "--json"]);
+      const attempt = await niceeval.run(["show", failed.locator, "--json"]);
       expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
       const document = attempt.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
@@ -198,7 +191,7 @@ test("show 对 immutable Attempt 交付精确 evidence JSON", async () => {
       expect(document.projections.costs).toEqual([]);
 
       const payload = JSON.stringify(document.data);
-      expect(payload).toContain(failed.locator!);
+      expect(payload).toContain(failed.locator);
       expect(payload).toContain("mismatched");
     },
   );
