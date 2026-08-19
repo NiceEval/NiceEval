@@ -97,10 +97,10 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         page: { route: "/", pageId: "overview" },
         data: { kind: "leaderboard" },
       });
-      expect(initialDocument.problems.length).toBeGreaterThan(0);
-      expect(initialDocument.problems).toEqual(expect.arrayContaining([
-        expect.objectContaining({ code: "analysis-missing", path: ["page", "overview"] }),
-      ]));
+      expect(
+        initialDocument.problems,
+        "a completed Eval with no Agent send has known zero usage rather than missing input",
+      ).toEqual([]);
       expect(initialDocument.data.rows).toHaveLength(1);
       expect(initialDocument.data.rows[0]!.passRate).toMatchObject({
         state: "available",

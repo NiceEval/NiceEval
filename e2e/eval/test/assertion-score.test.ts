@@ -15,6 +15,7 @@ interface ExpEvent {
 interface LeaderboardShow {
   schema: "niceeval.show/v1";
   selection: { kind: "project-current"; sampleIdentity: string };
+  problems: readonly unknown[];
   data: {
     kind: "leaderboard";
     rows: readonly {
@@ -95,6 +96,7 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       const [row] = document.data.rows;
       expect(row).toBeDefined();
       expect(row!.totalScore).toEqual(expect.any(Number));
+      expect(document.problems, "scored, stopped, and skipped are known score outcomes").toEqual([]);
     },
   );
 });

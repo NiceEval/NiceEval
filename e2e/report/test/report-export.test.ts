@@ -49,6 +49,9 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       expect(index).toContain("Report fixture");
       expect(index).not.toContain(projectRoot);
       expect(index).not.toContain(".niceeval/");
+      expect(index, "Overview must not inherit a detail Page's missing-input warning")
+        .not.toContain("analysis-missing");
+      expect(index).not.toContain("file-changes is not-recorded");
 
       // The authored hrefs, rather than a hand-built output path, reveal every
       // parameterized instance that static export had to close.
@@ -110,6 +113,8 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       const diff = await readFile(fileURLToPath(new URL("diff/index.html", staticRoot)), "utf8");
       expect(diff).toContain("Diff fixture detail");
       expect(diff).toContain("Diff entries: not-recorded");
+      expect(diff, "the Page that requests an intentionally absent attachment keeps its exact warning")
+        .toMatch(/<code>analysis-missing<\/code> — file-changes is not-recorded/);
 
       const complete = await stat(join(projectRoot, "site-export", "_niceeval", "complete"));
       expect(complete.size).toBe(0);

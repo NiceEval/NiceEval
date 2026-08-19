@@ -130,6 +130,16 @@ export async function proveLocalProtocolOwner(kind: OwnerKind): Promise<void> {
           .selection;
         expect(selection.runIds, shown.diagnostic()).toEqual([inv.runIds[0]!]);
 
+        const project = await niceeval.run(
+          ["show", "--json"],
+          { env: { [FIXTURE_BASE_URL_ENV]: ready.baseUrl } },
+        );
+        expect(project.exitCode, project.diagnostic()).toBe(0);
+        expect(
+          project.json<{ readonly problems: readonly unknown[] }>().problems,
+          `${verdict} is a known terminal result, not missing analysis input`,
+        ).toEqual([]);
+
         // tracing 缺席不代表 runner 阶段也丢失了 timing：已落盘的阶段树仍
         // 必须可从公开 timing 页面读出 Eval 与首轮 Turn。此 direct Agent 没有
         // 声明 setup，runner 不应凭空补一个 agent.setup 阶段。
