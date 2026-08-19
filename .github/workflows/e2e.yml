@@ -338,19 +338,36 @@ jobs:
       - name: Resolve cell manifests
         id: cell
         env:
+          CELL_ID: ${{ matrix.id }}
           REPO_IDS_JSON: ${{ toJSON(matrix.repoIds) }}
           REPO_DIRS_JSON: ${{ toJSON(matrix.dirs) }}
         run: |
           set -euo pipefail
           manifests_file="${RUNNER_TEMP}/e2e-cell-manifests.json"
-          jq -n \
-            --argjson ids "$REPO_IDS_JSON" \
-            --argjson dirs "$REPO_DIRS_JSON" \
-            'if ($ids | length) != ($dirs | length) or ($ids | length) == 0 then error("invalid cell repo mapping") else [range(0; $ids | length) | {id: $ids[.], manifest: ("e2e/" + $dirs[.] + "/e2e.json")}] end' \
-            > "$manifests_file"
-          jq -e 'all(.[]; (.id | type == "string") and (.manifest | type == "string"))' "$manifests_file" >/dev/null
+          node - "$manifests_file" <<'NODE'
+          const fs = require("node:fs")
+
+          const outputPath = process.argv[2]
+          const ids = JSON.parse(process.env.REPO_IDS_JSON)
+          const dirs = JSON.parse(process.env.REPO_DIRS_JSON)
+          if (
+            !Array.isArray(ids) ||
+            !Array.isArray(dirs) ||
+            ids.length === 0 ||
+            ids.length !== dirs.length ||
+            !ids.every((id) => typeof id === "string") ||
+            !dirs.every((dir) => typeof dir === "string")
+          ) {
+            throw new Error("invalid cell repo mapping")
+          }
+          const manifests = ids.map((id, index) => ({
+            id,
+            manifest: `e2e/${dirs[index]}/e2e.json`,
+          }))
+          fs.writeFileSync(outputPath, `${JSON.stringify(manifests)}\n`)
+          console.log(`[e2e] cell ${process.env.CELL_ID}: ${ids.join(", ")}`)
+          NODE
           echo "manifests-file=${manifests_file}" >> "$GITHUB_OUTPUT"
-          echo "[e2e] cell ${{ matrix.id }}: $(jq -r '[.[].id] | join(", ")' "$manifests_file")"
 
       - name: Set up Python
         if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
