@@ -86,8 +86,10 @@ t.check(fresh.reply, satisfies("没有记忆泄漏", (r) => !r.includes("小明"
 有些 agent 会在一轮执行中间停下来,等审批或缺失信息,而不是直接跑完。这时这一轮以 `status: "waiting"` 结束,并带一条或多条 `input.requested` 事件说明在等什么。完整的心智模型(握手时序、Adapter 侧义务、rejected 语义)见 [HITL](/zh/explanation/hitl),这里讲评估侧怎么用。
 
 ```ts
+import { equals } from "niceeval/expect";
+
 const draft = await t.send("拟一封跟进邮件,但先别发,等我确认。");
-draft.parked().label("停在审批上");
+t.check(draft.status, equals("waiting")).label("停在审批上");
 
 const request = t.requireInputRequest({
   prompt: /是否发送/,

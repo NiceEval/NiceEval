@@ -88,25 +88,27 @@ See the full glossary in the [architecture overview](https://niceeval.com/docs/c
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
+import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "Verify the agent calls the weather tool and answers from its result",
 
   async test(t) {
     const turn = await t.send("What's the weather in Beijing today?");
-    t.succeeded();
+    turn.succeeded();
 
     await t.group("calls get_weather with the right city", () => {
-      t.calledTool("get_weather", { input: { city: "Beijing" } });
-      t.messageIncludes(/°C|sunny|cloudy|rain/);
+      turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));
+      t.check(turn.message, pattern(/°C|sunny|cloudy|rain/));
     });
 
     const second = await t.send("What about Shanghai tomorrow?");
-    second.messageIncludes("Shanghai");
+    t.check(second.message, includes("Shanghai"));
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("Does the reply use the tool's weather data instead of making up a temperature?")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```
@@ -171,7 +173,4 @@ This project was inspired by — or had its code learned by AI from — the proj
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-Thanks to the following communities
-- WIP
-
-We also thank Linux Do for their support and feedback during the project's early development.
+Thanks to [Linux.do](https://linux.do/) for their support and feedback during the project's early development.

@@ -18,7 +18,6 @@ export default defineExperiment({
   agent,
   model: "gpt-5.6-luna",
   sandbox,
-  sandboxReuse: true,
   evals: ["skills/status-report", "session/recall", "usage/tokens"],
   attempts: 1,
 });

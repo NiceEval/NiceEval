@@ -58,9 +58,9 @@
   <path d="M 674 282 H 206" class="returnArrow" />
 
   <!-- ③ eval 侧检查（不触发 send） -->
-  <rect x="40" y="308" width="170" height="32" rx="8" class="pill" />
-  <text x="54" y="331" class="codeSm">t.parked()</text>
-  <text x="230" y="331" class="muted">断言这一轮确实停下了</text>
+  <rect x="40" y="308" width="430" height="32" rx="8" class="pill" />
+  <text x="54" y="331" class="codeSm">t.check(turn.status, equals("waiting"))</text>
+  <text x="490" y="331" class="muted">断言这一轮确实停下了</text>
 
   <rect x="40" y="350" width="500" height="32" rx="8" class="pill" />
   <text x="54" y="373" class="codeSm">t.requireInputRequest({ action: "deploy" })</text>

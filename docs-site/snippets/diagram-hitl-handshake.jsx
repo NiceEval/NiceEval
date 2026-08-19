@@ -60,7 +60,7 @@ export const HitlHandshake = () => (
         </div>
 
         <div className="ne-seq-local ne-lit" style={{ gridColumn: "1 / -1", gridRow: 5, animationDelay: "3s" }}>
-          <span className="ne-pill">t.parked()</span>
+          <span className="ne-pill">t.check(turn.status, equals("waiting"))</span>
           <span className="ne-seq-note">断言这一轮确实停下了</span>
         </div>
 

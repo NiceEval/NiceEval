@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "cli",
-  "batch": "host-1",
+  "batch": "host-2",
   "areas": ["cli"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },

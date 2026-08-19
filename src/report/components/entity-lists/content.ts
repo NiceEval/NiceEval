@@ -11,6 +11,7 @@ import type {
 import { localizedMessage } from "../../model/locale.ts";
 import type { Verdict } from "../../../shared/types.ts";
 import type { MetricValue } from "../../../analysis/index.ts";
+import { experimentListEvaluationKindComposition } from "../../model/format.ts";
 import {
   experimentEvalLayout,
   relativeEvalLabel,
@@ -32,6 +33,7 @@ const HEADER = {
   agent: localizedMessage("table.agent"),
   durationMs: localizedMessage("experimentList.avgDuration"),
   passRate: localizedMessage("experimentList.passRate"),
+  totalScore: localizedMessage("experimentList.totalScore"),
   tokens: localizedMessage("experimentList.tokens"),
   costUSD: localizedMessage("experimentList.cost"),
   record: localizedMessage("experimentList.result"),
@@ -114,20 +116,32 @@ function attemptCells(attempt: AttemptListItem): CellBag {
     // 层级表的判定构成列:该次判定,与 verdict 格同值。
     record: verdictCell(attempt.verdict),
     durationMs: measureCell(attempt.durationMs),
+    ...(attempt.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: attempt.totalScore } as const }),
     ...(attempt.costUSD === undefined ? {} : { costUSD: measureCell(attempt.costUSD) }),
   };
 }
 
-/** 层级表列集:主读数列随题型构成在场,其余固定。当前 facade 只有通过制读数。 */
-const HIERARCHY_COLUMNS: readonly ColumnSpec[] = [
+const HIERARCHY_COLUMNS_PREFIX: readonly ColumnSpec[] = [
   { key: "entity", header: HEADER.entity },
   { key: "model", header: HEADER.model },
   { key: "agent", header: HEADER.agent },
   { key: "durationMs", better: "lower", header: HEADER.durationMs },
-  { key: "passRate", better: "higher", header: HEADER.passRate },
+];
+
+const HIERARCHY_COLUMNS_SUFFIX: readonly ColumnSpec[] = [
   { key: "tokens", better: "lower", header: HEADER.tokens },
   { key: "record", header: HEADER.record },
 ];
+
+function hierarchyColumns(items: readonly ExperimentListItem[]): readonly ColumnSpec[] {
+  const composition = experimentListEvaluationKindComposition(
+    items.map((item) => ({ evaluationKind: item.evaluationKind, attempts: item.evalRows.length })),
+  );
+  const primary: ColumnSpec[] = [];
+  if (composition !== "points") primary.push({ key: "passRate", better: "higher", header: HEADER.passRate });
+  if (composition !== "pass") primary.push({ key: "totalScore", better: "higher", header: HEADER.totalScore });
+  return [...HIERARCHY_COLUMNS_PREFIX, ...primary, ...HIERARCHY_COLUMNS_SUFFIX];
+}
 
 const COST_COLUMN: ColumnSpec = { key: "costUSD", better: "lower", header: HEADER.costUSD };
 
@@ -210,6 +224,8 @@ function evalRow(
     // 判定构成列:该题 attempts 的计票,与 experiment 行计票同一形态。
     record: verdictCountsCell(row.attempts),
     durationMs: measureCell(row.durationMs),
+    ...(row.evaluationKind === "pass" ? { passRate: measureCell(row.endToEndPassRate) } : {}),
+    ...(row.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: row.totalScore } as const }),
     ...(row.costUSD === undefined ? {} : { costUSD: measureCell(row.costUSD) }),
   };
   return {
@@ -267,7 +283,17 @@ function groupTableRow(
   const bag: CellBag = {
     entity: identityCell(node.segment, groupEntityDetail(evals, knownEvals)),
     durationMs: groupMetricValue(metrics, "durationMs"),
-    passRate: groupMetricValue(metrics, "passRate"),
+    ...(evalRows.every((row) => row.evaluationKind === "pass")
+      ? { passRate: groupMetricValue(metrics, "passRate") }
+      : {}),
+    ...(evalRows.some((row) => row.totalScore !== undefined)
+      ? {
+          totalScore: {
+            kind: "score",
+            earned: evalRows.reduce((sum, row) => sum + (row.totalScore ?? 0), 0),
+          } as const,
+        }
+      : {}),
     tokens: groupMetricValue(metrics, "tokens"),
     ...(metrics?.costUSD === undefined ? {} : { costUSD: measureCell(metrics.costUSD) }),
     record: evals === 0
@@ -315,7 +341,8 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
     model: item.model === null ? { kind: "notApplicable" } : textCell(item.model),
     agent: item.agent === null ? { kind: "notApplicable" } : textCell(item.agent),
     durationMs: measureCell(item.durationMs),
-    passRate: measureCell(item.endToEndPassRate),
+    ...(item.evaluationKind === "pass" ? { passRate: measureCell(item.endToEndPassRate) } : {}),
+    ...(item.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: item.totalScore } as const }),
     tokens: measureCell(item.tokens),
     ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD) }),
     record: verdictCountsCell(attempts),
@@ -328,7 +355,7 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
 }
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {
-  const columns = columnsWithCost(HIERARCHY_COLUMNS, items.some((item) => item.costUSD !== undefined));
+  const columns = columnsWithCost(hierarchyColumns(items), items.some((item) => item.costUSD !== undefined));
   return {
     columns,
     rows: items.map((item) =>

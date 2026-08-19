@@ -88,25 +88,27 @@ NiceEval поддерживает два способа подключения �
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
+import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "Проверяет, что агент корректно вызывает инструмент при вопросах о погоде в реальном времени и отвечает на основе его результата",
 
   async test(t) {
     const turn = await t.send("Какая сегодня погода в Beijing?");
-    t.succeeded();
+    turn.succeeded();
 
     await t.group("вызывает get_weather с правильным городом", () => {
-      t.calledTool("get_weather", { input: { city: "Beijing" } });
-      t.messageIncludes(/°C|температура|погода|солнечно|облачно|дождь/);
+      turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));
+      t.check(turn.message, pattern(/°C|температура|погода|солнечно|облачно|дождь/));
     });
 
     const second = await t.send("А как насчёт Shanghai завтра?");
-    second.messageIncludes("Shanghai");
+    t.check(second.message, includes("Shanghai"));
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("Отвечает ли ассистент на основе данных о погоде от инструмента, а не выдумывает температуру?")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```
@@ -170,7 +172,4 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-Благодарим следующие сообщества
-- WIP
-
-Мы также благодарим Linux Do за поддержку и обратную связь на ранних этапах разработки проекта.
+Мы благодарим [Linux.do](https://linux.do/) за поддержку и обратную связь на ранних этапах разработки проекта.

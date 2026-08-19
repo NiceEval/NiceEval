@@ -135,7 +135,9 @@ test("show 将固定 execution 的文本和单目标机器文档交付给调用�
 
       const text = await niceeval.run(["show"]);
       expect(text.exitCode, text.diagnostic()).toBe(0);
-      expect(text.stdout).toContain("Pass rate");
+      expect(text.stdout).not.toContain("Pass rate");
+      expect(text.stdout).toContain("Mean score");
+      expect(text.stdout.replace(/\s+/gu, " ")).toMatch(/main 7/u);
       expect(text.stdout).toContain("main");
 
       const json = await niceeval.run(["show", "--json"]);
@@ -155,6 +157,13 @@ test("show 将固定 execution 的文本和单目标机器文档交付给调用�
       expect(document.report.token).toEqual(expect.any(String));
       expect(document.report.identity).toEqual(expect.any(String));
       expect(document.data.kind).toBe("leaderboard");
+      if (document.data.kind !== "leaderboard") throw new Error("Expected leaderboard data");
+      const mainRow = only(
+        document.data.rows as readonly Record<string, unknown>[],
+        (row) => row.experiment === "main",
+        JSON.stringify(document.data),
+      );
+      expect(mainRow).toMatchObject({ evaluationKind: "mixed", totalScore: 7, passRate: null });
       expectBuiltInPricingProfile(document.projections);
       expect(document.projections.costs).toEqual([]);
     },
@@ -241,8 +250,10 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
 
       const piped = await niceeval.run(["show"]);
       expect(piped.exitCode, piped.diagnostic()).toBe(0);
-      expect(piped.stdout).toContain("Pass rate");
+      expect(piped.stdout).not.toContain("Pass rate");
+      expect(piped.stdout).toContain("Mean score");
       expect(piped.stdout).toContain("main");
+      expect(piped.stdout).not.toMatch(/[╭╮╰╯├┤]/u);
 
       const terminal = await runReportPty(
         ["show"],
@@ -250,14 +261,17 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
           columns: 120,
           rows: 40,
           cwd: projectRoot,
-          env: { TERM: "dumb", NO_COLOR: undefined, FORCE_COLOR: undefined },
+          env: { TERM: "dumb", NO_COLOR: "1", FORCE_COLOR: undefined },
           timeoutMs: 60_000,
         },
       );
       expect(terminal.exitCode, terminal.diagnostic()).toBe(0);
       const visible = stripVTControlCharacters(terminal.stdout);
-      expect(visible).toContain("Pass rate");
+      expect(visible).not.toContain("Pass rate");
+      expect(visible).toContain("Mean score");
       expect(visible).toContain("main");
+      expect(visible).toMatch(/^╭.*╮$/mu);
+      expect(visible).toMatch(/^╰.*╯$/mu);
     },
   );
 });

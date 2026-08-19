@@ -70,6 +70,22 @@ npx niceeval accept @1K1P0VJAPVJ12
 
 `accept` 先检查所有输入，再发布一个以 `reference` 采用该 Attempt 的新 Run。操作者理由、差异和资格会随该 Run 保存。它不会修改源 Attempt，也不会复制源 Attempt 的业务值。
 
+新 Run 保留该 Experiment 当前完整的 expected-slot 分母。命令中选中的 slot 写作 `accepted`，同 Run 中没有被选中的 sibling slot 写作 `not-dispatched`。因此一次只接受一个 locator 时，这个 Run 的其它位置可能没有指标输入。
+
+每次 `accept` 调用都会发布新 Run，不会修改或合并上一次调用。连续接受同一 Experiment 的多个 locator 后，`project-current` 会保留这些仍匹配的 Run occurrence。默认 Overview 会在有边框的 `Result coverage` 区域提示只有部分预期结果可用；这里的可用数是结果覆盖率，不是通过率或 score。
+
+需要接受同一 Experiment 的多个结果时，把 locator 放进同一条命令：
+
+```sh
+npx niceeval accept @1K1P0VJAPVJ12 @1K1P0VJAPVJ13
+```
+
+同一次调用会为该 Experiment 发布一个 Run，并让两个目标 slot 都成为 `accepted`。需要核对某次接受的精确分母时，复制成功反馈中的 Run ID：
+
+```sh
+npx niceeval show --run <accepted-run-id>
+```
+
 ## 发布后不可修改
 
 Attempt 发布后不可修改。每一次查看都读取当时 Record 中已发布的值；新 Run 或新事实只会以新的发布出现。若 Attempt 或引用无效，Sample 将该 slot 标为 `core-invalid`，而不是 `not-recorded`。

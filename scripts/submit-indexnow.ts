@@ -1,14 +1,12 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { getAllBlogPosts } from "../site/lib/blog";
+import { absoluteUrl } from "../site/lib/content";
+import { getSitemapUrls } from "../site/lib/sitemap";
 
 const HOST = "niceeval.com";
 const KEY = "4b37f1e904e64086835ccaa2d5645d84";
 const KEY_LOCATION = `https://${HOST}/${KEY}.txt`;
-const SITEMAP_PATH = path.join(process.cwd(), "site/public/sitemap-pages.xml");
-
-function extractUrls(xml: string): string[] {
-  return [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map((match) => match[1]);
-}
+const SITE_ROOT = path.join(process.cwd(), "site");
 
 async function main() {
   // 只在 Vercel 生产部署构建时提交，预览部署/本地构建跳过，避免刷 IndexNow 配额
@@ -17,10 +15,11 @@ async function main() {
     return;
   }
 
-  const xml = await readFile(SITEMAP_PATH, "utf8");
-  const urlList = extractUrls(xml);
+  const urlList = getSitemapUrls(getAllBlogPosts(SITE_ROOT)).map(({ path: urlPath }) =>
+    absoluteUrl(urlPath),
+  );
   if (urlList.length === 0) {
-    console.warn(`[indexnow] skip: no <loc> entries found in ${SITEMAP_PATH}`);
+    console.warn("[indexnow] skip: generated sitemap has no URLs");
     return;
   }
 

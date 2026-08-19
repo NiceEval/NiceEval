@@ -141,13 +141,13 @@ export interface EvidenceCoverage {
   readonly events: EvidenceCoverageEntry;
   /** action 生命周期(工具正负断言、顺序、失败的依据)。 */
   readonly actions: EvidenceCoverageEntry;
-  /** assistant / user message(reply、messageIncludes 的依据)。 */
+  /** assistant / user message（reply 与显式 message 值断言的依据）。 */
   readonly messages: EvidenceCoverageEntry;
   /** usage(token / cost 上限断言的依据)。 */
   readonly usage: EvidenceCoverageEntry;
   /** Turn status 的真实性(succeeded / parked 的依据)——恒 completed 的映射必须声明非 complete。 */
   readonly status: EvidenceCoverageEntry;
-  /** Turn.data(outputEquals / outputMatches 的依据)。 */
+  /** Turn.data（供 `t.check(turn.data, match)` 检查结构化输出）。 */
   readonly data: EvidenceCoverageEntry;
 }
 

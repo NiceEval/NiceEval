@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "adapter/openclaw",
-  "batch": "docker-1",
+  "batch": "docker-2",
   "areas": ["adapter", "sandbox"],
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },

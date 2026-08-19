@@ -4,7 +4,7 @@
 
 带人工审批的 agent 正确行为是「停下来问」，而不是一口气做完。
 要评这类流程，需要把「停在了正确的请求上」变成 gate，再代替人类回答、驱动下一轮。
-三个 API 各管一段：`parked()` 断停下了，`requireInputRequest(filter)` 断停对了并取出请求，`respond` / `respondAll` 替人回答。
+三个 API 各管一段：`t.check(turn.status, equals("waiting"))` 断停下了，`requireInputRequest(filter)` 取出待答请求，`respond` / `respondAll` 替人回答。
 
 ## 全流程
 
@@ -12,11 +12,11 @@
    停在审批上的那笔工具调用状态是 `pending`——「停下了」和「停在正确的调用上」各一条断言：
 
    ```typescript
-   import { toolMatch } from "niceeval/expect";
+   import { equals } from "niceeval/expect";
 
    const draft = await t.send("先拟稿,发出前让我确认。");
-   draft.parked();
-   draft.calledTool(toolMatch("send_email", { status: "pending" }), { count: 1 });
+   t.check(draft.status, equals("waiting"));
+   draft.calledTool("send_email", { count: 1 });
    ```
 
 2. 用 `requireInputRequest` 要求**恰好一个**匹配的待处理请求。
@@ -58,11 +58,11 @@
 
 - `respond` 的 `optionId` 必须存在于 `request.options` 里，写错直接抛；自由文本回答用 `text` 字段，二选一。
 - 多个请求同时待处理且要**分别**回答时，用对象形式 `respond({ request, ... })` 逐一指名——字符串形式无法消歧。
-- `succeeded()` 与 `parked()` 互斥：停着未回答的请求会让 `succeeded()` 失败。
+- `draft.succeeded()` 与 `t.check(draft.status, equals("waiting"))` 互斥：停着未回答的请求不会成功完成。
   测「全程无停顿」就不要中途 `respond`。
 - agent 怎样把停点表达成输入请求是 adapter 的责任，见 [Adapter · Session 与 HITL](../../adapters/library/sessions-and-hitl.md)。
 
 ## 相关阅读
 
 - [Context · 驱动 API](../library/context.md#驱动-api) —— `requireInputRequest` filter 的字段全集。
-- [作用域断言](../../assertions/library/scoped-assertions.md) —— `parked` 与 `status: "rejected"` 的语义。
+- [作用域断言](../../assertions/library/scoped-assertions.md) —— `calledTool` 与 `status: "rejected"` 的语义。

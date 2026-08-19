@@ -219,7 +219,34 @@ interface CoordinationRecoveredNotice {
 
 ## 结束反馈与 receipt
 
-TTY 结束反馈显示 Invocation completion、Run ID、终态计数和下一步命令。它不持久化成另一份结果文档。
+TTY 结束反馈显示 Invocation completion、Run ID、终态计数、`RESULTS` 和下一步命令。它不持久化成另一份结果文档。
+
+结果标题是人类结果摘要，不是 `InvocationReceipt.completion` 的别名。正常发布后的优先级固定为：
+
+1. 有 execution error：`ERRORED`；
+2. 有未被满足的结果缺口：`INCOMPLETE`；
+3. 纯 Pass：有未通过时 `FAILED`，否则 `PASSED`；
+4. 纯 Score：`SCORED`；
+5. mixed：有未通过的 Pass Eval 时 `FAILED`，否则 `COMPLETED`。
+
+预算耗尽和无法解释的 `not-dispatched` 是结果缺口；已满足契约的 early exit 不是缺口。受控中断
+显示 `INTERRUPTED`，Record 发布失败显示 `FAILED TO PUBLISH`，两者不冒充正常结果摘要。标题不替代退出码：
+Pass 未通过、execution error、结果缺口、中断和发布失败均保持非零退出；完整 Score 结果即使 earned 为 `0`
+仍是成功的 `SCORED`。
+
+`RESULTS` 以 Experiment/config 为一个有界 row/block，按 plan 稳定排序。Pass Eval 显示通过读数；Score Eval
+按 Eval 分 cell 或续行，显示 complete attempts 的 earned mean 与 `complete / total`。partial 只显示已知下界，
+unavailable 不制造数字。
+
+Human 最多显示五个 config block；其余项显示准确省略数，并在 `NEXT` 给出能包含被省略 Run 的精确
+`niceeval show --run <runId>` 命令。
+合法零分必须显示成 `0 score · complete`，不能省略或当成 unavailable。
+
+Attempt 创建前的共享构建失败另列 `ERRORS`，按共享 failure 分组显示 phase、受影响 Eval、错误码、
+有界错误摘要与已知修复提示。`not-dispatched` 仍表示 membership，不能替代错误原因；后续
+`niceeval show --run <runId>` 在对应 Slot 行同时显示 `outcome: errored`、phase、error 和 shared failure。
+这组事实复用现有 Run-owned Observability diagnostic，不改变 Record 或 attachment schema；历史 Run 没有采集时
+继续只显示 membership，不能补造错误原因。
 
 ```ts
 interface InvocationReceipt {

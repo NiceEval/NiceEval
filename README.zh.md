@@ -88,25 +88,27 @@ NiceEval 支持两种接入方式，取决于被测 agent 是否需要隔离的�
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
+import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
 
   async test(t) {
     const turn = await t.send("北京今天天气怎么样？");
-    t.succeeded();
+    turn.succeeded();
 
     await t.group("调用 get_weather 且城市正确", () => {
-      t.calledTool("get_weather", { input: { city: "北京" } });
-      t.messageIncludes(/°C|气温|天气|晴|多云|雨/);
+      turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "北京" }) }));
+      t.check(turn.message, pattern(/°C|气温|天气|晴|多云|雨/));
     });
 
     const second = await t.send("上海明天天气怎么样?");
-    second.messageIncludes("上海");
+    t.check(second.message, includes("上海"));
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("助手是否基于工具返回的天气数据作答，而不是凭空编造温度？")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```
@@ -171,7 +173,4 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-感谢下列社区
-- WIP
-
-我们也感谢 Linux Do 在项目早期开发期间给予的支持与反馈。
+感谢 [Linux.do](https://linux.do/) 在项目早期开发期间给予的支持与反馈。

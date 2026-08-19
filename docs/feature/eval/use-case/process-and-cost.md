@@ -8,7 +8,7 @@ t.calledTool("file_read", { count: 2 }).label("读取两次");
 t.notCalledTool("raw_record_reader").label("未直接读取记录");
 ```
 
-工具的名称、输入与状态在 `calledTool` 的 options 中表达；确切次数用 `{ count }`。需要验证相对顺序时，把工具名按顺序传给 `toolOrder`：
+工具的名称、输入、输出与状态在 `toolMatch(...)` 中表达；`calledTool` 的第二参数只控制确切次数或下限。需要验证相对顺序时，把至少两个 `ToolMatch` 按顺序传给 `turn.toolOrder` 或 `session.toolOrder`：
 
 ```typescript
    turn.toolOrder([toolMatch("read_file"), toolMatch("write_file")]).label("先读后写");

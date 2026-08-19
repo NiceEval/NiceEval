@@ -84,7 +84,7 @@ Judge recipe 调用时直接登记 measurement Assertion。Pass Eval 对同一 h
 
 缺少 evidence 不能伪装成普通 mismatch。`unavailable` 与 `errored` 保留原因与脱敏 evidence。
 
-AssertionResult 也不是只保存成功或失败。所有入口都遵循同一个 `check(a, b)` 模型：每条结果保存 subject `a` 的安全结构化内容或稳定引用、evaluator / Match `b` 的 identity 与完整安全 config，以及 evaluation、policy 和显示所需的结构化结果。显式 `t.check(a, b)` 由作者提供两者；`loadedSkill`、`calledTool`、`succeeded` 与 Judge recipe 只是替作者取得 `a` 并构造 `b` 的特例，保存规则不变。
+AssertionResult 也不是只保存成功或失败。所有入口都遵循同一个 `check(a, b)` 模型：每条结果保存 subject `a` 的安全结构化内容或稳定引用、evaluator / Match `b` 的 identity 与完整安全 config，以及 evaluation、policy 和显示所需的结构化结果。显式 `t.check(a, b)` 由作者提供两者；`calledTool`、`succeeded` 与 Judge recipe 只是替作者取得 `a` 并构造 `b` 的特例，保存规则不变。
 
 例如 `t.check(await t.sandbox.runCommand(...), commandSucceeded())` 会保留已求值 `CommandResult` 的命令、参数、退出状态、运行时间以及脱敏 stdout / stderr 内容或引用。`calledTool(...)` 会保留其 scope 中归一化的 tool occurrence context。context 包括 operation / event identity、脱敏 input、status、output / error refs、coverage 与匹配 event refs。没有命中时也保留观察范围与候选 occurrence refs，而不是只存 `false`。
 

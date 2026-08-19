@@ -7,9 +7,8 @@ export default defineEval({
   judge: true,
   async test(t) {
     const turn = await t.send("解释这次修改的风险。");
-    t.check(
-      turn.judge.autoevals.closedQA("说明是否覆盖兼容性、回滚与数据风险？").atLeast(0.75),
-    );
+    turn.judge.autoevals.closedQA("说明是否覆盖兼容性、回滚与数据风险？")
+      .gate(0.75);
   },
 });
 ```

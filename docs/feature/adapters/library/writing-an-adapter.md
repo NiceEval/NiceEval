@@ -10,7 +10,7 @@
 | 收发消息 | 只在取得可信协议终态时返回真实 `status` / `data`；执行异常 reject `SendFailure` | 单轮发送、结构化输出、`succeeded` |
 | 标准事件流 | 完整转换消息、工具、结果与 usage | 消息、工具和事件断言 |
 | 多轮会话 | 使用 typed session slot 或 `id` / `capture()` | 连续发送和 `newSession()` |
-| HITL | waiting、`input.requested`、按 request ID 恢复 | `parked`、`requireInputRequest`、`respond` |
+| HITL | waiting、`input.requested`、按 request ID 恢复 | `t.check(turn.status, equals("waiting"))`、`requireInputRequest`、`respond` |
 | tracing | exporter 配置与 span mapper | trace artifact 和 view 瀑布图 |
 
 这五步表示 Adapter 文件实现了多少行为；Tier 1/2/3 表示接入需要对被测应用做多少修改。

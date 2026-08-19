@@ -34,49 +34,49 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "3c8c8c0de59ea2d33d5ccbcf42d2f3c369cfdce6"
+      "baseTree": "f38f326e35982677cc4a36926b93a9ee6f590372"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "cbcde6233df31a4828dcac6b721625c0b57133ae"
+      "baseTree": "461c87cb711d6b0fe88c149fc29424e410e2f4c4"
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "163b26135741eaafee59a4f7ba947288f3a0a293"
+      "baseTree": "956cc5427c335d26753c2c57e49c196b13046e09"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "a0bb64378f38ae138f9020d6049557600f20f488"
+      "baseTree": "50e26f3cb77757e0bf43f5409d702fb32f9b407c"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "51b9e2a156ebc509d7eca7d96cefbfa377d38e32"
+      "baseTree": "fbdaecc62d32519204acf52ee6a896469164e416"
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "e77a0b6e5f167824e44f2c4c59492290181f1fed"
+      "baseTree": "2c9de7c16feb0bac372431da10e92a12d619c146"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "45a6e41911af870e4f9856a1af6f81e8f0673c6c"
+      "baseTree": "1d49a1ae9a4a923486443694f8fb2c4a60f61385"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "ad56a6b4586db284597e3b29f4348e4469670ec3"
+      "baseTree": "e6857857cba197a8aa253f1367a2ce38081040da"
     }
   ]
 }

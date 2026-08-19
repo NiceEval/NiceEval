@@ -22,7 +22,7 @@ const turn = await t.send("总结需求。");
 
 turn.succeeded().label("Turn 完成");
 turn.calledTool(toolMatch("search"), { count: { atLeast: 1 } }).label("搜索资料");
-turn.judge.autoevals.summarizes(source).label("摘要质量");
+turn.judge.autoevals.summarizes(source).gate(0.8).label("摘要质量");
 ```
 
 scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。它们和显式值比较共享 snapshot、criterion、sealed result 与读取协议。
@@ -69,7 +69,7 @@ t.score(1).label("人工加分");
 ```ts
 await t.group("输出", () => {
   t.check(turn.message, includes("下一步")).label("给出下一步");
-  turn.judge.autoevals.closedQA("是否容易执行？").label("可执行性");
+  turn.judge.autoevals.closedQA("是否容易执行？").gate(0.8).label("可执行性");
 });
 ```
 

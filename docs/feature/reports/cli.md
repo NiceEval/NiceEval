@@ -57,6 +57,16 @@ key 完全相同。`show` 不调用 `enumerate()`，却要求 `PageLoadContext` 
 `show` 不形成 `ClosedSiteRevision`，不分配全站 route 集，也不产生 revision identity。它只交付这次目标 Page 的关闭 text 或机器文档。
 构建阶段的阶段反馈写入 stderr；人读输出写入 stdout。Broken pipe 是正常 CLI 退出，其它失败保持类型化错误。
 
+人读 text 在 Page 关闭时同时保留固定 80 列 plain projection 与本次 stdout 能力对应的 projection。stdout 是 TTY 且终端足够宽时，
+`Section` 显示区域框，`Grid` 与 `Table` 显示数据格线；非 TTY 或过窄终端选择 plain projection，组件、数据状态与顺序不变。
+`NO_COLOR` 只禁用颜色，不删除表达组件边界的结构框。`show --json` 的 `renderedText` 始终读取固定 80 列 plain projection，不继承 TTY。
+
+`default-overview` 与标准报告的 Overview 按题型显示主读数：Pass Eval 显示通过率，Score Eval 只显示 earned score，不声明满分或百分比。
+主读数、耗时和 token 的单元格不追加 `samples / total · partial`。当 Sample 中有预期结果没有可分析的 Attempt 时，Overview 在 KPI
+与实验表之外显示独立的 `Result coverage` Section。TTY 中它是区域框，标题行写明多少结果可用，正文说明这是结果完整度而不是分数。
+
+完整 Sample 不显示这个 Section。Analysis 仍保留原始 `MetricValue` 的 state、samples、total、issues 与 refs，机器文档也不因此改写数据。
+
 ### locale
 
 CLI 与 Node runtime 的人读文案固定为英语。`show` 和 `show --json` 固定写 `locale: "en"`；没有 CLI locale flag、

@@ -111,3 +111,29 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
     },
   );
 });
+
+test("计分制与通过制 Human 结束摘要显示各自主读数", async () => {
+  await cliE2E.case(
+    "score-human-results",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval } }) => {
+      const scored = await niceeval.run(["exp", "deliberate-score", "--rerun", "all"]);
+      expect(scored.exitCode, scored.diagnostic()).toBe(0);
+      expect(scored.stderr).toBe("");
+      expect(scored.stdout).not.toMatch(/[\x1b\x08]/);
+      expect(scored.stdout).toContain("SCORED");
+      expect(scored.stdout).toContain("RESULTS");
+      expect(scored.stdout).toContain("deliberate-score/scored  2 score · 1/1 complete");
+      expect(scored.stdout).toContain("1 scored · 0 skipped · 0 errored");
+      expect(scored.stdout).not.toContain("1 passed · 0 failed");
+
+      const passed = await niceeval.run(["exp", "normal", "greet", "--rerun", "all"]);
+      expect(passed.exitCode, passed.diagnostic()).toBe(0);
+      expect(passed.stderr).toBe("");
+      expect(passed.stdout).toContain("PASSED");
+      expect(passed.stdout).toContain("RESULTS");
+      expect(passed.stdout).toContain("greet/hello  1/1 passed");
+      expect(passed.stdout).not.toContain("SCORED");
+    },
+  );
+});

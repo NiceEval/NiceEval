@@ -5,12 +5,12 @@ Adapter 不实现断言，但其数据出处决定判定能否成立。
 
 | 证据 | 支撑的判定 | 缺失风险 |
 |---|---|---|
-| 真实 Turn status | succeeded、parked | 恒 completed 会静默假通过 |
-| assistant message | reply、messageIncludes | 正断言失败 |
-| Turn data | output 断言 | 正断言失败 |
+| 真实 Turn status | `succeeded()`、`t.check(turn.status, equals("waiting"))` | 恒 completed 会静默假通过 |
+| assistant message | `t.check(turn.message, includes(...) / pattern(...))` | 正断言失败 |
+| Turn data | `t.check(turn.data, equals(...) / matches(...))` | 正断言失败 |
 | 完整 action 生命周期 | 工具正负断言、顺序、失败 | 未声明缺口时负断言假通过；声明后记 unavailable |
-| skill.loaded | loadedSkill | 正断言失败 |
-| 完整事件流 | event / notEvent / order | 未声明缺口时 notEvent 假通过；声明后记 unavailable |
+| skill.loaded | 只保留为原始事件与报告事实，当前没有专用作者断言 | 不能伪称工具调用 |
+| 完整事件流 | `event(eventMatch(...))` / `notEvent(eventMatch(...))` / receiver 上的 `eventOrder` | 未声明缺口时 notEvent 假通过；声明后记 unavailable |
 | usage 与 Runner estimate | token / cost 上限 | 缺少所需 Usage 或无法形成 cost estimate 时记 unavailable；绝不按零聚合 |
 
 ## 完整性不变量
@@ -43,13 +43,13 @@ interface EvidenceCoverage {
   readonly events: EvidenceCoverageEntry;
   /** action 生命周期（工具正负断言、顺序、失败的依据）。 */
   readonly actions: EvidenceCoverageEntry;
-  /** assistant / user message（reply、messageIncludes 的依据）。 */
+  /** assistant / user message（turn.message / t.reply 的值 Match 与 eventMatch(message) 的依据）。 */
   readonly messages: EvidenceCoverageEntry;
   /** usage（token / cost 上限断言的依据）。 */
   readonly usage: EvidenceCoverageEntry;
-  /** Turn status 的真实性（succeeded / parked 的依据）——恒 completed 的映射必须声明非 complete。 */
+  /** Turn status 的真实性（succeeded 与显式 equals("waiting") 比较的依据）——恒 completed 的映射必须声明非 complete。 */
   readonly status: EvidenceCoverageEntry;
-  /** Turn.data（outputEquals / outputMatches 的依据）。 */
+  /** Turn.data（equals / matches 值 Match 的依据）。 */
   readonly data: EvidenceCoverageEntry;
 }
 

@@ -10,7 +10,9 @@ import type {
 import { attemptObservabilityFamily } from "../analysis/bindings.ts";
 import type {
   BuiltinDomainView,
+  ClosedRunDiagnosticsEntry,
   ClosedDomainEntry,
+  RunDiagnosticsDomainView,
 } from "../analysis/api.ts";
 import type {
   BuiltinDomainDetail,
@@ -674,6 +676,97 @@ export function readBuiltinDomainView<
       refs,
     });
     return view;
+  });
+}
+
+/** @internal Closes Run-owned diagnostics without requiring an Attempt locator. */
+export function readRunDiagnosticsDomainView(
+  sample: Sample,
+): Effect.Effect<RunDiagnosticsDomainView, SampleClosedError> {
+  return Effect.gen(function* () {
+    yield* assertSampleOpen(sample);
+    const binding = sampleBindings.get(sample);
+    if (binding === undefined) return yield* Effect.fail(sampleClosed(sample.snapshot.identity));
+    const selectedRunIds = new Set(sample.snapshot.runs.map((run) => String(run.runId)));
+    const experimentByRun = new Map(sample.snapshot.runs.map((run) => [String(run.runId), String(run.experimentId)]));
+    const entries: RunDiagnosticsDomainView["entries"][number][] = [];
+    for (const ref of binding.runRefs) {
+      const runId = String(ref.runId);
+      if (!selectedRunIds.has(runId)) continue;
+      const experimentId = experimentByRun.get(runId) ?? "unknown";
+      const runRead = yield* Effect.either(binding.reader.readRun(ref));
+      let entry: ClosedRunDiagnosticsEntry;
+      if (Either.isLeft(runRead)) {
+        entry = Object.freeze({
+          runId,
+          experimentId,
+          state: "failed" as const,
+          detail: `Record read failed: ${safeErrorMessage(runRead.left)}`,
+        });
+      } else if (runRead.right.state !== "available") {
+        entry = Object.freeze({
+          runId,
+          experimentId,
+          state: runRead.right.state === "missing" ? "not-recorded" as const : "invalid" as const,
+        });
+      } else {
+        const observability = yield* Effect.either(
+          binding.reader.readRunObservability(runRead.right.value.owner),
+        );
+        if (Either.isLeft(observability)) {
+          entry = Object.freeze({
+            runId,
+            experimentId,
+            state: "failed" as const,
+            detail: `Record read failed: ${safeErrorMessage(observability.left)}`,
+          });
+        } else if (observability.right.state !== "available") {
+          entry = Object.freeze({
+            runId,
+            experimentId,
+            state: observability.right.state === "not-recorded" ? "not-recorded" as const : "unsupported" as const,
+          });
+        } else {
+          const diagnostics = observability.right.value.diagnostics;
+          entry = Object.freeze({
+            runId,
+            experimentId,
+            state: "available" as const,
+            detail: Object.freeze({
+              collection: Object.freeze({
+                state: diagnostics.collection.state,
+                limitations: Object.freeze([...diagnostics.collection.limitations]),
+              }),
+              diagnostics: Object.freeze(diagnostics.diagnostics.map((diagnostic) => Object.freeze({
+                diagnosticId: String(diagnostic.diagnosticId),
+                kind: diagnostic.kind,
+                code: String(diagnostic.code),
+                phase: diagnostic.phase,
+                summary: String(diagnostic.summary),
+                causes: Object.freeze(diagnostic.causes.map((cause) => Object.freeze({
+                  code: String(cause.code),
+                  summary: String(cause.summary),
+                }))),
+                redaction: diagnostic.redaction,
+                sourceFrame: diagnostic.sourceFrame,
+              }))),
+            }),
+          });
+        }
+      }
+      entries.push(entry);
+    }
+    return Object.freeze({
+      kind: "domain-view" as const,
+      identity: Object.freeze({
+        kind: "domain-view" as const,
+        id: canonicalIdentity("domain-view", [sample.snapshot.identity.id, "run-diagnostics"]),
+      }),
+      view: "run-diagnostics" as const,
+      entries: Object.freeze(entries),
+      issues: Object.freeze([]),
+      refs: Object.freeze([]),
+    });
   });
 }
 

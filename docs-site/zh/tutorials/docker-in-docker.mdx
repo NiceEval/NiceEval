@@ -180,6 +180,9 @@ export default defineExperiment({
 共享宿主或不可信 Agent使用 managed模式。它在 inner daemon之外增加 profile attestation、单容器
 资源限制、跨进程容量准入、独占外层网络和 watchdog恢复：
 
+NixOS宿主先按照[在 NixOS上配置 Managed DinD](/zh/tutorials/nixos-managed-dind)部署并验证 profile，
+再配置下面的 Experiment。
+
 ```ts title="experiments/dind-managed.ts"
 import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";

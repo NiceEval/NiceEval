@@ -1,4 +1,5 @@
 import { defineEval } from "niceeval";
+import { pattern } from "niceeval/expect";
 
 // 这条 eval 验证 agent 在不调用工具的纯文本会话里能记住上文。
 //
@@ -8,7 +9,8 @@ export default defineEval({
 
   async test(t) {
     await (await t.send("请用一句话介绍一下自己")).succeeded().orStop();
-    await (await t.send("你刚才说的是什么语言？")).succeeded().orStop();
+    const recall = await t.send("你刚才说的是什么语言？");
+    await recall.succeeded().orStop();
     await (await t.send("好的，谢谢你的回答")).succeeded().orStop();
 
     await t.group("三轮都正常收发", () => {
@@ -19,7 +21,7 @@ export default defineEval({
 
     await t.group("第二轮能回忆起第一轮内容", () => {
       // 第二轮应提到“中文”或“汉语”等，说明它不是把第二个问题当成孤立输入处理。
-      t.messageIncludes(/中文|汉语|Chinese/i);
+      t.check(recall.message, pattern(/中文|汉语|Chinese/i));
     });
   },
 });

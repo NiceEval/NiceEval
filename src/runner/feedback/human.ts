@@ -53,7 +53,9 @@ import type {
   DurableFeedbackEvent,
   RunFeedbackPlan,
   RunFeedbackState,
+  EvalResult,
 } from "../types.ts";
+import type { CurrentReusedAttemptReadback } from "../reuse-readback.ts";
 import type { FeedbackRenderer } from "./renderer.ts";
 import type { FeedbackIO } from "./io.ts";
 import type { JsonValue } from "../../shared/types.ts";
@@ -118,6 +120,137 @@ const NON_TTY_HEARTBEAT_IDLE_MS = 30_000;
 /** dashboard 高度预留:避免最后一行触发终端自动滚动(与 live.ts 旧实现的 `rows - 2` 同一动机,
  *  这里只需要给「下一帧」留出一行余地,不需要额外的表头/尾行预留)。 */
 const DASHBOARD_ROW_RESERVE = 1;
+const HUMAN_RESULTS_EXPERIMENT_CAP = 5;
+
+type HumanResultItem = {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly evaluationKind: "pass" | "score";
+  readonly verdict: import("../../shared/types.ts").Verdict;
+  readonly scoreState?: "complete" | "partial" | "unavailable";
+  readonly earned?: number;
+};
+
+function freshHumanResult(result: EvalResult): HumanResultItem {
+  const score = result.scoreResult;
+  const scoreState = score === undefined
+    ? undefined
+    : score.status === "scored"
+      ? "complete" as const
+      : score.earnedScore > 0
+        ? "partial" as const
+        : "unavailable" as const;
+  return {
+    experimentId: result.experimentId ?? "default",
+    evalId: result.id,
+    evaluationKind: result.evaluationKind,
+    verdict: result.verdict,
+    ...(scoreState === undefined || score === undefined ? {} : { scoreState, earned: score.earnedScore }),
+  };
+}
+
+function reusedHumanResult(result: CurrentReusedAttemptReadback): HumanResultItem {
+  const attachment = result.score.state === "applicable" && result.score.attachment.state === "available"
+    ? result.score.attachment.value
+    : undefined;
+  return {
+    experimentId: result.target.experimentId,
+    evalId: result.target.evalId,
+    evaluationKind: result.source.evaluationKind,
+    verdict: result.verdict,
+    ...(attachment === undefined
+      ? {}
+      : {
+          scoreState: attachment.state,
+          ...(attachment.earned === undefined ? {} : { earned: attachment.earned }),
+        }),
+  };
+}
+
+function humanResultItems(summary: import("../types.ts").InvocationSummary): readonly HumanResultItem[] {
+  return [
+    ...summary.results.map(freshHumanResult),
+    ...summary.reusedAttempts.map(reusedHumanResult),
+  ];
+}
+
+function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
+  const byExperiment = new Map<string, HumanResultItem[]>();
+  for (const item of items) {
+    const group = byExperiment.get(item.experimentId);
+    if (group) group.push(item);
+    else byExperiment.set(item.experimentId, [item]);
+  }
+  const groups = [...byExperiment.entries()];
+  const rows: PanelRow[] = [];
+  for (const [experimentId, members] of groups.slice(0, HUMAN_RESULTS_EXPERIMENT_CAP)) {
+    rows.push({ kind: "line", text: experimentId });
+    const byEval = new Map<string, HumanResultItem[]>();
+    for (const member of members) {
+      const evalGroup = byEval.get(member.evalId);
+      if (evalGroup) evalGroup.push(member);
+      else byEval.set(member.evalId, [member]);
+    }
+    for (const [evalId, attempts] of byEval) {
+      if (attempts.some((attempt) => attempt.evaluationKind === "score")) {
+        const complete = attempts.filter((attempt) => attempt.scoreState === "complete" && attempt.earned !== undefined);
+        const partial = attempts.filter((attempt) => attempt.scoreState === "partial" && attempt.earned !== undefined);
+        const reading = complete.length > 0
+          ? `${complete.reduce((sum, attempt) => sum + attempt.earned!, 0) / complete.length} score · ${complete.length}/${attempts.length} complete`
+          : partial.length > 0
+            ? `≥${partial.map((attempt) => attempt.earned).join(", ≥")} score · partial`
+            : "score unavailable";
+        rows.push({ kind: "line", text: `  ${evalId}  ${reading}` });
+      } else {
+        const passed = attempts.filter((attempt) => attempt.verdict === "passed").length;
+        rows.push({ kind: "line", text: `  ${evalId}  ${passed}/${attempts.length} passed` });
+      }
+    }
+  }
+  if (groups.length > HUMAN_RESULTS_EXPERIMENT_CAP) {
+    rows.push({
+      kind: "line",
+      text: t("feedback.human.resultsMore", { count: groups.length - HUMAN_RESULTS_EXPERIMENT_CAP }),
+    });
+  }
+  return rows;
+}
+
+function buildPreAttemptErrorRows(results: readonly EvalResult[]): { readonly rows: PanelRow[]; readonly slots: number } | undefined {
+  const errored = results.filter((result) =>
+    result.verdict === "errored" && result.locator === undefined && result.error !== undefined
+  );
+  if (errored.length === 0) return undefined;
+  const groups = new Map<string, EvalResult[]>();
+  for (const result of errored) {
+    const error = result.error!;
+    const failureId = error.origin.scope === "run" ? error.origin.timingNodeId : `${error.code}:${error.message}`;
+    const members = groups.get(failureId);
+    if (members) members.push(result);
+    else groups.set(failureId, [result]);
+  }
+  const rows: PanelRow[] = [];
+  for (const [failureId, members] of groups) {
+    const representative = members[0]!;
+    const error = representative.error!;
+    const codeMatch = /\bERR_[A-Z0-9_]+\b/u.exec(error.message);
+    const errorCode = codeMatch?.[0] ?? error.code;
+    const focusedMessage = codeMatch === null ? error.message.slice(-600) : error.message.slice(codeMatch.index);
+    rows.push({ kind: "line", text: `${FAILURE_SYMBOL} ${representative.experimentId ?? "default"} · sandbox provisioning failed` });
+    rows.push({ kind: "line", text: `  phase: ${error.origin.scope === "run" ? "sandbox.image.build" : error.origin.phase}` });
+    rows.push({ kind: "line", text: `  affected: ${members.map((member) => member.id).join(", ")}` });
+    rows.push({ kind: "line", text: `  shared failure: ${failureId}` });
+    rows.push({ kind: "line", text: `  ${errorCode}` });
+    for (const line of focusedMessage.split(/\r?\n/u).slice(0, 6)) {
+      const text = line.trimEnd();
+      if (text.length > 0) rows.push({ kind: "line", text: `  ${text}` });
+    }
+    if (errorCode === "ERR_PNPM_IGNORED_BUILDS") {
+      rows.push({ kind: "line", text: "  fix: Review these dependencies and configure pnpm allowBuilds." });
+    }
+  }
+  return { rows, slots: errored.length };
+}
 
 export interface HumanRendererOptions {
   io: FeedbackIO;
@@ -415,22 +548,45 @@ function buildSummaryLines(
 ): string[] {
   const { summary, completion } = event;
   const fullReuse = state.total > 0 && state.total === state.reused;
+  const resultItems = humanResultItems(summary);
+  const hasScore = resultItems.some((item) => item.evaluationKind === "score");
+  const hasPass = resultItems.some((item) => item.evaluationKind === "pass");
+  const scored = resultItems.filter((item) =>
+    item.evaluationKind === "score" && item.scoreState === "complete"
+  ).length;
   // required reporter(显式 --junit)写失败必须让这行判红——它不是
   // CompletionStatus 的第四个值(那个枚举只有 complete/incomplete/interrupted 三态),但必须
   // 避免人看到一句会被误读成"全绿"的 PASSED、进程却以非零退出。
   const verdictWord =
     completion.status === "interrupted"
       ? t("feedback.human.resultInterrupted")
-      : completion.status === "incomplete"
-        ? t("feedback.human.resultIncomplete")
-        : summary.failed > 0 || summary.errored > 0 || completion.reporterErrors.some((e) => e.required)
-          ? t("feedback.human.resultFailed")
-          : t("feedback.human.resultPassed");
+      : summary.errored > 0
+        ? t("feedback.human.resultErrored")
+        : completion.status === "incomplete"
+          ? t("feedback.human.resultIncomplete")
+          : completion.reporterErrors.some((e) => e.required)
+            ? t("feedback.human.resultFailed")
+            : hasScore && !hasPass
+              ? t("feedback.human.resultScored")
+              : hasScore && hasPass
+                ? summary.failed > 0
+                  ? t("feedback.human.resultFailed")
+                  : t("feedback.human.resultCompleted")
+                : summary.failed > 0
+                  ? t("feedback.human.resultFailed")
+                  : t("feedback.human.resultPassed");
 
   const summaryRows: PanelRow[] = [
     {
       kind: "line",
-      text: t(completion.unstarted > 0
+      text: hasScore && !hasPass
+        ? t("feedback.human.scoreSummaryLine", {
+          scored,
+          skipped: summary.skipped,
+          errored: summary.errored,
+          reused: state.reused,
+        })
+        : t(completion.unstarted > 0
         ? "feedback.human.summaryIncompleteLine"
         : fullReuse
           ? "feedback.human.summaryAllReusedLine"
@@ -447,6 +603,27 @@ function buildSummaryLines(
   const blocks: string[][] = [
     renderPanel({ title: verdictWord, meta: formatElapsed(summary.durationMs), rows: summaryRows, width: panel.width, mode: panel.mode }),
   ];
+
+  if (resultItems.length > 0) {
+    blocks.push(renderPanel({
+      title: t("feedback.human.resultsHeader"),
+      meta: `${new Set(resultItems.map((item) => item.experimentId)).size} configs`,
+      rows: buildResultsPanelRows(resultItems),
+      width: panel.width,
+      mode: panel.mode,
+    }));
+  }
+
+  const preAttemptErrors = buildPreAttemptErrorRows(summary.results);
+  if (preAttemptErrors !== undefined) {
+    blocks.push(renderPanel({
+      title: t("feedback.human.errorsHeader"),
+      meta: `${preAttemptErrors.slots} slots`,
+      rows: preAttemptErrors.rows,
+      width: panel.width,
+      mode: panel.mode,
+    }));
+  }
 
   // 全通过时(state.failures 为空)不留空 FAILURES 面板。fresh 失败来自 durable event，carry
   // 失败由 plan 静态注入；reducer 把两者按 locator 收进同一清单，这里不从 InvocationSummary 再造 ——

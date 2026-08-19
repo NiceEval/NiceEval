@@ -56,6 +56,7 @@ import {
 import { reportDefinitionIdentity } from "./report/host/execute.ts";
 import { validateReportRoute } from "./report/execution/paths.ts";
 import { reportHost } from "./report/host/index.ts";
+import { panelCapabilityOf } from "./report/model/panel.ts";
 import {
   ReportHostProgressObserver,
   type ReportHostPhase,
@@ -2659,7 +2660,9 @@ function reportExecutionFailure(error: unknown): CliFailure {
     case "record-bootstrap-invalid":
       return usageError("record-bootstrap-invalid\nPass --record <actual-record-root> or create a current NiceEval Record.\n");
     case "record-format-unsupported":
-      return usageError("record-format-unsupported\nUse a NiceEval version that supports this Record format.\n");
+      return usageError(
+        "record-format-unsupported\nThis Record was created by a NiceEval version that is no longer supported. Remove .niceeval (for example, rm -rf .niceeval) and rerun the evaluation.\n",
+      );
     case "record-migration-interrupted":
       return usageError("record-migration-interrupted\nRestore the Record from Git or a backup before retrying.\n");
     case "report-route-invalid":
@@ -2893,12 +2896,19 @@ function runShowCommand(
       "Load project, config, Report, and Theme",
       loadCliReportInputs(request),
     );
+    const textProjection = flags.json
+      ? undefined
+      : panelCapabilityOf({
+          isTTY: process.stdout.isTTY,
+          width: process.stdout.columns,
+        });
     const show = request.target.kind === "attempt"
       ? reportHost.show({
           root: request.root,
           locator: request.target.locator,
           report: inputs.report,
           ...(request.page === undefined ? {} : { route: request.page }),
+          ...(textProjection === undefined ? {} : { textProjection: { width: textProjection.width, panelMode: textProjection.mode } }),
           format: flags.json ? "json" as const : "text" as const,
         })
       : reportHost.show({
@@ -2908,6 +2918,7 @@ function runShowCommand(
             : inputs.projectCurrentSelection!,
           report: inputs.report,
           ...(request.page === undefined ? {} : { route: request.page }),
+          ...(textProjection === undefined ? {} : { textProjection: { width: textProjection.width, panelMode: textProjection.mode } }),
           format: flags.json ? "json" as const : "text" as const,
         });
     const output = yield* show.pipe(

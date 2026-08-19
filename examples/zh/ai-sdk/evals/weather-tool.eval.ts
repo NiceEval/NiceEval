@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { jsonMatch, toolMatch } from "niceeval/expect";
+import { jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 // 这条 eval 验证 agent 遇到实时天气问题时会走工具，而不是直接编一个答案。
 //
@@ -16,7 +16,7 @@ export default defineEval({
     await t.group("调用 get_weather 且城市正确", () => {
       t.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "北京" }) }));
       // 回复里要出现天气信息的可见证据，避免“调了工具但没有回答用户”的情况也通过。
-      t.messageIncludes(/°C|气温|天气|晴|多云|雨/);
+      t.check(turn.message, pattern(/°C|气温|天气|晴|多云|雨/));
     });
 
     // 「是否走了工具」由上面的 t.calledTool 确定性把关;judge 只看对话文本、看不到工具调用,

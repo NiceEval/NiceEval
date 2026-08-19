@@ -450,7 +450,7 @@ export interface AiSdkAgentOptions<M = JsonValue, Integration extends object = o
    * model / tools / system prompt / stopWhen 都在这里配 —— 那是应用的事,工厂不掺和。
    */
   generate(ctx: AiSdkGenerateContext<M, Integration>): Promise<AiSdkResultLike>;
-  /** 本轮的结构化输出(Turn.data,喂 outputEquals / outputMatches)。省略则 data 为 undefined。 */
+  /** 本轮的结构化输出（Turn.data，供 `t.check(turn.data, match)` 使用）。省略则 data 为 undefined。 */
   data?(result: AiSdkResultLike, turn: AiSdkTurn): JsonValue;
 }
 

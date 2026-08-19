@@ -74,13 +74,13 @@ export default defineEval({
   async test(t) {
     const turn = await t.send("我想取消我的 Pro 订阅");
 
-    t.toolOrder([toolMatch("lookup_account"), toolMatch("get_subscription"), toolMatch("cancel_subscription")]);
+    turn.toolOrder([toolMatch("lookup_account"), toolMatch("get_subscription"), toolMatch("cancel_subscription")]);
 
     t.check(turn.message, pattern(/取消|退款|订阅/));
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("助手是否在执行取消前向用户确认了退款金额和权益变更？")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```

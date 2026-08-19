@@ -1,4 +1,5 @@
 import { defineEval } from "niceeval";
+import { pattern } from "niceeval/expect";
 
 // 这条 eval 验证 agent 能读取用户随消息上传的图片，而不是只看文字问题。
 //
@@ -16,8 +17,8 @@ export default defineEval({
     await t.group("助手描述出图片内容", () => {
       t.succeeded();
       // 必须同时提到两个具体特征(蓝色背景 + 白色方块)，而不是任一宽泛关键词就算数。
-      t.messageIncludes(/蓝|blue/i);
-      t.messageIncludes(/白|方块|square/i);
+      t.check(turn.message, pattern(/蓝|blue/i));
+      t.check(turn.message, pattern(/白|方块|square/i));
     });
 
     turn.judge.autoevals

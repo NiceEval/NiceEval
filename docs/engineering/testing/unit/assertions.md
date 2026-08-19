@@ -71,14 +71,12 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   不测试 JavaScript 标准库本身；`makeAssertion`的错误捕获与文本回退（stack 优先、非 Error 值字符串化）单独证明。
 - **值断言入口**：`check` 调用即登记并继续；需要硬判定时链 `.gate()`，需要停止当前 continuation 时 `await .orStop()`。失败保留已写条目并中止、通过透传原引用。
   `group` 只组织报告不改变语义；值断言只评显式传入的值，不隐式读取 scope 证据。`CommandResult` 失败摘要的构成：首行、尾部段、evidence 取命令行。
-- **ToolMatch/SubagentMatch 的 match 小语言**：`calledTool`/`notCalledTool`/`calledSubagent` 的 `match` 参数各字段独立形态与命中语义。
-  - `input`：顶层给对象是深度部分匹配、给 RegExp 是测序列化后的完整输入、给谓词函数是拿原始值自行判断，三种形态互不退化（回归：RegExp 实例误落深比对分支、枚举其自身空可枚举属性、静默匹配一切调用，必须锁死为不匹配）。
-  - `output`：同样支持深度部分匹配、RegExp（非字符串先序列化再测）、谓词函数与严格相等四种值语义。
-  - `count`：数字精确匹配与谓词自定义判定两种形态；只有数字精确形态在实测超出时才是确凿失败，谓词形态不满足时按证据完整度折叠走 `unavailable`。
-  - `remoteUrl`：字符串精确、RegExp、谓词函数三种形态。
-  - `status`：按 `ToolMatch` 四态（含 `pending`）与 `SubagentMatch` 三态（无 `rejected`）过滤，不带 `status` 过滤时匹配任意状态。
+- **ToolMatch 的 match 小语言**：`calledTool` / `notCalledTool` 接收名称或 `ToolMatch`；当前没有 `calledSubagent` 作者 API。
+  - `input` 与 `output` 都是 `jsonMatch(...)`、`referencesAnyPath(...)` 等受管值 Match；它们在同一个 logical occurrence 上与名称、状态做 AND。
+  - `count` 只接受正整数（确切次数）或 `{ atLeast: 正整数 }`；计数需要完整证据，不能由 predicate 自定义。
+  - `status` 只接受已完成生命周期的 `completed`、`failed` 或 `rejected`；未完成的 HITL 调用用 `calledTool(name)` 证明已发起，并单独检查 Turn 的 `waiting` 状态。
 - **Scope**：同名断言挂三个接收者时按各自数据范围判定；session 时点 Run 不被后续事件追溯；新 session 事件进 `t.*` 聚合但不进主 session 即时视图。
-  - 子序列匹配类断言的顺序语义；互斥断言对（`succeeded`/`parked`）在同一证据上反转；接收者专属能力不下放（类型负例）。
+  - 子序列匹配类断言的顺序语义；`succeeded()` 与 `t.check(turn.status, equals("waiting"))` 在同一 Turn 状态上互斥；接收者专属能力不下放（类型负例）。
 - **Collector 生命周期**：
   - 链式句柄只修改 Severity 与 threshold，evaluate 恰好执行一次。
   - 延迟断言在 finalize 时求值；即时断言立即求值。

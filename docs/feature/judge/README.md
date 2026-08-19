@@ -7,6 +7,7 @@ Judge recipe 调用时直接登记一条 Assertion，并返回同一 entry 的 h
 
 ```ts
 const quality = turn.judge.autoevals.closedQA("回答是否解释了风险？")
+  .gate(0.8)
   .label("风险说明质量");
 ```
 
