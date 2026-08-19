@@ -523,7 +523,7 @@ collector 对该 Attempt 不适用，和前两种空态不同。
 
 File Changes 固定限额如下：
 
-- 最多 256 个 send 区间；每个 send 区间与整份 Attachment 都最多保留 10,000 个 changes。上游导出候选超过该值时仍进入 collector，由它保留确定性前缀并登记遗漏数量。
+- 最多 256 个 send 区间。v1 decoder 继续接受每个区间与整份 Attachment 最多 10,000 个 changes，保证既有 Record 可读；新 producer 每个区间与整份 Attachment 只保留 1,000 个 changes。上游导出候选超过 producer 边界时仍进入 collector，由它保留确定性前缀并登记遗漏数量。这个 1,000 条边界只约束 structural retention；16 MiB payload JSON 与 128 MiB blob bytes 上限不变。
 - 一个完整 text revision 与单个 blob 都最多 1 MiB；最多 20,000 个 blobs、总计 128 MiB blob bytes。
 - payload JSON 最多 16 MiB。`include` 与 `ignore` 各最多 256 项，每项最多 4,096 bytes。
 

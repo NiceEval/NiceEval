@@ -16,7 +16,37 @@ interface ExpEvent {
 interface ShowDocument {
   readonly data: {
     readonly kind: string;
-    readonly fileChanges?: unknown;
+    readonly fileChanges?: {
+      readonly entries: readonly {
+        readonly detail: {
+          readonly collection: {
+            readonly state: string;
+            readonly limitations: readonly {
+              readonly code: string;
+              readonly target?: string;
+              readonly omittedAtLeast?: number;
+            }[];
+          };
+          readonly paths: readonly unknown[];
+        };
+      }[];
+    };
+  };
+}
+
+interface TimingDocument {
+  readonly data: {
+    readonly kind: "timing";
+    readonly timing: readonly {
+      readonly state: string;
+      readonly timing?: {
+        readonly intervals: readonly {
+          readonly phase: string;
+          readonly label: string;
+          readonly durationMs: number;
+        }[];
+      };
+    }[];
   };
 }
 
@@ -49,7 +79,27 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const document = shown.json<ShowDocument>();
       expect(document.data.kind).toBe("attempt");
-      expect(JSON.stringify(document.data.fileChanges)).toContain("collection-cap-reached");
+      const fileChanges = only(document.data.fileChanges?.entries ?? [], () => true, shown.diagnostic()).detail;
+      expect(fileChanges.paths).toHaveLength(1_000);
+      expect(fileChanges.collection).toMatchObject({
+        state: "partial",
+        limitations: [{
+          code: "collection-cap-reached",
+          target: "change",
+          omittedAtLeast: 29_001,
+        }],
+      });
+      const timing = await niceeval.run(["show", bulkEvaluation.locator!, "--timing=full", "--json"]);
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      const timingDocument = timing.json<TimingDocument>();
+      expect(timingDocument.data.kind).toBe("timing");
+      const workspaceDiffIntervals = timingDocument.data.timing.flatMap((entry) =>
+        entry.state === "available"
+          ? (entry.timing?.intervals ?? []).filter((interval) => interval.phase === "attempt.teardown" && interval.label === "workspace.diff")
+          : [],
+      );
+      expect(workspaceDiffIntervals, timing.diagnostic()).toHaveLength(1);
+      expect(workspaceDiffIntervals[0]!.durationMs, timing.diagnostic()).toBeLessThanOrEqual(9_000);
     },
   );
 });
