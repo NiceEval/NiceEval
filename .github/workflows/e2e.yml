@@ -258,9 +258,9 @@ jobs:
     if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ubuntu-24.04
     # host / docker cell 保留四分钟性能门槛。browser cache 只覆盖浏览器二进制，
-    # `playwright install --with-deps` 的 apt 系统依赖不在 cache 中，给 browser cell
-    # 两分钟独立的镜像抖动余量，避免慢 apt 下载把已缓存的浏览器场景误判为 cancelled。
-    timeout-minutes: ${{ (contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')) && 6 || 4 }}
+    # `playwright install --with-deps` 的 apt 系统依赖不在 cache 中。browser cell
+    # 单独保留八分钟镜像抖动余量，不把 apt mirror 卡顿误判为产品回归。
+    timeout-minutes: ${{ (contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')) && 12 || 4 }}
     # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
     # 同名 Environment。所有路径都只注入 manifest 白名单中的 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
