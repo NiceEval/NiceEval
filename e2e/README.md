@@ -60,7 +60,7 @@ Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，
 - 原始收据、JUnit 与声明的 artifact 写入 durable artifact root；隔离副本在 cleanup 阶段删除。
 - durable root 先物理锚定；root 自身及以下的 candidate、receipt 与 summary 目录链逐段核验。内部 symlink 使 runner 以 infra 结束。
 
-根 CLI 只管理它创建的 detached process group：SIGINT/SIGTERM 第一次先停止新阶段并转发同 signal，grace 后 KILL，等待 `close` 后再检查 group 是否消失；第二次立即 KILL。每个 command capture 的 `groupCleanup` 都写入探测、信号和终态。场景自己的 container、server、Sandbox 或新 session 仍由场景 receipt 负责。每个原生 test command 获得新 `NICEEVAL_E2E_INVOCATION_ID`，不含 secret。
+根 CLI 只管理它创建的 detached process group：SIGINT/SIGTERM 第一次先停止新阶段并转发同 signal，grace 后 KILL，等待 `close` 后再检查 group 是否还有可运行成员；第二次立即 KILL。Linux `/proc` 若证明只剩不可运行的 zombie，收据明确记录主机 init 尚未 reap，不把它误报成仍在运行的泄漏。每个 command capture 的 `groupCleanup` 都写入探测、信号和终态。场景自己的 container、server、Sandbox 或新 session 仍由场景 receipt 负责。每个原生 test command 获得新 `NICEEVAL_E2E_INVOCATION_ID`，不含 secret。
 
 子进程保留 PATH、locale 和 Node/pnpm 等普通变量。未由当前 Repo 声明的 token、key、secret、password、credential、auth、jwt 与数据库连接变量会被剥离。preflight、install 和 test 共用这项策略，receipt 不写值。
 
