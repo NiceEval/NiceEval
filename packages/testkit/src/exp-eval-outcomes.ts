@@ -11,12 +11,6 @@ export interface ExpEvalOutcomeExpectation {
   readonly unstarted?: number;
 }
 
-/** The public compound identity of one terminal `niceeval exp --json` Eval event. */
-export interface ExactEvalIdentity {
-  readonly experimentId: string;
-  readonly evalId: string;
-}
-
 type ComparableField =
   | "verdict"
   | "attempts"
@@ -93,32 +87,6 @@ function renderDiagnostic(
   if (diagnostic === undefined) return "";
   const rendered = typeof diagnostic === "function" ? diagnostic() : diagnostic;
   return `\n\n${rendered}`;
-}
-
-/**
- * Return exactly one public Eval conclusion selected by its full identity.
- *
- * A locator is deliberately not a selector: it is an output of the selected
- * event and may be used by the caller only after this identity lookup.
- */
-export function exactEval<T extends ExpEvalEvent>(
-  events: readonly T[],
-  identity: ExactEvalIdentity,
-  diagnostic?: string | (() => string),
-): T {
-  const matches = events.filter(
-    (event) =>
-      event.experimentId === identity.experimentId && event.evalId === identity.evalId,
-  );
-  if (matches.length !== 1) {
-    const candidates = events.length === 0
-      ? "(none)"
-      : events.map((event) => labelOf(event)).join(", ");
-    throw new Error(
-      `exactEval(): expected exactly one Eval conclusion for ${labelOf(identity)}, got ${matches.length}; candidates: ${candidates}${renderDiagnostic(diagnostic)}`,
-    );
-  }
-  return matches[0]!;
 }
 
 /**

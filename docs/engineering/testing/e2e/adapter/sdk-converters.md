@@ -16,12 +16,11 @@ secret and no external network.
 Each owner has one fixture, one Eval, one Experiment, and one test file. The
 eight Vitest files retain default file parallelism.
 
-Each test file opens one isolated `withProjectCopy` case in `beforeAll`.
-It runs its Experiment once and holds that case until `afterAll`.
+Each test uses `withProjectCopy` for an isolated project, result, and JUnit
+root.
 
-- The outcome and `show --execution` tests read the same frozen public result.
-- An initial run failure closes the held case immediately.
-- `afterAll` closes a successful case, stages its `.niceeval` artifact, and removes the copied project before the file settles.
+It stages `.niceeval` and JUnit artifacts under invocation- and case-specific
+paths.
 
 Tests use only the installed candidate's public adapter and CLI surfaces. They
 never inspect candidate source or a private result layout.
@@ -43,14 +42,9 @@ Every Journey runs this command:
 
 It then reads the result through public commands:
 
-- `niceeval show @locator --execution --json`
-
-Generic `eval.run`, `agent.setup`, and `agent.send` timing belongs only to the
-[Runner owner](../runner.md#runner-history-dedup).
-
-- Record / `show` currently has no mapper-specific OTel attribution seam for a converter.
-- This owner therefore has no public observation for that claim.
-- Logs, private result files, `telemetry.collect`, and a generic `agent.send` interval cannot stand in for it.
+- `niceeval show --run <run-id>`
+- `niceeval show --run <run-id> --json`
+- `niceeval show @locator --report <fixture-module> --page <execution-route>`
 
 The `// owner:` first line of each corresponding test points at its stable
 anchor below.

@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { ProcessReceipt, ProcessStartError } from "./process.js";
 import type { Argv } from "./process.js";
@@ -8,42 +7,6 @@ import type { Argv } from "./process.js";
 export const DEFAULT_GRACE_MS = 2000;
 
 const PROCESS_GROUP_POLL_MS = 25;
-
-type ProcessGroupPresence = "alive" | "zombie-only" | "gone" | "unknown";
-
-interface LinuxProcessGroupMembers {
-  readonly live: readonly number[];
-  readonly zombies: readonly number[];
-}
-
-function linuxProcessGroupMembers(groupId: number): LinuxProcessGroupMembers | undefined {
-  if (process.platform !== "linux") return undefined;
-  try {
-    const live: number[] = [];
-    const zombies: number[] = [];
-    for (const entry of readdirSync("/proc", { withFileTypes: true })) {
-      if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) continue;
-      let stat: string;
-      try {
-        stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
-      } catch {
-        continue;
-      }
-      const commandEnd = stat.lastIndexOf(")");
-      if (commandEnd < 0) continue;
-      const fields = stat.slice(commandEnd + 1).trimStart().split(/\s+/u);
-      const state = fields[0];
-      const processGroup = Number(fields[2]);
-      if (!Number.isInteger(processGroup) || processGroup !== groupId) continue;
-      const pid = Number(entry.name);
-      if (state === "Z" || state === "X") zombies.push(pid);
-      else live.push(pid);
-    }
-    return { live, zombies };
-  } catch {
-    return undefined;
-  }
-}
 
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
@@ -195,91 +158,48 @@ export class ProcessHandle {
     }
   }
 
-  private ownedGroupPresence(): ProcessGroupPresence {
+  private ownedGroupExists(): boolean {
     if (!this.processGroup || this.pid === undefined) {
-      return "gone";
+      return false;
     }
     try {
       process.kill(-this.pid, 0);
-      const members = linuxProcessGroupMembers(this.pid);
-      return members !== undefined && members.live.length === 0 && members.zombies.length > 0
-        ? "zombie-only"
-        : "alive";
+      return true;
     } catch (error) {
-      if (errorCode(error) === "ESRCH") return "gone";
-      if (errorCode(error) === "EPERM") return "unknown";
+      if (errorCode(error) === "ESRCH") return false;
+      if (errorCode(error) === "EPERM") return true;
       throw error;
     }
   }
 
-  private async waitForOwnedGroupExit(timeoutMs: number): Promise<ProcessGroupPresence> {
+  private async waitForOwnedGroupExit(timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
-    for (;;) {
-      const presence = this.ownedGroupPresence();
-      if (presence !== "alive") return presence;
+    while (this.ownedGroupExists()) {
       const remaining = deadline - Date.now();
-      if (remaining <= 0) return "alive";
+      if (remaining <= 0) return false;
       await new Promise<void>((resolve) => {
         setTimeout(resolve, Math.min(PROCESS_GROUP_POLL_MS, remaining));
       });
     }
-  }
-
-  private waitForDone(timeoutMs: number): Promise<boolean> {
-    if (this.settled) {
-      return this.done.then(() => true);
-    }
-    return new Promise<boolean>((resolve, reject) => {
-      let finished = false;
-      const finish = (result: { value: boolean } | { error: unknown }) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        if ("value" in result) resolve(result.value);
-        else reject(result.error);
-      };
-      const timer = setTimeout(() => finish({ value: false }), Math.max(0, timeoutMs));
-      void this.done.then(
-        () => finish({ value: true }),
-        (error: unknown) => finish({ error }),
-      );
-    });
-  }
-
-  private async settleAfterOwnedGroupExit(): Promise<void> {
-    if (await this.waitForDone(this.graceMs)) return;
-
-    // A descendant can escape the owned process group yet keep inherited pipe
-    // descriptors open. Once no live group member remains, stop waiting for
-    // those unrelated descriptors so ChildProcess can emit `close`.
-    this.child.stdout?.destroy();
-    this.child.stderr?.destroy();
-    if (await this.waitForDone(this.graceMs)) return;
-
-    throw new Error(
-      `process group ${this.pid} exited but its child process did not close within two grace periods`,
-    );
+    return true;
   }
 
   private async terminateOwnedGroup(): Promise<void> {
-    const initial = this.ownedGroupPresence();
-    if (initial === "gone" || initial === "zombie-only") {
-      await this.settleAfterOwnedGroupExit();
+    if (!this.ownedGroupExists()) {
+      await this.done;
       return;
     }
 
     this.sendTermination("SIGTERM");
-    const afterTerm = await this.waitForOwnedGroupExit(this.graceMs);
-    if (afterTerm === "alive" || afterTerm === "unknown") {
+    if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
       this.sendTermination("SIGKILL");
-      const afterKill = await this.waitForOwnedGroupExit(this.graceMs);
-      if (afterKill === "alive" || afterKill === "unknown") {
+      if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
         throw new Error(
           `process group ${this.pid} still exists after SIGTERM and SIGKILL`,
         );
       }
     }
-    await this.settleAfterOwnedGroupExit();
+    await this.done;
   }
 
   private terminate(): Promise<void> {

@@ -18,9 +18,9 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 |---|---|
 | 正常 SSE | 完整帧序列归约为成功 Turn，assistant message 与公开 Evidence Page 包含 fixture 文案 |
 | HITL approval | `approval-requested` 先产生一次 `operation.started` + `input.requested`，调用处于 pending；approve / deny resume 分别以同一 call ID 唯一结束为 completed / rejected |
-| 半途断流 | fixture 收据确认断流路由已命中，公开 Attempt diagnostic 必须是 `agent-send-failed`，并点名缺少 UI Message Stream `[DONE]` 收尾 |
-| timeout | fixture 收据确认挂起路由已命中，公开 Attempt diagnostic 必须是 `agent.send` 阶段、固定 4000ms deadline 的 `timeout` |
-| HTTP 非 2xx | fixture 收据确认 HTTP 500 路由已命中，公开 Attempt diagnostic 必须是 `agent-send-failed`，并保留 500 与 fixture 错误文案 |
+| 半途断流 | 收到部分 SSE 后在 `[DONE]` 前关闭，运行必须非零退出，并公开 `agent-send-failed` 与缺少结束标记的诊断 |
+| timeout | 响应头完成但 body 挂起，Attempt deadline 必须中止 send，并产生 timeout 诊断 |
+| HTTP 非 2xx | HTTP 500 必须使 send 失败，诊断包含 HTTP 请求或状态信息 |
 
 正常 SSE 是三个负面场景的 control。
 它先证明相同 candidate、fixture、transport 与 Adapter 接线能够成功，避免把宿主运行条件或安装错误误判成故障处理正确。
@@ -41,19 +41,19 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Disconnect owner
 
-`test/disconnect.test.ts` 只拥有 fixture 确认半截 SSE 断流路由已命中，以及公开 Attempt diagnostic 对缺失 `[DONE]` 的精确归因。
+`test/disconnect.test.ts` 只拥有半截 SSE 在 `[DONE]` 前被对端断开的公开 `agent-send-failed` 结果。
 
 <a id="timeout-owner"></a>
 
 ### Timeout owner
 
-`test/timeout.test.ts` 只拥有 fixture 确认挂起 body 路由已命中，以及固定 attempt deadline 后公开 `agent.send` timeout diagnostic。
+`test/timeout.test.ts` 只拥有挂起 body 触发 attempt timeout 的结果。
 
 <a id="http-error-owner"></a>
 
 ### HTTP error owner
 
-`test/http-error.test.ts` 只拥有 fixture 确认 HTTP 500 路由已命中，以及保留 HTTP status 与响应文案的公开 diagnostic。
+`test/http-error.test.ts` 只拥有 HTTP 500 的公开失败与可行动诊断。
 
 ## 仓库验收
 
@@ -65,10 +65,7 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 - Vitest 保留默认文件级并行；不使用共享 `beforeAll`、固定端口、mutex、文件顺序或
   `maxConcurrency: 1`。
 - **CLI 读回**：`show` 默认报告列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的代表 Evidence Page 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
-- **Timing 边界**：本地 fixture 不接 OTel。`eval.run`、`agent.setup`、`agent.send` 是 Runner 的通用 timing，
-  只由 [`runner-history-dedup`](../runner.md#runner-history-dedup) 读回；本 Repo 不再重复 `show --timing`。
-  当前公开 Record / `show` 不能把 OTel mapper 明确归因给这个 Adapter，因此 mapper-specific OTel 没有可核查的公开证据：
-  不得用日志、私有 `.niceeval` 目录文件、`telemetry.collect` 或 `agent.send` 代替公开 seam。
+- **Timing Page**：本地 fixture 不接 OTel；每个 transport owner 从独立 target Page 读回 runner 阶段，不从 Evidence Page 文字反推 telemetry。
 
 ## 与 live AI SDK 的边界
 

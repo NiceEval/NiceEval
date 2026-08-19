@@ -23,10 +23,6 @@ case 中的 `commands.<name>.run/start` 固定使用该 case 的 cwd，调用点
 `start` 登记的进程在正文结束后按逆序回收，然后才暂存 artifact 并删除项目副本；多个失败按
 `body → process cleanup → staging → project cleanup` 的顺序聚合。完整 argv、readiness 和 expected 仍留在测试正文。
 
-`case()` 的项目寿命就是其 async 正文。原生 `beforeAll` / `afterAll` 若要让同一文件的多个只读断言共享一轮冻结证据，
-可以由 owner 自己保持正文 pending，并在 `afterAll` 释放它、等待同一个 case Promise；这样才会按上述顺序暂存并删除副本。
-这不是另一条 Testkit API，也不把项目、领域 expected 或测试标题上移到 Testkit。
-
 正式 runner 同时注入 `NICEEVAL_E2E_INVOCATION_ID` 与隔离 Repo 副本内的
 `NICEEVAL_E2E_ARTIFACT_STAGING_ROOT`。context 只能写这个 staging root 的 invocation/case namespace，再由
 manifest collector 携带到 durable root；它不获得 durable root。直接调试没有注入时使用系统临时目录，
@@ -134,12 +130,6 @@ export function assertExpEvalOutcomes(
   diagnostic?: string | (() => string),
 ): ExpEvalEvent[];
 
-export function exactEval(
-  events: readonly ExpEvalEvent[],
-  identity: { experimentId: string; evalId: string },
-  diagnostic?: string | (() => string),
-): ExpEvalEvent;
-
 export function retryFailedExpEvalsOnce(options: {
   events: readonly ExpEvalEvent[];
   targets: readonly ExpEvalEvent[];
@@ -220,10 +210,6 @@ const evalEvents = assertExpEvalOutcomes(
 expected 数组属于调用方 owner；Testkit 只比较公开原始字段。
 CLI 退出码、`InvocationReceipt.completion`、Run 数与后续 `show` 读回仍在测试正文分别断言。
 
-`exactEval(events, { experimentId, evalId }, diagnostic?)` 只按这两个公开字段选取一个终局 Eval event。
-它严格拒绝零个或多个匹配，并在错误中列出全部候选复合身份和调用方提供的诊断。`locator` 是选中 event
-的输出，不参与选择；Testkit 不为 `show`、领域 expected 或 retry 增加另一层 DSL。
-
 非零 exit 与 signal 会返回收据，`timedOut` 区分 Testkit timeout 与被测进程自行退出。spawn 本身失败时抛
 `ProcessStartError`，错误携带完整 argv、cwd 与原始 cause；调用方不用猜是产品 exit 还是命令没有启动。
 
@@ -269,8 +255,6 @@ TERM → grace period → KILL 结束 owned process。正文已经让进程退�
 
 POSIX 上的 `dispose()` 在根进程已退出后仍检查它创建的 process group；同组后代仍存活时继续执行 TERM → grace → KILL，
 并等待整组消失。Windows 没有等价的负 PID group signal，`processGroup: true` 会在 spawn 前明确失败，不静默退化成只杀根进程。
-Linux 的 signal-0 会把尚未由宿主 PID 1 回收的 zombie 也报告为存在；Testkit 通过 `/proc` 区分仍可运行的成员与
-zombie-only group。只有后者可视为终止完成，任何 live member 在 TERM → grace → KILL 后仍然存在都继续作为 cleanup failure。
 
 正文和 cleanup 同时失败时抛 `AggregateError([bodyError, cleanupError])`，主错误排第一并作为 cause。只有 cleanup 失败时，
 直接抛 cleanup error。
