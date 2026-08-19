@@ -94,7 +94,7 @@ Bug 修复先从安装后的候选包和公开生产入口建立 E2E 红灯，�
 - 在三个彼此隔离的 Repo 副本中各运行一次；
 - 在同一副本中连续运行两次，证明没有上轮状态漂移；
 - 所属 Repo 按默认并行运行一次，证明不依赖顺序或独占共享状态；
-- 按文件与标题单项运行一次；
+- 按 owner 单项运行一次：文件拥有完整 Journey 时按文件运行；标题本身拥有独立结果时按文件与标题运行；
 - 对进程、server、container 与 Sandbox 取得资源终结收据。
 
 这些运行使用同一 candidate digest、checkout、lockfile、fixture、seed、时钟策略与运行镜像。
@@ -115,9 +115,9 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 
 ## 测试正文约束
 
-- 每个测试文件第一行写 `// owner: <docs path#anchor>`；一个文件只拥有一个稳定结果或一个具名 Unit 风险。
-- 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
-- Journey 检查点只证明终态所需前提。独立输入、expected、修复动作或可独立失败的命题必须拆到另一文件。
+- 每个测试文件第一行写 `// owner: <docs path#anchor>`；一个文件只拥有一个稳定用户结果、Journey 或一个具名 Unit 风险。
+- 同一冻结输入、公开动作批次与资源生命周期可以服务同一 Journey 的多个 `test()`；每个 `test()` 只断言 outcomes、execution、OTel、timing 等一个观察维度。
+- Journey 检查点只证明终态所需前提。独立输入、fixture、公开动作、expected 或修复 owner 必须拆到另一文件；仅能独立失败不等于必须拆分，因为不同观察维度本来就应能分别定位失败。
 - 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。
 - 预期来自公开契约、签入 fixture 或测试中字面量，不能从候选包枚举、解码后再生成自己的 expected。
 - 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
@@ -182,7 +182,7 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 
 - 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
 - Testkit 跟随 checkout 测试并按 runner invocation clean-build 一次；场景 Repo 只在隔离副本安装该目录依赖，不产生第二份 tarball 信任链。
-- 每个自动化测试文件只有一个稳定 owner；Journey 不把独立结果压进同一个 `test()`。
+- 每个自动化测试文件只有一个稳定 owner；同一 Journey 可共享一次冻结执行并按观察维度拆 `test()`，但不把独立结果压进同一个 `test()`。
 - JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。
 - Report 单边界 E2E 只读消费证据；会修改配置、结果或服务的流程拥有私有项目副本与结果根。
 - Journey E2E 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。

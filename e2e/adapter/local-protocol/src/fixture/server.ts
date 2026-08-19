@@ -181,6 +181,9 @@ const server = createServer((req, res) => {
         // 消费 body，避免客户端半关闭时挂起；approval 模式还会读取公开的
         // assistant approval-responded 状态，决定返回 output 或拒绝确认。
         const body = await readBody(req);
+        process.stdout.write(
+          `NICEEVAL_E2E_REQUEST ${JSON.stringify({ mode, method, path: url.pathname })}\n`,
+        );
 
         if (mode === "error") {
           json(res, 500, { error: "local-protocol fixture deliberate 500" });

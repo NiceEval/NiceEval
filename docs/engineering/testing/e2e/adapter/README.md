@@ -44,8 +44,8 @@
    - 独立 test 执行 `niceeval show @locator --report <fixture-module> --page <execution-route>`。
    - route 是签入小型代表 Report 的字面 route，只断言一个可区分协议投影是否可达的工具或入参 sentinel。
    - 工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 Page text 重复评分。
-一次 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict 与 execution 两个独立 test 只读共用。
-按标题单项运行时，`beforeAll` 仍必须现场产生本轮 evidence。
+一次 live 运行可在 `beforeAll` 中生产冻结 evidence，再由 verdict 与 execution 两个观察维度的独立 `test()` 只读共用；
+它们共同描述同一 Adapter Journey，由一个文件 owner 接管。按文件单项运行时，`beforeAll` 必须现场产生本轮 evidence。
 
 `eval.run`、`agent.setup` 与 `agent.send` 是通用 Runner timing，只由
 [Runner owner](../runner.md#runner-history-dedup)通过公开 JSON 读回。Adapter 不重复 `show --timing`，也不把

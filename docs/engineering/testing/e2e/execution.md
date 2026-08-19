@@ -75,7 +75,8 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 
 ## Owner 接管运行
 
-新增、接管或实质修改确定性 owner 时，必须使用根入口 `pnpm e2e takeover --candidate ... --repo <id> -- --run <file> -t <title>`。
+新增、接管或实质修改确定性 owner 时，必须使用根入口 `pnpm e2e takeover --candidate ... --repo <id> -- --run <file>`；
+标题本身拥有独立结果时再追加 `-t <title>`。
 它拒绝没有显式 candidate、Repo 或原生 target 参数的调用；不是把普通 `run` 重复五次冒充可靠性门。
 接管入口先固定 candidate digest、checkout commit/dirty 标记、一次 Testkit scratch
 snapshot（如需要）与场景源 snapshot，再保留以下可审查 receipt：
@@ -83,7 +84,7 @@ snapshot（如需要）与场景源 snapshot，再保留以下可审查 receipt�
 1. 同一 candidate 与 checkout Testkit 在三个全新 Repo 副本中各运行目标 owner 一次；
 2. 另一个**同一已安装副本**连续运行目标 owner 两次；它只 install 一次，两个 native test command 各有新的 `NICEEVAL_E2E_INVOCATION_ID`，不能因 `stageArtifacts` 的 `collision:error` namespace 假红；
 3. 所属 Repo 用默认并行完整运行一次；
-4. 目标 owner 按文件和标题单项运行一次；
+4. 目标 owner 单项运行一次：文件拥有完整 Journey 时按文件运行；标题拥有独立结果时按文件和标题运行；
 5. 每次运行都核对进程、server、container、Sandbox 和临时副本的资源终态。
 
 接管 summary 的每项链接到独立 receipt；same-copy receipt 含两个 test stage、按 attempt 显式关联的两个 invocation ID 和一个 copy ID。它不 retry：重复是明确的观察矩阵，
@@ -350,6 +351,6 @@ Release Repo 使用同一 checkout 的私有 Testkit 作为 harness，但只有 
 - 确定性 Report tests 不声明真实模型 secret，并进入 fork-safe 的无密钥 PR lane。
 - Release preflight 聚合同一 tarball 的全部 blocking Repo；通过后发布同一字节与 digest。
 - 注入身份核验失败与待测包不可消费使用不同失败分类，并保留各自的原始收据。
-- Adapter 与 Report Repo 按 owner 拆成原生测试文件，再按文件和标题分片；不把多个命题压进线性脚本或同一文件。
+- Adapter 与 Report Repo 按 owner 拆成原生测试文件；同一 Journey 可共享冻结执行并按观察维度拆 `test()`，独立输入、fixture、公开动作、expected 或修复 owner 才拆文件。
 - CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
 - 共用 runner 不等于共用 Repo；同 batch 的功能与 Adapter 可以混装，但仍保留各自的依赖安装、secret 白名单、结果根、receipt 与 cleanup。

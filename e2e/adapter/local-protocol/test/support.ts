@@ -7,6 +7,12 @@ interface FixtureReady {
   readonly port: number;
 }
 
+export type LocalProtocolFixtureMode = "ok" | "approval" | "disconnect" | "hang" | "error";
+
+interface LocalProtocolFixture extends FixtureReady {
+  readonly waitForRequest: (mode: LocalProtocolFixtureMode) => Promise<void>;
+}
+
 function parseReady(output: string): FixtureReady {
   const line = output.split("\n").find((candidate) => candidate.startsWith("NICEEVAL_E2E_READY "));
   if (line === undefined) {
@@ -43,7 +49,7 @@ async function assertPortReusable(port: number): Promise<void> {
 /** Owns only the local server's readiness, lifetime, and dynamic-port cleanup. */
 export async function withLocalProtocolFixture<T>(
   cwd: string,
-  body: (fixture: FixtureReady) => Promise<T>,
+  body: (fixture: LocalProtocolFixture) => Promise<T>,
 ): Promise<T> {
   const server = startProcess(
     ["pnpm", "exec", "tsx", join("src", "fixture", "server.ts")],
@@ -61,7 +67,17 @@ export async function withLocalProtocolFixture<T>(
     if (health.status !== 200) {
       throw new Error(`local-protocol fixture health check returned ${health.status}`);
     }
-    return await body(ready);
+    return await body({
+      ...ready,
+      waitForRequest: async (mode) => {
+        await waitForOutput(
+          server,
+          "stdout",
+          new RegExp(`NICEEVAL_E2E_REQUEST \\{[^\\n]*"mode":"${mode}"[^\\n]*\\}`),
+          { timeoutMs: 5_000, label: `local-protocol ${mode} request` },
+        );
+      },
+    });
   } catch (error) {
     bodyError = error;
     throw error;

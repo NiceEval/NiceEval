@@ -38,8 +38,10 @@ Unit 只作为可证伪的例外，同一矩阵不在多层复制。
 表只回答 owner 和运行档，不复制 argv、fixture、expected 或步骤。执行真相仍在测试文件，lane 真相在 Repo manifest。
 测试文件第一行写 `// owner: <文档路径#Owner-ID>`，一份文件只指向一个 owner。
 
-Journey 的检查点只证明终态所需身份、接线和前置事实。
-拥有独立输入、独立 expected、独立修复动作，或能与终态独立失败的命题，必须拆到另一 owner 文件。
+Journey 的检查点只证明终态所需身份、接线和前置事实。同一冻结输入、公开动作批次与资源生命周期可以由文件内多个
+`test()` 只读共享；每个 `test()` 只断言 outcomes、execution、OTel、timing 等一个观察维度。
+拥有独立输入、fixture、公开动作、expected 或修复 owner 的命题必须拆到另一 owner 文件。观察维度能独立失败时应拆成
+独立 `test()` 以便定位，但只要它们共同描述同一 Journey，就不因此机械拆文件或重跑昂贵动作。
 
 ## 唯一矩阵 Owner
 

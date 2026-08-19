@@ -70,9 +70,10 @@ init → exp --dry → exp → show --run <runId> --json → show --page <route>
 只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 locator 和结果能跨域传递。
 Journey E2E 同时保留过程检查点和最终目标。
 
-Journey 的每个检查点只证明终态需要的身份、接线或前置事实。
-一个命题拥有独立输入、独立 expected、独立修复动作，或可以与终态独立失败时，必须拆成单边界 E2E 或另一 Journey。
-不能把选择、退出码、缓存、机器输出与导出等多个结果放进一个 `test()`，再用“长流程”掩盖多 owner。
+Journey 的每个检查点只证明终态需要的身份、接线或前置事实。同一冻结输入、公开动作批次与资源生命周期可以由文件内
+多个 `test()` 只读共享；每个 `test()` 只断言 outcomes、execution、OTel、timing 等一个观察维度。
+一个命题拥有独立输入、fixture、公开动作、expected 或修复 owner 时，必须拆成单边界 E2E 或另一 Journey。
+不能把选择、退出码、缓存、机器输出与导出等多个观察维度压进一个 `test()`；也不能为了“一 test 一命令”重复昂贵的真实执行。
 
 Journey E2E 使用独立项目副本和结果根。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
 
@@ -217,7 +218,8 @@ pnpm e2e --repo report -- --run test/exported-targets.test.ts
 pnpm e2e --repo report -- --run test/exported-targets.test.ts -t "打开 case target"
 ```
 
-E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选择的线性脚本不拥有长期测试命题。
+E2E 必须由原生测试 runner 按文件与标题发现。文件拥有完整 Journey 时，文件级 target 就是完整 owner；标题本身拥有独立结果时，
+还必须能按标题选择。无法由原生 runner 选择的线性脚本不拥有长期测试命题。
 
 新增、接管或实质修改确定性 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的隔离副本、同副本连续运行、
 默认并行与单项重跑组合。任一次意外失败都不合格；测试级 retry 不得把失败改写成通过。

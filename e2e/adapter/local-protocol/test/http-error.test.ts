@@ -20,11 +20,12 @@ test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async (
     "http-error",
     localProtocolRecordArtifacts,
     async ({ commands: { niceeval }, paths }) => {
-      await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl }) => {
+      await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl, waitForRequest }) => {
         const run = await niceeval.run(
           ["exp", "http-error", "--rerun", "all", "--json"],
           { env: { [FIXTURE_BASE_URL_ENV]: baseUrl }, timeoutMs: 60_000 },
         );
+        await waitForRequest("error");
         const events = run.expEvalEvents();
         const receipt = run.expReceipt();
 
