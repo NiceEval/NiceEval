@@ -73,10 +73,9 @@ owner/family 时读取和验证它。`available` snapshot 包含 deep-frozen pay
 读取 blob 时返回 defensive copy，不重开文件。Scope 关闭后，已经形成的 snapshot 仍可同步消费。
 
 历史 owner 缺少 current catalog 中请求的 family 时返回 `not-recorded`。`invalid` 只影响请求该事实的 query，
-不能把其它 Core 或 family 伪装为失败。已知 family 的旧 schemaVersion 要求显式 migrate，ordinary reader
-不兼容。未知独立 future family 保留在磁盘、跳过解释，不影响 Core 与认识的 family；只有请求它的
-AnalysisInput / DomainView 返回 `unsupported`。带 `/vN` 后缀的未发布 family 草案仍是
-`unsupported-format`。
+不能把其它 Core 或 family 伪装为失败。已知 family 的旧 schemaVersion 不进入 ordinary reader；只在完整固定
+chain 存在时可 maintenance migrate。未知独立 future family、已知 future 版本与带 `/vN` 后缀的未发布草案都使
+整份 Record 在 session 形成前返回 `unsupported-format`。
 
 ## 不能写进 Attachment 的内容
 

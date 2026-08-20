@@ -1,101 +1,107 @@
 // owner: docs/engineering/testing/e2e/migrate.md#observability-v1-to-v2
-// regression: memory/results-schema-version-history.md#observability-family-1--2
 
-import { readFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { ATTEMPT_ID, commitRecord, copyV1Fixture, e2e, RUN_ID, sha256 } from "./support.ts";
+import { attestLegacyProducer, commitRecord, e2e } from "./support.ts";
 
-test("Observability v1 Record 经过显式迁移后由当前 candidate 完整读取", async () => {
+test("Git 保存的 npm 0.13.0 Record 自动迁移后显示同一结果并拒绝旧 writer", async () => {
   await e2e.case(
-    "observability-v1",
+    "observability-v1-auto-migrate",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ paths, commands: { candidate, producer }, run }) => {
-      const recordRoot = join(paths.projectRoot, ".niceeval", "record");
-      copyV1Fixture(paths.sourceRoot, recordRoot);
-      const attemptAttachment = join(recordRoot, "runs", RUN_ID, "attempts", ATTEMPT_ID, "attachments", "niceeval.observability");
-      const runAttachment = join(recordRoot, "runs", RUN_ID, "attachments", "niceeval.observability");
-      const sourceNavigationAttachment = join(recordRoot, "runs", RUN_ID, "attempts", ATTEMPT_ID, "attachments", "niceeval.source-navigation");
-      const attemptPayloadBefore = sha256(join(attemptAttachment, "payload.json"));
-      const runPayloadBefore = sha256(join(runAttachment, "payload.json"));
-      const sourceNavigationBefore = sha256(join(sourceNavigationAttachment, "payload.json"));
-      const unknownPath = join(recordRoot, "runs", RUN_ID, "attachments", "example.future", "opaque.txt");
-      const unknownBefore = readFileSync(unknownPath, "utf8");
-      const draftEnvelope = join(recordRoot, "runs", "draft-run", "attachments", "niceeval.observability", "attachment.json");
-      const draftBefore = readFileSync(draftEnvelope, "utf8");
+    async ({ paths, commands: { candidate, legacyProducer }, run }) => {
+      attestLegacyProducer(paths.projectRoot);
 
-      const blockedRead = await candidate.run(["show", "--run", RUN_ID, "--json"]);
-      expect(blockedRead.exitCode, blockedRead.diagnostic()).toBe(0);
-      expect(blockedRead.stdout, blockedRead.diagnostic()).toContain('"state":"migration-required"');
-      expect(blockedRead.stdout, blockedRead.diagnostic()).toContain('"code":"analysis-migration-required"');
-      expect(blockedRead.stdout, blockedRead.diagnostic()).not.toContain('"domain":"source-navigation","state":"invalid"');
+      const configPath = join(paths.projectRoot, "niceeval.config.ts");
+      const currentConfig = readFileSync(configPath, "utf8");
+      const hiddenDefinitions = [
+        "evals/handoff.eval.ts",
+        "experiments/handoff.ts",
+        "experiments/missing-usage.ts",
+      ].map((relativePath) => [
+        join(paths.projectRoot, relativePath),
+        join(paths.projectRoot, `${relativePath}.current-disabled`),
+      ] as const);
+      const legacyDefinitions = [
+        "evals/legacy-handoff.eval.ts",
+        "experiments/legacy-handoff.ts",
+      ].map((relativePath) => [
+        join(paths.projectRoot, `${relativePath}.legacy-disabled`),
+        join(paths.projectRoot, relativePath),
+      ] as const);
+      const runLegacyExperiment = async () => {
+        try {
+          for (const [source, hidden] of hiddenDefinitions) renameSync(source, hidden);
+          for (const [disabled, active] of legacyDefinitions) renameSync(disabled, active);
+          writeFileSync(configPath, [
+            'import { defineConfig } from "niceeval-legacy-0-13";',
+            "export default defineConfig({",
+            '  name: "e2e: persisted legacy Record",',
+            "  timeoutMs: 60_000,",
+            "  maxConcurrency: 1,",
+            "});",
+            "",
+          ].join("\n"));
+          return await legacyProducer.run(["exp", "legacy-handoff", "--rerun", "all", "--json"]);
+        } finally {
+          writeFileSync(configPath, currentConfig);
+          for (const [disabled, active] of legacyDefinitions.toReversed()) renameSync(active, disabled);
+          for (const [source, hidden] of hiddenDefinitions.toReversed()) renameSync(hidden, source);
+        }
+      };
+      const produced = await runLegacyExperiment();
+      expect(produced.exitCode, produced.diagnostic()).toBe(0);
+      const receipt = produced.expReceipt();
+      expect(receipt.completion, produced.diagnostic()).toBe("completed");
+      expect(receipt.runIds, produced.diagnostic()).toHaveLength(1);
+      const runId = receipt.runIds[0]!;
+      expect(produced.stdout, produced.diagnostic()).toContain('"evalId":"legacy-handoff"');
+      expect(produced.stdout, produced.diagnostic()).toContain('"verdict":"passed"');
 
-      const blockedNavigation = await candidate.run(["show", "--run", RUN_ID, "--report", "./reports/source-navigation.tsx", "--page", "/source-navigation", "--json"]);
-      expect(blockedNavigation.exitCode, blockedNavigation.diagnostic()).toBe(0);
-      expect(blockedNavigation.stdout, blockedNavigation.diagnostic()).toContain("source-navigation:migration-required");
+      const unsaved = await candidate.run(["show", "--run", runId, "--json"]);
+      expect(unsaved.exitCode, unsaved.diagnostic()).toBe(1);
+      expect(unsaved.stderr, unsaved.diagnostic()).toContain("record-auto-migration-git-save-required");
+      expect(unsaved.stderr, unsaved.diagnostic()).toContain("git add");
+      expect(unsaved.stdout, unsaved.diagnostic()).not.toContain('"selection"');
 
-      const blockedCost = await candidate.run(["show", "--run", RUN_ID, "--report", "./reports/cost-state.tsx", "--page", "/cost-state"]);
-      expect(blockedCost.exitCode, blockedCost.diagnostic()).toBe(0);
-      expect(blockedCost.stdout, blockedCost.diagnostic()).toContain("cost:migration-required:0/1");
-      expect(blockedCost.stdout, blockedCost.diagnostic()).toContain("cost projection requires migration — run niceeval migrate");
+      await commitRecord(run, "record: save npm 0.13.0 run");
 
-      const currentRun = await producer.run(["exp", "handoff", "--rerun", "all", "--json"]);
-      expect(currentRun.exitCode, currentRun.diagnostic()).toBe(0);
-      const currentRunId = currentRun.expReceipt().runIds[0]!;
-      const mixedCost = await candidate.run(["show", "--run", RUN_ID, "--run", currentRunId, "--report", "./reports/cost-state.tsx", "--page", "/cost-state"]);
-      expect(mixedCost.exitCode, mixedCost.diagnostic()).toBe(0);
-      expect(mixedCost.stdout, mixedCost.diagnostic()).toContain("cost:partial:1/2");
-
-      const missingUsageRun = await producer.run(["exp", "missing-usage", "--rerun", "all", "--json"]);
-      expect(missingUsageRun.exitCode, missingUsageRun.diagnostic()).toBe(0);
-      const missingUsageRunId = missingUsageRun.expReceipt().runIds[0]!;
-      const mixedMissing = await candidate.run([
-        "show",
-        "--run",
-        RUN_ID,
-        "--run",
-        missingUsageRunId,
-        "--report",
-        "./reports/tokens-state.tsx",
-        "--page",
-        "/tokens-state",
-      ]);
-      expect(mixedMissing.exitCode, mixedMissing.diagnostic()).toBe(0);
-      expect(mixedMissing.stdout, mixedMissing.diagnostic()).toContain("tokens:partial:0/2");
-      expect(mixedMissing.stdout, mixedMissing.diagnostic()).not.toContain("requires migration");
-
-      await commitRecord(run, "fixture: observability v1");
-      const confirmation = await candidate.run(["migrate"]);
-      const restoreCommit = await run(["git", "rev-parse", "HEAD"]);
-      expect(restoreCommit.exitCode, restoreCommit.diagnostic()).toBe(0);
-      expect(confirmation.exitCode, confirmation.diagnostic()).toBe(1);
-      expect(confirmation.stdout, confirmation.diagnostic()).toContain("attachments: 2");
-      expect(confirmation.stdout, confirmation.diagnostic()).toContain("backup: git-restore-point");
-      expect(confirmation.stderr, confirmation.diagnostic()).toContain("record-migration-confirmation-required");
-
-      const migrated = await candidate.run(["migrate", "--yes"]);
-      expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
-      expect(migrated.stdout, migrated.diagnostic()).toContain("Record migration migrated.");
-      expect(JSON.parse(readFileSync(join(attemptAttachment, "attachment.json"), "utf8"))).toEqual({ family: "niceeval.observability", schemaVersion: 2 });
-      expect(JSON.parse(readFileSync(join(runAttachment, "attachment.json"), "utf8"))).toEqual({ family: "niceeval.observability", schemaVersion: 2 });
-      expect(sha256(join(attemptAttachment, "payload.json"))).toBe(attemptPayloadBefore);
-      expect(sha256(join(runAttachment, "payload.json"))).toBe(runPayloadBefore);
-      expect(sha256(join(sourceNavigationAttachment, "payload.json"))).toBe(sourceNavigationBefore);
-      expect(readFileSync(unknownPath, "utf8")).toBe(unknownBefore);
-      expect(readFileSync(draftEnvelope, "utf8")).toBe(draftBefore);
-
-      const changed = await run(["git", "diff", "--name-only"]);
-      expect(changed.exitCode, changed.diagnostic()).toBe(0);
-      expect(changed.stdout.trim().split("\n").sort()).toEqual([
-        `.niceeval/record/runs/${RUN_ID}/attachments/niceeval.observability/attachment.json`,
-        `.niceeval/record/runs/${RUN_ID}/attempts/${ATTEMPT_ID}/attachments/niceeval.observability/attachment.json`,
-      ].sort());
-      const shown = await candidate.run(["show", "--run", RUN_ID, "--json"]);
+      const shown = await candidate.run(["show", "--run", runId, "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.json<{ selection: { runIds: readonly string[] } }>().selection.runIds).toEqual([RUN_ID]);
-      const idempotent = await candidate.run(["migrate", "--yes"]);
-      expect(idempotent.exitCode, idempotent.diagnostic()).toBe(0);
-      expect(idempotent.stdout, idempotent.diagnostic()).toContain("already-current");
+      expect(shown.stderr, shown.diagnostic()).toContain("Record automatically migrated");
+      expect(shown.stderr, shown.diagnostic()).toContain("restore commit");
+      const output = shown.json<{
+        selection: { runIds: readonly string[] };
+        data: { rows: readonly [{ passRate: { state: string; value: number } }] };
+      }>();
+      expect(output.selection.runIds).toEqual([runId]);
+      expect(output.data.rows[0]?.passRate).toMatchObject({ state: "available", value: 1 });
+
+      const beforeOldWriter = await run(["git", "diff", "--binary", "--", ".niceeval/record"]);
+      expect(beforeOldWriter.exitCode, beforeOldWriter.diagnostic()).toBe(0);
+      const beforeOldWriterStatus = await run([
+        "git", "status", "--porcelain=v1", "--untracked-files=all", "--", ".niceeval/record",
+      ]);
+      expect(beforeOldWriterStatus.exitCode, beforeOldWriterStatus.diagnostic()).toBe(0);
+
+      const oldWriterRejected = await runLegacyExperiment();
+      expect(oldWriterRejected.exitCode, oldWriterRejected.diagnostic()).toBe(1);
+      expect(oldWriterRejected.stderr, oldWriterRejected.diagnostic()).toContain("record-format-unsupported");
+      expect(oldWriterRejected.stdout, oldWriterRejected.diagnostic()).not.toContain('"event":"run"');
+
+      const afterOldWriter = await run(["git", "diff", "--binary", "--", ".niceeval/record"]);
+      expect(afterOldWriter.exitCode, afterOldWriter.diagnostic()).toBe(0);
+      expect(afterOldWriter.stdout).toBe(beforeOldWriter.stdout);
+      const afterOldWriterStatus = await run([
+        "git", "status", "--porcelain=v1", "--untracked-files=all", "--", ".niceeval/record",
+      ]);
+      expect(afterOldWriterStatus.exitCode, afterOldWriterStatus.diagnostic()).toBe(0);
+      expect(afterOldWriterStatus.stdout).toBe(beforeOldWriterStatus.stdout);
+
+      const stillShown = await candidate.run(["show", "--run", runId, "--json"]);
+      expect(stillShown.exitCode, stillShown.diagnostic()).toBe(0);
+      expect(stillShown.stderr, stillShown.diagnostic()).not.toContain("Record automatically migrated");
+      expect(stillShown.json<{ selection: { runIds: readonly string[] } }>().selection.runIds).toEqual([runId]);
     },
   );
 });

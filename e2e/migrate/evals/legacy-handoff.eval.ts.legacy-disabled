@@ -1,0 +1,11 @@
+import { defineEval } from "niceeval-legacy-0-13";
+import { includes } from "niceeval-legacy-0-13/expect";
+
+export default defineEval({
+  description: "Persist one deterministic legacy result for automatic migration",
+  async test(t) {
+    const turn = await t.send("handoff-input");
+    await turn.succeeded().orStop();
+    t.check(turn.message, includes("persisted-handoff:handoff-input"));
+  },
+});

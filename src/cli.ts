@@ -80,7 +80,7 @@ import {
   resolveTrustedModulePath,
   type ThemeDefinition,
 } from "./report/host/node.ts";
-import { runRecordCliCommand } from "./cli/record.ts";
+import { ensureAutomaticRecordMigration, runRecordCliCommand } from "./cli/record.ts";
 import { selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { stopAllSandboxes } from "./sandbox/registry.ts";
 import {
@@ -3088,6 +3088,26 @@ function reportExecutionFailure(error: unknown): CliFailure {
   }
 }
 
+function automaticRecordMigrationFailure(error: unknown): CliFailure {
+  const code = failureCode(error);
+  if (code === "record-auto-migration-git-save-required") {
+    return usageError(
+      "record-auto-migration-git-save-required\n" +
+      "Save every portable Record byte first (for example: git add .niceeval/record && git commit), then retry the same command.\n",
+    );
+  }
+  if (code === "record-maintenance-busy" || code === "record-writer-busy") {
+    return usageError(`${code}\nClose the command using this Record, then retry.\n`);
+  }
+  if (code === "record-format-unsupported") {
+    return usageError("record-format-unsupported\nUse the NiceEval version that wrote this future or unknown Record format.\n");
+  }
+  if (code === "record-migration-recovery-required" || code === "record-migration-interrupted") {
+    return usageError(`${code}\nRestore and verify the complete Record from Git before retrying.\n`);
+  }
+  return cliFailure("automatically migrate Record", error);
+}
+
 /** Preserve the actionable dimension and target from the Host's closed budget error. */
 function reportBuildBudgetExceededMessage(error: unknown): string {
   const budget = stringProperty(error, "budget");
@@ -3770,6 +3790,18 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
   if (flags.version) {
     yield* writeStdout((yield* packageVersion()) + "\n");
     return 0;
+  }
+
+  if (command === "show" || command === "view" || command === "exp") {
+    const migrated = yield* ensureAutomaticRecordMigration({
+      cwd,
+      ...(flags.record === undefined ? {} : { record: flags.record }),
+    }).pipe(Effect.mapError(automaticRecordMigrationFailure));
+    if (migrated !== null) {
+      yield* writeStderr(
+        `Record automatically migrated to schemaVersion ${migrated.targetSchemaVersion}; restore commit ${migrated.restoreCommit}.\n`,
+      );
+    }
   }
 
   if (command === "debug") {

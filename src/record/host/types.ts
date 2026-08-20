@@ -389,6 +389,10 @@ export type RecordMigrationPlan =
       readonly state: "migration-required";
       readonly format: "niceeval.record";
       readonly backup: RecordBackupState;
+      readonly root: {
+        readonly fromSchemaVersion: number;
+        readonly toSchemaVersion: number;
+      } | null;
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     }
   | {

@@ -32,9 +32,9 @@ Sources schemaVersion `2` 发布时，NiceEval 必须同时判断 `1 → 2` 是�
 读取当前 worktree 或调用第三方 code。目标 blob 重新属于 schemaVersion `2` 的 own closure，不能把旧 `RecordBlobRef`、path
 或 key 冒充新 ref。
 
-已知 `niceeval.sources` 的旧 schemaVersion 使 ordinary read 返回 `migration-required`。它与独立未知 future
-family 不同：例如较早 reader 看到 `niceeval.energy` 时保留其 bytes、跳过解释并继续读取 Sources；它不会试图
-把 unknown energy 当成 Sources 的旧版本，也不会把它加入 migration plan。
+已知 `niceeval.sources` 的旧 schemaVersion 使 ordinary open 在 session 形成前拒绝，再由入口的
+automatic maintenance gate 决定是否可无确认迁移。独立未知 future family 不会被当成 Sources 的旧版本；
+它会让整份 Record fail closed，也不会进入 migration plan。
 
 ## Source identity 保持或整体改变
 

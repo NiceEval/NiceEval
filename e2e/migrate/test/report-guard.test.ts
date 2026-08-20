@@ -1,13 +1,15 @@
 // owner: docs/engineering/testing/e2e/migrate.md#report-migration-metric-guard
 
-import { join } from "node:path";
 import { expect, test } from "vitest";
-import { copyV1Fixture, e2e, RUN_ID } from "./support.ts";
+import { e2e } from "./support.ts";
 
-test("Report 拒绝 ledger 缺 Slot 的 migration-required metric", async () => {
-  await e2e.case("report-incomplete-ledger", async ({ paths, commands: { candidate } }) => {
-    copyV1Fixture(paths.sourceRoot, join(paths.projectRoot, ".niceeval", "record"));
-    const rejected = await candidate.run(["show", "--run", RUN_ID, "--report", "./reports/invalid-migration-metric.tsx", "--page", "/invalid-migration-metric"]);
+test("Report 拒绝 ledger 缺 Slot 的伪造 metric", async () => {
+  await e2e.case("report-incomplete-ledger", async ({ commands: { candidate } }) => {
+    const produced = await candidate.run(["exp", "handoff", "--rerun", "all", "--json"]);
+    expect(produced.exitCode, produced.diagnostic()).toBe(0);
+    const [runId] = produced.expReceipt().runIds;
+    expect(runId, produced.diagnostic()).toBeDefined();
+    const rejected = await candidate.run(["show", "--run", runId!, "--report", "./reports/invalid-migration-metric.tsx", "--page", "/invalid-migration-metric"]);
     expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
     expect(rejected.stderr, rejected.diagnostic()).toContain("Table rows[0].metric has unsupported object type");
   });

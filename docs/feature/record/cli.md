@@ -1,9 +1,9 @@
 # Record CLI
 
 CLI 通过 [Record Library](library.md) 打开 exact current Record protocol：root 是
-`{ format: "niceeval.record", schemaVersion: 1 }`。它不在 `show`、`view`、`exp` 或 `clean` 中自动迁移
-字节；不相容格式必须先由显式 `niceeval migrate` 处理，才能形成 `RecordReadSession`。缺少规范的零字节普通文件 `complete`
-的目录不是 Run。
+`{ format: "niceeval.record", schemaVersion: 2 }`。`show`、`view` 与 `exp` 在任何 ordinary session、Run、
+claim、Sandbox 或付费调用前检查格式；完整且 automatic-safe 的旧格式在 Git 安全门后无确认原地迁移，再以全新
+ordinary session 继续。缺少规范的零字节普通文件 `complete` 的目录不是 Run。
 
 CLI 是五个 Host composition SDK 的一个调用者。`exp` 与 `accept` 经 `experimentHost`，Record I/O 经
 `recordHost`。dispatch claim 与 lease 经 `coordinationHost`，Sample 经 `analysisHost`。`show`、`view` 与
@@ -44,13 +44,10 @@ details: niceeval clean
 fixed family 显示 `not-recorded`；closure 或 exact payload 无效显示 `invalid`。这些局部问题不把其它有效
 Run 从 selection 中移除。
 
-root 或 Core schemaVersion 不匹配时，CLI 返回 `migration-required`（有固定相邻步骤）或
-`unsupported-format`，不形成 reader。已知 family 的旧 schemaVersion 同样要求显式 migrate，ordinary read
-不兼容。
-
-未知独立 future family 例外：CLI 保留其 directory、payload 与 blob bytes，跳过解释并继续读取 Core 与
-认识的 family。依赖它的 AnalysisInput 或 DomainView 显示 `unsupported`。带 `/vN` 后缀的
-未发布 family 草案不是这种 future family，仍返回 `unsupported-format`。
+root/Core epoch、fixed catalog 或 family version 不 exact current 时不形成 reader。若命中完整、无损且
+automatic-safe 的固定 chain，CLI 先释放检查 scope，再取得 exclusive maintenance session。该 session
+复核 Git HEAD、Record identity、portable inventory、source bytes 与 migration identity。成功后释放 maintenance
+并重新打开。未知/future family、无完整 chain 或任何安全门失败都返回 typed error，不进入 Analysis 或 Report。
 
 读到 `available` 后，payload 已 deep-freeze，blob closure 已验证并 materialize。Analysis 与 Report
 不会再次打开 storage。形成 value 前的 I/O 或 permission failure 仍是 typed read failure，不会伪装成
@@ -58,7 +55,7 @@ root 或 Core schemaVersion 不匹配时，CLI 返回 `migration-required`（有
 
 ## `exp` 与 `exp --dry`
 
-`niceeval exp` 在模型、Sandbox、外部命令或付费调用前打开 current Record，并取得 shared append
+`niceeval exp` 在模型、Sandbox、外部命令、claim 或付费调用前完成上述 current/automatic maintenance gate，再取得 shared append
 lease。它创建一个全新的 RunId 和 `runs/<RunId>/`；不会锁住其它 Run writer，也不会更新 root manifest、
 counter、`latest` 或共享 summary。
 
@@ -98,19 +95,25 @@ niceeval clean [--record <root>] [--yes]
 niceeval migrate [--record <root>] [--yes]
 ```
 
-root / Core schemaVersion `1` 没有已发布 predecessor。所有 fixed family 也处于 current 时，`migrate`
+root / Core schemaVersion `2` 是 current。所有 fixed family 也处于 current 时，`migrate`
 对完整 current Record 返回：
 
 ```text
-Record is already current: niceeval.record (schemaVersion 1)
+Record is already current: niceeval.record (schemaVersion 2)
 ```
 
 root / Core 不相容时，若有固定相邻步骤则返回 `migration-required`，否则 `unsupported-format`，并且不写盘。
 已知 family 的旧 schemaVersion 也经这条 maintenance 路径迁移。未发布的斜杠版本草案不是 migration source。
-未知 independent future family 不迁移，也不删除。CLI 不猜测中间格式，不接受第三方 converter。
+未知或 future family 不迁移，直接拒绝。CLI 不猜测中间格式，不接受第三方 converter。
 
-Observability v1 由固定 `1 → 2` maintenance step 迁移；两个 owner 的 payload、label、blob refs 与 blob bytes
-逐字保留，只更新 envelope。历史格式完成或由 Git 恢复后，才可打开为 current reader。
+npm `niceeval@0.13.0` 写出的 root epoch 1 / Observability v1 由固定联合 `1 → 2` maintenance step 迁移；
+两个 owner 的 payload、label、blob refs 与 blob bytes 逐字保留，root epoch 最后升级。历史格式完成或由 Git
+恢复后，才可打开为 current reader。
+
+automatic policy 与本节 explicit policy 分开：自动路径不打印计划、不询问确认，只接受完整 automatic-safe chain，
+并要求 HEAD 已跟踪全部 portable bytes且 Record path 的 index/worktree clean。非 Git、未保存、dirty、untracked、
+ignored、read-only、lease busy、future/unknown、不完整 chain 或失败都 fail closed，并要求用户保存 Record 或处理
+具名 blocker。自动成功只向 stderr 输出一次含 restore commit 与目标 epoch 的简短 receipt，随后正常输出原命令结果。
 
 存在固定相邻步骤时，命令先做只读 Git preflight，并打印计划。预检要求：
 
@@ -136,14 +139,15 @@ preflight 失败或 sentinel 创建失败都发生在首个 portable write 前�
 | code/state | 含义 | 下一步 |
 |---|---|---|
 | `already-current` | root / Core 是 schemaVersion `1`，所有 fixed family 也处于 current | 不修改 Record |
-| `migration-required` | root / Core 或已知 family 有固定相邻 migration | 运行 `niceeval migrate`；ordinary reader 不改盘 |
+| `record-auto-migration-git-save-required` | automatic-safe predecessor 尚未由 Git HEAD 完整保存，或 Record path dirty | 先 `git add` / `git commit` 保存全部 portable bytes，再重试原命令 |
+| `migration-required` | explicit inspection 发现固定相邻 migration | 检查计划并运行 `niceeval migrate`；ordinary reader 不读旧格式 |
 | `unsupported-format` | root / Core 无支持步骤、known family 是 future/无链版本，或 family 名使用未发布 `/vN` 草案 | 使用写出该格式的 NiceEval；不要按损坏数据恢复 |
 | `record-maintenance-busy` | maintenance 与 reader/writer/clean 冲突 | 关闭占用命令后重试 |
 | `record-migration-plan-stale` / `record-migration-git-restore-required` | apply 前计划或 Git 状态已变化，尚未写 portable byte | 保留当前编辑，重新检查并形成新计划；不要执行旧计划的 restore |
 | `record-migration-recovery-required` | sentinel 已创建，迁移写入或最终校验失败 | 仅在 `restoreSafe` 证明成立时按命令恢复；否则先人工检查并保留并发编辑 |
 | `incomplete-run` | Run 缺少规范的零字节普通文件 `complete` | 有效 Run 继续可用；用 `niceeval clean` 检查 |
 | `not-recorded` | 已封口 owner 没有请求的 fixed family | 让 query 按其 missing policy 处理 |
-| `unsupported` | input 或 view 依赖本版本不认识的 future family | 使用认识该 family 的 NiceEval；其它结果继续可用 |
+| `unsupported-format` | root/Core/family 是 future、unknown 或无完整 chain | 使用写出该格式的 NiceEval；不会形成部分 ordinary session |
 | `invalid` | envelope、payload、ref 或 closure 无效 | 检查该 family；其它有效事实继续可用 |
 
 ## Git、复制与分享

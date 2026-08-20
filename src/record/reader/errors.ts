@@ -54,6 +54,13 @@ export class RecordMigrationGitRestoreRequired extends Schema.TaggedError<Record
   code: Schema.Literal("record-migration-git-restore-required"),
 }) {}
 
+/** Automatic migration requires every portable byte to be saved at clean HEAD. */
+export class RecordAutoMigrationGitSaveRequired extends Schema.TaggedError<RecordAutoMigrationGitSaveRequired>(
+  "@niceeval/record/RecordAutoMigrationGitSaveRequired",
+)("RecordAutoMigrationGitSaveRequired", {
+  code: Schema.Literal("record-auto-migration-git-save-required"),
+}) {}
+
 /** A known historical attachment cannot be proven safe to advance in place. */
 export class RecordMigrationInvalid extends Schema.TaggedError<RecordMigrationInvalid>(
   "@niceeval/record/RecordMigrationInvalid",

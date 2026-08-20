@@ -8,6 +8,12 @@ import {
   type RecordRoot,
 } from "../record/index.ts";
 import { recordHost } from "../record/host/index.ts";
+import { RECORD_SCHEMA_VERSION } from "../record/model/identifiers.ts";
+import {
+  RecordAutoMigrationGitSaveRequired,
+  RecordMigrationRequired,
+} from "../record/reader/errors.ts";
+import { RecordFileSystem, recordPortablePath } from "../record/platform/services.ts";
 
 export type RecordCliCommand = "clean" | "migrate";
 
@@ -39,6 +45,56 @@ function output(input: {
 }
 
 export const NodeRecordCliLive = NodeRecordLive;
+
+export interface AutomaticRecordMigrationReceipt {
+  readonly restoreCommit: string;
+  readonly targetSchemaVersion: typeof RECORD_SCHEMA_VERSION;
+}
+
+/**
+ * Preflight for ordinary CLI entry points. Every Scope is closed before the
+ * next lease kind is acquired: read check -> exclusive maintenance -> caller's
+ * fresh ordinary open.
+ */
+export function ensureAutomaticRecordMigration(input: {
+  readonly cwd: string;
+  readonly record?: string;
+}) {
+  const root = makeRecordRoot(resolve(input.cwd, input.record ?? ".niceeval/record"));
+  if (Either.isLeft(root)) return Effect.fail(root.left);
+  return Effect.gen(function* () {
+    const fileSystem = yield* RecordFileSystem;
+    if ((yield* fileSystem.pathKind(recordPortablePath(root.right, "record.json"))) === "missing") {
+      return null;
+    }
+    const checked = yield* Effect.either(Effect.scoped(recordHost.current.openRead({ root: root.right })));
+    if (Either.isRight(checked)) return null;
+    if (!(checked.left instanceof RecordMigrationRequired)) return yield* Effect.fail(checked.left);
+
+    return yield* Effect.scoped(Effect.gen(function* () {
+      const session = yield* recordHost.maintenance.open({ root: root.right });
+      const plan = yield* session.planMigrate();
+      if (plan.state !== "migration-required") {
+        return yield* Effect.fail(checked.left);
+      }
+      if (plan.backup.state !== "git-restore-point") {
+        return yield* Effect.fail(new RecordAutoMigrationGitSaveRequired({
+          code: "record-auto-migration-git-save-required",
+        }));
+      }
+      yield* session.applyMigrate(plan).pipe(
+        Effect.catchTag("RecordMigrationGitRestoreRequired", () =>
+          Effect.fail(new RecordAutoMigrationGitSaveRequired({
+            code: "record-auto-migration-git-save-required",
+          }))),
+      );
+      return Object.freeze({
+        restoreCommit: plan.backup.commit,
+        targetSchemaVersion: RECORD_SCHEMA_VERSION,
+      });
+    }));
+  });
+}
 
 function resolveRecordRoot(
   input: RunRecordCliCommandInput,
@@ -194,7 +250,7 @@ function migrateCommand(input: {
       ? `Record migration plan: already-current\nformat: ${plan.format}\n`
       : plan.state === "unsupported-format"
         ? `Record migration plan: unsupported-format\nformat: ${plan.format}\n`
-        : `Record migration plan: migration-required\nformat: ${plan.format}\nattachments: ${plan.attachments.length}\nbackup: ${plan.backup.state}${plan.backup.state === "git-restore-point" ? `\nrestore commit: ${plan.backup.commit}` : ""}\n`;
+        : `Record migration plan: migration-required\nformat: ${plan.format}\nroot: ${plan.root === null ? "current" : `${plan.root.fromSchemaVersion} -> ${plan.root.toSchemaVersion}`}\nattachments: ${plan.attachments.length}\nbackup: ${plan.backup.state}${plan.backup.state === "git-restore-point" ? `\nrestore commit: ${plan.backup.commit}` : ""}\n`;
     if (plan.state === "unsupported-format") {
       return output({
         exitCode: 1,

@@ -16,7 +16,7 @@ composition SDK，供 NiceEval CLI、替代 CLI / Web host 或深度应用集成
 
 ```json
 // record.json
-{ "format": "niceeval.record", "schemaVersion": 1 }
+{ "format": "niceeval.record", "schemaVersion": 2 }
 
 // runs/<RunId>/attempts/<AttemptId>/attachments/niceeval.assertions/attachment.json
 { "family": "niceeval.assertions", "schemaVersion": 1 }
@@ -85,10 +85,10 @@ registration point 或 migration registration。此前未保存且不可恢复�
 要么扩展既有 family，要么由 NiceEval 增加新的 fixed family definition。它不能成为调用方定义的第三方
 durable family。
 
-NiceEval 也可以在后续 catalog 中加入另一个固定 family，例如 `niceeval.energy`。这只增加该 family 自己的
-definition、`owners` map 与 schemaVersion，不升级 Core。较早 reader 保留它在磁盘上的完整目录和 bytes，
-忽略它并继续读取 Core 与认识的 family；只有请求 energy 的 AnalysisInput 或 DomainView 才得到
-`unsupported`。
+current catalog、root 与 Core 共同构成 durable writer epoch。ordinary reader 和 writer 只接受这一整套 exact
+current definition；未知 family、known family 的 future 版本和 root/Core epoch 不匹配都在 Analysis、Report 或
+Runner 形成前 fail closed。新增 fixed family 或改变既有 family 的 current 版本时必须同步升级 root epoch，防止旧
+writer 在迁移后继续追加旧格式。
 
 Core 的 `Schema.Encoded` 只允许 exact JSON，禁止 blob ref。Attachment owner 的 encoded side 仍是 exact JSON，
 但可含由该 owner 的 declaration 唯一 mint 的 `RecordBlobRef`。一个 ref 只能指向同 owner、同 family 下的一份
@@ -140,19 +140,19 @@ reader、writer 和固定 family 必须接受的 root、Core 与 Attachment shap
 身份、预期 Slot 和问题的 `RecordSelection`。查询需要某条 trace、diff 或 Evidence 时，才读取并校验对应
 Attachment。
 
-Record 的首次正式格式是 schemaVersion `1`，没有已发布 predecessor（前代格式）。未来 schemaVersion 变化时，
-maintenance 只执行固定的相邻步骤，例如 `1 → 2`。兼容性按对象判断：
+Record 的 current root 是 schemaVersion `2`。schemaVersion `1` 是 npm `niceeval@0.13.0` 可产生的已发布
+predecessor；固定的 `1 → 2` chain 同时升级 root epoch 与 Observability v1 envelope。兼容性如下：
 
 | 碰到的 bytes | ordinary reader 的动作 |
 |---|---|
-| root 或 Core 的 schemaVersion 不匹配 | 若 maintenance 有相邻步骤，返回 `migration-required`；否则 `unsupported-format`，不形成 session |
-| 已知 fixed family 的旧 schemaVersion | 返回 `migration-required`，普通读取不兼容，必须显式 migrate |
-| 未知的独立 future family | 保留 bytes、忽略该 family，继续读取 Core 和认识的 family |
+| root/Core epoch 或已知 fixed family 是完整可自动迁移的 predecessor | ordinary 入口先退出检查 scope，再进入 Git-safe automatic maintenance；迁移成功后全新打开 current session |
+| root/Core epoch 或 known family 是 future、unknown 或无完整 chain | `unsupported-format`，不形成 session |
+| 未知 family | `unsupported-format`，不形成 session |
 | current catalog 中缺少的 family | 在请求它时返回 `not-recorded` |
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format`；它不能伪装为独立 future family |
 
-未知 family 的局部容忍不让 reader 猜测 payload 或 blob closure，也不让 Report 看见原始内容。它只保护可读的
-历史；依赖该 family 的能力保持 `unsupported`，直到使用认识该 definition 的 NiceEval。
+ordinary reader 不局部容忍未知或 future bytes。maintenance 可以在已知 migration plan 中逐字保留不属于目标的
+portable bytes，但全量 exact current 验证必须认识最终 inventory；否则迁移和普通打开都拒绝。
 
 ## 从 Record 到闭合输出
 
