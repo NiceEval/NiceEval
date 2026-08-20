@@ -113,8 +113,8 @@ Executor 回答“测试进程在哪里运行”：
 依赖缓存只能缓存包管理器 store 与 Docker layer。
 不能缓存 `node_modules`、`.niceeval`、导出站或上次测试结果并直接作为新候选输入。
 
-release lane 必须验收随后要发布的同一份 tarball。
-验证后重新 pack 再发布会切断信任链。
+release workflow 不运行 E2E；它只生成一次最终 tarball，并在 publish 前复核同一 artifact。
+重新 pack 再发布会切断 tarball 身份链。
 
 ## 测试支持边界
 

@@ -26,7 +26,7 @@
 
 **事实。** Root script 先构建仓库，再用一份 `stable-test-runner` 中的 `@playwright/test` CLI 作为外层 runner。Fixture 把当前构建的 `packages/playwright-test/cli.js` 作为内层 candidate，以 `node <cli> test ...` 启动。
 
-**推断。** Stable outer/current inner 避免“用正在被测的调度器裁决自己是否正确”的递归。NiceEval 不需要复制稳定 runner，但 release lane 必须让 runner 与候选 artifact 身份彼此独立。
+**推断。** Stable outer/current inner 避免“用正在被测的调度器裁决自己是否正确”的递归。NiceEval 不需要复制稳定 runner；E2E runner 与候选 artifact 身份仍保持独立，但 release workflow 不再运行该 lane。
 
 ## 使用哪个 test runner
 

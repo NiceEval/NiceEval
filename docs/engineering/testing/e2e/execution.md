@@ -192,7 +192,7 @@ backend、container 与 browser 都必须登记 owned handle；`finally` 做有�
 | Fork / Dependabot `pull_request` | `pr` | 无 | 无密钥功能与确定性 Adapter Repo |
 | `push main` | `main` | main Environment，按 manifest 白名单注入 | lane 全集，包含 live provider Repo |
 | `schedule` | `nightly` | nightly Environment，按 manifest 白名单注入 | lane 全集，包含 live provider Repo |
-| release preflight | `release` | 仓库级 Actions secrets + release Environment | 精确待发布 tarball + 确定性 blocking 矩阵 + live 结果或 AI 真实验收 |
+| 手动完整验收 | `release` | 按 workflow dispatch 选择 | 按需复现完整矩阵，不参与 npm 发布门禁 |
 | `workflow_dispatch` | 显式 | `live_providers=true` 时按 manifest 白名单注入 | 默认确定性 Repo；显式开关后包含 live Repo |
 
 同仓 PR 只有在 `head.repo.full_name` 等于当前仓库且 PR 作者不是 Dependabot 时才进入可信 `main` lane。
@@ -333,28 +333,18 @@ artifact 只接受 canonical `dir/**` 或顶层文件 glob。collector 在每次
 collector 拒绝源目录中的 symlink、后代 symlink 和特殊文件，也拒绝目标根中的 symlink。
 candidate、receipt 与两类 summary 同样逐段核验 durable root 以下的目录链。任一内部 symlink 属于 runner infra。
 
-## Release 信任链
+## Release 与 E2E 分离
 
-Release job 先按最终版本生成 tarball 与 digest，所有 release Repo 安装该 artifact；通过后发布同一文件。
-任何重新 pack、identity 不一致、blocking Repo 没有 pass / fail 状态或 artifact 丢失都阻止发布。
+Release job 按最终版本生成一次 tarball 与 digest，发布 job 下载并复核同一 artifact，且不得重新 pack。
+发布链只以类型检查、docs/memory lint、构建成功、SHA-256 与 npm integrity / identity 校验为门禁；它不再 plan 或运行 release lane，也不聚合 E2E receipt。
 
-聚合 release receipt 前调用 root `verify-release`：它是这份本地结构化信任链的唯一判断入口，要求非空 grid、精确 receipt 集、全 pass 与同一 tarball digest/tag，
-而不是在 workflow 里另写 package/receipt 判定。
-
-确定性协议 counterpart 阻断产品 regression。有效 live Adapter 结果显示协议不兼容时同样阻断。
-结构化外部故障不是 pass，但可以由同一 candidate 的 AI 真实兼容性验收替代。
-PR / release 说明必须保存版本、生产入口、动作、公开观察与未守护风险。
-既没有有效 live 结果，也没有本次 AI 真实验收时，该兼容性状态是“未证明”，不能伪装成通过。
-
-Release Repo 使用同一 checkout 的私有 Testkit 作为 harness，但只有 NiceEval candidate 进入 pack-once、digest、preflight 与 publish
-信任链。安装后的 candidate 必须证明不包含、也不依赖 `@niceeval/testkit`。
-
-这保证“CI 测过的代码”和“registry 收到的包”是同一字节，而不是两个相近 checkout。
+PR、main 与 nightly 的 E2E 继续在独立 workflow 运行。`release` lane 和 root `verify-release` 仍可用于手动完整验收与诊断，但结果不授权、阻止或延迟 npm 发布。
+因此 E2E 证明的是对应 checkout 的安装后行为，而发布链只保证 registry 收到的是本次按 tag 构建并校验过的精确字节；两者不再组成同一条阻塞信任链。
 
 ## 待测包与 CI 闭包
 
 - 确定性 Report tests 不声明真实模型 secret，并进入 fork-safe 的无密钥 PR lane。
-- Release preflight 聚合同一 tarball 的全部 blocking Repo；通过后发布同一字节与 digest。
+- Release 只 pack 一次，并在 publish 前复核同一 tarball 的 digest 与 npm identity；不等待 E2E preflight。
 - 注入身份核验失败与待测包不可消费使用不同失败分类，并保留各自的原始收据。
 - Adapter 与 Report Repo 按 owner 拆成原生测试文件，再按文件和标题分片；不把多个命题压进线性脚本或同一文件。
 - CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。

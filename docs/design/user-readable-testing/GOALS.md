@@ -59,7 +59,7 @@ Fixture 必须区分正确实现与至少一种常见错误实现。
 
 ### G10：本地与 CI 使用同一条执行链
 
-开发者本地、GitHub Actions 与 release preflight 必须运行同一个根命令、同一种候选包注入和同一份消费项目。
+开发者本地与 E2E GitHub Actions 必须运行同一个根命令、同一种候选包注入和同一份消费项目；release workflow 不运行 E2E。
 Host、Docker 与 live provider 的边界要显式，不能靠宿主自动切换后仍声称证明同一个条件。
 
 ## 可验证要求

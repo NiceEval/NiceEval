@@ -48,7 +48,7 @@ Docker 项目先检查 daemon、镜像 digest 与资源预算；不满足时报�
 | `pull_request` | `pr` | 无 | unit、CLI、Report、Package、本地 Docker fixture |
 | `push main` | `main` | GitHub Environment | PR 全集 + 便宜 live adapter smoke |
 | `schedule` | `nightly` | GitHub Environment | 全 adapter、sandbox、cleanup、平台代表 |
-| release preflight | `release` | GitHub Environment | 精确待发布 tarball + release-blocking 矩阵 |
+| 手动完整验收 | `release` | GitHub Environment | 按需复现完整矩阵，不参与发布门禁 |
 | `workflow_dispatch` | 显式 | 按 environment | 单 repo / lane 复现 |
 
 PR 代码绝不通过 `pull_request_target` 获取 secrets。
@@ -67,7 +67,6 @@ workflow 的职责只有 checkout、运行时准备、矩阵调度、缓存 stor
 
 ## Release
 
-release workflow 先按 tag 生成带最终版本的 tarball 并保存 digest，再把该 artifact 交给 release lane。
-所有 blocking 项目通过后才发布同一 tarball。
-
-live provider 结果不定、artifact 丢失或候选 identity 不一致都阻止发布；不能把 inconclusive 当 pass。
+release workflow 先按 tag 生成带最终版本的 tarball 并保存 digest，publish job 复核并发布同一 artifact，不运行 release lane。
+日常与手动 E2E 保持独立；其 live provider 结果不延迟或阻止发布。
+artifact 丢失、digest 或 npm identity 不一致仍阻止发布。

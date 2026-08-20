@@ -46,6 +46,6 @@ factory 交给 E2B 的公开构建输入可复现，且不会因 identity 分叉
 ## 安装与身份
 
 Package Repo 本身是候选包的外部 consumer。根 runner 负责 candidate digest、lockfile integrity、executable 身份与隔离副本；
-测试正文不另建未安装 candidate 的第二套消费图。Release preflight 必须验收随后发布的同一 tarball，验收后不得重新 pack。
+测试正文不另建未安装 candidate 的第二套消费图。Release 与 E2E 独立；发布只 pack 一次并在 publish 前复核同一 tarball，不在发版时重跑消费验收。
 
 具体编译器、bundle/chunk 数量、私有目录布局、CLI flag 全矩阵、provider 协议和浏览器交互不属于本 Repo。
