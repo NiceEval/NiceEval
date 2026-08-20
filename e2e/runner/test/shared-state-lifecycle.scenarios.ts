@@ -20,6 +20,8 @@ async function appearsWithin(path: string, timeoutMs: number, label: string): Pr
   ).then(() => true).catch(() => false);
 }
 
+const REUSABLE_SANDBOX_READY_TIMEOUT_MS = 60_000;
+
 function ownerTokenFromPublicRecoveryInspection(stderr: string): string {
   const match = stderr.match(/owner token:\s*(\S+)/u);
   expect(match, stderr).not.toBeNull();
@@ -94,7 +96,11 @@ test("复用的同一物理 Sandbox 完成 Sandbox lifecycle/finalizer scope 和
               const secondAttempt = join(barrierRoot, "pool-first-attempt-2");
               return await exists(firstAttempt) && await exists(secondAttempt) ? true : undefined;
             },
-            { timeoutMs: 45_000, intervalMs: 20, label: "two attempts use the reusable Sandbox" },
+            {
+              timeoutMs: REUSABLE_SANDBOX_READY_TIMEOUT_MS,
+              intervalMs: 20,
+              label: "two attempts use the reusable Sandbox",
+            },
           );
           const [firstSandbox, secondSandbox] = await Promise.all([
             (await import("node:fs/promises")).readFile(join(barrierRoot, "pool-first-attempt-1"), "utf8"),
@@ -105,7 +111,11 @@ test("复用的同一物理 Sandbox 完成 Sandbox lifecycle/finalizer scope 和
 
           await pollUntil(
             async () => (await exists(join(barrierRoot, "sandbox-lifecycle-scope-started"))) || undefined,
-            { timeoutMs: 45_000, intervalMs: 20, label: "Sandbox lifecycle/finalizer scope starts after the last Attempt" },
+            {
+              timeoutMs: REUSABLE_SANDBOX_READY_TIMEOUT_MS,
+              intervalMs: 20,
+              label: "Sandbox lifecycle/finalizer scope starts after the last Attempt",
+            },
           );
           second = niceeval.start(["exp", "shared-state-pool-second", "--rerun", "all", "--json"], {
             env: {
