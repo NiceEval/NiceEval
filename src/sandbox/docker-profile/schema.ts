@@ -60,16 +60,108 @@ export const DockerExecutionProfileV1Schema: Schema.Schema<DockerExecutionProfil
 export const DockerExecutionProfileSchema = DockerExecutionProfileV1Schema;
 function nonEmpty(values: readonly string[]): readonly [string, ...string[]] { const [first, ...rest] = values; if (first === undefined) throw new Error("expected non-empty tuple"); return Object.freeze([first, ...rest]); }
 function freezeProfile(profile: DockerExecutionProfileV1): DockerExecutionProfileV1 { return Object.freeze({ ...profile, transport: Object.freeze({ ...profile.transport, dockerSocket: Object.freeze({ ...profile.transport.dockerSocket }), controlSocket: Object.freeze({ ...profile.transport.controlSocket }) }), backend: Object.freeze({ ...profile.backend, owner: Object.freeze({ ...profile.backend.owner }), filesystem: Object.freeze({ ...profile.backend.filesystem }), cgroup: Object.freeze({ ...profile.backend.cgroup, controllers: PROFILE_CONTROLLERS }) }), capacity: Object.freeze({ ...profile.capacity, memorySwapBytes: 0, aggregate: Object.freeze({ ...profile.capacity.aggregate, memorySwapBytes: 0 }) }), policy: Object.freeze({ ...profile.policy, network: Object.freeze({ ...profile.policy.network, dns: Object.freeze({ ...profile.policy.network.dns, servers: nonEmpty(profile.policy.network.dns.servers) }), egress: Object.freeze({ ...profile.policy.network.egress, allowedProtocols: NETWORK_ALLOWED_PROTOCOLS, denyCidrs: DOCKER_PROFILE_NETWORK_DENY_CIDRS }) }) }) }); }
-function semanticPolicyJson(input: DockerExecutionProfileSemanticInput): JsonValue { return { schemaVersion: 1, securityLevel: input.securityLevel, backend: { kind: input.backend.kind, cgroup: { policyRevision: input.backend.cgroup.policyRevision, controllers: [...input.backend.cgroup.controllers] } }, policy: { hostLoopback: input.policy.hostLoopback, tcpDockerEndpoint: input.policy.tcpDockerEndpoint, outerSocketInjection: input.policy.outerSocketInjection, privilegedTranslation: input.policy.privilegedTranslation, writableRoot: input.policy.writableRoot, network: { version: input.policy.network.version, dns: { mode: input.policy.network.dns.mode, servers: [...input.policy.network.dns.servers] }, egress: { ...input.policy.network.egress, allowedProtocols: [...input.policy.network.egress.allowedProtocols], denyCidrs: [...input.policy.network.egress.denyCidrs] } } } }; }
+function semanticPolicyJson(input: DockerExecutionProfileSemanticInput): JsonValue {
+  return {
+    schemaVersion: DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION,
+    securityLevel: input.securityLevel,
+    backend: {
+      kind: input.backend.kind,
+      cgroup: {
+        policyRevision: input.backend.cgroup.policyRevision,
+        controllers: [...input.backend.cgroup.controllers],
+      },
+    },
+    policy: {
+      hostLoopback: input.policy.hostLoopback,
+      tcpDockerEndpoint: input.policy.tcpDockerEndpoint,
+      outerSocketInjection: input.policy.outerSocketInjection,
+      privilegedTranslation: input.policy.privilegedTranslation,
+      writableRoot: input.policy.writableRoot,
+      network: {
+        version: input.policy.network.version,
+        dns: { mode: input.policy.network.dns.mode, servers: [...input.policy.network.dns.servers] },
+        egress: {
+          mode: input.policy.network.egress.mode,
+          allowedProtocols: [...input.policy.network.egress.allowedProtocols],
+          denyPrivateNetworks: input.policy.network.egress.denyPrivateNetworks,
+          denySiblingSyntheticEndpoints: input.policy.network.egress.denySiblingSyntheticEndpoints,
+          denyCidrs: [...input.policy.network.egress.denyCidrs],
+          ipv6: input.policy.network.egress.ipv6,
+          disableHostLoopback: input.policy.network.egress.disableHostLoopback,
+          portDriver: input.policy.network.egress.portDriver,
+          daemonBridge: input.policy.network.egress.daemonBridge,
+          exclusiveNetwork: input.policy.network.egress.exclusiveNetwork,
+          icc: input.policy.network.egress.icc,
+        },
+      },
+    },
+  };
+}
 export function dockerExecutionProfileSemanticPolicyRevisionOf(input: DockerExecutionProfileSemanticInput): string { return digestOf(semanticPolicyJson(input)).slice(0, 8); }
 export const dockerProfileSemanticPolicyRevisionOf = dockerExecutionProfileSemanticPolicyRevisionOf;
-function schemaError(value: unknown, error: ParseResult.ParseError): DockerProfileError { const issue = ParseResult.ArrayFormatter.formatErrorSync(error)[0]; const suffix = issue?.path.map(String).join("."); const errorPath = `profile${suffix === undefined || suffix === "" ? "" : `.${suffix}`}`; const root = typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined; if (errorPath === "profile.schemaVersion") return dockerProfileError({ code: "sandbox.docker-profile-unknown-version", path: errorPath, message: `Unsupported Docker execution profile schema version ${JSON.stringify(root?.schemaVersion)}; expected 1` }); if (errorPath === "profile.securityLevel") return dockerProfileError({ code: "sandbox.docker-profile-security-level-unsupported", path: errorPath, message: `Unsupported Docker execution profile security level ${JSON.stringify(root?.securityLevel)}` }); return dockerProfileError({ code: errorPath === "profile.capacity" ? "sandbox.docker-profile-capacity-invalid" : "sandbox.docker-profile-schema-invalid", path: errorPath, message: issue === undefined ? "profile is not a valid Docker execution profile v1" : `${errorPath} ${issue.message}` }); }
+function formatSchemaPath(path: readonly PropertyKey[]): string {
+  return path.reduce<string>((result, segment) =>
+    typeof segment === "number" || (typeof segment === "string" && /^\\d+$/.test(segment))
+      ? `${result}[${String(segment)}]`
+      : `${result}.${String(segment)}`, "profile");
+}
+
+function schemaError(value: unknown, error: ParseResult.ParseError): DockerProfileError {
+  const issue = ParseResult.ArrayFormatter.formatErrorSync(error)[0];
+  const errorPath = issue === undefined ? "profile" : formatSchemaPath(issue.path);
+  const root = typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+  if (errorPath === "profile.schemaVersion") {
+    if (root?.schemaVersion === undefined) {
+      return dockerProfileError({ code: "sandbox.docker-profile-schema-invalid", path: errorPath, message: "profile.schemaVersion is required" });
+    }
+    return dockerProfileError({ code: "sandbox.docker-profile-unknown-version", path: errorPath, message: `Unsupported Docker execution profile schema version ${JSON.stringify(root.schemaVersion)}; expected 1` });
+  }
+  if (errorPath === "profile.securityLevel") return dockerProfileError({ code: "sandbox.docker-profile-security-level-unsupported", path: errorPath, message: `Unsupported Docker execution profile security level ${JSON.stringify(root?.securityLevel)}` });
+  return dockerProfileError({ code: errorPath === "profile.capacity" ? "sandbox.docker-profile-capacity-invalid" : "sandbox.docker-profile-schema-invalid", path: errorPath, message: issue === undefined ? "profile is not a valid Docker execution profile v1" : `${errorPath} ${issue.message}` });
+}
 export function parseDockerExecutionProfileV1(value: unknown): DockerExecutionProfileV1 { const decoded = Schema.decodeUnknownEither(DockerExecutionProfileV1Schema, ParseOptions)(value); if (Either.isLeft(decoded)) throw schemaError(value, decoded.left); const profile = freezeProfile(decoded.right); const expected = dockerExecutionProfileSemanticPolicyRevisionOf(profile); if (profile.semanticPolicyRevision !== expected) throw dockerProfileError({ code: "sandbox.docker-profile-semantic-policy-mismatch", path: "profile.semanticPolicyRevision", message: `profile.semanticPolicyRevision does not match the canonical semantic policy revision ${expected}`, details: { expected, actual: profile.semanticPolicyRevision } }); return profile; }
 export const parseDockerExecutionProfile = parseDockerExecutionProfileV1;
 export const decodeDockerExecutionProfileV1 = parseDockerExecutionProfileV1;
 export function makeDockerExecutionProfileV1(input: DockerExecutionProfileV1Draft): DockerExecutionProfileV1 { return parseDockerExecutionProfileV1({ ...input, semanticPolicyRevision: dockerExecutionProfileSemanticPolicyRevisionOf(input) }); }
 export const createDockerExecutionProfileV1 = makeDockerExecutionProfileV1;
 export function isDockerExecutionProfileV1(value: unknown): value is DockerExecutionProfileV1 { try { parseDockerExecutionProfileV1(value); return true; } catch { return false; } }
-export function dockerExecutionProfileV1Digest(profile: DockerExecutionProfileV1): string { return `sha256:${digestOf(parseDockerExecutionProfileV1(profile) as unknown as JsonValue)}`; }
+function canonicalJson(profile: DockerExecutionProfileV1): JsonValue {
+  return {
+    schemaVersion: profile.schemaVersion, profileId: profile.profileId, securityLevel: profile.securityLevel, semanticPolicyRevision: profile.semanticPolicyRevision,
+    transport: { kind: profile.transport.kind, hostMachineIdentity: profile.transport.hostMachineIdentity, dockerSocket: { path: profile.transport.dockerSocket.path, peerUid: profile.transport.dockerSocket.peerUid }, controlSocket: { path: profile.transport.controlSocket.path, peerUid: profile.transport.controlSocket.peerUid, protocol: profile.transport.controlSocket.protocol } },
+    backend: { kind: profile.backend.kind, machineIdentity: profile.backend.machineIdentity, owner: { uid: profile.backend.owner.uid, gid: profile.backend.owner.gid }, filesystem: { identity: profile.backend.filesystem.identity, mountPath: profile.backend.filesystem.mountPath, dockerRootDir: profile.backend.filesystem.dockerRootDir, limitBytes: profile.backend.filesystem.limitBytes }, cgroup: { aggregatePath: profile.backend.cgroup.aggregatePath, policyRevision: profile.backend.cgroup.policyRevision, controllers: [...profile.backend.cgroup.controllers] } },
+    capacity: { cpus: profile.capacity.cpus, memoryBytes: profile.capacity.memoryBytes, memorySwapBytes: profile.capacity.memorySwapBytes, pids: profile.capacity.pids, maxContainers: profile.capacity.maxContainers, maxBuilds: profile.capacity.maxBuilds, aggregate: { cpus: profile.capacity.aggregate.cpus, memoryBytes: profile.capacity.aggregate.memoryBytes, memorySwapBytes: profile.capacity.aggregate.memorySwapBytes, pids: profile.capacity.aggregate.pids } },
+    policy: {
+      hostLoopback: profile.policy.hostLoopback,
+      tcpDockerEndpoint: profile.policy.tcpDockerEndpoint,
+      outerSocketInjection: profile.policy.outerSocketInjection,
+      privilegedTranslation: profile.policy.privilegedTranslation,
+      writableRoot: profile.policy.writableRoot,
+      network: {
+        version: profile.policy.network.version,
+        dns: { mode: profile.policy.network.dns.mode, servers: [...profile.policy.network.dns.servers] },
+        egress: {
+          mode: profile.policy.network.egress.mode,
+          allowedProtocols: [...profile.policy.network.egress.allowedProtocols],
+          denyPrivateNetworks: profile.policy.network.egress.denyPrivateNetworks,
+          denySiblingSyntheticEndpoints: profile.policy.network.egress.denySiblingSyntheticEndpoints,
+          denyCidrs: [...profile.policy.network.egress.denyCidrs],
+          ipv6: profile.policy.network.egress.ipv6,
+          disableHostLoopback: profile.policy.network.egress.disableHostLoopback,
+          portDriver: profile.policy.network.egress.portDriver,
+          daemonBridge: profile.policy.network.egress.daemonBridge,
+          exclusiveNetwork: profile.policy.network.egress.exclusiveNetwork,
+          icc: profile.policy.network.egress.icc,
+        },
+      },
+    },
+  };
+}
+export function dockerExecutionProfileV1Digest(profile: DockerExecutionProfileV1): string { return `sha256:${digestOf(canonicalJson(parseDockerExecutionProfileV1(profile)))}`; }
 export const dockerProfileDigestOf = dockerExecutionProfileV1Digest;
-export function dockerProfilePublicSummaryOf(profile: DockerExecutionProfileV1): DockerProfilePublicSummary { const normalized = parseDockerExecutionProfileV1(profile); return Object.freeze({ schemaVersion: 1, profileId: normalized.profileId, securityLevel: normalized.securityLevel, semanticPolicyRevision: normalized.semanticPolicyRevision, capacity: normalized.capacity }); }
+export function dockerProfilePublicSummaryOf(profile: DockerExecutionProfileV1): DockerProfilePublicSummary {
+  const normalized = parseDockerExecutionProfileV1(profile);
+  return Object.freeze({ schemaVersion: 1, profileId: normalized.profileId, securityLevel: normalized.securityLevel, semanticPolicyRevision: normalized.semanticPolicyRevision, capacity: Object.freeze({ ...normalized.capacity, aggregate: Object.freeze({ ...normalized.capacity.aggregate }) }) });
+}
