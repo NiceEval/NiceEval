@@ -331,8 +331,17 @@ function fencedBlockCount(content: string | undefined): number {
 function requireFences(errors: string[], label: string, content: string | undefined, count: number): void {
   if (content !== undefined && fencedBlockCount(content) < count) errors.push(`${label} requires at least ${count} fenced code block${count === 1 ? "" : "s"}`);
 }
+function validateCaseDirections(errors: string[], name: string, content: string): void {
+  const directions = [...content.matchAll(/^### (?:Removed|Added|Changed|Added terms|Removed terms)$/gm)];
+  for (const [index, heading] of directions.entries()) {
+    const block = content.slice(heading.index! + heading[0].length, directions[index + 1]?.index ?? content.length);
+    if (!/^#### Case: .+$/m.test(block)) errors.push(`${name} ${heading[0]} must be omitted when it has no cases`);
+  }
+}
 function validateProductCaseSection(errors: string[], name: string, content: string): void {
   const cases = [...content.matchAll(/^#### Case: .+$/gm)];
+  if (!cases.length) errors.push(`${name} must be omitted when it has no cases`);
+  validateCaseDirections(errors, name, content);
   for (const [index, heading] of cases.entries()) {
     const block = content.slice(heading.index! + heading[0].length, cases[index + 1]?.index ?? content.length);
     const label = `${name} ${heading[0]}`;
@@ -363,8 +372,10 @@ function validateStructure(body: string, metadata: FinalMetadata): string[] {
     else if (index < previous) errors.push(`section is out of template order: ${section}`);
     else previous = index;
   }
-  for (const required of ["Problem", "Terminology"]) if (!seen.has(required)) errors.push(`required section is missing: ${required}`);
+  if (!seen.has("Problem")) errors.push("required section is missing: Problem");
   for (const placeholder of templatePlaceholders()) if (content.includes(placeholder)) errors.push(`unresolved template placeholder: ${placeholder}`);
+  const prose = content.replace(/^```[^\n]*\n[\s\S]*?^```\s*$/gm, "");
+  if (/^\s*(?:[-*]\s*)?None(?:\s*(?:—|-).*)?\.?\s*$/gim.test(prose)) errors.push('empty content must be omitted instead of written as "None"');
   for (const literal of metadata.forbid ?? []) if (content.includes(literal)) errors.push(`forbidden stale text remains: ${JSON.stringify(literal)}`);
   for (const field of ["Coverage", "Starting point", "Copyable usage or trigger", "Observable result or diagnostic", "Contract", "Before usage or result", "After usage or result", "User impact"]) {
     if (new RegExp(`^- ${field}:`, "m").test(content)) errors.push(`legacy summary field remains: - ${field}:`);
@@ -376,6 +387,7 @@ function validateStructure(body: string, metadata: FinalMetadata): string[] {
   const useCases = sectionsByName.get("Use cases");
   if (useCases) {
     const cases = [...useCases.matchAll(/^### Case: .+$/gm)];
+    if (!cases.length) errors.push("Use cases must be omitted when it has no cases");
     for (const [index, heading] of cases.entries()) {
       const block = useCases.slice(heading.index! + heading[0].length, cases[index + 1]?.index ?? useCases.length);
       requireHeadingFields(errors, heading[0], block, 4, ["Starting state", "Action", "Result"]);
@@ -390,6 +402,8 @@ function validateStructure(body: string, metadata: FinalMetadata): string[] {
   const environment = sectionsByName.get("Environment variables");
   if (environment) {
     const cases = [...environment.matchAll(/^#### Case: .+$/gm)];
+    if (!cases.length) errors.push("Environment variables must be omitted when it has no cases");
+    validateCaseDirections(errors, "Environment variables", environment);
     for (const [index, heading] of cases.entries()) {
       const block = environment.slice(heading.index! + heading[0].length, cases[index + 1]?.index ?? environment.length);
       const label = `Environment variables ${heading[0]}`;
@@ -402,6 +416,9 @@ function validateStructure(body: string, metadata: FinalMetadata): string[] {
   }
   const packageScripts = sectionsByName.get("Package scripts");
   if (packageScripts) validateProductCaseSection(errors, "Package scripts", packageScripts);
+
+  const terminology = sectionsByName.get("Terminology");
+  if (terminology) validateProductCaseSection(errors, "Terminology", terminology);
 
   const record = sectionsByName.get("Record schema and stored-data upgrade");
   if (record) {

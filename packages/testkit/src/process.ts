@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { Either, Schema } from "effect";
 
 export type Argv = readonly [string, ...string[]];
 
@@ -15,31 +16,41 @@ export interface DiagnosticTruncation {
 }
 
 /** The invocation-level hand-off emitted by `niceeval exp --json`. */
-export interface InvocationReceipt {
-  readonly invocationId: string;
-  readonly runIds: readonly string[];
-  readonly startedAt: string;
-  readonly completedAt?: string;
-  readonly completion: "completed" | "interrupted" | "failed";
-}
+const NonNegativeIntegerSchema = Schema.Number.pipe(
+  Schema.filter((value) => Number.isInteger(value) && value >= 0),
+);
+
+export const InvocationReceiptSchema = Schema.Struct({
+  invocationId: Schema.String,
+  runIds: Schema.Array(Schema.String),
+  startedAt: Schema.String,
+  completedAt: Schema.optional(Schema.String),
+  completion: Schema.Literal("completed", "interrupted", "failed"),
+});
+
+export type InvocationReceipt = Schema.Schema.Type<typeof InvocationReceiptSchema>;
 
 /** The sole terminal envelope in a `niceeval exp --json` stream. */
-export interface ExpReceiptEvent {
-  readonly type: "receipt";
-  readonly receipt: InvocationReceipt;
-}
+export const ExpReceiptEventSchema = Schema.Struct({
+  type: Schema.Literal("receipt"),
+  receipt: InvocationReceiptSchema,
+});
+
+export type ExpReceiptEvent = Schema.Schema.Type<typeof ExpReceiptEventSchema>;
 
 /** The stream identity line emitted first by `niceeval exp --json`. */
-export interface ExpStartEvent {
-  format: "niceeval.exp";
-  schemaVersion: number;
-  event: "start";
-  total: number;
-  configs: number;
-  concurrency: number;
-  experimentConcurrency?: Readonly<Record<string, number>>;
-  reused: number;
-}
+export const ExpStartEventSchema = Schema.Struct({
+  format: Schema.Literal("niceeval.exp"),
+  schemaVersion: NonNegativeIntegerSchema,
+  event: Schema.Literal("start"),
+  total: NonNegativeIntegerSchema,
+  configs: NonNegativeIntegerSchema,
+  concurrency: NonNegativeIntegerSchema,
+  experimentConcurrency: Schema.optional(Schema.Record({ key: Schema.String, value: NonNegativeIntegerSchema })),
+  reused: NonNegativeIntegerSchema,
+});
+
+export type ExpStartEvent = Schema.Schema.Type<typeof ExpStartEventSchema>;
 
 interface ExpProgressEvent {
   event: "progress";
@@ -76,17 +87,31 @@ interface ExpErrorEvent {
   reason: string;
 }
 
-export type ExpEvalEvent = {
-  event: "eval";
-  locator: string;
-  evalId: string;
-  experimentId: string;
-  verdict: "passed" | "failed" | "errored" | "skipped";
-  attempts: number;
-} & (
-  | { passed: number; planned?: never; unstarted?: never; reason?: never }
-  | { passed?: never; planned: number; unstarted: number; reason: "early_exit" }
+const ExpEvalBaseSchema = Schema.Struct({
+  event: Schema.Literal("eval"),
+  locator: Schema.String,
+  evalId: Schema.String,
+  experimentId: Schema.String,
+  verdict: Schema.Literal("passed", "failed", "errored", "skipped"),
+  attempts: NonNegativeIntegerSchema,
+});
+
+export const ExpEvalEventSchema = Schema.Union(
+  Schema.extend(ExpEvalBaseSchema, Schema.Struct({
+    passed: NonNegativeIntegerSchema,
+    planned: Schema.optional(Schema.Never),
+    unstarted: Schema.optional(Schema.Never),
+    reason: Schema.optional(Schema.Never),
+  })),
+  Schema.extend(ExpEvalBaseSchema, Schema.Struct({
+    passed: Schema.optional(Schema.Never),
+    planned: NonNegativeIntegerSchema,
+    unstarted: NonNegativeIntegerSchema,
+    reason: Schema.Literal("early_exit"),
+  })),
 );
+
+export type ExpEvalEvent = Schema.Schema.Type<typeof ExpEvalEventSchema>;
 
 interface ExpKeptEvent {
   event: "kept";
@@ -333,69 +358,28 @@ export class ProcessReceipt {
   }
 }
 
+function isExpStartEvent(value: unknown): value is ExpStartEvent {
+  return Either.isRight(Schema.decodeUnknownEither(ExpStartEventSchema)(value));
+}
+
+function isExpEvalEvent(value: unknown): value is ExpEvalEvent {
+  return Either.isRight(Schema.decodeUnknownEither(ExpEvalEventSchema, {
+    errors: "all",
+    onExcessProperty: "error",
+  })(value));
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
-function isNonNegativeIntegerRecord(value: unknown): value is Record<string, number> {
-  return isRecord(value) && Object.values(value).every(isNonNegativeInteger);
-}
-
-function isExpStartEvent(value: unknown): value is ExpStartEvent {
-  if (!isRecord(value)) return false;
-  if (value.format !== "niceeval.exp" || value.event !== "start") return false;
-  if (!isNonNegativeInteger(value.schemaVersion)) return false;
-  if (!isNonNegativeInteger(value.total)) return false;
-  if (!isNonNegativeInteger(value.configs)) return false;
-  if (!isNonNegativeInteger(value.concurrency)) return false;
-  if (!isNonNegativeInteger(value.reused)) return false;
-  if (
-    value.experimentConcurrency !== undefined &&
-    !isNonNegativeIntegerRecord(value.experimentConcurrency)
-  ) return false;
-  return true;
-}
-
-function isExpEvalEvent(value: unknown): value is ExpEvalEvent {
-  if (!isRecord(value) || value.event !== "eval") return false;
-  if (typeof value.locator !== "string") return false;
-  if (typeof value.evalId !== "string" || typeof value.experimentId !== "string") return false;
-  if (!isNonNegativeInteger(value.attempts)) return false;
-  if (
-    value.verdict !== "passed" &&
-    value.verdict !== "failed" &&
-    value.verdict !== "errored" &&
-    value.verdict !== "skipped"
-  ) return false;
-  if (value.reason === "early_exit") {
-    return isNonNegativeInteger(value.planned) && isNonNegativeInteger(value.unstarted);
-  }
-  return isNonNegativeInteger(value.passed);
-}
-
 function isReceiptEvent(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && value.type === "receipt";
+  return typeof value === "object" && value !== null && !Array.isArray(value) &&
+    (value as { type?: unknown }).type === "receipt";
 }
 
 function isExpReceiptEvent(value: unknown): value is ExpReceiptEvent {
-  return isReceiptEvent(value) && isInvocationReceipt(value.receipt);
-}
-
-function isInvocationReceipt(value: unknown): value is InvocationReceipt {
-  if (!isRecord(value)) return false;
-  if (typeof value.invocationId !== "string") return false;
-  if (!Array.isArray(value.runIds) || !value.runIds.every((runId) => typeof runId === "string")) return false;
-  if (typeof value.startedAt !== "string") return false;
-  if (value.completedAt !== undefined && typeof value.completedAt !== "string") return false;
-  return (
-    value.completion === "completed" ||
-    value.completion === "interrupted" ||
-    value.completion === "failed"
-  );
+  return Either.isRight(Schema.decodeUnknownEither(ExpReceiptEventSchema)(value));
 }
 
 function truncateForDisplay(text: string, stream: "stdout" | "stderr"): string {

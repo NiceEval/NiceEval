@@ -58,11 +58,11 @@ identify the incompatible public-format result and the upgrade path. An
 unchanged version must show both reader directions. Do not replace these cases
 with an abstract schema checklist.
 
-Always keep the Terminology section. Inventory terms added to or removed from
-the project's preferred vocabulary, including a rename as one Removed term and
-one Added term. Define each term in plain language and link its canonical entry
-in `docs/concepts.md`. If terminology is unchanged, write `None` under both
-directions.
+Include the Terminology section only when the PR adds or removes terms from the
+project's preferred vocabulary. Inventory a rename as one Removed term and one
+Added term. Define each term in plain language and link its canonical entry in
+`docs/concepts.md`. Delete unchanged directions and delete the whole section
+when terminology is unchanged.
 -->
 
 ## Problem
@@ -92,10 +92,9 @@ Across the repeated blocks, explicitly account for every applicable path:
 - a named failure path;
 - an explicitly unsupported boundary.
 
-Write `None — <reason>` for a path that does not apply. Do not invent scenarios
-to satisfy a fixed count. If one workflow covers the entire change, explain why
-it also covers the relevant composition, lifecycle, failure, and unsupported
-boundaries.
+Omit paths that do not apply. Do not invent scenarios to satisfy a fixed count.
+If one workflow covers the entire change, explain why it also covers the
+relevant composition, lifecycle, failure, and unsupported boundaries.
 -->
 
 ### Case: `<user goal>`
@@ -596,7 +595,7 @@ removed
 
 ##### User and security impact
 
-<migration or "none">
+<concrete migration and security impact; omit the case if there is no change>
 
 ### Added
 
@@ -632,7 +631,7 @@ removed
 
 ##### User and security impact
 
-<workflow, default, migration, or "none">
+<concrete workflow, default, migration, and security impact>
 
 ### Changed
 
@@ -668,7 +667,7 @@ removed
 
 ##### User and security impact
 
-<compatibility, migration, or "none">
+<concrete compatibility, migration, and security impact>
 
 ## Package scripts
 
@@ -755,9 +754,10 @@ removed
 ## Terminology
 
 <!--
-Keep this section even when terminology is unchanged. A term is a preferred
-domain word recorded in docs/concepts.md, not every new identifier in source.
-For a rename, list the old term under Removed and the replacement under Added.
+Delete this entire section when terminology is unchanged, and delete either
+direction when it has no cases. A term is a preferred domain word recorded in
+docs/concepts.md, not every new identifier in source. For a rename, list the
+old term under Removed and the replacement under Added.
 -->
 
 ### Added terms
