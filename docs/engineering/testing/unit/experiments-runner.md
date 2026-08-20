@@ -58,6 +58,8 @@ fixture 里的 `costUSD` 是输入证据（该 attempt 完成后结算的实测�
 
 时序纪律：并发与调度用 barrier 观察"在飞"状态，不用 `setTimeout` 猜测调度是否已经发生；重试和 backoff 用 `TestClock.adjust` 推进，不做真实等待。
 Effect 程序用 `it.effect` 让测试运行时持有 Scope；保存状态的 Layer 要求每例隔离时用独立 `it.layer(...)`。
+仓库未引入 `@effect/vitest` 时，普通 Vitest 必须把被测 Effect 提供给 `TestContext.TestContext`，在同一 Effect 图内 fork 后用
+`TestClock.adjust` 推进；不得用 Vitest fake timers 伪造 Effect Clock。
 
 ```ts
 it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
@@ -125,6 +127,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   前一 Attempt 的 `sandbox.cleanup` 未完成时，下一 Attempt 也不得创建沙箱或进入 `sandbox.prepare`。
   用 `TestClock` 与 barrier 观察在飞峰值或分配顺序。
   完整的用户侧搭配见[并发怎么配](../../../feature/experiments/use-case/并发/)。
+- **send 重试虚拟时间**：退避边界之前不重试，到边界才重试；释放全局槽位后必先重获再进入下一次 send。
+  Attempt AbortSignal 抢赢 sleep 时 sleep 一侧被取消；Attempt 重试预算耗尽后不再登记下一段 sleep。
 - **发现顺序与串行下的执行顺序**：
   - 发现结果按项目根相对路径字典序排列。
     数字前缀补零与不补零各一格（`10-` 排在 `2-` 前），再加跨目录与 `.eval.ts` / `.eval.tsx` 同名两格。
@@ -199,6 +203,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   新的 `plan` 清空残留行。
   用例见[准备与收尾怎么放](../../../feature/experiments/use-case/生命周期/)。
   字节渲染归 [E2E · CLI](../e2e/cli.md)。
+- **cleanup 超时虚拟时间**：用 Effect `TestClock` 证明边界前仍在等待、边界时失败。
+  超时必须 interruption 底层 Effect，并 abort `tryPromise` callback 收到的 signal；外层 Scope 继续关闭，所有 finalizer 各执行一次。
 - **断言求值阶段的 judge 推进 detail（`runner/attempt.ts` 接线）**：进入 `assertions.evaluate` 后，collector 的每次 judge 进度回调把 active 行 detail 更新为 `judge k/n · <检查方式>`。
   契约见 [CLI · Attempt 阶段](../../../feature/experiments/cli.md#attempt-阶段)。
   无 judge 断言的 attempt 在断言求值阶段不产生任何 detail 文本——不存在与阶段词重复的静态占位文案。

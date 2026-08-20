@@ -2,7 +2,7 @@
 // timeout, retry, and interruption inside the owning Effect.
 
 import { ClosedQA, Factuality, Summary } from "autoevals";
-import { Effect } from "effect";
+import { Clock, Effect, Random } from "effect";
 import OpenAI from "openai";
 
 import { summaryText } from "./display.ts";
@@ -86,13 +86,16 @@ function headerValue(headers: unknown, name: string): string | undefined {
   return undefined;
 }
 
-function retryAfterMs(headers: unknown): number | undefined {
+function retryAfterMs(headers: unknown): Effect.Effect<number | undefined> {
   const raw = headerValue(headers, "retry-after")?.trim();
-  if (!raw) return undefined;
+  if (!raw) return Effect.succeed(undefined);
   const seconds = Number(raw);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
+  if (Number.isFinite(seconds) && seconds >= 0) return Effect.succeed(Math.round(seconds * 1_000));
   const timestamp = Date.parse(raw);
-  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : undefined;
+  if (!Number.isFinite(timestamp)) return Effect.succeed(undefined);
+  return Clock.currentTimeMillis.pipe(
+    Effect.map((now) => Math.max(0, timestamp - now)),
+  );
 }
 
 function isTransientJudgeStatus(status: number | undefined): boolean {
@@ -254,7 +257,7 @@ function probeAttempt(
     if (response.response.ok) return undefined;
 
     if (isTransientJudgeStatus(response.response.status) && attempt < PROBE_MAX_ATTEMPTS) {
-      const delay = retryAfterMs(response.response.headers);
+      const delay = yield* retryAfterMs(response.response.headers);
       if (delay !== undefined) yield* Effect.sleep(delay);
       return retryProbe;
     }
@@ -341,7 +344,6 @@ export interface JudgeRecipeExecution {
   readonly reference: string;
   readonly material: JudgeMaterial;
   readonly signal?: AbortSignal;
-  readonly random?: () => number;
 }
 
 function evaluateAutoeval(
@@ -415,11 +417,19 @@ function evaluateJudgeRecipe(
               if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
                 return Effect.succeed(unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried)));
               }
-              const retryAfter = retryAfterMs(objectField(error, "headers"));
-              const delay = retryAfter ?? (input.random ?? Math.random)() * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt;
-              retried = true;
-              return judgeSleep(delay).pipe(
-                Effect.zipRight(evaluate(attempt + 1)),
+              return retryAfterMs(objectField(error, "headers")).pipe(
+                Effect.flatMap((retryAfter) =>
+                  retryAfter === undefined
+                    ? Random.next.pipe(
+                        Effect.map((random) => random * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt),
+                      )
+                    : Effect.succeed(retryAfter)),
+                Effect.flatMap((delay) => {
+                  retried = true;
+                  return judgeSleep(delay).pipe(
+                    Effect.zipRight(evaluate(attempt + 1)),
+                  );
+                }),
               );
             }),
           ),

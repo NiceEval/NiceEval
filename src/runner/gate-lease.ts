@@ -6,7 +6,7 @@
 
 import { mkdir, open, rm, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Fiber } from "effect";
+import { Clock, Effect, Fiber } from "effect";
 import {
   claimEntryFileEffect,
   fsyncDirEffect,
@@ -345,7 +345,14 @@ export function acquireGateSlotEffect(
     unknown
   > => Effect.suspend(() => {
     if (opts.signal?.aborted) return Effect.fail(makeAbortError(opts.signal));
-    return tryAcquireGateSlotOnceEffect(niceevalRoot, experimentId, maxConcurrency, identity, Date.now()).pipe(
+    return Clock.currentTimeMillis.pipe(
+      Effect.flatMap((nowMs) => tryAcquireGateSlotOnceEffect(
+        niceevalRoot,
+        experimentId,
+        maxConcurrency,
+        identity,
+        nowMs,
+      )),
       Effect.flatMap((result) => {
         if (result.kind === "acquired") return Effect.succeed(result);
         const reportWait = waitStarted
@@ -369,8 +376,12 @@ export function acquireGateSlotEffect(
         const heartbeat = Effect.forever(
           Effect.sleep(heartbeatIntervalMs).pipe(
             Effect.zipRight(
-              Effect.suspend(() => Effect.uninterruptible(renewHeartbeatEffect(dir, id, record, Date.now(), () => released)))
-                .pipe(Effect.ignore),
+              Clock.currentTimeMillis.pipe(
+                Effect.flatMap((nowMs) => Effect.uninterruptible(
+                  renewHeartbeatEffect(dir, id, record, nowMs, () => released),
+                )),
+                Effect.ignore,
+              ),
             ),
           ),
         );

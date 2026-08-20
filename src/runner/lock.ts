@@ -5,7 +5,7 @@
 
 import { mkdir, open, rm, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Fiber } from "effect";
+import { Clock, Effect, Fiber } from "effect";
 import {
   claimEntryFileEffect,
   fsyncDirEffect,
@@ -288,7 +288,8 @@ export function acquireCaseLockEffect(
   let waitStarted = false;
   const acquire = (): Effect.Effect<{ takenOver: boolean }, unknown> => Effect.suspend(() => {
     if (opts.signal?.aborted) return Effect.fail(makeAbortError(opts.signal));
-    return tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, Date.now()).pipe(
+    return Clock.currentTimeMillis.pipe(
+      Effect.flatMap((nowMs) => tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, identity, nowMs)),
       Effect.flatMap((result) => {
         if (result.kind === "acquired") return Effect.succeed({ takenOver: result.takenOver });
         const reportWait = waitStarted
@@ -314,13 +315,16 @@ export function acquireCaseLockEffect(
             Effect.zipRight(
               // File-system promises do not guarantee AbortSignal support. Keep one renewal uninterruptible so
               // Fiber.interrupt below waits for any started write before rm can make the path reusable.
-              Effect.suspend(() => Effect.uninterruptible(renewHeartbeatEffect(
-                niceevalRoot,
-                experimentId,
-                evalId,
-                Date.now(),
-                () => released,
-              ))).pipe(Effect.ignore),
+              Clock.currentTimeMillis.pipe(
+                Effect.flatMap((nowMs) => Effect.uninterruptible(renewHeartbeatEffect(
+                  niceevalRoot,
+                  experimentId,
+                  evalId,
+                  nowMs,
+                  () => released,
+                ))),
+                Effect.ignore,
+              ),
             ),
           ),
         );

@@ -35,12 +35,12 @@ export function withCleanupTimeout<T, Error, Requirements>(
 
 /** Author / provider callback adapter; internal callers compose this Effect directly. */
 export function cleanupCallback<T>(
-  fn: () => Promise<T> | T,
+  fn: (signal: AbortSignal) => Promise<T> | T,
   timeoutMs = CLEANUP_TIMEOUT_MS,
 ): Effect.Effect<T, unknown | CleanupTimeoutError> {
   return withCleanupTimeout(
     Effect.tryPromise({
-      try: () => Promise.resolve().then(fn),
+      try: (signal) => Promise.resolve().then(() => fn(signal)),
       // Preserve the callback's original error identity for legacy diagnostics.
       catch: (cause) => cause,
     }),

@@ -124,6 +124,9 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - 默认 180_000 的生效路径要真跑到——不配 `timeoutMs` 的调用同样被中断，不是无限等。
   - 逐字段求值走单条断言 `{ model }` → experiment → eval → config，与 [experiments-runner 同名类别](experiments-runner.md#证明范围规范)是同一契约。
     「config 写 `timeoutMs`、Eval 写 `baseUrl`、Experiment 只写 `model`」这一格必须三层各取一个值而不是整对象替换——这是逐字段合并与整体替换结果不同的一格。
+- **judge 重试、Retry-After 与取消次序**：用 Effect TestClock 截获传输层，锁住重试等待前后与中断终态，不用真实时间或 Vitest fake timers。
+  - 瞬态错误的抖动退避在边界前不得发起下一次请求，边界到达才重试；固定 Effect Random 只用于选择确定的退避值，不复制生产重试算法。
+  - HTTP-date `Retry-After` 以 Effect Clock 的当前时间计算，同样证明边界前/边界到达两侧；作者 AbortSignal 中断 owning fiber 与底层请求，不得落成 Judge unavailable 结果。
 - **finalize 的 judge 推进回调**：逐条 judge 求值开始前回调一次进度（第几条 / judge 总数 /检查方式摘要，摘要与落盘 `detail` 同源）。
   非 Judge 断言不回调，无 Judge 断言时零次回调；回调不进 Assertion result，也不落盘。
   runner 侧把回调接到 active 行 detail 的接线归 [Experiments Runner](experiments-runner.md#证明范围规范)。

@@ -26,4 +26,11 @@
 
 最小矩阵区分：没有 reconcile 通道时不盲重试、每次重试前先 reconcile、reconcile 失败终止、退避前后按序 release / reacquire。
 
+### Idempotent IO retry
+
+[Sandbox 重试契约](../../../feature/sandbox/architecture.md)只允许已创建 Sandbox 的幂等文件 IO 重试；命令执行、追加日志与 stop
+不进入这条路径。真实网络无法稳定制造每一档抖动边界与连续瞬时故障，稳定 seam 是 Effect TestClock、固定 Random 与幂等 IO operation。
+
+最小矩阵区分：指数退避的 0.5x / 1.5x 边界与最大次数共同证明有限退避；确定性错误第一次立即失败且不进入睡眠。
+
 其它 Sandbox 行为不保留 Unit。真实运行条件能观察的结果归 E2E；无法可靠运行的 Docker-in-Docker 行为按不自动化处置。
