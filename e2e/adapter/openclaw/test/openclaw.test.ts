@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/openclaw.md#adapter-openclaw-live-compatibility
 //
 // 单文件 Journey：真实 OpenClaw CLI + Docker Sandbox + live provider，
-// 同一次真实运行分别供 verdict、execution 与 timing 三个独立命题读取。
+// 同一次真实运行供 verdict 与 execution 两个独立命题读取。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
@@ -86,15 +86,4 @@ it("show --execution 读回 OpenClaw 的代表性工具证据", async () => {
   const execution = await niceeval.run(["show", event.locator!, "--execution"]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain("status-report.txt");
-});
-
-it("show --timing 读回 OpenClaw 的 runner 阶段", async () => {
-  const event = only(
-    evalEvents,
-    (candidate) => candidate.evalId === "skills/status-report",
-  );
-  const timing = await niceeval.run(["show", event.locator!, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
-
 });

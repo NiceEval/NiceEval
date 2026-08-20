@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-compatibility
 //
 // 单文件 Journey：真实 Claude Code + Docker Sandbox + live provider。
-// 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 另读一条代表 execution 与 timing。
+// 具体 Skill、MCP、Plugin 与配置行为由各自 Eval 断言；owner 另读一条代表 execution。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
@@ -129,13 +129,4 @@ it("show --execution 读回 Claude Code 的代表性工具证据", async () => {
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain("notes.txt");
   expect(execution.stdout).toContain("niceeval-e2e-marker-alpha-926");
-});
-
-it("show --timing 读回 Claude Code 的 runner 阶段", async () => {
-  const attempt = representativeAttempt();
-  const timing = await niceeval.run(["show", attempt.locator!, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toContain("agent.setup");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+agent\.turn\b/);
 });

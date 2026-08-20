@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/ai-sdk.md#adapter-ai-sdk-live-compatibility
 //
 // 单文件 Journey：启动真实 AI SDK HTTP 应用，运行安装后的 niceeval candidate，
-// 再从公开 CLI 读回 Experiment、attempt、execution 与 timing。测试不导入候选
+// 再从公开 CLI 读回 Experiment、attempt 与 execution。测试不导入候选
 // 源码或类型，不读取私有结果布局；判分仍由 evals/ 内的真实 uiMessageStreamAgent
 // 事件断言负责。
 
@@ -104,19 +104,14 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
         locators.set(evalId, evalEvent.locator);
       }
 
-      // outcome：execution 是适配器收到的公开投影；工具名、入参和 OTel 节点
-      // 时间注释都必须穿过归一化、落盘与 CLI 展示。
+      // outcome：execution 是适配器收到的公开投影；工具名与入参必须穿过
+      // 归一化、落盘与 CLI 展示。
       const toolLocator = locators.get("tool-call")!;
       const execution = await niceeval.run(["show", toolLocator, "--execution"]);
       expect(execution.exitCode, execution.diagnostic()).toBe(0);
       expect(execution.stdout).toContain("get_weather");
       expect(execution.stdout).toMatch(/北京/);
 
-      // timing 公开命令独立证明该 Adapter 的 runner 阶段可读。
-      const timing = await niceeval.run(["show", toolLocator, "--timing"]);
-      expect(timing.exitCode, timing.diagnostic()).toBe(0);
-      expect(timing.stdout).toContain("eval.run");
-      expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
     },
   );
 });

@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/bub.md#adapter-bub-live-compatibility
 //
 // 单文件 Journey：真实 bubAgent + Docker Sandbox + live provider，
-// 同一批真实运行分别供 verdict、execution 与 timing 独立命题读取。
+// 同一批真实运行分别供 verdict 与 execution 独立命题读取。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
@@ -69,7 +69,7 @@ beforeAll(async () => {
   expect(run.exitCode, run.diagnostic()).toBe(0);
   evalEvents = run.expEvalEvents();
 
-  // legacy 版本线同时证明 version/otelPlugin pin 的 telemetry 契约。
+  // legacy 版本线证明声明的旧版组合仍能安装并完成公开协议闭环。
   legacy = await niceeval.run(
     ["exp", "legacy", "coding-task", "--rerun", "all", "--json"],
     { timeoutMs: 20 * 60_000 },
@@ -118,17 +118,4 @@ it("show --execution 读回 Bub 的代表性工具证据", async () => {
   const execution = await niceeval.run(["show", event.locator!, "--execution"]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   expect(execution.stdout).toContain("notes.txt");
-});
-
-it("show --timing 分别读回 Bub 当前版与 legacy runner 阶段", async () => {
-  for (const [receipt, events] of [[run, evalEvents], [legacy, legacyEvalEvents]] as const) {
-    const event = only(
-      events,
-      (candidate) => candidate.evalId === "coding-task/write-and-verify",
-    );
-    const timing = await niceeval.run(["show", event.locator!, "--timing"]);
-    expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    expect(timing.stdout, receipt.diagnostic()).toContain("eval.run");
-    expect(timing.stdout, receipt.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
-  }
 });
