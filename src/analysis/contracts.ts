@@ -227,13 +227,7 @@ export type ExperimentGroupIdentity =
   | { readonly kind: "named"; readonly groupId: string; readonly key: `named/${string}` }
   | { readonly kind: "singleton"; readonly experimentId: ExperimentId; readonly key: `singleton/${string}` };
 
-export type NonComparableReason =
-  | "eval-population-mismatch"
-  | "evaluation-kind-mismatch"
-  | "population-unavailable"
-  | "measure-population-mismatch"
-  | "measure-basis-mismatch"
-  | "measure-basis-unavailable";
+export type NonComparableReason = "eval-population-mismatch";
 
 export interface NonComparableIssue {
   readonly reason: NonComparableReason;

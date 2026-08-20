@@ -66,7 +66,7 @@ key 完全相同。`show` 不调用 `enumerate()`，却要求 `PageLoadContext` 
 
 `standard` 只遇到一个实验组时，Overview 直接呈现该组的比较结果。遇到多个组时，`show` 默认输出实验组索引和可复制的 `niceeval show --group <key>` 命令，不生成跨组 leaderboard。具名组 Page 在唯一 `ExperimentComparisonScope` 内使用 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。Pass Eval 显示通过率，Score Eval 只显示 earned score，不声明满分或百分比；两种题型分面板呈现，不互排。
 
-每个 Experiment 可逐层展开到 Eval 与 Attempt，Attempt locator 链接到同一份 `standard` 显式声明的详情 Page。Analysis 的 `MetricValue` 仍完整保留 state、samples、total、issues 与 refs。结构不可比时，组 Page 显示具名原因、成员、实际 population / basis 与 Evidence，不显示排名或散点。
+每个 Experiment 可逐层展开到 Eval 与 Attempt，Attempt locator 链接到同一份 `standard` 显式声明的详情 Page。Analysis 的 `MetricValue` 仍完整保留 state、samples、total、issues 与 refs。Eval population 不同时，组 Page 显示具名原因、成员与实际 population，不显示排名或散点。
 
 `ExperimentScatter` 使用同一题型判断：通过制画成本 × 通过率，分数制画成本 × 总分；同一实验比较范围同时包含两种题型时分成两张图，
 不把 points 和 ratio 混在同一纵轴。通过率轴以百分比刻度显示，`ratio` 只保留为内部量纲，不进入轴标题或刻度文案。

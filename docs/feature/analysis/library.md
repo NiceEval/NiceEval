@@ -391,20 +391,14 @@ declare function experimentComparisonScope(
 
 组列表只从 selection 选中的 Run 派生。纯 `identity-mismatch` 的 excluded 历史不产生组或成员；Core invalid、not-dispatched 和 interrupted 仍属于已选 Run，留在组内并贡献问题。comparison member 是去重后的 `ExperimentId`，同一 Experiment 的多个 Run 合并为一个 member。
 
-population 从该 member 的全部非 excluded expected Slot 形成，按 `EvalId × evaluationKind` 去重。Attempt ordinal、Attempt 是否建立或 outcome 都不改变这个总体。根级 singleton 与当前 Sample 中只剩一个 member 的 named 组都可形成 comparable scope；它们可显示单行，但不声称相对排名。
+population 从该 member 的全部非 excluded expected Slot 形成，按 `EvalId` 去重。Attempt ordinal、Attempt 是否建立或 outcome 都不改变这个总体。根级 singleton 与当前 Sample 中只剩一个 member 的 named 组都可形成 comparable scope；它们可显示单行，但不声称相对排名。
 
 ### 结构可比性
 
-目录是作者的比较准入声明，Analysis 另行验证可证明的结构条件。同组 member 必须有相同的 `EvalId × evaluationKind` 总体；每个比较投影还必须使用兼容的 Measure population 与 basis。Pass 与 Score 可在同组的独立面板呈现，不互排。不同 Eval 集不自动取交集、补零或缩小分母。
+目录是作者的比较准入声明，Analysis 另行验证可证明的结构条件。同组 member 必须有相同的 `EvalId` 总体。Pass 与 Score 可在同组的独立面板呈现，不互排。不同 Eval 集不自动取交集、补零或缩小分母。
 
 ```ts
-type NonComparableReason =
-  | "eval-population-mismatch"
-  | "evaluation-kind-mismatch"
-  | "population-unavailable"
-  | "measure-population-mismatch"
-  | "measure-basis-mismatch"
-  | "measure-basis-unavailable";
+type NonComparableReason = "eval-population-mismatch";
 
 interface NonComparableIssue {
   readonly reason: NonComparableReason;
