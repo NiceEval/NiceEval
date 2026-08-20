@@ -1,110 +1,123 @@
 ---
 title: "View NiceEval Results"
-sidebarTitle: "Viewing Results"
-description: "Use show or view to select a Sample from published Records and inspect a fixed ReportExecution."
+sidebarTitle: "View Results"
+description: "Use show or view to select a fixed Sample from a published Record, then read one Page or a complete report site."
 ---
 
-After a run finishes, `show` presents results in the terminal and `view` presents them locally in a browser.
-Both commands read the `.niceeval/record` written by `exp` by default, so you do not need `--record`.
-They use the same data path:
+After a run finishes, start with these two commands:
 
-```text
-opaque Record + CLI selector
-                  ↓ internal host
-             AnalysisSample
-                  ↓
-       official opaque projector
-                  ↓
-           ProjectedSample → ReportExecution
-                            ↙         ↘
-                          show        view
+```sh
+pnpm exec niceeval show
+pnpm exec niceeval view
 ```
 
-A Sample determines the comparison scope and denominator.
-A projector interprets one RecordAttachment for one explicit owner.
-A Report organizes projected values into one immutable `ReportExecution` and does not read files directly.
+Both form a fixed `Sample` with the same selection rules, but their execution scopes differ. `show` reads just one target Page; `view` builds the whole site before hosting it in a browser.
 
-## Select Runs to inspect
+## Select results to view
 
 Select one explicit Run:
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 ```
 
-To view every result that still matches the current project's source and configuration, run `show` directly.
-`--experiment` narrows the current-project target by a complete ID:
+For an ordinary run, get the Run ID from `runIds` in the final receipt emitted by `exp --json`:
 
-```sh
-npx niceeval show --experiment checkout
+```json
+{"type":"receipt","receipt":{"invocationId":"11c8fc15-8a9b-49a0-bb93-68205b52ffab","runIds":["7b8d2ea4-b840-4870-9840-f85a436a5527"],"startedAt":"2026-08-14T10:00:00.000Z","completedAt":"2026-08-14T10:01:00.000Z","completion":"completed"}}
 ```
 
-Without a locator or `--run`, the command uses `project-current`.
-It scans every published Run and keeps every slot whose Experiment, Eval, attempt ordinal, evaluation kind, input identity, and config identity still match the current project.
-It does not choose one Run by time.
-After source or configuration changes, stale results leave the current Sample but are not deleted.
-Use a complete `--run` ID to audit those historical results.
+Without a locator, `--run`, or `--experiment`, the command uses `project-current`: it retains every published result that still matches the current project identity rather than selecting only the latest one. To read historical results, pass complete `--run` values. To limit current-project results, repeat complete `--experiment <id>` values.
 
-## Inspect results in the terminal
+`project-current` retains results by slot occurrence in a Run. It does not merge identically named Experiments, Evals, and Attempt ordinals from several Runs into one position. Repeated runs or several `accept` invocations can therefore increase the current Sample's denominator.
 
-`show` renders the default Report as text.
-Supplying a page or custom Report still creates one execution from the same selection.
-
-```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --page /
-npx niceeval show --experiment checkout --json
-```
-
-`--json` emits the `niceeval.report-show/v1` document for the same execution.
-It includes pages, calculations, projection summaries, and problems.
-It does not create another data path.
-
-## Inspect results in the browser
-
-```sh
-npx niceeval view --experiment checkout --no-open
-```
-
-Each successful `view` rebuild creates a new fixed `ReportExecution` and replaces the revision on screen.
-Changes to the Report, configuration, theme, or Record trigger the next rebuild.
-A failed rebuild keeps the last-good execution and shows the problem.
-
-Opening, navigating, or refreshing a page does not reread the Record behind a fixed execution.
-To see a newly published Run, let `view` finish a rebuild or run the command again.
-Pass `--record <root>` only when you explicitly need to read another Record root.
-
-## Read denominators and Attachment states
-
-An explicit `--run` Sample preserves each named Run's complete expected-slot denominator; `project-current` first materializes only slots whose identities still match the current target.
-Within the framework established by selection, each slot can be:
+A Sample records one state for each position:
 
 | State | Meaning |
 | --- | --- |
-| `included` | It has a valid Member and readable Attempt. |
-| `not-recorded` | A planned slot has no Member. |
-| `core-invalid` | The Member, Attempt, or core reference cannot be read reliably. |
-| `excluded` | This selection excluded it. |
+| `included` | It has an analyzable Attempt. |
+| `not-recorded` | A planned position has no result. |
+| `core-invalid` | Its identity or reference cannot be read reliably. |
+| `excluded` | This selection excluded the position. |
 
-Pages and Calculations also show requested Attachment states.
-`unavailable` means the Attachment is absent.
-`migration-required` or `migration-unavailable` means historical schemas need attention.
-`unsupported` means the current feature does not recognize it.
-`invalid` means its envelope, payload, or blob is invalid.
+These states and each Measure's denominator are fixed at selection time. A Page cannot shrink `total` because data is absent, filtered, or only some rows are displayed.
 
-These data states do not silently shrink the Sample denominator after selection.
-An unrequested bad Attachment does not affect an unrelated page.
-Each Calculation defines its own business `observed` and `denominator`; it cannot infer them from Attachment counts.
+## Read one Page in the terminal
 
-## Record publication boundary
+```sh
+pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show --run <run-id> --page /
+pnpm exec niceeval show @<attempt-locator>
+pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx --json
+```
 
-A Record stores published facts only.
-Published Runs are immutable. Run a new Invocation to create a different result.
+Without `--page`, `show` uses the Report's default navigable Page. With `--page`, it decodes, loads, renders, and closes only that exact route. A parameterized Page does not call `enumerate()` as a result; other Pages, Analysis queries, and author callbacks do not run either.
 
-A directory without `complete` does not belong to a Sample.
-The reader freezes the visible set of published Runs, so a Run completed afterward appears only after reopening the reader.
+An explicit `--run` uses the built-in Run results page when no `--report` is given. For example, when a Run references a historical Attempt:
+
+```text
+Report run-membership-overview
+Sample: 1 run(s), 1 slot(s)
+
+Page /
+  Run results
+  Planned attempts
+  Experiment | Eval | Attempt | Result | Details
+  checkout | checkout/basic | #1 | using result @91DDC61BAE96 | @91DDC61BAE96
+
+Problems
+  none
+```
+
+`Result` shows `passed`, `failed`, `errored`, `not started`, or `using result @<locator>`. The locator in `Details` can be followed for more detail. When failure occurs before an Attempt is created, the Page also shows `Run errors` and the number of unstarted Attempts actually affected by that error. Human pages do not show internal fields such as Slot; machine `--json` retains stable membership keys.
+
+`show --json` is still the same one-target operation. The built-in Report returns named domain JSON owned by the Host; a custom Report returns that Page's route, title, fixed English 80-column rendered text, download summary, and problem table. Both v1 JSON forms include a top-level `projections` object with the same shape, containing only the closed projections captured by the target Page.
+
+Every cost entry is `{ page: { pageId, route }, measureId, row: { key, dimensions }, profileIdentity, projection }`. The canonical key of the cost array is `route` → `pageId` → `measureId` → `row.key` → `profileIdentity`. It sorts only by those five fields in UTF-8 order; `dimensions` and `projection` are not extra sort keys.
+
+Entries with the same key are deduplicated only when both `row.dimensions` and `projection` are byte-identical canonical JSON. Any difference fails with the typed `report-cost-projection-conflict` conflict.
+
+`pricingProfile` is the Report's top-level closed `PricingProfile`, or `null` if no Profile is declared. Every cost entry's `profileIdentity` and `projection.profile.contentIdentity` must equal the top-level `pricingProfile.contentIdentity`; when there is no Profile, `costs` must be empty.
+
+The JSON contains no other Pages, HTML, React tree, site identity, or ability to read a Record.
+
+## Read primary metrics by Eval kind
+
+The default report chooses its primary metric by Eval kind:
+
+- Pass/fail Evals show a pass rate.
+- Scored Evals show earned score.
+- A mixed Experiment shows Score and gives pass/fail Eval subrows their pass rate; it does not combine them into one percentage.
+
+`points` declared on a scored Eval are contribution weights for scoring items, not an Experiment's fixed maximum score. Dynamic execution, conditional branches, or unavailable material can yield different scoring-item sets, so the default report does not automatically divide earned score by every `points` value declared in source.
+
+When the project has no Report configured, `project-current` uses the one-page `default-overview`. Passing `--report standard` explicitly uses the same primary metrics and additionally supplies Attempts, Traces, Experiment, and Attempt detail pages. Adding detail pages does not change how Score or pass rate is calculated.
+
+The default Overview keeps primary metrics independent: Score shows only earned score, and duration and tokens show only their own values. It does not append a confusing `2 / 4 slot · partial` to those cells.
+
+When some expected results are unavailable, Overview shows a separate `Result coverage` section outside the KPIs and Experiment table. In the terminal, this section has a border and a title that directly states how many results are available. It describes result completeness, not score, pass rate, or work completion. It does not appear when results are complete.
+
+## Read the whole site in a browser
+
+```sh
+pnpm exec niceeval view --experiment checkout --no-open
+pnpm exec niceeval view --run <run-id> --page / --no-open
+```
+
+Before starting a server, view enumerates every explicitly declared ordinary Page and every parameterized Page instance, then validates routes, links, assets, downloads, `_niceeval/data/projections.json`, and the budget. `pages` is the sole page set; the Host does not add detail routes. `--page` chooses only the initial existing route to open and cannot narrow the build scope. The bytes of the whole-site projections file are part of the revision identity.
+
+Only a successful rebuild atomically replaces the current complete site. When a Report, theme, configuration, or published results change, view builds a candidate site; if it fails, it continues to serve the previous usable content. Page navigation, reload, Source, Diff, Trace, and downloads read only bytes already generated. They never make the browser reopen a Record or call Analysis.
+
+The browser Report chrome can switch between Chinese and English. It only switches delivered LocalizedText and the browser dictionary; it does not change the factual meaning of the Sample, machine JSON, or site content.
+
+## Understand incomplete data
+
+`MetricValue`'s `samples` is the actual contributor count, `total` is the established denominator, and `state` and `issues` explain incompleteness. A custom Report using `formatMetricValue()` can still obtain a compact form such as `2 / 4 slot · partial`; it means that two of four selected positions supplied the metric, not that the score is half or the work is half complete. The default Overview uses the separate coverage section described above. `partial` can have a value; `empty`, `unsupported`, and `failed` are not zero. Evidence refs retain auditable locators.
+
+Analysis data problems continue to appear as Page content. In contrast, a failure in the selected Page's callback, parameter key, or membership makes `show` return a one-target error; any whole-site Page, route, asset, or budget failure blocks publication of a new site.
 
 ## Next steps
 
-- [Debug a failure](/troubleshooting/debugging): Diagnose a visible symptom.
-- [Rerun and Carry Results](/tutorials/rerun-and-cache): See which slots execute or are adopted.
-- [Publish a Static Report](/tutorials/publish-report): Export selected results as an offline site.
+- [Report API](/reference/report-components) — author Pages, components, and machine output.
+- [Publish a Static Report](/tutorials/publish-report) — export the whole site for offline readers.
+- [Troubleshoot Results and Report Problems](/troubleshooting/debugging) — diagnose selection, data states, and rebuild feedback.

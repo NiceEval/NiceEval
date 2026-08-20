@@ -87,25 +87,27 @@ NiceEvalは、テスト対象のagentが隔離されたサンドボックスフ�
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
+import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "agentがリアルタイムの天気に関する質問で正しくツールを呼び出し、その結果に基づいて回答できるかをテストする",
 
   async test(t) {
     const turn = await t.send("北京の今日の天気はどうですか？");
-    t.succeeded();
+    turn.succeeded();
 
     await t.group("get_weatherを正しい都市名で呼び出す", () => {
-      t.calledTool("get_weather", { input: { city: "北京" } });
-      t.messageIncludes(/°C|気温|天気|晴れ|曇り|雨/);
+      turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "北京" }) }));
+      t.check(turn.message, pattern(/°C|気温|天気|晴れ|曇り|雨/));
     });
 
     const second = await t.send("上海の明日の天気はどうですか?");
-    second.messageIncludes("上海");
+    t.check(second.message, includes("上海"));
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("アシスタントは気温をでたらめに作るのではなく、ツールが返した天気データに基づいて回答しているか？")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```
@@ -169,5 +171,4 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-以下のコミュニティに感謝します
-- WIP
+プロジェクトの開発初期にサポートとフィードバックを提供してくださった [Linux.do](https://linux.do/) に感謝します。

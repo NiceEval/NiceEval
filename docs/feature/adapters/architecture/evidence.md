@@ -5,13 +5,13 @@ Adapter 不实现断言，但其数据出处决定判定能否成立。
 
 | 证据 | 支撑的判定 | 缺失风险 |
 |---|---|---|
-| 真实 Turn status | succeeded、parked | 恒 completed 会静默假通过 |
-| assistant message | reply、messageIncludes | 正断言失败 |
-| Turn data | output 断言 | 正断言失败 |
+| 真实 Turn status | `succeeded()`、`t.check(turn.status, equals("waiting"))` | 恒 completed 会静默假通过 |
+| assistant message | `t.check(turn.message, includes(...) / pattern(...))` | 正断言失败 |
+| Turn data | `t.check(turn.data, equals(...) / matches(...))` | 正断言失败 |
 | 完整 action 生命周期 | 工具正负断言、顺序、失败 | 未声明缺口时负断言假通过；声明后记 unavailable |
-| skill.loaded | loadedSkill | 正断言失败 |
-| 完整事件流 | event / notEvent / order | 未声明缺口时 notEvent 假通过；声明后记 unavailable |
-| usage | token/cost 上限 | 未声明缺失时按零聚合假通过；声明后记 unavailable |
+| skill.loaded | 只保留为原始事件与报告事实，当前没有专用作者断言 | 不能伪称工具调用 |
+| 完整事件流 | `event(eventMatch(...))` / `notEvent(eventMatch(...))` / receiver 上的 `eventOrder` | 未声明缺口时 notEvent 假通过；声明后记 unavailable |
+| usage 与 Runner estimate | token / cost 上限 | 缺少所需 Usage 或无法形成 cost estimate 时记 unavailable；绝不按零聚合 |
 
 ## 完整性不变量
 
@@ -43,13 +43,13 @@ interface EvidenceCoverage {
   readonly events: EvidenceCoverageEntry;
   /** action 生命周期（工具正负断言、顺序、失败的依据）。 */
   readonly actions: EvidenceCoverageEntry;
-  /** assistant / user message（reply、messageIncludes 的依据）。 */
+  /** assistant / user message（turn.message / t.reply 的值 Match 与 eventMatch(message) 的依据）。 */
   readonly messages: EvidenceCoverageEntry;
   /** usage（token / cost 上限断言的依据）。 */
   readonly usage: EvidenceCoverageEntry;
-  /** Turn status 的真实性（succeeded / parked 的依据）——恒 completed 的映射必须声明非 complete。 */
+  /** Turn status 的真实性（succeeded 与显式 equals("waiting") 比较的依据）——恒 completed 的映射必须声明非 complete。 */
   readonly status: EvidenceCoverageEntry;
-  /** Turn.data（outputEquals / outputMatches 的依据）。 */
+  /** Turn.data（equals / matches 值 Match 的依据）。 */
   readonly data: EvidenceCoverageEntry;
 }
 
@@ -70,6 +70,10 @@ type TurnEvidenceCoverage = Partial<EvidenceCoverage>;
 - 正断言在非 complete 通道上**找到匹配即通过**（证据存在就是证据）；**没找到记 `unavailable`**，不判失败——「没采到」不能算成「Agent 没做」。
   complete 通道上没找到才是失败。
 - 负断言与上限断言在所需通道非 complete 时一律 `unavailable`——空流证明不了「没发生」，缺 usage 不能按零聚合。
+
+`maxCost` 还要求 Runner 已从 Config/runtime price table 形成 `estimatedCostUSD`。无法形成 estimate 时，`maxCost` 是
+`unavailable`，不能把缺失当作 `0`，也不能改用 `Usage.costUSD`。相反，显式零费率实际算得的 `estimatedCostUSD: 0` 是存在的
+estimate，按正常上限规则求值。
 
 CI 因此拿到「证据链断了」和「agent 答错了」两个不同信号。
 

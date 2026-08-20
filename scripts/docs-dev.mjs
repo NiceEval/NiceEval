@@ -22,23 +22,22 @@ const command = process.platform === "win32" ? "npx.cmd" : "npx";
 const forwardedArgs = process.argv.slice(2);
 if (forwardedArgs[0] === "--") forwardedArgs.shift();
 
-const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
-const currentNodeIsSupported =
-  (nodeMajor === 20 && nodeMinor >= 17) || (nodeMajor > 20 && nodeMajor < 25);
+const [nodeMajor] = process.versions.node.split(".").map(Number);
+const currentNodeIsSupported = nodeMajor === 24;
 const childEnv = { ...process.env };
 
 if (!currentNodeIsSupported) {
   const nodeExecutable = process.platform === "win32" ? "node.exe" : "node";
   const supportedNodeBin = [
     process.env.NICEEVAL_DOCS_NODE_BIN,
-    "/opt/homebrew/opt/node@22/bin",
-    "/usr/local/opt/node@22/bin",
+    "/opt/homebrew/opt/node@24/bin",
+    "/usr/local/opt/node@24/bin",
   ].find((candidate) => candidate && existsSync(join(candidate, nodeExecutable)));
 
   if (!supportedNodeBin) {
     console.error(
-      `Mintlify requires Node >=20.17 and <25; current version is ${process.versions.node}. ` +
-        "Install Node 22 or set NICEEVAL_DOCS_NODE_BIN to its bin directory.",
+      `NiceEval docs require Node 24; current version is ${process.versions.node}. ` +
+        "Install Node 24 or set NICEEVAL_DOCS_NODE_BIN to its bin directory.",
     );
     process.exit(1);
   }

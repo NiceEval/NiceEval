@@ -60,8 +60,7 @@ Unit fixture 只显式填写本 case 有语义的字段；机械默认值由测�
 E2E 不手写内部 Run、Attempt 或 Report DTO；它们通过真实 Eval / Experiment 产生结果，再从公开 CLI、包导出、
 HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，才签入最小旧格式 fixture，并把 schema version 写成独立字面量。
 
-稳定的定义见[测试总纲](README.md#稳定性变更预算)；逐类预算、逐文件审计与 blocking 条件只在
-[Pullfrog review prompt](../../../.github/pullfrog-review-prompt.md#prompt)维护。
+稳定的定义、逐类预算、逐文件审计与 blocking 条件见[测试总纲](README.md#稳定性变更预算)。
 
 ## 功能归属与 Bug 回归
 
@@ -91,13 +90,13 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 });
 ```
 
-没有历史 Bug 的功能测试只写 owner。发现 Bug 后，先加强原 owner；新断言确实能杀死旧实现时，才追加 `regression:`。
+没有历史 Bug 的功能测试只写 owner。发现 Bug 后，按[测试总纲的 E2E TDD](README.md#bug-修复的-e2e-tdd)取得旧实现红灯；新断言确实能杀死旧实现时才追加 `regression:`。
 若只能证明同类风险而没有 kill 收据，仍只链接 Feature 契约。相关 memory 可以在普通解释注释或 Repo README 中写成
 “相关风险”，但不再发明一行看似可机器追踪、实际没有 kill 资格的 `risk:` 元数据。
 
 ## 历史 Bug 回归
 
-Bug escape 后按顺序处理：
+Bug escape 后先裁决自动化回归或本次 AI 真实验收。选择不自动化时直接修根因，按 PR Test impact 保存公开入口手测和未守护风险，不创建回归 metadata 或伪 owner。选择自动化时按顺序处理：
 
 1. 找本应捕获它的现有 owner；
 2. owner 命题正确但 fixture / 断言无区分力时，修它，不并排建第二套；
@@ -134,7 +133,7 @@ Bug escape 后按顺序处理：
 ## 不自动化的处置
 
 `automation: none` 是一次变更的验收处置，不是长期 owner。
-只有 Journey、单边界 E2E 与 Unit 例外都会违反稳定或可靠要求，依赖无法固定的外部条件，或必须复制生产核心算法时才能选择。
+Bug 修复只有无法固定的外部条件、安全限制或 Provider 阻塞时可以选择本路径；没有合格 owner 时应新增最小 E2E。非 Bug 变更在不应新增 owner、自动化会违反稳定或可靠要求、依赖无法固定、必须复制生产核心算法，或长期区分收益不足以抵偿维护成本时可以选择。
 
 PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)保存本次验收事实。
 不创建空测试、mock 假 pass 或伪 owner。Docker-in-Docker 的宿主内核、daemon 权限和嵌套网络无法固定时适用本处置。
@@ -158,8 +157,9 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 
 ## 修改测试的 PR 裁决
 
-生产改动让测试失败时，不先更新 snapshot 或 expected。逐类预算、Snapshot 变化与共享状态的 blocking 裁决只在
-[Pullfrog review prompt](../../../.github/pullfrog-review-prompt.md#prompt)维护；本篇不复制一张无法直接读取 PR diff 的决策表。
+生产改动让测试失败时，不先更新 snapshot 或 expected。逐类预算与 Snapshot 变化按
+[稳定性预算](README.md#稳定性变更预算)裁决，共享状态按[可靠性门](README.md#可靠性重复运行)裁决；
+本篇不复制一张无法直接读取 PR diff 的决策表。
 
 ## 周期复核
 

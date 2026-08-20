@@ -1,4 +1,4 @@
-# PLAN-1：package-owned pure assembler
+# PLAN-1（推荐）：package-owned pure assembler
 
 关系作者接收若干 closed projections，以普通纯函数返回穷尽 relation cells。anchor 查找、cardinality 与错误
 分类属于该 assembler 的实现；host 只验证输入属于同一 Sample，并验证输出包含完整 population。

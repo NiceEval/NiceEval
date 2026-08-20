@@ -1,723 +1,345 @@
+import { createHash } from "node:crypto";
+
 import { Effect, Either, Schema, Stream } from "effect";
 import {
-  defineRecordAttachmentFamily,
-  makeRecordAttachmentWrite,
+  makeFixedRecordAttachmentWrite,
   makeRecordBlobSource,
   validateRecordAttachmentWrite,
   type RecordAttachmentBlobBuilder,
   type RecordAttachmentBlobDraft,
-  type RecordAttachmentFamily,
   type RecordAttachmentWrite,
-  type RecordBlobRef,
 } from "../../record/attachment/index.ts";
-import { defineBuiltinJsonRecordAttachment } from "../../record/attachment/internal.ts";
+import { recordAttachmentWriteContents } from "../../record/attachment/internal.ts";
+import { RecordExactParseOptions } from "../../record/codec/core.ts";
 import {
-  CollectionV1Schema,
-  CommandIdV1Schema,
-  CommandsReferencesV1Schema,
-  NonNegativeSafeIntegerV1Schema,
-  ObservabilityExactParseOptions,
-  SafeTextV1Schema,
-} from "./codec.ts";
+  attemptObservabilityRecordFamily,
+  runObservabilityRecordFamily,
+} from "../../record/family/catalog.ts";
 import {
-  MAX_COMMAND_INLINE_STREAM_BYTES_V1,
-  MAX_COMMAND_STREAM_BYTES_V1,
-  MAX_COMMANDS_CLOSURE_BYTES_V1,
-  MAX_COMMANDS_V1,
+  AttemptObservabilityAttachmentSchema,
+  RunObservabilityAttachmentSchema,
+} from "../../record/family/observability.ts";
+import {
+  MAX_COMMAND_INLINE_STREAM_BYTES,
 } from "./limits.ts";
 import {
-  compareObservabilityTextV1,
-  limitationTargetV1,
-  makeNonNegativeSafeIntegerV1,
-  type CollectionV1,
+  limitationTarget,
+  type CollectionTarget,
+  type Collection,
+  type ObservabilityLimitation,
 } from "./model.ts";
-import {
-  AttemptDiagnosticsAttachmentV1Schema,
-  AttemptTimingAttachmentV1Schema,
-  CommandManifestV1Schema,
-  CommandOutcomeV1Schema,
-  CommandsAttachmentV1Schema,
-  ConversationAttachmentV1Schema,
-  RunDiagnosticsAttachmentV1Schema,
-  RunTimingAttachmentV1Schema,
-  UsageAttachmentV1Schema,
-  makeAttemptCommandsAttachmentFamilyValidationV1,
-  makeAttemptConversationAttachmentFamilyValidationV1,
-  makeAttemptDiagnosticsAttachmentFamilyValidationV1,
-  makeAttemptTimingAttachmentFamilyValidationV1,
-  makeAttemptUsageAttachmentFamilyValidationV1,
-  makeRunDiagnosticsAttachmentFamilyValidationV1,
-  makeRunTimingAttachmentFamilyValidationV1,
-  type AttemptDiagnosticsAttachmentV1,
-  type AttemptTimingAttachmentV1,
-  type CommandManifestV1,
-  type CommandsAttachmentV1,
-  type CommandStreamV1,
-  type ConversationAttachmentV1,
-  type RunDiagnosticsAttachmentV1,
-  type RunTimingAttachmentV1,
-  type UsageAttachmentV1,
+import type {
+  AttemptDiagnostic,
+  AttemptDiagnosticsAttachment,
+  AttemptTimingAttachment,
+  CommandManifest,
+  CommandOutcomeSchema,
+  ConversationAttachment,
+  ConversationItem,
+  RunDiagnostic,
+  RunDiagnosticsAttachment,
+  RunTimingAttachment,
+  UsageAttachment,
 } from "./families.ts";
 import {
-  validateObservabilityRecordContractV1,
-  type ObservabilityFamilyValidationV1,
-  type ObservabilityRecordContractValidationInputV1,
-} from "./validation.ts";
+  observabilityOwnerOrSchemaInvalidError,
+  type ObservabilityRecordContractError,
+} from "./errors.ts";
 
-export type ObservabilityAttachmentFamilyNameV1 =
-  | "conversation"
-  | "commands"
-  | "usage"
-  | "attempt-timing"
-  | "attempt-diagnostics"
-  | "run-timing"
-  | "run-diagnostics";
-
-export type ObservabilityAttachmentBuildErrorV1 = {
-  readonly code: "observability-attachment-input-invalid";
-  readonly family: ObservabilityAttachmentFamilyNameV1;
-};
-
-function attachmentInputInvalid(
-  family: ObservabilityAttachmentFamilyNameV1,
-): ObservabilityAttachmentBuildErrorV1 {
-  return Object.freeze({
-    code: "observability-attachment-input-invalid" as const,
-    family,
-  });
-}
-
-function requireAttachmentCapability<Result, Failure>(
-  result: Either.Either<Result, Failure>,
-  message: string,
-): Result {
-  if (Either.isLeft(result)) throw new Error(message);
-  return result.right;
-}
-
-function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
-  return Object.freeze([...values]);
-}
-
-export function commandAttachmentBlobRefsV1(
-  payload: CommandsAttachmentV1,
-): readonly RecordBlobRef[] {
-  const refs: RecordBlobRef[] = [];
-  for (const command of payload.commands) {
-    for (const stream of [command.result.stdout, command.result.stderr]) {
-      if (stream.storage.kind === "blob") refs.push(stream.storage.ref);
-    }
-  }
-  return freezeArray(refs);
-}
-
-function noObservabilityBlobRefs(): readonly RecordBlobRef[] {
-  return Object.freeze([]);
-}
-
-export const attemptConversationAttachmentDefinitionV1 = requireAttachmentCapability(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: "niceeval.conversation",
-    schemaId: "niceeval.conversation/v1",
-    schema: ConversationAttachmentV1Schema,
-    blobRefs: noObservabilityBlobRefs,
-  }),
-  "Attempt conversation v1 RecordAttachment definition must be valid",
-);
-
-export const attemptCommandsAttachmentDefinitionV1 = requireAttachmentCapability(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: "niceeval.commands",
-    schemaId: "niceeval.commands/v1",
-    schema: CommandsAttachmentV1Schema,
-    blobRefs: commandAttachmentBlobRefsV1,
-  }),
-  "Attempt commands v1 RecordAttachment definition must be valid",
-);
-
-export const attemptUsageAttachmentDefinitionV1 = requireAttachmentCapability(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: "niceeval.usage",
-    schemaId: "niceeval.usage/v1",
-    schema: UsageAttachmentV1Schema,
-    blobRefs: noObservabilityBlobRefs,
-  }),
-  "Attempt usage v1 RecordAttachment definition must be valid",
-);
-
-export const attemptTimingAttachmentDefinitionV1 = requireAttachmentCapability(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: "niceeval.timing",
-    schemaId: "niceeval.timing/v1",
-    schema: AttemptTimingAttachmentV1Schema,
-    blobRefs: noObservabilityBlobRefs,
-  }),
-  "Attempt timing v1 RecordAttachment definition must be valid",
-);
-
-export const attemptDiagnosticsAttachmentDefinitionV1 = requireAttachmentCapability(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: "niceeval.diagnostics",
-    schemaId: "niceeval.diagnostics/v1",
-    schema: AttemptDiagnosticsAttachmentV1Schema,
-    blobRefs: noObservabilityBlobRefs,
-  }),
-  "Attempt diagnostics v1 RecordAttachment definition must be valid",
-);
-
-export const runTimingAttachmentDefinitionV1 = requireAttachmentCapability(
-  defineBuiltinJsonRecordAttachment({
-    owner: "run",
-    name: "niceeval.timing",
-    schemaId: "niceeval.timing/v1",
-    schema: RunTimingAttachmentV1Schema,
-    blobRefs: noObservabilityBlobRefs,
-  }),
-  "Run timing v1 RecordAttachment definition must be valid",
-);
-
-export const runDiagnosticsAttachmentDefinitionV1 = requireAttachmentCapability(
-  defineBuiltinJsonRecordAttachment({
-    owner: "run",
-    name: "niceeval.diagnostics",
-    schemaId: "niceeval.diagnostics/v1",
-    schema: RunDiagnosticsAttachmentV1Schema,
-    blobRefs: noObservabilityBlobRefs,
-  }),
-  "Run diagnostics v1 RecordAttachment definition must be valid",
-);
-
-export const attemptConversationAttachmentV1 = requireAttachmentCapability(
-  defineRecordAttachmentFamily({
-    current: attemptConversationAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Attempt conversation v1 RecordAttachment family must be valid",
-);
-
-export const attemptCommandsAttachmentV1 = requireAttachmentCapability(
-  defineRecordAttachmentFamily({
-    current: attemptCommandsAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Attempt commands v1 RecordAttachment family must be valid",
-);
-
-export const attemptUsageAttachmentV1 = requireAttachmentCapability(
-  defineRecordAttachmentFamily({
-    current: attemptUsageAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Attempt usage v1 RecordAttachment family must be valid",
-);
-
-export const attemptTimingAttachmentV1 = requireAttachmentCapability(
-  defineRecordAttachmentFamily({
-    current: attemptTimingAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Attempt timing v1 RecordAttachment family must be valid",
-);
-
-export const attemptDiagnosticsAttachmentV1 = requireAttachmentCapability(
-  defineRecordAttachmentFamily({
-    current: attemptDiagnosticsAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Attempt diagnostics v1 RecordAttachment family must be valid",
-);
-
-export const runTimingAttachmentV1 = requireAttachmentCapability(
-  defineRecordAttachmentFamily({
-    current: runTimingAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Run timing v1 RecordAttachment family must be valid",
-);
-
-export const runDiagnosticsAttachmentV1 = requireAttachmentCapability(
-  defineRecordAttachmentFamily({
-    current: runDiagnosticsAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Run diagnostics v1 RecordAttachment family must be valid",
-);
-
-export const builtInObservabilityAttachmentFamiliesV1 = Object.freeze([
-  attemptConversationAttachmentV1,
-  attemptCommandsAttachmentV1,
-  attemptUsageAttachmentV1,
-  attemptTimingAttachmentV1,
-  attemptDiagnosticsAttachmentV1,
-  runTimingAttachmentV1,
-  runDiagnosticsAttachmentV1,
-] as const);
+type CommandOutcome = Schema.Schema.Type<typeof CommandOutcomeSchema>;
 
 /**
- * All inputs are post-normalization capture facts. They have no provider
- * frames, filesystem handles, record paths, blob refs, EvalResult, or Runner
- * object. The commands form keeps text separate because this builder owns the
- * inline-vs-blob decision and closure stream.
+ * The old component shapes are capture-only intermediate data. Sealing always
+ * produces one owner-local `niceeval.observability` closure.
  */
-export type NormalizedConversationCaptureV1 = ConversationAttachmentV1;
-export type NormalizedUsageCaptureV1 = UsageAttachmentV1;
-export type NormalizedAttemptTimingCaptureV1 = AttemptTimingAttachmentV1;
-export type NormalizedRunTimingCaptureV1 = RunTimingAttachmentV1;
-export type NormalizedAttemptDiagnosticsCaptureV1 = AttemptDiagnosticsAttachmentV1;
-export type NormalizedRunDiagnosticsCaptureV1 = RunDiagnosticsAttachmentV1;
+export type NormalizedConversationCapture = ConversationAttachment;
+export type NormalizedUsageCapture = UsageAttachment;
+export type NormalizedAttemptTimingCapture = AttemptTimingAttachment;
+export type NormalizedRunTimingCapture = RunTimingAttachment;
+export type NormalizedAttemptDiagnosticsCapture = AttemptDiagnosticsAttachment;
+export type NormalizedRunDiagnosticsCapture = RunDiagnosticsAttachment;
 
-export const NormalizedCommandStreamCaptureV1Schema = Schema.Struct({
-  text: SafeTextV1Schema,
-  totalSafeUtf8Bytes: NonNegativeSafeIntegerV1Schema,
-});
-
-const NormalizedCommandResultCaptureV1Schema = Schema.Struct({
-  outcome: CommandOutcomeV1Schema,
-  stdout: NormalizedCommandStreamCaptureV1Schema,
-  stderr: NormalizedCommandStreamCaptureV1Schema,
-});
-
-const NormalizedCommandObservationCaptureV1Schema = Schema.Struct({
-  commandId: CommandIdV1Schema,
-  manifest: CommandManifestV1Schema,
-  result: NormalizedCommandResultCaptureV1Schema,
-  refs: CommandsReferencesV1Schema,
-});
-
-const NormalizedCommandsCaptureV1StructuralSchema = Schema.Struct({
-  collection: CollectionV1Schema,
-  commands: Schema.Array(NormalizedCommandObservationCaptureV1Schema),
-});
-
-export type NormalizedCommandStreamCaptureV1 = Schema.Schema.Type<
-  typeof NormalizedCommandStreamCaptureV1Schema
->;
-export type NormalizedCommandResultCaptureV1 = Schema.Schema.Type<
-  typeof NormalizedCommandResultCaptureV1Schema
->;
-export type NormalizedCommandObservationCaptureV1 = Schema.Schema.Type<
-  typeof NormalizedCommandObservationCaptureV1Schema
->;
-
-function retainedTextBytes(stream: NormalizedCommandStreamCaptureV1): number {
-  return new TextEncoder().encode(stream.text).byteLength;
+export interface NormalizedCommandStreamCapture {
+  readonly text: string;
+  readonly totalSafeUtf8Bytes: number;
+}
+export interface NormalizedCommandObservationCapture {
+  readonly commandId: string;
+  readonly manifest: CommandManifest;
+  readonly result: {
+    readonly outcome: CommandOutcome;
+    readonly stdout: NormalizedCommandStreamCapture;
+    readonly stderr: NormalizedCommandStreamCapture;
+  };
+  readonly refs: readonly unknown[];
+}
+export interface NormalizedCommandsCapture {
+  readonly collection: Collection;
+  readonly commands: readonly NormalizedCommandObservationCapture[];
 }
 
-function isAllowedCommandsCollection(collection: CollectionV1): boolean {
-  return collection.limitations.every((limitation) =>
-    ["command-manifest", "command-stdout", "command-stderr"].some(
-      (target) => limitationTargetV1(limitation) === target,
-    ),
-  );
+export interface NormalizedAttemptObservabilityCapture {
+  readonly conversation: NormalizedConversationCapture;
+  readonly commands: NormalizedCommandsCapture;
+  readonly usage: NormalizedUsageCapture;
+  readonly timing: NormalizedAttemptTimingCapture;
+  readonly diagnostics: NormalizedAttemptDiagnosticsCapture;
+}
+export interface NormalizedRunObservabilityCapture {
+  readonly timing: NormalizedRunTimingCapture;
+  readonly diagnostics: NormalizedRunDiagnosticsCapture;
 }
 
-function hasExactStreamTruncation(
-  collection: CollectionV1,
-  commandId: string,
-  stream: "stdout" | "stderr",
-  retainedBytes: number,
-  totalSafeUtf8Bytes: number,
-): boolean {
-  const omittedBytes = totalSafeUtf8Bytes - retainedBytes;
-  return collection.limitations.some(
-    (limitation) =>
-      limitation.code === "stream-truncated" &&
-      limitation.commandId === commandId &&
-      limitation.stream === stream &&
-      limitation.retainedBytes === retainedBytes &&
-      limitation.omittedBytes === omittedBytes,
-  );
+export type ObservabilityAttachmentBuildError = {
+  readonly code: "observability-attachment-input-invalid";
+  readonly family: "observability";
+};
+function invalid(): ObservabilityAttachmentBuildError {
+  return Object.freeze({ code: "observability-attachment-input-invalid" as const, family: "observability" as const });
 }
 
-function commandManifestTextLengths(manifest: CommandManifestV1): readonly number[] {
-  const encoder = new TextEncoder();
-  const invocation = manifest.invocation.kind === "argv"
-    ? [manifest.invocation.executable, ...manifest.invocation.arguments]
-    : [manifest.invocation.command];
-  const directory = manifest.workingDirectory.kind === "project-relative"
-    ? [manifest.workingDirectory.path]
-    : [];
-  return freezeArray([...invocation, ...directory].map((value) => encoder.encode(value).byteLength));
-}
-
-function isCanonicalNormalizedCommandStreamV1(
-  stream: NormalizedCommandStreamCaptureV1,
-  collection: CollectionV1,
-  commandId: string,
-  streamName: "stdout" | "stderr",
-): boolean {
-  const retainedBytes = retainedTextBytes(stream);
-  return (
-    retainedBytes <= MAX_COMMAND_STREAM_BYTES_V1 &&
-    stream.totalSafeUtf8Bytes >= retainedBytes &&
-    (stream.totalSafeUtf8Bytes === retainedBytes ||
-      hasExactStreamTruncation(
-        collection,
-        commandId,
-        streamName,
-        retainedBytes,
-        stream.totalSafeUtf8Bytes,
-      ))
-  );
-}
-
-function isCanonicalNormalizedCommandsCaptureV1(
-  value: Schema.Schema.Type<typeof NormalizedCommandsCaptureV1StructuralSchema>,
-): boolean {
-  if (
-    value.commands.length > MAX_COMMANDS_V1 ||
-    !isAllowedCommandsCollection(value.collection)
-  ) {
-    return false;
+type FixedTarget = "conversation" | "command" | "usage" | "timing" | "diagnostic";
+function fixedTarget(target: CollectionTarget): FixedTarget {
+  switch (target) {
+    case "conversation-item":
+    case "conversation-text": return "conversation";
+    case "command-manifest":
+    case "command-stdout":
+    case "command-stderr": return "command";
+    case "usage-observation": return "usage";
+    case "timing-interval": return "timing";
+    case "diagnostic": return "diagnostic";
   }
-  let previousCommandId: string | undefined;
-  let closureBytes = 0;
-  for (const command of value.commands) {
-    if (
-      previousCommandId !== undefined &&
-      compareObservabilityTextV1(previousCommandId, command.commandId) >= 0
-    ) {
-      return false;
-    }
-    previousCommandId = command.commandId;
-    for (const [name, stream] of [
-      ["stdout", command.result.stdout],
-      ["stderr", command.result.stderr],
-    ] as const) {
-      if (
-        !isCanonicalNormalizedCommandStreamV1(
-          stream,
-          value.collection,
-          command.commandId,
-          name,
-        )
-      ) {
-        return false;
-      }
-      if (retainedTextBytes(stream) > MAX_COMMAND_INLINE_STREAM_BYTES_V1) {
-        closureBytes += retainedTextBytes(stream);
-      }
-    }
+}
+
+function fixedLimitation(limitation: ObservabilityLimitation): unknown {
+  const target = fixedTarget(limitationTarget(limitation));
+  switch (limitation.code) {
+    case "capture-failed":
+    case "capture-interrupted":
+      return Object.freeze({ code: limitation.code, stage: limitation.stage, target });
+    case "collection-cap-reached":
+    case "unsupported-input":
+      return Object.freeze({ code: limitation.code, target, omittedAtLeast: limitation.omittedAtLeast });
+    case "text-truncated":
+      return Object.freeze({ code: "text-truncated" as const, target, replacementOrOmittedCount: limitation.omittedBytes });
+    case "redacted":
+      return Object.freeze({ code: "redacted" as const, target, replacementOrOmittedCount: limitation.replacementCount });
+    case "stream-truncated":
+      return Object.freeze({
+        code: "stream-truncated" as const,
+        commandId: limitation.commandId,
+        stream: limitation.stream,
+        retainedBytes: limitation.retainedBytes,
+        omittedBytes: limitation.omittedBytes,
+      });
+    case "invalid-utf8-replaced":
+      return Object.freeze({ code: "invalid-utf8-replaced" as const, commandId: limitation.commandId, stream: limitation.stream, count: limitation.replacementCount });
+    case "unsafe-control-stripped":
+      return Object.freeze({ code: "unsafe-control-stripped" as const, commandId: limitation.commandId, stream: limitation.stream, count: limitation.strippedCount });
   }
-  if (closureBytes > MAX_COMMANDS_CLOSURE_BYTES_V1) return false;
-  return value.collection.limitations.every((limitation) => {
-    if (limitation.code !== "text-truncated" || limitation.target !== "command-manifest") {
-      return true;
-    }
-    const command = value.commands.find(
-      (candidate) => candidate.commandId === limitation.commandId,
-    );
-    return command !== undefined && commandManifestTextLengths(command.manifest).some(
-      (length) => length === limitation.retainedBytes,
-    );
+}
+
+function fixedCollection(collection: Collection): unknown {
+  return Object.freeze({
+    state: collection.state,
+    limitations: Object.freeze(collection.limitations.map(fixedLimitation)),
   });
 }
 
-export const NormalizedCommandsCaptureV1Schema =
-  NormalizedCommandsCaptureV1StructuralSchema.pipe(
-    Schema.filter(isCanonicalNormalizedCommandsCaptureV1, {
-      identifier: "NormalizedObservabilityCommandsCaptureV1",
-      description: "bounded normalized command capture facts",
-    }),
-  );
-
-export type NormalizedCommandsCaptureV1 = Schema.Schema.Type<
-  typeof NormalizedCommandsCaptureV1Schema
->;
-
-const noObservabilityBlobDraftsV1: readonly RecordAttachmentBlobDraft<never, never>[] =
-  Object.freeze([]);
-
-function decodeNormalized<Value, Encoded>(
-  schema: Schema.Schema<Value, Encoded, never>,
-  input: Value,
-): Value | undefined {
-  const decoded = Schema.decodeUnknownEither(schema, ObservabilityExactParseOptions)(input);
-  return Either.isLeft(decoded) ? undefined : decoded.right;
-}
-
-function makeNoBlobObservabilityWriteV1<
-  Owner extends "attempt" | "run",
-  Payload,
-  Encoded,
->(
-  family: RecordAttachmentFamily<Owner, Payload>,
-  schema: Schema.Schema<Payload, Encoded, never>,
-  input: Payload,
-  familyName: ObservabilityAttachmentFamilyNameV1,
-): Either.Either<
-  RecordAttachmentWrite<Owner, never, never>,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  const payload = decodeNormalized(schema, input);
-  if (payload === undefined) return Either.left(attachmentInputInvalid(familyName));
-  const write = makeRecordAttachmentWrite(family, () =>
-    Object.freeze({ payload, blobs: noObservabilityBlobDraftsV1 }),
-  );
-  const closure = validateRecordAttachmentWrite(write);
-  if (Either.isLeft(closure)) {
-    throw new Error("A generated no-blob Observability RecordAttachment write was invalid");
+function fixedConversationItem(item: ConversationItem): unknown {
+  const base = { itemId: item.itemId, turnId: item.turnId, sequence: item.sequence };
+  switch (item.kind) {
+    case "message": return Object.freeze({ ...base, kind: item.kind, role: item.role, text: item.text });
+    case "tool-call": return Object.freeze({ ...base, kind: item.kind, callId: item.callId, tool: item.tool, inputSummary: item.inputSummary });
+    case "tool-result": return Object.freeze({ ...base, kind: item.kind, callId: item.callId, outcome: item.outcome, outputSummary: item.outputSummary });
+    case "thinking-summary": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
+    case "subagent": return Object.freeze({ ...base, kind: item.kind, state: item.state, label: item.label, summary: item.summary });
+    case "input-request": return Object.freeze({ ...base, kind: item.kind, state: item.state, promptSummary: item.promptSummary, responseSummary: item.responseSummary });
+    case "skill-load": return Object.freeze({ ...base, kind: item.kind, code: item.skill, summary: item.outcome });
+    case "context-injection": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
+    case "compaction": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
+    case "conversation-error": return Object.freeze({ ...base, kind: item.kind, code: item.code, summary: item.summary });
   }
-  return Either.right(write);
 }
 
-export function createAttemptConversationAttachmentWriteV1(
-  input: NormalizedConversationCaptureV1,
-): Either.Either<
-  RecordAttachmentWrite<"attempt", never, never>,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  return makeNoBlobObservabilityWriteV1(
-    attemptConversationAttachmentV1,
-    ConversationAttachmentV1Schema,
-    input,
-    "conversation",
-  );
-}
-
-export function createAttemptUsageAttachmentWriteV1(
-  input: NormalizedUsageCaptureV1,
-): Either.Either<
-  RecordAttachmentWrite<"attempt", never, never>,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  return makeNoBlobObservabilityWriteV1(
-    attemptUsageAttachmentV1,
-    UsageAttachmentV1Schema,
-    input,
-    "usage",
-  );
-}
-
-export function createAttemptTimingAttachmentWriteV1(
-  input: NormalizedAttemptTimingCaptureV1,
-): Either.Either<
-  RecordAttachmentWrite<"attempt", never, never>,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  return makeNoBlobObservabilityWriteV1(
-    attemptTimingAttachmentV1,
-    AttemptTimingAttachmentV1Schema,
-    input,
-    "attempt-timing",
-  );
-}
-
-export function createAttemptDiagnosticsAttachmentWriteV1(
-  input: NormalizedAttemptDiagnosticsCaptureV1,
-): Either.Either<
-  RecordAttachmentWrite<"attempt", never, never>,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  return makeNoBlobObservabilityWriteV1(
-    attemptDiagnosticsAttachmentV1,
-    AttemptDiagnosticsAttachmentV1Schema,
-    input,
-    "attempt-diagnostics",
-  );
-}
-
-export function createRunTimingAttachmentWriteV1(
-  input: NormalizedRunTimingCaptureV1,
-): Either.Either<
-  RecordAttachmentWrite<"run", never, never>,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  return makeNoBlobObservabilityWriteV1(
-    runTimingAttachmentV1,
-    RunTimingAttachmentV1Schema,
-    input,
-    "run-timing",
-  );
-}
-
-export function createRunDiagnosticsAttachmentWriteV1(
-  input: NormalizedRunDiagnosticsCaptureV1,
-): Either.Either<
-  RecordAttachmentWrite<"run", never, never>,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  return makeNoBlobObservabilityWriteV1(
-    runDiagnosticsAttachmentV1,
-    RunDiagnosticsAttachmentV1Schema,
-    input,
-    "run-diagnostics",
-  );
-}
-
-function commandStreamPayloadV1(
-  stream: NormalizedCommandStreamCaptureV1,
+function commandStream(
+  stream: NormalizedCommandStreamCapture,
   blobs: RecordAttachmentBlobBuilder,
   drafts: RecordAttachmentBlobDraft<never, never>[],
-): CommandStreamV1 {
-  const retainedBytes = makeNonNegativeSafeIntegerV1(retainedTextBytes(stream));
-  if (retainedBytes === undefined) {
-    throw new Error("A bounded command stream must have a safe retained byte length");
-  }
-  if (retainedBytes <= MAX_COMMAND_INLINE_STREAM_BYTES_V1) {
+): unknown {
+  const bytes = new TextEncoder().encode(stream.text);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  if (bytes.byteLength <= MAX_COMMAND_INLINE_STREAM_BYTES) {
     return Object.freeze({
       storage: Object.freeze({ kind: "inline" as const, text: stream.text }),
-      retainedBytes,
+      retainedBytes: bytes.byteLength,
       totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes,
+      sha256,
     });
   }
-  const source = makeRecordBlobSource(
-    Stream.fromEffect(Effect.sync(() => new TextEncoder().encode(stream.text))),
-  );
-  const draft = blobs.add(source);
+  const draft = blobs.add(makeRecordBlobSource(Stream.fromEffect(Effect.sync(() => bytes))));
   drafts.push(draft);
   return Object.freeze({
     storage: Object.freeze({ kind: "blob" as const, ref: draft.ref }),
-    retainedBytes,
+    retainedBytes: bytes.byteLength,
     totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes,
+    sha256,
   });
 }
 
-export function createAttemptCommandsAttachmentWriteV1(
-  input: NormalizedCommandsCaptureV1,
-): Either.Either<
-  RecordAttachmentWrite<"attempt", never, never>,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  const normalized = decodeNormalized(NormalizedCommandsCaptureV1Schema, input);
-  if (normalized === undefined) return Either.left(attachmentInputInvalid("commands"));
-  const write = makeRecordAttachmentWrite(attemptCommandsAttachmentV1, (blobs) => {
+function fixedRedaction(redaction: AttemptDiagnostic["redaction"]): unknown {
+  if (redaction.state === "none") return Object.freeze({ state: "none" as const });
+  return Object.freeze({
+    state: "applied" as const,
+    replacements: redaction.summaryReplacements + redaction.causeReplacements + redaction.contextReplacements,
+  });
+}
+function fixedAttemptDiagnostic(diagnostic: AttemptDiagnostic): unknown {
+  return Object.freeze({
+    diagnosticId: diagnostic.diagnosticId,
+    kind: diagnostic.kind,
+    code: diagnostic.code,
+    phase: diagnostic.phase === "collection" ? "attempt.teardown" : diagnostic.phase,
+    summary: diagnostic.summary,
+    causes: Object.freeze(diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary }))),
+    redaction: fixedRedaction(diagnostic.redaction),
+    sourceFrame: diagnostic.sourceFrame,
+  });
+}
+function fixedRunDiagnostic(diagnostic: RunDiagnostic): unknown {
+  return Object.freeze({
+    diagnosticId: diagnostic.diagnosticId,
+    kind: diagnostic.kind,
+    code: diagnostic.code,
+    phase: diagnostic.phase === "collection" ? "run.teardown" : diagnostic.phase,
+    summary: diagnostic.summary,
+    causes: Object.freeze(diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary }))),
+    redaction: fixedRedaction(diagnostic.redaction),
+    sourceFrame: diagnostic.sourceFrame,
+  });
+}
+
+function decodeAttempt(value: unknown): Either.Either<Schema.Schema.Type<typeof AttemptObservabilityAttachmentSchema>, ObservabilityAttachmentBuildError> {
+  const decoded = Schema.validateEither(AttemptObservabilityAttachmentSchema, RecordExactParseOptions)(value);
+  return Either.isLeft(decoded) ? Either.left(invalid()) : Either.right(decoded.right);
+}
+function decodeRun(value: unknown): Either.Either<Schema.Schema.Type<typeof RunObservabilityAttachmentSchema>, ObservabilityAttachmentBuildError> {
+  const decoded = Schema.validateEither(RunObservabilityAttachmentSchema, RecordExactParseOptions)(value);
+  return Either.isLeft(decoded) ? Either.left(invalid()) : Either.right(decoded.right);
+}
+
+/** Builds exactly one fixed Attempt Observability write, including command blobs. */
+export function createAttemptObservabilityAttachmentWrite(
+  input: NormalizedAttemptObservabilityCapture,
+): Either.Either<RecordAttachmentWrite<"attempt", never, never>, ObservabilityAttachmentBuildError> {
+  const preflight = decodeAttempt(Object.freeze({
+    owner: "attempt" as const,
+    conversation: Object.freeze({
+      collection: fixedCollection(input.conversation.collection),
+      turns: Object.freeze(input.conversation.turns.map((turn) => Object.freeze({ turnId: turn.turnId, sequence: turn.sequence, outcome: turn.outcome }))),
+      items: Object.freeze(input.conversation.items.map(fixedConversationItem)),
+    }),
+    commands: Object.freeze({ collection: fixedCollection(input.commands.collection), commands: Object.freeze([]) }),
+    usage: Object.freeze({ collection: fixedCollection(input.usage.collection), observations: Object.freeze(input.usage.observations.map(({ refs: _refs, ...value }) => Object.freeze(value))) }),
+    timing: Object.freeze({ collection: fixedCollection(input.timing.collection), intervals: Object.freeze(input.timing.intervals.map(({ refs: _refs, ...value }) => Object.freeze(value))) }),
+    diagnostics: Object.freeze({ collection: fixedCollection(input.diagnostics.collection), diagnostics: Object.freeze(input.diagnostics.diagnostics.map(fixedAttemptDiagnostic)) }),
+  }));
+  // Empty commands can be decoded eagerly. Non-empty commands are checked in
+  // the write builder after its owner-local blob refs have been minted.
+  if (input.commands.commands.length === 0 && Either.isLeft(preflight)) return Either.left(preflight.left);
+
+  const write = makeFixedRecordAttachmentWrite(attemptObservabilityRecordFamily.write, (blobs) => {
     const drafts: RecordAttachmentBlobDraft<never, never>[] = [];
-    const commands = normalized.commands.map((command) =>
-      Object.freeze({
-        commandId: command.commandId,
-        manifest: command.manifest,
-        result: Object.freeze({
-          outcome: command.result.outcome,
-          stdout: commandStreamPayloadV1(command.result.stdout, blobs, drafts),
-          stderr: commandStreamPayloadV1(command.result.stderr, blobs, drafts),
-        }),
-        refs: command.refs,
+    const candidate = Object.freeze({
+      owner: "attempt" as const,
+      conversation: Object.freeze({
+        collection: fixedCollection(input.conversation.collection),
+        turns: Object.freeze(input.conversation.turns.map((turn) => Object.freeze({ turnId: turn.turnId, sequence: turn.sequence, outcome: turn.outcome }))),
+        items: Object.freeze(input.conversation.items.map(fixedConversationItem)),
       }),
-    );
-    const decoded = Schema.decodeUnknownEither(
-      CommandsAttachmentV1Schema,
-      ObservabilityExactParseOptions,
-    )(
-      Object.freeze({
-        collection: normalized.collection,
-        commands: Object.freeze(commands),
+      commands: Object.freeze({
+        collection: fixedCollection(input.commands.collection),
+        commands: Object.freeze(input.commands.commands.map((command) => Object.freeze({
+          commandId: command.commandId,
+          manifest: command.manifest,
+          result: Object.freeze({
+            outcome: command.result.outcome,
+            stdout: commandStream(command.result.stdout, blobs, drafts),
+            stderr: commandStream(command.result.stderr, blobs, drafts),
+          }),
+        }))),
       }),
-    );
-    if (Either.isLeft(decoded)) {
-      throw new Error("Normalized commands capture produced an invalid durable payload");
-    }
+      usage: Object.freeze({ collection: fixedCollection(input.usage.collection), observations: Object.freeze(input.usage.observations.map(({ refs: _refs, ...value }) => Object.freeze(value))) }),
+      timing: Object.freeze({ collection: fixedCollection(input.timing.collection), intervals: Object.freeze(input.timing.intervals.map(({ refs: _refs, ...value }) => Object.freeze(value))) }),
+      diagnostics: Object.freeze({ collection: fixedCollection(input.diagnostics.collection), diagnostics: Object.freeze(input.diagnostics.diagnostics.map(fixedAttemptDiagnostic)) }),
+    });
+    const decoded = decodeAttempt(candidate);
+    if (Either.isLeft(decoded)) throw new Error("Observability capture does not satisfy the fixed v1 payload");
     return Object.freeze({ payload: decoded.right, blobs: Object.freeze(drafts) });
   });
   const closure = validateRecordAttachmentWrite(write);
-  if (Either.isLeft(closure)) {
-    throw new Error("A generated commands Observability RecordAttachment closure was invalid");
-  }
+  if (Either.isLeft(closure)) throw new Error("Fixed Observability write closure was invalid");
   return Either.right(write);
 }
 
-export interface NormalizedAttemptObservabilityCaptureV1 {
-  readonly conversation: NormalizedConversationCaptureV1;
-  readonly commands: NormalizedCommandsCaptureV1;
-  readonly usage: NormalizedUsageCaptureV1;
-  readonly timing: NormalizedAttemptTimingCaptureV1;
-  readonly diagnostics: NormalizedAttemptDiagnosticsCaptureV1;
+/** Builds the fixed Run Observability payload (timing and diagnostics only). */
+export function createRunObservabilityAttachmentWrite(
+  input: NormalizedRunObservabilityCapture,
+): Either.Either<RecordAttachmentWrite<"run", never, never>, ObservabilityAttachmentBuildError> {
+  const candidate = Object.freeze({
+    owner: "run" as const,
+    timing: Object.freeze({ collection: fixedCollection(input.timing.collection), intervals: Object.freeze(input.timing.intervals.map(({ refs: _refs, ...value }) => Object.freeze(value))) }),
+    diagnostics: Object.freeze({ collection: fixedCollection(input.diagnostics.collection), diagnostics: Object.freeze(input.diagnostics.diagnostics.map(fixedRunDiagnostic)) }),
+  });
+  const decoded = decodeRun(candidate);
+  if (Either.isLeft(decoded)) return Either.left(decoded.left);
+  const write = makeFixedRecordAttachmentWrite(runObservabilityRecordFamily.write, () => Object.freeze({ payload: decoded.right, blobs: Object.freeze([]) }));
+  const closure = validateRecordAttachmentWrite(write);
+  if (Either.isLeft(closure)) throw new Error("Fixed Run Observability write closure was invalid");
+  return Either.right(write);
 }
 
-export interface NormalizedRunObservabilityCaptureV1 {
-  readonly timing: NormalizedRunTimingCaptureV1;
-  readonly diagnostics: NormalizedRunDiagnosticsCaptureV1;
+export interface AttemptObservabilityAttachmentWrites {
+  readonly write: RecordAttachmentWrite<"attempt", never, never>;
+}
+export interface RunObservabilityAttachmentWrites {
+  readonly write: RecordAttachmentWrite<"run", never, never>;
 }
 
-export interface AttemptObservabilityAttachmentWritesV1 {
-  readonly conversation: RecordAttachmentWrite<"attempt", never, never>;
-  readonly commands: RecordAttachmentWrite<"attempt", never, never>;
-  readonly usage: RecordAttachmentWrite<"attempt", never, never>;
-  readonly timing: RecordAttachmentWrite<"attempt", never, never>;
-  readonly diagnostics: RecordAttachmentWrite<"attempt", never, never>;
-  readonly validations: readonly ObservabilityFamilyValidationV1<"attempt">[];
+/** Legacy plural names now deliberately return a one-write fixed bundle. */
+export function createAttemptObservabilityAttachmentWrites(input: NormalizedAttemptObservabilityCapture): Either.Either<AttemptObservabilityAttachmentWrites, ObservabilityAttachmentBuildError> {
+  const write = createAttemptObservabilityAttachmentWrite(input);
+  return Either.isLeft(write)
+    ? Either.left(write.left)
+    : Either.right(Object.freeze({ write: write.right }));
+}
+export function createRunObservabilityAttachmentWrites(input: NormalizedRunObservabilityCapture): Either.Either<RunObservabilityAttachmentWrites, ObservabilityAttachmentBuildError> {
+  const write = createRunObservabilityAttachmentWrite(input);
+  return Either.isLeft(write)
+    ? Either.left(write.left)
+    : Either.right(Object.freeze({ write: write.right }));
 }
 
-export interface RunObservabilityAttachmentWritesV1 {
-  readonly timing: RecordAttachmentWrite<"run", never, never>;
-  readonly diagnostics: RecordAttachmentWrite<"run", never, never>;
-  readonly validations: readonly ObservabilityFamilyValidationV1<"run">[];
+/** Boundary check used by Runner before passing bundles to the fixed collector. */
+export function validateObservabilityAttachmentWriteBundles(input: {
+  readonly run: RunObservabilityAttachmentWrites;
+  readonly attempts: readonly AttemptObservabilityAttachmentWrites[];
+}): readonly ObservabilityRecordContractError[] {
+  const errors: ObservabilityRecordContractError[] = [];
+  const run = recordAttachmentWriteContents(input.run.write);
+  if (Either.isLeft(run) || run.right.fixed !== runObservabilityRecordFamily.write) {
+    errors.push(observabilityOwnerOrSchemaInvalidError("run", "niceeval.observability"));
+  }
+  for (const attempt of input.attempts) {
+    const captured = recordAttachmentWriteContents(attempt.write);
+    if (Either.isLeft(captured) || captured.right.fixed !== attemptObservabilityRecordFamily.write) {
+      errors.push(observabilityOwnerOrSchemaInvalidError("attempt", "niceeval.observability"));
+    }
+  }
+  return Object.freeze(errors);
 }
 
-export function createAttemptObservabilityAttachmentWritesV1(
-  input: NormalizedAttemptObservabilityCaptureV1,
-): Either.Either<
-  AttemptObservabilityAttachmentWritesV1,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  const conversation = createAttemptConversationAttachmentWriteV1(input.conversation);
-  if (Either.isLeft(conversation)) return Either.left(conversation.left);
-  const commands = createAttemptCommandsAttachmentWriteV1(input.commands);
-  if (Either.isLeft(commands)) return Either.left(commands.left);
-  const usage = createAttemptUsageAttachmentWriteV1(input.usage);
-  if (Either.isLeft(usage)) return Either.left(usage.left);
-  const timing = createAttemptTimingAttachmentWriteV1(input.timing);
-  if (Either.isLeft(timing)) return Either.left(timing.left);
-  const diagnostics = createAttemptDiagnosticsAttachmentWriteV1(input.diagnostics);
-  if (Either.isLeft(diagnostics)) return Either.left(diagnostics.left);
-  return Either.right(
-    Object.freeze({
-      conversation: conversation.right,
-      commands: commands.right,
-      usage: usage.right,
-      timing: timing.right,
-      diagnostics: diagnostics.right,
-      validations: Object.freeze([
-        makeAttemptConversationAttachmentFamilyValidationV1(input.conversation),
-        makeAttemptCommandsAttachmentFamilyValidationV1(input.commands),
-        makeAttemptUsageAttachmentFamilyValidationV1(input.usage),
-        makeAttemptTimingAttachmentFamilyValidationV1(input.timing),
-        makeAttemptDiagnosticsAttachmentFamilyValidationV1(input.diagnostics),
-      ]),
-    }),
-  );
-}
-
-export function createRunObservabilityAttachmentWritesV1(
-  input: NormalizedRunObservabilityCaptureV1,
-): Either.Either<
-  RunObservabilityAttachmentWritesV1,
-  ObservabilityAttachmentBuildErrorV1
-> {
-  const timing = createRunTimingAttachmentWriteV1(input.timing);
-  if (Either.isLeft(timing)) return Either.left(timing.left);
-  const diagnostics = createRunDiagnosticsAttachmentWriteV1(input.diagnostics);
-  if (Either.isLeft(diagnostics)) return Either.left(diagnostics.left);
-  return Either.right(
-    Object.freeze({
-      timing: timing.right,
-      diagnostics: diagnostics.right,
-      validations: Object.freeze([
-        makeRunTimingAttachmentFamilyValidationV1(input.timing),
-        makeRunDiagnosticsAttachmentFamilyValidationV1(input.diagnostics),
-      ]),
-    }),
-  );
-}
-
-/**
- * Joint validation is intentionally separate from individual writes: an
- * otherwise valid owner-local Attachment is never invalidated just because a
- * sibling family is absent or corrupt. The coordinator calls this after all
- * owner-local builders have frozen their values and before generic writing.
- */
-export function validateObservabilityAttachmentWriteBundlesV1(input: {
-  readonly run: RunObservabilityAttachmentWritesV1;
-  readonly attempts: readonly AttemptObservabilityAttachmentWritesV1[];
-}): ReturnType<typeof validateObservabilityRecordContractV1> {
-  const contractInput: ObservabilityRecordContractValidationInputV1 = {
-    run: { families: input.run.validations },
-    attempts: input.attempts.map((attempt) => ({ families: attempt.validations })),
-  };
-  return validateObservabilityRecordContractV1(contractInput);
-}
+/** Fixed owner primitives; no caller can define or register a new family. */
+export const attemptObservabilityAttachmentWrite = attemptObservabilityRecordFamily.write;
+export const runObservabilityAttachmentWrite = runObservabilityRecordFamily.write;

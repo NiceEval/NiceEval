@@ -1,6 +1,6 @@
 // i18n 内核:CLI(src/i18n/index.ts)与 view 前端(src/view/app/i18n.ts)共用。
 // 必须保持环境无关(不 import node/browser API),vite 前端和 node CLI 都直接打包它。
-// 两侧只在这里之外各自注入 locale 来源(env vs navigator+localStorage)与默认值(zh-CN vs en)。
+// view 在此之外注入 navigator+localStorage 与默认值。
 
 export type Locale = "zh-CN" | "en";
 

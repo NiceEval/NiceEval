@@ -120,7 +120,7 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 
 "没有跨 provider 构建 DSL"不等于每个项目都要从空白 Sandbox 安装 coding agent。
 官方镜像与模板都在配方里声明非 root 用户(`USER`):执行身份是预制实例自己的声明([Library · 执行身份](../library.md#执行身份)),Claude Code 等 agent 在 root 下会拒绝 `--dangerously-skip-permissions`;自己写预制实例时同样在配方里声明。
-NiceEval 为内置 coding Agent 维护公共 Docker image 与 E2B template：Docker image 六家齐全；E2B template 涵盖 Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进发布清单，不导出常量）；配方同源、版本号共用：
+NiceEval 为 coding Agent 维护公共 Docker image 与 E2B template：Docker image 八家齐全；E2B template 涵盖 Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进发布清单，不导出常量）；配方同源、版本号共用：
 
 | Agent | E2B 公共模板 | Docker 公共镜像 | 起点与校验 |
 |---|---|---|---|
@@ -130,16 +130,18 @@ NiceEval 为内置 coding Agent 维护公共 Docker image 与 E2B template：Doc
 | [OpenCode](../../adapters/sdk/opencode/README.md) | — | `niceeval/opencode` | Docker 烘焙 `opencode-ai`;Adapter 检测 PATH 上的 `opencode` |
 | [Hermes](../../adapters/sdk/hermes/README.md) | — | `niceeval/hermes` | Docker 按 `$HOME/.local` 装 `hermes-agent`;Adapter 走同路径 |
 | [OpenClaw](../../adapters/sdk/openclaw/README.md) | — | `niceeval/openclaw` | Docker 烘焙 `openclaw`;Adapter 检测 PATH 上的 `openclaw` |
+| [Oh My Pi](../../adapters/sdk/omp/README.md) | — | `niceeval/omp` | Docker 烘焙精确版本的 Bun 与 `omp`;Adapter 同时复检两者 |
+| [DeepSeek Harness](../../adapters/sdk/deepseek-harness/README.md) | — | `niceeval/deepseek-harness` | Docker 烘焙 `dsh`;Adapter 检测 PATH 上的 `dsh` |
 
 Vercel 没有可公开发布的构建结果原语,官方起点止步于 E2B 与 Docker;Vercel 用户按上面的[Run 构建流程](#vercel-sandbox从运行实例拍 Run)在自己的 Project 里构建。
 
 ### 跨 provider 起点工具面
 
-六个 Docker target 与三个 E2B template 共用同一份起点工具面契约,与各自装的 Agent CLI 版本无关:
+八个 Docker target 与三个 E2B template 共用同一份起点工具面契约,与各自装的 Agent CLI 版本无关:
 
 - **保证 npm 与 corepack,不预装 yarn 实体**。node:24-slim 自带 yarn 1.22,E2B 官方 `claude`/`codex` 起点的现状不与 Docker 侧一致;统一之后官方起点一律不再提供现成的 yarn 二进制,要 yarn 的派生项目自己 `corepack enable` 或安装。
 - **保证 python3**。两侧起点都带系统 python3。取两侧都装是因为 E2B 配方只能在官方起点上叠加、没有"卸载"路径,而运行时安装步骤(node-gyp、rustup 一类)普遍依赖它。
-- **保证 `/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写**。起点的全局 CLI 在构建期以 root 安装,执行身份是非 root `node`(执行身份契约见[执行身份](../library.md#执行身份));这两个目录必须交给运行用户,否则运行期 `corepack enable` 与 `npm install -g` 直接 EACCES。Docker 侧由 base 构建期 chown 给 `node`,六个 target(含只用 `$HOME/.local` 的 bub / hermes)全部继承;E2B 侧由 `withNodeToolContract` 保证同一条。
+- **保证 `/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写**。起点的全局 CLI 在构建期以 root 安装,执行身份是非 root `node`(执行身份契约见[执行身份](../library.md#执行身份));这两个目录必须交给运行用户,否则运行期 `corepack enable` 与 `npm install -g` 直接 EACCES。Docker 侧由 base 构建期 chown 给 `node`,八个 target(含只用 `$HOME/.local` 的 bub / hermes)全部继承;E2B 侧由 `withNodeToolContract` 保证同一条。
 - 三条都是发布门槛,与「[官方 coding agent 起点](#官方-coding-agent-起点)」的其余契约同一批构建自检。Docker 侧由 CI 的构建自检步骤断言:`command -v yarn` 必须为空、`python3 --version` 必须成功、以镜像默认用户执行 `corepack enable && yarn --version` 必须成功。E2B 侧由 `verifyE2BNodeToolContract` 断言同样三条。任一项不过,配方不写入 registry、不推送 tag。
 
 这条契约与「版本号跟着被装的 Agent 走」共用同一条规则:配方变了(包括这次的工具面收敛)就 bump `-r`,内容没变不重建。

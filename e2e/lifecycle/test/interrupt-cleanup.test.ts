@@ -10,6 +10,7 @@ import {
   withProjectCopy,
 } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import { siblingCompleteMarker } from "../experiments/interrupts/complete.ts";
 
 interface BackendInfo { pid: number; port: number }
 interface ProcessReceipt { diagnostic(): string }
@@ -19,10 +20,13 @@ interface ExpEvent {
   experimentId?: string;
   evalId?: string;
   verdict?: string;
+  locator?: string;
 }
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([binary]);
 const docker = command(["docker"]);
+const interruptedExperimentId = "interrupts/inflight";
+const completeSiblingExperimentId = "interrupts/complete";
 const projectCopy = {
   from: process.cwd(),
   prefix: "niceeval-e2e-lifecycle-project-",
@@ -34,6 +38,15 @@ async function backendInfo(path: string): Promise<BackendInfo | undefined> {
   try {
     const value = JSON.parse(await readFile(path, "utf8")) as BackendInfo;
     return typeof value.pid === "number" && typeof value.port === "number" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fileExists(path: string): Promise<true | undefined> {
+  try {
+    await readFile(path);
+    return true;
   } catch {
     return undefined;
   }
@@ -109,8 +122,9 @@ async function waitForSecondReuseAttempt(pid: number, cwd: string): Promise<void
 test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源，下一消费者仍可运行", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const infoPath = join(root, ".niceeval-lifecycle-backend.json");
+    const siblingMarkerPath = join(root, siblingCompleteMarker);
     const owned = await withProcess(
-      [binary, "exp", "interrupt", "--rerun", "all", "--json"],
+      [binary, "exp", "interrupts", "--rerun", "all", "--json"],
       {
         cwd: root,
         processGroup: true,
@@ -129,35 +143,76 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         );
         await waitForHealth(info.port, controlled.done);
         const invocationPid = defined(controlled.pid, "niceeval invocation did not expose a pid");
+        await whileRunning(
+          pollUntil(() => fileExists(siblingMarkerPath), {
+            timeoutMs: 60_000,
+            intervalMs: 100,
+            label: "sibling Experiment completion marker",
+          }),
+          controlled.done,
+          "the sibling Experiment completed",
+        );
+        // The second-attempt marker proves that attempt 1 settled and released
+        // the reused sandbox. Together the two fixture seams define when to send
+        // SIGINT without depending on a sampled progress heartbeat.
         await waitForSecondReuseAttempt(invocationPid, root);
         expect(controlled.signal("SIGINT")).toBe(true);
 
         const interrupted = await controlled.done;
         expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
         const events = interrupted.ndjson<ExpEvent>();
-        // receipt 只承载 Invocation 级完成事实(见 docs/feature/experiments/cli.md「结束反馈与
-        // receipt」)：completion。中断前完成的 attempt 由带身份的 eval 事件断言；不读 Record
-        // 内部细节，也不在 receipt 上断言计数。
-        expect(interrupted.expReceipt(), interrupted.diagnostic()).toMatchObject({
+        // receipt 只承载 Invocation completion 与已发布 Run ID（见
+        // docs/feature/experiments/cli.md「结束反馈与 receipt」）。业务 outcome 仍由带身份的
+        // eval 事件断言；不读取 Record 内部细节。
+        const interruptedReceipt = interrupted.expReceipt();
+        expect(interruptedReceipt, interrupted.diagnostic()).toMatchObject({
           completion: "interrupted",
+        });
+        // The selected `interrupts/` directory creates two Runs. The sibling
+        // has settled before SIGINT; the other Run keeps its completed first
+        // Attempt and closes the reserved second Attempt as interrupted.
+        expect(interruptedReceipt.runIds, interrupted.diagnostic()).toHaveLength(2);
+        const completedBeforeInterrupt = only(
+          events,
+          (event) => event.event === "eval" && event.experimentId === interruptedExperimentId,
+          interrupted.diagnostic(),
+        );
+        expect(completedBeforeInterrupt).toMatchObject({
+          event: "eval",
+          experimentId: interruptedExperimentId,
+          evalId: "interrupt",
+          verdict: "passed",
+          locator: expect.stringMatching(/^@1[0-9A-HJKMNP-TV-Z]{12}$/),
         });
         expect(
           only(
             events,
-            (event) => event.event === "eval" && event.experimentId === "interrupt",
+            (event) => event.event === "eval" && event.experimentId === completeSiblingExperimentId,
             interrupted.diagnostic(),
           ),
-        ).toMatchObject({ event: "eval", experimentId: "interrupt", evalId: "interrupt", verdict: "passed" });
+        ).toMatchObject({ event: "eval", experimentId: completeSiblingExperimentId, evalId: "probe", verdict: "passed" });
         expect(
           only(
             events,
             (event) =>
               event.event === "experiment_teardown" &&
-              event.experimentId === "interrupt" &&
+              event.experimentId === interruptedExperimentId &&
               event.status === "done",
             interrupted.diagnostic(),
           ),
         ).toMatchObject({ status: "done" });
+
+        const completedAttempt = await niceeval.run([
+          "show",
+          completedBeforeInterrupt.locator!,
+          "--json",
+        ], { cwd: root });
+        expect(completedAttempt.exitCode, completedAttempt.diagnostic()).toBe(0);
+        expect(completedAttempt.json<{ data: { kind: string } }>().data.kind).toBe("attempt");
+
+        const visibleInventory = await niceeval.run(["show", "--json"], { cwd: root });
+        expect(visibleInventory.exitCode, visibleInventory.diagnostic()).toBe(0);
+        expect(visibleInventory.stdout).toContain(completedBeforeInterrupt.locator!);
 
         return {
           invocationPid,

@@ -38,7 +38,7 @@ manifest collector 携带到 durable root；它不获得 durable root。直接�
 不是身份、缓存键或稳定性承诺。Testkit 不发布 npm、不采用独立 semver/tag/workflow，也不对仓外消费者建立 API 承诺。
 若未来要对外提供测试库，应作为新产品重新设计，不复用本内部包的假公开面。
 
-Testkit 与根 E2E harness 统一使用 Node 22，不维护独立的 Node 兼容矩阵。内部包同时提供 ESM、CJS 与对应类型入口；
+Testkit 与根 E2E harness 统一使用 Node 24，不维护独立的 Node 兼容矩阵。内部包同时提供 ESM、CJS 与对应类型入口；
 构建必须直接输出到新的 staging package，再在同一 scratch filesystem 原子
 发布；不得读取、删除或写入共享 `packages/testkit/dist`。runner 校验 package
 metadata/exports，并在 install 前、install 后和副本 cleanup 后核对 snapshot
@@ -80,6 +80,33 @@ export interface ExpReceiptEvent {
   readonly receipt: InvocationReceipt;
 }
 
+export type ExpEvalEvent = {
+  readonly event: "eval";
+  readonly locator: string;
+  readonly evalId: string;
+  readonly experimentId: string;
+  readonly verdict: "passed" | "failed" | "errored" | "skipped";
+  readonly attempts: number;
+} & (
+  | { readonly passed: number }
+  | {
+      readonly planned: number;
+      readonly unstarted: number;
+      readonly reason: "early_exit";
+    }
+);
+
+export interface ExpEvalOutcomeExpectation {
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly verdict: "passed" | "failed" | "errored" | "skipped";
+  readonly attempts: number;
+  readonly passed?: number;
+  readonly reason?: "early_exit";
+  readonly planned?: number;
+  readonly unstarted?: number;
+}
+
 export interface ProcessReceipt {
   argv: Argv;
   cwd: string;
@@ -94,7 +121,35 @@ export interface ProcessReceipt {
   json<T = unknown>(): T;
   ndjson<T = unknown>(): T[];
   expReceipt(): InvocationReceipt;
+  expEvalEvents(): ExpEvalEvent[];
 }
+
+export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument;
+
+export function assertExpEvalOutcomes(
+  actual: readonly ExpEvalEvent[],
+  expected: readonly ExpEvalOutcomeExpectation[],
+  diagnostic?: string | (() => string),
+): ExpEvalEvent[];
+
+export function exactEval(
+  events: readonly ExpEvalEvent[],
+  identity: { experimentId: string; evalId: string },
+  diagnostic?: string | (() => string),
+): ExpEvalEvent;
+
+export function retryFailedExpEvalsOnce(options: {
+  events: readonly ExpEvalEvent[];
+  targets: readonly ExpEvalEvent[];
+  runRetry: (target: ExpEvalEvent) => Promise<ProcessReceipt>;
+}): Promise<{
+  events: readonly ExpEvalEvent[];
+  retries: readonly {
+    target: ExpEvalEvent;
+    event: ExpEvalEvent;
+    receipt: ProcessReceipt;
+  }[];
+}>;
 
 export function runProcess(
   argv: Argv,
@@ -123,10 +178,60 @@ Testkit 直接导出公开原始 `ExpEvent`、`ExpReceiptEvent` 与精确的 `In
 - `completedAt` 未提供时不存在，否则为字符串；
 - `completion` 是 `"completed" | "interrupted" | "failed"`。
 
-`expReceipt()` 返回末行的内层 `InvocationReceipt`。它不检查退出码、不折叠 Verdict 或 Attempt，也不提供 expected 辅助断言。
+`expReceipt()` 返回末行的内层 `InvocationReceipt`。它不检查退出码，也不折叠 Verdict 或 Attempt。
+
+`retryFailedExpEvalsOnce()` 是 live Adapter 固定容错的机械设施，不是测试级自动 retry。调用方先从首轮公开
+Eval events 明确选出 `verdict: "failed"` 且 `attempts: 1` 的 targets，并在 `runRetry` 回调中保留完整产品 argv、
+timeout 与 selector 预检。Testkit 只串行执行每个 target，要求补跑产生唯一同身份 `passed` event 和零退出码，
+再返回首轮事件按身份替换后的 effective events；首轮 receipt、排除项、最终 expected 和日志仍归 owner。
 
 业务 Verdict 和 Attempt 只能从中间的 `event: "eval"` 读取，或按 `receipt.runIds` 读取 Record；receipt 本身不复制这些
-业务事实。需要检查逐 Eval 身份的场景仍直接用 `ndjson<ExpEvent>()` 并在读取 `.event` 前排除末行 `type: "receipt"`。
+业务事实。`expEvalEvents()` 严格解码所有公开 Eval 终局事件，并拒绝字段非法的 Eval event。
+
+`assertExpEvalOutcomes()` 要求调用方在测试文件中逐条提供 `experimentId`、`evalId`、Verdict 与 Attempt 数。
+它严格拒绝缺失、额外、重复身份和字段不符，并可选核对 `passed` 或 `early_exit` 字段。
+Testkit 不生成 expected、不按 exit code 推断 Verdict，也不把 `failed`、`errored` 或 `skipped` 折叠成另一状态。
+
+`decodeShowTiming()` 严格验证 `niceeval show --timing --json` 的稳定公开结构：
+
+- schema、timing data 与 Attempt 身份；
+- complete/partial collection 与完整 interval 字段；
+- Attempt phase、标识符，以及唯一且规范排序的 interval；
+- parent 存在、区间包含、无环且无安全整数溢出；
+- complete collection 不含 unknown outcome。
+
+malformed 时错误附带原始命令诊断。decoder 不选择业务所需 interval，也不替 owner 决定应出现哪个
+phase、label、父子关系或 outcome；这些 expected 必须继续写在 owner 正文中。
+
+```ts
+const evalEvents = assertExpEvalOutcomes(
+  run.expEvalEvents(),
+  [
+    {
+      experimentId: "transport",
+      evalId: "transport-ok",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    },
+    {
+      experimentId: "timeout",
+      evalId: "timeout",
+      verdict: "errored",
+      attempts: 1,
+      passed: 0,
+    },
+  ],
+  () => run.diagnostic(),
+);
+```
+
+expected 数组属于调用方 owner；Testkit 只比较公开原始字段。
+CLI 退出码、`InvocationReceipt.completion`、Run 数与后续 `show` 读回仍在测试正文分别断言。
+
+`exactEval(events, { experimentId, evalId }, diagnostic?)` 只按这两个公开字段选取一个终局 Eval event。
+它严格拒绝零个或多个匹配，并在错误中列出全部候选复合身份和调用方提供的诊断。`locator` 是选中 event
+的输出，不参与选择；Testkit 不为 `show`、领域 expected 或 retry 增加另一层 DSL。
 
 非零 exit 与 signal 会返回收据，`timedOut` 区分 Testkit timeout 与被测进程自行退出。spawn 本身失败时抛
 `ProcessStartError`，错误携带完整 argv、cwd 与原始 cause；调用方不用猜是产品 exit 还是命令没有启动。
@@ -173,6 +278,8 @@ TERM → grace period → KILL 结束 owned process。正文已经让进程退�
 
 POSIX 上的 `dispose()` 在根进程已退出后仍检查它创建的 process group；同组后代仍存活时继续执行 TERM → grace → KILL，
 并等待整组消失。Windows 没有等价的负 PID group signal，`processGroup: true` 会在 spawn 前明确失败，不静默退化成只杀根进程。
+Linux 上被 PID 1 接管但尚未 reap 的 zombie 仍会让 signal 0 报告 process group 存在，而 TERM / KILL 已不可能改变它。
+Testkit 会通过 procfs 区分成员状态：只有仍含非 zombie 成员的组才算存活；procfs 无法可靠读取时保持 fail-closed，不把未知状态当作进程组已经终止。
 
 正文和 cleanup 同时失败时抛 `AggregateError([bodyError, cleanupError])`，主错误排第一并作为 cause。只有 cleanup 失败时，
 直接抛 cleanup error。

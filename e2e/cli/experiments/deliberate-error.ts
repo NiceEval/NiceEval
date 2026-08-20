@@ -1,12 +1,12 @@
 import { defineExperiment } from "niceeval";
-import { deterministicAgent } from "../agents/deterministic.ts";
+import { localSandbox } from "niceeval/sandbox";
+import { preContextErrorAgent } from "../agents/deterministic.ts";
 
-const agent = deterministicAgent("cli-deliberate-error");
-
-// 只覆盖 deliberate-error/ 前缀下唯一的 eval:确定性执行错误,验证 attempt verdict = errored、
-// 进程非零退出、JUnit 折叠成 <error>(不是 <failure>)——与 deliberate-fail 判然有别。
+// 只覆盖 deliberate-error/ 前缀下唯一的 eval；local provider 让 prepare 的非零退出
+// 完全确定且不依赖 Docker、网络或远端 provider。
 export default defineExperiment({
-  description: "deliberate-error:确定性执行错误,验证退出码折叠与 JUnit <error>",
-  agent,
+  description: "deliberate-error:Context 建立前执行错误,验证发布与 JUnit <error>",
+  agent: preContextErrorAgent,
+  sandbox: localSandbox({ dir: process.cwd() }),
   evals: ["deliberate-error"],
 });

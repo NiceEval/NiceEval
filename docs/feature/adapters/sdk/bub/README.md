@@ -29,13 +29,13 @@ bubAgent({                                          // 往回钉一代:插件要
 })
 ```
 
-- **NiceEval 总是钉一个确定版本**，不装 latest：被测对象的版本必须能从实验配置读出来，否则两次跑分不可比。
+- **NiceEval 总是钉一个确定版本**，不装 latest：被测对象的版本必须能从实验配置读出来，否则两次跑分不可比。默认的 Bub 0.4.0 还复现其上游 lock 中的 `any-llm-sdk==1.17.0` 与 `openai==2.31.0`，避免相同 Bub 版本因安装日期不同而改变模型请求协议。
 - **`otelPlugin` 与 `version` 同代才有 tracing。**
   行为轨来自 Bub tape，时间轨来自 `bub-tapestore-otel` 插件，插件按 tape 协议的形态读数据：新插件从 `bub.tape` 取类型（要求 Bub ≥ 0.3.10），旧插件按 republic 的类型校验（配 Bub ≤ 0.3.9）。
   配错代不会安装失败，而是 span 全被拒、时间轨静默为空——所以往回钉 `version` 时必须同批钉配套的 `otelPlugin`（复盘见 [memory](../../../../../memory/bub-tapestore-otel-tapeentry-drift.md)）。
 - **插件靠 override 装。**
   插件所在 workspace 把 `bub` 声明成 git 依赖，不写 override 的话每次安装都会去拉 Bub 主干——版本失控。
-  Adapter 因此总是先写一份把 `bub` 钉成 `bub==<version>` 的 override 文件再安装，用户不需要知道这个细节。
+  Adapter 因此总是先写一份 override 文件再安装：它把 `bub` 钉成 `bub==<version>`；默认版本还带上对应的模型客户端闭包。用户不需要知道这个细节。
 - **`version` 与 `otelPlugin` 都参与 ensure identity**：换任意一个都改变配置身份，也让预装 Sandbox 的 marker 对不上而触发配对 Installer 的完整安装。
 
 行为轨来自 Bub tape JSONL；session 由 Adapter 管理。
@@ -52,6 +52,6 @@ NiceEval 用固定版本配方（锁定 Bub 版本与 OTel 插件 commit）构�
 
 Adapter 的 ensure 只接受 identity marker 完全匹配的预装 Sandbox，不把 PATH 上任意一个 `bub` 当成兼容版本。
 
-`version`、`otelPlugin` 与 `pythonPlugins` 集合都参与 identity（factory 与 Installer 共用规范化代码，顺序、空白、重复项不制造假差异）；任一不同就由匹配的新 Installer 完整安装并复检。
+`version`、默认模型客户端闭包、`otelPlugin` 与 `pythonPlugins` 集合都参与 identity（factory 与 Installer 共用规范化代码，顺序、空白、重复项不制造假差异）；任一不同就由匹配的新 Installer 完整安装并复检。旧预制实例不含当前默认闭包时 marker 不匹配，Adapter 会在 Sandbox 内完整重装，不会把旧实例误当成命中。
 
 构建带自有插件的模板见 [Sandbox · Prebuilt environment](../../../sandbox/library/prebuilt-environments.md)。

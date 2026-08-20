@@ -49,18 +49,26 @@ export default defineEval({
 });
 ```
 
-共享服务无法访问时，改用 `ExperimentFatalError` 停止同一实验的剩余 Attempt：
+共享服务无法访问时，把检查写进真实评估用例的 `test(t)` callback。先把
+`serviceHealthUrl` 换成服务的健康检查地址，再用 `ExperimentFatalError` 停止同一实验的剩余 Attempt：
 
 ```ts
-import { ExperimentFatalError } from "niceeval";
+// evals/coding/shared-service-health.eval.ts
+import { defineEval, ExperimentFatalError } from "niceeval";
 
-const health = await t.sandbox.runCommand("curl", ["-fsS", serviceHealthUrl]);
-if (health.exitCode !== 0) {
-  throw new ExperimentFatalError(
-    "共享服务无法访问。请检查服务和隧道，然后重跑实验。",
-    { cause: health.stderr },
-  );
-}
+const serviceHealthUrl = "https://service.example.test/health";
+
+export default defineEval({
+  async test(t) {
+    const health = await t.sandbox.runCommand("curl", ["-fsS", serviceHealthUrl]);
+    if (health.exitCode !== 0) {
+      throw new ExperimentFatalError(
+        "共享服务无法访问。请检查服务和隧道，然后重跑实验。",
+        { cause: health.stderr },
+      );
+    }
+  },
+});
 ```
 
 错误消息会出现在终端和运行记录中。请写明发生了什么，以及下一步怎么修复。
@@ -108,7 +116,7 @@ npx niceeval exp compare evals/coding
 需要查看某个 Attempt 的原始错误和重试摘要时，使用终端给出的定位符：
 
 ```shell
-npx niceeval show --run <runId> --page attempt-<attemptId>
+pnpm exec niceeval show @<attempt-locator>
 ```
 
 自定义 Adapter 如果有专用的受理前拒绝信号，可以提供 `classifySendFailure`。该字段的类型和边界见 [`defineSandboxAgent` 参考](/zh/reference/define-agent#definesandboxagent)。

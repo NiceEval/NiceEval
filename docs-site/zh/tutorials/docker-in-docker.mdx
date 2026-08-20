@@ -4,28 +4,28 @@ sidebarTitle: "Docker 与 DinD"
 description: "根据任务信任边界选择 Docker socket、raw privileged DinD 或受管 rootless DinD，并为 Agent 准备 Docker CLI 与 daemon。"
 ---
 
-当评估任务要求 Agent执行 `docker build`、`docker run`或 `docker compose`时，先按任务的信任边界
+当评估任务要求 Agent 执行 `docker build`、`docker run` 或 `docker compose` 时，先按任务的信任边界
 选择 Docker access：
 
 | 模式 | 什么时候用 | 启动成本 | 安全边界 |
 | --- | --- | --- | --- |
-| Docker socket | 可信 Agent、个人开发机、已有 daemon，优先启动速度 | 最低，共用已有 daemon | Agent拥有该 daemon的完整控制权。rootful socket通常等价宿主 root |
-| Raw privileged DinD | 一次性 VM或专用 runner，需要独立 image、network和 cache | 每个 Sandbox启动 inner daemon | outer container是 raw privileged，不是安全隔离方案 |
-| Managed rootless DinD | 不可信 Agent、共享宿主、并发评估、需要资源准入和强杀恢复 | 最高，需要宿主 profile | privileged限制在受管 rootless user namespace或专用 VM，并有 watchdog与容量契约 |
+| Docker socket | 可信 Agent、个人开发机、已有 daemon，优先启动速度 | 最低，共用已有 daemon | Agent 拥有该 daemon 的完整控制权。rootful socket 通常等价宿主 root |
+| Raw privileged DinD | 一次性 VM 或专用 runner，需要独立 image、network 和 cache | 每个 Sandbox 启动 inner daemon | outer container 是 raw privileged，不是安全隔离方案 |
+| Managed rootless DinD | 不可信 Agent、共享宿主、并发评估、需要资源准入和强杀恢复 | 最高，需要宿主 profile | privileged 限制在受管 rootless user namespace 或专用 VM，并有 watchdog 与容量契约 |
 
-三种模式都要求镜像预装 Docker CLI。两种 DinD模式只接受从官方
-`docker:<version>-dind`派生的兼容镜像。镜像需要 Docker daemon、Node和评估工具，
-但不需要自定义 NiceEval `ENTRYPOINT`。NiceEval负责启动与监督 inner daemon、
-Sandbox保活、容器内 TTL和 `docker info`探活，不会向任意镜像动态安装 Docker。
+三种模式都要求镜像预装 Docker CLI。两种 DinD 模式只接受从官方
+`docker:<version>-dind` 派生的兼容镜像。镜像需要 Docker daemon、Node 和评估工具，
+但不需要自定义 NiceEval `ENTRYPOINT`。NiceEval 负责启动与监督 inner daemon、
+Sandbox 保活、容器内 TTL 和 `docker info` 探活，不会向任意镜像动态安装 Docker。
 
-不能直接把未经派生的 `docker:<version>-dind`写成 `source.image`。该镜像没有 NiceEval supervisor
-需要的 Node，也没有被测 Agent的工具。创建时会以
-`dind-image-incompatible: missing node`失败。请使用下面的 Dockerfile，或先发布等价的派生镜像，
-再让 `source`引用它。
+不能直接把未经派生的 `docker:<version>-dind` 写成 `source.image`。该镜像没有 NiceEval supervisor
+需要的 Node，也没有被测 Agent 的工具。创建时会以
+`dind-image-incompatible: missing node` 失败。请使用下面的 Dockerfile，或先发布等价的派生镜像，
+再让 `source` 引用它。
 
 ## 方案一：直接挂 Docker socket
 
-先准备只有 CLI、Node和评估工具的镜像：
+先准备只有 CLI、Node 和评估工具的镜像：
 
 ```dockerfile title="sandbox/Dockerfile"
 FROM docker:29-cli
@@ -35,7 +35,7 @@ RUN apk add --no-cache ca-certificates git nodejs npm python3 \
   && adduser -D -u 1000 -G node node
 ```
 
-在 Experiment里显式填写宿主 Unix socket。NiceEval不会从进程环境或 Docker context猜这个路径：
+在 Experiment 里显式填写宿主 Unix socket。NiceEval 不会从进程环境或 Docker context 猜这个路径：
 
 ```ts title="experiments/docker-socket.ts"
 import { defineExperiment } from "niceeval";
@@ -59,22 +59,22 @@ export default defineExperiment({
 });
 ```
 
-NiceEval会解析 symlink、确认最终目标是 Unix socket，把它挂到 Sandbox内固定的
-`/var/run/docker.sock`，并按 socket的数值 GID给 `node`添加补充组。启动 Agent前，NiceEval会确认
-镜像没有预设 Docker endpoint或 context，而且默认 `docker info`与显式访问这个 Unix socket得到同一个
-daemon。CLI缺失、用户无法访问 socket或镜像把默认 endpoint改到别处时，Sandbox创建失败。
+NiceEval 会解析 symlink、确认最终目标是 Unix socket，把它挂到 Sandbox 内固定的
+`/var/run/docker.sock`，并按 socket 的数值 GID 给 `node` 添加补充组。启动 Agent 前，NiceEval 会确认
+镜像没有预设 Docker endpoint 或 context，而且默认 `docker info` 与显式访问这个 Unix socket 得到同一个
+daemon。CLI 缺失、用户无法访问 socket 或镜像把默认 endpoint 改到别处时，Sandbox 创建失败。
 
-这项检查只固定 Agent启动时的默认用法，不是安全边界。Agent之后仍可显式传 `docker --host`访问另一个
-endpoint。不可信任务需要依赖 managed模式的网络策略，而不是依赖 Docker CLI的默认值。
+这项检查只固定 Agent 启动时的默认用法，不是安全边界。Agent 之后仍可显式传 `docker --host` 访问另一个
+endpoint。不可信任务需要依赖 managed 模式的网络策略，而不是依赖 Docker CLI 的默认值。
 
 <Warning>
-  这不是隔离方案。Agent可以通过 socket创建 privileged容器、挂宿主目录，并操作同一 daemon上的
-  其它容器、image、volume和 network。不要给不可信 Agent挂 rootful宿主 socket。
+  这不是隔离方案。Agent 可以通过 socket 创建 privileged 容器、挂宿主目录，并操作同一 daemon 上的
+  其它容器、image、volume 和 network。不要给不可信 Agent 挂 rootful 宿主 socket。
 </Warning>
 
 ## 方案二：Docker-in-Docker
 
-DinD让每个外层 Sandbox拥有自己的 inner daemon。先创建镜像：
+DinD 让每个外层 Sandbox 拥有自己的 inner daemon。先创建镜像：
 
 ```dockerfile title="sandbox/Dockerfile"
 FROM docker:29-dind
@@ -85,7 +85,7 @@ RUN apk add --no-cache ca-certificates git nodejs npm python3 \
   && addgroup node docker
 ```
 
-生产评估应把 `FROM`钉到审核过的 digest，并把被测 Agent需要的固定 CLI烘焙进镜像。
+生产评估应把 `FROM` 钉到审核过的 digest，并把被测 Agent 需要的固定 CLI 烘焙进镜像。
 
 ### NiceEval 如何启动 DinD
 
@@ -111,15 +111,17 @@ Agent 仍以 `user: "node"` 运行。上面 Dockerfile 在构建期把 `node` �
 
 ### 在 setup 中准备 Attempt 运行时
 
-Dockerfile 只烘焙固定工具、只读归档和项目初始文件。需要 inner daemon 的操作放进 Sandbox 级
-`setup`，不要放进镜像 `ENTRYPOINT`。下面的 setup 可以导入离线 image、把项目初始文件复制到可写
-workspace，并运行项目自己的 smoke check：
+Dockerfile 只烘焙固定工具和项目初始文件。需要 inner daemon 的操作放进 Sandbox 级
+`setup`，不要放进镜像 `ENTRYPOINT`。下面这个完整 setup 会创建可写 workspace 并验证 inner daemon；只有镜像确实烘焙了对应归档和文件时，才在这里加入 `docker load`、文件复制或项目 smoke-check 命令：
 
 ```ts title="lib/dind-sandbox.ts"
-import { dockerfileSandbox } from "niceeval/sandbox";
+import { dockerSandbox } from "niceeval/sandbox";
 
-export const dindSandbox = dockerfileSandbox({
-  context: new URL("../sandbox/", import.meta.url),
+export const dindSandbox = dockerSandbox({
+  source: {
+    type: "dockerfile",
+    context: new URL("../sandbox/", import.meta.url),
+  },
   user: "node",
   dockerAccess: {
     mode: "dind",
@@ -132,7 +134,11 @@ export const dindSandbox = dockerfileSandbox({
   },
 }).setup(async (sandbox, ctx) => {
   ctx.progress({ message: "准备 inner Docker 运行时" });
-  const result = await sandbox.runCommand("prepare-inner-runtime", [], {
+  const result = await sandbox.runCommand("sh", ["-lc", [
+    "set -eu",
+    "mkdir -p /workspace",
+    "docker info >/dev/null",
+  ].join("\n")], {
     user: "root",
     stream: true,
   });
@@ -148,7 +154,7 @@ Attempt 在 `sandbox.create` 阶段记为 `errored`，不会把半成品 Sandbox
 
 ### Raw privileged DinD
 
-在一次性 VM或专用 runner上，可以显式选择 raw privileged：
+在一次性 VM 或专用 runner 上，可以显式选择 raw privileged：
 
 ```ts title="experiments/dind-raw.ts"
 import { defineExperiment } from "niceeval";
@@ -172,13 +178,16 @@ export default defineExperiment({
 });
 ```
 
-必填的 `raw-privileged`字面量是风险授权。NiceEval不会把 raw模式描述成 rootless，也不会在失败时
+必填的 `raw-privileged` 字面量是风险授权。NiceEval 不会把 raw 模式描述成 rootless，也不会在失败时
 自动改用 managed profile。
 
 ### Managed rootless DinD
 
-共享宿主或不可信 Agent使用 managed模式。它在 inner daemon之外增加 profile attestation、单容器
-资源限制、跨进程容量准入、独占外层网络和 watchdog恢复：
+共享宿主或不可信 Agent 使用 managed 模式。它在 inner daemon 之外增加 profile attestation、单容器
+资源限制、跨进程容量准入、独占外层网络和 watchdog 恢复：
+
+NixOS 宿主先按照[在 NixOS 上配置 Managed DinD](/zh/tutorials/nixos-managed-dind)部署并验证 profile，
+再配置下面的 Experiment。
 
 ```ts title="experiments/dind-managed.ts"
 import { defineExperiment } from "niceeval";
@@ -226,7 +235,7 @@ export default defineExperiment({
 });
 ```
 
-profile缺失、拼错、attestation失败或容量不足时，NiceEval会在模型调用前失败，绝不降级成 raw
+profile 缺失、拼错、attestation 失败或容量不足时，NiceEval 会在模型调用前失败，绝不降级成 raw
 privileged。宿主部署完成后先检查 profile：
 
 ```bash
@@ -235,9 +244,9 @@ npx niceeval docker profile doctor default --smoke
 npx niceeval exp dind-managed
 ```
 
-`doctor --smoke`会在该 profile上启动一次 DinD容器，并实际运行内层
-`docker run --rm alpine:3.20 true`。它证明 profile支持 nested Docker，但不会检查项目自己的
-Dockerfile。项目镜像仍由默认 `docker info` readiness验证。
+`doctor --smoke` 会在该 profile 上启动一次 DinD 容器，并实际运行内层
+`docker run --rm alpine:3.20 true`。它证明 profile 支持 nested Docker，但不会检查项目自己的
+Dockerfile。项目镜像仍由默认 `docker info` readiness 验证。
 
 ### 为 DinD 设置运行并发
 
@@ -270,9 +279,9 @@ pnpm exec niceeval show @1ABC234DEF
 | Docker access compatibility timeout | 从 `niceeval show` 给出的有界 `dockerd.log` 尾部检查 daemon 启动、socket 与 storage driver |
 | 启动前提示 orphan Sandbox | 先用 `niceeval sandbox list --orphans` 只读核对，再显式运行 `niceeval sandbox prune` |
 
-## 在 Eval里验证 Docker任务
+## 在评估用例里验证 Docker 任务
 
-三种模式对 Eval暴露相同的 Docker CLI用法：
+三种模式对评估用例暴露相同的 Docker CLI 用法：
 
 ```ts title="evals/docker-compose.eval.ts"
 import { defineEval } from "niceeval";
@@ -291,5 +300,5 @@ export default defineEval({
 });
 ```
 
-socket模式的命令操作显式选择的外层 daemon。两种 DinD模式操作 Sandbox内的 inner daemon。
-`sandbox`也可以直接写在 `defineEval({ sandbox: ... })`里。多条 Eval共用配置时写在 Experiment上。
+Socket 模式的命令操作显式选择的外层 daemon。两种 DinD 模式操作 Sandbox 内的 inner daemon。
+`sandbox` 也可以直接写在 `defineEval({ sandbox: ... })` 里。多条评估用例共用配置时写在 Experiment 上。

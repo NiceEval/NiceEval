@@ -9,10 +9,7 @@ export const RecordPlatformOperationSchema = Schema.Literal(
   "sync-file",
   "sync-directory",
   "remove-path",
-  "acquire-maintenance-lock",
-  "release-maintenance-lock",
-  "acquire-writer-lock",
-  "release-writer-lock",
+  "release-record-lease",
   "inspect-git",
 );
 
@@ -133,13 +130,6 @@ export class RecordMaintenanceBusy extends Schema.TaggedError<RecordMaintenanceB
   requested: Schema.Literal("shared", "exclusive"),
 }) {}
 
-/** A second cooperative writer or clean operation attempted to own a root. */
-export class RecordWriterBusy extends Schema.TaggedError<RecordWriterBusy>(
-  "@niceeval/record/RecordWriterBusy",
-)("RecordWriterBusy", {
-  code: Schema.Literal("record-writer-busy"),
-}) {}
-
 /** Git inspection failed for a reason other than an ordinary no-restore-point state. */
 export class RecordGitCommandError extends Schema.TaggedError<RecordGitCommandError>(
   "@niceeval/record/RecordGitCommandError",
@@ -158,12 +148,6 @@ export type RecordFileSystemError =
   | RecordResourceLimitExceeded
   | RecordIoError
   | RecordPermissionError;
-
-export type RecordMaintenanceLockError =
-  | RecordFileSystemError
-  | RecordMaintenanceBusy;
-
-export type RecordWriterLockError = RecordFileSystemError | RecordWriterBusy;
 
 export type RecordGitError =
   | RecordRootInvalid

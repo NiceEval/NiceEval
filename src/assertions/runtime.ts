@@ -399,12 +399,21 @@ function captureMatchDiagnostic(
   value: MatchDiagnostic | undefined,
   depth = 0,
   seen = new WeakSet<object>(),
+  budget = { remainingNodes: assertionRuntimeLimits.diagnosticNodes },
 ): AssertionSnapshotObject | undefined {
   if (value === undefined) return undefined;
-  if (depth >= assertionRuntimeLimits.jsonDepth || seen.has(value)) {
+  if (budget.remainingNodes <= 0) {
     return Object.freeze({
       code: "diagnostic-truncated",
-      message: depth >= assertionRuntimeLimits.jsonDepth
+      message: "matcher diagnostic exceeded the persisted node limit",
+      path: Object.freeze([]),
+    });
+  }
+  budget.remainingNodes -= 1;
+  if (depth >= assertionRuntimeLimits.diagnosticDepth || seen.has(value)) {
+    return Object.freeze({
+      code: "diagnostic-truncated",
+      message: depth >= assertionRuntimeLimits.diagnosticDepth
         ? "matcher diagnostic exceeded the persisted depth limit"
         : "matcher diagnostic contained a cycle",
       path: Object.freeze([]),
@@ -429,21 +438,51 @@ function captureMatchDiagnostic(
         ? Object.freeze({ kind: "json-pointer", pointer: text(value.locator.pointer) })
         : Object.freeze({ kind: "tool-occurrence", id: text(value.locator.id) });
     }
+    if (value.truncation !== undefined) {
+      output.truncation = Object.freeze({ ...value.truncation });
+    }
     if (value.children !== undefined) {
       const children: AssertionSnapshotValue[] = [];
       for (const child of value.children.slice(0, assertionRuntimeLimits.jsonArrayItems)) {
+        if (budget.remainingNodes <= 0) break;
         const entry: globalThis.Record<string, AssertionSnapshotValue> = {
           index: child.index,
           state: child.state,
         };
         if (child.label !== undefined) entry.label = text(child.label);
-        const diagnostic = captureMatchDiagnostic(child.diagnostic, depth + 1, seen);
+        const diagnostic = captureMatchDiagnostic(child.diagnostic, depth + 1, seen, budget);
         if (diagnostic !== undefined) entry.diagnostic = diagnostic;
         children.push(Object.freeze(entry));
       }
       output.children = Object.freeze(children);
+      if (children.length < value.children.length && output.truncation === undefined) {
+        output.truncation = Object.freeze({
+          code: "diagnostic-truncated",
+          reason: "sampled",
+          captured: children.length,
+          knownTotal: value.children.length,
+        });
+      }
     }
-    return Object.freeze(output);
+    const captured = Object.freeze(output);
+    const serialized = JSON.stringify(captured);
+    const originalBytes = UTF8.encode(serialized).byteLength;
+    if (originalBytes <= assertionRuntimeLimits.diagnosticBytes) return captured;
+    return Object.freeze({
+      code: output.code,
+      message: output.message,
+      path: output.path,
+      ...(output.expected === undefined ? {} : { expected: output.expected }),
+      ...(output.received === undefined ? {} : { received: output.received }),
+      ...(output.reason === undefined ? {} : { reason: output.reason }),
+      ...(output.locator === undefined ? {} : { locator: output.locator }),
+      truncation: Object.freeze({
+        code: "diagnostic-truncated",
+        reason: "byte-limit",
+        limitBytes: assertionRuntimeLimits.diagnosticBytes,
+        originalBytes,
+      }),
+    });
   } finally {
     seen.delete(value);
   }
@@ -526,8 +565,8 @@ class BooleanHandle extends HandleBase {
     return this;
   }
 
-  gate(): this {
-    this.runtime.configureGate(this.entry);
+  gate(value?: number): this {
+    this.runtime.configureGate(this.entry, value);
     return this;
   }
 
@@ -589,14 +628,21 @@ export function postRunBooleanAssertionHandle<
       handle.group(title);
       return view;
     }),
-    optional: descriptor(() => {
-      handle.optional();
-      return view;
-    }),
-    gate: descriptor(() => {
-      handle.gate();
-      return view;
-    }),
+    ...(evaluationKind === "pass"
+      ? (() => {
+          const passHandle = handle as PassBooleanAssertionHandle<Refined>;
+          return {
+            optional: descriptor(() => {
+              passHandle.optional();
+              return view;
+            }),
+            gate: descriptor(() => {
+              passHandle.gate();
+              return view;
+            }),
+          };
+        })()
+      : {}),
     ...(evaluationKind === "score"
       ? (() => {
           if (!isScoreBooleanAssertionHandle(handle)) {
@@ -628,8 +674,8 @@ class MeasurementHandle extends HandleBase {
     return this;
   }
 
-  gate(): this {
-    this.runtime.configureGate(this.entry);
+  gate(value: number): this {
+    this.runtime.configureGate(this.entry, value);
     return this;
   }
 
@@ -851,16 +897,27 @@ class AssertionsRuntimeImplementation {
 
   configureOptional(entry: AssertionEntry): void {
     this.assertMutable(entry, "optional()");
+    if (this.evaluationKind === "score") {
+      throw new TypeError("optional() is not available in a Score Eval; every score contribution must be comparable");
+    }
     if (entry.optionalConfigured) throw new Error("An Assertion optional policy is already configured");
     entry.optionalConfigured = true;
     this.recordSourceOccurrence(entry, "optional");
   }
 
-  configureGate(entry: AssertionEntry): void {
+  configureGate(entry: AssertionEntry, threshold?: number): void {
     this.assertMutable(entry, "gate()");
+    if (this.evaluationKind === "score") {
+      throw new TypeError("gate() is not available in a Score Eval; normal scoring always passes");
+    }
     if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot be a gate");
-    if (entry.kind === "measurement" && entry.threshold === undefined) {
-      throw new TypeError("A measurement Assertion requires atLeast() before gate()");
+    if (entry.kind === "measurement") {
+      if (threshold === undefined) {
+        throw new TypeError("A measurement Assertion requires gate(threshold)");
+      }
+      assertUnitInterval(threshold, "gate() threshold");
+      if (entry.threshold !== undefined) throw new Error("An Assertion threshold is already configured");
+      entry.threshold = threshold;
     }
     if (entry.gateConfigured) throw new Error("An Assertion gate policy is already configured");
     entry.gateConfigured = true;
@@ -1388,8 +1445,7 @@ class AssertionsRuntimeImplementation {
 
   private isGate(entry: AssertionEntry): boolean {
     if (entry.gateConfigured) return true;
-    return this.evaluationKind === "pass"
-      && (entry.kind === "boolean" || (entry.kind === "measurement" && entry.threshold !== undefined));
+    return this.evaluationKind === "pass" && entry.kind === "boolean";
   }
 
   private gateForMatched(entry: AssertionEntry): "not-gate" | "satisfied" {

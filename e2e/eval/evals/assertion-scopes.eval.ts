@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { jsonMatch, toolMatch } from "niceeval/expect";
+import { commandMatch, jsonMatch, or, referencesAnyPath, toolMatch } from "niceeval/expect";
 export default defineEval({
   description: "同一套确定性工具证据在 turn、session 与 t scope 的边界一致",
   async test(t) {
@@ -44,6 +44,18 @@ export default defineEval({
           status: "completed",
         }),
       );
+      t.calledTool(or(
+        commandMatch("niceeval", { argsStart: ["init"] }),
+        toolMatch("shell", { input: referencesAnyPath(["node_modules/niceeval/INDEX.md"]) }),
+      ));
+      t.calledTool(or(
+        commandMatch("niceeval", { argsStart: ["exp"], excludes: ["--dry", "--help"] }),
+        toolMatch("shell", { input: referencesAnyPath(["niceeval.config.ts", "experiments"]) }),
+      ));
+      t.calledTool(or(
+        commandMatch("niceeval", { argsStart: ["show"] }),
+        toolMatch("shell", { input: referencesAnyPath([".niceeval", "run.json"]) }),
+      ));
     });
   },
 });

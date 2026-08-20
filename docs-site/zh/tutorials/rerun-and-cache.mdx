@@ -11,11 +11,11 @@ description: "查看每个 slot 会执行、自动采用还是由操作者接受
 | `origin` | Attempt 的实际执行 slot 就是当前 slot。 |
 | `reference` | 采用了其它 Run 中已发布的 Attempt。 |
 
-占位怎样形成（执行、自动沿用或操作者接受）由目标 Run 的 `niceeval.membership-provenance/v1` RecordAttachment 记录，不进入 Core。Attempt 始终保存实际执行它的 `origin`；采用不复制 Verdict、Usage 或其他业务值。
+每个位置怎样形成（执行、自动沿用或操作者接受）都会随目标 Run 保存。Attempt 始终保留实际执行它的 `origin`；采用不会复制 Verdict、用量或其他业务值。
 
 ## 先查看计划
 
-在运行前使用 `--dry`。它读取停稳 Record 中规划所需的 RecordAttachment，并逐个列出执行或采用的原因。
+在运行前使用 `--dry`。它根据已发布结果逐个列出执行或采用的原因。
 
 ```sh
 npx niceeval exp checkout --dry
@@ -25,7 +25,7 @@ npx niceeval exp checkout --dry
 
 ```text
 PLAN
-checkout  cart/add-item  ordinal 0  reuse @01J8ZK3M6P4T7V9X2C5N8QW0RY
+checkout  cart/add-item  ordinal 0  reuse @1K1P0VJAPVJ12
 checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 ```
 
@@ -41,9 +41,9 @@ checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 - 本次 `--rerun` 允许采用该 Verdict；
 - 本次没有通过 `--keep-sandbox` 要求真实执行。
 
-输入身份和配置身份都是带 domain 的不透明值。只有 domain 逐字相同才比较 value。Verdict 与 Eligibility 是规划所需的长期支持 Attachment。
+输入身份和配置身份都是带 domain 的不透明值。只有 domain 逐字相同才比较 value。Verdict 与资格信息为规划提供长期依据。
 
-自动采用时，资格、身份和理由写入目标 Run 的 `niceeval.membership-provenance/v1` RecordAttachment。Member 本身只保存引用，不复制这些说明，也不复制 Attempt 的业务值。
+自动采用时，资格、身份和理由会随目标 Run 保存。Member 只保留引用，不复制这些说明，也不复制 Attempt 的业务值。
 
 ## 控制重跑范围
 
@@ -62,13 +62,15 @@ npx niceeval exp checkout --rerun all
 
 ## 明确接受已有 Attempt
 
-当自动采用条件不满足，但你确认某个已有 Attempt 仍可用时，使用完整 locator：
+身份变化不一定表示历史结果已经失效，但 NiceEval 不会替操作者猜测。先从 dry run 或结果页取得完整 locator，核对候选 Attempt；确认它在新配置下仍然成立时，明确接受它：
 
 ```sh
-npx niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
+npx niceeval accept @1K1P0VJAPVJ12
 ```
 
-`accept` 先检查所有输入，再发布一个以 `reference` 采用该 Attempt 的新 Run。操作者理由、差异和资格写入该 Run 的 `niceeval.membership-provenance/v1` RecordAttachment。它不会修改源 Attempt，也不会复制源 Attempt 的 Attachment 值。
+`accept` 会发布一个新的采用 Run，不会修改原 Attempt。一次需要接受多个结果时，把全部 locator 放在同一条命令中；NiceEval 会先原子预检所有输入，避免只接受一半。
+
+候选 locator 的取得方式、审阅项目、原子预检和失败处理见[审阅并采用历史 Attempt](/zh/tutorials/accept-results)。
 
 ## 发布后不可修改
 

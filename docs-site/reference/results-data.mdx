@@ -1,76 +1,69 @@
 ---
 title: "Read Result Data in a Report"
 sidebarTitle: "Results Data API"
-description: "Declare result reads with AnalysisSample and NiceEval's official opaque projectors from niceeval/report."
+description: "Read closed Analysis results in a Page or composite component with a fixed Sample, aggregate(), and named domain projections."
 ---
 
-A Record is an opaque, portable directory under `.niceeval/record/` that can be copied or put in Git.
-Application code does not read its internal structure, write its files, or import a Record reader or writer.
-The internal hosts for `niceeval show` and `niceeval view` select Runs and run projections.
+Result viewing starts with published Runs. NiceEval first forms a `Sample`, then provides it only through `ctx.scope` while a Page or composite component executes. Application code cannot construct a Sample, open a result directory, or hold a reader.
 
-To inspect results in a terminal or browser, see [Viewing Results](/tutorials/viewing-results).
-To define pages and calculations, see [Report Components API](/reference/report-components).
+## A Sample retains the selected scope
 
-## Report callbacks receive `AnalysisSample`
+A Sample fixes the Runs, logical Slots, and denominator of this selection. Each position retains one of the states `included`, `not-recorded`, `core-invalid`, or `excluded`.
 
-Calculation, Page, and PageFamily callbacks receive a pure `AnalysisSample`.
-It holds every expected slot in the framework established by selection and its complete denominator, with no path, reader, file handle, or deferred I/O.
-`--run` uses each named Run's complete expected slots; `project-current` materializes only slots whose identities still match the current target:
+`--run` retains the full planned scope of the selected Run. `project-current` retains only the scope that still matches the current project identity. Neither selection shrinks its denominator because a Measure lacks input.
 
-| State | Meaning |
-| --- | --- |
-| `included` | A valid Member points to one exact Attempt. |
-| `not-recorded` | The expected slot has no Member. |
-| `core-invalid` | The Member, Attempt, or core reference cannot be read reliably. |
-| `excluded` | The host explicitly excluded this item from an existing Sample. |
+The unit of membership for `project-current` is a matching Run slot occurrence, not a deduplicated `(experiment, eval, ordinal)`. When the same position appears in multiple matching Runs, every occurrence contributes to `MetricValue.total`. Repeated runs or accepting entries one by one can therefore increase the denominator.
 
-Authors can import the needed Sample and identity types from `niceeval/report`.
-They can also apply pure `narrowAnalysisSample` to an existing Sample.
-Those values cannot restore Record I/O.
+A Sample can only be passed to the Report facade during `load()`, Page, or composite-component execution. Once the callback ends, the page retains only values that have already been closed and cannot read results again.
 
-## Declare data with an official projector
+## Get rows with `aggregate()`
 
-Report authors choose an opaque projector supplied by NiceEval, then declare how it aligns with a Sample:
+`niceeval/report` re-exports the Analysis facade required by Reports. `aggregate()` returns `ClosedRows` with stable identity, issues, refs, and complete `MetricValue` values.
 
-```ts
+```tsx
 import {
-  attemptSlotProjection,
-  selectedRunProjection,
-  evaluationsProjector,
-  verdictProjector,
+  aggregate,
+  defineComponent,
+  Table,
 } from "niceeval/report";
+import { experiment, passRate } from "./quality-measures.ts";
 
-const verdicts = attemptSlotProjection(verdictProjector);
-const evaluations = selectedRunProjection(evaluationsProjector);
+const ResultTable = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { experiment },
+    values: { passRate },
+  });
+
+  return <Table rows={rows} />;
+});
 ```
 
-`attemptSlotProjection` creates one entry for every slot.
-`attemptOriginRunProjection` also creates one entry per slot, but uses the Attempt's origin Run.
-`selectedRunProjection` creates one entry for every selected Run.
+`Table` uses rows, charts use points, and `Stat` uses a formatted complete metric. A display layer can sort, limit, or filter rows, but it cannot recalculate a value from the displayed array or reduce `MetricValue.total`.
 
-Authors cannot define raw Attachment families or projectors, receive payload or blob capabilities, or call the projection runtime directly.
-When a Report needs a new durable fact, NiceEval must supply a higher-level projector or a future Eval, Experiment, or Plugin capability.
+## Get closed domain data
 
-## Projection results remain exhaustive
+Attempt Evidence, Observability, File Changes, Sources, and Sandbox history each have a named Report facade. They respectively use `toAttemptEvidence()`, `toAttemptObservability()`, `toFileChanges()`, `toSources()`, and `toSandboxHistory()`. These facades accept only a fixed Sample and an optional Attempt locator, then return a closed `DomainView`.
 
-The first two slot projections preserve `excluded`, `not-recorded`, `core-invalid`, and `attachment-result`.
-An attachment result then expresses:
+A parameter Page uses `context.evidence(locator)` to obtain the closed Evidence for its detail target. The Host verifies that the locator belongs to the current Sample; it does not give the page a path, raw Record payload, or arbitrary query capability.
 
-| State | Meaning |
+## Understand `MetricValue`
+
+| Field | Meaning |
 | --- | --- |
-| `available` | The official projector formed a typed value. |
-| `unavailable` | The owner did not request this fact. |
-| `migration-required` | The current value requires `niceeval migrate`. |
-| `migration-unavailable` | Historical facts cannot form the current value without loss. |
-| `unsupported` | The current NiceEval does not recognize this fact version. |
-| `invalid` | Recorded data cannot be interpreted reliably. |
+| `value` | The current value; `0` is valid. |
+| `samples` | The number of members that actually contributed. |
+| `total` | The denominator determined in advance by the Measure. |
+| `state` and `issues` | Why a value is incomplete, unavailable, or failed. |
+| `refs` | Evidence locations that can be reviewed. |
 
-These are Report-visible data states. They do not change the Sample's Core state.
-I/O, permissions, reader Scope, and raw schema errors remain inside the host.
-Public authors receive only self-contained values and structured Report problems.
+`available`, `partial`, `empty`, `unsupported`, and `failed` are distinct states. Do not treat `null` as zero, or replace the total denominator with the count of remaining visible rows.
+
+For example, the `2 / 4 slot · partial` produced by `formatMetricValue()` means that only two of four selected occurrences supplied input for that Measure. Those counts describe coverage only; they are not an earned score, pass rate, or proportion of work completed. The Measure's own `value` is the reading.
+
+The default Overview does not append this count to every metric cell. It displays pass rate or earned score by evaluation kind, then uses a separate `Result coverage` area to show the number of available results when data is incomplete. The terminal renders that area in a titled border; the underlying `MetricValue` fields do not change.
 
 ## Related pages
 
-- [Architecture Overview](/explanation/overview): Learn why a Record is an opaque product asset.
-- [Viewing Results](/tutorials/viewing-results): Select results with `show` and `view`.
-- [Report Components API](/reference/report-components): Consume `ProjectedSample` and create a Report.
+- [Report API](/reference/report-components): Page, component, JSON, and whole-site build boundaries.
+- [Write a custom Report](/tutorials/custom-reports): The complete path from Measure to Report.
+- [Viewing results](/tutorials/viewing-results): Select a Sample through the CLI.

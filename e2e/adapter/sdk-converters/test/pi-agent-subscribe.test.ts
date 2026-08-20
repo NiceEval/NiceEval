@@ -1,18 +1,47 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#pi-agent-subscribe-deterministic
+// rerun: pnpm e2e --repo adapter/sdk-converters -- --run test/pi-agent-subscribe.test.ts
 
-import { test } from "vitest";
-import { proveSdkConverterOwner } from "./support.ts";
+import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
+import { expect, test } from "vitest";
+import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 
-test("createPiAgentEventStream 接收真实 Agent.subscribe 回调并公开成功与 terminal failure", async () => {
-  await proveSdkConverterOwner({
-    experimentId: "pi-agent-subscribe",
-    evalId: "pi-agent-subscribe",
-    caseName: "pi-agent-subscribe",
-    executionMarkers: [
-      "pi-agent-subscribe-success-marker",
-      "inventory_lookup",
-      "pi-agent-tool-result-marker",
-      "pi-agent-terminal-failure-marker",
-    ],
+const EXPECTED = [{
+  experimentId: "pi-agent-subscribe",
+  evalId: "pi-agent-subscribe",
+  verdict: "passed",
+  attempts: 1,
+  passed: 1,
+}] as const;
+
+test("createPiAgentEventStream 的 subscribe 回调经 Experiment 和公开 CLI 确定性读回", async () => {
+  await sdkConverterE2E.case("pi-agent-subscribe", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
+    const run = await niceeval.run(["exp", "pi-agent-subscribe", "--rerun", "all", "--json"]);
+    expect(run.exitCode, run.diagnostic()).toBe(0);
+    const receipt = run.expReceipt();
+    expect(receipt.completion, run.diagnostic()).toBe("completed");
+    expect(receipt.invocationId, run.diagnostic()).toBeTruthy();
+    expect(receipt.runIds, run.diagnostic()).toHaveLength(1);
+    const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
+    const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
+
+    const shown = await niceeval.run(["show", "--run", receipt.runIds[0]!, "--json"]);
+    expect(shown.exitCode, shown.diagnostic()).toBe(0);
+    expect(shown.json<{ selection: { kind: string; runIds: readonly string[] } }>().selection)
+      .toMatchObject({ kind: "explicit-runs", runIds: [receipt.runIds[0]!] });
+
+    const source = await niceeval.run(["show", event.locator, "--source"]);
+    expect(source.exitCode, source.diagnostic()).toBe(0);
+    expect(source.stdout).toContain("Recorded source");
+    expect(source.stdout).toContain("evals/pi-agent-subscribe.eval.ts");
+    expect(source.stdout).toContain("sourceItem");
+    expect(source.stdout).toContain("available");
+    expect(source.stdout).toContain("export default defineEval({");
+
+    const execution = await niceeval.run(["show", event.locator, "--execution", "--json"]);
+    expect(execution.exitCode, execution.diagnostic()).toBe(0);
+    expect(execution.stdout).toContain("pi-agent-subscribe-success-marker");
+    expect(execution.stdout).toContain("inventory_lookup");
+    expect(execution.stdout).toContain("pi-agent-tool-result-marker");
+    expect(execution.stdout).toContain("pi-agent-terminal-failure-marker");
   });
 });

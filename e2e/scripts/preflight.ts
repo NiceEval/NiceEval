@@ -177,13 +177,33 @@ async function checkDocker(
   env: NodeJS.ProcessEnv,
   control: E2EExecutionControl,
 ): Promise<{ check?: CapabilityCheck; cancelled: boolean }> {
+  const existing = dockerPreflights.get(control);
+  if (existing !== undefined) return existing;
+
+  const pending = checkDockerOnce(env, control);
+  dockerPreflights.set(control, pending);
+  return pending;
+}
+
+const dockerPreflights = new WeakMap<
+  E2EExecutionControl,
+  Promise<{ check?: CapabilityCheck; cancelled: boolean }>
+>();
+
+async function checkDockerOnce(
+  env: NodeJS.ProcessEnv,
+  control: E2EExecutionControl,
+): Promise<{ check?: CapabilityCheck; cancelled: boolean }> {
   const command = ["docker", "info", "--format", "{{.ServerVersion}}"];
   const result = await control.supervisor.run(command, {
     cwd: process.cwd(),
     env,
     output: "capture",
     stream: false,
-    timeoutMs: 10_000,
+    // A plan cell starts all independent Repos together. Probe the shared
+    // daemon once and allow cold hosted runners enough time to answer; every
+    // Docker Repo receives the same structured receipt from this exact probe.
+    timeoutMs: 30_000,
     abortSignal: control.abortSignal,
   });
   const capture = toCapture(result);

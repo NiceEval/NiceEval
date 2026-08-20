@@ -308,7 +308,7 @@ export async function runRepo(
     const setupInvocationId = randomUUID();
     invocationIds.push(setupInvocationId);
     const preflightEnv = withInvocationContext(
-      buildChildEnv(process.env, allSecretNames, repo.manifest.secrets),
+      buildChildEnv(process.env, allSecretNames, repo.manifest.secrets, repoId),
       setupInvocationId,
       copyDir,
     );
@@ -491,7 +491,7 @@ export async function runRepo(
                         const invocationId = randomUUID();
                         invocationIds.push(invocationId);
                         const childEnv = withInvocationContext(
-                          buildChildEnv(process.env, allSecretNames, repo.manifest.secrets),
+                          buildChildEnv(process.env, allSecretNames, repo.manifest.secrets, repoId),
                           invocationId,
                           copyDir,
                         );

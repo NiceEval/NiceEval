@@ -1,5 +1,6 @@
-import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, defineSandboxAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
+import { shell } from "niceeval/sandbox";
 
 import { weatherFixture } from "../src/tools.ts";
 
@@ -61,3 +62,16 @@ export function deterministicAgent(name: string): Agent {
     },
   });
 }
+
+/** The paired Sandbox prepare command fails before this adapter can run. */
+export const preContextErrorAgent = defineSandboxAgent({
+  name: "cli-pre-context-error",
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure: {
+    identity: { fixture: "cli-pre-context-error", revision: "1" },
+    probe: shell("true"),
+  },
+  async send() {
+    throw new Error("pre-context error fixture unexpectedly reached the agent");
+  },
+});

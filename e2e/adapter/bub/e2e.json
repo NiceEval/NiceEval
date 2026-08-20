@@ -1,14 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "adapter/bub",
+  "batch": "docker-5",
   "areas": ["adapter", "sandbox"],
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 40,
+  "timeoutMinutes": 6,
   "harness": { "testkit": true },
-  "secrets": ["BUB_API_KEY", "BUB_API_BASE"],
-  "requires": { "docker": true, "externalNetwork": true, "runtimes": ["python>=3.11"] },
+  "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
+  "requires": { "docker": true, "externalNetwork": true, "runtimes": ["node>=24", "python>=3.11"] },
   "paths": ["e2e/adapter/bub/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**", "junit.xml", "junit-legacy.xml", "logs/**"]
 }

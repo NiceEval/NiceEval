@@ -2,24 +2,24 @@ import { Either, Schema } from "effect";
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
 import type { RecordBlobRef } from "../record/attachment/index.ts";
 import {
-  CANONICAL_SOURCE_PATH_V1_BRAND,
-  type AssertionSourceFileFrameV1,
-  type AssertionSourceFrameV1,
-  type AssertionSourceOccurrenceV1,
-  type AssertionSourcePackageFrameV1,
-  type AssertionSourceSendOccurrenceV1,
-  type AssertionSourceSendSiteV1,
-  type AssertionSourceSiteV1,
-  type AssertionSourceSitesDocumentV1,
-  type AssertionSourceSitesEntryV1,
-  type AssertionSourceTraceV1,
-  type CanonicalSourcePathV1,
-  type SourceCoordinateV1,
-  type SourceFileItemRefV1,
-  type SourceFileV1,
-  type SourcePackageItemRefV1,
-  type SourcePackageV1,
-  type SourcesDocumentV1,
+  CANONICAL_SOURCE_PATH__BRAND,
+  type AssertionSourceFileFrame,
+  type AssertionSourceFrame,
+  type AssertionSourceOccurrence,
+  type AssertionSourcePackageFrame,
+  type AssertionSourceSendOccurrence,
+  type AssertionSourceSendSite,
+  type AssertionSourceSite,
+  type AssertionSourceSitesDocument,
+  type AssertionSourceSitesEntry,
+  type AssertionSourceTrace,
+  type CanonicalSourcePath,
+  type SourceCoordinate,
+  type SourceFileItemRef,
+  type SourceFile,
+  type SourcePackageItemRef,
+  type SourcePackage,
+  type SourcesDocument,
 } from "./model.ts";
 import {
   SHA256_DIGEST_BRAND,
@@ -65,7 +65,7 @@ function isNonNegativeFinite(value: number): boolean {
   return Number.isFinite(value) && value >= 0;
 }
 
-function isCanonicalSourcesDocument<BlobRef>(document: SourcesDocumentV1<BlobRef>): boolean {
+function isCanonicalSourcesDocument<BlobRef>(document: SourcesDocument<BlobRef>): boolean {
   let previousPackage: string | undefined;
   const packageIds = new Set<string>();
   for (const sourcePackage of document.packages) {
@@ -114,112 +114,112 @@ export const Sha256DigestSchema: Schema.Schema<Sha256Digest, string> = Schema.St
   Schema.brand(SHA256_DIGEST_BRAND),
 );
 
-export const CanonicalSourcePathV1Schema: Schema.Schema<CanonicalSourcePathV1, string> =
+export const CanonicalSourcePathSchema: Schema.Schema<CanonicalSourcePath, string> =
   Schema.String.pipe(
     Schema.filter(isCanonicalSourcePath, {
-      identifier: "CanonicalSourcePathV1",
+      identifier: "CanonicalSourcePath",
       description: "a non-empty package-relative path with canonical slash segments",
     }),
-    Schema.brand(CANONICAL_SOURCE_PATH_V1_BRAND),
+    Schema.brand(CANONICAL_SOURCE_PATH__BRAND),
   );
 
-const SourceDisplayLabelV1Schema = Schema.String.pipe(
+const SourceDisplayLabelSchema = Schema.String.pipe(
   Schema.filter(isSourceDisplayLabel, {
-    identifier: "SourceDisplayLabelV1",
+    identifier: "SourceDisplayLabel",
     description: "display text without control characters and at most 256 Unicode scalar values",
   }),
 );
 
-const PositiveSafeIntegerV1Schema = Schema.JsonNumber.pipe(
+const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
   Schema.filter(isPositiveSafeInteger, {
     identifier: "PositiveSafeInteger",
     description: "a positive JSON-safe integer",
   }),
 );
 
-const NonNegativeFiniteV1Schema = Schema.JsonNumber.pipe(
+const NonNegativeFiniteSchema = Schema.JsonNumber.pipe(
   Schema.filter(isNonNegativeFinite, {
     identifier: "NonNegativeFinite",
     description: "a finite non-negative JSON number",
   }),
 );
 
-export const SourcePackageItemRefV1Schema = Schema.Struct({
+export const SourcePackageItemRefSchema = Schema.Struct({
   kind: Schema.Literal("package"),
   packageItemId: SourcePackageItemIdSchema,
 });
 
-export const SourceFileItemRefV1Schema = Schema.Struct({
+export const SourceFileItemRefSchema = Schema.Struct({
   kind: Schema.Literal("file"),
   packageItemId: SourcePackageItemIdSchema,
   fileItemId: SourceFileItemIdSchema,
   sha256: Sha256DigestSchema,
 });
 
-export const SourceCoordinateV1Schema: Schema.Schema<SourceCoordinateV1> = Schema.Struct({
-  line: PositiveSafeIntegerV1Schema,
-  column: PositiveSafeIntegerV1Schema,
+export const SourceCoordinateSchema: Schema.Schema<SourceCoordinate> = Schema.Struct({
+  line: PositiveSafeIntegerSchema,
+  column: PositiveSafeIntegerSchema,
 });
 
-export const AssertionSourcePackageFrameV1Schema = Schema.Struct({
-  target: SourcePackageItemRefV1Schema,
+export const AssertionSourcePackageFrameSchema = Schema.Struct({
+  target: SourcePackageItemRefSchema,
 });
 
-export const AssertionSourceFileFrameV1Schema = Schema.Struct({
-  target: SourceFileItemRefV1Schema,
-  coordinate: SourceCoordinateV1Schema,
+export const AssertionSourceFileFrameSchema = Schema.Struct({
+  target: SourceFileItemRefSchema,
+  coordinate: SourceCoordinateSchema,
 });
 
-export const AssertionSourceFrameV1Schema = Schema.Union(
-  AssertionSourcePackageFrameV1Schema,
-  AssertionSourceFileFrameV1Schema,
+export const AssertionSourceFrameSchema = Schema.Union(
+  AssertionSourcePackageFrameSchema,
+  AssertionSourceFileFrameSchema,
 );
 
-export const AssertionSourceTraceV1Schema = Schema.Struct({
+export const AssertionSourceTraceSchema = Schema.Struct({
   frames: Schema.Union(
-    Schema.Tuple(AssertionSourceFileFrameV1Schema),
+    Schema.Tuple(AssertionSourceFileFrameSchema),
     Schema.Tuple(
-      [AssertionSourceFileFrameV1Schema],
-      AssertionSourceFrameV1Schema,
-      AssertionSourceFileFrameV1Schema,
+      [AssertionSourceFileFrameSchema],
+      AssertionSourceFrameSchema,
+      AssertionSourceFileFrameSchema,
     ),
   ),
 });
 
-export const AssertionSourceOccurrenceV1Schema: Schema.Schema<AssertionSourceOccurrenceV1> =
+export const AssertionSourceOccurrenceSchema: Schema.Schema<AssertionSourceOccurrence> =
   Schema.Union(
     Schema.Struct({
-      sourceOrder: PositiveSafeIntegerV1Schema,
+      sourceOrder: PositiveSafeIntegerSchema,
       role: Schema.Literal("declaration", "threshold", "score", "gate", "optional"),
     }),
     Schema.Struct({
-      sourceOrder: PositiveSafeIntegerV1Schema,
+      sourceOrder: PositiveSafeIntegerSchema,
       role: Schema.Literal("stop"),
       outcome: Schema.Literal("continued", "stopped", "interrupted"),
     }),
   );
 
-export const AssertionSourceSiteV1Schema = Schema.Struct({
-  trace: AssertionSourceTraceV1Schema,
-  occurrences: Schema.NonEmptyArray(AssertionSourceOccurrenceV1Schema),
+export const AssertionSourceSiteSchema = Schema.Struct({
+  trace: AssertionSourceTraceSchema,
+  occurrences: Schema.NonEmptyArray(AssertionSourceOccurrenceSchema),
 });
 
-export const AssertionSourceSitesEntryV1Schema = Schema.Struct({
+export const AssertionSourceSitesEntrySchema = Schema.Struct({
   entryId: AssertionEntryIdSchema,
-  sites: Schema.NonEmptyArray(AssertionSourceSiteV1Schema),
+  sites: Schema.NonEmptyArray(AssertionSourceSiteSchema),
 });
 
-export const AssertionSourceSendOccurrenceV1Schema: Schema.Schema<AssertionSourceSendOccurrenceV1> =
+export const AssertionSourceSendOccurrenceSchema: Schema.Schema<AssertionSourceSendOccurrence> =
   Schema.Struct({
-    sourceOrder: PositiveSafeIntegerV1Schema,
-    label: SourceDisplayLabelV1Schema,
+    sourceOrder: PositiveSafeIntegerSchema,
+    label: SourceDisplayLabelSchema,
     status: Schema.Literal("completed", "failed", "interrupted"),
-    durationMs: NonNegativeFiniteV1Schema,
+    durationMs: NonNegativeFiniteSchema,
   });
 
-export const AssertionSourceSendSiteV1Schema = Schema.Struct({
-  trace: AssertionSourceTraceV1Schema,
-  occurrences: Schema.NonEmptyArray(AssertionSourceSendOccurrenceV1Schema),
+export const AssertionSourceSendSiteSchema = Schema.Struct({
+  trace: AssertionSourceTraceSchema,
+  occurrences: Schema.NonEmptyArray(AssertionSourceSendOccurrenceSchema),
 });
 
 /**
@@ -227,9 +227,9 @@ export const AssertionSourceSendSiteV1Schema = Schema.Struct({
  * orders. They are readable historical data whose local ambiguity belongs to
  * the pure assembler, rather than an Attachment-wide invalid state.
  */
-export const AssertionSourceSitesDocumentV1Schema = Schema.Struct({
-  entries: Schema.Array(AssertionSourceSitesEntryV1Schema),
-  sendSites: Schema.Array(AssertionSourceSendSiteV1Schema),
+export const AssertionSourceSitesDocumentSchema = Schema.Struct({
+  entries: Schema.Array(AssertionSourceSitesEntrySchema),
+  sendSites: Schema.Array(AssertionSourceSendSiteSchema),
 });
 
 /** Record's opaque ref position is the only non-JSON value seen before storage encodes it. */
@@ -238,18 +238,18 @@ const RecordBlobRefPositionSchema: Schema.Schema<RecordBlobRef, RecordBlobRef, n
     typeof value === "object" && value !== null,
   );
 
-export function createSourcesRecordSchemasV1<BlobRef, BlobRefEncoded>(
+export function createSourcesRecordSchemas<BlobRef, BlobRefEncoded>(
   blobRefSchema: Schema.Schema<BlobRef, BlobRefEncoded>,
 ) {
   const file = Schema.Struct({
     fileItemId: SourceFileItemIdSchema,
-    path: CanonicalSourcePathV1Schema,
+    path: CanonicalSourcePathSchema,
     sha256: Sha256DigestSchema,
     blob: blobRefSchema,
   });
   const sourcePackage = Schema.Struct({
     packageItemId: SourcePackageItemIdSchema,
-    label: SourceDisplayLabelV1Schema,
+    label: SourceDisplayLabelSchema,
     files: Schema.Array(file),
   });
   const document = Schema.Struct({
@@ -264,39 +264,39 @@ export function createSourcesRecordSchemasV1<BlobRef, BlobRefEncoded>(
   return Object.freeze({ file, sourcePackage, document });
 }
 
-export const sourcesRecordSchemasV1 = createSourcesRecordSchemasV1(
+export const sourcesRecordSchemas = createSourcesRecordSchemas(
   RecordBlobRefPositionSchema,
 );
 
-export const SourcesDocumentV1Schema = sourcesRecordSchemasV1.document;
+export const SourcesDocumentSchema = sourcesRecordSchemas.document;
 
-export type SourcesCodecErrorV1 = { readonly code: "sources-document-invalid" };
-export type AssertionSourceSitesCodecErrorV1 = {
+export type SourcesCodecError = { readonly code: "sources-document-invalid" };
+export type AssertionSourceSitesCodecError = {
   readonly code: "assertion-source-sites-document-invalid";
 };
 
-const sourcesDocumentInvalid: SourcesCodecErrorV1 = Object.freeze({
+const sourcesDocumentInvalid: SourcesCodecError = Object.freeze({
   code: "sources-document-invalid",
 });
-const assertionSourceSitesDocumentInvalid: AssertionSourceSitesCodecErrorV1 = Object.freeze({
+const assertionSourceSitesDocumentInvalid: AssertionSourceSitesCodecError = Object.freeze({
   code: "assertion-source-sites-document-invalid",
 });
 
-export function decodeSourcesDocumentV1<BlobRef, Encoded>(
-  schema: Schema.Schema<SourcesDocumentV1<BlobRef>, Encoded>,
+export function decodeSourcesDocument<BlobRef, Encoded>(
+  schema: Schema.Schema<SourcesDocument<BlobRef>, Encoded>,
   input: unknown,
-): Either.Either<SourcesDocumentV1<BlobRef>, SourcesCodecErrorV1> {
+): Either.Either<SourcesDocument<BlobRef>, SourcesCodecError> {
   const decoded = Schema.decodeUnknownEither(schema, SourcesExactParseOptions)(input);
   return Either.isLeft(decoded)
     ? Either.left(sourcesDocumentInvalid)
     : Either.right(decoded.right);
 }
 
-export function decodeAssertionSourceSitesDocumentV1(
+export function decodeAssertionSourceSitesDocument(
   input: unknown,
-): Either.Either<AssertionSourceSitesDocumentV1, AssertionSourceSitesCodecErrorV1> {
+): Either.Either<AssertionSourceSitesDocument, AssertionSourceSitesCodecError> {
   const decoded = Schema.decodeUnknownEither(
-    AssertionSourceSitesDocumentV1Schema,
+    AssertionSourceSitesDocumentSchema,
     SourcesExactParseOptions,
   )(input);
   return Either.isLeft(decoded)
@@ -305,12 +305,12 @@ export function decodeAssertionSourceSitesDocumentV1(
 }
 
 /** The writer canonicalizes CRLF and CR, but any persisted source text must already be LF-only. */
-export function canonicalizeSourceTextV1(text: string): string {
+export function canonicalizeSourceText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 /** JavaScript strings with unmatched surrogate code units cannot represent strict UTF-8 source text. */
-export function isStrictUnicodeTextV1(value: string): boolean {
+export function isStrictUnicodeText(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
@@ -324,6 +324,6 @@ export function isStrictUnicodeTextV1(value: string): boolean {
   return true;
 }
 
-export function utf8BytesOfSourceTextV1(text: string): Uint8Array {
+export function utf8BytesOfSourceText(text: string): Uint8Array {
   return UTF8.encode(text);
 }

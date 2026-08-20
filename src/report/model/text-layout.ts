@@ -188,3 +188,11 @@ export function joinColumns(blocks: string[], columnWidths: number[], separator 
   }
   return out.join("\n");
 }
+
+/** v0.12 public aliases sharing the exact same width implementation. */
+export const padEnd = padDisplay;
+export const padStart = padStartDisplay;
+export const wrapText = wrapDisplay;
+export const indent = indentBlock;
+export const bar = textBar;
+export const columns = joinColumns;

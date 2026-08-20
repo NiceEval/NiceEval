@@ -7,4 +7,8 @@ export const assertionRuntimeLimits = Object.freeze({
   jsonObjectKeys: 64,
   jsonArrayItems: 256,
   stringBytes: 8 * 1_024,
+  diagnosticDepth: 2,
+  diagnosticNodes: 64,
+  diagnosticBytes: 64 * 1_024,
+  collectionDiagnosticCandidates: 8,
 });

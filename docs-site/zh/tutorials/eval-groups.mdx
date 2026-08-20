@@ -12,7 +12,7 @@ Sandbox，也不要为了复用而把整批任务都降成串行。`defineEvalGr
 | 你会得到什么 | 运行行为 |
 | --- | --- |
 | 公共准备少付几次 | Sandbox 创建和组级 `setup()` 每个组内实例只执行一次 |
-| 组内稳定串行 | Runner 按规范化 Eval ID 排序，同组同时只派发一条 Attempt |
+| 组内稳定串行 | Runner 按规范化评估用例 ID 排序，同组同时只派发一条 Attempt |
 | 组间保留吞吐 | 不同组和未分组评估用例可以并行 |
 | 结果仍能单独比较 | 每条 Attempt 继续拥有自己的断言、判定、用量和文件改动 |
 
@@ -69,9 +69,9 @@ export default defineEvalGroup({
 `tag` 或 `selector`。NiceEval 也不会自动收集同目录文件；成员增删和顺序变化都会明确出现在
 `eval-group.ts` 的 diff 中。
 
-`evals` 数组只声明成员，不声明业务顺序。Runner 始终按规范化 Eval ID 稳定排序；只调整
+`evals` 数组只声明成员，不声明业务顺序。Runner 始终按规范化评估用例 ID 稳定排序；只调整
 数组位置不会改变调度行为或组指纹。需要“先构建、后查询”这类结果依赖时，把两个步骤放进
-同一条 Eval。Eval Group 的业务排序 API 还没有实现。
+同一条评估用例。评估组的业务排序 API 还没有实现。
 
 `onUnavailable` 是必填策略。`"stop-group"` 在物理 Sandbox 无法创建、重置或准备时停止
 该组后续派发；`"replace-sandbox"` 会先退休当前实例，并让下一条 slot 尝试建立替代实例。
@@ -123,14 +123,14 @@ codex  workflow/01-index [group workflow]   new
 codex  workflow/02-query [group workflow]   new
 ```
 
-确认两条选中 Eval 都显示相同的组 ID 后再运行：
+确认两条选中评估用例都显示相同的组 ID 后再运行：
 
 ```bash
 npx niceeval exp codex
 ```
 
-当前调度器按规范化 Eval ID 排列成员；`attempts` 大于 1 时，同一成员的各次 Attempt 连续
-进入组内泳道，再进入下一个成员。这只是稳定的调度规则，不是跨 Eval 的数据依赖契约。
+当前调度器按规范化评估用例 ID 排列成员；`attempts` 大于 1 时，同一成员的各次 Attempt 连续
+进入组内泳道，再进入下一个成员。这只是稳定的调度规则，不是跨评估用例的数据依赖契约。
 首过即停或结果沿用没有实际派发的槽位会直接跳过。
 
 ## 把公共准备放到评估组

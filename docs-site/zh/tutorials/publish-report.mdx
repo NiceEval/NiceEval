@@ -1,66 +1,66 @@
 ---
 title: "发布静态报告"
 sidebarTitle: "发布静态报告"
-description: "用 view --out 导出一个可离线打开、与源 Record 脱离的自包含报告站。"
+description: "用 view --out 导出可离线打开、与源 Record 脱离且包含全部页面的自包含报告站。"
 ---
 
-`niceeval view --out <目录>` 或显式 `niceeval view --run <id> --out <目录>`
-选择已发布的 Run。内部 host 形成纯 `AnalysisSample`，按 Report 声明投影所需事实，并导出
-一次完成的 `ReportExecution`。这是分享结果的导出路径。
+`niceeval view --out <目录>` 从已发布结果形成固定 Sample，再构建完整报告站。它不是把当前浏览器页面保存为文件：`pages` 中显式声明的所有普通 Page、参数 Page 实例、资源和下载都必须先关闭并通过校验；Host 不补建详情页。
 
 ```sh
-npx niceeval view --experiment checkout \
+pnpm exec niceeval view --experiment checkout \
   --out ./report-site \
   --no-open
 ```
 
-也可以导出明确 Run：
+需要固定到本次运行时，从 receipt 的 `runIds` 取得 Run ID：
 
 ```sh
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+pnpm exec niceeval view --run <run-id> \
   --out ./report-site \
   --no-open
 ```
 
-## 导出前选择范围
+## 导出前会构建什么
 
-不带 locator 或 `--run` 的命令以当前项目身份选择全部匹配结果；`--run` 选择具名历史 Run。两者都会先形成 Sample。Sample 保留选中 slot 的分母，以及 `included`、`not-recorded`、`core-invalid` 和 `excluded` 状态。
+完整构建会枚举每个普通 Page 和每个参数 Page 实例。Host 校验 route、链接、下载、作者 asset、Source、Diff、`_niceeval/data/projections.json` 与资源预算，然后形成一个关闭站点版本。
 
-Report 只读取它声明的 `RecordProjection`。未请求的坏 Attachment 不影响导出。请求到的 recorded-data problem 会写进内建 problems surface，而不是悄悄从分母中删除。
+这个站点版本同时是本机 view 与静态导出的来源。同一路由的 HTTP body 和导出目录中的页面 body 逐字节相同。`--out` 不接受 `--page`，因为静态目录始终包含整个站点。
 
-## 什么会阻止导出
+Analysis 的 `partial`、`empty`、`unsupported` 与 `failed` 是可显示的数据状态，会带着 samples、total、issues 和 refs 一起写入页面。Page callback 失败、参数实例不合法、路径冲突、资源冲突或预算超限会阻止导出；它们不会产生一份缺页的目录。
 
-`unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 与 partial collection 都是 recorded-data problem。它们可以被导出，但页面必须显示问题。
+## 导出目录的边界
 
-projector 或作者 callback defect、非法 semantic document、route conflict 等是 execution problem。只要存在 execution problem，静态导出就停止，不发布半份成功报告。
+成功目录包含：
 
-## 导出目录包含什么
+- 全部 HTML 页面和参数化详情页；
+- Report CSS、theme token、reload client 与作者声明的关闭 asset；
+- 已关闭的 Source / Diff asset、下载文件和 `_niceeval/data/projections.json`；
+- 站点阅读所需的导航、正文、完整度和问题内容。
 
-成功的目录包括：
+目录不需要源 Record、NiceEval 安装或网络。`_niceeval/data/projections.json` 的 bytes 与页面、资源一起进入 revision identity。它携带和 view 相同的 reload client；静态目录不存在 view 端点时，client 安静停用，不显示错误，也不发起新的 Analysis 读取。
 
-- 全部 fixed 和 PageFamily 展开的页面；
-- 页面所需的 host-data；
-- 已经生成的下载项；
-- manifest 与 exporter 内建 runtime；
-- 最后写入的 `complete` marker。
+在断网浏览器中关闭 JavaScript 后打开首页和至少一个参数页。正文、导航、详情、完整度、问题和下载仍应可读。
 
-浏览器只读取导出目录。它不访问网络、不读取源 Record，也不需要之后安装 NiceEval。把目录交给同事或静态托管服务前，可以在断网浏览器中打开它确认页面与下载项可用。
+## 目标目录保护
 
-目标目录必须不存在。命令不会替换或删除已有目录；需要更新时请导出到一个新目录，再让部署平台切换版本。
+`--out` 的目录必须不存在。命令不会替换、删除或合并已有目录；更新站点时导出到新目录，再让托管服务切换版本。
+
+```sh
+# 成功时写入全新目录
+pnpm exec niceeval view --run <run-id> --out ./report-site-2026-08-15
+```
 
 ## 在 CI 中生成
 
-先运行评估，再在同一任务中导出：
-
 ```sh
 npx niceeval exp ci --json
-npx niceeval view --experiment ci --out ./report-site --no-open
+pnpm exec niceeval view --experiment ci --out ./report-site --no-open
 ```
 
-第一条命令的最后一条 JSON 是 receipt。需要固定到本次运行时，读取 receipt 的 `runIds`，并改用 `view --run <runId>`。
+若 CI 必须发布刚完成的那次运行，读取第一条命令最后一行 receipt 的 `runIds`，并使用 `view --run <run-id>`。不要让托管平台读取源 Record；它只应部署生成目录。
 
-## 发布目录
+## 下一步
 
-将 `./report-site` 作为静态站点目录交给托管平台。不要把平台构建步骤指向源 Record；平台只需要部署已经生成的目录。
-
-部署方式见[部署报告站](/zh/tutorials/deploy-report-site)。
+- [部署报告站](/zh/tutorials/deploy-report-site)：交给静态托管服务。
+- [查看结果](/zh/tutorials/viewing-results)：理解单目标 `show` 与全站 `view` 的边界。
+- [报告 API](/zh/reference/report-components)：定义参数 Page、资源与无 JavaScript 阅读内容。

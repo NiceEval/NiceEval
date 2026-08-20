@@ -47,10 +47,9 @@ describe("send retry virtual time", () => {
       const fiber = yield* sendWithTurnRetry(send, {
         budget,
         classifier: () => ({ retryable: true, reason: "fixture" }),
-        random: () => 1,
         signal: new AbortController().signal,
         slot,
-      }).pipe(Effect.fork);
+      }).pipe(Effect.withRandomFixed([1]), Effect.fork);
 
       yield* awaitScheduledSleep(5_000);
       expect(Array.from(yield* TestClock.sleeps())).toEqual([5_000]);
@@ -69,12 +68,6 @@ describe("send retry virtual time", () => {
 
   it("lets AbortSignal win the backoff race and cancels the sleeping side", async () => {
     const controller = new AbortController();
-    let notifySleepStarted: (() => void) | undefined;
-    const sleepStarted = new Promise<void>((resolve) => {
-      notifySleepStarted = resolve;
-    });
-    let sleepAborts = 0;
-    let sleepSignal: AbortSignal | undefined;
     let calls = 0;
 
     await runTest(Effect.gen(function*() {
@@ -86,26 +79,16 @@ describe("send retry virtual time", () => {
         {
           budget: { remaining: ATTEMPT_MAX_RETRIES },
           classifier: () => ({ retryable: true, reason: "fixture" }),
-          random: () => 1,
           signal: controller.signal,
-          sleep: (_delayMs, signal) => new Promise<void>((resolve) => {
-            sleepSignal = signal;
-            signal.addEventListener("abort", () => {
-              sleepAborts += 1;
-              resolve();
-            }, { once: true });
-            notifySleepStarted?.();
-          }),
         },
-      ).pipe(Effect.fork);
+      ).pipe(Effect.withRandomFixed([1]), Effect.fork);
 
-      yield* Effect.promise(() => sleepStarted);
+      yield* awaitScheduledSleep(5_000);
       controller.abort();
 
       const exit = yield* Fiber.await(fiber);
       expect(Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)).toBe(true);
-      expect(sleepSignal?.aborted).toBe(true);
-      expect(sleepAborts).toBe(1);
+      yield* TestClock.adjust(5_000);
       expect(calls).toBe(1);
     }));
   });
@@ -123,10 +106,9 @@ describe("send retry virtual time", () => {
         {
           budget,
           classifier: () => ({ retryable: true, reason: "fixture" }),
-          random: () => 1,
           signal: new AbortController().signal,
         },
-      ).pipe(Effect.fork);
+      ).pipe(Effect.withRandomFixed([1]), Effect.fork);
 
       yield* awaitScheduledSleep(5_000);
       expect(Array.from(yield* TestClock.sleeps())).toEqual([5_000]);

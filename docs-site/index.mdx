@@ -1,123 +1,95 @@
 ---
 title: "NiceEval"
 sidebarTitle: "Home"
-description: "NiceEval is a framework-agnostic, agent-native eval framework and harness, giving you a complete closed loop for building evals for your AI applications."
+description: "NiceEval is a framework-agnostic, agent-native eval framework and Harness that gives you a complete loop for building evals for your AI applications."
 ---
+
+import { SandboxMode } from '/snippets/diagram-sandbox-mode.jsx';
+import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 
 <div align="center">
 
 # NiceEval
 
-**An agent-native eval framework and harness built for your AI applications**
+**An agent-native eval framework and Harness for your AI applications**
 
 </div>
 
-[NiceEval](https://niceeval.com/) is an agent-native eval framework and harness inspired by [eve](https://eve.dev): `defineEval` is where you write what to test, and the harness connects to the subject under test, runs it, scores it, and produces reports — together they form a complete loop from writing evals to reading results and improving the agent. It aims for strong developer experience first: a project can usually integrate it in about 10 minutes, eval files stay intuitive, and results stay easy to read.
+[NiceEval](https://niceeval.com/) is an agent-native eval framework and Harness inspired by [eve](https://eve.dev): `defineEval` makes clear what to test, while the Harness connects to the subject under test, runs it, scores it, and generates reports. Together, they form a complete loop from writing evals through inspecting results to improving your Agent. NiceEval puts developer experience first: a project can usually integrate it in about 10 minutes, eval files stay intuitive, and results stay easy to read.
 
-It is also framework-agnostic and broad enough to evaluate coding-agent plugins, Hooks, and Skills built for Claude Code / Codex, as well as your own AI agent application. Whether your app is built on AI SDK, LangGraph, Pi, or a custom agent loop, you can connect it through an Adapter.
+It is also framework-agnostic and general-purpose. You can evaluate coding-agent plugins, Hooks, and Skills for Claude Code / Codex, or evaluate your own AI Agent application. Whether your application uses AI SDK, LangGraph, Pi, or a custom Agent loop, you can connect it through an Adapter.
 
-After a run finishes, [NiceEval](https://niceeval.com/) generates readable reports and structured artifacts so you can inspect agent behavior, debug failures, and keep improving pass rate, cost, and latency.
+After an eval run finishes, [NiceEval](https://niceeval.com/) generates readable reports and structured Artifacts. You can inspect Agent behavior, debug failures, and keep improving pass rate, cost, and latency.
 
 <CardGroup cols={3}>
   <Card title="Agent Framework Integration" icon="code-branch" href="/examples">
-    Runnable integration projects for AI SDK, Claude SDK, Codex SDK, pi-agent-core, and LangGraph.
+    Compare runnable integration projects for AI SDK, Claude SDK, Codex SDK, pi-agent-core, and LangGraph.
   </Card>
   <Card title="Coding Agent Extensions" icon="wand-magic-sparkles" href="/examples/coding-agent-extensions">
-    Measure the real payoff of Skills, prompts, and plugin benchmarks using a real workspace and controlled experiments.
+    Measure the real benefit of Skills, prompts, and Plugin Benchmarks with a real Workspace and controlled experiments.
   </Card>
   <Card title="Write Your Own Adapter" icon="globe" href="/examples/ai-agent-application">
-    See a complete AI agent project covering tools, images, multi-turn conversations, model comparison, and OTel.
+    Explore a complete AI Agent project that covers tools, images, multi-turn conversations, model comparison, and OTel.
   </Card>
 </CardGroup>
 
 ## Architecture
 
-[NiceEval](https://niceeval.com/) supports two integration modes, depending on whether the subject under test needs an isolated workspace.
+[NiceEval](https://niceeval.com/) supports two integration modes, depending on whether the subject under test needs an isolated Workspace.
 
 ### Mode 1: Sandbox
 
-Run coding agents such as Codex and Claude Code that need a Sandbox:
+Run coding Agents such as Codex and Claude Code that need a Sandbox:
 
-```text
-   evals/*.eval.ts
-        │
-        ▼
-   ┌────────────┐
-   │  niceeval  │
-   └────────────┘
-        │
-        │ Agent adapter (official)
-        ▼
-   ┌───────────────────────────────┐
-   │        Docker Sandbox         │
-   │    ┌───────────────────────┐  │
-   │    │ Codex / Claude Code / │  │
-   │    │   apps that need an   │  │
-   │    │  isolated workspace   │  │
-   │    └───────────────────────┘  │
-   └───────────────────────────────┘
-```
+<SandboxMode />
 
 ### Mode 2: Direct
 
-Connect directly to your own AI agent:
+Connect directly to your own AI Agent:
 
-```text
-   evals/*.eval.ts
-        │
-        ▼
-   ┌────────────┐
-   │  niceeval  │
-   └────────────┘
-        │
-        │ Agent adapter (official / custom)
-        ▼
-   ┌────────────────────────────┐
-   │   Your own AI agent app    │
-   │ (AI SDK · LangGraph · Pi · │
-   │  custom agent loop, etc.)  │
-   └────────────────────────────┘
-```
+<DirectMode />
 
-- **[NiceEval](https://niceeval.com/) core** discovers evals, schedules runs, scores them, and generates reports and artifacts.
-- **Agent adapters** are the open boundary: you decide how to call the subject under test and how to map its output into the standard event stream.
-- **Sandbox** handles file-system isolation: coding agents that need a real workspace use Docker or a cloud Sandbox; your own web agent can connect directly, with no Docker needed.
+- **[NiceEval](https://niceeval.com/)** discovers evals, schedules runs, scores them, and generates reports and Artifacts.
+- **Agent Adapters** are the open boundary: you decide how to call the subject under test and how to map its output into the standard event stream.
+- **Sandbox** provides file-system isolation: coding Agents that need a real Workspace use Docker or a cloud Sandbox. Your own web Agent can connect directly and does not need Docker.
 
-## Core Concepts
+## Core concepts at a glance
 
 | Concept | In one sentence |
 |---|---|
-| [Eval](/explanation/evals) | A test case: written in `evals/*.eval.ts`, describing what to test. |
-| [Experiment](/explanation/experiment) | A check-in-able run configuration: decides which Adapter, model, and flags to use. |
-| [Adapter](/explanation/adapter) | The connection layer to the subject under test: implements a `send` and translates the response into the standard event stream. |
-| [Sandbox](/tutorials/sandbox-providers) | Needed only for coding agents that require an isolated workspace; a direct web agent doesn't need one. |
-| [Tier](/explanation/tier) | Three investment levels for Adapter integration: Tier 1 only connects `send`, Tier 2 adds OTel for a call waterfall, Tier 3 makes invasive changes for feature A/B tests. |
+| [Eval](/explanation/evals) | A test case: written in `evals/*.eval.ts`, it describes what to test. |
+| [Experiment](/explanation/experiment) | A checked-in run configuration: it chooses an Adapter, model, and flags. |
+| [Adapter](/explanation/adapter) | The layer that connects to the subject under test: implement `send` and translate its response into the standard event stream. |
+| [Sandbox](/tutorials/sandbox-providers) | Needed only for coding Agents that need an isolated Workspace. A direct web Agent does not need one. |
+| [Tier](/explanation/tier) | Three investment levels for Adapter integration: Tier 1 connects only `send`, Tier 2 adds OTel for a call waterfall, and Tier 3 makes application changes for feature A/B tests. |
 
-See [Architecture Overview](/explanation/overview) for the full terminology map.
+For the complete terminology map, see [Architecture Overview](/explanation/overview).
 
-## Examples
+## Example
 
-Running one eval needs two files: the eval itself (what to test) and an experiment (which agent to run). The CLI does not accept a bare eval id — in `niceeval exp <experiment> <eval-prefix>`, the experiment is what decides which subject under test gets connected. Below is a real direct-connect web-agent scenario (the full project is at `examples/zh/ai-sdk/` in the repository) that verifies the agent calls a tool for a live weather question and answers from the tool result instead of making one up:
+One eval needs two files: the eval itself (what to test) and an Experiment (which Agent to run). The CLI does not accept a bare eval id—within `niceeval exp <experiment> <eval-prefix>`, the Experiment decides which subject under test is connected. The example below is a real direct web Agent scenario. Its complete project is under `examples` / `zh` / `ai-sdk` in the repository. It verifies that an Agent calls a tool for a live weather question and answers from the result instead of inventing one:
 
 ```ts
 // evals/weather-tool.eval.ts
 import { defineEval } from "niceeval";
+import { includes } from "niceeval/expect";
 
 export default defineEval({
-  description: "Verify that the agent calls the right tool for a live weather question and answers from the result",
+  judge: true,
+  description: "Verify that the agent calls a tool for a live weather question and answers from the result",
 
   async test(t) {
     const turn = await t.send("What's the weather like in Beijing today?");
-    turn.succeeded();
+    turn.succeeded().label("Turn completed");
 
-    await t.group("Calls get_weather with the correct city", () => {
-      t.calledTool("get_weather", { input: { city: "Beijing" } });
-      t.messageIncludes(/°C|temperature|weather|sunny|cloudy|rain/);
+    await t.group("Calls get_weather and answers about the weather", () => {
+      t.calledTool("get_weather").label("Calls the weather tool");
+      t.check(turn.message, includes("weather")).label("Describes the weather");
     });
 
-    t.judge.autoevals
-      .closedQA("Does the assistant answer using the weather data returned by the tool, rather than making up a temperature?")
-      .atLeast(0.7);
+    turn.judge.autoevals.closedQA("Does the assistant answer using the weather data returned by the tool?")
+      .gate(0.7)
+      .label("Answer is grounded");
   },
 });
 ```
@@ -125,7 +97,7 @@ export default defineEval({
 ```ts
 // experiments/local.ts
 import { defineExperiment } from "niceeval";
-import { webAgent } from "./adapter"; // Your own adapter, connecting to the web agent under test
+import { webAgent } from "./adapter"; // Your Adapter, which connects to the web Agent under test
 
 export default defineExperiment({
   agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
@@ -135,15 +107,15 @@ export default defineExperiment({
 
 ```sh
 npx niceeval exp local weather-tool
-npx niceeval show           # read current-project results in the terminal
-npx niceeval view           # browse the same Sample in the web viewer
+pnpm exec niceeval show       # Read results in the terminal and drill into failures
+pnpm exec niceeval view       # Browse results interactively in a browser
 ```
 
-If the subject under test is a coding agent that needs an isolated workspace (Codex, a Claude Code plugin/Skill), use `t.sandbox.uploadDirectory()` in the eval to lay down the workspace, `t.sandbox.fileChanged()` / `t.sandbox.changedPaths()` to check which files changed, and `t.sandbox.runCommand()` to run tests — see the standalone repository [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill) for reference.
+If the subject under test is a coding Agent that needs an isolated Workspace, such as Codex or a Claude Code Plugin / Skill, use `t.sandbox.uploadDirectory()` in the eval to set up the Workspace. Use attribution assertions such as `t.sandbox.fileChanged()` to check file changes, and run tests with `t.sandbox.runCommand()`. See the standalone [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill) repository.
 
 ## Quickstart
 
-If you want a coding agent to integrate [NiceEval](https://niceeval.com/) into your project directly, have it read the install entry point first:
+If you want a Coding Agent to integrate [NiceEval](https://niceeval.com/) into your project directly, have it read the installation entry point first:
 
 ```text
 READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it, integrate it with this project, and run the first eval end to end.
@@ -151,13 +123,13 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 
 <CardGroup cols={3}>
   <Card title="Browse All Runnable Examples" icon="grid-2" href="/examples">
-    Choose by subject under test to see before/after integration source and full projects.
+    Choose by subject under test to see integration source and complete projects.
   </Card>
-  <Card title="Eval Coding Agent Extensions" icon="wand-magic-sparkles" href="/examples/coding-agent-extensions">
-    Reuse a real workspace, a baseline, and a multi-arm experiment design.
+  <Card title="Evaluate Coding Agent Extensions" icon="wand-magic-sparkles" href="/examples/coding-agent-extensions">
+    Reuse a real Workspace, Baseline, and multi-Arm experiment design.
   </Card>
   <Card title="Write Your Own Adapter" icon="globe" href="/examples/ai-agent-application">
-    See a complete project with a custom HTTP protocol and event mapping.
+    Explore a complete project with a custom HTTP protocol and event mapping.
   </Card>
 </CardGroup>
 
@@ -165,16 +137,16 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 
 <AccordionGroup>
   <Accordion title="Do I need to sign up for an account?">
-    No. Running evals and viewing reports with `niceeval view` all happen locally. A Sandbox provider such as Docker or E2B is only needed when the subject under test is itself a coding agent that requires an isolated workspace.
+    No. Running evals and viewing reports with `niceeval view` both happen locally. You need a Sandbox provider such as Docker or E2B only when the subject under test is a coding Agent that needs an isolated Workspace.
   </Accordion>
-  <Accordion title="My agent isn't written in TypeScript / JavaScript. Can I still connect it?">
-    Yes. An Adapter just sends to and receives from whatever interface your app already exposes — HTTP, gRPC, WebSocket, any of them work. [NiceEval](https://niceeval.com/) doesn't care what language your app is written in or where it's deployed. See [Adapter](/explanation/adapter).
+  <Accordion title="My Agent is not written in TypeScript / JavaScript. Can I still connect it?">
+    Yes. An Adapter sends to and receives from the interface your application already exposes—HTTP, gRPC, and WebSocket all work. [NiceEval](https://niceeval.com/) does not care which language your application uses or where it is deployed. See [Adapter](/explanation/adapter).
   </Accordion>
-  <Accordion title="Can I hook this into CI?">
+  <Accordion title="Can I integrate it with CI?">
     Yes. See [CI Integration](/tutorials/ci-integration).
   </Accordion>
 </AccordionGroup>
 
 <Tip>
-  For the smallest first path, read [Quickstart](/tutorials/quickstart). To understand the boundaries, read [Architecture Overview](/explanation/overview).
+  For the smallest path, read [Quickstart](/tutorials/quickstart). To understand the boundaries, read [Architecture Overview](/explanation/overview).
 </Tip>

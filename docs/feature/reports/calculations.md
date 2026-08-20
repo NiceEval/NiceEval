@@ -1,72 +1,120 @@
-# Reports Calculations
+# Report 读数与显示语义
 
-Calculation 把已经形成的 `ProjectedSample` 变成跨 owner 读数。它不拥有 Attachment、不读取 Record，也不改变 `AnalysisSample` 的选择与分母。
+Report 选择显示维度和度量，却不定义总体、分母、缺失或归并算法。这些语义只由 Analysis 的 Population、Dimension、Measure 与
+Relation 拥有。`aggregate()` 在 Page 或组合组件执行期间取得闭合结果；text、web 与静态文件随后只使用同一批值。
 
-## 声明
+## `aggregate()` 是唯一 Analysis facade
 
-作者选择官方 typed projector，再用 `RecordProjection` 声明 logical access：
+```tsx
+import {
+  aggregate,
+  Bars,
+  defineComponent,
+  Grid,
+  model,
+  passRate,
+  Table,
+  type GroupFunction,
+} from "niceeval/report";
 
-```ts
-const commands = attemptSlotProjection(attemptCommandsProjector);
+const condition: GroupFunction = subject =>
+  String(subject.run.experiment?.flags.condition ?? "unknown");
 
-const checkedCount = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("checked-count")),
-  inputs: reportInputs({ commands }),
-  completeness: "allow-partial",
-  calculate({ sample, inputs }) {
-    return calculateCheckedCount(sample, inputs.commands);
-  },
+const Overview = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model, condition },
+    values: {
+      passRate,
+    },
+  });
+
+  return (
+    <Grid>
+      <Bars points={rows} x="model" y="passRate" color="condition" />
+      <Table rows={rows} />
+    </Grid>
+  );
 });
 ```
 
-Calculation 以显式 `id` 提供安全诊断定位，再以 object identity 注册进 `defineReport`。作者不创建 ID registry、底层 owner request 或宿主去重表。
+`ctx.scope` 是组合组件取得 Sample 的唯一字段。`aggregate()` 返回带稳定 row identity、issues 与 refs 的 `ClosedRows`；Table、图形和
+text 面读取同一组 rows，不会分别归并同一份事实。
 
-每个 Calculation 必须明确：
+成本 Measure 是显式的 Report 整合：只有 `ctx.report.pricing` 非 `null` 的组件才能请求它。其 Profile 参数、Analysis 投影、
+无 Profile 呈现与 Runner estimate 的隔离由 [Report 成本投影](cost-projections/README.md) 单点定义。
 
-1. 所需 `RecordProjection` declarations；
-2. `allow-partial` 或 `require-complete`；
-3. 公式怎样从 `AnalysisSample` 与 projected inputs 形成 `observed`、`denominator` 与 issues。
+## 作者形态与未发布形态
 
-callback 只能读取已经形成的 projected inputs。它不能按某个 payload 字段临时请求另一份 Attachment。
-
-## 完整度 policy
-
-| policy | 可计算条件 | 输出要求 |
+| 作者需要 | Report 形态 | 边界 |
 |---|---|---|
-| `allow-partial` | Host 已形成穷尽 `ProjectedSample`；Attachment data problems 可以存在。 | 调用公式，并保留 partial、observed、denominator 与 issues。 |
-| `require-complete` | 每个 required logical entry 的 Core、decoding 与 value limitations 都完整。 | 任一条件不满足时不调用作者公式，形成 `data-unavailable`。 |
+| 按固定 Sample 分组 | `aggregate(scope, { by, values })` | 委托唯一的 Analysis executor。 |
+| 固定维度 | `agent`、`model`、`attempt`、`evalId`、`experiment`、`reasoningEffort`、`flag()`、`label()` | 只读取冻结 Run context。 |
+| 自定义分组 | `GroupFunction` | 只读 `experimentId`、`evalId` 与冻结的 agent / model / flags / labels。 |
+| 固定度量 | `passRate`、`durationMs`、`tokens` 与[成本 Measure](cost-projections/library.md) | 由 Analysis 定义分母、缺失、成本 ledger 与 Evidence。 |
+| 领域读取 | `toAttemptEvidence()`、`toAttemptObservability()`、`toFileChanges()`、`toSources()`、`toSandboxHistory()` | 返回关闭 DomainView。 |
 
-`invalid` 是 Attachment data problem，不是 callback defect。`allow-partial` 可以用同一 ProjectedSample 中其它成功 entries 继续公式；`require-complete` 不调用。没有请求它的 Calculation 不读取也不受影响。
+`rollup()`、`metricValue()`、`totalScore`、AttemptHandle converter 与任意 Reducer 没有 `niceeval/report` export。它们不能由同名
+但较窄的 facade 冒充：两级归并、手写 MetricValue 或可读 Attempt 都会改变分母和 Evidence 语义。
 
-`unavailable` 与 `unsupported` 必须进入明确 reasons；不能用零、`null` 或空数组代替。
+`GroupFunction` 的返回值必须是稳定 string。它不能取得 reader、Path、Scope 外数据或当前配置。零 Attempt 的 logical Slot 仍由
+Analysis 留在其既定分母中。
 
-## 分母由 Calculation value 返回
+## MetricValue 与分母
 
-`AnalysisSample.denominator` 与 `ProjectionCoverage.sample.denominator` 都是 Sample-wide 的 slot denominator，不因 Attachment 状态改变。它们不是 Calculation 的业务 denominator；host 不从 coverage、entry 数或 access count 推导 `observed` / `denominator`。
+`MetricValue` 的完整形状由 [Library](library.md#aggregate-与-metricvalue) 定义。每个度量单元都保留完整状态，而非只保留 number。
 
-例如 denominator 100，只有 20 个 owner 形成可用 commands value：
+| 要显示的事实 | 使用字段 | 不允许的替代 |
+|---|---|---|
+| 当前数值 | `value` | 把 `null` 当作零。 |
+| 实际贡献数 | `samples` | 用可见 row 数代替。 |
+| 既定分母 | `total` | 用筛选后的 row 数缩小。 |
+| 缺口或失败 | `state` 与 `issues` | 靠空字符串、颜色或隐藏行表达。 |
+| 可复核路径 | `refs` | 用显示 label 或数组下标伪造链接。 |
+
+例如某个通过率有 20 个贡献成员和 100 个预期成员：
 
 ```text
-commands.checked
-value:       20
-observed:    20
-denominator: 100
-state:       partial
+value:   0.80
+samples: 20
+total:   100
+state:   partial
 ```
 
-页面必须显示 `20 / 100 · partial`。它不能把 20 改写成完整总体。`observed`、`denominator` 与 `state` 都由 Calculation value 自己返回，host 只把它原样呈现。
+页面可以显示 `80% · 20 / 100 · partial`。它不能因为只画出 20 行有值数据，就把读数写成 `20 / 20`。
 
-pairwise Calculation 还要声明 pairing key 与可比较条件。任一侧缺失 required input 时，不能无声丢弃 pair；结果保留未形成 pair 的数量与原因。
+自定义 Report 可以按上面的紧凑形态把完整度放在读数旁边。内建 Overview 把两者分开：指标单元格只显示业务值，缺少结果时另用一个
+有标题的 `Result coverage` Section 显示可用结果数与预期结果数。这个 Section 只改变信息层级，不删除或重算底层 `MetricValue`。
 
-## 报告旁算法
+| state | `value` | 必须保留的含义 |
+|---|---|---|
+| `available` | number | 全部预期成员按度量规则贡献。 |
+| `partial` | number 或 null | 部分成员贡献，issues 说明缺口。 |
+| `empty` | null | 输入完整，领域结果合法为空。 |
+| `unsupported` | null | Host 缺少所需 Analysis 输入。 |
+| `failed` | null | 读取或归并失败，issues 保留身份与 refs。 |
 
-领域特有的质量、成本、趋势、配对差异和成绩单算法属于使用它的 Report module。只有多个 Report 共享相同 inputs、公式与状态语义时，才把算法提升为公开 Calculation。
+`available` 与 `partial` 都可以有 `value: 0`。排序、截断与筛选只能组织显示；每个保留的 `MetricValue` 仍保持原来的
+`total`、`state`、`issues` 与 `refs`。
 
-Page、Chart、terminal text 与 Download 消费同一个 `ReportCalculationResult`。它们不各自重新 projection、重算或按呈现形态调整分母。Calculation 不依赖另一个 Calculation；共享公式使用普通纯函数。
+## 中立组件与领域视图
+
+Table、Bars、Line、Scatter 与 Stat 只理解显示输入。Table 保留 `ClosedRows` identity 和 issues；图形使用字段名选择坐标；
+Stat 接收 `formatMetricValue()` 的显示字节。外部业务数组可以进入这些组件，但不会自动取得分母、问题或 Evidence 语义。
+
+每个图形必须有同一批 rows 的 text 或表格等价内容。每项至少保留 label、value、samples、total、state 与可用 Evidence link；
+颜色、hover、筛选和缩放只能增强这些内容。
+
+Attempt、会话、Source、文件差异和时序适合使用关闭 DomainView。详情组件可以理解该视图的稳定 identity 与 issues，
+却不能打开路径、读取 attachment 或让浏览器在导航时再次读取数据。
+
+Source 与 Diff 如果进入全站路径，必须在构建时成为受限 page 内容或 asset。单目标 `show` 只读取所选 Page 所需的 DomainView；
+它不会为其它详情页取得数据。
 
 ## 相关阅读
 
-- [Library](library.md#calculation)：作者 API 与结果类型。
-- [Architecture](architecture.md#completeness-与局部隔离)：局部状态。
-- [比较质量与成本](use-case/比较质量与成本.md)：比较 Report。
-- [核对 RecordAttachment 完整度](use-case/核对RecordAttachment完整度.md)：partial 的完整路径。
+- [Analysis Library](../analysis/library.md)：总体、度量、分母和关闭输出的 owner。
+- [Report Library](library.md)：`aggregate()`、组件、Page 与 `MetricValue` 形状。
+- [Report 成本投影](cost-projections/README.md)：成本 Measure 的 Profile、Projection 与显示边界。
+- [Architecture](architecture.md)：单目标 show、全站 SSG 与缓存。
+- [比较质量与成本](use-case/比较质量与成本.md)：同一 rows 同时进入表格和散点图。
+- [核对数据完整度](use-case/核对数据完整度.md)：partial、empty、unsupported 与 failed 的呈现。

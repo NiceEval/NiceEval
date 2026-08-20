@@ -1,6 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/openai-compat.md#responses-live
 
 import { beforeAll, expect, test } from "vitest";
+import { assertExpEvalOutcomes } from "@niceeval/testkit";
 import {
   runOpenAiLiveEvidence,
   showOpenAiLiveEvidence,
@@ -22,12 +23,20 @@ test("真实 OpenAI Responses 一次请求以通过 verdict 完成", () => {
   const receipt = evidence.receipt.expReceipt();
   expect(receipt.completion).toBe("completed");
   expect(receipt.runIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
-  expect(evidence.evalEvent).toMatchObject({
-    evalId: evidence.evalId,
-    experimentId: evidence.experimentId,
-    verdict: "passed",
-    attempts: 1,
-  });
+  assertExpEvalOutcomes(
+    evidence.evalEvents,
+    [
+      // Responses：真实一次请求须调用 fixture 工具并公开读回 marker；因此期望 passed/1。
+      {
+        evalId: "responses-live",
+        experimentId: "responses-live",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
+    () => evidence.receipt.diagnostic(),
+  );
 });
 
 test("show --execution 读回 OpenAI Responses 的代表性证据", async () => {
@@ -37,15 +46,4 @@ test("show --execution 读回 OpenAI Responses 的代表性证据", async () => 
   ]);
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   for (const marker of evidence.executionMarkers) expect(execution.stdout).toContain(marker);
-});
-
-test("show --timing 读回 OpenAI Responses 的 runner 阶段", async () => {
-  const timing = await showOpenAiLiveEvidence(evidence, [
-    evidence.evalEvent.locator!,
-    "--timing",
-  ]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
-
 });

@@ -5,6 +5,7 @@ import type { JsonValue } from "../shared/types.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
 import {
   linkPluginLifecycles,
+  pluginLifecycleIdentity,
   pluginLifecycleProjection,
   projectPluginLifecycles,
   type LinkedPluginLifecycle,
@@ -129,6 +130,20 @@ function occurrences(
   }));
 }
 
+function sandboxOccurrenceProjections(
+  lifecycles: readonly LinkedPluginLifecycle[],
+  ownerKind: "experiment" | "eval-group" | "eval",
+  ownerId: string,
+): JsonValue[] {
+  const owner = Object.freeze({ kind: ownerKind, id: ownerId });
+  const projections: JsonValue[] = lifecycles.map((lifecycle) => Object.freeze({
+    owner,
+    lifecycle: pluginLifecycleIdentity(lifecycle),
+  }) as JsonValue);
+  Object.freeze(projections);
+  return projections;
+}
+
 async function runTeardowns(
   lifecycles: readonly LinkedPluginLifecycle[],
   activated: number,
@@ -203,6 +218,14 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
       ? Object.freeze([]) as readonly LinkedPluginOccurrence[]
       : occurrences(groupLifecycles, "group", evalDef.evalGroup.id, evalDef.evalGroup.sourcePath);
     const all = Object.freeze([...preparedRun.experimentOccurrences, ...groupOccurrences, ...evalOccurrences]);
+    const sandboxOccurrences: JsonValue[] = [
+      ...sandboxOccurrenceProjections(experimentSandbox, "experiment", preparedRun.run.experimentId),
+      ...(evalDef.evalGroup === undefined
+        ? []
+        : sandboxOccurrenceProjections(groupSandbox, "eval-group", evalDef.evalGroup.id)),
+      ...sandboxOccurrenceProjections(evalSandbox, "eval", evalDef.id),
+    ];
+    Object.freeze(sandboxOccurrences);
     return Object.freeze({
       evalLayer: evalDef.sandbox,
       ...(evalDef.evalGroup === undefined ? {} : { groupLayer: evalDef.evalGroup.sandbox }),
@@ -213,7 +236,13 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
       groupLifecycles,
       evalLifecycles,
       sandboxLifecycles: Object.freeze({ experiment: experimentSandbox, group: groupSandbox, eval: evalSandbox }),
-      pairProjection: Object.freeze({ version: 1, occurrences: all.map((entry) => entry.projection) }) as JsonValue,
+      pairProjection: Object.freeze({
+        version: 1,
+        occurrences: all.map((entry) => entry.projection),
+        // Preserve existing fingerprint bytes for pairs with no Sandbox Plugin;
+        // only histories whose identity coverage was incomplete must become fresh.
+        ...(sandboxOccurrences.length === 0 ? {} : { sandboxOccurrences }),
+      }) as JsonValue,
     });
   } catch (error) {
     throw pluginError([{ code: "plugin-owner-unsupported", experimentId: preparedRun.run.experimentId, evalId: evalDef.id, message: String(error), actions: ["Attach each plugin only to a scope it declares, without duplicates in one scope."] }]);

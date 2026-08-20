@@ -145,9 +145,9 @@ target platform 是构建事实,不是一个写在代码里的默认值,并且**
 声明了平台的服务因此在任何宿主上身份稳定;未声明的服务在 arm64 宿主与 amd64 宿主拿到不同 BuildKey,两台机器不会对同一道题互认不可比的结果。
 多元素 `build.platforms` 是发布场景的多平台矩阵,一个 BuildKey 只对应一种架构的构建结果,这类声明在规划期直接报错拒绝,不挑其中一个平台近似执行。
 
-一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,登记其声明的 image ref；可取得的实际 digest 另作为运行事实。
+一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,登记其声明的 image ref；可取得的实际 digest 是创建期 provider observation。
 构建结果另有 provider 原生 locator(Docker image digest、E2B template id)。
-BuildKey 回答「为什么应该得到同一构建结果」,locator 回答「本次从哪里启动」,两者都进 Record。
+BuildKey 回答「为什么应该得到同一构建结果」,locator 回答「本次从哪里启动」。前者参与 planning 与 fingerprint；后者只服务 materialize 或留存注册表，不建立 Sandbox 专属的可携带事实。
 
 完整 Sandbox 另算 `CaseKey`:
 
@@ -164,7 +164,7 @@ CaseKey
 
 **BuildKey 负责构建结果复用,CaseKey 负责完整 attempt 运行身份与 fingerprint。**
 只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果。
-逐 attempt 的容器名、临时目录和随机 project name 由 Provider 生成,不进 CaseKey,只作为本次启动的运行事实写入。
+逐 attempt 的容器名、临时目录和随机 project name 由 Provider 生成,不进 CaseKey，也不成为 portable Record identity。创建命令、计时与诊断需要可观察时，按其内容进入 Observability。
 
 作者不能用 `container_name` 固定任一 service 的容器名；这会绕开受管 project namespace,让并发 Case 争用同一个宿主资源。
 Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
@@ -192,7 +192,7 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 同理，未 pin 的 `FROM`、Compose image / `FROM`、checkout 浮动 ref 与 opaque provider callback 的外部变化都需要作者提升 revision、改变声明，或使用 `--rerun all`。
 凭据值不落盘、不进身份:凭据轮换不改变运行时语义时只写入引用名;凭据同时选择了不同租户、数据集或权限面时,用户必须提供非敏感 `revision` 进入身份,不靠 secret 值自动推断。
 
-身份只收声明,不收本地 daemon 的易变求值状态——`docker inspect` 等查询只产出运行事实(见上文 BuildKey 一节),永不回填进 BuildKey / CaseKey。
+身份只收声明,不收本地 daemon 的易变求值状态——`docker inspect` 等查询只作为受管 command 的 Observability 结果，永不回填进 BuildKey / CaseKey。
 同一份声明因此在两次独立规划之间(如 accept 后立即 `--dry`)必须算出相同身份,不随宿主机上并行的 docker 构建或拉取漂移。
 
 身份求值是 fingerprint 的输入，不另设 provider carry eligibility 状态；未 pin 或未登记的值可以用原始声明或 opaque marker 表达，变化不会被自动观察。
@@ -207,8 +207,9 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 4. cache miss 才调用 provider 原生构建 API;成功后以 BuildKey 登记 locator,再放行依赖它的 attempt。放行逐 key 发生:一条 attempt 只等自己引用的那几个 key,不等同批其它 key 收工,不引用任何 BuildKey 的 attempt 从第一秒就可派发。
 5. 瞬时构建失败(基础镜像拉取限流、传输层中断)由 builder 按 [Provisioning 的性质分类](architecture.md#provisioning-失败与重试)指数退避重试、封顶次数。构建结果是镜像与 template,没有计费实例的泄漏面,歧义类失败同样可重试——一次镜像拉取的 EOF 不该让整批依赖该 key 的 Attempt 形成 `errored` Verdict。
 6. 重试耗尽或确定性构建失败（构建定义错误、基础镜像不存在）按共享该 key 的范围止损。
-   失败的 BuildKey 只执行一次；每个依赖它、本应 fresh 执行的 Attempt 都引用同一 Run-scoped 执行错误通道事件，并形成自己的 `errored` Verdict。
-   timing decoder 由同一 Run-scoped `sandbox.build` channel event 读出归属。
+   失败的 BuildKey 只执行一次；每个依赖它、本应 fresh 执行的 Slot 保持 `not-dispatched`，不制造 Attempt。
+   Runner 在既有 Run-owned Observability diagnostics 中为这些 Slot 保存同一 shared failure identity；Analysis
+   据此显示 slot outcome `errored`。历史 Record 没有采集该诊断时只保留 membership，不反推错误。
 
 预算分两层,口径不混:
 
@@ -216,9 +217,9 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 - **attempt 级启动**:从 image / template / snapshot 启动主 Sandbox 实例和伴随资源、等待服务 ready;Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline。attempt deadline 从拿到构建结果并开始启动 Sandbox 时起算。
 
 共享构建不属于任一 attempt,不计入任何 attempt 的 `executionMs`;一次十分钟的冷构建在整份 Record 里只出现一次时间。
-构建计时落 Run 侧时间树的 `sandbox.build` activity,provenance 落 `sandboxBuilds`,两者经 `timingNodeId` 关联。
+构建命令、计时与失败诊断都由 Run-owned Observability 收口；用于解释构建输入的源码 closure 归 Sources，需要保留的大型构建输出归 Artifacts。
 每个 BuildKey 是一个可并发 activity 实例,内部可挂 `provider.image.pull`、`provider.build.execute` 等开放子 key。
-落盘形状单源在 [Record · 两层时间模型](../record/architecture.md)。
+六族运行事实的 exact durable shape 只由 [Record Architecture](../record/architecture.md) 定义。
 
 这个前置阶段不是无预算后台工作:Ctrl+C 停止新构建并调用 provider 的 build cancellation;无法取消的远端 build 进入可核对 registry,后续按 provider locator 认领或销毁。
 不依赖失败 BuildKey 的 attempt 继续执行,除非失败分类触发 eval / experiment scope 止损;carried attempt 不因查看历史结果触发构建,也不引用本 Run 不存在的 build。
@@ -260,9 +261,10 @@ Compose 的第二文件入口不属于当前 CaseKey 的输入闭包；`include`
 Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或受控的判分采证接口可见——把 sidecar 合并进主 Sandbox 会改变题目,不属于合法降级。
 
 主容器进入 ready 后才交给 Agent;判分完成前整组保持存活。
-任一必需服务提前退出时，Attempt 形成 `errored` Verdict，并附服务状态与日志 channel event，不折叠成 Agent 行为的 `failed` Verdict。
+任一必需服务提前退出时，Attempt 形成 `errored` Verdict，并附服务状态与日志的 Observability，不折叠成 Agent 行为的 `failed` Verdict。
 收尾按 case 自己的资源句柄执行 `compose down`;部分启动、中断与超时同样走整组 finalizer。
-逐服务日志和 artifact 由 `ServiceController` 取得;artifact 声明只引用主 Sandbox 时所有 provider 都能运行,引用 sidecar 时启动期要求 `services` 能力并校验服务名存在。
+
+逐服务日志由 `ServiceController` 取得并按有界 command / diagnostics 进入 Observability；需要保留的大型具类型捕获才进入 Artifacts。Artifact 声明只引用主 Sandbox 时所有 provider 都能运行,引用 sidecar 时启动期要求 `services` 能力并校验服务名存在。
 
 ## 云端 Compose case
 
@@ -303,7 +305,6 @@ defineSandboxCase({
     sandbox: mainPodSandbox,
     group: namespaceResourceGroup,
     services: { _tag: "Available", value: podServiceController },
-    facts: { namespace: "eval-prod" },
   }),
 });
 ```
@@ -311,7 +312,7 @@ defineSandboxCase({
 约束:
 
 - `identity` 必须可序列化;函数体不参与自动哈希，身份声明进入 fingerprint；需要改变语义时提升声明或 revision，不能用函数名或 `toString()` 冒充运行指纹。
-- `services`、`materialize` 结果中的 services 与 facts 都是完整 ADT/必填值。
+- `services` 与 `materialize` 结果中的 services 都是完整 ADT/必填值。
   不用 optional 字段表示领域状态；`materialize` 返回 typed Effect。
 - 声明了某项能力就承担对应完整契约测试。
 - 自定义 Sandbox 定义的公开扩展面当前只允许主实例、伴随资源与 `services`；不能为 `defineSandboxCase` callback 声明跨进程留存，因为函数本身没有可发现的 provider identity 与 detached 实现。`--keep-sandbox` 与自定义 Sandbox 定义在创建前报错。未来若开放 provider plugin，必须先让 plugin 提供稳定 identity 与 `DetachedSandboxRetention`，不能仅加一个布尔 capability。
@@ -322,12 +323,12 @@ defineSandboxCase({
 |---|---|---|
 | template 缺失、冲突或 case 声明非法 | link 期配置错误 | 一次穷举报错,零 Sandbox 创建 |
 | 声明合法但平台、能力或 locator 不可用 | physical planning 聚合错误 | 整个 Run 零资源失败;作者用 selector 显式排除 |
-| 共享构建失败 | 依赖它的 Attempt 形成 `errored` Verdict | 引用 Run-scoped `sandbox.build` channel event；timing decoder 读出同一归属 |
-| Sandbox 启动、ready、服务中途退出 | Attempt 形成 `errored` Verdict | Attempt 运行归属,附服务状态与日志 channel event |
+| 共享构建失败 | 依赖它的 Attempt 形成 `errored` Verdict | 引用 Run-owned Observability diagnostic；同一 owner 的 timing 读出归属 |
+| Sandbox 启动、ready、服务中途退出 | Attempt 形成 `errored` Verdict | Attempt 运行归属,附服务状态、命令与 diagnostics 的 Observability |
 | Agent Ensure 失败 | Attempt 形成 `errored` Verdict | `agent.ensure` 归属(见 [Agent Ensure](../adapters/architecture/agent-ensure.md)) |
 
 Agent 完成任务但断言未达标时，才形成 `failed` Verdict。
-每个 case 至少产出主 Sandbox 启动日志与本次使用的 image / template / snapshot、容器名等运行事实;声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready timing。
+每个 case 至少产出创建与 ready 的 command、timing 与 diagnostics；它们归 Observability。声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready timing；大型具类型日志归 Artifacts。provider locator、容器名与可 detached 操作的句柄只留在运行期或留存注册表。
 证据字段是中性的,采集手段留在 provider。
 
 ## 收尾、留存与注册表
@@ -356,9 +357,9 @@ Group keep 是独立能力:支持者必须能整组 suspend / wake、恢复后�
 
 folder eval 的测试文件与构建输入共址时，materializer 与普通上传共同给出泄漏证据:
 
-- materializer 登记全部 build context 经 `.dockerignore` / filtered context 求值后的实际 closure，以及 Agent 可达 bind mounts。
-- `test(t)` 中的普通本地上传登记 source tree 与内容摘要。
-- 判定封口前交叉比对两份事实；send 区间外才上传的测试若已在 Agent 可见 closure 中，写入执行错误通道事件 并形成本次 Attempt 的 `errored` Verdict。
+- materializer 登记全部 build context 经 `.dockerignore` / filtered context 求值后的实际 closure，以及 Agent 可达 bind mounts；需要在已发布 Record 中解释它时，closure 归 Sources。
+- `test(t)` 中的普通本地上传登记 source tree 与内容摘要，并按同一 Sources 边界交叉比对。
+- 判定封口前交叉比对两份输入；send 区间外才上传的测试若已在 Agent 可见 closure 中，写入 Observability diagnostic 并形成本次 Attempt 的 `errored` Verdict。
 - 后续运行可用历史 transfer manifest 在启动 Agent 前预检；首次运行只能事后拒绝结果，不能宣称阻止了暴露。
 - 修法是移出 context、写进 `.dockerignore`，或让 materializer 生成 filtered context；过滤规则自身进入 BuildKey。
 
@@ -384,6 +385,6 @@ folder eval 的测试文件与构建输入共址时，materializer 与普通上�
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Library](library.md) —— provider 选择、生命周期 Hook、自定义 provider。
 - [Architecture](architecture.md) —— 生命周期时序、留存注册表、孤儿核对、重试。
-- [Record · 两层时间模型](../record/architecture.md) —— `sandbox.build` activity 与 `sandboxBuilds` 的落盘形状。
+- [Record Architecture](../record/architecture.md) —— 五个固定 family 的 owner、closure 与 maintenance 边界。
 - [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md) —— case 产出主 Sandbox 之后,Agent 怎样检查与安装。
 - [Experiments · 缓存与携带](../experiments/cache.md) —— CaseKey 怎样进入指纹与携带门。

@@ -35,7 +35,6 @@ export type SandboxProgress = (update: {
 }) => void;
 
 export type SandboxDiagnosticSink = (input: DiagnosticInput) => void;
-export type SandboxFactsWriter = (key: string, value: string | number | boolean) => void;
 
 export type SandboxCleanupCommand = (
   sandbox: SandboxCommandTarget,
@@ -58,7 +57,6 @@ export interface SandboxCommandContext {
   readonly signal: AbortSignal;
   readonly progress: SandboxProgress;
   readonly diagnostic: SandboxDiagnosticSink;
-  readonly facts: SandboxFactsWriter;
   onCleanup(command: SandboxCleanupCommand): void;
 }
 
@@ -94,7 +92,7 @@ export interface StableSandboxCommand extends SandboxCommand {
 }
 
 /**
- * `--dry --commands` 能证明的声明式命令。这里只保存执行闭包已经消费的同一份规范化数据；
+ * `niceeval debug` 能证明的声明式命令。这里只保存执行闭包已经消费的同一份规范化数据；
  * 普通 `defineSandboxCommand(identity, run)` 不会因为 identity 看起来像内建 id 就获得计划。
  */
 export type SandboxCommandPlanRedaction =

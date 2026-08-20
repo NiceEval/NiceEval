@@ -1,39 +1,50 @@
-# 并行 Invocation 使用不同 Record
+# 并行 Invocation 追加同一 Record
 
 ## 解决什么问题
 
-两条写 Invocation 可以同时使用同一份代码和 Experiment，但不能同时写同一个 Record root。这样 Record 不需要 revision、写合并或跨进程接管；只读命令仍可查看已经发布的 Run。
+两条写 Invocation 可以同时使用同一份代码、Experiment 和 Record root。每个 Run writer 只排他创建自己唯一的
+`runs/<RunId>/`，因此 Record 不需要 revision、写合并或跨进程接管；只读命令仍只查看已经发布的 Run。
 
-为两个进程指定不同 root：
+两个终端可以指向同一个 root：
 
 ```bash
-niceeval exp compare --record .niceeval/record-a --max-concurrency 2
-niceeval exp compare --record .niceeval/record-b --max-concurrency 2
+niceeval exp compare --record .niceeval/record --max-concurrency 2
+niceeval exp compare --record .niceeval/record --max-concurrency 2
 ```
 
-每条命令独立规划、建立 Run、写 Attempt 并返回 receipt。两个并发上限可以同时生效，但两个 Record 的 Run、Sample 和 Report 不会自动合并。
+每条命令独立规划、建立 Run、写 Attempt 并返回 receipt。两个并发上限各自生效；每个已封口 Run 都进入同一
+Record，之后由 analysis selection（分析选择）决定 Sample 与 Report 的范围。
 
-## 同一 root 怎样反馈
+## 同一 root 怎样协作
 
-若终端 B 也运行 `exp` 并指向终端 A 正在写的 root，B 在规划前以 `record-writer-busy` 失败：
+终端 A 和 B 不会因同一 root 互相报 busy。它们只能读取已创建 `complete` 的 Run；对方还在写的目录始终
+incomplete（未发布不完整），不会被读取、展示或沿用。
 
-```text
-error: Record writer is busy: .niceeval/record
-fix: wait for the active writer, or choose another --record root
-```
+每条 Invocation 用 weak scan（弱扫描）形成自己的计划。A 在 B 扫描期间封口的 Run 可以整体被 B 看到，
+也可以留给 B 的下一次运行；没有一次扫描承诺全局快照。`show`、`view` 与 `exp --dry` 也遵守这条规则。
 
-B 不等待、不认领剩余 Eval、不读取 A 的 local build，也不在 A 完成后自动重试。`show`、`view` 或 `exp --dry` 可以同时打开取得 shared maintenance lease 的 reader；它们只看到 A 已经原子发布的完整 Run。
+是否让两个 Invocation 派发同一 logical slot，由 Coordination 的 execution deduplication（执行去重）和
+dispatch claim（派发占用）决定。它们使用 `.niceeval/` 的本地状态，不读取另一个 writer 的目录或 local build。
+
+有效 case-lock owner 仍在运行时，等待方把占位显示为运行状态；case lock 的过期恢复仍是本地执行去重的一部分。
+但 `sharedState.key` 不使用 heartbeat expiry 或 PID 自动接管：它的等待方保持阻塞，直到 owner 正常完成完整生命周期，或
+操作员按[恢复中断运行](恢复中断运行.md#sharedstate-显式恢复)显式确认 terminated/quiesced 后运行一次补偿 teardown。
 
 ## 外部共享状态
 
-不同 Record root 仍可能访问同一数据库或 checkpoint。此时 `sharedState.key` 只保护那份外部状态的生命周期；它不合并 Record，也不把另一个 root 的 Attempt 作为 carry 候选。
+同一或不同 Record root 的 Invocation 都可能访问同一数据库或 checkpoint。此时 `sharedState.key` 只保护
+那份外部状态的生命周期；它不合并选择集，也不把未发布 Attempt 作为 carry 候选。
+
+最后 Attempt settle 后，Runner 冻结 reusable pool registry。它等待 Sandbox lifecycle/finalizer scope（其中也等待
+provider finalizer）和 Experiment teardown 完成后才释放。任一 cleanup 失败会留下可公开检查、显式恢复的 owner evidence。
 
 ## 边界
 
 - `--max-concurrency` 与 Experiment `maxConcurrency` 都只约束本 Invocation。
 - Sandbox handle 与复用池不跨 Invocation。
-- 同一 root 的 writer 彼此互斥，reader 可并发；reader 的 weak scan 可能只看到一次 Invocation 的部分 Run。
-- 要比较两个独立 Record，使用各自的 Sample/Report；Record 不提供局部 Run 合并或跨 Record Sample。
+- 同一 root 的 writer 可以并发追加；每个 `complete` 只发布一个完整 Run。
+- reader 的 weak scan 只惰性读取已发布 Run，可能只看到并发 Invocation 的一部分 Run。
+- `clean` / `migrate` 的 maintenance lease 仍排他；它们不能与 append writer 或 reader 交错。
 
 ## 相关阅读
 

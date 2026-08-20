@@ -1,12 +1,12 @@
 # 约束与候选方案
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 目的
 
-记下四类候选作者面各自能做什么、做不到什么，以及它们共同撞上的那几堵墙。
+记下各类候选作者面能做什么、做不到什么，以及它们共同撞上的那几堵墙。
 裁决在 [DECISION](DECISION.md)，这里只写现状。
 
 ---
@@ -112,26 +112,90 @@ SQL 在「灵活提问」这条上明显赢，在 [GOALS](GOALS.md) 的正确性
 
 ---
 
-# 候选项 4：普通值转换 + 静态 page
+# 候选项 5：普通值转换 + 静态 page
 
 ## 产品特性
 
-page render 直接接收 Sample 或 AttemptEvidence，调用普通函数后把具体结果值交给组件。
-两级聚合与证据由少量公共组合器保障。
+`reportInputs()` 在作者 callback 前闭合 Sample-aligned projections；Calculation 调用普通纯函数并把具体结果值交给
+Page。聚合口径与 refs 由领域自己的具名结果类型保留。
 
 ## 当前支持
 
-- 普通 TypeScript 直接表达异步、并行、join、排序与复用。
+- 普通 TypeScript 直接表达 join、排序、公式组合与复用；I/O 停在 host input phase。
 - 组件属性按值的角色命名，调用点可见 `rows`、`points` 与 `attempt`。
-- 静态 page 清单保留导航、逐页惰性求值和失败隔离。
-- 官方与用户 Calculation 走同一个 `rollup()` / `aggregate()`。
+- 静态 Page / Calculation 清单保留导航、一次执行和失败隔离。
+- 官方与用户都用 `reportInputs()`、`defineCalculation()` 与普通结果值。
 
 ## 当前不支持
 
 - 不提供细粒度的公开查询依赖图；跨 page 自动共享不是作者语义。
-- 报告旁复杂算法的公式仍需单独测试，证据构造器只保证结果可追溯。
+- 报告旁复杂算法的公式仍需单独验证；具名结果类型只保证口径、issues 与 refs 不被省略。
 
 详见 [PLAN-5](PLAN-5/README.md)。
+
+---
+
+# 候选项 6：静态 Analysis fields + descriptor components
+
+## 产品特性
+
+Analysis SDK 在 nominal population 上导出 Dimension 与 Measure。Report 作者用 `aggregate({ by, values })` 形成静态
+`ReportData`，再交给 `Bars`、`Table`、`Scatter` 或纯组合组件。host 从 descriptor 编译本次有限依赖闭包，在 Page
+展开前一次 materialize。
+
+## 当前支持
+
+- 恢复 `aggregate + 显示形状` 的业务心智，同时不恢复 render-time I/O；
+- 两级聚合、denominator、evidence 与数值语义由 Measure 一次声明；
+- 同一 nominal population 的第三方 fields 可以直接进入官方组件；
+- `ReportRowKey`、PageFamily object target 与显式 evidence family 保持身份和下钻闭合；
+- Report 作者不接触 projection、input manifest、Calculation registration、Effect 或 branded id。
+
+## 当前不支持
+
+- `ReportData` 不是普通数组，不能任意 `.map()`／`.toSorted()`；
+- population narrowing 与新业务公式必须回到 Analysis；
+- 普通插件不能增加新的 host primitive；
+- 自有 JSX runtime 的独立 TypeScript 工具链需要 report preset 或 `jsxImportSource`。
+
+## 直接影响
+
+这套方案承认一张只包含本次请求的有限 dependency DAG，但不建立动态或全程序 graph。它在 PLAN-5 的 closed execution
+内核上增加作者友好的字段与组件 compiler，把内部 plumbing 从每份业务 Report 中移除。
+
+详见 [PLAN-6](PLAN-6/README.md)。
+
+---
+
+# 候选项 7：受限 ReportSample + 运行时局部 field DAG
+
+## 产品特性
+
+Page / component callback 获得受限 `ReportSample`，通过 `await aggregate(sample, { by, values })` 执行 Analysis fields。
+每次 aggregate 局部编译有限 DAG，并返回 closed typed rows。
+
+## 当前支持
+
+- 恢复 0.12.1 的普通 async callback、rows 与 `Bars` / `Table` / `Scatter` 调用心智；
+- callback 可以依据已经计算的 rows 分支，再请求另一组 fields；
+- `ReportSample` 不枚举 raw facts，不允许改变 population；
+- Measure 继续拥有 denominator、三段 rollup、producer policy、issues 与 refs；
+- 同一次 execution 按 exact field identity memoize；
+- callback 完成后仍形成 closed semantic tree，renderer 不查询数据。
+
+## 当前不支持
+
+- callback 前整份 Report 的全局依赖编译；
+- 未请求 Page 的 dependency error 提前暴露；
+- 不信任普通 JavaScript callback 时的跨 execution 机械确定性；
+- Report 内定义新 population、业务 Measure 或 raw query。
+
+## 直接影响
+
+这套方案明确选择 data-dependent callback 与 requested-page isolation。它把依赖闭包从 whole-report definition phase 移到每次
+`aggregate()` 调用，同时保留 closed renderer boundary。
+
+详见 [PLAN-7](PLAN-7/README.md)。
 
 # 共通限制
 

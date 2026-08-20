@@ -2,7 +2,7 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 import { describe, expect, test } from "vitest";
 import { Effect, Fiber, TestClock, TestContext } from "effect";
-import { withSandboxIoRetryEffect } from "./io-retry.ts";
+import { withSandboxIoRetry } from "./io-retry.ts";
 
 const runWithClock = <A, E>(effect: Effect.Effect<A, E>) =>
   Effect.runPromise(effect.pipe(Effect.provide(TestContext.TestContext)));
@@ -14,8 +14,8 @@ describe("Sandbox idempotent IO retry", () => {
     const terminal = new Error("still unavailable");
 
     const failure = await runWithClock(Effect.gen(function*() {
-      const fiber = yield* Effect.fork(withSandboxIoRetryEffect(
-        () => Effect.sync(() => {
+      const fiber = yield* Effect.fork(withSandboxIoRetry(
+        Effect.sync(() => {
           attempts += 1;
         }).pipe(Effect.zipRight(Effect.fail(terminal))),
         {
@@ -43,8 +43,8 @@ describe("Sandbox idempotent IO retry", () => {
     const terminal = new Error("permission denied");
     let attempts = 0;
 
-    const failure = await runWithClock(withSandboxIoRetryEffect(
-      () => Effect.sync(() => {
+    const failure = await runWithClock(withSandboxIoRetry(
+      Effect.sync(() => {
         attempts += 1;
       }).pipe(Effect.zipRight(Effect.fail(terminal))),
       { classify: () => "unknown" },

@@ -1,44 +1,40 @@
 ---
-title: "How the Runner Executes Evals"
+title: "How the Runner executes Evals"
 sidebarTitle: "Runner"
-description: "Learn how the Runner creates Runs, chooses executed or adopted Attempts, and returns a receipt for later reading."
+description: "Learn how the Runner creates Runs, chooses to execute or adopt Attempts, and returns a receipt for later reading."
 ---
 
-The Runner schedules selected Experiments and Evals as one Invocation. It executes work in the current process, shows progress, and writes business facts to the Record when the directory becomes quiescent.
+The Runner arranges selected Experiments and Evals into one Invocation. It schedules execution in the current process, shows progress, and writes settled business facts to the Record.
 
 ## Invocation, Run, and Attempt
 
-An Invocation has one `invocationId`. Each selected Experiment creates a Run, whose expected slots define the denominator for that run.
+An Invocation has one `invocationId`. Each selected Experiment creates a Run, whose expected slots determine that run's denominator.
 
-Each slot has at most one Member:
+Each slot has at most one Member. A Member says which Attempt occupies the slot: an Attempt is `origin` when its `origin` matches the current slot, and `reference` when it adopts an Attempt from another Run.
 
-- `executed`: The Runner executed this slot's Attempt.
-- `carried`: The planner automatically adopted an existing Attempt.
-- `accepted`: An operator explicitly adopted an existing Attempt.
-
-Every Member refers to an Attempt. An Attempt keeps its own `origin`, the Run and slot that actually executed it. A `carried` or `accepted` Member does not copy its Verdict, Usage, events, or other business values.
+Whether each position was executed, automatically carried, or manually adopted is saved with the target Run as inspectable provenance. An Attempt always retains the origin that actually executed it; adoption does not copy its Verdict, usage, events, or other business facts.
 
 ## Plan before execution
 
-Use `niceeval exp --dry` before a run. It reads the channels needed for planning from a quiescent Record and lists why each slot will execute or be adopted.
+`niceeval exp --dry` uses published results to list a plan for every position, then decides whether to execute or adopt an existing Attempt.
 
 ```sh
 npx niceeval exp checkout --dry
 ```
 
-Carry happens only when the terminal Verdict, input identity, timeout, and `--rerun` conditions all allow it. Identity is an opaque value with a domain; values compare only when the domains match. The target Run's `niceeval.actions` channel records the reason, eligibility, and input information.
+Carry occurs only when terminal state, input identity, timeout, and `--rerun` conditions are all suitable. Eligibility, identity, and the adoption reason are saved with the target Run. Analysis selection and reuse planning are separate: the former establishes the viewing denominator, while the latter decides which positions to execute.
 
-The Runner starts the Attempts that need execution only after planning. See [Rerun and Carry Results](/tutorials/rerun-and-cache) for details.
+Only after planning does the Runner start Attempts that need execution. See [Rerun and Carry Results](/tutorials/rerun-and-cache) for details.
 
 ## Feedback from the current process
 
-Progress, active Attempts, and short diagnostics exist only for the current process. The terminal can render them, and `--json` writes the same machine-readable feedback.
+Progress, active Attempts, and short diagnostics during a run serve the current process only. The terminal can display them, and `--json` outputs the same machine-readable feedback.
 
 ```sh
 npx niceeval exp checkout --json
 ```
 
-`exp --json` emits NDJSON. Progress and diagnostic records describe the current Invocation; they are not a Record decoding format. Exactly one final record is a lightweight `InvocationReceipt`:
+`exp --json` outputs NDJSON. Progress and diagnostic lines describe the current Invocation; they are not a Record decoding format. Exactly one final line is a lightweight `InvocationReceipt`:
 
 ```json
 {
@@ -53,27 +49,31 @@ npx niceeval exp checkout --json
 }
 ```
 
-The receipt identifies this Invocation, its Runs, timing, and completion only. To inspect Verdicts, Usage, diagnostics, or report aggregates, reread the quiescent Record using its `runIds`.
+The receipt identifies only this Invocation, its Runs, timing, and completion state. To read Verdicts, usage, diagnostics, or report aggregates, use its `runIds` to read the published Record again.
+
+## How a Run is published
+
+The Runner makes a Run available for later viewing and adoption only after it fully publishes the result. If execution exits, I/O fails, or it is interrupted before then, that result does not enter a Sample or reuse. Use `niceeval clean` to remove incomplete remnants.
 
 ## Reporter
 
-A Reporter connects only to the current Invocation. It can send information already known to the process to an external system, and `--junit` writes a file for a CI platform to consume.
+A Reporter connects only to the current Invocation. It can send results already known to the current process to an external system; `--junit` can also write a file for a CI platform to consume.
 
-Neither output owns the Record. The quiescent Record's named channels retain the recorded Verdict, Usage, assertions, and diagnostics. A later step projects an AnalysisSample from the receipt's `runIds`, then uses `show`, `view`, or `view --out` to inspect complete results.
+These outputs do not own the Record. Verdicts, usage, assertions, and diagnostics still belong to published results. To inspect complete results later, use the receipt's `runIds` to select a Sample, then run `show`, `view`, or `view --out`.
 
-## Inspect after the run
+## Inspect after the run settles
 
-After the Runner ends, inspect a historical result with an explicit Run selection:
+After the Runner ends, select an explicit Run to inspect its result:
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-Without a locator or `--run`, `show` and `view` read every slot whose identity still matches the current project. A locator or `--run` reads named historical facts. The internal host forms a pure `AnalysisSample`, projects the facts declared by the Report, and produces a fixed `ReportExecution`. Published Runs are immutable; another view creates a new selection and execution.
+`show` and `view` without a locator or `--run` read every result whose identity still matches the current project. A locator or `--run` reads specified historical facts. NiceEval forms a `Sample`, then obtains closed values for the selected Page or the Measures and domain views needed by the complete site. Published Runs are immutable; viewing again forms a new selection. `show` delivers only the target Page, while `view` and static export deliver the complete site.
 
-## Completion status
+## Completion state
 
-The process exit status reflects the Verdicts, execution errors, and Invocation completion known to the Runner. CI can use that status as its gate. A machine caller can read the final receipt, then use `runIds` to select what to show or export.
+The process exit status reflects Verdicts, execution errors, and Invocation completion known to this Runner. CI can use the exit status to decide whether to pass. A machine caller can read the final receipt and use `runIds` to select results to show or export.
 
-Input errors that prevent an Invocation from being created have no receipt. Correct the command, Experiment, or selection condition before trying again.
+Input errors that prevent an Invocation from being created have no receipt. Correct the command, Experiment, or selection condition, then run again.

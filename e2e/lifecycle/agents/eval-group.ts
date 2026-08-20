@@ -68,7 +68,6 @@ export const evalGroupAgent = defineSandboxAgent({
     const quotedGroup = JSON.stringify(groupId);
     const identity = await ctx.sandbox.runShellOrThrow("cat /etc/hostname", { signal: ctx.signal });
     const sandboxId = identity.stdout.trim();
-    ctx.fact("eval-group.container", sandboxId);
     appendFileSync(
       "eval-group-lifecycle.ndjson",
       `${JSON.stringify({ groupId, evalId, sandboxId })}\n`,

@@ -1,7 +1,4 @@
-import type {
-  RecordAttachmentSchemaId,
-  RunId,
-} from "./identifiers.ts";
+import type { RunId } from "./identifiers.ts";
 import type { NonEmptyRecordIssues } from "../errors/record-errors.ts";
 
 /** Core corruption is represented as readable state, not an Effect failure. */
@@ -20,19 +17,15 @@ export type RecordAttachmentRead<Value> =
   | { readonly state: "unavailable" }
   | {
       readonly state: "migration-required";
-      readonly from: RecordAttachmentSchemaId;
-      readonly to: RecordAttachmentSchemaId;
+      readonly family: string;
+      readonly fromSchemaVersion: number;
+      readonly toSchemaVersion: number;
       readonly command: "niceeval migrate";
     }
   | {
-      readonly state: "migration-unavailable";
-      readonly from: RecordAttachmentSchemaId;
-      readonly to: RecordAttachmentSchemaId;
-      readonly reason: string;
-    }
-  | {
       readonly state: "unsupported";
-      readonly schemaId: RecordAttachmentSchemaId;
+      readonly family: string;
+      readonly schemaVersion: number;
     }
   | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
 

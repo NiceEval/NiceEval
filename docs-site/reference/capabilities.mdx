@@ -1,29 +1,29 @@
 ---
-title: "Capabilities and evidence coverage"
+title: "Capabilities and Evidence Coverage Reference"
 sidebarTitle: "Capabilities"
-description: "How construction, runtime behavior, and the required six-channel evidenceCoverage declaration determine which NiceEval assertions can be trusted."
+description: "How an Agent's construction, runtime behavior, and required six-channel evidenceCoverage declaration together determine what NiceEval assertions can trust."
 ---
 
-Capabilities answer two separate questions:
+Capabilities answer two different questions:
 
-1. **What can the runner construct or call?** Agent construction and runtime behavior provide Sandbox access, tracing, session continuation, and HITL.
-2. **What conclusions can assertions trust?** Every Agent declares the completeness of six evidence channels with the required `evidenceCoverage` field.
+1. **What can the Runner construct or call?** An Agent's construction and runtime behavior provide Sandbox access, tracing, session continuation, and HITL.
+2. **What conclusions can assertions trust?** Every Agent must use `evidenceCoverage` to declare the completeness of six evidence channels.
 
-There is no separate `capabilities` field on `defineAgent` or `defineSandboxAgent`. That does **not** mean there is nothing to declare: `evidenceCoverage` is required on both definitions so missing evidence never becomes an implicit fourth state.
+There is no separate `capabilities` field on `defineAgent` / `defineSandboxAgent`. That does not mean "nothing needs to be declared": `evidenceCoverage` is required on both definitions so missing evidence never becomes an ambiguous fourth state.
 
 ## Construction and runtime capabilities
 
-| Capability | How it is obtained | Evidence implication |
+| Capability | How to obtain it | Effect on evidence |
 |---|---|---|
-| `t.sandbox` / `t.sandbox.fileChanged()` and other filesystem assertions | Construct the Agent with `defineSandboxAgent` (`Agent.kind` is always `"sandbox"`) | Sandbox result assertions consume the Attempt's agent-attributed diff, not an `evidenceCoverage` channel |
-| `tracing` (OTLP receiver → `niceeval view` waterfall) | CLI-style agents configure `tracing`; long-running apps configure a fixed `telemetry` port | Spans feed the timing waterfall only; they never fill gaps in behavior evidence |
-| Cross-turn continuation and `t.newSession()` isolation | Continue the backend session with `ctx.session.id` / `capture`, or store typed adapter-private history with `ctx.session.get` / `set` | Session wiring determines behavior; it is not inferred from an evidence bit |
-| HITL (`t.respond()`) | `send` returns `status: "waiting"` plus `input.requested` | The next response is matched to the structured request ID |
-| Compaction visibility | An official parser or a complete manual mapping emits a `compaction` event | `t.event("compaction")` also depends on the `events` coverage declared below |
+| `t.sandbox` / `t.sandbox.fileChanged()` and other filesystem assertions | Construct with `defineSandboxAgent` (`Agent.kind` is always `"sandbox"`) | Sandbox-result assertions consume the Attempt's agent-attributed diff; they do not correspond to an `evidenceCoverage` channel |
+| `tracing` (OTLP receiver → `niceeval view` waterfall) | Configure `tracing` for a CLI-style Agent. Configure a fixed `telemetry` port for a long-running application | Spans go only to the timing waterfall; they cannot fill a gap in behavior evidence |
+| Cross-turn continuation and `t.newSession()` isolation | Continue the backend session with `ctx.session.id` / `capture`, or save typed adapter-private history with `ctx.session.get` / `set` | The session connection determines actual behavior; do not infer it from an evidence bit |
+| HITL (`t.respond()`) | `send` returns `status: "waiting"` and `input.requested` | The next response is matched by structured request ID |
+| Compaction visibility | An official parser or complete manual mapping emits a `compaction` event | Raw events go to reports and diagnostics; there is currently no public `eventMatch` selector |
 
 ## The required six-channel declaration
 
-`defineAgent` and `defineSandboxAgent` both require an `EvidenceCoverage` value:
+Both `defineAgent` and `defineSandboxAgent` require an `EvidenceCoverage`:
 
 ```ts
 interface EvidenceCoverage {
@@ -43,52 +43,52 @@ type EvidenceCoverageEntry =
     };
 ```
 
-Use `completeEvidenceCoverage` only when the adapter really captures every channel completely. Official converters expose a coverage declaration for the protocol they normalize; a manual mapping must declare all six channels honestly:
+Use `completeEvidenceCoverage` only when the Adapter really captures every channel completely. An official converter provides its coverage declaration for the protocol it normalizes. A manual mapping must state all six channels honestly:
 
 ```ts
 import type { EvidenceCoverage } from "niceeval/adapter";
 
 const evidenceCoverage = {
   events: { status: "partial", reason: "the endpoint emits final events only" },
-  actions: { status: "unavailable", reason: "tool lifecycle events are not exposed" },
+  actions: { status: "unavailable", reason: "the endpoint does not expose tool lifecycles" },
   messages: { status: "complete" },
-  usage: { status: "unavailable", reason: "the endpoint omits token usage" },
+  usage: { status: "unavailable", reason: "the endpoint does not return token usage" },
   status: { status: "complete" },
   data: { status: "complete" },
 } satisfies EvidenceCoverage;
 ```
 
-`Turn.evidenceCoverage` is an optional per-turn **downgrade**. List only channels that were worse than the Agent default for that turn, such as a stream that disconnected before usage arrived. Omitted channels inherit the Agent declaration; a Turn cannot upgrade it.
+`Turn.evidenceCoverage` is an optional per-turn **downgrade**. List only channels that are worse for that turn than the Agent default, such as when a stream ends before usage arrives. Omitted channels inherit the Agent declaration. A Turn cannot upgrade the default coverage.
 
-## How coverage changes an assertion result
+## How coverage changes assertion results
 
-Coverage prevents missing telemetry from looking like proof that nothing happened:
+Coverage prevents "not collected" from looking like "confirmed not to have happened":
 
-| Check | Complete required channel | Partial / unavailable required channel |
+| Check | Required channel is complete | Required channel is partial / unavailable |
 |---|---|---|
-| Positive assertion finds matching evidence | `passed` | `passed` — evidence that exists is still evidence |
-| Positive assertion finds no match | `failed` | `unavailable` — missing collection cannot prove the Agent did not do it |
-| Negative assertion such as `notCalledTool()` / `notEvent()` | Evaluated normally | `unavailable` |
-| Upper-bound assertion such as `maxTokens()` / `maxCost()` | Evaluated normally | `unavailable` |
+| A positive assertion finds matching evidence | `passed` | `passed` — evidence that exists is still valid |
+| A positive assertion finds no match | `failed` | `unavailable` — a collection gap cannot prove the Agent did not act |
+| A negative assertion such as `notCalledTool()` / `notEvent()` | Evaluated normally | `unavailable` |
+| An upper-bound assertion such as `maxTokens()` / `maxCost()` | Evaluated normally | `unavailable` |
 
-An `unavailable` assertion is always recorded with a machine-readable reason. It is never silently discarded or folded into a pass:
+An `unavailable` assertion is always persisted with a machine-readable reason. It is never silently discarded or folded into a pass:
 
-- a non-optional unavailable assertion makes the Attempt `errored`;
-- an assertion explicitly chained with `.optional()` stays visible as unavailable but does not affect the Verdict.
+- A non-optional unavailable assertion makes the Attempt `errored`.
+- An assertion explicitly chained with `.optional()` remains visible as unavailable, but does not affect the Verdict.
 
-Judge availability follows the same Verdict rule but has its own causes: an unresolved Judge model or API key, a failed Judge call, or an unparseable score produces `unavailable`. Judge is therefore not "always available."
+Judge follows the same Verdict rule, but has its own unavailable reasons: an unresolved Judge model or API key, a failed Judge call, or a response without an extractable score all produce `unavailable`. Judge is therefore not "always available."
 
 ## What happens when a manual mapping misses events
 
-If a manual mapping claims `events` or `actions` are complete while omitting events, negative assertions can appear to pass on an incomplete picture. That is a false completeness declaration. Declare `partial` or `unavailable` with a reason until the mapping covers success, failure, rejection, and concurrent tool lifecycles.
+If a manual mapping misses events but declares `events` or `actions` complete, negative assertions can appear to pass on an incomplete picture. That is an incorrect completeness declaration. Until the mapping covers successful, failed, rejected, and concurrent tool lifecycles, declare `partial` or `unavailable` honestly and give a reason.
 
-Official converters guarantee only the protocol surface stated by their contract. OTel spans cannot repair an incomplete event mapping: spans feed the waterfall, never assertions.
+An official converter guarantees only the surface its protocol contract explicitly covers. OTel spans cannot repair an incomplete event mapping: spans go only to the waterfall, not assertions.
 
 ## Related reading
 
-- [Events reference](/reference/events) — the standard event stream contract.
-- [Adapter concept](/explanation/adapter) — the full `ctx` / `Turn` contract.
+- [Event stream reference](/reference/events) — the standard event stream contract.
+- [Adapter concepts](/explanation/adapter) — the full `ctx` / `Turn` contract.
 - [defineAgent and defineSandboxAgent](/reference/define-agent) — Agent fields and examples.
 - [Assertions](/explanation/assert) — unavailable, `.optional()`, and Verdict propagation.
-- [OTel integration](/tutorials/connect-otel) — why spans feed visualization rather than assertions.
-- [Built-in agent capabilities](/reference/builtin-agents) — what each built-in adapter captures.
+- [OTel integration](/tutorials/connect-otel) — why spans feed visualization only, not assertions.
+- [Built-in Agent capabilities](/reference/builtin-agents) — what each built-in Adapter actually captures.

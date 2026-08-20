@@ -4,12 +4,17 @@
 直接登记 Assertion。`defineEval` 各字段见 [README](README.md)。
 
 ```ts
+import { jsonMatch, toolMatch } from "niceeval/expect";
+
 export default defineEval({
   description: "布鲁克林天气查询",
   async test(t) {
     const turn = await t.send("布鲁克林今天天气怎么样？");
     turn.succeeded().label("Turn 完成");
-    turn.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });
+    turn.calledTool(
+      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
+      { count: 1 },
+    );
     t.check(turn.message, includes("晴")).label("回答天气");
   },
 });
@@ -32,11 +37,15 @@ export default defineEval({
 
 ## 两种 Eval
 
-`defineEval` 创建 Pass Eval。它用 Boolean condition 得到 Attempt Verdict；continuous measurement 必须
-`.atLeast(n)`，context 没有 `t.score` 或 handle `.score`。
+`defineEval` 创建 Pass Eval。Boolean condition 是 gate；Verdict 在 Assertion 封口后由 Core `outcome`、
+sealed Assertions 与显式 skip 读侧折叠。continuous measurement 用 `.gate(n)` 才进入 failed，context 没有 `t.score`
+或 handle `.score`。
 
 `defineScoreEval` 创建 Score Eval。Assertion 默认 record-only；用 `.score(points)` 或 `t.score(points)`
-显式贡献 score。每个 Attempt 仍有四态 Verdict，并另写 Score Attachment；gate failed 不清空 earned score。
-Score 不声明 max 或百分比。
+显式贡献 score。
+
+`points`、earned contribution 与完整度都封口在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 中，Score 按同一份
+rubric 在读侧形成。Score Eval 不声明 gate、max 或百分比；低分和零分不导致 `failed`，正常封口为 `passed`。
+execution error 读为 `errored`，显式 `t.skip(reason)` 读为 `skipped`。`.orStop()` 只停止当前 continuation。
 
 详细 API 与完整场景见 [Use cases](use-case/README.md)。

@@ -141,13 +141,13 @@ export interface EvidenceCoverage {
   readonly events: EvidenceCoverageEntry;
   /** action 生命周期(工具正负断言、顺序、失败的依据)。 */
   readonly actions: EvidenceCoverageEntry;
-  /** assistant / user message(reply、messageIncludes 的依据)。 */
+  /** assistant / user message（reply 与显式 message 值断言的依据）。 */
   readonly messages: EvidenceCoverageEntry;
   /** usage(token / cost 上限断言的依据)。 */
   readonly usage: EvidenceCoverageEntry;
   /** Turn status 的真实性(succeeded / parked 的依据)——恒 completed 的映射必须声明非 complete。 */
   readonly status: EvidenceCoverageEntry;
-  /** Turn.data(outputEquals / outputMatches 的依据)。 */
+  /** Turn.data（供 `t.check(turn.data, match)` 检查结构化输出）。 */
   readonly data: EvidenceCoverageEntry;
 }
 
@@ -305,12 +305,12 @@ export interface AgentContext {
    */
   readonly experimentId?: string;
   /**
-   * 当前 Attempt 对应的 eval id。NiceEval runner 始终从 discovery 后的 Eval 身份填入；
+   * 当前 Attempt 对应的 eval ID。NiceEval Runner 始终从 discovery 后的评估用例身份填入；
    * 第三方直接构造 AgentContext 时可省略。Adapter 可用它定位与题目同目录的只读宿主资产，
    * 但不能据此绕过 Sandbox 的隐藏判据隔离。
    */
   readonly evalId?: string;
-  /** 当前 Attempt 的 Eval Group；未分组 Eval 省略。 */
+  /** 当前 Attempt 的评估组；未分组评估用例省略。 */
   readonly evalGroup?: {
     readonly id: string;
     readonly definitionHash: string;
@@ -340,14 +340,6 @@ export interface AgentContext {
    * 即使 level 为 "error" 也不改变 Turn.status / verdict——无法继续时抛异常。
    */
   diagnostic(input: DiagnosticInput): void;
-  /**
-   * 写入本 Attempt 的 generic custom fact document。name 使用反向域格式且不能以 `niceeval.` 开头；
-   * 同一 owner/name 只允许写一次，第二次写入是 typed error，不替换也不追加。value 可以是任意 JsonValue。
-   * `{ observedAt, value }` 经 JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出
-   * `record-custom-fact-too-large`，且不留下部分文件。不影响 Turn status、verdict、评分或指纹。
-   * 形状与归属语义见 docs/feature/record/architecture.md。
-   */
-  fact(key: string, value: string | number | boolean): void;
   /**
    * `progress({ message: msg })` 的别名,不是第二条通道(见 docs/feature/experiments/cli.md
    * 「Attempt 阶段」)。超时失败时最近若干行会并入结果的 error 信息,方便定位卡在哪一步。
@@ -456,7 +448,7 @@ export type AgentArtifactPlatform =
     };
 
 /**
- * Run 级准备好的锁定制品。digest + 实际 platform 只属于运行 provenance/facts，不进入
+ * Run 级准备好的锁定制品。digest + 实际 platform 只属于运行 provenance，不进入
  * configHash 或 Eval fingerprint；静态 installer identity/revision 与 ProviderPlan target 才是配置身份。
  * 安装时经主 Sandbox 文件 API 上传,不依赖题面网络。
  */
@@ -474,7 +466,7 @@ export type AgentArtifactInstallShape =
   | { readonly kind: "npm-tarball" }
   | { readonly kind: "self-contained"; readonly binPath: string };
 
-/** attempt facts 里 `agent.ensure` 的取值:区分 probe 命中与本次安装。 */
+/** `agent.ensure` 的取值:区分 probe 命中与本次安装。 */
 export type AgentEnsureOutcome = "hit" | "installed";
 
 /**

@@ -84,6 +84,7 @@ export {
   type ErrorEvent,
   type EvalEvent,
   type KeptEvent,
+  type NoticeEvent,
   type WarningEvent,
   type BudgetExhaustedEvent,
   type ReporterErrorEvent,

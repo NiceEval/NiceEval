@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
+import { equals, pattern, toolMatch } from "niceeval/expect";
 
 // calculate 工具声明了 needsApproval:true(AI SDK 自己的 tool loop 停轮机制)。这条验证批准
 // 分支:approve 之后工具正常执行,calledTool 的 status 是 "completed"。
@@ -18,7 +18,7 @@ export default defineEval({
 
     const approved = await t.respond("approve");
     approved.succeeded();
-    t.calledTool("calculate", { status: "completed" });
-    t.messageIncludes(/126/);
+    t.calledTool(toolMatch("calculate", { status: "completed" }));
+    t.check(approved.message, pattern(/126/));
   },
 });

@@ -16,9 +16,9 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 | 协议行为 | Eval 断言（只读事件流与公开运行结果） |
 |---|---|
-| 正常 SSE | 完整帧序列归约为成功 Turn，assistant message 与公开 execution 投影包含 fixture 文案 |
+| 正常 SSE | 完整帧序列归约为成功 Turn，assistant message 与公开 Evidence Page 包含 fixture 文案 |
 | HITL approval | `approval-requested` 先产生一次 `operation.started` + `input.requested`，调用处于 pending；approve / deny resume 分别以同一 call ID 唯一结束为 completed / rejected |
-| 半途断流 | 收到部分 SSE 后连接关闭，运行必须非零退出，并产生归属于本 Eval 的 send 失败 |
+| 非法终止 | 在 `[DONE]` 前关闭，或在 `[DONE]` 后才发送 assistant 帧，运行必须非零退出并公开 `agent-send-failed` |
 | timeout | 响应头完成但 body 挂起，Attempt deadline 必须中止 send，并产生 timeout 诊断 |
 | HTTP 非 2xx | HTTP 500 必须使 send 失败，诊断包含 HTTP 请求或状态信息 |
 
@@ -29,7 +29,7 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Transport owner
 
-`test/transport.test.ts` 只拥有完整 SSE 成功及其公开 execution 文案。
+`test/transport.test.ts` 只拥有完整 SSE 成功及其公开 Evidence Page 文案。
 
 <a id="approval-owner"></a>
 
@@ -41,7 +41,7 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Disconnect owner
 
-`test/disconnect.test.ts` 只拥有半截 SSE 被对端断开的公开失败结果。
+`test/disconnect.test.ts` 只拥有 `[DONE]` 两侧的非法终止：半截 SSE 在结束标记前断开，以及结束标记后的帧不能补成成功 Turn。
 
 <a id="timeout-owner"></a>
 
@@ -64,8 +64,11 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
   dispose 后测试真实重绑该端口，证明资源释放。
 - Vitest 保留默认文件级并行；不使用共享 `beforeAll`、固定端口、mutex、文件顺序或
   `maxConcurrency: 1`。
-- **CLI 读回**：`show` 默认报告列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的 `show --execution` 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
-- **Timing**：本地 fixture 不接 OTel；每个 transport owner 从 `show --timing` 读回 runner 阶段，不从 execution 文本反推 telemetry。
+- **CLI 读回**：`show` 默认报告列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的代表 Evidence Page 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
+- **Timing 边界**：本地 fixture 不接 OTel。`eval.run`、`agent.setup`、`agent.send` 是 Runner 的通用 timing，
+  只由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 读回；本 Repo 不再重复 `show --timing`。
+  当前公开 Record / `show` 不能把 OTel mapper 明确归因给这个 Adapter，因此 mapper-specific OTel 没有可核查的公开证据：
+  不得用日志、私有 `.niceeval` 目录文件、`telemetry.collect` 或 `agent.send` 代替公开 seam。
 
 ## 与 live AI SDK 的边界
 

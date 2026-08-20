@@ -59,6 +59,7 @@ import {
   type ToolMatchQuantifier,
 } from "../assertions/match.ts";
 import { buildO11ySummary, deriveRunFacts, deriveScopedLogicalToolOccurrences } from "../o11y/derive.ts";
+import { estimateCost } from "../o11y/cost.ts";
 import { UNCLASSIFIED_TOOL_ACTIONS_REASON } from "../o11y/command-projection.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
@@ -74,6 +75,7 @@ import type {
   JsonMatch,
   JsonValue,
   JudgeMaterial,
+  PriceOverride,
   ResolvedJudgeConfig,
   Sandbox,
   SandboxOperations,
@@ -108,6 +110,8 @@ export interface AssertFirstContextDeps {
   readonly attempt?: import("../types.ts").AgentContext["attempt"];
   readonly evalGroup?: import("../types.ts").AgentContext["evalGroup"];
   readonly model?: string;
+  /** defineConfig({ pricing }) 的价目表,只供 maxCost 的 estimatedCostUSD 估算(estimateCost);与 observed usage.costUSD 无关。 */
+  readonly pricing?: globalThis.Record<string, PriceOverride>;
   readonly reasoningEffort?: string;
   readonly flags: globalThis.Record<string, JsonValue>;
   readonly experimentId?: string;
@@ -116,15 +120,12 @@ export interface AssertFirstContextDeps {
   readonly telemetry?: import("../types.ts").Telemetry;
   readonly otel?: import("../o11y/otlp/turn-otel.ts").AgentOtelChannel;
   readonly feedback?: import("../types.ts").ScopedFeedback;
-  readonly fact?: (key: string, value: string | number | boolean) => void;
   readonly onSendActive?: (active: boolean) => void;
   readonly ledgerHooks?: import("./session.ts").SessionDeps["ledgerHooks"];
   readonly timingNow?: import("./session.ts").SessionDeps["timingNow"];
   readonly onTurn?: import("./session.ts").SessionDeps["onTurn"];
   readonly concurrencySlot?: ConcurrencySlot;
   readonly experimentClassifier?: import("./session.ts").SessionDeps["experimentClassifier"];
-  readonly retryRandom?: import("./session.ts").SessionDeps["retryRandom"];
-  readonly retrySleep?: import("./session.ts").SessionDeps["retrySleep"];
   /** Attempt-owned source snapshot registry; never inferred from an Effect fiber. */
   readonly sourceRegistry?: SourceRegistry;
   /** Shared ordering with Assertion runtime source facts and Session user events. */
@@ -683,6 +684,8 @@ function usageLimitHandle<Kind extends RuntimeKind>(input: {
   readonly metric: "tokens" | "cost";
   readonly maximum: number;
   readonly usage: Usage;
+  /** metric === "cost" 时的价目表估算(estimateCost(model, usage, pricing));observed usage.costUSD 不进入预算断言。 */
+  readonly estimatedCostUSD?: number;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }): BooleanAssertionHandle<Kind, void> {
@@ -699,9 +702,13 @@ function usageLimitHandle<Kind extends RuntimeKind>(input: {
       snapshot: input.snapshot,
     }),
     evaluate: () => Effect.sync(() => {
+      // 预算只认 estimatedCostUSD(价目表估算),never observed usage.costUSD:
+      // 两者独立并存,observed 存在也不改变估算口径(见 Usage.costUSD 单向字段契约)。
+      // 无 model / 无价格 / 无可计价 usage 时 estimate 不存在；缺测不能被当成零成本。
       const actual = input.metric === "tokens"
         ? (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0)
-        : input.usage.costUSD ?? 0;
+        : input.estimatedCostUSD;
+      if (actual === undefined) return unavailableVoid();
       if (actual > input.maximum) return mismatchedVoid();
       return hasCompleteCoverage(input.coverage, "usage")
         ? matchedVoid()
@@ -1518,15 +1525,12 @@ export function createAssertFirstEvalContext(
     telemetry: deps.telemetry,
     otel: deps.otel,
     feedback: deps.feedback,
-    fact: deps.fact,
     onSendActive: deps.onSendActive,
     timingNow: deps.timingNow,
     onTurn: deps.onTurn,
     ledgerHooks: deps.ledgerHooks,
     concurrencySlot: deps.concurrencySlot,
     experimentClassifier: deps.experimentClassifier,
-    retryRandom: deps.retryRandom,
-    retrySleep: deps.retrySleep,
     nextSourceOrder: deps.nextSourceOrder,
     sourceRegistry: deps.sourceRegistry,
   });
@@ -1538,6 +1542,11 @@ export function createAssertFirstEvalContext(
     manager,
     late: { diff: Object.freeze({ state: "pending" as const }), scripts: {} },
   };
+
+  // maxCost 断言唯一认价目表估算(estimateCost);observed usage.costUSD 与之独立并存,
+  // 存在也不改变估算(见 Usage.costUSD 单向字段契约)。
+  const estimatedCostFor = (usage: Usage): number | undefined =>
+    estimateCost(deps.model, usage, deps.pricing);
 
   interface TurnScopeSnapshot {
     readonly events: readonly StreamEvent[];
@@ -1848,6 +1857,7 @@ export function createAssertFirstEvalContext(
         metric: "cost",
         maximum: usd,
         usage: turn.usage ?? {},
+        estimatedCostUSD: estimatedCostFor(turn.usage === undefined ? {} : turn.usage),
         coverage,
         snapshot: scopeSnapshot,
       });
@@ -2009,6 +2019,7 @@ export function createAssertFirstEvalContext(
         metric: "cost",
         maximum: usd,
         usage: session.usage,
+        estimatedCostUSD: estimatedCostFor(session.usage),
         coverage,
         snapshot: sessionSnapshot(scope),
       });
@@ -2197,6 +2208,7 @@ export function createAssertFirstEvalContext(
       metric: "cost",
       maximum: usd,
       usage: manager.usage,
+      estimatedCostUSD: estimatedCostFor(manager.usage),
       coverage,
       snapshot: attemptSnapshot(),
     });

@@ -1,23 +1,26 @@
 ---
-title: "Evals in NiceEval: lifecycle, verdicts, and files"
+title: "Evals in NiceEval: lifecycle, Verdicts, and files"
 sidebarTitle: "Evals"
-description: "An eval is a test case: a description and a test function, agent-neutral. Learn how evals are discovered, scheduled, scored, and reported."
+description: "An Eval is a test case: a description and a test function, kept agent-neutral. Learn how Evals are discovered, scheduled, scored, and reported."
 ---
 
-An eval is a runnable test case. It usually lives in a `*.eval.ts` file and is declared with `defineEval`.
+An Eval is a runnable test case. It is usually exported from a `*.eval.ts` file and declared with `defineEval`.
 
-## What an eval contains
+## What an Eval contains
 
 ```ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { includes, jsonMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description: "Brooklyn weather query",
   async test(t) {
     await t.send("What's the weather like in Brooklyn today?");
     t.succeeded();
-    t.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });
+    t.calledTool(
+      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
+      { count: 1 },
+    );
     t.check(t.reply, includes("sunny"));
   },
 });
@@ -25,76 +28,82 @@ export default defineEval({
 
 Core fields:
 
-| Field | Meaning |
+| Field | Description |
 |---|---|
-| `description` | Human-readable description shown in reports |
-| `environment` | Optional environment requirement profile, mapped by the Sandbox spec's `environments` table to a concrete preset environment |
-| `test(t)` | Interaction and assertion logic |
+| `description` | A human-readable description shown in reports |
+| `sandbox` | An optional Sandbox layer owned by the Eval; omit it when the Experiment provides the template-bearing layer |
+| `test(t)` | The interaction and assertion logic |
 
-An eval does not declare which Agent it runs against — it stays agent-neutral by default, so the same eval can run against different Agents under different experiments. Choosing the Agent is a field of the experiment, not something the CLI overrides ad hoc.
+An Eval does not declare which Agent to run. It stays agent-neutral by default, so the same Eval can run against different Agents under different Experiments. The Experiment chooses the Agent; the CLI does not override it ad hoc.
 
 <Note>
-  Do not hand-write `id` or `name`. [NiceEval](https://niceeval.com/) derives the eval ID from the file path.
+  Do not write `id` or `name` by hand. [NiceEval](https://niceeval.com/) derives the ID from the file path.
 </Note>
 
 ## Path is identity
 
-`evals/weather/brooklyn.eval.ts` has ID `weather/brooklyn`. Positional arguments after the experiment name filter by ID prefix:
+`evals/weather/brooklyn.eval.ts` has the ID `weather/brooklyn`. Positional arguments after the Experiment name filter by ID prefix:
 
 ```bash
 npx niceeval exp local weather
 npx niceeval exp local weather/brooklyn
 ```
 
-This keeps IDs stable and readable, and naturally consistent with the directory structure. Positional arguments use a bare string-prefix match: `terminal-swe-bench` also matches `terminal-swe-bench-astropy-1` — the character right after the match is not required to be `/`.
+This keeps IDs stable and readable, and naturally aligned with the directory structure. Positional arguments use a string prefix: `terminal-swe-bench` also matches `terminal-swe-bench-astropy-1`; the following character does not have to be `/`.
 
 ## Lifecycle
 
 <Steps>
   <Step title="Discovery">
-    The runner loads the `*.eval.ts` files and fixture directories under `evals/`.
+    The Runner loads `*.eval.ts` files and Fixture directories under `evals/`.
   </Step>
   <Step title="Scheduling">
-    Build the execution plan from concurrency, cache, attempts, and early exit.
+    It creates an execution plan from concurrency, cache, attempts, and early exit.
   </Step>
   <Step title="agent.send">
     `t.send()` calls the selected Adapter and receives a standard `Turn`.
   </Step>
-  <Step title="Evaluate assertions">
-    [NiceEval](https://niceeval.com/) collects value assertions, scoped assertions, judge scores, and test results.
+  <Step title="Assertions and Verdict">
+    [NiceEval](https://niceeval.com/) collects value assertions, scoped assertions, and Judge measurements, then registers score contributions.
   </Step>
-  <Step title="Verdict">
-    All assertion results fold into one final verdict.
+  <Step title="Final state">
+    A pass-style Eval folds assertion results into its final Verdict; a score-style Eval accumulates its official score.
   </Step>
   <Step title="Report">
-    The console and reporters emit the results, and facts are committed to the `.niceeval/` Record root.
+    The console and Reporters output results, while facts are published to the `.niceeval/` Record root.
   </Step>
 </Steps>
 
 ## Verdict types
 
+A pass-style Eval Attempt has exactly four terminal states:
+
 <CardGroup cols={2}>
   <Card title="passed" icon="circle-check" color="#22c55e">
-    All gate assertions passed (under `--strict`, soft assertions also met their thresholds), and no execution error occurred.
+    Every Boolean Assertion matched, every gated measurement met its `.gate(n)` threshold, and no execution error occurred.
   </Card>
   <Card title="failed" icon="circle-xmark" color="#ef4444">
-    At least one gate assertion failed, or under `--strict` a soft assertion came in below its threshold.
+    At least one Boolean condition mismatched, or a measurement fell below an explicit `.gate(n)` threshold.
   </Card>
   <Card title="errored" icon="triangle-exclamation" color="#f59e0b">
-    An execution error, timeout, or authoring error — this run cannot produce a trustworthy conclusion.
+    An execution exception, timeout, or authoring error means this execution cannot form a trustworthy conclusion.
   </Card>
   <Card title="skipped" icon="forward" color="#6b7280">
-    The eval skipped itself, usually through `t.skip(reason)`.
+    The Eval actively skipped itself, usually with `t.skip(reason)`.
   </Card>
 </CardGroup>
 
-## Gate and soft
+A score-style Eval's primary reading is its cumulative earned score; higher is better. A score of `0` is normal when there are no score items. The default report shows earned score and does not count normal closed states as pass rate.
 
-`gate` is a hard threshold. Failure makes the eval fail. `soft` contributes a score without necessarily failing the eval. See [Assert](/explanation/assert) for the full rules.
+The `points` in `.score(points)` are the weight of one contribution, not a fixed total score. The default report does not automatically convert earned score into a percentage. When an Experiment contains both pass-style and score-style Evals, the report displays their primary readings separately.
+
+## Verdicts and measurements
+
+Boolean `matched` enters the Verdict by default. Continuous measurements and Judge output are measurements in `[0, 1]`; a pass-style Eval puts one into `failed` only with `.gate(n)`, while `.atLeast(n)` records only a local condition. See [Assert](/explanation/assert) for the complete rules.
 
 ## The `*.eval.ts` convention
 
-Only files ending in `.eval.ts` are discovered. Use directories for grouping:
+Only files ending in `.eval.ts` are discovered. Directories only form ID prefixes:
 
 ```text
 evals/
@@ -102,9 +111,9 @@ evals/
    └─ refund.eval.ts  # id: billing/refund
 ```
 
-## Array exports and data-driven tests (dataset fan-out)
+## Array exports and data-driven tests (Dataset fan-out)
 
-A file can also default-export an array of `defineEval(...)` calls to generate multiple cases from the same logic:
+A file can default-export an array of `defineEval(...)` calls to generate multiple cases from the same logic:
 
 ```ts
 export default rows.map((row) =>
@@ -122,5 +131,5 @@ This generates IDs such as `sql/0000` and `sql/0001`. See [Dataset fan-out](/tut
 
 ## Related reading
 
-- [Experiment](/explanation/experiment) — The other half: who to evaluate and how to run it, and why it is kept separate from the eval (late binding).
-- [Assert](/explanation/assert) — The full verdict rules for gate and soft assertions.
+- [Experiment](/explanation/experiment) — The other half: who to evaluate and how to run it, and why it is separate from the Eval (late binding).
+- [Assert](/explanation/assert) — Assertion and Verdict rules.

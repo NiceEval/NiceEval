@@ -1,74 +1,109 @@
 import type {
   AttemptId,
-  RecordAttachmentName,
-  RecordAttachmentSchemaId,
-  RecordFormatV1,
+  EvalId,
+  ExecutionIdentityDigest,
+  ExperimentId,
+  RecordFormat,
   RecordId,
   RunId,
   SlotId,
   UtcMillis,
 } from "./identifiers.ts";
+import type { RunContext } from "./run-context.ts";
 
-/** The exact contents of `record.json` for the current Record major. */
-export interface RecordDocumentV1 {
-  readonly format: RecordFormatV1;
+/** The current root header keeps stable identity separate from schema version. */
+export interface RecordDocument {
+  readonly format: RecordFormat;
+  readonly schemaVersion: 2;
   readonly recordId: RecordId;
 }
 
-/** The exact contents of one published Run's `run.json`. */
-export interface RunDocumentV1 {
-  readonly runId: RunId;
-  readonly startedAt: UtcMillis;
-  readonly completedAt: UtcMillis;
-  readonly expectedSlots: readonly SlotId[];
-}
-
-/** An exact reference to an Attempt at its immutable origin. */
+/** An exact reference to an immutable origin Attempt. */
 export interface RecordAttemptRef {
   readonly originRunId: RunId;
   readonly attemptId: AttemptId;
 }
 
-/** The exact contents of `members/<SlotId>.json`. */
-export interface MemberDocumentV1 {
+/** The terminal execution fact required to interpret an origin Attempt. */
+export type AttemptOutcome =
+  | "completed"
+  | "errored"
+  | "cancelled"
+  | "interrupted";
+
+/** The immutable final action for one planned denominator Slot. */
+export type MembershipAction =
+  | "executed"
+  | "carried"
+  | "accepted"
+  | "not-dispatched"
+  | "interrupted";
+
+/** Exact planned identity; its existing digest remains the only execution identity. */
+export interface RecordSlotIdentity {
   readonly slotId: SlotId;
-  readonly attempt: RecordAttemptRef;
+  readonly evalId: EvalId;
+  /** Zero-based planned attempt identity; never inferred from array position. */
+  readonly attemptOrdinal: number;
+  readonly executionIdentityDigest: ExecutionIdentityDigest;
 }
 
-/** The exact contents of `attempts/<AttemptId>/attempt.json`. */
-export interface AttemptDocumentV1 {
+/** The exact durable contents of one sealed `run.json`. */
+export interface RunDocument {
+  readonly runId: RunId;
+  readonly experimentId: ExperimentId;
+  /** Mandatory historical Core, sealed once with the Run. */
+  readonly context: RunContext;
+  readonly startedAt: UtcMillis;
+  readonly completedAt: UtcMillis;
+  readonly expectedSlots: readonly RecordSlotIdentity[];
+}
+
+/** The exact durable contents of `members/<SlotId>.json`. */
+export type MemberDocument =
+  | {
+      readonly slotId: SlotId;
+      readonly action: "executed" | "carried" | "accepted";
+      readonly attempt: RecordAttemptRef;
+    }
+  | {
+      readonly slotId: SlotId;
+      readonly action: "not-dispatched" | "interrupted";
+      readonly attempt: null;
+    };
+
+/** The exact durable contents of `attempts/<AttemptId>/attempt.json`. */
+export interface AttemptDocument {
   readonly attemptId: AttemptId;
   readonly originRunId: RunId;
+  readonly slotId: SlotId;
+  readonly evalId: EvalId;
+  readonly executionIdentityDigest: ExecutionIdentityDigest;
+  readonly outcome: AttemptOutcome;
 }
 
-/** The exact contents of one Attachment's `attachment.json`. */
-export interface RecordAttachmentEnvelopeV1 {
-  readonly name: RecordAttachmentName;
-  readonly schemaId: RecordAttachmentSchemaId;
+/** Stable fixed-family identity plus the numeric shape version. */
+export interface RecordAttachmentEnvelope<Family extends string = string> {
+  readonly family: Family;
+  readonly schemaVersion: number;
 }
 
 export type RecordAttachmentOwner = "run" | "attempt";
 
-/**
- * Pure aggregate used to validate cross-document Core invariants. It is not a
- * second durable document; filesystem code supplies it from one frozen view.
- */
-export interface RunCoreV1 {
-  readonly run: RunDocumentV1;
-  readonly members: readonly MemberDocumentV1[];
-  readonly attempts: readonly AttemptDocumentV1[];
+/** In-memory aggregate for cross-document Core refine; never a second disk document. */
+export interface RunCore {
+  readonly run: RunDocument;
+  readonly members: readonly MemberDocument[];
+  readonly attempts: readonly AttemptDocument[];
 }
 
-/** A complete, already-published Record Core snapshot. */
-export interface RecordCoreV1 {
-  readonly record: RecordDocumentV1;
-  readonly runs: readonly RunCoreV1[];
+/** A complete already-published Record Core snapshot. */
+export interface RecordCore {
+  readonly record: RecordDocument;
+  readonly runs: readonly RunCore[];
 }
 
-/**
- * NUL cannot occur in a portable ID segment, so this is an unambiguous private
- * map key for exact Run/Attempt references.
- */
+/** NUL cannot appear in a portable segment, so this map key is collision-free. */
 export function recordAttemptReferenceKey(ref: RecordAttemptRef): string {
   return `${ref.originRunId}\u0000${ref.attemptId}`;
 }

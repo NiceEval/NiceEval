@@ -1,14 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "adapter/opencode",
+  "batch": "docker-2",
   "areas": ["adapter", "sandbox"],
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 55,
+  "timeoutMinutes": 3,
   "harness": { "testkit": true },
-  "secrets": ["BUB_API_KEY", "BUB_API_BASE", "OPENCODE_API_KEY"],
-  "requires": { "docker": true, "externalNetwork": true },
+  "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENCODE_API_KEY"],
+  "requires": { "docker": true, "externalNetwork": true, "runtimes": ["node>=24"] },
   "paths": ["e2e/adapter/opencode/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**", "junit.xml", "junit-skill.xml", "junit-go.xml"]
 }

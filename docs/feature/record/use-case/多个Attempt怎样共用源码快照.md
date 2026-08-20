@@ -1,67 +1,61 @@
 # 多个 Attempt 怎样共用源码快照
 
-Eval 源码快照属于 Run-owned `niceeval.sources/v1`。Attempt 不各自复制源码，也不在 Core 保存 source path。
+源码闭包属于 origin Run 的 `niceeval.sources`。Attempt 不各自复制源码，也不把 host path 或 blob
+ref 写进 Core。
 
 ## 同一个 origin Run
 
 ```text
 Run R1
-  ├─ niceeval.sources/v1
-  │    ├─ SourceItemId manifest
-  │    └─ Run-local blobs
-  ├─ Attempt A1
-  │    └─ niceeval.assertion-source-sites/v1
-  └─ Attempt A2
+├─ niceeval.sources
+│  ├─ SourceItemId manifest
+│  └─ Run-local blobs
+├─ Attempt A1
+│  └─ assertions / diagnostics source-site joins
+└─ Attempt A2
 ```
 
-A1 与 A2 都由 R1 实际产生时，可以通过同一个 origin Run 读取这份源码快照。Attempt-owned
-source-sites 以 `sourceItemId` 与 digest join origin Run Sources entry；canonical path 与 source
-blob 仍只留在 Run-owned Attachment。Assertions payload 本身不携带 source location。
+R1 的每个 origin Attempt 都通过自己的 `originRunId` 读取同一个 Sources manifest。Assertion 和
+diagnostic 的 source-site 只保存 `sourceItemId`、digest 和坐标；它们不携带 Sources blob、storage path、
+Run handle 或读取 capability。
+
+`SourceItemId` 是 manifest 内稳定 identity，不是数组下标、path、digest 或 blob key。每个 item 的
+canonical project-relative path、SHA-256 和 own blob 表示当时的内容。离线 reader 因而可以展示并
+核对当时源码，而不读取现在的 worktree。
 
 ## 后续 Run 引用历史 Attempt
 
 ```text
 Run R2 / Member
   → { originRunId: R1, attemptId: A1 }
-  → R1 / niceeval.sources/v1
+  → R1 / niceeval.sources
 ```
 
-R2 采用 A1 时只保存精确 Attempt reference，不复制 A1 或 R1 的 RecordAttachment。source viewer 沿 A1 的 origin Run 读取，不能改读 R2 或当前 worktree。
+R2 采用 A1 时只保存精确 Attempt reference，不复制 A1 或 R1 的 Attachment。source viewer 沿 A1 的
+origin Run 读取，不能改读 R2 或当前 worktree。origin Run 可以进入 reader 的 dependency closure，
+但不因此进入 R2 的逻辑 Sample denominator。
 
-origin Run 只进入 reader 的 dependency closure，不因此进入 Sample 分母。
+十个 Slot 指向同一个 origin Run 时仍是十条逻辑引用。宿主可以按 owner 与固定读取种类去重一次
+物理读取；这个 cache 不会改变每条 Member 的语义。
 
-十个 slot 指向同一个 origin Run 时仍是十条逻辑访问。宿主可以按 owner 与 projector token
-去重一次物理 projection。
+## 不建立跨 Run blob pool
 
-读取 sources Attachment 时，read Effect 会先 materialize 它的完整 blob closure，并
-deep-freeze decoded JSON payload。
+即使两个 Run 的源码 bytes 和 digest 完全相同，每份 Sources Attachment 仍拥有自己的 closure。一个
+`RecordBlobRef` 只指向同一 Attachment directory 的 `blobs/`，不能指向另一个 Run、另一个 family 或
+全局 blob pool。
 
-projector 随后只同步消费自包含内存 value。即使 reader Scope 已关闭，展示源码也不会再次
-触发磁盘 I/O，亦不能以 mutation 改写其它 consumer 的 payload 视图。
+改变为跨 Run blob pool、允许 root 外文件，或改变 Sources owner，会改变所有 reader 必须理解的
+Core 公理。这不是 Sources payload 的小改，而是下一 Record format 的工作。
 
-## SourceItemId 与 SHA-256 不替代源码 bytes
+## 惰性读取不改变 ownership
 
-Sources manifest 的每个项目都有 stable `SourceItemId`、canonical project-relative path、SHA-256 与
-own blob。`SourceItemId` 是 stable manifest index，不是数组位置；source-sites 用它与 digest
-定位当时项目。Run 完成标识本身不保存 hash。
-
-Record 仍保存实际 source bytes。只保存 hash 会让离线 Report 无法展示源码，也无法证明一个外部同名文件就是当时内容。
-
-## 跨 Run 不建立 blob 引用
-
-两个 Run 各自产生新的 Attempt 时，即使源码 bytes 和 digest 相同，每个 Sources RecordAttachment 仍拥有自己的 closure。
-
-RecordAttachment blob ref 只能指向同一 RecordAttachment directory 的 `blobs/**`。跨 Run 或跨 RecordAttachment 的全局 blob pool 会改变 owner、portable closure 与路径公理，不能作为 Sources payload 的普通 schema 演进。
-
-source-sites 的 `sourceItemId` 与 digest 只是 schema-declared semantic join。它们不赋予 Attempt
-对 Sources blob、storage path、Run handle 或读取 capability 的访问权；公开读取仍由三个中立
-projection 组成。
-
-本用例不声明 sources entries 与 expected Eval 的集合等式，也不推断一个全-reference Run 必须保存哪些当前源码。可依赖的读取规则只有一条：Attempt 的历史源码始终由它的 origin Run 拥有。
+`RecordReadSession` 只在 source viewer 或 Analysis query 实际请求 Sources 时 materialize payload 和
+closure。形成 `available` value 后，payload 已 deep-freeze，blob bytes 以 defensive copy 提供；Scope
+关闭后展示继续消费内存 snapshot，不再触发磁盘 I/O。
 
 ## 相关阅读
 
-- [Attempt origin 与 reference](../architecture.md#core-v1)
 - [Sources manifest](../architecture.md#sources-manifest)
-- [Run RecordAttachment](../../../observability.md)
-- [Assertion source sites](../../assertions/architecture/source-sites.md)
+- [Attachment closure](RecordAttachment怎样保存运行事实.md#一个-family-一份完整-closure)
+- [跨文件 Eval 怎样进入源码闭包](跨文件Eval怎样进入源码闭包.md)
+- [Assertions](../../assertions/README.md)

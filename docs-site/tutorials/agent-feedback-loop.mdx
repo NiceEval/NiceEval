@@ -1,22 +1,28 @@
 ---
 title: "Let a Coding Agent Iterate from Results"
 sidebarTitle: "Coding Agent Feedback Loop"
-description: "Let a Coding Agent read receipt run IDs, then use show or view to inspect results from a quiescent Record."
+description: "Let a Coding Agent read receipt runIds, then use show or view to inspect results in a published Record."
 ---
 
-A Coding Agent can complete a clear feedback loop from the command line: read the installed documentation, run an Experiment, read the final receipt, use its `runIds` to inspect results, update the program or evals, and run again.
+A Coding Agent can complete a clear feedback loop from the command line: read the installed documentation, run an Experiment, read the final receipt, use its `runIds` to inspect results, update the program or eval, and run again.
 
 ## Start with the installed documentation
 
-Tell the Agent to start with the documentation installed in the project instead of guessing an API:
+NiceEval packages its Chinese documentation in `docs-site/zh/` and provides an `INDEX.md` at the package root for Coding Agents. A Coding Agent should read `node_modules/niceeval/INDEX.md` first, then use the index to reach pages needed for the current task. Do not rely on training data or online examples from another version. This keeps API and CLI guidance aligned with the installed version.
+
+`npx niceeval init` initializes configuration and writes managed guidance into the project's `AGENTS.md`. If a project has only `CLAUDE.md`, it writes there instead. If neither file exists, it creates `AGENTS.md`. Run `init` again after upgrading NiceEval to refresh the managed block.
+
+The managed guidance separates writing source from proving what happened in a Run. An Agent can read project source such as `evals/` and `agents/` while writing code. To prove historical execution, it uses only `niceeval show` and its public evidence slices. Do not scan raw `.niceeval/` files or infer historical execution from current source. If the public slice lacks needed evidence, report a NiceEval presentation gap.
+
+You can give an AI this starting task:
 
 ```text
 Read node_modules/niceeval/INDEX.md first.
-Then read the pages relevant to the current task from that index.
-Run Experiments with commands, and use the final receipt to select the Runs to inspect.
+Then use the index to read the pages relevant to the current task.
+Run the Experiment with a command, and use the final receipt to select the Run to inspect.
 ```
 
-That keeps the Agent's instructions aligned with the version installed in the project.
+That keeps the Agent's documentation aligned with the version installed in the project.
 
 ## Run and retain the receipt
 
@@ -24,7 +30,7 @@ That keeps the Agent's instructions aligned with the version installed in the pr
 npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
 ```
 
-Every `--json` line is feedback from the current process. Progress and diagnostics describe what is happening in this run. Exactly one final `receipt` contains:
+Every `--json` line is feedback from the current process. Progress and diagnostics describe what is happening in this invocation. Exactly one final receipt contains:
 
 ```json
 {
@@ -36,40 +42,41 @@ Every `--json` line is feedback from the current process. Progress and diagnosti
 }
 ```
 
-The Agent should treat the final receipt as the handoff for this Invocation. It is not a persisted results protocol. Read business facts from the quiescent Record through its `runIds`.
+The Agent should treat the final receipt as the handoff for this invocation. It is not a persisted-results protocol; read business facts from the published Record through its `runIds`.
 
 ## Inspect results with Run IDs
 
 After the run ends, inspect the Run's Report:
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`show` and `view` select a Sample before they form one fixed `ReportInput`. The Agent should distinguish these states:
+`show` and `view` select a Sample, then obtain the closed analysis values required by the current target. `show` executes one Page only; `view` builds the complete site. The Agent should distinguish these states:
 
 | Visible state | Next step |
 | --- | --- |
-| `failed` | Inspect the task result and assertions, then correct the system under test or eval logic. |
+| `failed` | Inspect the task result and Assertions, then correct the system under test or eval logic. |
 | `errored` | Inspect diagnostics, the Adapter, Sandbox, or credentials. |
 | `not-recorded` | Find why that expected slot has no Member. |
-| `unavailable` | Check whether the channel was not collected or does not apply. |
-| `unsupported` | Address only the viewing work that depends on the channel. |
-| `invalid` | Repair the named file or reference before reading again. |
+| `core-invalid` | Read the named Core issue; do not treat it as uncollected. |
+| `partial` | Read the denominator and problems to see which Members did not contribute. |
+| `migration-required` | Run `niceeval migrate`. |
+| `unsupported` or `failed` | Address only the viewing work that depends on that analysis input, and read the named problem. |
 
 ## Run again after an edit
 
-Have the Agent test one verifiable hypothesis at a time: change the program or eval, run the same scope, then read the new receipt and Run. To confirm that every slot executes again:
+Have the Agent test one verifiable hypothesis at a time: change the program or eval, run the same scope, then read the new receipt and Run. To confirm that every slot executes again, use:
 
 ```sh
 npx niceeval exp checkout --rerun all --json
 ```
 
-When an existing Attempt is adopted automatically, `--dry` explains why. Reasons for carrying and accepting are in the target Run's `niceeval.actions` channel. See [Rerun and Carry Results](/tutorials/rerun-and-cache).
+When an existing Attempt is adopted automatically, `--dry` explains why. Carry and acceptance reasons are saved with the target Run and visible in results. See [Rerun and Carry Results](/tutorials/rerun-and-cache).
 
-## Boundaries for Record edits
+## Record boundaries
 
-A Record is an editable fact dataset. An Agent may edit business channels only after the directory is quiescent, then run `show` or `view` again. Do not let a Runner, active reader, or AnalysisSample/ReportInput-construction phase operate on the same directory as a manual edit. Later Report execution and site writing do not access the Record.
+A Record stores published facts only and cannot be modified after publication. To obtain a different result, an Agent changes the program or eval, runs a new Invocation, then reads the new receipt's `runIds`.
 
 To share a result with someone else, use [Publish a Static Report](/tutorials/publish-report), not feedback from the current process.

@@ -15,10 +15,10 @@ export class CleanupTimeoutError extends Data.TaggedError("CleanupTimeoutError")
 }> {}
 
 /**
- * Bounded cleanup stays inside the owning Scope. On timeout Effect interrupts
- * the cleanup fiber; a legacy callback that ignores cancellation remains an
- * intentional dangling process-level Promise, matching the prior Promise.race
- * behavior until process exit.
+ * Bounded cleanup stays inside the owning Scope. `tryPromise` supplies the
+ * callback's only signal, and timeout interrupts that fiber. A legacy callback
+ * which ignores the signal remains a process-level Promise, while the owning
+ * Scope proceeds after the virtual timeout without disconnecting its cleanup.
  */
 export function withCleanupTimeout<T, Error, Requirements>(
   effect: Effect.Effect<T, Error, Requirements>,
@@ -35,15 +35,22 @@ export function withCleanupTimeout<T, Error, Requirements>(
 
 /** Author / provider callback adapter; internal callers compose this Effect directly. */
 export function cleanupCallback<T>(
-  fn: (signal: AbortSignal) => Promise<T> | T,
+  fn: (signal: AbortSignal) => PromiseLike<T> | T,
   timeoutMs = CLEANUP_TIMEOUT_MS,
 ): Effect.Effect<T, unknown | CleanupTimeoutError> {
   return withCleanupTimeout(
     Effect.tryPromise({
-      try: (signal) => Promise.resolve().then(() => fn(signal)),
+      // Keep this wrapper arity at one: Effect v3 only creates and aborts the
+      // signal for a `tryPromise` callback that declares it.
+      try: (signal) => Promise.resolve(fn(signal)),
       // Preserve the callback's original error identity for legacy diagnostics.
       catch: (cause) => cause,
-    }),
+    }).pipe(
+      // Scope finalizers run uninterruptibly. The cleanup child itself must be
+      // interruptible so `timeoutFail` can abort its tryPromise signal and let
+      // Scope.close finish at the virtual deadline.
+      Effect.interruptible,
+    ),
     timeoutMs,
   );
 }

@@ -6,6 +6,7 @@ import { CheckCircle2, ChevronRight, MessageCircle } from "lucide-react";
 import { track } from "../src/analytics";
 import { evalExamples, type EvalExample } from "../src/eval-examples";
 import type { Dictionary, Locale } from "../lib/content";
+import ExampleTurnTrace from "./site-example-turn-trace";
 
 const codeTheme = {
   ...themes.vsDark,
@@ -135,10 +136,16 @@ function EvalCard({
                       ) : null}
                     </div>
                     {noteKey && open ? (
-                      <div className={`code-note ${isReply ? "code-note-reply" : ""}`}>
-                        {isReply ? <span className="code-note-role">assistant</span> : <CheckCircle2 size={13} />}
-                        <span>{card.notes[noteKey]}</span>
-                      </div>
+                      isReply ? (
+                        <div className="code-note code-note-trace">
+                          <ExampleTurnTrace trace={card.traces[noteKey]} locale={locale} />
+                        </div>
+                      ) : (
+                        <div className="code-note">
+                          <CheckCircle2 size={13} />
+                          <span>{card.notes[noteKey]}</span>
+                        </div>
+                      )
                     ) : null}
                   </React.Fragment>
                 );

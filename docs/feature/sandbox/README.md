@@ -16,6 +16,26 @@
 这些默认由容器 / 微 VM provider 兑现。
 [本地执行 `localSandbox()`](local.md) 是刻意的例外——明码放弃隔离,换「就地评你手边的仓库」的零成本入口,它的安全边界在自己那篇里定义。
 
+## 已封口事实的归属
+
+Sandbox 负责创建、准备、复用和留存隔离实例，但它不拥有独立的可携带 Record family。一次 Attempt 封口时，Sandbox
+相关事实按内容进入 Record catalog 中的六个运行事实 family。family 名是稳定 identity；每份 Attachment envelope 的 `schemaVersion` 由对应 family 契约拥有：
+
+| 事实 | family 与 owner |
+|---|---|
+| 创建、prepare 与受管命令的历史，计时，诊断，以及 agent 的 conversation / usage | origin Attempt 或 Run 的 `niceeval.observability` |
+| agent 归因的 workdir 文件变化轨迹、归因策略与采集状态 | origin Attempt 的 `niceeval.file-changes` |
+| 每个物理 send 的 source/timing join | origin Attempt 的 `niceeval.source-navigation` |
+| source frame 与可复现输入所需的源码闭包 | origin Run 的 `niceeval.sources` |
+| diff Assertion 的 result、coverage 与 Evidence refs | origin Attempt 的 `niceeval.assertions` |
+| 需要保留的大型、具类型对象 | Attempt 或 Run 的 `niceeval.artifacts` |
+
+provider 的实例 id、池内承接序号、live / dormant 状态与 detached cleanup locator 只服务本次运行或留存注册表。
+它们不成为可携带 Record 事实。销毁现场不会影响已经封口的六族运行事实 closure；恢复现场也不会把新的事实补写回旧 Attempt。
+
+持久事实不由 Sandbox API 直接读取。Analysis 以 `query()` 闭合发布的 `DomainView`，例如命令历史使用
+`sandboxHistoryView`，文件变化使用 `fileChangesView`。这使 Sandbox 的运行能力与 Record 的读取能力保持分界。
+
 ## provider 统一接口
 
 ```typescript
@@ -71,11 +91,12 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 
 - [Sandbox Layer](layers.md) —— Eval / Experiment 的 `sandbox` 声明:template 配对、准备命令与顺序。
 - [三方准备时序](lifecycle.md) —— link 规划、owner 顺序、fresh / reuse 次数与错误归属。
-- [内置 prepare 命令](prepare-commands.md) —— `checkout()` / `installTool()` 官方写法与 `--dry --commands` 可证明边界。
+- [内置 prepare 命令](prepare-commands.md) —— `checkout()` / `installTool()` 官方写法与 `niceeval debug` 可证明边界。
 - [Library](library.md) —— 路径与 workdir、执行身份、Provider 选择、准备命令、自定义 provider。
 - [Case](case.md) —— 一份 Sandbox 声明的完整运行单位:五类 case、BuildKey / CaseKey、构建协调、Compose、能力矩阵。
 - [本地执行](local.md) —— `localSandbox()` 在宿主机本地目录直接跑,只观察 diff 不还原仓库,最小的 provider。
 - [预制实例](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从中启动。
+- [Docker 执行配置](docker-profiles/README.md) —— 官方 Docker Sandbox 的 profile、rootless privileged 单容器 DinD、硬配额与故障回收。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
 - [Sandbox 复用](reuse.md) —— Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox；Provider 用 `lifetimeMs` 单独声明 Sandbox 存活时间。
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 的用户用例全流程。

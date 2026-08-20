@@ -2,7 +2,7 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 import { describe, expect, test } from "vitest";
 import { Effect, Fiber, TestClock, TestContext } from "effect";
-import { withProvisionRetryEffect } from "./retry.ts";
+import { withProvisionRetry } from "./retry.ts";
 
 describe("Sandbox provisioning retry", () => {
   test("releases its slot during backoff, then reacquires and reconciles before retrying", async () => {
@@ -12,8 +12,8 @@ describe("Sandbox provisioning retry", () => {
     const original = new Error("ambiguous create");
 
     const program = Effect.gen(function*() {
-      const fiber = yield* Effect.fork(withProvisionRetryEffect(
-        () => Effect.sync(() => {
+      const fiber = yield* Effect.fork(withProvisionRetry(
+        Effect.sync(() => {
           creates += 1;
           events.push(`create:${creates}`);
           if (creates === 1) return original;
@@ -21,21 +21,19 @@ describe("Sandbox provisioning retry", () => {
         }).pipe(Effect.flatMap((value) => value instanceof Error ? Effect.fail(value) : Effect.succeed(value))),
         () => "ambiguous",
         {
-          slot: {
-            release: Effect.sync(() => {
-              slotHeld = false;
-              events.push("release");
-            }),
-            reacquire: Effect.sync(() => {
-              slotHeld = true;
-              events.push("reacquire");
-            }),
-          },
-          reconcile: Effect.sync(() => {
-            events.push("reconcile");
+          release: Effect.sync(() => {
+            slotHeld = false;
+            events.push("release");
           }),
-          feedback: { progress: () => {}, diagnostic: () => {} },
+          reacquire: Effect.sync(() => {
+            slotHeld = true;
+            events.push("reacquire");
+          }),
         },
+        { progress: () => {}, diagnostic: () => {} },
+        Effect.sync(() => {
+          events.push("reconcile");
+        }),
       ).pipe(Effect.withRandomFixed([0])));
 
       yield* Effect.yieldNow();

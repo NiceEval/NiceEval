@@ -1,14 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "eval",
+  "batch": "host-3",
   "areas": ["eval"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 10,
+  "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": { "runtimes": ["node>=22"] },
+  "requires": { "runtimes": ["node>=24"] },
   "paths": [
     "e2e/eval/**",
     "src/context/**",

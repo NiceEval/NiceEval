@@ -1,8 +1,7 @@
 # 测试跟改率 —— 用 git 历史定位不稳定测试
 
 稳定的定义是：小更改只修改真实契约影响范围内的 owner，不连带修改无关测试文件。
-[稳定性：变更预算](README.md#稳定性变更预算)定义目标；可执行的逐类预算与拒绝条件只在
-[Pullfrog review prompt](../../../.github/pullfrog-review-prompt.md#prompt)维护。实现重构导致产品测试、fixture 或 expected
+[稳定性：变更预算](README.md#稳定性变更预算)定义可执行的逐类预算与拒绝条件。实现重构导致产品测试、fixture 或 expected
 批量修改，属于测试缺陷。
 
 本篇使用**测试跟改率**回看历史：过去修改 `src/` 时，哪些测试文件总被连带修改。跟改率高通常有两个原因：测试锁定了实现细节，或者测试站错了层。前者要把断言改到契约层；后者按 [Owner 选择顺序](README.md#owner-选择顺序)迁移。
@@ -10,7 +9,8 @@
 ## 本次变更先裁决
 
 跟改率只能发现过去的问题，不能决定当前 PR 是否合格。
-PR Test impact 提供契约、owner 与验证证据；Review 直接从 base diff 独立列出全部测试变化，并按唯一 review prompt 作语义裁决。
+PR Tests section 提供契约、owner 与验证证据；审查直接从 base diff 独立列出全部测试变化，并按
+[稳定性预算](README.md#稳定性变更预算)作语义裁决。
 跟改率是事后诊断，不是准入替代品。
 
 ## 口径

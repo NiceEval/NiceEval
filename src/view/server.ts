@@ -1,25 +1,19 @@
 // The Node view host owns transport and watch lifetime only. Its caller has
-// already closed RecordReader -> AnalysisSampleHandle -> executeReport into a
-// fixed execution rebuild; this module never reopens a retired Record graph.
+// already closed Record -> Sample -> Report into a fixed execution rebuild;
+// this module never reopens Record facts.
 
 import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
+import { networkInterfaces } from "node:os";
 import { basename, dirname, resolve } from "node:path";
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 import type * as Scope from "effect/Scope";
 import {
-  isReportDownloadPath,
-  reportRoute,
-  type ReportRoute,
-} from "../report/author/identity.ts";
-import type { ReportExecution } from "../report/execution/model.ts";
-import type { ReportPageResult } from "../report/execution/results.ts";
-import {
-  renderReportExecutionJson,
-  renderReportExecutionProblemsText,
-  renderReportExecutionText,
-} from "../report/host/presentation.ts";
+  closedSiteRevisionData,
+  type ClosedSiteFile,
+  type ClosedSiteRevision,
+} from "../report/execution/model.ts";
 import {
   openReportViewSession,
   type OpenReportViewSessionInput,
@@ -27,9 +21,7 @@ import {
   type ReportViewSessionClosed,
   type ReportViewSession,
 } from "../report/host/view-session.ts";
-import type { ThemeDefinition } from "../report/host/node/theme.ts";
 import type { ViewScanOptions } from "./data.ts";
-import { renderHtml } from "./site.ts";
 
 export interface NodeViewServerError {
   readonly code: "report-view-server-failed";
@@ -41,7 +33,7 @@ export interface ViewOptions<Requirements = never> {
   readonly input?: string;
   readonly out?: string;
   readonly port?: number;
-  /** Loopback only. A public listener is not a Report host capability. */
+  /** Defaults to loopback. An explicit address opts into that network exposure. */
   readonly host?: string;
   /** Retained for the CLI-shaped facade; it is never interpreted as Record data. */
   readonly scan?: ViewScanOptions;
@@ -51,10 +43,6 @@ export interface ViewOptions<Requirements = never> {
    */
   readonly watchInputs?: readonly string[];
   readonly onRebuild?: (completedAt: Date) => void;
-  /** Static export consumes this exact fixed execution. */
-  readonly reportExecution?: ReportExecution;
-  /** A one-shot static export Theme; an open session keeps its revision Theme. */
-  readonly theme?: ThemeDefinition;
   /** An already-open scoped session owned by the caller. */
   readonly session?: ReportViewSession<Requirements>;
   /** Or let this scope open a session from a caller-supplied current rebuild. */
@@ -80,9 +68,6 @@ interface HttpRequest {
   readonly request: IncomingMessage;
   readonly response: ServerResponse;
 }
-
-type RenderedPage = Extract<ReportPageResult, { readonly state: "rendered" }>;
-type PageLookup = RenderedPage | "fallback" | "missing";
 
 const HTTP_REQUEST_QUEUE_MAX = 128;
 
@@ -210,7 +195,7 @@ interface WatchSet {
 }
 
 /**
- * Opens a real loopback HTTP server. A watcher event only requests
+ * Opens a real HTTP server, defaulting to loopback. A watcher event only requests
  * `session.refresh`; the session serializes rebuild and close, preserves the
  * last good immutable execution and recoverable watch set, and publishes a new
  * revision only on success. The Node server then atomically replaces its
@@ -220,12 +205,16 @@ export function openViewServer<Requirements>(
   options: ViewOptions<Requirements> = {},
 ): Effect.Effect<ReportViewServer, NodeViewServerError | ReportViewOpenError, Scope.Scope | Requirements> {
   return Effect.gen(function* () {
+    const serverScope = yield* Effect.scope;
     if (options.session !== undefined && options.request !== undefined) {
       return yield* Effect.fail(serverError("open", "provide either session or request, not both"));
     }
-    const host = options.host ?? "127.0.0.1";
-    if (!isLoopbackHost(host)) {
-      return yield* Effect.fail(serverError("open", `view host must be loopback, got ${host}`));
+    const host = (options.host ?? "127.0.0.1").trim();
+    if (host.length === 0) {
+      return yield* Effect.fail(serverError("open", "view host must not be empty"));
+    }
+    if (host.includes("%")) {
+      return yield* Effect.fail(serverError("open", "scoped IPv6 view hosts are not supported"));
     }
     const port = options.port ?? 0;
     if (!Number.isInteger(port) || port < 0 || port > 65_535) {
@@ -252,6 +241,8 @@ export function openViewServer<Requirements>(
       (value) => closeResources(value),
     );
     const address = yield* listen(resources.server, host, port);
+    const urls = viewUrls(host, address.port);
+    const advertisedAuthorities = Object.freeze(new Set(urls.map((url) => new URL(url).host)));
     const watches = yield* Effect.acquireRelease(
       openWatchers(initialWatchInputs, () => resources.refreshes.request()),
       (value) => closeWatchers(value),
@@ -259,19 +250,21 @@ export function openViewServer<Requirements>(
 
     yield* Effect.forkScoped(
       Effect.forever(
-        Effect.flatMap(resources.requests.take(), (request) => serveRequest(session, request)),
+        Effect.flatMap(
+          resources.requests.take(),
+          (request) => serveRequest(session, request, advertisedAuthorities),
+        ),
       ).pipe(Effect.catchAll(() => Effect.void)),
     );
     yield* Effect.forkScoped(
       Effect.forever(
         Effect.flatMap(resources.refreshes.take(), () =>
-          refreshSession(session, watches, options.onRebuild)),
+          registerRefreshIntent(session, watches, options.onRebuild, serverScope)),
       ).pipe(Effect.catchAll(() => Effect.void)),
     );
 
     const close = Effect.zipRight(closeWatchers(watches), closeResources(resources));
-    const url = `http://${formatHost(address.host)}:${address.port}/`;
-    return Object.freeze({ url, urls: Object.freeze([url]), close });
+    return Object.freeze({ url: urls[0]!, urls, close });
   });
 }
 
@@ -328,7 +321,20 @@ function listen(
 function serveRequest<Requirements>(
   session: ReportViewSession<Requirements>,
   request: HttpRequest,
+  advertisedAuthorities: ReadonlySet<string>,
 ): Effect.Effect<void> {
+  const authority = requestAuthority(request.request.headers.host);
+  if (authority === undefined || !advertisedAuthorities.has(authority)) {
+    return Effect.sync(() => sendText(request.response, 421, "view host is not advertised"));
+  }
+  if (request.request.method !== "GET" && request.request.method !== "HEAD") {
+    return Effect.sync(() => sendText(
+      request.response,
+      405,
+      "method not allowed",
+      { allow: "GET, HEAD" },
+    ));
+  }
   const url = requestUrl(request.request);
   if (url === undefined) {
     return Effect.sync(() => sendText(request.response, 400, "bad request"));
@@ -341,50 +347,28 @@ function serveRequest<Requirements>(
       const headers = Object.freeze({
         "cache-control": "no-store",
         "x-niceeval-report-revision": String(state.current.revision),
+        "x-niceeval-report-content-hash": closedSiteRevisionData(state.current.site).identity.contentHash,
         ...(state.lastProblem === undefined ? {} : { "x-niceeval-last-rebuild-problem": "1" }),
       });
-      const hostTextPrefix = state.lastProblem === undefined
-        ? `Revision ${state.current.revision}\n\n`
-        : `Revision ${state.current.revision}\nLast rebuild failed: ${state.lastProblem.summary}\n\n`;
-      if (url.pathname === "/_niceeval/execution.json") {
-        return Effect.flatMap(
-          renderReportExecutionJson({ execution: state.current.execution }),
-          (body) => Effect.sync(() => send(request.response, 200, body, "application/json; charset=utf-8", headers)),
-        );
+      // Optional host transport probe. It contains no Report body and does
+      // not belong to the content-addressed file mapping. The HTML response
+      // below establishes its own served revision through an HttpOnly cookie;
+      // after publication this endpoint can report that the browser document
+      // is stale without putting revision information into its body bytes.
+      if (url.pathname === "/_niceeval/refresh") {
+        const servedIdentity = reportRevisionCookieValue(request.request.headers.cookie);
+        return Effect.sync(() => send(request.response, 204, new Uint8Array(), "text/plain; charset=utf-8", {
+          ...headers,
+          "x-niceeval-view-stale": servedIdentity === undefined || servedIdentity === closedSiteRevisionData(state.current.site).identity.contentHash
+            ? "0"
+            : "1",
+        }));
       }
-      if (url.pathname === "/_niceeval/problems" || url.pathname === "/_niceeval/problems/") {
-        return Effect.sync(() => send(
-          request.response,
-          200,
-          renderHtml(`${hostTextPrefix}${renderReportExecutionProblemsText(state.current.execution)}`, state.current.theme),
-          "text/html; charset=utf-8",
-          headers,
-        ));
+      const resolved = siteFileForPath(url.pathname, state.current.site);
+      if (resolved.state === "redirect") {
+        return Effect.sync(() => redirect(request.response, resolved.location, headers));
       }
-      const download = downloadForPath(url.pathname, state.current.execution);
-      if (download !== undefined) {
-        return Effect.sync(() => send(
-          request.response,
-          200,
-          download.bytes,
-          downloadContentType(download.mediaType),
-          {
-            ...headers,
-            "content-disposition": "attachment",
-            "x-content-type-options": "nosniff",
-          },
-        ));
-      }
-      const canonical = canonicalPagePath(url.pathname);
-      if (
-        canonical !== undefined &&
-        canonical !== url.pathname &&
-        pageForPath(canonical, state.current.execution) !== "missing"
-      ) {
-        return Effect.sync(() => redirect(request.response, canonical, headers));
-      }
-      const page = pageForPath(url.pathname, state.current.execution);
-      if (page === "missing") {
+      if (resolved.state === "missing") {
         return Effect.sync(() => sendText(
           request.response,
           404,
@@ -395,51 +379,48 @@ function serveRequest<Requirements>(
       return Effect.sync(() => send(
         request.response,
         200,
-        page === "fallback"
-          ? renderHtml(
-            `${hostTextPrefix}${renderReportExecutionText({ execution: state.current.execution })}`,
-            state.current.theme,
-          )
-          : renderHtml({
-            document: page.document,
-            route: page.route,
-            theme: state.current.theme,
-            hostMetadata: {
-              revision: state.current.revision,
-              ...(state.lastProblem === undefined
-                ? {}
-                : { lastRebuildProblem: state.lastProblem.summary }),
-            },
-          }),
-        "text/html; charset=utf-8",
-        headers,
+        resolved.file.bytes,
+        siteContentType(resolved.file.mediaType),
+        resolved.file.path.startsWith("downloads/")
+          ? { ...headers, "content-disposition": "attachment", "x-content-type-options": "nosniff" }
+          : resolved.file.mediaType.startsWith("text/html;")
+            ? { ...headers, "set-cookie": reportRevisionCookie(closedSiteRevisionData(state.current.site).identity.contentHash) }
+            : headers,
       ));
     }),
     Effect.catchAll(() => Effect.sync(() => sendText(request.response, 503, "report view session is closed"))),
   );
 }
 
-function refreshSession<Requirements>(
+/**
+ * Register immediately, then subscribe in a scoped waiter. The refresh inbox
+ * can therefore accept a newer intent while this candidate still performs
+ * author work; only a published outcome mutates watcher ownership or emits a
+ * browser-facing rebuild notification.
+ */
+function registerRefreshIntent<Requirements>(
   session: ReportViewSession<Requirements>,
   watches: WatchResources,
   onRebuild: ViewOptions["onRebuild"],
+  serverScope: Scope.Scope,
 ): Effect.Effect<void, ReportViewSessionClosed, Requirements> {
   return Effect.gen(function* () {
-    const before = yield* session.snapshot;
-    yield* session.refresh;
-    const after = yield* session.snapshot;
-    if (after.current.revision <= before.current.revision) {
-      // Failure kept last-good execution and the prior recoverable watch set.
-      return;
-    }
-    // One successful revision owns one fixed execution and one next-round watch set.
-    yield* Effect.sync(() => replaceWatchInputs(watches, after.current.watchInputs));
-    if (onRebuild !== undefined) {
-      yield* Effect.try({
-        try: () => onRebuild(new Date()),
-        catch: () => undefined,
-      }).pipe(Effect.ignore);
-    }
+    const intent = yield* session.refresh;
+    yield* Effect.forkIn(intent.outcome.pipe(
+      Effect.flatMap((outcome) => outcome.state !== "published"
+        ? Effect.void
+        : Effect.gen(function* () {
+          // One published revision owns its corresponding successful watch set.
+          yield* Effect.sync(() => replaceWatchInputs(watches, outcome.revision.watchInputs));
+          if (onRebuild !== undefined) {
+            yield* Effect.try({
+              try: () => onRebuild(new Date()),
+              catch: () => undefined,
+            }).pipe(Effect.ignore);
+          }
+        }),
+      ),
+    ), serverScope);
   });
 }
 
@@ -701,53 +682,58 @@ function closeServer(server: Server): Effect.Effect<void> {
   });
 }
 
-function pageForPath(pathname: string, execution: ReportExecution): PageLookup {
-  const route = routeForOutputPath(pathname);
-  if (route === undefined) return "missing";
-  const page = execution.pages.find(
-    (candidate): candidate is RenderedPage =>
-      candidate.state === "rendered" && candidate.route === route,
-  );
-  if (page !== undefined) return page;
-  return route === "/" ? "fallback" : "missing";
+type SitePathLookup =
+  | { readonly state: "file"; readonly file: ClosedSiteFile }
+  | { readonly state: "redirect"; readonly location: string }
+  | { readonly state: "missing" };
+
+/**
+ * Resolves HTTP paths strictly through the current revision's finished file
+ * map. There is intentionally no route callback, renderer, Sample, or Record
+ * fallback here, so a request can never splice two revisions together.
+ */
+function siteFileForPath(pathname: string, site: ClosedSiteRevision): SitePathLookup {
+  if (!pathname.startsWith("/") || pathname.includes("%") || pathname.includes("\\")) {
+    return Object.freeze({ state: "missing" as const });
+  }
+  const requested = pathname.slice(1);
+  const exact = requested === "" ? "index.html" : requested;
+  const revision = closedSiteRevisionData(site);
+  const files = revision.files;
+  if (requested === "" && revision.defaultRoute !== undefined && revision.defaultRoute !== "/") {
+    const entryFile = staticPageFileForRoute(revision.defaultRoute);
+    if (files.some((file) => file.path === entryFile)) {
+      return Object.freeze({ state: "redirect" as const, location: revision.defaultRoute });
+    }
+  }
+  const direct = files.find((file) => file.path === exact);
+  if (direct !== undefined) return Object.freeze({ state: "file" as const, file: direct });
+
+  // A report may deliberately declare its first Page at /overview (or another
+  // route), so its immutable closure has no root index.html. The advertised
+  // root must still land on that revision's canonical entry route rather than
+  // becoming a host-generated 404 or re-entering Report execution.
+  if (requested === "" && revision.defaultRoute !== undefined) {
+    const entryFile = staticPageFileForRoute(revision.defaultRoute);
+    if (files.some((file) => file.path === entryFile)) {
+      return Object.freeze({ state: "redirect" as const, location: revision.defaultRoute });
+    }
+  }
+
+  // Keep direct Page URLs convenient without manufacturing a different body.
+  // The redirect selects the exact generated index.html path from this same map.
+  const indexPath = requested.endsWith("/")
+    ? `${requested}index.html`
+    : `${requested}/index.html`;
+  const page = files.find((file) => file.path === indexPath);
+  if (page !== undefined) {
+    return Object.freeze({ state: "redirect" as const, location: `/${indexPath}` });
+  }
+  return Object.freeze({ state: "missing" as const });
 }
 
-function canonicalPagePath(pathname: string): string | undefined {
-  if (routeForOutputPath(pathname) !== undefined) return pathname;
-  const direct = reportRoute(pathname);
-  if (Either.isRight(direct) && direct.right !== "/") {
-    return `${direct.right}/index.html`;
-  }
-  if (pathname.endsWith("/") && pathname.length > 1) {
-    const withoutTrailingSlash = pathname.slice(0, -1);
-    const parsed = reportRoute(withoutTrailingSlash);
-    if (Either.isRight(parsed)) return `${parsed.right}/index.html`;
-  }
-  return undefined;
-}
-
-function routeForOutputPath(pathname: string): ReportRoute | undefined {
-  if (pathname === "/" || pathname === "/index.html") {
-    return reportRoute("/").pipe(Either.getOrUndefined);
-  }
-  if (!pathname.endsWith("/index.html")) return undefined;
-  return reportRoute(pathname.slice(0, -"/index.html".length)).pipe(Either.getOrUndefined);
-}
-
-function downloadForPath(
-  pathname: string,
-  execution: ReportExecution,
-): { readonly bytes: Uint8Array; readonly mediaType: string } | undefined {
-  const prefix = "/downloads/";
-  if (!pathname.startsWith(prefix)) return undefined;
-  const path = pathname.slice(prefix.length);
-  if (!isReportDownloadPath(path)) return undefined;
-  for (const download of execution.downloads) {
-    if (download.state !== "built") continue;
-    const file = download.files.find((candidate) => candidate.path === path);
-    if (file !== undefined) return file;
-  }
-  return undefined;
+function staticPageFileForRoute(route: string): string {
+  return route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
 }
 
 function requestUrl(request: IncomingMessage): URL | undefined {
@@ -756,6 +742,21 @@ function requestUrl(request: IncomingMessage): URL | undefined {
   } catch {
     return undefined;
   }
+}
+
+const REPORT_REVISION_COOKIE = "niceeval_report_revision";
+
+function reportRevisionCookie(contentHash: string): string {
+  return `${REPORT_REVISION_COOKIE}=${contentHash}; Path=/; SameSite=Strict; HttpOnly`;
+}
+
+function reportRevisionCookieValue(cookie: string | undefined): string | undefined {
+  if (cookie === undefined) return undefined;
+  for (const entry of cookie.split(";")) {
+    const [name, ...value] = entry.trim().split("=");
+    if (name === REPORT_REVISION_COOKIE) return value.join("=");
+  }
+  return undefined;
 }
 
 function sendText(
@@ -791,12 +792,61 @@ function redirect(
 
 const SAFE_MEDIA_TYPE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
 
-function downloadContentType(mediaType: string): string {
-  return SAFE_MEDIA_TYPE.test(mediaType) ? mediaType : "application/octet-stream";
+function siteContentType(mediaType: string): string {
+  const base = mediaType.split(";", 1)[0]?.trim() ?? "";
+  return SAFE_MEDIA_TYPE.test(base) ? base : "application/octet-stream";
 }
 
-function isLoopbackHost(host: string): boolean {
-  return host === "127.0.0.1" || host === "::1" || host === "localhost";
+function viewUrls(host: string, port: number): readonly string[] {
+  if (host === "0.0.0.0") {
+    return urlsForAddresses([
+      "127.0.0.1",
+      ...interfaceAddresses("IPv4"),
+    ], port);
+  }
+  if (host === "::") {
+    return urlsForAddresses([
+      "::1",
+      ...interfaceAddresses("IPv6"),
+    ], port);
+  }
+  return Object.freeze([viewUrl(host, port)]);
+}
+
+function interfaceAddresses(family: "IPv4" | "IPv6"): readonly string[] {
+  const addresses: string[] = [];
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (
+        entry.family === family &&
+        !entry.internal &&
+        !entry.address.includes("%") &&
+        (family !== "IPv6" || entry.scopeid === 0)
+      ) {
+        addresses.push(entry.address);
+      }
+    }
+  }
+  return addresses.sort((left, right) => left.localeCompare(right));
+}
+
+function urlsForAddresses(addresses: readonly string[], port: number): readonly string[] {
+  return Object.freeze([...new Set(addresses)].map((address) => viewUrl(address, port)));
+}
+
+function viewUrl(host: string, port: number): string {
+  return new URL(`http://${formatHost(host)}:${port}/`).toString();
+}
+
+function requestAuthority(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(`http://${value}`);
+    if (url.username.length > 0 || url.password.length > 0) return undefined;
+    return url.host;
+  } catch {
+    return undefined;
+  }
 }
 
 function formatHost(host: string): string {

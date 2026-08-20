@@ -1,14 +1,28 @@
-import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+import { commandProjection, completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+import type { CommandProjection } from "niceeval/adapter";
+
+type DirectTool = {
+  readonly name: string;
+  readonly input: Record<string, string>;
+  readonly output: Record<string, string>;
+  readonly command?: CommandProjection;
+};
 
 type DirectReply = {
   readonly marker: string;
   readonly data: { readonly fixture: string; readonly ok: true };
-  readonly tool?: {
-    readonly name: string;
-    readonly input: Record<string, string>;
-    readonly output: Record<string, string>;
-  };
+  readonly tool?: DirectTool;
+  readonly tools?: readonly DirectTool[];
 };
+
+function shellCommand(id: string, executable: string, args: readonly string[]): DirectTool {
+  return {
+    name: "shell",
+    input: { command: [executable, ...args].join(" "), id },
+    output: { marker: id },
+    command: commandProjection({ state: "available", executable, args }),
+  };
+}
 
 const replies: Readonly<Record<string, DirectReply>> = {
   "context/main-first": {
@@ -45,11 +59,18 @@ const replies: Readonly<Record<string, DirectReply>> = {
   "assertion/scopes-main": {
     marker: "assertion-scope-main",
     data: { fixture: "assertion-scope-main", ok: true },
-    tool: {
-      name: "scope_main_tool",
-      input: { session: "main", token: "scope-main-input" },
-      output: { marker: "scope-main-output" },
-    },
+    tools: [
+      ...Array.from({ length: 116 }, (_, index) =>
+        shellCommand(`scope-filler-${index}`, "node", ["fixture.mjs", `--case=${index}`])),
+      shellCommand("scope-init", "niceeval", ["init"]),
+      shellCommand("scope-exp", "niceeval", ["exp", "sample"]),
+      shellCommand("scope-show", "niceeval", ["show", "@sample"]),
+      {
+        name: "scope_main_tool",
+        input: { session: "main", token: "scope-main-input" },
+        output: { marker: "scope-main-output" },
+      },
+    ],
   },
   "assertion/scopes-branch": {
     marker: "assertion-scope-branch",
@@ -91,21 +112,32 @@ export const deterministicAgent = defineAgent({
     const branch = input.text.includes("branch") ? "branch" : "main";
     ctx.session.capture(`eval-direct-${branch}`);
 
-    const events = reply.tool === undefined
+    const tools = [...(reply.tool === undefined ? [] : [reply.tool]), ...(reply.tools ?? [])];
+    const events = tools.length === 0
       ? [{ type: "message" as const, role: "assistant" as const, text: reply.marker }]
       : [
-          {
-            type: "operation.started" as const,
-            operationId: `${reply.tool.name}-${input.text}`,
-            operation: { kind: "tool" as const, name: reply.tool.name, input: reply.tool.input },
-          },
-          {
-            type: "operation.finished" as const,
-            operationId: `${reply.tool.name}-${input.text}`,
-            kind: "tool" as const,
-            output: reply.tool.output,
-            status: "completed" as const,
-          },
+          ...tools.flatMap((tool, index) => {
+            const operationId = `${tool.name}-${input.text}-${index}`;
+            return [
+              {
+                type: "operation.started" as const,
+                operationId,
+                operation: {
+                  kind: "tool" as const,
+                  name: tool.name,
+                  input: tool.input,
+                  ...(tool.command === undefined ? {} : { command: tool.command }),
+                },
+              },
+              {
+                type: "operation.finished" as const,
+                operationId,
+                kind: "tool" as const,
+                output: tool.output,
+                status: "completed" as const,
+              },
+            ];
+          }),
           { type: "message" as const, role: "assistant" as const, text: reply.marker },
         ];
 

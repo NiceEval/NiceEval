@@ -1,0 +1,13 @@
+#!/bin/sh
+if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+  exit 1
+fi
+case "$*" in
+  *provider-error-sandbox-secondary*)
+    printf '%s\n' '409 Conflict · DOCKER_BUILD_DENIED: the secondary sandbox build was rejected after provider validation; this deliberately long safe explanation repeats context context context context context context context context context context context context context context context context context context context context; request req_docker_secondary_987' >&2
+    ;;
+  *)
+    printf '%s\n' '502 Bad Gateway · DOCKER_PROVIDER_TIMEOUT: the primary sandbox builder could not reach unix:///fixture/docker.sock; this deliberately long safe explanation repeats context context context context context context context context context context context context context context context context context context context context; request req_docker_primary_789' >&2
+    ;;
+esac
+exit 42

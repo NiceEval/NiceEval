@@ -117,7 +117,7 @@ Runner 只按分类账恢复 `workdir`;`/opt`、`$HOME`、`/tmp` 等 workdir 外
 
 大型持久 build/cache 由作者负责生命周期治理。
 作者必须选择容量上限、达到上限前的可解释阈值告警、清除或轮换策略,以及无法安全清除时退休 Sandbox 的策略。
-正常的容量、缓存大小、版本和命中状态写入为 `facts` channel event;只有达到明确风险阈值才报 `diagnostic` channel event,清除或轮换无法保证继续安全时应退休 Sandbox 或抛出异常。
+正常的容量、缓存大小、版本和命中状态不另建可携带值；若由受管命令观察，只保留在该命令的有界 Observability capture。只有达到明确风险阈值才写 Observability diagnostic，清除或轮换无法保证继续安全时应退休 Sandbox 或抛出异常。
 
 reset 删除了某个已安装内容时,当前 Attempt 的检查会未命中并重新安装;这是正确性结果,不是缓存失败。
 reset 失败后,该 Sandbox 立即停止承接 Attempt,并追加一条运行级 diagnostic(`sandbox-reset-failed`,点名实例编号与失败原文)。
@@ -129,7 +129,7 @@ reset 失败后,该 Sandbox 立即停止承接 Attempt,并追加一条运行级 
 
 | 字段 | 对象 | 到期结果 |
 |---|---|---|
-| Experiment `timeoutMs` | 一条 Attempt | 写 timeout 执行错误通道事件 并形成 `errored` Verdict，随后执行有界收尾 |
+| Experiment `timeoutMs` | 一条 Attempt | 写 timeout Observability execution diagnostic 并形成 `errored` Verdict，随后执行有界收尾 |
 | Sandbox Provider `lifetimeMs` | 一个 Sandbox | Provider 到期后停止 Sandbox |
 
 不能为了让 Sandbox 活得更久而提高 Experiment `timeoutMs`。
@@ -189,7 +189,7 @@ DinD同样遵守这条边界。
 替代 Sandbox 就绪后再次检查。
 如果替代创建已消耗过多时间，本次 Run 报错，不反复创建同样的替代 Sandbox。
 
-Sandbox 在 Attempt 中途消失时，Runner 写结构化执行错误通道事件，并形成该 Attempt 的 `errored` Verdict。
+Sandbox 在 Attempt 中途消失时，Runner 写结构化 Observability execution diagnostic，并形成该 Attempt 的 `errored` Verdict。
 Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用。
 
 ## 结果与结果沿用
@@ -200,15 +200,15 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 直接 command / lifecycle callback 不提供额外失效条件，也不阻断该 pair 的 carry；需要追踪其变化时由作者登记稳定 identity。
 
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
-- Attempt 写入 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
-  这些是调度事实，在 Sandbox 租借给该 Attempt 的那一刻确定；Attempt 无论在哪个阶段终结（含 Eval `setup` 失败与超时），Record 里都必须带完整归属，不得因为没走到收尾而缺失。
+- 真实派发的 Attempt 仍完整封入 prepare、命令、计时与诊断的 Observability。Sandbox 编号、承接序号与
+  租借状态是调度和留存注册表数据，不成为 portable Record family；它们不会因 Attempt 提前终结而伪造一份状态值。
 
 ## 复用污染的可观察性
 
 「prepare 可重复执行、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。
 框架必须自己把线索说出来。
 Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接序号聚合判定。
-当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中形成 `errored` Verdict 且指向同一生命周期阶段时，结束反馈追加一条运行级 diagnostic channel event，点名实例、序号区间与阶段，提示复用残留的可能性。
+当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中形成 `errored` Verdict 且指向同一生命周期阶段时，结束反馈追加一条 Run-owned Observability diagnostic，点名实例、序号区间与阶段，提示复用残留的可能性。
 诊断只指路，不改判定。
 
 携带结果不会伪造 Sandbox 生命周期：它只复用已落盘的判定和证据。后续实际派发的 Attempt 仍从本次 Invocation 创建的 Sandbox 开始，并按当前复用规则运行。

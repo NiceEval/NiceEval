@@ -14,7 +14,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 - **易阅读**：命令、动作、独立预期和历史 bug 引用留在同一个原生测试文件。
 
 稳定与可靠是自动化测试的准入条件，不是测试完成后的优化项。
-一种行为无法得到同时满足两者的自动化测试时，不把脆弱测试并入长期套件；本次变更改由 AI 通过真实生产入口验收。
+Bug 修复统一从公开入口的 E2E 红灯开始；只有无法固定的外部条件、安全限制或 Provider 阻塞才改由 AI 通过真实生产入口验收。
 
 真实场景 Repo 是表现和运行手段，不是新的测试语义。它就是一个普通用户项目，含自己的
 `package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务和测试。
@@ -33,7 +33,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 3. 一个原子公开结果只跨一条真实边界时，由单边界 E2E 拥有。
 4. 只有前两种 E2E 无法直接、稳定地制造输入并观察同一错误结果时，才保留最小 Unit 例外。
 5. 选定形态后才检查现有 owner；命题相同就修正或复用，不并排增加测试。
-6. 所有自动化形态都会破坏稳定或可靠要求时，不写自动化测试，改做本次 AI 真实验收。
+6. 没有稳定、可靠且长期收益足以抵偿维护成本的自动化命题时，不写自动化测试，改做本次 AI 真实验收。
 
 现有测试没有保留资格。复核从零开始，每条 Unit 都先与 E2E 比较，而不是与其它 Unit 比较。
 “算法重要”“分支独有”“方便定位”或“没有另一条 Unit”都不能说明 E2E 做不到；无法给出具体反例时直接删除。
@@ -50,6 +50,17 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 
 `Journey` 是 E2E 体裁，不是第三层。Testkit 与根 E2E runner 是测试执行所需的普通代码，不另建一种测试身份；runner 的行为由
 真实场景执行和 CI 收据验收，不再维护 `test/unit/e2e-runner/` 模拟套件。另一条轴只回答产品域：Eval、CLI、Report、Package、Runner、Adapter、Sandbox / Lifecycle。
+
+## Bug 修复的 E2E TDD
+
+Bug 修复先从安装后的候选包和公开生产入口建立 E2E 红灯，再修改生产代码：
+
+1. 从 Feature 契约确定长期用户结果和公开观察，不从当前实现反推 expected。
+2. 同一结果已有 E2E owner 时加强它的 fixture 或断言；没有合格 owner 时新增一个最小 Journey 或单边界 E2E，不并排复制矩阵。
+3. 用 fix parent、历史 checkout 或最小逆补丁运行同一 owner，保存最早失败阶段和红灯收据；红灯必须来自真实候选、公开入口与独立 expected。
+4. 修改生产根因后运行同一 owner 转绿，并按本篇可靠性门验收。Unit、源码直调、私有落盘文件和复制生产算法的 fake 都不能代替红灯。
+
+只有无法固定的外部条件、安全限制或 Provider 阻塞才允许暂停 E2E TDD。开工前必须写明具体阻塞；随后把当前 candidate 安装到隔离消费项目，从公开入口执行代表性动作，并在 PR Test impact 保存 candidate Git SHA / tarball digest、运行条件、命令、公开观察、cleanup 与未守护风险。测试重置、工期或内部实现标签不构成例外。
 
 ## 风险边界
 
@@ -72,15 +83,36 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 
 稳定的定义是：小更改只修改真实契约影响范围内的测试，不连带修改无关测试文件。
 
-具体的变更预算、逐文件审计和拒绝条件只在 [Pullfrog review prompt](../../../.github/pullfrog-review-prompt.md#prompt)
-维护。Review 直接比较 PR 的契约 diff 与测试 diff，不依赖作者自报。本文只定义稳定目标与 owner 结构；机器只检查结构事实。
-[测试跟改率](churn.md)用于事后发现长期偏差，不能代替本次 review。
+PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改写的产品测试、fixture、expected 与 harness，
+再从产品契约和可观察行为的变化独立推导受影响 owner，逐文件核对测试 diff，不依赖 PR 描述自报。
+以下预算是 blocking 规则：
+
+- 公开结果不变的内部重构，产品测试、fixture 与 expected 的预算为零；私有路径移动只能修改一个集中 seam 或 harness。
+  若必须批量跟改，说明测试锁住了实现细节，必须恢复稳定边界、迁移或删除这些测试。
+- 每个新增的独立用户目标只新增一个 Journey 主 owner；目标只有一个原子公开结果时才使用一个单边界 E2E。
+  多个可独立失败的用户目标必须逐个列出契约与 owner，不能以“同一功能”为由压进一个测试；既有用户结果不变时不修改其 owner。
+- 公开契约变化只修改实际结果发生变化的 owner。多个测试文件同改时，每个文件都必须拥有独立公开结果；
+  “同一 Feature”“顺便增加测试涉及范围”或实现文件同批变化都不能扩大预算。
+- Snapshot 或 golden 只有在 owner 已声明的稳定表示实际变化时才能更新；批量确认输出变化不能代替逐项核对契约与 expected。
+- Bug 修复必须先由安装后的旧候选经公开入口取得 E2E 红灯，再修改生产代码；先加强本应捕获它的既有 owner，
+  没有合格 owner 时才新增一个最小 Journey 或单边界 E2E。只有无法固定的外部条件、安全限制或 Provider 阻塞才可改做
+  AI 真实验收；测试重置、工期或内部实现标签不构成例外。Unit、源码直调或私有落盘文件不能代替红灯，红灯必须杀死旧实现。
+- 测试设施变化只修改集中机械适配层，产品 expected 不随 runner、executor 或内部 receipt 改写。Testkit、根 E2E runner
+  与 workflow 不建立独立测试分类，也不用 Vitest 扫描 YAML 或源码结构来证明测试流程。专门的测试退役 PR 只修改声明的迁移集合，
+  并逐项给出 retain、replace 或 delete 的证据。
+- Report、Runner、Record 的新 owner 接管前必须做 contract-preserving perturbation：分别改变内部 DTO、组件树或 class，
+  调度器、receipt 或模块布局，私有存储或 reader，同时保持公开结果不变。演练前后测试源码、fixture 与 expected 必须零 diff 并保持全绿；
+  再注入一个真正改变公开结果的 mutation，确认对应 owner 在最早相关阶段变红。
+
+任何超出预算、缺少唯一 owner、复制已有矩阵，或因内部实现小改而连带修改的测试，都必须在合入前修正。
+[PR 模板的 Tests section](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)负责保存逐文件最终源码、删除处置与共享验证收据；
+[测试跟改率](churn.md)只用于事后发现长期偏差，不能代替本次审查。
 
 ## 可靠性：重复运行
 
 新增、接管或实质修改确定性自动化 owner 时，必须通过固定接管门：
 
-- 在三个全新 Repo 副本中各运行一次；
+- 在三个彼此隔离的 Repo 副本中各运行一次；
 - 在同一副本中连续运行两次，证明没有上轮状态漂移；
 - 所属 Repo 按默认并行运行一次，证明不依赖顺序或独占共享状态；
 - 按文件与标题单项运行一次；
@@ -96,8 +128,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 
 ## 不自动化
 
-不自动化不是测试层，也不是长期 owner。只有所有自动化形态都会破坏稳定或可靠要求时，才选择本次 AI 真实验收。
-适用原因包括无法固定的外部条件，或自动化必须复制生产核心算法；“编写麻烦”与“运行较慢”不构成理由。
+不自动化不是测试层，也不是长期 owner。Bug 修复只在无法固定的外部条件、安全限制或 Provider 阻塞时进入本路径；没有既有 owner 时应新增最小 E2E，不能用测试重置、工期或内部实现标签跳过。非 Bug 变更仍按长期区分收益、稳定性、可靠性与维护成本裁决。
 
 PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)保存本次 AI 真实验收及未守护风险。
 不创建空测试、mock 假 pass 或伪 owner。Docker-in-Docker 依赖不可固定的宿主内核、daemon 权限和嵌套网络时属于适用例。

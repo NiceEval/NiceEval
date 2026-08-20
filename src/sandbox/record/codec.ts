@@ -1,106 +1,106 @@
 import { Schema } from "effect";
 import {
-  PositiveSafeIntegerV1Schema,
-  SafeIdentifierV1Schema,
+  PositiveSafeIntegerSchema,
+  SafeIdentifierSchema,
 } from "../../o11y/record/codec.ts";
 import {
-  isSourceNativeSandboxIdV1,
-  type SandboxAssignedPayloadV1,
-  type SandboxAttachmentPayloadV1,
-  type SandboxFreshReuseV1,
-  type SandboxNotUsedPayloadV1,
-  type SandboxPooledReuseV1,
-  type SandboxReuseV1,
-  type SourceNativeSandboxIdV1,
+  isSourceNativeSandboxId,
+  type SandboxAssignedPayload,
+  type SandboxAttachmentPayload,
+  type SandboxFreshReuse,
+  type SandboxNotUsedPayload,
+  type SandboxPooledReuse,
+  type SandboxReuse,
+  type SourceNativeSandboxId,
 } from "./model.ts";
 
-/** All Sandbox Attachment payloads aggregate errors and reject extra fields. */
+/** Sandbox capture values aggregate errors and reject extra fields. */
 export const SandboxAttachmentExactParseOptions = Object.freeze({
   errors: "all" as const,
   onExcessProperty: "error" as const,
 });
 
-export const SourceNativeSandboxIdV1Schema: Schema.Schema<
-  SourceNativeSandboxIdV1,
+export const SourceNativeSandboxIdSchema: Schema.Schema<
+  SourceNativeSandboxId,
   string
 > = Schema.String.pipe(
-  Schema.filter(isSourceNativeSandboxIdV1, {
-    identifier: "SourceNativeSandboxIdV1",
+  Schema.filter(isSourceNativeSandboxId, {
+    identifier: "SourceNativeSandboxId",
     description: "a non-empty source-native safe UTF-8 sandbox id no longer than 256 bytes",
   }),
-  Schema.brand("@niceeval/sandbox/SourceNativeSandboxIdV1"),
+  Schema.brand("@niceeval/sandbox/SourceNativeSandboxId"),
 );
 
-type SandboxFreshReuseV1Encoded = {
+type SandboxFreshReuseEncoded = {
   readonly kind: "fresh";
 };
 
-type SandboxPooledReuseV1Encoded = {
+type SandboxPooledReuseEncoded = {
   readonly kind: "pooled";
   readonly sandbox: number;
   readonly ordinal: number;
 };
 
-type SandboxReuseV1Encoded =
-  | SandboxFreshReuseV1Encoded
-  | SandboxPooledReuseV1Encoded;
+type SandboxReuseEncoded =
+  | SandboxFreshReuseEncoded
+  | SandboxPooledReuseEncoded;
 
-type SandboxNotUsedPayloadV1Encoded = {
+type SandboxNotUsedPayloadEncoded = {
   readonly state: "not-used";
 };
 
-type SandboxAssignedPayloadV1Encoded = {
+type SandboxAssignedPayloadEncoded = {
   readonly state: "assigned";
   readonly provider: string;
   readonly sandboxId: string;
-  readonly reuse: SandboxReuseV1Encoded;
+  readonly reuse: SandboxReuseEncoded;
 };
 
-type SandboxAttachmentPayloadV1Encoded =
-  | SandboxNotUsedPayloadV1Encoded
-  | SandboxAssignedPayloadV1Encoded;
+type SandboxAttachmentPayloadEncoded =
+  | SandboxNotUsedPayloadEncoded
+  | SandboxAssignedPayloadEncoded;
 
-const SandboxFreshReuseV1Schema: Schema.Schema<
-  SandboxFreshReuseV1,
-  SandboxFreshReuseV1Encoded
+const SandboxFreshReuseSchema: Schema.Schema<
+  SandboxFreshReuse,
+  SandboxFreshReuseEncoded
 > = Schema.Struct({
   kind: Schema.Literal("fresh"),
 });
 
-const SandboxPooledReuseV1Schema: Schema.Schema<
-  SandboxPooledReuseV1,
-  SandboxPooledReuseV1Encoded
+const SandboxPooledReuseSchema: Schema.Schema<
+  SandboxPooledReuse,
+  SandboxPooledReuseEncoded
 > = Schema.Struct({
   kind: Schema.Literal("pooled"),
-  sandbox: PositiveSafeIntegerV1Schema,
-  ordinal: PositiveSafeIntegerV1Schema,
+  sandbox: PositiveSafeIntegerSchema,
+  ordinal: PositiveSafeIntegerSchema,
 });
 
-const SandboxReuseV1Schema: Schema.Schema<SandboxReuseV1, SandboxReuseV1Encoded> =
-  Schema.Union(SandboxFreshReuseV1Schema, SandboxPooledReuseV1Schema);
+const SandboxReuseSchema: Schema.Schema<SandboxReuse, SandboxReuseEncoded> =
+  Schema.Union(SandboxFreshReuseSchema, SandboxPooledReuseSchema);
 
-const SandboxNotUsedPayloadV1Schema: Schema.Schema<
-  SandboxNotUsedPayloadV1,
-  SandboxNotUsedPayloadV1Encoded
+const SandboxNotUsedPayloadSchema: Schema.Schema<
+  SandboxNotUsedPayload,
+  SandboxNotUsedPayloadEncoded
 > = Schema.Struct({
   state: Schema.Literal("not-used"),
 });
 
-const SandboxAssignedPayloadV1Schema: Schema.Schema<
-  SandboxAssignedPayloadV1,
-  SandboxAssignedPayloadV1Encoded
+const SandboxAssignedPayloadSchema: Schema.Schema<
+  SandboxAssignedPayload,
+  SandboxAssignedPayloadEncoded
 > = Schema.Struct({
   state: Schema.Literal("assigned"),
-  provider: SafeIdentifierV1Schema,
-  sandboxId: SourceNativeSandboxIdV1Schema,
-  reuse: SandboxReuseV1Schema,
+  provider: SafeIdentifierSchema,
+  sandboxId: SourceNativeSandboxIdSchema,
+  reuse: SandboxReuseSchema,
 });
 
-/** Exact durable schema for `niceeval.sandbox/v1`. */
-export const SandboxAttachmentPayloadV1Schema: Schema.Schema<
-  SandboxAttachmentPayloadV1,
-  SandboxAttachmentPayloadV1Encoded
+/** Exact transient capture schema; it is never a Record Attachment payload. */
+export const SandboxAttachmentPayloadSchema: Schema.Schema<
+  SandboxAttachmentPayload,
+  SandboxAttachmentPayloadEncoded
 > = Schema.Union(
-  SandboxNotUsedPayloadV1Schema,
-  SandboxAssignedPayloadV1Schema,
+  SandboxNotUsedPayloadSchema,
+  SandboxAssignedPayloadSchema,
 );

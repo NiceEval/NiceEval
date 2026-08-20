@@ -1,7 +1,7 @@
 // Agent send 的唯一重试执行体。正常返回的三种 Turn status 都原样交回；只有 reject 的
 // SendFailure 进入分类和重试（docs/feature/error-classification/architecture.md）。
 
-import { Effect } from "effect";
+import { Clock, Effect, Random } from "effect";
 
 import { t } from "../i18n/index.ts";
 import { attachFailureClass, type AttemptFailureClassifier, type FailureClass } from "../shared/failure-class.ts";
@@ -50,9 +50,6 @@ export interface SendRetryDeps {
   slot?: ConcurrencySlot;
   reportRetry?: (message: string) => void;
   signal: AbortSignal;
-  random?: () => number;
-  /** 仅供既有确定性测试注入；生产退避始终使用 Effect.sleep。 */
-  sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
 /** Adapt the Attempt-owned AbortSignal into interruption, without turning it into a send failure. */
@@ -68,16 +65,10 @@ function awaitAbort(signal: AbortSignal): Effect.Effect<void> {
   });
 }
 
-function retrySleep(deps: SendRetryDeps, delayMs: number): Effect.Effect<void, unknown> {
-  const delay = deps.sleep
-    ? Effect.tryPromise({
-        try: (signal) => deps.sleep!(delayMs, signal),
-        catch: (error) => error,
-      })
-    : Effect.sleep(delayMs);
+function retrySleep(signal: AbortSignal, delayMs: number): Effect.Effect<void> {
   return Effect.raceFirst(
-    delay.pipe(Effect.as("delay" as const)),
-    awaitAbort(deps.signal).pipe(Effect.as("aborted" as const)),
+    Effect.sleep(delayMs).pipe(Effect.as("delay" as const)),
+    awaitAbort(signal).pipe(Effect.as("aborted" as const)),
   ).pipe(Effect.flatMap((winner) => winner === "aborted" ? Effect.interrupt : Effect.void));
 }
 
@@ -106,29 +97,33 @@ export function sendWithTurnRetry<T>(
   callOnce: Effect.Effect<T, unknown>,
   deps: SendRetryDeps,
 ): Effect.Effect<T, unknown> {
-  const random = deps.random ?? Math.random;
   const retry = (sendAttempt: number): Effect.Effect<T, unknown> =>
-    Effect.suspend(() => {
-      const startedAtMs = Date.now();
-      const monotonicStartedAt = performance.now();
-      return callOnce.pipe(
+    Effect.gen(function* () {
+      const startedAtMs = yield* Clock.currentTimeMillis;
+      const monotonicStartedAt = yield* Clock.currentTimeNanos;
+      return yield* callOnce.pipe(
         Effect.mapError(normalizeSendFailure),
-        Effect.catchAll((failure) => {
-          const durationMs = Math.max(0, performance.now() - monotonicStartedAt);
+        Effect.catchAll((failure) => Effect.gen(function* () {
+          const monotonicEndedAt = yield* Clock.currentTimeNanos;
+          const durationMs = Math.max(
+            0,
+            Number(monotonicEndedAt - monotonicStartedAt) / 1_000_000,
+          );
           const cls = resolveSendFailureClass(failure, {
             experiment: deps.experimentClassifier,
             adapter: deps.classifier,
           });
-          if (!cls.retryable) return Effect.fail(attachFailureClass(failure, cls));
+          if (!cls.retryable) return yield* Effect.fail(attachFailureClass(failure, cls));
           if (sendAttempt + 1 >= SEND_MAX_ATTEMPTS) {
-            return Effect.fail(finalizeExhausted(failure, cls, "send"));
+            return yield* Effect.fail(finalizeExhausted(failure, cls, "send"));
           }
           if (deps.budget.remaining <= 0) {
-            return Effect.fail(finalizeExhausted(failure, cls, "attempt"));
+            return yield* Effect.fail(finalizeExhausted(failure, cls, "attempt"));
           }
 
-          const delayMs = BASE_DELAY_MS * 2 ** sendAttempt * random();
-          return Effect.sync(() => {
+          const jitter = yield* Random.next;
+          const delayMs = BASE_DELAY_MS * 2 ** sendAttempt * jitter;
+          yield* Effect.sync(() => {
             deps.onRetryAttempt?.({
               sendAttempt,
               startedAt: new Date(startedAtMs).toISOString(),
@@ -145,11 +140,10 @@ export function sendWithTurnRetry<T>(
                 seconds: Math.round(delayMs / 1000),
               }),
             );
-          }).pipe(
-            Effect.zipRight(sleepWithReleasedSlot(deps.slot, retrySleep(deps, delayMs))),
-            Effect.zipRight(retry(sendAttempt + 1)),
-          );
-        }),
+          });
+          yield* sleepWithReleasedSlot(deps.slot, retrySleep(deps.signal, delayMs));
+          return yield* retry(sendAttempt + 1);
+        })),
       );
     });
 

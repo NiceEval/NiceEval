@@ -19,10 +19,17 @@ export const DEFAULT_HERMES_CLI_VERSION = "0.19.0";
 /** OpenClaw CLI（npm `openclaw`）默认钉的版本。 */
 export const DEFAULT_OPENCLAW_CLI_VERSION = "2026.7.1-2";
 
+/** Oh My Pi coding-agent CLI (npm) and its Bun runtime. */
+export const DEFAULT_OMP_CLI_VERSION = "17.3.5";
+export const DEFAULT_BUN_VERSION = "1.3.14";
+
+/** DeepSeek Harness CLI (npm `@deepseek-ai/dsh`). */
+export const DEFAULT_DEEPSEEK_HARNESS_CLI_VERSION = "0.1.0-rc.7";
+
 /**
- * 有官方公共基线制品的内置 coding agent。
+ * 有官方公共基线制品的 coding agent。
  *
- * Docker 侧六家齐全；E2B 侧目前只发布 Claude Code / Codex / Bub
+ * Docker 侧八家齐全；E2B 侧目前只发布 Claude Code / Codex / Bub
  *（见 `E2BCodingAgent`），其余 Agent 的 E2B 模板尚未进台账。
  */
 export type CodingAgentBaseline =
@@ -31,7 +38,9 @@ export type CodingAgentBaseline =
   | "bub"
   | "opencode"
   | "hermes"
-  | "openclaw";
+  | "openclaw"
+  | "omp"
+  | "deepseek-harness";
 
 /** 每个官方基线制品里装的那个 Agent 的版本——制品版本号的版本位。 */
 export const AGENT_BASELINE_VERSION: globalThis.Record<CodingAgentBaseline, string> = {
@@ -41,6 +50,8 @@ export const AGENT_BASELINE_VERSION: globalThis.Record<CodingAgentBaseline, stri
   opencode: DEFAULT_OPENCODE_CLI_VERSION,
   hermes: DEFAULT_HERMES_CLI_VERSION,
   openclaw: DEFAULT_OPENCLAW_CLI_VERSION,
+  omp: DEFAULT_OMP_CLI_VERSION,
+  "deepseek-harness": DEFAULT_DEEPSEEK_HARNESS_CLI_VERSION,
 };
 
 /**
@@ -74,6 +85,8 @@ export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseli
   // r2: 同上「USER node」配方变更
   // r3: 同上「跨 provider 基线工具面统一」配方变更(含可写性)
   openclaw: 3,
+  omp: 1,
+  "deepseek-harness": 1,
 };
 
 /**

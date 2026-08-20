@@ -1,38 +1,36 @@
 ---
 title: "部署静态报告站"
 sidebarTitle: "部署报告站"
-description: "将 view --out 生成的自包含目录部署到任意静态托管服务。"
+description: "将 view --out 生成的完整自包含报告目录部署到任意静态托管服务。"
 ---
 
-先用明确的 `niceeval view --out` 或 `niceeval view --run <id> --out` 生成报告站，再部署该目录。报告站已经含有页面、宿主数据、下载项、内建精确 runtime 和 manifest；托管平台无需读取源 Record，也无需执行 NiceEval。
+先生成完整报告站，再部署输出目录。托管平台不读取源 Record，也不需要安装或运行 NiceEval。
 
 ```sh
-npx niceeval view --experiment checkout \
+pnpm exec niceeval view --experiment checkout \
   --out ./report-site \
   --no-open
 ```
 
-需要发布特定运行时，使用 receipt 中的 Run ID：
+要部署一次明确运行，请从 receipt 读取 Run ID：
 
 ```sh
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
-  --out ./report-site \
-  --no-open
+pnpm exec niceeval view --run <run-id> --out ./report-site --no-open
 ```
 
 ## CI 流程
 
-一个静态托管流程通常有三步：
+一个静态托管流程有三步：
 
-1. 运行 Experiment，并保留最后的 receipt。
-2. 用当前项目结果或明确 Run 运行 `view --out`。
-3. 将输出目录交给静态托管服务。
+1. 运行 Experiment，并保留最后一条 receipt。
+2. 用 `view --out` 构建完整站点。
+3. 上传输出目录，而不是源 Record。
 
 GitHub Actions 的构建任务示例：
 
 ```yaml
 - name: 生成报告站
-  run: npx niceeval view --experiment checkout --out ./report-site --no-open
+  run: pnpm exec niceeval view --experiment checkout --out ./report-site --no-open
 
 - name: 上传静态站点目录
   uses: actions/upload-pages-artifact@v3
@@ -40,16 +38,15 @@ GitHub Actions 的构建任务示例：
     path: ./report-site
 ```
 
-后续部署任务使用托管平台提供的发布步骤。无论使用 GitHub Pages、对象存储或其它静态托管服务，发布目标都是 `./report-site`，不是源 Record。
-
 ## 发布前检查
 
-导出会列出所有页面、参数化页面、下载项与内建 runtime 文件，并写入 `StaticAssetManifest`。导出失败时不会发布半完成目录。`--out` 必须指向不存在的目录；更新内容时使用新的输出目录。
+导出前，NiceEval 已验证 `pages` 中全部显式声明的普通 Page、参数 Page 实例、链接、资源、下载、`_niceeval/data/projections.json` 和预算；Host 不补建详情 route。成功目录包含 HTML、Report CSS、reload client、作者 asset、下载文件与 projections 文件，后者的 bytes 属于 revision identity；静态目录缺少 reload 端点时，client 安静停用。
 
-部署后用浏览器检查首页、参数化页面和下载项。站点在断网条件下也应正常显示，因为所有引用都是目录内的相对路径。
+在部署前断开网络并禁用 JavaScript，打开首页和至少一个参数详情页。正文、导航、完整度、问题和下载仍应可读。若本机 `view` 使用同一选择和 Report，同一路由的 HTTP body 与目录页面 body 应逐字节一致。
 
-## 更新站点
+`--out` 必须指向不存在的目录。更新内容时，选择新的 Sample、导出到新目录，再切换托管平台的发布版本；不要覆盖旧目录。
 
-每次需要更新内容时，重新选择 Sample，导出到新的目录，再部署该目录。已发布目录表示那次导出时的固定 `ReportExecution`；它不会随着之后的 Record 编辑而变化。
+## 下一步
 
-有关选择范围和导出内容，请阅读[发布静态报告](/zh/tutorials/publish-report)。
+- [发布静态报告](/zh/tutorials/publish-report)：导出边界、失败条件和离线阅读。
+- [查看结果](/zh/tutorials/viewing-results)：选择结果并在本机构建完整站点。

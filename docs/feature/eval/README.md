@@ -26,7 +26,7 @@ export default defineEval({
   //  只改变「哪些路径算进 agent 归因」,不改变沙箱里实际有什么;仅沙箱型有意义
 
   reporters?: Reporter[];               // 这个 eval 专用的报告器
-  metadata?: Record<string, JsonValue>; // 纯 JSON 元数据,原样落进记录,给报告和事后分析读
+  metadata?: Record<string, JsonValue>; // 发现期供 Experiment 的 evals 谓词选择；不进入 durable Record
 
   async test(t) { /* 按顺序写普通上传、交互、命令、读取与断言 */ },
 });
@@ -36,7 +36,7 @@ export default defineEval({
 项目级配置是没写时的默认出处，压不掉 eval 写下的值。
 `timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
 
-Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge recipe 直接登记 measurement Assertion。Pass Eval 在同一 handle 调用 `.atLeast(n)`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
+Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge recipe 直接登记 measurement Assertion。Pass Eval 在同一 handle 调用 `.gate(n)`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
@@ -54,8 +54,9 @@ Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.un
 `diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。
 两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-区间与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
-`metadata` 只在 Experiment 谓词或 Reporter 确实消费某个结构化业务维度时使用。
-能从 eval id、tags 或 description 推导出的值不重复写；没有消费者就省略，不能把它当任意杂物抽屉。
+`metadata` 只在发现期作为 Experiment 的 `evals` 谓词可读的结构化选择数据。它决定哪些 eval 被选中，
+不进入 durable Record，Report 与 Analysis 也不能读取它。能从 eval id、tags 或 description 推导出的值不重复写；
+没有选择用途就省略，不能把它当任意杂物抽屉。
 
 题目的机械准备只有两处:`sandbox` layer 的 `.prepare()` 命令与 `test(t)` 普通代码。
 `prepare()` 每条 Attempt 都在 Agent 进场前执行,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖);写入算 eval 归因,不进 agent diff。
@@ -126,18 +127,24 @@ export default defineScoreEval({
 });
 ```
 
-Assertion 默认只保存 evaluation、evidence 与 diagnostic。`.score(points)` 使 Boolean matched 贡献
+每条 Assertion 在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 中封口 `evaluation`、evidence 与 diagnostic。
+`.score(points)` 还将 `points` 与 earned contribution 封口到同一 entry：Boolean matched 贡献
 `points`、mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。`t.score(points)` 直接登记
 direct-score Assertion entry，返回的 handle 只能配置 key 与 label。
 
-Score Eval 的每个 Attempt 也有四态 Verdict，另有独立 Score Attachment。gate failed 会形成
-`failed` Verdict，但不会抹掉已 earned 的 score；execution error 或 unavailable score source 使 Score
-Attachment 成为 partial 或 unavailable，而不是伪造 `0`。没有 contribution 的正常 Attempt 得到
-`earned: 0`。Score 不声明 max、百分比或隐式每项 `+1`。
+Score 是同一份 sealed Assertions 的 `points`、earned contribution 与 rubric 在读侧形成的结果。
+所有 contribution 可算时它是 complete；execution error 或 required score source unavailable 时，已取得的
+contribution 仍保留，结果为 partial 或 unavailable，而不是伪造 `0`。没有 contribution 的正常 Attempt
+得到 `earned: 0`。
 
-题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供报告选择主读数。
-`points` 只在 Score Eval 内表示 Assertion 分值。一个 Experiment 可以同时选择两种题型，但每条 Attempt
-按自己的 evaluationKind 解释。
+Verdict 同样在读侧折叠 Core `outcome`、sealed Assertions 与显式 skip。Score Eval 没有 gate：低分或
+Boolean mismatch 不会得到 `failed`；正常封口为 `passed`，execution error 为 `errored`，显式 skip 为
+`skipped`。`.orStop()` 仍是控制流 barrier，`t.skip(reason)` 的 Attempt 不参加排名。Score 不声明 max、
+百分比或隐式每项 `+1`。
+
+题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供 Report 与 Analysis
+选择主读数，而不是 durable family。`points` 只在 Score Eval 内表示 Assertion 分值。一个 Experiment 可以
+同时选择两种题型，但每条 Attempt 按自己的 evaluationKind 解释。
 
 完整 score 语义见 [Assertions · Score Eval](../assertions/library/score-points.md)，完整场景见
 [Score Eval 用例](use-case/rubric-points.md)。

@@ -1,7 +1,7 @@
 # Package：安装后的外部消费
 
 Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界。根 runner 把待发布 tarball 安装进仓库外副本；测试只从
-安装后的 `niceeval` binary 与 package exports 进入，不引用 checkout 源码或构建目录。NiceEval 的 CI 只使用 Node 22，
+安装后的 `niceeval` binary 与 package exports 进入，不引用 checkout 源码或构建目录。NiceEval 的 CI 只使用 Node 24，
 不建立跨 Node 版本兼容矩阵。
 
 ## Owner 表
@@ -9,6 +9,7 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 | Owner ID | 用户结果 | 形态 | 文件 | Lane | 历史 bug |
 | --- | --- | --- | --- | --- | --- |
 | [`#package-commonjs-init-list`](#package-commonjs-init-list) | 默认 CommonJS 项目可用安装后的候选包完成 `init → list` | Journey E2E | `e2e/package/test/package.test.ts` | PR / release | `b44420d3` |
+| [`#package-bub-e2b-template`](#package-bub-e2b-template) | 安装后的 E2B factory 为默认 Bub 生成固定模型客户端闭包及匹配 marker | 单边界 E2E | `e2e/package/test/bub-e2b-template.test.ts` | PR / release | `bub-default-client-closure-drift` |
 
 ## package-commonjs-init-list
 
@@ -22,6 +23,15 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 
 同一安装边界还核对候选包的四类 dependency 字段都不声明 `@niceeval/testkit`，且 tarball 不含 `packages/testkit`。
 这是防止私有测试设施泄漏进产品包的 checkpoint，不另建 Testkit owner。
+
+## package-bub-e2b-template
+
+用户从安装后的 `niceeval/sandbox/e2b-template` 调用 `e2bCodingAgentTemplate("bub")`，再通过 E2B
+`TemplateBuilder.toDockerfile()` 取得实际构建输入。构建输入必须同时固定 Bub、`any-llm-sdk` 与 `openai`，
+并写入与默认 `bubAgent()` 相同的安装 marker；漏掉任一传递依赖或仍按旧闭包计算 marker 都会使本 owner 变红。
+
+这条单边界测试不连接 E2B、也不声称模板已经发布；外部 provider 的构建与发布仍走维护者发布流程。它只证明安装后
+factory 交给 E2B 的公开构建输入可复现，且不会因 identity 分叉强制 Adapter 每次重装。
 
 ## 不重复建立的测试
 

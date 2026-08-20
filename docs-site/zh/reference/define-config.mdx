@@ -29,7 +29,7 @@ export default defineConfig({
 #### `report`
 
 ```ts
-report?: Report;
+report?: ReportDefinition;
 ```
 
 view/show 的项目默认报告。
@@ -50,15 +50,6 @@ name?: LocalizedText;
 
 项目名,显示在 `niceeval view` 顶部 hero(`<h1>`),省略则回退到通用标题。
 可传字符串,或按 locale 提供多语言(如 `{ en: "...", "zh-CN": "..." }`),随 view 语言切换。
-
-#### `locale`
-
-```ts
-locale?: string;
-```
-
-CLI 与运行时文案的界面语言(BCP 47,如 `"en"` / `"zh-CN"`);CI 里想让日志恒定一种语言就写这个。
-省略则按系统 locale(`LC_ALL` / `LC_MESSAGES` / `LANG`)判定,都没有时用 `zh-CN`。
 
 #### `workspace`
 
@@ -131,8 +122,12 @@ pricing?: globalThis.Record<string, PriceOverride>;
 
 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
 · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
-精确 key 优先于通配。只在没有网关实测成本(`usage.costUSD`)时才会用到——实测优先于估算恒成立。
+精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
+`usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。它是 runtime/config 价目表,
+不是 Report 的成本投影:Report 不消费该字段(Report 侧使用自己的 PricingProfile)。
 
 {/* GENERATED:END config-fields */}
 
-[NiceEval](https://niceeval.com/) 把环境准备放在普通代码里：评估用例自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 setup。`Config` 刻意没有 `sandbox` 字段，也不自动探测 provider。请在 Eval 或 Experiment 上声明 template-bearing `SandboxLayer`，让 link planning 在创建任何资源前确定它的 owner 与配对结果。
+> 成本边界：这里的 `pricing` 只提供 Runner 的 Config/runtime price table 输入。Runner 不论是否已有 `Usage.costUSD`，都会从 `model`、上报的 token 用量和这个表独立产生 `estimatedCostUSD`。Experiment 的预算与 `t.maxCost()` 使用该 estimate，`Usage.costUSD` 不驱动它。Report 不读取此配置；它必须在 Report module 以 `definePricingProfile()` 显式声明自己的 USD Profile，并只对 sealed Usage 做 Analysis 投影。
+
+[NiceEval](https://niceeval.com/) 把环境准备放在普通代码里：评估用例自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 setup。`Config` 刻意没有 `sandbox` 字段，也不自动探测 provider。请在评估用例或 Experiment 上声明 template-bearing `SandboxLayer`，让 link planning 在创建任何资源前确定它的 owner 与配对结果。

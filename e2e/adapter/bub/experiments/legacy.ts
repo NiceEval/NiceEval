@@ -14,6 +14,8 @@ const LEGACY_OTEL_PLUGIN =
 export default defineExperiment({
   description: "bub:往回钉一代(0.3.9 + 同代 OTel 插件)仍跑通协议路径与时间轨",
   agent: bubAgent({
+    apiKey: process.env.OPENAI_API_KEY,
+    apiBase: process.env.OPENAI_BASE_URL,
     version: "0.3.9",
     otelPlugin: LEGACY_OTEL_PLUGIN,
   }),
@@ -21,6 +23,9 @@ export default defineExperiment({
   // (预算见 docs/engineering/testing/e2e/adapter/README.md「仓库 Eval 预算」),
   // 其余行为已由 ci.ts 在默认版本上证明。
   model: "gpt-5.6-luna",
+  // Republic 0.5.x only retains token/request usage. This lane must not claim
+  // a provider-cost fact that its tape protocol cannot carry.
+  flags: { requireObservedCost: false },
   sandbox,
   attempts: 1,
   evals: ["coding-task/write-and-verify"],

@@ -2,7 +2,7 @@
 
 Experiment ID 由 `experiments/` 下的路径决定。改名会产生新的 `experimentId`；旧 Run 与 Attempt 保持原身份，不会被路径改写、移动或删除。
 
-`niceeval exp rename` 让操作者明确采用旧 Experiment 的已有 Attempt。它不复制执行事实，也不把 Attempt 改挂到新 Experiment；它为新 Experiment 建立 Run，用 reference Member 引用原 Attempt，并在 Run 的 `niceeval.membership-provenance` 通道保存 `accepted` 与改名理由。
+`niceeval exp rename` 让操作者明确采用旧 Experiment 的已有 Attempt。它不复制执行事实，也不把 Attempt 改挂到新 Experiment；它为新 Experiment 建立 Run，用 reference Member 引用原 Attempt，并以 Core `accepted` action 标记明确采用。
 
 ## 命令
 
@@ -28,16 +28,16 @@ rename 在写入前完成整批预检，任一不合格项都会让命令零写�
 
 ## 写入语义
 
-正式执行建立新的 Invocation，并为 `newId` 建立一个 Run。每个通过预检的成员产生一个 reference Member，引用原 `{ originRunId, attemptId }`；对应 action 为 `accepted`。原 Attempt 的 origin、locator、Verdict 和采集事实都不复制。
+正式执行建立新的 Invocation，并为 `newId` 建立一个 Run。每个通过预检的成员产生一个 reference Member，引用原 `{ originRunId, attemptId }`；对应 action 为 `accepted`。原 Attempt 的 origin、locator、Core outcome、Assertions 与采集事实都不复制。
 
-oldId、newId、当前 identity、差异摘要与操作者采用理由写入目标 Run 的 `niceeval.membership-provenance/v1` 通道，并以 `slotId`、`attemptId` 关联。这个通道只解释当时的决定，不持续认证源 Attempt；源 Attempt 已随 origin Run immutable，后续事实变化只能发布新 Run。
+目标 Run 的 expected slot 给出当前 Core combined execution identity；reference Member 给出原 `{ originRunId, attemptId }`，`accepted` action 给出明确采用。Invocation receipt 的 `runIds` 将这次命令与目标 Run 关联。源 Attempt 已随 origin Run immutable，后续事实变化只能发布新 Run。
 
 ## 输出与错误
 
 成功输出列出 source locator、oldId、newId、目标 Run 和 `accepted`：
 
 ```text
-@01J8ZK3M6P4T7V9X2C5N8QW0RY  codex -> codex-5.6  accepted
+@1K1P0VJAPVJ12  codex -> codex-5.6  accepted
 ```
 
 `--json` 输出计划或 Invocation receipt，不另定义迁移结果格式。
@@ -57,4 +57,4 @@ oldId、newId、当前 identity、差异摘要与操作者采用理由写入目�
 | accept | 不变 | 人明确接受具体 Attempt | `reference / accepted` |
 | rename | 改变 | 人明确采用旧 Experiment 的具体 Attempt | `reference / accepted` |
 
-三种动作都建立新的 Run membership，并保留同一个 Attempt identity。采用原因都进入 `niceeval.membership-provenance` 通道，而不是扩张 Member 核心。
+三种动作都建立新的 Run membership，并保留同一个 Attempt identity。Core reference 与 `carried` / `accepted` action 给出持久、可公开复核的成员关系；需要显示 Verdict 时，从该 Attempt 的 Core outcome 与 sealed Assertions 读侧折叠。

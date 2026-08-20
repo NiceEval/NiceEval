@@ -11,7 +11,7 @@ export default defineEval({
   async test(t) {
     await t.send("我叫小明,帮我记住这个名字。");
     const recall = await t.send("我刚才说我叫什么名字?");
-    recall.messageIncludes("小明");
+    t.check(recall.message, includes("小明"));
     t.check(t.reply, includes("小明"));
 
     const fresh = t.newSession();

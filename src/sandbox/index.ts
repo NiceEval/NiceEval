@@ -43,10 +43,12 @@ export {
   buildFailureOrigin,
 } from "./build-coordinator.ts";
 export { createCheckpoint, restoreCheckpoint } from "./checkpoint.ts";
-export { createSandboxAttachmentWrite } from "./record/attachment.ts";
+export {
+  normalizeSandboxCapture,
+} from "./record/attachment.ts";
 export type {
-  SandboxAttachmentInput,
-  SandboxAttachmentWriteError,
+  SandboxCaptureInput,
+  SandboxCaptureInputError,
 } from "./record/attachment.ts";
 export {
   NICEEVAL_BUB_DOCKER_IMAGE,
@@ -55,6 +57,8 @@ export {
   NICEEVAL_HERMES_DOCKER_IMAGE,
   NICEEVAL_OPENCLAW_DOCKER_IMAGE,
   NICEEVAL_OPENCODE_DOCKER_IMAGE,
+  NICEEVAL_OMP_DOCKER_IMAGE,
+  NICEEVAL_DEEPSEEK_HARNESS_DOCKER_IMAGE,
 } from "./docker-agent-image.ts";
 
 export type {

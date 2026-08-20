@@ -1,14 +1,19 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "lifecycle",
+  "batch": "docker-3",
   "areas": ["lifecycle"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
-  "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 10,
+  "command": ["python3", "fixtures/subreaper-runner.py", "pnpm", "exec", "vitest", "run"],
+  "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": { "runtimes": ["node>=22"], "docker": true },
+  "requires": {
+    "runtimes": ["node>=24", "python>=3.11"],
+    "docker": true,
+    "platforms": ["linux"]
+  },
   "paths": [
     "e2e/lifecycle/**",
     "src/cli.ts",

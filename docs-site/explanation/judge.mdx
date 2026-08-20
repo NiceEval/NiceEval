@@ -1,138 +1,113 @@
 ---
-title: "LLM-as-judge in NiceEval: assessing open-ended output"
+title: "Judge in NiceEval: assess open-ended output"
 sidebarTitle: "Judge"
-description: "How t.judge and turn.judge use a separate judge model to score factuality, closed-ended quality, and summarization faithfulness — plus model resolution and severity."
+description: "Register a Judge Assertion directly through t.judge or turn.judge, then configure a threshold or score on the same handle."
 ---
 
-Judge assertions are the fifth assertion mechanism, alongside the four covered in [Assert](/explanation/assert). Use them when correctness cannot be expressed as a rule — for open-ended prose, tone, factual consistency, or summarization quality. The Judge model is **entirely separate** from the agent under test, which prevents self-evaluation bias: the same model grading its own output would be prone to rating itself generously.
+Judge uses a separate model to assess quality that is hard to express with an exact Match, such as factual consistency, summary faithfulness, or clarity of explanation. Its three recipes each register a measurement Assertion directly. The score is a finite number in `[0, 1]`. Calling the recipe registers it; the returned handle only configures that same Assertion.
 
 ```ts
-t.judge.autoevals.factuality(reference).atLeast(0.8);   // factual consistency with a reference text
-t.judge.autoevals.closedQA("Is the response appropriate for a 10-year-old?");
-t.judge.autoevals.summarizes(sourceDocument);            // faithful summarization check
-turn.judge.autoevals.closedQA("Custom evaluation rubric description");  // bound to the turn's material
+const turn = await t.send("Explain the risk of this change in two sentences.");
+turn.judge.autoevals.closedQA("Does the answer explain the risk clearly?")
+  .gate(0.8)
+  .label("Risk explanation quality");
 ```
 
-## The three judge shapes
+## Three recipes
 
-`t.judge.autoevals` exposes exactly three fixed forms, whatever you're evaluating maps onto one of them:
+| Recipe | Purpose |
+|---|---|
+| `closedQA(question, material)` | Decide whether output satisfies one open-ended criterion |
+| `factuality(reference, material)` | Decide whether output agrees with reference text |
+| `summarizes(source, material)` | Decide whether output faithfully summarizes source text |
 
-- **`closedQA(question, opts?)`** — a closed-ended judgment: does the output satisfy this criterion? Best for rubric-style checks ("is the tone polite and specific", "does this avoid inventing policy details").
-- **`factuality(reference, opts?)`** — factual consistency between the output and a reference text you provide.
-- **`summarizes(source, opts?)`** — whether the output is a faithful summary of a source document.
-
-Judge material is either bound by the receiver or passed explicitly: `turn.judge` defaults to that turn's material, while root-level `t.judge` must receive explicit `{ input, output }` strings (see below).
-
-## Where judge lives: `t` and `turn`
-
-Like scoped assertions, judge calls follow the rule that **the receiver decides the default material, not the call site**:
+`turn.judge.autoevals.*` is already bound to the Turn's original user input and assistant output, so pass only the criterion:
 
 ```ts
-turn.judge.autoevals.closedQA("...")     // (from t.send()'s return value) defaults to turn.message only
-t.judge.autoevals.closedQA("...", {      // root level: no implicit material — pass both strings
-  input: "The original request",
-  output: "The material to judge",
-});
+turn.judge.autoevals.factuality("The refund period is 30 days.")
+  .atLeast(0.9)
+  .label("Refund fact");
 ```
 
-`turn.judge` is turn-level: it only sees the message from that one turn, which is what you want when different turns in a multi-turn eval need different rubrics. Root-level `t.judge` carries no implicit material, so pass `{ input, output }` explicitly for cross-turn, file, or other custom material:
+Root-level `t.judge.autoevals.*` is for material across turns, files, or other custom sources. It must receive both strings explicitly:
 
 ```ts
-const turn1 = await t.send("What's in this image?");                  // turn 1: the image
-const turn2 = await t.send("What color is the background?");          // turns 2–3: text-only follow-ups,
-const turn3 = await t.send("What color is the shape in the middle?"); // testing cross-turn memory
-
-t.judge.autoevals
-  .closedQA("Does the assistant stay grounded in the image from turn 1 throughout?", {
-    input: "Identify the object in the image from turn 1 and describe it.",
-    output: "turn 2 and turn 3 answers",
-  })
-  .atLeast(0.7);
-
-turn3.judge.autoevals.closedQA("Does this turn answer the shape's color?").gate();
+const notes = await t.sandbox.readText("NOTES.md");
+t.judge.autoevals.closedQA("Does the document explain installation and rollback?", {
+  input: "Install the service and explain installation and rollback in NOTES.md.",
+  output: notes,
+}).gate(0.8).label("Operating instructions");
 ```
 
-To judge material that isn't the conversation itself — a file's current content or anything else — read it through the public Sandbox API and pass both strings explicitly:
+Read files as strings through the public Sandbox API first. The Judge API does not accept paths, `{ on }`, an implicit last input, or a one-off model override. `session.judge` is not a public API either; authors explicitly combine material across sessions.
+
+## Declare capability and configure it
+
+Only an Eval that declares `judge` can create Judge Assertions:
 
 ```ts
-const src = await t.sandbox.readText("src/handler.ts");
-t.judge.autoevals.closedQA("Is the generated code idiomatic TypeScript?", {
-  input: "Rewrite src/handler.ts to idiomatic TypeScript.",
-  output: src,
-}).atLeast(0.7);
-
-t.sandbox.fileChanged("src/handler.ts");   // attribution: did the Agent change this file?
-```
-
-Judge material is content you read; agent attribution is a separate claim made by `fileChanged`, not by what you pass to the Judge.
-
-## Judge model resolution
-
-The judge model is resolved from most- to least-specific:
-
-```
-Per-eval judge.model
-  ↓
-Global config judge.model
-```
-
-```ts
-// niceeval.config.ts — global default
-defineConfig({ judge: { model: "anthropic/claude-haiku-4-5" } });
-
-// A specific eval that needs a more capable judge
-defineEval({
-  judge: { model: "anthropic/claude-opus-4-8" },
+export default defineEval({
+  judge: true,
   async test(t) {
-    t.judge.autoevals.factuality(reference);  // uses claude-opus-4-8 for this eval
+    const turn = await t.send("Summarize the requirements.");
+    turn.judge.autoevals.summarizes("The original requirements").gate(0.8).label("Summary quality");
   },
 });
 ```
 
-If neither level is set, the judge call fails at the call site as a configuration error. There is no built-in default judge model, and no environment variable for it — the model is configuration, so it comes from code only.
-
-## Judge endpoint and key: OpenAI-compatible protocol
-
-Judge calls use an **OpenAI-compatible `/chat/completions`** protocol. OpenAI, DeepSeek, and any gateway compatible with that protocol can serve as the judge endpoint. Point at it in the `judge` config:
+- `judge: true` declares the capability and inherits fields from the Experiment and project configuration.
+- `judge: { ... }` both declares the capability and overrides fields from the Experiment and project configuration.
+- Creating a Judge Assertion without a `judge` declaration immediately reports an authoring error.
 
 ```ts
 // niceeval.config.ts
-defineConfig({
+export default defineConfig({
   judge: {
-    model: "deepseek-chat",
-    baseUrl: "https://api.deepseek.com/v1",  // defaults to the official OpenAI endpoint
-    apiKeyEnv: "DEEPSEEK_API_KEY",           // the key is read from this environment variable
+    model: "judge-model",
+    baseUrl: "https://gateway.example.com/v1",
+    apiKeyEnv: "JUDGE_GATEWAY_KEY",
+    timeoutMs: 180_000,
   },
 });
 ```
 
-The endpoint is configuration and the key is a credential, so they come from different places:
+Field precedence is the Eval object, then the Experiment, then project configuration. When unspecified, `baseUrl` is the OpenAI-compatible endpoint, `apiKeyEnv` is `OPENAI_API_KEY`, and `timeoutMs` is 180000 milliseconds. The Runner freezes the resolved configuration once and uses the same configuration for fingerprinting, preflight, and the actual evaluator.
 
-| Item | Resolution order |
-|---|---|
-| Endpoint | `judge.baseUrl` → `https://api.openai.com/v1` |
-| Key | env var named by `judge.apiKeyEnv` → `NICEEVAL_JUDGE_KEY` |
+## Thresholds and scores
 
-Point `judge.baseUrl` explicitly at your gateway or OpenAI-compatible proxy — NiceEval does not go looking for an endpoint in variables like `OPENAI_BASE_URL`. The key works the same way: exactly one name, either the one `judge.apiKeyEnv` names or the default `NICEEVAL_JUDGE_KEY`. The judge has its own credential and never borrows the one belonging to the app under test or to an agent.
-
-<Warning>
-  When the model or key does not resolve, the judge assertion is recorded as `unavailable` (with a reason) rather than vanishing: unless you explicitly chain `.optional()`, an assertion that cannot be evaluated makes the attempt `errored` — a verdict nobody could reach is neither a pass nor the agent's fault. After configuring keys, run one eval with `t.judge` and confirm the judge score appears in `niceeval view`.
-</Warning>
-
-## Severity: judge defaults to soft
-
-Judge calls are assertions, so they follow the same mechanics described in [Assert · Gate vs soft severity](/explanation/assert#gate-vs-soft-severity) — but their **default** is different from most value matchers:
+Pass-style Evals use `.gate(n)` to include a Judge measurement in `failed`; `.atLeast(n)` records only a local condition.
 
 ```ts
-turn.judge.autoevals.closedQA("Is the tone polite?");              // no threshold → soft, pure score, never fails the eval
-turn.judge.autoevals.closedQA("Is the tone polite?").atLeast(0.7); // soft with a threshold → fails only under --strict
-turn.judge.autoevals.closedQA("Is the tone polite?").gate();       // promoted to gate → fails immediately if below threshold
+const quality = turn.judge.autoevals.closedQA("Is the answer accurate and complete?")
+  .gate(0.8)
+  .label("Answer quality");
+await quality.orStop();
 ```
 
-With no `.atLeast()` and no `.gate()`, a bare judge call is recorded purely as a quality score — it shows up on the eval's score chip but can never fail the run on its own. This is the right default for judge: it's a probabilistic model assessing another probabilistic model's output, and treating every rubric miss as a hard failure would make suites brittle and constantly red. Reach for `.gate()` only when the judged property is truly load-bearing (for example, "the response must not fabricate account details").
+`.orStop()` is an async barrier on the same handle. If the value is below the threshold, it stops the current continuation. The Attempt still receives a `failed` Verdict after a normal stop.
 
-## Related pages
+Score-style Evals call `.score(n)` directly. A measurement `m` contributes `m * n`. `.atLeast(n)` only adds a local condition; configure it separately or alongside `.score(n)` on the same Assertion.
 
-- [Assert](/explanation/assert) — gate vs soft severity in full, plus the verdict rules judge scores feed into.
-- [Drive](/explanation/drive) — `t.send()`, `t.newSession()`, and which handle `t.judge` and `turn.judge` each hang off of.
-- [Evals](/explanation/evals) — how judge scores fold into the eval lifecycle and verdict types.
+```ts
+turn.judge.autoevals.closedQA("How good is the answer?").score(20).atLeast(0.5);
+```
+
+Both configurations run the Judge evaluator once and write one AssertionResult. A Judge Assertion without `.score()` saves only the evaluation by default.
+
+## Configuration, preflight, and failures
+
+When no model or key is available, NiceEval does not make a network preflight request. The Judge Assertion is `unavailable` and retains the reason `judge-model-unresolved` or `judge-key-unresolved`. If an Assertion configured with a score or `.orStop()` is unavailable, score grading cannot rank it; a pass-style Attempt is `errored`.
+
+When both a model and key exist, the Runner checks the endpoint before dispatch. A real preflight failure is a setup error and does not fabricate an AssertionResult. A transport failure after the model request starts is an ordinary `unavailable`. An invalid response, a non-finite score, or a score outside the range is `errored`; NiceEval does not clamp it to a usable score.
+
+The Judge's reason goes in the general `explanation`. `evidence` stores only trimmed and redacted evaluation material.
+
+## Reading results
+
+`niceeval show`, the web report, and failure feedback create summaries from the same closed Assertion results. Failed and unavailable entries appear first. Configured measurements display their actual value and required threshold. Judge has no special Assertion-result or display branch.
+
+## Related reading
+
+- [Assertions and Matches](/explanation/assert) — Registration at call time and the two Eval types.
+- [Pass-style and score-style Evals](/tutorials/evaluation-kinds) — Choosing `atLeast` or `score`.
+- [Drive](/explanation/drive) — Turns, sessions, and material across turns.

@@ -3,7 +3,6 @@
 // resource handles stay with their existing owners.
 
 import type { ExperimentHookContext } from "../runner/types.ts";
-import type { FactValue } from "../shared/facts.ts";
 import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
 import type { Sandbox, SandboxHookContext } from "../sandbox/types.ts";
 
@@ -25,7 +24,6 @@ export interface GroupPluginContext extends ScopedFeedback {
   readonly experimentId: string;
   readonly evalGroupId: string;
   readonly signal: AbortSignal;
-  fact(key: string, value: FactValue): void;
 }
 
 export interface EvalPluginContext extends ScopedFeedback {
@@ -34,7 +32,6 @@ export interface EvalPluginContext extends ScopedFeedback {
   readonly attempt: number;
   readonly evalGroupId?: string;
   readonly signal: AbortSignal;
-  fact(key: string, value: FactValue): void;
 }
 
 export type ExperimentPluginContext = ExperimentHookContext;
@@ -251,7 +248,8 @@ export function projectPluginLifecycles<Scope extends PluginScope>(
   plugins: readonly PluginInstance<any>[],
   scope: Scope,
 ): readonly LinkedPluginLifecycle[] {
-  return Object.freeze(plugins.flatMap((plugin, arrayPosition) => {
+  let projectedPosition = 0;
+  return Object.freeze(plugins.flatMap((plugin) => {
     const data = pluginInstanceDataOf(plugin);
     const fragment = data[scope];
     if (fragment === undefined) return [];
@@ -261,7 +259,7 @@ export function projectPluginLifecycles<Scope extends PluginScope>(
       behaviorRevision: data.behaviorRevision,
       instanceKey: data.instanceKey,
       identity: fragment.identity ?? Object.freeze({}),
-      arrayPosition,
+      arrayPosition: projectedPosition++,
       hasSetup: fragment.setup !== undefined,
       hasTeardown: fragment.teardown !== undefined,
       ...(fragment.setup === undefined ? {} : { setup: fragment.setup }),
@@ -270,10 +268,23 @@ export function projectPluginLifecycles<Scope extends PluginScope>(
   }));
 }
 
+export function pluginLifecycleIdentity(
+  { scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown }: LinkedPluginLifecycle,
+): JsonValue {
+  return Object.freeze({
+    scope,
+    name,
+    behaviorRevision,
+    instanceKey,
+    identity,
+    arrayPosition,
+    hasSetup,
+    hasTeardown,
+  });
+}
+
 export function pluginLifecycleProjection(lifecycles: readonly LinkedPluginLifecycle[]): JsonValue {
-  const projection: JsonValue[] = lifecycles.map(({ scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown }) => ({
-    scope, name, behaviorRevision, instanceKey, identity, arrayPosition, hasSetup, hasTeardown,
-  }));
+  const projection: JsonValue[] = lifecycles.map(pluginLifecycleIdentity);
   Object.freeze(projection);
   return projection;
 }

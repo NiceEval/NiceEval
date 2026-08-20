@@ -3,7 +3,7 @@
 //
 // This is intentionally not five ordinary `run` calls. One candidate, one
 // checkout identity, one Testkit build, and one immutable scenario-source
-// snapshot feed the required fresh-copy and same-installed-copy observations.
+// snapshot feed the required isolated-copy and same-installed-copy observations.
 
 import { createHash } from "node:crypto";
 import { lstat, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
@@ -203,7 +203,7 @@ async function fingerprintSourceSnapshot(snapshotDir: string): Promise<SourceSna
 
 export interface TakeoverRunRecord {
   label: string;
-  mode: "fresh" | "same-installed-copy" | "repo-default-parallel" | "target-single";
+  mode: "isolated-copy" | "same-installed-copy" | "repo-default-parallel" | "target-single";
   copyId?: string;
   sourceSnapshotDigest?: string;
   receiptPath: string;
@@ -212,13 +212,13 @@ export interface TakeoverRunRecord {
   detail: string;
   testInvocations: number;
   invocationIds: readonly string[];
-  /** Ordered test attempt → fresh child namespace mapping, auditable for same-copy runs. */
+  /** Ordered test attempt → unique child namespace mapping, auditable for same-copy runs. */
   testAttemptInvocationIds: readonly { attempt: number; invocationId: string }[];
   cleanupOk: boolean;
 }
 
 export interface TakeoverSummary {
-  format: "niceeval.e2e.takeover/v1";
+  format: "niceeval.e2e.takeover/v2";
   repoId: string;
   candidate: Pick<CandidateTarball, "sha256" | "integrity">;
   checkout: CheckoutIdentity;
@@ -269,9 +269,9 @@ function toRunRecord(
 }
 
 const REQUIRED_TAKEOVER_RUNS = [
-  { label: "takeover/fresh-1", mode: "fresh", copyId: "fresh-1", attempts: 1, target: true },
-  { label: "takeover/fresh-2", mode: "fresh", copyId: "fresh-2", attempts: 1, target: true },
-  { label: "takeover/fresh-3", mode: "fresh", copyId: "fresh-3", attempts: 1, target: true },
+  { label: "takeover/isolated-copy-1", mode: "isolated-copy", copyId: "isolated-copy-1", attempts: 1, target: true },
+  { label: "takeover/isolated-copy-2", mode: "isolated-copy", copyId: "isolated-copy-2", attempts: 1, target: true },
+  { label: "takeover/isolated-copy-3", mode: "isolated-copy", copyId: "isolated-copy-3", attempts: 1, target: true },
   { label: "takeover/same-copy", mode: "same-installed-copy", copyId: "same-installed-copy", attempts: 2, target: true },
   { label: "takeover/repo-default-parallel", mode: "repo-default-parallel", copyId: "repo-default-parallel", attempts: 1, target: false },
   { label: "takeover/target-single", mode: "target-single", copyId: "target-single", attempts: 1, target: true },
@@ -467,7 +467,13 @@ export async function runTakeover(
     }
 
     for (let index = 1; index <= 3 && !isExecutionCancelled(execution); index += 1) {
-      await run(`takeover/fresh-${index}`, "fresh", cli.nativeArgs, 1, `fresh-${index}`);
+      await run(
+        `takeover/isolated-copy-${index}`,
+        "isolated-copy",
+        cli.nativeArgs,
+        1,
+        `isolated-copy-${index}`,
+      );
     }
     if (!isExecutionCancelled(execution)) {
       // One install, two deliberately distinct test command invocations. Their
@@ -511,7 +517,7 @@ export async function runTakeover(
         ? "infra"
         : baseCategory;
   const summary: TakeoverSummary = {
-    format: "niceeval.e2e.takeover/v1",
+    format: "niceeval.e2e.takeover/v2",
     repoId: repo.manifest.id,
     candidate: { sha256: candidate.sha256, integrity: candidate.integrity },
     checkout: checkout ?? {
@@ -530,7 +536,7 @@ export async function runTakeover(
           ? "repo-default-parallel"
           : label.includes("target-single")
             ? "target-single"
-            : "fresh";
+            : "isolated-copy";
       return toRunRecord(label, mode, result);
     }),
     matrixValidation,

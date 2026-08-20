@@ -89,25 +89,27 @@ Consulta el glosario completo en la [visión general de la arquitectura](https:/
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
+import { includes, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 export default defineEval({
+  judge: true,
   description: "Prueba la capacidad del agent de llamar correctamente a la herramienta en preguntas sobre el clima en tiempo real y responder según el resultado",
 
   async test(t) {
     const turn = await t.send("¿Qué tiempo hace hoy en Beijing?");
-    t.succeeded();
+    turn.succeeded();
 
     await t.group("Llama a get_weather con la ciudad correcta", () => {
-      t.calledTool("get_weather", { input: { city: "Beijing" } });
-      t.messageIncludes(/°C|temperatura|clima|soleado|nublado|lluvia/);
+      turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));
+      t.check(turn.message, pattern(/°C|temperatura|clima|soleado|nublado|lluvia/));
     });
 
     const second = await t.send("¿Qué tiempo hará mañana en Shanghai?");
-    second.messageIncludes("Shanghai");
+    t.check(second.message, includes("Shanghai"));
 
-    t.judge.autoevals
+    turn.judge.autoevals
       .closedQA("¿La respuesta del asistente se basa en los datos meteorológicos devueltos por la herramienta, en lugar de inventar la temperatura?")
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });
 ```
@@ -171,5 +173,4 @@ Este proyecto está inspirado en los siguientes proyectos, o fue escrito por una
 - [agent eval](https://github.com/vercel-labs/agent-eval)
 - [ponytail](https://github.com/DietrichGebert/ponytail)
 
-Gracias a las siguientes comunidades
-- WIP
+Agradecemos a [Linux.do](https://linux.do/) su apoyo y sus comentarios durante las primeras etapas del desarrollo del proyecto.

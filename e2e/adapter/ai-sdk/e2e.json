@@ -1,14 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "adapter/ai-sdk",
+  "batch": "host-3",
   "areas": ["adapter"],
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 15,
+  "timeoutMinutes": 3,
   "harness": { "testkit": true },
   "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
-  "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },
+  "requires": { "externalNetwork": true, "runtimes": ["node>=24"] },
   "paths": ["e2e/adapter/ai-sdk/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**", "junit.xml"]
 }

@@ -3,7 +3,7 @@
 本研究比较 Eve 与 NiceEval 的断言作者面，并用 NiceEval-Eval Harness 检查候选 API 是否解决真实用户问题。
 它只提供带日期的设计输入，不构成 NiceEval 的目标契约。
 
-> 本页列出的 `ToolMatch.command`、`ToolSelector` 与 `toolInputsExclude()` 是阶段性候选，已被当前 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md) 取代。
+> 本页列出的 `ToolMatch.command`、`ToolSelector` 与 `toolInputsExclude()` 是阶段性候选，已被当前 [Assertions](../feature/assertions/README.md) 取代。
 > 目标契约使用一等 `commandMatch()`、共用 `ToolMatch`，并以 `notCalledTool(toolMatch({ input: referencesAnyPath(...) }))` 表达 observed-input 负约束。
 
 ## 观察版本
@@ -152,4 +152,4 @@ NiceEval 应保留 Eve 的 scope-first 风格，也应保留自己的 `unavailab
 普通调用点不需要新的 Match AST 或大量新方法。
 
 本研究确认了 scope-first、logical command、exact Sandbox path set 与 observed-input coverage 的需求。
-具体语法已经由后续 Roadmap 收敛；目标契约只以 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md) 为准。
+具体语法已经由后续设计收敛；目标契约只以 [Assertions](../feature/assertions/README.md) 为准。

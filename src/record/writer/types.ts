@@ -1,31 +1,28 @@
-import type { Effect, Scope } from "effect";
+import type { Effect } from "effect";
 import type { RecordAttachmentWrite } from "../attachment/types.ts";
-import type { RecordAttemptRef } from "../model/core.ts";
-import type { AttemptId, RunId, SlotId, UtcMillis } from "../model/identifiers.ts";
+import type { RecordAttemptRef, RecordSlotIdentity } from "../model/core.ts";
+import type { RunContext } from "../model/run-context.ts";
+import type {
+  AttemptId,
+  ExperimentId,
+  RunId,
+  SlotId,
+  UtcMillis,
+} from "../model/identifiers.ts";
 import type { RecordCoreInvalid, RecordReferenceInvalid } from "../errors/record-errors.ts";
 import type { RecordAttachmentClosureInvalid } from "../attachment/errors.ts";
-import type { RecordFileSystemError, RecordWriterLockError } from "../platform/errors.ts";
+import type { RecordFileSystemError } from "../platform/errors.ts";
 import type { RecordRoot } from "../platform/root.ts";
 import type {
-  RecordEntropy,
-  RecordFileSystem,
-  RecordMaintenanceLock,
-  RecordWriterLock,
-} from "../platform/services.ts";
-import type {
   FrozenRecordAttempt,
-  FrozenRecordView,
 } from "../reader/types.ts";
-import type {
-  RecordReaderOpenError,
-  RecordReaderReadError,
-} from "../reader/errors.ts";
 import type {
   RecordAttachmentEncodeError,
   RecordDraftHandleInvalid,
   RecordDraftStateError,
   RecordWriteSessionInvalid,
   RecordWriterClosed,
+  RecordRunAlreadyCreated,
 } from "./errors.ts";
 
 export const recordWriteSessionBrand: unique symbol = Symbol(
@@ -41,6 +38,7 @@ export const recordAttemptDraftBrand: unique symbol = Symbol(
 export type RecordWriteError =
   | RecordFileSystemError
   | RecordWriterClosed
+  | RecordRunAlreadyCreated
   | RecordWriteSessionInvalid
   | RecordDraftStateError
   | RecordDraftHandleInvalid
@@ -59,11 +57,12 @@ export interface RecordPublishReceipt {
 
 export interface RecordWriteSession {
   readonly [recordWriteSessionBrand]: () => void;
-  readonly view: FrozenRecordView<RecordReaderReadError>;
 
   readonly createRun: (input: {
+    readonly experimentId: ExperimentId;
+    readonly context: RunContext;
     readonly startedAt: UtcMillis;
-    readonly expectedSlots: readonly SlotId[];
+    readonly expectedSlots: readonly RecordSlotIdentity[];
   }) => Effect.Effect<RecordRunDraft, RecordWriteError>;
 }
 
@@ -81,6 +80,7 @@ export interface RecordRunDraft {
 
   readonly reference: (input: {
     readonly slotId: SlotId;
+    readonly action: "carried" | "accepted";
     readonly attempt: FrozenRecordAttempt;
   }) => Effect.Effect<void, RecordWriteError>;
 
@@ -97,23 +97,3 @@ export interface RecordAttemptDraft {
     write: RecordAttachmentWrite<"attempt", E, R>,
   ) => Effect.Effect<void, RecordWriteError | E, R>;
 }
-
-export type OpenRecordWriteSessionRequirements =
-  | Scope.Scope
-  | RecordFileSystem
-  | RecordMaintenanceLock
-  | RecordWriterLock
-  | RecordEntropy;
-
-export type OpenRecordWriteSessionError =
-  | RecordReaderOpenError
-  | RecordWriterLockError
-  | RecordWriteError;
-
-export type OpenRecordWriteSession = (input: {
-  readonly root: RecordRoot;
-}) => Effect.Effect<
-  RecordWriteSession,
-  OpenRecordWriteSessionError,
-  OpenRecordWriteSessionRequirements
->;

@@ -4,6 +4,8 @@
 @layer theme, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source("../");
+/* 首页会话轨迹直接消费产品 TurnTrace 的官方 stylesheet，避免颜色与交互状态另起一套。 */
+@import "../../src/report/assets/styles.css";
 
 /* 站点观感与产品面同源:令牌值抄 DESIGN.md 的单源主题 basalt(src/report/host/theme.ts),
    短名与 src/view/styles.css 的宿主 chrome 对齐。站点只有暗色一套,不做浅色切换。 */
@@ -859,16 +861,19 @@ h1 {
   color: var(--good);
 }
 
-/* 助手回复气泡，呼应 view 里 transcript 的 ts-role + ts-text 样式 */
-.code-note-reply {
-  flex-direction: column;
-  gap: 4px;
+/* send/sendFile 原位展开产品面的真实 TurnTrace 结构。 */
+.code-note-trace {
+  display: block;
+  padding: 8px 14px 12px 42px;
 }
 
-.code-note-role {
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 10px;
+.site-example-trace {
+  width: 100%;
+}
+
+.code-note-trace .niceeval-turn-trace {
+  margin: 0;
+  font-size: 12px;
 }
 
 .eval-more {
@@ -1565,6 +1570,11 @@ h1 {
 
   .eval-code {
     font-size: 11.5px;
+  }
+
+  .code-note-trace {
+    padding-right: 8px;
+    padding-left: 26px;
   }
 
   .terminal-body {

@@ -36,13 +36,6 @@ export interface SandboxHookContext extends ScopedFeedback {
   };
   /** 当前 Invocation 的中止信号；物理 Sandbox 生命周期不从某条 Attempt 借用信号。 */
   readonly signal: AbortSignal;
-  /**
-   * 写入所属 Run 的 generic custom fact document；这类事实不归属于某一条 Attempt。
-   * name 使用反向域格式且不能以 `niceeval.` 开头，同一 owner/name 只允许写一次。value 可以是任意
-   * JsonValue。完整 document 经 JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出
-   * `record-custom-fact-too-large`，且不留下部分文件。不影响判定、评分或指纹。
-   */
-  fact(key: string, value: string | number | boolean): void;
 }
 
 /** 沙箱级生命周期钩子(`SandboxLayer.setup()` / `.teardown()` 链式挂载)。 */
@@ -92,7 +85,7 @@ export interface CommandOptions {
    *
    * 语义跨 provider 一致,各 provider 映射到自己的原生机制(docker:`exec --user`;E2B:
    * `{ user }`;Vercel:只认 `"root"`,映射 `{ sudo: true }`,其它值报错;local:任何值都报错)。
-   * 本就全程 root 的 provider视作 no-op;完全无法换身份的 provider 可不支持(抛错)—— 但**省略与
+   * 本就全程 root 的 provider 视作 no-op；完全无法换身份的 provider 可不支持（抛错）——但**省略与
    * 显式值的语义保持一致**,不因 provider 而变。
    */
   readonly user?: string;

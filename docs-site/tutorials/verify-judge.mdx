@@ -1,0 +1,78 @@
+---
+title: "Configure and Verify a Judge"
+sidebarTitle: "Configure and Verify a Judge"
+description: "Connect an OpenAI-compatible Judge gateway, use one minimal Eval to preflight and score for real, then distinguish missing configuration, network failure, and low-quality output in the results."
+---
+
+Use a Judge for open-ended quality judgments that rules cannot express as an exact match. First use one minimal Eval to confirm that the model, key, and endpoint can score for real, then add the Judge to production tasks.
+
+## Configure the model and credential source
+
+```ts title="niceeval.config.ts"
+import { defineConfig } from "niceeval";
+
+export default defineConfig({
+  judge: {
+    model: "judge-model",
+    baseUrl: "https://gateway.example.com/v1",
+    apiKeyEnv: "JUDGE_GATEWAY_KEY",
+    timeoutMs: 180_000,
+  },
+});
+```
+
+Keep the key only in the process environment:
+
+```sh
+export JUDGE_GATEWAY_KEY="..."
+```
+
+The configuration file stores the environment-variable name, never the key value. To compare Judge models, override `judge.model` in different Experiments; do not add a one-off recipe model parameter.
+
+## Write one minimal real scoring Eval
+
+```ts title="evals/judge-smoke.eval.ts"
+import { defineEval } from "niceeval";
+
+export default defineEval({
+  judge: true,
+  async test(t) {
+    t.judge.autoevals.closedQA("Does the text clearly state that the operation succeeded?", {
+      input: "operation completed successfully",
+      output: "operation completed successfully",
+    })
+      .gate(0.8)
+      .label("Clearly states success");
+  },
+});
+```
+
+`judge: true` declares that this Eval needs a Judge and inherits its fields from the Experiment and project configuration. `.gate(0.8)` makes the measurement a pass/fail requirement; an Attempt becomes `failed` below the threshold.
+
+## Run only this verification Eval
+
+First ensure that an existing Experiment's `evals` scope includes `judge-smoke`, then use the second positional argument to select only that Eval. This example uses the Experiment ID `local`:
+
+```sh
+pnpm exec niceeval exp local judge-smoke
+```
+
+Use `pnpm exec niceeval exp list` to find the actual Experiment ID. Do not treat an Eval ID as an Experiment ID too. When both the model and key are present, the Runner preflights the Judge endpoint before dispatching. A failed preflight is a setup error and never produces a fabricated Judge score.
+
+## Inspect the scoring result
+
+Copy the Run ID from the completion feedback:
+
+```sh
+pnpm exec niceeval show --run <run-id>
+```
+
+The result should contain the Judge measurement, threshold, condition, reason, and trimmed material. Distinguish these three failure types:
+
+| Result | Meaning |
+| --- | --- |
+| `judge-model-unresolved` / `judge-key-unresolved` | Configuration or the environment variable is missing; no network preflight began. |
+| `unavailable` | The network or Provider became unavailable after the request started. It is not a zero score. |
+| evaluator `errored` | The response is invalid, its score is not finite, or it lies outside `[0, 1]`. |
+
+For production tasks, first calibrate the rubric and threshold with representative results. To compare two Judge models, have two Experiments select the same Evals and use different `labels` to identify the Judge conditions. See the full matrix pattern in [Experiment Matrices](/tutorials/experiments).

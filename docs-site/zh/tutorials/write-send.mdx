@@ -75,7 +75,7 @@ if (!res.requestId) {
 
 `progress` 不落盘。diagnostic 会写入 Attempt-owned 通道，并从已选 Run 的详情页面回顾。HTTP 连接失败或响应无法解析时直接抛错；runner 会记录错误发生在 `agent.run`，并在 `niceeval.verdict` 通道形成 `errored` Verdict。
 
-**这一步支持**：`t.reply`、`t.messageIncludes()`、Judge 的全部对话材料，以及 Experiment 侧的**模型对比**。`ctx.model` 来自 Experiment 的 `model`。运行器原样传递，Adapter 只负责转发。接入等级见 [Tier](/zh/explanation/tier)。
+**这一步支持**：`t.reply` 的直接值检查（`t.check(t.reply, includes(...))` 或 `pattern(...)`）、Judge 的全部对话材料，以及 Experiment 侧的**模型对比**。`ctx.model` 来自 Experiment 的 `model`。运行器原样传递，Adapter 只负责转发。接入等级见 [Tier](/zh/explanation/tier)。
 
 它有两个明显的局限：每轮都是一场全新对话（第二次 `t.send` 接不上第一次），工具调用完全看不见。后面两步各解决一个。
 
@@ -152,9 +152,17 @@ export default defineAgent({
     };
 ```
 
-`Usage` 的完整字段还有可选的 `cacheReadTokens` / `cacheCreationTokens`、推理 token 数 `reasoningTokens`、请求次数 `requests`，以及 `costUSD`——网关回了实测成本就填它，优先于价格表估算。每个字段只在接口真实提供时填，接口不回用量就整个不填 `usage`，其它断言不受影响。这段照抄也是过渡：下一步的官方转换器会连 `usage` 一起填好。
+`Usage` 的完整字段还有可选的 `cacheReadTokens` / `cacheCreationTokens`、推理 token 数 `reasoningTokens`、请求次数 `requests`，以及
+`costUSD`。`costUSD` 只在 provider 或 adapter 如实返回 USD observed 成本时填写；上游估算、模型目录价目表或本地计算绝不写入它。每个字段只在接口真实提供时填，接口不回用量就整个不填 `usage`，其它断言不受影响。
 
-**这一步支持**：`t.maxTokens()` / `t.maxCost()` 断言（`maxCost` 用 `costUSD` 或配置里的价格表估算），以及报告和 `niceeval view` 里的用量。
+Runner 始终从 `model`、上报的 token 用量和 Config/runtime price table 独立计算 `estimatedCostUSD`，即使有 observed `costUSD`
+也不改变该计算；Experiment budget 与 `t.maxCost()` 使用这个 estimate。Report 则只使用显式 `PricingProfile` 和 sealed Usage 进行 Analysis 成本投影，绝不消费 Runner
+estimate。
+
+当 Config/runtime price table 无法形成 Runner estimate 时，`t.maxCost()` 为 `unavailable`，绝不能把缺失当成 `0`。显式零费率实际
+算得 `estimatedCostUSD: 0` 时，`0` 是合法 estimate，仍按上限规则求值。
+
+**这一步支持**：`t.maxTokens()` / `t.maxCost()` 断言，以及报告和 `niceeval view` 里的用量。
 
 ## 第四步：把工具解析成事件
 
@@ -228,10 +236,10 @@ type StreamEvent =
 
 | 你吐的事件 | 解锁的断言 |
 |---|---|
-| `message` | `t.reply`、`t.messageIncludes()`、judge 的对话材料 |
+| `message` | `t.reply`、`t.check(turn.message, includes(...))` / `pattern(...)`、Judge 的对话材料 |
 | tool `operation.started` / `operation.finished`（靠 `operationId` 配对） | `turn.calledTool()` / `turn.toolOrder()` / `turn.maxToolCalls()` / `turn.noFailedActions()`… |
-| `input.requested`（配合 status `"waiting"`） | `t.parked()`、`t.requireInputRequest()`、`t.respond()`（第五步） |
-| `thinking` / `compaction` / `error` | 对应断言与 o11y 计数 |
+| `input.requested`（配合 status `"waiting"`） | `t.check(turn.status, equals("waiting"))`、`t.requireInputRequest()`、`t.respond()`（第五步） |
+| `thinking` / `compaction` / `error` | 报告与诊断；当前没有对应的公开 `eventMatch` selector |
 
 Chat Completions 响应**不保证包含完整过程记录**。应用可能在服务端完成工具循环，只返回最终答案。因此，`turnFromChatCompletion` 的返回不带完整性证明：`calledTool` 等正断言可用，`notCalledTool` 等负断言会提示证据不完整。Responses 协议要求 `output` 数组记录完整过程，`turnFromResponses` 的返回带完整性证明，负断言可信。两者的可信度差异来自接口契约。
 
@@ -241,7 +249,7 @@ Chat Completions 响应**不保证包含完整过程记录**。应用可能在�
 
 应用中途停下来等人（工具审批、等补充信息）时，`send` 两侧各有义务：
 
-- **停轮**：返回 `status: "waiting"`，并且每个待回答的问题吐一条带稳定 `id` 的 `input.requested` 事件——`t.parked()`、`t.requireInputRequest()` 读它，回答靠这个 `id` 对位。
+- **停轮**：返回 `status: "waiting"`，并且每个待回答的问题吐一条带稳定 `id` 的 `input.requested` 事件——`t.check(turn.status, equals("waiting"))` 与 `t.requireInputRequest()` 读取它，回答靠这个 `id` 对位。
 - **回答轮**：评估用例里的 `t.respond(...)` 到 Adapter 是**又一次普通的 `send`**（还是同一条会话线、同一份状态），人的裁决以结构化形式随 `input.responses` 到达，每条带 `requestId`、`optionId` 或 `text`（形态见[不同回答的入参](/zh/explanation/adapter#不同回答的入参)）。Adapter 先把裁决交回应用，再接着取结果。被人拒绝的调用，tool `operation.finished` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，`noFailedActions()` 不误伤。
 
 "停轮时读了一半的现场"（比如一条读到一半的 SSE 流）也存在 `ctx.session` 上。Adapter 先用 `createSessionSlot<Pending>()` 创建私有 slot，停轮时 `ctx.session.set(slot, pending)`，回答轮开头 `ctx.session.take(slot)` 取回。取到即清除，一次消费。
@@ -304,7 +312,8 @@ export default defineAgent({
 
 不需要 HITL 的接口，删掉停轮现场相关的三处（`Pending`、`hold`、开头的 `take` 分支）即可，其余不变。停轮 / 回答 / 续跑的完整心智模型见 [HITL](/zh/explanation/hitl)。
 
-**这一步支持**：`t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()`，以及 `calledTool(..., { status: "rejected" })` 的精确断言。
+**这一步支持**：`t.check(turn.status, equals("waiting"))`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()`。
+被人拒绝的调用可用 `calledTool(toolMatch(..., { status: "rejected" }))` 精确断言。
 
 ## 第六步：接上 OTel trace
 

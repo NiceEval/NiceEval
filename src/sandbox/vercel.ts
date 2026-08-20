@@ -2,6 +2,7 @@
 // 契约对齐 ../types.ts 的 Sandbox 接口,与 DockerSandbox 可互换。
 
 import { Sandbox as VSandbox, APIError } from "@vercel/sandbox";
+import { Effect } from "effect";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
@@ -38,19 +39,19 @@ const VERCEL_WORKDIR = "/vercel/sandbox";
 // rotate 时停掉旧 session 的等待上限:stop 挂起时不无限拖住当前命令。
 const STOP_OLD_SESSION_TIMEOUT_MS = 15_000;
 
-/** 给 promise 套超时;到点 reject,并清掉计时器避免拖住事件循环。 */
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+/** 给 promise 套超时;到点 fail。计时用 Effect Clock/Sleep,超时分支中断等待 fiber,不再手工管 timer。 */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Effect.runPromise(
+    Effect.tryPromise({
+      try: () => promise,
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.timeoutFail({
+        duration: ms,
+        onTimeout: () => new Error(`timed out after ${ms}ms`),
       }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
+    ),
+  );
 }
 
 export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapability {

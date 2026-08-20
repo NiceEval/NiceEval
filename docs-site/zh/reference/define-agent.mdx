@@ -61,7 +61,7 @@ export default defineSandboxAgent({
   name: "my-cli-agent",
   evidenceCoverage: completeEvidenceCoverage,
   ensure: {
-    identity: { agent: "my-cli-agent", version: "1.0.0" },
+    identity: { agent: "my-cli-agent", version: "1.0.0", revision: "1" },
     probe: command("my-agent", ["--version"]),
   },
   async send(input, ctx) {
@@ -303,7 +303,7 @@ SandboxLayer command 按实验隔离跨 attempt 的基础设施内容，或 adap
 readonly evalId?: string;
 ```
 
-当前 Attempt 对应的 eval id。NiceEval runner 始终从 discovery 后的 Eval 身份填入；
+当前 Attempt 对应的 eval ID。NiceEval Runner 始终从 discovery 后的评估用例身份填入；
 第三方直接构造 AgentContext 时可省略。Adapter 可用它定位与题目同目录的只读宿主资产，
 但不能据此绕过 Sandbox 的隐藏判据隔离。
 
@@ -316,7 +316,7 @@ readonly evalGroup?: {
 };
 ```
 
-当前 Attempt 的 Eval Group；未分组 Eval 省略。
+当前 Attempt 的评估组；未分组评估用例省略。
 
 #### `attempt`
 
@@ -366,14 +366,6 @@ diagnostic(input: DiagnosticInput): void;
 永久事件,落进 attempt 的 diagnostics 并进各 profile 的永久输出;`dedupeKey` 去重。
 即使 level 为 "error" 也不改变 Turn.status / verdict——无法继续时抛异常。
 
-#### `fact`
-
-```ts
-fact(name: string, value: JsonValue): void;
-```
-
-写入本 Attempt 的 generic custom fact document。name 使用反向域格式且不能以 `niceeval.` 开头；同一 owner/name 只允许写一次，第二次写入是 typed error，不替换也不追加。value 可以是任意 JsonValue。`{ observedAt, value }` 经 JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出 `record-custom-fact-too-large`，且不留下部分文件。不影响 Turn status、verdict、评分或指纹。形状与归属语义见 docs/feature/record/architecture.md。
-
 #### `log`
 
 ```ts
@@ -396,11 +388,136 @@ log(msg: string): void;
 
 ## Sandbox 接口
 
-Sandbox 型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄。`CommandOptions` 是 `runCommand` / `runShell` 的可选项：
+Sandbox 型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄。`Sandbox` 继承 `SandboxOperations` 与 `SandboxTransferOperations`，下方按声明接口列出全部成员。`CommandOptions` 是 `runCommand` / `runShell` 的可选项：
 
 {/* GENERATED:BEGIN sandbox-methods */}
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
+
+### `SandboxOperations`
+
+#### `workdir`
+
+```ts
+readonly workdir: string;
+```
+
+Sandbox 内项目/工作区根目录的绝对路径(agent 命令的默认 cwd,也是 git baseline 提交的位置)。各方法的相对路径都以此为基准解析,省略 `cwd`/`targetDir` 时也落到这里。
+
+#### `runCommand`
+
+```ts
+runCommand(cmd: string, args?: readonly string[], opts?: CommandOptions): Promise<CommandResult>;
+```
+
+执行单个命令,`args` 作为独立 argv 传递、不经 shell 解释(无 `&&`、管道、通配符展开)。
+只想跑一个可执行文件、参数来自外部输入、担心注入时优先用它。
+
+#### `runShell`
+
+```ts
+runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
+```
+
+执行一整段脚本,经 shell(bash)解释,支持 `&&`、管道、`$()`、重定向等。
+需要拼多条命令或做条件判断时用它。
+
+#### `runCommandOrThrow`
+
+```ts
+runCommandOrThrow(
+  cmd: string,
+  args?: readonly string[],
+  opts?: CommandOptions,
+): Promise<SuccessfulCommandResult>;
+```
+
+像 `runCommand` 一样执行单个命令，但非零退出时抛出 `SandboxCommandExitError`。错误消息附带
+有界、已清理和脱敏的 stderr 尾部；stderr 为空时回退 stdout。完整输出保留在异常的
+`result` 字段中。成功结果的 `exitCode` 在类型上固定为 `0`。
+
+#### `runShellOrThrow`
+
+```ts
+runShellOrThrow(script: string, opts?: CommandOptions): Promise<SuccessfulCommandResult>;
+```
+
+像 `runShell` 一样执行 shell 脚本，但非零退出时抛出 `SandboxCommandExitError`。错误摘要、
+完整输出和成功结果的语义与 `runCommandOrThrow` 相同。
+
+#### `readText`
+
+```ts
+readText(path: string): Promise<string>;
+```
+
+读取 Sandbox 内文件的文本内容(UTF-8)。文件不存在时抛错。
+
+#### `writeText`
+
+```ts
+writeText(path: string, content: string): Promise<void>;
+```
+
+写入 Sandbox 内一个 UTF-8 文本文件；父目录不存在时自动创建。
+
+#### `readBytes`
+
+```ts
+readBytes(path: string): Promise<Uint8Array>;
+```
+
+精确读取 Sandbox 内文件字节；公共契约不绑定 Node Buffer。
+
+#### `writeBytes`
+
+```ts
+writeBytes(path: string, content: Uint8Array): Promise<void>;
+```
+
+精确写入 Sandbox 内文件字节；父目录不存在时自动创建。
+
+#### `pathExists`
+
+```ts
+pathExists(path: string): Promise<boolean>;
+```
+
+检查 Sandbox 内文件或目录路径是否存在。
+
+### `SandboxTransferOperations`
+
+#### `uploadFile`
+
+```ts
+uploadFile(source: string | URL, targetPath: string): Promise<void>;
+```
+
+#### `uploadDirectory`
+
+```ts
+uploadDirectory(
+  sourceDir: string | URL,
+  targetDir?: string,
+  options?: { readonly ignore?: readonly string[] },
+): Promise<void>;
+```
+
+#### `downloadFile`
+
+```ts
+downloadFile(sourcePath: string, target: string | URL): Promise<void>;
+```
+
+#### `downloadDirectory`
+
+```ts
+downloadDirectory(
+  sourceDir: string,
+  targetDir: string | URL,
+  options?: { readonly ignore?: readonly string[] },
+): Promise<void>;
+```
 
 ### `Sandbox`
 
@@ -516,7 +633,7 @@ docs/feature/sandbox/library.md「执行身份」)。
 
 语义跨 provider 一致,各 provider 映射到自己的原生机制(docker:`exec --user`;E2B:
 `{ user }`;Vercel:只认 `"root"`,映射 `{ sudo: true }`,其它值报错;local:任何值都报错)。
-本就全程 root 的 provider视作 no-op;完全无法换身份的 provider 可不支持(抛错)—— 但**省略与
+本就全程 root 的 provider 视作 no-op；完全无法换身份的 provider 可不支持（抛错）——但**省略与
 显式值的语义保持一致**,不因 provider 而变。
 
 #### `timeoutMs`

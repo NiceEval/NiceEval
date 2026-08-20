@@ -80,8 +80,9 @@ fixture、Eval、Experiment、测试文件、项目副本 / 结果根与 owner a
 type Executor = { kind: "host" };
 
 interface E2ERepoManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
+  batch: string;
   areas: readonly (
     | "eval"
     | "cli"
@@ -96,6 +97,7 @@ interface E2ERepoManifest {
   lanes: readonly ("pr" | "main" | "nightly" | "release")[];
   executor: Executor;
   command: readonly [string, ...string[]];
+  /** Maximum runtime for one test invocation; deterministic Repo 2 minutes, live provider Repo 3 minutes. */
   timeoutMinutes: number;
   harness?: {
     testkit?: boolean;
@@ -114,10 +116,21 @@ interface E2ERepoManifest {
 ```
 
 manifest 不含测试标题、expected、page matrix、历史 bug 或 contract anchor。`paths` 只是选择优化。
+
+`batch` 是必填的 canonical lowercase placement ID，例如 `host-1`、`docker-1` 或 `browser-1`。它只决定 CI 共机分组，
+不表示资源 capability；完整宿主运行条件仍以 `requires` 为唯一真源。
+
+未来同类 Repo 过多时，直接把部分 manifest 改为 `host-2`、`host-3` 等新 ID。planner 会产生额外并行 cell，
+不维护第二份 batch registry。
+
 无法计算 diff 时多跑，不能静默少跑。显式 `--repo <id>` 不受 `--diff-path` 过滤。
 多个显式 Repo 中任一个不在所选 lane 时，命令必须非零退出并列出该 Repo 的可用 lane。
 `requires.runtimes`、`docker`、`browsers`、platform 与 secret 在 test 前有结构化 preflight。
 `externalNetwork: true` 在 receipt 中写为“声明但未主动预检”。通用探测不能替代 Repo 自己拥有的 provider/network 行为。
+
+同仓可信 PR、main push 与 schedule 会纳入这些 live Repo，并按 manifest 白名单注入已登记 secret；
+Fork 与 Dependabot 使用无密钥 lane。人工 workflow dispatch 通过 `live_providers` 明确选择是否纳入。
+显式 `--repo` 点名 live Repo 却同时排除 external network 属于配置错误，不能变成空计划假绿。
 
 `id` 是 canonical 相对路径。它允许 `adapter/ai-sdk`，但不允许绝对路径、空段、dot traversal、反斜杠或控制符。
 `artifacts` 只允许 canonical `dir/**` 或顶层文件 glob。非法形状使 discovery 聚合报错。
@@ -170,7 +183,7 @@ Docker 是 Repo 的 backend / sandbox 依赖，不属于 executor 类型。host 
 - CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `show --json` 读取；
 - Report 从 `show`、`view --out`、HTTP 和浏览器读取；
 - Record 目录只作为 opaque 整体由 CLI 产生、复制或进入 Git，不通过 Library API 读取内部结构或写入；
-- Adapter 从公开运行流和 `show --execution/--timing/--json` 读取；
+- Adapter 从公开运行流、签入代表 Report 的 `show --page <route>` 与 `show --json` 读取；
 - 不直接扫描 `.niceeval/` 私有布局；无法通过 CLI / Report 观察的事实属于呈现缺口，不以测试绕过；
 - 不 import 候选内部类型给测试手写 expected。
 
@@ -205,7 +218,7 @@ capture 中的 groupCleanup 写入这次探测、所发信号与确认终态。�
 
 隔离是可靠性的必要条件，但不等于可靠性已经成立。
 新增、接管或实质修改 owner 时，使用根 `takeover` 入口固定 candidate、checkout、Testkit 与 source snapshot。
-确定性 owner 还要在三个全新副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
+确定性 owner 还要在三个彼此隔离的副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
 
 takeover summary 写入 source snapshot 的相对路径、字节数、SHA-256 清单和总 digest。
 每份 receipt 绑定该 digest；矩阵核验六个观察标签、copy ID、attempt、唯一 invocation ID 与 cleanup 终态。
@@ -229,8 +242,8 @@ Eval / Experiment 集：
 
 “把所有 Eval 跑完且 exit 0”不够。测试必须列出期望 Eval ID，并对每个必要结果或关键事件作断言，防止 discovery 少排后假绿。
 
-Adapter Repo 中出现 `exp`、`show` 或 `--execution` 不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
-公开读面的最短路径；同一 CLI flag、Report 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
+Adapter Repo 中出现 `exp`、`show` 或代表 Report Page 不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
+公开读面的最短路径；同一 CLI 选择、Report 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
 
 只有 converter 的 SDK 可以拥有受限 live consumer glue，但边界是机械的：raw SDK frame 原样进入候选包的公开 converter；
 Repo 不构造 `StreamEvent`，不手写 SDK 字段映射，不自行计算 canonical tool、usage 或终局。Glue 只处理 SDK invocation、

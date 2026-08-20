@@ -7,7 +7,7 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 
 ## 全流程
 
-1. 门禁命令钉报告路径；日志语言在 `niceeval.config.ts` 里用 `locale: "en"` 锁定,不在命令行传 env 变量:
+1. 门禁命令钉报告路径:
 
    ```sh
    niceeval exp ci --junit ./niceeval-junit.xml
@@ -18,7 +18,7 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 3. 门禁只认退出码:`0` 全部通过且运行完整完成计划;`1` 有 `failed` / `errored`、budget 未完成计划或 required reporter 写失败;`2` 未捕获崩溃;`130` 中断。
    折叠规则见 [Runner · 退出码](../../../../runner.md#退出码)。
 4. 归档文件：`--junit` 是整次运行的最终聚合，收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件，要么不存在。
-   每个完整 Run 连同 Member、origin-owned Attempt 与 channels 在 seal 后一次原子发布；进程中断后，已经发布的 Run 仍可通过 receipt 的 `runIds` 选择，未发布的局部 Attempt 不会出现在 durable Record。
+   每个完整 Run 连同 Member、origin-owned Attempt 与固定 Attachment 在 seal 后一次原子发布。`SIGINT` 时含 reserved / inflight Attempt 的 Run 保持未发布；receipt 的 `runIds` 只列已经发布的其它 Run。
    需要 JSON 汇总交给自建看板时，归档 receipt，再以明确 Run 建立 Sample 并运行 `show --json`。
 5. JUnit 交给平台做测试注解；完整业务数据以 Record 为准。
 
@@ -27,12 +27,13 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 ## 边界
 
 - `--junit` 不是终端格式开关,与输出形态正交;它是 required reporter,写失败必须判红,不降级成 warning。
-- 只有连形态都没能确定的 argv / 配置加载错误走 `stderr`(人读 `error:` + `fix:` 两行)。
-- budget 到顶时完成态是 `incomplete`、退出码 `1`,不伪装全绿——流程见 [`--budget` 用例](../预算上限.md)。
+- 只有连形态都没能确定的 argv / 配置加载错误走 `stderr`。Human 显示真实 `error:`；有限且确定的命令语法
+  错误可以附 `usage:`，不为外部服务或宿主运行条件枚举 `fix:`。
+- budget 到顶时，正常闭合的 Invocation 仍是 `completion: "completed"`，但退出码为 `1`，不伪装全绿——流程见 [`--budget` 用例](../预算上限.md)。
 - `--dry` 不创建 Invocation、Run、Member、Attempt 或 JUnit。
 
 ## 相关阅读
 
 - [CLI · CI 门禁](../../cli.md#ci-门禁) —— 门禁 case 的单源。
-- [Runner · 完成状态](../../../../runner.md#完成状态) —— `complete` / `incomplete` / `interrupted` 怎样进完成态。
+- [Runner · 完成状态](../../../../runner.md#完成状态) —— Run 发布、`SIGINT` 与严格失败收尾。
 - [`--json`(AI 循环)](AI修复循环.md) —— 机器面的另一类消费者。

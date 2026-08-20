@@ -10,7 +10,7 @@
     "url": "git+https://github.com/NiceEval/NiceEval.git"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "bin": {
     "niceeval": "bin/niceeval.js"
@@ -116,14 +116,54 @@
         "default": "./dist/analysis/index.cjs"
       }
     },
-    "./projection": {
+    "./experiment/host": {
       "import": {
-        "types": "./dist/projection/index.d.mts",
-        "default": "./dist/projection/index.mjs"
+        "types": "./dist/experiment/host/index.d.mts",
+        "default": "./dist/experiment/host/index.mjs"
       },
       "require": {
-        "types": "./dist/projection/index.d.cts",
-        "default": "./dist/projection/index.cjs"
+        "types": "./dist/experiment/host/index.d.cts",
+        "default": "./dist/experiment/host/index.cjs"
+      }
+    },
+    "./coordination/host": {
+      "import": {
+        "types": "./dist/coordination/host/index.d.mts",
+        "default": "./dist/coordination/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/coordination/host/index.d.cts",
+        "default": "./dist/coordination/host/index.cjs"
+      }
+    },
+    "./record": {
+      "import": {
+        "types": "./dist/record/index.d.mts",
+        "default": "./dist/record/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/index.d.cts",
+        "default": "./dist/record/index.cjs"
+      }
+    },
+    "./record/host": {
+      "import": {
+        "types": "./dist/record/host/index.d.mts",
+        "default": "./dist/record/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/host/index.d.cts",
+        "default": "./dist/record/host/index.cjs"
+      }
+    },
+    "./analysis/host": {
+      "import": {
+        "types": "./dist/analysis/host.d.mts",
+        "default": "./dist/analysis/host.mjs"
+      },
+      "require": {
+        "types": "./dist/analysis/host.d.cts",
+        "default": "./dist/analysis/host.cjs"
       }
     },
     "./report": {
@@ -136,6 +176,16 @@
         "default": "./dist/report/index.cjs"
       }
     },
+    "./report/host": {
+      "import": {
+        "types": "./dist/report/host/index.d.mts",
+        "default": "./dist/report/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/host/index.d.cts",
+        "default": "./dist/report/host/index.cjs"
+      }
+    },
     "./report/built-in": {
       "import": {
         "types": "./dist/report/built-in/index.d.mts",
@@ -145,7 +195,29 @@
         "types": "./dist/report/built-in/index.d.cts",
         "default": "./dist/report/built-in/index.cjs"
       }
-    }
+    },
+    "./report/react": {
+      "import": {
+        "types": "./dist/report/react/index.d.mts",
+        "default": "./dist/report/react/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/react/index.d.cts",
+        "default": "./dist/report/react/index.cjs"
+      }
+    },
+    "./report/extension": {
+      "import": {
+        "types": "./dist/report/extension/index.d.mts",
+        "default": "./dist/report/extension/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/extension/index.d.cts",
+        "default": "./dist/report/extension/index.cjs"
+      }
+    },
+    "./report/react/styles.css": "./dist/report/react/styles.css",
+    "./report/react/enhance.js": "./dist/report/react/enhance.js"
   },
   "files": [
     "INDEX.md",
@@ -155,20 +227,22 @@
     "docs-site/images"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc -p docs/roadmap/assertion-authoring/reference/tsconfig.json",
-    "lint": "vitest run --project lint-docs --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",
+    "typecheck": "tsc --noEmit && tsc -p docs/feature/assertions/reference/tsconfig.json",
+    "lint": "concurrently --names vitest,validate,links \"pnpm run lint:vitest\" \"pnpm run docs:validate\" \"pnpm run docs:links\"",
+    "lint:vitest": "vitest run --project lint-docs --project lint-docs-site",
     "lint:docs": "vitest run --project lint-docs",
     "lint:docs-site": "vitest run --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",
     "niceeval": "node bin/niceeval.js",
     "e2e": "tsx e2e/scripts/cli.ts",
     "gen:diff-code": "tsx scripts/gen-diff-code.ts",
+    "pr:body": "tsx scripts/pr-body.ts",
     "docs:reference": "tsx scripts/generate-reference.ts",
     "tiers:sync": "node scripts/sync-tiers.mjs sync",
     "view:build": "vite build --config src/view/app/vite.config.ts",
     "build:report": "pnpm run build:package",
     "build:package": "pnpm run view:build && node scripts/package-runtime/build.mjs",
     "build:index": "tsx scripts/generate-reference.ts --bundled-index",
-    "prepare": "pnpm run build:package && pnpm run build:index && husky",
+    "prepare": "pnpm run build:package && pnpm run build:index && husky && node scripts/configure-husky.mjs",
     "site:dev": "cd site && node scripts/dev.mjs",
     "site:build": "cd site && next build && cd .. && tsx scripts/submit-indexnow.ts",
     "docs:dev": "node scripts/docs-dev.mjs",
@@ -204,7 +278,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/dockerode": "^3.3.31",
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.0.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/tar-stream": "^3.1.3",
@@ -214,6 +288,7 @@
     "braintrust": "^3.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "concurrently": "^10.0.5",
     "dockerode": "^4.0.2",
     "e2b": "^2.31.0",
     "esbuild": "^0.28.1",
@@ -223,7 +298,7 @@
     "motion": "^12.42.2",
     "next": "16.3.0",
     "prism-react-renderer": "^2.4.1",
-    "react-grab": "^0.1.48",
+    "react-grab": "^0.2.0",
     "shiki": "^4.3.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.1",

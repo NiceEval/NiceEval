@@ -1,6 +1,20 @@
+import { networkInterfaces } from "node:os";
+
+const localDevOrigins = [
+  "127.0.0.1",
+  ...Object.values(networkInterfaces()).flatMap((addresses) =>
+    (addresses ?? [])
+      .filter(({ family, internal }) => family === "IPv4" && !internal)
+      .map(({ address }) => address),
+  ),
+];
+
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // dev server 监听 0.0.0.0 时，浏览器实际使用回环或网卡 IP；只放行本机
+  // 拥有的地址，避免 Next 把 hydration / HMR chunk 当成跨站请求拦成 403。
+  allowedDevOrigins: [...new Set(localDevOrigins)],
   experimental: {
     // app/[lang]/layout.jsx 是唯一的 root layout,没法用普通 not-found.jsx 拼出全局 404,
     // 需要 app/global-not-found.jsx 接管未匹配路由。
@@ -25,4 +39,3 @@ const nextConfig = {
 };
 
 export default nextConfig;
-

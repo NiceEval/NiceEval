@@ -73,8 +73,8 @@ export interface ClaudeCodeConfig {
    */
   baseUrl?: string;
   /**
-   * Extra process environment for Claude Code. Values stay private runtime data and do not enter carry identity.
-   * Mirror behavior-changing non-secret values into Experiment flags or the owning Plugin identity.
+   * Claude Code 进程的额外环境变量。值只保留在运行时，不进入结果沿用身份。
+   * 会改变行为的非敏感值应同时写入 Experiment flags 或所属 Plugin 的身份。
    */
   env?: Readonly<globalThis.Record<string, string>>;
   /**
@@ -265,7 +265,9 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
       if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
       if (ctx.session.id) args.push("--resume", ctx.session.id);
-      args.push(input.text);
+      // --allowedTools is variadic in Claude Code. Terminate option parsing so the
+      // positional prompt cannot be consumed as one more allowed tool name.
+      args.push("--", input.text);
 
       const apiKey = getApiKey();
       const env: globalThis.Record<string, string> = {
@@ -364,7 +366,15 @@ export async function installPlugins(
       const source = marketplace.ref
         ? await cloneRepo(sb, marketplace.source, marketplace.ref)
         : marketplace.source;
-      const add = await sb.runShell(`${shared.agentBin("claude")} plugin marketplace add ${shared.shellQuote(source)}`);
+      const addCommand = `${shared.agentBin("claude")} plugin marketplace add ${shared.shellQuote(source)}`;
+      let add = await sb.runShell(addCommand);
+      // The native CLI fetches remote marketplace metadata during add. A
+      // transient connection failure must not discard an otherwise reusable
+      // Sandbox, but every retry starts from the same declared empty state.
+      for (let attempt = 1; add.exitCode !== 0 && attempt < 3; attempt += 1) {
+        await dropRegisteredMarketplace(sb, marketplace.name);
+        add = await sb.runShell(addCommand);
+      }
       if (add.exitCode !== 0) {
         throw new Error(
           t("plugin.marketplaceFailed", {

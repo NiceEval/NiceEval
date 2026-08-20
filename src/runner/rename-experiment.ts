@@ -8,26 +8,25 @@ import { Effect, Either } from "effect";
 
 import type { SandboxPlanningServices } from "../sandbox/plan.ts";
 import {
-  type AdoptionProjectInputV1,
-  type AdoptionProjectV1,
-  ExplicitAdoptionErrorV1,
-  type ExplicitAdoptionOpenErrorV1,
-  type ExplicitAdoptionReadErrorV1,
-  type ExplicitAdoptionRunPlanV1,
-  type ExplicitAdoptionRunReceiptV1,
-  type RenameAdoptionPreflightV1,
-  adoptionRecordRootV1,
-  adoptionStartedAtV1,
-  buildExplicitAdoptionRunPlanV1,
-  commitExplicitAdoptionRunPlansV1,
-  createExplicitAdoptionInvocationIdV1,
-  loadAdoptionProjectV1,
-  mapExplicitAdoptionCommitFailureV1,
-  prepareCurrentAdoptionTargetV1,
-  prepareRenameAdoptionMembersV1,
-  resolveRenameSourceRunV1,
-  withAdoptionReaderV1,
-  withAdoptionWriteSessionV1,
+  type AdoptionProjectInput,
+  type AdoptionProject,
+  ExplicitAdoptionError,
+  type ExplicitAdoptionOpenError,
+  type ExplicitAdoptionReadError,
+  type ExplicitAdoptionRunPlan,
+  type ExplicitAdoptionRunReceipt,
+  type RenameAdoptionPreflight,
+  adoptionRecordRoot,
+  adoptionStartedAt,
+  buildExplicitAdoptionRunPlan,
+  commitExplicitAdoptionRunPlans,
+  createExplicitAdoptionInvocationId,
+  loadAdoptionProject,
+  prepareCurrentAdoptionTarget,
+  prepareRenameAdoptionMembers,
+  resolveRenameSourceRun,
+  withAdoptionCommitScope,
+  withAdoptionReader,
 } from "./adoption.ts";
 import type {
   Config,
@@ -101,7 +100,7 @@ export interface ExperimentRenamePlan {
 }
 
 /** A receipt-only replacement for the retired EvalResult. It is never stored. */
-export interface RenamedAttemptSourceReceiptV1 {
+export interface RenamedAttemptSourceReceipt {
   readonly experimentId: string;
   readonly locator: string;
   readonly originRunId: string;
@@ -114,7 +113,7 @@ export interface ExperimentRenameDoneEntry {
   readonly locator: string;
   readonly fingerprint: string;
   readonly verdict: "passed" | "failed";
-  readonly renamedFrom: RenamedAttemptSourceReceiptV1;
+  readonly renamedFrom: RenamedAttemptSourceReceipt;
 }
 
 export interface RenamedExperiment {
@@ -137,23 +136,23 @@ export interface ExperimentRenameRejected {
   readonly detail?: string;
 }
 
-export interface RenamePreflightV1 {
-  readonly source: RenameAdoptionPreflightV1;
-  readonly plan: ExplicitAdoptionRunPlanV1;
+export interface RenamePreflight {
+  readonly source: RenameAdoptionPreflight;
+  readonly plan: ExplicitAdoptionRunPlan;
 }
 
 /** All native Record v1 failures before/while the formal publication runs. */
-export type ExperimentRenameNativeErrorV1 =
-  | ExplicitAdoptionOpenErrorV1;
+export type ExperimentRenameNativeError =
+  | ExplicitAdoptionOpenError;
 
 function explicitError(
-  code: ExplicitAdoptionErrorV1["code"],
+  code: ExplicitAdoptionError["code"],
   message: string,
-): ExplicitAdoptionErrorV1 {
-  return new ExplicitAdoptionErrorV1(code, message);
+): ExplicitAdoptionError {
+  return new ExplicitAdoptionError(code, message);
 }
 
-function projectInputV1(input: ExperimentRenameOptions): AdoptionProjectInputV1 {
+function projectInput(input: ExperimentRenameOptions): AdoptionProjectInput {
   return {
     cwd: input.cwd,
     ...(input.config === undefined ? {} : { config: input.config }),
@@ -170,19 +169,19 @@ function defaultOperatorReason(input: ExperimentRenameOptions): string {
 }
 
 /**
- * Native frozen-view preflight. It selects one old Run, rebuilds the complete
+ * Native Host-reader preflight. It selects one old Run, rebuilds the complete
  * current target for newId, and validates every source Member before any
- * generic writer operation may begin.
+ * reference Run write may begin.
  */
-export function preflightExperimentRenameV1(input: {
-  readonly view: Parameters<typeof resolveRenameSourceRunV1>[0]["view"];
-  readonly project: AdoptionProjectV1;
+export function preflightExperimentRename(input: {
+  readonly reader: Parameters<typeof resolveRenameSourceRun>[0]["reader"];
+  readonly project: AdoptionProject;
   readonly oldId: string;
   readonly newId: string;
   readonly sourceRunId?: string;
-  readonly startedAt: Parameters<typeof prepareCurrentAdoptionTargetV1>[0]["startedAt"];
+  readonly startedAt: Parameters<typeof prepareCurrentAdoptionTarget>[0]["startedAt"];
   readonly operatorReason: string;
-}): Effect.Effect<RenamePreflightV1, ExplicitAdoptionReadErrorV1> {
+}): Effect.Effect<RenamePreflight, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     if (input.oldId === input.newId) {
       return yield* Effect.fail(explicitError(
@@ -190,18 +189,18 @@ export function preflightExperimentRenameV1(input: {
         "The old and new Experiment identities must differ.",
       ));
     }
-    const sourceRun = yield* resolveRenameSourceRunV1({
-      view: input.view,
+    const sourceRun = yield* resolveRenameSourceRun({
+      reader: input.reader,
       oldId: input.oldId,
       ...(input.sourceRunId === undefined ? {} : { sourceRunId: input.sourceRunId }),
     });
-    const target = yield* prepareCurrentAdoptionTargetV1({
+    const target = yield* prepareCurrentAdoptionTarget({
       project: input.project,
       experimentId: input.newId,
       startedAt: input.startedAt,
     });
-    const source = yield* prepareRenameAdoptionMembersV1({
-      view: input.view,
+    const source = yield* prepareRenameAdoptionMembers({
+      reader: input.reader,
       oldId: input.oldId,
       sourceRun,
       target,
@@ -213,7 +212,7 @@ export function preflightExperimentRenameV1(input: {
         `Selected source Run "${sourceRun.runId}" has no Members eligible for explicit rename adoption.`,
       ));
     }
-    const plan = yield* buildExplicitAdoptionRunPlanV1({
+    const plan = yield* buildExplicitAdoptionRunPlan({
       intent: "rename",
       target,
       members: source.members.map((entry) => entry.member),
@@ -222,10 +221,10 @@ export function preflightExperimentRenameV1(input: {
   });
 }
 
-function planFromPreflightV1(input: {
+function planFromPreflight(input: {
   readonly oldId: string;
   readonly newId: string;
-  readonly preflight: RenamePreflightV1;
+  readonly preflight: RenamePreflight;
 }): ExperimentRenamePlan {
   return Object.freeze({
     status: "plan",
@@ -244,7 +243,7 @@ function planFromPreflightV1(input: {
   });
 }
 
-function compatibilityReason(error: ExplicitAdoptionErrorV1): ExperimentRenameReason {
+function compatibilityReason(error: ExplicitAdoptionError): ExperimentRenameReason {
   switch (error.code) {
     case "adoption-source-run-not-found":
       return "source-empty";
@@ -253,7 +252,7 @@ function compatibilityReason(error: ExplicitAdoptionErrorV1): ExperimentRenameRe
     case "adoption-target-planning-failed":
     case "adoption-target-invalid":
       return "artifact-unavailable";
-    case "adoption-source-eligibility-unavailable":
+    case "adoption-source-observability-unavailable":
     case "adoption-source-verdict-unavailable":
     case "adoption-source-verdict-ineligible":
     case "adoption-duration-domain-mismatch":
@@ -266,7 +265,7 @@ function compatibilityReason(error: ExplicitAdoptionErrorV1): ExperimentRenameRe
 
 function blockedPlanFromError(
   input: Pick<ExperimentRenameOptions, "oldId" | "newId">,
-  error: ExplicitAdoptionErrorV1,
+  error: ExplicitAdoptionError,
 ): ExperimentRenamePlan {
   const reason = error.code === "adoption-target-invalid"
     && error.message.includes("no Members eligible")
@@ -284,7 +283,7 @@ function blockedPlanFromError(
 
 function renameErrorFor(
   input: Pick<ExperimentRenameOptions, "oldId" | "newId">,
-  error: ExplicitAdoptionErrorV1,
+  error: ExplicitAdoptionError,
 ): ExperimentRenameError {
   const plan = blockedPlanFromError(input, error);
   return new ExperimentRenameError(plan.blocked!.reason, error.message, plan);
@@ -296,13 +295,13 @@ function renameErrorFor(
  */
 export function planExperimentRename(input: ExperimentRenameOptions) {
   return Effect.gen(function* () {
-    const root = yield* adoptionRecordRootV1(input);
-    const startedAt = yield* adoptionStartedAtV1(input.now);
-    const project = yield* loadAdoptionProjectV1(projectInputV1(input));
-    const result = yield* Effect.either(withAdoptionReaderV1({
+    const root = yield* adoptionRecordRoot(input);
+    const startedAt = yield* adoptionStartedAt(input.now);
+    const project = yield* loadAdoptionProject(projectInput(input));
+    const result = yield* Effect.either(withAdoptionReader({
       root,
-      use: (view) => preflightExperimentRenameV1({
-        view,
+      use: (reader) => preflightExperimentRename({
+        reader,
         project,
         oldId: input.oldId,
         newId: input.newId,
@@ -312,26 +311,100 @@ export function planExperimentRename(input: ExperimentRenameOptions) {
       }),
     }));
     if (Either.isRight(result)) {
-      return planFromPreflightV1({
+      return planFromPreflight({
         oldId: input.oldId,
         newId: input.newId,
         preflight: result.right,
       });
     }
-    if (result.left instanceof ExplicitAdoptionErrorV1) {
+    if (result.left instanceof ExplicitAdoptionError) {
       return blockedPlanFromError(input, result.left);
     }
     return yield* Effect.fail(result.left);
   });
 }
 
-function renamedReceiptV1(input: {
+/**
+ * Receipt ordering is an implementation detail of the writer, never rename
+ * provenance. Match each published Member through its immutable source
+ * locator, then prove the target Slot and source Attempt provenance agree.
+ */
+function renameMemberReceiptsByLocator(input: {
+  readonly preflight: RenamePreflight;
+  readonly receipt: ExplicitAdoptionRunReceipt;
+}): Effect.Effect<
+  ReadonlyMap<string, ExplicitAdoptionRunReceipt["members"][number]>,
+  ExplicitAdoptionError
+> {
+  return Effect.gen(function* () {
+    const expectedByLocator = new Map<
+      string,
+      RenameAdoptionPreflight["members"][number]
+    >();
+    for (const entry of input.preflight.source.members) {
+      if (expectedByLocator.has(entry.member.locator)) {
+        return yield* Effect.fail(explicitError(
+          "adoption-provenance-invalid",
+          `Explicit rename preflight repeated source locator "${entry.member.locator}".`,
+        ));
+      }
+      expectedByLocator.set(entry.member.locator, entry);
+    }
+
+    const receiptsByLocator = new Map<
+      string,
+      ExplicitAdoptionRunReceipt["members"][number]
+    >();
+    for (const memberReceipt of input.receipt.members) {
+      if (receiptsByLocator.has(memberReceipt.locator)) {
+        return yield* Effect.fail(explicitError(
+          "adoption-provenance-invalid",
+          `Explicit rename publication returned duplicate receipt locator "${memberReceipt.locator}".`,
+        ));
+      }
+      receiptsByLocator.set(memberReceipt.locator, memberReceipt);
+    }
+
+    for (const [locator, entry] of expectedByLocator) {
+      const memberReceipt = receiptsByLocator.get(locator);
+      if (memberReceipt === undefined) {
+        return yield* Effect.fail(explicitError(
+          "adoption-provenance-invalid",
+          `Explicit rename publication omitted receipt for source locator "${locator}".`,
+        ));
+      }
+      if (
+        memberReceipt.locator !== entry.member.locator
+        || memberReceipt.slotId !== entry.member.target.slotId
+        || memberReceipt.sourceRunId !== entry.member.source.origin.runId
+        || memberReceipt.attemptId !== entry.member.source.attempt.attemptId
+      ) {
+        return yield* Effect.fail(explicitError(
+          "adoption-provenance-invalid",
+          `Explicit rename publication returned mismatched identity provenance for source locator "${locator}".`,
+        ));
+      }
+    }
+
+    for (const locator of receiptsByLocator.keys()) {
+      if (!expectedByLocator.has(locator)) {
+        return yield* Effect.fail(explicitError(
+          "adoption-provenance-invalid",
+          `Explicit rename publication returned unexpected receipt locator "${locator}".`,
+        ));
+      }
+    }
+    return receiptsByLocator;
+  });
+}
+
+function renamedReceipt(input: {
   readonly invocationId: string;
   readonly oldId: string;
   readonly newId: string;
-  readonly preflight: RenamePreflightV1;
-  readonly receipt: readonly ExplicitAdoptionRunReceiptV1[];
-}): Effect.Effect<RenamedExperiment, ExplicitAdoptionErrorV1> {
+  readonly preflight: RenamePreflight;
+  readonly receipt: readonly ExplicitAdoptionRunReceipt[];
+}): Effect.Effect<RenamedExperiment, ExplicitAdoptionError> {
   return Effect.gen(function* () {
     const [runReceipt] = input.receipt;
     if (input.receipt.length !== 1 || runReceipt === undefined) {
@@ -340,15 +413,22 @@ function renamedReceiptV1(input: {
         "Explicit rename publication did not return exactly one target Run receipt.",
       ));
     }
-    if (runReceipt.members.length !== input.preflight.source.members.length) {
+    if (
+      runReceipt.experimentId !== input.newId
+      || runReceipt.experimentId !== input.preflight.plan.target.experimentId
+    ) {
       return yield* Effect.fail(explicitError(
         "adoption-provenance-invalid",
-        "Explicit rename publication omitted Member receipts.",
+        "Explicit rename publication returned a receipt for the wrong target Experiment.",
       ));
     }
+    const receiptsByLocator = yield* renameMemberReceiptsByLocator({
+      preflight: input.preflight,
+      receipt: runReceipt,
+    });
     const migrated: ExperimentRenameDoneEntry[] = [];
-    for (const [index, entry] of input.preflight.source.members.entries()) {
-      const memberReceipt = runReceipt.members[index];
+    for (const entry of input.preflight.source.members) {
+      const memberReceipt = receiptsByLocator.get(entry.member.locator);
       if (memberReceipt === undefined) {
         return yield* Effect.fail(explicitError(
           "adoption-provenance-invalid",
@@ -365,7 +445,7 @@ function renamedReceiptV1(input: {
         renamedFrom: Object.freeze({
           experimentId: input.oldId,
           locator: entry.member.locator,
-          originRunId: entry.member.source.origin.run.runId,
+          originRunId: entry.member.source.origin.runId,
           attemptId: entry.member.source.attempt.attemptId,
         }),
       }));
@@ -383,20 +463,20 @@ function renamedReceiptV1(input: {
 }
 
 /**
- * Effect-native formal rename. The frozen reader preflight occurs before the
- * writer lock. The one write-session frozen view then repeats every decision
- * before its sole target Run is created and published.
+ * Effect-native formal rename. A Host reader preflight occurs first. One
+ * later Host read Scope then repeats every decision and publishes the
+ * reference Run through createReferenceRun.
  */
-export function renameExperimentV1(input: ExperimentRenameOptions) {
+export function renameExperiment(input: ExperimentRenameOptions) {
   return Effect.gen(function* () {
-    const root = yield* adoptionRecordRootV1(input);
-    const startedAt = yield* adoptionStartedAtV1(input.now);
-    const projectInput = projectInputV1(input);
-    const previewProject = yield* loadAdoptionProjectV1(projectInput);
-    const initial = yield* Effect.either(withAdoptionReaderV1({
+    const root = yield* adoptionRecordRoot(input);
+    const startedAt = yield* adoptionStartedAt(input.now);
+    const resolvedProjectInput = projectInput(input);
+    const previewProject = yield* loadAdoptionProject(resolvedProjectInput);
+    const initial = yield* Effect.either(withAdoptionReader({
       root,
-      use: (view) => preflightExperimentRenameV1({
-        view,
+      use: (reader) => preflightExperimentRename({
+        reader,
         project: previewProject,
         oldId: input.oldId,
         newId: input.newId,
@@ -406,19 +486,19 @@ export function renameExperimentV1(input: ExperimentRenameOptions) {
       }),
     }));
     if (Either.isLeft(initial)) {
-      if (initial.left instanceof ExplicitAdoptionErrorV1) {
+      if (initial.left instanceof ExplicitAdoptionError) {
         return yield* Effect.fail(renameErrorFor(input, initial.left));
       }
       return yield* Effect.fail(initial.left);
     }
 
-    const invocationId = yield* createExplicitAdoptionInvocationIdV1();
-    const published = yield* withAdoptionWriteSessionV1({
+    const invocationId = yield* createExplicitAdoptionInvocationId();
+    const published = yield* withAdoptionCommitScope({
       root,
-      use: (session) => Effect.gen(function* () {
-        const project = yield* loadAdoptionProjectV1(projectInput);
-        const preflight = yield* preflightExperimentRenameV1({
-          view: session.view,
+      use: (reader) => Effect.gen(function* () {
+        const project = yield* loadAdoptionProject(resolvedProjectInput);
+        const preflight = yield* preflightExperimentRename({
+          reader,
           project,
           oldId: input.oldId,
           newId: input.newId,
@@ -426,10 +506,8 @@ export function renameExperimentV1(input: ExperimentRenameOptions) {
           startedAt,
           operatorReason: defaultOperatorReason(input),
         });
-        const receipt = yield* commitExplicitAdoptionRunPlansV1(session, [preflight.plan]).pipe(
-          Effect.mapError(mapExplicitAdoptionCommitFailureV1),
-        );
-        return yield* renamedReceiptV1({
+        const receipt = yield* commitExplicitAdoptionRunPlans(reader, root, [preflight.plan]);
+        return yield* renamedReceipt({
           invocationId,
           oldId: input.oldId,
           newId: input.newId,
@@ -438,15 +516,10 @@ export function renameExperimentV1(input: ExperimentRenameOptions) {
         });
       }),
     }).pipe(
-      Effect.mapError((error) => error instanceof ExplicitAdoptionErrorV1
+      Effect.mapError((error) => error instanceof ExplicitAdoptionError
         ? renameErrorFor(input, error)
         : error),
     );
     return published;
   });
-}
-
-/** Current CLI compatibility adapter; native callers should use renameExperimentV1. */
-export function renameExperiment(input: ExperimentRenameOptions) {
-  return renameExperimentV1(input);
 }

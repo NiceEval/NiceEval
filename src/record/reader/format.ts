@@ -1,10 +1,8 @@
-import { Effect, Either } from "effect";
-import { decodeRecordDocumentV1 } from "../codec/core.ts";
-import type { RecordDocumentV1 } from "../model/core.ts";
-import {
-  isRecordFormatId,
-  RECORD_FORMAT_V1,
-} from "../model/identifiers.ts";
+import { Effect, Either, Schema } from "effect";
+import { decodeRecordDocument, RecordExactParseOptions } from "../codec/core.ts";
+import { RecordIdSchema } from "../codec/identifiers.ts";
+import type { RecordDocument } from "../model/core.ts";
+import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../model/identifiers.ts";
 import type { RecordFileSystemError } from "../platform/errors.ts";
 import {
   recordPortablePath,
@@ -20,10 +18,13 @@ import {
 /** `record.json` contains only root identity, so its read has a hard small cap. */
 export const RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES = 64 * 1024;
 
-const RECORD_FORMAT_MAJOR_PATTERN = /^niceeval\.record\/v([1-9][0-9]*)$/;
-
 export interface CurrentRecordFormatRead {
-  readonly document: RecordDocumentV1;
+  readonly document: RecordDocument;
+}
+
+export interface MaintenanceRecordFormatRead extends CurrentRecordFormatRead {
+  readonly sourceSchemaVersion: 1 | typeof RECORD_SCHEMA_VERSION;
+  readonly sourceBytes: Uint8Array;
 }
 
 function bootstrapInvalid(
@@ -51,93 +52,122 @@ function formatOf(value: unknown): string | undefined {
     : undefined;
 }
 
-function formatMajor(format: string): number | undefined {
-  if (!isRecordFormatId(format)) {
-    return undefined;
-  }
-  const match = RECORD_FORMAT_MAJOR_PATTERN.exec(format);
-  const major = match === null ? undefined : Number(match[1]);
-  return major !== undefined && Number.isSafeInteger(major) ? major : undefined;
+function schemaVersionOf(value: unknown): number | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(value, "schemaVersion");
+  return descriptor !== undefined && "value" in descriptor &&
+      Number.isSafeInteger(descriptor.value) && descriptor.value > 0
+    ? descriptor.value
+    : undefined;
 }
-
-const CURRENT_RECORD_MAJOR = (() => {
-  const major = formatMajor(RECORD_FORMAT_V1);
-  if (major === undefined) {
-    throw new Error("The current Record format must have a positive safe major");
-  }
-  return major;
-})();
 
 function classifyRecordDocument(
   value: unknown,
-): Either.Either<
-  CurrentRecordFormatRead,
-  RecordBootstrapInvalid | RecordMigrationRequired | RecordFormatUnsupported
-> {
+): Either.Either<CurrentRecordFormatRead, RecordBootstrapInvalid | RecordFormatUnsupported | RecordMigrationRequired> {
   const format = formatOf(value);
-  if (format === undefined) {
-    return Either.left(bootstrapInvalid("record-document-invalid"));
+  if (format === undefined) return Either.left(bootstrapInvalid("record-document-invalid"));
+  if (format !== RECORD_FORMAT) {
+    return Either.left(new RecordFormatUnsupported({ code: "record-format-unsupported", format }));
   }
-
-  if (format === RECORD_FORMAT_V1) {
-    const decoded = decodeRecordDocumentV1(value);
-    return Either.isLeft(decoded)
-      ? Either.left(bootstrapInvalid("record-document-invalid"))
-      : Either.right(Object.freeze({ document: decoded.right }));
+  const schemaVersion = schemaVersionOf(value);
+  if (schemaVersion === 1) {
+    return Either.left(new RecordMigrationRequired({
+      code: "record-migration-required",
+      source: `${RECORD_FORMAT}@1`,
+      target: `${RECORD_FORMAT}@${RECORD_SCHEMA_VERSION}`,
+      command: "niceeval migrate",
+    }));
   }
-
-  const major = formatMajor(format);
-  if (major !== undefined && major < CURRENT_RECORD_MAJOR) {
-    return Either.left(
-      new RecordMigrationRequired({
-        code: "record-migration-required",
-        source: format,
-        target: RECORD_FORMAT_V1,
-        command: "niceeval migrate",
-      }),
-    );
+  if (schemaVersion !== RECORD_SCHEMA_VERSION) {
+    return Either.left(new RecordFormatUnsupported({ code: "record-format-unsupported", format }));
   }
+  const decoded = decodeRecordDocument(value);
+  return Either.isLeft(decoded)
+    ? Either.left(bootstrapInvalid("record-document-invalid"))
+    : Either.right(Object.freeze({ document: decoded.right }));
+}
 
-  return Either.left(
-    new RecordFormatUnsupported({ code: "record-format-unsupported", format }),
+function legacyRecordDocument(value: unknown): RecordDocument | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    Object.keys(record).length !== 3 ||
+    record.format !== RECORD_FORMAT ||
+    record.schemaVersion !== 1
+  ) return undefined;
+  const recordId = Schema.decodeUnknownEither(RecordIdSchema, RecordExactParseOptions)(record.recordId);
+  return Either.isLeft(recordId) ? undefined : Object.freeze({
+    format: RECORD_FORMAT as RecordDocument["format"],
+    schemaVersion: RECORD_SCHEMA_VERSION,
+    recordId: recordId.right,
+  });
+}
+
+function readFormatBytes(fileSystem: RecordFileSystemService, root: RecordRoot) {
+  return fileSystem.readFile({
+    file: recordPortablePath(root, "record.json"),
+    maximumBytes: RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
+  }).pipe(
+    Effect.catchTag("RecordResourceLimitExceeded", () =>
+      Effect.fail(bootstrapInvalid("record-format-document-limit-exceeded")),
+    ),
   );
 }
 
 /**
- * Reads only the bounded root document and accepts exactly the current major.
- * Older known majors take the explicit migration path; a corrupt current root
- * is never treated as a foreign format or as an empty Record.
+ * Reads only the bounded exact-current root header. The one published
+ * predecessor is reported as migration-required but is never decoded as current.
  */
 export function readCurrentRecordFormat(
   fileSystem: RecordFileSystemService,
   root: RecordRoot,
 ): Effect.Effect<
   CurrentRecordFormatRead,
-  | RecordFileSystemError
-  | RecordBootstrapInvalid
-  | RecordMigrationRequired
-  | RecordFormatUnsupported
+  RecordFileSystemError | RecordBootstrapInvalid | RecordFormatUnsupported | RecordMigrationRequired
 > {
-  const readDocument = fileSystem.readFile({
-      file: recordPortablePath(root, "record.json"),
-      maximumBytes: RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
-    }).pipe(
-      Effect.catchTag("RecordResourceLimitExceeded", () =>
-        Effect.fail(bootstrapInvalid("record-format-document-limit-exceeded")),
-      ),
-    );
-
-  return Effect.flatMap(readDocument, (bytes) => {
-    if (bytes === undefined) {
-      return Effect.fail(bootstrapInvalid("record-document-invalid"));
-    }
+  return Effect.gen(function* () {
+    const bytes = yield* readFormatBytes(fileSystem, root);
+    if (bytes === undefined) return yield* Effect.fail(bootstrapInvalid("record-document-invalid"));
     const parsed = parseRecordJson(bytes);
-    if (Either.isLeft(parsed)) {
-      return Effect.fail(parsed.left);
-    }
+    if (Either.isLeft(parsed)) return yield* Effect.fail(parsed.left);
     const classified = classifyRecordDocument(parsed.right);
-    return Either.isLeft(classified)
-      ? Effect.fail(classified.left)
-      : Effect.succeed(classified.right);
+    if (Either.isLeft(classified)) return yield* Effect.fail(classified.left);
+    return classified.right;
+  });
+}
+
+/** Maintenance-only exact recognition of the one published root predecessor. */
+export function readRecordFormatForMaintenance(
+  fileSystem: RecordFileSystemService,
+  root: RecordRoot,
+): Effect.Effect<
+  MaintenanceRecordFormatRead,
+  RecordFileSystemError | RecordBootstrapInvalid | RecordFormatUnsupported
+> {
+  return Effect.gen(function* () {
+    const bytes = yield* readFormatBytes(fileSystem, root);
+    if (bytes === undefined) return yield* Effect.fail(bootstrapInvalid("record-document-invalid"));
+    const parsed = parseRecordJson(bytes);
+    if (Either.isLeft(parsed)) return yield* Effect.fail(parsed.left);
+    const version = schemaVersionOf(parsed.right);
+    if (version === RECORD_SCHEMA_VERSION) {
+      const decoded = decodeRecordDocument(parsed.right);
+      if (Either.isLeft(decoded)) return yield* Effect.fail(bootstrapInvalid("record-document-invalid"));
+      return Object.freeze({
+        document: decoded.right,
+        sourceSchemaVersion: RECORD_SCHEMA_VERSION,
+        sourceBytes: bytes,
+      });
+    }
+    if (version === 1) {
+      const document = legacyRecordDocument(parsed.right);
+      if (document === undefined) return yield* Effect.fail(bootstrapInvalid("record-document-invalid"));
+      return Object.freeze({ document, sourceSchemaVersion: 1 as const, sourceBytes: bytes });
+    }
+    const format = formatOf(parsed.right);
+    return yield* Effect.fail(new RecordFormatUnsupported({
+      code: "record-format-unsupported",
+      format: format ?? "unknown",
+    }));
   });
 }

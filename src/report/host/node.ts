@@ -28,17 +28,14 @@ export {
   defineTheme,
   isThemeDefinition,
   themeStylesheet,
-} from "./node/theme.ts";
+} from "../theme.ts";
 export type {
   ReportTheme,
   ThemeColor,
   ThemeDefinition,
-  ThemeFontSize,
-  ThemeFontTokens,
   ThemeHex,
-  ThemeRadius,
   ThemeSeries,
-} from "./node/theme.ts";
+} from "../theme.ts";
 
 export {
   loadTrustedReportConfig,
@@ -62,9 +59,7 @@ export type {
 } from "../../view/server.ts";
 export type {
   OpenReportViewSessionInput,
-  ReportViewExecutionRebuild,
   ReportViewRebuild,
-  ReportViewThemeRebuild,
 } from "./view-session.ts";
 
 /** Node host request after its loader/watcher has closed over all live inputs. */
@@ -101,7 +96,7 @@ export function openNodeReportView(
   return Effect.flatMap(NodeReportViewHost, (host) => host.open(request));
 }
 
-/** Opens the loopback HTTP and watcher host around caller-supplied fixed rebuilds. */
+/** Opens the HTTP and watcher host around caller-supplied fixed rebuilds; host defaults to loopback. */
 export function openNodeReportViewServer(
   options: ViewOptions,
 ): Effect.Effect<ReportViewServer, NodeViewServerError | ReportViewOpenError, Scope.Scope | NodeReportViewHost> {

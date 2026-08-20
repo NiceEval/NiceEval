@@ -10,17 +10,22 @@ The E2E runner installs the candidate NiceEval tarball. It injects
 
 The scenario uses its own locked `pnpm-lock.yaml`.
 
-Its `pr`, `main`, `nightly`, and `release` lanes require Node 22+. They use no
+Its `pr`, `main`, `nightly`, and `release` lanes require Node 24+. They use no
 secret and no external network.
 
 Each owner has one fixture, one Eval, one Experiment, and one test file. The
 eight Vitest files retain default file parallelism.
 
-Each test uses `withProjectCopy` for an isolated project, result, and JUnit
-root.
+Each test file has one Journey test and one isolated `withProjectCopy` case.
+The Journey runs its Experiment once. It then checks these public results in order:
 
-It stages `.niceeval` and JUnit artifacts under invocation- and case-specific
-paths.
+- outcome;
+- explicit Run selection;
+- recorded source;
+- converter-specific execution evidence.
+
+The case stages its `.niceeval` artifact and removes the copied project before
+the test settles. Setup and public readback failures use the same cleanup path.
 
 Tests use only the installed candidate's public adapter and CLI surfaces. They
 never inspect candidate source or a private result layout.
@@ -42,9 +47,16 @@ Every Journey runs this command:
 
 It then reads the result through public commands:
 
-- `niceeval show --exp`
-- `niceeval show ... --history`
-- `niceeval show @locator --execution`
+- `niceeval show --run <run-id> --json`
+- `niceeval show @locator --source`
+- `niceeval show @locator --execution --json`
+
+Generic `eval.run`, `agent.setup`, and `agent.send` timing belongs only to the
+[Runner owner](../runner.md#runner-generic-timing).
+
+- Record / `show` currently has no mapper-specific OTel attribution seam for a converter.
+- This owner therefore has no public observation for that claim.
+- Logs, private result files, `telemetry.collect`, and a generic `agent.send` interval cannot stand in for it.
 
 The `// owner:` first line of each corresponding test points at its stable
 anchor below.
@@ -82,7 +94,7 @@ real SDK denial response. The Eval checks:
 Removing or corrupting the normal call ID/result kills the completed
 `inventory_lookup` assertion.
 
-Removing the SDK approval part kills `parked()` and `requireInputRequest`.
+Removing the SDK approval part kills the `t.check(turn.status, equals("waiting"))` and `requireInputRequest` path.
 
 Changing its response-message tool result kills the completed/rejected branch
 assertions.

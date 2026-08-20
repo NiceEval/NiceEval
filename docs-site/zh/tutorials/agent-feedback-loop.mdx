@@ -49,11 +49,11 @@ Agent 应把最后一条 receipt 当作本次调用的交接信息。它不是�
 运行结束后，先读取 Run 的 Report：
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-`show` 与 `view` 选择 Sample，投影需要的 `RecordAttachment`，并形成固定的 `ReportExecution`。Agent 应区分以下状态：
+`show` 与 `view` 选择 Sample，再取得当前目标需要的闭合分析值。`show` 只执行一个 Page；`view` 构建完整站点。Agent 应区分以下状态：
 
 | 看到的状态 | 下一步 |
 | --- | --- |
@@ -61,9 +61,9 @@ npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 | `errored` | 检查诊断、Adapter、Sandbox 或凭据。 |
 | `not-recorded` | 检查该 expected slot 为什么没有 Member。 |
 | `core-invalid` | 阅读具名 Core issue，不要把它当成未采集。 |
-| `unavailable` | 确认 owner 是否应当有这个 Attachment。 |
+| `partial` | 阅读分母和问题，确认哪些成员没有贡献。 |
 | `migration-required` | 运行 `niceeval migrate`。 |
-| `unsupported` 或 `invalid` | 只处理依赖该 Attachment 的查看内容，并阅读具名 issue。 |
+| `unsupported` 或 `failed` | 只处理依赖该分析输入的查看内容，并阅读具名问题。 |
 
 ## 修改后再次运行
 
@@ -73,7 +73,7 @@ npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 npx niceeval exp checkout --rerun all --json
 ```
 
-自动采用已有 Attempt 时，`--dry` 会说明原因。carry 与 accept 的理由位于目标 Run 的 `niceeval.membership-provenance/v1` RecordAttachment；详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
+自动采用已有 Attempt 时，`--dry` 会说明原因。carry 与 accept 的理由随目标 Run 保存，并可在结果中查看；详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
 ## Record 的边界
 

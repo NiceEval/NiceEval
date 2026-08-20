@@ -7,7 +7,7 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("用一句话介绍一下你自己,这轮不用查天气也不用算数。");
-    await turn.succeeded().stopOnFailure();
+    await turn.succeeded().orStop();
 
     await t.group("正常收发、没有多余工具调用", () => {
       t.succeeded();

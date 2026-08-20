@@ -42,15 +42,29 @@ commit、日期与主题由 `git show -s --format='%h %cs %s' <commit>` 复核�
 
 旧 Results 把 root、Run、Attempt、assertion、commands、diff、timing、source 与 coverage 放在一个兼容域里。任一业务 API 或 artifact 字段变化都只能递增全局整数；reader 又只接受与自己完全相同的版本，因此“一处领域变化”会让所有页面、carry 和诊断同时失去整份历史。7/10 的跳号和 main/branch 16–18 的重叠，也说明整数本身没有表达变化属于哪个领域。
 
-## 新 Record 怎样切断连锁
+## 新 Record 的正式起点
 
-目标设计把兼容性拆成四个独立机制：
+`{ format: "niceeval.record", schemaVersion: 1 }` 是 Record root / Core 首次正式公开的格式身份。它没有已发布
+predecessor：旧 `niceeval.results`、未合并 `polish-assert` 的 16–18，以及尚未正式发布的 main 或工作树格式，
+都不是 Record root migration source。当前 root / Core 仍是 schemaVersion `1`，没有相邻 migration。
 
-1. `niceeval.record/v1` 只冻结 root、Run、Member、Attempt、identity、origin、descriptor 与 whole-Run 原子发布；只有这些边界变化才需要完整 `record/v2`。发布 `record/v2` 不授权删除 v1 reader，也不把 v2 对象混写进 v1 root。
-2. 业务事实用稳定 `ChannelName` 表示语义，用完整 `ChannelSchemaId` 表示精确 bytes shape。Assertions、usage、commands 或 source payload 改变只新增自己的 `/vN` decoder；未知 schema 只让该 fact `unsupported`，不会让整个 Record 无法打开。
-3. 每个正式 `FactRequirement<A>` identity 不可变且自带版本。normalized 输出类型升级时发布新 identity；旧 identity 与输出类型永久保留，调用方按 identity 得到对应代的 normalized 值。
-4. carry 不靠“reader 能展示旧值”推断安全。execution-required eligibility 带 mandatory `reuseContract` equality token；新增或改变 gate 必须切换 domain，旧 policy/旧 schema 形成 gap，不会误 carry。
+## Observability family 1 → 2
 
-built-in registry 在 core v1 生命周期内永久保留已发布 decoder 与 normalized FactRequirement。这样 API 可以重构、normalized model 可以演进、旧 channel 仍可被具名读取；兼容成本留在发生变化的领域，而不再扩散成 1→18 式全局重写。
+2026-08-19，`niceeval.observability` 独立从 schemaVersion `1` 升到 `2`，Record root / Core 版本保持 `1`。
+不兼容点只在 Attempt `agent.send` timing label：v1 只接受不含斜杠的 SafeIdentifier；v2 还接受 canonical
+`turnN` 与 `sessionK/turnN`，从而让多 session turn identity 不再被降格成 `agent.turn`。
+
+- 新 reader 遇到 v1 envelope 返回 `migration-required`，不把 dot label 猜成 turn，也不自动改写。
+- 旧 reader 遇到 v2 envelope 返回 unsupported / migration-required 读态，不会把 slash label 当成旧格式。
+- `niceeval migrate --yes` 只在 Git 能提供干净 restore point 时把已封口 Run 的 Observability envelope 从 1 改为 2；payload、blob 与未知 family bytes 保持不变。
+- migration 前后都验证完整 sealed Core；结束前再验证全部认识的 family closure 与跨 family join。无 `complete` 的 draft 不进入 inventory，仍由 `niceeval clean` 处理。
+- 中断会留下 `migration.in-progress` sentinel；用户从计划回执所列 Git commit 恢复 portable root 后重试。迁移幂等，已完成的 Record 返回 `already-current`。
+
+Record 用稳定 `format` 和数值 `schemaVersion` 表达各兼容边界的身份，不使用带斜杠的版本名称。只有 root / Core
+变化才递增 root schemaVersion；fixed family 变化由该 family 自己的固定相邻 migration 链承接。
+
+新的 Record 将 root / Core 与每个 fixed family 的兼容性分开：已知 root、Core 或 family 的旧 schemaVersion
+只在存在固定相邻步骤时显式 migration；独立 future family 则保持 opaque，只有依赖它的 Analysis 请求得到
+`unsupported`，不影响其它闭合结果。这样兼容成本留在实际变化的格式边界，而不再扩散成 1→18 式全局重写。
 
 当前目标契约见 [`docs/feature/record/architecture.md`](../docs/feature/record/architecture.md)；durable/local/cache 与 immutable publication 的翻案原因见 [`record-durable-local-boundary.md`](record-durable-local-boundary.md)。

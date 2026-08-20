@@ -5,9 +5,9 @@
 // show commands only; it never reads the private .niceeval layout.
 
 import {
+  assertExpEvalOutcomes,
   command,
-  type ExpEvalEvent,
-  type ExpEvent,
+  only,
   type ProcessReceipt,
   withProcess,
   withTempDir,
@@ -17,7 +17,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-const REQUIRED_LIVE_SECRETS = ["CODEX_API_KEY", "CODEX_BASE_URL"] as const;
+const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 const EVAL_ID = "live-compatibility";
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([niceevalBin]);
@@ -74,52 +74,45 @@ beforeAll(async () => {
   });
 
   expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(0);
-  const evalEvent = runReceipt.ndjson<ExpEvent>().find(
-    (event): event is ExpEvalEvent =>
-      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  const evalEvent = only(
+    runReceipt.expEvalEvents(),
+    (event) => event.evalId === EVAL_ID,
+    () => runReceipt.diagnostic(),
   );
-  expect(evalEvent, runReceipt.diagnostic()).toMatchObject({ verdict: "passed" });
-  expect(evalEvent?.locator, runReceipt.diagnostic()).toMatch(/^@/);
-  locator = evalEvent!.locator!;
+  locator = evalEvent.locator;
 }, 14 * 60_000);
 
 it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
-  const events = runReceipt.ndjson<ExpEvent>();
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion 与 runIds；成败由带身份的 eval 事件精确断言，live provider
   // 故障不会冒充通过。
   const inv = runReceipt.expReceipt();
   expect(inv.completion, runReceipt.diagnostic()).toBe("completed");
   expect(inv.runIds, runReceipt.diagnostic()).toHaveLength(1);
-  const evalEvent = events.find(
-    (event): event is ExpEvalEvent =>
-      "event" in event && event.event === "eval" && event.evalId === EVAL_ID,
+  assertExpEvalOutcomes(
+    runReceipt.expEvalEvents(),
+    [
+      // live compatibility：真实 Thread stream 须保留命令结果并续接 sentinel；单次运行期望 passed/1。
+      {
+        evalId: EVAL_ID,
+        experimentId: "live",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      },
+    ],
+    () => runReceipt.diagnostic(),
   );
-  expect(evalEvent, runReceipt.diagnostic()).toBeDefined();
-  expect(evalEvent).toMatchObject({
-    event: "eval",
-    evalId: EVAL_ID,
-    verdict: "passed",
-    attempts: 1,
-  });
 });
 
 it("show --execution 读回 Codex SDK converter 的代表性证据", async () => {
-  const execution = await niceeval.run(["show", locator, "--execution"], { env });
+  const execution = await niceeval.run(["show", locator, "--execution", "--json"], { env });
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  // The public execution projection contains the original command marker, its
-  // converted tool card/result, and the second turn that resumed the thread.
+  // Conversation keeps the original command, converted tool identity,
+  // completed result, and resumed assistant response in the public machine view.
+  expect(execution.stdout).toContain('"conversation"');
+  expect(execution.stdout).toContain('"tool":"command_execution"');
+  expect(execution.stdout).toContain('"kind":"tool-result"');
   expect(execution.stdout).toContain(marker);
-  expect(execution.stdout).toMatch(/TOOL · (shell|command_execution)/);
-  expect(execution.stdout).toContain("TOOL RESULT · completed");
-  expect(execution.stdout).toContain("Without running a command");
   expect(execution.stdout).toContain(sentinel);
-});
-
-it("show --timing 读回 Codex SDK converter 的 runner 阶段", async () => {
-  const timing = await niceeval.run(["show", locator, "--timing"], { env });
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/turn\s+turn1\b/);
-
 });

@@ -1,24 +1,28 @@
 // owner: docs/engineering/testing/e2e/adapter/hermes.md#adapter-hermes-live-compatibility
 //
 // 单文件 Journey：真实 Hermes CLI + Docker Sandbox + live provider，
-// 同一次真实运行分别供 verdict、execution 与 timing 三个独立命题读取。
+// 同一次真实运行供 verdict 与 execution 两个独立命题读取。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
+  assertExpEvalOutcomes,
   createE2EContext,
   only,
-  type ExpEvalEvent,
-  type ExpEvent,
+  type ExpEvalOutcomeExpectation,
 } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 
-const EXPECTED_EVALS = [
-  "coding-task/write-and-verify",
-  "skills/selected",
-  "session/recall",
-  "usage/tokens",
-] as const;
+const EXPECTED_OUTCOMES = [
+  // coding task：带可区分入参的文件写入与 shell 读回都须归一完成；单次执行期望 passed/1。
+  { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
+  // Skill selection：只加载 incident-report Skill、不加载 decoy，并采用目标约定；期望 passed/1。
+  { experimentId: "ci", evalId: "skills/selected", verdict: "passed", attempts: 1, passed: 1 },
+  // session recall：同一会话的第二轮须引用首轮事实；一条会话链完成即为 passed/1。
+  { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
+  // usage：两个独立 turn 都须读到正的 input/output token；全部断言成立时为 passed/1。
+  { experimentId: "ci", evalId: "usage/tokens", verdict: "passed", attempts: 1, passed: 1 },
+] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
 const REQUIRED_LIVE_SECRETS = [
   "BUB_API_KEY",
@@ -48,7 +52,7 @@ function requireLiveSecrets(): void {
   }
 }
 
-it("真实 Hermes CLI adapter 完成运行并公开读回工具与 timing 证据", async () => {
+it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async () => {
   requireLiveSecrets();
   await e2e.case(
     "live",
@@ -60,9 +64,11 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具与 timing 证据
         timeoutMs: 36 * 60_000,
       });
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const evalEvents = run
-        .ndjson<ExpEvent>()
-        .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
+      const evalEvents = assertExpEvalOutcomes(
+        run.expEvalEvents(),
+        EXPECTED_OUTCOMES,
+        () => run.diagnostic(),
+      );
 
       // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
       // receipt」）：completion 与 runIds（每个 Experiment 一个 Run）。成败由下面带身份的
@@ -70,23 +76,15 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具与 timing 证据
       const inv = run.expReceipt();
       expect(inv.completion, run.diagnostic()).toBe("completed");
       expect(inv.runIds, run.diagnostic()).toHaveLength(1);
-      expect(
-        evalEvents.filter((event) => event.verdict === "passed"),
-        run.diagnostic(),
-      ).toHaveLength(EXPECTED_EVALS.length);
-      expect(
-        evalEvents.filter((event) => event.verdict !== "passed"),
-        run.diagnostic(),
-      ).toHaveLength(0);
-
       const event = only(
         evalEvents,
         (candidate) => candidate.evalId === "coding-task/write-and-verify",
       );
-      const timing = await niceeval.run(["show", event.locator!, "--timing"]);
-      expect(timing.exitCode, timing.diagnostic()).toBe(0);
-      expect(timing.stdout).toMatch(/turn\s+turn1\b/);
-
+      const execution = await niceeval.run(["show", event.locator, "--execution"]);
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
+      expect(execution.stdout).toContain("write_file");
+      expect(execution.stdout).toContain("terminal");
+      expect(execution.stdout).toContain("niceeval-hermes-tool-input-914");
     },
   );
 }, 38 * 60_000);

@@ -1,4 +1,5 @@
 import { compactAssertionSummary, summaryText } from "../../assertions/display.ts";
+import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import type {
   EvaluationFactResult,
   EvalResult,
@@ -47,7 +48,6 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
   // 只在真正的结构化执行错误（没有主 Fact 摘要）上携带 `code`。Fact unavailable/errored
   // 已经有更具体的结构化摘要，不需要也没有这个字段。
   const code = result.verdict === "errored" && fact === undefined ? fallbackError?.code : undefined;
-  const factsCount = result.facts === undefined ? undefined : Object.keys(result.facts).length;
 
   return {
     locator,
@@ -59,14 +59,12 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     ...(phase !== undefined ? { phase } : {}),
     ...(code !== undefined ? { code } : {}),
     ...(origin !== undefined ? { origin } : {}),
-    ...(factsCount !== undefined && factsCount > 0 ? { factsCount } : {}),
   };
 }
 
 /**
  * A current Record reuse remains a readback ADT all the way to display. The
- * durable source identity is already exact, so this path neither decodes nor
- * recreates the retired hash locator.
+ * durable source identity is exact; display derives the current short alias.
  */
 export function failureDetailFromCurrentReusedAttempt(
   readback: CurrentReusedAttemptReadback,
@@ -77,7 +75,7 @@ export function failureDetailFromCurrentReusedAttempt(
     ? readback.executionErrors.value[0]
     : undefined;
   return {
-    locator: `@${readback.source.attemptId}`,
+    locator: encodeAttemptLocator(readback.source.attemptId),
     identity: {
       experimentId: readback.target.experimentId,
       evalId: readback.target.evalId,

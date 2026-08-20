@@ -10,17 +10,17 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 
 | 能力 | 对应的断言 / API |
 |---|---|
-| 收发消息（基础契约） | `t.send()`（可多次调用）、`t.reply`、`turn.outputEquals` / `outputMatches`、按状态判断的 `t.succeeded()` |
-| 事件流完整性 | `calledTool` / `toolOrder` / `usedNoTools` / `maxToolCalls` / `messageIncludes` / `noFailedActions` / `event` / `eventOrder` 等整套作用域断言。**负断言（`notCalledTool` 等）有完整事件流才可信** |
+| 收发消息（基础契约） | `t.send()`（可多次调用）、`t.reply`、`t.check(turn.data, equals(...))` / `matches(...)`、按状态判断的 `t.succeeded()` |
+| 事件流完整性 | `calledTool` / `usedNoTools` / `maxToolCalls` / `noFailedActions` / `event` 等作用域断言；`toolOrder` / `eventOrder` 只在 Turn 或 Session 上接收 matcher。消息用 `t.check(turn.message, includes(...))` 或 `t.check(turn.message, pattern(...))`。**负断言（`notCalledTool` 等）有完整事件流才可信** |
 | 会话续接 | 跨轮记忆断言、`t.newSession()` 会话隔离 |
-| HITL（人工介入） | `t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()` |
+| HITL（人工介入） | `t.check(turn.status, equals("waiting"))`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()` |
 | `tracing` | trace decoding、`niceeval view` 的调用瀑布图 |
 
 ## 三个内置 agent 分别做到哪
 
 | Agent | 收发 | 事件流 | 会话续接 | HITL | tracing | 备注 |
 |---|---|---|---|---|---|---|
-| `claude-code` | ✅ | ✅ | ✅（`claude --resume <id>`） | ❌ | ✅（`http/protobuf` → OTLP，beta 开关） | 内置 parser 自动吐 `compaction` 事件，`t.event("compaction")` 可用 |
+| `claude-code` | ✅ | ✅ | ✅（`claude --resume <id>`） | ❌ | ✅（`http/protobuf` → OTLP，beta 开关） | 内置 parser 自动吐 `compaction` 原始事件，供报告和诊断读取；当前没有公开 `eventMatch` selector |
 | `codex` | ✅ | ✅ | ✅（`codex exec resume <id>`） | ❌ | ✅（`http/json` → OTLP） | 内置 parser 自动吐 `compaction` 事件 |
 | `bub` | ✅ | ✅ | ✅（`--session-id` + tape 续接） | ❌ | ✅（`http/protobuf` → OTLP） | 内置 parser 自动吐 `compaction` 事件 |
 
@@ -44,13 +44,13 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 ### codex
 
 - 连接方式：Sandbox 里跑 `codex exec --json`（续接时是 `codex exec resume <id> --json`），stdout JSONL 当 transcript。命令带 `--dangerously-bypass-approvals-and-sandbox` 与 `--dangerously-bypass-hook-trust`：Sandbox 里没人能回答 codex 的交互确认，插件或 `postSetup` 装好的 hook 因此不需要交互授信就能生效。
-- 鉴权：`CODEX_API_KEY`（不是 `OPENAI_API_KEY`），可选 `CODEX_BASE_URL` 接 OpenAI 兼容代理。配置项见下方 `CodexConfig`。
+- 鉴权：`OPENAI_API_KEY`，可选 `OPENAI_BASE_URL` 接 OpenAI 兼容代理。配置项见下方 `CodexConfig`。
 - `tracing` 通过 `~/.codex/config.toml` 的 `[otel.trace_exporter.otlp-http]` 段配置，协议 `http/json`。
 
 ### bub
 
 - 连接方式：Sandbox 里跑 `bub run` + `--session-id`，从 `~/.bub/tapes/<hash>.jsonl` 读 tape 当 transcript。
-- 鉴权：`BUB_API_KEY` + `BUB_API_BASE`（OpenAI 兼容代理）。配置项见下方 `BubConfig`。
+- 鉴权：`OPENAI_API_KEY` + `OPENAI_BASE_URL`（OpenAI 兼容代理）。配置项见下方 `BubConfig`。
 - `tracing` 通过环境变量注入（`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 等），协议 `http/protobuf`。
 - 安装走 `uv tool install`（非 npm 包），首次安装带 checkpoint 缓存以加速后续 Sandbox。
 
@@ -85,8 +85,8 @@ baseUrl?: string;
 env?: Readonly<globalThis.Record<string, string>>;
 ```
 
-Extra process environment for Claude Code. Values stay private runtime data and do not enter carry identity.
-Mirror behavior-changing non-secret values into Experiment flags or the owning Plugin identity.
+Claude Code 进程的额外环境变量。值只保留在运行时，不进入结果沿用身份。
+会改变行为的非敏感值应同时写入 Experiment flags 或所属 Plugin 的身份。
 
 #### `maxTurns`
 
@@ -168,7 +168,7 @@ preTeardown?: readonly SandboxCommand[];
 apiKey?: string;
 ```
 
-代理 / OpenAI API key。省略时读 CODEX_API_KEY env。
+代理 / OpenAI API key。省略时读 OPENAI_API_KEY env。
 
 #### `baseUrl`
 
@@ -176,7 +176,7 @@ apiKey?: string;
 baseUrl?: string;
 ```
 
-OpenAI 兼容代理 base URL(如 `https://s2a.example.com/v1`)。省略时读 CODEX_BASE_URL env。
+OpenAI 兼容代理 base URL(如 `https://s2a.example.com/v1`)。省略时读 OPENAI_BASE_URL env。
 
 #### `env`
 
@@ -187,7 +187,7 @@ env?: Readonly<globalThis.Record<string, string>>;
 注入每次 Codex CLI 进程的额外环境变量。首轮 `codex exec` 与续轮 `codex exec resume`
 使用同一份声明；Codex 启动的 lifecycle Hook、MCP 动态 header 与命令子进程都会继承。
 值只经 Sandbox command options 传入，不拼进 shell 文本或写入 setup manifest，并全部按
-潜在敏感值从 timing / execution / error 证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或
+潜在敏感值从 timing / execution / error 证据中脱敏。`OPENAI_API_KEY` 仍由 `apiKey` 或
 宿主同名环境变量提供，Adapter 的鉴权值会覆盖这里的同名键。
 env value 不进入 carry 身份。会改变被测行为的非敏感值必须同时声明在 Experiment flags
 或所属 Plugin identity；只轮换凭据不会让旧结果失效。
@@ -267,7 +267,7 @@ preTeardown?: readonly SandboxCommand[];
 apiKey?: string;
 ```
 
-OpenAI 兼容代理的 API key。省略时读 BUB_API_KEY env。
+OpenAI 兼容代理的 API key。省略时读 OPENAI_API_KEY env。
 
 #### `apiBase`
 
@@ -275,7 +275,7 @@ OpenAI 兼容代理的 API key。省略时读 BUB_API_KEY env。
 apiBase?: string;
 ```
 
-OpenAI 兼容代理的 base URL。省略时读 BUB_API_BASE env。
+OpenAI 兼容代理的 base URL。省略时读 OPENAI_BASE_URL env。
 
 #### `skills`
 

@@ -1,26 +1,19 @@
 import { resolve } from "node:path";
 import { Either, Effect, Layer } from "effect";
-import { assertionsAttachmentFamilyV1 } from "../assertions/record/attachment.ts";
-import { evaluationsAttachmentFamilyV1 } from "../eval/record/evaluation.ts";
-import { scoreAttachmentFamilyV1 } from "../eval/record/score.ts";
-import { verdictAttachmentFamilyV1 } from "../eval/record/verdict.ts";
-import {
-  AttemptPluginProvenanceV1Family,
-  RunPluginProvenanceV1Family,
-} from "../plugins/record/attachment.ts";
 import {
   cleanIncompleteRuns,
   inspectIncompleteRuns,
-  makeCurrentRecordMigrationRegistry,
   makeRecordRoot,
-  migrateRecord,
   NodeRecordLive,
-  planRecordMigration,
-  RecordMigrationRegistry,
-  type RecordMigrationPlanSummary,
   type RecordRoot,
 } from "../record/index.ts";
-import { defineRecordAttachmentRegistry } from "../record/attachment/internal.ts";
+import { recordHost } from "../record/host/index.ts";
+import { RECORD_SCHEMA_VERSION } from "../record/model/identifiers.ts";
+import {
+  RecordAutoMigrationGitSaveRequired,
+  RecordMigrationRequired,
+} from "../record/reader/errors.ts";
+import { RecordFileSystem, recordPortablePath } from "../record/platform/services.ts";
 
 export type RecordCliCommand = "clean" | "migrate";
 
@@ -51,40 +44,57 @@ function output(input: {
   });
 }
 
-function requireOfficialAttachmentRegistry() {
-  const registry = defineRecordAttachmentRegistry({
-    families: [
-      assertionsAttachmentFamilyV1,
-      evaluationsAttachmentFamilyV1,
-      verdictAttachmentFamilyV1,
-      scoreAttachmentFamilyV1,
-      RunPluginProvenanceV1Family,
-      AttemptPluginProvenanceV1Family,
-    ],
-  });
-  if (Either.isLeft(registry)) {
-    throw new Error(
-      `Official Record Attachment registry invariant failed: ${registry.left.code}`,
-    );
-  }
-  return registry.right;
+export const NodeRecordCliLive = NodeRecordLive;
+
+export interface AutomaticRecordMigrationReceipt {
+  readonly restoreCommit: string;
+  readonly targetSchemaVersion: typeof RECORD_SCHEMA_VERSION;
 }
 
 /**
- * This is intentionally an application composition edge. Generic Record stays
- * unaware of Assertion, Evaluation, Verdict, Score, and Plugin owners.
+ * Preflight for ordinary CLI entry points. Every Scope is closed before the
+ * next lease kind is acquired: read check -> exclusive maintenance -> caller's
+ * fresh ordinary open.
  */
-export const OfficialRecordAttachmentRegistry = requireOfficialAttachmentRegistry();
+export function ensureAutomaticRecordMigration(input: {
+  readonly cwd: string;
+  readonly record?: string;
+}) {
+  const root = makeRecordRoot(resolve(input.cwd, input.record ?? ".niceeval/record"));
+  if (Either.isLeft(root)) return Effect.fail(root.left);
+  return Effect.gen(function* () {
+    const fileSystem = yield* RecordFileSystem;
+    if ((yield* fileSystem.pathKind(recordPortablePath(root.right, "record.json"))) === "missing") {
+      return null;
+    }
+    const checked = yield* Effect.either(Effect.scoped(recordHost.current.openRead({ root: root.right })));
+    if (Either.isRight(checked)) return null;
+    if (!(checked.left instanceof RecordMigrationRequired)) return yield* Effect.fail(checked.left);
 
-export const NodeRecordCliLive = Layer.mergeAll(
-  NodeRecordLive,
-  Layer.succeed(
-    RecordMigrationRegistry,
-    makeCurrentRecordMigrationRegistry({
-      attachments: OfficialRecordAttachmentRegistry,
-    }),
-  ),
-);
+    return yield* Effect.scoped(Effect.gen(function* () {
+      const session = yield* recordHost.maintenance.open({ root: root.right });
+      const plan = yield* session.planMigrate();
+      if (plan.state !== "migration-required") {
+        return yield* Effect.fail(checked.left);
+      }
+      if (plan.backup.state !== "git-restore-point") {
+        return yield* Effect.fail(new RecordAutoMigrationGitSaveRequired({
+          code: "record-auto-migration-git-save-required",
+        }));
+      }
+      yield* session.applyMigrate(plan).pipe(
+        Effect.catchTag("RecordMigrationGitRestoreRequired", () =>
+          Effect.fail(new RecordAutoMigrationGitSaveRequired({
+            code: "record-auto-migration-git-save-required",
+          }))),
+      );
+      return Object.freeze({
+        restoreCommit: plan.backup.commit,
+        targetSchemaVersion: RECORD_SCHEMA_VERSION,
+      });
+    }));
+  });
+}
 
 function resolveRecordRoot(
   input: RunRecordCliCommandInput,
@@ -111,86 +121,78 @@ function recordErrorCode(error: unknown): string {
 function recordErrorNextStep(code: string): string | undefined {
   switch (code) {
     case "record-migration-required":
-    case "attachment-migration-required":
       return "Run: niceeval migrate";
     case "record-migration-interrupted":
-      return "Restore the Record from Git or a backup; do not rerun migrate.";
+      return "Restore the complete Record from the recorded Git commit; do not rerun migrate on mixed bytes.";
+    case "record-migration-recovery-required":
+      return "Restore the complete Record from Git before retrying migration.";
+    case "record-migration-plan-stale":
+      return "Review the new migration plan and rerun migrate.";
+    case "record-migration-git-restore-required":
+      return "Commit, restore, or otherwise obtain a clean Git restore point for this Record before migrating.";
+    case "record-migration-invalid":
+      return "Restore the Record from Git before retrying migration.";
     case "record-format-unsupported":
       return "Install a NiceEval version that supports this Record format.";
     case "record-maintenance-busy":
     case "record-writer-busy":
       return "Close the Record command holding the lock, then retry.";
-    case "record-migration-plan-stale":
-      return "The Record changed after planning; rerun niceeval migrate.";
     default:
       return undefined;
   }
 }
 
-function recordErrorOutput(error: unknown, stdout = ""): RecordCliCommandOutput {
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function recoveryCommands(restoreCommit: string, recordPath: string): string {
+  const root = shellQuote(recordPath);
+  const commit = shellQuote(restoreCommit);
+  const sentinel = shellQuote(resolve(recordPath, "migration.in-progress"));
+  return [
+    `Restore command: git -C ${root} restore --source=${commit} --staged --worktree -- .`,
+    `Verify command: git -C ${root} diff --quiet ${commit} -- . && git -C ${root} diff --cached --quiet ${commit} -- .`,
+    `Clear sentinel after verification: rm -f -- ${sentinel}`,
+  ].join("\n") + "\n";
+}
+
+function interruptedRecovery(error: unknown, recordPath: string | undefined): string {
+  if (typeof error !== "object" || error === null || recordPath === undefined) return "";
+  const restoreCommit = Reflect.get(error, "restoreCommit");
+  return Reflect.get(error, "restoreSafe") === true &&
+      typeof restoreCommit === "string" && /^[0-9a-f]{40,64}$/.test(restoreCommit)
+    ? recoveryCommands(restoreCommit, recordPath)
+    : "";
+}
+
+function recordErrorOutput(
+  error: unknown,
+  stdout = "",
+  recordPath?: string,
+): RecordCliCommandOutput {
   const code = recordErrorCode(error);
-  const next = recordErrorNextStep(code);
+  const automaticRestoreUnsafe =
+    (code === "record-migration-interrupted" || code === "record-migration-recovery-required") &&
+    (typeof error !== "object" || error === null || Reflect.get(error, "restoreSafe") !== true);
+  const next = automaticRestoreUnsafe
+    ? "Inspect and preserve concurrent Record edits before choosing a manual recovery; no automatic Git restore command is safe."
+    : recordErrorNextStep(code);
+  const causeCode = typeof error === "object" && error !== null &&
+      typeof Reflect.get(error, "causeCode") === "string"
+    ? String(Reflect.get(error, "causeCode"))
+    : undefined;
   return output({
     exitCode: 1,
     stdout,
-    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}`,
-  });
-}
-
-function renderAttachmentPlanSection(
-  plan: RecordMigrationPlanSummary,
-  state: RecordMigrationPlanSummary["attachments"][number]["state"],
-): readonly string[] {
-  const entries = plan.attachments.filter((entry) => entry.state === state);
-  if (entries.length === 0) return ["    none"];
-  return entries.map((entry) =>
-    `    ${entry.owner} ${entry.name} (${entry.schemaId})${
-      entry.reason === undefined ? "" : `: ${entry.reason}`
+    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}${
+      causeCode === undefined ? "" : `Cause: ${causeCode}\n`
+    }${
+      code === "record-migration-interrupted" || code === "record-migration-recovery-required"
+        ? interruptedRecovery(error, recordPath)
+        : ""
     }`,
-  );
-}
-
-export function renderRecordMigrationPlan(
-  plan: RecordMigrationPlanSummary,
-): string {
-  const lines = [
-    `Record migration plan: ${plan.state}`,
-    "Core",
-    `  source: ${plan.core.sourceFormat}`,
-    `  target: ${plan.core.targetFormat}`,
-    `  status: ${plan.core.state}`,
-  ];
-  if (plan.core.steps.length > 0) {
-    lines.push(...plan.core.steps.map((step) => `  ${step.from} -> ${step.to}`));
-  }
-  lines.push(
-    "RecordAttachments",
-    "  current:",
-    ...renderAttachmentPlanSection(plan, "current"),
-    "  migrate:",
-    ...renderAttachmentPlanSection(plan, "migrate"),
-    "  migration-unavailable:",
-    ...renderAttachmentPlanSection(plan, "migration-unavailable"),
-    "  unsupported:",
-    ...renderAttachmentPlanSection(plan, "unsupported"),
-    "Backup",
-  );
-  switch (plan.backup.state) {
-    case "git-restore-point":
-      lines.push(`  git restore point: ${plan.backup.commit}`);
-      break;
-    case "portable-root-dirty":
-      lines.push("  no restore point: portable Record has uncommitted changes");
-      for (const entry of plan.backup.entries) lines.push(`    ${entry}`);
-      break;
-    case "not-git-worktree":
-      lines.push("  no restore point: Record is not in a Git worktree");
-      break;
-    case "root-outside-worktree":
-      lines.push("  no restore point: Record is outside the Git worktree");
-      break;
-  }
-  return `${lines.join("\n")}\n`;
+  });
 }
 
 function cleanCommand(input: {
@@ -238,42 +240,53 @@ function cleanCommand(input: {
 
 function migrateCommand(input: {
   readonly root: RecordRoot;
+  readonly recordPath: string;
   readonly yes: boolean;
 }) {
-  return Effect.gen(function* () {
-    const plan = yield* planRecordMigration({ root: input.root });
-    const planText = renderRecordMigrationPlan(plan.summary);
-    const authorization = plan.summary.backup.state === "git-restore-point"
-      ? { state: "git-restore-point" as const }
-      : input.yes
-        ? { state: "accept-data-loss" as const }
-        : undefined;
-
-    if (authorization === undefined) {
+  return Effect.scoped(Effect.gen(function* () {
+    const session = yield* recordHost.maintenance.open({ root: input.root });
+    const plan = yield* session.planMigrate();
+    const planText = plan.state === "already-current"
+      ? `Record migration plan: already-current\nformat: ${plan.format}\n`
+      : plan.state === "unsupported-format"
+        ? `Record migration plan: unsupported-format\nformat: ${plan.format}\n`
+        : `Record migration plan: migration-required\nformat: ${plan.format}\nroot: ${plan.root === null ? "current" : `${plan.root.fromSchemaVersion} -> ${plan.root.toSchemaVersion}`}\nattachments: ${plan.attachments.length}\nbackup: ${plan.backup.state}${plan.backup.state === "git-restore-point" ? `\nrestore commit: ${plan.backup.commit}` : ""}\n`;
+    if (plan.state === "unsupported-format") {
       return output({
         exitCode: 1,
         stdout: planText,
-        stderr:
-          "record-migration-confirmation-required\nNo Git restore point is available; rerun with --yes to accept possible data loss.\n",
+        stderr: "record-format-unsupported\nInstall a NiceEval version that supports this Record format.\n",
       });
     }
-
-    const migrated = yield* Effect.either(
-      migrateRecord({ plan, authorization }),
-    );
-    if (Either.isLeft(migrated)) {
-      return recordErrorOutput(migrated.left, planText);
+    if (plan.state === "migration-required" && plan.backup.state !== "git-restore-point") {
+      return output({
+        exitCode: 1,
+        stdout: planText,
+        stderr: "record-migration-git-restore-required\nA clean Git restore point is required; --yes cannot bypass this preflight.\n",
+      });
     }
+    if (plan.state === "migration-required" && !input.yes) {
+      return output({
+        exitCode: 1,
+        stdout: planText,
+        stderr: "record-migration-confirmation-required\nReview the migration plan and rerun with --yes.\n",
+      });
+    }
+    const migrated = yield* Effect.either(session.applyMigrate(plan));
+    if (Either.isLeft(migrated)) {
+      return recordErrorOutput(migrated.left, planText, input.recordPath);
+    }
+    const receipt = migrated.right;
     return output({
       exitCode: 0,
-      stdout: `${planText}Record migration ${migrated.right.state}.\n`,
+      stdout: `${planText}Record migration ${receipt.state}.\n`,
     });
-  });
+  }));
 }
 
 /**
  * Effect-native command handling for the Record maintenance surface. The
- * legacy CLI owns the one Promise adaptation at its actual process boundary.
+ * CLI owns the one Promise adaptation at its actual process boundary.
  */
 export function runRecordCliCommand(
   input: RunRecordCliCommandInput,
@@ -287,8 +300,9 @@ export function runRecordCliCommand(
       Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error))),
     );
   }
-  return migrateCommand({ root: root.right, yes: input.yes }).pipe(
+  const recordPath = resolve(input.cwd, input.record ?? ".niceeval/record");
+  return migrateCommand({ root: root.right, recordPath, yes: input.yes }).pipe(
     Effect.provide(NodeRecordCliLive),
-    Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error))),
+    Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error, "", recordPath))),
   );
 }

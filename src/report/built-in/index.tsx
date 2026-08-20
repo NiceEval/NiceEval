@@ -1,26 +1,21 @@
-// Public built-ins are ordinary author-API Reports over projections and
-// closed semantic documents.
+/** The exact built-in facade fixed in docs/feature/reports/library.md. */
 export {
-  default,
-  defaultOverviewReport,
-  overview,
-  overviewPage,
-} from "./overview.ts";
+  standard,
+  standardAttemptPage,
+  standardExperimentPage,
+  standardOverviewPage,
+} from "./standard.tsx";
+
 export {
-  defaultAttemptOverviewReport,
-  attemptOverviewReport,
-} from "./attempt-overview.ts";
-export {
-  defaultSourceEvidenceReport,
-  sourceEvidenceReport,
-} from "./source.ts";
-export {
-  defaultExecutionEvidenceReport,
-  defaultTimingEvidenceReport,
-  executionEvidenceReport,
-  timingEvidenceReport,
-} from "./execution.ts";
-export {
-  defaultSandboxHistoryReport,
-  sandboxHistoryReport,
-} from "./sandbox-history.ts";
+  attemptDetailRoute,
+  attemptDetailTarget,
+  experimentDetailRoute,
+  experimentDetailTarget,
+  libraryDetailRoute,
+} from "../library/details.ts";
+
+export type {
+  AttemptDetailTarget,
+  ExperimentDetailTarget,
+  LibraryDetailTarget,
+} from "../library/details.ts";

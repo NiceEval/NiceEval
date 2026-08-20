@@ -5,4 +5,4 @@ LangChain 的归一化口径是**含明细**:`input_tokens` 是含缓存读写�
 落 [Record · Usage](../../../record/architecture.md) 前按恒互斥契约归一:`inputTokens = input_tokens − cache_read − cache_creation`(不小于 0),明细各自落 `cacheReadTokens` / `cacheCreationTokens`。
 `output_token_details.reasoning` 单列进 `reasoningTokens`。
 
-本 adapter 没有实测成本通道:`$` 由价格表估算(见 [Observability · 用量与成本](../../../../observability.md#用量与成本token--计费))。
+本 adapter 没有 provider / adapter observed 成本通道，因此省略 `Usage.costUSD`。它不在 adapter 内以 token 或价格表推导成本。

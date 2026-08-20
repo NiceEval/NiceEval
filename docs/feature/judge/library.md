@@ -5,7 +5,7 @@ AssertionHandle；没有需要交给另一条 `check`、require 或 score API �
 
 ```ts
 const correctness = turn.judge.autoevals.factuality("Brooklyn 的天气是晴朗。")
-  .atLeast(0.9)
+  .gate(0.9)
   .label("天气事实");
 
 const summary = t.judge.autoevals.summarizes("原始需求", {
@@ -14,7 +14,7 @@ const summary = t.judge.autoevals.summarizes("原始需求", {
 }).score(10).label("摘要质量");
 ```
 
-上例的第一条属于 Pass Eval，第二条属于 Score Eval。Pass measurement 必须 threshold；Score measurement
+上例的第一条属于 Pass Eval，第二条属于 Score Eval。Pass measurement 用 gate(threshold)；Score measurement
 可以贡献 score，threshold 只增加局部 condition。
 
 ## Capability 与配置
@@ -47,7 +47,7 @@ const source = await t.sandbox.readText("README.md");
 t.judge.autoevals.closedQA("文档是否说明安装步骤？", {
   input: source,
   output: t.reply,
-}).atLeast(0.8).label("安装说明");
+}).gate(0.8).label("安装说明");
 ```
 
 `turn.judge` 在调用时冻结该 Turn 的原始 input 与 output。没有 `session.judge`、路径猜测、隐式 last
@@ -63,6 +63,10 @@ thresholded measurement 可以 `await .orStop()`。below 触发 authoring stop l
 
 没有 model、key 或 provider 时不发网络预检，Assertion 为 `unavailable` 并保留机器可读 reason。完整配置
 的 endpoint 预检失败是 setup error，受影响 Attempt 不执行 Agent，也不伪造 AssertionResult。
+Runner 通过 `judge-precheck-failed` 运行级 diagnostic 交付端点、模型与 provider 返回的有界错误。
+
+这类 Slot 从未派发，没有 origin Attempt 或 locator。JSON 不为它伪造 locator-addressable `eval` 事件；
+对应 warning 直接携带 `experimentId`、`evalId`、`planned` 与 `errored`，最终计数仍把它记为 `errored`。
 
 模型请求后的传输失败是 `unavailable`。无效响应、非有限数值和区间外数值是 `errored`。理由写入
 explanation 或 Judge rationale，evidence 只保存裁剪与脱敏后的材料。

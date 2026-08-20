@@ -2,37 +2,64 @@
 // regression: 052b13bb (design: memory/current-result-single-state-ruling.md)
 // rerun: pnpm e2e --repo report -- --run test/report-project-current.test.ts
 
-import { only } from "@niceeval/testkit";
+import { only, type ExpEvent } from "@niceeval/testkit";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  verdict?: string;
-  reused?: number;
+interface MetricValueJson {
+  readonly value: number | null;
+  readonly state: string;
+  readonly samples: number;
+  readonly total: number;
+  readonly issues: readonly unknown[];
+  readonly refs: readonly unknown[];
+}
+
+interface LeaderboardRow {
+  readonly key: string;
+  readonly passRate: MetricValueJson;
+}
+
+interface ReportProblem {
+  readonly code: string;
+  readonly path: readonly string[];
+  readonly refs: readonly string[];
+  readonly summary?: string;
 }
 
 interface ShowOverview {
-  format: "niceeval.report-show/v1";
-  sample: {
-    selection:
-      | {
-          policy: "project-current";
-          experimentIds: "all" | string[];
-          selectedRunIds: string[];
-        }
-      | {
-          policy: "explicit-runs";
-          runIds: string[];
-        };
-    runCount: number;
-    slotCount: number;
-    denominator: number;
-  };
+  readonly format: "niceeval.show";
+  readonly locale: "en";
+  readonly selection:
+    | {
+        readonly kind: "project-current";
+        readonly sampleIdentity: string;
+        readonly experimentIds: readonly string[];
+      }
+    | {
+        readonly kind: "explicit-runs";
+        readonly sampleIdentity: string;
+        readonly runIds: readonly string[];
+      };
+  readonly page: { readonly route: string; readonly pageId: string };
+  readonly data:
+    | { readonly kind: "groups"; readonly groups: readonly unknown[] }
+    | {
+        readonly kind: "experiment-group";
+        readonly comparison: { readonly state: string; readonly rows: readonly LeaderboardRow[] };
+      };
+  readonly problems: readonly ReportProblem[];
 }
+
+const PROJECT_EXPERIMENT_IDS = [
+  "classic/baseline",
+  "classic/memory-a",
+  "classic/memory-b",
+  "main",
+  "source",
+] as const;
 
 test("项目未变时复用结果，Eval 源码变化后重新执行并读回新结果", async () => {
   await reportE2E.case(
@@ -44,8 +71,8 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       expect(initialRun.expReceipt()).toMatchObject({ completion: "completed" });
       expect(
         only(
-          initialRun.ndjson<ExpEvent>(),
-          (event) => event.event === "eval" && event.evalId === "source-snapshot",
+          initialRun.expEvalEvents(),
+          (event) => event.evalId === "source-snapshot",
           initialRun.diagnostic(),
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
@@ -55,22 +82,30 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         initialRun.diagnostic(),
       );
 
-      const initialShow = await niceeval.run(["show", "--json"]);
+      const initialShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
       const initialDocument = initialShow.json<ShowOverview>();
       expect(initialDocument).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [initialRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
+        format: "niceeval.show",
+        locale: "en",
+        selection: {
+          kind: "project-current",
+          experimentIds: ["source"],
         },
+        page: { route: "/group/singleton/source", pageId: "group-singleton" },
+        data: { kind: "experiment-group" },
       });
-      expect(initialDocument.sample.selection.experimentIds).toEqual(["main", "source"]);
+      expect(
+        initialDocument.problems,
+        "a completed Eval with no Agent send has known zero usage rather than missing input",
+      ).toEqual([]);
+      if (initialDocument.data.kind !== "experiment-group") throw new Error("expected experiment group");
+      expect(initialDocument.data.comparison.rows).toHaveLength(1);
+      expect(initialDocument.data.comparison.rows[0]!.passRate).toMatchObject({
+        state: "available",
+        samples: 1,
+        total: 1,
+      });
 
       const unchangedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(unchangedRun.exitCode, unchangedRun.diagnostic()).toBe(0);
@@ -82,22 +117,17 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
           unchangedRun.diagnostic(),
         ),
       ).toMatchObject({ event: "start", reused: 1 });
-      const unchangedRunId = only(
-        unchangedRun.expReceipt().runIds,
-        () => true,
-        unchangedRun.diagnostic(),
-      );
 
-      const accumulatedShow = await niceeval.run(["show", "--json"]);
+      const accumulatedShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(accumulatedShow.exitCode, accumulatedShow.diagnostic()).toBe(0);
-      expect(accumulatedShow.json<ShowOverview>().sample).toMatchObject({
-        selection: {
-          policy: "project-current",
-          selectedRunIds: [initialRunId, unchangedRunId].sort(),
-        },
-        runCount: 2,
-        slotCount: 2,
-        denominator: 2,
+      const accumulatedDocument = accumulatedShow.json<ShowOverview>();
+      expect(accumulatedDocument.selection).toMatchObject({ kind: "project-current" });
+      if (accumulatedDocument.data.kind !== "experiment-group") throw new Error("expected experiment group");
+      expect(accumulatedDocument.data.comparison.rows).toHaveLength(1);
+      expect(accumulatedDocument.data.comparison.rows[0]!.passRate).toMatchObject({
+        state: "available",
+        samples: 2,
+        total: 2,
       });
 
       const evalPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
@@ -109,35 +139,38 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         "utf8",
       );
 
-      const staleShow = await niceeval.run(["show", "--json"]);
+      const staleShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
       expect(staleShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [],
-          },
-          runCount: 0,
-          slotCount: 0,
-          denominator: 0,
-        },
+        format: "niceeval.show",
+        selection: { kind: "project-current" },
+        data: { kind: "groups", groups: [] },
+        problems: [],
       });
 
-      const staleHistory = await niceeval.run(["show", "--run", initialRunId, "--json"]);
+      const staleHistory = await niceeval.run([
+        "show",
+        "--run",
+        initialRunId,
+        "--report",
+        "standard",
+        "--page",
+        "/group/singleton/source",
+        "--json",
+      ]);
       expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
       expect(staleHistory.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: {
-          selection: {
-            policy: "explicit-runs",
-            runIds: [initialRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
+        format: "niceeval.show",
+        selection: {
+          kind: "explicit-runs",
+          runIds: [initialRunId],
         },
+        page: { route: "/group/singleton/source", pageId: "group-singleton" },
+        data: { kind: "experiment-group" },
       });
+      const historyData = staleHistory.json<ShowOverview>().data;
+      if (historyData.kind !== "experiment-group") throw new Error("expected experiment group");
+      expect(historyData.comparison.rows[0]!.passRate.state).toBe("available");
 
       const changedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(changedRun.exitCode, changedRun.diagnostic()).toBe(0);
@@ -151,30 +184,25 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       ).toMatchObject({ event: "start", reused: 0 });
       expect(
         only(
-          changedRun.ndjson<ExpEvent>(),
-          (event) => event.event === "eval" && event.evalId === "source-snapshot",
+          changedRun.expEvalEvents(),
+          (event) => event.evalId === "source-snapshot",
           changedRun.diagnostic(),
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
-      const changedRunId = only(
-        changedRun.expReceipt().runIds,
-        () => true,
-        changedRun.diagnostic(),
-      );
 
-      const refreshedShow = await niceeval.run(["show", "--json"]);
+      const refreshedShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
       expect(refreshedShow.json<ShowOverview>()).toMatchObject({
-        format: "niceeval.report-show/v1",
-        sample: {
-          selection: {
-            policy: "project-current",
-            selectedRunIds: [changedRunId],
-          },
-          runCount: 1,
-          slotCount: 1,
-          denominator: 1,
-        },
+        format: "niceeval.show",
+        selection: { kind: "project-current" },
+        data: { kind: "experiment-group" },
+      });
+      const refreshedData = refreshedShow.json<ShowOverview>().data;
+      if (refreshedData.kind !== "experiment-group") throw new Error("expected experiment group");
+      expect(refreshedData.comparison.rows[0]!.passRate).toMatchObject({
+        state: "available",
+        samples: 1,
+        total: 1,
       });
 
       const removedLatest = await niceeval.run(["show", "--latest"]);

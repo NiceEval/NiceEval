@@ -16,7 +16,7 @@ description: "NiceEval 内置的 Sandbox 和非 Sandbox 适配器分别是什么
 
 - **鉴权**：`ANTHROPIC_API_KEY`（工厂参数 `apiKey` 可覆盖），可选 `ANTHROPIC_BASE_URL`（工厂参数 `baseUrl`）。
 - **装 MCP server**：`mcpServers` 配置项，`setup` 阶段写进 Sandbox 里用户级的 `~/.claude.json`（顶层 `mcpServers` 字段）。两种形态按字段区分：本地 stdio 进程写 `command`（可带 `args` / `env`）。远程 Streamable HTTP 端点写 `url`（可带 `headers`，逐字进请求头，常用于 `Authorization`），写成 `{ "type": "http", "url": …, "headers": … }` 条目。`url` 要 Sandbox 内可达：服务跑在你自己机器上时，先用 cloudflared / tailscale 这类隧道暴露成公网地址。
-- **装 Skill**：`skills: SkillSpec[]`。本地 Skill（`{ kind: "local", path }`，从项目根读文件或目录）或 Repo Skill（`{ kind: "repo", source, ref, skills }`，可钉 commit/tag、可只启用多 Skill 仓库里的一部分）。装进 Sandbox 的 project 级 `.claude/skills/<name>/`，claude CLI 原生发现（原生 `Skill` 工具调用被 adapter 归一为 `skill.loaded` 事件，不重复记成工具调用。用 `t.loadedSkill()` 断言，不是 `t.calledTool("Skill", ...)`）。
+- **装 Skill**：`skills: SkillSpec[]`。本地 Skill（`{ kind: "local", path }`，从项目根读文件或目录）或 Repo Skill（`{ kind: "repo", source, ref, skills }`，可钉 commit/tag、可只启用多 Skill 仓库里的一部分）。装进 Sandbox 的 project 级 `.claude/skills/<name>/`，claude CLI 原生发现。adapter 会把原生 `Skill` 调用归一为 `skill.loaded` 原始事件，不重复记成工具调用；当前公开 Assert-first API 没有专用 Skill 断言，也不能把它伪装成 `calledTool("Skill", ...)`。
 - **装原生 Plugin**：`plugins: ClaudeCodePluginSpec[]`，每一项声明 Marketplace 连接（`name` / `source` / 可选 `ref`）和其中的 Plugin 名。这个类型只属于 claude-code，传不进 codex。复用 Sandbox 的 Experiment 不用额外处理残留：每条 Attempt 开始前，同名 marketplace 注册与已装 Plugin 都会按声明的 `source` / `ref` 重新安装。
 - **官方配置文件**：`settingsFile` 是运行 NiceEval 的机器上的本地项目路径，不是 Sandbox 内路径。它指向一份完整的 Claude Code `settings.json`。路径相对项目根，只允许普通相对路径或 `./` 前缀。`..`、绝对路径、`~` 和解析后逃出项目根的符号链接都会报错。
 
@@ -64,8 +64,8 @@ export default defineExperiment({
 
 ### codex
 
-- **鉴权**：`CODEX_API_KEY`（工厂参数 `apiKey` 可覆盖，不是 `OPENAI_API_KEY`），可选 `CODEX_BASE_URL`（工厂参数 `baseUrl`）接 OpenAI 兼容代理。
-- **Agent 进程环境**：`env` 会注入每次 `codex exec` 与 `codex exec resume`。Codex 启动的 Session 生命周期 Hook、MCP 动态请求头和命令子进程都会继承。值不会拼进 shell 文本或写入安装清单，并按潜在敏感值从 timing、execution 与错误证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或宿主环境提供，并覆盖 `env` 里的同名键。`PATH` 是 Sandbox 受管变量，不接受经 `env` 声明——出现即在 `codexAgent()` 调用时报错，改用 Sandbox 的 `pathPrepend`（见 [Sandbox provider](/zh/tutorials/sandbox-providers)）。
+- **鉴权**：`OPENAI_API_KEY`（工厂参数 `apiKey` 可覆盖），可选 `OPENAI_BASE_URL`（工厂参数 `baseUrl`）接 OpenAI 兼容代理。
+- **Agent 进程环境**：`env` 会注入每次 `codex exec` 与 `codex exec resume`。Codex 启动的 Session 生命周期 Hook、MCP 动态请求头和命令子进程都会继承。值不会拼进 shell 文本或写入安装清单，并按潜在敏感值从 timing、execution 与错误证据中脱敏。`OPENAI_API_KEY` 仍由 `apiKey` 或宿主环境提供，并覆盖 `env` 里的同名键。`PATH` 是 Sandbox 受管变量，不接受经 `env` 声明——出现即在 `codexAgent()` 调用时报错，改用 Sandbox 的 `pathPrepend`（见 [Sandbox provider](/zh/tutorials/sandbox-providers)）。
 - **装 MCP server**：`mcpServers` 配置项，`setup` 阶段追加进 `~/.codex/config.toml` 的 `[mcp_servers.<name>]` 段。两种形态按字段区分：本地 stdio 进程写 `command`（可带 `args` / `env`）。远程 Streamable HTTP 端点写 `url`（可带 `headers`，写成 `[mcp_servers.<name>.http_headers]` 子表）。`url` 要 Sandbox 内可达：服务跑在你自己机器上时，先用 cloudflared / tailscale 这类隧道暴露成公网地址。
 
   <Warning>
@@ -120,7 +120,7 @@ export default defineExperiment({
 
 ### bub
 
-- **鉴权**：`BUB_API_KEY` + `BUB_API_BASE`（OpenAI 兼容代理），工厂参数 `apiKey` / `apiBase` 可覆盖。
+- **鉴权**：`OPENAI_API_KEY` + `OPENAI_BASE_URL`（OpenAI 兼容代理），工厂参数 `apiKey` / `apiBase` 可覆盖。
 - **装 Skill**：`skills: SkillSpec[]`，与另外两个 Adapter 同一个类型。装进 `.agents/skills/<name>/`，发现指引写进 AGENTS.md。
 - **装插件**：`pythonPlugins: PythonPluginSpec[]`（`{ package }`：PyPI 包、版本约束或 git URL），`setup` 阶段进 `uv tool install … --with <package>`。这个类型只属于 bub。package 集合进安装 checkpoint key，插件不同的两个变体不会复用同一份安装缓存。
 - **预制 Bub**：NiceEval 的 E2B 配方会把 Bub、OTel 插件和 Python 插件集合算成安装指纹。Adapter 只复用指纹完全一致的环境。仅在 PATH 里放一个 `bub` 不足以证明兼容。构建入口见 [Sandbox provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
@@ -148,7 +148,7 @@ export default defineExperiment({
 
 | | claude-code | codex | bub |
 |---|---|---|---|
-| 鉴权环境变量 | `ANTHROPIC_API_KEY` | `CODEX_API_KEY` | `BUB_API_KEY` + `BUB_API_BASE` |
+| 鉴权环境变量 | `ANTHROPIC_API_KEY` | `OPENAI_API_KEY` + 可选 `OPENAI_BASE_URL` | `OPENAI_API_KEY` + `OPENAI_BASE_URL` |
 | 额外 Agent 进程环境 | ❌ | ✅ `env` | ❌ |
 | MCP server | ✅ `mcpServers`（stdio + HTTP） | ✅ `mcpServers`（stdio + HTTP） | ❌ |
 | Skill | ✅ `skills: SkillSpec[]`（原生发现） | ✅ `skills: SkillSpec[]`（+ 发现指引） | ✅ `skills: SkillSpec[]`（+ 发现指引） |
@@ -159,7 +159,7 @@ export default defineExperiment({
 | tracing | ✅（beta，仅结构与计时） | ✅ | ✅ |
 | 安装方式 | npm 全局包（需镜像自带 Node） | 自带运行时的原生包（解压即用，镜像无需 Node） | `uv tool install`（PyPI） |
 
-装了什么有据可查：Adapter 在 `setup` 收尾把安装清单交给运行器，存成 Attempt Artifact `agent-setup.json`（库里读 `attempt.agentSetup()`。清单不落沙箱磁盘，agent 看不到它）。清单只记来源、ref、Skill/Plugin 名、解析出的版本，以及官方配置文件的项目相对路径和 SHA-256。不保存配置正文、API Key 或环境变量值。MCP server 同理只记非敏感字段：stdio 形态记 `name` / `command` / `args` 不记 `env`，HTTP 形态记 `name` / `url` 不记 `headers`。
+装了什么有据可查：Adapter 在 `setup` 收尾把安装清单交给运行器，存成 Attempt Artifact `agent-setup.json`（库里读 `attempt.agentSetup()`。清单不落 Sandbox 磁盘，Agent 看不到它）。清单只记来源、ref、Skill/Plugin 名、解析出的版本，以及官方配置文件的项目相对路径和 SHA-256。不保存配置正文、API Key 或环境变量值。MCP server 同理只记非敏感字段：stdio 形态记 `name` / `command` / `args` 不记 `env`，HTTP 形态记 `name` / `url` 不记 `headers`。
 
 ## 非 Sandbox 适配器
 

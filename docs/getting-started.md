@@ -79,7 +79,7 @@ Attachment 状态与 slot 状态分开。页面需要的 Attachment 若未采集
 
 Record 是 immutable whole-Run 的持久事实集。`show`、`view` 与 export 使用持有 shared maintenance lease 的 frozen reader，可以和 writer 并发。
 
-宿主形成 `ReportExecution` 并关闭 reader Scope 后，Report execution 与静态站不再访问 Record。需要不同事实时发布新 Run，不局部编辑已发布 Attempt。
+`show` 关闭目标 Page、view 与静态导出关闭完整站点后，交付内容不再访问 Record。需要不同事实时发布新 Run，不局部编辑已发布 Attempt。
 
 不要在 writer 或 reader lease 存续时编辑目录。Record 不保存编辑事务、历史副本或全局格式整数。
 

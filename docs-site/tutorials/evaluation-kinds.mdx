@@ -1,92 +1,115 @@
 ---
-title: "Evaluation kinds, assertions, and cost limits"
-sidebarTitle: "Evaluation kinds"
-description: "Pass and points evals, value and scoped assertions, LLM-as-judge, and efficiency checks."
+title: "Pass/Fail and Scored Evals"
+sidebarTitle: "Pass/Fail and Scored"
+description: "Use defineEval and defineScoreEval to write pass/fail and scored evals. Calling an assertion registers it; its handle configures one entry only."
 ---
 
-A good eval should decompose "did this succeed?" into signals you can explain. [NiceEval](https://niceeval.com/) lets you mix precise assertions, semantic judges, event-stream checks, and real tests.
+[NiceEval](https://niceeval.com/) provides two eval kinds. `defineEval` answers whether one run meets requirements, and the default Report reads pass rate. `defineScoreEval` answers how much work was completed, and the default Report reads accumulated score. Both kinds register an Assertion when you call it; the handle only configures that same entry.
 
-## Choose the assertion type
-
-| Goal | Recommended mechanism |
-|---|---|
-| Reply contains a fixed substring or matches a regex | `includes` |
-| Structured JSON matches exactly | `equals` |
-| A tool call happened | `t.calledTool` / `t.notCalledTool` |
-| Output is semantically correct | `t.judge.*` |
-| Code actually works | `t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded())` |
-| Cost stays under control | `t.maxTokens` / `t.maxCost` |
-
-## Value assertions
+## Use `defineEval` for requirements that must hold
 
 ```ts
-import { includes, equals } from "niceeval/expect";
-
-t.check(t.reply, includes("refund"));
-t.check(turn.data, equals({ intent: "refund" }));
-t.check(t.reply, includes(/order #\d+/));
-```
-
-`includes` accepts both substrings and regexes. `matches` only accepts a Standard Schema / Zod schema, for structural validation — it does not do regex matching. Value assertions fit results that are precise, stable, and low-ambiguity.
-
-## Scoped assertions
-
-```ts
-t.succeeded();
-t.calledTool("search");
-t.usedNoTools();
-t.sandbox.fileChanged("src/app.ts");
-t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded());
-```
-
-These check facts about the whole run, usually from the standard event stream or sandbox artifacts.
-
-## LLM-as-judge
-
-```ts
-t.judge.autoevals.factuality("Refunds are available within 30 days.", { on: t.reply }).atLeast(0.8);
-t.judge.autoevals.closedQA("The answer is specific, polite, and does not invent policy.", { on: t.reply }).atLeast(0.75);
-```
-
-Judge checks fit semantic quality, but they don't replace every deterministic assertion. Prefer exact checks wherever you can make them.
-
-## Gate vs soft
-
-```ts
-t.check(t.reply, includes("refund").gate());
-t.check(t.reply, includes("friendly tone").atLeast(0.7));
-```
-
-- `gate`: a failure is a failure.
-- `soft`: keep the score, used to compare quality.
-
-## Use tests to score code tasks
-
-Run project tests or short probe scripts inside `.eval.ts`:
-
-```ts
+import { defineEval } from "niceeval";
 import { commandSucceeded, includes } from "niceeval/expect";
 
-const testResult = await t.sandbox.runCommand("npm", ["test"]);
-t.check(testResult, commandSucceeded());
+export default defineEval({
+  async test(t) {
+    const turn = await t.send("Fix the test and explain why.");
 
-const src = await t.sandbox.runShell("find . -name '*.ts' -exec cat {} +");
-t.check(src.stdout, includes(/z\.object\s*\(/));
+    t.check(turn.message, includes("why")).label("Explains the reason for failure");
+
+    const tests = await t.sandbox.runCommand("pnpm", ["test"]);
+    await t.check(tests, commandSucceeded()).label("Tests pass").orStop();
+  },
+});
 ```
 
-## Cost and efficiency
+Boolean `matched` enters the Verdict. `mismatched` makes the final Verdict `failed`, but does not prevent other Assertions from continuing to register and settle. When later code depends on this result, use `await handle.orStop()`.
+
+## Use a continuous quality threshold
+
+A Match such as `similarity(...)` produces a measurement in `[0, 1]`. It calculates character-level Levenshtein edit similarity, not semantic similarity. A pass/fail eval uses `.gate(n)` to give it a hard threshold:
 
 ```ts
-t.maxTokens(25_000);
-t.maxCost(0.1);
+t.check(turn.message, similarity(expected))
+  .gate(0.8)
+  .label("Response is close to the expected content");
 ```
 
-This is especially useful for coding agents and long-chain agents, where hiding quality problems behind heavy retries or excessive tool calls becomes possible.
+Below the `gate` threshold, that requirement fails. `.atLeast(n)` records only a local condition. When you only want an explanation that does not affect the Verdict, use `t.diagnostic(...)`; do not register a measurement that nobody consumes.
+
+## Award points for each completed step
+
+Step-by-step tasks fit `defineScoreEval`. Assertions save only evaluation by default; `.score(n)` is what makes one contribute points. A Boolean match contributes `n`, a mismatch contributes `0`, and a measurement `m` contributes `m * n`.
+
+```ts
+import { defineScoreEval } from "niceeval";
+import { commandSucceeded, includes } from "niceeval/expect";
+
+export default defineScoreEval({
+  description: "Install and start DB-GPT",
+  async test(t) {
+    const turn = await t.send("Install DB-GPT and pass the health check.");
+
+    t.sandbox.fileChanged("db-gpt/.env").score(1).label("Configure the runtime environment");
+
+    const health = await t.sandbox.runCommand("curl", ["-s", "localhost:5670/health"]);
+    t.check(health, commandSucceeded()).score(1).label("Health check is reachable");
+    t.check(health.stdout, includes("ok")).score(1).label("Health-check contents are correct");
+
+    t.check(turn.message, includes("verify")).score(2).label("Reply explains how it verified the result");
+
+    t.score(1).label("Code is concise");
+  },
+});
+```
+
+`t.score(n)` directly registers a contribution. `n` must be finite and nonnegative, and its returned handle can configure only `key` and `label`. One Assertion can use both `.score(n)` and `.atLeast(n)`; the evaluator runs only once and the order is interchangeable.
+
+When `test` returns normally, NiceEval closes the score automatically. No scoring entries is still a valid result with an official `score: 0`: evaluation successfully formed a zero score; it is not an execution failure or insufficient evidence.
+
+## Results for the two eval kinds
+
+| Eval kind | Successful state | Explicit requirement failure | Evidence cannot be obtained | Execution or evaluator error |
+|---|---|---|---|---|
+| `defineEval` | `passed` | `failed` | `errored` | `errored` |
+| `defineScoreEval` | `scored`, with a rankable score | Does not normally invalidate; score continues to accumulate | Unrankable when an item configured with score or control is unavailable | `errored`, retaining only `partialScore` |
+
+`scored` can be a zero score. Zero means evaluation successfully formed a score; it is not execution failure or insufficient evidence. A scored eval has no Attempt Verdict.
+
+## Judge is also a measurement
+
+A Judge recipe registers a measurement Assertion directly. First declare the `judge` capability, then configure a threshold or score on the same handle:
+
+```ts
+export default defineScoreEval({
+  judge: true,
+  async test(t) {
+    const turn = await t.send("Explain the motivation and risk of this change.");
+    turn.judge.autoevals.closedQA("Is the explanation specific and accurate?")
+      .score(20)
+      .atLeast(0.7)
+      .label("Explanation quality");
+  },
+});
+```
+
+The same Judge Assertion can use both `.score(n)` and `.atLeast(n)`, and the evaluator runs only once. Judge has no separate consumption API.
+
+## Use real commands to verify coding tasks
+
+```ts
+await t.check(
+  await t.sandbox.runCommand("pnpm", ["test"]),
+  commandSucceeded(),
+).label("Project tests pass");
+```
+
+When the grading standard itself is a file, use `loadText` to read hidden tests, a reference implementation, or a test script. A file change reruns the corresponding eval. See [Grade Hidden Tests](/tutorials/criteria-files).
 
 ## Practical advice
 
-- Write one or two gates first to establish the task's baseline.
-- Then add soft scores to compare quality.
-- Use Judge for complex semantics, but give the Judge a clear rubric.
-- For coding-agent results, verify with real tests wherever possible.
-- Write failure messages clearly, so you can locate problems directly from the report.
+- Register every condition that must hold as a Boolean Assertion so one Attempt gathers complete failure information.
+- When later steps depend on one result, use `await handle.orStop()`.
+- Use `defineScoreEval` when partial completion is meaningful; a normal `test` return closes it automatically.
+- Use Judge for open-ended semantics. Prefer deterministic Matches for exact files, commands, and structured output.

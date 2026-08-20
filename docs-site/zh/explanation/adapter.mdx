@@ -188,7 +188,9 @@ await t.respondAll("approve");
 //                 { requestId: "req_2", optionId: "approve" }] }
 ```
 
-Adapter 侧的对应义务：按 `requestId` 把裁决交回应用（不要按顺序猜）。被人拒绝的调用把 tool `operation.finished` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，这样 `noFailedActions()` 不误伤，`calledTool(..., { status: "rejected" })` 可精确断言。
+Adapter 侧按 `requestId` 把裁决交回应用，不按顺序猜。被人拒绝的调用把 tool `operation.finished` 的 `status` 置 `"rejected"`，而不是 `"failed"`。
+
+拒绝是人的决定，不是工具故障。这样 `noFailedActions()` 不会误伤，`calledTool(toolMatch(..., { status: "rejected" }))` 也能精确断言。
 
 ### 上下文：`AgentContext`
 
@@ -280,12 +282,12 @@ turn.data.amount;   // 类型是 number——不是 unknown，不用手动收窄
 
 | Turn 字段 | 运行器拿它做什么 | 评估用例作者在哪感知到 |
 |---|---|---|
-| `events` | 追加进本会话线的事件流，`deriveRunFacts` 折叠成事实（`toolCalls`、`parked`、`messageCount`…）。最后一条 assistant `message` 同时更新 `t.reply` | 全部作用域断言：`t.calledTool()`、`t.messageIncludes()`…。`t.events` 可直接查 |
-| `status` | 记录本轮终态。`"waiting"` 时把本轮的 `input.requested` 收进待答列表 | `t.succeeded()` / `t.parked()`。`"waiting"` 之后用 `t.respond()` 接 |
+| `events` | 追加进本会话线，归一为消息与逻辑工具 occurrence。最后一条 assistant `message` 同时更新 `t.reply` | `turn.calledTool()`、`turn.event(...)` 等作用域断言；`t.events` 可直接查 |
+| `status` | 记录本轮终态。`"waiting"` 时把本轮的 `input.requested` 收进待答列表 | `t.succeeded()` 或 `t.check(turn.status, equals("waiting"))`。`"waiting"` 之后用 `t.respond()` 接 |
 | `usage` | 逐轮累加到会话线与整次运行 | `maxTokens` / `maxCost` 断言、报告里的用量 |
-| `data` | 按 send 上声明的 `output` schema 校验——不匹配本轮直接 `failed`。通过才保存 | `turn.data`（按声明强类型）、`outputEquals` |
+| `data` | 按 send 上声明的 `output` schema 校验——不匹配本轮直接 `failed`。通过才保存 | `turn.data`（按声明强类型）、`t.check(turn.data, equals(...))` 或 `matches(...)` |
 
-`await t.send()` 拿到的句柄就是对这一轮 Turn 的视角：turn 级断言（`draft.parked()` 这类）只看这一轮的 `events`，`t` 级断言看整条会话线累计的。所以 Adapter 不需要"配合"任何断言——把这四个字段填对，断言、评分、报告全部在下游自动发生。
+`await t.send()` 拿到的句柄就是对这一轮 Turn 的视角：turn 级断言只看这一轮的 `events` 与字段，`t` 级断言看整条会话线累计的。因此 Adapter 不需要"配合"任何断言——把这四个字段填对，断言、评分、报告全部在下游自动发生。
 
 ## 能力从哪来：构造证明，不是问卷
 
@@ -298,7 +300,7 @@ Sandbox Agent，只有它的回调拿到带真实 `sandbox` 的 `SandboxAgentCon
 |---|---|---|
 | `t.send`、`t.sendFile`、`t.check`、`t.judge`… | 任何 Agent 都有 | 无 |
 | 多次 `t.send()`、`t.reply`、`t.newSession()` | `send` 里接了 `ctx.session` 的续接存取器（typed slot 或 `id` + `capture()`）——没接则每轮各是新对话 | 无——存取器就在 `ctx` 上 |
-| `t.respond()` / `t.parked()` 等 HITL | send 返回过 `"waiting"` + `input.requested` 事件 | 无——做到了就是有 |
+| `t.respond()`、状态检查等 HITL | send 返回过 `"waiting"` + `input.requested` 事件 | 无——做到了就是有 |
 | `turn.calledTool()` / `turn.toolOrder()` 等正断言 | events 里有配对的 `operation.started` / `operation.finished` | 无——有事件就能断 |
 | `t.notCalledTool()` / `t.usedNoTools()` 等负断言**可信** | 事件来自带完整性证明的官方转换器 | 无——证明随转换器返回值走 |
 | `t.sandbox`、`t.sandbox.fileChanged()` 等 | `defineSandboxAgent` 构造 | 无 |

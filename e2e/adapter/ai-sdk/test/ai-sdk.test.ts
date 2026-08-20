@@ -1,15 +1,15 @@
 // owner: docs/engineering/testing/e2e/adapter/ai-sdk.md#adapter-ai-sdk-live-compatibility
 //
 // 单文件 Journey：启动真实 AI SDK HTTP 应用，运行安装后的 niceeval candidate，
-// 再从公开 CLI 读回 Experiment、attempt、execution 与 timing。测试不导入候选
+// 再从公开 CLI 读回 Experiment、attempt 与 execution。测试不导入候选
 // 源码或类型，不读取私有结果布局；判分仍由 evals/ 内的真实 uiMessageStreamAgent
 // 事件断言负责。
 
 import "dotenv/config";
 import {
+  assertExpEvalOutcomes,
   command,
-  type ExpEvalEvent,
-  type ExpEvent,
+  type ExpEvalOutcomeExpectation,
   type ProcessReceipt,
   waitForOutput,
   withProcess,
@@ -19,7 +19,15 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
 
-const EXPECTED_EVALS = ["tool-call", "hitl-approval", "session-replay"] as const;
+const EXPECTED_OUTCOMES = [
+  // tool-call：天气请求须以裸名调用 get_weather，并按 call ID 配对输出；单次请求期望 passed/1。
+  { experimentId: "ci", evalId: "tool-call", verdict: "passed", attempts: 1, passed: 1 },
+  // hitl-approval：approve 须恢复 completed，独立 deny 分支须 rejected 且无工具结果；期望 passed/1。
+  { experimentId: "ci", evalId: "hitl-approval", verdict: "passed", attempts: 1, passed: 1 },
+  // session-replay：同一会话须回忆首轮事实，新会话须隔离历史；两个分支成立时为 passed/1。
+  { experimentId: "ci", evalId: "session-replay", verdict: "passed", attempts: 1, passed: 1 },
+] as const satisfies readonly ExpEvalOutcomeExpectation[];
+const EXPECTED_EVALS = EXPECTED_OUTCOMES.map((outcome) => outcome.evalId);
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 
 const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
@@ -79,51 +87,31 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
         },
       );
       expect(run.exitCode, run.diagnostic()).toBe(0);
-      const events = run.ndjson<ExpEvent>();
+      const evalEvents = assertExpEvalOutcomes(
+        run.expEvalEvents(),
+        EXPECTED_OUTCOMES,
+        () => run.diagnostic(),
+      );
       // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
       // completion 与 runIds；每个 Eval 的 identity/verdict/attempts 由中间 eval
       // 事件逐一断言，live provider 故障不会冒充通过。
       const inv = run.expReceipt();
       expect(inv.completion, run.diagnostic()).toBe("completed");
       expect(inv.runIds, run.diagnostic()).toHaveLength(1);
-      for (const evalId of EXPECTED_EVALS) {
-        const evalEvent = events.find(
-          (event): event is ExpEvalEvent =>
-            "event" in event && event.event === "eval" && event.evalId === evalId,
-        );
-        expect(evalEvent, run.diagnostic()).toBeDefined();
-        expect(evalEvent).toMatchObject({
-          event: "eval",
-          evalId,
-          verdict: "passed",
-          attempts: 1,
-        });
-      }
-
       const locators = new Map<string, string>();
       for (const evalId of EXPECTED_EVALS) {
-        const evalEvent = events.find(
-          (event): event is ExpEvalEvent =>
-            "event" in event && event.event === "eval" && event.evalId === evalId,
-        );
-        expect(evalEvent, run.diagnostic()).toMatchObject({ verdict: "passed" });
-        expect(evalEvent?.locator, run.diagnostic()).toMatch(/^@/);
-        locators.set(evalId, evalEvent!.locator!);
+        const evalEvent = evalEvents.find((event) => event.evalId === evalId)!;
+        locators.set(evalId, evalEvent.locator);
       }
 
-      // outcome：execution 是适配器收到的公开投影；工具名、入参和 OTel 节点
-      // 时间注释都必须穿过归一化、落盘与 CLI 展示。
+      // outcome：execution 是适配器收到的公开投影；工具名与入参必须穿过
+      // 归一化、落盘与 CLI 展示。
       const toolLocator = locators.get("tool-call")!;
       const execution = await niceeval.run(["show", toolLocator, "--execution"]);
       expect(execution.exitCode, execution.diagnostic()).toBe(0);
       expect(execution.stdout).toContain("get_weather");
       expect(execution.stdout).toMatch(/北京/);
 
-      // timing 公开命令独立证明该 Adapter 的 runner 阶段可读。
-      const timing = await niceeval.run(["show", toolLocator, "--timing"]);
-      expect(timing.exitCode, timing.diagnostic()).toBe(0);
-      expect(timing.stdout).toContain("eval.run");
-      expect(timing.stdout).toMatch(/turn\s+turn1\b/);
     },
   );
 });

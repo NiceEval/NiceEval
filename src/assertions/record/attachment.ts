@@ -1,15 +1,24 @@
-import { Either, Schema } from "effect";
+import { createHash } from "node:crypto";
+
+import { Either, Schema, Stream } from "effect";
 import {
-  defineRecordAttachmentFamily,
-  makeRecordAttachmentWrite,
+  makeFixedRecordAttachmentWrite,
+  makeRecordBlobSource,
   validateRecordAttachmentWrite,
+  type FixedAttachmentWriteSpec,
   type RecordAttachmentBlobBuilder,
   type RecordAttachmentBlobDraft,
-  type RecordAttachmentValue,
+  type RecordAttachmentPayloadSnapshot,
   type RecordAttachmentWrite,
   type RecordBlobRef,
   type RecordBlobSource,
 } from "../../record/attachment/index.ts";
+import { Sha256DigestSchema } from "../../record/codec/identifiers.ts";
+import type {
+  AssertionSourceSite,
+  AssertionsAttachment,
+} from "../../record/family/assertions.ts";
+import type { Sha256Digest } from "../../record/model/identifiers.ts";
 import type {
   AssertionCoverage,
   AssertionCriterion,
@@ -21,36 +30,36 @@ import type {
   SealedAssertionEntry,
 } from "../api.ts";
 import {
-  defineBuiltinJsonRecordAttachment,
-} from "../../record/attachment/internal.ts";
-import {
   AssertionEntryIdSchema,
   AssertionsExactParseOptions,
-  BoundedJsonObjectV1Schema,
+  BoundedJsonObjectSchema,
+  BoundedJsonValueSchema,
+  MAX_ASSERTION_DOCUMENT_BYTES,
   createAssertionsRecordSchemas,
-  projectAssertionsDocumentV1,
-  type ThirdPartyCriterionRegistryV1,
+  isBoundedJsonObject,
+  projectAssertionsDocument,
+  type ThirdPartyCriterionRegistry,
 } from "./codec.ts";
 import {
-  createAssertionsDocumentBuilderV1,
-  type AssertionEntryInputV1,
-  type AssertionsDocumentBuilderV1,
-  type AssertionsEntryIdSourceV1,
-  type AssertionsProducerErrorV1,
+  createAssertionsDocumentBuilder,
+  type AssertionEntryInput,
+  type AssertionsDocumentBuilder,
+  type AssertionsEntryIdSource,
+  type AssertionsProducerError,
 } from "./producer.ts";
 import type {
   AssertionEntryId,
-  AssertionEntryV1,
-  AssertionEntryOuterV1,
-  AssertionCoverageV1,
-  AssertionLimitationV1,
-  AssertionMaterialV1,
-  AssertionsDocumentOuterV1,
-  AssertionsProjectionV1,
-  BoundedJsonObjectV1,
-  BoundedJsonValueV1,
-  SealedAssertionResultV1,
-  WritableCriterionEnvelopeV1,
+  AssertionEntry,
+  AssertionEntryOuter,
+  AssertionCoverage as RecordAssertionCoverage,
+  AssertionLimitation as RecordAssertionLimitation,
+  AssertionMaterial as RecordAssertionMaterial,
+  AssertionsDocumentOuter,
+  AssertionsProjection,
+  BoundedJsonObject,
+  BoundedJsonValue,
+  SealedAssertionResult,
+  WritableCriterionEnvelope,
 } from "./model.ts";
 
 /**
@@ -72,30 +81,30 @@ const RecordBlobRefPositionSchema: Schema.Schema<
  * real Attachment builder exists. This is deliberately not a RecordBlobRef:
  * final payloads replace it with a ref minted by `blobs.add` below.
  */
-interface AssertionsProvisionalBlobRefV1 {
+interface AssertionsProvisionalBlobRef {
   readonly kind: "assertions-provisional-blob-ref";
 }
 
-const AssertionsProvisionalBlobRefV1Schema: Schema.Schema<
-  AssertionsProvisionalBlobRefV1
+const AssertionsProvisionalBlobRefSchema: Schema.Schema<
+  AssertionsProvisionalBlobRef
 > = Schema.Struct({
   kind: Schema.Literal("assertions-provisional-blob-ref"),
 });
 
-export const assertionsRecordSchemasV1 = createAssertionsRecordSchemas(
+export const assertionsRecordSchemas = createAssertionsRecordSchemas(
   RecordBlobRefPositionSchema,
 );
 
-const assertionsProducerSchemasV1 = createAssertionsRecordSchemas(
-  AssertionsProvisionalBlobRefV1Schema,
+const assertionsProducerSchemas = createAssertionsRecordSchemas(
+  AssertionsProvisionalBlobRefSchema,
 );
 
 /** Complete payload-order projection required by Record's closure validator. */
-export function assertionBlobRefsV1(
-  document: AssertionsDocumentOuterV1<RecordBlobRef>,
+export function assertionBlobRefs(
+  document: AssertionsDocumentOuter<RecordBlobRef>,
 ): readonly RecordBlobRef[] {
   const refs: RecordBlobRef[] = [];
-  const collect = (material: AssertionMaterialV1<RecordBlobRef>): void => {
+  const collect = (material: RecordAssertionMaterial<RecordBlobRef>): void => {
     if (material.kind === "blob") refs.push(material.ref);
   };
   for (const entry of document.entries) {
@@ -105,86 +114,54 @@ export function assertionBlobRefsV1(
   return Object.freeze(refs);
 }
 
-function requireDefinition<Result, Failure>(
-  result: Either.Either<Result, Failure>,
-  message: string,
-): Result {
-  if (Either.isLeft(result)) {
-    throw new Error(message);
-  }
-  return result.right;
-}
-
-export const assertionsAttachmentDefinitionV1 = requireDefinition(
-  defineBuiltinJsonRecordAttachment({
-    owner: "attempt",
-    name: "niceeval.assertions",
-    schemaId: "niceeval.assertions/v1",
-    schema: assertionsRecordSchemasV1.outerDocument,
-    blobRefs: assertionBlobRefsV1,
-  }),
-  "Assertions v1 RecordAttachment definition must be valid",
-);
-
-export const assertionsAttachmentFamilyV1 = requireDefinition(
-  defineRecordAttachmentFamily({
-    current: assertionsAttachmentDefinitionV1,
-    migrations: [],
-  }),
-  "Assertions v1 RecordAttachment family must be valid",
-);
-
-export type AssertionMaterialInputV1<E, R> =
+export type AssertionMaterialInput<E, R> =
   | {
       readonly kind: "snapshot";
-      readonly value: BoundedJsonValueV1;
+      readonly value: BoundedJsonValue;
     }
   | {
       readonly kind: "blob";
       readonly source: RecordBlobSource<E, R>;
       readonly encoding: "utf-8" | "binary";
       readonly byteLength: number;
-      readonly preview: string;
-    }
-  | {
-      readonly kind: "record-attachment";
-      readonly schemaId: "niceeval.diff/v1";
+      /** Digest declared by the producer and checked against sealed bytes. */
+      readonly sha256: Sha256Digest;
       readonly preview: string;
     };
 
-export interface AssertionsAttachmentEntryInputV1<E, R> {
-  readonly display: AssertionEntryInputV1<RecordBlobRef>["display"];
-  readonly criterion: AssertionEntryInputV1<RecordBlobRef>["criterion"];
-  readonly subject: AssertionMaterialInputV1<E, R>;
-  readonly evidence: readonly AssertionMaterialInputV1<E, R>[];
-  readonly coverage: AssertionEntryInputV1<RecordBlobRef>["coverage"];
-  readonly limitations: AssertionEntryInputV1<RecordBlobRef>["limitations"];
-  readonly result: AssertionEntryInputV1<RecordBlobRef>["result"];
+export interface AssertionsAttachmentEntryInput<E, R> {
+  readonly display: AssertionEntryInput<RecordBlobRef>["display"];
+  readonly criterion: AssertionEntryInput<RecordBlobRef>["criterion"];
+  readonly subject: AssertionMaterialInput<E, R>;
+  readonly evidence: readonly AssertionMaterialInput<E, R>[];
+  readonly coverage: AssertionEntryInput<RecordBlobRef>["coverage"];
+  readonly limitations: AssertionEntryInput<RecordBlobRef>["limitations"];
+  readonly result: AssertionEntryInput<RecordBlobRef>["result"];
 }
 
-function encodeSnapshotValueV1(value: AssertionSnapshotValue): BoundedJsonValueV1 {
+function encodeSnapshotValue(value: AssertionSnapshotValue): BoundedJsonValue {
   if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
     return value;
   }
   if (Array.isArray(value)) {
-    return Object.freeze(value.map(encodeSnapshotValueV1));
+    return Object.freeze(value.map(encodeSnapshotValue));
   }
-  const encoded: globalThis.Record<string, BoundedJsonValueV1> = {};
+  const encoded: globalThis.Record<string, BoundedJsonValue> = {};
   for (const [key, nested] of Object.entries(value)) {
-    encoded[key] = encodeSnapshotValueV1(nested);
+    encoded[key] = encodeSnapshotValue(nested);
   }
   return Object.freeze(encoded);
 }
 
-function encodeSnapshotObjectV1(value: AssertionSnapshotObject): BoundedJsonObjectV1 {
-  const encoded: globalThis.Record<string, BoundedJsonValueV1> = {};
+function encodeSnapshotObject(value: AssertionSnapshotObject): BoundedJsonObject {
+  const encoded: globalThis.Record<string, BoundedJsonValue> = {};
   for (const [key, nested] of Object.entries(value)) {
-    encoded[key] = encodeSnapshotValueV1(nested);
+    encoded[key] = encodeSnapshotValue(nested);
   }
   return Object.freeze(encoded);
 }
 
-function encodeCriterionV1(criterion: AssertionCriterion): WritableCriterionEnvelopeV1 {
+function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelope {
   switch (criterion.kind) {
     case "value-match":
       return Object.freeze({
@@ -277,30 +254,57 @@ function encodeCriterionV1(criterion: AssertionCriterion): WritableCriterionEnve
       return Object.freeze({
         name: criterion.name,
         schemaId: criterion.schemaId,
-        data: encodeSnapshotValueV1(criterion.data),
+        data: encodeSnapshotValue(criterion.data),
       });
   }
 }
 
-function encodeMaterialV1(
+function encodeMaterial(
   material: AssertionMaterial,
-): AssertionMaterialInputV1<never, never> {
+): AssertionMaterialInput<never, never> {
   switch (material.kind) {
-    case "snapshot":
+    case "snapshot": {
+      const value = encodeSnapshotValue(material.value);
+      const bytes = new TextEncoder().encode(JSON.stringify(value));
+      const inline = Schema.decodeUnknownEither(
+        BoundedJsonValueSchema,
+        AssertionsExactParseOptions,
+      )(value);
+      if (bytes.byteLength > 32 * 1_024 || Either.isLeft(inline)) {
+        const digest = Schema.decodeUnknownEither(Sha256DigestSchema)(
+          createHash("sha256").update(bytes).digest("hex"),
+        );
+        if (Either.isLeft(digest)) {
+          throw new Error("Assertions snapshot produced an invalid SHA-256 digest");
+        }
+        return Object.freeze({
+          kind: "blob" as const,
+          source: makeRecordBlobSource(Stream.succeed(bytes)),
+          encoding: "utf-8" as const,
+          byteLength: bytes.byteLength,
+          sha256: digest.right,
+          preview: `JSON Assertion material stored as a ${bytes.byteLength}-byte blob`,
+        });
+      }
       return Object.freeze({
         kind: "snapshot" as const,
-        value: encodeSnapshotValueV1(material.value),
+        value: inline.right,
       });
+    }
     case "record-attachment":
       return Object.freeze({
-        kind: "record-attachment" as const,
-        schemaId: "niceeval.diff/v1" as const,
-        preview: material.preview,
+        // The durable Assertions closure cannot hold a capability into the
+        // File Changes family. Keep only the already-safe display material.
+        kind: "snapshot" as const,
+        value: Object.freeze({
+          kind: "file-changes",
+          preview: material.preview,
+        }),
       });
   }
 }
 
-function encodeCoverageV1(coverage: AssertionCoverage): AssertionCoverageV1 {
+function encodeCoverage(coverage: AssertionCoverage): AssertionCoverage {
   switch (coverage.state) {
     case "complete":
       return Object.freeze({ state: "complete" as const });
@@ -313,10 +317,10 @@ function encodeCoverageV1(coverage: AssertionCoverage): AssertionCoverageV1 {
   }
 }
 
-function encodeLimitationsV1(
+function encodeLimitations(
   limitations: readonly AssertionLimitation[],
-): readonly AssertionLimitationV1[] {
-  return Object.freeze(limitations.map((limitation): AssertionLimitationV1 => {
+): readonly AssertionLimitation[] {
+  return Object.freeze(limitations.map((limitation): AssertionLimitation => {
     switch (limitation.kind) {
       case "redacted":
         return Object.freeze({ kind: "redacted" as const, fieldCount: limitation.fieldCount });
@@ -334,10 +338,10 @@ function encodeLimitationsV1(
   }));
 }
 
-export function encodeAssertionResultV1(result: AssertionResult): SealedAssertionResultV1 {
+export function encodeAssertionResult(result: AssertionResult): SealedAssertionResult {
   const diagnostic = result.diagnostic === undefined
     ? {}
-    : { diagnostic: encodeSnapshotObjectV1(result.diagnostic) };
+    : { diagnostic: encodeSnapshotObject(result.diagnostic) };
   switch (result.state) {
     case "matched":
       return Object.freeze({
@@ -392,64 +396,64 @@ export function encodeAssertionResultV1(result: AssertionResult): SealedAssertio
 }
 
 /** Private Runtime → durable Assertions codec bridge. */
-export function encodeSealedAssertionEntryV1(
+export function encodeSealedAssertionEntry(
   entry: SealedAssertionEntry,
-): AssertionsAttachmentEntryInputV1<never, never> {
+): AssertionsAttachmentEntryInput<never, never> {
   return Object.freeze({
     display: Object.freeze({
       ...(entry.display.key === undefined ? {} : { key: entry.display.key }),
       ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
       groupPath: Object.freeze([...entry.display.groupPath]),
     }),
-    criterion: encodeCriterionV1(entry.criterion),
-    subject: encodeMaterialV1(entry.subject),
-    evidence: Object.freeze(entry.evidence.map(encodeMaterialV1)),
-    coverage: encodeCoverageV1(entry.coverage),
-    limitations: encodeLimitationsV1(entry.limitations),
-    result: encodeAssertionResultV1(entry.result),
+    criterion: encodeCriterion(entry.criterion),
+    subject: encodeMaterial(entry.subject),
+    evidence: Object.freeze(entry.evidence.map(encodeMaterial)),
+    coverage: encodeCoverage(entry.coverage),
+    limitations: encodeLimitations(entry.limitations),
+    result: encodeAssertionResult(entry.result),
   });
 }
 
-export interface AssertionsAttachmentProducerV1<E, R> {
+export interface AssertionsAttachmentProducer<E, R> {
   readonly append: (
-    entry: AssertionsAttachmentEntryInputV1<E, R>,
-  ) => Either.Either<AssertionEntryId, AssertionsProducerErrorV1>;
-  readonly seal: () => Either.Either<
+    entry: AssertionsAttachmentEntryInput<E, R>,
+  ) => Either.Either<AssertionEntryId, AssertionsProducerError>;
+  readonly seal: (input?: AssertionsAttachmentSealInput) => Either.Either<
     RecordAttachmentWrite<"attempt", E, R>,
-    AssertionsProducerErrorV1
+    AssertionsProducerError
   >;
 }
 
-function makeProvisionalBlobRefV1(): AssertionsProvisionalBlobRefV1 {
+export interface AssertionsAttachmentSealInput {
+  /** Semantic joins to origin-Run Sources, embedded in this fixed family. */
+  readonly sourceSites?: readonly AssertionSourceSite[];
+}
+
+function makeProvisionalBlobRef(): AssertionsProvisionalBlobRef {
   return Object.freeze({ kind: "assertions-provisional-blob-ref" });
 }
 
 function provisionalMaterial<E, R>(
-  material: AssertionMaterialInputV1<E, R>,
-): AssertionMaterialV1<AssertionsProvisionalBlobRefV1> {
+  material: AssertionMaterialInput<E, R>,
+): RecordAssertionMaterial<AssertionsProvisionalBlobRef> {
   switch (material.kind) {
     case "snapshot":
       return Object.freeze({ kind: "snapshot", value: material.value });
-    case "record-attachment":
-      return Object.freeze({
-        kind: "record-attachment",
-        schemaId: material.schemaId,
-        preview: material.preview,
-      });
     case "blob":
       return Object.freeze({
         kind: "blob",
-        ref: makeProvisionalBlobRefV1(),
+        ref: makeProvisionalBlobRef(),
         encoding: material.encoding,
         byteLength: material.byteLength,
+        sha256: material.sha256,
         preview: material.preview,
       });
   }
 }
 
 function provisionalEntry<E, R>(
-  entry: AssertionsAttachmentEntryInputV1<E, R>,
-): AssertionEntryInputV1<AssertionsProvisionalBlobRefV1> {
+  entry: AssertionsAttachmentEntryInput<E, R>,
+): AssertionEntryInput<AssertionsProvisionalBlobRef> {
   return Object.freeze({
     display: entry.display,
     criterion: entry.criterion,
@@ -461,14 +465,14 @@ function provisionalEntry<E, R>(
   });
 }
 
-interface AssertionsAttachmentEntrySourcesV1<E, R> {
-  readonly subject: AssertionMaterialInputV1<E, R>;
-  readonly evidence: readonly AssertionMaterialInputV1<E, R>[];
+interface AssertionsAttachmentEntrySources<E, R> {
+  readonly subject: AssertionMaterialInput<E, R>;
+  readonly evidence: readonly AssertionMaterialInput<E, R>[];
 }
 
 function captureEntrySources<E, R>(
-  entry: AssertionsAttachmentEntryInputV1<E, R>,
-): AssertionsAttachmentEntrySourcesV1<E, R> {
+  entry: AssertionsAttachmentEntryInput<E, R>,
+): AssertionsAttachmentEntrySources<E, R> {
   return Object.freeze({
     subject: entry.subject,
     evidence: Object.freeze([...entry.evidence]),
@@ -476,26 +480,16 @@ function captureEntrySources<E, R>(
 }
 
 function materializeMaterial<E, R>(
-  material: AssertionMaterialV1<AssertionsProvisionalBlobRefV1>,
-  source: AssertionMaterialInputV1<E, R>,
+  material: RecordAssertionMaterial<AssertionsProvisionalBlobRef>,
+  source: AssertionMaterialInput<E, R>,
   blobs: RecordAttachmentBlobBuilder,
   drafts: RecordAttachmentBlobDraft<E, R>[],
-): AssertionMaterialV1<RecordBlobRef> {
+): RecordAssertionMaterial<RecordBlobRef> {
   if (material.kind === "snapshot") {
     if (source.kind !== "snapshot") {
       throw new Error("Assertions producer changed a sealed material kind");
     }
     return Object.freeze({ kind: "snapshot", value: material.value });
-  }
-  if (material.kind === "record-attachment") {
-    if (source.kind !== "record-attachment") {
-      throw new Error("Assertions producer changed a sealed material kind");
-    }
-    return Object.freeze({
-      kind: "record-attachment",
-      schemaId: material.schemaId,
-      preview: material.preview,
-    });
   }
   if (source.kind !== "blob") {
     throw new Error("Assertions producer changed a sealed material kind");
@@ -507,15 +501,21 @@ function materializeMaterial<E, R>(
     ref: draft.ref,
     encoding: material.encoding,
     byteLength: material.byteLength,
+    sha256: material.sha256,
     preview: material.preview,
   });
 }
 
 function outerCriterion(
-  criterion: AssertionEntryV1<AssertionsProvisionalBlobRefV1>["criterion"],
-): AssertionEntryOuterV1<RecordBlobRef>["criterion"] {
+  criterion: AssertionEntry<AssertionsProvisionalBlobRef>["criterion"],
+): AssertionEntryOuter<RecordBlobRef>["criterion"] {
+  // Effect's structural decoder reads fields before a trailing filter. Keep
+  // the descriptor-aware raw check in front so accessors are never executed.
+  if (!isBoundedJsonObject(criterion)) {
+    throw new Error("An Assertions v1 writer criterion must be bounded JSON");
+  }
   const decoded = Schema.decodeUnknownEither(
-    BoundedJsonObjectV1Schema,
+    BoundedJsonObjectSchema,
     AssertionsExactParseOptions,
   )(criterion);
   if (Either.isLeft(decoded)) {
@@ -525,15 +525,16 @@ function outerCriterion(
 }
 
 function materializeDocument<E, R>(
-  sources: readonly AssertionsAttachmentEntrySourcesV1<E, R>[],
-  sealedEntries: readonly AssertionEntryV1<AssertionsProvisionalBlobRefV1>[],
+  sources: readonly AssertionsAttachmentEntrySources<E, R>[],
+  sealedEntries: readonly AssertionEntry<AssertionsProvisionalBlobRef>[],
+  sourceSites: readonly AssertionSourceSite[],
   blobs: RecordAttachmentBlobBuilder,
 ): {
-  readonly payload: AssertionsDocumentOuterV1<RecordBlobRef>;
+  readonly payload: AssertionsAttachment;
   readonly blobs: readonly RecordAttachmentBlobDraft<E, R>[];
 } {
   const drafts: RecordAttachmentBlobDraft<E, R>[] = [];
-  const materializedEntries: AssertionEntryOuterV1<RecordBlobRef>[] = [];
+  const materializedEntries: AssertionEntryOuter<RecordBlobRef>[] = [];
   for (const [index, sealed] of sealedEntries.entries()) {
     const source = sources[index];
     if (source === undefined) {
@@ -562,7 +563,13 @@ function materializeDocument<E, R>(
     }));
   }
   return Object.freeze({
-    payload: Object.freeze({ entries: Object.freeze(materializedEntries) }),
+    payload: Object.freeze({
+      entries: Object.freeze(materializedEntries),
+      // Source sites are joined into this fixed family by the runner's source
+      // capture before final sealing. A producer with no captured site writes
+      // the exact empty sequence instead of another durable family.
+      sourceSites: Object.freeze([...sourceSites]),
+    }),
     blobs: Object.freeze(drafts),
   });
 }
@@ -572,35 +579,51 @@ function materializeDocument<E, R>(
  * inside one generic RecordAttachment write. Callers never receive a raw ref,
  * path, key, or bytes channel, so cross-Attachment closure is impossible.
  */
-export function createAssertionsAttachmentProducerV1<E, R>(input: {
-  readonly entryIds: AssertionsEntryIdSourceV1;
-}): AssertionsAttachmentProducerV1<E, R> {
-  const documentBuilder: AssertionsDocumentBuilderV1<AssertionsProvisionalBlobRefV1> =
-    createAssertionsDocumentBuilderV1({
-      documentSchema: assertionsProducerSchemasV1.document,
-      entryIds: input.entryIds,
+export function createAssertionsAttachmentProducer<E, R>(config: {
+  readonly entryIds: AssertionsEntryIdSource;
+  /** Injected by the fixed catalog consumer to avoid a catalog initialization cycle. */
+  readonly write: FixedAttachmentWriteSpec<"attempt", AssertionsAttachment>;
+}): AssertionsAttachmentProducer<E, R> {
+  const documentBuilder: AssertionsDocumentBuilder<AssertionsProvisionalBlobRef> =
+    createAssertionsDocumentBuilder({
+      documentSchema: assertionsProducerSchemas.document,
+      entryIds: config.entryIds,
     });
-  const sources: AssertionsAttachmentEntrySourcesV1<E, R>[] = [];
+  const sources: AssertionsAttachmentEntrySources<E, R>[] = [];
   let sealed:
-    | Either.Either<RecordAttachmentWrite<"attempt", E, R>, AssertionsProducerErrorV1>
+    | Either.Either<RecordAttachmentWrite<"attempt", E, R>, AssertionsProducerError>
     | undefined;
 
-  const producer: AssertionsAttachmentProducerV1<E, R> = {
+  const producer: AssertionsAttachmentProducer<E, R> = {
     append(entry) {
       const appended = documentBuilder.append(provisionalEntry(entry));
       if (Either.isRight(appended)) sources.push(captureEntrySources(entry));
       return appended;
     },
-    seal() {
+    seal(sealInput: AssertionsAttachmentSealInput = {}) {
       if (sealed !== undefined) return sealed;
-      const document = documentBuilder.seal();
+      const sourceSites = Object.freeze([...(sealInput.sourceSites ?? [])]);
+      const emptyEntriesBytes = new TextEncoder().encode(JSON.stringify({ entries: [] })).byteLength;
+      const sourceSitesFramingBytes = new TextEncoder().encode(JSON.stringify({
+        entries: [],
+        sourceSites,
+      })).byteLength - emptyEntriesBytes;
+      const document = documentBuilder.seal({
+        maximumBytes: MAX_ASSERTION_DOCUMENT_BYTES - sourceSitesFramingBytes,
+      });
       if (Either.isLeft(document)) {
         sealed = Either.left(document.left);
         return sealed;
       }
-      const write = makeRecordAttachmentWrite(
-        assertionsAttachmentFamilyV1,
-        (blobs) => materializeDocument(sources, document.right.entries, blobs),
+      const write = makeFixedRecordAttachmentWrite(
+        config.write,
+        (blobs) =>
+          materializeDocument(
+            sources,
+            document.right.entries,
+            sourceSites,
+            blobs,
+          ),
       );
       const closure = validateRecordAttachmentWrite(write);
       if (Either.isLeft(closure)) {
@@ -613,21 +636,22 @@ export function createAssertionsAttachmentProducerV1<E, R>(input: {
   return Object.freeze(producer);
 }
 
-export interface AssertionsProjectorDefinitionV1 {
-  readonly family: typeof assertionsAttachmentFamilyV1;
+export interface AssertionsProjectorDefinition {
+  readonly write: FixedAttachmentWriteSpec<"attempt", AssertionsAttachment>;
   readonly project: (
-    value: RecordAttachmentValue<AssertionsDocumentOuterV1<RecordBlobRef>>,
-  ) => AssertionsProjectionV1<RecordBlobRef>;
+    value: RecordAttachmentPayloadSnapshot<AssertionsAttachment>,
+  ) => AssertionsProjection<RecordBlobRef>;
 }
 
 /** Typed, synchronous projection over one already-materialized Attachment value. */
-export function defineAssertionsProjectorV1(
-  registry: ThirdPartyCriterionRegistryV1,
-): AssertionsProjectorDefinitionV1 {
+export function defineAssertionsProjector(
+  registry: ThirdPartyCriterionRegistry,
+  write: FixedAttachmentWriteSpec<"attempt", AssertionsAttachment>,
+): AssertionsProjectorDefinition {
   return Object.freeze({
-    family: assertionsAttachmentFamilyV1,
-    project(value: RecordAttachmentValue<AssertionsDocumentOuterV1<RecordBlobRef>>) {
-      return projectAssertionsDocumentV1(value.payload, registry);
+    write,
+    project(value: RecordAttachmentPayloadSnapshot<AssertionsAttachment>) {
+      return projectAssertionsDocument(value, registry);
     },
   });
 }

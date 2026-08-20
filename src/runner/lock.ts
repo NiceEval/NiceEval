@@ -235,22 +235,31 @@ function makeAbortError(signal: AbortSignal | undefined): Error {
 }
 
 function awaitAbort(signal: AbortSignal | undefined): Effect.Effect<never, Error> {
+  if (signal === undefined) return Effect.never;
   return Effect.async((resume, effectSignal) => {
-    if (signal === undefined) return;
+    let completed = false;
     const cleanup = (): void => {
       signal.removeEventListener("abort", onAbort);
-      effectSignal.removeEventListener("abort", cleanup);
+      effectSignal.removeEventListener("abort", onEffectAbort);
+    };
+    const cancel = (): void => {
+      if (completed) return;
+      completed = true;
+      cleanup();
     };
     const onAbort = (): void => {
-      cleanup();
+      if (completed) return;
+      cancel();
       resume(Effect.fail(makeAbortError(signal)));
     };
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
+    const onEffectAbort = (): void => cancel();
     signal.addEventListener("abort", onAbort, { once: true });
-    effectSignal.addEventListener("abort", cleanup, { once: true });
+    effectSignal.addEventListener("abort", onEffectAbort, { once: true });
+    // Both listeners must be live before inspecting either signal: otherwise
+    // an abort between inspection and registration could strand the waiter.
+    if (effectSignal.aborted) onEffectAbort();
+    else if (signal.aborted) onAbort();
+    return Effect.sync(cancel);
   });
 }
 
@@ -315,16 +324,17 @@ export function acquireCaseLockEffect(
             Effect.zipRight(
               // File-system promises do not guarantee AbortSignal support. Keep one renewal uninterruptible so
               // Fiber.interrupt below waits for any started write before rm can make the path reusable.
-              Clock.currentTimeMillis.pipe(
-                Effect.flatMap((nowMs) => Effect.uninterruptible(renewHeartbeatEffect(
-                  niceevalRoot,
-                  experimentId,
-                  evalId,
-                  nowMs,
-                  () => released,
-                ))),
-                Effect.ignore,
-              ),
+              Effect.uninterruptible(
+                Clock.currentTimeMillis.pipe(
+                  Effect.flatMap((nowMs) => renewHeartbeatEffect(
+                    niceevalRoot,
+                    experimentId,
+                    evalId,
+                    nowMs,
+                    () => released,
+                  )),
+                ),
+              ).pipe(Effect.ignore),
             ),
           ),
         );

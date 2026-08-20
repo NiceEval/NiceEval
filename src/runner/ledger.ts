@@ -9,6 +9,7 @@
 //   排除靠 pathspec,include 显式打洞加回。
 // - agent 归因增量 = 逐窗口 delta 序列(DiffWindow[]),不做跨窗口压缩。
 
+import { createHash } from "node:crypto";
 import type { DiffArtifact, DiffWindow, Sandbox, WindowChange } from "../types.ts";
 import type { AgentWorkspaceDiffPolicy } from "../assertions/workspace-diff.ts";
 import { sandboxSupportsRootCommands } from "../sandbox/backend.ts";
@@ -46,16 +47,47 @@ const DEFAULT_EXCLUDES = [
   "__pycache__",
 ];
 
+const MAX_POLICY_ENTRIES = 256;
+const MAX_POLICY_ENTRY_UTF8_BYTES = 4096;
+const policyEncoder = new TextEncoder();
+
+function compareAscii(left: string, right: string): number {
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
+/** Reject an unrecordable policy before the collector starts, then freeze its canonical evidence form. */
+function canonicalPolicyEntries(entries: readonly string[], name: "include" | "ignore"): readonly string[] {
+  if (entries.length > MAX_POLICY_ENTRIES) {
+    throw new Error(`defineEval({ diff }).${name} may contain at most ${MAX_POLICY_ENTRIES} entries`);
+  }
+  for (const [index, entry] of entries.entries()) {
+    if (typeof entry !== "string") {
+      throw new TypeError(`defineEval({ diff }).${name}[${index}] must be a string`);
+    }
+    if (policyEncoder.encode(entry).byteLength > MAX_POLICY_ENTRY_UTF8_BYTES) {
+      throw new Error(`defineEval({ diff }).${name}[${index}] exceeds ${MAX_POLICY_ENTRY_UTF8_BYTES} UTF-8 bytes`);
+    }
+  }
+  return Object.freeze([...new Set(entries)].sort(compareAscii));
+}
+
 /**
- * 单个 send 窗口的证据安全上限。越界必须让 workspace.diff 失败,不能产出误导性的空窗口。
+ * 单个 send 窗口的导出扫描安全上限。File Changes 的 10,000-change durable 上限由 collector
+ * 保留确定性前缀并写 collection-cap-reached；导出层必须先把更大的候选集合交给 collector，
+ * 不能在同一个 10,000 边界提前把已知 partial 证据降格成 unavailable。
  * 字节预算只数**真正要传输的文本** before/after:二进制与超过单文件阈值的文本不内联内容、
  * 只记字节数(WindowChange.elided),因此不占预算——编译产物型窗口(成百上千个 .o 加几个大
  * 文本)不该因为「按尺寸计」被判越界。
  */
-const MAX_WINDOW_PATHS = 10_000;
-const MAX_WINDOW_TEXT_BYTES = 64 * 1024 * 1024;
+const MAX_EXPORTED_WINDOW_PATHS = 100_000;
+const MAX_EXPORTED_WINDOW_TEXT_BYTES = 256 * 1024 * 1024;
 /** 单个文本 blob 的内联阈值:任一侧超过它,该条目按二进制同款处理(记字节数、内容省略)。 */
 const MAX_FILE_TEXT_BYTES = 1024 * 1024;
+/** Provider 文件 API 的单次安全读取边界，以及整次 Attempt 导出的硬上限。 */
+const EXPORT_PART_BYTES = 4_000_000;
+const MAX_EXPORT_BYTES = 512 * 1024 * 1024;
+const MAX_EXPORT_PARTS = Math.ceil(MAX_EXPORT_BYTES / EXPORT_PART_BYTES);
+const EXPORT_MANIFEST_HEADER = "niceeval-ledger-export-parts v1";
 
 /**
  * 整相导出:一条 POSIX shell 命令枚举**全部** agent 窗口并把证据写进沙箱内导出文件,宿主随后
@@ -92,7 +124,7 @@ function buildExportScript(exportDir: string): string {
     // 非 -z 的 diff-tree 把特殊路径引号转义成单行,一行 = 一个条目:wc -l 即路径数,awk 列取 sha 不碰路径。
     '  git diff-tree -r --no-renames "$hash^" "$hash" > "$D/dt.txt"',
     '  n=$(($(wc -l < "$D/dt.txt")))',
-    `  [ "$n" -le ${MAX_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; limit is ${MAX_WINDOW_PATHS}"`,
+    `  [ "$n" -le ${MAX_EXPORTED_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; export scan limit is ${MAX_EXPORTED_WINDOW_PATHS}; narrow defineEval({ diff }) include/ignore rules"`,
     '  git diff-tree -r --no-renames --numstat "$hash^" "$hash" > "$D/ns.txt"',
     // 全部 blob 出现次数(before + after,零 sha = 无此侧,排除)→ 逐次尺寸核算。
     "  awk '$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }' \"$D/dt.txt\" > \"$D/occ.txt\"",
@@ -104,7 +136,7 @@ function buildExportScript(exportDir: string): string {
     // 也不计入窗口预算——它们只出字节数(宿主据同一份 sizes 判成 elided)。
     `  awk -v LIMIT=${MAX_FILE_TEXT_BYTES} -v TOTAL="$D/total.txt" 'NR==FNR { sz[$1] = $3; next } $1 == "T" { b = $2; a = $3; if (b !~ /^0+$/ && sz[b] > LIMIT) next; if (a !~ /^0+$/ && sz[a] > LIMIT) next; if (b !~ /^0+$/ && !(b in seen)) { seen[b] = 1; total += sz[b]; print b } if (a !~ /^0+$/ && !(a in seen)) { seen[a] = 1; total += sz[a]; print a } } END { print total+0 > TOTAL }' "$D/sizes.txt" "$D/entries.txt" > "$D/text.txt"`,
     '  bytes=$(cat "$D/total.txt")',
-    `  [ "$bytes" -le ${MAX_WINDOW_TEXT_BYTES} ] || fail "niceeval diff window transfers $bytes text blob bytes; limit is ${MAX_WINDOW_TEXT_BYTES}; narrow defineEval({ diff }) include/ignore rules"`,
+    `  [ "$bytes" -le ${MAX_EXPORTED_WINDOW_TEXT_BYTES} ] || fail "niceeval diff window transfers $bytes text blob bytes; export scan limit is ${MAX_EXPORTED_WINDOW_TEXT_BYTES}; narrow defineEval({ diff }) include/ignore rules"`,
     '  git cat-file --batch < "$D/text.txt" > "$D/blobs.bin"',
     '  git diff-tree -r --no-renames -z "$hash^" "$hash" > "$D/dtz.bin"',
     '  git diff-tree -r --no-renames --numstat -z "$hash^" "$hash" > "$D/nsz.bin"',
@@ -114,9 +146,31 @@ function buildExportScript(exportDir: string): string {
     '  emit sizes "$D/sizes.txt"',
     '  emit blobs "$D/blobs.bin"',
     'done < "$D/log.txt"',
-    // root ledger commands may create the private export with a restrictive umask. The file is outside
-    // workdir; making only this runner artifact readable lets the provider file channel fetch it.
-    'chmod 0644 "$OUT"',
+    // Provider 文件 API 可能拒绝超过 4 MiB 的单对象读取。这里按固定原始字节切片，并在最后
+    // 原子发布 manifest；宿主只接受连续序号、精确长度和 Git blob checksum。
+    'total=$(($(wc -c < "$OUT")))',
+    `  [ "$total" -le ${MAX_EXPORT_BYTES} ] || fail "niceeval ledger export contains $total bytes; attempt export limit is ${MAX_EXPORT_BYTES}"`,
+    `parts=$(( (total + ${EXPORT_PART_BYTES} - 1) / ${EXPORT_PART_BYTES} ))`,
+    `  [ "$parts" -le ${MAX_EXPORT_PARTS} ] || fail "niceeval ledger export needs $parts parts; attempt part limit is ${MAX_EXPORT_PARTS}"`,
+    'MANIFEST_TMP=$D/manifest.tmp',
+    'MANIFEST=$D/manifest.txt',
+    `printf "%s\\ntotal %s\\nparts %s\\n" "${EXPORT_MANIFEST_HEADER}" "$total" "$parts" > "$MANIFEST_TMP"`,
+    'i=0',
+    'while [ "$i" -lt "$parts" ]; do',
+    '  suffix=$(printf "%06d" "$i")',
+    '  part=$D/export.part.$suffix',
+    `  dd if="$OUT" of="$part" bs=${EXPORT_PART_BYTES} skip="$i" count=1 2>/dev/null`,
+    '  size=$(($(wc -c < "$part")))',
+    '  oid=$(git hash-object --no-filters "$part")',
+    '  printf "part %s %s %s\\n" "$suffix" "$size" "$oid" >> "$MANIFEST_TMP"',
+    '  i=$((i + 1))',
+    'done',
+    'mv "$MANIFEST_TMP" "$MANIFEST"',
+    'rm -f "$OUT"',
+    // root ledger commands may create private exports with a restrictive umask. These artifacts are
+    // outside workdir and are deleted immediately after the provider file channel consumes them.
+    'chmod 0644 "$MANIFEST"',
+    'for part in "$D"/export.part.*; do [ -f "$part" ] || continue; chmod 0644 "$part"; done',
   ].join("\n");
 }
 
@@ -258,8 +312,9 @@ function gitignorePathspecs(pattern: string, exclude: boolean): string[] {
 
 /** 打分类账锚点(workspace.baseline 阶段,环境层钩子之后):git init + 冻结排除清单 + 首笔 commit。 */
 export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions): Promise<ChangeLedger> {
-  const excludes = [...DEFAULT_EXCLUDES, ...(opts?.ignore ?? [])];
-  const includes = opts?.include ?? [];
+  const includes = canonicalPolicyEntries(opts?.include ?? [], "include");
+  const ignored = canonicalPolicyEntries(opts?.ignore ?? [], "ignore");
+  const excludes = [...DEFAULT_EXCLUDES, ...ignored];
   // 多数 provider 用固定的宿主内私有路径(每实例全新隔离文件系统,天然不冲突);宿主本身即
   // 工作树的 provider(如 local)按 sandboxId 登记专属路径,避免同机多次运行互相踩踏
   // (见 sandbox/ledger-paths.ts —— 这里不认 provider 名,只问登记表)。
@@ -310,9 +365,9 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   return {
     rootExecutionIdentity: ordinaryUid === "0",
     attribution: Object.freeze({
-      defaultPolicy: "niceeval-default-excludes" as const,
-      include: Object.freeze([...includes]),
-      ignore: Object.freeze([...(opts?.ignore ?? [])]),
+      defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1" as const,
+      include: includes,
+      ignore: ignored,
     }),
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。
@@ -355,10 +410,96 @@ async function exportAgentWindows(
   exportDir: string,
   rootCommands: boolean,
 ): Promise<DiffArtifact> {
-  const result = await sandbox.runShell(buildExportScript(exportDir), commandOptions);
-  ensureCommandSucceeded(result, "export agent windows", rootCommands);
-  const payload = await sandbox.readBytes(`${exportDir}/export.bin`);
-  return parseExportPayload(Buffer.from(payload));
+  try {
+    const result = await sandbox.runShell(buildExportScript(exportDir), commandOptions);
+    ensureCommandSucceeded(result, "export agent windows", rootCommands);
+    const manifest = parseExportManifest(await sandbox.readText(`${exportDir}/manifest.txt`));
+    const chunks: Buffer[] = [];
+    for (const part of manifest.parts) {
+      const bytes = Buffer.from(await sandbox.readBytes(`${exportDir}/export.part.${part.suffix}`));
+      if (bytes.byteLength !== part.bytes) {
+        throw new Error(
+          `niceeval ledger export: part ${part.suffix} has ${bytes.byteLength} bytes, expected ${part.bytes}`,
+        );
+      }
+      const algorithm = part.oid.length === 40 ? "sha1" : "sha256";
+      const actual = createHash(algorithm)
+        .update(`blob ${bytes.byteLength}\0`, "utf8")
+        .update(bytes)
+        .digest("hex");
+      if (actual !== part.oid) {
+        throw new Error(`niceeval ledger export: checksum mismatch for part ${part.suffix}`);
+      }
+      chunks.push(bytes);
+    }
+    const payload = Buffer.concat(chunks, manifest.totalBytes);
+    if (payload.byteLength !== manifest.totalBytes) {
+      throw new Error("niceeval ledger export: assembled payload length mismatch");
+    }
+    return parseExportPayload(payload);
+  } finally {
+    await sandbox.runShell(`rm -rf ${shellQuote(exportDir)}`, commandOptions).catch(() => undefined);
+  }
+}
+
+interface ExportManifestPart {
+  readonly suffix: string;
+  readonly bytes: number;
+  readonly oid: string;
+}
+
+interface ExportManifest {
+  readonly totalBytes: number;
+  readonly parts: readonly ExportManifestPart[];
+}
+
+function manifestInteger(text: string, label: string, maximum: number): number {
+  if (!/^(?:0|[1-9][0-9]*)$/.test(text)) {
+    throw new Error(`niceeval ledger export: invalid manifest ${label}`);
+  }
+  const value = Number(text);
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) {
+    throw new Error(`niceeval ledger export: manifest ${label} exceeds its limit`);
+  }
+  return value;
+}
+
+function parseExportManifest(text: string): ExportManifest {
+  const lines = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n");
+  if (lines[0] !== EXPORT_MANIFEST_HEADER) {
+    throw new Error("niceeval ledger export: unsupported manifest header");
+  }
+  const totalMatch = /^total ([0-9]+)$/.exec(lines[1] ?? "");
+  const partsMatch = /^parts ([0-9]+)$/.exec(lines[2] ?? "");
+  if (totalMatch === null || partsMatch === null) {
+    throw new Error("niceeval ledger export: malformed manifest summary");
+  }
+  const totalBytes = manifestInteger(totalMatch[1]!, "total bytes", MAX_EXPORT_BYTES);
+  const partCount = manifestInteger(partsMatch[1]!, "part count", MAX_EXPORT_PARTS);
+  const expectedPartCount = Math.ceil(totalBytes / EXPORT_PART_BYTES);
+  if (partCount !== expectedPartCount || lines.length !== partCount + 3) {
+    throw new Error("niceeval ledger export: manifest part count mismatch");
+  }
+  const parts: ExportManifestPart[] = [];
+  let retainedBytes = 0;
+  for (let index = 0; index < partCount; index += 1) {
+    const match = /^part ([0-9]{6}) ([0-9]+) ([0-9a-f]{40}|[0-9a-f]{64})$/.exec(lines[index + 3] ?? "");
+    const suffix = String(index).padStart(6, "0");
+    if (match === null || match[1] !== suffix) {
+      throw new Error(`niceeval ledger export: invalid or non-contiguous part ${suffix}`);
+    }
+    const expectedBytes = Math.min(EXPORT_PART_BYTES, totalBytes - retainedBytes);
+    const bytes = manifestInteger(match[2]!, `part ${suffix} bytes`, EXPORT_PART_BYTES);
+    if (bytes !== expectedBytes || bytes === 0) {
+      throw new Error(`niceeval ledger export: invalid length for part ${suffix}`);
+    }
+    retainedBytes += bytes;
+    parts.push(Object.freeze({ suffix, bytes, oid: match[3]! }));
+  }
+  if (retainedBytes !== totalBytes) {
+    throw new Error("niceeval ledger export: manifest total length mismatch");
+  }
+  return Object.freeze({ totalBytes, parts: Object.freeze(parts) });
 }
 
 function ensureCommandSucceeded(

@@ -1,15 +1,16 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "report",
+  "batch": "browser-1",
   "areas": ["report"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["node", "scripts/run-native.mjs"],
-  "timeoutMinutes": 10,
+  "timeoutMinutes": 3,
   "harness": { "testkit": true },
   "secrets": [],
   "requires": {
-    "runtimes": ["node>=22"],
+    "runtimes": ["node>=24"],
     "browsers": ["chromium"]
   },
   "paths": ["e2e/report/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],

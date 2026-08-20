@@ -4,8 +4,8 @@ import { sandbox } from "../sandbox.ts";
 
 // 与 bub 同源的 OpenAI 兼容网关。
 const agent = hermesAgent({
-  apiKey: process.env.BUB_API_KEY,
-  baseUrl: process.env.BUB_API_BASE,
+  apiKey: process.env.OPENAI_API_KEY,
+  baseUrl: process.env.OPENAI_BASE_URL,
   skills: [
     { kind: "local", path: "skills/niceeval-hermes-incident-report", name: "niceeval-hermes-incident-report" },
     { kind: "local", path: "skills/niceeval-hermes-decoy", name: "niceeval-hermes-decoy" },

@@ -37,7 +37,7 @@ export function registerAgentLifecycleHookCommands<T extends SandboxAgent>(
   return agent;
 }
 
-/** @internal `--dry --commands` 只读取已登记的声明，不执行 hook。 */
+/** @internal `niceeval debug` 只读取已登记的声明，不执行 hook。 */
 export function agentLifecycleHookCommandsOf(agent: SandboxAgent): AgentLifecycleHookCommands | undefined {
   return lifecycleHookCommands.get(agent);
 }
@@ -64,7 +64,6 @@ function commandContext(
     signal: ctx.signal,
     progress: (update) => ctx.progress(update),
     diagnostic: (input) => ctx.diagnostic(input),
-    facts: (key, value) => ctx.fact(key, value),
     onCleanup,
   };
 }
@@ -116,7 +115,6 @@ export async function runPreTeardownHooks(
     signal: hookCtx.signal,
     progress: hookCtx.progress,
     diagnostic: hookCtx.diagnostic,
-    facts: hookCtx.facts,
   };
   const failures: Error[] = [];
   try {

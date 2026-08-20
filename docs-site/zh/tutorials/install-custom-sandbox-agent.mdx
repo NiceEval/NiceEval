@@ -13,10 +13,12 @@ Node.js CLI 可以使用 `createNpmCliInstaller`。下面的代码把 npm 包 `m
 ```ts
 // agents/my-agent.ts
 import {
-  completeEvidenceCoverage,
   createNpmCliInstaller,
   defineSandboxAgent,
-  resolveAgentBin,
+  agentBin,
+  responsesEvidenceCoverage,
+  turnFromResponses,
+  type ResponseLike,
 } from "niceeval/adapter";
 
 const { ensure, installer } = createNpmCliInstaller({
@@ -36,7 +38,7 @@ const { ensure, installer } = createNpmCliInstaller({
 
 export default defineSandboxAgent({
   name: "my-agent",
-  evidenceCoverage: completeEvidenceCoverage,
+  evidenceCoverage: responsesEvidenceCoverage,
   ensure,
   installers: [installer],
 
@@ -45,15 +47,21 @@ export default defineSandboxAgent({
   },
 
   async send(input, ctx) {
-    const bin = await resolveAgentBin(ctx.sandbox, "my-agent");
-    const result = await ctx.sandbox.runCommand(bin, ["run", "--json", input.text]);
+    const result = await ctx.sandbox.runCommand("sh", [
+      "-lc",
+      `exec ${agentBin("my-agent")} run --json "$1"`,
+      "my-agent",
+      input.text,
+    ]);
     if (result.exitCode !== 0) {
       throw new Error(`my-agent 退出码 ${result.exitCode}: ${result.stderr}`);
     }
-    return parseTurn(result.stdout);
+    return turnFromResponses(JSON.parse(result.stdout) as ResponseLike);
   },
 });
 ```
+
+这个示例约定 `my-agent run --json` 输出一个 OpenAI Responses 兼容的 JSON 对象。`turnFromResponses` 会把其中的 `output` 项与 usage 转成 NiceEval 的 `Turn`；如果 CLI 输出的是另一套 schema，就把这一行替换成对 `events`、`status` 与 `usage` 的显式映射。
 
 `identity.version` 是 CLI 的精确版本。同一版本的安装步骤变化时，同时更新 `identity.revision`。不要在这里使用 `latest`。
 
@@ -72,7 +80,7 @@ import myAgent from "../agents/my-agent.ts";
 export default defineExperiment({
   agent: myAgent,
   model: "acme-model-v2",
-  sandbox: dockerSandbox({ source: { type: "image", image: "debian:bookworm-slim" } }),
+  sandbox: dockerSandbox({ source: { type: "image", image: "node:22-slim" } }),
 });
 ```
 
@@ -80,14 +88,14 @@ export default defineExperiment({
 npx niceeval exp my-agent fixtures/button
 ```
 
-Sandbox 不需要 Node.js 或 npm。`createNpmCliInstaller` 在宿主机上下载 npm 包，再通过 Sandbox 的文件接口安装。Sandbox 如果已有正确版本，NiceEval 会直接使用它。
+普通 npm 包要求 Sandbox 提供 Node.js 与 npm。`createNpmCliInstaller` 在宿主机打包、上传，再在 Sandbox 内执行 `npm install -g`。Sandbox 如果已有正确版本，NiceEval 会直接使用它。只有真正自包含的 `platformPackage` 才能省掉这项运行时前置条件。
 
 ## 检查安装失败
 
 安装或复检失败时，Attempt 会在 `agent.ensure` 阶段变成 `errored`。终端会给出 Attempt 定位符。
 
 ```shell
-npx niceeval show --run <runId> --page attempt-<attemptId>
+pnpm exec niceeval show @<attempt-locator>
 ```
 
 先检查错误里的包名、版本和目标平台。修正 `identity`、npm 包或安装步骤后，重新运行原命令。

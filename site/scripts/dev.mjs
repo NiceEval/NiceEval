@@ -2,7 +2,7 @@ import { createServer } from "node:net";
 import { spawn } from "node:child_process";
 import { rmSync } from "node:fs";
 
-const HOSTNAME = "127.0.0.1";
+const HOSTNAME = "0.0.0.0";
 const PREFERRED_PORT = 5174;
 const MAX_ATTEMPTS = 20;
 const DEV_CACHE_DIR = ".next/dev";

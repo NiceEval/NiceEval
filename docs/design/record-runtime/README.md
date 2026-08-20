@@ -11,5 +11,5 @@ read cache 的资源 owner。
 - [Limits](LIMITS.md)
 - [Cases](CASES.md)
 - [PLAN-1：各 open 独立拥有资源](PLAN-1/README.md)
-- [PLAN-2：统一 RecordAccessRuntime substrate](PLAN-2/README.md)
+- [PLAN-2（推荐）：统一 RecordAccessRuntime substrate](PLAN-2/README.md)
 - [Decision](DECISION.md)

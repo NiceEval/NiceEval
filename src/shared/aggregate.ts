@@ -34,14 +34,29 @@ export function displayExperimentName(id: string | undefined): string | undefine
   return id.split("/").filter(Boolean).at(-1) ?? id;
 }
 
+export type ExperimentGroupIdentityValue =
+  | { readonly kind: "named"; readonly groupId: string; readonly key: `named/${string}` }
+  | { readonly kind: "singleton"; readonly experimentId: string; readonly key: `singleton/${string}` };
+
 /**
- * 实验 id 的组推导:去掉末段的目录前缀("compare/bub-low" → "compare");
- * 无 "/" 的顶层实验不属于任何组,返回 undefined。view 实验列表分组与自定义报告
- * 的分组用同一份,两边的「组」永远指同一个东西。
+ * The sole Experiment Group derivation. A named group is always the first
+ * ExperimentId segment; a root Experiment is its own singleton group.
  */
-export function experimentGroupOf(experimentId: string): string | undefined {
-  if (!experimentId.includes("/")) return undefined;
-  return experimentId.split("/").slice(0, -1).join("/");
+export function experimentGroupOf(experimentId: string): ExperimentGroupIdentityValue {
+  const slash = experimentId.indexOf("/");
+  if (slash === -1) {
+    return Object.freeze({
+      kind: "singleton" as const,
+      experimentId,
+      key: `singleton/${experimentId}` as const,
+    });
+  }
+  const groupId = experimentId.slice(0, slash);
+  return Object.freeze({
+    kind: "named" as const,
+    groupId,
+    key: `named/${groupId}` as const,
+  });
 }
 
 /**

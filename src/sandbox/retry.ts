@@ -4,7 +4,8 @@
 // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)中,这里承担
 // 「重试前对账」;kill-on-failure 在各 provider 的 create() 内部。
 
-import { Cause, Effect, Exit, Option, Random } from "effect";
+import { Effect, Random } from "effect";
+
 import { isRejectedProvisionError, isRetryableProvisionError, type SandboxProvisionErrorKind } from "./errors.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
@@ -13,104 +14,38 @@ import type { ScopedFeedback } from "../types.ts";
 const MAX_ATTEMPTS = 4;
 const BASE_DELAY_MS = 1000;
 
-/** Promise 只留在现有 provider façade；重试状态机使用 EffectProvisionSlot。 */
+/** 指数退避 + 全抖动(0.5x~1.5x),避免同一批被限流的 create() 同时醒来再次撞限流。 */
+function delayFor(attempt: number, jitter: number): number {
+  return BASE_DELAY_MS * 2 ** attempt * (0.5 + jitter);
+}
+
+/**
+ * 调用方(runtime.ts)持有的并发槽位的临时归还/收回。
+ */
 export interface ProvisionSlot {
-  release(): Promise<void>;
-  reacquire(): Promise<void>;
+  readonly release: Effect.Effect<void>;
+  readonly reacquire: Effect.Effect<void>;
 }
 
-export interface EffectProvisionSlot {
-  readonly release: Effect.Effect<void, unknown>;
-  readonly reacquire: Effect.Effect<void, unknown>;
+/**
+ * 退避期间只是在睡觉,不是在真的创建沙箱:攥着并发槽位陪跑 setTimeout 会让被限流的
+ * provider 把整批并发名额拖垮成"看起来卡在个位数并发"——先还名额,睡醒了再排队要回来。
+ * acquireUseRelease 在进入可中断睡眠前先登记 reacquire,interruption 不会永久吃掉并发名额。
+ */
+function sleepWithReleasedSlot(
+  slot: ProvisionSlot | undefined,
+  wait: Effect.Effect<void, unknown>,
+): Effect.Effect<void, unknown> {
+  if (slot === undefined) return wait;
+  return Effect.acquireUseRelease(
+    Effect.suspend(() => slot.release),
+    () => wait,
+    () => Effect.suspend(() => slot.reacquire),
+  );
 }
 
-export interface ProvisionRetryEffectOptions {
-  readonly slot?: EffectProvisionSlot;
-  readonly feedback?: ScopedFeedback;
-  readonly reconcile?: Effect.Effect<void, unknown>;
-}
-
-/** Effect-native provisioning retry state machine. */
-export function withProvisionRetryEffect<T, E>(
-  create: () => Effect.Effect<T, E>,
-  classify: (error: E) => SandboxProvisionErrorKind,
-  options: ProvisionRetryEffectOptions = {},
-): Effect.Effect<T, E | unknown> {
-  const loop = (attempt: number): Effect.Effect<T, E | unknown> =>
-    Effect.suspend(() =>
-      create().pipe(
-        Effect.catchAll((error) => {
-          const kind = classify(error);
-          if (!isRetryableProvisionError(kind) || attempt >= MAX_ATTEMPTS - 1) return Effect.fail(error);
-          if (!isRejectedProvisionError(kind) && options.reconcile === undefined) return Effect.fail(error);
-
-          return Effect.gen(function*() {
-            const random = yield* Random.next;
-            const delayMs = BASE_DELAY_MS * 2 ** attempt * (0.5 + random);
-            const message = t("sandbox.provisionRetry", {
-              delayMs: Math.round(delayMs),
-              attempt: attempt + 1,
-              maxAttempts: MAX_ATTEMPTS,
-            }).trimEnd();
-            if (options.feedback) options.feedback.progress({ message });
-            else reportActivity(message);
-
-            const backoff = Effect.sleep(delayMs);
-            if (options.slot === undefined) {
-              yield* backoff;
-            } else {
-              yield* Effect.acquireUseRelease(
-                options.slot.release,
-                () => backoff,
-                () => options.slot!.reacquire.pipe(
-                  Effect.orDieWith((error) => error instanceof Error ? error : new Error(String(error))),
-                ),
-              );
-            }
-
-            if (options.reconcile !== undefined) {
-              const reconciled = yield* options.reconcile.pipe(
-                Effect.as(true),
-                Effect.catchAll((reconcileError) =>
-                  Effect.sync(() => {
-                    const diagnostic = {
-                      code: "sandbox-provision-reconcile-failed",
-                      level: "warning" as const,
-                      message: t("sandbox.provisionReconcileFailed", { error: String(reconcileError) }).trimEnd(),
-                    };
-                    if (options.feedback) options.feedback.diagnostic(diagnostic);
-                    else reportDiagnostic({ key: diagnostic.code, severity: diagnostic.level, message: diagnostic.message });
-                    return false;
-                  }),
-                ),
-              );
-              if (!reconciled) return yield* Effect.fail(error);
-            }
-
-            return yield* loop(attempt + 1);
-          });
-        }),
-      ),
-    );
-
-  return loop(0);
-}
-
-function promiseEffect<A>(thunk: () => Promise<A>): Effect.Effect<A, unknown> {
-  return Effect.tryPromise({ try: thunk, catch: (error) => error });
-}
-
-async function runPromiseFacade<A>(effect: Effect.Effect<A, unknown>): Promise<A> {
-  const exit = await Effect.runPromiseExit(effect);
-  if (Exit.isSuccess(exit)) return exit.value;
-  const failure = Cause.failureOption(exit.cause);
-  if (Option.isSome(failure)) throw failure.value;
-  throw Cause.squash(exit.cause);
-}
-
-/** Existing Promise façade for provider SDK callers. */
 export function withProvisionRetry<T>(
-  create: () => Promise<T>,
+  create: Effect.Effect<T, unknown>,
   classify: (e: unknown) => SandboxProvisionErrorKind,
   slot?: ProvisionSlot,
   feedback?: ScopedFeedback,
@@ -118,17 +53,53 @@ export function withProvisionRetry<T>(
    * 对账钩子按 provision token 检索并销毁可能已创建的实例。每次重试前都执行；失败时
    * 放弃重试并保留原始 create 错误。没有对账通道的歧义失败不盲重试。
    */
-  reconcile?: () => Promise<void>,
-): Promise<T> {
-  return runPromiseFacade(withProvisionRetryEffect(
-    () => promiseEffect(create),
-    classify,
-    {
-      ...(slot === undefined
-        ? {}
-        : { slot: { release: promiseEffect(() => slot.release()), reacquire: promiseEffect(() => slot.reacquire()) } }),
-      ...(feedback === undefined ? {} : { feedback }),
-      ...(reconcile === undefined ? {} : { reconcile: promiseEffect(reconcile) }),
-    },
-  ));
+  reconcile?: Effect.Effect<void, unknown>,
+): Effect.Effect<T, unknown> {
+  const retry = (attempt: number): Effect.Effect<T, unknown> =>
+    Effect.gen(function* () {
+      return yield* create.pipe(
+        Effect.catchAll((error) => Effect.gen(function* () {
+          const kind = classify(error);
+          if (!isRetryableProvisionError(kind) || attempt >= MAX_ATTEMPTS - 1) return yield* Effect.fail(error);
+          // 歧义类:远端可能已有实例,没有对账通道就不能重试,第一次抛出。
+          if (!isRejectedProvisionError(kind) && !reconcile) return yield* Effect.fail(error);
+          const jitter = yield* Random.next;
+          const delayMs = delayFor(attempt, jitter);
+          // 「activity」而非「diagnostic」—— 这是正常的退避进度,不是需要去重/永久留痕的
+          // warning(与 docker.ts 的镜像拉取进度、vercel.ts 的 session rotate 通知同一个理由,
+          // 见 sink.ts 的 reportActivity 说明)。让 human dashboard 的 active slot 在整个退避
+          // 窗口里有可见更新,而不是冻结到重试成功或耗尽为止。
+          const message = t("sandbox.provisionRetry", { delayMs: Math.round(delayMs), attempt: attempt + 1, maxAttempts: MAX_ATTEMPTS }).trimEnd();
+          // 严格顺序:release → 反馈 → sleep → reacquire → reconcile。
+          yield* sleepWithReleasedSlot(slot, Effect.zipRight(
+            Effect.sync(() => {
+              if (feedback) feedback.progress({ message });
+              else reportActivity(message);
+            }),
+            Effect.sleep(delayMs),
+          ));
+          if (reconcile) {
+            const outcome = yield* reconcile.pipe(Effect.either);
+            if (outcome._tag === "Left") {
+              // 对账是重试的硬前置:查不到账就重试与盲重试无异。放弃重试,留 diagnostic,
+              // 抛回原始 create 错误(对账失败不掩盖它)。
+              const reconcileError = outcome.left;
+              const diagnostic = {
+                code: "sandbox-provision-reconcile-failed",
+                level: "warning" as const,
+                message: t("sandbox.provisionReconcileFailed", { error: String(reconcileError) }).trimEnd(),
+              };
+              yield* Effect.sync(() => {
+                if (feedback) feedback.diagnostic(diagnostic);
+                else reportDiagnostic({ key: diagnostic.code, severity: diagnostic.level, message: diagnostic.message });
+              });
+              return yield* Effect.fail(error);
+            }
+          }
+          return yield* retry(attempt + 1);
+        })),
+      );
+    });
+
+  return retry(0);
 }

@@ -12,6 +12,8 @@ import {
 } from "../sandbox/runtime.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
+import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
+import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
@@ -36,6 +38,7 @@ import {
 import {
   AssertionAuthoringClosedError,
 } from "../assertions/api.ts";
+import { createAssertionsRuntime } from "../assertions/runtime.ts";
 import type {
   AssertionStopError,
   AssertionsRuntime,
@@ -62,6 +65,12 @@ import {
   deriveDiffData,
 } from "../assertions/diff.ts";
 import { createAgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
+import {
+  assertFileChangesCaptureRecordable,
+  createEmptyFileChangesCapture,
+  createFileChangesCapture,
+  type FileChangesCapture,
+} from "../assertions/record/diff.ts";
 import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { inheritSandboxCapabilities } from "../sandbox/backend.ts";
@@ -74,7 +83,6 @@ import {
 import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/commands.ts";
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
-import { recordFact, type FactValue } from "../shared/facts.ts";
 import { linkPluginLifecycles, type EvalPluginContext } from "../plugin/contracts.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
@@ -82,16 +90,18 @@ import {
   retainRunnerAttemptSourceCapture,
   type RunnerAttemptSourceCapture,
 } from "./source-producer.ts";
+import { retainRunnerAttemptFileChangesCapture } from "./sandbox-record-producer.ts";
 import {
-  bindRunnerAttemptObservabilityCaptureV1,
-  captureRunnerCommandCaptureFailedV1,
-  captureRunnerCommandInterruptedV1,
-  captureRunnerCommandResultV1,
-  captureRunnerCommandStartV1,
-  captureRunnerCommandTimeoutV1,
-  captureRunnerTurnUsageV1,
-  createRunnerAttemptObservabilityRuntimeV1,
-  type RunnerAttemptObservabilityRuntimeV1,
+  bindRunnerAttemptObservabilityCapture,
+  captureRunnerCommandCaptureFailed,
+  captureRunnerCommandInterrupted,
+  captureRunnerCommandResult,
+  captureRunnerCommandStart,
+  captureRunnerCommandTimeout,
+  captureRunnerPhysicalConversationTurn,
+  captureRunnerTurnUsage,
+  createRunnerAttemptObservabilityRuntime,
+  type RunnerAttemptObservabilityRuntime,
 } from "../o11y/record/runner-producer.ts";
 import {
   attemptFailureInfo,
@@ -201,8 +211,15 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
   /**
+   * A fresh Sandbox owns its physical Scope inside this Attempt. Its lifecycle
+   * hooks normally turn cleanup errors into diagnostics so the remaining
+   * finalizers can run; an Experiment with sharedState must still retain that
+   * terminal cleanup fact until it decides whether releasing its lease is safe.
+   */
+  onFreshSandboxCleanupFailure?: (failure: FreshSandboxCleanupFailure) => void;
+  /**
    * Invocation coordination may consume the single sealed Assert-first result
-   * here and pass it to EvaluationRecordContractV1. The Attempt never opens a
+   * here and pass it to EvaluationRecordContract. The Attempt never opens a
    * Record session or owns Record I/O itself.
    */
   onSealedEvaluation?: (
@@ -214,6 +231,12 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
     reuseSandbox: number;
     reuseOrdinal: number;
   };
+}
+
+/** Internal handoff from a fresh Attempt Scope to its owning Experiment lifecycle. */
+export interface FreshSandboxCleanupFailure {
+  readonly stage: "sandbox.lifecycle" | "sandbox.stop";
+  readonly error: Error;
 }
 
 export function runAttemptEffect<
@@ -232,13 +255,14 @@ export function runAttemptEffect<
     onPhase,
     concurrencySlot,
     onFailureClass,
+    onFreshSandboxCleanupFailure,
     onSealedEvaluation,
     reusedSandbox,
   }: RunAttemptEffectOptions<SealRequirements>,
 ) {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
-  const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
+  const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
   const t0 = Date.now();
   // Source bytes are snapshotted at the author action, then held only through
   // an internal capability until the Record producer seals its own Attachments.
@@ -343,6 +367,8 @@ export function runAttemptEffect<
   // Effect.timeoutTo 调用点的注释)。
   let timedOut = false;
   let timeoutDiff: DiffArtifact | undefined;
+  let fileChangesCapture: FileChangesCapture | undefined;
+  let timeoutFileChangesCapture: FileChangesCapture | undefined;
   let timeoutSources: SourceArtifact[] | undefined;
   const enterPhase = (phase: LifecyclePhase) => {
     lastPhase = phase;
@@ -372,15 +398,11 @@ export function runAttemptEffect<
       });
     }
   };
-  // 本 attempt 累计的运行事实(与 verdict/diagnostics 独立):layer prepare/cleanup 与
-  // agent setup·send·teardown 经 ctx.fact() 上报的都落这里(同一 attempt 内后写覆盖先写),
-  // 收尾时并入结果的 facts 字段(见 finally 末尾,与 diagnostics 同一种「累加器 + finally 并入」模式)。
-  const facts: globalThis.Record<string, FactValue> = {};
   // 本 attempt 累计的诊断(与 verdict 独立):ScopedFeedback.diagnostic 与 teardown 失败都落这里,
   // 收尾时并入结果;dedupeKey 相同的并发诊断折叠成一条并累计 count。
   const diagnostics: DiagnosticRecord[] = [];
   const dedupeIndex = new Map<string, DiagnosticRecord>();
-  // Sandbox 命令证据的累加器(与 diagnostics/facts 同一种「共享容器」模式):
+  // Sandbox 命令证据的累加器(与 diagnostics 同一种「共享容器」模式):
   // withCommandTiming 在 CommandResult 交还调用方之前把每条命令(成功与非零退出都算)push 进来,
   // runAttemptBody 的 finally 与本函数的超时/中断兜底分支都读同一个数组引用
   // (见 docs/feature/record/architecture.md「commandsjson」「证据在 CommandResult 返回
@@ -392,7 +414,7 @@ export function runAttemptEffect<
   // Package-internal only: the final EvalResult is weakly associated with this
   // capture after all Runner evidence is sealed. No public result field or
   // legacy artifact is used as a transport.
-  const observabilityRuntime = createRunnerAttemptObservabilityRuntimeV1({
+  const observabilityRuntime = createRunnerAttemptObservabilityRuntime({
     providerName: run.agent.name,
     sensitiveValues,
   });
@@ -445,6 +467,69 @@ export function runAttemptEffect<
       log(`${u.message}${suffix}`);
     },
     diagnostic: recordDiagnostic,
+  };
+  const recordFreshSandboxCleanupFailure = (
+    stage: FreshSandboxCleanupFailure["stage"],
+    cause: unknown,
+  ): void => {
+    if (reusedSandbox !== undefined || onFreshSandboxCleanupFailure === undefined) return;
+    const rawError = cause instanceof Error ? cause : new Error(String(cause));
+    // The ledger is later surfaced as an Experiment diagnostic, outside this
+    // Attempt's normal diagnostic sink. Preserve the real cleanup outcome, but
+    // cross that boundary only after applying this Attempt's evidence redaction.
+    const error = new Error(redactSensitiveText(rawError.message, sensitiveValues));
+    // This receiver runs inside the Scope finalizer path. It must not let a
+    // bookkeeping failure replace the provider or lifecycle cleanup outcome.
+    try {
+      onFreshSandboxCleanupFailure({ stage, error });
+    } catch {
+      // The owning Experiment will still receive the original cleanup result.
+    }
+  };
+  /**
+   * Sandbox runtime deliberately keeps lifecycle cleanup diagnostic-only so it
+   * can continue other finalizers. Only this fresh-materialization wrapper
+   * observes those runtime-owned diagnostics; Eval/Agent diagnostics with the
+   * same public sink never enter the physical cleanup ledger.
+   */
+  const freshSandboxLifecycleFeedback: ScopedFeedback = {
+    progress: scopedFeedback.progress,
+    diagnostic: (input) => {
+      scopedFeedback.diagnostic(input);
+      if (
+        input.code === "sandbox-teardown-failed" ||
+        input.code === "sandbox-stop-failed" ||
+        input.code === "plugin-lifecycle-teardown-failed"
+      ) {
+        recordFreshSandboxCleanupFailure(
+          "sandbox.lifecycle",
+          new Error(redactSensitiveText(input.message, sensitiveValues)),
+        );
+      }
+    },
+  };
+
+  const sealExecutionError = (): Effect.Effect<
+    SealedAttemptAssertions,
+    import("../assertions/api.ts").AssertionSealError,
+    SealRequirements
+  > => {
+    const runtime = liveAssertions ?? (evalDef.evaluationKind === "score"
+      ? createAssertionsRuntime({ evaluationKind: "score" })
+      : createAssertionsRuntime({ evaluationKind: "pass" }));
+    if (liveAssertions === undefined) {
+      // Sandbox acquire/prepare may fail before TestContext exists. It is still
+      // an executed Attempt, so seal its empty assertion set with the same
+      // execution-error terminal used by failures after Context construction.
+      liveAssertions = runtime;
+      sourceCapture.attachAssertions(runtime);
+    }
+    return sealAttemptAssertions(runtime, { execution: "errored" }).pipe(
+      Effect.tap(() => Effect.sync(() => {
+        assertionsSealed = true;
+      })),
+      Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+    );
   };
 
   // 同时保留最近 20 条进度消息,timeout 时嵌入 error 字段方便定位卡在哪一步。
@@ -547,8 +632,8 @@ export function runAttemptEffect<
       // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
       const provisionSlot = {
-        release: () => assertFirst.requestEffect(sandboxSem.release(1)).then(() => {}),
-        reacquire: () => assertFirst.requestEffect(sandboxSem.take(1)).then(() => {}),
+        release: sandboxSem.release(1),
+        reacquire: sandboxSem.take(1),
       };
       // Sample release(receiver close + provider stop)整段计成 sandbox.stop:先加的 finalizer
       // 后跑(LIFO),所以「先加的」在 release 链末尾打终点戳、「后加的」在 release 开始前打起点戳;
@@ -593,14 +678,13 @@ export function runAttemptEffect<
                     plan: sandboxPlan,
                     evalId: evalDef.id,
                     deadline: runtimeDeadline,
-                    feedback: scopedFeedback,
+                    feedback: freshSandboxLifecycleFeedback,
                     signal,
                     hookContext: {
                       experimentId: sandboxPlan.pair.experimentId,
                       signal,
-                      progress: scopedFeedback.progress,
-                      diagnostic: scopedFeedback.diagnostic,
-                      fact: (key, value) => recordFact(facts, key, value),
+                      progress: freshSandboxLifecycleFeedback.progress,
+                      diagnostic: freshSandboxLifecycleFeedback.diagnostic,
                     },
                     buildLocators,
                     agent: run.agent.kind === "sandbox" ? run.agent : undefined,
@@ -614,7 +698,13 @@ export function runAttemptEffect<
                       run: (owned) => Effect.gen(function* () {
                         const sb = owned.sandbox;
                         if (disposition !== "keep") {
-                          return yield* tryPromiseAsDefect(() => owned.group.stop());
+                          return yield* tryPromiseAsDefect(() => owned.group.stop()).pipe(
+                            Effect.onExit((exit) => Exit.isFailure(exit)
+                              ? Effect.sync(() => {
+                                  recordFreshSandboxCleanupFailure("sandbox.stop", Cause.squash(exit.cause));
+                                })
+                              : Effect.void),
+                          );
                         }
                         yield* Effect.sync(() => unregisterSandbox(sb));
                         const providerName = runtimeCapabilities.provider;
@@ -624,7 +714,7 @@ export function runAttemptEffect<
                             recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
                           })),
                           Effect.zipRight(
-                            updateKeptEntryEffect(niceevalRoot, keptEntryId(providerName, sb.sandboxId), {
+                            updateKeptEntryEffect(coordinationRoot, keptEntryId(providerName, sb.sandboxId), {
                               state: "dormant",
                             }).pipe(Effect.ignore),
                           ),
@@ -646,7 +736,15 @@ export function runAttemptEffect<
                       }),
                     },
                   });
-                  return materialized.sandbox;
+                  // fresh Attempt:author facade 在当前 Attempt Scope 内构建。executor 捕获本
+                  // Scope 的 Runtime,Scope 关闭时统一中断在飞请求并拒绝新调用;release closure
+                  // 继续用 materialized.sandbox(资源面 facade),两者生命周期互不借用。
+                  const executor = yield* makeSandboxRequestExecutor();
+                  return makeSandboxAuthorFacade(
+                    materialized.authorBackend,
+                    executor,
+                    runtimeCapabilities.provider,
+                  );
                 }),
               );
             })
@@ -763,7 +861,47 @@ export function runAttemptEffect<
           if (run.agent.kind === "sandbox" && liveLedger) {
             const startedAt = recorder.offsetNow();
             const diff = yield* Effect.either(cleanupCallback(() => liveLedger!.exportWindows()));
-            if (Either.isRight(diff)) timeoutDiff = diff.right;
+            if (Either.isRight(diff)) {
+              timeoutDiff = diff.right;
+              let document: AgentWorkspaceDiff | undefined;
+              try {
+                document = createAgentWorkspaceDiff({
+                  windows: diff.right,
+                  policy: liveLedger.attribution,
+                });
+              } catch {
+                timeoutFileChangesCapture = createEmptyFileChangesCapture({
+                  policy: liveLedger.attribution,
+                  limitations: [Object.freeze({
+                    code: "capture-failed" as const,
+                    stage: "normalize" as const,
+                    atWindowId: null,
+                  })],
+                });
+              }
+              if (document !== undefined) {
+                timeoutFileChangesCapture = createFileChangesCapture({
+                  document,
+                  limitations: [Object.freeze({
+                    code: "capture-interrupted" as const,
+                    stage: "finalizer-export" as const,
+                    atWindowId: null,
+                  })],
+                });
+              }
+            } else {
+              timeoutFileChangesCapture = createEmptyFileChangesCapture({
+                policy: liveLedger.attribution,
+                limitations: [Object.freeze({
+                  code: "capture-interrupted" as const,
+                  stage: "finalizer-export" as const,
+                  atWindowId: null,
+                })],
+              });
+            }
+            if (timeoutFileChangesCapture !== undefined) {
+              assertFileChangesCaptureRecordable(timeoutFileChangesCapture);
+            }
             // 沙箱不可用 / 导出挂起到点:如实缺失,不阻塞收尾。
             recorder.record("workspace.diff", recorder.offsetNow() - startedAt);
           }
@@ -845,10 +983,9 @@ export function runAttemptEffect<
                   }));
                   if (node) recorder.pushParent(node);
                   try {
-                    const cleanupSignal = AbortSignal.timeout(CLEANUP_TIMEOUT_MS);
-                    await assertFirst.requestEffect(cleanupCallback(() => cleanup.command(commandTarget, {
+                    await assertFirst.requestEffect(cleanupCallback((signal) => cleanup.command(commandTarget, {
                       ...cleanup.context,
-                      signal: cleanupSignal,
+                      signal,
                     })));
                   } catch (error) {
                     if (node) node.failed = true;
@@ -893,7 +1030,6 @@ export function runAttemptEffect<
             ...(deadlineAt !== undefined ? { deadlineAt } : {}),
             feedback: scopedFeedback,
             diagnostics,
-            facts,
             commands,
             sensitiveValues,
             observabilityRuntime,
@@ -908,6 +1044,9 @@ export function runAttemptEffect<
             },
             registerLedger: (ledger) => {
               liveLedger = ledger;
+            },
+            retainFileChangesCapture: (capture) => {
+              fileChangesCapture = capture;
             },
             assertFirst,
             registerAssertions: (runtime, state) => {
@@ -1016,7 +1155,7 @@ export function runAttemptEffect<
           const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
           const keptAt = new Date().toISOString();
           const expiresAt = computeExpiresAt(providerName, keptAt);
-          const registered = yield* Effect.either(writeKeptEntryEffect(niceevalRoot, {
+          const registered = yield* Effect.either(writeKeptEntryEffect(coordinationRoot, {
             sandboxId: sandbox.sandboxId,
             provider: providerName,
             evalId: evalDef.id,
@@ -1084,18 +1223,21 @@ export function runAttemptEffect<
               ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
               ...(commands.length > 0 ? { commands: [...commands] } : {}),
             };
-            if (liveAssertions === undefined) return Effect.succeed(fallback);
-            return sealAttemptAssertions(liveAssertions, {
-              execution: "errored",
-            }).pipe(
-              Effect.tap(() => Effect.sync(() => {
-                assertionsSealed = true;
-              })),
-              Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
-              Effect.map((sealed) => withSealedAssertions(fallback, sealed)),
-              Effect.catchAll(() => Effect.succeed(fallback)),
-            );
+            return Effect.succeed(fallback);
           }),
+    ),
+    // A prepare/setup failure can be caught by runAttemptBody before a real
+    // TestContext exists. In that case the scoped body returns an errored
+    // value successfully, so catchAllCause above never runs. Enforce the
+    // Record boundary as an output postcondition: every executed errored
+    // Attempt owns one sealed (possibly empty) assertion result.
+    Effect.flatMap((result) =>
+      assertionsSealed || result.verdict !== "errored"
+        ? Effect.succeed(result)
+        : sealExecutionError().pipe(
+            Effect.map((sealed) => withSealedAssertions(result, sealed)),
+            Effect.catchAll(() => Effect.succeed(result)),
+          ),
     ),
     Effect.map((result) =>
       !timedOut || timeoutSealedAssertions === undefined
@@ -1111,7 +1253,6 @@ export function runAttemptEffect<
       const withEvidence: EvalResult = {
         ...r,
         ...(diagnostics.length > 0 ? { diagnostics: [...diagnostics] } : {}),
-        ...(Object.keys(facts).length > 0 ? { facts: { ...facts } } : {}),
         ...(commands.length > 0 ? { commands: [...commands] } : {}),
       };
       const phases = recorder.finalize();
@@ -1137,7 +1278,13 @@ export function runAttemptEffect<
         redactEvalResultEvidence(completed, sensitiveValues),
         sourceCapture.snapshot(),
       );
-      bindRunnerAttemptObservabilityCaptureV1(finalResult, observabilityRuntime);
+      const capture = timedOut
+        ? timeoutFileChangesCapture ?? fileChangesCapture
+        : fileChangesCapture;
+      if (capture !== undefined) {
+        retainRunnerAttemptFileChangesCapture(finalResult, capture);
+      }
+      bindRunnerAttemptObservabilityCapture(finalResult, observabilityRuntime);
       return finalResult;
     }),
   );
@@ -1378,21 +1525,15 @@ interface AttemptResources {
   /** attempt 级诊断累计(runAttemptEffect 持有,含 sandbox.create 期间的诊断)。 */
   diagnostics: DiagnosticRecord[];
   /**
-   * attempt 级运行事实累计(runAttemptEffect 持有的同一个 Record 引用,与 diagnostics 同一种
-   * 「共享可变容器」模式):runAttemptBody 用它构造 ctx.fact() 闭包,并在 finally 里原样
-   * 挂到即将返回的结果上(见 diagnostics 的并入点)。
-   */
-  facts: globalThis.Record<string, FactValue>;
-  /**
    * attempt 级 Sandbox 命令证据累加(runAttemptEffect 持有的同一个数组引用,与
-   * diagnostics/facts 同一种「共享容器」模式):`withCommandTiming` 往这里 push,
+   * diagnostics 同一种「共享容器」模式):`withCommandTiming` 往这里 push,
    * finally 挂到即将返回的结果上(见 diagnostics 的并入点)。
    */
   commands: CommandExitEvidence[];
   /** `CommandOptions.sensitiveValues` 的 Attempt 级内存集合；只由命令包装写、结果封口读。 */
   sensitiveValues: Set<string>;
   /** Private Observability capture; its final attachment facts are read only by the Record adapter. */
-  observabilityRuntime: RunnerAttemptObservabilityRuntimeV1;
+  observabilityRuntime: RunnerAttemptObservabilityRuntime;
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 Assert-first Context。 */
   concurrencySlot?: ConcurrencySlot;
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
@@ -1411,6 +1552,8 @@ interface AttemptResources {
   ) => void;
   /** 变更分类账一建好(workspace.baseline 阶段)就登记回外层(超时收尾段折叠 workspace.diff 用)。 */
   registerLedger: (ledger: ChangeLedger) => void;
+  /** Record capture freezes independently of Assertion late evidence and crosses the Result boundary once. */
+  retainFileChangesCapture: (capture: FileChangesCapture) => void;
   /** The outer Effect boundary owns author execution and the one seal. */
   assertFirst: AssertFirstAttemptBridge<unknown>;
   /** Registers the Attempt-local runtime and its post-run evidence state for scope sealing. */
@@ -1454,7 +1597,6 @@ async function runAttemptBody(
     recorder,
     feedback,
     diagnostics,
-    facts,
     commands,
     sensitiveValues,
     observabilityRuntime,
@@ -1464,13 +1606,11 @@ async function runAttemptBody(
     layerCleanups,
     registerEvidence,
     registerLedger,
+    retainFileChangesCapture,
     assertFirst,
     registerAssertions,
     prepareCoordinator,
   } = res;
-  // ctx.fact() 闭包:校验后写进 res.facts(与 runAttemptEffect 共享的同一个 Record 引用),
-  // finally 把它原样挂到即将返回的结果上(与 diagnostics 同一种「共享容器 + finally 并入」模式)。
-  const fact = (key: string, value: FactValue) => recordFact(facts, key, value);
   const usesSandbox = run.agent.kind === "sandbox";
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
   // 节点)下的 command 子节点。包装只在最外层公开调用记录一次——provider 内部转调不经过它。
@@ -1503,7 +1643,6 @@ async function runAttemptBody(
     telemetry,
     progress: feedback.progress,
     diagnostic: feedback.diagnostic,
-    fact,
     // log 是 progress({ message }) 的别名,不是第二条通道(见 AgentContext.log 注释)。
     log,
   };
@@ -1521,7 +1660,6 @@ async function runAttemptBody(
     signal,
     progress: feedback.progress,
     diagnostic: feedback.diagnostic,
-    fact,
   };
   // Only the Assert-first runtime is registered with the outer Scope. The
   // body requests its single seal after gathering non-authoring evidence.
@@ -1565,7 +1703,6 @@ async function runAttemptBody(
             signal,
             progress: feedback.progress,
             diagnostic: feedback.diagnostic,
-            facts: fact,
           };
           const context: SandboxCommandContext = {
             ...cleanupContext,
@@ -1608,7 +1745,6 @@ async function runAttemptBody(
         ));
         if (Either.isLeft(verified)) throw verified.left;
         const ensureEffect = runAgentEnsure(run.agent.ensure, run.agent.installers, sandbox, {
-          fact,
           coordinator: Option.fromNullable(prepareCoordinator),
           targetPlatform: a.plan.providerPlan.target.platform,
           signal,
@@ -1694,6 +1830,8 @@ async function runAttemptBody(
       } }),
       model: run.model,
       reasoningEffort: run.reasoningEffort,
+      // maxCost 断言的估算价目表;与 observed usage.costUSD 互不兜底。
+      pricing: config.pricing,
       flags: run.flags,
       experimentId: run.experimentId,
       judge: a.judge,
@@ -1706,7 +1844,6 @@ async function runAttemptBody(
       telemetry,
       otel,
       feedback,
-      fact,
       concurrencySlot,
       // 实验分类器:send 链上排在 adapter 的 classifySendFailure 之前(见
       // docs/feature/error-classification/architecture.md「分类链」)。与本文件 declareFailure
@@ -1732,9 +1869,14 @@ async function runAttemptBody(
       // 才带(show `--execution`/`--timing` 的 turn 头行读 TimingNode.usage,见 docs/feature/
       // results/architecture.md「result.json」TimingNode.usage)。
       onTurn: (info) => {
-        sourceCapture.onTurn(info);
+        const turnId = captureRunnerPhysicalConversationTurn({
+          runtime: observabilityRuntime,
+          outcome: info.outcome,
+          events: info.events,
+        });
+        sourceCapture.onTurn({ ...info, ...(turnId === undefined ? {} : { turnId }) });
         if (info.usage !== undefined) {
-          captureRunnerTurnUsageV1(observabilityRuntime, info.usage);
+          captureRunnerTurnUsage(observabilityRuntime, info.usage);
         }
         return recorder.child(turnActivity({
           label: info.label,
@@ -1743,6 +1885,7 @@ async function runAttemptBody(
           ...(info.failed ? { failed: true as const } : {}),
           sessionIndex: info.sessionIndex,
           turnIndex: info.turnIndex,
+          ...(turnId === undefined ? {} : { turnId }),
           ...(info.traceId !== undefined ? { traceId: info.traceId } : {}),
           ...(info.traceAttribution !== undefined ? { traceAttribution: info.traceAttribution } : {}),
           ...(info.usage !== undefined ? { usage: info.usage } : {}),
@@ -1785,6 +1928,7 @@ async function runAttemptBody(
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
     let diffWindows: DiffArtifact = [];
     let diffArtifactAvailable = true;
+    let diffExportAvailable = true;
     const captureFailure = state.manager.ledgerCaptureFailure;
     if (captureFailure !== undefined) {
       // `afterSend` is intentionally non-fatal to the completed agent Turn,
@@ -1802,7 +1946,7 @@ async function runAttemptBody(
         ),
       });
     }
-    if (!skipReason && usesSandbox && ledger && captureFailure === undefined) {
+    if (usesSandbox && ledger) {
       const startedAt = recorder.offsetNow();
       const operation = recorder.child(workspaceDiffExportActivity({
         label: "export workspace diff",
@@ -1820,6 +1964,7 @@ async function runAttemptBody(
         if (operation) operation.failed = true;
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw diffError;
         diffArtifactAvailable = false;
+        diffExportAvailable = false;
         feedback.diagnostic({
           code: "workspace-diff-unavailable",
           level: "warning",
@@ -1839,35 +1984,73 @@ async function runAttemptBody(
     }
     const diff = deriveDiffData(diffWindows);
     let workspaceDiff: AgentWorkspaceDiff | undefined;
-    if (usesSandbox && ledger && diffArtifactAvailable && !skipReason) {
-      // This is the one export/freeze point. Post-run Assertion closures and
-      // the later Evaluation Record adapter share this exact object; neither
-      // side rebuilds a diff.
-      try {
-        const document = createAgentWorkspaceDiff({
-          windows: diffWindows,
+    if (usesSandbox && ledger) {
+      let document: AgentWorkspaceDiff | undefined;
+      if (diffExportAvailable) {
+        try {
+          document = createAgentWorkspaceDiff({
+            windows: diffWindows,
+            policy: ledger.attribution,
+          });
+        } catch (diffError) {
+          diffArtifactAvailable = false;
+          feedback.diagnostic({
+            code: "workspace-diff-unavailable",
+            level: "warning",
+            message: `workspace diff freeze failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
+            data: evidenceDiagnosticData(
+              "freeze",
+              diffError,
+              a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+            ),
+          });
+        }
+      }
+
+      const limitations = [
+        ...(captureFailure === undefined ? [] : [Object.freeze({
+          code: "capture-failed" as const,
+          stage: "checkpoint" as const,
+          atWindowId: captureFailure.label,
+        })]),
+        ...(!diffExportAvailable ? [Object.freeze({
+          code: "capture-failed" as const,
+          stage: "export" as const,
+          atWindowId: null,
+        })] : []),
+      ];
+      if (document === undefined) {
+        const capture = createEmptyFileChangesCapture({
           policy: ledger.attribution,
+          limitations: [
+            ...limitations,
+            ...(diffExportAvailable ? [Object.freeze({
+              code: "capture-failed" as const,
+              stage: "normalize" as const,
+              atWindowId: null,
+            })] : []),
+          ],
         });
+        assertFileChangesCaptureRecordable(capture);
+        retainFileChangesCapture(capture);
+      } else {
+        const capture = createFileChangesCapture({ document, limitations });
+        assertFileChangesCaptureRecordable(capture);
+        retainFileChangesCapture(capture);
+      }
+      // A malformed family payload or its blob closure is a producer defect,
+      // not a collector limitation. Keep this outside the collector catches.
+
+      if (!skipReason && diffArtifactAvailable && captureFailure === undefined && document !== undefined) {
         state.late.diff = Object.freeze({
           state: "available" as const,
           document,
         });
         workspaceDiff = document;
-      } catch (diffError) {
-        diffArtifactAvailable = false;
+      } else {
         state.late.diff = Object.freeze({
           state: "unavailable" as const,
           reason: "producer-failed" as const,
-        });
-        feedback.diagnostic({
-          code: "workspace-diff-unavailable",
-          level: "warning",
-          message: `workspace diff freeze failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
-          data: evidenceDiagnosticData(
-            "freeze",
-            diffError,
-            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
-          ),
         });
       }
     } else {
@@ -1977,9 +2160,11 @@ async function runAttemptBody(
     recorder.closeCurrent();
     const durationMs = recorder.offsetNow();
     const o11y = buildO11ySummary(events);
-    // 实测成本(网关带回)优先,缺则按 model + 用量查价格表估算(见 o11y/cost.ts)。
+    // 单向字段契约:estimatedCostUSD 恒为 estimateCost(run.model, usage, config.pricing)
+    // 的 runtime/config price table 估算,永远独立计算;observed 成本(网关/adapter 显式回报)
+    // 只留在 usage.costUSD,两者互不覆盖、互不兜底——即使 observed 存在也照常估算。
     // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/record/architecture.md「o11y.json」)。
-    const cost = usage.costUSD ?? estimateCost(run.model, usage, config.pricing);
+    const estimatedCostUSD = estimateCost(run.model, usage, config.pricing);
 
     // Assert-first entries carry no legacy source graph. Session events and the
     // captured entry module still provide the stable source artifact surface.
@@ -2008,7 +2193,7 @@ async function runAttemptBody(
       evaluationKind: evalDef.evaluationKind ?? "pass",
       ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
       usage,
-      estimatedCostUSD: cost,
+      estimatedCostUSD,
       error,
       skipReason,
       events,
@@ -2077,10 +2262,20 @@ async function runAttemptBody(
             // AgentTeardown | DirectAgentTeardown 混成无法调用的签名。
             if (run.agent.kind === "sandbox") {
               const teardown = run.agent.teardown;
-              if (teardown) await assertFirst.requestEffect(cleanupCallback(() => teardown(sandbox, sandboxAttemptCtx)));
+              if (teardown) {
+                await assertFirst.requestEffect(cleanupCallback((signal) => teardown(sandbox, {
+                  ...sandboxAttemptCtx,
+                  signal,
+                })));
+              }
             } else {
               const teardown = run.agent.teardown;
-              if (teardown) await assertFirst.requestEffect(cleanupCallback(() => teardown(attemptCtx)));
+              if (teardown) {
+                await assertFirst.requestEffect(cleanupCallback((signal) => teardown({
+                  ...attemptCtx,
+                  signal,
+                })));
+              }
             }
           } catch (e) {
             declareFailure("agent.teardown", e);
@@ -2093,10 +2288,10 @@ async function runAttemptBody(
     for (const lifecycle of evalPluginLifecycles.slice(0, activatedEvalPlugins).reverse()) {
       if (lifecycle.teardown === undefined) continue;
       try {
-        await Effect.runPromise(cleanupCallback(() =>
+        await assertFirst.requestEffect(cleanupCallback((signal) =>
           (lifecycle.teardown as (context: EvalPluginContext) => void | Promise<void>)({
             ...evalPluginContext,
-            signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS),
+            signal,
           })
         ));
       } catch (error) {
@@ -2224,7 +2419,6 @@ const EVAL_RESULT_REDACTED_EVIDENCE_KEYS = [
   "retryAttempts",
   "error",
   "diagnostics",
-  "facts",
   "phases",
   "skipReason",
   "events",
@@ -2275,8 +2469,18 @@ function redactEvalResultEvidence(result: EvalResult, sensitiveValues: ReadonlyS
  * (docs/feature/record/architecture.md「commandsjson」);登记不改变 `runCommand` 的
  * 返回/抛错语义,调用方可以处理非零退出并继续,证据仍保留。checked 方法抛出的
  * `SandboxCommandExitError` 自带 `CommandResult`,同样登记；没有结果的 transport 错误只落
- * 时间树 `failed` 标记。
+ * 时间树 `failed` 标记，同时保留 manifest 和准确的非正常终态。
  */
+function isCommandSpawnFailure(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { readonly code?: unknown; readonly syscall?: unknown };
+  return (
+    (candidate.code === "ENOENT" || candidate.code === "EACCES") &&
+    typeof candidate.syscall === "string" &&
+    candidate.syscall.startsWith("spawn")
+  );
+}
+
 function withCommandTiming(
   sandbox: Sandbox,
   recorder: TimingRecorder,
@@ -2284,7 +2488,7 @@ function withCommandTiming(
   commands: CommandExitEvidence[],
   sensitiveValues: Set<string>,
   deadlineAt: number | undefined,
-  observabilityRuntime: RunnerAttemptObservabilityRuntimeV1,
+  observabilityRuntime: RunnerAttemptObservabilityRuntime,
   attemptSignal: AbortSignal,
 ): Sandbox {
   const recordCommandExit = (
@@ -2317,7 +2521,7 @@ function withCommandTiming(
     const display = commandDisplay(cmd, args, sensitiveValues);
     // Register the command manifest capability before process launch. The
     // later result can only be attached through this opaque handle.
-    const observabilityCommand = captureRunnerCommandStartV1({
+    const observabilityCommand = captureRunnerCommandStart({
       runtime: observabilityRuntime,
       phase: getPhase() ?? "eval.run",
       invocationKind,
@@ -2358,14 +2562,14 @@ function withCommandTiming(
           exitCode,
           ...(result as { stdout?: unknown; stderr?: unknown }),
         }, checked);
-        captureRunnerCommandResultV1({
+        captureRunnerCommandResult({
           handle: observabilityCommand,
           exitCode,
           stdout: (result as { stdout?: unknown }).stdout,
           stderr: (result as { stderr?: unknown }).stderr,
         });
       } else {
-        captureRunnerCommandCaptureFailedV1(observabilityCommand);
+        captureRunnerCommandCaptureFailed(observabilityCommand);
       }
       // CommandResult.command:最外层公开调用恰好是「eval 实际跑了什么」的定义点,摘要
       // 与时间树节点同一份。记录边界是权威来源，provider 即使给过原始 command 也必须覆盖，
@@ -2404,23 +2608,26 @@ function withCommandTiming(
       );
       if (commandResult !== undefined) {
         recordCommandExit(node, display, commandResult, checked);
-        captureRunnerCommandResultV1({
+        captureRunnerCommandResult({
           handle: observabilityCommand,
           exitCode: commandResult.exitCode,
           stdout: commandResult.stdout,
           stderr: commandResult.stderr,
         });
       } else if (e instanceof SandboxCommandTimeoutError) {
-        captureRunnerCommandTimeoutV1(observabilityCommand);
+        captureRunnerCommandTimeout(observabilityCommand);
       } else if (
         attemptSignal.aborted ||
         ((opts as { signal?: AbortSignal } | undefined)?.signal?.aborted === true)
       ) {
-        // Cancellation has no observed terminal result; preserve the partial
-        // capture state rather than inventing one.
-        captureRunnerCommandInterruptedV1(observabilityCommand);
+        // The provider call was already entered, so cancellation terminates
+        // this registered command rather than claiming it never started.
+        captureRunnerCommandInterrupted(observabilityCommand);
       } else {
-        captureRunnerCommandCaptureFailedV1(observabilityCommand);
+        captureRunnerCommandCaptureFailed(
+          observabilityCommand,
+          isCommandSpawnFailure(e) ? "spawn-failed" : "transport-lost",
+        );
       }
       throw e;
     }
@@ -2514,6 +2721,7 @@ export function experimentRunInfo(
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     sandboxPlansByEval: { ...sandboxPlansByEval },
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
+    ...(run.sharedState === undefined ? {} : { sharedState: { key: run.sharedState.key } }),
     ...(judge
       ? { judge: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs } }
       : {}),

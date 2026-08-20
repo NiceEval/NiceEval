@@ -2,7 +2,7 @@
 
 ## adapter-ai-sdk-direct-live-compatibility
 
-Repo ID 是 `adapter/ai-sdk-direct`；manifest 声明 `areas: ["adapter"]`、live lanes、Node 22 与 external network。
+Repo ID 是 `adapter/ai-sdk-direct`；manifest 声明 `areas: ["adapter"]`、live lanes、Node 24 与 external network。
 被测公开入口是 `aiSdkAgent()`：Experiment 直接把真实 AI SDK `generateText()` 交给候选包的完整 Direct Agent factory，
 不经过 HTTP、UI Message Stream 或 Repo 自写协议转换。
 
@@ -26,5 +26,5 @@ input/output usage；同一 `t` 的第二轮必须从 factory 保存的消息历
 
 - `attempts: 1`，无测试级 retry，也不使用 Judge；缺少 `OPENAI_API_KEY` / `OPENAI_BASE_URL` 是 configuration failure。
 - `niceeval exp` 在 Testkit 拥有的独立进程组内运行；每次 Journey 使用系统临时私有 `HOME`，cleanup 后不留子进程或认证目录。
-- `show`、`show --json`、`show <eval> --history` 与 `show @locator --execution` 公开读回同一结果；execution 必须出现工具名与哨兵入参。
-- 本 factory 未声明 tracing。独立 timing owner 只读回 runner 阶段，不重复 execution 或 OTel 断言。
+- `show`、`show --json`、`show --run <run-id>` 与代表 Report 的 `show @locator --report <fixture-module> --page <execution-route>` 公开读回同一结果；目标 Page 必须出现工具名与哨兵入参。
+- 本 factory 未声明 tracing。通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回；本 Repo 不重复断言。

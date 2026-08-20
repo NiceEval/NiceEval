@@ -9,14 +9,18 @@ description: "安装 NiceEval，写三个文件，10 分钟内对你自己的应
 ## 使用 Coding Agent 接入（推荐）
 <Steps>
   <Step title="接入">
+    把以下指令发送给你正在使用的 Coding Agent（例如 Codex、Claude Code 或其他能修改当前项目的 Agent）：
+
     ```text
-    READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it, integrate it with this project, and run the first eval end to end.
+    阅读 https://niceeval.com/INIT.md，为当前仓库安装并接入 niceeval，端到端跑通第一条评估用例。完成时列出创建的 Experiment ID、运行命令和结果查看命令。
 
     ```
   </Step>
   <Step title="运行测试">
+    使用 Agent 最后列出的 Experiment ID。若它没有列出，先运行 `pnpm exec niceeval exp list` 查看可用的 Experiment。
+
     ```bash
-    pnpm exec niceeval exp 实验名
+    pnpm exec niceeval exp <experiment-id>
     ```
   </Step>
   <Step title="查看结果">
@@ -29,6 +33,8 @@ description: "安装 NiceEval，写三个文件，10 分钟内对你自己的应
 
 
 ## 人工接入
+
+先启动你的被测应用，并确认它有一个可调用接口。下方示例假设接口是 `POST http://localhost:3000/chat`，请求体接收 `message` 和 `model`，响应 JSON 含有字符串字段 `reply`。接口不同就改 Adapter 的 URL、请求体和读取响应的代码；还没有可启动的应用时，先从 [Examples](/zh/examples) 选择一个可运行项目。
 
 ```bash
 pnpm add -D niceeval
@@ -82,14 +88,14 @@ export default defineExperiment({
 ```ts
 // evals/refund-policy.eval.ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { pattern } from "niceeval/expect";
 
 export default defineEval({
   description: "退款政策问答",
   async test(t) {
     await t.send("你们的退款政策是什么?");
     t.succeeded();
-    t.check(t.reply, includes(/30\s*天|一个月/));  // 措辞会变，用等价正则而不是单一精确短语
+    t.check(t.reply, pattern(/30\s*天|一个月/));  // 措辞会变，用等价正则而不是单一精确短语
   },
 });
 ```

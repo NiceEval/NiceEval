@@ -41,6 +41,8 @@ jobs:
           - image: opencode
           - image: hermes
           - image: openclaw
+          - image: omp
+          - image: deepseek-harness
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -61,7 +63,19 @@ jobs:
               process.stdout.write(m.agentBaselineVersionTag(process.env.AGENT));
             });
           ')
+          AGENT_VERSION=$(node -e '
+            import("./src/agents/coding-cli-versions.ts").then((m) => {
+              process.stdout.write(m.AGENT_BASELINE_VERSION[process.env.AGENT]);
+            });
+          ')
+          BUN_VERSION=$(node -e '
+            import("./src/agents/coding-cli-versions.ts").then((m) => {
+              process.stdout.write(m.DEFAULT_BUN_VERSION);
+            });
+          ')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "agent_version=$AGENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "bun_version=$BUN_VERSION" >> "$GITHUB_OUTPUT"
           echo "已解析 niceeval/$AGENT:$VERSION"
 
       - name: Decide whether to publish
@@ -112,6 +126,10 @@ jobs:
           load: true
           platforms: linux/amd64
           tags: niceeval/${{ matrix.image }}:selfcheck
+          build-args: |
+            OMP_VERSION=${{ steps.version.outputs.agent_version }}
+            BUN_VERSION=${{ steps.version.outputs.bun_version }}
+            DEEPSEEK_HARNESS_VERSION=${{ steps.version.outputs.agent_version }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
@@ -144,6 +162,10 @@ jobs:
           tags: |
             niceeval/${{ matrix.image }}:${{ steps.version.outputs.version }}
             niceeval/${{ matrix.image }}:latest
+          build-args: |
+            OMP_VERSION=${{ steps.version.outputs.agent_version }}
+            BUN_VERSION=${{ steps.version.outputs.bun_version }}
+            DEEPSEEK_HARNESS_VERSION=${{ steps.version.outputs.agent_version }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           provenance: mode=max

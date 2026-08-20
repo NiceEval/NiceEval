@@ -1,80 +1,82 @@
 import { Schema } from "effect";
+import { isCanonicalTurnLabel } from "../../shared/turn-label.ts";
 import type { RecordBlobRef } from "../../record/attachment/index.ts";
 import {
   Sha256DigestSchema,
   SourceFileItemIdSchema,
 } from "../../sources/codec.ts";
 import {
-  AttemptDiagnosticsReferencesV1Schema,
-  AttemptReferenceTargetV1Schema,
-  AttemptTimingReferencesV1Schema,
-  CollectionV1Schema,
-  CommandsReferencesV1Schema,
-  ConversationReferencesV1Schema,
-  CurrencyCodeV1Schema,
-  NonNegativeSafeIntegerV1Schema,
-  PositiveSafeIntegerV1Schema,
-  RunDiagnosticsReferencesV1Schema,
-  RunReferenceTargetV1Schema,
-  RunTimingReferencesV1Schema,
-  SafeIdentifierV1Schema,
-  SafeTextV1Schema,
-  SourceNativeToolNameV1Schema,
-  StableLabelV1Schema,
-  UsageObservationIdV1Schema,
-  UsageReferencesV1Schema,
-  boundedSafeTextV1Schema,
-  CallIdV1Schema,
-  CommandIdV1Schema,
-  DiagnosticIdV1Schema,
-  IntervalIdV1Schema,
-  ItemIdV1Schema,
-  TurnIdV1Schema,
+  AttemptDiagnosticsReferencesSchema,
+  AttemptReferenceTargetSchema,
+  AttemptTimingReferencesSchema,
+  CollectionSchema,
+  CommandsReferencesSchema,
+  ConversationReferencesSchema,
+  CurrencyCodeSchema,
+  NonNegativeSafeIntegerSchema,
+  PositiveSafeIntegerSchema,
+  RunDiagnosticsReferencesSchema,
+  RunReferenceTargetSchema,
+  RunTimingReferencesSchema,
+  SafeIdentifierSchema,
+  SafeTextSchema,
+  SourceNativeToolNameSchema,
+  StableLabelSchema,
+  UsageObservationIdSchema,
+  UsageReferencesSchema,
+  boundedSafeTextSchema,
+  CallIdSchema,
+  CommandIdSchema,
+  DiagnosticIdSchema,
+  IntervalIdSchema,
+  ItemIdSchema,
+  TurnIdSchema,
 } from "./codec.ts";
 import {
-  MAX_COMMAND_ARGUMENT_BYTES_V1,
-  MAX_COMMAND_ARGUMENTS_V1,
-  MAX_COMMAND_EXECUTABLE_BYTES_V1,
-  MAX_COMMAND_INLINE_STREAM_BYTES_V1,
-  MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES_V1,
-  MAX_COMMAND_SHELL_BYTES_V1,
-  MAX_COMMAND_STREAM_BYTES_V1,
-  MAX_COMMANDS_ATTACHMENT_BYTES_V1,
-  MAX_COMMANDS_CLOSURE_BYTES_V1,
-  MAX_COMMANDS_V1,
-  MAX_CONVERSATION_ATTACHMENT_BYTES_V1,
-  MAX_CONVERSATION_ITEMS_V1,
-  MAX_CONVERSATION_TEXT_BYTES_V1,
-  MAX_CONVERSATION_TURNS_V1,
-  MAX_DIAGNOSTIC_CAUSES_V1,
-  MAX_DIAGNOSTIC_CAUSE_SUMMARY_BYTES_V1,
-  MAX_DIAGNOSTIC_CONTEXT_ITEMS_V1,
-  MAX_DIAGNOSTIC_SUMMARY_BYTES_V1,
-  MAX_DIAGNOSTICS_ATTACHMENT_BYTES_V1,
-  MAX_DIAGNOSTICS_V1,
-  MAX_TIMING_ATTACHMENT_BYTES_V1,
-  MAX_TIMING_INTERVALS_V1,
-  MAX_USAGE_ATTACHMENT_BYTES_V1,
-  MAX_USAGE_OBSERVATIONS_V1,
+  MAX_COMMAND_ARGUMENT_BYTES,
+  MAX_COMMAND_ARGUMENTS,
+  MAX_COMMAND_EXECUTABLE_BYTES,
+  MAX_COMMAND_INLINE_STREAM_BYTES,
+  MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES,
+  MAX_COMMAND_SHELL_BYTES,
+  MAX_COMMAND_STREAM_BYTES,
+  MAX_COMMANDS_ATTACHMENT_BYTES,
+  MAX_COMMANDS_CLOSURE_BYTES,
+  MAX_COMMANDS,
+  MAX_CONVERSATION_ATTACHMENT_BYTES,
+  MAX_CONVERSATION_ITEMS,
+  MAX_CONVERSATION_TEXT_BYTES,
+  MAX_CONVERSATION_TURNS,
+  MAX_DIAGNOSTIC_CAUSES,
+  MAX_DIAGNOSTIC_CAUSE_SUMMARY_BYTES,
+  MAX_DIAGNOSTIC_CONTEXT_ITEMS,
+  MAX_DIAGNOSTIC_SUMMARY_BYTES,
+  MAX_DIAGNOSTICS_ATTACHMENT_BYTES,
+  MAX_DIAGNOSTICS,
+  MAX_TIMING_ATTACHMENT_BYTES,
+  MAX_TIMING_INTERVALS,
+  MAX_USAGE_ATTACHMENT_BYTES,
+  MAX_USAGE_OBSERVATIONS,
 } from "./limits.ts";
 import {
-  ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS_V1,
-  RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS_V1,
-  compareObservabilityTextV1,
-  isSafeTextV1,
-  jsonUtf8ByteLengthV1,
-  limitationTargetV1,
-  type AttemptDiagnosticsReferencesV1,
-  type AttemptReferenceTargetV1,
-  type CollectionV1,
-  type CommandIdV1,
-  type CommandsReferencesV1,
-  type RunDiagnosticsReferencesV1,
+  ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS,
+  RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS,
+  compareObservabilityText,
+  isSafeText,
+  isStableLabel,
+  jsonUtf8ByteLength,
+  limitationTarget,
+  type AttemptDiagnosticsReferences,
+  type AttemptReferenceTarget,
+  type Collection,
+  type CommandId,
+  type CommandsReferences,
+  type RunDiagnosticsReferences,
 } from "./model.ts";
 import {
-  makeAttemptObservabilityFamilyValidationV1,
-  makeRunObservabilityFamilyValidationV1,
-  type ObservabilityFamilyValidationV1,
+  makeAttemptObservabilityFamilyValidation,
+  makeRunObservabilityFamilyValidation,
+  type ObservabilityFamilyValidation,
 } from "./validation.ts";
 
 function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
@@ -82,7 +84,7 @@ function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
 }
 
 function payloadFits(value: object, maximumBytes: number): boolean {
-  const length = jsonUtf8ByteLengthV1(value);
+  const length = jsonUtf8ByteLength(value);
   return length !== undefined && length <= maximumBytes;
 }
 
@@ -94,7 +96,7 @@ function isStrictlyOrderedById<Item>(
   const seen = new Set<string>();
   for (const value of values) {
     const id = idOf(value);
-    if (seen.has(id) || (previous !== undefined && compareObservabilityTextV1(previous, id) >= 0)) {
+    if (seen.has(id) || (previous !== undefined && compareObservabilityText(previous, id) >= 0)) {
       return false;
     }
     seen.add(id);
@@ -104,16 +106,16 @@ function isStrictlyOrderedById<Item>(
 }
 
 function isAllowedCollection(
-  collection: CollectionV1,
+  collection: Collection,
   targets: readonly string[],
 ): boolean {
   return collection.limitations.every((limitation) =>
-    targets.some((target) => limitationTargetV1(limitation) === target),
+    targets.some((target) => limitationTarget(limitation) === target),
   );
 }
 
 function hasExactStreamTruncation(
-  collection: CollectionV1,
+  collection: Collection,
   commandId: string,
   stream: "stdout" | "stderr",
   retainedBytes: number,
@@ -132,126 +134,126 @@ function hasExactStreamTruncation(
 
 function isProjectRelativePath(value: string): boolean {
   return (
-    isSafeTextV1(value) &&
+    isSafeText(value) &&
     value.length > 0 &&
     !value.startsWith("/") &&
     value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..") &&
-    new TextEncoder().encode(value).byteLength <= MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES_V1
+    new TextEncoder().encode(value).byteLength <= MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES
   );
 }
 
-const ProjectRelativePathV1Schema = Schema.String.pipe(
+const ProjectRelativePathSchema = Schema.String.pipe(
   Schema.filter(isProjectRelativePath, {
-    identifier: "ObservabilityProjectRelativePathV1",
+    identifier: "ObservabilityProjectRelativePath",
     description: "a portable project-relative path without dot segments",
   }),
 );
 
-const ExitCodeV1Schema = Schema.JsonNumber.pipe(
+const ExitCodeSchema = Schema.JsonNumber.pipe(
   Schema.filter(
     (value) =>
       Number.isSafeInteger(value) &&
       value >= -2_147_483_648 &&
       value <= 2_147_483_647,
     {
-      identifier: "ObservabilityCommandExitCodeV1",
+      identifier: "ObservabilityCommandExitCode",
       description: "a signed 32-bit command exit code",
     },
   ),
 );
 
 /** Record's opaque ref position is the only non-JSON value in a durable command payload. */
-const RecordBlobRefPositionV1Schema: Schema.Schema<RecordBlobRef, RecordBlobRef, never> =
+const RecordBlobRefPositionSchema: Schema.Schema<RecordBlobRef, RecordBlobRef, never> =
   Schema.declare<RecordBlobRef>(
     (value): value is RecordBlobRef => typeof value === "object" && value !== null,
   );
 
-const ConversationItemBaseV1Fields = {
-  itemId: ItemIdV1Schema,
-  turnId: TurnIdV1Schema,
-  sequence: PositiveSafeIntegerV1Schema,
-  refs: ConversationReferencesV1Schema,
+const ConversationItemBaseFields = {
+  itemId: ItemIdSchema,
+  turnId: TurnIdSchema,
+  sequence: PositiveSafeIntegerSchema,
+  refs: ConversationReferencesSchema,
 } as const;
 
-export const ConversationTurnV1Schema = Schema.Struct({
-  turnId: TurnIdV1Schema,
-  sequence: PositiveSafeIntegerV1Schema,
+export const ConversationTurnSchema = Schema.Struct({
+  turnId: TurnIdSchema,
+  sequence: PositiveSafeIntegerSchema,
   outcome: Schema.Literal("completed", "failed", "cancelled", "interrupted"),
-  refs: ConversationReferencesV1Schema,
+  refs: ConversationReferencesSchema,
 });
 
-export const ConversationItemV1Schema = Schema.Union(
+export const ConversationItemSchema = Schema.Union(
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("message"),
     role: Schema.Literal("user", "assistant"),
-    text: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+    text: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("tool-call"),
-    callId: CallIdV1Schema,
-    tool: SourceNativeToolNameV1Schema,
-    inputSummary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+    callId: CallIdSchema,
+    tool: SourceNativeToolNameSchema,
+    inputSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("tool-result"),
-    callId: CallIdV1Schema,
+    callId: CallIdSchema,
     outcome: Schema.Literal("completed", "rejected", "failed", "cancelled"),
-    outputSummary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+    outputSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("thinking-summary"),
-    summary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("subagent"),
     state: Schema.Literal("started", "completed", "failed"),
-    label: SafeIdentifierV1Schema,
-    summary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+    label: SafeIdentifierSchema,
+    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("input-request"),
     state: Schema.Literal("requested", "answered", "cancelled"),
-    promptSummary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+    promptSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
     responseSummary: Schema.NullOr(
-      boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+      boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
     ),
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("skill-load"),
-    skill: SafeIdentifierV1Schema,
+    skill: SafeIdentifierSchema,
     outcome: Schema.Literal("loaded", "failed"),
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("context-injection"),
     source: Schema.Literal("system", "memory", "skill", "user"),
-    summary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("compaction"),
-    summary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
-    compactedItemCount: NonNegativeSafeIntegerV1Schema,
+    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    compactedItemCount: NonNegativeSafeIntegerSchema,
   }),
   Schema.Struct({
-    ...ConversationItemBaseV1Fields,
+    ...ConversationItemBaseFields,
     kind: Schema.Literal("conversation-error"),
-    code: SafeIdentifierV1Schema,
-    summary: boundedSafeTextV1Schema(MAX_CONVERSATION_TEXT_BYTES_V1),
+    code: SafeIdentifierSchema,
+    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
   }),
 );
 
-export type ConversationTurnV1 = Schema.Schema.Type<typeof ConversationTurnV1Schema>;
-export type ConversationItemV1 = Schema.Schema.Type<typeof ConversationItemV1Schema>;
+export type ConversationTurn = Schema.Schema.Type<typeof ConversationTurnSchema>;
+export type ConversationItem = Schema.Schema.Type<typeof ConversationItemSchema>;
 
-function conversationTextLengths(item: ConversationItemV1): readonly number[] {
+function conversationTextLengths(item: ConversationItem): readonly number[] {
   switch (item.kind) {
     case "message":
       return freezeArray([new TextEncoder().encode(item.text).byteLength]);
@@ -277,13 +279,13 @@ function conversationTextLengths(item: ConversationItemV1): readonly number[] {
   }
 }
 
-function isCanonicalConversationAttachmentV1(
-  value: Schema.Schema.Type<typeof ConversationAttachmentV1StructuralSchema>,
+function isCanonicalConversationAttachment(
+  value: Schema.Schema.Type<typeof ConversationAttachmentStructuralSchema>,
 ): boolean {
   if (
-    value.turns.length > MAX_CONVERSATION_TURNS_V1 ||
-    value.items.length > MAX_CONVERSATION_ITEMS_V1 ||
-    !payloadFits(value, MAX_CONVERSATION_ATTACHMENT_BYTES_V1) ||
+    value.turns.length > MAX_CONVERSATION_TURNS ||
+    value.items.length > MAX_CONVERSATION_ITEMS ||
+    !payloadFits(value, MAX_CONVERSATION_ATTACHMENT_BYTES) ||
     !isAllowedCollection(value.collection, ["conversation-item", "conversation-text"])
   ) {
     return false;
@@ -301,7 +303,7 @@ function isCanonicalConversationAttachmentV1(
   const itemSequences = new Set<number>();
   const callIds = new Set<string>();
   const resultCallIds = new Set<string>();
-  let previous: ConversationItemV1 | undefined;
+  let previous: ConversationItem | undefined;
   for (const item of value.items) {
     if (
       itemIds.has(item.itemId) ||
@@ -314,7 +316,7 @@ function isCanonicalConversationAttachmentV1(
       previous !== undefined &&
       (previous.sequence > item.sequence ||
         (previous.sequence === item.sequence &&
-          compareObservabilityTextV1(previous.itemId, item.itemId) >= 0))
+          compareObservabilityText(previous.itemId, item.itemId) >= 0))
     ) {
       return false;
     }
@@ -347,52 +349,52 @@ function isCanonicalConversationAttachmentV1(
   });
 }
 
-const ConversationAttachmentV1StructuralSchema = Schema.Struct({
-  collection: CollectionV1Schema,
-  turns: Schema.Array(ConversationTurnV1Schema),
-  items: Schema.Array(ConversationItemV1Schema),
+const ConversationAttachmentStructuralSchema = Schema.Struct({
+  collection: CollectionSchema,
+  turns: Schema.Array(ConversationTurnSchema),
+  items: Schema.Array(ConversationItemSchema),
 });
 
-export const ConversationAttachmentV1Schema = ConversationAttachmentV1StructuralSchema.pipe(
-  Schema.filter(isCanonicalConversationAttachmentV1, {
-    identifier: "ObservabilityConversationAttachmentV1",
+export const ConversationAttachmentSchema = ConversationAttachmentStructuralSchema.pipe(
+  Schema.filter(isCanonicalConversationAttachment, {
+    identifier: "ObservabilityConversationAttachment",
     description: "a canonical, bounded conversation attachment",
   }),
 );
 
-export type ConversationAttachmentV1 = Schema.Schema.Type<
-  typeof ConversationAttachmentV1Schema
+export type ConversationAttachment = Schema.Schema.Type<
+  typeof ConversationAttachmentSchema
 >;
 
-const CommandInvocationV1Schema = Schema.Union(
+const CommandInvocationSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("argv"),
-    executable: boundedSafeTextV1Schema(MAX_COMMAND_EXECUTABLE_BYTES_V1),
+    executable: boundedSafeTextSchema(MAX_COMMAND_EXECUTABLE_BYTES),
     arguments: Schema.Array(
-      boundedSafeTextV1Schema(MAX_COMMAND_ARGUMENT_BYTES_V1),
+      boundedSafeTextSchema(MAX_COMMAND_ARGUMENT_BYTES),
     ).pipe(
-      Schema.filter((arguments_) => arguments_.length <= MAX_COMMAND_ARGUMENTS_V1, {
-        identifier: "ObservabilityCommandArgumentsV1",
+      Schema.filter((arguments_) => arguments_.length <= MAX_COMMAND_ARGUMENTS, {
+        identifier: "ObservabilityCommandArguments",
         description: "at most 64 safe command arguments",
       }),
     ),
   }),
   Schema.Struct({
     kind: Schema.Literal("shell"),
-    command: boundedSafeTextV1Schema(MAX_COMMAND_SHELL_BYTES_V1),
+    command: boundedSafeTextSchema(MAX_COMMAND_SHELL_BYTES),
   }),
 );
 
-const CommandWorkingDirectoryV1Schema = Schema.Union(
+const CommandWorkingDirectorySchema = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("sandbox-default") }),
   Schema.Struct({
     kind: Schema.Literal("project-relative"),
-    path: ProjectRelativePathV1Schema,
+    path: ProjectRelativePathSchema,
   }),
   Schema.Struct({ kind: Schema.Literal("redacted") }),
 );
 
-export const CommandManifestV1Schema = Schema.Struct({
+export const CommandManifestSchema = Schema.Struct({
   phase: Schema.Literal(
     "attempt.setup",
     "sandbox.prepare",
@@ -401,29 +403,29 @@ export const CommandManifestV1Schema = Schema.Struct({
     "sandbox.command",
     "attempt.teardown",
   ),
-  invocation: CommandInvocationV1Schema,
-  workingDirectory: CommandWorkingDirectoryV1Schema,
+  invocation: CommandInvocationSchema,
+  workingDirectory: CommandWorkingDirectorySchema,
 });
 
-export const CommandStreamV1Schema = Schema.Struct({
+export const CommandStreamSchema = Schema.Struct({
   storage: Schema.Union(
     Schema.Struct({
       kind: Schema.Literal("inline"),
-      text: SafeTextV1Schema,
+      text: SafeTextSchema,
     }),
     Schema.Struct({
       kind: Schema.Literal("blob"),
-      ref: RecordBlobRefPositionV1Schema,
+      ref: RecordBlobRefPositionSchema,
     }),
   ),
-  retainedBytes: NonNegativeSafeIntegerV1Schema,
-  totalSafeUtf8Bytes: NonNegativeSafeIntegerV1Schema,
+  retainedBytes: NonNegativeSafeIntegerSchema,
+  totalSafeUtf8Bytes: NonNegativeSafeIntegerSchema,
 });
 
-export const CommandOutcomeV1Schema = Schema.Union(
+export const CommandOutcomeSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("exited"),
-    exitCode: ExitCodeV1Schema,
+    exitCode: ExitCodeSchema,
   }),
   Schema.Struct({
     kind: Schema.Literal("terminated"),
@@ -435,37 +437,37 @@ export const CommandOutcomeV1Schema = Schema.Union(
   }),
 );
 
-export const CommandResultV1Schema = Schema.Struct({
-  outcome: CommandOutcomeV1Schema,
-  stdout: CommandStreamV1Schema,
-  stderr: CommandStreamV1Schema,
+export const CommandResultSchema = Schema.Struct({
+  outcome: CommandOutcomeSchema,
+  stdout: CommandStreamSchema,
+  stderr: CommandStreamSchema,
 });
 
-export const CommandObservationV1Schema = Schema.Struct({
-  commandId: CommandIdV1Schema,
-  manifest: CommandManifestV1Schema,
-  result: CommandResultV1Schema,
-  refs: CommandsReferencesV1Schema,
+export const CommandObservationSchema = Schema.Struct({
+  commandId: CommandIdSchema,
+  manifest: CommandManifestSchema,
+  result: CommandResultSchema,
+  refs: CommandsReferencesSchema,
 });
 
-const CommandsAttachmentV1StructuralSchema = Schema.Struct({
-  collection: CollectionV1Schema,
-  commands: Schema.Array(CommandObservationV1Schema),
+const CommandsAttachmentStructuralSchema = Schema.Struct({
+  collection: CollectionSchema,
+  commands: Schema.Array(CommandObservationSchema),
 });
 
-export type CommandManifestV1 = Schema.Schema.Type<typeof CommandManifestV1Schema>;
-export type CommandStreamV1 = Schema.Schema.Type<typeof CommandStreamV1Schema>;
-export type CommandResultV1 = Schema.Schema.Type<typeof CommandResultV1Schema>;
-export type CommandObservationV1 = Schema.Schema.Type<typeof CommandObservationV1Schema>;
+export type CommandManifest = Schema.Schema.Type<typeof CommandManifestSchema>;
+export type CommandStream = Schema.Schema.Type<typeof CommandStreamSchema>;
+export type CommandResult = Schema.Schema.Type<typeof CommandResultSchema>;
+export type CommandObservation = Schema.Schema.Type<typeof CommandObservationSchema>;
 
-function isCanonicalCommandStreamV1(
-  stream: CommandStreamV1,
-  collection: CollectionV1,
+function isCanonicalCommandStream(
+  stream: CommandStream,
+  collection: Collection,
   commandId: string,
   streamName: "stdout" | "stderr",
 ): boolean {
   if (
-    stream.retainedBytes > MAX_COMMAND_STREAM_BYTES_V1 ||
+    stream.retainedBytes > MAX_COMMAND_STREAM_BYTES ||
     stream.totalSafeUtf8Bytes < stream.retainedBytes
   ) {
     return false;
@@ -474,15 +476,15 @@ function isCanonicalCommandStreamV1(
     const bytes = new TextEncoder().encode(stream.storage.text).byteLength;
     if (
       bytes !== stream.retainedBytes ||
-      stream.retainedBytes > MAX_COMMAND_INLINE_STREAM_BYTES_V1
+      stream.retainedBytes > MAX_COMMAND_INLINE_STREAM_BYTES
     ) {
       return false;
     }
   }
   if (stream.totalSafeUtf8Bytes === stream.retainedBytes) {
     return stream.storage.kind === "inline"
-      ? stream.retainedBytes <= MAX_COMMAND_INLINE_STREAM_BYTES_V1
-      : stream.retainedBytes > MAX_COMMAND_INLINE_STREAM_BYTES_V1;
+      ? stream.retainedBytes <= MAX_COMMAND_INLINE_STREAM_BYTES
+      : stream.retainedBytes > MAX_COMMAND_INLINE_STREAM_BYTES;
   }
   return hasExactStreamTruncation(
     collection,
@@ -493,7 +495,7 @@ function isCanonicalCommandStreamV1(
   );
 }
 
-function commandManifestTextLengths(manifest: CommandManifestV1): readonly number[] {
+function commandManifestTextLengths(manifest: CommandManifest): readonly number[] {
   const encoder = new TextEncoder();
   const invocation = manifest.invocation.kind === "argv"
     ? [manifest.invocation.executable, ...manifest.invocation.arguments]
@@ -504,12 +506,12 @@ function commandManifestTextLengths(manifest: CommandManifestV1): readonly numbe
   return freezeArray([...invocation, ...directory].map((value) => encoder.encode(value).byteLength));
 }
 
-function isCanonicalCommandsAttachmentV1(
-  value: Schema.Schema.Type<typeof CommandsAttachmentV1StructuralSchema>,
+function isCanonicalCommandsAttachment(
+  value: Schema.Schema.Type<typeof CommandsAttachmentStructuralSchema>,
 ): boolean {
   if (
-    value.commands.length > MAX_COMMANDS_V1 ||
-    !payloadFits(value, MAX_COMMANDS_ATTACHMENT_BYTES_V1) ||
+    value.commands.length > MAX_COMMANDS ||
+    !payloadFits(value, MAX_COMMANDS_ATTACHMENT_BYTES) ||
     !isAllowedCollection(value.collection, [
       "command-manifest",
       "command-stdout",
@@ -525,7 +527,7 @@ function isCanonicalCommandsAttachmentV1(
       ["stdout", command.result.stdout],
       ["stderr", command.result.stderr],
     ] as const) {
-      if (!isCanonicalCommandStreamV1(stream, value.collection, command.commandId, name)) {
+      if (!isCanonicalCommandStream(stream, value.collection, command.commandId, name)) {
         return false;
       }
       if (stream.storage.kind === "blob") {
@@ -533,7 +535,7 @@ function isCanonicalCommandsAttachmentV1(
       }
     }
   }
-  if (closureBytes > MAX_COMMANDS_CLOSURE_BYTES_V1) return false;
+  if (closureBytes > MAX_COMMANDS_CLOSURE_BYTES) return false;
   return value.collection.limitations.every((limitation) => {
     if (limitation.code !== "text-truncated" || limitation.target !== "command-manifest") {
       return true;
@@ -547,20 +549,20 @@ function isCanonicalCommandsAttachmentV1(
   });
 }
 
-export const CommandsAttachmentV1Schema = CommandsAttachmentV1StructuralSchema.pipe(
-  Schema.filter(isCanonicalCommandsAttachmentV1, {
-    identifier: "ObservabilityCommandsAttachmentV1",
+export const CommandsAttachmentSchema = CommandsAttachmentStructuralSchema.pipe(
+  Schema.filter(isCanonicalCommandsAttachment, {
+    identifier: "ObservabilityCommandsAttachment",
     description: "a canonical, bounded commands attachment",
   }),
 );
 
-export type CommandsAttachmentV1 = Schema.Schema.Type<typeof CommandsAttachmentV1Schema>;
+export type CommandsAttachment = Schema.Schema.Type<typeof CommandsAttachmentSchema>;
 
-export const UsageObservationV1Schema = Schema.Union(
+export const UsageObservationSchema = Schema.Union(
   Schema.Struct({
-    usageObservationId: UsageObservationIdV1Schema,
-    provider: SafeIdentifierV1Schema,
-    refs: UsageReferencesV1Schema,
+    usageObservationId: UsageObservationIdSchema,
+    provider: SafeIdentifierSchema,
+    refs: UsageReferencesSchema,
     kind: Schema.Literal("token-bucket"),
     bucket: Schema.Literal(
       "input",
@@ -570,19 +572,19 @@ export const UsageObservationV1Schema = Schema.Union(
       "reasoning",
       "other",
     ),
-    tokens: NonNegativeSafeIntegerV1Schema,
+    tokens: NonNegativeSafeIntegerSchema,
   }),
   Schema.Struct({
-    usageObservationId: UsageObservationIdV1Schema,
-    provider: SafeIdentifierV1Schema,
-    refs: UsageReferencesV1Schema,
+    usageObservationId: UsageObservationIdSchema,
+    provider: SafeIdentifierSchema,
+    refs: UsageReferencesSchema,
     kind: Schema.Literal("request"),
     requestKind: Schema.Literal("model", "tool"),
   }),
   Schema.Struct({
-    usageObservationId: UsageObservationIdV1Schema,
-    provider: SafeIdentifierV1Schema,
-    refs: UsageReferencesV1Schema,
+    usageObservationId: UsageObservationIdSchema,
+    provider: SafeIdentifierSchema,
+    refs: UsageReferencesSchema,
     kind: Schema.Literal("provider-cost"),
     amount: Schema.String.pipe(
       Schema.filter(
@@ -590,43 +592,43 @@ export const UsageObservationV1Schema = Schema.Union(
           /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value) &&
           new TextEncoder().encode(value).byteLength <= 64,
         {
-          identifier: "ObservabilityCanonicalDecimalV1",
+          identifier: "ObservabilityCanonicalDecimal",
           description: "a non-negative canonical decimal string",
         },
       ),
     ),
-    currency: CurrencyCodeV1Schema,
+    currency: CurrencyCodeSchema,
   }),
 );
 
-const UsageAttachmentV1StructuralSchema = Schema.Struct({
-  collection: CollectionV1Schema,
-  observations: Schema.Array(UsageObservationV1Schema),
+const UsageAttachmentStructuralSchema = Schema.Struct({
+  collection: CollectionSchema,
+  observations: Schema.Array(UsageObservationSchema),
 });
 
-export type UsageObservationV1 = Schema.Schema.Type<typeof UsageObservationV1Schema>;
+export type UsageObservation = Schema.Schema.Type<typeof UsageObservationSchema>;
 
-function isCanonicalUsageAttachmentV1(
-  value: Schema.Schema.Type<typeof UsageAttachmentV1StructuralSchema>,
+function isCanonicalUsageAttachment(
+  value: Schema.Schema.Type<typeof UsageAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.observations.length <= MAX_USAGE_OBSERVATIONS_V1 &&
-    payloadFits(value, MAX_USAGE_ATTACHMENT_BYTES_V1) &&
+    value.observations.length <= MAX_USAGE_OBSERVATIONS &&
+    payloadFits(value, MAX_USAGE_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["usage-observation"]) &&
     isStrictlyOrderedById(value.observations, (observation) => observation.usageObservationId)
   );
 }
 
-export const UsageAttachmentV1Schema = UsageAttachmentV1StructuralSchema.pipe(
-  Schema.filter(isCanonicalUsageAttachmentV1, {
-    identifier: "ObservabilityUsageAttachmentV1",
+export const UsageAttachmentSchema = UsageAttachmentStructuralSchema.pipe(
+  Schema.filter(isCanonicalUsageAttachment, {
+    identifier: "ObservabilityUsageAttachment",
     description: "a canonical, bounded usage attachment",
   }),
 );
 
-export type UsageAttachmentV1 = Schema.Schema.Type<typeof UsageAttachmentV1Schema>;
+export type UsageAttachment = Schema.Schema.Type<typeof UsageAttachmentSchema>;
 
-export const AttemptTimingPhaseV1Schema = Schema.Literal(
+export const AttemptTimingPhaseSchema = Schema.Literal(
   "attempt.setup",
   "sandbox.prepare",
   "agent.ensure",
@@ -638,7 +640,7 @@ export const AttemptTimingPhaseV1Schema = Schema.Literal(
   "attempt.teardown",
 );
 
-export const RunTimingPhaseV1Schema = Schema.Literal(
+export const RunTimingPhaseSchema = Schema.Literal(
   "run.setup",
   "run.discovery",
   "run.plan",
@@ -646,7 +648,7 @@ export const RunTimingPhaseV1Schema = Schema.Literal(
   "run.teardown",
 );
 
-const TimingOutcomeV1Schema = Schema.Literal(
+const TimingOutcomeSchema = Schema.Literal(
   "completed",
   "failed",
   "cancelled",
@@ -654,33 +656,54 @@ const TimingOutcomeV1Schema = Schema.Literal(
   "unknown",
 );
 
-export const AttemptTimingIntervalV1Schema = Schema.Struct({
-  intervalId: IntervalIdV1Schema,
-  phase: AttemptTimingPhaseV1Schema,
-  label: StableLabelV1Schema,
-  startOffsetMs: NonNegativeSafeIntegerV1Schema,
-  durationMs: NonNegativeSafeIntegerV1Schema,
-  parentIntervalId: Schema.NullOr(IntervalIdV1Schema),
-  outcome: TimingOutcomeV1Schema,
-  refs: AttemptTimingReferencesV1Schema,
+const CanonicalTurnLabelSchema = Schema.String.pipe(
+  Schema.filter(
+    (value): value is string => isCanonicalTurnLabel(value),
+    { identifier: "CanonicalTurnLabel" },
+  ),
+);
+
+const AttemptTimingIntervalBase = {
+  intervalId: IntervalIdSchema,
+  startOffsetMs: NonNegativeSafeIntegerSchema,
+  durationMs: NonNegativeSafeIntegerSchema,
+  parentIntervalId: Schema.NullOr(IntervalIdSchema),
+  outcome: TimingOutcomeSchema,
+  refs: AttemptTimingReferencesSchema,
+} as const;
+
+const AttemptTimingIntervalStructuralSchema = Schema.Struct({
+  ...AttemptTimingIntervalBase,
+  phase: AttemptTimingPhaseSchema,
+  label: Schema.Union(StableLabelSchema, CanonicalTurnLabelSchema),
 });
 
-export const RunTimingIntervalV1Schema = Schema.Struct({
-  intervalId: IntervalIdV1Schema,
-  phase: RunTimingPhaseV1Schema,
-  label: StableLabelV1Schema,
-  startOffsetMs: NonNegativeSafeIntegerV1Schema,
-  durationMs: NonNegativeSafeIntegerV1Schema,
-  parentIntervalId: Schema.NullOr(IntervalIdV1Schema),
-  outcome: TimingOutcomeV1Schema,
-  refs: RunTimingReferencesV1Schema,
+export const AttemptTimingIntervalSchema = AttemptTimingIntervalStructuralSchema.pipe(
+  Schema.filter(
+    (interval) => interval.phase === "agent.send" || isStableLabel(interval.label),
+    {
+      identifier: "AttemptTimingInterval",
+      description: "canonical turn labels are reserved for agent.send intervals",
+    },
+  ),
+);
+
+export const RunTimingIntervalSchema = Schema.Struct({
+  intervalId: IntervalIdSchema,
+  phase: RunTimingPhaseSchema,
+  label: StableLabelSchema,
+  startOffsetMs: NonNegativeSafeIntegerSchema,
+  durationMs: NonNegativeSafeIntegerSchema,
+  parentIntervalId: Schema.NullOr(IntervalIdSchema),
+  outcome: TimingOutcomeSchema,
+  refs: RunTimingReferencesSchema,
 });
 
-export type AttemptTimingIntervalV1 = Schema.Schema.Type<
-  typeof AttemptTimingIntervalV1Schema
+export type AttemptTimingInterval = Schema.Schema.Type<
+  typeof AttemptTimingIntervalSchema
 >;
-export type RunTimingIntervalV1 = Schema.Schema.Type<
-  typeof RunTimingIntervalV1Schema
+export type RunTimingInterval = Schema.Schema.Type<
+  typeof RunTimingIntervalSchema
 >;
 
 function timingEnd(start: number, duration: number): number | undefined {
@@ -688,7 +711,7 @@ function timingEnd(start: number, duration: number): number | undefined {
   return Number.isSafeInteger(end) ? end : undefined;
 }
 
-function isCanonicalTimingTreeV1<
+function isCanonicalTimingTree<
   Interval extends {
     readonly intervalId: string;
     readonly startOffsetMs: number;
@@ -725,63 +748,63 @@ function isCanonicalTimingTreeV1<
   return true;
 }
 
-const AttemptTimingAttachmentV1StructuralSchema = Schema.Struct({
-  collection: CollectionV1Schema,
-  intervals: Schema.Array(AttemptTimingIntervalV1Schema),
+const AttemptTimingAttachmentStructuralSchema = Schema.Struct({
+  collection: CollectionSchema,
+  intervals: Schema.Array(AttemptTimingIntervalSchema),
 });
 
-function isCanonicalAttemptTimingAttachmentV1(
-  value: Schema.Schema.Type<typeof AttemptTimingAttachmentV1StructuralSchema>,
+function isCanonicalAttemptTimingAttachment(
+  value: Schema.Schema.Type<typeof AttemptTimingAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.intervals.length <= MAX_TIMING_INTERVALS_V1 &&
-    payloadFits(value, MAX_TIMING_ATTACHMENT_BYTES_V1) &&
+    value.intervals.length <= MAX_TIMING_INTERVALS &&
+    payloadFits(value, MAX_TIMING_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["timing-interval"]) &&
-    isCanonicalTimingTreeV1(value.intervals) &&
+    isCanonicalTimingTree(value.intervals) &&
     (!value.intervals.some((interval) => interval.outcome === "unknown") ||
       value.collection.state === "partial")
   );
 }
 
-export const AttemptTimingAttachmentV1Schema = AttemptTimingAttachmentV1StructuralSchema.pipe(
-  Schema.filter(isCanonicalAttemptTimingAttachmentV1, {
-    identifier: "ObservabilityAttemptTimingAttachmentV1",
+export const AttemptTimingAttachmentSchema = AttemptTimingAttachmentStructuralSchema.pipe(
+  Schema.filter(isCanonicalAttemptTimingAttachment, {
+    identifier: "ObservabilityAttemptTimingAttachment",
     description: "a canonical, bounded attempt timing tree",
   }),
 );
 
-export type AttemptTimingAttachmentV1 = Schema.Schema.Type<
-  typeof AttemptTimingAttachmentV1Schema
+export type AttemptTimingAttachment = Schema.Schema.Type<
+  typeof AttemptTimingAttachmentSchema
 >;
 
-const RunTimingAttachmentV1StructuralSchema = Schema.Struct({
-  collection: CollectionV1Schema,
-  intervals: Schema.Array(RunTimingIntervalV1Schema),
+const RunTimingAttachmentStructuralSchema = Schema.Struct({
+  collection: CollectionSchema,
+  intervals: Schema.Array(RunTimingIntervalSchema),
 });
 
-function isCanonicalRunTimingAttachmentV1(
-  value: Schema.Schema.Type<typeof RunTimingAttachmentV1StructuralSchema>,
+function isCanonicalRunTimingAttachment(
+  value: Schema.Schema.Type<typeof RunTimingAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.intervals.length <= MAX_TIMING_INTERVALS_V1 &&
-    payloadFits(value, MAX_TIMING_ATTACHMENT_BYTES_V1) &&
+    value.intervals.length <= MAX_TIMING_INTERVALS &&
+    payloadFits(value, MAX_TIMING_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["timing-interval"]) &&
-    isCanonicalTimingTreeV1(value.intervals) &&
+    isCanonicalTimingTree(value.intervals) &&
     (!value.intervals.some((interval) => interval.outcome === "unknown") ||
       value.collection.state === "partial")
   );
 }
 
-export const RunTimingAttachmentV1Schema = RunTimingAttachmentV1StructuralSchema.pipe(
-  Schema.filter(isCanonicalRunTimingAttachmentV1, {
-    identifier: "ObservabilityRunTimingAttachmentV1",
+export const RunTimingAttachmentSchema = RunTimingAttachmentStructuralSchema.pipe(
+  Schema.filter(isCanonicalRunTimingAttachment, {
+    identifier: "ObservabilityRunTimingAttachment",
     description: "a canonical, bounded run timing tree",
   }),
 );
 
-export type RunTimingAttachmentV1 = Schema.Schema.Type<typeof RunTimingAttachmentV1Schema>;
+export type RunTimingAttachment = Schema.Schema.Type<typeof RunTimingAttachmentSchema>;
 
-export const AttemptDiagnosticPhaseV1Schema = Schema.Literal(
+export const AttemptDiagnosticPhaseSchema = Schema.Literal(
   "attempt.setup",
   "sandbox.prepare",
   "agent.ensure",
@@ -794,7 +817,7 @@ export const AttemptDiagnosticPhaseV1Schema = Schema.Literal(
   "collection",
 );
 
-export const RunDiagnosticPhaseV1Schema = Schema.Literal(
+export const RunDiagnosticPhaseSchema = Schema.Literal(
   "run.setup",
   "run.discovery",
   "run.plan",
@@ -803,34 +826,34 @@ export const RunDiagnosticPhaseV1Schema = Schema.Literal(
   "collection",
 );
 
-export const SourcePositionV1Schema = Schema.Struct({
-  line: PositiveSafeIntegerV1Schema,
-  column: PositiveSafeIntegerV1Schema,
+export const SourcePositionSchema = Schema.Struct({
+  line: PositiveSafeIntegerSchema,
+  column: PositiveSafeIntegerSchema,
 });
 
-export const SourceFrameV1Schema = Schema.Struct({
+export const SourceFrameSchema = Schema.Struct({
   sourceItemId: SourceFileItemIdSchema,
   sha256: Sha256DigestSchema,
-  start: SourcePositionV1Schema,
-  end: SourcePositionV1Schema,
+  start: SourcePositionSchema,
+  end: SourcePositionSchema,
 });
 
-const SafeDiagnosticCauseV1Schema = Schema.Struct({
-  code: SafeIdentifierV1Schema,
-  summary: boundedSafeTextV1Schema(MAX_DIAGNOSTIC_CAUSE_SUMMARY_BYTES_V1),
+const SafeDiagnosticCauseSchema = Schema.Struct({
+  code: SafeIdentifierSchema,
+  summary: boundedSafeTextSchema(MAX_DIAGNOSTIC_CAUSE_SUMMARY_BYTES),
 });
 
-const DiagnosticRedactionV1Schema = Schema.Union(
+const DiagnosticRedactionSchema = Schema.Union(
   Schema.Struct({ state: Schema.Literal("none") }),
   Schema.Struct({
     state: Schema.Literal("applied"),
-    summaryReplacements: NonNegativeSafeIntegerV1Schema,
-    causeReplacements: NonNegativeSafeIntegerV1Schema,
-    contextReplacements: NonNegativeSafeIntegerV1Schema,
+    summaryReplacements: NonNegativeSafeIntegerSchema,
+    causeReplacements: NonNegativeSafeIntegerSchema,
+    contextReplacements: NonNegativeSafeIntegerSchema,
   }),
 );
 
-const DiagnosticLimitContextV1Schema = Schema.Struct({
+const DiagnosticLimitContextSchema = Schema.Struct({
   kind: Schema.Literal("limit"),
   limit: Schema.Literal(
     "conversation-items",
@@ -840,13 +863,13 @@ const DiagnosticLimitContextV1Schema = Schema.Struct({
     "diagnostics",
     "command-stream-bytes",
   ),
-  maximum: NonNegativeSafeIntegerV1Schema,
-  observedAtLeast: NonNegativeSafeIntegerV1Schema,
+  maximum: NonNegativeSafeIntegerSchema,
+  observedAtLeast: NonNegativeSafeIntegerSchema,
 });
 
-const DiagnosticProviderContextV1Schema = Schema.Struct({
+const DiagnosticProviderContextSchema = Schema.Struct({
   kind: Schema.Literal("provider"),
-  provider: SafeIdentifierV1Schema,
+  provider: SafeIdentifierSchema,
 });
 
 /**
@@ -854,87 +877,87 @@ const DiagnosticProviderContextV1Schema = Schema.Struct({
  * ref-array constructors cannot express the exclusion while preserving the
  * direct triple, so these declarations keep the exact input check local.
  */
-const AttemptDiagnosticEntityContextV1Schema = Schema.Struct({
+const AttemptDiagnosticEntityContextSchema = Schema.Struct({
   kind: Schema.Literal("entity"),
-  target: AttemptReferenceTargetV1Schema.pipe(
-    Schema.filter((target): target is AttemptDiagnosticsReferencesV1 =>
-      target.family !== "niceeval.diagnostics/v1",
+  target: AttemptReferenceTargetSchema.pipe(
+    Schema.filter((target): target is AttemptDiagnosticsReferences =>
+      target.kind !== "diagnostic",
     ),
   ),
 });
 
-const RunDiagnosticEntityContextV1Schema = Schema.Struct({
+const RunDiagnosticEntityContextSchema = Schema.Struct({
   kind: Schema.Literal("entity"),
-  target: RunReferenceTargetV1Schema.pipe(
-    Schema.filter((target): target is RunDiagnosticsReferencesV1 =>
-      target.family !== "niceeval.diagnostics/v1",
+  target: RunReferenceTargetSchema.pipe(
+    Schema.filter((target): target is RunDiagnosticsReferences =>
+      target.kind !== "diagnostic",
     ),
   ),
 });
 
-const AttemptDiagnosticContextExactV1Schema = Schema.Union(
-  AttemptDiagnosticEntityContextV1Schema,
-  DiagnosticLimitContextV1Schema,
-  DiagnosticProviderContextV1Schema,
+const AttemptDiagnosticContextExactSchema = Schema.Union(
+  AttemptDiagnosticEntityContextSchema,
+  DiagnosticLimitContextSchema,
+  DiagnosticProviderContextSchema,
 );
 
-const RunDiagnosticContextExactV1Schema = Schema.Union(
-  RunDiagnosticEntityContextV1Schema,
-  DiagnosticLimitContextV1Schema,
-  DiagnosticProviderContextV1Schema,
+const RunDiagnosticContextExactSchema = Schema.Union(
+  RunDiagnosticEntityContextSchema,
+  DiagnosticLimitContextSchema,
+  DiagnosticProviderContextSchema,
 );
 
-export const AttemptDiagnosticV1Schema = Schema.Struct({
-  diagnosticId: DiagnosticIdV1Schema,
+export const AttemptDiagnosticSchema = Schema.Struct({
+  diagnosticId: DiagnosticIdSchema,
   kind: Schema.Literal("advisory", "execution-error"),
-  code: SafeIdentifierV1Schema,
-  phase: AttemptDiagnosticPhaseV1Schema,
-  summary: boundedSafeTextV1Schema(MAX_DIAGNOSTIC_SUMMARY_BYTES_V1),
-  causes: Schema.Array(SafeDiagnosticCauseV1Schema),
-  context: Schema.Array(AttemptDiagnosticContextExactV1Schema),
-  redaction: DiagnosticRedactionV1Schema,
-  sourceFrame: Schema.NullOr(SourceFrameV1Schema),
-  refs: AttemptDiagnosticsReferencesV1Schema,
+  code: SafeIdentifierSchema,
+  phase: AttemptDiagnosticPhaseSchema,
+  summary: boundedSafeTextSchema(MAX_DIAGNOSTIC_SUMMARY_BYTES),
+  causes: Schema.Array(SafeDiagnosticCauseSchema),
+  context: Schema.Array(AttemptDiagnosticContextExactSchema),
+  redaction: DiagnosticRedactionSchema,
+  sourceFrame: Schema.NullOr(SourceFrameSchema),
+  refs: AttemptDiagnosticsReferencesSchema,
 });
 
-export const RunDiagnosticV1Schema = Schema.Struct({
-  diagnosticId: DiagnosticIdV1Schema,
+export const RunDiagnosticSchema = Schema.Struct({
+  diagnosticId: DiagnosticIdSchema,
   kind: Schema.Literal("advisory", "execution-error"),
-  code: SafeIdentifierV1Schema,
-  phase: RunDiagnosticPhaseV1Schema,
-  summary: boundedSafeTextV1Schema(MAX_DIAGNOSTIC_SUMMARY_BYTES_V1),
-  causes: Schema.Array(SafeDiagnosticCauseV1Schema),
-  context: Schema.Array(RunDiagnosticContextExactV1Schema),
-  redaction: DiagnosticRedactionV1Schema,
-  sourceFrame: Schema.NullOr(SourceFrameV1Schema),
-  refs: RunDiagnosticsReferencesV1Schema,
+  code: SafeIdentifierSchema,
+  phase: RunDiagnosticPhaseSchema,
+  summary: boundedSafeTextSchema(MAX_DIAGNOSTIC_SUMMARY_BYTES),
+  causes: Schema.Array(SafeDiagnosticCauseSchema),
+  context: Schema.Array(RunDiagnosticContextExactSchema),
+  redaction: DiagnosticRedactionSchema,
+  sourceFrame: Schema.NullOr(SourceFrameSchema),
+  refs: RunDiagnosticsReferencesSchema,
 });
 
-export type SourcePositionV1 = Schema.Schema.Type<typeof SourcePositionV1Schema>;
-export type SourceFrameV1 = Schema.Schema.Type<typeof SourceFrameV1Schema>;
-export type SafeDiagnosticCauseV1 = Schema.Schema.Type<typeof SafeDiagnosticCauseV1Schema>;
-export type DiagnosticRedactionV1 = Schema.Schema.Type<typeof DiagnosticRedactionV1Schema>;
-export type AttemptDiagnosticV1 = Schema.Schema.Type<typeof AttemptDiagnosticV1Schema>;
-export type RunDiagnosticV1 = Schema.Schema.Type<typeof RunDiagnosticV1Schema>;
+export type SourcePosition = Schema.Schema.Type<typeof SourcePositionSchema>;
+export type SourceFrame = Schema.Schema.Type<typeof SourceFrameSchema>;
+export type SafeDiagnosticCause = Schema.Schema.Type<typeof SafeDiagnosticCauseSchema>;
+export type DiagnosticRedaction = Schema.Schema.Type<typeof DiagnosticRedactionSchema>;
+export type AttemptDiagnostic = Schema.Schema.Type<typeof AttemptDiagnosticSchema>;
+export type RunDiagnostic = Schema.Schema.Type<typeof RunDiagnosticSchema>;
 
 function sourcePositionBeforeOrEqual(
-  left: SourcePositionV1,
-  right: SourcePositionV1,
+  left: SourcePosition,
+  right: SourcePosition,
 ): boolean {
   return left.line < right.line || (left.line === right.line && left.column <= right.column);
 }
 
 function hasValidDiagnosticShape(
   diagnostic: {
-    readonly causes: readonly SafeDiagnosticCauseV1[];
+    readonly causes: readonly SafeDiagnosticCause[];
     readonly context: readonly unknown[];
-    readonly redaction: DiagnosticRedactionV1;
-    readonly sourceFrame: SourceFrameV1 | null;
+    readonly redaction: DiagnosticRedaction;
+    readonly sourceFrame: SourceFrame | null;
   },
 ): boolean {
   if (
-    diagnostic.causes.length > MAX_DIAGNOSTIC_CAUSES_V1 ||
-    diagnostic.context.length > MAX_DIAGNOSTIC_CONTEXT_ITEMS_V1
+    diagnostic.causes.length > MAX_DIAGNOSTIC_CAUSES ||
+    diagnostic.context.length > MAX_DIAGNOSTIC_CONTEXT_ITEMS
   ) {
     return false;
   }
@@ -952,88 +975,86 @@ function hasValidDiagnosticShape(
   );
 }
 
-const AttemptDiagnosticsAttachmentV1StructuralSchema = Schema.Struct({
-  collection: CollectionV1Schema,
-  diagnostics: Schema.Array(AttemptDiagnosticV1Schema),
+const AttemptDiagnosticsAttachmentStructuralSchema = Schema.Struct({
+  collection: CollectionSchema,
+  diagnostics: Schema.Array(AttemptDiagnosticSchema),
 });
 
-function isCanonicalAttemptDiagnosticsAttachmentV1(
-  value: Schema.Schema.Type<typeof AttemptDiagnosticsAttachmentV1StructuralSchema>,
+function isCanonicalAttemptDiagnosticsAttachment(
+  value: Schema.Schema.Type<typeof AttemptDiagnosticsAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.diagnostics.length <= MAX_DIAGNOSTICS_V1 &&
-    payloadFits(value, MAX_DIAGNOSTICS_ATTACHMENT_BYTES_V1) &&
+    value.diagnostics.length <= MAX_DIAGNOSTICS &&
+    payloadFits(value, MAX_DIAGNOSTICS_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["diagnostic"]) &&
     isStrictlyOrderedById(value.diagnostics, (diagnostic) => diagnostic.diagnosticId) &&
     value.diagnostics.every(hasValidDiagnosticShape)
   );
 }
 
-export const AttemptDiagnosticsAttachmentV1Schema =
-  AttemptDiagnosticsAttachmentV1StructuralSchema.pipe(
-    Schema.filter(isCanonicalAttemptDiagnosticsAttachmentV1, {
-      identifier: "ObservabilityAttemptDiagnosticsAttachmentV1",
+export const AttemptDiagnosticsAttachmentSchema =
+  AttemptDiagnosticsAttachmentStructuralSchema.pipe(
+    Schema.filter(isCanonicalAttemptDiagnosticsAttachment, {
+      identifier: "ObservabilityAttemptDiagnosticsAttachment",
       description: "a canonical, bounded attempt diagnostics attachment",
     }),
   );
 
-export type AttemptDiagnosticsAttachmentV1 = Schema.Schema.Type<
-  typeof AttemptDiagnosticsAttachmentV1Schema
+export type AttemptDiagnosticsAttachment = Schema.Schema.Type<
+  typeof AttemptDiagnosticsAttachmentSchema
 >;
 
-const RunDiagnosticsAttachmentV1StructuralSchema = Schema.Struct({
-  collection: CollectionV1Schema,
-  diagnostics: Schema.Array(RunDiagnosticV1Schema),
+const RunDiagnosticsAttachmentStructuralSchema = Schema.Struct({
+  collection: CollectionSchema,
+  diagnostics: Schema.Array(RunDiagnosticSchema),
 });
 
-function isCanonicalRunDiagnosticsAttachmentV1(
-  value: Schema.Schema.Type<typeof RunDiagnosticsAttachmentV1StructuralSchema>,
+function isCanonicalRunDiagnosticsAttachment(
+  value: Schema.Schema.Type<typeof RunDiagnosticsAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.diagnostics.length <= MAX_DIAGNOSTICS_V1 &&
-    payloadFits(value, MAX_DIAGNOSTICS_ATTACHMENT_BYTES_V1) &&
+    value.diagnostics.length <= MAX_DIAGNOSTICS &&
+    payloadFits(value, MAX_DIAGNOSTICS_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["diagnostic"]) &&
     isStrictlyOrderedById(value.diagnostics, (diagnostic) => diagnostic.diagnosticId) &&
     value.diagnostics.every(hasValidDiagnosticShape)
   );
 }
 
-export const RunDiagnosticsAttachmentV1Schema = RunDiagnosticsAttachmentV1StructuralSchema.pipe(
-  Schema.filter(isCanonicalRunDiagnosticsAttachmentV1, {
-    identifier: "ObservabilityRunDiagnosticsAttachmentV1",
+export const RunDiagnosticsAttachmentSchema = RunDiagnosticsAttachmentStructuralSchema.pipe(
+  Schema.filter(isCanonicalRunDiagnosticsAttachment, {
+    identifier: "ObservabilityRunDiagnosticsAttachment",
     description: "a canonical, bounded run diagnostics attachment",
   }),
 );
 
-export type RunDiagnosticsAttachmentV1 = Schema.Schema.Type<
-  typeof RunDiagnosticsAttachmentV1Schema
+export type RunDiagnosticsAttachment = Schema.Schema.Type<
+  typeof RunDiagnosticsAttachmentSchema
 >;
 
-const [
-  attemptConversationFamilySchemaIdV1,
-  attemptCommandsFamilySchemaIdV1,
-  attemptUsageFamilySchemaIdV1,
-  attemptTimingFamilySchemaIdV1,
-  attemptDiagnosticsFamilySchemaIdV1,
-] = ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS_V1;
-const [runTimingFamilySchemaIdV1, runDiagnosticsFamilySchemaIdV1] =
-  RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS_V1;
+const attemptConversationFamilySchemaId = "niceeval.observability" as const;
+const attemptCommandsFamilySchemaId = "niceeval.observability" as const;
+const attemptUsageFamilySchemaId = "niceeval.observability" as const;
+const attemptTimingFamilySchemaId = "niceeval.observability" as const;
+const attemptDiagnosticsFamilySchemaId = "niceeval.observability" as const;
+const runTimingFamilySchemaId = "niceeval.observability" as const;
+const runDiagnosticsFamilySchemaId = "niceeval.observability" as const;
 
 /** Semantic cross-family facts intentionally remain independent of writes. */
-export function makeAttemptConversationAttachmentFamilyValidationV1(
-  payload: ConversationAttachmentV1,
-): ObservabilityFamilyValidationV1<"attempt"> {
-  const entities: AttemptReferenceTargetV1[] = [
+export function makeAttemptConversationAttachmentFamilyValidation(
+  payload: ConversationAttachment,
+): ObservabilityFamilyValidation<"attempt"> {
+  const entities: AttemptReferenceTarget[] = [
     ...payload.turns.map((turn) =>
       Object.freeze({
-        family: attemptConversationFamilySchemaIdV1,
+        family: attemptConversationFamilySchemaId,
         kind: "turn" as const,
         id: turn.turnId,
       }),
     ),
     ...payload.items.map((item) =>
       Object.freeze({
-        family: attemptConversationFamilySchemaIdV1,
+        family: attemptConversationFamilySchemaId,
         kind: "item" as const,
         id: item.itemId,
       }),
@@ -1042,7 +1063,7 @@ export function makeAttemptConversationAttachmentFamilyValidationV1(
       item.kind === "tool-call"
         ? [
             Object.freeze({
-              family: attemptConversationFamilySchemaIdV1,
+              family: attemptConversationFamilySchemaId,
               kind: "call" as const,
               id: item.callId,
             }),
@@ -1050,8 +1071,8 @@ export function makeAttemptConversationAttachmentFamilyValidationV1(
         : [],
     ),
   ];
-  return makeAttemptObservabilityFamilyValidationV1({
-    schemaId: attemptConversationFamilySchemaIdV1,
+  return makeAttemptObservabilityFamilyValidation({
+    schemaId: attemptConversationFamilySchemaId,
     entities,
     references: [
       ...payload.turns.map((turn) =>
@@ -1064,17 +1085,17 @@ export function makeAttemptConversationAttachmentFamilyValidationV1(
   });
 }
 
-export function makeAttemptCommandsAttachmentFamilyValidationV1(input: {
+export function makeAttemptCommandsAttachmentFamilyValidation(input: {
   readonly commands: readonly {
-    readonly commandId: CommandIdV1;
-    readonly refs: readonly CommandsReferencesV1[];
+    readonly commandId: CommandId;
+    readonly refs: readonly CommandsReferences[];
   }[];
-}): ObservabilityFamilyValidationV1<"attempt"> {
-  return makeAttemptObservabilityFamilyValidationV1({
-    schemaId: attemptCommandsFamilySchemaIdV1,
+}): ObservabilityFamilyValidation<"attempt"> {
+  return makeAttemptObservabilityFamilyValidation({
+    schemaId: attemptCommandsFamilySchemaId,
     entities: input.commands.map((command) =>
       Object.freeze({
-        family: attemptCommandsFamilySchemaIdV1,
+        family: attemptCommandsFamilySchemaId,
         kind: "command" as const,
         id: command.commandId,
       }),
@@ -1085,14 +1106,14 @@ export function makeAttemptCommandsAttachmentFamilyValidationV1(input: {
   });
 }
 
-export function makeAttemptUsageAttachmentFamilyValidationV1(
-  payload: UsageAttachmentV1,
-): ObservabilityFamilyValidationV1<"attempt"> {
-  return makeAttemptObservabilityFamilyValidationV1({
-    schemaId: attemptUsageFamilySchemaIdV1,
+export function makeAttemptUsageAttachmentFamilyValidation(
+  payload: UsageAttachment,
+): ObservabilityFamilyValidation<"attempt"> {
+  return makeAttemptObservabilityFamilyValidation({
+    schemaId: attemptUsageFamilySchemaId,
     entities: payload.observations.map((observation) =>
       Object.freeze({
-        family: attemptUsageFamilySchemaIdV1,
+        family: attemptUsageFamilySchemaId,
         kind: "usage-observation" as const,
         id: observation.usageObservationId,
       }),
@@ -1106,14 +1127,14 @@ export function makeAttemptUsageAttachmentFamilyValidationV1(
   });
 }
 
-export function makeAttemptTimingAttachmentFamilyValidationV1(
-  payload: AttemptTimingAttachmentV1,
-): ObservabilityFamilyValidationV1<"attempt"> {
-  return makeAttemptObservabilityFamilyValidationV1({
-    schemaId: attemptTimingFamilySchemaIdV1,
+export function makeAttemptTimingAttachmentFamilyValidation(
+  payload: AttemptTimingAttachment,
+): ObservabilityFamilyValidation<"attempt"> {
+  return makeAttemptObservabilityFamilyValidation({
+    schemaId: attemptTimingFamilySchemaId,
     entities: payload.intervals.map((interval) =>
       Object.freeze({
-        family: attemptTimingFamilySchemaIdV1,
+        family: attemptTimingFamilySchemaId,
         kind: "interval" as const,
         id: interval.intervalId,
       }),
@@ -1124,14 +1145,14 @@ export function makeAttemptTimingAttachmentFamilyValidationV1(
   });
 }
 
-export function makeAttemptDiagnosticsAttachmentFamilyValidationV1(
-  payload: AttemptDiagnosticsAttachmentV1,
-): ObservabilityFamilyValidationV1<"attempt"> {
-  return makeAttemptObservabilityFamilyValidationV1({
-    schemaId: attemptDiagnosticsFamilySchemaIdV1,
+export function makeAttemptDiagnosticsAttachmentFamilyValidation(
+  payload: AttemptDiagnosticsAttachment,
+): ObservabilityFamilyValidation<"attempt"> {
+  return makeAttemptObservabilityFamilyValidation({
+    schemaId: attemptDiagnosticsFamilySchemaId,
     entities: payload.diagnostics.map((diagnostic) =>
       Object.freeze({
-        family: attemptDiagnosticsFamilySchemaIdV1,
+        family: attemptDiagnosticsFamilySchemaId,
         kind: "diagnostic" as const,
         id: diagnostic.diagnosticId,
       }),
@@ -1142,14 +1163,14 @@ export function makeAttemptDiagnosticsAttachmentFamilyValidationV1(
   });
 }
 
-export function makeRunTimingAttachmentFamilyValidationV1(
-  payload: RunTimingAttachmentV1,
-): ObservabilityFamilyValidationV1<"run"> {
-  return makeRunObservabilityFamilyValidationV1({
-    schemaId: runTimingFamilySchemaIdV1,
+export function makeRunTimingAttachmentFamilyValidation(
+  payload: RunTimingAttachment,
+): ObservabilityFamilyValidation<"run"> {
+  return makeRunObservabilityFamilyValidation({
+    schemaId: runTimingFamilySchemaId,
     entities: payload.intervals.map((interval) =>
       Object.freeze({
-        family: runTimingFamilySchemaIdV1,
+        family: runTimingFamilySchemaId,
         kind: "interval" as const,
         id: interval.intervalId,
       }),
@@ -1160,14 +1181,14 @@ export function makeRunTimingAttachmentFamilyValidationV1(
   });
 }
 
-export function makeRunDiagnosticsAttachmentFamilyValidationV1(
-  payload: RunDiagnosticsAttachmentV1,
-): ObservabilityFamilyValidationV1<"run"> {
-  return makeRunObservabilityFamilyValidationV1({
-    schemaId: runDiagnosticsFamilySchemaIdV1,
+export function makeRunDiagnosticsAttachmentFamilyValidation(
+  payload: RunDiagnosticsAttachment,
+): ObservabilityFamilyValidation<"run"> {
+  return makeRunObservabilityFamilyValidation({
+    schemaId: runDiagnosticsFamilySchemaId,
     entities: payload.diagnostics.map((diagnostic) =>
       Object.freeze({
-        family: runDiagnosticsFamilySchemaIdV1,
+        family: runDiagnosticsFamilySchemaId,
         kind: "diagnostic" as const,
         id: diagnostic.diagnosticId,
       }),

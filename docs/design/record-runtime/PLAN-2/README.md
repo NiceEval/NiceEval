@@ -1,11 +1,11 @@
-# PLAN-2：统一 RecordAccessRuntime substrate
+# PLAN-2（推荐）：统一 RecordAccessRuntime substrate
 
 application/CLI host 为 canonical Record root 建立一个 outer `RecordAccessRuntime`。它统一 root identity、runtime
 registry、private snapshot generation allocator、lock authority 与 exact-content verified cache，但不长期持有
 maintenance lease。
 
-业务 consumer 不接收 runtime。host 从同一 underlying identity 取得不同 nominal facets，再把
-`FrozenRecordView` 或更窄 capability 交给 reuse planning、Analysis 与 Report execution。
+业务 consumer 不接收 runtime。host 从同一 underlying identity 取得不同 nominal facets。write session 把
+`FrozenRecordView` 交给 reuse planning；snapshot callback 把完整 `RecordReader` 交给 Analysis selection 与 Report host。
 
 ## Host facets
 
@@ -18,7 +18,7 @@ declare const recordMaintenanceAccessTypeId: unique symbol;
 interface RecordSnapshotSource {
   readonly [recordSnapshotSourceTypeId]: typeof recordSnapshotSourceTypeId;
   readonly withSnapshot: <A, E, R>(
-    use: (view: FrozenRecordView) => Effect.Effect<A, E, R>,
+    use: (reader: RecordReader) => Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | RecordOpenError | RecordReadError, R>;
 }
 
@@ -34,6 +34,7 @@ interface RecordMaintenanceAccess {
   readonly inspect: RecordMaintenanceInspect;
   readonly clean: RecordClean;
   readonly planMigration: RecordMigrationPlanning;
+  readonly authorizeMigration: RecordMigrationAuthorizationMinting;
   readonly migrate: RecordMigrationExecution;
 }
 
@@ -49,13 +50,18 @@ declare const openRecordAccessRuntime: (input: {
 }) => Effect.Effect<
   RecordAccessRuntime,
   RecordAccessRuntimeOpenError,
-  Scope.Scope | RecordFileSystem | RecordMaintenanceLock | RecordWriterLock | RecordEntropy
+  Scope.Scope | RecordFileSystem | RecordMaintenanceLock | RecordWriterLock |
+    RecordEntropy | RecordGit
 >;
 ```
 
 `openRecordAccessRuntime` 只 canonicalize root、绑定 runtime registry，并初始化 generation allocator 与 cache。
 它不读取 portable Record，也不在无 lease 时保留 current-format 或 sentinel 判断。每个子操作取得自己的 locks
 后，才执行完整 open 与 operation-specific bootstrap。
+
+runtime 使用 NiceEval 版本内建的 immutable Record registry。第三方 Capture 只产生固定 Metric、Score 或 Artifact envelope，
+不能从 application config、Layer、Plugin mount、Record bytes 或 dynamic import 补充 family、decoder 或 converter。
+plan 与 authorization 都是该 runtime mint 的 nominal、root-affine capabilities，不能交给另一个 runtime 执行。
 
 facets 有 package-minted nominal identity，不能结构性伪造或由弱 facet 转成强 facet。Report host 只持
 `RecordSnapshotSource`；Invocation coordination 持 `RecordInvocationAccess`；maintenance CLI 才持
@@ -67,6 +73,9 @@ execution 都不得取得任何 facet。
 `withSnapshot` 在内部 child Scope 取得 shared maintenance lease，并执行 current-format 与 sentinel 检查。
 随后 mint 一个 runtime-private generation，再冻结 Run membership、warnings 与 owner handles。callback 结束后
 释放 lease 并关闭 generation。
+
+`RecordReader` 是完整 `FrozenRecordView`，也是 `selectAnalysisSample()` 的精确输入。它只在 callback 内交给 host；
+Analysis 作者与 Report callback 只收到 reader-bound handle 或 closed projected values。
 
 `withWriteSession` 按 shared maintenance → exclusive writer 的固定顺序取锁，并自行 mint
 `session.view` generation。它不接受调用方已有 view。publish 不刷新任何 generation，也不把 draft 加入 view。
@@ -99,7 +108,7 @@ RecordAccessRuntime
   │    session.view → reuse planning → gaps → Attempt execution → publish
   │    close：释放 writer + maintenance
   └─ withSnapshot
-       new FrozenRecordView → Analysis → Projection → ReportExecution
+       new RecordReader → AnalysisSampleHandle → Projection → ReportExecution
        close：释放 maintenance；ReportExecution 保持普通自包含值
 ```
 

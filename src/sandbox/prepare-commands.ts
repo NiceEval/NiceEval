@@ -24,7 +24,7 @@ import type { CommandResult } from "./types.ts";
 export interface CheckoutOptions {
   /** Git remote;HTTP(S) URL 中的 userinfo / query / fragment 一律拒绝，凭据只走 Git 原生机制。 */
   readonly repo: string;
-  /** commit SHA 或 tag 等 Git revision；运行时解析出的 commit SHA 会作为事实记录。 */
+  /** commit SHA 或 tag 等 Git revision。 */
   readonly ref: string;
   /** 相对 workdir 的目标目录；省略或 `.` 就是 workdir 根。 */
   readonly into?: string;
@@ -42,7 +42,6 @@ export interface InstallToolOptions {
 }
 
 const CHECKOUT_CACHE_ROOT = "/tmp/niceeval-checkout-cache";
-const CHECKOUT_FACT_PREFIX = "sandbox.checkout";
 
 function assertPlainRecord(value: unknown, path: string): asserts value is globalThis.Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -170,10 +169,6 @@ function checkoutCachePath(repo: string, ref: string): string {
   return `${CHECKOUT_CACHE_ROOT}/${sha256(JSON.stringify([repo, ref]))}`;
 }
 
-function checkoutFactKey(repo: string, ref: string): string {
-  return `${CHECKOUT_FACT_PREFIX}.${sha256(JSON.stringify([repo, ref])).slice(0, 16)}.commit`;
-}
-
 function targetPath(workdir: string, into: string): string {
   const normalizedWorkdir = posix.resolve(workdir);
   const target = posix.resolve(normalizedWorkdir, into);
@@ -281,7 +276,6 @@ export function checkout(options: CheckoutOptions): StableSandboxCommand {
       const cachedCommit = await mirrorMatches(sandbox, cachePath, normalized.repo, normalized.ref);
       const commit = cachedCommit ?? await recreateMirror(sandbox, cachePath, normalized.repo, normalized.ref);
       await materializeCheckout(sandbox, cachePath, targetPath(sandbox.workdir, normalized.into), commit);
-      context.facts(checkoutFactKey(normalized.repo, normalized.ref), commit);
     },
   );
 }

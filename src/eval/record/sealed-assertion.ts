@@ -1,12 +1,12 @@
 import { Schema } from "effect";
-import { SealedAssertionResultV1Schema as AssertionsSealedAssertionResultV1Schema } from "../../assertions/record/codec.ts";
+import { SealedAssertionResultSchema as AssertionsSealedAssertionResultSchema } from "../../assertions/record/codec.ts";
 import type {
-  EarnedScoreContributionV1,
-  GateDispositionV1,
-  NoScoreContributionV1,
-  ScoreContributionV1,
-  SealedAssertionResultV1,
-  UnavailableScoreContributionV1,
+  EarnedScoreContribution,
+  GateDisposition,
+  NoScoreContribution,
+  ScoreContribution,
+  SealedAssertionResult,
+  UnavailableScoreContribution,
 } from "../../assertions/record/model.ts";
 
 /**
@@ -15,16 +15,16 @@ import type {
  * closure; `required` below is Eval producer policy only.
  */
 export {
-  AssertionsSealedAssertionResultV1Schema as SealedAssertionResultV1Schema,
+  AssertionsSealedAssertionResultSchema as SealedAssertionResultSchema,
 };
 
 export type {
-  EarnedScoreContributionV1,
-  GateDispositionV1,
-  NoScoreContributionV1,
-  ScoreContributionV1,
-  SealedAssertionResultV1,
-  UnavailableScoreContributionV1,
+  EarnedScoreContribution,
+  GateDisposition,
+  NoScoreContribution,
+  ScoreContribution,
+  SealedAssertionResult,
+  UnavailableScoreContribution,
 };
 
 /**
@@ -32,28 +32,28 @@ export type {
  * Attachment. It determines whether an otherwise-local unavailable result
  * raises the Attempt Verdict to errored.
  */
-export const SealedAssertionForEvaluationV1Schema = Schema.Struct({
+export const SealedAssertionForEvaluationSchema = Schema.Struct({
   required: Schema.Boolean,
-  result: AssertionsSealedAssertionResultV1Schema,
+  result: AssertionsSealedAssertionResultSchema,
 });
 
-export type SealedAssertionForEvaluationV1 = Schema.Schema.Type<
-  typeof SealedAssertionForEvaluationV1Schema
+export type SealedAssertionForEvaluation = Schema.Schema.Type<
+  typeof SealedAssertionForEvaluationSchema
 >;
 
 /** All producer facts shared by the independent Verdict and Score folds. */
-export const EvaluationAttemptFactsV1Schema = Schema.Struct({
+export const EvaluationAttemptFactsSchema = Schema.Struct({
   execution: Schema.Literal("completed", "errored"),
   explicitlySkipped: Schema.Boolean,
-  assertions: Schema.Array(SealedAssertionForEvaluationV1Schema),
+  assertions: Schema.Array(SealedAssertionForEvaluationSchema),
 });
 
-export type EvaluationAttemptFactsV1 = Schema.Schema.Type<
-  typeof EvaluationAttemptFactsV1Schema
+export type EvaluationAttemptFacts = Schema.Schema.Type<
+  typeof EvaluationAttemptFactsSchema
 >;
 
-export function isRequiredAssertionUnavailableOrErroredV1(
-  assertion: SealedAssertionForEvaluationV1,
+export function isRequiredAssertionUnavailableOrErrored(
+  assertion: SealedAssertionForEvaluation,
 ): boolean {
   return assertion.required && (
     assertion.result.state === "unavailable"
@@ -61,8 +61,8 @@ export function isRequiredAssertionUnavailableOrErroredV1(
   );
 }
 
-export function isGateFailedV1(
-  assertion: SealedAssertionForEvaluationV1,
+export function isGateFailed(
+  assertion: SealedAssertionForEvaluation,
 ): boolean {
   return assertion.result.gate === "failed";
 }

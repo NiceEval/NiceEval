@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
+import { equals, toolMatch } from "niceeval/expect";
 
 // deny 分支:人否决和工具故障是两回事——calledTool 的 status 应该是 "rejected"
 // (来自 system/permission_denied 帧,见 agents/claude-sdk.ts),noFailedActions() 依然通过。
@@ -19,7 +19,7 @@ export default defineEval({
       denied = await t.respond("deny");
     }
     t.check(denied.status, equals("completed"));
-    t.calledTool("mcp__demo-tools__calculate", { status: "rejected" });
+    t.calledTool(toolMatch("mcp__demo-tools__calculate", { status: "rejected" }));
     t.noFailedActions();
   },
 });

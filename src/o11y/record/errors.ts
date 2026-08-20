@@ -1,8 +1,8 @@
 import type {
-  CommandIdV1,
-  DiagnosticIdV1,
-  IntervalIdV1,
-  ObservabilityOwnerV1,
+  CommandId,
+  DiagnosticId,
+  IntervalId,
+  ObservabilityOwner,
 } from "./model.ts";
 
 /**
@@ -13,29 +13,29 @@ import type {
 export type ObservabilityCaptureError =
   | {
       readonly code: "observability-capture-sealed";
-      readonly owner: ObservabilityOwnerV1;
+      readonly owner: ObservabilityOwner;
     }
   | {
       readonly code: "observability-command-not-registered";
-      readonly commandId: CommandIdV1;
+      readonly commandId: CommandId;
     }
   | {
       readonly code: "observability-command-result-already-recorded";
-      readonly commandId: CommandIdV1;
+      readonly commandId: CommandId;
     }
   | {
       readonly code: "observability-input-not-safe";
       readonly field: "text" | "manifest" | "diagnostic";
     };
 
-export function observabilityCaptureSealedErrorV1(
-  owner: ObservabilityOwnerV1,
+export function observabilityCaptureSealedError(
+  owner: ObservabilityOwner,
 ): ObservabilityCaptureError {
   return Object.freeze({ code: "observability-capture-sealed" as const, owner });
 }
 
-export function observabilityCommandNotRegisteredErrorV1(
-  commandId: CommandIdV1,
+export function observabilityCommandNotRegisteredError(
+  commandId: CommandId,
 ): ObservabilityCaptureError {
   return Object.freeze({
     code: "observability-command-not-registered" as const,
@@ -43,8 +43,8 @@ export function observabilityCommandNotRegisteredErrorV1(
   });
 }
 
-export function observabilityCommandResultAlreadyRecordedErrorV1(
-  commandId: CommandIdV1,
+export function observabilityCommandResultAlreadyRecordedError(
+  commandId: CommandId,
 ): ObservabilityCaptureError {
   return Object.freeze({
     code: "observability-command-result-already-recorded" as const,
@@ -52,7 +52,7 @@ export function observabilityCommandResultAlreadyRecordedErrorV1(
   });
 }
 
-export function observabilityInputNotSafeErrorV1(
+export function observabilityInputNotSafeError(
   field: "text" | "manifest" | "diagnostic",
 ): ObservabilityCaptureError {
   return Object.freeze({ code: "observability-input-not-safe" as const, field });
@@ -62,12 +62,12 @@ export function observabilityInputNotSafeErrorV1(
 export type ObservabilityRecordContractError =
   | {
       readonly code: "observability-required-attachment-missing";
-      readonly owner: ObservabilityOwnerV1;
+      readonly owner: ObservabilityOwner;
       readonly schemaId: string;
     }
   | {
       readonly code: "observability-owner-or-schema-invalid";
-      readonly owner: ObservabilityOwnerV1;
+      readonly owner: ObservabilityOwner;
       readonly schemaId: string;
     }
   | {
@@ -82,15 +82,15 @@ export type ObservabilityRecordContractError =
     }
   | {
       readonly code: "observability-timing-tree-invalid";
-      readonly intervalId: IntervalIdV1;
+      readonly intervalId: IntervalId;
     }
   | {
       readonly code: "observability-source-frame-invalid";
-      readonly diagnosticId: DiagnosticIdV1;
+      readonly diagnosticId: DiagnosticId;
     };
 
-export function observabilityRequiredAttachmentMissingErrorV1(
-  owner: ObservabilityOwnerV1,
+export function observabilityRequiredAttachmentMissingError(
+  owner: ObservabilityOwner,
   schemaId: string,
 ): ObservabilityRecordContractError {
   return Object.freeze({
@@ -100,8 +100,8 @@ export function observabilityRequiredAttachmentMissingErrorV1(
   });
 }
 
-export function observabilityOwnerOrSchemaInvalidErrorV1(
-  owner: ObservabilityOwnerV1,
+export function observabilityOwnerOrSchemaInvalidError(
+  owner: ObservabilityOwner,
   schemaId: string,
 ): ObservabilityRecordContractError {
   return Object.freeze({
@@ -111,7 +111,7 @@ export function observabilityOwnerOrSchemaInvalidErrorV1(
   });
 }
 
-export function observabilityIdentityInvalidErrorV1(
+export function observabilityIdentityInvalidError(
   schemaId: string,
   entity: string,
 ): ObservabilityRecordContractError {
@@ -122,7 +122,7 @@ export function observabilityIdentityInvalidErrorV1(
   });
 }
 
-export function observabilityCrossReferenceInvalidErrorV1(
+export function observabilityCrossReferenceInvalidError(
   schemaId: string,
   sourceId: string,
 ): ObservabilityRecordContractError {
@@ -133,8 +133,8 @@ export function observabilityCrossReferenceInvalidErrorV1(
   });
 }
 
-export function observabilityTimingTreeInvalidErrorV1(
-  intervalId: IntervalIdV1,
+export function observabilityTimingTreeInvalidError(
+  intervalId: IntervalId,
 ): ObservabilityRecordContractError {
   return Object.freeze({
     code: "observability-timing-tree-invalid" as const,
@@ -142,8 +142,8 @@ export function observabilityTimingTreeInvalidErrorV1(
   });
 }
 
-export function observabilitySourceFrameInvalidErrorV1(
-  diagnosticId: DiagnosticIdV1,
+export function observabilitySourceFrameInvalidError(
+  diagnosticId: DiagnosticId,
 ): ObservabilityRecordContractError {
   return Object.freeze({
     code: "observability-source-frame-invalid" as const,

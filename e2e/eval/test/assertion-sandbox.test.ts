@@ -1,15 +1,46 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-sandbox
+// regression: memory/workspace-diff-path-cap-skips-partial-capture.md
 // rerun: pnpm e2e --repo eval -- --run test/assertion-sandbox.test.ts
 
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  locator?: string;
-  verdict?: string;
+interface ShowDocument {
+  readonly data: {
+    readonly kind: string;
+    readonly fileChanges?: {
+      readonly entries: readonly {
+        readonly detail: {
+          readonly collection: {
+            readonly state: string;
+            readonly limitations: readonly {
+              readonly code: string;
+              readonly target?: string;
+              readonly omittedAtLeast?: number;
+            }[];
+          };
+          readonly paths: readonly unknown[];
+        };
+      }[];
+    };
+  };
+}
+
+interface TimingDocument {
+  readonly data: {
+    readonly kind: "timing";
+    readonly timing: readonly {
+      readonly state: string;
+      readonly timing?: {
+        readonly intervals: readonly {
+          readonly phase: string;
+          readonly label: string;
+          readonly durationMs: number;
+        }[];
+      };
+    }[];
+  };
 }
 
 test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
@@ -20,9 +51,10 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       const run = await niceeval.run(["exp", "assertion-sandbox", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+      const evaluations = run.expEvalEvents();
       const evaluation = only(
-        run.ndjson<ExpEvent>(),
-        (event) => event.event === "eval" && event.evalId === "assertion-sandbox" && event.locator !== undefined,
+        evaluations,
+        (event) => event.evalId === "assertion-sandbox",
         run.diagnostic(),
       );
       expect(evaluation).toMatchObject({
@@ -30,6 +62,38 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
         evalId: "assertion-sandbox",
         verdict: "passed",
       });
+      expect(`${run.stdout}\n${run.stderr}`).not.toContain("workspace-diff-unavailable");
+      const bulkEvaluation = only(
+        evaluations,
+        (event) => event.evalId === "workspace-diff-cap",
+        run.diagnostic(),
+      );
+      expect(bulkEvaluation).toMatchObject({ verdict: "passed" });
+      const shown = await niceeval.run(["show", bulkEvaluation.locator, "--json"]);
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      const document = shown.json<ShowDocument>();
+      expect(document.data.kind).toBe("attempt");
+      const fileChanges = only(document.data.fileChanges?.entries ?? [], () => true, shown.diagnostic()).detail;
+      expect(fileChanges.paths).toHaveLength(1_000);
+      expect(fileChanges.collection).toMatchObject({
+        state: "partial",
+        limitations: [{
+          code: "collection-cap-reached",
+          target: "change",
+          omittedAtLeast: 29_001,
+        }],
+      });
+      const timing = await niceeval.run(["show", bulkEvaluation.locator, "--timing=full", "--json"]);
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      const timingDocument = timing.json<TimingDocument>();
+      expect(timingDocument.data.kind).toBe("timing");
+      const workspaceDiffIntervals = timingDocument.data.timing.flatMap((entry) =>
+        entry.state === "available"
+          ? (entry.timing?.intervals ?? []).filter((interval) => interval.phase === "attempt.teardown" && interval.label === "workspace.diff")
+          : [],
+      );
+      expect(workspaceDiffIntervals, timing.diagnostic()).toHaveLength(1);
+      expect(workspaceDiffIntervals[0]!.durationMs, timing.diagnostic()).toBeLessThanOrEqual(9_000);
     },
   );
 });

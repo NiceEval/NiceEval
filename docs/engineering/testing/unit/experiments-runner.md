@@ -90,12 +90,12 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈。
   template 配对 link 的同源消费(check / --dry / 正常运行同一 linker),以及 conflict / missing 的全矩阵前置报错。
   选择类契约的每条规则都要有"命中"与"不误配"两面。
-- **`EvalDescriptor.evaluationKind` 投影与混型保真**：`evalDescriptorOf` 对 `defineEval` 返回的定义值投影 `evaluationKind: "pass"`，对 `defineScoreEval` 返回的定义值投影 `"points"`。
+- **`EvalDescriptor.evaluationKind` 投影与混型保真**：`evalDescriptorOf` 对 `defineEval` 返回的定义值投影 `evaluationKind: "pass"`，对 `defineScoreEval` 返回的定义值投影 `"score"`。
   未经两个定义函数处理的未包装对象缺少 `evaluationKind` 时，discovery 明确拒绝；不能用默认 `"pass"` 猜它原本想调用哪个 factory。
   同一 Experiment 选择混合题型时，两类 Eval 全部进入调度、写入与携带，不能在启动期拒绝或静默删掉一类。报告按题型分列通过率与总分，绝不把两种无共同单位的数相加。
-- **计分制 attempt 落盘**：`runAttemptEffect` 对 `evaluationKind: "points"` 的 eval 把 `.points(n)` 的声明值与挣分分别写进 `EvalResult.assertions[].pointsAvailable` / `.points`。`t.score(label, n)` 正确写进 `EvalResult.scoreEntries`（不只是 collector 单元层的孤立证明，这里证明 runner 真的把 collector 的输出接上了落盘字段）。
+- **计分制 attempt 落盘**：`runAttemptEffect` 对 `evaluationKind: "score"` 的 eval 把 `.score(n)` 的声明值与 earned 分别写进 sealed Assertions。`t.score(n)` 也登记一条 direct-score Assertion（不走旁路字段）。
 - 同一 attempt 内 user send、断言、直接给分的 `sourceOrder` 来自同一条单调序列，跨三个存储分区仍能恢复真实发生顺序。
-- 前置 `.gate()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已写入，不是执行异常）；中止前已经产生的 `scoreEntries` 照实保留，中止后的 `test()` 代码不再执行（后续 `.points()` / `t.score()` 调用不出现在结果里）。
+- 前置 `.gate().orStop()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已写入，不是执行异常）；中止前已经产生的 score contribution 照实保留，中止后的 `test()` 代码不再执行（后续 `.score()` / `t.score()` 调用不出现在结果里）。
 - 没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为 `passed`——计分制的 `failed` 只有中止一个出处。
 - **调度项优先级**：CLI flag → experiment → config → 内置默认的替换链逐层可区分；agent/model/flags 只属 experiment，CLI 替换报用法错误；labels 的值域校验与 Run 投影。
   **这条链里没有进程变量层**（[边界](../../../architecture.md)）。
@@ -119,8 +119,6 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 同一 Experiment 下一个 eval 声明 `judge`、其余不声明时，`runEvals` 写进 `InvocationShape.configHashes`（继而落进 `run.json`）的值必须与其余 eval 相同。它只取 Run 级 `judge`，不叠加 `experiment > eval > config` 的逐字段求值链（`configIdentityForRun` 默认单层）。
   - 反例：那条 eval 自己的 `result.configHash`（携带判据读 `plannedConfigHashes`）仍按完整求值链算出。它可以与 Run 级值不同——这是刻意的携带正确性（docs/feature/experiments/cache.md「指纹:两个哈希嵌套」），不是要抹平的分叉。
   - 反面回归：曾直接拿 `plannedConfigHashes` 当 Run 级值汇总。任意 eval 声明自己的 `judge` 就让规划期硬抛错，见 memory/config-hash-forks-per-eval-judge-declaration。
-- **界面语言的取值链**：`config.locale` → 系统 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`）→ `zh-CN`。
-  断言面是 `detectLocale(env)` 的返回值：`config.locale` 在场时压过任何系统变量；未声明或无法归一（`C` / `POSIX` / 空串）时逐级回落而不是报错；niceeval 自己的旧变量（`NICEEVAL_LANG` / `NICEEVAL_LOCALE`）在场也不参与。
 - **并发**：全局与实验级上限、全局上限的三层求值与 Provider 推荐值、exclusive Provider 强制串行。
   退避睡眠释放全局槽位，实验级并发限制全程持有。
   `maxConcurrency: 1` 时，前一 Attempt 进入退避区间，下一 Attempt 不得启动。
@@ -186,7 +184,6 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 组按条数降序；超过 10 组收进 `+K more kinds — niceeval view` 尾行；总数与形态数嵌上边框 meta。
   - 人读运行中每个诊断 `code` 至多完整打印一次，同 `code` 后续静默计数；结束时 `WARNINGS` 面板每 code 一行（`! <code> ×N` + 首条 message 截断），无诊断不出面板。
   - 区分力：205 条同 matcher 失败聚成一行且代表 locator 是首现那条；1 条失败展开成完整身份两行；`--json` 的 `failure`/`warning` 事件仍逐条。
-  - **facts 摘要提示**：失败 attempt 的 `AttemptRecord.facts` 非空时，组行（size > 1）与身份行（size = 1）行尾各追加一次 `facts ×N`（N = 键数）。没有 facts 时不追加，面板密度不变，完整键值表留给 `niceeval show @<locator>`，不在这里展开。`failureDetailFromResult` 是数据源：有 facts 时 `factsCount` 等于键数，facts 缺失或为空对象时该字段整个省略。区分力：同一失败形态两条 attempt，一条有 facts 一条没有，只有前者的行尾出现提示。
 - **live 面板的键盘接管与自愈重绘（`runner/feedback/input-guard.ts` + coordinator 接线）**：契约见 [CLI · 键盘输入与画面自愈](../../../feature/experiments/cli.md#键盘输入与画面自愈)。
   - stdin 与 stderr 都是 TTY 时，live 期间 stdin 进入 raw mode 且不回显，普通字节不透传。
   - 收到 `\r` / `\n` 触发 clear → 整帧重绘且绕过「同帧不写」判断。收到 `\x03` 走与 SIGINT 相同的中断路径。
@@ -238,10 +235,6 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **Experiment 收尾协议**：`experiment:complete` 事件在该 Experiment `teardown`（若声明）完成之后、`invocation:summary` 之前恰好触发一次。携带的 `experimentId` / `completedAt` / `carriedResults` / `diagnostics` 与该 Experiment 实际的收尾结果一致。
 - 多 Experiment 的一次 Invocation 里各自的 `experiment:complete` 独立触发、顺序与各自完成时点一致，不等到全部 Experiment 收尾才批量触发。
 - 实验域诊断（teardown 失败、budget 不可执行等）经 `ExperimentDiagnosticInput` 累积进正确的 experimentId 桶，不同 Experiment 的诊断不串桶，相同 `dedupeKey` 只在同一个 Experiment 内折叠计数。
-- **`ctx.fact()` 的作用域归属**：sandbox hook / agent setup·send·teardown 经 `ctx.fact()` 上报的落进对应 attempt 的 `EvalResult.facts`（不落进任何其它 attempt）。
-- experiment setup/teardown（含收尾自愈路径 `recoverOrphanedTeardownRegistration`）经 `ctx.fact()` 上报的累积进该 Experiment 的 `experiment:complete` 事件 `facts` 字段。按 experimentId 分桶，不同 Experiment 不串桶。
-- 两级互不混淆，runner 按当前回调所处生命周期自动归属，调用方不能指定层级。同一作用域内同 key 后写替换先写（跨 setup/send/teardown 三个不同回调仍是同一 attempt 作用域）。
-- key 不匹配 `[a-z0-9._-]{1,64}` 或 value 非标量（对象/数组/`null`/`undefined`）时抛错，错误信息带上具体 key/value 与修正提示；合法调用不受影响。
 - **用例锁与并发 Invocation**：
 
   - 派发时刻逐用例非阻塞取锁。排队用例不持锁；全携带用例不取锁；等锁用例不触发实验级 setup。
@@ -257,7 +250,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 租约在 Experiment setup、Sandbox create 和 lifecycle setup 前取得，在 Sandbox teardown、Provider finalizer 与 Experiment teardown 后释放。
   - 等待方不占全局位、不创建 Sandbox、不提前持有 Eval 锁。释放后先重做整个 Experiment 的携带规划。
   - 证明全携带不取新租约，以及仍有工作时取得租约两面。同 Invocation 的两个 Experiment id 共用 key 也串行；不同 key 可并行。
-  - 心跳过期后接管产生 `state-lease-taken-over` diagnostic，但不伪造外部状态已回滚的事实。`--rerun all` 不跳过租约。
+  - sharedState heartbeat 只提供诊断，永不触发接管。强杀或 cleanup 失败保留 owner evidence，等待方只能保持阻塞或走公开的显式恢复；`--rerun all` 不跳过租约。
   - `state_lease_wait` 起止事件与 `elsewhere` 计数归约进反馈状态。字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
   - 锁文件走隔离 `niceevalRoot` 下的真实文件系统（每例独立临时根，不许写进真实仓库的 `.niceeval/`），时间推进用 `TestClock`，不做真实等待。
   - 逐条目原子文件原语（命名、tmp→fsync→rename→fsync 目录写、损坏跳过的全目录扫描、rename 墓碑认领互斥）抽在 `src/shared/entry-file-store.ts`（用例锁、收尾登记、留存清单三个消费方共用）。由 `src/shared/entry-file-store.test.ts` 独立证明：写入/读取往返、全目录扫描跳过损坏条目与点文件、缺失目录不抛错、认领在两个并发调用者之间互斥（恰一个拿到 `true`）。
@@ -351,7 +344,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   任缺一条哈希都会随宿主条件漂移，症状是缓存永不命中而不是结果出错，只有这一格会红。
 - **汇总与退出码**：verdict 四值互斥、failed 只统计断言不过；退出码按 `(experiment, eval)` 最终判定折叠、完整退出码矩阵（0/1/130、strict、required reporter）；分组通过率的分母口径。
 - **Session 登记与查询**：每次真实派发在启动期原子创建 Session 文件，按反馈维护 queued/running/elsewhere 计数与状态，收尾后保留完成条目；查询只读投影默认过滤已完成项，并把超过心跳阈值的活动条目放入 `expired`，`--all` 保留完成项。
-- **启动期错误格式**：coordinator 激活前的错误恒为 `error:` + `fix:` 两行、两种输出形态同形；库错误类的下一步原样透传。
+- **启动期错误格式**：coordinator 激活前的 Human 错误恒有真实 `error:`；有限且确定的语法错误可以附
+  `usage:`，有公开说明时可以附 `docs:`，不得要求通用 `fix:`。机器输出保留稳定错误结构，不要求与 Human 字节同形。
 - **用户 `.ts` 装载与宿主模块形态**（`bin/niceeval.js` + 包 `exports` 表）：CLI 装载用户 `.ts` 不受宿主 `package.json` 的 `type` 影响（契约见 [docs/cli.md「装载用户 .ts」](../../../cli.md)）。
 - 单元层以数据面守护两条不变量：exports 每个带 `import` 条件的出口同时带 `require` 条件、且两者指向真实存在的文件。
 - bin 入口同时注册 tsx 的 ESM 与 CJS 两个 hook——两者缺一，CJS 宿主（`npm init -y` 默认）下 `init` 刚生成的 config 就装载不了（`// bug: memory/tsx-dynamic-import-require-cycle.md`）。

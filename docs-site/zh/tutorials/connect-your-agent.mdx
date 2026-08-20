@@ -18,7 +18,7 @@ description: "写一个 Adapter、配置一个 Experiment，并运行第一条�
     评估 Claude Code / Codex / bub 这种独立的 Agent：用内置 Sandbox Agent。
   </Card>
   <Card title="其它 AI Agent" icon="plug">
-    自己的 Agent 需要 [编写 Send](/zh/tutorials/write-send)。如应用已有 OTel 埋点，可 [接入OTel ](/zh/tutorials/connect-otel)
+    自己的 Agent 需要 [编写 Send](/zh/tutorials/write-send)。如应用已有 OTel 埋点，可[接入 OTel](/zh/tutorials/connect-otel)。
   </Card>
 </CardGroup>
 
@@ -54,9 +54,11 @@ export default defineAgent({
 
 最小示例先使用固定 URL。需要按环境传入 URL 时，使用下文的[参数传递方式](#实验-flag)。`send` 的完整契约（`TurnInput` / `AgentContext` / `Turn` 各字段）见 [Adapter](/zh/explanation/adapter)。
 
-即使 Agent runtime 和评估用例位于同一个代码库，也应通过像前端用户一样调用接口，也不要把 `fetch` 换成进程内函数调用，因为
+如果被测对象是独立的 HTTP 服务，即使服务代码和评估用例位于同一个代码库，也应通过线上实际使用的 HTTP 接口调用，不要把本例的 `fetch` 换成进程内函数调用，因为
 - **代码内部调用不是用户走的那条链路。** HTTP 层、序列化、中间件、流式传输全被绕过，评估用例通过不代表线上行为正确。
 - **Adapter 无法复用于其它部署环境。** HTTP Adapter 只需更换 `baseUrl`，即可连接本地、预发或生产环境（见下文两个 Experiment 文件）。进程内调用依赖当前代码库。
+
+如果 Agent 只提供 SDK、函数或 CLI，就在 `send` 中直接调用对应入口。保留前面相同的输入、取消信号和 `Turn` 返回形状；不要为了套用 HTTP 示例额外搭一个并不存在的服务。
 
 **2. 实验**
 
@@ -88,7 +90,7 @@ export default defineEval({
     turn.succeeded().label("请求成功");
     t.check(turn.message, includes("30")).label("说明退款期限");
     turn.judge.autoevals.closedQA("回答是否说明了退款期限？")
-      .atLeast(0.7)
+      .gate(0.7)
       .label("退款政策质量");
   },
 });
@@ -99,10 +101,10 @@ export default defineEval({
 ```bash
 npx niceeval exp my-agent        # 跑这个 experiment 下的全部 eval
 npx niceeval exp my-agent refund # 只跑 ID 以 refund 开头的
-npx niceeval view --experiment my-agent  # 本地查看器里看结果
+pnpm exec niceeval view --experiment my-agent  # 本地查看器里看结果
 ```
 
-**验证运行结果**：终端会显示动态 dashboard，完成和排队数量在原位更新。失败、错误和 warning 会保留在输出中。运行结束后会打印摘要和 receipt；用其中的 Run ID 也可以执行 `npx niceeval view --run <runId>`，查看每条评估用例逐轮的输入、事件和评分明细。
+**验证运行结果**：终端会显示动态 dashboard，完成和排队数量在原位更新。失败、错误和 warning 会保留在输出中。运行结束后会打印摘要和 receipt；用其中的 Run ID 也可以执行 `pnpm exec niceeval view --run <runId>`，查看每条评估用例逐轮的输入、事件和评分明细。
 
 没跑通时，按报错的位置分三类排查：
 
@@ -201,7 +203,7 @@ async send(input, ctx) {
 
 `progress` 是可覆盖的短期状态。`diagnostic` 是运行结束后仍能回顾的有界记录。两者都不能指定 phase 或输出流，也不会自动改变 `Turn.status` 或 Attempt 判定。连接失败、解析无法继续等基础设施错误应抛出异常。正常收到的被测 Agent 失败通过 `Turn.status: "failed"` 表达。
 
-终端只显示错误的一层摘要和 Attempt identity。完整 code、message、cause、stack 与 diagnostics 保存在 Attempt-owned 通道里，使用 `niceeval show --run <runId> --page attempt-<attemptId>` 查看。OTel trace 只补充调用关系和耗时，不是错误数据的前提。
+终端只显示错误的一层摘要和 Attempt identity。完整 code、message、cause、stack 与 diagnostics 保存在 Attempt-owned 通道里，使用 `niceeval show @<attempt-locator>` 查看。OTel trace 只补充调用关系和耗时，不是错误数据的前提。
 
 要分别评估本地和生产环境，创建两个 Experiment 文件，并传入不同的工厂参数：
 

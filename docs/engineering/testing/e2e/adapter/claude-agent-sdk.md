@@ -3,7 +3,7 @@
 ## adapter-claude-agent-sdk-live-compatibility
 
 Repo ID 是 `adapter/claude-agent-sdk`。它在 host 上锁定
-`@anthropic-ai/claude-agent-sdk@0.3.226`。它声明 Node 22、external network 与 main / nightly /
+`@anthropic-ai/claude-agent-sdk@0.3.226`。它声明 Node 24、external network 与 main / nightly /
 release lanes。它且仅声明 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_BASE_URL` 两项 secret。
 它验证候选包公开的 `createClaudeSdkEventStream()` 能消费真实 SDK 的原生 `SDKMessage`；它不新增
 NiceEval public factory。
@@ -37,10 +37,14 @@ group，确保没有残留子进程。
 唯一 `bash-session` Journey 的首轮要求真实模型用原生 Bash 执行一条带随机 marker 的安全
 `printf`。它断言 canonical `shell`、精确 command input 与 `completed`；这个 completed 状态同时证明
 `tool_use_id` 和 `tool_result` 已配对。首轮和 resume 轮的 input / output usage 都必须为正，
-`t.sessionId` 必须已经由 `system/init` 捕获。第二轮要求模型引用首轮随机哨兵，证明 SDK `resume`
-真正取回首轮会话。
+`t.sessionId` 必须已经由 `system/init` 捕获。第二轮要求模型引用首轮短随机 challenge code，证明 SDK `resume`
+真正取回首轮会话；challenge 保持不可预知，但不把长 UUID 的逐字抄写能力混入 session 兼容性判定。
 
-测试随后只通过公开 CLI 调用 `show`、`show --json`、`show @locator --execution` 与
-`show @locator --timing` 读回通过结果、session assertion、完整原始 `Bash` 名和 marker；不读取
-私有结果文件。Experiment 固定 `attempts: 1`，Vitest `retry: 0`，不配置 Judge。缺少任一声明 secret
-是 configuration failure，不会 skip。
+测试只通过公开 CLI 的 `show`、`show --json` 和代表 Report 的 execution target Page 读回通过结果。
+target Page 使用 `show @locator --report <fixture-module> --page <route>`。
+它检查 session assertion、完整原始 `Bash` 名和 marker，不读取私有结果文件。
+通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回；本 Repo 不重复断言。
+
+Experiment 固定 `attempts: 1`，Vitest `retry: 0`，不配置 Judge。首次 Invocation 若产生结构化
+`verdict: failed`，原生 owner 只精确补跑该 Eval 一次，并保留首次 Invocation；`errored`、`skipped`、
+timeout、setup、I/O 与 lifecycle 故障不补跑。缺少任一声明 secret 是 configuration failure，不会 skip。

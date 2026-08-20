@@ -8,85 +8,15 @@
 // 并发 register 会死锁,整进程串行化 namespaced import。
 
 import * as NodeModule from "node:module";
+import { Effect } from "effect";
 import { register, type NamespacedUnregister } from "tsx/esm/api";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 let generation = 0;
-let chain: Promise<void> = Promise.resolve();
+const generationGate = Effect.runSync(Effect.makeSemaphore(1));
 
 const canonicalRequire = NodeModule.createRequire(import.meta.url);
 const canonicalizeNiceEval = fileURLToPath(import.meta.url).endsWith(".cjs");
-
-// Node 22.0–22.14 has only the asynchronous customization-hook API. The hook
-// stays dormant after this import generation, just like tsx's fallback hook on
-// those Node releases; current Node deregisters the synchronous hook instead.
-const ASYNC_CANONICAL_RUNTIME_HOOK = `
-  import { createRequire } from "node:module";
-  import { fileURLToPath, pathToFileURL } from "node:url";
-
-  let active;
-  let canonicalizeNiceEval;
-  let canonicalRequire;
-  let namespace;
-
-  export function initialize(data) {
-    active = new Int32Array(data.active);
-    canonicalizeNiceEval = data.canonicalizeNiceEval;
-    canonicalRequire = createRequire(data.resolutionParentURL);
-    namespace = data.namespace;
-  }
-
-  export async function resolve(specifier, context, nextResolve) {
-    const belongsToGeneration = context.parentURL?.includes(
-      "namespace=" + encodeURIComponent(namespace),
-    ) === true;
-    const isEffect = specifier === "effect" || specifier.startsWith("effect/");
-    const isNiceEval = specifier === "niceeval" || specifier.startsWith("niceeval/");
-    if (
-      Atomics.load(active, 0) !== 1 ||
-      !belongsToGeneration ||
-      (!isEffect && !(canonicalizeNiceEval && isNiceEval))
-    ) {
-      const resolved = await nextResolve(specifier, context);
-      return forceNamespacedTypeScriptModule(resolved, namespace);
-    }
-    try {
-      const resolved = await nextResolve(specifier, context);
-      const freshResolved = forceNamespacedTypeScriptModule(resolved, namespace);
-      if (!isNiceEval) return freshResolved;
-      const canonicalPath = canonicalRequire.resolve(specifier);
-      if (
-        resolved.url.startsWith("file:") &&
-        fileURLToPath(resolved.url).replace(/\\.mjs$/, "") === canonicalPath.replace(/\\.cjs$/, "")
-      ) {
-        return { shortCircuit: true, url: pathToFileURL(canonicalPath).href };
-      }
-      return freshResolved;
-    } catch (cause) {
-      if (!isEffect) throw cause;
-      const code = cause !== null && typeof cause === "object" ? cause.code : undefined;
-      if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") throw cause;
-      return {
-        shortCircuit: true,
-        url: pathToFileURL(canonicalRequire.resolve(specifier)).href,
-      };
-    }
-  }
-
-  function forceNamespacedTypeScriptModule(resolved, namespace) {
-    if (
-      !resolved.url.includes("tsx-namespace=" + encodeURIComponent(namespace)) ||
-      !resolved.url.includes("tsx-commonjs-virtual-query=1") ||
-      (resolved.format !== "commonjs" && resolved.format !== "commonjs-typescript")
-    ) {
-      return resolved;
-    }
-    return { ...resolved, format: "module-typescript" };
-  }
-`;
-
-const asyncCanonicalRuntimeHookUrl =
-  `data:text/javascript;charset=utf-8,${encodeURIComponent(ASYNC_CANONICAL_RUNTIME_HOOK)}`;
 
 type UnregisterCanonicalRuntimeResolution = () => Promise<void>;
 
@@ -100,50 +30,33 @@ type UnregisterCanonicalRuntimeResolution = () => Promise<void>;
 function registerCanonicalRuntimeResolution(
   namespace: string,
 ): UnregisterCanonicalRuntimeResolution {
-  if (typeof NodeModule.registerHooks === "function") {
-    const hooks = NodeModule.registerHooks({
-      resolve: (specifier, context, nextResolve) => {
-        const isEffect = isEffectSpecifier(specifier);
-        const isNiceEval = canonicalizeNiceEval && isNiceEvalSpecifier(specifier);
-        if (
-          !belongsToFreshGeneration(context.parentURL, namespace) ||
-          (!isEffect && !isNiceEval)
-        ) {
-          const resolved = nextResolve(specifier, context);
-          return forceNamespacedTypeScriptModule(resolved, namespace);
-        }
-        try {
-          const resolved = nextResolve(specifier, context);
-          const freshResolved = forceNamespacedTypeScriptModule(resolved, namespace);
-          if (!isNiceEval) return freshResolved;
-          return resolveCanonicalNiceEval(specifier, freshResolved);
-        } catch (cause) {
-          if (!isEffect) throw cause;
-          if (!isModuleNotFound(cause)) throw cause;
-          return {
-            shortCircuit: true,
-            url: pathToFileURL(canonicalRequire.resolve(specifier)).href,
-          };
-        }
-      },
-    });
-    return async () => hooks.deregister();
-  }
-
-  const active = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
-  Atomics.store(active, 0, 1);
-  NodeModule.register(asyncCanonicalRuntimeHookUrl, {
-    parentURL: import.meta.url,
-    data: {
-      active: active.buffer,
-      canonicalizeNiceEval,
-      namespace,
-      resolutionParentURL: import.meta.url,
+  const hooks = NodeModule.registerHooks({
+    resolve: (specifier, context, nextResolve) => {
+      const isEffect = isEffectSpecifier(specifier);
+      const isNiceEval = canonicalizeNiceEval && isNiceEvalSpecifier(specifier);
+      if (
+        !belongsToFreshGeneration(context.parentURL, namespace) ||
+        (!isEffect && !isNiceEval)
+      ) {
+        const resolved = nextResolve(specifier, context);
+        return forceNamespacedTypeScriptModule(resolved, namespace);
+      }
+      try {
+        const resolved = nextResolve(specifier, context);
+        const freshResolved = forceNamespacedTypeScriptModule(resolved, namespace);
+        if (!isNiceEval) return freshResolved;
+        return resolveCanonicalNiceEval(specifier, freshResolved);
+      } catch (cause) {
+        if (!isEffect) throw cause;
+        if (!isModuleNotFound(cause)) throw cause;
+        return {
+          shortCircuit: true,
+          url: pathToFileURL(canonicalRequire.resolve(specifier)).href,
+        };
+      }
     },
   });
-  return async () => {
-    Atomics.store(active, 0, 0);
-  };
+  return async () => hooks.deregister();
 }
 
 function resolveCanonicalNiceEval(
@@ -224,11 +137,10 @@ async function importFromNamespace(
  * module identity; close releases both tsx and canonical runtime hooks.
  */
 export async function createFreshImportGeneration(): Promise<FreshImportGeneration> {
-  let releaseQueue!: () => void;
-  const turn = new Promise<void>((resolve) => { releaseQueue = resolve; });
-  const previous = chain;
-  chain = previous.then(() => turn, () => turn);
-  await previous;
+  await Effect.runPromise(generationGate.take(1));
+
+  const releaseGeneration = (): Promise<void> =>
+    Effect.runPromise(generationGate.release(1)).then(() => undefined);
 
   const namespace = `niceeval-fresh-${++generation}`;
   let ns: NamespacedUnregister | undefined;
@@ -238,7 +150,7 @@ export async function createFreshImportGeneration(): Promise<FreshImportGenerati
     ns = register({ namespace });
     unregisterCanonicalRuntimeResolution = registerCanonicalRuntimeResolution(namespace);
   } catch (cause) {
-    releaseQueue();
+    await releaseGeneration();
     throw cause;
   }
 
@@ -261,7 +173,7 @@ export async function createFreshImportGeneration(): Promise<FreshImportGenerati
         try {
           await active?.unregister();
         } finally {
-          releaseQueue();
+          await releaseGeneration();
         }
       }
     },

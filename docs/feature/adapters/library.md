@@ -111,7 +111,7 @@ export default defineSandboxAgent({
 | 收发消息 | 返回可信 Turn；执行异常 reject `SendFailure` | 单轮发送、输出断言 |
 | 标准事件流 | 完整映射消息与 operation，保持顺序和 operation ID | 工具、消息与事件断言 |
 | 多轮会话 | 使用 typed session slot 或 `id` / `capture()` | 多轮与 `newSession()` |
-| HITL | 返回 `waiting`、`input.requested`，按 request ID 恢复 | `parked`、`requireInputRequest`、`respond` |
+| HITL | 返回 `waiting`、`input.requested`，按 request ID 恢复 | `t.check(turn.status, equals("waiting"))`、`requireInputRequest`、`respond` |
 | tracing | 配置 exporter 与 span mapper | 结果 trace 和 view 瀑布图 |
 
 这条递进路径描述一个 Adapter 实现了多少行为，与 Tier 1/2/3 描述的应用侵入程度是两条正交坐标。

@@ -409,15 +409,14 @@ function evidenceRow<const Fields extends object>(
 合法调用：
 
 ```ts
+const [summary] = await aggregate(ctx.scope, {
+  by: {},
+  values: { passRate },
+});
+
 const row = evidenceRow({
   agent: "codex",
-  passRate: metricValue({
-    value: 0.82,
-    samples: 41,
-    total: 50,
-    basis: "attempt",
-    evidence: attempts,
-  }),
+  passRate: summary.passRate,
 });
 ```
 

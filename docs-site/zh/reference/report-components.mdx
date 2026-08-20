@@ -1,121 +1,125 @@
 ---
 title: "报告 API"
-description: "RecordProjection、Calculation、Page、ReportExecution 与静态导出的公开边界。"
+description: "用标准 React JSX、Page 与关闭的 Analysis 值编写终端、网页和静态报告。"
 ---
 
-Report 作者只从 `niceeval/report` 声明需要哪些 `RecordProjection`，再把投影结果和计算结果包装成页面或下载。作者不接收 reader、路径、raw Attachment 或磁盘字段。
+Report 作者只组织已经关闭的 Analysis 值。作者文件使用标准 React JSX；它不读取 Record 路径、不会取得 reader，也不需要 NiceEval 专属 JSX runtime 或 `jsxImportSource`。
 
 ```text
-AnalysisSample
-        ↓  opaque RecordProjection declarations
-ProjectedSample
-        ↓  Calculation / Page / PageFamily / Download
-immutable ReportExecution
-        ├─ show
-        ├─ view revision
-        └─ static export
+已发布的 Record
+        ↓ 选择
+Sample → Analysis 的 ClosedRows / MetricValue / DomainView
+        ↓
+Report：Page + component
+        ├─ show：一个选中的 Page → terminal text 或 JSON
+        └─ view / view --out：全部 Page → 完整静态站
 ```
 
-## 声明 RecordProjection
+## 定义一个 Report
 
-NiceEval 提供的 opaque projector 固定形成一种 typed view。Report 用三个 constructor 声明逻辑访问；作者不能定义 raw family/projector：
+把 Report 写成 `.tsx` 模块，并在项目的 TypeScript 配置中启用 `"jsx": "react-jsx"`。组合组件通过 `ctx.scope` 取得这次命令固定的 `Sample`，再把 `aggregate()` 返回的 `ClosedRows` 交给标准组件。
 
-| constructor | 对齐方式 |
-| --- | --- |
-| `attemptSlotProjection(projector)` | 对 Sample 的每个 slot 形成 entry，并读取它精确引用的 Attempt Attachment。 |
-| `attemptOriginRunProjection(projector)` | 对每个 slot 形成 entry，并读取该 Attempt 的 origin Run Attachment。 |
-| `selectedRunProjection(projector)` | 对每个 selected Run 形成 entry，并读取该 Run Attachment。 |
+```tsx
+import {
+  aggregate,
+  Bars,
+  defineComponent,
+  defineReport,
+  Grid,
+  model,
+  passRate,
+  Section,
+  Table,
+} from "niceeval/report";
 
-前两种访问不会丢掉 `excluded`、`not-recorded` 或 `core-invalid` slot。相同 Attempt 被多个 slot 引用时，公开结果仍按 slot 对齐。
+const Overview = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model },
+    values: { passRate },
+  });
 
-```ts
-const verdicts = attemptSlotProjection(verdictProjector);
-const evaluations = selectedRunProjection(evaluationsProjector);
-
-const inputs = reportInputs({ verdicts, evaluations });
-```
-
-`reportInputs` 固定输入 key 与其 projection 的类型。host 在执行任何 Record I/O 前闭合这组依赖，并让每个 projection 至多执行一次。
-
-## 定义 Calculation 和页面
-
-Calculation 只从静态声明的 projection 派生业务值。它自己返回业务 `observed` 与 `denominator`；host 不会从 coverage 或 entry 数量猜测统计口径。
-
-```ts
-const passRate = defineCalculation({
-  id: Either.getOrThrow(reportComponentId("pass-rate")),
-  inputs,
-  completeness: "allow-partial",
-  calculate: ({ sample, inputs }) =>
-    calculatePassRate(sample, inputs.verdicts, inputs.evaluations),
-});
-```
-
-直接消费 projection 的 Calculation、Page、PageFamily 和 Download 必须选择完整度：
-
-| 选择 | 行为 |
-| --- | --- |
-| `allow-partial` | callback 收到完整的 `ProjectedSample`、coverage 与 issues，可以显示部分结果。 |
-| `require-complete` | 必需数据不完整时不调用 callback，result 是 `data-unavailable`。 |
-
-`unavailable`、`migration-required`、`migration-unavailable`、`unsupported`、`invalid` 与 partial collection 都是 recorded-data problem。callback 的意外 throw 属于 execution problem，两者不能互相替代。
-
-Page 返回闭合的 `ReportDocument` 语义树。它不是 HTML、React element 或另一套文本输出。PageFamily 只能根据已投影或已计算的内存值展开 route，不能在展开时追加 Attachment I/O。
-
-## 组合一个 Report
-
-```ts
-const overview = definePage({
-  id: Either.getOrThrow(reportComponentId("overview")),
-  route: Either.getOrThrow(reportRoute("/")),
-  calculations: { passRate },
-  render: ({ calculations }) =>
-    reportDocument({
-      title: "Summary",
-      children: [
-        reportMetric({
-          label: "Pass rate",
-          value:
-            calculations.passRate.state === "available"
-              ? calculations.passRate.value.rate
-              : null,
-        }),
-      ],
-    }),
+  return (
+    <Section title={ctx.report.title}>
+      <Grid>
+        <Bars points={rows} x="model" y="passRate" />
+        <Table rows={rows} />
+      </Grid>
+    </Section>
+  );
 });
 
 export default defineReport({
-  id: Either.getOrThrow(reportId("summary")),
-  calculations: { passRate },
-  pages: [overview],
+  title: { en: "Quality", "zh-CN": "质量" },
+  pages: [{
+    id: "overview",
+    path: "/",
+    title: { en: "Overview", "zh-CN": "概览" },
+    render: () => <Overview />,
+  }],
 });
 ```
 
-`defineReport` 验证 ID 与组件引用。Page、PageFamily 和 Download 只能引用同一个 Report 已注册的 Calculation。页面 route 与下载路径必须通过对应 constructor 创建，避免输出冲突。
+`ctx.scope` 是组件取得 Sample 的唯一字段。`ctx.report` 提供 Report 标题、导航 Page 摘要和只读的 `pricing`；后者是已验证的
+`PricingProfile` 或 `null`，与 `ReportDefinition.pricing` 是同一个值，不提供 Config、Runner price table 或第二份价格输入。`ctx.report`
+不提供当前目录、Record、主题或其它 Page 的数据读取能力。
 
-## 由 show / view 执行 Report
+成本 Measure 必须显式调用 `costUSD(profile)` 或 `totalCostUSD(profile)`，其中 `profile` 就是该 Report 的已验证 `pricing`；没有零参数
+或别名入口。Analysis 拥有 slot-provider ledger、exact total 与 `numerator / denominator` mean，Host 只闭合并呈现这些结果。
 
-应用代码不调用 Report host。`niceeval show`、`niceeval view` 与 `view --out` 的内部 host
-选择 Run、执行 projection 与作者 graph，并形成不可变、自包含的 `ReportExecution`。
-包不导出 `niceeval/report/host`、`niceeval/report/host/node` 或 `executeReport()`。
+`MetricValue` 来自 Analysis，并完整保留 `value`、`state`、`samples`、`total`、`issues` 和 `refs`。`value: 0` 是有效读数。不要从可见行数重算分母，也不要把 `null` 写成零。
 
-`ReportExecution` 包含 Sample、projection 摘要、Calculation、family、页面、下载项与 problem table，但不包含 reader、路径、Scope、callback 或 projector token。
+## 两种组件形态
 
-每个 projection、Calculation、PageFamily、页面实例与 Download 在同一 execution 中最多执行一次。`show`、`view` 与 `exportStaticReport` 只消费完成后的 execution。
+上例是组合组件。它可以在 Page 执行期间异步读取固定 Sample 上的关闭值。
 
-| 情况 | `show` / `view` | 静态导出 |
-| --- | --- | --- |
-| recorded-data problem | 显示问题，并保留其它成功内容。 | 可以导出，问题必须可见。 |
-| execution problem | 保留其它成功页面，并显示问题。 | 不导出。 |
+显示原语使用另一种 `defineComponent()` 形态。可选的 `resolve()` 只运行一次；同步的 `text()` 与 `web()` 读取同一个关闭结果。
 
-## view 与静态导出
+```tsx
+import {
+  defineComponent,
+  formatMetricValue,
+  Stat,
+  type MetricValue,
+} from "niceeval/report";
 
-`view` 每次 rebuild 构造新的固定 `ReportExecution`。完整成功后才替换当前 revision；失败保留 last-good execution，并显示 bounded rebuild problem。
+const MetricCard = defineComponent<
+  { readonly label: string; readonly value: MetricValue },
+  { readonly label: string; readonly value: MetricValue }
+>({
+  resolve: props => props,
+  text: data => `${data.label}: ${formatMetricValue(data.value)}`,
+  web: data => <Stat label={data.label} value={formatMetricValue(data.value)} />,
+});
+```
 
-静态导出只写一份已经完成的 execution。它先验证 semantic tree、route、下载项与 execution problems，再写出页面、host-data、downloads、manifest 和内建 runtime。所有内容写完后，最后写入 `complete` marker。
+`text()` 返回文字，`web()` 返回 React JSX。两面不能再次读取 Sample、发起网络请求或各自计算统计。不要从 HTML、文字或 React element 反推机器数据。
+
+## Page、参数和页面选择
+
+普通 Page 的 `render` 可以直接接收固定 Sample，或先用 `load(sample, params, context)` 关闭输入。参数 Page 还要声明 `navigation: false` 与 `params`：
+
+- `encode(params)` 产生 canonical key；
+- `decode(key)` 必须能把同一种 key 还原；
+- `enumerate(sample)` 只为完整站点列出实例；
+- `context.evidence(locator)` 只返回当前 Sample 内的关闭证据视图。
+
+`pages` 是 Report 唯一的页面集合，详情必须作为 Page 或参数 Page 显式声明；Host 不补建任何 route。`niceeval show --page <route>` 只 decode、load 和 render 这个目标 Page。它不会调用 `enumerate()` 或执行其它 Page。`niceeval view` 与 `niceeval view --out` 才会枚举全部普通 Page 和参数实例，并在所有路径、链接、资源和预算通过校验后形成完整站点。
+
+## JSON、网页和静态站
+
+`show --json` 固定输出英语 JSON。内建 Report 输出 Host 拥有的具名领域文档；自定义 Report 输出一个 Page 的 route、标题、80-column rendered text、下载摘要和问题表。两种 v1 JSON 都在顶层以相同的 `projections` 对象携带该目标 Page 的闭合成本数据；它们不包含作者树、HTML、全站路由或站点 identity。
+
+view 与静态导出使用同一份完整站点版本。同一路由的 HTTP body 与导出目录页面 body 逐字节相同。两者都携带同一个 reload client；静态目录找不到 view 的端点时，它会安静停用。禁用 JavaScript 或断开网络后，正文、导航、详情、完整度、问题和下载仍可读。
+
+## 样式和资源边界
+
+Report CSS 是唯一的产品样式 owner。它负责 reset、基础排版、theme token 与组件样式。View shell 只负责浏览器语言切换、reload 状态和 Host 提示，不重绘 Report 内容。
+
+Report 可以在 `head` 中声明结构化 `meta`、`link`、`style` 和 `script`，也可以选择 theme。脚本只能做渐进增强，不能成为正文、导航、Evidence 或机器文档的唯一入口。自定义样式不能建立第二份 reset、theme 或 View shell。
 
 ## 相关页面
 
-- [结果数据 API](/zh/reference/results-data)：在 Report callback 中消费 Sample 与 `ProjectedSample`。
-- [编写自定义报告](/zh/tutorials/custom-reports)：从投影写出一个实际 Report。
-- [发布静态报告](/zh/tutorials/publish-report)：导出并分享固定 execution。
+- [结果数据 API](/zh/reference/results-data)：选择 Analysis 输入并读取关闭数据。
+- [编写自定义报告](/zh/tutorials/custom-reports)：从统计口径到一个可运行的 Report。
+- [查看结果](/zh/tutorials/viewing-results)：选择范围、单目标 `show` 与全站 `view`。
+- [发布静态报告](/zh/tutorials/publish-report)：导出离线可读的完整站点。

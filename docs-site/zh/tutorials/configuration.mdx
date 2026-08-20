@@ -1,21 +1,21 @@
 ---
 title: "把配置和密钥各放到该放的地方"
 sidebarTitle: "配置与环境变量"
-description: "跑几次、超时、并发、judge、语言这些值写进代码的哪一层，API key 和 provider token 用哪些环境变量。"
+description: "跑几次、超时、并发、judge 这些值写进代码的哪一层，API key 和 provider token 用哪些环境变量。"
 ---
 
 import { ConfigLayers } from '/snippets/diagram-config-layers.jsx';
 
 [NiceEval](https://niceeval.com/) 里的值只有两个家：
 
-- **配置写进代码**——CLI flag、`experiments/` 下的 experiment 文件、根目录的 `niceeval.config.ts`。跑几次、超时多久、并发多少、judge 用哪个模型、默认看哪份报告、界面什么语言，全都在这里，没有对应的环境变量。
-- **密钥放环境变量**——API key、provider token。再加上 `NO_COLOR`、系统语言这类描述"输出到哪个终端"的事实。
+- **配置写进代码**——CLI flag、`experiments/` 下的 experiment 文件、根目录的 `niceeval.config.ts`。跑几次、超时多久、并发多少、judge 用哪个模型、默认看哪份报告，全都在这里，没有对应的环境变量。
+- **密钥放环境变量**——API key、provider token。再加上 `NO_COLOR` 这类描述"输出到哪个终端"的事实。
 
-所以同一个值只有一条来路。`niceeval exp --dry` 打印出来的就是真正生效的值，不用担心某个环境变量在背后改了它。
+所以同一个值只有一条来路。`niceeval exp --dry` 打印出来的就是真正生效的值，不用担心某个环境变量在背后改了它。CLI 与运行时文案是英语；浏览器 view 自己提供中英切换。
 
 ## 配置：想让这个值活多久，就写在哪一层
 
-同一个值出现在多层时，按 **CLI flag → experiment → eval → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
+同一个值出现在多层时，按 **CLI flag → experiment → 评估用例 → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
 
 <ConfigLayers />
 
@@ -49,7 +49,6 @@ export default defineExperiment({
 import { defineConfig } from "niceeval";
 
 export default defineConfig({
-  locale: "en",
   judge: { model: "gpt-5.4-mini" },
   maxConcurrency: 4,
   timeoutMs: 300_000,
@@ -61,7 +60,6 @@ export default defineConfig({
 | 字段 | 放什么 |
 | --- | --- |
 | `name` | 项目名，显示在 `niceeval view` 顶部。可按语言给多份 |
-| `locale` | CLI 与运行时文案的语言（`"en"` / `"zh-CN"`）。CI 里想让日志恒定英文，写这个 |
 | `report` | 默认报告定义，不带 `--report` 的 `show` / `view` 装载它（见[自定义报告](/zh/tutorials/custom-reports#设成项目默认)） |
 | `judge` | 默认裁判配置：`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs`（判分调用等待上限，默认 180_000） |
 | `workspace` | 上传进 Sandbox 的工作区根目录 |
@@ -81,10 +79,8 @@ export default defineConfig({
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | `claudeCodeAgent()` | 工厂参数 `apiKey` 可覆盖 |
 | `ANTHROPIC_BASE_URL` | `claudeCodeAgent()` | 网关地址，工厂参数 `baseUrl` 可覆盖 |
-| `CODEX_API_KEY` | `codexAgent()` | 不是 `OPENAI_API_KEY`。工厂参数 `apiKey` 可覆盖 |
-| `CODEX_BASE_URL` | `codexAgent()` | OpenAI 兼容代理地址，工厂参数 `baseUrl` 可覆盖 |
-| `BUB_API_KEY` | `bubAgent()` | 工厂参数 `apiKey` 可覆盖 |
-| `BUB_API_BASE` | `bubAgent()` | 工厂参数 `apiBase` 可覆盖 |
+| `OPENAI_API_KEY` | `codexAgent()`、`bubAgent()` | 工厂参数 `apiKey` 可覆盖 |
+| `OPENAI_BASE_URL` | `codexAgent()`、`bubAgent()` | OpenAI 兼容代理地址，工厂参数 `baseUrl` / `apiBase` 可覆盖 |
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | key 省略时依次回落 `OPENROUTER_API_KEY`、`ANTHROPIC_API_KEY` |
@@ -94,7 +90,6 @@ export default defineConfig({
 | `VERCEL_TEAM_ID` | `vercelSandbox()` | |
 | `VERCEL_PROJECT_ID` | `vercelSandbox()` | |
 | `NO_COLOR` | CLI 输出 | 设了就不画颜色和框线 |
-| `LC_ALL` / `LC_MESSAGES` / `LANG` | CLI 文案 | 系统语言，决定默认界面语言。`config.locale` 优先 |
 
 judge 想用别的变量名装 key，在配置里指过去：
 
@@ -148,11 +143,10 @@ NICEEVAL_JUDGE_KEY=sk-...
 | 单次 Attempt 的超时 | `--timeout`，或 experiment / config 的 `timeoutMs` |
 | 花费上限 | `--budget`，或 experiment 的 `budget` |
 | 并发上限 | `--max-concurrency`，或 config 的 `maxConcurrency` |
-| 界面语言 | config 的 `locale` |
 | Judge 模型与端点 | config 或评估用例的 `judge.model` / `judge.baseUrl` |
 | OTel 接收地址 | config 的 `telemetry: { host, port }` |
 
-Judge 的 key 只从 `NICEEVAL_JUDGE_KEY`（或 `judge.apiKeyEnv` 指定的变量）读，端点只从 `judge.baseUrl` 读。被测应用把标准的 `OPENAI_*` 挪作它用时，Judge 不会跟着串味。
+Judge 默认从 `NICEEVAL_JUDGE_KEY` 读取 key，也可以改读 `judge.apiKeyEnv` 指定的变量；端点只从 `judge.baseUrl` 读。它不会借用被测应用的 `OPENAI_API_KEY`。
 
 ## 接着看
 
@@ -167,6 +161,6 @@ Judge 的 key 只从 `NICEEVAL_JUDGE_KEY`（或 `judge.apiKeyEnv` 指定的变�
     哪些值属于一次具体运行。
   </Card>
   <Card title="CI 集成" icon="circle-play" href="/zh/tutorials/ci-integration">
-    在 CI 里传 secrets、固定日志语言。
+    在 CI 里传 secrets。
   </Card>
 </CardGroup>

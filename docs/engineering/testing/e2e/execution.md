@@ -31,8 +31,11 @@ pnpm e2e --lane pr --repo adapter/local-protocol
 ```sh
 pnpm e2e pack --out artifacts/niceeval-candidate.tgz
 pnpm e2e plan --lane pr --json
+pnpm e2e plan --lane main --no-diff --exclude-external-network --json
 pnpm e2e plan --lane release --no-diff --json
 pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report --artifact-root artifacts/e2e/report
+pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
+  --plan artifacts/e2e-plan.json --cell repo-batch-docker-1 --artifact-root artifacts/e2e/docker-1
 
 # Owner 接管可靠性收据：target 必须在 -- 后给出原生文件/标题参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo report \
@@ -49,7 +52,9 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 - `run` 在选中 Testkit consumer 时构建当前 workspace Testkit 的 invocation-local scratch snapshot 一次；
 - 无 Repo 被选择或 manifest 非法时不 pack、不 build；
 - CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
-- matrix run 消费 candidate artifact 与当前 checkout，不再下载第二份 Testkit artifact；
+- matrix run 消费 candidate artifact、同一次生成的 plan 与当前 checkout，通过 `--plan/--cell` 精确执行该格；它不再把 Repo 列表和并发数翻译成 workflow shell，也不下载第二份 Testkit artifact；
+- 声明 browser capability 的 matrix cell 使用与根 `@playwright/test` 精确版本相同的官方 Playwright Noble container；
+- 浏览器与 Linux 系统依赖来自镜像，不在 job 内运行 apt 或 `playwright install --with-deps`。没有 browser requirement 的 host / docker cell 仍直接运行在普通 GitHub runner；
 - `plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；显式 `run --candidate` 不重新 pack。
 
 `verify-release` 只接受非空的 `plan --json` 数组、candidate `.tgz`、receipt root 与 tag。
@@ -109,9 +114,8 @@ checkout 的 Testkit 源码编译到新的 scratch staging package，并在同�
 - runner 在 install 前后及副本 cleanup 后核对 snapshot digest；任何 mutation 都是 infra。receipt 只保存 version、checkout 相对 source path、snapshot digest 与副本内 installed realpath，全部仅供诊断。durable artifact 与 exact replay
   只属于 NiceEval candidate；重跑时 Testkit 始终来自当时所在 checkout。
 
-功能 Repo 与 Adapter Repo 永远不会混进同一个 matrix cell。`--repo report` 只复制并运行 Report 功能 Repo，不会挑一个
-`adapter/ai-sdk` Repo 来提供“更真实”的模型结果；`--repo adapter/ai-sdk` 也只运行该兼容性项目。可信 CI lane 可把多个
-I/O-bound Adapter Repo 装入一个 4 vCPU cell 并发运行；每个 Repo 仍分别安装、执行、收集 artifact 和 cleanup。
+`--repo report` 只选择 Report Repo，`--repo adapter/ai-sdk` 也只选择该兼容性项目。CI 可按 manifest `batch` 让功能 Repo
+与 Adapter Repo 共用同一 matrix cell，但每个 Repo 仍分别复制、安装、执行、限定 secret、收集 artifact / receipt 和 cleanup。
 
 ## 一次运行
 
@@ -129,11 +133,17 @@ discover → select → pack candidate → build Testkit → capability prefligh
 | summarize | 根 runner | 状态、阶段、耗时、重现命令 |
 
 每个 Repo invocation 注入新的非秘密 `NICEEVAL_E2E_INVOCATION_ID`；receipt 只写 ID，不写 secret 值。
+Hermes、OpenClaw 与 OpenCode 的既有 live owner 仍检查其 CLI-native `BUB_*` 名称；runner 只在这些 Repo
+已经通过 manifest 的 `OPENAI_*` preflight 后，于隔离 test 子进程集中提供 test-only alias。workflow 与
+manifest 不再要求旧 secret，产品 adapter 也不读取这些 alias。
 
 `requires.runtimes`、`requires.docker`、`requires.browsers`、平台与 manifest secret 都在 test 前形成结构化 capability check。
 缺 runtime、Docker daemon、browser 或显式需要的 secret 是 `configuration`，不是 regression。
+
 `externalNetwork: true` 也会写入结构化 check，但其状态是“声明但未预检”。
 runner 不对任意公网 endpoint 做伪探测；真实 owner test 验证自己的 provider/network 边界。
+`plan --exclude-external-network` 会在 pack 前排除这些 live Repo；它是明确的运行策略，不把 URL 可达性、
+provider 额度或 5xx 猜成 pass。显式 `--repo` 选择 live Repo 时不能同时使用该开关。
 
 子进程从普通运行变量开始。runner 会剥离未由该 Repo 声明的敏感名变量。
 敏感名包含 token、key、secret、password、credential、auth 与 jwt 的分段或常见复合写法，也包含数据库连接变量。
@@ -178,21 +188,26 @@ backend、container 与 browser 都必须登记 owned handle；`finally` 做有�
 | 触发 | Lane | Secret | 内容 |
 |---|---|---|---|
 | 本地默认 | `pr` | 无 | 无密钥功能与确定性 Adapter Repo |
-| 同仓可信 `pull_request` | `main` | 仓库级 Actions secrets | 当前 PR checkout 的全部 E2E Repo |
+| 同仓可信 `pull_request` | `main` | 仓库级 Actions secrets，按 manifest 白名单注入 | lane 全集，包含 live provider Repo |
 | Fork / Dependabot `pull_request` | `pr` | 无 | 无密钥功能与确定性 Adapter Repo |
-| `push main` | `main` | 仓库级 Actions secrets | 全部 E2E Repo |
-| `schedule` | `nightly` | 仓库级 Actions secrets | 全部 E2E Repo |
+| `push main` | `main` | main Environment，按 manifest 白名单注入 | lane 全集，包含 live provider Repo |
+| `schedule` | `nightly` | nightly Environment，按 manifest 白名单注入 | lane 全集，包含 live provider Repo |
 | release preflight | `release` | 仓库级 Actions secrets + release Environment | 精确待发布 tarball + 确定性 blocking 矩阵 + live 结果或 AI 真实验收 |
-| `workflow_dispatch` | 显式 | pr 无密钥；其它 lane 使用仓库级 Actions secrets + 同名 Environment | 单 Repo / lane 复现 |
+| `workflow_dispatch` | 显式 | `live_providers=true` 时按 manifest 白名单注入 | 默认确定性 Repo；显式开关后包含 live Repo |
 
 同仓 PR 只有在 `head.repo.full_name` 等于当前仓库且 PR 作者不是 Dependabot 时才进入可信 `main` lane。
-这项边界明确采用“仓库写权限即 secret 信任”：PR 代码可以主动外传已经取得的凭据，runner 的变量过滤和 artifact 脱敏不能阻止外传。
-Fork 与 Dependabot 固定进入无密钥 `pr` lane。禁止用 `pull_request_target` 或 `workflow_run` 让不可信 PR 代码接触 secret。
+它直接使用仓库级 Actions secret，并只向声明对应名称的 Repo 注入。Fork 与 Dependabot 固定进入无密钥 `pr` lane。
+禁止用 `pull_request_target` 或 `workflow_run` 让不可信 PR 代码接触 secret。
+
+同仓可信 PR、main push 与 schedule 不向 plan 传 `--exclude-external-network`，所以有已登记密钥的 live owner
+必须真实执行；401、额度不足、429、5xx 与 timeout 都由 owner 如实判定，不能转成 skip 或 pass。Fork、Dependabot
+与 `pr` lane 仍无密钥。`workflow_dispatch` 只有显式设置 `live_providers=true` 才纳入 live Repo。
 
 可信 lane 的 workflow 只能显式引用已登记的 secret 白名单；禁止 `toJSON(secrets)` 或其它全量枚举。
 Repo manifest 声明了白名单外的名称时，在注入前失败，不动态读取其它仓库 secret。
 
-整个 E2E portfolio 都可以频繁全量运行。成本、Docker、provider 类型和矩阵规模不构成降频或省略 owner 的理由。
+确定性与 live portfolio 在可信自动触发中都运行；provider 故障可以使该次 CI 失败，不能用探测、skip 或 AI 真实验收
+把未运行的 live owner 记成 pass。人工 dispatch 仍可用开关选择只跑确定性 Repo。
 
 ## GitHub Actions 形状
 
@@ -204,19 +219,30 @@ prepare job
              │
              ▼
 matrix jobs：下载同一 candidate.tgz
-  ├─ 功能 Repo：checkout 中 build Testkit；e2e run --candidate … --repo <id>
-  └─ Adapter batch：同一 checkout / Testkit 下并发 run 多个独立 --repo <id>
+  └─ run --plan <同一 plan> --cell <id>：同格独立 Repo 全部并发启动
 ```
 
 Workflow 只准备 Node / pnpm / Docker / browser、下发矩阵、缓存 store / image layer、上传 artifact。
 它不自己改 dependency、分类错误、实现重试、决定 expected 或维护另一份 Repo 清单。
-每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；Adapter batch 的 artifact root 下仍按 Repo ID 分目录并
+
+batch 是共机放置单位，不是限流单位；plan 不携带 CI 限流参数，同格所有独立 Repo 立即并发启动。
+资源竞争、OOM 或尾延迟通过把 manifest 显式拆到 `docker-1`、`docker-2`、`docker-3` 等更多 matrix cell 处理，
+不能通过让同格 Repo 排队来换取通过；拆分不改变 lane 的精确 Repo 集。
+
+每个 Repo 的测试调用上限由自己的 manifest `timeoutMinutes` 独立声明；`host-1`、`docker-1`、`browser-1`
+等 batch 只决定共机放置，不拥有也不替换测试预算。同一个 matrix cell 可能并发运行多个预算不同的 Repo，workflow
+不得再设置 cell 级 `timeout-minutes`，否则会把依赖安装、独立测试、artifact 收集与 cleanup 的并发尾延迟混成第二个截止时间，
+并可能在 Repo 自己的预算到期前取消收据和资源回收。Provider 与产品调用的更窄 timeout 仍由对应 owner 明确声明，不能靠放宽 Repo 预算替代。
+
+每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；Repo batch 的 artifact root 下仍按 Repo ID 分目录并
 保存独立 receipt，batch summary 列全该格 Repo。GitHub 原生汇总 matrix 成败，不再启动一个 job 下载并复述所有 cell 的结果。
 
 Cache key 至少区分 pnpm 版本、OS / 架构和 Docker image digest。包管理器 store 依赖自身内容寻址；PR 不使用会把
 其它候选测试文件带回来的宽泛 restore key。Nightly 定期跑 cold cell，防止日常 cache 掩盖缺失依赖或镜像初始化问题。
 
-GitHub Actions 固定向 plan 传 `--no-diff`，因此每次执行所选 lane 全集。显式 `--repo` 只用于人工单 Repo 复现。
+GitHub Actions 固定向 plan 传 `--no-diff`，因此每次执行所选 lane 中符合本次 network 策略的全集。
+同仓可信 PR、main push 与 schedule 包含 `externalNetwork`；Fork / Dependabot 无密钥 lane 不含 live Repo。
+显式 `--repo` 只用于人工单 Repo 复现。
 manifest `paths` 与 diff filter 只保留给本地诊断选择，不参与线上完整验收。
 候选包的以下输入变化也执行整条 lane：
 
@@ -250,10 +276,12 @@ Docker cgroup 的 `cpu.max`、`memory.max`、`memory.swap.max` 与 `pids.max` �
 - 同一 checkout 的独立根 E2E invocation 可以并发启动；只有会触发共享 `prepare` 写入的 candidate `pnpm pack` 生命周期按 canonical checkout 的跨进程 lease 局部串行，计划、Testkit snapshot、隔离 Repo 与 run 阶段继续并发；
 - lease 位于 OS 临时控制目录而不进入待打包文件。正常退出、失败或取消都会释放；进程崩溃留下的 lease fail-closed 并报出精确人工删除路径，绝不靠超时或不安全删除让两个 pack 同时写入；
 - 无密钥 host Repo 可按 CPU 并行，每个 Repo 独立副本；
-- CI E2E matrix 使用 4 vCPU Blacksmith runner。功能 Repo 保持 singleton；I/O-bound Adapter 按最多四个 Repo 装箱，
-  格内并发启动且各 Repo 保留自己的 attempt 并发，因此允许约 8–16 条外部等待同时铺开，不把 vCPU 数当作 I/O 并发上限；
+- CI E2E matrix 使用标准 GitHub-hosted `ubuntu-24.04` runner；browser cell 只是在同类 runner 上进入精确 Playwright
+  container，不切换 runner 供应商或规格。当前 public repository 的该标签由 GitHub 定义为 4 vCPU，但并发预算仍以 workflow
+  与实测收据为准，不从 runner 名称猜测。所有独立 Repo 按 manifest `batch` 装箱，格内并发启动且各 Repo 保留自己的
+  file / experiment / attempt 并发；这些 owner 的主要开销是依赖安装、容器启动、浏览器与外部 I/O 等待，不把 vCPU 数当作 I/O 并发上限；
 - Repo 内保留 Vitest / Playwright 的默认文件级并行；短命控制文件、结果根、项目副本与资源名按 case 隔离；
-- Adapter 装箱先分散 Docker-heavy Repo；出现 OOM、daemon 抖动或显著尾延迟时拆分对应 cell，不以升配 CPU 作为默认修法；
+- 出现 OOM、daemon 抖动或显著尾延迟时，把部分 Repo 显式移到 `docker-2`、`host-2` 等新 batch，不以升配 CPU 作为默认修法；
 - live provider 按 provider / account 建 concurrency group，避免同一配额互相制造 429；
 - Lifecycle case 用独立进程组、动态端口和 run ID 核对自己的 orphan，不得因兄弟任务存在就误判；
 - 共享 evidence 只能在冻结后只读并行。无法拥有独立资源的 case 才局部串行，不把整个 Lifecycle 域降为串行。
@@ -269,7 +297,13 @@ GitHub runner 或 Docker daemon 故障。测试超时、parse 失败、cleanup �
 - 首轮 `niceeval exp --json` 完整结束后，测试读取公开 `eval` 事件；
 - 只有 `verdict: "failed"` 才对精确 Experiment/Eval 配对另起一次 `exp --rerun all` Invocation；
 - `passed`、`errored`、`skipped`、中断和不完整 Invocation 都不重试，第二轮也不递归；
+- 同一 Repo 的补跑继续写同一个 Record，因此多个补跑 Invocation 串行执行；不能用并行 CLI 进程
+  制造 `RecordWriterBusy`。主 Invocation 内部与不同 Repo batch 仍按各自并发配置运行；
 - 两次 Invocation、receipt 与 Attempt 全部保留，并在 CI 日志标出 retry 后通过。
+
+Owner 从首轮 events 明确选择 targets，并把带完整 argv 的 `runRetry` 回调交给 Testkit
+`retryFailedExpEvalsOnce()`。Testkit 只串行执行、核对唯一同身份 `passed` event 与零退出码，再返回替换后的
+effective events；selector 唯一性、排除项、timeout、首轮日志和最终 expected matrix 仍留在 owner 正文。
 
 这不是 Vitest / Playwright retry，也不能计入确定性 owner 的可靠性接管。
 验证 Sandbox reuse 等刻意运行多条 Attempt 的生命周期 owner 不使用这项容错。
@@ -324,4 +358,4 @@ Release Repo 使用同一 checkout 的私有 Testkit 作为 harness，但只有 
 - 注入身份核验失败与待测包不可消费使用不同失败分类，并保留各自的原始收据。
 - Adapter 与 Report Repo 按 owner 拆成原生测试文件，再按文件和标题分片；不把多个命题压进线性脚本或同一文件。
 - CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
-- 共用 runner 不等于共用 Repo；功能与 Adapter 不混装，Adapter 同格时仍保留各自的依赖安装、结果根、receipt 与 cleanup。
+- 共用 runner 不等于共用 Repo；同 batch 的功能与 Adapter 可以混装，但仍保留各自的依赖安装、secret 白名单、结果根、receipt 与 cleanup。

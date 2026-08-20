@@ -11,8 +11,10 @@ NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
 
 四段职责是**单向数据流**。
 发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`，Assertion collector 形成检查结果。
-判定规则把执行错误与全部断言折叠成一个互斥 Verdict，Record writer 再把这些已形成的业务事实写入具名 RecordAttachment。
-Assertion 和 Judge 不知道 transport 是 HTTP 还是沙箱 CLI，只消费 `Turn` 与显式材料。
+判定规则把执行错误与全部断言折叠成一个互斥 Verdict。Experiment Host 再通过 Record Host
+封口不可恢复的事实；Verdict、Score 和采用理由都是 Core、Assertions 或运行 outcome 的语义，
+不各自形成 durable family。Assertion 和 Judge 不知道 transport 是 HTTP 还是沙箱 CLI，只消费
+`Turn` 与显式材料。
 
 ## 模块分层
 
@@ -36,10 +38,14 @@ src/
 │                           #   Sandbox 接口、resolve、各 provider
 │
 ├─ o11y/                    # transcript 归一化 → 标准事件流;OTLP 接收与归一;派生事实与成本
-├─ runner/                  # 调度(有界并发 / 首过即停 / 预算)、发现、指纹缓存、reporters
-├─ record/                  # 内部 Record 读写面(唯一碰磁盘布局的地方，不公开子路径)
-├─ report/                  # 公开作者 DSL + 内部 host；持久化执行能力不对作者开放
-├─ show/                    # 终端宿主      └─ view/  网页宿主(两个宿主共用 report/)
+├─ experiment/host/         # experimentHost；公开 Host SDK，供 exp / debug / accept 组合
+├─ runner/                  # experimentHost 后的调度、生命周期、缓存与 receipt 实现
+├─ coordination/            # coordinationHost；execution claim 与 Record lease 协调
+├─ record/                  # recordHost；持久布局 owner，definition 与 codec 保持包私有
+├─ analysis/                # analysisHost 签发 Sample；作者定义与 query / aggregate
+├─ report/                  # 作者 DSL + reportHost；单目标页与全站 revision 的执行、呈现与导出
+├─ show/                    # 终端命令胶水，只消费 Report Host 的单目标输出
+├─ view/                    # 浏览器 Host shell，只消费已闭合的站点 bytes
 │
 └─ cli.ts                   # CLI 入口
 ```
@@ -71,14 +77,52 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 
 | 层 | 长期承诺 | 允许怎样变化 | Effect 的角色 |
 |---|---|---|---|
-| 内部 Record capability | 打开 current Core、冻结已完成 Run、读写 Attachment、clean 与 migrate | 不随 Assertions、Plugin 或 Report 增加业务方法，也不形成公开 package API | 组合文件、maintenance lock、writer lock、Scope 与 typed I/O failure |
-| Record Core | Record identity、Run/Slot 分母、Attempt origin/reference 与完成标识 | owner、reference、path、完成判断或 Core shape 改变时发布新 major | `RecordCoreRead.core-invalid` 是成功 ADT，不伪装成 I/O error |
-| RecordAttachment schema | 一个 owner-local payload 的精确 shape 与语义 | 发布相邻 schema 与 migration policy | 在不可信边界精确解码，Stream 不逃出 Scope |
-| RecordAttachment projection | 一个 owner 的一份 Attachment 到 typed view | typed view 改变时发布新 projector/API | unavailable、migration-required、migration-unavailable、unsupported 与 invalid 保持成功 ADT |
-| Producer / behavior | 产生所属领域的 Attachment，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
-| Analysis selection / reuse planning / Report | 分别选择分析分母、规划 reuse/gap、计算与展示 | 各自独立迭代 | reader Scope 内完成按需读取，Scope 外只消费自包含值 |
+| Host composition SDK | `experimentHost`、`coordinationHost`、`recordHost`、`analysisHost` 与 `reportHost` 各拥有窄操作面 | CLI、替代 CLI / Web host 与深度应用集成只组合这些入口，不穿透到 Runner、reader、路径或 loader | 在 Host 边界组合 Layer、Scope、typed error 与 interruption |
+| Record Core 与固定 family | Record identity、Run/Slot 分母、Attempt origin/reference、Member action、完成标识和六个固定事实 family | Core 或某个固定 family 的持久语义变化时发布相邻 schema migration | 精确解码、closure 校验、lease、flush 与 Scope-bound I/O |
+| family 读取结果 | `available`、`not-recorded`、`unsupported`、`invalid` 四态 | 新字段只能在所属固定 family 的契约内演进 | 单项问题保持局部，不把 Root 或其它 family 伪造为失败 |
+| Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
+| Analysis | Host 签发的 Sample、Population / Dimension / Measure / Relation、`aggregate()` 与 `query()` | 新统计口径或领域视图不改变 Record 格式 | reader Scope 内按需读取；Scope 外只交付 `ClosedRows`、`SemanticFrame` 或 `DomainView` |
+| Report | `defineReport({ pages })`、标准 React JSX、组件与参数页。`show` 只交付目标 Page；view/static 才拥有 `ClosedSiteRevision`。 | 新页面、renderer 或显示原语不改变 Analysis 口径 | Host 在 Sample 存活时执行 `params`、`load`、`render`。show 只执行选中 Page；view/static 枚举全部 Page 后形成 revision。 |
 
-Record Core 只证明磁盘导航与引用成立，不证明 Attempt 适合当前算法。RecordAttachment schema 只证明 payload 可解释，也不能替代 behavior identity。
+## 公开 Host composition SDK
+
+下面五个 package export 都是公开、受支持的高级 Host composition SDK。NiceEval CLI 是它们的一个调用者；
+替代 CLI、Web host 或深度应用集成者也可以按相同边界组合。普通 Eval、Analysis、Report 作者继续使用各自的
+作者 API，通常不导入这些 Host entry。
+
+| 导入面 | Host 操作 | CLI 映射 | 不授予的能力 |
+|---|---|---|---|
+| `niceeval/experiment/host` | `experimentHost.list`、`experimentHost.plan`、具名只读 `experimentHost.debug()`、`experimentHost.run`、`experimentHost.accept` | `exp`、`debug` 与 `accept` | 重新拼装 selector、Runner 或 adoption 内部状态 |
+| `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
+| `niceeval/record` / `niceeval/record/host` | `recordHost.current.openRead`、`recordHost.current.createRun`、`recordHost.current.createReferenceRun`；`recordHost.maintenance.open` | Record I/O | durable layout、generic Attachment、family 或 migration registration |
+| `niceeval/analysis/host` | `analysisHost.openSample` | Sample 签发 | 作者构造 Sample、注册 AnalysisInput，或让 Report author 取得 Record reader |
+| `niceeval/report/host` | `reportHost.show`、`reportHost.serve`、`reportHost.export` | `show`、`view` 与静态 export | loader、renderer、watcher 或 Record reader 的可组合接口 |
+
+“公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
+Record definition、fixed family catalog 与 migration step factory 仍是 package-private；第三方不能注册 family
+或 migration。五个入口也不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
+
+`niceeval debug` 有独立的只读命令数据流：
+
+```text
+argv
+  ↓
+experimentHost.debug()
+  ↓
+Host 内部：唯一选择 → link → physical planning
+  ↓
+commandPlan
+  ↓
+terminal / JSON
+```
+
+CLI 只调用 `experimentHost.debug()` 并呈现闭合 commandPlan，不构造或直连 Runner。该 Host 操作不创建
+Invocation、Run、Record、lease、Sandbox 或 build。
+
+Record Core 只证明磁盘导航、引用和 Member action 成立，不证明 Attempt 适合当前算法。固定 family
+只保存各自的不可恢复事实；family 消费方穷尽四态。旧 Record 需要升级时，只有
+`recordHost.current.openRead()` 的 `record-migration-required` 错误引导用户运行 migrate，不把迁移伪装成
+某个 family 的值。
 
 完整分层见 [Record · 三个演进边界](feature/record/architecture.md#三个演进边界)。
 
@@ -120,12 +164,17 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    不支持 Eval 替换的字段按各自专题声明的层级求值；见[配置与凭据的边界](#配置从代码来凭据从进程变量来)。
 2. **发现。
    ** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
-3. **形成 ProjectTarget、ExecutionTarget 与 Run draft。
-   ** 对每个 Eval 计算带 domain 的 input/config identity，并在单 writer `RecordWriteSession` 内创建目标 Run draft、绑定 `startedAt` 与完整 expected SlotId。draft 没有完成标识，因此不是已发布 Run。
+3. **由 Experiment Host 建立运行。
+   ** CLI 调用 `experimentHost.plan()` 或 `experimentHost.run()`。Host 计算带 domain 的
+   input/config identity，并在其实现内通过 `recordHost.current.createRun()` 建立带 `startedAt` 与完整
+   expected SlotId 的目标 Run draft。draft 没有完成标识，因此不是已发布 Run。
 4. **reuse planning。
-   ** 具名 policy 接收当前 ProjectTarget、ExecutionTarget 与 frozen `RecordWriteSession.view`，把每个 Slot 穷尽判为 reuse 或 gap。source barrier、禁止回扫、`reuseContract`、Verdict、fingerprint、timeout、`--rerun` 与 `--keep-sandbox` 都属于该 policy，不属于 Record。完整契约见 [Execution reuse planning](feature/experiments/cache.md)。
+   ** `experimentHost` 在内部把当前 ProjectTarget、ExecutionTarget 和 Record Host 交给 Runner。
+   具名 policy 把每个 Slot 穷尽判为 reuse 或 gap。source barrier、禁止回扫、`reuseContract`、
+   Verdict、fingerprint、timeout、`--rerun` 与 `--keep-sandbox` 都属于该 policy，不属于 Record。
+   完整契约见 [Execution reuse planning](feature/experiments/cache.md)。
 
-   planner/scheduler 只接收 gaps；invocation coordinator 保留完整 projection。
+   planner/scheduler 只接收 gaps；Host 保留完整 Slot decision。
 5. **有界并发调度。
    ** 全局至多 `maxConcurrency` 个 gap execution 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。
    重试不是 attempt 级耗时启发式：turn 重试只包 `agent.send` 且受受理证据门约束，Sandbox provisioning 与幂等文件 IO 各守自己的执行体；完整边界见[执行失败分类](feature/error-classification/architecture.md)与[Sandbox](feature/sandbox/architecture.md#provisioning-失败与重试)。
@@ -140,23 +189,33 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    作者按自己的顺序调 `t.sandbox.writeText` / `writeBytes` / `uploadDirectory`(准备起始文件)与 `t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)。
    `t.send()` 驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、归一化成标准事件流。
    顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定;核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
-7. **折叠 agent 归因增量。
-   ** `test(t)` 跑完后从分类账取得各 send 区间的变更事实，折叠其并集，供 `fileChanged` / `notInDiff` 等归因断言的 finalize 与 Record diff Attachment 使用。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
+7. **封口 agent 归因轨迹。
+   ** `test(t)` 跑完后从分类账取得每个 send 区间自己的 before/after 端点，按 send 顺序形成完整轨迹，供
+   `fileChanged` / `notInDiff` 等归因断言的 finalize 与固定 file-changes family 使用。它不把跨 send 区间的
+   路径合成并集、`net` 或 hunk。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **断言求值。
    ** `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部形成结构化 assertion 结果。
 9. **判定。
-   ** assertion 结果、执行错误与跳过原因共同形成一个互斥 Verdict（`passed` / `failed` / `errored` / `skipped`，没有中间态），写入 Attempt-owned `niceeval.verdict` Attachment。Record 只保存并校验这个事实；未来 reuse planning 按自己的 policy 决定是否采用。
+   ** assertion 结果、执行错误与跳过原因共同形成一个互斥 Verdict（`passed` / `failed` /
+   `errored` / `skipped`，没有中间态）。它由 Assertions 与 Attempt outcome 解释，不另建持久
+   family；未来 reuse planning 按自己的 policy 决定是否采用。
 10. **首过即停。
    ** 若该 Attempt 形成 `passed` Verdict 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
 11. **收尾与留存。
     ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
     收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
-12. **写 Record 与返回 receipt。
-    ** coordinator 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 `EvaluationRecordContract`。reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin anchor；形成原因写入 Membership Provenance Attachment。
+12. **经 Host 封口 Record，并返回 receipt。
+    ** `experimentHost` 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 Runner。
+    reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin
+    anchor；采用动作是 Member Core 事实，不另设 provenance family。
 
-    领域 contract 验证 Assertions、Score、Evaluation 与 provenance aggregate。generic writer 只验证 Core、Attachment closure 和引用，最后创建 Run 完成标识。全部结束后返回窄 `InvocationReceipt`。
+    固定 collector 先封口所属事实，再由 `recordHost` 验证 Core、六个固定 family 的 closure 与引用，
+    最后创建 Run 完成标识并返回窄 `InvocationReceipt`。普通 `TestContext` 没有 Record 方法。
 
-    Report 不参与采集或落盘。show/view 的内部 host 先形成 `AnalysisSample`，再按 Report 声明读取 Attachment 并产生 typed projection；Calculation 和 Page 只消费这些自包含值。一次 `ReportExecution` 同时服务终端、本机页面或静态导出。
+    Report 不参与采集或落盘。show/view 由 `reportHost` 进入，再按需经 `recordHost.openRead()` 和
+    `analysisHost.openSample()` 取得 Sample。Page 或组件只用 `aggregate()` 与具名 DomainView 投影取得
+    `ClosedRows` 或 `DomainView`。`show` 只执行选中 Page，形成私有 `ResolvedPage` 后交付 text 或 JSON；
+    `view` 与静态导出枚举全部 Page，校验后形成同一个 `ClosedSiteRevision`。
 13. **退出码。
     ** 有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 
@@ -167,9 +226,11 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
 | 类别 | 从哪来 | 说明 |
 |---|---|---|
 | **Attempt 配置**(`timeoutMs`、Judge) | CLI flag → experiment → eval → `niceeval.config.ts` → 内置默认 | eval 可以声明自己的完成条件；config 只是默认出处 |
-| **其它运行配置**(attempts、并发、预算、报告、界面语言、Adapter 与 Sandbox 参数) | 按所属专题声明的层级求值 | 没有进程变量层；`--dry` 打印的求值结果就是真正生效的值 |
-| **凭据**(API key、provider token) | 进程变量,变量名由代码声明 | adapter / sandbox 工厂各自声明自己那一个官方变量名(`ANTHROPIC_API_KEY`、`CODEX_API_KEY`、`BUB_API_KEY` + `BUB_API_BASE`、`E2B_API_KEY`、`VERCEL_API_TOKEN`);judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。**只读自己家族那一个名字**,不跨家族回落、不做"进程变量里有哪个 key 就用哪个"的探测 |
-| **终端输出事实**(`NO_COLOR`、TTY、系统 locale) | 进程变量 | 这些描述的是"输出到哪个终端",不是 niceeval 的配置。`config.locale` 优先于系统 locale |
+| **其它运行配置**(attempts、并发、预算、报告、Adapter 与 Sandbox 参数) | 按所属专题声明的层级求值 | 没有进程变量层；`--dry` 打印的求值结果就是真正生效的值 |
+| **凭据**(API key、provider token) | 进程变量,变量名由代码声明 | `bubAgent()` 读取必需的 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`；`codexAgent()` 读取必需的 `OPENAI_API_KEY` 与可选的 `OPENAI_BASE_URL`。OMP 保留其已有的 OpenAI-compatible fallback；其它 adapter / sandbox 工厂读取各自声明的变量名(`ANTHROPIC_API_KEY`、`E2B_API_KEY`、`VERCEL_API_TOKEN` 等)。judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。不跨无关 provider 家族回落，也不做"进程变量里有哪个 key 就用哪个"的探测 |
+| **终端输出事实**(`NO_COLOR`、TTY) | 进程变量 | 这些描述的是"输出到哪个终端",不是 niceeval 的配置 |
+
+CLI 与 Node runtime 的人读文案是英语。浏览器 view 自己提供中英切换，不读 `niceeval.config.ts`，也不读系统 locale。
 
 CLI 启动时仍加载项目根的 `.env`(不改写已有进程变量)——那是凭据的投递方式,不是配置层。
 

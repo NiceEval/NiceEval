@@ -89,15 +89,15 @@ export interface CodexPluginSpec {
 }
 
 export interface CodexConfig {
-  /** 代理 / OpenAI API key。省略时读 CODEX_API_KEY env。 */
+  /** 代理 / OpenAI API key。省略时读 OPENAI_API_KEY env。 */
   apiKey?: string;
-  /** OpenAI 兼容代理 base URL(如 https://s2a.example.com/v1)。省略时读 CODEX_BASE_URL env。 */
+  /** OpenAI 兼容代理 base URL(如 https://s2a.example.com/v1)。省略时读 OPENAI_BASE_URL env。 */
   baseUrl?: string;
   /**
    * 注入每次 Codex CLI 进程的额外环境变量。首轮 `codex exec` 与续轮 `codex exec resume`
    * 使用同一份声明；Codex 启动的 lifecycle Hook、MCP 动态 header 与命令子进程都会继承。
    * 值只经 Sandbox command options 传入，不拼进 shell 文本或写入 setup manifest，并全部按
-   * 潜在敏感值从 timing / execution / error 证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或
+   * 潜在敏感值从 timing / execution / error 证据中脱敏。`OPENAI_API_KEY` 仍由 `apiKey` 或
    * 宿主同名环境变量提供，Adapter 的鉴权值会覆盖这里的同名键。
    * env value 不进入 carry 身份。会改变被测行为的非敏感值必须同时声明在 Experiment flags
    * 或所属 Plugin identity；只轮换凭据不会让旧结果失效。
@@ -246,6 +246,7 @@ function codexAcceptance(
  */
 function codexPlatformPackage(
   platform: AgentArtifactPlatform,
+  version: string,
 ): { spec: string; binPath: string } | undefined {
   const target =
     platform.os === "linux" && platform.arch === "x64"
@@ -259,14 +260,20 @@ function codexPlatformPackage(
             : undefined;
   if (target === undefined) return undefined;
   return {
-    spec: `@openai/codex@${DEFAULT_CODEX_CLI_VERSION}-${target.suffix}`,
+    spec: `@openai/codex@${version}-${target.suffix}`,
     binPath: `vendor/${target.triple}/bin/codex`,
   };
 }
 
+// Codex 0.144.1 会把「hook 命令已正常退出、随后写 stdin 撞 BrokenPipe」误判成 hook
+// 失败并丢掉 stdout。0.146.0 的官方 command runner 已忽略这个竞态；配置 Plugin 时必须
+// 选择包含该修复的 CLI。未配置 Plugin 的官方基线仍保持当前已发布版本，避免引用尚未发布
+// 的 Docker/E2B 制品。
+const CODEX_PLUGIN_HOOK_SAFE_CLI_VERSION = "0.146.0";
+
 export function codexAgent(config?: CodexConfig): Agent {
-  const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
-  const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
+  const getApiKey = () => config?.apiKey ?? requireEnv("OPENAI_API_KEY");
+  const getBaseUrl = () => config?.baseUrl ?? getEnv("OPENAI_BASE_URL");
   // PATH 是 Sandbox 受管变量,在 factory 构造时(link/配置校验期)同步拒绝,不留到 setup()
   // 才炸,也不静默丢弃——被覆盖的 PATH 会让 hooks / 子进程读到错误的可执行文件而零报错
   // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
@@ -277,20 +284,26 @@ export function codexAgent(config?: CodexConfig): Agent {
   // 不同 run/resume 轮拿到不同 Space。值不进入 shell 或 manifest，只交给 command options。
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
   const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
+  const cliVersion = config?.plugins?.length
+    ? CODEX_PLUGIN_HOOK_SAFE_CLI_VERSION
+    : DEFAULT_CODEX_CLI_VERSION;
+  const cliRecipeRevision = config?.plugins?.length
+    ? "plugin-hook-safe-r1"
+    : String(AGENT_BASELINE_RECIPE_REVISION.codex);
   const { ensure, installer } = createNpmCliInstaller({
-      identity: {
-        agent: "codex",
-        version: DEFAULT_CODEX_CLI_VERSION,
-        revision: String(AGENT_BASELINE_RECIPE_REVISION.codex),
-      },
-      packageName: "@openai/codex",
-      bin: "codex",
-      platformPackage: codexPlatformPackage,
-      progress: {
-        checking: `checking Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
-        installing: `installing official OpenAI Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
-        ready: `Codex CLI ${DEFAULT_CODEX_CLI_VERSION} ready`,
-      },
+    identity: {
+      agent: "codex",
+      version: cliVersion,
+      revision: cliRecipeRevision,
+    },
+    packageName: "@openai/codex",
+    bin: "codex",
+    platformPackage: (platform) => codexPlatformPackage(platform, cliVersion),
+    progress: {
+      checking: `checking Codex CLI ${cliVersion}`,
+      installing: `installing official OpenAI Codex CLI ${cliVersion}`,
+      ready: `Codex CLI ${cliVersion} ready`,
+    },
   });
 
   return registerAgentLifecycleHookCommands(defineSandboxAgent({
@@ -318,6 +331,17 @@ export function codexAgent(config?: CodexConfig): Agent {
         });
       }
 
+      // Codex 把 Plugin 的声明态写在 config.toml、安装体写在 cache。必须在覆盖用户配置前
+      // 同时摘掉两边：覆盖后 `plugin list` 已看不见旧声明，旧安装体却仍会影响下一次 add
+      // 的版本选择。先完整收敛，再写本 Attempt 的唯一配置层。
+      if (config?.plugins?.length) {
+        const plugins = config.plugins;
+        yield* Effect.tryPromise({
+          try: () => resetPluginState(sb, plugins),
+          catch: (cause) => cause,
+        });
+      }
+
       // model 归属:实验决定(ctx.model);省略时不写 model 行,交给 codex CLI 原生默认,
       // 不在 adapter 里硬编码一个会过期的模型名。
       const modelLine = ctx.model ? `model = "${ctx.model}"\n` : "";
@@ -337,7 +361,7 @@ export function codexAgent(config?: CodexConfig): Agent {
         ? `[model_providers.s2a]\n` +
           `name = "s2a"\n` +
           `base_url = "${base}"\n` +
-          `env_key = "CODEX_API_KEY"\n` +
+          `env_key = "OPENAI_API_KEY"\n` +
           `wire_api = "responses"\n`
         : "";
 
@@ -424,7 +448,7 @@ export function codexAgent(config?: CodexConfig): Agent {
         );
       }
       if (config?.plugins?.length) {
-        manifest.nativePlugins = await installPlugins(sb, config.plugins);
+        manifest.nativePlugins = await installPluginsFromResetState(sb, config.plugins);
       }
       if (config?.mcpServers?.length) {
         // manifest 只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
@@ -495,7 +519,7 @@ export function codexAgent(config?: CodexConfig): Agent {
       const res = await sb.runShell(cmd, {
         // ambient env 由 Codex 进程自然传给 SessionStart/SessionStop hooks、env_http_headers
         // 与 agent 调起的 nmem 等子进程。鉴权字段最后覆盖，避免 env 形成第二条 key 来源。
-        env: { ...agentEnv, CODEX_API_KEY: apiKey },
+        env: { ...agentEnv, OPENAI_API_KEY: apiKey },
         sensitiveValues: [apiKey, ...agentEnvSensitiveValues],
         stream: true,
         onStdout,
@@ -616,20 +640,44 @@ export async function installPlugins(
   sb: Sandbox,
   plugins: readonly CodexPluginSpec[],
 ): Promise<NonNullable<AgentSetupManifest["nativePlugins"]>> {
-  const connected = new Set<string>();
-  const out: NonNullable<AgentSetupManifest["nativePlugins"]> = [];
+  await resetPluginState(sb, plugins);
+  return installPluginsFromResetState(sb, plugins);
+}
 
-  // 摘除顺序固定「先卸完全部同名插件、后摘 marketplace」:marketplace 注册一摘,`codex plugin list`
-  // 就不再列出挂在它名下的安装(真机核对 codex-cli 0.146.0),残留的那份从此定位不到。
-  // 整体先于安装循环执行,多个插件共用一个 marketplace 时第二个插件的残留才摘得到。
+/**
+ * 在 config.toml 仍保留上一条 Attempt 的 Plugin 声明时清理声明态与安装体。
+ * setup 必须先调用它再覆盖 config；直接调用 installPlugins() 时也走同一收敛入口。
+ */
+async function resetPluginState(
+  sb: Sandbox,
+  plugins: readonly CodexPluginSpec[],
+): Promise<void> {
+  // 摘除顺序固定「先卸完全部同名插件、后摘 marketplace」:marketplace 注册一摘,
+  // `codex plugin list` 就不再列出挂在它名下的安装(真机核对 codex-cli 0.146.0),
+  // 残留的那份从此定位不到。多个插件共用一个 marketplace 时只需摘一次注册。
   for (const plugin of plugins) {
     await removeInstalledPlugins(sb, plugin.name);
   }
 
+  const marketplaces = new Set<string>();
+  for (const plugin of plugins) {
+    if (marketplaces.has(plugin.marketplace.name)) continue;
+    await dropRegisteredMarketplace(sb, plugin.marketplace.name);
+    marketplaces.add(plugin.marketplace.name);
+  }
+}
+
+/** 安装阶段只接受已经由 resetPluginState() 收敛过的 Sandbox。 */
+async function installPluginsFromResetState(
+  sb: Sandbox,
+  plugins: readonly CodexPluginSpec[],
+): Promise<NonNullable<AgentSetupManifest["nativePlugins"]>> {
+  const connected = new Set<string>();
+  const out: NonNullable<AgentSetupManifest["nativePlugins"]> = [];
+
   for (const plugin of plugins) {
     const { marketplace } = plugin;
     if (!connected.has(marketplace.name)) {
-      await dropRegisteredMarketplace(sb, marketplace.name);
       const refFlag = marketplace.ref ? ` --ref ${shared.shellQuote(marketplace.ref)}` : "";
       // --sparse 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
       const sparseFlags = (marketplace.sparse ?? [])

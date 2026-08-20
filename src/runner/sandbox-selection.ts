@@ -29,6 +29,11 @@ import {
   PluginLinkError,
   type PluginPairLink,
 } from "../plugin/link.ts";
+import {
+  sandboxReusePoolDescriptor,
+  sandboxReusePoolIdentityDifferences,
+  type SandboxReusePoolDescriptor,
+} from "./sandbox-reuse.ts";
 
 export interface LinkedRunPair {
   readonly key: string;
@@ -372,20 +377,39 @@ export function prepareRunSandboxes(
             message: `Physical planner returned ${prepared.length} of ${linkedPairs.length} linked pairs.`,
           }));
         }
-        const groupPlans = new Map<string, string>();
+        const groupPlans = new Map<string, { readonly evalId: string; readonly descriptor: SandboxReusePoolDescriptor }>();
         for (const entry of prepared) {
           const group = entry.evalDef.evalGroup;
           if (group === undefined || entry.plan._tag !== "Sandbox") continue;
           const key = JSON.stringify([entry.run.experimentId, group.id]);
-          const physical = digestOf(entry.plan.providerPlan.identity);
-          const previous = groupPlans.get(key);
-          if (previous !== undefined && previous !== physical) {
+          const descriptor = sandboxReusePoolDescriptor({
+            run: entry.run,
+            evalId: entry.evalDef.id,
+            evalGroupId: group.id,
+            plan: entry.plan,
+          });
+          if (descriptor === undefined) {
             return Effect.fail(new SandboxRunPlanningInvariantError({
-              code: "eval-group-incompatible",
-              message: `Eval Group ${JSON.stringify(group.id)} has different physical Sandbox plans across its selected members in Experiment ${JSON.stringify(entry.run.experimentId)}. Split the group by compatible template/provider identity.`,
+              code: "sandbox.run-planning-invariant",
+              message: `Eval Group ${JSON.stringify(group.id)} has no physical Sandbox cohort descriptor.`,
             }));
           }
-          groupPlans.set(key, physical);
+          const previous = groupPlans.get(key);
+          if (previous !== undefined && previous.descriptor.key !== descriptor.key) {
+            const differences = sandboxReusePoolIdentityDifferences(
+              previous.descriptor.identity,
+              descriptor.identity,
+            );
+            return Effect.fail(new SandboxRunPlanningInvariantError({
+              code: "eval-group-incompatible",
+              message:
+                `Eval Group ${JSON.stringify(group.id)} has incompatible physical Sandbox cohorts between ` +
+                `Eval ${JSON.stringify(previous.evalId)} and Eval ${JSON.stringify(entry.evalDef.id)} in Experiment ` +
+                `${JSON.stringify(entry.run.experimentId)} (different ${differences.join(", ") || "pool identity"}). ` +
+                "Split the group by compatible provider, Agent install, and physical lifecycle identity. No Sandbox was created.",
+            }));
+          }
+          groupPlans.set(key, { evalId: entry.evalDef.id, descriptor });
         }
         return Effect.succeed(Object.freeze(prepared));
       },

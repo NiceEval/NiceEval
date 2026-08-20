@@ -62,7 +62,7 @@ README),和 span 无关。span 晚到、缺失时也只是瀑布图缺一块,断
 ```sh
 cd examples/zh/tier2/codex-sdk
 pnpm install
-cp .env.example .env   # 填 CODEX_API_KEY / CODEX_BASE_URL
+cp .env.example .env   # 填 OPENAI_API_KEY / OPENAI_BASE_URL
 
 # 终端 1:起应用(本机 4318 被占时,两边一起换:应用改这里的端口,
 # eval 侧改 niceeval.config.ts 的 telemetry.port)

@@ -55,8 +55,55 @@ function causeChainSuffix(error: Error): string {
  * 哪一行、也看不到真实死因。`firstLine()` 的消费方不受影响:cause 恒在第一行之后。
  */
 export function formatThrown(e: unknown): string {
-  if (!(e instanceof Error)) return String(e);
+  if (!(e instanceof Error)) return formatNonErrorThrown(e);
   return (e.stack ?? `${e.name}: ${e.message}`) + causeChainSuffix(e);
+}
+
+/**
+ * Effect 的 typed error 不要求继承 Error。Record / Runner 边界因此会把带稳定 `code`
+ * 与结构化 issues 的普通对象交给 CLI；直接 `String(value)` 只会得到 `[object Object]`，
+ * 恰好抹掉唯一能行动的诊断。第一行保留 code/message，后续附上完整 JSON，让调用
+ * `firstLine(formatThrown(...))` 的单行反馈与 CLI 的完整失败出口各取所需。
+ */
+function formatNonErrorThrown(value: unknown): string {
+  if (typeof value !== "object" || value === null) return String(value);
+
+  const readString = (key: string): string | undefined => {
+    try {
+      const field = Reflect.get(value, key);
+      return typeof field === "string" && field !== "" ? field : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const code = readString("code");
+  const message = readString("message");
+  const summary = code === undefined
+    ? message
+    : message === undefined || message === code
+      ? code
+      : `${code}: ${message}`;
+
+  let serialized: string | undefined;
+  try {
+    const seen = new WeakSet<object>();
+    serialized = JSON.stringify(value, (_key, nested: unknown) => {
+      if (typeof nested === "bigint") return `${nested}n`;
+      if (typeof nested === "function" || typeof nested === "symbol") return String(nested);
+      if (typeof nested === "object" && nested !== null) {
+        if (seen.has(nested)) return "[Circular]";
+        seen.add(nested);
+      }
+      return nested;
+    }, 2);
+  } catch {
+    // Hostile getters and proxies still fall back to their ordinary string form.
+  }
+
+  if (serialized !== undefined && serialized !== "{}") {
+    return summary === undefined ? serialized : `${summary}\n${serialized}`;
+  }
+  return summary ?? String(value);
 }
 
 /**

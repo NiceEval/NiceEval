@@ -9,7 +9,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative as relativePath, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Data, Effect } from "effect";
+import { Data, Effect, type Scope } from "effect";
 import { parseDocument } from "yaml";
 import type { JsonValue } from "../shared/types.ts";
 import {
@@ -38,6 +38,8 @@ import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from ".
 import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
 import type { CommandResult } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
+import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
+import type { DockerSandbox } from "./docker.ts";
 import { dockerfileBaseIdentity } from "./dockerfile-identity.ts";
 
 /**
@@ -1130,10 +1132,25 @@ export interface DockerComposeProviderMaterializationPlan {
   readonly identity: JsonValue;
 }
 
-export async function materializeDockerComposeProviderCase(
+export class ComposeMaterializationError extends Data.TaggedError("ComposeMaterializationError")<{
+  readonly projectName: string;
+  readonly message: string;
+  readonly cause?: Error;
+}> {}
+
+function composeMaterializationError(projectName: string, cause: unknown): ComposeMaterializationError {
+  const error = cause instanceof Error ? cause : new Error(String(cause));
+  return new ComposeMaterializationError({
+    projectName,
+    message: error.message,
+    cause: error,
+  });
+}
+
+export function materializeDockerComposeProviderCase(
   plan: DockerComposeProviderMaterializationPlan,
   opts: MaterializeComposeOpts,
-): Promise<MaterializedSandboxCase> {
+): Effect.Effect<MaterializedSandboxCase, ComposeMaterializationError, Scope.Scope> {
   const collection = plan.collection;
 
   const overlay = buildComposeOverlay({
@@ -1144,183 +1161,83 @@ export async function materializeDockerComposeProviderCase(
     serviceNames: collection.inspection.services.map((s) => s.name),
   });
 
-  const overlayDir = await mkdtemp(join(tmpdir(), "niceeval-compose-"));
-  const overlayPath = join(overlayDir, "niceeval.overlay.yaml");
-  await writeFile(overlayPath, overlay.yaml, "utf-8");
-
-  const identityYaml = buildComposeIdentityOverlay({
-    identity: currentRunIdentity(),
-    serviceNames: collection.inspection.services.map((s) => s.name),
-    networkNames: collection.inspection.networkNames,
-  });
-  const identityPath = join(overlayDir, "niceeval.identity.yaml");
-  if (identityYaml !== "") await writeFile(identityPath, identityYaml, "utf-8");
-
-  const composeFiles =
-    identityYaml !== "" ? [collection.composePath, overlayPath, identityPath] : [collection.composePath, overlayPath];
-  const cwd = dirname(collection.composePath);
-  // 平台与 BuildKey 同源:物化期这次 compose build 构出的架构必须与身份里写的一致。
-  const env = {
-    ...process.env,
-    ...plan.env,
-    COMPOSE_PROJECT_NAME: overlay.projectName,
-    [DOCKER_PLATFORM_ENV]: collection.platform,
-  };
-  const runCompose = opts._testHooks?.runCompose ?? runDockerCompose;
-
-  // Attempt 的前向 signal 到这里往往已经 timeout/abort。收尾必须拿一条新的、独立且有界的
-  // signal；复用 opts.ctx.signal 会让 runDockerCompose 在真正执行 down 前立刻抛错，整组资源
-  // 原地变孤儿。--timeout 给服务 5s 优雅退出，剩余 1.5s 留给 CLI 与网络/volume 删除；
-  // runDockerCompose 再给 TERM 1s KILL grace，总上界 7.5s，严格短于 runner 的 8s 看门狗。
-  const composeDown = () => runCompose(
-    [
-      "-p",
-      overlay.projectName,
-      ...composeFileArgs(composeFiles),
-      "down",
-      "--timeout",
-      "5",
-      "--volumes",
-      "--remove-orphans",
-    ],
-    { cwd, env, signal: AbortSignal.timeout(COMPOSE_STOP_TIMEOUT_MS) },
-  );
-
-  let finalized = false;
-  let finalizing: Promise<void> | undefined;
-  const finalizer = async () => {
-    if (finalized) return;
-    if (finalizing !== undefined) return finalizing;
-    const pending = (async () => {
-      await composeDown();
-      finalized = true;
-      await rm(overlayDir, { recursive: true, force: true }).catch(() => {});
-    })();
-    finalizing = pending;
-    try {
-      await pending;
-    } finally {
-      // 失败回 Open，保留 overlay 供 registry 强清路径重试；成功才永久封口。
-      if (finalizing === pending) finalizing = undefined;
-    }
-  };
-
-  try {
-    if (opts.ctx.signal?.aborted) {
-      await finalizer();
-      throw abortError(opts.ctx.signal);
-    }
-
-    // dockerode 是 optional peer：compose 实现在 materialize 热路径才加载 docker.ts。
-    const { classifyProvisionError, DockerSandbox } = await import("./docker.ts");
-
-    // 构建:协调器 locator 命中时仍跑一次 compose build——BuildKit cache 很快,
-    // 且把 BuildKey tag 对齐回本 eval 的 image: 插值名(避免多题共用 provider env 时串镜像)。
-    const buildServices = collection.inspection.services.filter((s) => s.build !== undefined).map((s) => s.name);
-    if (buildServices.length > 0) {
-      await withProvisionRetry(
-        () => runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "build", ...buildServices], {
-          cwd,
-          env,
-          signal: opts.ctx.signal,
-        }),
-        classifyProvisionError,
-        opts.provisionSlot,
-        opts.feedback,
-        // 构建产物没有计费实例泄漏面；同一 BuildKey 重建本身就是对账。
-        async () => {},
-      );
-    }
-
-    await withProvisionRetry(
-      () => runCompose(
-        ["-p", overlay.projectName, ...composeFileArgs(composeFiles), "up", "--detach", "--wait", "--remove-orphans"],
-        { cwd, env, signal: opts.ctx.signal },
-      ),
-      classifyProvisionError,
-      opts.provisionSlot,
-      opts.feedback,
-      // projectName 与 overlay 在整个重试闭包内固定；先清掉半启动组，再收敛同一个 project。
-      async () => {
-        await composeDown();
-      },
-    );
-
-    const resolveId =
-      opts._testHooks?.resolveMainContainerId ??
-      ((project: string, service: string) => resolveComposeContainerId(project, service, composeFiles, cwd, env));
-    const containerId = await resolveId(overlay.projectName, plan.mainService);
-
-    const attach =
-      opts._testHooks?.attachMain ??
-      ((id: string) =>
-        DockerSandbox.attach(id, {
-          timeout: opts.timeout,
-          lifetimeMs: opts.lifetimeMs,
-          feedback: opts.feedback,
-          releaseMode: "detach",
-          ...(plan.user !== undefined ? { user: plan.user } : {}),
-          ...(plan.pathPrepend !== undefined ? { pathPrepend: plan.pathPrepend } : {}),
-        }));
-    const sandbox = await attach(containerId);
-
-    const services = createComposeServiceController({
-      projectName: overlay.projectName,
-      composeFiles,
-      cwd,
-      env,
-      runCompose,
+  return Effect.gen(function* () {
+    const overlayDir = yield* Effect.tryPromise({
+      try: () => mkdtemp(join(tmpdir(), "niceeval-compose-")),
+      catch: (cause) => composeMaterializationError(overlay.projectName, cause),
+    });
+    const overlayPath = join(overlayDir, "niceeval.overlay.yaml");
+    yield* Effect.tryPromise({
+      try: () => writeFile(overlayPath, overlay.yaml, "utf-8"),
+      catch: (cause) => composeMaterializationError(overlay.projectName, cause),
     });
 
-    const group: SandboxResourceGroup = {
-      primary: { sandboxId: sandbox.sandboxId, provider: "docker" },
-      resources: {
-        kind: "docker-compose",
-        projectName: overlay.projectName,
-        composeFiles,
-        mainService: plan.mainService,
-      },
-      stop: finalizer,
-      entry: {
-        provider: "docker",
-        profile: plan.profile,
-        primary: { sandboxId: sandbox.sandboxId, provider: "docker" },
-        resources: {
-          kind: "docker-compose",
-          projectName: overlay.projectName,
-          mainService: plan.mainService,
-        },
-        state: "alive",
-      },
-    };
+    const identityYaml = buildComposeIdentityOverlay({
+      identity: currentRunIdentity(),
+      serviceNames: collection.inspection.services.map((s) => s.name),
+      networkNames: collection.inspection.networkNames,
+    });
+    const identityPath = join(overlayDir, "niceeval.identity.yaml");
+    if (identityYaml !== "") {
+      yield* Effect.tryPromise({
+        try: () => writeFile(identityPath, identityYaml, "utf-8"),
+        catch: (cause) => composeMaterializationError(overlay.projectName, cause),
+      });
+    }
 
-    // 主 Sandbox.stop 走 detach;真正回收挂在 group.stop(= finalizer)。
-    const originalStop = sandbox.stop.bind(sandbox);
-    (sandbox as { stop: () => Promise<void> }).stop = async () => {
-      await originalStop();
-      await finalizer();
+    const composeFiles =
+      identityYaml !== "" ? [collection.composePath, overlayPath, identityPath] : [collection.composePath, overlayPath];
+    const cwd = dirname(collection.composePath);
+    // 平台与 BuildKey 同源:物化期这次 compose build 构出的架构必须与身份里写的一致。
+    const env = {
+      ...process.env,
+      ...plan.env,
+      COMPOSE_PROJECT_NAME: overlay.projectName,
+      [DOCKER_PLATFORM_ENV]: collection.platform,
     };
+    const runCompose = opts._testHooks?.runCompose ?? runDockerCompose;
 
-    return {
-      sandbox,
-      services,
-      group,
-      caseKind: "compose",
-      caseKey: plan.caseKey,
-      buildKeys: collection.buildKeys,
-      identity: plan.identity,
-      facts: {
-        projectName: overlay.projectName,
-        mainService: plan.mainService,
-        composeFile: collection.composePath,
-        containerId: sandbox.sandboxId,
-        imageRefs: collection.imageRefs,
-      },
+    // Attempt 的前向 signal 到这里往往已经 timeout/abort。收尾必须拿一条新的、独立且有界的
+    // signal；复用 opts.ctx.signal 会让 runDockerCompose 在真正执行 down 前立刻抛错，整组资源
+    // 原地变孤儿。--timeout 给服务 5s 优雅退出，剩余 1.5s 留给 CLI 与网络/volume 删除；
+    // runDockerCompose 再给 TERM 1s KILL grace，总上界 7.5s，严格短于 runner 的 8s 看门狗。
+    const composeDown = () => runCompose(
+      [
+        "-p",
+        overlay.projectName,
+        ...composeFileArgs(composeFiles),
+        "down",
+        "--timeout",
+        "5",
+        "--volumes",
+        "--remove-orphans",
+      ],
+      { cwd, env, signal: AbortSignal.timeout(COMPOSE_STOP_TIMEOUT_MS) },
+    );
+
+    let finalized = false;
+    let finalizing: Promise<void> | undefined;
+    const finalizer = async () => {
+      if (finalized) return;
+      if (finalizing !== undefined) return finalizing;
+      const pending = (async () => {
+        await composeDown();
+        finalized = true;
+        await rm(overlayDir, { recursive: true, force: true }).catch(() => {});
+      })();
+      finalizing = pending;
+      try {
+        await pending;
+      } finally {
+        // 失败回 Open，保留 overlay 供 registry 强清路径重试；成功才永久封口。
+        if (finalizing === pending) finalizing = undefined;
+      }
     };
-  } catch (e) {
-    try {
-      await finalizer();
-    } catch (cleanupError) {
+    // 清理失败只诊断、不覆盖原 Cause；finalizer 幂等，成功路径的 stop 与失败路径的 down 共用一份。
+    const finalizerEffect = Effect.tryPromise({
+      try: () => finalizer(),
+      catch: (cause) => cause,
+    }).pipe(Effect.catchAll((cleanupError) => Effect.sync(() => {
       opts.feedback?.diagnostic({
         code: "sandbox-stop-failed",
         level: "warning",
@@ -1335,10 +1252,165 @@ export async function materializeDockerComposeProviderCase(
         },
         dedupeKey: `sandbox-stop-failed:${overlay.projectName}`,
       });
-    }
-    if (isAbortError(e) || opts.ctx.signal?.aborted) throw abortError(opts.ctx.signal, e);
-    throw await enrichComposeError(e, overlay.projectName, composeFiles, cwd, env, runCompose);
-  }
+    })));
+
+    // 重试前对账先清半启动组:down 失败只诊断、继续重试,不覆盖原始 create 错误
+    // (cleanup 失败不升格为 Cause;withProvisionRetry 的 reconcile 通道是 never 错误)。
+    const composeDownReconcile = Effect.tryPromise({
+      try: () => composeDown(),
+      catch: (cause) => cause,
+    }).pipe(Effect.asVoid);
+
+    // 资源可能创建：先原子登记 best-effort finalizer。此后无论是中断还是失败，外层 Scope
+    // 关闭都会执行 compose down；失败路径还会先显式跑一遍(幂等)，保持「先 down 再采证」的顺序。
+    yield* Effect.addFinalizer(() => finalizerEffect);
+
+    const failEnriched = (cause: unknown): Effect.Effect<never, ComposeMaterializationError> =>
+      Effect.tryPromise({
+        try: () => enrichComposeError(cause, overlay.projectName, composeFiles, cwd, env, runCompose),
+        catch: (enrichCause) => enrichCause,
+      }).pipe(Effect.matchEffect({
+        onFailure: (enrichCause) => Effect.fail(composeMaterializationError(overlay.projectName, enrichCause)),
+        onSuccess: (enriched) => Effect.fail(composeMaterializationError(overlay.projectName, enriched)),
+      }));
+
+    return yield* Effect.gen(function* () {
+      if (opts.ctx.signal?.aborted) return yield* Effect.interrupt;
+
+      // dockerode 是 optional peer：compose 实现在 materialize 热路径才加载 docker.ts。
+      const { classifyProvisionError, DockerSandbox } = yield* Effect.tryPromise({
+        try: () => import("./docker.ts"),
+        catch: (cause) => cause,
+      });
+
+      // 构建:协调器 locator 命中时仍跑一次 compose build——BuildKit cache 很快,
+      // 且把 BuildKey tag 对齐回本 eval 的 image: 插值名(避免多题共用 provider env 时串镜像)。
+      const buildServices = collection.inspection.services.filter((s) => s.build !== undefined).map((s) => s.name);
+      if (buildServices.length > 0) {
+        yield* withProvisionRetry(
+          Effect.tryPromise({
+            try: () => runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "build", ...buildServices], {
+              cwd,
+              env,
+              signal: opts.ctx.signal,
+            }),
+            catch: (cause) => cause,
+          }),
+          classifyProvisionError,
+          opts.provisionSlot,
+          opts.feedback,
+          // 构建产物没有计费实例泄漏面；同一 BuildKey 重建本身就是对账。
+          Effect.void,
+        );
+      }
+
+      yield* withProvisionRetry(
+        Effect.tryPromise({
+          try: () => runCompose(
+            ["-p", overlay.projectName, ...composeFileArgs(composeFiles), "up", "--detach", "--wait", "--remove-orphans"],
+            { cwd, env, signal: opts.ctx.signal },
+          ),
+          catch: (cause) => cause,
+        }),
+        classifyProvisionError,
+        opts.provisionSlot,
+        opts.feedback,
+        // projectName 与 overlay 在整个重试闭包内固定；先清掉半启动组，再收敛同一个 project。
+        composeDownReconcile,
+      );
+
+      const resolveId =
+        opts._testHooks?.resolveMainContainerId ??
+        ((project: string, service: string) => resolveComposeContainerId(project, service, composeFiles, cwd, env));
+      const containerId = yield* Effect.tryPromise({
+        try: () => resolveId(overlay.projectName, plan.mainService),
+        catch: (cause) => cause,
+      });
+
+      const attach =
+        opts._testHooks?.attachMain ??
+        ((id: string) =>
+          DockerSandbox.attach(id, {
+            timeout: opts.timeout,
+            lifetimeMs: opts.lifetimeMs,
+            feedback: opts.feedback,
+            releaseMode: "detach",
+            ...(plan.user !== undefined ? { user: plan.user } : {}),
+            ...(plan.pathPrepend !== undefined ? { pathPrepend: plan.pathPrepend } : {}),
+          }));
+      const sandbox = yield* Effect.tryPromise({
+        try: () => attach(containerId),
+        catch: (cause) => cause,
+      });
+
+      const services = createComposeServiceController({
+        projectName: overlay.projectName,
+        composeFiles,
+        cwd,
+        env,
+        runCompose,
+      });
+
+      const group: SandboxResourceGroup = {
+        primary: { sandboxId: sandbox.sandboxId, provider: "docker" },
+        resources: {
+          kind: "docker-compose",
+          projectName: overlay.projectName,
+          composeFiles,
+          mainService: plan.mainService,
+        },
+        stop: finalizer,
+        entry: {
+          provider: "docker",
+          profile: plan.profile,
+          primary: { sandboxId: sandbox.sandboxId, provider: "docker" },
+          resources: {
+            kind: "docker-compose",
+            projectName: overlay.projectName,
+            mainService: plan.mainService,
+          },
+          state: "alive",
+        },
+      };
+
+      // 主 Sandbox.stop 走 detach;真正回收挂在 group.stop(= finalizer)。
+      const originalStop = sandbox.stop.bind(sandbox);
+      (sandbox as { stop: () => Promise<void> }).stop = async () => {
+        await originalStop();
+        await finalizer();
+      };
+
+      const materialized: MaterializedSandboxCase = {
+        sandbox,
+        // 生产路径 attach 返回 raw DockerSandbox(自带 provider backend capabilities),直接作为
+        // author backend;测试 hook 注入的普通 Sandbox 走 customSandboxBackend 显式适配,不回读
+        // provider 私有成员。
+        authorBackend: opts._testHooks?.attachMain === undefined
+          ? (sandbox as DockerSandbox)
+          : customSandboxBackend(sandbox),
+        services,
+        group,
+        caseKind: "compose",
+        caseKey: plan.caseKey,
+        buildKeys: collection.buildKeys,
+        identity: plan.identity,
+        facts: {
+          projectName: overlay.projectName,
+          mainService: plan.mainService,
+          composeFile: collection.composePath,
+          containerId: sandbox.sandboxId,
+          imageRefs: collection.imageRefs,
+        },
+      };
+      return materialized;
+    }).pipe(
+      Effect.catchAll((cause) => Effect.gen(function* () {
+        yield* finalizerEffect;
+        if (isAbortError(cause) || opts.ctx.signal?.aborted) return yield* Effect.interrupt;
+        return yield* failEnriched(cause);
+      })),
+    );
+  });
 }
 
 function composeFileArgs(files: readonly string[]): string[] {

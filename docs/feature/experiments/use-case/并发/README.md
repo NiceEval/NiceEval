@@ -1,12 +1,20 @@
 # 并发 —— 用例
 
-先区分三个控制面：CLI `--max-concurrency` 约束本 Invocation 的全局吞吐，Experiment `maxConcurrency` 约束本 Invocation 内该实验的宽度。同一 Record root 不支持并发 Invocation；不同 root 若共享外部状态，再用 `sharedState.key` 保护状态区间。
+先区分四个控制面：
+
+- CLI `--max-concurrency` 约束本 Invocation 的全局吞吐。
+- Experiment `maxConcurrency` 约束本 Invocation 内该实验的宽度。
+- Coordination（协调）处理执行去重与同一 Experiment 的 dispatch claim（派发占用）。
+- Record 只独立发布 Run。
+
+多个 Invocation 可以追加同一 Record root。只要它们共享外部状态，就用 `sharedState.key` 保护状态区间。
 
 | 目标 | 用例 |
 |---|---|
 | Eval 互相独立，追求默认吞吐 | [独立评测并行执行](独立评测并行执行.md) |
 | 跨 Attempt 读写同一份状态 | [串行保护共享状态](串行保护共享状态.md) |
-| 多开终端时隔离 Record，并保护共享 checkpoint | [并行 Invocation 与状态边界](../../../sandbox/use-case/Sandbox复用/并行Invocation与状态边界.md) |
+| 多开终端时追加同一 Record，并保护共享 checkpoint | [并行 Invocation](并行Invocation协作.md) |
+| 上一次运行被强杀，下一次运行接管过期协调状态 | [恢复中断运行](恢复中断运行.md) |
 | 后一道 Eval 依赖前一道的结果 | [固定执行顺序](固定执行顺序.md) |
 | 只有一个 Experiment 撞服务限额 | [限制单个实验](限制单个实验.md) |
 | 重复运行必须按结果决定下一次 | [严格顺序重试](严格顺序重试.md) |

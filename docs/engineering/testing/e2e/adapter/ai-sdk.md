@@ -17,7 +17,7 @@ Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes
 
 | 协议行为                   | Eval 断言（只读事件流）                                                                                                          |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| UI Message Stream 工具调用 | 工具以**不带命名空间的工具名**出现在 `operation.started`，并按 operation ID 与 `operation.finished` 配对；反例断言未提供的工具 `notCalledTool`        |
+| UI Message Stream 工具调用 | 工具以**不带命名空间的工具名**出现在 `operation.started`，并按 operation ID 与 `operation.finished` 配对 |
 | HITL 审批                  | approval part 产生 `operation.started` + `input.requested`，工具在该轮是 `pending`；批准后经改写重发恢复，恢复轮出现对应 `operation.finished`；拒绝路径产生被拒状态，不产生工具结果 |
 | 会话                       | 全量历史重建下，第二轮能引用首轮事实                                                                                             |
 
@@ -30,8 +30,8 @@ Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes
 - `attempts: 1` 且没有测试级 retry；只声明实际使用的 `OPENAI_API_KEY` / `OPENAI_BASE_URL`，不要求 Judge secret。
 - 外层只从 Testkit `expResult()` 读取精确终态：`passed: 3`、`failed: 0`、`errored: 0`、`completion: "complete"`。工具、approval、会话与 usage 的判分只在各 Eval 的 `Turn.events` 中完成。
 - HTTP backend 与 `niceeval exp` 分别由 Testkit 独立进程组拥有，Journey 结束时都完成最终无 orphan cleanup。
-- **CLI 读回**：对通过 attempt 的 `show --execution` 执行树出现不带命名空间的工具名调用节点与入参，节点带 span 时间注释；通用默认报告与 JUnit 格式不由本 Repo 重复验收。
+- **CLI 读回**：对通过 attempt 的代表 Evidence Page 出现不带命名空间的工具名调用节点与入参；它以 `show @locator --report <fixture-module> --page <execution-route>` 打开。通用默认报告与 JUnit 格式不由本 Repo 重复验收。
 - **OTel 写入**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`）。span 按 `src/topology.ts` 的固定 endpoint 发到 `niceeval.config.ts` 的 `telemetry.port`。
 - **OTel 生命周期**：UI stream 关闭 HTTP response 前显式 `forceFlush()`，进程终结时 `shutdown()` provider。验收不用固定延时竞速 BatchSpanProcessor。
-- **Timing 读回**：独立 `show --timing` owner 证明该 Adapter 的 `eval.run` 与首轮 turn 可读。该 owner 不再重复 execution 或 raw OTLP 的展示断言。
-- OTel 只生成 trace，不成为事件出处。判分断言仍只读事件流；本仓库承担矩阵中 direct-agent telemetry 路径的证明。
+- **OTel 观察边界**：当前公开 Record / `show` 不能把 mapper 与单个 Adapter 明确归因，因此本 Repo 不声称 mapper-specific OTel 已被验收，也不以日志、私有结果或通用 timing 代替。
+- OTel 不成为事件出处。判分断言只读事件流；通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回。

@@ -36,7 +36,6 @@ import type {
 } from "../types.ts";
 import type { JsonValue, Verdict } from "../../shared/types.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
-import type { CommandPlan } from "../command-plan.ts";
 
 /** `ExpEvent`/`ExpPlanDocument` 的 `format`/`schemaVersion` —— 只在破坏性形状变更时递增
  *  (见 cli.md「事件与计划文档的 TypeScript 形状」)。 */
@@ -132,6 +131,21 @@ export interface WarningEvent {
   phase?: LifecyclePhase;
   experimentId?: string;
   evalId?: string;
+  planned?: number;
+  errored?: number;
+}
+
+export interface NoticeEvent {
+  event: "notice";
+  code: string;
+  level: "info";
+  message: string;
+  phase?: LifecyclePhase;
+  experimentId?: string;
+  evalId?: string;
+  resource?: "case-lock";
+  previousPid?: number;
+  previousHost?: string;
 }
 
 export interface BudgetExhaustedEvent {
@@ -197,6 +211,7 @@ export type ExpEvent =
   | ErrorEvent
   | EvalEvent
   | KeptEvent
+  | NoticeEvent
   | WarningEvent
   | BudgetExhaustedEvent
   | ReporterErrorEvent
@@ -262,8 +277,8 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           noteCheckpoint(event.at);
           if (!isFirstOccurrence(state, event.key)) return; // 去重后只追加一次(cli.md)
           const phase = lifecyclePhaseField(event.data?.phase);
-          // `code` 是 cli.md `WarningEvent` 里那个稳定词法(`lock-taken-over` / `dispatch-halted`),
-          // **不是**去重 key:去重 key 常把折叠身份编进去(`lock-taken-over:<exp>|<eval>`),原样
+          // `code` 是 cli.md notice/warning 事件的稳定词法(`coordination-recovered` /
+          // `dispatch-halted`),**不是**去重 key:去重 key 常把折叠身份编进去,原样
           // 透出会让消费方拿到一个每次运行都不同的 code、没法按值分支。折叠到哪一条实验/用例
           // 由下面的 experimentId/evalId 两个具名字段回答。
           const code = event.code ?? event.key;
@@ -272,15 +287,32 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           // "diagnostic" 变体的 identity 注释)。
           const experimentId = event.identity?.experimentId ?? stringField(event.data?.experimentId);
           const evalId = event.identity?.evalId ?? stringField(event.data?.evalId);
-          writeEvent(io, {
-            event: "warning",
+          const planned = numberField(event.data?.planned);
+          const errored = numberField(event.data?.errored);
+          const common = {
             code,
-            level: event.severity,
             message: event.message,
             ...(phase !== undefined ? { phase } : {}),
             ...(experimentId !== undefined ? { experimentId } : {}),
             ...(evalId !== undefined ? { evalId } : {}),
-          });
+            ...(planned !== undefined ? { planned } : {}),
+            ...(errored !== undefined ? { errored } : {}),
+          };
+          if (event.severity === "info") {
+            const resource = coordinationResourceField(event.data?.resource);
+            const previousPid = numberField(event.data?.previousPid);
+            const previousHost = stringField(event.data?.previousHost);
+            writeEvent(io, {
+              event: "notice",
+              level: "info",
+              ...common,
+              ...(resource !== undefined ? { resource } : {}),
+              ...(previousPid !== undefined ? { previousPid } : {}),
+              ...(previousHost !== undefined ? { previousHost } : {}),
+            });
+          } else {
+            writeEvent(io, { event: "warning", level: event.severity, ...common });
+          }
           return;
         }
 
@@ -434,7 +466,15 @@ function stringField(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** 诊断 data 是 JSON 边界；只有全局 LifecyclePhase 闭集成员才能进入 WarningEvent.phase。 */
+function numberField(value: JsonValue | undefined): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function coordinationResourceField(value: JsonValue | undefined): NoticeEvent["resource"] {
+  return value === "case-lock" ? value : undefined;
+}
+
+/** 通知 data 是 JSON 边界；只有全局 LifecyclePhase 闭集成员才能进入 notice/warning phase。 */
 function lifecyclePhaseField(value: JsonValue | undefined): LifecyclePhase | undefined {
   switch (value) {
     case "judge.precheck":
@@ -517,10 +557,13 @@ function requiredExperimentId(experimentId: string | undefined, evalId: string):
 /** 一条 `eval` 事件(cli.md「runs 与首过即停怎样展示」):字段随 earlyExit 是否触发在
  *  planned/unstarted/reason 与 passed 两组间二选一,不同时出现两组字段。`rate` 是
  *  `EvalConclusionRow` 派生出的额外读数,不在 `ExpEvent` 的 `EvalEvent` 形状里,这里不透出。 */
-function evalConclusionEvent(row: EvalConclusionRow): EvalEvent {
+function evalConclusionEvent(row: EvalConclusionRow): EvalEvent | undefined {
   const experimentId = requiredExperimentId(row.experimentId, row.evalId);
   if (row.locator === undefined) {
-    throw new Error(`JSON experiment event is missing locator for eval ${row.evalId}`);
+    // Pre-dispatch failures have no origin Attempt and therefore no locator.
+    // `eval` events are locator-addressable conclusions, so the run-level
+    // diagnostic and final result counts are their public projection.
+    return undefined;
   }
   const base: EvalEventBase = {
     event: "eval",
@@ -549,7 +592,10 @@ function writeEvalConclusions(
 ): void {
   if (!pending) return;
   const rows = evalConclusionRows(pending.results, state.earlyExitByEval, state.diagnostics);
-  for (const row of rows) writeEvent(io, evalConclusionEvent(row));
+  for (const row of rows) {
+    const event = evalConclusionEvent(row);
+    if (event !== undefined) writeEvent(io, event);
+  }
 }
 
 // ───────────────────────── 退出码(CompletionStatus 驱动) ─────────────────────────
@@ -657,8 +703,6 @@ export interface JsonPlanInput {
    *  场景的展示规则,这里与 human/agent 既有的 dry 预览取同一个近似口径:最大值)。 */
   attempts: number;
   matrix: readonly JsonPlanRow[];
-  /** 只在 `--dry --commands` 出现；普通 `--dry --json` 仍只给选择/carry 矩阵。 */
-  commandPlan?: CommandPlan;
 }
 
 /**
@@ -676,6 +720,5 @@ export function renderJsonPlanDocument(input: JsonPlanInput): string {
     attempts: input.attempts,
     reused,
     matrix: input.matrix,
-    ...(input.commandPlan === undefined ? {} : { commandPlan: input.commandPlan }),
   })}\n`;
 }

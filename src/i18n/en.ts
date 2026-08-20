@@ -1,5 +1,3 @@
-import type { Messages } from "./zh-CN.ts";
-
 export const en = {
   "agent.installFailed": "Install failed: {{key}}\n{{tail}}",
   "agent.unknown": "Unknown agent \"{{name}}\". Registered agents: {{known}}.",
@@ -46,6 +44,8 @@ export const en = {
   "bub.checkpointRestoreFailed": "bub checkpoint restore failed, falling back to a full install: {{error}}",
   "bub.installFailed": "bub install failed after {{attempts}} attempts:\n{{tail}}",
   "bub.setupNotRun": "bub adapter setup() has not run in this sandbox (missing home/workspace info). The runner must call setup before send.",
+  "e2b.listNextItemsNotArray":
+    "e2b Sandbox.list() paginator nextItems() returned a non-array ({{type}}), not the SandboxInfo[] promised by the SDK type contract",
   "checkpoint.emptyTar": "checkpoint: tar is empty (paths: {{paths}})",
   "checkpoint.archiveFailed": "checkpoint archive failed (exit {{exitCode}}): {{detail}}",
   "checkpoint.restoreFailed": "checkpoint restore failed (exit {{exitCode}}): {{detail}}",
@@ -98,8 +98,24 @@ export const en = {
   "cli.dry.unit.configs": "configs",
   "cli.dry.affects": "affects {{evals}} · {{ids}}",
   "cli.dry.acceptHint": "accept:  {{command}}",
-  "cli.commands.requiresDryExp":
-    "error: --commands is only valid as `niceeval exp <selection> --dry --commands`; it cannot be used alone or with exp list / rename / --teardown.\n",
+  "cli.debug.usage":
+    "error: niceeval debug expects exactly one Experiment selector and one Eval selector\n" +
+    "  fix: niceeval debug <experiment> <eval> [--json]\n",
+  "cli.debug.flagUnsupported":
+    "error: {{flag}} is not valid with niceeval debug\n" +
+    "  fix: pass only <experiment> <eval>, optionally --json\n",
+  "cli.debug.experimentNoMatch":
+    "error: Experiment selector \"{{selector}}\" matched nothing\n" +
+    "  exact candidates: {{candidates}}\n",
+  "cli.debug.experimentAmbiguous":
+    "error: Experiment selector \"{{selector}}\" is ambiguous\n" +
+    "  exact candidates: {{candidates}}\n",
+  "cli.debug.evalNoMatch":
+    "error: Eval selector \"{{selector}}\" matched nothing in Experiment \"{{experimentId}}\"\n" +
+    "  exact candidates: {{candidates}}\n",
+  "cli.debug.evalAmbiguous":
+    "error: Eval selector \"{{selector}}\" is ambiguous in Experiment \"{{experimentId}}\"\n" +
+    "  exact candidates: {{candidates}}\n",
   "cli.accept.choiceHeader": "previous-result  {{selector}}{{change}}  ({{evals}} evals)\n",
   "cli.accept.prompt": "  reuse these results? [y/N] ",
   "cli.accept.nothingToAccept":
@@ -169,7 +185,7 @@ export const en = {
   "cli.flag.outputRemoved":
     "error: unknown option '--output'\n  fix: run without a flag for human text; use --json for the machine feed\n",
   "cli.flag.strictRemoved":
-    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.require(...) in the Eval source.\n",
+    "Unknown option: --strict\nExpress required facts with t.check(...) or await t.check(...).orStop() in the Eval source.\n",
   "runner.budgetUnenforceable":
     "budget for {{budgetKey}}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.\n",
   "runner.experimentTeardownFailed":
@@ -181,12 +197,28 @@ export const en = {
     "experiment {{experimentId}}'s teardown was not triggered by the normal countdown path; it has been executed by the end-of-run sweep instead. Record are unaffected; seeing this line means an unlocated intermittent scheduling issue fired — please record this run in the memory ledger.\n",
   "runner.teardownRegistrationWriteFailed":
     "writing the crash-recovery teardown registration for experiment {{experimentId}} failed: {{message}}. The run continues normally, but a SIGKILL during this run cannot be recovered via `niceeval exp --teardown` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.\n",
-  "runner.lockTakenOver":
-    "took over an expired case lock for {{experimentId}}/{{evalId}} (previously held by pid {{pid}} on {{host}}; its heartbeat expired) — that run likely died without releasing it; this run now owns dispatching this case.\n",
-  "runner.gateLeaseTakenOver":
-    "took over an expired concurrency-slot lease for experiment {{experimentId}} (slot {{slot}}, previously held by pid {{pid}} on {{host}}; its heartbeat expired) — that run likely died without releasing it; this run now owns the slot.\n",
-  "runner.gateLeaseWaiting":
-    "waiting on another run for experiment {{experimentId}}'s concurrency slots: all {{effectiveN}} in use ({{holders}}). Concurrent runs share this experiment's slots, and the smallest maxConcurrency in play wins — this run declared {{declaredN}}. Nothing dispatches until a slot frees up; the other run's slots release when its attempts finish, or 30s after it dies.\n",
+  "runner.coordinationRecovered":
+    "recovered expired coordination state for {{experimentId}}; this run continues. Further recoveries are summarized at completion.\n",
+  "runner.sharedStateWaiting":
+    "waiting for sharedState key {{key}} to be released; this Invocation will not take it over automatically.\n",
+  "runner.sharedStateRecoveryRequired":
+    "sharedState key {{key}} requires explicit recovery before another Invocation can use it. Inspect immutable owner evidence with `niceeval exp <selector> --teardown --recover-shared-state <key>`.\n",
+  "runner.sharedStateExplicitRecovered":
+    "explicitly recovered sharedState key {{key}} for experiment {{experimentId}}.\n",
+  "cli.exp.sharedStateRecoveryFlags":
+    "sharedState recovery requires `--teardown --recover-shared-state <key> --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced`.\n",
+  "cli.exp.sharedStateRecoveryJsonUnsupported":
+    "error: explicit sharedState recovery does not support --json. Retry without --json; this recovery flow has a human-only interface.\n",
+  "cli.exp.sharedStateRecoveryTeardownRequired":
+    "error: sharedState recovery requires the selected Experiment {{experimentId}} to declare teardown as a function. The active generation was left unchanged.\n",
+  "cli.exp.sharedStateRecoveryTarget":
+    "sharedState recovery target:\n  key: {{key}}\n  experiment: {{experimentId}}\n  owner token: {{ownerToken}}\n  host: {{host}}\n  PID: {{pid}}\n  process identity: {{processIdentity}}\n  heartbeat: {{heartbeatAt}}\n",
+  "cli.exp.sharedStateRecoveryAlreadyReleased":
+    "sharedState key {{key}} was already released after its cleanup; its immutable recovery generation is already complete.\n",
+  "cli.exp.sharedStateRecoveryRegistrationFailed":
+    "error: sharedState recovery for {{key}} could not clear the exact interrupted teardown registration: {{message}}. The recovery generation remains closed.\n",
+  "cli.exp.sharedStateRecoveryAlreadyReleasedRegistrationFailed":
+    "error: sharedState key {{key}} was already released, but NiceEval could not clear the exact stale teardown registration: {{message}}. It did not rerun teardown.\n",
   "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
   "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":
@@ -212,22 +244,28 @@ export const en = {
     "  niceeval exp [path|experiment] [eval-id-prefix…]    run experiments\n" +
     "  niceeval exp list [experiment-prefix]               list runnable configs (no dispatch)\n" +
     "  niceeval exp rename <oldId> <newId>                 rebind terminal results from old to new id\n" +
-    "      --dry   preview without writing; --json   one JSON document\n" +
+    "      --dry   preview without writing; --record <root>   select the actual Record root; --json   one JSON document\n" +
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
+    "      explicit sharedState recovery:\n" +
+    "        niceeval exp <selector> --teardown --recover-shared-state <key>\n" +
+    "          --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced\n" +
+    "        reads immutable owner evidence from <key>; the selected Experiment must declare a teardown function\n" +
+    "        (its current sharedState declaration may have changed); inspect or recover with human text (not --json)\n" +
+    "  niceeval debug <experiment> <eval> [--json]         show the lifecycle command plan\n" +
     "  niceeval accept @<locator>...                      accept explicit historical results\n" +
     "  niceeval show [--run <run-id>...]                    render a Report in the terminal\n" +
     "      by default, show reads all results matching the current project identities;\n" +
     "        --experiment <id> is repeatable and narrows that current target\n" +
     "      --run <run-id> is repeatable and audits complete historical ids only\n" +
     "      --record <root> selects the actual Record root (default: .niceeval/record)\n" +
-    "      --report overview (or omit it) uses the built-in overview; --page <route>\n" +
+    "      --report standard (or omit it) uses the built-in standard report; --page <route>\n" +
     "        selects an exact Report route; --json emits one Report show document\n" +
     "  niceeval list                                       list discovered evals\n" +
     "  niceeval session list [--all] [experiment-prefix]    query Sessions (read-only)\n" +
     "  niceeval session show <sessionId>                   show one Session (read-only)\n" +
     "  niceeval view [--run <run-id>...] [--out dir] [--port n] [--no-open]\n" +
-    "      uses the same Record selection and built-in overview as show; live mode\n" +
+    "      uses the same Record selection and built-in standard report as show; live mode\n" +
     "      binds loopback only and rebuilds fixed ReportExecutions on Record changes\n" +
     "      --out <dir> exports one completed static site and starts no server\n" +
     "  niceeval sandbox list|enter|history|diff|stop  inspect & destroy sandboxes kept by --keep-sandbox\n" +
@@ -237,8 +275,8 @@ export const en = {
     "Flags:\n" +
     "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
     "  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry  --commands\n" +
-    "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
+    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry\n" +
+    "  --json  (command-specific JSON; exp runs use NDJSON; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +
     "how to run come from experiments/ + flags. Resolution: flag > experiment >\n" +
@@ -275,6 +313,8 @@ export const en = {
   "cli.eval.noMatchHintExperiment": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.eval.noMatchKnown": "Discovered {{count}} evals: {{evals}}\n",
   "cli.exp.agentModelFlagUnsupported": "experiment runs do not support --agent / --model. Add or copy an experiment file and change its model instead.\n",
+  "cli.exp.forceUnsupported": "experiment runs do not support --force; use --rerun all.\n",
+  "cli.check.recordUnsupported": "`--record` only applies to niceeval exp, not niceeval check.\n",
   "cli.exp.viewerFlagUnsupported": "`{{flag}}` only applies to niceeval {{command}}, not niceeval exp.\n",
   "cli.exp.teardownNoEvalPatterns":
     "--teardown selects experiments only; it does not run any eval, so eval id patterns are not allowed with it. Use `niceeval exp <experiment path> --teardown`.\n",
@@ -335,7 +375,9 @@ export const en = {
   "define.experimentAgentRequired": "defineExperiment requires agent.",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} is not JSON-serializable (functions / undefined / cycles / bigint are not allowed); flags are persisted verbatim into result runs and must be plain JSON.",
   "define.experimentLabelInvalid": "experiment.labels.{{key}} must be a string or a finite number; labels are report-side grouping coordinates persisted verbatim into result runs.",
+  "define.experimentSharedStateInvalid": "experiment.sharedState must be exactly { key }, where key is a stable, non-secret string matching [a-z0-9][a-z0-9._/-]{0,127}.",
   "define.experimentSetupNotFunction": "experiment.setup must be a function ((ctx) => void); use experiment.teardown for cleanup; to prepare the in-sandbox environment per experiment, chain .setup() hooks on the sandbox spec instead.",
+  "define.experimentTeardownNotFunction": "Experiment teardown must be a function ((ctx) => void); use a function-valued paired lifecycle hook so normal cleanup and explicit sharedState recovery can both execute it.",
   "define.experimentClassifyFailureNotFunction": "experiment.classifyFailure must be a function ((failure) => FailureClass | undefined); it classifies failures that surface as third-party errors and must return undefined for anything it does not recognize.",
   "define.experimentIdRejected": "defineExperiment does not accept id; ids are derived from file paths.",
   "define.sandboxAgentNameRequired": "defineSandboxAgent requires name.",
@@ -356,7 +398,6 @@ export const en = {
   "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
   "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
   "feedback.human.exampleLocator": "e.g. {{locator}}",
-  "feedback.human.failureFacts": "facts ×{{count}}",
   "feedback.human.failuresHeader": "FAILURES",
   "feedback.human.failuresSoFar": "{{count}} so far",
   "feedback.human.failuresTotalKinds": "{{total}} total · {{kinds}} kinds",
@@ -372,8 +413,16 @@ export const en = {
   "feedback.human.resultIncomplete": "INCOMPLETE",
   "feedback.human.resultInterrupted": "INTERRUPTED",
   "feedback.human.resultPassed": "PASSED",
+  "feedback.human.resultScored": "SCORED",
+  "feedback.human.resultErrored": "ERRORED",
+  "feedback.human.resultCompleted": "COMPLETED",
+  "feedback.human.recoveryHeader": "RECOVERY",
+  "feedback.human.unit.caseLock": "case lock",
+  "feedback.human.unit.caseLocks": "case locks",
   "feedback.human.resultsHeader": "RESULTS",
+  "feedback.human.errorsHeader": "ERRORS",
   "feedback.human.resultsMore": "… {{count}} more",
+  "feedback.human.scoreSummaryLine": "{{scored}} scored · {{skipped}} skipped · {{errored}} errored  ({{reused}} reused)",
   "feedback.human.reuse": "{{reused}} of {{total}} carried in from cache · {{toRun}} to run",
   "feedback.human.summaryLine": "{{passed}} passed · {{failed}} failed · {{errored}} errored  ({{reused}} reused)",
   "feedback.human.summaryIncompleteLine":
@@ -419,7 +468,7 @@ export const en = {
   "hitl.invalidOption": "Answer \"{{optionId}}\" is not an option of request {{requestId}} ({{options}}).",
   "hitl.noOptions": "this request has no options",
   "hitl.requestMissingId": "This input.requested request has no stable id, so a response cannot be built — the adapter must give every pending request a stable id.",
-  "hitl.respondAllEmpty": "There is no pending input.requested request; respond() / respondAll() cannot work. Confirm the turn parked with t.parked(), then answer via t.requireInputRequest() or t.respond().",
+  "hitl.respondAllEmpty": "There is no pending input.requested request; respond() / respondAll() cannot work. Confirm the turn has status waiting, then answer via t.requireInputRequest() or t.respond().",
   "hitl.respondEmpty": "t.respond(...) requires at least one answer.",
   "hitl.stringAmbiguous": "There are {{count}} pending input requests; a plain-string answer cannot be matched to one. Use the { request, optionId } or { request, text } object form to name it explicitly.",
   "judge.apiKeyMissing": "judge is missing an API key: set NICEEVAL_JUDGE_KEY, or point judge.apiKeyEnv at another environment variable.",
@@ -521,6 +570,8 @@ export const en = {
     "fix: make /tmp writable for the run user (`chmod 1777 /tmp` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.",
   "assertions.evaluationError": "assertion evaluation error: {{error}}",
   "assertions.scoreInvalid": "t.score({{label}}, {{n}}) is invalid; points must be a non-negative finite number (n >= 0).",
+  "session.rerunOriginal": "rerun the original command",
+  "session.nextRerunOriginal": "NEXT rerun the original command",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} tools",
   "session.turn.primary": "turn {{turn}}",
@@ -534,4 +585,7 @@ export const en = {
   "vercel.rotated": "[VercelSandbox] session rotated after {{seconds}}s -> {{sessionId}}",
   "vercel.userUnsupported":
     'the Vercel Sandbox provider only supports { user: "root" } (mapped to sudo: true) at the command level, got { user: "{{user}}" }. Use a container provider (docker / e2b) for other identities.',
-} satisfies Messages;
+} as const;
+
+export type MessageKey = keyof typeof en;
+export type Messages = globalThis.Record<MessageKey, string>;

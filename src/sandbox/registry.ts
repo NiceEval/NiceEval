@@ -8,6 +8,7 @@
 // 都能直接、带超时地强停所有还活着的沙箱。stop 不再静默吞异常(原 `.catch(() => {})`),失败打到
 // stderr,这样孤儿至少留下痕迹可查。
 
+import { Effect } from "effect";
 import type { Sandbox } from "../types.ts";
 import { t } from "../i18n/index.ts";
 import { reportDiagnostic } from "../runner/feedback/sink.ts";
@@ -37,15 +38,21 @@ export function liveSandboxCount(): number {
  * 供 Sample finalizer 与兜底强清共用,避免重复实现 stop 语义。
  */
 export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_MS): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   try {
-    await Promise.race([
-      sb.stop(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(t("sandbox.stopTimeout", { timeoutMs }))), timeoutMs);
-      }),
-    ]);
+    // 超时走 Effect Clock/Sleep:到点 timeoutFail 中断等待 fiber,不再手工维护 timer。
+    // sb.stop() 是 provider Promise 叶子,原样保留,失败/超时都不从登记表移除,供同轮重试。
+    await Effect.runPromise(
+      Effect.tryPromise({
+        try: () => sb.stop(),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.timeoutFail({
+          duration: timeoutMs,
+          onTimeout: () => new Error(t("sandbox.stopTimeout", { timeoutMs })),
+        }),
+      ),
+    );
     stopped = true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -58,7 +65,6 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
       data: { sandboxId: sb.sandboxId, message: msg },
     });
   } finally {
-    if (timer) clearTimeout(timer);
     if (stopped) live.delete(sb);
   }
 }

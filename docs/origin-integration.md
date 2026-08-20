@@ -175,7 +175,7 @@ claude-sdk 的 CLI 遥测只有 metrics+logs,niceeval 只消费 trace spans;pi-a
   它是编码 agent,eval 测「在工作目录里写文件、跑命令」这类真实任务,用 `node:fs` 直接核实磁盘上的真实内容,不只信模型自述。
 - OTel:codex CLI 原生 OTLP,长驻服务必须 run 级共享接收器(固定端口模式)。
   span 是 codex 自家命名,声明 `spanMapper: mapCodexSpans`(`niceeval/adapter` 公开导出)归一后瀑布图和内置 `codexAgent` 一致——**事件断言的数据出处始终是 `ThreadEvent` 流,和 span 无关**。
-- 模型:`AGENT_MODEL`(默认 `gpt-5.4`),自定义 provider 走 `CODEX_BASE_URL`。
+- 模型:`AGENT_MODEL`(默认 `gpt-5.4`),自定义 provider 走 `OPENAI_BASE_URL`。
 
 ### pi-sdk
 
@@ -210,7 +210,7 @@ claude-sdk 的 CLI 遥测只有 metrics+logs,niceeval 只消费 trace spans;pi-a
 1. **基础问答**:`t.send` 一轮,`t.succeeded()` + 文本断言。
 2. **工具调用**：触发工具，用 `turn.calledTool` / `turn.toolOrder` / `turn.noFailedActions` 验证单轮；需要跨 Turn 的顺序时改用 `session.toolOrder`。
 3. **多轮记忆 + 隔离**:第一轮报名字、第二轮问名字;`t.newSession()` 再问,新会话不应知道——这条专门验证会话续接没写错(最常见 bug:adapter 没有正确使用 `ctx.session` 存取器,导致跨会话线串用历史,隔离静默失真)。
-4. **HITL 批准 + 拒绝**(有审批流的应用):`waiting` → `respond("approve")` → `calledTool(..., {status:"completed"})`;拒绝分支断 `status:"rejected"`。
+4. **HITL 批准 + 拒绝**(有审批流的应用):`waiting` → `respond("approve")` → `calledTool(toolMatch(..., { status: "completed" }))`;拒绝分支用同一 matcher 断言 `status: "rejected"`。
 5. **用量/成本**(能拿到 usage 的应用):`t.maxTokens` 冒烟。
 
 experiment 至少两个单配置文件，可放在 `compare-models/` 路径下方便批量选择（ai-sdk-v7 / claude-sdk / pi-sdk 有多模型可比）；路径不声明比较边界。

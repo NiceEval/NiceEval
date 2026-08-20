@@ -68,7 +68,7 @@ read-only 变体下 `create-file`(要写盘)预期变红,沙箱拦下写操作�
 ```sh
 cd examples/zh/tier3/codex-sdk
 pnpm install
-cp .env.example .env   # 填 CODEX_API_KEY / CODEX_BASE_URL
+cp .env.example .env   # 填 OPENAI_API_KEY / OPENAI_BASE_URL
 
 # 终端 1:起应用(OTel 部分与 tier2 相同,要瀑布图就带上)
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 pnpm start

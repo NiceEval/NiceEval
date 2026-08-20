@@ -4,7 +4,7 @@ sidebarTitle: "运行器"
 description: "了解 Runner 怎样建立 Run、选择执行或采用 Attempt，并返回可供后续读取的 receipt。"
 ---
 
-Runner 把选中的 Experiment 和 Eval 排成一次 Invocation。它在当前进程中安排执行、显示进度，并把停稳后的业务事实写入 Record。
+Runner 把选中的 Experiment 和评估用例排成一次 Invocation。它在当前进程中安排执行、显示进度，并把停稳后的业务事实写入 Record。
 
 ## Invocation、Run 与 Attempt
 
@@ -12,17 +12,17 @@ Runner 把选中的 Experiment 和 Eval 排成一次 Invocation。它在当前�
 
 每个 slot 最多有一个 Member。Member 表示这个 slot 被哪个 Attempt 占据：Attempt 的 `origin` 与当前 slot 一致时是 `origin`，采用其它 Run 的 Attempt 时是 `reference`。
 
-占位怎样形成属于 Run-owned 的 `niceeval.membership-provenance/v1` RecordAttachment。Attempt 始终保存实际执行它的 origin；采用不复制 Verdict、Usage、事件或其他业务事实。
+每个位置是执行、自动沿用还是人工采用，都会随目标 Run 保存为可查看的来源说明。Attempt 始终保留实际执行它的 origin；采用不会复制 Verdict、用量、事件或其他业务事实。
 
 ## 执行前的规划
 
-`niceeval exp --dry` 在停稳的 Record 上列出每个 slot 的计划。它读取规划需要的 Verdict 与 Eligibility RecordAttachment，再决定执行还是采用已有 Attempt。
+`niceeval exp --dry` 根据已发布结果列出每个位置的计划，再决定执行还是采用已有 Attempt。
 
 ```sh
 npx niceeval exp checkout --dry
 ```
 
-carry 只在终态、输入身份、超时和 `--rerun` 条件都合适时发生。资格、身份和采用理由作为事实写入目标 Run 的 Membership provenance Attachment。分析选择与 reuse planning 是两件事：前者建立查看分母，后者决定本次要执行哪些 slot。
+carry 只在终态、输入身份、超时和 `--rerun` 条件都合适时发生。资格、身份和采用理由会随目标 Run 保存。分析选择与 reuse planning 是两件事：前者建立查看分母，后者决定本次要执行哪些位置。
 
 规划完成后，Runner 才启动需要执行的 Attempt。详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
@@ -53,26 +53,25 @@ receipt 只说明本次调用的身份、Run、时间与完成状态。需要 Ve
 
 ## Run 如何发布
 
-Runner 先写 Run Core、Member、Attempt 和它们的 RecordAttachment。所有 durable 内容写完后，最后创建零字节 `complete`。在此之前退出、I/O 失败或中断会留下未完成目录；它不进入 reader、Sample 或 reuse，可用 `niceeval clean` 清理。
+Runner 只有在一个 Run 的结果完整发布后，才让它进入后续查看和沿用。运行在此之前退出、I/O 失败或中断时，该结果不会进入 Sample 或 reuse；可用 `niceeval clean` 清理未完成的残留。
 
 ## Reporter
 
 Reporter 只接入当前 Invocation。它可以把当前进程已知的结果交给外部系统；`--junit` 也会写出供 CI 平台读取的文件。
 
-这些输出不拥有 Record。Verdict、Usage、断言与诊断仍属于停稳 Record 的 Attachment。需要在后续步骤查看完整结果时，使用 receipt 的 `runIds` 选择 Sample，再运行 `show`、`view` 或 `view --out`。
+这些输出不拥有 Record。Verdict、用量、断言与诊断仍属于已发布结果。需要在后续步骤查看完整结果时，使用 receipt 的 `runIds` 选择 Sample，再运行 `show`、`view` 或 `view --out`。
 
 ## 停稳后查看
 
 Runner 结束后，用明确 Run 选择查看结果：
 
 ```sh
-npx niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
-不带 locator 或 `--run` 的 `show` 和 `view` 读取身份仍匹配当前项目的全部结果；locator 与 `--run` 读取指定历史事实。内部 host 形成纯
-`AnalysisSample`，按 Report 声明投影所需事实，并生成固定的 `ReportExecution`。
-已发布的 Run 不可修改；再次查看会形成新的选择与 execution。
+不带 locator 或 `--run` 的 `show` 和 `view` 读取身份仍匹配当前项目的全部结果；locator 与 `--run` 读取指定历史事实。NiceEval 形成 `Sample`，再按选中 Page 或完整站点所需的 Measure 与领域视图取得闭合值。
+已发布的 Run 不可修改；再次查看会形成新的选择。`show` 只交付目标 Page，`view` 与静态导出交付完整站点。
 
 ## 结束状态
 

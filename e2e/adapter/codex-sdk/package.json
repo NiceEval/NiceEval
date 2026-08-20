@@ -4,7 +4,7 @@
   "type": "module",
   "description": "niceeval E2E adapter repo: Codex SDK converter live compatibility — see docs/engineering/testing/e2e/adapter/codex-sdk.md",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "e2e": "vitest run",
@@ -18,7 +18,7 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.0.0",
     "typescript": "^5.7.2",
     "vitest": "^4.1.9"
   }

@@ -1,14 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "runner",
+  "batch": "host-4",
   "areas": ["runner"],
-  "lanes": ["main", "nightly", "release"],
+  "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 10,
+  "timeoutMinutes": 4,
   "harness": { "testkit": true },
-  "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "NICEEVAL_JUDGE_KEY"],
-  "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },
-  "paths": ["e2e/runner/**", "src/runner/**", "src/sample/**", "src/record/**", "src/show/**"],
+  "secrets": [],
+  "requires": { "runtimes": ["node>=24"] },
+  "paths": ["e2e/runner/**", "src/coordination/**", "src/define.ts", "src/experiment/**", "src/runner/**", "src/sample/**", "src/record/**", "src/show/**"],
   "artifacts": [".e2e-artifacts/**"]
 }
