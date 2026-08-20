@@ -204,14 +204,11 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
   await reportE2E.case(
     "browser-default-classic-surface",
     { artifacts: reportCaseArtifacts() },
-    async ({ commands: { niceeval } }) => {
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       for (const experimentId of ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const) {
         const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
         expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       }
-      const mixedRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-      expect(mixedRun.expReceipt(), mixedRun.diagnostic()).toMatchObject({ completion: "completed" });
-
       const view = niceeval.start(
         [
           "view",
@@ -236,15 +233,49 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await page.goto(origin!);
         await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
 
+        // A fixed Sample with one named Experiment Group goes straight to its
+        // comparison and does not waste Header space on a one-option selector.
+        await expect(page.getByRole("navigation", { name: "Experiment groups" })).toHaveCount(0);
+
         const passChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
         await expect(passChart).toHaveCount(1);
         await expect(passChart).toContainText("classic/memory-a");
         await expect(passChart).toContainText("100%");
         await expect(passChart).not.toContainText("ratio");
         const scoreChart = page.locator('svg[aria-label="costUSD × totalScore"]').filter({ visible: true });
-        await expect(scoreChart).toHaveCount(1);
-        await expect(scoreChart).toContainText("main");
+        await expect(scoreChart).toHaveCount(0);
 
+        const mixedRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+        expect(mixedRun.expReceipt(), mixedRun.diagnostic()).toMatchObject({ completion: "completed" });
+        const groupNavigation = page.getByRole("navigation", { name: "Experiment groups" });
+        await expect(groupNavigation).toBeVisible({ timeout: 15_000 });
+        const classicGroup = groupNavigation.getByRole("link", { name: "classic" });
+        const mainGroup = groupNavigation.getByRole("link", { name: "main" });
+        await expect(classicGroup).toHaveAttribute("href", "group/named/classic/index.html");
+        await expect(mainGroup).toHaveAttribute("href", "group/singleton/main/index.html");
+        await classicGroup.click();
+        await expect(page).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));
+        const selectedGroupChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
+        await expect(selectedGroupChart).toContainText("classic/memory-a");
+        await expect(selectedGroupChart).not.toContainText("main");
+
+        const exported = await niceeval.run(["view", "--out", "group-static", "--no-open"]);
+        expect(exported.exitCode, exported.diagnostic()).toBe(0);
+        const offline = await browser.newContext({ javaScriptEnabled: false });
+        try {
+          const staticPage = await offline.newPage();
+          await staticPage.goto(pathToFileURL(join(projectRoot, "group-static", "index.html")).href);
+          const staticGroups = staticPage.getByRole("navigation", { name: "Experiment groups" });
+          await expect(staticGroups.getByRole("link", { name: "classic" }))
+            .toHaveAttribute("href", "group/named/classic/index.html");
+          await staticGroups.getByRole("link", { name: "classic" }).click();
+          await expect(staticPage).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));
+          const staticGroupChart = staticPage.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
+          await expect(staticGroupChart).toContainText("classic/memory-a");
+          await expect(staticGroupChart).not.toContainText("main");
+        } finally {
+          await offline.close();
+        }
         const filter = page.getByRole("searchbox").filter({ visible: true });
         await expect(filter).toHaveCount(1);
         await expect(filter).toBeVisible();
@@ -381,7 +412,7 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await expect(page.getByText(/^@[0-9A-Z]+$/).first()).toBeVisible();
         await expect(page.getByText(/^source · execution · timing(?: · diff)?$/).filter({ visible: true })).toBeVisible();
 
-        await page.goto(origin!);
+        await page.goto(new URL("group/named/classic/index.html", origin!).href);
         const scatter = page.getByRole("img", { name: "costUSD × passRate" }).filter({ visible: true });
         await expect(scatter).toHaveCount(1);
         await expect(scatter).toContainText("classic/memory-a");

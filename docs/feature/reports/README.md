@@ -27,6 +27,8 @@ Report 有两条明确不同的执行路径。它们共享同一份作者定义�
 ```
 
 `show` 不调用参数 Page 的 `enumerate()`，不建立 `ClosedSiteRevision`，也不为未选 route 执行作者 callback。
+
+`project-current` 仍是整个项目的 Sample。只有一个实验组时，标准 Overview 直接从父 Sample 形成该组的 `ExperimentComparisonScope`，不显示组选择器。有多个组时，Overview 列出组，Header 才显示实验组选择。每个组 Page 把唯一 scope 交给 `ExperimentTable` 或 `ExperimentScatter`；任何比较组件都不能跨组。
 `view` 与静态导出则必须完成全站枚举、链接校验、资源闭包和限额检查；它们只从同一个 revision 读取最终 bytes。
 
 [Report 成本投影](cost-projections/README.md) 是完整的成本契约。它只经 `ReportDefinition.pricing` 接入 Report，并以同一只读值暴露为
@@ -85,6 +87,7 @@ view 不注入只在本机有效的作者脚本。
 
 `show --json` 的内建报告和自定义报告各有固定 schema。内建报告输出 Host-owned 领域数据；自定义报告输出单目标执行 manifest 与
 选中 Page 的已呈现文字，不序列化通用作者树或 site revision。schema、locale、route 选择与 canonical order 由 [CLI](cli.md) 定义。
+内建文档使用 `niceeval.show/v2`：单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard。实验组 Page 的 `comparison` 穷尽 `comparable | non-comparable`。
 
 报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 只负责浏览器语言切换、
 更新状态与 Host 提示，不重绘 Report 内容。完整边界见 [Architecture](architecture.md#css、theme-与-view-shell)。

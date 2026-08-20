@@ -19,7 +19,7 @@ import { resolvedPageText } from "../runtime/text.ts";
 export type ContentAddress = string;
 
 /** The exact machine schemas in docs/feature/reports/cli.md. */
-export const BUILT_IN_SHOW_SCHEMA = "niceeval.show/v1";
+export const BUILT_IN_SHOW_SCHEMA = "niceeval.show/v2";
 export const CUSTOM_TARGET_EXECUTION_SCHEMA = "niceeval.report-target-execution/v1";
 export const REPORT_PROJECTIONS_SCHEMA = "niceeval.report-projections/v1";
 
@@ -58,7 +58,8 @@ export interface ReportProblem {
  * not a generic component/HTML/text reverse-engineering format.
  */
 export type BuiltInShowData =
-  | { readonly kind: "leaderboard"; readonly rows: JsonValue }
+  | { readonly kind: "groups"; readonly groups: JsonValue }
+  | { readonly kind: "experiment-group"; readonly group: JsonValue; readonly comparison: JsonValue }
   | {
       readonly kind: "attempt";
       readonly evidence: JsonValue;
@@ -653,9 +654,16 @@ function freezeBuiltInData(value: BuiltInShowData): BuiltInShowData {
   // The selected registry producer owns their stable identities and must close
   // them in the canonical order defined for that domain before returning.
   switch (value.kind) {
-    case "leaderboard":
-      assertExactFields(value, ["kind", "rows"], "leaderboard show data");
-      return Object.freeze({ kind: "leaderboard" as const, rows: closeMachineJson(value.rows) });
+    case "groups":
+      assertExactFields(value, ["kind", "groups"], "groups show data");
+      return Object.freeze({ kind: "groups" as const, groups: closeMachineJson(value.groups) });
+    case "experiment-group":
+      assertExactFields(value, ["kind", "group", "comparison"], "experiment-group show data");
+      return Object.freeze({
+        kind: "experiment-group" as const,
+        group: closeMachineJson(value.group),
+        comparison: closeMachineJson(value.comparison),
+      });
     case "attempt":
       assertExactFields(value, ["kind", "evidence", "observability", "fileChanges"], "attempt show data");
       return Object.freeze({

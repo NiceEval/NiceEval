@@ -24,6 +24,8 @@ enumerate every Page instance → execute every Page → validate site → Close
 `show` 只执行目标 Page。省略 `--page` 时使用 Report 的默认 route；带 `--page` 时使用精确 route。它不枚举参数 Page，
 不执行其它 Page，也不创建 site revision。
 
+`--group` 是实验组 Page 的具名 target，不是 Sample selector。`show --group` 只执行该组 Page；`view --group` 只设定初始 route，仍枚举并闭合固定 Sample 中的全部组 Page。
+
 `view` 和 `view --out` 都先枚举全部普通 Page 与参数 Page 实例。只有所有页面、route、链接、下载、asset、问题表和预算通过校验，
 Host 才形成一个 revision。view 只托管它；static 只写出它。
 
@@ -83,7 +85,7 @@ client 先读取两边都存在且 bytes 相同的自身 runtime 文件；只有
 `theme.ts` 只定义 theme token 与 token 值；它不新增 reset、布局 selector 或组件样式。`styles.css` 是 token 的唯一消费者。
 作者通过结构化 `head` 提供的样式只能服务自己的具名内容，不能建立另一套 reset、theme 或 View shell。
 
-View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和访问入口。它不读取 Analysis、不调整报告组件的数据含义、
+View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和已闭合 Page 的访问入口。固定 Sample 有两个或更多实验组时，选择器才沿作者声明的 `experiment-group` Page 真实链接导航；只有一组时不渲染该选择器。它不读取 Analysis、不在浏览器改变比较范围、
 不注入第二份产品 CSS，也不重绘已关闭的 Report 内容。
 
 浏览器启用 JavaScript 时，站内参数 Page 的普通详情 href 会渐进增强为 Host modal，并把当前位置写成

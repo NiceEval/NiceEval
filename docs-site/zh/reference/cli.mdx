@@ -176,6 +176,7 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--run` | string[] | `show` / `view` 可重复传入 `--run`;每次按完整 RunId 增加一个显式 Run,重复 identity 去重。 |
 | `--report` | string | `show` / `view` 命令专用：内建 `standard` 或受信任的 Report module 路径。 |
 | `--page` | string | `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 |
+| `--group` | string | `show` / `view`：精确选择 `named/<key>` 或 `singleton/<experiment-id>` Experiment Group。 |
 | `--teardown` | boolean | `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 |
 | `--recover-shared-state` | string | `exp --teardown` 专用:显式恢复一个永不自动接管的 sharedState lease；必须同时提供 --owner-token、--confirm-owner-terminated 和 --confirm-remote-quiesced。 |
 | `--owner-token` | string | `--recover-shared-state` 专用:要恢复的不可变 owner token；错误或过期 token 不会修改 lease。 |

@@ -330,6 +330,8 @@ export interface Flags {
   run?: string[];
   report?: string;
   page?: string;
+  /** `show` / `view`：选择固定 Sample 中一个 Experiment Group Page。 */
+  group?: string;
   theme?: string;
   /** `sandbox list` 专用:核对强杀路径留下的无主实例。 */
   orphans: boolean;
@@ -424,6 +426,8 @@ const FLAG_OPTIONS = {
   theme: { type: "string" },
   /** `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 */
   page: { type: "string" },
+  /** `show` / `view`：精确选择 `named/<key>` 或 `singleton/<experiment-id>` Experiment Group。 */
+  group: { type: "string" },
   /** `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 */
   teardown: { type: "boolean" },
   /** `exp --teardown` 专用:显式恢复一个永不自动接管的 sharedState lease；必须同时提供 --owner-token、--confirm-owner-terminated 和 --confirm-remote-quiesced。 */
@@ -644,6 +648,7 @@ function parseArgs(argv: string[]): ParsedCliArgs {
     run: values.run as string[] | undefined,
     report: values.report as string | undefined,
     page: values.page as string | undefined,
+    group: values.group as string | undefined,
     theme: values.theme as string | undefined,
     orphans: values.orphans === true,
     teardown: values.teardown === true,
@@ -2549,6 +2554,7 @@ interface ReportCliRequest {
   readonly reportSelection: ReportSelection;
   readonly themeSelection: ThemeSelection;
   readonly page?: string;
+  readonly group?: string;
 }
 
 /** Resolve the CLI's one portable Record target without treating `.niceeval` as Record data. */
@@ -2585,7 +2591,16 @@ function parseReportCliRequest(input: {
 
   const { root, rootPath } = parseActualRecordRoot(input.cwd, input.flags.record);
 
-  const page = parseReportRoute(input.flags.page);
+  if (input.flags.group !== undefined && input.flags.page !== undefined) {
+    throw usageError("--group cannot be combined with --page.\n");
+  }
+  const group = parseExperimentGroupTarget(input.flags.group);
+  const page = group === undefined
+    ? parseReportRoute(input.flags.page)
+    : `/group/${group}`;
+  if (group !== undefined && input.positionals.length > 0) {
+    throw usageError("--group cannot be combined with an Attempt locator.\n");
+  }
   const evidenceReports = [
     input.flags.source !== undefined ? "--source" : undefined,
     input.flags.execution ? "--execution" : undefined,
@@ -2743,6 +2758,7 @@ function parseReportCliRequest(input: {
     reportSelection: report,
     themeSelection: theme,
     ...(page === undefined ? {} : { page }),
+    ...(group === undefined ? {} : { group }),
   });
 }
 
@@ -2811,6 +2827,15 @@ function parseReportRoute(value: string | undefined): string | undefined {
     throw usageError(`Invalid --page route "${value}": ${issue.reason}.\n`);
   }
   return value;
+}
+
+function parseExperimentGroupTarget(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const match = /^(named|singleton)\/([a-z0-9][a-z0-9._~-]*)$/u.exec(value);
+  if (match === null) {
+    throw usageError(`Invalid --group "${value}"; expected named/<key> or singleton/<experiment-id>.\n`);
+  }
+  return `${match[1]}/${match[2]}`;
 }
 
 function reportSelection(cwd: string, value: string | undefined): ReportSelection {
@@ -3133,15 +3158,31 @@ function finiteNumberProperty(value: unknown, key: string): number | undefined {
 function requireKnownReportPage(
   revision: ClosedSiteRevision,
   page: string | undefined,
+  group?: string,
 ): Effect.Effect<void, CliUsageError> {
   const routes = closedSiteRevisionData(revision).routes;
   if (page === undefined || routes.includes(page)) {
     return Effect.void;
   }
+  if (group !== undefined) {
+    return Effect.fail(usageError(`report-group-not-in-sample: ${group}\n`));
+  }
   const available = [...routes].sort().join(", ");
   return Effect.fail(usageError(
     `Unknown Report route "${page}". Available routes: ${available || "none"}.\n`,
   ));
+}
+
+function requireGroupPageAvailable(
+  report: ReportDefinition,
+  group: string | undefined,
+): Effect.Effect<void, CliUsageError> {
+  if (group === undefined) return Effect.void;
+  const groupKind = group.startsWith("named/") ? "named" : "singleton";
+  if (report.pages.some((page) => "role" in page && page.role?.kind === "experiment-group" && page.role.groupKind === groupKind)) {
+    return Effect.void;
+  }
+  return Effect.fail(usageError(`report-group-page-unavailable: ${group}\n`));
 }
 
 const cliReportConsole = Object.freeze({
@@ -3283,6 +3324,7 @@ function runShowCommand(
       "Load project, config, Report, and Theme",
       loadCliReportInputs(request),
     );
+    yield* requireGroupPageAvailable(inputs.report, request.group);
     const textProjection = flags.json
       ? undefined
       : panelCapabilityOf({
@@ -3338,6 +3380,9 @@ function runViewCommand(
       if (flags.port !== undefined || flags.host !== undefined || flags.open === true) {
         return yield* Effect.fail(usageError("view --out does not start a server; remove --port, --host, and --open.\n"));
       }
+      if (request.group !== undefined) {
+        return yield* Effect.fail(usageError("view --out does not accept --group.\n"));
+      }
       if (request.page !== undefined) {
         return yield* Effect.fail(usageError("view --out does not accept --page.\n"));
       }
@@ -3360,10 +3405,11 @@ function runViewCommand(
       "Load project, config, Report, and Theme",
       loadCliReportInputs(request),
     );
+    yield* requireGroupPageAvailable(initialInputs.report, request.group);
     const initial = yield* buildCliReportSite(request, initialInputs).pipe(
       Effect.provideService(ReportHostProgressObserver, makeCliReportProgress(request.rootPath, progress)),
     );
-    yield* requireKnownReportPage(initial, request.page);
+    yield* requireKnownReportPage(initial, request.page, request.group);
     const buildCache = yield* makeReportViewBuildCache(
       request,
       initialInputs,
@@ -3469,7 +3515,7 @@ function rebuildReportView(request: ReportCliRequest, cache: ReportViewBuildCach
         themeIdentity,
       });
     }
-    yield* requireKnownReportPage(revision, request.page);
+    yield* requireKnownReportPage(revision, request.page, request.group);
     cache.revision = revision;
     cache.pageBytes = pageBytes;
     cache.watchInputs = inputs.watchInputs;

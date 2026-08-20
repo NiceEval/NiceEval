@@ -10,6 +10,7 @@ import type {
   JsonValue,
   Sample,
 } from "../../analysis/index.ts";
+import { experimentGroups } from "../../analysis/index.ts";
 import type { RecordCoordination } from "../../coordination/record-leases.ts";
 import { recordHost } from "../../record/host/runtime.ts";
 import type { RecordRoot } from "../../record/platform/root.ts";
@@ -207,15 +208,25 @@ function showSelectionFromRecord(input: SelectionTarget & {
     const sample = yield* openSelectionSample(input.root, input.selection);
     const report = input.report ?? defaultReportForSelection(input.selection);
     const selection = showSelectionForRequest(sample, input.selection);
+    const groups = report === standard ? experimentGroups(sample) : [];
+    const implicitRoute = input.route === undefined && groups.length === 1
+      ? groupRoute(groups[0]!.group)
+      : undefined;
     return yield* presentShowTarget({
       sample,
       report,
       selection,
-      ...(input.route === undefined ? {} : { route: input.route }),
+      ...(input.route === undefined && implicitRoute === undefined ? {} : { route: input.route ?? implicitRoute }),
       ...(input.textProjection === undefined ? {} : { textProjection: input.textProjection }),
       format: input.format ?? "text",
     });
   }));
+}
+
+function groupRoute(group: import("../../analysis/index.ts").ExperimentGroupIdentity): string {
+  return group.kind === "named"
+    ? `/group/named/${group.groupId}`
+    : `/group/singleton/${String(group.experimentId)}`;
 }
 
 function showAttemptFromRecord(input: AttemptTarget & {

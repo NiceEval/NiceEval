@@ -204,8 +204,8 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
         const duplicate = await niceeval.run(["show", "--report", `./reports/${module}`, "--json"]);
         expect(duplicate.exitCode, duplicate.diagnostic()).toBe(0);
         expect(duplicate.json<{ schema: string; data: { kind: string } }>()).toMatchObject({
-          schema: "niceeval.show/v1",
-          data: { kind: "leaderboard" },
+          schema: "niceeval.show/v2",
+          data: { kind: "groups" },
         });
       }
 
@@ -271,10 +271,10 @@ export default Object.freeze(report);
       const deliberateErrorRows = [...overview.matchAll(/<summary\b[^>]*>[\s\S]*?<\/summary>/g)]
         .map(([summary]) => summary)
         .filter((summary) => summary.includes("deliberate-error"));
-      expect(deliberateErrorRows, "errored attempt rows must be present in both locale surfaces").toHaveLength(2);
-      for (const row of deliberateErrorRows) {
-        expect(row, "an errored attempt keeps the exact cost of completed agent work").toContain("$0.00002");
-      }
+      expect(
+        deliberateErrorRows,
+        "a named Experiment comparison must not pull main's errored row across the group boundary",
+      ).toHaveLength(0);
       expect(overview, "classic overview must not serialize internal attempt evidence into visible text")
         .not.toContain('{"kind":"attempt"');
       expect(overview, "classic overview must link into attempt detail instances")

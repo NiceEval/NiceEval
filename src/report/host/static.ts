@@ -559,6 +559,7 @@ function buildSiteFiles(site: ClosedReportSite, theme: ThemeDefinition): readonl
 function parameterizedRoutePrefixes(site: ClosedReportSite): readonly string[] {
   const prefixes = new Set<string>();
   for (const entry of site.pages) {
+    if (entry.role?.kind === "experiment-group") continue;
     if (entry.page.target.params === undefined) continue;
     const route = entry.page.target.route;
     const cut = route.lastIndexOf("/");
@@ -585,6 +586,8 @@ function renderPage(site: ClosedReportSite, entry: ClosedSitePage, paramRoutes: 
   const bodyZh = projection(page, "zh-CN");
   const navigationEn = renderNavigation(site.pages, page.target.route, output, "en");
   const navigationZh = renderNavigation(site.pages, page.target.route, output, "zh-CN");
+  const groupsEn = renderExperimentGroupNavigation(site.pages, page.target.route, output, "en");
+  const groupsZh = renderExperimentGroupNavigation(site.pages, page.target.route, output, "zh-CN");
   const pageProblems = site.problems.filter((problem) =>
     problem.path.length === 0 || (problem.path[0] === "page" && problem.path[1] === page.target.pageId)
   );
@@ -594,7 +597,28 @@ function renderPage(site: ClosedReportSite, entry: ClosedSitePage, paramRoutes: 
     ? ""
     : ` data-niceeval-param-routes="${escapeAttribute(paramRoutes.join(" "))}"`;
   const siteRootHref = relativeHref(output, "index.html");
-  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}" data-niceeval-site-root="${escapeAttribute(siteRootHref)}"${paramRoutesAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav><div class="niceeval-view-locale" aria-label="Language"><button class="is-active" type="button" data-niceeval-locale-button="en" aria-pressed="true">EN</button><button type="button" data-niceeval-locale-button="zh-CN" aria-pressed="false">中文</button></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div><noscript><p class="niceeval-view-noscript">This report remains readable without JavaScript; language selection is unavailable.</p></noscript></main></body></html>`;
+  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}" data-niceeval-site-root="${escapeAttribute(siteRootHref)}"${paramRoutesAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav>${groupsEn}${groupsZh}<div class="niceeval-view-locale" aria-label="Language"><button class="is-active" type="button" data-niceeval-locale-button="en" aria-pressed="true">EN</button><button type="button" data-niceeval-locale-button="zh-CN" aria-pressed="false">中文</button></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div><noscript><p class="niceeval-view-noscript">This report remains readable without JavaScript; language selection is unavailable.</p></noscript></main></body></html>`;
+}
+
+function renderExperimentGroupNavigation(
+  pages: readonly ClosedSitePage[],
+  currentRoute: string,
+  sourceFile: string,
+  locale: string,
+): string {
+  const groups = pages.filter((entry) => entry.role?.kind === "experiment-group").sort(compareSitePages);
+  if (groups.length < 2) return "";
+  const items = groups.map(({ page }) => {
+    const current = page.target.route === currentRoute ? " aria-current=\"page\"" : "";
+    const href = relativeHref(sourceFile, staticPathForRoute(page.target.route).posix);
+    const params = page.target.params as Record<string, unknown> | undefined;
+    const label = typeof params?.groupId === "string" ? params.groupId
+      : typeof params?.experimentId === "string" ? params.experimentId : page.target.route;
+    return `<li><a href="${escapeAttribute(href)}"${current}>${escapeText(label)}</a></li>`;
+  });
+  const hidden = locale === "zh-CN" ? " hidden" : "";
+  const label = locale === "zh-CN" ? "实验组" : "Experiment groups";
+  return `<nav class="niceeval-view-nav" data-niceeval-locale="${locale}" aria-label="${label}"${hidden}><ul>${items.join("")}</ul></nav>`;
 }
 
 function renderNavigation(

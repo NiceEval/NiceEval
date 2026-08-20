@@ -30,7 +30,7 @@ interface ReportProblem {
 }
 
 interface ShowOverview {
-  readonly schema: "niceeval.show/v1";
+  readonly schema: "niceeval.show/v2";
   readonly locale: "en";
   readonly selection:
     | {
@@ -44,7 +44,12 @@ interface ShowOverview {
         readonly runIds: readonly string[];
       };
   readonly page: { readonly route: string; readonly pageId: string };
-  readonly data: { readonly kind: "leaderboard"; readonly rows: readonly LeaderboardRow[] };
+  readonly data:
+    | { readonly kind: "groups"; readonly groups: readonly unknown[] }
+    | {
+        readonly kind: "experiment-group";
+        readonly comparison: { readonly state: string; readonly rows: readonly LeaderboardRow[] };
+      };
   readonly problems: readonly ReportProblem[];
 }
 
@@ -77,25 +82,26 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         initialRun.diagnostic(),
       );
 
-      const initialShow = await niceeval.run(["show", "--json"]);
+      const initialShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
       const initialDocument = initialShow.json<ShowOverview>();
       expect(initialDocument).toMatchObject({
-        schema: "niceeval.show/v1",
+        schema: "niceeval.show/v2",
         locale: "en",
         selection: {
           kind: "project-current",
-          experimentIds: [...PROJECT_EXPERIMENT_IDS],
+          experimentIds: ["source"],
         },
-        page: { route: "/", pageId: "overview" },
-        data: { kind: "leaderboard" },
+        page: { route: "/group/singleton/source", pageId: "group-singleton" },
+        data: { kind: "experiment-group" },
       });
       expect(
         initialDocument.problems,
         "a completed Eval with no Agent send has known zero usage rather than missing input",
       ).toEqual([]);
-      expect(initialDocument.data.rows).toHaveLength(1);
-      expect(initialDocument.data.rows[0]!.passRate).toMatchObject({
+      if (initialDocument.data.kind !== "experiment-group") throw new Error("expected experiment group");
+      expect(initialDocument.data.comparison.rows).toHaveLength(1);
+      expect(initialDocument.data.comparison.rows[0]!.passRate).toMatchObject({
         state: "available",
         samples: 1,
         total: 1,
@@ -112,12 +118,13 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         ),
       ).toMatchObject({ event: "start", reused: 1 });
 
-      const accumulatedShow = await niceeval.run(["show", "--json"]);
+      const accumulatedShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(accumulatedShow.exitCode, accumulatedShow.diagnostic()).toBe(0);
       const accumulatedDocument = accumulatedShow.json<ShowOverview>();
       expect(accumulatedDocument.selection).toMatchObject({ kind: "project-current" });
-      expect(accumulatedDocument.data.rows).toHaveLength(1);
-      expect(accumulatedDocument.data.rows[0]!.passRate).toMatchObject({
+      if (accumulatedDocument.data.kind !== "experiment-group") throw new Error("expected experiment group");
+      expect(accumulatedDocument.data.comparison.rows).toHaveLength(1);
+      expect(accumulatedDocument.data.comparison.rows[0]!.passRate).toMatchObject({
         state: "available",
         samples: 2,
         total: 2,
@@ -132,26 +139,30 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         "utf8",
       );
 
-      const staleShow = await niceeval.run(["show", "--json"]);
+      const staleShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
       expect(staleShow.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v1",
+        schema: "niceeval.show/v2",
         selection: { kind: "project-current" },
-        data: { kind: "leaderboard", rows: [] },
+        data: { kind: "groups", groups: [] },
         problems: [],
       });
 
-      const staleHistory = await niceeval.run(["show", "--run", initialRunId, "--json"]);
+      const staleHistory = await niceeval.run([
+        "show", "--run", initialRunId, "--report", "standard", "--group", "singleton/source", "--json",
+      ]);
       expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
       expect(staleHistory.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v1",
+        schema: "niceeval.show/v2",
         selection: {
           kind: "explicit-runs",
           runIds: [initialRunId],
         },
-        data: { kind: "leaderboard" },
+        data: { kind: "experiment-group" },
       });
-      expect(staleHistory.json<ShowOverview>().data.rows[0]!.passRate.state).toBe("available");
+      const historyData = staleHistory.json<ShowOverview>().data;
+      if (historyData.kind !== "experiment-group") throw new Error("expected experiment group");
+      expect(historyData.comparison.rows[0]!.passRate.state).toBe("available");
 
       const changedRun = await niceeval.run(["exp", "source", "--json"]);
       expect(changedRun.exitCode, changedRun.diagnostic()).toBe(0);
@@ -171,14 +182,16 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
 
-      const refreshedShow = await niceeval.run(["show", "--json"]);
+      const refreshedShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
       expect(refreshedShow.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v1",
+        schema: "niceeval.show/v2",
         selection: { kind: "project-current" },
-        data: { kind: "leaderboard" },
+        data: { kind: "experiment-group" },
       });
-      expect(refreshedShow.json<ShowOverview>().data.rows[0]!.passRate).toMatchObject({
+      const refreshedData = refreshedShow.json<ShowOverview>().data;
+      if (refreshedData.kind !== "experiment-group") throw new Error("expected experiment group");
+      expect(refreshedData.comparison.rows[0]!.passRate).toMatchObject({
         state: "available",
         samples: 1,
         total: 1,

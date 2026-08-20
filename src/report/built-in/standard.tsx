@@ -7,15 +7,22 @@
  */
 
 import type {
+  ExperimentComparisonScope,
+  ExperimentGroupIdentity,
   ExperimentId,
   Sample,
   SampleSnapshot,
 } from "../../analysis/index.ts";
+import {
+  experimentComparisonScope,
+  experimentGroups,
+} from "../../analysis/index.ts";
 import type {
   Page,
   PageEvidence,
+  PageParams,
 } from "../definition/report.ts";
-import { Col, Section } from "../definition/primitives.tsx";
+import { Col, Link, Section, Text } from "../definition/primitives.tsx";
 import { defineComponent } from "../definition/tree.ts";
 import { AttemptDetails } from "../components/attempt-detail/index.tsx";
 import { ExperimentTable } from "../components/entity-lists/index.tsx";
@@ -94,27 +101,44 @@ function membershipRows(
     })));
 }
 
-const StandardExperimentResults = defineComponent(async (_props, context) => {
-  const rows = await experimentListData(context.scope, context.report.pricing);
+const StandardExperimentResults = defineComponent<{ readonly comparison: ExperimentComparisonScope }>(async (props) => {
   return (
     <Col>
       <Section title={{ en: "Experiment comparison", "zh-CN": "实验对比" }}>
-        <ExperimentScatter rows={rows} />
+        <ExperimentScatter comparison={props.comparison} />
       </Section>
       <Section title={{ en: "Experiments", "zh-CN": "实验" }}>
-        <ExperimentTable rows={rows} />
+        <ExperimentTable comparison={props.comparison} />
       </Section>
     </Col>
   );
 });
 
-function standardOverview() {
+function standardOverview(sample: Sample) {
+  const groups = experimentGroups(sample);
+  const only = groups.length === 1 ? groups[0] : undefined;
   return (
     <Col>
       <Hero />
       <SampleNotices />
       <SampleSummary />
-      <StandardExperimentResults />
+      {only === undefined ? (
+        <Section title={{ en: "Experiment groups", "zh-CN": "实验组" }}>
+          <Col>
+            {groups.map((entry) => (
+              <Link
+                key={entry.group.key}
+                target={{
+                  page: entry.group.kind === "named" ? "group-named" : "group-singleton",
+                  params: entry.group,
+                }}
+              >
+                {entry.group.kind === "named" ? entry.group.groupId : String(entry.group.experimentId)}
+              </Link>
+            ))}
+          </Col>
+        </Section>
+      ) : <StandardExperimentResults comparison={experimentComparisonScope(sample, only.group)} />}
     </Col>
   );
 }
@@ -126,6 +150,81 @@ export const standardOverviewPage = {
   title: { en: "Overview", "zh-CN": "总览" },
   render: standardOverview,
 } satisfies Page;
+
+type NamedGroupParams = {
+  readonly kind: "named";
+  readonly groupId: string;
+  readonly key: `named/${string}`;
+};
+type SingletonGroupParams = {
+  readonly kind: "singleton";
+  readonly experimentId: ExperimentId;
+  readonly key: `singleton/${string}`;
+};
+
+const namedGroupParams: PageParams<NamedGroupParams> = Object.freeze({
+  encode: (params: NamedGroupParams) => params.groupId,
+  decode: (key: string) => {
+    if (!/^[a-z0-9][a-z0-9._~-]*$/u.test(key)) throw new TypeError("named Experiment Group key is not canonical");
+    return Object.freeze({ kind: "named" as const, groupId: key, key: `named/${key}` as const });
+  },
+  enumerate: (sample: Sample) => experimentGroups(sample)
+    .filter((entry): entry is typeof entry & { readonly group: NamedGroupParams } => entry.group.kind === "named")
+    .map((entry) => entry.group),
+});
+
+const singletonGroupParams: PageParams<SingletonGroupParams> = Object.freeze({
+  encode: (params: SingletonGroupParams) => String(params.experimentId),
+  decode: (key: string) => {
+    if (!/^[a-z0-9][a-z0-9._~-]*$/u.test(key)) throw new TypeError("singleton Experiment Group key is not canonical");
+    return Object.freeze({
+      kind: "singleton" as const,
+      experimentId: key as ExperimentId,
+      key: `singleton/${key}` as const,
+    });
+  },
+  enumerate: (sample: Sample) => experimentGroups(sample)
+    .filter((entry): entry is typeof entry & { readonly group: SingletonGroupParams } => entry.group.kind === "singleton")
+    .map((entry) => entry.group),
+});
+
+function standardGroupPage<Params extends import("../../analysis/index.ts").JsonValue>(input: {
+  readonly id: string;
+  readonly path: string;
+  readonly groupKind: "named" | "singleton";
+  readonly params: PageParams<Params>;
+}): Page<Params, ExperimentComparisonScope> {
+  return {
+    id: input.id,
+    path: input.path,
+    title: { en: "Experiment group", "zh-CN": "实验组" },
+    navigation: false as const,
+    role: { kind: "experiment-group" as const, groupKind: input.groupKind },
+    params: input.params,
+    load: (sample: Sample, params: Params) =>
+      experimentComparisonScope(sample, params as ExperimentGroupIdentity),
+    render: (comparison: ExperimentComparisonScope) => (
+      <Col>
+        <Text>{comparison.group.key}</Text>
+        <StandardExperimentResults comparison={comparison} />
+      </Col>
+    ),
+  } as unknown as Page<Params, ExperimentComparisonScope>;
+}
+
+export const standardNamedGroupPage = standardGroupPage({
+  id: "group-named",
+  path: "/group/named",
+  groupKind: "named",
+  params: namedGroupParams,
+});
+
+export const standardSingletonGroupPage = standardGroupPage({
+  id: "group-singleton",
+  path: "/group/singleton",
+  groupKind: "singleton",
+  params: singletonGroupParams,
+});
 
 /** One standard detail Page for one already-selected Attempt. */
 export const standardAttemptPage = {
@@ -176,6 +275,8 @@ export const standard = defineBuiltInReport(builtInMachineProducerIds.standard, 
   title: "NiceEval overview",
   pages: [
     standardOverviewPage,
+    standardNamedGroupPage,
+    standardSingletonGroupPage,
     standardAttemptPage,
     standardExperimentPage,
   ],

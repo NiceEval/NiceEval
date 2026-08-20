@@ -188,6 +188,10 @@ interface ParameterizedPage<Params extends JsonValue, Input> {
   readonly path?: string;
   readonly title: LocalizedText;
   readonly navigation: false;
+  readonly role?: {
+    readonly kind: "experiment-group";
+    readonly groupKind: "named" | "singleton";
+  };
   readonly params: PageParams<Params>;
   readonly load: (
     sample: Sample,
@@ -205,6 +209,10 @@ type Page<Params extends JsonValue | void = void, Input = Sample> =
     ? PlainPage<Input>
     : ParameterizedPage<Extract<Params, JsonValue>, Input>;
 ```
+
+`role.kind: "experiment-group"` 只适用于参数 Page。`groupKind` 固定该 Page 接收 named 或 singleton identity，`load` 再从当前 Sample 形成 `ExperimentComparisonScope`。Host 只为作者显式声明的这类 Page 生成 Header 实验组选择器；当前 Sample 只有一组时不显示选择器，有两组或更多时才显示。未声明该 role 时不补造 Page、route 或选择器。
+
+参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，形成 `/group/named/<segment>` 与 `/group/singleton/<experiment-id>`。选择器把两个 Page 的已闭合目标汇总成一个列表；每个选项都是真实 `href`。JavaScript 只渐进增强交互，禁用 JavaScript 与静态导出仍能沿同一链接切换组。
 
 `params.encode()` 产生一个 canonical key segment；`decode()` 只接受同一形式。全站路径调用 `enumerate(sample)` 恰好一次，
 并生成每个返回值。`show --page` 只用 `decode()` 取得已请求 key，不调用 `enumerate()`。
@@ -383,6 +391,8 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 `Hero`、`SampleOverview`、`AttemptDetails`、`ExperimentDetails`、`Conversation`、`TurnTrace`、`DiffView`、`SourceView` 与 `Waterfall` 是
 官方组合组件。它们只接收关闭数据，详情 route 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
 `libraryDetailRoute()` 建立。
+
+`ExperimentTable` 与 `ExperimentScatter` 是具名比较组件。它们只接受 `ExperimentComparisonScope` 或该 scope 产生的同组 branded projection，不接受普通 Sample 或任意 rows。多组输入以 `analysis-comparison-group-mismatch` 失败；单组的 `non-comparable` 闭合原因与 Evidence，不渲染排名或散点。中立 `Table` 与 `Scatter` 仍可显示任意已闭合值，不承担实验组语义。
 
 `AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。展开该行后，`TurnTrace` 以 `Conversation` 的静态因果事件流为账本，加上 turn 时间概览与可关闭的事件 inspector。没有精确 source mapping 的 turn 保留在页面级 `TurnTrace`，不按源码顺序猜测归属；没有 JavaScript 时 inspector 不出现，但完整事件内容仍在正文中。
 
