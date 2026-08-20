@@ -13,6 +13,58 @@ interface ExpEvent {
   verdict?: string;
 }
 
+interface AttemptShow {
+  data: {
+    kind: "attempt";
+    evidence: {
+      entries: readonly {
+        state: string;
+        detail?: {
+          entries: readonly { display: unknown; result: unknown }[];
+        };
+      }[];
+    };
+  };
+}
+
+const MATCHED_LABELS = [
+  "includes:matched", "excludes:matched", "pattern:matched", "includesUrl:matched",
+  "hasSections:matched", "isDefined:matched", "isTrue:matched", "isFalse:matched",
+  "equals:matched", "matches:matched", "satisfies:matched", "defineValueMatch:matched",
+  "jsonMatch:matched", "referencesAnyPath:matched", "and:matched", "or:matched", "not:matched",
+  "similarity:matched", "defineScoreMatch:matched", "commandSucceeded:matched",
+  "toolMatch.name:matched", "toolMatch.input:matched", "toolMatch.output:matched",
+  "toolMatch.status:matched", "toolMatch.path:matched", "calledTool.count.exact:matched",
+  "toolMatch.options:matched", "calledTool.count.atLeast:matched", "notCalledTool:matched",
+  "commandMatch:matched", "eventMatch:matched", "eventMatch.tool:matched",
+  "eventMatch.finished:matched", "eventOrder:matched",
+] as const;
+
+const MISMATCHED_LABELS = [
+  "includes:mismatched", "excludes:mismatched", "pattern:mismatched", "includesUrl:mismatched",
+  "hasSections:mismatched", "isDefined:mismatched", "isTrue:mismatched", "isFalse:mismatched",
+  "equals:mismatched", "matches:mismatched", "satisfies:mismatched", "defineValueMatch:mismatched",
+  "jsonMatch:mismatched", "referencesAnyPath:mismatched", "and:mismatched", "or:mismatched",
+  "not:mismatched", "similarity:mismatched", "defineScoreMatch:mismatched",
+  "commandSucceeded:mismatched", "toolMatch.name:mismatched", "toolMatch.input:mismatched",
+  "toolMatch.output:mismatched", "toolMatch.status:mismatched", "toolMatch.path:mismatched",
+  "toolMatch.options:mismatched", "calledTool.count.exact:mismatched",
+  "calledTool.count.atLeast:mismatched", "notCalledTool:mismatched",
+  "commandMatch.executable:mismatched", "commandMatch.argsStart:mismatched",
+  "commandMatch.excludes:mismatched", "commandMatch.status:mismatched", "eventMatch:mismatched",
+  "eventMatch.tool:mismatched", "eventMatch.finished:mismatched", "eventOrder:mismatched",
+] as const;
+
+function assertionOutcomeMap(entries: readonly { display: unknown; result: unknown }[]): Map<string, string> {
+  return new Map(entries.flatMap((entry) => {
+    if (entry.display === null || typeof entry.display !== "object" || Array.isArray(entry.display)) return [];
+    if (entry.result === null || typeof entry.result !== "object" || Array.isArray(entry.result)) return [];
+    const label = (entry.display as Record<string, unknown>).label;
+    const state = (entry.result as Record<string, unknown>).state;
+    return typeof label === "string" && typeof state === "string" ? [[label, state] as const] : [];
+  }));
+}
+
 test("值 Match Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
     "values",
@@ -31,6 +83,26 @@ test("值 Match Eval 以 passed 终态完成", async () => {
         evalId: "assertion-values",
         verdict: "passed",
       });
+
+      const outcomes = only(
+        run.ndjson<ExpEvent>(),
+        (event) => event.event === "eval" && event.evalId === "assertion-match-outcomes" && event.locator !== undefined,
+        run.diagnostic(),
+      );
+      expect(outcomes).toMatchObject({ verdict: "passed" });
+      const shown = await niceeval.run(["show", outcomes.locator!, "--json"]);
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      const document = shown.json<AttemptShow>();
+      expect(document.data.kind).toBe("attempt");
+      const evidence = only(
+        document.data.evidence.entries,
+        (entry) => entry.state === "available" && entry.detail !== undefined,
+        shown.diagnostic(),
+      );
+      const states = assertionOutcomeMap(evidence.detail!.entries);
+      expect([...states.keys()].sort()).toEqual([...MATCHED_LABELS, ...MISMATCHED_LABELS].sort());
+      for (const label of MATCHED_LABELS) expect(states.get(label), label).toBe("matched");
+      for (const label of MISMATCHED_LABELS) expect(states.get(label), label).toBe("mismatched");
     },
   );
 });

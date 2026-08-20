@@ -31,7 +31,9 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 ## eval-assertion-values
 
 值 Match 在本轮确定性回复上登记并封口为 Assertion，随后折叠为 `passed` Verdict。
-这个 owner 明确接管 `niceeval/expect` 的 value 与 score factory，包括组合 matcher、自定义 matcher、Standard Schema、JSON、文本、布尔、相似度与命令结果。
+这个 owner 明确接管 `niceeval/expect` 的全部 factory。
+每个 value、score、tool、command 与 event matcher 都以 matched 和 mismatched 两种结果运行，并从公开 Attempt readback 逐项核对结果。
+`calledTool` 还分别验证 name、input、output、status、exact count 与 at-least count；`notCalledTool` 与 `eventOrder` 也各自验证正反结果。
 公开 `show --json` 必须读到这些 Assertion 与 Verdict。
 
 ## eval-assertion-scopes
