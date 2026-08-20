@@ -159,4 +159,5 @@ niceeval view --report <fixture> --no-open
 
 `report.browser.spec.ts` 通过真实 href、HTTP、可访问身份、可见内容和断网禁用 JavaScript 的 route 阅读验证浏览器 Journey。
 经典旅程通过真实浏览器完成筛选、原生 `details` 展开、Attempt href 下钻与中文切换。它只锁 role、text、href 和
-原生标签语义，不锁 CSS class、像素或精确颜色。
+原生标签语义，不锁 CSS class、像素或精确颜色。Assertion 展开同时守住 record-only 的 `recorded` 状态，以及
+`notCalledTool` 零命中或决定性命中的人读诊断。

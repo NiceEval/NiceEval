@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-browser-journey
+// regression: memory/record-only-assertions-labeled-soft.md
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
 // The Journey uses only the installed candidate CLI, exported files, real HTTP,
@@ -425,9 +426,10 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await expect(dialog).not.toBeVisible();
 
         // Assertion source-line details use one display contract across a
-        // matched built-in assertion, a nested scoped matcher mismatch, and a
-        // direct value mismatch. The Report projects sealed diagnostic facts;
-        // it never dumps the matcher tree as user-facing JSON.
+        // matched built-in assertions, a nested scoped matcher mismatch, and
+        // a direct value mismatch. Record-only checks say `recorded`; scoped
+        // matchers expose the decisive count/witness without dumping their
+        // matcher tree as user-facing JSON.
         await page.goto(origin!);
         await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "main" });
         await expect(page).toHaveURL(new RegExp("/group/singleton/main/index\\.html$"));
@@ -456,10 +458,26 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await failedAttemptLink.click();
         await expect(dialog).toBeVisible();
 
-        const matchedAssertion = dialog.locator("details").filter({ hasText: "Turn completed · soft passed" });
+        const matchedAssertion = dialog.locator("details").filter({ hasText: "Turn completed · recorded passed" });
         await expect(matchedAssertion).toHaveCount(1);
         await matchedAssertion.locator(":scope > summary").click();
-        await expect(matchedAssertion.getByText("Turn completed · soft passed", { exact: true })).toBeVisible();
+        await expect(matchedAssertion.getByText("Turn completed · recorded passed", { exact: true })).toBeVisible();
+
+        const absentToolAssertion = dialog.locator("details").filter({
+          hasText: "No project guidance access · recorded passed",
+        });
+        await expect(absentToolAssertion).toHaveCount(1);
+        await absentToolAssertion.locator(":scope > summary").click();
+        await expect(absentToolAssertion.getByText(
+          "notCalledTool(toolMatch(input=referencesAnyPath(5 paths))) observed no matching tool",
+          { exact: false },
+        )).toBeVisible();
+        await expect(absentToolAssertion.getByText(
+          "expected: no toolMatch(input=referencesAnyPath(5 paths))",
+          { exact: false },
+        )).toBeVisible();
+        await expect(absentToolAssertion.getByText("received: 0 definite matches", { exact: false })).toBeVisible();
+        await expect(absentToolAssertion.getByText(/^diagnostic: \{"children"/)).toHaveCount(0);
 
         const nestedMismatch = dialog.locator("details").filter({
           hasText: "No private source access · gate failed",

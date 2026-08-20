@@ -12,7 +12,9 @@ Pass Eval 的区块顺序是 Execution、Verdict、检查项。Score Eval 的区
 
 每条 Assertion 显示其 display、sealed result、coverage、limitations 与有界的 subject／evidence preview。criterion 可解释时显示 criterion 说明；unknown 或 invalid criterion 只影响该 entry，并明确显示 `unsupported` 或 `invalid`。
 
-未配置 points 的 Assertion 显示 `recorded`，不显示 `+0`。配置 points 的 entry 显示 points、其 sealed evaluation 与实际 contribution。entry 的 points 不是 max、百分比或 Evaluation kind。
+未配置 points 且没有失败 gate 的 Assertion 以 `recorded passed`、`recorded failed` 或 `recorded unavailable` 显示，不补 `+0`。失败 gate 仍显示 `gate failed`。配置 points 的 entry 显示 points、sealed evaluation 与实际 contribution。entry 的 points 不是 max、百分比或 Evaluation kind。
+
+`notCalledTool` matched 时，展开区显示期望零命中与 `0 definite matches`。mismatched 时显示实际命中数、决定结果的 tool occurrence，以及命中输入内的位置。诊断采样或截断不能删除 sealed result 与决定性见证。
 
 Assertions display 不携带 source path、origin source snapshot 或跨 family blob ref。需要源码导航时，Analysis 的 source-navigation DomainView 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
 没有对应 row 或 Sources 无法形成可用值时，entry 位置显示 `unmapped`，不能猜测当前 worktree。`.orStop()` 已执行的位置可由 role 为 `stop` 的 source site 显示，不能由未保存的控制流推断。

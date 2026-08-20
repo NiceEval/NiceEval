@@ -83,8 +83,8 @@ export interface AttemptScoreView {
 export interface AttemptAssertionView {
   readonly entryId: string;
   readonly name: string;
-  /** sealed gate 投影:failed / unavailable 是 gate,其余是 soft。 */
-  readonly severity: "gate" | "soft";
+  /** 展示角色:失败 gate、未计分 recorded、其余带分 soft。 */
+  readonly severity: "gate" | "recorded" | "soft";
   readonly outcome: "passed" | "failed" | "unavailable";
   readonly groupPath: readonly string[];
   /** 展示层预拼好的判定详情(原因 / coverage / limitations / diagnostic)。 */
@@ -500,7 +500,8 @@ function assertionOutcomeOf(entry: SealedAssertionEntryView): AttemptAssertionVi
 }
 
 function assertionSeverityOf(entry: SealedAssertionEntryView): AttemptAssertionView["severity"] {
-  return entry.result.gate === "failed" || entry.result.gate === "unavailable" ? "gate" : "soft";
+  if (entry.result.gate === "failed" || entry.result.gate === "unavailable") return "gate";
+  return entry.result.score.state === "not-scored" ? "recorded" : "soft";
 }
 
 function scoreOf(entry: SealedAssertionEntryView): AttemptScoreView | undefined {

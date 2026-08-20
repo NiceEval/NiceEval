@@ -32,7 +32,9 @@ function assertionViewProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an AttemptAssertionView object`;
   if (typeof value.entryId !== "string") return `"${path}.entryId" must be a string`;
   if (typeof value.name !== "string") return `"${path}.name" must be a string`;
-  if (value.severity !== "gate" && value.severity !== "soft") return `"${path}.severity" must be "gate" or "soft"`;
+  if (value.severity !== "gate" && value.severity !== "recorded" && value.severity !== "soft") {
+    return `"${path}.severity" must be "gate" | "recorded" | "soft"`;
+  }
   if (value.outcome !== "passed" && value.outcome !== "failed" && value.outcome !== "unavailable") {
     return `"${path}.outcome" must be "passed" | "failed" | "unavailable"`;
   }
