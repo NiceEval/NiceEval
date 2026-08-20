@@ -1,14 +1,14 @@
 # Assertions —— source sites
 
-本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。两者当前 envelope 的 `schemaVersion` 都是 `1`，并且都保存已经发生的审计事实，不保存可执行的作者调用图。
+本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。Assertions 当前 envelope 是 `schemaVersion: 2`，Sources 是 `schemaVersion: 1`；两者都保存已经发生的审计事实，不保存可执行的作者调用图。
 
-Record v1 的 catalog 固定为六个 family。Attempt-owned `niceeval.source-navigation` 只拥有物理 send 到 source/timing 的 join，不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources manifest 规则见 [Record architecture](../../record/architecture.md)。
+Record catalog 固定为六个 family。Attempt-owned `niceeval.source-navigation` 只拥有物理 send 到 source/timing 的 join，不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources manifest 规则见 [Record architecture](../../record/architecture.md)。
 
 ## owner 与 semantic join
 
 | family | owner | 精确事实 |
 |---|---|---|
-| `niceeval.assertions` | Attempt | `entryId`、criterion、material、sealed result，以及 `sourceSites` row。 |
+| `niceeval.assertions` | Attempt | `entryId`、criterion、materials、evaluation、decision、policy、contribution，以及 `sourceSites` row。 |
 | `niceeval.source-navigation` | Attempt | `turnId`、source frame 与 `agent.send` timing join；不含 `entryId`。 |
 | `niceeval.sources` | origin Run | 当时源码闭包的 item manifest 与本 family own blobs。 |
 
@@ -21,7 +21,7 @@ Record v1 的 catalog 固定为六个 family。Attempt-owned `niceeval.source-na
 `sourceSites` 与 `entries` 同属一个 exact Assertions payload：
 
 ```ts
-type AssertionSourceRoleV1 =
+type AssertionSourceRole =
   | "declaration"
   | "threshold"
   | "score"
@@ -29,24 +29,24 @@ type AssertionSourceRoleV1 =
   | "optional"
   | "stop";
 
-type AssertionSourcePositionV1 = {
+type AssertionSourcePosition = {
   readonly line: number;
   readonly column: number;
 };
 
-type AssertionSourceSiteV1 = {
+type AssertionSourceSite = {
   readonly entryId: AssertionEntryId;
   readonly sourceOrder: number;
-  readonly role: AssertionSourceRoleV1;
+  readonly role: AssertionSourceRole;
   readonly sourceItemId: SourceItemId;
   readonly sha256: Sha256Digest;
-  readonly start: AssertionSourcePositionV1;
-  readonly end: AssertionSourcePositionV1;
+  readonly start: AssertionSourcePosition;
+  readonly end: AssertionSourcePosition;
 };
 
-type AssertionsAttachmentV1 = {
-  readonly entries: readonly AssertionEntryV1[];
-  readonly sourceSites: readonly AssertionSourceSiteV1[];
+type AssertionsAttachment = {
+  readonly entries: readonly AssertionEntry[];
+  readonly sourceSites: readonly AssertionSourceSite[];
 };
 ```
 
@@ -61,7 +61,7 @@ type AssertionsAttachmentV1 = {
 - `start` 与 `end` 是该 snapshot 中可显示的有序位置；
 - `role` 只标记实际执行过的 declaration 或 modifier；未执行源码不补写 row。
 
-`declaration` 标明 entry 的登记，`threshold`、`score`、`gate` 与 `optional` 标明对应 modifier，`stop` 标明实际执行 `.orStop()` 的位置。它们只服务审计和导航；不会改变 criterion、sealed result、gate、points、earned score 或 Verdict。
+`declaration` 标明 entry 的登记，`threshold`、`score`、`gate` 与 `optional` 标明对应 modifier，`stop` 标明实际执行 `.orStop()` 的位置。它们只服务审计和导航；不会改变 criterion、evaluation、decision、policy、contribution、gate、points、earned score 或 Verdict。
 
 一个 entry 可以有多个 row。它们可以产生多个 location annotation，但 Assertion detail、summary 与 score contribution 都按 `entryId` 只计算一次。source order 的数字不能用来推测未保存的 send、控制流或其它事件。
 

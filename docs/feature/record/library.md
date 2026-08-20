@@ -139,7 +139,7 @@ maintenance lease 不做自动回收。
 RunContext，并 refine `context.experimentId === experimentId`；它把这个已验证值带入 draft，只有 `seal()` 时
 将它作为 `RunDocument.context` 写入 `run.json`。不能在 session 创建后以当前配置或补丁重新设定 context。
 
-`current` 只接受 package-private definition 中的 root `{ format: "niceeval.record", schemaVersion: 2 }` 与匹配的 Core。
+`current` 只接受 package-private definition 中的 root `{ format: "niceeval.record", schemaVersion: 3 }` 与匹配的 Core。
 root / Core 不兼容时，若 maintenance 有固定相邻步骤则返回 `migration-required`，否则
 `unsupported-format`；session 根本不会形成。带 `/vN` 后缀的未发布 family 草案也是
 `unsupported-format`，不能伪装成独立 future family。
@@ -150,7 +150,7 @@ current catalog 的六个 fixed family 由 definition 关闭：
 
 | family | current | `owners` |
 |---|---:|---|
-| `niceeval.assertions` | 1 | `{ attempt }` |
+| `niceeval.assertions` | 2 | `{ attempt }` |
 | `niceeval.observability` | 2 | `{ attempt, run }` |
 | `niceeval.file-changes` | 1 | `{ attempt }` |
 | `niceeval.source-navigation` | 1 | `{ attempt }` |
@@ -367,7 +367,7 @@ interface RecordMaintenanceSession {
 }
 ```
 
-schemaVersion `2` 是 current root / Core writer epoch。所有 fixed family 也处于 current 时，
+schemaVersion `3` 是 current root / Core writer epoch。所有 fixed family 也处于 current 时，
 `inspect()` 与 `planMigrate()` 返回 `already-current`；`applyMigrate()` 不运行，也不写 portable byte。
 
 root / Core 不相容时，`inspect()` 返回 `migration-required` 或 `unsupported-format`。已知 family 的旧
@@ -376,11 +376,13 @@ schemaVersion 同样需要显式 migration。
 未知/future family、known family 的 future/无链版本和未发布的斜杠版本草案返回 `unsupported-format`，不会被
 猜测成损坏数据或 migration source。
 
-root epoch 2 与 Observability schemaVersion `2` 同批在 maintenance facet 内提供固定联合 `1 → 2` step。它只从已保存的两个
-owner payload 和 own blob closure 形成目标 bytes，不能读取当前 worktree、网络、第三方 converter 或运行时
-算法。没有无损步骤时，maintenance 在改盘前拒绝计划；它不伪造新事实。
+root epoch 沿 `1 → 2 → 3` 相邻链演进，plan 与 receipt 都保留准确的相邻 steps。Assertions 与 Observability 分别提供 package-private `1 → 2` step。
 
-计划绑定 Git repository、HEAD、Record path、`recordId`、current format 与 portable-byte inventory。它还绑定每个目标 envelope 的 exact source bytes 和 NiceEval migration implementation identity。`applyMigrate()` 重新验证这些值，避免把陈旧计划应用到变化后的 Record。
+相邻 transform 只接收已 hydrate 的 payload，不能做文件 I/O；maintenance framework 统一拥有历史 codec、blob closure、Git/sentinel/no-follow replace 与最终 exact-current 验证。
+
+adjacent link 的 physical write-set metadata 供 plan、execute 与 recovery 共用。Observability 是 envelope-only，Assertions 是 envelope + payload；运行时 transform identity 只作一致性校验。
+
+计划绑定 Git repository、HEAD、Record path、`recordId`、current format 与 portable-byte inventory。它还绑定每个目标 envelope/payload 的 exact source bytes、physical write set 和 NiceEval migration implementation identity。`applyMigrate()` 重新验证这些值，避免把陈旧计划应用到变化后的 Record。
 
 迁移只允许 Record 已纳入 Git 且 worktree/index 干净时执行。它在 exclusive maintenance lease 下原地
 逐步改写，并完整校验 exact current Core、完整 catalog 与 blob closure。未知/future family 使计划失败。
@@ -393,7 +395,7 @@ session 内完成 plan/apply，并绑定、复核 HEAD、Record identity、porta
 migration identity。成功全量 exact-current 验证并释放 maintenance 后，调用方只能全新打开 ordinary
 session，不得升级既有 read lease。
 
-首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。失败或中断后，maintenance 先证明 HEAD 未变化，且 dirty path 只有 sentinel 与已写成 canonical v2 的计划目标。证明成立时，CLI 才给出限定到 Record root 的 Git restore 与 tracked-byte 验证命令；否则只要求人工检查并保留并发编辑。验证 worktree/index 都等于该 commit 后才清除 sentinel，再重新形成计划。
+首次改写前的 `migration.in-progress` 保存已验证的 restore commit。失败或中断后，maintenance 先证明 HEAD 未变化，且 dirty path 只有 sentinel 与 physical plan 明确写入的 canonical current 目标；envelope-only family 的 payload 不在 expected paths。证明成立时，CLI 才给出限定到 Record root 的 Git restore 与 tracked-byte 验证命令；否则只要求人工检查并保留并发编辑。验证 worktree/index 都等于该 commit 后才清除 sentinel，再重新形成计划。
 
 这里的“失败”只指 sentinel 已成功创建后的失败；apply 前的计划指纹变化、preflight 或 create-sentinel 错误
 不携带恢复动作，并保留造成计划变化的编辑。post-sentinel 错误闭合为

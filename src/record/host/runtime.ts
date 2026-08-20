@@ -41,6 +41,7 @@ import {
   encodeFixedRecordAttachmentEnvelope,
   NiceEvalRecordAttachments,
   NiceEvalRecordFamilyCatalog,
+  NiceEvalRecordFamilyDescriptorsByOwner,
   type FixedRecordFamilyDescriptor,
   type NiceEvalFamily,
 } from "../family/catalog.ts";
@@ -2510,26 +2511,20 @@ interface KnownMigrationAttachment {
   readonly descriptor: AnyMigrationDescriptor;
 }
 
-function migrationDescriptor<
-  Family extends NiceEvalFamily,
-  Owner extends RecordAttachmentOwner,
-  Payload,
->(descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>): AnyMigrationDescriptor {
+type KnownFamilyDescriptor =
+  | (typeof NiceEvalRecordFamilyDescriptorsByOwner.attempt)[number]
+  | (typeof NiceEvalRecordFamilyDescriptorsByOwner.run)[number];
+
+function migrationDescriptor(descriptor: KnownFamilyDescriptor): AnyMigrationDescriptor {
   return descriptor as unknown as AnyMigrationDescriptor;
 }
 
 const runMigrationDescriptors = Object.freeze([
-  migrationDescriptor(NiceEvalRecordFamilyCatalog.observability.run),
-  migrationDescriptor(NiceEvalRecordFamilyCatalog.sources),
-  migrationDescriptor(NiceEvalRecordFamilyCatalog.artifacts.run),
+  ...NiceEvalRecordFamilyDescriptorsByOwner.run.map(migrationDescriptor),
 ]);
 
 const attemptMigrationDescriptors = Object.freeze([
-  migrationDescriptor(NiceEvalRecordFamilyCatalog.assertions),
-  migrationDescriptor(NiceEvalRecordFamilyCatalog.observability.attempt),
-  migrationDescriptor(NiceEvalRecordFamilyCatalog.fileChanges),
-  migrationDescriptor(NiceEvalRecordFamilyCatalog.sourceNavigation),
-  migrationDescriptor(NiceEvalRecordFamilyCatalog.artifacts.attempt),
+  ...NiceEvalRecordFamilyDescriptorsByOwner.attempt.map(migrationDescriptor),
 ]);
 
 function validateAttachmentDirectoryInventory(input: {
@@ -2719,20 +2714,27 @@ function migrationFailureCode(error: unknown): string {
   return typeof code === "string" ? code : "record-command-failed";
 }
 
-function migrationTarget(location: KnownMigrationAttachment): RecordAttachmentMigrationTarget {
+function migrationTarget(
+  location: KnownMigrationAttachment,
+  fromSchemaVersion: number,
+  toSchemaVersion: number,
+): RecordAttachmentMigrationTarget {
   return Object.freeze({
     family: location.descriptor.family,
     owner: location.owner,
     runId: location.runId,
     ...(location.attemptId === undefined ? {} : { attemptId: location.attemptId }),
-    fromSchemaVersion: 1,
-    toSchemaVersion: location.descriptor.schemaVersion,
+    fromSchemaVersion,
+    toSchemaVersion,
   });
 }
 
 interface PlannedMigrationSource {
   readonly target: RecordAttachmentMigrationTarget;
+  readonly location: KnownMigrationAttachment;
   readonly envelopeBytes: Uint8Array;
+  readonly payloadBytes: Uint8Array;
+  readonly rewritePayload: boolean;
 }
 
 interface PlannedMigrationSources {
@@ -2742,7 +2744,7 @@ interface PlannedMigrationSources {
   readonly implementationIdentity: typeof RECORD_MIGRATION_IMPLEMENTATION_ID;
 }
 
-const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/root-1-observability-1-to-root-2-observability-2/v1" as const;
+const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/root-1-2-to-root-3-current-attachments/v1" as const;
 const migrationPlanSources = new WeakMap<object, PlannedMigrationSources>();
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -2792,13 +2794,12 @@ function planAttachmentMigration(input: {
     for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root)) {
       const read = yield* readKnownMigrationAttachment(input.fileSystem, input.root, location);
       if (read.state === "available") continue;
-      if (
-        read.state === "migration-required" &&
-        location.descriptor.family === NiceEvalRecordAttachments.observability.family &&
-        read.fromSchemaVersion === 1 &&
-        read.toSchemaVersion === 2
-      ) {
-        const target = migrationTarget(location);
+      const migrationLink = read.state === "migration-required"
+        ? location.descriptor.adjacentMigrationLinks.find((link) =>
+            link.fromSchemaVersion === read.fromSchemaVersion && link.toSchemaVersion === read.toSchemaVersion)
+        : undefined;
+      if (read.state === "migration-required" && migrationLink !== undefined) {
+        const target = migrationTarget(location, read.fromSchemaVersion, read.toSchemaVersion);
         const envelopeBytes = yield* input.fileSystem.readFile({
           file: migrationEnvelopePath(input.root, location),
           maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
@@ -2806,8 +2807,43 @@ function planAttachmentMigration(input: {
         if (envelopeBytes === undefined) {
           return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         }
+        const facet = yield* loadAttachmentMaintenance(location.descriptor);
+        const historical = facet.historicalCodecs.find((codec) => codec.schemaVersion === read.fromSchemaVersion);
+        const step = facet.adjacentMigrations.find((migration) =>
+          migration.fromSchemaVersion === read.fromSchemaVersion &&
+          migration.toSchemaVersion === read.toSchemaVersion);
+        if (historical === undefined || step === undefined) {
+          return yield* Effect.fail(migrationInvalid(location.descriptor.family));
+        }
+        const prepared = yield* validateFixedRecordAttachmentMigrationSource({
+          fileSystem: input.fileSystem,
+          root: input.root,
+          location: migrationReaderLocation(location),
+          descriptor: location.descriptor,
+          fromSchemaVersion: read.fromSchemaVersion,
+          decodeHistorical: historical.decode,
+          migrate: step.migrate,
+        });
+        if (prepared === false || prepared.rewritePayload !== migrationLink.rewritePayload) {
+          return yield* Effect.fail(migrationInvalid(location.descriptor.family));
+        }
+        const payloadBytes = yield* input.fileSystem.readFile({
+          file: recordPortablePath(
+            input.root,
+            ...migrationAttachmentDirectory(input.root, location).segments,
+            "payload.json",
+          ),
+          maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+        });
+        if (payloadBytes === undefined) return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         targets.push(target);
-        sources.push(Object.freeze({ target, envelopeBytes }));
+        sources.push(Object.freeze({
+          target,
+          location,
+          envelopeBytes,
+          payloadBytes,
+          rewritePayload: migrationLink.rewritePayload,
+        }));
         continue;
       }
       if (read.state === "unsupported") {
@@ -2858,6 +2894,13 @@ function migrationPlan(input: {
       : Object.freeze({
           fromSchemaVersion: format.sourceSchemaVersion,
           toSchemaVersion: RECORD_SCHEMA_VERSION,
+          steps: Object.freeze(Array.from(
+            { length: RECORD_SCHEMA_VERSION - format.sourceSchemaVersion },
+            (_, index) => Object.freeze({
+              fromSchemaVersion: format.sourceSchemaVersion + index,
+              toSchemaVersion: format.sourceSchemaVersion + index + 1,
+            }),
+          )),
         });
     if (rootMigration === null && attachments.targets.length === 0) {
       return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
@@ -2893,47 +2936,41 @@ function validateSealedCoreForMigration(
   );
 }
 
-function loadObservabilityV1Maintenance(): Effect.Effect<
-  Awaited<ReturnType<NonNullable<typeof NiceEvalRecordAttachments.observability.maintenance>>>,
+function loadAttachmentMaintenance(descriptor: AnyMigrationDescriptor): Effect.Effect<
+  import("../definition/attachment.ts").RecordAttachmentMaintenanceFacet,
   RecordMigrationInvalid
 > {
-  const loader = NiceEvalRecordAttachments.observability.maintenance;
-  if (loader === undefined) return Effect.fail(migrationInvalid(NiceEvalRecordAttachments.observability.family));
+  const loader = descriptor.maintenance;
+  if (loader === undefined) return Effect.fail(migrationInvalid(descriptor.family));
   return Effect.tryPromise({
     try: loader,
-    catch: () => migrationInvalid(NiceEvalRecordAttachments.observability.family),
+    catch: () => migrationInvalid(descriptor.family),
   });
 }
 
-function migrateObservabilityAttachment(input: {
+function migrateKnownAttachment(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
+  readonly location: KnownMigrationAttachment;
   readonly target: RecordAttachmentMigrationTarget;
   readonly expectedEnvelopeBytes: Uint8Array;
+  readonly expectedPayloadBytes: Uint8Array;
+  readonly rewritePayload: boolean;
 }): Effect.Effect<void, RecordMaintenanceError> {
   return Effect.gen(function* () {
-    if (
-      input.target.family !== NiceEvalRecordAttachments.observability.family ||
-      input.target.fromSchemaVersion !== 1 ||
-      input.target.toSchemaVersion !== 2
-    ) {
+    const descriptor = input.location.descriptor;
+    const migrationLink = descriptor.adjacentMigrationLinks.find((link) =>
+      link.fromSchemaVersion === input.target.fromSchemaVersion &&
+      link.toSchemaVersion === input.target.toSchemaVersion);
+    if (migrationLink === undefined || migrationLink.rewritePayload !== input.rewritePayload) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
-    const descriptor = input.target.owner === "run"
-      ? migrationDescriptor(NiceEvalRecordFamilyCatalog.observability.run)
-      : migrationDescriptor(NiceEvalRecordFamilyCatalog.observability.attempt);
-    const location: KnownMigrationAttachment = input.target.owner === "run"
-      ? Object.freeze({ owner: "run" as const, runId: input.target.runId, descriptor })
-      : Object.freeze({
-          owner: "attempt" as const,
-          runId: input.target.runId,
-          attemptId: input.target.attemptId!,
-          descriptor,
-        });
-    const facet = yield* loadObservabilityV1Maintenance();
-    const historical = facet.historicalCodecs.find((codec) => codec.schemaVersion === 1);
+    const location = input.location;
+    const facet = yield* loadAttachmentMaintenance(descriptor);
+    const historical = facet.historicalCodecs.find((codec) => codec.schemaVersion === input.target.fromSchemaVersion);
     const step = facet.adjacentMigrations.find(
-      (migration) => migration.fromSchemaVersion === 1 && migration.toSchemaVersion === 2,
+      (migration) => migration.fromSchemaVersion === input.target.fromSchemaVersion &&
+        migration.toSchemaVersion === input.target.toSchemaVersion,
     );
     if (historical === undefined || step === undefined) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
@@ -2946,16 +2983,28 @@ function migrateObservabilityAttachment(input: {
     if (sourceBeforeValidation === undefined || !bytesEqual(sourceBeforeValidation, input.expectedEnvelopeBytes)) {
       return yield* Effect.fail(migrationPlanStale());
     }
-    const valid = yield* validateFixedRecordAttachmentMigrationSource({
+    const payloadPath = recordPortablePath(
+      input.root,
+      ...migrationAttachmentDirectory(input.root, location).segments,
+      "payload.json",
+    );
+    const payloadBeforeValidation = yield* input.fileSystem.readFile({
+      file: payloadPath,
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+    });
+    if (payloadBeforeValidation === undefined || !bytesEqual(payloadBeforeValidation, input.expectedPayloadBytes)) {
+      return yield* Effect.fail(migrationPlanStale());
+    }
+    const validated = yield* validateFixedRecordAttachmentMigrationSource({
       fileSystem: input.fileSystem,
       root: input.root,
       location: migrationReaderLocation(location),
       descriptor,
-      fromSchemaVersion: 1,
+      fromSchemaVersion: input.target.fromSchemaVersion,
       decodeHistorical: historical.decode,
       migrate: step.migrate,
     });
-    if (!valid) {
+    if (validated === false) {
       const sourceAfterInvalid = yield* input.fileSystem.readFile({
         file: envelopePath,
         maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
@@ -2966,8 +3015,8 @@ function migrateObservabilityAttachment(input: {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
     const envelope = encodeFixedRecordAttachmentEnvelope({
-      family: NiceEvalRecordAttachments.observability.family,
-      schemaVersion: 2,
+      family: descriptor.family,
+      schemaVersion: input.target.toSchemaVersion,
     });
     if (Either.isLeft(envelope)) return yield* Effect.fail(migrationInvalid(input.target.family));
     const sourceBeforeWrite = yield* input.fileSystem.readFile({
@@ -2976,6 +3025,24 @@ function migrateObservabilityAttachment(input: {
     });
     if (sourceBeforeWrite === undefined || !bytesEqual(sourceBeforeWrite, input.expectedEnvelopeBytes)) {
       return yield* Effect.fail(migrationPlanStale());
+    }
+    if (validated.rewritePayload !== input.rewritePayload) {
+      return yield* Effect.fail(migrationInvalid(input.target.family));
+    }
+    if (input.rewritePayload) {
+      const encodedPayload = descriptor.write.encodePayload(validated.payload);
+      if (Either.isLeft(encodedPayload)) return yield* Effect.fail(migrationInvalid(input.target.family));
+      const durablePayload = encodeAttachmentPayloadForStorage({
+        payload: encodedPayload.right,
+        blobKeys: validated.blobKeys,
+      });
+      if (Either.isLeft(durablePayload)) return yield* Effect.fail(migrationInvalid(input.target.family));
+      yield* input.fileSystem.writeFile({
+        file: payloadPath,
+        bytes: jsonBytes(durablePayload.right),
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+        mode: "replace-no-follow",
+      });
     }
     yield* input.fileSystem.writeFile({
       file: envelopePath,
@@ -3016,35 +3083,13 @@ function migrationRecoveryIsSafe(input: {
   readonly git: RecordGitService;
   readonly root: RecordRoot;
   readonly restoreCommit: string;
+  readonly expectedRelativePaths: readonly string[];
 }): Effect.Effect<boolean> {
   return Effect.gen(function* () {
-    const encoded = encodeFixedRecordAttachmentEnvelope({
-      family: NiceEvalRecordAttachments.observability.family,
-      schemaVersion: 2,
-    });
-    if (Either.isLeft(encoded)) return false;
-    const currentEnvelopeBytes = jsonBytes(encoded.right);
-    const expectedPaths = [recordPortablePath(input.root, "migration.in-progress")];
-    const currentRoot = yield* input.fileSystem.readFile({
-      file: recordPortablePath(input.root, "record.json"),
-      maximumBytes: RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
-    });
-    if (currentRoot !== undefined) {
-      const parsed = parseJson(currentRoot);
-      if (
-        typeof parsed === "object" && parsed !== null &&
-        Reflect.get(parsed, "schemaVersion") === RECORD_SCHEMA_VERSION
-      ) expectedPaths.push(recordPortablePath(input.root, "record.json"));
-    }
-    for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root)) {
-      if (location.descriptor.family !== NiceEvalRecordAttachments.observability.family) continue;
-      const path = migrationEnvelopePath(input.root, location);
-      const bytes = yield* input.fileSystem.readFile({
-        file: path,
-        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
-      });
-      if (bytes !== undefined && bytesEqual(bytes, currentEnvelopeBytes)) expectedPaths.push(path);
-    }
+    const expectedPaths = [
+      recordPortablePath(input.root, "migration.in-progress"),
+      ...input.expectedRelativePaths.map((relative) => recordPortablePath(input.root, ...relative.split("/"))),
+    ];
     return yield* input.git.recoveryChangesAreExpected({
       root: input.root,
       restoreCommit: input.restoreCommit,
@@ -3066,11 +3111,17 @@ function openMaintenance(input: {
     const git = yield* RecordGit;
     yield* coordination.enterRecordMaintenance(input.root);
     if (yield* fileSystem.migrationSentinelPresent(input.root)) {
-      const restoreCommit = yield* fileSystem.readMigrationSentinelRestoreCommit(input.root);
-      const restoreSafe = restoreCommit === undefined
+      const sentinel = yield* fileSystem.readMigrationSentinel(input.root);
+      const restoreSafe = sentinel === undefined
         ? false
-        : yield* migrationRecoveryIsSafe({ fileSystem, git, root: input.root, restoreCommit });
-      return yield* Effect.fail(migrationInterrupted(restoreCommit, restoreSafe));
+        : yield* migrationRecoveryIsSafe({
+            fileSystem,
+            git,
+            root: input.root,
+            restoreCommit: sentinel.restoreCommit,
+            expectedRelativePaths: sentinel.expectedRelativePaths,
+          });
+      return yield* Effect.fail(migrationInterrupted(sentinel?.restoreCommit, restoreSafe));
     }
     const inspect = () => currentFormatInspection(fileSystem, input.root);
     const planMigrate = () => Effect.gen(function* () {
@@ -3109,13 +3160,22 @@ function openMaintenance(input: {
             plannedSources.attachments.length !== currentPlan.attachments.length ||
             (currentPlan.root === null) !== (plannedSources.rootBytes === null)
           ) {
-            return yield* Effect.fail(migrationInvalid(NiceEvalRecordAttachments.observability.family));
+            return yield* Effect.fail(migrationInvalid("niceeval.core"));
           }
           let portableTargetWritten = false;
+          const expectedRelativePaths = Object.freeze([
+            ...plannedSources.attachments.flatMap((source) => {
+              const base = migrationAttachmentDirectory(input.root, source.location).segments.join("/");
+              return source.rewritePayload
+                ? [`${base}/attachment.json`, `${base}/payload.json`]
+                : [`${base}/attachment.json`];
+            }),
+            ...(plannedSources.rootBytes === null ? [] : ["record.json"]),
+          ]);
 
           // The sentinel is the first portable write. Any later failure or
           // interruption intentionally leaves it behind for Git recovery.
-          yield* fileSystem.createMigrationSentinel(input.root, restoreCommit);
+          yield* fileSystem.createMigrationSentinel(input.root, restoreCommit, expectedRelativePaths);
           const sentinelOnly = yield* git.recoveryChangesAreExpected({
             root: input.root,
             restoreCommit,
@@ -3127,11 +3187,14 @@ function openMaintenance(input: {
           }
           yield* Effect.gen(function* () {
             for (const source of plannedSources.attachments) {
-              yield* migrateObservabilityAttachment({
+              yield* migrateKnownAttachment({
                 fileSystem,
                 root: input.root,
+                location: source.location,
                 target: source.target,
                 expectedEnvelopeBytes: source.envelopeBytes,
+                expectedPayloadBytes: source.payloadBytes,
+                rewritePayload: source.rewritePayload,
               });
               portableTargetWritten = true;
             }
@@ -3161,7 +3224,13 @@ function openMaintenance(input: {
             yield* fileSystem.removeMigrationSentinel(input.root);
           }).pipe(Effect.catchAll((error) => {
             const recoveryRequired = () => Effect.flatMap(
-              migrationRecoveryIsSafe({ fileSystem, git, root: input.root, restoreCommit }),
+              migrationRecoveryIsSafe({
+                fileSystem,
+                git,
+                root: input.root,
+                restoreCommit,
+                expectedRelativePaths,
+              }),
               (restoreSafe) => Effect.fail(new RecordMigrationRecoveryRequired({
                 code: "record-migration-recovery-required",
                 causeCode: migrationFailureCode(error),
@@ -3179,7 +3248,12 @@ function openMaintenance(input: {
             }
             return recoveryRequired();
           }));
-          return Object.freeze({ state: "migrated" as const, format: RECORD_FORMAT });
+          return Object.freeze({
+            state: "migrated" as const,
+            format: RECORD_FORMAT,
+            root: currentPlan.root,
+            attachments: currentPlan.attachments,
+          });
         }),
     });
   });

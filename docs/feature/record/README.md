@@ -70,7 +70,7 @@ NiceEval current 固定 Attachment catalog 有以下六个 family（附件族）
 
 | family | current | `owners` | 保存的事实 |
 |---|---:|---|---|
-| `niceeval.assertions` | 1 | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
+| `niceeval.assertions` | 2 | `{ attempt }` | criterion、materials、evaluation、decision、policy、contribution 与有界 explanation retention |
 | `niceeval.observability` | 2 | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
 | `niceeval.file-changes` | 1 | `{ attempt }` | 归因策略、采集状态与按 send 区间排序的文件变化轨迹 |
 | `niceeval.source-navigation` | 1 | `{ attempt }` | 每个物理 `t.send` 的 turn、源码 frame 与 timing identity join |
@@ -140,8 +140,8 @@ reader、writer 和固定 family 必须接受的 root、Core 与 Attachment shap
 身份、预期 Slot 和问题的 `RecordSelection`。查询需要某条 trace、diff 或 Evidence 时，才读取并校验对应
 Attachment。
 
-Record 的 current root 是 schemaVersion `2`。schemaVersion `1` 是 npm `niceeval@0.13.0` 可产生的已发布
-predecessor；固定的 `1 → 2` chain 同时升级 root epoch 与 Observability v1 envelope。兼容性如下：
+Record 的 current root 是 schemaVersion `3`。schemaVersion `1` 与 `2` 是已发布 predecessor；固定的
+`1 → 2 → 3` chain 升级 root epoch，Observability 与 Assertions 各自有 package-private `1 → 2` step。兼容性如下：
 
 | 碰到的 bytes | ordinary reader 的动作 |
 |---|---|

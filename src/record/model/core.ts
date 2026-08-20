@@ -14,7 +14,7 @@ import type { RunContext } from "./run-context.ts";
 /** The current root header keeps stable identity separate from schema version. */
 export interface RecordDocument {
   readonly format: RecordFormat;
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly recordId: RecordId;
 }
 

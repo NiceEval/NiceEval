@@ -18,6 +18,7 @@ type DirectReply = {
   readonly data: { readonly fixture: string; readonly ok: true };
   readonly tool?: DirectTool;
   readonly tools?: readonly DirectTool[];
+  readonly partialActionsReason?: string;
 };
 
 function shellCommand(id: string, executable: string, args: readonly string[]): DirectTool {
@@ -78,7 +79,7 @@ const replies: Readonly<Record<string, DirectReply>> = {
     marker: "assertion-scope-main",
     data: { fixture: "assertion-scope-main", ok: true },
     tools: [
-      ...Array.from({ length: 116 }, (_, index) =>
+      ...Array.from({ length: 10_000 }, (_, index) =>
         shellCommand(`scope-filler-${index}`, "node", ["fixture.mjs", `--case=${index}`])),
       shellCommand("scope-init", "niceeval", ["init"]),
       shellCommand("scope-exp", "niceeval", ["exp", "sample"]),
@@ -98,6 +99,7 @@ const replies: Readonly<Record<string, DirectReply>> = {
       input: { session: "branch", token: "scope-branch-input" },
       output: { marker: "scope-branch-output" },
     },
+    partialActionsReason: "deterministic partial-source fixture",
   },
   "assertion/score": {
     marker: "assertion-score-marker",
@@ -164,6 +166,16 @@ export const deterministicAgent = defineAgent({
       events,
       data: reply.data,
       usage: { inputTokens: 2, outputTokens: 3, costUSD: 0 },
+      ...(reply.partialActionsReason === undefined
+        ? {}
+        : {
+            evidenceCoverage: {
+              actions: {
+                status: "partial" as const,
+                reason: reply.partialActionsReason,
+              },
+            },
+          }),
     };
   },
 });

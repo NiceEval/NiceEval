@@ -64,6 +64,7 @@ export interface FixedRecordFamilyDescriptor<
   readonly write: FixedAttachmentWriteSpec<Owner, Payload>;
   /** Declared adjacent upgrade graph; implementations remain lazy. */
   readonly adjacentMigrationLinks: readonly RecordAttachmentAdjacentMigrationLink[];
+  readonly maintenance: RecordAttachmentDefinition["maintenance"];
 }
 
 type FixedAttachmentDeclaration = RecordAttachmentDefinition<
@@ -122,6 +123,7 @@ function fixedFamily(
     owner,
     write,
     adjacentMigrationLinks: declaration.adjacentMigrationLinks,
+    maintenance: declaration.maintenance,
   });
 }
 
@@ -148,6 +150,22 @@ export const NiceEvalRecordFamilyCatalog = Object.freeze({
     attempt: attemptArtifactsRecordFamily,
     run: runArtifactsRecordFamily,
   }),
+});
+
+/** Host discovery iterates this closed catalog; maintenance never names a family. */
+export const NiceEvalRecordFamilyDescriptorsByOwner = Object.freeze({
+  attempt: Object.freeze([
+    assertionsRecordFamily,
+    attemptObservabilityRecordFamily,
+    fileChangesRecordFamily,
+    sourceNavigationRecordFamily,
+    attemptArtifactsRecordFamily,
+  ]),
+  run: Object.freeze([
+    runObservabilityRecordFamily,
+    sourcesRecordFamily,
+    runArtifactsRecordFamily,
+  ]),
 });
 
 export const FixedRecordAttachmentEnvelopeSchema: Schema.Schema<{

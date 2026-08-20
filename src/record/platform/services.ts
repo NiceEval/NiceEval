@@ -114,11 +114,15 @@ export interface RecordFileSystemService {
   readonly createMigrationSentinel: (
     root: RecordRoot,
     restoreCommit: string,
+    expectedRelativePaths: readonly string[],
   ) => Effect.Effect<void, RecordFileSystemError>;
-  /** Returns the bounded restore commit recorded by a current migration sentinel. */
-  readonly readMigrationSentinelRestoreCommit: (
+  /** Returns the exact physical plan recorded by a current migration sentinel. */
+  readonly readMigrationSentinel: (
     root: RecordRoot,
-  ) => Effect.Effect<string | undefined, RecordFileSystemError>;
+  ) => Effect.Effect<{
+    readonly restoreCommit: string;
+    readonly expectedRelativePaths: readonly string[];
+  } | undefined, RecordFileSystemError>;
   readonly removeMigrationSentinel: (
     root: RecordRoot,
   ) => Effect.Effect<void, RecordFileSystemError>;

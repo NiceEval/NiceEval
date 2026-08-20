@@ -77,8 +77,10 @@ migration 是 maintenance 的内部工作，不是 family read，也不是 Analy
 
 NiceEval 不创建 staging、backup、rollback、root replacement 或自己的恢复日志。被 kill、断电、I/O failure
 或校验失败时，ordinary reader 不形成 reader session。计划绑定目标 envelope 的 exact source bytes；首个目标
-改写前发现变化时移除 sentinel、保留并发编辑并返回 `record-migration-plan-stale`。sentinel 后的恢复只有在 HEAD 未变化，且 dirty path
-只含 sentinel 与 canonical v2 计划目标时才显示 Git restore 命令；其它现场要求人工检查，不能改写并发编辑。
+改写前发现变化时移除 sentinel、保留并发编辑并返回 `record-migration-plan-stale`。
+
+sentinel 后的恢复只有在 HEAD 未变化，且 dirty path
+只含 sentinel 与 physical plan 明确写入的 canonical current 目标时才显示 Git restore 命令；其它现场要求人工检查，不能改写并发编辑。
 
 用户必须用 Git 把 `.niceeval/record` 的 tracked 与迁移新增内容完整恢复到预检显示的 commit，再重新运行
 `niceeval migrate`。恢复后由新 preflight 再次判断格式和计划；工具不会从半完成的 known-family bytes 继续。

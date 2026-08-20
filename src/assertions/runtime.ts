@@ -6,6 +6,7 @@ import {
   assertionHandleBrand,
   AssertionAuthoringClosedError,
   type AssertionCoverage,
+  type AssertionCollectionReceipt,
   type AssertionCriterion,
   type AssertionDisplay,
   type AssertionEvaluationKind,
@@ -56,6 +57,8 @@ type EntryKind = "boolean" | "measurement" | "direct-score";
 
 interface SettlementDiagnostic {
   readonly diagnostic?: MatchDiagnostic;
+  readonly explanation?: AssertionSnapshotObject;
+  readonly receipt?: AssertionCollectionReceipt;
 }
 
 type AvailableResult =
@@ -763,7 +766,7 @@ class AssertionsRuntimeImplementation {
     if (managed.kind === "boolean") {
       const entry = this.createEntry({
         kind: "boolean",
-        criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const }),
+        criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const, matcher: Object.freeze({ state: "declared" as const, name: managed.name }) }),
         subject: captured.material,
         evidence: Object.freeze([]),
         coverage: captured.coverage,
@@ -774,7 +777,7 @@ class AssertionsRuntimeImplementation {
     }
     const entry = this.createEntry({
       kind: "measurement",
-      criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const }),
+      criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const, matcher: Object.freeze({ state: "declared" as const, name: managed.name }) }),
       subject: captured.material,
       evidence: Object.freeze([]),
       coverage: captured.coverage,
@@ -1189,17 +1192,20 @@ class AssertionsRuntimeImplementation {
           state: "matched" as const,
           value: evaluation.value,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
         });
       case "mismatched":
         return Object.freeze({
           state: "mismatched" as const,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
         });
       case "unavailable":
         return Object.freeze({
           state: "unavailable" as const,
           reason: evaluation.reason,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
         });
       case "not-applicable":
         return Object.freeze({
@@ -1215,13 +1221,21 @@ class AssertionsRuntimeImplementation {
     switch (evaluation.state) {
       case "measured":
         assertUnitInterval(evaluation.value, "measurement Assertion result");
-        return Object.freeze({ state: "measured" as const, value: evaluation.value });
+        return Object.freeze({
+          state: "measured" as const,
+          value: evaluation.value,
+          ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
+        });
       case "unavailable":
-        return Object.freeze({ state: "unavailable" as const, reason: evaluation.reason });
+        return Object.freeze({
+          state: "unavailable" as const,
+          reason: evaluation.reason,
+          ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
+        });
       case "not-applicable":
-        return Object.freeze({ state: "not-applicable" as const });
+        return Object.freeze({ state: "not-applicable" as const, ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }) });
       case "errored":
-        return Object.freeze({ state: "errored" as const });
+        return Object.freeze({ state: "errored" as const, ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }) });
     }
   }
 
@@ -1347,6 +1361,28 @@ class AssertionsRuntimeImplementation {
       coverage: material.coverage,
       limitations: material.limitations,
       result: this.resultFor(entry, settlement),
+      policy: Object.freeze({
+        requirement: entry.optionalConfigured ? "optional" as const : "required" as const,
+        condition: entry.kind === "measurement" && entry.threshold !== undefined
+          ? Object.freeze({ kind: "at-least" as const, threshold: entry.threshold })
+          : entry.kind === "boolean"
+            ? Object.freeze({ kind: "boolean" as const, expected: true as const })
+            : Object.freeze({ kind: "record-only" as const }),
+      }),
+      observed: entry.kind === "boolean"
+        ? Object.freeze({
+            kind: "boolean" as const,
+            outcome: settlement.state === "measured" || settlement.state === "interrupted"
+              ? "errored" as const
+              : settlement.state,
+          })
+        : entry.kind === "measurement"
+          ? settlement.state === "measured"
+            ? Object.freeze({ kind: "measurement" as const, state: "available" as const, value: settlement.value })
+            : Object.freeze({ kind: "measurement" as const, state: "unavailable" as const })
+          : settlement.state === "measured"
+            ? Object.freeze({ kind: "direct-score" as const, state: "available" as const, value: settlement.value })
+            : Object.freeze({ kind: "direct-score" as const, state: "unavailable" as const }),
     });
   }
 
@@ -1373,8 +1409,9 @@ class AssertionsRuntimeImplementation {
   }
 
   private resultFor(entry: AssertionEntry, settlement: EntrySettlement): AssertionResult {
-    const capturedDiagnostic = captureMatchDiagnostic(settlement.diagnostic);
+    const capturedDiagnostic = settlement.explanation ?? captureMatchDiagnostic(settlement.diagnostic);
     const diagnostic = capturedDiagnostic === undefined ? {} : { diagnostic: capturedDiagnostic };
+    const receipt = settlement.receipt === undefined ? {} : { receipt: settlement.receipt };
     switch (settlement.state) {
       case "matched":
         return Object.freeze({
@@ -1382,6 +1419,7 @@ class AssertionsRuntimeImplementation {
           gate: this.gateForMatched(entry),
           score: this.availableScoreFor(entry, 1),
           ...diagnostic,
+          ...receipt,
         });
       case "mismatched":
         return Object.freeze({
@@ -1390,6 +1428,7 @@ class AssertionsRuntimeImplementation {
           gate: this.gateForMismatched(entry),
           score: this.availableScoreFor(entry, 0),
           ...diagnostic,
+          ...receipt,
         });
       case "measured": {
         const matched = entry.threshold === undefined || settlement.value >= entry.threshold;
@@ -1399,6 +1438,7 @@ class AssertionsRuntimeImplementation {
               gate: this.gateForMatched(entry),
               score: this.availableScoreFor(entry, settlement.value),
               ...diagnostic,
+              ...receipt,
             })
           : Object.freeze({
               state: "mismatched" as const,
@@ -1406,6 +1446,7 @@ class AssertionsRuntimeImplementation {
               gate: this.gateForMismatched(entry),
               score: this.availableScoreFor(entry, settlement.value),
               ...diagnostic,
+              ...receipt,
             });
       }
       case "unavailable":
@@ -1415,6 +1456,7 @@ class AssertionsRuntimeImplementation {
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "source-unavailable"),
           ...diagnostic,
+          ...receipt,
         });
       case "not-applicable":
         return Object.freeze({
@@ -1423,6 +1465,7 @@ class AssertionsRuntimeImplementation {
           gate: this.gateForNotApplicable(entry),
           score: this.incompleteScoreFor(entry, "not-applicable"),
           ...diagnostic,
+          ...receipt,
         });
       case "errored":
         return Object.freeze({
@@ -1431,6 +1474,7 @@ class AssertionsRuntimeImplementation {
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
           ...diagnostic,
+          ...receipt,
         });
       case "interrupted":
         return Object.freeze({
@@ -1439,6 +1483,7 @@ class AssertionsRuntimeImplementation {
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
           ...diagnostic,
+          ...receipt,
         });
     }
   }

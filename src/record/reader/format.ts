@@ -23,7 +23,7 @@ export interface CurrentRecordFormatRead {
 }
 
 export interface MaintenanceRecordFormatRead extends CurrentRecordFormatRead {
-  readonly sourceSchemaVersion: 1 | typeof RECORD_SCHEMA_VERSION;
+  readonly sourceSchemaVersion: 1 | 2 | typeof RECORD_SCHEMA_VERSION;
   readonly sourceBytes: Uint8Array;
 }
 
@@ -70,10 +70,10 @@ function classifyRecordDocument(
     return Either.left(new RecordFormatUnsupported({ code: "record-format-unsupported", format }));
   }
   const schemaVersion = schemaVersionOf(value);
-  if (schemaVersion === 1) {
+  if (schemaVersion === 1 || schemaVersion === 2) {
     return Either.left(new RecordMigrationRequired({
       code: "record-migration-required",
-      source: `${RECORD_FORMAT}@1`,
+      source: `${RECORD_FORMAT}@${schemaVersion}`,
       target: `${RECORD_FORMAT}@${RECORD_SCHEMA_VERSION}`,
       command: "niceeval migrate",
     }));
@@ -87,13 +87,13 @@ function classifyRecordDocument(
     : Either.right(Object.freeze({ document: decoded.right }));
 }
 
-function legacyRecordDocument(value: unknown): RecordDocument | undefined {
+function historicalRecordDocument(value: unknown, schemaVersion: 1 | 2): RecordDocument | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   if (
     Object.keys(record).length !== 3 ||
     record.format !== RECORD_FORMAT ||
-    record.schemaVersion !== 1
+    record.schemaVersion !== schemaVersion
   ) return undefined;
   const recordId = Schema.decodeUnknownEither(RecordIdSchema, RecordExactParseOptions)(record.recordId);
   return Either.isLeft(recordId) ? undefined : Object.freeze({
@@ -159,10 +159,10 @@ export function readRecordFormatForMaintenance(
         sourceBytes: bytes,
       });
     }
-    if (version === 1) {
-      const document = legacyRecordDocument(parsed.right);
+    if (version === 1 || version === 2) {
+      const document = historicalRecordDocument(parsed.right, version);
       if (document === undefined) return yield* Effect.fail(bootstrapInvalid("record-document-invalid"));
-      return Object.freeze({ document, sourceSchemaVersion: 1 as const, sourceBytes: bytes });
+      return Object.freeze({ document, sourceSchemaVersion: version, sourceBytes: bytes });
     }
     const format = formatOf(parsed.right);
     return yield* Effect.fail(new RecordFormatUnsupported({

@@ -24,6 +24,18 @@ interface ShowDocument {
         };
       }[];
     };
+    readonly evidence?: {
+      readonly entries: readonly {
+        readonly state: string;
+        readonly detail?: {
+          readonly entries: readonly {
+            readonly display: { readonly label?: string };
+            readonly source: { readonly kind: string };
+            readonly decision: { readonly result: string };
+          }[];
+        };
+      }[];
+    };
   };
 }
 
@@ -83,6 +95,20 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
           omittedAtLeast: 29_001,
         }],
       });
+      const assertionDetail = only(
+        document.data.evidence?.entries ?? [],
+        (entry) => entry.state === "available" && entry.detail !== undefined,
+        shown.diagnostic(),
+      ).detail!;
+      const lastWitness = only(
+        assertionDetail.entries,
+        (entry) => entry.display.label === "last diff change remains a decisive witness",
+        shown.diagnostic(),
+      );
+      expect(lastWitness.decision.result).toBe("matched");
+      const assertionJson = JSON.stringify(assertionDetail.entries);
+      expect(Buffer.byteLength(assertionJson), shown.diagnostic()).toBeLessThan(256 * 1024);
+      expect(assertionJson).not.toContain("bulk/29999.txt");
       const timing = await niceeval.run(["show", bulkEvaluation.locator, "--timing=full", "--json"]);
       expect(timing.exitCode, timing.diagnostic()).toBe(0);
       const timingDocument = timing.json<TimingDocument>();

@@ -59,6 +59,13 @@ legacy migration owner 另以固定 npm alias 安装并证明旧 producer 的 re
 
 `historical-labels.test.ts` 证明 v1 合法 `turn01` 与大整数字符串 label 逐字迁移。
 
+### Assertions v1 to v2
+
+`assertions-v1.test.ts` 固定 package-owned v1 wire fixture，经公开 `niceeval migrate --yes` 与 `show`
+证明统一 maintenance 物理重写唯一的 current semantic entry。fixture 同时保留 required-unavailable gate：迁移后
+requirement 为 available/required、condition 为 unavailable/not-recorded，公开 Verdict 仍为 errored。测试只在
+migration owner 中检查 envelope/payload 的 exact physical rewrite；产品结果仍从公开 show 读取。
+
 ### Strict complete marker clean
 
 `complete-marker-clean.test.ts` 通过公开 `niceeval clean` 证明只有零字节普通文件
@@ -68,6 +75,6 @@ legacy migration owner 另以固定 npm alias 安装并证明旧 producer 的 re
 
 `report-guard.test.ts` 用 current candidate 的真实 `exp` 生成 current Record，再证明 Report 拒绝 ledger 缺少 denominator Slot 的伪造 metric；它不以旧 Record 的前置失败掩盖 Report 边界。
 
-恢复与故障 owner 的 fixture 仍把 root schemaVersion 与两个 Observability schemaVersion 写成独立字面量，不由
-candidate 生成 expected；它们只拥有恢复与故障边界。固定 chain 同时把 Record root epoch 1 与 Observability
-family 1 升到 2，不把旧 `niceeval.results` 或 future/unknown format 宣称为可迁移输入。
+恢复与故障 owner 的 fixture 仍把 root schemaVersion 与 Observability schemaVersion 写成独立字面量，不由
+candidate 生成 expected；它们只拥有恢复与故障边界。root 以准确 `1 → 2 → 3` 相邻 steps 升级，Observability
+与 Assertions family 各自以 `1 → 2` 升级，不把旧 `niceeval.results` 或 future/unknown format 宣称为可迁移输入。

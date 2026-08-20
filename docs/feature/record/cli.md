@@ -1,7 +1,7 @@
 # Record CLI
 
 CLI 通过 [Record Library](library.md) 打开 exact current Record protocol：root 是
-`{ format: "niceeval.record", schemaVersion: 2 }`。`show`、`view` 与 `exp` 在任何 ordinary session、Run、
+`{ format: "niceeval.record", schemaVersion: 3 }`。`show`、`view` 与 `exp` 在任何 ordinary session、Run、
 claim、Sandbox 或付费调用前检查格式；完整且 automatic-safe 的旧格式在 Git 安全门后无确认原地迁移，再以全新
 ordinary session 继续。缺少规范的零字节普通文件 `complete` 的目录不是 Run。
 
@@ -103,7 +103,7 @@ root / Core schemaVersion `2` 是 current。所有 fixed family 也处于 curren
 对完整 current Record 返回：
 
 ```text
-Record is already current: niceeval.record (schemaVersion 2)
+Record is already current: niceeval.record (schemaVersion 3)
 ```
 
 root / Core 不相容时，若有固定相邻步骤则返回 `migration-required`，否则 `unsupported-format`，并且不写盘。
@@ -129,7 +129,7 @@ ignored、read-only、lease busy、future/unknown、不完整 chain 或失败都
 maintenance lease 下原地运行每个相邻步骤，完整验证 Core、认识的 fixed family 和 blob closure 后才结束。
 
 NiceEval 不创建 staging、backup、rollback 或 root replacement。首次改写前创建的
-`migration.in-progress` 只保存已通过 preflight 的 restore commit，不保存 payload。迁移失败、被 kill 或断电后，
+`migration.in-progress` 只保存已通过 preflight 的 restore commit 与本次 physical write set，不保存 payload。迁移失败、被 kill 或断电后，
 CLI 从 sentinel 打印限定到 Record root 的精确 `git restore`、tracked-byte 验证和 sentinel 清除命令；只有验证
 worktree 与 index 都等于该 commit 后才清除 sentinel，再重新运行 migrate。
 
@@ -142,7 +142,7 @@ preflight 失败或 sentinel 创建失败都发生在首个 portable write 前�
 
 | code/state | 含义 | 下一步 |
 |---|---|---|
-| `already-current` | root / Core 是 schemaVersion `1`，所有 fixed family 也处于 current | 不修改 Record |
+| `already-current` | root / Core 是 schemaVersion `3`，所有 fixed family 也处于 current | 不修改 Record |
 | `record-auto-migration-git-save-required` | automatic-safe predecessor 尚未由 Git HEAD 完整保存，或 Record path dirty | 先 `git add` / `git commit` 保存全部 portable bytes，再重试原命令 |
 | `migration-required` | explicit inspection 发现固定相邻 migration | 检查计划并运行 `niceeval migrate`；ordinary reader 不读旧格式 |
 | `unsupported-format` | root / Core 无支持步骤、known family 是 future/无链版本，或 family 名使用未发布 `/vN` 草案 | 使用写出该格式的 NiceEval；不要按损坏数据恢复 |

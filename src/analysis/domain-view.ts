@@ -233,15 +233,112 @@ export interface AttemptEvidenceDomainDetail {
   readonly verdict: VerdictState;
   readonly entries: readonly {
     readonly entryId: string;
-    readonly display: JsonValue;
-    readonly criterion: JsonValue;
-    readonly result: JsonValue;
-    readonly coverage: JsonValue;
-    readonly limitations: JsonValue;
-    readonly subject: JsonValue;
-    readonly evidence: readonly JsonValue[];
+    readonly display: ClosedAssertionDisplay;
+    readonly source: ClosedAssertionSource;
+    readonly check: ClosedAssertionFactValue;
+    readonly observed: ClosedAssertionObserved;
+    readonly expected: ClosedAssertionFactValue;
+    readonly explanation: ClosedAssertionFactValue;
+    readonly decision: ClosedAssertionDecision;
   }[];
-  readonly sourceSites: readonly JsonValue[];
+  readonly sourceSites: readonly ClosedAssertionSourceSite[];
+}
+
+export interface ClosedAssertionDisplay {
+  readonly key?: string;
+  readonly label?: string;
+  readonly groupPath: readonly string[];
+}
+
+/** Recursive, display-safe algebra used by all five neutral assertion sections. */
+export type ClosedAssertionFactValue =
+  | { readonly kind: "unavailable"; readonly reason: "not-recorded" | "not-declared" | "source-unavailable" }
+  | { readonly kind: "value"; readonly value: null | boolean | number | string }
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "list"; readonly items: readonly ClosedAssertionFactValue[] }
+  | { readonly kind: "fields"; readonly fields: readonly ClosedAssertionFactField[] };
+
+export interface ClosedAssertionFactField {
+  readonly label: string;
+  readonly value: ClosedAssertionFactValue;
+}
+
+export interface ClosedAssertionCollectionReceipt {
+  readonly examined: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+  readonly knownTotal: number | null;
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
+}
+
+export interface ClosedAssertionObserved {
+  readonly kind: "fields";
+  readonly fields: readonly ClosedAssertionFactField[];
+  readonly receipt?: ClosedAssertionCollectionReceipt;
+}
+
+export type ClosedAssertionCoverage =
+  | { readonly state: "complete" }
+  | { readonly state: "partial"; readonly reason: "sampled" | "truncated" | "redacted" | "provider-limited" }
+  | { readonly state: "unavailable"; readonly reason: "not-collected" | "source-unavailable" | "producer-failed" }
+  | { readonly state: "not-applicable"; readonly reason: "optional-material" | "unsupported-subject" };
+
+export interface ClosedAssertionSource {
+  readonly kind: "fields";
+  readonly fields: readonly ClosedAssertionFactField[];
+  readonly coverage: ClosedAssertionCoverage;
+  readonly limitations: readonly ClosedAssertionLimitation[];
+}
+
+export type ClosedAssertionLimitation =
+  | { readonly kind: "redacted"; readonly fieldCount: number }
+  | { readonly kind: "sampled"; readonly captured: number; readonly knownTotal?: number }
+  | { readonly kind: "truncated"; readonly omittedBytes: number }
+  | { readonly kind: "provider-limited" };
+
+export interface ClosedAssertionPolicy {
+  readonly requirement:
+    | { readonly state: "available"; readonly value: "required" | "optional" }
+    | { readonly state: "unavailable"; readonly reason: "not-recorded" };
+  readonly condition:
+    | {
+        readonly state: "available";
+        readonly value:
+          | { readonly kind: "boolean"; readonly expected: true }
+          | { readonly kind: "at-least"; readonly threshold: number }
+          | { readonly kind: "record-only" };
+      }
+    | { readonly state: "unavailable"; readonly reason: "not-recorded" };
+}
+
+export type ClosedAssertionContribution =
+  | { readonly state: "not-scored" }
+  | { readonly state: "earned"; readonly points: number; readonly earned: number }
+  | {
+      readonly state: "unavailable";
+      readonly points: number;
+      readonly reason: "source-unavailable" | "evaluation-errored" | "not-applicable";
+    };
+
+export interface ClosedAssertionDecision {
+  readonly result: "matched" | "mismatched" | "unavailable" | "errored" | "not-applicable";
+  readonly reason: string | null;
+  readonly gate: "not-gate" | "satisfied" | "failed" | "unavailable" | "not-applicable";
+  readonly policy: ClosedAssertionPolicy;
+  readonly contribution: ClosedAssertionContribution;
+}
+
+export interface ClosedAssertionSourceSite {
+  readonly entryId: string;
+  readonly sourceOrder: number;
+  readonly role: "declaration" | "threshold" | "score" | "gate" | "optional" | "stop";
+  readonly sourceItemId: string;
+  readonly sha256: string;
+  readonly start: { readonly line: number; readonly column: number };
+  readonly end: { readonly line: number; readonly column: number };
 }
 
 /** A FileChanges endpoint after its owner-local blob reference has been closed. */

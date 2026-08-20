@@ -31,6 +31,8 @@ import type {
   BuiltinDomainDetail,
   BuiltinDomainViewKind,
   ClosedAttemptCore,
+  ClosedAssertionObserved,
+  ClosedAssertionFactValue,
   ClosedBlobContent,
   ClosedCommandInvocation,
   ClosedCommandOutcome,
@@ -403,15 +405,51 @@ function closeAssertions(
     verdict: foldRecordedAttemptVerdict({ outcome: core.outcome, assertions: payload }),
     entries: Object.freeze(payload.entries.map((entry) => Object.freeze({
       entryId: entry.entryId,
-      display: closeJson(entry.display),
-      criterion: closeJson(entry.criterion),
-      result: closeJson(entry.result),
-      coverage: closeJson(entry.coverage),
-      limitations: closeJson(entry.limitations),
-      subject: closeAssertionMaterial(entry.subject),
-      evidence: Object.freeze(entry.evidence.map(closeAssertionMaterial)),
+      display: Object.freeze({ ...entry.display, groupPath: Object.freeze([...entry.display.groupPath]) }),
+      source: Object.freeze({
+        kind: "fields" as const,
+        fields: Object.freeze([Object.freeze({
+          label: "input",
+          value: assertionMaterialFact(entry.materials.source),
+        }), ...(entry.materials.evidence.length === 0 ? [] : [Object.freeze({
+          label: "evidence",
+          value: Object.freeze({
+            kind: "list" as const,
+            items: Object.freeze(entry.materials.evidence.map(assertionMaterialFact)),
+          }),
+        })])]),
+        coverage: entry.materials.coverage,
+        limitations: entry.materials.limitations,
+      }),
+      check: entry.criterion.state === "available"
+        ? assertionFact(entry.criterion.value)
+        : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+      observed: Object.freeze({
+        kind: "fields" as const,
+        fields: entry.evaluation.observed.kind === "fields"
+          ? entry.evaluation.observed.fields
+          : Object.freeze([Object.freeze({ label: "value", value: entry.evaluation.observed })]),
+        ...(entry.evaluation.receipt === undefined ? {} : { receipt: entry.evaluation.receipt }),
+      }),
+      expected: entry.policy.condition.state === "available"
+        ? assertionFact(entry.policy.condition.value)
+        : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+      explanation: entry.explanationRetention.state === "retained"
+        ? entry.explanationRetention.value
+        : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+      decision: Object.freeze({
+        result: entry.decision.result,
+        reason: entry.decision.reason,
+        gate: entry.decision.gate,
+        policy: entry.policy,
+        contribution: entry.contribution,
+      }),
     }))),
-    sourceSites: Object.freeze(payload.sourceSites.map(closeJson)),
+    sourceSites: Object.freeze(payload.sourceSites.map((site) => Object.freeze({
+      ...site,
+      start: Object.freeze({ ...site.start }),
+      end: Object.freeze({ ...site.end }),
+    }))),
   });
 }
 
@@ -874,12 +912,37 @@ function closeSources(
   });
 }
 
-function closeAssertionMaterial(value: { readonly kind: string }): JsonValue {
-  if (value.kind === "snapshot") {
-    return Object.freeze({ kind: "snapshot", value: closeJson((value as unknown as { readonly value: unknown }).value) });
+function assertionFact(value: unknown): ClosedAssertionFactValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return Object.freeze({ kind: "value" as const, value });
   }
-  const blob = value as unknown as { readonly encoding: string; readonly byteLength: number; readonly preview: string };
-  return Object.freeze({ kind: "blob", encoding: blob.encoding, byteLength: blob.byteLength, preview: blob.preview });
+  if (typeof value === "number") {
+    return Number.isFinite(value)
+      ? Object.freeze({ kind: "value" as const, value })
+      : Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" as const });
+  }
+  if (Array.isArray(value)) {
+    return Object.freeze({ kind: "list" as const, items: Object.freeze(value.map(assertionFact)) });
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.freeze({
+      kind: "fields" as const,
+      fields: Object.freeze(Object.entries(value).map(([label, item]) => Object.freeze({
+        label,
+        value: assertionFact(item),
+      }))),
+    });
+  }
+  return Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" as const });
+}
+
+function assertionMaterialFact(
+  value: AssertionsAttachment["entries"][number]["materials"]["source"],
+): ClosedAssertionFactValue {
+  if (value.kind === "snapshot") {
+    return assertionFact(value.value);
+  }
+  return assertionFact({ encoding: value.encoding, byteLength: value.byteLength, preview: value.preview });
 }
 
 function closeBlob(ref: RecordBlobRef, blobs: RecordAttachmentBlobs): ClosedBlobContent {

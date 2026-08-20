@@ -392,6 +392,10 @@ export type RecordMigrationPlan =
       readonly root: {
         readonly fromSchemaVersion: number;
         readonly toSchemaVersion: number;
+        readonly steps: readonly {
+          readonly fromSchemaVersion: number;
+          readonly toSchemaVersion: number;
+        }[];
       } | null;
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     }
@@ -400,10 +404,21 @@ export type RecordMigrationPlan =
       readonly format: string;
     };
 
-export interface RecordMigrationReceipt {
-  readonly state: "already-current" | "migrated";
-  readonly format: "niceeval.record";
-}
+export type RecordMigrationReceipt =
+  | { readonly state: "already-current"; readonly format: "niceeval.record" }
+  | {
+      readonly state: "migrated";
+      readonly format: "niceeval.record";
+      readonly root: {
+        readonly fromSchemaVersion: number;
+        readonly toSchemaVersion: number;
+        readonly steps: readonly {
+          readonly fromSchemaVersion: number;
+          readonly toSchemaVersion: number;
+        }[];
+      } | null;
+      readonly attachments: readonly RecordAttachmentMigrationTarget[];
+    };
 
 export interface RecordMaintenanceSession {
   readonly inspect: () => Effect.Effect<RecordFormatInspection, RecordMaintenanceError>;

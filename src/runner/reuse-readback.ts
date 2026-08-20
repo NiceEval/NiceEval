@@ -1,6 +1,7 @@
 import { Effect, Either } from "effect";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
+import type { ScoreContribution } from "../assertions/record/model.ts";
 import type { RecordIssue } from "../record/errors/record-errors.ts";
 import type {
   FixedFamilyRead,
@@ -212,14 +213,13 @@ function readSourceAttempt(input: {
   );
 }
 
-function scoreOf(entries: readonly { readonly result: { readonly score: unknown } }[]): {
+function scoreOf(contributions: readonly ScoreContribution[]): {
   readonly state: "complete" | "partial" | "unavailable";
   readonly earned?: number;
 } {
   let earned = 0;
   let unavailable = false;
-  for (const entry of entries) {
-    const score = entry.result.score as { readonly state?: unknown; readonly earned?: unknown };
+  for (const score of contributions) {
     if (score.state === "earned" && typeof score.earned === "number") earned += score.earned;
     if (score.state === "unavailable") unavailable = true;
   }
@@ -273,7 +273,9 @@ function detailsFor(input: {
       readonly state: "complete" | "partial" | "unavailable";
       readonly earned?: number;
     }> = assertions.state === "available"
-      ? Object.freeze({ state: "available" as const, value: scoreOf(assertions.value.entries) })
+      ? Object.freeze({ state: "available" as const, value: scoreOf(
+          assertions.value.entries.map((entry) => entry.contribution),
+        ) })
       : nonAvailableRead(assertions);
     const score: CurrentReusedAttemptScore = input.evaluationKind === "score"
       ? Object.freeze({ state: "applicable" as const, attachment: scoreAttachment })

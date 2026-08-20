@@ -40,8 +40,13 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 
 turn、session 与 attempt scope 必须以同一批真实工具事件完成断言。
 这个 owner 明确接管 tool、command 与 event matcher，以及 present、absent、count、order、scope status 与 failed-action 等 scope assertion。
+
 候选很多时 matcher diagnostic 只保留有界解释材料，
-不能让已经完成的 Attempt 因 Assertions document 膨胀而无法发布。公开 execution readback 同时保留主支工具身份。
+不能让已经完成的 Attempt 因 Assertions document 膨胀而无法发布。owner 至少产生 10,001 个真实 normalized
+tool occurrences，涉及末尾 decisive witness、absence/exact/at-least 与 partial source unavailable。
+
+公开
+`exp → show --json` 核对 O(1) receipt、typed 五段投影和有界 explanation，不读取私有 Record。
 
 ## eval-assertion-score
 
@@ -71,7 +76,9 @@ Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoi
 ## eval-assertion-judge-unavailable
 
 未配置 Judge 时，声明 capability 后 required Judge Assertion 保留 `unavailable` 并报告 model unresolved。
-Attempt 为 `errored`，CLI 退出码为 1。该场景以公开 Record 的精确原因证明未进入预检或 evaluator 网络路径。
+Attempt 为 `errored`，CLI 退出码为 1。该场景以公开 Record 的精确原因证明未进入预检或 evaluator 网络路径，
+并核对 settlement 没有丢掉有界 failure detail。Judge 未实际返回的 rationale/evidence/detail/citations 必须分别为
+unavailable/not-recorded；输入 material 不得冒充 returned evidence，Agent-as-Judge trace 不在本 owner 范围。
 
 每条 Eval 内的 assertion 负责判分；对应原生测试只核对 discovery 没漏、预期 Eval 实际运行、进程退出与公开读回中的 assertion /
 verdict。正向证据来自真实 Direct Agent 或 Sandbox 行为，测试不手写标准事件来让 matcher 自证。

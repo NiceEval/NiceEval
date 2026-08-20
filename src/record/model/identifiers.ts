@@ -58,7 +58,7 @@ export type CanonicalProjectRelativePath = string & Brand.Brand<
 
 /** Stable root identity; evolution is carried by the separate numeric header. */
 export const RECORD_FORMAT = "niceeval.record" as const;
-export const RECORD_SCHEMA_VERSION = 2 as const;
+export const RECORD_SCHEMA_VERSION = 3 as const;
 
 export type RecordFormat =
   typeof RECORD_FORMAT & Brand.Brand<typeof RECORD_FORMAT_ID_BRAND>;

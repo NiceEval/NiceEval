@@ -340,9 +340,10 @@ export function readFixedRecordAttachment<
 
 /**
  * Maintenance-only validation of one exact historical attachment before its
- * envelope advances. The durable payload and blob bytes are never rewritten:
- * the historical decoder proves the old shape, while the current descriptor
- * proves that the unchanged bytes and closure are valid after the step.
+ * envelope advances. The historical decoder proves the old shape, the pure
+ * adjacent migration constructs the current payload, and the current
+ * descriptor proves its exact shape and blob closure. Physical rewrite policy
+ * remains host-owned metadata; `rewritePayload` is only its consistency check.
  */
 export function validateFixedRecordAttachmentMigrationSource<
   Family extends NiceEvalFamily,
@@ -356,7 +357,11 @@ export function validateFixedRecordAttachmentMigrationSource<
   readonly fromSchemaVersion: number;
   readonly decodeHistorical: (value: unknown) => unknown;
   readonly migrate: (value: unknown) => unknown;
-}): Effect.Effect<boolean, RecordFileSystemError> {
+}): Effect.Effect<false | {
+  readonly payload: Payload;
+  readonly blobKeys: ReadonlyMap<object, string>;
+  readonly rewritePayload: boolean;
+}, RecordFileSystemError> {
   return Effect.gen(function* () {
     const directory = attachmentPath(input.root, input.location, input.descriptor.family);
     if ((yield* input.fileSystem.pathKind(directory)) !== "directory") return false;
@@ -400,13 +405,14 @@ export function validateFixedRecordAttachmentMigrationSource<
     }
 
     let migrated: unknown;
+    let historical: unknown;
     try {
-      migrated = input.migrate(input.decodeHistorical(hydrated.value));
+      historical = input.decodeHistorical(hydrated.value);
+      migrated = input.migrate(historical);
     } catch {
       return false;
     }
-    if (Either.isLeft(input.descriptor.write.decodePayload(migrated))) return false;
-    const payload = input.descriptor.write.decodePayload(hydrated.value);
+    const payload = input.descriptor.write.decodePayload(migrated);
     if (Either.isLeft(payload)) return false;
 
     let totalBytes = 0;
@@ -422,10 +428,15 @@ export function validateFixedRecordAttachmentMigrationSource<
       if (totalBytes > input.descriptor.write.budget.maximumTotalBytes) return false;
       materialized.push(Object.freeze({ ref, bytes }));
     }
-    return Either.isRight(makeFixedRecordAttachmentValueFromDecoded(
+    if (Either.isLeft(makeFixedRecordAttachmentValueFromDecoded(
       input.descriptor.write,
       payload.right,
       materialized,
-    ));
+    ))) return false;
+    return Object.freeze({
+      payload: payload.right,
+      blobKeys: new Map([...hydrated.refsByKey].map(([key, ref]) => [ref as object, key] as const)),
+      rewritePayload: migrated !== historical,
+    });
   });
 }

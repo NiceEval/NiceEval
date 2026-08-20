@@ -85,6 +85,8 @@ export interface RecordAttachmentAdjacentMigration {
 export interface RecordAttachmentAdjacentMigrationLink {
   readonly fromSchemaVersion: number;
   readonly toSchemaVersion: number;
+  /** Physical plan metadata shared by planning, execution, and interrupted recovery. */
+  readonly rewritePayload: boolean;
 }
 
 export interface RecordAttachmentMaintenanceFacet {
@@ -204,6 +206,7 @@ export function defineRecordAttachment<
       link.fromSchemaVersion <= 0 ||
       link.toSchemaVersion !== link.fromSchemaVersion + 1 ||
       link.toSchemaVersion > input.current.schemaVersion ||
+      typeof link.rewritePayload !== "boolean" ||
       migrationStarts.has(link.fromSchemaVersion)
     ) {
       throw new TypeError("Record Attachment migration links must be unique adjacent upgrades to current history");

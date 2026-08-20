@@ -67,7 +67,11 @@ export type AssertionMaterial =
     };
 
 export type AssertionCriterion =
-  | { readonly kind: "value-match"; readonly subject: "explicit-value" }
+  | {
+      readonly kind: "value-match";
+      readonly subject: "explicit-value";
+      readonly matcher: { readonly state: "declared"; readonly name: string } | { readonly state: "unavailable" };
+    }
   | {
       readonly kind: "scope-status";
       readonly scope: "turn" | "session" | "attempt";
@@ -127,12 +131,42 @@ export type AssertionScoreContribution =
       readonly reason: "source-unavailable" | "evaluation-errored" | "not-applicable";
     };
 
+/** Constant-size semantic receipt for one collection evaluation. */
+export interface AssertionCollectionReceipt {
+  readonly examined: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+  readonly knownTotal: number | null;
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
+}
+
+export type AssertionConditionPolicy =
+  | { readonly kind: "boolean"; readonly expected: true }
+  | { readonly kind: "at-least"; readonly threshold: number }
+  | { readonly kind: "record-only" };
+
+export interface AssertionPolicy {
+  readonly requirement: "required" | "optional";
+  readonly condition: AssertionConditionPolicy;
+}
+
+export type AssertionObserved =
+  | { readonly kind: "boolean"; readonly outcome: "matched" | "mismatched" | "unavailable" | "errored" | "not-applicable" }
+  | { readonly kind: "measurement"; readonly state: "available"; readonly value: number }
+  | { readonly kind: "measurement"; readonly state: "unavailable" }
+  | { readonly kind: "direct-score"; readonly state: "available"; readonly value: number }
+  | { readonly kind: "direct-score"; readonly state: "unavailable" };
+
 export type AssertionResult =
   | {
       readonly state: "matched";
       readonly gate: "not-gate" | "satisfied";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
       readonly diagnostic?: AssertionSnapshotObject;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly state: "mismatched";
@@ -140,6 +174,7 @@ export type AssertionResult =
       readonly gate: "not-gate" | "failed";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
       readonly diagnostic?: AssertionSnapshotObject;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly state: "unavailable";
@@ -147,6 +182,7 @@ export type AssertionResult =
       readonly gate: "not-gate" | "unavailable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
       readonly diagnostic?: AssertionSnapshotObject;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly state: "errored";
@@ -154,6 +190,7 @@ export type AssertionResult =
       readonly gate: "not-gate" | "unavailable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
       readonly diagnostic?: AssertionSnapshotObject;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly state: "not-applicable";
@@ -161,6 +198,7 @@ export type AssertionResult =
       readonly gate: "not-gate" | "not-applicable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
       readonly diagnostic?: AssertionSnapshotObject;
+      readonly receipt?: AssertionCollectionReceipt;
     };
 
 /** One fully formed author/runtime result, before durable attachment encoding. */
@@ -172,6 +210,8 @@ export interface SealedAssertionEntry {
   readonly coverage: AssertionCoverage;
   readonly limitations: readonly AssertionLimitation[];
   readonly result: AssertionResult;
+  readonly policy: AssertionPolicy;
+  readonly observed: AssertionObserved;
 }
 
 /**
@@ -238,8 +278,17 @@ export type AssertionStopExecutor = <Value>(
 
 /** A Boolean entry is evaluated once and may retain a refinement witness. */
 export type BooleanAssertionEvaluation<Refined> =
-  | { readonly state: "matched"; readonly value: Refined; readonly diagnostic?: MatchDiagnostic }
-  | { readonly state: "mismatched"; readonly diagnostic?: MatchDiagnostic }
+  | {
+      readonly state: "matched";
+      readonly value: Refined;
+      readonly diagnostic?: MatchDiagnostic;
+      readonly receipt?: AssertionCollectionReceipt;
+    }
+  | {
+      readonly state: "mismatched";
+      readonly diagnostic?: MatchDiagnostic;
+      readonly receipt?: AssertionCollectionReceipt;
+    }
   | {
       readonly state: "unavailable";
       readonly reason:
@@ -247,21 +296,23 @@ export type BooleanAssertionEvaluation<Refined> =
         | "source-unavailable"
         | "redacted";
       readonly diagnostic?: MatchDiagnostic;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | { readonly state: "not-applicable"; readonly diagnostic?: MatchDiagnostic };
 
 /** A measurement is always a finite unit-interval value when it is available. */
 export type MeasurementAssertionEvaluation =
-  | { readonly state: "measured"; readonly value: number }
+  | { readonly state: "measured"; readonly value: number; readonly detail?: AssertionSnapshotObject }
   | {
       readonly state: "unavailable";
       readonly reason:
         | "evidence-unavailable"
         | "source-unavailable"
         | "redacted";
+      readonly detail?: AssertionSnapshotObject;
     }
-  | { readonly state: "not-applicable" }
-  | { readonly state: "errored" };
+  | { readonly state: "not-applicable"; readonly detail?: AssertionSnapshotObject }
+  | { readonly state: "errored"; readonly detail?: AssertionSnapshotObject };
 
 export interface CapturedAssertionSnapshot {
   readonly material: Extract<AssertionMaterial, { readonly kind: "snapshot" }>;

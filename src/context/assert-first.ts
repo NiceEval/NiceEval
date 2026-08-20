@@ -458,14 +458,15 @@ function collectionAssertionEvaluation(
 ): BooleanAssertionEvaluation<void> {
   switch (result.state) {
     case "matched":
-      return Object.freeze({ state: "matched" as const, value: undefined, diagnostic: result.diagnostic });
+      return Object.freeze({ state: "matched" as const, value: undefined, diagnostic: result.diagnostic, receipt: result.receipt });
     case "mismatched":
-      return Object.freeze({ state: "mismatched" as const, diagnostic: result.diagnostic });
+      return Object.freeze({ state: "mismatched" as const, diagnostic: result.diagnostic, receipt: result.receipt });
     case "unavailable":
       return Object.freeze({
         state: "unavailable" as const,
         reason: "evidence-unavailable" as const,
         diagnostic: result.diagnostic,
+        receipt: result.receipt,
       });
   }
 }
@@ -482,8 +483,8 @@ function toolAssertionHandle<Kind extends RuntimeKind>(input: {
     occurrence: "tool",
     matcher: input.match.name,
     quantifier: input.quantifier,
-    candidates: input.snapshot.occurrences,
-    orphanFinishes: input.snapshot.orphanFinishes,
+    candidateCount: input.snapshot.occurrences.length,
+    orphanFinishCount: input.snapshot.orphanFinishes.length,
     coverage: input.snapshot.coverage.actions,
     snapshot: input.snapshot.snapshot,
   });
@@ -541,7 +542,11 @@ function notCalledToolHandle<Kind extends RuntimeKind>(input: {
 }
 
 function valueMatchCriterion(): AssertionCriterion {
-  return Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const });
+  return Object.freeze({
+    kind: "value-match" as const,
+    subject: "explicit-value" as const,
+    matcher: Object.freeze({ state: "unavailable" as const }),
+  });
 }
 
 function matchedVoid(): BooleanAssertionEvaluation<void> {
@@ -607,8 +612,8 @@ function usedNoToolsHandle<Kind extends RuntimeKind>(input: {
     snapshot: Object.freeze({
       scope: input.scope,
       assertion: "used-no-tools",
-      occurrences: input.snapshot.occurrences,
-      orphanFinishes: input.snapshot.orphanFinishes,
+      occurrenceCount: input.snapshot.occurrences.length,
+      orphanFinishCount: input.snapshot.orphanFinishes.length,
       coverage: input.snapshot.coverage.actions,
       snapshot: input.snapshot.snapshot,
     }),
@@ -635,8 +640,8 @@ function maxToolCallsHandle<Kind extends RuntimeKind>(input: {
       scope: input.scope,
       assertion: "max-tool-calls",
       max: input.max,
-      occurrences: input.snapshot.occurrences,
-      orphanFinishes: input.snapshot.orphanFinishes,
+      occurrenceCount: input.snapshot.occurrences.length,
+      orphanFinishCount: input.snapshot.orphanFinishes.length,
       coverage: input.snapshot.coverage.actions,
       snapshot: input.snapshot.snapshot,
     }),
@@ -662,7 +667,7 @@ function noFailedActionsHandle<Kind extends RuntimeKind>(input: {
     snapshot: Object.freeze({
       scope: input.scope,
       assertion: "no-failed-actions",
-      events: input.events,
+      eventCount: input.events.length,
       coverage: input.coverage.actions,
       snapshot: input.snapshot,
     }),
@@ -780,8 +785,8 @@ function toolOrderHandle<Kind extends RuntimeKind>(input: {
       scope: input.scope,
       assertion: "tool-order",
       matches: matches.map((match) => match.name),
-      occurrences: input.snapshot.occurrences,
-      orphanFinishes: input.snapshot.orphanFinishes,
+      occurrenceCount: input.snapshot.occurrences.length,
+      orphanFinishCount: input.snapshot.orphanFinishes.length,
       coverage: input.snapshot.coverage.actions,
       snapshot: input.snapshot.snapshot,
     }),
@@ -945,7 +950,7 @@ function eventAssertionHandle<Kind extends RuntimeKind>(input: {
       occurrence: "event",
       matcher: input.match.name,
       quantifier,
-      candidates: input.snapshot.events,
+      candidateCount: input.snapshot.events.length,
       unassociatedOperation: input.snapshot.unassociatedOperation,
       coverage: input.snapshot.coverage.events,
       snapshot: input.snapshot.snapshot,
@@ -982,7 +987,7 @@ function notEventHandle<Kind extends RuntimeKind>(input: {
       occurrence: "event",
       matcher: input.match.name,
       quantifier: Object.freeze({ kind: "absent" as const }),
-      candidates: input.snapshot.events,
+      candidateCount: input.snapshot.events.length,
       unassociatedOperation: input.snapshot.unassociatedOperation,
       coverage: input.snapshot.coverage.events,
       snapshot: input.snapshot.snapshot,
@@ -1017,7 +1022,7 @@ function eventOrderHandle<Kind extends RuntimeKind>(input: {
       scope: input.scope,
       assertion: "event-order",
       matches: matches.map((match) => match.name),
-      candidates: input.snapshot.events,
+      candidateCount: input.snapshot.events.length,
       unassociatedOperation: input.snapshot.unassociatedOperation,
       coverage: input.snapshot.coverage.events,
       snapshot: input.snapshot.snapshot,
