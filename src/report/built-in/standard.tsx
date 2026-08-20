@@ -17,12 +17,13 @@ import {
   experimentComparisonScope,
   experimentGroups,
 } from "../../analysis/index.ts";
+import { sampleForExperimentComparisonScope } from "../../analysis/experiment-groups.ts";
 import type {
   Page,
   PageEvidence,
   PageParams,
 } from "../definition/report.ts";
-import { Col, Link, Section, Text } from "../definition/primitives.tsx";
+import { Col, Link, Section } from "../definition/primitives.tsx";
 import { defineComponent } from "../definition/tree.ts";
 import { AttemptDetails } from "../components/attempt-detail/index.tsx";
 import { ExperimentTable } from "../components/entity-lists/index.tsx";
@@ -114,31 +115,44 @@ const StandardExperimentResults = defineComponent<{ readonly comparison: Experim
   );
 });
 
+const StandardExperimentOverview = defineComponent<{ readonly comparison: ExperimentComparisonScope }>((props) => {
+  const sample = sampleForExperimentComparisonScope(props.comparison);
+  return (
+    <Col>
+      <Hero input={sample} />
+      <SampleNotices input={sample} />
+      <SampleSummary input={sample} />
+      <StandardExperimentResults comparison={props.comparison} />
+    </Col>
+  );
+});
+
 function standardOverview(sample: Sample) {
   const groups = experimentGroups(sample);
   const only = groups.length === 1 ? groups[0] : undefined;
+  if (only !== undefined) {
+    return <StandardExperimentOverview comparison={experimentComparisonScope(sample, only.group)} />;
+  }
   return (
     <Col>
       <Hero />
       <SampleNotices />
       <SampleSummary />
-      {only === undefined ? (
-        <Section title={{ en: "Experiments", "zh-CN": "实验" }}>
-          <Col>
-            {groups.map((entry) => (
-              <Link
-                key={entry.group.key}
-                target={{
-                  page: entry.group.kind === "named" ? "group-named" : "group-singleton",
-                  params: entry.group,
-                }}
-              >
-                {entry.group.kind === "named" ? entry.group.groupId : String(entry.group.experimentId)}
-              </Link>
-            ))}
-          </Col>
-        </Section>
-      ) : <StandardExperimentResults comparison={experimentComparisonScope(sample, only.group)} />}
+      <Section title={{ en: "Experiments", "zh-CN": "实验" }}>
+        <Col>
+          {groups.map((entry) => (
+            <Link
+              key={entry.group.key}
+              target={{
+                page: entry.group.kind === "named" ? "group-named" : "group-singleton",
+                params: entry.group,
+              }}
+            >
+              {entry.group.kind === "named" ? entry.group.groupId : String(entry.group.experimentId)}
+            </Link>
+          ))}
+        </Col>
+      </Section>
     </Col>
   );
 }
@@ -204,10 +218,7 @@ function standardGroupPage<Params extends import("../../analysis/index.ts").Json
     load: (sample: Sample, params: Params) =>
       experimentComparisonScope(sample, params as ExperimentGroupIdentity),
     render: (comparison: ExperimentComparisonScope) => (
-      <Col>
-        <Text>{comparison.group.key}</Text>
-        <StandardExperimentResults comparison={comparison} />
-      </Col>
+      <StandardExperimentOverview comparison={comparison} />
     ),
   } as unknown as Page<Params, ExperimentComparisonScope>;
 }

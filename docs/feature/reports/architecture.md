@@ -85,8 +85,16 @@ client 先读取两边都存在且 bytes 相同的自身 runtime 文件；只有
 `theme.ts` 只定义 theme token 与 token 值；它不新增 reset、布局 selector 或组件样式。`styles.css` 是 token 的唯一消费者。
 作者通过结构化 `head` 提供的样式只能服务自己的具名内容，不能建立另一套 reset、theme 或 View shell。
 
-View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和已闭合 Page 的访问入口。固定 Sample 有两个或更多实验组时，选择器才沿作者声明的 `experiment-group` Page 真实链接导航；只有一组时不渲染该选择器。它不读取 Analysis、不在浏览器改变比较范围、
+View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和已闭合 Page 的访问入口。品牌位于左侧，完整 Page router 作为一个整体
+居中，右侧使用原生 select 承载实验与语言选择；Page router 含一个或多个 Page 时都保持同一位置。
+
+固定 Sample 有两个或更多实验组时，实验选择器默认选中稳定排序的第一个 `experiment-group` Page；根 URL 也进入该 Page，不交付未选择
+范围的 Overview。只有一组时不渲染实验选择器。选择变化只导航到另一个已闭合 Page；无 JavaScript 时由同组真实链接 fallback。
+Shell 不读取 Analysis、不在浏览器计算比较范围、
 不注入第二份产品 CSS，也不重绘已关闭的 Report 内容。
+
+所选逻辑 Attempt 没有 Record 输入时，Report 正文以 `not-recorded` notice 与 partial MetricValue 呈现一次。Host 不再把同一事实重复成
+`analysis-missing — the selected logical Slot has no input value`；带具体语义的附件缺失、无效输入或迁移提示仍保留在数据说明中。
 
 浏览器启用 JavaScript 时，站内参数 Page 的普通详情 href 会渐进增强为 Host modal，并把当前位置写成
 `#/<page-route-prefix>/<key>`。该 hash 可复制、首次打开和刷新后恢复同一详情；Escape、关闭按钮和浏览器返回会关闭 modal 并恢复

@@ -28,7 +28,9 @@ Report 有两条明确不同的执行路径。它们共享同一份作者定义�
 
 `show` 不调用参数 Page 的 `enumerate()`，不建立 `ClosedSiteRevision`，也不为未选 route 执行作者 callback。
 
-`project-current` 仍是整个项目的 Sample。只有一个可比实验范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`，不显示选择器。有多个范围时，Overview 列出实验，Header 才显示实验选择；它沿真实 Page 链接导航，不新增 CLI 参数。每个 Page 把唯一 scope 交给 `ExperimentTable` 或 `ExperimentScatter`；任何比较组件都不能跨范围。
+`project-current` 仍是整个项目的 Sample。只有一个可比实验范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`，不显示选择器。有多个范围时，浏览器默认稳定选择第一项，并在 Header 显示实验下拉框；不存在未选择范围的 view Overview。Hero、通知、Summary、图表和 Table 都消费所选范围背后的同一 narrowed Sample。
+
+切换选项沿已闭合 Page 导航，不新增 CLI 参数。`show` 的多组默认输出仍是可复制命令的实验索引。每个 Page 把唯一 scope 交给具名比较组件；任何比较组件都不能跨范围。
 `view` 与静态导出则必须完成全站枚举、链接校验、资源闭包和限额检查；它们只从同一个 revision 读取最终 bytes。
 
 [Report 成本投影](cost-projections/README.md) 是完整的成本契约。它只经 `ReportDefinition.pricing` 接入 Report，并以同一只读值暴露为
@@ -91,8 +93,9 @@ view 不注入只在本机有效的作者脚本。
 实验索引与组内比较使用 `niceeval.show/v2`。单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard。
 既有 Attempt、Source、Execution 与 Timing 文档继续使用 `niceeval.show/v1`。实验组 Page 的 `comparison` 穷尽 `comparable | non-comparable`。
 
-报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 只负责浏览器语言切换、
-更新状态与 Host 提示，不重绘 Report 内容。完整边界见 [Architecture](architecture.md#css、theme-与-view-shell)。
+报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 左侧放品牌，中间居中整个
+Page router，右侧放实验与语言两个原生选择器；Page router 无论含一个还是多个 Page 都作为整体居中。Shell 不重绘 Report 内容。
+完整边界见 [Architecture](architecture.md#css、theme-与-view-shell)。
 
 ## 范围与入口
 

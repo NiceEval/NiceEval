@@ -60,8 +60,10 @@ niceeval view --report <fixture> --no-open
 每对 response body 与文件 body 必须逐字节相同；固定 Host asset 也必须来自同一 revision。下载字节合同仍属于产品契约，但这个
 不发布 public Download 的代表 fixture 不为它伪造作者入口。
 
-浏览器在断网且禁用 JavaScript 时打开根页、参数页、Source 和 Diff。它仍能读取 marker、正文、导航、完整度、
-问题。测试拦截外部网络请求；任何为补读 Analysis、Source 详情或页面数据发出的请求都是失败。
+浏览器默认进入稳定排序的第一个实验组 Page；多组 Header 实验 selector 始终有当前值，语言也由原生 selector 切换。完整 Page router
+作为一组居中，不能因当前只有一个 Page 就退化成左右栏布局。切换实验后，Hero、告警、Summary、图表与 Table 都只反映所选组。
+浏览器在断网且禁用 JavaScript 时打开根页、参数页、Source 和 Diff，仍能通过 fallback 链接读取 marker、正文、导航、完整度、问题。
+测试拦截外部网络请求；任何为补读 Analysis、Source 详情或页面数据发出的请求都是失败。
 
 ### 5. view 的版本 oracle
 

@@ -235,7 +235,7 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
 
         // A fixed Sample with one named Experiment Group goes straight to its
         // comparison and does not waste Header space on a one-option selector.
-        await expect(page.getByRole("navigation", { name: "Experiments" })).toHaveCount(0);
+        await expect(page.getByRole("combobox", { name: "Experiments" })).toHaveCount(0);
 
         const passChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
         await expect(passChart).toHaveCount(1);
@@ -247,13 +247,26 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
 
         const mixedRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(mixedRun.expReceipt(), mixedRun.diagnostic()).toMatchObject({ completion: "completed" });
-        const groupNavigation = page.getByRole("navigation", { name: "Experiments" });
-        await expect(groupNavigation).toBeVisible({ timeout: 15_000 });
-        const classicGroup = groupNavigation.getByRole("link", { name: "classic" });
-        const mainGroup = groupNavigation.getByRole("link", { name: "main" });
-        await expect(classicGroup).toHaveAttribute("href", "group/named/classic/index.html");
-        await expect(mainGroup).toHaveAttribute("href", "group/singleton/main/index.html");
-        await classicGroup.click();
+        const experimentSelector = page.getByRole("combobox", { name: "Experiments" });
+        await expect(experimentSelector).toBeVisible({ timeout: 15_000 });
+        await expect(experimentSelector.getByRole("option")).toHaveText(["classic", "main"]);
+        await expect(experimentSelector.locator("option:checked")).toHaveText("classic");
+
+        // Opening the site root never exposes an unselected project-wide
+        // overview: the first stable Experiment Group is the current value.
+        await page.goto(origin!);
+        await expect(page).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));
+        await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+        const classicExperimentCount = page.locator(".niceeval-stat").filter({ hasText: "Experiments", visible: true });
+        await expect(classicExperimentCount.locator(".niceeval-stat-value")).toHaveText("3");
+
+        await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "main" });
+        await expect(page).toHaveURL(new RegExp("/group/singleton/main/index\\.html$"));
+        await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+        const mainExperimentCount = page.locator(".niceeval-stat").filter({ hasText: "Experiments", visible: true });
+        await expect(mainExperimentCount.locator(".niceeval-stat-value")).toHaveText("1");
+
+        await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "classic" });
         await expect(page).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));
         const selectedGroupChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
         await expect(selectedGroupChart).toContainText("classic/memory-a");
@@ -416,12 +429,19 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         const scatter = page.getByRole("img", { name: "costUSD × passRate" }).filter({ visible: true });
         await expect(scatter).toHaveCount(1);
         await expect(scatter).toContainText("classic/memory-a");
-        const zhButton = page.getByRole("button", { name: "中文" }).filter({ visible: true });
-        await expect(zhButton).toHaveCount(1);
-        await expect(zhButton).toBeVisible();
-        await zhButton.click();
+        const pageRouter = page.getByRole("navigation", { name: "Report pages" });
+        const pageRouterBox = await pageRouter.boundingBox();
+        const viewport = page.viewportSize();
+        expect(pageRouterBox, "the whole Page router must have a visible layout box").not.toBeNull();
+        expect(viewport, "the browser fixture must expose its viewport").not.toBeNull();
+        expect(Math.abs(pageRouterBox!.x + pageRouterBox!.width / 2 - viewport!.width / 2))
+          .toBeLessThanOrEqual(1);
+        const languageSelector = page.getByRole("combobox", { name: "Language" });
+        await expect(languageSelector).toBeVisible();
+        await expect(languageSelector.getByRole("option")).toHaveText(["EN", "中文"]);
+        await languageSelector.selectOption("zh-CN");
         await expect(page.getByText("总览", { exact: true })).toBeVisible();
-        await expect(zhButton).toHaveAttribute("aria-pressed", "true");
+        await expect(languageSelector).toHaveValue("zh-CN");
       } finally {
         await page.close();
       }

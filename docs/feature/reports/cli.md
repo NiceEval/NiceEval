@@ -201,7 +201,7 @@ view 在启动 server 前完整构建 `ClosedSiteRevision`。它对每个参数 
 枚举实例，并校验全站路径、链接、download、asset、Source、Diff、问题表、`_niceeval/data/projections.json` 与预算。该文件捕获所有
 显式声明 Page 的 projection closure；浏览器不重新计算成本。
 
-`--page` 只决定浏览器初始打开的已存在 route；不会缩小构建、枚举或验证。Header 的实验选择器沿已关闭的组 Page 链接导航，不增加 CLI selector。浏览器导航、刷新、Source、Trace、Diff 与下载只读取
+`--page` 只决定浏览器初始打开的已存在 route；不会缩小构建、枚举或验证。未给 `--page` 且存在实验组 Page 时，view 默认打开稳定排序的第一组；多组 Header 显示原生实验选择器，单组不显示。每个选项导航到已关闭的完整 scoped Overview，因此 Hero、通知、Summary、图表与 Table 使用同一范围。浏览器导航、刷新、Source、Trace、Diff 与下载只读取
 revision bytes，不执行作者 callback、Analysis 或 Record 读取。
 
 view 监听 Record root、Report module、项目内静态 import、theme 与配置。最新完整构建成功时原子替换 current revision；失败保留
