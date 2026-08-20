@@ -309,13 +309,9 @@ function selectionSummary(
   selection: RecordSelection,
 ): AnalysisSelectionSummary {
   const selectedRunIds = uniqueSorted(selection.runRefs.map((ref) => ref.runId));
-  const problems = normalizedSelectionProblems([
-    ...selection.problems,
-    ...selection.warnings.map((warning): AnalysisSelectionProblem => Object.freeze({
-      code: "incomplete-run" as const,
-      runId: warning.runId,
-    })),
-  ]);
+  // Unpublished Run directories are normal writer residue. Record keeps the
+  // warning for maintenance, but it is not a problem with the selected Sample.
+  const problems = normalizedSelectionProblems(selection.problems);
   if (request.policy === "explicit-runs") {
     return Object.freeze({
       policy: "explicit-runs" as const,
