@@ -7,13 +7,9 @@ name: Release
 # 集合通过闸门后，才发布同一份 tgz。不要求 main 预先提交版本号变更。
 #
 # 前置:在仓库 Settings → Secrets → Actions 配好 NPM_TOKEN(npm automation token)。
-# 包大部分发 TypeScript 源码(package.json files: src + bin,消费侧用 tsx 加载,无 build 步骤);
-# 唯一例外是 src/report/**(报告 web 面用到 JSX,tsx 的 JSX 编译按调用进程 cwd 找 tsconfig,
-# niceeval 被 link 消费时会退化成 classic JSX、产物引用未定义的全局 React)—— 这部分改发预编译
-# ESM(`pnpm run build:report` 产出 dist/report/**,tsconfig.report-build.json),不受消费方
-# cwd/tsconfig 影响。`pnpm install` / `pnpm pack` 会经 prepare 生命周期触发这一步；
-# 下面的 Build 仍显式跑一遍，方便 CI 失败时定位，也让 Typecheck 针对真实构建
-# 产物跑。最后的 `npm publish <tgz>` 不再重建或重新 pack。
+# 根 install 只准备工具依赖，不触发 prepare。后面的 `pnpm pack` 是唯一构建点：
+# prepare 生成 dist/** 与随包 INDEX.md，再把精确 tgz 交给 release E2E。最后的
+# `npm publish <tgz>` 发布同一份已验证制品，不再重建或重新 pack。
 
 on:
   push:
@@ -50,15 +46,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
         with:
-          node-version: 24
-          cache: pnpm
-          registry-url: "https://registry.npmjs.org"
+          runtime: node@24
+          cache: true
+          install: false
 
       - name: Apply release version
         id: version
@@ -80,17 +73,14 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm run build:report
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck
         run: pnpm run typecheck
 
       # 发版闸门只看包自身对不对:类型检查 + docs/memory 守护。docs-site 的 mint 校验
       # (lint:docs-site)不进这条链——文档站单独部署,一条断链不该拦住 npm publish;
-      # 随包 INDEX.md 的生成失败由 prepare 里的 build:index 直接报错。
+      # 随包 INDEX.md 的生成失败由 pack 里的 prepare/build:index 直接报错。
       - name: Lint docs
         run: pnpm run lint:docs
 
@@ -167,15 +157,13 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
         with:
-          node-version: 24
-          cache: pnpm
+          runtime: node@24
+          cache: true
           cache-dependency-path: ${{ steps.dependency-cache.outputs.paths }}
+          install: false
 
       - name: Install orchestrator dependencies
         # release candidate 已由 prepare-release 从同一 checkout 构建；matrix 只安装
@@ -359,17 +347,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
         with:
-          node-version: 24
-          cache: pnpm
+          runtime: node@24
+          cache: true
+          install: false
 
       - name: Install verifier dependencies
-        run: pnpm install --frozen-lockfile
+        # verify-release only executes the checked-out verifier; it does not
+        # consume root dist/ or INDEX.md.
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download exact release candidate and plan
         uses: actions/download-artifact@v8
