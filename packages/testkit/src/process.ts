@@ -97,8 +97,14 @@ const ExpEvalBaseSchema = Schema.Struct({
 });
 
 export const ExpEvalEventSchema = Schema.Union(
-  Schema.extend(ExpEvalBaseSchema, Schema.Struct({ passed: NonNegativeIntegerSchema })),
   Schema.extend(ExpEvalBaseSchema, Schema.Struct({
+    passed: NonNegativeIntegerSchema,
+    planned: Schema.optional(Schema.Never),
+    unstarted: Schema.optional(Schema.Never),
+    reason: Schema.optional(Schema.Never),
+  })),
+  Schema.extend(ExpEvalBaseSchema, Schema.Struct({
+    passed: Schema.optional(Schema.Never),
     planned: NonNegativeIntegerSchema,
     unstarted: NonNegativeIntegerSchema,
     reason: Schema.Literal("early_exit"),
@@ -357,7 +363,14 @@ function isExpStartEvent(value: unknown): value is ExpStartEvent {
 }
 
 function isExpEvalEvent(value: unknown): value is ExpEvalEvent {
-  return Either.isRight(Schema.decodeUnknownEither(ExpEvalEventSchema)(value));
+  return Either.isRight(Schema.decodeUnknownEither(ExpEvalEventSchema, {
+    errors: "all",
+    onExcessProperty: "error",
+  })(value));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isReceiptEvent(value: unknown): value is Record<string, unknown> {
