@@ -10,6 +10,7 @@ Repo ID 是 `adapter/openclaw`；manifest 声明 `areas: ["adapter", "sandbox"]`
 | 协议行为 | Eval 断言（只读事件流） |
 | --- | --- |
 | Skills 与工具轨 | 目标 Skill 真装进 `.agents/skills/` 并被 shell 读取；session transcript 归一出工具事件并按 call ID 配对，生成文件采用 Skill 的独有 marker，同轮不读 decoy |
+| 原生插件 | 官方 `@openclaw/brave-plugin@2026.7.1` 的原生 install record 保留精确 package/version，且 `plugins inspect --runtime` 报 loaded、无 diagnostics |
 | 会话 | 显式 session id 续轮能引用首轮事实；新 session 与旧 session 隔离 |
 | usage | transcript 或 `--json` 封包归一出每轮正的 `inputTokens` / `outputTokens` |
 | 负断言边界 | transcript 完整时设 `notCalledTool` 反例；缺失时不从最终文本猜过程 |
