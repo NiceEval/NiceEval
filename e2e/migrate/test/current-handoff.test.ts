@@ -4,7 +4,7 @@ import { createE2EContext, type ExpEvalEvent, type ExpEvent } from "@niceeval/te
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
-const installedNiceeval = [join(process.cwd(), "node_modules", ".bin", "niceeval")] as const;
+const installedNiceeval = [process.execPath, join(process.cwd(), "node_modules", "niceeval", "bin", "niceeval.js")] as const;
 const e2e = createE2EContext({
   repoId: "migrate",
   project: {

@@ -140,22 +140,22 @@ export async function buildCandidateTarball(
 
 /**
  * Extract the `resolution.integrity` pnpm recorded for the `niceeval@file:...`
- * package entry in a pnpm-lock.yaml. Throws (does not guess) if there isn't
- * exactly one such entry — zero means niceeval never resolved to a local
- * tarball at all, more than one means an ambiguous/partial injection.
+ * package entry in a pnpm-lock.yaml. Registry-pinned historical producer
+ * aliases are deliberately outside this candidate identity. Throws (does not
+ * guess) unless there is exactly one local-tarball candidate entry.
  */
 export function extractNiceevalIntegrity(lockfileText: string): string {
-  const entryRe = /^ {2}niceeval@[^\n]*:\n {4}resolution:\s*\{[^}\n]*integrity:\s*(sha512-[A-Za-z0-9+/=]+)/gm;
+  const entryRe = /^ {2}niceeval@file:[^\n]*:\n {4}resolution:\s*\{[^}\n]*integrity:\s*(sha512-[A-Za-z0-9+/=]+)/gm;
   const matches = [...lockfileText.matchAll(entryRe)];
 
   if (matches.length === 0) {
     throw new Error(
-      'no "niceeval@..." package entry with a resolution.integrity found in pnpm-lock.yaml — niceeval may not have resolved to the injected tarball at all',
+      'no "niceeval@file:..." package entry with a resolution.integrity found in pnpm-lock.yaml — niceeval may not have resolved to the injected tarball at all',
     );
   }
   if (matches.length > 1) {
     throw new Error(
-      `found ${matches.length} "niceeval@..." package entries in pnpm-lock.yaml — expected exactly one; a partial or ambiguous injection`,
+      `found ${matches.length} "niceeval@file:..." package entries in pnpm-lock.yaml — expected exactly one local candidate; a partial or ambiguous injection`,
     );
   }
   return matches[0][1];

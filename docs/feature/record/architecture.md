@@ -164,8 +164,8 @@ closure 与 integrity 验证。当前每个 family 文件恰有一个 `defineRec
 但只有 `definition.ts` 保留该入口。总 catalog 只列六个 declaration，不复制 owner shape 或 payload Schema。
 Observability 与 Artifacts 各有一个 family declaration；`owners.attempt` 与 `owners.run` 不会形成第二个 family。
 
-未知 stable family 保留其目录与 bytes，跳过 payload / blob 解码，继续读取 Core 与已知 family。请求它的
-AnalysisInput 或 DomainView 才得到 `unsupported`。已知 family 的旧 schemaVersion 则走显式 migration。
+ordinary reader 与 writer 只接受 exact current catalog。未知 stable family、known family 的 future 版本与
+root/Core epoch 不匹配都在 session 形成前拒绝；历史版本只可由 maintenance 的固定完整 chain 迁移。
 
 ### Schema 允许集
 
@@ -208,7 +208,7 @@ root 的 exact JSON 是：
 ```ts
 type RecordDocument = {
   readonly format: "niceeval.record";
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly recordId: RecordId;
 };
 ```
@@ -362,10 +362,10 @@ Assertions 的 criterion、Evidence 与局部错误规则由 [Assertions archite
 拥有。Observability 的精确 shape 由 [Observability Attachment](architecture/observability-attachments.md)
 拥有。本页定义它们共同的 durable boundary。
 
-future NiceEval catalog 可以增加独立 fixed family，例如 `niceeval.energy`，而不改变 root 或 Core。它有自己的
-stable family name、numeric schemaVersion、`owners` map、definition 与 collector；它仍不是第三方扩展点。
-早期 reader 在扫描 owner attachment directory 时保留未知 family 的完整 bytes，跳过 payload / blob 解释，
-继续验证 Core 和认识的 family。
+future NiceEval catalog 可以增加独立 fixed family，例如 `niceeval.energy`，但发布时必须同时升级 root writer
+epoch。它仍有自己的 stable family name、numeric schemaVersion、`owners` map、definition 与 collector，且不是
+第三方扩展点。旧 reader 在扫描到未知 family 时 fail closed，不能让 Analysis、Report 或 Runner 读取一个只验证了
+部分 catalog 的 Record。
 
 ```ts
 type FileChangesAttachment = {
@@ -598,35 +598,40 @@ Runner 收到可处理的 `SIGINT` 后会先停止派发并关闭每个已知 Sl
 
 ## Maintenance、兼容性与相邻迁移
 
-schemaVersion `1` 是当前 root / Core 的唯一可读、可写版本；fixed family 各自拥有 current 版本。
-ordinary reader 按下表区分不兼容和局部
-未知数据：
+schemaVersion `2` 是当前 root / Core 的唯一可读、可写 writer epoch；fixed family 各自拥有 current 版本。
+schemaVersion `1` 与 Observability v1 只有在固定完整 `1 → 2` chain 中才是 predecessor：
 
 | 发现的内容 | ordinary reader | maintenance |
 |---|---|---|
-| root 或 Core schemaVersion 不匹配 | `migration-required`（有相邻步骤）或 `unsupported-format`；不形成 session | 只运行静态定义的相邻 step |
-| 已知 family 的旧 schemaVersion | `migration-required`；ordinary read 不兼容 | 显式迁移该已知 family 的 definition |
-| 已知 family 的 future/无链 schemaVersion | `unsupported` | `unsupported-format`；提示使用写出该版本的 NiceEval |
-| 未知的独立 future family | 保留 directory、payload 与 blob bytes；不解释，继续读取 Core / 已知 family | 不迁移、也不删除 |
+| root/Core epoch 与全部 family 命中完整 automatic-safe chain | ordinary 入口不得形成 session；Git-safe automatic maintenance 成功后全新打开 | 同一 exclusive session plan/apply，并同时升级 root epoch与目标 family |
+| root/Core 或已知 family 是 future/无链 schemaVersion | `unsupported-format`；不形成 session | `unsupported-format`；提示使用写出该版本的 NiceEval |
+| 未知 family | `unsupported-format`；不形成 session | `unsupported-format`；不猜 payload、closure 或迁移 |
 | current catalog family 缺失 | 按请求得到 `not-recorded` | 不补写历史事实 |
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format`；不得按未知 family 容忍 | 不进入迁移链 |
 
-未知 family 不是 schemaVersion 不匹配的 known family。它的 stable name 尚未被该 reader 的 catalog 认识，
-所以 reader 没有 payload schema、closure rule 或 projection 可以安全执行。任何 `AnalysisInput` 或
-`DomainViewRequest` 依赖它时，只返回 `unsupported`；其它 Analysis 结果和 Report
-闭合输出不受污染。
+未知 family 没有 payload schema、closure rule 或 projection 可供当前版本验证，因此整个 ordinary open
+fail closed；它不能再作为局部 `unsupported` 进入 Analysis。
 
-Observability schemaVersion `2` 由 `maintenance` facet 提供固定 `1 → 2` step。step 只依赖已保存的
-两个 owner payload 与 own blob closure，并逐字保留 label、blob refs 与 blob bytes。它不调用第三方
-converter，也不从当前 worktree、网络或运行时算法补写历史事实。
+Record root schemaVersion `2` 与 Observability schemaVersion `2` 由 `maintenance` facet 提供固定的联合
+`1 → 2` step。step 只依赖已保存的两个 owner payload 与 own blob closure，并逐字保留 label、blob refs 与
+blob bytes；root epoch 最后升级。它不调用第三方 converter，也不从当前 worktree、网络或运行时算法补写历史事实。
 
 有相邻步骤时，maintenance 在首次写 portable byte 前完成 Git preflight：Record 位于 Git worktree，
 完整 portable inventory 由 HEAD 跟踪，index 与 worktree 对该 inventory 干净。计划还绑定 repository
 identity、HEAD、Record path、`recordId`、source inventory 与 NiceEval migration implementation identity。
 
-迁移在 exclusive maintenance lease 下原地逐步执行，完整校验 Core、所有认识的 fixed family 与它们的
-blob closure 后才结束。未知 future family 保持逐字节不动。NiceEval 不创建 staging、backup、rollback 或
-root replacement。
+迁移在 exclusive maintenance lease 下原地逐步执行，完整校验 exact current Core、完整 catalog 与所有 blob
+closure 后才结束。未知或 future family 使计划失败。NiceEval 不创建 staging、backup、rollback 或 root replacement。
+
+`show`、`view` 与 `exp` 在 ordinary session、Run/claim/Sandbox 或付费调用前先做短检查。current fast path
+直接 ordinary open，不要求 Git clean。
+
+需要迁移时先关闭检查 scope，再取得 exclusive maintenance。plan/apply 绑定并复核 HEAD、
+Record identity、portable inventory、source bytes 与 migration identity。只有完整、无损、automatic-safe chain
+且 HEAD 已跟踪全部 portable bytes、Record path 的 index/worktree 干净时才无确认迁移。
+
+成功并全量验证后释放 maintenance，再新开 ordinary session。非 Git、dirty/untracked/ignored、read-only、
+lease busy、不完整 chain、future/unknown 或失败都给出 typed blocker，绝不继续 ordinary open。
 
 计划同时绑定每个目标 envelope 的 exact source bytes。首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。
 

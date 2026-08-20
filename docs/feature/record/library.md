@@ -135,7 +135,7 @@ interface CreateReferenceRunRequest extends CreateRunRequest {}
 RunContext，并 refine `context.experimentId === experimentId`；它把这个已验证值带入 draft，只有 `seal()` 时
 将它作为 `RunDocument.context` 写入 `run.json`。不能在 session 创建后以当前配置或补丁重新设定 context。
 
-`current` 只接受 package-private definition 中的 root `{ format: "niceeval.record", schemaVersion: 1 }` 与匹配的 Core。
+`current` 只接受 package-private definition 中的 root `{ format: "niceeval.record", schemaVersion: 2 }` 与匹配的 Core。
 root / Core 不兼容时，若 maintenance 有固定相邻步骤则返回 `migration-required`，否则
 `unsupported-format`；session 根本不会形成。带 `/vN` 后缀的未发布 family 草案也是
 `unsupported-format`，不能伪装成独立 future family。
@@ -157,9 +157,8 @@ Attachment envelope 的 shape 是 `{ family, schemaVersion }`。family 是稳定
 Observability 与 Artifacts 各自只有一个 package-private definition；其 owner-specific payload 位于同一
 `owners` map，不是公开的 attempt / run family pair。
 
-future NiceEval catalog 可在不改变 Core 的情况下加入 `niceeval.energy` 等独立 fixed family。它具有自己的
-static definition 与 `owners` map；应用作者仍不能定义 family。较早 reader 发现未知 stable family 时保留
-该目录的所有 bytes，跳过 payload / blob 解码，继续读取 Core 与认识的 family。
+future NiceEval catalog 可加入 `niceeval.energy` 等独立 fixed family，但必须同时递增 root writer epoch。应用作者
+仍不能定义 family。较早 reader 发现未知 stable family 时在 session 形成前 fail closed，不跳过 catalog 验证。
 
 每个 fixed collector 通过 private definition mint `RecordBlobRef`。它写出的 payload 是 deep-frozen JSON
 snapshot；全部 own blob 通过 closure 验证后才可从内存获得 defensive copy。没有可从
@@ -174,9 +173,9 @@ permission 或 materialize failure 仍是 `RecordReadError`。
 partial 空前缀和 `not-recorded` 因而保持可区分。内部 reader 只把归因策略、collection 与 ordered send 区间
 trajectory（轨迹）交给 Analysis，绝不提供按 path 汇总的 `changes` 或 durable `net`。
 
-已知 family 的旧 schemaVersion 是 `migration-required`，ordinary reader 不做局部兼容读。未知 independent
-future family 则局部容忍：reader 保留它，且继续读取其它事实；依赖它的 input / view 是 `unsupported`。
-它不同于 `not-recorded` 与 `migration-required`。
+已知 family 的旧 schemaVersion 只有命中完整 maintenance chain 时可迁移；ordinary reader 不做局部兼容读。
+未知 independent future family、known future version 与无完整 chain 的旧版本都拒绝 ordinary open。它们不同于
+current catalog family 缺失所表达的 `not-recorded`。
 
 ## Reader：RecordReadSession
 
@@ -219,8 +218,8 @@ Run 可以整体进入或整体不进入本次选择；缺少规范的零字节�
 
 selected ref 都是当前 session 签发的 nominal handle（名义句柄）。它们不能靠对象复制、ID 拼接或跨 Scope
 重用。Analysis 的 `AnalysisInput` 或 `DomainViewRequest` 真正需要事实时，package-private adapter 才以
-`{ owner, fixed definition }` 读取并缓存对应 Attachment。请求未知 future family 时，它缓存
-`unsupported`，但不解码磁盘 bytes。verified cache 可以省 I/O，不能成为 absence、
+`{ owner, fixed definition }` 读取并缓存对应 Attachment。未知或 future family 已在 session 形成前被拒绝，
+不会进入 Analysis cache。verified cache 可以省 I/O，不能成为 absence、
 candidate set 或 latest 的权威依据。
 
 ## Writer：RunWriteSession
@@ -364,24 +363,31 @@ interface RecordMaintenanceSession {
 }
 ```
 
-schemaVersion `1` 的 current root / Core 没有已发布 predecessor。所有 fixed family 也处于 current 时，
+schemaVersion `2` 是 current root / Core writer epoch。所有 fixed family 也处于 current 时，
 `inspect()` 与 `planMigrate()` 返回 `already-current`；`applyMigrate()` 不运行，也不写 portable byte。
 
 root / Core 不相容时，`inspect()` 返回 `migration-required` 或 `unsupported-format`。已知 family 的旧
 schemaVersion 同样需要显式 migration。
 
-未知 independent future family 保持 bytes 不动，不进入 migration plan。known family 的 future/无链版本和
-未发布的斜杠版本草案返回 `unsupported-format`，不会被猜测成损坏数据或 migration source。
+未知/future family、known family 的 future/无链版本和未发布的斜杠版本草案返回 `unsupported-format`，不会被
+猜测成损坏数据或 migration source。
 
-Observability schemaVersion `2` 同批在 maintenance facet 内提供固定 `1 → 2` step。它只从已保存的两个
+root epoch 2 与 Observability schemaVersion `2` 同批在 maintenance facet 内提供固定联合 `1 → 2` step。它只从已保存的两个
 owner payload 和 own blob closure 形成目标 bytes，不能读取当前 worktree、网络、第三方 converter 或运行时
 算法。没有无损步骤时，maintenance 在改盘前拒绝计划；它不伪造新事实。
 
 计划绑定 Git repository、HEAD、Record path、`recordId`、current format 与 portable-byte inventory。它还绑定每个目标 envelope 的 exact source bytes 和 NiceEval migration implementation identity。`applyMigrate()` 重新验证这些值，避免把陈旧计划应用到变化后的 Record。
 
 迁移只允许 Record 已纳入 Git 且 worktree/index 干净时执行。它在 exclusive maintenance lease 下原地
-逐步改写，并完整校验 current Core、认识的 fixed family 与 blob closure。未知 independent future family
-保持原有 directory 与 bytes。NiceEval 不创建 staging、backup、rollback 或 root replacement。
+逐步改写，并完整校验 exact current Core、完整 catalog 与 blob closure。未知/future family 使计划失败。
+NiceEval 不创建 staging、backup、rollback 或 root replacement。root epoch 在所有 portable target 写入并校验后最后升级，
+阻止旧 writer 再次追加 v1。
+
+ordinary Host 入口在建立任何 read/append session 或执行外部副作用前调用内部 automatic gate。current fast path
+不检查 Git clean。需要迁移时，检查 Scope 必须先关闭。随后 exclusive maintenance session 在同一
+session 内完成 plan/apply，并绑定、复核 HEAD、Record identity、portable inventory、source bytes 与
+migration identity。成功全量 exact-current 验证并释放 maintenance 后，调用方只能全新打开 ordinary
+session，不得升级既有 read lease。
 
 首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。失败或中断后，maintenance 先证明 HEAD 未变化，且 dirty path 只有 sentinel 与已写成 canonical v2 的计划目标。证明成立时，CLI 才给出限定到 Record root 的 Git restore 与 tracked-byte 验证命令；否则只要求人工检查并保留并发编辑。验证 worktree/index 都等于该 commit 后才清除 sentinel，再重新形成计划。
 
