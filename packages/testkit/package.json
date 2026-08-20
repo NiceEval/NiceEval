@@ -34,5 +34,8 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "npm:@typescript/typescript6@6.0.2"
+  },
+  "dependencies": {
+    "effect": "3.22.1"
   }
 }

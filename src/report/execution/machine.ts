@@ -19,8 +19,7 @@ import { resolvedPageText } from "../runtime/text.ts";
 export type ContentAddress = string;
 
 /** The exact regenerable machine formats in docs/feature/reports/cli.md. */
-export const BUILT_IN_SHOW_FORMAT_V1 = "niceeval.show/v1";
-export const BUILT_IN_SHOW_FORMAT_V2 = "niceeval.show/v2";
+export const BUILT_IN_SHOW_FORMAT = "niceeval.show";
 export const CUSTOM_TARGET_EXECUTION_FORMAT = "niceeval.report-target-execution/v1";
 export const REPORT_PROJECTIONS_FORMAT = "niceeval.report-projections/v1";
 
@@ -79,7 +78,7 @@ export type BuiltInShowData =
   | { readonly kind: "timing"; readonly timing: JsonValue };
 
 export interface BuiltInShowDocument {
-  readonly format: typeof BUILT_IN_SHOW_FORMAT_V1 | typeof BUILT_IN_SHOW_FORMAT_V2;
+  readonly format: typeof BUILT_IN_SHOW_FORMAT;
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: {
@@ -536,7 +535,7 @@ export function builtInShowDocument(input: {
   readonly problems?: readonly ReportProblem[];
 }): BuiltInShowDocument {
   return Object.freeze({
-    format: builtInShowFormat(input.data),
+    format: BUILT_IN_SHOW_FORMAT,
     locale: "en" as const,
     selection: freezeSelection(input.selection),
     report: Object.freeze({
@@ -705,14 +704,6 @@ function freezeBuiltInData(value: BuiltInShowData): BuiltInShowData {
     default:
       throw new TypeError("built-in show data kind is not declared by the show format");
   }
-}
-
-function builtInShowFormat(
-  data: BuiltInShowData,
-): typeof BUILT_IN_SHOW_FORMAT_V1 | typeof BUILT_IN_SHOW_FORMAT_V2 {
-  return data.kind === "groups" || data.kind === "experiment-group"
-    ? BUILT_IN_SHOW_FORMAT_V2
-    : BUILT_IN_SHOW_FORMAT_V1;
 }
 
 /** Re-closes a ReportProjections value: validates format, dedupes, and canonically sorts. */

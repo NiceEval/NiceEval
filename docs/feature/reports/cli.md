@@ -87,7 +87,7 @@ Record 或 Analysis 读取路径。
 
 ```ts
 interface BuiltInShowDocument {
-  readonly format: "niceeval.show/v1" | "niceeval.show/v2";
+  readonly format: "niceeval.show";
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: { readonly token: BuiltInReportToken; readonly identity: ContentAddress };

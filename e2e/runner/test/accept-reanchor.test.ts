@@ -37,7 +37,7 @@ interface DryPlan {
 }
 
 interface ExperimentGroupShow {
-  format: "niceeval.show/v2";
+  format: "niceeval.show";
   selection:
     | { kind: "explicit-runs"; sampleIdentity: string; runIds: readonly string[] }
     | { kind: "project-current"; sampleIdentity: string; experimentIds: readonly string[] };
@@ -124,12 +124,14 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       acceptedRunId,
       "--report",
       "standard",
+      "--page",
+      "/group/singleton/accept",
       "--json",
     ]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
     const acceptedShow = acceptedCurrent.json<ExperimentGroupShow>();
     expect(acceptedShow).toMatchObject({
-      format: "niceeval.show/v2",
+      format: "niceeval.show",
       selection: { kind: "explicit-runs", runIds: [acceptedRunId] },
       data: {
         kind: "experiment-group",
@@ -152,7 +154,7 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     expect(projectCurrent.exitCode, projectCurrent.diagnostic()).toBe(0);
     const projectCurrentShow = projectCurrent.json<ExperimentGroupShow>();
     expect(projectCurrentShow).toMatchObject({
-      format: "niceeval.show/v2",
+      format: "niceeval.show",
       selection: { kind: "project-current" },
       data: {
         kind: "experiment-group",

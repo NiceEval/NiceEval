@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
 interface ExperimentGroupShow {
-  format: "niceeval.show/v2";
+  format: "niceeval.show";
   selection: { kind: "project-current"; sampleIdentity: string };
   problems: readonly unknown[];
   data: {
@@ -76,7 +76,7 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       expect(evaluations.filter((event) => event.verdict === "failed")).toEqual([]);
       const document = shown.json<ExperimentGroupShow>();
       expect(document).toMatchObject({
-        format: "niceeval.show/v2",
+        format: "niceeval.show",
         selection: { kind: "project-current" },
         data: {
           kind: "experiment-group",

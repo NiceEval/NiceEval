@@ -204,7 +204,7 @@ test("标准 React JSX 的 v0.12 作者 fixture 经安装候选构建完整站�
         const duplicate = await niceeval.run(["show", "--report", `./reports/${module}`, "--json"]);
         expect(duplicate.exitCode, duplicate.diagnostic()).toBe(0);
         expect(duplicate.json<{ format: string; data: { kind: string } }>()).toMatchObject({
-          format: "niceeval.show/v2",
+          format: "niceeval.show",
           data: { kind: "groups" },
         });
       }

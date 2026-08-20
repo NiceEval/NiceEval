@@ -31,7 +31,7 @@ interface ReportProjections {
 
 /** The documented built-in machine document (docs/feature/reports/cli.md). */
 interface BuiltInShowDocument {
-  readonly format: "niceeval.show/v1" | "niceeval.show/v2";
+  readonly format: "niceeval.show";
   readonly locale: "en";
   readonly selection:
     | {
@@ -70,6 +70,18 @@ interface BuiltInShowDocument {
         readonly comparison:
           | { readonly state: "comparable"; readonly members: readonly string[]; readonly rows: readonly unknown[] }
           | { readonly state: "non-comparable"; readonly members: readonly string[]; readonly issues: readonly { readonly reason: string }[] };
+      }
+    | {
+        readonly kind: "run-membership";
+        readonly summary: unknown;
+        readonly members: readonly {
+          readonly experiment: string;
+          readonly selectedRun: string;
+          readonly locator: string | null;
+          readonly verdict: string | null;
+        }[];
+        readonly errors: readonly unknown[];
+        readonly evidence: unknown;
       }
     | {
         readonly kind: "attempt";
@@ -153,7 +165,7 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
       expect(singleJson.exitCode, singleJson.diagnostic()).toBe(0);
       const singleDocument = singleJson.json<BuiltInShowDocument>();
       expect(singleDocument).toMatchObject({
-        format: "niceeval.show/v2",
+        format: "niceeval.show",
         locale: "en",
         selection: {
           kind: "project-current",
@@ -182,7 +194,7 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
       expect(indexJson.exitCode, indexJson.diagnostic()).toBe(0);
       const indexDocument = indexJson.json<BuiltInShowDocument>();
       expect(indexDocument).toMatchObject({
-        format: "niceeval.show/v2",
+        format: "niceeval.show",
         page: { route: "/", pageId: "overview" },
         data: {
           kind: "groups",
@@ -204,7 +216,7 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
       const selected = await niceeval.run(["show", "--experiment", "main", "--json"]);
       expect(selected.exitCode, selected.diagnostic()).toBe(0);
       expect(selected.json<BuiltInShowDocument>()).toMatchObject({
-        format: "niceeval.show/v2",
+        format: "niceeval.show",
         page: { route: "/group/singleton/main", pageId: "group-singleton" },
         data: {
           kind: "experiment-group",
@@ -230,7 +242,7 @@ test("show 保留 named identity，并把同组不同 Eval population 闭合为 
       const shown = await niceeval.run(["show", "--experiment", "classic", "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.json<BuiltInShowDocument>()).toMatchObject({
-        format: "niceeval.show/v2",
+        format: "niceeval.show",
         page: { route: "/group/named/classic", pageId: "group-named" },
         data: {
           kind: "experiment-group",
@@ -263,7 +275,7 @@ test("show 对 immutable Attempt 交付精确 evidence JSON", async () => {
       expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
       const document = attempt.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
-        format: "niceeval.show/v1",
+        format: "niceeval.show",
         locale: "en",
         selection: { kind: "attempt-locator", locator: failed.locator },
         page: { route: "/", pageId: "attempt-overview", title: "Attempt overview" },
@@ -301,23 +313,31 @@ test("show --run 保留 deterministic classic World 的历史 Run 与 Attempt �
       expect(historical.exitCode, historical.diagnostic()).toBe(0);
       const document = historical.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
-        format: "niceeval.show/v2",
+        format: "niceeval.show",
         locale: "en",
         selection: {
           kind: "explicit-runs",
           runIds: [...historyRunIds].sort(),
         },
-        page: { route: "/group/named/classic", pageId: "group-named" },
+        page: { route: "/", pageId: "run-membership" },
         data: {
-          kind: "experiment-group",
-          group: { kind: "named", groupId: "classic", key: "named/classic" },
-          comparison: {
-            state: "comparable",
-            members: ["classic/baseline", "classic/memory-a", "classic/memory-b"],
-          },
+          kind: "run-membership",
+          errors: [],
         },
       });
-      expectCanonicalProblemTable(document.problems, "group-named");
+      if (document.data.kind !== "run-membership") throw new Error("expected run membership");
+      expect(document.data.members.map((member) => member.selectedRun)).toEqual(
+        expect.arrayContaining(historyRunIds),
+      );
+      expect(document.data.members.map((member) => member.experiment)).toEqual(
+        expect.arrayContaining(["classic/baseline", "classic/memory-a", "classic/memory-b"]),
+      );
+      const includedMembers = document.data.members.filter((member) => member.locator !== null);
+      expect(includedMembers.map((member) => member.selectedRun)).toEqual(
+        expect.arrayContaining(historyRunIds),
+      );
+      expect(includedMembers.every((member) => member.verdict !== null)).toBe(true);
+      expectCanonicalProblemTable(document.problems, "run-membership");
       expectBuiltInPricingProfile(document.projections);
       expect(document.projections.costs).toEqual([]);
     },

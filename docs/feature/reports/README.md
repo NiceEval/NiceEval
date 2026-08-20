@@ -90,8 +90,10 @@ view 不注入只在本机有效的作者脚本。
 `show --json` 的内建报告和自定义报告各有固定 format。内建报告输出 Host-owned 领域数据；自定义报告输出单目标执行 manifest 与
 选中 Page 的已呈现文字，不序列化通用作者树或 site revision。format、locale、route 选择与 canonical order 由 [CLI](cli.md) 定义。
 
-实验索引与组内比较使用 `niceeval.show/v2`。单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard。
-既有 Attempt、Source、Execution 与 Timing 文档继续使用 `niceeval.show/v1`。实验组 Page 的 `comparison` 穷尽 `comparable | non-comparable`。
+所有内建 `show --json` Page 使用同一个 `niceeval.show` 文档 format；format 只标识机器文档类型，不承担版本或迁移语义，
+也不随当前 Page 改变。该 API 与生产者同步演进；持久化版本只属于 Record。
+单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard；实验组 Page 的 `comparison` 穷尽
+`comparable | non-comparable`。
 
 报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 左侧放品牌，中间居中整个
 Page router，右侧放实验与语言两个原生选择器；Page router 无论含一个还是多个 Page 都作为整体居中。Shell 不重绘 Report 内容。
