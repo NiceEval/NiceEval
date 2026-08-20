@@ -54,8 +54,8 @@ record/
 事实是否存在。
 
 `complete` 是零字节普通文件，也是排他创建的唯一发布信号。writer 在它之前关闭并 flush 本 Run 的每份文件和目录；
-它之后永不修改这个 Run。缺少它，或该路径为非空文件、目录、symlink 等其它形态的 Run 不进入选择、Sample 或 reuse，并产生
-`incomplete-run` warning。
+它之后永不修改这个 Run。缺少它，或该路径为非空文件、目录、symlink 等其它形态的 Run 不进入选择、Sample 或 reuse。
+reader 保留 `incomplete-run` maintenance warning 供 `clean` 检查，但 Analysis 与 Report 不把正常 residue 当成用户数据问题。
 
 ## NiceEval 内部的 Effect Schema 作者模型
 

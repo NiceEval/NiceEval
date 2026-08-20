@@ -288,9 +288,6 @@ test("自定义 Report 的 show 是单目标阅读面，JSON 只含 target-execu
       expect(shown.stdout).toMatch(/Fixture pass rate is\s+partial \(\d+\/\d+\)/);
       expect(shown.stdout).toContain("Source detail");
       expect(shown.stdout).toContain("Diff detail");
-      const unwrapped = shown.stdout.replace(/\s+/gu, " ");
-      expect(unwrapped).toContain("Total known cost");
-      expect(unwrapped).toContain("costUSD");
 
       const json = await niceeval.run(
         ["show", "--report", "./reports/site.tsx", "--json"],

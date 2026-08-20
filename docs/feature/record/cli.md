@@ -149,7 +149,7 @@ preflight 失败或 sentinel 创建失败都发生在首个 portable write 前�
 | `record-maintenance-busy` | maintenance 与 reader/writer/clean 冲突 | 关闭占用命令后重试 |
 | `record-migration-plan-stale` / `record-migration-git-restore-required` | apply 前计划或 Git 状态已变化，尚未写 portable byte | 保留当前编辑，重新检查并形成新计划；不要执行旧计划的 restore |
 | `record-migration-recovery-required` | sentinel 已创建，迁移写入或最终校验失败 | 仅在 `restoreSafe` 证明成立时按命令恢复；否则先人工检查并保留并发编辑 |
-| `incomplete-run` | Run 缺少规范的零字节普通文件 `complete` | 有效 Run 继续可用；用 `niceeval clean` 检查 |
+| `incomplete-run` | Run 缺少规范的零字节普通文件 `complete` | 普通 `show` 不提示；用 `niceeval clean` 检查 |
 | `not-recorded` | 已封口 owner 没有请求的 fixed family | 让 query 按其 missing policy 处理 |
 | `unsupported-format` | root/Core/family 是 future、unknown 或无完整 chain | 使用写出该格式的 NiceEval；不会形成部分 ordinary session |
 | `invalid` | envelope、payload、ref 或 closure 无效 | 检查该 family；其它有效事实继续可用 |
