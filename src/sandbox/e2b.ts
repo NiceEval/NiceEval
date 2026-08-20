@@ -14,6 +14,8 @@ import { dirname } from "node:path";
 import type {
   CommandResult,
   CommandOptions,
+  ManagedProcess,
+  ManagedProcessStart,
   SandboxReuseCapability,
   SuccessfulCommandResult,
 } from "../types.ts";
@@ -30,7 +32,8 @@ import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { e2bRunIdentityMetadata, type RunIdentity } from "./run-identity.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { successfulCommandResult } from "./operations.ts";
-import { supportedBackendCapability, unsupportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
+import { ManagedProcessOutput } from "./managed-process.ts";
+import { supportedBackendCapability, unsupportedBackendCapability, unsupportedBackendCapabilityBecause, type SandboxProviderBackend } from "./backend.ts";
 
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
@@ -401,7 +404,53 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     suspend: supportedBackendCapability(() => this.suspend()),
     ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
     setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+    managedProcess: unsupportedBackendCapabilityBecause(
+      "E2B managed processes are not enabled until the provider boundary has a public installed-candidate E2E owner",
+    ),
   };
+
+  private async startManagedProcess(input: ManagedProcessStart): Promise<ManagedProcess> {
+    const output = new ManagedProcessOutput();
+    const command = input.argv.map(shellQuote).join(" ");
+    const script = this.pathPrepend.length === 0
+      ? `exec ${command}`
+      : `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\nexec ${command}`;
+    const handle = await this.sbx.commands.run(script, {
+      background: true,
+      stdin: true,
+      cwd: resolveSandboxPath(this.workdir, input.cwd),
+      envs: input.env === undefined ? undefined : { ...input.env },
+      ...(this.userOverride === undefined ? {} : { user: this.userOverride }),
+      onStdout: (chunk) => output.push({ _tag: "Stdout", bytes: new TextEncoder().encode(chunk) }),
+      onStderr: (chunk) => output.push({ _tag: "Stderr", bytes: new TextEncoder().encode(chunk) }),
+    });
+    const exit = handle.wait().then(
+      (result) => ({ exitCode: result.exitCode } as const),
+      (error: unknown) => {
+        if (error instanceof CommandExitError) return { exitCode: error.exitCode } as const;
+        throw error;
+      },
+    ).finally(() => output.end());
+    let closeReceipt: Promise<void> | undefined;
+    let terminateReceipt: Promise<void> | undefined;
+    let stdinState: "open" | "closing" | "closed" = "open";
+    return {
+      output,
+      writeStdin: (bytes) => stdinState === "open" ? handle.sendStdin(bytes) : Promise.reject(new Error("managed process stdin is closed")),
+      closeStdin: () => closeReceipt ??= (async () => {
+        stdinState = "closing";
+        await handle.closeStdin();
+        stdinState = "closed";
+      })(),
+      wait: () => exit,
+      terminate: () => terminateReceipt ??= (async () => {
+        stdinState = "closing";
+        await handle.kill();
+        await exit.catch(() => undefined);
+        stdinState = "closed";
+      })(),
+    };
+  }
 
   private constructor(
     sbx: E2BSdkSandbox,

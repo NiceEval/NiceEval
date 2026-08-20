@@ -7,6 +7,7 @@ export type { Shared } from "./shared.ts";
 
 export { createNpmCliInstaller, agentBin } from "./npm-staged.ts";
 export type { NpmCliInstallerOptions } from "./npm-staged.ts";
+export { acquireManagedProcess } from "./managed-process.ts";
 
 // 证据覆盖声明:官方 SDK 适配器声明全通道 complete 用 completeEvidenceCoverage;
 // 手写映射按实际情况声明(见 docs/feature/adapters/architecture/evidence.md)。

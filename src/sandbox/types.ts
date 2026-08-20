@@ -106,6 +106,30 @@ export interface SuccessfulCommandResult extends CommandResult {
   readonly exitCode: 0;
 }
 
+export interface ManagedProcessStart {
+  readonly argv: readonly [string, ...string[]];
+  readonly cwd?: string;
+  readonly env?: Readonly<globalThis.Record<string, string>>;
+}
+
+export type ManagedProcessChunk =
+  | { readonly _tag: "Stdout"; readonly bytes: Uint8Array }
+  | { readonly _tag: "Stderr"; readonly bytes: Uint8Array };
+
+export interface ManagedProcessExit {
+  readonly exitCode: number | null;
+  readonly signal?: string;
+}
+
+/** Attempt-owned bidirectional process. `output` has exactly one consumer. */
+export interface ManagedProcess {
+  readonly output: AsyncIterable<ManagedProcessChunk>;
+  writeStdin(bytes: Uint8Array): Promise<void>;
+  closeStdin(): Promise<void>;
+  wait(): Promise<ManagedProcessExit>;
+  terminate(): Promise<void>;
+}
+
 /** 三个运行中 Sandbox 视图共用的操作词汇；同名成员在不同视图中不得改变语义。 */
 export interface SandboxOperations {
   /** Sandbox 内项目/工作区根目录的绝对路径(agent 命令的默认 cwd,也是 git baseline 提交的位置)。各方法的相对路径都以此为基准解析,省略 `cwd`/`targetDir` 时也落到这里。 */

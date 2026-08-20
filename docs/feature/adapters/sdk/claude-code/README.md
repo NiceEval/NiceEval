@@ -50,9 +50,13 @@ Adapter 从本地读取文件后上传到隔离的 Claude 配置目录，原样�
 文件原始字节的 SHA-256 进入安装 checkpoint key；manifest 只记项目相对路径和 SHA-256，不保存正文。
 secret 走 env var，不写进配置文件。
 
-Adapter 用 Claude Code transcript JSONL 取得消息、thinking、工具、usage 和 session ID，按 `tool_use.id` / `tool_result.tool_use_id` 配对。
+Adapter 使用 Claude Code 官方 SDK 同款的双向 stream-json 进程协议取得消息、thinking、工具、usage 和原生 session ID，按 `tool_use.id` / `tool_result.tool_use_id` 配对。
 Skill Tool 调用归一为 `skill.loaded`。
-会话通过原生 resume ID 续接。
+进程属于 Attempt；多个 send 在同一个原生 session 上写 user frame。`t.newSession()` 创建独立进程与 session，旧 SessionHandle 不会被自动关闭。
+
+`AskUserQuestion` 通过官方 `control_request / can_use_tool` 暂停，不从 transcript 后验推断。一个 native tool batch 的每题 request ID
+由原生 `session_id + tool_use_id + stable question index` 派生；control request ID 只用于 `control_response`。NiceEval 在任何 write 前全量校验
+duplicate、unknown、missing 与 option，再用一个 `updatedInput.answers` 原子回答整批问题。失败保留 pending，可修正后重试。
 
 Claude Code 自己的 SessionStart / UserPromptSubmit hook 往模型上下文前置的附加文本，在 transcript 里以独立的 `hook_additional_context` 行出现。
 配对的 `hook_success` 行只是执行确认、不带上下文文本，不产生事件。

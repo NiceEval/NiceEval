@@ -86,19 +86,29 @@ secret 走 env var，不写进配置文件。
 Codex Adapter 把 Skills 写到可发现目录并提供稳定发现指引；不能假设存在与 Claude Code Skill Tool 相同的自动加载事件。
 验证 Skill 使用时检查读取行为或 Skill 特有结果。
 
-行为轨来自 `codex exec --json` 的结构化 stdout，session ID 来自 thread started 事件；工具调用优先按显式 call ID 配对。
+Adapter 为每条 NiceEval Session 启动一个 Codex app-server stdio 连接。
+`thread/start` 返回的原生 thread ID 是唯一 session identity。
+每次 send 走 `turn/start`，行为轨来自 app-server 的增量通知，工具调用优先按原生 item ID 配对。
+
+`request_user_input` 通过 app-server 的 `item/tool/requestUserInput` JSON-RPC request 暂停。
+NiceEval 先全量校验同一 native batch 的 request ID、缺失项、重复项与 option，再用原生 RPC ID 一次提交 `answers`。
+校验或 transport 写入失败不会清掉 pending batch，可以修正后重试。Adapter 不从完成后的 transcript 反造 HITL。
+
+进程属于 Attempt，而不是单次 send。Agent teardown 先发送 app-server `shutdown` 并关闭 stdin，随后 Attempt finalizer 等待进程自然退出；仅在有界等待失败时精确终止命令树。
+`t.newSession()` 新建另一条独立 app-server/thread，旧 SessionHandle 仍可继续使用。
 实际模型可能被网关改写，需要时从 Codex session 侧写读取，不能只信请求参数。
 
 ## 执行信任姿态
 
-`codex exec` 一律以 `--json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --dangerously-bypass-hook-trust` 运行，首轮与 `codex exec resume` 续轮相同。
+app-server 在外层 Sandbox 中以 `approval_policy="never"`、`sandbox_mode="danger-full-access"` 运行，thread/turn 同样声明 never 与 danger-full-access。
+锁定的 Codex CLI 0.144.1 还显式启用其原生 `default_mode_request_user_input` feature；该版本默认关闭这项工具。
 
 hook 信任 bypass 与审批 bypass 属同一信任层级。沙箱运行是 headless 的，codex 对非 managed 出处的 hook 的交互式信任确认永远无人应答。
 
 不 bypass 时，这些 hook 被静默跳过且零报错，插件依赖的注入和捕获行为会整体失效。
 
 沙箱里的每个 hook 出处都由实验配置显式声明（`plugins`、`postSetup`、`configFile`），声明即审计，因此不设开关。
-`bypass_hook_trust` 是 runtime-only 参数，`config.toml` 写不了，只能进 exec 命令行。
+app-server 没有 `exec --dangerously-bypass-hook-trust` 这一 one-shot 入口；Plugin hook 的声明与配置仍只来自本 Attempt setup。
 
 ## Prebuilt environment
 

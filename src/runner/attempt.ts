@@ -15,6 +15,8 @@ import { unregisterSandbox } from "../sandbox/registry.ts";
 import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
+import { ManagedAttemptResources } from "./attempt-resources.ts";
+import { bindAttemptResources } from "../context/attempt-resources.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
@@ -1626,8 +1628,9 @@ async function runAttemptBody(
         signal,
       )
     : rawSandbox;
+  const attemptResources = new ManagedAttemptResources();
   // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
-  const attemptCtx: AgentContext = {
+  const attemptCtx: AgentContext = bindAttemptResources({
     signal,
     evalId: evalDef.id,
     attempt: { id: evalDef.id, index: attempt },
@@ -1645,8 +1648,8 @@ async function runAttemptBody(
     diagnostic: feedback.diagnostic,
     // log 是 progress({ message }) 的别名,不是第二条通道(见 AgentContext.log 注释)。
     log,
-  };
-  const sandboxAttemptCtx: SandboxAgentContext = { ...attemptCtx, sandbox };
+  }, attemptResources);
+  const sandboxAttemptCtx: SandboxAgentContext = bindAttemptResources({ ...attemptCtx, sandbox }, attemptResources);
   const commandTarget = createSandboxCommandTarget(sandbox);
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
@@ -1850,6 +1853,7 @@ async function runAttemptBody(
       // 走的生命周期链是同一个函数,两条链的决议序各自单源在 send-failures.ts / failure-class.ts。
       experimentClassifier: run.classifyFailure,
       sourceRegistry,
+      resources: attemptResources,
       nextSourceOrder: sourceCapture.nextSourceOrder,
       // Pass / Score share the same Assert-first entry runtime. Their
       // independent folds are both derived only after this Attempt seals.
@@ -2284,6 +2288,12 @@ async function runAttemptBody(
           }
         })
         .catch(() => {});
+    }
+    try {
+      await assertFirst.requestEffect(cleanupCallback((cleanupSignal) => attemptResources.releaseAll(cleanupSignal)));
+    } catch (error) {
+      declareFailure("agent.teardown", error);
+      diagnostics.push(teardownDiagnostic("agent.teardown", error));
     }
     for (const lifecycle of evalPluginLifecycles.slice(0, activatedEvalPlugins).reverse()) {
       if (lifecycle.teardown === undefined) continue;

@@ -166,6 +166,21 @@ diagnostic 写明三样：触发的是哪层时限（attempt deadline / 命令�
 报错行与请求 timing fact 的 Report 照实印这三样，不打一个没有归属说明的 ✗。
 provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不能静默充当默认值:deadline 超出它时在派发前就报告该约束,点名 provider 与上限值,不让 attempt 跑到一半被截。
 
+Agent 的原生双向协议使用 provider-only `managedProcess` capability。它包含 argv/env/cwd、stdin bytes、单消费者 stdout/stderr 原始 chunk 流、closeStdin、wait 与 terminate。
+它不是公开 `t.sandbox` 作者 facade，也不内建 JSONL、question 或 provider schema。
+
+Local 与 Docker 支持。E2B 的 2.31.0 `CommandHandle` 映射尚未通过安装后公开入口 E2E，因此与缺少双向字节流的 Vercel 一样显式拒绝，不把未经接管的实现声明成可用能力。
+Vercel Sandbox 2.2.1 没有双向 stdin 与 raw output chunk，因此明确 Unsupported。
+custom Sandbox 也明确 Unsupported。Agent setup 在写配置或启动进程前抛具名 capability error，不做鸭子类型探测。
+
+managed process acquire 与 Attempt registry 登记是一个失败原子的步骤。登记或后续构造失败会立即有界 release。
+正常顺序是 Agent 协议 shutdown/EOF → managed finalizer → Sandbox lifecycle/release。
+
+Docker 的正常 finalizer 不停止容器。`setsid --wait` 把 Docker exec receipt 绑定到原生命令树，强制 terminate 只 kill 已确认的进程组。
+身份不明或无法确认静止时标记需要退休，由 runner 的 Sandbox release fallback 收回整实例。
+write、close、terminate 与 wait 都共享幂等 receipt；stdin 一进入 closing 就拒绝晚写。
+output poll 在 exit、stream error、terminate fallback 与 Scope cleanup 路径清除。
+
 ## 留存(keep)与注册表
 
 [`--keep-sandbox`](cli.md) 的留存决策发生在 attempt 收尾链的最后一步。

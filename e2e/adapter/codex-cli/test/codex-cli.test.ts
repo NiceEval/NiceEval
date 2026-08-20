@@ -27,6 +27,8 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "baseline", evalId: "session", verdict: "passed", attempts: 1, passed: 1 },
   // usage：每轮 token usage 非空，且 session 侧写中的实际模型正确；一次验证期望 passed/1。
   { experimentId: "baseline", evalId: "usage", verdict: "passed", attempts: 1, passed: 1 },
+  // HITL：原生问题的两个选项须进入结构化 request，选择 Node.js 后恢复同一会话。
+  { experimentId: "hitl", evalId: "hitl-options", verdict: "passed", attempts: 1, passed: 1 },
   // configfile 反例：shell-disabled 配置下同一 prompt 不得调用 shell；零调用成立时为 passed/1。
   { experimentId: "configfile", evalId: "configfile", verdict: "passed", attempts: 1, passed: 1 },
   // mcp：stdio 求和与远程 DeepWiki 两种 MCP 调用都须出现且入参正确；期望 passed/1。

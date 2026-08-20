@@ -242,3 +242,19 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
     ).toMatchObject({ event: "eval", experimentId: "probe", evalId: "probe", verdict: "passed" });
   });
 });
+
+test("安装后候选的 Local 与 Docker provider 保持 managed process 双工 bytes、分流、EOF、自然退出、terminate 与 Attempt cleanup", async () => {
+  await withProjectCopy(projectCopy, async ({ root }) => {
+    for (const experiment of ["managed-local", "managed-docker"]) {
+      const result = await niceeval.run(["exp", experiment, "--rerun", "all", "--json"], {
+        cwd: root,
+        timeoutMs: 120_000,
+      });
+      expect(result.exitCode, result.diagnostic()).toBe(0);
+      expect(result.expReceipt(), result.diagnostic()).toMatchObject({ completion: "completed" });
+      expect(
+        only(result.ndjson<ExpEvent>(), (event) => event.event === "eval", result.diagnostic()),
+      ).toMatchObject({ experimentId: experiment, evalId: "managed-process", verdict: "passed" });
+    }
+  });
+});

@@ -5,6 +5,8 @@ import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 import { shared } from "./shared.ts";
 import { createPiAgentEventStream, type PiAgentEventLike } from "./sdk-streams.ts";
+import { normalizeToolName } from "../o11y/tool-names.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../o11y/command-projection.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import {
   AGENT_BASELINE_RECIPE_REVISION,
@@ -75,6 +77,21 @@ function parseJsonl(raw: string): PiAgentEventLike[] {
     }
     return value as PiAgentEventLike;
   });
+}
+
+function enrichOmpEvent(event: StreamEvent): StreamEvent {
+  if (event.type !== "operation.started" || event.operation.kind !== "tool") return event;
+  const tool = normalizeToolName(event.operation.name);
+  return {
+    ...event,
+    operation: {
+      ...event.operation,
+      tool,
+      command: tool === "shell"
+        ? opaqueCommandProjection("unsupported-protocol")
+        : notCommandProjection(),
+    },
+  };
 }
 
 /** Oh My Pi sandbox adapter backed by `omp --print --mode json`. */
@@ -163,7 +180,7 @@ export function ompAgent(config?: OmpConfig): Agent {
             });
           }
           const stream = createPiAgentEventStream();
-          const events: StreamEvent[] = nativeEvents.flatMap((event) => stream.add(event));
+          const events: StreamEvent[] = nativeEvents.flatMap((event) => stream.add(event)).map(enrichOmpEvent);
           const terminal = nativeEvents.filter((event) =>
             event.type === "agent_end" &&
             (event as { isTerminal?: unknown }).isTerminal !== false &&

@@ -25,6 +25,8 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "coding", evalId: "session-resume", verdict: "passed", attempts: 1, passed: 1 },
   // WebSearch 正例：coding 开启 webResearch，必须调用 web_search 且不调用 web_fetch，因此期望 passed/1。
   { experimentId: "coding", evalId: "websearch-denied", verdict: "passed", attempts: 1, passed: 1 },
+  // HITL：AskUserQuestion 的两个选项须进入结构化 request，选择 Node.js 后恢复同一会话。
+  { experimentId: "hitl", evalId: "hitl-options", verdict: "passed", attempts: 1, passed: 1 },
   // skill-used：只加载目标本地 Skill，并在回答中采用其独有 marker；单次正调应为 passed/1。
   { experimentId: "skill", evalId: "skill-used", verdict: "passed", attempts: 1, passed: 1 },
   // skill-checklist：只加载 checklist Skill、不误载 marker/decoy；反选断言同时成立才是 passed/1。
