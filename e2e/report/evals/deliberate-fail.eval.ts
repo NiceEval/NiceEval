@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
+import { includes, referencesAnyPath, toolMatch } from "niceeval/expect";
 
 // Deterministically failing assertion: the public read face must keep failed distinct
 // from errored and JUnit must fold it as <failure>.
@@ -7,6 +7,12 @@ export default defineEval({
   description: "deliberate-fail:确定性失败断言",
 
   async test(t) {
-    t.check(1 + 1, equals(3));
+    const turn = await t.send("produce a deterministic forbidden tool call");
+    turn.succeeded().label("Turn completed");
+    turn.notCalledTool(
+      toolMatch({ input: referencesAnyPath(["report-notes.txt", "evals", "agents"]) }),
+    ).label("No private source access");
+    t.check("actual fixture value", includes("expected fixture value"))
+      .label("Expected fixture value");
   },
 });

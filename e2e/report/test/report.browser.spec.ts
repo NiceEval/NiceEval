@@ -419,6 +419,72 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await page.goBack();
         await expect(dialog).not.toBeVisible();
 
+        // Assertion source-line details use one display contract across a
+        // matched built-in assertion, a nested scoped matcher mismatch, and a
+        // direct value mismatch. The Report projects sealed diagnostic facts;
+        // it never dumps the matcher tree as user-facing JSON.
+        await page.goto(origin!);
+        await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "main" });
+        await expect(page).toHaveURL(new RegExp("/group/singleton/main/index\\.html$"));
+        const mainFilter = page.getByRole("searchbox").filter({ visible: true });
+        await mainFilter.fill("deliberate-fail");
+        const mainTable = mainFilter.locator("..").getByRole("table");
+        const mainSummary = mainTable.locator("summary").filter({
+          has: page.getByText("main", { exact: true }),
+        }).filter({ visible: true });
+        await expect(mainSummary).toHaveCount(1);
+        await expect(mainSummary).toBeVisible();
+        const mainGroup = mainSummary.locator("..");
+        await mainSummary.click();
+        await expect(mainGroup).toHaveAttribute("open", "");
+        const failedEvalSummary = mainGroup.locator("summary").filter({
+          has: page.getByText("deliberate-fail", { exact: true }),
+        }).filter({ visible: true });
+        await expect(failedEvalSummary).toHaveCount(1);
+        await expect(failedEvalSummary).toBeVisible();
+        const failedEval = failedEvalSummary.locator("..");
+        await failedEvalSummary.click();
+        await expect(failedEval).toHaveAttribute("open", "");
+        await mainFilter.fill("");
+        const failedAttemptLink = failedEval.getByRole("link").filter({ visible: true });
+        await expect(failedAttemptLink).toHaveCount(1);
+        await failedAttemptLink.click();
+        await expect(dialog).toBeVisible();
+
+        const matchedAssertion = dialog.locator("details").filter({ hasText: "Turn completed · soft passed" });
+        await expect(matchedAssertion).toHaveCount(1);
+        await matchedAssertion.locator(":scope > summary").click();
+        await expect(matchedAssertion.getByText("Turn completed · soft passed", { exact: true })).toBeVisible();
+
+        const nestedMismatch = dialog.locator("details").filter({
+          hasText: "No private source access · gate failed",
+        });
+        await expect(nestedMismatch).toHaveCount(1);
+        if (await nestedMismatch.getAttribute("open") === null) {
+          await nestedMismatch.locator(":scope > summary").click();
+        }
+        await expect(nestedMismatch.getByText("reason: condition-not-met", { exact: false })).toBeVisible();
+        await expect(nestedMismatch.getByText(
+          "notCalledTool(toolMatch(input=referencesAnyPath(3 paths))) observed a matching tool",
+          { exact: false },
+        )).toBeVisible();
+        await expect(nestedMismatch.getByText("received: 1 definite match", { exact: false })).toBeVisible();
+        await expect(nestedMismatch.getByText("location: tool occurrence", { exact: false })).toBeVisible();
+        await expect(nestedMismatch.getByText(/^diagnostic: \{"children"/)).toHaveCount(0);
+
+        const valueMismatch = dialog.locator("details").filter({ hasText: "Expected fixture value · gate failed" });
+        await expect(valueMismatch).toHaveCount(1);
+        if (await valueMismatch.getAttribute("open") === null) {
+          await valueMismatch.locator(":scope > summary").click();
+        }
+        await expect(valueMismatch.getByText("includes(\"expected fixture value\") did not find the literal text", {
+          exact: false,
+        })).toBeVisible();
+        await expect(valueMismatch.getByText("expected: \"expected fixture value\"", { exact: false })).toBeVisible();
+        await expect(valueMismatch.getByText(/^diagnostic: \{/)).toHaveCount(0);
+        await page.keyboard.press("Escape");
+        await expect(dialog).not.toBeVisible();
+
         // The href stays a real standalone route: direct navigation reads the
         // same closed detail document.
         await page.goto(detail.href);

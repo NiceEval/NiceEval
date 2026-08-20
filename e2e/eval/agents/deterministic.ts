@@ -1,4 +1,9 @@
-import { commandProjection, completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+import {
+  commandProjection,
+  completeEvidenceCoverage,
+  defineAgent,
+  notCommandProjection,
+} from "niceeval/adapter";
 import type { CommandProjection } from "niceeval/adapter";
 
 type DirectTool = {
@@ -55,6 +60,19 @@ const replies: Readonly<Record<string, DirectReply>> = {
   "assertion/values": {
     marker: "assertion-values-marker\n# First\n## Second\nhttps://one.example https://two.example",
     data: { fixture: "assertion-values", ok: true },
+  },
+  "assertion/match-outcomes": {
+    marker: "assertion-match-outcomes-marker",
+    data: { fixture: "assertion-match-outcomes", ok: true },
+    tools: [
+      shellCommand("match-command", "niceeval", ["exp", "fixture"]),
+      {
+        name: "matcher_tool",
+        input: { path: "match/input.txt", mode: "safe" },
+        output: { marker: "match-output" },
+        command: notCommandProjection(),
+      },
+    ],
   },
   "assertion/scopes-main": {
     marker: "assertion-scope-main",
