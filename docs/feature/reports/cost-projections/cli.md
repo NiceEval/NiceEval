@@ -13,6 +13,10 @@ Sample、Profile 和关闭投影。
 
 ## 人类输出
 
+摘要中的成本 KPI 只显示闭合金额，例如 `USD 32.414359`。`partial` 的缺失 slot 由同层 `not-recorded`
+warning 解释，不在 KPI 格里重复 Profile、provenance、coverage 和每个 reason。完整 ledger 仍在成本组件与 machine
+projection 中可用。
+
 成本组件显示 USD、Profile content identity、declared-rate-card provenance、`available` / `partial` / `unavailable` 状态、total、mean
 和每条 Attempt 的 Provider 计价状态。它不会以一个 basis 标签替代 ledger。
 

@@ -75,19 +75,10 @@ export function formatCostProjectionCellText(
   if (projection.state === "unavailable" || projection.combined === null) {
     return Object.freeze({
       text: localeText(locale, "costProjection.unavailable"),
-      detail: formatCostProjectionCellDetail(cell, locale),
     });
   }
-  const parts = [
-    `${knownValueLabel(projection, locale)} ${moneyText(projection.combined)}`,
-    localeText(locale, `costProjection.basis.${projection.basis}`),
-  ];
-  if (projection.state === "partial") {
-    parts.push(localeText(locale, "costProjection.state.partial"));
-  }
   return Object.freeze({
-    text: parts.join(" · "),
-    detail: formatCostProjectionCellDetail(cell, locale),
+    text: moneyText(projection.combined),
   });
 }
 
