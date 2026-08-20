@@ -7,7 +7,7 @@ description: "理解 Experiment、Record、Analysis 与 Report 如何组成一�
 NiceEval 把评估定义、运行、已发布结果和报告分成清楚的职责。你定义评估用例与 Experiment，Runner 执行它们；完整 Run 发布到 Record；查看和分享时，Analysis 从选中的结果形成闭合值，Report 再把这些值组织成页面。
 
 ```text
-Eval 与 Experiment
+评估用例与 Experiment
         ↓
 Runner
         ↓
@@ -24,7 +24,7 @@ Report
 
 ## 评估如何运行
 
-Eval 定义任务、断言和需要的 Fixture。Experiment 选择 Eval，并声明 Agent、模型、并发、预算与其他运行条件。Adapter 连接被测系统；Sandbox 提供隔离的执行位置。
+评估用例定义任务、断言和需要的 Fixture。Experiment 选择评估用例，并声明 Agent、模型、并发、预算与其他运行条件。Adapter 连接被测系统；Sandbox 提供隔离的执行位置。
 
 Runner 为每个选中的 Experiment 建立一个 Run。Run 列出本次应有的位置，因此它定义结果计算的分母。每个位置最多有一个 Member。
 
@@ -40,7 +40,7 @@ Record 是可携带、可复制并可进入 Git 的已发布结果集。应用�
 
 用户用不带 locator 或 `--run` 的命令选择仍匹配当前项目的结果，或用 locator、`--run` 选择历史事实。NiceEval 根据这个选择形成 `Sample`，它保留完整的预期范围和分母，但不允许页面重新选择或重新打开结果。
 
-`project-current` 扫描所有已发布 Run，只保留 Experiment、Eval 和执行身份仍匹配当前项目的位置。它不按时间只留一个 Run。
+`project-current` 扫描所有已发布 Run，只保留 Experiment、评估用例和执行身份仍匹配当前项目的位置。它不按时间只留一个 Run。
 
 `--run` 保留具名 Run 的完整预期范围。每个已选位置都是 `included`、`not-recorded`、`core-invalid` 或 `excluded`。选择建立框架后，缺少分析输入不会悄悄缩小分母。
 

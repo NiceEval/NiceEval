@@ -1,0 +1,61 @@
+---
+title: "比较多个固定 Run"
+sidebarTitle: "比较多个 Run"
+description: "用明确 Run ID 固定比较分母，核对结果覆盖，再比较通过率、得分、成本与时长，而不让新结果改变已打开的比较。"
+---
+
+比较模型、提示词或 Agent 版本时，先固定要看的 Run。不要用“最新结果”代替实验边界；新 Run 发布后不应悄悄改变已经开始的比较。
+
+## 取得每次运行的 Run ID
+
+TTY 完成反馈会显示 Run ID。机器流程从 `exp --json` 最后一条 receipt 读取 `runIds`：
+
+```sh
+pnpm exec niceeval exp baseline --json > baseline.ndjson
+pnpm exec niceeval exp candidate --json > candidate.ndjson
+```
+
+保留这两个固定 ID。它们定义比较使用的计划与 expected-slot 分母。
+
+## 先分别核对结果覆盖
+
+```sh
+pnpm exec niceeval show --run <baseline-run-id>
+pnpm exec niceeval show --run <candidate-run-id>
+```
+
+先看每个 Run 有多少位置是已执行、自动沿用、人工采用、未派发或中断。结果覆盖不足时，不要把缺失位置当成失败、零分或成功。
+
+如果一个 Run 因预算、首过即停或部分采用留下 `not-dispatched`，应先决定补跑、接受不完整分母，还是只比较两边共同且明确的范围。
+
+## 在同一个固定选择中比较
+
+```sh
+pnpm exec niceeval show \
+  --run <baseline-run-id> \
+  --run <candidate-run-id>
+```
+
+浏览器需要完整页面时使用同一组参数：
+
+```sh
+pnpm exec niceeval view \
+  --run <baseline-run-id> \
+  --run <candidate-run-id>
+```
+
+通过制评估比较通过率，计分制评估比较 earned score。混合 Experiment 分别保留两种主读数，不把它们合成一个百分比。
+
+成本和时长只在有完整 Observability 时比较。缺失、部分采集或不支持的数据必须保持可见，不能填成零。
+
+## 下钻差异来源
+
+从 Run 页面复制 Attempt locator：
+
+```sh
+pnpm exec niceeval show @1K1P0VJAPVJ12
+```
+
+详情页用于核对 Assertion、Judge 理由、工具调用、用量、时间和 File Changes。Run 页面解释本次位置为何使用该 Attempt；Attempt 页面解释这次执行实际发生了什么。
+
+需要自定义分组、成本 Profile 或专用页面时，继续阅读[编写自定义报告](/zh/tutorials/custom-reports)。

@@ -50,7 +50,8 @@ Human 采用用户动作和结果词汇，不采用内部实体名：
 | `reuse/carried` | `using a result from a previous run` |
 | `identity-mismatch` | `will run because the configuration changed` |
 | `elsewhere` | `waiting for another NiceEval run` |
-| recovered lease / lock | `Recovered stale coordination state; the run continued.` |
+| recovered case lock | `Recovered stale coordination state; the run continued.` |
+| sharedState cleanup retained | `sharedState remains owned; explicit recovery is required.` |
 
 `attempts`、`evals` 和 Experiment/config 名称来自用户的运行计划，可以直接展示。表示计划乘积时优先写清对象，例如 `18 attempts · 6 evals × 3 run configurations`。
 

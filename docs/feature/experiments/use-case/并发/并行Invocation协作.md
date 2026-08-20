@@ -26,13 +26,17 @@ incomplete（未发布不完整），不会被读取、展示或沿用。
 是否让两个 Invocation 派发同一 logical slot，由 Coordination 的 execution deduplication（执行去重）和
 dispatch claim（派发占用）决定。它们使用 `.niceeval/` 的本地状态，不读取另一个 writer 的目录或 local build。
 
-有效 owner 仍在运行时，等待方把占位显示为运行状态。owner 被强杀且 heartbeat 过期时，等待方接管本地
-协调状态并继续派发；成功接管属于恢复信息，不形成 warning。完整输出见[恢复中断运行](恢复中断运行.md)。
+有效 case-lock owner 仍在运行时，等待方把占位显示为运行状态；case lock 的过期恢复仍是本地执行去重的一部分。
+但 `sharedState.key` 不使用 heartbeat expiry 或 PID 自动接管：它的等待方保持阻塞，直到 owner 正常完成完整生命周期，或
+操作员按[恢复中断运行](恢复中断运行.md#sharedstate-显式恢复)显式确认 terminated/quiesced 后运行一次补偿 teardown。
 
 ## 外部共享状态
 
 同一或不同 Record root 的 Invocation 都可能访问同一数据库或 checkpoint。此时 `sharedState.key` 只保护
 那份外部状态的生命周期；它不合并选择集，也不把未发布 Attempt 作为 carry 候选。
+
+最后 Attempt settle 后，Runner 冻结 reusable pool registry。它等待 Sandbox lifecycle/finalizer scope（其中也等待
+provider finalizer）和 Experiment teardown 完成后才释放。任一 cleanup 失败会留下可公开检查、显式恢复的 owner evidence。
 
 ## 边界
 

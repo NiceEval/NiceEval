@@ -42,7 +42,7 @@
 
 - Sandbox 中途消失时当前 Attempt `errored`，不静默重跑。
 - Sandbox lifecycle `teardown()` 早于 Provider finalizer；因 Sandbox 已停止而无法 save 属于收尾顺序违约。
-- 持有者强杀后用心跳过期与 rename 接管恢复互斥，并记 `state-lease-taken-over`。
+- 持有者强杀后 sharedState 保留不可变 owner evidence，等待方经公开双确认恢复；心跳不触发接管。
 - 租约不证明半次外部写入已回滚。作者无法保证原子 checkpoint 时，必须换新 key 与干净 cohort 重建。
 - 文件租约不涵盖不同机器或不同结果根；这些场景使用外部分布式互斥。
 

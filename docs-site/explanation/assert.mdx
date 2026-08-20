@@ -1,256 +1,98 @@
 ---
-title: "NiceEval assertions: values, scoped facts, tests, and cost"
-sidebarTitle: "Assert"
-description: "NiceEval's assertion vocabulary — value assertions, scoped assertions, project-test assertions, and efficiency checks — plus gate vs soft severity and the rules that fold them into a verdict."
+title: "NiceEval Assertions and Matches"
+sidebarTitle: "Assertions and Matches"
+description: "Use a Match to describe a value comparison. A call immediately registers an Assertion; the handle only configures that Assertion."
 ---
 
-Assertion is the process of taking everything an agent did during an eval — every message, tool call, file change, and token spent — and folding it into a single, explainable result. [NiceEval](https://niceeval.com/) gives you four assertion mechanisms that complement each other: some check values immediately, some assess the whole run after it completes, some execute tests inside the Sandbox, and some measure efficiency. All four produce the same `Assertion` type and feed into the same verdict rules. For the fifth mechanism — asking a language model to judge open-ended quality — see [Judge](/explanation/judge).
-
-## The four assertion mechanisms
-
-<CardGroup cols={2}>
-  <Card title="1. Value assertions" icon="equals">
-    `t.check(value, matcher)` and `t.require(value, matcher)` evaluate a specific value immediately against a matcher from `niceeval/expect`. Use these for facts you can verify inline.
-  </Card>
-  <Card title="2. Scoped assertions" icon="crosshairs">
-    `t.succeeded()`, `t.calledTool()`, `t.messageIncludes()`, and friends are registered during `test(t)` but evaluated **after** the function returns, against the complete turn data. Use these for whole-run facts.
-  </Card>
-  <Card title="3. Project-test assertions" icon="flask">
-    For Sandbox evals, run project tests, build scripts, or focused probe commands from `test(t)`. Use this for coding tasks where file content and build results are the ground truth.
-  </Card>
-  <Card title="4. Efficiency assertions" icon="gauge">
-    `t.maxTokens()` and `t.maxCost()` turn token usage and estimated cost into scoreable dimensions. An agent that answers correctly but burns ten times the expected tokens should not score the same as one that answers efficiently.
-  </Card>
-</CardGroup>
-
-## Gate vs soft severity
-
-Every assertion carries a **severity** that determines how it influences the final verdict. There are exactly two severities:
-
-<Tabs>
-  <Tab title="gate">
-    A gate assertion is a hard requirement. If it fails, the entire eval is immediately classified as `failed` — regardless of how well every other assertion passed. Use gate for facts that must be true: "the agent called the correct tool", "the response parsed as valid JSON", "no shell commands errored."
-
-    Most matchers in `niceeval/expect` (`includes`, `equals`, `matches`, `satisfies`) default to gate. Scoped assertions like `t.succeeded()` and `t.calledTool()` also default to gate.
-  </Tab>
-  <Tab title="soft">
-    A soft assertion is a quality score with a numeric threshold. If the score falls below the threshold, the eval becomes `passed` rather than `failed` — a signal that there is a quality regression, but not a hard breakage. Soft failures only count as failures when you run with `--strict`.
-
-    Use soft for continuous judgments where the answer is "how good" rather than "correct or not": similarity measurement, LLM-as-judge factuality ratings, cost budgets you want to track without blocking CI.
-
-    Matchers that produce a continuous score (`similarity`) and all judge calls default to soft.
-  </Tab>
-</Tabs>
-
-You can override the default severity with a chain method on any matcher or assertion:
+An Assertion is NiceEval's unit of evaluation. When an author calls `t.check(value, match)`, `turn.succeeded()`, `calledTool(...)`, or a Judge recipe, NiceEval immediately registers one Assertion. There is no flow where you first create an intermediate object and then pass it to another API. The returned handle only configures that one entry.
 
 ```ts
-t.check(t.reply, includes("confirmed"));          // gate (default)
-t.check(t.reply, similarity(expected).gate());    // promote to gate
-t.maxTokens(80_000).atLeast(0.7);                 // demote to soft with a threshold
+import { includes } from "niceeval/expect";
+
+t.check(turn.message, includes("Completed")).label("Reply says it completed");
+turn.succeeded().label("Turn completed");
+turn.calledTool("get_weather", { count: 1 }).label("Looks up weather");
+turn.judge.autoevals.closedQA("Is the answer specific and polite?").gate(0.8).label("Answer quality");
 ```
 
-## Verdict rules
+Each Assertion's `key` and `label` can be configured at most once. Setting either more than once is an authoring error, even when setting it to the same value.
 
-Once all assertions are collected, the runner takes the first matching rule in this fixed order and folds them into a single result:
+## Matches compare values only
 
-```
-Execution error, timeout, or author mistake                        → errored
-Any gate assertion failed, or a soft is below threshold --strict   → failed
-t.skip(reason) was called explicitly                                → skipped
-Otherwise                                                            → passed
-```
-
-`errored` outranks everything else, because the execution evidence can no longer be trusted. `failed` outranks `skipped`, so that a `t.skip()` cannot mask a hard failure recorded earlier.
-
-<CardGroup cols={2}>
-  <Card title="passed" icon="circle-check" color="#22c55e">
-    No errors, all gate assertions passed, all soft assertions met their thresholds (or you did not run with `--strict`).
-  </Card>
-  <Card title="failed" icon="circle-xmark" color="#ef4444">
-    At least one gate assertion did not pass, or a soft assertion fell below its threshold under `--strict`. Hard failure.
-  </Card>
-  <Card title="errored" icon="triangle-exclamation" color="#f59e0b">
-    An execution error, timeout, or author mistake — this run cannot support a trustworthy conclusion, and it is not disguised as an assertion failure.
-  </Card>
-  <Card title="skipped" icon="forward" color="#6b7280">
-    `t.skip("reason")` was called. Excluded from pass-rate calculations entirely.
-  </Card>
-</CardGroup>
-
-When you run an eval more than once (`attempts > 1`), the per-eval summary becomes a **pass rate** (the fraction of attempts that produced `passed`) and an average latency, rather than a single verdict.
-
-## 1. Value assertions — `niceeval/expect` matchers
-
-`t.check(value, assertion)` evaluates the assertion immediately and records the result. `t.require(value, assertion)` does the same but **throws immediately** if the assertion fails, aborting the rest of the test function. Use `t.require` for preconditions: if a required fact is false, there is no point continuing.
-
-The matchers available from `niceeval/expect`:
+`niceeval/expect` exports pure Match factories. A Match is a reusable, immutable, deterministic, side-effect-free comparison rule. It has no identity, call site, threshold, score, or control flow. `t.check(value, match)` strictly takes two arguments, reads `value` at the call site, and registers an Assertion.
 
 ```ts
-import {
-  includes,    // substring or regex match          (default: gate)
-  equals,      // deep equality                     (default: gate)
-  matches,     // Standard Schema (Zod etc.) check  (default: gate)
-  similarity,  // normalized Levenshtein 0–1        (default: soft)
-  satisfies,   // custom predicate + label          (default: gate)
-} from "niceeval/expect";
-```
+import { equals, includes, matches, satisfies } from "niceeval/expect";
 
-Usage examples:
-
-```ts
-// Check that the agent's reply contains a specific string
-t.check(t.reply, includes("order confirmed"));
-
-// Deep-equal check on structured output
+t.check(turn.message, includes("Order confirmed"));
 t.check(turn.data, equals({ status: "refund", amount: 42 }));
-
-// Validate structured output against a Zod schema
-t.check(turn.data, matches(z.object({ intent: z.enum(["refund", "ship"]) })));
-
-// Similarity with an explicit threshold
-t.check(t.reply, similarity("expected answer").atLeast(0.8));
-
-// Custom predicate
-t.check(turn.data, satisfies((d) => d.total > 0, "total is positive"));
+t.check(turn.data, matches(OrderSchema));
+t.check(turn.message.length, satisfies("Reply is not empty", (length) => length > 0));
 ```
 
-Matchers are pure functions — `(value) => number` — so you can write your own and pass them to `t.check` without any special registration.
+## Scoped Assertions
 
-## 2. Scoped assertions
-
-Scoped assertions are registered during `test(t)` but evaluated **after the function returns**, against the complete accumulated turn data. They read from the standard event stream that `t.send()` produces (see [Drive](/explanation/drive)) and its derived facts — so as long as your adapter produces correct events, these assertions work identically for every agent.
-
-<Warning>
-Scoped assertions only appear on `t` if the agent has declared the corresponding capability. Calling `t.calledTool()` when the agent has not declared `toolObservability: true` is a compile error.
-</Warning>
-
-### Run / session dimension
+Scoped methods directly register a Boolean Assertion when called. The receiver determines the evidence scope: `turn.*` sees only that immutable Turn, `session.*` sees the prefix of that Session before the call, and root `t.*` sees the vector cut of all Sessions started at the call.
 
 ```ts
-await t.succeeded().orStop();    // run completed; stop dependent checks if it did not
-t.parked();                     // cleanly stopped on a HITL input.requested event
-t.messageIncludes("Regards,");  // all message events concatenated contain this string/regex
+const turn = await t.send("Run checks and fix the problem.");
+turn.succeeded().label("Turn completed");
+turn.calledTool("shell").label("Uses shell");
+turn.calledTool("read_file", { count: 2 }).label("Reads twice");
 ```
 
-### Tool / action dimension
+The second argument to `calledTool` controls only `count`. Put conditions on `input`, `output`, and `status` in `toolMatch`; give JSON structure to `jsonMatch` and command tokens to `commandMatch`. `notCalledTool` directly accepts the same kind of matcher.
+
+## Two kinds of Eval
+
+`defineEval` creates a pass-style Eval. Boolean `matched` enters the Attempt Verdict; `mismatched` makes the final Verdict `failed`, but does not prevent later checks from registering. Continuous evaluators and Judge recipes yield a `[0,1]` measurement. A pass-style Eval includes it in `failed` only with `.gate(n)`; `.atLeast(n)` records only a local condition.
 
 ```ts
-import { commandMatch } from "niceeval/expect";
-
-t.calledTool(commandMatch("pwd"), { count: 1 });
-t.notCalledTool(commandMatch("npm", { argsStart: ["install"] }));
-t.toolOrder(["read_file", "write_file"]);   // relative order of tool calls
-t.usedNoTools();
-t.maxToolCalls(5);
-t.loadedSkill("memory-v2");                // sugar for calledTool("load_skill", ...)
-t.calledSubagent("researcher", { remoteUrl: /api\.example/ });
-t.noFailedActions();                       // no tool, subagent, or skill has status "failed"
+turn.judge.autoevals.closedQA("Does the answer give actionable steps?")
+  .gate(0.8)
+  .label("Actionable steps");
 ```
 
-The second argument to `calledTool` only controls `count`. Put input, output, and status constraints in a managed matcher such as `toolMatch`, `jsonMatch`, or `commandMatch`. `notCalledTool` takes the matcher directly.
-
-### Event stream dimension (low-level escape hatch)
+`defineScoreEval` creates a score-style Eval. It has only a cumulative `score`, not an Attempt Verdict, total score, percentage, or another numeric unit. An Assertion saves its evaluation without scoring by default; `.score(n)` makes an existing Assertion contribute score. A Boolean match contributes `n` and a mismatch contributes `0`; a measurement `m` contributes `m * n`. `t.score(n)` registers a contribution directly, and its returned handle can configure only `key` and `label`.
 
 ```ts
-t.event("input.requested", { count: 1 });
-t.notEvent("error");
-t.eventOrder(["operation.started", "operation.finished"]);
-t.eventsSatisfy("read before write", (events) => /* custom predicate */ true);
+turn.calledTool("search");                         // Saves only the evaluation
+turn.calledTool("search").score(2);                // +2 when it matches
+turn.judge.autoevals.closedQA("Is the answer complete?").score(5); // +4 when measurement is 0.8
+t.score(5);                                        // Directly +5
 ```
 
-All scoped assertions above are syntactic sugar for these low-level event stream queries. When none of the higher-level assertions fit your use case, you can drop down to `eventsSatisfy` and write an arbitrary predicate over the raw `StreamEvent[]`.
+A score-style Eval measurement can close without a threshold. `.atLeast(n)` only adds a local `met` / `below` condition; it does not change the contribution. An Assertion without `.score()` does not display `+0`. A score-style Eval with no score items normally receives an official, rankable `score: 0`.
 
-### Structured output (on `turn`, not `t`)
+## Control flow
+
+`.orStop()` is an async barrier on the same Assertion handle and must be awaited. A Boolean mismatch, or a thresholded measurement below its threshold, sets an authoring stop latch and rejects a private control signal. It stops only the continuation currently awaiting it. It does not undo ordinary JavaScript side effects or cancel concurrent work that has already started; source that has not executed produces no result.
 
 ```ts
-const turn = await t.send("Return the result as JSON");
-turn.outputEquals({ status: "ok" });                         // deep equality on turn.data
-turn.outputMatches(z.object({ status: z.string() }));        // Standard Schema validation
+const turn = await t.send("Search for information and explain the conclusion.");
+await turn.succeeded().orStop();
+const search = await t.check(turn.message, includes("conclusion")).orStop();
 ```
 
-### Workspace dimension (Sandbox agents only)
+After a normal stop, a pass-style Eval still receives a `failed` Verdict from the Assertion that triggered it. A score-style Eval remains `scored`, preserving its official score and stop cause, so it can be ranked.
 
-```ts
-t.sandbox.fileChanged("src/Button.tsx");
-t.sandbox.fileDeleted("src/old.ts");
-t.sandbox.noChanges();                         // no repository files were modified this turn
-t.sandbox.notInDiff(/sk-[A-Za-z0-9]/);         // attributed diff contains no secrets / inline styles
-t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded());         // npm test exited 0
-t.check(await t.sandbox.runCommand("npm", ["run", "build"]), commandSucceeded()); // npm run build exited 0
-t.sandbox.noFailedShellCommands();
-```
+## Judge
 
-These declarations are evaluated against the agent-attributed diff after the run: `fileChanged("src/Button.tsx")` matches when the Agent modified that path, `fileDeleted("src/old.ts")` matches when the Agent deleted it, and `changedPaths([...])` matches the exact unordered set of changed paths. `fileChanged(path, { before, after, status })` also matches content: `before` and `after` are read from the same change's endpoints.
+Calling a Judge recipe immediately registers a measurement Assertion. A pass-style Eval calls `.gate(n)` on that handle; a score-style Eval calls `.score(n)`. Both configurations run the Judge evaluator once. See [Judge](/explanation/judge) for material, configuration, and failure semantics.
 
-To read a file's current content — for example, to hand it to a Judge as explicit `{ input, output }` material — use `await t.sandbox.readText(path)`. Attribution is decided by `fileChanged`, not by what you read.
+## Unavailable results and reading them
 
-Scoped assertions follow one rule everywhere: **the receiver decides the scope, not the assertion name.** `t.*` aggregates every turn of the whole eval run (including any `t.newSession()` sessions); `session.*` (from `t.newSession()`) scopes to that one session; `turn.*` (from `t.send()`'s return value) scopes to that single turn only. Same vocabulary, different receiver — see [Drive](/explanation/drive) for what each receiver is.
+Missing evidence must not masquerade as an ordinary mismatch. `unavailable` and `errored` preserve their reasons and redacted evidence.
 
-## 3. Project-test assertions (Sandbox evals)
+AssertionResult does not save only a pass or failure. Every entry follows the same `check(a, b)` model: each result saves safe structured content or a stable reference for subject `a`, the evaluator / Match `b` identity and complete safe configuration, and the structured result needed for evaluation, policy, and display. Explicit `t.check(a, b)` lets the author supply both. `calledTool`, `succeeded`, and Judge recipes are special cases that obtain `a` and construct `b` for the author; their storage rules are unchanged.
 
-For Sandbox coding evals, run validation commands inside `test(t)` and record their result as assertions.
+For example, `t.check(await t.sandbox.runCommand(...), commandSucceeded())` retains the evaluated `CommandResult` command, arguments, exit status, duration, and redacted stdout / stderr content or references. `calledTool(...)` retains normalized tool-occurrence context in its scope. That context includes operation / event identity, redacted input, status, output / error references, coverage, and matching event references. When nothing matches, it still retains observation scope and candidate occurrence references rather than only `false`.
 
-```ts
-import { commandSucceeded, includes } from "niceeval/expect";
-
-const testResult = await t.sandbox.runCommand("npm", ["test"]);
-t.check(testResult, commandSucceeded());
-
-const src = await t.sandbox.runShell("find . -name '*.ts' -exec cat {} +");
-t.check(src.stdout, includes(/z\.object\s*\(/));
-```
-
-You can also assert behavior through the standard event stream: `t.calledTool(...)`, `t.sandbox.noFailedShellCommands()`, `t.eventsSatisfy(...)`, and diff assertions such as `t.sandbox.fileChanged(...)`.
-
-## 4. Efficiency / cost assertions
-
-Token usage is a first-class evaluation dimension. An agent that answers correctly but burns far more tokens than expected should not be treated identically to one that answers efficiently.
-
-```ts
-t.maxTokens(50_000);            // hard token limit for the entire run (gate by default)
-t.maxCost(0.5);                 // estimated cost cap in USD (requires a price table in config)
-t.maxTokens(80_000).atLeast(0.7);     // soft variant — tracked but only red under --strict
-t.check(t.usage.outputTokens, satisfies((n) => n < 10_000, "not verbose"));
-```
-
-`t.usage` is available anywhere inside `test(t)` and exposes `{ inputTokens, outputTokens, cacheReadTokens?, … }`. For Sandbox agents, token counts are extracted from the transcript by the adapter; for Direct Agents, they are returned in `Turn.usage`.
-
-## Custom scorers
-
-A value assertion is just a function `(value) => number | Promise<number>`. You can write custom matchers using `makeAssertion`:
-
-```ts
-import { makeAssertion } from "niceeval/expect";
-import type { Assertion } from "niceeval/expect";
-
-function jsonValid(): Assertion {
-  return makeAssertion({
-    name: "jsonValid",
-    severity: "gate",
-    score: (value) => {
-      try { JSON.parse(String(value)); return 1; }
-      catch { return 0; }
-    },
-  });
-}
-
-t.check(t.reply, jsonValid());
-```
-
-Custom matchers compose with the same chain methods as built-ins: `.gate()`, `.atLeast(0.7)`.
-
-## Results stay structured
-
-An `AssertionResult` stores more than pass or fail. Every entry follows the same `check(a, b)` model: safe structured subject content or a stable reference for `a`; the evaluator or Match identity and complete safe configuration for `b`; and the evaluation, policy, and structured result needed for display. Explicit `t.check(a, b)` supplies both values. `loadedSkill`, `calledTool`, `succeeded`, and Judge recipes only obtain `a` and construct `b` for the author.
-
-For example, `t.check(await t.sandbox.runCommand(...), commandSucceeded())` retains the evaluated command, arguments, exit status, duration, and redacted stdout and stderr content or references. `calledTool(...)` retains normalized occurrence context in its scope. When nothing matches, it retains the observation scope and candidate occurrence references rather than only `false`.
-
-`show`, `view`, JSON, export, and source can organize copy and interfaces offline from these structured AssertionResults. They do not rerun a Match or call a Judge. `expected` and `received` are reading-surface copy derived from `a`, `b`, and the evaluation, not the only two saved strings. Assertion defines what must remain; Record decides how to persist it. When the subject data needed to evaluate safely cannot be retained, the result must be `unavailable` rather than leaving only `matched` or `mismatched`.
+`show`, `view`, JSON, export, and source can therefore organize copy and interfaces offline from the same structured AssertionResult without rerunning a Match or calling Judge. `expected` / `received` are reading-surface text generated from `a`, `b`, and the evaluation; they are not the only two stored strings. Assertion decides what must be retained, while Record decides how it is persisted. If subject data needed to preserve an evaluator decision safely cannot be retained, the result must be `unavailable`; it cannot retain only `matched` or `mismatched`.
 
 ## Related reading
 
-- [Drive](/explanation/drive) — `t.send()`, `t.newSession()`, and HITL: how you produce the Turn data these assertions read from.
-- [Judge](/explanation/judge) — the fifth assertion mechanism, for open-ended quality that can't be expressed as a fixed rule.
-- [Write send](/tutorials/write-send) — how the standard event stream is produced, and what scoped assertions depend on.
-- [Evals](/explanation/evals) — how assertions fold into the eval lifecycle and verdict types.
+- [Match Reference](/reference/expect) — Built-in Matches, composition, and custom Matches.
+- [Eval API](/reference/define-eval) — The complete field set for `t`, Session, Turn, and handles.
+- [Pass-style and score-style Evals](/tutorials/evaluation-kinds) — The complete form of both kinds of Eval.
+- [Judge](/explanation/judge) — Judge and model configuration.

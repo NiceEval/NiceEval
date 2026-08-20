@@ -121,7 +121,7 @@ npx niceeval exp prompts/concise
 | `flags` | 实验条件（A/B 里的 feature flag），任意 JSON 对象，经 `ctx.flags` / `t.flags` 透传 |
 | `attempts` | 每个评估用例 × 配置最多跑几次 |
 | `earlyExit` | 多次运行里通过一次就提前停止。默认关，`attempts` 默认跑满测完整通过率 |
-| `evals` | `"*"`、id 前缀数组，或遍历只读 eval 描述并返回 boolean 的函数 |
+| `evals` | `"*"`、ID 前缀数组，或遍历只读评估用例描述并返回 Boolean 的函数 |
 | `timeoutMs` | 单个 attempt 的超时 |
 | `budget` | 这一格配置的预算上限 |
 | `maxConcurrency` | 这一格配置的并发上限 |
@@ -220,6 +220,8 @@ export default defineExperiment({
 });
 ```
 
+`maxConcurrency: 1` 只串行本 Invocation。`sharedState.key` 在同一项目 Coordination 域内保护跨 Invocation 的 checkpoint。租约从 Experiment 与 Sandbox setup 前开始，到全部 Sandbox teardown、Provider finalizer 和 Experiment teardown 完成。它只提供互斥；存储、原子回存、强杀恢复与跨机器协调仍由作者负责。
+
 固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot。`.setup()` 不应在每个 Attempt 重建同一套环境。从官方 Docker 镜像、E2B 模板或 Vercel runtime 派生预制环境的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
 
 Hook 的执行时机、多 Hook 顺序和失败语义见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
@@ -263,7 +265,7 @@ export default defineExperiment({
 });
 ```
 
-一份实验文件从上往下读就是完整的运行说明：整场一次的宿主机资源在实验级 Hook 对里。每 Sandbox 的写入与回存在 `sandbox` 链式 Hook 里，读实验级产物。agent 怎么连自己、评估用例的Fixture各在 agent 定义与 `EvalDef` 里，不进实验文件。
+一份实验文件从上往下读就是完整的运行说明：整场一次的宿主机资源在实验级 Hook 对里。每 Sandbox 的写入与回存在 `sandbox` 链式 Hook 里，读实验级产物。Agent 怎么连接被测对象、评估用例的 Fixture，各自在 Agent 定义与 `EvalDef` 里，不进实验文件。
 
 ### 多个实验共享同一套生命周期代码
 
@@ -357,7 +359,7 @@ export const sharedNowledge = {
 
 ## 让不同评估用例使用不同预制环境
 
-一批真实任务可能需要不同版本的运行时和依赖。把具体的 template-bearing factory 直接放在每条 Eval 上，让任务与执行环境保持为同一份声明：
+一批真实任务可能需要不同版本的运行时和依赖。把具体的 template-bearing factory 直接放在每条评估用例上，让任务与执行环境保持为同一份声明：
 
 ```ts
 // evals/astropy-2021.eval.ts
@@ -377,7 +379,7 @@ export const python39 = () => e2bSandbox({ template: "codex-python39" });
 ```
 
 ```ts
-// experiments/e2b.ts —— Eval 拥有 template，Experiment 只拥有 agent
+// experiments/e2b.ts —— 评估用例拥有 template，Experiment 只拥有 Agent
 import { defineExperiment } from "niceeval";
 
 export default defineExperiment({
@@ -385,6 +387,6 @@ export default defineExperiment({
 });
 ```
 
-没有 profile registry，也没有按 source kind 登记的 materializer 表。每个 factory 同时拥有支持声明与实现，physical planning 会在创建任何 Sandbox 前校验所有选中 Eval。重复 template 用普通 TypeScript 辅助函数 共享。同一个 Experiment 仍能覆盖全部 Eval，link planning 会逐条把 Eval layer 与 Experiment layer 配对。
+没有 profile registry，也没有按 source kind 登记的 materializer 表。每个 factory 同时拥有支持声明与实现，physical planning 会在创建任何 Sandbox 前校验所有选中评估用例。重复 template 用普通 TypeScript 辅助函数共享。同一个 Experiment 仍能覆盖全部评估用例，link planning 会逐条把评估用例 layer 与 Experiment layer 配对。
 
 跨配置比较的设计建议见[实验矩阵](/zh/tutorials/experiments)。Adapter 对 `ctx.model` 和 `ctx.flags` 的用法见 [Adapter](/zh/explanation/adapter)。

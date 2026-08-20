@@ -82,7 +82,7 @@ messages 与 status 完整，协议未提供的 usage 和 adapter 未产生的 `
 cd examples/zh/tier3/langgraph
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # 只需要建一次
 pnpm install
-cp .env.example .env   # 填 OPENAI_API_KEY(这里挪用给 DeepSeek,见 niceeval.config.ts 注释)
+cp .env.example .env   # 填应用的 OPENAI_API_KEY 和 Judge 的 NICEEVAL_JUDGE_KEY
 
 # 终端 1:起应用(OTel 部分与 tier2 相同,要瀑布图就带上这些环境变量)
 LANGSMITH_TRACING=true LANGSMITH_OTEL_ENABLED=true LANGSMITH_OTEL_ONLY=true \

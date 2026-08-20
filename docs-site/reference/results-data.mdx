@@ -1,89 +1,69 @@
 ---
 title: "Read Result Data in a Report"
 sidebarTitle: "Results Data API"
-description: "Use Sample, Measure, aggregate(), and query() in a Page or component to read displayable analysis results."
+description: "Read closed Analysis results in a Page or composite component with a fixed Sample, aggregate(), and named domain projections."
 ---
 
-Result viewing starts with published Runs. NiceEval selects a scope before it provides a `Sample` to a Report Page or component callback. Application code does not open result storage and cannot construct a `Sample`.
-
-To inspect results in a terminal or browser, see [Viewing Results](/tutorials/viewing-results). To define Pages and components, see [Report API](/reference/report-components).
+Result viewing starts with published Runs. NiceEval first forms a `Sample`, then provides it only through `ctx.scope` while a Page or composite component executes. Application code cannot construct a Sample, open a result directory, or hold a reader.
 
 ## A Sample retains the selected scope
 
-A `Sample` fixes the Runs, logical positions, and denominator for one selection. Its snapshot retains the state of each position:
+A Sample fixes the Runs, logical Slots, and denominator of this selection. Each position retains one of the states `included`, `not-recorded`, `core-invalid`, or `excluded`.
 
-| State | Meaning |
-| --- | --- |
-| `included` | An analyzable Attempt exists. |
-| `not-recorded` | A planned position has no result. |
-| `core-invalid` | The position's identity or reference cannot be read reliably. |
-| `excluded` | The current selection explicitly excluded this position. |
+`--run` retains the full planned scope of the selected Run. `project-current` retains only the scope that still matches the current project identity. Neither selection shrinks its denominator because a Measure lacks input.
 
-`--run` retains the complete planned scope of a named Run. `project-current` retains only the scope that still matches the current project. Neither selection silently shrinks its denominator because a Measure is missing data.
+The unit of membership for `project-current` is a matching Run slot occurrence, not a deduplicated `(experiment, eval, ordinal)`. When the same position appears in multiple matching Runs, every occurrence contributes to `MetricValue.total`. Repeated runs or accepting entries one by one can therefore increase the denominator.
 
-Use a `Sample` with `aggregate()`, `query()`, or `narrowSample()` only while a Page, `load()`, or composite component is executing. After the callback returns, the page retains only the closed values it already received and cannot begin another read.
+A Sample can only be passed to the Report facade during `load()`, Page, or composite-component execution. Once the callback ends, the page retains only values that have already been closed and cannot read results again.
 
-## Use published Analysis inputs
+## Get rows with `aggregate()`
 
-`niceeval/analysis` exports NiceEval's published inputs and domain-view requests. Authors can use these inputs in `defineMeasure()`, but cannot register arbitrary data sources, durable data types, or readers.
+`niceeval/report` re-exports the Analysis facade required by Reports. `aggregate()` returns `ClosedRows` with stable identity, issues, refs, and complete `MetricValue` values.
 
-```ts
+```tsx
 import {
-  attemptEvidenceView,
-  query,
-} from "niceeval/analysis";
-import { defineComponent, Text } from "niceeval/report";
-
-const EvidenceCount = defineComponent(async (_props, { sample }) => {
-  const evidence = await query(sample, {
-    kind: "domain-view",
-    view: attemptEvidenceView,
-  });
-
-  return Text({ value: `Inspectable evidence entries: ${evidence.entries.length}` });
-});
-```
-
-`attemptPassed`, `attemptLatencyMs`, and `attemptToolFailure` are the currently public Measure inputs. `attemptEvidenceView`, `attemptObservabilityView`, `fileChangesView`, `sourcesView`, and `sandboxHistoryView` provide closed domain views that cannot be reduced to a table.
-
-When you need a new long-lived result, first check whether NiceEval already provides a suitable Eval, Experiment, Adapter, or analysis capability. A callback has no general write or registration API. Arbitrary JSON, network responses, or current files cannot become a new analysis input.
-
-## Get table and chart rows with aggregate()
-
-`aggregate()` forms `ClosedRows` from established Dimensions and Measures. Each row retains a stable identity, and every Measure cell is a complete `MetricValue`.
-
-```ts
-import { aggregate } from "niceeval/analysis";
-import { defineComponent, Table } from "niceeval/report";
+  aggregate,
+  defineComponent,
+  Table,
+} from "niceeval/report";
 import { experiment, passRate } from "./quality-measures.ts";
 
-const ResultTable = defineComponent(async (_props, { sample }) => {
-  const rows = await aggregate(sample, {
+const ResultTable = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
     by: { experiment },
     values: { passRate },
   });
 
-  return Table({ rows });
+  return <Table rows={rows} />;
 });
 ```
 
-`Table` reads `rows`. `Bars`, `Line`, and `Scatter` read `points`. `Stat` reads a complete `MetricValue`. A display layer can sort, limit, or filter visible rows, but it cannot recalculate a Measure from the displayed array or reduce `MetricValue.total`.
+`Table` uses rows, charts use points, and `Stat` uses a formatted complete metric. A display layer can sort, limit, or filter rows, but it cannot recalculate a value from the displayed array or reduce `MetricValue.total`.
 
-## Understand closed states
+## Get closed domain data
 
-A Measure's `MetricValue.state` tells you whether its result is complete:
+Attempt Evidence, Observability, File Changes, Sources, and Sandbox history each have a named Report facade. They respectively use `toAttemptEvidence()`, `toAttemptObservability()`, `toFileChanges()`, `toSources()`, and `toSandboxHistory()`. These facades accept only a fixed Sample and an optional Attempt locator, then return a closed `DomainView`.
 
-| State | Meaning |
+A parameter Page uses `context.evidence(locator)` to obtain the closed Evidence for its detail target. The Host verifies that the locator belongs to the current Sample; it does not give the page a path, raw Record payload, or arbitrary query capability.
+
+## Understand `MetricValue`
+
+| Field | Meaning |
 | --- | --- |
-| `available` | Every denominator member contributes under the Measure's rule. |
-| `partial` | A displayable result exists, but some members did not contribute. |
-| `empty` | The inputs are complete and the domain result is validly empty. |
-| `unsupported` | The current environment does not support the input. |
-| `failed` | Reading, joining, or aggregation failed. |
+| `value` | The current value; `0` is valid. |
+| `samples` | The number of members that actually contributed. |
+| `total` | The denominator determined in advance by the Measure. |
+| `state` and `issues` | Why a value is incomplete, unavailable, or failed. |
+| `refs` | Evidence locations that can be reviewed. |
 
-`value: 0` is still a valid reading, not `empty`. `samples` is the actual contributor count. `total` is the denominator the Measure set in advance. Problems and evidence references travel with `MetricValue`, `ClosedRows`, and domain views into a Report.
+`available`, `partial`, `empty`, `unsupported`, and `failed` are distinct states. Do not treat `null` as zero, or replace the total denominator with the count of remaining visible rows.
+
+For example, the `2 / 4 slot · partial` produced by `formatMetricValue()` means that only two of four selected occurrences supplied input for that Measure. Those counts describe coverage only; they are not an earned score, pass rate, or proportion of work completed. The Measure's own `value` is the reading.
+
+The default Overview does not append this count to every metric cell. It displays pass rate or earned score by evaluation kind, then uses a separate `Result coverage` area to show the number of available results when data is incomplete. The terminal renders that area in a titled border; the underlying `MetricValue` fields do not change.
 
 ## Related pages
 
-- [Viewing Results](/tutorials/viewing-results): Select results with `show` and `view`.
-- [Report API](/reference/report-components): Organize closed results into a Report.
+- [Report API](/reference/report-components): Page, component, JSON, and whole-site build boundaries.
+- [Write a custom Report](/tutorials/custom-reports): The complete path from Measure to Report.
+- [Viewing results](/tutorials/viewing-results): Select a Sample through the CLI.

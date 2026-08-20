@@ -159,6 +159,59 @@ export function extractInterfaceMembers(sourceText: string, fileName: string, in
 }
 
 /**
+ * 提取一个 interface 及其 extends 链上的成员，并保留每个成员的原始声明接口作为分组。
+ * TypeScript 不会把继承成员放进 `InterfaceDeclaration.members`；Reference 若只读取最外层
+ * interface，就会把用户实际能调用的公共成员漏掉。按祖先 → 子接口的顺序渲染，既完整也能
+ * 让读者看出成员来自哪个可导入的公共类型。
+ */
+export function extractInterfaceMemberGroups(
+  sourceText: string,
+  fileName: string,
+  interfaceName: string,
+): MemberGroup[] {
+  const sourceFile = parse(sourceText, fileName);
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (name: string): MemberGroup[] => {
+    if (visited.has(name)) return [];
+    if (visiting.has(name)) {
+      throw new Error(`cyclic interface inheritance at ${name} in ${fileName}`);
+    }
+
+    visiting.add(name);
+    const iface = findInterface(sourceFile, name);
+    const inherited = (iface.heritageClauses ?? [])
+      .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+      .flatMap((clause) =>
+        clause.types.map((type) => {
+          if (!ts.isIdentifier(type.expression)) {
+            throw new Error(`unsupported interface heritage ${type.expression.getText(sourceFile)} in ${fileName}`);
+          }
+          return type.expression.text;
+        }),
+      );
+    const groups = inherited.flatMap(visit);
+    visiting.delete(name);
+    visited.add(name);
+
+    return [
+      ...groups,
+      {
+        heading: name,
+        members: iface.members.map((member) => ({
+          name: memberName(member),
+          signature: dedentContinuationLines(member.getText(sourceFile).trim()),
+          doc: extractDoc(sourceFile, member),
+        })),
+      },
+    ];
+  };
+
+  return visit(interfaceName);
+}
+
+/**
  * 提取具名 type alias 中直接声明的对象字面量成员。alias 可用交叉类型把稳定的公共字段
  * 接到一个小对象上（如 `EvalInput = EvalAuthorFields & { test(...) }`）；这里只展开对象
  * 字面量本身，具名引用仍由调用方从其真实声明处提取，避免靠 TypeChecker 隐式改写签名。
@@ -656,10 +709,11 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
       ]);
     case "sandbox-methods":
       return renderMemberGroups([
-        {
-          heading: "Sandbox",
-          members: extractInterfaceMembers(sources["src/sandbox/types.ts"], "src/sandbox/types.ts", "Sandbox"),
-        },
+        ...extractInterfaceMemberGroups(
+          sources["src/sandbox/types.ts"],
+          "src/sandbox/types.ts",
+          "Sandbox",
+        ),
         {
           heading: "CommandOptions",
           members: extractInterfaceMembers(

@@ -12,6 +12,7 @@ import type {
   EvalDefinitionFields,
   ExperimentDefinition,
   ExperimentInput,
+  SharedStateConfig,
   SandboxAgent,
   SandboxAgentDef,
   ScoreEvalInput,
@@ -170,6 +171,12 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   if (def.setup !== undefined && typeof def.setup !== "function") {
     throw new Error(t("define.experimentSetupNotFunction"));
   }
+  // teardown 与 setup 是同一个 Experiment lifecycle 边界。非函数值绝不能
+  // 伪装成已声明的 cleanup，否则 explicit sharedState recovery 可能在没有
+  // 执行补偿的情况下释放 immutable owner generation。
+  if (def.teardown !== undefined && typeof def.teardown !== "function") {
+    throw new Error(t("define.experimentTeardownNotFunction"));
+  }
   // classifyFailure 是失败分类链上的实验通道(见 runner/types.ts 的 ExperimentDef.classifyFailure):
   // 传成非函数在解析时就报,不等到某条 attempt 撞死才发现这一路声明白写。
   if (def.classifyFailure !== undefined && typeof def.classifyFailure !== "function") {
@@ -183,7 +190,8 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
       if (!ok) throw new Error(t("define.experimentLabelInvalid", { key }));
     }
   }
-  const { id: _derivedId, ...author } = def;
+  const sharedState = normalizeSharedState(def.sharedState);
+  const { id: _derivedId, sharedState: _sharedState, ...author } = def;
   return brandExperimentDefinition({
     ...author,
     flags: decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
@@ -192,8 +200,28 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     earlyExit: def.earlyExit ?? false,
     evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
     sandboxReuse: def.sandboxReuse === true,
+    ...(sharedState === undefined ? {} : { sharedState }),
     plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
   });
+}
+
+const SharedStateKeyPattern = /^[a-z0-9][a-z0-9._/-]{0,127}$/u;
+
+function normalizeSharedState(value: unknown): SharedStateConfig | undefined {
+  if (value === undefined) return undefined;
+  const candidate = value as { key?: unknown };
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !Object.hasOwn(value, "key") ||
+    Object.keys(value).length !== 1 ||
+    typeof candidate.key !== "string" ||
+    !SharedStateKeyPattern.test(candidate.key)
+  ) {
+    throw new TypeError(t("define.experimentSharedStateInvalid"));
+  }
+  return Object.freeze({ key: candidate.key });
 }
 
 function normalizeEvalFields<

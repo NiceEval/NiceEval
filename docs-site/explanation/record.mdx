@@ -1,0 +1,50 @@
+---
+title: "Record: published results"
+sidebarTitle: "Record"
+description: "Understand how a Record stores published Runs, and how to select, view, and share results safely."
+---
+
+A Record is NiceEval's set of published results. You can copy it as a whole, put it in Git, or work with it through `show`, `view`, `clean`, and `migrate`. Application code does not need to—and cannot—parse its implementation details.
+
+Once a Run is published, it is never modified. Rerunning, automatic carry, and manual adoption each form a new Run, so historical results remain available for explicit viewing and comparison.
+
+## What a Record stores
+
+A Record stores the scope of each run, whether each expected position has a result, and which Attempt the result actually comes from. It also stores NiceEval's collected assertions, diagnostics, events, usage, file changes, and provenance so you can inspect the same historical results later.
+
+NiceEval writes and validates these facts. Applications, Adapters, and Plugins have no general interface for adding arbitrary persisted data, registering custom data families, or rewriting historical results. For a new long-lived capability, use an existing NiceEval API or have NiceEval provide support for it.
+
+## From selection to report
+
+When you inspect or generate a report, data follows one fixed path:
+
+```text
+Record + CLI selection conditions
+        ↓
+Sample: selected scope and denominator
+        ↓
+Analysis: Measure + aggregate() / query()
+        ↓
+ClosedRows / MetricValue / DomainView
+        ↓
+Report
+        ↓
+show: one selected Page; view / static export: complete site
+```
+
+Commands without a locator or `--run` select results that still match the current project. A locator or `--run` lets you inspect explicit historical results. `Sample` retains the complete denominator and marks each position as `included`, `not-recorded`, `core-invalid`, or `excluded`, but it does not give pages the ability to read the underlying results.
+
+Analysis reads only the facts required by a Measure or domain view and closes them into displayable values. Report can present those values, but it cannot modify historical results, expand the selection scope, or read the source data again.
+
+## Versions and maintenance
+
+NiceEval recognizes supported result formats. When a migration is needed, run `niceeval migrate`. Historical data that cannot be interpreted safely shows a clear problem where the view depends on it instead of being guessed as an empty or zero value.
+
+Incomplete written results do not enter the viewing scope. Run `niceeval clean` to remove these incomplete remnants, then rerun the affected evals.
+
+## Next steps
+
+- [Viewing Results](/tutorials/viewing-results): Select a Sample and inspect `show` and `view`.
+- [Results Data API](/reference/results-data): Use Measures and closed results in a Report.
+- [Report API](/reference/report-components): Define Pages, components, and a Report.
+- [Publish a Static Report](/tutorials/publish-report): Share a complete closed report site.

@@ -1,36 +1,64 @@
 ---
 title: "Report Appearance and Safety Boundaries"
 sidebarTitle: "Report Appearance"
-description: "Understand the current Report host's fixed appearance and why Reports cannot inject theme files, CSS, or browser code."
+description: "Adjust appearance with Report theme tokens while preserving the sole product CSS, offline reading, and View shell boundaries."
 ---
 
-The current Record and Reports contract has no `--theme` flag and does not load arbitrary theme files. `show`, local `view`, and static export consume the same `ReportExecution`. NiceEval's exporter supplies the web shell completely through its built-in runtime, base styles, and fonts.
+A Report theme chooses only token values. Product CSS remains the sole owner of resets, base typography, component styling, and responsive layout. The View shell only manages browser language switching, reload state, and Host notices.
 
-```sh
-niceeval view
-niceeval view --report ./reports/site.ts --out ./report-site
+```tsx
+import { chalk, defineReport, type HeadTag } from "niceeval/report";
+
+const head: readonly HeadTag[] = [{
+  tag: "style",
+  children: ".release-note { font-weight: 700; }",
+}];
+
+export default defineReport({
+  title: { en: "Release", "zh-CN": "发布" },
+  theme: chalk,
+  head,
+  pages: [{
+    id: "overview",
+    path: "/",
+    title: { en: "Overview", "zh-CN": "概览" },
+    render: () => null,
+  }],
+});
 ```
 
-## What a Report can control
+NiceEval provides `basalt` and `chalk`. To use your own tokens, call `defineTheme()` and declare values such as colors, fonts, font size, and radius:
 
-A Report uses a structured `ReportPageModel` to choose its title, content, tables, chart data, status prompts, and text alternative. It can organize information and choose appropriate built-in components, but it cannot return scripts, CSS, fonts, workers, WASM, network URLs, or local file paths.
+```ts
+import { defineTheme } from "niceeval/report";
 
-Color and interaction can only enhance existing meaning. Partial, unavailable, unsupported, and invalid states must also have text or table representations; color alone cannot distinguish them.
+export const brandTheme = defineTheme({
+  appearance: "light",
+  accent: "#2a78d6",
+  positive: "#087f5b",
+  negative: "#b42318",
+  page: "#fafafa",
+  surface: "#ffffff",
+  text: "#111113",
+  font: { sans: "ui-sans-serif, system-ui, sans-serif" },
+  fontSize: "14px",
+  radius: "8px",
+});
+```
 
-## Why arbitrary theme injection is excluded
+## Assets you can declare
 
-A static Report promises to be self-contained, preflightable, and available offline. If a Report or CLI could load arbitrary CSS, scripts, or fonts, export would need to deal again with code execution, resource closure, network URLs, path escapes, and version drift. Sharing a fixed result would become another plugin and build system.
+A Report can declare `meta`, `link`, `style`, and `script` through structured `head`. Inline content, attribute order, and local resources enter the site closure, so view and static export use the same bytes.
 
-A fixed host lets the exporter enumerate every asset before writing files, keep the manifest and ordinary files one-to-one, and give local and static pages the same interpretation even when an external theme package changes.
+The preceding `head` is a structured declaration. Styles of this kind may serve only the author's own named content. Do not add a global reset, replace theme tokens, redraw built-in components, or alter the View shell. A script may only progressively enhance the site; the body, navigation, Evidence, and machine JSON cannot depend on it.
 
-## Branding later
+## Boundaries that do not change
 
-The current choice is to design branding as a future host capability rather than let users inject arbitrary resources. Any future capability must still:
+The theme does not change the meanings of `MetricValue`, denominator, state, Evidence, or terminal text. `show` still closes one target Page; `view` and `view --out` still build the complete site. HTTP pages, exported pages, CSS, and reload-client bytes are identical for the same revision.
 
-- Change appearance only, not a Measure, denominator, or state.
-- Allow the asset set to be verified exhaustively before export.
-- Avoid network and arbitrary user paths.
-- Keep terminal text and web semantics equivalent for the same `ReportExecution`.
-- Preserve the static site's offline and content-security boundaries.
+When a static directory has no view reload endpoint, the reload client disables itself quietly. With the network disconnected or JavaScript disabled, pages must still retain their body, navigation, details, problems, and downloads.
 
-Until that contract exists, a product that needs a fully custom branded page can consume the Report's structured result and implement a host within its own application boundary. NiceEval static export remains a fixed, safe built-in shell.
+## Next steps
+
+- [Report API](/reference/report-components) — Pages, head, components, and whole-site boundaries.
+- [Publish a Static Report](/tutorials/publish-report) — verify offline reading in a static directory.
