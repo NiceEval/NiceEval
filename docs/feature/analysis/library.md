@@ -391,7 +391,7 @@ declare function experimentComparisonScope(
 
 组列表只从 selection 选中的 Run 派生。纯 `identity-mismatch` 的 excluded 历史不产生组或成员；Core invalid、not-dispatched 和 interrupted 仍属于已选 Run，留在组内并贡献问题。comparison member 是去重后的 `ExperimentId`，同一 Experiment 的多个 Run 合并为一个 member。
 
-population 从该 member 的全部非 excluded expected Slot 形成，按 `EvalId` 去重。Attempt ordinal、Attempt 是否建立或 outcome 都不改变这个总体。根级 singleton 与当前 Sample 中只剩一个 member 的 named 组都可形成 comparable scope；它们可显示单行，但不声称相对排名。
+population（Eval ID 集合）从该 member 的全部非 excluded expected Slot 形成，按 `EvalId` 去重。Attempt ordinal、Attempt 是否建立或 outcome 都不改变这个总体。根级 singleton 与当前 Sample 中只剩一个 member 的 named 组都可形成 comparable scope；它们可显示单行，但不声称相对排名。
 
 ### 结构可比性
 
