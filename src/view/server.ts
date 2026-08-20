@@ -700,6 +700,12 @@ function siteFileForPath(pathname: string, site: ClosedSiteRevision): SitePathLo
   const exact = requested === "" ? "index.html" : requested;
   const revision = closedSiteRevisionData(site);
   const files = revision.files;
+  if (requested === "" && revision.defaultRoute !== undefined && revision.defaultRoute !== "/") {
+    const entryFile = staticPageFileForRoute(revision.defaultRoute);
+    if (files.some((file) => file.path === entryFile)) {
+      return Object.freeze({ state: "redirect" as const, location: revision.defaultRoute });
+    }
+  }
   const direct = files.find((file) => file.path === exact);
   if (direct !== undefined) return Object.freeze({ state: "file" as const, file: direct });
 

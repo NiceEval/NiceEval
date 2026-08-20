@@ -37,8 +37,8 @@ openai · Attempt #14  unavailable · pricing information unavailable
 
 ## machine、view 与静态输出
 
-内建与自定义 `show --json` 都使用各自的 v1 schema，并且都在顶层携带相同的 `projections` 对象：
-`{ schema: "niceeval.report-projections/v1", pricingProfile, costs }`。
+内建与自定义 `show --json` 都使用各自的版本化 format，并且都在顶层携带相同的 `projections` 对象：
+`{ format: "niceeval.report-projections/v1", pricingProfile, costs }`。
 
 每个 cost entry 的形状为 `{ page: { pageId, route }, measureId, row: { key, dimensions }, profileIdentity, projection }`。
 `projection` 包含 `{ kind: "declared-rate-card", source, asOf }`、slot-provider ledger、exact aggregate、rational mean 和有限 reasons。

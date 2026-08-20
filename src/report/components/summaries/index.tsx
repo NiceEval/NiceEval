@@ -1,6 +1,7 @@
 /** Official summary components over a fixed Sample and closed Analysis rows. */
 
-import type { ExperimentId, MetricValue, Sample } from "../../../analysis/index.ts";
+import type { ExperimentComparisonScope, ExperimentId, MetricValue, Sample } from "../../../analysis/index.ts";
+import { sampleForExperimentComparisonScope } from "../../../analysis/experiment-groups.ts";
 import { defineComponent } from "../../definition/tree.ts";
 import {
   Chart,
@@ -36,7 +37,6 @@ import {
   type SummarySeries,
 } from "./compute.ts";
 import type { Dataset, DatasetField } from "../../model/types.ts";
-import type { ExperimentListItem } from "../entity-lists/compute.ts";
 
 export { StabilityOverview } from "./stability-overview.tsx";
 export type { StabilityOverviewProps } from "./stability-overview.tsx";
@@ -94,16 +94,13 @@ export const SampleSummary = defineComponent<SampleSummaryProps>(async (props, c
 SampleSummary.displayName = "SampleSummary";
 
 export interface ExperimentScatterProps {
-  /** Explicit fixed Sample; omitted means the resolving component's `ctx.scope`. */
-  readonly input?: Sample;
+  readonly comparison: ExperimentComparisonScope;
   /** The closed Run-context dimension used to split experiment points. */
   readonly series?: SummarySeries;
   /** Connect points from the same series; defaults on for the conventional `line` label. */
   readonly connect?: boolean;
   /** Overrides the library's default Experiment detail target for each point. */
   readonly pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined;
-  /** Closed Experiment facts; the standard Report shares these with ExperimentTable. */
-  readonly rows?: readonly ExperimentListItem[];
   readonly locale?: ReportLocale;
   readonly className?: string;
 }
@@ -125,10 +122,18 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
       </Col>
     );
   }
-  const data = await experimentScatterData(props.input ?? ctx.scope, {
+  if (props.comparison.comparison.state === "non-comparable") {
+    return (
+      <Col className={joinClassNames("niceeval-experiment-scatter", props.className)}>
+        <Text className="niceeval-experiment-scatter-note">
+          {props.comparison.comparison.issues.map((issue) => issue.reason).join(", ")}
+        </Text>
+      </Col>
+    );
+  }
+  const data = await experimentScatterData(sampleForExperimentComparisonScope(props.comparison), {
     series: props.series,
     connect: props.connect,
-    experiments: props.rows,
   }, pricing);
   if (data.points.length > 0 && data.points.every((point) => point.costUSD.state === "migration-required")) {
     return (
@@ -185,13 +190,12 @@ export interface SampleOverviewProps extends ExperimentScatterProps {}
 /** The conventional summary + comparison composition. */
 export const SampleOverview = defineComponent<SampleOverviewProps>((props) => (
   <Col className={props.className}>
-    <SampleSummary input={props.input} locale={props.locale} />
+    <SampleSummary input={sampleForExperimentComparisonScope(props.comparison)} locale={props.locale} />
     <ExperimentScatter
-      input={props.input}
+      comparison={props.comparison}
       series={props.series}
       connect={props.connect}
       pointTarget={props.pointTarget}
-      rows={props.rows}
       locale={props.locale}
     />
   </Col>

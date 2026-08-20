@@ -2,9 +2,10 @@
 // 列表本体是中立 Table 原语(TableContentView);语义全部住在 compute.ts 与
 // content.ts 的投影层,docs/feature/reports/library.md。
 
-import type { Sample } from "../../../analysis/index.ts";
+import type { ExperimentComparisonScope, Sample } from "../../../analysis/index.ts";
+import { sampleForExperimentComparisonScope } from "../../../analysis/experiment-groups.ts";
 import { defineComponent } from "../../definition/tree.ts";
-import { TableContentView } from "../../definition/primitives.tsx";
+import { TableContentView, Text } from "../../definition/primitives.tsx";
 import type { ReportLocale } from "../../model/locale.ts";
 import {
   attemptListData,
@@ -83,10 +84,7 @@ export const AttemptList = defineComponent<AttemptListProps>(async (props, ctx) 
 AttemptList.displayName = "AttemptList";
 
 export interface ExperimentTableProps {
-  /** 显式 Sample;省略时用当前组合上下文的 `ctx.scope`。 */
-  readonly input?: Sample;
-  /** 已闭合的行;省略时按 `input` 计算。 */
-  readonly rows?: readonly ExperimentListItem[];
+  readonly comparison: ExperimentComparisonScope;
   /** 显示排序列;省略时按列表自身题型选择 passRate 或 totalScore。 */
   readonly sort?: string;
   readonly searchable?: boolean;
@@ -95,8 +93,13 @@ export interface ExperimentTableProps {
 }
 
 export const ExperimentTable = defineComponent<ExperimentTableProps>(async (props, ctx) => {
-  const sample = props.input ?? ctx.scope;
-  const rows = props.rows ?? await experimentListData(sample, ctx.report.pricing);
+  if (props.comparison.comparison.state === "non-comparable") {
+    return <Text className={props.className}>
+      {props.comparison.comparison.issues.map((issue) => issue.reason).join(", ")}
+    </Text>;
+  }
+  const sample = sampleForExperimentComparisonScope(props.comparison);
+  const rows = await experimentListData(sample, ctx.report.pricing);
   const composition = experimentListEvaluationKindComposition(
     rows.map((row) => ({ evaluationKind: row.evaluationKind, attempts: row.evalRows.length })),
   );

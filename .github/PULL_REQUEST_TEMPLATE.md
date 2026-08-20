@@ -14,9 +14,12 @@ draft, embed exact test sources, enforce this template, and check GitHub drift.
 
 Keep only product-surface sections that contain a real change. Delete empty
 directions and sections instead of writing "None". Under each included
-direction, present every change as a named user case with a concrete Before
-example, After example, and User impact. The case is the explanation: do not
-replace it with prose about a "contract", implementation mechanism, or change
+direction, present every change as a named user case with concrete, fenced
+Before and After inputs plus their literal observable outputs. Follow the
+examples with a short User impact paragraph. Do not use `Name: summary` bullets
+such as `Coverage:`, `Before usage or result:`, or `User impact:` in product
+sections. The case and its examples are the explanation: do not replace them
+with prose about a "contract", implementation mechanism, or change
 classification. Usage examples must begin at the public owner that consumes
 the value: `defineEval()`, `defineExperiment()`, report JSX, a CLI invocation,
 or a package script.
@@ -95,13 +98,30 @@ it also covers the relevant composition, lifecycle, failure, and unsupported
 boundaries.
 -->
 
-### `<user goal>`
+### Case: `<user goal>`
 
-- Coverage: `happy path | composition | lifecycle | failure | unsupported`
-- Starting point: <what the user already has>
-- Copyable usage or trigger: <the smallest complete usage beginning at a public owner>
-- Observable result or diagnostic: <what the user sees>
-- Contract: `<docs path to the complete use case, or "no separate use-case document">`
+#### Starting state
+
+```text
+<the minimum concrete files, config, or previously completed public action>
+```
+
+#### Action
+
+```<language>
+<the smallest copyable usage beginning at a public owner>
+```
+
+#### Result
+
+```text
+<literal stdout, stderr, JSON, rendered UI text, or other observable result>
+```
+
+Explain in prose why this result completes the workflow. Link the complete
+use-case document when one exists. Cover composition, lifecycle, failure, or
+unsupported boundaries with additional real cases only when they apply; do not
+list coverage classifications.
 
 ## Public API
 
@@ -109,25 +129,81 @@ boundaries.
 
 #### Case: `<package entry or symbol>`
 
-- Before usage or result: <copyable TypeScript example and observed result>
-- After usage or result: `removed`
-- User impact: <what stops working and the concrete migration or replacement>
+##### Before
+
+```ts
+<copyable TypeScript input>
+```
+
+```text
+<observed result>
+```
+
+##### After
+
+```text
+removed
+```
+
+##### User impact
+
+<what stops working and the concrete migration or replacement>
 
 ### Added
 
 #### Case: `<package entry or symbol>`
 
-- Before usage or result: `not available`
-- After usage or result: <copyable TypeScript example and observed result>
-- User impact: <what becomes possible>
+##### Before
+
+```ts
+<the attempted TypeScript usage>
+```
+
+```text
+<the compile or runtime failure proving it was unavailable>
+```
+
+##### After
+
+```ts
+<copyable TypeScript input>
+```
+
+```text
+<observed result>
+```
+
+##### User impact
+
+<what becomes possible>
 
 ### Changed
 
 #### Case: `<package entry or symbol>`
 
-- Before usage or result: <copyable TypeScript example and observed result>
-- After usage or result: <copyable replacement example and observed result>
-- User impact: <compatibility and migration effects>
+##### Before
+
+```ts
+<copyable TypeScript input>
+```
+
+```text
+<observed result>
+```
+
+##### After
+
+```ts
+<copyable replacement input>
+```
+
+```text
+<observed result>
+```
+
+##### User impact
+
+<compatibility and migration effects>
 
 ## CLI
 
@@ -135,25 +211,81 @@ boundaries.
 
 #### Case: `<command or flag>`
 
-- Before usage or result: <copyable shell command and observed result>
-- After usage or result: `removed`
-- User impact: <what stops working and the concrete migration or replacement>
+##### Before
+
+```sh
+<copyable command>
+```
+
+```text
+<literal stdout, stderr, and exit status when material>
+```
+
+##### After
+
+```text
+removed
+```
+
+##### User impact
+
+<what stops working and the concrete migration or replacement>
 
 ### Added
 
 #### Case: `<command or flag>`
 
-- Before usage or result: `not available`
-- After usage or result: <copyable shell command and observed result>
-- User impact: <stdout, stderr, exit code, JSON schema, default, or workflow effect>
+##### Before
+
+```sh
+<the attempted command>
+```
+
+```text
+<literal rejection and exit status>
+```
+
+##### After
+
+```sh
+<copyable command>
+```
+
+```text
+<literal stdout, stderr, JSON, and exit status when material>
+```
+
+##### User impact
+
+<workflow and automation effect>
 
 ### Changed
 
 #### Case: `<command or flag>`
 
-- Before usage or result: <copyable shell command and observed result>
-- After usage or result: <the same command, or its replacement, and the observed result>
-- User impact: <stdout, stderr, exit code, JSON schema, default, or migration change>
+##### Before
+
+```sh
+<copyable command>
+```
+
+```text
+<literal stdout, stderr, JSON, and exit status when material>
+```
+
+##### After
+
+```sh
+<the same command or its replacement>
+```
+
+```text
+<literal stdout, stderr, JSON, and exit status when material>
+```
+
+##### User impact
+
+<workflow, automation, default, or migration effect>
 
 ## Report components
 
@@ -161,25 +293,81 @@ boundaries.
 
 #### Case: `<component, prop, or report entry>`
 
-- Before usage or result: <copyable TSX example and rendered result>
-- After usage or result: `removed`
-- User impact: <author migration and reader-visible effect>
+##### Before
+
+```tsx
+<copyable Report JSX>
+```
+
+```text
+<rendered result>
+```
+
+##### After
+
+```text
+removed
+```
+
+##### User impact
+
+<author migration and reader-visible effect>
 
 ### Added
 
 #### Case: `<component, prop, or report entry>`
 
-- Before usage or result: `not available`
-- After usage or result: <copyable TSX example and rendered result>
-- User impact: <authoring and reader-visible capability>
+##### Before
+
+```tsx
+<the attempted Report JSX>
+```
+
+```text
+<compile or runtime failure proving it was unavailable>
+```
+
+##### After
+
+```tsx
+<copyable Report JSX>
+```
+
+```text
+<rendered result>
+```
+
+##### User impact
+
+<authoring and reader-visible capability>
 
 ### Changed
 
 #### Case: `<component, prop, or report entry>`
 
-- Before usage or result: <copyable TSX example and rendered result>
-- After usage or result: <copyable replacement TSX and rendered result>
-- User impact: <author migration and reader-visible effect>
+##### Before
+
+```tsx
+<copyable Report JSX>
+```
+
+```text
+<rendered result>
+```
+
+##### After
+
+```tsx
+<copyable replacement Report JSX>
+```
+
+```text
+<rendered result>
+```
+
+##### User impact
+
+<author migration and reader-visible effect>
 
 ## Observable behavior and data contracts
 
@@ -187,25 +375,81 @@ boundaries.
 
 #### Case: `<runtime behavior, record/schema, cache, provider, or output>`
 
-- Before usage or result: <concrete input and observed result>
-- After usage or result: `removed`
-- User impact: <effect on users, stored data, or automation and the replacement>
+##### Before
+
+```<language>
+<concrete input>
+```
+
+```text
+<observed output or state>
+```
+
+##### After
+
+```text
+removed
+```
+
+##### User impact
+
+<effect on users, stored data, or automation and the replacement>
 
 ### Added
 
 #### Case: `<runtime behavior, record/schema, cache, provider, or output>`
 
-- Before usage or result: `not available`
-- After usage or result: <concrete input and observed result>
-- User impact: <effect on users, stored data, or automation>
+##### Before
+
+```<language>
+<attempted input>
+```
+
+```text
+<observed absence or failure>
+```
+
+##### After
+
+```<language>
+<concrete input>
+```
+
+```text
+<observed output or state>
+```
+
+##### User impact
+
+<effect on users, stored data, or automation>
 
 ### Changed
 
 #### Case: `<runtime behavior, record/schema, cache, provider, or output>`
 
-- Before usage or result: <concrete input and observed result>
-- After usage or result: <the same input, or its replacement, and the observed result>
-- User impact: <compatibility, migration, stored data, or automation effect>
+##### Before
+
+```<language>
+<concrete input>
+```
+
+```text
+<observed output or state>
+```
+
+##### After
+
+```<language>
+<the same input or its replacement>
+```
+
+```text
+<observed output or state>
+```
+
+##### User impact
+
+<compatibility, migration, stored data, or automation effect>
 
 ## Record schema and stored-data upgrade
 
@@ -238,31 +482,91 @@ persisted implementation changes. Otherwise show only the applicable cases:
 
 ### Case: write a new Record
 
-- Action: <public writer or CLI command>
-- Result: <literal recognition header plus changed files, attachments, fields, references, or meanings>
+#### Action
+
+```sh
+<public writer or CLI command>
+```
+
+#### Result
+
+```text
+<literal recognition header plus changed files, attachments, fields, references, or meanings>
+```
 
 ### Case: read an existing Record
 
-- Action: <public reader or CLI command, including the historical producer version when needed>
-- Result: <direct read, migration, or exact rejection/recovery diagnostic>
+#### Action
+
+```sh
+<public reader or CLI command, including the historical producer version when needed>
+```
+
+#### Result
+
+```text
+<direct read, migration, or exact rejection/recovery diagnostic>
+```
 
 ### Case: upgrade or recover stored data
 
-- Version: `<N -> N | N -> M>`
-- Before: <what happens to existing data before this PR>
-- After: <what happens after this PR; include both reader directions when N -> N>
-- Safety: <preservation, atomicity, idempotence, interruption recovery, and known data loss; or why no migration runs>
-- User impact: <required action and observable result>
-- Evidence: <Record architecture; version history when N -> M; exact public verification command and result>
+#### Version
+
+`<N -> N | N -> M>`
+
+#### Before
+
+```sh
+<copyable public read or recovery command>
+```
+
+```text
+<what happens to existing data before this PR>
+```
+
+#### After
+
+```sh
+<copyable public read or recovery command>
+```
+
+```text
+<what happens after this PR; include both reader directions when N -> N>
+```
+
+#### Safety
+
+<preservation, atomicity, idempotence, interruption recovery, and known data loss; or why no migration runs>
+
+#### User impact
+
+<required action and observable result>
+
+#### Evidence
+
+<Record architecture; version history when N -> M; exact public verification command and result>
 
 ### Private persisted data
 
 <!-- Delete when private persistence is unaffected. -->
 
-- Case: <cache, index, temporary file, or layout scenario>
-- Before: <observable behavior or data-loss boundary>
-- After: <observable behavior or data-loss boundary>
-- User impact: <required action, recovery, or no action with concrete reason>
+### Case: <cache, index, temporary file, or layout scenario>
+
+#### Before
+
+```text
+<observable behavior or data-loss boundary>
+```
+
+#### After
+
+```text
+<observable behavior or data-loss boundary>
+```
+
+#### User impact
+
+<required action, recovery, or no action with concrete reason>
 
 ## Environment variables
 
@@ -270,30 +574,101 @@ persisted implementation changes. Otherwise show only the applicable cases:
 
 #### Case: `<VARIABLE_NAME>`
 
-- Before usage or result: <copyable shell/config example and observed result>
-- After usage or result: `removed`
-- Environment boundary: <scope, producer, consumer, inheritance, default, precedence, validation, and secret exposure>
-- User and security impact: <migration or "none">
+##### Before
+
+```sh
+<copyable environment and command input>
+```
+
+```text
+<observed result>
+```
+
+##### After
+
+```text
+removed
+```
+
+##### Environment boundary
+
+<scope, producer, consumer, inheritance, default, precedence, validation, and secret exposure>
+
+##### User and security impact
+
+<migration or "none">
 
 ### Added
 
 #### Case: `<VARIABLE_NAME>`
 
-- Before usage or result: `not available`
-- After usage or result: <copyable shell/config example, default, and observed result>
-- Environment boundary: <scope, producer, consumer, inheritance, precedence, validation, and secret exposure>
-- Necessity: <why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
-- User and security impact: <workflow, default, migration, or "none">
+##### Before
+
+```sh
+<attempted environment and command input>
+```
+
+```text
+<observed absence or rejection>
+```
+
+##### After
+
+```sh
+<copyable environment and command input>
+```
+
+```text
+<default and observed result>
+```
+
+##### Environment boundary
+
+<scope, producer, consumer, inheritance, precedence, validation, and secret exposure>
+
+##### Necessity
+
+<why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
+
+##### User and security impact
+
+<workflow, default, migration, or "none">
 
 ### Changed
 
 #### Case: `<VARIABLE_NAME>`
 
-- Before usage or result: <copyable shell/config example, default, and observed result>
-- After usage or result: <copyable shell/config example, default, and observed result>
-- Environment boundary: <scope, producer, consumer, inheritance, precedence, validation, and secret exposure>
-- Necessity: <why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
-- User and security impact: <compatibility, migration, or "none">
+##### Before
+
+```sh
+<copyable environment and command input>
+```
+
+```text
+<default and observed result>
+```
+
+##### After
+
+```sh
+<copyable environment and command input>
+```
+
+```text
+<default and observed result>
+```
+
+##### Environment boundary
+
+<scope, producer, consumer, inheritance, precedence, validation, and secret exposure>
+
+##### Necessity
+
+<why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
+
+##### User and security impact
+
+<compatibility, migration, or "none">
 
 ## Package scripts
 
@@ -301,25 +676,81 @@ persisted implementation changes. Otherwise show only the applicable cases:
 
 #### Case: `<pnpm script>`
 
-- Before usage or result: <copyable command and observed result>
-- After usage or result: `removed`
-- User impact: <development, CI, documentation, or release workflow migration>
+##### Before
+
+```sh
+<copyable command>
+```
+
+```text
+<observed result>
+```
+
+##### After
+
+```text
+removed
+```
+
+##### User impact
+
+<development, CI, documentation, or release workflow migration>
 
 ### Added
 
 #### Case: `<pnpm script>`
 
-- Before usage or result: `not available`
-- After usage or result: <copyable command and observed result>
-- User impact: <development, CI, documentation, or release workflow capability>
+##### Before
+
+```sh
+<attempted command>
+```
+
+```text
+<observed rejection>
+```
+
+##### After
+
+```sh
+<copyable command>
+```
+
+```text
+<observed result>
+```
+
+##### User impact
+
+<development, CI, documentation, or release workflow capability>
 
 ### Changed
 
 #### Case: `<pnpm script>`
 
-- Before usage or result: <copyable command and observed result>
-- After usage or result: <copyable command and observed result>
-- User impact: <development, CI, documentation, or release workflow change>
+##### Before
+
+```sh
+<copyable command>
+```
+
+```text
+<observed result>
+```
+
+##### After
+
+```sh
+<copyable command>
+```
+
+```text
+<observed result>
+```
+
+##### User impact
+
+<development, CI, documentation, or release workflow change>
 
 ## Terminology
 

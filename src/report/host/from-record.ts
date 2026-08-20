@@ -10,6 +10,7 @@ import type {
   JsonValue,
   Sample,
 } from "../../analysis/index.ts";
+import { experimentGroups } from "../../analysis/index.ts";
 import type { RecordCoordination } from "../../coordination/record-leases.ts";
 import { recordHost } from "../../record/host/runtime.ts";
 import type { RecordRoot } from "../../record/platform/root.ts";
@@ -207,15 +208,36 @@ function showSelectionFromRecord(input: SelectionTarget & {
     const sample = yield* openSelectionSample(input.root, input.selection);
     const report = input.report ?? defaultReportForSelection(input.selection);
     const selection = showSelectionForRequest(sample, input.selection);
+    const implicitRoute = input.route === undefined && input.selection.policy !== "explicit-runs"
+      ? singleExperimentGroupRoute(report, sample)
+      : undefined;
     return yield* presentShowTarget({
       sample,
       report,
       selection,
-      ...(input.route === undefined ? {} : { route: input.route }),
+      ...(input.route === undefined && implicitRoute === undefined ? {} : { route: input.route ?? implicitRoute }),
       ...(input.textProjection === undefined ? {} : { textProjection: input.textProjection }),
       format: input.format ?? "text",
     });
   }));
+}
+
+function singleExperimentGroupRoute(report: ReportDefinition, sample: Sample): string | undefined {
+  const groups = experimentGroups(sample);
+  if (groups.length !== 1) return undefined;
+  const group = groups[0]!.group;
+  const declaresGroupPage = report.pages.some((page) =>
+    "role" in page
+    && page.role?.kind === "experiment-group"
+    && page.role.groupKind === group.kind
+  );
+  return declaresGroupPage ? groupRoute(group) : undefined;
+}
+
+function groupRoute(group: import("../../analysis/index.ts").ExperimentGroupIdentity): string {
+  return group.kind === "named"
+    ? `/group/named/${group.groupId}`
+    : `/group/singleton/${String(group.experimentId)}`;
 }
 
 function showAttemptFromRecord(input: AttemptTarget & {

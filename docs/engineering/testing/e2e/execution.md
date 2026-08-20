@@ -229,9 +229,10 @@ batch 是共机放置单位，不是限流单位；plan 不携带 CI 限流参�
 资源竞争、OOM 或尾延迟通过把 manifest 显式拆到 `docker-1`、`docker-2`、`docker-3` 等更多 matrix cell 处理，
 不能通过让同格 Repo 排队来换取通过；拆分不改变 lane 的精确 Repo 集。
 
-matrix cell 的 5 分钟外层上限包含 runner/action 启动、依赖安装、artifact 收集与 cleanup；这是 E2E 关键路径的性能门槛。
-每个 Repo 的产品执行预算仍由 manifest 自己收紧，外层比最长 host Repo 的 4 分钟测试预算多留一分钟编排余量，
-不能用 job 上限放宽 provider timeout。
+每个 Repo 的测试调用上限由自己的 manifest `timeoutMinutes` 独立声明；`host-1`、`docker-1`、`browser-1`
+等 batch 只决定共机放置，不拥有也不替换测试预算。同一个 matrix cell 可能并发运行多个预算不同的 Repo，workflow
+不得再设置 cell 级 `timeout-minutes`，否则会把依赖安装、独立测试、artifact 收集与 cleanup 的并发尾延迟混成第二个截止时间，
+并可能在 Repo 自己的预算到期前取消收据和资源回收。Provider 与产品调用的更窄 timeout 仍由对应 owner 明确声明，不能靠放宽 Repo 预算替代。
 
 每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；Repo batch 的 artifact root 下仍按 Repo ID 分目录并
 保存独立 receipt，batch summary 列全该格 Repo。GitHub 原生汇总 matrix 成败，不再启动一个 job 下载并复述所有 cell 的结果。
