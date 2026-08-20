@@ -30,11 +30,16 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 
 ## eval-assertion-values
 
-值 Match 在本轮确定性回复上登记并封口为 Assertion，随后折叠为 `passed` Verdict。公开 `show --json` 必须读到该 Assertion 与 Verdict。
+值 Match 在本轮确定性回复上登记并封口为 Assertion，随后折叠为 `passed` Verdict。
+这个 owner 明确接管 `niceeval/expect` 的 value 与 score factory，包括组合 matcher、自定义 matcher、Standard Schema、JSON、文本、布尔、相似度与命令结果。
+公开 `show --json` 必须读到这些 Assertion 与 Verdict。
 
 ## eval-assertion-scopes
 
-turn、session 与 attempt scope 必须以同一批真实工具事件完成断言；候选很多时 matcher diagnostic 只保留有界解释材料，不能让已经完成的 Attempt 因 Assertions document 膨胀而无法发布。公开 execution readback 同时保留主支工具身份。
+turn、session 与 attempt scope 必须以同一批真实工具事件完成断言。
+这个 owner 明确接管 tool、command 与 event matcher，以及 present、absent、count、order、scope status 与 failed-action 等 scope assertion。
+候选很多时 matcher diagnostic 只保留有界解释材料，
+不能让已经完成的 Attempt 因 Assertions document 膨胀而无法发布。公开 execution readback 同时保留主支工具身份。
 
 ## eval-assertion-score
 
