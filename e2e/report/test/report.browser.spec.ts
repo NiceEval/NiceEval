@@ -265,6 +265,11 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
         const mainExperimentCount = page.locator(".niceeval-stat").filter({ hasText: "Experiments", visible: true });
         await expect(mainExperimentCount.locator(".niceeval-stat-value")).toHaveText("1");
+        const mainPassChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
+        await expect(mainPassChart).toHaveCount(0);
+        const mainScoreChart = page.locator('svg[aria-label="costUSD × totalScore"]').filter({ visible: true });
+        await expect(mainScoreChart).toHaveCount(1);
+        await expect(mainScoreChart).toContainText("Total score");
 
         await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "classic" });
         await expect(page).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));

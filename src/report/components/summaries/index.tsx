@@ -36,6 +36,7 @@ import {
   type ExperimentScatterPoint,
   type SummarySeries,
 } from "./compute.ts";
+import { experimentListData } from "../entity-lists/compute.ts";
 import type { Dataset, DatasetField } from "../../model/types.ts";
 
 export { StabilityOverview } from "./stability-overview.tsx";
@@ -131,9 +132,12 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
       </Col>
     );
   }
-  const data = await experimentScatterData(sampleForExperimentComparisonScope(props.comparison), {
+  const sample = sampleForExperimentComparisonScope(props.comparison);
+  const experiments = await experimentListData(sample, pricing);
+  const data = await experimentScatterData(sample, {
     series: props.series,
     connect: props.connect,
+    experiments,
   }, pricing);
   if (data.points.length > 0 && data.points.every((point) => point.costUSD.state === "migration-required")) {
     return (
