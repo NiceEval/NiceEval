@@ -384,7 +384,10 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 官方组合组件。它们只接收关闭数据，详情 route 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
 `libraryDetailRoute()` 建立。
 
-`AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。展开该行后，`TurnTrace` 以 `Conversation` 的静态因果事件流为账本，加上 turn 时间概览与可关闭的事件 inspector。没有精确 source mapping 的 turn 保留在页面级 `TurnTrace`，不按源码顺序猜测归属；没有 JavaScript 时 inspector 不出现，但完整事件内容仍在正文中。
+`AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。Assertion 展开区先显示判定、完整度与 matcher
+已经封口的决定性见证，例如期望、实际命中次数和位置；它不把整棵 matcher diagnostic JSON 当作用户文案。展开 `send` 所在行后，`TurnTrace` 以
+`Conversation` 的静态因果事件流为账本，加上 turn 时间概览与可关闭的事件 inspector。没有精确 source mapping 的 turn 保留在页面级
+`TurnTrace`，不按源码顺序猜测归属；没有 JavaScript 时 inspector 不出现，但完整事件内容仍在正文中。
 
 下载文件属于 Host 的站点闭包：view 与静态写出只读取已关闭的 bytes。作者入口不发布一个 generic `Download` 组件或
 `DownloadFile` 类型；这避免把尚无最终 primitive owner 的 generic semantic API 写进公共契约。
