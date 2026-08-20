@@ -62,7 +62,7 @@ type UsageSnapshot = RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachm
 /** @internal Builds a missing denominator Slot without inventing a provider. */
 export function unavailableCostSlot(
   member: LogicalSlot,
-  code: Extract<CostCoverageReason["code"], "member-not-recorded" | "core-invalid" | "origin-run-unavailable" | "usage-not-recorded" | "usage-unavailable" | "usage-unsupported" | "usage-invalid">,
+  code: Extract<CostCoverageReason["code"], "member-not-recorded" | "core-invalid" | "origin-run-unavailable" | "usage-not-recorded" | "usage-unavailable" | "usage-migration-required" | "usage-unsupported" | "usage-invalid">,
   refs: readonly EvidenceRef[] = [],
 ): CostSlotProjection {
   const slot = closeSlot(member);
@@ -256,9 +256,12 @@ export function aggregateCostProjection(
     reasons: freezeReasons(slots.flatMap((slot) => slot.reasons)),
     ledger: Object.freeze(slots.flatMap((slot) => slot.ledger).sort(compareLedger)),
   });
+  const migrationRequired = combined === null && slots.length > 0 && slots.every((slot) =>
+    slot.reasons.some((reason) => reason.code === "usage-migration-required")
+  );
   const projection: CostProjectionValue = combined === null
     ? Object.freeze({
-      state: "unavailable" as const,
+      state: migrationRequired ? "migration-required" as const : "unavailable" as const,
       basis: "unavailable" as const,
       observed: null,
       estimated: null,

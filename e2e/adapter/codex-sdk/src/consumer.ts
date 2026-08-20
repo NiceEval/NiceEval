@@ -22,13 +22,13 @@ function workspaceFromTest(): string {
 
 function createCodexClient(): Codex {
   // This is the official SDK/provider shape used by the repository's Codex SDK
-  // examples. CODEX_BASE_URL can point to the approved compatibility provider.
+  // examples. OPENAI_BASE_URL can point to the approved compatibility provider.
   const config: NonNullable<CodexOptions["config"]> = {
     model_providers: {
       [PROVIDER_NAME]: {
         name: PROVIDER_NAME,
-        base_url: process.env.CODEX_BASE_URL ?? DEFAULT_BASE_URL,
-        env_key: "CODEX_API_KEY",
+        base_url: process.env.OPENAI_BASE_URL ?? DEFAULT_BASE_URL,
+        env_key: "OPENAI_API_KEY",
         wire_api: "responses",
         supports_websockets: false,
       },
@@ -36,7 +36,7 @@ function createCodexClient(): Codex {
     model_provider: PROVIDER_NAME,
   };
 
-  return new Codex({ apiKey: process.env.CODEX_API_KEY, config });
+  return new Codex({ apiKey: process.env.OPENAI_API_KEY, config });
 }
 
 async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {

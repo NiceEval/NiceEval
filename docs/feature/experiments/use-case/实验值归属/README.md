@@ -11,6 +11,6 @@
 | 同一个值既可能是条件也可能是观测 | [按角色选择归属](区分条件与观测.md) |
 
 模型名是 `model` 配置，实验 id 是身份，都不属于这三个袋子。
-运行时观测不是第三方可扩展的持久化面。只有 NiceEval 已发布的 typed collector 或 Adapter 能力才能把匹配值写入固定的 Observability、FileChanges、Assertions、Sources 或 Artifacts。
+运行时观测不是第三方可扩展的持久化面。只有 NiceEval 已发布的 typed collector 或 Adapter 能力，才能把匹配值写入 Record catalog 中与 owner 匹配的 fixed family。
 没有 collector 的值不自动持久化或查询。
 完整归属规则见 [Library · labels 与运行时观测](../../library.md#labels-与运行时观测)。

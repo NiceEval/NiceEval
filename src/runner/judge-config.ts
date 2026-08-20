@@ -1,7 +1,7 @@
 import type { JudgeDeclaration, JudgeConfig, ResolvedJudgeConfig } from "../types.ts";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_API_KEY_ENV = "OPENAI_API_KEY";
+const DEFAULT_API_KEY_ENV = "NICEEVAL_JUDGE_KEY";
 const DEFAULT_TIMEOUT_MS = 180_000;
 
 /**

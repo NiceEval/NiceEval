@@ -13,10 +13,10 @@ A Sandbox Agent starts a coding-agent CLI in an isolated environment, gives it a
     Runs the Anthropic Claude Code CLI and requires `ANTHROPIC_API_KEY`.
   </Card>
   <Card title="codex" icon="terminal">
-    Runs the OpenAI Codex CLI and requires `CODEX_API_KEY`.
+    Runs the OpenAI Codex CLI and requires `OPENAI_API_KEY`.
   </Card>
   <Card title="bub" icon="robot">
-    Runs the bub coding agent and follows bub's own authentication rules.
+    Runs the bub coding agent and requires `OPENAI_API_KEY` plus `OPENAI_BASE_URL`.
   </Card>
 </CardGroup>
 
@@ -95,8 +95,10 @@ export default defineExperiment({
 | Agent | Required variable |
 | --- | --- |
 | `claude-code` | `ANTHROPIC_API_KEY` |
-| `codex` | `CODEX_API_KEY` |
-| `bub` | Follow the bub CLI's authentication rules. |
+| `codex` | `OPENAI_API_KEY` |
+| `bub` | `OPENAI_API_KEY`, `OPENAI_BASE_URL` |
+
+NiceEval's `bubAgent()` and `codexAgent()` read those shared OpenAI-compatible variables when their factory arguments are omitted. Existing `BUB_API_KEY`, `BUB_API_BASE`, `CODEX_API_KEY`, and `CODEX_BASE_URL` settings are no longer read; rename them before running the Experiment.
 
 ## Workflow
 

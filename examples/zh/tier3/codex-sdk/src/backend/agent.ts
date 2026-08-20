@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // src/backend,得往上两级才能回到项目根。
 export const WORKSPACE_DIR = path.join(__dirname, "..", "..", "workspace");
 
-const CODEX_BASE_URL = process.env.CODEX_BASE_URL ?? "https://api.openai.com/v1";
+const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
 
 // Codex CLI 原生 otel 配置段,导出发生在子进程内部,默认开启(见 README OTel 说明)。
 const OTLP_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318";
@@ -32,13 +32,13 @@ const otelConfig: NonNullable<CodexOptions["config"]> = {
 };
 
 const codex = new Codex({
-  apiKey: process.env.CODEX_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
   config: {
     model_providers: {
       "openai-no-ws": {
         name: "openai-no-ws",
-        base_url: CODEX_BASE_URL,
-        env_key: "CODEX_API_KEY",
+        base_url: OPENAI_BASE_URL,
+        env_key: "OPENAI_API_KEY",
         wire_api: "responses",
         supports_websockets: false,
       },

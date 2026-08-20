@@ -9,7 +9,6 @@ import type { Argv } from "./process.js";
 export const DEFAULT_GRACE_MS = 2000;
 
 const PROCESS_GROUP_POLL_MS = 25;
-
 type OwnedGroupState = "gone" | "terminal" | "running" | "unknown";
 
 function errorCode(error: unknown): string | undefined {
@@ -236,7 +235,9 @@ export class ProcessHandle {
     }
   }
 
-  private async waitForOwnedGroupExit(timeoutMs: number): Promise<boolean> {
+  private async waitForOwnedGroupExit(
+    timeoutMs: number,
+  ): Promise<boolean> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
     let terminalProbePending = false;
     for (;;) {
@@ -259,7 +260,6 @@ export class ProcessHandle {
         setTimeout(resolve, Math.min(PROCESS_GROUP_POLL_MS, remaining));
       });
     }
-    return true;
   }
 
   private async terminateOwnedGroup(): Promise<void> {

@@ -10,11 +10,17 @@ importers:
     dependencies:
       niceeval:
         specifier: 0.4.6
-        version: 0.4.6
+        version: 0.4.6(react@19.2.8)
+      react:
+        specifier: ^19.2.7
+        version: 19.2.8
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      '@types/react':
+        specifier: ^19.2.7
+        version: 19.2.18
       typescript:
         specifier: 5.7.2
         version: 5.7.2
@@ -294,6 +300,9 @@ packages:
   '@types/node@24.13.3':
     resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
 
+  '@types/react@19.2.18':
+    resolution: {integrity: sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==}
+
   '@vitest/expect@4.1.9':
     resolution: {integrity: sha512-vl/rYsUKcBr3SnQn166+XR5ZQcgMx3DQhFWdfli/cWpLnLUmbxZvyrJZotLFUryib+LtArYMSTJ5RbQ57ZqrlA==}
 
@@ -402,6 +411,9 @@ packages:
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
+
+  csstype@3.2.3:
+    resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
@@ -656,6 +668,10 @@ packages:
 
   pure-rand@6.1.0:
     resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
+
+  react@19.2.8:
+    resolution: {integrity: sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==}
+    engines: {node: '>=0.10.0'}
 
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
@@ -965,6 +981,10 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
+  '@types/react@19.2.18':
+    dependencies:
+      csstype: 3.2.3
+
   '@vitest/expect@4.1.9':
     dependencies:
       '@standard-schema/spec': 1.1.0
@@ -1089,6 +1109,8 @@ snapshots:
       validate.io-function: 1.0.2
 
   convert-source-map@2.0.0: {}
+
+  csstype@3.2.3: {}
 
   detect-libc@2.1.2: {}
 
@@ -1262,12 +1284,14 @@ snapshots:
 
   nanoid@3.3.18: {}
 
-  niceeval@0.4.6:
+  niceeval@0.4.6(react@19.2.8):
     dependencies:
       autoevals: 0.0.132
       effect: 3.22.1
       tar-stream: 3.2.0
       tsx: 4.23.12
+    optionalDependencies:
+      react: 19.2.8
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -1296,6 +1320,8 @@ snapshots:
       source-map-js: 1.2.1
 
   pure-rand@6.1.0: {}
+
+  react@19.2.8: {}
 
   require-from-string@2.0.2: {}
 

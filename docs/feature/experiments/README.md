@@ -110,7 +110,7 @@ Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
 再次运行会以当前 labels 建立新 Run，并通过 reference Member 连接已有 Attempt；Core relation、action 与精确 origin 共同说明该成员怎样进入目标 Run。
 
 两者都是实验作者写下的**声明**。
-运行后才存在的值，例如 `setup` 起出的隧道 URL 或服务端报回的版本，两个袋子都不进。只有 NiceEval 已发布的 typed collector 或 Adapter 能力能把语义匹配的运行时观测写入固定的 Observability、FileChanges、Assertions、Sources 或 Artifacts。
+运行后才存在的值，例如 `setup` 起出的隧道 URL 或服务端报回的版本，两个袋子都不进。只有 NiceEval 已发布的 typed collector 或 Adapter 能力，才能把语义匹配的运行时观测写入 Record catalog 中与 owner 匹配的 fixed family。
 没有已发布 collector 的第三方值不自动持久化，也不能查询。
 
 三个家的判据按场景查[用例手册 · 实验值归属](use-case/实验值归属/)。声明与消费见 [Library · labels 与运行时观测](library.md#labels-与运行时观测)。

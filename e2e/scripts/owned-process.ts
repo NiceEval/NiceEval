@@ -58,7 +58,7 @@ export interface OwnedProcessGroupCleanup {
   groupId?: number;
   /** Signals successfully sent only to the owned negative-pid group. */
   signalsSent: readonly NodeJS.Signals[];
-  /** True only when the runner confirmed that the owned group disappeared. */
+  /** True only when the runner confirmed that the owned group has no live members. */
   gone: boolean | null;
   detail: string;
 }
@@ -343,7 +343,7 @@ class ActiveOwnedProcess {
     }
     if (initial === "gone") {
       this.groupAliveAfterLeaderClose = false;
-      this.markGroupGone(`owned process group ${this.groupId} was absent after command leader close`);
+      this.markGroupGone(`owned process group ${this.groupId} had no live members after command leader close`);
       return;
     }
     if (initial === "unknown") {

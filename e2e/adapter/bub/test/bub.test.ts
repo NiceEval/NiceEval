@@ -27,7 +27,7 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "ci", evalId: "session/recall", verdict: "passed", attempts: 1, passed: 1 },
 ] as const satisfies readonly ExpEvalOutcomeExpectation[];
 
-const REQUIRED_LIVE_SECRETS = ["BUB_API_KEY", "BUB_API_BASE"] as const;
+const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 let run!: ProcessReceipt;
@@ -57,6 +57,10 @@ async function requireDocker(): Promise<void> {
 
 beforeAll(async () => {
   requireLiveSecrets();
+  // The Bub owner must not receive harness aliases: otherwise an implementation
+  // that still reads only BUB_* would pass while the public OPENAI_* contract is broken.
+  expect(process.env.BUB_API_KEY).toBeUndefined();
+  expect(process.env.BUB_API_BASE).toBeUndefined();
   await requireDocker();
 
   rmSync(".niceeval", { recursive: true, force: true });

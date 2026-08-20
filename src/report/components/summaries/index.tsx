@@ -118,6 +118,15 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
     series: props.series,
     connect: props.connect,
   }, pricing);
+  if (data.points.length > 0 && data.points.every((point) => point.costUSD.state === "migration-required")) {
+    return (
+      <Col className={joinClassNames("niceeval-experiment-scatter", props.className)}>
+        <Text className="niceeval-experiment-scatter-note">
+          {localeText(locale, "costProjection.migrationRequired")}
+        </Text>
+      </Col>
+    );
+  }
   return (
     <Col className={props.className}>
       <Scatter

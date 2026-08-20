@@ -2,7 +2,7 @@
 
 CLI 通过 [Record Library](library.md) 打开 exact current Record protocol：root 是
 `{ format: "niceeval.record", schemaVersion: 1 }`。它不在 `show`、`view`、`exp` 或 `clean` 中自动迁移
-字节；不相容格式必须先由显式 `niceeval migrate` 处理，才能形成 `RecordReadSession`。没有 `complete`
+字节；不相容格式必须先由显式 `niceeval migrate` 处理，才能形成 `RecordReadSession`。缺少规范的零字节普通文件 `complete`
 的目录不是 Run。
 
 CLI 是五个 Host composition SDK 的一个调用者。`exp` 与 `accept` 经 `experimentHost`，Record I/O 经
@@ -38,7 +38,7 @@ They are not readable or reusable.
 details: niceeval clean
 ```
 
-受控 `SIGINT` 会先把已完成 Attempt、仍在飞的 Attempt 和未派发 Member 分别封口，再发布完整 Run，因此这类 Run 不触发 incomplete warning。warning 只报告进程来不及收尾、写入失败或 seal 失败后没有 `complete` 的 directory；reader 不从这些 draft 中拼装部分事实。
+受控 `SIGINT` 会先把已完成 Attempt、仍在飞的 Attempt 和未派发 Member 分别封口，再发布完整 Run，因此这类 Run 不触发 incomplete warning。warning 只报告进程来不及收尾、写入失败、seal 失败，或 `complete` 不是零字节普通文件的 directory；reader 不从这些 draft 中拼装部分事实。
 
 一个 query 只在其 `AnalysisInput` 或 `DomainView` 真正需要时读取对应的 Attachment 和 blob。未持久化的
 fixed family 显示 `not-recorded`；closure 或 exact payload 无效显示 `invalid`。这些局部问题不把其它有效
@@ -87,7 +87,7 @@ Runner 对受控 `SIGINT` 的调用会在进入 `seal()` 前关闭仍在飞的 A
 niceeval clean [--record <root>] [--yes]
 ```
 
-`clean` 先列出没有 `complete` 的 RunId，并要求确认。它取得 maintenance lease 后再次检查 marker，
+`clean` 先列出缺少规范零字节普通文件 `complete` 的 RunId，并要求确认。它取得 maintenance lease 后再次检查 marker，
 只删除仍 incomplete 的目录。已经封口的 Run 即使 Core invalid，也不在 clean 范围内。
 
 非交互调用必须传 `--yes`。成功 receipt 列出 `deleted` 和在重验中变为已封口的 `skipped` RunId。
@@ -98,8 +98,8 @@ niceeval clean [--record <root>] [--yes]
 niceeval migrate [--record <root>] [--yes]
 ```
 
-schemaVersion `1` 没有已发布 predecessor，maintenance facet 的 migration 链为空。因此 `migrate` 对完整
-current Record 返回：
+root / Core schemaVersion `1` 没有已发布 predecessor。所有 fixed family 也处于 current 时，`migrate`
+对完整 current Record 返回：
 
 ```text
 Record is already current: niceeval.record (schemaVersion 1)
@@ -107,9 +107,10 @@ Record is already current: niceeval.record (schemaVersion 1)
 
 root / Core 不相容时，若有固定相邻步骤则返回 `migration-required`，否则 `unsupported-format`，并且不写盘。
 已知 family 的旧 schemaVersion 也经这条 maintenance 路径迁移。未发布的斜杠版本草案不是 migration source。
-未知 independent future family 不迁移，也不删除。CLI 不猜测中间格式，不接受第三方 converter。未来
-schemaVersion `2` 发布时，CLI 随之提供固定 `1 → 2` maintenance step；历史格式必须由这条显式路径完成转换，
-之后才可打开为 current reader。
+未知 independent future family 不迁移，也不删除。CLI 不猜测中间格式，不接受第三方 converter。
+
+Observability v1 由固定 `1 → 2` maintenance step 迁移；两个 owner 的 payload、label、blob refs 与 blob bytes
+逐字保留，只更新 envelope。历史格式完成或由 Git 恢复后，才可打开为 current reader。
 
 存在固定相邻步骤时，命令先做只读 Git preflight，并打印计划。预检要求：
 
@@ -120,19 +121,27 @@ schemaVersion `2` 发布时，CLI 随之提供固定 `1 → 2` maintenance step�
 预检通过后，命令显示 restore commit，并要求确认；非交互调用必须显式传 `--yes`。它在 exclusive
 maintenance lease 下原地运行每个相邻步骤，完整验证 Core、认识的 fixed family 和 blob closure 后才结束。
 
-NiceEval 不创建 staging、backup、rollback、root replacement 或恢复日志。迁移失败、被 kill 或断电时，
-用户必须用 Git 完整恢复 `.niceeval/record` 的历史字节，再重新运行 migrate。在旧格式或未恢复的迁移
-现场，CLI 不创建 reader，Analysis 和 Report 也不会看到迁移执行态。
+NiceEval 不创建 staging、backup、rollback 或 root replacement。首次改写前创建的
+`migration.in-progress` 只保存已通过 preflight 的 restore commit，不保存 payload。迁移失败、被 kill 或断电后，
+CLI 从 sentinel 打印限定到 Record root 的精确 `git restore`、tracked-byte 验证和 sentinel 清除命令；只有验证
+worktree 与 index 都等于该 commit 后才清除 sentinel，再重新运行 migrate。
+
+旧格式或未恢复的迁移现场不创建 reader，Analysis 和 Report 也不会看到迁移执行态。计划指纹变化、第二次
+preflight 失败或 sentinel 创建失败都发生在首个 portable write 前，只报告原错误并保留并发编辑，绝不根据旧
+计划打印恢复命令。sentinel 成功创建后的任何失败统一返回 `record-migration-recovery-required`，同时保留原始
+`Cause` code 与恢复命令。
 
 ## 错误与下一步
 
 | code/state | 含义 | 下一步 |
 |---|---|---|
-| `already-current` | Record 是 `niceeval.record` schemaVersion `1` | 不修改 Record |
+| `already-current` | root / Core 是 schemaVersion `1`，所有 fixed family 也处于 current | 不修改 Record |
 | `migration-required` | root / Core 或已知 family 有固定相邻 migration | 运行 `niceeval migrate`；ordinary reader 不改盘 |
-| `unsupported-format` | root / Core 无支持步骤，或 family 名使用未发布 `/vN` 草案 | 使用支持该格式的 NiceEval；不要强行迁移 |
+| `unsupported-format` | root / Core 无支持步骤、known family 是 future/无链版本，或 family 名使用未发布 `/vN` 草案 | 使用写出该格式的 NiceEval；不要按损坏数据恢复 |
 | `record-maintenance-busy` | maintenance 与 reader/writer/clean 冲突 | 关闭占用命令后重试 |
-| `incomplete-run` | Run 没有 `complete` | 有效 Run 继续可用；用 `niceeval clean` 检查 |
+| `record-migration-plan-stale` / `record-migration-git-restore-required` | apply 前计划或 Git 状态已变化，尚未写 portable byte | 保留当前编辑，重新检查并形成新计划；不要执行旧计划的 restore |
+| `record-migration-recovery-required` | sentinel 已创建，迁移写入或最终校验失败 | 仅在 `restoreSafe` 证明成立时按命令恢复；否则先人工检查并保留并发编辑 |
+| `incomplete-run` | Run 缺少规范的零字节普通文件 `complete` | 有效 Run 继续可用；用 `niceeval clean` 检查 |
 | `not-recorded` | 已封口 owner 没有请求的 fixed family | 让 query 按其 missing policy 处理 |
 | `unsupported` | input 或 view 依赖本版本不认识的 future family | 使用认识该 family 的 NiceEval；其它结果继续可用 |
 | `invalid` | envelope、payload、ref 或 closure 无效 | 检查该 family；其它有效事实继续可用 |

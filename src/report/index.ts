@@ -66,6 +66,7 @@ export type {
   CostMetricValue,
   CostProjectionAggregate,
   CostProjectionKnown,
+  CostProjectionMigrationRequired,
   CostProjectionProfile,
   CostProjectionState,
   CostProjectionUnavailable,

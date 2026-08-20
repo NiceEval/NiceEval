@@ -27,7 +27,7 @@ description 只在列表详情中显示，不能替代主标题。
 dry 计划和运行中的行把名称与 ID 成对呈现：
 
 ```text
-Baseline [compare/codex]  memory/commit0  Attempt #1  using result @1K1P0VJAPVJ12
+Baseline [compare/codex]  memory/commit0  ordinal 0  carried @1K1P0VJAPVJ12
 ```
 
 人类完成摘要在 terminal JSON receipt 前显示 `displayName [experimentId] → runId`。

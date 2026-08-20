@@ -229,7 +229,7 @@ accepted 的唯一含义是“操作者当时明确采用这个 immutable Attemp
 
 ## policy 演进
 
-policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为，但不能靠额外 eligibility descriptor 认证旧 Attempt。新增 required gate 时，必须由已有 Core 或固定五类 Attachment 提供可审计 owner；缺失、partial、unsupported 或 invalid 一律形成 gap。新 writer 不保留能让旧 policy 错误通过的 compatibility eligibility payload。
+policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为，但不能靠额外 eligibility descriptor 认证旧 Attempt。新增 required gate 时，必须由已有 Core 或 Record catalog 中具名的 fixed Attachment owner 提供可审计事实；缺失、partial、unsupported 或 invalid 一律形成 gap。新 writer 不保留能让旧 policy 错误通过的 compatibility eligibility payload。
 
 `--dry` 不建立 Invocation、不写 Record，也不取得 append lease。它用 shared read lease（共享读取租约）做 weak scan，运行同一份 reuse planning，并在 CLI 输出中显示相同的当前 options、reuse、gap 与真实 comparison。它只看已发布 Run，不保证全局 snapshot。
 

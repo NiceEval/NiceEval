@@ -303,7 +303,7 @@ export interface Flags {
   host?: string;
   help: boolean;
   version: boolean;
-  /** `clean` / `migrate` 专用：确认删除未完成 Run 或没有 Git restore point 的 migration。 */
+  /** `clean` / `migrate` 专用：确认删除未完成 Run 或在 clean Git restore point 下执行 migration。 */
   yes: boolean;
   // ── show 专属(位置参数仍是 eval id 前缀 / `@<locator>`;这些 flag 选「怎么看」)──
   source?: true | string;
@@ -447,7 +447,7 @@ const FLAG_OPTIONS = {
   /** `view` 命令专用:启动后自动打开浏览器(默认行为)。 */
   open: { type: "boolean" },
   "no-open": { type: "boolean" },
-  /** `clean` / `migrate` 专用：确认不可逆 maintenance 动作或没有 Git restore point 的 migration。 */
+  /** `clean` / `migrate` 专用：确认不可逆 maintenance 动作或在 clean Git restore point 下执行 migration。 */
   yes: { type: "boolean" },
   /** 打印用法说明并退出。 */
   help: { type: "boolean", short: "h" },

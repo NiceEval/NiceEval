@@ -142,15 +142,16 @@ root / Core 不兼容时，若 maintenance 有固定相邻步骤则返回 `migra
 
 ## fixed family 与内部读取
 
-current catalog 的五个 fixed family 由 definition 关闭：
+current catalog 的六个 fixed family 由 definition 关闭：
 
-| family | `owners` |
-|---|---|
-| `niceeval.assertions` | `{ attempt }` |
-| `niceeval.observability` | `{ attempt, run }` |
-| `niceeval.file-changes` | `{ attempt }` |
-| `niceeval.sources` | `{ run }` |
-| `niceeval.artifacts` | `{ attempt, run }` |
+| family | current | `owners` |
+|---|---:|---|
+| `niceeval.assertions` | 1 | `{ attempt }` |
+| `niceeval.observability` | 2 | `{ attempt, run }` |
+| `niceeval.file-changes` | 1 | `{ attempt }` |
+| `niceeval.source-navigation` | 1 | `{ attempt }` |
+| `niceeval.sources` | 1 | `{ run }` |
+| `niceeval.artifacts` | 1 | `{ attempt, run }` |
 
 Attachment envelope 的 shape 是 `{ family, schemaVersion }`。family 是稳定 identity，schemaVersion 是数值。
 Observability 与 Artifacts 各自只有一个 package-private definition；其 owner-specific payload 位于同一
@@ -214,7 +215,7 @@ blob ref。`RecordReadSession` 的 definition-driven Core / Attachment access ca
 
 打开 reader 只验证 root 与 current definition。`selectRuns()` 扫描 `runs/*/complete`，并读取选择所需的
 最小 Core。它固定 RunId、SlotId、预期分母和问题，既不携带 payload，也不冻结未来新 Run。扫描中刚封口的
-Run 可以整体进入或整体不进入本次选择；没有 `complete` 的 Run 永远不会进入。
+Run 可以整体进入或整体不进入本次选择；缺少规范的零字节普通文件 `complete` 时永远不会进入。
 
 selected ref 都是当前 session 签发的 nominal handle（名义句柄）。它们不能靠对象复制、ID 拼接或跨 Scope
 重用。Analysis 的 `AnalysisInput` 或 `DomainViewRequest` 真正需要事实时，package-private adapter 才以
@@ -359,34 +360,38 @@ interface RecordMaintenanceSession {
   readonly planMigrate: () => Effect.Effect<RecordMigrationPlan, RecordMaintenanceError>;
   readonly applyMigrate: (
     plan: RecordMigrationPlan,
-    authorization: RecordMigrationAuthorization,
-  ) => Effect.Effect<RecordMigrationReceipt, RecordMigrationError>;
+  ) => Effect.Effect<RecordMigrationReceipt, RecordMaintenanceError>;
 }
 ```
 
-schemaVersion `1` 的 current root / Core 没有已发布 predecessor。`inspect()` 与 `planMigrate()` 对完整
-current Record 返回 `already-current`；`applyMigrate()` 不运行，也不写 portable byte。
+schemaVersion `1` 的 current root / Core 没有已发布 predecessor。所有 fixed family 也处于 current 时，
+`inspect()` 与 `planMigrate()` 返回 `already-current`；`applyMigrate()` 不运行，也不写 portable byte。
 
 root / Core 不相容时，`inspect()` 返回 `migration-required` 或 `unsupported-format`。已知 family 的旧
 schemaVersion 同样需要显式 migration。
 
-未知 independent future family 保持 bytes 不动，不进入 migration plan。未发布的斜杠版本草案返回
-`unsupported-format`，不会被猜测成迁移源。
+未知 independent future family 保持 bytes 不动，不进入 migration plan。known family 的 future/无链版本和
+未发布的斜杠版本草案返回 `unsupported-format`，不会被猜测成损坏数据或 migration source。
 
-未来 schemaVersion `2` 发布时，NiceEval 同批在 maintenance facet 内提供固定 `1 → 2` step。每一步只从
-已保存 payload 和 own blob closure 形成目标 bytes，不能读取当前 worktree、网络、第三方 converter 或运行时
+Observability schemaVersion `2` 同批在 maintenance facet 内提供固定 `1 → 2` step。它只从已保存的两个
+owner payload 和 own blob closure 形成目标 bytes，不能读取当前 worktree、网络、第三方 converter 或运行时
 算法。没有无损步骤时，maintenance 在改盘前拒绝计划；它不伪造新事实。
 
-计划绑定 Git repository、HEAD、Record path、`recordId`、current format、portable-byte inventory 与
-NiceEval migration implementation identity。`applyMigrate()` 重新验证这些值，避免把陈旧计划应用到变化后的
-Record。
+计划绑定 Git repository、HEAD、Record path、`recordId`、current format 与 portable-byte inventory。它还绑定每个目标 envelope 的 exact source bytes 和 NiceEval migration implementation identity。`applyMigrate()` 重新验证这些值，避免把陈旧计划应用到变化后的 Record。
 
 迁移只允许 Record 已纳入 Git 且 worktree/index 干净时执行。它在 exclusive maintenance lease 下原地
 逐步改写，并完整校验 current Core、认识的 fixed family 与 blob closure。未知 independent future family
-保持原有 directory 与 bytes。NiceEval 不创建 staging、backup、rollback、root replacement 或恢复日志。
+保持原有 directory 与 bytes。NiceEval 不创建 staging、backup、rollback 或 root replacement。
 
-失败或中断后，用户通过 Git 完整恢复 `.niceeval/record`，再重新形成计划；恢复完成前 `current.openRead()`
-不产生 session。`clean` 同样取得 maintenance lease。它只删除取得 lease 后重验仍没有 `complete` 的目录；
+首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。失败或中断后，maintenance 先证明 HEAD 未变化，且 dirty path 只有 sentinel 与已写成 canonical v2 的计划目标。证明成立时，CLI 才给出限定到 Record root 的 Git restore 与 tracked-byte 验证命令；否则只要求人工检查并保留并发编辑。验证 worktree/index 都等于该 commit 后才清除 sentinel，再重新形成计划。
+
+这里的“失败”只指 sentinel 已成功创建后的失败；apply 前的计划指纹变化、preflight 或 create-sentinel 错误
+不携带恢复动作，并保留造成计划变化的编辑。post-sentinel 错误闭合为
+`RecordMigrationRecoveryRequired`，携带 `restoreCommit`、`restoreSafe` 与原始 `causeCode`。`restoreSafe`
+只有在上述 HEAD 与 dirty-path 证明成立时为 true。恢复完成前
+`current.openRead()` 不产生 session。
+
+`clean` 同样取得 maintenance lease。它只删除取得 lease 后重验仍缺少规范零字节普通文件 `complete` 的目录；
 已封口但 Core invalid 的 Run 不是 clean 的对象。
 
 ## Typed error、Cause 与 Stream 边界
@@ -415,12 +420,13 @@ type RecordWriteError =
   | RecordCoreInvalid
   | RecordAttachmentClosureInvalid;
 
-type RecordMigrationError =
-  | RecordIoError
-  | RecordPermissionError
-  | RecordMigrationPlanChanged
-  | RecordMigrationStepFailed
-  | RecordMigrationInterrupted;
+type RecordMaintenanceError =
+  | RecordMaintenanceOpenError
+  | RecordMigrationPlanStale
+  | RecordMigrationGitRestoreRequired
+  | RecordMigrationInvalid
+  | RecordMigrationRecoveryRequired
+  | RecordGitError;
 ```
 
 每个 typed error 只有稳定 `code` 和有界安全上下文。raw filesystem error、Schema tree、stack、secret 和

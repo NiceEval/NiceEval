@@ -17,7 +17,9 @@ test("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
     "judge-unavailable",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
-      const run = await niceeval.run(["exp", "assertion-judge", "--rerun", "all", "--json"]);
+      const run = await niceeval.run(["exp", "assertion-judge", "--rerun", "all", "--json"], {
+        env: { ...process.env, OPENAI_API_KEY: "adapter-key-must-not-be-borrowed" },
+      });
       expect(run.exitCode, run.diagnostic()).toBe(1);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const evaluation = only(

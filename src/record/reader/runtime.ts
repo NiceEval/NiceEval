@@ -337,3 +337,95 @@ export function readFixedRecordAttachment<
     return Object.freeze({ state: "available" as const, ...materializedValue.right });
   });
 }
+
+/**
+ * Maintenance-only validation of one exact historical attachment before its
+ * envelope advances. The durable payload and blob bytes are never rewritten:
+ * the historical decoder proves the old shape, while the current descriptor
+ * proves that the unchanged bytes and closure are valid after the step.
+ */
+export function validateFixedRecordAttachmentMigrationSource<
+  Family extends NiceEvalFamily,
+  Owner extends RecordAttachmentOwner,
+  Payload,
+>(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly location: FixedRecordAttachmentLocation<Owner>;
+  readonly descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>;
+  readonly fromSchemaVersion: number;
+  readonly decodeHistorical: (value: unknown) => unknown;
+  readonly migrate: (value: unknown) => unknown;
+}): Effect.Effect<boolean, RecordFileSystemError> {
+  return Effect.gen(function* () {
+    const directory = attachmentPath(input.root, input.location, input.descriptor.family);
+    if ((yield* input.fileSystem.pathKind(directory)) !== "directory") return false;
+
+    const envelopeDocument = yield* readJson(
+      input.fileSystem,
+      attachmentPath(input.root, input.location, input.descriptor.family, "attachment.json"),
+    );
+    if (envelopeDocument.state !== "available") return false;
+    const envelope = decodeRecordAttachmentEnvelope(envelopeDocument.value);
+    if (
+      Either.isLeft(envelope) ||
+      envelope.right.family !== input.descriptor.family ||
+      envelope.right.schemaVersion !== input.fromSchemaVersion
+    ) {
+      return false;
+    }
+
+    const payloadDocument = yield* readJson(
+      input.fileSystem,
+      attachmentPath(input.root, input.location, input.descriptor.family, "payload.json"),
+    );
+    if (payloadDocument.state !== "available") return false;
+    const blobs = yield* readBlobDirectory(
+      input.fileSystem,
+      attachmentPath(input.root, input.location, input.descriptor.family, "blobs"),
+      input.descriptor.write.budget.maximumBlobs,
+    );
+    if (blobs.state === "invalid") return false;
+
+    const hydrated = hydrateDurablePayload(payloadDocument.value);
+    if (hydrated.invalid) return false;
+    const entries = blobs.state === "available" ? blobs.entries : [];
+    if (entries.length > input.descriptor.write.budget.maximumBlobs) return false;
+    const entriesByKey = new Map(entries.map((entry) => [entry.name, entry] as const));
+    if (
+      entriesByKey.size !== hydrated.refsByKey.size ||
+      [...hydrated.refsByKey.keys()].some((key) => !entriesByKey.has(key))
+    ) {
+      return false;
+    }
+
+    let migrated: unknown;
+    try {
+      migrated = input.migrate(input.decodeHistorical(hydrated.value));
+    } catch {
+      return false;
+    }
+    if (Either.isLeft(input.descriptor.write.decodePayload(migrated))) return false;
+    const payload = input.descriptor.write.decodePayload(hydrated.value);
+    if (Either.isLeft(payload)) return false;
+
+    let totalBytes = 0;
+    const materialized: RecordAttachmentMaterializedBlob[] = [];
+    for (const [key, ref] of hydrated.refsByKey) {
+      const bytes = yield* readBlob(
+        input.fileSystem,
+        attachmentPath(input.root, input.location, input.descriptor.family, "blobs", key),
+        input.descriptor.write.budget.maximumBlobBytes,
+      );
+      if (bytes === undefined) return false;
+      totalBytes += bytes.byteLength;
+      if (totalBytes > input.descriptor.write.budget.maximumTotalBytes) return false;
+      materialized.push(Object.freeze({ ref, bytes }));
+    }
+    return Either.isRight(makeFixedRecordAttachmentValueFromDecoded(
+      input.descriptor.write,
+      payload.right,
+      materialized,
+    ));
+  });
+}

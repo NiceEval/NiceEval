@@ -41,7 +41,7 @@ export interface RecordReadFileStreamInput extends RecordReadFileInput {
   readonly chunkBytes?: number;
 }
 
-export type RecordFileWriteMode = "exclusive" | "replace";
+export type RecordFileWriteMode = "exclusive" | "replace" | "replace-no-follow";
 
 export interface RecordWriteFileInput {
   readonly file: RecordPortablePath;
@@ -103,13 +103,22 @@ export interface RecordFileSystemService {
   readonly createCompleteMarker: (
     input: { readonly root: RecordRoot; readonly runId: string },
   ) => Effect.Effect<void, RecordFileSystemError>;
+  /** True only for the zero-byte regular file created by `createCompleteMarker`. */
+  readonly isCompleteMarker: (
+    input: { readonly root: RecordRoot; readonly runId: string },
+  ) => Effect.Effect<boolean, RecordFileSystemError>;
 
   readonly migrationSentinelPresent: (
     root: RecordRoot,
   ) => Effect.Effect<boolean, RecordFileSystemError>;
   readonly createMigrationSentinel: (
     root: RecordRoot,
+    restoreCommit: string,
   ) => Effect.Effect<void, RecordFileSystemError>;
+  /** Returns the bounded restore commit recorded by a current migration sentinel. */
+  readonly readMigrationSentinelRestoreCommit: (
+    root: RecordRoot,
+  ) => Effect.Effect<string | undefined, RecordFileSystemError>;
   readonly removeMigrationSentinel: (
     root: RecordRoot,
   ) => Effect.Effect<void, RecordFileSystemError>;
@@ -150,6 +159,12 @@ export interface RecordGitService {
   readonly inspectBackupState: (
     root: RecordRoot,
   ) => Effect.Effect<RecordBackupState, RecordGitError>;
+  /** Proves HEAD is unchanged and every dirty path is an expected migration write. */
+  readonly recoveryChangesAreExpected: (input: {
+    readonly root: RecordRoot;
+    readonly restoreCommit: string;
+    readonly expectedPaths: readonly RecordPortablePath[];
+  }) => Effect.Effect<boolean, RecordGitError | RecordFileSystemError>;
 }
 
 export class RecordGit extends Context.Tag("@niceeval/record/RecordGit")<

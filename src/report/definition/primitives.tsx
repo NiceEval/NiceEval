@@ -631,6 +631,16 @@ function plainValueToCell(value: unknown, path: string, locale: ReportLocale): C
   if (value === undefined) {
     throw new Error(`Table ${path} is missing — every declared column must exist on the row object.`);
   }
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    Object.hasOwn(value, "projection") &&
+    !isCostMetricValue(value)
+  ) {
+    throw new Error(
+      `Table ${path} has unsupported object type — Table rows only accept scalars, LocalizedText, MetricValue, or Cell.`,
+    );
+  }
   if (isMetricValue(value)) {
     return { kind: "metric", metric: value };
   }

@@ -38,9 +38,15 @@ import type {
   UtcMillis,
 } from "../model/identifiers.ts";
 import type { RecordRoot } from "../platform/root.ts";
+import type { RecordBackupState } from "../platform/services.ts";
 import type { RecordCoreRead, RecordWarning } from "../model/read-state.ts";
 import type { NonEmptyRecordIssues } from "../errors/record-errors.ts";
-import type { RecordReaderOpenError, RecordReaderReadError } from "../reader/errors.ts";
+import type {
+  RecordMaintenanceError,
+  RecordMaintenanceOpenError,
+  RecordReaderOpenError,
+  RecordReaderReadError,
+} from "../reader/errors.ts";
 import type { RecordWriteError } from "../writer/types.ts";
 
 export const selectedRunRefBrand: unique symbol = Symbol(
@@ -362,24 +368,45 @@ export interface ReferenceRunWriteSession {
 
 export type RecordFormatInspection =
   | { readonly state: "already-current"; readonly format: "niceeval.record" }
+  | { readonly state: "migration-required"; readonly format: "niceeval.record" }
   | { readonly state: "unsupported-format"; readonly format: string };
 
-export interface RecordMigrationPlan {
-  readonly state: "already-current" | "unsupported-format";
-  readonly format: string;
+export interface RecordAttachmentMigrationTarget {
+  readonly family: string;
+  readonly owner: "attempt" | "run";
+  readonly runId: RunId;
+  readonly attemptId?: AttemptId;
+  readonly fromSchemaVersion: number;
+  readonly toSchemaVersion: number;
 }
 
+export type RecordMigrationPlan =
+  | {
+      readonly state: "already-current";
+      readonly format: "niceeval.record";
+    }
+  | {
+      readonly state: "migration-required";
+      readonly format: "niceeval.record";
+      readonly backup: RecordBackupState;
+      readonly attachments: readonly RecordAttachmentMigrationTarget[];
+    }
+  | {
+      readonly state: "unsupported-format";
+      readonly format: string;
+    };
+
 export interface RecordMigrationReceipt {
-  readonly state: "already-current";
+  readonly state: "already-current" | "migrated";
   readonly format: "niceeval.record";
 }
 
 export interface RecordMaintenanceSession {
-  readonly inspect: () => Effect.Effect<RecordFormatInspection, RecordReaderOpenError>;
-  readonly planMigrate: () => Effect.Effect<RecordMigrationPlan, RecordReaderOpenError>;
+  readonly inspect: () => Effect.Effect<RecordFormatInspection, RecordMaintenanceError>;
+  readonly planMigrate: () => Effect.Effect<RecordMigrationPlan, RecordMaintenanceError>;
   readonly applyMigrate: (
     plan: RecordMigrationPlan,
-  ) => Effect.Effect<RecordMigrationReceipt, RecordReaderOpenError>;
+  ) => Effect.Effect<RecordMigrationReceipt, RecordMaintenanceError>;
 }
 
 export interface RecordHostSDK {
@@ -397,6 +424,6 @@ export interface RecordHostSDK {
   readonly maintenance: {
     readonly open: (input: {
       readonly root: RecordRoot;
-    }) => Effect.Effect<RecordMaintenanceSession, RecordReaderOpenError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../../coordination/record-leases.ts").RecordCoordination>;
+    }) => Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../platform/services.ts").RecordGit | import("../../coordination/record-leases.ts").RecordCoordination>;
   };
 }

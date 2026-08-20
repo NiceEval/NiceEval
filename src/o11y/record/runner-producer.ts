@@ -14,6 +14,7 @@ import type {
   TimingActivity,
   TimingOrigin,
 } from "../../runner/types.ts";
+import { formatTurnLabel } from "../../shared/turn-label.ts";
 import type { StreamEvent } from "../../types.ts";
 import type { Usage } from "../types.ts";
 import {
@@ -1675,7 +1676,7 @@ type AttemptTimingProjection =
   | {
       readonly kind: "attempt";
       readonly phase: AttemptTimingInterval["phase"];
-      readonly label: StableLabel;
+      readonly label: StableLabel | ReturnType<typeof formatTurnLabel>;
     }
   | { readonly kind: "outside-attempt-domain" }
   | { readonly kind: "unsupported" };
@@ -1728,7 +1729,10 @@ function validPhaseStartOffset(value: PhaseTiming): NonNegativeSafeInteger | und
 
 function timingActivityProjection(
   activity: TimingActivity,
-): { readonly phase: AttemptTimingInterval["phase"]; readonly label: StableLabel } | undefined {
+): {
+  readonly phase: AttemptTimingInterval["phase"];
+  readonly label: StableLabel | ReturnType<typeof formatTurnLabel>;
+} | undefined {
   const phase = (() => {
     switch (activity.key) {
     case "agent.turn":
@@ -1745,9 +1749,15 @@ function timingActivityProjection(
   })();
   if (phase === undefined) return undefined;
   // Runner's activity label is human-facing and can contain spaces or other
-  // SafeText punctuation. v1 persists only StableLabel, so standard activities
-  // retain a stable key when their display label cannot cross that boundary.
-  const label = stableLabel(activity.label) ?? stableLabel(activity.key);
+  // SafeText punctuation. Standard activities retain a stable key when their
+  // display label cannot cross the durable boundary. Native agent turns keep
+  // their canonical slash coordinate so the Record writer never invents a
+  // dot-encoded historical label.
+  const label = activity.key === "agent.turn"
+      && activity.sessionIndex !== undefined
+      && activity.turnIndex !== undefined
+    ? formatTurnLabel(activity.sessionIndex, activity.turnIndex)
+    : stableLabel(activity.label) ?? stableLabel(activity.key);
   if (label === undefined) return undefined;
   return Object.freeze({ phase, label });
 }

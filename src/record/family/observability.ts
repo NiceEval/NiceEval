@@ -17,6 +17,7 @@ import {
   MAX_COMMAND_INLINE_STREAM_BYTES,
   MAX_COMMAND_STREAM_BYTES,
 } from "../../o11y/record/limits.ts";
+import { isCanonicalTurnLabel } from "../../shared/turn-label.ts";
 import {
   FixedAttachmentValueLimits,
   NonNegativeSafeIntegerSchema,
@@ -496,7 +497,63 @@ function timingCollectionSchema<Phase extends Schema.Schema.AnyNoContext>(phase:
   );
 }
 
-export const AttemptTimingCollectionSchema = timingCollectionSchema(AttemptTimingPhaseSchema);
+const CanonicalTurnLabelSchema = Schema.String.pipe(
+  Schema.filter(
+    isCanonicalTurnLabel,
+    {
+      identifier: "CanonicalTurnLabel",
+      description: "a canonical turnN or sessionK/turnN timing label",
+    },
+  ),
+);
+
+function attemptTimingCollectionSchema<Label extends Schema.Schema.AnyNoContext>(
+  agentSendLabel: Label,
+) {
+  const intervalBase = {
+    intervalId: SafeIdentifierSchema,
+    startOffsetMs: NonNegativeSafeIntegerSchema,
+    durationMs: NonNegativeSafeIntegerSchema,
+    parentIntervalId: Schema.NullOr(SafeIdentifierSchema),
+    outcome: Schema.Literal("completed", "failed", "cancelled", "interrupted", "unknown"),
+  } as const;
+  const interval = Schema.Union(
+    Schema.Struct({
+      ...intervalBase,
+      phase: Schema.Literal("agent.send"),
+      label: agentSendLabel,
+    }),
+    Schema.Struct({
+      ...intervalBase,
+      phase: Schema.Literal(
+        "attempt.setup",
+        "sandbox.prepare",
+        "agent.ensure",
+        "eval.run",
+        "sandbox.command",
+        "assertion.evaluate",
+        "verdict.fold",
+        "attempt.teardown",
+      ),
+      label: SafeIdentifierSchema,
+    }),
+  );
+  return Schema.Struct({
+    collection: ObservabilityCollectionStateSchema,
+    intervals: Schema.Array(interval),
+  }).pipe(
+    Schema.filter(
+      hasCanonicalTimingCollection,
+      { identifier: "TimingCollection", description: "canonical timing intervals with valid parents" },
+    ),
+  );
+}
+
+export const AttemptTimingCollectionSchema = attemptTimingCollectionSchema(
+  Schema.Union(SafeIdentifierSchema, CanonicalTurnLabelSchema),
+);
+/** Exact historical v1 timing shape: every label was a SafeIdentifier. */
+export const AttemptTimingCollectionV1Schema = attemptTimingCollectionSchema(SafeIdentifierSchema);
 export const RunTimingCollectionSchema = timingCollectionSchema(RunTimingPhaseSchema);
 
 const SourceFrameSchema = Schema.Struct({
@@ -609,6 +666,28 @@ export const AttemptObservabilityAttachmentSchema = Schema.Struct({
     Schema.fromKey("usage-data"),
   ),
   timing: Schema.propertySignature(AttemptTimingCollectionSchema).pipe(
+    Schema.fromKey("timing-data"),
+  ),
+  diagnostics: Schema.propertySignature(AttemptDiagnosticsCollectionSchema).pipe(
+    Schema.fromKey("diagnostics-data"),
+  ),
+});
+
+/** Exact historical v1 payload; only the agent.send label domain differs from v2. */
+export const AttemptObservabilityAttachmentV1Schema = Schema.Struct({
+  owner: Schema.propertySignature(Schema.Literal("attempt")).pipe(
+    Schema.fromKey("owner-kind"),
+  ),
+  conversation: Schema.propertySignature(AttemptConversationCollectionSchema).pipe(
+    Schema.fromKey("conversation-data"),
+  ),
+  commands: Schema.propertySignature(AttemptCommandsCollectionSchema).pipe(
+    Schema.fromKey("commands-data"),
+  ),
+  usage: Schema.propertySignature(AttemptUsageCollectionSchema).pipe(
+    Schema.fromKey("usage-data"),
+  ),
+  timing: Schema.propertySignature(AttemptTimingCollectionV1Schema).pipe(
     Schema.fromKey("timing-data"),
   ),
   diagnostics: Schema.propertySignature(AttemptDiagnosticsCollectionSchema).pipe(
@@ -766,7 +845,7 @@ const RunObservabilityBlobBudget = Object.freeze({
 export const observabilityRecordAttachment = defineRecordAttachment({
   family: "niceeval.observability",
   current: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     owners: {
       attempt: {
         schema: AttemptObservabilityAttachmentSchema,
@@ -788,4 +867,10 @@ export const observabilityRecordAttachment = defineRecordAttachment({
       },
     },
   },
+  maintenance: () => import("./observability-v1.ts").then(
+    ({ observabilityV1Maintenance }) => observabilityV1Maintenance,
+  ),
+  adjacentMigrationLinks: Object.freeze([
+    Object.freeze({ fromSchemaVersion: 1, toSchemaVersion: 2 }),
+  ]),
 });
