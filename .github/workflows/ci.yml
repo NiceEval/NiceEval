@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   package:
     name: Typecheck and docs lint
@@ -13,17 +17,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
         with:
-          node-version: 24
-          cache: pnpm
+          runtime: node@24
+          cache: true
+          install: false
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Typecheck/lint only need the dependency graph. Root prepare builds the
+        # publishable package and would add ~22s without being consumed here.
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck
         run: pnpm run typecheck
@@ -38,19 +42,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      # mint CLI 要 LTS Node；这个 job 与 package job 并行，慢在拉 mint@latest 上，
-      # 不拖住代码侧反馈。
-      - name: Set up Node
-        uses: actions/setup-node@v6
+      # mint CLI 要 LTS Node；这个 job 与 package job 并行，不拖住代码侧反馈。
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
         with:
-          node-version: 24
-          cache: pnpm
+          runtime: node@24
+          cache: true
+          install: false
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Mint 不进根 devDependencies，避免所有非文档 job 都安装它的大依赖树。
+      # npx 环境按精确 CLI 版本单独缓存；lint:docs-site 先预热，
+      # 再并发 validate/links。
+      - name: Restore Mint CLI cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm/_npx
+          key: mint-cli-${{ runner.os }}-${{ runner.arch }}-node24-4.2.812
 
       - name: Lint docs-site and validate with mint
         run: pnpm run lint:docs-site

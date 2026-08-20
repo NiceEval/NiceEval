@@ -77,7 +77,9 @@ jobs:
           install: false
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # `pnpm e2e pack` below invokes `pnpm pack`, whose prepare lifecycle
+        # builds dist/ and INDEX.md. Do not perform the same build during install.
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Resolve lane and environment
         id: lane
