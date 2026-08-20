@@ -42,7 +42,15 @@ export default defineEval({
           `f=$(find ~/.codex/sessions -name "*${t.sessionId}*.jsonl" | head -1); test -n "$f" && grep -o '"model":"[^"]*"' "$f" | sort -u`,
         );
         t.check(probe.exitCode, equals(0));
-        t.check(probe.stdout, includes(`"model":"${t.model}"`));
+        // `t.model` 是请求值；兼容网关可以在转发时改写它。这里核对 Codex
+        // session 侧写真正记录了非空的实际模型，而不把请求值冒充实际值。
+        t.check(
+          probe.stdout,
+          satisfies(
+            "Codex session records a non-empty actual model",
+            (value) => typeof value === "string" && /"model":"[^"]+"/.test(value),
+          ),
+        );
       },
     );
   },
