@@ -5,17 +5,20 @@ import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
-interface LeaderboardShow {
-  schema: "niceeval.show/v1";
+interface ExperimentGroupShow {
+  format: "niceeval.show/v2";
   selection: { kind: "project-current"; sampleIdentity: string };
   problems: readonly unknown[];
   data: {
-    kind: "leaderboard";
-    rows: readonly {
-      experiment: string;
-      passRate: null;
-      totalScore: number;
-    }[];
+    kind: "experiment-group";
+    comparison: {
+      state: "comparable";
+      rows: readonly {
+        experiment: string;
+        passRate: null;
+        totalScore: number;
+      }[];
+    };
   };
 }
 
@@ -71,19 +74,22 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
       const shown = await niceeval.run(["show", "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(evaluations.filter((event) => event.verdict === "failed")).toEqual([]);
-      const document = shown.json<LeaderboardShow>();
+      const document = shown.json<ExperimentGroupShow>();
       expect(document).toMatchObject({
-        schema: "niceeval.show/v1",
+        format: "niceeval.show/v2",
         selection: { kind: "project-current" },
         data: {
-          kind: "leaderboard",
-          rows: [{
-            experiment: "assertion-score",
-            passRate: null,
-          }],
+          kind: "experiment-group",
+          comparison: {
+            state: "comparable",
+            rows: [{
+              experiment: "assertion-score",
+              passRate: null,
+            }],
+          },
         },
       });
-      const [row] = document.data.rows;
+      const [row] = document.data.comparison.rows;
       expect(row).toBeDefined();
       expect(row!.totalScore).toEqual(expect.any(Number));
       expect(document.problems, "scored, stopped, and skipped are known score outcomes").toEqual([]);

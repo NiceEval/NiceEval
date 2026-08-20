@@ -34,7 +34,7 @@ experiments/compare/nested/model.ts  -> Experiment compare/nested/model -> named
 experiments/smoke.ts                 -> Experiment smoke             -> singleton/smoke
 ```
 
-`named/<segment>` 取 `experimentId` 的第一段；更深的目录只组织成员。根级 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是判别联合；named `foo` 与根级 Experiment `foo` 不冲突，CLI、route 与机器输出都不接受未带 kind 的 `foo`。
+`named/<segment>` 取 `experimentId` 的第一段；更深的目录只组织成员。根级 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是 Analysis、Report route 与机器输出中的判别联合，不成为另一套 CLI 参数；`niceeval exp foo` 与 Report 的 `--experiment foo` 继续使用同一实验 selector 规则。
 
 目录表示作者允许成员共同比较，不证明它们一定可比。Analysis 另行验证 Eval 总体、evaluation kind、Measure population 与 basis。验证不通过时产生可呈现的 `non-comparable`，不产生排名或散点，也不让整份项目报告失败。
 

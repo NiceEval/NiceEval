@@ -113,6 +113,15 @@
     },
     "rejectedCliFlags": [
       {
+        "flag": "--group",
+        "roots": [
+          "docs/feature/reports",
+          "docs-site/zh/reference"
+        ],
+        "use": "使用与 niceeval exp 相同的 --experiment <selector>；浏览器 Header 沿已关闭的实验 Page 链接切换",
+        "why": "实验 selector 已代表用户可运行和可查看的实验范围，另加 group 参数会暴露内部比较 identity，并形成第二套选择语法"
+      },
+      {
         "flag": "--latest",
         "roots": [
           "docs-site/zh"

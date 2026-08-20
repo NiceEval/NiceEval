@@ -24,7 +24,7 @@ enumerate every Page instance → execute every Page → validate site → Close
 `show` 只执行目标 Page。省略 `--page` 时使用 Report 的默认 route；带 `--page` 时使用精确 route。它不枚举参数 Page，
 不执行其它 Page，也不创建 site revision。
 
-`--group` 是实验组 Page 的具名 target，不是 Sample selector。`show --group` 只执行该组 Page；`view --group` 只设定初始 route，仍枚举并闭合固定 Sample 中的全部组 Page。
+`--experiment <selector>` 与 `niceeval exp <selector>` 使用同一实验选择规则并形成固定 Sample；Report 不增加另一套实验组 CLI selector。浏览器 Header 沿已关闭的实验组 Page 链接导航，不重新选择 Sample。
 
 `view` 和 `view --out` 都先枚举全部普通 Page 与参数 Page 实例。只有所有页面、route、链接、下载、asset、问题表和预算通过校验，
 Host 才形成一个 revision。view 只托管它；static 只写出它。
@@ -146,7 +146,7 @@ Page、params、locale 与 theme identity。缓存不保存开放 Scope、callba
 的 route、标题、rendered text、下载摘要和问题表，不含 React tree、site revision、revision identity 或任意作者数据对象。
 其中 rendered text 固定为该 Page 已关闭的英语 80-column text projection；它不随 TTY 或浏览器宽度变化，也不会触发第二次执行。
 
-CLI 固定这些文档的 schema、locale、目标选择和 canonical order；详见 [CLI](cli.md#niceeval-show---json)。机器数据不是组件第三面。
+CLI 固定这些文档的 format、locale、目标选择和 canonical order；详见 [CLI](cli.md#niceeval-show---json)。机器数据不是组件第三面。
 
 ## 仓库 E2E 与候选包 dogfood
 

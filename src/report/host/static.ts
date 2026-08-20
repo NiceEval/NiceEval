@@ -617,7 +617,7 @@ function renderExperimentGroupNavigation(
     return `<li><a href="${escapeAttribute(href)}"${current}>${escapeText(label)}</a></li>`;
   });
   const hidden = locale === "zh-CN" ? " hidden" : "";
-  const label = locale === "zh-CN" ? "实验组" : "Experiment groups";
+  const label = locale === "zh-CN" ? "实验" : "Experiments";
   return `<nav class="niceeval-view-nav" data-niceeval-locale="${locale}" aria-label="${label}"${hidden}><ul>${items.join("")}</ul></nav>`;
 }
 

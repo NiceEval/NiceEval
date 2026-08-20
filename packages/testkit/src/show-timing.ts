@@ -43,7 +43,7 @@ export type ShowTimingEntry =
     };
 
 export interface ShowTimingDocument {
-  readonly schema: "niceeval.show/v1";
+  readonly format: "niceeval.show/v1";
   readonly locale: "en";
   readonly selection: {
     readonly kind: "attempt-locator";
@@ -64,7 +64,7 @@ export interface ShowTimingDocument {
     readonly timing: readonly ShowTimingEntry[];
   };
   readonly projections: {
-    readonly schema: "niceeval.report-projections/v1";
+    readonly format: "niceeval.report-projections/v1";
     readonly pricingProfile: unknown;
     readonly costs: readonly unknown[];
   };
@@ -86,9 +86,9 @@ export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument {
     "problems",
     "projections",
     "report",
-    "schema",
+    "format",
     "selection",
-  ]) || value.schema !== "niceeval.show/v1" || value.locale !== "en") {
+  ]) || value.format !== "niceeval.show/v1" || value.locale !== "en") {
     return invalid(receipt, "document must be the exact niceeval.show/v1 envelope");
   }
   const selection = value.selection;
@@ -138,8 +138,8 @@ function isLocalizedText(value: unknown): value is ShowTimingDocument["page"]["t
 }
 
 function isProjections(value: unknown): value is ShowTimingDocument["projections"] {
-  return isRecord(value) && hasExactKeys(value, ["costs", "pricingProfile", "schema"]) &&
-    value.schema === "niceeval.report-projections/v1" && Array.isArray(value.costs);
+  return isRecord(value) && hasExactKeys(value, ["costs", "format", "pricingProfile"]) &&
+    value.format === "niceeval.report-projections/v1" && Array.isArray(value.costs);
 }
 
 function isProblems(value: unknown): value is ShowTimingDocument["problems"] {

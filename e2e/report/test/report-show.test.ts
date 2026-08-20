@@ -18,7 +18,7 @@ interface ReportProblem {
 }
 
 interface ReportProjections {
-  readonly schema: "niceeval.report-projections/v1";
+  readonly format: "niceeval.report-projections/v1";
   readonly pricingProfile: Record<string, unknown> | null;
   readonly costs: readonly {
     readonly page: { readonly pageId: string; readonly route: string };
@@ -31,7 +31,7 @@ interface ReportProjections {
 
 /** The documented built-in machine document (docs/feature/reports/cli.md). */
 interface BuiltInShowDocument {
-  readonly schema: "niceeval.show/v2";
+  readonly format: "niceeval.show/v1" | "niceeval.show/v2";
   readonly locale: "en";
   readonly selection:
     | {
@@ -83,7 +83,7 @@ interface BuiltInShowDocument {
 
 /** The documented custom single-target manifest (docs/feature/reports/cli.md). */
 interface CustomTargetExecutionManifest {
-  readonly schema: "niceeval.report-target-execution/v1";
+  readonly format: "niceeval.report-target-execution/v1";
   readonly locale: "en";
   readonly selection: { readonly kind: "project-current"; readonly sampleIdentity: string; readonly experimentIds: readonly string[] };
   readonly report: { readonly identity: string; readonly title: string | Record<string, string> };
@@ -119,7 +119,7 @@ function expectCanonicalProblemTable(problems: readonly ReportProblem[], pageId:
 
 function expectBuiltInPricingProfile(projections: ReportProjections): void {
   expect(projections).toMatchObject({
-    schema: "niceeval.report-projections/v1",
+    format: "niceeval.report-projections/v1",
     pricingProfile: {
       contentIdentity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       currency: "USD",
@@ -128,7 +128,7 @@ function expectBuiltInPricingProfile(projections: ReportProjections): void {
   });
 }
 
-test("show 对单组默认直达 comparison，对多组默认列索引并以 --group 精确读取", async () => {
+test("show 对单组默认直达 comparison，对多组默认列索引并以实验选择精确读取", async () => {
   await reportE2E.case(
     "show-overview",
     { artifacts: reportCaseArtifacts() },
@@ -153,7 +153,7 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以 --g
       expect(singleJson.exitCode, singleJson.diagnostic()).toBe(0);
       const singleDocument = singleJson.json<BuiltInShowDocument>();
       expect(singleDocument).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         locale: "en",
         selection: {
           kind: "project-current",
@@ -174,15 +174,15 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以 --g
 
       const indexText = await niceeval.run(["show"]);
       expect(indexText.exitCode, indexText.diagnostic()).toBe(0);
-      expect(indexText.stdout).toContain("niceeval show --group 'singleton/main'");
-      expect(indexText.stdout).toContain("niceeval show --group 'singleton/source'");
+      expect(indexText.stdout).toContain("niceeval show --experiment 'main'");
+      expect(indexText.stdout).toContain("niceeval show --experiment 'source'");
       expect(indexText.stdout).not.toContain("Experiment comparison");
 
       const indexJson = await niceeval.run(["show", "--json"]);
       expect(indexJson.exitCode, indexJson.diagnostic()).toBe(0);
       const indexDocument = indexJson.json<BuiltInShowDocument>();
       expect(indexDocument).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         page: { route: "/", pageId: "overview" },
         data: {
           kind: "groups",
@@ -201,10 +201,10 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以 --g
         },
       });
 
-      const selected = await niceeval.run(["show", "--group", "singleton/main", "--json"]);
+      const selected = await niceeval.run(["show", "--experiment", "main", "--json"]);
       expect(selected.exitCode, selected.diagnostic()).toBe(0);
       expect(selected.json<BuiltInShowDocument>()).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         page: { route: "/group/singleton/main", pageId: "group-singleton" },
         data: {
           kind: "experiment-group",
@@ -213,11 +213,6 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以 --g
         },
       });
 
-      const narrowed = await niceeval.run([
-        "show", "--experiment", "main", "--group", "singleton/source", "--json",
-      ]);
-      expect(narrowed.exitCode, narrowed.diagnostic()).not.toBe(0);
-      expect(narrowed.stderr).toContain("report-group-not-in-sample");
     },
   );
 });
@@ -232,10 +227,10 @@ test("show 保留 named identity，并把同组不同 Eval population 闭合为 
         expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       }
 
-      const shown = await niceeval.run(["show", "--group", "named/classic", "--json"]);
+      const shown = await niceeval.run(["show", "--experiment", "classic", "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.json<BuiltInShowDocument>()).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         page: { route: "/group/named/classic", pageId: "group-named" },
         data: {
           kind: "experiment-group",
@@ -268,7 +263,7 @@ test("show 对 immutable Attempt 交付精确 evidence JSON", async () => {
       expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
       const document = attempt.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v1",
         locale: "en",
         selection: { kind: "attempt-locator", locator: failed.locator },
         page: { route: "/", pageId: "attempt-overview", title: "Attempt overview" },
@@ -306,7 +301,7 @@ test("show --run 保留 deterministic classic World 的历史 Run 与 Attempt �
       expect(historical.exitCode, historical.diagnostic()).toBe(0);
       const document = historical.json<BuiltInShowDocument>();
       expect(document).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         locale: "en",
         selection: {
           kind: "explicit-runs",
@@ -389,7 +384,7 @@ test("自定义 Report 的 show 是单目标阅读面，JSON 只含 target-execu
       expect(json.exitCode, json.diagnostic()).toBe(0);
       const manifest = json.json<CustomTargetExecutionManifest>();
       expect(manifest).toMatchObject({
-        schema: "niceeval.report-target-execution/v1",
+        format: "niceeval.report-target-execution/v1",
         locale: "en",
         selection: {
           kind: "project-current",
@@ -449,7 +444,7 @@ test("参数化 show 按规范 key 读取详情页，并对非成员 key 返回�
       expect(detail.exitCode, detail.diagnostic()).toBe(0);
       const detailManifest = detail.json<CustomTargetExecutionManifest>();
       expect(detailManifest).toMatchObject({
-        schema: "niceeval.report-target-execution/v1",
+        format: "niceeval.report-target-execution/v1",
         page: {
           route: `/slot/${slotKey}`,
           pageId: "slot",

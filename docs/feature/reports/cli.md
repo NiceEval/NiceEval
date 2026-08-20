@@ -24,10 +24,9 @@ niceeval view [selection] [report options] --out <directory>
 | `--record <root>` | 选择实际 Record root；省略时使用 `<cwd>/.niceeval/record`。 |
 | `@<locator>` | 精确选择一个 immutable Attempt。 |
 | `--run <run-id>` | 可重复；精确选择历史 Run。 |
-| `--experiment <id>` | 可重复；按完整 ExperimentId 收窄不带 locator 或 `--run` 的项目选择。 |
+| `--experiment <selector>` | 可重复；使用与 `niceeval exp <selector>` 相同的实验选择规则收窄当前项目；目录 selector 会选择其下全部 Experiments。 |
 | `--report <module>` | 选择内建 Report 或受信任的 Report module。 |
 | `--page <route>` | `show` 的唯一目标 route，或 `view` 的初始浏览 route。 |
-| `--group <key>` | 选择实验组 Page；精确 key 为 `named/<segment>` 或 `singleton/<experiment-id>`。 |
 | `--port <port>` | `view` 监听端口；省略时由操作系统分配空闲端口。 |
 | `--host <address>` | `view` 监听地址；省略时为 `127.0.0.1`。 |
 | `--no-open` | 阻止 `view` 自动打开浏览器。 |
@@ -37,16 +36,14 @@ niceeval view [selection] [report options] --out <directory>
 不带 locator、`--run` 或 `--experiment` 时，命令按当前项目身份形成 Sample。它选择所有匹配的 published Run，不按时间缩成
 一个 Run，也不写回 Record。没有匹配结果仍形成空 Sample；度量用自己的 state、samples、total 与 issues 表示结果。
 
-`--experiment` 不能与 locator 或 `--run` 合用。`--group` 是 Page target，不改变 Sample；它可与 `--run` 或 `--experiment` 合用，但不能与 locator、`--page` 或 `--out` 合用。不接受未带 kind 的 `foo`，因为它无法区分 named 与 singleton。
-
-未知 Run、未知 Experiment、未知 route、参数 route 的非规范 key 和缺少默认 route 都是用法错误。目标组不在固定 Sample 中时返回 `report-group-not-in-sample`；自定义 Report 没有声明对应 `groupKind` 的 `experiment-group` Page 时返回 `report-group-page-unavailable`。
+`--experiment` 不能与 locator 或 `--run` 合用。它沿用 `exp` 的精确 ID、目录与同目录文件名前缀选择规则；例如 `--experiment classic` 选择 `classic/` 下的整组 Experiments。未知 Run、零命中的 Experiment selector、未知 route、参数 route 的非规范 key 和缺少默认 route 都是用法错误。
 
 ## `niceeval show`
 
 ```sh
 niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
 niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527 --page /overview
-niceeval show --group named/compare
+niceeval show --experiment compare
 niceeval show @1K1P0VJAPVJ12 --page /attempt/1K1P0VJAPVJ12
 ```
 
@@ -64,7 +61,7 @@ key 完全相同。`show` 不调用 `enumerate()`，却要求 `PageLoadContext` 
 `Section` 显示区域框，`Grid` 与 `Table` 显示数据格线；非 TTY 或过窄终端选择 plain projection，组件、数据状态与顺序不变。
 `NO_COLOR` 只禁用颜色，不删除表达组件边界的结构框。`show --json` 的 `renderedText` 始终读取固定 80 列 plain projection，不继承 TTY。
 
-`standard` 只遇到一个实验组时，Overview 直接呈现该组的比较结果。遇到多个组时，`show` 默认输出实验组索引和可复制的 `niceeval show --group <key>` 命令，不生成跨组 leaderboard。具名组 Page 在唯一 `ExperimentComparisonScope` 内使用 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。Pass Eval 显示通过率，Score Eval 只显示 earned score，不声明满分或百分比；两种题型分面板呈现，不互排。
+`standard` 只遇到一个实验组时，Overview 直接呈现该组的比较结果。遇到多个组时，`show` 默认输出实验索引和可复制的 `niceeval show --experiment <selector>` 命令，不生成跨组 leaderboard，也不引入另一套实验组 CLI 参数。具名组 Page 在唯一 `ExperimentComparisonScope` 内使用 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。Pass Eval 显示通过率，Score Eval 只显示 earned score，不声明满分或百分比；两种题型分面板呈现，不互排。
 
 每个 Experiment 可逐层展开到 Eval 与 Attempt，Attempt locator 链接到同一份 `standard` 显式声明的详情 Page。Analysis 的 `MetricValue` 仍完整保留 state、samples、total、issues 与 refs。
 
@@ -90,7 +87,7 @@ Record 或 Analysis 读取路径。
 
 ```ts
 interface BuiltInShowDocument {
-  readonly schema: "niceeval.show/v2";
+  readonly format: "niceeval.show/v1" | "niceeval.show/v2";
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: { readonly token: BuiltInReportToken; readonly identity: ContentAddress };
@@ -132,7 +129,7 @@ interface ExperimentGroupSummary {
 
 ```ts
 interface CustomTargetExecutionManifest {
-  readonly schema: "niceeval.report-target-execution/v1";
+  readonly format: "niceeval.report-target-execution/v1";
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: { readonly identity: ContentAddress; readonly title: LocalizedText };
@@ -154,7 +151,7 @@ interface CustomTargetExecutionManifest {
 `renderedText` 固定取该 Page 已关闭的英语 text projection，宽度固定为 80 个 display columns。它不读取 TTY 或浏览器宽度，
 也不为 JSON 再次运行组件、执行 Analysis 或读取 Record。
 
-默认 Page 以固定 Sample 中的组数决定关闭数据：恰好一组时产生 `experiment-group`，两组或更多时产生 `groups`。显式 `--group` 总是产生目标组的 `experiment-group`。
+默认 Page 以固定 Sample 中的组数决定关闭数据：恰好一组时产生 `experiment-group`，两组或更多时产生 `groups`。`--experiment <selector>` 先按 `exp` 的同一规则收窄当前项目；收窄后只有一组时直接产生该组的 `experiment-group`。
 
 `ShowSelection` 是固定 selector 的机器形状：
 
@@ -165,10 +162,10 @@ type ShowSelection =
   | { readonly kind: "attempt-locator"; readonly sampleIdentity: ContentAddress; readonly locator: string };
 ```
 
-`selection` 只说明固定 Sample 的选择；`page` 是唯一的 Page 选择，恰好含一个 `route` 与一个 `pageId`。两种 schema 都没有全站
+`selection` 只说明固定 Sample 的选择；`page` 是唯一的 Page 选择，恰好含一个 `route` 与一个 `pageId`。两类机器文档都没有全站
 pages 数组或 site identity。
 
-`ContentAddress` 与 `BuiltInReportToken` 都是非空 string。两种 schema 共用下列问题形状：
+`ContentAddress` 与 `BuiltInReportToken` 都是非空 string。两类机器文档共用下列问题形状：
 
 ```ts
 interface ReportProblem {
@@ -197,7 +194,6 @@ canonical JSON 的规则固定如下：
 ```sh
 niceeval view --report ./reports/summary.ts --port 4400
 niceeval view --host 192.168.0.199
-niceeval view --group named/compare
 niceeval view --run 01H... --page /attempt/attempt-01h... --no-open
 ```
 
@@ -205,7 +201,7 @@ view 在启动 server 前完整构建 `ClosedSiteRevision`。它对每个参数 
 枚举实例，并校验全站路径、链接、download、asset、Source、Diff、问题表、`_niceeval/data/projections.json` 与预算。该文件捕获所有
 显式声明 Page 的 projection closure；浏览器不重新计算成本。
 
-`--page` 或 `--group` 只决定浏览器初始打开的已存在 route；不会缩小构建、枚举或验证。浏览器导航、刷新、Source、Trace、Diff 与下载只读取
+`--page` 只决定浏览器初始打开的已存在 route；不会缩小构建、枚举或验证。Header 的实验选择器沿已关闭的组 Page 链接导航，不增加 CLI selector。浏览器导航、刷新、Source、Trace、Diff 与下载只读取
 revision bytes，不执行作者 callback、Analysis 或 Record 读取。
 
 view 监听 Record root、Report module、项目内静态 import、theme 与配置。最新完整构建成功时原子替换 current revision；失败保留
@@ -221,7 +217,7 @@ niceeval view --report ./reports/summary.ts --out ./report-site
 niceeval view --run 01H... --out ./shared-site --no-open
 ```
 
-`--out` 不接受 `--page` 或 `--group`。它与 view 使用同一完整 SSG 路径，完成全站校验后原样写出 revision 的页面、CSS、reload client、作者 asset、
+`--out` 不接受 `--page`。它与 view 使用同一完整 SSG 路径，完成全站校验后原样写出 revision 的页面、CSS、reload client、作者 asset、
 下载文件与 `_niceeval/data/projections.json`。该 projections 文件包含全体声明 Page 的 closure，bytes 进入 revision identity。目标目录
 必须不存在；存在时返回 `report-export-target-exists`，Host 不删除或替换其中的文件。
 
@@ -243,7 +239,6 @@ niceeval view --run 01H... --out ./shared-site --no-open
 | MetricValue 是 partial、empty、unsupported 或 failed | 成功呈现状态、issues 与 refs。 |
 | 实验组结构不可比 | 成功呈现 `non-comparable`、成员、原因与 Evidence，不生成排名或散点。 |
 | 比较组件收到多组输入 | 返回 `analysis-comparison-group-mismatch`，不降级成 `non-comparable`。 |
-| `--group` 不在 Sample 中，或 Report 没有组 Page | 分别返回 `report-group-not-in-sample` 或 `report-group-page-unavailable`。 |
 | 未知或非规范 route | 用法错误，说明可用 route 或参数格式。 |
 | 输出目录已存在 | 返回 `report-export-target-exists`，不改动目录。 |
 | 静态写入失败 | 返回 `report-export-write-failed`，不泄露任意系统路径或内部 cause。 |

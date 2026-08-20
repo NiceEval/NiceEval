@@ -705,7 +705,7 @@ function commandForTarget(pages: readonly ReportPageDefinition[], target: Report
   const page = pages.find((candidate) => candidate.id === target.page);
   if (page?.params !== undefined && page.role?.kind === "experiment-group") {
     const key = route.slice(page.path.length + 1);
-    return `niceeval show --group ${shellQuote(`${page.role.groupKind}/${key}`)}`;
+    return `niceeval show --experiment ${shellQuote(key)}`;
   }
   return `niceeval show --page ${shellQuote(route)}`;
 }

@@ -30,7 +30,7 @@ interface ReportProblem {
 }
 
 interface ShowOverview {
-  readonly schema: "niceeval.show/v2";
+  readonly format: "niceeval.show/v2";
   readonly locale: "en";
   readonly selection:
     | {
@@ -86,7 +86,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       expect(initialShow.exitCode, initialShow.diagnostic()).toBe(0);
       const initialDocument = initialShow.json<ShowOverview>();
       expect(initialDocument).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         locale: "en",
         selection: {
           kind: "project-current",
@@ -142,18 +142,18 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const staleShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(staleShow.exitCode, staleShow.diagnostic()).toBe(0);
       expect(staleShow.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         selection: { kind: "project-current" },
         data: { kind: "groups", groups: [] },
         problems: [],
       });
 
       const staleHistory = await niceeval.run([
-        "show", "--run", initialRunId, "--report", "standard", "--group", "singleton/source", "--json",
+        "show", "--run", initialRunId, "--report", "standard", "--json",
       ]);
       expect(staleHistory.exitCode, staleHistory.diagnostic()).toBe(0);
       expect(staleHistory.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         selection: {
           kind: "explicit-runs",
           runIds: [initialRunId],
@@ -185,7 +185,7 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       const refreshedShow = await niceeval.run(["show", "--experiment", "source", "--json"]);
       expect(refreshedShow.exitCode, refreshedShow.diagnostic()).toBe(0);
       expect(refreshedShow.json<ShowOverview>()).toMatchObject({
-        schema: "niceeval.show/v2",
+        format: "niceeval.show/v2",
         selection: { kind: "project-current" },
         data: { kind: "experiment-group" },
       });

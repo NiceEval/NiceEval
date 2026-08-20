@@ -123,7 +123,7 @@ function standardOverview(sample: Sample) {
       <SampleNotices />
       <SampleSummary />
       {only === undefined ? (
-        <Section title={{ en: "Experiment groups", "zh-CN": "实验组" }}>
+        <Section title={{ en: "Experiments", "zh-CN": "实验" }}>
           <Col>
             {groups.map((entry) => (
               <Link

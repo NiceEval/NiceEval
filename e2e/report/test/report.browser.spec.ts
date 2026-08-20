@@ -235,7 +235,7 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
 
         // A fixed Sample with one named Experiment Group goes straight to its
         // comparison and does not waste Header space on a one-option selector.
-        await expect(page.getByRole("navigation", { name: "Experiment groups" })).toHaveCount(0);
+        await expect(page.getByRole("navigation", { name: "Experiments" })).toHaveCount(0);
 
         const passChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
         await expect(passChart).toHaveCount(1);
@@ -247,7 +247,7 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
 
         const mixedRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(mixedRun.expReceipt(), mixedRun.diagnostic()).toMatchObject({ completion: "completed" });
-        const groupNavigation = page.getByRole("navigation", { name: "Experiment groups" });
+        const groupNavigation = page.getByRole("navigation", { name: "Experiments" });
         await expect(groupNavigation).toBeVisible({ timeout: 15_000 });
         const classicGroup = groupNavigation.getByRole("link", { name: "classic" });
         const mainGroup = groupNavigation.getByRole("link", { name: "main" });
@@ -265,7 +265,7 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         try {
           const staticPage = await offline.newPage();
           await staticPage.goto(pathToFileURL(join(projectRoot, "group-static", "index.html")).href);
-          const staticGroups = staticPage.getByRole("navigation", { name: "Experiment groups" });
+          const staticGroups = staticPage.getByRole("navigation", { name: "Experiments" });
           await expect(staticGroups.getByRole("link", { name: "classic" }))
             .toHaveAttribute("href", "group/named/classic/index.html");
           await staticGroups.getByRole("link", { name: "classic" }).click();

@@ -210,7 +210,7 @@ type Page<Params extends JsonValue | void = void, Input = Sample> =
     : ParameterizedPage<Extract<Params, JsonValue>, Input>;
 ```
 
-`role.kind: "experiment-group"` 只适用于参数 Page。`groupKind` 固定该 Page 接收 named 或 singleton identity，`load` 再从当前 Sample 形成 `ExperimentComparisonScope`。Host 只为作者显式声明的这类 Page 生成 Header 实验组选择器；当前 Sample 只有一组时不显示选择器，有两组或更多时才显示。未声明该 role 时不补造 Page、route 或选择器。
+`role.kind: "experiment-group"` 只适用于参数 Page。`groupKind` 固定该 Page 接收 named 或 singleton identity，`load` 再从当前 Sample 形成 `ExperimentComparisonScope`。Host 只为作者显式声明的这类 Page 生成 Header 实验选择器；当前 Sample 只有一个可比范围时不显示选择器，有两个或更多时才显示。未声明该 role 时不补造 Page、route 或选择器。
 
 参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，形成 `/group/named/<segment>` 与 `/group/singleton/<experiment-id>`。选择器把两个 Page 的已闭合目标汇总成一个列表；每个选项都是真实 `href`。JavaScript 只渐进增强交互，禁用 JavaScript 与静态导出仍能沿同一链接切换组。
 

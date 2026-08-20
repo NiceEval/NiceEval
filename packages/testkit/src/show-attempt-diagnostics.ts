@@ -35,8 +35,8 @@ function string(value: unknown, path: string, receipt: ProcessReceipt): string {
 /** Strictly read stable diagnostic facts from public `niceeval show @locator --json`. */
 export function decodeShowAttemptDiagnostics(receipt: ProcessReceipt): readonly ShowAttemptDiagnostic[] {
   const document = record(receipt.json<unknown>(), "$", receipt);
-  if (string(document.schema, "$.schema", receipt) !== "niceeval.show/v1") {
-    throw new Error(`decodeShowAttemptDiagnostics(): $.schema is not niceeval.show/v1\n\n${receipt.diagnostic()}`);
+  if (string(document.format, "$.format", receipt) !== "niceeval.show/v1") {
+    throw new Error(`decodeShowAttemptDiagnostics(): $.format is not niceeval.show/v1\n\n${receipt.diagnostic()}`);
   }
   const data = record(document.data, "$.data", receipt);
   if (string(data.kind, "$.data.kind", receipt) !== "attempt") {

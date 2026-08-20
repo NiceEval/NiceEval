@@ -26,6 +26,12 @@ import {
   builtInMachineProducerIds,
   defineBuiltInReport,
 } from "./machine.ts";
+import {
+  standardAttemptPage,
+  standardExperimentPage,
+  standardNamedGroupPage,
+  standardSingletonGroupPage,
+} from "./standard.tsx";
 
 interface RunMembershipPageInput {
   readonly hero: HeroData;
@@ -199,7 +205,13 @@ const runMembershipPage = {
 export function runMembershipOverviewReport() {
   return defineBuiltInReport(builtInMachineProducerIds.runMembershipOverview, {
     title: "Run results",
-    pages: [runMembershipPage],
+    pages: [
+      runMembershipPage,
+      standardNamedGroupPage,
+      standardSingletonGroupPage,
+      standardAttemptPage,
+      standardExperimentPage,
+    ],
   });
 }
 
