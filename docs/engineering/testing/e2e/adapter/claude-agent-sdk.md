@@ -37,8 +37,8 @@ group，确保没有残留子进程。
 唯一 `bash-session` Journey 的首轮要求真实模型用原生 Bash 执行一条带随机 marker 的安全
 `printf`。它断言 canonical `shell`、精确 command input 与 `completed`；这个 completed 状态同时证明
 `tool_use_id` 和 `tool_result` 已配对。首轮和 resume 轮的 input / output usage 都必须为正，
-`t.sessionId` 必须已经由 `system/init` 捕获。第二轮要求模型引用首轮随机哨兵，证明 SDK `resume`
-真正取回首轮会话。
+`t.sessionId` 必须已经由 `system/init` 捕获。第二轮要求模型引用首轮短随机 challenge code，证明 SDK `resume`
+真正取回首轮会话；challenge 保持不可预知，但不把长 UUID 的逐字抄写能力混入 session 兼容性判定。
 
 测试只通过公开 CLI 的 `show`、`show --json` 和代表 Report 的 execution target Page 读回通过结果。
 target Page 使用 `show @locator --report <fixture-module> --page <route>`。

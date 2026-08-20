@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "runner",
-  "batch": "host-1",
+  "batch": "host-4",
   "areas": ["runner"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },

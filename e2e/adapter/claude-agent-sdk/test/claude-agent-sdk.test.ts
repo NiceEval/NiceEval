@@ -3,7 +3,7 @@
 // 真实 SDK / provider Journey：候选包公开的 converter 只消费 SDKMessage，测试只经
 // 安装后的 CLI 读回。没有 HTTP server、MCP 或私有 .niceeval 读取。
 
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -42,7 +42,10 @@ beforeAll(async () => {
   requireLiveSecrets();
 
   marker = `niceeval-claude-sdk-bash-${randomUUID()}`;
-  sentinel = `niceeval-claude-sdk-session-${randomUUID()}`;
+  // Resume only needs an unpredictable challenge that was present in the first
+  // turn. A UUID makes the live model's character-perfect transcription, rather
+  // than SDK session continuity, the dominant source of failure.
+  sentinel = `NE-${randomInt(1_000, 10_000)}`;
 
   await withTempDir("niceeval-claude-agent-sdk-", async (tempRoot) => {
     const privateHome = join(tempRoot, "home");
