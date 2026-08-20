@@ -53,8 +53,8 @@ Journey 在每个域间接缝立即断言，不把整段流程压成最后一个
 
 ## 稳定与可靠
 
-稳定的定义是小更改只修改真实契约影响范围内的测试；逐类预算与 blocking 裁决只在
-[Pullfrog review prompt](../../../../.github/pullfrog-review-prompt.md#prompt)维护。测试读取公开结果的稳定身份与关系，
+稳定的定义是小更改只修改真实契约影响范围内的测试；逐类预算与 blocking 裁决见
+[测试总纲](../README.md#稳定性变更预算)。测试读取公开结果的稳定身份与关系，
 不锁动态 ID、临时端口、duration、DOM class 或私有文件布局。
 
 可靠要求同一 candidate、输入与运行条件反复执行时不意外失败。测试使用确定性 fixture、显式 seed / 时钟策略、条件等待和私有状态。

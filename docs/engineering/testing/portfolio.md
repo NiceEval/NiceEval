@@ -60,8 +60,7 @@ Unit fixture 只显式填写本 case 有语义的字段；机械默认值由测�
 E2E 不手写内部 Run、Attempt 或 Report DTO；它们通过真实 Eval / Experiment 产生结果，再从公开 CLI、包导出、
 HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，才签入最小旧格式 fixture，并把 schema version 写成独立字面量。
 
-稳定的定义见[测试总纲](README.md#稳定性变更预算)；逐类预算、逐文件审计与 blocking 条件只在
-[Pullfrog review prompt](../../../.github/pullfrog-review-prompt.md#prompt)维护。
+稳定的定义、逐类预算、逐文件审计与 blocking 条件见[测试总纲](README.md#稳定性变更预算)。
 
 ## 功能归属与 Bug 回归
 
@@ -158,8 +157,9 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 
 ## 修改测试的 PR 裁决
 
-生产改动让测试失败时，不先更新 snapshot 或 expected。逐类预算、Snapshot 变化与共享状态的 blocking 裁决只在
-[Pullfrog review prompt](../../../.github/pullfrog-review-prompt.md#prompt)维护；本篇不复制一张无法直接读取 PR diff 的决策表。
+生产改动让测试失败时，不先更新 snapshot 或 expected。逐类预算与 Snapshot 变化按
+[稳定性预算](README.md#稳定性变更预算)裁决，共享状态按[可靠性门](README.md#可靠性重复运行)裁决；
+本篇不复制一张无法直接读取 PR diff 的决策表。
 
 ## 周期复核
 

@@ -9,7 +9,7 @@
 - 产品、架构或内部设计：[`docs/README.md`](docs/README.md)
 - 文档用词审查：先把裁决写进 `docs/writing-rules.json`，再运行 `pnpm lint`，按 lint 输出逐项修改；不手工搜索并维护另一份命中清单
 - 设计到源码的定位：[`docs/source-map.md`](docs/source-map.md)
-- 修 Bug、写改或评审测试：先读产品 Feature 契约，再读 [`docs/engineering/testing/README.md`](docs/engineering/testing/README.md) 的「Bug 修复的 E2E TDD」；随后依次读 [`portfolio.md`](docs/engineering/testing/portfolio.md) 找 owner、[`e2e/README.md`](docs/engineering/testing/e2e/README.md) 选体裁、[`scenario-repos.md`](docs/engineering/testing/e2e/scenario-repos.md) 确认布局及对应领域页，真正写和运行时再读 [`authoring.md`](docs/engineering/testing/e2e/authoring.md) 与 [`execution.md`](docs/engineering/testing/e2e/execution.md)。测试变更预算以 [Pullfrog review prompt](.github/pullfrog-review-prompt.md#prompt)为唯一执行入口；写 Unit 前再读 [`unit/README.md`](docs/engineering/testing/unit/README.md) 与对应 Feature 例外登记
+- 修 Bug、写改或评审测试：先读产品 Feature 契约，再读 [`docs/engineering/testing/README.md`](docs/engineering/testing/README.md) 的「Bug 修复的 E2E TDD」与「稳定性：变更预算」；随后依次读 [`portfolio.md`](docs/engineering/testing/portfolio.md) 找 owner、[`e2e/README.md`](docs/engineering/testing/e2e/README.md) 选体裁、[`scenario-repos.md`](docs/engineering/testing/e2e/scenario-repos.md) 确认布局及对应领域页，真正写和运行时再读 [`authoring.md`](docs/engineering/testing/e2e/authoring.md) 与 [`execution.md`](docs/engineering/testing/e2e/execution.md)；写 Unit 前再读 [`unit/README.md`](docs/engineering/testing/unit/README.md) 与对应 Feature 例外登记
 - 历史踩坑与设计裁决：[`memory/INDEX.md`](memory/INDEX.md)，命中索引项后才读正文
 - 公开文档站：[`docs-site/AGENTS.md`](docs-site/AGENTS.md)
 - 可运行示例：[`examples/README.md`](examples/README.md)
@@ -25,19 +25,6 @@
 - 先加强拥有同一长期结果的既有 E2E owner；没有合格 owner 时新增一个最小 Journey 或单边界 E2E。测试标题仍描述长期用户结果，Bug 历史只作为 regression 凭据，不另建按 Bug 命名的目录或第二套 owner。
 - 无法稳定自动化的外部条件、安全限制或不可固定 Provider 才可暂停 E2E TDD；必须在开工前写明具体阻塞，并把当前候选安装到隔离消费环境做公开入口 AI 真实验收。测试重置、工期或“只是内部实现”不构成跳过理由。
 - E2E 按产品域放在 `e2e/{eval,cli,runner,record,report,package,lifecycle}`，adapter 放在 `e2e/adapter/<id>`；测试文件留在所属 Repo 的原生 `test/`，机械共享能力才进入 Testkit 或根 `e2e/scripts/`。不按 Bug 编号、日期或实现模块另建目录。
-
-## Pullfrog PR 当前最终态审查
-
-`.github/workflows/pullfrog.yml` 把 Pullfrog action 当作 headless CI primitive，并让 agent 明确选择
-`Task`，不使用内建 `Review` 或 `IncrementalReview`。Console dispatch 只用于确定目标 PR；工作流随后从
-GitHub PR metadata 锁定 base SHA 与当时的 head SHA，并仅从 base 的
-`.github/pullfrog-review-prompt.md` 读取 `## Prompt` 下正文作为审查规则。无法按 base SHA 读取、解析或
-验证时不得降级为 head 版本，应停止审查，不创建 GitHub review、评论或回复；失败只留在运行日志与
-Pullfrog 平台诊断中。
-
-权威审查范围等价于 `git diff --merge-base <base_sha> <head_sha>`。agent 只生成一次结构化
-`pullfrog_set_output`，不创建 review/comment；同一 review job 的确定性 publish step 串行 upsert 带 canonical marker 的唯一普通
-issue comment，并在写入前复核 PR 仍为 open 且锁定的 base/head 未变化，避免旧结果覆盖新最终态。
 
 ## 全仓约束
 

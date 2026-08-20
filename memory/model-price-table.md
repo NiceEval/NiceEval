@@ -31,13 +31,12 @@ models.dev 两个**反直觉点**(踩过):
   无 model / 查不到 / 零用量返回 `undefined`(显示 `—` 而非假 `$0`)。
 - 接入点 `runner/run.ts`:`usage.costUSD ?? estimateCost(run.model, usage)` —— 实测优先、估算兜底。
 
-**生成逻辑只在 CI,不进仓库**(没有 TS 脚本 / npm script):`.github/workflows/prices.yml` 每周
-`curl models.dev/api.json | jq ...`,第一方 provider 优先取价,**跳过 input/output 都为 0 的占位条目**
-(否则会制造假 $0,2431→2190 条),写回 `prices.json`,变了 commit 回 main。要本地手动刷新就照搬
-workflow 里那段 `curl|jq`。
+价格表是显式审查后提交的 vendored 快照，不再由 GitHub Actions bot 定时改写。人工刷新时从
+`models.dev/api.json` 取数并按同一规则转换：第一方 provider 优先取价，**跳过 input/output 都为 0 的占位条目**
+（否则会制造假 $0，2431→2190 条），核对 diff 后再提交 `prices.json`。仓库不保留自动提交脚本或 npm script。
 
-**运行时零网络**:用户拿到打包进 `src/` 的 `prices.json` 快照,`cost.ts` 纯 `readFileSync`;
-唯一 fetch 发生在 CI 的 curl,不随包发布。保鲜靠周更 commit(GeoIP 库刷新本地 DB 的套路)。
+**运行时零网络**：用户拿到打包进 `src/` 的 `prices.json` 快照，`cost.ts` 纯 `readFileSync`；
+刷新只在维护者显式执行并审查时联网，不随包发布，也不由 bot 自动提交。
 
 第三个**反直觉点**(jq 重写时撞到):models.dev 里不少 model 被「0/0 占位」provider 抢先(免费转发站),
 TS 版按 JSON 插入序选,jq 版按字母序选,结果不同 —— 根因是这些 0/0 条目本就不该入选,必须 `input>0 or output>0` 守卫。
