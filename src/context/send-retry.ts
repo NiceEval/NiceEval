@@ -53,20 +53,23 @@ export interface SendRetryDeps {
 }
 
 /** Adapt the Attempt-owned AbortSignal into interruption, without turning it into a send failure. */
-function interruptWhenAborted(signal: AbortSignal): Effect.Effect<never> {
-  return Effect.async<never>((resume) => {
+function awaitAbort(signal: AbortSignal): Effect.Effect<void> {
+  return Effect.async<void>((resume) => {
     if (signal.aborted) {
-      resume(Effect.interrupt);
+      resume(Effect.void);
       return;
     }
-    const onAbort = () => resume(Effect.interrupt);
+    const onAbort = () => resume(Effect.void);
     signal.addEventListener("abort", onAbort, { once: true });
     return Effect.sync(() => signal.removeEventListener("abort", onAbort));
   });
 }
 
 function retrySleep(signal: AbortSignal, delayMs: number): Effect.Effect<void> {
-  return Effect.raceFirst(Effect.sleep(delayMs), interruptWhenAborted(signal));
+  return Effect.raceFirst(
+    Effect.sleep(delayMs).pipe(Effect.as("delay" as const)),
+    awaitAbort(signal).pipe(Effect.as("aborted" as const)),
+  ).pipe(Effect.flatMap((winner) => winner === "aborted" ? Effect.interrupt : Effect.void));
 }
 
 /**
