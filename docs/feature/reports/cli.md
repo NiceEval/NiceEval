@@ -101,6 +101,13 @@ interface BuiltInShowDocument {
           | { readonly state: "comparable"; readonly members: readonly string[]; readonly rows: JsonValue }
           | { readonly state: "non-comparable"; readonly members: readonly string[]; readonly issues: readonly NonComparableIssue[] };
       }
+    | {
+        readonly kind: "run-membership";
+        readonly summary: JsonValue;
+        readonly members: JsonValue;
+        readonly errors: JsonValue;
+        readonly evidence: JsonValue;
+      }
     | { readonly kind: "attempt"; readonly evidence: JsonValue; readonly observability: JsonValue; readonly fileChanges: JsonValue }
     | { readonly kind: "source"; readonly sources: JsonValue }
     | { readonly kind: "execution"; readonly execution: JsonValue }
@@ -151,7 +158,9 @@ interface CustomTargetExecutionManifest {
 `renderedText` 固定取该 Page 已关闭的英语 text projection，宽度固定为 80 个 display columns。它不读取 TTY 或浏览器宽度，
 也不为 JSON 再次运行组件、执行 Analysis 或读取 Record。
 
-默认 Page 以固定 Sample 中的组数决定关闭数据：恰好一组时产生 `experiment-group`，两组或更多时产生 `groups`。`--experiment <selector>` 先按 `exp` 的同一规则收窄当前项目；收窄后只有一组时直接产生该组的 `experiment-group`。
+`project-current` 的默认 Page 以固定 Sample 中的组数决定关闭数据：恰好一组时产生 `experiment-group`，两组或更多时产生 `groups`。
+`--experiment <selector>` 先按 `exp` 的同一规则收窄当前项目；收窄后只有一组时直接产生该组的 `experiment-group`。
+一个或多个 `--run` 始终选择 `run-membership` Page；即使这些 Run 只含一个实验组，也不会转成实验比较。
 
 `ShowSelection` 是固定 selector 的机器形状：
 

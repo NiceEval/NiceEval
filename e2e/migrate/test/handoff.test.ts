@@ -73,22 +73,15 @@ test("Git 保存的 npm 0.13.0 Record 自动迁移后显示同一结果并拒绝
       const output = shown.json<{
         selection: { runIds: readonly string[] };
         data: {
-          kind: "experiment-group";
-          comparison:
-            | {
-                state: "comparable";
-                rows: readonly [{ passRate: { state: string; value: number } }];
-              }
-            | { state: "non-comparable" };
+          kind: "run-membership";
+          members: readonly [{ eval: string; locator: string; verdict: string }];
         };
       }>();
       expect(output.selection.runIds).toEqual([runId]);
-      expect(output.data.kind).toBe("experiment-group");
-      expect(output.data.comparison.state).toBe("comparable");
-      if (output.data.comparison.state !== "comparable") {
-        throw new Error("the migrated single-Experiment run is not comparable");
-      }
-      expect(output.data.comparison.rows[0]?.passRate).toMatchObject({ state: "available", value: 1 });
+      expect(output.data.kind).toBe("run-membership");
+      expect(output.data.members).toEqual([
+        expect.objectContaining({ eval: "legacy-handoff", locator: expect.stringMatching(/^@/), verdict: "passed" }),
+      ]);
 
       const beforeOldWriter = await run(["git", "diff", "--binary", "--", ".niceeval/record"]);
       expect(beforeOldWriter.exitCode, beforeOldWriter.diagnostic()).toBe(0);

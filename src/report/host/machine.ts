@@ -13,6 +13,7 @@ import {
 import { sampleForExperimentComparisonScope } from "../../analysis/experiment-groups.ts";
 import { builtInMachineProducerIds } from "../built-in/machine.ts";
 import { loadBuiltInExperimentRows } from "../built-in/analysis-values.ts";
+import { loadRunMembershipPageInput } from "../built-in/run-membership-overview.ts";
 import {
   closeMachineJson,
   type BuiltInMachineProducer,
@@ -59,6 +60,17 @@ const experimentGroup = producer(async (sample, _locator, route) => {
     kind: "experiment-group" as const,
     group: closeMachineJson(summary.group),
     comparison: closeMachineJson(comparison),
+  });
+});
+
+const runMembership = producer(async (sample) => {
+  const result = await loadRunMembershipPageInput(sample);
+  return Object.freeze({
+    kind: "run-membership" as const,
+    summary: closeMachineJson(result.summary),
+    members: closeMachineJson(result.members),
+    errors: closeMachineJson(result.errors),
+    evidence: closeMachineJson(result.evidence),
   });
 });
 
@@ -122,7 +134,7 @@ const standard: BuiltInMachineProducer<BuiltInMachineProductionFailed, never> = 
 };
 
 const producers = new Map<string, BuiltInMachineProducer<BuiltInMachineProductionFailed, never>>([
-  [builtInMachineProducerIds.runMembershipOverview, standard],
+  [builtInMachineProducerIds.runMembershipOverview, runMembership],
   [builtInMachineProducerIds.attemptOverview, attempt],
   [builtInMachineProducerIds.executionEvidence, execution],
   [builtInMachineProducerIds.timingEvidence, timing],

@@ -208,7 +208,7 @@ function showSelectionFromRecord(input: SelectionTarget & {
     const sample = yield* openSelectionSample(input.root, input.selection);
     const report = input.report ?? defaultReportForSelection(input.selection);
     const selection = showSelectionForRequest(sample, input.selection);
-    const implicitRoute = input.route === undefined
+    const implicitRoute = input.route === undefined && input.selection.policy !== "explicit-runs"
       ? singleExperimentGroupRoute(report, sample)
       : undefined;
     return yield* presentShowTarget({

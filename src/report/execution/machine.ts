@@ -62,6 +62,13 @@ export type BuiltInShowData =
   | { readonly kind: "groups"; readonly groups: JsonValue }
   | { readonly kind: "experiment-group"; readonly group: JsonValue; readonly comparison: JsonValue }
   | {
+      readonly kind: "run-membership";
+      readonly summary: JsonValue;
+      readonly members: JsonValue;
+      readonly errors: JsonValue;
+      readonly evidence: JsonValue;
+    }
+  | {
       readonly kind: "attempt";
       readonly evidence: JsonValue;
       readonly observability: JsonValue;
@@ -664,6 +671,19 @@ function freezeBuiltInData(value: BuiltInShowData): BuiltInShowData {
         kind: "experiment-group" as const,
         group: closeMachineJson(value.group),
         comparison: closeMachineJson(value.comparison),
+      });
+    case "run-membership":
+      assertExactFields(
+        value,
+        ["kind", "summary", "members", "errors", "evidence"],
+        "run-membership show data",
+      );
+      return Object.freeze({
+        kind: "run-membership" as const,
+        summary: closeMachineJson(value.summary),
+        members: closeMachineJson(value.members),
+        errors: closeMachineJson(value.errors),
+        evidence: closeMachineJson(value.evidence),
       });
     case "attempt":
       assertExactFields(value, ["kind", "evidence", "observability", "fileChanges"], "attempt show data");
