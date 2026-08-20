@@ -122,7 +122,7 @@ const standard: BuiltInMachineProducer<BuiltInMachineProductionFailed, never> = 
 };
 
 const producers = new Map<string, BuiltInMachineProducer<BuiltInMachineProductionFailed, never>>([
-  [builtInMachineProducerIds.runMembershipOverview, groups],
+  [builtInMachineProducerIds.runMembershipOverview, standard],
   [builtInMachineProducerIds.attemptOverview, attempt],
   [builtInMachineProducerIds.executionEvidence, execution],
   [builtInMachineProducerIds.timingEvidence, timing],

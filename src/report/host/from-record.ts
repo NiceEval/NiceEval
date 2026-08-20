@@ -208,9 +208,8 @@ function showSelectionFromRecord(input: SelectionTarget & {
     const sample = yield* openSelectionSample(input.root, input.selection);
     const report = input.report ?? defaultReportForSelection(input.selection);
     const selection = showSelectionForRequest(sample, input.selection);
-    const groups = report === standard ? experimentGroups(sample) : [];
-    const implicitRoute = input.route === undefined && groups.length === 1
-      ? groupRoute(groups[0]!.group)
+    const implicitRoute = input.route === undefined
+      ? singleExperimentGroupRoute(report, sample)
       : undefined;
     return yield* presentShowTarget({
       sample,
@@ -221,6 +220,18 @@ function showSelectionFromRecord(input: SelectionTarget & {
       format: input.format ?? "text",
     });
   }));
+}
+
+function singleExperimentGroupRoute(report: ReportDefinition, sample: Sample): string | undefined {
+  const groups = experimentGroups(sample);
+  if (groups.length !== 1) return undefined;
+  const group = groups[0]!.group;
+  const declaresGroupPage = report.pages.some((page) =>
+    "role" in page
+    && page.role?.kind === "experiment-group"
+    && page.role.groupKind === group.kind
+  );
+  return declaresGroupPage ? groupRoute(group) : undefined;
 }
 
 function groupRoute(group: import("../../analysis/index.ts").ExperimentGroupIdentity): string {

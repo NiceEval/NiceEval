@@ -307,9 +307,17 @@ test("show --run 保留 deterministic classic World 的历史 Run 与 Attempt �
           kind: "explicit-runs",
           runIds: [...historyRunIds].sort(),
         },
-        page: { route: "/", pageId: "run-membership" },
+        page: { route: "/group/named/classic", pageId: "group-named" },
+        data: {
+          kind: "experiment-group",
+          group: { kind: "named", groupId: "classic", key: "named/classic" },
+          comparison: {
+            state: "comparable",
+            members: ["classic/baseline", "classic/memory-a", "classic/memory-b"],
+          },
+        },
       });
-      expectCanonicalProblemTable(document.problems, "run-membership");
+      expectCanonicalProblemTable(document.problems, "group-named");
       expectBuiltInPricingProfile(document.projections);
       expect(document.projections.costs).toEqual([]);
     },
