@@ -1,7 +1,6 @@
 // Native Fact/use result record. Schema 18 stores the graph directly in
 // result.json; no assertion compatibility envelope is read or written.
 
-import { Either, ParseResult, Schema } from "effect";
 import type {
   EvaluationFactResult,
   ScoreFactAttemptOutcome,
@@ -33,229 +32,148 @@ export type FactRecordResult = EvalResult & FactRecordEnvelope;
 
 type UnknownRecord = globalThis.Record<string, unknown>;
 
-const NonEmptyStringSchema = Schema.String.pipe(Schema.minLength(1, {
-  description: "a non-empty string",
-}));
-const FiniteNumberSchema = Schema.Number.pipe(Schema.finite());
-const NonNegativeFiniteNumberSchema = FiniteNumberSchema.pipe(Schema.nonNegative());
-const UnitIntervalSchema = FiniteNumberSchema.pipe(Schema.between(0, 1));
-const NonNegativeSafeIntegerSchema = Schema.Number.pipe(Schema.filter(
-  (value) => Number.isSafeInteger(value) && value >= 0,
-  { description: "a non-negative safe integer" },
-));
-const EvaluatorErrorSchema = Schema.Struct({
-  class: Schema.Literal("evaluator"),
-  code: NonEmptyStringSchema,
-  message: Schema.String,
-});
-const AttemptFactErrorSchema = Schema.Struct({
-  class: Schema.Literal("agent", "execution", "author", "evaluator"),
-  code: Schema.String,
-  message: Schema.String,
-});
-const UnavailableAttemptIssueSchema = Schema.Struct({
-  kind: Schema.Literal("unavailable"),
-  reason: Schema.String,
-  factId: Schema.optional(Schema.String),
-  useSourceOrder: Schema.optional(Schema.Number),
-});
-const ErrorAttemptIssueSchema = Schema.Struct({
-  kind: Schema.Literal("error"),
-  error: AttemptFactErrorSchema,
-  factId: Schema.optional(Schema.String),
-  useSourceOrder: Schema.optional(Schema.Number),
-});
-const AttemptFactIssueSchema = Schema.Union(UnavailableAttemptIssueSchema, ErrorAttemptIssueSchema);
-
-const FactResultBaseSchema = Schema.Struct({
-  factId: NonEmptyStringSchema,
-  name: NonEmptyStringSchema,
-  dependencyFactIds: Schema.Array(Schema.String),
-  sourceOrder: NonNegativeSafeIntegerSchema,
-  expected: Schema.optional(Schema.String),
-  received: Schema.optional(Schema.String),
-  explanation: Schema.optional(Schema.String),
-  evidence: Schema.optional(Schema.String),
-});
-const EvaluationFactResultSchema = Schema.Union(
-  FactResultBaseSchema.pipe(Schema.extend(Schema.Struct({
-    factKind: Schema.Literal("boolean"),
-    outcome: Schema.Literal("passed", "failed"),
-  }))),
-  FactResultBaseSchema.pipe(Schema.extend(Schema.Struct({
-    factKind: Schema.Literal("score"),
-    outcome: Schema.Literal("scored"),
-    normalizedScore: UnitIntervalSchema,
-  }))),
-  FactResultBaseSchema.pipe(Schema.extend(Schema.Struct({
-    factKind: Schema.Literal("boolean", "score"),
-    outcome: Schema.Literal("unavailable", "notReachedByControl", "notReachedByError"),
-    reason: NonEmptyStringSchema,
-  }))),
-  FactResultBaseSchema.pipe(Schema.extend(Schema.Struct({
-    factKind: Schema.Literal("boolean", "score"),
-    outcome: Schema.Literal("errored"),
-    error: EvaluatorErrorSchema,
-  }))),
-);
-
-const VerdictUseBaseSchema = Schema.Struct({
-  useKind: Schema.Literal("verdict"),
-  method: Schema.Literal("check", "require", "checkIfCovered"),
-  label: Schema.optional(Schema.String),
-  sourceOrder: NonNegativeSafeIntegerSchema,
-  key: Schema.optional(NonEmptyStringSchema),
-  target: Schema.Union(
-    Schema.Struct({ kind: Schema.Literal("boolean"), factId: NonEmptyStringSchema }),
-    Schema.Struct({ kind: Schema.Literal("score"), factId: NonEmptyStringSchema, atLeast: UnitIntervalSchema }),
-  ),
-});
-const VerdictFactUseSchema = Schema.Union(
-  VerdictUseBaseSchema.pipe(Schema.extend(Schema.Struct({ outcome: Schema.Literal("passed", "failed") }))),
-  VerdictUseBaseSchema.pipe(Schema.extend(Schema.Struct({
-    outcome: Schema.Literal("unavailable", "notApplicable", "notReachedByControl", "notReachedByError"),
-    reason: NonEmptyStringSchema,
-  }))),
-  VerdictUseBaseSchema.pipe(Schema.extend(Schema.Struct({
-    outcome: Schema.Literal("errored"),
-    error: EvaluatorErrorSchema,
-  }))),
-);
-const ScoreUseBaseSchema = Schema.Struct({
-  useKind: Schema.Literal("score"),
-  label: NonEmptyStringSchema,
-  sourceOrder: NonNegativeSafeIntegerSchema,
-  key: Schema.optional(NonEmptyStringSchema),
-  input: Schema.Struct({
-    kind: Schema.Literal("fact"),
-    factId: NonEmptyStringSchema,
-    max: FiniteNumberSchema,
-  }),
-});
-const ScoreFactUseSchema = Schema.Union(
-  Schema.Struct({
-    useKind: Schema.Literal("score"),
-    label: NonEmptyStringSchema,
-    sourceOrder: NonNegativeSafeIntegerSchema,
-    key: Schema.optional(NonEmptyStringSchema),
-    input: Schema.Struct({ kind: Schema.Literal("direct"), earned: FiniteNumberSchema }),
-    outcome: Schema.Literal("scored"),
-    earned: NonNegativeFiniteNumberSchema,
-  }),
-  ScoreUseBaseSchema.pipe(Schema.extend(Schema.Struct({
-    outcome: Schema.Literal("scored"),
-    earned: NonNegativeFiniteNumberSchema,
-  }))),
-  ScoreUseBaseSchema.pipe(Schema.extend(Schema.Struct({
-    outcome: Schema.Literal("unavailable", "notReachedByControl", "notReachedByError"),
-    reason: NonEmptyStringSchema,
-  }))),
-  ScoreUseBaseSchema.pipe(Schema.extend(Schema.Struct({
-    outcome: Schema.Literal("errored"),
-    error: EvaluatorErrorSchema,
-  }))),
-);
-const FactUseResultSchema = Schema.Union(VerdictFactUseSchema, ScoreFactUseSchema);
-
-const ScoreFactAttemptOutcomeSchema = Schema.Union(
-  Schema.Struct({
-    status: Schema.Literal("scored"),
-    earnedScore: NonNegativeFiniteNumberSchema,
-    creditedScore: FiniteNumberSchema,
-  }),
-  Schema.Struct({
-    status: Schema.Literal("invalid"),
-    earnedScore: NonNegativeFiniteNumberSchema,
-    creditedScore: Schema.Literal(0),
-    issues: Schema.Array(AttemptFactIssueSchema),
-  }),
-  Schema.Struct({
-    status: Schema.Literal("unavailable"),
-    earnedScore: NonNegativeFiniteNumberSchema,
-    creditedScore: Schema.Literal(null),
-    issues: Schema.NonEmptyArray(UnavailableAttemptIssueSchema),
-  }),
-  Schema.Struct({
-    status: Schema.Literal("errored"),
-    earnedScore: NonNegativeFiniteNumberSchema,
-    creditedScore: Schema.Literal(null),
-    errors: Schema.NonEmptyArray(ErrorAttemptIssueSchema),
-    issues: Schema.Array(UnavailableAttemptIssueSchema),
-  }),
-  Schema.Struct({
-    status: Schema.Literal("skipped"),
-    earnedScore: NonNegativeFiniteNumberSchema,
-    creditedScore: Schema.Literal(null),
-    reason: Schema.String,
-  }),
-);
-const FactRecordEnvelopeSchema: Schema.Schema<FactRecordEnvelope> = Schema.Struct({
-  evaluationAlgorithm: Schema.Literal(FACT_USE_EVALUATION_ALGORITHM),
-  evaluationKind: Schema.Literal("pass", "score"),
-  factResults: Schema.Array(EvaluationFactResultSchema),
-  factUses: Schema.Array(FactUseResultSchema),
-  scoreResult: Schema.optional(ScoreFactAttemptOutcomeSchema),
-});
-
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function schemaPath(context: string, path: ReadonlyArray<PropertyKey>): string {
-  let formatted = context;
-  for (const segment of path) {
-    formatted += typeof segment === "number" ? `[${segment}]` : `.${String(segment)}`;
-  }
-  return formatted;
+function assertNonEmptyString(value: unknown, path: string): asserts value is string {
+  if (typeof value !== "string" || value.length === 0) throw new Error(`${path} must be a non-empty string.`);
 }
 
-function assertSchema<A>(value: unknown, schema: Schema.Schema<A>, context: string): asserts value is A {
-  const decoded = Schema.decodeUnknownEither(schema)(value);
-  if (Either.isRight(decoded)) return;
-  const issue = ParseResult.ArrayFormatter.formatErrorSync(decoded.left)[0];
-  if (issue === undefined) throw new Error(`${context} is invalid.`);
-  throw new Error(`${schemaPath(context, issue.path)} ${issue.message}.`);
+function assertFinite(value: unknown, path: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${path} must be finite.`);
 }
 
-function assertFactGraphInvariants(value: FactRecordEnvelope, context: string): void {
-  const facts = new Set<string>();
-  for (const [index, fact] of value.factResults.entries()) {
-    const path = `${context}.factResults[${index}]`;
-    if (facts.has(fact.factId)) throw new Error(`${path}.factId duplicates ${JSON.stringify(fact.factId)}.`);
-    facts.add(fact.factId);
+function assertUnit(value: unknown, path: string): asserts value is number {
+  assertFinite(value, path);
+  if (value < 0 || value > 1) throw new Error(`${path} must be in [0, 1].`);
+}
+
+function factUseTargetId(use: UnknownRecord): string | undefined {
+  if (use.useKind === "verdict") {
+    return isRecord(use.target) && typeof use.target.factId === "string" ? use.target.factId : undefined;
   }
-  const keys = new Set<string>();
-  for (const [index, use] of value.factUses.entries()) {
-    const path = `${context}.factUses[${index}]`;
-    if (use.key !== undefined) {
-      if (keys.has(use.key)) throw new Error(`${path}.key duplicates ${JSON.stringify(use.key)}.`);
-      keys.add(use.key);
+  if (use.useKind !== "score" || !isRecord(use.input) || use.input.kind !== "fact") return undefined;
+  return typeof use.input.factId === "string" ? use.input.factId : undefined;
+}
+
+function assertFactResult(value: unknown, path: string, factIds: Set<string>): asserts value is EvaluationFactResult {
+  if (!isRecord(value)) throw new Error(`${path} must be an EvaluationFactResult.`);
+  assertNonEmptyString(value.factId, `${path}.factId`);
+  if (factIds.has(value.factId)) throw new Error(`${path}.factId duplicates ${JSON.stringify(value.factId)}.`);
+  factIds.add(value.factId);
+  assertNonEmptyString(value.name, `${path}.name`);
+  if (value.factKind !== "boolean" && value.factKind !== "score") throw new Error(`${path}.factKind is invalid.`);
+  if (!Array.isArray(value.dependencyFactIds) || !value.dependencyFactIds.every((id) => typeof id === "string")) {
+    throw new Error(`${path}.dependencyFactIds must be a string array.`);
+  }
+  for (const field of ["expected", "received", "explanation", "evidence"] as const) {
+    if (value[field] !== undefined && typeof value[field] !== "string") throw new Error(`${path}.${field} must be a string.`);
+  }
+  const sourceOrder = value.sourceOrder;
+  if (typeof sourceOrder !== "number" || !Number.isSafeInteger(sourceOrder) || sourceOrder < 0) {
+    throw new Error(`${path}.sourceOrder is invalid.`);
+  }
+  switch (value.outcome) {
+    case "passed":
+    case "failed":
+      if (value.factKind !== "boolean") throw new Error(`${path}.${value.outcome} requires a boolean Fact.`);
+      return;
+    case "scored":
+      if (value.factKind !== "score") throw new Error(`${path}.scored requires a score Fact.`);
+      assertUnit(value.normalizedScore, `${path}.normalizedScore`);
+      return;
+    case "unavailable":
+      assertNonEmptyString(value.reason, `${path}.reason`);
+      return;
+    case "errored":
+      if (!isRecord(value.error) || value.error.class !== "evaluator") throw new Error(`${path}.error must be an evaluator error.`);
+      assertNonEmptyString(value.error.code, `${path}.error.code`);
+      if (typeof value.error.message !== "string") throw new Error(`${path}.error.message must be a string.`);
+      return;
+    case "notReachedByControl":
+    case "notReachedByError":
+      assertNonEmptyString(value.reason, `${path}.reason`);
+      return;
+    default:
+      throw new Error(`${path}.outcome is invalid.`);
+  }
+}
+
+function assertFactUse(value: unknown, path: string, factIds: ReadonlySet<string>, keys: Set<string>): asserts value is FactUseResult {
+  if (!isRecord(value)) throw new Error(`${path} must be a Fact use.`);
+  const sourceOrder = value.sourceOrder;
+  if (typeof sourceOrder !== "number" || !Number.isSafeInteger(sourceOrder) || sourceOrder < 0) {
+    throw new Error(`${path}.sourceOrder is invalid.`);
+  }
+  if (value.key !== undefined) {
+    assertNonEmptyString(value.key, `${path}.key`);
+    if (keys.has(value.key)) throw new Error(`${path}.key duplicates ${JSON.stringify(value.key)}.`);
+    keys.add(value.key);
+  }
+  const factId = factUseTargetId(value);
+  if (factId !== undefined && !factIds.has(factId)) throw new Error(`${path} references unknown Fact ${JSON.stringify(factId)}.`);
+  if (value.useKind === "verdict") {
+    if (value.method !== "check" && value.method !== "require" && value.method !== "checkIfCovered") {
+      throw new Error(`${path}.method is invalid.`);
     }
-    const factId = use.useKind === "verdict"
-      ? use.target.factId
-      : use.input.kind === "fact" ? use.input.factId : undefined;
-    if (factId !== undefined && !facts.has(factId)) {
-      throw new Error(`${path} references unknown Fact ${JSON.stringify(factId)}.`);
+    if (!isRecord(value.target) || (value.target.kind !== "boolean" && value.target.kind !== "score")) {
+      throw new Error(`${path}.target is invalid.`);
     }
-    if (use.useKind === "verdict" && use.method === "checkIfCovered" && use.target.kind !== "boolean") {
+    assertNonEmptyString(value.target.factId, `${path}.target.factId`);
+    if (value.target.kind === "score") assertUnit(value.target.atLeast, `${path}.target.atLeast`);
+    if (value.method === "checkIfCovered" && value.target.kind !== "boolean") {
       throw new Error(`${path}.method checkIfCovered requires a boolean usage evidence Fact.`);
     }
+    if (!["passed", "failed", "unavailable", "notApplicable", "errored", "notReachedByControl", "notReachedByError"].includes(value.outcome as string)) {
+      throw new Error(`${path}.outcome is invalid.`);
+    }
+    return;
   }
-  if (value.evaluationKind === "score") {
-    if (value.scoreResult === undefined) throw new Error(`${context}.scoreResult is required for score Eval.`);
-  } else if (value.scoreResult !== undefined) {
-    throw new Error(`${context}.scoreResult is only valid for score Eval.`);
+  if (value.useKind !== "score") throw new Error(`${path}.useKind is invalid.`);
+  assertNonEmptyString(value.label, `${path}.label`);
+  if (!["scored", "unavailable", "errored", "notReachedByControl", "notReachedByError"].includes(value.outcome as string)) {
+    throw new Error(`${path}.outcome is invalid.`);
   }
+  if (value.outcome === "scored") {
+    assertFinite(value.earned, `${path}.earned`);
+    if (value.earned < 0) throw new Error(`${path}.earned must be non-negative.`);
+  }
+}
+
+function assertScoreResult(value: unknown, path: string): asserts value is ScoreFactAttemptOutcome {
+  if (!isRecord(value)) throw new Error(`${path} must be a ScoreFactAttemptOutcome.`);
+  if (!["scored", "invalid", "unavailable", "errored", "skipped"].includes(value.status as string)) {
+    throw new Error(`${path}.status is invalid.`);
+  }
+  assertFinite(value.earnedScore, `${path}.earnedScore`);
+  if (value.earnedScore < 0) throw new Error(`${path}.earnedScore must be non-negative.`);
+  if (value.status === "scored") assertFinite(value.creditedScore, `${path}.creditedScore`);
 }
 
 /** Reject old or hybrid result objects. There is no partial compatibility reader. */
 export function assertFactRecord(value: unknown, context = "Fact Record"): asserts value is FactRecordEnvelope {
   if (!isRecord(value)) throw new Error(`${context} must be an object.`);
+  if (value.evaluationAlgorithm !== FACT_USE_EVALUATION_ALGORITHM) {
+    throw new Error(`${context}.evaluationAlgorithm must be ${JSON.stringify(FACT_USE_EVALUATION_ALGORITHM)}.`);
+  }
+  if (value.evaluationKind !== "pass" && value.evaluationKind !== "score") throw new Error(`${context}.evaluationKind is invalid.`);
+  if (!Array.isArray(value.factResults) || !Array.isArray(value.factUses)) {
+    throw new Error(`${context} must contain factResults and factUses arrays.`);
+  }
   for (const legacyField of ["assertions", "scoreEntries", "factTrace", "legacyJudgeAssertions"] as const) {
     if (legacyField in value) throw new Error(`${context} contains unsupported legacy field ${JSON.stringify(legacyField)}.`);
   }
-  assertSchema(value, FactRecordEnvelopeSchema, context);
-  assertFactGraphInvariants(value, context);
+  const facts = new Set<string>();
+  for (const [index, fact] of value.factResults.entries()) assertFactResult(fact, `${context}.factResults[${index}]`, facts);
+  const keys = new Set<string>();
+  for (const [index, use] of value.factUses.entries()) assertFactUse(use, `${context}.factUses[${index}]`, facts, keys);
+  if (value.evaluationKind === "score") {
+    if (value.scoreResult === undefined) throw new Error(`${context}.scoreResult is required for score Eval.`);
+    assertScoreResult(value.scoreResult, `${context}.scoreResult`);
+  } else if (value.scoreResult !== undefined) {
+    throw new Error(`${context}.scoreResult is only valid for score Eval.`);
+  }
 }
 
 export function factRecordOf(value: unknown): FactRecordEnvelope | undefined {
