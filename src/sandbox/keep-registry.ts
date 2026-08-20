@@ -9,7 +9,7 @@
 
 import { mkdir, open, readdir, readFile, rm, type FileHandle } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { Data, Effect } from "effect";
+import { Data, Effect, Either, Schema } from "effect";
 import {
   fsyncDirEffect,
   hashEntryId,
@@ -108,88 +108,54 @@ function readDirectoryIfPresentEffect(path: string, operation: string): Registry
   );
 }
 
-function recordOf(value: unknown): globalThis.Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as globalThis.Record<string, unknown>
-    : undefined;
-}
+const NonNegativeSafeIntegerSchema = Schema.Number.pipe(Schema.filter(
+  (value) => Number.isSafeInteger(value) && value >= 0,
+  { identifier: "NonNegativeSafeInteger" },
+));
 
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
+const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.filter(
+  (value) => Number.isSafeInteger(value) && value > 0,
+  { identifier: "PositiveSafeInteger" },
+));
 
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
+const TimestampSchema = Schema.String.pipe(Schema.filter(
+  (value) => Number.isFinite(Date.parse(value)),
+  { identifier: "Timestamp" },
+));
 
-function isTimestamp(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
+const KeptSandboxEntrySchema = Schema.Struct({
+  sandboxId: Schema.String,
+  provider: Schema.String,
+  evalId: Schema.String,
+  attempt: NonNegativeSafeIntegerSchema,
+  experimentId: Schema.optional(Schema.String),
+  locator: Schema.String,
+  verdict: Schema.Literal("passed", "failed", "errored", "skipped"),
+  keptAt: TimestampSchema,
+  workdir: Schema.String,
+  enter: Schema.optional(Schema.String),
+  expiresAt: Schema.optional(TimestampSchema),
+  state: Schema.Literal("alive", "dormant", "expired", "unknown"),
+});
 
-function isVerdict(value: unknown): value is Verdict {
-  return value === "passed" || value === "failed" || value === "errored" || value === "skipped";
-}
-
-function isKeptSandboxState(value: unknown): value is KeptSandboxEntry["state"] {
-  return value === "alive" || value === "dormant" || value === "expired" || value === "unknown";
-}
+const PersistedKeptSandboxLeaseSchema = Schema.Struct({
+  holder: Schema.String,
+  op: Schema.String,
+  acquiredAt: TimestampSchema,
+  ttlMs: PositiveSafeIntegerSchema,
+  token: Schema.optional(Schema.String),
+});
 
 /** 留存条目的全部字段均在磁盘边界验证，特别是两个字符串联合与可选时间字段。 */
 function decodeKeptSandboxEntry(value: unknown): KeptSandboxEntry | undefined {
-  const record = recordOf(value);
-  if (
-    record === undefined ||
-    typeof record.sandboxId !== "string" ||
-    typeof record.provider !== "string" ||
-    typeof record.evalId !== "string" ||
-    !isNonNegativeInteger(record.attempt) ||
-    (record.experimentId !== undefined && typeof record.experimentId !== "string") ||
-    typeof record.locator !== "string" ||
-    !isVerdict(record.verdict) ||
-    !isTimestamp(record.keptAt) ||
-    typeof record.workdir !== "string" ||
-    (record.enter !== undefined && typeof record.enter !== "string") ||
-    (record.expiresAt !== undefined && !isTimestamp(record.expiresAt)) ||
-    !isKeptSandboxState(record.state)
-  ) {
-    return undefined;
-  }
-  return {
-    sandboxId: record.sandboxId,
-    provider: record.provider,
-    evalId: record.evalId,
-    attempt: record.attempt,
-    ...(record.experimentId === undefined ? {} : { experimentId: record.experimentId }),
-    locator: record.locator,
-    verdict: record.verdict,
-    keptAt: record.keptAt,
-    workdir: record.workdir,
-    ...(record.enter === undefined ? {} : { enter: record.enter }),
-    ...(record.expiresAt === undefined ? {} : { expiresAt: record.expiresAt }),
-    state: record.state,
-  };
+  const decoded = Schema.decodeUnknownEither(KeptSandboxEntrySchema)(value);
+  return Either.isRight(decoded) ? decoded.right : undefined;
 }
 
 /** lease 同样来自持久 JSON；token 是内部互斥凭据，可选但类型必须正确。 */
 function decodeKeptSandboxLease(value: unknown): PersistedKeptSandboxLease | undefined {
-  const record = recordOf(value);
-  if (
-    record === undefined ||
-    typeof record.holder !== "string" ||
-    typeof record.op !== "string" ||
-    !isTimestamp(record.acquiredAt) ||
-    !isPositiveInteger(record.ttlMs) ||
-    (record.token !== undefined && typeof record.token !== "string")
-  ) {
-    return undefined;
-  }
-  return {
-    holder: record.holder,
-    op: record.op,
-    acquiredAt: record.acquiredAt,
-    ttlMs: record.ttlMs,
-    ...(record.token === undefined ? {} : { token: record.token }),
-  };
+  const decoded = Schema.decodeUnknownEither(PersistedKeptSandboxLeaseSchema)(value);
+  return Either.isRight(decoded) ? decoded.right : undefined;
 }
 
 /** entry id:provider + sandboxId 的稳定散列(条目文件名)。 */

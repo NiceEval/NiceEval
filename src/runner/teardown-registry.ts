@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Either, Schema } from "effect";
 import {
   claimEntryFileEffect,
   hashEntryId,
@@ -25,19 +25,23 @@ export interface TeardownRegistration {
   startedAt: string;
 }
 
-function recordOf(value: unknown): globalThis.Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as globalThis.Record<string, unknown>
-    : undefined;
-}
+const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.filter(
+  (value) => Number.isSafeInteger(value) && value > 0,
+  { identifier: "PositiveSafeInteger" },
+));
 
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
+const TimestampSchema = Schema.String.pipe(Schema.filter(
+  (value) => Number.isFinite(Date.parse(value)),
+  { identifier: "Timestamp" },
+));
 
-function isTimestamp(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
+const TeardownRegistrationSchema = Schema.Struct({
+  experimentId: Schema.String,
+  selectedEvalIds: Schema.Array(Schema.String),
+  pid: PositiveSafeIntegerSchema,
+  host: Schema.String,
+  startedAt: TimestampSchema,
+});
 
 function errnoCode(cause: unknown): string | undefined {
   return typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
@@ -50,27 +54,13 @@ function decodeTeardownRegistration(
   value: unknown,
   expected: { experimentId?: string; pid?: number } = {},
 ): TeardownRegistration | undefined {
-  const record = recordOf(value);
-  if (
-    record === undefined ||
-    typeof record.experimentId !== "string" ||
-    !Array.isArray(record.selectedEvalIds) ||
-    !record.selectedEvalIds.every((id) => typeof id === "string") ||
-    !isPositiveInteger(record.pid) ||
-    typeof record.host !== "string" ||
-    !isTimestamp(record.startedAt) ||
-    (expected.experimentId !== undefined && record.experimentId !== expected.experimentId) ||
-    (expected.pid !== undefined && record.pid !== expected.pid)
-  ) {
-    return undefined;
-  }
-  return {
-    experimentId: record.experimentId,
-    selectedEvalIds: record.selectedEvalIds,
-    pid: record.pid,
-    host: record.host,
-    startedAt: record.startedAt,
-  };
+  const decoded = Schema.decodeUnknownEither(TeardownRegistrationSchema)(value);
+  if (Either.isLeft(decoded)) return undefined;
+  const registration = decoded.right;
+  return (expected.experimentId !== undefined && registration.experimentId !== expected.experimentId) ||
+    (expected.pid !== undefined && registration.pid !== expected.pid)
+    ? undefined
+    : registration;
 }
 
 export function teardownsDirOf(niceevalRoot: string): string {
