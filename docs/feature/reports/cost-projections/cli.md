@@ -13,6 +13,10 @@ Sample、Profile 和关闭投影。
 
 ## 人类输出
 
+摘要中的成本 KPI 只显示闭合金额，例如 `USD 32.414359`。`partial` 的缺失 slot 由同层 `not-recorded`
+warning 解释，不在 KPI 格里重复 Profile、provenance、coverage 和每个 reason。完整 ledger 仍在成本组件与 machine
+projection 中可用。
+
 成本组件显示 USD、Profile content identity、declared-rate-card provenance、`available` / `partial` / `unavailable` 状态、total、mean
 和每条 Attempt 的 Provider 计价状态。它不会以一个 basis 标签替代 ledger。
 
@@ -33,8 +37,8 @@ openai · Attempt #14  unavailable · pricing information unavailable
 
 ## machine、view 与静态输出
 
-内建与自定义 `show --json` 都使用各自的 v1 schema，并且都在顶层携带相同的 `projections` 对象：
-`{ schema: "niceeval.report-projections/v1", pricingProfile, costs }`。
+内建与自定义 `show --json` 都使用各自的版本化 format，并且都在顶层携带相同的 `projections` 对象：
+`{ format: "niceeval.report-projections/v1", pricingProfile, costs }`。
 
 每个 cost entry 的形状为 `{ page: { pageId, route }, measureId, row: { key, dimensions }, profileIdentity, projection }`。
 `projection` 包含 `{ kind: "declared-rate-card", source, asOf }`、slot-provider ledger、exact aggregate、rational mean 和有限 reasons。

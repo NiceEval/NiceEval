@@ -52,7 +52,7 @@ const document = JSON.parse(
     `pnpm exec niceeval show --run ${mainRunId} --report ${reportModule} --page ${overviewRoute} --json`,
   ),
 );
-assert.equal(document.schema, "niceeval.report-target-execution/v1");
+assert.equal(document.format, "niceeval.report-target-execution/v1");
 assert.equal(document.locale, "en");
 assert.equal(document.page.route, overviewRoute);
 assert.equal(document.page.pageId, "overview");

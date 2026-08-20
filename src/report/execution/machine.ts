@@ -18,10 +18,10 @@ import { resolvedPageText } from "../runtime/text.ts";
 /** Content-addressed identities are opaque, printable strings at this boundary. */
 export type ContentAddress = string;
 
-/** The exact machine schemas in docs/feature/reports/cli.md. */
-export const BUILT_IN_SHOW_SCHEMA = "niceeval.show/v1";
-export const CUSTOM_TARGET_EXECUTION_SCHEMA = "niceeval.report-target-execution/v1";
-export const REPORT_PROJECTIONS_SCHEMA = "niceeval.report-projections/v1";
+/** The exact regenerable machine formats in docs/feature/reports/cli.md. */
+export const BUILT_IN_SHOW_FORMAT = "niceeval.show";
+export const CUSTOM_TARGET_EXECUTION_FORMAT = "niceeval.report-target-execution/v1";
+export const REPORT_PROJECTIONS_FORMAT = "niceeval.report-projections/v1";
 
 export type BuiltInReportToken = string;
 
@@ -58,7 +58,15 @@ export interface ReportProblem {
  * not a generic component/HTML/text reverse-engineering format.
  */
 export type BuiltInShowData =
-  | { readonly kind: "leaderboard"; readonly rows: JsonValue }
+  | { readonly kind: "groups"; readonly groups: JsonValue }
+  | { readonly kind: "experiment-group"; readonly group: JsonValue; readonly comparison: JsonValue }
+  | {
+      readonly kind: "run-membership";
+      readonly summary: JsonValue;
+      readonly members: JsonValue;
+      readonly errors: JsonValue;
+      readonly evidence: JsonValue;
+    }
   | {
       readonly kind: "attempt";
       readonly evidence: JsonValue;
@@ -70,7 +78,7 @@ export type BuiltInShowData =
   | { readonly kind: "timing"; readonly timing: JsonValue };
 
 export interface BuiltInShowDocument {
-  readonly schema: typeof BUILT_IN_SHOW_SCHEMA;
+  readonly format: typeof BUILT_IN_SHOW_FORMAT;
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: {
@@ -88,12 +96,12 @@ export interface BuiltInShowDocument {
 }
 
 /**
- * The custom schema is a single target execution manifest, never a revision.
+ * The custom format is a single target execution manifest, never a revision.
  * It contains only the selected Page's closed English text—not a React tree,
  * HTML body, site identity, Sample capability, Record payload, or raw bytes.
  */
 export interface CustomTargetExecutionManifest {
-  readonly schema: typeof CUSTOM_TARGET_EXECUTION_SCHEMA;
+  readonly format: typeof CUSTOM_TARGET_EXECUTION_FORMAT;
   readonly locale: "en";
   readonly selection: ShowSelection;
   readonly report: {
@@ -141,7 +149,7 @@ export interface ReportProjectionCost {
  * dimensions or projections at one canonical capture key are a build failure.
  */
 export interface ReportProjections {
-  readonly schema: typeof REPORT_PROJECTIONS_SCHEMA;
+  readonly format: typeof REPORT_PROJECTIONS_FORMAT;
   readonly pricingProfile: JsonValue | null;
   readonly costs: readonly ReportProjectionCost[];
 }
@@ -241,7 +249,7 @@ export function buildReportProjections(input: {
     compareUtf8(left.profileIdentity, right.profileIdentity)
   ));
   return Object.freeze({
-    schema: REPORT_PROJECTIONS_SCHEMA,
+    format: REPORT_PROJECTIONS_FORMAT,
     pricingProfile,
     costs,
   });
@@ -527,7 +535,7 @@ export function builtInShowDocument(input: {
   readonly problems?: readonly ReportProblem[];
 }): BuiltInShowDocument {
   return Object.freeze({
-    schema: BUILT_IN_SHOW_SCHEMA,
+    format: BUILT_IN_SHOW_FORMAT,
     locale: "en" as const,
     selection: freezeSelection(input.selection),
     report: Object.freeze({
@@ -562,7 +570,7 @@ export function customTargetExecutionManifest(input: {
     throw new TypeError("the selected Page lacks a closed English text projection at the requested width");
   }
   return Object.freeze({
-    schema: CUSTOM_TARGET_EXECUTION_SCHEMA,
+    format: CUSTOM_TARGET_EXECUTION_FORMAT,
     locale: "en" as const,
     selection: freezeSelection(input.selection),
     report: Object.freeze({
@@ -653,9 +661,29 @@ function freezeBuiltInData(value: BuiltInShowData): BuiltInShowData {
   // The selected registry producer owns their stable identities and must close
   // them in the canonical order defined for that domain before returning.
   switch (value.kind) {
-    case "leaderboard":
-      assertExactFields(value, ["kind", "rows"], "leaderboard show data");
-      return Object.freeze({ kind: "leaderboard" as const, rows: closeMachineJson(value.rows) });
+    case "groups":
+      assertExactFields(value, ["kind", "groups"], "groups show data");
+      return Object.freeze({ kind: "groups" as const, groups: closeMachineJson(value.groups) });
+    case "experiment-group":
+      assertExactFields(value, ["kind", "group", "comparison"], "experiment-group show data");
+      return Object.freeze({
+        kind: "experiment-group" as const,
+        group: closeMachineJson(value.group),
+        comparison: closeMachineJson(value.comparison),
+      });
+    case "run-membership":
+      assertExactFields(
+        value,
+        ["kind", "summary", "members", "errors", "evidence"],
+        "run-membership show data",
+      );
+      return Object.freeze({
+        kind: "run-membership" as const,
+        summary: closeMachineJson(value.summary),
+        members: closeMachineJson(value.members),
+        errors: closeMachineJson(value.errors),
+        evidence: closeMachineJson(value.evidence),
+      });
     case "attempt":
       assertExactFields(value, ["kind", "evidence", "observability", "fileChanges"], "attempt show data");
       return Object.freeze({
@@ -674,13 +702,13 @@ function freezeBuiltInData(value: BuiltInShowData): BuiltInShowData {
       assertExactFields(value, ["kind", "timing"], "timing show data");
       return Object.freeze({ kind: "timing" as const, timing: closeMachineJson(value.timing) });
     default:
-      throw new TypeError("built-in show data kind is not declared by the show schema");
+      throw new TypeError("built-in show data kind is not declared by the show format");
   }
 }
 
-/** Re-closes a ReportProjections value: validates schema, dedupes, and canonically sorts. */
+/** Re-closes a ReportProjections value: validates format, dedupes, and canonically sorts. */
 function freezeProjections(value: ReportProjections): ReportProjections {
-  if (!isPlainRecord(value) || value.schema !== REPORT_PROJECTIONS_SCHEMA) {
+  if (!isPlainRecord(value) || value.format !== REPORT_PROJECTIONS_FORMAT) {
     throw new TypeError("projections must be a niceeval.report-projections/v1 value");
   }
   return buildReportProjections({

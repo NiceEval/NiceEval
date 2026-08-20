@@ -2540,7 +2540,7 @@ interface ReportCliRequest {
     }
     | {
       readonly kind: "project-current";
-      readonly experimentIds?: readonly ExperimentId[];
+      readonly experimentSelectors?: readonly string[];
     }
     | {
       readonly kind: "attempt";
@@ -2731,7 +2731,7 @@ function parseReportCliRequest(input: {
         kind: "project-current" as const,
         ...(input.flags.experiment === undefined
           ? {}
-          : { experimentIds: uniqueExactExperimentIds(input.flags.experiment) }),
+          : { experimentSelectors: uniqueExperimentSelectors(input.flags.experiment) }),
       });
 
   return Object.freeze({
@@ -2866,13 +2866,13 @@ function uniqueExactRunIds(values: readonly string[]): readonly RunId[] {
   return Object.freeze(result);
 }
 
-function uniqueExactExperimentIds(values: readonly string[]): readonly ExperimentId[] {
-  const result: ExperimentId[] = [];
+function uniqueExperimentSelectors(values: readonly string[]): readonly string[] {
+  const result: string[] = [];
   const seen = new Set<string>();
   for (const value of values) {
     const decoded = Schema.decodeUnknownEither(ExperimentIdSchema)(value);
     if (Either.isLeft(decoded)) {
-      throw usageError(`Invalid --experiment value "${value}": expected one exact ExperimentId.\n`);
+      throw usageError(`Invalid --experiment value "${value}": expected an Experiment selector.\n`);
     }
     if (!seen.has(decoded.right)) {
       seen.add(decoded.right);
@@ -2880,6 +2880,13 @@ function uniqueExactExperimentIds(values: readonly string[]): readonly Experimen
     }
   }
   return Object.freeze(result);
+}
+
+function selectedExperimentIds(
+  slots: readonly import("./analysis/contracts.ts").AnalysisCurrentSlotIdentity[],
+): readonly ExperimentId[] {
+  return Object.freeze([...new Set(slots.map((slot) => slot.experimentId))]
+    .sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right))));
 }
 
 /** Current Record locators use the strict scheme-1 short alias. */
@@ -2914,9 +2921,9 @@ function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCli
   return Effect.gen(function* () {
     const projectCurrent = request.target.kind === "project-current"
       ? yield* cliEffect("load current project target", loadProjectCurrent(request.cwd, {
-          ...(request.target.experimentIds === undefined
+          ...(request.target.experimentSelectors === undefined
             ? {}
-            : { experiments: request.target.experimentIds }),
+            : { experiments: request.target.experimentSelectors }),
           freshImport: true,
         }))
       : undefined;
@@ -2935,8 +2942,8 @@ function loadCliReportInputs(request: ReportCliRequest): Effect.Effect<LoadedCli
       : Object.freeze({
           policy: "project-current" as const,
           currentSlots: projectCurrent.currentSlots,
-          ...(request.target.kind === "project-current" && request.target.experimentIds !== undefined
-            ? { experimentIds: request.target.experimentIds }
+          ...(request.target.kind === "project-current" && request.target.experimentSelectors !== undefined
+            ? { experimentIds: selectedExperimentIds(projectCurrent.currentSlots) }
             : {}),
         });
     const sourceWatchInputs = uniqueWatchInputs([

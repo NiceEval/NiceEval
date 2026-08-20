@@ -38,6 +38,7 @@ Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 
 | 目标契约 owner | 源码边界 |
 |---|---|
 | [Analysis](feature/analysis/README.md) | `src/analysis/{api,definitions,contracts,host}.ts` 拥有 Population、Dimension、Measure、Relation、Host-issued Sample、`aggregate()` 与 `query()`。 |
+| [实验组与比较范围](feature/analysis/library.md#实验组与比较范围) | `src/analysis/experiment-groups.ts` 从固定 Sample 派生 Experiment Group、签发 `ExperimentComparisonScope` 并闭合结构可比性；`src/report/built-in/standard.tsx` 与 `src/report/host/{from-record,machine,static}.ts` 分别拥有标准组 Page、`show` 组输出与 Header 真实链接。 |
 | [Analysis outputs](feature/analysis/library.md#closedrowssemanticframe-与-domainview) | `src/analysis/` 形成并校验 `ClosedRows`、`SemanticFrame` 与 `DomainView`；`src/report/model/{aggregate,conversions}.ts` 只提供 Report facade 与具名关闭投影，不建立通用作者 semantic model。 |
 | [Reports](feature/reports/README.md) | `src/report/definition/{report,tree}.ts`、`definition/primitives/**`、`components/**`、`model/{aggregate,conversions}.ts` 与 `index.ts` 是作者面：`defineReport({ pages })`、两种 `defineComponent()`、普通 Page 与参数 Page。作者只使用标准 React JSX，不增加专属 JSX 入口。 |
 | [Report 成本投影](feature/reports/cost-projections/README.md) | `src/analysis/{cost,cost-projection,cost-decimal}.ts` 定义 Profile 验证、slot-provider ledger 与闭合 projection；`src/report/{definition/report.ts,execution/machine.ts,host/{machine,show-target,site-runtime}.ts}` 把已签发 projection 纳入 target 或 site 输出，不重新计算。 |

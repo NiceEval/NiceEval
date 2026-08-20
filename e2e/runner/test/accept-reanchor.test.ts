@@ -36,23 +36,26 @@ interface DryPlan {
   matrix: DryTarget[];
 }
 
-interface LeaderboardShow {
-  schema: "niceeval.show/v1";
+interface ExperimentGroupShow {
+  format: "niceeval.show";
   selection:
     | { kind: "explicit-runs"; sampleIdentity: string; runIds: readonly string[] }
     | { kind: "project-current"; sampleIdentity: string; experimentIds: readonly string[] };
   data: {
-    kind: "leaderboard";
-    rows: readonly {
-      experiment: string;
-      passRate: {
-        state: string;
-        value: number | null;
-        samples: number;
-        total: number;
-        refs: readonly { identity: { kind: "attempt"; locator: string } }[];
-      };
-    }[];
+    kind: "experiment-group";
+    comparison: {
+      state: "comparable";
+      rows: readonly {
+        experiment: string;
+        passRate: {
+          state: string;
+          value: number | null;
+          samples: number;
+          total: number;
+          refs: readonly { identity: { kind: "attempt"; locator: string } }[];
+        };
+      }[];
+    };
   };
 }
 
@@ -115,41 +118,56 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
     // the immutable source Attempt identity instead of manufacturing an Attempt.
     expect(newLocator).toBe(oldLocator);
 
-    const acceptedCurrent = await niceeval.run(["show", "--run", acceptedRunId, "--json"]);
+    const acceptedCurrent = await niceeval.run([
+      "show",
+      "--run",
+      acceptedRunId,
+      "--report",
+      "standard",
+      "--page",
+      "/group/singleton/accept",
+      "--json",
+    ]);
     expect(acceptedCurrent.exitCode, acceptedCurrent.diagnostic()).toBe(0);
-    const acceptedShow = acceptedCurrent.json<LeaderboardShow>();
+    const acceptedShow = acceptedCurrent.json<ExperimentGroupShow>();
     expect(acceptedShow).toMatchObject({
-      schema: "niceeval.show/v1",
+      format: "niceeval.show",
       selection: { kind: "explicit-runs", runIds: [acceptedRunId] },
       data: {
-        kind: "leaderboard",
-        rows: [{
-          experiment: "accept",
-          passRate: { state: "available", value: 1, samples: 1, total: 1 },
-        }],
+        kind: "experiment-group",
+        comparison: {
+          state: "comparable",
+          rows: [{
+            experiment: "accept",
+            passRate: { state: "available", value: 1, samples: 1, total: 1 },
+          }],
+        },
       },
     });
-    expect(acceptedShow.data.rows[0]!.passRate.refs).toEqual([
+    expect(acceptedShow.data.comparison.rows[0]!.passRate.refs).toEqual([
       { identity: { kind: "attempt", locator: oldLocator } },
     ]);
 
     // Explicit --run proves the durable reference, while the default read proves
     // accept used the same current target identity as project-current planning.
-    const projectCurrent = await niceeval.run(["show", "--json"]);
+    const projectCurrent = await niceeval.run(["show", "--experiment", "accept", "--json"]);
     expect(projectCurrent.exitCode, projectCurrent.diagnostic()).toBe(0);
-    const projectCurrentShow = projectCurrent.json<LeaderboardShow>();
+    const projectCurrentShow = projectCurrent.json<ExperimentGroupShow>();
     expect(projectCurrentShow).toMatchObject({
-      schema: "niceeval.show/v1",
+      format: "niceeval.show",
       selection: { kind: "project-current" },
       data: {
-        kind: "leaderboard",
-        rows: [{
-          experiment: "accept",
-          passRate: { state: "available", value: 1, samples: 1, total: 1 },
-        }],
+        kind: "experiment-group",
+        comparison: {
+          state: "comparable",
+          rows: [{
+            experiment: "accept",
+            passRate: { state: "available", value: 1, samples: 1, total: 1 },
+          }],
+        },
       },
     });
-    expect(projectCurrentShow.data.rows[0]!.passRate.refs).toEqual([
+    expect(projectCurrentShow.data.comparison.rows[0]!.passRate.refs).toEqual([
       { identity: { kind: "attempt", locator: oldLocator } },
     ]);
 

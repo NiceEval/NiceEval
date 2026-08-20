@@ -128,6 +128,10 @@ export interface ClosedTargetExecution {
 export interface ClosedSitePage {
   readonly page: ResolvedPage;
   readonly navigation: boolean;
+  readonly role?: {
+    readonly kind: "experiment-group";
+    readonly groupKind: "named" | "singleton";
+  };
 }
 
 /** Host-private complete page closure used only while forming a revision. */
@@ -287,7 +291,7 @@ export function executeReportSite(input: {
               },
               capturePage: (capture) => capturedProjectionCosts(capture, route, definition.id),
             });
-            yield* addSitePage(pages, routeOwners, page, false);
+            yield* addSitePage(pages, routeOwners, page, false, definition.role);
             yield* registerProjectionCosts(pricingProfile, projectionCosts, pageCosts);
             siteProblems.push(...analysisProblems(issues, page.target.pageId));
             yield* checkBuildBudgets(input.budget);
@@ -557,6 +561,7 @@ function addSitePage(
   routeOwners: Map<string, string>,
   page: ResolvedPage,
   navigation: boolean,
+  role?: ClosedSitePage["role"],
 ): Effect.Effect<void, ReportSiteRouteConflict | ReportBuildBudgetExceeded> {
   const owner = routeOwners.get(page.target.route);
   if (owner !== undefined) {
@@ -570,7 +575,7 @@ function addSitePage(
     return Effect.fail(reportBuildBudgetExceeded("pages", REPORT_PAGES_MAX, pages.length + 1));
   }
   routeOwners.set(page.target.route, page.target.pageId);
-  pages.push(Object.freeze({ page, navigation }));
+  pages.push(Object.freeze({ page, navigation, ...(role === undefined ? {} : { role }) }));
   return Effect.void;
 }
 
@@ -696,7 +701,13 @@ function relativeHref(sourceFile: string, targetFile: string): string {
 
 function commandForTarget(pages: readonly ReportPageDefinition[], target: ReportTarget): string | undefined {
   const route = routeForTarget(pages, target);
-  return route === undefined ? undefined : `niceeval show --page ${shellQuote(route)}`;
+  if (route === undefined) return undefined;
+  const page = pages.find((candidate) => candidate.id === target.page);
+  if (page?.params !== undefined && page.role?.kind === "experiment-group") {
+    const key = route.slice(page.path.length + 1);
+    return `niceeval show --experiment ${shellQuote(key)}`;
+  }
+  return `niceeval show --page ${shellQuote(route)}`;
 }
 
 function shellQuote(value: string): string {

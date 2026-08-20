@@ -35,8 +35,8 @@ Record
       └─ own blobs（只属于这一 owner 和 family）
 ```
 
-缺少 `complete`，或该路径不是零字节普通文件的 Run directory，不是 Record 事实。reader 不读取、不展示也不沿用它，只返回
-`incomplete-run` warning；用户可以用 `niceeval clean` 删除。
+缺少 `complete`，或该路径不是零字节普通文件的 Run directory，不是 Record 事实。reader 不读取、不展示也不沿用它；这类正常的
+writer residue 只留给 maintenance 检查，不进入 Analysis 或 Report warning。用户可以用 `niceeval clean` 删除。
 
 Record Core（核心身份）只保存完整 `attemptId`。面向人的 locator 是上层确定性别名：`@1` 加
 `SHA-256(AttemptId UTF-8)` 前 60 bit 的 12 位大写 Crockford 编码。它不写入 Core，也不触发迁移。

@@ -188,6 +188,10 @@ interface ParameterizedPage<Params extends JsonValue, Input> {
   readonly path?: string;
   readonly title: LocalizedText;
   readonly navigation: false;
+  readonly role?: {
+    readonly kind: "experiment-group";
+    readonly groupKind: "named" | "singleton";
+  };
   readonly params: PageParams<Params>;
   readonly load: (
     sample: Sample,
@@ -205,6 +209,12 @@ type Page<Params extends JsonValue | void = void, Input = Sample> =
     ? PlainPage<Input>
     : ParameterizedPage<Extract<Params, JsonValue>, Input>;
 ```
+
+`role.kind: "experiment-group"` 只适用于参数 Page。`groupKind` 固定该 Page 接收 named 或 singleton identity，`load` 再从当前 Sample 形成 `ExperimentComparisonScope`。Host 只为作者显式声明的这类 Page 生成 Header 实验选择器；当前 Sample 只有一个可比范围时不显示选择器，有两个或更多时才显示，并默认选择稳定排序的第一项。未声明该 role 时不补造 Page、route 或选择器。
+
+参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，形成 `/group/named/<segment>` 与 `/group/singleton/<experiment-id>`。选择器把两个 Page 的已闭合目标汇总成一个原生 `select`；切换只导航到选项携带的静态 Page URL。禁用 JavaScript 时，Header 提供同一组真实链接作为 fallback，静态导出仍能切换组。
+
+标准实验组 Page 是完整的 scoped Overview，不是只替换 Experiment Table。它把 `ExperimentComparisonScope` 的 backing Sample 显式交给 Hero、`SampleNotices` 与 `SampleSummary`，再把同一 scope 交给 `ExperimentScatter` 和 `ExperimentTable`。因此告警数、Pass rate、Experiments、Evals、Attempts、Eval results、Total cost 与 Run range 都随选择范围变化。
 
 `params.encode()` 产生一个 canonical key segment；`decode()` 只接受同一形式。全站路径调用 `enumerate(sample)` 恰好一次，
 并生成每个返回值。`show --page` 只用 `decode()` 取得已请求 key，不调用 `enumerate()`。
@@ -384,10 +394,9 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 官方组合组件。它们只接收关闭数据，详情 route 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
 `libraryDetailRoute()` 建立。
 
-`AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。Assertion 展开区先显示判定、完整度与 matcher
-已经封口的决定性见证，例如期望、实际命中次数和位置；它不把整棵 matcher diagnostic JSON 当作用户文案。展开 `send` 所在行后，`TurnTrace` 以
-`Conversation` 的静态因果事件流为账本，加上 turn 时间概览与可关闭的事件 inspector。没有精确 source mapping 的 turn 保留在页面级
-`TurnTrace`，不按源码顺序猜测归属；没有 JavaScript 时 inspector 不出现，但完整事件内容仍在正文中。
+`ExperimentTable` 与 `ExperimentScatter` 是具名比较组件。它们只接受 `ExperimentComparisonScope` 或该 scope 产生的同组 branded projection，不接受普通 Sample 或任意 rows。多组输入以 `analysis-comparison-group-mismatch` 失败；单组的 `non-comparable` 闭合原因与 Evidence，不渲染排名或散点。中立 `Table` 与 `Scatter` 仍可显示任意已闭合值，不承担实验组语义。
+
+`AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。Assertion 展开区先显示判定、完整度与 matcher 已经封口的决定性见证，例如期望、实际命中次数和位置；它不把整棵 matcher diagnostic JSON 当作用户文案。展开 `send` 所在行后，`TurnTrace` 以 `Conversation` 的静态因果事件流为账本，加上 turn 时间概览与可关闭的事件 inspector。没有精确 source mapping 的 turn 保留在页面级 `TurnTrace`，不按源码顺序猜测归属；没有 JavaScript 时 inspector 不出现，但完整事件内容仍在正文中。
 
 下载文件属于 Host 的站点闭包：view 与静态写出只读取已关闭的 bytes。作者入口不发布一个 generic `Download` 组件或
 `DownloadFile` 类型；这避免把尚无最终 primitive owner 的 generic semantic API 写进公共契约。

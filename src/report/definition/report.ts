@@ -171,6 +171,10 @@ export interface ParameterizedPage<Params extends JsonValue, Input> {
   readonly path?: string;
   readonly title: LocalizedText;
   readonly navigation: false;
+  readonly role?: {
+    readonly kind: "experiment-group";
+    readonly groupKind: "named" | "singleton";
+  };
   readonly params: PageParams<Params>;
   readonly load: PageLoad<Params, Input>;
   readonly render: PageRender<Input>;
@@ -201,6 +205,10 @@ interface NormalizedParameterizedPage<
   readonly path: string;
   readonly title: LocalizedText;
   readonly navigation: false;
+  readonly role?: {
+    readonly kind: "experiment-group";
+    readonly groupKind: "named" | "singleton";
+  };
   readonly params: PageParams<Params>;
   readonly load: PageLoad<Params, Input>;
   readonly render: PageRender<Input>;
@@ -524,7 +532,9 @@ function isFrozenNormalizedPage(value: unknown): value is NormalizedPage {
   }
   if (Object.hasOwn(value, "params")) {
     return value.navigation === false && typeof value.load === "function" &&
-      hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "params", "load", "render"]) &&
+      (hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "params", "load", "render"]) ||
+        hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "role", "params", "load", "render"])) &&
+      (!Object.hasOwn(value, "role") || isExperimentGroupRole(value.role)) &&
       isFrozenPageParams(value.params);
   }
   const valid = hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "render"]) ||
@@ -632,10 +642,10 @@ function normalizePage(value: unknown, index: number): NormalizedPage {
   assertOnlyFields(
     fields,
     parameterized
-      ? ["id", "path", "title", "navigation", "params", "load", "render"]
+      ? ["id", "path", "title", "navigation", "role", "params", "load", "render"]
       : ["id", "path", "title", "navigation", "load", "render"],
     label,
-    parameterized ? ["path"] : ["path", "navigation", "load"],
+    parameterized ? ["path", "role"] : ["path", "navigation", "load"],
   );
   const id = normalizePageId(fields.get("id"), label);
   const path = fields.has("path") && fields.get("path") !== undefined
@@ -650,11 +660,13 @@ function normalizePage(value: unknown, index: number): NormalizedPage {
     }
     const params = normalizePageParams(fields.get("params"), `${label}.params`);
     const load = requireFunction(fields.get("load"), `${label}.load`);
+    const role = fields.has("role") ? normalizeExperimentGroupRole(fields.get("role"), `${label}.role`) : undefined;
     return Object.freeze({
       id,
       path,
       title,
       navigation: false as const,
+      ...(role === undefined ? {} : { role }),
       params,
       load: load as PageLoad<JsonValue, unknown>,
       render: render as PageRender<unknown>,
@@ -677,6 +689,27 @@ function normalizePage(value: unknown, index: number): NormalizedPage {
     ...(load === undefined ? {} : { load: load as PageLoad<void, unknown> }),
     render: render as PageRender<unknown>,
   }) as NormalizedPlainPage<unknown>;
+}
+
+function normalizeExperimentGroupRole(value: unknown, label: string): NonNullable<NormalizedParameterizedPage["role"]> {
+  const fields = ownFields(value, label);
+  assertOnlyFields(fields, ["kind", "groupKind"], label);
+  if (fields.get("kind") !== "experiment-group" ||
+    (fields.get("groupKind") !== "named" && fields.get("groupKind") !== "singleton")) {
+    throw new TypeError(`${label} must declare experiment-group and named/singleton`);
+  }
+  return Object.freeze({
+    kind: "experiment-group" as const,
+    groupKind: fields.get("groupKind") as "named" | "singleton",
+  });
+}
+
+function isExperimentGroupRole(value: unknown): value is NonNullable<NormalizedParameterizedPage["role"]> {
+  try {
+    return normalizeExperimentGroupRole(value, "Report page role") !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 function derivePagePath(id: string): string {

@@ -283,9 +283,9 @@ jobs:
     # cell 的 matrix.container 为 null，仍直接运行在普通 GitHub runner。镜像已经包含 browser
     # 与系统依赖，不在每次 job 中运行 apt / `playwright install --with-deps`。
     container: ${{ matrix.container }}
-    # Repo test budgets are enforced by the root runner. Keep one additional
-    # minute for checkout, dependency installation, collection, and cleanup.
-    timeout-minutes: 5
+    # Each Repo owns its test budget through e2e.json timeoutMinutes. A cell may
+    # host several Repos concurrently, so a second job-wide budget would race
+    # their independent setup, test, collection, and cleanup lifecycles.
     # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
     # 同名 Environment。所有路径都只注入 manifest 白名单中的 secret。
     environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
