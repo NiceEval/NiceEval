@@ -257,22 +257,8 @@ interface CostProjectionUnavailable {
   readonly ledger: readonly CostLedgerEntry[];
 }
 
-interface CostProjectionMigrationRequired {
-  readonly state: "migration-required";
-  readonly basis: "unavailable";
-  readonly profile: CostProjectionProfile;
-  readonly aggregate: CostProjectionAggregate;
-  readonly observed: null;
-  readonly estimated: null;
-  readonly combined: null;
-  readonly observedOtherCurrencies: readonly ObservedOtherCurrency[];
-  readonly reasons: readonly CostCoverageReason[];
-  readonly ledger: readonly CostLedgerEntry[];
-}
-
 type CostProjectionValue =
   | CostProjectionKnown
-  | CostProjectionMigrationRequired
   | CostProjectionUnavailable;
 
 interface CostMetricValue extends MetricValue<number> {
@@ -289,7 +275,7 @@ declare function totalCostUSD(profile: PricingProfile): CostMeasure;
 `aggregate(ctx.scope, { values: { cost: costUSD(profile) } })` 返回的 `cost` cell 是作者可观察的 `CostMetricValue`。
 它的 `cell.projection` 是 `CostProjectionValue`。
 
-两者与 `CostProjectionState`、`CostProjectionMigrationRequired`、`CostBasis`、ledger、reason 和 component data types 都是 `niceeval/report` 的 type-only exports。
+两者与 `CostProjectionState`、`CostBasis`、ledger、reason 和 component data types 都是 `niceeval/report` 的 type-only exports。
 具体字段以上面的 Library 形状为准。
 
 Analysis 从 sealed Usage 和 Profile 构造每个 slot-provider `ledger` entry。`branch` 只能是 `observed`、`estimated` 或
@@ -300,9 +286,9 @@ order 输出。reason 不携带自由文本、费率或第二份输入，词表�
 Analysis 在 `aggregate` 保留 exact total；mean 以 `numerator / denominator` 的 rational 形式保留，之后才按 Profile display 做
 half-away-from-zero 格式化。它不经过 binary floating-point，也不把 unavailable slot 当作零。
 
-当所有选中 slot 都因 Observability v1 而无法读取 Usage，顶层 projection 与 metric state 都是
-`migration-required`，Report 显示 `niceeval migrate` 恢复动作；不能只把原因藏在 `reasons`。v1/current 混合且
-仍有已知金额时保持 `partial`，coverage 只计入实际贡献的 slot。
+Report 只在 exact current Record session 上执行，因此不会收到 Observability v1、unknown/future family 或
+`migration-required` metric。ordinary 入口要么在进入 Report 前完成 Git-safe automatic migration 并全新打开，
+要么以 typed migration blocker fail closed；不得构造 v1/current 混合 ledger。
 
 `profile.provenance` 原样进入 `CostProjectionProfile.provenance`，其形状始终是 `{ kind: "declared-rate-card", source, asOf }`。
 显示层不能重算 ledger、total 或 mean。

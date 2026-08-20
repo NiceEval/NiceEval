@@ -3,19 +3,19 @@
 本页说明 `niceeval migrate` 怎样区分 Core 不兼容、已知 family 的升级与未知 future family。契约单源
 始终在 [Record Architecture](../architecture.md) 和 [Record CLI](../cli.md#migrate)。
 
-## root schemaVersion `1` 的结果
+## root schemaVersion `2` 的结果
 
 完整 current Record 的 root 是：
 
 ```json
-{ "format": "niceeval.record", "schemaVersion": 1 }
+{ "format": "niceeval.record", "schemaVersion": 2 }
 ```
 
 它没有已发布 predecessor。所有 fixed family 也处于 current 时，命令不写盘：
 
 ```sh
 niceeval migrate --record .niceeval/record
-# Record is already current: niceeval.record (schemaVersion 1)
+# Record is already current: niceeval.record (schemaVersion 2)
 ```
 
 兼容性不把所有未认识 bytes 混成一个错误：
@@ -24,12 +24,11 @@ niceeval migrate --record .niceeval/record
 |---|---|---|
 | root / Core 与 current 不兼容 | `migration-required` 或 `unsupported-format` | 只在有固定相邻步骤时迁移 |
 | 已知 family 的旧 schemaVersion | `migration-required` | 显式迁移该 known family |
-| 未知独立 future family | 忽略且继续读取其它事实 | 保留 directory、payload 与 blob bytes |
+| 未知独立 future family | `unsupported-format`，不形成 session | 拒绝迁移，不触碰 bytes |
 | current catalog family 缺失 | 请求时 `not-recorded` | 不补写历史事实 |
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format` | 不推测、也不迁移 |
 
-未知 family 的局部容忍只保护可读的历史。它不能让 reader 解释 payload、验证 blob closure 或把事实交给
-Report。`AnalysisInput` 或 `DomainViewRequest` 依赖该 family 时才返回 `unsupported`。
+未知 family 不再局部容忍；一旦 portable inventory 出现它，ordinary reader 和 migration 都 fail closed。
 
 ## Observability `1 → 2` 的固定步骤
 
@@ -37,7 +36,8 @@ Report。`AnalysisInput` 或 `DomainViewRequest` 依赖该 family 时才返回 `
 `1 → 2` maintenance step。步骤只处理已保存的 attempt / run payload 与 own blob closure，
 逐字保留 label、blob refs 和 blob bytes，只更新 envelope。
 
-future root / Core schemaVersion 发布时，仍必须另行同批提供它自己的固定相邻步骤。
+root epoch `1 → 2` 与 Observability `1 → 2` 是同一固定联合步骤；root epoch 最后写入。future
+root / Core schemaVersion 发布时，仍必须另行同批提供它自己的固定相邻步骤。
 
 迁移可以重新编码 bytes、mint 新 blob ref 或重排 canonical object key。它不能：
 
@@ -67,8 +67,6 @@ exclusive maintenance lease
 原地运行固定的相邻步骤
         ↓
 完整校验 Core 与认识的 family closure
-        ↓
-未知 future family 保持原有 bytes
         ↓
 完成后才允许新的 openRead
 ```
