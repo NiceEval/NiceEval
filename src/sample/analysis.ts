@@ -1,5 +1,6 @@
-import { Effect, Either, Schema } from "effect";
+import { Effect, Either, ParseResult, Schema } from "effect";
 import { encodeAttemptLocator, parseAttemptLocator } from "../attempt-locator.ts";
+import type { AttemptLocator } from "../attempt-locator.ts";
 import {
   EvalIdSchema,
   ExecutionIdentityDigestSchema,
@@ -246,26 +247,275 @@ export function decodeSampleSnapshot(value: unknown): SampleSnapshot {
 export function decodeSampleSnapshotEither(
   value: unknown,
 ): Either.Either<SampleSnapshot, SampleSnapshotCodecError> {
-  if (!isExactObject(value, ["version", "identity", "selection", "runs", "slots", "coverage"])) {
-    return Either.left(codecError([], "must contain exactly version, identity, selection, runs, slots, and coverage"));
-  }
-  if (valueAt(value, "version") !== 1) return Either.left(codecError(["version"], "must be 1"));
-  const selection = decodeSelection(valueAt(value, "selection"), ["selection"]);
-  if (Either.isLeft(selection)) return Either.left(selection.left);
-  const runs = decodeRuns(valueAt(value, "runs"), ["runs"]);
-  if (Either.isLeft(runs)) return Either.left(runs.left);
-  const slots = decodeSlots(valueAt(value, "slots"), ["slots"]);
-  if (Either.isLeft(slots)) return Either.left(slots.left);
-  const alignment = validateSlotRunAlignment(runs.right, slots.right);
+  const decoded = Schema.decodeUnknownEither(SampleSnapshotWireSchema, SampleSchemaParseOptions)(value);
+  if (Either.isLeft(decoded)) return Either.left(codecErrorFromSchema(decoded.left));
+  const canonical = canonicalizeSnapshotWire(decoded.right);
+  if (Either.isLeft(canonical)) return Either.left(canonical.left);
+  const alignment = validateSlotRunAlignment(canonical.right.runs, canonical.right.slots);
   if (alignment !== undefined) return Either.left(alignment);
-  const snapshot = makeSnapshot({ selection: selection.right, runs: runs.right, slots: slots.right });
-  if (!sameIdentity(valueAt(value, "identity"), snapshot.identity)) {
+  const snapshot = makeSnapshot(canonical.right);
+  if (decoded.right.identity.kind !== snapshot.identity.kind || decoded.right.identity.id !== snapshot.identity.id) {
     return Either.left(codecError(["identity"], "does not match the canonical frozen selection"));
   }
-  if (!sameCoverage(valueAt(value, "coverage"), snapshot.coverage)) {
+  if (!sameCoverage(decoded.right.coverage, snapshot.coverage)) {
     return Either.left(codecError(["coverage"], "does not satisfy the canonical coverage equations"));
   }
   return Either.right(snapshot);
+}
+
+const SampleSchemaParseOptions = Object.freeze({
+  errors: "all" as const,
+  exact: true,
+  onExcessProperty: "error" as const,
+});
+
+const AttemptOrdinalSchema = Schema.JsonNumber.pipe(Schema.filter(
+  (value): value is number => Number.isSafeInteger(value) && value >= 0,
+  { identifier: "SampleAttemptOrdinal", description: "a zero-based non-negative safe attempt ordinal" },
+));
+
+const AttemptLocatorSchema: Schema.Schema<AttemptLocator, string> = Schema.String.pipe(Schema.filter<string, AttemptLocator>(
+  (value): value is AttemptLocator => parseAttemptLocator(value).valid,
+  { identifier: "SampleAttemptLocator", description: "a canonical Attempt locator" },
+));
+
+const JsonValueSchema: Schema.Schema<JsonValue> = Schema.suspend(() => Schema.Union(
+  Schema.Null,
+  Schema.Boolean,
+  Schema.JsonNumber,
+  Schema.String,
+  Schema.Array(JsonValueSchema),
+  Schema.Record({ key: Schema.String, value: JsonValueSchema }),
+));
+
+const RunContextWireSchema = Schema.Struct({
+  execution: Schema.Struct({
+    agentId: Schema.String.pipe(Schema.minLength(1)),
+    model: Schema.NullOr(Schema.String),
+    reasoningEffort: Schema.NullOr(Schema.String),
+    flags: Schema.Record({ key: Schema.String, value: JsonValueSchema }),
+  }),
+  labels: Schema.Record({ key: Schema.String, value: Schema.String }),
+});
+
+const SelectionProblemSchema = Schema.Struct({
+  code: Schema.Literal("incomplete-run", "record-core-invalid", "selection-run-missing", "selection-run-unreadable"),
+  runId: RunIdSchema,
+});
+
+const SelectionSchema = Schema.Union(
+  Schema.Struct({
+    policy: Schema.Literal("explicit-runs"),
+    runIds: Schema.Array(RunIdSchema),
+    selectedRunIds: Schema.Array(RunIdSchema),
+    problems: Schema.Array(SelectionProblemSchema),
+  }),
+  Schema.Struct({
+    policy: Schema.Literal("project-current"),
+    experimentIds: Schema.Union(Schema.Literal("all"), Schema.Array(ExperimentIdSchema)),
+    selectedRunIds: Schema.Array(RunIdSchema),
+    problems: Schema.Array(SelectionProblemSchema),
+  }),
+);
+
+const RunSchema = Schema.Struct({
+  runId: RunIdSchema,
+  experimentId: ExperimentIdSchema,
+  context: Schema.NullOr(RunContextWireSchema),
+  startedAt: UtcMillisSchema,
+  completedAt: UtcMillisSchema,
+  expectedSlots: Schema.Array(SlotIdSchema),
+});
+
+const SlotReferenceFields = {
+  runId: RunIdSchema,
+  slotId: SlotIdSchema,
+  experimentId: ExperimentIdSchema,
+  evalId: EvalIdSchema,
+  attemptOrdinal: AttemptOrdinalSchema,
+  executionIdentityDigest: ExecutionIdentityDigestSchema,
+};
+
+const AttemptEvidenceSchema = Schema.Struct({
+  kind: Schema.Literal("attempt"),
+  locator: AttemptLocatorSchema,
+  originRunId: RunIdSchema,
+});
+
+const IssueSchema = Schema.Struct({
+  code: Schema.Literal("missing", "migration-required", "unsupported", "producer-incompatible", "input-invalid", "reduction-failed", "relation-unmatched"),
+  message: Schema.String,
+  refs: Schema.Array(Schema.Struct({
+    identity: Schema.Struct({ kind: Schema.Literal("attempt"), locator: AttemptLocatorSchema }),
+  })),
+});
+
+const ActiveSlotSchema = Schema.Union(
+  Schema.Struct({
+    ...SlotReferenceFields,
+    state: Schema.Literal("included"),
+    action: Schema.Literal("executed", "carried", "accepted"),
+    relation: Schema.Literal("origin", "reference"),
+    attempt: AttemptEvidenceSchema,
+  }),
+  Schema.Struct({
+    ...SlotReferenceFields,
+    state: Schema.Literal("not-recorded"),
+    action: Schema.Literal("not-dispatched", "interrupted").pipe(Schema.NullOr),
+    attempt: Schema.Null,
+  }),
+  Schema.Struct({
+    ...SlotReferenceFields,
+    state: Schema.Literal("core-invalid"),
+    action: Schema.Literal("executed", "carried", "accepted", "not-dispatched", "interrupted").pipe(Schema.NullOr),
+    attempt: Schema.Null,
+    issues: Schema.Array(IssueSchema),
+  }),
+);
+
+const SlotSchemaRaw = Schema.suspend(() => Schema.Union(
+  ActiveSlotSchema,
+  Schema.Struct({ ...SlotReferenceFields, state: Schema.Literal("excluded"), base: ActiveSlotSchema }),
+  Schema.Struct({
+    ...SlotReferenceFields,
+    state: Schema.Literal("excluded"),
+    base: ActiveSlotSchema,
+    reason: Schema.Literal("identity-mismatch"),
+ }),
+));
+
+const SlotSchema: Schema.Schema<AnalysisSlot, Schema.Schema.Encoded<typeof SlotSchemaRaw>> = SlotSchemaRaw;
+
+const SampleSnapshotWireSchema = Schema.Struct({
+  version: Schema.Literal(1),
+  identity: Schema.Struct({ kind: Schema.Literal("analysis-sample"), id: Schema.String }),
+  selection: SelectionSchema,
+  runs: Schema.Array(RunSchema).pipe(Schema.filter(
+    (runs) => runs.length <= MAX_SELECTED_RUNS,
+    { identifier: "SampleSelectedRuns", description: "at most 4096 selected Runs" },
+  )),
+  slots: Schema.Array(SlotSchema).pipe(Schema.filter(
+    (slots) => slots.length <= MAX_SLOTS,
+    { identifier: "SampleSlots", description: "at most 250000 Slots" },
+  )),
+  coverage: Schema.Struct({
+    frameTotal: Schema.JsonNumber,
+    selected: Schema.JsonNumber,
+    included: Schema.JsonNumber,
+    notRecorded: Schema.JsonNumber,
+    coreInvalid: Schema.JsonNumber,
+    excluded: Schema.JsonNumber,
+  }),
+});
+
+function canonicalizeSnapshotWire(input: Schema.Schema.Type<typeof SampleSnapshotWireSchema>): Either.Either<{
+  readonly selection: AnalysisSelectionSummary;
+  readonly runs: readonly AnalysisRun[];
+  readonly slots: readonly AnalysisSlot[];
+}, SampleSnapshotCodecError> {
+  const selection = canonicalizeSelection(input.selection);
+  const runs: AnalysisRun[] = [];
+  for (let index = 0; index < input.runs.length; index += 1) {
+    const run = input.runs[index]!;
+    const context = run.context === null
+      ? null
+      : canonicalizeRunContext({ experimentId: run.experimentId, ...run.context });
+    if (context !== null && Either.isLeft(context)) {
+      return Either.left(codecError(["runs", String(index), "context"], "is not a valid closed Run context"));
+    }
+    runs.push(Object.freeze({
+      runId: run.runId,
+      experimentId: run.experimentId,
+      context: context === null ? null : closeRunContext(context.right),
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+      expectedSlots: Object.freeze(uniqueSorted(run.expectedSlots)),
+    }));
+  }
+  let canonicalRuns: readonly AnalysisRun[];
+  try {
+    canonicalRuns = uniqueSortedBy(runs, (run) => run.runId);
+  } catch {
+    return Either.left(codecError(["runs"], "duplicates a Run identity"));
+  }
+  const identities = new Set<string>();
+  const slots: AnalysisSlot[] = [];
+  for (let index = 0; index < input.slots.length; index += 1) {
+    const slot = input.slots[index]!;
+    const key = slotKey(slot.runId, slot.slotId);
+    if (identities.has(key)) return Either.left(codecError(["slots", String(index)], "duplicates a Run/Slot identity"));
+    identities.add(key);
+    const closed = closeDecodedSlot(slot, ["slots", String(index)]);
+    if (Either.isLeft(closed)) return Either.left(closed.left);
+    slots.push(closed.right);
+  }
+  return Either.right(Object.freeze({
+    selection,
+    runs: canonicalRuns,
+    slots: Object.freeze(slots.sort(compareSlots)),
+  }));
+}
+
+function closeDecodedSlot(
+  slot: AnalysisSlot,
+  path: readonly string[],
+): Either.Either<AnalysisSlot, SampleSnapshotCodecError> {
+  if (slot.state === "excluded") {
+    const base = closeDecodedSlot(slot.base, [...path, "base"]);
+    if (Either.isLeft(base)) return base;
+    if (base.right.state === "excluded") {
+      return Either.left(codecError([...path, "base"], "must be an active Slot"));
+    }
+    if (
+      base.right.runId !== slot.runId || base.right.slotId !== slot.slotId ||
+      base.right.experimentId !== slot.experimentId || base.right.evalId !== slot.evalId ||
+      base.right.attemptOrdinal !== slot.attemptOrdinal ||
+      base.right.executionIdentityDigest !== slot.executionIdentityDigest
+    ) return Either.left(codecError(path, "excluded base must be a matching active Slot"));
+    return Either.right(Object.freeze({ ...slot, base: base.right }));
+  }
+  if (slot.state === "included") {
+    return Either.right(Object.freeze({ ...slot, attempt: Object.freeze({ ...slot.attempt }) }));
+  }
+  if (slot.state === "not-recorded") return Either.right(Object.freeze({ ...slot }));
+  return Either.right(Object.freeze({
+    ...slot,
+    issues: Object.freeze(slot.issues.map((issue) => Object.freeze({
+      ...issue,
+      refs: Object.freeze(issue.refs.map((ref) => Object.freeze({
+        identity: Object.freeze({ ...ref.identity }),
+      }))),
+    }))),
+  }));
+}
+
+function canonicalizeSelection(selection: Schema.Schema.Type<typeof SelectionSchema>): AnalysisSelectionSummary {
+  const problems = normalizedSelectionProblems(selection.problems);
+  return selection.policy === "explicit-runs"
+    ? Object.freeze({ policy: selection.policy, runIds: uniqueSorted(selection.runIds), selectedRunIds: uniqueSorted(selection.selectedRunIds), problems })
+    : Object.freeze({ policy: selection.policy, experimentIds: selection.experimentIds === "all" ? "all" : uniqueSorted(selection.experimentIds), selectedRunIds: uniqueSorted(selection.selectedRunIds), problems });
+}
+
+/** A Snapshot Slot is a derived occurrence of exactly one closed AnalysisRun. */
+function validateSlotRunAlignment(
+  runs: readonly AnalysisRun[],
+  slots: readonly AnalysisSlot[],
+): SampleSnapshotCodecError | undefined {
+  const runsById = new Map(runs.map((run) => [run.runId, run] as const));
+  for (let index = 0; index < slots.length; index += 1) {
+    const slot = slots[index]!;
+    const run = runsById.get(slot.runId);
+    if (run === undefined) return codecError(["slots", String(index), "runId"], "does not identify a selected AnalysisRun");
+    if (run.experimentId !== slot.experimentId) return codecError(["slots", String(index), "experimentId"], "does not match the associated AnalysisRun");
+    if (!run.expectedSlots.includes(slot.slotId)) return codecError(["slots", String(index), "slotId"], "does not belong to the associated AnalysisRun");
+  }
+  return undefined;
+}
+
+function codecErrorFromSchema(error: ParseResult.ParseError): SampleSnapshotCodecError {
+  const issue = ParseResult.ArrayFormatter.formatErrorSync(error)[0];
+  if (issue === undefined) return codecError([], "is not a valid Sample snapshot");
+  return codecError(issue.path.map(String), issue.message);
 }
 
 function expectedSlotsByRun(
@@ -766,454 +1016,6 @@ function issueJson(issue: AnalysisIssue): JsonValue {
   });
 }
 
-function decodeSelection(
-  value: unknown,
-  path: readonly string[],
-): Either.Either<AnalysisSelectionSummary, SampleSnapshotCodecError> {
-  if (!isPlainObject(value)) return Either.left(codecError(path, "must be an object"));
-  const policy = valueAt(value, "policy");
-  if (policy === "explicit-runs") {
-    if (!isExactObject(value, ["policy", "runIds", "selectedRunIds", "problems"])) {
-      return Either.left(codecError(path, "explicit-runs must contain exactly policy, runIds, selectedRunIds, and problems"));
-    }
-    const runIds = decodeArray(valueAt(value, "runIds"), [...path, "runIds"], decodeRunId);
-    const selectedRunIds = decodeArray(
-      valueAt(value, "selectedRunIds"),
-      [...path, "selectedRunIds"],
-      decodeRunId,
-    );
-    const problems = decodeSelectionProblems(valueAt(value, "problems"), [...path, "problems"]);
-    if (Either.isLeft(runIds)) return Either.left(runIds.left);
-    if (Either.isLeft(selectedRunIds)) return Either.left(selectedRunIds.left);
-    if (Either.isLeft(problems)) return Either.left(problems.left);
-    return Either.right(Object.freeze({
-      policy: "explicit-runs" as const,
-      runIds: uniqueSorted(runIds.right),
-      selectedRunIds: uniqueSorted(selectedRunIds.right),
-      problems: normalizedSelectionProblems(problems.right),
-    }));
-  }
-  if (policy === "project-current") {
-    if (!isExactObject(value, ["policy", "experimentIds", "selectedRunIds", "problems"])) {
-      return Either.left(codecError(path, "project-current must contain exactly policy, experimentIds, selectedRunIds, and problems"));
-    }
-    const experimentIdsValue = valueAt(value, "experimentIds");
-    let experimentIds: "all" | readonly ExperimentId[];
-    if (experimentIdsValue === "all") {
-      experimentIds = "all";
-    } else {
-      const decodedExperimentIds = decodeArray(
-        experimentIdsValue,
-        [...path, "experimentIds"],
-        decodeExperimentId,
-      );
-      if (Either.isLeft(decodedExperimentIds)) return Either.left(decodedExperimentIds.left);
-      experimentIds = uniqueSorted(decodedExperimentIds.right);
-    }
-    const selectedRunIds = decodeArray(
-      valueAt(value, "selectedRunIds"),
-      [...path, "selectedRunIds"],
-      decodeRunId,
-    );
-    const problems = decodeSelectionProblems(valueAt(value, "problems"), [...path, "problems"]);
-    if (Either.isLeft(selectedRunIds)) return Either.left(selectedRunIds.left);
-    if (Either.isLeft(problems)) return Either.left(problems.left);
-    return Either.right(Object.freeze({
-      policy: "project-current" as const,
-      experimentIds,
-      selectedRunIds: uniqueSorted(selectedRunIds.right),
-      problems: normalizedSelectionProblems(problems.right),
-    }));
-  }
-  return Either.left(codecError([...path, "policy"], "must be explicit-runs or project-current"));
-}
-
-function decodeSelectionProblems(
-  value: unknown,
-  path: readonly string[],
-): Either.Either<readonly AnalysisSelectionProblem[], SampleSnapshotCodecError> {
-  if (!Array.isArray(value)) return Either.left(codecError(path, "must be an array"));
-  const problems: AnalysisSelectionProblem[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const decoded = decodeSelectionProblem(value[index], [...path, String(index)]);
-    if (Either.isLeft(decoded)) return Either.left(decoded.left);
-    problems.push(decoded.right);
-  }
-  return Either.right(Object.freeze(problems));
-}
-
-function decodeSelectionProblem(
-  value: unknown,
-  path: readonly string[],
-): Either.Either<AnalysisSelectionProblem, SampleSnapshotCodecError> {
-  if (!isExactObject(value, ["code", "runId"])) return Either.left(codecError(path, "must contain exactly code and runId"));
-  const code = valueAt(value, "code");
-  if (code !== "incomplete-run" && code !== "record-core-invalid" && code !== "selection-run-missing" && code !== "selection-run-unreadable") {
-    return Either.left(codecError([...path, "code"], "is not a known selection problem"));
-  }
-  const runId = decodeRunId(valueAt(value, "runId"), [...path, "runId"]);
-  return Either.isLeft(runId) ? Either.left(runId.left) : Either.right(Object.freeze({ code, runId: runId.right }));
-}
-
-function decodeRuns(
-  value: unknown,
-  path: readonly string[],
-): Either.Either<readonly AnalysisRun[], SampleSnapshotCodecError> {
-  if (!Array.isArray(value)) return Either.left(codecError(path, "must be an array"));
-  if (value.length > MAX_SELECTED_RUNS) return Either.left(codecError(path, "exceeds the selected-runs limit"));
-  const runs: AnalysisRun[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const decoded = decodeRun(value[index], [...path, String(index)]);
-    if (Either.isLeft(decoded)) return Either.left(decoded.left);
-    runs.push(decoded.right);
-  }
-  return Either.right(Object.freeze(uniqueSortedBy(runs, (run) => run.runId)));
-}
-
-function decodeRun(value: unknown, path: readonly string[]): Either.Either<AnalysisRun, SampleSnapshotCodecError> {
-  if (!isExactObject(value, ["runId", "experimentId", "context", "startedAt", "completedAt", "expectedSlots"])) {
-    return Either.left(codecError(path, "contains unsupported fields"));
-  }
-  const runId = decodeRunId(valueAt(value, "runId"), [...path, "runId"]);
-  const experimentId = decodeExperimentId(valueAt(value, "experimentId"), [...path, "experimentId"]);
-  const startedAt = decodeUtcMillis(valueAt(value, "startedAt"), [...path, "startedAt"]);
-  const completedAt = decodeUtcMillis(valueAt(value, "completedAt"), [...path, "completedAt"]);
-  const slots = decodeArray(valueAt(value, "expectedSlots"), [...path, "expectedSlots"], decodeSlotId);
-  if (Either.isLeft(runId)) return Either.left(runId.left);
-  if (Either.isLeft(experimentId)) return Either.left(experimentId.left);
-  const context = decodeRunContext(valueAt(value, "context"), experimentId.right, [...path, "context"]);
-  if (Either.isLeft(context)) return Either.left(context.left);
-  if (Either.isLeft(startedAt)) return Either.left(startedAt.left);
-  if (Either.isLeft(completedAt)) return Either.left(completedAt.left);
-  if (Either.isLeft(slots)) return Either.left(slots.left);
-  return Either.right(Object.freeze({
-    runId: runId.right,
-    experimentId: experimentId.right,
-    context: context.right,
-    startedAt: startedAt.right,
-    completedAt: completedAt.right,
-    expectedSlots: Object.freeze(uniqueSorted(slots.right)),
-  }));
-}
-
-function decodeRunContext(
-  value: unknown,
-  experimentId: ExperimentId,
-  path: readonly string[],
-): Either.Either<AnalysisRunContext | null, SampleSnapshotCodecError> {
-  if (value === null) return Either.right(null);
-  if (!isExactObject(value, ["execution", "labels"])) {
-    return Either.left(codecError(path, "must contain exactly execution and labels"));
-  }
-  const decoded = canonicalizeRunContext({
-    experimentId,
-    execution: valueAt(value, "execution"),
-    labels: valueAt(value, "labels"),
-  });
-  return Either.isLeft(decoded)
-    ? Either.left(codecError(path, "is not a valid closed Run context"))
-    : Either.right(closeRunContext(decoded.right));
-}
-
-function decodeSlots(
-  value: unknown,
-  path: readonly string[],
-): Either.Either<readonly AnalysisSlot[], SampleSnapshotCodecError> {
-  if (!Array.isArray(value)) return Either.left(codecError(path, "must be an array"));
-  if (value.length > MAX_SLOTS) return Either.left(codecError(path, "exceeds the Slot limit"));
-  const slots: AnalysisSlot[] = [];
-  const identities = new Set<string>();
-  for (let index = 0; index < value.length; index += 1) {
-    const decoded = decodeSlot(value[index], [...path, String(index)], false);
-    if (Either.isLeft(decoded)) return Either.left(decoded.left);
-    const key = slotKey(decoded.right.runId, decoded.right.slotId);
-    if (identities.has(key)) return Either.left(codecError([...path, String(index)], "duplicates a Run/Slot identity"));
-    identities.add(key);
-    slots.push(decoded.right);
-  }
-  return Either.right(Object.freeze(slots.sort(compareSlots)));
-}
-
-/** A Snapshot Slot is a derived occurrence of exactly one closed AnalysisRun. */
-function validateSlotRunAlignment(
-  runs: readonly AnalysisRun[],
-  slots: readonly AnalysisSlot[],
-): SampleSnapshotCodecError | undefined {
-  const runsById = new Map(runs.map((run) => [run.runId, run] as const));
-  for (let index = 0; index < slots.length; index += 1) {
-    const slot = slots[index]!;
-    const run = runsById.get(slot.runId);
-    if (run === undefined) {
-      return codecError(["slots", String(index), "runId"], "does not identify a selected AnalysisRun");
-    }
-    if (run.experimentId !== slot.experimentId) {
-      return codecError(["slots", String(index), "experimentId"], "does not match the associated AnalysisRun");
-    }
-    if (!run.expectedSlots.includes(slot.slotId)) {
-      return codecError(["slots", String(index), "slotId"], "does not belong to the associated AnalysisRun");
-    }
-  }
-  return undefined;
-}
-
-function decodeSlot(
-  value: unknown,
-  path: readonly string[],
-  nested: boolean,
-): Either.Either<AnalysisSlot, SampleSnapshotCodecError> {
-  if (!isPlainObject(value)) return Either.left(codecError(path, "must be an object"));
-  const state = valueAt(value, "state");
-  if (state === "excluded") {
-    const hasReason = Object.prototype.hasOwnProperty.call(value, "reason");
-    const expectedKeys = hasReason
-      ? ["runId", "slotId", "experimentId", "evalId", "attemptOrdinal", "executionIdentityDigest", "state", "base", "reason"]
-      : ["runId", "slotId", "experimentId", "evalId", "attemptOrdinal", "executionIdentityDigest", "state", "base"];
-    if (nested || !isExactObject(value, expectedKeys)) {
-      return Either.left(codecError(path, "excluded Slots must contain exactly runId, slotId, state, base, and optional reason"));
-    }
-    const runId = decodeRunId(valueAt(value, "runId"), [...path, "runId"]);
-    const slotId = decodeSlotId(valueAt(value, "slotId"), [...path, "slotId"]);
-    const experimentId = decodeExperimentId(valueAt(value, "experimentId"), [...path, "experimentId"]);
-    const evalId = decodeEvalId(valueAt(value, "evalId"), [...path, "evalId"]);
-    const attemptOrdinal = decodeAttemptOrdinal(valueAt(value, "attemptOrdinal"), [...path, "attemptOrdinal"]);
-    const executionIdentityDigest = decodeExecutionIdentityDigest(
-      valueAt(value, "executionIdentityDigest"),
-      [...path, "executionIdentityDigest"],
-    );
-    const base = decodeSlot(valueAt(value, "base"), [...path, "base"], true);
-    if (Either.isLeft(runId)) return Either.left(runId.left);
-    if (Either.isLeft(slotId)) return Either.left(slotId.left);
-    if (Either.isLeft(experimentId)) return Either.left(experimentId.left);
-    if (Either.isLeft(evalId)) return Either.left(evalId.left);
-    if (Either.isLeft(attemptOrdinal)) return Either.left(attemptOrdinal.left);
-    if (Either.isLeft(executionIdentityDigest)) return Either.left(executionIdentityDigest.left);
-    if (Either.isLeft(base)) return Either.left(base.left);
-    if (
-      base.right.state === "excluded"
-      || base.right.runId !== runId.right
-      || base.right.slotId !== slotId.right
-      || base.right.experimentId !== experimentId.right
-      || base.right.evalId !== evalId.right
-      || base.right.attemptOrdinal !== attemptOrdinal.right
-      || base.right.executionIdentityDigest !== executionIdentityDigest.right
-    ) {
-      return Either.left(codecError(path, "excluded base must be a matching active Slot"));
-    }
-    if (hasReason && valueAt(value, "reason") !== "identity-mismatch") {
-      return Either.left(codecError([...path, "reason"], "must be identity-mismatch"));
-    }
-    return Either.right(Object.freeze({
-      runId: runId.right,
-      slotId: slotId.right,
-      experimentId: experimentId.right,
-      evalId: evalId.right,
-      attemptOrdinal: attemptOrdinal.right,
-      executionIdentityDigest: executionIdentityDigest.right,
-      state,
-      base: base.right,
-      ...(hasReason ? { reason: "identity-mismatch" as const } : {}),
-    }));
-  }
-  const runId = decodeRunId(valueAt(value, "runId"), [...path, "runId"]);
-  const slotId = decodeSlotId(valueAt(value, "slotId"), [...path, "slotId"]);
-  const experimentId = decodeExperimentId(valueAt(value, "experimentId"), [...path, "experimentId"]);
-  const evalId = decodeEvalId(valueAt(value, "evalId"), [...path, "evalId"]);
-  const attemptOrdinal = decodeAttemptOrdinal(valueAt(value, "attemptOrdinal"), [...path, "attemptOrdinal"]);
-  const executionIdentityDigest = decodeExecutionIdentityDigest(
-    valueAt(value, "executionIdentityDigest"),
-    [...path, "executionIdentityDigest"],
-  );
-  if (Either.isLeft(runId)) return Either.left(runId.left);
-  if (Either.isLeft(slotId)) return Either.left(slotId.left);
-  if (Either.isLeft(experimentId)) return Either.left(experimentId.left);
-  if (Either.isLeft(evalId)) return Either.left(evalId.left);
-  if (Either.isLeft(attemptOrdinal)) return Either.left(attemptOrdinal.left);
-  if (Either.isLeft(executionIdentityDigest)) return Either.left(executionIdentityDigest.left);
-  if (state === "included") {
-    if (!isExactObject(value, ["runId", "slotId", "experimentId", "evalId", "attemptOrdinal", "executionIdentityDigest", "state", "action", "relation", "attempt"])) {
-      return Either.left(codecError(path, "included Slots contain unsupported fields"));
-    }
-    const action = valueAt(value, "action");
-    const relation = valueAt(value, "relation");
-    const attempt = decodeAttemptIdentity(valueAt(value, "attempt"), [...path, "attempt"]);
-    if ((action !== "executed" && action !== "carried" && action !== "accepted") || (relation !== "origin" && relation !== "reference")) {
-      return Either.left(codecError(path, "included Slot has an invalid Member action or relation"));
-    }
-    if (Either.isLeft(attempt)) return Either.left(attempt.left);
-    return Either.right(Object.freeze({
-      runId: runId.right,
-      slotId: slotId.right,
-      experimentId: experimentId.right,
-      evalId: evalId.right,
-      attemptOrdinal: attemptOrdinal.right,
-      executionIdentityDigest: executionIdentityDigest.right,
-      state,
-      action,
-      relation,
-      attempt: attempt.right,
-    }));
-  }
-  if (state === "not-recorded") {
-    if (!isExactObject(value, ["runId", "slotId", "experimentId", "evalId", "attemptOrdinal", "executionIdentityDigest", "state", "action", "attempt"]) || valueAt(value, "attempt") !== null) {
-      return Either.left(codecError(path, "not-recorded Slots must retain a null Attempt"));
-    }
-    const action = valueAt(value, "action");
-    if (action !== null && action !== "not-dispatched" && action !== "interrupted") {
-      return Either.left(codecError([...path, "action"], "is not a null Member action"));
-    }
-    return Either.right(Object.freeze({
-      runId: runId.right,
-      slotId: slotId.right,
-      experimentId: experimentId.right,
-      evalId: evalId.right,
-      attemptOrdinal: attemptOrdinal.right,
-      executionIdentityDigest: executionIdentityDigest.right,
-      state,
-      action,
-      attempt: null,
-    }));
-  }
-  if (state === "core-invalid") {
-    if (!isExactObject(value, ["runId", "slotId", "experimentId", "evalId", "attemptOrdinal", "executionIdentityDigest", "state", "action", "attempt", "issues"]) || valueAt(value, "attempt") !== null) {
-      return Either.left(codecError(path, "core-invalid Slots must contain null Attempt and issues"));
-    }
-    const action = valueAt(value, "action");
-    if (action !== null && action !== "executed" && action !== "carried" && action !== "accepted" && action !== "not-dispatched" && action !== "interrupted") {
-      return Either.left(codecError([...path, "action"], "is not a Member action"));
-    }
-    const issues = decodeIssues(valueAt(value, "issues"), [...path, "issues"]);
-    if (Either.isLeft(issues)) return Either.left(issues.left);
-    return Either.right(Object.freeze({
-      runId: runId.right,
-      slotId: slotId.right,
-      experimentId: experimentId.right,
-      evalId: evalId.right,
-      attemptOrdinal: attemptOrdinal.right,
-      executionIdentityDigest: executionIdentityDigest.right,
-      state,
-      action,
-      attempt: null,
-      issues: issues.right,
-    }));
-  }
-  return Either.left(codecError([...path, "state"], "must be included, not-recorded, core-invalid, or excluded"));
-}
-
-function decodeAttemptIdentity(
-  value: unknown,
-  path: readonly string[],
-): Either.Either<IncludedAnalysisSlot["attempt"], SampleSnapshotCodecError> {
-  if (!isExactObject(value, ["kind", "locator", "originRunId"]) || valueAt(value, "kind") !== "attempt") {
-    return Either.left(codecError(path, "must contain an Attempt locator identity"));
-  }
-  const locator = valueAt(value, "locator");
-  const originRunId = decodeRunId(valueAt(value, "originRunId"), [...path, "originRunId"]);
-  if (typeof locator !== "string" || !parseAttemptLocator(locator).valid) {
-    return Either.left(codecError([...path, "locator"], "is not a canonical Attempt locator"));
-  }
-  return Either.isLeft(originRunId)
-    ? Either.left(originRunId.left)
-    : Either.right(Object.freeze({ kind: "attempt" as const, locator: locator as IncludedAnalysisSlot["attempt"]["locator"], originRunId: originRunId.right }));
-}
-
-function decodeIssues(
-  value: unknown,
-  path: readonly string[],
-): Either.Either<readonly AnalysisIssue[], SampleSnapshotCodecError> {
-  if (!Array.isArray(value)) return Either.left(codecError(path, "must be an array"));
-  const issues: AnalysisIssue[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const entry = value[index];
-    if (!isExactObject(entry, ["code", "message", "refs"])) return Either.left(codecError([...path, String(index)], "has unsupported fields"));
-    const code = valueAt(entry, "code");
-    const message = valueAt(entry, "message");
-    const refs = valueAt(entry, "refs");
-    if ((code !== "missing" && code !== "migration-required" && code !== "unsupported" && code !== "producer-incompatible" && code !== "input-invalid" && code !== "reduction-failed" && code !== "relation-unmatched") || typeof message !== "string" || !Array.isArray(refs)) {
-      return Either.left(codecError([...path, String(index)], "is not a closed Analysis issue"));
-    }
-    const decodedRefs = [] as AnalysisIssue["refs"][number][];
-    for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
-      const ref = refs[refIndex];
-      if (!isExactObject(ref, ["identity"]) || !isExactObject(valueAt(ref, "identity"), ["kind", "locator"])) {
-        return Either.left(codecError([...path, String(index), "refs", String(refIndex)], "is not a closed evidence reference"));
-      }
-      const identity = valueAt(ref, "identity");
-      if (!isExactObject(identity, ["kind", "locator"])) {
-        return Either.left(codecError([...path, String(index), "refs", String(refIndex)], "is not a closed evidence reference"));
-      }
-      const locator = valueAt(identity, "locator");
-      if (valueAt(identity, "kind") !== "attempt" || typeof locator !== "string" || !parseAttemptLocator(locator).valid) {
-        return Either.left(codecError([...path, String(index), "refs", String(refIndex)], "has an invalid evidence locator"));
-      }
-      decodedRefs.push(Object.freeze({ identity: Object.freeze({ kind: "attempt" as const, locator: locator as AnalysisIssue["refs"][number]["identity"]["locator"] }) }));
-    }
-    issues.push(Object.freeze({ code, message, refs: Object.freeze(decodedRefs) }));
-  }
-  return Either.right(Object.freeze(issues));
-}
-
-function decodeArray<Value>(
-  value: unknown,
-  path: readonly string[],
-  decode: (value: unknown, path: readonly string[]) => Either.Either<Value, SampleSnapshotCodecError>,
-): Either.Either<readonly Value[], SampleSnapshotCodecError> {
-  if (!Array.isArray(value)) return Either.left(codecError(path, "must be an array"));
-  const values: Value[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const decoded = decode(value[index], [...path, String(index)]);
-    if (Either.isLeft(decoded)) return Either.left(decoded.left);
-    values.push(decoded.right);
-  }
-  return Either.right(Object.freeze(values));
-}
-
-function decodeRunId(value: unknown, path: readonly string[]): Either.Either<RunId, SampleSnapshotCodecError> {
-  return decodeBrand(RunIdSchema, value, path, "a RunId");
-}
-
-function decodeSlotId(value: unknown, path: readonly string[]): Either.Either<SlotId, SampleSnapshotCodecError> {
-  return decodeBrand(SlotIdSchema, value, path, "a SlotId");
-}
-
-function decodeEvalId(value: unknown, path: readonly string[]): Either.Either<EvalId, SampleSnapshotCodecError> {
-  return decodeBrand(EvalIdSchema, value, path, "an EvalId");
-}
-
-function decodeAttemptOrdinal(value: unknown, path: readonly string[]): Either.Either<number, SampleSnapshotCodecError> {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? Either.right(value)
-    : Either.left(codecError(path, "must be a zero-based non-negative safe attempt ordinal"));
-}
-
-function decodeExecutionIdentityDigest(
-  value: unknown,
-  path: readonly string[],
-): Either.Either<ExecutionIdentityDigest, SampleSnapshotCodecError> {
-  return decodeBrand(ExecutionIdentityDigestSchema, value, path, "an execution identity digest");
-}
-
-function decodeExperimentId(value: unknown, path: readonly string[]): Either.Either<ExperimentId, SampleSnapshotCodecError> {
-  return decodeBrand(ExperimentIdSchema, value, path, "an ExperimentId");
-}
-
-function decodeUtcMillis(value: unknown, path: readonly string[]): Either.Either<UtcMillis, SampleSnapshotCodecError> {
-  return decodeBrand(UtcMillisSchema, value, path, "a UTC millisecond value");
-}
-
-function decodeBrand<Value>(
-  schema: Schema.Schema<Value, any>,
-  value: unknown,
-  path: readonly string[],
-  label: string,
-): Either.Either<Value, SampleSnapshotCodecError> {
-  const decoded = Schema.decodeUnknownEither(schema)(value);
-  return Either.isLeft(decoded) ? Either.left(codecError(path, `must be ${label}`)) : Either.right(decoded.right);
-}
-
-function uniqueSorted<Value extends string>(values: readonly Value[]): readonly Value[] {
-  return Object.freeze([...new Set<Value>(values)].sort(compareCanonicalIdentity));
-}
-
 function uniqueSortedBy<Value>(values: readonly Value[], key: (value: Value) => string): readonly Value[] {
   const byKey = new Map<string, Value>();
   for (const value of values) {
@@ -1224,6 +1026,10 @@ function uniqueSortedBy<Value>(values: readonly Value[], key: (value: Value) => 
   return Object.freeze([...byKey.entries()]
     .sort(([left], [right]) => compareCanonicalIdentity(left, right))
     .map(([, value]) => value));
+}
+
+function uniqueSorted<Value extends string>(values: readonly Value[]): readonly Value[] {
+  return Object.freeze([...new Set<Value>(values)].sort(compareCanonicalIdentity));
 }
 
 function sameIdentity(value: unknown, expected: SampleIdentity): boolean {
