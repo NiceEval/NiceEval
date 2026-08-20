@@ -21,6 +21,7 @@ import type { ProjectCurrentTarget } from "./project-target.ts";
 import type { SandboxRunPlanningError } from "./sandbox-selection.ts";
 import { resolveAttemptTimeout, resolveRunTimeout } from "./timeout.ts";
 import type { AgentRun, Config } from "./types.ts";
+import { matchExperimentSelector } from "../shared/aggregate.ts";
 
 export interface LoadProjectCurrentOptions {
   experiments?: string | readonly string[];
@@ -73,18 +74,22 @@ export function loadProjectCurrent(
     const selectors = options.experiments === undefined
       ? []
       : Array.isArray(options.experiments) ? options.experiments : [options.experiments];
-    const availableIds = new Set(experiments.map((entry) => entry.id));
+    const availableExperimentIds = experiments.map((entry) => entry.id);
+    const availableIds = new Set(availableExperimentIds);
+    const selectedIds = new Set<string>();
     for (const selector of selectors) {
-      if (!availableIds.has(selector)) {
+      const matches = matchExperimentSelector(availableExperimentIds, selector);
+      if (matches.length === 0) {
         return yield* Effect.fail(new ProjectCurrentLoadError({
           stage: "selection",
           message: `Unknown current project Experiment ${JSON.stringify(selector)}.`,
         }));
       }
+      for (const match of matches) selectedIds.add(match);
     }
-    const selectedIds = selectors.length === 0
-      ? availableIds
-      : new Set(selectors);
+    if (selectors.length === 0) {
+      for (const id of availableIds) selectedIds.add(id);
+    }
     if (selectedIds.size === 0) {
       return yield* Effect.fail(new ProjectCurrentLoadError({
         stage: "selection",

@@ -141,14 +141,22 @@ interface ScopedFeedback {
 
 要让运行失败，应抛出 typed error。要改变 Verdict，应形成 assertion 或 Judge 结果；error diagnostic 本身不改变 Verdict。
 
-## 路径只表达身份与选择
+## 路径表达身份、选择与实验组
 
 ```text
 experiments/agents/codex/coding.ts   -> agents/codex/coding
 experiments/agents/claude/coding.ts  -> agents/claude/coding
 ```
 
-路径形成 `experimentId` 并支持前缀选择。它不决定 Record 物理布局，也不成为 Sample 的隐含 selection。
+路径形成 `experimentId` 并支持前缀选择。第一段同时形成具名实验组；无目录段的根级 Experiment 形成单成员组。
+
+```ts
+type ExperimentGroupIdentity =
+  | { readonly kind: "named"; readonly groupId: ExperimentGroupId }
+  | { readonly kind: "singleton"; readonly experimentId: ExperimentId };
+```
+
+实验组不决定 Record 物理布局，也不改变 Sample 的 selection。它只能在已固定 Sample 内形成单调收窄的实验比较范围。
 
 ## 相关阅读
 

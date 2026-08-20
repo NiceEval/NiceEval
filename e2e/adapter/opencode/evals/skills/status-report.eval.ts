@@ -21,8 +21,8 @@ export default defineEval({
       t.check(installed.exitCode, equals(0));
     });
     const turn = await t.send(
-      `Before writing a status report, inspect only the applicable Skill under ${SKILL_DIR}/; ` +
-        "do not inspect another Skill. " +
+      `Before writing a status report, use OpenCode's native Skill tool to load ${STATUS_SKILL}; ` +
+        "do not read its SKILL.md directly and do not load another Skill. " +
         `Create ${reportPath} saying "all systems nominal" and follow the selected Skill exactly.`,
     );
     await turn.succeeded().orStop();

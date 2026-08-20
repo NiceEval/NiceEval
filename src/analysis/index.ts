@@ -48,6 +48,11 @@ export {
   narrowSample,
 } from "../sample/capability.ts";
 
+export {
+  experimentComparisonScope,
+  experimentGroups,
+} from "./experiment-groups.ts";
+
 export type {
   AggregateRequest,
   AggregateRow,
@@ -194,11 +199,16 @@ export type {
   EvidenceIdentity,
   EvidenceRef,
   ExperimentId,
+  ExperimentComparisonScope,
+  ExperimentComparisonState,
+  ExperimentGroupIdentity,
   JsonValue,
   MeasureFormat,
   MetricBasis,
   MetricState,
   MetricValue,
+  NonComparableIssue,
+  NonComparableReason,
   PopulationIdentity,
   ProducerIdentity,
   RunId,
@@ -209,5 +219,7 @@ export type {
   SampleSnapshotCodecError,
   SlotId,
 } from "./contracts.ts";
+
+export type { ExperimentGroupSummary } from "./experiment-groups.ts";
 
 export { ExperimentIdSchema } from "../record/codec/identifiers.ts";

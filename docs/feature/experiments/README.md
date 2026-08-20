@@ -19,10 +19,26 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **experiment 是可签入的运行配置。**
   比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
 - **跨 agent / 跨配置对比是一等公民。**
-  每个实验文件声明一个配置；报告只比较 `Sample` 已经选好的 Run 与 Attempt，不在页面打开时另选结果。
+  每个实验文件声明一个配置；报告只在 `Sample` 已经选好的同一实验组内比较，不在页面打开时另选结果。
 
 实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 reference Member；其 Core `accepted` action 与精确引用就是可复核的采用事实。
-  目录只组织源码、生成 id 和支持 CLI 前缀选择。
+  目录组织源码、生成 id、支持 CLI 前缀选择，并且由第一段表达实验组。
+
+## 实验组与可比边界
+
+实验组是 Experiment 的比较准入边界，不是 [Eval Group](../eval-groups/README.md) 的 Sandbox 复用 lane，也不是具名 Experiment 族的作者语法。
+
+```text
+experiments/compare/baseline.ts      -> Experiment compare/baseline  -> named/compare
+experiments/compare/nested/model.ts  -> Experiment compare/nested/model -> named/compare
+experiments/smoke.ts                 -> Experiment smoke             -> singleton/smoke
+```
+
+`named/<segment>` 取 `experimentId` 的第一段；更深的目录只组织成员。根级 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是 Analysis、Report route 与机器输出中的判别联合，不成为另一套 CLI 参数；`niceeval exp foo` 与 Report 的 `--experiment foo` 继续使用同一实验 selector 规则。
+
+目录表示作者允许成员共同比较，不证明它们一定可比。Analysis 另行验证 Eval 总体、evaluation kind、Measure population 与 basis。验证不通过时产生可呈现的 `non-comparable`，不产生排名或散点，也不让整份项目报告失败。
+
+实验组不写入 Record。历史 Run 从已封存的 `experimentId` 派生组；跨第一段改名后，目标 Run 属于新组，origin Attempt 仍保留自己的历史身份。
 
 ## 与 Record 的边界
 

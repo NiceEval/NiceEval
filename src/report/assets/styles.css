@@ -2456,9 +2456,9 @@ html.niceeval-view-document body {
   position: sticky;
   top: 0;
   z-index: 10;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 28px;
 }
 
@@ -2470,11 +2470,26 @@ html.niceeval-view-document body {
 
 .niceeval-view-brand {
   display: flex;
+  justify-self: start;
   flex: 0 0 auto;
   align-items: baseline;
   gap: 12px;
   font-size: 20px;
   font-weight: 690;
+}
+
+.niceeval-view-pages {
+  display: flex;
+  min-width: 0;
+  justify-self: center;
+}
+
+.niceeval-view-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-self: end;
+  gap: 12px;
 }
 
 .niceeval-view-mark {
@@ -2516,40 +2531,42 @@ html.niceeval-view-document body {
 
 .niceeval-view-nav a[aria-current="page"] { font-weight: 560; }
 
-.niceeval-view-locale {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  overflow: hidden;
-  border: 1px solid var(--niceeval-color-border, #262626);
-  border-radius: var(--niceeval-radius, 0);
-  background: var(--niceeval-color-surface, #0b0b0b);
+.niceeval-view-experiment {
+  min-width: 0;
+  color: var(--niceeval-color-text-secondary, #a1a1aa);
+  font-size: 12px;
 }
 
-.niceeval-view-locale button {
-  height: 30px;
-  min-width: 44px;
-  border: 0;
-  border-right: 1px solid var(--niceeval-color-border, #262626);
-  padding: 0;
-  color: var(--niceeval-color-text-secondary, #a1a1aa);
-  background: transparent;
+.niceeval-view-experiment label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.niceeval-view-experiment select,
+.niceeval-view-language select {
+  min-width: 132px;
+  height: 32px;
+  border: 1px solid var(--niceeval-color-border, #262626);
+  border-radius: var(--niceeval-radius, 0);
+  padding: 0 28px 0 10px;
+  color: var(--niceeval-color-text, #ededed);
+  background: var(--niceeval-color-surface, #0b0b0b);
   font: inherit;
-  font-size: 12px;
-  line-height: 1;
+  font-size: 14px;
   cursor: pointer;
 }
 
-.niceeval-view-locale button:last-child { border-right: 0; }
-.niceeval-view-locale button:hover { color: var(--niceeval-color-text, #ededed); }
-.niceeval-view-locale button.is-active {
-  color: var(--niceeval-color-text, #ededed);
-  background: var(--niceeval-color-surface-subtle, #111111);
-  font-weight: 620;
+.niceeval-view-language {
+  display: block;
+  flex: 0 0 auto;
 }
 
+.niceeval-view-language select { min-width: 76px; }
+
 .niceeval-view-nav a:focus-visible,
-.niceeval-view-locale button:focus-visible,
+.niceeval-view-experiment select:focus-visible,
+.niceeval-view-language select:focus-visible,
 .niceeval-view-brand:focus-visible {
   outline: 1px solid var(--niceeval-color-focus, #cbd6dc);
   outline-offset: 2px;
@@ -2665,14 +2682,21 @@ html.niceeval-view-document body {
 [data-niceeval-locale][hidden] { display: none !important; }
 
 @media (max-width: 760px) {
-  .niceeval-view-shell { padding: 0 20px; }
-  .niceeval-view-nav { display: none; }
-  .niceeval-view-locale button { min-width: 40px; }
+  .niceeval-view-shell {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 0 20px;
+  }
+  .niceeval-view-pages { display: none; }
+  .niceeval-view-controls { grid-column: 2; }
+  .niceeval-view-experiment noscript .niceeval-view-nav { display: none; }
+  .niceeval-view-experiment label > span { display: none; }
+  .niceeval-view-experiment select { min-width: 108px; }
+  .niceeval-view-language select { min-width: 68px; }
   .niceeval-view-main { width: min(calc(100vw - 28px), 1120px); padding-top: 42px; }
 }
 
 @media print {
   .niceeval-view-shell { position: static; }
-  .niceeval-view-locale { display: none; }
+  .niceeval-view-controls { display: none; }
   .niceeval-view-main { width: auto; padding: 0; }
 }

@@ -129,10 +129,8 @@ jobs:
     name: release e2e (${{ matrix.id }})
     needs: prepare-release
     runs-on: ubuntu-24.04
-    # host / docker cell 保留四分钟性能门槛。browser cache 只覆盖浏览器二进制，
-    # `playwright install --with-deps` 的 apt 系统依赖不在 cache 中，给 browser cell
-    # 两分钟独立的镜像抖动余量，避免慢 apt 下载把已缓存的浏览器场景误判为 cancelled。
-    timeout-minutes: ${{ (contains(matrix.requires.browsers, 'chromium') || contains(matrix.requires.browsers, 'firefox') || contains(matrix.requires.browsers, 'webkit')) && 6 || 4 }}
+    # Each Repo owns its test budget through e2e.json timeoutMinutes. Do not add
+    # a cell-wide deadline that can cancel independent Repo cleanup or receipts.
     environment: release
     strategy:
       fail-fast: false

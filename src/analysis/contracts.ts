@@ -223,6 +223,46 @@ export interface Sample {
   readonly [sampleCapabilityTypeId]: true;
 }
 
+export type ExperimentGroupIdentity =
+  | { readonly kind: "named"; readonly groupId: string; readonly key: `named/${string}` }
+  | { readonly kind: "singleton"; readonly experimentId: ExperimentId; readonly key: `singleton/${string}` };
+
+export type NonComparableReason = "eval-population-mismatch";
+
+export interface NonComparableIssue {
+  readonly reason: NonComparableReason;
+  readonly members: readonly ExperimentId[];
+  readonly actual: readonly {
+    readonly member: ExperimentId;
+    readonly population: JsonValue | null;
+    readonly basis: JsonValue | null;
+  }[];
+  readonly refs: readonly EvidenceRef[];
+  readonly params: Readonly<Record<string, JsonValue>>;
+}
+
+export type ExperimentComparisonState =
+  | { readonly state: "comparable"; readonly members: readonly ExperimentId[] }
+  | {
+      readonly state: "non-comparable";
+      readonly members: readonly ExperimentId[];
+      readonly issues: readonly NonComparableIssue[];
+    };
+
+const experimentComparisonScopeTypeId: unique symbol = Symbol("niceeval.analysis.ExperimentComparisonScope");
+
+/** Analysis-issued comparison capability; the backing Sample remains private. */
+export interface ExperimentComparisonScope {
+  readonly group: ExperimentGroupIdentity;
+  readonly comparison: ExperimentComparisonState;
+  readonly [experimentComparisonScopeTypeId]: true;
+}
+
+export interface AnalysisComparisonGroupMismatchError {
+  readonly code: "analysis-comparison-group-mismatch";
+  readonly groups: readonly ExperimentGroupIdentity[];
+}
+
 export interface SampleSelector {
   readonly runIds?: readonly RunId[];
   readonly slotIds?: readonly SlotId[];
