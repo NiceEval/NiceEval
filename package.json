@@ -242,6 +242,7 @@
     "build:report": "pnpm run build:package",
     "build:package": "pnpm run view:build && node scripts/package-runtime/build.mjs",
     "build:index": "tsx scripts/generate-reference.ts --bundled-index",
+    "dev:link": "node scripts/link-consumer.mjs",
     "prepare": "pnpm run build:package && pnpm run build:index && husky && node scripts/configure-husky.mjs",
     "site:dev": "cd site && node scripts/dev.mjs",
     "site:build": "cd site && next build && cd .. && tsx scripts/submit-indexnow.ts",
