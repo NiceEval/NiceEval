@@ -269,15 +269,35 @@ const SampleSchemaParseOptions = Object.freeze({
   onExcessProperty: "error" as const,
 });
 
+/** Preserve the former JSON-record boundary before each exact Struct parse. */
+type PlainObject = Readonly<Record<PropertyKey, unknown>>;
+
+const PlainObjectSchema = Schema.declare<PlainObject>(
+  (value): value is PlainObject => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  },
+  { identifier: "SamplePlainObject", description: "a plain object or null-prototype record" },
+);
+
+const plainStruct = <Fields extends Schema.Struct.Fields>(fields: Fields) =>
+  Schema.compose(Schema.Struct(fields), { strict: false })(PlainObjectSchema);
+
 const AttemptOrdinalSchema = Schema.JsonNumber.pipe(Schema.filter(
   (value): value is number => Number.isSafeInteger(value) && value >= 0,
-  { identifier: "SampleAttemptOrdinal", description: "a zero-based non-negative safe attempt ordinal" },
+  {
+    identifier: "SampleAttemptOrdinal",
+    description: "a zero-based non-negative safe attempt ordinal",
+  },
 ));
 
-const AttemptLocatorSchema: Schema.Schema<AttemptLocator, string> = Schema.String.pipe(Schema.filter<string, AttemptLocator>(
-  (value): value is AttemptLocator => parseAttemptLocator(value).valid,
-  { identifier: "SampleAttemptLocator", description: "a canonical Attempt locator" },
-));
+const AttemptLocatorSchema: Schema.Schema<AttemptLocator, string> = Schema.String.pipe(
+  Schema.filter<string, AttemptLocator>(
+    (value): value is AttemptLocator => parseAttemptLocator(value).valid,
+    { identifier: "SampleAttemptLocator", description: "a canonical Attempt locator" },
+  ),
+);
 
 const JsonValueSchema: Schema.Schema<JsonValue> = Schema.suspend(() => Schema.Union(
   Schema.Null,
@@ -288,8 +308,8 @@ const JsonValueSchema: Schema.Schema<JsonValue> = Schema.suspend(() => Schema.Un
   Schema.Record({ key: Schema.String, value: JsonValueSchema }),
 ));
 
-const RunContextWireSchema = Schema.Struct({
-  execution: Schema.Struct({
+const RunContextWireSchema = plainStruct({
+  execution: plainStruct({
     agentId: Schema.String.pipe(Schema.minLength(1)),
     model: Schema.NullOr(Schema.String),
     reasoningEffort: Schema.NullOr(Schema.String),
@@ -298,19 +318,24 @@ const RunContextWireSchema = Schema.Struct({
   labels: Schema.Record({ key: Schema.String, value: Schema.String }),
 });
 
-const SelectionProblemSchema = Schema.Struct({
-  code: Schema.Literal("incomplete-run", "record-core-invalid", "selection-run-missing", "selection-run-unreadable"),
+const SelectionProblemSchema = plainStruct({
+  code: Schema.Literal(
+    "incomplete-run",
+    "record-core-invalid",
+    "selection-run-missing",
+    "selection-run-unreadable",
+  ),
   runId: RunIdSchema,
 });
 
 const SelectionSchema = Schema.Union(
-  Schema.Struct({
+  plainStruct({
     policy: Schema.Literal("explicit-runs"),
     runIds: Schema.Array(RunIdSchema),
     selectedRunIds: Schema.Array(RunIdSchema),
     problems: Schema.Array(SelectionProblemSchema),
   }),
-  Schema.Struct({
+  plainStruct({
     policy: Schema.Literal("project-current"),
     experimentIds: Schema.Union(Schema.Literal("all"), Schema.Array(ExperimentIdSchema)),
     selectedRunIds: Schema.Array(RunIdSchema),
@@ -318,7 +343,7 @@ const SelectionSchema = Schema.Union(
   }),
 );
 
-const RunSchema = Schema.Struct({
+const RunSchema = plainStruct({
   runId: RunIdSchema,
   experimentId: ExperimentIdSchema,
   context: Schema.NullOr(RunContextWireSchema),
@@ -336,38 +361,52 @@ const SlotReferenceFields = {
   executionIdentityDigest: ExecutionIdentityDigestSchema,
 };
 
-const AttemptEvidenceSchema = Schema.Struct({
+const AttemptEvidenceSchema = plainStruct({
   kind: Schema.Literal("attempt"),
   locator: AttemptLocatorSchema,
   originRunId: RunIdSchema,
 });
 
-const IssueSchema = Schema.Struct({
-  code: Schema.Literal("missing", "migration-required", "unsupported", "producer-incompatible", "input-invalid", "reduction-failed", "relation-unmatched"),
+const IssueSchema = plainStruct({
+  code: Schema.Literal(
+    "missing",
+    "migration-required",
+    "unsupported",
+    "producer-incompatible",
+    "input-invalid",
+    "reduction-failed",
+    "relation-unmatched",
+  ),
   message: Schema.String,
-  refs: Schema.Array(Schema.Struct({
-    identity: Schema.Struct({ kind: Schema.Literal("attempt"), locator: AttemptLocatorSchema }),
+  refs: Schema.Array(plainStruct({
+    identity: plainStruct({ kind: Schema.Literal("attempt"), locator: AttemptLocatorSchema }),
   })),
 });
 
 const ActiveSlotSchema = Schema.Union(
-  Schema.Struct({
+  plainStruct({
     ...SlotReferenceFields,
     state: Schema.Literal("included"),
     action: Schema.Literal("executed", "carried", "accepted"),
     relation: Schema.Literal("origin", "reference"),
     attempt: AttemptEvidenceSchema,
   }),
-  Schema.Struct({
+  plainStruct({
     ...SlotReferenceFields,
     state: Schema.Literal("not-recorded"),
     action: Schema.Literal("not-dispatched", "interrupted").pipe(Schema.NullOr),
     attempt: Schema.Null,
   }),
-  Schema.Struct({
+  plainStruct({
     ...SlotReferenceFields,
     state: Schema.Literal("core-invalid"),
-    action: Schema.Literal("executed", "carried", "accepted", "not-dispatched", "interrupted").pipe(Schema.NullOr),
+    action: Schema.Literal(
+      "executed",
+      "carried",
+      "accepted",
+      "not-dispatched",
+      "interrupted",
+    ).pipe(Schema.NullOr),
     attempt: Schema.Null,
     issues: Schema.Array(IssueSchema),
   }),
@@ -375,20 +414,24 @@ const ActiveSlotSchema = Schema.Union(
 
 const SlotSchemaRaw = Schema.suspend(() => Schema.Union(
   ActiveSlotSchema,
-  Schema.Struct({ ...SlotReferenceFields, state: Schema.Literal("excluded"), base: ActiveSlotSchema }),
-  Schema.Struct({
+  plainStruct({
+    ...SlotReferenceFields,
+    state: Schema.Literal("excluded"),
+    base: ActiveSlotSchema,
+  }),
+  plainStruct({
     ...SlotReferenceFields,
     state: Schema.Literal("excluded"),
     base: ActiveSlotSchema,
     reason: Schema.Literal("identity-mismatch"),
- }),
+  }),
 ));
 
 const SlotSchema: Schema.Schema<AnalysisSlot, Schema.Schema.Encoded<typeof SlotSchemaRaw>> = SlotSchemaRaw;
 
-const SampleSnapshotWireSchema = Schema.Struct({
+const SampleSnapshotWireSchema = plainStruct({
   version: Schema.Literal(1),
-  identity: Schema.Struct({ kind: Schema.Literal("analysis-sample"), id: Schema.String }),
+  identity: plainStruct({ kind: Schema.Literal("analysis-sample"), id: Schema.String }),
   selection: SelectionSchema,
   runs: Schema.Array(RunSchema).pipe(Schema.filter(
     (runs) => runs.length <= MAX_SELECTED_RUNS,
@@ -398,7 +441,7 @@ const SampleSnapshotWireSchema = Schema.Struct({
     (slots) => slots.length <= MAX_SLOTS,
     { identifier: "SampleSlots", description: "at most 250000 Slots" },
   )),
-  coverage: Schema.Struct({
+  coverage: plainStruct({
     frameTotal: Schema.JsonNumber,
     selected: Schema.JsonNumber,
     included: Schema.JsonNumber,
@@ -492,8 +535,18 @@ function closeDecodedSlot(
 function canonicalizeSelection(selection: Schema.Schema.Type<typeof SelectionSchema>): AnalysisSelectionSummary {
   const problems = normalizedSelectionProblems(selection.problems);
   return selection.policy === "explicit-runs"
-    ? Object.freeze({ policy: selection.policy, runIds: uniqueSorted(selection.runIds), selectedRunIds: uniqueSorted(selection.selectedRunIds), problems })
-    : Object.freeze({ policy: selection.policy, experimentIds: selection.experimentIds === "all" ? "all" : uniqueSorted(selection.experimentIds), selectedRunIds: uniqueSorted(selection.selectedRunIds), problems });
+    ? Object.freeze({
+      policy: selection.policy,
+      runIds: uniqueSorted(selection.runIds),
+      selectedRunIds: uniqueSorted(selection.selectedRunIds),
+      problems,
+    })
+    : Object.freeze({
+      policy: selection.policy,
+      experimentIds: selection.experimentIds === "all" ? "all" : uniqueSorted(selection.experimentIds),
+      selectedRunIds: uniqueSorted(selection.selectedRunIds),
+      problems,
+    });
 }
 
 /** A Snapshot Slot is a derived occurrence of exactly one closed AnalysisRun. */
@@ -1032,20 +1085,8 @@ function uniqueSorted<Value extends string>(values: readonly Value[]): readonly 
   return Object.freeze([...new Set<Value>(values)].sort(compareCanonicalIdentity));
 }
 
-function sameIdentity(value: unknown, expected: SampleIdentity): boolean {
-  return isExactObject(value, ["kind", "id"])
-    && valueAt(value, "kind") === expected.kind
-    && valueAt(value, "id") === expected.id;
-}
-
 function sameCoverage(value: unknown, expected: SampleCoverage): boolean {
-  return isExactObject(value, ["frameTotal", "selected", "included", "notRecorded", "coreInvalid", "excluded"])
-    && valueAt(value, "frameTotal") === expected.frameTotal
-    && valueAt(value, "selected") === expected.selected
-    && valueAt(value, "included") === expected.included
-    && valueAt(value, "notRecorded") === expected.notRecorded
-    && valueAt(value, "coreInvalid") === expected.coreInvalid
-    && valueAt(value, "excluded") === expected.excluded;
+  return JSON.stringify(value) === JSON.stringify(expected);
 }
 
 function codecException(error: SampleSnapshotCodecError): Error {
@@ -1063,20 +1104,4 @@ function canonicalIdentity(value: unknown): string {
   const encoded = JSON.stringify(value);
   if (encoded === undefined) throw new Error("Sample identity input must be JSON-serializable");
   return `sample-v1:${encoded}`;
-}
-
-function isPlainObject(value: unknown): value is object {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function isExactObject(value: unknown, keys: readonly string[]): value is object {
-  if (!isPlainObject(value)) return false;
-  const actual = Reflect.ownKeys(value);
-  return actual.length === keys.length && actual.every((key) => typeof key === "string" && keys.includes(key));
-}
-
-function valueAt(value: object, key: string): unknown {
-  return Reflect.get(value, key);
 }
