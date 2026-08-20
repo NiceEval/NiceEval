@@ -429,6 +429,15 @@ const SlotSchemaRaw = Schema.suspend(() => Schema.Union(
 
 const SlotSchema: Schema.Schema<AnalysisSlot, Schema.Schema.Encoded<typeof SlotSchemaRaw>> = SlotSchemaRaw;
 
+const CoverageWireSchema = plainStruct({
+  frameTotal: Schema.JsonNumber,
+  selected: Schema.JsonNumber,
+  included: Schema.JsonNumber,
+  notRecorded: Schema.JsonNumber,
+  coreInvalid: Schema.JsonNumber,
+  excluded: Schema.JsonNumber,
+});
+
 const SampleSnapshotWireSchema = plainStruct({
   version: Schema.Literal(1),
   identity: plainStruct({ kind: Schema.Literal("analysis-sample"), id: Schema.String }),
@@ -441,14 +450,7 @@ const SampleSnapshotWireSchema = plainStruct({
     (slots) => slots.length <= MAX_SLOTS,
     { identifier: "SampleSlots", description: "at most 250000 Slots" },
   )),
-  coverage: plainStruct({
-    frameTotal: Schema.JsonNumber,
-    selected: Schema.JsonNumber,
-    included: Schema.JsonNumber,
-    notRecorded: Schema.JsonNumber,
-    coreInvalid: Schema.JsonNumber,
-    excluded: Schema.JsonNumber,
-  }),
+  coverage: CoverageWireSchema,
 });
 
 function canonicalizeSnapshotWire(input: Schema.Schema.Type<typeof SampleSnapshotWireSchema>): Either.Either<{
@@ -1085,8 +1087,16 @@ function uniqueSorted<Value extends string>(values: readonly Value[]): readonly 
   return Object.freeze([...new Set<Value>(values)].sort(compareCanonicalIdentity));
 }
 
-function sameCoverage(value: unknown, expected: SampleCoverage): boolean {
-  return JSON.stringify(value) === JSON.stringify(expected);
+function sameCoverage(
+  value: Schema.Schema.Type<typeof CoverageWireSchema>,
+  expected: SampleCoverage,
+): boolean {
+  return value.frameTotal === expected.frameTotal
+    && value.selected === expected.selected
+    && value.included === expected.included
+    && value.notRecorded === expected.notRecorded
+    && value.coreInvalid === expected.coreInvalid
+    && value.excluded === expected.excluded;
 }
 
 function codecException(error: SampleSnapshotCodecError): Error {
