@@ -229,8 +229,9 @@ batch 是共机放置单位，不是限流单位；plan 不携带 CI 限流参�
 资源竞争、OOM 或尾延迟通过把 manifest 显式拆到 `docker-1`、`docker-2`、`docker-3` 等更多 matrix cell 处理，
 不能通过让同格 Repo 排队来换取通过；拆分不改变 lane 的精确 Repo 集。
 
-matrix cell 的 4 分钟上限包含 runner/action 启动、依赖安装与同 cell 的并行 live Repo；这是 E2E 关键路径的性能门槛。
-每个 Repo 的产品执行预算仍由 manifest 自己收紧，不能用 job 上限放宽 provider timeout。
+matrix cell 的 5 分钟外层上限包含 runner/action 启动、依赖安装、artifact 收集与 cleanup；这是 E2E 关键路径的性能门槛。
+每个 Repo 的产品执行预算仍由 manifest 自己收紧，外层比最长 host Repo 的 4 分钟测试预算多留一分钟编排余量，
+不能用 job 上限放宽 provider timeout。
 
 每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；Repo batch 的 artifact root 下仍按 Repo ID 分目录并
 保存独立 receipt，batch summary 列全该格 Repo。GitHub 原生汇总 matrix 成败，不再启动一个 job 下载并复述所有 cell 的结果。
@@ -274,9 +275,10 @@ Docker cgroup 的 `cpu.max`、`memory.max`、`memory.swap.max` 与 `pids.max` �
 - 同一 checkout 的独立根 E2E invocation 可以并发启动；只有会触发共享 `prepare` 写入的 candidate `pnpm pack` 生命周期按 canonical checkout 的跨进程 lease 局部串行，计划、Testkit snapshot、隔离 Repo 与 run 阶段继续并发；
 - lease 位于 OS 临时控制目录而不进入待打包文件。正常退出、失败或取消都会释放；进程崩溃留下的 lease fail-closed 并报出精确人工删除路径，绝不靠超时或不安全删除让两个 pack 同时写入；
 - 无密钥 host Repo 可按 CPU 并行，每个 Repo 独立副本；
-- CI E2E matrix 按 capability 选择 Blacksmith runner：声明 `requires.docker: true` 的 cell 使用 4 vCPU，
-  其它 host / browser cell 使用 2 vCPU。所有独立 Repo 按 manifest `batch` 装箱，格内并发启动且各 Repo 保留
-  自己的 file / experiment / attempt 并发；这些 owner 的主要开销是依赖安装、容器启动、浏览器与外部 I/O 等待，不把 vCPU 数当作 I/O 并发上限；
+- CI E2E matrix 使用标准 GitHub-hosted `ubuntu-24.04` runner；browser cell 只是在同类 runner 上进入精确 Playwright
+  container，不切换 runner 供应商或规格。当前 public repository 的该标签由 GitHub 定义为 4 vCPU，但并发预算仍以 workflow
+  与实测收据为准，不从 runner 名称猜测。所有独立 Repo 按 manifest `batch` 装箱，格内并发启动且各 Repo 保留自己的
+  file / experiment / attempt 并发；这些 owner 的主要开销是依赖安装、容器启动、浏览器与外部 I/O 等待，不把 vCPU 数当作 I/O 并发上限；
 - Repo 内保留 Vitest / Playwright 的默认文件级并行；短命控制文件、结果根、项目副本与资源名按 case 隔离；
 - 出现 OOM、daemon 抖动或显著尾延迟时，把部分 Repo 显式移到 `docker-2`、`host-2` 等新 batch，不以升配 CPU 作为默认修法；
 - live provider 按 provider / account 建 concurrency group，避免同一配额互相制造 429；
