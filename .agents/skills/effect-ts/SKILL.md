@@ -1,11 +1,24 @@
 ---
 name: effect-ts
-description: Use when work in NiceEval touches Effect v3 code, including runtime boundaries, typed errors, Schema, Scope, concurrency, retries, services, layers, observability, or Effect-backed tests. Keep the repository on Effect v3 unless the user explicitly authorizes a v4 migration, and verify exact APIs against the installed v3 source.
+description: Use when implementing, debugging, or reviewing NiceEval code whose correctness depends on Effect v3 APIs or semantics, including typed failures, Schema decoding, Scope and resource lifecycles, concurrency, retries, services, layers, or Effect-backed tests. Do not use for domain modeling, data ownership, ordinary control-flow analysis, or generic observability questions that can be answered without reasoning about Effect behavior.
 ---
 
 # Effect v3 workflow
 
 Treat this repository as an Effect v3 codebase. Do not install `effect@beta`, use v4-only `effect/unstable/*` imports, or apply v4 package-alignment rules.
+
+## Applicability gate
+
+Use this workflow only when the task requires changing Effect code or making a claim that depends on exact Effect v3 behavior.
+
+Do not activate it merely because:
+
+- the inspected file imports Effect;
+- the relevant implementation happens to be Effect-based;
+- the task mentions Schema or observability in a product-domain sense;
+- a domain or data-ownership question can be answered from payloads and write paths alone.
+
+If removing Effect from the implementation would leave the question unchanged, handle the task without this skill.
 
 ## Establish the version and source
 
