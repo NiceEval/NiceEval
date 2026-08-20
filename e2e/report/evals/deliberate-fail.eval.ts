@@ -12,6 +12,17 @@ export default defineEval({
     turn.notCalledTool(
       toolMatch({ input: referencesAnyPath(["report-notes.txt", "evals", "agents"]) }),
     ).label("No private source access");
+    turn.notCalledTool(
+      toolMatch({
+        input: referencesAnyPath([
+          "package.json",
+          "AGENTS.md",
+          "CLAUDE.md",
+          "INIT.md",
+          "node_modules/niceeval",
+        ]),
+      }),
+    ).label("No project guidance access");
     t.check("actual fixture value", includes("expected fixture value"))
       .label("Expected fixture value");
   },
