@@ -32,6 +32,7 @@ interface TestDirective {
   source?: "full" | { fragments: FragmentSpec[]; reason: string };
 }
 interface RenderedBody { body: string; metadata: FinalMetadata; referencedFiles: string[] }
+interface ManagedBody { authored: string; suffix?: string }
 
 const HELP = `NiceEval PR body compiler
 
@@ -390,6 +391,18 @@ function byteReport(body: string): string {
   const width = Math.max(7, ...rows.map((row) => row.name.length));
   return [`PR body: ${Buffer.byteLength(body).toLocaleString("en-US")} bytes`, ...rows.map((row) => `${row.name.padEnd(width)}  ${row.bytes.toLocaleString("en-US").padStart(8)}`)].join("\n");
 }
+function splitManagedBody(body: string): ManagedBody {
+  const startMarker = "<!-- codesmith:footer -->";
+  const endMarker = "<!-- /codesmith:footer -->";
+  const start = body.indexOf(startMarker);
+  if (start === -1) return { authored: `${body.trimEnd()}\n` };
+  const end = body.indexOf(endMarker, start + startMarker.length);
+  if (end === -1 || body.slice(end + endMarker.length).trim()) return { authored: `${body.trimEnd()}\n` };
+  return {
+    authored: `${body.slice(0, start).trimEnd()}\n`,
+    suffix: body.slice(start, end + endMarker.length).trim(),
+  };
+}
 function validate(rendered: RenderedBody, options: Options, compareRemote: boolean): void {
   const errors = validateStructure(rendered.body, rendered.metadata);
   const bytes = Buffer.byteLength(rendered.body);
@@ -399,7 +412,7 @@ function validate(rendered: RenderedBody, options: Options, compareRemote: boole
     if (!options.pr) fail("remote comparison requires --pr");
     const remote = JSON.parse(gh(["pr", "view", String(options.pr), "--json", "body,headRefOid"])) as { body: string; headRefOid: string };
     if (remote.headRefOid !== rendered.metadata.head) errors.push(`GitHub PR head ${remote.headRefOid} does not match local HEAD ${rendered.metadata.head}`);
-    if (`${remote.body.trimEnd()}\n` !== rendered.body) errors.push("GitHub PR body is stale relative to the rendered draft");
+    if (splitManagedBody(remote.body).authored !== rendered.body) errors.push("GitHub PR body is stale relative to the rendered draft");
   }
   process.stdout.write(`${byteReport(rendered.body)}\n`);
   if (errors.length) fail(`PR body check failed:\n${errors.map((error) => `- ${error}`).join("\n")}`);
@@ -422,11 +435,16 @@ function main(): void {
   validate(rendered, options, false);
   const dirty = rendered.referencedFiles.filter((path) => git(["status", "--short", "--", path]).length > 0);
   if (dirty.length) fail(`apply requires committed referenced source files:\n${dirty.map((path) => `- ${path}`).join("\n")}`);
-  const remote = JSON.parse(gh(["pr", "view", String(options.pr), "--json", "headRefOid"])) as { headRefOid: string };
+  const remote = JSON.parse(gh(["pr", "view", String(options.pr), "--json", "body,headRefOid"])) as { body: string; headRefOid: string };
   if (remote.headRefOid !== rendered.metadata.head) fail(`refusing to apply: GitHub PR head ${remote.headRefOid} does not match local HEAD ${rendered.metadata.head}`);
+  const managed = splitManagedBody(remote.body);
+  const appliedBody = managed.suffix ? `${rendered.body.trimEnd()}\n\n${managed.suffix}\n` : rendered.body;
+  if (Buffer.byteLength(appliedBody) > GITHUB_LIMIT) {
+    fail(`refusing to apply: authored body plus managed GitHub footer exceeds ${GITHUB_LIMIT} bytes`);
+  }
   const output = resolve(git(["rev-parse", "--absolute-git-dir"]), "niceeval", "pr-body", `${options.pr}.rendered.md`);
   mkdirSync(dirname(output), { recursive: true });
-  writeFileSync(output, rendered.body);
+  writeFileSync(output, appliedBody);
   gh(["pr", "edit", String(options.pr), "--body-file", output]);
   process.stdout.write(`Updated PR #${options.pr} from ${draftPath(options)}\n`);
 }
