@@ -26,13 +26,35 @@ import {
   builtInMachineProducerIds,
   defineBuiltInReport,
 } from "./machine.ts";
+import {
+  standardAttemptPage,
+  standardExperimentPage,
+  standardNamedGroupPage,
+  standardSingletonGroupPage,
+} from "./standard.tsx";
 
-interface RunMembershipPageInput {
+export interface RunMembershipPageInput {
   readonly hero: HeroData;
   readonly summary: BuiltInSummaryRows;
   readonly members: readonly MembershipRow[];
   readonly errors: readonly RunErrorRow[];
   readonly evidence: Awaited<ReturnType<typeof toAttemptEvidence>>;
+}
+
+/** Closes the data shared by the Human Page and its Host-owned machine producer. */
+export async function loadRunMembershipPageInput(sample: Sample): Promise<RunMembershipPageInput> {
+  const [summary, evidence, diagnostics] = await Promise.all([
+    loadBuiltInSummaryRows(sample),
+    toAttemptEvidence(sample),
+    query(sample, { kind: "domain-view", view: runDiagnosticsView }),
+  ]);
+  return Object.freeze({
+    hero: heroData(sample.snapshot),
+    summary,
+    members: membershipRows(sample.snapshot, diagnostics, evidence),
+    errors: runErrorRows(diagnostics),
+    evidence,
+  });
 }
 
 function heroData(snapshot: SampleSnapshot): HeroData {
@@ -178,20 +200,7 @@ const runMembershipPage = {
   id: "run-membership",
   path: "/",
   title: "Run results",
-  load: async (sample: Sample): Promise<RunMembershipPageInput> => {
-    const [summary, evidence, diagnostics] = await Promise.all([
-      loadBuiltInSummaryRows(sample),
-      toAttemptEvidence(sample),
-      query(sample, { kind: "domain-view", view: runDiagnosticsView }),
-    ]);
-    return Object.freeze({
-      hero: heroData(sample.snapshot),
-      summary,
-      members: membershipRows(sample.snapshot, diagnostics, evidence),
-      errors: runErrorRows(diagnostics),
-      evidence,
-    });
-  },
+  load: loadRunMembershipPageInput,
   render: (input: RunMembershipPageInput) => jsx(RunMembershipResultView, input),
 } satisfies Page<void, RunMembershipPageInput>;
 
@@ -199,7 +208,13 @@ const runMembershipPage = {
 export function runMembershipOverviewReport() {
   return defineBuiltInReport(builtInMachineProducerIds.runMembershipOverview, {
     title: "Run results",
-    pages: [runMembershipPage],
+    pages: [
+      runMembershipPage,
+      standardNamedGroupPage,
+      standardSingletonGroupPage,
+      standardAttemptPage,
+      standardExperimentPage,
+    ],
   });
 }
 

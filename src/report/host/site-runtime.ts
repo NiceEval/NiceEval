@@ -8,7 +8,7 @@ export const REPORT_LOCALE_RUNTIME = `(() => {
   "use strict";
   const locales = ["en", "zh-CN"];
   const views = Array.from(document.querySelectorAll("[data-niceeval-locale]"));
-  const buttons = Array.from(document.querySelectorAll("[data-niceeval-locale-button]"));
+  const selectors = Array.from(document.querySelectorAll("[data-niceeval-locale-select]"));
   if (views.length === 0) return;
   const stored = () => {
     try {
@@ -23,19 +23,20 @@ export const REPORT_LOCALE_RUNTIME = `(() => {
   const select = (locale, persist) => {
     if (!locales.includes(locale)) return;
     for (const view of views) view.hidden = view.dataset.niceevalLocale !== locale;
-    for (const button of buttons) {
-      const active = button.dataset.niceevalLocaleButton === locale;
-      button.setAttribute("aria-pressed", String(active));
-      button.classList.toggle("is-active", active);
-    }
+    for (const selector of selectors) selector.value = locale;
     document.documentElement.lang = locale;
     const title = document.documentElement.getAttribute("data-niceeval-title-" + locale.toLowerCase());
     if (title !== null) document.title = title;
     if (!persist) return;
     try { localStorage.setItem("niceeval:view:locale", locale); } catch {}
   };
-  for (const button of buttons) {
-    button.addEventListener("click", () => select(button.dataset.niceevalLocaleButton, true));
+  for (const selector of selectors) {
+    selector.addEventListener("change", () => select(selector.value, true));
+  }
+  for (const experiment of document.querySelectorAll("[data-niceeval-experiment-select]")) {
+    experiment.addEventListener("change", () => {
+      if (experiment.value) location.href = experiment.value;
+    });
   }
   select(stored() || preferred(), false);
 })();`;

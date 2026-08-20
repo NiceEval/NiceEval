@@ -360,6 +360,61 @@ declare function narrowSample(sample: Sample, selector: SampleSelector): Sample;
 只做单调交集：已排除成员不会重新纳入，操作不重新打开 Record，也不会更新 Snapshot 的历史事实。
 它是 Analysis 的范围操作，不是 Report 的显示筛选。
 
+## 实验组与比较范围
+
+`ExperimentComparisonScope` 是 Analysis 签发的私有品牌能力。它绑定一个父 `Sample` 与一个判别式实验组 identity，不能由作者构造、伪造品牌或在父 Scope 关闭后读取。
+
+```ts
+type ExperimentGroupIdentity =
+  | { readonly kind: "named"; readonly groupId: ExperimentGroupId }
+  | { readonly kind: "singleton"; readonly experimentId: ExperimentId };
+
+type ExperimentComparisonState =
+  | { readonly state: "comparable"; readonly members: readonly ExperimentId[] }
+  | {
+      readonly state: "non-comparable";
+      readonly members: readonly ExperimentId[];
+      readonly issues: readonly NonComparableIssue[];
+    };
+
+interface ExperimentComparisonScope {
+  readonly group: ExperimentGroupIdentity;
+  readonly comparison: ExperimentComparisonState;
+  // private brand and parent-Sample capability
+}
+
+declare function experimentComparisonScope(
+  sample: Sample,
+  group: ExperimentGroupIdentity,
+): ExperimentComparisonScope;
+```
+
+组列表只从 selection 选中的 Run 派生。纯 `identity-mismatch` 的 excluded 历史不产生组或成员；Core invalid、not-dispatched 和 interrupted 仍属于已选 Run，留在组内并贡献问题。comparison member 是去重后的 `ExperimentId`，同一 Experiment 的多个 Run 合并为一个 member。
+
+population（Eval ID 集合）从该 member 的全部非 excluded expected Slot 形成，按 `EvalId` 去重。Attempt ordinal、Attempt 是否建立或 outcome 都不改变这个总体。根级 singleton 与当前 Sample 中只剩一个 member 的 named 组都可形成 comparable scope；它们可显示单行，但不声称相对排名。
+
+### 结构可比性
+
+目录是作者的比较准入声明，Analysis 另行验证可证明的结构条件。同组 member 必须有相同的 `EvalId` 总体。Pass 与 Score 可在同组的独立面板呈现，不互排。不同 Eval 集不自动取交集、补零或缩小分母。
+
+```ts
+type NonComparableReason = "eval-population-mismatch";
+
+interface NonComparableIssue {
+  readonly reason: NonComparableReason;
+  readonly members: readonly ExperimentId[];
+  readonly actual: readonly {
+    readonly member: ExperimentId;
+    readonly population: JsonValue | null;
+    readonly basis: JsonValue | null;
+  }[];
+  readonly refs: readonly EvidenceRef[];
+  readonly params: Readonly<Record<string, JsonValue>>;
+}
+```
+
+`non-comparable` 是闭合业务状态；Report 呈现原因与修复信息，不输出排名或散点。把多个实验组伪造成一个 branded projection 则以 `analysis-comparison-group-mismatch` 失败，不能降级成 `non-comparable`。
+
 ## query 与 aggregate
 
 `aggregate()` 为普通 Report 直接返回闭合行。它从 by 与 values 推断共同 Population，并在读取事实前

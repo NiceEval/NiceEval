@@ -1,73 +1,70 @@
+import { Schema } from "effect";
 import type { ProcessReceipt } from "./process.js";
+import {
+  decodeShowSchema,
+  NonEmptyStringSchema,
+  ShowAttemptEnvelopeFields,
+} from "./show-schema.js";
 
-export interface ShowAttemptDiagnostic {
-  readonly code: string;
-  readonly kind: string;
-  readonly phase: string;
-  readonly summary: string;
-}
+const ShowAttemptDiagnosticOutputSchema = Schema.Struct({
+  code: NonEmptyStringSchema,
+  kind: NonEmptyStringSchema,
+  phase: NonEmptyStringSchema,
+  summary: Schema.String,
+});
 
-interface UnknownRecord {
-  readonly [key: string]: unknown;
-}
+const ShowAttemptDiagnosticSchema = Schema.Struct({
+  ...ShowAttemptDiagnosticOutputSchema.fields,
+  diagnosticId: NonEmptyStringSchema,
+  causes: Schema.Array(Schema.Unknown),
+  redaction: Schema.Unknown,
+  sourceFrame: Schema.Unknown,
+});
 
-function record(value: unknown, path: string, receipt: ProcessReceipt): UnknownRecord {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`decodeShowAttemptDiagnostics(): ${path} is not an object\n\n${receipt.diagnostic()}`);
-  }
-  return value as UnknownRecord;
-}
+const ShowAttemptDiagnosticsDocumentSchema = Schema.Struct({
+  ...ShowAttemptEnvelopeFields,
+  data: Schema.Struct({
+    kind: Schema.Literal("attempt"),
+    evidence: Schema.Unknown,
+    observability: Schema.Struct({
+      kind: Schema.Literal("domain-view"),
+      identity: Schema.Unknown,
+      refs: Schema.Array(Schema.Unknown),
+      issues: Schema.Array(Schema.Unknown),
+      view: Schema.Literal("attempt-observability"),
+      entries: Schema.Tuple(Schema.Struct({
+        attempt: Schema.Unknown,
+        state: Schema.Literal("available"),
+        view: Schema.Literal("attempt-observability"),
+        detail: Schema.Struct({
+          conversation: Schema.Unknown,
+          commands: Schema.Unknown,
+          usage: Schema.Unknown,
+          timing: Schema.Unknown,
+          diagnostics: Schema.Struct({
+            collection: Schema.Unknown,
+            diagnostics: Schema.Array(ShowAttemptDiagnosticSchema),
+          }),
+        }),
+      })),
+    }),
+    fileChanges: Schema.Unknown,
+  }),
+});
 
-function array(value: unknown, path: string, receipt: ProcessReceipt): readonly unknown[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`decodeShowAttemptDiagnostics(): ${path} is not an array\n\n${receipt.diagnostic()}`);
-  }
-  return value;
-}
-
-function string(value: unknown, path: string, receipt: ProcessReceipt): string {
-  if (typeof value !== "string") {
-    throw new Error(`decodeShowAttemptDiagnostics(): ${path} is not a string\n\n${receipt.diagnostic()}`);
-  }
-  return value;
-}
+export type ShowAttemptDiagnostic = Schema.Schema.Type<typeof ShowAttemptDiagnosticOutputSchema>;
 
 /** Strictly read stable diagnostic facts from public `niceeval show @locator --json`. */
 export function decodeShowAttemptDiagnostics(receipt: ProcessReceipt): readonly ShowAttemptDiagnostic[] {
-  const document = record(receipt.json<unknown>(), "$", receipt);
-  if (string(document.schema, "$.schema", receipt) !== "niceeval.show/v1") {
-    throw new Error(`decodeShowAttemptDiagnostics(): $.schema is not niceeval.show/v1\n\n${receipt.diagnostic()}`);
-  }
-  const data = record(document.data, "$.data", receipt);
-  if (string(data.kind, "$.data.kind", receipt) !== "attempt") {
-    throw new Error(`decodeShowAttemptDiagnostics(): $.data.kind is not attempt\n\n${receipt.diagnostic()}`);
-  }
-  const observability = record(data.observability, "$.data.observability", receipt);
-  const entries = array(observability.entries, "$.data.observability.entries", receipt);
-  if (entries.length !== 1) {
-    throw new Error(`decodeShowAttemptDiagnostics(): expected one observability entry, got ${entries.length}\n\n${receipt.diagnostic()}`);
-  }
-  const entry = record(entries[0], "$.data.observability.entries[0]", receipt);
-  if (string(entry.state, "$.data.observability.entries[0].state", receipt) !== "available") {
-    throw new Error(`decodeShowAttemptDiagnostics(): observability entry is not available\n\n${receipt.diagnostic()}`);
-  }
-  const detail = record(entry.detail, "$.data.observability.entries[0].detail", receipt);
-  const diagnostics = record(detail.diagnostics, "$.data.observability.entries[0].detail.diagnostics", receipt);
-  return array(
-    diagnostics.diagnostics,
-    "$.data.observability.entries[0].detail.diagnostics.diagnostics",
+  const document = decodeShowSchema(
+    ShowAttemptDiagnosticsDocumentSchema,
     receipt,
-  ).map((value, index) => {
-    const diagnostic = record(
-      value,
-      `$.data.observability.entries[0].detail.diagnostics.diagnostics[${index}]`,
-      receipt,
-    );
-    return {
-      code: string(diagnostic.code, `diagnostics[${index}].code`, receipt),
-      kind: string(diagnostic.kind, `diagnostics[${index}].kind`, receipt),
-      phase: string(diagnostic.phase, `diagnostics[${index}].phase`, receipt),
-      summary: string(diagnostic.summary, `diagnostics[${index}].summary`, receipt),
-    };
-  });
+    "decodeShowAttemptDiagnostics()",
+  );
+  return document.data.observability.entries[0].detail.diagnostics.diagnostics.map((diagnostic) => ({
+    code: diagnostic.code,
+    kind: diagnostic.kind,
+    phase: diagnostic.phase,
+    summary: diagnostic.summary,
+  }));
 }

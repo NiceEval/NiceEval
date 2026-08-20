@@ -13,7 +13,9 @@ import {
   defineReport,
   experiment,
   passRate,
+  type Sample,
 } from "niceeval/report";
+import { experimentComparisonScope, experimentGroups } from "niceeval/analysis";
 import {
   standardAttemptPage,
   standardExperimentPage,
@@ -55,7 +57,12 @@ const Leaderboard = defineComponent(async (_props, ctx) => {
   );
 });
 
-function classicOverview() {
+function classicOverview(sample: Sample) {
+  const group = experimentGroups(sample).find((entry) => entry.group.key === "named/classic");
+  if (group === undefined) {
+    throw new Error("Classic comparison fixture requires named/classic");
+  }
+  const comparison = experimentComparisonScope(sample, group.group);
   return (
     <Col>
       <MemoryBenchHero />
@@ -65,10 +72,10 @@ function classicOverview() {
         <Leaderboard />
       </Section>
       <Section title={{ en: "Experiment comparison", "zh-CN": "实验对比" }}>
-        <ExperimentScatter />
+        <ExperimentScatter comparison={comparison} />
       </Section>
       <Section title={{ en: "Experiments", "zh-CN": "实验" }}>
-        <ExperimentTable />
+        <ExperimentTable comparison={comparison} />
       </Section>
     </Col>
   );

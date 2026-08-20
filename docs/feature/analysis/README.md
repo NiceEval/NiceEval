@@ -115,6 +115,8 @@ CLI 的 `--run` 与精确 locator 只决定选择哪个历史事实。它们审�
 因而“范围外”“没有 Member”与“Core 损坏”不会混成同一个空值。它不能重新纳入已排除成员，也不能读取
 修改后的 Record。
 
+`experimentComparisonScope(sample, group)` 不是第二种 Sample selection。它在已固定 Sample 内选择唯一实验组，共享父 Scope 寿命，并保留组内全部非 excluded expected Slot 的分母与问题。它不用显示过滤重写 `total`，也不从当前源码补回 Sample 未选中的同组 Experiment。
+
 Scope 关闭后，`query()`、`aggregate()` 与 `narrowSample()` 以 `analysis-sample-closed` 失败，并且不再发起
 I/O。Snapshot 与已经得到的 SemanticFrame、ClosedRows 和 DomainView 不依赖该能力，关闭后仍可呈现或序列化。
 
