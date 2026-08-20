@@ -1653,7 +1653,9 @@ function normalizeUsage(input: {
 }): NormalizedAttemptObservabilityCapture["usage"] {
   // EvalResult.usage remains an aggregate for legacy consumers. Only records
   // captured from actual Session onTurn values above enter this family.
-  if (input.result.evidenceCoverage.usage.status !== "complete") {
+  if (input.result.evidenceCoverage.usage.status === "unavailable") {
+    input.runtime.usageLimitations.addUnsupported("usage-observation");
+  } else if (input.result.evidenceCoverage.usage.status === "partial") {
     input.runtime.usageLimitations.addCaptureFailed("usage-capture", "usage-observation");
   }
   if (input.result.retryAttempts?.some((attempt) => attempt.usage !== undefined) === true) {

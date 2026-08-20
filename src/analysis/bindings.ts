@@ -184,21 +184,14 @@ export const publishedAnalysisInputBindings = Object.freeze({
       readonly core: ClosedAttemptCore;
       readonly payload: RecordAttachmentPayloadSnapshot<AssertionsAttachment>;
     }): InputProjection<boolean> => {
-      const gateFailed = payload.entries.some((entry) => entry.result.gate === "failed");
-      const gateUnavailable = payload.entries.some((entry) => entry.result.gate === "unavailable");
-      if (core.outcome !== "completed") {
-        return Object.freeze({
-          state: "missing" as const,
-          message: "the Attempt did not complete with a pass/fail assertion result",
-        });
+      const verdict = foldRecordedAttemptVerdict({ outcome: core.outcome, assertions: payload });
+      if (verdict === "passed" || verdict === "failed") {
+        return Object.freeze({ state: "value" as const, value: verdict === "passed" });
       }
-      if (gateUnavailable) {
-        return Object.freeze({
-          state: "missing" as const,
-          message: "a gating Assertion result is unavailable",
-        });
-      }
-      return Object.freeze({ state: "value" as const, value: !gateFailed });
+      return Object.freeze({
+        state: "unsupported" as const,
+        message: `Attempt verdict ${verdict} has no pass/fail reading`,
+      });
     },
   }),
   attemptLatencyMs: Object.freeze({
@@ -215,10 +208,7 @@ export const publishedAnalysisInputBindings = Object.freeze({
       }
       const intervals = timing.intervals.filter((interval) => interval.phase === "eval.run");
       if (intervals.length === 0) {
-        return Object.freeze({
-          state: "missing" as const,
-          message: "no eval.run interval was recorded",
-        });
+        return Object.freeze({ state: "value" as const, value: 0 });
       }
       return Object.freeze({
         state: "value" as const,
@@ -257,6 +247,9 @@ export const publishedAnalysisInputBindings = Object.freeze({
           output += observation.tokens;
           hasOutput = true;
         }
+      }
+      if (!hasInput && !hasOutput && usage.observations.every((observation) => observation.kind !== "token-bucket")) {
+        return Object.freeze({ state: "value" as const, value: 0 });
       }
       if (!hasInput || !hasOutput) {
         return Object.freeze({

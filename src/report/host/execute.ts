@@ -210,7 +210,7 @@ export function executeReportSite(input: {
       Effect.gen(function* () {
         const pages: ClosedSitePage[] = [];
         const routeOwners = new Map<string, string>();
-        const siteIssues: AnalysisIssue[] = [];
+        const siteProblems: ReportProblem[] = [];
         const projectionCosts: ReportProjectionCostInput[] = [];
         const pricingProfile = reportPricingProfileJson(input.report);
         // The Report declaration is the only page owner. A custom Report that
@@ -234,7 +234,7 @@ export function executeReportSite(input: {
             });
             yield* addSitePage(pages, routeOwners, page, definition.navigation);
             yield* registerProjectionCosts(pricingProfile, projectionCosts, pageCosts);
-            siteIssues.push(...issues);
+            siteProblems.push(...analysisProblems(issues, page.target.pageId));
             continue;
           }
 
@@ -289,12 +289,12 @@ export function executeReportSite(input: {
             });
             yield* addSitePage(pages, routeOwners, page, false);
             yield* registerProjectionCosts(pricingProfile, projectionCosts, pageCosts);
-            siteIssues.push(...issues);
+            siteProblems.push(...analysisProblems(issues, page.target.pageId));
             yield* checkBuildBudgets(input.budget);
           }
         }
 
-        siteIssues.push(...outerCapture.issues());
+        siteProblems.push(...analysisProblems(outerCapture.issues()));
 
         return Object.freeze({
           startedAtMs,
@@ -308,7 +308,7 @@ export function executeReportSite(input: {
             pricingProfile,
             costs: projectionCosts,
           }),
-          problems: analysisProblems(mergeAnalysisIssues(siteIssues)),
+          problems: mergeReportProblems(siteProblems),
         });
       }),
       Effect.sync(() => outerCapture.close()),
@@ -389,16 +389,18 @@ function reportPricingProfileJson(report: ReportDefinition): JsonValue | null {
   return report.pricing === null ? null : closePricingProfileJson(report.pricing);
 }
 
-/** Merges per-Page issue captures into the site-wide problem table input. */
-function mergeAnalysisIssues(issues: readonly AnalysisIssue[]): readonly AnalysisIssue[] {
-  const unique = new Map<string, AnalysisIssue>();
-  for (const issue of issues) {
-    const key = `${issue.code}\u0000${issue.message}\u0000${issue.refs
-      .map((ref) => ref.identity.locator).sort(compareUtf8).join("\u0001")}`;
-    if (!unique.has(key)) unique.set(key, issue);
+/** Merges captures without discarding the Page scope that produced each issue. */
+function mergeReportProblems(problems: readonly ReportProblem[]): readonly ReportProblem[] {
+  const unique = new Map<string, ReportProblem>();
+  for (const problem of problems) {
+    const key = `${problem.code}\u0000${problem.path.join("\u0001")}\u0000${problem.refs.join("\u0001")}\u0000${problem.summary ?? ""}`;
+    if (!unique.has(key)) unique.set(key, problem);
   }
   return Object.freeze([...unique.values()].sort((left, right) =>
-    compareUtf8(left.code, right.code) || compareUtf8(left.message, right.message)
+    compareUtf8(left.code, right.code) ||
+    compareUtf8(left.path.join("\u0001"), right.path.join("\u0001")) ||
+    compareUtf8(left.refs.join("\u0001"), right.refs.join("\u0001")) ||
+    compareUtf8(left.summary ?? "", right.summary ?? "")
   ));
 }
 

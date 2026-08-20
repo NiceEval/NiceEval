@@ -12,10 +12,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
-interface ExpEvent {
-  readonly event: string;
-}
-
 type DetailKind = "Source" | "Diff" | "Slot";
 
 test("静态站与 view 对同一用户路由交付相同字节，且离线无 JavaScript 仍可浏览", async ({ browser }) => {
@@ -29,8 +25,7 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
       expect(mainRun.expReceipt(), mainRun.diagnostic()).toMatchObject({ completion: "completed" });
       const sourceRun = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
       expect(sourceRun.expReceipt(), sourceRun.diagnostic()).toMatchObject({ completion: "completed" });
-      const slotCount = mainRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length
-        + sourceRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
+      const slotCount = mainRun.expEvalEvents().length + sourceRun.expEvalEvents().length;
       expect(slotCount, mainRun.diagnostic()).toBeGreaterThan(0);
 
       const exported = await niceeval.run([
@@ -203,23 +198,23 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
   );
 });
 
-test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语言切换", async ({ browser }) => {
+test("零配置 view 使用经典报告完成筛选、原生展开、详情下钻与语言切换", async ({ browser }) => {
   test.setTimeout(180_000);
 
   await reportE2E.case(
-    "browser-classic-surface",
+    "browser-default-classic-surface",
     { artifacts: reportCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
       for (const experimentId of ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const) {
         const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
         expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       }
+      const mixedRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(mixedRun.expReceipt(), mixedRun.diagnostic()).toMatchObject({ completion: "completed" });
 
       const view = niceeval.start(
         [
           "view",
-          "--report",
-          "./reports/classic.tsx",
           "--host",
           "127.0.0.1",
           "--port",
@@ -238,8 +233,17 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
 
       const page = await browser.newPage();
       try {
-        await page.goto(new URL("/overview", origin!).href);
-        await expect(page.getByRole("heading", { name: "MemoryBench Classic" })).toBeVisible();
+        await page.goto(origin!);
+        await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+
+        const passChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
+        await expect(passChart).toHaveCount(1);
+        await expect(passChart).toContainText("classic/memory-a");
+        await expect(passChart).toContainText("100%");
+        await expect(passChart).not.toContainText("ratio");
+        const scoreChart = page.locator('svg[aria-label="costUSD × totalScore"]').filter({ visible: true });
+        await expect(scoreChart).toHaveCount(1);
+        await expect(scoreChart).toContainText("main");
 
         const filter = page.getByRole("searchbox").filter({ visible: true });
         await expect(filter).toHaveCount(1);
@@ -377,7 +381,7 @@ test("经典 MemoryBench 报告支持筛选、原生展开、详情下钻与语�
         await expect(page.getByText(/^@[0-9A-Z]+$/).first()).toBeVisible();
         await expect(page.getByText(/^source · execution · timing(?: · diff)?$/).filter({ visible: true })).toBeVisible();
 
-        await page.goto(new URL("/overview", origin!).href);
+        await page.goto(origin!);
         const scatter = page.getByRole("img", { name: "costUSD × passRate" }).filter({ visible: true });
         await expect(scatter).toHaveCount(1);
         await expect(scatter).toContainText("classic/memory-a");

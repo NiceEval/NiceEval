@@ -7,6 +7,10 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
+interface ShowDocument {
+  readonly problems: readonly unknown[];
+}
+
 interface JudgePrecheckWarning {
   event: "warning";
   code: string;
@@ -58,6 +62,14 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       const failedJunit = readFileSync(join(root, "junit", "failed.xml"), "utf8");
       expect(failedJunit).toContain("<failure");
       expect(failedJunit).not.toContain("<error");
+      const shownFailed = await niceeval.run([
+        "show",
+        "--record",
+        ".niceeval/record",
+        "--json",
+      ]);
+      expect(shownFailed.exitCode, shownFailed.diagnostic()).toBe(0);
+      expect(shownFailed.json<ShowDocument>().problems, "failed is a complete assertion result").toEqual([]);
 
       const shownFailedRun = await niceeval.run([
         "show",
@@ -115,6 +127,17 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       expect(shownRun.stdout).toContain(erroredEval.locator!);
       expect(shownRun.stdout).toContain("errored");
       expect(shownRun.stdout).not.toContain("Membership");
+      const shownProjectJson = await niceeval.run([
+        "show",
+        "--record",
+        ".niceeval/record",
+        "--json",
+      ]);
+      expect(shownProjectJson.exitCode, shownProjectJson.diagnostic()).toBe(0);
+      expect(
+        shownProjectJson.json<ShowDocument>().problems,
+        "the project view treats failed and errored as complete terminal results",
+      ).toEqual([]);
 
       const shownAttempt = await niceeval.run([
         "show",
@@ -132,6 +155,18 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
         "deliberate pre-context sandbox prepare failure",
       );
       expect(shownAttempt.stdout).not.toContain("[object Object]");
+      const shownAttemptJson = await niceeval.run([
+        "show",
+        erroredEval.locator!,
+        "--record",
+        ".niceeval/record",
+        "--json",
+      ]);
+      expect(shownAttemptJson.exitCode, shownAttemptJson.diagnostic()).toBe(0);
+      expect(
+        shownAttemptJson.json<ShowDocument>().problems,
+        "an errored setup has no derivative missing-data warning",
+      ).toEqual([]);
     },
   );
 });

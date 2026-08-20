@@ -3,9 +3,11 @@
 import type { ExperimentId, MetricValue, Sample } from "../../../analysis/index.ts";
 import { defineComponent } from "../../definition/tree.ts";
 import {
+  Chart,
   Col,
   Grid,
   Scatter,
+  Series,
   Stat,
   Text,
 } from "../../definition/primitives.tsx";
@@ -30,8 +32,11 @@ import {
 import {
   experimentScatterData,
   sampleSummaryData,
+  type ExperimentScatterPoint,
   type SummarySeries,
 } from "./compute.ts";
+import type { Dataset, DatasetField } from "../../model/types.ts";
+import type { ExperimentListItem } from "../entity-lists/compute.ts";
 
 export { StabilityOverview } from "./stability-overview.tsx";
 export type { StabilityOverviewProps } from "./stability-overview.tsx";
@@ -97,11 +102,17 @@ export interface ExperimentScatterProps {
   readonly connect?: boolean;
   /** Overrides the library's default Experiment detail target for each point. */
   readonly pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined;
+  /** Closed Experiment facts; the standard Report shares these with ExperimentTable. */
+  readonly rows?: readonly ExperimentListItem[];
   readonly locale?: ReportLocale;
   readonly className?: string;
 }
 
-/** An Analysis-backed experiment cost × pass-rate comparison. */
+/**
+ * An Experiment comparison whose primary y axis follows the evaluation kind.
+ * Pass-only Experiments use pass rate; Score and mixed Experiments use total
+ * earned score. A mixed Sample renders the two incomparable units separately.
+ */
 export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (props, ctx) => {
   const locale = props.locale ?? DEFAULT_REPORT_LOCALE;
   const pricing = ctx.report.pricing;
@@ -117,6 +128,7 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
   const data = await experimentScatterData(props.input ?? ctx.scope, {
     series: props.series,
     connect: props.connect,
+    experiments: props.rows,
   }, pricing);
   if (data.points.length > 0 && data.points.every((point) => point.costUSD.state === "migration-required")) {
     return (
@@ -127,19 +139,42 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
       </Col>
     );
   }
+  const passPoints = data.points.filter((point) => point.evaluationKind === "pass");
+  const scorePoints = data.points.filter((point) => point.evaluationKind !== "pass");
+  const pointTarget = props.pointTarget ?? defaultExperimentPointTarget;
   return (
     <Col className={props.className}>
-      <Scatter
-        points={data.points}
-        x="costUSD"
-        y="passRate"
-        point="experiment"
-        series="series"
-        connect={data.connect}
-        pointTarget={props.pointTarget ?? defaultExperimentPointTarget}
-        locale={props.locale}
-        legend
-      />
+      {passPoints.length === 0 ? null : (
+        <Scatter
+          points={passPoints}
+          x="costUSD"
+          y="passRate"
+          point="experiment"
+          series="series"
+          connect={data.connect}
+          pointTarget={pointTarget}
+          locale={props.locale}
+          legend
+        />
+      )}
+      {scorePoints.length === 0 ? null : (
+        <Chart
+          data={scoreScatterDataset(scorePoints)}
+          x="costUSD"
+          y="totalScore"
+          pointTarget={pointTarget}
+          locale={props.locale}
+          legend
+        >
+          <Series
+            id="score"
+            mark="scatter"
+            points="experiment"
+            by="series"
+            connect={data.connect}
+          />
+        </Chart>
+      )}
     </Col>
   );
 });
@@ -156,6 +191,7 @@ export const SampleOverview = defineComponent<SampleOverviewProps>((props) => (
       series={props.series}
       connect={props.connect}
       pointTarget={props.pointTarget}
+      rows={props.rows}
       locale={props.locale}
     />
   </Col>
@@ -171,6 +207,37 @@ function defaultExperimentPointTarget(point: ChartTargetPoint): ReportTarget {
     page: "experiment",
     params: experimentDetailTarget(point.key as ExperimentId),
   };
+}
+
+function scoreScatterDataset(points: readonly ExperimentScatterPoint[]): Dataset {
+  const cost = points[0]?.costUSD;
+  const costField: DatasetField = Object.freeze({
+    name: "costUSD",
+    kind: "metric",
+    valueType: "number",
+    ...(cost?.unit === undefined ? {} : { unit: cost.unit }),
+    ...(cost?.format === undefined ? {} : { format: cost.format }),
+    ...(cost?.better === undefined ? {} : { better: cost.better }),
+    ...(cost?.bounds === undefined ? {} : { bounds: cost.bounds }),
+  });
+  return Object.freeze({
+    fields: Object.freeze([
+      { name: "experiment", kind: "dimension", valueType: "string" },
+      { name: "series", kind: "dimension", valueType: "string" },
+      costField,
+      { name: "totalScore", kind: "metric", valueType: "number", better: "higher", bounds: { min: 0 } },
+    ] satisfies readonly DatasetField[]),
+    rows: Object.freeze(points.map((point) => Object.freeze({
+      // Match Scatter's point="experiment" route identity on the pass branch.
+      key: point.experiment,
+      values: Object.freeze({
+        experiment: point.experiment,
+        series: point.series,
+        costUSD: point.costUSD,
+        totalScore: point.totalScore ?? null,
+      }),
+    }))),
+  });
 }
 
 function rangeText(

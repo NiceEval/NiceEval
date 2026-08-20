@@ -19,7 +19,6 @@ import {
 
 /** Stable names consumed by the Host-owned built-in machine registry. */
 export const builtInMachineProducerIds = Object.freeze({
-  defaultOverview: "niceeval.report.default-overview@v2",
   runMembershipOverview: "niceeval.report.run-membership-overview@v2",
   attemptOverview: "niceeval.report.attempt-overview@v2",
   executionEvidence: "niceeval.report.execution-evidence@v2",
@@ -27,7 +26,6 @@ export const builtInMachineProducerIds = Object.freeze({
   sourceEvidence: "niceeval.report.source-evidence@v2",
   sandboxHistory: "niceeval.report.sandbox-history@v2",
   standard: "niceeval.report.standard@v2",
-  classicOverview: "niceeval.report.classic-overview@v2",
 } as const);
 
 export type BuiltInMachineProducerId =

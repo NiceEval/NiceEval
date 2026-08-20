@@ -8,12 +8,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
-interface ExpEvent {
-  readonly event: string;
-  readonly evalId?: string;
-  readonly locator?: string;
-}
-
 test("view --out 导出完整参数化站点并保护已有目标目录", async () => {
   await reportE2E.case(
     "export",
@@ -23,13 +17,14 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       expect(mainRun.expReceipt(), mainRun.diagnostic()).toMatchObject({ completion: "completed" });
       const sourceRun = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
       expect(sourceRun.expReceipt(), sourceRun.diagnostic()).toMatchObject({ completion: "completed" });
-      const mainSlots = mainRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
-      const sourceSlots = sourceRun.ndjson<ExpEvent>().filter((event) => event.event === "eval").length;
+      const mainEvaluations = mainRun.expEvalEvents();
+      const mainSlots = mainEvaluations.length;
+      const sourceSlots = sourceRun.expEvalEvents().length;
       expect(mainSlots, "main must seal four logical slots").toBe(4);
       expect(mainSlots + sourceSlots, "the fixture Sample must stay small").toBe(5);
       const failed = only(
-        mainRun.ndjson<ExpEvent>(),
-        (event) => event.event === "eval" && event.evalId === "deliberate-fail" && event.locator !== undefined,
+        mainEvaluations,
+        (event) => event.evalId === "deliberate-fail",
         mainRun.diagnostic(),
       );
 
@@ -49,6 +44,9 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       expect(index).toContain("Report fixture");
       expect(index).not.toContain(projectRoot);
       expect(index).not.toContain(".niceeval/");
+      expect(index, "Overview must not inherit a detail Page's missing-input warning")
+        .not.toContain("analysis-missing");
+      expect(index).not.toContain("file-changes is not-recorded");
 
       // The authored hrefs, rather than a hand-built output path, reveal every
       // parameterized instance that static export had to close.
@@ -110,6 +108,8 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       const diff = await readFile(fileURLToPath(new URL("diff/index.html", staticRoot)), "utf8");
       expect(diff).toContain("Diff fixture detail");
       expect(diff).toContain("Diff entries: not-recorded");
+      expect(diff, "the Page that requests an intentionally absent attachment keeps its exact warning")
+        .toMatch(/<code>analysis-missing<\/code> — file-changes is not-recorded/);
 
       const complete = await stat(join(projectRoot, "site-export", "_niceeval", "complete"));
       expect(complete.size).toBe(0);
@@ -130,7 +130,7 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       const attemptExport = await niceeval.run(
         [
           "view",
-          failed.locator!,
+          failed.locator,
           "--out",
           "attempt-export",
           "--no-open",
@@ -140,7 +140,7 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
 
       const attemptIndex = await readFile(join(projectRoot, "attempt-export", "index.html"), "utf8");
       expect(attemptIndex).toContain("Attempt overview");
-      expect(attemptIndex).toContain(failed.locator!);
+      expect(attemptIndex).toContain(failed.locator);
       expect(attemptIndex).not.toContain(projectRoot);
       expect(attemptIndex).not.toContain(".niceeval/");
 

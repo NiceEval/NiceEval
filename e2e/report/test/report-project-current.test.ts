@@ -2,18 +2,11 @@
 // regression: 052b13bb (design: memory/current-result-single-state-ruling.md)
 // rerun: pnpm e2e --repo report -- --run test/report-project-current.test.ts
 
-import { only } from "@niceeval/testkit";
+import { only, type ExpEvent } from "@niceeval/testkit";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
-
-interface ExpEvent {
-  event: string;
-  evalId?: string;
-  verdict?: string;
-  reused?: number;
-}
 
 interface MetricValueJson {
   readonly value: number | null;
@@ -73,8 +66,8 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       expect(initialRun.expReceipt()).toMatchObject({ completion: "completed" });
       expect(
         only(
-          initialRun.ndjson<ExpEvent>(),
-          (event) => event.event === "eval" && event.evalId === "source-snapshot",
+          initialRun.expEvalEvents(),
+          (event) => event.evalId === "source-snapshot",
           initialRun.diagnostic(),
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });
@@ -97,10 +90,10 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
         page: { route: "/", pageId: "overview" },
         data: { kind: "leaderboard" },
       });
-      expect(initialDocument.problems.length).toBeGreaterThan(0);
-      expect(initialDocument.problems).toEqual(expect.arrayContaining([
-        expect.objectContaining({ code: "analysis-missing", path: ["page", "overview"] }),
-      ]));
+      expect(
+        initialDocument.problems,
+        "a completed Eval with no Agent send has known zero usage rather than missing input",
+      ).toEqual([]);
       expect(initialDocument.data.rows).toHaveLength(1);
       expect(initialDocument.data.rows[0]!.passRate).toMatchObject({
         state: "available",
@@ -172,8 +165,8 @@ test("项目未变时复用结果，Eval 源码变化后重新执行并读回新
       ).toMatchObject({ event: "start", reused: 0 });
       expect(
         only(
-          changedRun.ndjson<ExpEvent>(),
-          (event) => event.event === "eval" && event.evalId === "source-snapshot",
+          changedRun.expEvalEvents(),
+          (event) => event.evalId === "source-snapshot",
           changedRun.diagnostic(),
         ),
       ).toMatchObject({ event: "eval", evalId: "source-snapshot", verdict: "passed" });

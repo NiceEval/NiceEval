@@ -504,6 +504,10 @@ export function recordAnalysisIssues(
   if (binding === undefined || binding.lifecycle.closed || issues.length === 0) return;
   if (capture === undefined || capture.closed || capture.lifecycle !== binding.lifecycle) return;
   for (const issue of freezeIssues(issues)) {
+    // Unsupported is a closed, locally renderable MetricValue/DomainView
+    // state. Report components retain it with its refs; it is not a Host-level
+    // warning about a failed or unexpectedly missing analysis input.
+    if (issue.code === "unsupported") continue;
     const key = analysisIssueIdentity(issue);
     if (!capture.issues.has(key)) capture.issues.set(key, issue);
   }
@@ -943,6 +947,7 @@ function readDomainEntry<
         slot.attempt,
         domain.kind,
         cached.read,
+        !(cached.read.state === "not-recorded" && resolved.core.outcome !== "completed"),
       );
     }
     return domainAvailable<Kind>(
@@ -1040,6 +1045,7 @@ function domainFamilyState<Kind extends BuiltinDomainViewKind, Payload>(
   identity: AttemptEvidenceIdentity,
   view: Kind,
   read: Exclude<FixedFamilyRead<Payload>, { readonly state: "available" }>,
+  reportIssue = true,
 ): { readonly value: ClosedDomainEntry<Kind>; readonly issues: readonly AnalysisIssue[] } {
   const state = read.state === "not-recorded"
     ? "not-recorded"
@@ -1059,7 +1065,7 @@ function domainFamilyState<Kind extends BuiltinDomainViewKind, Payload>(
   const value: ClosedDomainEntry<Kind> = Object.freeze({ attempt: identity, state, view });
   return Object.freeze({
     value,
-    issues: Object.freeze([issue]),
+    issues: reportIssue ? Object.freeze([issue]) : Object.freeze([]),
   });
 }
 

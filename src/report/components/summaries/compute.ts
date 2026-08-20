@@ -39,6 +39,7 @@ import {
 } from "../../model/dataset.ts";
 import type { VerdictCounts } from "../../definition/cell.tsx";
 import type { Dataset } from "../../model/types.ts";
+import type { ExperimentListItem } from "../entity-lists/compute.ts";
 
 export interface SampleSummaryData {
   readonly earliestStartedAt: string | null;
@@ -66,6 +67,10 @@ export interface ExperimentScatterPoint extends EvidenceRow {
   /** 成本投影读数;调用方已确认 Report 声明了 PricingProfile。 */
   readonly costUSD: CostMetricValue;
   readonly passRate: MetricValue<number>;
+  /** The Experiment's primary reading kind, shared with ExperimentTable. */
+  readonly evaluationKind: "pass" | "points" | "mixed";
+  /** Closed earned score; absent when score evidence is incomplete or not applicable. */
+  readonly totalScore?: number;
 }
 
 export interface StabilityPoint extends EvidenceRow {
@@ -128,11 +133,17 @@ export async function sampleSummaryData(
 /**
  * Uses Analysis rows for every plotted value. Only display-safe dimensions
  * are normalized into strings; MetricValue, issues, and evidence stay intact.
- * The x axis always stays cost × passRate; duration never replaces cost.
+ * Cost and pass rate remain Analysis MetricValues. Score classification and
+ * earned score reuse the closed Experiment list facts used by ExperimentTable,
+ * so the chart and table agree on every Experiment's primary reading.
  */
 export async function experimentScatterData(
   sample: Sample,
-  options: { readonly series?: SummarySeries; readonly connect?: boolean },
+  options: {
+    readonly series?: SummarySeries;
+    readonly connect?: boolean;
+    readonly experiments?: readonly ExperimentListItem[];
+  },
   pricing: PricingProfile,
 ): Promise<ExperimentScatterData> {
   const line = label("line");
@@ -144,12 +155,19 @@ export async function experimentScatterData(
     by: { experiment, series: group },
     values: { costUSD: costUSD(pricing), passRate },
   });
+  const experimentFacts = new Map(
+    (options.experiments ?? []).map((item) => [String(item.experimentId), item]),
+  );
   const points = Object.freeze(rows.map((row): ExperimentScatterPoint => evidenceRow({
     key: row.key,
     experiment: String(row.experiment),
     series: dimensionText(row.series),
     costUSD: (row as unknown as { readonly costUSD: CostMetricValue }).costUSD,
     passRate: row.passRate,
+    evaluationKind: experimentFacts.get(String(row.experiment))?.evaluationKind ?? "pass",
+    ...(experimentFacts.get(String(row.experiment))?.totalScore === undefined
+      ? {}
+      : { totalScore: experimentFacts.get(String(row.experiment))!.totalScore }),
   })));
   return Object.freeze({ connect, points });
 }

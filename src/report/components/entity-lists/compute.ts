@@ -480,8 +480,8 @@ export async function attemptListData(
 
 /**
  * `experimentListData(sample)`:每个 experiment 一项,展开到每道 Eval;初始排序按
- * 这份列表自身的题型构成选择主读数——当前 facade 只有通过制读数,恒为
- * endToEndPassRate 降序(缺数据沉底,同值按 experimentId 字典序收口)。
+ * 这份列表自身的题型构成选择主读数：纯通过制按 endToEndPassRate，含分数制
+ * 时按 totalScore 降序（缺数据沉底，同值按 experimentId 字典序收口）。
  */
 export async function experimentListData(
   sample: Sample,

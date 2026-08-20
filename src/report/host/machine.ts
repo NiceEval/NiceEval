@@ -79,15 +79,12 @@ const standard: BuiltInMachineProducer<BuiltInMachineProductionFailed, never> = 
     case "attempt":
     case "attempt-overview":
       return attempt(input);
-    case "traces":
-      return execution(input);
     default:
       return leaderboard(input);
   }
 };
 
 const producers = new Map<string, BuiltInMachineProducer<BuiltInMachineProductionFailed, never>>([
-  [builtInMachineProducerIds.defaultOverview, leaderboard],
   [builtInMachineProducerIds.runMembershipOverview, leaderboard],
   [builtInMachineProducerIds.attemptOverview, attempt],
   [builtInMachineProducerIds.executionEvidence, execution],
@@ -95,7 +92,6 @@ const producers = new Map<string, BuiltInMachineProducer<BuiltInMachineProductio
   [builtInMachineProducerIds.sourceEvidence, source],
   [builtInMachineProducerIds.sandboxHistory, execution],
   [builtInMachineProducerIds.standard, standard],
-  [builtInMachineProducerIds.classicOverview, leaderboard],
 ]);
 
 export const builtInMachineRegistry: BuiltInMachineRegistry<BuiltInMachineProductionFailed, never> = Object.freeze({
