@@ -19,6 +19,11 @@ execution claim、session 与 gate 位于项目 `.niceeval/`，并由 Coordinati
 read / append / maintenance lease 位于 `.niceeval/coordination/records/<recordKey>/`。custom Record 的
 lease 位于其 parent 的同形目录。`recordKey` 绑定 canonical physical root，并由不可变 `recordId` 复核。
 
+exclusive maintenance 建立 fence 后，会保守回收被强杀进程遗留的 shared read / append lease。只有
+sidecar 所属同一 host、payload 完整且 OS 以 `ESRCH` 明确证明 PID 不存在时才回收；活 PID、异宿主、
+`EPERM`、畸形或非普通文件仍视为占用。固定路径 `maintenance.lock` 不自动回收，避免路径复用时误删新的
+owner。
+
 这些 local state 不进入 Report，也不随 Record 复制。复制或 Git 操作只在没有活动 reader、writer 或
 maintenance 的静止状态进行。
 

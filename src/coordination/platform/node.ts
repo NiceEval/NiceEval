@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readdir, readFile, unlink, type FileHandle } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, unlink, type FileHandle } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { Effect, Layer } from "effect";
@@ -42,6 +42,15 @@ interface IdentityFile {
 
 const textEncoder = new TextEncoder();
 const leases = new WeakMap<RecordLease, string>();
+const MAXIMUM_LEASE_PAYLOAD_BYTES = 4_096;
+
+interface LeasePayload {
+  readonly version: 1;
+  readonly kind: RecordLeaseKind;
+  readonly host: string;
+  readonly pid: number;
+  readonly nonce: string;
+}
 
 function errorCode(cause: unknown): string | undefined {
   return typeof cause === "object" && cause !== null && "code" in cause &&
@@ -204,6 +213,70 @@ function leasePayload(kind: RecordLeaseKind): Uint8Array {
   );
 }
 
+function decodeLeasePayload(value: unknown): LeasePayload | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  if (
+    Object.keys(value).length !== 5 ||
+    Reflect.get(value, "version") !== 1 ||
+    (Reflect.get(value, "kind") !== "read" &&
+      Reflect.get(value, "kind") !== "append" &&
+      Reflect.get(value, "kind") !== "maintenance") ||
+    typeof Reflect.get(value, "host") !== "string" ||
+    typeof Reflect.get(value, "pid") !== "number" ||
+    !Number.isSafeInteger(Reflect.get(value, "pid")) ||
+    Reflect.get(value, "pid") <= 0 ||
+    typeof Reflect.get(value, "nonce") !== "string" ||
+    Reflect.get(value, "nonce").length === 0
+  ) return undefined;
+  return value as LeasePayload;
+}
+
+/** Only ESRCH proves that a same-host lease owner no longer exists. */
+function ownerIsKnownDead(payload: LeasePayload): boolean {
+  if (payload.host !== hostname()) return false;
+  try {
+    process.kill(payload.pid, 0);
+    return false;
+  } catch (cause) {
+    return errorCode(cause) === "ESRCH";
+  }
+}
+
+function sharedLeaseIsKnownStale(
+  path: string,
+  expectedKind: "read" | "append",
+): Effect.Effect<boolean, RecordFileSystemError> {
+  return Effect.gen(function* () {
+    const metadata = yield* nodeIo({
+      operation: "read-file",
+      path,
+      run: () => lstat(path),
+    }).pipe(
+      Effect.catchAll((error) => isMissing(error.cause) ? Effect.succeed(undefined) : Effect.fail(error)),
+    );
+    if (metadata === undefined) return true;
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > MAXIMUM_LEASE_PAYLOAD_BYTES) {
+      return false;
+    }
+    const bytes = yield* nodeIo({
+      operation: "read-file",
+      path,
+      run: () => readFile(path),
+    }).pipe(
+      Effect.catchAll((error) => isMissing(error.cause) ? Effect.succeed(undefined) : Effect.fail(error)),
+    );
+    if (bytes === undefined) return true;
+    let value: unknown;
+    try {
+      value = JSON.parse(bytes.toString("utf8"));
+    } catch {
+      return false;
+    }
+    const payload = decodeLeasePayload(value);
+    return payload !== undefined && payload.kind === expectedKind && ownerIsKnownDead(payload);
+  });
+}
+
 function makeLease(kind: RecordLeaseKind, path: string): RecordLease {
   const lease = issueRecordLease(kind);
   leases.set(lease, path);
@@ -214,22 +287,33 @@ function sharedDirectory(layout: LeaseLayout, kind: "read" | "append"): string {
   return kind === "read" ? layout.readDirectory : layout.appendDirectory;
 }
 
-function sharedEntriesPresent(
+function liveSharedEntriesPresent(
   layout: LeaseLayout,
 ): Effect.Effect<boolean, RecordFileSystemError> {
-  const directories = [layout.readDirectory, layout.appendDirectory] as const;
-  return Effect.forEach(directories, (directory) =>
-    ensureDirectory(directory).pipe(
-      Effect.zipRight(
-        nodeIo({
-          operation: "list-directory",
-          path: directory,
-          run: () => readdir(directory),
-        }),
-      ),
-    ), { concurrency: 1 }).pipe(
-    Effect.map((entries) => entries.some((items) => items.length > 0)),
-  );
+  const directories = [
+    { path: layout.readDirectory, kind: "read" as const },
+    { path: layout.appendDirectory, kind: "append" as const },
+  ] as const;
+  return Effect.gen(function* () {
+    let occupied = false;
+    for (const directory of directories) {
+      yield* ensureDirectory(directory.path);
+      const entries = yield* nodeIo({
+        operation: "list-directory",
+        path: directory.path,
+        run: () => readdir(directory.path),
+      });
+      for (const entry of entries) {
+        const path = join(directory.path, entry);
+        if (yield* sharedLeaseIsKnownStale(path, directory.kind)) {
+          yield* removeFileIfPresent(path);
+        } else {
+          occupied = true;
+        }
+      }
+    }
+    return occupied;
+  });
 }
 
 function maintenanceBusy(
@@ -264,7 +348,10 @@ function enterSharedLease(
       return yield* Effect.fail(maintenanceBusy("shared"));
     }
 
-    if (yield* pathPresent(layout.maintenanceFile)) {
+    const maintenancePresent = yield* pathPresent(layout.maintenanceFile).pipe(
+      Effect.tapError(() => removeFileIfPresent(path).pipe(Effect.orDie)),
+    );
+    if (maintenancePresent) {
       yield* removeFileIfPresent(path);
       return yield* Effect.fail(maintenanceBusy("shared"));
     }
@@ -294,7 +381,10 @@ function enterMaintenanceLease(
       return yield* Effect.fail(maintenanceBusy("exclusive"));
     }
 
-    if (yield* sharedEntriesPresent(layout)) {
+    const sharedPresent = yield* liveSharedEntriesPresent(layout).pipe(
+      Effect.tapError(() => removeFileIfPresent(layout.maintenanceFile).pipe(Effect.orDie)),
+    );
+    if (sharedPresent) {
       yield* removeFileIfPresent(layout.maintenanceFile);
       return yield* Effect.fail(maintenanceBusy("exclusive"));
     }

@@ -24,6 +24,10 @@ shared read 和 append lease 可并存。每个 `exp` writer 只修改自己排�
 `runs/<RunId>/`，因此正常追加没有全局 writer lock（写入锁）。maintenance 与 reader、writer、clean
 互斥；冲突时返回 `record-maintenance-busy`，而不是等待并持有一个半完成的操作。
 
+被强杀的 reader / writer 若留下 shared lease，下一次 maintenance 只在同 host 且 OS 明确证明原 PID
+不存在时回收它。活 owner、无法核验的 owner 与固定 `maintenance.lock` 继续返回
+`record-maintenance-busy`。
+
 ## `show` 与 `view`
 
 `show` 和 `view` 打开一个 `RecordReadSession`，调用 `selectRuns()`，再把同一个 reader 与

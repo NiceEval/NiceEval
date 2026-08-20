@@ -131,6 +131,10 @@ interface CreateReferenceRunRequest extends CreateRunRequest {}
 不会和 ordinary read/write 交错。execution claim、`maxConcurrency` 与 Slot 去重属于
 `niceeval/coordination/host`，不属于 Record directory 的所有权。
 
+取得 exclusive fence 后，Node Host 可删除同一 host 上 PID 已被 OS 明确判定不存在的遗留 shared
+read / append lease。不能确认死亡的 owner 一律保留并返回 `RecordMaintenanceBusy`；固定路径的
+maintenance lease 不做自动回收。
+
 `CreateRunRequest` 与 `CreateReferenceRunRequest` 都必须带入完整 `context`。writer 在创建目录前验证 exact
 RunContext，并 refine `context.experimentId === experimentId`；它把这个已验证值带入 draft，只有 `seal()` 时
 将它作为 `RunDocument.context` 写入 `run.json`。不能在 session 创建后以当前配置或补丁重新设定 context。
