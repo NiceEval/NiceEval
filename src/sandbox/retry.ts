@@ -50,8 +50,12 @@ export function withProvisionRetry<T>(
   slot?: ProvisionSlot,
   feedback?: ScopedFeedback,
   /**
-   * 对账钩子按 provision token 检索并销毁可能已创建的实例。每次重试前都执行；失败时
-   * 放弃重试并保留原始 create 错误。没有对账通道的歧义失败不盲重试。
+   * 对账钩子:按 provision token 检索远端、销毁可能已创建的实例。提供时**每次重试前都执行**,
+   * 不区分拒绝类还是歧义类——被重试的 create() 闭包跨多个请求,一个 429 可能来自实例已创建
+   * 之后的初始化请求,分类不保证远端没有实例。对账排在退避睡眠之后(紧跟失败发出的检索大概率
+   * 同样被限流);对账抛错即放弃重试、抛回原始 create 错误。没有对账通道的 provider 不传——
+   * 歧义类第一次抛出:宁可判死一个 attempt,不留一台计费的无主实例
+   * (见 docs/feature/sandbox/architecture.md)。
    */
   reconcile?: Effect.Effect<void, unknown>,
 ): Effect.Effect<T, unknown> {
