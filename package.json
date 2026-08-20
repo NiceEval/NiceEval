@@ -234,6 +234,7 @@
     "niceeval": "node bin/niceeval.js",
     "e2e": "tsx e2e/scripts/cli.ts",
     "gen:diff-code": "tsx scripts/gen-diff-code.ts",
+    "pr:body": "tsx scripts/pr-body.ts",
     "docs:reference": "tsx scripts/generate-reference.ts",
     "tiers:sync": "node scripts/sync-tiers.mjs sync",
     "view:build": "vite build --config src/view/app/vite.config.ts",
