@@ -90,11 +90,11 @@ JSON 不包含其它 Page、HTML、React tree、站点 identity 或 Record 读�
 
 默认报告按评估类型选择主读数：
 
-- Pass Eval 显示通过率。
-- Score Eval 显示 earned score。
-- mixed Experiment 显示 Score，并在 Pass Eval 子行显示通过率，不把两者合成百分比。
+- 通过制评估显示通过率。
+- 计分制评估显示 earned score。
+- mixed Experiment 显示 Score，并在通过制评估子行显示通过率，不把两者合成百分比。
 
-Score Eval 上声明的 `points` 是评分项的贡献权重，不是 Experiment 的固定满分。动态执行、条件分支或不可用材料可能让评分项集合不同，因此默认报告不会自动把 earned score 除以所有源码里声明的 `points`。
+计分制评估上声明的 `points` 是评分项的贡献权重，不是 Experiment 的固定满分。动态执行、条件分支或不可用材料可能让评分项集合不同，因此默认报告不会自动把 earned score 除以所有源码里声明的 `points`。
 
 项目没有配置 Report 时，`project-current` 使用内建 `standard`。Overview 通过同一个 `ExperimentTable` 呈现通过制和分数制结果，
 并提供筛选、逐层展开与 Attempt 详情链接。`standard` 只额外包含由该表链接到的 Experiment 和 Attempt 详情 Page；两种详情

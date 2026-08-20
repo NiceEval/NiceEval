@@ -89,15 +89,15 @@ export interface CodexPluginSpec {
 }
 
 export interface CodexConfig {
-  /** 代理 / OpenAI API key。省略时读 CODEX_API_KEY env。 */
+  /** 代理 / OpenAI API key。省略时读 OPENAI_API_KEY env。 */
   apiKey?: string;
-  /** OpenAI 兼容代理 base URL(如 https://s2a.example.com/v1)。省略时读 CODEX_BASE_URL env。 */
+  /** OpenAI 兼容代理 base URL(如 https://s2a.example.com/v1)。省略时读 OPENAI_BASE_URL env。 */
   baseUrl?: string;
   /**
    * 注入每次 Codex CLI 进程的额外环境变量。首轮 `codex exec` 与续轮 `codex exec resume`
    * 使用同一份声明；Codex 启动的 lifecycle Hook、MCP 动态 header 与命令子进程都会继承。
    * 值只经 Sandbox command options 传入，不拼进 shell 文本或写入 setup manifest，并全部按
-   * 潜在敏感值从 timing / execution / error 证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或
+   * 潜在敏感值从 timing / execution / error 证据中脱敏。`OPENAI_API_KEY` 仍由 `apiKey` 或
    * 宿主同名环境变量提供，Adapter 的鉴权值会覆盖这里的同名键。
    * env value 不进入 carry 身份。会改变被测行为的非敏感值必须同时声明在 Experiment flags
    * 或所属 Plugin identity；只轮换凭据不会让旧结果失效。
@@ -272,8 +272,8 @@ function codexPlatformPackage(
 const CODEX_PLUGIN_HOOK_SAFE_CLI_VERSION = "0.146.0";
 
 export function codexAgent(config?: CodexConfig): Agent {
-  const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
-  const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
+  const getApiKey = () => config?.apiKey ?? requireEnv("OPENAI_API_KEY");
+  const getBaseUrl = () => config?.baseUrl ?? getEnv("OPENAI_BASE_URL");
   // PATH 是 Sandbox 受管变量,在 factory 构造时(link/配置校验期)同步拒绝,不留到 setup()
   // 才炸,也不静默丢弃——被覆盖的 PATH 会让 hooks / 子进程读到错误的可执行文件而零报错
   // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
@@ -361,7 +361,7 @@ export function codexAgent(config?: CodexConfig): Agent {
         ? `[model_providers.s2a]\n` +
           `name = "s2a"\n` +
           `base_url = "${base}"\n` +
-          `env_key = "CODEX_API_KEY"\n` +
+          `env_key = "OPENAI_API_KEY"\n` +
           `wire_api = "responses"\n`
         : "";
 
@@ -519,7 +519,7 @@ export function codexAgent(config?: CodexConfig): Agent {
       const res = await sb.runShell(cmd, {
         // ambient env 由 Codex 进程自然传给 SessionStart/SessionStop hooks、env_http_headers
         // 与 agent 调起的 nmem 等子进程。鉴权字段最后覆盖，避免 env 形成第二条 key 来源。
-        env: { ...agentEnv, CODEX_API_KEY: apiKey },
+        env: { ...agentEnv, OPENAI_API_KEY: apiKey },
         sensitiveValues: [apiKey, ...agentEnvSensitiveValues],
         stream: true,
         onStdout,

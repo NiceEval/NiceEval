@@ -59,7 +59,10 @@ export function Header({ locale, t, route }: { locale: Locale; t: Dictionary; ro
         )}
         <a href={headerDocsUrl[locale]} onClick={() => track("Click Docs Link", { location: "header", locale })}>{t.docs}</a>
         <a href={githubUrl} onClick={() => track("Click GitHub Link", { location: "header" })}>{t.github}</a>
-        <Link
+        {/* 切语言必须走完整文档请求。英文正式 URL 没有文件系统 page,只靠
+            next.config rewrite 到 /en;Next Link 客户端导航会打到 /en,再被
+            proxy 308 回 /,结果 404。 */}
+        <a
           className="lang-toggle"
           aria-label={t.languageLabel}
           href={routeHref(nextLocale, route)}
@@ -68,7 +71,7 @@ export function Header({ locale, t, route }: { locale: Locale; t: Dictionary; ro
           }}
         >
           {nextLocale === "zh" ? "中文" : "EN"}
-        </Link>
+        </a>
       </nav>
     </header>
   );

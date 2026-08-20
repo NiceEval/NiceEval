@@ -58,7 +58,7 @@ adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不
 ```sh
 cd examples/zh/tier1/codex-sdk
 pnpm install
-cp .env.example .env   # 填 CODEX_API_KEY / CODEX_BASE_URL
+cp .env.example .env   # 填 OPENAI_API_KEY / OPENAI_BASE_URL
 
 # 终端 1:起应用
 pnpm start

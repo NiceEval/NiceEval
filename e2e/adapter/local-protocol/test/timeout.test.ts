@@ -34,9 +34,40 @@ test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 erro
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-        const shown = await niceeval.run(["show", event.locator, "--json"]);
+        const shown = await niceeval.run([
+          "show", event.locator, "--execution", "--json",
+        ]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        expect(shown.stdout, shown.diagnostic()).toContain(event.locator);
+        const entries = shown.json<{
+          data: {
+            execution: {
+              entries: readonly {
+                detail: {
+                  diagnostics: {
+                    collection: { state: string; limitations: readonly unknown[] };
+                    diagnostics: readonly {
+                      code: string;
+                      phase: string;
+                      summary: string;
+                    }[];
+                  };
+                };
+              }[];
+            };
+          };
+        }>().data.execution.entries;
+        expect(entries, shown.diagnostic()).toHaveLength(1);
+        expect(entries[0]!.detail.diagnostics.collection, shown.diagnostic()).toEqual({
+          state: "complete",
+          limitations: [],
+        });
+        expect(entries[0]!.detail.diagnostics.diagnostics, shown.diagnostic()).toEqual([
+          expect.objectContaining({
+            code: "timeout",
+            phase: "agent.send",
+            summary: "attempt timed out (4000ms, from experiment)",
+          }),
+        ]);
       });
     },
   );

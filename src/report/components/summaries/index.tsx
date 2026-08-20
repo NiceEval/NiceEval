@@ -130,6 +130,15 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
     connect: props.connect,
     experiments: props.rows,
   }, pricing);
+  if (data.points.length > 0 && data.points.every((point) => point.costUSD.state === "migration-required")) {
+    return (
+      <Col className={joinClassNames("niceeval-experiment-scatter", props.className)}>
+        <Text className="niceeval-experiment-scatter-note">
+          {localeText(locale, "costProjection.migrationRequired")}
+        </Text>
+      </Col>
+    );
+  }
   const passPoints = data.points.filter((point) => point.evaluationKind === "pass");
   const scorePoints = data.points.filter((point) => point.evaluationKind !== "pass");
   const pointTarget = props.pointTarget ?? defaultExperimentPointTarget;

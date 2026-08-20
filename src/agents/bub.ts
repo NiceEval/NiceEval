@@ -39,7 +39,7 @@ import { DEFAULT_BUB_VERSION } from "./coding-cli-versions.ts";
 // ⚠️ 现实校正:bub 是 PyPI 上的 `bub`(alpha,Python 3.12),不是 npm 包。
 //    · 安装:uv tool install bub(uv 自带 python 3.12,免 root)。
 //    · 调用:bub run "<prompt>" --session-id <id> --workspace <path>
-//    · 模型 + 代理:BUB_MODEL=openai:<model>、BUB_API_BASE、BUB_API_KEY。
+//    · 模型 + 代理:BUB_MODEL=openai:<model>、OPENAI_BASE_URL、OPENAI_API_KEY。
 //    · 记忆:tape(总是开),落盘在 ~/.bub/tapes/<md5(ws)[:16]>__<md5(sess)[:16]>.jsonl。
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -53,9 +53,9 @@ export interface PythonPluginSpec {
 }
 
 export interface BubConfig {
-  /** OpenAI 兼容代理的 API key。省略时读 BUB_API_KEY env。 */
+  /** OpenAI 兼容代理的 API key。省略时读 OPENAI_API_KEY env。 */
   apiKey?: string;
-  /** OpenAI 兼容代理的 base URL。省略时读 BUB_API_BASE env。 */
+  /** OpenAI 兼容代理的 base URL。省略时读 OPENAI_BASE_URL env。 */
   apiBase?: string;
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
@@ -147,8 +147,8 @@ function tapePath(workspace: string, sessionId: string, bubHome: string): string
 }
 
 export function bubAgent(config?: BubConfig): Agent {
-  const getApiKey = () => config?.apiKey ?? requireEnv("BUB_API_KEY");
-  const getApiBase = () => config?.apiBase ?? requireEnv("BUB_API_BASE");
+  const getApiKey = () => config?.apiKey ?? requireEnv("OPENAI_API_KEY");
+  const getApiBase = () => config?.apiBase ?? requireEnv("OPENAI_BASE_URL");
   const packages = normalizePackages(config?.pythonPlugins);
   const pin = resolvePin(config);
   const identity = {
@@ -275,8 +275,8 @@ export function bubAgent(config?: BubConfig): Agent {
 
       const apiKey = getApiKey();
       const env: globalThis.Record<string, string> = {
-        BUB_API_KEY: apiKey,
-        BUB_API_BASE: getApiBase(),
+        OPENAI_API_KEY: apiKey,
+        OPENAI_BASE_URL: getApiBase(),
         BUB_HOME: bubHome,
         ...ctx.telemetry?.env,
       };

@@ -13,16 +13,16 @@ Sandbox agent 会在隔离环境中启动 coding-agent CLI，给它 workspace �
     运行 Anthropic Claude Code CLI，需要 `ANTHROPIC_API_KEY`。
   </Card>
   <Card title="codex" icon="terminal">
-    运行 OpenAI Codex CLI，需要 `CODEX_API_KEY`。
+    运行 OpenAI Codex CLI，需要 `OPENAI_API_KEY`。
   </Card>
   <Card title="bub" icon="robot">
-    运行 bub coding agent，鉴权遵循 bub CLI 自身约定。
+    运行 bub coding agent，需要 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`。
   </Card>
 </CardGroup>
 
 ## 运行内置 agent
 
-在 Eval 或 Experiment 上设置 `sandbox`，选择 [NiceEval](https://niceeval.com/) 在哪里创建隔离环境：
+在评估用例或 Experiment 上设置 `sandbox`，选择 [NiceEval](https://niceeval.com/) 在哪里创建隔离环境：
 
 ```ts
 // experiments/local.ts
@@ -45,7 +45,7 @@ npx niceeval exp local fixtures/button --attempts 10
 ```
 
 <Note>
-  没有对应的 CLI flag，也没有项目级默认 provider。Eval 与 Experiment 都没贡献 template-bearing layer 时，link planning 会在创建任何 Sandbox 前失败。
+  没有对应的 CLI flag，也没有项目级默认 provider。评估用例与 Experiment 都没贡献 template-bearing layer 时，link planning 会在创建任何 Sandbox 前失败。
 </Note>
 
 云端跑 coding agent 时，可以直接使用 NiceEval 已发布的 E2B 公共模板，避免每个 Attempt 安装 CLI：
@@ -95,8 +95,10 @@ export default defineExperiment({
 | Agent | 必需变量 |
 |---|---|
 | `claude-code` | `ANTHROPIC_API_KEY` |
-| `codex` | `CODEX_API_KEY` |
-| `bub` | 遵循 bub CLI 鉴权 |
+| `codex` | `OPENAI_API_KEY` |
+| `bub` | `OPENAI_API_KEY`、`OPENAI_BASE_URL` |
+
+省略工厂参数时，NiceEval 的 `bubAgent()` 与 `codexAgent()` 都读取这组 OpenAI-compatible 变量。旧的 `BUB_API_KEY`、`BUB_API_BASE`、`CODEX_API_KEY`、`CODEX_BASE_URL` 不再读取；运行 Experiment 前要完成改名。
 
 ## 工作流程
 
@@ -151,7 +153,7 @@ import {
   completeEvidenceCoverage,
   createNpmCliInstaller,
   defineSandboxAgent,
-  resolveAgentBin,
+  agentBin,
 } from "niceeval/adapter";
 
 const { ensure, installer } = createNpmCliInstaller({
@@ -167,8 +169,12 @@ export default defineSandboxAgent({
   installers: [installer],
   async send(input, ctx) {
     ctx.progress({ message: "运行 my-agent CLI" });
-    const bin = await resolveAgentBin(ctx.sandbox, "my-agent");
-    await ctx.sandbox.runCommand(bin, ["run", input.text, "--json-out", "agent-events.json"]);
+    await ctx.sandbox.runCommand("sh", [
+      "-lc",
+      `exec ${agentBin("my-agent")} run "$1" --json-out agent-events.json`,
+      "my-agent",
+      input.text,
+    ]);
     const transcript = await ctx.sandbox.readText("agent-events.json");
     if (transcript.trim() === "") {
       ctx.diagnostic({
@@ -185,7 +191,7 @@ export default defineSandboxAgent({
 });
 ```
 
-`createNpmCliInstaller` 会在宿主机准备 npm 包，再把它送入 Sandbox。Sandbox 里不需要安装 Node.js 或 npm。完整步骤见[为自定义 Sandbox Agent 安装 CLI](/zh/tutorials/install-custom-sandbox-agent)。
+`createNpmCliInstaller` 会在宿主机准备 npm 包、送入 Sandbox，再用 npm 安装普通包。这类 Sandbox 需要 Node.js 与 npm；只有自包含的 `platformPackage` 才能省掉它们。完整步骤见[为自定义 Sandbox Agent 安装 CLI](/zh/tutorials/install-custom-sandbox-agent)。
 
 `setup`、每次 `send` 和 `teardown` 都拿到各自作用域的反馈方法：
 

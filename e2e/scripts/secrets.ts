@@ -51,6 +51,7 @@ export function buildChildEnv(
   baseEnv: NodeJS.ProcessEnv,
   allDeclaredSecretNames: ReadonlySet<string>,
   thisRepoSecrets: readonly string[],
+  repoId?: string,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   for (const name of allDeclaredSecretNames) {
@@ -65,6 +66,14 @@ export function buildChildEnv(
     if (value !== undefined) {
       env[name] = value;
     }
+  }
+  // These external CLIs still consume their native BUB_* names. Keep the
+  // compatibility translation scoped to those explicit consumers so the Bub
+  // and Codex product owners can distinguish an implementation that reads only
+  // OPENAI_* from one that silently falls back to a legacy name.
+  if (repoId === "adapter/hermes" || repoId === "adapter/openclaw" || repoId === "adapter/opencode") {
+    if (env.OPENAI_API_KEY !== undefined) env.BUB_API_KEY = env.OPENAI_API_KEY;
+    if (env.OPENAI_BASE_URL !== undefined) env.BUB_API_BASE = env.OPENAI_BASE_URL;
   }
   return env;
 }

@@ -118,7 +118,7 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 
 ### 回放留存现场的变更历史:sandbox history / diff
 
-origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场里还保有完整的逐区间账本,这两条命令是它的公开出口(现场休眠中同样先唤醒、读完送回休眠;现场销毁后账本随之消失,已封口的五族 closure 不受影响):
+origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场里还保有完整的逐区间账本,这两条命令是它的公开出口(现场休眠中同样先唤醒、读完送回休眠;现场销毁后账本随之消失,已封口的六族运行事实 closure 不受影响):
 
 ```text
 $ niceeval sandbox history a3f9c2d1
@@ -214,9 +214,15 @@ pruned 2 orphan sandboxes
 - 幂等:实例已不存在不算错误;某台销毁失败时如实列出并退出 1,其余照常处理,不能把仍活着的资源从核对面隐藏掉。
 - 与 `list` / `stop` 同一纪律:不读 config、不执行用户代码,按运行标识里的 provider 名路由 detached 销毁。
 
-## 与五个固定 family 的分工
+## 与六个固定运行事实 family 的分工
 
-留存现场不替代 Record。Assertions 保存判定与 Evidence refs，FileChanges 保存 agent 归因文件变化，Observability 保存命令、事件、计时与诊断，Sources 保存源码闭包，Artifacts 保存大型具类型对象。它们都经 Analysis `query()` 的 DomainView 读取。现场只回答落盘之外的问题，例如命令当时怎样失败、Agent 向 workdir 外写了什么。
+留存现场不替代 Record：
+
+- Assertions 保存判定与 Evidence refs；FileChanges 保存 agent 归因文件变化。
+- SourceNavigation 保存物理 send 的 source/timing join；Observability 保存命令、事件、计时与诊断。
+- Sources 保存源码闭包；Artifacts 保存大型具类型对象。
+
+它们都经 Analysis `query()` 的 DomainView 读取。现场只回答落盘之外的问题，例如命令当时怎样失败、Agent 向 workdir 外写了什么。
 
 留存的 Sandbox 不是可续跑状态，也没有续跑或重评语义。Provider 的休眠唤醒只恢复现场供人检查，不恢复 eval 运行。
 

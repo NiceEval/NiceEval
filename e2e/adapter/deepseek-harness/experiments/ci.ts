@@ -4,6 +4,7 @@ import { sandbox } from "../sandbox.ts";
 
 const agent = deepSeekHarnessAgent({
   apiKey: process.env.DEEPSEEK_API_KEY,
+  plugins: ["dsh-dead-links@0.1.1"],
 });
 
 export default defineExperiment({

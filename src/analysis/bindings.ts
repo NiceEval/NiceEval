@@ -85,7 +85,7 @@ export interface FixedFamilyBinding<
 export type InputProjection<Value> =
   | { readonly state: "value"; readonly value: Value }
   | {
-      readonly state: "missing" | "unsupported" | "failed";
+      readonly state: "missing" | "migration-required" | "unsupported" | "failed";
       readonly message: string;
     };
 

@@ -65,7 +65,7 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
 | --- | --- | --- | --- |
 | 全局并发位 | `--max-concurrency`，或 `niceeval.config.ts` 的 `maxConcurrency` | 本次运行的总吞吐 | 各算各的，两个终端的值相加 |
 | 实验并发上限 | 实验文件的 `maxConcurrency` | 这一个实验同时跑几条 | 各算各的，两个终端的值相加 |
-| 共享状态租约 | 实验文件的 `sharedState.key` | 同一 checkpoint 的完整恢复、执行与回存 | 同 key 的窗口串行 |
+| 共享状态租约 | 实验文件的 `sharedState.key` | 同一 checkpoint 的完整恢复、执行与回存区间 | 同 key 的区间串行 |
 
 全局值的解析顺序是 `--max-concurrency` → 配置里的 `maxConcurrency` → 当前 Sandbox Provider 的推荐默认值（`docker` 10、`e2b` 20、`vercel` 1、`local` 1）。推荐值反映的是 Provider 侧的约束。你自己 Agent 接口的限速用 `--max-concurrency` 压。
 
@@ -147,10 +147,11 @@ export default defineExperiment({
 });
 ```
 
-`maxConcurrency: 1` 只串行本 Invocation 的 Attempt。`sharedState.key` 才跨终端保护同一 checkpoint。
-租约在 Experiment 和 Sandbox 的 `setup` 之前取得，到 Sandbox `teardown`、Provider finalizer 与 Experiment `teardown` 完成后才释放。等待方不创建 Sandbox。租约释放后，等待方继续自己的既定计划；它不读取或沿用另一 Record 的结果。
+`maxConcurrency: 1` 只串行本 Invocation 的 Attempt。`sharedState.key` 会在同一项目 Coordination 域内保护跨 Invocation 的同一 checkpoint。租约在 Experiment 与 Sandbox `setup` 前取得，直到 Sandbox `teardown`、Provider finalizer 和 Experiment `teardown` 全部完成才释放。等待方不会提前创建 Sandbox；拿到租约后继续自己的计划，不读取或沿用另一个 Run 的结果。
 
-`sharedState` 只做互斥，不替你存 checkpoint，也不能回滚强杀前的半次写入。做不到原子回存时，换新 key 和干净 cohort 从头重建。
+`sharedState` 只提供互斥，不负责 checkpoint 存储、原子提交、回滚或强杀后的半次写入恢复。能原子回存时应原子回存，否则换新 key，从干净 cohort 重建。跨机器协调仍归外部编排。
+
+NiceEval 不会根据超时、PID 或 heartbeat 自动接管租约。原 owner 暂停时仍然拥有租约；强杀或 cleanup 失败后，等待方继续阻塞，避免两条 Invocation 同时改同一份状态。确认原 owner 已终止、外部状态已静止后，按[运行被强杀后恢复](/zh/troubleshooting/recover-after-kill#恢复共享状态租约)里的公开命令检查 owner token，并显式恢复。
 
 只有一个 Agent 服务频繁限流时，同样在这个实验上设 `maxConcurrency: N`，不要去降全局上限——降全局会连累同批其它实验。实验级并发上限退避时不放行第 N+1 条，所以服务不会在已经限流时继续被加压。
 
@@ -170,7 +171,7 @@ const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void
 Attempt，并复用至多一台 Sandbox；不同组和未分组评估用例继续竞争剩余并发位。你不需要把
 整个 Experiment 设成 `maxConcurrency: 1`。
 
-`evals` 数组只声明成员，不声明业务顺序。Runner 按规范化 Eval ID 稳定串行；
+`evals` 数组只声明成员，不声明业务顺序。Runner 按规范化评估用例 ID 稳定串行；
 `attempts > 1` 时，同一成员需要真实派发的各次 Attempt 连续进入组内泳道。完整目录、
 Experiment 写法和 `--dry` 输出见[用评估组复用 Sandbox](/zh/tutorials/eval-groups)。
 
@@ -195,23 +196,23 @@ export default defineExperiment({
 });
 ```
 
-## 多开终端时隔离 Record
+## 多开终端时共用 Record
 
-同一 Record root 不支持两条 Invocation 自动分工。确认本机、Provider 和 Agent 服务还有余量时，为第二个终端指定不同 root：
+同一 Record root 允许多个 append writer 并发，但不会让两条 Invocation 自动分工。确认本机、Provider 和 Agent 服务还有余量时，两个终端可以使用同一个 root：
 
 ```bash
-niceeval exp compare --record .niceeval/record-a --max-concurrency 2
-niceeval exp compare --record .niceeval/record-b --max-concurrency 2
+niceeval exp compare --record .niceeval/record --max-concurrency 2
+niceeval exp compare --record .niceeval/record --max-concurrency 2
 ```
 
-两边各自规划完整选择，可能重复执行相同评估用例，也不会读取或携入对方运行中的 Attempt。每个 root 独立产生 Run、Sample 和 Report；NiceEval 不自动合并它们。
+两边各自规划完整选择，可能重复执行相同评估用例，因为双方都不会读取对方尚未发布的 Attempt。完整 Run 会原子发布到共享 Record。只有确实需要隔离 Run、Sample 与 Report 时才使用不同 root；NiceEval 不自动合并分开的 root。
 
 三个边界：
 
 - 两边的 CLI 上限会相加，Provider 容量不会。配额紧张时把两边都调低。
 - 实验自己的 `maxConcurrency` 也是每个终端各算各的：两条命令都声明 3 时，合计最多跑六条。
-- 两个终端的 Sandbox 池也各自独立。只有确实共享外部 checkpoint 时才声明 `sharedState.key`；这不会合并 Record。
-- 指向同一 root 的第二条命令立即失败，不等待、不接管，也不读取第一条命令的中间数据。
+- 两个终端的 Sandbox 池也各自独立。只有确实共享外部 checkpoint 时才声明 `sharedState.key`；它不会合并 Record。
+- 并发 append writer 可以共用 root。Record maintenance 仍然独占；遇到 `record-maintenance-busy` 时，先停掉 reader 和 writer 再重试。
 
 ## 边界
 

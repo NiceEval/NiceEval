@@ -35,7 +35,7 @@ Record
       └─ own blobs（只属于这一 owner 和 family）
 ```
 
-没有 `complete` 的 Run directory 不是 Record 事实。reader 不读取、不展示也不沿用它，只返回
+缺少 `complete`，或该路径不是零字节普通文件的 Run directory，不是 Record 事实。reader 不读取、不展示也不沿用它，只返回
 `incomplete-run` warning；用户可以用 `niceeval clean` 删除。
 
 Record Core（核心身份）只保存完整 `attemptId`。面向人的 locator 是上层确定性别名：`@1` 加
@@ -68,14 +68,14 @@ NiceEval 的 package-private（包私有）Record 作者模型只使用
 NiceEval current 固定 Attachment catalog 有以下六个 family（附件族）。一个 family 只有一个定义入口；多个 owner
 写在同一 `owners` map，不复制 family 或另立版本名称。
 
-| family | `owners` | 保存的事实 |
-|---|---|---|
-| `niceeval.assertions` | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
-| `niceeval.observability` | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
-| `niceeval.file-changes` | `{ attempt }` | 归因策略、采集状态与按 send 区间排序的文件变化轨迹 |
-| `niceeval.source-navigation` | `{ attempt }` | 每个物理 `t.send` 的 turn、源码 frame 与 timing identity join |
-| `niceeval.sources` | `{ run }` | 当时源码闭包的 manifest 与 own blob |
-| `niceeval.artifacts` | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
+| family | current | `owners` | 保存的事实 |
+|---|---:|---|---|
+| `niceeval.assertions` | 1 | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
+| `niceeval.observability` | 2 | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
+| `niceeval.file-changes` | 1 | `{ attempt }` | 归因策略、采集状态与按 send 区间排序的文件变化轨迹 |
+| `niceeval.source-navigation` | 1 | `{ attempt }` | 每个物理 `t.send` 的 turn、源码 frame 与 timing identity join |
+| `niceeval.sources` | 1 | `{ run }` | 当时源码闭包的 manifest 与 own blob |
+| `niceeval.artifacts` | 1 | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
 
 每个 family 的模块把自己的 declaration、复杂 payload Schema、durable JSON 键、limits 与 blob closure / integrity
 相邻放置。总 catalog 只列这六个 declaration，不重新描述任何 payload。

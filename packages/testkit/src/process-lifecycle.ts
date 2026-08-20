@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { PassThrough } from "node:stream";
 import { ProcessReceipt, ProcessStartError } from "./process.js";
 import type { Argv } from "./process.js";
@@ -8,47 +9,66 @@ import type { Argv } from "./process.js";
 export const DEFAULT_GRACE_MS = 2000;
 
 const PROCESS_GROUP_POLL_MS = 25;
-
-type ProcessGroupPresence = "alive" | "zombie-only" | "gone" | "unknown";
-
-interface LinuxProcessGroupMembers {
-  readonly live: readonly number[];
-  readonly zombies: readonly number[];
-}
-
-function linuxProcessGroupMembers(groupId: number): LinuxProcessGroupMembers | undefined {
-  if (process.platform !== "linux") return undefined;
-  try {
-    const live: number[] = [];
-    const zombies: number[] = [];
-    for (const entry of readdirSync("/proc", { withFileTypes: true })) {
-      if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) continue;
-      let stat: string;
-      try {
-        stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
-      } catch {
-        continue;
-      }
-      const commandEnd = stat.lastIndexOf(")");
-      if (commandEnd < 0) continue;
-      const fields = stat.slice(commandEnd + 1).trimStart().split(/\s+/u);
-      const state = fields[0];
-      const processGroup = Number(fields[2]);
-      if (!Number.isInteger(processGroup) || processGroup !== groupId) continue;
-      const pid = Number(entry.name);
-      if (state === "Z" || state === "X") zombies.push(pid);
-      else live.push(pid);
-    }
-    return { live, zombies };
-  } catch {
-    return undefined;
-  }
-}
+type OwnedGroupState = "gone" | "terminal" | "running" | "unknown";
 
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
     ? String((error as { code?: unknown }).code)
     : undefined;
+}
+
+/**
+ * Linux keeps a zombie in its process group until the adopting parent reaps
+ * it. Signal 0 still reports that group as present, while TERM and KILL cannot
+ * change the zombie. This is only a point-in-time classification: callers
+ * must first send their cleanup signal and then establish a stable terminal
+ * result before accepting it. Return undefined when procfs cannot prove the
+ * membership safely.
+ */
+function linuxProcessGroupHasRunningMember(
+  groupId: number,
+  onSnapshot?: () => void,
+): boolean | undefined {
+  if (process.platform !== "linux") return undefined;
+
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync("/proc", { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+
+  // Keep this seam after the complete directory snapshot but before any
+  // member stat is read. It lets the Linux Lifecycle E2E make the otherwise
+  // non-atomic procfs boundary deterministic without changing production
+  // cleanup when no hook is supplied.
+  onSnapshot?.();
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+
+    let stat: string;
+    try {
+      stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+    } catch (error) {
+      const code = errorCode(error);
+      if (code === "ENOENT" || code === "ESRCH") continue;
+      return undefined;
+    }
+
+    const commandEnd = stat.lastIndexOf(")");
+    if (commandEnd < 0 || stat[commandEnd + 1] !== " ") return undefined;
+    const fields = stat.slice(commandEnd + 2).trim().split(/\s+/);
+    if (fields.length < 3) return undefined;
+
+    const state = fields[0];
+    const processGroup = Number(fields[2]);
+    if (!Number.isSafeInteger(processGroup)) return undefined;
+    if (processGroup !== groupId) continue;
+    if (state !== "Z" && state !== "X" && state !== "x") return true;
+  }
+
+  return false;
 }
 
 export interface StartOptions {
@@ -57,6 +77,8 @@ export interface StartOptions {
   processGroup?: boolean;
   timeoutMs?: number;
   graceMs?: number;
+  /** @internal Deterministic Lifecycle E2E seam after a post-TERM `/proc` snapshot. */
+  onProcessGroupProcfsSnapshot?: () => void;
 }
 
 export class ProcessHandle {
@@ -69,6 +91,7 @@ export class ProcessHandle {
   private readonly cwd: string;
   private readonly processGroup: boolean;
   private readonly graceMs: number;
+  private readonly onProcessGroupProcfsSnapshot: (() => void) | undefined;
   private readonly child: ChildProcess;
   private readonly startedAt: number;
   private readonly stdoutChunks: Buffer[];
@@ -85,6 +108,7 @@ export class ProcessHandle {
     this.cwd = options.cwd ?? process.cwd();
     this.processGroup = options.processGroup === true;
     this.graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
+    this.onProcessGroupProcfsSnapshot = options.onProcessGroupProcfsSnapshot;
     this.child = child;
     this.pid = child.pid;
     this.startedAt = Date.now();
@@ -195,16 +219,15 @@ export class ProcessHandle {
     }
   }
 
-  private ownedGroupPresence(): ProcessGroupPresence {
+  private ownedGroupState(onProcfsSnapshot?: () => void): OwnedGroupState {
     if (!this.processGroup || this.pid === undefined) {
       return "gone";
     }
     try {
       process.kill(-this.pid, 0);
-      const members = linuxProcessGroupMembers(this.pid);
-      return members !== undefined && members.live.length === 0 && members.zombies.length > 0
-        ? "zombie-only"
-        : "alive";
+      const hasRunningMember = linuxProcessGroupHasRunningMember(this.pid, onProcfsSnapshot);
+      if (hasRunningMember === undefined) return "unknown";
+      return hasRunningMember ? "running" : "terminal";
     } catch (error) {
       if (errorCode(error) === "ESRCH") return "gone";
       if (errorCode(error) === "EPERM") return "unknown";
@@ -212,13 +235,27 @@ export class ProcessHandle {
     }
   }
 
-  private async waitForOwnedGroupExit(timeoutMs: number): Promise<ProcessGroupPresence> {
+  private async waitForOwnedGroupExit(
+    timeoutMs: number,
+  ): Promise<boolean> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
+    let terminalProbePending = false;
     for (;;) {
-      const presence = this.ownedGroupPresence();
-      if (presence !== "alive") return presence;
+      const state = this.ownedGroupState(this.onProcessGroupProcfsSnapshot);
+      if (state === "gone") return true;
+      if (state === "terminal") {
+        // /proc membership is not an atomic snapshot. A terminal-only result
+        // becomes safe only after TERM has covered the group and a later scan
+        // independently observes the same terminal boundary.
+        if (terminalProbePending) return true;
+        terminalProbePending = true;
+      } else {
+        // A live member, an orphan, or uncertain procfs visibility remains
+        // fail-closed and must advance through the normal grace/KILL path.
+        terminalProbePending = false;
+      }
       const remaining = deadline - Date.now();
-      if (remaining <= 0) return "alive";
+      if (remaining <= 0) return false;
       await new Promise<void>((resolve) => {
         setTimeout(resolve, Math.min(PROCESS_GROUP_POLL_MS, remaining));
       });
@@ -226,18 +263,19 @@ export class ProcessHandle {
   }
 
   private async terminateOwnedGroup(): Promise<void> {
-    const initial = this.ownedGroupPresence();
-    if (initial === "gone" || initial === "zombie-only") {
+    if (this.ownedGroupState() === "gone") {
       await this.done;
       return;
     }
 
+    // Even a terminal-only procfs scan can be stale: a parent observed by
+    // readdir may fork a same-group child before it exits. TERM establishes a
+    // group-wide cleanup boundary before waitForOwnedGroupExit accepts a
+    // terminal result on two post-signal scans.
     this.sendTermination("SIGTERM");
-    const afterTerm = await this.waitForOwnedGroupExit(this.graceMs);
-    if (afterTerm === "alive" || afterTerm === "unknown") {
+    if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
       this.sendTermination("SIGKILL");
-      const afterKill = await this.waitForOwnedGroupExit(this.graceMs);
-      if (afterKill === "alive" || afterKill === "unknown") {
+      if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
         throw new Error(
           `process group ${this.pid} still exists after SIGTERM and SIGKILL`,
         );

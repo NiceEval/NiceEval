@@ -1,0 +1,62 @@
+---
+title: "Grade Hidden Tests: Include Criteria Files in the Cache Fingerprint"
+sidebarTitle: "Grade Hidden Tests"
+description: "Read hidden tests, test scripts, and other criteria files with loadText at module scope so their contents enter the fingerprint: changing one byte reruns automatically, without a manual --rerun."
+---
+
+Sandbox Coding tasks often use a hidden test for grading: after the Agent changes the code, the eval writes the test file into the Sandbox and runs it. Passing the test means passing the task. That test file is the grading standard itself—changing it changes the task, so old results can no longer be trusted.
+
+Read it with `loadText`, and NiceEval includes the file contents in that eval's fingerprint. Change one byte and the next run reruns this eval automatically while other evals keep using their cache.
+Reading the same content with `fs.readFile` leaves NiceEval unaware that the read happened. Change the test file and the cache still hits, so you see a conclusion made against the old test.
+
+## Steps
+
+1. Keep the criteria files in the repository with the eval:
+
+   ```text
+   evals/
+     react-datepicker/
+       pr-6058.eval.ts
+     fixtures/react-datepicker/pr-6058/
+       tests/datepicker_test.test.tsx   # hidden test
+       tests/run-tests.sh               # test script
+   ```
+
+2. Read them at the **module top level** of the `.eval.ts` file:
+
+   ```typescript
+   import { defineEval } from "niceeval";
+   import { loadText } from "niceeval/loaders";
+   import { commandSucceeded } from "niceeval/expect";
+
+   const fixture = (p: string) =>
+     new URL(`../fixtures/react-datepicker/pr-6058/${p}`, import.meta.url);
+
+   const hiddenTest = await loadText(fixture("tests/datepicker_test.test.tsx"));
+   const runTests = await loadText(fixture("tests/run-tests.sh"));
+   ```
+
+   A project-root-relative string works too: `loadText("evals/fixtures/react-datepicker/pr-6058/tests/run-tests.sh")`.
+   `loadText` accepts a `URL` directly; you do not need to import `node:url`.
+
+3. Write the files into the Sandbox and execute them in `test(t)`:
+
+   ```typescript
+   export default defineEval({
+     description: "react-datepicker pr-6058",
+     async test(t) {
+       await t.send("Fix the misaligned changeMonth panel. Do not change the test files.");
+       await t.sandbox.writeText("src/test/datepicker_test.test.tsx", hiddenTest);
+       await t.sandbox.writeText("tests/run-tests.sh", runTests);
+       t.check(await t.sandbox.runCommand("bash", ["tests/run-tests.sh"]), commandSucceeded());
+     },
+   });
+   ```
+
+Change `datepicker_test.test.tsx` and run the same command again. Only this eval reruns, which verifies that the fingerprint took effect.
+
+## Notes
+
+- **`loadText` must be at module top level.** Cache reuse is decided before execution. Reading it inside `test(t)` happens too late, so NiceEval reports an error telling you to move it to the top level.
+- **Read Agent output with `t.sandbox`, not `loadText`.** Files created by the Agent inside the Sandbox are evidence for this run and vary each time; they do not belong in the fingerprint. Read them with `await t.sandbox.readText(path)`, then pass the returned string to `t.check`.
+- Use `loadYaml` / `loadJson` when criteria are structured data such as a case table. See [Data-driven Testing](/tutorials/dataset-fanout).

@@ -167,7 +167,7 @@ Assertions 与 Observability 都必须以 `RecordAttachmentRead.available` 取�
 
 随后 Verdict 只能是 `passed` 或 `failed`。`errored`、`cancelled`、`interrupted`、`skipped`、不存在和无法读取的 Attempt 都不能 reuse。
 
-fingerprint/config identity 由上游已求值 ProjectTarget 用来生成组合 execution identity；reuse planning 只比较 Core digest，不重新发现配置，也不把 digest 回填成两份 identity。凭据不进入 identity 或 manifest；`judge.apiKeyEnv` 只表示读取凭据的位置。
+fingerprint/config identity 由上游已求值 ProjectTarget 用来生成组合 execution identity；reuse planning 只比较 Core digest，不重新发现配置，也不把 digest 回填成两份 identity。凭据不进入 identity 或 manifest；`judge.apiKeyEnv` 只表示读取凭据的位置。`sharedState` 未声明时不在配置身份对象或 manifest 写键，因而保持既有 base config hash；声明、删除或变更 key 分别产生具名 `config:sharedState.key` added、removed、changed 差异。
 
 ## 错误与缺口作用域
 
@@ -229,7 +229,7 @@ accepted 的唯一含义是“操作者当时明确采用这个 immutable Attemp
 
 ## policy 演进
 
-policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为，但不能靠额外 eligibility descriptor 认证旧 Attempt。新增 required gate 时，必须由已有 Core 或固定五类 Attachment 提供可审计 owner；缺失、partial、unsupported 或 invalid 一律形成 gap。新 writer 不保留能让旧 policy 错误通过的 compatibility eligibility payload。
+policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为，但不能靠额外 eligibility descriptor 认证旧 Attempt。新增 required gate 时，必须由已有 Core 或 Record catalog 中具名的 fixed Attachment owner 提供可审计事实；缺失、partial、unsupported 或 invalid 一律形成 gap。新 writer 不保留能让旧 policy 错误通过的 compatibility eligibility payload。
 
 `--dry` 不建立 Invocation、不写 Record，也不取得 append lease。它用 shared read lease（共享读取租约）做 weak scan，运行同一份 reuse planning，并在 CLI 输出中显示相同的当前 options、reuse、gap 与真实 comparison。它只看已发布 Run，不保证全局 snapshot。
 

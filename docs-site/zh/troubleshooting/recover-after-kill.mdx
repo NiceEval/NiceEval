@@ -1,24 +1,26 @@
 ---
 title: "运行被强杀后恢复"
-description: "进程被 kill -9、CI 超时或断电杀掉后，重跑同一条命令续跑没跑完的部分，用 niceeval sandbox prune 收回没清理的容器，用 --teardown 补齐实验收尾。"
+description: "进程被 kill -9、CI 超时或断电杀掉后，从已发布结果重跑、收回遗留 Sandbox、补齐实验收尾，并显式恢复共享状态租约。"
 ---
 
 `niceeval exp` 跑到一半被 `kill -9`、CI 时限或断电直接杀掉时，进程没有机会做任何清理。你会碰到三种残留：没跑完的评估、还在 Provider 侧占资源的 Sandbox 实例、实验 `setup` 起过但没关掉的外部服务（隧道、共享服务、license 席位）。三种各有一个恢复入口，都不需要手工翻 Docker 或云控制台。
 
 正常的 Ctrl+C 或 SIGTERM 不在本页范围：那些路径 NiceEval 会自己走完全部收尾，不留残留。
 
-## 重跑同一条命令，续跑没跑完的部分
+## 从已发布结果重跑
 
-已经跑完并落盘的 Attempt 是可信结果，重跑时自动带入，不再花一次 Agent 和 Sandbox 的成本：
+只有成功 seal、完整发布的 Run 里的 Attempt 才是 Record 事实。重跑可以自动沿用其中仍符合资格的结果，不再花一次 Agent 和 Sandbox 的成本。强杀 Invocation 留下的 incomplete Run directory 会被整体忽略：里面的草稿 Attempt 不展示、不引用、也不沿用。
 
 ```bash
 niceeval exp compare/bub-e2b memory/commit0
 ```
 
-- 只补跑缺的部分：`--attempts 5` 已经落盘 3 次，就只再跑 2 次。
+- 如果另一个完整 Run 已经为 `--attempts 5` 发布 3 个符合资格的 Attempt，就只再跑 2 次。如果那 3 个草稿只存在于强杀 Run、尚未到达 `complete` 发布点，它们一个也不会沿用，5 个位置都可能重跑。
 - 被强杀的实验如果留了没做完的收尾，重跑会先补一次实验级 `teardown` 再开始，泄漏不会越积越多。
 - 判定为 `errored` 的 Attempt 不复用，照常重跑。
 - 想全部重来，加 `--rerun all`。
+
+确认没有活跃 Invocation 占用 Record root 后，运行 `niceeval clean` 删除 incomplete Run 残留。清理不会把草稿 Attempt 变成可复用结果。
 
 ## 收回没清理的 Sandbox 实例
 
@@ -57,7 +59,37 @@ niceeval exp compare/bub-e2b --teardown
 - 随时可以执行，不依赖上次运行留下的记录。`teardown` 自身要能容忍重复执行。
 - 强杀后原进程的内存已经丢失，`teardown` 里要从容器名、pid 文件或幂等的关停脚本这类持久信息找回要关的资源，不要依赖 `setup` 存在内存里的对象。
 
+## 恢复共享状态租约
+
+声明了 `sharedState.key` 的实验会把租约持有到 Sandbox teardown、Provider finalizer 和实验 `teardown` 全部成功。进程被强杀或其中一项 cleanup 失败时，租约会保留；同 key 的新 Invocation 会继续等待，不会根据 PID、超时或 heartbeat 自动接管。
+
+先只检查当前 owner evidence，不带 token 或确认参数：
+
+```bash
+niceeval exp compare/bub-e2b --teardown \
+  --recover-shared-state mempal/codex/cohort-a
+```
+
+命令会显示 key、Experiment、owner token、host、PID、process identity 和最新 heartbeat，然后以非零状态退出。先确认原 owner 已终止，再确认它操作的 checkpoint、远端服务和回存流程都已静止。这个恢复入口只补跑实验 `teardown`，不会回滚已经写到一半的业务状态。
+
+核对完后，复制刚显示的完整 owner token，并显式确认两个条件：
+
+```bash
+niceeval exp compare/bub-e2b --teardown \
+  --recover-shared-state mempal/codex/cohort-a \
+  --owner-token <displayed-token> \
+  --confirm-owner-terminated \
+  --confirm-remote-quiesced
+```
+
+- 同机的原进程仍然存活时，NiceEval 拒绝恢复；暂停的进程仍算存活。
+- 错误或过期的 token 不会修改租约，也不会释放后来 owner 的租约。
+- 两条恢复命令同时竞争时，只有一条能取得恢复 ownership。
+- 补偿 `teardown` 失败时，租约继续保留。解决 teardown 问题后重新检查，再用当前显示的 token 重试。
+- 成功后，同 key 的等待 Invocation 才能取得租约并开始 Experiment setup 或创建 Sandbox。
+
 ## 预防：让下一次强杀无害
 
-- 长任务放在有时限的环境（CI、外部看门狗）里跑时，把时限内跑不完当成常态：靠上面的续跑机制分多次跑完，不必强求单次完成。
+- 长任务放在有时限的环境（CI、外部看门狗）里跑时，要为 Run 留出到达 `complete` 发布点的时间。后续运行只能沿用完整 Run 已经发布的结果。
 - 实验 `teardown` 写成幂等的：重复执行不报错、目标已经关掉也算成功。这是补收尾机制正确工作的前提。
+- 使用 `sharedState.key` 时，让 checkpoint 回存具备原子性或可补偿性。显式恢复协调租约不能修复半次业务写入。

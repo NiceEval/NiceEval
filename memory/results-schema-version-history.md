@@ -44,14 +44,24 @@ commit、日期与主题由 `git show -s --format='%h %cs %s' <commit>` 复核�
 
 ## 新 Record 的正式起点
 
-`{ format: "niceeval.record", schemaVersion: 1 }` 是 Record 首次正式公开的格式身份。它没有已发布
+`{ format: "niceeval.record", schemaVersion: 1 }` 是 Record root / Core 首次正式公开的格式身份。它没有已发布
 predecessor：旧 `niceeval.results`、未合并 `polish-assert` 的 16–18，以及尚未正式发布的 main 或工作树格式，
-都不是 Record migration source。完整 current Record 的 `migrate` 返回 `already-current`，不改 portable bytes。
+都不是 Record root migration source。当前 root / Core 仍是 schemaVersion `1`，没有相邻 migration。
 
-Record 用稳定 `format` 和数值 `schemaVersion` 表达格式身份，不使用带斜杠的版本名称。未来正式发布
-schemaVersion `2` 时，maintenance 才同时提供固定 `1 → 2` migration；该步骤只能从
-已保存的 schemaVersion `1` Record bytes 形成正式 schemaVersion `2` bytes，不能把旧 Results 或未发布格式转换为
-Record。
+## Observability family 1 → 2
+
+2026-08-19，`niceeval.observability` 独立从 schemaVersion `1` 升到 `2`，Record root / Core 版本保持 `1`。
+不兼容点只在 Attempt `agent.send` timing label：v1 只接受不含斜杠的 SafeIdentifier；v2 还接受 canonical
+`turnN` 与 `sessionK/turnN`，从而让多 session turn identity 不再被降格成 `agent.turn`。
+
+- 新 reader 遇到 v1 envelope 返回 `migration-required`，不把 dot label 猜成 turn，也不自动改写。
+- 旧 reader 遇到 v2 envelope 返回 unsupported / migration-required 读态，不会把 slash label 当成旧格式。
+- `niceeval migrate --yes` 只在 Git 能提供干净 restore point 时把已封口 Run 的 Observability envelope 从 1 改为 2；payload、blob 与未知 family bytes 保持不变。
+- migration 前后都验证完整 sealed Core；结束前再验证全部认识的 family closure 与跨 family join。无 `complete` 的 draft 不进入 inventory，仍由 `niceeval clean` 处理。
+- 中断会留下 `migration.in-progress` sentinel；用户从计划回执所列 Git commit 恢复 portable root 后重试。迁移幂等，已完成的 Record 返回 `already-current`。
+
+Record 用稳定 `format` 和数值 `schemaVersion` 表达各兼容边界的身份，不使用带斜杠的版本名称。只有 root / Core
+变化才递增 root schemaVersion；fixed family 变化由该 family 自己的固定相邻 migration 链承接。
 
 新的 Record 将 root / Core 与每个 fixed family 的兼容性分开：已知 root、Core 或 family 的旧 schemaVersion
 只在存在固定相邻步骤时显式 migration；独立 future family 则保持 opaque，只有依赖它的 Analysis 请求得到

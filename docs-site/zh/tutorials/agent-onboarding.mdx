@@ -1,7 +1,7 @@
 ---
 title: "Coding Agent 从零接入项目"
 sidebarTitle: "Coding Agent 从零接入"
-description: "给 Coding Agent 的完整接入流程：探索项目、与用户确认路径、配置 Judge、写出 Adapter / Experiment / 评估用例并跑通第一个实验。"
+description: "给 Coding Agent 的完整接入流程：探索项目、与用户确认路径、配置 Judge、写出 Adapter、Experiment 与评估用例，并跑通第一个实验。"
 ---
 
 这一页是 Coding Agent 把 NiceEval 接入一个项目的执行步骤。前提：`niceeval` 依赖已经装进项目、`niceeval init` 已经运行，你是从随包 `INDEX.md` 进入本页的。用用户的语言与用户交流。所有 API、字段和 CLI 行为以随包文档为准，不要凭训练记忆现编。
@@ -14,10 +14,10 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 2. **前端和 Agent 怎么通信**：HTTP 还是 gRPC / WebSocket？协议是标准的还是自己实现的——AI SDK UI Message Stream、OpenAI Responses / Chat Completions 这类标准协议，还是 SDK 原生事件流透传，还是用户自定义的 JSON/SSE 帧？这直接决定 Adapter 是用内置的（零映射）还是手写 `send`（要自己写事件映射）。
 3. **后端有没有接 OTel**：搜有没有 OTel SDK 初始化、AI SDK telemetry、LangSmith / OpenLLMetry / OpenInference 这类埋点。已经有的话 Tier 2 几乎零成本。
 4. **用户自己有没有做 A/B Test / feature flag**：应用里已有变体开关的话，Experiment 的 `flags` 可以直接透传给它（Tier 3 的现成入口）。
-5. **Judge 用什么**：语义评估（`t.judge.autoevals.*`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在 Score Eval 中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
+5. **Judge 用什么**：语义评估（`t.judge.autoevals.*`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容的 `/chat/completions` 协议。问用户手上有哪个服务的 key、想用什么 Judge 模型。缺 key 不会静默通过：Judge Assertion 会记为 `unavailable`；它参与 Pass grading，或在计分制评估中配置了 `.score()` / `.orStop()` 时，Attempt 的 grading 不可用。没有 Judge 配置时，先只写精确 Match。
 6. **是不是 Agent 本体要进 Sandbox**：被测对象是 coding agent CLI、或给 coding agent 写的 Skill/Plugin/Hook/MCP server（要在隔离 workspace 里改文件/跑命令）的话，必须走 Sandbox，不能像 HTTP 服务那样直接 `send`。
 
-   默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`，但**要先跟用户确认**——本机/CI 有没有 Docker、要不要 Vercel Sandbox 或其它远程 Provider。用户没有异议就默认走 Docker。Provider 声明在 Eval 或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
+   默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`，但**要先跟用户确认**——本机/CI 有没有 Docker、要不要 Vercel Sandbox 或其它远程 Provider。用户没有异议就默认走 Docker。Provider 声明在评估用例或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
 
 探完之后，向用户**介绍接入等级**并给出推荐（详见[接入等级](/zh/explanation/tier)）：
 
@@ -59,9 +59,9 @@ export default defineConfig({
 三个要提醒用户的点：
 
 - **配错不会假装通过。** 模型或 key 解析不到、网关拒绝鉴权、评估请求超时时，Judge Assertion 记为 `unavailable` 并带上原因；读取面不会把缺失 measurement 伪装成 mismatch 或零分。
-- **配完先验一次。** 写一条带 `judge: true` 的轻量 Pass Eval，调用 `turn.judge.autoevals.closedQA(...).gate(0.8)`。跑完 `niceeval show <评估用例 id>`，确认能看到 measurement、threshold、condition 与 Assertion 证据。
+- **配完先验一次。** 写一条带 `judge: true` 的轻量通过制评估，调用 `turn.judge.autoevals.closedQA(...).gate(0.8)`。跑完后用 `niceeval show --run <run-id>` 查看结果，确认能看到 measurement、threshold、condition 与 Assertion 证据。
 - **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有可用 key，例如 `OPENAI_API_KEY` 或 `DEEPSEEK_API_KEY`。有就用 `apiKeyEnv` 指向它并验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
-- Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。配置按 Eval、Experiment、项目配置逐字段解析；三种 recipe 见 [Judge](/zh/explanation/judge)。
+- Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。配置按评估用例、Experiment、项目配置逐字段解析；三种 recipe 见 [Judge](/zh/explanation/judge)。
 
 ## 第 3 步：写三件套
 
@@ -100,7 +100,7 @@ export default defineConfig({
 - [ ] 有 key 时 Judge 已配置，且在 `niceeval view` 里看到过 Judge 分数。没 key 时总结里说明了
 - [ ] Experiment 里声明的 `model` / `flags` 确实被 Adapter 消费（没有写了没人读的死配置，也没有编造被测系统不存在的 model 值）
 
-跑通之后先总结，再谈下一步。总结要说清：接了什么被测对象、生成了哪几个文件（Adapter / Experiment / 评估用例各在哪）、`niceeval exp <实验路径>` 和 `niceeval view` 怎么跑、第一次运行的结果是什么样。不要在没被要求的情况下顺手重构用户已有代码，也不要在这几个文件之外新增抽象。
+跑通之后先总结，再谈下一步。总结要说清：接了什么被测对象、Adapter、Experiment 与评估用例各在哪、`niceeval exp <实验路径>` 和 `niceeval view` 怎么跑、第一次运行的结果是什么样。不要在没被要求的情况下顺手重构用户已有代码，也不要在这几个文件之外新增抽象。
 
 ## 第 6 步：问用户要不要往深了接
 

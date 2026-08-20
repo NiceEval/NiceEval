@@ -211,7 +211,7 @@ entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时�
 
 `Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。是否已停驻、何时过期或收尾成功与否只留在注册表，`phases` 无 `sandbox.stop` 条目。
 
-## Sandbox 的可携带事实只用五个固定 family
+## Sandbox 的可携带事实只用六个固定运行事实 family
 
 Sandbox 不定义自己的可携带 schema。创建、prepare、复用和留存仍完整执行，但它们产生的可观察结果按内容封入既有 family：
 
@@ -219,6 +219,7 @@ Sandbox 不定义自己的可携带 schema。创建、prepare、复用和留存�
 |---|---|
 | provider 创建、prepare、受管命令、计时、诊断，以及 conversation / usage | origin Attempt 或 Run 的 Observability |
 | agent 归因的文件变化 | origin Attempt 的 FileChanges |
+| 每个物理 send 的 source/timing join | origin Attempt 的 SourceNavigation |
 | source frame 或 build 输入所需的源码闭包 | origin Run 的 Sources |
 | Assertion 的 result、coverage 与 Evidence refs | origin Attempt 的 Assertions |
 | 超出有界命令摘要的大型具类型对象 | Attempt 或 Run 的 Artifacts |

@@ -99,7 +99,12 @@ import {
   isCaseLockExpired,
   readCaseLockEffect,
 } from "./runner/lock.ts";
-import { drainHeldGateLeasesEffect } from "./runner/gate-lease.ts";
+import {
+  beginExplicitSharedStateRecoveryEffect,
+  completeExplicitSharedStateRecoveryEffect,
+  readSharedStateLeaseRecoveryTargetEffect,
+  type SharedStateLeaseRecord,
+} from "./runner/shared-state-lease.ts";
 import { cleanupCallback } from "./runner/cleanup-timeout.ts";
 import {
   closeReportPageBytes,
@@ -113,11 +118,14 @@ import {
 import type { ExecutionReusePlanSlot } from "./runner/reuse-plan.ts";
 import {
   isOrphanedTeardownRegistration,
+  isExactTeardownRegistrationOwnerTerminatedEffect,
   orphanedTeardownReminderEffect,
+  readExactTeardownRegistrationEffect,
   readTeardownRegistrationsEffect,
   removeTeardownRegistrationIfPresentEffect,
+  teardownEntryId,
 } from "./runner/teardown-registry.ts";
-import type { DiscoveredExperiment, ExperimentHookContext } from "./runner/types.ts";
+import type { DiscoveredExperiment, ExperimentHook, ExperimentHookContext } from "./runner/types.ts";
 import type {
   ExperimentRenameBlocked,
   ExperimentRenamePlan,
@@ -295,7 +303,7 @@ export interface Flags {
   host?: string;
   help: boolean;
   version: boolean;
-  /** `clean` / `migrate` 专用：确认删除未完成 Run 或没有 Git restore point 的 migration。 */
+  /** `clean` / `migrate` 专用：确认删除未完成 Run 或在 clean Git restore point 下执行 migration。 */
   yes: boolean;
   // ── show 专属(位置参数仍是 eval id 前缀 / `@<locator>`;这些 flag 选「怎么看」)──
   source?: true | string;
@@ -327,6 +335,14 @@ export interface Flags {
   orphans: boolean;
   /** `exp` 命令专用:只对选中实验各执行一次实验级 teardown,不派发 attempt、不跑 setup。 */
   teardown: boolean;
+  /** `exp --teardown` 专用:请求显式恢复的 sharedState key。 */
+  recoverSharedState?: string;
+  /** `exp --teardown --recover-shared-state` 专用:不可变 lease owner token。 */
+  ownerToken?: string;
+  /** 明确确认记录的 owner 已终止；没有它恢复拒绝执行。 */
+  confirmOwnerTerminated: boolean;
+  /** 明确确认远端外部状态已静止；没有它恢复拒绝执行。 */
+  confirmRemoteQuiesced: boolean;
 }
 
 // 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明，不依赖 Node 20.14+
@@ -410,6 +426,14 @@ const FLAG_OPTIONS = {
   page: { type: "string" },
   /** `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 */
   teardown: { type: "boolean" },
+  /** `exp --teardown` 专用:显式恢复一个永不自动接管的 sharedState lease；必须同时提供 --owner-token、--confirm-owner-terminated 和 --confirm-remote-quiesced。 */
+  "recover-shared-state": { type: "string" },
+  /** `--recover-shared-state` 专用:要恢复的不可变 owner token；错误或过期 token 不会修改 lease。 */
+  "owner-token": { type: "string" },
+  /** `--recover-shared-state` 专用:确认原 owner 已终止。 */
+  "confirm-owner-terminated": { type: "boolean" },
+  /** `--recover-shared-state` 专用:确认远端外部状态已静止。 */
+  "confirm-remote-quiesced": { type: "boolean" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
   /** `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 */
@@ -423,7 +447,7 @@ const FLAG_OPTIONS = {
   /** `view` 命令专用:启动后自动打开浏览器(默认行为)。 */
   open: { type: "boolean" },
   "no-open": { type: "boolean" },
-  /** `clean` / `migrate` 专用：确认不可逆 maintenance 动作或没有 Git restore point 的 migration。 */
+  /** `clean` / `migrate` 专用：确认不可逆 maintenance 动作或在 clean Git restore point 下执行 migration。 */
   yes: { type: "boolean" },
   /** 打印用法说明并退出。 */
   help: { type: "boolean", short: "h" },
@@ -623,6 +647,10 @@ function parseArgs(argv: string[]): ParsedCliArgs {
     theme: values.theme as string | undefined,
     orphans: values.orphans === true,
     teardown: values.teardown === true,
+    recoverSharedState: values["recover-shared-state"] as string | undefined,
+    ownerToken: values["owner-token"] as string | undefined,
+    confirmOwnerTerminated: values["confirm-owner-terminated"] === true,
+    confirmRemoteQuiesced: values["confirm-remote-quiesced"] === true,
   };
   return { command, positionals, flags, providedOptions };
 }
@@ -886,6 +914,10 @@ function firstRecordMaintenanceUnsupportedFlag(flags: Flags): string | undefined
     ["--theme", flags.theme],
     ["--orphans", flags.orphans],
     ["--teardown", flags.teardown],
+    ["--recover-shared-state", flags.recoverSharedState],
+    ["--owner-token", flags.ownerToken],
+    ["--confirm-owner-terminated", flags.confirmOwnerTerminated],
+    ["--confirm-remote-quiesced", flags.confirmRemoteQuiesced],
   ];
   const bad = unsupported.find(([flag, value]) => {
     if (flag === "--open/--no-open" || flag === "--early-exit/--no-early-exit") {
@@ -946,6 +978,10 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--theme", flags.theme],
     ["--orphans", flags.orphans],
     ["--teardown", flags.teardown],
+    ["--recover-shared-state", flags.recoverSharedState],
+    ["--owner-token", flags.ownerToken],
+    ["--confirm-owner-terminated", flags.confirmOwnerTerminated],
+    ["--confirm-remote-quiesced", flags.confirmRemoteQuiesced],
   ];
   const bad = unsupported.find(([flag, value]) => {
     // `--no-open` / `--no-early-exit` are represented as false, but are still
@@ -1067,6 +1103,10 @@ export function firstExperimentRenameUnsupportedFlag(flags: Flags): string | und
     ["--theme", flags.theme],
     ["--orphans", flags.orphans],
     ["--teardown", flags.teardown],
+    ["--recover-shared-state", flags.recoverSharedState],
+    ["--owner-token", flags.ownerToken],
+    ["--confirm-owner-terminated", flags.confirmOwnerTerminated],
+    ["--confirm-remote-quiesced", flags.confirmRemoteQuiesced],
     ["--out", flags.out],
     ["--port", flags.port],
     ["--host", flags.host],
@@ -1473,12 +1513,14 @@ function writeStderr(text: string): Effect.Effect<void> {
 
 /** Idempotent application-level sweep for resources owned by this invocation. */
 function releaseCliResources(): Effect.Effect<void> {
-  return Effect.all([
-    cliPromise("stop remaining sandboxes", () => stopAllSandboxes()).pipe(Effect.ignore),
-    drainExperimentTeardowns().pipe(Effect.ignore),
-    drainHeldCaseLocksEffect().pipe(Effect.ignore),
-    drainHeldGateLeasesEffect().pipe(Effect.ignore),
-  ], { concurrency: "unbounded" }).pipe(Effect.asVoid);
+  // Shared-state leases are never part of this exit sweep. A normal Runner
+  // lifecycle releases one only after every pool/provider/Experiment cleanup
+  // succeeds; a failed cleanup intentionally leaves explicit recovery work.
+  return cliPromise("stop remaining sandboxes", () => stopAllSandboxes()).pipe(
+    Effect.ignore,
+    Effect.zipRight(drainExperimentTeardowns().pipe(Effect.ignore)),
+    Effect.zipRight(drainHeldCaseLocksEffect().pipe(Effect.ignore)),
+  );
 }
 
 function errorMessage(cause: unknown): string {
@@ -1616,6 +1658,7 @@ function agentRunFromExperiment(
     earlyExit: overrides.earlyExit ?? experiment.earlyExit ?? false,
     sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
+    ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
     judge: experiment.judge,
     ...resolveRunTimeout(overrides.timeout, experiment.timeoutMs),
     budget: overrides.budget ?? experiment.budget,
@@ -1630,6 +1673,117 @@ function agentRunFromExperiment(
     teardown: experiment.teardown,
     classifyFailure: experiment.classifyFailure,
   };
+}
+
+function hasSharedStateRecoveryOptions(flags: Flags): boolean {
+  return flags.recoverSharedState !== undefined ||
+    flags.ownerToken !== undefined ||
+    flags.confirmOwnerTerminated ||
+    flags.confirmRemoteQuiesced;
+}
+
+function renderSharedStateRecoveryTarget(record: SharedStateLeaseRecord): string {
+  return t("cli.exp.sharedStateRecoveryTarget", {
+    key: record.key,
+    experimentId: record.experimentId,
+    ownerToken: record.ownerToken,
+    host: record.host,
+    pid: record.pid,
+    processIdentity: record.processIdentity,
+    heartbeatAt: record.heartbeatAt,
+  });
+}
+
+function experimentTeardownOf(experiment: Pick<DiscoveredExperiment, "teardown">): ExperimentHook | undefined {
+  return typeof experiment.teardown === "function" ? experiment.teardown : undefined;
+}
+
+/**
+ * A legacy free generation can exist from an interrupted pre-fix recovery:
+ * it has durable owner evidence but may still have its old teardown entry.
+ * Only the entry keyed by that exact immutable owner is eligible for removal.
+ *
+ * Claimed recovery takes the same path before publishing free. A failed or
+ * contested claim therefore leaves the recovery generation closed rather than
+ * letting a waiter enter while the old teardown could still be replayed.
+ */
+function inspectExactRecoveryTeardownRegistrationEffect(input: {
+  readonly niceevalRoot: string;
+  readonly record: SharedStateLeaseRecord;
+  readonly currentHost: string;
+}): Effect.Effect<boolean, unknown> {
+  const { niceevalRoot, record, currentHost } = input;
+  const id = teardownEntryId(record.experimentId, record.pid);
+  return Effect.gen(function* () {
+    const registration = yield* readExactTeardownRegistrationEffect(
+      niceevalRoot,
+      record.experimentId,
+      record.pid,
+    );
+    // A holder can die before its registration is durably written. There is
+    // then no old teardown obligation to clear, but no unrelated entry may be
+    // inferred from the current Experiment declaration.
+    if (registration === undefined) return false;
+    if (registration.host !== record.host) {
+      return yield* Effect.fail(new Error(
+        `teardown registration ${JSON.stringify(id)} belongs to host ${JSON.stringify(registration.host)}, ` +
+        `not immutable sharedState owner host ${JSON.stringify(record.host)}`,
+      ));
+    }
+    // The registration does not carry a process identity itself, so recovery
+    // compares it to the immutable sharedState owner. This shares the lease
+    // terminal boundary: an exact local Z/X/x owner is stopped; an unreadable
+    // or malformed identity probe fails closed instead of treating PID
+    // existence as proof that cleanup can still run.
+    const terminated = yield* isExactTeardownRegistrationOwnerTerminatedEffect({
+      registration,
+      owner: record,
+      currentHost,
+    });
+    if (!terminated) {
+      return yield* Effect.fail(new Error(
+        `teardown registration ${JSON.stringify(id)} still belongs to a live exact sharedState owner; refusing to clear it`,
+      ));
+    }
+    return true;
+  });
+}
+
+function clearExactRecoveryTeardownRegistrationEffect(input: {
+  readonly niceevalRoot: string;
+  readonly record: SharedStateLeaseRecord;
+  readonly currentHost: string;
+  /** Presence was checked after recovery claimed the immutable generation. */
+  readonly expectedRegistration: boolean;
+}): Effect.Effect<void, unknown> {
+  const { niceevalRoot, record, currentHost, expectedRegistration } = input;
+  const id = teardownEntryId(record.experimentId, record.pid);
+  return Effect.gen(function* () {
+    const present = yield* inspectExactRecoveryTeardownRegistrationEffect({
+      niceevalRoot,
+      record,
+      currentHost,
+    });
+    if (!present) {
+      if (expectedRegistration) {
+        return yield* Effect.fail(new Error(
+          `teardown registration ${JSON.stringify(id)} disappeared before this recovery could clear it`,
+        ));
+      }
+      return;
+    }
+    if (!expectedRegistration) {
+      return yield* Effect.fail(new Error(
+        `teardown registration ${JSON.stringify(id)} appeared after this recovery was claimed`,
+      ));
+    }
+    const removed = yield* removeTeardownRegistrationIfPresentEffect(niceevalRoot, id);
+    if (!removed) {
+      return yield* Effect.fail(new Error(
+        `teardown registration ${JSON.stringify(id)} changed before this recovery could clear it`,
+      ));
+    }
+  });
 }
 
 function renderDebugPlanJson(input: ExperimentHostDebugPlan): string {
@@ -1707,6 +1861,13 @@ function runEvaluationCommand(
   interruption?: CliInterruptionOwnership,
 ) {
   return Effect.gen(function* () {
+    // Explicit recovery is intentionally human-only. It has no receipt or
+    // NDJSON contract, so accepting --json would give machine callers an
+    // apparently successful but unparseable interface.
+    if (command === "exp" && flags.recoverSharedState !== undefined && flags.json) {
+      yield* writeStderr(t("cli.exp.sharedStateRecoveryJsonUnsupported"));
+      return 1;
+    }
     // Keep project-local coordination (sessions, locks, kept sandboxes) separate
     // from the portable Record root selected by `--record` below.
     const coordinationRoot = resolvePath(cwd, ".niceeval");
@@ -1736,6 +1897,10 @@ function runEvaluationCommand(
     let availableExperimentPaths = t("cli.none");
 
     if (command === "exp" || command === "check") {
+      if (hasSharedStateRecoveryOptions(flags) && (command !== "exp" || !flags.teardown)) {
+        yield* writeStderr(t("cli.exp.sharedStateRecoveryFlags"));
+        return 1;
+      }
       if (flags.agent || flags.model) {
         yield* writeStderr(t("cli.exp.agentModelFlagUnsupported"));
         return 1;
@@ -1840,7 +2005,7 @@ function runEvaluationCommand(
       const teardownReminder = yield* orphanedTeardownReminderEffect(
         coordinationRoot,
         new Set(selected
-          .filter(({ experiment }) => experiment.teardown)
+          .filter(({ experiment }) => experimentTeardownOf(experiment) !== undefined)
           .map(({ experiment }) => experiment.id)),
         hostname(),
       ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
@@ -1852,9 +2017,158 @@ function runEvaluationCommand(
           return 1;
         }
         const niceevalRootForTeardown = coordinationRoot;
+        let selectedForTeardown = selected;
+        let explicitRecovery: {
+          readonly key: string;
+          readonly ownerToken: string;
+          readonly recoveryId: string;
+          readonly experimentId: string;
+          readonly record: SharedStateLeaseRecord;
+          readonly registrationWasPresent: boolean;
+        } | undefined;
+        if (flags.recoverSharedState !== undefined) {
+          // The input key is the recovery authority. Read its immutable
+          // evidence before considering today's Experiment declaration: an
+          // author may have renamed or removed sharedState after the holder
+          // crashed, but must still have a public recovery path for that old
+          // external state.
+          const inspected = yield* Effect.either(readSharedStateLeaseRecoveryTargetEffect(
+            niceevalRootForTeardown,
+            flags.recoverSharedState,
+          ));
+          if (Either.isLeft(inspected)) {
+            yield* writeStderr(`sharedState recovery inspection failed: ${errorMessage(inspected.left)}\n`);
+            return 1;
+          }
+          if (inspected.right === undefined) {
+            yield* writeStderr(`No recoverable sharedState ownership evidence exists for ${JSON.stringify(flags.recoverSharedState)}.\n`);
+            return 1;
+          }
+          yield* writeStderr(renderSharedStateRecoveryTarget(inspected.right));
+          if (selected.length !== 1) {
+            yield* writeStderr("sharedState recovery requires an experiment selector that resolves to exactly one Experiment.\n");
+            return 1;
+          }
+          const target = selected[0]!;
+          if (inspected.right.experimentId !== target.experiment.id) {
+            yield* writeStderr(
+              `sharedState key ${JSON.stringify(flags.recoverSharedState)} belongs to experiment ${inspected.right.experimentId}, not ${target.experiment.id}; refusing recovery.\n`,
+            );
+            return 1;
+          }
+          // Inspection intentionally precedes confirmation validation. The
+          // immutable generation head retains the exact owner evidence even
+          // after a crashed recovery attempt; this public command is the only
+          // supported way to reveal it, never private-file manipulation.
+          if (
+            flags.ownerToken === undefined ||
+            !flags.confirmOwnerTerminated ||
+            !flags.confirmRemoteQuiesced
+          ) {
+            yield* writeStderr(t("cli.exp.sharedStateRecoveryFlags"));
+            return 1;
+          }
+          // Inspection is read-only and remains available without a teardown.
+          // Only the uniquely selected target can reach this point. Validate
+          // its teardown immediately before claiming a recovery generation.
+          if (experimentTeardownOf(target.experiment) === undefined) {
+            yield* writeStderr(t("cli.exp.sharedStateRecoveryTeardownRequired", {
+              experimentId: target.experiment.id,
+            }));
+            return 1;
+          }
+          const begun = yield* Effect.either(beginExplicitSharedStateRecoveryEffect({
+            niceevalRoot: niceevalRootForTeardown,
+            key: flags.recoverSharedState,
+            ownerToken: flags.ownerToken,
+            localHost: hostname(),
+            confirmOwnerTerminated: flags.confirmOwnerTerminated,
+            confirmRemoteQuiesced: flags.confirmRemoteQuiesced,
+          }));
+          if (Either.isLeft(begun)) {
+            yield* writeStderr(`sharedState recovery refused: ${errorMessage(begun.left)}\n`);
+            return 1;
+          }
+          if (begun.right._tag === "AlreadyReleased") {
+            const registrationWasPresent = yield* Effect.either(inspectExactRecoveryTeardownRegistrationEffect({
+              niceevalRoot: niceevalRootForTeardown,
+              record: begun.right.record,
+              currentHost: hostname(),
+            }));
+            if (Either.isLeft(registrationWasPresent)) {
+              yield* writeStderr(t("cli.exp.sharedStateRecoveryAlreadyReleasedRegistrationFailed", {
+                key: begun.right.record.key,
+                message: errorMessage(registrationWasPresent.left),
+              }));
+              return 1;
+            }
+            const cleared = yield* Effect.either(clearExactRecoveryTeardownRegistrationEffect({
+              niceevalRoot: niceevalRootForTeardown,
+              record: begun.right.record,
+              currentHost: hostname(),
+              expectedRegistration: registrationWasPresent.right,
+            }));
+            if (Either.isLeft(cleared)) {
+              yield* writeStderr(t("cli.exp.sharedStateRecoveryAlreadyReleasedRegistrationFailed", {
+                key: begun.right.record.key,
+                message: errorMessage(cleared.left),
+              }));
+              return 1;
+            }
+            yield* writeStderr(t("cli.exp.sharedStateRecoveryAlreadyReleased", { key: begun.right.record.key }));
+            yield* writeStderr(t("runner.sharedStateExplicitRecovered", {
+              key: begun.right.record.key,
+              experimentId: begun.right.record.experimentId,
+              ownerToken: begun.right.record.ownerToken,
+            }));
+            return 0;
+          }
+          if (begun.right.record.experimentId !== target.experiment.id) {
+            yield* writeStderr(
+              `sharedState key ${JSON.stringify(flags.recoverSharedState)} changed Experiment ownership during recovery; refusing teardown.\n`,
+            );
+            return 1;
+          }
+          const registrationWasPresent = yield* Effect.either(inspectExactRecoveryTeardownRegistrationEffect({
+            niceevalRoot: niceevalRootForTeardown,
+            record: begun.right.record,
+            currentHost: hostname(),
+          }));
+          if (Either.isLeft(registrationWasPresent)) {
+            yield* writeStderr(t("cli.exp.sharedStateRecoveryRegistrationFailed", {
+              key: begun.right.record.key,
+              message: errorMessage(registrationWasPresent.left),
+            }));
+            return 1;
+          }
+          explicitRecovery = {
+            key: begun.right.record.key,
+            ownerToken: begun.right.record.ownerToken,
+            recoveryId: begun.right.recoveryId,
+            experimentId: begun.right.record.experimentId,
+            record: begun.right.record,
+            registrationWasPresent: registrationWasPresent.right,
+          };
+          selectedForTeardown = [target];
+        } else if (hasSharedStateRecoveryOptions(flags)) {
+          yield* writeStderr(t("cli.exp.sharedStateRecoveryFlags"));
+          return 1;
+        }
         let anyFailed = false;
-        for (const { experiment, selectedEvalIds } of selected) {
-          if (!experiment.teardown) continue;
+        for (const { experiment, selectedEvalIds } of selectedForTeardown) {
+          const teardown = experimentTeardownOf(experiment);
+          if (teardown === undefined) {
+            // Discovery normally reaches this branch only for an absent
+            // teardown, because defineExperiment rejects non-functions. Keep
+            // the CLI boundary equally strict for dynamically supplied
+            // definitions: a truthy or null-ish impostor must never be
+            // treated as a completed recovery hook.
+            if (experiment.teardown !== undefined) {
+              anyFailed = true;
+              yield* writeStderr(t("define.experimentTeardownNotFunction"));
+            }
+            continue;
+          }
           const ctx: ExperimentHookContext = {
             experimentId: experiment.id,
             selectedEvalIds,
@@ -1862,24 +2176,44 @@ function runEvaluationCommand(
             progress: () => {},
             diagnostic: (input) => process.stderr.write(`${input.message}\n`),
           };
+          if (explicitRecovery !== undefined) {
+            // The exact registration was inspected after the immutable
+            // recovery marker was claimed. Do not re-scan by current
+            // Experiment identity: its sharedState declaration can have
+            // changed, and broad scans could claim another run's cleanup.
+            const outcome = yield* Effect.either(cliEffect(
+              "run experiment teardown",
+              cleanupCallback(() => teardown(ctx)),
+            ));
+            if (Either.isRight(outcome)) {
+              yield* writeStderr(t("cli.exp.teardownDone", { experimentId: experiment.id }));
+            } else {
+              anyFailed = true;
+              const error = outcome.left.cause;
+              yield* writeStderr(t("cli.exp.teardownFailed", {
+                experimentId: experiment.id,
+                message: error instanceof Error ? error.message : String(error),
+              }));
+            }
+            continue;
+          }
           const registrations = yield* readTeardownRegistrationsEffect(niceevalRootForTeardown).pipe(
             Effect.catchAll(() => Effect.succeed([] as const)),
           );
           const matching = registrations.filter(({ entry }) => entry.experimentId === experiment.id);
-          const claimed = yield* Effect.all(
-            matching
-              .filter(({ entry }) => isOrphanedTeardownRegistration(entry, hostname()))
-              .map(({ id }) => removeTeardownRegistrationIfPresentEffect(niceevalRootForTeardown, id).pipe(
-                Effect.catchAll(() => Effect.succeed(false)),
-                Effect.map((claimed) => claimed ? id : undefined),
-              )),
+          const orphaned = matching.filter(({ entry }) => isOrphanedTeardownRegistration(entry, hostname()));
+          const executions = Effect.all(
+            orphaned.map(({ id }) => removeTeardownRegistrationIfPresentEffect(niceevalRootForTeardown, id).pipe(
+              Effect.catchAll(() => Effect.succeed(false)),
+              Effect.map((claimed) => claimed ? id : undefined),
+            )),
             { concurrency: "unbounded" },
-          );
-          const executions = matching.length === 0 ? [undefined] : claimed.filter((id): id is string => id !== undefined);
-          for (const _ of executions) {
+          ).pipe(Effect.map((claimed) =>
+            matching.length === 0 ? [undefined] : claimed.filter((id): id is string => id !== undefined)));
+          for (const _ of yield* executions) {
             const outcome = yield* Effect.either(cliEffect(
               "run experiment teardown",
-              cleanupCallback(() => experiment.teardown!(ctx)),
+              cleanupCallback(() => teardown(ctx)),
             ));
             if (Either.isRight(outcome)) {
               yield* writeStderr(t("cli.exp.teardownDone", { experimentId: experiment.id }));
@@ -1892,6 +2226,42 @@ function runEvaluationCommand(
               }));
             }
           }
+        }
+        if (!anyFailed && explicitRecovery !== undefined) {
+          // A waiter may enter as soon as `complete...` publishes free. The
+          // old durable teardown obligation must therefore be removed first.
+          // Any read/claim failure leaves the immutable recovery marker
+          // closed, so an operator can inspect and retry instead of replaying
+          // old teardown after a new owner starts.
+          const cleared = yield* Effect.either(clearExactRecoveryTeardownRegistrationEffect({
+            niceevalRoot: niceevalRootForTeardown,
+            record: explicitRecovery.record,
+            currentHost: hostname(),
+            expectedRegistration: explicitRecovery.registrationWasPresent,
+          }));
+          if (Either.isLeft(cleared)) {
+            yield* writeStderr(t("cli.exp.sharedStateRecoveryRegistrationFailed", {
+              key: explicitRecovery.key,
+              message: errorMessage(cleared.left),
+            }));
+            return 1;
+          }
+          const completed = yield* Effect.either(completeExplicitSharedStateRecoveryEffect({
+            niceevalRoot: niceevalRootForTeardown,
+            key: explicitRecovery.key,
+            ownerToken: explicitRecovery.ownerToken,
+            recoveryId: explicitRecovery.recoveryId,
+            localHost: hostname(),
+          }));
+          if (Either.isLeft(completed)) {
+            yield* writeStderr(`sharedState recovery could not release its exact owner token: ${errorMessage(completed.left)}\n`);
+            return 1;
+          }
+          yield* writeStderr(t("runner.sharedStateExplicitRecovered", {
+            key: explicitRecovery.key,
+            experimentId: explicitRecovery.experimentId,
+            ownerToken: explicitRecovery.ownerToken,
+          }));
         }
         return anyFailed ? 1 : 0;
       }
@@ -2422,6 +2792,10 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
     ["--stats", flags.stats],
     ["--orphans", flags.orphans],
     ["--teardown", flags.teardown],
+    ["--recover-shared-state", flags.recoverSharedState],
+    ["--owner-token", flags.ownerToken],
+    ["--confirm-owner-terminated", flags.confirmOwnerTerminated],
+    ["--confirm-remote-quiesced", flags.confirmRemoteQuiesced],
     ["--yes", flags.yes],
   ];
   const found = unsupported.find(([, value]) =>
@@ -3340,6 +3714,10 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
   }
 
   if (flags.help) {
+    yield* writeStdout(t("cli.help"));
+    return 0;
+  }
+  if (command === "exp" && positionals.length === 1 && positionals[0] === "help") {
     yield* writeStdout(t("cli.help"));
     return 0;
   }

@@ -241,6 +241,7 @@ const en = {
 
   /** 成本投影卡片的显示文案(docs/feature/reports/cost-projections/cli.md)。 */
   "costProjection.unavailable": "cost projection unavailable",
+  "costProjection.migrationRequired": "cost projection requires migration — run niceeval migrate",
   "costProjection.basis.observed": "observed",
   "costProjection.basis.estimated": "estimated",
   "costProjection.basis.mixed": "mixed",
@@ -430,6 +431,7 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "tabs.tab": "Tab",
 
   "costProjection.unavailable": "成本投影不可用",
+  "costProjection.migrationRequired": "成本投影需要迁移——请运行 niceeval migrate",
   "costProjection.basis.observed": "供应商观测",
   "costProjection.basis.estimated": "价格表估算",
   "costProjection.basis.mixed": "混合",

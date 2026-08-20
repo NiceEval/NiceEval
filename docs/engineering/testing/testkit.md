@@ -23,10 +23,6 @@ case 中的 `commands.<name>.run/start` 固定使用该 case 的 cwd，调用点
 `start` 登记的进程在正文结束后按逆序回收，然后才暂存 artifact 并删除项目副本；多个失败按
 `body → process cleanup → staging → project cleanup` 的顺序聚合。完整 argv、readiness 和 expected 仍留在测试正文。
 
-`case()` 的项目寿命就是其 async 正文。原生 `beforeAll` / `afterAll` 若要让同一文件的多个只读断言共享一轮冻结证据，
-可以由 owner 自己保持正文 pending，并在 `afterAll` 释放它、等待同一个 case Promise；这样才会按上述顺序暂存并删除副本。
-这不是另一条 Testkit API，也不把项目、领域 expected 或测试标题上移到 Testkit。
-
 正式 runner 同时注入 `NICEEVAL_E2E_INVOCATION_ID` 与隔离 Repo 副本内的
 `NICEEVAL_E2E_ARTIFACT_STAGING_ROOT`。context 只能写这个 staging root 的 invocation/case namespace，再由
 manifest collector 携带到 durable root；它不获得 durable root。直接调试没有注入时使用系统临时目录，
@@ -128,6 +124,8 @@ export interface ProcessReceipt {
   expEvalEvents(): ExpEvalEvent[];
 }
 
+export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument;
+
 export function assertExpEvalOutcomes(
   actual: readonly ExpEvalEvent[],
   expected: readonly ExpEvalOutcomeExpectation[],
@@ -193,6 +191,17 @@ timeout 与 selector 预检。Testkit 只串行执行每个 target，要求补�
 `assertExpEvalOutcomes()` 要求调用方在测试文件中逐条提供 `experimentId`、`evalId`、Verdict 与 Attempt 数。
 它严格拒绝缺失、额外、重复身份和字段不符，并可选核对 `passed` 或 `early_exit` 字段。
 Testkit 不生成 expected、不按 exit code 推断 Verdict，也不把 `failed`、`errored` 或 `skipped` 折叠成另一状态。
+
+`decodeShowTiming()` 严格验证 `niceeval show --timing --json` 的稳定公开结构：
+
+- schema、timing data 与 Attempt 身份；
+- complete/partial collection 与完整 interval 字段；
+- Attempt phase、标识符，以及唯一且规范排序的 interval；
+- parent 存在、区间包含、无环且无安全整数溢出；
+- complete collection 不含 unknown outcome。
+
+malformed 时错误附带原始命令诊断。decoder 不选择业务所需 interval，也不替 owner 决定应出现哪个
+phase、label、父子关系或 outcome；这些 expected 必须继续写在 owner 正文中。
 
 ```ts
 const evalEvents = assertExpEvalOutcomes(
@@ -269,8 +278,8 @@ TERM → grace period → KILL 结束 owned process。正文已经让进程退�
 
 POSIX 上的 `dispose()` 在根进程已退出后仍检查它创建的 process group；同组后代仍存活时继续执行 TERM → grace → KILL，
 并等待整组消失。Windows 没有等价的负 PID group signal，`processGroup: true` 会在 spawn 前明确失败，不静默退化成只杀根进程。
-Linux 的 signal-0 会把尚未由宿主 PID 1 回收的 zombie 也报告为存在；Testkit 通过 `/proc` 区分仍可运行的成员与
-zombie-only group。只有后者可视为终止完成，任何 live member 在 TERM → grace → KILL 后仍然存在都继续作为 cleanup failure。
+Linux 上被 PID 1 接管但尚未 reap 的 zombie 仍会让 signal 0 报告 process group 存在，而 TERM / KILL 已不可能改变它。
+Testkit 会通过 procfs 区分成员状态：只有仍含非 zombie 成员的组才算存活；procfs 无法可靠读取时保持 fail-closed，不把未知状态当作进程组已经终止。
 
 正文和 cleanup 同时失败时抛 `AggregateError([bodyError, cleanupError])`，主错误排第一并作为 cause。只有 cleanup 失败时，
 直接抛 cleanup error。

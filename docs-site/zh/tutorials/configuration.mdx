@@ -15,7 +15,7 @@ import { ConfigLayers } from '/snippets/diagram-config-layers.jsx';
 
 ## 配置：想让这个值活多久，就写在哪一层
 
-同一个值出现在多层时，按 **CLI flag → experiment → eval → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
+同一个值出现在多层时，按 **CLI flag → experiment → 评估用例 → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
 
 <ConfigLayers />
 
@@ -79,10 +79,8 @@ export default defineConfig({
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | `claudeCodeAgent()` | 工厂参数 `apiKey` 可覆盖 |
 | `ANTHROPIC_BASE_URL` | `claudeCodeAgent()` | 网关地址，工厂参数 `baseUrl` 可覆盖 |
-| `CODEX_API_KEY` | `codexAgent()` | 不是 `OPENAI_API_KEY`。工厂参数 `apiKey` 可覆盖 |
-| `CODEX_BASE_URL` | `codexAgent()` | OpenAI 兼容代理地址，工厂参数 `baseUrl` 可覆盖 |
-| `BUB_API_KEY` | `bubAgent()` | 工厂参数 `apiKey` 可覆盖 |
-| `BUB_API_BASE` | `bubAgent()` | 工厂参数 `apiBase` 可覆盖 |
+| `OPENAI_API_KEY` | `codexAgent()`、`bubAgent()` | 工厂参数 `apiKey` 可覆盖 |
+| `OPENAI_BASE_URL` | `codexAgent()`、`bubAgent()` | OpenAI 兼容代理地址，工厂参数 `baseUrl` / `apiBase` 可覆盖 |
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | key 省略时依次回落 `OPENROUTER_API_KEY`、`ANTHROPIC_API_KEY` |
@@ -148,7 +146,7 @@ NICEEVAL_JUDGE_KEY=sk-...
 | Judge 模型与端点 | config 或评估用例的 `judge.model` / `judge.baseUrl` |
 | OTel 接收地址 | config 的 `telemetry: { host, port }` |
 
-Judge 的 key 只从 `NICEEVAL_JUDGE_KEY`（或 `judge.apiKeyEnv` 指定的变量）读，端点只从 `judge.baseUrl` 读。被测应用把标准的 `OPENAI_*` 挪作它用时，Judge 不会跟着串味。
+Judge 默认从 `NICEEVAL_JUDGE_KEY` 读取 key，也可以改读 `judge.apiKeyEnv` 指定的变量；端点只从 `judge.baseUrl` 读。它不会借用被测应用的 `OPENAI_API_KEY`。
 
 ## 接着看
 

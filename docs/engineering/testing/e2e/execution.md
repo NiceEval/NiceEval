@@ -133,6 +133,9 @@ discover → select → pack candidate → build Testkit → capability prefligh
 | summarize | 根 runner | 状态、阶段、耗时、重现命令 |
 
 每个 Repo invocation 注入新的非秘密 `NICEEVAL_E2E_INVOCATION_ID`；receipt 只写 ID，不写 secret 值。
+Hermes、OpenClaw 与 OpenCode 的既有 live owner 仍检查其 CLI-native `BUB_*` 名称；runner 只在这些 Repo
+已经通过 manifest 的 `OPENAI_*` preflight 后，于隔离 test 子进程集中提供 test-only alias。workflow 与
+manifest 不再要求旧 secret，产品 adapter 也不读取这些 alias。
 
 `requires.runtimes`、`requires.docker`、`requires.browsers`、平台与 manifest secret 都在 test 前形成结构化 capability check。
 缺 runtime、Docker daemon、browser 或显式需要的 secret 是 `configuration`，不是 regression。

@@ -3,7 +3,7 @@
 本页说明 `niceeval migrate` 怎样区分 Core 不兼容、已知 family 的升级与未知 future family。契约单源
 始终在 [Record Architecture](../architecture.md) 和 [Record CLI](../cli.md#migrate)。
 
-## schemaVersion `1` 的结果
+## root schemaVersion `1` 的结果
 
 完整 current Record 的 root 是：
 
@@ -11,7 +11,7 @@
 { "format": "niceeval.record", "schemaVersion": 1 }
 ```
 
-它没有已发布 predecessor，因此命令不写盘：
+它没有已发布 predecessor。所有 fixed family 也处于 current 时，命令不写盘：
 
 ```sh
 niceeval migrate --record .niceeval/record
@@ -31,11 +31,13 @@ niceeval migrate --record .niceeval/record
 未知 family 的局部容忍只保护可读的历史。它不能让 reader 解释 payload、验证 blob closure 或把事实交给
 Report。`AnalysisInput` 或 `DomainViewRequest` 依赖该 family 时才返回 `unsupported`。
 
-## future schema 的固定步骤
+## Observability `1 → 2` 的固定步骤
 
-future root / Core schemaVersion `2` 发布时，NiceEval 必须同批提供固定 `1 → 2` maintenance step。已知
-family 的 schemaVersion 升级也由固定、静态 definition 说明相邻步骤。步骤只处理保存的 Core、payload 与
-own blob closure。
+`niceeval.observability` current schemaVersion 是 `2`。它的静态 definition 同批提供固定
+`1 → 2` maintenance step。步骤只处理已保存的 attempt / run payload 与 own blob closure，
+逐字保留 label、blob refs 和 blob bytes，只更新 envelope。
+
+future root / Core schemaVersion 发布时，仍必须另行同批提供它自己的固定相邻步骤。
 
 迁移可以重新编码 bytes、mint 新 blob ref 或重排 canonical object key。它不能：
 
@@ -76,7 +78,9 @@ migration 是 maintenance 的内部工作，不是 family read，也不是 Analy
 ## 中断后的唯一恢复路径
 
 NiceEval 不创建 staging、backup、rollback、root replacement 或自己的恢复日志。被 kill、断电、I/O failure
-或校验失败时，ordinary reader 不形成 reader session。
+或校验失败时，ordinary reader 不形成 reader session。计划绑定目标 envelope 的 exact source bytes；首个目标
+改写前发现变化时移除 sentinel、保留并发编辑并返回 `record-migration-plan-stale`。sentinel 后的恢复只有在 HEAD 未变化，且 dirty path
+只含 sentinel 与 canonical v2 计划目标时才显示 Git restore 命令；其它现场要求人工检查，不能改写并发编辑。
 
 用户必须用 Git 把 `.niceeval/record` 的 tracked 与迁移新增内容完整恢复到预检显示的 commit，再重新运行
 `niceeval migrate`。恢复后由新 preflight 再次判断格式和计划；工具不会从半完成的 known-family bytes 继续。

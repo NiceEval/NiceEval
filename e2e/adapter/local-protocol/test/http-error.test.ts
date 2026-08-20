@@ -34,9 +34,42 @@ test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async (
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-        const shown = await niceeval.run(["show", event.locator, "--json"]);
+        const shown = await niceeval.run([
+          "show", event.locator, "--execution", "--json",
+        ]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        expect(shown.stdout, shown.diagnostic()).toContain(event.locator);
+        const entries = shown.json<{
+          data: {
+            execution: {
+              entries: readonly {
+                detail: {
+                  diagnostics: {
+                    collection: { state: string; limitations: readonly unknown[] };
+                    diagnostics: readonly {
+                      code: string;
+                      phase: string;
+                      summary: string;
+                    }[];
+                  };
+                };
+              }[];
+            };
+          };
+        }>().data.execution.entries;
+        expect(entries, shown.diagnostic()).toHaveLength(1);
+        expect(entries[0]!.detail.diagnostics.collection, shown.diagnostic()).toEqual({
+          state: "complete",
+          limitations: [],
+        });
+        expect(entries[0]!.detail.diagnostics.diagnostics, shown.diagnostic()).toEqual([
+          expect.objectContaining({
+            code: "agent-send-failed",
+            phase: "eval.run",
+            summary: expect.stringMatching(
+              /POST http:\/\/127\.0\.0\.1:\d+\/modes\/error\/api\/chat failed: 500 .*deliberate 500/,
+            ),
+          }),
+        ]);
       });
     },
   );

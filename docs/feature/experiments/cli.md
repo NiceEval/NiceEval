@@ -145,15 +145,47 @@ writer 互斥。只读命令只惰性读取已发布 Run。
 
 ### 协调等待与恢复
 
-有效 owner 持有 Experiment 并发槽时，等待方以 `i gate-lease-waiting` 显示当前运行状态。该信息不改变
-completion 或退出码。名额释放或 owner heartbeat 过期后，调度器继续派发。
+Experiment `maxConcurrency` 只在本 Invocation 内限流，不产生跨 Invocation 的等待或被其它 Invocation 收紧。
+跨 Invocation 的 Eval dispatch claim 仍由 case lock 协调。声明 `sharedState.key` 的 Invocation 在拿到
+共享状态租约前不运行 Experiment Hook、不创建 Sandbox，也不持有 Eval lock 或全局并发位。
 
-过期协调状态被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。成功接管不形成
-warning，也不写入 Run diagnostic。Human 只说明 NiceEval 已恢复中断运行留下的状态并继续执行，不展示
-lease、lock 或协调器内部计数；机器流为每次接管保留结构化 notice。完整形态见
-[协调恢复输出案例](output/coordination-recovery.md)。
+它也不占有限 dispatch execution worker 或 Provider lane。
 
-机器 notice 的稳定字段如下；`resource` 决定资源专属字段是否存在：
+过期 case lock 被原子接管时，当前 Invocation 产生 info 级 `coordination-recovered` notice。
+`sharedState` 从不自动接管：等待方不运行 Hook 或创建 Sandbox，也不持有这些执行资源，直到当前 owner
+正常释放或操作员完成显式恢复。
+
+健康等待只产生不含 owner token 的 info `state-lease-waiting`，且不进入 durable Run diagnostic。
+cleanup-required 的 warning 同样只包含 key 与原因。
+
+heartbeat 是随 owner 活动更新的非权威诊断 sidecar。暂停 owner 时它可以停止前进，但绝不因超时失权。
+
+显式 sharedState recovery 只能附在一个唯一 Experiment 的 teardown 命令上：
+
+```bash
+niceeval exp <selector> --teardown \
+  --recover-shared-state <key> \
+  --owner-token <token> \
+  --confirm-owner-terminated \
+  --confirm-remote-quiesced
+```
+
+CLI 先要求 selector 最终只匹配一个 Experiment。它保留不带 token 或确认的只读 owner-evidence inspection。只有 token 与
+双确认齐全、即将开始 recovery generation 时，CLI 才检查这个唯一 Experiment 是否声明 `teardown`。selector 不唯一或
+target 缺少 `teardown` 都以非零状态结束，当前 active generation 保持不变，不会进入 recovering 或 free。
+
+不带 token 或确认时，该公开入口只显示 key、Experiment、owner token、host、PID、process identity 与当前 exact
+token/generation 匹配时的 heartbeat 诊断。这是 owner token 的唯一普通可见面。
+
+若同机 exact process identity 仍活则拒绝；无可靠身份也 fail closed。恢复和正常 release 都只推进 exact owner
+generation，错误/旧 token 不会修改 lease，也不能删除恢复后的新 holder。
+
+成功显示 `explicitly recovered sharedState key`；cleanup 失败保留时显示 `state-lease-recovery-required`。
+
+显式 recovery 没有 NDJSON 或 receipt 形状。带完整 recovery 参数的 `--json` 组合在选择、读取 owner evidence 或
+改变 generation 之前以具名错误拒绝；调用方必须改用人读 recovery 流程，不能从 stderr 拼装机器接口。
+
+case-lock recovery notice 的稳定字段如下：
 
 ```ts
 interface CoordinationRecoveredNotice {
@@ -161,10 +193,9 @@ interface CoordinationRecoveredNotice {
   code: "coordination-recovered";
   level: "info";
   message: string;
-  resource: "concurrency-slot" | "case-lock";
+  resource: "case-lock";
   experimentId: string;
   evalId?: string;
-  slot?: number;
   previousPid?: number;
   previousHost?: string;
 }
@@ -239,7 +270,8 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 
 ## `--json`
 
-`exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。完整形态见
+普通 `exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。显式 sharedState recovery 明确拒绝
+`--json`，因为它不建立 Invocation 或 receipt，也没有 NDJSON 形状。完整形态见
 [NDJSON 输出案例](output/json-stream.md)。
 
 progress 与 diagnostic 形状服务当前 Invocation，不是 Record 解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 Record reader 读取业务数据。

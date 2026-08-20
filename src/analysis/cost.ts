@@ -221,7 +221,7 @@ export interface PricingProfileInput {
   readonly coverage: readonly PricingCoverageInput[];
 }
 
-export type CostProjectionState = "available" | "partial" | "unavailable";
+export type CostProjectionState = "available" | "partial" | "migration-required" | "unavailable";
 export type CostBasis = "observed" | "estimated" | "mixed" | "unavailable";
 
 export interface ProjectedMoney {
@@ -246,6 +246,7 @@ export type CostCoverageReasonCode =
   | "execution-model-not-recorded"
   | "usage-not-recorded"
   | "usage-unavailable"
+  | "usage-migration-required"
   | "usage-unsupported"
   | "usage-invalid"
   | "usage-collection-partial"
@@ -358,7 +359,18 @@ export interface CostProjectionUnavailable extends CostProjectionCommon {
   readonly combined: null;
 }
 
-export type CostProjectionValue = CostProjectionKnown | CostProjectionUnavailable;
+export interface CostProjectionMigrationRequired extends CostProjectionCommon {
+  readonly state: "migration-required";
+  readonly basis: "unavailable";
+  readonly observed: null;
+  readonly estimated: null;
+  readonly combined: null;
+}
+
+export type CostProjectionValue =
+  | CostProjectionKnown
+  | CostProjectionMigrationRequired
+  | CostProjectionUnavailable;
 
 /** A normal MetricValue with a closed cost domain value attached. */
 export interface CostMetricValue extends MetricValue<number> {
@@ -556,9 +568,18 @@ export function isCostProjectionValue(value: unknown): value is CostProjectionVa
     !projection.ledger.every((entry) => isCostLedgerEntry(entry, profile))) {
     return false;
   }
-  if (projection.state === "unavailable") {
-    return projection.basis === "unavailable" && projection.observed === null &&
-      projection.estimated === null && projection.combined === null;
+  if (projection.state === "unavailable" || projection.state === "migration-required") {
+    if (projection.basis !== "unavailable" || projection.observed !== null ||
+      projection.estimated !== null || projection.combined !== null) return false;
+    if (projection.state === "unavailable") return true;
+    const ledger = projection.ledger as readonly CostLedgerEntry[];
+    const reasons = projection.reasons as readonly CostCoverageReason[];
+    return ledger.length > 0 &&
+      ledger.every((entry) => entry.branch === "unavailable" && reasons.some((reason) =>
+        reason.code === "usage-migration-required" &&
+        reason.slot.runId === entry.slot.runId &&
+        reason.slot.slotId === entry.slot.slotId
+      ));
   }
   if (projection.state !== "available" && projection.state !== "partial" ||
     !isNullableProjectedMoney(projection.observed, profile) ||
@@ -593,6 +614,7 @@ const COST_COVERAGE_REASON_CODES = new Set<CostCoverageReason["code"]>([
   "execution-model-not-recorded",
   "usage-not-recorded",
   "usage-unavailable",
+  "usage-migration-required",
   "usage-unsupported",
   "usage-invalid",
   "usage-collection-partial",

@@ -67,7 +67,15 @@ function recordErrorNextStep(code: string): string | undefined {
     case "record-migration-required":
       return "Run: niceeval migrate";
     case "record-migration-interrupted":
-      return "Restore the Record from Git; do not rerun migrate on mixed bytes.";
+      return "Restore the complete Record from the recorded Git commit; do not rerun migrate on mixed bytes.";
+    case "record-migration-recovery-required":
+      return "Restore the complete Record from Git before retrying migration.";
+    case "record-migration-plan-stale":
+      return "Review the new migration plan and rerun migrate.";
+    case "record-migration-git-restore-required":
+      return "Commit, restore, or otherwise obtain a clean Git restore point for this Record before migrating.";
+    case "record-migration-invalid":
+      return "Restore the Record from Git before retrying migration.";
     case "record-format-unsupported":
       return "Install a NiceEval version that supports this Record format.";
     case "record-maintenance-busy":
@@ -78,13 +86,56 @@ function recordErrorNextStep(code: string): string | undefined {
   }
 }
 
-function recordErrorOutput(error: unknown, stdout = ""): RecordCliCommandOutput {
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function recoveryCommands(restoreCommit: string, recordPath: string): string {
+  const root = shellQuote(recordPath);
+  const commit = shellQuote(restoreCommit);
+  const sentinel = shellQuote(resolve(recordPath, "migration.in-progress"));
+  return [
+    `Restore command: git -C ${root} restore --source=${commit} --staged --worktree -- .`,
+    `Verify command: git -C ${root} diff --quiet ${commit} -- . && git -C ${root} diff --cached --quiet ${commit} -- .`,
+    `Clear sentinel after verification: rm -f -- ${sentinel}`,
+  ].join("\n") + "\n";
+}
+
+function interruptedRecovery(error: unknown, recordPath: string | undefined): string {
+  if (typeof error !== "object" || error === null || recordPath === undefined) return "";
+  const restoreCommit = Reflect.get(error, "restoreCommit");
+  return Reflect.get(error, "restoreSafe") === true &&
+      typeof restoreCommit === "string" && /^[0-9a-f]{40,64}$/.test(restoreCommit)
+    ? recoveryCommands(restoreCommit, recordPath)
+    : "";
+}
+
+function recordErrorOutput(
+  error: unknown,
+  stdout = "",
+  recordPath?: string,
+): RecordCliCommandOutput {
   const code = recordErrorCode(error);
-  const next = recordErrorNextStep(code);
+  const automaticRestoreUnsafe =
+    (code === "record-migration-interrupted" || code === "record-migration-recovery-required") &&
+    (typeof error !== "object" || error === null || Reflect.get(error, "restoreSafe") !== true);
+  const next = automaticRestoreUnsafe
+    ? "Inspect and preserve concurrent Record edits before choosing a manual recovery; no automatic Git restore command is safe."
+    : recordErrorNextStep(code);
+  const causeCode = typeof error === "object" && error !== null &&
+      typeof Reflect.get(error, "causeCode") === "string"
+    ? String(Reflect.get(error, "causeCode"))
+    : undefined;
   return output({
     exitCode: 1,
     stdout,
-    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}`,
+    stderr: `${code}\n${next === undefined ? "" : `${next}\n`}${
+      causeCode === undefined ? "" : `Cause: ${causeCode}\n`
+    }${
+      code === "record-migration-interrupted" || code === "record-migration-recovery-required"
+        ? interruptedRecovery(error, recordPath)
+        : ""
+    }`,
   });
 }
 
@@ -133,6 +184,7 @@ function cleanCommand(input: {
 
 function migrateCommand(input: {
   readonly root: RecordRoot;
+  readonly recordPath: string;
   readonly yes: boolean;
 }) {
   return Effect.scoped(Effect.gen(function* () {
@@ -140,15 +192,35 @@ function migrateCommand(input: {
     const plan = yield* session.planMigrate();
     const planText = plan.state === "already-current"
       ? `Record migration plan: already-current\nformat: ${plan.format}\n`
-      : `Record migration plan: unsupported-format\nformat: ${plan.format}\n`;
-    if (plan.state !== "already-current") {
+      : plan.state === "unsupported-format"
+        ? `Record migration plan: unsupported-format\nformat: ${plan.format}\n`
+        : `Record migration plan: migration-required\nformat: ${plan.format}\nattachments: ${plan.attachments.length}\nbackup: ${plan.backup.state}${plan.backup.state === "git-restore-point" ? `\nrestore commit: ${plan.backup.commit}` : ""}\n`;
+    if (plan.state === "unsupported-format") {
       return output({
         exitCode: 1,
         stdout: planText,
         stderr: "record-format-unsupported\nInstall a NiceEval version that supports this Record format.\n",
       });
     }
-    const receipt = yield* session.applyMigrate(plan);
+    if (plan.state === "migration-required" && plan.backup.state !== "git-restore-point") {
+      return output({
+        exitCode: 1,
+        stdout: planText,
+        stderr: "record-migration-git-restore-required\nA clean Git restore point is required; --yes cannot bypass this preflight.\n",
+      });
+    }
+    if (plan.state === "migration-required" && !input.yes) {
+      return output({
+        exitCode: 1,
+        stdout: planText,
+        stderr: "record-migration-confirmation-required\nReview the migration plan and rerun with --yes.\n",
+      });
+    }
+    const migrated = yield* Effect.either(session.applyMigrate(plan));
+    if (Either.isLeft(migrated)) {
+      return recordErrorOutput(migrated.left, planText, input.recordPath);
+    }
+    const receipt = migrated.right;
     return output({
       exitCode: 0,
       stdout: `${planText}Record migration ${receipt.state}.\n`,
@@ -172,8 +244,9 @@ export function runRecordCliCommand(
       Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error))),
     );
   }
-  return migrateCommand({ root: root.right, yes: input.yes }).pipe(
+  const recordPath = resolve(input.cwd, input.record ?? ".niceeval/record");
+  return migrateCommand({ root: root.right, recordPath, yes: input.yes }).pipe(
     Effect.provide(NodeRecordCliLive),
-    Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error))),
+    Effect.catchAll((error) => Effect.succeed(recordErrorOutput(error, "", recordPath))),
   );
 }

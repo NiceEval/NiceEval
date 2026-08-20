@@ -1132,7 +1132,7 @@ function decodeIssues(
     const code = valueAt(entry, "code");
     const message = valueAt(entry, "message");
     const refs = valueAt(entry, "refs");
-    if ((code !== "missing" && code !== "unsupported" && code !== "producer-incompatible" && code !== "input-invalid" && code !== "reduction-failed" && code !== "relation-unmatched") || typeof message !== "string" || !Array.isArray(refs)) {
+    if ((code !== "missing" && code !== "migration-required" && code !== "unsupported" && code !== "producer-incompatible" && code !== "input-invalid" && code !== "reduction-failed" && code !== "relation-unmatched") || typeof message !== "string" || !Array.isArray(refs)) {
       return Either.left(codecError([...path, String(index)], "is not a closed Analysis issue"));
     }
     const decodedRefs = [] as AnalysisIssue["refs"][number][];

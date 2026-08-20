@@ -1,0 +1,72 @@
+---
+title: "Review and Accept Historical Attempts"
+sidebarTitle: "Accept Historical Attempts"
+description: "Get candidate locators from --dry, inspect immutable Attempts, explicitly accept selected results with niceeval accept, and verify the denominator and origin with a new Run ID."
+---
+
+Automatic carry can be rejected when configuration identity changes. If you have reviewed a historical Attempt and confirmed that it still holds under the new configuration, use `niceeval accept` to accept it explicitly.
+
+Do not use this command to bypass a real change in evaluation conditions. Rerun and collect new evidence when the task, assertions, Agent behavior, or Sandbox starting point has changed.
+
+## Get candidate locators from the plan
+
+Preview the current target first:
+
+```sh
+pnpm exec niceeval exp checkout --dry
+```
+
+Historical results blocked by an identity difference show their full Attempt locator and a runnable `accept` suggestion. The locator is the only scope authorized by this operation; the command never implicitly selects other results from the same Run or Experiment.
+
+## Inspect the historical Attempt
+
+Use the full locator to inspect the immutable result:
+
+```sh
+pnpm exec niceeval show @1K1P0VJAPVJ12
+```
+
+Review the Verdict, Assertions, usage, timing, and evidence on the detail page. To review the source Run's full denominator, also use:
+
+```sh
+pnpm exec niceeval show --run <source-run-id>
+```
+
+## Accept the results you need in one operation
+
+```sh
+pnpm exec niceeval accept @1K1P0VJAPVJ12
+```
+
+When one Experiment has several results to accept, put their locators in the same command:
+
+```sh
+pnpm exec niceeval accept @1K1P0VJAPVJ12 @1K1P0VJAPVJ13
+```
+
+NiceEval validates every input before it proceeds. If any locator is invalid, ineligible, or conflicts with another input, the command publishes no business result at all.
+
+After success, every target slot points to the original Attempt with `reference` and records the `accepted` action. The source Attempt's facts, source Run, and locator are neither modified nor copied.
+
+## Verify the new Run
+
+Success feedback shows the new Run ID:
+
+```sh
+pnpm exec niceeval show --run <accepted-run-id>
+```
+
+This Run retains the current Experiment's full expected-slot denominator. Positions selected in the command are `accepted`; sibling slots not selected are `not-dispatched`. When you accept only part of the positions, the Report accurately shows incomplete result coverage.
+
+Every `accept` publishes a new Run. It never modifies or merges with a previous invocation. Put results in one command when they need to form the same acceptance boundary.
+
+## Common failures
+
+| Error | Next step |
+| --- | --- |
+| `malformed-locator` | Copy the complete uppercase locator from `--dry` or `show`; do not use an old UUID or ambiguous prefix. |
+| `locator-not-found` | Confirm that you are reading the same Record; pass `--record` explicitly for another result root. |
+| `accept-ineligible` | Follow the message to check the Verdict, timeout, identity, or Observability. Rerun if you cannot prove the result still holds. |
+| `duplicate-accept-member` | Keep one locator for every target slot and remove duplicate or conflicting input. |
+
+For the choice between automatic carry and forced reruns, see [Rerun and Carry Results](/tutorials/rerun-and-cache).

@@ -1,0 +1,65 @@
+---
+title: "选择并预览运行范围"
+sidebarTitle: "选择并预览运行范围"
+description: "先列出 Experiment，再用路径、评估用例前缀和 tag 收窄范围，最后用 --dry 确认计划后再花费模型与 Sandbox 成本。"
+---
+
+仓库里有多组 Experiment 和大量评估用例时，先确认定义，再预览本次计划。不要靠文件名猜 ID，也不要直接启动一批可能选错的任务。
+
+## 列出可运行的 Experiment
+
+```sh
+pnpm exec niceeval exp list
+pnpm exec niceeval exp list compare/codex
+```
+
+每行会显示 Experiment ID、描述、Agent、模型、Attempt 数量、选中的评估用例数量和 labels。`exp list` 只做发现与选择，不创建 Invocation、Sandbox 或模型调用。
+
+脚本需要完整清单时使用 JSON：
+
+```sh
+pnpm exec niceeval exp list --json > experiments.json
+```
+
+## 用位置参数收窄范围
+
+第一个位置参数选择 Experiment ID、目录或文件名前缀。后续参数只从这些 Experiment 已经选择的评估用例中继续按 ID 前缀收窄：
+
+```sh
+pnpm exec niceeval exp compare/codex memory/commit0
+```
+
+精确 Experiment ID 优先于前缀。目录段必须精确匹配；评估用例前缀不能把 Experiment 长期范围之外的题目加回来。
+
+只想运行带有某个标签的评估用例时使用 `--tag`：
+
+```sh
+pnpm exec niceeval exp compare --tag smoke
+```
+
+长期范围应写进 Experiment 的 `evals`。位置参数和 `--tag` 只负责一次调用的临时收窄。
+
+## 用 `--dry` 检查计划
+
+在真实运行前加上 `--dry`：
+
+```sh
+pnpm exec niceeval exp compare/codex memory/commit0 --dry
+```
+
+计划会列出评估用例、运行配置、Attempt 序号，以及每个位置会执行还是采用历史结果。它不会创建 Invocation、Run、Sandbox 或模型调用，也不会写 JUnit。
+
+机器需要读取计划时组合 `--json`：
+
+```sh
+pnpm exec niceeval exp compare/codex memory/commit0 --dry --json > plan.json
+```
+
+确认数量、模型、Attempt 和历史结果处置都符合预期后，去掉 `--dry` 运行同一条命令。
+
+## 处理选择失败
+
+- Experiment 零命中时，CLI 会列出可浏览的目录，并提示先运行 `exp <path> --dry`。
+- 评估用例零命中时，CLI 会明确报告 `No evals selected`，不会退回整个 Experiment 范围。
+- 想查看生命周期命令而不是运行矩阵时，使用[运行前检查生命周期计划](/zh/tutorials/debug-lifecycle-plan)。
+- 想决定哪些旧结果可以沿用时，继续阅读[重跑与沿用结果](/zh/tutorials/rerun-and-cache)。

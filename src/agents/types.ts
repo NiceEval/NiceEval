@@ -305,12 +305,12 @@ export interface AgentContext {
    */
   readonly experimentId?: string;
   /**
-   * 当前 Attempt 对应的 eval id。NiceEval runner 始终从 discovery 后的 Eval 身份填入；
+   * 当前 Attempt 对应的 eval ID。NiceEval Runner 始终从 discovery 后的评估用例身份填入；
    * 第三方直接构造 AgentContext 时可省略。Adapter 可用它定位与题目同目录的只读宿主资产，
    * 但不能据此绕过 Sandbox 的隐藏判据隔离。
    */
   readonly evalId?: string;
-  /** 当前 Attempt 的 Eval Group；未分组 Eval 省略。 */
+  /** 当前 Attempt 的评估组；未分组评估用例省略。 */
   readonly evalGroup?: {
     readonly id: string;
     readonly definitionHash: string;

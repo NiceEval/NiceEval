@@ -26,11 +26,11 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | NiceEval | NiceEval | 产品名。正文写 `NiceEval`;命令、包名、配置文件、代码标识写 `niceeval` | 本页 |
 
-### 评测用例
+### 评估用例
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 评测用例 | Eval | 一个 Task 跑在一个 Agent 上，由已登记的 Assertion 评判；id 从文件路径推导 | [Eval](feature/eval/README.md) |
+| 评估用例 | Eval | 一个 Task 跑在一个 Agent 上，由已登记的 Assertion 评判；id 从文件路径推导 | [Eval](feature/eval/README.md) |
 | 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
 | Fixture | Fixture | 第一次 `send` 前通过普通 Sandbox API 写入的起始素材,加 Eval layer `prepare()` 准备的内容;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
 | 本地传输清单 | transfer manifest | 普通本地上传实际读取的 source tree、内容摘要、Sandbox 目标与 send 区间;由 Runner 自动写入 | [本地测试文件](feature/eval/use-case/criteria-files.md) |
@@ -203,13 +203,13 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
 | 执行槽位 | Slot | Run 在调度前展开的一个预期位置；最多对应一个 Member，并作为分析分母。它不是并发位，默认 Human CLI 也不把它作为列名展示 | [Record Architecture](feature/record/architecture.md) |
 | Run 完成标识 | Run completion marker | writer 在内容校验与刷盘后最后排他创建的 zero-byte `complete`，是 Run 对 reader 可见的发布点 | [Record Architecture](feature/record/architecture.md) |
-| 未完成 Run | Incomplete Run | 没有 `complete` 的中断目录；不是已发布事实，只能由取得独占维护 lease 的 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md) |
+| 未完成 Run | Incomplete Run | 缺少规范零字节普通文件 `complete` 的目录；不是已发布事实，只能由取得独占维护 lease 的 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md) |
 | Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 NiceEval 固定定义的 immutable payload 与 owner-local blob closure | [Record Architecture](feature/record/architecture.md) |
-| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、Observability、FileChanges、Sources 与 Artifacts 五类封闭联合；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
+| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、Observability、FileChanges、SourceNavigation、Sources 与 Artifacts 六类封闭联合；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
 | Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、Git safety 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
-| Record migration receipt | `RecordMigrationReceipt` | migration 完整校验并刷盘后返回的 immutable outcome；第一版协议只会产生 `already-current` | [Record Library](feature/record/library.md) |
+| Record migration receipt | `RecordMigrationReceipt` | migration 完整校验并刷盘后返回的 immutable outcome；未需改写时为 `already-current`，成功改写时为 `migrated` | [Record Library](feature/record/library.md) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources`（envelope `schemaVersion: 1`）；保存当时 source closure 的 manifest 与 own blobs | [Record Architecture](feature/record/architecture.md) |
 | 源码项 | source item | Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-256 与 own blob 标识的一项源码 | [Record Architecture](feature/record/architecture.md) |
 | 未映射 | `unmapped` | 可读 Assertion 没有可用 source navigation；不改变 Assertion、Verdict 或 Score | [Source sites](feature/assertions/architecture/source-sites.md#局部-unmapped-与-assertion-隔离) |

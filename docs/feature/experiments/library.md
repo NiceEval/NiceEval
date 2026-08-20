@@ -1,6 +1,9 @@
 # Experiments —— 库用法
 
-Experiment 声明运行配置、选择 Eval，并把值交给 Agent。Runner 把执行结果写入 [Record](../record/README.md)：Core 表达身份、引用与 action；运行事实只能进入 NiceEval 固定的 Assertions、Observability、FileChanges、Sources 或 Artifacts。
+Experiment 声明运行配置、选择 Eval，并把值交给 Agent。Runner 把执行结果写入 [Record](../record/README.md)：
+Core 表达身份、引用与 action。
+
+运行事实只能进入 NiceEval Record catalog 中具名、owner 固定的 family。
 
 本页定义 `defineExperiment` 作者 API。执行 Host 使用公开、受支持的 `niceeval/experiment/host` 与
 `experimentHost.list()`、`plan()`、`run()`、`accept()` 组合 CLI 或深度应用集成。这个 Host entry 不开放
@@ -66,7 +69,7 @@ export default defineExperiment({
 |---|---|---|---|
 | 改变执行的条件 | 调用前 | `flags` | Run 的不可变配置上下文 |
 | 报告归类坐标 | 调用前 | `labels` | Run 的不可变配置上下文；不透传给 Agent 或 Eval |
-| 有已发布 collector 的运行时观测 | 调用中或调用后 | 对应 NiceEval typed collector 或 Adapter 能力 | 固定 Assertions、Observability、FileChanges、Sources 或 Artifacts |
+| 有已发布 collector 的运行时观测 | 调用中或调用后 | 对应 NiceEval typed collector 或 Adapter 能力 | Record catalog 中与 owner 匹配的 fixed family |
 | 未发布 collector 的第三方运行时值 | 调用中或调用后 | 无通用持久化 API | 不自动持久化或查询 |
 
 carry、accept 与 rename 引用历史 Attempt 时，不复制其事实。之后读取仍沿引用取得 origin Run 中已经封存的同一份 Attempt。
@@ -134,7 +137,7 @@ interface ScopedFeedback {
 
 `progress()` 是有界临时反馈，不进入 Record。`diagnostic()` 是作用域绑定的结构化反馈，不改变 Verdict。两者都不是通用持久化 writer，也不能定义 Attachment、family、schema、blob 或 migration。
 
-需要持久化的运行时事实只能调用 NiceEval 已发布的 typed collector 或 Adapter 能力；它们只写入五个固定 Attachment family。没有匹配 collector 的第三方值保留在本进程或外部系统，不自动进入 Record。新增不可恢复事实须由 NiceEval 定义 payload、读面与版本迁移，而不是由 Experiment callback 扩展。
+需要持久化的运行时事实只能调用 NiceEval 已发布的 typed collector 或 Adapter 能力；它们只写入 Record catalog 中与其 owner 匹配的 fixed family。没有匹配 collector 的第三方值保留在本进程或外部系统，不自动进入 Record。新增不可恢复事实须由 NiceEval 定义 payload、读面与版本迁移，而不是由 Experiment callback 扩展。
 
 要让运行失败，应抛出 typed error。要改变 Verdict，应形成 assertion 或 Judge 结果；error diagnostic 本身不改变 Verdict。
 
