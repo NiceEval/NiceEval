@@ -1586,6 +1586,57 @@ table.niceeval-report,
   border-color: color-mix(in oklch, var(--bad), transparent 58%);
   color: color-mix(in oklch, var(--bad), var(--text) 38%);
 }
+.niceeval-assertion-evidence {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+.niceeval-assertion-evidence-section { min-width: 0; }
+.niceeval-assertion-evidence-section > h5 {
+  margin: 0 0 5px;
+  color: var(--soft);
+  font: 9px/1.2 var(--font-mono);
+  font-weight: 650;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.niceeval-assertion-evidence-section p,
+.niceeval-assertion-evidence-list,
+.niceeval-assertion-evidence-fields { margin: 0; }
+.niceeval-assertion-evidence-code {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  max-height: 24rem;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel), black 8%);
+  color: var(--muted);
+  font: 11px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.niceeval-assertion-evidence-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 9px;
+  color: var(--soft);
+}
+.niceeval-assertion-evidence-fields {
+  display: grid;
+  gap: 6px;
+}
+.niceeval-assertion-evidence-fields > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+  gap: 10px;
+}
+.niceeval-assertion-evidence-fields dt { color: var(--soft); }
+.niceeval-assertion-evidence-fields dd { min-width: 0; margin: 0; }
+.niceeval-assertion-evidence-list { padding-inline-start: 18px; }
 .niceeval-js .niceeval-turn-trace .niceeval-trace-evidence > summary { display: none; }
 .niceeval-js .niceeval-turn-trace .niceeval-trace-evidence[open] { padding-bottom: 8px; }
 .niceeval-js .niceeval-turn-trace .niceeval-trace-evidence-tabs {
@@ -2131,7 +2182,7 @@ table.niceeval-report,
   overflow-wrap: anywhere;
   box-shadow: inset 2px 0 0 var(--line-tone, transparent);
 }
-/* 展开区内容:判定摘要一行、细节正文等宽、给分记录一行。同行重复 send
+/* 展开区内容:判定摘要一行、五段结构化证据、给分记录一行。同行重复 send
    复用 Conversation 的完整轮卡；轮头必须保留，才能区分 outcome 与 duration。 */
 .niceeval-source-view .niceeval-source-line-detail .niceeval-conversation-turn { border-left: 0; padding-left: 0; }
 .niceeval-source-view .niceeval-source-line-detail > * + * { margin-top: 6px; }
@@ -2140,17 +2191,6 @@ table.niceeval-report,
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 650;
-}
-.niceeval-source-view .niceeval-source-assertion-body {
-  margin: 0;
-  padding: 6px 10px;
-  border-radius: var(--radius);
-  background: var(--panel-2);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 .niceeval-source-view .niceeval-source-score-entry {
   margin: 0;

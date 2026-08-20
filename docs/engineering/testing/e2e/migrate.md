@@ -32,7 +32,8 @@ legacy migration owner 另以固定 npm alias 安装并证明旧 producer 的 re
 
 ### Interrupted migration recovery
 
-`interrupted-recovery.test.ts` 证明 sentinel 恢复、验证、清除与重试。
+`interrupted-recovery.test.ts` 证明 sentinel 恢复、验证、清除与重试。缺少 physical write set 的旧 sentinel
+只能进入人工恢复；current sentinel 绑定本次精确写集后，才可输出 Git restore 命令。
 
 ### Plan change preserves concurrent edit
 

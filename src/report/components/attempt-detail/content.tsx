@@ -7,6 +7,7 @@ import type { CalloutGroup, CalloutItem } from "../../definition/primitives/call
 import type { CopyBlockContent } from "../../definition/primitives/copy-block.tsx";
 import type { CommandEvidenceContent, ConversationContent, ConversationEntry, ConversationTurn } from "../../definition/primitives/conversation.tsx";
 import { ToolEvidence } from "../../definition/primitives/tool-evidence.tsx";
+import { AssertionEvidence } from "../../definition/primitives/assertion-evidence.tsx";
 import type { DiffContent } from "../../definition/primitives/diff-lines.ts";
 import type {
   SourceBlockContent,
@@ -46,7 +47,7 @@ function assertionToneClass(assertion: AttemptAssertionView): string {
 }
 
 /**
- * 一条 assertion 在展开区里的呈现:一行判定摘要,再接一段详情正文
+ * 一条 assertion 在展开区里的呈现:一行判定摘要,再接五段中立结构
  * (docs/feature/reports/library.md「源码行展开区里有什么」)。
  */
 function assertionNodes(assertion: AttemptAssertionView, key: string): ReportNode[] {
@@ -60,13 +61,7 @@ function assertionNodes(assertion: AttemptAssertionView, key: string): ReportNod
       {head}
     </Text>,
   ];
-  if (assertion.detail.length > 0) {
-    nodes.push(
-      <Text key={`${key}:body`} className="niceeval-source-assertion-body">
-        {assertion.detail}
-      </Text>,
-    );
-  }
+  nodes.push(<AssertionEvidence key={`${key}:body`} content={assertion.evidence} />);
   return nodes;
 }
 

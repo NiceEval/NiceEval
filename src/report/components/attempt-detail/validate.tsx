@@ -27,6 +27,39 @@ function capabilitiesProblem(value: unknown, path: string): string | null {
   return null;
 }
 
+function assertionFactProblem(value: unknown, path: string): string | null {
+  if (!isObject(value) || typeof value.kind !== "string") return `"${path}" must be a closed assertion fact`;
+  switch (value.kind) {
+    case "unavailable":
+      return typeof value.reason === "string" ? null : `"${path}.reason" must be a string`;
+    case "value":
+      return value.value === null || typeof value.value === "string" || typeof value.value === "number" ||
+          typeof value.value === "boolean"
+        ? null
+        : `"${path}.value" must be a JSON scalar`;
+    case "text":
+      return typeof value.text === "string" ? null : `"${path}.text" must be a string`;
+    case "list":
+      return arrayProblem(value.items, `${path}.items`, assertionFactProblem);
+    case "fields":
+      return arrayProblem(value.fields, `${path}.fields`, (field, fieldPath) => {
+        if (!isObject(field) || typeof field.label !== "string") return `"${fieldPath}.label" must be a string`;
+        return assertionFactProblem(field.value, `${fieldPath}.value`);
+      });
+    default:
+      return `"${path}.kind" is unsupported`;
+  }
+}
+
+function assertionEvidenceProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be an AssertionEvidenceContent object`;
+  for (const key of ["source", "check", "observed", "expected", "explanation"] as const) {
+    const problem = assertionFactProblem(value[key], `${path}.${key}`);
+    if (problem !== null) return problem;
+  }
+  return null;
+}
+
 /** AttemptAssertionView(compute.ts):sealed 断言 entry 的展示投影。 */
 function assertionViewProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an AttemptAssertionView object`;
@@ -39,6 +72,8 @@ function assertionViewProblem(value: unknown, path: string): string | null {
     return `"${path}.outcome" must be "passed" | "failed" | "unavailable"`;
   }
   if (typeof value.detail !== "string") return `"${path}.detail" must be a string`;
+  const evidenceProblem = assertionEvidenceProblem(value.evidence, `${path}.evidence`);
+  if (evidenceProblem !== null) return evidenceProblem;
   if (!Array.isArray(value.groupPath) || !value.groupPath.every((segment: unknown) => typeof segment === "string")) {
     return `"${path}.groupPath" must be an array of strings`;
   }
@@ -47,8 +82,13 @@ function assertionViewProblem(value: unknown, path: string): string | null {
     if (value.score.state !== "earned" && value.score.state !== "unavailable") {
       return `"${path}.score.state" must be "earned" | "unavailable"`;
     }
-    if (typeof value.score.earned !== "number") return `"${path}.score.earned" must be a number`;
     if (typeof value.score.points !== "number") return `"${path}.score.points" must be a number`;
+    if (value.score.state === "earned" && typeof value.score.earned !== "number") {
+      return `"${path}.score.earned" must be a number for an earned contribution`;
+    }
+    if (value.score.state === "unavailable" && value.score.earned !== undefined) {
+      return `"${path}.score.earned" must be omitted for an unavailable contribution`;
+    }
   }
   return null;
 }

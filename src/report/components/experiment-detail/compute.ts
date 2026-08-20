@@ -94,24 +94,22 @@ function loadExperimentMetrics(sample: Sample, pricing: PricingProfile | null) {
   });
 }
 
-/** 一份闭合 evidence entry 的可读 sealed 断言清单(DomainView 边界是 JsonValue)。 */
+/** 一份闭合 evidence entry 的 typed sealed 断言清单。 */
 function sealedEntriesOf(entry: EvidenceEntry | undefined): readonly SealedAssertionEntryView[] {
   if (entry?.state !== "available") return [];
-  return entry.detail.entries
-    .map(assertionEntryViewOf)
-    .filter((sealed): sealed is SealedAssertionEntryView => sealed !== undefined);
+  return entry.detail.entries.map(assertionEntryViewOf);
 }
 
 /** sealed score 状态 → 题型:任一 entry 有非 not-scored 的 score 就是计分制。 */
 function evaluationKindOf(entries: readonly SealedAssertionEntryView[]): "pass" | "points" {
-  return entries.some((entry) => entry.result.score.state !== "not-scored") ? "points" : "pass";
+  return entries.some((entry) => entry.decision.contribution.state !== "not-scored") ? "points" : "pass";
 }
 
 /** 闭合断言 entries 的本轮挣分合计(纯闭合值求和,无分母语义)。 */
 function earnedTotalOf(entries: readonly SealedAssertionEntryView[]): number {
   let total = 0;
   for (const entry of entries) {
-    const score = entry.result.score;
+    const score = entry.decision.contribution;
     if (score.state === "earned" && score.earned !== undefined) total += score.earned;
   }
   return total;
