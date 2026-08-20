@@ -1,0 +1,121 @@
+---
+title: "Stop Unproductive Runs When Infrastructure Fails"
+sidebarTitle: "Handle Execution Failures"
+description: "Understand automatic retries, declare the scope of deterministic failures, and resume incomplete evals after fixing them."
+---
+
+NiceEval automatically retries transient failures that clearly did not reach the Agent, such as rate limits and some network errors. If a failure guarantees that later Attempts in the same Experiment or Eval will fail, you can stop them immediately.
+
+## Understand automatic retries first
+
+Automatic retries require no configuration. While a retry waits, the Attempt's active row shows a message like this:
+
+```text
+turn retry 2/4 (rate_limit) — waiting 8s
+```
+
+After a retry succeeds, the Verdict and event stream retain only the successful Turn. When the retries run out, the Attempt becomes `errored` and its error includes a summary:
+
+```text
+retries exhausted (4 attempts, rate_limit)
+```
+
+Without that summary, NiceEval did not retry the error. Requests the Agent has already accepted, or whose acceptance status is uncertain, are never retried automatically because repeating them might duplicate side effects.
+
+## Declare the scope when you discover a failure
+
+When you inspect a shared service or a Fixture yourself, throw an error with a scope directly:
+
+- `ExperimentFatalError` stops unstarted Attempts in the same Experiment. Use it for shared services, shared credentials, and Experiment-level configuration failures.
+- `EvalFatalError` stops only unstarted Attempts in the current Eval. Use it for a deterministically missing Fixture or a prerequisite that belongs only to that Eval.
+
+This Eval stops its remaining Attempts when its Fixture is missing:
+
+```ts
+// evals/coding/fix-button.eval.ts
+import { defineEval, EvalFatalError } from "niceeval";
+
+export default defineEval({
+  async test(t) {
+    const fixture = await t.sandbox.runCommand("test", ["-f", "src/Button.tsx"]);
+    if (fixture.exitCode !== 0) {
+      throw new EvalFatalError(
+        "The Fixture is missing src/Button.tsx. Run pnpm fixtures:sync, then rerun the Eval.",
+      );
+    }
+
+    await t.send("Fix the Button keyboard-focus issue.");
+  },
+});
+```
+
+When a shared service is unavailable, make that check inside a real Eval's `test(t)` callback. Replace `serviceHealthUrl` with your service's health endpoint, then use `ExperimentFatalError` to stop the Experiment's remaining Attempts:
+
+```ts
+// evals/coding/shared-service-health.eval.ts
+import { defineEval, ExperimentFatalError } from "niceeval";
+
+const serviceHealthUrl = "https://service.example.test/health";
+
+export default defineEval({
+  async test(t) {
+    const health = await t.sandbox.runCommand("curl", ["-fsS", serviceHealthUrl]);
+    if (health.exitCode !== 0) {
+      throw new ExperimentFatalError(
+        "The shared service is unreachable. Check the service and tunnel, then rerun the Experiment.",
+        { cause: health.stderr },
+      );
+    }
+  },
+});
+```
+
+The error message appears in the terminal and the run record. State what happened and what the reader should do next.
+
+## Identify shared services that disconnect during a run
+
+Some shared services work when an Experiment begins but disconnect later. An SDK, CLI, or network library usually throws that failure. Use an Experiment's `classifyFailure` to recognize your own service address:
+
+```ts
+// experiments/compare.ts
+import { defineExperiment } from "niceeval";
+
+const serviceHost = "memory.internal.example";
+
+export default defineExperiment({
+  // Agent and Sandbox configuration omitted
+  classifyFailure({ text }) {
+    const isOurService = text.includes(serviceHost);
+    const isConnectionFailure = /ECONNREFUSED|ENOTFOUND|connection refused/i.test(text);
+
+    if (isOurService && isConnectionFailure) {
+      return {
+        retryable: false,
+        scope: "experiment",
+        reason: "shared_service_unavailable",
+      };
+    }
+    return undefined;
+  },
+});
+```
+
+Recognize only services whose scope you can determine. Do not treat every `ECONNREFUSED` as an Experiment-level failure: the Agent can see the same error while reaching another site.
+
+## Resume the run after fixing it
+
+After stopping work, failed Attempts are recorded as `errored`. Attempts that never began are `unstarted`, and the run status shows `incomplete`.
+
+After you fix the service, credentials, or Fixture, rerun the original command. NiceEval keeps the passed results and runs the parts that were previously `errored` or `unstarted`.
+
+```shell
+npx niceeval exp compare evals/coding
+```
+
+To inspect an Attempt's raw error and retry summary, use the locator printed by the terminal:
+
+```shell
+pnpm exec niceeval show @<attempt-locator>
+```
+
+A custom Adapter can provide `classifySendFailure` when it has a dedicated pre-acceptance rejection signal. See its type and boundaries in the [`defineSandboxAgent` reference](/reference/define-agent#definesandboxagent).

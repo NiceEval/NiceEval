@@ -199,8 +199,26 @@ export const en = {
     "writing the crash-recovery teardown registration for experiment {{experimentId}} failed: {{message}}. The run continues normally, but a SIGKILL during this run cannot be recovered via `niceeval exp --teardown` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.\n",
   "runner.coordinationRecovered":
     "recovered expired coordination state for {{experimentId}}; this run continues. Further recoveries are summarized at completion.\n",
-  "runner.gateLeaseWaiting":
-    "waiting on another run for experiment {{experimentId}}'s concurrency slots: all {{effectiveN}} in use ({{holders}}). Concurrent runs share this experiment's slots, and the smallest maxConcurrency in play wins — this run declared {{declaredN}}. This run will dispatch when a slot is released or its owner's heartbeat expires.\n",
+  "runner.sharedStateWaiting":
+    "waiting for sharedState key {{key}} to be released; this Invocation will not take it over automatically.\n",
+  "runner.sharedStateRecoveryRequired":
+    "sharedState key {{key}} requires explicit recovery before another Invocation can use it. Inspect immutable owner evidence with `niceeval exp <selector> --teardown --recover-shared-state <key>`.\n",
+  "runner.sharedStateExplicitRecovered":
+    "explicitly recovered sharedState key {{key}} for experiment {{experimentId}}.\n",
+  "cli.exp.sharedStateRecoveryFlags":
+    "sharedState recovery requires `--teardown --recover-shared-state <key> --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced`.\n",
+  "cli.exp.sharedStateRecoveryJsonUnsupported":
+    "error: explicit sharedState recovery does not support --json. Retry without --json; this recovery flow has a human-only interface.\n",
+  "cli.exp.sharedStateRecoveryTeardownRequired":
+    "error: sharedState recovery requires the selected Experiment {{experimentId}} to declare teardown as a function. The active generation was left unchanged.\n",
+  "cli.exp.sharedStateRecoveryTarget":
+    "sharedState recovery target:\n  key: {{key}}\n  experiment: {{experimentId}}\n  owner token: {{ownerToken}}\n  host: {{host}}\n  PID: {{pid}}\n  process identity: {{processIdentity}}\n  heartbeat: {{heartbeatAt}}\n",
+  "cli.exp.sharedStateRecoveryAlreadyReleased":
+    "sharedState key {{key}} was already released after its cleanup; its immutable recovery generation is already complete.\n",
+  "cli.exp.sharedStateRecoveryRegistrationFailed":
+    "error: sharedState recovery for {{key}} could not clear the exact interrupted teardown registration: {{message}}. The recovery generation remains closed.\n",
+  "cli.exp.sharedStateRecoveryAlreadyReleasedRegistrationFailed":
+    "error: sharedState key {{key}} was already released, but NiceEval could not clear the exact stale teardown registration: {{message}}. It did not rerun teardown.\n",
   "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
   "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":
@@ -229,6 +247,11 @@ export const en = {
     "      --dry   preview without writing; --record <root>   select the actual Record root; --json   one JSON document\n" +
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
+    "      explicit sharedState recovery:\n" +
+    "        niceeval exp <selector> --teardown --recover-shared-state <key>\n" +
+    "          --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced\n" +
+    "        reads immutable owner evidence from <key>; the selected Experiment must declare a teardown function\n" +
+    "        (its current sharedState declaration may have changed); inspect or recover with human text (not --json)\n" +
     "  niceeval debug <experiment> <eval> [--json]         show the lifecycle command plan\n" +
     "  niceeval accept @<locator>...                      accept explicit historical results\n" +
     "  niceeval show [--run <run-id>...]                    render a Report in the terminal\n" +
@@ -352,7 +375,9 @@ export const en = {
   "define.experimentAgentRequired": "defineExperiment requires agent.",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} is not JSON-serializable (functions / undefined / cycles / bigint are not allowed); flags are persisted verbatim into result runs and must be plain JSON.",
   "define.experimentLabelInvalid": "experiment.labels.{{key}} must be a string or a finite number; labels are report-side grouping coordinates persisted verbatim into result runs.",
+  "define.experimentSharedStateInvalid": "experiment.sharedState must be exactly { key }, where key is a stable, non-secret string matching [a-z0-9][a-z0-9._/-]{0,127}.",
   "define.experimentSetupNotFunction": "experiment.setup must be a function ((ctx) => void); use experiment.teardown for cleanup; to prepare the in-sandbox environment per experiment, chain .setup() hooks on the sandbox spec instead.",
+  "define.experimentTeardownNotFunction": "Experiment teardown must be a function ((ctx) => void); use a function-valued paired lifecycle hook so normal cleanup and explicit sharedState recovery can both execute it.",
   "define.experimentClassifyFailureNotFunction": "experiment.classifyFailure must be a function ((failure) => FailureClass | undefined); it classifies failures that surface as third-party errors and must return undefined for anything it does not recognize.",
   "define.experimentIdRejected": "defineExperiment does not accept id; ids are derived from file paths.",
   "define.sandboxAgentNameRequired": "defineSandboxAgent requires name.",
@@ -392,9 +417,6 @@ export const en = {
   "feedback.human.resultErrored": "ERRORED",
   "feedback.human.resultCompleted": "COMPLETED",
   "feedback.human.recoveryHeader": "RECOVERY",
-  "feedback.human.coordinationRecoveredSummary": "{{slots}} · {{locks}}",
-  "feedback.human.unit.concurrencySlot": "concurrency slot",
-  "feedback.human.unit.concurrencySlots": "concurrency slots",
   "feedback.human.unit.caseLock": "case lock",
   "feedback.human.unit.caseLocks": "case locks",
   "feedback.human.resultsHeader": "RESULTS",

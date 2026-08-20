@@ -28,7 +28,7 @@ Boolean `matched` 进入 Verdict；`mismatched` 使最终 Verdict 为 `failed`�
 
 ## 连续质量线
 
-`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。通过制评估用 `.gate(n)` 给它 hard 阈值：
+`similarity(...)` 这类 Match 产生 `[0, 1]` 的 measurement。它计算字符级 Levenshtein 编辑相似度，不判断语义。通过制评估用 `.gate(n)` 给它 hard 阈值：
 
 ```ts
 t.check(turn.message, similarity(expected))
@@ -44,7 +44,7 @@ t.check(turn.message, similarity(expected))
 
 ```ts
 import { defineScoreEval } from "niceeval";
-import { commandSucceeded, includes, similarity } from "niceeval/expect";
+import { commandSucceeded, includes } from "niceeval/expect";
 
 export default defineScoreEval({
   description: "安装并启动 DB-GPT",
@@ -57,7 +57,7 @@ export default defineScoreEval({
     t.check(health, commandSucceeded()).score(1).label("健康检查可达");
     t.check(health.stdout, includes("ok")).score(1).label("健康检查内容正确");
 
-    t.check(turn.message, similarity("说明安装步骤和验证结果")).score(2).label("说明质量");
+    t.check(turn.message, includes("验证")).score(2).label("回复说明验证方法");
 
     t.score(1).label("代码精简");
   },

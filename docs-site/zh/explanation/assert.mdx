@@ -43,9 +43,9 @@ turn.calledTool("read_file", { count: 2 }).label("读取两次");
 
 `calledTool` 的第二参数只控制 `count`。`input`、`output` 与 `status` 条件写进 `toolMatch`；JSON 结构交给 `jsonMatch`，命令 token 交给 `commandMatch`。`notCalledTool` 直接接收同一类 matcher。
 
-## 两种 Eval
+## 两种评估用例
 
-`defineEval` 创建 Pass Eval。Boolean `matched` 进入 Attempt Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止后续检查继续登记。连续 evaluator 与 Judge recipe 给出 `[0,1]` measurement；Pass Eval 使用 `.gate(n)` 才把它纳入 failed；`.atLeast(n)` 只记录局部 condition。
+`defineEval` 创建通过制评估。Boolean `matched` 进入 Attempt Verdict；`mismatched` 使最终 Verdict 为 `failed`，但不会阻止后续检查继续登记。连续 evaluator 与 Judge recipe 给出 `[0,1]` measurement；通过制评估使用 `.gate(n)` 才把它纳入 failed；`.atLeast(n)` 只记录局部 condition。
 
 ```ts
 turn.judge.autoevals.closedQA("回答是否给出可执行步骤？")
@@ -53,7 +53,7 @@ turn.judge.autoevals.closedQA("回答是否给出可执行步骤？")
   .label("步骤可执行");
 ```
 
-`defineScoreEval` 创建 Score Eval。它只有累计 `score`，没有 Attempt Verdict、总分、百分比或另一种数值单位。Assertion 默认只保存 evaluation，不计分；用 `.score(n)` 才让已有 Assertion 贡献 score。Boolean matched 贡献 `n`，mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。`t.score(n)` 直接登记 contribution，返回的 handle 只能配置 `key` 与 `label`。
+`defineScoreEval` 创建计分制评估。它只有累计 `score`，没有 Attempt Verdict、总分、百分比或另一种数值单位。Assertion 默认只保存 evaluation，不计分；用 `.score(n)` 才让已有 Assertion 贡献 score。Boolean matched 贡献 `n`，mismatched 贡献 `0`；measurement `m` 贡献 `m * n`。`t.score(n)` 直接登记 contribution，返回的 handle 只能配置 `key` 与 `label`。
 
 ```ts
 turn.calledTool("search");                       // 只保存 evaluation
@@ -62,7 +62,7 @@ turn.judge.autoevals.closedQA("回答完整").score(5); // measurement 0.8 时 +
 t.score(5);                                      // 直接 +5
 ```
 
-Score Eval 的 measurement 不必 threshold 就能封口。`.atLeast(n)` 只增加局部 `met` / `below` condition，不改变 contribution。没有 `.score()` 的 Assertion 不显示 `+0`；正常没有计分项的 Score Eval 得到正式且可排名的 `score: 0`。
+计分制评估的 measurement 不必 threshold 就能封口。`.atLeast(n)` 只增加局部 `met` / `below` condition，不改变 contribution。没有 `.score()` 的 Assertion 不显示 `+0`；正常没有计分项的计分制评估得到正式且可排名的 `score: 0`。
 
 ## 控制流
 
@@ -74,11 +74,11 @@ await turn.succeeded().orStop();
 const search = await t.check(turn.message, includes("结论")).orStop();
 ```
 
-正常 stop 后，Pass Eval 仍按触发 Assertion 得到 `failed` Verdict；Score Eval 仍是 `scored`，保留正式 score 和 stop cause，因此可以排名。
+正常 stop 后，通过制评估仍按触发 Assertion 得到 `failed` Verdict；计分制评估仍是 `scored`，保留正式 score 和 stop cause，因此可以排名。
 
 ## Judge
 
-Judge recipe 调用时直接登记 measurement Assertion。Pass Eval 对同一 handle 用 `.gate(n)`，Score Eval 用 `.score(n)`；两种配置都只运行一次 Judge evaluator。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
+Judge recipe 调用时直接登记 measurement Assertion。通过制评估对同一 handle 用 `.gate(n)`，计分制评估用 `.score(n)`；两种配置都只运行一次 Judge evaluator。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
 
 ## 不可用与读取
 

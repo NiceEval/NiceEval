@@ -54,6 +54,7 @@ export type {
   EvaluationKind,
   EvalDescriptor,
   ExperimentAuthorFields,
+  SharedStateConfig,
   ExperimentInput,
   ExperimentDefinition,
   ExperimentHook,

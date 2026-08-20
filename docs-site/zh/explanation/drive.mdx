@@ -8,7 +8,7 @@ description: "t.send() 和它返回的 Turn、t.sendFile()、多轮对话、t.ne
 
 ## `t.send()` 和它返回的 `Turn`
 
-`t.send(input)` 是唯一的动词。它底层调用 Adapter 的 `send(input, ctx)`，把返回值归一成一个 `Turn`：
+`t.send(input)` 是 Adapter 的基础执行动词。它底层调用 Adapter 的 `send(input, ctx)`，把返回值归一成一个 `Turn`：
 
 ```ts
 const turn = await t.send("布鲁克林今天天气怎么样?");

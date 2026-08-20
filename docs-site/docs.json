@@ -518,7 +518,10 @@
                   "tutorials/write-send",
                   "tutorials/connect-otel",
                   "tutorials/sandbox-agent",
+                  "tutorials/install-custom-sandbox-agent",
                   "tutorials/sandbox-providers",
+                  "tutorials/docker-in-docker",
+                  "tutorials/nixos-managed-dind",
                   "tutorials/sandbox-reuse"
                 ]
               },
@@ -526,21 +529,33 @@
                 "group": "Write Evals",
                 "pages": [
                   "tutorials/authoring",
+                  "tutorials/eval-groups",
+                  "tutorials/plugins",
                   "tutorials/write-experiment",
+                  "tutorials/select-and-preview",
                   "tutorials/experiments",
                   "tutorials/fixtures",
                   "tutorials/dataset-fanout",
-                  "tutorials/evaluation-kinds"
+                  "tutorials/criteria-files",
+                  "tutorials/evaluation-kinds",
+                  "tutorials/verify-judge"
                 ]
               },
               {
                 "group": "Run, Observe & Publish",
                 "pages": [
                   "tutorials/rerun-and-cache",
+                  "tutorials/accept-results",
+                  "tutorials/control-run-cost",
+                  "tutorials/debug-lifecycle-plan",
+                  "tutorials/handle-execution-failures",
+                  "tutorials/concurrency",
                   "tutorials/ci-integration",
                   "tutorials/reporters",
                   "tutorials/viewing-results",
+                  "tutorials/compare-runs",
                   "tutorials/publish-report",
+                  "tutorials/deploy-report-site",
                   "tutorials/custom-reports",
                   "tutorials/theming",
                   "tutorials/agent-feedback-loop"
@@ -550,7 +565,8 @@
                 "group": "Troubleshooting",
                 "pages": [
                   "troubleshooting/debugging",
-                  "troubleshooting/debug-sandbox"
+                  "troubleshooting/debug-sandbox",
+                  "troubleshooting/recover-after-kill"
                 ]
               }
             ]
@@ -562,6 +578,7 @@
                 "group": "Core Model",
                 "pages": [
                   "explanation/overview",
+                  "explanation/record",
                   "explanation/evals",
                   "explanation/experiment",
                   "explanation/adapter",
@@ -687,22 +704,28 @@
                   "zh/tutorials/eval-groups",
                   "zh/tutorials/plugins",
                   "zh/tutorials/write-experiment",
+                  "zh/tutorials/select-and-preview",
                   "zh/tutorials/experiments",
                   "zh/tutorials/fixtures",
                   "zh/tutorials/dataset-fanout",
                   "zh/tutorials/criteria-files",
-                  "zh/tutorials/evaluation-kinds"
+                  "zh/tutorials/evaluation-kinds",
+                  "zh/tutorials/verify-judge"
                 ]
               },
               {
                 "group": "运行、观察与发布",
                 "pages": [
                   "zh/tutorials/rerun-and-cache",
+                  "zh/tutorials/accept-results",
+                  "zh/tutorials/control-run-cost",
+                  "zh/tutorials/debug-lifecycle-plan",
                   "zh/tutorials/handle-execution-failures",
                   "zh/tutorials/concurrency",
                   "zh/tutorials/ci-integration",
                   "zh/tutorials/reporters",
                   "zh/tutorials/viewing-results",
+                  "zh/tutorials/compare-runs",
                   "zh/tutorials/publish-report",
                   "zh/tutorials/deploy-report-site",
                   "zh/tutorials/custom-reports",

@@ -64,18 +64,11 @@ export default defineExperiment({
 
 ## 多开终端时 Sandbox 不共享
 
-Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池。NiceEval 不把运行中的 Sandbox handle 交给另一个进程。同一个 Record root 同时只允许一项操作；第二个终端指向同一个 root 会立即得到 `record-root-busy`，不会和第一个终端并行写入。
+Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池。NiceEval 不把运行中的 Sandbox handle 交给另一个进程；两个 Invocation 可以并发向同一个 Record root 追加已发布结果。
 
-确实需要并行时，给两个终端不同的 Record root：
+Record maintenance 是独占操作。`clean` 或其它维护命令报告 `record-maintenance-busy` 时，先停止占用该 root 的 reader 和 writer，再重试维护命令。正常并发运行不需要为了避开 writer 冲突而拆成多个 Record root。
 
-```bash
-niceeval exp experiments/mempal.ts --record .niceeval/mempal-a
-niceeval exp experiments/mempal.ts --record .niceeval/mempal-b
-```
-
-两个 root 各自形成完整结果，NiceEval 不自动合并它们。
-
-如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。两边都会在 Sandbox `setup()` 恢复同一 checkpoint，并在 `teardown()` 回存时，再给实验声明稳定的非密 key：
+如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。Sandbox Hook 恢复、回存同一个外部 checkpoint 时，为 Experiment 声明稳定且不含秘密的 key：
 
 ```typescript
 export default defineExperiment({
@@ -88,9 +81,9 @@ export default defineExperiment({
 });
 ```
 
-NiceEval 会在创建 Sandbox 前独占这个 key，到 Sandbox `teardown`、Provider finalizer 和实验 `teardown` 后才释放。等待方不创建 Sandbox。租约释放后，等待方继续自己的既定计划；它不读取或沿用另一 Record 的结果。
+NiceEval 会在 Experiment setup 或创建 Sandbox 前取得这个 key，直到 Sandbox `teardown`、Provider finalizer 与 Experiment `teardown` 全部完成才释放。等待方不会创建 Sandbox；租约释放后，它继续自己的计划，不读取或采用另一条 Run 的结果。
 
-key 会进入结果的配置身份。换 key 表示换了状态 cohort，旧结果不会混入。这个租约只按 `sharedState.key` 保护外部 checkpoint，不替代 Record root 的独占规则。不同机器或工作副本需要外部分布式互斥。
+key 会进入结果的配置身份。更换 key 就是更换状态 cohort，旧结果不会混进来。租约只保护外部 checkpoint，与 Record root 无关；普通 append writer 仍可并发使用同一个 root。不同机器或 working copy 仍需外部分布式锁。
 
 ## 生命周期：谁跑几次
 
@@ -120,8 +113,9 @@ key 会进入结果的配置身份。换 key 表示换了状态 cohort，旧结�
   `.setup()`。它每个 Sandbox 只跑一次，产物成为题间重置点的一部分，每道题白拿。
 - **只有这道题要的素材**（它自己的仓库、数据、依赖）→ 评估用例自己的 `setup` 或
   `test(t)`。每题重置后重放，所以必须是重放一遍还对的代码。每题各自 clone 时，
-  临时 clone 目录整个实验统一用一个名字、加进 `diff.ignore`，clone 前先
-  `rm -rf .git <临时目录>` 清掉上一题的残留——`.git` 会活过题间重置。
+  整个 Experiment 使用同一个具名临时目录，例如 `.niceeval-task-clone`，并把它加进
+  `diff.ignore`。clone 前只运行 `rm -rf .niceeval-task-clone` 清掉上一题的残留。
+  绝不能删除 `workdir` 根的 `.git`：题间 `git reset` 依赖它，且它会活过题间重置。
 - **起了后台进程、占了端口** → 评估用例的 `teardown` 自己收，题间重置不杀进程。
 
 ## 幂等是硬要求：一反一正
@@ -164,12 +158,11 @@ npm install          # 调和到 package.json/lockfile 声明的状态，本身�
 `setup`。marketplace 拉取太慢时用 `sparse` 只拉插件路径，或把插件烘进 template
 并从 `plugins` 里拿掉声明——代价是安装 manifest 里就没有插件与解析版本的记录了。
 
-## 一批里混了不同环境
+## 一批里混了不同 Sandbox layer
 
-选中的评估用例用 `environment` 解析到不同预制产物时，不需要拆命令。Runner 按解析后的
-环境 profile 分组：同一个 Sandbox 只承接同组 Attempt，每组建立自己的题间重置点，
-组之间不共享 Sandbox 也不共享 Sandbox 级 `setup` 的产物。实验的 `maxConcurrency`
-约束的是所有组加起来的同时执行数。
+选中的评估用例声明不同 template-bearing `sandbox` layer 时，不需要拆命令。Link planning
+逐条解析评估用例 × Experiment 配对。物理 Sandbox identity 不同的 Attempt 不共享 Sandbox，
+也不共享 Sandbox 级 `setup` 产物；实验的 `maxConcurrency` 约束全部选中工作的同时执行数。
 
 ## 典型节奏
 

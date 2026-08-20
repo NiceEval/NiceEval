@@ -111,6 +111,7 @@ export function loadProjectCurrent(
           earlyExit: experiment.earlyExit ?? false,
           sandbox: experiment.sandbox,
           sandboxReuse: experiment.sandboxReuse,
+          ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
           judge: experiment.judge,
           ...resolveRunTimeout(undefined, experiment.timeoutMs),
           budget: experiment.budget,

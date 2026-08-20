@@ -67,4 +67,4 @@ pnpm exec niceeval exp compare-models weather-tool  # 在实验组里只跑某�
 
 `webAgent()` 是 Direct Agent，所以不会创建 Sandbox；如果 eval 里使用 `t.sandbox.diff`、`t.sandbox.fileChanged()` 或 workspace 文件断言，需要改用 Sandbox Agent。
 
-这组 eval 包含非 optional 的 Judge 断言，因此必须设置 `NICEEVAL_JUDGE_KEY`（或在 `judge.apiKeyEnv` 指定别的变量名）；缺少 key 时断言会记为 `unavailable`，Attempt 会 `errored`。若只想跑确定性断言，应删除 Judge 断言；只有明确接受证据缺席时才链 `.optional()`。
+这组 eval 包含非 optional 的 Judge 断言，因此必须设置默认的 `OPENAI_API_KEY`（或在 `judge.apiKeyEnv` 指定别的变量名）；缺少 key 时断言会记为 `unavailable`，Attempt 会 `errored`。若只想跑确定性断言，应删除 Judge 断言；只有明确接受证据缺席时才链 `.optional()`。

@@ -1,14 +1,18 @@
 ---
-title: "Data-driven testing (dataset fan-out): run one eval suite across many rows of data"
-sidebarTitle: "Data-driven testing"
-description: "Export an array or a keyed record from a .eval.ts file to fan one eval out into many cases. Use loadYaml or loadJson to read external datasets, with stable IDs."
+title: "Data-driven Testing (Dataset Fan-out): Run One Eval Suite Across Many Data Rows"
+sidebarTitle: "Data-driven Testing"
+description: "Export an array or keyed record from a .eval.ts file to fan one eval implementation out into many cases. Use loadYaml or loadJson to read external datasets and obtain stable IDs."
 ---
 
-Data-driven testing (dataset fan-out) is a good fit when many test cases share the same structure and only the inputs change. Typical examples are SQL generation, intent classification, retrieval QA, and tool selection.
+import { DatasetFanout } from '/snippets/diagram-dataset-fanout.jsx';
 
-## How fan-out works
+Data-driven testing (dataset fan-out) fits many tests with the same structure and different inputs. Typical examples include SQL generation, intent classification, retrieval QA, and tool selection.
 
-When there is no external business ID, a `.eval.ts` file exports an array by default:
+<DatasetFanout />
+
+## How it works
+
+When there is no external business ID, a `.eval.ts` file default-exports an array:
 
 ```ts
 import { defineEval } from "niceeval";
@@ -39,9 +43,9 @@ sql/0000
 sql/0001
 ```
 
-The numeric suffix is zero-padded so IDs stay stable and easy to filter.
+The numeric suffix is zero-padded, making IDs stable to reference and filter.
 
-When the data source already carries a stable case, issue, or benchmark ID, export a keyed record by default instead:
+When the data source already carries a stable case, issue, or benchmark ID, default-export a keyed record instead:
 
 ```ts
 export default Object.fromEntries(
@@ -58,9 +62,9 @@ export default Object.fromEntries(
 );
 ```
 
-If the file is `evals/swelancer.eval.ts` and the key is `15193`, the ID is `swelancer/15193`. A key must be a non-empty path segment: it cannot be `.` or `..`, and it cannot contain `/`, `\`, or control characters. NiceEval discovers cases in key lexicographic order, so a change in the data source's return order never changes run order.
+If the file is `evals/swelancer.eval.ts` and the key is `15193`, the ID is `swelancer/15193`. A key must be a nonempty path segment: it cannot be `.` or `..` and cannot contain `/`, `\\`, or control characters. NiceEval discovers keys in lexicographic order, so a changed data-source order does not change execution order.
 
-## Loading from YAML and JSON
+## Load from YAML or JSON
 
 ```ts
 import { loadYaml } from "niceeval/loaders";
@@ -80,9 +84,9 @@ cases:
     sql: SELECT COUNT(*) FROM users;
 ```
 
-`loadYaml` and `loadJson` require a decoder. The unvalidated dynamic value exists only at the decoder input; after validation, the return value is strongly typed data that the Eval can use directly.
+`loadYaml` and `loadJson` require a decoder. An unvalidated dynamic value exists only at the decoder boundary. After validation, the returned value is strongly typed data you can use directly.
 
-## Filtering dataset evals
+## Filter dataset evals
 
 ```bash
 # Run the whole dataset
@@ -91,21 +95,21 @@ npx niceeval exp local sql
 # Run only the first array case
 npx niceeval exp local sql/0000
 
-# Run a keyed case
+# Run one keyed case
 npx niceeval exp local swelancer/15193
 ```
 
-## Datasets vs separate files
+## Datasets versus separate files
 
 <Tabs>
   <Tab title="Use a dataset">
-    The cases have exactly the same structure. Only the input and expected output change.
+    Cases have exactly the same structure; the main differences are the input and expected output.
   </Tab>
   <Tab title="Use separate files">
-    Each case has a different flow, different assertions, or needs a different agent configuration.
+    Each case has a different flow or Assertions, or needs different Agent configuration.
   </Tab>
 </Tabs>
 
 <Tip>
-  Datasets are good for broad horizontal coverage. Separate eval files are better when the behavior itself is complex.
+  Datasets fit broad horizontal coverage. Separate eval files fit behaviorally complex scenarios.
 </Tip>

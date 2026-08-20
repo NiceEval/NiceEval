@@ -134,8 +134,8 @@ const pricing = definePricingProfile({
 ```
 
 在组件中只调用 `costUSD(pricing)` 或 `totalCostUSD(pricing)`；二者没有零参数形式。Analysis 计算 slot-provider ledger、exact total 和
-`numerator / denominator` mean，Report Host 只验证 Profile、捕获闭包和呈现结果。Runner `estimatedCostUSD` 即使 observed 成本存在也独立计算，
-只供 `maxCost` 使用，Report 不读取它。
+`numerator / denominator` mean，Report Host 只验证 Profile、捕获闭包和呈现结果。Runner `estimatedCostUSD` 即使 observed 成本存在也独立计算；
+Experiment budget 与 `maxCost` 使用它，Report 不读取它。
 
 `aggregate(ctx.scope, { values: { cost: costUSD(pricing) } })` 的 `cost` cell 是可观察的 `CostMetricValue`，其 `cell.projection` 是
 `CostProjectionValue`。这两个类型以及 projection 的 state、basis、ledger 和 reason data types 都从 `niceeval/report` 以 type-only
