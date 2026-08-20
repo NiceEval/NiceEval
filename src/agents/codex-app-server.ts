@@ -48,6 +48,28 @@ function normalizeItem(value: unknown): unknown {
   return { ...item, type };
 }
 
+function appServerUsage(frames: readonly unknown[]): Usage | undefined {
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = record(frames[index]);
+    if (frame?.method !== "thread/tokenUsage/updated") continue;
+    const last = record(record(record(frame.params)?.tokenUsage)?.last);
+    if (!last) continue;
+    const number = (value: unknown): number =>
+      typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+    const rawInput = number(last.inputTokens);
+    const cacheReadTokens = number(last.cachedInputTokens);
+    const reasoningTokens = number(last.reasoningOutputTokens);
+    return {
+      inputTokens: Math.max(0, rawInput - cacheReadTokens),
+      outputTokens: number(last.outputTokens),
+      ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
+      ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
+      requests: 1,
+    };
+  }
+  return undefined;
+}
+
 function protocolEvents(frames: readonly unknown[], reported: Set<string>): { events: StreamEvent[]; usage?: Usage } {
   const normalized = frames.flatMap((value) => {
     const frame = record(value);
@@ -57,6 +79,10 @@ function protocolEvents(frames: readonly unknown[], reported: Set<string>): { ev
     return [{ type, ...params, ...(params.item === undefined ? {} : { item: normalizeItem(params.item) }) }];
   });
   const parsed = shared.parseCodex(normalized.map((frame) => JSON.stringify(frame)).join("\n"));
+  // app-server v2 streams per-turn usage separately from `turn/completed`.
+  // `last` is already the current turn's total, so take the latest notification
+  // in this send window instead of summing intermediate cumulative updates.
+  const usage = appServerUsage(frames) ?? (Object.keys(parsed.usage).length === 0 ? undefined : parsed.usage);
   const events = parsed.events.filter((event) => {
     const key = eventKey(event);
     if (key === undefined) return true;
@@ -64,7 +90,7 @@ function protocolEvents(frames: readonly unknown[], reported: Set<string>): { ev
     reported.add(key);
     return true;
   });
-  return { events, ...(Object.keys(parsed.usage).length === 0 ? {} : { usage: parsed.usage }) };
+  return { events, ...(usage === undefined ? {} : { usage }) };
 }
 
 function evidence(frames: readonly unknown[], parseSuccess: boolean, events: readonly StreamEvent[]): TurnEvidenceCoverage {
