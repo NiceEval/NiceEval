@@ -5,11 +5,15 @@
   "areas": ["lifecycle"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
-  "command": ["pnpm", "exec", "vitest", "run"],
+  "command": ["python3", "fixtures/subreaper-runner.py", "pnpm", "exec", "vitest", "run"],
   "timeoutMinutes": 2,
   "harness": { "testkit": true },
   "secrets": [],
-  "requires": { "runtimes": ["node>=24"], "docker": true },
+  "requires": {
+    "runtimes": ["node>=24", "python>=3.11"],
+    "docker": true,
+    "platforms": ["linux"]
+  },
   "paths": [
     "e2e/lifecycle/**",
     "src/cli.ts",

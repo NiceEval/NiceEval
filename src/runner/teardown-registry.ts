@@ -3,6 +3,8 @@
 // (temp → fsync → rename → fsync 目录)。
 // 契约见 docs/feature/experiments/architecture.md「强杀后的收尾兜底:收尾登记与启动自愈」。
 
+import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
 import {
@@ -12,6 +14,7 @@ import {
   readEntryFileEffect,
   writeEntryFileEffect,
 } from "../shared/entry-file-store.ts";
+import { processIdentityForPidEffect } from "./shared-state-lease.ts";
 
 /** 一条收尾登记项(逐条目文件的 JSON 形状)。 */
 export interface TeardownRegistration {
@@ -34,6 +37,12 @@ function isPositiveInteger(value: unknown): value is number {
 
 function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function errnoCode(cause: unknown): string | undefined {
+  return typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
+    ? cause.code
+    : undefined;
 }
 
 /** 收尾登记的完整持久形状；单条读取还会核对文件身份。 */
@@ -95,6 +104,80 @@ export function readTeardownRegistrationEffect(
   );
 }
 
+/**
+ * Exact recovery cannot treat a malformed or unreadable expected entry as an
+ * absent cleanup obligation. Normal registry scans deliberately tolerate
+ * damaged historical rows; a recovery is instead about to publish a new
+ * sharedState generation, so only a genuinely absent path is safe to accept.
+ */
+export function readExactTeardownRegistrationEffect(
+  niceevalRoot: string,
+  experimentId: string,
+  pid: number,
+): Effect.Effect<TeardownRegistration | undefined, unknown> {
+  const id = teardownEntryId(experimentId, pid);
+  const path = join(teardownsDirOf(niceevalRoot), `${id}.json`);
+  return Effect.tryPromise({
+    try: () => readFile(path, "utf8"),
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.catchAll((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(undefined) : Effect.fail(cause)),
+    Effect.flatMap((raw) => raw === undefined ? Effect.succeed(undefined) : Effect.try({
+      try: () => {
+        let value: unknown;
+        try {
+          value = JSON.parse(raw);
+        } catch (cause) {
+          throw new Error(`teardown registration ${JSON.stringify(id)} is not valid JSON`, { cause });
+        }
+        const registration = decodeTeardownRegistration(value, { experimentId, pid });
+        if (registration === undefined) {
+          throw new Error(`teardown registration ${JSON.stringify(id)} has an invalid identity or shape`);
+        }
+        return registration;
+      },
+      catch: (cause) => cause,
+    })),
+  );
+}
+
+/** Immutable sharedState owner facts that can prove a registry row is old. */
+export interface ExactTeardownRegistrationOwner {
+  readonly experimentId: string;
+  readonly pid: number;
+  readonly host: string;
+  readonly processIdentity: string;
+}
+
+/**
+ * Checks the terminal state of the exact owner recorded by a sharedState
+ * generation. On the local host, this uses the same PID + process-identity
+ * probe as lease recovery: ENOENT, PID reuse, and Linux Z/X/x are terminal;
+ * unreadable or malformed probe evidence fails rather than guessing. Remote
+ * termination was already explicitly confirmed by the recovery command.
+ */
+export function isExactTeardownRegistrationOwnerTerminatedEffect(input: {
+  readonly registration: TeardownRegistration;
+  readonly owner: ExactTeardownRegistrationOwner;
+  readonly currentHost: string;
+}): Effect.Effect<boolean, unknown> {
+  const { registration, owner, currentHost } = input;
+  if (
+    registration.experimentId !== owner.experimentId ||
+    registration.pid !== owner.pid ||
+    registration.host !== owner.host
+  ) {
+    return Effect.fail(new Error(
+      "teardown registration does not match the immutable sharedState owner identity",
+    ));
+  }
+  if (owner.host !== currentHost) return Effect.succeed(true);
+  return processIdentityForPidEffect(owner.pid).pipe(
+    Effect.map((currentIdentity) =>
+      currentIdentity === undefined || currentIdentity !== owner.processIdentity),
+  );
+}
+
 /** 读全部登记项(损坏条目跳过,不整体失败;目录不存在时返回空集合)。 */
 export function readTeardownRegistrationsEffect(
   niceevalRoot: string,
@@ -114,20 +197,36 @@ export function removeTeardownRegistrationIfPresentEffect(
   return claimEntryFileEffect(teardownsDirOf(niceevalRoot), id);
 }
 
-/** 同宿主 pid 存活探测。runner 已依赖 sandbox 模块;此处保持本地小函数,是因为收尾登记只需
- * `kill(pid, 0)` 这一无副作用的宿主进程事实,不应把 sandbox 身份分类策略带进来。 */
-function isPidAlive(pid: number): boolean {
+/**
+ * Normal startup scans only persist PID + host, so they cannot prove PID
+ * reuse. They still share lease recovery's terminal Linux process states:
+ * a Z/X/x task cannot execute cleanup. Any `/proc` read/parse ambiguity is
+ * deliberately treated as live here; the explicit recovery path above has
+ * stronger immutable identity evidence and fails closed on that ambiguity.
+ */
+function isPidTerminal(pid: number): boolean {
+  if (process.platform === "linux") {
+    try {
+      const raw = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const closing = raw.lastIndexOf(")");
+      if (closing < 0 || raw[closing + 1] !== " ") return false;
+      const state = raw.slice(closing + 2).trim().split(/\s+/u)[0];
+      return state === "Z" || state === "X" || state === "x";
+    } catch (cause) {
+      return errnoCode(cause) === "ENOENT";
+    }
+  }
   try {
     process.kill(pid, 0);
-    return true;
+    return false;
   } catch (e) {
-    return (e as NodeJS.ErrnoException).code === "EPERM";
+    return (e as NodeJS.ErrnoException).code !== "EPERM";
   }
 }
 
-/** 遗留义务判定:同宿主且 pid 不存活。pid 存活或异宿主可能属于并发 run,不触碰。 */
+/** 遗留义务判定:同宿主且 PID 已缺失或处于终态。pid 存活、读取不明或异宿主可能属于并发 run,不触碰。 */
 export function isOrphanedTeardownRegistration(entry: TeardownRegistration, currentHost: string): boolean {
-  return entry.host === currentHost && !isPidAlive(entry.pid);
+  return entry.host === currentHost && isPidTerminal(entry.pid);
 }
 
 /**

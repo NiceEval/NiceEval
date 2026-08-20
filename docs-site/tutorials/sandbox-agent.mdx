@@ -153,7 +153,7 @@ import {
   completeEvidenceCoverage,
   createNpmCliInstaller,
   defineSandboxAgent,
-  resolveAgentBin,
+  agentBin,
 } from "niceeval/adapter";
 
 const { ensure, installer } = createNpmCliInstaller({
@@ -169,8 +169,12 @@ export default defineSandboxAgent({
   installers: [installer],
   async send(input, ctx) {
     ctx.progress({ message: "Running my-agent CLI" });
-    const bin = await resolveAgentBin(ctx.sandbox, "my-agent");
-    await ctx.sandbox.runCommand(bin, ["run", input.text, "--json-out", "agent-events.json"]);
+    await ctx.sandbox.runCommand("sh", [
+      "-lc",
+      `exec ${agentBin("my-agent")} run "$1" --json-out agent-events.json`,
+      "my-agent",
+      input.text,
+    ]);
     const transcript = await ctx.sandbox.readText("agent-events.json");
     if (transcript.trim() === "") {
       ctx.diagnostic({
@@ -187,7 +191,7 @@ export default defineSandboxAgent({
 });
 ```
 
-`createNpmCliInstaller` prepares the npm package on the host, then sends it into the Sandbox. The Sandbox does not need Node.js or npm. The complete workflow is in [Create a Custom Sandbox Agent](#create-a-custom-sandbox-agent).
+`createNpmCliInstaller` prepares the npm package on the host, sends it into the Sandbox, and installs an ordinary package there with npm. Such a Sandbox needs Node.js and npm; only a self-contained `platformPackage` can omit them. The complete workflow is in [Create a Custom Sandbox Agent](#create-a-custom-sandbox-agent).
 
 `setup`, every `send`, and `teardown` each receive feedback methods for their own scope:
 

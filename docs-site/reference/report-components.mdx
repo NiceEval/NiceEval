@@ -1,146 +1,122 @@
 ---
 title: "Report API"
-sidebarTitle: "Report API"
-description: "Write Reports for terminal, web, and static sites with Measures, Pages, components, and closed execution results."
+description: "Write terminal, web, and static Reports with standard React JSX, Pages, and closed Analysis values."
 ---
 
-A Report only handles display. Define statistical meaning in Analysis first, then obtain closed results in a Page or component. A Report author does not read result files, register durable data types, or handle migration or storage paths.
+Report authors only organize Analysis values that are already closed. Author files use standard React JSX; they do not read Record paths, obtain a reader, or need a NiceEval-specific JSX runtime or `jsxImportSource`.
 
 ```text
-Published run results
-        ↓
-Analysis: Measure + aggregate() / query()
-        ↓
-ClosedRows / MetricValue / DomainView
+Published Record
+        ↓ selection
+Sample → Analysis ClosedRows / MetricValue / DomainView
         ↓
 Report: Page + component
-        ↓
-ReportExecution → show / view / static export
+        ├─ show: one selected Page → terminal text or JSON
+        └─ view / view --out: all Pages → complete static site
 ```
 
-## Define statistical meaning first
+## Define a Report
 
-`niceeval/analysis` provides NiceEval's published inputs. Use `defineMeasure()` to make the population, aggregation, denominator, and missing-data policy explicit. No separate input-registration step is needed.
+Write a Report as a `.tsx` module, and enable `"jsx": "react-jsx"` in the project's TypeScript configuration. A composite component uses `ctx.scope` to obtain the Sample fixed for this command, then passes the `ClosedRows` returned by `aggregate()` to standard components.
 
-```ts
-import {
-  allLogicalSlots,
-  attemptPassed,
-  defineDimension,
-  defineMeasure,
-  latestCompletedAttempt,
-  logicalSlots,
-  oneValue,
-  partial,
-  ratio,
-  retainContributingEvidence,
-} from "niceeval/analysis";
-
-export const experiment = defineDimension({
-  id: "example.experiment",
-  population: logicalSlots,
-  value: slot => slot.experimentId,
-});
-
-export const passRate = defineMeasure({
-  id: "example.pass-rate",
-  population: logicalSlots,
-  input: attemptPassed,
-  withinAttempt: oneValue<boolean>(),
-  withinSlot: latestCompletedAttempt<boolean>(),
-  acrossSlots: ratio(),
-  denominator: allLogicalSlots(),
-  missing: partial(),
-  evidence: retainContributingEvidence(),
-  unit: "ratio",
-  format: "percent",
-  better: "higher",
-});
-```
-
-A `MetricValue` retains its value, state, actual contributor count, fixed denominator, problems, and evidence references. Do not unwrap a number and then recalculate or wrap it again in a Report.
-
-## Read closed values in a Page or component
-
-`aggregate()` is for table or chart rows grouped by a Dimension. It runs on the `Sample` that a Page or composite component receives, and returns `ClosedRows` that you can pass directly to `Table`, `Bars`, `Line`, or `Scatter`.
-
-```ts
+```tsx
 import {
   aggregate,
   Bars,
   defineComponent,
   defineReport,
   Grid,
+  model,
+  passRate,
+  Section,
   Table,
 } from "niceeval/report";
-import { experiment, passRate } from "./quality-measures.ts";
 
-const Comparison = defineComponent(async (_props, { sample }) => {
-  const rows = await aggregate(sample, {
-    by: { experiment },
+const Overview = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model },
     values: { passRate },
   });
 
-  return Grid({
-    children: [
-      Bars({ points: rows, x: "experiment", y: "passRate" }),
-      Table({ rows, caption: "Pass rate by experiment" }),
-    ],
-  });
+  return (
+    <Section title={ctx.report.title}>
+      <Grid>
+        <Bars points={rows} x="model" y="passRate" />
+        <Table rows={rows} />
+      </Grid>
+    </Section>
+  );
 });
 
 export default defineReport({
-  title: "Quality overview",
-  pages: [
-    {
-      id: "overview",
-      path: "/",
-      title: "Overview",
-      render: () => Comparison({}),
-    },
-  ],
+  title: { en: "Quality", "zh-CN": "质量" },
+  pages: [{
+    id: "overview",
+    path: "/",
+    title: { en: "Overview", "zh-CN": "概览" },
+    render: () => <Overview />,
+  }],
 });
 ```
 
-For a complete tabular request or a domain view, import `query()` from `niceeval/analysis`. For example, `attemptEvidenceView` returns a closed evidence view. It never gives a component a reader or raw run data.
+`ctx.scope` is the component's only field for obtaining a Sample. `ctx.report` provides the Report title, navigation Page summaries, and read-only `pricing`. The latter is a validated `PricingProfile` or `null`, the same value as `ReportDefinition.pricing`; it does not expose Config, the Runner price table, or another price input. `ctx.report` does not provide the current directory, Record, theme, or data-reading access to other Pages.
+
+A cost Measure must explicitly call `costUSD(profile)` or `totalCostUSD(profile)`, where `profile` is the Report's validated `pricing`; there is no no-argument or alias entry point. Analysis owns the slot-provider ledger, exact total, and `numerator / denominator` mean; the Host only closes and presents these results.
+
+`MetricValue` comes from Analysis and fully retains `value`, `state`, `samples`, `total`, `issues`, and `refs`. `value: 0` is valid. Do not recalculate a denominator from visible rows or write zero for `null`.
 
 ## Two component forms
 
-A composite component receives a `Sample` while it executes, then combines existing components. `Comparison` above is this kind of component.
+The preceding example is a composite component. It can asynchronously read closed values on the fixed Sample while the Page executes.
 
-A new display primitive provides both a text surface and a web surface. Its optional `resolve()` is the only phase that can retrieve a closed value asynchronously. `text` and `web` then read the same result.
+Display primitives use another `defineComponent()` form. Optional `resolve()` runs once; synchronous `text()` and `web()` read the same closed result.
 
-```ts
+```tsx
 import {
   defineComponent,
+  formatMetricValue,
   Stat,
-  Text,
   type MetricValue,
 } from "niceeval/report";
 
-const PassRateState = defineComponent({
-  text: ({ value }: { readonly value: MetricValue }) =>
-    Text({ value: `Pass-rate state: ${value.state}` }),
-  web: ({ value }) => Stat({ label: "Pass rate", value }),
+const MetricCard = defineComponent<
+  { readonly label: string; readonly value: MetricValue },
+  { readonly label: string; readonly value: MetricValue }
+>({
+  resolve: props => props,
+  text: data => `${data.label}: ${formatMetricValue(data.value)}`,
+  web: data => <Stat label={data.label} value={formatMetricValue(data.value)} />,
 });
 ```
 
-Both surfaces can return only NiceEval semantic nodes. Do not return DOM, raw HTML, browser side effects, or a separate text result.
+`text()` returns text and `web()` returns React JSX. Neither surface can read a Sample again, make a network request, or calculate statistics separately. Do not infer machine data back from HTML, text, or a React element.
 
-## Pages, parameters, and routes
+## Pages, parameters, and page selection
 
-`defineReport({ pages })` is the only Report-definition entry point. An ordinary Page can read closed values directly in `render(sample)`. For a family of detail routes, provide `params`, `load`, and `render` on that same Page. `params.enumerate(sample)` lists every instance for static export. `load` can use `context.evidence(locator)` to obtain a closed evidence view.
+An ordinary Page's `render` can receive the fixed Sample directly, or first close inputs with `load(sample, params, context)`. A parameter Page must also declare `navigation: false` and `params`:
 
-A Page's `id` supports diagnostics and stable ordering. Its `path` is the base address a user visits. A parameterized Page must set `navigation: false` and make `encode()` and `decode()` round trip canonically. Report validates page definitions, IDs, and ordinary paths before it calls author callbacks. After instantiation, it checks parameter-route and download-path conflicts.
+- `encode(params)` produces the canonical key.
+- `decode(key)` must restore the same kind of key.
+- `enumerate(sample)` lists instances only for a complete site.
+- `context.evidence(locator)` returns only the closed Evidence view within the current Sample.
 
-## Execution and problems
+`pages` is a Report's only page collection. Details must be explicitly declared as a Page or parameter Page; the Host does not add routes. `niceeval show --page <route>` only decodes, loads, and renders that target Page. It does not call `enumerate()` or execute other Pages. Only `niceeval view` and `niceeval view --out` enumerate all ordinary Pages and parameter instances, then form a complete site after all paths, links, resources, and budgets pass validation.
 
-`show`, `view`, and static export run Pages and components while the Sample is available. They then retain only an immutable `ReportExecution`. It contains completed pages, downloads, and problems. It has no capability to read results again.
+## JSON, web, and static sites
 
-Analysis problems remain in `MetricValue`, `ClosedRows`, and domain views. A callback that throws, invalid parameters, an invalid semantic tree, or a route conflict is an execution problem. `show` and `view` continue to display other successful pages. Static export does not publish a site with an execution problem.
+`show --json` always outputs English JSON. The built-in Report outputs Host-owned named domain documents; a custom Report outputs one Page's route, title, 80-column rendered text, download summary, and problem table. Both v1 JSON forms carry the closed cost data for that target Page in the same top-level `projections` object. They do not contain the author tree, HTML, whole-site routes, or site identity.
+
+View and static export use the same complete site version. The HTTP body for a route and the page body in the export directory are byte-for-byte identical. Both include the same reload client; when a static directory cannot find the view endpoint, it quietly disables itself. With JavaScript disabled or the network disconnected, body content, navigation, details, coverage, problems, and downloads remain readable.
+
+## Style and resource boundaries
+
+Report CSS is the only owner of product styling. It handles reset, base typography, theme tokens, and component styling. The View shell only handles browser language switching, reload state, and Host notices; it does not redraw Report content.
+
+A Report can declare structured `meta`, `link`, `style`, and `script` in `head`, and can choose a theme. Scripts may provide progressive enhancement only; they cannot be the sole entry point for body content, navigation, Evidence, or machine documents. Custom styling cannot create a second reset, theme, or View shell.
 
 ## Related pages
 
-- [Results Data API](/reference/results-data): Select published Analysis inputs and read closed values.
-- [Write a Custom Report](/tutorials/custom-reports): Write a practical Report from Measures.
-- [Publish a Static Report](/tutorials/publish-report): Export and share a fixed execution.
+- [Results Data API](/reference/results-data): Select Analysis input and read closed values.
+- [Write a custom Report](/tutorials/custom-reports): From measurement definitions to a runnable Report.
+- [Viewing results](/tutorials/viewing-results): Select scope, use single-target `show`, and use whole-site `view`.
+- [Publish a static Report](/tutorials/publish-report): Export a complete offline-readable site.

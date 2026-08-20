@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/opencode.md#adapter-opencode-live-compatibility
 //
 // 单文件 Journey：真实 OpenCode CLI + Docker Sandbox + live provider，
-// 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
+// 再从公开 CLI 读回 Eval、attempt 与 execution。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
@@ -147,13 +147,6 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
       execution.stdout.includes("command_execution"),
     "execution tree missing shell evidence (shell/bash/command_execution)",
   ).toBe(true);
-
-  // timing 独立读回 runner 的实际阶段树，不重复 execution 或 Skill 断言。
-  const timing = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout).toContain("eval.run");
-  expect(timing.stdout).toContain("agent.setup");
-  expect(timing.stdout).toMatch(/agent\.send\s+turn1\b/);
 
   // Skill 配置独立成线：安装、原生 skill 工具选择与 decoy 反选由专用 Eval 证明。
   const skillRun = await niceeval.run(

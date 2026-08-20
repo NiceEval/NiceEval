@@ -1,9 +1,78 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile, access, cp } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile, access, cp, open, rename, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import type { CommandOptions, CommandResult, Sandbox, SuccessfulCommandResult } from "niceeval/sandbox";
 
 const MAXIMUM_SINGLE_READ_BYTES = 4_000_000;
+const HOST_LEDGER_LOCK = "/tmp/niceeval-limited-local-e2e.lock";
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return errorCode(error) === "EPERM";
+  }
+}
+
+async function moveExactLockAside(expected: string, suffix: string): Promise<void> {
+  const current = await readFile(HOST_LEDGER_LOCK, "utf8").catch(() => undefined);
+  if (current !== expected) return;
+  const quarantine = `${HOST_LEDGER_LOCK}.${suffix}`;
+  await rename(HOST_LEDGER_LOCK, quarantine).catch((error: unknown) => {
+    if (errorCode(error) !== "ENOENT") throw error;
+  });
+  await rm(quarantine, { force: true });
+}
+
+/**
+ * This E2E custom Provider deliberately runs on the host, while NiceEval's
+ * fallback ledger path is fixed for isolated VMs. Serialize only this fixture
+ * across native test processes so concurrent takeover matrices cannot remove
+ * one another's private Git ledger. The exact token prevents stale cleanup
+ * from deleting a successor's lock.
+ */
+async function acquireHostLedgerLock(): Promise<() => Promise<void>> {
+  const token = `${process.pid}:${randomUUID()}`;
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    try {
+      const handle = await open(HOST_LEDGER_LOCK, "wx", 0o600);
+      try {
+        await handle.writeFile(token, "utf8");
+      } finally {
+        await handle.close();
+      }
+      return async () => moveExactLockAside(token, `released-${randomUUID()}`);
+    } catch (error) {
+      if (errorCode(error) !== "EEXIST") throw error;
+    }
+
+    const current = await readFile(HOST_LEDGER_LOCK, "utf8").catch(() => undefined);
+    const ownerPid = current?.match(/^(\d+):/u)?.[1];
+    const malformedAgeMs = ownerPid === undefined
+      ? await stat(HOST_LEDGER_LOCK).then(({ mtimeMs }) => Date.now() - mtimeMs, () => 0)
+      : 0;
+    if (
+      (ownerPid !== undefined && !processIsAlive(Number(ownerPid))) ||
+      (ownerPid === undefined && malformedAgeMs > 5_000)
+    ) {
+      await moveExactLockAside(current ?? "", `stale-${randomUUID()}`);
+      continue;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out waiting for host ledger fixture lock ${HOST_LEDGER_LOCK}`);
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+  }
+}
 
 function pathIn(workdir: string, path: string): string {
   return isAbsolute(path) ? path : resolve(workdir, path);
@@ -64,7 +133,8 @@ function runProcess(
 }
 
 /** Public custom-provider boundary whose file API rejects every read over 4,000,000 bytes. */
-export function createLimitedLocalSandbox(workdir = process.cwd()): Sandbox {
+export async function createLimitedLocalSandbox(workdir = process.cwd()): Promise<Sandbox> {
+  const releaseHostLedgerLock = await acquireHostLedgerLock();
   const runCommand = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
     runProcess(workdir, command, args, options);
   const runShell = (script: string, options: CommandOptions = {}) =>
@@ -111,6 +181,6 @@ export function createLimitedLocalSandbox(workdir = process.cwd()): Sandbox {
     downloadDirectory: async (sourceDir, targetDir) => {
       await cp(pathIn(workdir, sourceDir), targetDir, { recursive: true });
     },
-    stop: async () => {},
+    stop: releaseHostLedgerLock,
   };
 }

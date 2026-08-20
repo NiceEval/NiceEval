@@ -4,7 +4,7 @@ sidebarTitle: "隐藏测试判分"
 description: "用 loadText 在模块顶层读入隐藏测试、跑测脚本等判据文件，文件内容进入 fingerprint：改一字节自动重跑，不靠人工 --rerun。"
 ---
 
-沙箱 coding 题常用一份隐藏测试判分：Agent 改完代码后，评估用例把测试文件写进 Sandbox 执行，
+Sandbox Coding 任务常用一份隐藏测试判分：Agent 改完代码后，评估用例把测试文件写进 Sandbox 执行，
 测试通过就算过。这份测试文件就是判分标准本体——改了它，等于换了一道题，旧结果不能再采信。
 
 用 `loadText` 读它，NiceEval 会把文件内容算进这条评估用例的 fingerprint：
@@ -63,6 +63,6 @@ description: "用 loadText 在模块顶层读入隐藏测试、跑测脚本等�
 - **`loadText` 必须写在模块顶层。** 缓存判断发生在运行之前，写进 `test(t)` 里运行期才读就来不及了，
   NiceEval 会直接报错并提示挪到顶层。
 - **读 Agent 的产物用 `t.sandbox`，不用 `loadText`。** Sandbox 里 Agent 跑出来的文件是本次运行的证据，
-  每次都不同，不属于 fingerprint。用 `t.sandbox.file(...)` 一类断言去读。
+  每次都不同，不属于 fingerprint。用 `await t.sandbox.readText(path)` 读取，再把返回的字符串交给 `t.check`。
 - 判据是结构化数据（case 对照表）时用 `loadYaml` / `loadJson`，
   见[数据驱动测试](/zh/tutorials/dataset-fanout)。

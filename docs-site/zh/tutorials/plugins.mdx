@@ -39,6 +39,15 @@ export const memory = definePlugin<MemoryOptions>({
     teardown: (_sandbox, ctx) => ctx.progress({ message: "断开当前 Sandbox" }),
   }),
 });
+
+export const telemetry = definePlugin({
+  name: "acme.telemetry",
+  behaviorRevision: "1",
+  experiment: () => ({
+    setup: (ctx) => ctx.progress({ message: "启动 telemetry 收集" }),
+    teardown: (ctx) => ctx.progress({ message: "停止 telemetry 收集" }),
+  }),
+});
 ```
 
 `name` 命名 Plugin family。`instanceKey(options)` 区分同一 family 的不同配置。实现语义改变时提高 `behaviorRevision`，让旧结果不再被精确沿用。
@@ -50,6 +59,11 @@ export const memory = definePlugin<MemoryOptions>({
 `plugins` 始终接收数组：
 
 ```ts
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+import { memory, telemetry } from "./shared/memory.ts";
+
 export default defineExperiment({
   agent: codexAgent({
     skills: [{ kind: "local", path: ".agents/skills/memory" }],

@@ -4,7 +4,7 @@ sidebarTitle: "评估"
 description: "评估用例是一个测试用例：描述和 test 函数，agent-neutral。了解评估用例如何被发现、调度、评分和报告。"
 ---
 
-一个 eval 是一个可运行的测试用例。它通常由一个 `*.eval.ts` 文件导出，通过 `defineEval` 声明。
+一个评估用例是一个可运行的测试用例。它通常由一个 `*.eval.ts` 文件导出，通过 `defineEval` 声明。
 
 ## 评估用例的组成
 
@@ -31,7 +31,7 @@ export default defineEval({
 | 字段 | 说明 |
 |---|---|
 | `description` | 给人看的描述，出现在报告里 |
-| `environment` | 可选的环境需求 profile，由 sandbox spec 的 `environments` 表映射到具体预制环境 |
+| `sandbox` | 评估用例拥有的可选 Sandbox layer；Experiment 提供 template-bearing layer 时省略 |
 | `test(t)` | 交互和断言逻辑 |
 
 评估用例本身不声明用哪个 Agent——它默认保持 agent-neutral，同一个评估用例可以在不同 experiment 下跑不同 Agent。选哪个 Agent 是 experiment 的字段，不由 CLI 临时覆盖。
@@ -67,7 +67,7 @@ npx niceeval exp local weather/brooklyn
     [NiceEval](https://niceeval.com/) 收集值断言、作用域断言与 Judge measurement，并登记 score contribution。
   </Step>
   <Step title="终态">
-    Pass Eval 把断言结果折叠成最终 Verdict；Score Eval 累计正式 score。
+    通过制评估把断言结果折叠成最终 Verdict；计分制评估累计正式 score。
   </Step>
   <Step title="Report">
     控制台和 reporters 输出结果，事实同时提交进 `.niceeval/` Record 根。
@@ -76,14 +76,14 @@ npx niceeval exp local weather/brooklyn
 
 ## Verdict 类型
 
-Pass Eval 的 Attempt 终态只有四种：
+通过制评估的 Attempt 终态只有四种：
 
 <CardGroup cols={2}>
   <Card title="passed" icon="circle-check" color="#22c55e">
-    所有 Boolean Assertion 都 matched，所有 measurement 都达到 `atLeast` 阈值，并且没有执行错误。
+    所有 Boolean Assertion 都 matched，所有 gated measurement 都达到 `.gate(n)` 阈值，并且没有执行错误。
   </Card>
   <Card title="failed" icon="circle-xmark" color="#ef4444">
-    至少一个 Boolean condition mismatched，或 measurement 低于阈值。
+    至少一个 Boolean condition mismatched，或 measurement 低于明确的 `.gate(n)` 阈值。
   </Card>
   <Card title="errored" icon="triangle-exclamation" color="#f59e0b">
     执行异常、超时或作者错误，本次执行无法形成可信结论。
@@ -93,13 +93,13 @@ Pass Eval 的 Attempt 终态只有四种：
   </Card>
 </CardGroup>
 
-Score Eval 的主读数是累计 earned score，分数越高越好。正常没有计分项时 score 为 `0`。默认报告显示 earned score，不把正常封口状态算进通过率。
+计分制评估的主读数是累计 earned score，分数越高越好。正常没有计分项时 score 为 `0`。默认报告显示 earned score，不把正常封口状态算进通过率。
 
-`.score(points)` 中的 `points` 是单项贡献权重，不是固定总分。默认报告不会把 earned score 自动换算成百分比。一个 Experiment 同时包含 Pass Eval 与 Score Eval 时，报告分别显示两种主读数。
+`.score(points)` 中的 `points` 是单项贡献权重，不是固定总分。默认报告不会把 earned score 自动换算成百分比。一个 Experiment 同时包含通过制评估与计分制评估时，报告分别显示两种主读数。
 
 ## 判定与测量值
 
-Boolean `matched` 默认进入 Verdict。连续测量值与 Judge 输出是 `[0, 1]` 的 measurement；Pass Eval 使用 `.gate(n)` 才把它纳入 failed，`.atLeast(n)` 只记录局部 condition。完整规则见 [Assert](/zh/explanation/assert)。
+Boolean `matched` 默认进入 Verdict。连续测量值与 Judge 输出是 `[0, 1]` 的 measurement；通过制评估使用 `.gate(n)` 才把它纳入 failed，`.atLeast(n)` 只记录局部 condition。完整规则见 [Assert](/zh/explanation/assert)。
 
 ## `*.eval.ts` 约定
 

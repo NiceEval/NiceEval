@@ -6,6 +6,7 @@
 import { openClawAgent } from "niceeval/adapter";
 
 const agent = openClawAgent({
+  plugins: ["@acme/openclaw-plugin@1.2.3"],
   skills: [{ kind: "local", path: "skills/review/SKILL.md" }],
 });
 ```
@@ -36,7 +37,14 @@ const agent = openClawAgent({
 transcript 拿不到时，只保留 `--json` 封包的最终回复，并声明负断言不可信——不从最终文本猜测工具行为。
 
 Skills 落到 `.agents/skills/<name>/`，并写发现指引进 `AGENTS.md`。
-OpenClaw 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
+OpenClaw 不接受 Claude/Codex 的 `mcpServers`，但接受自己的 `plugins: string[]`：每项必须是精确 npm
+`package@version`，tag、range 与同名重复项会在创建 Agent 时拒绝。
+
+原生插件与 CLI 分成有顺序的 Agent Ensure。插件探测命令验证 OpenClaw 管理的 npm project、实际 package
+version、manifest id 与启用状态；缺失或存在额外外部插件时，installer 用 `openclaw plugins uninstall/install`
+收敛到声明集合。`setup` 合并并保留原生命令写入的 `plugins` 配置，随后现有 live owner 用
+`plugins inspect --runtime` 验证 local embedded runtime 已加载且没有 diagnostics。派生镜像预装状态和复用
+Sandbox 都能命中并跳过安装；插件声明及协议修订进入 Agent install identity。
 
 公开能力以真实 fixture / e2e 仓库固定的事实为准；未证明完整的行为不进公开能力声明。
 

@@ -4,6 +4,8 @@ sidebarTitle: "OTel Integration"
 description: "Send the OTel spans your app already emits to NiceEval, then view a per-turn call waterfall in niceeval view. Eval assertions still come from the events and usage send returns."
 ---
 
+import { OtelCollect } from '/snippets/diagram-otel-collect.jsx';
+
 OTel integration **does not change where assertion data comes from**. `t.calledTool`, `t.maxTokens`, and timing verdicts all read the `Turn` (`events` and `usage`) your adapter returns from `send` — see [Connect Your Agent](/tutorials/connect-your-agent).
 
 OTel spans power **the call waterfall in `niceeval view`**. The waterfall shows model calls, tool execution, duration, and tokens per turn, helping you pinpoint the exact step where an eval failed or a turn slowed down.
@@ -13,6 +15,8 @@ If your app already emits OTel traces — AI SDK telemetry, LangGraph's LangSmit
 ## How it works (one paragraph)
 
 At run time [NiceEval](https://niceeval.com/) starts a local OTLP receiver. Spans the app sends are attributed to the corresponding `send` turn, normalized into GenAI semantics, and written to the Attempt-owned `niceeval.telemetry` JSONL event channel. A Report decodes and displays the waterfall only when it declares that requirement. **Spans never affect assertions** — they do not change Agent behavior, execution errors, or Verdicts. Missing instrumentation, late spans, or dropped batches affect that channel's coverage and waterfall completeness only; they never affect a Verdict.
+
+<OtelCollect />
 
 ## Wiring it up
 

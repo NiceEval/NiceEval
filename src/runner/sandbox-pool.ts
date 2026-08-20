@@ -15,7 +15,7 @@ import type { JsonValue, Sandbox, SandboxAgent, SandboxHookContext, SandboxReuse
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { firstLine, formatThrown } from "../util.ts";
-import { Cause, Effect, Either, Exit, Scope } from "effect";
+import { Cause, Deferred, Effect, Either, Exit, Scope } from "effect";
 import type { GroupPluginContext, LinkedPluginLifecycle } from "../plugin/contracts.ts";
 
 export interface ReusableSandboxLease {
@@ -33,6 +33,24 @@ export type ReusableLeaseRelease =
 /** A post-attempt physical lifecycle failure observed after its result sealed. */
 export interface ReusableSandboxPoolRuntimeFailure {
   readonly stage: "sandbox.reset";
+  readonly error: Error;
+}
+
+/**
+ * A physical Sandbox Scope or reset failure that must remain observable until
+ * the owning Experiment has completed its one-and-only pool stop. Unlike
+ * `runtimeFailures`, this ledger is deliberately never drained by Attempt
+ * result sealing: an early retire may have already removed its entry from the
+ * live pool, but it must still make Experiment cleanup fail.
+ */
+interface ReusableSandboxPoolCleanupFailure {
+  readonly stage:
+    | "sandbox.reset"
+    | "sandbox.retire"
+    | "sandbox.materialize-cleanup"
+    | "sandbox.ensure-lifetime-cleanup"
+    | "sandbox.prepare-cleanup"
+    | "sandbox.lifecycle-diagnostic";
   readonly error: Error;
 }
 
@@ -74,7 +92,16 @@ export class ReusableSandboxPool {
   private readonly waiters: Array<() => void> = [];
   private creating = 0;
   private stopped = false;
+  /** One physical stop operation owns every instance/finalizer exactly once. */
+  private stopCompletion: Deferred.Deferred<void, unknown> | undefined;
   private readonly runtimeFailures: ReusableSandboxPoolRuntimeFailure[] = [];
+  /**
+   * Whole-Experiment physical cleanup ledger. This is intentionally distinct
+   * from `runtimeFailures`: the latter is a per-Attempt diagnostic channel and
+   * is drained once that Attempt seals, whereas this collection is replayed by
+   * the terminal `stop()` even if an entry was retired long before then.
+   */
+  private readonly cleanupFailures: ReusableSandboxPoolCleanupFailure[] = [];
   /** Provider 可观察的物理 owner；Group 池不能随首个未携入成员改用另一个 Eval ID。 */
   private readonly materializationOwnerId: string;
   /** 本次 Run 内的 Sandbox 编号计数器;淘汰的实例不让号,编号在结果里永远指向同一个实例。 */
@@ -99,9 +126,22 @@ export class ReusableSandboxPool {
     this.materializationOwnerId = materializationOwnerId ?? plan.pair.evalId;
   }
 
-  /** 把整座池登记进调用方 Scope；Invocation 中断与正常结束走同一条 stop finalizer。 */
+  /**
+   * Registers only an awaiter in the outer Invocation Scope. The real stop is
+   * initiated by the Experiment lifecycle before its teardown; if the outer
+   * Scope closes first it joins the same single-flight result rather than
+   * repeating provider or plugin finalizers.
+   */
   managed(): Effect.Effect<this, never, Scope.Scope> {
-    return Effect.addFinalizer(() => this.stop()).pipe(Effect.as(this));
+    return Effect.addFinalizer(() => this.stop().pipe(Effect.ignore)).pipe(Effect.as(this));
+  }
+
+  /** Closes admission before the Experiment starts physical cleanup. */
+  freeze(): Effect.Effect<void> {
+    return Effect.sync(() => {
+      this.stopped = true;
+      this.wake();
+    });
   }
 
   /**
@@ -169,34 +209,77 @@ export class ReusableSandboxPool {
     });
   }
 
-  stop(): Effect.Effect<void> {
+  stop(): Effect.Effect<void, unknown> {
+    return Effect.uninterruptibleMask((restore) => Effect.gen(this, function* () {
+      const created = yield* Deferred.make<void, unknown>();
+      const completion = yield* Effect.sync(() => {
+        if (this.stopCompletion !== undefined) return this.stopCompletion;
+        this.stopCompletion = created;
+        this.stopped = true;
+        this.wake();
+        return created;
+      });
+      // A caller joining an already-started stop remains cancelable. The one
+      // caller that starts it cannot be interrupted between publishing the
+      // Deferred and recording its terminal Exit.
+      if (completion !== created) return yield* restore(Deferred.await(completion));
+
+      // Stop must finish every physical cleanup even if the initiating
+      // Invocation is interrupted. Its recorded Exit is replayed to joiners.
+      const exit = yield* Effect.exit(this.stopAll());
+      yield* Deferred.done(created, exit);
+      if (Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause);
+    }));
+  }
+
+  private stopAll(): Effect.Effect<void, unknown> {
     return Effect.gen(this, function* () {
-      this.stopped = true;
-      this.wake();
-      // 已借出的 lease 仍在执行其 Attempt/cleanup；现在关闭 entry Scope 会把 Sandbox 在
-      // 使用中 teardown。创建中的 entry 尚未进 entries，必须等它落入唯一 retire 路径。
+      // Leases own their Attempt scopes. Wait until each lease has returned
+      // before closing provider scopes; this is also the barrier that makes
+      // pool stop safe to place before Experiment teardown.
       while (this.creating > 0 || this.entries.some((entry) => entry.lifecycle._tag === "Leased")) {
         yield* this.awaitWake();
       }
-      yield* Effect.forEach([...this.entries], (entry) => this.retire(entry), {
+      const exits: Exit.Exit<void, unknown>[] = [];
+      const retired = yield* Effect.forEach([...this.entries], (entry) => Effect.exit(this.retire(entry)), {
         concurrency: "unbounded",
-        discard: true,
       });
+      exits.push(...retired);
       if (this.groupPluginContext !== undefined) {
-        yield* Effect.forEach(
+        const groupTeardowns = yield* Effect.forEach(
           this.groupPlugins.slice(0, this.activatedGroupPlugins).reverse(),
           (entry) => entry.teardown === undefined
-            ? Effect.void
-            : cleanupCallback((signal) => (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
-                ...this.groupPluginContext!,
-                signal,
-              })).pipe(Effect.catchAll((cause) => Effect.sync(() => this.feedback.diagnostic({
-                code: "plugin-lifecycle-teardown-failed",
-                level: "warning",
-                message: cause instanceof Error ? cause.message : String(cause),
-              })))),
-          { discard: true },
+            ? Effect.succeed(Exit.void)
+            : Effect.exit(cleanupCallback((signal) =>
+                (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
+                  ...this.groupPluginContext!,
+                  signal,
+                }),
+              )),
+          { concurrency: "unbounded" },
         );
+        for (const exit of groupTeardowns) {
+          exits.push(exit);
+          if (Exit.isFailure(exit)) {
+            this.feedback.diagnostic({
+              code: "plugin-lifecycle-teardown-failed",
+              level: "warning",
+              message: String(Cause.squash(exit.cause)),
+            });
+          }
+        }
+      }
+      const failures: unknown[] = [];
+      for (const exit of exits) {
+        if (Exit.isFailure(exit)) failures.push(Cause.squash(exit.cause));
+      }
+      // An entry may have been removed by a failed Attempt release before this
+      // terminal sweep. Replaying the durable pool-local ledger makes that
+      // physical Scope/provider cleanup failure visible to Experiment teardown
+      // and therefore to sharedState lease release.
+      failures.push(...this.cleanupFailures.map((failure) => failure.error));
+      if (failures.length > 0) {
+        return yield* Effect.fail(new AggregateError([...new Set(failures)], "Sandbox reuse pool cleanup failed."));
       }
     });
   }
@@ -236,13 +319,28 @@ export class ReusableSandboxPool {
         ? { _tag: "Unlimited" }
         : { _tag: "Bounded", timeoutMs: Math.max(1, minRemainingMs - CLEANUP_TIMEOUT_MS), deadlineAt };
       const entryScope = yield* Scope.make();
+      // One wrapper per physical materialization. Both provider feedback and
+      // SandboxLayer hook context must use this exact instance: runtime sends
+      // provider release failures through `feedback`, while
+      // `runTeardownHooks` reports through `hookContext.diagnostic`.
+      const lifecycleFeedback = this.lifecycleFeedback();
+      const lifecycleHookContext: SandboxHookContext = {
+        ...this.setupContext,
+        progress: lifecycleFeedback.progress,
+        diagnostic: lifecycleFeedback.diagnostic,
+      };
       const materialized = yield* Scope.extend(materializeSandboxRunPlan({
         plan: this.plan,
         evalId: this.materializationOwnerId,
         deadline,
-        feedback: this.feedback,
+        // Runtime intentionally reports SandboxLayer/provider finalizer errors
+        // as diagnostics so it can continue the remaining finalizers. The pool
+        // must nevertheless retain those physical cleanup failures until its
+        // terminal stop; otherwise an early retire can disappear from
+        // `entries` and incorrectly permit sharedState release.
+        feedback: lifecycleFeedback,
         signal: this.setupContext.signal,
-        hookContext: this.setupContext,
+        hookContext: lifecycleHookContext,
         buildLocators,
         ...(this.agent !== undefined ? { agent: this.agent } : {}),
         ...(this.runTiming !== undefined ? { runTiming: this.runTiming } : {}),
@@ -250,14 +348,18 @@ export class ReusableSandboxPool {
         services: this.runtimeServices,
         release: { _tag: "Stop" },
       }), entryScope).pipe(
-        Effect.onError((cause) => Scope.close(entryScope, Exit.failCause(cause))),
+        Effect.onError((cause) => this.closeFailedCreateScope(
+          entryScope,
+          Exit.failCause(cause),
+          "sandbox.materialize-cleanup",
+        )),
       );
       const sandbox = materialized.sandbox;
     // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
     // docs/feature/sandbox/reuse.md「派发前确认」)。
     const lifetime = sandboxReuseCapability(sandbox);
     if (!lifetime) {
-      yield* Scope.close(entryScope, Exit.void);
+      yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");
       return yield* Effect.fail(new Error(
         `sandboxReuse needs the "${capabilities.provider}" provider to confirm sandbox lifetime, but it does not implement ` +
           "ensureLifetime(minRemainingMs). Only a provider can prove the lifetime is set on its own backend; the runner " +
@@ -265,10 +367,14 @@ export class ReusableSandboxPool {
       ));
     }
     const confirmed = yield* externalPromise(() => lifetime.ensureLifetime(minRemainingMs)).pipe(
-      Effect.onError((cause) => Scope.close(entryScope, Exit.failCause(cause))),
+      Effect.onError((cause) => this.closeFailedCreateScope(
+        entryScope,
+        Exit.failCause(cause),
+        "sandbox.ensure-lifetime-cleanup",
+      )),
     );
     if (!confirmed.ready) {
-      yield* Scope.close(entryScope, Exit.void);
+      yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");
       return yield* Effect.fail(
         new Error(`sandboxReuse cannot prepare the "${capabilities.provider}" sandbox: ${confirmed.reason}`),
       );
@@ -305,7 +411,11 @@ export class ReusableSandboxPool {
         ordinal: 0,
         lifecycle: { _tag: "Idle" } satisfies EntryLifecycle,
       };
-    }).pipe(Effect.onError((cause) => Scope.close(entryScope, Exit.failCause(cause))));
+    }).pipe(Effect.onError((cause) => this.closeFailedCreateScope(
+      entryScope,
+      Exit.failCause(cause),
+      "sandbox.prepare-cleanup",
+    )));
     return prepared;
     });
   }
@@ -333,17 +443,21 @@ export class ReusableSandboxPool {
           ? settled.release.release
           : { _tag: "Retire" };
         if (release._tag === "Retire") {
-          yield* this.retire(entry);
+          // The Attempt has already sealed. Do not turn its return finalizer
+          // into a defect; `retire` persists the physical failure and terminal
+          // `stop()` replays it to Experiment cleanup/lease release.
+          yield* this.retire(entry).pipe(Effect.catchAll(() => Effect.void));
         } else if (entry.lifecycle._tag !== "Retired") {
           const reset = yield* Effect.either(externalPromise(() => entry.ledger.resetToAnchor()));
           if (Either.isLeft(reset)) {
             this.runtimeFailures.push(Object.freeze({ stage: "sandbox.reset", error: reset.left }));
+            this.recordCleanupFailure("sandbox.reset", reset.left);
             this.feedback.diagnostic({
               code: "sandbox-reset-failed",
               level: "warning",
               message: `Sandbox #${entry.reuseSandbox} reset to anchor failed, retiring the instance: ${firstLine(formatThrown(reset.left))}`,
             });
-            yield* this.retire(entry);
+            yield* this.retire(entry).pipe(Effect.catchAll(() => Effect.void));
           } else {
             entry.lifecycle = { _tag: "Idle" };
           }
@@ -372,19 +486,23 @@ export class ReusableSandboxPool {
 
   /** 淘汰一台实例:停资源组并移出池——留在池里会占满容量,
    *  让后续 acquire 既等不到空闲实例、也创建不出替代实例(等待者永远醒不来)。 */
-  private retire(entry: Entry): Effect.Effect<void> {
+  private retire(entry: Entry): Effect.Effect<void, Error> {
     return Effect.gen(this, function* () {
       if (entry.lifecycle._tag === "Retired") return;
       entry.lifecycle = { _tag: "Retired" };
       const at = this.entries.indexOf(entry);
       if (at >= 0) this.entries.splice(at, 1);
-      yield* Scope.close(entry.scope, Exit.void).pipe(
-        Effect.catchAllCause((cause) => Effect.sync(() => this.feedback.diagnostic({
+      const exit = yield* Effect.exit(Scope.close(entry.scope, Exit.void));
+      if (Exit.isFailure(exit)) {
+        const error = this.recordCleanupFailure("sandbox.retire", Cause.squash(exit.cause));
+        this.feedback.diagnostic({
           code: "sandbox-stop-failed",
           level: "warning",
-          message: `Sandbox reuse case finalizer failed: ${String(cause)}`,
-        }))),
-      );
+          message: `Sandbox reuse case finalizer failed: ${String(error)}`,
+        });
+        this.wake();
+        return yield* Effect.fail(error);
+      }
       this.wake();
     });
   }
@@ -402,6 +520,63 @@ export class ReusableSandboxPool {
         if (index >= 0) this.waiters.splice(index, 1);
       });
     });
+  }
+
+  /**
+   * A create/ensureLifetime failure can still run provider and Sandbox Scope
+   * finalizers. The entry is not yet in `entries`, so `stopAll()` cannot find
+   * it later; record a close failure now and replay it from the Experiment
+   * lifetime ledger instead of letting an `onError` cleanup failure vanish.
+   */
+  private closeFailedCreateScope(
+    scope: Scope.CloseableScope,
+    exit: Exit.Exit<unknown, unknown>,
+    stage: Extract<ReusableSandboxPoolCleanupFailure["stage"],
+      "sandbox.materialize-cleanup" | "sandbox.ensure-lifetime-cleanup" | "sandbox.prepare-cleanup">,
+  ): Effect.Effect<void> {
+    return Effect.exit(Scope.close(scope, exit)).pipe(
+      Effect.flatMap((close) => Exit.isFailure(close)
+        ? Effect.sync(() => {
+            const error = this.recordCleanupFailure(stage, Cause.squash(close.cause));
+            this.feedback.diagnostic({
+              code: "sandbox-stop-failed",
+              level: "warning",
+              message: `Sandbox reuse setup cleanup failed: ${String(error)}`,
+            });
+          })
+        : Effect.void),
+    );
+  }
+
+  private recordCleanupFailure(
+    stage: ReusableSandboxPoolCleanupFailure["stage"],
+    cause: unknown,
+  ): Error {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    this.cleanupFailures.push(Object.freeze({ stage, error }));
+    return error;
+  }
+
+  /**
+   * `materializeSandboxRunPlan` deliberately converts hook/provider cleanup
+   * failures into feedback and continues its Scope.close. Preserve that signal
+   * beside thrown Scope close failures, without changing the public Sandbox
+   * lifecycle API or its diagnostic-only finalizer contract.
+   */
+  private lifecycleFeedback(): ScopedFeedback {
+    return {
+      progress: (update) => this.feedback.progress(update),
+      diagnostic: (input) => {
+        this.feedback.diagnostic(input);
+        if (
+          input.code === "sandbox-teardown-failed" ||
+          input.code === "sandbox-stop-failed" ||
+          input.code === "plugin-lifecycle-teardown-failed"
+        ) {
+          this.recordCleanupFailure("sandbox.lifecycle-diagnostic", new Error(input.message));
+        }
+      },
+    };
   }
 }
 

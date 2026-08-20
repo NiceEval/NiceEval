@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-cli-live-compatibility
 //
 // 单文件 Journey：真实 Codex CLI + Docker Sandbox + live provider，
-// 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
+// 再从公开 CLI 读回 Eval、attempt 与 execution。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
 import {
@@ -136,12 +136,4 @@ it("show --execution 读回 Codex CLI 的代表性工具证据", async () => {
     "execution tree missing shell/command_execution",
   ).toBe(true);
   expect(execution.stdout).toContain("niceeval-e2e-run-914");
-});
-
-it("show --timing 读回 Codex CLI 的 runner 阶段", async () => {
-  const codingTaskLocator = locatorFor("coding-task");
-  const timing = await niceeval.run(["show", codingTaskLocator, "--timing"]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
 });

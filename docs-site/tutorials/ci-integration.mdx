@@ -4,9 +4,11 @@ sidebarTitle: "CI Integration"
 description: "Use the process exit status for a CI gate, retain the final receipt, and provide a JUnit file to the platform."
 ---
 
-When CI runs an Experiment, the process exit status decides whether the gate passes. `--json` provides feedback from the current process; its final receipt contains the Invocation's `runIds`. A JUnit file gives the CI platform test results to display.
+When CI runs an Experiment, the process exit status decides whether the gate passes. `--json` provides feedback from the current process, and its final receipt contains the Invocation's `runIds`. A JUnit file gives the CI platform test results to display.
 
 ## Basic command
+
+Whenever a Boolean condition is mismatched, a measurement falls below an explicit `.gate(n)` threshold, or execution errors, [NiceEval](https://niceeval.com/) exits with a nonzero status. `.atLeast(n)` records a local condition but does not affect the Verdict or exit status by itself. Put requirements that must block a merge directly in eval source so CI and local runs read the same Verdicts.
 
 ```sh
 npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml
@@ -18,7 +20,7 @@ This command has three outputs:
 - NDJSON: Progress and diagnostics describe the current process; the final receipt describes the Invocation.
 - JUnit: A temporary file for the CI platform.
 
-JUnit and external-platform files do not own the Record. The quiescent Record's named channels keep the recorded Verdict, Usage, assertions, and diagnostics.
+JUnit and external-platform files do not own the Record. The quiescent Record's named channels retain the persisted Verdict, Usage, Assertions, and diagnostics.
 
 ## GitHub Actions example
 
@@ -41,14 +43,14 @@ This step retains JSON output and correctly preserves the exit status from `nice
     path: ./artifacts/niceeval-junit.xml
 ```
 
-Inject model credentials through CI secrets. Do not put credentials in an Experiment, receipt, JUnit file, or log.
+Inject model credentials through CI secrets into variables required by the command. Do not put credentials in an Experiment, receipt, JUnit file, or log.
 
 ## Use the receipt in a later step
 
-After an Invocation is created successfully, the final NDJSON record contains its receipt. A later script can use its `runIds` to select an explicit Run for viewing or export:
+After an Invocation is created successfully, the final NDJSON line contains its receipt. A later script can read its `runIds` and select an explicit Run to view or export:
 
 ```sh
-npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
   --out ./report-site \
   --no-open
 ```
@@ -57,6 +59,6 @@ If an input error ends the command before an Invocation exists, there is no rece
 
 ## Keep feedback readable
 
-CI logs are for the current process's progress and diagnostics. To inspect business results, use the receipt's `runIds` with `show` or `view`. To share results over time, use `view --out` to produce a static report site.
+CI logs are for the current process's progress and diagnostics. To inspect business results, use the receipt's `runIds` with `show` or `view`; to share results over time, use `view --out` to produce a static report site.
 
 See [Publish a Static Report](/tutorials/publish-report) for the full static-site workflow.

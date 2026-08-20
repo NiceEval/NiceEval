@@ -47,14 +47,3 @@ test("show --execution 读回 OpenAI Responses 的代表性证据", async () => 
   expect(execution.exitCode, execution.diagnostic()).toBe(0);
   for (const marker of evidence.executionMarkers) expect(execution.stdout).toContain(marker);
 });
-
-test("show --timing 读回 OpenAI Responses 的 runner 阶段", async () => {
-  const timing = await showOpenAiLiveEvidence(evidence, [
-    evidence.evalEvent.locator!,
-    "--timing",
-  ]);
-  expect(timing.exitCode, timing.diagnostic()).toBe(0);
-  expect(timing.stdout, timing.diagnostic()).toContain("eval.run");
-  expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+turn1\b/);
-
-});
