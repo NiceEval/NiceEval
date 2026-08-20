@@ -306,16 +306,40 @@ function templateSections(): string[] { return [...currentTemplate().text.matchA
 function templatePlaceholders(): string[] {
   return [...new Set([...stripAuthoringComments(currentTemplate().text).matchAll(/<[^>\n]+>/g)].map((match) => match[0]))];
 }
-function requireFields(errors: string[], label: string, block: string, fields: string[]): void {
+function requireBulletFields(errors: string[], label: string, block: string, fields: string[]): void {
   for (const field of fields) {
     if (!new RegExp(`^- ${field}:`, "m").test(block)) errors.push(`${label} is missing - ${field}:`);
   }
 }
-function validateCaseSection(errors: string[], name: string, content: string, fields: string[]): void {
+function headingContent(block: string, level: number, name: string): string | undefined {
+  const marker = "#".repeat(level);
+  const headings = [...block.matchAll(new RegExp(`^${marker} (.+)$`, "gm"))];
+  const index = headings.findIndex((heading) => heading[1].trim() === name);
+  if (index === -1) return undefined;
+  return block.slice(headings[index].index! + headings[index][0].length, headings[index + 1]?.index ?? block.length).trim();
+}
+function requireHeadingFields(errors: string[], label: string, block: string, level: number, fields: string[]): void {
+  for (const field of fields) {
+    const value = headingContent(block, level, field);
+    if (value === undefined) errors.push(`${label} is missing ${"#".repeat(level)} ${field}`);
+    else if (!value) errors.push(`${label} has an empty ${"#".repeat(level)} ${field}`);
+  }
+}
+function fencedBlockCount(content: string | undefined): number {
+  return content ? [...content.matchAll(/^```[^\n]*\n[\s\S]*?^```\s*$/gm)].length : 0;
+}
+function requireFences(errors: string[], label: string, content: string | undefined, count: number): void {
+  if (content !== undefined && fencedBlockCount(content) < count) errors.push(`${label} requires at least ${count} fenced code block${count === 1 ? "" : "s"}`);
+}
+function validateProductCaseSection(errors: string[], name: string, content: string): void {
   const cases = [...content.matchAll(/^#### Case: .+$/gm)];
   for (const [index, heading] of cases.entries()) {
     const block = content.slice(heading.index! + heading[0].length, cases[index + 1]?.index ?? content.length);
-    requireFields(errors, `${name} ${heading[0]}`, block, fields);
+    const label = `${name} ${heading[0]}`;
+    requireHeadingFields(errors, label, block, 5, ["Before", "After", "User impact"]);
+    requireFences(errors, `${label} Before`, headingContent(block, 5, "Before"), 2);
+    const removed = content.slice(0, heading.index!).trimEnd().endsWith("### Removed");
+    requireFences(errors, `${label} After`, headingContent(block, 5, "After"), removed ? 1 : 2);
   }
 }
 function subsection(content: string, name: string): string | undefined {
@@ -342,41 +366,61 @@ function validateStructure(body: string, metadata: FinalMetadata): string[] {
   for (const required of ["Problem", "Terminology"]) if (!seen.has(required)) errors.push(`required section is missing: ${required}`);
   for (const placeholder of templatePlaceholders()) if (content.includes(placeholder)) errors.push(`unresolved template placeholder: ${placeholder}`);
   for (const literal of metadata.forbid ?? []) if (content.includes(literal)) errors.push(`forbidden stale text remains: ${JSON.stringify(literal)}`);
-  for (const heading of ["#### Starting state", "#### Action", "#### Result"]) if (content.includes(heading)) errors.push(`legacy Use case field remains: ${heading}`);
+  for (const field of ["Coverage", "Starting point", "Copyable usage or trigger", "Observable result or diagnostic", "Contract", "Before usage or result", "After usage or result", "User impact"]) {
+    if (new RegExp(`^- ${field}:`, "m").test(content)) errors.push(`legacy summary field remains: - ${field}:`);
+  }
   const sectionsByName = sectionMap(content);
   const problem = sectionsByName.get("Problem");
-  if (problem) requireFields(errors, "Problem", problem, ["User goal", "Current limitation", "Required capability", "User outcome"]);
+  if (problem) requireBulletFields(errors, "Problem", problem, ["User goal", "Current limitation", "Required capability", "User outcome"]);
 
   const useCases = sectionsByName.get("Use cases");
   if (useCases) {
-    const cases = [...useCases.matchAll(/^### .+$/gm)];
+    const cases = [...useCases.matchAll(/^### Case: .+$/gm)];
     for (const [index, heading] of cases.entries()) {
       const block = useCases.slice(heading.index! + heading[0].length, cases[index + 1]?.index ?? useCases.length);
-      requireFields(errors, heading[0], block, ["Coverage", "Starting point", "Copyable usage or trigger", "Observable result or diagnostic", "Contract"]);
+      requireHeadingFields(errors, heading[0], block, 4, ["Starting state", "Action", "Result"]);
+      for (const field of ["Starting state", "Action", "Result"]) requireFences(errors, `${heading[0]} ${field}`, headingContent(block, 4, field), 1);
     }
   }
 
   for (const name of ["Public API", "CLI", "Report components", "Observable behavior and data contracts"]) {
     const section = sectionsByName.get(name);
-    if (section) validateCaseSection(errors, name, section, ["Before usage or result", "After usage or result", "User impact"]);
+    if (section) validateProductCaseSection(errors, name, section);
   }
   const environment = sectionsByName.get("Environment variables");
   if (environment) {
-    validateCaseSection(errors, "Environment variables", environment, ["Before usage or result", "After usage or result", "Environment boundary", "User and security impact"]);
-    for (const direction of ["Added", "Changed"]) {
-      const content = subsection(environment, direction);
-      if (content) validateCaseSection(errors, `Environment variables ${direction}`, content, ["Necessity"]);
+    const cases = [...environment.matchAll(/^#### Case: .+$/gm)];
+    for (const [index, heading] of cases.entries()) {
+      const block = environment.slice(heading.index! + heading[0].length, cases[index + 1]?.index ?? environment.length);
+      const label = `Environment variables ${heading[0]}`;
+      requireHeadingFields(errors, label, block, 5, ["Before", "After", "Environment boundary", "User and security impact"]);
+      requireFences(errors, `${label} Before`, headingContent(block, 5, "Before"), 2);
+      const removed = environment.slice(0, heading.index!).trimEnd().endsWith("### Removed");
+      requireFences(errors, `${label} After`, headingContent(block, 5, "After"), removed ? 1 : 2);
+      if (!removed) requireHeadingFields(errors, label, block, 5, ["Necessity"]);
     }
   }
   const packageScripts = sectionsByName.get("Package scripts");
-  if (packageScripts) validateCaseSection(errors, "Package scripts", packageScripts, ["Before usage or result", "After usage or result", "User impact"]);
+  if (packageScripts) validateProductCaseSection(errors, "Package scripts", packageScripts);
+
+  const record = sectionsByName.get("Record schema and stored-data upgrade");
+  if (record) {
+    for (const [name, fields] of [
+      ["Case: write a new Record", ["Action", "Result"]],
+      ["Case: read an existing Record", ["Action", "Result"]],
+      ["Case: upgrade or recover stored data", ["Version", "Before", "After", "Safety", "User impact", "Evidence"]],
+    ] as const) {
+      const block = subsection(record, name);
+      if (block !== undefined) requireHeadingFields(errors, `Record ${name}`, block, 4, [...fields]);
+    }
+  }
 
   const tests = sectionsByName.get("Tests");
   if (tests) {
     const owners = [...tests.matchAll(/^### `.+`$/gm)];
     for (const [index, heading] of owners.entries()) {
       const block = tests.slice(heading.index! + heading[0].length, owners[index + 1]?.index ?? tests.length);
-      requireFields(errors, heading[0], block, ["Purpose", "Protects", "Runs", "Asserts"]);
+      requireBulletFields(errors, heading[0], block, ["Purpose", "Protects", "Runs", "Asserts"]);
     }
   }
   for (const match of body.matchAll(/^- Purpose:\s*(.+)$/gm)) {
