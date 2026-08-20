@@ -1,5 +1,8 @@
 import { defineEval } from "niceeval";
 import {
+  and,
+  defineScoreMatch,
+  defineValueMatch,
   equals,
   excludes,
   hasSections,
@@ -8,8 +11,11 @@ import {
   isDefined,
   isFalse,
   isTrue,
-  defineScoreMatch,
+  jsonMatch,
   matches,
+  not,
+  or,
+  pattern,
   satisfies,
   similarity,
 } from "niceeval/expect";
@@ -50,8 +56,24 @@ export default defineEval({
       t.check(turn.data, matches(valueDataSchema));
       t.check(turn.message, includes("assertion-values-marker"));
       t.check(turn.message, excludes("forbidden-marker"));
+      t.check(turn.message, pattern(/assertion-values-marker/u));
+      t.check(
+        turn.message,
+        and(
+          includes("assertion-values-marker"),
+          not(includes("forbidden-marker")),
+        ),
+      );
+      t.check(
+        turn.message,
+        or(includes("missing-alternative"), includes("assertion-values-marker")),
+      );
       t.check(turn.message, includesUrl(2));
       t.check(turn.message, hasSections(2));
+      t.check(
+        turn.data!,
+        jsonMatch({ fixture: "assertion-values", ok: true }),
+      );
       t.check(
         "stable fixture text",
         similarity("stable fixture text").atLeast(1),
@@ -70,6 +92,13 @@ export default defineEval({
           "two values",
           (value) => Array.isArray(value) && value.length === 2,
         ),
+      );
+      t.check(
+        "custom-value",
+        defineValueMatch<string>({
+          name: "custom value matcher",
+          evaluate: (value) => value === "custom-value",
+        }),
       );
       t.check(turn.data, isDefined("fixture data"));
       t.check(true, isTrue("explicit true"));

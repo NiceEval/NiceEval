@@ -80,19 +80,19 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       const projections = JSON.parse(
         await readFile(join(projectRoot, "site-export", manifest.projections), "utf8"),
       ) as {
-        readonly schema: string;
+        readonly format: string;
         readonly pricingProfile: unknown;
         readonly costs: readonly unknown[];
       };
       expect(projections).toMatchObject({
-        schema: "niceeval.report-projections/v1",
+        format: "niceeval.report-projections/v1",
         pricingProfile: {
           contentIdentity: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
           currency: "USD",
           provenance: { kind: "declared-rate-card" },
         },
       });
-      expect(projections.costs).toHaveLength(3);
+      expect(projections.costs).toHaveLength(1);
       const attemptPages = manifest.pages.filter((page) => page.pageId === "attempt");
       const experimentPages = manifest.pages.filter((page) => page.pageId === "experiment");
       expect(attemptPages, "the declared standard Attempt Page must close every included Slot").toHaveLength(

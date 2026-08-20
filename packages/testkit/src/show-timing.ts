@@ -1,191 +1,195 @@
-import { Either, Schema } from "effect";
+import { Schema } from "effect";
 import type { ProcessReceipt } from "./process.js";
+import {
+  CanonicalAttemptLocatorSchema,
+  decodeShowSchema,
+  ShowAttemptEnvelopeFields,
+} from "./show-schema.js";
 
-const Exact = { errors: "all" as const, onExcessProperty: "error" as const };
-const nonEmpty = (identifier: string) =>
-  Schema.String.pipe(Schema.filter((value) => value.length > 0, { identifier }));
-const safeInteger = (identifier: string) =>
-  Schema.Number.pipe(Schema.filter(
-    (value) => Number.isSafeInteger(value) && value >= 0,
-    { identifier },
-  ));
-const positiveInteger = (identifier: string) =>
-  Schema.Number.pipe(Schema.filter(
-    (value) => Number.isSafeInteger(value) && value > 0,
-    { identifier },
-  ));
-const safeIdentifier = Schema.String.pipe(Schema.filter(
-  (value) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(value),
-  { identifier: "SafeIdentifier" },
-));
-const locator = Schema.String.pipe(Schema.filter(
-  (value) => /^@1[0-9A-HJKMNP-TV-Z]{12}$/.test(value),
-  { identifier: "CanonicalAttemptLocator" },
-));
-const portableSegment = Schema.String.pipe(Schema.filter(
-  (value) =>
-    /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$/.test(value) &&
-    !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(value),
-  { identifier: "PortableSegment" },
-));
+const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
+  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0, {
+    identifier: "ShowNonNegativeSafeInteger",
+    description: "a non-negative safe integer",
+  }),
+);
 
-const AttemptSchema = Schema.Struct({
-  kind: Schema.Literal("attempt"),
-  locator,
-  originRunId: portableSegment,
-});
-const IntervalSchema = Schema.Struct({
-  intervalId: safeIdentifier,
-  phase: Schema.Literal(
-    "attempt.setup", "sandbox.prepare", "agent.ensure", "eval.run", "agent.send",
-    "sandbox.command", "assertion.evaluate", "verdict.fold", "attempt.teardown",
+const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
+  Schema.filter((value) => Number.isSafeInteger(value) && value > 0, {
+    identifier: "ShowPositiveSafeInteger",
+    description: "a positive safe integer",
+  }),
+);
+
+const SafeIdentifierSchema = Schema.String.pipe(
+  Schema.filter((value) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(value), {
+    identifier: "ShowSafeIdentifier",
+    description: "a safe timing identifier",
+  }),
+);
+
+const PORTABLE_SEGMENT_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$/;
+const WINDOWS_RESERVED_SEGMENT_PATTERN = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+const PortableSegmentSchema = Schema.String.pipe(
+  Schema.filter(
+    (value) => PORTABLE_SEGMENT_PATTERN.test(value) && !WINDOWS_RESERVED_SEGMENT_PATTERN.test(value),
+    {
+      identifier: "ShowPortableSegment",
+      description: "a portable non-reserved path segment",
+    },
   ),
-  label: safeIdentifier,
-  startOffsetMs: safeInteger("NonNegativeSafeInteger"),
-  durationMs: safeInteger("NonNegativeSafeInteger"),
-  parentIntervalId: Schema.Union(safeIdentifier, Schema.Null),
-  outcome: Schema.Literal("completed", "failed", "cancelled", "interrupted", "unknown"),
-});
-const target = Schema.Literal("conversation", "command", "usage", "timing", "diagnostic");
-const limitation = Schema.Union(
+);
+
+const CollectionTargetSchema = Schema.Literal(
+  "conversation",
+  "command",
+  "usage",
+  "timing",
+  "diagnostic",
+);
+
+const CollectionStageSchema = Schema.Literal(
+  "adapter",
+  "command-capture",
+  "usage-capture",
+  "timing-capture",
+  "diagnostic-capture",
+  "attempt-finalizer",
+  "run-teardown",
+);
+
+const ObservabilityLimitationSchema = Schema.Union(
   Schema.Struct({
     code: Schema.Literal("capture-failed", "capture-interrupted"),
-    stage: Schema.Literal(
-      "adapter", "command-capture", "usage-capture", "timing-capture",
-      "diagnostic-capture", "attempt-finalizer", "run-teardown",
-    ),
-    target,
+    stage: CollectionStageSchema,
+    target: CollectionTargetSchema,
   }),
   Schema.Struct({
     code: Schema.Literal("collection-cap-reached", "unsupported-input"),
-    omittedAtLeast: positiveInteger("PositiveSafeInteger"),
-    target,
+    omittedAtLeast: PositiveSafeIntegerSchema,
+    target: CollectionTargetSchema,
   }),
   Schema.Struct({
     code: Schema.Literal("text-truncated", "redacted"),
-    replacementOrOmittedCount: positiveInteger("PositiveSafeInteger"),
-    target,
+    replacementOrOmittedCount: PositiveSafeIntegerSchema,
+    target: CollectionTargetSchema,
   }),
   Schema.Struct({
     code: Schema.Literal("stream-truncated"),
-    commandId: safeIdentifier,
+    commandId: SafeIdentifierSchema,
+    omittedBytes: PositiveSafeIntegerSchema,
+    retainedBytes: NonNegativeSafeIntegerSchema,
     stream: Schema.Literal("stdout", "stderr"),
-    retainedBytes: safeInteger("NonNegativeSafeInteger"),
-    omittedBytes: positiveInteger("PositiveSafeInteger"),
   }),
   Schema.Struct({
     code: Schema.Literal("invalid-utf8-replaced", "unsafe-control-stripped"),
-    commandId: safeIdentifier,
+    commandId: SafeIdentifierSchema,
+    count: PositiveSafeIntegerSchema,
     stream: Schema.Literal("stdout", "stderr"),
-    count: positiveInteger("PositiveSafeInteger"),
   }),
 );
-const TimingDetailSchema = Schema.Struct({
-  collection: Schema.Union(
-    Schema.Struct({
-      state: Schema.Literal("complete"),
-      limitations: Schema.Array(limitation).pipe(Schema.filter(
-        (values) => values.length === 0,
-        { identifier: "CompleteTimingLimitations" },
-      )),
-    }),
-    Schema.Struct({
-      state: Schema.Literal("partial"),
-      limitations: Schema.Array(limitation).pipe(Schema.filter(
-        (values) => values.length > 0,
-        { identifier: "PartialTimingLimitations" },
-      )),
-    }),
-  ),
-  intervals: Schema.Array(IntervalSchema),
-});
-const TimingEntrySchema = Schema.Union(
+
+const TimingCollectionSchema = Schema.Union(
   Schema.Struct({
-    attempt: AttemptSchema,
-    state: Schema.Literal("available"),
-    timing: TimingDetailSchema,
+    state: Schema.Literal("complete"),
+    limitations: Schema.Tuple(),
   }),
   Schema.Struct({
-    attempt: AttemptSchema,
+    state: Schema.Literal("partial"),
+    limitations: Schema.NonEmptyArray(ObservabilityLimitationSchema),
+  }),
+);
+
+const ShowTimingIntervalSchema = Schema.Struct({
+  intervalId: SafeIdentifierSchema,
+  phase: Schema.Literal(
+    "attempt.setup",
+    "sandbox.prepare",
+    "agent.ensure",
+    "eval.run",
+    "agent.send",
+    "sandbox.command",
+    "assertion.evaluate",
+    "verdict.fold",
+    "attempt.teardown",
+  ),
+  label: SafeIdentifierSchema,
+  startOffsetMs: NonNegativeSafeIntegerSchema,
+  durationMs: NonNegativeSafeIntegerSchema,
+  parentIntervalId: Schema.NullOr(SafeIdentifierSchema),
+  outcome: Schema.Literal("completed", "failed", "cancelled", "interrupted", "unknown"),
+});
+
+export type ShowTimingInterval = Schema.Schema.Type<typeof ShowTimingIntervalSchema>;
+
+const ShowTimingDetailSchema = Schema.Struct({
+  collection: TimingCollectionSchema,
+  intervals: Schema.Array(ShowTimingIntervalSchema),
+}).pipe(
+  Schema.filter(
+    (detail) => hasCanonicalTimingIntervals(detail.collection.state, detail.intervals),
+    {
+      identifier: "CanonicalShowTimingDetail",
+      description: "canonical, bounded and acyclic timing intervals",
+    },
+  ),
+);
+
+export type ShowTimingDetail = Schema.Schema.Type<typeof ShowTimingDetailSchema>;
+
+const ShowTimingAttemptSchema = Schema.Struct({
+  kind: Schema.Literal("attempt"),
+  locator: CanonicalAttemptLocatorSchema,
+  originRunId: PortableSegmentSchema,
+});
+
+export type ShowTimingAttempt = Schema.Schema.Type<typeof ShowTimingAttemptSchema>;
+
+const ShowTimingEntrySchema = Schema.Union(
+  Schema.Struct({
+    attempt: ShowTimingAttemptSchema,
+    state: Schema.Literal("available"),
+    timing: ShowTimingDetailSchema,
+  }),
+  Schema.Struct({
+    attempt: ShowTimingAttemptSchema,
     state: Schema.Literal("not-recorded", "unsupported", "invalid"),
     view: Schema.Literal("attempt-observability"),
   }),
   Schema.Struct({
-    attempt: AttemptSchema,
+    attempt: ShowTimingAttemptSchema,
     state: Schema.Literal("failed"),
     view: Schema.Literal("attempt-observability"),
     detail: Schema.String,
   }),
 );
-const LocalizedTextSchema = Schema.Union(
-  Schema.String,
-  Schema.Record({ key: nonEmpty("Locale"), value: Schema.String }).pipe(Schema.filter(
-    (value) => Object.keys(value).length > 0,
-    { identifier: "LocalizedText" },
-  )),
-);
-export const ShowTimingDocumentSchema = Schema.Struct({
-  schema: Schema.Literal("niceeval.show/v1"),
-  locale: Schema.Literal("en"),
-  selection: Schema.Struct({
-    kind: Schema.Literal("attempt-locator"),
-    sampleIdentity: nonEmpty("SampleIdentity"),
-    locator,
-  }),
-  report: Schema.Struct({
-    token: nonEmpty("ReportToken"),
-    identity: nonEmpty("ReportIdentity"),
-  }),
-  page: Schema.Struct({
-    route: nonEmpty("PageRoute"),
-    pageId: nonEmpty("PageId"),
-    title: LocalizedTextSchema,
-  }),
+
+export type ShowTimingEntry = Schema.Schema.Type<typeof ShowTimingEntrySchema>;
+
+const ShowTimingDocumentSchema = Schema.Struct({
+  ...ShowAttemptEnvelopeFields,
   data: Schema.Struct({
     kind: Schema.Literal("timing"),
-    timing: Schema.Array(TimingEntrySchema),
+    timing: Schema.NonEmptyArray(ShowTimingEntrySchema),
   }),
-  projections: Schema.Struct({
-    schema: Schema.Literal("niceeval.report-projections/v1"),
-    pricingProfile: Schema.Unknown,
-    costs: Schema.Array(Schema.Unknown),
-  }),
-  problems: Schema.Array(Schema.Struct({
-    code: nonEmpty("ProblemCode"),
-    path: Schema.Array(nonEmpty("ProblemPath")),
-    refs: Schema.Array(nonEmpty("ProblemRef")),
-    summary: Schema.optional(nonEmpty("ProblemSummary")),
-  })),
-});
-export type ShowTimingDocument = Schema.Schema.Type<typeof ShowTimingDocumentSchema>;
-export type ShowTimingEntry = Schema.Schema.Type<typeof TimingEntrySchema>;
-export type ShowTimingDetail = Schema.Schema.Type<typeof TimingDetailSchema>;
-export type ShowTimingInterval = Schema.Schema.Type<typeof IntervalSchema>;
-export type ShowTimingAttempt = Schema.Schema.Type<typeof AttemptSchema>;
+}).pipe(
+  Schema.filter(
+    (document) => document.data.timing.every(
+      (entry) => entry.attempt.locator === document.selection.locator,
+    ),
+    {
+      identifier: "SelectedShowTimingDocument",
+      description: "timing entries belonging to the selected Attempt locator",
+    },
+  ),
+);
 
+export type ShowTimingDocument = Schema.Schema.Type<typeof ShowTimingDocumentSchema>;
+
+/** Decode the public timing facts through the current unversioned show API. */
 export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument {
-  const decoded = Schema.decodeUnknownEither(ShowTimingDocumentSchema, Exact)(
-    receipt.json<unknown>(),
-  );
-  if (Either.isLeft(decoded)) {
-    return invalid(receipt, "document must be the exact niceeval.show/v1 timing envelope");
-  }
-  const document = decoded.right;
-  if (document.data.timing.length === 0 || document.data.timing.some(
-    (entry) => entry.attempt.locator !== document.selection.locator,
-  )) {
-    return invalid(receipt, "timing entries must belong to the selected Attempt locator");
-  }
-  for (const entry of document.data.timing) {
-    if (
-      entry.state === "available" &&
-      !hasCanonicalTimingIntervals(entry.timing.collection.state, entry.timing.intervals)
-    ) {
-      return invalid(receipt, "timing intervals are not canonical");
-    }
-  }
-  return document;
+  return decodeShowSchema(ShowTimingDocumentSchema, receipt, "decodeShowTiming()");
 }
+
 function hasCanonicalTimingIntervals(
   collectionState: "complete" | "partial",
   intervals: readonly ShowTimingInterval[],
@@ -193,22 +197,20 @@ function hasCanonicalTimingIntervals(
   let previousId: string | undefined;
   const byId = new Map<string, ShowTimingInterval>();
   for (const interval of intervals) {
-    if (
-      (previousId !== undefined && previousId >= interval.intervalId) ||
-      byId.has(interval.intervalId) ||
-      !Number.isSafeInteger(interval.startOffsetMs + interval.durationMs)
-    ) return false;
+    if (previousId !== undefined && previousId >= interval.intervalId) return false;
+    if (byId.has(interval.intervalId)) return false;
+    if (!Number.isSafeInteger(interval.startOffsetMs + interval.durationMs)) return false;
     previousId = interval.intervalId;
     byId.set(interval.intervalId, interval);
   }
   for (const interval of intervals) {
     if (interval.parentIntervalId === null) continue;
     const parent = byId.get(interval.parentIntervalId);
-    if (
-      parent === undefined ||
-      interval.startOffsetMs < parent.startOffsetMs ||
-      interval.startOffsetMs + interval.durationMs > parent.startOffsetMs + parent.durationMs
-    ) return false;
+    if (parent === undefined) return false;
+    const intervalEnd = interval.startOffsetMs + interval.durationMs;
+    const parentEnd = parent.startOffsetMs + parent.durationMs;
+    if (!Number.isSafeInteger(parentEnd) || interval.startOffsetMs < parent.startOffsetMs ||
+      intervalEnd > parentEnd) return false;
     const visited = new Set<string>([interval.intervalId]);
     let cursor: ShowTimingInterval | undefined = parent;
     while (cursor !== undefined) {
@@ -220,7 +222,4 @@ function hasCanonicalTimingIntervals(
     }
   }
   return collectionState !== "complete" || intervals.every((interval) => interval.outcome !== "unknown");
-}
-function invalid(receipt: ProcessReceipt, reason: string): never {
-  throw new Error(`decodeShowTiming(): ${reason}\n\n${receipt.diagnostic()}`);
 }

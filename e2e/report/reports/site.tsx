@@ -9,7 +9,6 @@ import {
   Grid,
   Link,
   Section,
-  ExperimentScatter,
   SampleSummary,
   Stat,
   Tab,
@@ -169,7 +168,6 @@ export default defineReport({
           <Section title="Fixture overview">
             <Text>{"Report fixture static site"}</Text>
             <SampleSummary />
-            <ExperimentScatter />
             <FixtureSlotCount label="Selected slots" />
             <FixturePassRateState />
             <FixtureMetricRows />

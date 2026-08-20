@@ -70,6 +70,7 @@
 - 多 agent 直接在当前工作目录的 `main` 上并行开发；不建 feature branch，也不创建或使用额外的 git worktree。
 - PR 标题与正文使用用户当前提问的语言；用户切换语言时跟随最新一条提问。commit message 仍使用英语。PR 标题描述用户可见的最终能力或行为，不拿 registry、protocol、storage model 等内部机制代替 feature 名。
 - 创建或更新 PR 前先读 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)，并以它作为 PR 标题与正文写法的唯一入口。只保留真实变化的产品面；每项变化以具名 case 展示 before / after example 与 user impact，不用“契约”、实现机制或变化分类代替例子。Record 与 Tests 严格使用模板中的 case / 完整测试源码格式；不在本文件维护第二份 PR 清单。
+- PR 正文包含多个 case、测试源码或可能接近 GitHub 字节上限时，使用 `pnpm pr:body --help`，不要再写一次性 generator。创建 PR 前用 `pnpm pr:body init --source <draft.md>` 建草稿，编辑后运行 `check --source <draft.md> --no-remote` 与 `render --source <draft.md> --out <body.md>`，再把 `<body.md>` 交给 `gh pr create --body-file`；取得 PR 编号并推送最终提交后，用 `pnpm pr:body apply --pr <number> --source <draft.md>` 更新正文，最后用同一 source 运行 `check --pr <number>` 校验远端 HEAD 与正文。已有 PR 也可直接用 `init --pr <number>`，草稿默认保存在当前 worktree 的 Git 私有目录。具体字段、测试源码 directive、fragment anchor 和字节预算以 `pnpm pr:body --help` 为准。
 - 自动化产品测试仍禁止新增或恢复 `src/**/*.test.*` 与 `test/unit/**`。Bug 修复优先修改既有 E2E owner；没有合格 owner 时允许新增一个最小 `e2e/**` owner，以公开入口红灯作为开工门。新增或实质修改的 owner 仍须满足 testing 契约并通过可靠性接管门；收据完成前不得宣称成熟或完成接管，当前 suite 不得宣称已成熟。
 - 每个 agent 只修改自己任务范围内的文件；遇到并行改动时继续协作，不通过切分支、换 worktree 或回退他人改动来隔离工作。
 - 未知改动属于用户或其它 agent。不要覆盖、顺手格式化或提交它们；提交前检查 `git status`、未暂存 diff 与暂存 diff。

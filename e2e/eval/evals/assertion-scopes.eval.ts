@@ -1,5 +1,13 @@
 import { defineEval } from "niceeval";
-import { commandMatch, jsonMatch, or, referencesAnyPath, toolMatch } from "niceeval/expect";
+import {
+  commandMatch,
+  eventMatch,
+  includes,
+  jsonMatch,
+  or,
+  referencesAnyPath,
+  toolMatch,
+} from "niceeval/expect";
 export default defineEval({
   description: "同一套确定性工具证据在 turn、session 与 t scope 的边界一致",
   async test(t) {
@@ -19,6 +27,8 @@ export default defineEval({
       );
       mainTurn.notCalledTool("scope_branch_tool");
       mainTurn.calledTool("scope_main_tool");
+      mainTurn.noFailedActions();
+      mainTurn.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
     });
     await t.group("session scope", () => {
       branch.calledTool(
@@ -30,6 +40,8 @@ export default defineEval({
       );
       branch.notCalledTool("scope_main_tool");
       branch.calledTool("scope_branch_tool", { count: { atLeast: 1 } });
+      branch.noFailedActions();
+      branch.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
     });
     await t.group("attempt scope", () => {
       t.calledTool(toolMatch("scope_main_tool", { status: "completed" }), {
@@ -44,6 +56,8 @@ export default defineEval({
           status: "completed",
         }),
       );
+      t.noFailedActions();
+      t.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
       t.calledTool(or(
         commandMatch("niceeval", { argsStart: ["init"] }),
         toolMatch("shell", { input: referencesAnyPath(["node_modules/niceeval/INDEX.md"]) }),

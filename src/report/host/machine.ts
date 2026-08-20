@@ -3,13 +3,17 @@ import { Effect } from "effect";
 import {
   attemptEvidenceView,
   attemptObservabilityView,
+  experimentComparisonScope,
+  experimentGroups,
   fileChangesView,
   query,
   sourcesView,
   type Sample,
 } from "../../analysis/index.ts";
+import { sampleForExperimentComparisonScope } from "../../analysis/experiment-groups.ts";
 import { builtInMachineProducerIds } from "../built-in/machine.ts";
 import { loadBuiltInExperimentRows } from "../built-in/analysis-values.ts";
+import { loadRunMembershipPageInput } from "../built-in/run-membership-overview.ts";
 import {
   closeMachineJson,
   type BuiltInMachineProducer,
@@ -23,9 +27,51 @@ export interface BuiltInMachineProductionFailed {
   readonly reason: string;
 }
 
-const leaderboard = producer(async (sample) => {
-  const rows = [...await loadBuiltInExperimentRows(sample)].sort((left, right) => compareUtf8(left.key, right.key));
-  return Object.freeze({ kind: "leaderboard" as const, rows: closeMachineJson(rows) });
+const groups = producer(async (sample) => {
+  const entries = experimentGroups(sample).map((entry) => Object.freeze({
+    group: entry.group,
+    members: entry.members,
+    href: `/group/${entry.group.kind}/${entry.group.kind === "named" ? entry.group.groupId : String(entry.group.experimentId)}`,
+  }));
+  return Object.freeze({ kind: "groups" as const, groups: closeMachineJson(entries) });
+});
+
+const experimentGroup = producer(async (sample, _locator, route) => {
+  const match = /^\/group\/(named|singleton)\/([^/]+)$/u.exec(route);
+  if (match === null) throw new TypeError("Experiment Group route is invalid");
+  const kind = match[1]!;
+  const key = decodeURIComponent(match[2]!);
+  const summary = experimentGroups(sample).find((entry) =>
+    entry.group.kind === kind && (kind === "named"
+      ? entry.group.kind === "named" && entry.group.groupId === key
+      : entry.group.kind === "singleton" && String(entry.group.experimentId) === key));
+  if (summary === undefined) {
+    throw Object.freeze({ code: "report-group-not-in-sample" as const, group: `${kind}/${key}` });
+  }
+  const scope = experimentComparisonScope(sample, summary.group);
+  const comparison = scope.comparison.state === "comparable"
+    ? Object.freeze({
+        state: "comparable" as const,
+        members: scope.comparison.members,
+        rows: await loadBuiltInExperimentRows(sampleForExperimentComparisonScope(scope)),
+      })
+    : scope.comparison;
+  return Object.freeze({
+    kind: "experiment-group" as const,
+    group: closeMachineJson(summary.group),
+    comparison: closeMachineJson(comparison),
+  });
+});
+
+const runMembership = producer(async (sample) => {
+  const result = await loadRunMembershipPageInput(sample);
+  return Object.freeze({
+    kind: "run-membership" as const,
+    summary: closeMachineJson(result.summary),
+    members: closeMachineJson(result.members),
+    errors: closeMachineJson(result.errors),
+    evidence: closeMachineJson(result.evidence),
+  });
 });
 
 const attempt = producer(async (sample, locator) => {
@@ -79,13 +125,16 @@ const standard: BuiltInMachineProducer<BuiltInMachineProductionFailed, never> = 
     case "attempt":
     case "attempt-overview":
       return attempt(input);
+    case "group-named":
+    case "group-singleton":
+      return experimentGroup(input);
     default:
-      return leaderboard(input);
+      return groups(input);
   }
 };
 
 const producers = new Map<string, BuiltInMachineProducer<BuiltInMachineProductionFailed, never>>([
-  [builtInMachineProducerIds.runMembershipOverview, leaderboard],
+  [builtInMachineProducerIds.runMembershipOverview, runMembership],
   [builtInMachineProducerIds.attemptOverview, attempt],
   [builtInMachineProducerIds.executionEvidence, execution],
   [builtInMachineProducerIds.timingEvidence, timing],
@@ -102,6 +151,7 @@ function producer(
   build: (
     sample: Sample,
     locator: import("../../attempt-locator.ts").AttemptLocator | undefined,
+    route: string,
   ) => Promise<BuiltInShowData>,
 ): BuiltInMachineProducer<BuiltInMachineProductionFailed, never> {
   return (input) => Effect.tryPromise({
@@ -110,6 +160,7 @@ function producer(
       input.selection.kind === "attempt-locator"
         ? input.selection.locator as import("../../attempt-locator.ts").AttemptLocator
         : undefined,
+      input.route,
     ),
     catch: (cause): BuiltInMachineProductionFailed => Object.freeze({
       code: "report-built-in-machine-production-failed" as const,
@@ -124,7 +175,8 @@ function producerIdForInput(pageId: string): string {
 }
 
 function boundedReason(cause: unknown): string {
-  const value = cause instanceof Error ? cause.message : String(cause);
+  const value = cause instanceof Error ? cause.message
+    : typeof cause === "object" && cause !== null ? JSON.stringify(cause) : String(cause);
   return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").slice(0, 512).trim() || "machine producer failed";
 }
 

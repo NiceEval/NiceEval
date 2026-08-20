@@ -72,10 +72,16 @@ test("Git 保存的 npm 0.13.0 Record 自动迁移后显示同一结果并拒绝
       expect(shown.stderr, shown.diagnostic()).toContain("restore commit");
       const output = shown.json<{
         selection: { runIds: readonly string[] };
-        data: { rows: readonly [{ passRate: { state: string; value: number } }] };
+        data: {
+          kind: "run-membership";
+          members: readonly [{ eval: string; locator: string; verdict: string }];
+        };
       }>();
       expect(output.selection.runIds).toEqual([runId]);
-      expect(output.data.rows[0]?.passRate).toMatchObject({ state: "available", value: 1 });
+      expect(output.data.kind).toBe("run-membership");
+      expect(output.data.members).toEqual([
+        expect.objectContaining({ eval: "legacy-handoff", locator: expect.stringMatching(/^@/), verdict: "passed" }),
+      ]);
 
       const beforeOldWriter = await run(["git", "diff", "--binary", "--", ".niceeval/record"]);
       expect(beforeOldWriter.exitCode, beforeOldWriter.diagnostic()).toBe(0);

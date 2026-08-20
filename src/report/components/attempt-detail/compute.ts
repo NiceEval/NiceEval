@@ -513,7 +513,77 @@ function scoreOf(entry: SealedAssertionEntryView): AttemptScoreView | undefined 
   };
 }
 
-/** 展示层预拼的判定详情;字段全闭合,不再有 expected / received 等旧形状。 */
+function diagnosticLocatorText(record: Readonly<Record<string, JsonValue>>): string | undefined {
+  const locator = jsonRecordOf(record["locator"]);
+  if (locator === undefined) return undefined;
+  const kind = jsonStringOf(locator, "kind");
+  if (kind === "json-pointer") {
+    const pointer = jsonStringOf(locator, "pointer");
+    return pointer === undefined ? undefined : `location: ${pointer}`;
+  }
+  if (kind === "tool-occurrence") {
+    const id = jsonStringOf(locator, "id");
+    return id === undefined ? undefined : `location: tool occurrence ${id}`;
+  }
+  return undefined;
+}
+
+function childDiagnostics(record: Readonly<Record<string, JsonValue>>): readonly Readonly<Record<string, JsonValue>>[] {
+  const children = record["children"];
+  if (!Array.isArray(children)) return [];
+  return children.flatMap((child) => {
+    const childRecord = jsonRecordOf(child);
+    const diagnostic = childRecord === undefined ? undefined : jsonRecordOf(childRecord["diagnostic"]);
+    return diagnostic === undefined ? [] : [diagnostic];
+  });
+}
+
+function pathWitnessOf(
+  record: Readonly<Record<string, JsonValue>>,
+): Readonly<Record<string, JsonValue>> | undefined {
+  for (const child of childDiagnostics(record)) {
+    if (jsonStringOf(child, "code") === "path-reference-match") return child;
+    const nested = pathWitnessOf(child);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}
+
+function diagnosticWasTruncated(record: Readonly<Record<string, JsonValue>>): boolean {
+  if (jsonStringOf(record, "code") === "diagnostic-truncated" || record["truncation"] !== undefined) return true;
+  return childDiagnostics(record).some(diagnosticWasTruncated);
+}
+
+function diagnosticSummary(value: JsonValue): string {
+  const record = jsonRecordOf(value);
+  if (record === undefined) return stableJson(value);
+  const message = jsonStringOf(record, "message");
+  if (message === undefined) return stableJson(value);
+
+  const parts = [message];
+  const expected = jsonStringOf(record, "expected");
+  const received = jsonStringOf(record, "received");
+  const reason = jsonStringOf(record, "reason");
+  if (expected !== undefined) parts.push(`expected: ${expected}`);
+  if (received !== undefined) parts.push(`received: ${received}`);
+  if (reason !== undefined) parts.push(`diagnostic reason: ${reason}`);
+  const locator = diagnosticLocatorText(record);
+  if (locator !== undefined) parts.push(locator);
+
+  const witness = pathWitnessOf(record);
+  if (witness !== undefined) {
+    const witnessMessage = jsonStringOf(witness, "message");
+    const witnessExpected = jsonStringOf(witness, "expected");
+    const witnessLocator = diagnosticLocatorText(witness);
+    if (witnessMessage !== undefined) parts.push(witnessMessage);
+    if (witnessExpected !== undefined) parts.push(`expected: ${witnessExpected}`);
+    if (witnessLocator !== undefined) parts.push(witnessLocator);
+  }
+  if (diagnosticWasTruncated(record)) parts.push("diagnostic details truncated");
+  return parts.join(" · ");
+}
+
+/** 展示层预拼的判定详情;字段全闭合,不把 matcher diagnostic tree 当作文案。 */
 export function assertionDetailOf(entry: SealedAssertionEntryView): string {
   const parts: string[] = [];
   if (entry.result.state === "mismatched") parts.push(`reason: ${entry.result.reason}`);
@@ -526,7 +596,7 @@ export function assertionDetailOf(entry: SealedAssertionEntryView): string {
     parts.push(`limitations: ${limitation.kind}`);
   }
   if (entry.result.diagnostic !== undefined) {
-    parts.push(`diagnostic: ${stableJson(entry.result.diagnostic)}`);
+    parts.push(`diagnostic: ${diagnosticSummary(entry.result.diagnostic)}`);
   }
   return parts.join(" · ");
 }

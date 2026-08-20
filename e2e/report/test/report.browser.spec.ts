@@ -204,14 +204,11 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
   await reportE2E.case(
     "browser-default-classic-surface",
     { artifacts: reportCaseArtifacts() },
-    async ({ commands: { niceeval } }) => {
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       for (const experimentId of ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const) {
         const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
         expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       }
-      const mixedRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-      expect(mixedRun.expReceipt(), mixedRun.diagnostic()).toMatchObject({ completion: "completed" });
-
       const view = niceeval.start(
         [
           "view",
@@ -236,15 +233,62 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await page.goto(origin!);
         await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
 
+        // A fixed Sample with one named Experiment Group goes straight to its
+        // comparison and does not waste Header space on a one-option selector.
+        await expect(page.getByRole("combobox", { name: "Experiments" })).toHaveCount(0);
+
         const passChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
         await expect(passChart).toHaveCount(1);
         await expect(passChart).toContainText("classic/memory-a");
         await expect(passChart).toContainText("100%");
         await expect(passChart).not.toContainText("ratio");
         const scoreChart = page.locator('svg[aria-label="costUSD × totalScore"]').filter({ visible: true });
-        await expect(scoreChart).toHaveCount(1);
-        await expect(scoreChart).toContainText("main");
+        await expect(scoreChart).toHaveCount(0);
 
+        const mixedRun = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+        expect(mixedRun.expReceipt(), mixedRun.diagnostic()).toMatchObject({ completion: "completed" });
+        const experimentSelector = page.getByRole("combobox", { name: "Experiments" });
+        await expect(experimentSelector).toBeVisible({ timeout: 15_000 });
+        await expect(experimentSelector.getByRole("option")).toHaveText(["classic", "main"]);
+        await expect(experimentSelector.locator("option:checked")).toHaveText("classic");
+
+        // Opening the site root never exposes an unselected project-wide
+        // overview: the first stable Experiment Group is the current value.
+        await page.goto(origin!);
+        await expect(page).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));
+        await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+        const classicExperimentCount = page.locator(".niceeval-stat").filter({ hasText: "Experiments", visible: true });
+        await expect(classicExperimentCount.locator(".niceeval-stat-value")).toHaveText("3");
+
+        await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "main" });
+        await expect(page).toHaveURL(new RegExp("/group/singleton/main/index\\.html$"));
+        await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+        const mainExperimentCount = page.locator(".niceeval-stat").filter({ hasText: "Experiments", visible: true });
+        await expect(mainExperimentCount.locator(".niceeval-stat-value")).toHaveText("1");
+
+        await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "classic" });
+        await expect(page).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));
+        const selectedGroupChart = page.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
+        await expect(selectedGroupChart).toContainText("classic/memory-a");
+        await expect(selectedGroupChart).not.toContainText("main");
+
+        const exported = await niceeval.run(["view", "--out", "group-static", "--no-open"]);
+        expect(exported.exitCode, exported.diagnostic()).toBe(0);
+        const offline = await browser.newContext({ javaScriptEnabled: false });
+        try {
+          const staticPage = await offline.newPage();
+          await staticPage.goto(pathToFileURL(join(projectRoot, "group-static", "index.html")).href);
+          const staticGroups = staticPage.getByRole("navigation", { name: "Experiments" });
+          await expect(staticGroups.getByRole("link", { name: "classic" }))
+            .toHaveAttribute("href", "group/named/classic/index.html");
+          await staticGroups.getByRole("link", { name: "classic" }).click();
+          await expect(staticPage).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));
+          const staticGroupChart = staticPage.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
+          await expect(staticGroupChart).toContainText("classic/memory-a");
+          await expect(staticGroupChart).not.toContainText("main");
+        } finally {
+          await offline.close();
+        }
         const filter = page.getByRole("searchbox").filter({ visible: true });
         await expect(filter).toHaveCount(1);
         await expect(filter).toBeVisible();
@@ -375,22 +419,95 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await page.goBack();
         await expect(dialog).not.toBeVisible();
 
+        // Assertion source-line details use one display contract across a
+        // matched built-in assertion, a nested scoped matcher mismatch, and a
+        // direct value mismatch. The Report projects sealed diagnostic facts;
+        // it never dumps the matcher tree as user-facing JSON.
+        await page.goto(origin!);
+        await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "main" });
+        await expect(page).toHaveURL(new RegExp("/group/singleton/main/index\\.html$"));
+        const mainFilter = page.getByRole("searchbox").filter({ visible: true });
+        await mainFilter.fill("deliberate-fail");
+        const mainTable = mainFilter.locator("..").getByRole("table");
+        const mainSummary = mainTable.locator("summary").filter({
+          has: page.getByText("main", { exact: true }),
+        }).filter({ visible: true });
+        await expect(mainSummary).toHaveCount(1);
+        await expect(mainSummary).toBeVisible();
+        const mainGroup = mainSummary.locator("..");
+        await mainSummary.click();
+        await expect(mainGroup).toHaveAttribute("open", "");
+        const failedEvalSummary = mainGroup.locator("summary").filter({
+          has: page.getByText("deliberate-fail", { exact: true }),
+        }).filter({ visible: true });
+        await expect(failedEvalSummary).toHaveCount(1);
+        await expect(failedEvalSummary).toBeVisible();
+        const failedEval = failedEvalSummary.locator("..");
+        await failedEvalSummary.click();
+        await expect(failedEval).toHaveAttribute("open", "");
+        await mainFilter.fill("");
+        const failedAttemptLink = failedEval.getByRole("link").filter({ visible: true });
+        await expect(failedAttemptLink).toHaveCount(1);
+        await failedAttemptLink.click();
+        await expect(dialog).toBeVisible();
+
+        const matchedAssertion = dialog.locator("details").filter({ hasText: "Turn completed · soft passed" });
+        await expect(matchedAssertion).toHaveCount(1);
+        await matchedAssertion.locator(":scope > summary").click();
+        await expect(matchedAssertion.getByText("Turn completed · soft passed", { exact: true })).toBeVisible();
+
+        const nestedMismatch = dialog.locator("details").filter({
+          hasText: "No private source access · gate failed",
+        });
+        await expect(nestedMismatch).toHaveCount(1);
+        if (await nestedMismatch.getAttribute("open") === null) {
+          await nestedMismatch.locator(":scope > summary").click();
+        }
+        await expect(nestedMismatch.getByText("reason: condition-not-met", { exact: false })).toBeVisible();
+        await expect(nestedMismatch.getByText(
+          "notCalledTool(toolMatch(input=referencesAnyPath(3 paths))) observed a matching tool",
+          { exact: false },
+        )).toBeVisible();
+        await expect(nestedMismatch.getByText("received: 1 definite match", { exact: false })).toBeVisible();
+        await expect(nestedMismatch.getByText("location: tool occurrence", { exact: false })).toBeVisible();
+        await expect(nestedMismatch.getByText(/^diagnostic: \{"children"/)).toHaveCount(0);
+
+        const valueMismatch = dialog.locator("details").filter({ hasText: "Expected fixture value · gate failed" });
+        await expect(valueMismatch).toHaveCount(1);
+        if (await valueMismatch.getAttribute("open") === null) {
+          await valueMismatch.locator(":scope > summary").click();
+        }
+        await expect(valueMismatch.getByText("includes(\"expected fixture value\") did not find the literal text", {
+          exact: false,
+        })).toBeVisible();
+        await expect(valueMismatch.getByText("expected: \"expected fixture value\"", { exact: false })).toBeVisible();
+        await expect(valueMismatch.getByText(/^diagnostic: \{/)).toHaveCount(0);
+        await page.keyboard.press("Escape");
+        await expect(dialog).not.toBeVisible();
+
         // The href stays a real standalone route: direct navigation reads the
         // same closed detail document.
         await page.goto(detail.href);
         await expect(page.getByText(/^@[0-9A-Z]+$/).first()).toBeVisible();
         await expect(page.getByText(/^source · execution · timing(?: · diff)?$/).filter({ visible: true })).toBeVisible();
 
-        await page.goto(origin!);
+        await page.goto(new URL("group/named/classic/index.html", origin!).href);
         const scatter = page.getByRole("img", { name: "costUSD × passRate" }).filter({ visible: true });
         await expect(scatter).toHaveCount(1);
         await expect(scatter).toContainText("classic/memory-a");
-        const zhButton = page.getByRole("button", { name: "中文" }).filter({ visible: true });
-        await expect(zhButton).toHaveCount(1);
-        await expect(zhButton).toBeVisible();
-        await zhButton.click();
+        const pageRouter = page.getByRole("navigation", { name: "Report pages" });
+        const pageRouterBox = await pageRouter.boundingBox();
+        const viewport = page.viewportSize();
+        expect(pageRouterBox, "the whole Page router must have a visible layout box").not.toBeNull();
+        expect(viewport, "the browser fixture must expose its viewport").not.toBeNull();
+        expect(Math.abs(pageRouterBox!.x + pageRouterBox!.width / 2 - viewport!.width / 2))
+          .toBeLessThanOrEqual(1);
+        const languageSelector = page.getByRole("combobox", { name: "Language" });
+        await expect(languageSelector).toBeVisible();
+        await expect(languageSelector.getByRole("option")).toHaveText(["EN", "中文"]);
+        await languageSelector.selectOption("zh-CN");
         await expect(page.getByText("总览", { exact: true })).toBeVisible();
-        await expect(zhButton).toHaveAttribute("aria-pressed", "true");
+        await expect(languageSelector).toHaveValue("zh-CN");
       } finally {
         await page.close();
       }

@@ -40,7 +40,7 @@ Record reader / writer，不扫描物理布局，也不复制 selection、decode
 
 - 普通 Page 的 `show` 只执行这个 Page；参数 Page 按 `decode()`、canonical `encode()`、`load()`、`render()` 读取给定 key。
 - 参数化 `show` 不调用 `enumerate()`。不属于当前 Sample 的 locator、identity 或 key 以类型化错误结束，而不是通过其它 Page 查找成员。
-- 自定义 `show --json` 只断言 target-execution manifest 的 schema、选中 route、标题、rendered text、空下载摘要与问题表。
+- 自定义 `show --json` 只断言 target-execution manifest 的 format、选中 route、标题、rendered text、空下载摘要与问题表。
   它没有 revision identity、全路由集合或其它 Page 的作者数据。
 - 内建 `show --json` 只断言选中 Page 的 Host-owned 领域文档。它不从 text、HTML 或一个通用作者树推断机器数据。
 
@@ -60,8 +60,10 @@ niceeval view --report <fixture> --no-open
 每对 response body 与文件 body 必须逐字节相同；固定 Host asset 也必须来自同一 revision。下载字节合同仍属于产品契约，但这个
 不发布 public Download 的代表 fixture 不为它伪造作者入口。
 
-浏览器在断网且禁用 JavaScript 时打开根页、参数页、Source 和 Diff。它仍能读取 marker、正文、导航、完整度、
-问题。测试拦截外部网络请求；任何为补读 Analysis、Source 详情或页面数据发出的请求都是失败。
+浏览器默认进入稳定排序的第一个实验组 Page；多组 Header 实验 selector 始终有当前值，语言也由原生 selector 切换。完整 Page router
+作为一组居中，不能因当前只有一个 Page 就退化成左右栏布局。切换实验后，Hero、告警、Summary、图表与 Table 都只反映所选组。
+浏览器在断网且禁用 JavaScript 时打开根页、参数页、Source 和 Diff，仍能通过 fallback 链接读取 marker、正文、导航、完整度、问题。
+测试拦截外部网络请求；任何为补读 Analysis、Source 详情或页面数据发出的请求都是失败。
 
 ### 5. view 的版本 oracle
 
@@ -80,7 +82,7 @@ niceeval view --report <fixture> --no-open
 ### 6. 构建失败与数据状态
 
 - `MetricValue` 的 partial、empty、unsupported 和 failed 是可呈现的数据状态。它们在 Page text、view 和 static
-  中保留相同的 samples、total、issues 与 refs；内建 JSON 依其具名领域 schema 保留这些值。
+  中保留相同的 samples、total、issues 与 refs；内建 JSON 依其具名领域 format 保留这些值。
 - `show` 的目标 Page callback、参数 key 或成员资格失败时，命令返回单目标错误且从不交付 revision。
 - 参数枚举、未选中 Page、路径或全站校验失败时，static 不写完整站点，view 保留 last-good；这些错误不扩大
   `show` 的执行范围。
@@ -96,7 +98,7 @@ niceeval view --report <fixture> --no-open
 |---|---|---|
 | 标准 React JSX 作者源码以固定 Sample 构建完整站点。 | `report-execution-evidence` | 安装后的 `.tsx` Report 可由 `view` / `view --out` 枚举普通与参数 Page；overview 有 Hero HTTPS anchor、KPI/图表/层级文字、详情 href，且不暴露 raw Attempt DTO。 |
 | show 是独立的单目标终端阅读面。 | `report-show` 与 `report-project-current` | selector、选中 route、文字、完整 MetricValue、参数 key 成员资格与 project-current 身份。 |
-| JSON 是单目标机器阅读面。 | `report-show-json` | target schema、canonical order、选中 route、metadata、下载摘要与 problem table；不含全路由 revision oracle。 |
+| JSON 是单目标机器阅读面。 | `report-show-json` | target format、canonical order、选中 route、metadata、下载摘要与 problem table；不含全路由 revision oracle。 |
 | view 是同一 revision 的本机 HTTP 面。 | `report-config-reload` 与 `report-browser-journey` | last-good、最新 intent、固定响应、HTTP 边界和可访问内容。 |
 | static 是同一 revision 的离线文件面。 | `report-static-export` | 全部页面 closure、view 字节等价、existing-target 保护和无 JavaScript 阅读。 |
 | Source、Diff 和运行证据来自本次构建。 | `report-source-snapshot` 与 `report-execution-evidence` | 已生成页面或文件不从工作树或私有文件补造。 |
@@ -146,7 +148,7 @@ niceeval view --report <fixture> --no-open
 
 ### report-show-json
 
-`report-show.test.ts` 验证 locator、project-current、human 与 JSON 的单目标公开读回。它只断言选中 route 的 schema 与内容，
+`report-show.test.ts` 验证 locator、project-current、human 与 JSON 的单目标公开读回。它只断言选中 route 的 format 与内容，
 不拥有全路由或 revision oracle。fixture 会让无关参数 Page 的 `enumerate()` 失败，并证明两种 show 都不受影响。
 
 ### report-source-snapshot

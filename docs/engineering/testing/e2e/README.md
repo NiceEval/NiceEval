@@ -51,7 +51,7 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
   expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(128 * 1024);
 
   const document = result.json<AttemptDocument>();
-  expect(document.schema).toBe("niceeval.show/v1");
+  expect(document.format).toBe("niceeval.show");
   expect(document.data).toContainEqual(expect.objectContaining({ id: "tail-sentinel" }));
 });
 ```
