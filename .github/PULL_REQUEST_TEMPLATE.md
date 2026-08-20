@@ -9,6 +9,9 @@ an internal mechanism such as its registry, protocol, or storage model. Keep one
 dominant outcome and aim for 72 characters or fewer. Write the PR title and
 description in the language of the user's latest request.
 
+For large PR bodies, use `pnpm pr:body --help` to create a local Markdown
+draft, embed exact test sources, enforce this template, and check GitHub drift.
+
 Keep only product-surface sections that contain a real change. Delete empty
 directions and sections instead of writing "None". Under each included
 direction, present every change as a named user case with concrete, fenced
