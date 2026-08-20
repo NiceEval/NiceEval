@@ -140,6 +140,10 @@ async function createState(ctx: SandboxAgentContext, env: Readonly<Record<string
     ...(ctx.model === undefined ? {} : { model: ctx.model }),
     approvalPolicy: "never",
     sandbox: "danger-full-access",
+    // app-server 没有 `codex exec --dangerously-bypass-hook-trust` 的顶层 flag，
+    // 但 thread/start.config 会把这个 runtime-only override 交给同一 ConfigBuilder。
+    // Eval Sandbox 中的 hook 出处由 agent 配置显式声明，因此非交互运行统一 bypass。
+    config: { bypass_hook_trust: true },
   }, ctx.signal);
   cursor = started.cursor;
   const threadId = record(started.result.thread)?.id;

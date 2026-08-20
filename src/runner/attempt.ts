@@ -270,6 +270,14 @@ export function runAttemptEffect<
   // an internal capability until the Record producer seals its own Attachments.
   const sourceRegistry = createSourceRegistry(process.cwd());
   const sourceCapture = createRunnerAttemptSourceCapture(sourceRegistry);
+  const attemptResources = new ManagedAttemptResources();
+  let attemptResourceReleaseFailureReported = false;
+  const reportAttemptResourceReleaseFailure = (error: unknown): void => {
+    if (attemptResourceReleaseFailureReported) return;
+    attemptResourceReleaseFailureReported = true;
+    declareFailure("agent.teardown", error);
+    diagnostics.push(teardownDiagnostic("agent.teardown", error));
+  };
 
   const base: EvalResult = {
     id: evalDef.id,
@@ -1007,6 +1015,18 @@ export function runAttemptEffect<
         );
       }
 
+      // Cross-send adapter processes belong to the Attempt Scope, not to the
+      // Promise-shaped body. On timeout the bridge is intentionally sealed
+      // before that Promise's finally continuation can submit more work, so a
+      // scope finalizer must remain the unconditional release owner.
+      yield* Effect.addFinalizer(() =>
+        cleanupCallback((cleanupSignal) => attemptResources.releaseAll(cleanupSignal)).pipe(
+          Effect.catchAll((error) => Effect.sync(() => {
+            reportAttemptResourceReleaseFailure(error);
+          })),
+        ),
+      );
+
       // The legacy setup/diff body remains Promise-shaped, while OTLP waits,
       // author execution, and sealing run in this Attempt's Effect scope. No
       // nested runtime is introduced.
@@ -1039,6 +1059,8 @@ export function runAttemptEffect<
             declareFailure,
             isDeadlineTimedOut: () => timedOut,
             layerCleanups,
+            attemptResources,
+            reportAttemptResourceReleaseFailure,
             registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
               liveEvents = getEvents;
               liveUsage = getUsage;
@@ -1565,6 +1587,10 @@ interface AttemptResources {
   ) => void;
   /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
   prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
+  /** Attempt Scope-owned registry for adapter processes spanning sends. */
+  attemptResources: ManagedAttemptResources;
+  /** Records the registry's single terminal release failure at most once. */
+  reportAttemptResourceReleaseFailure: (error: unknown) => void;
 }
 
 interface LayerCleanupEntry {
@@ -1628,7 +1654,7 @@ async function runAttemptBody(
         signal,
       )
     : rawSandbox;
-  const attemptResources = new ManagedAttemptResources();
+  const { attemptResources, reportAttemptResourceReleaseFailure } = res;
   // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
   const attemptCtx: AgentContext = bindAttemptResources({
     signal,
@@ -2292,8 +2318,13 @@ async function runAttemptBody(
     try {
       await assertFirst.requestEffect(cleanupCallback((cleanupSignal) => attemptResources.releaseAll(cleanupSignal)));
     } catch (error) {
-      declareFailure("agent.teardown", error);
-      diagnostics.push(teardownDiagnostic("agent.teardown", error));
+      // An interrupted body can resume its Promise finally only after the
+      // Effect bridge has closed. The Scope finalizer above still performs the
+      // release; this named closure is therefore lifecycle control, not a
+      // second teardown failure.
+      if (!(error instanceof AssertionAuthoringClosedError && error.reason === "attempt-interrupted")) {
+        reportAttemptResourceReleaseFailure(error);
+      }
     }
     for (const lifecycle of evalPluginLifecycles.slice(0, activatedEvalPlugins).reverse()) {
       if (lifecycle.teardown === undefined) continue;

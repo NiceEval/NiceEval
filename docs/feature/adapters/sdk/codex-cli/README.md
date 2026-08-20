@@ -108,7 +108,8 @@ hook 信任 bypass 与审批 bypass 属同一信任层级。沙箱运行是 head
 不 bypass 时，这些 hook 被静默跳过且零报错，插件依赖的注入和捕获行为会整体失效。
 
 沙箱里的每个 hook 出处都由实验配置显式声明（`plugins`、`postSetup`、`configFile`），声明即审计，因此不设开关。
-app-server 没有 `exec --dangerously-bypass-hook-trust` 这一 one-shot 入口；Plugin hook 的声明与配置仍只来自本 Attempt setup。
+app-server 没有 `exec --dangerously-bypass-hook-trust` 这一顶层 flag；Adapter 在
+`thread/start.config` 中传入 runtime-only `bypass_hook_trust = true`。Plugin hook 的声明与配置仍只来自本 Attempt setup。
 
 ## Prebuilt environment
 
