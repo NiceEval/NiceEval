@@ -18,13 +18,16 @@ if [[ -e "$PUBLISH_DIRECTORY" ]]; then
 fi
 
 PREVIEW_SCRATCH="$(mktemp -d)"
-trap 'rm -rf "$PREVIEW_SCRATCH"' EXIT
+mkdir -p "$NICEEVAL_ROOT/.netlify"
+PACKAGE_SCRATCH="$(mktemp -d "$NICEEVAL_ROOT/.netlify/package-runtime.XXXXXX")"
+trap 'rm -rf "$PREVIEW_SCRATCH" "$PACKAGE_SCRATCH"' EXIT
 readonly MEMORYBENCH_ROOT="$PREVIEW_SCRATCH/MemoryBench"
 
 git clone --filter=blob:none --no-checkout "$MEMORYBENCH_REPOSITORY" "$MEMORYBENCH_ROOT"
 git -C "$MEMORYBENCH_ROOT" checkout --detach "$MEMORYBENCH_COMMIT"
 
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" install --frozen-lockfile
+TMPDIR="$PACKAGE_SCRATCH" \
 corepack pnpm@11.18.0 --dir "$NICEEVAL_ROOT" dev:link "$MEMORYBENCH_ROOT"
 
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" exec niceeval --version
