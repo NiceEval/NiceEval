@@ -376,6 +376,8 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
       expect(visible).not.toMatch(/\d+ \/ \d+ slot/);
       expect(visible).not.toMatch(/deliberate-fail[^\n]*0%/);
       expect(visible).not.toMatch(/tool-call[^\n]*100%/);
+      expect(visible).toContain("├─ deliberate-error");
+      expect(visible).toContain("│  └─ !");
       expect(visible).toMatch(/^╭.*╮$/mu);
       expect(visible).toMatch(/^╰.*╯$/mu);
     },
@@ -402,7 +404,7 @@ test("自定义 Report 的 show 是单目标阅读面，JSON 只含 target-execu
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("Report fixture static");
-      expect(shown.stdout).toMatch(/Fixture pass rate is\s+partial \(\d+\/\d+\)/);
+      expect(shown.stdout).toMatch(/Fixture pass rate is\s+available \(5\/5\)/);
       expect(shown.stdout).toContain("Source detail");
       expect(shown.stdout).toContain("Diff detail");
       const json = await niceeval.run(

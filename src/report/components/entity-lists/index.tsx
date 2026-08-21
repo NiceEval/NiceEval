@@ -14,7 +14,6 @@ import {
   type ExperimentListItem,
 } from "./compute.ts";
 import { attemptListContent, experimentListContent } from "./content.ts";
-import { experimentListEvaluationKindComposition } from "../../model/format.ts";
 
 export {
   attemptListData,
@@ -100,10 +99,7 @@ export const ExperimentTable = defineComponent<ExperimentTableProps>(async (prop
   }
   const sample = sampleForExperimentComparisonScope(props.comparison);
   const rows = await experimentListData(sample, ctx.report.pricing);
-  const composition = experimentListEvaluationKindComposition(
-    rows.map((row) => ({ evaluationKind: row.evaluationKind, attempts: row.evalRows.length })),
-  );
-  const defaultSort = composition === "pass" ? "passRate" : "totalScore";
+  const defaultSort = "summary";
   return <TableContentView
     data={experimentListContent(rows)}
     sort={props.sort ?? defaultSort}

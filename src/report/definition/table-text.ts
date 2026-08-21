@@ -173,6 +173,13 @@ export function renderTableText(props: TextTableProps, ctx: TextContext): string
   const natural = header.map((_, c) => Math.max(...matrix.map((row) => stringWidth(row[c] ?? ""))));
   // 画线时列间距与不画线时相同(` │ ` 与 `   ` 都是 3 列),所以只有外框那 4 列要先让出来。
   const lines = dataBoxMode(ctx.panelMode, ctx.width) === "boxed";
+  if (!lines) {
+    for (const row of body) {
+      if (row[0] !== undefined) {
+        row[0] = row[0].replaceAll("│", "|").replaceAll("├", "+").replaceAll("└", "`");
+      }
+    }
+  }
   // 嵌在画框的 Section 里:边界已由面板的框给出,自己只留列边界与表头横线,不套二层框。
   const outerFrame = lines && panelSectionDepth() === 0;
   const available = outerFrame ? ctx.width - DATA_BOX_FRAME_OVERHEAD : ctx.width;
