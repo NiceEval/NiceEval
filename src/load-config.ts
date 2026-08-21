@@ -18,17 +18,14 @@ function needsAdditionalTsxLoader(error: unknown): boolean {
   );
 }
 
-export async function loadConfigFile(
-  cwd: string,
-  options?: { freshImport?: boolean },
-): Promise<Config> {
+async function loadConfigModule(cwd: string, rebuild: boolean): Promise<Config> {
   const path = join(cwd, "niceeval.config.ts");
   if (!existsSync(path)) {
     throw new Error(t("cli.config.missing"));
   }
   let mod: { default?: Config };
   try {
-    mod = options?.freshImport
+    mod = rebuild
       ? ((await freshImportModule(path)) as { default?: Config })
       : ((await import(pathToFileURL(path).href)) as { default?: Config });
   } catch (e) {
@@ -37,7 +34,7 @@ export async function loadConfigFile(
     // ERR_UNKNOWN_FILE_EXTENSION。只对普通一次性装载的能力错误补一层 tsx hook
     // 重试，用户模块自己抛错时不重放副作用。fresh 装载不能退回 canonical URL：
     // 它可能已被 view 启动时缓存，从而用上一代成功配置掩盖当前损坏。
-    if (!options?.freshImport && needsAdditionalTsxLoader(e)) {
+    if (!rebuild && needsAdditionalTsxLoader(e)) {
       const url = pathToFileURL(path).href;
       register();
       // 这是一次性 CLI 装载器：保留 hook 到进程结束。不用 namespace——
@@ -50,4 +47,14 @@ export async function loadConfigFile(
   }
   if (!mod.default) throw new Error(t("cli.config.noDefault"));
   return mod.default;
+}
+
+/** Canonical trusted module load; callers that need fresh evaluation use rebuild. */
+export function loadConfigModuleOnce(cwd: string): Promise<Config> {
+  return loadConfigModule(cwd, false);
+}
+
+/** Serial callers deliberately request a new module graph rather than a boolean mode. */
+export function rebuildConfigModule(cwd: string): Promise<Config> {
+  return loadConfigModule(cwd, true);
 }

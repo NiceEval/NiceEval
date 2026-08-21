@@ -54,7 +54,7 @@ openai · Attempt #14  unavailable · pricing information unavailable
 Usage payload、Runner estimate 或任何当前价格。
 
 `show` 只放入目标 Page 已关闭的 projections。`view` 与静态导出闭合所有已声明 Page 的 projections，并在
-`_niceeval/data/projections.json` 写出 canonical 全站集合。该文件属于 revision identity；静态页面、view HTTP body 与 projection
+`_niceeval/data/projections.json` 写出 canonical 全站集合。该文件属于 revision identity；根 app shell、HTML fragments 与 projection
 data 都从同一 revision 读取。
 
 `partial` 和 `unavailable` 是可呈现的数据状态，命令成功时退出码仍为 `0`。非法 Profile、目标 Page 执行失败、全站构建失败或无法形成

@@ -101,6 +101,7 @@ const slotDetailPage: Page<SlotParams, Sample["snapshot"]["slots"][number]> = {
   path: "/slot",
   title: "Slot fixture",
   navigation: false,
+  presentation: "overlay",
   params: slotParams,
   load: (sample, params) => {
     const slot = sample.snapshot.slots.find((candidate) => candidate.slotId === params.slotId);

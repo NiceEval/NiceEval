@@ -313,7 +313,7 @@ interface FlagEntry {
   doc?: string;
 }
 
-/** 静态解析 `const FLAG_OPTIONS = { ... } as const;` 对象字面量,不 import 模块(cli.ts 有模块级副作用)。 */
+/** 静态解析 platform-neutral program 的 `FLAG_OPTIONS` 对象字面量，不执行 CLI。 */
 function extractFlagOptions(sourceText: string, fileName: string): FlagEntry[] {
   const sourceFile = parse(sourceText, fileName);
   let objectLiteral: ts.ObjectLiteralExpression | undefined;
@@ -536,7 +536,7 @@ export const SOURCE_FILES = [
   "src/agents/types.ts",
   "src/sandbox/types.ts",
   "src/o11y/types.ts",
-  "src/cli.ts",
+  "src/cli/program.ts",
   "src/agents/claude-code.ts",
   "src/agents/codex.ts",
   "src/agents/bub.ts",
@@ -730,7 +730,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
     case "usage-fields":
       return renderMemberList(extractInterfaceMembers(sources["src/o11y/types.ts"], "src/o11y/types.ts", "Usage"));
     case "cli-flags":
-      return renderCliFlagsTable(buildCliFlagRows(sources["src/cli.ts"], "src/cli.ts"));
+      return renderCliFlagsTable(buildCliFlagRows(sources["src/cli/program.ts"], "src/cli/program.ts"));
     case "builtin-agent-config":
       return renderMemberGroups([
         {

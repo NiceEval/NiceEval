@@ -252,35 +252,11 @@ export default Object.freeze(report);
       ]);
       expect(exported.exitCode, exported.diagnostic()).toBe(0);
 
-      const overview = await readFile(join(projectRoot, "classic-export", "overview", "index.html"), "utf8");
-      for (const marker of [
-        "Deterministic 0.12 classic report:",
-        "Eval results",
-        "Total cost",
-        "Run range",
-        "Leaderboard",
-        "Experiment comparison",
-        "Experiments",
-      ] as const) {
-        expect(overview, `classic overview marker ${JSON.stringify(marker)}`).toContain(marker);
-      }
-      expect(overview, "classic Hero external link must be an anchor")
-        .toMatch(/<a\b[^>]*\bhref="https:\/\/github\.com\/NiceEval\/NiceEval"/);
-      expect(overview, "classic hierarchy must keep native disclosure semantics")
-        .toMatch(/<details\b[\s\S]*<summary\b/);
-      const deliberateErrorRows = [...overview.matchAll(/<summary\b[^>]*>[\s\S]*?<\/summary>/g)]
-        .map(([summary]) => summary)
-        .filter((summary) => summary.includes("deliberate-error"));
-      expect(
-        deliberateErrorRows,
-        "a named Experiment comparison must not pull main's errored row across the group boundary",
-      ).toHaveLength(0);
-      expect(overview, "classic overview must not serialize internal attempt evidence into visible text")
-        .not.toContain('{"kind":"attempt"');
-      expect(overview, "classic overview must link into attempt detail instances")
-        .toMatch(/<a\b[^>]*\bhref="[^"]*\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}\/index\.html"/);
-      expect(overview, "classic overview must link into experiment detail instances")
-        .toMatch(/<a\b[^>]*\bhref="[^"]*\/experiment\/e1[a-f0-9]{24}\/index\.html"/);
+      const exportRoot = join(projectRoot, "classic-export");
+      const shell = await readFile(join(exportRoot, "index.html"), "utf8");
+      expect(shell).toContain('src="_niceeval/app.js"');
+      expect(shell).not.toContain(projectRoot);
+      expect(shell).not.toContain(".niceeval/");
     },
   );
 });

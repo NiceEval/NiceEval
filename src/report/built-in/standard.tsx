@@ -213,6 +213,7 @@ function standardGroupPage<Params extends import("../../analysis/index.ts").Json
     path: input.path,
     title: { en: "Experiment group", "zh-CN": "实验组" },
     navigation: false as const,
+    presentation: "page" as const,
     role: { kind: "experiment-group" as const, groupKind: input.groupKind },
     params: input.params,
     load: (sample: Sample, params: Params) =>
@@ -243,6 +244,7 @@ export const standardAttemptPage = {
   path: "/attempt",
   title: "Attempt",
   navigation: false,
+  presentation: "overlay",
   params: attemptDetailParams,
   load: async (_sample: Sample, params: AttemptDetailTarget, context): Promise<StandardAttemptPageInput> =>
     Object.freeze({
@@ -268,6 +270,7 @@ export const standardExperimentPage = {
   path: "/experiment",
   title: "Experiment",
   navigation: false,
+  presentation: "overlay",
   params: experimentDetailParams,
   load: async (sample: Sample, params: ExperimentDetailTarget): Promise<StandardExperimentPageInput> => {
     const experiment = experimentForTarget(sample, params);

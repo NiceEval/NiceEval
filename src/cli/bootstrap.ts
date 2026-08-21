@@ -1,8 +1,10 @@
 // The one application runtime boundary. Library and command modules return
 // Effect values; this file is the only place NiceEval starts a runtime.
 
-import { Cause, Effect, Exit } from "effect";
-import { cliProgram, renderCliFailure, type CliInterruptionOwnership } from "../cli.ts";
+import { Cause, Effect, Exit, Layer } from "effect";
+import { cliProgram, renderCliFailure, type CliInterruptionOwnership } from "./program.ts";
+import { NodeCliPlatformLive } from "./node-application.ts";
+import { ConfigModuleLoaderLive, ProjectConfigurationLayer, ProjectCredentialsLive } from "./project-configuration.ts";
 import { NodeRecordLive } from "../record/index.ts";
 
 // There is exactly one synchronous ownership state for the first signal. Node
@@ -37,7 +39,15 @@ const interruption: CliInterruptionOwnership = {
     // the CLI preserve that Cause rather than start an Invocation underneath it.
     return signalOwnership !== "root-interrupted";
   },
+  requestInterrupt: () => process.emit("SIGINT"),
 };
+
+// This is the only Node composition edge. The application layer itself keeps
+// its two capability requirements visible and portable.
+const NodeCliApplicationLive = ProjectConfigurationLayer.pipe(
+  Layer.provide(ProjectCredentialsLive),
+  Layer.provide(ConfigModuleLoaderLive),
+);
 
 const onInterrupt = (signal: NodeJS.Signals): void => {
   if (signalOwnership === "root") {
@@ -65,6 +75,8 @@ const application = Effect.scoped(cliProgram(interruption)).pipe(
   // Application bootstrap is the sole provider of concrete Node services.
   // Command and library modules retain their real requirements for callers.
   Effect.provide(NodeRecordLive),
+  Effect.provide(NodeCliApplicationLive),
+  Effect.provide(NodeCliPlatformLive),
   // Typed CLI failures are expected, user-actionable outcomes. They become an
   // ordinary process status after their message has been written once.
   Effect.catchAll((failure) => Effect.sync(() => {

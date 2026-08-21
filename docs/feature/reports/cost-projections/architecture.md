@@ -86,14 +86,14 @@ Analysis 对每个 known USD entry 使用 exact decimal 计算。`aggregate.kind
 `view` 与 `view --out` 执行 Report 的全部已声明 Page 和参数实例。全站 closure 写出所有页面所需 projections 的 canonical union 到
 `_niceeval/data/projections.json`。这个文件的 bytes、Profile identity、页面和其它资源都进入 `ClosedSiteRevision` identity。
 
-`pages` 是 Report 的完整页面集合。详情地址只有在作者声明 ParameterizedPage 并由它枚举时才进入全站；Host 不会补建详情页面。
+`pages` 是 Report 的完整页面集合。详情只有在作者声明 `presentation: "overlay"` 的 ParameterizedPage 并由它枚举时才进入全站；Host 不会补建详情页面或 route HTML。
 
 ## 生命周期与审计
 
 Profile 在 Report module 装载时规范化，并在每个 target execution 或 site build 中按其 content identity 验证。重复安装的 NiceEval
 通过 `definition/v2` 与 `pricing-profile/v1` 的 `Symbol.for` descriptor 重验定义与 Profile，不依赖对象地址或 `instanceof`。
 
-静态目录保存 closed HTML 和 `_niceeval/data/projections.json`，所以离线读者不需要 Record、Profile source 或网络。下一次 build 可以
+静态目录保存根 `index.html` app shell、closed HTML fragments 和 `_niceeval/data/projections.json`，所以离线读者不需要 Record、Profile source 或网络。下一次 build 可以
 加载不同 Profile，但不能改变已发布 revision。
 
 ## 不变量

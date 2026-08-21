@@ -14,6 +14,6 @@
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
     "src/**/*.harness.ts",
-    "src/view/app/**"
+    "src/report/client/**"
   ]
 }

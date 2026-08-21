@@ -21,7 +21,6 @@ import {
   type ReportViewSessionClosed,
   type ReportViewSession,
 } from "../report/host/view-session.ts";
-import type { ViewScanOptions } from "./data.ts";
 
 export interface NodeViewServerError {
   readonly code: "report-view-server-failed";
@@ -35,8 +34,6 @@ export interface ViewOptions<Requirements = never> {
   readonly port?: number;
   /** Defaults to loopback. An explicit address opts into that network exposure. */
   readonly host?: string;
-  /** Retained for the CLI-shaped facade; it is never interpreted as Record data. */
-  readonly scan?: ViewScanOptions;
   /**
    * Bootstrap watch inputs when the session/request has none yet. After each
    * successful rebuild the session revision owns the next-round watch set.
@@ -365,9 +362,6 @@ function serveRequest<Requirements>(
         }));
       }
       const resolved = siteFileForPath(url.pathname, state.current.site);
-      if (resolved.state === "redirect") {
-        return Effect.sync(() => redirect(request.response, resolved.location, headers));
-      }
       if (resolved.state === "missing") {
         return Effect.sync(() => sendText(
           request.response,
@@ -684,7 +678,6 @@ function closeServer(server: Server): Effect.Effect<void> {
 
 type SitePathLookup =
   | { readonly state: "file"; readonly file: ClosedSiteFile }
-  | { readonly state: "redirect"; readonly location: string }
   | { readonly state: "missing" };
 
 /**
@@ -697,43 +690,14 @@ function siteFileForPath(pathname: string, site: ClosedSiteRevision): SitePathLo
     return Object.freeze({ state: "missing" as const });
   }
   const requested = pathname.slice(1);
+  // The SPA shell is the revision's sole root document. All business
+  // navigation belongs to its hash router, not to host-side path probing.
   const exact = requested === "" ? "index.html" : requested;
   const revision = closedSiteRevisionData(site);
   const files = revision.files;
-  if (requested === "" && revision.defaultRoute !== undefined && revision.defaultRoute !== "/") {
-    const entryFile = staticPageFileForRoute(revision.defaultRoute);
-    if (files.some((file) => file.path === entryFile)) {
-      return Object.freeze({ state: "redirect" as const, location: revision.defaultRoute });
-    }
-  }
   const direct = files.find((file) => file.path === exact);
   if (direct !== undefined) return Object.freeze({ state: "file" as const, file: direct });
-
-  // A report may deliberately declare its first Page at /overview (or another
-  // route), so its immutable closure has no root index.html. The advertised
-  // root must still land on that revision's canonical entry route rather than
-  // becoming a host-generated 404 or re-entering Report execution.
-  if (requested === "" && revision.defaultRoute !== undefined) {
-    const entryFile = staticPageFileForRoute(revision.defaultRoute);
-    if (files.some((file) => file.path === entryFile)) {
-      return Object.freeze({ state: "redirect" as const, location: revision.defaultRoute });
-    }
-  }
-
-  // Keep direct Page URLs convenient without manufacturing a different body.
-  // The redirect selects the exact generated index.html path from this same map.
-  const indexPath = requested.endsWith("/")
-    ? `${requested}index.html`
-    : `${requested}/index.html`;
-  const page = files.find((file) => file.path === indexPath);
-  if (page !== undefined) {
-    return Object.freeze({ state: "redirect" as const, location: `/${indexPath}` });
-  }
   return Object.freeze({ state: "missing" as const });
-}
-
-function staticPageFileForRoute(route: string): string {
-  return route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
 }
 
 function requestUrl(request: IncomingMessage): URL | undefined {
@@ -778,16 +742,6 @@ function send(
   if (response.destroyed) return;
   response.writeHead(status, { "content-type": contentType, ...headers });
   response.end(body);
-}
-
-function redirect(
-  response: ServerResponse,
-  location: string,
-  headers: Readonly<Record<string, string>>,
-): void {
-  if (response.destroyed) return;
-  response.writeHead(308, { location, ...headers });
-  response.end();
 }
 
 const SAFE_MEDIA_TYPE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;

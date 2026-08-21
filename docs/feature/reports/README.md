@@ -28,9 +28,9 @@ Report 有两条明确不同的执行路径。它们共享同一份作者定义�
 
 `show` 不调用参数 Page 的 `enumerate()`，不建立 `ClosedSiteRevision`，也不为未选 route 执行作者 callback。
 
-`project-current` 仍是整个项目的 Sample。只有一个可比实验范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`，不显示选择器。有多个范围时，浏览器默认稳定选择第一项，并在 Header 显示实验下拉框；不存在未选择范围的 view Overview。Hero、通知、Summary、图表和 Table 都消费所选范围背后的同一 narrowed Sample。
+`project-current` 仍是整个项目的 Sample。只有一个可比实验范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`。有多个范围时，标准 Report 内容交付各范围的普通 Page 链接；通用 Header 不理解实验组。Hero、通知、Summary、图表和 Table 都消费目标 Page 背后的同一 narrowed Sample。
 
-切换选项沿已闭合 Page 导航，不新增 CLI 参数。`show` 的多组默认输出仍是可复制命令的实验索引。每个 Page 把唯一 scope 交给具名比较组件；任何比较组件都不能跨范围。
+切换选项只改变根 document 的 hash，不新增 CLI 参数或 HTTP 路径。`show` 的多组默认输出仍是可复制命令的实验索引。每个 Page 把唯一 scope 交给具名比较组件；任何比较组件都不能跨范围。
 `view` 与静态导出则必须完成全站枚举、链接校验、资源闭包和限额检查；它们只从同一个 revision 读取最终 bytes。
 
 [Report 成本投影](cost-projections/README.md) 是完整的成本契约。它只经 `ReportDefinition.pricing` 接入 Report，并以同一只读值暴露为
@@ -52,7 +52,7 @@ const Overview = defineComponent(async (_props, ctx) => {
 
 export default defineReport({
   title: "Quality",
-  pages: [{ id: "overview", path: "/", title: "Overview", render: () => <Overview /> }],
+  pages: [{ id: "overview", path: "/", title: "Overview", presentation: "page", render: () => <Overview /> }],
 });
 ```
 
@@ -64,22 +64,20 @@ export default defineReport({
 
 ## 站点版本与离线阅读
 
-`ClosedSiteRevision` 包含每个 route 的最终 HTML body bytes、rendered text、CSS、reload client、作者声明的 asset、下载文件、
-`_niceeval/data/projections.json` 和 Host 问题表。`projections.json` 的 bytes 属于 revision identity。它不包含 Sample、Record reader、
+`ClosedSiteRevision` 包含一个根 `index.html` app shell、每个已关闭 Page 或 overlay 的 HTML fragment、rendered text、CSS 与唯一 app client。它还包含作者声明的 asset、下载文件、`_niceeval/data/projections.json` 和 Host 问题表。fragment 和 `projections.json` 的 bytes 都属于 revision identity。它不包含 Sample、Record reader、
 Promise、callback、React element 或组件函数。
 
-`view` 托管一个已验证 revision；`view --out` 写出同一 revision。相同 route 的 HTTP body 与目录页面 body 必须相同。HTML header、
-连接和更新通知不改变这些 bytes。
+`view` 托管一个已验证 revision；`view --out` 写出同一 revision。两者都只交付一个根 app shell，并由唯一外部 manifest 把 hash route 指向已关闭 fragment；shell 不内联第二份 route 数据。HTTP header、
+连接和更新通知不改变 revision bytes。
 
-两种站点都携带同一个 Host-owned reload client。view 为它提供版本探测与通知端点；静态目录没有这些端点时，client 安静停用，
-不显示错误、不发起 Analysis，也不影响阅读。目录不依赖网络、Record 或 NiceEval 安装，但浏览器必须启用 JavaScript；禁用时页面只显示明确的启用提示，不维持另一套阅读与导航逻辑。
+两种站点都携带同一个 app client。live view 通过 app 响应 header 启用 reload；静态目录不会探测刷新端点。目录不依赖外部网络、Record 或 NiceEval 安装，且可由普通静态 HTTP(S) host（包括 Netlify）直接托管，不需要 rewrite 或 NiceEval server。浏览器必须启用 JavaScript；禁用时根 shell 明确报错，不维持另一套阅读与导航逻辑。`file://` 不受支持。
 
 ## 结构化 head 与站点资产
 
 作者通过 `head` 声明 `meta`、`link`、`style` 与 `script`。script 是结构化标签而非 raw HTML；内联 bytes、属性顺序与本地 asset
 都进入 revision identity。外部 `src` 可以带 `integrity`、`crossorigin` 与 `referrerpolicy`，但远端响应不属于 revision bytes。
 
-Host runtime 负责页面阅读、导航和详情交互。作者脚本可以增强作者内容，但不能替代已闭合的正文、Evidence 或机器文档。Host reload 与作者 script 属于不同命名空间，
+唯一 app client 负责页面阅读、导航、详情交互与 live reload。作者脚本可以增强作者内容，但不能替代已闭合的正文、Evidence 或机器文档。app client 与作者 script 属于不同命名空间，
 view 不注入只在本机有效的作者脚本。
 
 ## 数据、机器输出与样式边界
@@ -98,21 +96,19 @@ view 不注入只在本机有效的作者脚本。
 报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 左侧放品牌，中间居中整个
 Page router，右侧放实验与语言两个原生选择器；Page router 无论含一个还是多个 Page 都作为整体居中。Shell 不重绘 Report 内容。
 
-参数详情的增强 modal 使用半透明黑色 backdrop，保留当前报告作为可见上下文，内容面板保持不透明。点击内容外侧、按 Escape
-或点击关闭按钮都会关闭 modal。启用 JavaScript 直接打开参数详情 route 时，Host 恢复站点根 Page 作为背景，并按同一参数目标打开
-modal，且同步 head bootstrap 在详情正文绘制前完成跳转，避免先闪现独立详情页。禁用 JavaScript 时，该 route 与其它页面一样只显示启用提示。
+每个报告只有一个根 document。作者可声明多个业务 Page；Hash router 把它们呈现在同一 document 中。Page 的 `presentation` 明确为 `page` 或 `overlay`。Attempt、Source 和 Diff 使用 `overlay`，不是独立业务 Page。overlay 使用半透明黑色 backdrop，保留当前业务 Page 作为可见上下文，内容面板保持不透明。点击内容外侧、按 Escape、点击关闭按钮或浏览器返回都会关闭 overlay 并恢复前一 hash。
 完整边界见 [Architecture](architecture.md#css、theme-与-view-shell)。
 
 ## 范围与入口
 
-Report 包含作者 DSL、Analysis facade、标准 React 组件、单页终端读取、全站 SSG、view、静态目录与下载文件。`pages` 是唯一 Page 集合；
-详情页必须在其中显式声明，Host 不补建任何详情 route。
+Report 包含作者 DSL、Analysis facade、标准 React 组件、单页终端读取、全站关闭、view、静态目录与下载文件。`pages` 是唯一 Page 集合；
+作者明确声明业务 Page 和 overlay，Host 不补建任何 route HTML 或详情页面。
 Report 不包含 Record 格式、浏览器端 Analysis、任意文件读取、通用 semantic author model 或第二条 CSS / renderer 管线。
 
 - [Library](library.md)：公开 export manifest、作者 API、Page、组件与闭合值。
 - [成本投影](cost-projections/README.md)：Profile、Analysis 成本读数与 machine / site 闭合。
 - [读数与显示语义](calculations.md)：MetricValue、分母、GroupFunction 与领域投影。
-- [Architecture](architecture.md)：两条执行路径、revision、CSS、reload、缓存与预算。
+- [Architecture](architecture.md)：两条执行路径、revision、CSS、reload 与预算。
 - [CLI](cli.md)：选择、`show`、JSON、`view` 与静态导出。
 - [Use case](use-case/README.md)：比较、完整度、静态分享与浏览器阅读。
 - [Reference](reference/README.md)：外部材料入口。

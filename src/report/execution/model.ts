@@ -4,8 +4,8 @@ import type { ReportProblem } from "./machine.ts";
 export const REPORT_PAGES_MAX = 20_000;
 export const REPORT_DOCUMENT_NODES_MAX = 20_000;
 export const REPORT_DOCUMENT_DEPTH_MAX = 32;
-export const REPORT_PAGE_HTML_BYTES_MAX = 16_777_216;
-export const REPORT_SITE_HTML_BYTES_MAX = 268_435_456;
+export const REPORT_FRAGMENT_BYTES_MAX = 16_777_216;
+export const REPORT_SHELL_FRAGMENT_BYTES_MAX = 268_435_456;
 export const REPORT_BUILD_TIME_MS_MAX = 120_000;
 export const REPORT_BUILD_RSS_BYTES_MAX = 1_342_177_280;
 export const REPORT_DOWNLOAD_FILES_MAX = 1_000;
@@ -19,8 +19,8 @@ export type ReportBuildBudget =
   | "pages"
   | "document-nodes"
   | "document-depth"
-  | "page-html-bytes"
-  | "site-html-bytes"
+  | "fragment-bytes"
+  | "shell-fragment-bytes"
   | "build-time"
   | "build-rss"
   | "download-files"
@@ -62,13 +62,13 @@ export interface ClosedSiteFile {
 }
 
 export interface ClosedSiteIdentity {
-  readonly format: "niceeval.report-site-revision/v1";
-  readonly renderer: "niceeval.report-ssg/v1";
+  readonly format: "niceeval.report-site-revision/v2";
+  readonly renderer: "niceeval.report-spa/v1";
   readonly contentHash: string;
 }
 
 const closedSiteRevisionTypeId: unique symbol = Symbol.for(
-  "niceeval.report.closed-site-revision/v1",
+  "niceeval.report.closed-site-revision/v2",
 );
 
 /**
@@ -83,17 +83,12 @@ export interface ClosedSiteRevision {
 export interface ClosedSiteRevisionData extends ClosedSiteRevision {
   readonly identity: ClosedSiteIdentity;
   readonly files: readonly ClosedSiteFile[];
-  readonly routes: readonly string[];
-  /** The deterministic landing route when the revision has no root index.html. */
-  readonly defaultRoute?: string;
   readonly problems: readonly ReportProblem[];
 }
 
 export function makeClosedSiteRevision(input: {
   readonly contentHash: string;
   readonly files: readonly ClosedSiteFile[];
-  readonly routes: readonly string[];
-  readonly defaultRoute?: string;
   readonly problems?: readonly ReportProblem[];
 }): ClosedSiteRevision {
   if (typeof input.contentHash !== "string" || input.contentHash.length === 0) {
@@ -114,21 +109,13 @@ export function makeClosedSiteRevision(input: {
     });
   });
   files.sort((left, right) => compareUtf8(left.path, right.path));
-  const sourceRoutes = [...new Set(input.routes)];
-  const routes = [...sourceRoutes].sort(compareUtf8);
-  const defaultRoute = input.defaultRoute ?? sourceRoutes[0];
-  if (defaultRoute !== undefined && !routes.includes(defaultRoute)) {
-    throw new TypeError("ClosedSiteRevision default route must belong to its routes");
-  }
   const revision: Omit<ClosedSiteRevisionData, typeof closedSiteRevisionTypeId> = {
     identity: Object.freeze({
-      format: "niceeval.report-site-revision/v1" as const,
-      renderer: "niceeval.report-ssg/v1" as const,
+      format: "niceeval.report-site-revision/v2" as const,
+      renderer: "niceeval.report-spa/v1" as const,
       contentHash: input.contentHash,
     }),
     files: Object.freeze(files),
-    routes: Object.freeze(routes),
-    ...(defaultRoute === undefined ? {} : { defaultRoute }),
     problems: Object.freeze([...(input.problems ?? [])]),
   };
   Object.defineProperty(revision, closedSiteRevisionTypeId, {

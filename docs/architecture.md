@@ -234,6 +234,17 @@ CLI 与 Node runtime 的人读文案是英语。浏览器 view 自己提供中�
 
 CLI 启动时仍加载项目根的 `.env`(不改写已有进程变量)——那是凭据的投递方式,不是配置层。
 
+CLI application 通过窄的 `ProjectConfiguration` facade 固定执行 `prepare → load`。
+
+- `ProjectCredentials` 只投递缺失的 `.env` 凭据，并按规范 cwd 缓存。
+- `ConfigModuleLoader` 只提供串行的 `loadOnce` 与 `rebuild`。
+- application 与公开 Library Host 不隐式选择 Node Layer，也不以 `.env` 作为 Config layer。
+
+命令的 argv parse、选择、render 与 Effect 编排留在 platform-neutral command program。
+它只读取不可变的 `InvocationFacts`，并依赖 `CliOutput`、`ProjectInitializer`、
+`PackageMetadata`、`BrowserLauncher`、`CliArguments` 与 `CliPath` 等具名 capability。
+Node adapter 不拥有命令选择；所有 Live Layer 只在 bootstrap runtime edge 组合。
+
 **配置是代码,所以"从进程变量注入某个配置值"这条路一直开着**:私有网关地址这类不便签入的值,在自己的 `niceeval.config.ts` 里写 `process.env.MY_GATEWAY` 即可(`.env` 已经加载完)。
 区别在于变量名由项目自己起、自己读,NiceEval 不内置任何配置类变量名、也不去进程变量里猜——这正是这条边界要保住的东西。
 
