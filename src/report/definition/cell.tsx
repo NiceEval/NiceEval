@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../attempt-locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { MetricValue } from "../../analysis/index.ts";
-import { formatMetricScalar, formatMetricValue, missingText, verdictMark } from "../model/format.ts";
+import { formatMetricScalar, missingText, verdictMark } from "../model/format.ts";
 import { formatCostProjectionCellText, isCostMetricValue } from "../model/pricing.ts";
 import {
   DEFAULT_REPORT_LOCALE,
@@ -29,6 +29,11 @@ export interface VerdictCounts {
  * - summary 的文本已在上游折好。
  */
 export type Cell =
+  | {
+      /** 同一格内按顺序组合多个中立 Cell；不得嵌套 stack。 */
+      readonly kind: "stack";
+      readonly cells: readonly [Cell, ...Cell[]];
+    }
   | {
       readonly kind: "metric";
       readonly metric: MetricValue;
@@ -98,6 +103,11 @@ export interface TableContent {
 export function formatCellText(cell: Cell | null | undefined, locale?: ReportLocale): string {
   if (cell == null) return "—";
   switch (cell.kind) {
+    case "stack":
+      return cell.cells
+        .map((entry) => formatCellText(entry, locale))
+        .filter((entry) => entry !== "—")
+        .join(" · ") || "—";
     case "notApplicable":
       return "—";
     case "missing": {
@@ -147,7 +157,13 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
           locale ?? DEFAULT_REPORT_LOCALE,
         );
       }
-      return formatMetricValue(cell.metric, locale ?? DEFAULT_REPORT_LOCALE);
+      const display = formatMetricScalar(
+        cell.metric.value,
+        cell.metric.unit,
+        cell.metric.format,
+        locale ?? DEFAULT_REPORT_LOCALE,
+      );
+      return `${display} · ${cell.metric.state}`;
     }
     default: {
       const _exhaustive: never = cell;
@@ -172,19 +188,23 @@ export function flattenTableContentForText(
     align: (c.better ? "right" : "left") as "left" | "right",
   }));
   const rows: Array<{ key: string; cells: Record<string, string | null>; variant?: string; depth: number }> = [];
-  const walk = (row: TableContentRow, depth: number): void => {
+  const walk = (row: TableContentRow, depth: number, ancestorLast: readonly boolean[], isLast: boolean): void => {
     const cells: Record<string, string | null> = {};
     for (const col of content.columns) {
       const cell = row.cells[col.key];
       let text = formatCellText(cell, locale);
       if (depth > 0 && col === content.columns[0] && text !== "—") {
-        text = `${"  ".repeat(depth)}${text}`;
+        const rails = ancestorLast.map((last) => last ? "   " : "│  ").join("");
+        text = `${rails}${isLast ? "└─ " : "├─ "}${text}`;
       }
       cells[col.key] = text;
     }
     rows.push({ key: row.key, cells, variant: row.variant, depth });
-    for (const child of row.subRows ?? []) walk(child, depth + 1);
+    const children = row.subRows ?? [];
+    const childAncestors = depth === 0 ? ancestorLast : [...ancestorLast, isLast];
+    children.forEach((child, index) =>
+      walk(child, depth + 1, childAncestors, index === children.length - 1));
   };
-  for (const row of content.rows) walk(row, 0);
+  content.rows.forEach((row, index) => walk(row, 0, [], index === content.rows.length - 1));
   return { columns, rows };
 }

@@ -29,8 +29,10 @@ NiceEval JSX runtime、generic semantic author model、Record capability 或 Hos
 `niceeval/report/jsx-dev-runtime` 没有 package export。`ReportElement`、`ReportNode`、`ClosedReportNode` 与通用 semantic tree
 也没有作者导出。
 
-`Cell` 与 `VerdictCounts` 的唯一声明 owner 是 `definition/cell.tsx`。root `niceeval/report` 以 type-only export 提供它们；
-`metric` Cell 默认显示完整的 `MetricValue`。只有相邻的命名区域已经显示同一份结果完整度时，才可设 `showCoverage: false` 让该格只显示业务值；
+`Cell` 与 `VerdictCounts` 的唯一声明 owner 是 `definition/cell.tsx`。root `niceeval/report` 以 type-only export 提供它们。
+`metric` Cell 默认显示完整的 `MetricValue`。只有相邻的命名区域已经显示同一份结果完整度时，才可设 `showCoverage: false` 让该格只显示业务值。
+
+`stack` Cell 按顺序把多个非嵌套 Cell 合成一个显示格，并以首项作为排序值。它只表达紧凑组合，不解释其中的领域含义。
 这不会删除 `metric` 自身的 state、samples、total、issues 或 refs。
 `niceeval/report/react` 只 re-export 同一对类型，既不声明第二份类型，也不做转换。
 

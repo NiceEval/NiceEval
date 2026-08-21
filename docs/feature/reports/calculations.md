@@ -80,7 +80,12 @@ total:   100
 state:   partial
 ```
 
-页面可以显示 `80% · 20 / 100 · partial`。它不能因为只画出 20 行有值数据，就把读数写成 `20 / 20`。
+页面可以在摘要旁显示 `80% · 20 / 100 · partial`。它不能因为只画出 20 行有值数据，就把读数写成 `20 / 20`。
+
+终端 Table 对完整读数只显示业务值。`state: available` 且 `samples === total` 时，`80%` 已足以表达这格的正常结果，
+不在每格重复 `100 / 100 · available`。`partial`、`empty`、`migration-required`、`unsupported`、`unavailable` 与
+`failed` 仍显示状态。终端 Table 的紧凑单元格写成 `80% · partial`；相邻 Result 摘要负责解释结果构成，详情与机器输出仍保留
+`samples`、`total` 和 `basis`。这项压缩只改变 text 投影，不删除或重算底层 `MetricValue`。
 
 自定义 Report 可以按上面的紧凑形态把完整度放在读数旁边。内建 Overview 把两者分开：指标单元格只显示业务值，缺少结果时另用一个
 有标题的 `Result coverage` Section 显示可用结果数与预期结果数。这个 Section 只改变信息层级，不删除或重算底层 `MetricValue`。
@@ -90,7 +95,9 @@ state:   partial
 | `available` | number | 全部预期成员按度量规则贡献。 |
 | `partial` | number 或 null | 部分成员贡献，issues 说明缺口。 |
 | `empty` | null | 输入完整，领域结果合法为空。 |
+| `migration-required` | null | Record family 需要迁移后才能读取。 |
 | `unsupported` | null | Host 缺少所需 Analysis 输入。 |
+| `unavailable` | null | 输入存在，但该度量无法形成可报告值。 |
 | `failed` | null | 读取或归并失败，issues 保留身份与 refs。 |
 
 `available` 与 `partial` 都可以有 `value: 0`。排序、截断与筛选只能组织显示；每个保留的 `MetricValue` 仍保持原来的

@@ -928,6 +928,14 @@ function renderCellWeb(
 ): ReactNode {
   if (!cell) return <span className="niceeval-missing">{MISSING_MARK}</span>;
   switch (cell.kind) {
+    case "stack":
+      return (
+        <span className="niceeval-cell-stack">
+          {cell.cells.map((entry, index) => (
+            <span className="niceeval-cell-stack-item" key={index}>{renderCellWeb(entry, ctx)}</span>
+          ))}
+        </span>
+      );
     case "notApplicable":
       return <span className="niceeval-missing">{MISSING_MARK}</span>;
     case "missing": {
@@ -1015,6 +1023,7 @@ function renderCellWeb(
 
 function cellSortValue(cell: Cell | undefined): string | number {
   if (!cell) return "";
+  if (cell.kind === "stack") return cellSortValue(cell.cells[0]);
   if (cell.kind === "metric") return cell.metric.value ?? "";
   if (cell.kind === "score") return cell.earned;
   if (cell.kind === "text") return cell.text;
@@ -1175,7 +1184,16 @@ const TableImplementation = defineComponent<TableImplementationProps>({
     const { columns, content } = tableContentOf(props, locale);
     const flat = flattenTableContentForText(content, locale);
     return renderTableText(
-      { columns, rows: flat.rows.map((row) => ({ key: row.key, cells: row.cells, depth: row.depth })), locale },
+      {
+        columns,
+        rows: flat.rows.map((row) => ({
+          key: row.key,
+          cells: row.cells,
+          depth: row.depth,
+          ruleBefore: row.variant === "group",
+        })),
+        locale,
+      },
       ctx,
     );
   },

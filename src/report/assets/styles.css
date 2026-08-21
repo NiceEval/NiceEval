@@ -331,6 +331,17 @@ table.niceeval-report,
   color: var(--muted);
   font-size: 12px;
 }
+.niceeval-report .niceeval-cell-stack {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.niceeval-report .niceeval-cell-stack-item + .niceeval-cell-stack-item::before {
+  content: "·";
+  margin-right: 10px;
+  color: var(--soft);
+}
 
 /* ---- MetricValue:缺数据 / 覆盖率角标 / 证据链接 ---- */
 .niceeval-report .niceeval-value { white-space: nowrap; }

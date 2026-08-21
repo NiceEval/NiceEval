@@ -187,13 +187,7 @@ export const publishedAnalysisInputBindings = Object.freeze({
       readonly payload: RecordAttachmentPayloadSnapshot<AssertionsAttachment>;
     }): InputProjection<boolean> => {
       const verdict = foldRecordedAttemptVerdict({ outcome: core.outcome, assertions: payload });
-      if (verdict === "passed" || verdict === "failed") {
-        return Object.freeze({ state: "value" as const, value: verdict === "passed" });
-      }
-      return Object.freeze({
-        state: "unsupported" as const,
-        message: `Attempt verdict ${verdict} has no pass/fail reading`,
-      });
+      return Object.freeze({ state: "value" as const, value: verdict === "passed" });
     },
   }),
   attemptLatencyMs: Object.freeze({

@@ -11,7 +11,6 @@ import type {
 import { localizedMessage } from "../../model/locale.ts";
 import type { Verdict } from "../../../shared/types.ts";
 import type { MetricValue } from "../../../analysis/index.ts";
-import { experimentListEvaluationKindComposition } from "../../model/format.ts";
 import {
   experimentEvalLayout,
   relativeEvalLabel,
@@ -57,7 +56,21 @@ function projectCells(bag: CellBag, columns: readonly ColumnSpec[]): globalThis.
 }
 
 function measureCell(value: MetricValue): Cell {
-  return { kind: "metric", metric: value };
+  return {
+    kind: "metric",
+    metric: value,
+    // A complete denominator adds no actionable information to every text
+    // cell. Keep partial and exceptional states explicit; the MetricValue
+    // itself remains intact for both renderers and machine output.
+    showCoverage: value.state !== "available",
+  };
+}
+
+function stackCell(...cells: readonly Cell[]): Cell {
+  const visible = cells.filter((cell) => cell.kind !== "notApplicable");
+  if (visible.length === 0) return { kind: "notApplicable" };
+  if (visible.length === 1) return visible[0]!;
+  return { kind: "stack", cells: visible as [Cell, ...Cell[]] };
 }
 
 /** 一组判定 → 计票。experiment / 组行数题、Eval 行数 attempt,同一形态同一构造。 */
@@ -77,6 +90,11 @@ function tallyVerdicts(attempts: readonly AttemptListItem[]): {
 
 function verdictCountsCell(attempts: readonly AttemptListItem[]): Cell {
   return { kind: "verdict", counts: tallyVerdicts(attempts) };
+}
+
+function evalVerdictCell(attempts: readonly AttemptListItem[]): Cell {
+  const only = attempts.length === 1 ? attempts[0]?.verdict : null;
+  return only === null || only === undefined ? verdictCountsCell(attempts) : verdictCell(only);
 }
 
 function verdictCell(verdict: Verdict | null): Cell {
@@ -104,7 +122,7 @@ function resultCell(attempt: AttemptListItem): Cell {
 }
 
 /**
- * attempt 行的格子原料。层级表取 entity / record / durationMs / costUSD,
+ * attempt 行的格子原料。层级表取 entity / record / durationMs / tokens / costUSD,
  * 平铺表取 entity / verdict / result / durationMs / costUSD;
  * 两张表各自裁自这一份,不各写一份构造。
  */
@@ -113,9 +131,9 @@ function attemptCells(attempt: AttemptListItem): CellBag {
     entity: locatorCell(attempt),
     verdict: verdictCell(attempt.verdict),
     result: resultCell(attempt),
-    // 层级表的判定构成列:该次判定,与 verdict 格同值。
-    record: verdictCell(attempt.verdict),
+    // locator 已携带这次判定；层级 Result 不重复同一个状态。
     durationMs: measureCell(attempt.durationMs),
+    tokens: measureCell(attempt.tokens),
     ...(attempt.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: attempt.totalScore } as const }),
     ...(attempt.costUSD === undefined ? {} : { costUSD: measureCell(attempt.costUSD) }),
   };
@@ -130,17 +148,11 @@ const HIERARCHY_COLUMNS_PREFIX: readonly ColumnSpec[] = [
 
 const HIERARCHY_COLUMNS_SUFFIX: readonly ColumnSpec[] = [
   { key: "tokens", better: "lower", header: HEADER.tokens },
-  { key: "record", header: HEADER.record },
+  { key: "summary", better: "higher", header: HEADER.result },
 ];
 
-function hierarchyColumns(items: readonly ExperimentListItem[]): readonly ColumnSpec[] {
-  const composition = experimentListEvaluationKindComposition(
-    items.map((item) => ({ evaluationKind: item.evaluationKind, attempts: item.evalRows.length })),
-  );
-  const primary: ColumnSpec[] = [];
-  if (composition !== "points") primary.push({ key: "passRate", better: "higher", header: HEADER.passRate });
-  if (composition !== "pass") primary.push({ key: "totalScore", better: "higher", header: HEADER.totalScore });
-  return [...HIERARCHY_COLUMNS_PREFIX, ...primary, ...HIERARCHY_COLUMNS_SUFFIX];
+function hierarchyColumns(): readonly ColumnSpec[] {
+  return [...HIERARCHY_COLUMNS_PREFIX, ...HIERARCHY_COLUMNS_SUFFIX];
 }
 
 const COST_COLUMN: ColumnSpec = { key: "costUSD", better: "lower", header: HEADER.costUSD };
@@ -155,9 +167,9 @@ const FLAT_ENTITY_COLUMNS: readonly ColumnSpec[] = [
 
 function columnsWithCost(columns: readonly ColumnSpec[], includeCost: boolean): readonly ColumnSpec[] {
   if (!includeCost) return columns;
-  const recordIndex = columns.findIndex((column) => column.key === "record");
-  if (recordIndex < 0) return [...columns, COST_COLUMN];
-  return [...columns.slice(0, recordIndex), COST_COLUMN, ...columns.slice(recordIndex)];
+  const resultIndex = columns.findIndex((column) => column.key === "summary");
+  if (resultIndex < 0) return [...columns, COST_COLUMN];
+  return [...columns.slice(0, resultIndex), COST_COLUMN, ...columns.slice(resultIndex)];
 }
 
 /** 层级实体的计数属于身份说明,必须留在同一个首格而不是渲染成续行。 */
@@ -188,7 +200,7 @@ function placeholderRow(
 ): TableContentRow {
   const bag: CellBag = {
     entity: textCell(label),
-    record: {
+    summary: {
       kind: "missing",
       code: NO_CURRENT_RESULT,
       detail: `niceeval exp ${experimentId}`,
@@ -221,11 +233,17 @@ function evalRow(
 ): TableContentRow {
   const bag: CellBag = {
     entity: textCell(label),
-    // 判定构成列:该题 attempts 的计票,与 experiment 行计票同一形态。
-    record: verdictCountsCell(row.attempts),
     durationMs: measureCell(row.durationMs),
-    ...(row.evaluationKind === "pass" ? { passRate: measureCell(row.endToEndPassRate) } : {}),
-    ...(row.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: row.totalScore } as const }),
+    summary: row.evaluationKind === "pass"
+      ? (row.attempts.length === 1
+          ? evalVerdictCell(row.attempts)
+          : stackCell(measureCell(row.endToEndPassRate), verdictCountsCell(row.attempts)))
+      : stackCell(
+          row.totalScore === undefined
+            ? { kind: "notApplicable" }
+            : { kind: "score", earned: row.totalScore },
+          evalVerdictCell(row.attempts),
+        ),
     ...(row.costUSD === undefined ? {} : { costUSD: measureCell(row.costUSD) }),
   };
   return {
@@ -279,26 +297,21 @@ function groupTableRow(
   const evals = evalRows.length;
   const metrics = item.groupMetrics.get(node.prefix);
   const attempts = attemptsUnder(node, item.evalRows);
+  const verdicts = evals === 0
+    ? { kind: "missing", code: GROUP_NO_SAMPLES } as const
+    : verdictCountsCell(attempts);
+  const primary = evalRows.every((row) => row.evaluationKind === "pass")
+    ? groupMetricValue(metrics, "passRate")
+    : evalRows.some((row) => row.totalScore !== undefined)
+    ? { kind: "score", earned: evalRows.reduce((sum, row) => sum + (row.totalScore ?? 0), 0) } as const
+    : { kind: "notApplicable" } as const;
 
   const bag: CellBag = {
     entity: identityCell(node.segment, groupEntityDetail(evals, knownEvals)),
     durationMs: groupMetricValue(metrics, "durationMs"),
-    ...(evalRows.every((row) => row.evaluationKind === "pass")
-      ? { passRate: groupMetricValue(metrics, "passRate") }
-      : {}),
-    ...(evalRows.some((row) => row.totalScore !== undefined)
-      ? {
-          totalScore: {
-            kind: "score",
-            earned: evalRows.reduce((sum, row) => sum + (row.totalScore ?? 0), 0),
-          } as const,
-        }
-      : {}),
     tokens: groupMetricValue(metrics, "tokens"),
     ...(metrics?.costUSD === undefined ? {} : { costUSD: measureCell(metrics.costUSD) }),
-    record: evals === 0
-      ? { kind: "missing", code: GROUP_NO_SAMPLES }
-      : verdictCountsCell(attempts),
+    summary: stackCell(primary, verdicts),
   };
   return {
     key: `group:${node.prefix}`,
@@ -336,16 +349,19 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
   const evalIds = new Set(item.evalRows.map((row) => row.evalId));
   const members: readonly EvalLayoutNode[] = experimentEvalLayout([...new Set([...evalIds, ...item.missingEvalIds])]);
   const attempts = item.evalRows.flatMap((row) => row.attempts);
+  const primary = item.evaluationKind === "pass"
+    ? measureCell(item.endToEndPassRate)
+    : item.totalScore === undefined
+    ? { kind: "notApplicable" } as const
+    : { kind: "score", earned: item.totalScore } as const;
   const bag: CellBag = {
     entity: textCell(item.experimentId),
     model: item.model === null ? { kind: "notApplicable" } : textCell(item.model),
     agent: item.agent === null ? { kind: "notApplicable" } : textCell(item.agent),
     durationMs: measureCell(item.durationMs),
-    ...(item.evaluationKind === "pass" ? { passRate: measureCell(item.endToEndPassRate) } : {}),
-    ...(item.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: item.totalScore } as const }),
     tokens: measureCell(item.tokens),
     ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD) }),
-    record: verdictCountsCell(attempts),
+    summary: stackCell(primary, verdictCountsCell(attempts)),
   };
   return {
     key: item.experimentId,
@@ -355,7 +371,7 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
 }
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {
-  const columns = columnsWithCost(hierarchyColumns(items), items.some((item) => item.costUSD !== undefined));
+  const columns = columnsWithCost(hierarchyColumns(), items.some((item) => item.costUSD !== undefined));
   return {
     columns,
     rows: items.map((item) =>

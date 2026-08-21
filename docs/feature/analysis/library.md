@@ -49,6 +49,9 @@ declare const attemptLatencyMs: AnalysisInput<LogicalSlot, number>;
 declare const attemptToolFailure: AnalysisInput<LogicalSlot, boolean>;
 ```
 
+`attemptPassed` 把 `passed` 投影为 `true`，把 `failed`、`errored` 与 `skipped` 投影为 `false`。这些都是已有 verdict 事实，
+因此都进入通过率分母；只有没有可读 Record 输入的成员才形成 missing contribution，并使读数成为 `partial`。
+
 `AnalysisInput.id` 只标识投影语义。它既不是 Record property token id，也不是 TS field 或 durableKey。
 例如 `attemptLatencyMs` 可以有 `niceeval.analysis.attempt-latency-ms` 这个 input id，同时读取
 `niceeval.observability` 中的多个固定 property。把任何 JSON key 或内部 property token 当成 input id

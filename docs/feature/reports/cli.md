@@ -62,7 +62,14 @@ key 完全相同。`show` 不调用 `enumerate()`，却要求 `PageLoadContext` 
 `Section` 显示区域框，`Grid` 与 `Table` 显示数据格线；非 TTY 或过窄终端选择 plain projection，组件、数据状态与顺序不变。
 `NO_COLOR` 只禁用颜色，不删除表达组件边界的结构框。`show --json` 的 `renderedText` 始终读取固定 80 列 plain projection，不继承 TTY。
 
-`standard` 只遇到一个实验组时，Overview 直接呈现该组的比较结果。遇到多个组时，`show` 默认输出实验索引和可复制的 `niceeval show --experiment <selector>` 命令，不生成跨组 leaderboard，也不引入另一套实验组 CLI 参数。具名组 Page 在唯一 `ExperimentComparisonScope` 内使用 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。Pass Eval 显示通过率，Score Eval 只显示 earned score，不声明满分或百分比；两种题型分面板呈现，不互排。
+`standard` 只遇到一个实验组时，Overview 直接呈现该组的比较结果。遇到多个组时，`show` 默认输出实验索引和可复制的 `niceeval show --experiment <selector>` 命令，不生成跨组 leaderboard，也不引入另一套实验组 CLI 参数。具名组 Page 在唯一 `ExperimentComparisonScope` 内使用 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。Result 是唯一主结果列：Pass Eval 把通过率与判定摘要放在同一格，Score Eval 把 earned score 与判定摘要放在同一格；两种题型分面板呈现，不互排。
+
+Pass Eval 只有一个 Attempt 时，Eval 行不重复显示必为 `0%` 或 `100%` 的通过率，Result 直接显示 `passed`、`failed` 或
+`errored` 判定。相同 Eval 有多个 Attempt 时，Eval 行显示聚合通过率与判定计票。Experiment 与 Eval group 行始终保留汇总通过率。
+Attempt 行的 locator 已携带判定符，Result 不重复同一个状态。
+
+层级表由中立 Table 从任意深度的 `subRows` 生成树形连接线；完整横线只标出具名 group 边界。renderer 不识别 Experiment、Eval
+或 Attempt，也不按固定三层结构分支。
 
 每个 Experiment 可逐层展开到 Eval 与 Attempt，Attempt locator 链接到同一份 `standard` 显式声明的详情 Page。Analysis 的 `MetricValue` 仍完整保留 state、samples、total、issues 与 refs。
 
