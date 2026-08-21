@@ -42,7 +42,7 @@ Example build steps for GitHub Actions:
 
 Before export, NiceEval validates every explicitly declared regular Page, parameterized Page instance, link, asset, download, `_niceeval/data/projections.json`, and budget in `pages`; the Host does not invent detail routes. A successful directory contains HTML, Report CSS, the reload client, author assets, downloads, and projections. The projection bytes are part of revision identity; the client quietly disables reload when a static directory has no reload endpoint.
 
-Before deploying, disconnect the network and disable JavaScript, then open the home page and at least one parameterized detail page. The body, navigation, completeness, problems, and downloads must still be readable. When local `view` uses the same selection and Report, the HTTP body for a route and its directory-page body must be byte-for-byte identical.
+Before deploying, disconnect the network while keeping bundled JavaScript enabled, then open the home page and at least one parameterized detail page. The body, navigation, completeness, problems, and downloads must remain readable. Disable JavaScript separately and confirm the explicit enable-JavaScript error. When local `view` uses the same selection and Report, the HTTP body for a route and its directory-page body must be byte-for-byte identical.
 
 `--out` must point to a directory that does not exist. To update content, select a new Sample, export to a new directory, then switch the hosted release version. Do not overwrite the old directory.
 

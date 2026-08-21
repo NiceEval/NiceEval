@@ -68,7 +68,7 @@ function isRuntimeSource(file) {
 }
 
 function isExcludedSource(relativePath) {
-  return relativePath === "view/app" || relativePath.startsWith("view/app/");
+  return relativePath === "report/client" || relativePath.startsWith("report/client/");
 }
 
 function isRuntimeAsset(relativePath) {

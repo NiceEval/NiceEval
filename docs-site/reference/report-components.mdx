@@ -106,17 +106,17 @@ An ordinary Page's `render` can receive the fixed Sample directly, or first clos
 
 `show --json` always outputs English JSON. The built-in Report outputs Host-owned named domain documents; a custom Report outputs one Page's route, title, 80-column rendered text, download summary, and problem table. Both v1 JSON forms carry the closed cost data for that target Page in the same top-level `projections` object. They do not contain the author tree, HTML, whole-site routes, or site identity.
 
-View and static export use the same complete site version. The HTTP body for a route and the page body in the export directory are byte-for-byte identical. Both include the same reload client; when a static directory cannot find the view endpoint, it quietly disables itself. With JavaScript disabled or the network disconnected, body content, navigation, details, coverage, problems, and downloads remain readable.
+View and static export use the same complete site version. The HTTP body for a route and the page body in the export directory are byte-for-byte identical. Both include the same Host runtime; when a static directory cannot find the view endpoint, live reload quietly disables itself. The directory needs no network, source Record, or NiceEval installation, but the browser must enable its bundled JavaScript. With JavaScript disabled, the page shows an actionable error instead of maintaining a second reading path.
 
 ## Style and resource boundaries
 
 Report CSS is the only owner of product styling. It handles reset, base typography, theme tokens, and component styling. The View shell only handles browser language switching, reload state, and Host notices; it does not redraw Report content.
 
-A Report can declare structured `meta`, `link`, `style`, and `script` in `head`, and can choose a theme. Scripts may provide progressive enhancement only; they cannot be the sole entry point for body content, navigation, Evidence, or machine documents. Custom styling cannot create a second reset, theme, or View shell.
+A Report can declare structured `meta`, `link`, `style`, and `script` in `head`, and can choose a theme. The Host runtime owns report reading and navigation. Author scripts may enhance author content, but cannot replace closed body content, Evidence, or machine documents. Custom styling cannot create a second reset, theme, or View shell.
 
 ## Related pages
 
 - [Results Data API](/reference/results-data): Select Analysis input and read closed values.
 - [Write a custom Report](/tutorials/custom-reports): From measurement definitions to a runnable Report.
 - [Viewing results](/tutorials/viewing-results): Select scope, use single-target `show`, and use whole-site `view`.
-- [Publish a static Report](/tutorials/publish-report): Export a complete offline-readable site.
+- [Publish a static Report](/tutorials/publish-report): Export a self-contained site with bundled JavaScript.

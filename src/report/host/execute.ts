@@ -55,7 +55,6 @@ import type { ReportProblem } from "../execution/machine.ts";
 import {
   routeWithParameterKey,
   staticPathForDownload,
-  staticPathForRoute,
   validateDownloadPath,
   validateParameterKey,
   validateReportRoute,
@@ -128,10 +127,7 @@ export interface ClosedTargetExecution {
 export interface ClosedSitePage {
   readonly page: ResolvedPage;
   readonly navigation: boolean;
-  readonly role?: {
-    readonly kind: "experiment-group";
-    readonly groupKind: "named" | "singleton";
-  };
+  readonly presentation: "page" | "overlay";
 }
 
 /** Host-private complete page closure used only while forming a revision. */
@@ -236,7 +232,7 @@ export function executeReportSite(input: {
               capturePage: (capture) =>
                 capturedProjectionCosts(capture, definition.path, definition.id),
             });
-            yield* addSitePage(pages, routeOwners, page, definition.navigation);
+            yield* addSitePage(pages, routeOwners, page, definition.navigation, "page");
             yield* registerProjectionCosts(pricingProfile, projectionCosts, pageCosts);
             siteProblems.push(...analysisProblems(issues, page.target.pageId));
             continue;
@@ -291,7 +287,7 @@ export function executeReportSite(input: {
               },
               capturePage: (capture) => capturedProjectionCosts(capture, route, definition.id),
             });
-            yield* addSitePage(pages, routeOwners, page, false, definition.role);
+            yield* addSitePage(pages, routeOwners, page, false, definition.presentation);
             yield* registerProjectionCosts(pricingProfile, projectionCosts, pageCosts);
             siteProblems.push(...analysisProblems(issues, page.target.pageId));
             yield* checkBuildBudgets(input.budget);
@@ -561,7 +557,7 @@ function addSitePage(
   routeOwners: Map<string, string>,
   page: ResolvedPage,
   navigation: boolean,
-  role?: ClosedSitePage["role"],
+  presentation: "page" | "overlay",
 ): Effect.Effect<void, ReportSiteRouteConflict | ReportBuildBudgetExceeded> {
   const owner = routeOwners.get(page.target.route);
   if (owner !== undefined) {
@@ -575,7 +571,7 @@ function addSitePage(
     return Effect.fail(reportBuildBudgetExceeded("pages", REPORT_PAGES_MAX, pages.length + 1));
   }
   routeOwners.set(page.target.route, page.target.pageId);
-  pages.push(Object.freeze({ page, navigation, ...(role === undefined ? {} : { role }) }));
+  pages.push(Object.freeze({ page, navigation, presentation }));
   return Effect.void;
 }
 
@@ -668,35 +664,23 @@ function routeForTarget(pages: readonly ReportPageDefinition[], target: ReportTa
 
 function hrefForTarget(
   pages: readonly ReportPageDefinition[],
-  sourceRoute: string,
+  _sourceRoute: string,
   target: ReportTarget,
 ): string | undefined {
-  const source = staticPathForRoute(sourceRoute).posix;
   if (target.page === DOWNLOAD_TARGET_PAGE) {
     const path = isJsonRecord(target.params) ? target.params.path : undefined;
     if (typeof path !== "string" || validateDownloadPath(path) !== undefined) return undefined;
-    return relativeHref(source, staticPathForDownload(path).posix);
+    return staticPathForDownload(path).posix;
   }
   const route = routeForTarget(pages, target);
-  return route === undefined ? undefined : relativeHref(source, staticPathForRoute(route).posix);
+  if (route === undefined) return undefined;
+  const page = pages.find((candidate) => candidate.id === target.page);
+  if (page === undefined) return undefined;
+  return `#${route}`;
 }
 
 function isJsonRecord(value: JsonValue | undefined): value is Readonly<Record<string, JsonValue>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function relativeHref(sourceFile: string, targetFile: string): string {
-  const sourceSegments = sourceFile.split("/");
-  sourceSegments.pop();
-  const targetSegments = targetFile.split("/");
-  let common = 0;
-  while (common < sourceSegments.length && common < targetSegments.length &&
-    sourceSegments[common] === targetSegments[common]) common += 1;
-  const relative = [
-    ...sourceSegments.slice(common).map(() => ".."),
-    ...targetSegments.slice(common),
-  ].join("/");
-  return relative || "./";
 }
 
 function commandForTarget(pages: readonly ReportPageDefinition[], target: ReportTarget): string | undefined {
@@ -739,6 +723,7 @@ export function reportDefinitionIdentity(report: ReportDefinition): string {
       path: page.path,
       title: page.title,
       navigation: page.navigation,
+      presentation: page.presentation,
       parameterized: page.params !== undefined,
       load: page.load?.toString() ?? null,
       render: page.render.toString(),

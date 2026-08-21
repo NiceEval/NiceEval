@@ -1,10 +1,10 @@
 // niceeval 报告的渐进增强 runtime:纯 vanilla JS、零依赖、IIFE、幂等。
 // 只作用于 .niceeval-report DOM 与 data-niceeval-* 属性;六个行为——Tabs 单选切换、表格排序、
 // 行过滤、SVG 点 tooltip、警告命令复制、源码语法着色。全部只改浏览状态,不改数据、指标口径或初始 HTML 数值。
-// 静态 HTML 无 JS 时内容完整可读是硬约束:排序有数据侧预排、tooltip 退化为原生 <title>、
-// 过滤输入框静默无功能、Tabs 退化为原生 <details> 手风琴、命令块退化为点击全选。
+// fragment 的初始 HTML 保留语义结构：排序有数据侧预排、tooltip 保留原生 <title>、
+// Tabs 以原生 <details> 表达；app 挂载 fragment 后再增强浏览状态。
 // 全部经 document 级事件委托绑定,重复注入本文件只在首次生效(window.__nreEnhanced 守卫),
-// DOM 被搬动(如 view 把 <template> 内容摆进报告槽)也无需重新绑定。
+// app 切换 fragment 并替换报告槽内容时也无需重新绑定。
 
 (function () {
   "use strict";
@@ -21,7 +21,7 @@
 
   // ───────────────────────── SourceView:客户端语法着色 ─────────────────────────
   // 静态 HTML 只保留完整、已转义的源码文本，避免全站构建为每个 token、每种 locale
-  // 预先创建 React 节点。浏览器只给当前打开的文档着色；无 JS 时源码仍完整可读。
+  // 预先创建 React 节点。浏览器只给当前打开的 fragment 着色，源码文本始终保留。
   // MutationObserver 覆盖 attempt 文档被 Host modal 插入后的同一行为。
 
   var sourceTokenPattern =
@@ -412,7 +412,7 @@
 
   // ───────────────────────── tooltip:.niceeval-chart-dot ─────────────────────────
   // 首次 hover 时把点内 <title> 的内容搬进 data-niceeval-title(避免与原生 tooltip 重影),
-  // 渲染样式化 tooltip div(定位在点上方,挂在所属 figure 里)。无 JS 时 <title> 原样生效。
+  // 渲染样式化 tooltip div（定位在点上方并挂在所属 figure 中）；增强前保留 <title>。
 
   var tooltip = null;
 

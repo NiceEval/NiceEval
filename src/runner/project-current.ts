@@ -8,7 +8,6 @@ import {
   ExecutionIdentityDigestSchema,
   ExperimentIdSchema,
 } from "../record/codec/identifiers.ts";
-import { loadConfigFile } from "../load-config.ts";
 import { discoverEvals, discoverExperiments, type DiscoveryError } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import { slotExecutionIdentityDigestHex } from "./execution-identity.ts";
@@ -24,6 +23,8 @@ import type { AgentRun, Config } from "./types.ts";
 import { matchExperimentSelector } from "../shared/aggregate.ts";
 
 export interface LoadProjectCurrentOptions {
+  /** Project-observing application hosts resolve this before entering Runner. */
+  config: Config;
   experiments?: string | readonly string[];
   evals?: readonly string[];
   freshImport?: boolean;
@@ -35,24 +36,10 @@ export interface LoadedProjectCurrent {
   currentSlots: readonly AnalysisCurrentSlotIdentity[];
 }
 
-/** Project-current config loading is the only Promise boundary in this module. */
 export class ProjectCurrentLoadError extends Data.TaggedError("ProjectCurrentLoadError")<{
   readonly stage: "config" | "selection";
   readonly message: string;
 }> {}
-
-function loadProjectConfig(
-  cwd: string,
-  options: { freshImport?: boolean },
-): Effect.Effect<Config, ProjectCurrentLoadError> {
-  return Effect.tryPromise({
-    try: () => loadConfigFile(cwd, options),
-    catch: (cause) => new ProjectCurrentLoadError({
-      stage: "config",
-      message: cause instanceof Error ? cause.message : String(cause),
-    }),
-  });
-}
 
 /**
  * Discovers and plans the current project without closing the Effect runtime.
@@ -60,7 +47,7 @@ function loadProjectConfig(
  */
 export function loadProjectCurrent(
   cwd: string,
-  options: LoadProjectCurrentOptions = {},
+  options: LoadProjectCurrentOptions,
 ): Effect.Effect<
   LoadedProjectCurrent,
   ProjectCurrentLoadError | DiscoveryError | SandboxRunPlanningError | FingerprintPlanningFailure
@@ -68,7 +55,7 @@ export function loadProjectCurrent(
   const discoveryOptions = { freshImport: options.freshImport };
   return Effect.gen(function*() {
     // namespaced fresh import 是进程级 loader 边界，按顺序装载，避免三棵图并发注册互相卡住。
-    const config = yield* loadProjectConfig(cwd, discoveryOptions);
+    const config = options.config;
     const evals = yield* discoverEvals(cwd, discoveryOptions);
     const experiments = yield* discoverExperiments(cwd, discoveryOptions);
     const selectors = options.experiments === undefined

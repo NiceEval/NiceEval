@@ -149,6 +149,9 @@ function issueSection(view: { readonly issues: readonly { readonly code: string;
 function membershipTable(rows: readonly MembershipRow[]) {
   const normalized = rows.map((row) => ({
     ...row,
+    locator: row.locator === null
+      ? null
+      : ({ kind: "locator", locator: row.locator as AttemptLocator } satisfies Cell),
     outcome: row.outcome ?? null,
     phase: row.phase ?? null,
     error: row.error ?? null,

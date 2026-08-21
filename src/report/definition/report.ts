@@ -161,6 +161,7 @@ export interface PlainPage<Input = ReportSample> {
   readonly title: LocalizedText;
   readonly navigation?: boolean;
   readonly params?: never;
+  readonly presentation?: "page";
   readonly load?: PageLoad<void, Input>;
   readonly render: PageRender<Input>;
 }
@@ -171,6 +172,8 @@ export interface ParameterizedPage<Params extends JsonValue, Input> {
   readonly path?: string;
   readonly title: LocalizedText;
   readonly navigation: false;
+  /** Whether each closed instance replaces the main Page or opens over it. */
+  readonly presentation: "page" | "overlay";
   readonly role?: {
     readonly kind: "experiment-group";
     readonly groupKind: "named" | "singleton";
@@ -193,6 +196,7 @@ interface NormalizedPlainPage<Input = unknown> {
   readonly title: LocalizedText;
   readonly navigation: boolean;
   readonly params?: never;
+  readonly presentation: "page";
   readonly load?: PageLoad<void, Input>;
   readonly render: PageRender<Input>;
 }
@@ -205,6 +209,7 @@ interface NormalizedParameterizedPage<
   readonly path: string;
   readonly title: LocalizedText;
   readonly navigation: false;
+  readonly presentation: "page" | "overlay";
   readonly role?: {
     readonly kind: "experiment-group";
     readonly groupKind: "named" | "singleton";
@@ -250,6 +255,7 @@ export interface ReportMetaPage {
   readonly id: string;
   readonly title: LocalizedText;
   readonly navigation: boolean;
+  readonly presentation: "page" | "overlay";
 }
 
 /** Closed declaration metadata available as ctx.report during one resolve. */
@@ -378,6 +384,7 @@ export function buildReportMeta(value: ReportDefinition): ReportMeta {
       id: page.id,
       title: page.title,
       navigation: page.navigation,
+      presentation: page.presentation,
     }))),
     pricing: report.pricing,
   };
@@ -531,15 +538,16 @@ function isFrozenNormalizedPage(value: unknown): value is NormalizedPage {
     return false;
   }
   if (Object.hasOwn(value, "params")) {
-    return value.navigation === false && typeof value.load === "function" &&
-      (hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "params", "load", "render"]) ||
-        hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "role", "params", "load", "render"])) &&
+    return value.navigation === false && (value.presentation === "page" || value.presentation === "overlay") &&
+      typeof value.load === "function" &&
+      (hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "presentation", "params", "load", "render"]) ||
+        hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "presentation", "role", "params", "load", "render"])) &&
       (!Object.hasOwn(value, "role") || isExperimentGroupRole(value.role)) &&
       isFrozenPageParams(value.params);
   }
-  const valid = hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "render"]) ||
-    hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "load", "render"]);
-  return valid && (!Object.hasOwn(value, "load") || typeof value.load === "function");
+  const valid = hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "presentation", "render"]) ||
+    hasExactOwnDataFields(value, ["id", "path", "title", "navigation", "presentation", "load", "render"]);
+  return valid && value.presentation === "page" && (!Object.hasOwn(value, "load") || typeof value.load === "function");
 }
 
 function isFrozenDimensionPins(value: unknown): value is DimensionPins {
@@ -642,10 +650,10 @@ function normalizePage(value: unknown, index: number): NormalizedPage {
   assertOnlyFields(
     fields,
     parameterized
-      ? ["id", "path", "title", "navigation", "role", "params", "load", "render"]
-      : ["id", "path", "title", "navigation", "load", "render"],
+      ? ["id", "path", "title", "navigation", "presentation", "role", "params", "load", "render"]
+      : ["id", "path", "title", "navigation", "presentation", "load", "render"],
     label,
-    parameterized ? ["path", "role"] : ["path", "navigation", "load"],
+    parameterized ? ["path", "role"] : ["path", "navigation", "presentation", "load"],
   );
   const id = normalizePageId(fields.get("id"), label);
   const path = fields.has("path") && fields.get("path") !== undefined
@@ -659,6 +667,10 @@ function normalizePage(value: unknown, index: number): NormalizedPage {
       throw new TypeError(`${label} declares params and must set navigation: false`);
     }
     const params = normalizePageParams(fields.get("params"), `${label}.params`);
+    const presentation = fields.get("presentation");
+    if (presentation !== "page" && presentation !== "overlay") {
+      throw new TypeError(`${label}.presentation must be \"page\" or \"overlay\"`);
+    }
     const load = requireFunction(fields.get("load"), `${label}.load`);
     const role = fields.has("role") ? normalizeExperimentGroupRole(fields.get("role"), `${label}.role`) : undefined;
     return Object.freeze({
@@ -666,6 +678,7 @@ function normalizePage(value: unknown, index: number): NormalizedPage {
       path,
       title,
       navigation: false as const,
+      presentation,
       ...(role === undefined ? {} : { role }),
       params,
       load: load as PageLoad<JsonValue, unknown>,
@@ -686,6 +699,7 @@ function normalizePage(value: unknown, index: number): NormalizedPage {
     path,
     title,
     navigation: navigation !== false,
+    presentation: "page" as const,
     ...(load === undefined ? {} : { load: load as PageLoad<void, unknown> }),
     render: render as PageRender<unknown>,
   }) as NormalizedPlainPage<unknown>;

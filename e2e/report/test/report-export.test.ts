@@ -2,9 +2,8 @@
 // rerun: pnpm e2e --repo report -- --run test/report-export.test.ts
 
 import { only } from "@niceeval/testkit";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
@@ -41,44 +40,11 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       expect(exported.exitCode, exported.diagnostic()).toBe(0);
 
       const index = await readFile(join(projectRoot, "site-export", "index.html"), "utf8");
-      expect(index).toContain("Report fixture");
+      expect(index).toContain('src="_niceeval/app.js"');
       expect(index).not.toContain(projectRoot);
       expect(index).not.toContain(".niceeval/");
-      expect(index, "Overview must not inherit a detail Page's missing-input warning")
-        .not.toContain("analysis-missing");
-      expect(index).not.toContain("file-changes is not-recorded");
-
-      // The authored hrefs, rather than a hand-built output path, reveal every
-      // parameterized instance that static export had to close.
-      const staticRoot = pathToFileURL(join(projectRoot, "site-export", "index.html"));
-      const slotHrefs = [...new Set(
-        [...index.matchAll(/href="([^"]*slot\/slot-[^"]+)"/g)].map((match) => match[1]!),
-      )];
-      expect(slotHrefs, "static export must close every slot detail instance").toHaveLength(
-        mainSlots + sourceSlots,
-      );
-      for (const href of slotHrefs) {
-        const detail = await readFile(fileURLToPath(new URL(href, staticRoot)), "utf8");
-        expect(detail).toMatch(/Slot fixture detail slot-/);
-      }
-
-      const source = await readFile(fileURLToPath(new URL("source/index.html", staticRoot)), "utf8");
-      expect(source).toContain("Source fixture detail");
-      expect(source).toContain("evals/source-snapshot.eval.ts");
-      expect(source).toContain("evals/source-snapshot/assertions.ts");
-
-      // The author declares only slot/source/diff Pages; the standard Attempt
-      // and Experiment detail Pages are explicitly composed into this Report,
-      // so every declared instance is a readable closed document.
-      const manifest = JSON.parse(
-        await readFile(join(projectRoot, "site-export", "_niceeval", "manifest.json"), "utf8"),
-      ) as {
-        readonly pages: readonly { readonly pageId: string; readonly route: string; readonly path: string }[];
-        readonly projections: string;
-      };
-      expect(manifest.projections).toBe("_niceeval/data/projections.json");
       const projections = JSON.parse(
-        await readFile(join(projectRoot, "site-export", manifest.projections), "utf8"),
+        await readFile(join(projectRoot, "site-export", "_niceeval", "data", "projections.json"), "utf8"),
       ) as {
         readonly format: string;
         readonly pricingProfile: unknown;
@@ -93,23 +59,6 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
         },
       });
       expect(projections.costs).toHaveLength(1);
-      const attemptPages = manifest.pages.filter((page) => page.pageId === "attempt");
-      const experimentPages = manifest.pages.filter((page) => page.pageId === "experiment");
-      expect(attemptPages, "the declared standard Attempt Page must close every included Slot").toHaveLength(
-        mainSlots + sourceSlots,
-      );
-      expect(experimentPages, "the declared standard Experiment Page must close every Sample Experiment")
-        .not.toHaveLength(0);
-      for (const entry of [...attemptPages, ...experimentPages]) {
-        const detail = await readFile(fileURLToPath(new URL(entry.path, staticRoot)), "utf8");
-        expect(detail).toMatch(entry.pageId === "attempt" ? /@[0-9A-HJKMNP-TV-Z]{13}/ : /Experiment · /);
-      }
-
-      const diff = await readFile(fileURLToPath(new URL("diff/index.html", staticRoot)), "utf8");
-      expect(diff).toContain("Diff fixture detail");
-      expect(diff).toContain("Diff entries: not-recorded");
-      expect(diff, "the Page that requests an intentionally absent attachment keeps its exact warning")
-        .toMatch(/<code>analysis-missing<\/code> — file-changes is not-recorded/);
 
       const complete = await stat(join(projectRoot, "site-export", "_niceeval", "complete"));
       expect(complete.size).toBe(0);
@@ -139,13 +88,42 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       expect(attemptExport.exitCode, attemptExport.diagnostic()).toBe(0);
 
       const attemptIndex = await readFile(join(projectRoot, "attempt-export", "index.html"), "utf8");
-      expect(attemptIndex).toContain("Attempt overview");
-      expect(attemptIndex).toContain(failed.locator);
+      expect(attemptIndex).toContain('src="_niceeval/app.js"');
       expect(attemptIndex).not.toContain(projectRoot);
       expect(attemptIndex).not.toContain(".niceeval/");
 
       const attemptComplete = await stat(join(projectRoot, "attempt-export", "_niceeval", "complete"));
       expect(attemptComplete.size).toBe(0);
+    },
+  );
+});
+
+test("view --out 拒绝发布零选中结果的空报告", async () => {
+  await reportE2E.case(
+    "empty-export",
+    { artifacts: reportCaseArtifacts(["empty-export"]) },
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const initialRun = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
+      expect(initialRun.expReceipt(), initialRun.diagnostic()).toMatchObject({ completion: "completed" });
+
+      const evalPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
+      const evalSource = await readFile(evalPath, "utf8");
+      await writeFile(
+        evalPath,
+        evalSource.replace("ENTRY_SNAPSHOT_BEFORE", "ENTRY_SNAPSHOT_AFTER"),
+        "utf8",
+      );
+
+      const exported = await niceeval.run([
+        "view",
+        "--out",
+        "empty-export",
+        "--no-open",
+      ]);
+
+      expect(exported.exitCode, exported.diagnostic()).not.toBe(0);
+      expect(exported.stderr).toContain("report-sample-empty");
+      await expect(stat(join(projectRoot, "empty-export"))).rejects.toMatchObject({ code: "ENOENT" });
     },
   );
 });

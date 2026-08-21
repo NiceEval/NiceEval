@@ -10,10 +10,10 @@ import {
   REPORT_DIFF_ASSET_BYTES_MAX,
   REPORT_DOWNLOAD_FILE_BYTES_MAX,
   REPORT_DOWNLOAD_FILES_MAX,
-  REPORT_PAGE_HTML_BYTES_MAX,
+  REPORT_FRAGMENT_BYTES_MAX,
   REPORT_SOURCE_ASSET_BYTES_MAX,
   REPORT_SOURCE_DIFF_ASSET_BYTES_MAX,
-  REPORT_SITE_HTML_BYTES_MAX,
+  REPORT_SHELL_FRAGMENT_BYTES_MAX,
   REPORT_STATIC_ASSET_BYTES_MAX,
   closedSiteRevisionData,
   compareUtf8,
@@ -27,7 +27,6 @@ import {
   hostStaticPath,
   staticPathConflicts,
   staticPathForDownload,
-  staticPathForRoute,
   validateDownloadPath,
   validateReportRoute,
   type ReportStaticPath,
@@ -43,10 +42,8 @@ import {
 } from "../theme.ts";
 import type { ClosedReportSite, ClosedSitePage } from "./execute.ts";
 import {
-  REPORT_REFRESH_RUNTIME_PATH,
   REPORT_STYLESHEET_PATH,
 } from "./site-assets.ts";
-import { reportSiteRuntime } from "./site-runtime.ts";
 
 export interface ReportHostOutputPath {
   readonly value: string;
@@ -97,242 +94,18 @@ export type ReportExportError = ReportFileSystemFailure | ReportSiteBuildFailure
 /** The one Host-owned static resource path for a closed Theme stylesheet. */
 export const REPORT_THEME_STYLESHEET_PATH = "_niceeval/theme.css";
 /** The Host-owned renderer identity carried by every static revision. */
-export const REPORT_STATIC_RENDERER = "niceeval.report-ssg/v1" as const;
+export const REPORT_APP_RENDERER = "niceeval.report-spa/v1" as const;
 const MANIFEST_PATH = "_niceeval/manifest.json";
 const PROBLEMS_PATH = "_niceeval/problems.json";
 const PROJECTIONS_PATH = "_niceeval/data/projections.json";
+const REPORT_APP_PATH = "_niceeval/app.js";
+const REPORT_FRAGMENT_ROOT = "_niceeval/fragments";
 const COMPLETE_PATH = "_niceeval/complete";
-const NICEEVAL_BRAND_HREF = "https://niceeval.com/?utm_source=report&utm_medium=brand";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 const PRODUCT_STYLESHEET = readFileSync(new URL("../assets/styles.css", import.meta.url), "utf8");
-const PRODUCT_ENHANCER = readFileSync(new URL("../assets/enhance.js", import.meta.url), "utf8");
-
-/**
- * Host-owned parameterized-Page dialog for the shared view/static runtime.
- * A click on a same-site `<pageId>/<key>/index.html` href writes the legacy
- * hash deep link and opens a native `<dialog>` filled with that standalone
- * detail document's own slot bytes. No-JS and direct hrefs keep reading the
- * same document. The route list comes from the revision's closed pages, not
- * from any author declaration. The report content inside the dialog is styled
- * by the existing product stylesheet; only the dialog chrome is styled here.
- */
-const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
-  "use strict";
-  if (typeof window === "undefined" || typeof HTMLDialogElement !== "function") return;
-  if (location.protocol !== "http:" && location.protocol !== "https:") return;
-  const routes = (document.documentElement.getAttribute("data-niceeval-param-routes") || "")
-    .split(" ")
-    .filter((value) => value.length > 0);
-  if (routes.length === 0) return;
-  const siteRoot = document.documentElement.getAttribute("data-niceeval-site-root") || "index.html";
-
-  function closest(target, selector) {
-    return target && target.closest ? target.closest(selector) : null;
-  }
-
-  function escapeRegExp(value) {
-    const special = ".+*?^$()[]{}|";
-    let escaped = "";
-    for (const character of value) {
-      if (special.includes(character) || character.charCodeAt(0) === 92) {
-        escaped += String.fromCharCode(92);
-      }
-      escaped += character;
-    }
-    return escaped;
-  }
-
-  function matchTarget(url) {
-    if (url.origin !== location.origin) return null;
-    for (const prefix of routes) {
-      const root = new URL(siteRoot, document.baseURI);
-      const pattern = new RegExp("^" + escapeRegExp(new URL(prefix + "/", root).pathname) + "([^/]+)/index\\\\.html$");
-      const match = pattern.exec(url.pathname);
-      if (!match) continue;
-      let key;
-      try {
-        key = decodeURIComponent(match[1]);
-      } catch {
-        return null;
-      }
-      if (!key || key.includes("/")) return null;
-      return { prefix, key, url };
-    }
-    return null;
-  }
-
-  function targetFromHash() {
-    const match = location.hash.startsWith("#/") ? location.hash.slice(2).split("/") : [];
-    if (match.length !== 2 || !routes.includes(match[0]) || !match[1]) return null;
-    const root = new URL(siteRoot, document.baseURI);
-    return {
-      prefix: match[0],
-      key: match[1],
-      url: new URL(match[0] + "/" + encodeURIComponent(match[1]) + "/index.html", root),
-    };
-  }
-
-  function hashForTarget(target) {
-    return "#/" + target.prefix + "/" + target.key;
-  }
-
-  function currentLocale() {
-    return document.documentElement.lang === "zh-CN" ? "zh-CN" : "en";
-  }
-
-  function rebaseSlotUrls(slot, responseUrl) {
-    for (const element of slot.querySelectorAll("[href], [src]")) {
-      for (const attribute of ["href", "src"]) {
-        const value = element.getAttribute(attribute);
-        if (value === null) continue;
-        // Fragment and non-document schemes retain their literal browser
-        // meaning. Every other relative reference must keep the fetched
-        // detail document as its base after this slot moves into the root
-        // page's dialog.
-        if (value.startsWith("#") || /^(?:data:|mailto:|tel:)/i.test(value)) continue;
-        try {
-          element.setAttribute(attribute, new URL(value, responseUrl).href);
-        } catch {
-          // Leave malformed author data untouched; the standalone document
-          // would have the same browser-level handling.
-        }
-      }
-    }
-  }
-
-  function extractDocument(html, locale, responseUrl) {
-    const parsed = new DOMParser().parseFromString(html, "text/html");
-    const slot = parsed.querySelector('.niceeval-view-report-slot[data-niceeval-locale="' + locale + '"]');
-    if (!slot) return null;
-    rebaseSlotUrls(slot, responseUrl);
-    return { title: parsed.title, content: slot.innerHTML };
-  }
-
-  let dialog = null;
-  let ownsHistory = false;
-  let requestRevision = 0;
-  let requestedTarget = null;
-
-  function ensureDialog() {
-    if (dialog !== null) return;
-    dialog = document.createElement("dialog");
-    dialog.className = "niceeval-view-dialog";
-    const head = document.createElement("div");
-    head.className = "niceeval-view-dialog-head";
-    const title = document.createElement("span");
-    title.className = "niceeval-view-dialog-title";
-    title.id = "niceeval-view-dialog-title";
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "niceeval-view-dialog-close";
-    close.setAttribute("aria-label", "Close");
-    // Keep the static host visually identical to the legacy React/Radix
-    // dialog. The old DialogClose renders a literal x, rather than the
-    // typographic multiplication sign.
-    close.textContent = "x";
-    close.addEventListener("click", closeFromUi);
-    head.appendChild(title);
-    head.appendChild(close);
-    const body = document.createElement("div");
-    body.className = "niceeval-view-dialog-body niceeval-view-report-slot";
-    dialog.appendChild(head);
-    dialog.appendChild(body);
-    dialog.setAttribute("aria-labelledby", title.id);
-    dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) closeFromUi();
-    });
-    dialog.addEventListener("cancel", (event) => {
-      event.preventDefault();
-      closeFromUi();
-    });
-    document.body.appendChild(dialog);
-  }
-
-  function closeFromUi() {
-    if (dialog === null || !dialog.open) return;
-    requestedTarget = null;
-    requestRevision++;
-    if (!ownsHistory) {
-      dialog.close();
-      history.replaceState(null, "", location.pathname + location.search);
-      return;
-    }
-    ownsHistory = false;
-    history.back();
-  }
-
-  function openTarget(target, nextOwnsHistory) {
-    ensureDialog();
-    requestedTarget = target;
-    const revision = ++requestRevision;
-    fetch(target.url.href, { credentials: "same-origin" })
-      .then((response) => {
-        if (!response.ok) throw new Error("http " + response.status);
-        return response.text().then((html) => ({ html, responseUrl: response.url || target.url.href }));
-      })
-      .then(({ html, responseUrl }) => {
-        if (revision !== requestRevision || requestedTarget !== target) return;
-        const extracted = extractDocument(html, currentLocale(), responseUrl);
-        if (extracted === null) {
-          location.href = target.url.href;
-          return;
-        }
-        dialog.querySelector(".niceeval-view-dialog-title").textContent = extracted.title;
-        dialog.querySelector(".niceeval-view-dialog-close").setAttribute(
-          "aria-label",
-          currentLocale() === "zh-CN" ? "关闭" : "Close",
-        );
-        dialog.querySelector(".niceeval-view-dialog-body").innerHTML = extracted.content;
-        if (!dialog.open) dialog.showModal();
-        ownsHistory = nextOwnsHistory;
-      })
-      .catch(() => {
-        if (revision === requestRevision && requestedTarget === target) location.href = target.url.href;
-      });
-  }
-
-  function onHashChange() {
-    const target = targetFromHash();
-    if (target !== null) {
-      openTarget(target, true);
-      return;
-    }
-    requestedTarget = null;
-    requestRevision++;
-    ownsHistory = false;
-    if (dialog !== null && dialog.open) dialog.close();
-  }
-
-  const initialTarget = targetFromHash();
-  if (initialTarget !== null) openTarget(initialTarget, false);
-  window.addEventListener("hashchange", onHashChange);
-  window.addEventListener("popstate", () => {
-    if (location.hash) return;
-    onHashChange();
-  });
-
-  document.addEventListener("click", (event) => {
-    if (event.defaultPrevented || event.button !== 0) return;
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const anchor = closest(event.target, "a[href]");
-    if (!anchor) return;
-    const anchorTarget = anchor.getAttribute("target");
-    if (anchorTarget !== null && anchorTarget !== "_self") return;
-    if (anchor.hasAttribute("download")) return;
-    let url;
-    try {
-      url = new URL(anchor.getAttribute("href"), document.baseURI);
-    } catch {
-      return;
-    }
-    const target = matchTarget(url);
-    if (target === null) return;
-    event.preventDefault();
-    location.hash = hashForTarget(target);
-  });
-})();`;
+const PRODUCT_APP = readFileSync(new URL("../client-dist/app.js", import.meta.url), "utf8");
 
 /** Forms one byte-complete revision; neither view nor static renders afterward. */
 export function buildSiteRevision(input: {
@@ -343,13 +116,10 @@ export function buildSiteRevision(input: {
     try: () => {
       const files = buildSiteFiles(input.site, input.theme ?? input.site.theme ?? basalt);
       assertFinalBuildBudgets(input.site.startedAtMs, input.site.baselineRssBytes);
-      const defaultRoute = defaultRouteForSite(input.site);
       return signClosedSiteRevision({
         sampleIdentity: input.site.sampleIdentity,
         reportIdentity: input.site.reportIdentity,
         files,
-        routes: input.site.pages.map(({ page }) => page.target.route),
-        ...(defaultRoute === undefined ? {} : { defaultRoute }),
       });
     },
     catch: (cause): ReportSiteBuildError => isBudgetError(cause)
@@ -370,8 +140,6 @@ export function signClosedSiteRevision(input: {
   readonly sampleIdentity: string;
   readonly reportIdentity: string;
   readonly files: readonly ClosedSiteFile[];
-  readonly routes: readonly string[];
-  readonly defaultRoute?: string;
 }): ClosedSiteRevision {
   const files = Object.freeze([...input.files].sort((left, right) => compareUtf8(left.path, right.path)));
   const problems = closedProblemsFromFiles(files);
@@ -380,12 +148,9 @@ export function signClosedSiteRevision(input: {
       sampleIdentity: input.sampleIdentity,
       reportIdentity: input.reportIdentity,
       files,
-      ...(input.defaultRoute === undefined ? {} : { defaultRoute: input.defaultRoute }),
       problems,
     }),
     files,
-    routes: input.routes,
-    ...(input.defaultRoute === undefined ? {} : { defaultRoute: input.defaultRoute }),
     problems,
   });
 }
@@ -398,14 +163,18 @@ export function closeStaticThemeStylesheet(theme: ThemeDefinition): Uint8Array {
   return encoder.encode(`${themeStylesheet(theme)}\n${inlineThemeStyles(theme)}\n`);
 }
 
-function assertFinalBuildBudgets(startedAtMs: number, baselineRssBytes: number): void {
+function assertFinalBuildBudgets(
+  startedAtMs: number,
+  baselineRssBytes: number,
+  target?: { readonly pageId: string; readonly route: string },
+): void {
   const elapsed = Date.now() - startedAtMs;
   if (elapsed > REPORT_BUILD_TIME_MS_MAX) {
     throw reportBuildBudgetExceeded("build-time", REPORT_BUILD_TIME_MS_MAX, elapsed);
   }
   const rssGrowth = Math.max(0, process.memoryUsage().rss - baselineRssBytes);
   if (rssGrowth > REPORT_BUILD_RSS_BYTES_MAX) {
-    throw reportBuildBudgetExceeded("build-rss", REPORT_BUILD_RSS_BYTES_MAX, rssGrowth);
+    throw reportBuildBudgetExceeded("build-rss", REPORT_BUILD_RSS_BYTES_MAX, rssGrowth, target);
   }
 }
 
@@ -453,42 +222,46 @@ function buildSiteFiles(site: ClosedReportSite, theme: ThemeDefinition): readonl
     "text/css; charset=utf-8",
     closeStaticThemeStylesheet(theme),
   );
-  const runtime = textFile(
-    REPORT_REFRESH_RUNTIME_PATH,
-    `${reportSiteRuntime(PRODUCT_ENHANCER).trimEnd()}\n${PARAM_PAGE_DIALOG_RUNTIME}\n`,
-    "text/javascript; charset=utf-8",
-  );
+  const app = textFile(REPORT_APP_PATH, PRODUCT_APP, "text/javascript; charset=utf-8");
   add(stylesheet, hostStaticPath(stylesheet.path));
   add(themeFile, hostStaticPath(themeFile.path));
-  add(runtime, hostStaticPath(runtime.path));
+  add(app, hostStaticPath(app.path));
 
   const pages = [...site.pages].sort(compareSitePages);
-  const paramRoutes = parameterizedRoutePrefixes(site);
-  let siteHtmlBytes = 0;
+  let shellFragmentBytes = 0;
+  const fragmentFiles = new Map<string, string>();
   for (const entry of pages) {
-    assertFinalBuildBudgets(site.startedAtMs, site.baselineRssBytes);
+    assertFinalBuildBudgets(site.startedAtMs, site.baselineRssBytes, entry.page.target);
     const routeIssue = validateReportRoute(entry.page.target.route);
     if (routeIssue !== undefined || entry.page.target.route === "/_niceeval" ||
       entry.page.target.route.startsWith("/_niceeval/")) {
       throw siteFailure("path", routeIssue?.reason ?? "author routes cannot occupy /_niceeval");
     }
-    const output = staticPathForRoute(entry.page.target.route);
-    const pageFile = textFile(output.posix, renderPage(site, entry, paramRoutes), "text/html; charset=utf-8");
-    if (pageFile.bytes.byteLength > REPORT_PAGE_HTML_BYTES_MAX) {
+    const fragmentPath = fragmentPathForRoute(entry.page.target.route);
+    const fragment = textFile(fragmentPath, renderFragment(site, entry), "application/json; charset=utf-8");
+    if (fragment.bytes.byteLength > REPORT_FRAGMENT_BYTES_MAX) {
       throw reportBuildBudgetExceeded(
-        "page-html-bytes",
-        REPORT_PAGE_HTML_BYTES_MAX,
-        pageFile.bytes.byteLength,
+        "fragment-bytes",
+        REPORT_FRAGMENT_BYTES_MAX,
+        fragment.bytes.byteLength,
         { pageId: entry.page.target.pageId, route: entry.page.target.route },
       );
     }
-    siteHtmlBytes += pageFile.bytes.byteLength;
-    if (siteHtmlBytes > REPORT_SITE_HTML_BYTES_MAX) {
-      throw reportBuildBudgetExceeded("site-html-bytes", REPORT_SITE_HTML_BYTES_MAX, siteHtmlBytes);
+    shellFragmentBytes += fragment.bytes.byteLength;
+    if (shellFragmentBytes > REPORT_SHELL_FRAGMENT_BYTES_MAX) {
+      throw reportBuildBudgetExceeded("shell-fragment-bytes", REPORT_SHELL_FRAGMENT_BYTES_MAX, shellFragmentBytes);
     }
-    add(pageFile, output);
+    add(fragment, hostStaticPath(fragment.path));
+    fragmentFiles.set(entry.page.target.route, fragment.path);
     for (const asset of entry.page.assets) addPageAsset(add, asset);
   }
+
+  const shell = textFile("index.html", renderShell(site, pages), "text/html; charset=utf-8");
+  shellFragmentBytes += shell.bytes.byteLength;
+  if (shellFragmentBytes > REPORT_SHELL_FRAGMENT_BYTES_MAX) {
+    throw reportBuildBudgetExceeded("shell-fragment-bytes", REPORT_SHELL_FRAGMENT_BYTES_MAX, shellFragmentBytes);
+  }
+  add(shell, hostStaticPath("index.html"));
 
   const downloads = collectDownloads(site.pages);
   if (downloads.length > REPORT_DOWNLOAD_FILES_MAX) {
@@ -522,20 +295,31 @@ function buildSiteFiles(site: ClosedReportSite, theme: ThemeDefinition): readonl
   add(projections, hostStaticPath(projections.path));
 
   assertAssetBudgets(files, site.pages);
+  const landing = landingPage(pages);
   const manifestValue = Object.freeze({
-    format: "niceeval.report-static/v1",
+    format: "niceeval.report-static/v2",
     sampleIdentity: site.sampleIdentity,
     reportIdentity: site.reportIdentity,
+    title: {
+      en: resolveLocalizedText(site.title, "en"),
+      "zh-CN": resolveLocalizedText(site.title, "zh-CN"),
+    },
+    defaultRoute: landing.page.target.route,
     pages: pages.map((entry) => Object.freeze({
       pageId: entry.page.target.pageId,
       route: entry.page.target.route,
-      path: staticPathForRoute(entry.page.target.route).posix,
+      fragment: fragmentFiles.get(entry.page.target.route)!,
+      title: {
+        en: resolveLocalizedText(entry.page.title, "en"),
+        "zh-CN": resolveLocalizedText(entry.page.title, "zh-CN"),
+      },
       navigation: entry.navigation,
+      presentation: entry.presentation,
     })),
     files: [...files.keys(), MANIFEST_PATH, COMPLETE_PATH].sort(compareUtf8),
     stylesheet: REPORT_STYLESHEET_PATH,
     theme: REPORT_THEME_STYLESHEET_PATH,
-    runtime: REPORT_REFRESH_RUNTIME_PATH,
+    app: REPORT_APP_PATH,
     problems: PROBLEMS_PATH,
     projections: PROJECTIONS_PATH,
   });
@@ -551,104 +335,45 @@ function buildSiteFiles(site: ClosedReportSite, theme: ThemeDefinition): readonl
   return Object.freeze([...files.values()].sort((left, right) => compareUtf8(left.path, right.path)));
 }
 
-/**
- * The closed parameterized Page route prefixes of this site (the instance
- * route minus its final key segment, without the leading slash).  The shared
- * dialog runtime uses them to recognize same-site detail hrefs.
- */
-function parameterizedRoutePrefixes(site: ClosedReportSite): readonly string[] {
-  const prefixes = new Set<string>();
-  for (const entry of site.pages) {
-    if (entry.role?.kind === "experiment-group") continue;
-    if (entry.page.target.params === undefined) continue;
-    const route = entry.page.target.route;
-    const cut = route.lastIndexOf("/");
-    prefixes.add(route.slice(1, cut));
-  }
-  return Object.freeze([...prefixes].sort(compareUtf8));
+function fragmentPathForRoute(route: string): string {
+  return route === "/" ? `${REPORT_FRAGMENT_ROOT}/root.json` : `${REPORT_FRAGMENT_ROOT}${route}.json`;
 }
 
-function renderPage(site: ClosedReportSite, entry: ClosedSitePage, paramRoutes: readonly string[]): string {
+function renderFragment(site: ClosedReportSite, entry: ClosedSitePage): string {
   const page = entry.page;
-  const output = staticPathForRoute(page.target.route).posix;
-  const stylesheetHref = relativeHref(output, REPORT_STYLESHEET_PATH);
-  const themeHref = relativeHref(output, REPORT_THEME_STYLESHEET_PATH);
-  const runtimeHref = relativeHref(output, REPORT_REFRESH_RUNTIME_PATH);
-  const titleEn = resolveLocalizedText(page.title, "en");
-  const titleZh = resolveLocalizedText(page.title, "zh-CN");
-  const authorHead = renderHead(page, output);
-  const rendererAssets = page.assets.map((asset) => asset.kind === "style"
-    ? `<link rel="stylesheet" href="${escapeAttribute(relativeHref(output, asset.path))}">`
-    : asset.kind === "script"
-      ? `<script src="${escapeAttribute(relativeHref(output, asset.path))}" defer></script>`
-      : "").join("");
-  const bodyEn = projection(page, "en");
-  const bodyZh = projection(page, "zh-CN");
-  const navigationEn = renderNavigation(site.pages, page.target.route, output, "en");
-  const navigationZh = renderNavigation(site.pages, page.target.route, output, "zh-CN");
-  const groupsEn = renderExperimentGroupNavigation(site.pages, page.target.route, output, "en");
-  const groupsZh = renderExperimentGroupNavigation(site.pages, page.target.route, output, "zh-CN");
   const pageProblems = site.problems.filter((problem) =>
     problem.path.length === 0 || (problem.path[0] === "page" && problem.path[1] === page.target.pageId)
   );
-  const problemsEn = renderProblems(pageProblems, "en");
-  const problemsZh = renderProblems(pageProblems, "zh-CN");
-  const paramRoutesAttr = paramRoutes.length === 0
-    ? ""
-    : ` data-niceeval-param-routes="${escapeAttribute(paramRoutes.join(" "))}"`;
-  const siteRootHref = relativeHref(output, "index.html");
-  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}" data-niceeval-site-root="${escapeAttribute(siteRootHref)}"${paramRoutesAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><div class="niceeval-view-pages"><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav></div><div class="niceeval-view-controls">${groupsEn}${groupsZh}<label class="niceeval-view-language"><select aria-label="Language" data-niceeval-locale-select><option value="en">EN</option><option value="zh-CN">中文</option></select></label></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div><noscript><p class="niceeval-view-noscript">This report remains readable without JavaScript; language selection is unavailable.</p></noscript></main></body></html>`;
+  return `${canonicalJson({
+    title: {
+      en: resolveLocalizedText(page.title, "en"),
+      "zh-CN": resolveLocalizedText(page.title, "zh-CN"),
+    },
+    html: {
+      en: `${projection(page, "en")}${renderProblems(pageProblems, "en")}`,
+      "zh-CN": `${projection(page, "zh-CN")}${renderProblems(pageProblems, "zh-CN")}`,
+    },
+  })}\n`;
 }
 
-function renderExperimentGroupNavigation(
+function renderShell(
+  site: ClosedReportSite,
   pages: readonly ClosedSitePage[],
-  currentRoute: string,
-  sourceFile: string,
-  locale: string,
 ): string {
-  const groups = pages.filter((entry) => entry.role?.kind === "experiment-group").sort(compareSitePages);
-  if (groups.length < 2) return "";
-  const options = groups.map(({ page }) => {
-    const current = page.target.route === currentRoute ? " selected" : "";
-    const href = relativeHref(sourceFile, staticPathForRoute(page.target.route).posix);
-    const params = page.target.params as Record<string, unknown> | undefined;
-    const label = typeof params?.groupId === "string" ? params.groupId
-      : typeof params?.experimentId === "string" ? params.experimentId : page.target.route;
-    return `<option value="${escapeAttribute(href)}"${current}>${escapeText(label)}</option>`;
-  });
-  const links = groups.map(({ page }) => {
-    const current = page.target.route === currentRoute ? " aria-current=\"page\"" : "";
-    const href = relativeHref(sourceFile, staticPathForRoute(page.target.route).posix);
-    const params = page.target.params as Record<string, unknown> | undefined;
-    const label = typeof params?.groupId === "string" ? params.groupId
-      : typeof params?.experimentId === "string" ? params.experimentId : page.target.route;
-    return `<li><a href="${escapeAttribute(href)}"${current}>${escapeText(label)}</a></li>`;
-  });
-  const hidden = locale === "zh-CN" ? " hidden" : "";
-  const label = locale === "zh-CN" ? "实验" : "Experiments";
-  return `<div class="niceeval-view-experiment" data-niceeval-locale="${locale}"${hidden}><label><span>${label}</span><select aria-label="${label}" data-niceeval-experiment-select>${options.join("")}</select></label><noscript><nav class="niceeval-view-nav" aria-label="${label}"><ul>${links.join("")}</ul></nav></noscript></div>`;
+  const first = pages[0]!;
+  const rendererAssets = [...new Map(pages.flatMap((entry) => entry.page.assets).map((asset) => [asset.path, asset])).values()]
+    .map((asset) => asset.kind === "style"
+      ? `<link rel="stylesheet" href="${escapeAttribute(asset.path)}">`
+      : asset.kind === "script"
+        ? `<script src="${escapeAttribute(asset.path)}" defer></script>`
+        : "").join("");
+  return `<!doctype html><html class="niceeval-view-document" lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(resolveLocalizedText(site.title, "en"))}</title><noscript><style>#root{display:none!important}</style></noscript><link rel="stylesheet" href="${REPORT_STYLESHEET_PATH}"><link rel="stylesheet" href="${REPORT_THEME_STYLESHEET_PATH}">${renderHead(first.page, "index.html")}${rendererAssets}<script src="${REPORT_APP_PATH}" defer></script></head><body><noscript><main class="niceeval-view-js-required" role="alert"><h1>JavaScript required</h1><p>Enable JavaScript to view this NiceEval report.</p></main></noscript><div id="root"></div></body></html>`;
 }
 
-function renderNavigation(
-  pages: readonly ClosedSitePage[],
-  currentRoute: string,
-  sourceFile: string,
-  locale: string,
-): string {
-  const groups = pages.filter((entry) => entry.role?.kind === "experiment-group").sort(compareSitePages);
-  const groupRoutes = new Set(groups.map((entry) => entry.page.target.route));
-  const selectedGroupRoute = groupRoutes.has(currentRoute) ? currentRoute : groups[0]?.page.target.route;
-  const items = pages.filter((entry) => entry.navigation).sort(compareSitePages).map(({ page }) => {
-    const targetRoute = page.target.route === "/" && selectedGroupRoute !== undefined
-      ? selectedGroupRoute
-      : page.target.route;
-    const current = page.target.route === currentRoute || (page.target.route === "/" && groupRoutes.has(currentRoute))
-      ? " aria-current=\"page\""
-      : "";
-    const href = relativeHref(sourceFile, staticPathForRoute(targetRoute).posix);
-    return `<li><a href="${escapeAttribute(href)}"${current}>${escapeText(resolveLocalizedText(page.title, locale))}</a></li>`;
-  });
-  return `<ul>${items.join("")}</ul>`;
+function landingPage(pages: readonly ClosedSitePage[]): ClosedSitePage {
+  const landing = pages.find((entry) => entry.presentation === "page");
+  if (landing === undefined) throw siteFailure("render", "a report site requires at least one page presentation");
+  return landing;
 }
 
 function renderProblems(problems: readonly ReportProblem[], locale: string): string {
@@ -783,15 +508,6 @@ function inlineThemeStyles(theme: ThemeDefinition): string {
   }).join("\n");
 }
 
-/** A grouped site always opens a concrete comparison; other sites use their first navigable Page. */
-function defaultRouteForSite(site: ClosedReportSite): string | undefined {
-  return [...site.pages]
-    .filter((entry) => entry.role?.kind === "experiment-group")
-    .sort(compareSitePages)[0]?.page.target.route
-    ?? site.pages.find((entry) => entry.navigation)?.page.target.route
-    ?? site.pages[0]?.page.target.route;
-}
-
 function closedProblemsFromFiles(files: readonly ClosedSiteFile[]): readonly ReportProblem[] {
   const file = files.find((candidate) => candidate.path === PROBLEMS_PATH);
   if (file === undefined || file.mediaType !== "application/json; charset=utf-8") {
@@ -831,16 +547,14 @@ function siteRevisionIdentity(input: {
   readonly sampleIdentity: string;
   readonly reportIdentity: string;
   readonly files: readonly ClosedSiteFile[];
-  readonly defaultRoute?: string;
   readonly problems: readonly ReportProblem[];
 }): string {
   const hash = createHash("sha256");
   hash.update(canonicalJson({
-    format: "niceeval.report-site-revision/v1",
-    renderer: REPORT_STATIC_RENDERER,
+    format: "niceeval.report-site-revision/v2",
+    renderer: REPORT_APP_RENDERER,
     sampleIdentity: input.sampleIdentity,
     reportIdentity: input.reportIdentity,
-    ...(input.defaultRoute === undefined ? {} : { defaultRoute: input.defaultRoute }),
     problems: input.problems,
   }));
   hash.update("\0");

@@ -50,7 +50,7 @@ export const brandTheme = defineTheme({
 
 A Report can declare `meta`, `link`, `style`, and `script` through structured `head`. Inline content, attribute order, and local resources enter the site closure, so view and static export use the same bytes.
 
-The preceding `head` is a structured declaration. Styles of this kind may serve only the author's own named content. Do not add a global reset, replace theme tokens, redraw built-in components, or alter the View shell. A script may only progressively enhance the site; the body, navigation, Evidence, and machine JSON cannot depend on it.
+The preceding `head` is a structured declaration. Styles of this kind may serve only the author's own named content. Do not add a global reset, replace theme tokens, redraw built-in components, or alter the View shell. The Host runtime owns report reading and navigation. An author script may enhance author content, but cannot replace closed body content, Evidence, or machine JSON.
 
 ## Boundaries that do not change
 

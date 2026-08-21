@@ -1325,7 +1325,7 @@ table.niceeval-report,
 }
 
 /* Ledger:turn rail + compact kind tag + one-line summary。evidence 默认在行内
-   <details>，所以关 JavaScript 时页面仍是完整的可读正文。 */
+   <details>，app 增强前仍保留完整的语义结构。 */
 .niceeval-turn-trace .niceeval-trace-ledger { min-width: 0; }
 .niceeval-turn-trace .niceeval-trace-turn {
   position: relative;
@@ -1977,7 +1977,7 @@ table.niceeval-report,
 .niceeval-report .niceeval-scatter-point { cursor: default; }
 .niceeval-report .niceeval-line-point { fill: var(--series); }
 
-/* enhance.js 的样式化 tooltip(无 JS 时退化为 SVG <title>) */
+/* enhance.js 的样式化 tooltip（增强前保留 SVG <title>） */
 .niceeval-report .niceeval-tooltip {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -2419,7 +2419,7 @@ table.niceeval-report,
   font-size: 13px;
 }
 
-/* ---- Tabs:静态 HTML 每 tab 一个 <details> 且仅首个 open(无 JS = 手风琴卡片,内容完整);
+/* ---- Tabs:fragment HTML 每 tab 一个 <details> 且仅首个 open；
         enhance.js 在 <html> 上打 niceeval-js 后升级为单选 tab 条:收起的 tab 缩成一枚标题排在首行,
         唯一展开的 tab 以 100% 宽 + order:1 换行到下方,活动标题带高亮下划线、贴着面板顶部。
         不能用 display:contents 把 summary/body 直接投影进 flex 容器——Chrome 里 <details> 的
@@ -2678,13 +2678,6 @@ html.niceeval-view-document body {
   box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
 }
 
-/* An author display declaration overrides the browser's default
-   `dialog:not([open]) { display: none }` rule. Preserve the legacy Radix
-   unmount result when native dialog.close() removes [open]. */
-.niceeval-view-dialog:not([open]) { display: none; }
-
-.niceeval-view-dialog::backdrop { background: rgb(0 0 0 / 90%); }
-
 .niceeval-view-dialog-head {
   flex: 0 0 auto;
   position: sticky;
@@ -2752,7 +2745,16 @@ html.niceeval-view-document body {
 
 .niceeval-view-problems h2 { margin: 0 0 8px; font-size: 14px; }
 .niceeval-view-problems ul { margin: 0; padding-left: 20px; }
-.niceeval-view-noscript { margin: 0; color: var(--niceeval-color-text-secondary, #a1a1aa); }
+.niceeval-view-js-required {
+  width: min(calc(100vw - 48px), 720px);
+  margin: 18vh auto 0;
+  padding: 28px;
+  border: 1px solid var(--niceeval-color-border, #262626);
+  color: var(--niceeval-color-text, #ededed);
+  background: var(--niceeval-color-surface, #0b0b0b);
+}
+.niceeval-view-js-required h1 { margin: 0 0 12px; font-size: 22px; }
+.niceeval-view-js-required p { margin: 0; color: var(--niceeval-color-text-secondary, #a1a1aa); }
 
 [data-niceeval-locale][hidden] { display: none !important; }
 
@@ -2763,7 +2765,6 @@ html.niceeval-view-document body {
   }
   .niceeval-view-pages { display: none; }
   .niceeval-view-controls { grid-column: 2; }
-  .niceeval-view-experiment noscript .niceeval-view-nav { display: none; }
   .niceeval-view-experiment label > span { display: none; }
   .niceeval-view-experiment select { min-width: 108px; }
   .niceeval-view-language select { min-width: 68px; }

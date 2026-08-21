@@ -33,7 +33,7 @@ describe("随包 AI 文档索引", () => {
     };
     const init = await readFile(join(ROOT, "INIT.zh.md"), "utf-8");
     const initEn = await readFile(join(ROOT, "INIT.md"), "utf-8");
-    const cli = await readFile(join(ROOT, "src/cli.ts"), "utf-8");
+    const cli = await readFile(join(ROOT, "src/cli/node-application.ts"), "utf-8");
 
     expect(pkg.files).toContain("INDEX.md");
     expect(pkg.scripts?.prepare, "prepare 链必须包含 build:index,否则发出去的包缺 INDEX.md").toContain("build:index");
