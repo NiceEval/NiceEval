@@ -1,5 +1,17 @@
 # codex-cli 仓库
 
+## adapter-codex-app-server-failed-turn
+
+Repo ID 是 `adapter/codex-app-server`。它以签入的外部 `codex app-server` JSON-RPC
+fixture 驱动安装后的 `codexAgent()`、Local Sandbox 与公开 CLI，不使用 provider 凭据。
+
+这个 owner 固定验证以下结果：
+
+- `turn/completed` 的 `turn.status = failed` 仍是可信协议终态；
+- Record 把结果归为 assertion `failed`，而不是 execution `errored`；
+- Human 反馈展示 scope assertion 的 expected / received 与原生 `turn.error.message`；
+- 反馈不能退化为 `error: failed`，也不能抛出 adapter 组装的 SendFailure 文本。
+
 ## adapter-codex-cli-live-compatibility
 
 Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。

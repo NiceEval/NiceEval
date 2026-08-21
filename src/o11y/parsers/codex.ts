@@ -340,11 +340,19 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         case "thread.started":
         case "thread.completed":
         case "turn.started":
-        case "turn.completed":
         case "response.created":
         case "response.completed":
         case "response.cancelled":
           break;
+
+        case "turn.completed": {
+          const turn = get(data, "turn");
+          if (get(turn, "status") !== "failed") break;
+          const err = get(turn, "error");
+          const msg = get(err, "message") ?? get(data, "message") ?? "turn failed";
+          events.push({ type: "error", message: String(msg) });
+          break;
+        }
 
         case "turn.failed":
         case "response.failed": {

@@ -18,6 +18,7 @@ e2e/
 ├── adapter/                        # Adapter 兼容性 Repo collection
 │   ├── ai-sdk/
 │   ├── codex-cli/
+│   ├── codex-app-server/
 │   └── local-protocol/
 └── scripts/                         # 发现、pack、注入、executor、artifact
 ```
