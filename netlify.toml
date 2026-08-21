@@ -1,12 +1,13 @@
 [build]
-  publish = "netlify-report-preview"
+  base = "netlify-preview"
+  publish = "../netlify-report-preview"
   ignore = "exit 0"
 
 [build.environment]
   NODE_VERSION = "24"
 
 [context.deploy-preview]
-  command = "bash scripts/netlify-report-preview.sh"
+  command = "bash ../scripts/netlify-report-preview.sh"
   ignore = "exit 1"
 
 [context.deploy-preview.environment]

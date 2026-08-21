@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly NICEEVAL_ROOT="$PWD"
+readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly NICEEVAL_ROOT="$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)"
 readonly MEMORYBENCH_REPOSITORY="https://github.com/NiceEval/MemoryBench.git"
 readonly MEMORYBENCH_COMMIT="9f2a67d26b243902e8cd1c07af1effc9f752fff1"
 readonly PUBLISH_DIRECTORY="$NICEEVAL_ROOT/netlify-report-preview"
@@ -24,7 +25,7 @@ git clone --filter=blob:none --no-checkout "$MEMORYBENCH_REPOSITORY" "$MEMORYBEN
 git -C "$MEMORYBENCH_ROOT" checkout --detach "$MEMORYBENCH_COMMIT"
 
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" install --frozen-lockfile
-pnpm dev:link "$MEMORYBENCH_ROOT"
+corepack pnpm@11.18.0 --dir "$NICEEVAL_ROOT" dev:link "$MEMORYBENCH_ROOT"
 
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" exec niceeval --version
 CODEX_BASE_URL="https://preview.invalid/v1" \
