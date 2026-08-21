@@ -4,7 +4,11 @@ import { sandbox } from "../sandbox.ts";
 
 export default defineExperiment({
   description: "hitl:Codex 原生选项请求、结构化选择与会话恢复",
-  agent: codexAgent({ configFile: "configs/shell-enabled.toml" }),
+  agent: codexAgent({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseUrl: process.env.OPENAI_BASE_URL,
+    configFile: "configs/shell-enabled.toml",
+  }),
   model: "gpt-5.6-luna",
   sandbox,
   flags: { requestHitl: true },

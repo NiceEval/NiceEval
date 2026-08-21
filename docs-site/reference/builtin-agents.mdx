@@ -44,13 +44,13 @@ When you need `t.respond()` / `t.requireInputRequest()`: if the system under tes
 ### codex
 
 - Connection: runs `codex exec --json` in the Sandbox, or `codex exec resume <id> --json` for continuation, and uses stdout JSONL as the transcript. The command includes `--dangerously-bypass-approvals-and-sandbox` and `--dangerously-bypass-hook-trust`: nobody can answer Codex's interactive confirmations in a Sandbox, so a Hook installed by a Plugin or `postSetup` can take effect without interactive trust.
-- Authentication: `OPENAI_API_KEY`, and optionally `OPENAI_BASE_URL` for an OpenAI-compatible proxy. See `CodexConfig` below for options.
+- Authentication: `CODEX_API_KEY`, and optionally `CODEX_BASE_URL` for an OpenAI-compatible proxy. See `CodexConfig` below for options.
 - `tracing` is configured through `[otel.trace_exporter.otlp-http]` in `~/.codex/config.toml`, over `http/json`.
 
 ### bub
 
 - Connection: runs `bub run` with `--session-id` in the Sandbox and reads the tape at `~/.bub/tapes/<hash>.jsonl` as the transcript.
-- Authentication: `OPENAI_API_KEY` plus `OPENAI_BASE_URL` for an OpenAI-compatible proxy. See `BubConfig` below for options.
+- Authentication: `BUB_API_KEY` plus `BUB_API_BASE` for an OpenAI-compatible proxy. See `BubConfig` below for options.
 - `tracing` is injected through environment variables such as `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, over `http/protobuf`.
 - Installation uses `uv tool install`, not an npm package. The first install creates a checkpoint cache to speed later Sandboxes.
 
@@ -150,7 +150,7 @@ The cleanup Hook paired with `postSetup`. It uses `postSetup`'s reverse order an
 apiKey?: string;
 ```
 
-Proxy / OpenAI API key. Falls back to the `OPENAI_API_KEY` env var if omitted.
+Proxy / OpenAI API key. Falls back to the `CODEX_API_KEY` env var if omitted.
 
 #### `baseUrl`
 
@@ -158,7 +158,7 @@ Proxy / OpenAI API key. Falls back to the `OPENAI_API_KEY` env var if omitted.
 baseUrl?: string;
 ```
 
-OpenAI-compatible proxy base URL (e.g. `https://s2a.example.com/v1`). Falls back to the `OPENAI_BASE_URL` env var if omitted.
+OpenAI-compatible proxy base URL (e.g. `https://s2a.example.com/v1`). Falls back to the `CODEX_BASE_URL` env var if omitted.
 
 #### `env`
 
@@ -166,7 +166,7 @@ OpenAI-compatible proxy base URL (e.g. `https://s2a.example.com/v1`). Falls back
 env?: Readonly<globalThis.Record<string, string>>;
 ```
 
-Extra environment variables injected into every Codex CLI process. The first `codex exec` and continuing `codex exec resume` use the same declaration; lifecycle Hooks started by Codex, dynamic MCP headers, and command subprocesses all inherit it. Values enter only through Sandbox command options: they are not concatenated into shell text or written to the setup manifest, and are all redacted as potential sensitive values from timing, execution, and error evidence. `OPENAI_API_KEY` still comes from `apiKey` or the same host environment variable; the Adapter's authentication value overrides a same-named key here.
+Extra environment variables injected into every Codex CLI process. The first `codex exec` and continuing `codex exec resume` use the same declaration; lifecycle Hooks started by Codex, dynamic MCP headers, and command subprocesses all inherit it. Values enter only through Sandbox command options: they are not concatenated into shell text or written to the setup manifest, and are all redacted as potential sensitive values from timing, execution, and error evidence. `CODEX_API_KEY` still comes from `apiKey` or the same host environment variable; the Adapter's authentication value overrides a same-named key here.
 
 An environment value does not enter carry identity. A non-sensitive value that changes behavior must also be declared in Experiment Flags or the owning Plugin identity; rotating credentials alone does not invalidate old results. `PATH` is Sandbox-managed and cannot be declared here. Its presence errors at factory construction; use the Sandbox factory's `pathPrepend` instead. See `docs/feature/sandbox/library.md`.
 
@@ -226,7 +226,7 @@ The cleanup Hook paired with `postSetup`. It uses `postSetup`'s reverse order an
 apiKey?: string;
 ```
 
-API key for the OpenAI-compatible proxy. Falls back to the `OPENAI_API_KEY` env var if omitted.
+API key for the OpenAI-compatible proxy. Falls back to the `BUB_API_KEY` env var if omitted.
 
 #### `apiBase`
 
@@ -234,7 +234,7 @@ API key for the OpenAI-compatible proxy. Falls back to the `OPENAI_API_KEY` env 
 apiBase?: string;
 ```
 
-Base URL for the OpenAI-compatible proxy. Falls back to the `OPENAI_BASE_URL` env var if omitted.
+Base URL for the OpenAI-compatible proxy. Falls back to the `BUB_API_BASE` env var if omitted.
 
 #### `skills`
 

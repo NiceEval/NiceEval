@@ -79,8 +79,8 @@ The following table is every environment variable NiceEval reads. Each Agent, Sa
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | `claudeCodeAgent()` | A factory `apiKey` parameter can override it |
 | `ANTHROPIC_BASE_URL` | `claudeCodeAgent()` | Gateway address; a factory `baseUrl` parameter can override it |
-| `OPENAI_API_KEY` | `codexAgent()`, `bubAgent()` | A factory `apiKey` parameter can override it |
-| `OPENAI_BASE_URL` | `codexAgent()`, `bubAgent()` | OpenAI-compatible proxy address; a factory `baseUrl` / `apiBase` parameter can override it |
+| `CODEX_API_KEY` / `CODEX_BASE_URL` | `codexAgent()` | The key is required and the proxy address is optional; factory `apiKey` / `baseUrl` parameters can override them |
+| `BUB_API_KEY` / `BUB_API_BASE` | `bubAgent()` | Both are required; factory `apiKey` / `apiBase` parameters can override them |
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | When the key is absent, it falls back to `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | When the key is absent, it falls back to `ANTHROPIC_API_KEY` |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | When the key is absent, it falls back in order to `OPENROUTER_API_KEY`, then `ANTHROPIC_API_KEY` |

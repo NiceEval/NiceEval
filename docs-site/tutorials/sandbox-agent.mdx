@@ -13,10 +13,10 @@ A Sandbox Agent starts a coding-agent CLI in an isolated environment, gives it a
     Runs the Anthropic Claude Code CLI and requires `ANTHROPIC_API_KEY`.
   </Card>
   <Card title="codex" icon="terminal">
-    Runs the OpenAI Codex CLI and requires `OPENAI_API_KEY`.
+    Runs the OpenAI Codex CLI and requires `CODEX_API_KEY`.
   </Card>
   <Card title="bub" icon="robot">
-    Runs the bub coding agent and requires `OPENAI_API_KEY` plus `OPENAI_BASE_URL`.
+    Runs the bub coding agent and requires `BUB_API_KEY` plus `BUB_API_BASE`.
   </Card>
 </CardGroup>
 
@@ -95,10 +95,10 @@ export default defineExperiment({
 | Agent | Required variable |
 | --- | --- |
 | `claude-code` | `ANTHROPIC_API_KEY` |
-| `codex` | `OPENAI_API_KEY` |
-| `bub` | `OPENAI_API_KEY`, `OPENAI_BASE_URL` |
+| `codex` | `CODEX_API_KEY` |
+| `bub` | `BUB_API_KEY`, `BUB_API_BASE` |
 
-NiceEval's `bubAgent()` and `codexAgent()` read those shared OpenAI-compatible variables when their factory arguments are omitted. Existing `BUB_API_KEY`, `BUB_API_BASE`, `CODEX_API_KEY`, and `CODEX_BASE_URL` settings are no longer read; rename them before running the Experiment.
+These are each Agent's official variable names. CI can keep only `OPENAI_API_KEY` and `OPENAI_BASE_URL` as shared secrets, but the Experiment must explicitly map them through `apiKey`, `baseUrl`, or `apiBase`. That mapping does not change the public environment variable names that each Adapter reads.
 
 ## Workflow
 

@@ -79,8 +79,8 @@ export default defineConfig({
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | `claudeCodeAgent()` | 工厂参数 `apiKey` 可覆盖 |
 | `ANTHROPIC_BASE_URL` | `claudeCodeAgent()` | 网关地址，工厂参数 `baseUrl` 可覆盖 |
-| `OPENAI_API_KEY` | `codexAgent()`、`bubAgent()` | 工厂参数 `apiKey` 可覆盖 |
-| `OPENAI_BASE_URL` | `codexAgent()`、`bubAgent()` | OpenAI 兼容代理地址，工厂参数 `baseUrl` / `apiBase` 可覆盖 |
+| `CODEX_API_KEY` / `CODEX_BASE_URL` | `codexAgent()` | key 必需，代理地址可选；工厂参数 `apiKey` / `baseUrl` 可覆盖 |
+| `BUB_API_KEY` / `BUB_API_BASE` | `bubAgent()` | 两者必需；工厂参数 `apiKey` / `apiBase` 可覆盖 |
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | key 省略时依次回落 `OPENROUTER_API_KEY`、`ANTHROPIC_API_KEY` |

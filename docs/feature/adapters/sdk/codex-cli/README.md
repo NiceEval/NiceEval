@@ -39,7 +39,7 @@ stdio 形态的 MCP 写成 `[mcp_servers.<name>]` 的 `command`/`args`/`env`；H
 `marketplace.sparse` 列出 sparse 拉取的路径，每个元素生成一个 `--sparse <path>`（codex 的 `--sparse` 必须带路径参数、可重复），大仓库只拉插件所需路径；省略或空数组即全量 clone。
 它只影响拉取速度，不影响装出来的内容，manifest 不记它。
 
-鉴权与路由有两个字段：`apiKey` 是代理 / OpenAI API key，省略时读 `OPENAI_API_KEY` env var；`baseUrl` 是 OpenAI 兼容代理端点（如 `https://s2a.example.com/v1`），省略时读 `OPENAI_BASE_URL`。
+鉴权与路由有两个字段：`apiKey` 是代理 / OpenAI API key，省略时读 `CODEX_API_KEY` env var；`baseUrl` 是 OpenAI 兼容代理端点（如 `https://s2a.example.com/v1`），省略时读 `CODEX_BASE_URL`。
 模型选择不在这里——它归 experiment 的 `model` 维度。
 
 ## Agent 进程 env var
@@ -54,7 +54,7 @@ const agent = codexAgent({
 ```
 
 env var 只经 Sandbox 命令 options 注入，不拼进 shell 文本，也不进入安装 manifest。Adapter 把全部声明值按潜在敏感值登记；timing、execution 与错误证据落盘前会脱敏。
-`OPENAI_API_KEY` 仍由 `apiKey` 或宿主同名 env var 提供，Adapter 的鉴权值替换 `env` 里的同名键。
+`CODEX_API_KEY` 仍由 `apiKey` 或宿主同名 env var 提供，Adapter 的鉴权值替换 `env` 里的同名键。
 
 env value 不进入 carry 身份。`NMEM_SPACE` 这类会改变被测行为的非敏感值还要写进
 `defineExperiment({ flags: { memorySpace }, ... })`，或写进所属 Plugin identity。token 与 API key
