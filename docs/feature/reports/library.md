@@ -406,7 +406,9 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 
 Report 不识别 matcher code、不拼 matcher 专属句子，也不把整棵 diagnostic JSON 当作用户文案。某一段在历史 Record 中没有持久化事实时，它以普通的 `not-recorded` 状态显示，不从 diagnostic、得分比例或其它段反推。
 
-展开 `send` 所在行后，`TurnTrace` 以 `Conversation` 的静态因果事件流为账本，加上 turn 时间概览与可关闭的事件 inspector。没有精确 source mapping 的 turn 保留在页面级 `TurnTrace`，不按源码顺序猜测归属；没有 JavaScript 时 inspector 不出现，但完整事件内容仍在正文中。
+展开 `send` 所在行后，`TurnTrace` 以 `Conversation` 的静态因果事件流为账本，加上 turn 时间概览与可关闭的事件 inspector。
+
+匹配同一 call ID 的工具调用和结果在调用位置组合成一个生命周期节点，inspector 同时保留输入与结果证据；未闭合或无法唯一配对的阶段仍各自显示。节点状态和颜色只使用 provider-neutral outcome：`completed`、`failed`、`rejected` 或 `cancelled`；原始工具名和 output 字段不参与 View 判断。没有精确 source mapping 的 turn 保留在页面级 `TurnTrace`，不按源码顺序猜测归属；没有 JavaScript 时 inspector 不出现，但完整事件内容仍在正文中。
 
 下载文件属于 Host 的站点闭包：view 与静态写出只读取已关闭的 bytes。作者入口不发布一个 generic `Download` 组件或
 `DownloadFile` 类型；这避免把尚无最终 primitive owner 的 generic semantic API 写进公共契约。

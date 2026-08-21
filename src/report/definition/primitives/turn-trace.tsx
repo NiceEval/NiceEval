@@ -1,6 +1,7 @@
 // TurnTrace: compact, server-rendered trajectory ledger.  The browser only
-// filters, folds, selects, and switches pre-rendered inline evidence tabs; every
-// event and its captured evidence is present in the static report body.
+// filters, folds, selects, and switches pre-rendered inline evidence tabs. Tool
+// start/result events remain separate in Conversation but render as one lifecycle
+// row here, with both phases' evidence present in the static report body.
 
 import type { CSSProperties, ReactElement } from "react";
 import { defineComponent } from "../tree.ts";
@@ -96,14 +97,61 @@ function callCount(events: readonly TraceEvent[]): number {
 }
 
 function statusFor(entry: ConversationEntry, locale: ReportLocale): string {
+  if (entry.callOutcome === "completed") return text(locale, "Completed", "已完成");
+  if (entry.callOutcome === "failed") return text(locale, "Failed", "失败");
+  if (entry.callOutcome === "rejected") return text(locale, "Rejected", "已拒绝");
+  if (entry.callOutcome === "cancelled") return text(locale, "Cancelled", "已取消");
   if (entry.failed === true) return text(locale, "Failed", "失败");
   if (entry.callPhase === "started") return text(locale, "Started", "已开始");
   if (entry.callPhase === "finished") return text(locale, "Completed", "已完成");
   return text(locale, "Captured", "已捕获");
 }
 
+function lifecycleEntriesOf(
+  turn: ConversationTurn,
+): readonly { readonly entry: ConversationEntry; readonly entryIndex: number }[] {
+  const phasesByCallId = new Map<string, { started: number[]; finished: number[] }>();
+  for (const [entryIndex, entry] of turn.entries.entries()) {
+    if (entry.callId === undefined || entry.callPhase === undefined) continue;
+    const phases = phasesByCallId.get(entry.callId) ?? { started: [], finished: [] };
+    phases[entry.callPhase].push(entryIndex);
+    phasesByCallId.set(entry.callId, phases);
+  }
+
+  const lifecycleByStartedIndex = new Map<number, ConversationEntry>();
+  const pairedFinishedIndexes = new Set<number>();
+  for (const phases of phasesByCallId.values()) {
+    // Public author data is validated structurally, not as a durable ledger. Only
+    // coalesce an unambiguous 1:1 lifecycle; duplicate phases remain visible.
+    if (phases.started.length !== 1 || phases.finished.length !== 1) continue;
+    const startedIndex = phases.started[0]!;
+    const finishedIndex = phases.finished[0]!;
+    if (finishedIndex <= startedIndex) continue;
+    const started = turn.entries[startedIndex]!;
+    const finished = turn.entries[finishedIndex]!;
+    const raw = [started.raw, finished.raw].filter((value): value is string => value !== undefined).join("\n");
+    const details = [started.detail, finished.detail].filter((value) => value !== undefined);
+    lifecycleByStartedIndex.set(startedIndex, {
+      kind: started.kind,
+      preview: started.preview,
+      callId: started.callId,
+      callPhase: "finished",
+      ...(finished.callOutcome === undefined ? {} : { callOutcome: finished.callOutcome }),
+      ...(started.failed === true || finished.failed === true ? { failed: true } : {}),
+      ...(raw === "" ? {} : { raw }),
+      ...(details.length === 0 ? {} : { detail: details.length === 1 ? details[0] : details }),
+    });
+    pairedFinishedIndexes.add(finishedIndex);
+  }
+
+  return turn.entries.flatMap((entry, entryIndex) => {
+    if (pairedFinishedIndexes.has(entryIndex)) return [];
+    return [{ entry: lifecycleByStartedIndex.get(entryIndex) ?? entry, entryIndex }];
+  });
+}
+
 function traceEventsOf(content: ConversationContent, locale: ReportLocale): readonly TraceEvent[] {
-  return content.turns.flatMap((turn, turnIndex) => turn.entries.map((entry, entryIndex) => {
+  return content.turns.flatMap((turn, turnIndex) => lifecycleEntriesOf(turn).map(({ entry, entryIndex }) => {
     const raw = entry.raw ?? resolveLocalizedText(entry.preview, locale);
     return {
       // Keep IDs safe for HTML data attributes without relying on selector
@@ -389,6 +437,7 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
       )}
       data-niceeval-trace-event={event.id}
       data-tool-row={event.toolLike ? "true" : undefined}
+      data-call-outcome={event.entry.callOutcome}
     >
       <span className="niceeval-trace-event-turn-rail" aria-hidden="true" />
       <button
@@ -407,7 +456,7 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
         >
           {duration === undefined ? "—" : durationLabel(duration)}
         </span>
-        <span className="niceeval-trace-event-status">{status}</span>
+        <span className="niceeval-trace-event-status" data-call-outcome={event.entry.callOutcome}>{status}</span>
       </button>
       <TraceEvidence event={event} locale={locale} />
     </article>

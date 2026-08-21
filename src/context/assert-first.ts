@@ -128,6 +128,7 @@ export interface AssertFirstContextDeps {
   readonly experimentClassifier?: import("./session.ts").SessionDeps["experimentClassifier"];
   /** Attempt-owned source snapshot registry; never inferred from an Effect fiber. */
   readonly sourceRegistry?: SourceRegistry;
+  readonly resources: import("../types.ts").AttemptResourceRegistry;
   /** Shared ordering with Assertion runtime source facts and Session user events. */
   readonly nextSourceOrder?: () => number;
   readonly judge: ResolvedJudgeConfig | undefined;
@@ -1538,6 +1539,7 @@ export function createAssertFirstEvalContext(
     experimentClassifier: deps.experimentClassifier,
     nextSourceOrder: deps.nextSourceOrder,
     sourceRegistry: deps.sourceRegistry,
+    resources: deps.resources,
   });
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
     ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })

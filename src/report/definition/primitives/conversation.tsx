@@ -27,6 +27,8 @@ export interface ConversationEntry {
   callPhase?: "started" | "finished";
   /** Stable provider call identity when this row belongs to a tool lifecycle. */
   callId?: string;
+  /** Provider-neutral terminal outcome; omitted while the call is still open. */
+  callOutcome?: "completed" | "failed" | "rejected" | "cancelled";
 }
 
 export interface ConversationTurn {
@@ -115,6 +117,15 @@ function validateEntry(value: unknown, path: string): string | null {
   if (value.callId !== undefined && typeof value.callId !== "string") return `"${path}.callId" must be a string`;
   if (value.callPhase !== undefined && value.callPhase !== "started" && value.callPhase !== "finished") {
     return `"${path}.callPhase" must be started | finished`;
+  }
+  if (
+    value.callOutcome !== undefined &&
+    value.callOutcome !== "completed" &&
+    value.callOutcome !== "failed" &&
+    value.callOutcome !== "rejected" &&
+    value.callOutcome !== "cancelled"
+  ) {
+    return `"${path}.callOutcome" must be completed | failed | rejected | cancelled`;
   }
   return null;
 }

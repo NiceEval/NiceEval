@@ -3,6 +3,7 @@
 //(runShell/runCommand 的 opts 一律是选项对象,不再用位置参数)。
 
 import { basename, dirname, join } from "node:path";
+import { PassThrough } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import Docker from "dockerode";
@@ -10,6 +11,8 @@ import { Clock, Effect } from "effect";
 import type {
   CommandResult,
   CommandOptions,
+  ManagedProcess,
+  ManagedProcessStart,
   SandboxReuseCapability,
   SuccessfulCommandResult,
 } from "../types.ts";
@@ -32,6 +35,7 @@ import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { supportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
 import type { DockerSandboxAccess, DockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
 import { dindContainerCommand } from "./dind-supervisor.ts";
+import { ManagedProcessOutput } from "./managed-process.ts";
 
 /**
  * dockerode 对镜像拉取限流没有专门的错误类型;Docker Hub 429 体现在错误 message 里
@@ -370,7 +374,131 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     suspend: supportedBackendCapability(() => this.suspend()),
     ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
     setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+    managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startManagedProcess(input)),
   };
+
+  private async startManagedProcess(input: ManagedProcessStart): Promise<ManagedProcess> {
+    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    const [command, ...args] = input.argv;
+    const env = {
+      HOME: this.defaultHome,
+      USER: this.defaultUserName,
+      LOGNAME: this.defaultUserName,
+      ...input.env,
+      PATH: this.sandboxPath,
+      ...(this.defaultIsRoot ? { npm_config_unsafe_perm: "true" } : {}),
+    };
+    const marker = `__NICEEVAL_MANAGED_PID_${randomUUID()}__`;
+    const exec = await this.container.exec({
+      // If the Docker exec leader is already a process-group leader, setsid
+      // forks. --wait keeps Docker's receipt tied to the native child lifetime.
+      Cmd: ["setsid", "--wait", "sh", "-c", `printf '${marker}%s\\n' "$$" >&2; exec "$@"`, "sh", command, ...args],
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      WorkingDir: resolveSandboxPath(this.workdir, input.cwd),
+      Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),
+      User: this.userOverride,
+    });
+    const stream = await exec.start({ hijack: true, stdin: true });
+    const output = new ManagedProcessOutput();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    stdout.on("data", (bytes: Buffer) => output.push({ _tag: "Stdout", bytes: new Uint8Array(bytes) }));
+    let stderrPrefix = Buffer.alloc(0);
+    let processGroup: number | undefined;
+    stderr.on("data", (bytes: Buffer) => {
+      if (processGroup !== undefined) {
+        output.push({ _tag: "Stderr", bytes: new Uint8Array(bytes) });
+        return;
+      }
+      stderrPrefix = Buffer.concat([stderrPrefix, bytes]);
+      const newline = stderrPrefix.indexOf(10);
+      if (newline < 0) return;
+      const first = stderrPrefix.subarray(0, newline).toString("utf8");
+      if (!first.startsWith(marker) || !/^\d+$/.test(first.slice(marker.length))) {
+        output.push({ _tag: "Stderr", bytes: new Uint8Array(stderrPrefix) });
+      } else {
+        processGroup = Number(first.slice(marker.length));
+        const rest = stderrPrefix.subarray(newline + 1);
+        if (rest.length > 0) output.push({ _tag: "Stderr", bytes: new Uint8Array(rest) });
+      }
+      stderrPrefix = Buffer.alloc(0);
+    });
+    this.docker.modem.demuxStream(stream, stdout, stderr);
+    let poll: ReturnType<typeof setInterval> | undefined;
+    let settled = false;
+    let rejectExit!: (error: unknown) => void;
+    const finishError = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      if (poll !== undefined) clearInterval(poll);
+      output.end();
+      stream.destroy();
+      rejectExit(error);
+    };
+    const exit = new Promise<import("../types.ts").ManagedProcessExit>((resolve, reject) => {
+      rejectExit = reject;
+      stream.once("error", finishError);
+      poll = setInterval(() => {
+        void exec.inspect().then((inspection) => {
+          if (inspection.Running) return;
+          if (settled) return;
+          settled = true;
+          if (poll !== undefined) clearInterval(poll);
+          output.end();
+          stream.destroy();
+          resolve({ exitCode: inspection.ExitCode ?? null });
+        }, finishError);
+      }, 100);
+    });
+    let closeReceipt: Promise<void> | undefined;
+    let terminateReceipt: Promise<void> | undefined;
+    let stdinState: "open" | "closing" | "closed" = "open";
+    return {
+      output,
+      writeStdin: (bytes) => new Promise<void>((resolve, reject) => {
+        if (stdinState !== "open") { reject(new Error("managed process stdin is closed")); return; }
+        stream.write(Buffer.from(bytes), (error?: Error | null) => error ? reject(error) : resolve());
+      }),
+      closeStdin: () => closeReceipt ??= new Promise<void>((resolve) => {
+        stdinState = "closing";
+        stream.end(() => { stdinState = "closed"; resolve(); });
+      }),
+      wait: () => exit,
+      terminate: () => terminateReceipt ??= (async () => {
+        stdinState = "closing";
+        const inspection = await exec.inspect().catch(() => undefined);
+        if (!inspection?.Running) { await exit.catch(() => undefined); return; }
+        if (processGroup === undefined) {
+          const error = new Error("docker managed process did not disclose its process-group identity; sandbox retirement is required");
+          finishError(error);
+          throw error;
+        }
+        // Do not route this provider-owned control operation through runCommand's
+        // command-tree supervisor: killing the target exec while that supervisor
+        // samples the same tree creates an ambiguous non-zero receipt. Docker's
+        // own exec receipt is the exact acknowledgement for this one kill(2).
+        const killer = await this.container!.exec({
+          // POSIX `kill` is a shell builtin in slim images (no /usr/bin/kill).
+          // The PGID is a separate positional parameter, never interpolated.
+          Cmd: ["sh", "-c", "kill -KILL \"$1\"", "sh", `-${processGroup}`],
+          AttachStdout: true,
+          AttachStderr: true,
+          User: "root",
+        });
+        const killStream = await killer.start({});
+        const killOutput = await readableToBuffer(killStream);
+        const killed = await killer.inspect();
+        if (killed.ExitCode !== 0) {
+          const error = new Error(`docker could not terminate managed process group ${processGroup}; sandbox retirement is required: ${killOutput.toString("utf8")}`);
+          finishError(error);
+          throw error;
+        }
+        await exit;
+      })(),
+    };
+  }
 
   constructor(options: DockerSandboxOptions = {}) {
     this.docker = new Docker(options.dockerSocketPath === undefined ? undefined : { socketPath: options.dockerSocketPath });

@@ -373,12 +373,11 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await expect(sendLine.locator(".niceeval-conversation-turn-head")).toBeVisible();
         const trace = sendLine.locator("[data-niceeval-turn-trace]");
         const traceRows = trace.locator("[data-niceeval-trace-event]");
+        await expect(traceRows).toHaveCount(3);
         const firstTraceRow = traceRows.nth(0);
         const secondTraceRow = traceRows.nth(1);
-        const thirdTraceRow = traceRows.nth(2);
         const firstTraceEvidence = firstTraceRow.locator("[data-niceeval-trace-evidence]");
         const secondTraceEvidence = secondTraceRow.locator("[data-niceeval-trace-evidence]");
-        const thirdTraceEvidence = thirdTraceRow.locator("[data-niceeval-trace-evidence]");
         await expect(firstTraceEvidence).not.toHaveAttribute("open", "");
         await firstTraceRow.locator("[data-niceeval-trace-select]").click();
         await expect(firstTraceEvidence).toHaveAttribute("open", "");
@@ -386,27 +385,27 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await secondTraceRow.locator("[data-niceeval-trace-select]").click();
         await expect(firstTraceEvidence).not.toHaveAttribute("open", "");
         await expect(secondTraceEvidence).toHaveAttribute("open", "");
+        await expect(secondTraceRow.locator(".niceeval-trace-event-status")).toHaveText("Completed");
         await expect(secondTraceEvidence.locator("[data-tool-evidence-kind='command']")).toBeVisible();
-        expect(await secondTraceEvidence.locator(".niceeval-tool-evidence-code").textContent()).toBe(
+        expect(await secondTraceEvidence.locator(".niceeval-tool-evidence-code").nth(0).textContent()).toBe(
           "printf 'classic/recall-constraint: recalled=true\\n' > memory-note.txt",
         );
-        await thirdTraceRow.locator("[data-niceeval-trace-select]").click();
-        await expect(secondTraceEvidence).not.toHaveAttribute("open", "");
-        await expect(thirdTraceEvidence).toHaveAttribute("open", "");
-        await expect(thirdTraceRow.locator(".niceeval-trace-event-summary")).toHaveText("command_execution result");
-        await expect(thirdTraceEvidence.locator("[data-tool-evidence-kind='terminal']")).toBeVisible();
-        await expect(thirdTraceEvidence.getByText("Exit 0", { exact: true })).toBeVisible();
-        expect(await thirdTraceEvidence.locator(".niceeval-tool-evidence-code").nth(0).textContent()).toBe(
+        await expect(secondTraceEvidence.locator("[data-tool-evidence-kind='terminal']")).toBeVisible();
+        await expect(secondTraceEvidence.getByText("Exit 0", { exact: true })).toBeVisible();
+        expect(await secondTraceEvidence.locator(".niceeval-tool-evidence-code").nth(1).textContent()).toBe(
           "wrote memory-note.txt\nclassic/recall-constraint: recalled=true\n",
         );
-        expect(await thirdTraceEvidence.locator(".niceeval-tool-evidence-code").nth(1).textContent()).toBe(
+        expect(await secondTraceEvidence.locator(".niceeval-tool-evidence-code").nth(2).textContent()).toBe(
           '{\n  "written": true,\n  "recalled": true\n}',
         );
-        await thirdTraceEvidence.getByRole("tab", { name: "Raw" }).click();
-        await expect(thirdTraceEvidence.getByRole("tab", { name: "Raw" })).toHaveAttribute("aria-selected", "true");
-        await expect(thirdTraceEvidence.locator("[data-niceeval-trace-evidence-panel='raw']")).toBeVisible();
-        expect(await thirdTraceEvidence.locator(".niceeval-trace-evidence-raw").textContent()).toBe(
-          '{"output":"wrote memory-note.txt\\nclassic/recall-constraint: recalled=true\\n","exit_code":0,"written":true,"recalled":true}',
+        await secondTraceEvidence.getByRole("tab", { name: "Raw" }).click();
+        await expect(secondTraceEvidence.getByRole("tab", { name: "Raw" })).toHaveAttribute("aria-selected", "true");
+        await expect(secondTraceEvidence.locator("[data-niceeval-trace-evidence-panel='raw']")).toBeVisible();
+        await expect(secondTraceEvidence.locator(".niceeval-trace-evidence-raw")).toContainText(
+          '"command":"printf \'classic/recall-constraint: recalled=true\\\\n\' > memory-note.txt"',
+        );
+        await expect(secondTraceEvidence.locator(".niceeval-trace-evidence-raw")).toContainText(
+          '"output":"wrote memory-note.txt\\nclassic/recall-constraint: recalled=true\\n"',
         );
         const deepLink = page.url();
         expect(new URL(deepLink).hash).toMatch(/^#\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}$/);

@@ -277,6 +277,18 @@ export interface AgentSession {
   take<T>(slot: SessionSlot<T>): T | undefined;
 }
 
+/** Runner-owned Attempt resource registry; adapters use it for cross-send drivers. */
+export interface AttemptResourceRegistry {
+  acquire<T>(
+    acquire: () => Promise<T>,
+    lifecycle: {
+      shutdown: (resource: T, signal: AbortSignal) => Promise<void>;
+      release: (resource: T, signal: AbortSignal) => Promise<void>;
+    },
+  ): Promise<T>;
+  shutdownAll(signal: AbortSignal): Promise<void>;
+}
+
 export interface AgentContext {
   /**
    * 软取消信号:合并了 attempt 超时、run 级中断(用户 Ctrl+C)与评估用例自身的中断请求

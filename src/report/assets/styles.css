@@ -1462,6 +1462,10 @@ table.niceeval-report,
   white-space: nowrap;
 }
 .niceeval-turn-trace .niceeval-trace-event-row--failed .niceeval-trace-event-status { color: var(--bad); }
+.niceeval-turn-trace .niceeval-trace-event-status[data-call-outcome="completed"] { color: var(--good); }
+.niceeval-turn-trace .niceeval-trace-event-status[data-call-outcome="failed"] { color: var(--bad); }
+.niceeval-turn-trace .niceeval-trace-event-status[data-call-outcome="rejected"],
+.niceeval-turn-trace .niceeval-trace-event-status[data-call-outcome="cancelled"] { color: var(--warn); }
 .niceeval-turn-trace .niceeval-trace-evidence {
   position: relative;
   z-index: 2;

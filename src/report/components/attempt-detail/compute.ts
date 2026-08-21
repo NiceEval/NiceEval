@@ -678,7 +678,7 @@ function conversationReplyOf(
         inputSummary: call?.inputSummary ?? "",
         outputSummary: item.outputSummary,
         outcome: item.outcome,
-        failed: item.outcome === "failed" || item.outcome === "rejected",
+        failed: item.outcome === "failed",
       };
     }
     case "thinking-summary":

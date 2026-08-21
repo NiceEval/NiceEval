@@ -12,7 +12,6 @@ import {
   type LoadedNativeConfig,
 } from "./native-config.ts";
 import { mapClaudeCodeSpans } from "../o11y/otlp/mappers/claude-code.ts";
-import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CLAUDE_CODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
@@ -22,9 +21,11 @@ import {
   runPreTeardownHooks,
 } from "./post-setup.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
-import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import { requireManagedProcessCapability } from "../sandbox/backend.ts";
+import { attemptResources } from "../context/attempt-resources.ts";
+import { sendClaudeCodeNative } from "./claude-code-native.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Claude Code 的 agent adapter(沙箱型)。
@@ -160,6 +161,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
     },
 
     setup: (sb, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      yield* Effect.try({ try: () => requireManagedProcessCapability(sb, "claude-code"), catch: (cause) => cause });
       // 原生配置文件最先落(安装顺序契约的第 1 步):本地读原始字节 → 验 JSON 语法与保留键
       // → 原样替换沙箱里原本为空的用户级 settings.json。字节 SHA-256 进 manifest 与安装
       // checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
@@ -253,21 +255,14 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
       // claude-code 目前没有其它收尾步骤,这段就是整个 teardown。
       await runPreTeardownHooks(sb, ctx, "claude-code", config?.preTeardown);
+      await attemptResources(ctx)?.shutdownAll(ctx.signal);
     },
 
-    send: (input, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-      const sb = ctx.sandbox;
-      const claudeBin = yield* resolveAgentBinEffect(sb, "claude");
-      return yield* Effect.tryPromise({
-        try: async (signal) => {
-      const args = ["--print", "--dangerously-skip-permissions"];
+    async send(input, ctx) {
+      const args: string[] = [];
       if (ctx.model) args.push("--model", ctx.model);
       if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
       if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
-      if (ctx.session.id) args.push("--resume", ctx.session.id);
-      // --allowedTools is variadic in Claude Code. Terminate option parsing so the
-      // positional prompt cannot be consumed as one more allowed tool name.
-      args.push("--", input.text);
 
       const apiKey = getApiKey();
       const env: globalThis.Record<string, string> = {
@@ -279,56 +274,8 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       };
       const baseUrl = getBaseUrl();
       if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
-
-      const res = await sb.runCommand(claudeBin, args, {
-        env,
-        sensitiveValues: [apiKey, ...agentEnvSensitiveValues],
-        stream: true,
-        signal,
-      });
-
-      // 「最新 jsonl」而非按 session id 精确定位:--resume 会 fork 新 session id 的新文件,
-      // 精确匹配旧 id 会读到过期 transcript。send 串行,最新的一定是刚跑完的这次。
-      const raw = await shared.captureLatestJsonl(sb, "~/.claude/projects");
-      ctx.session.capture(shared.sessionIdFromClaudeTranscript(raw));
-      const parsed = shared.parseClaudeCode(raw);
-      const events = [...parsed.events];
-      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
-      if (!raw?.trim()) {
-        const reason = "Claude Code transcript was unavailable; tool trajectory was not observed.";
-        turnEvidenceCoverage = {
-          events: { status: "unavailable", reason },
-          actions: { status: "unavailable", reason },
-          usage: { status: "unavailable", reason },
-        };
-      } else if (!parsed.parseSuccess) {
-        const reason = "Some Claude Code transcript lines could not be parsed.";
-        turnEvidenceCoverage = {
-          events: { status: "partial", reason },
-          actions: { status: "partial", reason },
-        };
-      } else {
-        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
-      }
-      if (res.exitCode !== 0) {
-        throw makeSendFailure({
-          acceptance: sendAcceptanceFromEvents(events),
-          message: shared.diagnoseFailure(res, parsed.events, raw),
-          events,
-          usage: parsed.usage,
-          process: res,
-        });
-      }
-      return {
-        events,
-        usage: parsed.usage,
-        status: "completed" as const,
-        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
-      };
-        },
-        catch: (cause) => cause,
-      });
-    })), { signal: ctx.signal }),
+      return sendClaudeCodeNative(input, ctx, args, env);
+    },
   }), config?.postSetup, config?.preTeardown);
 }
 

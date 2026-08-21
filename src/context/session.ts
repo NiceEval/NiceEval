@@ -23,6 +23,7 @@ import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import { isSendFailure, normalizeSendFailure, sendFailureText } from "./send-failures.ts";
 import type { RetryAttemptRecord, TimingActivity } from "../runner/types.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
+import { bindAttemptResources } from "./attempt-resources.ts";
 
 interface PhysicalSendResult {
   readonly turn: Turn;
@@ -192,6 +193,7 @@ export interface SessionDeps {
   nextSourceOrder?: () => number;
   /** Attempt-owned source snapshot registry; Runner injects it explicitly. */
   sourceRegistry?: SourceRegistry;
+  resources: import("../types.ts").AttemptResourceRegistry;
 }
 
 /** A successful agent send whose post-send ledger checkpoint could not be recorded. */
@@ -314,7 +316,7 @@ export class SessionManager {
     responses?: readonly InputResponse[],
   ): Effect.Effect<Turn, unknown> {
     return Effect.suspend(() => {
-      const ctx: AgentContext = {
+      const ctx: AgentContext = bindAttemptResources({
         signal: this.deps.signal,
         evalId: this.deps.evalId,
         attempt: this.deps.attempt,
@@ -332,7 +334,7 @@ export class SessionManager {
         diagnostic: (d) => this.deps.feedback?.diagnostic(d),
         // log 是 progress({ message }) 的别名(见 AgentContext.log)。
         log: this.deps.log,
-      };
+      }, this.deps.resources);
 
       const n = ++this.turnCount;
       const attach = files?.length ? ` 📎${files.length}` : "";
@@ -631,7 +633,10 @@ export class SessionManager {
   private sendAgent(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     const agent = this.deps.agent;
     if (agent.kind === "sandbox") {
-      const sandboxCtx: SandboxAgentContext = { ...ctx, sandbox: this.deps.sandbox };
+      const sandboxCtx: SandboxAgentContext = bindAttemptResources(
+        { ...ctx, sandbox: this.deps.sandbox },
+        this.deps.resources,
+      );
       return agent.send(input, sandboxCtx);
     }
     return agent.send(input, ctx);

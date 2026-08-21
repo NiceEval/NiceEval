@@ -17,7 +17,6 @@ import {
   type LoadedNativeConfig,
 } from "./native-config.ts";
 import { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
-import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CODEX_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
@@ -27,22 +26,24 @@ import {
   runPreTeardownHooks,
 } from "./post-setup.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import type { AgentArtifactPlatform } from "./types.ts";
 import {
-  makeSendFailure,
   sendAcceptanceFromEvents,
   sendFailureText,
   type SendFailure,
 } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import type { FailureClass } from "../shared/failure-class.ts";
+import { requireManagedProcessCapability } from "../sandbox/backend.ts";
+import { attemptResources } from "../context/attempt-resources.ts";
+import { sendCodexAppServer } from "./codex-app-server.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
 //
-// 连接方式:在沙箱里 spawn `codex exec --json`,stdout JSONL → parseCodex → 标准事件流。
+// 连接方式:在沙箱里维护 Codex app-server stdio,原生通知 → 标准事件流。
 // 配置:鉴权本地(config / env),模型交给实验(ctx.model),推理努力程度经 ctx.reasoningEffort,
 // 其余参数经 ctx.flags。
 // 扩展(skill / plugin / MCP)是构造参数,setup 翻译成 codex 的原生形态并写 manifest。
@@ -316,6 +317,7 @@ export function codexAgent(config?: CodexConfig): Agent {
     installers: [installer],
 
     setup: (sb, ctx) => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      yield* Effect.try({ try: () => requireManagedProcessCapability(sb, "codex"), catch: (cause) => cause });
       // 用户的原生配置文件:本地读原始字节 → 验 TOML 语法与保留键。字节 SHA-256 进
       // manifest 与安装 checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
       let nativeConfig: LoadedNativeConfig | undefined;
@@ -479,6 +481,7 @@ export function codexAgent(config?: CodexConfig): Agent {
       // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
       // codex 目前没有其它收尾步骤,这段就是整个 teardown。
       await runPreTeardownHooks(sb, ctx, "codex", config?.preTeardown);
+      await attemptResources(ctx)?.shutdownAll(ctx.signal);
     },
 
     tracing: {
@@ -498,72 +501,18 @@ export function codexAgent(config?: CodexConfig): Agent {
     },
 
     async send(input, ctx) {
-      const sb = ctx.sandbox;
-      // hook trust bypass 是 runtime-only(config.toml 设不了):headless 下 codex 对非 managed
-      // 来源 hook 的交互式授信永远无人应答,不带它插件装的 hook 会被静默跳过、零报错
-      // (见 memory/codex-hook-trust-headless-silent-skip.md)。沙箱内 hook 来源全部由实验配置
-      // 声明,与 approvals/sandbox bypass 同一信任层级。
-      const flags =
-        "--json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --dangerously-bypass-hook-trust";
-      const prompt = shared.shellQuote(input.text);
-      const resuming = ctx.session.id;
-      const cmd = resuming
-        ? `${shared.agentBin("codex")} exec resume ${ctx.session.id} ${flags} ${prompt}`
-        : `${shared.agentBin("codex")} exec ${flags} ${prompt}`;
-
-      // `codex exec --json` 持续写出 ThreadEvent JSONL。把它压成短 step 送进 runner
-      // progress，human dashboard 因而能显示真正的 tool / reasoning / assistant 活动；完整
-      // transcript 仍在命令结束后一次解析并落入 events artifact，不能让 live 文案变成第二份结果。
-      const onStdout = codexProgressReporter(ctx);
       const apiKey = getApiKey();
-      const res = await sb.runShell(cmd, {
-        // ambient env 由 Codex 进程自然传给 SessionStart/SessionStop hooks、env_http_headers
-        // 与 agent 调起的 nmem 等子进程。鉴权字段最后覆盖，避免 env 形成第二条 key 来源。
-        env: { ...agentEnv, OPENAI_API_KEY: apiKey },
-        sensitiveValues: [apiKey, ...agentEnvSensitiveValues],
-        stream: true,
-        onStdout,
+      return sendCodexAppServer(input, ctx, {
+        ...agentEnv,
+        OPENAI_API_KEY: apiKey,
+        ...ctx.telemetry?.env,
+      }, (raw, events, nativeText) => {
+        const code = codexCapacityCode(raw);
+        return {
+          acceptance: codexAcceptance(raw, events, nativeText),
+          ...(code === undefined ? {} : { cause: normalizeExternalCause({ code }) }),
+        };
       });
-
-      const raw = shared.extractJsonlFromStdout(res.stdout);
-      ctx.session.capture(shared.codexThreadId(res.stdout));
-      const parsed = shared.parseCodex(raw);
-      const events = [...parsed.events];
-      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
-      if (!raw?.trim()) {
-        const reason = "Codex JSONL transcript was unavailable; tool trajectory was not observed.";
-        turnEvidenceCoverage = {
-          events: { status: "unavailable", reason },
-          actions: { status: "unavailable", reason },
-          usage: { status: "unavailable", reason },
-        };
-      } else if (!parsed.parseSuccess) {
-        const reason = "Some Codex JSONL transcript lines could not be parsed.";
-        turnEvidenceCoverage = {
-          events: { status: "partial", reason },
-          actions: { status: "partial", reason },
-        };
-      } else {
-        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
-      }
-      if (res.exitCode !== 0) {
-        throw makeSendFailure({
-          acceptance: codexAcceptance(raw, events, res.stderr),
-          message: shared.diagnoseFailure(res, parsed.events, raw),
-          ...(codexCapacityCode(raw) !== undefined
-            ? { cause: normalizeExternalCause({ code: codexCapacityCode(raw) }) }
-            : {}),
-          events,
-          usage: parsed.usage,
-          process: res,
-        });
-      }
-      return {
-        events,
-        usage: parsed.usage,
-        status: "completed",
-        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
-      };
     },
   }), config?.postSetup, config?.preTeardown);
 }
