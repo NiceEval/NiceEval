@@ -5,6 +5,7 @@
 
 [build.environment]
   NODE_VERSION = "24"
+  PNPM_FLAGS = "--ignore-scripts"
 
 [context.deploy-preview]
   command = "bash ../scripts/netlify-report-preview.sh"
