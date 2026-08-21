@@ -109,13 +109,13 @@ const MetricCard = defineComponent<
 
 `show --json` 固定输出英语 JSON。内建 Report 输出 Host 拥有的具名领域文档；自定义 Report 输出一个 Page 的 route、标题、80-column rendered text、下载摘要和问题表。两种 v1 JSON 都在顶层以相同的 `projections` 对象携带该目标 Page 的闭合成本数据；它们不包含作者树、HTML、全站路由或站点 identity。
 
-view 与静态导出使用同一份完整站点版本。同一路由的 HTTP body 与导出目录页面 body 逐字节相同。两者都携带同一个 reload client；静态目录找不到 view 的端点时，它会安静停用。禁用 JavaScript 或断开网络后，正文、导航、详情、完整度、问题和下载仍可读。
+view 与静态导出使用同一份完整站点版本。同一路由的 HTTP body 与导出目录页面 body 逐字节相同。两者都携带同一个 Host runtime；静态目录找不到 view 的端点时，实时刷新会安静停用。目录不需要网络、源 Record 或 NiceEval 安装，但浏览器必须启用随包交付的 JavaScript。禁用时页面显示可操作的错误，不维护第二套阅读路径。
 
 ## 样式和资源边界
 
 Report CSS 是唯一的产品样式 owner。它负责 reset、基础排版、theme token 与组件样式。View shell 只负责浏览器语言切换、reload 状态和 Host 提示，不重绘 Report 内容。
 
-Report 可以在 `head` 中声明结构化 `meta`、`link`、`style` 和 `script`，也可以选择 theme。脚本只能做渐进增强，不能成为正文、导航、Evidence 或机器文档的唯一入口。自定义样式不能建立第二份 reset、theme 或 View shell。
+Report 可以在 `head` 中声明结构化 `meta`、`link`、`style` 和 `script`，也可以选择 theme。Host runtime 负责报告阅读与导航；作者脚本可以增强作者内容，但不能替代已闭合的正文、Evidence 或机器文档。自定义样式不能建立第二份 reset、theme 或 View shell。
 
 ## 相关页面
 

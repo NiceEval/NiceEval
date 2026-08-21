@@ -2741,7 +2741,16 @@ html.niceeval-view-document body {
 
 .niceeval-view-problems h2 { margin: 0 0 8px; font-size: 14px; }
 .niceeval-view-problems ul { margin: 0; padding-left: 20px; }
-.niceeval-view-noscript { margin: 0; color: var(--niceeval-color-text-secondary, #a1a1aa); }
+.niceeval-view-js-required {
+  width: min(calc(100vw - 48px), 720px);
+  margin: 18vh auto 0;
+  padding: 28px;
+  border: 1px solid var(--niceeval-color-border, #262626);
+  color: var(--niceeval-color-text, #ededed);
+  background: var(--niceeval-color-surface, #0b0b0b);
+}
+.niceeval-view-js-required h1 { margin: 0 0 12px; font-size: 22px; }
+.niceeval-view-js-required p { margin: 0; color: var(--niceeval-color-text-secondary, #a1a1aa); }
 
 [data-niceeval-locale][hidden] { display: none !important; }
 
@@ -2752,7 +2761,6 @@ html.niceeval-view-document body {
   }
   .niceeval-view-pages { display: none; }
   .niceeval-view-controls { grid-column: 2; }
-  .niceeval-view-experiment noscript .niceeval-view-nav { display: none; }
   .niceeval-view-experiment label > span { display: none; }
   .niceeval-view-experiment select { min-width: 108px; }
   .niceeval-view-language select { min-width: 68px; }

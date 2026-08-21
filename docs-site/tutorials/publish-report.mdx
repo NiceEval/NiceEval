@@ -1,7 +1,7 @@
 ---
 title: "Publish a Static Report"
 sidebarTitle: "Publish a Static Report"
-description: "Use view --out to export a self-contained report site that opens offline, is separate from its source Record, and contains every page."
+description: "Use view --out to export a self-contained report site with bundled JavaScript, separate from its source Record, containing every page."
 ---
 
 `niceeval view --out <directory>` forms a fixed Sample from published results, then builds the complete report site. It does not save the current browser page as files: every ordinary Page, parameterized Page instance, asset, and download explicitly declared in `pages` must be closed and validated first. The Host does not add detail pages.
@@ -37,9 +37,9 @@ A successful directory contains:
 - Closed Source and Diff assets, downloads, and `_niceeval/data/projections.json`.
 - The navigation, body, completeness, and problem content needed to read the site.
 
-The directory needs no source Record, NiceEval installation, or network. The bytes of `_niceeval/data/projections.json` enter the revision identity together with pages and assets. It carries the same reload client as view; when a static directory has no view endpoint, the client disables itself quietly, shows no error, and starts no new Analysis read.
+The directory needs no source Record, NiceEval installation, or network. The bytes of `_niceeval/data/projections.json` enter the revision identity together with pages and assets. It carries the same Host runtime as view; when a static directory has no view endpoint, live reload disables itself quietly, shows no error, and starts no new Analysis read.
 
-Open the home page and at least one parameterized page in an offline browser with JavaScript disabled. The body, navigation, details, completeness, problems, and downloads must still be readable.
+Open the home page and at least one parameterized page in an offline browser with bundled JavaScript enabled. The body, navigation, details, completeness, problems, and downloads must remain readable. Then disable JavaScript and confirm that the page shows the explicit enable-JavaScript error instead of partial report content.
 
 ## Protect the destination directory
 
@@ -63,4 +63,4 @@ When CI must publish the run it just completed, read the `runIds` from the final
 
 - [Deploy a Report Site](/tutorials/deploy-report-site) — hand the directory to a static hosting service.
 - [View Results](/tutorials/viewing-results) — understand the boundary between one-target `show` and whole-site `view`.
-- [Report API](/reference/report-components) — define parameterized Pages, assets, and content readable without JavaScript.
+- [Report API](/reference/report-components) — define parameterized Pages, assets, and closed report content.

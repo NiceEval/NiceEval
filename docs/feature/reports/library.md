@@ -23,7 +23,7 @@ NiceEval JSX runtime、generic semantic author model、Record capability 或 Hos
 | `niceeval/report/extension` · `extension/{define,meta,types,assets}.ts` | `defineRenderer`、`rendererMetaOf`、`isRendererComponent` | `RendererFaces`、`RendererProps`、`RendererOptions`、`RendererAssetDeclaration`、`RendererMeta`、`RendererTextContext`、`RendererWebContext` |
 | `niceeval/report/host` · `host/**` 与 `execution/**` | `reportHost` | `ClosedSiteRevision` |
 | `niceeval/report/react/styles.css` · `assets/styles.css` | Report 产品 CSS 文件 | 无 |
-| `niceeval/report/react/enhance.js` · `assets/enhance.js` | Report 渐进增强脚本 | 无 |
+| `niceeval/report/react/enhance.js` · `assets/enhance.js` | Report 浏览器 runtime | 无 |
 
 `niceeval/jsx-runtime`、`niceeval/jsx-dev-runtime`、`niceeval/report/jsx-runtime` 与
 `niceeval/report/jsx-dev-runtime` 没有 package export。`ReportElement`、`ReportNode`、`ClosedReportNode` 与通用 semantic tree
@@ -212,7 +212,7 @@ type Page<Params extends JsonValue | void = void, Input = Sample> =
 
 `role.kind: "experiment-group"` 只适用于参数 Page。`groupKind` 固定该 Page 接收 named 或 singleton identity，`load` 再从当前 Sample 形成 `ExperimentComparisonScope`。Host 只为作者显式声明的这类 Page 生成 Header 实验选择器；当前 Sample 只有一个可比范围时不显示选择器，有两个或更多时才显示，并默认选择稳定排序的第一项。未声明该 role 时不补造 Page、route 或选择器。
 
-参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，形成 `/group/named/<segment>` 与 `/group/singleton/<experiment-id>`。选择器把两个 Page 的已闭合目标汇总成一个原生 `select`；切换只导航到选项携带的静态 Page URL。禁用 JavaScript 时，Header 提供同一组真实链接作为 fallback，静态导出仍能切换组。
+参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，形成 `/group/named/<segment>` 与 `/group/singleton/<experiment-id>`。选择器把两个 Page 的已闭合目标汇总成一个原生 `select`；切换只导航到选项携带的静态 Page URL。该交互依赖静态目录随包交付的 Host runtime；禁用 JavaScript 时只显示启用提示。
 
 标准实验组 Page 是完整的 scoped Overview，不是只替换 Experiment Table。它把 `ExperimentComparisonScope` 的 backing Sample 显式交给 Hero、`SampleNotices` 与 `SampleSummary`，再把同一 scope 交给 `ExperimentScatter` 和 `ExperimentTable`。因此告警数、Pass rate、Experiments、Evals、Attempts、Eval results、Total cost 与 Run range 都随选择范围变化。
 

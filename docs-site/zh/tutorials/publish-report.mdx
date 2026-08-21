@@ -37,9 +37,9 @@ Analysis 的 `partial`、`empty`、`unsupported` 与 `failed` 是可显示的数
 - 已关闭的 Source / Diff asset、下载文件和 `_niceeval/data/projections.json`；
 - 站点阅读所需的导航、正文、完整度和问题内容。
 
-目录不需要源 Record、NiceEval 安装或网络。`_niceeval/data/projections.json` 的 bytes 与页面、资源一起进入 revision identity。它携带和 view 相同的 reload client；静态目录不存在 view 端点时，client 安静停用，不显示错误，也不发起新的 Analysis 读取。
+目录不需要源 Record、NiceEval 安装或网络。`_niceeval/data/projections.json` 的 bytes 与页面、资源一起进入 revision identity。它携带和 view 相同的 Host runtime；静态目录不存在 view 端点时，实时刷新安静停用，不显示错误，也不发起新的 Analysis 读取。
 
-在断网浏览器中关闭 JavaScript 后打开首页和至少一个参数页。正文、导航、详情、完整度、问题和下载仍应可读。
+在断网浏览器中保持随包交付的 JavaScript 启用，打开首页和至少一个参数页。正文、导航、详情、完整度、问题和下载仍应可读；再单独禁用 JavaScript，确认页面显示明确的启用提示而不是局部报告内容。
 
 ## 目标目录保护
 
@@ -63,4 +63,4 @@ pnpm exec niceeval view --experiment ci --out ./report-site --no-open
 
 - [部署报告站](/zh/tutorials/deploy-report-site)：交给静态托管服务。
 - [查看结果](/zh/tutorials/viewing-results)：理解单目标 `show` 与全站 `view` 的边界。
-- [报告 API](/zh/reference/report-components)：定义参数 Page、资源与无 JavaScript 阅读内容。
+- [报告 API](/zh/reference/report-components)：定义参数 Page、资源与闭合报告内容。

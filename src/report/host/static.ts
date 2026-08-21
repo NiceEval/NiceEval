@@ -113,8 +113,9 @@ const PRODUCT_ENHANCER = readFileSync(new URL("../assets/enhance.js", import.met
  * Host-owned parameterized-Page dialog for the shared view/static runtime.
  * A click on a same-site `<pageId>/<key>/index.html` href writes the legacy
  * hash deep link and opens a native `<dialog>` filled with that standalone
- * detail document's own slot bytes. No-JS and direct hrefs keep reading the
- * same document. The route list comes from the revision's closed pages, not
+ * detail document's own slot bytes. Direct HTTP(S) hrefs redirect from a
+ * synchronous head bootstrap before their standalone body can paint. The
+ * route list comes from the revision's closed pages, not
  * from any author declaration. The report content inside the dialog is styled
  * by the existing product stylesheet; only the dialog chrome is styled here.
  */
@@ -176,18 +177,6 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
 
   function hashForTarget(target) {
     return "#/" + target.prefix + "/" + target.key;
-  }
-
-  function targetFromCurrentPage() {
-    const prefix = document.documentElement.getAttribute("data-niceeval-param-prefix") || "";
-    const key = document.documentElement.getAttribute("data-niceeval-param-key") || "";
-    if (!prefix || !key || !routes.includes(prefix)) return null;
-    const root = new URL(siteRoot, document.baseURI);
-    return {
-      prefix,
-      key,
-      url: new URL(prefix + "/" + encodeURIComponent(key) + "/index.html", root),
-    };
   }
 
   function currentLocale() {
@@ -315,14 +304,6 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
     requestRevision++;
     ownsHistory = false;
     if (dialog !== null && dialog.open) dialog.close();
-  }
-
-  const currentPageTarget = targetFromCurrentPage();
-  if (currentPageTarget !== null && !location.hash) {
-    const root = new URL(siteRoot, document.baseURI);
-    root.hash = hashForTarget(currentPageTarget);
-    location.replace(root.href);
-    return;
   }
 
   const initialTarget = targetFromHash();
@@ -617,11 +598,27 @@ function renderPage(site: ClosedReportSite, entry: ClosedSitePage, paramRoutes: 
     ? ""
     : ` data-niceeval-param-routes="${escapeAttribute(paramRoutes.join(" "))}"`;
   const currentParamTarget = parameterizedTargetForPage(page.target.route, paramRoutes);
-  const currentParamAttr = currentParamTarget === undefined
-    ? ""
-    : ` data-niceeval-param-prefix="${escapeAttribute(currentParamTarget.prefix)}" data-niceeval-param-key="${escapeAttribute(currentParamTarget.key)}"`;
   const siteRootHref = relativeHref(output, "index.html");
-  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}" data-niceeval-site-root="${escapeAttribute(siteRootHref)}"${paramRoutesAttr}${currentParamAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><div class="niceeval-view-pages"><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav></div><div class="niceeval-view-controls">${groupsEn}${groupsZh}<label class="niceeval-view-language"><select aria-label="Language" data-niceeval-locale-select><option value="en">EN</option><option value="zh-CN">中文</option></select></label></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div><noscript><p class="niceeval-view-noscript">This report remains readable without JavaScript; language selection is unavailable.</p></noscript></main></body></html>`;
+  const directParamBootstrap = currentParamTarget === undefined
+    ? ""
+    : renderDirectParamBootstrap(siteRootHref, currentParamTarget);
+  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}" data-niceeval-site-root="${escapeAttribute(siteRootHref)}"${paramRoutesAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title>${directParamBootstrap}<noscript><style>.niceeval-view-shell,.niceeval-view-main{display:none!important}</style></noscript><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><noscript><main class="niceeval-view-js-required" role="alert"><h1>JavaScript required</h1><p>Enable JavaScript to view this NiceEval report.</p></main></noscript><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><div class="niceeval-view-pages"><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav></div><div class="niceeval-view-controls">${groupsEn}${groupsZh}<label class="niceeval-view-language"><select aria-label="Language" data-niceeval-locale-select><option value="en">EN</option><option value="zh-CN">中文</option></select></label></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div></main></body></html>`;
+}
+
+function renderDirectParamBootstrap(
+  siteRootHref: string,
+  target: { readonly prefix: string; readonly key: string },
+): string {
+  const root = inlineScriptString(siteRootHref);
+  const hash = inlineScriptString(`#/${target.prefix}/${target.key}`);
+  return `<script>(()=>{if(typeof HTMLDialogElement!=="function")return;if(location.protocol!=="http:"&&location.protocol!=="https:")return;const root=new URL(${root},document.baseURI);root.hash=${hash};location.replace(root.href)})()</script>`;
+}
+
+function inlineScriptString(value: string): string {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003c")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
 }
 
 function parameterizedTargetForPage(
@@ -651,17 +648,9 @@ function renderExperimentGroupNavigation(
       : typeof params?.experimentId === "string" ? params.experimentId : page.target.route;
     return `<option value="${escapeAttribute(href)}"${current}>${escapeText(label)}</option>`;
   });
-  const links = groups.map(({ page }) => {
-    const current = page.target.route === currentRoute ? " aria-current=\"page\"" : "";
-    const href = relativeHref(sourceFile, staticPathForRoute(page.target.route).posix);
-    const params = page.target.params as Record<string, unknown> | undefined;
-    const label = typeof params?.groupId === "string" ? params.groupId
-      : typeof params?.experimentId === "string" ? params.experimentId : page.target.route;
-    return `<li><a href="${escapeAttribute(href)}"${current}>${escapeText(label)}</a></li>`;
-  });
   const hidden = locale === "zh-CN" ? " hidden" : "";
   const label = locale === "zh-CN" ? "实验" : "Experiments";
-  return `<div class="niceeval-view-experiment" data-niceeval-locale="${locale}"${hidden}><label><span>${label}</span><select aria-label="${label}" data-niceeval-experiment-select>${options.join("")}</select></label><noscript><nav class="niceeval-view-nav" aria-label="${label}"><ul>${links.join("")}</ul></nav></noscript></div>`;
+  return `<div class="niceeval-view-experiment" data-niceeval-locale="${locale}"${hidden}><label><span>${label}</span><select aria-label="${label}" data-niceeval-experiment-select>${options.join("")}</select></label></div>`;
 }
 
 function renderNavigation(

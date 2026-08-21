@@ -231,8 +231,8 @@ niceeval view --run 01H... --out ./shared-site --no-open
 下载文件与 `_niceeval/data/projections.json`。该 projections 文件包含全体声明 Page 的 closure，bytes 进入 revision identity。目标目录
 必须不存在；存在时返回 `report-export-target-exists`，Host 不删除或替换其中的文件。
 
-生成目录不需要 Record、NiceEval 安装或网络。reload client 找不到 view 端点时安静停用；禁用 JavaScript 后，正文、导航、详情、
-完整度、问题和下载仍可读。相同 route 的目录页面 body 与 view HTTP body 相同。
+生成目录不需要 Record、NiceEval 安装或网络。reload client 找不到 view 端点时安静停用；浏览器必须启用目录内随包交付的 JavaScript，
+禁用时页面明确提示启用，不提供第二套阅读 fallback。相同 route 的目录页面 body 与 view HTTP body 相同。
 
 全站构建要求固定 Sample 至少选中一个 logical Slot。零选中结果返回 `report-sample-empty`；`view --out` 不创建目录，`view` 不启动
 server。这个输入错误不同于某个已选中结果的 MetricValue 为 `empty`：后者是报告应当呈现的数据状态。
@@ -268,4 +268,4 @@ server。这个输入错误不同于某个已选中结果的 MetricValue 为 `em
 - [Report Library](library.md)：作者 API、Page、组件与 export manifest。
 - [Architecture](architecture.md)：单目标路径、全站 SSG、缓存与 revision 发布。
 - [分享静态报告站](use-case/分享静态报告站.md)：团队分享的离线路径。
-- [制作可访问页面](use-case/制作可访问页面.md)：text、Web 与无 JavaScript 阅读。
+- [制作可访问页面](use-case/制作可访问页面.md)：text、Web 与浏览器阅读。

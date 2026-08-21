@@ -64,7 +64,7 @@ Deploy Preview URL 可能被转发。不要把含敏感内容的 Record 发布�
 
 导出前，NiceEval 已验证 `pages` 中全部显式声明的普通 Page、参数 Page 实例、链接、资源、下载、`_niceeval/data/projections.json` 和预算；Host 不补建详情 route。成功目录包含 HTML、Report CSS、reload client、作者 asset、下载文件与 projections 文件，后者的 bytes 属于 revision identity；静态目录缺少 reload 端点时，client 安静停用。
 
-在部署前断开网络并禁用 JavaScript，打开首页和至少一个参数详情页。正文、导航、完整度、问题和下载仍应可读。若本机 `view` 使用同一选择和 Report，同一路由的 HTTP body 与目录页面 body 应逐字节一致。
+在部署前断开网络但保持随包交付的 JavaScript 启用，打开首页和至少一个参数详情页。正文、导航、完整度、问题和下载仍应可读；再单独禁用 JavaScript，确认页面显示明确的启用提示。若本机 `view` 使用同一选择和 Report，同一路由的 HTTP body 与目录页面 body 应逐字节一致。
 
 `--out` 必须指向不存在的目录。固定 Sample 零选中结果时，命令以 `report-sample-empty` 失败且不创建目录。已选中结果中的 empty MetricValue 仍会正常呈现。更新内容时，选择新的 Sample、导出到新目录，再切换托管平台的发布版本；不要覆盖旧目录。
 
