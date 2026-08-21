@@ -86,6 +86,11 @@ function verdictCountsCell(attempts: readonly AttemptListItem[]): Cell {
   return { kind: "verdict", counts: tallyVerdicts(attempts) };
 }
 
+function evalVerdictCell(attempts: readonly AttemptListItem[]): Cell {
+  const only = attempts.length === 1 ? attempts[0]?.verdict : null;
+  return only === null || only === undefined ? verdictCountsCell(attempts) : verdictCell(only);
+}
+
 function verdictCell(verdict: Verdict | null): Cell {
   if (verdict === null) return { kind: "notApplicable" };
   return { kind: "verdict", verdict };
@@ -120,8 +125,8 @@ function attemptCells(attempt: AttemptListItem): CellBag {
     entity: locatorCell(attempt),
     verdict: verdictCell(attempt.verdict),
     result: resultCell(attempt),
-    // 层级表的判定构成列:该次判定,与 verdict 格同值。
-    record: verdictCell(attempt.verdict),
+    // locator 已携带这次判定；末列不重复同一个状态。
+    record: { kind: "notApplicable" },
     durationMs: measureCell(attempt.durationMs),
     ...(attempt.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: attempt.totalScore } as const }),
     ...(attempt.costUSD === undefined ? {} : { costUSD: measureCell(attempt.costUSD) }),
@@ -228,10 +233,12 @@ function evalRow(
 ): TableContentRow {
   const bag: CellBag = {
     entity: textCell(label),
-    // 判定构成列:该题 attempts 的计票,与 experiment 行计票同一形态。
-    record: verdictCountsCell(row.attempts),
+    // 单 Attempt Eval 直接显示判定；重复运行后才升级成计票摘要。
+    record: evalVerdictCell(row.attempts),
     durationMs: measureCell(row.durationMs),
-    ...(row.evaluationKind === "pass" ? { passRate: measureCell(row.endToEndPassRate) } : {}),
+    ...(row.evaluationKind === "pass" && row.attempts.length > 1
+      ? { passRate: measureCell(row.endToEndPassRate) }
+      : {}),
     ...(row.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: row.totalScore } as const }),
     ...(row.costUSD === undefined ? {} : { costUSD: measureCell(row.costUSD) }),
   };

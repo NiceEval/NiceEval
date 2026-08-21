@@ -374,6 +374,8 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
       expect(visible).toContain("Experiment comparison");
       expect(visible).toContain("main");
       expect(visible).not.toMatch(/\d+ \/ \d+ slot/);
+      expect(visible).not.toMatch(/deliberate-fail[^\n]*0%/);
+      expect(visible).not.toMatch(/tool-call[^\n]*100%/);
       expect(visible).toMatch(/^╭.*╮$/mu);
       expect(visible).toMatch(/^╰.*╯$/mu);
     },

@@ -63,6 +63,10 @@ key 完全相同。`show` 不调用 `enumerate()`，却要求 `PageLoadContext` 
 
 `standard` 只遇到一个实验组时，Overview 直接呈现该组的比较结果。遇到多个组时，`show` 默认输出实验索引和可复制的 `niceeval show --experiment <selector>` 命令，不生成跨组 leaderboard，也不引入另一套实验组 CLI 参数。具名组 Page 在唯一 `ExperimentComparisonScope` 内使用 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。Pass Eval 显示通过率，Score Eval 只显示 earned score，不声明满分或百分比；两种题型分面板呈现，不互排。
 
+Pass Eval 只有一个 Attempt 时，Eval 行不重复显示必为 `0%` 或 `100%` 的通过率，Result 直接显示 `passed`、`failed` 或
+`errored` 判定。相同 Eval 有多个 Attempt 时，Eval 行显示聚合通过率与判定计票。Experiment 与 Eval group 行始终保留汇总通过率。
+Attempt 行的 locator 已携带判定符，Result 不重复同一个状态。
+
 每个 Experiment 可逐层展开到 Eval 与 Attempt，Attempt locator 链接到同一份 `standard` 显式声明的详情 Page。Analysis 的 `MetricValue` 仍完整保留 state、samples、total、issues 与 refs。
 
 同组实验运行的 Eval ID 集合不同时，组 Page 显示具名原因、成员与实际集合，不显示排名或散点。通过制与分数制可以在同组的独立面板中呈现，不因题型不同而进入这个状态。
