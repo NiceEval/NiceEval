@@ -2644,6 +2644,90 @@ html.niceeval-view-document body {
 
 .niceeval-view-report-slot { margin: 0 auto 36px; }
 
+.niceeval-view-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.niceeval-view-skeleton {
+  --niceeval-skeleton-base: var(--niceeval-color-surface-subtle, #151515);
+  --niceeval-skeleton-shine: var(--niceeval-color-border-strong, #343434);
+  display: grid;
+  gap: 28px;
+  width: 100%;
+  min-height: 440px;
+}
+
+.niceeval-view-skeleton-line,
+.niceeval-view-skeleton-cards > span,
+.niceeval-view-skeleton-chart,
+.niceeval-view-skeleton-table,
+.niceeval-view-skeleton-table > i {
+  display: block;
+  border-radius: var(--niceeval-radius, 0);
+  background: linear-gradient(
+    100deg,
+    var(--niceeval-skeleton-base) 25%,
+    var(--niceeval-skeleton-shine) 44%,
+    var(--niceeval-skeleton-base) 63%
+  );
+  background-size: 300% 100%;
+  animation: niceeval-view-skeleton-shimmer 1.7s ease-in-out infinite;
+}
+
+.niceeval-view-skeleton-heading { display: grid; gap: 12px; }
+.niceeval-view-skeleton-eyebrow { width: 92px; height: 10px; }
+.niceeval-view-skeleton-title { width: min(440px, 68%); height: 32px; }
+.niceeval-view-skeleton-copy { width: min(620px, 86%); height: 14px; }
+
+.niceeval-view-skeleton-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.niceeval-view-skeleton-cards > span { height: 104px; }
+
+.niceeval-view-skeleton-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, .65fr);
+  gap: 18px;
+}
+
+.niceeval-view-skeleton-chart { min-height: 230px; }
+.niceeval-view-skeleton-table { min-height: 230px; padding: 24px 20px; }
+.niceeval-view-skeleton-table > i { height: 12px; margin-bottom: 24px; }
+.niceeval-view-skeleton-table > i:nth-child(2) { width: 82%; }
+.niceeval-view-skeleton-table > i:nth-child(3) { width: 91%; }
+.niceeval-view-skeleton-table > i:nth-child(4) { width: 68%; }
+
+.niceeval-view-skeleton-overlay {
+  min-height: 360px;
+  padding-top: 12px;
+}
+
+@keyframes niceeval-view-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .niceeval-view-skeleton-line,
+  .niceeval-view-skeleton-cards > span,
+  .niceeval-view-skeleton-chart,
+  .niceeval-view-skeleton-table,
+  .niceeval-view-skeleton-table > i {
+    animation: none;
+  }
+}
+
 /* View shell owns only the modal chrome. The report body inside the dialog
    keeps the same closed product markup and the same stylesheet as its direct
    route; the runtime injects no second CSS owner. */
@@ -2758,6 +2842,12 @@ html.niceeval-view-document body {
   .niceeval-view-experiment select { min-width: 108px; }
   .niceeval-view-language select { min-width: 68px; }
   .niceeval-view-main { width: min(calc(100vw - 28px), 1120px); padding-top: 42px; }
+  .niceeval-view-skeleton { min-height: 380px; gap: 20px; }
+  .niceeval-view-skeleton-cards { grid-template-columns: 1fr; }
+  .niceeval-view-skeleton-cards > span:nth-child(n + 2) { display: none; }
+  .niceeval-view-skeleton-content { grid-template-columns: 1fr; }
+  .niceeval-view-skeleton-chart { min-height: 190px; }
+  .niceeval-view-skeleton-table { display: none; }
 }
 
 @media print {
