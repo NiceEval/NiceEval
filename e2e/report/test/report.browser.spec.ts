@@ -15,7 +15,7 @@ import { reportCaseArtifacts, reportE2E } from "./support.ts";
 
 type DetailKind = "Source" | "Diff" | "Slot";
 
-test("静态站与 view 对同一用户路由交付相同字节，且离线无 JavaScript 仍可浏览", async ({ browser }) => {
+test("静态站与 view 对同一用户路由交付相同字节，且缺少 JavaScript 时明确报错", async ({ browser }) => {
   test.setTimeout(120_000);
 
   await reportE2E.case(
@@ -68,54 +68,13 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
         await offline.setOffline(true);
         const page = await offline.newPage();
         await page.goto(staticRoot.href);
-        await expect(page.getByRole("heading", { name: "Fixture overview" })).toBeVisible();
-        const staticSiteText = visibleText(page, "Report fixture static site");
-        await expect(staticSiteText).toHaveCount(1);
-        await expect(staticSiteText).toBeVisible();
-        const overviewTabText = visibleText(page, "Fixture overview tab content");
-        await expect(overviewTabText).toHaveCount(1);
-        await expect(overviewTabText).toBeVisible();
-        // Native disclosure: only the first tab is open without JavaScript.
-        const fixtureDetailsTab = page.locator("details").filter({
-          hasText: "Fixture details tab content",
-        }).filter({ visible: true });
-        await expect(fixtureDetailsTab).toHaveCount(1);
-        await expect(visibleText(page, "Fixture details tab content")).toHaveCount(0);
-        await fixtureDetailsTab.locator(":scope > summary").click();
-        await expect(fixtureDetailsTab).toHaveAttribute("open", "");
-        const expandedDetailsText = visibleText(page, "Fixture details tab content");
-        await expect(expandedDetailsText).toHaveCount(1);
-        await expect(expandedDetailsText).toBeVisible();
+        await expect(page.getByRole("heading", { name: "JavaScript required" })).toBeVisible();
+        await expect(page.getByRole("alert")).toContainText("Enable JavaScript to view this NiceEval report.");
+        await expect(page.getByRole("heading", { name: "Fixture overview" })).not.toBeVisible();
 
-        const detailLinks = await Promise.all(
-          (await page.getByRole("link", { name: /^(?:Source|Diff) detail$|^Slot detail / }).all()).map(async (link) => {
-            const href = await link.getAttribute("href");
-            if (href === null) throw new Error("a visible static detail link has no href");
-            return { href, label: await link.innerText() };
-          }),
-        );
-        expect(detailLinks.filter(({ label }) => detailKind(label) === "Slot")).toHaveLength(slotCount);
-        expect([...new Set(detailLinks.map(({ label }) => detailKind(label)))].sort()).toEqual(
-          ["Diff", "Slot", "Source"],
-        );
-
-        for (const detail of detailLinks) {
-          const kind = detailKind(detail.label);
-          const staticUrl = new URL(detail.href, staticRoot);
-          const liveUrl = new URL(detail.href, origin!);
-          await expectSameBody(staticUrl, liveUrl);
-
-          // The href is a shareable exported location, not an in-memory router state.
-          await page.goto(staticUrl.href);
-          const heading = kind === "Slot"
-            ? page.getByRole("heading", { name: /^Slot fixture detail slot-/ })
-            : page.getByRole("heading", { name: new RegExp(`^${kind} fixture detail$`) });
-          await expect(heading).toBeVisible();
-          const sharedUrl = page.url();
-          await page.reload();
-          expect(page.url()).toBe(sharedUrl);
-          await expect(heading).toBeVisible();
-        }
+        await page.goto(new URL("source/index.html", staticRoot).href);
+        await expect(page.getByRole("heading", { name: "JavaScript required" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Source fixture detail" })).not.toBeVisible();
 
       } finally {
         await offline.close();
@@ -143,10 +102,37 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
         await page.goto(origin!);
         const slotDetail = page.getByRole("link", { name: /^Slot detail / }).first().filter({ visible: true });
         await expect(slotDetail).toBeVisible();
-        await slotDetail.click();
+        const slotHref = await slotDetail.getAttribute("href");
+        if (slotHref === null) throw new Error("the visible Slot detail has no href");
+        const directSlotUrl = new URL(slotHref, page.url());
+        const directSlotMatch = /^\/(slot\/[^/]+)\/index\.html$/.exec(directSlotUrl.pathname);
+        if (directSlotMatch === null) throw new Error(`unexpected Slot detail URL: ${directSlotUrl.href}`);
+        const enhancedSlotUrl = new URL("index.html", origin!);
+        enhancedSlotUrl.hash = `#/${directSlotMatch[1]}`;
+
+        // A shareable parameterized URL restores the report context and opens
+        // the same target as a dialog before the detail body can paint.
+        await page.goto(directSlotUrl.href);
+        await expect(page).toHaveURL(enhancedSlotUrl.href);
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
         await expect(dialog.getByRole("heading", { name: /^Slot fixture detail slot-/ })).toBeVisible();
+        expect(await dialog.evaluate((element) => getComputedStyle(element, "::backdrop").backgroundColor)).toBe(
+          "rgba(0, 0, 0, 0.5)",
+        );
+        expect(await dialog.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
+          "rgba(0, 0, 0, 0)",
+        );
+
+        // The detail remains a lightweight overlay over the readable report.
+        // Clicking outside its content dismisses it and restores the overview
+        // URL instead of trapping the user in an Attempt-looking surface.
+        await page.mouse.click(4, 4);
+        await expect(dialog).not.toBeVisible();
+        expect(new URL(page.url()).hash).toBe("");
+
+        await slotDetail.click();
+        await expect(dialog).toBeVisible();
         const nestedSource = dialog.getByRole("link", { name: "Source from slot detail" });
         const sourceUrl = new URL("/source/index.html", origin!).href;
         // This is a relative href in the fetched slot document. The dialog
@@ -284,14 +270,8 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         try {
           const staticPage = await offline.newPage();
           await staticPage.goto(pathToFileURL(join(projectRoot, "group-static", "index.html")).href);
-          const staticGroups = staticPage.getByRole("navigation", { name: "Experiments" });
-          await expect(staticGroups.getByRole("link", { name: "classic" }))
-            .toHaveAttribute("href", "group/named/classic/index.html");
-          await staticGroups.getByRole("link", { name: "classic" }).click();
-          await expect(staticPage).toHaveURL(new RegExp("/group/named/classic/index\\.html$"));
-          const staticGroupChart = staticPage.locator('svg[aria-label="costUSD × passRate"]').filter({ visible: true });
-          await expect(staticGroupChart).toContainText("classic/memory-a");
-          await expect(staticGroupChart).not.toContainText("main");
+          await expect(staticPage.getByRole("heading", { name: "JavaScript required" })).toBeVisible();
+          await expect(staticPage.getByRole("heading", { name: "NiceEval overview" })).not.toBeVisible();
         } finally {
           await offline.close();
         }

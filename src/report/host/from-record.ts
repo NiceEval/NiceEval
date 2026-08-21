@@ -98,6 +98,10 @@ export interface ReportShowPresentationFailed {
   readonly reason: string;
 }
 
+export interface ReportSampleEmpty {
+  readonly code: "report-sample-empty";
+}
+
 export type ExecuteReportFromRecordError =
   | RecordReaderOpenError
   | RecordReaderReadError
@@ -106,6 +110,7 @@ export type ExecuteReportFromRecordError =
   | BuiltInMachineProductionFailed
   | BuiltInMachineProducerMissing
   | ReportShowPresentationFailed
+  | ReportSampleEmpty
   | {
       readonly code: "sample-attempt-locator-not-found";
       readonly locator: AttemptLocator;
@@ -177,7 +182,7 @@ export function buildReportSiteFromRecord(
 export function closeReportSiteFromRecord(
   input: CloseReportSiteFromRecordInput,
 ): Effect.Effect<ClosedReportSite, ExecuteReportFromRecordError, ExecuteReportFromRecordRequirements> {
-  return Effect.suspend(() => {
+  return Effect.suspend<ClosedReportSite, ExecuteReportFromRecordError, ExecuteReportFromRecordRequirements>(() => {
     const budget = startReportBuildBudget();
     return "locator" in input
       ? closeAttemptSiteFromRecord(input, budget)
@@ -393,6 +398,9 @@ function closeSelectionSiteFromRecord(
 ) {
   return Effect.scoped(Effect.gen(function* () {
     const sample = yield* openSelectionSample(input.root, input.selection);
+    if (sample.snapshot.coverage.selected === 0) {
+      return yield* Effect.fail(Object.freeze({ code: "report-sample-empty" as const }));
+    }
     return yield* withReportHostPhase("report-execution", executeReportSite({
       sample,
       report: input.report ?? defaultReportForSelection(input.selection),

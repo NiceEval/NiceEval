@@ -50,13 +50,13 @@ export const brandTheme = defineTheme({
 
 Report 可以通过结构化 `head` 声明 `meta`、`link`、`style` 和 `script`。内联内容、属性顺序和本地资源进入站点闭包，因此 view 与静态导出使用相同 bytes。
 
-上例的 `head` 是结构化声明。这类样式只能服务作者自己具名的内容。不要加入全局 reset、替换 theme token、重画内建组件或修改 View shell。script 只能渐进增强；正文、导航、Evidence 和机器 JSON 不能依赖它。
+上例的 `head` 是结构化声明。这类样式只能服务作者自己具名的内容。不要加入全局 reset、替换 theme token、重画内建组件或修改 View shell。Host runtime 负责报告阅读与导航；作者 script 可以增强作者内容，但不能替代已闭合的正文、Evidence 或机器 JSON。
 
 ## 不会改变的边界
 
 主题不会改变 `MetricValue`、分母、state、Evidence 或终端文字语义。`show` 仍关闭一个目标 Page；`view` 与 `view --out` 仍构建完整站点。相同 revision 的 HTTP 页面、导出页面、CSS 与 reload client bytes 一致。
 
-静态目录没有 view reload 端点时，reload client 会安静停用。断开网络或禁用 JavaScript 后，页面仍要保留正文、导航、详情、问题和下载。
+静态目录没有 view reload 端点时，实时刷新会安静停用。断开网络但启用随包交付的 JavaScript 时，页面仍保留正文、导航、详情、问题和下载；禁用 JavaScript 时只显示启用提示。
 
 ## 下一步
 

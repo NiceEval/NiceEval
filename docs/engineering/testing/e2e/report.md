@@ -62,7 +62,7 @@ niceeval view --report <fixture> --no-open
 
 浏览器默认进入稳定排序的第一个实验组 Page；多组 Header 实验 selector 始终有当前值，语言也由原生 selector 切换。完整 Page router
 作为一组居中，不能因当前只有一个 Page 就退化成左右栏布局。切换实验后，Hero、告警、Summary、图表与 Table 都只反映所选组。
-浏览器在断网且禁用 JavaScript 时打开根页、参数页、Source 和 Diff，仍能通过 fallback 链接读取 marker、正文、导航、完整度、问题。
+浏览器在断网但启用 JavaScript 时打开根页、参数页、Source 和 Diff，仍能读取 marker、正文、导航、完整度与问题；禁用 JavaScript 时只显示明确的启用提示，且不泄露报告正文。
 测试拦截外部网络请求；任何为补读 Analysis、Source 详情或页面数据发出的请求都是失败。
 
 ### 5. view 的版本 oracle
@@ -83,6 +83,8 @@ niceeval view --report <fixture> --no-open
 
 - `MetricValue` 的 partial、empty、unsupported 和 failed 是可呈现的数据状态。它们在 Page text、view 和 static
   中保留相同的 samples、total、issues 与 refs；内建 JSON 依其具名领域 format 保留这些值。
+- 全站构建的固定 Sample 零选中结果时，`view --out` 返回 `report-sample-empty`，且不创建输出目录。这个输入错误不把
+  已选中结果中的 empty MetricValue 错判为构建失败。
 - `show` 的目标 Page callback、参数 key 或成员资格失败时，命令返回单目标错误且从不交付 revision。
 - 参数枚举、未选中 Page、路径或全站校验失败时，static 不写完整站点，view 保留 last-good；这些错误不扩大
   `show` 的执行范围。
@@ -100,11 +102,11 @@ niceeval view --report <fixture> --no-open
 | show 是独立的单目标终端阅读面。 | `report-show` 与 `report-project-current` | selector、选中 route、文字、完整 MetricValue、参数 key 成员资格与 project-current 身份。 |
 | JSON 是单目标机器阅读面。 | `report-show-json` | target format、canonical order、选中 route、metadata、下载摘要与 problem table；不含全路由 revision oracle。 |
 | view 是同一 revision 的本机 HTTP 面。 | `report-config-reload` 与 `report-browser-journey` | last-good、最新 intent、固定响应、HTTP 边界和可访问内容。 |
-| static 是同一 revision 的离线文件面。 | `report-static-export` | 全部页面 closure、view 字节等价、existing-target 保护和无 JavaScript 阅读。 |
+| static 是同一 revision 的离线文件面。 | `report-static-export` | 全部页面 closure、view 字节等价、零选中结果拒绝、existing-target 保护和 JavaScript 必需提示。 |
 | Source、Diff 和运行证据来自本次构建。 | `report-source-snapshot` 与 `report-execution-evidence` | 已生成页面或文件不从工作树或私有文件补造。 |
 
 固定 world（固定世界）的真实浏览器人工验收补足视觉判断。它使用相同候选 tarball、签入 fixture、viewport、主题、
-浏览器版本和 route 集合，逐页核对文字层级、表格可读性、图形标签、状态、链接和无 JavaScript 阅读。
+浏览器版本和 route 集合，逐页核对文字层级、表格可读性、图形标签、状态、链接和 JavaScript 必需提示。
 
 它不做像素比较、截图 diff 或私有 class 断言。自动化 browser Journey 只断言稳定 URL、HTTP、可访问身份、字节等价和
 可见结果。
@@ -144,7 +146,7 @@ niceeval view --report <fixture> --no-open
 
 ### report-static-export
 
-`report-export.test.ts` 验证 `view --out` 的完整文件集合、与 view 的 body bytes 等价，以及已存在目标保护。
+`report-export.test.ts` 验证 `view --out` 的完整文件集合、与 view 的 body bytes 等价、零选中结果拒绝，以及已存在目标保护。
 
 ### report-show-json
 
@@ -157,7 +159,7 @@ niceeval view --report <fixture> --no-open
 
 ### report-browser-journey
 
-`report.browser.spec.ts` 通过真实 href、HTTP、可访问身份、可见内容和断网禁用 JavaScript 的 route 阅读验证浏览器 Journey。
+`report.browser.spec.ts` 通过真实 href、HTTP、可访问身份、可见内容、断网阅读和禁用 JavaScript 的明确提示验证浏览器 Journey。
 经典旅程通过真实浏览器完成筛选、原生 `details` 展开、Attempt href 下钻与中文切换。它只锁 role、text、href 和
 原生标签语义，不锁 CSS class、像素或精确颜色。Assertion 展开同时守住 record-only 的 `recorded` 状态，以及
 `notCalledTool` 零命中或决定性命中的人读诊断。

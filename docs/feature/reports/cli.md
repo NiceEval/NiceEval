@@ -34,7 +34,8 @@ niceeval view [selection] [report options] --out <directory>
 | `--out <directory>` | 写入完整静态站，不启动 watcher 或长期 server。 |
 
 不带 locator、`--run` 或 `--experiment` 时，命令按当前项目身份形成 Sample。它选择所有匹配的 published Run，不按时间缩成
-一个 Run，也不写回 Record。没有匹配结果仍形成空 Sample；度量用自己的 state、samples、total 与 issues 表示结果。
+一个 Run，也不写回 Record。`show` 可以从零选中结果的 Sample 关闭单个空态 Page；全站 `view` 与 `view --out` 则拒绝在这种
+Sample 上形成 revision。Sample 已选中结果后，度量仍用自己的 state、samples、total 与 issues 表示 empty 等数据状态。
 
 `--experiment` 不能与 locator 或 `--run` 合用。它沿用 `exp` 的精确 ID、目录与同目录文件名前缀选择规则；例如 `--experiment classic` 选择 `classic/` 下的整组 Experiments。未知 Run、零命中的 Experiment selector、未知 route、参数 route 的非规范 key 和缺少默认 route 都是用法错误。
 
@@ -230,8 +231,11 @@ niceeval view --run 01H... --out ./shared-site --no-open
 下载文件与 `_niceeval/data/projections.json`。该 projections 文件包含全体声明 Page 的 closure，bytes 进入 revision identity。目标目录
 必须不存在；存在时返回 `report-export-target-exists`，Host 不删除或替换其中的文件。
 
-生成目录不需要 Record、NiceEval 安装或网络。reload client 找不到 view 端点时安静停用；禁用 JavaScript 后，正文、导航、详情、
-完整度、问题和下载仍可读。相同 route 的目录页面 body 与 view HTTP body 相同。
+生成目录不需要 Record、NiceEval 安装或网络。reload client 找不到 view 端点时安静停用；浏览器必须启用目录内随包交付的 JavaScript，
+禁用时页面明确提示启用，不提供第二套阅读 fallback。相同 route 的目录页面 body 与 view HTTP body 相同。
+
+全站构建要求固定 Sample 至少选中一个 logical Slot。零选中结果返回 `report-sample-empty`；`view --out` 不创建目录，`view` 不启动
+server。这个输入错误不同于某个已选中结果的 MetricValue 为 `empty`：后者是报告应当呈现的数据状态。
 
 ## 默认 Report 与错误
 
@@ -244,6 +248,7 @@ niceeval view --run 01H... --out ./shared-site --no-open
 | 情况 | 命令结果 |
 |---|---|
 | `show` 的 Page callback、参数 key 或成员资格失败 | 返回单目标执行错误，不形成 revision。 |
+| 全站构建的 Sample 零选中结果 | 返回 `report-sample-empty`，不形成 revision 或输出目录。 |
 | 全站 Page、枚举、路径、asset 或预算失败 | view 保留 last-good；static 不创建完整目录。 |
 | MetricValue 是 partial、empty、unsupported 或 failed | 成功呈现状态、issues 与 refs。 |
 | 实验组结构不可比 | 成功呈现 `non-comparable`、成员、原因与 Evidence，不生成排名或散点。 |
@@ -263,4 +268,4 @@ niceeval view --run 01H... --out ./shared-site --no-open
 - [Report Library](library.md)：作者 API、Page、组件与 export manifest。
 - [Architecture](architecture.md)：单目标路径、全站 SSG、缓存与 revision 发布。
 - [分享静态报告站](use-case/分享静态报告站.md)：团队分享的离线路径。
-- [制作可访问页面](use-case/制作可访问页面.md)：text、Web 与无 JavaScript 阅读。
+- [制作可访问页面](use-case/制作可访问页面.md)：text、Web 与浏览器阅读。

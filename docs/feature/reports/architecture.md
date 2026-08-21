@@ -26,8 +26,9 @@ enumerate every Page instance → execute every Page → validate site → Close
 
 `--experiment <selector>` 与 `niceeval exp <selector>` 使用同一实验选择规则并形成固定 Sample；Report 不增加另一套实验组 CLI selector。浏览器 Header 沿已关闭的实验组 Page 链接导航，不重新选择 Sample。
 
-`view` 和 `view --out` 都先枚举全部普通 Page 与参数 Page 实例。只有所有页面、route、链接、下载、asset、问题表和预算通过校验，
-Host 才形成一个 revision。view 只托管它；static 只写出它。
+`view` 和 `view --out` 先要求固定 Sample 至少选中一个 logical Slot，再枚举全部普通 Page 与参数 Page 实例。零选中结果是
+`report-sample-empty` 输入错误，不形成 revision。只有所有页面、route、链接、下载、asset、问题表和预算通过校验，Host 才形成
+一个 revision。view 只托管它；static 只写出它。
 
 `pages` 是唯一的 Page 集合。详情页同样必须作为 `Page` 或 `ParameterizedPage` 由作者明确列出；Host 不由 locator、组件或
 导航推断并回填 route。若 Page 请求成本投影，其 Profile、Analysis 闭合与 target / full-site 范围由
@@ -89,16 +90,16 @@ View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和
 居中，右侧使用原生 select 承载实验与语言选择；Page router 含一个或多个 Page 时都保持同一位置。
 
 固定 Sample 有两个或更多实验组时，实验选择器默认选中稳定排序的第一个 `experiment-group` Page；根 URL 也进入该 Page，不交付未选择
-范围的 Overview。只有一组时不渲染实验选择器。选择变化只导航到另一个已闭合 Page；无 JavaScript 时由同组真实链接 fallback。
+范围的 Overview。只有一组时不渲染实验选择器。选择变化只导航到另一个已闭合 Page；浏览器禁用 JavaScript 时页面只显示启用提示。
 Shell 不读取 Analysis、不在浏览器计算比较范围、
 不注入第二份产品 CSS，也不重绘已关闭的 Report 内容。
 
 所选逻辑 Attempt 没有 Record 输入时，Report 正文以 `not-recorded` notice 与 partial MetricValue 呈现一次。Host 不再把同一事实重复成
 `analysis-missing — the selected logical Slot has no input value`；带具体语义的附件缺失、无效输入或迁移提示仍保留在数据说明中。
 
-浏览器启用 JavaScript 时，站内参数 Page 的普通详情 href 会渐进增强为 Host modal，并把当前位置写成
+站内参数 Page 的普通详情 href 由 Host runtime 打开为 modal，并把当前位置写成
 `#/<page-route-prefix>/<key>`。该 hash 可复制、首次打开和刷新后恢复同一详情；Escape、关闭按钮和浏览器返回会关闭 modal 并恢复
-前一地址。禁用 JavaScript、在新标签页打开或静态导出时，href 仍直接打开同一份独立详情文档。
+前一地址。启用 JavaScript 直接打开 HTTP(S) 详情 route 时，同步 head bootstrap 会在正文绘制前恢复根 Page 和同一 modal，避免独立详情闪现；禁用 JavaScript 时只显示启用提示。
 
 ## SSG 预算
 
@@ -170,6 +171,7 @@ view/static bytes、reload 静默停用与 last-good。
 - `show` 只执行一个已选择 Page，且不产生 revision。
 - 参数化 show 先完成 decode 与 canonical encode，并在 `load` / DomainView 边界验证 Sample 成员资格。
 - view 与 static 从同一个完整 `ClosedSiteRevision` 读取相同 route、HTML、CSS、reload client、asset 和下载 bytes。
+- 零选中结果的 Sample 不能形成全站 revision；已选中结果中的 empty MetricValue 仍是可呈现数据。
 - `ResolvedPage` 只在 Host 内部短存；公开作者面没有 generic semantic tree。
 - 同一 Record snapshot 不会因 watch 信号重复执行已缓存的 Analysis 查询。
 - 失败不会替换 last-good revision；数据问题保持可见，构建错误不会发布部分站点。

@@ -3059,6 +3059,10 @@ function reportExecutionFailure(error: unknown): CliFailure {
       );
     case "record-migration-interrupted":
       return usageError("record-migration-interrupted\nRestore the Record from Git or a backup before retrying.\n");
+    case "report-sample-empty":
+      return usageError(
+        "report-sample-empty\nRun an evaluation matching the current project, or select recorded results with --run.\n",
+      );
     case "report-route-invalid":
       return usageError(`Unknown Report route "${stringProperty(error, "route") ?? "unknown"}".\n`);
     case "report-build-budget-exceeded":

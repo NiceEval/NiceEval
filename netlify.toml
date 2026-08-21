@@ -1,0 +1,15 @@
+[build]
+  base = "netlify-preview"
+  publish = "../netlify-report-preview"
+  ignore = "exit 0"
+
+[build.environment]
+  NODE_VERSION = "24"
+  PNPM_FLAGS = "--ignore-scripts"
+
+[context.deploy-preview]
+  command = "bash ../scripts/netlify-report-preview.sh"
+  ignore = "exit 1"
+
+[context.deploy-preview.environment]
+  NICEEVAL_REPORT_PREVIEW = "1"
