@@ -93,7 +93,7 @@ const en = {
   "experimentList.totalScoreDescription": "Total score: sum of points earned across evals",
   "experimentList.tokens": "Tokens",
   "experimentList.cost": "Cost",
-  "experimentList.result": "Record",
+  "experimentList.result": "Result",
   "experimentList.status": "Status",
   "experimentList.evalAttempt": "Eval / Attempt",
   "experimentList.duration": "Duration",

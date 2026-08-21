@@ -57,7 +57,14 @@ function projectCells(bag: CellBag, columns: readonly ColumnSpec[]): globalThis.
 }
 
 function measureCell(value: MetricValue): Cell {
-  return { kind: "metric", metric: value };
+  return {
+    kind: "metric",
+    metric: value,
+    // A complete denominator adds no actionable information to every text
+    // cell. Keep partial and exceptional states explicit; the MetricValue
+    // itself remains intact for both renderers and machine output.
+    showCoverage: value.state !== "available",
+  };
 }
 
 /** 一组判定 → 计票。experiment / 组行数题、Eval 行数 attempt,同一形态同一构造。 */
