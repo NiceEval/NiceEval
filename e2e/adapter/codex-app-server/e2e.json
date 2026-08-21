@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "id": "adapter/codex-app-server",
+  "batch": "host-2",
+  "areas": ["adapter"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "exec", "vitest", "run"],
+  "timeoutMinutes": 2,
+  "harness": { "testkit": true },
+  "secrets": [],
+  "requires": { "runtimes": ["node>=24"] },
+  "paths": [
+    "e2e/adapter/codex-app-server/**",
+    "src/agents/codex-app-server.ts",
+    "src/o11y/parsers/codex.ts",
+    "src/runner/feedback/**",
+    "package.json",
+    "pnpm-lock.yaml",
+    "e2e/scripts/**"
+  ],
+  "artifacts": [".niceeval/**"]
+}

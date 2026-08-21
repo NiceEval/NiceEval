@@ -82,6 +82,18 @@ test("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", asy
       expect(shownFailedRun.stdout).toContain(failedEval.locator!);
       expect(shownFailedRun.stdout).toMatch(/deliberate-fail\/broken[\s\S]*?#1[\s\S]*?failed/u);
 
+      const failedHuman = await niceeval.run([
+        "exp",
+        "deliberate-fail",
+        "--rerun",
+        "all",
+      ]);
+      expect(failedHuman.exitCode, failedHuman.diagnostic()).toBe(1);
+      expect(failedHuman.stderr).toBe("");
+      expect(failedHuman.stdout).toContain("turn succeeded · expected completed · received failed");
+      expect(failedHuman.stdout).toContain("reason deterministic agent reported a t");
+      expect(failedHuman.stdout).not.toContain("error: failed");
+
       const errored = await niceeval.run(
         ["exp", "deliberate-error", "--rerun", "all", "--json", "--junit", "junit/errored.xml"],
       );

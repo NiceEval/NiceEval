@@ -252,8 +252,7 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number):
   const parsed = protocolEvents(state.driver.framesSince(from).slice(0, receipt.cursor - from), state.reported);
   const turn = record(record(frame.params)?.turn);
   const status = turn?.status;
-  if (frame.method === "error" || status === "failed") {
-    const raw = state.driver.framesSince(from).map((value) => JSON.stringify(value)).join("\n");
+  if (frame.method === "error") {
     throw makeSendFailure({
       acceptance: sendAcceptanceFromEvents(parsed.events),
       message: `Codex app-server turn failed: ${JSON.stringify(frame.params)}`,
@@ -265,7 +264,7 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number):
   }
   for (const event of parsed.events) if (event.type === "operation.started") ctx.progress({ message: event.operation.name });
   return {
-    status: "completed", events: parsed.events,
+    status: status === "failed" ? "failed" : "completed", events: parsed.events,
     ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
     evidenceCoverage: evidence(state.driver.framesSince(from).slice(0, receipt.cursor - from), true, parsed.events),
   };
