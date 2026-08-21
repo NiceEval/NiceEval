@@ -145,6 +145,9 @@ it("show --execution 读回 Codex CLI 的代表性工具证据", async () => {
     "execution tree missing shell/command_execution",
   ).toBe(true);
   expect(execution.stdout).toContain("niceeval-e2e-run-914");
-  expect(execution.stdout).toMatch(/"exit_code":\s*0/);
-  expect(execution.stdout).not.toMatch(/"output":\s*null,\s*"exit_code":\s*null/);
+
+  const executionJson = await niceeval.run(["show", codingTaskLocator, "--execution", "--json"]);
+  expect(executionJson.exitCode, executionJson.diagnostic()).toBe(0);
+  expect(executionJson.stdout).toContain('"exit_code":0');
+  expect(executionJson.stdout).not.toContain('{"output":null,"exit_code":null}');
 });
