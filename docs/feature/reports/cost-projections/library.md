@@ -275,6 +275,9 @@ declare function totalCostUSD(profile: PricingProfile): CostMeasure;
 `aggregate(ctx.scope, { values: { cost: costUSD(profile) } })` 返回的 `cost` cell 是作者可观察的 `CostMetricValue`。
 它的 `cell.projection` 是 `CostProjectionValue`。
 
+Table 对 `projection.state: "unavailable"` 且 `combined: null` 的单元格显示 `—`，不把合法空值展开成重复的 unavailable 文案。
+`reasons`、Metric issues 与 refs 仍由问题摘要和详情面保留。`migration-required` 继续显示可行动状态，不能折成 `—`。
+
 两者与 `CostProjectionState`、`CostBasis`、ledger、reason 和 component data types 都是 `niceeval/report` 的 type-only exports。
 具体字段以上面的 Library 形状为准。
 

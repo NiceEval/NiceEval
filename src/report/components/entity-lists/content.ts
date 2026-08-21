@@ -116,7 +116,7 @@ function resultCell(attempt: AttemptListItem): Cell {
 }
 
 /**
- * attempt 行的格子原料。层级表取 entity / record / durationMs / costUSD,
+ * attempt 行的格子原料。层级表取 entity / record / durationMs / tokens / costUSD,
  * 平铺表取 entity / verdict / result / durationMs / costUSD;
  * 两张表各自裁自这一份,不各写一份构造。
  */
@@ -128,6 +128,7 @@ function attemptCells(attempt: AttemptListItem): CellBag {
     // locator 已携带这次判定；末列不重复同一个状态。
     record: { kind: "notApplicable" },
     durationMs: measureCell(attempt.durationMs),
+    tokens: measureCell(attempt.tokens),
     ...(attempt.totalScore === undefined ? {} : { totalScore: { kind: "score", earned: attempt.totalScore } as const }),
     ...(attempt.costUSD === undefined ? {} : { costUSD: measureCell(attempt.costUSD) }),
   };

@@ -46,7 +46,7 @@ export function formatCostProjectionAmountText(
     case "partial":
       return `$${cell.projection.combined.amount}`;
     case "unavailable":
-      return localeText(locale, "costProjection.unavailable");
+      return "—";
     case "migration-required":
       return localeText(locale, "costProjection.migrationRequired");
     default: {
@@ -74,7 +74,7 @@ export function formatCostProjectionCellText(
   }
   if (projection.state === "unavailable" || projection.combined === null) {
     return Object.freeze({
-      text: localeText(locale, "costProjection.unavailable"),
+      text: "—",
     });
   }
   return Object.freeze({
