@@ -25,6 +25,10 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "coding", evalId: "session-resume", verdict: "passed", attempts: 1, passed: 1 },
   // WebSearch 正例：coding 开启 webResearch，必须调用 web_search 且不调用 web_fetch，因此期望 passed/1。
   { experimentId: "coding", evalId: "websearch-denied", verdict: "passed", attempts: 1, passed: 1 },
+  // HITL：AskUserQuestion 的两个选项须进入结构化 request，选择 Node.js 后恢复同一会话。
+  { experimentId: "hitl", evalId: "hitl-options", verdict: "passed", attempts: 1, passed: 1 },
+  // HITL 反例：同一 Eval 收到普通内容且没有原生待输入请求时，必须是 failed/1。
+  { experimentId: "hitl-content", evalId: "hitl-options", verdict: "failed", attempts: 1, passed: 0 },
   // skill-used：只加载目标本地 Skill，并在回答中采用其独有 marker；单次正调应为 passed/1。
   { experimentId: "skill", evalId: "skill-used", verdict: "passed", attempts: 1, passed: 1 },
   // skill-checklist：只加载 checklist Skill、不误载 marker/decoy；反选断言同时成立才是 passed/1。
@@ -84,8 +88,11 @@ beforeAll(async () => {
   // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不能用二次运行替换它的首次并发结果。
   // 其余 live provider 任务只对模型断言失败补跑一次；setup、timeout、I/O error 与
   // skipped 都是基础设施/生命周期故障，不能用后续绿色覆盖。
-  const failed = firstEvents.filter(
-    (event) => event.verdict === "failed" && event.experimentId !== "plugin-reuse",
+  const retryableFailed = firstEvents.filter(
+    (event) =>
+      event.verdict === "failed" &&
+      event.experimentId !== "plugin-reuse" &&
+      !(event.experimentId === "hitl-content" && event.evalId === "hitl-options"),
   );
   expect(
     firstEvents.filter(
@@ -93,15 +100,17 @@ beforeAll(async () => {
     ),
     run.diagnostic(),
   ).toHaveLength(0);
-  expect(run.exitCode, run.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
+  expect(run.exitCode, run.diagnostic()).toBe(
+    firstEvents.some((event) => event.verdict === "failed") ? 1 : 0,
+  );
   expect(inv.completion, run.diagnostic()).toBe("completed");
-  for (const event of failed) assertExactRetryEvalSelector(firstEvents, event);
+  for (const event of retryableFailed) assertExactRetryEvalSelector(firstEvents, event);
 
   // 补跑 Invocation 继续写同一个保留证据的 Record；Record 是单写者，所以同 Repo
   // 必须串行。主 Invocation 内的 Attempt 并发和跨 Repo batch 并发不受影响。
   const retried = await retryFailedExpEvalsOnce({
     events: firstEvents,
-    targets: failed,
+    targets: retryableFailed,
     runRetry: (event) =>
       niceeval.run(
         ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
@@ -116,7 +125,7 @@ beforeAll(async () => {
   evalEvents = retried.events;
 }, 53 * 60_000);
 
-it("真实 Claude Code adapter 的全部专用 Eval 通过", () => {
+it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
   // receipt」）；成败与发现完整性由下面带身份的 eval 事件精确断言。
   const inv = run.expReceipt();

@@ -16,13 +16,15 @@ Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]
 | Plugins 与 hook 信任 | marketplace 安装的 Plugin 行为可观察，其 hook 在 bypass 信任姿态下确实生效——hook 注入/捕获行为在事件流或输出中留下证据，不是被静默跳过；`sandboxReuse` 以四路并发运行两波 Attempt，复用波次安装收敛——同名不同出处的残留 marketplace 注册被替换为声明出处、Plugin 按声明重装，不因残留状态报错 |
 | configFile | 同一个 Eval 和 prompt 分别由 shell enabled / disabled Experiment 运行；前者调用 `shell`，后者正常完成且 `notCalledTool` |
 | 会话 | thread started 事件的 session ID 续接 `codex exec resume`，第二轮能引用首轮事实 |
+| HITL 选项 | `request_user_input` 返回 waiting 与两个原生选项；按 request ID 选择后恢复同一会话并采用所选项；同一 Eval 的普通内容对照没有请求时得到 failed verdict |
 | usage 与实际模型 | usage 逐轮到位；实际模型从 Codex session 侧写核对，不只信请求参数 |
 
 ## 仓库验收
 
 - `configfile` Eval 同时进入 baseline 与 disabled Experiment；两边通过 `flags.shellTool` 声明预期，并各自挂载显式 enabled / disabled 原生 configFile。相同 prompt 下工具面的结构差异形成正反对照，不依赖 custom provider 是否支持 Web Search。
 - coding 任务按 Codex 的真实归一形状设计：apply_patch 新增 → `file_write`、apply_patch 修改 → `file_edit`、命令执行 → `shell`。提示词显式禁止用 shell 写文件，避免 Codex 用一条命令顶掉文件工具。
-- `baseline` Experiment 选中本仓库的 `coding-task` / `configfile` / `session` / `usage`；原生验收脚本列全 Codex CLI 协议 Eval ID。
+- `baseline` Experiment 选中本仓库的 `coding-task` / `configfile` / `session` / `usage`。
+- `hitl` 验证原生选项暂停与恢复。`hitl-content` 用同一 Eval 验证普通内容轮因没有待输入请求而判为 failed；原生验收脚本列全 Codex CLI 协议 Eval ID。
 - `skill` Experiment 把三个 Skill 一起装进同一个 agent。status report 与 release note 两条 Eval 各自要求只读取目标文件；decoy 只作为反选哨兵，任一正调读到它都会判红。
 - 两条 Skill Eval 使用互不重叠的 `status-report` / `skill-release-note` ID，让 live 模型断言失败时可按 CLI 前缀选择规则精确补跑一条，不扩大成本，也不替换另一条结果。
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`；专用 Eval 核对安装位置、真实读取行为与命令内容。

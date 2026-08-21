@@ -5,13 +5,15 @@ import type {
   CommandOptions,
   CommandResult,
   Sandbox,
+  ManagedProcess,
+  ManagedProcessStart,
   SandboxReuseCapability,
   SandboxTransferOperations,
 } from "./types.ts";
 
 export type SandboxBackendSupport<T> =
   | { readonly _tag: "Supported"; readonly value: T }
-  | { readonly _tag: "Unsupported" };
+  | { readonly _tag: "Unsupported"; readonly reason: string };
 
 export interface SandboxBackendCapabilities {
   /** Provider 能否兑现 CommandOptions.user 的 root 覆盖；runner 私有基础设施按这项能力选择身份。 */
@@ -22,6 +24,7 @@ export interface SandboxBackendCapabilities {
     (minRemainingMs: number) => Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }>
   >;
   readonly setCommandDeadline: SandboxBackendSupport<(deadlineAt?: number) => void>;
+  readonly managedProcess: SandboxBackendSupport<(input: ManagedProcessStart) => Promise<ManagedProcess>>;
 }
 
 export interface SandboxProviderBackend extends SandboxTransferOperations {
@@ -41,7 +44,12 @@ export interface SandboxProviderBackend extends SandboxTransferOperations {
 
 export const unsupportedBackendCapability: SandboxBackendSupport<never> = Object.freeze({
   _tag: "Unsupported",
+  reason: "the provider does not implement this capability",
 });
+
+export function unsupportedBackendCapabilityBecause(reason: string): SandboxBackendSupport<never> {
+  return Object.freeze({ _tag: "Unsupported", reason });
+}
 
 export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.freeze({
   rootCommands: unsupportedBackendCapability,
@@ -49,6 +57,7 @@ export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.f
   suspend: unsupportedBackendCapability,
   ensureLifetime: unsupportedBackendCapability,
   setCommandDeadline: unsupportedBackendCapability,
+  managedProcess: unsupportedBackendCapability,
 });
 
 export function supportedBackendCapability<T>(value: T): SandboxBackendSupport<T> {
@@ -90,7 +99,10 @@ export function customSandboxBackend(sandbox: Sandbox): SandboxProviderBackend {
   const appendLog = sandbox.appendLog;
   // Provider facade 产出的 Sandbox 再经 runtime 归一化时必须保留 provider-only capabilities；
   // 作者直接返回的普通 Sandbox 没有登记项，仍严格退回 Unsupported，不能靠鸭子类型猜能力。
-  const registered = SANDBOX_CAPABILITIES.get(sandbox) ?? noSandboxBackendCapabilities;
+  const registered = SANDBOX_CAPABILITIES.get(sandbox) ?? {
+    ...noSandboxBackendCapabilities,
+    managedProcess: unsupportedBackendCapabilityBecause("custom Sandbox facades do not declare the internal managed-process capability"),
+  };
   return {
     get workdir() {
       return sandbox.workdir;
@@ -145,6 +157,24 @@ export function sandboxCapabilities(sandbox: Sandbox): SandboxBackendCapabilitie
 /** 未经 provider facade 登记的普通自定义 Sandbox 保守视为不支持提权，不做鸭子类型猜测。 */
 export function sandboxSupportsRootCommands(sandbox: Sandbox): boolean {
   return SANDBOX_CAPABILITIES.get(sandbox)?.rootCommands._tag === "Supported";
+}
+
+export class SandboxManagedProcessCapabilityError extends Error {
+  readonly name = "SandboxManagedProcessCapabilityError";
+  constructor(readonly agent: string, readonly sandboxId: string, readonly reason: string) {
+    super(`Agent ${agent} requires the sandbox managed-process capability, but sandbox ${sandboxId} does not support it: ${reason}`);
+  }
+}
+
+export function requireManagedProcessCapability(
+  sandbox: Sandbox,
+  agent: string,
+): (input: ManagedProcessStart) => Promise<ManagedProcess> {
+  const capability = sandboxCapabilities(sandbox).managedProcess;
+  if (capability._tag === "Unsupported") {
+    throw new SandboxManagedProcessCapabilityError(agent, sandbox.sandboxId, capability.reason);
+  }
+  return capability.value;
 }
 
 /** Provider facade 登记的复用寿命能力；不存在时保持显式 Unsupported，不做鸭子类型探测。 */

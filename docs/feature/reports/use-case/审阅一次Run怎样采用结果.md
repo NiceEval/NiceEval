@@ -45,7 +45,7 @@ niceeval show @1K1P0VJAPVJ12 --json
 已知 locator 时应使用 `show @locator` 精确下钻。要读取自定义报告的另一页，显式传入该页的 `--page <route>`。view 与静态目录读取
 同一份 `ClosedSiteRevision`；terminal 为目标 Page 生成临时 text。三种呈现面都保留同一 Sample 的 locator、Evidence refs、issues、samples 和 total。
 
-Attempt 页的源码中，带交互标记的 `.send()` 行可以原生展开。展开区显示该次物理 send 的 Session log 摘要与事件轨迹；工具调用、工具结果和 assistant 消息保持原始因果顺序，不折成只有最终文本的一行。
+Attempt 页的源码中，带交互标记的 `.send()` 行可以原生展开。展开区显示该次物理 send 的 Session log 摘要与事件轨迹。匹配同一 call ID 的工具调用和结果在调用位置显示为一个生命周期节点，展开后同时呈现输入与结果；未闭合阶段和 assistant 消息仍按原始因果位置显示，不折成只有最终文本的一行。
 
 ## 4. 查看 File Changes 轨迹
 

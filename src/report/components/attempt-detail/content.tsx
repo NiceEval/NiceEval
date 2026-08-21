@@ -290,6 +290,7 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
         raw,
         callId: reply.callId,
         callPhase: finished ? "finished" : "started",
+        ...(reply.outcome === undefined ? {} : { callOutcome: reply.outcome }),
         ...(reply.failed === true ? { failed: true } : {}),
         detail: (
           <ToolEvidence content={{

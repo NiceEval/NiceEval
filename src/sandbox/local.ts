@@ -16,7 +16,7 @@ import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { CommandOptions, CommandResult, SuccessfulCommandResult } from "../types.ts";
+import type { CommandOptions, CommandResult, ManagedProcess, ManagedProcessStart, SuccessfulCommandResult } from "../types.ts";
 import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
@@ -29,6 +29,7 @@ import {
 } from "./backend.ts";
 import { registerLedgerPaths, unregisterLedgerPaths } from "./ledger-paths.ts";
 import { t } from "../i18n/index.ts";
+import { ManagedProcessOutput } from "./managed-process.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -195,7 +196,60 @@ export class LocalSandbox implements SandboxProviderBackend {
     suspend: unsupportedBackendCapability,
     ensureLifetime: unsupportedBackendCapability,
     setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+    managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startManagedProcess(input)),
   };
+
+  private async startManagedProcess(input: ManagedProcessStart): Promise<ManagedProcess> {
+    const [command, ...args] = input.argv;
+    const output = new ManagedProcessOutput();
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...input.env,
+      ...(this.pathPrepend.length === 0
+        ? {}
+        : { PATH: `${this.pathPrepend.join(":")}:${process.env.PATH ?? ""}` }),
+    };
+    const posix = process.platform !== "win32";
+    const child = spawn(command, args, {
+      cwd: resolveSandboxPath(this.workdir, input.cwd),
+      env,
+      detached: posix,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    child.stdout.on("data", (bytes: Buffer) => output.push({ _tag: "Stdout", bytes: new Uint8Array(bytes) }));
+    child.stderr.on("data", (bytes: Buffer) => output.push({ _tag: "Stderr", bytes: new Uint8Array(bytes) }));
+    const exit = new Promise<import("../types.ts").ManagedProcessExit>((resolve, reject) => {
+      child.once("error", (error) => { output.end(); reject(error); });
+      child.once("close", (exitCode, signal) => {
+        output.end();
+        resolve({ exitCode, ...(signal === null ? {} : { signal }) });
+      });
+    });
+    const terminate = async (): Promise<void> => {
+      stdinState = "closing";
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      if (posix && child.pid !== undefined) {
+        try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+      } else child.kill("SIGKILL");
+      await exit.catch(() => undefined);
+    };
+    let stdinState: "open" | "closing" | "closed" = "open";
+    let closeReceipt: Promise<void> | undefined;
+    let terminateReceipt: Promise<void> | undefined;
+    return {
+      output,
+      writeStdin: (bytes) => new Promise<void>((resolve, reject) => {
+        if (stdinState !== "open") { reject(new Error("managed process stdin is closed")); return; }
+        child.stdin.write(bytes, (error) => error ? reject(error) : resolve());
+      }),
+      closeStdin: () => closeReceipt ??= new Promise<void>((resolve) => {
+        stdinState = "closing";
+        child.stdin.end(() => { stdinState = "closed"; resolve(); });
+      }),
+      wait: () => exit,
+      terminate: () => terminateReceipt ??= terminate(),
+    };
+  }
 
   private constructor(
     workdir: string,

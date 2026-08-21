@@ -20,7 +20,7 @@ import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { successfulCommandResult } from "./operations.ts";
-import { supportedBackendCapability, unsupportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
+import { supportedBackendCapability, unsupportedBackendCapability, unsupportedBackendCapabilityBecause, type SandboxProviderBackend } from "./backend.ts";
 
 /**
  * vercel SDK 对单次 fetch 的 429 已有内部重试(见 @vercel/sandbox 的 with-retry.js,
@@ -72,6 +72,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     suspend: supportedBackendCapability(() => this.suspend()),
     ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
     setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+    managedProcess: unsupportedBackendCapabilityBecause("@vercel/sandbox 2.2.1 does not expose bidirectional stdin or raw output chunks"),
   };
 
   private constructor(

@@ -27,6 +27,10 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "baseline", evalId: "session", verdict: "passed", attempts: 1, passed: 1 },
   // usage：每轮 token usage 非空，且 session 侧写中的实际模型正确；一次验证期望 passed/1。
   { experimentId: "baseline", evalId: "usage", verdict: "passed", attempts: 1, passed: 1 },
+  // HITL：原生问题的两个选项须进入结构化 request，选择 Node.js 后恢复同一会话。
+  { experimentId: "hitl", evalId: "hitl-options", verdict: "passed", attempts: 1, passed: 1 },
+  // HITL 反例：同一 Eval 收到普通内容且没有原生待输入请求时，必须是 failed/1。
+  { experimentId: "hitl-content", evalId: "hitl-options", verdict: "failed", attempts: 1, passed: 0 },
   // configfile 反例：shell-disabled 配置下同一 prompt 不得调用 shell；零调用成立时为 passed/1。
   { experimentId: "configfile", evalId: "configfile", verdict: "passed", attempts: 1, passed: 1 },
   // mcp：stdio 求和与远程 DeepWiki 两种 MCP 调用都须出现且入参正确；期望 passed/1。
@@ -77,21 +81,26 @@ beforeAll(async () => {
   // eval 事件是中间的身份事件：identity / verdict / attempts 在此精确断言。
   const firstEvents = run.expEvalEvents();
   // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不是模型断言重试消费者。
-  const failed = firstEvents.filter(
-    (event) => event.verdict === "failed" && event.experimentId !== "plugin-reuse",
+  const retryableFailed = firstEvents.filter(
+    (event) =>
+      event.verdict === "failed" &&
+      event.experimentId !== "plugin-reuse" &&
+      !(event.experimentId === "hitl-content" && event.evalId === "hitl-options"),
   );
   expect(
     firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
     run.diagnostic(),
   ).toHaveLength(0);
-  expect(run.exitCode, run.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
-  for (const event of failed) assertExactRetryEvalSelector(firstEvents, event);
+  expect(run.exitCode, run.diagnostic()).toBe(
+    firstEvents.some((event) => event.verdict === "failed") ? 1 : 0,
+  );
+  for (const event of retryableFailed) assertExactRetryEvalSelector(firstEvents, event);
 
   // 这些 Invocation 继续写同一个保留证据的 Record；Record 是单写者，多个 CLI 进程
   // 重叠会确定性触发 RecordWriterBusy。主 Invocation 内的 Attempt 并发不受影响。
   const retried = await retryFailedExpEvalsOnce({
     events: firstEvents,
-    targets: failed,
+    targets: retryableFailed,
     runRetry: (event) =>
       niceeval.run(
         ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
@@ -106,7 +115,7 @@ beforeAll(async () => {
   evalEvents = retried.events;
 }, 48 * 60_000);
 
-it("真实 Codex CLI adapter 的全部专用 Eval 通过", () => {
+it("真实 Codex CLI adapter 的全部专用 Eval 得到预期 verdict", () => {
   expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
   assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
