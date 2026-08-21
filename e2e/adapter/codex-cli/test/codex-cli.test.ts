@@ -148,6 +148,29 @@ it("show --execution 读回 Codex CLI 的代表性工具证据", async () => {
 
   const executionJson = await niceeval.run(["show", codingTaskLocator, "--execution", "--json"]);
   expect(executionJson.exitCode, executionJson.diagnostic()).toBe(0);
-  expect(executionJson.stdout).toContain('"exit_code":0');
-  expect(executionJson.stdout).not.toContain('{"output":null,"exit_code":null}');
+  const payload = executionJson.json<{
+    data: {
+      execution: {
+        entries: readonly {
+          detail: {
+            conversation: {
+              items: readonly { kind: string; outputSummary?: string }[];
+            };
+          };
+        }[];
+      };
+    };
+  }>();
+  const resultSummaries = payload.data.execution.entries.flatMap(({ detail }) =>
+    detail.conversation.items.flatMap((item) =>
+      item.kind === "tool-result" && item.outputSummary !== undefined ? [item.outputSummary] : []
+    )
+  );
+  const markerResult = resultSummaries.find((summary) => summary.includes("niceeval-e2e-run-914"));
+  expect(markerResult).toBeDefined();
+  expect(JSON.parse(markerResult!)).toMatchObject({
+    output: expect.stringContaining("niceeval-e2e-run-914"),
+    exit_code: 0,
+  });
+  expect(resultSummaries).not.toContain('{"output":null,"exit_code":null}');
 });
