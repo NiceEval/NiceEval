@@ -26,7 +26,7 @@ pnpm exec niceeval view --run <run-id> \
 
 这个站点版本同时是本机 view 与静态导出的来源。同一路由的 HTTP body 和导出目录中的页面 body 逐字节相同。`--out` 不接受 `--page`，因为静态目录始终包含整个站点。
 
-Analysis 的 `partial`、`empty`、`unsupported` 与 `failed` 是可显示的数据状态，会带着 samples、total、issues 和 refs 一起写入页面。Page callback 失败、参数实例不合法、路径冲突、资源冲突或预算超限会阻止导出；它们不会产生一份缺页的目录。
+Analysis 的 `partial`、`empty`、`unsupported` 与 `failed` 是可显示的数据状态，会带着 samples、total、issues 和 refs 一起写入页面。固定 Sample 零选中结果时，导出以 `report-sample-empty` 失败且不创建目录。Page callback 失败、参数实例不合法、路径冲突、资源冲突或预算超限也会阻止导出；它们不会产生一份缺页的目录。
 
 ## 导出目录的边界
 

@@ -2,7 +2,7 @@
 // rerun: pnpm e2e --repo report -- --run test/report-export.test.ts
 
 import { only } from "@niceeval/testkit";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
@@ -146,6 +146,36 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
 
       const attemptComplete = await stat(join(projectRoot, "attempt-export", "_niceeval", "complete"));
       expect(attemptComplete.size).toBe(0);
+    },
+  );
+});
+
+test("view --out 拒绝发布零选中结果的空报告", async () => {
+  await reportE2E.case(
+    "empty-export",
+    { artifacts: reportCaseArtifacts(["empty-export"]) },
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const initialRun = await niceeval.run(["exp", "source", "--rerun", "all", "--json"]);
+      expect(initialRun.expReceipt(), initialRun.diagnostic()).toMatchObject({ completion: "completed" });
+
+      const evalPath = join(projectRoot, "evals", "source-snapshot.eval.ts");
+      const evalSource = await readFile(evalPath, "utf8");
+      await writeFile(
+        evalPath,
+        evalSource.replace("ENTRY_SNAPSHOT_BEFORE", "ENTRY_SNAPSHOT_AFTER"),
+        "utf8",
+      );
+
+      const exported = await niceeval.run([
+        "view",
+        "--out",
+        "empty-export",
+        "--no-open",
+      ]);
+
+      expect(exported.exitCode, exported.diagnostic()).not.toBe(0);
+      expect(exported.stderr).toContain("report-sample-empty");
+      await expect(stat(join(projectRoot, "empty-export"))).rejects.toMatchObject({ code: "ENOENT" });
     },
   );
 });

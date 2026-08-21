@@ -83,6 +83,8 @@ niceeval view --report <fixture> --no-open
 
 - `MetricValue` 的 partial、empty、unsupported 和 failed 是可呈现的数据状态。它们在 Page text、view 和 static
   中保留相同的 samples、total、issues 与 refs；内建 JSON 依其具名领域 format 保留这些值。
+- 全站构建的固定 Sample 零选中结果时，`view --out` 返回 `report-sample-empty`，且不创建输出目录。这个输入错误不把
+  已选中结果中的 empty MetricValue 错判为构建失败。
 - `show` 的目标 Page callback、参数 key 或成员资格失败时，命令返回单目标错误且从不交付 revision。
 - 参数枚举、未选中 Page、路径或全站校验失败时，static 不写完整站点，view 保留 last-good；这些错误不扩大
   `show` 的执行范围。
@@ -100,7 +102,7 @@ niceeval view --report <fixture> --no-open
 | show 是独立的单目标终端阅读面。 | `report-show` 与 `report-project-current` | selector、选中 route、文字、完整 MetricValue、参数 key 成员资格与 project-current 身份。 |
 | JSON 是单目标机器阅读面。 | `report-show-json` | target format、canonical order、选中 route、metadata、下载摘要与 problem table；不含全路由 revision oracle。 |
 | view 是同一 revision 的本机 HTTP 面。 | `report-config-reload` 与 `report-browser-journey` | last-good、最新 intent、固定响应、HTTP 边界和可访问内容。 |
-| static 是同一 revision 的离线文件面。 | `report-static-export` | 全部页面 closure、view 字节等价、existing-target 保护和无 JavaScript 阅读。 |
+| static 是同一 revision 的离线文件面。 | `report-static-export` | 全部页面 closure、view 字节等价、零选中结果拒绝、existing-target 保护和无 JavaScript 阅读。 |
 | Source、Diff 和运行证据来自本次构建。 | `report-source-snapshot` 与 `report-execution-evidence` | 已生成页面或文件不从工作树或私有文件补造。 |
 
 固定 world（固定世界）的真实浏览器人工验收补足视觉判断。它使用相同候选 tarball、签入 fixture、viewport、主题、
@@ -144,7 +146,7 @@ niceeval view --report <fixture> --no-open
 
 ### report-static-export
 
-`report-export.test.ts` 验证 `view --out` 的完整文件集合、与 view 的 body bytes 等价，以及已存在目标保护。
+`report-export.test.ts` 验证 `view --out` 的完整文件集合、与 view 的 body bytes 等价、零选中结果拒绝，以及已存在目标保护。
 
 ### report-show-json
 

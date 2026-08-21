@@ -26,8 +26,9 @@ enumerate every Page instance → execute every Page → validate site → Close
 
 `--experiment <selector>` 与 `niceeval exp <selector>` 使用同一实验选择规则并形成固定 Sample；Report 不增加另一套实验组 CLI selector。浏览器 Header 沿已关闭的实验组 Page 链接导航，不重新选择 Sample。
 
-`view` 和 `view --out` 都先枚举全部普通 Page 与参数 Page 实例。只有所有页面、route、链接、下载、asset、问题表和预算通过校验，
-Host 才形成一个 revision。view 只托管它；static 只写出它。
+`view` 和 `view --out` 先要求固定 Sample 至少选中一个 logical Slot，再枚举全部普通 Page 与参数 Page 实例。零选中结果是
+`report-sample-empty` 输入错误，不形成 revision。只有所有页面、route、链接、下载、asset、问题表和预算通过校验，Host 才形成
+一个 revision。view 只托管它；static 只写出它。
 
 `pages` 是唯一的 Page 集合。详情页同样必须作为 `Page` 或 `ParameterizedPage` 由作者明确列出；Host 不由 locator、组件或
 导航推断并回填 route。若 Page 请求成本投影，其 Profile、Analysis 闭合与 target / full-site 范围由
@@ -170,6 +171,7 @@ view/static bytes、reload 静默停用与 last-good。
 - `show` 只执行一个已选择 Page，且不产生 revision。
 - 参数化 show 先完成 decode 与 canonical encode，并在 `load` / DomainView 边界验证 Sample 成员资格。
 - view 与 static 从同一个完整 `ClosedSiteRevision` 读取相同 route、HTML、CSS、reload client、asset 和下载 bytes。
+- 零选中结果的 Sample 不能形成全站 revision；已选中结果中的 empty MetricValue 仍是可呈现数据。
 - `ResolvedPage` 只在 Host 内部短存；公开作者面没有 generic semantic tree。
 - 同一 Record snapshot 不会因 watch 信号重复执行已缓存的 Analysis 查询。
 - 失败不会替换 last-good revision；数据问题保持可见，构建错误不会发布部分站点。
