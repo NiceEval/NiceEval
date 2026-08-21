@@ -8,7 +8,7 @@ import {
   type RecordRoot,
 } from "../record/index.ts";
 import { recordHost } from "../record/host/index.ts";
-import { RECORD_SCHEMA_VERSION } from "../record/model/identifiers.ts";
+import type { RecordAttachmentMigrationTarget } from "../record/host/types.ts";
 import {
   RecordAutoMigrationGitSaveRequired,
   RecordMigrationRequired,
@@ -48,7 +48,7 @@ export const NodeRecordCliLive = NodeRecordLive;
 
 export interface AutomaticRecordMigrationReceipt {
   readonly restoreCommit: string;
-  readonly targetSchemaVersion: typeof RECORD_SCHEMA_VERSION;
+  readonly attachments: readonly RecordAttachmentMigrationTarget[];
 }
 
 /**
@@ -82,7 +82,7 @@ export function ensureAutomaticRecordMigration(input: {
           code: "record-auto-migration-git-save-required",
         }));
       }
-      yield* session.applyMigrate(plan).pipe(
+      const receipt = yield* session.applyMigrate(plan).pipe(
         Effect.catchTag("RecordMigrationGitRestoreRequired", () =>
           Effect.fail(new RecordAutoMigrationGitSaveRequired({
             code: "record-auto-migration-git-save-required",
@@ -90,7 +90,7 @@ export function ensureAutomaticRecordMigration(input: {
       );
       return Object.freeze({
         restoreCommit: plan.backup.commit,
-        targetSchemaVersion: RECORD_SCHEMA_VERSION,
+        attachments: receipt.state === "migrated" ? receipt.attachments : Object.freeze([]),
       });
     }));
   });
@@ -246,11 +246,28 @@ function migrateCommand(input: {
   return Effect.scoped(Effect.gen(function* () {
     const session = yield* recordHost.maintenance.open({ root: input.root });
     const plan = yield* session.planMigrate();
+    const impactText = plan.state !== "migration-required"
+      ? ""
+      : [...new Map(plan.attachments.map((attachment) => {
+          const key = `${attachment.family}@${attachment.fromSchemaVersion}->${attachment.toSchemaVersion}`;
+          return [key, attachment] as const;
+        })).values()].map((attachment) => {
+          const retention = attachment.retention;
+          const lines = [
+            `impact ${attachment.family}@${attachment.fromSchemaVersion}->${attachment.toSchemaVersion}:`,
+            `  retained facts: ${retention.retainedFacts.length === 0 ? "none" : retention.retainedFacts.join(", ")}`,
+            `  dropped facts: ${retention.droppedFacts.length === 0 ? "none" : retention.droppedFacts.join(", ")}`,
+          ];
+          if (retention.rerunRecommendation !== null) {
+            lines.push(`  rerun recommendation: ${retention.rerunRecommendation}`);
+          }
+          return lines.join("\n");
+        }).join("\n");
     const planText = plan.state === "already-current"
       ? `Record migration plan: already-current\nformat: ${plan.format}\n`
       : plan.state === "unsupported-format"
         ? `Record migration plan: unsupported-format\nformat: ${plan.format}\n`
-        : `Record migration plan: migration-required\nformat: ${plan.format}\nroot: ${plan.root === null ? "current" : `${plan.root.fromSchemaVersion} -> ${plan.root.toSchemaVersion}`}\nattachments: ${plan.attachments.length}\nbackup: ${plan.backup.state}${plan.backup.state === "git-restore-point" ? `\nrestore commit: ${plan.backup.commit}` : ""}\n`;
+        : `Record migration plan: migration-required\nformat: ${plan.format}\nattachments: ${plan.attachments.length}\n${impactText === "" ? "" : `${impactText}\n`}backup: ${plan.backup.state}${plan.backup.state === "git-restore-point" ? `\nrestore commit: ${plan.backup.commit}` : ""}\n`;
     if (plan.state === "unsupported-format") {
       return output({
         exitCode: 1,

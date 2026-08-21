@@ -4,6 +4,7 @@
 
 import { Effect, Cause, Data, Deferred, Either, Exit, Option } from "effect";
 import { probeJudgeEffect } from "../assertions/judge.ts";
+import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
@@ -2611,6 +2612,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // 且混进兄弟 fiber 的 interrupt 后被当成用户中断吞掉正文(见
             // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
             // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
+            let sealedEvaluation: SealedAttemptAssertions | undefined;
             const completed = yield* Effect.scoped(Effect.gen(function* () {
               const leased = poolSelection._tag === "Reuse"
               ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
@@ -2698,10 +2700,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         }
                       : {}),
                     onSealedEvaluation: (sealed) =>
-                      recordCoordinator.noteSealedOrMarkIncomplete(
-                        recordedAttempt,
-                        sealed,
-                      ),
+                      Effect.sync(() => {
+                        sealedEvaluation = sealed;
+                      }).pipe(Effect.zipRight(
+                        recordCoordinator.noteSealedOrMarkIncomplete(
+                          recordedAttempt,
+                          sealed,
+                        ),
+                      )),
                   },
                 );
             if (lease) {
@@ -2819,7 +2825,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // 的省略规则一致),且只报真正计入 results 的 attempt(上面的并发去重分支已经
             // return 掉、不会走到这里,不会为一条被丢弃的重复 attempt 误报失败)。
             if (locator) {
-              const failure = failureDetailFromResult(result);
+              const failure = failureDetailFromResult(result, sealedEvaluation);
               if (failure) reportFailure(failure);
             }
             yield* reportMutex.withPermits(1)(

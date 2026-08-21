@@ -8,6 +8,9 @@ import type { VerdictState } from "../../../eval/record/verdict.ts";
 import type {
   AttemptEvidenceDomainDetail,
   ClosedCommandEntry,
+  ClosedAssertionLimitation,
+  ClosedAssertionSourceSite,
+  ClosedAssertionFactValue,
   ClosedCommandsDetail,
   ClosedConversationDetail,
   ClosedConversationItem,
@@ -21,9 +24,9 @@ import type {
   ClosedUsageDetail,
   ClosedUsageObservation,
   FileChangesDomainDetail,
-  JsonValue,
   SourceNavigationDomainDetail,
 } from "../../../analysis/index.ts";
+import type { AssertionEvidenceContent } from "../../definition/primitives/assertion-evidence.tsx";
 import type { DiffFile, DiffFileWindow } from "../../definition/primitives/diff-lines.ts";
 
 // ───────────────────────── 共享视图形状 ─────────────────────────
@@ -87,8 +90,10 @@ export interface AttemptAssertionView {
   readonly severity: "gate" | "recorded" | "soft";
   readonly outcome: "passed" | "failed" | "unavailable";
   readonly groupPath: readonly string[];
-  /** 展示层预拼好的判定详情(原因 / coverage / limitations / diagnostic)。 */
+  /** Table 等紧凑读面的中立判定摘要。 */
   readonly detail: string;
+  /** Source 展开区消费的五段闭合结构。 */
+  readonly evidence: AssertionEvidenceContent;
   /** 得分点贡献;没有 score 贡献时整字段省略。 */
   readonly score?: AttemptScoreView;
 }
@@ -369,235 +374,40 @@ export function attemptErrorData(input: {
 
 // ───────────────────────── AttemptAssertions ─────────────────────────
 
-/**
- * sealed 断言 entry 的结构读取形状。DomainView 边界把整条 entry 声明成 JsonValue,
- * 展示层按已知 sealed 形状做最小结构读取(与 sourceSites 的 siteViewOf 同一条纪律):
- * 读不到的字段省略、读不懂的 entry 跳过,前向兼容,不伪造事实。
- */
-export interface SealedAssertionEntryView {
-  readonly entryId: string;
-  readonly display: SealedAssertionDisplayView;
-  readonly result: SealedAssertionResultView;
-  readonly coverage: SealedAssertionCoverageView;
-  readonly limitations: readonly SealedAssertionLimitationView[];
+export type SealedAssertionEntryView = AttemptEvidenceDomainDetail["entries"][number];
+
+/** Typed Analysis entry → report view. No Record or matcher shape is parsed here. */
+export function assertionEntryViewOf(value: SealedAssertionEntryView): SealedAssertionEntryView {
+  return value;
 }
 
-export interface SealedAssertionDisplayView {
-  readonly label?: string;
-  readonly key?: string;
-  readonly groupPath: readonly string[];
-}
-
-export interface SealedAssertionCoverageView {
-  readonly state: "complete" | "partial" | "unavailable" | "not-applicable";
-  readonly reason?: string;
-}
-
-export interface SealedAssertionLimitationView {
-  readonly kind: string;
-}
-
-export interface SealedAssertionResultView {
-  readonly state: "matched" | "mismatched" | "unavailable" | "errored";
-  readonly reason?: string;
-  readonly gate: "not-gate" | "satisfied" | "failed" | "unavailable";
-  readonly score: SealedAssertionScoreView;
-  readonly diagnostic?: JsonValue;
-}
-
-export interface SealedAssertionScoreView {
-  readonly state: "not-scored" | "earned" | "unavailable";
-  readonly earned?: number;
-  readonly points?: number;
-}
-
-function jsonRecordOf(value: JsonValue | undefined): Readonly<Record<string, JsonValue>> | undefined {
-  if (value === undefined || typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  return value as Readonly<Record<string, JsonValue>>;
-}
-
-function jsonStringOf(record: Readonly<Record<string, JsonValue>>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function jsonNumberOf(record: Readonly<Record<string, JsonValue>>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function jsonStringArrayOf(record: Readonly<Record<string, JsonValue>>, key: string): readonly string[] | undefined {
-  const value = record[key];
-  if (!Array.isArray(value)) return undefined;
-  const items: string[] = [];
-  for (const item of value) {
-    if (typeof item !== "string") return undefined;
-    items.push(item);
-  }
-  return items;
-}
-
-/** 整条 sealed assertion entry 的结构读取;读不懂(形状不符)返回 undefined,调用方跳过。 */
-export function assertionEntryViewOf(value: JsonValue): SealedAssertionEntryView | undefined {
-  const record = jsonRecordOf(value);
-  if (record === undefined) return undefined;
-  const entryId = jsonStringOf(record, "entryId");
-  const display = jsonRecordOf(record["display"]);
-  const result = jsonRecordOf(record["result"]);
-  const coverage = jsonRecordOf(record["coverage"]);
-  if (entryId === undefined || display === undefined || result === undefined || coverage === undefined) return undefined;
-  const state = jsonStringOf(result, "state");
-  const gate = jsonStringOf(result, "gate");
-  const score = jsonRecordOf(result["score"]);
-  if (state === undefined || gate === undefined || score === undefined) return undefined;
-  if (state !== "matched" && state !== "mismatched" && state !== "unavailable" && state !== "errored") return undefined;
-  if (gate !== "not-gate" && gate !== "satisfied" && gate !== "failed" && gate !== "unavailable") return undefined;
-  const scoreState = jsonStringOf(score, "state");
-  if (scoreState !== "not-scored" && scoreState !== "earned" && scoreState !== "unavailable") return undefined;
-  const coverageState = jsonStringOf(coverage, "state");
-  if (coverageState !== "complete" && coverageState !== "partial" &&
-    coverageState !== "unavailable" && coverageState !== "not-applicable") return undefined;
-  const limitations: SealedAssertionLimitationView[] = [];
-  const rawLimitations = Array.isArray(record["limitations"]) ? record["limitations"] : [];
-  for (const item of rawLimitations) {
-    const kind = jsonStringOf(jsonRecordOf(item) ?? {}, "kind");
-    if (kind !== undefined) limitations.push({ kind });
-  }
-  const earned = jsonNumberOf(score, "earned");
-  const points = jsonNumberOf(score, "points");
-  return {
-    entryId,
-    display: {
-      ...(jsonStringOf(display, "label") === undefined ? {} : { label: jsonStringOf(display, "label") }),
-      ...(jsonStringOf(display, "key") === undefined ? {} : { key: jsonStringOf(display, "key") }),
-      groupPath: jsonStringArrayOf(display, "groupPath") ?? [],
-    },
-    result: {
-      state,
-      ...(jsonStringOf(result, "reason") === undefined ? {} : { reason: jsonStringOf(result, "reason") }),
-      gate,
-      score: {
-        state: scoreState,
-        ...(earned === undefined ? {} : { earned }),
-        ...(points === undefined ? {} : { points }),
-      },
-      ...(result["diagnostic"] === undefined ? {} : { diagnostic: result["diagnostic"] }),
-    },
-    coverage: {
-      state: coverageState,
-      ...(jsonStringOf(coverage, "reason") === undefined ? {} : { reason: jsonStringOf(coverage, "reason") }),
-    },
-    limitations,
-  };
-}
-
-/** sealed result → 展示 outcome;errored 归 failed,理由留在 detail。 */
 function assertionOutcomeOf(entry: SealedAssertionEntryView): AttemptAssertionView["outcome"] {
-  const state = entry.result.state;
+  const state = entry.decision.result;
   if (state === "matched") return "passed";
   if (state === "mismatched" || state === "errored") return "failed";
   return "unavailable";
 }
 
 function assertionSeverityOf(entry: SealedAssertionEntryView): AttemptAssertionView["severity"] {
-  if (entry.result.gate === "failed" || entry.result.gate === "unavailable") return "gate";
-  return entry.result.score.state === "not-scored" ? "recorded" : "soft";
+  if (entry.decision.gate === "failed" || entry.decision.gate === "unavailable") return "gate";
+  return entry.decision.contribution.state === "not-scored" ? "recorded" : "soft";
 }
 
 function scoreOf(entry: SealedAssertionEntryView): AttemptScoreView | undefined {
-  const score = entry.result.score;
+  const score = entry.decision.contribution;
   if (score.state === "not-scored") return undefined;
   return {
     state: score.state,
-    points: score.points ?? 0,
-    ...(score.state === "earned" ? { earned: score.earned ?? 0 } : {}),
+    points: score.points,
+    ...(score.state === "earned" ? { earned: score.earned } : {}),
   };
 }
 
-function diagnosticLocatorText(record: Readonly<Record<string, JsonValue>>): string | undefined {
-  const locator = jsonRecordOf(record["locator"]);
-  if (locator === undefined) return undefined;
-  const kind = jsonStringOf(locator, "kind");
-  if (kind === "json-pointer") {
-    const pointer = jsonStringOf(locator, "pointer");
-    return pointer === undefined ? undefined : `location: ${pointer}`;
-  }
-  if (kind === "tool-occurrence") {
-    const id = jsonStringOf(locator, "id");
-    return id === undefined ? undefined : `location: tool occurrence ${id}`;
-  }
-  return undefined;
-}
-
-function childDiagnostics(record: Readonly<Record<string, JsonValue>>): readonly Readonly<Record<string, JsonValue>>[] {
-  const children = record["children"];
-  if (!Array.isArray(children)) return [];
-  return children.flatMap((child) => {
-    const childRecord = jsonRecordOf(child);
-    const diagnostic = childRecord === undefined ? undefined : jsonRecordOf(childRecord["diagnostic"]);
-    return diagnostic === undefined ? [] : [diagnostic];
-  });
-}
-
-function pathWitnessOf(
-  record: Readonly<Record<string, JsonValue>>,
-): Readonly<Record<string, JsonValue>> | undefined {
-  for (const child of childDiagnostics(record)) {
-    if (jsonStringOf(child, "code") === "path-reference-match") return child;
-    const nested = pathWitnessOf(child);
-    if (nested !== undefined) return nested;
-  }
-  return undefined;
-}
-
-function diagnosticWasTruncated(record: Readonly<Record<string, JsonValue>>): boolean {
-  if (jsonStringOf(record, "code") === "diagnostic-truncated" || record["truncation"] !== undefined) return true;
-  return childDiagnostics(record).some(diagnosticWasTruncated);
-}
-
-function diagnosticSummary(value: JsonValue): string {
-  const record = jsonRecordOf(value);
-  if (record === undefined) return stableJson(value);
-  const message = jsonStringOf(record, "message");
-  if (message === undefined) return stableJson(value);
-
-  const parts = [message];
-  const expected = jsonStringOf(record, "expected");
-  const received = jsonStringOf(record, "received");
-  const reason = jsonStringOf(record, "reason");
-  if (expected !== undefined) parts.push(`expected: ${expected}`);
-  if (received !== undefined) parts.push(`received: ${received}`);
-  if (reason !== undefined) parts.push(`diagnostic reason: ${reason}`);
-  const locator = diagnosticLocatorText(record);
-  if (locator !== undefined) parts.push(locator);
-
-  const witness = pathWitnessOf(record);
-  if (witness !== undefined) {
-    const witnessMessage = jsonStringOf(witness, "message");
-    const witnessExpected = jsonStringOf(witness, "expected");
-    const witnessLocator = diagnosticLocatorText(witness);
-    if (witnessMessage !== undefined) parts.push(witnessMessage);
-    if (witnessExpected !== undefined) parts.push(`expected: ${witnessExpected}`);
-    if (witnessLocator !== undefined) parts.push(witnessLocator);
-  }
-  if (diagnosticWasTruncated(record)) parts.push("diagnostic details truncated");
-  return parts.join(" · ");
-}
-
-/** 展示层预拼的判定详情;字段全闭合,不把 matcher diagnostic tree 当作文案。 */
 export function assertionDetailOf(entry: SealedAssertionEntryView): string {
   const parts: string[] = [];
-  if (entry.result.state === "mismatched") parts.push(`reason: ${entry.result.reason}`);
-  if (entry.result.state === "unavailable") parts.push(`reason: ${entry.result.reason}`);
-  if (entry.result.state === "errored") parts.push(`reason: ${entry.result.reason}`);
-  if (entry.coverage.state !== "complete") {
-    parts.push(`coverage: ${entry.coverage.state}${entry.coverage.reason === undefined ? "" : ` (${entry.coverage.reason})`}`);
-  }
-  for (const limitation of entry.limitations) {
-    parts.push(`limitations: ${limitation.kind}`);
-  }
-  if (entry.result.diagnostic !== undefined) {
-    parts.push(`diagnostic: ${diagnosticSummary(entry.result.diagnostic)}`);
+  if (entry.decision.reason !== null) parts.push(`reason: ${entry.decision.reason}`);
+  if (entry.source.coverage.state !== "complete") {
+    parts.push(`coverage: ${entry.source.coverage.state} (${entry.source.coverage.reason})`);
   }
   return parts.join(" · ");
 }
@@ -609,6 +419,91 @@ function assertionNameOf(entry: SealedAssertionEntryView): string {
   return entry.entryId;
 }
 
+function factValue(value: null | boolean | number | string): ClosedAssertionFactValue {
+  return { kind: "value", value };
+}
+
+function limitationFact(limitation: ClosedAssertionLimitation): ClosedAssertionFactValue {
+  switch (limitation.kind) {
+    case "redacted":
+      return { kind: "fields", fields: [
+        { label: "kind", value: factValue(limitation.kind) },
+        { label: "fieldCount", value: factValue(limitation.fieldCount) },
+      ] };
+    case "sampled":
+      return { kind: "fields", fields: [
+        { label: "kind", value: factValue(limitation.kind) },
+        { label: "captured", value: factValue(limitation.captured) },
+        ...(limitation.knownTotal === undefined
+          ? []
+          : [{ label: "knownTotal", value: factValue(limitation.knownTotal) }]),
+      ] };
+    case "truncated":
+      return { kind: "fields", fields: [
+        { label: "kind", value: factValue(limitation.kind) },
+        { label: "omittedBytes", value: factValue(limitation.omittedBytes) },
+      ] };
+    case "provider-limited":
+      return { kind: "fields", fields: [
+        { label: "kind", value: factValue(limitation.kind) },
+      ] };
+  }
+}
+
+function assertionEvidenceOf(entry: SealedAssertionEntryView): AssertionEvidenceContent {
+  const coverageFields: { readonly label: string; readonly value: ClosedAssertionFactValue }[] = [
+    { label: "state", value: factValue(entry.source.coverage.state) },
+  ];
+  if ("reason" in entry.source.coverage) {
+    coverageFields.push({ label: "reason", value: factValue(entry.source.coverage.reason) });
+  }
+  const source: ClosedAssertionFactValue = {
+    kind: "fields",
+    fields: [
+      ...entry.source.fields,
+      { label: "coverage", value: { kind: "fields", fields: coverageFields } },
+      ...(entry.source.limitations.length === 0
+        ? []
+        : [{
+            label: "limitations",
+            value: { kind: "list" as const, items: entry.source.limitations.map(limitationFact) },
+          }]),
+    ],
+  };
+  const receipt = entry.observed.receipt;
+  const observed: ClosedAssertionFactValue = receipt === undefined
+    ? entry.observed
+    : {
+        kind: "fields",
+        fields: [
+          ...entry.observed.fields,
+          {
+            label: "receipt",
+            value: {
+              kind: "fields",
+              fields: [
+                { label: "examined", value: factValue(receipt.examined) },
+                { label: "matched", value: factValue(receipt.matched) },
+                { label: "mismatched", value: factValue(receipt.mismatched) },
+                { label: "unavailable", value: factValue(receipt.unavailable) },
+                { label: "knownTotal", value: factValue(receipt.knownTotal) },
+                { label: "complete", value: factValue(receipt.complete) },
+                { label: "exhaustive", value: factValue(receipt.exhaustive) },
+                { label: "decisive", value: factValue(receipt.decisive) },
+              ],
+            },
+          },
+        ],
+      };
+  return {
+    source,
+    check: entry.check,
+    observed: { kind: "fields", fields: observed.kind === "fields" ? observed.fields : [] },
+    expected: entry.expected,
+    explanation: entry.explanation,
+  };
+}
+
 export function assertionViewOf(entry: SealedAssertionEntryView): AttemptAssertionView {
   const score = scoreOf(entry);
   return {
@@ -618,6 +513,7 @@ export function assertionViewOf(entry: SealedAssertionEntryView): AttemptAsserti
     outcome: assertionOutcomeOf(entry),
     groupPath: entry.display.groupPath,
     detail: assertionDetailOf(entry),
+    evidence: assertionEvidenceOf(entry),
     ...(score === undefined ? {} : { score }),
   };
 }
@@ -652,9 +548,7 @@ export function attemptAssertionsData(
   detail: AttemptEvidenceDomainDetail | undefined,
 ): AttemptAssertionsData | null {
   if (detail === undefined) return null;
-  const entries = detail.entries
-    .map(assertionEntryViewOf)
-    .filter((entry): entry is SealedAssertionEntryView => entry !== undefined);
+  const entries = detail.entries.map(assertionEntryViewOf);
   if (entries.length === 0) return null;
   const assertions = entries.map(assertionViewOf);
   const attentionBase = assertions.filter((assertion) =>
@@ -1125,33 +1019,16 @@ export function attemptDiffData(
 
 // ───────────────────────── AttemptSource ─────────────────────────
 
-/** sourceSites 在 DomainView 边界是 JsonValue;这里做最小结构读取,读不到即跳过。 */
-function siteViewOf(value: JsonValue): AttemptSourceSiteView | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const record = value as Readonly<Record<string, unknown>>;
-  const entryId = record["entryId"];
-  const role = record["role"];
-  const sourceOrder = record["sourceOrder"];
-  const sourceItemId = record["sourceItemId"];
-  const sha256 = record["sha256"];
-  const start = record["start"];
-  const end = record["end"];
-  if (
-    typeof entryId !== "string" ||
-    typeof sourceOrder !== "number" ||
-    !Number.isSafeInteger(sourceOrder) ||
-    sourceOrder < 1 ||
-    typeof role !== "string" ||
-    typeof sourceItemId !== "string" ||
-    typeof sha256 !== "string"
-  ) return undefined;
-  if (typeof start !== "object" || start === null || Array.isArray(start)) return undefined;
-  if (typeof end !== "object" || end === null || Array.isArray(end)) return undefined;
-  const startLine = (start as Readonly<Record<string, unknown>>)["line"];
-  const endLine = (end as Readonly<Record<string, unknown>>)["line"];
-  if (typeof startLine !== "number" || typeof endLine !== "number") return undefined;
-  if (startLine < 1 || endLine < startLine) return undefined;
-  return { entryId, sourceOrder, role, sourceItemId, sha256, startLine, endLine };
+function siteViewOf(value: ClosedAssertionSourceSite): AttemptSourceSiteView {
+  return {
+    entryId: value.entryId,
+    sourceOrder: value.sourceOrder,
+    role: value.role,
+    sourceItemId: value.sourceItemId,
+    sha256: value.sha256,
+    startLine: value.start.line,
+    endLine: value.end.line,
+  };
 }
 
 export function attemptSourceData(input: {
@@ -1162,7 +1039,7 @@ export function attemptSourceData(input: {
     readonly sha256: string;
     readonly content: { readonly state: "available"; readonly text: string } | { readonly state: "unavailable" | "binary" };
   }[];
-  readonly sourceSites: readonly JsonValue[];
+  readonly sourceSites: readonly ClosedAssertionSourceSite[];
   readonly entries: readonly AttemptAssertionView[];
   readonly navigation?: SourceNavigationDomainDetail;
 }): AttemptSourceData | null {
@@ -1171,7 +1048,7 @@ export function attemptSourceData(input: {
   const knownEntryIds = new Set(entries.map((entry) => entry.entryId));
   const sites = sourceSites
     .map(siteViewOf)
-    .filter((site): site is AttemptSourceSiteView => site !== undefined && knownEntryIds.has(site.entryId));
+    .filter((site) => knownEntryIds.has(site.entryId));
   const firstOrderByItem = new Map<string, number>();
   for (const site of sites) {
     const key = `${site.sourceItemId}:${site.sha256}`;
@@ -1206,19 +1083,6 @@ export function attemptSourceData(input: {
     entries,
     ...(navigation === undefined ? {} : { navigation }),
   };
-}
-
-// ───────────────────────── helpers ─────────────────────────
-
-export function stableJson(value: JsonValue): string {
-  if (value === null || typeof value === "string" || typeof value === "boolean") {
-    return typeof value === "string" ? value : String(value);
-  }
-  if (typeof value === "number") return String(value);
-  if (Array.isArray(value)) return JSON.stringify(value);
-  const keys = Object.keys(value).sort(compareText);
-  if (keys.length === 0) return "{}";
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJson((value as Readonly<Record<string, JsonValue>>)[key]!)}`).join(",")}}`;
 }
 
 function compareText(left: string, right: string): number {

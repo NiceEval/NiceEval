@@ -11,10 +11,9 @@ import type {
 } from "./identifiers.ts";
 import type { RunContext } from "./run-context.ts";
 
-/** The current root header keeps stable identity separate from schema version. */
+/** The versionless root header; a future incompatible root uses a new format identity. */
 export interface RecordDocument {
   readonly format: RecordFormat;
-  readonly schemaVersion: 2;
   readonly recordId: RecordId;
 }
 

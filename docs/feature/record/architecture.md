@@ -121,7 +121,10 @@ const recordDefinition = {
 
 一个 `defineRecordAttachment` 调用定义 stable `family` 与 `current`。`current` 包含数值 `schemaVersion` 和
 全部 owner。每个 owner 相邻声明 payload Schema、limits 及 `blobs: { refs, budget, verify }`。`maintenance`
-是 async 的 lazy 历史 codec 与相邻 migration 描述；它不提供历史兼容读取。
+是 async 的 lazy 历史 codec 与纯相邻 migration 描述；它不提供历史兼容读取。
+
+eager adjacent link 另声明
+package-private physical write set（envelope 总会改写，payload 是否改写），供 plan、sentinel recovery 与 execute 共用；物理层不按 family 名猜测。
 
 ```ts
 // NiceEval internal only.
@@ -170,7 +173,7 @@ closure 与 integrity 验证。当前每个 family 文件恰有一个 `defineRec
 Observability 与 Artifacts 各有一个 family declaration；`owners.attempt` 与 `owners.run` 不会形成第二个 family。
 
 ordinary reader 与 writer 只接受 exact current catalog。未知 stable family、known family 的 future 版本与
-root/Core epoch 不匹配都在 session 形成前拒绝；历史版本只可由 maintenance 的固定完整 chain 迁移。
+不相容 Core 都在 session 形成前拒绝；Attachment 历史版本只可由所属 family maintenance 的固定完整 chain 迁移。
 
 ### Schema 允许集
 
@@ -213,7 +216,6 @@ root 的 exact JSON 是：
 ```ts
 type RecordDocument = {
   readonly format: "niceeval.record";
-  readonly schemaVersion: 2;
   readonly recordId: RecordId;
 };
 ```
@@ -298,7 +300,7 @@ Core 历史事实。matcher、当前输入、cache hit、通行率、排名与�
 ```ts
 type AttachmentEnvelope = {
   readonly family: "niceeval.assertions";
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
 };
 ```
 
@@ -306,7 +308,7 @@ type AttachmentEnvelope = {
 
 | family | current | `owners` map | exact payload root | 写入语义 |
 |---|---:|---|---|---|
-| `niceeval.assertions` | 1 | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口 criterion、material、Evidence 与 result |
+| `niceeval.assertions` | 2 | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口唯一的 criterion、materials、evaluation、decision、policy、contribution 与 explanation retention |
 | `niceeval.observability` | 2 | `{ attempt, run }` | `AttemptObservabilityAttachment` / `RunObservabilityAttachment` | collector 封口对话、命令、用量、时间、诊断与 OTel |
 | `niceeval.file-changes` | 1 | `{ attempt }` | `FileChangesAttachment` | Sandbox collector 封口归因策略与 send 区间文件变化轨迹 |
 | `niceeval.source-navigation` | 1 | `{ attempt }` | `SourceNavigationAttachment` | Runner 封口每个物理 send 的 source/timing join |
@@ -367,8 +369,8 @@ Assertions 的 criterion、Evidence 与局部错误规则由 [Assertions archite
 拥有。Observability 的精确 shape 由 [Observability Attachment](architecture/observability-attachments.md)
 拥有。本页定义它们共同的 durable boundary。
 
-future NiceEval catalog 可以增加独立 fixed family，例如 `niceeval.energy`，但发布时必须同时升级 root writer
-epoch。它仍有自己的 stable family name、numeric schemaVersion、`owners` map、definition 与 collector，且不是
+future NiceEval catalog 可以增加独立 fixed family，例如 `niceeval.energy`，而不改变 Record root。它仍有自己的
+stable family name、numeric schemaVersion、`owners` map、definition 与 collector，且不是
 第三方扩展点。旧 reader 在扫描到未知 family 时 fail closed，不能让 Analysis、Report 或 Runner 读取一个只验证了
 部分 catalog 的 Record。
 
@@ -603,13 +605,13 @@ Runner 收到可处理的 `SIGINT` 后会先停止派发并关闭每个已知 Sl
 
 ## Maintenance、兼容性与相邻迁移
 
-schemaVersion `2` 是当前 root / Core 的唯一可读、可写 writer epoch；fixed family 各自拥有 current 版本。
-schemaVersion `1` 与 Observability v1 只有在固定完整 `1 → 2` chain 中才是 predecessor：
+Record root 没有 schemaVersion；fixed family 各自拥有 current 版本。已声明的 family predecessor
+只有在所属 family 的固定完整相邻 chain 中才可迁移：
 
 | 发现的内容 | ordinary reader | maintenance |
 |---|---|---|
-| root/Core epoch 与全部 family 命中完整 automatic-safe chain | ordinary 入口不得形成 session；Git-safe automatic maintenance 成功后全新打开 | 同一 exclusive session plan/apply，并同时升级 root epoch与目标 family |
-| root/Core 或已知 family 是 future/无链 schemaVersion | `unsupported-format`；不形成 session | `unsupported-format`；提示使用写出该版本的 NiceEval |
+| 已知 family 命中完整 automatic-safe chain | ordinary 入口不得形成 session；Git-safe automatic maintenance 成功后全新打开 | 同一 exclusive session plan/apply，只改写目标 Attachment |
+| root format/Core 不相容，或已知 family 是 future/无链 schemaVersion | `unsupported-format`；不形成 session | `unsupported-format`；提示使用写出该版本的 NiceEval |
 | 未知 family | `unsupported-format`；不形成 session | `unsupported-format`；不猜 payload、closure 或迁移 |
 | current catalog family 缺失 | 按请求得到 `not-recorded` | 不补写历史事实 |
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format`；不得按未知 family 容忍 | 不进入迁移链 |
@@ -617,9 +619,11 @@ schemaVersion `1` 与 Observability v1 只有在固定完整 `1 → 2` chain 中
 未知 family 没有 payload schema、closure rule 或 projection 可供当前版本验证，因此整个 ordinary open
 fail closed；它不能再作为局部 `unsupported` 进入 Analysis。
 
-Record root schemaVersion `2` 与 Observability schemaVersion `2` 由 `maintenance` facet 提供固定的联合
-`1 → 2` step。step 只依赖已保存的两个 owner payload 与 own blob closure，并逐字保留 label、blob refs 与
-blob bytes；root epoch 最后升级。它不调用第三方 converter，也不从当前 worktree、网络或运行时算法补写历史事实。
+Observability 与 Assertions 各由自己的 `maintenance` facet 提供固定 `1 → 2` step。Record migration
+framework 只调度这些 Attachment steps；plan/receipt 没有 root target。step 只接收已验证、hydrate 的历史 payload 并返回 current payload，绝不执行文件 I/O。
+
+Observability 的 physical write set 是 envelope-only；Assertions 是 envelope + payload，以及失去引用时应删除的
+own blobs。执行时 transform 结果只用于核对该 metadata，不作为 recovery 猜测依据；`record.json` 不在 write set。
 
 有相邻步骤时，maintenance 在首次写 portable byte 前完成 Git preflight：Record 位于 Git worktree，
 完整 portable inventory 由 HEAD 跟踪，index 与 worktree 对该 inventory 干净。计划还绑定 repository
@@ -638,9 +642,9 @@ Record identity、portable inventory、source bytes 与 migration identity。只
 成功并全量验证后释放 maintenance，再新开 ordinary session。非 Git、dirty/untracked/ignored、read-only、
 lease busy、不完整 chain、future/unknown 或失败都给出 typed blocker，绝不继续 ordinary open。
 
-计划同时绑定每个目标 envelope 的 exact source bytes。首次改写前的 `migration.in-progress` 只保存已验证的 restore commit。
+计划同时绑定每个目标 envelope 与 payload 的 exact source bytes，以及 descriptor 声明的 physical write set。首次改写前的 `migration.in-progress` 保存已验证的 restore commit；恢复 expected paths 复用同一 write-set metadata，不把 envelope-only family 的 payload 并发改动列为预期。
 
-中断或失败后，maintenance 先证明 HEAD 未变化，且 dirty path 只有 sentinel 与 canonical v2 计划目标。证明成立时，CLI 才给出限定到 Record root 的 Git restore 与 tracked-byte 验证命令；否则只要求人工检查并保留并发编辑。验证 worktree/index 等于该 commit 后才清除 sentinel 并重试 `niceeval migrate`。
+中断或失败后，maintenance 先证明 HEAD 未变化，且 dirty path 只有 sentinel 与 physical plan 明确写入的 canonical current 目标。证明成立时，CLI 才给出限定到 Record root 的 Git restore 与 tracked-byte 验证命令；否则只要求人工检查并保留并发编辑。验证 worktree/index 等于该 commit 后才清除 sentinel 并重试 `niceeval migrate`。
 
 只有 sentinel 创建成功后的失败进入该恢复态。首个目标改写前发现 source bytes 变化、计划指纹变化、第二次 Git preflight 或 sentinel 创建失败时，不得输出旧计划的 restore 命令。恢复前不会创建 reader。
 

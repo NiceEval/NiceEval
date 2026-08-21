@@ -5,6 +5,7 @@ import { shell } from "niceeval/sandbox";
 import { weatherFixture } from "../src/tools.ts";
 
 const GREETING = "Hello, niceeval!";
+const DELIBERATE_TURN_FAILURE = "deterministic agent reported a terminal turn failure";
 
 /**
  * CLI 功能 Repo 使用的进程内确定性 Agent。
@@ -24,6 +25,13 @@ export function deterministicAgent(name: string): Agent {
       }
 
       ctx.session.capture(`cli-deterministic:${name}`);
+
+      if (input.text === "return a failed turn") {
+        return {
+          status: "failed",
+          events: [{ type: "error", message: DELIBERATE_TURN_FAILURE }],
+        };
+      }
 
       if (/weather/i.test(input.text)) {
         const operationId = "get-weather-1";

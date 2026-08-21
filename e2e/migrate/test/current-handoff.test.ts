@@ -1,6 +1,7 @@
 // owner: docs/engineering/testing/e2e/migrate.md#current-to-current-handoff-bootstrap
 
 import { createE2EContext, type ExpEvalEvent, type ExpEvent } from "@niceeval/testkit";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
@@ -25,7 +26,7 @@ test("当前 producer 的持久化结果可由独立 candidate show 进程读取
   await e2e.case(
     "current-handoff",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { producer, candidate } }) => {
+    async ({ commands: { producer, candidate }, paths }) => {
       const run = await producer.run(["exp", "handoff", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const receipt = run.expReceipt();
@@ -36,6 +37,10 @@ test("当前 producer 的持久化结果可由独立 candidate show 进程读取
           "event" in event && event.event === "eval" && event.evalId === "handoff",
       );
       expect(evalEvent, run.diagnostic()).toMatchObject({ verdict: "passed" });
+      expect(JSON.parse(readFileSync(join(paths.projectRoot, ".niceeval", "record", "record.json"), "utf8")))
+        .toEqual(expect.objectContaining({ format: "niceeval.record" }));
+      expect(readFileSync(join(paths.projectRoot, ".niceeval", "record", "record.json"), "utf8"))
+        .not.toContain("schemaVersion");
 
       const shown = await candidate.run(["show", "--run", receipt.runIds[0]!, "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);

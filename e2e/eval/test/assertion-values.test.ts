@@ -20,7 +20,7 @@ interface AttemptShow {
       entries: readonly {
         state: string;
         detail?: {
-          entries: readonly { display: unknown; result: unknown }[];
+          entries: readonly { display: unknown; decision: unknown }[];
         };
       }[];
     };
@@ -55,12 +55,12 @@ const MISMATCHED_LABELS = [
   "eventMatch.tool:mismatched", "eventMatch.finished:mismatched", "eventOrder:mismatched",
 ] as const;
 
-function assertionOutcomeMap(entries: readonly { display: unknown; result: unknown }[]): Map<string, string> {
+function assertionOutcomeMap(entries: readonly { display: unknown; decision: unknown }[]): Map<string, string> {
   return new Map(entries.flatMap((entry) => {
     if (entry.display === null || typeof entry.display !== "object" || Array.isArray(entry.display)) return [];
-    if (entry.result === null || typeof entry.result !== "object" || Array.isArray(entry.result)) return [];
+    if (entry.decision === null || typeof entry.decision !== "object" || Array.isArray(entry.decision)) return [];
     const label = (entry.display as Record<string, unknown>).label;
-    const state = (entry.result as Record<string, unknown>).state;
+    const state = (entry.decision as Record<string, unknown>).result;
     return typeof label === "string" && typeof state === "string" ? [[label, state] as const] : [];
   }));
 }

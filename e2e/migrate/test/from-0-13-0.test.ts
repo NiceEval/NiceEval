@@ -1,11 +1,11 @@
-// owner: docs/engineering/testing/e2e/migrate.md#observability-v1-to-v2
+// owner: docs/engineering/testing/e2e/migrate.md#npm-0130-to-current
 
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { attestLegacyProducer, commitRecord, e2e } from "./support.ts";
 
-test("Git 保存的 npm 0.13.0 Record 自动迁移后显示同一结果并拒绝旧 writer", async () => {
+test("Git 保存的 npm 0.13.0 Record 可由 current 逐次迁移并继续往返追加", async () => {
   await e2e.case(
     "observability-v1-auto-migrate",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -70,6 +70,8 @@ test("Git 保存的 npm 0.13.0 Record 自动迁移后显示同一结果并拒绝
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stderr, shown.diagnostic()).toContain("Record automatically migrated");
       expect(shown.stderr, shown.diagnostic()).toContain("restore commit");
+      expect(shown.stderr, shown.diagnostic()).toContain("Dropped facts: criterion, subject, evidence");
+      expect(shown.stderr, shown.diagnostic()).toContain("Rerun the affected evaluation");
       const output = shown.json<{
         selection: { runIds: readonly string[] };
         data: {
@@ -83,26 +85,57 @@ test("Git 保存的 npm 0.13.0 Record 自动迁移后显示同一结果并拒绝
         expect.objectContaining({ eval: "legacy-handoff", locator: expect.stringMatching(/^@/), verdict: "passed" }),
       ]);
 
-      const beforeOldWriter = await run(["git", "diff", "--binary", "--", ".niceeval/record"]);
-      expect(beforeOldWriter.exitCode, beforeOldWriter.diagnostic()).toBe(0);
-      const beforeOldWriterStatus = await run([
-        "git", "status", "--porcelain=v1", "--untracked-files=all", "--", ".niceeval/record",
+      const attempt = await candidate.run(["show", output.data.members[0].locator, "--json"]);
+      expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
+      const attemptJson = attempt.json<{
+        data: {
+          evidence: {
+            entries: readonly {
+              state: string;
+              detail?: {
+                entries: readonly {
+                  display: { label?: string };
+                  source: unknown;
+                  explanation: unknown;
+                  decision: { result: string };
+                }[];
+              };
+            }[];
+          };
+        };
+      }>();
+      const migratedEntries = attemptJson.data.evidence.entries
+        .flatMap((entry) => entry.detail?.entries ?? []);
+      expect(migratedEntries.map((entry) => entry.display.label)).toEqual([
+        "legacy turn succeeded",
+        "legacy includes match",
+        "legacy excludes match",
+        "legacy called tool",
+        "legacy not-called tool",
       ]);
-      expect(beforeOldWriterStatus.exitCode, beforeOldWriterStatus.diagnostic()).toBe(0);
-
-      const oldWriterRejected = await runLegacyExperiment();
-      expect(oldWriterRejected.exitCode, oldWriterRejected.diagnostic()).toBe(1);
-      expect(oldWriterRejected.stderr, oldWriterRejected.diagnostic()).toContain("record-format-unsupported");
-      expect(oldWriterRejected.stdout, oldWriterRejected.diagnostic()).not.toContain('"event":"run"');
-
-      const afterOldWriter = await run(["git", "diff", "--binary", "--", ".niceeval/record"]);
-      expect(afterOldWriter.exitCode, afterOldWriter.diagnostic()).toBe(0);
-      expect(afterOldWriter.stdout).toBe(beforeOldWriter.stdout);
-      const afterOldWriterStatus = await run([
-        "git", "status", "--porcelain=v1", "--untracked-files=all", "--", ".niceeval/record",
+      expect(migratedEntries.map((entry) => entry.decision.result)).toEqual([
+        "matched", "matched", "matched", "matched", "matched",
       ]);
-      expect(afterOldWriterStatus.exitCode, afterOldWriterStatus.diagnostic()).toBe(0);
-      expect(afterOldWriterStatus.stdout).toBe(beforeOldWriterStatus.stdout);
+      const migratedAssertionsText = JSON.stringify(migratedEntries);
+      expect(migratedAssertionsText).not.toContain("persisted-handoff:handoff-input");
+      expect(migratedAssertionsText).not.toContain("legacy_lookup");
+      expect(migratedAssertionsText).not.toContain("forbidden_tool");
+      expect(migratedAssertionsText).toContain('"reason":"not-recorded"');
+
+      const appended = await runLegacyExperiment();
+      expect(appended.exitCode, appended.diagnostic()).toBe(0);
+      const appendedReceipt = appended.expReceipt();
+      expect(appendedReceipt.completion, appended.diagnostic()).toBe("completed");
+      expect(appendedReceipt.runIds, appended.diagnostic()).toHaveLength(1);
+      const appendedRunId = appendedReceipt.runIds[0]!;
+      expect(appendedRunId).not.toBe(runId);
+      await commitRecord(run, "record: save second npm 0.13.0 run");
+
+      const appendedShown = await candidate.run(["show", "--run", appendedRunId, "--json"]);
+      expect(appendedShown.exitCode, appendedShown.diagnostic()).toBe(0);
+      expect(appendedShown.stderr, appendedShown.diagnostic()).toContain("Record automatically migrated");
+      expect(appendedShown.json<{ selection: { runIds: readonly string[] } }>().selection.runIds)
+        .toEqual([appendedRunId]);
 
       const stillShown = await candidate.run(["show", "--run", runId, "--json"]);
       expect(stillShown.exitCode, stillShown.diagnostic()).toBe(0);

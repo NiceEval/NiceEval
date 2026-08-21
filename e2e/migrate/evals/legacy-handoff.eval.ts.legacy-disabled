@@ -1,11 +1,18 @@
 import { defineEval } from "niceeval-legacy-0-13";
-import { includes } from "niceeval-legacy-0-13/expect";
+import { excludes, includes } from "niceeval-legacy-0-13/expect";
 
 export default defineEval({
   description: "Persist one deterministic legacy result for automatic migration",
   async test(t) {
     const turn = await t.send("handoff-input");
-    await turn.succeeded().orStop();
-    t.check(turn.message, includes("persisted-handoff:handoff-input"));
+    await turn.succeeded().label("legacy turn succeeded").orStop();
+    t.check(turn.message, includes("persisted-handoff:handoff-input"))
+      .label("legacy includes match");
+    t.check(turn.message, excludes("forbidden-output"))
+      .label("legacy excludes match");
+    turn.calledTool("legacy_lookup", { count: 1 })
+      .label("legacy called tool");
+    turn.notCalledTool("forbidden_tool")
+      .label("legacy not-called tool");
   },
 });

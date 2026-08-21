@@ -12,18 +12,18 @@ Record（持久事实集）是 `<project>/.niceeval/record/` 中可携带、可�
 composition SDK，供 NiceEval CLI、替代 CLI / Web host 或深度应用集成组合 scoped Record I/O。它不让调用方
 直接依赖目录布局，也不把 Record definition、family catalog 或 migration 变成可注册的 durable schema。
 
-一个最小 Record 使用稳定名称加数值版本，而不是把版本写进名称：
+一个最小 Record 的根只有稳定格式身份；数值版本只属于 Attachment：
 
 ```json
 // record.json
-{ "format": "niceeval.record", "schemaVersion": 2 }
+{ "format": "niceeval.record", "recordId": "..." }
 
 // runs/<RunId>/attempts/<AttemptId>/attachments/niceeval.assertions/attachment.json
 { "family": "niceeval.assertions", "schemaVersion": 1 }
 ```
 
-`format`（格式身份）和 `family`（附件族身份）保持稳定；`schemaVersion`（数值 schema 版本）表达它们的
-wire shape。`owner`（归属者）决定一份 Attachment 属于 Run 还是 Attempt。
+`format`（格式身份）和 `family`（附件族身份）保持稳定；只有 Attachment envelope 的 `schemaVersion`
+表达该 family 的 wire shape。`owner`（归属者）决定一份 Attachment 属于 Run 还是 Attempt。
 
 ```text
 Record
@@ -70,7 +70,7 @@ NiceEval current 固定 Attachment catalog 有以下六个 family（附件族）
 
 | family | current | `owners` | 保存的事实 |
 |---|---:|---|---|
-| `niceeval.assertions` | 1 | `{ attempt }` | AssertionResult、Evidence 与已封口的检查结果 |
+| `niceeval.assertions` | 2 | `{ attempt }` | criterion、materials、evaluation、decision、policy、contribution 与有界 explanation retention |
 | `niceeval.observability` | 2 | `{ attempt, run }` | 对话、命令、用量、时间、诊断与 OTel 归一观察 |
 | `niceeval.file-changes` | 1 | `{ attempt }` | 归因策略、采集状态与按 send 区间排序的文件变化轨迹 |
 | `niceeval.source-navigation` | 1 | `{ attempt }` | 每个物理 `t.send` 的 turn、源码 frame 与 timing identity join |
@@ -85,10 +85,9 @@ registration point 或 migration registration。此前未保存且不可恢复�
 要么扩展既有 family，要么由 NiceEval 增加新的 fixed family definition。它不能成为调用方定义的第三方
 durable family。
 
-current catalog、root 与 Core 共同构成 durable writer epoch。ordinary reader 和 writer 只接受这一整套 exact
-current definition；未知 family、known family 的 future 版本和 root/Core epoch 不匹配都在 Analysis、Report 或
-Runner 形成前 fail closed。新增 fixed family 或改变既有 family 的 current 版本时必须同步升级 root epoch，防止旧
-writer 在迁移后继续追加旧格式。
+ordinary reader 和 writer 接受 exact root/Core 与 current catalog。未知 family、known family 的 future 版本和
+不相容 Core 都在 Analysis、Report 或 Runner 形成前 fail closed。Attachment 的演进只提高所属 family 的版本，
+不建立全局 writer/catalog epoch。
 
 Core 的 `Schema.Encoded` 只允许 exact JSON，禁止 blob ref。Attachment owner 的 encoded side 仍是 exact JSON，
 但可含由该 owner 的 declaration 唯一 mint 的 `RecordBlobRef`。一个 ref 只能指向同 owner、同 family 下的一份
@@ -133,20 +132,21 @@ mapped frame 必须以 exact origin Run Sources 的 `sourceItemId`、`sha256` �
 ## current 与 maintenance
 
 内部 definition 有 `current`（当前）与 `maintenance`（维护）两个 facet（分面）。`current` 定义普通
-reader、writer 和固定 family 必须接受的 root、Core 与 Attachment shape。`maintenance` 单独拥有格式
+reader、writer 和固定 family 必须接受的 root、Core 与 Attachment shape。`maintenance` 单独拥有 Attachment
 检查、Git 预检和相邻 schemaVersion 迁移步骤。
 
-普通 `RecordReadSession` 只读取 exact current format，绝不自动改盘。它先选择已封口 Run，形成只含
-身份、预期 Slot 和问题的 `RecordSelection`。查询需要某条 trace、diff 或 Evidence 时，才读取并校验对应
-Attachment。
+普通 `RecordReadSession` 只读取 exact current format，绝不自动改盘。openRead 在一次有界候选枚举中逐 Run
+观察规范 `complete`，冻结这组 RunId，并以同一集合完成 Core、family inventory 与 attachment version gate。
+之后的 selection、owner resolution 与 lazy reads 不重新扫描扩大集合。
 
-Record 的 current root 是 schemaVersion `2`。schemaVersion `1` 是 npm `niceeval@0.13.0` 可产生的已发布
-predecessor；固定的 `1 → 2` chain 同时升级 root epoch 与 Observability v1 envelope。兼容性如下：
+Record root 的领域值没有 schemaVersion。旧 root 上名为 `schemaVersion` 的键在 JSON reader 边界无条件
+被丢弃，不读取其值，也不进入领域值或 migration；其它额外键仍拒绝。未来不相容只由新的 `format` identity
+表达。Observability 与 Assertions 各自有 package-private `1 → 2` step。兼容性如下：
 
 | 碰到的 bytes | ordinary reader 的动作 |
 |---|---|
-| root/Core epoch 或已知 fixed family 是完整可自动迁移的 predecessor | ordinary 入口先退出检查 scope，再进入 Git-safe automatic maintenance；迁移成功后全新打开 current session |
-| root/Core epoch 或 known family 是 future、unknown 或无完整 chain | `unsupported-format`，不形成 session |
+| 已知 fixed family 是完整可自动迁移的 predecessor | ordinary 入口先退出检查 scope，再进入 Git-safe automatic maintenance；迁移成功后全新打开 current session |
+| root format/Core 不相容，或 known family 是 future、unknown 或无完整 chain | `unsupported-format`，不形成 session |
 | 未知 family | `unsupported-format`，不形成 session |
 | current catalog 中缺少的 family | 在请求它时返回 `not-recorded` |
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format`；它不能伪装为独立 future family |

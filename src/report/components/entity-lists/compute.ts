@@ -212,14 +212,9 @@ function closedFailureSummary(entry: ClosedAttemptEvidenceEntry | undefined): st
   if (detail.verdict === "errored") return detail.outcome;
   if (detail.verdict !== "failed") return null;
   for (const item of detail.entries) {
-    const result = item.result;
-    if (typeof result !== "object" || result === null || Array.isArray(result)) continue;
-    if ((result as Readonly<Record<string, unknown>>).state !== "mismatched") continue;
-    const display = item.display;
-    if (typeof display === "object" && display !== null && !Array.isArray(display)) {
-      const label = (display as Readonly<Record<string, unknown>>).label;
-      if (typeof label === "string" && label.length > 0) return label;
-    }
+    if (item.decision.result !== "mismatched") continue;
+    const label = item.display.label ?? item.display.key;
+    if (label !== undefined && label.length > 0) return label;
     return "assertion";
   }
   return null;
@@ -231,14 +226,16 @@ async function evidenceFacts(sample: Sample): Promise<ReadonlyMap<AttemptLocator
   for (const entry of view.entries) {
     const locator = entry.attempt.locator;
     const assertions = entry.state === "available"
-      ? entry.detail.entries.map(assertionEntryViewOf).filter((item) => item !== undefined)
+      ? entry.detail.entries.map(assertionEntryViewOf)
       : [];
     const scoreContributions = assertions
-      .map((item) => item.result.score)
+      .map((item) => item.decision.contribution)
       .filter((score) => score.state !== "not-scored");
-    const completeScore = scoreContributions.length > 0 &&
-      scoreContributions.every((score) => score.state === "earned" && score.earned !== undefined)
-      ? scoreContributions.reduce((sum, score) => sum + (score.earned ?? 0), 0)
+    const earned = scoreContributions.filter((score): score is Extract<typeof score, { readonly state: "earned" }> =>
+      score.state === "earned"
+    );
+    const completeScore = scoreContributions.length > 0 && earned.length === scoreContributions.length
+      ? earned.reduce((sum, score) => sum + score.earned, 0)
       : undefined;
     facts.set(locator, Object.freeze({
       verdict: entry.state === "available" ? (entry.detail.verdict as Verdict) : null,

@@ -38,6 +38,11 @@ export const observabilityV1Maintenance: RecordAttachmentMaintenanceFacet = Obje
     Object.freeze({
       fromSchemaVersion: 1,
       toSchemaVersion: 2,
+      retention: Object.freeze({
+        retainedFacts: Object.freeze(["payload", "blobs"]),
+        droppedFacts: Object.freeze([]),
+        rerunRecommendation: null,
+      }),
       migrate: migrateObservabilityV1,
     }),
   ]),

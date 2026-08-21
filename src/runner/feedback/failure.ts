@@ -1,4 +1,10 @@
 import { compactAssertionSummary, summaryText } from "../../assertions/display.ts";
+import type {
+  AssertionCriterion,
+  AssertionSnapshotObject,
+  SealedAssertionEntry,
+  SealedAttemptAssertions,
+} from "../../assertions/api.ts";
 import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import type {
   EvaluationFactResult,
@@ -16,14 +22,19 @@ import type { CurrentReusedAttemptReadback } from "../reuse-readback.ts";
  * Fresh results and current Record readbacks use separate projections so the
  * latter never has to impersonate an EvalResult at the feedback boundary.
  */
-export function failureDetailFromResult(result: EvalResult): FailureDetail | undefined {
+export function failureDetailFromResult(
+  result: EvalResult,
+  sealed?: SealedAttemptAssertions,
+): FailureDetail | undefined {
   const locator = result.locator;
   if (!locator || (result.verdict !== "failed" && result.verdict !== "errored")) {
     return undefined;
   }
 
   const terminal = failureSummaryTerminal(result);
-  const fact = terminal === undefined ? undefined : primaryFactSummary(result, terminal);
+  const fact = terminal === undefined
+    ? undefined
+    : primaryFactSummary(result, terminal) ?? primaryAssertionSummary(result, sealed, terminal);
   // An errored terminal can only fall back to the runner error after every
   // evaluator-originated Fact cause has been considered.
   const fallbackError = terminal === "errored" && fact === undefined ? result.error : undefined;
@@ -59,6 +70,94 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     ...(phase !== undefined ? { phase } : {}),
     ...(code !== undefined ? { code } : {}),
     ...(origin !== undefined ? { origin } : {}),
+  };
+}
+
+function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Readonly<Record<string, unknown>>
+    : undefined;
+}
+
+function criterionTitle(criterion: AssertionCriterion): string {
+  switch (criterion.kind) {
+    case "scope-status":
+      return criterion.assertion === "succeeded"
+        ? `${criterion.scope} succeeded`
+        : `${criterion.scope} had no failed actions`;
+    case "value-match":
+      return "value matched";
+    case "occurrence":
+      return `${criterion.scope} ${criterion.occurrence} ${criterion.assertion}`;
+    case "judge-measurement":
+      return criterion.recipe;
+    case "sandbox-result":
+      return criterion.operation.replaceAll("-", " ");
+    case "direct-score":
+      return "direct score";
+    case "third-party":
+      return criterion.name;
+  }
+}
+
+function diagnosticFields(diagnostic: AssertionSnapshotObject | undefined): {
+  readonly matcher?: string;
+  readonly expected?: string;
+  readonly received?: string;
+  readonly reason?: string;
+} {
+  const value = record(diagnostic);
+  if (value === undefined) return {};
+  const string = (key: string): string | undefined =>
+    typeof value[key] === "string" ? value[key] : undefined;
+  return {
+    ...(string("message") === undefined ? {} : { matcher: string("message") }),
+    ...(string("expected") === undefined ? {} : { expected: string("expected") }),
+    ...(string("received") === undefined ? {} : { received: string("received") }),
+    ...(string("reason") === undefined ? {} : { reason: string("reason") }),
+  };
+}
+
+function assertionCandidate(
+  entry: SealedAssertionEntry,
+  result: EvalResult,
+): Omit<PrimaryFactSummary, "additionalFailures"> {
+  const diagnostic = diagnosticFields(entry.result.diagnostic);
+  const subject = entry.subject.kind === "snapshot" ? record(entry.subject.value) : undefined;
+  const errorReason = [...(result.events ?? [])].reverse().find((event) => event.type === "error")?.message;
+  const scopeStatus = entry.criterion.kind === "scope-status"
+    ? {
+        expected: entry.criterion.assertion === "succeeded" ? "completed" : undefined,
+        received: typeof subject?.status === "string" ? subject.status : undefined,
+      }
+    : {};
+  return {
+    title: entry.display.label ?? entry.display.key ?? criterionTitle(entry.criterion),
+    ...diagnostic,
+    ...scopeStatus,
+    ...(errorReason === undefined ? {} : { reason: errorReason }),
+  };
+}
+
+function primaryAssertionSummary(
+  result: EvalResult,
+  sealed: SealedAttemptAssertions | undefined,
+  terminal: FailureSummaryTerminal,
+): PrimaryFactSummary | undefined {
+  if (sealed === undefined) return undefined;
+  const failures = sealed.entries.filter((entry) => terminal === "failed"
+    ? entry.result.gate === "failed"
+    : entry.result.state === "errored" || entry.result.gate === "unavailable");
+  const primary = failures[0];
+  if (primary === undefined) return undefined;
+  const candidate = assertionCandidate(primary, result);
+  return {
+    title: summaryText(candidate.title),
+    ...(candidate.matcher === undefined ? {} : { matcher: summaryText(candidate.matcher) }),
+    ...(candidate.expected === undefined ? {} : { expected: summaryText(candidate.expected) }),
+    ...(candidate.received === undefined ? {} : { received: summaryText(candidate.received) }),
+    ...(candidate.reason === undefined ? {} : { reason: summaryText(candidate.reason) }),
+    additionalFailures: failures.length - 1,
   };
 }
 

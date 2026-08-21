@@ -424,11 +424,12 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await page.goBack();
         await expect(dialog).not.toBeVisible();
 
-        // Assertion source-line details use one display contract across a
-        // matched built-in assertions, a nested scoped matcher mismatch, and
-        // a direct value mismatch. Record-only checks say `recorded`; scoped
-        // matchers expose the decisive count/witness without dumping their
-        // matcher tree as user-facing JSON.
+        // Assertion source-line details use one neutral structure across a
+        // matched built-in assertion, a nested scoped matcher mismatch, and a
+        // direct value mismatch. Record-only checks say `recorded`; every
+        // assertion separately exposes its source, check, observed result,
+        // expected result, and bounded explanation instead of concatenating a
+        // matcher-specific sentence or dumping its diagnostic tree as JSON.
         await page.goto(origin!);
         await page.getByRole("combobox", { name: "Experiments" }).selectOption({ label: "main" });
         await expect(page).toHaveURL(new RegExp("/group/singleton/main/index\\.html$"));
@@ -467,15 +468,15 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         });
         await expect(absentToolAssertion).toHaveCount(1);
         await absentToolAssertion.locator(":scope > summary").click();
-        await expect(absentToolAssertion.getByText(
-          "notCalledTool(toolMatch(input=referencesAnyPath(5 paths))) observed no matching tool",
-          { exact: false },
-        )).toBeVisible();
-        await expect(absentToolAssertion.getByText(
-          "expected: no toolMatch(input=referencesAnyPath(5 paths))",
-          { exact: false },
-        )).toBeVisible();
-        await expect(absentToolAssertion.getByText("received: 0 definite matches", { exact: false })).toBeVisible();
+        await expect(absentToolAssertion.getByRole("heading", { name: "Source" })).toBeVisible();
+        await expect(absentToolAssertion.getByRole("heading", { name: "Check" })).toBeVisible();
+        await expect(absentToolAssertion.getByRole("heading", { name: "Observed" })).toBeVisible();
+        await expect(absentToolAssertion.getByRole("heading", { name: "Expected" })).toBeVisible();
+        await expect(absentToolAssertion.getByRole("heading", { name: "Explanation" })).toBeVisible();
+        await expect(absentToolAssertion.getByText("input", { exact: true }).first()).toBeVisible();
+        await expect(absentToolAssertion.getByText("coverage", { exact: true }).first()).toBeVisible();
+        await expect(absentToolAssertion.getByText("outcome", { exact: true }).first()).toBeVisible();
+        await expect(absentToolAssertion.getByText("receipt", { exact: true }).first()).toBeVisible();
         await expect(absentToolAssertion.getByText(/^diagnostic: \{"children"/)).toHaveCount(0);
 
         const nestedMismatch = dialog.locator("details").filter({
@@ -485,13 +486,9 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         if (await nestedMismatch.getAttribute("open") === null) {
           await nestedMismatch.locator(":scope > summary").click();
         }
-        await expect(nestedMismatch.getByText("reason: condition-not-met", { exact: false })).toBeVisible();
-        await expect(nestedMismatch.getByText(
-          "notCalledTool(toolMatch(input=referencesAnyPath(3 paths))) observed a matching tool",
-          { exact: false },
-        )).toBeVisible();
-        await expect(nestedMismatch.getByText("received: 1 definite match", { exact: false })).toBeVisible();
-        await expect(nestedMismatch.getByText("location: tool occurrence", { exact: false })).toBeVisible();
+        await expect(nestedMismatch.getByText('"tool-absence-mismatch"', { exact: true }).first()).toBeVisible();
+        await expect(nestedMismatch.getByText("receipt", { exact: true }).first()).toBeVisible();
+        await expect(nestedMismatch.getByText('"tool-occurrence"', { exact: true }).first()).toBeVisible();
         await expect(nestedMismatch.getByText(/^diagnostic: \{"children"/)).toHaveCount(0);
 
         const valueMismatch = dialog.locator("details").filter({ hasText: "Expected fixture value · gate failed" });
@@ -499,11 +496,34 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         if (await valueMismatch.getAttribute("open") === null) {
           await valueMismatch.locator(":scope > summary").click();
         }
-        await expect(valueMismatch.getByText("includes(\"expected fixture value\") did not find the literal text", {
-          exact: false,
-        })).toBeVisible();
-        await expect(valueMismatch.getByText("expected: \"expected fixture value\"", { exact: false })).toBeVisible();
+        const sourceSection = valueMismatch.getByRole("heading", { name: "Source" }).locator("..");
+        const checkSection = valueMismatch.getByRole("heading", { name: "Check" }).locator("..");
+        const observedSection = valueMismatch.getByRole("heading", { name: "Observed" }).locator("..");
+        const expectedSection = valueMismatch.getByRole("heading", { name: "Expected" }).locator("..");
+        await expect(sourceSection).toBeVisible();
+        await expect(checkSection).toBeVisible();
+        await expect(observedSection).toBeVisible();
+        await expect(expectedSection).toBeVisible();
+        await expect(valueMismatch.getByRole("heading", { name: "Explanation" })).toBeVisible();
+        await expect(sourceSection.getByText('"actual fixture value"', { exact: true })).toBeVisible();
+        await expect(checkSection.getByText(/expected fixture value/).first()).toBeVisible();
+        await expect(observedSection.getByText('"mismatched"', { exact: true })).toBeVisible();
+        await expect(expectedSection.getByText("true", { exact: true })).toBeVisible();
         await expect(valueMismatch.getByText(/^diagnostic: \{/)).toHaveCount(0);
+
+        const longCommandAssertion = dialog.locator("details").filter({
+          hasText: "Long command result · recorded passed",
+        });
+        await expect(longCommandAssertion).toHaveCount(1);
+        await longCommandAssertion.locator(":scope > summary").click();
+        const longSource = longCommandAssertion.getByRole("heading", { name: "Source" }).locator("..");
+        const foldedValue = longSource.locator("details").filter({ hasText: /\d+ characters/ });
+        await expect(foldedValue).toHaveCount(1);
+        await expect(foldedValue).not.toHaveAttribute("open", "");
+        await expect(foldedValue.locator(":scope > summary")).toContainText(/\d+ characters/);
+        await expect(longSource.getByText("LONG_CHECK_SOURCE_TAIL", { exact: false })).not.toBeVisible();
+        await foldedValue.locator(":scope > summary").click();
+        await expect(longSource.getByText("LONG_CHECK_SOURCE_TAIL", { exact: false })).toBeVisible();
         await page.keyboard.press("Escape");
         await expect(dialog).not.toBeVisible();
 

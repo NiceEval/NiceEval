@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { includes, referencesAnyPath, toolMatch } from "niceeval/expect";
+import { commandSucceeded, includes, referencesAnyPath, toolMatch } from "niceeval/expect";
 
 // Deterministically failing assertion: the public read face must keep failed distinct
 // from errored and JUnit must fold it as <failure>.
@@ -25,5 +25,11 @@ export default defineEval({
     ).label("No project guidance access");
     t.check("actual fixture value", includes("expected fixture value"))
       .label("Expected fixture value");
+    t.check({
+      command: "fixture command",
+      exitCode: 0,
+      stderr: `${"repeated fixture output ".repeat(32)}LONG_CHECK_SOURCE_TAIL`,
+      stdout: "",
+    }, commandSucceeded()).label("Long command result");
   },
 });

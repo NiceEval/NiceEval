@@ -1,40 +1,47 @@
 # Assertions
 
-Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 1`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Analysis 只读取已封口的事实，不重新执行 matcher 或作者代码。
+Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 2`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Analysis 只读取已封口的事实，不重新执行 matcher 或作者代码。
 
-Record v1 的 durable catalog 有 Assertions、Observability、FileChanges、Source Navigation、Sources 与 Artifacts 六个固定 family。第三方可以提供 Assertion criterion 的解释 schema，却不能增加 family、字段 writer 或自己的持久化通道。完整 catalog、owner 与 closure 规则见 [Record architecture](../record/architecture.md)。
+Record current durable catalog 有 Assertions、Observability、FileChanges、Source Navigation、Sources 与 Artifacts 六个固定 family。第三方可以提供 Assertion criterion 的解释 schema，却不能增加 family、字段 writer 或自己的持久化通道。完整 catalog、owner 与 closure 规则见 [Record architecture](../record/architecture.md)。
 
-## Assertions v1 持久化什么
+## Assertions 持久化什么
 
 每个 entry 都有仅在本 Attempt Assertions Attachment 内稳定的 `entryId`。它是详情与导航的 identity，不从名称、数组位置、源码位置或证据内容推导，也不承诺跨 Attempt 相同。
 
 | 字段组 | 必须保存的事实 |
 |---|---|
 | identity 与顺序 | 稳定 `entryId`，以及原始声明／展示顺序。 |
-| criterion | 一个封闭的内建 criterion，或精确的第三方 `{ name, schemaId, data }` criterion。 |
-| material | 有界的 subject snapshot 或稳定 ref，以及有界 evidence refs 或预览。 |
-| completeness | coverage、redaction、sampling、truncation 等 limitations。 |
-| outcome | 已封口的 evaluation、result、可用性和具名原因。 |
+| criterion | 当前可证明的封闭 criterion；不可序列化的声明诚实标为 unavailable。 |
+| materials | 有界 source/evidence、coverage 与 limitations；不复制高基数候选集合。 |
+| evaluation | observed boolean/measurement/direct score/Judge result 与可选 O(1) collection receipt。 |
+| decision | result、具名 reason 与 gate disposition。 |
+| policy | 独立闭合的 requirement 与 condition；required 不从 gate/not-gate 反推。 |
+| contribution | typed not-scored / earned / unavailable score contribution。 |
+| explanationRetention | 有界 decisive/representative explanation；裁剪不改变其它字段。 |
 | display | 作者给出的 key、label 与 groupPath。 |
 | score unit | sealed score contribution 中的 `points` 与 earned 值；它是分值单位，不是题型。 |
 | source navigation | 已执行 source site 的 `entryId`、role、位置与 Sources item join。 |
 
 内建 criterion 是包定义的封闭判别联合，例如值比较、scope 状态、事件 occurrence、Judge measurement 和 Sandbox result。第三方 criterion 只能以自己的 `name`、版本化 `schemaId` 与 exact JSON `data` 表示；它不能冒充内建成员，也不能借此写入另一种 durable family。
 
-`subject` 与 `evidence` 只保存安全快照，或本 Assertions Attachment 自己 closure 中的 blob ref。v1 不携带另一个 Attachment 的 `RecordBlobRef`、path 或“最新状态”引用。二者都受条目数、ref 数、预览大小和 document 大小的固定上限约束。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
+`materials.source` 与 `materials.evidence` 只保存安全、有界的事实，或本 Assertions Attachment 自己 closure 中的 blob ref。它不携带另一个 Attachment 的 `RecordBlobRef`、path 或“最新状态”引用。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
+
+高基数 collection 只保存计数与 complete/exhaustive/decisive receipt，并有界保留 decisive witness 与代表样本。native producer 不复制完整 candidates、tool occurrences、diff changes 或 Agent Judge trace。
+
+Judge 的 measurement 属于 evaluation，输入属于 materials。只有 Judge 实际返回的 rationale/evidence/detail/citations 才能标为 available；未返回项分别是 unavailable/not-recorded。
 
 ## 不写入的运行时细节
 
-作者调用图、evaluator 内部实现、memoization、求值控制流、未执行的源码和当前 worktree 都不属于 Assertions payload。它们可以变化；只要已保存 criterion、材料、coverage 与 sealed result 的含义不变，Assertions 事实不变。
+作者调用图、evaluator 内部实现、memoization、求值控制流、未执行的源码和当前 worktree 都不属于 Assertions payload。它们可以变化；只要已保存 criterion、materials、evaluation、decision、policy 与 contribution 的含义不变，Assertions 事实不变。
 
 `.orStop()` 和 detached async 都不改变 entry 的 sealed result，也不会凭空产生 `notReached` 条目或补零。已经执行的 assertion modifier 位置可作为 `sourceSites` row 保存；未执行源码不是持久事实。
 
 ## 源码导航
 
-Assertion source site 不是 Source Navigation 的 row。`sourceSites` 仍是 `niceeval.assertions` payload（envelope `schemaVersion: 1`）的一部分。
+Assertion source site 不是 Source Navigation 的 row。`sourceSites` 仍是 `niceeval.assertions` payload（envelope `schemaVersion: 2`）的一部分。
 每一行只用本 Attachment 内的 `entryId` 关联一个已执行、role-tagged 的 source site，并以 `sourceItemId` 与 digest join 到 origin Run 的既有 Sources snapshot。它不复制 criterion、result、points、gate、source path、source blob 或控制流。
 
-一个 entry 有多个 source site 也不形成多条 check 或 score contribution；权威 result 与 points 始终按 `entryId` 只计算一次。Sources 内容仍只属于 `niceeval.sources` family 的 own closure（envelope `schemaVersion: 1`），不能用同 path、digest 或 item identity 假装配对另一个 Run。
+一个 entry 有多个 source site 也不形成多条 check 或 score contribution；权威 decision 与 contribution 始终按 `entryId` 只计算一次。Sources 内容仍只属于 `niceeval.sources` family 的 own closure（envelope `schemaVersion: 1`），不能用同 path、digest 或 item identity 假装配对另一个 Run。
 
 Assertion source site 与物理 send navigation 分别由 [Analysis Library](../analysis/library.md) 的 `query()` 以已发布的 `DomainView` 读取。它不会把 Record path、blob capability 或当前 worktree 交给 consumer。没有 matching site、Sources 不能形成可用值，或 join／坐标不能验证时，DomainView 把该位置标为 `unmapped`；这只是视图的局部结果，不能改变 Assertion、Verdict 或 Score。
 

@@ -219,17 +219,31 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         if (!startedCallIds.has(callId)) {
           emitCall(callId, "command_execution", { command } as JsonValue, "shell", opaqueCommandProjection("unsupported-protocol"));
         }
-        const exit = get(item, "exit_code");
+        // `codex exec --json` uses snake_case while app-server v2 keeps the
+        // protocol's camelCase fields after normalizeItem() rewrites only the
+        // tagged-union type.  Both are public Codex transports and must close
+        // to the same provider-neutral result.
+        const exit = get(item, "exit_code") ?? get(item, "exitCode");
+        const output =
+          get(item, "aggregated_output") ??
+          get(item, "aggregatedOutput") ??
+          get(item, "output");
         const statusStr = get(item, "status");
-        const success =
-          exit === 0 || (exit == null && statusStr !== "failed" && statusStr !== "error");
+        const status = statusStr === "declined" || statusStr === "rejected"
+          ? "rejected" as const
+          : exit === 0 || (exit == null && statusStr !== "failed" && statusStr !== "error")
+            ? "completed" as const
+            : "failed" as const;
+        const result = output === undefined && exit === undefined
+          ? undefined
+          : {
+              output: (output ?? null) as JsonValue,
+              exit_code: (exit ?? null) as JsonValue,
+            };
         emitResult(
           callId,
-          {
-            output: (get(item, "aggregated_output") ?? get(item, "output") ?? null) as JsonValue,
-            exit_code: (exit ?? null) as JsonValue,
-          },
-          success ? "completed" : "failed",
+          result,
+          status,
         );
         return;
       }
@@ -326,11 +340,19 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         case "thread.started":
         case "thread.completed":
         case "turn.started":
-        case "turn.completed":
         case "response.created":
         case "response.completed":
         case "response.cancelled":
           break;
+
+        case "turn.completed": {
+          const turn = get(data, "turn");
+          if (get(turn, "status") !== "failed") break;
+          const err = get(turn, "error");
+          const msg = get(err, "message") ?? get(data, "message") ?? "turn failed";
+          events.push({ type: "error", message: String(msg) });
+          break;
+        }
 
         case "turn.failed":
         case "response.failed": {

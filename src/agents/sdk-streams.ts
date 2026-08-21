@@ -433,14 +433,21 @@ export function createCodexThreadEventStream(): CodexThreadStream {
           opaqueCommandProjection("unsupported-protocol"),
         );
         if (isCompleted) {
-          const exit = item.exit_code;
-          const success = exit === 0 || (exit == null && item.status !== "failed" && item.status !== "error");
+          const exit = item.exit_code ?? item.exitCode;
+          const output = item.aggregated_output ?? item.aggregatedOutput ?? item.output;
+          const status = item.status === "declined" || item.status === "rejected"
+            ? "rejected" as const
+            : exit === 0 || (exit == null && item.status !== "failed" && item.status !== "error")
+              ? "completed" as const
+              : "failed" as const;
           events.push({
             type: "operation.finished",
             operationId: callId,
             kind: "tool",
-            output: { output: (item.aggregated_output ?? null) as JsonValue, exit_code: (exit ?? null) as JsonValue },
-            status: success ? "completed" : "failed",
+            ...(output === undefined && exit === undefined
+              ? {}
+              : { output: { output: (output ?? null) as JsonValue, exit_code: (exit ?? null) as JsonValue } }),
+            status,
           });
         }
         return events;

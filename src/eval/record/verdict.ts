@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import type { AssertionsAttachment } from "../../record/family/assertions.ts";
+import { sealedAssertionResult } from "../../assertions/record/model.ts";
 import type { AttemptOutcome } from "../../record/model/core.ts";
 import type { Verdict } from "../../shared/types.ts";
 import {
@@ -62,8 +63,8 @@ export function foldRecordedAttemptVerdict(input: {
     assertions: input.assertions.entries.map((entry) => Object.freeze({
       // `unavailable` is a required gate's sealed representation. Entries
       // marked `not-gate` stay optional and cannot invent an execution error.
-      required: entry.result.gate !== "not-gate",
-      result: entry.result,
+      required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
+      result: sealedAssertionResult(entry),
     })),
   });
 }

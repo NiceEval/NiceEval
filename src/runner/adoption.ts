@@ -8,6 +8,7 @@ import {
   type AttemptLocator,
 } from "../attempt-locator.ts";
 import { resolveAttemptLocator } from "../attempt-locator-resolution.ts";
+import { sealedAssertionResult } from "../assertions/record/model.ts";
 import {
   EXECUTION_DURATION_DOMAIN,
   readAttemptExecutionDuration,
@@ -760,8 +761,8 @@ export function readAdoptionAttemptFacts(
         : "completed",
       explicitlySkipped: outcome === "cancelled",
       assertions: assertions.value.entries.map((entry) => Object.freeze({
-        required: entry.result.gate !== "not-gate",
-        result: entry.result,
+        required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
+        result: sealedAssertionResult(entry),
       })),
     });
     return Object.freeze({ outcome, verdict });

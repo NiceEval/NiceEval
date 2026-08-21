@@ -33,6 +33,17 @@ test("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
         evalId: "assertion-judge-unavailable",
         verdict: "errored",
       });
+      const shown = await niceeval.run(["show", evaluation.locator!, "--json"]);
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      const detail = JSON.stringify(shown.json());
+      expect(detail).toContain("judge-model-unresolved");
+      expect(detail).toContain("failureDetail");
+      for (const field of ["rationale", "evidence", "detail", "citations"]) {
+        expect(detail).toContain(`\"label\":\"${field}\"`);
+      }
+      expect(detail).toContain(
+        '"label":"reason","value":{"kind":"value","value":"not-recorded"}',
+      );
     },
   );
 });

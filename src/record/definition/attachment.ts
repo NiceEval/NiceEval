@@ -72,19 +72,34 @@ export type RecordAttachmentOwnerDefinitions<Owners extends RecordAttachmentOwne
 export interface RecordAttachmentHistoricalCodec {
   readonly schemaVersion: number;
   readonly decode: (input: unknown) => unknown;
+  /** Optional historical own-blob integrity check, run before a lossy transform. */
+  readonly verify?: (
+    payload: unknown,
+    blobs: readonly { readonly ref: RecordBlobRef; readonly bytes: Uint8Array }[],
+  ) => boolean;
 }
 
 /** Only adjacent, package-owned migrations may be declared for a fixed family. */
 export interface RecordAttachmentAdjacentMigration {
   readonly fromSchemaVersion: number;
   readonly toSchemaVersion: number;
+  /** User-visible semantic impact shared by plan and receipt surfaces. */
+  readonly retention: RecordAttachmentMigrationRetention;
   readonly migrate: (input: unknown) => unknown;
+}
+
+export interface RecordAttachmentMigrationRetention {
+  readonly retainedFacts: readonly string[];
+  readonly droppedFacts: readonly string[];
+  readonly rerunRecommendation: string | null;
 }
 
 /** Eager metadata only: implementation remains behind `maintenance`. */
 export interface RecordAttachmentAdjacentMigrationLink {
   readonly fromSchemaVersion: number;
   readonly toSchemaVersion: number;
+  /** Physical plan metadata shared by planning, execution, and interrupted recovery. */
+  readonly rewritePayload: boolean;
 }
 
 export interface RecordAttachmentMaintenanceFacet {
@@ -204,6 +219,7 @@ export function defineRecordAttachment<
       link.fromSchemaVersion <= 0 ||
       link.toSchemaVersion !== link.fromSchemaVersion + 1 ||
       link.toSchemaVersion > input.current.schemaVersion ||
+      typeof link.rewritePayload !== "boolean" ||
       migrationStarts.has(link.fromSchemaVersion)
     ) {
       throw new TypeError("Record Attachment migration links must be unique adjacent upgrades to current history");

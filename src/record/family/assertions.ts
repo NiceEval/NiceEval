@@ -61,13 +61,16 @@ const assertionSchemas = createAssertionsRecordSchemas(
 
 /** Reuse the existing v1 entry schema inside the one direct attachment schema. */
 export const AssertionsEntriesSchema = assertionSchemas.entries;
+export const AssertionsEntriesV1Schema = assertionSchemas.historicalEntries;
 export const AssertionSourceSitesSchema = Schema.Array(AssertionSourceSiteSchema);
 
 function hasNoLegacyAttachmentMaterial(
   document: {
-    readonly entries: readonly {
-      readonly subject: { readonly kind: string };
-      readonly evidence: readonly { readonly kind: string }[];
+      readonly entries: readonly {
+      readonly materials: {
+        readonly source: { readonly kind: string };
+        readonly evidence: readonly { readonly kind: string }[];
+      };
     }[];
   },
 ): boolean {
@@ -75,7 +78,7 @@ function hasNoLegacyAttachmentMaterial(
     material.kind !== "record-attachment";
   return document.entries.every(
     (entry) =>
-      materialIsAllowed(entry.subject) && entry.evidence.every(materialIsAllowed),
+      materialIsAllowed(entry.materials.source) && entry.materials.evidence.every(materialIsAllowed),
   );
 }
 
@@ -148,6 +151,16 @@ export const AssertionsAttachmentSchema = Schema.Struct({
   }),
 );
 
+/** @internal Package-private historical wire codec, loaded only by maintenance. */
+export const AssertionsAttachmentV1Schema = Schema.Struct({
+  entries: Schema.propertySignature(AssertionsEntriesV1Schema).pipe(
+    Schema.fromKey("entries-data"),
+  ),
+  sourceSites: Schema.propertySignature(AssertionSourceSitesSchema).pipe(
+    Schema.fromKey("source-sites-data"),
+  ),
+});
+
 export type AssertionsAttachment = Schema.Schema.Type<
   typeof AssertionsAttachmentSchema
 >;
@@ -168,7 +181,7 @@ export function assertionsAttachmentIntegrityIssues(
     blobs.map((blob) => [blob.ref, blob.bytes] as const),
   );
   const issues: RecordAttachmentIssue[] = [];
-  const validateMaterial = (material: AssertionsAttachment["entries"][number]["subject"], path: readonly string[]) => {
+  const validateMaterial = (material: AssertionsAttachment["entries"][number]["materials"]["source"], path: readonly string[]) => {
     if (material.kind !== "blob") return;
     const bytes = bytesByRef.get(material.ref);
     if (bytes === undefined || bytes.byteLength !== material.byteLength) {
@@ -186,8 +199,8 @@ export function assertionsAttachmentIntegrityIssues(
     }
   };
   for (const [index, entry] of payload.entries.entries()) {
-    validateMaterial(entry.subject, ["entries", String(index), "subject"]);
-    for (const [evidenceIndex, material] of entry.evidence.entries()) {
+    validateMaterial(entry.materials.source, ["entries", String(index), "materials", "source"]);
+    for (const [evidenceIndex, material] of entry.materials.evidence.entries()) {
       validateMaterial(material, ["entries", String(index), "evidence", String(evidenceIndex)]);
     }
   }
@@ -226,7 +239,7 @@ const AssertionsBlobBudget = Object.freeze({
 export const assertionsRecordAttachment = defineRecordAttachment({
   family: "niceeval.assertions",
   current: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     owners: {
       attempt: {
         schema: AssertionsAttachmentSchema,
@@ -239,4 +252,10 @@ export const assertionsRecordAttachment = defineRecordAttachment({
       },
     },
   },
+  maintenance: () => import("./assertions-v1.ts").then(
+    ({ assertionsV1Maintenance }) => assertionsV1Maintenance,
+  ),
+  adjacentMigrationLinks: Object.freeze([
+    Object.freeze({ fromSchemaVersion: 1, toSchemaVersion: 2, rewritePayload: true }),
+  ]),
 });
