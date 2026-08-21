@@ -163,14 +163,18 @@ export function closeStaticThemeStylesheet(theme: ThemeDefinition): Uint8Array {
   return encoder.encode(`${themeStylesheet(theme)}\n${inlineThemeStyles(theme)}\n`);
 }
 
-function assertFinalBuildBudgets(startedAtMs: number, baselineRssBytes: number): void {
+function assertFinalBuildBudgets(
+  startedAtMs: number,
+  baselineRssBytes: number,
+  target?: { readonly pageId: string; readonly route: string },
+): void {
   const elapsed = Date.now() - startedAtMs;
   if (elapsed > REPORT_BUILD_TIME_MS_MAX) {
     throw reportBuildBudgetExceeded("build-time", REPORT_BUILD_TIME_MS_MAX, elapsed);
   }
   const rssGrowth = Math.max(0, process.memoryUsage().rss - baselineRssBytes);
   if (rssGrowth > REPORT_BUILD_RSS_BYTES_MAX) {
-    throw reportBuildBudgetExceeded("build-rss", REPORT_BUILD_RSS_BYTES_MAX, rssGrowth);
+    throw reportBuildBudgetExceeded("build-rss", REPORT_BUILD_RSS_BYTES_MAX, rssGrowth, target);
   }
 }
 
@@ -227,7 +231,7 @@ function buildSiteFiles(site: ClosedReportSite, theme: ThemeDefinition): readonl
   let shellFragmentBytes = 0;
   const fragmentFiles = new Map<string, string>();
   for (const entry of pages) {
-    assertFinalBuildBudgets(site.startedAtMs, site.baselineRssBytes);
+    assertFinalBuildBudgets(site.startedAtMs, site.baselineRssBytes, entry.page.target);
     const routeIssue = validateReportRoute(entry.page.target.route);
     if (routeIssue !== undefined || entry.page.target.route === "/_niceeval" ||
       entry.page.target.route.startsWith("/_niceeval/")) {
