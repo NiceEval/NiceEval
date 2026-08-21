@@ -282,14 +282,14 @@ function assertionMetadata(entries: readonly AssertionEntryRead<unknown>[]): Jso
   const metadata: JsonValue[] = [];
   for (const entry of entries) {
     const display = entry.entry.display;
-    const result = entry.entry.result;
+    const decision = entry.entry.decision;
     const item: globalThis.Record<string, JsonValue> = {
       entryId: entry.entry.entryId,
       groupPath: [...display.groupPath],
-      outcome: entry.state === "available" ? result.state : entry.state,
-      coverage: coverageMetadata(entry.entry.coverage),
-      limitations: entry.entry.limitations.map(limitationMetadata),
-      scoreContribution: scoreContributionMetadata(result.score),
+      outcome: entry.state === "available" ? decision.result : entry.state,
+      coverage: coverageMetadata(entry.entry.materials.coverage),
+      limitations: entry.entry.materials.limitations.map(limitationMetadata),
+      scoreContribution: scoreContributionMetadata(entry.entry.contribution),
     };
     if (display.label !== undefined) item.label = display.label;
     if (display.key !== undefined) item.key = display.key;
@@ -302,14 +302,14 @@ function assertionMetadata(entries: readonly AssertionEntryRead<unknown>[]): Jso
 
 function assertionReason(entry: AssertionEntryRead<unknown>): string | undefined {
   if (entry.state !== "available") return entry.reason;
-  switch (entry.entry.result.state) {
+  switch (entry.entry.decision.result) {
     case "matched":
       return undefined;
     case "mismatched":
     case "unavailable":
     case "errored":
     case "not-applicable":
-      return entry.entry.result.reason;
+      return entry.entry.decision.reason ?? undefined;
   }
 }
 

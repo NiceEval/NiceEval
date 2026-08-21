@@ -208,10 +208,10 @@ function assertionRows(entry: Extract<AttemptEvidenceDomainView["entries"][numbe
   return entry.detail.entries.map((assertion) => ({
     key: assertion.entryId,
     assertion: assertion.entryId,
-    display: jsonText(assertion.display),
-    criterion: jsonText(assertion.criterion),
-    result: jsonText(assertion.result),
-    coverage: jsonText(assertion.coverage),
+    display: assertion.display.label ?? assertion.display.key ?? assertion.entryId,
+    check: JSON.stringify(assertion.check),
+    result: assertion.decision.result,
+    coverage: assertion.source.coverage.state,
   }));
 }
 
@@ -235,7 +235,7 @@ function attemptEvidenceTree(props: { readonly view: AttemptEvidenceDomainView; 
         return (
           <Section key={entry.attempt.locator} title={`Assertions · ${entry.attempt.locator}`}>
             {assertions.length === 0 ? <Text>No recorded assertions.</Text> : (
-              <Table rows={assertions} columns={["assertion", "display", "criterion", "result", "coverage"]} />
+              <Table rows={assertions} columns={["assertion", "display", "check", "result", "coverage"]} />
             )}
             {omittedText(entry.detail.entries.length, assertions.length, "assertions")}
           </Section>

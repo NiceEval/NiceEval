@@ -178,8 +178,8 @@ type ObservabilityTarget =
 ```
 
 `partial` 表示这份已写入 Attachment 的事实有明确缺口，不表示没有发生。`not-recorded` 与 `invalid`
-是 Record reader 的外层结果，不是 payload state，不能被当成空数组。Observability v1 与 root epoch 1 是固定
-联合 migration source，ordinary reader 不产生局部兼容读。没有完整固定迁移路径的版本与未知 family 都使
+是 Record reader 的外层结果，不是 payload state，不能被当成空数组。Observability v1 是该 family 的固定
+migration source，ordinary reader 不产生局部兼容读。没有完整固定迁移路径的版本与未知 family 都使
 ordinary open fail closed。
 
 producer 为 turn、item、call、command、usage observation、interval 和 diagnostic mint 不可推导的
@@ -498,9 +498,9 @@ Host 只把完整的 `available` internal snapshot 交给 Analysis。读取命�
 统一 inline 与 blob storage；选择 Run、汇总 command success、计算成本或连接另一份 Attachment 仍属于
 Analysis Calculation，不能回写 Record。Report 不取得这个 snapshot、reader 或 blob capability。
 
-schemaVersion `2` 的 maintenance facet 与 root epoch 2 提供固定联合 `1 → 2` step。v1 codec 仅在
+schemaVersion `2` 的 maintenance facet 提供固定 `1 → 2` step。v1 codec 仅在
 maintenance 中 lazy 加载，不形成局部兼容读。迁移逐字保留两个 owner 的 payload、label、blob refs 与 blob
-bytes，先升级 envelope、完整验证后最后升级 root epoch；它不把旧 label 猜成新 coordinate。
+bytes，并升级 envelope 后完整验证；它不把旧 label 猜成新 coordinate，也不改写 Record root。
 
 较早 reader 遇到 v2，或当前 reader 遇到未知/future family 时，必须在 ordinary session 形成前拒绝整份 Record。
 Analysis 与 Report 不再接收来自非 current catalog 的 `unsupported` 或 `migration-required` 局部值。

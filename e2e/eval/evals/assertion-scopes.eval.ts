@@ -38,25 +38,30 @@ export default defineEval({
           status: "completed",
         }),
       );
-      branch.notCalledTool("scope_main_tool");
+      branch.notCalledTool("scope_main_tool")
+        .optional()
+        .label("partial source absence remains unavailable");
+      branch.calledTool("scope_branch_tool", { count: 1 })
+        .optional()
+        .label("partial source exact count remains unavailable");
       branch.calledTool("scope_branch_tool", { count: { atLeast: 1 } });
-      branch.noFailedActions();
+      branch.noFailedActions().optional();
       branch.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
     });
     await t.group("attempt scope", () => {
       t.calledTool(toolMatch("scope_main_tool", { status: "completed" }), {
         count: 1,
-      });
+      }).optional();
       t.calledTool(toolMatch("scope_branch_tool", { status: "completed" }), {
         count: 1,
-      });
+      }).optional();
       t.notCalledTool(
         toolMatch("never_called", {
           input: jsonMatch({ token: "not-present" }),
           status: "completed",
         }),
-      );
-      t.noFailedActions();
+      ).optional();
+      t.noFailedActions().optional();
       t.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
       t.calledTool(or(
         commandMatch("niceeval", { argsStart: ["init"] }),

@@ -871,6 +871,6 @@ export const observabilityRecordAttachment = defineRecordAttachment({
     ({ observabilityV1Maintenance }) => observabilityV1Maintenance,
   ),
   adjacentMigrationLinks: Object.freeze([
-    Object.freeze({ fromSchemaVersion: 1, toSchemaVersion: 2 }),
+    Object.freeze({ fromSchemaVersion: 1, toSchemaVersion: 2, rewritePayload: false }),
   ]),
 });

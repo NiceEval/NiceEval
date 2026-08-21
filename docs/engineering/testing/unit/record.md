@@ -21,9 +21,9 @@ JSON 和 blob 内容必须从已发布的 fixed family 形状构造，不能复�
 
 ## 最小证明面
 
-- **root 与导航**：精确 `{ format: "niceeval.record/v1", recordId }` 可由 `recordHost.openRead()` 打开；
-  损坏 root 产生具名 open error。可迁移旧 root 只返回 `record-migration-required` 和 migrate 引导，
-  不生成兼容 reader 或 family 值。
+- **root 与导航**：精确 `{ format: "niceeval.record", recordId }` 可由 `recordHost.openRead()` 打开；
+  损坏 root 产生具名 open error。旧 root 上名为 `schemaVersion` 的键在 JSON 边界被无条件丢弃，形成同一个
+  无版本领域值；其它额外键拒绝，它不进入 migration、receipt 或 family 值。
 - **身份与关系**：Attempt 永属 origin Run；Member 只引用已封口 Attempt，`origin | reference` 从关系
   派生，executed/carried/accepted 是 Member action。expected slots 之外的 Member 由 Analysis 标成
   `core-invalid`，不改写分母。

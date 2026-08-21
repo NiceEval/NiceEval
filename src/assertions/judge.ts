@@ -24,6 +24,8 @@ type JudgeMeasurementResult =
       readonly value: number;
       readonly evidence?: string;
       readonly explanation?: string;
+      readonly detail?: string;
+      readonly citations?: readonly string[];
     }
   | {
       readonly state: "unavailable";
@@ -214,10 +216,6 @@ export function freezeJudgeMaterial(material: JudgeMaterial): JudgeMaterial {
   return Object.freeze({ input: material.input, output: material.output });
 }
 
-function evidenceFor(material: JudgeMaterial): string {
-  return JSON.stringify({ input: summaryText(material.input), output: summaryText(material.output) });
-}
-
 function missingConfiguration(resolved: ResolvedJudgeConfig): JudgeMeasurementResult | undefined {
   if (!resolved.model) return unavailable("judge-model-unresolved");
   if (!getEnv(resolved.apiKeyEnv)) return unavailable(`judge-key-unresolved (${resolved.apiKeyEnv} unset)`);
@@ -402,11 +400,25 @@ function evaluateJudgeRecipe(
                 return Effect.succeed(evaluatorError("judge-invalid-response", "Judge returned no finite score in [0, 1]"));
               }
               const rationale = result.metadata?.rationale;
+              const returnedEvidence = result.metadata?.evidence;
+              const returnedDetail = result.metadata?.detail;
+              const returnedCitations = result.metadata?.citations;
               return Effect.succeed({
                 state: "measured" as const,
                 value: result.score,
-                evidence: evidenceFor(frozenMaterial),
+                ...(typeof returnedEvidence === "string" && returnedEvidence.trim() !== ""
+                  ? { evidence: summaryText(returnedEvidence) }
+                  : {}),
                 ...(typeof rationale === "string" && rationale.trim() !== "" ? { explanation: summaryText(rationale) } : {}),
+                ...(typeof returnedDetail === "string" && returnedDetail.trim() !== "" ? { detail: summaryText(returnedDetail) } : {}),
+                ...(Array.isArray(returnedCitations)
+                  ? {
+                      citations: Object.freeze(returnedCitations
+                        .slice(0, 16)
+                        .filter((citation): citation is string => typeof citation === "string" && citation.trim() !== "")
+                        .map(summaryText)),
+                    }
+                  : {}),
               });
             }),
             Effect.catchAll((failure: JudgeProviderFailure): Effect.Effect<JudgeMeasurementResult> =>
@@ -442,5 +454,45 @@ function evaluateJudgeRecipe(
 export function evaluateJudgeMeasurement(
   input: JudgeRecipeExecution,
 ): Effect.Effect<MeasurementAssertionEvaluation, never, never> {
-  return evaluateJudgeRecipe(input);
+  return evaluateJudgeRecipe(input).pipe(Effect.map((result): MeasurementAssertionEvaluation => {
+    switch (result.state) {
+      case "measured":
+        return Object.freeze({
+          state: "measured" as const,
+          value: result.value,
+          detail: Object.freeze({
+            evidence: result.evidence === undefined
+              ? Object.freeze({ state: "unavailable", reason: "not-recorded" })
+              : Object.freeze({ state: "available", value: result.evidence }),
+            rationale: result.explanation === undefined
+              ? Object.freeze({ state: "unavailable", reason: "not-recorded" })
+              : Object.freeze({ state: "available", value: result.explanation }),
+            detail: result.detail === undefined
+              ? Object.freeze({ state: "unavailable", reason: "not-recorded" })
+              : Object.freeze({ state: "available", value: result.detail }),
+            citations: result.citations === undefined
+              ? Object.freeze({ state: "unavailable", reason: "not-recorded" })
+              : Object.freeze({ state: "available", value: result.citations }),
+          }),
+        });
+      case "unavailable":
+        return Object.freeze({
+          state: "unavailable" as const,
+          reason: result.reason,
+          detail: Object.freeze({
+            failureDetail: result.detail,
+            failureEvidence: result.evidence ?? Object.freeze({ state: "unavailable", reason: "not-recorded" }),
+            rationale: Object.freeze({ state: "unavailable", reason: "not-recorded" }),
+            evidence: Object.freeze({ state: "unavailable", reason: "not-recorded" }),
+            detail: Object.freeze({ state: "unavailable", reason: "not-recorded" }),
+            citations: Object.freeze({ state: "unavailable", reason: "not-recorded" }),
+          }),
+        });
+      case "errored":
+        return Object.freeze({
+          state: "errored" as const,
+          detail: Object.freeze({ code: result.code, message: result.message }),
+        });
+    }
+  }));
 }

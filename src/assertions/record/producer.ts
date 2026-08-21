@@ -6,27 +6,30 @@ import {
   isAssertionsRawDataGraph,
 } from "./codec.ts";
 import type {
-  BoundedJsonObject,
-  BoundedJsonValue,
   AssertionDisplay,
   AssertionEntryId,
   AssertionEntry,
-  AssertionLimitation,
-  AssertionMaterial,
-  AssertionCoverage,
+  AssertionCriterionRecord,
+  AssertionMaterials,
+  AssertionEvaluation,
+  AssertionDecision,
+  AssertionDecisionPolicy,
+  AssertionFactValue,
+  ScoreContribution,
+  ExplanationRetention,
   AssertionsDocument,
-  SealedAssertionResult,
   WritableCriterionEnvelope,
 } from "./model.ts";
 
 export interface AssertionEntryInput<BlobRef> {
   readonly display: AssertionDisplay;
-  readonly criterion: WritableCriterionEnvelope;
-  readonly subject: AssertionMaterial<BlobRef>;
-  readonly evidence: readonly AssertionMaterial<BlobRef>[];
-  readonly coverage: AssertionCoverage;
-  readonly limitations: readonly AssertionLimitation[];
-  readonly result: SealedAssertionResult;
+  readonly criterion: AssertionCriterionRecord;
+  readonly materials: AssertionMaterials<BlobRef>;
+  readonly evaluation: AssertionEvaluation;
+  readonly decision: AssertionDecision;
+  readonly policy: AssertionDecisionPolicy;
+  readonly contribution: ScoreContribution;
+  readonly explanationRetention: ExplanationRetention;
 }
 
 export interface AssertionsEntryIdSource {
@@ -55,66 +58,78 @@ function encodedBytes(value: unknown): number {
   return UTF8.encode(JSON.stringify(value)).byteLength;
 }
 
-const DIAGNOSTIC_ROOT_KEYS = Object.freeze([
-  "code",
-  "message",
-  "path",
-  "expected",
-  "received",
-  "reason",
-  "locator",
-] as const);
-
-function compactDiagnostic(
-  diagnostic: BoundedJsonObject,
-  mode: "root" | "minimal",
-): BoundedJsonObject {
-  if (mode === "minimal") {
-    return Object.freeze({
-      code: "diagnostic-truncated",
-      message: "matcher diagnostic details were omitted to fit the Assertions document limit",
-      path: Object.freeze([]),
-      truncation: Object.freeze({
-        code: "diagnostic-truncated",
-        reason: "document-limit",
-      }),
-    });
-  }
-  const root: globalThis.Record<string, BoundedJsonValue> = {};
-  for (const key of DIAGNOSTIC_ROOT_KEYS) {
-    const value = diagnostic[key];
-    if (value !== undefined) root[key] = value;
-  }
-  root.truncation = Object.freeze({
-    code: "diagnostic-truncated",
-    reason: "document-limit",
-  });
-  return Object.freeze(root);
-}
-
-function replaceDiagnostic(
-  result: SealedAssertionResult,
-  mode: "root" | "minimal",
-): SealedAssertionResult {
-  if (result.diagnostic === undefined) return result;
-  const diagnostic = compactDiagnostic(result.diagnostic, mode);
-  switch (result.state) {
-    case "matched": return Object.freeze({ ...result, diagnostic });
-    case "mismatched": return Object.freeze({ ...result, diagnostic });
-    case "unavailable": return Object.freeze({ ...result, diagnostic });
-    case "errored": return Object.freeze({ ...result, diagnostic });
-    case "not-applicable": return Object.freeze({ ...result, diagnostic });
-  }
-}
-
 function compactEntries<BlobRef>(
   entries: readonly AssertionEntry<BlobRef>[],
   mode: "root" | "minimal",
 ): readonly AssertionEntry<BlobRef>[] {
-  return Object.freeze(entries.map((entry) => Object.freeze({
-    ...entry,
-    result: replaceDiagnostic(entry.result, mode),
-  })));
+  const childState = (value: AssertionFactValue): string | undefined => {
+    if (value.kind !== "fields") return undefined;
+    const state = value.fields.find((field) => field.label === "state")?.value;
+    return state?.kind === "value" && typeof state.value === "string" ? state.value : undefined;
+  };
+  const compactFact = (
+    value: AssertionFactValue,
+    decision: AssertionEntry<BlobRef>["decision"],
+  ): AssertionFactValue => {
+    switch (value.kind) {
+      case "unavailable":
+      case "value":
+        return value;
+      case "text":
+        return value.text.length <= 512
+          ? value
+          : Object.freeze({ kind: "text", text: `${value.text.slice(0, 511)}…` });
+      case "list":
+        return Object.freeze({ kind: "list", items: Object.freeze(value.items.map((item) => compactFact(item, decision))) });
+      case "fields":
+        return Object.freeze({
+          kind: "fields",
+          fields: Object.freeze(value.fields.flatMap((field) => {
+            if (
+              (mode === "root" || mode === "minimal") &&
+              (field.label === "message" || field.label === "expected" || field.label === "received")
+            ) return [];
+            if (field.label === "children" && field.value.kind === "list") {
+              const decisiveState = decision.result === "matched"
+                ? "matched"
+                : decision.result === "unavailable"
+                  ? "unavailable"
+                  : decision.result === "mismatched"
+                    ? "matched"
+                    : undefined;
+              const decisive: AssertionFactValue[] = [];
+              if (decisiveState !== undefined) {
+                for (const item of field.value.items) {
+                  if (childState(item) !== decisiveState) continue;
+                  if (decisive.length === 0) decisive.push(item);
+                  else if (decisive.length === 1) decisive.push(item);
+                  else decisive[1] = item;
+                }
+              }
+              const representative = mode === "root" ? field.value.items.slice(0, 2) : [];
+              const retained = [...new Set([...representative, ...decisive])];
+              return [Object.freeze({
+                label: field.label,
+                value: Object.freeze({
+                  kind: "list" as const,
+                  items: Object.freeze(retained.map((item) => compactFact(item, decision))),
+                }),
+              })];
+            }
+            return [Object.freeze({ label: field.label, value: compactFact(field.value, decision) })];
+          })),
+        });
+    }
+  };
+  return Object.freeze(entries.map((entry) => entry.explanationRetention.state === "retained"
+    ? Object.freeze({
+        ...entry,
+        explanationRetention: Object.freeze({
+          state: "retained" as const,
+          value: compactFact(entry.explanationRetention.value, entry.decision),
+        }),
+      })
+    : entry));
 }
 
 function invalidDocument(message: string): AssertionsProducerError {
@@ -228,7 +243,7 @@ export function createAssertionsDocumentBuilder<BlobRef, Encoded>(input: {
         return Either.left(invalidDocument(
           `Assertions could not be saved after diagnostic compaction because entry framing is ` +
           `${documentBytes} bytes; ${maximumBytes} bytes remain after source sites within the ` +
-          `${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. Large subject and evidence snapshots are already ` +
+          `${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. Large source and evidence snapshots are already ` +
           "stored as blobs; reduce assertion count or matcher/display identity and retry.",
         ));
       }

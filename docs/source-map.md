@@ -27,6 +27,7 @@ Report loader。Host 内部才取得 Scope、Layer、lease、reader、writer 或
 | execution claim 与 Record lease 协调 | `src/coordination/` 与 `src/record/` 的 Host 实现 |
 | Record Core、Run、Member、Attempt 与 migration 编解码 | `src/record/{model,codec,migration,host}/` |
 | 六个固定 family 与各自 collector / decoder | `src/record/family/`、`src/assertions/record/`、`src/o11y/record/`、`src/sandbox/record/`、`src/runner/source-producer.ts` 与 `src/sources/` |
+| Assertions current semantic entry、v1→v2 纯迁移与有界 collection receipt | `src/assertions/{api,runtime,match}.ts`、`src/assertions/record/` 与 `src/record/family/assertions-v1.ts` |
 | Scope-bound reader 与按需读取 | `src/record/reader/`；只能经 `recordHost` 到达 |
 
 Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 解释，不另建 durable family。
@@ -40,6 +41,7 @@ Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 
 | [Analysis](feature/analysis/README.md) | `src/analysis/{api,definitions,contracts,host}.ts` 拥有 Population、Dimension、Measure、Relation、Host-issued Sample、`aggregate()` 与 `query()`。 |
 | [实验组与比较范围](feature/analysis/library.md#实验组与比较范围) | `src/analysis/experiment-groups.ts` 从固定 Sample 派生 Experiment Group、签发 `ExperimentComparisonScope` 并闭合结构可比性；`src/report/built-in/standard.tsx` 与 `src/report/host/{from-record,machine,static}.ts` 分别拥有标准组 Page、`show` 组输出与 Header 真实链接。 |
 | [Analysis outputs](feature/analysis/library.md#closedrowssemanticframe-与-domainview) | `src/analysis/` 形成并校验 `ClosedRows`、`SemanticFrame` 与 `DomainView`；`src/report/model/{aggregate,conversions}.ts` 只提供 Report facade 与具名关闭投影，不建立通用作者 semantic model。 |
+| Assertions typed closed projection | `src/analysis/{domain-view,bindings,index}.ts` 从唯一 current entry 形成 Source、Check、Observed、Expected、Explanation tagged sections，并保留 typed policy、contribution、coverage 与 collection receipt；不向 Report 暴露 `JsonValue` 或 matcher diagnostic code 判读职责。 |
 | [Reports](feature/reports/README.md) | `src/report/definition/{report,tree}.ts`、`definition/primitives/**`、`components/**`、`model/{aggregate,conversions}.ts` 与 `index.ts` 是作者面：`defineReport({ pages })`、两种 `defineComponent()`、普通 Page 与参数 Page。作者只使用标准 React JSX，不增加专属 JSX 入口。 |
 | [Report 成本投影](feature/reports/cost-projections/README.md) | `src/analysis/{cost,cost-projection,cost-decimal}.ts` 定义 Profile 验证、slot-provider ledger 与闭合 projection；`src/report/{definition/report.ts,execution/machine.ts,host/{machine,show-target,site-runtime}.ts}` 把已签发 projection 纳入 target 或 site 输出，不重新计算。 |
 | [Report 单目标 Host](feature/reports/architecture.md#两条执行路径) | `src/report/host/{execute,from-record,show-target,target-route}.ts` 与 `runtime/{resolved-page,text,web}.ts` 在固定 Sample 内解码并执行一个 Page，短存私有 `ResolvedPage` 后交付 text 或 target manifest；此路径不 `enumerate()`，不形成站点版本。 |

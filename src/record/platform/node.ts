@@ -47,7 +47,7 @@ import {
 const DEFAULT_STREAM_CHUNK_BYTES = 64 * 1024;
 const GIT_MAX_OUTPUT_BYTES = 1024 * 1024;
 const GIT_MAX_STATUS_ENTRIES = 10_000;
-const MIGRATION_SENTINEL_MAXIMUM_BYTES = 256;
+const MIGRATION_SENTINEL_MAXIMUM_BYTES = 16 * 1024 * 1024;
 
 function nodeErrorCode(cause: unknown): string | undefined {
   if (typeof cause !== "object" || cause === null) {
@@ -752,6 +752,11 @@ const nodeFileSystem: RecordFileSystemService = {
       syncDirectoryAt(path),
     ),
 
+  removeFile: (file) =>
+    Effect.flatMap(resolvePortablePath(file, true), (path) =>
+      removeFileIfPresentAt(path, "remove-path"),
+    ),
+
   createRunDirectory: ({ root, runId }) =>
     Effect.gen(function* () {
       yield* nodeFileSystem.ensureDirectory(recordPortablePath(root, "runs"));
@@ -784,17 +789,17 @@ const nodeFileSystem: RecordFileSystemService = {
       (kind) => kind !== "missing",
     ),
 
-  createMigrationSentinel: (root, restoreCommit) =>
+  createMigrationSentinel: (root, restoreCommit, expectedRelativePaths) =>
     Effect.uninterruptible(
       nodeFileSystem.writeFile({
         file: recordPortablePath(root, "migration.in-progress"),
-        bytes: new TextEncoder().encode(`${JSON.stringify({ restoreCommit })}\n`),
+        bytes: new TextEncoder().encode(`${JSON.stringify({ restoreCommit, expectedRelativePaths })}\n`),
         maximumBytes: MIGRATION_SENTINEL_MAXIMUM_BYTES,
         mode: "exclusive",
       }),
     ),
 
-  readMigrationSentinelRestoreCommit: (root) =>
+  readMigrationSentinel: (root) =>
     Effect.map(
       nodeFileSystem.readFile({
         file: recordPortablePath(root, "migration.in-progress"),
@@ -807,9 +812,20 @@ const nodeFileSystem: RecordFileSystemService = {
           if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
           const keys = Object.keys(value);
           const restoreCommit = Reflect.get(value, "restoreCommit");
-          return keys.length === 1 && typeof restoreCommit === "string" && /^[0-9a-f]{40,64}$/.test(restoreCommit)
-            ? restoreCommit
-            : undefined;
+          const expectedRelativePaths = Reflect.get(value, "expectedRelativePaths");
+          if (
+            keys.length !== 2 ||
+            typeof restoreCommit !== "string" ||
+            !/^[0-9a-f]{40,64}$/.test(restoreCommit) ||
+            !Array.isArray(expectedRelativePaths) ||
+            expectedRelativePaths.some((path) =>
+              typeof path !== "string" || path.length === 0 || path.startsWith("/") ||
+              path.includes("\\") || path.split("/").some((segment) => segment.length === 0 || segment === "." || segment === ".."))
+          ) return undefined;
+          return Object.freeze({
+            restoreCommit,
+            expectedRelativePaths: Object.freeze([...expectedRelativePaths]),
+          });
         } catch {
           return undefined;
         }
