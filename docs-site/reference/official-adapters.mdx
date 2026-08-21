@@ -64,8 +64,8 @@ export default defineExperiment({
 
 ### codex
 
-- **Authentication**: `OPENAI_API_KEY`, which the `apiKey` factory option can override. Optionally, use `OPENAI_BASE_URL` through the `baseUrl` factory option for an OpenAI-compatible proxy.
-- **Agent process environment**: `env` is injected into every `codex exec` and `codex exec resume`. Session lifecycle Hooks started by Codex, dynamic MCP request headers, and command subprocesses inherit it. Values are not concatenated into shell text or written to the installation manifest, and potential sensitive values are redacted from timing, execution, and error evidence. `OPENAI_API_KEY` still comes from `apiKey` or the host environment and overrides the same key in `env`. `PATH` is managed by the Sandbox and cannot be declared through `env`; its presence errors at `codexAgent()` call time. Use the Sandbox `pathPrepend` instead; see [Sandbox Providers](/tutorials/sandbox-providers).
+- **Authentication**: `CODEX_API_KEY`, which the `apiKey` factory option can override. Optionally, use `CODEX_BASE_URL` through the `baseUrl` factory option for an OpenAI-compatible proxy.
+- **Agent process environment**: `env` is injected into every `codex exec` and `codex exec resume`. Session lifecycle Hooks started by Codex, dynamic MCP request headers, and command subprocesses inherit it. Values are not concatenated into shell text or written to the installation manifest, and potential sensitive values are redacted from timing, execution, and error evidence. `CODEX_API_KEY` still comes from `apiKey` or the host environment and overrides the same key in `env`. `PATH` is managed by the Sandbox and cannot be declared through `env`; its presence errors at `codexAgent()` call time. Use the Sandbox `pathPrepend` instead; see [Sandbox Providers](/tutorials/sandbox-providers).
 - **Install an MCP server**: use `mcpServers`. During `setup`, it appends a `[mcp_servers.<name>]` section to `~/.codex/config.toml`. The two shapes are distinguished by fields. A local stdio process uses `command`, optionally with `args` / `env`. A remote Streamable HTTP endpoint uses `url`, optionally with `headers`, written as a `[mcp_servers.<name>.http_headers]` subtable. The `url` must be reachable inside the Sandbox. If the service runs on your machine, first expose it as a public address through a tunnel such as cloudflared or tailscale.
 
   <Warning>
@@ -120,7 +120,7 @@ export default defineExperiment({
 
 ### bub
 
-- **Authentication**: `OPENAI_API_KEY` plus `OPENAI_BASE_URL` for an OpenAI-compatible proxy. The `apiKey` / `apiBase` factory options can override them.
+- **Authentication**: `BUB_API_KEY` plus `BUB_API_BASE` for an OpenAI-compatible proxy. The `apiKey` / `apiBase` factory options can override them.
 - **Install a Skill**: use `skills: SkillSpec[]`, the same type as the other two Adapters. They are installed in `.agents/skills/<name>/`, with a discovery instruction in AGENTS.md.
 - **Install a Plugin**: use `pythonPlugins: PythonPluginSpec[]`. `{ package }` can be a PyPI package, version specifier, or git URL. During `setup`, it becomes `uv tool install … --with <package>`. This type belongs only to bub. The package set enters the installation checkpoint key, so two variants with different Plugins never reuse the same installation cache.
 - **Prebuilt Bub**: NiceEval's E2B recipe includes Bub, the OTel Plugin, and the Python Plugin set in an installation fingerprint. The Adapter reuses only an environment with an exactly matching fingerprint. Simply having `bub` on `PATH` is not proof of compatibility. For the build entry point, see [Sandbox Providers · Build on the official baselines to speed things up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
@@ -148,7 +148,7 @@ export default defineExperiment({
 
 | | claude-code | codex | bub |
 |---|---|---|---|
-| Authentication environment variable | `ANTHROPIC_API_KEY` | `OPENAI_API_KEY` + optional `OPENAI_BASE_URL` | `OPENAI_API_KEY` + `OPENAI_BASE_URL` |
+| Authentication environment variable | `ANTHROPIC_API_KEY` | `CODEX_API_KEY` + optional `CODEX_BASE_URL` | `BUB_API_KEY` + `BUB_API_BASE` |
 | Additional Agent process environment | ❌ | ✅ `env` | ❌ |
 | MCP server | ✅ `mcpServers` (stdio + HTTP) | ✅ `mcpServers` (stdio + HTTP) | ❌ |
 | Skill | ✅ `skills: SkillSpec[]` (native discovery) | ✅ `skills: SkillSpec[]` (+ discovery instruction) | ✅ `skills: SkillSpec[]` (+ discovery instruction) |

@@ -57,8 +57,8 @@ async function requireDocker(): Promise<void> {
 
 beforeAll(async () => {
   requireLiveSecrets();
-  // The Bub owner must not receive harness aliases: otherwise an implementation
-  // that still reads only BUB_* would pass while the public OPENAI_* contract is broken.
+  // CI exposes only the shared OPENAI_* secrets. The Experiment maps them through
+  // factory options; the product Adapter must continue owning Bub's native BUB_* names.
   expect(process.env.BUB_API_KEY).toBeUndefined();
   expect(process.env.BUB_API_BASE).toBeUndefined();
   await requireDocker();
