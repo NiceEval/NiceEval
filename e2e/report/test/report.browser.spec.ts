@@ -143,7 +143,19 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
         await page.goto(origin!);
         const slotDetail = page.getByRole("link", { name: /^Slot detail / }).first().filter({ visible: true });
         await expect(slotDetail).toBeVisible();
-        await slotDetail.click();
+        const slotHref = await slotDetail.getAttribute("href");
+        if (slotHref === null) throw new Error("the visible Slot detail has no href");
+        const directSlotUrl = new URL(slotHref, page.url());
+        const directSlotMatch = /^\/(slot\/[^/]+)\/index\.html$/.exec(directSlotUrl.pathname);
+        if (directSlotMatch === null) throw new Error(`unexpected Slot detail URL: ${directSlotUrl.href}`);
+        const enhancedSlotUrl = new URL("index.html", origin!);
+        enhancedSlotUrl.hash = `#/${directSlotMatch[1]}`;
+
+        // A shareable parameterized URL remains a standalone document without
+        // JavaScript, but progressive enhancement restores the report context
+        // and opens the same target as a dialog when JavaScript is available.
+        await page.goto(directSlotUrl.href);
+        await expect(page).toHaveURL(enhancedSlotUrl.href);
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
         await expect(dialog.getByRole("heading", { name: /^Slot fixture detail slot-/ })).toBeVisible();

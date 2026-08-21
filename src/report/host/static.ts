@@ -178,6 +178,18 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
     return "#/" + target.prefix + "/" + target.key;
   }
 
+  function targetFromCurrentPage() {
+    const prefix = document.documentElement.getAttribute("data-niceeval-param-prefix") || "";
+    const key = document.documentElement.getAttribute("data-niceeval-param-key") || "";
+    if (!prefix || !key || !routes.includes(prefix)) return null;
+    const root = new URL(siteRoot, document.baseURI);
+    return {
+      prefix,
+      key,
+      url: new URL(prefix + "/" + encodeURIComponent(key) + "/index.html", root),
+    };
+  }
+
   function currentLocale() {
     return document.documentElement.lang === "zh-CN" ? "zh-CN" : "en";
   }
@@ -303,6 +315,14 @@ const PARAM_PAGE_DIALOG_RUNTIME = `(() => {
     requestRevision++;
     ownsHistory = false;
     if (dialog !== null && dialog.open) dialog.close();
+  }
+
+  const currentPageTarget = targetFromCurrentPage();
+  if (currentPageTarget !== null && !location.hash) {
+    const root = new URL(siteRoot, document.baseURI);
+    root.hash = hashForTarget(currentPageTarget);
+    location.replace(root.href);
+    return;
   }
 
   const initialTarget = targetFromHash();
@@ -596,8 +616,23 @@ function renderPage(site: ClosedReportSite, entry: ClosedSitePage, paramRoutes: 
   const paramRoutesAttr = paramRoutes.length === 0
     ? ""
     : ` data-niceeval-param-routes="${escapeAttribute(paramRoutes.join(" "))}"`;
+  const currentParamTarget = parameterizedTargetForPage(page.target.route, paramRoutes);
+  const currentParamAttr = currentParamTarget === undefined
+    ? ""
+    : ` data-niceeval-param-prefix="${escapeAttribute(currentParamTarget.prefix)}" data-niceeval-param-key="${escapeAttribute(currentParamTarget.key)}"`;
   const siteRootHref = relativeHref(output, "index.html");
-  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}" data-niceeval-site-root="${escapeAttribute(siteRootHref)}"${paramRoutesAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><div class="niceeval-view-pages"><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav></div><div class="niceeval-view-controls">${groupsEn}${groupsZh}<label class="niceeval-view-language"><select aria-label="Language" data-niceeval-locale-select><option value="en">EN</option><option value="zh-CN">中文</option></select></label></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div><noscript><p class="niceeval-view-noscript">This report remains readable without JavaScript; language selection is unavailable.</p></noscript></main></body></html>`;
+  return `<!doctype html><html class="niceeval-view-document" lang="en" data-niceeval-title-en="${escapeAttribute(titleEn)}" data-niceeval-title-zh-cn="${escapeAttribute(titleZh)}" data-niceeval-site-root="${escapeAttribute(siteRootHref)}"${paramRoutesAttr}${currentParamAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeText(titleEn)}</title><link rel="stylesheet" href="${escapeAttribute(stylesheetHref)}"><link rel="stylesheet" href="${escapeAttribute(themeHref)}">${authorHead}${rendererAssets}<script src="${escapeAttribute(runtimeHref)}" defer></script></head><body><header class="niceeval-view-shell"><a class="niceeval-view-brand" href="${escapeAttribute(NICEEVAL_BRAND_HREF)}" target="_blank" rel="noopener"><span class="niceeval-view-mark" aria-hidden="true"></span><span>NiceEval</span></a><div class="niceeval-view-pages"><nav class="niceeval-view-nav" data-niceeval-locale="en" aria-label="Report pages">${navigationEn}</nav><nav class="niceeval-view-nav" data-niceeval-locale="zh-CN" aria-label="报告页面" hidden>${navigationZh}</nav></div><div class="niceeval-view-controls">${groupsEn}${groupsZh}<label class="niceeval-view-language"><select aria-label="Language" data-niceeval-locale-select><option value="en">EN</option><option value="zh-CN">中文</option></select></label></div></header><main class="niceeval-view-main"><div class="niceeval-view-report-slot" data-niceeval-locale="en" data-page-id="${escapeAttribute(page.target.pageId)}">${bodyEn}${problemsEn}</div><div class="niceeval-view-report-slot" data-niceeval-locale="zh-CN" data-page-id="${escapeAttribute(page.target.pageId)}" hidden>${bodyZh}${problemsZh}</div><noscript><p class="niceeval-view-noscript">This report remains readable without JavaScript; language selection is unavailable.</p></noscript></main></body></html>`;
+}
+
+function parameterizedTargetForPage(
+  route: string,
+  paramRoutes: readonly string[],
+): { readonly prefix: string; readonly key: string } | undefined {
+  const cut = route.lastIndexOf("/");
+  if (cut <= 0 || cut === route.length - 1) return undefined;
+  const prefix = route.slice(1, cut);
+  if (!paramRoutes.includes(prefix)) return undefined;
+  return Object.freeze({ prefix, key: route.slice(cut + 1) });
 }
 
 function renderExperimentGroupNavigation(
