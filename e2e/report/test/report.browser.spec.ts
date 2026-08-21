@@ -147,6 +147,22 @@ test("静态站与 view 对同一用户路由交付相同字节，且离线无 J
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
         await expect(dialog.getByRole("heading", { name: /^Slot fixture detail slot-/ })).toBeVisible();
+        expect(await dialog.evaluate((element) => getComputedStyle(element, "::backdrop").backgroundColor)).toBe(
+          "rgba(0, 0, 0, 0.5)",
+        );
+        expect(await dialog.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
+          "rgba(0, 0, 0, 0)",
+        );
+
+        // The detail remains a lightweight overlay over the readable report.
+        // Clicking outside its content dismisses it and restores the overview
+        // URL instead of trapping the user in an Attempt-looking surface.
+        await page.mouse.click(4, 4);
+        await expect(dialog).not.toBeVisible();
+        expect(new URL(page.url()).hash).toBe("");
+
+        await slotDetail.click();
+        await expect(dialog).toBeVisible();
         const nestedSource = dialog.getByRole("link", { name: "Source from slot detail" });
         const sourceUrl = new URL("/source/index.html", origin!).href;
         // This is a relative href in the fetched slot document. The dialog

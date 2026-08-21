@@ -97,6 +97,8 @@ view 不注入只在本机有效的作者脚本。
 
 报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 左侧放品牌，中间居中整个
 Page router，右侧放实验与语言两个原生选择器；Page router 无论含一个还是多个 Page 都作为整体居中。Shell 不重绘 Report 内容。
+参数详情的增强 modal 使用半透明黑色 backdrop，保留当前报告作为可见上下文，内容面板保持不透明。点击内容外侧、按 Escape
+或点击关闭按钮都会关闭 modal。
 完整边界见 [Architecture](architecture.md#css、theme-与-view-shell)。
 
 ## 范围与入口
