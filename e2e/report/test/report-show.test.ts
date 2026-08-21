@@ -160,7 +160,7 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
       expect(text.exitCode, text.diagnostic()).toBe(0);
       expect(text.stdout).toContain("Experiment comparison");
       expect(text.stdout).toContain("main");
-      expect(text.stdout).not.toMatch(/\d+ \/ \d+ slot · available/);
+      expect(text.stdout).not.toMatch(/\d+ \/ \d+ slot/);
 
       const singleJson = await niceeval.run(["show", "--experiment", "main", "--json"]);
       expect(singleJson.exitCode, singleJson.diagnostic()).toBe(0);
@@ -373,7 +373,7 @@ test("show 在 pipe 与真实 PTY 中保留独立、可读的公开文本", asyn
       const visible = stripVTControlCharacters(terminal.stdout);
       expect(visible).toContain("Experiment comparison");
       expect(visible).toContain("main");
-      expect(visible).not.toMatch(/\d+ \/ \d+ slot · available/);
+      expect(visible).not.toMatch(/\d+ \/ \d+ slot/);
       expect(visible).toMatch(/^╭.*╮$/mu);
       expect(visible).toMatch(/^╰.*╯$/mu);
     },

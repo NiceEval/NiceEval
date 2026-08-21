@@ -23,9 +23,14 @@ import { DATA_BOX_FRAME_OVERHEAD, dataBoxBorder, dataBoxMode, dataBoxRow } from 
 import { panelSectionDepth } from "./primitives/text-panel-state.ts";
 
 /** text 排版器入参:faces.ts 与旧 Table 形态共用的预格式化表。 */
+interface TextTableRow extends TableRow {
+  /** 在本行前画一条分组线；只表达表格结构，不携带领域语义。 */
+  readonly ruleBefore?: boolean;
+}
+
 export interface TextTableProps {
   columns: readonly TableColumn[];
-  rows: readonly TableRow[];
+  rows: readonly TextTableRow[];
   locale?: import("../model/locale.ts").ReportLocale;
 }
 
@@ -179,6 +184,7 @@ export function renderTableText(props: TextTableProps, ctx: TextContext): string
   const headerPhysical = toPhysicalRows(header.slice(0, widths.length), widths, widths.map(() => undefined));
   const bodyBlocks = body.map((row, i) => ({
     depth: props.rows[i]?.depth ?? 0,
+    ruleBefore: props.rows[i]?.ruleBefore ?? false,
     physical: toPhysicalRows(row.slice(0, widths.length), widths, maxLines),
   }));
   const bodyPhysical = bodyBlocks.flatMap((block) => block.physical);
@@ -191,15 +197,15 @@ export function renderTableText(props: TextTableProps, ctx: TextContext): string
 
 /**
  * 数据格框形态:列边界贯穿全表,横线画在行树自己的边界上——表头与正文之间一条,行树有
- * 嵌套时每个顶层行之前再一条(一组一格,组内不切)。平表只有表头那一条:逐行切割读起来
- * 是一堆独立小框,层级与分组反而看不出来。分隔只按 depth 判,`Table` 不认识具体实体。
+ * 嵌套时每个顶层行之前再一条，Content 也可用中立的 `ruleBefore` 标出组边界。平表默认只有
+ * 表头那一条：逐行切割读起来是一堆独立小框，层级与分组反而看不出来。`Table` 不认识具体实体。
  *
  * 框宽跟随表自己的内容宽度(`fitWidths` 已经把它压进可用列数),不硬拉满终端——
  * 窄表拉满只会让同一行的读数彼此远离。
  */
 function renderFramedTable(
   header: readonly string[][],
-  body: readonly { depth: number; physical: string[][] }[],
+  body: readonly { depth: number; ruleBefore: boolean; physical: string[][] }[],
   widths: readonly number[],
   align: readonly ColumnAlign[],
   outerFrame: boolean,
@@ -221,7 +227,9 @@ function renderFramedTable(
   for (const row of header) out.push(line(row));
   out.push(dataBoxBorder("rule", actual, outerFrame));
   body.forEach((block, i) => {
-    if (nested && i > 0 && block.depth === 0) out.push(dataBoxBorder("rule", actual, outerFrame));
+    if (i > 0 && (block.ruleBefore || (nested && block.depth === 0))) {
+      out.push(dataBoxBorder("rule", actual, outerFrame));
+    }
     for (const row of block.physical) out.push(line(row));
   });
   if (outerFrame) out.push(dataBoxBorder("bottom", actual, true));

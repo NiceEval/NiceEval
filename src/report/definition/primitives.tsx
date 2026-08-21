@@ -1175,7 +1175,16 @@ const TableImplementation = defineComponent<TableImplementationProps>({
     const { columns, content } = tableContentOf(props, locale);
     const flat = flattenTableContentForText(content, locale);
     return renderTableText(
-      { columns, rows: flat.rows.map((row) => ({ key: row.key, cells: row.cells, depth: row.depth })), locale },
+      {
+        columns,
+        rows: flat.rows.map((row) => ({
+          key: row.key,
+          cells: row.cells,
+          depth: row.depth,
+          ruleBefore: row.variant === "group",
+        })),
+        locale,
+      },
       ctx,
     );
   },

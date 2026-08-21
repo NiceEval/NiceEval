@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../attempt-locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { MetricValue } from "../../analysis/index.ts";
-import { formatMetricScalar, formatMetricValue, missingText, verdictMark } from "../model/format.ts";
+import { formatMetricScalar, missingText, verdictMark } from "../model/format.ts";
 import { formatCostProjectionCellText, isCostMetricValue } from "../model/pricing.ts";
 import {
   DEFAULT_REPORT_LOCALE,
@@ -147,7 +147,13 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
           locale ?? DEFAULT_REPORT_LOCALE,
         );
       }
-      return formatMetricValue(cell.metric, locale ?? DEFAULT_REPORT_LOCALE);
+      const display = formatMetricScalar(
+        cell.metric.value,
+        cell.metric.unit,
+        cell.metric.format,
+        locale ?? DEFAULT_REPORT_LOCALE,
+      );
+      return `${display} · ${cell.metric.state}`;
     }
     default: {
       const _exhaustive: never = cell;
