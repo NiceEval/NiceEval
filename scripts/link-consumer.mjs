@@ -65,7 +65,7 @@ async function sha256(path) {
 }
 
 function usage() {
-  process.stdout.write(`Usage: pnpm dev:link -- <consumer-directory>\n\n`);
+  process.stdout.write(`Usage: pnpm dev:link <consumer-directory>\n\n`);
   process.stdout.write(`Rebuilds the current NiceEval checkout, generates INDEX.md, packs the publish\n`);
   process.stdout.write(`closure, links it into an installed pnpm consumer, and verifies the resolved\n`);
   process.stdout.write(`node_modules/niceeval realpath. pnpm persists the development link in the consumer\n`);
