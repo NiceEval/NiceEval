@@ -26,6 +26,10 @@ readonly MEMORYBENCH_ROOT="$PREVIEW_SCRATCH/MemoryBench"
 git clone --filter=blob:none --no-checkout "$MEMORYBENCH_REPOSITORY" "$MEMORYBENCH_ROOT"
 git -C "$MEMORYBENCH_ROOT" checkout --detach "$MEMORYBENCH_COMMIT"
 
+# Netlify installs the isolated netlify-preview base, not the repository root.
+# Build the linked candidate from a lockfile-complete root instead of relying
+# on a stale dependency cache (the Report SPA has its own build dependencies).
+corepack pnpm@11.18.0 --dir "$NICEEVAL_ROOT" install --frozen-lockfile --ignore-scripts
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" install --frozen-lockfile
 TMPDIR="$PACKAGE_SCRATCH" \
 corepack pnpm@11.18.0 --dir "$NICEEVAL_ROOT" dev:link "$MEMORYBENCH_ROOT"
