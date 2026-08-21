@@ -1,19 +1,31 @@
 // owner: docs/engineering/testing/e2e/migrate.md#assertions-v1-to-v2
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { commitRecord, copyV1Fixture, e2e, RUN_ID } from "./support.ts";
+import {
+  ATTEMPT_ID,
+  commitRecord,
+  copyAssertionsV1Fixture,
+  e2e,
+  RUN_ID,
+} from "./support.ts";
 
 test("Assertions v1 经统一 maintenance 改写为诚实的 current 语义记录", async () => {
   await e2e.case("assertions-v1-to-v2", async ({ paths, commands: { candidate }, run }) => {
     const recordRoot = join(paths.projectRoot, ".niceeval", "record");
-    copyV1Fixture(paths.sourceRoot, recordRoot);
+    const { discardedBlobPath } = copyAssertionsV1Fixture(paths.sourceRoot, recordRoot);
+    const rootBefore = readFileSync(join(recordRoot, "record.json"), "utf8");
     await commitRecord(run, "fixture: assertions v1");
 
     const migrated = await candidate.run(["migrate", "--yes"]);
     expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
+    expect(migrated.stdout, migrated.diagnostic()).toContain("impact niceeval.assertions@1->2");
+    expect(migrated.stdout, migrated.diagnostic()).toContain("dropped facts: criterion, subject, evidence");
+    expect(migrated.stdout, migrated.diagnostic()).toContain("Rerun the affected evaluation");
+    expect(readFileSync(join(recordRoot, "record.json"), "utf8")).toBe(rootBefore);
+    expect(existsSync(discardedBlobPath)).toBe(false);
 
     const runView = await candidate.run(["show", "--run", RUN_ID, "--json"]);
     expect(runView.exitCode, runView.diagnostic()).toBe(0);
@@ -56,7 +68,9 @@ test("Assertions v1 经统一 maintenance 改写为诚实的 current 语义记�
     expect(shown).toContain("historical assertion");
     expect(shown).toContain('"reason":"not-recorded"');
     expect(shown).toContain('"result":"matched"');
-    expect(shown).toContain("recorded v1 fact");
+    expect(shown).not.toContain("recorded v1 fact");
+    expect(shown).not.toContain("historical source that migration must discard");
+    expect(shown).not.toContain('"answer":42');
     expect(evidence.verdict).toBe("errored");
     const requiredUnavailable = only(
       evidence.entries,
@@ -73,7 +87,7 @@ test("Assertions v1 经统一 maintenance 改写为诚实的 current 语义记�
 
     const attachment = join(
       recordRoot,
-      "runs", RUN_ID, "attempts", "ae2047b7-d0ef-4f1d-8a2f-ae2b27e7b4ad",
+      "runs", RUN_ID, "attempts", ATTEMPT_ID,
       "attachments", "niceeval.assertions",
     );
     expect(JSON.parse(readFileSync(join(attachment, "attachment.json"), "utf8"))).toEqual({
@@ -83,7 +97,11 @@ test("Assertions v1 经统一 maintenance 改写为诚实的 current 语义记�
     const payloadText = readFileSync(join(attachment, "payload.json"), "utf8");
     expect(payloadText).toContain('"materials"');
     expect(payloadText).toContain('"explanationRetention"');
+    expect(payloadText).toContain('"source":{"kind":"unavailable","reason":"not-recorded"}');
+    expect(payloadText).toContain('"evidence":[]');
     expect(payloadText).not.toContain('"subject"');
+    expect(payloadText).not.toContain("historical-match");
+    expect(payloadText).not.toContain("recorded v1 fact");
     expect(payloadText).not.toContain('"result":{"state"');
   });
 });

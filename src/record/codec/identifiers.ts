@@ -19,7 +19,6 @@ import {
   RECORD_ATTACHMENT_SCHEMA_ID_BRAND,
   RECORD_FORMAT,
   RECORD_FORMAT_ID_BRAND,
-  RECORD_SCHEMA_VERSION,
   RECORD_ID_BRAND,
   RUN_ID_BRAND,
   SHA256_DIGEST_BRAND,
@@ -38,7 +37,6 @@ import {
   type RecordFormat,
   type RecordFormatId,
   type RecordId,
-  type RecordSchemaVersion,
   type RunId,
   type Sha256Digest,
   type SlotId,
@@ -154,15 +152,10 @@ export const RecordFormatIdSchema: Schema.Schema<RecordFormatId, string> =
   Schema.String.pipe(
     Schema.filter(isRecordFormatId, {
       identifier: "RecordFormatId",
-      description: "a niceeval.record/vN format identity",
+      description: "a fixed niceeval.record format identity",
     }),
     Schema.brand(RECORD_FORMAT_ID_BRAND),
   );
-
-export const RecordSchemaVersionSchema: Schema.Schema<
-  RecordSchemaVersion,
-  typeof RECORD_SCHEMA_VERSION
-> = Schema.Literal(RECORD_SCHEMA_VERSION);
 
 export const RecordFormatSchema: Schema.Schema<RecordFormat, typeof RECORD_FORMAT> =
   Schema.Literal(RECORD_FORMAT).pipe(Schema.brand(RECORD_FORMAT_ID_BRAND));

@@ -643,6 +643,10 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
 ) {
   const material = Schema.Union(
     Schema.Struct({
+      kind: Schema.Literal("unavailable"),
+      reason: Schema.Literal("not-recorded"),
+    }),
+    Schema.Struct({
       kind: Schema.Literal("snapshot"),
       value: BoundedJsonValueSchema,
     }),

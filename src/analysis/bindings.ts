@@ -942,6 +942,9 @@ function assertionMaterialFact(
   if (value.kind === "snapshot") {
     return assertionFact(value.value);
   }
+  if (value.kind === "unavailable") {
+    return Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const });
+  }
   return assertionFact({ encoding: value.encoding, byteLength: value.byteLength, preview: value.preview });
 }
 

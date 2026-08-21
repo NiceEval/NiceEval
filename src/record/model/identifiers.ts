@@ -56,13 +56,11 @@ export type CanonicalProjectRelativePath = string & Brand.Brand<
   typeof CANONICAL_PROJECT_RELATIVE_PATH_BRAND
 >;
 
-/** Stable root identity; evolution is carried by the separate numeric header. */
+/** Fixed root identity; an incompatible root format must use a different identity. */
 export const RECORD_FORMAT = "niceeval.record" as const;
-export const RECORD_SCHEMA_VERSION = 3 as const;
 
 export type RecordFormat =
   typeof RECORD_FORMAT & Brand.Brand<typeof RECORD_FORMAT_ID_BRAND>;
-export type RecordSchemaVersion = typeof RECORD_SCHEMA_VERSION;
 
 const PORTABLE_SEGMENT_PATTERN =
   /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$/;

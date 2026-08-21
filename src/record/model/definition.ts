@@ -10,7 +10,6 @@ import {
   ExperimentIdSchema,
   RecordFormatSchema,
   RecordIdSchema,
-  RecordSchemaVersionSchema,
   RunIdSchema,
   SlotIdSchema,
   UtcMillisSchema,
@@ -113,11 +112,10 @@ export const RecordSlotIdentitySchema = RecordSlotIdentityDefinition.schema;
 
 const RecordDocumentCurrentSchema = Schema.Struct({
   format: RecordFormatSchema,
-  schemaVersion: RecordSchemaVersionSchema,
   recordId: RecordIdSchema,
 });
 
-/** The current root header definition, with identity separate from numeric version. */
+/** The exact versionless root header definition. */
 export const RecordDocumentDefinition = defineRecordCore({
   schema: RecordDocumentCurrentSchema,
   limits: RecordCoreDocumentLimits,

@@ -94,6 +94,10 @@ export interface RecordFileSystemService {
   readonly syncDirectory: (
     directory: RecordPortablePath,
   ) => Effect.Effect<void, RecordFileSystemError>;
+  /** Maintenance-only exact portable file removal; missing is idempotent success. */
+  readonly removeFile: (
+    file: RecordPortablePath,
+  ) => Effect.Effect<void, RecordFileSystemError>;
 
   /** Creates `runs/<RunId>` without publishing it. */
   readonly createRunDirectory: (

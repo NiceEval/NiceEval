@@ -3759,8 +3759,16 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
       ...(flags.record === undefined ? {} : { record: flags.record }),
     }).pipe(Effect.mapError(automaticRecordMigrationFailure));
     if (migrated !== null) {
+      const droppedFacts = [...new Set(migrated.attachments.flatMap(
+        (attachment) => attachment.retention.droppedFacts,
+      ))];
+      const rerunRecommendations = [...new Set(migrated.attachments.flatMap(
+        (attachment) => attachment.retention.rerunRecommendation === null
+          ? []
+          : [attachment.retention.rerunRecommendation],
+      ))];
       yield* writeStderr(
-        `Record automatically migrated to schemaVersion ${migrated.targetSchemaVersion}; restore commit ${migrated.restoreCommit}.\n`,
+        `Record automatically migrated ${migrated.attachments.length} attachment${migrated.attachments.length === 1 ? "" : "s"}; restore commit ${migrated.restoreCommit}.${droppedFacts.length === 0 ? "" : ` Dropped facts: ${droppedFacts.join(", ")}.`}${rerunRecommendations.length === 0 ? "" : ` ${rerunRecommendations.join(" ")}`}\n`,
       );
     }
   }

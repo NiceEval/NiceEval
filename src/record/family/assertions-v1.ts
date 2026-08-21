@@ -1,24 +1,9 @@
+import { createHash } from "node:crypto";
 import { Either, ParseResult, Schema } from "effect";
-import type { AssertionFactValue, BoundedJsonValue } from "../../assertions/record/model.ts";
+import type { RecordBlobRef } from "../attachment/blob-ref.ts";
 import { RecordExactParseOptions } from "../codec/core.ts";
 import type { RecordAttachmentMaintenanceFacet } from "../definition/attachment.ts";
 import { AssertionsAttachmentSchema, AssertionsAttachmentV1Schema } from "./assertions.ts";
-
-function fact(value: BoundedJsonValue): AssertionFactValue {
-  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
-    return Object.freeze({ kind: "value", value });
-  }
-  if (Array.isArray(value)) {
-    return Object.freeze({ kind: "list", items: Object.freeze(value.map(fact)) });
-  }
-  return Object.freeze({
-    kind: "fields",
-    fields: Object.freeze(Object.entries(value).map(([label, child]) => Object.freeze({
-      label,
-      value: fact(child),
-    }))),
-  });
-}
 
 function parseAssertionsV1(value: unknown): Schema.Schema.Type<typeof AssertionsAttachmentV1Schema> {
   const decoded = Schema.decodeUnknownEither(AssertionsAttachmentV1Schema, RecordExactParseOptions)(value);
@@ -40,10 +25,10 @@ function migrateAssertionsV1(value: unknown): unknown {
       display: entry.display,
       criterion: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
       materials: Object.freeze({
-        source: entry.subject,
-        evidence: entry.evidence,
-        coverage: entry.coverage,
-        limitations: entry.limitations,
+        source: Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+        evidence: Object.freeze([]),
+        coverage: Object.freeze({ state: "unavailable" as const, reason: "not-collected" as const }),
+        limitations: Object.freeze([]),
       }),
       evaluation: Object.freeze({
         observed: Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
@@ -60,9 +45,7 @@ function migrateAssertionsV1(value: unknown): unknown {
         condition: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
       }),
       contribution: entry.result.score,
-      explanationRetention: entry.result.diagnostic === undefined
-        ? Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const })
-        : Object.freeze({ state: "retained" as const, value: fact(entry.result.diagnostic) }),
+      explanationRetention: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
     }))),
     "source-sites-data": previous.sourceSites,
   });
@@ -75,9 +58,47 @@ function migrateAssertionsV1(value: unknown): unknown {
 
 export const assertionsV1Maintenance: RecordAttachmentMaintenanceFacet = Object.freeze({
   historicalCodecs: Object.freeze([
-    Object.freeze({ schemaVersion: 1, decode: decodeAssertionsV1 }),
+    Object.freeze({
+      schemaVersion: 1,
+      decode: decodeAssertionsV1,
+      verify: (payload: unknown, blobs: readonly { readonly ref: RecordBlobRef; readonly bytes: Uint8Array }[]) => {
+        const previous = parseAssertionsV1(payload);
+        const byRef = new Map(blobs.map((blob) => [blob.ref, blob.bytes] as const));
+        const materials = previous.entries.flatMap((entry) => [entry.subject, ...entry.evidence]);
+        return materials.every((material) => {
+          if (material.kind !== "blob") return true;
+          const bytes = byRef.get(material.ref);
+          return bytes !== undefined &&
+            bytes.byteLength === material.byteLength &&
+            createHash("sha256").update(bytes).digest("hex") === material.sha256;
+        });
+      },
+    }),
   ]),
   adjacentMigrations: Object.freeze([
-    Object.freeze({ fromSchemaVersion: 1, toSchemaVersion: 2, migrate: migrateAssertionsV1 }),
+    Object.freeze({
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      retention: Object.freeze({
+        retainedFacts: Object.freeze([
+          "display",
+          "decision",
+          "provable-policy",
+          "contribution",
+          "source-sites",
+        ]),
+        droppedFacts: Object.freeze([
+          "criterion",
+          "subject",
+          "evidence",
+          "coverage",
+          "limitations",
+          "result.diagnostic",
+          "result.receipt",
+        ]),
+        rerunRecommendation: "Rerun the affected evaluation to collect current assertion facts.",
+      }),
+      migrate: migrateAssertionsV1,
+    }),
   ]),
 });

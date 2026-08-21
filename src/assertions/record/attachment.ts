@@ -117,6 +117,10 @@ export function assertionBlobRefs(
 
 export type AssertionMaterialInput<E, R> =
   | {
+      readonly kind: "unavailable";
+      readonly reason: "not-recorded";
+    }
+  | {
       readonly kind: "snapshot";
       readonly value: BoundedJsonValue;
     }
@@ -494,6 +498,8 @@ function provisionalMaterial<E, R>(
   material: AssertionMaterialInput<E, R>,
 ): RecordAssertionMaterial<AssertionsProvisionalBlobRef> {
   switch (material.kind) {
+    case "unavailable":
+      return material;
     case "snapshot":
       return Object.freeze({ kind: "snapshot", value: material.value });
     case "blob":
@@ -548,6 +554,12 @@ function materializeMaterial<E, R>(
   blobs: RecordAttachmentBlobBuilder,
   drafts: RecordAttachmentBlobDraft<E, R>[],
 ): RecordAssertionMaterial<RecordBlobRef> {
+  if (material.kind === "unavailable") {
+    if (source.kind !== "unavailable") {
+      throw new Error("Assertions producer changed a sealed material kind");
+    }
+    return material;
+  }
   if (material.kind === "snapshot") {
     if (source.kind !== "snapshot") {
       throw new Error("Assertions producer changed a sealed material kind");

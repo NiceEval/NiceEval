@@ -752,6 +752,11 @@ const nodeFileSystem: RecordFileSystemService = {
       syncDirectoryAt(path),
     ),
 
+  removeFile: (file) =>
+    Effect.flatMap(resolvePortablePath(file, true), (path) =>
+      removeFileIfPresentAt(path, "remove-path"),
+    ),
+
   createRunDirectory: ({ root, runId }) =>
     Effect.gen(function* () {
       yield* nodeFileSystem.ensureDirectory(recordPortablePath(root, "runs"));

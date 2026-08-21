@@ -3,26 +3,26 @@
 本页说明 `niceeval migrate` 怎样区分 Core 不兼容、已知 family 的升级与未知 future family。契约单源
 始终在 [Record Architecture](../architecture.md) 和 [Record CLI](../cli.md#migrate)。
 
-## root schemaVersion `2` 的结果
+## 无版本 root 的结果
 
 完整 current Record 的 root 是：
 
 ```json
-{ "format": "niceeval.record", "schemaVersion": 2 }
+{ "format": "niceeval.record", "recordId": "..." }
 ```
 
 它没有已发布 predecessor。所有 fixed family 也处于 current 时，命令不写盘：
 
 ```sh
 niceeval migrate --record .niceeval/record
-# Record is already current: niceeval.record (schemaVersion 2)
+# Record is already current: niceeval.record
 ```
 
 兼容性不把所有未认识 bytes 混成一个错误：
 
 | 发现的 bytes | 普通读取 | `migrate` |
 |---|---|---|
-| root / Core 与 current 不兼容 | `migration-required` 或 `unsupported-format` | 只在有固定相邻步骤时迁移 |
+| root format / Core 与 current 不兼容 | `unsupported-format` | 不由 Attachment migration 猜测或改写 |
 | 已知 family 的旧 schemaVersion | `migration-required` | 显式迁移该 known family |
 | 未知独立 future family | `unsupported-format`，不形成 session | 拒绝迁移，不触碰 bytes |
 | current catalog family 缺失 | 请求时 `not-recorded` | 不补写历史事实 |
@@ -36,8 +36,8 @@ niceeval migrate --record .niceeval/record
 `1 → 2` maintenance step。步骤只处理已保存的 attempt / run payload 与 own blob closure，
 逐字保留 label、blob refs 和 blob bytes，只更新 envelope。
 
-root epoch `1 → 2` 与 Observability `1 → 2` 是同一固定联合步骤；root epoch 最后写入。future
-root / Core schemaVersion 发布时，仍必须另行同批提供它自己的固定相邻步骤。
+Observability `1 → 2` 只迁移该 family 的 Attachment。framework 统一负责物理写入、Git 与恢复，
+但不会改写 `record.json`，plan/receipt 也没有 root target。
 
 迁移可以重新编码 bytes、mint 新 blob ref 或重排 canonical object key。它不能：
 
@@ -47,8 +47,9 @@ root / Core schemaVersion 发布时，仍必须另行同批提供它自己的固
 - 接受第三方 converter、调用方 durable family 或物理字段；
 - 解释、删除或重写未知 future family 的 bytes。
 
-如果已知 bytes 不能如实形成目标 schema，迁移计划在写盘前拒绝。它不创建半有效目标格式，也不把 unknown
-data 默默丢弃。
+如果已知 bytes 不能形成目标 schema，迁移计划在写盘前拒绝。相邻步骤可以明确丢弃无法等价映射的旧事实，
+但必须在 plan/receipt 列出 dropped facts 与重跑建议，并把 current 字段写成 unavailable 或空集合。
+未知字段或 unknown family 仍不得默默丢弃。
 
 ## Git preflight 与执行
 

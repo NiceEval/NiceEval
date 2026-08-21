@@ -78,7 +78,6 @@ import { RecordSlotIdentityDefinition } from "../model/definition.ts";
 import { validateExpectedSlots } from "../model/validation.ts";
 import {
   RECORD_FORMAT,
-  RECORD_SCHEMA_VERSION,
   compareCanonicalIdentity,
   isPortableSegment,
   type AttemptId,
@@ -128,6 +127,7 @@ import {
   readRecordFormatForMaintenance,
 } from "../reader/format.ts";
 import {
+  inspectFixedRecordAttachmentEnvelope,
   readFixedRecordAttachment,
   type FixedRecordAttachmentRead,
   validateFixedRecordAttachmentMigrationSource,
@@ -405,11 +405,11 @@ function currentFormatInspection(
   root: RecordRoot,
 ): Effect.Effect<RecordFormatInspection, RecordMaintenanceError> {
   return readRecordFormatForMaintenance(fileSystem, root).pipe(
-    Effect.flatMap((format) =>
+    Effect.flatMap(() =>
       Effect.map(
         planAttachmentMigration({ fileSystem, root }),
         (attachments): RecordFormatInspection => ({
-          state: format.sourceSchemaVersion === RECORD_SCHEMA_VERSION && attachments.targets.length === 0
+          state: attachments.targets.length === 0
             ? "already-current"
             : "migration-required",
           format: RECORD_FORMAT,
@@ -712,49 +712,21 @@ function scanSelection(
     const wanted = request?.runIds === undefined
       ? undefined
       : new Set(request.runIds);
-    const entries = orderedEntries(
-      yield* fileSystem.listDirectory({
-        directory: recordPath(runtime.root, "runs"),
-        maximumEntries: MAXIMUM_RUN_ENTRIES,
-      }),
-    );
     const snapshot = yield* readSealedCoreSnapshot(runtime, fileSystem);
-    const found = new Set<RunId>();
     const warnings: RecordWarning[] = [];
     const problems: RecordSelectionProblem[] = [];
     const documents: RunDocument[] = [];
-
-    for (const entry of entries) {
-      if (entry.kind !== "directory") continue;
-      const runId = decodeRunId(entry.name);
-      if (runId === undefined) continue;
-      found.add(runId);
-      const sealed = yield* isSealedRun(fileSystem, runtime.root, runId);
-      if (!sealed) {
-        warnings.push(Object.freeze({
-          code: "incomplete-run" as const,
-          runId,
-          cleanupCommand: "niceeval clean" as const,
-        }));
-        if (wanted?.has(runId)) {
-          problems.push(Object.freeze({ code: "incomplete-run" as const, runId }));
-        }
-        continue;
-      }
-      if (wanted !== undefined && !wanted.has(runId)) continue;
-      const core = snapshot.state === "available" ? snapshot.byRunId.get(runId) : undefined;
-      if (core === undefined) {
+    if (snapshot.state === "core-invalid") {
+      for (const runId of wanted ?? []) {
         problems.push(Object.freeze({ code: "record-core-invalid" as const, runId }));
-      } else {
-        documents.push(core.run);
       }
-    }
-
-    if (wanted !== undefined) {
+    } else if (wanted === undefined) {
+      documents.push(...[...snapshot.byRunId.values()].map((core) => core.run));
+    } else {
       for (const runId of wanted) {
-        if (!found.has(runId)) {
-          problems.push(Object.freeze({ code: "selection-run-missing" as const, runId }));
-        }
+        const core = snapshot.byRunId.get(runId);
+        if (core === undefined) problems.push(Object.freeze({ code: "selection-run-missing" as const, runId }));
+        else documents.push(core.run);
       }
     }
 
@@ -1162,7 +1134,6 @@ function mintRecordDocument(
       ? Effect.fail(coreInvalid())
       : Effect.succeed(Object.freeze({
           format: format.right,
-          schemaVersion: RECORD_SCHEMA_VERSION,
           recordId: id.right,
         }));
   });
@@ -1237,8 +1208,6 @@ function openCurrentRead(input: {
       return yield* Effect.fail(migrationInterrupted());
     }
     const current = yield* readCurrentRecordFormat(fileSystem, input.root);
-    yield* ensureOrdinaryCurrentAttachments({ fileSystem, root: input.root });
-    yield* coordination.verifyRecordIdentity({ root: input.root, recordId: current.document.recordId });
     const lifecycle: ReaderLifecycle = { closed: false };
     const runtime: ReaderRuntime = {
       root: input.root,
@@ -1251,6 +1220,14 @@ function openCurrentRead(input: {
       attemptsByKey: new Map(),
       sealedCoreSnapshot: undefined,
     };
+    const snapshot = yield* readSealedCoreSnapshot(runtime, fileSystem);
+    if (snapshot.state === "core-invalid") return yield* Effect.fail(bootstrapInvalid());
+    yield* ensureOrdinaryCurrentAttachments({
+      fileSystem,
+      root: input.root,
+      runIds: new Set(snapshot.byRunId.keys()),
+    });
+    yield* coordination.verifyRecordIdentity({ root: input.root, recordId: current.document.recordId });
     yield* Effect.addFinalizer(() => Effect.sync(() => { lifecycle.closed = true; }));
     return makeReadSession(runtime, fileSystem);
   });
@@ -2558,6 +2535,7 @@ function validateAttachmentDirectoryInventory(input: {
 function validateCurrentFamilyInventory(
   fileSystem: RecordFileSystemService,
   root: RecordRoot,
+  runIds?: ReadonlySet<RunId>,
 ): Effect.Effect<void, RecordFileSystemError | RecordFormatUnsupported> {
   const runFamilies = new Set(runMigrationDescriptors.map((descriptor) => descriptor.family));
   const attemptFamilies = new Set(attemptMigrationDescriptors.map((descriptor) => descriptor.family));
@@ -2570,6 +2548,7 @@ function validateCurrentFamilyInventory(
       if (entry.kind !== "directory") continue;
       const runId = decodeRunId(entry.name);
       if (runId === undefined || !(yield* isSealedRun(fileSystem, root, runId))) continue;
+      if (runIds !== undefined && !runIds.has(runId)) continue;
       yield* validateAttachmentDirectoryInventory({
         fileSystem,
         directory: recordPortablePath(root, "runs", runId, "attachments"),
@@ -2636,6 +2615,7 @@ function migrationReaderLocation(location: KnownMigrationAttachment) {
 function knownMigrationAttachments(
   fileSystem: RecordFileSystemService,
   root: RecordRoot,
+  runIds?: ReadonlySet<RunId>,
 ): Effect.Effect<readonly KnownMigrationAttachment[], RecordFileSystemError> {
   return Effect.gen(function* () {
     const locations: KnownMigrationAttachment[] = [];
@@ -2647,6 +2627,7 @@ function knownMigrationAttachments(
       if (entry.kind !== "directory") continue;
       const runId = decodeRunId(entry.name);
       if (runId === undefined) continue;
+      if (runIds !== undefined && !runIds.has(runId)) continue;
       // Draft directories are not Runs and belong exclusively to `niceeval
       // clean`; maintenance must preserve every byte beneath them.
       if (!(yield* isSealedRun(fileSystem, root, runId))) continue;
@@ -2714,10 +2695,32 @@ function migrationFailureCode(error: unknown): string {
   return typeof code === "string" ? code : "record-command-failed";
 }
 
+function normalizedMigrationRetention(
+  value: unknown,
+): import("../definition/attachment.ts").RecordAttachmentMigrationRetention | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const retention = value as Record<string, unknown>;
+  const retainedFacts = retention.retainedFacts;
+  const droppedFacts = retention.droppedFacts;
+  const rerunRecommendation = retention.rerunRecommendation;
+  if (
+    !Array.isArray(retainedFacts) || retainedFacts.some((fact) => typeof fact !== "string" || fact.length === 0) ||
+    !Array.isArray(droppedFacts) || droppedFacts.some((fact) => typeof fact !== "string" || fact.length === 0) ||
+    (rerunRecommendation !== null &&
+      (typeof rerunRecommendation !== "string" || rerunRecommendation.length === 0))
+  ) return undefined;
+  return Object.freeze({
+    retainedFacts: Object.freeze([...retainedFacts] as string[]),
+    droppedFacts: Object.freeze([...droppedFacts] as string[]),
+    rerunRecommendation,
+  });
+}
+
 function migrationTarget(
   location: KnownMigrationAttachment,
   fromSchemaVersion: number,
   toSchemaVersion: number,
+  retention: import("../definition/attachment.ts").RecordAttachmentMigrationRetention,
 ): RecordAttachmentMigrationTarget {
   return Object.freeze({
     family: location.descriptor.family,
@@ -2726,7 +2729,67 @@ function migrationTarget(
     ...(location.attemptId === undefined ? {} : { attemptId: location.attemptId }),
     fromSchemaVersion,
     toSchemaVersion,
+    retention,
   });
+}
+
+function migrationLocationKey(
+  owner: RecordAttachmentOwner,
+  runId: RunId,
+  attemptId: AttemptId | undefined,
+  family: string,
+): string {
+  return `${owner}\u0000${runId}\u0000${attemptId ?? ""}\u0000${family}`;
+}
+
+function validateProspectiveCrossFamilyJoins(
+  values: readonly { readonly location: KnownMigrationAttachment; readonly payload: unknown }[],
+): boolean {
+  const byLocation = new Map(values.map(({ location, payload }) => [
+    migrationLocationKey(location.owner, location.runId, location.attemptId, location.descriptor.family),
+    payload,
+  ] as const));
+  for (const { location, payload } of values) {
+    const runSources = () => byLocation.get(migrationLocationKey(
+      "run",
+      location.runId,
+      undefined,
+      NiceEvalRecordFamilyCatalog.sources.family,
+    )) as SourcesAttachment | undefined;
+    if (isObservabilityDescriptor(location.descriptor)) {
+      const observability = payload as ObservabilityAttachment;
+      if (hasSourceFrames(observability)) {
+        const sources = runSources();
+        if (sources === undefined || observabilitySourceFrameIntegrityIssues(observability, sources).length > 0) {
+          return false;
+        }
+      }
+    } else if (isAssertionsDescriptor(location.descriptor)) {
+      const assertions = payload as AssertionsAttachment;
+      if (assertions.sourceSites.length > 0) {
+        const sources = runSources();
+        if (sources === undefined || assertionsSourceSiteIntegrityIssues(assertions, sources).length > 0) {
+          return false;
+        }
+      }
+    } else if (isSourceNavigationDescriptor(location.descriptor)) {
+      if (location.attemptId === undefined) return false;
+      const navigation = payload as SourceNavigationAttachment;
+      const observability = byLocation.get(migrationLocationKey(
+        "attempt",
+        location.runId,
+        location.attemptId,
+        NiceEvalRecordFamilyCatalog.observability.attempt.family,
+      )) as AttemptObservabilityAttachment | undefined;
+      const sources = hasMappedNavigationRows(navigation) ? runSources() : undefined;
+      if (
+        observability === undefined ||
+        (hasMappedNavigationRows(navigation) && sources === undefined) ||
+        sourceNavigationIntegrityIssues({ payload: navigation, observability, sources }).length > 0
+      ) return false;
+    }
+  }
+  return true;
 }
 
 interface PlannedMigrationSource {
@@ -2734,17 +2797,17 @@ interface PlannedMigrationSource {
   readonly location: KnownMigrationAttachment;
   readonly envelopeBytes: Uint8Array;
   readonly payloadBytes: Uint8Array;
+  readonly removedBlobs: readonly { readonly key: string; readonly bytes: Uint8Array }[];
   readonly rewritePayload: boolean;
 }
 
 interface PlannedMigrationSources {
   readonly attachments: readonly PlannedMigrationSource[];
-  readonly rootBytes: Uint8Array | null;
-  readonly record: RecordDocument;
+  readonly rootIdentityBytes: Uint8Array;
   readonly implementationIdentity: typeof RECORD_MIGRATION_IMPLEMENTATION_ID;
 }
 
-const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/root-1-2-to-root-3-current-attachments/v1" as const;
+const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/current-attachments/v2" as const;
 const migrationPlanSources = new WeakMap<object, PlannedMigrationSources>();
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -2766,9 +2829,8 @@ function sameMigrationPlan(left: RecordMigrationPlan, right: RecordMigrationPlan
   if (left.state !== right.state || left.format !== right.format) return false;
   if (left.state !== "migration-required" || right.state !== "migration-required") return true;
   if (JSON.stringify(left.backup) !== JSON.stringify(right.backup)) return false;
-  if (JSON.stringify(left.root) !== JSON.stringify(right.root)) return false;
   if (left.attachments.length !== right.attachments.length) return false;
-  return left.attachments.every((target, index) => {
+  if (!left.attachments.every((target, index) => {
     const candidate = right.attachments[index];
     return candidate !== undefined &&
       target.family === candidate.family &&
@@ -2776,30 +2838,55 @@ function sameMigrationPlan(left: RecordMigrationPlan, right: RecordMigrationPlan
       target.runId === candidate.runId &&
       target.attemptId === candidate.attemptId &&
       target.fromSchemaVersion === candidate.fromSchemaVersion &&
-      target.toSchemaVersion === candidate.toSchemaVersion;
+      target.toSchemaVersion === candidate.toSchemaVersion &&
+      JSON.stringify(target.retention) === JSON.stringify(candidate.retention);
+  })) return false;
+  const leftSources = migrationPlanSources.get(left);
+  const rightSources = migrationPlanSources.get(right);
+  if (
+    leftSources === undefined || rightSources === undefined ||
+    leftSources.implementationIdentity !== rightSources.implementationIdentity ||
+    !bytesEqual(leftSources.rootIdentityBytes, rightSources.rootIdentityBytes) ||
+    leftSources.attachments.length !== rightSources.attachments.length
+  ) return false;
+  return leftSources.attachments.every((source, index) => {
+    const candidate = rightSources.attachments[index];
+    return candidate !== undefined &&
+      bytesEqual(source.envelopeBytes, candidate.envelopeBytes) &&
+      bytesEqual(source.payloadBytes, candidate.payloadBytes) &&
+      source.rewritePayload === candidate.rewritePayload &&
+      source.removedBlobs.length === candidate.removedBlobs.length &&
+      source.removedBlobs.every((blob, blobIndex) => {
+        const other = candidate.removedBlobs[blobIndex];
+        return other !== undefined && blob.key === other.key && bytesEqual(blob.bytes, other.bytes);
+      });
   });
 }
 
 function planAttachmentMigration(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
+  readonly runIds?: ReadonlySet<RunId>;
 }): Effect.Effect<{
   readonly targets: readonly RecordAttachmentMigrationTarget[];
   readonly sources: readonly PlannedMigrationSource[];
 }, RecordFileSystemError | RecordFormatUnsupported | RecordMigrationInvalid> {
   return Effect.gen(function* () {
-    yield* validateCurrentFamilyInventory(input.fileSystem, input.root);
+    yield* validateCurrentFamilyInventory(input.fileSystem, input.root, input.runIds);
     const targets: RecordAttachmentMigrationTarget[] = [];
     const sources: PlannedMigrationSource[] = [];
-    for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root)) {
+    const prospective: { readonly location: KnownMigrationAttachment; readonly payload: unknown }[] = [];
+    for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root, input.runIds)) {
       const read = yield* readKnownMigrationAttachment(input.fileSystem, input.root, location);
-      if (read.state === "available") continue;
+      if (read.state === "available") {
+        prospective.push(Object.freeze({ location, payload: read.value }));
+        continue;
+      }
       const migrationLink = read.state === "migration-required"
         ? location.descriptor.adjacentMigrationLinks.find((link) =>
             link.fromSchemaVersion === read.fromSchemaVersion && link.toSchemaVersion === read.toSchemaVersion)
         : undefined;
       if (read.state === "migration-required" && migrationLink !== undefined) {
-        const target = migrationTarget(location, read.fromSchemaVersion, read.toSchemaVersion);
         const envelopeBytes = yield* input.fileSystem.readFile({
           file: migrationEnvelopePath(input.root, location),
           maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
@@ -2815,6 +2902,16 @@ function planAttachmentMigration(input: {
         if (historical === undefined || step === undefined) {
           return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         }
+        const retention = normalizedMigrationRetention(step.retention);
+        if (retention === undefined) {
+          return yield* Effect.fail(migrationInvalid(location.descriptor.family));
+        }
+        const target = migrationTarget(
+          location,
+          read.fromSchemaVersion,
+          read.toSchemaVersion,
+          retention,
+        );
         const prepared = yield* validateFixedRecordAttachmentMigrationSource({
           fileSystem: input.fileSystem,
           root: input.root,
@@ -2822,11 +2919,13 @@ function planAttachmentMigration(input: {
           descriptor: location.descriptor,
           fromSchemaVersion: read.fromSchemaVersion,
           decodeHistorical: historical.decode,
+          ...(historical.verify === undefined ? {} : { verifyHistorical: historical.verify }),
           migrate: step.migrate,
         });
         if (prepared === false || prepared.rewritePayload !== migrationLink.rewritePayload) {
           return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         }
+        prospective.push(Object.freeze({ location, payload: prepared.payload }));
         const payloadBytes = yield* input.fileSystem.readFile({
           file: recordPortablePath(
             input.root,
@@ -2842,6 +2941,7 @@ function planAttachmentMigration(input: {
           location,
           envelopeBytes,
           payloadBytes,
+          removedBlobs: prepared.removedBlobs,
           rewritePayload: migrationLink.rewritePayload,
         }));
         continue;
@@ -2854,6 +2954,9 @@ function planAttachmentMigration(input: {
       }
       return yield* Effect.fail(migrationInvalid(location.descriptor.family));
     }
+    if (!validateProspectiveCrossFamilyJoins(prospective)) {
+      return yield* Effect.fail(migrationInvalid("niceeval.record cross-family"));
+    }
     return Object.freeze({
       targets: Object.freeze(targets),
       sources: Object.freeze(sources),
@@ -2864,20 +2967,35 @@ function planAttachmentMigration(input: {
 function ensureOrdinaryCurrentAttachments(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
+  readonly runIds?: ReadonlySet<RunId>;
 }): Effect.Effect<void, RecordReaderOpenError> {
-  return planAttachmentMigration(input).pipe(
-    Effect.flatMap((plan) => plan.targets.length === 0
-      ? Effect.void
-      : Effect.fail(new RecordMigrationRequired({
+  return Effect.gen(function* () {
+    yield* validateCurrentFamilyInventory(input.fileSystem, input.root, input.runIds);
+    for (const location of yield* knownMigrationAttachments(input.fileSystem, input.root, input.runIds)) {
+      const envelope = yield* inspectFixedRecordAttachmentEnvelope({
+        fileSystem: input.fileSystem,
+        root: input.root,
+        location: migrationReaderLocation(location),
+        descriptor: location.descriptor,
+      });
+      if (envelope.state === "current" || envelope.state === "unavailable") continue;
+      if (envelope.state === "migration-required") {
+        return yield* Effect.fail(new RecordMigrationRequired({
           code: "record-migration-required",
-          source: "niceeval.record attachment predecessor",
-          target: `${RECORD_FORMAT}@${RECORD_SCHEMA_VERSION}`,
+          source: `${envelope.family}@${envelope.fromSchemaVersion}`,
+          target: `${envelope.family}@${envelope.toSchemaVersion}`,
           command: "niceeval migrate",
-        }))),
-    Effect.mapError((error): RecordReaderOpenError => error instanceof RecordMigrationInvalid
-      ? bootstrapInvalid()
-      : error),
-  );
+        }));
+      }
+      if (envelope.state === "unsupported") {
+        return yield* Effect.fail(new RecordFormatUnsupported({
+          code: "record-format-unsupported",
+          format: `${envelope.family}@${envelope.schemaVersion}`,
+        }));
+      }
+      return yield* Effect.fail(bootstrapInvalid());
+    }
+  });
 }
 
 function migrationPlan(input: {
@@ -2889,20 +3007,7 @@ function migrationPlan(input: {
     const format = yield* readRecordFormatForMaintenance(input.fileSystem, input.root);
     yield* validateSealedCoreForMigration(input.fileSystem, input.root, format.document);
     const attachments = yield* planAttachmentMigration(input);
-    const rootMigration = format.sourceSchemaVersion === RECORD_SCHEMA_VERSION
-      ? null
-      : Object.freeze({
-          fromSchemaVersion: format.sourceSchemaVersion,
-          toSchemaVersion: RECORD_SCHEMA_VERSION,
-          steps: Object.freeze(Array.from(
-            { length: RECORD_SCHEMA_VERSION - format.sourceSchemaVersion },
-            (_, index) => Object.freeze({
-              fromSchemaVersion: format.sourceSchemaVersion + index,
-              toSchemaVersion: format.sourceSchemaVersion + index + 1,
-            }),
-          )),
-        });
-    if (rootMigration === null && attachments.targets.length === 0) {
+    if (attachments.targets.length === 0) {
       return Object.freeze({ state: "already-current" as const, format: RECORD_FORMAT });
     }
     const backup = yield* input.git.inspectBackupState(input.root);
@@ -2910,13 +3015,11 @@ function migrationPlan(input: {
       state: "migration-required" as const,
       format: RECORD_FORMAT,
       backup,
-      root: rootMigration,
       attachments: attachments.targets,
     });
     migrationPlanSources.set(plan, Object.freeze({
       attachments: attachments.sources,
-      rootBytes: rootMigration === null ? null : format.sourceBytes,
-      record: format.document,
+      rootIdentityBytes: format.sourceBytes,
       implementationIdentity: RECORD_MIGRATION_IMPLEMENTATION_ID,
     }));
     return plan;
@@ -2955,6 +3058,7 @@ function migrateKnownAttachment(input: {
   readonly target: RecordAttachmentMigrationTarget;
   readonly expectedEnvelopeBytes: Uint8Array;
   readonly expectedPayloadBytes: Uint8Array;
+  readonly expectedRemovedBlobs: readonly { readonly key: string; readonly bytes: Uint8Array }[];
   readonly rewritePayload: boolean;
 }): Effect.Effect<void, RecordMaintenanceError> {
   return Effect.gen(function* () {
@@ -2973,6 +3077,10 @@ function migrateKnownAttachment(input: {
         migration.toSchemaVersion === input.target.toSchemaVersion,
     );
     if (historical === undefined || step === undefined) {
+      return yield* Effect.fail(migrationInvalid(input.target.family));
+    }
+    const retention = normalizedMigrationRetention(step.retention);
+    if (retention === undefined || JSON.stringify(retention) !== JSON.stringify(input.target.retention)) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
     const envelopePath = migrationEnvelopePath(input.root, location);
@@ -3002,6 +3110,7 @@ function migrateKnownAttachment(input: {
       descriptor,
       fromSchemaVersion: input.target.fromSchemaVersion,
       decodeHistorical: historical.decode,
+      ...(historical.verify === undefined ? {} : { verifyHistorical: historical.verify }),
       migrate: step.migrate,
     });
     if (validated === false) {
@@ -3029,6 +3138,15 @@ function migrateKnownAttachment(input: {
     if (validated.rewritePayload !== input.rewritePayload) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
+    if (
+      validated.removedBlobs.length !== input.expectedRemovedBlobs.length ||
+      validated.removedBlobs.some((blob, index) => {
+        const expected = input.expectedRemovedBlobs[index];
+        return expected === undefined || blob.key !== expected.key || !bytesEqual(blob.bytes, expected.bytes);
+      })
+    ) {
+      return yield* Effect.fail(migrationPlanStale());
+    }
     if (input.rewritePayload) {
       const encodedPayload = descriptor.write.encodePayload(validated.payload);
       if (Either.isLeft(encodedPayload)) return yield* Effect.fail(migrationInvalid(input.target.family));
@@ -3043,6 +3161,27 @@ function migrateKnownAttachment(input: {
         maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
         mode: "replace-no-follow",
       });
+    }
+    for (const blob of input.expectedRemovedBlobs) {
+      const blobPath = recordPortablePath(
+        input.root,
+        ...migrationAttachmentDirectory(input.root, location).segments,
+        "blobs",
+        blob.key,
+      );
+      const beforeDelete = yield* input.fileSystem.readFile({
+        file: blobPath,
+        maximumBytes: descriptor.write.budget.maximumBlobBytes,
+      });
+      if (beforeDelete === undefined || !bytesEqual(beforeDelete, blob.bytes)) {
+        return yield* Effect.fail(migrationPlanStale());
+      }
+      yield* input.fileSystem.removeFile(recordPortablePath(
+        input.root,
+        ...migrationAttachmentDirectory(input.root, location).segments,
+        "blobs",
+        blob.key,
+      ));
     }
     yield* input.fileSystem.writeFile({
       file: envelopePath,
@@ -3157,8 +3296,7 @@ function openMaintenance(input: {
           if (
             plannedSources === undefined ||
             plannedSources.implementationIdentity !== RECORD_MIGRATION_IMPLEMENTATION_ID ||
-            plannedSources.attachments.length !== currentPlan.attachments.length ||
-            (currentPlan.root === null) !== (plannedSources.rootBytes === null)
+            plannedSources.attachments.length !== currentPlan.attachments.length
           ) {
             return yield* Effect.fail(migrationInvalid("niceeval.core"));
           }
@@ -3167,11 +3305,23 @@ function openMaintenance(input: {
             ...plannedSources.attachments.flatMap((source) => {
               const base = migrationAttachmentDirectory(input.root, source.location).segments.join("/");
               return source.rewritePayload
-                ? [`${base}/attachment.json`, `${base}/payload.json`]
+                ? [
+                    `${base}/attachment.json`,
+                    `${base}/payload.json`,
+                    ...source.removedBlobs.map((blob) => `${base}/blobs/${blob.key}`),
+                  ]
                 : [`${base}/attachment.json`];
             }),
-            ...(plannedSources.rootBytes === null ? [] : ["record.json"]),
           ]);
+
+          const rootBeforeSentinel = yield* fileSystem.readFile({
+            file: recordPortablePath(input.root, "record.json"),
+            maximumBytes: RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
+          });
+          if (
+            rootBeforeSentinel === undefined ||
+            !bytesEqual(rootBeforeSentinel, plannedSources.rootIdentityBytes)
+          ) return yield* Effect.fail(migrationPlanStale());
 
           // The sentinel is the first portable write. Any later failure or
           // interruption intentionally leaves it behind for Git recovery.
@@ -3194,27 +3344,8 @@ function openMaintenance(input: {
                 target: source.target,
                 expectedEnvelopeBytes: source.envelopeBytes,
                 expectedPayloadBytes: source.payloadBytes,
+                expectedRemovedBlobs: source.removedBlobs,
                 rewritePayload: source.rewritePayload,
-              });
-              portableTargetWritten = true;
-            }
-            if (plannedSources.rootBytes !== null) {
-              const rootPath = recordPortablePath(input.root, "record.json");
-              const sourceBeforeRootWrite = yield* fileSystem.readFile({
-                file: rootPath,
-                maximumBytes: RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
-              });
-              if (
-                sourceBeforeRootWrite === undefined ||
-                !bytesEqual(sourceBeforeRootWrite, plannedSources.rootBytes)
-              ) return yield* Effect.fail(migrationPlanStale());
-              const encodedRoot = encodeRecordDocument(plannedSources.record);
-              if (Either.isLeft(encodedRoot)) return yield* Effect.fail(migrationInvalid("niceeval.core"));
-              yield* fileSystem.writeFile({
-                file: rootPath,
-                bytes: jsonBytes(encodedRoot.right),
-                maximumBytes: RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
-                mode: "replace-no-follow",
               });
               portableTargetWritten = true;
             }
@@ -3251,7 +3382,6 @@ function openMaintenance(input: {
           return Object.freeze({
             state: "migrated" as const,
             format: RECORD_FORMAT,
-            root: currentPlan.root,
             attachments: currentPlan.attachments,
           });
         }),

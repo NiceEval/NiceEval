@@ -169,6 +169,10 @@ export type WritableCriterionEnvelope = BuiltInCriterion | ThirdPartyCriterion;
 
 export type AssertionMaterial<BlobRef> =
   | {
+      readonly kind: "unavailable";
+      readonly reason: "not-recorded";
+    }
+  | {
       readonly kind: "snapshot";
       readonly value: BoundedJsonValue;
     }

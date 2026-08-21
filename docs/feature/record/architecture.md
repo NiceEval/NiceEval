@@ -173,7 +173,7 @@ closure 与 integrity 验证。当前每个 family 文件恰有一个 `defineRec
 Observability 与 Artifacts 各有一个 family declaration；`owners.attempt` 与 `owners.run` 不会形成第二个 family。
 
 ordinary reader 与 writer 只接受 exact current catalog。未知 stable family、known family 的 future 版本与
-root/Core epoch 不匹配都在 session 形成前拒绝；历史版本只可由 maintenance 的固定完整 chain 迁移。
+不相容 Core 都在 session 形成前拒绝；Attachment 历史版本只可由所属 family maintenance 的固定完整 chain 迁移。
 
 ### Schema 允许集
 
@@ -216,7 +216,6 @@ root 的 exact JSON 是：
 ```ts
 type RecordDocument = {
   readonly format: "niceeval.record";
-  readonly schemaVersion: 3;
   readonly recordId: RecordId;
 };
 ```
@@ -370,8 +369,8 @@ Assertions 的 criterion、Evidence 与局部错误规则由 [Assertions archite
 拥有。Observability 的精确 shape 由 [Observability Attachment](architecture/observability-attachments.md)
 拥有。本页定义它们共同的 durable boundary。
 
-future NiceEval catalog 可以增加独立 fixed family，例如 `niceeval.energy`，但发布时必须同时升级 root writer
-epoch。它仍有自己的 stable family name、numeric schemaVersion、`owners` map、definition 与 collector，且不是
+future NiceEval catalog 可以增加独立 fixed family，例如 `niceeval.energy`，而不改变 Record root。它仍有自己的
+stable family name、numeric schemaVersion、`owners` map、definition 与 collector，且不是
 第三方扩展点。旧 reader 在扫描到未知 family 时 fail closed，不能让 Analysis、Report 或 Runner 读取一个只验证了
 部分 catalog 的 Record。
 
@@ -606,13 +605,13 @@ Runner 收到可处理的 `SIGINT` 后会先停止派发并关闭每个已知 Sl
 
 ## Maintenance、兼容性与相邻迁移
 
-schemaVersion `3` 是当前 root / Core 的唯一可读、可写 writer epoch；fixed family 各自拥有 current 版本。
-root schemaVersion `1` / `2` 与已声明的 family predecessor 只有在固定完整相邻 chain 中才可迁移：
+Record root 没有 schemaVersion；fixed family 各自拥有 current 版本。已声明的 family predecessor
+只有在所属 family 的固定完整相邻 chain 中才可迁移：
 
 | 发现的内容 | ordinary reader | maintenance |
 |---|---|---|
-| root/Core epoch 与全部 family 命中完整 automatic-safe chain | ordinary 入口不得形成 session；Git-safe automatic maintenance 成功后全新打开 | 同一 exclusive session plan/apply，并同时升级 root epoch与目标 family |
-| root/Core 或已知 family 是 future/无链 schemaVersion | `unsupported-format`；不形成 session | `unsupported-format`；提示使用写出该版本的 NiceEval |
+| 已知 family 命中完整 automatic-safe chain | ordinary 入口不得形成 session；Git-safe automatic maintenance 成功后全新打开 | 同一 exclusive session plan/apply，只改写目标 Attachment |
+| root format/Core 不相容，或已知 family 是 future/无链 schemaVersion | `unsupported-format`；不形成 session | `unsupported-format`；提示使用写出该版本的 NiceEval |
 | 未知 family | `unsupported-format`；不形成 session | `unsupported-format`；不猜 payload、closure 或迁移 |
 | current catalog family 缺失 | 按请求得到 `not-recorded` | 不补写历史事实 |
 | 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format`；不得按未知 family 容忍 | 不进入迁移链 |
@@ -620,10 +619,11 @@ root schemaVersion `1` / `2` 与已声明的 family predecessor 只有在固定�
 未知 family 没有 payload schema、closure rule 或 projection 可供当前版本验证，因此整个 ordinary open
 fail closed；它不能再作为局部 `unsupported` 进入 Analysis。
 
-Record root 沿 `1 → 2 → 3` 演进。Observability 与 Assertions 各由自己的 `maintenance` facet 提供固定
-`1 → 2` step；root plan/receipt 保留每个准确的相邻版本。step 只接收已验证、hydrate 的历史 payload 并返回 current payload，绝不执行文件 I/O。
+Observability 与 Assertions 各由自己的 `maintenance` facet 提供固定 `1 → 2` step。Record migration
+framework 只调度这些 Attachment steps；plan/receipt 没有 root target。step 只接收已验证、hydrate 的历史 payload 并返回 current payload，绝不执行文件 I/O。
 
-Observability 的 physical write set 是 envelope-only；Assertions 是 envelope + payload。执行时 `migrated !== historical` 只用于核对该 metadata，不作为 recovery 猜测依据。root epoch 在所有 family 目标完成后最后升级。
+Observability 的 physical write set 是 envelope-only；Assertions 是 envelope + payload，以及失去引用时应删除的
+own blobs。执行时 transform 结果只用于核对该 metadata，不作为 recovery 猜测依据；`record.json` 不在 write set。
 
 有相邻步骤时，maintenance 在首次写 portable byte 前完成 Git preflight：Record 位于 Git worktree，
 完整 portable inventory 由 HEAD 跟踪，index 与 worktree 对该 inventory 干净。计划还绑定 repository

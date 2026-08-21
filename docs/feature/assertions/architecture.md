@@ -70,7 +70,9 @@ type AssertionEntry = {
     | { readonly state: "available"; readonly value: BuiltInCriterion | ThirdPartyCriterion }
     | { readonly state: "unavailable"; readonly reason: "not-recorded" };
   readonly materials: {
-    readonly source: AssertionMaterial;
+    readonly source:
+      | AssertionMaterial
+      | { readonly kind: "unavailable"; readonly reason: "not-recorded" };
     readonly evidence: readonly AssertionMaterial[];
     readonly coverage: AssertionCoverage;
     readonly limitations: readonly AssertionLimitation[];
@@ -340,7 +342,20 @@ source mapping 不能重新计算 criterion、points、gate、unavailable 或 Ve
 
 ## v1 → v2 相邻迁移
 
-package-private v1 codec 只为 maintenance 存在。纯相邻 transform 保留 v1 能证明的 result/gate/score、materials、diagnostic 与 sourceSites。旧高基数 material 可作为当前有界 opaque material 保留，不展开成 candidate row、DOM 或整份数组。
+package-private v1 codec 只为 maintenance 存在。纯相邻 transform 只保留 v1 严格能证明的
+display、result/gate/score 与 sourceSites。
+
+v1 的 subject、evidence 与 diagnostic 无法区分 source、检查条件、observed、expected 与 explanation。
+迁移时按以下方式明确丢弃：
+
+- `materials.source` 写为 `unavailable/not-recorded`；
+- evidence 与 limitations 写为空；
+- coverage 写为 `unavailable/not-collected`；
+- explanation 写为 `unavailable/not-recorded`。
+
+这些旧字段不得以 snapshot、summary、legacy marker 或递归 object 冒充 current 事实。
+
+若被丢弃的 v1 material 引用了 own blob，maintenance 同时物理删除失去引用的 blob，并把删除路径纳入 plan、sentinel 与 Git recovery write set；迁移后的双向 closure 不保留 orphan blob。
 
 v1 没有持久化 criterion expression、measurement/threshold、Judge rationale/citations 时，对应 current field 一律写 `unavailable { reason: "not-recorded" }`。transform 不得从 diagnostic、score ratio 或零值反推。
 

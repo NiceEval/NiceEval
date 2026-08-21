@@ -48,6 +48,7 @@ import type {
   RecordReaderReadError,
 } from "../reader/errors.ts";
 import type { RecordWriteError } from "../writer/types.ts";
+import type { RecordAttachmentMigrationRetention } from "../definition/attachment.ts";
 
 export const selectedRunRefBrand: unique symbol = Symbol(
   "@niceeval/record/SelectedRunRef",
@@ -378,6 +379,7 @@ export interface RecordAttachmentMigrationTarget {
   readonly attemptId?: AttemptId;
   readonly fromSchemaVersion: number;
   readonly toSchemaVersion: number;
+  readonly retention: RecordAttachmentMigrationRetention;
 }
 
 export type RecordMigrationPlan =
@@ -389,14 +391,6 @@ export type RecordMigrationPlan =
       readonly state: "migration-required";
       readonly format: "niceeval.record";
       readonly backup: RecordBackupState;
-      readonly root: {
-        readonly fromSchemaVersion: number;
-        readonly toSchemaVersion: number;
-        readonly steps: readonly {
-          readonly fromSchemaVersion: number;
-          readonly toSchemaVersion: number;
-        }[];
-      } | null;
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     }
   | {
@@ -409,14 +403,6 @@ export type RecordMigrationReceipt =
   | {
       readonly state: "migrated";
       readonly format: "niceeval.record";
-      readonly root: {
-        readonly fromSchemaVersion: number;
-        readonly toSchemaVersion: number;
-        readonly steps: readonly {
-          readonly fromSchemaVersion: number;
-          readonly toSchemaVersion: number;
-        }[];
-      } | null;
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     };
 

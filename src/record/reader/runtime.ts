@@ -64,6 +64,19 @@ export interface FixedRecordAttachmentLocation<Owner extends RecordAttachmentOwn
   readonly attemptId?: AttemptId;
 }
 
+export type FixedRecordAttachmentEnvelopeRead =
+  | { readonly state: "current" }
+  | { readonly state: "unavailable" }
+  | {
+      readonly state: "migration-required";
+      readonly family: string;
+      readonly fromSchemaVersion: number;
+      readonly toSchemaVersion: number;
+      readonly command: "niceeval migrate";
+    }
+  | { readonly state: "unsupported"; readonly family: string; readonly schemaVersion: number }
+  | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
+
 /** @internal Storage result already flattened for the Host current API. */
 export type FixedRecordAttachmentRead<Payload> =
   | {
@@ -85,6 +98,12 @@ export type FixedRecordAttachmentRead<Payload> =
 function attachmentInvalid<Payload>(
   path: readonly string[],
 ): FixedRecordAttachmentRead<Payload> {
+  const issues = nonEmptyRecordIssues([recordIssue("record-schema-invalid", path)]);
+  if (issues === undefined) throw new Error("Attachment invalid state requires one issue");
+  return Object.freeze({ state: "invalid" as const, issues });
+}
+
+function attachmentEnvelopeInvalid(path: readonly string[]): FixedRecordAttachmentEnvelopeRead {
   const issues = nonEmptyRecordIssues([recordIssue("record-schema-invalid", path)]);
   if (issues === undefined) throw new Error("Attachment invalid state requires one issue");
   return Object.freeze({ state: "invalid" as const, issues });
@@ -227,6 +246,54 @@ function hasReachableAdjacentMigration<
   return true;
 }
 
+/** Open-session gate: inspect only directory identity and exact envelope/version. */
+export function inspectFixedRecordAttachmentEnvelope<
+  Family extends NiceEvalFamily,
+  Owner extends RecordAttachmentOwner,
+  Payload,
+>(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly location: FixedRecordAttachmentLocation<Owner>;
+  readonly descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>;
+}): Effect.Effect<FixedRecordAttachmentEnvelopeRead, RecordFileSystemError> {
+  return Effect.gen(function* () {
+    const directory = attachmentPath(input.root, input.location, input.descriptor.family);
+    const kind = yield* input.fileSystem.pathKind(directory);
+    if (kind === "missing") return Object.freeze({ state: "unavailable" as const });
+    if (kind !== "directory") return attachmentEnvelopeInvalid(["attachment"]);
+    const envelopeDocument = yield* readJson(
+      input.fileSystem,
+      attachmentPath(input.root, input.location, input.descriptor.family, "attachment.json"),
+    );
+    if (envelopeDocument.state !== "available") return attachmentEnvelopeInvalid(["attachment.json"]);
+    const envelope = decodeRecordAttachmentEnvelope(envelopeDocument.value);
+    if (Either.isLeft(envelope)) return attachmentEnvelopeInvalid(["attachment.json"]);
+    if (envelope.right.family !== input.descriptor.family) {
+      return attachmentEnvelopeInvalid(["attachment.json", "family"]);
+    }
+    if (
+      envelope.right.schemaVersion < input.descriptor.schemaVersion &&
+      hasReachableAdjacentMigration(input.descriptor, envelope.right.schemaVersion)
+    ) {
+      return Object.freeze({
+        state: "migration-required" as const,
+        family: input.descriptor.family,
+        fromSchemaVersion: envelope.right.schemaVersion,
+        toSchemaVersion: input.descriptor.schemaVersion,
+        command: "niceeval migrate" as const,
+      });
+    }
+    return envelope.right.schemaVersion === input.descriptor.schemaVersion
+      ? Object.freeze({ state: "current" as const })
+      : Object.freeze({
+          state: "unsupported" as const,
+          family: input.descriptor.family,
+          schemaVersion: envelope.right.schemaVersion,
+        });
+  });
+}
+
 /**
  * Reads precisely one known static family. Unknown sibling directories are
  * intentionally neither enumerated nor decoded, so future independent
@@ -243,48 +310,8 @@ export function readFixedRecordAttachment<
   readonly descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>;
 }): Effect.Effect<FixedRecordAttachmentRead<Payload>, RecordFileSystemError> {
   return Effect.gen(function* () {
-    const directory = attachmentPath(input.root, input.location, input.descriptor.family);
-    const kind = yield* input.fileSystem.pathKind(directory);
-    if (kind === "missing") return Object.freeze({ state: "unavailable" as const });
-    if (kind !== "directory") return attachmentInvalid<Payload>(["attachment"]);
-
-    const envelopeDocument = yield* readJson(
-      input.fileSystem,
-      attachmentPath(input.root, input.location, input.descriptor.family, "attachment.json"),
-    );
-    if (envelopeDocument.state !== "available") return attachmentInvalid<Payload>(["attachment.json"]);
-    const envelope = decodeRecordAttachmentEnvelope(envelopeDocument.value);
-    if (Either.isLeft(envelope)) return attachmentInvalid<Payload>(["attachment.json"]);
-    // We reached a directory for one known fixed family. Its envelope must
-    // declare that same family; treating a swapped envelope as an unknown
-    // sibling would let a corrupted known directory masquerade as tolerated
-    // future data.
-    if (envelope.right.family !== input.descriptor.family) {
-      return attachmentInvalid<Payload>(["attachment.json", "family"]);
-    }
-    if (
-      envelope.right.schemaVersion < input.descriptor.schemaVersion &&
-      hasReachableAdjacentMigration(input.descriptor, envelope.right.schemaVersion)
-    ) {
-      return Object.freeze({
-        state: "migration-required" as const,
-        family: input.descriptor.family,
-        fromSchemaVersion: envelope.right.schemaVersion,
-        toSchemaVersion: input.descriptor.schemaVersion,
-        command: "niceeval migrate" as const,
-      });
-    }
-    if (envelope.right.schemaVersion !== input.descriptor.schemaVersion) {
-      // A well-formed envelope for a known family can still carry a version
-      // this reader cannot interpret. Only a reachable older version asks for
-      // migration; all other non-current versions remain local unsupported
-      // data, rather than being misclassified as corrupt bytes.
-      return Object.freeze({
-        state: "unsupported" as const,
-        family: input.descriptor.family,
-        schemaVersion: envelope.right.schemaVersion,
-      });
-    }
+    const envelope = yield* inspectFixedRecordAttachmentEnvelope(input);
+    if (envelope.state !== "current") return envelope;
 
     const payloadDocument = yield* readJson(
       input.fileSystem,
@@ -356,10 +383,15 @@ export function validateFixedRecordAttachmentMigrationSource<
   readonly descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>;
   readonly fromSchemaVersion: number;
   readonly decodeHistorical: (value: unknown) => unknown;
+  readonly verifyHistorical?: (
+    payload: unknown,
+    blobs: readonly RecordAttachmentMaterializedBlob[],
+  ) => boolean;
   readonly migrate: (value: unknown) => unknown;
 }): Effect.Effect<false | {
   readonly payload: Payload;
   readonly blobKeys: ReadonlyMap<object, string>;
+  readonly removedBlobs: readonly { readonly key: string; readonly bytes: Uint8Array }[];
   readonly rewritePayload: boolean;
 }, RecordFileSystemError> {
   return Effect.gen(function* () {
@@ -404,17 +436,12 @@ export function validateFixedRecordAttachmentMigrationSource<
       return false;
     }
 
-    let migrated: unknown;
     let historical: unknown;
     try {
       historical = input.decodeHistorical(hydrated.value);
-      migrated = input.migrate(historical);
     } catch {
       return false;
     }
-    const payload = input.descriptor.write.decodePayload(migrated);
-    if (Either.isLeft(payload)) return false;
-
     let totalBytes = 0;
     const materialized: RecordAttachmentMaterializedBlob[] = [];
     for (const [key, ref] of hydrated.refsByKey) {
@@ -428,14 +455,35 @@ export function validateFixedRecordAttachmentMigrationSource<
       if (totalBytes > input.descriptor.write.budget.maximumTotalBytes) return false;
       materialized.push(Object.freeze({ ref, bytes }));
     }
+    if (input.verifyHistorical !== undefined && !input.verifyHistorical(historical, materialized)) {
+      return false;
+    }
+
+    let migrated: unknown;
+    try {
+      migrated = input.migrate(historical);
+    } catch {
+      return false;
+    }
+    const payload = input.descriptor.write.decodePayload(migrated);
+    if (Either.isLeft(payload)) return false;
+    const currentRefs = new Set(input.descriptor.write.refs(payload.right));
+    const currentMaterialized = materialized.filter((blob) => currentRefs.has(blob.ref));
     if (Either.isLeft(makeFixedRecordAttachmentValueFromDecoded(
       input.descriptor.write,
       payload.right,
-      materialized,
+      currentMaterialized,
     ))) return false;
+    const bytesByRef = new Map(materialized.map((blob) => [blob.ref, blob.bytes] as const));
+    const removedBlobs = [...hydrated.refsByKey]
+      .filter(([, ref]) => !currentRefs.has(ref))
+      .map(([key, ref]) => Object.freeze({ key, bytes: bytesByRef.get(ref)! }));
     return Object.freeze({
       payload: payload.right,
-      blobKeys: new Map([...hydrated.refsByKey].map(([key, ref]) => [ref as object, key] as const)),
+      blobKeys: new Map([...hydrated.refsByKey]
+        .filter(([, ref]) => currentRefs.has(ref))
+        .map(([key, ref]) => [ref as object, key] as const)),
+      removedBlobs: Object.freeze(removedBlobs),
       rewritePayload: migrated !== historical,
     });
   });
