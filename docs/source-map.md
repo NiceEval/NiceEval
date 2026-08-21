@@ -10,7 +10,7 @@ Record、Analysis 与 Report 是三个数据层。CLI 只进入各自的 Host SD
 
 | 目标行为 | 当前源码区域 |
 |---|---|
-| argv 读取、命令分派、退出状态与项目初始化 | `src/cli.ts` |
+| argv 读取、命令分派、退出状态与项目初始化 | `src/cli/program.ts` 拥有 platform-neutral command program 与唯一 flag schema；`src/cli/application.ts` 定义窄 capability contract；`src/cli/node-application.ts` 只实现 Node adapter，`src/cli/bootstrap.ts` 是唯一 Node Live Layer composition edge |
 | `exp`、`--dry`、`accept` 的 list、plan、run 与 accept | `src/experiment/host/index.ts` 的 `experimentHost` |
 | Record 打开、创建、封口与 maintenance | `src/record/host/{index,runtime,types}.ts` 的 `recordHost` |
 | 由 reader 与 selection 签发 Sample | `src/analysis/host.ts` 的 `analysisHost` |

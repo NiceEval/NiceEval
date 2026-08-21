@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { loadConfigFile } from "../../load-config.ts";
 import { assembleCommandPlan, type CommandPlan } from "../../runner/command-plan.ts";
 import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
 import { planProjectTarget } from "../../runner/fingerprint.ts";
@@ -97,6 +96,7 @@ function list(input: {
 
 export interface ExperimentHostDebugPlanRequest {
   readonly cwd: string;
+  readonly config: Config;
   readonly experimentSelector: string;
   readonly evalSelector: string;
 }
@@ -186,10 +186,6 @@ function debug(
   input: ExperimentHostDebugPlanRequest,
 ): Effect.Effect<ExperimentHostDebugPlanResult, unknown> {
   return Effect.gen(function* () {
-    const config = yield* Effect.tryPromise({
-      try: () => loadConfigFile(input.cwd),
-      catch: (cause) => cause,
-    });
     const listed = yield* list({ cwd: input.cwd });
     const selectedExperiments = uniqueExactOrPrefix(
       listed.selections,
@@ -239,8 +235,8 @@ function debug(
     const target = yield* planProjectTarget(
       listed.evals,
       [run],
-      config.timeoutMs,
-      { configJudge: config.judge },
+      input.config.timeoutMs,
+      { configJudge: input.config.judge },
     );
     const commandPlan = assembleCommandPlan({
       rows: [{

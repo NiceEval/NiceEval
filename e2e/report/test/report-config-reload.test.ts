@@ -19,18 +19,45 @@ function withLiveViewConfig(config: string): string {
   return configured;
 }
 
-async function htmlWithMarkers(url: string, ...markers: string[]): Promise<string | undefined> {
+interface LiveManifest {
+  readonly defaultRoute: string;
+  readonly pages: readonly { readonly route: string; readonly fragment: string }[];
+}
+
+interface LiveRevision {
+  readonly content: string;
+  readonly bytes: Buffer;
+}
+
+async function liveRevision(url: string): Promise<LiveRevision | undefined> {
   try {
-    const [response, themeResponse] = await Promise.all([
-      fetch(url),
+    const response = await fetch(url);
+    if (response.status !== 200) return undefined;
+    const shell = Buffer.from(await response.arrayBuffer());
+    const manifestResponse = await fetch(new URL("_niceeval/manifest.json", url));
+    if (manifestResponse.status !== 200) return undefined;
+    const manifest = await manifestResponse.json() as LiveManifest;
+    const page = manifest.pages.find((candidate) => candidate.route === manifest.defaultRoute);
+    if (page === undefined) return undefined;
+    const [fragmentResponse, themeResponse] = await Promise.all([
+      fetch(new URL(page.fragment, url)),
       fetch(new URL("_niceeval/theme.css", url)),
     ]);
-    if (response.status !== 200 || themeResponse.status !== 200) return undefined;
-    const [html, theme] = await Promise.all([response.text(), themeResponse.text()]);
-    return markers.every((marker) => html.includes(marker) || theme.includes(marker)) ? html : undefined;
+    if (fragmentResponse.status !== 200 || themeResponse.status !== 200) return undefined;
+    const [fragment, theme] = await Promise.all([
+      fragmentResponse.arrayBuffer(),
+      themeResponse.arrayBuffer(),
+    ]);
+    const bytes = Buffer.concat([shell, Buffer.from(fragment), Buffer.from(theme)]);
+    return { content: bytes.toString("utf8"), bytes };
   } catch {
     return undefined;
   }
+}
+
+async function revisionWithMarkers(url: string, ...markers: string[]): Promise<string | undefined> {
+  const revision = await liveRevision(url);
+  return revision !== undefined && markers.every((marker) => revision.content.includes(marker)) ? revision.content : undefined;
 }
 
 async function themeCss(url: string): Promise<string> {
@@ -91,22 +118,25 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
       const firstResponse = await fetch(origin!);
       expect(firstResponse.status).toBe(200);
       const first = await firstResponse.text();
-      expect(first).toContain("REPORT_FIRST");
-      expect(first).toContain("INDIRECT_FIRST");
-      expect(first).toContain(initialSlotMarker);
+      expect(first).toContain('src="_niceeval/app.js"');
+      const firstRevision = await liveRevision(origin!);
+      expect(firstRevision).toBeDefined();
+      expect(firstRevision!.content).toContain("REPORT_FIRST");
+      expect(firstRevision!.content).toContain("INDIRECT_FIRST");
+      expect(firstRevision!.content).toContain(initialSlotMarker);
       expect(await themeCss(origin!)).toContain("#123456");
-      expect(first).not.toContain("INDIRECT_SECOND");
+      expect(firstRevision!.content).not.toContain("INDIRECT_SECOND");
 
       await writeFile(componentPath, component.replace("INDIRECT_FIRST", "INDIRECT_SECOND"), "utf8");
       const indirect = await pollUntil(
-        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", initialSlotMarker),
+        () => revisionWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", initialSlotMarker),
         { timeoutMs: 15_000, intervalMs: 100, label: "indirect report component reload" },
       );
       expect(indirect).not.toContain("INDIRECT_FIRST");
 
       await writeFile(themePath, theme.replace("#123456", "#654321"), "utf8");
       const themed = await pollUntil(
-        () => htmlWithMarkers(origin!, "INDIRECT_SECOND", "#654321"),
+        () => revisionWithMarkers(origin!, "INDIRECT_SECOND", "#654321"),
         { timeoutMs: 15_000, intervalMs: 100, label: "theme reload" },
       );
       expect(themed).toContain("INDIRECT_SECOND");
@@ -116,14 +146,14 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
       expect(alternateConfig).not.toBe(liveConfig);
       await writeFile(configPath, alternateConfig, "utf8");
       const reconfigured = await pollUntil(
-        () => htmlWithMarkers(origin!, "CONFIG_SECOND", "INDIRECT_SECOND", "#654321"),
+        () => revisionWithMarkers(origin!, "CONFIG_SECOND", "INDIRECT_SECOND", "#654321"),
         { timeoutMs: 15_000, intervalMs: 100, label: "running config reload" },
       );
       expect(reconfigured).not.toContain("REPORT_FIRST");
 
       await writeFile(configPath, liveConfig, "utf8");
       await pollUntil(
-        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", "#654321"),
+        () => revisionWithMarkers(origin!, "REPORT_FIRST", "INDIRECT_SECOND", "#654321"),
         { timeoutMs: 15_000, intervalMs: 100, label: "running config restore" },
       );
 
@@ -134,9 +164,9 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
       const latestIntent = pollUntil(
         async () => {
           try {
-            const response = await fetch(origin!);
-            if (response.status !== 200) return undefined;
-            const body = await response.text();
+            const revision = await liveRevision(origin!);
+            if (revision === undefined) return undefined;
+            const body = revision.content;
             observedIntentBodies.push(body);
             if (!body.includes("REPORT_FIRST") || !body.includes("INTENT_LATEST")) return undefined;
             return (await themeCss(origin!)).includes("#654321") ? body : undefined;
@@ -157,7 +187,7 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
         expect(body).toContain("REPORT_FIRST");
         expect(body.includes("INDIRECT_SECOND") || body.includes("INTENT_LATEST")).toBe(true);
       }
-      const lastGoodBeforeConfigFailure = Buffer.from(await (await fetch(origin!)).arrayBuffer());
+      const lastGoodBeforeConfigFailure = (await liveRevision(origin!))!.bytes;
       expect(lastGoodBeforeConfigFailure.toString("utf8")).toBe(settledLatestIntent);
 
       const unsupportedConfigModule = join(projectRoot, "reports", "unsupported-config.niceeval-invalid");
@@ -179,8 +209,8 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
             response.status !== 200
             || response.headers.get("x-niceeval-last-rebuild-problem") !== "1"
           ) return undefined;
-          const body = Buffer.from(await response.arrayBuffer());
-          return body.equals(lastGoodBeforeConfigFailure) ? body : undefined;
+          const revision = await liveRevision(origin!);
+          return revision?.bytes.equals(lastGoodBeforeConfigFailure) ? revision.bytes : undefined;
         },
         { timeoutMs: 15_000, intervalMs: 100, label: "config failure retains last-good execution" },
       );
@@ -188,7 +218,7 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
 
       await writeFile(configPath, liveConfig, "utf8");
       await pollUntil(
-        () => htmlWithMarkers(origin!, "REPORT_FIRST", "INTENT_LATEST", "#654321"),
+        () => revisionWithMarkers(origin!, "REPORT_FIRST", "INTENT_LATEST", "#654321"),
         { timeoutMs: 15_000, intervalMs: 100, label: "config import recovery" },
       );
 
@@ -201,11 +231,11 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
       expect(addedSlots, newRecord.diagnostic()).toBeGreaterThan(0);
       const reloadedSlotMarker = `SLOTS_${initialSlots + addedSlots}`;
       const withNewRecord = await pollUntil(
-        () => htmlWithMarkers(origin!, reloadedSlotMarker, "REPORT_FIRST", "INTENT_LATEST"),
+        () => revisionWithMarkers(origin!, reloadedSlotMarker, "REPORT_FIRST", "INTENT_LATEST"),
         { timeoutMs: 15_000, intervalMs: 100, label: "record reload" },
       );
       expect(withNewRecord).not.toContain(initialSlotMarker);
-      const lastGoodBeforeReportFailure = Buffer.from(await (await fetch(origin!)).arrayBuffer());
+      const lastGoodBeforeReportFailure = (await liveRevision(origin!))!.bytes;
       expect(lastGoodBeforeReportFailure.toString("utf8")).toBe(withNewRecord);
 
       await writeFile(reportPath, 'throw new Error("BROKEN_REPORT");\nexport default {};\n', "utf8");
@@ -220,8 +250,8 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
             response.status !== 200
             || response.headers.get("x-niceeval-last-rebuild-problem") !== "1"
           ) return undefined;
-          const body = Buffer.from(await response.arrayBuffer());
-          return body.equals(lastGoodBeforeReportFailure) ? body : undefined;
+          const revision = await liveRevision(origin!);
+          return revision?.bytes.equals(lastGoodBeforeReportFailure) ? revision.bytes : undefined;
         },
         { timeoutMs: 15_000, intervalMs: 100, label: "broken report retains last-good execution" },
       );
@@ -230,7 +260,7 @@ test("view 重建项目模块、配置与 Record；last-good 保留且 latest in
       await writeFile(reportPath, report.replace("REPORT_FIRST", "REPORT_RECOVERED"), "utf8");
       const recovered = await pollUntil(
         () =>
-          htmlWithMarkers(
+          revisionWithMarkers(
             origin!,
             "REPORT_RECOVERED",
             "INTENT_LATEST",

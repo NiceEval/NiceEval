@@ -48,17 +48,6 @@ export function routeWithParameterKey(path: string, key: string): string {
   return path === "/" ? `/${key}` : `${path}/${key}`;
 }
 
-export function staticPathForRoute(route: string): ReportStaticPath {
-  const routeSegments = route === "/" ? [] : route.slice(1).split("/");
-  const segments = [...routeSegments, "index.html"];
-  return Object.freeze({
-    owner: "route" as const,
-    source: route,
-    segments: Object.freeze(segments),
-    posix: segments.join("/"),
-  });
-}
-
 export function staticPathForDownload(path: string): ReportStaticPath {
   const segments = ["downloads", ...path.split("/")];
   return Object.freeze({

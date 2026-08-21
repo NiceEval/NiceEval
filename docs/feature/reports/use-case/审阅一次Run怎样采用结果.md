@@ -1,7 +1,7 @@
 # 审阅一次 Run 的闭合结果
 
 这个用例把固定 Run 的计划与结果和 immutable Attempt 的关闭 Evidence、Observability、File Changes 分开阅读。
-前者说明哪些 Attempt 已完成、未启动或使用历史结果；后者由已生成的详情 Page 下钻。Report 不建立第三份持久状态，
+前者说明哪些 Attempt 已完成、未启动或使用历史结果；后者由已生成的 Attempt overlay 下钻。Report 不建立第三份持久状态，
 也不从一类事实猜出另一类事实。
 
 ## 1. 取得 Run ID
@@ -57,4 +57,4 @@ Attempt 页的源码中，带交互标记的 `.send()` 行可以原生展开。�
 并仍保留已经捕获的轨迹。
 
 完整空轨迹表示完整采集到零个 agent 归因变化；partial 的空安全前缀不作此断言。`not-recorded` 则说明 collector
-不适用于该 Attempt。`show` 在目标详情页取得这些闭合值；view 与静态目录在全站构建中取得它们，随后打开详情页不会再次读取。
+不适用于该 Attempt。`show` 在目标 Page 取得这些闭合值；view 与静态目录在全站构建中取得它们，随后打开 overlay 不会再次读取。

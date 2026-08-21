@@ -1,6 +1,6 @@
 # Reports CLI
 
-`show` 是单目标读取命令；`view` 与 `view --out` 是全站 SSG 命令。三者先以相同 selector 形成固定 Sample，但不会因此拥有
+`show` 是单目标读取命令；`view` 与 `view --out` 是全站关闭命令。三者先以相同 selector 形成固定 Sample，但不会因此拥有
 相同的 Page 执行范围。
 
 ```text
@@ -211,11 +211,10 @@ view 在启动 server 前完整构建 `ClosedSiteRevision`。它对每个参数 
 枚举实例，并校验全站路径、链接、download、asset、Source、Diff、问题表、`_niceeval/data/projections.json` 与预算。该文件捕获所有
 显式声明 Page 的 projection closure；浏览器不重新计算成本。
 
-`--page` 只决定浏览器初始打开的已存在 route；不会缩小构建、枚举或验证。未给 `--page` 且存在实验组 Page 时，view 默认打开稳定排序的第一组；多组 Header 显示原生实验选择器，单组不显示。每个选项导航到已关闭的完整 scoped Overview，因此 Hero、通知、Summary、图表与 Table 使用同一范围。浏览器导航、刷新、Source、Trace、Diff 与下载只读取
-revision bytes，不执行作者 callback、Analysis 或 Record 读取。
+`--page` 是交给浏览器的初始 hash route；CLI 不判断 Page、overlay 或客户端路由形状，也不从 revision 维护第二份 route 表。它不会缩小构建、枚举或验证。实验组切换由标准 Report 内容中的普通链接表达，通用 Header 不识别实验组。浏览器导航、刷新、Attempt、Source、Trace、Diff 与下载只读取 revision bytes，不执行作者 callback、Analysis 或 Record 读取。
 
 view 监听 Record root、Report module、项目内静态 import、theme 与配置。最新完整构建成功时原子替换 current revision；失败保留
-last-good。相同 Record snapshot 的 watch 信号不会重新执行已缓存 Analysis 查询。每个 HTTP request 在开始时固定一个 revision 引用。
+last-good。每个有效 watch intent 都走同一个完整 revision builder；不存在 Page-bytes 重签路径。每个 HTTP request 在开始时固定一个 revision 引用。
 
 view 默认只监听 `127.0.0.1`。非 loopback 地址没有认证或 TLS；CLI 在 stderr 给出明确警告。HTTP 只服务 `GET` 与 `HEAD`，
 其它 method 返回 `405`。
@@ -227,12 +226,11 @@ niceeval view --report ./reports/summary.ts --out ./report-site
 niceeval view --run 01H... --out ./shared-site --no-open
 ```
 
-`--out` 不接受 `--page`。它与 view 使用同一完整 SSG 路径，完成全站校验后原样写出 revision 的页面、CSS、reload client、作者 asset、
+`--out` 不接受 `--page`。它与 view 使用同一全站关闭路径，完成全站校验后原样写出 revision 的根 `index.html` app shell、HTML fragments、CSS、app client、作者 asset、
 下载文件与 `_niceeval/data/projections.json`。该 projections 文件包含全体声明 Page 的 closure，bytes 进入 revision identity。目标目录
 必须不存在；存在时返回 `report-export-target-exists`，Host 不删除或替换其中的文件。
 
-生成目录不需要 Record、NiceEval 安装或网络。reload client 找不到 view 端点时安静停用；浏览器必须启用目录内随包交付的 JavaScript，
-禁用时页面明确提示启用，不提供第二套阅读 fallback。相同 route 的目录页面 body 与 view HTTP body 相同。
+生成目录不需要 Record、NiceEval 安装或外部网络，可由普通静态 HTTP(S) host 直接托管，不需要 rewrite 或 NiceEval server。静态 app 不探测 live view 端点；浏览器必须启用目录内随包交付的 JavaScript，禁用时根 shell 明确报错，不提供第二套阅读 fallback。`file://` 不受支持。
 
 全站构建要求固定 Sample 至少选中一个 logical Slot。零选中结果返回 `report-sample-empty`；`view --out` 不创建目录，`view` 不启动
 server。这个输入错误不同于某个已选中结果的 MetricValue 为 `empty`：后者是报告应当呈现的数据状态。
@@ -266,6 +264,6 @@ server。这个输入错误不同于某个已选中结果的 MetricValue 为 `em
 ## 相关阅读
 
 - [Report Library](library.md)：作者 API、Page、组件与 export manifest。
-- [Architecture](architecture.md)：单目标路径、全站 SSG、缓存与 revision 发布。
+- [Architecture](architecture.md)：单目标路径、全站关闭与 revision 发布。
 - [分享静态报告站](use-case/分享静态报告站.md)：团队分享的离线路径。
 - [制作可访问页面](use-case/制作可访问页面.md)：text、Web 与浏览器阅读。

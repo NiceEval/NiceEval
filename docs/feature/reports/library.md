@@ -148,7 +148,7 @@ const head: readonly HeadTag[] = [
 export default defineReport({
   title: { en: "Quality", "zh-CN": "质量" },
   head,
-  pages: [{ id: "overview", path: "/", title: "Overview", render: () => null }],
+  pages: [{ id: "overview", path: "/", title: "Overview", presentation: "page", render: () => null }],
 });
 ```
 
@@ -162,15 +162,15 @@ Codex sealed Usage 的 model request observation、零费率的显式声明和�
 
 ## Page
 
-`pages` 是 Report 的唯一 Page 集合；Host 不回填、推断或自动生成详情页。普通 Page 的 `load` 省略时，`render` 直接收到 Host 签发的
-Sample。参数 Page 以 `params` 表示可寻址实例，并固定为 `navigation: false`。Attempt、Experiment 或任意其它详情都必须由作者作为
-`ParameterizedPage` 显式放入 `pages`，才能成为 route 或静态输出的一部分。
+`pages` 是 Report 的唯一 Page 集合；Host 不回填、推断或自动生成详情。普通 Page 的 `load` 省略时，`render` 直接收到 Host 签发的
+Sample。参数 Page 以 `params` 表示可寻址实例，并固定为 `navigation: false`。每个 Page 都以 `presentation` 明确它是业务 `page` 还是叠加在当前业务 Page 上的 `overlay`。Attempt、Source 和 Diff 必须声明为 `overlay`；它们不是独立业务页面。
 
 ```ts
 interface PlainPage<Input = Sample> {
   readonly id: string;
   readonly path?: string;
   readonly title: LocalizedText;
+  readonly presentation?: "page";
   readonly navigation?: boolean;
   readonly load?: (
     sample: Sample,
@@ -187,6 +187,7 @@ interface ParameterizedPage<Params extends JsonValue, Input> {
   readonly id: string;
   readonly path?: string;
   readonly title: LocalizedText;
+  readonly presentation: "page" | "overlay";
   readonly navigation: false;
   readonly role?: {
     readonly kind: "experiment-group";
@@ -210,9 +211,9 @@ type Page<Params extends JsonValue | void = void, Input = Sample> =
     : ParameterizedPage<Extract<Params, JsonValue>, Input>;
 ```
 
-`role.kind: "experiment-group"` 只适用于参数 Page。`groupKind` 固定该 Page 接收 named 或 singleton identity，`load` 再从当前 Sample 形成 `ExperimentComparisonScope`。Host 只为作者显式声明的这类 Page 生成 Header 实验选择器；当前 Sample 只有一个可比范围时不显示选择器，有两个或更多时才显示，并默认选择稳定排序的第一项。未声明该 role 时不补造 Page、route 或选择器。
+`role.kind: "experiment-group"` 只参与标准 Report 在关闭阶段形成 `ExperimentComparisonScope`；它不进入通用客户端 manifest，也不驱动 Host shell UI。实验组访问入口由标准 Report 自己渲染为普通 Page 链接。未声明该 role 时不补造 Page、route 或选择器。
 
-参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，形成 `/group/named/<segment>` 与 `/group/singleton/<experiment-id>`。选择器把两个 Page 的已闭合目标汇总成一个原生 `select`；切换只导航到选项携带的静态 Page URL。该交互依赖静态目录随包交付的 Host runtime；禁用 JavaScript 时只显示启用提示。
+参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，并用它们形成 canonical hash。标准 Report 内容链接直接指向这些最终 hash route；禁用 JavaScript 时根 shell 明确报错。
 
 标准实验组 Page 是完整的 scoped Overview，不是只替换 Experiment Table。它把 `ExperimentComparisonScope` 的 backing Sample 显式交给 Hero、`SampleNotices` 与 `SampleSummary`，再把同一 scope 交给 `ExperimentScatter` 和 `ExperimentTable`。因此告警数、Pass rate、Experiments、Evals、Attempts、Eval results、Total cost 与 Run range 都随选择范围变化。
 
@@ -242,6 +243,7 @@ const summaryPage: Page<SummaryParams, SummaryParams> = {
   id: "summary",
   path: "/summary",
   title: "Summary",
+  presentation: "page",
   navigation: false,
   params: summaryParams,
   load: (_sample, params) => params,
@@ -273,6 +275,7 @@ interface ReportMeta {
   readonly pages: readonly {
     readonly id: string;
     readonly title: LocalizedText;
+    readonly presentation: "page" | "overlay";
     readonly navigation: boolean;
   }[];
 }
@@ -391,7 +394,7 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 业务数组或已关闭领域视图，也不会自行读取数据。
 
 `Hero`、`SampleOverview`、`AttemptDetails`、`ExperimentDetails`、`Conversation`、`TurnTrace`、`DiffView`、`SourceView` 与 `Waterfall` 是
-官方组合组件。它们只接收关闭数据，详情 route 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
+官方组合组件。它们只接收关闭数据，详情 overlay 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
 `libraryDetailRoute()` 建立。
 
 `ExperimentTable` 与 `ExperimentScatter` 是具名比较组件。它们只接受 `ExperimentComparisonScope` 或该 scope 产生的同组 branded projection，不接受普通 Sample 或任意 rows。多组输入以 `analysis-comparison-group-mismatch` 失败；单组的 `non-comparable` 闭合原因与 Evidence，不渲染排名或散点。中立 `Table` 与 `Scatter` 仍可显示任意已闭合值，不承担实验组语义。
@@ -438,5 +441,5 @@ Report 不识别 matcher code、不拼 matcher 专属句子，也不把整棵 di
 
 - [Reports README](README.md)：两条执行路径与产品范围。
 - [读数与显示语义](calculations.md)：统计口径、MetricValue 与 DomainView。
-- [Architecture](architecture.md)：站点版本、CSS、reload、缓存与预算。
+- [Architecture](architecture.md)：站点版本、CSS、reload 与预算。
 - [CLI](cli.md)：route 选择、机器输出、view 与静态导出。

@@ -33,7 +33,7 @@ export interface ReportViewRebuildFailure {
   readonly summary: string;
 }
 
-/** A successful candidate always contains a new SSG-complete revision. */
+/** A successful candidate always contains one fully closed site revision. */
 export interface ReportViewSiteRebuild {
   readonly kind: "site";
   readonly site: ClosedSiteRevision;

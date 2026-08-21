@@ -10,7 +10,7 @@ node_modules/
 dist/
 .next/
 # vite 构建产物:由 `prepare` 在 install / publish 前自动构建(npm files:['src'] 仍会打进包)
-src/view/client-dist/
+src/report/client-dist/
 # 随包 AI 文档索引:由 `prepare`(build:index)从 INDEX.template.md + docs-site/zh frontmatter 生成
 /INDEX.md
 # 临时探针 / 冒烟脚本

@@ -22,7 +22,6 @@ import {
   foldVerdict,
   type VerdictState,
 } from "../eval/record/verdict.ts";
-import { loadConfigFile } from "../load-config.ts";
 import { recordHost } from "../record/host/runtime.ts";
 import type {
   RecordReadSession,
@@ -300,13 +299,10 @@ export function loadAdoptionProject(
 ): Effect.Effect<AdoptionProject, ExplicitAdoptionError> {
   return Effect.gen(function* () {
     const cwd = resolve(input.cwd);
-    const config = input.config ?? (yield* Effect.tryPromise({
-      try: () => loadConfigFile(cwd),
-      catch: (cause) => adoptionError(
-        "adoption-target-invalid",
-        `Current configuration could not be loaded: ${safeMessage(cause)}`,
-      ),
-    }));
+    const config = input.config ?? (yield* Effect.fail(adoptionError(
+      "adoption-target-invalid",
+      "An application host must supply the resolved project configuration.",
+    )));
     const evals = input.evals ?? (yield* discoverEvals(cwd).pipe(
       Effect.mapError((error) => adoptionError(
         "adoption-target-invalid",

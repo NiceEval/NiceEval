@@ -107,14 +107,14 @@ Stat 接收 `formatMetricValue()` 的显示字节。外部业务数组可以进�
 Attempt、会话、Source、文件差异和时序适合使用关闭 DomainView。详情组件可以理解该视图的稳定 identity 与 issues，
 却不能打开路径、读取 attachment 或让浏览器在导航时再次读取数据。
 
-Source 与 Diff 如果进入全站路径，必须在构建时成为受限 page 内容或 asset。单目标 `show` 只读取所选 Page 所需的 DomainView；
-它不会为其它详情页取得数据。
+Source 与 Diff 如果进入全站路径，必须在构建时成为受限 overlay fragment 或 asset。单目标 `show` 只读取所选 Page 所需的 DomainView；
+它不会为其它 overlay 取得数据。
 
 ## 相关阅读
 
 - [Analysis Library](../analysis/library.md)：总体、度量、分母和关闭输出的 owner。
 - [Report Library](library.md)：`aggregate()`、组件、Page 与 `MetricValue` 形状。
 - [Report 成本投影](cost-projections/README.md)：成本 Measure 的 Profile、Projection 与显示边界。
-- [Architecture](architecture.md)：单目标 show、全站 SSG 与缓存。
+- [Architecture](architecture.md)：单目标 show 与全站关闭。
 - [比较质量与成本](use-case/比较质量与成本.md)：同一 rows 同时进入表格和散点图。
 - [核对数据完整度](use-case/核对数据完整度.md)：partial、empty、unsupported 与 failed 的呈现。
