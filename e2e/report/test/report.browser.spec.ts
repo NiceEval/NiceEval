@@ -510,6 +510,20 @@ test("零配置 view 使用经典报告完成筛选、原生展开、详情下�
         await expect(observedSection.getByText('"mismatched"', { exact: true })).toBeVisible();
         await expect(expectedSection.getByText("true", { exact: true })).toBeVisible();
         await expect(valueMismatch.getByText(/^diagnostic: \{/)).toHaveCount(0);
+
+        const longCommandAssertion = dialog.locator("details").filter({
+          hasText: "Long command result · recorded passed",
+        });
+        await expect(longCommandAssertion).toHaveCount(1);
+        await longCommandAssertion.locator(":scope > summary").click();
+        const longSource = longCommandAssertion.getByRole("heading", { name: "Source" }).locator("..");
+        const foldedValue = longSource.locator("details").filter({ hasText: /\d+ characters/ });
+        await expect(foldedValue).toHaveCount(1);
+        await expect(foldedValue).not.toHaveAttribute("open", "");
+        await expect(foldedValue.locator(":scope > summary")).toContainText(/\d+ characters/);
+        await expect(longSource.getByText("LONG_CHECK_SOURCE_TAIL", { exact: false })).not.toBeVisible();
+        await foldedValue.locator(":scope > summary").click();
+        await expect(longSource.getByText("LONG_CHECK_SOURCE_TAIL", { exact: false })).toBeVisible();
         await page.keyboard.press("Escape");
         await expect(dialog).not.toBeVisible();
 

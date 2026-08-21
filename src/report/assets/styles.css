@@ -1622,6 +1622,26 @@ table.niceeval-report,
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.niceeval-assertion-evidence-long-value {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel), black 8%);
+}
+.niceeval-assertion-evidence-long-value > summary {
+  overflow: hidden;
+  padding: 8px 10px;
+  color: var(--soft);
+  font: 11px/1.5 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.niceeval-assertion-evidence-long-value[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.niceeval-assertion-evidence-long-value > .niceeval-assertion-evidence-code {
+  border: 0;
+}
 .niceeval-assertion-evidence-state {
   display: flex;
   flex-wrap: wrap;
