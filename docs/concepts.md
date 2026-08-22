@@ -229,7 +229,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 分析选择请求 | `AnalysisSelectionRequest` | 选择哪些已发布 Run 的纯配置，不携带 reader 或 I/O 能力 | [Analysis Library](feature/analysis/library.md) |
 | 分析样本 | `Sample` | host 从固定 `RecordSelection` 形成的 Scope-bound 作者输入；常驻身份与完整分母，重 payload 按需读取 | [Analysis](feature/analysis/README.md) |
 | 实验比较范围 | `ExperimentComparisonScope` | Analysis 从一份 Sample 按唯一实验组形成的私有品牌能力；共享父 Scope 寿命且只能单调收窄 | [Analysis Library](feature/analysis/library.md#实验组与比较范围) |
-| 结构不可比 | Non-comparable | 同组成员的 Eval 总体无法对齐的闭合状态；保留问题与 Evidence，但不产生排名或散点 | [Analysis Library](feature/analysis/library.md#结构可比性) |
 | Population | `Population` | Measure 解释的完整成员集合，拥有稳定 identity 与分母规则 | [Analysis Library](feature/analysis/library.md) |
 | Dimension | `Dimension` | 属于一个 Population、用于分组或稳定标识成员的 typed field | [Analysis Library](feature/analysis/library.md) |
 | Measure | `Measure` | 一次声明归并、denominator、missing 与 Evidence policy 的 typed 统计口径 | [Analysis Library](feature/analysis/library.md) |
