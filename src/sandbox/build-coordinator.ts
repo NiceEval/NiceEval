@@ -76,6 +76,7 @@ export type SandboxBuildActivityEvent =
     }
   | {
       status: "done" | "failed";
+      outcome: SandboxBuildRecord["status"];
       buildKey: BuildKey;
       id: string;
       key: typeof SANDBOX_BUILD_ACTIVITY;
@@ -292,6 +293,7 @@ function prepareOne(
       }
       ctx.onActivity?.({
         status: status === "failed" || status === "cancelled" ? "failed" : "done",
+        outcome: status,
         buildKey: work.buildKey,
         id: parent.id,
         key: SANDBOX_BUILD_ACTIVITY,

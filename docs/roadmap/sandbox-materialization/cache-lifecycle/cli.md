@@ -7,7 +7,7 @@ niceeval cache status <experiment-prefix> [eval-prefix...] [--json]
 ```
 
 该命令复用 `exp --dry` 的发现、选择、link 和 physical planning，只读取冻结选择的精确需求。
-它可以聚合 host CAS、Docker image store 与 BuildKit Domain，但不会把不同 Domain 的库存或回收权限合并。
+它可以聚合 host CAS、Docker image store、受管 BuildKit Domain 与只读 Provider observation，但不会合并不同范围的库存或回收权限。
 
 人类输出逐类显示 `required-present`、`required-missing`、`superseded-for-selection` 和 `unverified`。
 增长估算必须带样本数、时间范围和 estimate 标记；没有数据时显示 unknown。
@@ -28,11 +28,68 @@ interface CacheStatusDocumentV1 {
     requiredMissing: CacheDemandItem[];
     supersededForSelection: CacheDemandItem[];
   }>;
+  providerObservations: UnverifiedProviderCapacityObservation[];
 }
 ```
 
 status 不会产生删除候选，也不会刷新 last successful use。
 “当前没有选择”与“可以删除”是两个不同事实。
+
+## Invocation 任务构建反馈
+
+真正运行 Experiment 时，`niceeval exp` 在 Attempt 行之外显示一条运行级任务构建摘要。
+它按 `(domainId, BuildKey)` 去重，不把 BuildKey 数写成 Sandbox 数，也不把多个依赖者写成多个 build。
+
+人类反馈使用以下形态：
+
+```text
+8 attempts require 4 BuildKeys · 3 cache hits · 1 built once · 2 attempts waited
+```
+
+逐 key active 行显示有界 label、短 BuildKey、依赖 Attempt 数和状态：`querying`、`hit`、`queued`、`building`、`publishing`、`leasing`、`ready` 或 `failed`。
+共享的是 BuildKey 对应的构建或缓存结果，不是 Attempt；逐 Attempt 的 `creating sandbox` 只在其依赖 key ready 后出现。
+
+JSON progress 与 result 使用独立字段：
+
+```ts
+interface MaterializationCacheSummary {
+  requiredBuildKeys: number;
+  dependentAttempts: number;
+  querying: number;
+  queued: number;
+  building: number;
+  readyFromCache: number;
+  readyFromBuild: number;
+  failed: number;
+  waitingAttempts: number;
+}
+
+interface MaterializationCacheItem {
+  domainId: string;
+  buildKey: string;
+  label: string;
+  dependentAttempts: number;
+  state: "querying" | "hit" | "queued" | "building" | "publishing" | "leasing" | "ready" | "failed";
+  source?: "cache" | "build";
+  operationId?: string;
+  error?: { code: string; message: string };
+}
+
+interface MaterializationCacheEvent extends ExperimentOutputFields {
+  type: "progress" | "result";
+  materializationCache: {
+    summary: MaterializationCacheSummary;
+    items: MaterializationCacheItem[];
+  };
+}
+```
+
+结束摘要从每个 key 的最终状态投影，不累计 progress event。
+重试、状态替换或多个 waiter 不得重复增加 hit、built 或 failed。
+`hit` 尚未建立 lease；只有 `ready` 且 `source: "cache"` 才进入 `readyFromCache`。
+
+`materializationCache` 不进入 `sandboxReuse`、结果携带、Sandbox retention 或 orphan 词表。
+共享 build failure 的 key 只有一个 operation origin；依赖它的 Attempt 继续按既有结果契约投影各自结局。
 
 ## Domain 库存
 
@@ -43,6 +100,10 @@ niceeval cache inventory --domain <domain-id> [--json]
 
 库存命令不加载项目 config、Eval 或 Experiment。
 不指定 Domain 时只列 Domain 摘要；指定后才读取单个 Domain 的 entry、lease、root、policy 和 provider inspect 事实。
+
+共享或默认 BuildKit builder 不是 Domain。
+不指定 Domain 的库存摘要把它放在独立的 `provider observations` 区块，只显示 `unverified` 总量和 reclaimable estimate。
+它不会出现在 `entries`、`evictable` 或 GcPlan 中。
 
 明细按 kind、状态、owner、lease、last successful use 和容量分组。
 逻辑大小、共享大小、estimate 与 exact marginal reclaim 分栏展示，不能相加的数字标为 `not additive`。
@@ -59,6 +120,7 @@ interface CacheInventoryDocumentV1 {
   schemaVersion: 1;
   scope: { kind: "domains" } | { kind: "domain"; domainId: string };
   domains: CacheDomainSummary[];
+  providerObservations: UnverifiedProviderCapacityObservation[];
   entries?: CacheInventoryEntry[];
 }
 ```

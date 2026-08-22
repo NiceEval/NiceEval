@@ -46,6 +46,9 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       expect(compact).toContain(PRIMARY_ERROR_TAIL);
       expect(compact).toContain(SECONDARY_ERROR_HEAD);
       expect(compact).toContain(SECONDARY_ERROR_TAIL);
+      expect(compact, result.diagnostic()).toContain("checking build cache");
+      expect(compact.match(/checking build cache · docker:dockerfile:greet\/hello · 1 attempt/gu) ?? []).toHaveLength(2);
+      expect(compact.match(/build failed · docker:dockerfile:greet\/hello · 1 attempt/gu) ?? []).toHaveLength(2);
       expect(compact).toContain("2 attempts not started");
       expect(result.stdout).not.toContain("e2b-cause-secret-must-not-reach-human");
       expect(result.stdout).not.toContain("vercel-cause-secret-must-not-reach-human");

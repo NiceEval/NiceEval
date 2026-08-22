@@ -622,6 +622,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     ? Option.flatMap(collected, toBuildPreparation)
     : Option.some(opts.buildPreparation);
   const buildPrep = Option.getOrUndefined(buildPreparation);
+  const buildDependents = new Map<BuildKey, number>();
+  if (buildPrep !== undefined) {
+    for (const attempt of attempts) {
+      const keys = buildPrep.pairBuildKeys[cacheKey(attempt.run, attempt.evalDef.id)] ?? [];
+      for (const key of keys) buildDependents.set(key, (buildDependents.get(key) ?? 0) + 1);
+    }
+  }
   // 共享构建**不阻塞派发**:整批 key 同时开工,每条 attempt 只等自己引用的那几个 key
   // (case.md「Run 级构建协调」第 4 条的逐 key 放行)。全局 barrier 会让 10 个已就绪的镜像
   // 陪着最慢的那个构建干等(台账见 memory/shared-build-single-barrier-not-per-buildkey.md)。
@@ -636,10 +643,21 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           signal: opts.signal,
           // 最小反馈钩子:共享构建投影为运行级 active 行 / 非 TTY 起止事件,不占 attempt 位。
           onActivity: (event) => {
+            const dependents = buildDependents.get(event.buildKey) ?? 0;
+            const shared = `${dependents} attempt${dependents === 1 ? "" : "s"}`;
+            const action = event.status === "started"
+              ? "checking build cache"
+              : event.outcome === "hit"
+              ? "build cache hit"
+              : event.outcome === "built"
+              ? "built once"
+              : event.outcome === "cancelled"
+              ? "build cancelled"
+              : "build failed";
             reportRunActivity({
               id: event.id,
               key: event.key,
-              label: event.label,
+              label: `${action} · ${event.label} · ${shared}`,
               status: event.status,
               ...("durationMs" in event ? { durationMs: event.durationMs } : {}),
             });

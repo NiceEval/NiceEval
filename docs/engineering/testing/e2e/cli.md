@@ -47,6 +47,7 @@ When 从安装后的 candidate 运行 `niceeval exp provider-error --rerun all`�
 Then：
 
 - 四条安全封口后的 `error:` 都可见，长文本按显示宽度折行并以 head + tail 收口；不同 message 不因 phase/code 或跨 Run 的局部 `n1` 相同而合并；
+- 两个唯一 BuildKey 各显示一次 cache query 和失败，每行明确只有一条依赖 Attempt，不把共享构建写成 Sandbox 数；
 - Human 不出现 cause secret、`n1`、BuildKey、timing node、failureId、`cause:` 或 `fix:`；
 - 两条 post-Attempt error 各自紧跟 `details: niceeval show @<locator>`；pre-Attempt error 在 receipt 后的 `NEXT`
   按 Experiment 紧跟 `details: niceeval show --run <runId>`；

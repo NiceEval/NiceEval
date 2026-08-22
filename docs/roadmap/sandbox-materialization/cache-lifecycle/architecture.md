@@ -24,6 +24,9 @@ interface DomainIdentity {
 host CAS、Docker image store 和 BuildKit 是三个 Domain，不能用 Docker daemon id 代替其它 backend identity。
 `cache status` 可以聚合多个 Domain 的需求，库存明细、GcPlan 和 apply 始终只属于一个 Domain。
 
+共享或默认 BuildKit builder 不满足下表的 BuildKit identity，因此不是 Materialization Domain。
+它只能产生 provider-level `unverified` capacity observation，不能取得 domain id、entry、lease 或 GcPlan。
+
 `ownerId` 是当前 OS 用户保存在 `~/.local/state/niceeval/` 的随机 UUID。
 owner state 丢失会产生新 owner；旧 owner 的资源不会被新 owner 自动接管。
 
@@ -98,6 +101,35 @@ interface CacheManifest {
 
 缺少必需兼容轴或遇到未知 schema 时，entry 为 `unverified`。
 `intentProjection` 只解释同一意图的旧配方，不授予命中、迁移或删除资格。
+
+## Invocation 任务构建协调
+
+一次 Invocation 先按 `(domainId, BuildKey)` 收集并去重冻结选择的任务构建需求。
+BuildKey 相同但 Domain 不同的需求不能共享查询、single-flight、locator 或 lease。
+
+任务构建协调与 Attempt 调度属于两个独立容量域：
+
+1. BuildKey discovery、cache query、single-flight wait 和实际 build 都不占 Attempt concurrency。
+2. cache query 逻辑并发；Provider 可以配置独立的 query 安全上限，但不能复用 Attempt concurrency。
+3. `buildConcurrency` 只限制实际 miss build，必须大于零；它不限制 query 或同 key waiter。
+4. Attempt 的全部 BuildKey 都 ready，并成功取得所需 read lease 后，才进入 Attempt concurrency 队列。
+5. ready key 的 Attempt 立即具备放行资格。较早发现的 miss waiter 不能形成队首阻塞，也不能阻止其它 key 的 hit 放行。
+
+一个 build 失败时，同 key waiter 接收同一个具名 build failure origin。
+取消 waiter 不取消仍被其它 consumer 使用的共享 build；Run 取消则禁止尚未 ready 的 Attempt 继续放行。
+Provider 长操作不持有 registry transaction、Domain 全局锁或 Attempt 调度锁，避免 build lease、entry lock 与执行 permit 形成循环等待。
+
+任务构建状态按 key 前进：
+
+```text
+querying → hit → leasing → ready
+        ↘ queued → building → publishing → leasing → ready
+                                              ↘ failed
+```
+
+`hit` 只表示精确索引查询命中，不表示资源已经交付。
+只有 immutable identity 复核、lease 建立和交付入口就绪后才进入 `ready`。
+build 完成但 publish、index、identity 复核或 lease 失败时进入 `failed`，不得计为 hit 或 ready。
 
 ## 两级 fencing
 
@@ -248,6 +280,9 @@ V1 默认值如下：
 `superseded-for-selection` 只用于解释，不能改变优先级或删除资格。
 `legacy`、`foreign` 和 `unverified` 在任何 policy 下都不能成为 `evictable`。
 
+该顺序是安全门之后的稳定淘汰顺序，不是只按最近使用时间排序的 LRU。
+minimum age、`protectedUntil`、policy rule、lease、durable root 和 Provider reference 都先于最后成功使用时间。
+
 `lastSuccessfulUseAt` 只在资源完整交付给 consumer 后更新。
 status、inventory、planning、lease acquire、build 失败和交付失败都不刷新时间。
 新 entry 固定 `protectedUntil = createdAt + minimumAge`；调短 policy 不能缩短已有保护期。
@@ -300,6 +335,31 @@ legacy 资源永不进入 GcPlan、NiceEval apply 或自动迁移。
 
 构建 peak scratch 与稳态 cache 分列。
 缺失需求的增长区间必须展示同 kind、配方和平台的样本数与时间范围；没有实测时显示 unknown。
+
+## Provider-level BuildKit observation
+
+共享或默认 BuildKit builder 只产生只读 observation：
+
+```ts
+interface UnverifiedProviderCapacityObservation {
+  scope: "provider";
+  backendKind: "buildkit";
+  state: "unverified";
+  observedAt: string;
+  totalBytes: number | null;
+  reclaimableEstimateBytes: number | null;
+  reason: "shared-builder-unattributed";
+}
+```
+
+这个 observation 不属于 Domain inventory，不含 `domainId`、entry 或 NiceEval ownership。
+`reclaimableEstimateBytes` 是 Provider 自报估算，不是 NiceEval 的 exact marginal reclaim，也不授权删除。
+
+NiceEval 不为共享 builder 生成 GcPlan、自动 prune 或带 `--force` 的回收路径。
+CLI 可以展示用户自行执行的 Provider 命令，但必须同时说明它可能影响其它项目、builder session 与并行 build。
+
+BuildKit 只有在专属 managed builder 提供稳定 Domain identity、durable registry、lease/root、fencing 和 conditional delete 后，才能进入两阶段 GC。
+repository、image tag、cache record 年龄或 `docker system df` 不能替代这些证明。
 
 ## DestroyOnly 临时资源
 
