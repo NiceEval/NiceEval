@@ -46,7 +46,7 @@
 - [ ] 示例可复制运行,导入路径真实,输出已展示或说明。
 - [ ] 改动涉及的其它入口(README、示例、英文/中文对应页)已同步或明确留待同步。
 - [ ] 新增/重命名页面已更新 `docs.json`,旧链接加了 redirect。
-- [ ] 跑过 `pnpm lint`（文档与文档站规则 + `docs:validate` + `docs:links`，命令见 `docs-site/AGENTS.md`）。
+- [ ] 跑过 `pnpm lint`（文档与文档站规则 + `docs:validate` + `docs:links`，命令见 `apps/docs-site/AGENTS.md`）。
 
 ## 只改 `docs-ref/` 内部参考时
 

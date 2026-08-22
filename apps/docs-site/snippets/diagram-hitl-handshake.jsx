@@ -1,6 +1,6 @@
 /*
  * 图：HITL 一次完整握手。三条生命线，消息自上而下逐条点亮。
- * 一图一个组件，内容写死在组件里。共用样式在 docs-site/diagrams.css，
+ * 一图一个组件，内容写死在组件里。样式在 styles/diagram-hitl-handshake.css，
  * 写法约束见 snippets/diagram-sandbox-mode.jsx 开头。
  */
 export const HitlHandshake = () => (

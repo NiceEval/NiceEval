@@ -2,7 +2,7 @@
  * 文档站的交互与动画组件。页面用 props 传数据，组件只负责呈现。
  *
  * 观感按仓库根 DESIGN.md：1px 边表达区域、零圆角、无渐变无阴影，颜色只在有语义时出现，
- * 判定符号与文字始终同场。令牌值在 docs-site/widgets.css（浅色取 chalk，深色取 basalt）。
+ * 判定符号与文字始终同场。令牌值在 styles/base.css（浅色取 chalk，深色取 basalt）。
  *
  * 三条写法约束来自 Mintlify 把 JSX snippet 内联进 MDX 的方式，别改：
  * 只写箭头函数（它的 MDX 解析器只对箭头函数可靠）；不写 import；模块作用域里不放

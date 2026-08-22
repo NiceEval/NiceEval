@@ -8,7 +8,7 @@ import {
 } from "../../scripts/generate-reference.ts";
 
 // scripts/generate-reference.ts 从源码(TypeScript compiler API)生成
-// docs-site/zh/reference/*.mdx 里的 `{/* GENERATED:BEGIN <region-id> */}` 标记区块。
+// apps/docs-site/zh/reference/*.mdx 里的 `{/* GENERATED:BEGIN <region-id> */}` 标记区块。
 // 这个测试复用生成器导出的纯函数,在内存里重新计算每个 region,与已提交的文件逐字节
 // 比对——源码改了但忘记跑 `pnpm docs:reference` 时,这里会失败并提示怎么修。
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -36,18 +36,18 @@ describe("参考文档生成漂移守护", () => {
 
   for (const { file } of REFERENCE_FILES) {
     it(`${file} 与源码生成结果一致`, () => {
-      const path = join(ROOT, "docs-site/zh/reference", file);
+      const path = join(ROOT, "apps/docs-site/zh/reference", file);
       const committed = readFileSync(path, "utf8");
       const regenerated = regenerateReferenceDoc(file, committed, sources);
-      expect(regenerated, `docs-site/zh/reference/${file} 与源码生成结果不一致,请运行 \`pnpm docs:reference\` 重新生成后提交。`).toBe(
+      expect(regenerated, `apps/docs-site/zh/reference/${file} 与源码生成结果不一致,请运行 \`pnpm docs:reference\` 重新生成后提交。`).toBe(
         committed,
       );
     });
   }
 
   it("define-agent 的英文 Sandbox 成员镜像中文生成结果", () => {
-    const zh = readFileSync(join(ROOT, "docs-site/zh/reference/define-agent.mdx"), "utf8");
-    const en = readFileSync(join(ROOT, "docs-site/reference/define-agent.mdx"), "utf8");
+    const zh = readFileSync(join(ROOT, "apps/docs-site/zh/reference/define-agent.mdx"), "utf8");
+    const en = readFileSync(join(ROOT, "apps/docs-site/reference/define-agent.mdx"), "utf8");
     expect(generatedMemberSignatures(generatedRegion(en, "sandbox-methods"))).toEqual(
       generatedMemberSignatures(generatedRegion(zh, "sandbox-methods")),
     );

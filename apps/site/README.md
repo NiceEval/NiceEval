@@ -1,6 +1,6 @@
 # 产品站开发入口
 
-`site/` 是 NiceEval Landing Page。修改页面前先按当前项目依赖理解框架，不使用训练记忆中的 Next.js 约定替代本仓库版本。
+`apps/site/` 是 NiceEval Landing Page。修改页面前先按当前项目依赖理解框架，不使用训练记忆中的 Next.js 约定替代本仓库版本。
 
 ## Site
 
@@ -13,7 +13,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## 视觉
 
-站点观感跟产品面同源，规则在根目录 [DESIGN.md](../DESIGN.md)：层级靠排版和留白，区分靠位置和明度，颜色只在有语义时出现。落到站点是四条硬约束：
+站点观感跟产品面同源，规则在根目录 [DESIGN.md](../../DESIGN.md)：层级靠排版和留白，区分靠位置和明度，颜色只在有语义时出现。落到站点是四条硬约束：
 
 - **只有暗色。** `app/globals.css` 的 `:root` 是唯一色板，短名与 `src/view/styles.css` 的宿主 chrome 对齐，值抄 `src/report/theme.ts` 里的 basalt。站点不装主题机制，也不做浅色切换，所以令牌写死值、不写 `light-dark()`。
 - **零圆角、无渐变、无阴影、无发光。** 盒子只加 1px 边，层次靠 `--panel` / `--panel-2` 两级面色。

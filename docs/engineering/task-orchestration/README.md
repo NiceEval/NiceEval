@@ -5,7 +5,7 @@
 
 目标是同时得到三种可审计结果：
 
-- `site/**` 与内部 `docs/**` 变更不运行产品 E2E；
+- `apps/site/**` 与内部 `docs/**` 变更不运行产品 E2E；
 - 产品域或单个场景 Repo 变更只运行图上受影响的 E2E；
 - 无法安全归类的源码、共享测试设施或选择器故障扩大为该 lane 全量，不能绿色少跑。
 
@@ -39,6 +39,26 @@ NiceEval runner ── candidate / Testkit / native tests / receipts / cleanup
 `nx show projects --affected --with-target e2e` 查看选择，但不能用 `nx affected -t e2e` 绕过根 runner。
 直接执行后者必须因哨兵 executor 不存在而在 pack、secret 注入、场景子进程和 artifact 创建前明确失败。正式执行入口始终是
 `pnpm e2e`。
+
+## Workspace 目录管理
+
+`apps/` 放可部署应用，`packages/` 放供其它项目复用或发布的库。当前布局是：
+
+```text
+apps/
+├── site/       # Landing Page，独立部署，不拥有产品 E2E
+└── docs-site/  # Mintlify 文档站，其中中文正文与图片会进入 niceeval tarball
+packages/
+├── niceeval/   # 发布包
+└── testkit/    # 私有 E2E harness
+```
+
+目录位置只表达所有权，不直接决定 affected 结果。`apps/site` 用 `e2e:none` 表达合法空计划；
+`apps/docs-site` 保留 `kind:packaged-docs`，Package E2E 通过 project dependency 拥有它。依赖方向是 app → package，
+产品 E2E 不反向依赖 app。
+
+新增或移动 app 时，同一次变更必须更新 app 自己的 `project.json`、`pnpm-workspace.yaml`、根脚本、部署输出目录和引用该源码的 lint／生成器。
+Project name 是图上的稳定 identity，不因物理目录移动而重命名。若 app 内容进入发布包，staging 源路径使用 `apps/**`，tarball 内公开路径保持 package 契约，不把仓库布局泄漏给消费者。
 
 ## Project 形状
 
@@ -109,8 +129,8 @@ mutation 收据。
 
 ### 明确不拥有产品 E2E 的项目
 
-`site` 和内部 `docs` project 带 `e2e:none` tag。合法空计划只在所有 changed paths 都由这类 project 解释时成立。
-`docs-site` 不带该 tag：中文随包文档和图片进入 candidate，因此它至少影响 Package E2E。
+`apps/site` 和内部 `docs` project 带 `e2e:none` tag。合法空计划只在所有 changed paths 都由这类 project 解释时成立。
+`apps/docs-site` 不带该 tag：中文随包文档和图片进入 candidate，因此它至少影响 Package E2E。
 
 共享输入不建伪产品域。Testkit、根 `e2e/scripts/**`、package root / runtime builder、lockfile、workspace / Nx 配置以及
 E2E workflow 的变化属于所有 `e2e` target 的 workspace inputs，必须产生当前 lane 全量。
@@ -184,8 +204,8 @@ base/head 和 Nx graph JSON：
 
 | 变更样本 | 预期 |
 |---|---|
-| `site/**`、`docs/**` | `affected`，零产品 E2E |
-| `docs-site/zh/**` | 只选 Package owner |
+| `apps/site/**`、`docs/**` | `affected`，零产品 E2E |
+| `apps/docs-site/zh/**` | 只选 Package owner |
 | `record/**` | `eval`、`migrate`、`report`、`runner` |
 | 单个 `e2e/<id>/**` | 只选该 Repo |
 | Testkit、package root、E2E scripts / workflow | 当前 lane 全量 |

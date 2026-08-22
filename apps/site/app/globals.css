@@ -1,6 +1,6 @@
 /* Tailwind 只提供 utility(给 shadcn 那类复制粘贴组件用),不引 preflight:
    站点版式写在本文件,preflight 会把博客正文的列表符号、标题字重一并重置掉。
-   源码扫描范围钉在 site/,不让它顺着仓库根往外爬。 */
+   源码扫描范围钉在 apps/site/,不让它顺着仓库根往外爬。 */
 @layer theme, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source("../");

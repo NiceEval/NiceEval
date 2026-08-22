@@ -1,7 +1,7 @@
 /*
  * 图：OTel span 怎么被收上来、怎么归一，以及它和断言那条路的关系。
  * 两条轨各走各的：上面一条决定判定，下面一条只决定瀑布图。
- * 一图一个组件，内容写死在组件里。共用样式在 docs-site/diagrams.css，
+ * 一图一个组件，内容写死在组件里。样式在 styles/diagram-otel-collect.css，
  * 写法约束见 snippets/diagram-sandbox-mode.jsx 开头。
  */
 export const OtelCollect = () => (

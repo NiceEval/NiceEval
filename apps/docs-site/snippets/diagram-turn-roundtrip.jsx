@@ -1,6 +1,6 @@
 /*
  * 图：一次 t.send 的完整往返。去程三段依次点亮，再回程三段依次点亮。
- * 一图一个组件，内容写死在组件里。共用样式在 docs-site/diagrams.css，
+ * 一图一个组件，内容写死在组件里。样式在 styles/diagram-turn-roundtrip.css，
  * 写法约束见 snippets/diagram-sandbox-mode.jsx 开头。
  */
 export const TurnRoundtrip = () => (

@@ -42,4 +42,4 @@ Technical Reference 不等于整页都由生成器拼出来。页面仍可手写
 - `troubleshooting/debugging.mdx` 与 `troubleshooting/debug-sandbox.mdx` 从失败症状出发，目录独立，在导航中归入 `Tutorials` 标签下的“问题排查”。
 - `tutorials/sandbox-providers.mdx` 按 How-to 写，因为主任务是选择并配置 Provider。若以后字段表继续增长，再拆出独立 Provider Reference。
 
-新增或移动页面时，同时更新 `docs-site/docs.json` 和旧路径 redirect。校验命令以 [`../AGENTS.md`](../AGENTS.md) 为准。
+新增或移动页面时，同时更新 `apps/docs-site/docs.json` 和旧路径 redirect。校验命令以 [`../AGENTS.md`](../AGENTS.md) 为准。

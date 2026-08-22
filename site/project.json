@@ -1,6 +1,0 @@
-{
-  "$schema": "../node_modules/nx/schemas/project-schema.json",
-  "name": "niceeval-site",
-  "root": "site",
-  "tags": ["e2e:none"]
-}

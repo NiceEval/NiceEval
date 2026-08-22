@@ -1,5 +1,5 @@
 // 参考文档生成器:从源码(TypeScript compiler API 静态分析)提取接口成员 / 导出函数 /
-// 联合类型变体 / CLI flag 表,渲染成 Markdown,写回 docs-site/zh/reference/*.mdx 的
+// 联合类型变体 / CLI flag 表,渲染成 Markdown,写回 apps/docs-site/zh/reference/*.mdx 的
 // `{/* GENERATED:BEGIN <region-id> */}...{/* GENERATED:END <region-id> */}` 标记区块。
 //
 // 设计:提取 + 渲染 + 区块替换是纯函数(输入文件内容字符串,输出新内容字符串),
@@ -1151,13 +1151,16 @@ export function regenerateReferenceDoc(file: string, mdxContent: string, sources
 // 包根 INDEX.md 是 coding agent 读随包文档的单点入口(机制见 docs/engineering/agent-docs/)。
 // 它不签入 git:`prepare`(pnpm run build:index)在安装 / 发版打包前,读签入的
 // INDEX.template.md(手写导语 + 空区块),把文档树填进区块后写出 INDEX.md——与 dist/report
-// 同一个构建产物模型。树的文案从 docs-site/zh 各页 frontmatter title/description 来,
+// 同一个构建产物模型。树的文案从 apps/docs-site/zh 各页 frontmatter title/description 来,
 // 文案单源在页面自己身上,与参考页区块同一个模式。
+
+const DOCS_APP_ROOT = "apps/docs-site";
+const BUNDLED_DOCS_ROOT = "docs-site";
 
 /** 包根 INDEX.md 里生成树的 region id;Markdown 文件用 HTML 注释标记(见 replaceMdRegion)。 */
 export const BUNDLED_INDEX_REGION = "bundled-docs-tree";
 
-/** 一个随包正文页:路径相对仓库根(如 `docs-site/zh/tutorials/fixtures.mdx`)+ 文件内容。 */
+/** 一个随包正文页:路径相对 package 根(如 `docs-site/zh/tutorials/fixtures.mdx`)+ 文件内容。 */
 export interface ZhPage {
   path: string;
   content: string;
@@ -1188,7 +1191,7 @@ export function renderBundledIndexTree(pages: ZhPage[]): string {
   const groups = new Map<string, ZhPage[]>();
   for (const page of pages) {
     if (isNavEntryPage(page.path)) continue;
-    const rel = page.path.replace(/^docs-site\/zh\//, "");
+    const rel = page.path.replace(new RegExp(`^${BUNDLED_DOCS_ROOT}/zh/`), "");
     const dir = rel.includes("/") ? rel.split("/")[0] : ".";
     if (!groups.has(dir)) groups.set(dir, []);
     groups.get(dir)!.push(page);
@@ -1197,7 +1200,7 @@ export function renderBundledIndexTree(pages: ZhPage[]): string {
   const rest = [...groups.keys()].filter((d) => !ZH_DIR_ORDER.includes(d)).sort();
   return [...known, ...rest]
     .map((dir) => {
-      const heading = dir === "." ? "## `docs-site/zh/`" : `## \`docs-site/zh/${dir}/\``;
+      const heading = dir === "." ? `## \`${BUNDLED_DOCS_ROOT}/zh/\`` : `## \`${BUNDLED_DOCS_ROOT}/zh/${dir}/\``;
       const rows = groups
         .get(dir)!
         .sort((a, b) => (a.path < b.path ? -1 : 1))
@@ -1216,15 +1219,15 @@ export function regenerateBundledIndex(templateContent: string, pages: ZhPage[])
   return replaceMdRegion(templateContent, BUNDLED_INDEX_REGION, body);
 }
 
-/** 枚举 docs-site/zh 下全部 .mdx 页面(含导航入口,过滤在渲染层做),CLI 与漂移测试共用。 */
+/** 枚举 apps/docs-site/zh 下全部 .mdx 页面；返回的路径保持为 package 内 docs-site/zh。 */
 export function loadZhPages(root: string): ZhPage[] {
-  const dir = join(root, "docs-site/zh");
+  const dir = join(root, DOCS_APP_ROOT, "zh");
   return (readdirSync(dir, { recursive: true }) as string[])
     .filter((rel) => rel.endsWith(".mdx"))
     .sort()
     .map((rel) => {
-      const path = `docs-site/zh/${rel.split("\\").join("/")}`;
-      return { path, content: readFileSync(join(root, path), "utf8") };
+      const path = `${BUNDLED_DOCS_ROOT}/zh/${rel.split("\\").join("/")}`;
+      return { path, content: readFileSync(join(dir, rel), "utf8") };
     });
 }
 
@@ -1251,7 +1254,7 @@ function main(): void {
   if (!indexOnly) {
     const sources = loadSources(root);
     for (const { file } of REFERENCE_FILES) {
-      const path = join(root, "docs-site/zh/reference", file);
+      const path = join(root, DOCS_APP_ROOT, "zh", "reference", file);
       const original = readFileSync(path, "utf8");
       const updated = regenerateReferenceDoc(file, original, sources);
       if (updated !== original) {

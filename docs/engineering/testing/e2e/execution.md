@@ -245,7 +245,7 @@ Cache key 至少区分 pnpm 版本、OS / 架构和 Docker image digest。包管
 
 GitHub Actions 的 PR prepare job 检出完整历史，验证 base 是实际 checkout HEAD 的 ancestor，再把两者传给 planner。
 Nx project graph 只选择受影响且带 `e2e` target 的 Repo；同仓可信 PR 对选中集合使用 main lane并包含
-`externalNetwork`，Fork / Dependabot 对选中集合使用无密钥 pr lane。site 与内部 docs 变更是可证明的合法空计划。
+`externalNetwork`，Fork / Dependabot 对选中集合使用无密钥 pr lane。`apps/site` 与内部 docs 变更是可证明的合法空计划。
 main push、schedule、release 验收和显式 full dispatch 固定传 `--no-diff`，执行对应 lane 全集。
 
 无法验证 SHA、Nx 失败或 changed path 未得到 project / `e2e:none` / fallback 解释时，plan 进入
@@ -256,7 +256,7 @@ main push、schedule、release 验收和显式 full dispatch 固定传 `--no-dif
 候选包的以下输入变化执行整条 lane：
 
 - `packages/niceeval/bin/**`、`packages/niceeval/scripts/package-runtime/**`、`scripts/generate-reference.ts`、`INDEX.md` 与 `INDEX.template.md`；
-- `docs-site/zh/**`、`docs-site/images/**` 与 `dist/**`；
+- `apps/docs-site/zh/**`、`apps/docs-site/images/**` 与 `dist/**`；
 - root `.npmrc`、`.npmignore`、`.gitignore`、自动纳入文件、pnpm 配置、package metadata 与 root tsconfig。
 
 本地 diff 同时读取 staged、unstaged、tracked 删除和未忽略 untracked 路径；rename 按 delete 与 add 处理。

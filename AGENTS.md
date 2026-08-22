@@ -11,9 +11,9 @@
 - 设计到源码的定位：[`docs/source-map.md`](docs/source-map.md)
 - 修 Bug、写改或评审测试：先读产品 Feature 契约，再读 [`docs/engineering/testing/README.md`](docs/engineering/testing/README.md) 的「Bug 修复的 E2E TDD」与「稳定性：变更预算」；随后依次读 [`portfolio.md`](docs/engineering/testing/portfolio.md) 找 owner、[`e2e/README.md`](docs/engineering/testing/e2e/README.md) 选体裁、[`scenario-repos.md`](docs/engineering/testing/e2e/scenario-repos.md) 确认布局及对应领域页，真正写和运行时再读 [`authoring.md`](docs/engineering/testing/e2e/authoring.md) 与 [`execution.md`](docs/engineering/testing/e2e/execution.md)；写 Unit 前再读 [`unit/README.md`](docs/engineering/testing/unit/README.md) 与对应 Feature 例外登记
 - 历史踩坑与设计裁决：[`memory/INDEX.md`](memory/INDEX.md)，命中索引项后才读正文
-- 公开文档站：[`docs-site/AGENTS.md`](docs-site/AGENTS.md)
+- 公开文档站：[`apps/docs-site/AGENTS.md`](apps/docs-site/AGENTS.md)
 - 可运行示例：[`examples/README.md`](examples/README.md)
-- 产品站：[`site/README.md`](site/README.md)
+- 产品站：[`apps/site/README.md`](apps/site/README.md)
 - 具体功能：从 `docs/README.md` 进入对应 `docs/feature/<name>/README.md`
 
 目录入口负责说明本作用域的目标、组织方式、写作规则和验证命令。信息已有唯一入口时，不在本文件复制；目录结构变化时更新入口索引，让后续工作按路径动态发现。

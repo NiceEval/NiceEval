@@ -1,6 +1,6 @@
 # Mintlify 文档站指南
 
-`docs-site/` 是 NiceEval 的公开 Mintlify 文档站，面向正在学习和使用 NiceEval 的用户。这里的文档要回答“用户怎么完成任务”，不是记录内部设计讨论；内部设计、取舍和源码地图放在仓库根目录的 `docs/`。
+`apps/docs-site/` 是 NiceEval 的公开 Mintlify 文档站，面向正在学习和使用 NiceEval 的用户。这里的文档要回答“用户怎么完成任务”，不是记录内部设计讨论；内部设计、取舍和源码地图放在仓库根目录的 `docs/`。
 
 ## 目录结构
 
@@ -56,7 +56,7 @@
 - **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「报告槽」「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「不传 `--report` 时首页是默认报告」，不写「报告槽默认装官方榜单」。
 - **不写内部演进**：读者不知道旧设计，也不需要知道。「不再」「改成」「新版」这类相对旧稿的叙述不出现；设计迭代的来龙去脉住在仓库根 `docs/` 与 `memory/`。
 - 英语单词应该以大写开头
-- 只在 @docs-site/zh 下面更新中文版本，英语版本由其它 AI 翻译
+- 只在 @apps/docs-site/zh 下面更新中文版本，英语版本由其它 AI 翻译
 - 新增或重命名页面时同时更新 `docs.json`，必要时加 redirect，避免旧链接断掉。
 - 链接示例必须指向真实存在的 `examples/` 目录；当前完整示例主要在 `examples/zh/`。
 - 第一次成功路径和现实任务都写进 `zh/tutorials/`；前者按 Tutorial 写，后者按 How-to 写。概念边界写进 `zh/explanation/`，字段全集写进 `zh/reference/`，按症状修复写进 `zh/troubleshooting/`。不要把一个页面同时写成教程、设计文档和 API 字典。
@@ -64,14 +64,14 @@
 - `zh/reference/` 页里 `{/* GENERATED:BEGIN … */}` 到 `{/* GENERATED:END … */}` 之间的内容不要手改：它由 `pnpm docs:reference` 从源码紧邻注释生成（接口/函数取 TSDoc，CLI flag 取各 Feature/Host contribution 自有 option schema 的 help metadata；region 与源码的映射见 `scripts/generate-reference.ts`）。要改这些文案，改 owner 源码后从仓库根跑 `pnpm docs:reference`；手改会被 `pnpm lint` 的漂移 lint 拦下。
 - 文案使用主动语态和短句。错误信息、限制和前置条件要直接说清楚下一步。
 - 机器规则只是最低门槛，通过 lint 不等于文案已经好读。提交前逐段朗读；遇到「传输粘合」「停轮判定」这类内部名词串，改写成明确的主语、动作和结果，例如「Adapter 请求应用接口」「当前 Turn 等待用户选择」。
-- `docs-site/zh/` 与 `docs/` 共用 `docs/writing-rules.json` 的可读性上限：单句最多 140 字，一段最多 320 字。超长句拆成两句或列表，长段落按想法拆开。
+- `apps/docs-site/zh/` 与 `docs/` 共用 `docs/writing-rules.json` 的可读性上限：单句最多 140 字，一段最多 320 字。超长句拆成两句或列表，长段落按想法拆开。
 - 公开站禁词也从同一份 JSON 的 `siteBannedTerms` 与 `siteOnlyBannedTerms` 取值，不在这里另护一份清单。frontmatter 元数据、代码、JSX 实现与明确的生成区块不按正文计数。
 - 教程正文和标题使用陈述句或祈使句，不用设问带出内容。Eval 输入、Judge 标准、终端输出等需要展示真实问句的示例不受此限制。
-- 写作指南: docs-site/docs-ref/00-index.md
+- 写作指南: apps/docs-site/docs-ref/00-index.md
 
 ## 校验
 
-改 `docs-site/` 后，从仓库根目录运行：
+改 `apps/docs-site/` 后，从仓库根目录运行：
 
 ```sh
 PATH=/opt/homebrew/opt/node@24/bin:$PATH pnpm lint

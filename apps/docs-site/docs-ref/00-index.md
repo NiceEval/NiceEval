@@ -2,11 +2,11 @@
 
 整理日期:2026-07-04。蒸馏自 [`../dev-docs-dx-sources/`](../dev-docs-dx-sources/00-index.md) 的来源级提取(Diátaxis、Divio、Google / Microsoft / GitHub 风格指南、Write the Docs、The Good Docs Project、MDN、I'd Rather Be Writing、GetDX / Twilio / Phodal 的 DX 资料)。
 
-这套指南回答"怎么写好一页用户文档",按写作流程组织。仓库特定的术语表、目录职责和校验命令以 [`docs-site/AGENTS.md`](../../AGENTS.md) 为准,本指南不重复维护;两者冲突时以 AGENTS.md 为准。
+这套指南回答"怎么写好一页用户文档",按写作流程组织。仓库特定的术语表、目录职责和校验命令以 [`apps/docs-site/AGENTS.md`](../AGENTS.md) 为准,本指南不重复维护;两者冲突时以 AGENTS.md 为准。
 
 ## 使用顺序
 
-写任何 `docs-site/` 页面前,按顺序过一遍:
+写任何 `apps/docs-site/` 页面前,按顺序过一遍:
 
 1. [01-page-types.md](./01-page-types.md):先判定这页是 Tutorial、How-to、Reference、Explanation 还是 Troubleshooting。这是最重要的一步,页面类型错了后面全错。
 3. [03-style-rules.md](./03-style-rules.md):行文、步骤、可扫描性、标题与搜索意图。

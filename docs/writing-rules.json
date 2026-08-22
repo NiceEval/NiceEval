@@ -1,8 +1,8 @@
 {
-  "$doc": "docs/ 与 docs-site/zh/ 正文共用的可读性规则。句长与段长作用于两处;禁词默认只作用于 docs/,同时出现在 siteBannedTerms 的通用禁词才作用于公开中文站,siteOnlyBannedTerms 则只拦公开站的内部口吻。脚本只检查读者实际阅读的正文,frontmatter 元数据、代码、JSX 实现与明确的生成区块不算正文。用 pnpm lint 检查,每一处命中都必须改掉。",
+  "$doc": "docs/ 与 apps/docs-site/zh/ 正文共用的可读性规则。句长与段长作用于两处;禁词默认只作用于 docs/,同时出现在 siteBannedTerms 的通用禁词才作用于公开中文站,siteOnlyBannedTerms 则只拦公开站的内部口吻。脚本只检查读者实际阅读的正文,frontmatter 元数据、代码、JSX 实现与明确的生成区块不算正文。用 pnpm lint 检查,每一处命中都必须改掉。",
   "proseRoots": [
     "docs",
-    "docs-site/zh"
+    "apps/docs-site/zh"
   ],
   "siteClarityDecisions": {
     "$why": "公开教程必须让读者知道成功路径的前置条件、下一步和适用边界；把这些裁决放在与禁词同一个规则文件，避免后来为了缩短页面又删回去。",
@@ -80,7 +80,7 @@
         "docs/feature/assertions",
         "docs/feature/eval/use-case/calledtool.md",
         "docs/feature/adapters/architecture/events.md",
-        "docs-site/zh/reference"
+        "apps/docs-site/zh/reference"
       ],
       "methods": {
         "positive": "calledTool",
@@ -116,7 +116,7 @@
         "flag": "--group",
         "roots": [
           "docs/feature/reports",
-          "docs-site/zh/reference"
+          "apps/docs-site/zh/reference"
         ],
         "use": "使用与 niceeval exp 相同的 --experiment <selector>；浏览器 Header 沿已关闭的实验 Page 链接切换",
         "why": "实验 selector 已代表用户可运行和可查看的实验范围，另加 group 参数会暴露内部比较 identity，并形成第二套选择语法"
@@ -124,7 +124,7 @@
       {
         "flag": "--latest",
         "roots": [
-          "docs-site/zh"
+          "apps/docs-site/zh"
         ],
         "use": "不带 locator 或 --run 的 niceeval show / view 读取当前项目结果；历史审计使用 --run <run-id>",
         "why": "show / view 已移除时间排序选择，公开站继续展示会让用户复制出未知选项"
@@ -132,7 +132,7 @@
       {
         "flag": "--strict",
         "roots": [
-          "docs-site/zh"
+          "apps/docs-site/zh"
         ],
         "use": "在 Pass Eval 中写 Boolean Assertion，或为 measurement 配置 atLeast(n)",
         "why": "CLI 已把 --strict 当未知选项拒绝，公开站继续展示会让用户复制出启动前即失败的命令"
@@ -142,8 +142,8 @@
       {
         "name": "makeAssertion",
         "roots": [
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials",
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials",
           "docs/feature/eval/README.md"
         ],
         "use": "值比较用 Match；Judge recipe 或连续 evaluator 直接登记 measurement Assertion",
@@ -159,8 +159,8 @@
           "docs/feature/judge",
           "docs/feature/verdict",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "写 t.check(value, match)，或直接调用 scoped Boolean Assertion 方法",
         "why": "t.assert 不属于作者面；每个入口在调用时直接登记 Assertion"
@@ -173,8 +173,8 @@
           "docs/feature/judge",
           "docs/feature/verdict",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "只对 Usage Assertion handle 调用 .ifCovered()",
         "why": "coverage 例外仍只属于 usage；调用时已经登记 Assertion"
@@ -187,8 +187,8 @@
           "docs/feature/judge",
           "docs/feature/verdict",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "值比较写 t.check(value, match)，scope 与 Judge 使用各自的 Assertion 入口",
         "why": "t.fact 不属于作者面；调用入口会直接登记 Assertion"
@@ -200,8 +200,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "在同一 handle 上 await .orStop()",
         "why": "t.require 不属于作者面；orStop 是同一 Assertion 的 async barrier"
@@ -214,8 +214,8 @@
           "docs/feature/judge",
           "docs/feature/verdict",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "调用 scoped calledTool(...).orStop()，并 await 它",
         "why": "requireToolCall 不属于作者面；控制仍属于同一 Assertion handle"
@@ -227,8 +227,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "await handle.orStop()",
         "why": "控制 API 的名字固定为 orStop；它是同一 Assertion 的 async barrier"
@@ -240,8 +240,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "await handle.orStop()",
         "why": "控制 API 的名字固定为 orStop；它是同一 Assertion 的 async barrier"
@@ -253,8 +253,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "在 Score Eval 中写 handle.score(n)，或直接写 t.score(n)",
         "why": "score 是唯一的数值单位；不存在 points policy"
@@ -266,8 +266,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "只登记 Assertion，或在 Score Eval 中写 handle.score(n)",
         "why": "每条 Assertion 默认只记录 evaluation；没有隐式数值贡献"
@@ -279,8 +279,8 @@
           "docs/feature/eval",
           "docs/feature/judge",
           "docs/feature/assertions",
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials"
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials"
         ],
         "use": "在 Score Eval 中写 handle.score(n)",
         "why": "score 是唯一的数值单位；不存在 weight"
@@ -290,8 +290,8 @@
       {
         "callee": "t.score",
         "roots": [
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials",
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials",
           "docs/feature/eval/README.md",
           "docs/feature/assertions",
           "docs/feature/assertions"
@@ -304,8 +304,8 @@
       {
         "value": "points",
         "roots": [
-          "docs-site/zh/explanation",
-          "docs-site/zh/tutorials",
+          "apps/docs-site/zh/explanation",
+          "apps/docs-site/zh/tutorials",
           "docs/feature/eval/README.md"
         ],
         "use": "evaluationKind: \"score\"",
@@ -315,7 +315,7 @@
   },
   "sentenceLength": {
     "max": 140,
-    "$why": "docs/ 与 docs-site/zh/ 的读者都需要一遍读懂条件和下一步,长难句会让关键信息藏在并列分句里。量在段落拼接之后,并且只有句末标点算断句:分号和破折号串起来的分句仍算同一句——长难句正是这么长起来的。超了就拆成两句,或把并列内容改写成列表 / 表格。"
+    "$why": "docs/ 与 apps/docs-site/zh/ 的读者都需要一遍读懂条件和下一步,长难句会让关键信息藏在并列分句里。量在段落拼接之后,并且只有句末标点算断句:分号和破折号串起来的分句仍算同一句——长难句正是这么长起来的。超了就拆成两句,或把并列内容改写成列表 / 表格。"
   },
   "paragraphLength": {
     "max": 320,

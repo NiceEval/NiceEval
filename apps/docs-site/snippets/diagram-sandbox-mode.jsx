@@ -1,6 +1,6 @@
 /*
  * 图：Sandbox 模式的接入形状。一图一个组件，内容写死在组件里——图讲的是哪件事是
- * 组件的一部分，页面不用传一份数据把画面拼出来。共用样式在 docs-site/diagrams.css。
+ * 组件的一部分，页面不用传一份数据把画面拼出来。共用样式在 styles/diagram-access-modes.css。
  *
  * 写法约束同 snippets/widgets.jsx：只写箭头函数、不写 import（Mintlify 不允许
  * snippet 之间互相 import）、模块作用域里不放未导出的变量。动画走 CSS，关掉

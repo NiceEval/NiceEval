@@ -1,6 +1,6 @@
 /*
  * 图：接入等级三档，每档写清投入与买到。三档依次点亮，表达递进不互斥。
- * 一图一个组件，内容写死在组件里。共用样式在 docs-site/diagrams.css，
+ * 一图一个组件，内容写死在组件里。样式在 styles/diagram-tier-ladder.css，
  * 写法约束见 snippets/diagram-sandbox-mode.jsx 开头。
  */
 export const TierLadder = () => (
