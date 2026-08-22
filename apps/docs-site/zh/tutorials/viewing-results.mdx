@@ -71,6 +71,8 @@ Problems
 
 `Result` 显示 `passed`、`failed`、`errored`、`not started` 或 `using result @<locator>`；`Details` 的 locator 可继续下钻。Attempt 创建前失败时，页面另外显示 `Run errors` 和该错误真正影响的未启动 Attempt 数。Human 页不显示 Slot 等内部字段；机器 `--json` 仍保留稳定 membership keys。
 
+Attempt 的 `failed` 只说明影响 Verdict 的断言未满足，不会自动把原因归给被测对象。按[排查手册](/zh/troubleshooting/debugging#attempt-判定为-failed)分别比较任务、实际产物与断言，再决定修哪一层。
+
 `show --json` 仍是同一个单目标操作。内建 Report 返回 Host 拥有的具名领域 JSON；自定义 Report 返回该 Page 的 route、标题、固定英语 80-column rendered text、下载摘要和问题表。
 两种 v1 JSON 都在顶层带有同一形状的 `projections` 对象，只包含目标 Page 捕获的闭合投影。
 

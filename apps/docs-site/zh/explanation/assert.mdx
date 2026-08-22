@@ -30,6 +30,10 @@ t.check(turn.data, matches(OrderSchema));
 t.check(turn.message.length, satisfies("回复不是空文本", (length) => length > 0));
 ```
 
+`matched` 和 `mismatched` 只说明候选值是否满足当前 Match。它们不能单独证明这条规则刚好覆盖任务允许的全部正确结果。
+
+`equals(expected)` 比较值的深相等；候选值是字符串时，它要求完全相同的字符串。如果任务接受多种等价表示，先把产物解析或归一化为任务关心的值，再选择能覆盖这些结果的 Match。只有字面表示本身属于任务要求时，才用精确字符串比较。
+
 ## 作用域 Assertion
 
 作用域方法在调用时直接登记 Boolean Assertion。接收者决定证据范围：`turn.*` 只看该不可变 Turn，`session.*` 看该 Session 调用点之前的前缀，根 `t.*` 看调用点时所有已启动 Session 的 vector cut。
