@@ -13,7 +13,7 @@ total 402.6 GB · provider reclaimable estimate 221.6 GB
 NiceEval ownership unknown · not eligible for NiceEval GC
 ```
 
-这组数字不进入 Materialization Domain inventory，不取得 domain id，也不出现在 entry、evictable 或 GcPlan 中。
+这组数字不进入 Cache Domain inventory，不取得 domain id，也不出现在 entry、evictable 或 GcPlan 中。
 `reclaimable` 是 Provider 估算，不是 NiceEval 的 exact marginal reclaim。
 
 ## 用户自行回收

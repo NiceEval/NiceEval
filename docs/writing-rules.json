@@ -461,6 +461,11 @@
   ],
   "bannedTerms": [
     {
+      "term": "materialization",
+      "use": "按实际阶段写创建 Sandbox、构建 Provider 输出、恢复缓存、读取 payload 或生成资源",
+      "why": "同一个抽象词混指资源创建、缓存生成和延迟读取，读者无法判断发生了哪个动作"
+    },
+    {
       "term": "<code>",
       "use": "Markdown 行内代码使用反引号；路径中的尖括号直接写在反引号内",
       "why": "HTML code tag 让简单标识多一层转义，并与仓库已经采用的 Markdown 行内代码写法混用"

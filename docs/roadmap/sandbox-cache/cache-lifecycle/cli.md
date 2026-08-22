@@ -119,7 +119,7 @@ Setup prefix 摘要按 `(domainId, SetupPrefixKey)` 去重。逐 key 状态为 `
 
 等待 setup prefix single-flight 或 Provider reservation 的 Attempt 保持 `queued`，并显示 `setup-prefix` 或 `provider-capacity` reason。只有 reservation granted 后才显示 `creating sandbox`；等待者不占普通 sandbox semaphore。
 
-Setup prefix promotion 使用 Provider materialization queue。`changeFrequency` 只提供有界公平的排序、promotion 与 retention 提示；不新增作者侧 no-cache，也不改变 key。
+Setup prefix promotion 使用 Provider cache queue。`changeFrequency` 只提供有界公平的排序、promotion 与 retention 提示；不新增作者侧 no-cache，也不改变 key。
 
 ## Domain 库存
 

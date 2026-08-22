@@ -104,7 +104,7 @@ Case 就绪后,Runner 在分类账上建立 **复用 Sandbox 的题间重置点*
 
 1. `git reset --hard` 回到题间重置点；
 2. 按分类账排除清单执行 `git clean`；
-3. 按 owner 顺序重新执行两层作者 layer 的 `prepare()` 命令；
+3. 按 occurrence schedule 满足本次 Attempt 的 before action；
 4. 重新执行 agent.ensure 循环与 Agent runtime,再建立本 Attempt 的归因区间;`test(t)` 重新准备本 Attempt 的 Fixture。
 
 题间 reset 不是整台 Sandbox 归零。

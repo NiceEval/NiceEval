@@ -89,7 +89,7 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 ## 相关阅读
 
 - [Sandbox Layer](layers.md) —— Eval / Experiment 的 `sandbox` 声明:template 配对、准备命令与顺序。
-- [三方准备时序](lifecycle.md) —— link 规划、owner 顺序、fresh / reuse 次数与错误归属。
+- [三方准备时序](lifecycle.md) —— link 规划、action schedule、fresh / reuse 次数与错误归属。
 - [内置 prepare 命令](prepare-commands.md) —— `checkout()` / `installTool()` 官方写法与 `niceeval debug` 可证明边界。
 - [Library](library.md) —— 路径与 workdir、执行身份、Provider 选择、准备命令、自定义 provider。
 - [Case](case.md) —— 一份 Sandbox 声明的完整运行单位:五类 case、BuildKey / CaseKey、构建协调、Compose、能力矩阵。

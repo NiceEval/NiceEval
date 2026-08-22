@@ -11,7 +11,7 @@ provider acquire
        -> reset
        -> Group resource prepare
        -> current Eval resource prepare
-       -> Experiment / Group / Eval / Agent attempt before
+       -> occurrence DAG schedules attempt before
        -> agent ensure / setup / test / teardown
        -> attempt after in reverse registration order
   -> resource release in reverse order

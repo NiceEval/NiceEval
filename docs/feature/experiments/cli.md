@@ -73,11 +73,11 @@ Human 的 lane 顺序固定为 Group before-slots → physical enter → slots �
 
 可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。每个 action 使用独立圆角框，显示 owner、phase、occurrenceKind 与推导依据。
 
-同一框同时显示 `declarationOrder: { owner, ordinal }` 与 `executionOrder: { path, guarantee }`。path 是链接拓扑位置，不是运行时总序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
+同一框显示 `declarationOrder: { owner, ordinal }`、`dependencies` 与 `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }`。ordinal 只属于当前 occurrence，不是运行时全局序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
 
-before action 还显示作者原始 `changeFrequency` 数值、安全 prefix digest、eligibility、Provider cache capability 和 `cacheLookup: not-probed`。数值恰为 10、100、1000 时分别附 `rare`、`normal`、`frequent`；未声明显示 `not-configured`，after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
+before 与 around action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。缓存查询固定显示 `not-probed`。数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
 
-每个真实 `sandbox.materialize` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
+每个真实 `sandbox.create` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
 
 内建 locator 字段是闭合集合：`image`、`context`、`file`、`target`、`workspaceService`、`template`、`snapshotId`。远端 URL 的 userinfo、query 与 fragment 会先移除并登记 redaction。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`。URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，原字符串不进入输出。E2B template 与 Vercel snapshot ID 也是 Provider 管理的任意字符串，固定显示 `Opaque`。
 

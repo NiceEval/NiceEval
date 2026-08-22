@@ -7,7 +7,8 @@ pure link
   → evaluate typed action inputs
   → compile occurrence kind from inputs and sharing cohort
   → validate eligibility and capability
-  → link owner wrappers
+  → build dependency DAG per occurrence
+  → schedule ready actions by lowest changeFrequency
   → BuildKey ready
   → satisfy physical-instance before prefixes
   → establish verified reset baseline
@@ -18,13 +19,13 @@ pure link
   → physical after in global reverse order
 ```
 
-`--dry` 完成输入求值、occurrence 编译、eligibility、owner 链接顺序、SetupPrefixKey、CaseKey 与 fingerprint 计算；它不 lookup cache、不取得 lease、不创建 staging 或 Sandbox。普通 callback before 始终真实执行，并截断后续共享捕获 lineage。
+`--dry` 完成输入求值、occurrence 编译、依赖验证、频率排序、SetupPrefixKey、CaseKey 与 fingerprint 计算；它不 lookup cache、不取得 lease、不创建 staging 或 Sandbox。普通 callback before 始终真实执行，并截断后续共享捕获 lineage，但仍保留在 DAG 中。
 
 查询、等待 single-flight 与 lease acquire 不占 Attempt permit。实际 staging、quiesce、promotion、restore 和 clone 使用 Provider 的资源队列；长期操作不持 registry transaction、Domain 全局锁或 Attempt permit。一个前缀不被 promotion 时，最终实例直接重新执行它及后缀，语义不变。
 
 ## After 与收尾
 
-owner occurrence 进入时登记全部 `.after()`；调用 `around.before` 前登记配对 `around.after`。before 部分失败或 cache restore 命中都不撤销已登记项。attempt after 在 Adapter runtime teardown 后运行；physical after 在最后一个 Attempt 后、Provider finalizer 前运行。全部 after 使用独立 cleanup signal，按实际登记栈全局逆序执行，永不缓存或因 prefix hit 跳过。
+occurrence 进入时按稳定 declaration key 登记全部 `.after()`；调用 `around.before` 前登记配对 `around.after`。around 的 before 与 after 都始终真实执行。standalone before 的 cache restore 产生 satisfaction fact并释放依赖节点。attempt after 在 Adapter runtime teardown 后运行；physical after 在最后一个 Attempt 后、Provider finalizer 前运行。全部 after 使用独立 cleanup signal，按实际登记栈全局逆序执行，永不按 changeFrequency 或第二张 DAG 重排。
 
 共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可由最后的高频 before 写入；secret 通过私有 callback 注入并在 after 清除。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
 
@@ -51,4 +52,4 @@ Runner E2E owner 通过安装后的 `niceeval exp` 与可控 profile capacity fi
 
 运行反馈区分 `resolving`、`querying`、`hit`、`replaying`、`unsupported`、`queued`、`quiescing`、`promoting`、`restoring`、`ready` 与 `failed`。
 
-`niceeval debug` 只显示静态 scope、eligibility、prefix identity 与 Provider capability，并固定标记 `cacheLookup: not-probed`。实际 hit、generation 与 restore source 只进入运行反馈和 provenance。
+`niceeval debug` 显示 occurrence、declarationOrder、changeFrequency、dependencies、topological ordinal 与 scheduling reason。它还显示 eligibility、prefix identity 与 Provider capability，并固定标记 `cacheLookup: not-probed`。实际 hit、generation 与 restore provenance 只进入运行反馈。

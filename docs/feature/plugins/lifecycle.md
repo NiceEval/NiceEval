@@ -5,10 +5,10 @@ Experiment author setup
   -> Experiment Plugin setup (forward)
   -> Eval Group Plugin setup (forward)
   -> provider acquire
-  -> physical SandboxLayer before (Experiment -> Group -> Eval -> Agent)
+  -> scheduled physical SandboxLayer before
   -> automatically projected Sandbox Plugin setup (forward)
   -> reset anchor / attempt reset
-  -> attempt SandboxLayer before (Experiment -> Group -> Eval -> Agent)
+  -> scheduled attempt SandboxLayer before
   -> Eval Plugin setup (forward)
   -> agent ensure / setup / test / teardown
   -> Eval Plugin teardown (reverse)

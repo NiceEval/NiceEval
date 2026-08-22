@@ -8,10 +8,10 @@
 
 ```text
  Sandbox Case create / build / start / ready
-  → physical before                           # Experiment → Group → Eval → Agent；可命中并恢复前缀
+  → physical before                           # occurrence DAG 按依赖与 changeFrequency 排队
   → verified reset baseline                   # 包含已满足的 physical prefix
   → reset                                     # 复用时每 Attempt 都执行
-  → attempt before                            # Experiment → Group → Eval → Agent；owner 内按声明顺序
+  → attempt before                            # occurrence DAG 按依赖与 changeFrequency 排队
   → agent.ensure 循环                      # agent.ensure:probe、缺失时配对安装层 install、复检
   → workspace baseline                     # 变更分类账的锚点 commit(runner 私有 git ledger,见下节)
   → Agent runtime setup                    # agent.setup:本 Attempt 的连接与运行配置
@@ -140,7 +140,7 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md)。终端与网页都通过 [Reports](../reports/README.md) 请求由 Analysis `query()` 闭合的 Observability DomainView。
 
-核心固定的是这条调用链本身:Case 就绪后先按 owner 顺序执行两层 prepare 命令与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
+核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
 
 provider 的可写保证不止 `workdir`。
 runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。

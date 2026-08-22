@@ -44,7 +44,7 @@ V1 的 Agent 安装正确性路径固定为宿主内容寻址 artifact cache，�
 task × Agent commit、只读 artifact mount、OCI manifest 重组、共享 payload layer 和专属 BuildKit builder 均不属于 V1。
 共享或默认 BuildKit builder 只报告 `unverified` 容量，不进入 NiceEval GC。
 
-## Materialization Domain
+## Cache Domain
 
 Domain 是一个 cache backend 的独立所有权和回收边界：
 
@@ -60,7 +60,7 @@ interface DomainIdentity {
 host CAS、Docker image store 和 BuildKit 是三个 Domain，不能用 Docker daemon id 代替其它 backend identity。
 `cache status` 可以聚合多个 Domain 的需求，库存明细、GcPlan 和 apply 始终只属于一个 Domain。
 
-共享或默认 BuildKit builder 不满足下表的 BuildKit identity，因此不是 Materialization Domain。
+共享或默认 BuildKit builder 不满足下表的 BuildKit identity，因此不是 Cache Domain。
 它只能产生 provider-level `unverified` capacity observation，不能取得 domain id、entry、lease 或 GcPlan。
 
 `ownerId` 是当前 OS 用户保存在 `~/.local/state/niceeval/` 的随机 UUID。

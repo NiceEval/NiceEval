@@ -63,7 +63,7 @@ Eval before 由 planning 按输入编译为 physical-instance 或 attempt occurr
 命令取得沙箱外临时资源后用 `context.onCleanup()` 就地登记 cleanup(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md))。
 
 收尾按 owner occurrence 的登记栈全局逆序：Agent runtime teardown 之后，Agent、Eval、Group、Experiment 的 after 逆序执行，Provider finalizer 最后回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
-进入顺序固定为 Experiment → Eval Group → Eval → Agent，template owner 不参与排序。物理 before 完成后建立 verified reset baseline；每条 Attempt reset 后再满足 attempt before，随后进入 Agent runtime setup(`agent.setup`)。
+四类 owner 的 action 在各自 occurrence 内按依赖与 changeFrequency 排队，template owner 不参与排序。物理 before 完成后建立 verified reset baseline；每条 Attempt reset 后再满足 attempt before，随后进入 Agent runtime setup(`agent.setup`)。
 
 文件传输不设 EvalInput field。
 第一次 `send` 前需要 Agent 看见的文件直接通过 `t.sandbox.upload*()` 上传；测试文件在对应 `send` 返回后上传，再用普通命令和断言判分。

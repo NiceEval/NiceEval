@@ -277,7 +277,7 @@ DinD 镜像不得用 `DOCKER_HOST` 或 `DOCKER_CONTEXT` 改写默认 endpoint。
 readiness 前先验证默认 Docker context，并确认不带 endpoint 选项的 `docker info` 与显式
 `unix:///var/run/docker.sock` 到达同一个 daemon。
 
-镜像烘焙固定工具、归档和只读项目初始文件。必须等 inner daemon 就绪才能做的确定性准备使用 Sandbox `.before(action)`；固定离线 image 导入等工作可以命中[准备前缀缓存](../../roadmap/sandbox-materialization/setup-prefix/README.md)。恢复 checkpoint、建立租约或依赖本实例的 smoke check 使用 callback before 或 `.around()`。before 失败归入 Sandbox 创建，不会把未准备好的 Sandbox 交给 Agent。
+镜像烘焙固定工具、归档和只读项目初始文件。必须等 inner daemon 就绪才能做的确定性准备使用 Sandbox `.before(action)`；固定离线 image 导入等工作可以命中[准备前缀缓存](../../roadmap/sandbox-cache/setup-prefix/README.md)。恢复 checkpoint、建立租约或依赖本实例的 smoke check 使用 callback before 或 `.around()`。before 失败归入 Sandbox 创建，不会把未准备好的 Sandbox 交给 Agent。
 
 生命周期分工只有一条顺序：镜像提供静态内容，provider 启动并验证 daemon，Sandbox setup 准备本物理实例的动态状态，随后才运行 Agent。镜像 `ENTRYPOINT`、作者 readiness 与 Sandbox setup 不能承担
 同一项初始化职责；保留两套入口会让 build 成功但 Attempt 缺运行时状态。
@@ -440,7 +440,7 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 | 要准备的东西 | 放哪 | 怎么收尾 |
 |---|---|---|
 | 所有 attempt 都相同、无需运行中 daemon 的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用构建结果 | provider 的 image/template/snapshot 生命周期管理 |
-| 必须等 Provider ready 后生成的确定性状态 | [可缓存 before](../../roadmap/sandbox-materialization/setup-prefix/README.md)；typed inputs 与 cohort 决定 occurrence,变化频率只影响缓存策略 | SetupPrefixKey、可选 promotion 与私有 restore |
+| 必须等 Provider ready 后生成的确定性状态 | [可缓存 before](../../roadmap/sandbox-cache/setup-prefix/README.md)；typed inputs 与 cohort 决定 occurrence,变化频率只影响缓存策略 | SetupPrefixKey、可选 promotion 与私有 restore |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
 | **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`before()`](layers.md);每次 occurrence 可以 restore 或 replay | 外部资源改用 `.around()` 成对登记;沙箱内文件随销毁自动没了 |
 | **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`before()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `after()` / `around()` |
@@ -498,7 +498,7 @@ Scope release 统一执行 stop 或已经提交的 keep disposition。
 
 - [README](README.md) ——为什么需要沙箱、provider 统一接口。
 - [Sandbox Layer](layers.md) —— `sandbox` 声明:template 配对、准备命令与顺序。
-- [三方准备时序](lifecycle.md) —— link 规划、owner 顺序与 fresh / reuse 次数。
+- [三方准备时序](lifecycle.md) —— link 规划、action schedule 与 fresh / reuse 次数。
 - [预制实例](library/prebuilt-environments.md) ——各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
 - [CLI](cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 销毁命令。
 - [操作 Sandbox](library/operations.md) —— `t.sandbox` 的文件与命令 API。

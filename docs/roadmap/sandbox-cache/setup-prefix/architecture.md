@@ -9,7 +9,9 @@ SetupPrefixKey[i] = hash(
   domain/trust and base/provider identity,
   SetupPrefixKey[i - 1],
   physical sharing cohort and occurrence kind,
-  owner kind + stable id + linked order,
+  owner kind + stable id + declaration order,
+  linked topological order and changeFrequency,
+  explicit dependency and typed capability edges,
   action id,
   optional cacheVersion,
   canonical recipe digest,
@@ -19,7 +21,11 @@ SetupPrefixKey[i] = hash(
 )
 ```
 
-parent key 使相同 action 不能从不同 verified baseline 错误复用。action 类型、命令或目标、规范化参数和已求值 typed inputs 形成 canonical recipe digest；`cacheVersion` 只为这些输入无法表达的实现世代提供显式失效。physical-instance prefix 以 Provider/base 和 cohort 为根；attempt prefix 以 verified reset baseline 为 parent。`changeFrequency`、promotion、冷热、locator、lease、credential value、Attempt UUID 和调度额度不进入 key。
+parent key 使相同 action 不能从不同 verified baseline 错误复用。action 类型、命令或目标、规范化参数和已求值 typed inputs 形成 canonical recipe digest；`cacheVersion` 只为这些输入无法表达的实现世代提供显式失效。
+
+physical-instance prefix 以 Provider/base 和 cohort 为根；attempt prefix 以 verified reset baseline 为 parent。`changeFrequency` 通过 linked topological order 与祖先链进入身份。promotion、冷热、locator、lease、credential value、Attempt UUID 和调度额度不进入 key。
+
+普通 inputs 不产生 action 间的依赖边。显式 `dependsOn` 与具名 `provides` / `requires` capability 形成 DAG；每个 physical-instance occurrence 和每个 attempt occurrence 分别拓扑排序。ready set 按最小 changeFrequency、再按稳定 declaration key 取节点。跨 occurrence、跨 lane、跨 Attempt 或跨物理实例的边在 planning 阶段失败。
 
 只有 key、manifest 与 Provider artifact 双向验证成功的前缀可以命中。每个 eligible before occurrence 都产生 satisfaction：hit restore verified private state，miss 从最长 verified prefix replay，unsupported 真实执行。每个逻辑前缀都有 key 和缓存资格，但 Provider 不必为每一步立刻写出物理 artifact。promotion policy 可以根据频率、成本和复用证据选择前缀，并使用有界公平排队，不能让高频工作永久饥饿。
 
@@ -35,4 +41,4 @@ Docker DinD 的一个前缀必须原子包含 outer writable rootfs、私有 `/v
 
 每个消费者取得私有 writable clone。只 `docker commit` outer container 会漏掉 inner data-root；复制运行中的 `/var/lib/docker` 会产生不一致状态；共享 writable upperdir 会破坏 Attempt 隔离。这些都不是合法前缀。Provider 无法完整、原子捕获时必须报告 Unsupported。
 
-普通 callback before 截断整条共享捕获 lineage；后续 action 标记 `ineligible: opaque-ancestor`。每个物理 Sandbox 可以另有私有 reset baseline，但 opaque state 不能登记为共享 prefix。sandbox reuse 下，secret overlay 必须由 Provider 声明为 snapshot-excluded 且能被 after 清除；无法证明时该组合在 planning 失败。
+普通 callback before 截断整条共享捕获 lineage；后续 action 标记 `ineligible: opaque-ancestor`。callback、secret 与 external-I/O action 仍参与 DAG 调度。每个物理 Sandbox 可以另有私有 reset baseline，但 opaque state 不能登记为共享 prefix。sandbox reuse 下，secret overlay 通过始终真实执行的 around 注入与移除；无法证明隔离时该组合在 planning 失败。

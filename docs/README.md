@@ -84,10 +84,10 @@ docs/
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── report-chart-kernel/              中立图表的三面同事实语义内核
-│   ├── record-blob-materialization/       Record Host 透明分段、保存与读取逻辑 blob
+│   ├── record-blob-storage/       Record Host 透明分段、保存与读取逻辑 blob
 │   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
-│   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期
+│   ├── sandbox-cache/         Docker Image 与 Provider Cache 生命周期
 │   ├── sandbox-prepare/                 checkout、Fixture 内容与官方命令瞬时重试
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
 │   ├── sandbox-reuse-feedback/          Sandbox 物理复用的运行级摘要

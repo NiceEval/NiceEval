@@ -10,7 +10,7 @@ Runner 在每条 Attempt 的 `agent.ensure` 相位执行 **ensure 循环**:探�
 ```text
 sandbox case 构建所需产物并启动实例 → 主 Sandbox
  → physical before → verified reset baseline
- → 每条 Attempt:reset → Experiment → Group → Eval → Agent attempt before
+ → 每条 Attempt:reset → occurrence DAG 调度全部 attempt before
  → agent.ensure:逐条 ensure 声明执行循环
     ├─ probe 命中   → 记录命中的安装事实
     └─ probe 未命中 → 按 identity 配对安装层 → install → 复检 probe

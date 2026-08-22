@@ -7,13 +7,13 @@
 │ Guaranteed order is per lane.                                        │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.materialize ─────────────────────────────────────── OPAQUE ─╮
+╭─ sandbox.create ──────────────────────────────────────────── OPAQUE ─╮
 │ position: lane eval-group:group · physical lifecycle template enter  │
 │ owner: provider:docker                                               │
 │ template: docker:image                                               │
 │ template owner: experiment:suite/one                                 │
 │ configured locator: exact · image="node@sha256:cd849..."             │
-│ reason: provider materialization is a runtime operation              │
+│ reason: provider create is a runtime operation                       │
 ╰──────────────────────────────────────────────────────────────────────╯
 
 ╭─ sandbox.before ───────────────────────────────────────────── EXACT ─╮
@@ -21,9 +21,11 @@
 │ phase: before                                                        │
 │ occurrence: physical-instance · immutable inputs + stable cohort     │
 │ declaration order: experiment:suite/one · 1                          │
-│ execution order: physical.before[experiment:1]                       │
+│ dependencies: []                                                     │
+│ execution order: physical-instance · topological 1                   │
 │ guarantee: ordered-within-occurrence                                 │
-│ change frequency: 10 · rare                                          │
+│ change frequency: 10 · rare · explicit                               │
+│ scheduling reason: ready-lowest-change-frequency                     │
 │ prefix: sha256:50d2...                                               │
 │ cache capability: persistent                                        │
 │ cache lookup: not-probed                                             │
@@ -36,9 +38,11 @@
 │ phase: before                                                        │
 │ occurrence: attempt · required by fixture input                      │
 │ declaration order: eval:group/first · 1                              │
-│ execution order: slot[group/first,attempt:0].before[eval:1]          │
+│ dependencies: []                                                     │
+│ execution order: slot[group/first,attempt:0] · topological 1         │
 │ guarantee: unordered-across-lanes                                   │
-│ change frequency: 40                                                 │
+│ change frequency: 40 · explicit                                      │
+│ scheduling reason: ready-lowest-change-frequency                     │
 │ prefix: sha256:aa41...                                               │
 │ cache capability: persistent                                        │
 │ cache lookup: not-probed                                             │
@@ -51,9 +55,11 @@
 │ phase: around.before                                                 │
 │ occurrence: attempt · Agent default                                  │
 │ declaration order: adapter:codex · 2                                 │
-│ execution order: slot[group/first,attempt:0].before[agent:2]         │
+│ dependencies: eval:group/first#fixture · explicit                    │
+│ execution order: slot[group/first,attempt:0] · topological 2         │
 │ guarantee: ordered-within-occurrence                                 │
-│ change frequency: not-configured                                    │
+│ change frequency: 1000 · frequent · explicit                        │
+│ scheduling reason: dependency-released-then-lowest-frequency        │
 │ reason: callback body cannot be inspected or captured                │
 │ capture lineage: closed · opaque-ancestor                            │
 │ paired after: slot[group/first,attempt:0].after[agent:2]             │
@@ -63,11 +69,15 @@
 
 Human 框与 JSON `commandPlan` 投影同一棵结构化树和同一组字段；框中的标签只是 JSON 字段的人读投影：
 
+同一 attempt occurrence 可以同时包含 Experiment、Group 与 Agent action。例如三者的数值分别为 100、20 与 1000，且都已 ready，框依次显示 Group fixture、Experiment candidate 与 Agent `.env`。owner 不形成排序墙。
+
 | Human | JSON | 含义 |
 |---|---|---|
 | `declaration order` | `declarationOrder: { owner, ordinal }` | 用户在该 owner 中写下 action 的顺序 |
-| `execution order` | `executionOrder: { path, guarantee }` | link 后的拓扑位置及跨 lane 顺序保证，不伪造全局序号 |
-| `change frequency` | `changeFrequency: { value, label? }` | 用户填写的原始数值；只有精确命中常量值才附标签 |
+| `dependencies` | `dependencies: [{ action, source }]` | 显式 action 或 typed capability 形成的入边 |
+| `execution order` | `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }` | occurrence 内的拓扑位置，不伪造全局序号 |
+| `change frequency` | `changeFrequency: { value, source, label? }` | 求值后的数值与 explicit/defaulted 声明状态；只有精确命中常量值才附标签 |
+| `scheduling reason` | `schedulingReason` | 节点为何从 ready set 中被选中 |
 
 同一个 `fixture` 节点的 JSON 不是拼好的文本行，而是可查询的对象：
 
@@ -83,11 +93,14 @@ Human 框与 JSON `commandPlan` 投影同一棵结构化树和同一组字段；
     "owner": { "kind": "eval", "id": "group/first" },
     "ordinal": 1
   },
+  "dependencies": [],
   "executionOrder": {
-    "path": ["lane:eval-group:group", "slot:group/first:attempt:0", "before:eval:1"],
+    "occurrencePath": ["lane:eval-group:group", "slot:group/first:attempt:0"],
+    "topologicalOrdinal": 1,
     "guarantee": "unordered-across-lanes"
   },
-  "changeFrequency": { "value": 40 },
+  "changeFrequency": { "value": 40, "source": "explicit" },
+  "schedulingReason": "ready-lowest-change-frequency",
   "cache": {
     "prefix": "sha256:aa41...",
     "capability": "persistent",
