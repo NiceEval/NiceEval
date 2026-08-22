@@ -1,6 +1,7 @@
 import { mkdir, open as openFile, stat, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { dirname, relative, resolve, sep } from "node:path";
-import { Context, Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import type * as Scope from "effect/Scope";
 import {
   openReportViewSession,
@@ -15,12 +16,24 @@ import type {
   ReportFileSystemService,
   ReportExportTargetExists,
 } from "./static.ts";
+import { ReportFileSystem } from "./static.ts";
 import {
   openViewServer,
   type NodeViewServerError,
   type ReportViewServer,
   type ViewOptions,
 } from "../../view/server.ts";
+import {
+  ReportBrowser,
+  ReportModulePlatform,
+  ReportPlatformError,
+} from "./operations.ts";
+import {
+  loadTrustedReportConfig,
+  loadTrustedReportModule,
+  loadTrustedThemeModule,
+  resolveTrustedModulePath,
+} from "./node/loader.ts";
 
 export {
   basalt,
@@ -85,10 +98,15 @@ export class NodeReportViewHost extends Context.Tag("@niceeval/report/NodeReport
   NodeReportViewHostService
 >() {}
 
-export const NodeReportViewHostLive: NodeReportViewHostService = Object.freeze({
+export const nodeReportViewHostService: NodeReportViewHostService = Object.freeze({
   open: openReportViewSession,
   serve: openViewServer,
 });
+
+export const NodeReportViewHostLive = Layer.succeed(
+  NodeReportViewHost,
+  nodeReportViewHostService,
+);
 
 export function openNodeReportView(
   request: ReportViewRequest,
@@ -182,7 +200,57 @@ export function makeNodeReportFileSystem(): ReportFileSystemService {
   });
 }
 
-export const NodeReportFileSystemLive: ReportFileSystemService = makeNodeReportFileSystem();
+export const nodeReportFileSystemService: ReportFileSystemService = makeNodeReportFileSystem();
+
+export const NodeReportFileSystemLive = Layer.succeed(
+  ReportFileSystem,
+  nodeReportFileSystemService,
+);
+
+/** Complete Node transport/filesystem provisioning for Report Host operations. */
+export const NodeReportHostLive = Layer.merge(
+  NodeReportViewHostLive,
+  NodeReportFileSystemLive,
+);
+
+export const NodeReportModulePlatformLive = Layer.succeed(ReportModulePlatform, {
+  loadConfig: (cwd, options) => loadTrustedReportConfig(cwd, options).pipe(
+    Effect.mapError((cause) => new ReportPlatformError({ operation: "load-config", cause })),
+  ),
+  loadReport: (path) => loadTrustedReportModule(path).pipe(
+    Effect.mapError((cause) => new ReportPlatformError({ operation: "load-report", cause })),
+  ),
+  loadTheme: (path) => loadTrustedThemeModule(path).pipe(
+    Effect.mapError((cause) => new ReportPlatformError({ operation: "load-theme", cause })),
+  ),
+  resolveModulePath: resolveTrustedModulePath,
+});
+
+export const NodeReportBrowserLive = Layer.succeed(ReportBrowser, {
+  open: (url) => Effect.async<boolean, ReportPlatformError>((resume) => {
+    const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+    const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+    let settled = false;
+    const finish = (opened: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resume(Effect.succeed(opened));
+    };
+    const child = spawn(command, args, { detached: true, stdio: "ignore" });
+    const timer = setTimeout(() => finish(true), 1_500);
+    child.once("error", () => finish(false));
+    child.once("exit", (code) => finish(code === 0));
+    child.unref();
+  }),
+});
+
+/** All Report-owned Node capabilities; the central CLI only composes this Layer. */
+export const NodeReportCliLive = Layer.mergeAll(
+  NodeReportHostLive,
+  NodeReportModulePlatformLive,
+  NodeReportBrowserLive,
+);
 
 /**
  * `writeFile` and the completion marker are valid only after the exporter has

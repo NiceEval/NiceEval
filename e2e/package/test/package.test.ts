@@ -35,6 +35,15 @@ function findInstalledNiceeval(): InstalledPackage {
   }
 }
 
+function rejectedLoads(
+  labels: readonly string[],
+  results: readonly PromiseSettledResult<unknown>[],
+): string {
+  return results.flatMap((result, index) => result.status === "rejected"
+    ? [`${labels[index]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
+    : []).join("\n");
+}
+
 // 特例：case 项目源是签入的 CommonJS 消费者 fixture；sourceRoot 才是承载
 // runner 注入 staging root 的隔离 Repo 根（docs/engineering/testing/testkit.md）。
 const e2e = createE2EContext({
@@ -51,13 +60,68 @@ const e2e = createE2EContext({
   },
 });
 
-test("默认 CommonJS 项目用安装后的候选包完成 init → list", async () => {
+test("默认 CommonJS 项目可消费公开 Host SDK 并完成 init → list", async () => {
   const { root: installedRoot, packageJson } = findInstalledNiceeval();
   for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
     const dependencies = packageJson[field];
     expect(dependencies?.["@niceeval/testkit"], `package.json ${field}`).toBeUndefined();
   }
   expect(existsSync(join(installedRoot, "packages", "testkit")), "候选包不得携带 packages/testkit").toBe(false);
+
+  const labels = ["niceeval/eval/host", "niceeval/project/host"] as const;
+  const esm = await Promise.allSettled(labels.map((specifier) => import(specifier)));
+  const require = createRequire(import.meta.url);
+  const commonjs = await Promise.allSettled(
+    labels.map((specifier) => Promise.resolve().then(() => require(specifier))),
+  );
+
+  const loads = [...esm, ...commonjs];
+  const loadLabels = [
+    ...labels.map((specifier) => `ESM ${specifier}`),
+    ...labels.map((specifier) => `CommonJS ${specifier}`),
+  ];
+  expect(loads.map(({ status }) => status), rejectedLoads(loadLabels, loads)).toEqual([
+    "fulfilled",
+    "fulfilled",
+    "fulfilled",
+    "fulfilled",
+  ]);
+  if (
+    esm[0].status !== "fulfilled" || esm[1].status !== "fulfilled" ||
+    commonjs[0].status !== "fulfilled" || commonjs[1].status !== "fulfilled"
+  ) {
+    throw new Error("public Host SDK entries did not load");
+  }
+
+  const [evalEsm, projectEsm] = [esm[0].value, esm[1].value];
+  const [evalCommonjs, projectCommonjs] = [commonjs[0].value, commonjs[1].value];
+  expect(Object.keys(evalEsm).sort()).toEqual(["EvalCatalogError", "evalHost"]);
+  expect(Object.keys(projectEsm).sort()).toEqual([
+    "ProjectFileSystem",
+    "ProjectManifestFacts",
+    "ProjectPlatformError",
+    "ProjectProcessFacts",
+    "projectHost",
+  ]);
+  for (const name of Object.keys(evalEsm)) {
+    expect(evalEsm[name], `ESM/CJS eval Host identity: ${name}`).toBe(evalCommonjs[name]);
+  }
+  for (const name of Object.keys(projectEsm)) {
+    expect(projectEsm[name], `ESM/CJS project Host identity: ${name}`).toBe(projectCommonjs[name]);
+  }
+  expect(Object.isFrozen(evalEsm.evalHost)).toBe(true);
+  expect(Object.keys(evalEsm.evalHost)).toEqual(["catalog"]);
+  expect(Object.isFrozen(projectEsm.projectHost)).toBe(true);
+  expect(Object.keys(projectEsm.projectHost)).toEqual(["initialize"]);
+  expect([
+    projectEsm.ProjectFileSystem.key,
+    projectEsm.ProjectManifestFacts.key,
+    projectEsm.ProjectProcessFacts.key,
+  ]).toEqual([
+    "niceeval/project/ProjectFileSystem",
+    "niceeval/project/ProjectManifestFacts",
+    "niceeval/project/ProjectProcessFacts",
+  ]);
 
   await e2e.case("commonjs-init-list", async ({ commands: { niceeval }, paths }) => {
     const initialized = await niceeval.run(["init"]);

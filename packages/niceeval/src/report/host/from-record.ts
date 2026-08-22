@@ -346,14 +346,18 @@ function presentBuiltInMachineShow(input: {
         const data = yield* Effect.tryPromise({
           // The producer's Analysis facade captures the execution-local issue
           // token synchronously, so it must start inside the capture context.
-          try: () => capture.run(() => Effect.runPromise(Effect.scoped(produceBuiltInShowData({
+          try: () => capture.run(() => {
+            const produced = produceBuiltInShowData({
             registry: builtInMachineRegistry,
             descriptor: input.descriptor,
             sample: input.sample,
             selection: input.selection,
             route,
             pageId,
-          })))),
+            });
+            if ("code" in produced) throw produced;
+            return produced;
+          }),
           catch: (cause): BuiltInMachineProductionFailed | BuiltInMachineProducerMissing | ReportShowPresentationFailed => {
             if (isMachineShowFailure(cause)) return cause;
             return presentationFailure("machine", cause);

@@ -40,3 +40,4 @@ export const reportHost = Object.freeze({
 });
 
 export type { ClosedSiteRevision };
+export { ReportBrowser, ReportModulePlatform, ReportPlatformError } from "./operations.ts";

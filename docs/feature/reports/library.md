@@ -401,15 +401,19 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 
 `ExperimentTable` 与 `ExperimentScatter` 是具名比较组件。它们只接受 `ExperimentComparisonScope` 或该 scope 产生的同组 branded projection，不接受普通 Sample 或任意 rows。多组输入以 `analysis-comparison-group-mismatch` 失败；同组 member 即使 Eval population 不同也正常渲染，各自指标使用实际运行的 Slot 和自己的分母。没有运行的 Eval 不合成为失败，也不进入共同交集。中立 `Table` 与 `Scatter` 仍可显示任意已闭合值，不承担实验组语义。
 
-`AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。Assertion 展开区对值比较、scope 检查、Sandbox、Judge 与 score 使用同一套中立结构：
+`ExperimentTable` 的每个实验行只在实验名后显示一次 `samples/total`；耗时、Tokens、成本与主结果格不重复同一比值。展开后的 Eval、分组与 Attempt 行仍各自保留自己的读数完整度，因为它们回答的是下钻范围而不是实验行的重复摘要。
 
-- `Source` 显示求值材料、coverage 与 limitations。
+`AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。Assertion 展开区先把 matcher 或检查名、sealed 状态与有界 diagnostic children 投影成可逐层展开的状态树；它不重新执行 matcher。
+
+Report 的内建展示 adapter 可以识别稳定的 built-in criterion ID 与 diagnostic code。command、tool collection、比较／阈值和组合 matcher 使用少量语义读面；未知 code 与第三方 criterion 回落到 generic input／diagnostic 展示。值比较、scope 检查、Sandbox、Judge 与 score 的详情仍来自同一套闭合事实：
+
+- `Input` 显示求值材料、coverage 与 limitations。
 - `Check` 显示检查条件。
 - `Observed` 显示实际结果与有界收据。
 - `Expected` 显示预期条件。
 - `Explanation` 只显示 Analysis 已封口的决定性见证与有界代表材料。
 
-Report 不识别 matcher code、不拼 matcher 专属句子，也不把整棵 diagnostic JSON 当作用户文案。某一段在历史 Record 中没有持久化事实时，它以普通的 `not-recorded` 状态显示，不从 diagnostic、得分比例或其它段反推。
+Report 只本地化版面标签，不从 matcher name 或 message 文本猜测判定；节点状态、标签、expected、received、locator 与 reason 都来自已闭合值。`kind`、boolean `outcome`、policy 的 boolean `expected` 等路由字段只保留在原始技术详情，不占主要读面。某一段在历史 Record 中没有持久化事实时，它以普通的 `not-recorded` 状态显示，不从得分比例或其它段反推。
 
 展开 `send` 所在行后，`TurnTrace` 以 `Conversation` 的静态因果事件流为账本，加上 turn 时间概览与可关闭的事件 inspector。
 

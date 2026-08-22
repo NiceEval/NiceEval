@@ -49,6 +49,8 @@ import type {
 } from "../reader/errors.ts";
 import type { RecordWriteError } from "../writer/types.ts";
 import type { RecordAttachmentMigrationRetention } from "../definition/attachment.ts";
+import type { RecordFileSystemError } from "../platform/errors.ts";
+import type { RecordAutoMigrationGitSaveRequired } from "../reader/errors.ts";
 
 export const selectedRunRefBrand: unique symbol = Symbol(
   "@niceeval/record/SelectedRunRef",
@@ -406,6 +408,127 @@ export type RecordMigrationReceipt =
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     };
 
+/**
+ * Closed result of the ordinary-entry automatic migration preflight. A caller
+ * opens its current reader only after this operation returns, so read and
+ * maintenance leases can never overlap.
+ */
+export type RecordAutomaticMigrationResult =
+  | { readonly state: "record-missing" }
+  | { readonly state: "already-current" }
+  | {
+      readonly state: "migrated";
+      readonly restoreCommit: string;
+      readonly attachments: readonly RecordAttachmentMigrationTarget[];
+    };
+
+export type RecordAutomaticMigrationError =
+  | RecordFileSystemError
+  | RecordReaderOpenError
+  | RecordMaintenanceOpenError
+  | RecordMaintenanceError
+  | RecordAutoMigrationGitSaveRequired;
+
+/** Closed, presentation-neutral plan for explicit incomplete-Run cleanup. */
+export type RecordCleanOperationPlan =
+  | {
+      readonly _tag: "RecordCleanAlreadyClean";
+    }
+  | {
+      readonly _tag: "RecordCleanConfirmationRequired";
+      readonly runIds: readonly RunId[];
+    };
+
+export interface RecordCleanOperationReceipt {
+  readonly _tag: "RecordCleanApplied";
+  readonly deleted: readonly RunId[];
+  readonly skipped: readonly RunId[];
+}
+
+/**
+ * A migration plan is safe to carry outside the maintenance Scope. The ready
+ * branch remains nominally backed by the exact source-byte plan held by this
+ * Host process; callers cannot manufacture an applicable plan from JSON.
+ */
+export type RecordMigrateOperationPlan =
+  | {
+      readonly _tag: "RecordMigrationAlreadyCurrent";
+      readonly format: "niceeval.record";
+    }
+  | {
+      readonly _tag: "RecordMigrationUnsupported";
+      readonly format: string;
+    }
+  | {
+      readonly _tag: "RecordMigrationRestoreRequired";
+      readonly format: "niceeval.record";
+      readonly backup: Exclude<RecordBackupState, { readonly state: "git-restore-point" }>;
+      readonly attachments: readonly RecordAttachmentMigrationTarget[];
+    }
+  | RecordMigrateReadyPlan;
+
+export interface RecordMigrateReadyPlan {
+  readonly _tag: "RecordMigrationReady";
+  readonly format: "niceeval.record";
+  readonly restoreCommit: string;
+  readonly attachments: readonly RecordAttachmentMigrationTarget[];
+}
+
+export type RecordMigrateOperationReceipt =
+  | {
+      readonly _tag: "RecordMigrationAlreadyCurrent";
+      readonly format: "niceeval.record";
+    }
+  | {
+      readonly _tag: "RecordMigrationApplied";
+      readonly format: "niceeval.record";
+      readonly attachments: readonly RecordAttachmentMigrationTarget[];
+    };
+
+/** Exhaustive failure vocabulary consumed by Record-owned CLI presentation. */
+export type RecordMaintenanceOperationFailure =
+  | {
+      readonly _tag: "RecordMaintenanceBusy";
+      readonly code: "record-maintenance-busy";
+    }
+  | {
+      readonly _tag: "RecordMigrationInterrupted";
+      readonly code: "record-migration-interrupted";
+      readonly restoreCommit?: string;
+      readonly restoreSafe?: boolean;
+    }
+  | {
+      readonly _tag: "RecordMigrationPlanStale";
+      readonly code: "record-migration-plan-stale";
+    }
+  | {
+      readonly _tag: "RecordMigrationGitRestoreRequired";
+      readonly code: "record-migration-git-restore-required";
+    }
+  | {
+      readonly _tag: "RecordMigrationInvalid";
+      readonly code: "record-migration-invalid";
+    }
+  | {
+      readonly _tag: "RecordMigrationRecoveryRequired";
+      readonly code: "record-migration-recovery-required";
+      readonly causeCode: string;
+      readonly restoreCommit: string;
+      readonly restoreSafe: boolean;
+    }
+  | {
+      readonly _tag: "RecordFormatUnsupported";
+      readonly code: "record-format-unsupported";
+    }
+  | {
+      readonly _tag: "RecordMigrationRequired";
+      readonly code: "record-migration-required";
+    }
+  | {
+      readonly _tag: "RecordMaintenanceOperationFailed";
+      readonly code: string;
+    };
+
 export interface RecordMaintenanceSession {
   readonly inspect: () => Effect.Effect<RecordFormatInspection, RecordMaintenanceError>;
   readonly planMigrate: () => Effect.Effect<RecordMigrationPlan, RecordMaintenanceError>;
@@ -415,6 +538,20 @@ export interface RecordMaintenanceSession {
 }
 
 export interface RecordHostSDK {
+  /**
+   * Ordinary-entry read check followed, when required, by one Git-safe
+   * maintenance migration. Every internally acquired Scope is closed before
+   * this Effect completes; the caller must then perform a fresh current open.
+   */
+  readonly ensureAutomaticMigration: (input: {
+    readonly root: RecordRoot;
+  }) => Effect.Effect<
+    RecordAutomaticMigrationResult,
+    RecordAutomaticMigrationError,
+    import("../platform/services.ts").RecordFileSystem
+      | import("../platform/services.ts").RecordGit
+      | import("../../coordination/record-leases.ts").RecordCoordination
+  >;
   readonly current: {
     readonly openRead: (input: {
       readonly root: RecordRoot;
@@ -427,6 +564,42 @@ export interface RecordHostSDK {
     ) => Effect.Effect<ReferenceRunWriteSession, RecordReaderOpenError | RecordWriteError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../platform/services.ts").RecordEntropy | import("../../coordination/record-leases.ts").RecordCoordination>;
   };
   readonly maintenance: {
+    readonly planClean: (input: {
+      readonly root: RecordRoot;
+    }) => Effect.Effect<
+      RecordCleanOperationPlan,
+      RecordMaintenanceOperationFailure,
+      import("../platform/services.ts").RecordFileSystem
+        | import("../../coordination/record-leases.ts").RecordCoordination
+    >;
+    readonly applyClean: (input: {
+      readonly root: RecordRoot;
+      readonly plan: Extract<RecordCleanOperationPlan, { readonly _tag: "RecordCleanConfirmationRequired" }>;
+    }) => Effect.Effect<
+      RecordCleanOperationReceipt,
+      RecordMaintenanceOperationFailure,
+      import("../platform/services.ts").RecordFileSystem
+        | import("../../coordination/record-leases.ts").RecordCoordination
+    >;
+    readonly planMigrate: (input: {
+      readonly root: RecordRoot;
+    }) => Effect.Effect<
+      RecordMigrateOperationPlan,
+      RecordMaintenanceOperationFailure,
+      import("../platform/services.ts").RecordFileSystem
+        | import("../platform/services.ts").RecordGit
+        | import("../../coordination/record-leases.ts").RecordCoordination
+    >;
+    readonly applyMigrate: (input: {
+      readonly root: RecordRoot;
+      readonly plan: RecordMigrateReadyPlan;
+    }) => Effect.Effect<
+      RecordMigrateOperationReceipt,
+      RecordMaintenanceOperationFailure,
+      import("../platform/services.ts").RecordFileSystem
+        | import("../platform/services.ts").RecordGit
+        | import("../../coordination/record-leases.ts").RecordCoordination
+    >;
     readonly open: (input: {
       readonly root: RecordRoot;
     }) => Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../platform/services.ts").RecordGit | import("../../coordination/record-leases.ts").RecordCoordination>;

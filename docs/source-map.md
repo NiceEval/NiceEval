@@ -10,13 +10,18 @@ Record、Analysis 与 Report 是三个数据层。CLI 只进入各自的 Host SD
 
 | 目标行为 | 当前源码区域 |
 |---|---|
-| argv 读取、命令分派、退出状态与项目初始化 | `packages/niceeval/src/cli/program.ts` 拥有 platform-neutral command program 与唯一 flag schema；`packages/niceeval/src/cli/application.ts` 定义窄 capability contract；`packages/niceeval/src/cli/node-application.ts` 只实现 Node adapter，`packages/niceeval/src/cli/bootstrap.ts` 是唯一 Node Live Layer composition edge |
-| `exp`、`--dry`、`accept` 的 list、plan、run 与 accept | `packages/niceeval/src/experiment/host/index.ts` 的 `experimentHost` |
+| argv 读取、根路由、全局 help/version、退出状态与信号 | `packages/niceeval/src/cli/{application,contribution,program,bootstrap}.ts`；`bootstrap.ts` 是唯一 Node Live Layer 与 Effect runtime edge，`program.ts` 不拥有领域命令 |
+| Feature command 挂载 | 各 Feature 的 `cli/` 导出冻结 command 与完整 option/help schema；`packages/niceeval/src/cli/contribution.ts` 只验证、聚合和路由，`bootstrap.ts` 显式挂载 contribution 并提供所需 Layer |
+| Docker profile、image cache 与 BuildKit 管理 CLI | `packages/niceeval/src/docker/cli/contribution.ts` 拥有 `niceeval docker` 命令树；Docker-owned cache/profile 操作不进入通用 Sandbox contract |
+| Sandbox 留存与 orphan 管理 CLI | `packages/niceeval/src/sandbox/cli/contribution.ts` 拥有 `niceeval sandbox`，调用 Sandbox 自己的 detached/registry 操作；不加载 Eval 配置 |
+| Eval catalog CLI | `packages/niceeval/src/eval/{host,cli}/` 拥有 `niceeval list` 的发现投影与呈现 |
+| Experiment 命令与 Invocation status | `packages/niceeval/src/experiment/host/` 的高层 typed operations 与 `cli/` contributions；Runner 与 session 存储保持 Host 私有 |
+| 项目初始化 | `packages/niceeval/src/project/` 的 Host operation、平台 capability 与 `init` contribution |
 | Record 打开、创建、封口与 maintenance | `packages/niceeval/src/record/host/{index,runtime,types}.ts` 的 `recordHost` |
 | 由 reader 与 selection 签发 Sample | `packages/niceeval/src/analysis/host.ts` 的 `analysisHost` |
 | Report execute、show、serve 与 export | `packages/niceeval/src/report/host/` 的 `reportHost` |
 
-`packages/niceeval/src/cli.ts` 只能组合这些 Host。它不直接调用 `packages/niceeval/src/runner/`、`packages/niceeval/src/record/reader/`、family decoder 或
+`packages/niceeval/src/cli/bootstrap.ts` 只能组合这些 Host 与 Feature contribution。它不直接调用 `packages/niceeval/src/runner/`、`packages/niceeval/src/record/reader/`、family decoder 或
 Report loader。Host 内部才取得 Scope、Layer、lease、reader、writer 或 renderer 实现。
 
 ## 运行与持久事实
@@ -46,7 +51,7 @@ Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 
 | [Report 成本投影](feature/reports/cost-projections/README.md) | `packages/niceeval/src/analysis/{cost,cost-projection,cost-decimal}.ts` 定义 Profile 验证、slot-provider ledger 与闭合 projection；`packages/niceeval/src/report/{definition/report.ts,execution/machine.ts,host/{machine,show-target,site-runtime}.ts}` 把已签发 projection 纳入 target 或 site 输出，不重新计算。 |
 | [Report 单目标 Host](feature/reports/architecture.md#两条执行路径) | `packages/niceeval/src/report/host/{execute,from-record,show-target,target-route}.ts` 与 `runtime/{resolved-page,text,web}.ts` 在固定 Sample 内解码并执行一个 Page，短存私有 `ResolvedPage` 后交付 text 或 target manifest；此路径不 `enumerate()`，不形成站点版本。 |
 | [Report 站点 Host](feature/reports/architecture.md#两条执行路径) | `packages/niceeval/src/report/execution/{model,paths}.ts` 与 `packages/niceeval/src/report/host/{execute,site-assets,site-runtime,static,view-session}.ts` 枚举所有 Page 实例、校验闭包并形成 `ClosedSiteRevision`；view 和 static 只读取这一个 revision 的 bytes。 |
-| [Reports CLI](feature/reports/cli.md) | `packages/niceeval/src/cli.ts` 经 `reportHost` 进入；Host 再按需调用 Record 与 Analysis Host，不直接打开物理 reader。 |
+| [Reports CLI](feature/reports/cli.md) | `packages/niceeval/src/report/cli/` 提供 `show` / `view` contributions；Report Host 再按需调用 Record 与 Analysis Host，不直接打开物理 reader。 |
 | [静态 export](feature/reports/cli.md#niceeval-view---out) | `packages/niceeval/src/report/host/static.ts` 写出已验证 `ClosedSiteRevision` 的页面、asset 与下载文件；它不重新执行 Page 或 Analysis。 |
 
 实现时以对应 Feature 文档的 owner、输入和不变量为准。

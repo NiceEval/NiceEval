@@ -1,5 +1,3 @@
-import { Effect } from "effect";
-
 import {
   attemptEvidenceView,
   attemptObservabilityView,
@@ -118,20 +116,20 @@ const timing = producer(async (sample, locator) => {
   });
 });
 
-const standard: BuiltInMachineProducer<BuiltInMachineProductionFailed, never> = (input) => {
+const standard: BuiltInMachineProducer = async (input) => {
   switch (input.pageId) {
     case "attempt":
     case "attempt-overview":
-      return attempt(input);
+      return await attempt(input);
     case "group-named":
     case "group-singleton":
-      return experimentGroup(input);
+      return await experimentGroup(input);
     default:
-      return groups(input);
+      return await groups(input);
   }
 };
 
-const producers = new Map<string, BuiltInMachineProducer<BuiltInMachineProductionFailed, never>>([
+const producers = new Map<string, BuiltInMachineProducer>([
   [builtInMachineProducerIds.runMembershipOverview, runMembership],
   [builtInMachineProducerIds.attemptOverview, attempt],
   [builtInMachineProducerIds.executionEvidence, execution],
@@ -141,7 +139,7 @@ const producers = new Map<string, BuiltInMachineProducer<BuiltInMachineProductio
   [builtInMachineProducerIds.standard, standard],
 ]);
 
-export const builtInMachineRegistry: BuiltInMachineRegistry<BuiltInMachineProductionFailed, never> = Object.freeze({
+export const builtInMachineRegistry: BuiltInMachineRegistry = Object.freeze({
   producers,
 });
 
@@ -151,21 +149,24 @@ function producer(
     locator: import("../../attempt-locator.ts").AttemptLocator | undefined,
     route: string,
   ) => Promise<BuiltInShowData>,
-): BuiltInMachineProducer<BuiltInMachineProductionFailed, never> {
-  return (input) => Effect.tryPromise({
-    try: () => build(
+): BuiltInMachineProducer {
+  return async (input) => {
+    try {
+      return await build(
       input.sample,
       input.selection.kind === "attempt-locator"
         ? input.selection.locator as import("../../attempt-locator.ts").AttemptLocator
         : undefined,
       input.route,
-    ),
-    catch: (cause): BuiltInMachineProductionFailed => Object.freeze({
+      );
+    } catch (cause) {
+      throw Object.freeze({
       code: "report-built-in-machine-production-failed" as const,
       producerId: producerIdForInput(input.pageId),
       reason: boundedReason(cause),
-    }),
-  });
+      }) satisfies BuiltInMachineProductionFailed;
+    }
+  };
 }
 
 function producerIdForInput(pageId: string): string {

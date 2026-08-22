@@ -63,6 +63,12 @@ export interface FeedbackCoordinatorOptions {
   tickIntervalMs?: number;
   /** 观察同一份 reducer 事实的轻量索引（如 Experiment Session）；观察者不得改变事件。 */
   onEvent?: (event: RunFeedbackEvent, state: RunFeedbackState) => void;
+  /**
+   * The default coordinator installs itself as the active Runner sink. A Host
+   * that must multiplex the same lossless events to another lifecycle owner
+   * can disable that registration and install the wrapper itself.
+   */
+  activateSink?: boolean;
 }
 
 export interface FeedbackCoordinator extends FeedbackSink {
@@ -118,6 +124,7 @@ type Phase = "idle" | "active" | "dynamicStopped" | "finished";
 export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): FeedbackCoordinator {
   const { profile, renderer, io } = options;
   const onEvent = options.onEvent;
+  const shouldActivateSink = options.activateSink !== false;
   const tickIntervalMs = options.tickIntervalMs ?? DEFAULT_TICK_INTERVAL_MS;
 
   let phase: Phase = "idle";
@@ -361,21 +368,23 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     }
     phase = "active";
     startedAtMs = io.clock.now();
-    deactivate = activateFeedbackSink({
-      activity,
-      diagnostic,
-      interrupted,
-      reporterError,
-      failure,
-      budgetExhausted,
-      kept,
-      experimentHook,
-      experimentProgress,
-      precheck,
-      lockWait,
-      runActivity,
-      lifecycle,
-    });
+    if (shouldActivateSink) {
+      deactivate = activateFeedbackSink({
+        activity,
+        diagnostic,
+        interrupted,
+        reporterError,
+        failure,
+        budgetExhausted,
+        kept,
+        experimentHook,
+        experimentProgress,
+        precheck,
+        lockWait,
+        runActivity,
+        lifecycle,
+      });
+    }
     emit({ type: "plan", at: startedAtMs, plan });
     tickHandle = io.clock.setInterval(() => {
       if (phase !== "active") return;

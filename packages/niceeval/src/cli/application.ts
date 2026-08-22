@@ -4,28 +4,76 @@
  * bootstrap adapter.
  */
 import { Context, Data, Effect } from "effect";
-import type { Config } from "../runner/types.ts";
-import type { FeedbackIO } from "../runner/feedback/io.ts";
-import type { InputGuardStdin } from "../runner/feedback/input-guard.ts";
-import type { ReportDefinition } from "../report/definition/report.ts";
-import type { ThemeDefinition } from "../report/theme.ts";
-import type { ConfigModuleLoadError, ProjectCredentialsFailure } from "./project-configuration.ts";
 
 export interface CliInvocation {
   readonly cwd: string;
   readonly argv: readonly string[];
   readonly hostname: string;
+  /** Process identity exposed by the Node adapter for feature-owned lease coordination. */
+  readonly pid: number;
   readonly noColor?: string;
   readonly platform: "darwin" | "win32" | "linux" | string;
   readonly stdout: { readonly isTTY: boolean; readonly columns?: number };
   readonly stderr: { readonly isTTY: boolean; readonly columns?: number };
 }
 
-export type CliOptionDefinition = Readonly<{ type: "string" | "boolean"; multiple?: true; short?: string }>;
+/** Immutable display metadata owned with an option, rather than reconstructed by a central CLI registry. */
+export interface CliOptionHelp {
+  readonly summary: string;
+  /** Hidden options remain parser-recognized but do not become part of user help or generated reference. */
+  readonly visibility: "public" | "hidden";
+}
+
+/** A parser option plus the feature-owned metadata needed to compose and document it. */
+export interface CliOptionalOptionValue {
+  /** Value produced by a bare option. Boolean `true` preserves ordinary flag semantics. */
+  readonly default: string | true;
+  /** Accept one following token as the value. Inline `--name=value` is always accepted. */
+  readonly separated?: true;
+  /** Closed value vocabulary. Omit for an arbitrary non-empty string. */
+  readonly values?: readonly string[];
+}
+
+export type CliOptionDefinition = Readonly<{
+  readonly type: "string" | "boolean";
+  readonly multiple?: true;
+  readonly short?: string;
+  /** Generic boolean|string union syntax owned by this option, not by the root router. */
+  readonly optionalValue?: CliOptionalOptionValue;
+  readonly help?: CliOptionHelp;
+}>;
+
+export type CliParsedToken =
+  | Readonly<{
+      readonly kind: "option";
+      readonly index: number;
+      readonly name: string;
+      readonly rawName: string;
+      readonly value?: string;
+      readonly inlineValue?: boolean;
+    }>
+  | Readonly<{
+      readonly kind: "positional";
+      readonly index: number;
+      readonly name?: undefined;
+      readonly rawName?: undefined;
+      readonly value: string;
+      readonly inlineValue?: undefined;
+    }>
+  | Readonly<{
+      readonly kind: "option-terminator";
+      readonly index: number;
+      readonly name?: undefined;
+      readonly rawName?: undefined;
+      readonly value?: undefined;
+      readonly inlineValue?: undefined;
+    }>;
+
 export interface CliParsedTokens {
   readonly values: Record<string, string | boolean | string[] | undefined>;
-  readonly positionals: string[];
-  readonly tokens: readonly { readonly kind: string; readonly name?: string }[];
+  readonly positionals: readonly string[];
+  /** Exact Node parseArgs tokens, including raw argv indexes used for root projection. */
+  readonly tokens: readonly CliParsedToken[];
 }
 export interface CliArgumentsService {
   readonly parse: (argv: readonly string[], options: Readonly<Record<string, CliOptionDefinition>>) => CliParsedTokens;
@@ -46,6 +94,23 @@ export class CliInvocationFacts extends Context.Tag("niceeval/cli/CliInvocationF
   CliInvocationService
 >() {}
 
+/**
+ * Process-signal ownership stays at the application boundary. A feature may
+ * claim the Invocation signal immediately before dispatch, but it never reads
+ * Node globals or installs handlers of its own.
+ */
+export interface CliInterruptionService {
+  readonly invocationSignal: AbortSignal;
+  /** False means bootstrap already accepted a root-owned first signal. */
+  readonly enterGracefulDispatch: () => boolean;
+  readonly requestInterrupt: () => void;
+}
+
+export class CliInterruption extends Context.Tag("niceeval/cli/CliInterruption")<
+  CliInterruption,
+  CliInterruptionService
+>() {}
+
 export interface CliOutputService {
   readonly writeStdout: (text: string) => Effect.Effect<void, CliInvocationError>;
   readonly writeStderr: (text: string) => Effect.Effect<void, CliInvocationError>;
@@ -55,14 +120,6 @@ export interface CliOutputService {
 }
 export class CliOutput extends Context.Tag("niceeval/cli/CliOutput")<CliOutput, CliOutputService>() {}
 
-export interface ProjectInitializerService {
-  readonly initialize: (cwd: string) => Effect.Effect<{ readonly prefersEsm: boolean }, CliInvocationError>;
-}
-export class ProjectInitializer extends Context.Tag("niceeval/cli/ProjectInitializer")<
-  ProjectInitializer,
-  ProjectInitializerService
->() {}
-
 export interface PackageMetadataService {
   readonly version: Effect.Effect<string, CliInvocationError>;
 }
@@ -71,36 +128,8 @@ export class PackageMetadata extends Context.Tag("niceeval/cli/PackageMetadata")
   PackageMetadataService
 >() {}
 
-export interface BrowserLauncherService {
-  readonly open: (url: string) => Effect.Effect<boolean, CliInvocationError>;
-}
-export class BrowserLauncher extends Context.Tag("niceeval/cli/BrowserLauncher")<
-  BrowserLauncher,
-  BrowserLauncherService
->() {}
-
 export interface CliPathService {
   readonly resolve: (...parts: readonly string[]) => string;
   readonly isAbsolute: (path: string) => boolean;
 }
 export class CliPath extends Context.Tag("niceeval/cli/CliPath")<CliPath, CliPathService>() {}
-
-export interface CliTerminalService {
-  readonly feedback: FeedbackIO;
-  readonly stdin: InputGuardStdin;
-}
-export class CliTerminal extends Context.Tag("niceeval/cli/CliTerminal")<CliTerminal, CliTerminalService>() {}
-
-export interface CliReportPlatformService {
-  readonly loadConfig: (cwd: string) => Effect.Effect<{ readonly report?: ReportDefinition; readonly theme?: ThemeDefinition; readonly watchInputs: readonly string[] }, CliInvocationError>;
-  readonly loadReport: (path: string) => Effect.Effect<{ readonly report: ReportDefinition; readonly watchInputs: readonly string[] }, CliInvocationError>;
-  readonly loadTheme: (path: string) => Effect.Effect<{ readonly theme: ThemeDefinition; readonly watchInputs: readonly string[] }, CliInvocationError>;
-  readonly resolveModulePath: (cwd: string, value: string) => string;
-}
-export class CliReportPlatform extends Context.Tag("niceeval/cli/CliReportPlatform")<CliReportPlatform, CliReportPlatformService>() {}
-
-/** A narrow application facade; config always follows credential preparation. */
-export interface ProjectConfigurationFacade {
-  readonly load: (cwd: string) => Effect.Effect<Config, ProjectCredentialsFailure | ConfigModuleLoadError>;
-  readonly rebuild: (cwd: string) => Effect.Effect<Config, ProjectCredentialsFailure | ConfigModuleLoadError>;
-}

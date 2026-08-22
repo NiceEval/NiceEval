@@ -2,8 +2,6 @@
 // 不读 niceeval.config.ts、不发现 eval,只操作留存注册表(.niceeval/sandboxes/ 逐条目文件)
 // 与内置 provider 的 detached 能力;provider 名的路由发生在 CLI / 注册表边界(sandbox/ 域内)。
 
-import { hostname } from "node:os";
-import { resolve } from "node:path";
 import { Cause, Data, Effect } from "effect";
 import {
   destroyDetached,
@@ -36,21 +34,23 @@ export interface SandboxCommandFlags {
   path?: string;
   leaveRunning?: boolean;
   /** 仓库外执行时显式指定结果根(.niceeval 或其父目录)。 */
-  run?: string;
+  record?: string;
   /** `sandbox list` 专用:核对强杀路径留下的无主实例(见「孤儿核对」)。 */
   orphans?: boolean;
   /** `sandbox prune` 专用:连 unverified 一起销毁。 */
   force?: boolean;
 }
 
-interface Io {
+export interface SandboxCommandIo {
   out(text: string): void;
   err(text: string): void;
-  /** stdout 的 TTY 探测(面板 `mode` 的传输能力信号);省略时按 `process.stdout` 探测——
-   *  测试注入固定值,不依赖真实终端设备。 */
-  isTTY?: boolean;
-  /** stdout 的显示列数;省略时按 `process.stdout.columns` 探测,取不到时兜底 80。 */
-  columns?: number;
+}
+
+/** Host-owned terminal and process facts. The command operation never reads process globals. */
+export interface SandboxCommandFacts {
+  readonly leaseHolder: string;
+  readonly noColor?: string;
+  readonly stdout: { readonly isTTY: boolean; readonly columns?: number };
 }
 
 const LEASE_TTL_MS = 60 * 60 * 1000;
@@ -118,11 +118,11 @@ function refreshedEntryState(
 /** `list`/`history` 一次性面板的传输能力:是 TTY 且没有要求朴素输出时才画框
  *  (docs/feature/sandbox/cli.md「输出体裁」)——`sandbox` 命令组只在启动时探测一次,
  *  不像 `exp` 的 live 面板那样需要随 resize 重新判断。 */
-function panelCapabilityForIo(io: Io): { mode: PanelMode; width: number } {
+function panelCapabilityForFacts(facts: SandboxCommandFacts): { mode: PanelMode; width: number } {
   return panelCapabilityOf({
-    isTTY: io.isTTY ?? process.stdout.isTTY,
-    noColor: process.env.NO_COLOR,
-    width: io.columns ?? process.stdout.columns,
+    isTTY: facts.stdout.isTTY,
+    noColor: facts.noColor,
+    width: facts.stdout.columns,
   });
 }
 
@@ -131,11 +131,19 @@ export function runSandboxCommandEffect(
   cwd: string,
   positionals: string[],
   flags: SandboxCommandFlags,
-  io: Io = { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) },
+  io: SandboxCommandIo,
+  facts: SandboxCommandFacts,
+): SandboxCommandEffect<number>;
+export function runSandboxCommandEffect(
+  cwd: string,
+  positionals: string[],
+  flags: SandboxCommandFlags,
+  io: SandboxCommandIo,
+  facts: SandboxCommandFacts,
 ): SandboxCommandEffect<number> {
   return Effect.gen(function* () {
     const sub = positionals[0];
-    const root = yield* resolveRegistryRootEffect(cwd, flags.run);
+    const root = yield* resolveRegistryRootEffect(cwd, flags.record);
     if (root === undefined) {
       io.err(
         `No .niceeval directory found from ${cwd} upward. Run this inside the project, or pass --record <record-root> to point at it.\n`,
@@ -146,13 +154,13 @@ export function runSandboxCommandEffect(
       case "list":
         return yield* (flags.orphans
           ? listOrphansCommandEffect(root, io)
-          : listCommandEffect(root, io, panelCapabilityForIo(io)));
+          : listCommandEffect(root, io, panelCapabilityForFacts(facts)));
       case "stop":
         return yield* stopCommandEffect(root, positionals.slice(1), flags, io);
       case "enter":
-        return yield* enterCommandEffect(root, positionals.slice(1), flags, io);
+        return yield* enterCommandEffect(root, positionals.slice(1), flags, io, facts);
       case "history":
-        return yield* historyCommandEffect(root, positionals.slice(1), flags, io, panelCapabilityForIo(io));
+        return yield* historyCommandEffect(root, positionals.slice(1), flags, io, panelCapabilityForFacts(facts));
       case "diff":
         return yield* diffCommandEffect(root, positionals.slice(1), flags, io);
       case "prune":
@@ -171,7 +179,7 @@ function keptSandboxIdsEffect(root: string): SandboxCommandEffect<Set<string>> {
   );
 }
 
-function listOrphansCommandEffect(root: string, io: Io): SandboxCommandEffect<number> {
+function listOrphansCommandEffect(root: string, io: SandboxCommandIo): SandboxCommandEffect<number> {
   return keptSandboxIdsEffect(root).pipe(
     Effect.flatMap((keptIds) => providerEffect("list orphan sandboxes", () => listOrphanCandidates(keptIds))),
     Effect.map((candidates) => {
@@ -193,7 +201,7 @@ function listOrphansCommandEffect(root: string, io: Io): SandboxCommandEffect<nu
   );
 }
 
-function pruneCommandEffect(root: string, flags: SandboxCommandFlags, io: Io): SandboxCommandEffect<number> {
+function pruneCommandEffect(root: string, flags: SandboxCommandFlags, io: SandboxCommandIo): SandboxCommandEffect<number> {
   return keptSandboxIdsEffect(root).pipe(
     Effect.flatMap((keptIds) => providerEffect("prune orphan sandboxes", () => pruneOrphans(keptIds, flags.force === true))),
     Effect.map((outcome) => {
@@ -251,9 +259,8 @@ export function orphanReminderEffect(cwd: string): SandboxCommandEffect<string |
 
 function resolveRegistryRootEffect(cwd: string, runFlag: string | undefined): SandboxCommandEffect<string | undefined> {
   if (runFlag !== undefined) {
-    const base = resolve(cwd, runFlag);
     // --record 可以指 .niceeval 本身或它的父目录。
-    return Effect.succeed(base.endsWith(".niceeval") ? base : `${base}/.niceeval`);
+    return Effect.succeed(runFlag.endsWith(".niceeval") ? runFlag : `${runFlag}/.niceeval`);
   }
   return findNiceevalRootEffect(cwd);
 }
@@ -278,7 +285,7 @@ const LIST_ID_COL = 10;
 const LIST_PROVIDER_COL = 10;
 const LIST_STATE_COL = 10;
 
-function listCommandEffect(root: string, io: Io, panel: { mode: PanelMode; width: number }): SandboxCommandEffect<number> {
+function listCommandEffect(root: string, io: SandboxCommandIo, panel: { mode: PanelMode; width: number }): SandboxCommandEffect<number> {
   return Effect.gen(function* () {
     const { entries } = yield* readKeptEntriesEffect(root);
     if (entries.length === 0) {
@@ -329,7 +336,7 @@ function listCommandEffect(root: string, io: Io, panel: { mode: PanelMode; width
 function resolveEntriesEffect(
   root: string,
   ids: string[],
-  io: Io,
+  io: SandboxCommandIo,
 ): SandboxCommandEffect<{ id: string; entry: KeptSandboxEntry }[] | undefined> {
   return readKeptEntriesEffect(root).pipe(
     Effect.map(({ entries }) => {
@@ -354,11 +361,7 @@ function resolveEntriesEffect(
   );
 }
 
-function leaseHolder(): string {
-  return `${process.pid}@${hostname()}`;
-}
-
-function stopCommandEffect(root: string, ids: string[], flags: SandboxCommandFlags, io: Io): SandboxCommandEffect<number> {
+function stopCommandEffect(root: string, ids: string[], flags: SandboxCommandFlags, io: SandboxCommandIo): SandboxCommandEffect<number> {
   return Effect.gen(function* () {
     let targets: { id: string; entry: KeptSandboxEntry }[];
     if (flags.all) {
@@ -404,10 +407,11 @@ function withLeaseEffect<T>(
   id: string,
   entry: KeptSandboxEntry,
   op: string,
-  io: Io,
+  io: SandboxCommandIo,
+  facts: SandboxCommandFacts,
   fn: () => SandboxCommandEffect<T>,
 ): SandboxCommandEffect<T | undefined> {
-  const lease = { holder: leaseHolder(), op, acquiredAt: new Date().toISOString(), ttlMs: LEASE_TTL_MS };
+  const lease = { holder: facts.leaseHolder, op, acquiredAt: new Date().toISOString(), ttlMs: LEASE_TTL_MS };
   return acquireKeptLeaseEffect(root, id, lease).pipe(
     Effect.flatMap((acquired) => {
       if (!acquired.acquired) {
@@ -419,7 +423,13 @@ function withLeaseEffect<T>(
   );
 }
 
-function enterCommandEffect(root: string, ids: string[], flags: SandboxCommandFlags, io: Io): SandboxCommandEffect<number> {
+function enterCommandEffect(
+  root: string,
+  ids: string[],
+  flags: SandboxCommandFlags,
+  io: SandboxCommandIo,
+  facts: SandboxCommandFacts,
+): SandboxCommandEffect<number> {
   return resolveEntriesEffect(root, ids.slice(0, 1), io).pipe(
     Effect.flatMap((resolved) => {
       if (!resolved || resolved.length === 0) {
@@ -442,7 +452,7 @@ function enterCommandEffect(root: string, ids: string[], flags: SandboxCommandFl
             io.err(`${entry.sandboxId} (${entry.provider}) could not be inspected — check credentials or retry later.\n`);
             return Effect.succeed(1);
           }
-          return withLeaseEffect(root, id, entry, "enter", io, () => Effect.gen(function* () {
+          return withLeaseEffect(root, id, entry, "enter", io, facts, () => Effect.gen(function* () {
             yield* providerEffect("wake kept sandbox", () => wakeDetached(entry.provider, entry.sandboxId));
             yield* updateKeptEntryEffect(root, id, (current) => refreshedEntryState(current, "alive", new Date().toISOString()));
             const code = yield* providerEffect(
@@ -572,7 +582,7 @@ function historyCommandEffect(
   root: string,
   ids: string[],
   _flags: SandboxCommandFlags,
-  io: Io,
+  io: SandboxCommandIo,
   panel: { mode: PanelMode; width: number },
 ): SandboxCommandEffect<number> {
   return resolveEntriesEffect(root, ids.slice(0, 1), io).pipe(
@@ -647,7 +657,7 @@ function historyCommandEffect(
   );
 }
 
-function diffCommandEffect(root: string, ids: string[], flags: SandboxCommandFlags, io: Io): SandboxCommandEffect<number> {
+function diffCommandEffect(root: string, ids: string[], flags: SandboxCommandFlags, io: SandboxCommandIo): SandboxCommandEffect<number> {
   return resolveEntriesEffect(root, ids.slice(0, 1), io).pipe(
     Effect.flatMap((resolved) => {
       if (!resolved || resolved.length === 0) {
