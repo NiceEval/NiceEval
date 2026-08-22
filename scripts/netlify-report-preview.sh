@@ -43,5 +43,4 @@ NODE_OPTIONS="--max-old-space-size=1024" \
 CODEX_BASE_URL="https://preview.invalid/v1" \
 CODEX_API_KEY="netlify-report-preview-no-secret" \
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" exec niceeval view \
-  --experiment compare \
   --out "$PUBLISH_DIRECTORY"
