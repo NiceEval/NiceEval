@@ -5,21 +5,93 @@
 - [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Record CLI](feature/record/cli.md) 定义 Record root、只读命令、clean 与 migrate。
 - [Reports CLI](feature/reports/cli.md) 定义 `show`、`view` 与静态 export 的输入和输出。
+- [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
+- [Docker Profile CLI](feature/sandbox/docker-profiles/cli.md) 定义 Docker profile 的诊断；Docker cache 与 BuildKit
+  管理由 [Docker cache CLI](roadmap/sandbox-materialization/cache-lifecycle/cli.md) 定义。
+- [Getting Started](getting-started.md) 定义 `init` 建立项目入口后的第一条使用路径。
 
 ## 模块边界
 
 | 区域 | 职责 |
 |---|---|
-| `src/cli.ts` | argv、命令分派、信号与退出状态。 |
+| `src/cli/` | 聚合冻结 contribution、定位 root、应用级 help/version、信号、最终退出状态与唯一 runtime。 |
+| 各 Feature 的 `cli/` | 自己命令的 option schema、command help、参数组合、呈现与领域退出判定。 |
 | `experimentHost` | `exp`、`--dry`、只读 `debug` 与 `accept` 的发现、计划、运行、采用和命令计划操作。 |
 | `recordHost` | Record 的打开、创建、封口、clean 与 migrate 操作。 |
 | `analysisHost` | 由已打开 reader 和选择签发 Scope-bound Sample。 |
 | `reportHost` | `show` 的单目标读取，以及 `serve` / `export` 的完整站点构建。 |
 | `runner/`、`record/reader/` | 各自 Host 后的内部调度和读取实现，不是 CLI 直连面。 |
 
-`src/cli.ts` 只做 argv 读取、工作目录确定、Host 调用、进程信号接线和退出码交付。它不定义
-Record 文件语义，不计算报告读数，也不把终端文本当作业务事实。CLI 不直接构造 Runner、reader、
-Sample、页面或物理路径。
+`src/cli/` 只做根路由、应用 capability、进程信号接线和退出码交付。它不定义 Record 文件语义，
+不计算报告读数，也不把终端文本当作业务事实。领域 contribution 不直接构造 Runner、reader、Sample、
+页面或物理路径，只调用所属 Host 的闭合 operation。
+
+| root command | contribution owner | Host / capability owner |
+|---|---|---|
+| `list` | Eval catalog CLI | `evalHost.catalog` |
+| `check`、`exp`、`debug`、`accept`、`session` | Experiment Host CLI | `experimentHost`；session 是 ephemeral Invocation status，不是可恢复 Record |
+| `show`、`view` | Report Host CLI | `reportHost`，并显式调用 Record migration 与 Experiment project-current operation |
+| `clean`、`migrate` | Record Host CLI | `recordHost` typed maintenance operations |
+| `sandbox` | Sandbox CLI | Sandbox registry、detached provider 与 provider 自己的能力 |
+| `docker` | Docker CLI | Docker profile、image cache 与 BuildKit；不降格成通用 Sandbox API |
+| `init` | Project CLI | `projectHost.initialize` 与窄 filesystem/manifest capability |
+
+## 根路由与 option 所有权
+
+bootstrap 组合各 contribution 的冻结 schema。根 parser 只用聚合 schema 取得 token 的原始索引；第一个
+positional token 是 root，路由只删除它。root 前后的 option、值与 `--` 不重排。随后 contribution 必须用
+自己的 schema 再检查投影 argv 的语法，所以“聚合层认识一个 option”不等于“每个命令都接受它”。
+
+```console
+$ niceeval --json exp list
+{"format":"niceeval.experiments","schemaVersion":1,"experiments":[]}
+
+$ niceeval sandbox list --json
+niceeval error: Unknown option '--json'
+```
+
+第二条在读取 `.env`、求值 config 或连接任何 Sandbox Provider 之前失败。不存在 compatibility-only option、
+中央 shadow schema 或静默忽略的跨命令 flag。应用级 help/version、最终 failure/exit、OS signal 与唯一 runtime
+留在 CLI core；command help 与领域错误属于对应 contribution。
+
+## 从发现到查看的 command ownership
+
+根 CLI 的职责是把 token 交给正确的 contribution，不把相邻命令合并成一个含糊入口。`list` 与 `exp list`
+都只读，但前者列 Eval，后者列可运行的 Experiment；`check` 验证 Experiment 与 Sandbox 的选择和 link，
+`exp --dry` 才继续形成不派发的运行计划。
+
+```console
+$ niceeval list --tag smoke
+Discovered 2 evals:
+  onboarding/tool-first  — installs the tool before the first request
+  onboarding/tool-retry  — retries after a transient tool failure
+
+$ niceeval exp list compare/codex
+compare/codex  codex · gpt-5.6 · 3 attempts · 12 evals
+
+$ niceeval check compare/codex --tag smoke
+Sandbox layers linked: 2 pairs.
+```
+
+Docker 的 profile、image cache 和 BuildKit 是 Docker contribution 的完整领域，不是 Sandbox 的最小公分母。
+因此 rich command 仍留在 `docker` 下；`sandbox` 只负责已留存实例与 orphan 的检查、进入和回收。
+
+```console
+$ niceeval docker cache inventory --json
+{
+  "format": "niceeval.cache-inventory",
+  "schemaVersion": 1,
+  "scope": { "kind": "domains" },
+  "domains": [],
+  "providerObservations": []
+}
+
+$ niceeval sandbox list --json
+niceeval error: Unknown option '--json'
+```
+
+第一个命令由 Docker 自己定义 JSON 文档。第二个命令由 Sandbox schema 在任何 Provider I/O 前拒绝；它不会因
+另一个 contribution 使用同名 option 而接受它。
 
 ## 三条数据路径
 

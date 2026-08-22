@@ -8,7 +8,7 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 
 | Owner ID | 用户结果 | 形态 | 文件 | Lane | 历史 bug |
 | --- | --- | --- | --- | --- | --- |
-| [`#package-commonjs-init-list`](#package-commonjs-init-list) | 默认 CommonJS 项目可用安装后的候选包完成 `init → list` | Journey E2E | `e2e/package/test/package.test.ts` | PR / release | `b44420d3` |
+| [`#package-commonjs-init-list`](#package-commonjs-init-list) | 默认 CommonJS 项目可消费公开 Host SDK，并用安装后的候选包完成 `init → list` | Journey E2E | `e2e/package/test/package.test.ts` | PR / release | `b44420d3` |
 | [`#package-bub-e2b-template`](#package-bub-e2b-template) | 安装后的 E2B factory 为默认 Bub 生成固定模型客户端闭包及匹配 marker | 单边界 E2E | `e2e/package/test/bub-e2b-template.test.ts` | PR / release | `bub-default-client-closure-drift` |
 
 ## package-commonjs-init-list
@@ -24,6 +24,9 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 同一安装边界还核对候选包的四类 dependency 字段都不声明 `@niceeval/testkit`，且 tarball 不含 `packages/testkit`。
 这是防止私有测试设施泄漏进产品包的 checkpoint，不另建 Testkit owner。
 
+同一 consumer 还通过 ESM `import` 与 CommonJS `require` 加载 `niceeval/eval/host`、`niceeval/project/host`。
+测试核对两种模块系统共享冻结的 Host 对象，并且 Project 入口只交付调用者组合所需的 capability tags，不暴露 Node Live Layer。
+
 ## package-bub-e2b-template
 
 用户从安装后的 `niceeval/sandbox/e2b-template` 调用 `e2bCodingAgentTemplate("bub")`，再通过 E2B
@@ -35,7 +38,7 @@ factory 交给 E2B 的公开构建输入可复现，且不会因 identity 分叉
 
 ## 不重复建立的测试
 
-- ESM 根入口与实际功能子路径由 CLI、Runner、Record、Report、Lifecycle 和 Adapter 的真实 Journey 自然消费；Package Repo
+- ESM 根入口与其它实际功能子路径由 CLI、Runner、Record、Report、Lifecycle 和 Adapter 的真实 Journey 自然消费；Package Repo
   不再按 ESM / CJS / 无 `type` 各写一条只检查 `typeof` 的 smoke。
 - Release workflow 对待发布的同一 tarball 执行 native runtime smoke；Package Repo 不再复制一套从 candidate exports
   反推 expected 的遍历器。

@@ -115,6 +115,16 @@
         "default": "./dist/analysis/index.cjs"
       }
     },
+    "./eval/host": {
+      "import": {
+        "types": "./dist/eval/host/index.d.mts",
+        "default": "./dist/eval/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/eval/host/index.d.cts",
+        "default": "./dist/eval/host/index.cjs"
+      }
+    },
     "./experiment/host": {
       "import": {
         "types": "./dist/experiment/host/index.d.mts",
@@ -213,6 +223,16 @@
       "require": {
         "types": "./dist/report/extension/index.d.cts",
         "default": "./dist/report/extension/index.cjs"
+      }
+    },
+    "./project/host": {
+      "import": {
+        "types": "./dist/project/host/index.d.mts",
+        "default": "./dist/project/host/index.mjs"
+      },
+      "require": {
+        "types": "./dist/project/host/index.d.cts",
+        "default": "./dist/project/host/index.cjs"
       }
     },
     "./report/react/styles.css": "./dist/report/react/styles.css",

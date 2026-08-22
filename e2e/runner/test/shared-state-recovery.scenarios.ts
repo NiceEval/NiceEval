@@ -41,7 +41,11 @@ test("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       await withTempDir("niceeval-runner-shared-state-pause-", async (barrierRoot) => {
-        const holder = niceeval.start(["exp", "shared-state-pause-holder", "--rerun", "all", "--json"], {
+        // The scenario deliberately pauses the Attempt beyond the old 30s
+        // takeover window; its product deadline must sit outside that probe.
+        const holder = niceeval.start([
+          "exp", "shared-state-pause-holder", "--rerun", "all", "--timeout", "90000", "--json",
+        ], {
           env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
           timeoutMs: 120_000,
         });

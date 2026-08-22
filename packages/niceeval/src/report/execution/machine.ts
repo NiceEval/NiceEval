@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import type * as Scope from "effect/Scope";
 import type {
   JsonValue,
   Sample,
@@ -428,12 +427,17 @@ export interface BuiltInMachineProducerInput {
 }
 
 /** This callback is held only in a Host registry—not on a descriptor. */
-export type BuiltInMachineProducer<Error, Requirements> = (
+/**
+ * Host producers are Promise callbacks because Analysis exposes Promise APIs.
+ * The Report Host adapts this one external callback with `Effect.tryPromise`;
+ * producers never start or own an Effect runtime.
+ */
+export type BuiltInMachineProducer = (
   input: BuiltInMachineProducerInput,
-) => Effect.Effect<BuiltInShowData, Error, Requirements>;
+) => Promise<BuiltInShowData>;
 
-export interface BuiltInMachineRegistry<Error, Requirements> {
-  readonly producers: ReadonlyMap<string, BuiltInMachineProducer<Error, Requirements>>;
+export interface BuiltInMachineRegistry {
+  readonly producers: ReadonlyMap<string, BuiltInMachineProducer>;
 }
 
 export interface BuiltInMachineProducerMissing {
@@ -495,27 +499,23 @@ export function builtInMachineDescriptorOf(value: unknown): BuiltInMachineDescri
  * The Host selects the producer from its own registry by producerId. The
  * descriptor is never called and cannot contain a callback to call.
  */
-export function produceBuiltInShowData<Error, Requirements>(input: {
-  readonly registry: BuiltInMachineRegistry<Error, Requirements>;
+export function produceBuiltInShowData(input: {
+  readonly registry: BuiltInMachineRegistry;
   readonly descriptor: BuiltInMachineDescriptor;
   readonly sample: Sample;
   readonly selection: ShowSelection;
   readonly route: string;
   readonly pageId: string;
-}): Effect.Effect<
-  BuiltInShowData,
-  Error | BuiltInMachineProducerMissing,
-  Requirements | Scope.Scope
-> {
+}): Promise<BuiltInShowData> | BuiltInMachineProducerMissing {
   if (!isBuiltInMachineDescriptor(input.descriptor)) {
     throw new TypeError("a built-in machine descriptor must be created by defineBuiltInMachineDescriptor");
   }
   const producer = input.registry.producers.get(input.descriptor.producerId);
   if (producer === undefined) {
-    return Effect.fail(Object.freeze({
+    return Object.freeze({
       code: "report-built-in-machine-producer-missing" as const,
       producerId: input.descriptor.producerId,
-    }));
+    });
   }
   return producer({
     sample: input.sample,

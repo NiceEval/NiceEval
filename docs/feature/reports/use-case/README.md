@@ -11,3 +11,17 @@ ClosedSiteRevision 呈现完整站点。
 
 每个用例都从 CLI 已选择的 Sample 开始。`show` 只执行选中的 Page；view 与静态目录才完整枚举、关闭和校验后形成
 ClosedSiteRevision。renderer、HTTP 请求和浏览器导航都不能回到 Record 或再次取数。
+
+先用 `show` 读取一页，再按需要启动 `view` 或导出静态站：
+
+```console
+$ niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
+Overview
+  12 Eval results · details: niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527 --page /overview
+
+$ niceeval view --run 7b8d2ea4-b840-4870-9840-f85a436a5527 --no-open
+niceeval view — open in a browser:
+http://127.0.0.1:4400/
+```
+
+第一条只关闭 `/overview`。第二条在监听前关闭整站；若完整构建失败，不会用一部分新页面替换旧 revision。

@@ -237,53 +237,16 @@ export const en = {
   "loaders.nonFileUrl":
     "A URL passed to a loader must use the file: protocol, but got {{protocol}} ({{url}}). Pass new URL(relativePath, import.meta.url) instead, or use a plain project-root-relative string path.",
   "cli.flag.parseError": "{{message}}\nRun `niceeval --help` for usage.\n",
+  "cli.command.missing": "No command specified.\nRun `niceeval --help` for usage.\n",
   "cli.command.unknown": "Unknown command \"{{command}}\".\nRun `niceeval --help` for usage.\n",
   "cli.help":
     "niceeval — agent-native evals\n\n" +
     "Usage:\n" +
-    "  niceeval exp [path|experiment] [eval-id-prefix…]    run experiments\n" +
-    "  niceeval exp list [experiment-prefix]               list runnable configs (no dispatch)\n" +
-    "  niceeval exp rename <oldId> <newId>                 rebind terminal results from old to new id\n" +
-    "      --dry   preview without writing; --record <root>   select the actual Record root; --json   one JSON document\n" +
-    "      --teardown   recover a killed run: run only the selected experiments'\n" +
-    "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
-    "      explicit sharedState recovery:\n" +
-    "        niceeval exp <selector> --teardown --recover-shared-state <key>\n" +
-    "          --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced\n" +
-    "        reads immutable owner evidence from <key>; the selected Experiment must declare a teardown function\n" +
-    "        (its current sharedState declaration may have changed); inspect or recover with human text (not --json)\n" +
-    "  niceeval debug <experiment> <eval> [--json]         show the lifecycle command plan\n" +
-    "  niceeval accept @<locator>...                      accept explicit historical results\n" +
-    "  niceeval show [--run <run-id>...]                    render a Report in the terminal\n" +
-    "      by default, show reads all results matching the current project identities;\n" +
-    "        --experiment <id> is repeatable and narrows that current target\n" +
-    "      --run <run-id> is repeatable and audits complete historical ids only\n" +
-    "      --record <root> selects the actual Record root (default: .niceeval/record)\n" +
-    "      --report standard (or omit it) uses the built-in standard report; --page <route>\n" +
-    "        selects an exact Report route; --json emits one Report show document\n" +
-    "  niceeval list                                       list discovered evals\n" +
-    "  niceeval session list [--all] [experiment-prefix]    query Sessions (read-only)\n" +
-    "  niceeval session show <sessionId>                   show one Session (read-only)\n" +
-    "  niceeval view [--run <run-id>...] [--out dir] [--port n] [--no-open]\n" +
-    "      uses the same Record selection and built-in standard report as show; live mode\n" +
-    "      binds loopback only and rebuilds fixed ReportExecutions on Record changes\n" +
-    "      --out <dir> exports one completed static site and starts no server\n" +
-    "  niceeval sandbox list|enter|history|diff|stop  inspect & destroy sandboxes kept by --keep-sandbox\n" +
-    "  niceeval sandbox list --orphans / prune         reclaim instances orphaned by a killed run\n" +
-    "  niceeval clean                                      delete .niceeval/ artifacts\n" +
-    "  niceeval init                                       scaffold config + evals/\n\n" +
-    "Flags:\n" +
-    "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
-    "  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry\n" +
-    "  --json  (command-specific JSON; exp runs use NDJSON; default is human text)\n" +
-    "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
-    "Positional args only select which evals to run (id prefixes); which agent and\n" +
-    "how to run come from experiments/ + flags. Resolution: flag > experiment >\n" +
-    "eval (timeoutMs / judge only) > niceeval.config.ts > built-in default, where\n" +
-    "config is the fallback floor, not an override; --timeout has no built-in default —\n" +
-    "with none of the four set, an attempt has no deadline. Configuration has no environment layer;\n" +
-    "environment variables hold credentials such as API keys.\n",
+    "  niceeval <command> [options]\n\n" +
+    "Application options:\n" +
+    "  -h, --help       print this command index\n" +
+    "  -v, --version    print the installed version\n" +
+    "\nRun `niceeval <command> --help` for command-specific usage.\n",
   "cli.show.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval show`.\n",
   "cli.show.runDirMissing": "Record directory not found: {{dir}}\n",
   "cli.show.noEvalMatch": "No results matched: {{pattern}}. Evals with results: {{evals}}\n",

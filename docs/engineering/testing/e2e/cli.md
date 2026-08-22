@@ -53,7 +53,7 @@ Then：
 
 Given Docker 的共享 BuildKit builder 报告总容量和 Provider reclaimable estimate，但没有 NiceEval Domain identity、entry 或 lease。
 
-When 从安装后的 candidate 运行 `niceeval cache inventory --json`。
+When 从安装后的 candidate 运行 `niceeval docker cache inventory --json`。
 
 Then 输出把 BuildKit 放进独立的 `providerObservations`，状态为 `unverified`，不产生 `domainId`、`evictable` 或 GcPlan。
 
@@ -70,6 +70,16 @@ Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`�
   按 Experiment 紧跟 `details: niceeval show --run <runId>`；
 - 测试实际执行四个 details 命令，并分别读回所属错误；两个默认 Run Human 页错误优先且不展示空 KPI、证据、分析或内部 membership 字段；旧 candidate 对上述长期结果为红，新 candidate 为绿。
 
+### Sandbox 管理入口
+
+#### cli-sandbox-project-preflight
+
+`niceeval sandbox list` 在语法检查成功后准备当前项目的 `.env` 凭据，因此凭据文件不可读时会在调用
+Sandbox Provider 前失败；它不加载或求值 `niceeval.config.*`，空留存表仍输出
+`No kept sandboxes.`。这个单边界 owner 使用本机空注册表，不连接 Docker、E2B、Vercel 或其它
+Sandbox Provider。Sandbox 只接受自己声明的 option；例如 `sandbox list --json` 在凭据准备和配置
+求值之前以 unknown option 拒绝，不继承或静默吞掉其它命令的 `--json`。
+
 ### 缓存
 
 1. 首次带 `--rerun all` 执行并保存对照 Run。
@@ -83,7 +93,7 @@ Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`�
 对人读文本与 `--json` 两种输出形态各跑一次真实进程，在真实 stdout/stderr 上断言[Experiments CLI](../../../feature/experiments/cli.md) 声明的反馈契约。`--json` 每行是一个可 `JSON.parse` 的事件对象，永不出现 ANSI 控制字符，正常事件全部落在 stdout，只有 run 建立前的错误落 stderr。非 TTY 人读文本是零 ANSI 的单一 stdout 追加流。真实 PTY smoke 证明运行期确实选择 dashboard renderer、产生光标控制与框面，并与另外两种形态给出一致的完成态判定和退出码。
 TTY 的精确宽度、行高降级、折叠和逐帧顺序由[Runner](../unit/experiments-runner.md)对可控 IO 的纯 renderer 输出证明；E2E 不实现第二个终端模拟器，也不逐秒断言心跳节奏。
 
-公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。已删除的 `--output`、`--execution`、`--timing`、`--source` 与不存在的 `--quiet` 对任何命令都是未知 flag。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
+公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。已删除的 `--output` 与不存在的 `--quiet` 是未知 flag；`--execution`、`--timing`、`--source` 只属于 `show`，其它 command 会按自己的 schema 拒绝。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
 flag 组合的完整语义矩阵仍由 unit 的纯 parse 与错误对象证明，本域只保留每类公开进程边界的一条区分力代表。
 
 ## 边界

@@ -5,8 +5,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { DatabaseSync } from "node:sqlite";
-import type { ProviderCapacityObservation } from "./cache-administration.ts";
-import type { CacheDomainDescriptor } from "./cache-administration.ts";
+import type {
+  DockerCapacityObservation as ProviderCapacityObservation,
+  DockerCacheDomainDescriptor as CacheDomainDescriptor,
+} from "../docker/cache-administration.ts";
 
 const execFileAsync = promisify(execFile);
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
@@ -274,7 +276,7 @@ export async function listDockerCacheDomains(): Promise<readonly CacheDomainDesc
   }>;
   catalog.close();
   return rows.map((row) => ({
-    providerFamily: row.provider_family,
+    providerFamily: "docker",
     adminProtocolVersion: row.admin_protocol_version,
     domainId: row.domain_id,
     backendKind: row.backend_kind,

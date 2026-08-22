@@ -34,15 +34,15 @@ describe("随包 AI 文档索引", () => {
     };
     const init = await readFile(join(ROOT, "INIT.zh.md"), "utf-8");
     const initEn = await readFile(join(ROOT, "INIT.md"), "utf-8");
-    const cli = await readFile(join(PACKAGE_ROOT, "src/cli/node-application.ts"), "utf-8");
+    const projectTemplate = await readFile(join(PACKAGE_ROOT, "src/project/templates.ts"), "utf-8");
 
     expect(pkg.files).toContain("INDEX.md");
     expect(pkg.scripts?.prepack, "prepack 链必须包含 build:index,否则发出去的包缺 INDEX.md").toContain("build:index");
     expect(init).toContain("node_modules/niceeval/INDEX.md");
     expect(initEn).toContain("node_modules/niceeval/INDEX.md");
-    expect(cli).toContain("node_modules/niceeval/INDEX.md");
+    expect(projectTemplate).toContain("node_modules/niceeval/INDEX.md");
     expect(init).not.toContain("node_modules/niceeval/docs-site/zh/INDEX.md");
-    expect(cli).not.toContain("node_modules/niceeval/docs-site/zh/INDEX.md");
+    expect(projectTemplate).not.toContain("node_modules/niceeval/docs-site/zh/INDEX.md");
   });
 
   it("安装向导是自举文件,不依赖线上文档链接", async () => {

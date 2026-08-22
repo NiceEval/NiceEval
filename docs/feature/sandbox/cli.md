@@ -61,7 +61,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 ╰────────────────────────────────────────────────── niceeval sandbox stop --all ─╯
 ```
 
-`--json` 在事件流追加 `kept` 事件(与 run 事件同一词表),非 TTY 人读文本在 `NEXT` 里补 `niceeval sandbox stop --all`:
+`niceeval exp --json` 在事件流追加 `kept` 事件(与 run 事件同一词表),非 TTY 人读文本在 `NEXT` 里补 `niceeval sandbox stop --all`:
 
 ```json
 {"event":"kept","locator":"@1VE05BR7061YN","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","enter":"niceeval sandbox enter a3f9c2d1"}
@@ -93,9 +93,15 @@ niceeval sandbox list --orphans                        # 核对强杀路径留�
 niceeval sandbox prune                                 # 销毁已核实的孤儿实例
 ```
 
-`sandbox` 命令组不读 `niceeval.config.ts`、不发现 eval,只操作留存注册表(`.niceeval/sandboxes/` 下的逐条目文件,见 [Architecture · 留存注册表](architecture.md#留存keep与注册表))与内置 provider 的 detached 能力。
+`sandbox` 命令组先用自己的 schema 完成语法检查，再准备项目 `.env` 中的 provider 凭据；它不读取或求值
+`niceeval.config.ts`，也不发现 eval。正常命令只操作留存注册表(`.niceeval/sandboxes/` 下的逐条目文件，见
+[Architecture · 留存注册表](architecture.md#留存keep与注册表))与内置 provider 的 detached 能力。
+因此配置模块损坏时仍可 `list` / `enter` / `stop`，但 `.env` 不可读时会在连接 Provider 前失败。
 
-**输出体裁**:`sandbox` 命令组是一次性读取命令——一次调用、打印、退出,没有「运行中」阶段,因此不额外提供 `--json` 之外的形态开关([`exp` 的两种输出形态](../experiments/cli.md)区分的是长时运行的反馈节奏,不是一次性输出的格式)。
+**输出体裁**:`sandbox` 命令组是一次性读取命令——一次调用、打印、退出,没有「运行中」阶段，也不定义
+`--json`。[`exp` 的两种输出形态](../experiments/cli.md)区分的是长时运行的反馈节奏，不是所有 root command
+共享的开关。`niceeval sandbox list --json` 在读取 `.env`、配置或 Provider 之前报 unknown option；不会接受后
+继续打印 Human 文本。
 
 人读与机器读的区分由传输能力承担。stdout 是 TTY 时，`list` / `history` 这类有边界的输出可渲染为面板；非 TTY 时降级为无框纯文本。框只是呈现层，脚本不按框字符读取；注册表条目文件才是程序消费的数据。`diff` 的 patch hunk 与 `stop` 的确认行按逐条流输出，不画框。
 

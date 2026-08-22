@@ -78,7 +78,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 | --- | --- | --- |
 | 可生成 | `lint/docs-site/bundled-docs-index.lint.ts` | 复用生成器的纯函数，从模板 + 全部 zh 页面在内存生成一次：缺 `title` / `description`、模板缺区块标记时红灯，并校验每个非入口页都出现在输出里——与发版时 `prepack` 同一条失败路径，提前到 `pnpm lint:docs-site` |
 | 完整 | 生成器自身 | 树由文件系统枚举构造，存在与完整性天然成立；缺 `title` / `description` 的页面在生成时报错并指明落点，发布被挡下 |
-| 单点入口与打包链 | `lint/docs-site/bundled-docs-index.lint.ts` | `packages/niceeval/package.json` `files`、`INIT.zh.md`、`packages/niceeval/src/cli.ts` 托管指引三处指向的都是包根 `INDEX.md`；`prepack` 链包含 `build:index`，缺了发出去的包就没有索引 |
+| 单点入口与打包链 | `lint/docs-site/bundled-docs-index.lint.ts` | `packages/niceeval/package.json` `files`、`INIT.zh.md`、Project Host 的 init 托管模板三处指向的都是包根 `INDEX.md`；`prepack` 链包含 `build:index`，缺了发出去的包就没有索引 |
 
 ## 生成与打包的时机链
 
