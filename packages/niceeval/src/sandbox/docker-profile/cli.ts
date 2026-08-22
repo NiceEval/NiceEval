@@ -1,9 +1,8 @@
-import { randomUUID } from "node:crypto";
 import type Docker from "dockerode";
 import {
   acquireDockerProfileReservation,
   attestDockerProfile,
-  commitDockerProfileReservation,
+  createDockerProfileContainer,
   createDockerProfileLease,
   loadDockerProfileRegistry,
   releaseDockerProfileReservation,
@@ -28,6 +27,8 @@ export const DOCKER_PROFILE_DOCTOR_DIND_CMD = Object.freeze([
   "--host=unix:///var/run/docker.sock",
   "--shutdown-timeout=2",
 ] as const);
+
+const DOCKER_PROFILE_DOCTOR_DOCKER_DATA_BYTES = 1024 ** 3;
 
 /** `/proc/net/tcp{,6}` exposes listening sockets without requiring an extra image tool. */
 export const DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK = Object.freeze([
@@ -67,6 +68,22 @@ async function exec(container: Docker.Container, command: readonly string[]): Pr
   return { code: inspected.ExitCode ?? 1, output: Buffer.concat(chunks).toString().replace(/[\x00-\x08]/g, "") };
 }
 
+function dockerStatusCode(error: unknown): number | undefined {
+  return typeof error === "object" && error !== null && "statusCode" in error
+    ? (error as { readonly statusCode?: number }).statusCode
+    : undefined;
+}
+
+async function startDoctorContainerIdempotently(container: Docker.Container): Promise<void> {
+  if ((await container.inspect()).State?.Running === true) return;
+  try {
+    await container.start();
+  } catch (error) {
+    if (dockerStatusCode(error) === 304 && (await container.inspect()).State?.Running === true) return;
+    throw error;
+  }
+}
+
 async function smokeProfile(alias: string): Promise<Check[]> {
   const binding = await attestDockerProfile(alias);
   const lease = await createDockerProfileLease(binding);
@@ -75,55 +92,25 @@ async function smokeProfile(alias: string): Promise<Check[]> {
     memoryBytes: 512 * 1024 * 1024,
     pids: 256,
     containers: 1,
+    ephemeralDiskBytes: DOCKER_PROFILE_DOCTOR_DOCKER_DATA_BYTES,
   });
-  const labels = {
-    "niceeval.profile-id": binding.profile.profileId,
-    "niceeval.invocation-id": lease.invocationId,
-    "niceeval.reservation-id": reservation.reservationId,
-    "niceeval.provision-token": reservation.provisionToken,
-    "niceeval.attempt-id": "doctor-smoke",
-  };
   // doctor 的非 smoke 路径也不应要求安装 optional dockerode peer。
   const { default: DockerClient } = await import("dockerode");
   const docker = new DockerClient({ socketPath: binding.dockerSocketPath });
   let container: Docker.Container | undefined;
-  let network: Docker.Network | undefined;
   try {
     await pull(docker, "docker:29-dind");
-    network = await docker.createNetwork({
-      Name: `niceeval-doctor-${randomUUID()}`,
-      Driver: "bridge",
-      Options: { "com.docker.network.bridge.enable_icc": "false" },
-      Labels: labels,
-    });
-    container = await docker.createContainer({
-      Image: "docker:29-dind",
-      ...dockerProfileDoctorDindConfig(),
-      Labels: labels,
-      HostConfig: {
-        Privileged: true,
-        NetworkMode: network.id,
-        NanoCpus: 2_000_000_000,
-        Memory: 512 * 1024 * 1024,
-        MemorySwap: 512 * 1024 * 1024,
-        PidsLimit: 256,
-        ReadonlyRootfs: true,
-        ...(binding.profile.policy.level === "managed-rootless/v1"
-          ? { Dns: [...binding.profile.policy.network.dns.servers] }
-          : {}),
-        Tmpfs: {
-          "/var/lib/docker": "rw,exec,nosuid,nodev,size=256m",
-          "/run": "rw,exec,nosuid,nodev,size=64m",
-          "/tmp": "rw,nosuid,nodev,size=64m,mode=1777",
-        },
+    const created = await createDockerProfileContainer(lease, reservation.reservationId, {
+      image: "docker:29-dind",
+      attemptId: "doctor-smoke",
+      command: DOCKER_PROFILE_DOCTOR_DIND_CMD,
+      tmpfs: {
+        "/run": "rw,exec,nosuid,nodev,size=64m",
+        "/tmp": "rw,nosuid,nodev,size=64m,mode=1777",
       },
     });
-    await commitDockerProfileReservation(lease, reservation.reservationId, {
-      containerId: container.id,
-      networkId: network.id,
-      attemptId: "doctor-smoke",
-    });
-    await container.start();
+    container = docker.getContainer(created.containerId);
+    await startDoctorContainerIdempotently(container);
     let ready = false;
     for (let attempt = 0; attempt < 120; attempt += 1) {
       const result = await exec(container, ["docker", "info"]);
@@ -145,10 +132,7 @@ async function smokeProfile(alias: string): Promise<Check[]> {
       { name: "nested Docker", status: "PASS", detail: "docker:29-dind ran alpine:3.20" },
     ];
   } finally {
-    await releaseDockerProfileReservation(lease, reservation.reservationId).catch(async () => {
-      await container?.remove({ force: true }).catch(() => undefined);
-      await network?.remove().catch(() => undefined);
-    });
+    await releaseDockerProfileReservation(lease, reservation.reservationId).catch(() => undefined);
     await lease.stopHeartbeat().catch(() => undefined);
   }
 }

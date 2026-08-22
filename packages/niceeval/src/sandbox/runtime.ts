@@ -1,6 +1,7 @@
 // ProviderModule 的唯一运行入口：core 只调用 plan 私绑的闭包，不解释 adapter 名或 JSON runtime input。
 
 import { randomUUID } from "node:crypto";
+import { relative, sep } from "node:path";
 import { Data, Effect, Option, type Scope } from "effect";
 import type { ProvisionSlot } from "./retry.ts";
 import { withProvisionRetry } from "./retry.ts";
@@ -16,7 +17,11 @@ import {
   materializeDockerComposeProviderCase,
   normalizeBuildPlatform,
 } from "./compose.ts";
-import { collectDockerfileBuildFromIdentity, dockerfileBuildProvider } from "./dockerfile-build.ts";
+import {
+  collectDockerfileBuildFromIdentity,
+  dockerfileBuildProvider,
+  packDockerfileBuildContext,
+} from "./dockerfile-build.ts";
 import {
   DockerfileAgentImageCoordinator,
   isDockerfileAgentCacheSafeInstaller,
@@ -61,9 +66,10 @@ import type { DockerSandbox } from "./docker.ts";
 import type { E2BSandboxLifetime } from "./e2b.ts";
 import {
   acquireDockerProfileReservation,
-  commitDockerProfileReservation,
+  createDockerProfileBuild,
   createDockerProfileContainer,
   createDockerProfileLease,
+  lookupDockerProfileBuild,
   releaseDockerProfileReservation,
   type DockerProfileLease,
   type DockerProfileRuntimeBinding,
@@ -977,59 +983,45 @@ export function collectDockerfileProviderBuildPreparation(
         throw new Error("Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.");
       }
       const provider = dockerfileBuildProvider([collection]);
+      const managedSource = (locator: string, source: "cache" | "build") => ({
+        locator,
+        source,
+        acquireUse: async () => ({ locator, release() {} }),
+        release() {},
+      });
       const managedProvider: SandboxBuildProvider = plan.profileBinding === undefined ? provider : {
-        lookup: (work, signal) => provider.lookup(work, signal),
+        async lookup(work) {
+          const result = await lookupDockerProfileBuild(plan.profileBinding!, work.buildKey);
+          return result.hit
+            ? { _tag: "Hit", source: managedSource(result.locator, "cache") }
+            : { _tag: "Miss" };
+        },
         async build(work, buildContext) {
           const lease = await createDockerProfileLease(plan.profileBinding!);
           let reservation: import("./docker-profile/runtime.ts").DockerProfileReservation | undefined;
-          let network: import("dockerode").Network | undefined;
           try {
             reservation = await acquireDockerProfileReservation(lease, "build", {
               cpus: 0, memoryBytes: 0, pids: 0, containers: 0, ephemeralDiskBytes: 0,
             }, buildContext.signal);
-            const labels = Object.freeze({
-              "niceeval.profile-id": plan.profileBinding!.profile.profileId,
-              "niceeval.invocation-id": lease.invocationId,
-              "niceeval.reservation-id": reservation.reservationId,
-              "niceeval.provision-token": reservation.provisionToken,
-            });
-            const [{ default: Docker }, { dockerManagedNetworkOptions }] = await Promise.all([
-              import("dockerode"),
-              import("./docker.ts"),
-            ]);
-            const docker = new Docker({ socketPath: plan.profileBinding!.dockerSocketPath });
-            network = await docker.createNetwork(
-              dockerManagedNetworkOptions(reservation.provisionToken, randomUUID(), labels),
-            );
-            await commitDockerProfileReservation(lease, reservation.reservationId, { networkId: network.id });
-            const buildCollection = Object.freeze({
-              ...collection,
-              details: Object.freeze({ ...collection.details, dockerNetworkMode: network.id }),
-            });
-            const locator = await dockerfileBuildProvider([buildCollection]).build(work, buildContext);
-            await network.remove();
-            network = undefined;
-            await releaseDockerProfileReservation(lease, reservation.reservationId, {
-              daemonRequestTerminated: true,
-              buildkitSessionGone: true,
-              processActivityZero: true,
-              provisionalRefResolvedOrRemoved: true,
-            });
-            return locator;
+            const dockerfile = relative(collection.details.contextDir, collection.details.dockerfilePath)
+              .split(sep).join("/");
+            const result = await createDockerProfileBuild(lease, reservation.reservationId, {
+              buildKey: work.buildKey,
+              platform: collection.details.platform,
+              dockerfile,
+              ...(collection.details.buildArgs === undefined ? {} : { buildArgs: collection.details.buildArgs }),
+              ...(collection.details.target === undefined ? {} : { target: collection.details.target }),
+            }, packDockerfileBuildContext(collection.details), buildContext.signal);
+            await releaseDockerProfileReservation(lease, reservation.reservationId);
+            reservation = undefined;
+            return managedSource(result.locator, "build");
           } finally {
-            await network?.remove().catch(() => undefined);
             if (reservation !== undefined) {
-              await releaseDockerProfileReservation(lease, reservation.reservationId, {
-                daemonRequestTerminated: true,
-                buildkitSessionGone: true,
-                processActivityZero: true,
-                provisionalRefResolvedOrRemoved: true,
-              }).catch(() => undefined);
+              await releaseDockerProfileReservation(lease, reservation.reservationId).catch(() => undefined);
             }
             await lease.stopHeartbeat().catch(() => undefined);
           }
         },
-        ...(provider.cancel === undefined ? {} : { cancel: (work) => provider.cancel!(work) }),
       };
       return Option.some({
         works: [collection.work],

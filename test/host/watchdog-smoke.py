@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -28,13 +30,57 @@ def fake_docker(self, *args: str, check: bool = True):
     elif args[:2] == ("network", "create"):
         self.__dict__["fake_network"] = "network-a"
         output = "network-a\n"
+    elif args[:2] == ("buildx", "create"):
+        name = args[args.index("--name") + 1]
+        self.__dict__["fake_builder"] = name
+        self.__dict__["fake_builder_container"] = "builder-container-a"
+        self.__dict__["fake_builder_volume"] = f"buildx_buildkit_{name}0_state"
+        output = name + "\n"
+    elif args[:2] == ("buildx", "inspect"):
+        name = args[-1]
+        code = 0 if self.__dict__.get("fake_builder") == name else 1
+        result = subprocess.CompletedProcess(args, code, "", "")
+        if check and code != 0:
+            raise subprocess.CalledProcessError(code, args)
+        return result
+    elif args[:2] == ("buildx", "rm"):
+        self.__dict__.pop("fake_builder", None)
+        if not self.__dict__.get("fake_builder_rm_leaves_container"):
+            self.__dict__.pop("fake_builder_container", None)
+        if not self.__dict__.get("fake_builder_rm_leaves_volume"):
+            self.__dict__.pop("fake_builder_volume", None)
+        output = ""
+    elif args[:2] == ("image", "inspect"):
+        images = self.__dict__.setdefault("fake_images", set())
+        code = 0 if args[2] in images else 1
+        result = subprocess.CompletedProcess(args, code, "", "")
+        if check and code != 0:
+            raise subprocess.CalledProcessError(code, args)
+        return result
+    elif args[:2] == ("image", "rm"):
+        self.__dict__.setdefault("fake_images", set()).discard(args[-1])
+        output = ""
+    elif args[:1] == ("tag",):
+        images = self.__dict__.setdefault("fake_images", set())
+        if args[1] not in images:
+            raise subprocess.CalledProcessError(1, args, stderr="source image missing")
+        images.add(args[2])
+        output = ""
     elif args[:1] == ("create",):
         self.__dict__["fake_container"] = "container-a"
         if self.__dict__.pop("fake_ambiguous_create", False):
             raise subprocess.TimeoutExpired(args, 30)
         output = "container-a\n"
+    elif args[:2] == ("ps", "-aq") and any(
+        str(item).startswith("name=^/buildx_buildkit_") for item in args
+    ):
+        output = self.__dict__.get("fake_builder_container", "") + "\n"
     elif args[:2] == ("ps", "-aq") and self.__dict__.get("fake_query_failure"):
         return subprocess.CompletedProcess(args, 1, "", "daemon unavailable")
+    elif args[:2] == ("volume", "ls") and self.__dict__.get("fake_query_failure"):
+        return subprocess.CompletedProcess(args, 1, "", "daemon unavailable")
+    elif args[:2] == ("volume", "ls"):
+        output = self.__dict__.get("fake_builder_volume", "") + "\n"
     elif args[:3] == ("network", "ls", "-q") and self.__dict__.get("fake_query_failure"):
         return subprocess.CompletedProcess(args, 1, "", "daemon unavailable")
     elif args[:2] == ("ps", "-aq"):
@@ -42,7 +88,14 @@ def fake_docker(self, *args: str, check: bool = True):
     elif args[:3] == ("network", "ls", "-q"):
         output = self.__dict__.get("fake_network", "") + "\n"
     elif args[:2] == ("rm", "-f"):
-        self.__dict__.pop("fake_container", None)
+        if args[2] == self.__dict__.get("fake_builder_container"):
+            self.__dict__.pop("fake_builder_container", None)
+        else:
+            self.__dict__.pop("fake_container", None)
+        output = ""
+    elif args[:2] == ("volume", "rm"):
+        if args[-1] == self.__dict__.get("fake_builder_volume"):
+            self.__dict__.pop("fake_builder_volume", None)
         output = ""
     elif args[:2] == ("network", "rm"):
         self.__dict__.pop("fake_network", None)
@@ -52,13 +105,84 @@ def fake_docker(self, *args: str, check: bool = True):
     return subprocess.CompletedProcess(args, 0, output, "")
 
 
+def fake_run_build(self, reservation, spec, context_path):
+    self.__dict__["fake_build_runs"] = self.__dict__.get("fake_build_runs", 0) + 1
+    with tarfile.open(context_path, "r:*") as archive:
+        assert archive.extractfile("Dockerfile").read() == b"FROM scratch\n"
+    self.__dict__.setdefault("fake_images", set()).add(reservation["provisionalRef"])
+
+
+def tar_bytes(entries):
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w") as archive:
+        for name, kind, contents in entries:
+            item = tarfile.TarInfo(name)
+            if kind == "file":
+                item.size = len(contents)
+                archive.addfile(item, io.BytesIO(contents))
+            else:
+                item.type = tarfile.SYMTYPE
+                item.linkname = contents.decode()
+                archive.addfile(item)
+    return output.getvalue()
+
+
+class FakeActiveProcess:
+    def __init__(self):
+        self.running = True
+
+    def poll(self):
+        return None if self.running else 0
+
+    def terminate(self):
+        self.running = False
+
+    def kill(self):
+        self.running = False
+
+    def wait(self, timeout=None):
+        self.running = False
+        return 0
+
+
 watchdog.Admission._docker = fake_docker
+watchdog.Admission._run_build = fake_run_build
+watchdog.Admission._builder_process_facts = lambda self, container_ids: []
 watchdog.Admission._slot_references = lambda self, slot: []
 watchdog.Admission._slot_facts = lambda self, slot: {
     "projectId": slot["projectId"], "usageBytes": slot["baselineUsageBytes"],
     "hardBytes": slot["limitBytes"], "uid": slot["ownerUid"],
     "gid": slot["ownerGid"], "mode": slot["mode"],
 }
+
+framed_output = io.BytesIO()
+assert watchdog.receive_framed_build_context(
+    io.BytesIO((4).to_bytes(4, "big") + b"test" + (0).to_bytes(4, "big")),
+    framed_output,
+) == 4
+assert framed_output.getvalue() == b"test"
+try:
+    watchdog.receive_framed_build_context(
+        io.BytesIO((watchdog.MAX_BUILD_CONTEXT_CHUNK_BYTES + 1).to_bytes(4, "big")),
+        io.BytesIO(),
+    )
+except watchdog.ProtocolError as error:
+    assert error.code == "build-context-frame-too-large"
+else:
+    raise AssertionError("oversized build-context frames must fail before allocation")
+original_context_limit = watchdog.MAX_BUILD_CONTEXT_BYTES
+watchdog.MAX_BUILD_CONTEXT_BYTES = 8
+try:
+    watchdog.receive_framed_build_context(
+        io.BytesIO((5).to_bytes(4, "big") + b"first" + (5).to_bytes(4, "big") + b"again"),
+        io.BytesIO(),
+    )
+except watchdog.ProtocolError as error:
+    assert error.code == "build-context-too-large"
+else:
+    raise AssertionError("cumulative received build-context bytes must be capped")
+finally:
+    watchdog.MAX_BUILD_CONTEXT_BYTES = original_context_limit
 
 with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     root = Path(raw)
@@ -174,16 +298,19 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
 
     # A timeout after daemon acceptance is reconciled by the full provision-token labels.
     admission.fake_ambiguous_create = True
+    create_a = {
+        "image": "image:test", "attemptId": "attempt-a", "command": ["true"],
+        "tmpfs": {
+            "/tmp": "rw,nosuid,nodev,size=16m",
+            "/root": "rw,nosuid,nodev,size=8m",
+            "/opt/fixture-secrets": "rw,nosuid,nodev,size=8m",
+        },
+    }
     created_container = admission.handle({**common, "kind": "container.create",
-        "reservationId": "reservation-a", "create": {
-            "image": "image:test", "attemptId": "attempt-a", "command": ["true"],
-            "tmpfs": {
-                "/tmp": "rw,nosuid,nodev,size=16m",
-                "/root": "rw,nosuid,nodev,size=8m",
-                "/opt/fixture-secrets": "rw,nosuid,nodev,size=8m",
-            },
-        }})
+        "reservationId": "reservation-a", "create": create_a})
     assert created_container == {"containerId": "container-a", "networkId": "network-a", "state": "active"}
+    assert admission.handle({**common, "kind": "container.create",
+        "reservationId": "reservation-a", "create": create_a}) == created_container
     create_argv = next(argv for argv in admission.fake_commands if argv[:1] == ("create",))
     assert "--privileged" in create_argv
     mount = create_argv[create_argv.index("--mount") + 1]
@@ -245,6 +372,102 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
                    for item in restarted.state["degraded"])
     assert restarted.state["slots"]["slot-0000"]["generation"] == 2
     assert list(slot_path.iterdir()) == []
+
+    # Build context and all daemon lifecycle operations are control-owned. The
+    # client supplies no network ID, builder name, tag, or termination booleans.
+    lease_build = restarted.handle({"kind": "lease.create", "profileId": "profile-test",
+        "daemonGeneration": challenge["daemonGeneration"], "invocationId": "invocation-build"})
+    common_build = {"invocationId": "invocation-build", "leaseToken": lease_build["leaseToken"]}
+    restarted.handle({**common_build, "kind": "reservation.acquire",
+        "reservationId": "reservation-build", "reservationKind": "build",
+        "resources": {"cpus": 0, "memoryBytes": 0, "pids": 0, "containers": 0,
+                      "ephemeralDiskBytes": 0}})
+    build_key = "a" * 64
+    context_path = root / "context.tar"
+    context_path.write_bytes(tar_bytes([("Dockerfile", "file", b"FROM scratch\n")]))
+    build_request = {**common_build, "kind": "build.create",
+        "reservationId": "reservation-build", "contextEncoding": "tar-chunked/v1",
+        "build": {"buildKey": build_key, "platform": "linux/amd64",
+                  "dockerfile": "Dockerfile", "buildArgs": {}}}
+    for invalid_name, invalid_context, expected_code in (
+        ("escape", [("Dockerfile", "file", b"FROM scratch\n"),
+                    ("../escape", "file", b"host")], "build-context-path-forbidden"),
+        ("symlink", [("Dockerfile", "file", b"FROM scratch\n"),
+                     ("link", "symlink", b"/etc/passwd")], "build-context-type-forbidden"),
+    ):
+        invalid_path = root / f"context-{invalid_name}.tar"
+        invalid_path.write_bytes(tar_bytes(invalid_context))
+        try:
+            restarted.handle_build(build_request, invalid_path)
+        except watchdog.ProtocolError as error:
+            assert error.code == expected_code
+        else:
+            raise AssertionError("untrusted tar paths/types must fail before Docker sees the context")
+    restarted.fake_builder_rm_leaves_container = True
+    restarted.fake_builder_rm_leaves_volume = True
+    built = restarted.handle_build(build_request, context_path)
+    assert built == {"locator": "niceeval-build:" + build_key[:32], "state": "terminated"}
+    assert restarted.fake_build_runs == 1
+    assert restarted.handle_build(build_request, context_path) == built
+    assert restarted.fake_build_runs == 1
+    assert restarted.__dict__.get("fake_builder_container") is None
+    assert restarted.__dict__.get("fake_builder_volume") is None
+    assert any(argv[:3] == ("rm", "-f", "builder-container-a") for argv in restarted.fake_commands)
+    builder_name = restarted.state["reservations"]["reservation-build"]["builderName"]
+    assert any(argv == ("volume", "rm", "-f",
+        f"buildx_buildkit_{builder_name}0_state")
+        for argv in restarted.fake_commands)
+    assert restarted.handle({"kind": "build.lookup", "profileId": "profile-test",
+        "daemonGeneration": challenge["daemonGeneration"], "buildKey": build_key}) == {
+            "hit": True, "locator": built["locator"],
+        }
+    try:
+        restarted.handle({**common_build, "kind": "reservation.release",
+            "reservationId": "reservation-build", "terminationEvidence": {
+                "daemonRequestTerminated": True,
+            }})
+    except watchdog.ProtocolError as error:
+        assert error.code == "build-release-client-evidence-forbidden"
+    else:
+        raise AssertionError("client-supplied build termination evidence must be rejected")
+    assert restarted.handle({**common_build, "kind": "reservation.release",
+        "reservationId": "reservation-build"}) == {"released": True}
+    build_events = [json.loads(line)["event"] for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert build_events.index("build-create-intent") < build_events.index("build-network-created")
+    assert build_events.index("build-network-created") < build_events.index("build-builder-created")
+    assert build_events.index("build-builder-created") < build_events.index("build-terminated")
+    assert "build-create-replayed" in build_events
+
+    # build.cancel terminates the in-memory process. A same-generation watchdog
+    # restart then cancels any journaled provisioning operation before reopening
+    # admission, even while its lease is still active.
+    restarted.handle({**common_build, "kind": "reservation.acquire",
+        "reservationId": "reservation-cancel", "reservationKind": "build",
+        "resources": {"cpus": 0, "memoryBytes": 0, "pids": 0, "containers": 0,
+                      "ephemeralDiskBytes": 0}})
+    cancel_reservation = restarted.state["reservations"]["reservation-cancel"]
+    cancel_reservation.update({
+        "state": "provisioning",
+        "builderName": "niceeval-build-0123456789abcdef01234567",
+        "provisionalRef": "niceeval-build-provisional:cancel",
+        "locator": "niceeval-build:" + "b" * 32,
+    })
+    active_process = FakeActiveProcess()
+    restarted.build_processes["reservation-cancel"] = active_process
+    restarted._commit("fixture-build-provisioning", {"reservationId": "reservation-cancel"})
+    assert restarted.handle({**common_build, "kind": "build.cancel",
+        "reservationId": "reservation-cancel"}) == {"cancelRequested": True}
+    assert active_process.poll() == 0
+    restarted = watchdog.Admission(descriptor_path, journal, str(docker_socket), 5, host_config)
+    recovered_build = restarted.state["reservations"]["reservation-cancel"]
+    assert recovered_build["state"] == "committed"
+    assert recovered_build["buildTerminated"] is True
+    assert "watchdog restarted" in recovered_build["buildError"]
+    assert restarted.state["admissionOpen"] is True
+    assert restarted.handle({**common_build, "kind": "reservation.release",
+        "reservationId": "reservation-cancel"}) == {"released": True}
+    assert restarted.handle({**common_build, "kind": "lease.drain"}) == {"state": "recovered"}
+    assert restarted.state["leases"]["invocation-build"]["state"] == "recovered"
 
     # Any uncertain activity quarantines durably and replay never re-grants it.
     lease_d = restarted.handle({"kind": "lease.create", "profileId": "profile-test",

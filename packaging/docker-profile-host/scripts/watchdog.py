@@ -16,13 +16,16 @@ import json
 import math
 import os
 import posixpath
+import re
 import secrets
 import signal
 import socketserver
 import stat
 import subprocess
+import tarfile
 import threading
 import time
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -38,6 +41,35 @@ LABELS = {
 
 CREATE_KEYS = {"image", "command", "entrypoint", "environment", "workingDir", "user", "tmpfs", "attemptId"}
 FORBIDDEN_CREATE_KEYS = {"binds", "mounts", "volumes", "hostConfig", "devices", "networkMode", "ports", "extraHosts"}
+BUILD_KEYS = {"buildKey", "platform", "dockerfile", "buildArgs", "target"}
+MAX_BUILD_CONTEXT_BYTES = 2 * 1024 * 1024 * 1024
+MAX_BUILD_CONTEXT_CHUNK_BYTES = 4 * 1024 * 1024
+
+
+def read_exact(reader: Any, size: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = size
+    while remaining > 0:
+        chunk = reader.read(remaining)
+        if not chunk:
+            raise ProtocolError("build-context-truncated", "build context ended inside a frame")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def receive_framed_build_context(reader: Any, output: Any) -> int:
+    total = 0
+    while True:
+        length = int.from_bytes(read_exact(reader, 4), "big")
+        if length == 0:
+            return total
+        if length > MAX_BUILD_CONTEXT_CHUNK_BYTES:
+            raise ProtocolError("build-context-frame-too-large", "build context frame exceeds four MiB")
+        total += length
+        if total > MAX_BUILD_CONTEXT_BYTES:
+            raise ProtocolError("build-context-too-large", "build context exceeds two GiB")
+        output.write(read_exact(reader, length))
 
 
 def now() -> str:
@@ -77,6 +109,7 @@ class Admission:
         self.grace = grace
         self.lock = threading.RLock()
         self.stop = threading.Event()
+        self.build_processes: dict[str, subprocess.Popen[str]] = {}
         self.state: dict[str, Any] = {
             "schemaVersion": 1,
             "generation": self._generation(),
@@ -97,6 +130,7 @@ class Admission:
             self._recover_once()
             self.state["admissionOpen"] = not self.state["degraded"]
             self._commit("daemon-generation-reconciled", {})
+        self._reconcile_restarted_builds()
 
     def _load_slots(self) -> None:
         storage = self.host_config.get("storage", {}) if self.host_config else {}
@@ -416,6 +450,416 @@ class Admission:
             raise ProtocolError("container-create-invalid", "tmpfs paths are not permitted")
         return copy.deepcopy(raw)
 
+    def _validate_build(self, raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict) or set(raw) - BUILD_KEYS:
+            raise ProtocolError("build-create-host-input", "build accepts only normalized context metadata")
+        build_key = raw.get("buildKey")
+        platform = raw.get("platform")
+        dockerfile = raw.get("dockerfile")
+        build_args = raw.get("buildArgs", {})
+        target = raw.get("target")
+        if not isinstance(build_key, str) or re.fullmatch(r"[a-f0-9]{64}", build_key) is None:
+            raise ProtocolError("build-create-invalid", "buildKey must be a sha256 hex digest")
+        if not isinstance(platform, str) or re.fullmatch(r"linux/[A-Za-z0-9_.-]+", platform) is None:
+            raise ProtocolError("build-create-invalid", "platform must be a normalized Linux platform")
+        if (not isinstance(dockerfile, str) or not dockerfile or dockerfile.startswith("/")
+                or posixpath.normpath(dockerfile) != dockerfile
+                or dockerfile == ".." or dockerfile.startswith("../")):
+            raise ProtocolError("build-create-host-input", "Dockerfile must be a normalized context-relative path")
+        if not isinstance(build_args, dict) or any(
+            not isinstance(key, str) or not key or not isinstance(value, str)
+            for key, value in build_args.items()
+        ):
+            raise ProtocolError("build-create-invalid", "buildArgs must contain string keys and values")
+        if target is not None and (not isinstance(target, str) or not target or "\n" in target or "\r" in target):
+            raise ProtocolError("build-create-invalid", "target must be one non-empty line")
+        return copy.deepcopy(raw)
+
+    def validate_build_context(self, spec: dict[str, Any], context_path: Path) -> None:
+        names: set[str] = set()
+        total = 0
+        try:
+            with tarfile.open(context_path, mode="r:*") as archive:
+                for member in archive:
+                    name = member.name
+                    if (not name or name.startswith("/") or "\\" in name
+                            or posixpath.normpath(name) != name
+                            or name in (".", "..") or name.startswith("../")):
+                        raise ProtocolError("build-context-path-forbidden", "tar entries must be normalized relative paths")
+                    if name in names:
+                        raise ProtocolError("build-context-duplicate", f"duplicate tar entry {name!r}")
+                    names.add(name)
+                    if not member.isfile() or member.issparse():
+                        raise ProtocolError("build-context-type-forbidden", "build context accepts regular files only")
+                    total += member.size
+                    if member.size < 0 or total > MAX_BUILD_CONTEXT_BYTES:
+                        raise ProtocolError("build-context-too-large", "expanded build context exceeds two GiB")
+        except ProtocolError:
+            raise
+        except (tarfile.TarError, OSError) as error:
+            raise ProtocolError("build-context-invalid-tar", f"build context is not a valid tar archive: {error}") from error
+        if spec["dockerfile"] not in names:
+            raise ProtocolError("build-context-dockerfile-missing", "declared Dockerfile is absent from build context")
+
+    def _build_locator(self, build_key: str) -> str:
+        return "niceeval-build:" + build_key[:32]
+
+    def _build_labels(self, reservation: dict[str, Any]) -> dict[str, str]:
+        return {
+            label: str(self.profile_id if field == "profileId" else reservation[field])
+            for field, label in LABELS.items()
+            if field != "attemptId"
+        }
+
+    def _builder_container_name(self, reservation: dict[str, Any]) -> str:
+        builder = str(reservation.get("builderName", ""))
+        if re.fullmatch(r"niceeval-build-[a-f0-9]{24}", builder) is None:
+            raise RuntimeError("journaled builder name is not control-derived")
+        return "buildx_buildkit_" + builder + "0"
+
+    def _builder_volume_name(self, reservation: dict[str, Any]) -> str:
+        return self._builder_container_name(reservation) + "_state"
+
+    def _builder_container_ids(self, reservation: dict[str, Any]) -> list[str]:
+        name = self._builder_container_name(reservation)
+        result = self._docker("ps", "-aq", "--filter", f"name=^/{name}$", check=False)
+        if result.returncode != 0:
+            raise RuntimeError("Docker builder-container query failed; refusing to infer absence")
+        return result.stdout.split()
+
+    def _builder_volume_names(self, reservation: dict[str, Any]) -> list[str]:
+        name = self._builder_volume_name(reservation)
+        result = self._docker("volume", "ls", "-q", "--filter", f"name=^{name}$", check=False)
+        if result.returncode != 0:
+            raise RuntimeError("Docker builder-volume query failed; refusing to infer absence")
+        names = result.stdout.split()
+        if any(item != name for item in names):
+            raise RuntimeError("Docker builder-volume query returned a non-exact name")
+        return names
+
+    @staticmethod
+    def _process_start_time(pid: int) -> str | None:
+        try:
+            fields = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rpartition(") ")[2].split()
+            return fields[19]
+        except (FileNotFoundError, IndexError, OSError):
+            return None
+
+    @staticmethod
+    def _process_cgroup_path(pid: int) -> str | None:
+        try:
+            for line in Path(f"/proc/{pid}/cgroup").read_text(encoding="utf-8").splitlines():
+                if line.startswith("0::"):
+                    relative = line[3:].lstrip("/")
+                    root = Path("/sys/fs/cgroup").resolve()
+                    path = (root / relative).resolve()
+                    if path != root and root not in path.parents:
+                        raise RuntimeError("builder cgroup escaped /sys/fs/cgroup")
+                    return str(path)
+        except FileNotFoundError:
+            return None
+        raise RuntimeError(f"cannot attest cgroup v2 path for pid {pid}")
+
+    def _builder_process_facts(self, container_ids: list[str]) -> list[dict[str, Any]]:
+        facts: list[dict[str, Any]] = []
+        for container_id in container_ids:
+            result = self._docker("inspect", "--format", "{{.State.Pid}}", container_id, check=False)
+            if result.returncode != 0 or not result.stdout.strip().isdigit():
+                raise RuntimeError(f"cannot attest builder container process for {container_id}")
+            pid = int(result.stdout.strip())
+            start_time = self._process_start_time(pid)
+            cgroup_path = self._process_cgroup_path(pid)
+            if pid <= 0 or start_time is None or cgroup_path is None:
+                raise RuntimeError(f"builder container {container_id} has no stable process/cgroup identity")
+            facts.append({
+                "containerId": container_id,
+                "pid": pid,
+                "startTime": start_time,
+                "cgroupPath": cgroup_path,
+            })
+        return facts
+
+    def _record_builder_resources(self, reservation: dict[str, Any]) -> None:
+        container_ids = self._builder_container_ids(reservation)
+        if len(container_ids) != 1:
+            raise RuntimeError("control-derived builder must have exactly one container")
+        volume_names = self._builder_volume_names(reservation)
+        if volume_names != [self._builder_volume_name(reservation)]:
+            raise RuntimeError("control-derived builder must have exactly one state volume")
+        reservation["builderContainerIds"] = container_ids
+        reservation["builderProcesses"] = self._builder_process_facts(container_ids)
+        reservation["builderVolumeNames"] = volume_names
+        self._commit("build-builder-resources", {
+            "reservationId": reservation["reservationId"],
+            "containerIds": container_ids,
+            "volumeNames": volume_names,
+        })
+
+    def _terminate_build_process(self, reservation: dict[str, Any]) -> bool:
+        process = self.build_processes.get(reservation["reservationId"])
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        identity = reservation.get("buildProcess")
+        if identity is None:
+            return True
+        if not isinstance(identity, dict) or not isinstance(identity.get("pid"), int) \
+                or not isinstance(identity.get("startTime"), str):
+            raise RuntimeError("journaled build process identity is invalid")
+        pid = identity["pid"]
+        expected = identity["startTime"]
+        if self._process_start_time(pid) == expected:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            deadline = time.monotonic() + 5
+            while self._process_start_time(pid) == expected and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if self._process_start_time(pid) == expected:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                deadline = time.monotonic() + 5
+                while self._process_start_time(pid) == expected and time.monotonic() < deadline:
+                    time.sleep(0.05)
+        absent = self._process_start_time(pid) != expected
+        if absent:
+            reservation.pop("buildProcess", None)
+        return absent
+
+    def _builder_processes_absent(self, reservation: dict[str, Any]) -> bool:
+        for fact in reservation.get("builderProcesses", []):
+            if not isinstance(fact, dict):
+                return False
+            pid, start_time, cgroup_path = fact.get("pid"), fact.get("startTime"), fact.get("cgroupPath")
+            if not isinstance(pid, int) or not isinstance(start_time, str) or not isinstance(cgroup_path, str):
+                return False
+            if self._process_start_time(pid) == start_time or Path(cgroup_path).exists():
+                return False
+        return True
+
+    def _build_resources_absent(self, reservation: dict[str, Any]) -> bool:
+        process = self.build_processes.get(reservation["reservationId"])
+        if process is not None and process.poll() is None:
+            return False
+        identity = reservation.get("buildProcess")
+        if isinstance(identity, dict) and isinstance(identity.get("pid"), int) \
+                and isinstance(identity.get("startTime"), str) \
+                and self._process_start_time(identity["pid"]) == identity["startTime"]:
+            return False
+        builder = str(reservation.get("builderName", ""))
+        provisional = str(reservation.get("provisionalRef", ""))
+        if builder and self._docker("buildx", "inspect", builder, check=False).returncode == 0:
+            return False
+        if builder and self._builder_container_ids(reservation):
+            return False
+        if builder and self._builder_volume_names(reservation):
+            return False
+        if not self._builder_processes_absent(reservation):
+            return False
+        if provisional and self._docker("image", "inspect", provisional, check=False).returncode == 0:
+            return False
+        containers, networks = self._resource_ids(reservation)
+        return not containers and not networks
+
+    def _destroy_build(self, reservation: dict[str, Any]) -> bool:
+        process_absent = self._terminate_build_process(reservation)
+        builder_attested = True
+        builder = str(reservation.get("builderName", ""))
+        provisional = str(reservation.get("provisionalRef", ""))
+        if builder:
+            current_ids = self._builder_container_ids(reservation)
+            if current_ids and not reservation.get("builderProcesses"):
+                try:
+                    reservation["builderContainerIds"] = current_ids
+                    reservation["builderProcesses"] = self._builder_process_facts(current_ids)
+                except Exception:
+                    builder_attested = False
+            try:
+                self._docker("buildx", "rm", "--force", builder, check=False)
+            except Exception:
+                pass
+            for container_id in self._builder_container_ids(reservation):
+                self._docker("rm", "-f", container_id, check=False)
+            for volume_name in self._builder_volume_names(reservation):
+                self._docker("volume", "rm", "-f", volume_name, check=False)
+        if provisional:
+            self._docker("image", "rm", "--force", provisional, check=False)
+        _, networks = self._resource_ids(reservation)
+        for network in networks:
+            self._docker("network", "rm", network, check=False)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if process_absent and builder_attested and self._build_resources_absent(reservation):
+                return True
+            time.sleep(0.1)
+        return process_absent and builder_attested and self._build_resources_absent(reservation)
+
+    def _run_build(self, reservation: dict[str, Any], spec: dict[str, Any], context_path: Path) -> None:
+        args = [
+            "docker", "--host", f"unix://{self.docker_socket}",
+            "buildx", "build", "--builder", reservation["builderName"], "--load",
+            "--platform", spec["platform"], "--file", spec["dockerfile"],
+            "--tag", reservation["provisionalRef"],
+        ]
+        for key, value in sorted(spec.get("buildArgs", {}).items()):
+            args += ["--build-arg", f"{key}={value}"]
+        if spec.get("target"):
+            args += ["--target", spec["target"]]
+        args.append("-")
+        with context_path.open("rb") as context:
+            process = subprocess.Popen(
+                args,
+                stdin=context,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            start_time = self._process_start_time(process.pid)
+            if start_time is None:
+                process.terminate()
+                process.wait(timeout=5)
+                raise ProtocolError("build-process-attestation-failed", "cannot journal build process identity")
+            with self.lock:
+                self.build_processes[reservation["reservationId"]] = process
+                reservation["buildProcess"] = {"pid": process.pid, "startTime": start_time}
+                self._commit("build-process-started", {
+                    "reservationId": reservation["reservationId"],
+                    "pid": process.pid,
+                    "startTime": start_time,
+                })
+            try:
+                _, stderr = process.communicate(timeout=15 * 60)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                try:
+                    _, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    _, stderr = process.communicate(timeout=5)
+                raise ProtocolError("build-create-timeout", "control-owned build exceeded 15 minutes")
+            finally:
+                with self.lock:
+                    self.build_processes.pop(reservation["reservationId"], None)
+            if process.returncode != 0:
+                raise ProtocolError("build-create-failed", (stderr or "Docker build failed")[-65536:])
+
+    def authorize_build_header(self, request: dict[str, Any]) -> None:
+        with self.lock:
+            if request.get("kind") != "build.create" or request.get("contextEncoding") != "tar-chunked/v1":
+                raise ProtocolError("build-create-invalid", "build context framing must be tar-chunked/v1")
+            lease = self._lease(request)
+            reservation = self.state["reservations"].get(str(request.get("reservationId", "")))
+            if reservation is None or reservation["invocationId"] != lease["invocationId"]:
+                raise ProtocolError("reservation-not-found", "reservation is not owned by this lease")
+            if reservation["kind"] != "build" or reservation["state"] not in ("granted", "provisioning", "committed"):
+                raise ProtocolError("reservation-state", "build reservation is not createable")
+            self._validate_build(request.get("build"))
+
+    def handle_build(self, request: dict[str, Any], context_path: Path) -> dict[str, Any]:
+        self.authorize_build_header(request)
+        spec = self._validate_build(request.get("build"))
+        self.validate_build_context(spec, context_path)
+        reservation_id = str(request["reservationId"])
+        digest = canonical_digest(spec)
+        with self.lock:
+            reservation = self.state["reservations"][reservation_id]
+            if reservation["state"] == "committed":
+                if reservation.get("buildSpecDigest") != digest:
+                    raise ProtocolError("build-create-conflict", "retry does not match journaled build intent")
+                if reservation.get("buildTerminated") is True and reservation.get("locator"):
+                    self._commit("build-create-replayed", {"reservationId": reservation_id})
+                    return {"locator": reservation["locator"], "state": "terminated"}
+                raise ProtocolError("build-create-failed", str(reservation.get("buildError", "prior build failed")))
+            if reservation["state"] == "provisioning":
+                if reservation.get("buildSpecDigest") != digest:
+                    raise ProtocolError("build-create-conflict", "retry does not match journaled build intent")
+                raise ProtocolError("build-create-active", "the control-owned build operation is still active")
+            reservation["buildSpecDigest"] = digest
+            reservation["operationId"] = hashlib.sha256(
+                f"{reservation_id}:{reservation['provisionToken']}".encode()
+            ).hexdigest()[:32]
+            reservation["builderName"] = "niceeval-build-" + reservation["operationId"][:24]
+            reservation["provisionalRef"] = "niceeval-build-provisional:" + reservation["operationId"]
+            reservation["locator"] = self._build_locator(spec["buildKey"])
+            reservation["state"] = "provisioning"
+            self._commit("build-create-intent", {
+                "reservationId": reservation_id,
+                "operationId": reservation["operationId"],
+                "specDigest": digest,
+                "provisionalRef": reservation["provisionalRef"],
+            })
+
+        failure: Exception | None = None
+        try:
+            labels = self._build_labels(reservation)
+            network_args = [
+                "network", "create", "--driver", "bridge", "--opt",
+                "com.docker.network.bridge.enable_icc=false",
+            ]
+            for key, value in labels.items():
+                network_args += ["--label", f"{key}={value}"]
+            network_args.append("niceeval-build-" + reservation["provisionToken"][:20])
+            with self.lock:
+                self._commit("build-network-create-intent", {"reservationId": reservation_id})
+            network_id = self._docker(*network_args).stdout.strip()
+            with self.lock:
+                reservation["networkId"] = network_id
+                self._commit("build-network-created", {
+                    "reservationId": reservation_id, "networkId": network_id,
+                })
+            self._docker(
+                "buildx", "create", "--driver", "docker-container",
+                "--driver-opt", f"network={network_id}",
+                "--name", reservation["builderName"],
+            )
+            with self.lock:
+                self._commit("build-builder-created", {
+                    "reservationId": reservation_id, "builderName": reservation["builderName"],
+                })
+            self._docker("buildx", "inspect", "--bootstrap", reservation["builderName"])
+            with self.lock:
+                self._record_builder_resources(reservation)
+            self._run_build(reservation, spec, context_path)
+            self._docker("tag", reservation["provisionalRef"], reservation["locator"])
+        except Exception as error:
+            failure = error
+        try:
+            terminated = self._destroy_build(reservation)
+        except Exception as error:
+            terminated = False
+            if failure is None:
+                failure = error
+        with self.lock:
+            reservation["buildTerminated"] = terminated
+            if not terminated:
+                self._quarantine(reservation, f"build {reservation_id} termination could not be proven")
+                raise ProtocolError("build-termination-unproven", "control could not prove the build operation terminated")
+            reservation["state"] = "committed"
+            if failure is not None:
+                reservation["buildError"] = str(failure)[-65536:]
+            self._commit("build-terminated", {
+                "reservationId": reservation_id,
+                "operationId": reservation["operationId"],
+                "locator": reservation["locator"],
+                "outcome": "failed" if failure is not None else "succeeded",
+            })
+        if failure is not None:
+            if isinstance(failure, ProtocolError):
+                raise failure
+            if isinstance(failure, subprocess.CalledProcessError):
+                detail = (failure.stderr or failure.stdout or str(failure)).strip()[-65536:]
+            else:
+                detail = str(failure)
+            raise ProtocolError("build-create-failed", detail)
+        return {"locator": reservation["locator"], "state": "terminated"}
+
     def _create_container(self, reservation: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
         slot = self.state["slots"][reservation["slotId"]]
         reservation["attemptId"] = str(spec["attemptId"])
@@ -427,7 +871,10 @@ class Admission:
         self._commit("container-create-intent", {"reservationId": reservation["reservationId"],
                                                   "specDigest": reservation["createSpecDigest"]})
         network_name = "niceeval-" + reservation["provisionToken"][:20]
-        network_args = ["network", "create", "--driver", "bridge"]
+        network_args = [
+            "network", "create", "--driver", "bridge", "--opt",
+            "com.docker.network.bridge.enable_icc=false",
+        ]
         for key, value in labels.items():
             network_args += ["--label", f"{key}={value}"]
         network_args.append(network_name)
@@ -460,6 +907,10 @@ class Admission:
             args += ["--tmpfs", f"{path}:{options}"]
         for value in spec.get("environment", []):
             args += ["--env", str(value)]
+        policy = self.descriptor.get("policy", {})
+        if policy.get("level") == "managed-rootless/v1":
+            for server in policy.get("network", {}).get("dns", {}).get("servers", []):
+                args += ["--dns", str(server)]
         if spec.get("workingDir"):
             args += ["--workdir", str(spec["workingDir"])]
         if spec.get("user"):
@@ -513,6 +964,15 @@ class Admission:
                         "slots": list(self.state["slots"].values()),
                         "availableQuotaSlots": sum(1 for s in self.state["slots"].values() if s["state"] == "free"),
                         "degraded": list(self.state["degraded"])}
+            if kind == "build.lookup":
+                if request.get("profileId") != self.profile_id or request.get("daemonGeneration") != self.state["generation"]:
+                    raise ProtocolError("attestation-changed", "profile or daemon generation changed")
+                build_key = request.get("buildKey")
+                if not isinstance(build_key, str) or re.fullmatch(r"[a-f0-9]{64}", build_key) is None:
+                    raise ProtocolError("build-lookup-invalid", "buildKey must be a sha256 hex digest")
+                locator = self._build_locator(build_key)
+                hit = self._docker("image", "inspect", locator, check=False).returncode == 0
+                return {"hit": hit, "locator": locator}
             if kind == "lease.create":
                 if not self.state["admissionOpen"]:
                     raise ProtocolError("admission-closed", "profile recovery has not converged")
@@ -609,9 +1069,17 @@ class Admission:
             if kind == "reservation.commit":
                 raise ProtocolError("control-create-unimplemented", "container create must be owned by the control service; client-supplied IDs are forbidden")
             if kind == "container.create":
-                if reservation["kind"] != "container" or reservation["state"] not in ("granted", "provisioning"):
+                if reservation["kind"] != "container" or reservation["state"] not in ("granted", "provisioning", "committed"):
                     raise ProtocolError("reservation-state", "container reservation is not createable")
                 spec = self._validate_create(request.get("create"))
+                if reservation["state"] == "committed":
+                    if reservation.get("createSpecDigest") != canonical_digest(spec):
+                        raise ProtocolError("container-create-conflict", "replay does not match journaled create intent")
+                    containers, networks = self._resource_ids(reservation)
+                    if containers != [reservation.get("containerId")] or networks != [reservation.get("networkId")]:
+                        raise ProtocolError("container-create-replay-incomplete", "committed container resources are not uniquely visible")
+                    self._commit("container-create-replayed", {"reservationId": reservation_id})
+                    return {"containerId": containers[0], "networkId": networks[0], "state": "active"}
                 if reservation["state"] == "provisioning":
                     if reservation.get("createSpecDigest") != canonical_digest(spec):
                         raise ProtocolError("container-create-conflict", "retry does not match journaled create intent")
@@ -623,12 +1091,21 @@ class Admission:
                         self._commit("container-create-reconciled", {"reservationId": reservation_id})
                         return {"containerId": containers[0], "networkId": networks[0], "state": "active"}
                 return self._create_container(reservation, spec)
+            if kind == "build.cancel":
+                if reservation["kind"] != "build" or reservation["state"] != "provisioning":
+                    raise ProtocolError("reservation-state", "only an active build can cancel")
+                reservation["cancelRequested"] = True
+                process = self.build_processes.get(reservation_id)
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                self._commit("build-cancel-requested", {"reservationId": reservation_id})
+                return {"cancelRequested": True}
             if kind == "reservation.release":
                 if reservation["kind"] == "build":
-                    evidence = request.get("terminationEvidence", {})
-                    required = ("daemonRequestTerminated", "buildkitSessionGone", "processActivityZero", "provisionalRefResolvedOrRemoved")
-                    if not all(evidence.get(item) is True for item in required):
-                        raise ProtocolError("build-still-active", "complete build termination evidence is required")
+                    if "terminationEvidence" in request:
+                        raise ProtocolError("build-release-client-evidence-forbidden", "build termination proof is control-owned")
+                    if reservation.get("buildTerminated") is not True or not self._build_resources_absent(reservation):
+                        raise ProtocolError("build-still-active", "control has not proven complete build termination")
                 reservation["state"] = "releasing"
                 self._commit("reservation-release-intent", {"reservationId": reservation_id})
                 if reservation["kind"] == "container" and not self._destroy(reservation):
@@ -643,6 +1120,43 @@ class Admission:
                 return {"released": True}
             raise ProtocolError("request-unknown", f"unknown request kind {kind!r}")
 
+    def _reconcile_restarted_builds(self) -> None:
+        with self.lock:
+            active = [
+                reservation for reservation in self.state["reservations"].values()
+                if reservation["kind"] == "build" and reservation["state"] == "provisioning"
+            ]
+            if not active:
+                return
+            reopen = bool(self.state["admissionOpen"])
+            self.state["admissionOpen"] = False
+            self._commit("build-restart-recovery-started", {
+                "reservationIds": [reservation["reservationId"] for reservation in active],
+            })
+            for reservation in active:
+                reservation_id = reservation["reservationId"]
+                try:
+                    terminated = self._destroy_build(reservation)
+                except Exception as error:
+                    terminated = False
+                    reason = str(error)
+                else:
+                    reason = "watchdog restarted before the control-owned build completed"
+                reservation["buildTerminated"] = terminated
+                if terminated:
+                    reservation["state"] = "committed"
+                    reservation["buildError"] = reason
+                    self._commit("build-restart-reconciled", {
+                        "reservationId": reservation_id,
+                        "outcome": "cancelled",
+                    })
+                else:
+                    self._quarantine(reservation, f"build {reservation_id} restart recovery failed: {reason}")
+            self.state["admissionOpen"] = reopen and not self.state["degraded"]
+            self._commit("build-restart-recovery-finished", {
+                "admissionOpen": self.state["admissionOpen"],
+            })
+
     def _recover_once(self) -> None:
         with self.lock:
             changed = False
@@ -653,13 +1167,18 @@ class Admission:
                 unresolved = False
                 for reservation in owned:
                     recovery_error = f"recovery blocked for {reservation['reservationId']}"
-                    if reservation["kind"] == "build" and reservation["state"] in ("committed", "releasing"):
-                        message = f"build {reservation['reservationId']} lacks termination evidence"
-                        if message not in self.state["degraded"]:
-                            self.state["degraded"].append(message)
-                        unresolved = True
-                        continue
+                    if reservation["kind"] == "build" and reservation["state"] == "provisioning":
+                        process = self.build_processes.get(reservation["reservationId"])
+                        if process is not None:
+                            if process.poll() is None:
+                                process.terminate()
+                            reservation["cancelRequested"] = True
+                            unresolved = True
+                            continue
                     try:
+                        if reservation["kind"] == "build" and not self._destroy_build(reservation):
+                            unresolved = True
+                            continue
                         if reservation["kind"] == "container" and not self._destroy(reservation):
                             unresolved = True
                             continue
@@ -721,17 +1240,38 @@ class Admission:
 
 class Handler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
+        context_path: Path | None = None
         try:
             raw = self.rfile.readline(1024 * 1024)
+            if not raw.endswith(b"\n"):
+                raise ProtocolError("request-invalid", "request header exceeds one MiB or is unterminated")
             request = json.loads(raw.decode("utf-8"))
             if not isinstance(request, dict):
                 raise ProtocolError("request-invalid", "request must be an object")
-            response = {"ok": True, "result": self.server.admission.handle(request)}  # type: ignore[attr-defined]
+            admission = self.server.admission  # type: ignore[attr-defined]
+            if request.get("kind") == "build.create":
+                admission.authorize_build_header(request)
+                admission.journal.parent.mkdir(parents=True, exist_ok=True)
+                fd, raw_path = tempfile.mkstemp(prefix="build-context-", suffix=".tar", dir=admission.journal.parent)
+                context_path = Path(raw_path)
+                with os.fdopen(fd, "wb") as context:
+                    receive_framed_build_context(self.rfile, context)
+                    context.flush()
+                    os.fsync(context.fileno())
+                response = {"ok": True, "result": admission.handle_build(request, context_path)}
+            else:
+                response = {"ok": True, "result": admission.handle(request)}
         except ProtocolError as error:
             response = {"ok": False, "error": {"code": error.code, "message": str(error)}}
         except Exception as error:
             response = {"ok": False, "error": {"code": "internal", "message": str(error)}}
-        self.wfile.write((json.dumps(response, separators=(",", ":")) + "\n").encode())
+        finally:
+            if context_path is not None:
+                context_path.unlink(missing_ok=True)
+        try:
+            self.wfile.write((json.dumps(response, separators=(",", ":")) + "\n").encode())
+        except BrokenPipeError:
+            pass
 
 
 class Server(socketserver.ThreadingUnixStreamServer):

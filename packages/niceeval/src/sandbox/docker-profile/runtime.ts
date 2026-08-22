@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { lstat, readFile, readdir, stat } from "node:fs/promises";
 import { connect } from "node:net";
 import { dirname, join, parse } from "node:path";
+import type { Readable } from "node:stream";
 import { indexDockerProfiles, resolveDockerProfile, type ResolvedDockerProfileEntry } from "./registry.ts";
 import type { DockerExecutionProfileV1 } from "./schema.ts";
 
@@ -28,9 +30,12 @@ export interface DockerProfileLease {
 export interface DockerProfileReservation {
   readonly reservationId: string;
   readonly provisionToken: string;
-  readonly state: "queued" | "granted" | "committed" | "releasing";
+  readonly state: "queued" | "granted" | "provisioning" | "committed" | "releasing" | "quarantined";
   readonly containerId?: string;
   readonly networkId?: string;
+  readonly locator?: string;
+  readonly buildTerminated?: boolean;
+  readonly buildError?: string;
 }
 
 export interface DockerProfileContainerCreateInput {
@@ -48,6 +53,31 @@ export interface DockerProfileContainerCreateResult {
   readonly containerId: string;
   readonly networkId: string;
   readonly state: "active";
+}
+
+export interface DockerProfileBuildCreateInput {
+  readonly buildKey: string;
+  readonly platform: string;
+  readonly dockerfile: string;
+  readonly buildArgs?: Readonly<Record<string, string>>;
+  readonly target?: string;
+}
+
+export interface DockerProfileBuildCreateResult {
+  readonly locator: string;
+  readonly state: "terminated";
+}
+
+export async function lookupDockerProfileBuild(
+  binding: DockerProfileRuntimeBinding,
+  buildKey: string,
+): Promise<{ readonly hit: boolean; readonly locator: string }> {
+  return await controlRequest(binding.controlSocketPath, {
+    kind: "build.lookup",
+    profileId: binding.profile.profileId,
+    daemonGeneration: binding.daemonGeneration,
+    buildKey,
+  });
 }
 
 function modeOf(value: number): number {
@@ -95,23 +125,43 @@ export async function loadDockerProfileRegistry(): Promise<ReturnType<typeof ind
   return loadDockerProfileRegistryAt(DOCKER_PROFILE_REGISTRY_DIR);
 }
 
-function controlRequest<T>(path: string, request: Readonly<Record<string, unknown>>): Promise<T> {
+function controlRequest<T>(
+  path: string,
+  request: Readonly<Record<string, unknown>>,
+  signal?: AbortSignal,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const socket = connect(path);
     let response = "";
+    let settled = false;
+    const settle = (outcome: { value: T } | { error: unknown }) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      if ("value" in outcome) resolve(outcome.value);
+      else reject(outcome.error);
+    };
+    const abort = () => socket.destroy(
+      signal?.reason instanceof Error
+        ? signal.reason
+        : new DOMException("Docker profile control request aborted", "AbortError"),
+    );
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
     socket.setTimeout(10_000);
     socket.on("connect", () => socket.end(`${JSON.stringify(request)}\n`));
     socket.on("data", (chunk: Buffer) => { response += chunk.toString(); });
     socket.on("timeout", () => socket.destroy(new Error(`Docker profile control timeout: ${path}`)));
-    socket.on("error", reject);
+    socket.on("error", (error) => settle({ error }));
     socket.on("close", () => {
+      if (settled) return;
       try {
         const parsed = JSON.parse(response) as { ok?: boolean; result?: T; error?: { code?: string; message?: string } };
         if (parsed.ok !== true || parsed.result === undefined) {
-          reject(new Error(`${parsed.error?.code ?? "control-error"}: ${parsed.error?.message ?? "invalid control reply"}`));
-        } else resolve(parsed.result);
+          settle({ error: new Error(`${parsed.error?.code ?? "control-error"}: ${parsed.error?.message ?? "invalid control reply"}`) });
+        } else settle({ value: parsed.result });
       } catch (error) {
-        reject(error);
+        settle({ error });
       }
     });
   });
@@ -264,14 +314,68 @@ export async function acquireDockerProfileReservation(
   return reservation;
 }
 
-export async function commitDockerProfileReservation(
-  lease: DockerProfileLease,
-  reservationId: string,
-  input: { readonly containerId?: string; readonly networkId?: string; readonly attemptId?: string },
-): Promise<void> {
-  await controlRequest(lease.binding.controlSocketPath, {
-    kind: "reservation.commit", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
-    reservationId, ...input,
+async function writeControlFrame(socket: import("node:net").Socket, bytes: Buffer): Promise<void> {
+  if (socket.write(bytes)) return;
+  await once(socket, "drain");
+}
+
+function controlBuildRequest<T>(
+  path: string,
+  request: Readonly<Record<string, unknown>>,
+  context: Readable,
+  signal?: AbortSignal,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const socket = connect(path);
+    let response = "";
+    let settled = false;
+    const settle = (outcome: { value: T } | { error: unknown }) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      if ("value" in outcome) resolve(outcome.value);
+      else {
+        context.destroy(outcome.error instanceof Error ? outcome.error : new Error(String(outcome.error)));
+        reject(outcome.error);
+      }
+    };
+    const abort = () => socket.destroy(
+      signal?.reason instanceof Error
+        ? signal.reason
+        : new DOMException("Docker profile build aborted", "AbortError"),
+    );
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+    socket.setTimeout(15 * 60_000);
+    socket.on("connect", () => {
+      void (async () => {
+        await writeControlFrame(socket, Buffer.from(`${JSON.stringify(request)}\n`));
+        for await (const value of context) {
+          const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+          if (chunk.length === 0) continue;
+          const length = Buffer.allocUnsafe(4);
+          length.writeUInt32BE(chunk.length);
+          await writeControlFrame(socket, length);
+          await writeControlFrame(socket, chunk);
+        }
+        const end = Buffer.alloc(4);
+        socket.end(end);
+      })().catch((error: unknown) => socket.destroy(error instanceof Error ? error : new Error(String(error))));
+    });
+    socket.on("data", (chunk: Buffer) => { response += chunk.toString(); });
+    socket.on("timeout", () => socket.destroy(new Error(`Docker profile build control timeout: ${path}`)));
+    socket.on("error", (error) => settle({ error }));
+    socket.on("close", () => {
+      if (settled) return;
+      try {
+        const parsed = JSON.parse(response) as { ok?: boolean; result?: T; error?: { code?: string; message?: string } };
+        if (parsed.ok !== true || parsed.result === undefined) {
+          settle({ error: new Error(`${parsed.error?.code ?? "control-error"}: ${parsed.error?.message ?? "invalid control reply"}`) });
+        } else settle({ value: parsed.result });
+      } catch (error) {
+        settle({ error });
+      }
+    });
   });
 }
 
@@ -308,13 +412,71 @@ export async function createDockerProfileContainer(
   }
 }
 
+export async function createDockerProfileBuild(
+  lease: DockerProfileLease,
+  reservationId: string,
+  build: DockerProfileBuildCreateInput,
+  context: Readable,
+  signal?: AbortSignal,
+): Promise<DockerProfileBuildCreateResult> {
+  const cancelBuild = async () => {
+    await controlRequest(lease.binding.controlSocketPath, {
+      kind: "build.cancel",
+      invocationId: lease.invocationId,
+      leaseToken: lease.leaseToken,
+      reservationId,
+    }).catch(() => undefined);
+  };
+  try {
+    return await controlBuildRequest<DockerProfileBuildCreateResult>(lease.binding.controlSocketPath, {
+      kind: "build.create",
+      invocationId: lease.invocationId,
+      leaseToken: lease.leaseToken,
+      reservationId,
+      build,
+      contextEncoding: "tar-chunked/v1",
+    }, context, signal);
+  } catch (error) {
+    // The operation survives a client-side reply loss. Its durable reservation is
+    // the recovery handle; never retry a build under a second provision token.
+    if (signal?.aborted) {
+      await cancelBuild();
+      throw error;
+    }
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      if (signal?.aborted) {
+        await cancelBuild();
+        throw error;
+      }
+      const reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+        kind: "reservation.get",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+      }, signal).catch(() => undefined);
+      if (signal?.aborted) {
+        await cancelBuild();
+        throw error;
+      }
+      if (reservation?.state === "committed" && reservation.buildTerminated === true) {
+        if (reservation.buildError === undefined && !signal?.aborted && reservation.locator !== undefined) {
+          return { locator: reservation.locator, state: "terminated" };
+        }
+        break;
+      }
+      if (reservation?.state === "quarantined") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw error;
+  }
+}
+
 export async function releaseDockerProfileReservation(
   lease: DockerProfileLease,
   reservationId: string,
-  terminationEvidence?: Readonly<Record<string, boolean>>,
 ): Promise<void> {
   await controlRequest(lease.binding.controlSocketPath, {
     kind: "reservation.release", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
-    reservationId, ...(terminationEvidence === undefined ? {} : { terminationEvidence }),
+    reservationId,
   });
 }
