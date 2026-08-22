@@ -54,6 +54,7 @@ export default defineReport({
     id: "overview",
     path: "/",
     title: { en: "Overview", "zh-CN": "概览" },
+    presentation: "page",
     render: () => <Overview />,
   }],
 });
@@ -96,20 +97,20 @@ const MetricCard = defineComponent<
 
 ## Page、参数和页面选择
 
-普通 Page 的 `render` 可以直接接收固定 Sample，或先用 `load(sample, params, context)` 关闭输入。参数 Page 还要声明 `navigation: false` 与 `params`：
+普通 Page 的 `render` 可以直接接收固定 Sample，或先用 `load(sample, params, context)` 关闭输入。普通业务 Page 的 `presentation` 是 `"page"`。参数 Page 还要声明 `navigation: false`、`presentation` 与 `params`：
 
 - `encode(params)` 产生 canonical key；
 - `decode(key)` 必须能把同一种 key 还原；
 - `enumerate(sample)` 只为完整站点列出实例；
 - `context.evidence(locator)` 只返回当前 Sample 内的关闭证据视图。
 
-`pages` 是 Report 唯一的页面集合，详情必须作为 Page 或参数 Page 显式声明；Host 不补建任何 route。`niceeval show --page <route>` 只 decode、load 和 render 这个目标 Page。它不会调用 `enumerate()` 或执行其它 Page。`niceeval view` 与 `niceeval view --out` 才会枚举全部普通 Page 和参数实例，并在所有路径、链接、资源和预算通过校验后形成完整站点。
+`presentation: "overlay"` 用于叠加在当前业务 Page 上的 Attempt、Source 和 Diff 详情。其它业务页面使用 `"page"`。`pages` 是 Report 唯一的页面集合，Host 不补建任何详情或 route。`niceeval show --page <route>` 只 decode、load 和 render 这个目标 Page。它不会调用 `enumerate()` 或执行其它 Page。`niceeval view` 与 `niceeval view --out` 才会枚举全部普通 Page 和参数实例，并在所有路径、链接、资源和预算通过校验后形成完整站点。
 
 ## JSON、网页和静态站
 
 `show --json` 固定输出英语 JSON。内建 Report 输出 Host 拥有的具名领域文档；自定义 Report 输出一个 Page 的 route、标题、80-column rendered text、下载摘要和问题表。两种 v1 JSON 都在顶层以相同的 `projections` 对象携带该目标 Page 的闭合成本数据；它们不包含作者树、HTML、全站路由或站点 identity。
 
-view 与静态导出使用同一份完整站点版本。同一路由的 HTTP body 与导出目录页面 body 逐字节相同。两者都携带同一个 Host runtime；静态目录找不到 view 的端点时，实时刷新会安静停用。目录不需要网络、源 Record 或 NiceEval 安装，但浏览器必须启用随包交付的 JavaScript。禁用时页面显示可操作的错误，不维护第二套阅读路径。
+view 与静态导出使用同一份完整站点版本。两者只交付一个根 app shell，并通过 hash 打开已经关闭的 Page 或 overlay。它们都携带同一个 Host runtime；静态目录不会探测 view 的实时刷新端点。目录不需要网络、源 Record 或 NiceEval 安装，但必须通过 HTTP(S) 托管，且浏览器必须启用随包交付的 JavaScript。禁用时页面显示可操作的错误，不维护第二套阅读路径。
 
 ## 样式和资源边界
 

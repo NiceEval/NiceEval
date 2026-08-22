@@ -1,9 +1,10 @@
 ---
 title: "编写自定义报告"
-description: "先定义 Analysis 统计口径，再用标准 React JSX 编写可在终端、网页和静态站阅读的 Report。"
+sidebarTitle: "编写自定义报告"
+description: "用内建统计口径写出第一个 Report，再添加自定义 Measure、详情 overlay 和项目默认配置。"
 ---
 
-自定义 Report 只负责页面和显示。Record 保存已发布事实，Analysis 定义总体、分母和缺失语义；Report 组织 `ClosedRows`、`MetricValue` 与关闭的 DomainView。
+这篇教程会先用内建的 `model` 和 `passRate` 写出一份可运行报告。跑通以后，再把业务统计口径拆成自定义 Measure，并了解详情 overlay。
 
 ```text
 Record → Sample → Analysis
@@ -15,9 +16,169 @@ Record → Sample → Analysis
   show：一个目标 Page       view / --out：全部 Page
 ```
 
-## 从 Measure 开始
+## 写出第一个 Page
 
-把业务统计口径定义在 Report 模块之外。Measure 决定分母、缺失和 Evidence；页面不应从数组长度重新计算通过率或成本。
+项目需要使用 React JSX。确认 `tsconfig.json` 包含下面的选项：
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  }
+}
+```
+
+新建 `reports/quality.tsx`。先直接使用 NiceEval 提供的维度和 Measure：
+
+```tsx
+import {
+  aggregate,
+  Bars,
+  Col,
+  defineComponent,
+  defineReport,
+  model,
+  passRate,
+  durationMs,
+  Section,
+  Table,
+  tokens,
+} from "niceeval/report";
+
+const QualityComparison = defineComponent(async (_props: {}, ctx) => {
+  const rows = await aggregate(ctx.scope, {
+    by: { model },
+    values: { passRate, durationMs, tokens },
+  });
+
+  return (
+    <Section title="模型质量">
+      <Col>
+        <Bars points={rows} x="model" y="passRate" />
+        <Table rows={rows} caption="各模型质量与用量" />
+      </Col>
+    </Section>
+  );
+});
+
+export default defineReport({
+  title: { en: "Quality", "zh-CN": "质量" },
+  pages: [{
+    id: "overview",
+    path: "/",
+    title: { en: "Overview", "zh-CN": "概览" },
+    presentation: "page",
+    render: () => <QualityComparison />,
+  }],
+});
+```
+
+Report module 必须默认导出 `defineReport()` 的结果。`ctx.scope` 是这次命令选中的固定 Sample；`aggregate()` 按模型分组，并为每组计算通过率、平均耗时和平均 Token 数。
+
+先用已有 Run 在终端检查这个 Page，再打开完整网页：
+
+```sh
+pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx
+pnpm exec niceeval view --run <run-id> --report ./reports/quality.tsx
+```
+
+第一条命令应打印“模型质量”和各模型的通过率。第二条命令会打开报告站；修改 `quality.tsx` 后，成功的 rebuild 会替换当前内容，失败时仍保留上一份可用报告。
+
+## 用 `aggregate()` 组装图表数据
+
+所有内建图表都读取 `aggregate()` 返回的同一批 rows。组装时只做三件事：
+
+1. `by` 决定一行代表什么，例如一个模型、Agent、Experiment 或评估用例。
+2. `values` 决定每行计算哪些指标，例如通过率、平均耗时和平均 Token 数。
+3. 图表的 `x`、`y` 与 `color` 引用这些字段名，不再读取或重新计算 Sample。
+
+下面这个输入会得到每个“模型 × Agent”一行的数据：
+
+```tsx
+const rows = await aggregate(ctx.scope, {
+  by: { model, agent },
+  values: { passRate, durationMs, tokens },
+});
+```
+
+每个指标格都是完整的 `MetricValue`，包含数值、状态、实际样本数和固定分母。把同一份 `rows` 交给多个图表，才能保证图和表使用相同口径。
+
+### 用柱状图比较通过率
+
+`Bars` 适合比较一个离散维度上的同一指标。`color` 可以把第二个维度拆成不同系列：
+
+```tsx
+import {
+  agent,
+  aggregate,
+  Bars,
+  model,
+  passRate,
+} from "niceeval/report";
+
+const rows = await aggregate(ctx.scope, {
+  by: { model, agent },
+  values: { passRate },
+});
+
+return <Bars points={rows} x="model" y="passRate" color="agent" />;
+```
+
+同一个模型由多个 Agent 运行时，这张图会按 Agent 分色。若只想比较模型，删掉 `agent` 分组和 `color` 即可。
+
+### 用散点图找质量与速度的取舍
+
+`Scatter` 适合把两个连续指标放在一起。下面每个点代表一个 Experiment，横轴越靠左表示平均耗时越短，纵轴越靠上表示通过率越高：
+
+```tsx
+import {
+  aggregate,
+  durationMs,
+  experiment,
+  model,
+  passRate,
+  Scatter,
+} from "niceeval/report";
+
+const rows = await aggregate(ctx.scope, {
+  by: { experiment, model },
+  values: { durationMs, passRate },
+});
+
+return (
+  <Scatter
+    points={rows}
+    x="durationMs"
+    y="passRate"
+    color="model"
+  />
+);
+```
+
+### 用表格保留完整读数
+
+图表适合看趋势，`Table` 适合核对精确值和缺失状态。通常用 `Col` 把大图表和完整表格纵向排列：
+
+```tsx
+return (
+  <Col>
+    <Bars points={rows} x="model" y="passRate" color="agent" />
+    <Table
+      rows={rows}
+      columns={["model", "agent", "passRate", "durationMs", "tokens"]}
+      caption="模型与 Agent 对比"
+    />
+  </Col>
+);
+```
+
+`columns` 控制展示顺序，不会改变 rows 或统计口径。省略它时，`Table` 按 rows 的字段顺序显示全部列。
+
+`Grid` 是另一种选择，但不是另一套数据 API。它让每个直接子节点占一格，并根据宽度自动换列。截图里的摘要条就是 `<Grid><Stat ... /><Stat ... /></Grid>`。它适合 KPI 卡片或多个小面板；把 `Bars` 和大表格直接放进去时，两者也会各占一格，宽屏上可能并排，因此不是本教程的默认写法。
+
+## 定义自己的统计口径
+
+内建 Measure 不足时，把业务统计口径定义在 Report 模块之外。Measure 决定分母、缺失和 Evidence；页面不应从数组长度重新计算通过率或成本。
 
 ```ts
 // reports/quality-measures.ts
@@ -56,7 +217,7 @@ export const passRate = defineMeasure({
 });
 ```
 
-## 组织一个 Page
+## 在 Page 中使用自定义 Measure
 
 Report 模块是 `.tsx` 文件，并使用 TypeScript 的 `"jsx": "react-jsx"`。组合组件通过 `ctx.scope` 获得这次选择固定的 Sample。组件和 Page 不获得 Record reader、文件路径或浏览器请求能力。
 
@@ -65,9 +226,9 @@ Report 模块是 `.tsx` 文件，并使用 TypeScript 的 `"jsx": "react-jsx"`�
 import {
   aggregate,
   Bars,
+  Col,
   defineComponent,
   defineReport,
-  Grid,
   Table,
 } from "niceeval/report";
 import { experiment, passRate } from "./quality-measures.ts";
@@ -79,10 +240,10 @@ const QualityComparison = defineComponent(async (_props: {}, ctx) => {
   });
 
   return (
-    <Grid>
+    <Col>
       <Bars points={rows} x="experiment" y="passRate" />
       <Table rows={rows} caption="实验通过率" />
-    </Grid>
+    </Col>
   );
 });
 
@@ -92,6 +253,7 @@ export default defineReport({
     id: "overview",
     path: "/",
     title: { en: "Overview", "zh-CN": "概览" },
+    presentation: "page",
     render: () => <QualityComparison />,
   }],
 });
@@ -153,7 +315,11 @@ Codex sealed Usage 含 `requestKind: "model"` observation。因此即使 model r
 
 ## 添加详情与显示原语
 
-需要多个详情地址时，定义参数 Page。`pages` 是唯一的页面集合，详情页必须在此显式声明；`params.enumerate(sample)` 只在 view 或静态导出时列出全部实例，Host 不会补建详情 route。`show --page <route>` 只执行请求的一个实例，并检查 `decode()` 后再 `encode()` 得到同一 canonical key。
+需要多个详情地址时，定义参数 Page。每个 Page 都要说明 `presentation`：独立业务页面使用 `"page"`，在当前页面上打开的 Attempt、Source 或 Diff 详情使用 `"overlay"`。
+
+`pages` 是唯一的页面集合，详情必须在此显式声明；`params.enumerate(sample)` 只在 view 或静态导出时列出全部实例，Host 不会补建详情。`show --page <route>` 只执行请求的一个实例，并检查 `decode()` 后再 `encode()` 得到同一 canonical key。
+
+浏览器中的 Report 只有一个根 document。业务 Page 和 overlay 通过 hash 导航；overlay 会保留当前业务 Page，按 Escape、点击关闭按钮或浏览器返回即可关闭。静态报告仍需要浏览器启用随包交付的 JavaScript。
 
 新的显示原语使用双面 `defineComponent()`：`resolve()` 最多取得一次关闭输入，`text()` 与 `web()` 同步读取同一个值。两个面不能各自再次调用 Analysis，也不能用网页专有内容代替终端文字。
 
