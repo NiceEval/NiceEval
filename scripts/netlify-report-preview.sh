@@ -44,5 +44,4 @@ CODEX_BASE_URL="https://preview.invalid/v1" \
 CODEX_API_KEY="netlify-report-preview-no-secret" \
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" exec niceeval view \
   --experiment compare \
-  --report ./reports/memory.tsx \
   --out "$PUBLISH_DIRECTORY"
