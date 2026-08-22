@@ -17,7 +17,7 @@ import {
   IntervalIdSchema,
   TurnIdSchema,
 } from "../../o11y/record/codec.ts";
-import type { AttemptObservabilityAttachment } from "./observability.ts";
+import type { AttemptObservabilityAttachment } from "./observability/definition.ts";
 import type { SourcesAttachment } from "./sources.ts";
 import {
   EmptyArraySchema,

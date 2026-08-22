@@ -1,27 +1,27 @@
 import { createHash } from "node:crypto";
 
 import { Schema } from "effect";
-import { assertionBlobRefs } from "../../assertions/record/attachment.ts";
+import { assertionBlobRefs } from "../../../assertions/record/attachment.ts";
 import {
   AssertionEntryIdSchema,
   MAX_ASSERTION_DOCUMENT_BYTES,
   createAssertionsRecordSchemas,
-} from "../../assertions/record/codec.ts";
+} from "../../../assertions/record/codec.ts";
 import {
   RecordBlobRefSchema,
   type RecordBlobRef,
-} from "../attachment/blob-ref.ts";
-import { recordAttachmentIssue, type RecordAttachmentIssue } from "../attachment/errors.ts";
-import { defineRecordAttachment } from "../definition/index.ts";
+} from "../../attachment/blob-ref.ts";
+import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/errors.ts";
+import { defineRecordAttachment } from "../../definition/index.ts";
 import {
   Sha256DigestSchema,
   SourceItemIdSchema,
-} from "../codec/identifiers.ts";
+} from "../../codec/identifiers.ts";
 import {
   FixedAttachmentValueLimits,
   PositiveSafeIntegerSchema,
-} from "./common.ts";
-import type { SourcesAttachment } from "./sources.ts";
+} from "../common.ts";
+import type { SourcesAttachment } from "../sources.ts";
 
 const AssertionSourceRoleSchema = Schema.Literal(
   "declaration",
@@ -252,7 +252,7 @@ export const assertionsRecordAttachment = defineRecordAttachment({
       },
     },
   },
-  maintenance: () => import("./assertions-v1.ts").then(
+  maintenance: () => import("./migrate/1-to-2.ts").then(
     ({ assertionsV1Maintenance }) => assertionsV1Maintenance,
   ),
   adjacentMigrationLinks: Object.freeze([

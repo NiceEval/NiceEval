@@ -1,4 +1,4 @@
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import type { AttemptObservabilityAttachment } from "../record/family/observability/definition.ts";
 import type { RecordAttachmentPayloadSnapshot } from "../record/attachment/types.ts";
 import type {
   CanonicalDecimal,

@@ -19,7 +19,7 @@ import {
 import {
   AssertionSourceSiteSchema,
   type AssertionSourceSite,
-} from "../record/family/assertions.ts";
+} from "../record/family/assertions/definition.ts";
 import {
   canonicalizeSourceText,
   isStrictUnicodeText,

@@ -167,9 +167,12 @@ const currentAttachmentCatalog = [
 ] as const;
 ```
 
-每个 family 模块包含自己的 declaration、复杂 payload Schema、encoded-side durable JSON 键、limits、blob
-closure 与 integrity 验证。当前每个 family 文件恰有一个 `defineRecordAttachment` 调用。复杂 family 可拆成目录，
-但只有 `definition.ts` 保留该入口。总 catalog 只列六个 declaration，不复制 owner shape 或 payload Schema。
+每个 family 目录包含自己的 declaration、复杂 payload Schema、encoded-side durable JSON 键、limits、blob
+closure 与 integrity 验证。当前每个 family 目录恰有一个 `definition.ts`，并且只有它保留
+`defineRecordAttachment` 调用。
+
+每个历史相邻步骤位于 `migrate/<from>-to-<to>.ts`。该文件把历史 decoder、纯 transform 和 retention 放在
+同一个可审查单元，且不触碰 I/O。总 catalog 只列六个 declaration，不复制 owner shape 或 payload Schema。
 Observability 与 Artifacts 各有一个 family declaration；`owners.attempt` 与 `owners.run` 不会形成第二个 family。
 
 ordinary reader 与 writer 只接受 exact current catalog。未知 stable family、known family 的 future 版本与
@@ -629,8 +632,11 @@ own blobs。执行时 transform 结果只用于核对该 metadata，不作为 re
 完整 portable inventory 由 HEAD 跟踪，index 与 worktree 对该 inventory 干净。计划还绑定 repository
 identity、HEAD、Record path、`recordId`、source inventory 与 NiceEval migration implementation identity。
 
-迁移在 exclusive maintenance lease 下原地逐步执行，完整校验 exact current Core、完整 catalog 与所有 blob
-closure 后才结束。未知或 future family 使计划失败。NiceEval 不创建 staging、backup、rollback 或 root replacement。
+迁移在 exclusive maintenance lease 下原地逐步执行。任一 payload、blob 或 envelope 首次改写前，事务立即把自身
+标记为已写入。之后即使发现 source bytes changed，也保留 sentinel 进入恢复边界。
+
+完成后完整校验 exact current Core、完整 catalog 与所有 blob closure。未知或 future family 使计划失败。
+NiceEval 不创建 staging、backup、rollback 或 root replacement。
 
 `show`、`view` 与 `exp` 在 ordinary session、Run/claim/Sandbox 或付费调用前先做短检查。current fast path
 直接 ordinary open，不要求 Git clean。

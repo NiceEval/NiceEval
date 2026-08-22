@@ -5,19 +5,19 @@ import {
   CanonicalProjectRelativePathSchema,
   Sha256DigestSchema,
   SourceItemIdSchema,
-} from "../codec/identifiers.ts";
+} from "../../codec/identifiers.ts";
 import {
   RecordBlobRefSchema,
   type RecordBlobRef,
-} from "../attachment/blob-ref.ts";
-import { recordAttachmentIssue, type RecordAttachmentIssue } from "../attachment/errors.ts";
-import { defineRecordAttachment } from "../definition/index.ts";
-import type { SourcesAttachment } from "./sources.ts";
+} from "../../attachment/blob-ref.ts";
+import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/errors.ts";
+import { defineRecordAttachment } from "../../definition/index.ts";
+import type { SourcesAttachment } from "../sources.ts";
 import {
   MAX_COMMAND_INLINE_STREAM_BYTES,
   MAX_COMMAND_STREAM_BYTES,
-} from "../../o11y/record/limits.ts";
-import { isCanonicalTurnLabel } from "../../shared/turn-label.ts";
+} from "../../../o11y/record/limits.ts";
+import { isCanonicalTurnLabel } from "../../../shared/turn-label.ts";
 import {
   FixedAttachmentValueLimits,
   NonNegativeSafeIntegerSchema,
@@ -26,7 +26,7 @@ import {
   SafeIdentifierSchema,
   SafeTextSchema,
   isCanonicalIdentitySequence,
-} from "./common.ts";
+} from "../common.ts";
 
 const ObservabilityTargetSchema = Schema.Literal(
   "conversation",
@@ -867,7 +867,7 @@ export const observabilityRecordAttachment = defineRecordAttachment({
       },
     },
   },
-  maintenance: () => import("./observability-v1.ts").then(
+  maintenance: () => import("./migrate/1-to-2.ts").then(
     ({ observabilityV1Maintenance }) => observabilityV1Maintenance,
   ),
   adjacentMigrationLinks: Object.freeze([

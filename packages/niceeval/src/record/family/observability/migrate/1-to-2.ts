@@ -1,10 +1,10 @@
 import { Either, Schema } from "effect";
-import { RecordExactParseOptions } from "../codec/core.ts";
-import type { RecordAttachmentMaintenanceFacet } from "../definition/attachment.ts";
+import { RecordExactParseOptions } from "../../../codec/core.ts";
+import type { RecordAttachmentMaintenanceFacet } from "../../../definition/attachment.ts";
 import {
   AttemptObservabilityAttachmentV1Schema,
   RunObservabilityAttachmentSchema,
-} from "./observability.ts";
+} from "../definition.ts";
 
 const ObservabilityV1PayloadSchema = Schema.Union(
   AttemptObservabilityAttachmentV1Schema,

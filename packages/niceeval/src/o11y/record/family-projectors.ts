@@ -10,7 +10,7 @@ import {
 import type {
   AttemptObservabilityAttachment,
   RunObservabilityAttachment,
-} from "../../record/family/observability.ts";
+} from "../../record/family/observability/definition.ts";
 
 /** Neutral projections stay within one available fixed Observability value. */
 type AttemptPayload = RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;

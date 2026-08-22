@@ -32,7 +32,7 @@ Report loader。Host 内部才取得 Scope、Layer、lease、reader、writer 或
 | execution claim 与 Record lease 协调 | `packages/niceeval/src/coordination/` 与 `packages/niceeval/src/record/` 的 Host 实现 |
 | Record Core、Run、Member、Attempt 与 migration 编解码 | `packages/niceeval/src/record/{model,codec,migration,host}/` |
 | 六个固定 family 与各自 collector / decoder | `packages/niceeval/src/record/family/`、`packages/niceeval/src/assertions/record/`、`packages/niceeval/src/o11y/record/`、`packages/niceeval/src/sandbox/record/`、`packages/niceeval/src/runner/source-producer.ts` 与 `packages/niceeval/src/sources/` |
-| Assertions current semantic entry、v1→v2 纯迁移与有界 collection receipt | `packages/niceeval/src/assertions/{api,runtime,match}.ts`、`packages/niceeval/src/assertions/record/` 与 `packages/niceeval/src/record/family/assertions-v1.ts` |
+| Assertions current semantic entry、v1→v2 纯迁移与有界 collection receipt | `packages/niceeval/src/assertions/{api,runtime,match}.ts`、`packages/niceeval/src/assertions/record/` 与 `packages/niceeval/src/record/family/assertions/{definition.ts,migrate/1-to-2.ts}` |
 | Scope-bound reader 与按需读取 | `packages/niceeval/src/record/reader/`；只能经 `recordHost` 到达 |
 
 Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 解释，不另建 durable family。

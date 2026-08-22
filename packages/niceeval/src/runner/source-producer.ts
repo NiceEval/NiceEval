@@ -18,14 +18,14 @@ import type {
 import {
   AssertionSourceSiteSchema,
   type AssertionSourceSite,
-} from "../record/family/assertions.ts";
+} from "../record/family/assertions/definition.ts";
 import type { SourcesAttachment } from "../record/family/sources.ts";
 import {
   createSourceNavigationAttachmentWrite,
   type SourceNavigationRow,
 } from "../record/family/source-navigation.ts";
 import { sourceNavigationRecordFamily } from "../record/family/catalog.ts";
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import type { AttemptObservabilityAttachment } from "../record/family/observability/definition.ts";
 import {
   assertionsRuntimeSourceCaptureSnapshot,
   attachAssertionsRuntimeSourceCapture,

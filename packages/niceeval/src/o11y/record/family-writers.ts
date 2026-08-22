@@ -18,7 +18,7 @@ import {
 import {
   AttemptObservabilityAttachmentSchema,
   RunObservabilityAttachmentSchema,
-} from "../../record/family/observability.ts";
+} from "../../record/family/observability/definition.ts";
 import {
   MAX_COMMAND_INLINE_STREAM_BYTES,
 } from "./limits.ts";
