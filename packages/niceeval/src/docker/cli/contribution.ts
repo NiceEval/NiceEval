@@ -1,15 +1,20 @@
 import { Effect } from "effect";
-import { CliArguments, CliOutput, type CliOptionDefinition } from "../application.ts";
-import { CliFeatureError, type CliCommandContribution } from "../contribution.ts";
-import { DockerCacheAdministration } from "../../docker/cache-administration.ts";
+import { CliArguments, CliOutput, type CliOptionDefinition } from "../../cli/application.ts";
+import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
+import { DockerCacheAdministration } from "../cache-administration.ts";
 import { runDockerProfileCommand } from "../../sandbox/docker-profile/cli.ts";
 
-const DOCKER_OPTIONS = Object.freeze({
-  json: { type: "boolean" },
-  smoke: { type: "boolean" },
-  domain: { type: "string" },
-  apply: { type: "string" },
-  help: { type: "boolean", short: "h" },
+export const DOCKER_OPTIONS = Object.freeze({
+  /** Render Docker administration results as JSON. */
+  json: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Render Docker administration results as JSON.", visibility: "public" }) }),
+  /** Run Docker profile smoke diagnostics. */
+  smoke: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Run Docker profile smoke diagnostics.", visibility: "public" }) }),
+  /** Select one NiceEval-owned Docker cache domain. */
+  domain: Object.freeze({ type: "string", help: Object.freeze({ summary: "Select one NiceEval-owned Docker cache domain.", visibility: "public" }) }),
+  /** Apply a previously issued Docker cache GC plan. */
+  apply: Object.freeze({ type: "string", help: Object.freeze({ summary: "Apply a previously issued Docker cache GC plan.", visibility: "public" }) }),
+  /** Print Docker command help. */
+  help: Object.freeze({ type: "boolean", short: "h", help: Object.freeze({ summary: "Print Docker command help.", visibility: "public" }) }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 export type DockerCliError = CliFeatureError;
@@ -36,6 +41,25 @@ Usage:
 
 const dockerFailure = (operation: string, cause: unknown, exitCode = 4) =>
   new CliFeatureError({ feature: "docker", operation, cause, exitCode });
+
+const DOCKER_COMMAND_OPTIONS = Object.freeze({
+  "profile/list": Object.freeze(["json", "help"]),
+  "profile/doctor": Object.freeze(["json", "smoke", "help"]),
+  "cache/inventory": Object.freeze(["json", "domain", "help"]),
+  "cache/gc": Object.freeze(["json", "domain", "apply", "help"]),
+  profile: Object.freeze(["help"]),
+  cache: Object.freeze(["help"]),
+  root: Object.freeze(["help"]),
+} satisfies Readonly<Record<string, readonly string[]>>);
+
+function dockerCommandKey(positionals: readonly string[]): keyof typeof DOCKER_COMMAND_OPTIONS {
+  const [root, subcommand] = positionals;
+  if (root === "profile" && (subcommand === "list" || subcommand === "doctor")) return `profile/${subcommand}`;
+  if (root === "cache" && (subcommand === "inventory" || subcommand === "gc")) return `cache/${subcommand}`;
+  if (root === "profile") return "profile";
+  if (root === "cache") return "cache";
+  return "root";
+}
 
 function output(
   channel: "stdout" | "stderr",
@@ -196,6 +220,7 @@ export const dockerCliCommand: CliCommandContribution<
 > = Object.freeze({
   name: "docker",
   summary: "inspect Docker profiles, image cache, and BuildKit capacity",
+  options: DOCKER_OPTIONS,
   run: (argv: readonly string[]) => Effect.gen(function* () {
     const parser = yield* CliArguments;
     const parsed = yield* Effect.try({
@@ -203,6 +228,21 @@ export const dockerCliCommand: CliCommandContribution<
       catch: (cause) => dockerFailure("parse Docker command", cause, 2),
     });
     const positionals = parsed.positionals;
+    const providedOptions = parsed.tokens
+      .filter((token) => token.kind === "option")
+      .map((token) => token.name);
+    const commandKey = dockerCommandKey(positionals);
+    const unsupportedOption = providedOptions.find(
+      (name) => !DOCKER_COMMAND_OPTIONS[commandKey].includes(name),
+    );
+    if (unsupportedOption !== undefined) {
+      const commandLabel = positionals.length === 0 ? "" : ` ${positionals.join(" ")}`;
+      yield* output(
+        "stderr",
+        `niceeval docker${commandLabel} does not accept --${unsupportedOption}.\n`,
+      );
+      return 2;
+    }
     const json = parsed.values.json === true;
     const help = parsed.values.help === true;
     const root = positionals[0];

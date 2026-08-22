@@ -302,67 +302,236 @@ export function extractUnionVariants(sourceText: string, fileName: string, typeN
   });
 }
 
-// ───────────────────────── CLI flags(静态提取,不 import src/cli.ts) ─────────────────────────
+// ───────────────────────── CLI flags（静态提取，不 import 或执行 CLI 模块）─────────────────────────
 
 interface FlagEntry {
-  key: string; // FLAG_OPTIONS 里的原始 key,如 "max-concurrency"
+  key: string; // owner schema 里的原始 key,如 "max-concurrency"
   type: "string" | "boolean";
   multiple: boolean;
   short?: string;
-  /** 紧邻该 flag 属性的 JSDoc,即文档 flag 表里的中文说明。 */
+  /** Formal boolean|string syntax owned by one option schema. */
+  optionalValue?: CliOptionalValue;
+  /** Hidden entries remain parser input but leave the public reference. */
+  visible: boolean;
+  /** Schema help.summary, with an adjacent comment as a static fallback. */
   doc?: string;
 }
 
-/** 静态解析 platform-neutral program 的 `FLAG_OPTIONS` 对象字面量，不执行 CLI。 */
-function extractFlagOptions(sourceText: string, fileName: string): FlagEntry[] {
-  const sourceFile = parse(sourceText, fileName);
-  let objectLiteral: ts.ObjectLiteralExpression | undefined;
+interface CliOptionalValue {
+  readonly default: string | true;
+  readonly values?: readonly string[];
+  readonly separated: boolean;
+}
+
+function resolveIdentifierInitializer(sourceFile: ts.SourceFile, name: string): ts.Expression | undefined {
+  let found: ts.Expression | undefined;
   const visit = (node: ts.Node) => {
-    if (objectLiteral) return;
-    if (
-      ts.isVariableDeclaration(node) &&
-      node.name.getText() === "FLAG_OPTIONS" &&
-      node.initializer
-    ) {
-      let init = node.initializer;
-      if (ts.isAsExpression(init)) init = init.expression;
-      if (ts.isObjectLiteralExpression(init)) objectLiteral = init;
+    if (found !== undefined) return;
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
+      found = node.initializer;
+      return;
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-  if (!objectLiteral) throw new Error(`FLAG_OPTIONS not found in ${fileName}`);
+  return found;
+}
+
+function unwrapObjectLiteral(expression: ts.Expression, sourceFile?: ts.SourceFile): ts.ObjectLiteralExpression | undefined {
+  if (ts.isObjectLiteralExpression(expression)) return expression;
+  if (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression)) {
+    return unwrapObjectLiteral(expression.expression, sourceFile);
+  }
+  if (
+    ts.isCallExpression(expression) && expression.expression.getText() === "Object.freeze" &&
+    expression.arguments.length === 1
+  ) {
+    return unwrapObjectLiteral(expression.arguments[0]!, sourceFile);
+  }
+  if (ts.isIdentifier(expression) && sourceFile !== undefined) {
+    const initializer = resolveIdentifierInitializer(sourceFile, expression.text);
+    return initializer === undefined ? undefined : unwrapObjectLiteral(initializer, sourceFile);
+  }
+  return undefined;
+}
+
+function findOptionSchema(sourceFile: ts.SourceFile, schemaName: string): ts.ObjectLiteralExpression {
+  let found: ts.ObjectLiteralExpression | undefined;
+  const visit = (node: ts.Node) => {
+    if (found) return;
+    if (ts.isVariableDeclaration(node) && node.name.getText() === schemaName && node.initializer) {
+      found = unwrapObjectLiteral(node.initializer, sourceFile);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  if (!found) throw new Error(`CLI option schema ${schemaName} not found in ${sourceFile.fileName}`);
+  return found;
+}
+
+function propertyValue(objectLiteral: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
+  const property = objectLiteral.properties.find((candidate) =>
+    ts.isPropertyAssignment(candidate) && candidate.name.getText() === name,
+  );
+  return property !== undefined && ts.isPropertyAssignment(property) ? property.initializer : undefined;
+}
+
+function stringLiteral(expression: ts.Expression | undefined): string | undefined {
+  if (expression !== undefined && (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression))) {
+    return stringLiteral(expression.expression);
+  }
+  return expression !== undefined && ts.isStringLiteral(expression) ? expression.text : undefined;
+}
+
+function booleanLiteral(expression: ts.Expression | undefined): boolean | undefined {
+  if (expression !== undefined && (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression))) {
+    return booleanLiteral(expression.expression);
+  }
+  if (expression?.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (expression?.kind === ts.SyntaxKind.FalseKeyword) return false;
+  return undefined;
+}
+
+function arrayStringLiterals(expression: ts.Expression | undefined, sourceFile: ts.SourceFile): readonly string[] | undefined {
+  if (expression === undefined) return undefined;
+  const array = unwrapArrayLiteral(expression, sourceFile);
+  if (array === undefined) return undefined;
+  const values = array.elements.map((element) => ts.isStringLiteral(element) ? element.text : undefined);
+  return values.every((value): value is string => value !== undefined) ? Object.freeze(values) : undefined;
+}
+
+function unwrapArrayLiteral(expression: ts.Expression, sourceFile?: ts.SourceFile): ts.ArrayLiteralExpression | undefined {
+  if (ts.isArrayLiteralExpression(expression)) return expression;
+  if (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression)) {
+    return unwrapArrayLiteral(expression.expression, sourceFile);
+  }
+  if (ts.isCallExpression(expression) && expression.expression.getText() === "Object.freeze" && expression.arguments.length === 1) {
+    return unwrapArrayLiteral(expression.arguments[0]!, sourceFile);
+  }
+  if (ts.isIdentifier(expression) && sourceFile !== undefined) {
+    const initializer = resolveIdentifierInitializer(sourceFile, expression.text);
+    return initializer === undefined ? undefined : unwrapArrayLiteral(initializer, sourceFile);
+  }
+  return undefined;
+}
+
+function optionalValueFromObject(
+  expression: ts.Expression | undefined,
+  sourceFile: ts.SourceFile,
+): CliOptionalValue | undefined {
+  if (expression === undefined) return undefined;
+  const object = unwrapObjectLiteral(expression, sourceFile);
+  if (object === undefined) return undefined;
+  const defaultValue = stringLiteral(propertyValue(object, "default"));
+  const booleanDefault = booleanLiteral(propertyValue(object, "default"));
+  const values = arrayStringLiterals(propertyValue(object, "values"), sourceFile);
+  if (defaultValue === undefined && booleanDefault !== true) return undefined;
+  return Object.freeze({
+    default: defaultValue ?? true,
+    ...(values === undefined ? {} : { values }),
+    separated: booleanLiteral(propertyValue(object, "separated")) === true,
+  });
+}
+
+function helpSummary(expression: ts.Expression | undefined, sourceFile: ts.SourceFile): string | undefined {
+  const object = expression === undefined ? undefined : unwrapObjectLiteral(expression, sourceFile);
+  if (object !== undefined) return stringLiteral(propertyValue(object, "summary"));
+  if (
+    expression !== undefined &&
+    ts.isCallExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === "help"
+  ) {
+    return stringLiteral(expression.arguments[0]);
+  }
+  return undefined;
+}
+
+function flagFromHelperCall(
+  expression: ts.CallExpression,
+  key: string,
+  sourceFile: ts.SourceFile,
+): FlagEntry | undefined {
+  if (!ts.isIdentifier(expression.expression)) return undefined;
+  if (expression.expression.text === "option") {
+    const object = unwrapObjectLiteral(expression.arguments[0]!, sourceFile);
+    if (object !== undefined) return flagFromOptionObject(object, key, sourceFile);
+    const type = stringLiteral(expression.arguments[0]);
+    const doc = stringLiteral(expression.arguments[1]);
+    if ((type !== "string" && type !== "boolean") || doc === undefined) return undefined;
+    return {
+      key,
+      type,
+      multiple: booleanLiteral(expression.arguments[2]) === true,
+      visible: true,
+      doc,
+    };
+  }
+  if (expression.expression.text === "optionalTier") {
+    const doc = stringLiteral(expression.arguments[0]);
+    const defaultValue = stringLiteral(expression.arguments[1]);
+    const values = arrayStringLiterals(expression.arguments[2], sourceFile);
+    if (doc === undefined || defaultValue === undefined || values === undefined) return undefined;
+    return {
+      key,
+      type: "boolean",
+      multiple: false,
+      optionalValue: Object.freeze({
+        default: defaultValue,
+        values,
+        separated: booleanLiteral(expression.arguments[3]) === true,
+      }),
+      visible: true,
+      doc,
+    };
+  }
+  return undefined;
+}
+
+function flagFromOptionObject(
+  value: ts.ObjectLiteralExpression,
+  key: string,
+  sourceFile: ts.SourceFile,
+): FlagEntry | undefined {
+  const type = stringLiteral(propertyValue(value, "type"));
+  if (type !== "string" && type !== "boolean") return undefined;
+  const short = stringLiteral(propertyValue(value, "short"));
+  const help = propertyValue(value, "help");
+  const helpObject = help === undefined ? undefined : unwrapObjectLiteral(help, sourceFile);
+  const visibility = helpObject === undefined ? undefined : stringLiteral(propertyValue(helpObject, "visibility"));
+  const optionalValue = optionalValueFromObject(propertyValue(value, "optionalValue"), sourceFile);
+  return {
+    key,
+    type,
+    multiple: booleanLiteral(propertyValue(value, "multiple")) === true,
+    ...(short === undefined ? {} : { short }),
+    ...(optionalValue === undefined ? {} : { optionalValue }),
+    visible: visibility !== "hidden",
+    doc: helpSummary(help, sourceFile),
+  };
+}
+
+/** Statically parse an owner schema without importing or executing any CLI module. */
+function extractFlagOptions(sourceText: string, fileName: string, schemaName: string): FlagEntry[] {
+  const sourceFile = parse(sourceText, fileName);
+  const objectLiteral = findOptionSchema(sourceFile, schemaName);
 
   const entries: FlagEntry[] = [];
   for (const prop of objectLiteral.properties) {
     if (!ts.isPropertyAssignment(prop)) continue;
     const key = ts.isStringLiteral(prop.name) ? prop.name.text : prop.name.getText();
-    if (!ts.isObjectLiteralExpression(prop.initializer)) continue;
-    let type: "string" | "boolean" | undefined;
-    let multiple = false;
-    let short: string | undefined;
-    for (const p of prop.initializer.properties) {
-      if (!ts.isPropertyAssignment(p)) continue;
-      const pname = p.name.getText();
-      if (pname === "type" && ts.isStringLiteral(p.initializer)) {
-        type = p.initializer.text as "string" | "boolean";
-      }
-      if (pname === "multiple" && p.initializer.kind === ts.SyntaxKind.TrueKeyword) {
-        multiple = true;
-      }
-      if (pname === "short" && ts.isStringLiteral(p.initializer)) {
-        short = p.initializer.text;
-      }
-    }
-    if (type) entries.push({ key, type, multiple, short, doc: extractDoc(sourceFile, prop) });
+    const value = unwrapObjectLiteral(prop.initializer, sourceFile);
+    const entry = value === undefined
+      ? ts.isCallExpression(prop.initializer) ? flagFromHelperCall(prop.initializer, key, sourceFile) : undefined
+      : flagFromOptionObject(value, key, sourceFile);
+    if (entry !== undefined) entries.push({ ...entry, doc: entry.doc ?? extractDoc(sourceFile, prop) });
   }
   return entries;
 }
 
 /**
- * 数字型 flag(源码里经 `numberFlag("<name>", ...)` 校验)的 key 集合。
- * FLAG_OPTIONS 表本身只区分 string/boolean(parseArgs 层面),真实语义类型要看 parseArgs() 函数体
- * 怎么处理这个 value —— 这里做同一份 AST 里的静态文本匹配,不 import 模块。
+ * 数字型 flag（源码里经 `numberFlag(value, "--<name>")` 校验）的 key 集合。
+ * schema 本身只区分 string/boolean（parseArgs 层面）；真实语义类型取决于 owner 如何校验值。
  */
 function extractNumberFlagKeys(sourceText: string, fileName: string): Set<string> {
   const sourceFile = parse(sourceText, fileName);
@@ -372,10 +541,11 @@ function extractNumberFlagKeys(sourceText: string, fileName: string): Set<string
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === "numberFlag" &&
-      node.arguments.length > 0 &&
-      ts.isStringLiteral(node.arguments[0])
+      node.arguments.some(ts.isStringLiteral)
     ) {
-      keys.add(node.arguments[0].text);
+      for (const argument of node.arguments) {
+        if (ts.isStringLiteral(argument) && argument.text.startsWith("--")) keys.add(argument.text.slice(2));
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -385,27 +555,195 @@ function extractNumberFlagKeys(sourceText: string, fileName: string): Set<string
 
 interface CliFlagRow {
   flags: string[]; // 一或两个 `--x` 形式,负向 flag 配对显示在同一行
-  type: "string" | "string[]" | "number" | "boolean";
+  type: string;
   description: string;
+  commands: string[];
 }
 
-function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
-  const entries = extractFlagOptions(sourceText, fileName);
-  const numberKeys = extractNumberFlagKeys(sourceText, fileName);
-  // 这些选项只属于尚待删除的旧实现入口，不是 docs/ 已定稿的目标 CLI。
-  // 参考页必须描述目标契约，不能因解析器暂未收敛而继续公开已砍功能。
-  const hiddenImplementationFlags = new Set([
-    "source",
-    "execution",
-    "timing",
-    "grep",
-    "expand",
-    "diff",
-    "history",
-    "usage",
-    "stats",
-    "theme",
-  ]);
+/** CLI terminal help is English; these Docker-only public rows are Chinese in the zh reference. */
+const CHINESE_CLI_REFERENCE_SUMMARIES: Readonly<Record<string, string>> = Object.freeze({
+  tag: "只选择带有该 tag 的评估用例。",
+  attempts: "让每个选中的评估用例运行指定次数。",
+  "max-concurrency": "限制同时执行的 Attempt 数量。",
+  "max-build-concurrency": "限制同时准备 Sandbox build 的数量。",
+  timeout: "以毫秒设置每个 Attempt 的超时时间。",
+  budget: "以美元设置本次 Invocation 的预算。",
+  junit: "写出必需的 JUnit 报告。",
+  json: "写出该命令的机器文档或事件流。",
+  dry: "规划但不创建 Invocation。",
+  rerun: "要求重新运行失败目标或全部目标。",
+  "keep-sandbox": "保留 failed 或全部已结束 Attempt 的 Sandbox。",
+  "early-exit": "某次结果通过后停止该评估用例余下的 Attempt。",
+  record: "使用指定的 NiceEval Record root。",
+  teardown: "运行显式的 Experiment teardown 恢复。",
+  "recover-shared-state": "指定要显式恢复的共享状态 key。",
+  "owner-token": "提供准确的共享状态 owner token。",
+  "confirm-owner-terminated": "确认记录的 owner 已终止。",
+  "confirm-remote-quiesced": "确认远端共享状态已静止。",
+  all: "包含已经完成的 Invocation 状态条目。",
+  run: "选择一个已发布的精确 Run；可重复传入以选择多个 Run。",
+  experiment: "按 Experiment selector 缩小当前项目的结果。",
+  report: "使用标准 Report 或可信的 Report module 路径。",
+  theme: "使用 basalt、chalk 或可信的 Theme module 路径。",
+  page: "选择 show 的目标或 view 的初始路由。",
+  source: "显示一个 Attempt 的源快照；可选地只显示一个文件。",
+  execution: "显示一个 Attempt 保留的执行证据。",
+  timing: "显示摘要或完整的时序证据。",
+  grep: "用 JavaScript 正则表达式过滤执行证据。",
+  diff: "显示选中 Attempt 的文件改动；可选地只显示一个内联路径。",
+  out: "导出完整的静态 Report 站点。",
+  host: "监听指定地址；裸写 `--host` 会监听 0.0.0.0。",
+  port: "监听指定端口；默认选择可用端口。",
+  open: "在浏览器中打开实时 Report。",
+  help: "打印该命令的帮助。",
+  version: "打印当前安装的 NiceEval 版本。",
+  yes: "确认计划中的 Record maintenance 操作。",
+  smoke: "运行 Docker profile 的探测诊断。",
+  domain: "选择一个由 NiceEval 管理的 Docker 缓存域。",
+  apply: "应用先前签发的 Docker 缓存回收计划。",
+  window: "选择一个已记录的改动窗口。",
+  path: "选择 Sandbox diff 中的一个路径。",
+  "leave-running": "离开 shell 后继续保留 Sandbox。",
+  orphans: "检查已终止运行遗留的未登记 Sandbox 实例。",
+  force: "同时清理未验证的孤儿候选项。",
+  "src/cli/program.ts#APPLICATION_CLI_OPTIONS#help": "打印根命令索引。",
+  "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS#all": "销毁全部留存 Sandbox。",
+  "src/experiment/host/cli/contribution.ts#EXP_RENAME_CLI_OPTIONS#dry": "预览显式 Experiment 重命名。",
+});
+
+interface CliOptionSchemaSource {
+  readonly source: (typeof SOURCE_FILES)[number];
+  readonly schema: string;
+  /** Commands that own this schema; shared options list every applicable command. */
+  readonly commands: readonly string[];
+}
+
+/** Static composition descriptors: generator never imports or executes the CLI. */
+const CLI_OPTION_SCHEMA_SOURCES = [
+  { source: "src/cli/program.ts", schema: "APPLICATION_CLI_OPTIONS", commands: [""] },
+  { source: "src/experiment/host/cli/contribution.ts", schema: "CHECK_CLI_OPTIONS", commands: ["check"] },
+  { source: "src/experiment/host/cli/contribution.ts", schema: "EXP_NORMAL_CLI_OPTIONS", commands: ["exp"] },
+  { source: "src/experiment/host/cli/contribution.ts", schema: "EXP_LIST_CLI_OPTIONS", commands: ["exp list"] },
+  { source: "src/experiment/host/cli/contribution.ts", schema: "EXP_RENAME_CLI_OPTIONS", commands: ["exp rename"] },
+  { source: "src/experiment/host/cli/contribution.ts", schema: "EXP_TEARDOWN_CLI_OPTIONS", commands: ["exp --teardown"] },
+  { source: "src/experiment/host/cli/contribution.ts", schema: "DEBUG_CLI_OPTIONS", commands: ["debug"] },
+  { source: "src/experiment/host/cli/contribution.ts", schema: "ACCEPT_CLI_OPTIONS", commands: ["accept"] },
+  { source: "src/experiment/host/cli/contribution.ts", schema: "SESSION_CLI_OPTIONS", commands: ["session"] },
+  { source: "src/report/cli/contribution.ts", schema: "REPORT_CLI_OPTIONS", commands: ["show", "view"] },
+  { source: "src/record/host/cli/contribution.ts", schema: "RECORD_MAINTENANCE_CLI_OPTIONS", commands: ["clean", "migrate"] },
+  { source: "src/project/cli/contribution.ts", schema: "PROJECT_INIT_CLI_OPTIONS", commands: ["init"] },
+  { source: "src/docker/cli/contribution.ts", schema: "DOCKER_OPTIONS", commands: ["docker"] },
+  { source: "src/sandbox/cli/contribution.ts", schema: "SANDBOX_CLI_OPTIONS", commands: ["sandbox"] },
+  { source: "src/eval/cli/contribution.ts", schema: "EVAL_CATALOG_OPTIONS", commands: ["list"] },
+] as const satisfies readonly CliOptionSchemaSource[];
+
+/**
+ * Parser schemas remain the only source of parser shapes and summaries. These
+ * descriptors only record command-family routing already enforced by owners.
+ */
+const CLI_OPTION_COMMAND_OWNERSHIP: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = Object.freeze({
+  "src/report/cli/contribution.ts#REPORT_CLI_OPTIONS": Object.freeze({
+    source: Object.freeze(["show"]),
+    execution: Object.freeze(["show"]),
+    timing: Object.freeze(["show"]),
+    grep: Object.freeze(["show"]),
+    diff: Object.freeze(["show"]),
+    json: Object.freeze(["show"]),
+    out: Object.freeze(["view"]),
+    host: Object.freeze(["view"]),
+    port: Object.freeze(["view"]),
+    open: Object.freeze(["view"]),
+    "no-open": Object.freeze(["view"]),
+  }),
+  "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS": Object.freeze({
+    all: Object.freeze(["sandbox stop"]),
+    window: Object.freeze(["sandbox diff"]),
+    path: Object.freeze(["sandbox diff"]),
+    "leave-running": Object.freeze(["sandbox enter"]),
+    record: Object.freeze(["sandbox list", "sandbox enter", "sandbox history", "sandbox diff", "sandbox stop", "sandbox prune"]),
+    orphans: Object.freeze(["sandbox list"]),
+    force: Object.freeze(["sandbox prune"]),
+  }),
+  "src/docker/cli/contribution.ts#DOCKER_OPTIONS": Object.freeze({
+    json: Object.freeze(["docker profile list", "docker profile doctor", "docker cache inventory", "docker cache gc"]),
+    smoke: Object.freeze(["docker profile doctor"]),
+    domain: Object.freeze(["docker cache inventory", "docker cache gc"]),
+    apply: Object.freeze(["docker cache gc"]),
+  }),
+});
+
+function commandsForSchemaOption(
+  source: CliOptionSchemaSource["source"],
+  schema: string,
+  key: string,
+  commands: readonly string[],
+): string[] {
+  return [...(CLI_OPTION_COMMAND_OWNERSHIP[`${source}#${schema}`]?.[key] ?? commands)];
+}
+
+interface CollectedCliFlag extends FlagEntry {
+  commands: string[];
+  readonly number: boolean;
+  readonly source: CliOptionSchemaSource["source"];
+  readonly schema: string;
+  /** The source help summary is grouping identity, before zh-reference rendering. */
+  readonly summary: string;
+}
+
+function optionalValueShape(entry: FlagEntry): string {
+  const optional = entry.optionalValue;
+  return optional === undefined
+    ? "none"
+    : JSON.stringify({ default: optional.default, values: optional.values, separated: optional.separated });
+}
+
+function renderedOptionType(entry: CollectedCliFlag): string {
+  if (entry.optionalValue !== undefined) {
+    const values = entry.optionalValue.values;
+    if (entry.optionalValue.default !== true) {
+      return values === undefined ? "string" : values.map((value) => `\`${value}\``).join(" | ");
+    }
+    return values === undefined ? "true | string" : `true | ${values.map((value) => `\`${value}\``).join(" | ")}`;
+  }
+  if (entry.number) return "number";
+  if (entry.type === "boolean") return "boolean";
+  return entry.multiple ? "string[]" : "string";
+}
+
+function renderedFlagSyntax(entry: CollectedCliFlag): string {
+  const flag = `--${entry.key}`;
+  const optional = entry.optionalValue;
+  if (optional === undefined) return `\`${flag}\``;
+  const value = optional.values === undefined ? "<value>" : optional.values.join("|");
+  const bare = optional.default === true ? `\`${flag}\`` : `\`${flag}\`（单独使用为 \`${optional.default}\`）`;
+  const inline = `\`${flag}=${value}\``;
+  const separated = `\`${flag} ${value}\``;
+  return optional.separated ? `${bare} / ${inline} / ${separated}` : `${bare} / ${inline}`;
+}
+
+function referenceSummary(entry: CollectedCliFlag): string {
+  return CHINESE_CLI_REFERENCE_SUMMARIES[`${entry.source}#${entry.schema}#${entry.key}`]
+    ?? CHINESE_CLI_REFERENCE_SUMMARIES[entry.key]
+    ?? entry.summary;
+}
+
+function buildCliFlagRows(sources: SourceMap): CliFlagRow[] {
+  const entries = CLI_OPTION_SCHEMA_SOURCES.flatMap(({ source, schema, commands }) => {
+    const numberKeys = extractNumberFlagKeys(sources[source], source);
+    return extractFlagOptions(sources[source], source, schema).map((entry): CollectedCliFlag => {
+      if (entry.doc === undefined) {
+        throw new Error(`flag --${entry.key} has no public summary in ${source}#${schema}`);
+      }
+      return {
+        ...entry,
+        commands: commandsForSchemaOption(source, schema, entry.key, commands),
+        number: numberKeys.has(entry.key),
+        source,
+        schema,
+        summary: entry.doc,
+      };
+    });
+  });
 
   // 负向 flag(no-early-exit / no-open)与正向 flag 合并成一行,不单独成表项。
   const negatedOf = new Map<string, string>(); // "no-early-exit" -> "early-exit"
@@ -413,27 +751,33 @@ function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
     if (e.key.startsWith("no-")) negatedOf.set(e.key, e.key.slice("no-".length));
   }
 
-  const rows: CliFlagRow[] = [];
+  const seen = new Map<string, CollectedCliFlag>();
   for (const e of entries) {
-    if (negatedOf.has(e.key)) continue; // 作为配对项在正向 flag 那里一起渲染
-    if (hiddenImplementationFlags.has(e.key)) continue;
-    const desc = e.doc;
-    if (desc === undefined) {
-      throw new Error(
-        `flag --${e.key} has no description; add a JSDoc comment on its FLAG_OPTIONS entry in ${fileName}, then rerun pnpm docs:reference.`,
-      );
+    const groupKey = JSON.stringify({
+      key: e.key,
+      type: e.type,
+      multiple: e.multiple,
+      short: e.short,
+      number: e.number,
+      optionalValue: optionalValueShape(e),
+      summary: e.summary,
+    });
+    const previous = seen.get(groupKey);
+    if (previous !== undefined) {
+      previous.commands = [...new Set([...previous.commands, ...e.commands])];
+      continue;
     }
-    const flags = [`--${e.key}`];
+    seen.set(groupKey, e);
+  }
+
+  const rows: CliFlagRow[] = [];
+  for (const e of seen.values()) {
+    if (negatedOf.has(e.key)) continue; // 作为配对项在正向 flag 那里一起渲染
+    if (!e.visible) continue;
+    const flags = [renderedFlagSyntax(e)];
     const negKey = `no-${e.key}`;
-    if (entries.some((x) => x.key === negKey)) flags.push(`--${negKey}`);
-    const type: CliFlagRow["type"] = numberKeys.has(e.key)
-      ? "number"
-      : e.type === "boolean"
-      ? "boolean"
-      : e.multiple
-      ? "string[]"
-      : "string";
-    rows.push({ flags, type, description: desc });
+    if (entries.some((x) => x.key === negKey && x.commands.some((command) => e.commands.includes(command)))) flags.push(`\`--${negKey}\``);
+    rows.push({ flags, type: renderedOptionType(e), description: referenceSummary(e), commands: [...e.commands] });
   }
   return rows;
 }
@@ -491,10 +835,11 @@ export function renderMemberGroups(groups: MemberGroup[], groupHeadingLevel = 3,
 }
 
 function renderCliFlagsTable(rows: CliFlagRow[]): string {
-  const header = "| Flag | 类型 | 说明 |\n|---|---|---|";
+  const header = "| Flag | 命令 | 类型 | 说明 |\n|---|---|---|---|";
   const lines = rows.map((r) => {
-    const flagCell = r.flags.map((f) => `\`${f}\``).join(" / ");
-    return `| ${flagCell} | ${r.type} | ${escapeMdxProse(r.description).replace(/\|/g, "\\|")} |`;
+    const flagCell = r.flags.join(" / ").replace(/\|/g, "\\|");
+    const commandCell = r.commands.map((command) => `\`niceeval${command === "" ? "" : ` ${command}`}\``).join("、");
+    return `| ${flagCell} | ${commandCell} | ${r.type.replace(/\|/g, "\\|")} | ${escapeMdxProse(r.description).replace(/\|/g, "\\|")} |`;
   });
   return [header, ...lines].join("\n");
 }
@@ -537,6 +882,13 @@ export const SOURCE_FILES = [
   "src/sandbox/types.ts",
   "src/o11y/types.ts",
   "src/cli/program.ts",
+  "src/experiment/host/cli/contribution.ts",
+  "src/report/cli/contribution.ts",
+  "src/record/host/cli/contribution.ts",
+  "src/project/cli/contribution.ts",
+  "src/docker/cli/contribution.ts",
+  "src/sandbox/cli/contribution.ts",
+  "src/eval/cli/contribution.ts",
   "src/agents/claude-code.ts",
   "src/agents/codex.ts",
   "src/agents/bub.ts",
@@ -730,7 +1082,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
     case "usage-fields":
       return renderMemberList(extractInterfaceMembers(sources["src/o11y/types.ts"], "src/o11y/types.ts", "Usage"));
     case "cli-flags":
-      return renderCliFlagsTable(buildCliFlagRows(sources["src/cli/program.ts"], "src/cli/program.ts"));
+      return renderCliFlagsTable(buildCliFlagRows(sources));
     case "builtin-agent-config":
       return renderMemberGroups([
         {

@@ -64,7 +64,10 @@ interface ModuleNamespace {
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".jsx"] as const;
 
 /** Fresh-loads optional `<cwd>/niceeval.config.ts` and validates its Report-facing fields. */
-export function loadTrustedReportConfig(cwd: string): Effect.Effect<LoadedTrustedConfig, ReportModuleLoadError> {
+export function loadTrustedReportConfig(
+  cwd: string,
+  options: { readonly includeTheme?: boolean } = {},
+): Effect.Effect<LoadedTrustedConfig, ReportModuleLoadError> {
   const path = join(cwd, "niceeval.config.ts");
   return Effect.gen(function* () {
     const exists = yield* regularFile(path, "config", true);
@@ -80,7 +83,9 @@ export function loadTrustedReportConfig(cwd: string): Effect.Effect<LoadedTruste
       ));
     }
     const report = value.report === undefined ? undefined : yield* validateReport(value.report, "config");
-    const theme = value.theme === undefined ? undefined : yield* validateTheme(value.theme, "config");
+    const theme = options.includeTheme === false || value.theme === undefined
+      ? undefined
+      : yield* validateTheme(value.theme, "config");
     if (report?.theme !== undefined) registerThemeSourceBase(report.theme, dirname(path));
     if (theme !== undefined) registerThemeSourceBase(theme, dirname(path));
     const watchInputs = withThemeInputs(

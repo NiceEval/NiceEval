@@ -82,6 +82,31 @@ export interface SessionCloseInput {
   completedAt?: string;
 }
 
+/**
+ * Narrow transient event bridge owned by the Experiment Host.  Session data is
+ * an invocation-local index, so this intentionally excludes Record facts and
+ * every feedback event that cannot change its small progress projection.
+ */
+export type SessionInvocationEvent =
+  | {
+      readonly type: "attempt:start" | "attempt:complete" | "attempt:early-exit";
+      readonly identity?: { readonly experimentId?: string };
+    }
+  | {
+      readonly type: "lock-wait";
+      readonly experimentId: string;
+      readonly status: "started" | "resolved";
+      readonly attempts?: number;
+      readonly carried?: number;
+      readonly dispatched?: number;
+    }
+  | {
+      readonly type: "experiment-hook";
+      readonly experimentId: string;
+      readonly hook: "setup" | "teardown";
+      readonly status: "started" | "done" | "failed";
+    };
+
 function sessionsDirOf(niceevalRoot: string): string {
   return join(niceevalRoot, "sessions");
 }
@@ -299,6 +324,19 @@ export class SessionTracker {
 
   /** coordinator 的同步事件回调；只更新最小索引并把 snapshot 交给 Effect-owned serial worker。 */
   onFeedback(event: RunFeedbackEvent, _state?: RunFeedbackState): void {
+    if (
+      event.type === "attempt:start" ||
+      event.type === "attempt:complete" ||
+      event.type === "attempt:early-exit" ||
+      event.type === "lock-wait" ||
+      event.type === "experiment-hook"
+    ) {
+      this.onInvocationEvent(event);
+    }
+  }
+
+  /** Host-side observer bridge; no runtime is started from a synchronous callback. */
+  onInvocationEvent(event: SessionInvocationEvent): void {
     if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return;
     const identity = "identity" in event && event.identity !== undefined ? event.identity : undefined;
     const experimentId = identity

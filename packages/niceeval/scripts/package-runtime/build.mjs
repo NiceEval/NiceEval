@@ -25,6 +25,7 @@ const PUBLIC_ENTRIES = [
   ["./reporters", "runner/reporters/index.ts"],
   ["./loaders", "loaders/index.ts"],
   ["./analysis", "analysis/index.ts"],
+  ["./eval/host", "eval/host/index.ts"],
   ["./experiment/host", "experiment/host/index.ts"],
   ["./coordination/host", "coordination/host/index.ts"],
   ["./record", "record/index.ts"],
@@ -35,6 +36,7 @@ const PUBLIC_ENTRIES = [
   ["./report/built-in", "report/built-in/index.tsx"],
   ["./report/react", "report/react/index.ts"],
   ["./report/extension", "report/extension/index.ts"],
+  ["./project/host", "project/host/index.ts"],
 ];
 
 // These entries are copied verbatim by copyRuntimeAssets rather than emitted
