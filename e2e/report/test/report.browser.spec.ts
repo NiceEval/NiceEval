@@ -109,11 +109,21 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         const experiment = page.locator('a[href^="#/experiment/"]').filter({
           has: page.locator("title").filter({ hasText: "classic/memory-a" }),
         });
-        const experimentRow = page.locator("summary").filter({ hasText: "classic/memory-a" }).first();
-        await expect(experimentRow).toContainText("classic/memory-a (9/9)");
-        expect((await experimentRow.textContent())?.match(/9\/9/g)).toHaveLength(1);
+        const experimentSummary = page.locator("summary").filter({
+          has: page.getByText("classic/memory-a", { exact: true }),
+        });
+        await expect(experimentSummary).toHaveCount(1);
+        await expect(experimentSummary).toContainText("classic/memory-a (9/9)");
+        expect((await experimentSummary.textContent())?.match(/9\/9/g)).toHaveLength(1);
+        const expandedExperiment = experimentSummary.locator("..");
+        await experimentSummary.click();
+        await expect(expandedExperiment).toHaveAttribute("open", "");
+        const dialog = page.getByRole("dialog");
         await experiment.click();
         await expect(page).toHaveURL(/#\/experiment\//);
+        await expect(dialog).toBeVisible();
+        // regression: memory/react19-dangerously-set-inner-html-identity.md
+        await expect(expandedExperiment).toHaveAttribute("open", "");
 
         const attempt = page.locator('a[href^="#/attempt/"]').filter({ visible: true }).first();
         await expect(attempt).toBeVisible();
@@ -121,6 +131,12 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         expect(href).toMatch(/^#\/attempt\/a1[0-9a-hjkmnp-tv-z]{12}$/);
         const route = href!.slice(1);
         const detail = new URL(`_niceeval/fragments${route}.json`, origin!);
+
+        const overlayRequests: string[] = [];
+        page.on("request", (request) => {
+          if (new URL(request.url()).pathname.includes("/_niceeval/fragments/"))
+            overlayRequests.push(request.url());
+        });
 
         let detailRequested!: () => void;
         const requested = new Promise<void>((done) => { detailRequested = done; });
@@ -134,14 +150,15 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
           await request.continue();
           detailContinued();
         });
-        const dialog = page.getByRole("dialog");
         try {
           await attempt.click();
           await requested;
           await expect(page).toHaveURL(new RegExp(`#${route}$`));
           await expect(dialog).toBeVisible();
           await expect(dialog.getByRole("status")).toContainText("Loading details…");
-          await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+          await expect(
+            page.locator("h1", { hasText: "NiceEval overview" }),
+          ).toBeVisible();
         } finally {
           releaseDetail();
           await continued;
@@ -165,6 +182,7 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         await page.getByRole("button", { name: "Close" }).click();
         await expect(dialog).not.toBeVisible();
         expect(new URL(page.url()).hash).toBe("");
+        expect(overlayRequests).toEqual([detail.href]);
 
         await page.goForward();
         await expect(dialog).toBeVisible();
