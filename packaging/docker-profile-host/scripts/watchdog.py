@@ -570,6 +570,14 @@ class Admission:
                     normalized["containers"] != 1 or normalized["ephemeralDiskBytes"] <= 0
                 ):
                     raise ProtocolError("reservation-invalid", "container requires containers=1 and positive ephemeralDiskBytes")
+                allocation_limit = float(
+                    self.descriptor["backend"]["filesystem"]["dockerDataPool"]["bytesPerAllocation"]
+                )
+                if reservation_kind == "container" and normalized["ephemeralDiskBytes"] > allocation_limit:
+                    raise ProtocolError(
+                        "reservation-exceeds-capacity",
+                        "container ephemeralDiskBytes exceeds one Docker data allocation",
+                    )
                 if reservation_kind == "build" and normalized["containers"] != 0:
                     raise ProtocolError("reservation-invalid", "build requires containers=0")
                 if reservation_id in self.state["reservations"]:

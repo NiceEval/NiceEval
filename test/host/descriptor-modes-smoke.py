@@ -56,6 +56,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
         pool = desc["backend"]["filesystem"]["dockerDataPool"]
         assert pool == {"count": 2, "bytesPerAllocation": 1024**3,
                         "attestation": "linux-project-quota/v1"}
+        assert desc["capacity"]["ephemeralDiskBytes"] == 2 * 1024**3
         assert "dockerDataAllocationCount" not in desc["backend"]["filesystem"]
         assert "rootPath" not in json.dumps(desc) and "registryPath" not in json.dumps(desc)
 

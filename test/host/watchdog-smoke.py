@@ -115,6 +115,8 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
                          "containers": 1, "ephemeralDiskBytes": 1}),
         ("invalid-count", {"cpus": 1, "memoryBytes": 1, "pids": 1,
                            "containers": 0, "ephemeralDiskBytes": 1}),
+        ("invalid-allocation-size", {"cpus": 1, "memoryBytes": 1, "pids": 1,
+                                     "containers": 1, "ephemeralDiskBytes": 513}),
     ):
         try:
             admission.handle({**common, "kind": "reservation.acquire",

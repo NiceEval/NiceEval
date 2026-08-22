@@ -116,6 +116,11 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
     machine_id = host.get("hostMachineIdentity") or read_machine_id()
     data_mount = host["dataMount"]
     limit_bytes = parse_bytes(host["storage"]["size"])
+    docker_data_allocation_count = int(
+        host["capacity"].get("dockerDataAllocationCount", host["capacity"]["maxContainers"])
+    )
+    bytes_per_docker_data_allocation = parse_bytes(host["capacity"]["ephemeralDiskBytes"])
+    total_ephemeral_disk_bytes = docker_data_allocation_count * bytes_per_docker_data_allocation
 
     if _vc is not None:
         normalized = _vc.validate(
@@ -132,7 +137,7 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
             "pids": normalized["capacity"]["pids"],
             "maxContainers": normalized["capacity"]["maxContainers"],
             "maxBuilds": normalized["capacity"]["maxBuilds"],
-            "ephemeralDiskBytes": normalized["capacity"]["ephemeralDiskBytes"],
+            "ephemeralDiskBytes": total_ephemeral_disk_bytes,
             "aggregate": {
                 "cpus": normalized["aggregate"]["cpus"],
                 "memoryBytes": normalized["aggregate"]["memoryBytes"],
@@ -150,7 +155,7 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
             "pids": int(host["capacity"]["pids"]),
             "maxContainers": int(host["capacity"]["maxContainers"]),
             "maxBuilds": int(host["capacity"]["maxBuilds"]),
-            "ephemeralDiskBytes": parse_bytes(host["capacity"]["ephemeralDiskBytes"]),
+            "ephemeralDiskBytes": total_ephemeral_disk_bytes,
             "aggregate": {
                 "cpus": int(host["aggregate"]["cpus"]),
                 "memoryBytes": parse_bytes(
@@ -209,8 +214,8 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
                 "dockerRootDir": host["dockerRootDir"],
                 "limitBytes": limit_bytes,
                 "dockerDataPool": {
-                    "count": int(host["capacity"].get("dockerDataAllocationCount", host["capacity"]["maxContainers"])),
-                    "bytesPerAllocation": parse_bytes(host["capacity"]["ephemeralDiskBytes"]),
+                    "count": docker_data_allocation_count,
+                    "bytesPerAllocation": bytes_per_docker_data_allocation,
                     "attestation": "linux-project-quota/v1",
                 },
             },

@@ -503,7 +503,8 @@ export function parseDockerExecutionProfileV1(value: unknown): DockerExecutionPr
   const profile = freezeProfile(decoded.right);
   if (
     profile.backend.filesystem.dockerDataPool.count < profile.capacity.maxContainers ||
-    profile.backend.filesystem.dockerDataPool.bytesPerAllocation < profile.capacity.ephemeralDiskBytes
+    profile.backend.filesystem.dockerDataPool.count *
+      profile.backend.filesystem.dockerDataPool.bytesPerAllocation < profile.capacity.ephemeralDiskBytes
   ) {
     throw dockerProfileError({
       code: "sandbox.docker-profile-capacity-invalid",
