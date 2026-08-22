@@ -10,6 +10,6 @@
   "harness": { "testkit": true },
   "secrets": [],
   "requires": { "externalNetwork": false, "runtimes": ["node>=24"] },
-  "paths": ["e2e/migrate/**", "src/record/**", "src/show/**", "src/cli/**", "e2e/scripts/**"],
+  "paths": ["e2e/migrate/**", "packages/niceeval/src/record/**", "packages/niceeval/src/show/**", "packages/niceeval/src/cli/**", "e2e/scripts/**"],
   "artifacts": [".e2e-artifacts/**", "junit.xml"]
 }

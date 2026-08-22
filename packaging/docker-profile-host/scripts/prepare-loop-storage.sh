@@ -90,7 +90,7 @@ if [[ ! -e "$IMAGE" ]]; then
 fi
 
 if ! blkid "$IMAGE" >/dev/null 2>&1; then
-  mkfs.ext4 -F -L "ne-dp-data" "$IMAGE"
+  mkfs.ext4 -F -O project,quota -L "ne-dp-data" "$IMAGE"
   echo "formatted ext4 on $IMAGE"
 fi
 

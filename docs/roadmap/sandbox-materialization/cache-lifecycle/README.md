@@ -43,3 +43,6 @@ Sandbox 实例的停驻和销毁归 [Sandbox 默认停驻与回收](../../sandbo
 
 - [CLI](cli.md)定义需求、库存与回收命令。
 - [Architecture](architecture.md)定义 Cache Manifest、Domain、lease 和删除不变量。
+- [并行运行的共享任务镜像](use-case/并行运行的共享任务镜像.md)定义多个 Attempt 怎样等待、命中和复用少量 BuildKey。
+- [回收过期任务镜像](use-case/回收过期任务镜像.md)定义 task-build image 的安全淘汰路径。
+- [盘点共享 BuildKit 缓存](use-case/盘点共享BuildKit缓存.md)定义未验证容量怎样展示，以及用户自行回收的责任边界。

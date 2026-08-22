@@ -5,7 +5,7 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source("../");
 /* 首页会话轨迹直接消费产品 TurnTrace 的官方 stylesheet，避免颜色与交互状态另起一套。 */
-@import "../../src/report/assets/styles.css";
+@import "niceeval/report/react/styles.css";
 
 /* 站点观感与产品面同源:令牌值抄 DESIGN.md 的单源主题 basalt(src/report/host/theme.ts),
    短名与 src/view/styles.css 的宿主 chrome 对齐。站点只有暗色一套,不做浅色切换。 */

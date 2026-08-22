@@ -1,16 +1,17 @@
 [Unit]
 Description=NiceEval docker profile watchdog/admission (%i)
 Documentation=file:///usr/share/niceeval/docker-profile-host/config/default.host.json.example
-After=network.target niceeval-docker-profile@%i.service
+After=network.target niceeval-docker-profile@%i.service niceeval-docker-profile-quota-slots@%i.service
 Wants=niceeval-docker-profile@%i.service
+Requires=niceeval-docker-profile-quota-slots@%i.service
 Requires=niceeval-docker-profile-%i.slice
 After=niceeval-docker-profile-%i.slice
 ConditionPathExists=/etc/niceeval/docker-profiles/%i.host.json
 
 [Service]
 Type=simple
-User=niceeval-dp-%i
-Group=niceeval-dp-%i
+User=root
+Group=root
 Slice=niceeval-docker-profile-%i.slice
 Delegate=yes
 
@@ -21,6 +22,7 @@ WorkingDirectory=/var/lib/niceeval/docker-profiles/%i/journal
 ExecStart=/usr/libexec/niceeval/docker-profile-watchdog \
   --control-socket=/run/niceeval/docker-profiles/%i/control.sock \
   --descriptor=/etc/niceeval/docker-profiles/%i.json \
+  --host-config=/etc/niceeval/docker-profiles/%i.host.json \
   --docker-socket=/run/niceeval/docker-profiles/%i/docker.sock \
   --journal=/var/lib/niceeval/docker-profiles/%i/journal/events.ndjson \
   --socket-mode=0o660 \
@@ -33,8 +35,8 @@ RestartSec=1
 TimeoutStopSec=30
 KillMode=mixed
 
-# Journal dir is dedicated-UID owned; parent not writable by access group.
-ReadWritePaths=/var/lib/niceeval/docker-profiles/%i/journal /run/niceeval/docker-profiles/%i
+# Root-owned control plane needs the attested slot tree for fd-safe scrub.
+ReadWritePaths=/var/lib/niceeval/docker-profiles/%i/data/quota-slots /var/lib/niceeval/docker-profiles/%i/journal /run/niceeval/docker-profiles/%i
 
 [Install]
 WantedBy=multi-user.target

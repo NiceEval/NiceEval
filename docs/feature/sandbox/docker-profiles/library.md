@@ -38,14 +38,17 @@ interface DockerSandboxResources {
   readonly cpus?: number;
   readonly memoryBytes?: number;
   readonly pidsLimit?: number;
+  /** inner dockerd 的 /var/lib/docker 可实际写入的硬上限。 */
+  readonly dockerDataBytes?: number;
   readonly readOnlyRootfs?: boolean;
   readonly tmpfs?: Readonly<Record<string, DockerSandboxTmpfsOptions>>;
 }
 
-interface ManagedDockerResources extends DockerSandboxResources {
+interface ProfiledDockerResources extends DockerSandboxResources {
   readonly cpus: number;
   readonly memoryBytes: number;
   readonly pidsLimit: number;
+  readonly dockerDataBytes: number;
   readonly readOnlyRootfs: true;
 }
 
@@ -73,6 +76,8 @@ type DockerSandboxAccess =
   | {
       readonly mode: "dind";
       readonly isolation: "raw-privileged";
+      /** 只证明磁盘配额、跨进程准入与强杀恢复，不声明宿主隔离。 */
+      readonly storageProfile: string;
     }
   | {
       readonly mode: "dind";
@@ -86,10 +91,16 @@ type DockerSandboxOptions =
       readonly resources?: DockerSandboxResources;
     })
   | (DockerSandboxCommonOptions & {
-      readonly dockerAccess:
-        | { readonly mode: "socket"; readonly socketPath: string }
-        | { readonly mode: "dind"; readonly isolation: "raw-privileged" };
+      readonly dockerAccess: { readonly mode: "socket"; readonly socketPath: string };
       readonly resources?: DockerSandboxResources;
+    })
+  | (DockerSandboxCommonOptions & {
+      readonly dockerAccess: {
+        readonly mode: "dind";
+        readonly isolation: "raw-privileged";
+        readonly storageProfile: string;
+      };
+      readonly resources: ProfiledDockerResources;
     })
   | (DockerSandboxCommonOptions & {
       readonly dockerAccess: {
@@ -97,7 +108,7 @@ type DockerSandboxOptions =
         readonly isolation: "managed-rootless";
         readonly profile: string;
       };
-      readonly resources: ManagedDockerResources;
+      readonly resources: ProfiledDockerResources;
     });
 
 declare function dockerSandbox(options: DockerSandboxOptions): SandboxLayer;
@@ -112,8 +123,8 @@ declare function dockerSandbox(options: DockerSandboxOptions): SandboxLayer;
 | 模式 | NiceEval负责 | 镜像负责 | 适用场景 | 权限边界 |
 | --- | --- | --- | --- | --- |
 | `socket` | 校验并 bind显式 Unix socket、补充 socket GID、检查默认 endpoint并执行 readiness | Docker CLI | 可信 Agent、个人开发机、已有 daemon且优先启动速度 | Agent拥有该 daemon的完整控制权；rootful socket通常等价宿主 root |
-| `dind/raw-privileged` | 给 outer container设置 `Privileged: true`、注入受管 supervisor、启动 daemon并执行 readiness | 官方 dind兼容派生镜像、Docker CLI/daemon、Agent用户加入 `docker`组 | 一次性 VM或专用 runner，需要独立 inner image/network/cache | outer privileged继承所选 daemon/宿主的风险，不宣称 rootless隔离或跨进程容量保证 |
-| `dind/managed-rootless` | profile attestation、rootless privileged、资源准入、独占网络、watchdog恢复、受管 supervisor和 readiness | 官方 dind兼容派生镜像、Docker CLI/daemon、Agent用户加入 `docker`组 | 不可信 Agent、共享宿主、并发评估和强杀恢复 | privileged限制在受管 rootless user namespace或专用 VM内；仍不是 kernel/VM逃逸防护 |
+| `dind/raw-privileged` | 通过 storage profile取得私有 Docker data allocation、磁盘准入与强杀恢复，再启动受管 supervisor和 daemon | 官方 dind兼容派生镜像、Docker CLI/daemon、Agent用户加入 `docker`组 | 一次性 VM或专用 runner，需要先消除 inner Docker填盘风险 | outer privileged继承所选 daemon/宿主的风险；只承诺 `raw-dind-storage/v1`，不承诺 rootless或共享宿主隔离 |
+| `dind/managed-rootless` | profile attestation、rootless privileged、资源准入、独占网络、watchdog恢复、受管 supervisor和 readiness | 官方 dind兼容派生镜像、Docker CLI/daemon、Agent用户加入 `docker`组 | 不可信 Agent、共享 Linux宿主、并发评估和强杀恢复 | privileged限制在受管 rootless user namespace内；仍不是 kernel或 VM逃逸防护 |
 
 socket模式必须显式写宿主绝对路径，不从 NiceEval进程变量、Docker context或 Provider当前 endpoint推断路径。
 NiceEval对路径执行 `realpath`，要求最终目标是 Unix socket，并把规范路径 bind到容器内固定的
@@ -127,10 +138,13 @@ Agent启动前还会拒绝镜像预设的 endpoint/context，并确认默认 `do
 symlink只作为可信宿主配置的便捷入口，最终 bind的是求值时得到的规范目标；NiceEval不承诺防御
 可信宿主在检查与 create之间替换该路径。
 
-raw DinD的危险授权由必填字面量 `isolation: "raw-privileged"`表达。managed DinD的 profile别名
-放在同一判别分支内，缺失、拼错、attestation失败或容量不足都 fail closed，绝不降级成 raw
-privileged。managed分支必须显式提供 CPU、memory、PID和 `readOnlyRootfs: true`；watchdog因此能在
-create前取得完整 reservation向量。可写路径只能来自显式 `tmpfs`。
+raw DinD的危险授权由必填字面量 `isolation: "raw-privileged"`表达，并且必须声明
+`storageProfile`。该 profile只授予 `raw-dind-storage/v1`：每 Attempt磁盘配额、跨进程准入和强杀恢复。
+它不把 raw privileged提升为 rootless，也不承诺同一共享宿主上的 sibling隔离。
+
+managed DinD的 `profile`包含同一 storage capability，并额外证明 rootless、网络、cgroup和宿主边界。
+两个分支都必须显式提供 CPU、memory、PID、`dockerDataBytes`和 `readOnlyRootfs: true`。profile缺失、
+attestation失败或容量不足都 fail closed；managed绝不降级成 raw privileged。
 
 三种 Docker access默认在 Sandbox默认用户下执行 `docker info`。`readiness`可以替换命令、用户和
 超时，但不能关闭探活。NiceEval不向任意镜像安装 Docker组件；CLI、inner daemon和 entrypoint由
@@ -144,6 +158,7 @@ create前取得完整 reservation向量。可写路径只能来自显式 `tmpfs`
 | socket的 `socketPath`不是绝对规范路径 | 配置期失败 |
 | socket与 profile/privileged字段并存 | 配置期失败；三分支没有隐式组合 |
 | `dockerAccess: { mode: "dind" }` | 配置期失败；`isolation`没有默认值 |
+| `raw-privileged`缺 `storageProfile`或 `dockerDataBytes` | 在任何 Docker I/O前失败 |
 | `managed-rootless`缺 profile或完整 resources | 在任何 Docker I/O前失败 |
 | managed profile找不到或 attestation失败 | fail closed，不尝试 raw privileged |
 | 旧 `profile + privileged: "rootless"` | 迁移到 `dockerAccess: { mode: "dind", isolation: "managed-rootless", profile }` |
@@ -175,9 +190,9 @@ export default defineEval({
       cpus: 4,
       memoryBytes: 6 * GiB,
       pidsLimit: 2048,
+      dockerDataBytes: 8 * GiB,
       readOnlyRootfs: true,
       tmpfs: {
-        "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
         "/home/sandbox/workspace": {
           sizeBytes: 2 * GiB,
           mode: 0o755,
@@ -232,8 +247,13 @@ Sandbox lifecycle setup、prepare、agent ensure或 Attempt命令前重试 readi
 `nosuid,nodev`，并按 `executable`选择 `exec`或 `noexec`。tmpfs实际占用计入容器 memory cgroup；
 各路径 `sizeBytes`之和不是额外内存。
 
-`readOnlyRootfs: true`是单 Attempt磁盘 DoS边界。只有显式 tmpfs可写；Agent不能改写 outer
-writable layer。缺少必要写路径会在 readiness/setup报告配置错误，不能自动回退到可写 rootfs。
+`/var/lib/docker`不能出现在 `tmpfs`。provider把 storage profile租出的私有、disk-backed Docker data allocation以
+固定 `rprivate` bind挂到该路径。这笔 allocation的 project quota hard limit等于 `dockerDataBytes`，因此写入量受磁盘
+配额约束，不会挤占容器 memory cgroup。source路径、allocation ID和 lease token均不进入容器。
+
+`readOnlyRootfs: true`与声明的 tmpfs限制其它可写路径。缺少必要写路径会在 readiness/setup报告配置
+错误，不能自动回退到可写 rootfs。`dockerDataBytes`进入 template identity和 Attempt fingerprint；
+storage profile别名、allocation ID与宿主路径不进入可分享 identity。
 
 ## 身份
 
