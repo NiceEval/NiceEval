@@ -25,6 +25,8 @@
 - 先加强拥有同一长期结果的既有 E2E owner；没有合格 owner 时新增一个最小 Journey 或单边界 E2E。测试标题仍描述长期用户结果，Bug 历史只作为 regression 凭据，不另建按 Bug 命名的目录或第二套 owner。
 - 无法稳定自动化的外部条件、安全限制或不可固定 Provider 才可暂停 E2E TDD；必须在开工前写明具体阻塞，并把当前候选安装到隔离消费环境做公开入口 AI 真实验收。测试重置、工期或“只是内部实现”不构成跳过理由。
 - E2E 按产品域放在 `e2e/{eval,cli,runner,record,report,package,lifecycle}`，adapter 放在 `e2e/adapter/<id>`；测试文件留在所属 Repo 的原生 `test/`，机械共享能力才进入 Testkit 或根 `e2e/scripts/`。不按 Bug 编号、日期或实现模块另建目录。
+- 完整 E2E 只承担开工红灯、候选转绿与最终接管，不作为反复猜测 DOM、时序或 fixture 的交互式调试循环。首次完整运行需要继续定位时，使用 `--keep-workdir` 保留已安装的隔离副本，并在同一 candidate、fixture 与原生 runner 上收窄重跑；先用最小浏览器动作或进程实验确定稳定观察，再改长期 owner。不得反复 pack / install 来试探测试写法，也不得把临时 `only`、短 timeout、日志或诊断断言留进 owner。
+- 复杂 E2E 定位确有多条独立证据线时，可通过 Herdr 并行启动只读检索 worker，分别检查生产根因、trace / DOM 与稳定公开观察；主 agent 独占长期 owner 和生产修复。不得让多个 worker 同时修改同一测试文件，不得并行重复完整候选准备，也不得把 reviewer 安排在尚未停稳的实现上。
 
 ## 全仓约束
 
@@ -70,7 +72,7 @@
 - 多 agent 直接在当前工作目录的 `main` 上并行开发；不建 feature branch，也不创建或使用额外的 git worktree。
 - PR 标题与正文使用用户当前提问的语言；用户切换语言时跟随最新一条提问。commit message 仍使用英语。PR 标题描述用户可见的最终能力或行为，不拿 registry、protocol、storage model 等内部机制代替 feature 名。
 - 创建或更新 PR 前先读 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)，并以它作为 PR 标题与正文写法的唯一入口。只保留真实变化的产品面；每项变化以具名 case 展示 before / after example 与 user impact，不用“契约”、实现机制或变化分类代替例子。Record 与 Tests 严格使用模板中的 case / 完整测试源码格式；不在本文件维护第二份 PR 清单。
-- PR 正文包含多个 case、测试源码或可能接近 GitHub 字节上限时，使用 `pnpm pr:body --help`，不要再写一次性 generator。创建 PR 前用 `pnpm pr:body init --source <draft.md>` 建草稿，编辑后运行 `check --source <draft.md> --no-remote` 与 `render --source <draft.md> --out <body.md>`，再把 `<body.md>` 交给 `gh pr create --body-file`；取得 PR 编号并推送最终提交后，用 `pnpm pr:body apply --pr <number> --source <draft.md>` 更新正文，最后用同一 source 运行 `check --pr <number>` 校验远端 HEAD 与正文。已有 PR 也可直接用 `init --pr <number>`，草稿默认保存在当前 worktree 的 Git 私有目录。具体字段、测试源码 directive、fragment anchor 和字节预算以 `pnpm pr:body --help` 为准。
+- PR 正文包含多个 case、测试源码或可能接近 GitHub 字节上限时，使用 `pnpm pr:body --help`，不要再写一次性 generator。创建 PR 前用 `pnpm pr:body init --source <draft.md>` 建草稿，编辑后运行 `check --source <draft.md> --no-remote`，完成 commit 与 push，再用 `create --source <draft.md> --title <title> --base main` 创建 PR、apply 正文并校验远端 HEAD；已有 PR 用 `apply --pr <number> --source <draft.md>` 更新，随后用同一 source 运行 `check --pr <number>`。已有 PR 也可直接用 `init --pr <number>`，草稿默认保存在当前 worktree 的 Git 私有目录。具体字段、测试源码 directive、fragment anchor 和字节预算以 `pnpm pr:body --help` 为准。
 - 自动化产品测试仍禁止新增或恢复 `src/**/*.test.*` 与 `test/unit/**`。Bug 修复优先修改既有 E2E owner；没有合格 owner 时允许新增一个最小 `e2e/**` owner，以公开入口红灯作为开工门。新增或实质修改的 owner 仍须满足 testing 契约并通过可靠性接管门；收据完成前不得宣称成熟或完成接管，当前 suite 不得宣称已成熟。
 - 每个 agent 只修改自己任务范围内的文件；遇到并行改动时继续协作，不通过切分支、换 worktree 或回退他人改动来隔离工作。
 - 未知改动属于用户或其它 agent。不要覆盖、顺手格式化或提交它们；提交前检查 `git status`、未暂存 diff 与暂存 diff。

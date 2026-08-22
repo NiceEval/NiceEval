@@ -9,7 +9,6 @@ import {
 import {
   App,
   ReportOverlay,
-  ReportPage,
   type ReportOutletContext,
 } from "./App.tsx";
 import type {
@@ -125,14 +124,6 @@ export function createReportRoutes(manifest: ReportManifest): RouteObject[] {
       } else navigate(route);
     },
   };
-  function PageRoute({ page }: { readonly page: ReportPageManifest }) {
-    const { locale } = useOutletContext<ReportOutletContext>();
-    return (
-      <div className="niceeval-view-report-slot">
-        <ReportPage page={page} locale={locale} />
-      </div>
-    );
-  }
   function OverlayRoute({ page }: { readonly page: ReportPageManifest }) {
     const { locale } = useOutletContext<ReportOutletContext>();
     return (
@@ -150,9 +141,7 @@ export function createReportRoutes(manifest: ReportManifest): RouteObject[] {
           page,
           page.presentation === "overlay" ? (
             <OverlayRoute page={page} />
-          ) : (
-            <PageRoute page={page} />
-          ),
+          ) : null,
         ),
       );
   if (manifest.defaultRoute !== "/")
