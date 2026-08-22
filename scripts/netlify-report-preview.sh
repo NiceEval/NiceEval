@@ -6,7 +6,7 @@ readonly NICEEVAL_ROOT="$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)"
 readonly MEMORYBENCH_REPOSITORY="https://github.com/NiceEval/MemoryBench.git"
 # Keep the preview on a reviewed, immutable fixture while exercising current
 # Assertions v2 evidence. This commit contains the focused 12-attempt rerun.
-readonly MEMORYBENCH_COMMIT="55dbfb00b39ff9405902f8d966e9eda03affe8b2"
+readonly MEMORYBENCH_COMMIT="67249ba646a14d7d92c8b30bbc8646593db2601f"
 readonly PUBLISH_DIRECTORY="$NICEEVAL_ROOT/netlify-report-preview"
 
 if [[ "${CONTEXT:-}" != "deploy-preview" ]]; then
