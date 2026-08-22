@@ -372,17 +372,20 @@ type ExperimentGroupIdentity =
   | { readonly kind: "named"; readonly groupId: ExperimentGroupId }
   | { readonly kind: "singleton"; readonly experimentId: ExperimentId };
 
-type ExperimentComparisonState =
-  | { readonly state: "comparable"; readonly members: readonly ExperimentId[] }
-  | {
-      readonly state: "non-comparable";
-      readonly members: readonly ExperimentId[];
-      readonly issues: readonly NonComparableIssue[];
-    };
+interface ExperimentEvalCoverage {
+  readonly member: ExperimentId;
+  readonly coveredEvalCount: number;
+  readonly groupEvalCount: number;
+}
+
+interface ExperimentComparison {
+  readonly members: readonly ExperimentId[];
+  readonly coverage: readonly ExperimentEvalCoverage[];
+}
 
 interface ExperimentComparisonScope {
   readonly group: ExperimentGroupIdentity;
-  readonly comparison: ExperimentComparisonState;
+  readonly comparison: ExperimentComparison;
   // private brand and parent-Sample capability
 }
 
@@ -394,29 +397,13 @@ declare function experimentComparisonScope(
 
 组列表只从 selection 选中的 Run 派生。纯 `identity-mismatch` 的 excluded 历史不产生组或成员；Core invalid、not-dispatched 和 interrupted 仍属于已选 Run，留在组内并贡献问题。comparison member 是去重后的 `ExperimentId`，同一 Experiment 的多个 Run 合并为一个 member。
 
-population（Eval ID 集合）从该 member 的全部非 excluded expected Slot 形成，按 `EvalId` 去重。Attempt ordinal、Attempt 是否建立或 outcome 都不改变这个总体。根级 singleton 与当前 Sample 中只剩一个 member 的 named 组都可形成 comparable scope；它们可显示单行，但不声称相对排名。
+population（Eval ID 集合）从该 member 的全部非 excluded expected Slot 形成，按 `EvalId` 去重。Attempt ordinal、Attempt 是否建立或 outcome 都不改变这个总体。根级 singleton 与当前 Sample 中只剩一个 member 的 named 组也形成 comparison scope；它们可显示单行，但不声称相对排名。
 
-### 结构可比性
+### 比较资格与样本命中范围
 
-目录是作者的比较准入声明，Analysis 另行验证可证明的结构条件。同组 member 必须有相同的 `EvalId` 总体。Pass 与 Score 可在同组的独立面板呈现，不互排。不同 Eval 集不自动取交集、补零或缩小分母。
+实验组是作者的比较准入声明：属于同一个实验组的 member 始终可以比较，Analysis 不再用 Eval population 是否相同否决作者声明。每个 member 的指标只消费它实际拥有的 expected Slot，并保留自己的分母；没有运行的 Eval 不补零、不记为通过、失败或错误，也不缩成共同 Eval 的交集。
 
-```ts
-type NonComparableReason = "eval-population-mismatch";
-
-interface NonComparableIssue {
-  readonly reason: NonComparableReason;
-  readonly members: readonly ExperimentId[];
-  readonly actual: readonly {
-    readonly member: ExperimentId;
-    readonly population: JsonValue | null;
-    readonly basis: JsonValue | null;
-  }[];
-  readonly refs: readonly EvidenceRef[];
-  readonly params: Readonly<Record<string, JsonValue>>;
-}
-```
-
-`non-comparable` 是闭合业务状态；Report 呈现原因与修复信息，不输出排名或散点。把多个实验组伪造成一个 branded projection 则以 `analysis-comparison-group-mismatch` 失败，不能降级成 `non-comparable`。
+`coverage` 同时给出每个 member 命中的 distinct Eval 数和该组所有 member 的 distinct Eval 并集数。它描述样本命中范围，不是比较 gate；并集为零时比例是空值而不是 `0%`。Pass 类指标可连同各自分母和 coverage 展示；依赖不同总体的 raw total score 不默认排序或连线。把多个实验组伪造成一个 branded projection 仍以 `analysis-comparison-group-mismatch` 失败。
 
 ## query 与 aggregate
 

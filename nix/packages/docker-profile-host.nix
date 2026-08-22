@@ -4,6 +4,10 @@
   stdenvNoCC,
   python3,
   bash,
+  util-linux,
+  e2fsprogs,
+  quota,
+  makeWrapper,
 }:
 stdenvNoCC.mkDerivation {
   pname = "niceeval-docker-profile-host";
@@ -12,6 +16,7 @@ stdenvNoCC.mkDerivation {
   src = ../../packaging/docker-profile-host;
 
   dontBuild = true;
+  nativeBuildInputs = [ makeWrapper ];
 
   installPhase = ''
     runHook preInstall
@@ -32,7 +37,8 @@ stdenvNoCC.mkDerivation {
     for pair in \
       generate-descriptor.py:generate-descriptor \
       validate-capacity.py:validate-capacity \
-      watchdog.py:docker-profile-watchdog
+      watchdog.py:docker-profile-watchdog \
+      install-quota-slots.py:install-quota-slots
     do
       src_name=''${pair%%:*}
       dst_name=''${pair##*:}
@@ -69,6 +75,11 @@ stdenvNoCC.mkDerivation {
     ln -s $out/libexec/niceeval/docker-profile-host-doctor $out/bin/niceeval-docker-profile-host-doctor
     ln -s $out/libexec/niceeval/apply-rootless-network-policy $out/bin/niceeval-docker-profile-apply-network-policy
     ln -s $out/libexec/niceeval/verify-sibling-isolation $out/bin/niceeval-docker-profile-verify-sibling-isolation
+
+    wrapProgram $out/libexec/niceeval/install-quota-slots \
+      --prefix PATH : ${lib.makeBinPath [ util-linux e2fsprogs quota ]}
+    wrapProgram $out/libexec/niceeval/docker-profile-watchdog \
+      --prefix PATH : ${lib.makeBinPath [ util-linux e2fsprogs quota ]}
 
     runHook postInstall
   '';

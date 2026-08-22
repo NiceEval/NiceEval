@@ -1602,9 +1602,89 @@ table.niceeval-report,
   color: color-mix(in oklch, var(--bad), var(--text) 38%);
 }
 .niceeval-assertion-evidence {
-  display: grid;
   min-width: 0;
+}
+.niceeval-match-node {
+  min-width: 0;
+  border-left: 2px solid var(--line-strong);
+  padding-left: 10px;
+}
+.niceeval-match-node > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.niceeval-match-node > summary::-webkit-details-marker { display: none; }
+.niceeval-match-summary {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+  font: 12px/1.5 var(--font-mono);
+  font-weight: 650;
+}
+.niceeval-match-summary code {
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.niceeval-match-summary--matched { color: var(--good); }
+.niceeval-match-summary--mismatched { color: var(--bad); }
+.niceeval-match-summary--unavailable { color: var(--warn); }
+.niceeval-match-detail {
+  display: grid;
+  gap: 10px;
+  padding: 8px 0 4px;
+}
+.niceeval-match-children {
+  display: grid;
+  gap: 7px;
+}
+.niceeval-match-body {
+  display: grid;
+  gap: 10px;
+}
+.niceeval-match-evidence-grid {
+  display: grid;
+  gap: 10px;
+}
+.niceeval-match-facts {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  font: 11px/1.5 var(--font-mono);
+}
+.niceeval-match-facts > div {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, max-content) minmax(0, 1fr);
+  gap: 10px;
+}
+.niceeval-match-facts dt { color: var(--soft); }
+.niceeval-match-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.niceeval-match-coverage {
+  margin: 0;
+  color: var(--soft);
+  font: 10px/1.5 var(--font-mono);
+}
+.niceeval-match-raw {
+  min-width: 0;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+.niceeval-match-raw > summary {
+  color: var(--soft);
+  cursor: pointer;
+  font: 11px/1.4 var(--font-mono);
+}
+.niceeval-match-raw > div {
+  display: grid;
   gap: 12px;
+  padding-top: 10px;
 }
 .niceeval-assertion-evidence-section { min-width: 0; }
 .niceeval-assertion-evidence-section > h5 {

@@ -86,7 +86,11 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
     "browser-classic-attempt-overlay",
     { artifacts: reportCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
-      for (const id of ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const) {
+      for (const id of [
+        "classic/baseline",
+        "classic/memory-a",
+        "classic/incompatible",
+      ] as const) {
         const run = await niceeval.run(["exp", id, "--rerun", "all", "--json"]);
         expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       }
@@ -105,6 +109,9 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         const experiment = page.locator('a[href^="#/experiment/"]').filter({
           has: page.locator("title").filter({ hasText: "classic/memory-a" }),
         });
+        const experimentRow = page.locator("summary").filter({ hasText: "classic/memory-a" }).first();
+        await expect(experimentRow).toContainText("classic/memory-a (9/9)");
+        expect((await experimentRow.textContent())?.match(/9\/9/g)).toHaveLength(1);
         await experiment.click();
         await expect(page).toHaveURL(/#\/experiment\//);
 
@@ -142,6 +149,18 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         }
         await expect(dialog.getByText(/^@[0-9A-Z]+$/).first()).toBeVisible();
 
+        const assertionLine = dialog.locator("summary").filter({ hasText: "t.check(t.reply" }).first();
+        await assertionLine.click();
+        const rootMatch = dialog.getByLabel(/^and\(includes.+: matched$/).first();
+        await expect(rootMatch).toBeVisible();
+        await rootMatch.click();
+        const orMatch = dialog.getByLabel(/^or\(includes.+: matched$/).first();
+        await expect(orMatch).toBeVisible();
+        await orMatch.click();
+        const orNode = orMatch.locator("xpath=..");
+        await expect(orNode.getByLabel('includes("RECALL_OK"): matched')).toBeVisible();
+        await expect(orNode.getByLabel('includes("NEVER_PRESENT"): mismatched')).toBeVisible();
+
         const copiedUrl = page.url();
         await page.getByRole("button", { name: "Close" }).click();
         await expect(dialog).not.toBeVisible();
@@ -171,6 +190,39 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         await page.mouse.click(5, 5);
         await expect(dialog).not.toBeVisible();
         expect(new URL(page.url()).hash).toBe("");
+
+        const baselineSummary = page.locator("summary").filter({ hasText: /^classic\/baseline \(9\/9\)/ }).first();
+        if (await baselineSummary.locator("xpath=..").getAttribute("open") === null) await baselineSummary.click();
+        const classicSummary = page.locator("summary").filter({ hasText: /^classic \(8 evals\)/ }).first();
+        if (await classicSummary.locator("xpath=..").getAttribute("open") === null) await classicSummary.click();
+        const toolEvalSummary = page.locator("summary").filter({ hasText: /^tool-note/ }).first();
+        if (await toolEvalSummary.locator("xpath=..").getAttribute("open") === null) await toolEvalSummary.click();
+        const toolAttemptHref = await toolEvalSummary.locator("xpath=..").locator('a[href^="#/attempt/"]').first().getAttribute("href");
+        expect(toolAttemptHref).toMatch(/^#\/attempt\//);
+        await page.goto(new URL(toolAttemptHref!, origin!).href);
+        await expect(dialog).toBeVisible({ timeout: 10_000 });
+
+        const toolAssertion = dialog.locator("summary").filter({ hasText: 'calledTool("write_note"' }).first();
+        await expect(toolAssertion).toBeVisible({ timeout: 5_000 });
+        if (await toolAssertion.locator("xpath=..").getAttribute("open") === null) await toolAssertion.click();
+        const toolMatcher = dialog.getByLabel(/calledTool.+: mismatched$/).filter({ visible: true }).first();
+        await expect(toolMatcher).toBeVisible({ timeout: 5_000 });
+        await toolMatcher.click();
+        await expect(dialog.getByRole("heading", { name: "Tool calls" })).toBeVisible({ timeout: 5_000 });
+        await expect(dialog.getByText('exactly 1 × toolMatch("write_note")', { exact: true })).toBeVisible();
+        await expect(dialog.getByText("0 definite matches", { exact: true })).toBeVisible();
+
+        const commandAssertion = dialog.locator("summary").filter({ hasText: "t.check({" }).first();
+        await expect(commandAssertion).toBeVisible({ timeout: 5_000 });
+        if (await commandAssertion.locator("xpath=..").getAttribute("open") === null) await commandAssertion.click();
+        const commandMatcher = dialog.getByLabel("commandSucceeded(): matched").filter({ visible: true });
+        await expect(commandMatcher).toBeVisible({ timeout: 5_000 });
+        await commandMatcher.click();
+        await expect(dialog.getByRole("heading", { name: "Command result" })).toBeVisible();
+        await expect(dialog.getByText("pnpm test", { exact: true })).toBeVisible();
+        await expect(dialog.getByText("Exit code 0", { exact: true })).toBeVisible();
+        await expect(dialog.getByText("PASS src/example.test.ts", { exact: true })).not.toBeVisible();
+
       } finally {
         await page.close();
       }

@@ -97,9 +97,9 @@ export default defineExperiment({
       cpus: 4,
       memoryBytes: 6 * GiB,
       pidsLimit: 2048,
+      dockerDataBytes: 8 * GiB,
       readOnlyRootfs: true,
       tmpfs: {
-        "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
         "/home/sandbox/workspace": {
           sizeBytes: 2 * GiB,
           mode: 0o755,
@@ -137,11 +137,11 @@ services.niceeval.dockerProfiles.default = {
     cpus = 16;
     memory = "28G";
     pids = 8192;
-    maxContainers = 4;
+    maxContainers = 2;
     maxBuilds = 2;
   };
   aggregate = { cpus = 20; memory = "32G"; pids = 12288; };
-  storage = { size = "30G"; backing = "loop-ext4"; };
+  storage = { size = "32G"; slotSize = "8G"; backing = "loop-ext4"; };
 };
 ```
 
@@ -153,8 +153,8 @@ pnpm exec niceeval exp harness --dry
 pnpm exec niceeval exp harness
 ```
 
-Ubuntu/Debian的 systemd host package与 macOS专用 VM package同样登记 `default`。Experiment不按
-操作系统分支，也不需要 CLI profile flag。
+Ubuntu/Debian的 systemd host package同样登记 `default`。Experiment不按 Linux发行版分支，也不需要
+CLI profile flag；其它平台在 profile加载阶段 fail closed。
 
 更换本地 profile名字、socket路径或 daemon generation不会让旧结果失去携带资格。profile的
 semantic policy revision、Sandbox image digest或 per-container资源声明改变才影响 fingerprint。已有付费结果
@@ -185,7 +185,7 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 - inner Compose成功 up/down；
 - outer `cpu.max` / `memory.max` / `memory.swap.max` / `pids.max`与声明一致；
 - outer container cgroup是 profile aggregate path的严格后代；
-- rootfs只读，所有可写路径容量可核对；
+- rootfs只读，`/var/lib/docker`来自8 GiB project-quota Docker data allocation，其它可写路径容量可核对；
 - outer socket、control socket、lease token与 host gateway在容器内均不可见；
 - 每个 Attempt 使用独占 user-defined outer bridge；TCP、UDP、ICMP 与私网扫描均不能到达 sibling，
   也不能到达宿主 loopback/control endpoint，但公网 DNS/HTTPS 与 inner Compose 必须可用；
@@ -200,7 +200,7 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 - aggregate reservation从未越过 CPU/memory/PID/container/build上限；
 - 一个 Invocation退出未删除另一个的 container；
 - profile无遗留 active/provisioning NiceEval container或 reservation；
-- sibling没有因单条填盘、OOM或 PID storm失效；
+- sibling没有因单条填满 Docker data allocation、OOM或 PID storm失效；
 - cleanup p95低于 Runner看门狗边界。
 - 四个 outer container有至少120秒共同活动区间；每一路在该区间内都必须有真实 coding agent、已
   build/run/healthy的 inner Compose和持续增长的 CPU activity。排队、sleep、readiness或只创建容器
@@ -227,18 +227,19 @@ daemon请求、session和 process/cgroup活动全部终止前保持占用，不�
 
 ### 八路
 
-8路不是只改一个常量。相同任务矩阵必须先通过4路参照运行，再在实际宿主证明8个 outer scope都在
+8路不是只改一个常量。默认32 GiB storage profile只准入2笔8 GiB Docker data allocation。4路 profile至少提供
+64 GiB硬容量，8路 profile至少提供128 GiB硬容量；不得用稀疏文件的逻辑大小重复承诺同一批物理块。
+
+相同任务矩阵必须先通过4路参照运行，再在实际宿主证明8个 outer scope都在
 aggregate cgroup内、硬资源与 headroom仍成立、跨进程 admission无超卖。宿主 module把
 `maxContainers`声明为8后，Experiment才可同步上调；只改 `maxConcurrency`不能越过 profile。
 八路 allocatable 至少是32 CPU、48 GiB memory与16384 PID；aggregate硬上限至少是40 CPU、
 64 GiB memory与20480 PID。八路也必须满足同一个不少于120秒的真实共同活动区间。
 
-### 三种官方宿主集成
+### 两种官方 Linux宿主集成
 
 - NixOS VM test从零 rebuild、reboot、doctor、nested Docker、SIGKILL recovery全通过；
 - 通用 systemd Linux真实安装 host package，使用管理员提供的 bounded mount，完成同一 smoke与
   reboot recovery；
-- macOS从零安装专用 VM package，验证 launchd reboot、host/guest machine identity、nested Docker、
-  多 Invocation admission与 CLI SIGKILL recovery；
-- 三种部署产出的 descriptor/control protocol可由同一 NiceEval core消费，下游没有专用 daemon
+- 两种部署产出的 descriptor/control protocol可由同一 NiceEval core消费，下游没有专用 daemon
   shell脚本。

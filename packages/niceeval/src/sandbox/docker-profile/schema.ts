@@ -21,7 +21,7 @@ const PROFILE_CONTROLLERS: readonly ["cpu", "memory", "pids"] = Object.freeze([
 
 export type DockerExecutionProfileSecurityLevel =
   | "managed-rootless/v1"
-  | "managed-vm-rootless/v1";
+  | "raw-dind-storage/v1";
 
 export interface DockerProfileUnixEndpoint {
   readonly path: string;
@@ -50,6 +50,23 @@ export interface DockerProfileNetworkPolicy {
   };
 }
 
+export interface DockerRawStoragePolicy {
+  readonly level: "raw-dind-storage/v1";
+  readonly privilegedTranslation: "host-daemon";
+  readonly dockerData: "private-project-quota-allocation/v1";
+}
+
+export interface DockerManagedRootlessPolicy {
+  readonly level: "managed-rootless/v1";
+  readonly hostLoopback: false;
+  readonly tcpDockerEndpoint: false;
+  readonly outerSocketInjection: false;
+  readonly privilegedTranslation: "rootless-userns";
+  readonly writableRoot: "declared-tmpfs-only";
+  readonly dockerData: "private-project-quota-allocation/v1";
+  readonly network: DockerProfileNetworkPolicy;
+}
+
 export interface DockerExecutionProfileV1 {
   readonly schemaVersion: 1;
   readonly profileId: string;
@@ -72,6 +89,11 @@ export interface DockerExecutionProfileV1 {
       readonly mountPath: string;
       readonly dockerRootDir: string;
       readonly limitBytes: number;
+      readonly dockerDataPool: {
+        readonly count: number;
+        readonly bytesPerAllocation: number;
+        readonly attestation: "linux-project-quota/v1";
+      };
     };
     readonly cgroup: {
       readonly aggregatePath: string;
@@ -86,6 +108,7 @@ export interface DockerExecutionProfileV1 {
     readonly pids: number;
     readonly maxContainers: number;
     readonly maxBuilds: number;
+    readonly ephemeralDiskBytes: number;
     readonly aggregate: {
       readonly cpus: number;
       readonly memoryBytes: number;
@@ -93,14 +116,7 @@ export interface DockerExecutionProfileV1 {
       readonly pids: number;
     };
   };
-  readonly policy: {
-    readonly hostLoopback: false;
-    readonly tcpDockerEndpoint: false;
-    readonly outerSocketInjection: false;
-    readonly privilegedTranslation: "rootless-userns";
-    readonly writableRoot: "declared-tmpfs-only";
-    readonly network: DockerProfileNetworkPolicy;
-  };
+  readonly policy: DockerRawStoragePolicy | DockerManagedRootlessPolicy;
 }
 
 export type DockerExecutionProfileV1Draft =
@@ -247,6 +263,7 @@ const CapacitySchema = plainStruct({
   pids: positiveSafeInteger("DockerProfileCapacityPids"),
   maxContainers: positiveSafeInteger("DockerProfileCapacityMaxContainers"),
   maxBuilds: positiveSafeInteger("DockerProfileCapacityMaxBuilds"),
+  ephemeralDiskBytes: positiveSafeInteger("DockerProfileCapacityEphemeralDiskBytes"),
   aggregate: plainStruct({
     cpus: positiveFinite("DockerProfileAggregateCpus"),
     memoryBytes: positiveSafeInteger("DockerProfileAggregateMemoryBytes"),
@@ -270,7 +287,7 @@ export const DockerExecutionProfileV1Schema: Schema.Schema<
 > = plainStruct({
   schemaVersion: Schema.Literal(1),
   profileId: nonEmptyString("DockerProfileId"),
-  securityLevel: Schema.Literal("managed-rootless/v1", "managed-vm-rootless/v1"),
+  securityLevel: Schema.Literal("managed-rootless/v1", "raw-dind-storage/v1"),
   semanticPolicyRevision: nonEmptyString("DockerProfileSemanticPolicyRevision"),
   transport: plainStruct({
     kind: Schema.Literal("unix"),
@@ -294,6 +311,11 @@ export const DockerExecutionProfileV1Schema: Schema.Schema<
       mountPath: absolutePath("DockerProfileMountPath"),
       dockerRootDir: absolutePath("DockerProfileDockerRootDir"),
       limitBytes: positiveSafeInteger("DockerProfileFilesystemLimitBytes"),
+      dockerDataPool: plainStruct({
+        count: positiveSafeInteger("DockerProfileDockerDataSlotCount"),
+        bytesPerAllocation: positiveSafeInteger("DockerProfileDockerDataAllocationLimitBytes"),
+        attestation: Schema.Literal("linux-project-quota/v1"),
+      }),
     }),
     cgroup: plainStruct({
       aggregatePath: absolutePath("DockerProfileAggregatePath"),
@@ -306,14 +328,20 @@ export const DockerExecutionProfileV1Schema: Schema.Schema<
     }),
   }),
   capacity: CapacitySchema,
-  policy: plainStruct({
+  policy: Schema.Union(plainStruct({
+    level: Schema.Literal("raw-dind-storage/v1"),
+    privilegedTranslation: Schema.Literal("host-daemon"),
+    dockerData: Schema.Literal("private-project-quota-allocation/v1"),
+  }), plainStruct({
+    level: Schema.Literal("managed-rootless/v1"),
     hostLoopback: Schema.Literal(false),
     tcpDockerEndpoint: Schema.Literal(false),
     outerSocketInjection: Schema.Literal(false),
     privilegedTranslation: Schema.Literal("rootless-userns"),
     writableRoot: Schema.Literal("declared-tmpfs-only"),
+    dockerData: Schema.Literal("private-project-quota-allocation/v1"),
     network: NetworkSchema,
-  }),
+  })),
 });
 
 export const DockerExecutionProfileSchema = DockerExecutionProfileV1Schema;
@@ -336,7 +364,10 @@ function freezeProfile(profile: DockerExecutionProfileV1): DockerExecutionProfil
     backend: Object.freeze({
       ...profile.backend,
       owner: Object.freeze({ ...profile.backend.owner }),
-      filesystem: Object.freeze({ ...profile.backend.filesystem }),
+      filesystem: Object.freeze({
+        ...profile.backend.filesystem,
+        dockerDataPool: Object.freeze({ ...profile.backend.filesystem.dockerDataPool }),
+      }),
       cgroup: Object.freeze({ ...profile.backend.cgroup, controllers: PROFILE_CONTROLLERS }),
     }),
     capacity: Object.freeze({
@@ -344,21 +375,23 @@ function freezeProfile(profile: DockerExecutionProfileV1): DockerExecutionProfil
       memorySwapBytes: 0,
       aggregate: Object.freeze({ ...profile.capacity.aggregate, memorySwapBytes: 0 }),
     }),
-    policy: Object.freeze({
-      ...profile.policy,
-      network: Object.freeze({
-        ...profile.policy.network,
-        dns: Object.freeze({
-          ...profile.policy.network.dns,
-          servers: frozenNonEmptyStrings(profile.policy.network.dns.servers),
+    policy: profile.policy.level === "raw-dind-storage/v1"
+      ? Object.freeze({ ...profile.policy })
+      : Object.freeze({
+          ...profile.policy,
+          network: Object.freeze({
+            ...profile.policy.network,
+            dns: Object.freeze({
+              ...profile.policy.network.dns,
+              servers: frozenNonEmptyStrings(profile.policy.network.dns.servers),
+            }),
+            egress: Object.freeze({
+              ...profile.policy.network.egress,
+              allowedProtocols: NETWORK_ALLOWED_PROTOCOLS,
+              denyCidrs: DOCKER_PROFILE_NETWORK_DENY_CIDRS,
+            }),
+          }),
         }),
-        egress: Object.freeze({
-          ...profile.policy.network.egress,
-          allowedProtocols: NETWORK_ALLOWED_PROTOCOLS,
-          denyCidrs: DOCKER_PROFILE_NETWORK_DENY_CIDRS,
-        }),
-      }),
-    }),
   });
 }
 
@@ -373,12 +406,18 @@ function semanticPolicyJson(input: DockerExecutionProfileSemanticInput): JsonVal
         controllers: [...input.backend.cgroup.controllers],
       },
     },
-    policy: {
+    policy: input.policy.level === "raw-dind-storage/v1" ? {
+      level: input.policy.level,
+      privilegedTranslation: input.policy.privilegedTranslation,
+      dockerData: input.policy.dockerData,
+    } : {
+      level: input.policy.level,
       hostLoopback: input.policy.hostLoopback,
       tcpDockerEndpoint: input.policy.tcpDockerEndpoint,
       outerSocketInjection: input.policy.outerSocketInjection,
       privilegedTranslation: input.policy.privilegedTranslation,
       writableRoot: input.policy.writableRoot,
+      dockerData: input.policy.dockerData,
       network: {
         version: input.policy.network.version,
         dns: { mode: input.policy.network.dns.mode, servers: [...input.policy.network.dns.servers] },
@@ -462,6 +501,30 @@ export function parseDockerExecutionProfileV1(value: unknown): DockerExecutionPr
   const decoded = Schema.decodeUnknownEither(DockerExecutionProfileV1Schema, ParseOptions)(value);
   if (Either.isLeft(decoded)) throw schemaError(value, decoded.left);
   const profile = freezeProfile(decoded.right);
+  if (
+    profile.backend.filesystem.dockerDataPool.count < profile.capacity.maxContainers ||
+    profile.backend.filesystem.dockerDataPool.count *
+      profile.backend.filesystem.dockerDataPool.bytesPerAllocation < profile.capacity.ephemeralDiskBytes
+  ) {
+    throw dockerProfileError({
+      code: "sandbox.docker-profile-capacity-invalid",
+      path: "profile.backend.filesystem.dockerDataPool",
+      message: "Docker data allocations must cover maxContainers and allocatable ephemeralDiskBytes",
+    });
+  }
+  const rawStorage = profile.securityLevel === "raw-dind-storage/v1";
+  if (
+    profile.policy.level !== profile.securityLevel ||
+    (rawStorage
+      ? profile.policy.privilegedTranslation !== "host-daemon"
+      : profile.policy.privilegedTranslation !== "rootless-userns")
+  ) {
+    throw dockerProfileError({
+      code: "sandbox.docker-profile-security-level-unsupported",
+      path: "profile.policy",
+      message: "Docker profile policy level and privileged translation must match its security level",
+    });
+  }
   const expected = dockerExecutionProfileSemanticPolicyRevisionOf(profile);
   if (profile.semanticPolicyRevision !== expected) {
     throw dockerProfileError({
@@ -521,12 +584,18 @@ function canonicalJson(profile: DockerExecutionProfileV1): JsonValue {
       ...profile.capacity,
       aggregate: { ...profile.capacity.aggregate },
     },
-    policy: {
+    policy: profile.policy.level === "raw-dind-storage/v1" ? {
+      level: profile.policy.level,
+      privilegedTranslation: profile.policy.privilegedTranslation,
+      dockerData: profile.policy.dockerData,
+    } : {
+      level: profile.policy.level,
       hostLoopback: profile.policy.hostLoopback,
       tcpDockerEndpoint: profile.policy.tcpDockerEndpoint,
       outerSocketInjection: profile.policy.outerSocketInjection,
       privilegedTranslation: profile.policy.privilegedTranslation,
       writableRoot: profile.policy.writableRoot,
+      dockerData: profile.policy.dockerData,
       network: {
         version: profile.policy.network.version,
         dns: { mode: profile.policy.network.dns.mode, servers: [...profile.policy.network.dns.servers] },

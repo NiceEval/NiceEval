@@ -47,13 +47,11 @@ const experimentGroup = producer(async (sample, _locator, route) => {
     throw Object.freeze({ code: "report-group-not-in-sample" as const, group: `${kind}/${key}` });
   }
   const scope = experimentComparisonScope(sample, summary.group);
-  const comparison = scope.comparison.state === "comparable"
-    ? Object.freeze({
-        state: "comparable" as const,
-        members: scope.comparison.members,
-        rows: await loadBuiltInExperimentRows(sampleForExperimentComparisonScope(scope)),
-      })
-    : scope.comparison;
+  const comparison = Object.freeze({
+    members: scope.comparison.members,
+    coverage: scope.comparison.coverage,
+    rows: await loadBuiltInExperimentRows(sampleForExperimentComparisonScope(scope)),
+  });
   return Object.freeze({
     kind: "experiment-group" as const,
     group: closeMachineJson(summary.group),

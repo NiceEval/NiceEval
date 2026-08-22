@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/niceeval-host-check-cache}"
 
 PASS=0
 FAIL=0
@@ -20,12 +21,14 @@ for f in \
   packaging/docker-profile-host/scripts/generate-descriptor.py \
   packaging/docker-profile-host/scripts/prepare-loop-storage.sh \
   packaging/docker-profile-host/scripts/watchdog.py \
+  packaging/docker-profile-host/scripts/install-quota-slots.py \
   packaging/docker-profile-host/scripts/host-doctor.sh \
   packaging/docker-profile-host/scripts/apply-rootless-network-policy.sh \
   packaging/docker-profile-host/scripts/verify-sibling-isolation.sh \
   packaging/docker-profile-host/config/network-policy.md \
   packaging/docker-profile-host/systemd/niceeval-docker-profile@.service \
   packaging/docker-profile-host/systemd/niceeval-docker-profile-watchdog@.service \
+  packaging/docker-profile-host/systemd/niceeval-docker-profile-quota-slots@.service \
   packaging/docker-profile-host/systemd/niceeval-docker-profile-watchdog@.socket \
   packaging/docker-profile-host/systemd/niceeval-docker-profile-default.slice \
   packaging/docker-profile-host/sysusers.d/niceeval-docker-profile.conf \
@@ -45,6 +48,19 @@ if python3 "$PY" packaging/docker-profile-host/config/default.host.json.example 
   pass "example host config validates; allocatable cpus=16"
 else
   fail "example host config validation"
+fi
+
+if python3 "$PY" - <<'JSON' 2>/tmp/ne-dp-disk-bad.err
+{"name":"bad-disk","capacity":{"cpus":1,"memory":"1G","pids":10,"maxContainers":2,"maxBuilds":1,"ephemeralDiskBytes":"8G","dockerDataAllocationCount":2},"aggregate":{"cpus":1,"memory":"1G","pids":10},"storage":{"size":"10G"}}
+JSON
+then
+  fail "should reject quota slot sparse overcommit"
+else
+  if grep -q 'exceeds storage.size' /tmp/ne-dp-disk-bad.err; then
+    pass "rejects dockerDataAllocationCount * ephemeralDiskBytes > physical storage"
+  else
+    fail "disk overcommit reject message unclear: $(cat /tmp/ne-dp-disk-bad.err)"
+  fi
 fi
 
 if grep -q '"cpus": 20' /tmp/ne-dp-cap.json; then
@@ -257,12 +273,19 @@ ex = json.loads(Path("packaging/docker-profile-host/config/default.host.json.exa
 assert ex["policy"]["hostLoopback"] is False
 assert ex["policy"]["tcpDockerEndpoint"] is False
 assert ex["capacity"]["memorySwapBytes"] == 0
+assert ex["capacity"]["ephemeralDiskBytes"] == "6G"
 print("stable id", pid)
 PY
 pass "descriptor pure helpers / example policy"
 
 echo
 echo "== watchdog protocol/journal smoke =="
+if python3 test/host/descriptor-modes-smoke.py; then
+  pass "managed and raw descriptors have TS-compatible policy/storage shape"
+else
+  fail "descriptor mode generation smoke"
+fi
+
 if python3 test/host/watchdog-smoke.py; then
   pass "watchdog challenge, lease, reservation, release, recovery and replay"
 else

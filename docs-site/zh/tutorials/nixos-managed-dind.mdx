@@ -8,6 +8,11 @@ Managed rootless DinD 适合在共享 NixOS 宿主上运行不可信 Agent。Nic
 系统用户、rootless Docker daemon、容量受限的数据盘、资源 slice 和 watchdog。日常运行 NiceEval
 不需要 `sudo`，但首次部署和更新系统配置需要管理员权限。
 
+本页只介绍 NixOS 的部署入口。Docker profile 本身是 Linux 宿主能力，不是 NixOS 专属能力。Ubuntu、
+Debian 与其它 systemd Linux 需要安装等价的宿主服务。macOS 用户可以在 OrbStack Linux machine 内运行
+NiceEval 和对应的 Linux 宿主服务；Apple `container` 当前需要独立 NiceEval Provider。具体边界与命令见
+[让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker#在-macos-上使用-orbstack)。
+
 如果任务可以信任 Agent，或者只在一次性 VM 中运行，先阅读[让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker)
 选择 Docker socket 或 raw privileged DinD。它们不需要本页的宿主 profile。
 
@@ -66,6 +71,8 @@ Managed rootless DinD 适合在共享 NixOS 宿主上运行不可信 Agent。Nic
       pids = 4096;
       maxContainers = 2;
       maxBuilds = 1;
+      ephemeralDiskBytes = "6G";
+      dockerDataAllocationCount = 2;
     };
 
     aggregate = {
@@ -82,11 +89,13 @@ Managed rootless DinD 适合在共享 NixOS 宿主上运行不可信 Agent。Nic
 }
 ```
 
-`capacity` 是 NiceEval 可以分配给评估任务的预算。`aggregate` 是 daemon、构建进程、watchdog 和评估
-容器共同受到的硬限制，因此每一项都不能小于 `capacity`。两者之间的余量留给宿主侧开销。
+`capacity` 是 NiceEval 可以分配给评估任务的预算。`ephemeralDiskBytes` 是每个 Docker data allocation
+的硬上限，`dockerDataAllocationCount` 是 profile 可同时授予的 Docker data allocation 数量。`aggregate` 是 daemon、构建进程、
+watchdog 和评估容器共同受到的硬限制，因此每一项都不能小于 `capacity`。两者之间的余量留给宿主侧开销。
 
-`loop-ext4` 会在 `/var/lib/niceeval/docker-profiles/default.img` 创建稀疏镜像，并挂载为 Docker
-data root。`size` 是这个 profile 的磁盘上限，不代表 rebuild 时立即占用同等物理空间。
+`loop-ext4` 会在 `/var/lib/niceeval/docker-profiles/default.img` 创建独立的 ext4 quota 文件系统。
+watchdog 从中分配私有目录，并把目录挂到每个 Sandbox 的 `/var/lib/docker`。不要再为该路径声明
+`tmpfs`；inner image layer 和 BuildKit cache 应占磁盘，不应计入宿主 `Shmem`。
 
 ## 应用系统配置
 
@@ -142,7 +151,7 @@ dockerAccess: {
 },
 ```
 
-Experiment 还必须声明单容器 CPU、内存、PID、只读 rootfs 和 tmpfs。完整配置见
+Experiment 还必须声明单容器 CPU、内存、PID、`dockerDataBytes`、只读 rootfs 和其余可写路径的 tmpfs。完整配置见
 [让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker#managed-rootless-dind)。先用较小的
 `maxConcurrency` 运行一次，再根据 profile 的 `capacity` 增加并发。
 

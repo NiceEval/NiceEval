@@ -4,7 +4,7 @@ set -euo pipefail
 readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly NICEEVAL_ROOT="$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)"
 readonly MEMORYBENCH_REPOSITORY="https://github.com/NiceEval/MemoryBench.git"
-readonly MEMORYBENCH_COMMIT="9f2a67d26b243902e8cd1c07af1effc9f752fff1"
+readonly MEMORYBENCH_BRANCH="2-0"
 readonly PUBLISH_DIRECTORY="$NICEEVAL_ROOT/netlify-report-preview"
 
 if [[ "${CONTEXT:-}" != "deploy-preview" ]]; then
@@ -23,8 +23,8 @@ PACKAGE_SCRATCH="$(mktemp -d "$NICEEVAL_ROOT/.netlify/package-runtime.XXXXXX")"
 trap 'rm -rf "$PREVIEW_SCRATCH" "$PACKAGE_SCRATCH"' EXIT
 readonly MEMORYBENCH_ROOT="$PREVIEW_SCRATCH/MemoryBench"
 
-git clone --filter=blob:none --no-checkout "$MEMORYBENCH_REPOSITORY" "$MEMORYBENCH_ROOT"
-git -C "$MEMORYBENCH_ROOT" checkout --detach "$MEMORYBENCH_COMMIT"
+git clone --filter=blob:none --single-branch --branch "$MEMORYBENCH_BRANCH" \
+  "$MEMORYBENCH_REPOSITORY" "$MEMORYBENCH_ROOT"
 
 # Netlify installs the isolated netlify-preview base, not the repository root.
 # Build the linked candidate from a lockfile-complete root instead of relying
@@ -41,6 +41,4 @@ NODE_OPTIONS="--max-old-space-size=1024" \
 CODEX_BASE_URL="https://preview.invalid/v1" \
 CODEX_API_KEY="netlify-report-preview-no-secret" \
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" exec niceeval view \
-  --experiment compare \
-  --report standard \
   --out "$PUBLISH_DIRECTORY"
