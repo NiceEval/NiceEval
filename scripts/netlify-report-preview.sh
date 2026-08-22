@@ -4,10 +4,7 @@ set -euo pipefail
 readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly NICEEVAL_ROOT="$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)"
 readonly MEMORYBENCH_REPOSITORY="https://github.com/NiceEval/MemoryBench.git"
-# Keep the preview on a reviewed, immutable fixture while exercising current
-# Assertions v2 evidence. This commit contains the focused 12-attempt rerun and
-# consumes the current group-comparison shape in its optional custom report.
-readonly MEMORYBENCH_COMMIT="fdb978fb2aa54f7efd3b2b8da8bc1f00bf6195f3"
+readonly MEMORYBENCH_BRANCH="2-0"
 readonly PUBLISH_DIRECTORY="$NICEEVAL_ROOT/netlify-report-preview"
 
 if [[ "${CONTEXT:-}" != "deploy-preview" ]]; then
@@ -26,8 +23,8 @@ PACKAGE_SCRATCH="$(mktemp -d "$NICEEVAL_ROOT/.netlify/package-runtime.XXXXXX")"
 trap 'rm -rf "$PREVIEW_SCRATCH" "$PACKAGE_SCRATCH"' EXIT
 readonly MEMORYBENCH_ROOT="$PREVIEW_SCRATCH/MemoryBench"
 
-git clone --filter=blob:none --no-checkout "$MEMORYBENCH_REPOSITORY" "$MEMORYBENCH_ROOT"
-git -C "$MEMORYBENCH_ROOT" checkout --detach "$MEMORYBENCH_COMMIT"
+git clone --filter=blob:none --single-branch --branch "$MEMORYBENCH_BRANCH" \
+  "$MEMORYBENCH_REPOSITORY" "$MEMORYBENCH_ROOT"
 
 # Netlify installs the isolated netlify-preview base, not the repository root.
 # Build the linked candidate from a lockfile-complete root instead of relying
