@@ -5,19 +5,18 @@ Coding agent经常需要在 Sandbox里运行 `docker build`、`docker run`与 `d
 直接交给宿主 rootful daemon并开启 privileged，同样没有可接受的隔离边界。
 
 本主题扩展 NiceEval内建的 `dockerSandbox()`。评测代码在 factory中声明起始镜像、managed
-rootless DinD、单容器资源与 readiness。profile后端可以是本机 rootless daemon、专用宿主
-或 VM，但它不是新的 Sandbox provider，也不是 DinD专用抽象。
+rootless DinD、单容器资源与 readiness。profile后端是同一 Linux宿主上的 Docker daemon，但它不是
+新的 Sandbox provider，也不是 DinD专用抽象。
 
-首个本地 Linux后端由专用 OS UID持有 rootless Docker daemon。macOS后端使用专用 Linux VM，
-不把共享 Docker Desktop VM当作 privileged隔离边界。Agent、inner dockerd与 inner Compose都在
+Linux managed后端由专用 OS UID持有 rootless Docker daemon。Agent、inner dockerd与 inner Compose都在
 同一个 outer eval container里，outer socket永远不进入该容器。
 
 ## 核心心智
 
 ```text
 宿主部署者一次配置
-  -> NixOS module、systemd host package 或 macOS VM package
-  -> rootless Docker + 有硬容量的 data filesystem
+  -> NixOS module或 systemd host package
+  -> Docker daemon + 有硬容量的 data filesystem + 预建 allocation pool
   -> aggregate cgroup + 持久 watchdog/admission service
   -> root-owned、纯数据的 profile descriptor
   -> 本机别名 default
@@ -26,13 +25,14 @@ rootless DinD、单容器资源与 readiness。profile后端可以是本机 root
   dockerSandbox({
     source: {...},
     dockerAccess: { mode: "dind", isolation: "managed-rootless", profile: "default" }
+    resources: { dockerDataBytes: 8 * GiB, ... }
   })
   -> NiceEval加载声明
   -> 在任何 Docker I/O、build与模型调用前 attest profile
   -> discovery、physical planning、build、run全程使用同一 daemon
 
 每条 Attempt
-  -> 原子取得 CPU/memory/PID/container reservation
+  -> 原子取得 CPU/memory/PID/container/ephemeral-disk reservation与私有 Docker data allocation
   -> 一个 rootless daemon中的 privileged outer eval container
   -> root PID 1启动 inner dockerd并等待 ready
   -> coding agent以普通用户 exec
@@ -54,10 +54,13 @@ container。
 - `isolation: "managed-rootless"`与宿主 profile别名；
 - 必填的每容器 CPU、memory、PID和只读 rootfs；
 - 逐路径有界 tmpfs；
+- inner Docker data硬上限 `dockerDataBytes`；
 - inner daemon readiness。
 
 managed分支不会接受含糊的 `privileged: true`。需要 raw privileged DinD时必须显式写
-`isolation: "raw-privileged"`。`dockerComposeSandbox()`不接受这组单容器字段；这里的
+`isolation: "raw-privileged"`与 `storageProfile`。raw profile只承诺磁盘配额、跨进程准入和强杀恢复，
+security level为 `raw-dind-storage/v1`；它不承诺 rootless或共享宿主隔离。
+`dockerComposeSandbox()`不接受这组单容器字段；这里的
 Compose是 Agent在单个评估容器内连接 inner dockerd后运行的 Compose，不是 outer sidecar。
 
 ### 信任边界
@@ -76,7 +79,7 @@ core不提供“连接 profile后执行任意宿主命令”的入口。
 
 ### 宿主部署边界
 
-官方 NixOS module、通用 systemd host package或 macOS VM package负责专用 UID、subid、delegation、
+官方 NixOS module或通用 systemd host package负责专用 UID、subid、delegation、
 socket ACL、有界 filesystem、aggregate cgroup、daemon与 watchdog。日常 `niceeval exp`和
 `niceeval docker profile doctor`从不 sudo、不修改 `/etc`、不 mount loop device，也不安装 daemon。
 
@@ -85,19 +88,20 @@ socket ACL、有界 filesystem、aggregate cgroup、daemon与 watchdog。日常 
 
 ## Profile选择
 
-managed DinD中的 `profile: "default"`是宿主本地别名。NixOS、Ubuntu和 macOS可以各自把合适
-后端登记成 `default`，所以同一份 Experiment不需要按操作系统分支。别名不是结果 identity；实际
+managed DinD中的 `profile: "default"`是宿主本地别名。NixOS和 Ubuntu可以各自把合适
+后端登记成 `default`，所以同一份 Experiment不需要按 Linux发行版分支。别名不是结果 identity；实际
 profile的 semantic policy revision才表示执行语义。
 
 普通 `dockerSandbox()`可以省略 `dockerAccess`，此时Agent拿不到任何 Docker socket。socket模式与
-raw privileged DinD不使用 profile；managed rootless DinD必须声明 profile。managed Sandbox必须给出完整 CPU、memory、
-PID、只读 rootfs和显式可写 tmpfs。profile不存在、无法 attest或安全级别不符，均在 Docker build
+raw privileged DinD必须声明 Docker storage profile，managed rootless DinD必须声明包含相同 storage
+capability的 managed profile。两个分支都必须给出完整 CPU、memory、PID、`dockerDataBytes`、只读
+rootfs和显式可写 tmpfs。profile不存在、无法 attest或安全级别不符，均在 Docker build
 与模型调用前失败，不能回退到宿主 rootful socket。
 
 ## 安全保证
 
 Linux managed profile的 Docker API权限落在专用 host UID的 user namespace中，不等于宿主 root。
-macOS managed profile把同一边界放在专用 Linux VM内。宿主服务不接收评测 repo、HOME、凭据、
+宿主服务不接收评测 repo、HOME、凭据、
 rootful Docker socket、host PID或 host network bind；评估容器拿不到 outer socket。
 
 拥有 profile socket ACL的宿主用户属于可信运行者。若要防御 Linux kernel、rootlesskit、runc或
@@ -109,14 +113,14 @@ dockerd逃逸，应使用专用 VM或远端 profile；本功能不把本机容�
 
 | 层 | owner | 约束 |
 |---|---|---|
-| Profile aggregate | 宿主 cgroup + 有界 filesystem | 总 CPU、memory、swap、PID、磁盘与 daemon/build headroom |
-| 跨进程 admission | 持久 watchdog | 多个 Invocation的 reservation总和、同时 build与 container数 |
-| 单个 eval container | outer rootless daemon | CPU、memory、0 extra swap、PID、只读 rootfs、有界 tmpfs |
+| Profile aggregate | 宿主 cgroup + 有界 filesystem | 总 CPU、memory、swap、PID、真实磁盘与 daemon/build/scrub headroom |
+| 跨进程 admission | 持久 watchdog | 多个 Invocation的 reservation总和、`ephemeralDiskBytes`、同时 build与 container数 |
+| 单个 eval container | outer daemon | CPU、memory、0 extra swap、PID、只读 rootfs、有界 tmpfs、私有 Docker data allocation |
 
 同一 profile可以同时服务多个 `niceeval exp`。每条 Attempt在 create前向 watchdog原子申请资源
 向量；所有进程的已授予向量之和不得超过 aggregate可分配量。Experiment `maxConcurrency`限制本
-Invocation，profile admission再限制所有 Invocation的总资源。4路和实测通过后的8路无需独占整个
-profile。
+Invocation，profile admission再限制所有 Invocation的总资源。默认32 GiB filesystem配8 GiB allocation只
+开放2路；4路与8路分别至少晋升到64 GiB与128 GiB硬容量，不能用稀疏文件超卖。
 
 ## 范围
 
@@ -126,11 +130,12 @@ profile。
 - factory上的三种 Docker access、profile、resources与 readiness；
 - 只读的 `niceeval docker profile list|doctor`；
 - callback-free profile schema、稳定 profile ID与语义 policy revision；
-- 官方 NixOS module、通用 systemd host package与 macOS专用 VM package；
+- 官方 NixOS module与通用 systemd host package；
 - build前 attestation、跨进程 admission、身份与 fail-closed planning；
 - 持久 watchdog主导的正常回收、Ctrl+C、SIGKILL、watchdog/daemon restart恢复；
 - detached Docker操作按稳定 profile ID重连；
 - NiceEval-Eval单容器 DinD与4/8路并发验收。
+- raw DinD近期磁盘修复与 managed迁移的独立交付门。
 
 本主题不包含：
 
@@ -142,6 +147,20 @@ profile。
 - Docker Compose outer sidecar/provider作为 DinD实现；
 - 仅凭 `docker info`出现 `rootless`就信任外部 endpoint；
 - rootless privileged Sandbox的 retention。
+
+## 两个独立交付门
+
+raw DinD磁盘修复以 `raw-dind-storage/v1`为独立门。它必须证明8 GiB quota在写满时生效、两个默认
+slot不会跨 Attempt复用、并发 Invocation不会超卖磁盘，并且 SIGKILL后 watchdog能完成 scrub或隔离
+不确定的 allocation。该门不依赖 managed rootless迁移，也不能据此宣称共享宿主隔离。
+
+managed迁移以 `managed-rootless/v1`为另一独立门。它必须先通过同一 storage capability的全部验收，
+再证明专用 UID、user namespace、aggregate cgroup、网络隔离与 outer socket不可见。raw通过不能替代
+managed门，managed尚未通过也不能阻止 raw磁盘修复交付。
+
+v1 host package只接受 Linux、systemd和 cgroup v2。macOS、Windows、非 systemd Linux与无法证明
+project quota的 filesystem在 profile加载阶段返回稳定 unsupported错误；不得回退到 raw、共享 Docker
+Desktop、普通 rootful socket或无配额目录。
 
 ## 入口
 

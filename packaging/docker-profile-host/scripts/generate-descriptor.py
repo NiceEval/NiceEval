@@ -107,12 +107,20 @@ def filesystem_identity(mount_path: str) -> str:
 
 def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
     name = host["name"]
+    security_level = host.get("securityLevel", "managed-rootless/v1")
+    if security_level not in ("managed-rootless/v1", "raw-dind-storage/v1"):
+        raise SystemExit("securityLevel must be managed-rootless/v1 or raw-dind-storage/v1")
     user_name = host["userName"]
     pw = pwd.getpwnam(user_name)
     gr = grp.getgrnam(host.get("userGroup", user_name))
     machine_id = host.get("hostMachineIdentity") or read_machine_id()
     data_mount = host["dataMount"]
     limit_bytes = parse_bytes(host["storage"]["size"])
+    docker_data_allocation_count = int(
+        host["capacity"].get("dockerDataAllocationCount", host["capacity"]["maxContainers"])
+    )
+    bytes_per_docker_data_allocation = parse_bytes(host["capacity"]["ephemeralDiskBytes"])
+    total_ephemeral_disk_bytes = docker_data_allocation_count * bytes_per_docker_data_allocation
 
     if _vc is not None:
         normalized = _vc.validate(
@@ -123,7 +131,13 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
             }
         )
         capacity_block = {
-            **normalized["capacity"],
+            "cpus": normalized["capacity"]["cpus"],
+            "memoryBytes": normalized["capacity"]["memoryBytes"],
+            "memorySwapBytes": 0,
+            "pids": normalized["capacity"]["pids"],
+            "maxContainers": normalized["capacity"]["maxContainers"],
+            "maxBuilds": normalized["capacity"]["maxBuilds"],
+            "ephemeralDiskBytes": total_ephemeral_disk_bytes,
             "aggregate": {
                 "cpus": normalized["aggregate"]["cpus"],
                 "memoryBytes": normalized["aggregate"]["memoryBytes"],
@@ -141,6 +155,7 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
             "pids": int(host["capacity"]["pids"]),
             "maxContainers": int(host["capacity"]["maxContainers"]),
             "maxBuilds": int(host["capacity"]["maxBuilds"]),
+            "ephemeralDiskBytes": total_ephemeral_disk_bytes,
             "aggregate": {
                 "cpus": int(host["aggregate"]["cpus"]),
                 "memoryBytes": parse_bytes(
@@ -153,32 +168,44 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
 
     profile_id = host.get("profileId") or stable_profile_id(name, machine_id)
     aggregate_path = host["aggregateCgroupPath"]
-    network = host["networkPolicy"]
-    if network.get("ipv6") != "disabled":
-        raise SystemExit("networkPolicy.ipv6 must be disabled for managed-rootless/v1")
+    docker_socket = Path(host["dockerSocket"])
+    if security_level == "raw-dind-storage/v1":
+        if not docker_socket.is_socket():
+            raise SystemExit(f"raw Docker socket is absent or not a Unix socket: {docker_socket}")
+        socket_stat = docker_socket.stat()
+        backend_uid = socket_stat.st_uid
+        backend_gid = socket_stat.st_gid
+    else:
+        backend_uid = pw.pw_uid
+        backend_gid = gr.gr_gid
+    network = host.get("networkPolicy")
+    if security_level == "managed-rootless/v1" and (
+        not network or network.get("ipv6") != "disabled"
+    ):
+        raise SystemExit("managed networkPolicy.ipv6 must be disabled")
 
     draft = {
         "schemaVersion": 1,
         "profileId": profile_id,
-        "securityLevel": "managed-rootless/v1",
+        "securityLevel": security_level,
         "semanticPolicyRevision": "pending",
         "transport": {
             "kind": "unix",
             "hostMachineIdentity": machine_id,
             "dockerSocket": {
                 "path": host["dockerSocket"],
-                "peerUid": pw.pw_uid,
+                "peerUid": backend_uid,
             },
             "controlSocket": {
                 "path": host["controlSocket"],
-                "peerUid": pw.pw_uid,
+                "peerUid": 0,
                 "protocol": "niceeval-docker-profile-control/v1",
             },
         },
         "backend": {
             "kind": "local-systemd",
             "machineIdentity": machine_id,
-            "owner": {"uid": pw.pw_uid, "gid": gr.gr_gid},
+            "owner": {"uid": backend_uid, "gid": backend_gid},
             "filesystem": {
                 "identity": filesystem_identity(data_mount)
                 if Path(data_mount).exists()
@@ -186,21 +213,37 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
                 "mountPath": data_mount,
                 "dockerRootDir": host["dockerRootDir"],
                 "limitBytes": limit_bytes,
+                "dockerDataPool": {
+                    "count": docker_data_allocation_count,
+                    "bytesPerAllocation": bytes_per_docker_data_allocation,
+                    "attestation": "linux-project-quota/v1",
+                },
             },
             "cgroup": {
                 "aggregatePath": aggregate_path,
-                "policyRevision": "managed-rootless-cgroup-v1",
+                "policyRevision": "managed-rootless-cgroup-v1"
+                if security_level == "managed-rootless/v1"
+                else "raw-dind-storage-cgroup-v1",
                 "controllers": ["cpu", "memory", "pids"],
             },
         },
         "capacity": capacity_block,
-        "policy": {
-            "hostLoopback": False,
-            "tcpDockerEndpoint": False,
-            "outerSocketInjection": False,
-            "privilegedTranslation": "rootless-userns",
-            "writableRoot": "declared-tmpfs-only",
-            "network": {
+        "policy": (
+            {
+                "level": "raw-dind-storage/v1",
+                "privilegedTranslation": "host-daemon",
+                "dockerData": "private-project-quota-allocation/v1",
+            }
+            if security_level == "raw-dind-storage/v1"
+            else {
+                "level": "managed-rootless/v1",
+                "hostLoopback": False,
+                "tcpDockerEndpoint": False,
+                "outerSocketInjection": False,
+                "privilegedTranslation": "rootless-userns",
+                "writableRoot": "declared-tmpfs-only",
+                "dockerData": "private-project-quota-allocation/v1",
+                "network": {
                 "version": 1,
                 "dns": {
                     "mode": "explicit",
@@ -219,8 +262,9 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
                     "exclusiveNetwork": True,
                     "icc": False,
                 },
-            },
-        },
+                },
+            }
+        ),
     }
     rev = semantic_policy_revision(draft)
     draft["semanticPolicyRevision"] = rev

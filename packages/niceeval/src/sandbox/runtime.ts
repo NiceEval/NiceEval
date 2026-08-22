@@ -63,6 +63,7 @@ import type { E2BSandboxLifetime } from "./e2b.ts";
 import {
   acquireDockerProfileReservation,
   commitDockerProfileReservation,
+  createDockerProfileContainer,
   createDockerProfileLease,
   releaseDockerProfileReservation,
   type DockerProfileLease,
@@ -203,6 +204,7 @@ function configuredLifetime(
 async function managedContainerSession(
   binding: DockerProfileRuntimeBinding,
   resources: Readonly<import("./layer.ts").DockerSandboxResources>,
+  signal?: AbortSignal,
 ): Promise<{
   readonly lease: DockerProfileLease;
   readonly reservation: import("./docker-profile/runtime.ts").DockerProfileReservation;
@@ -215,8 +217,9 @@ async function managedContainerSession(
       cpus: resources.cpus ?? 0,
       memoryBytes: resources.memoryBytes ?? 0,
       pids: resources.pidsLimit ?? 0,
+      ephemeralDiskBytes: resources.dockerDataBytes ?? 0,
       containers: 1,
-    });
+    }, signal);
     const labels = Object.freeze({
       "niceeval.profile-id": binding.profile.profileId,
       "niceeval.invocation-id": lease.invocationId,
@@ -420,11 +423,10 @@ export function materializeDockerfileProviderPlan(
             );
             const managed = plan.profileBinding === undefined
               ? undefined
-              : yield* providerBoundaryEffect(() => managedContainerSession(plan.profileBinding!, plan.resources));
+              : yield* providerBoundaryEffect(() => managedContainerSession(plan.profileBinding!, plan.resources, context.signal));
             const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
             return yield* Effect.gen(function* () {
-              const backend = yield* withProvisionRetry(
-                providerBoundaryEffect(() => DockerSandbox.create({
+              const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
                   ...deadlineOptions(context.deadline),
                   runtime: "node24",
                   image: resolved.locator,
@@ -440,7 +442,9 @@ export function materializeDockerfileProviderPlan(
                   runIdentity: currentRunIdentity(),
                   ...(plan.profileBinding === undefined ? {} : {
                     dockerSocketPath: plan.profileBinding.dockerSocketPath,
-                    dns: plan.profileBinding.profile.policy.network.dns.servers,
+                    ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
+                      ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
+                      : {}),
                     managedLabels: managed?.labels,
                     rootlessAttestation: {
                       daemonId: plan.profileBinding.daemonId,
@@ -448,19 +452,22 @@ export function materializeDockerfileProviderPlan(
                     },
                     afterStop: managed?.finish,
                   }),
-                })),
+                };
+              const backend = yield* withProvisionRetry(
+                providerBoundaryEffect(() => managed === undefined
+                  ? DockerSandbox.create(createOptions)
+                  : DockerSandbox.createControlled(createOptions, (create) => createDockerProfileContainer(
+                      managed.lease,
+                      managed.reservation.reservationId,
+                      { ...create, attemptId: context.evalId },
+                    ))),
                 classifyProvisionError,
                 boundProvisionSlot(context),
                 context.feedback,
-                providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath)),
+                managed === undefined
+                  ? providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath))
+                  : Effect.void,
               );
-              if (managed !== undefined) {
-                yield* providerBoundaryEffect(() => commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
-                  containerId: backend.sandboxId,
-                  ...(backend.managedNetworkId === undefined ? {} : { networkId: backend.managedNetworkId }),
-                  attemptId: context.evalId,
-                }));
-              }
               return wrapSingleSandbox(backend, context, { image: resolved.locator });
             }).pipe(
               Effect.onError(() => managed === undefined
@@ -623,11 +630,10 @@ export function materializeDockerImageProviderPlan(
     );
     const managed = plan.profileBinding === undefined
       ? undefined
-      : yield* providerBoundaryEffect(() => managedContainerSession(plan.profileBinding!, plan.resources));
+      : yield* providerBoundaryEffect(() => managedContainerSession(plan.profileBinding!, plan.resources, context.signal));
     const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
     return yield* Effect.gen(function* () {
-      const backend = yield* withProvisionRetry(
-        providerBoundaryEffect(() => DockerSandbox.create({
+      const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
         ...deadlineOptions(context.deadline),
         runtime: "node24",
         image: plan.image,
@@ -643,7 +649,9 @@ export function materializeDockerImageProviderPlan(
         runIdentity: currentRunIdentity(),
         ...(plan.profileBinding === undefined ? {} : {
           dockerSocketPath: plan.profileBinding.dockerSocketPath,
-          dns: plan.profileBinding.profile.policy.network.dns.servers,
+          ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
+            ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
+            : {}),
           managedLabels: managed?.labels,
           rootlessAttestation: {
             daemonId: plan.profileBinding.daemonId,
@@ -651,19 +659,22 @@ export function materializeDockerImageProviderPlan(
           },
           afterStop: managed?.finish,
         }),
-      })),
+      };
+      const backend = yield* withProvisionRetry(
+        providerBoundaryEffect(() => managed === undefined
+          ? DockerSandbox.create(createOptions)
+          : DockerSandbox.createControlled(createOptions, (create) => createDockerProfileContainer(
+              managed.lease,
+              managed.reservation.reservationId,
+              { ...create, attemptId: context.evalId },
+            ))),
       classifyProvisionError,
       boundProvisionSlot(context),
       context.feedback,
-        providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath)),
+        managed === undefined
+          ? providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath))
+          : Effect.void,
       );
-      if (managed !== undefined) {
-        yield* providerBoundaryEffect(() => commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
-          containerId: backend.sandboxId,
-          ...(backend.managedNetworkId === undefined ? {} : { networkId: backend.managedNetworkId }),
-          attemptId: context.evalId,
-        }));
-      }
       return wrapSingleSandbox(backend, context, { image: plan.image });
     }).pipe(
       Effect.onError(() => managed === undefined
@@ -993,8 +1004,8 @@ export function collectDockerfileProviderBuildPreparation(
           let network: import("dockerode").Network | undefined;
           try {
             reservation = await acquireDockerProfileReservation(lease, "build", {
-              cpus: 0, memoryBytes: 0, pids: 0, containers: 0,
-            });
+              cpus: 0, memoryBytes: 0, pids: 0, containers: 0, ephemeralDiskBytes: 0,
+            }, buildContext.signal);
             const labels = Object.freeze({
               "niceeval.profile-id": plan.profileBinding!.profile.profileId,
               "niceeval.invocation-id": lease.invocationId,

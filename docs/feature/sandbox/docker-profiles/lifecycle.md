@@ -9,24 +9,12 @@ validate Linux/systemd/cgroup v2/admin authority
   -> record deployment intent
   -> provision dedicated UID/GID + subuid/subgid
   -> provision or attest bounded filesystem
+  -> pre-create project-quota Docker data allocations
   -> install aggregate cgroup + daemon + watchdog units
   -> create root-owned descriptor and socket ACL
   -> start watchdog and rootless daemon
   -> write runtime attestation
   -> run host smoke doctor
-  -> commit deployment
-```
-
-macOS VM package完成另一条宿主事务：
-
-```text
-validate virtualization + launchd + admin authority
-  -> create dedicated VM identity and bounded disk
-  -> boot Linux guest
-  -> provision guest UID/subids/cgroup/daemon/watchdog
-  -> install host Unix transport and root-owned descriptor
-  -> attest host/guest machine identity pair
-  -> run host-to-guest smoke doctor
   -> commit deployment
 ```
 
@@ -56,8 +44,9 @@ attestation和 lease失败发生在任何 NiceEval发起的 Docker I/O与模型�
 image/container，但仍完成 profile attestation、短命 Invocation lease和静态容量可行性检查；
 `check`相同。
 
-多个 Invocation可同时启动。它们不争夺一把 profile全局锁；只有 build slot和逐容器 resource vector
-进入 watchdog公平队列。一个 Invocation等待 admission时，已持有容量的其它 Invocation继续运行。
+多个 Invocation可同时启动。它们不争夺一把 profile全局锁；只有 build slot、逐容器 resource vector
+和 Docker data allocation进入 watchdog公平队列。一个 Invocation等待 admission时，已持有容量的其它 Invocation
+继续运行。
 
 ## Build
 
@@ -81,11 +70,13 @@ build取消或失败先进入 `cancelling`。只有 daemon请求结束、BuildKi
 ## Attempt create
 
 ```text
-request {cpu,memory,pids,container=1} reservation
-  -> watchdog atomically grants and journals provision token
+request {cpu,memory,pids,container=1,ephemeralDiskBytes} reservation
+  -> watchdog atomically grants vector + free Docker data allocation and journals provision token
+  -> prepare slot and verify project quota hard limit
   -> re-attest profile ID + daemon generation
-  -> create outer container with labels + hard resources
+  -> control service creates outer container with labels + hard resources
   -> commit reservation to container ID
+  -> rprivate bind slot to /var/lib/docker
   -> start provider-owned root bootstrap / supervisor
   -> retry readiness as agent user
   -> initialize workspace/tools
@@ -93,9 +84,10 @@ request {cpu,memory,pids,container=1} reservation
   -> hand Sandbox to Attempt
 ```
 
-readiness前的 exec只用于 探测，不运行 setup/prepare/agent。create/readiness失败先提交 destroy intent，
-再 force remove并由 id + token证明资源消失，最后释放 reservation。无法证明回收时 reservation保持
-占用并由 watchdog接管，不能为了继续派发而只删账。
+readiness前的 exec只用于探测，不运行 setup/prepare/agent。create/readiness失败先提交 destroy intent，
+再 force remove并由 id + token证明资源消失。watchdog随后卸载、scrub并验证 Docker data allocation，最后释放
+reservation。无法证明回收时 reservation与 slot保持占用，slot进入 `quarantined`，不能为了继续派发
+而只删账。
 
 ## 正常与领域失败
 
@@ -108,6 +100,8 @@ abort remaining command tree
   -> submit destroy intent to watchdog
   -> stop/force remove outer container
   -> verify id + labels + cgroup gone
+  -> detach + scrub Docker data allocation
+  -> verify empty + quota usage zero + no mount/process reference
   -> commit removed
   -> release admission reservation
 ```
@@ -146,10 +140,12 @@ watchdog检测 control connection断开和 heartbeat停止后，把 lease转为 
 4. 排除已经原子登记的 `kept`资源；
 5. running/provisioning outer container先 force remove，stopped container直接 remove；
 6. 重复枚举并验证相关 cgroup/process/mount消失；
-7. 释放匹配 container reservation并把 lease提交为 `recovered`。
+7. 对匹配 token的 Docker data allocation执行 draining、scrubbing与 verified-free；
+8. 释放匹配 container reservation并把 lease提交为 `recovered`。
 
-没有 profile ID + Invocation UUID + provision token + journal事实的完整匹配不自动删除。无法枚举或
-删除时保持 recovery占用，profile仍可在剩余容量内服务其它 Invocation，但不能重用该 reservation；
+没有 profile ID + Invocation UUID + provision token + journal事实的完整匹配不自动删除。无法枚举、
+卸载、scrub或验证时保持 recovery占用并隔离 slot。profile仍可在剩余容量内服务其它 Invocation，但
+不能重用该 reservation；
 `doctor`显示原始错误和宿主修复入口。
 
 outer PID 1的 dead-man deadline是 watchdog失联时的第二重停止机制，不是资源所有权主机制。下一次
@@ -187,9 +183,8 @@ daemon常驻连续性是验收项：正常 CLI结束不改变 generation；只�
 
 ## Host reboot 与断电
 
-本机 Linux开机顺序是 bounded filesystem → aggregate cgroup → watchdog recovery → rootless daemon →
-profile ready。macOS先由 launchd确认 dedicated VM machine identity，再进入 VM内相同顺序。watchdog
-在 profile ready前对账上次 boot未提交的 journal。旧 process消失不直接授权释放 lease；只有
+本机 Linux开机顺序是 bounded filesystem → aggregate cgroup → watchdog recovery → Docker daemon →
+profile ready。watchdog在 profile ready前对账上次 boot未提交的 journal。旧 process消失不直接授权释放 lease；只有
 build session、resource枚举、kept registry和 journal全部收敛才释放容量。
 
 ## 跨进程并发验收
@@ -198,12 +193,15 @@ build session、resource枚举、kept registry和 journal全部收敛才释放�
 
 - 两者同时取得 Invocation lease，不发生全局独占；
 - reservation总和从不超过 aggregate allocatable CPU/memory/PID/container/build上限；
+- `ephemeralDiskBytes`总和从不超过物理可授予容量，每笔 reservation只对应一个私有 Docker data allocation；
 - 等待者按 watchdog公平队列获得容量，取消等待不泄漏 slot；
 - 任一 CLI结束或 SIGKILL不会删除另一 Invocation的资源；
 - 每个 outer container和相关 shim/build process实际位于 aggregate cgroup后代；
-- 一条 Attempt的 OOM、PID storm、填满 tmpfs或 timeout不击穿 sibling。
+- 一条 Attempt的 OOM、PID storm、填满 Docker data allocation或 timeout不击穿 sibling。
 
-先跑4路 task-shaped Attempt作为参照；8路必须在相同故障矩阵、宿主 headroom和硬上限内实测通过，
+默认32 GiB filesystem与8 GiB allocation只开放2路。4路晋升至少使用64 GiB filesystem，8路晋升至少使用
+128 GiB filesystem；两者都不能依赖稀疏超卖。先跑4路 task-shaped Attempt作为参照；8路必须在相同
+故障矩阵、宿主 headroom和硬上限内实测通过，
 才允许宿主 profile把 `maxContainers`声明为8。Experiment可以把 `maxConcurrency`设得更大，但不能
 越过 watchdog admission。
 
