@@ -7,7 +7,6 @@ readonly MEMORYBENCH_REPOSITORY="https://github.com/NiceEval/MemoryBench.git"
 # Keep the preview on a reviewed, immutable fixture while exercising current
 # Assertions v2 evidence. This commit contains the focused 12-attempt rerun.
 readonly MEMORYBENCH_COMMIT="55dbfb00b39ff9405902f8d966e9eda03affe8b2"
-readonly MEMORYBENCH_RUN="1266ee67-e119-4ec8-81ba-6e4effb2b968"
 readonly PUBLISH_DIRECTORY="$NICEEVAL_ROOT/netlify-report-preview"
 
 if [[ "${CONTEXT:-}" != "deploy-preview" ]]; then
@@ -44,5 +43,6 @@ NODE_OPTIONS="--max-old-space-size=1024" \
 CODEX_BASE_URL="https://preview.invalid/v1" \
 CODEX_API_KEY="netlify-report-preview-no-secret" \
 corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" exec niceeval view \
-  --run "$MEMORYBENCH_RUN" \
+  --experiment compare \
+  --report ./reports/memory.tsx \
   --out "$PUBLISH_DIRECTORY"
