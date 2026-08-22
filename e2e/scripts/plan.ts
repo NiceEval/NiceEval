@@ -3,11 +3,13 @@
 // scenario child process, Testkit build, or artifact creation occurs here.
 
 import { spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
+
+import ignore from "ignore";
 
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { LANES, type Area, type BatchId, type Executor, type Lane, type RepoRequires } from "./manifest.ts";
@@ -250,13 +252,24 @@ function downstreamE2E(project: string, graph: NxGraphDocument): string[] {
   return [...selected].sort();
 }
 
+function nxIgnoredPaths(paths: readonly string[], cwd: string): Set<string> {
+  const matcher = ignore();
+  for (const filename of [".gitignore", ".nxignore"]) {
+    const path = join(cwd, filename);
+    if (existsSync(path)) matcher.add(readFileSync(path, "utf8"));
+  }
+  return new Set(paths.filter((path) => matcher.ignores(path)));
+}
+
 function selectAffected(nxArgs: readonly string[], changedPaths: readonly string[], cwd: string): { all: string[]; e2e: string[] } {
   if (changedPaths.some((path) => /[\r\n,]/.test(path))) throw new Error("changed paths contain comma or newline characters that Nx --files cannot represent losslessly");
   const graph = readNxGraph(cwd);
   const all = nxProjects(nxArgs, cwd, false);
   const e2e = nxProjects(nxArgs, cwd, true);
+  const ignoredPaths = nxIgnoredPaths(changedPaths, cwd);
   const expected = new Set<string>();
   for (const path of changedPaths) {
+    if (ignoredPaths.has(path)) continue;
     const owner = owningProject(path, graph);
     if (owner === undefined) throw new Error(`changed path has no Nx owner: ${path}`);
     const downstream = downstreamE2E(owner, graph);
