@@ -380,9 +380,19 @@ class LiveTaskBuildCacheSession implements TaskBuildCacheService {
       throw cause;
     }
     let released = false;
+    const heartbeat = setInterval(() => {
+      if (released) return;
+      try {
+        domain.db.prepare("UPDATE leases SET heartbeat_at = ? WHERE lease_id = ?").run(new Date().toISOString(), leaseId);
+      } catch {
+        // The holder identity and durable root remain authoritative; reconciliation will classify an unreadable registry as unverified.
+      }
+    }, 30_000);
+    heartbeat.unref();
     return { release() {
       if (released) return;
       released = true;
+      clearInterval(heartbeat);
       domain.db.exec("BEGIN IMMEDIATE");
       try {
         domain.db.prepare("DELETE FROM roots WHERE root_id = ?").run(rootId);
