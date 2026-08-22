@@ -1,12 +1,12 @@
 import path from "node:path";
-import { getAllBlogPosts } from "../site/lib/blog";
-import { absoluteUrl } from "../site/lib/content";
-import { getSitemapUrls } from "../site/lib/sitemap";
+import { getAllBlogPosts } from "../apps/site/lib/blog";
+import { absoluteUrl } from "../apps/site/lib/content";
+import { getSitemapUrls } from "../apps/site/lib/sitemap";
 
 const HOST = "niceeval.com";
 const KEY = "4b37f1e904e64086835ccaa2d5645d84";
 const KEY_LOCATION = `https://${HOST}/${KEY}.txt`;
-const SITE_ROOT = path.join(process.cwd(), "site");
+const SITE_ROOT = path.join(process.cwd(), "apps", "site");
 
 async function main() {
   // 只在 Vercel 生产部署构建时提交，预览部署/本地构建跳过，避免刷 IndexNow 配额

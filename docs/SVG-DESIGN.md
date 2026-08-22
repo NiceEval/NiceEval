@@ -1,6 +1,6 @@
 # SVG 图示的视觉契约
 
-`docs/` 与 `docs-site/` 里所有手绘 SVG 按这一页画。
+`docs/` 与 `apps/docs-site/` 里所有手绘 SVG 按这一页画。
 色值、间距、字号在这里裁决一次，图里直接写死这些数。
 
 色值取自官方暗色主题 [Basalt](feature/reports/README.md)（单源在 `src/report/theme.ts`）。
@@ -240,7 +240,7 @@ SVG 的文字按文字底线定位，盒内第一行的文字底线这样算：
 |---|---|
 | 只服务一篇 `docs/` 文档 | 该文档旁边的 `assets/<主题>.svg` |
 | 多篇 `docs/` 文档共用 | `docs/assets/<主题>.svg` |
-| 公开站 | `docs-site/images/<主题>-zh.svg`，英文另存一份 |
+| 公开站 | `apps/docs-site/images/<主题>-zh.svg`，英文另存一份 |
 
 用 markdown 图片语法引用，路径填 `assets/<主题>.svg`，占满正文宽度。
 不要用 `<table>` 或 `<img width>` 把两张图并排放入一行。
@@ -253,7 +253,7 @@ SVG 的文字按文字底线定位，盒内第一行的文字底线这样算：
 盒标题和泳道名是图里放"名字"的两格，只能用正文已经在用的词。
 为了摆得下临时造一个简称，读的人在正文里查不到它，图和正文从此各说各话。
 
-`pnpm lint` 逐张图查这两格：`.label` 里的每个中文词都要在 `docs/` 或 `docs-site/` 正文（含 [concepts](concepts.md) 的术语总表）里出现过，一次命中都不许有。
+`pnpm lint` 逐张图查这两格：`.label` 里的每个中文词都要在 `docs/` 或 `apps/docs-site/` 正文（含 [concepts](concepts.md) 的术语总表）里出现过，一次命中都不许有。
 被点名时有两条路——改用正文已有的说法，或者这个词本来就该先在正文里立起来。
 
 同一遍检查把[禁词库](writing-rules.json)和术语总表的首选裁决也压到图上，`<text>`、`<tspan>`、`<title>`、`<desc>` 一视同仁。

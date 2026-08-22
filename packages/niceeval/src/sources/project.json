@@ -1,0 +1,6 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "niceeval-domain-sources",
+  "root": "packages/niceeval/src/sources",
+  "tags": ["kind:source-domain", "domain:sources"]
+}

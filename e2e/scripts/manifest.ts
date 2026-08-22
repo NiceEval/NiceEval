@@ -1,9 +1,10 @@
-// E2E repo manifest schema and strict validation.
+// E2E target metadata schema and strict validation.
 //
 // Contract: docs/engineering/testing/e2e/scenario-repos.md「Repo Manifest」.
 // This is the stable contract between the root orchestrator and every e2e
-// repo: schemaVersion/id/batch/areas/lanes/executor/command/timeoutMinutes/secrets/
-// requires/harness/paths/artifacts. Unknown fields are rejected, never
+// repo: schemaVersion/batch/areas/lanes/executor/command/timeoutMinutes/secrets/
+// requires/harness/artifacts. Identity comes only from the owning Nx project
+// root. Unknown fields are rejected, never
 // ignored, and there is no legacy `group` compatibility. `harness.testkit:
 // true` is the only true source of Testkit consumption intent — scenario
 // source package.json/lockfiles never declare @niceeval/testkit
@@ -11,7 +12,7 @@
 
 import { posix } from "node:path";
 
-export const SCHEMA_VERSION = 2 as const;
+export const SCHEMA_VERSION = 3 as const;
 
 export const AREAS = [
   "eval",
@@ -55,7 +56,7 @@ export interface RepoHarness {
 }
 
 export interface E2ERepoManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   batch: BatchId;
   areas: readonly Area[];
@@ -66,7 +67,6 @@ export interface E2ERepoManifest {
   secrets: readonly string[];
   requires?: RepoRequires;
   harness?: RepoHarness;
-  paths: readonly string[];
   artifacts: readonly string[];
 }
 
@@ -76,7 +76,6 @@ export type ManifestParseResult =
 
 const TOP_LEVEL_FIELDS = new Set([
   "schemaVersion",
-  "id",
   "batch",
   "areas",
   "lanes",
@@ -86,7 +85,6 @@ const TOP_LEVEL_FIELDS = new Set([
   "secrets",
   "requires",
   "harness",
-  "paths",
   "artifacts",
 ]);
 
@@ -198,7 +196,7 @@ export function artifactPatternError(value: string): string | undefined {
 }
 
 /**
- * Parse and strictly validate one `e2e.json` value.
+ * Parse and strictly validate one `targets.e2e.metadata.niceeval` value.
  *
  * All problems are collected and returned; the caller treats any non-empty
  * `errors` as fatal for the whole discovery result. `source` names the file
@@ -208,19 +206,13 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
   const errors: string[] = [];
 
   if (!isPlainObject(raw)) {
-    return { ok: false, errors: [`${source}: e2e.json must be a JSON object`] };
+    return { ok: false, errors: [`${source}: E2E target metadata must be a JSON object`] };
   }
 
   errors.push(...unknownFields(TOP_LEVEL_FIELDS, raw, source));
 
   if (raw.schemaVersion !== SCHEMA_VERSION) {
     errors.push(`${source}: "schemaVersion" must be ${SCHEMA_VERSION}, got ${JSON.stringify(raw.schemaVersion)}`);
-  }
-
-  if (typeof raw.id !== "string" || !isCanonicalRelativePath(raw.id)) {
-    errors.push(
-      `${source}: "id" must be a canonical contained relative path (for example "adapter/ai-sdk"), got ${JSON.stringify(raw.id)}`,
-    );
   }
 
   if (typeof raw.batch !== "string" || !isCanonicalBatchId(raw.batch)) {
@@ -276,10 +268,6 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
 
   if (!isStringArray(raw.secrets)) {
     errors.push(`${source}: "secrets" must be an array of strings, got ${JSON.stringify(raw.secrets)}`);
-  }
-
-  if (!isStringArray(raw.paths)) {
-    errors.push(`${source}: "paths" must be an array of strings, got ${JSON.stringify(raw.paths)}`);
   }
 
   if (!isStringArray(raw.artifacts)) {
@@ -373,7 +361,7 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
     ok: true,
     manifest: {
       schemaVersion: SCHEMA_VERSION,
-      id: raw.id as string,
+      id: "",
       batch: raw.batch as BatchId,
       areas: raw.areas as readonly Area[],
       lanes: raw.lanes as readonly Lane[],
@@ -383,7 +371,6 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
       secrets: raw.secrets as string[],
       requires,
       ...(harness === undefined ? {} : { harness }),
-      paths: raw.paths as string[],
       artifacts: raw.artifacts as string[],
     },
   };

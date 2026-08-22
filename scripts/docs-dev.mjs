@@ -47,7 +47,7 @@ if (!currentNodeIsSupported) {
 }
 
 const child = spawn(command, ["--yes", "mint@latest", "dev", ...forwardedArgs], {
-  cwd: join(repoRoot, "docs-site"),
+  cwd: join(repoRoot, "apps", "docs-site"),
   env: childEnv,
   stdio: "inherit",
 });

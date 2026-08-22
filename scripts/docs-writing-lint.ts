@@ -1,5 +1,5 @@
 /**
- * docs/ 与 docs-site/zh/ 正文的可读性检查:句长、段长与禁词库。
+ * docs/ 与 apps/docs-site/zh/ 正文的可读性检查:句长、段长与禁词库。
  *
  * 规矩写在 docs/README.md「写给人读」,数据在 docs/writing-rules.json。
  *
@@ -13,9 +13,9 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(import.meta.dirname, "..");
 const RULES_FILE = "docs/writing-rules.json";
 const CONCEPTS_FILE = "docs/concepts.md";
-// 判「这个词有没有人用」要连中文站一起看:词在 docs-site/zh 用着、只是设计文档里没提,
+// 判「这个词有没有人用」要连中文站一起看:词在 apps/docs-site/zh 用着、只是设计文档里没提,
 // 那不是死词。反过来两边都不出现,才说明立了词没人用。
-const USAGE_DIRS = ["docs", "docs-site"];
+const USAGE_DIRS = ["docs", "apps/docs-site"];
 
 export interface BannedTerm {
   /** 禁用的字面写法。纯 ASCII 的词按词边界、忽略大小写匹配。 */
@@ -617,7 +617,7 @@ export function lintDocsWriting(): LintReport {
   const hits: Hit[] = [];
 
   for (const root of rules.proseRoots) {
-    const target = root.startsWith("docs-site/") ? "docs-site" : "docs";
+    const target = root.startsWith("apps/docs-site/") ? "docs-site" : "docs";
     const matchers = bannedMatchers(rules, target);
     for (const file of walkDocs(root, [".md", ".mdx"])) {
       const sourceLines = readFileSync(join(ROOT, file), "utf8").split("\n");
@@ -673,7 +673,7 @@ export function lintDocsWriting(): LintReport {
       line: term.line,
       rule: "deadConceptTerm",
       message:
-        `「${term.writings.join(" / ")}」立了词但 docs/ 与 docs-site/ 正文一次没用过——` +
+        `「${term.writings.join(" / ")}」立了词但 docs/ 与 apps/docs-site/ 正文一次没用过——` +
         "删掉这一行,或者正文改用它",
     });
   }
@@ -739,7 +739,7 @@ export function svgTexts(svg: string): SvgText[] {
 /**
  * 图里的用语检查。两条规则都要求一次命中都不许有:
  *
- * 1. **不立新词。** `.label` 里的每个中文词都要在 `docs/` 或 `docs-site/` 正文
+ * 1. **不立新词。** `.label` 里的每个中文词都要在 `docs/` 或 `apps/docs-site/` 正文
  *    (含概念表)里出现过。图最容易长出只此一处的自造词:画的人为了摆得下
  *    造个简称,读的人在正文里查不到它,而正文与图从此各说各话。
  * 2. **禁用写法照样管。** 正文那份禁词库与概念表的首选裁决,对图里的每个字同样生效。
@@ -774,7 +774,7 @@ export function lintSvgTerms(): Hit[] {
           line: node.line,
           rule: "svgTerm",
           message:
-            `图里的「${run}」在 docs/ 与 docs-site/ 正文里一次没出现——` +
+            `图里的「${run}」在 docs/ 与 apps/docs-site/ 正文里一次没出现——` +
             `图不立新词:改用正文已有的说法,或者这个词该先在正文里立起来`,
         });
       }
@@ -818,8 +818,8 @@ export function validateRules(): string[] {
     siteSeen.add(term);
     if (!seen.has(term)) problems.push(`siteBannedTerms 里「${term}」没有对应的 bannedTerms 条目`);
   }
-  if (!rules.proseRoots?.includes("docs") || !rules.proseRoots?.includes("docs-site/zh")) {
-    problems.push("proseRoots 必须同时包含 docs 与 docs-site/zh");
+  if (!rules.proseRoots?.includes("docs") || !rules.proseRoots?.includes("apps/docs-site/zh")) {
+    problems.push("proseRoots 必须同时包含 docs 与 apps/docs-site/zh");
   }
   for (const { key } of LENGTH_RULES) {
     const max = (rules as unknown as Record<string, { max?: number }>)[key]?.max;

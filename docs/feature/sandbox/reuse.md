@@ -221,7 +221,6 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 - **`attempts > 1`**：每次运行仍是一条 Attempt，开始前重置 workdir。
 - **首过即停**：语义不变，取消的 Attempt 不触发新 Sandbox 创建。
 - **`--keep-sandbox`**：与 `sandboxReuse: true` 互斥；最终现场不只属于某一条 Attempt。
-- **`localSandbox()`**：与 `sandboxReuse: true` 互斥；Runner 不重置用户工作树。
 - **预制实例**：优先使用，先把稳定安装移出 Attempt。
 - **Sandbox 预热**：不叠加；复用 Experiment 自己按需创建 Sandbox。
 

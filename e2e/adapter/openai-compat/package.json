@@ -2,6 +2,9 @@
   "name": "e2e-adapter-openai-compat",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "description": "Live OpenAI SDK compatibility owners for NiceEval response converters",
   "engines": {

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { createInterface } from "node:readline";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 
 if (process.argv.includes("--version")) {
   process.stdout.write("codex-cli 0.144.1\n");
@@ -28,17 +30,45 @@ input.on("line", (line) => {
       break;
     case "turn/start":
       write({ id: frame.id, result: { turn: { id: "fixture-turn" } } });
-      setImmediate(() => write({
-        method: "turn/completed",
-        params: {
-          threadId: "fixture-thread",
-          turn: {
-            id: "fixture-turn",
-            status: "failed",
-            error: { message: "codex fixture terminal failure" },
+      if (frame.params?.input?.[0]?.text === "report the isolated host identity") {
+        const home = process.env.HOME ?? "";
+        setImmediate(() => {
+          write({
+            method: "item/completed",
+            params: {
+              threadId: "fixture-thread",
+              turnId: "fixture-turn",
+              item: {
+                id: "fixture-message",
+                type: "agentMessage",
+                text: JSON.stringify({
+                  homeIdentity: basename(home),
+                  configPresent: existsSync(join(home, ".codex", "config.toml")),
+                }),
+              },
+            },
+          });
+          write({
+            method: "turn/completed",
+            params: {
+              threadId: "fixture-thread",
+              turn: { id: "fixture-turn", status: "completed" },
+            },
+          });
+        });
+      } else {
+        setImmediate(() => write({
+          method: "turn/completed",
+          params: {
+            threadId: "fixture-thread",
+            turn: {
+              id: "fixture-turn",
+              status: "failed",
+              error: { message: "codex fixture terminal failure" },
+            },
           },
-        },
-      }));
+        }));
+      }
       break;
     case "shutdown":
       write({ id: frame.id, result: {} });

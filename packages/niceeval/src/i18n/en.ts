@@ -443,14 +443,6 @@ export const en = {
   "live.running": "  Running {{totalRuns}} attempts ({{evals}} evals × {{configs}} configs, concurrency {{concurrency}})       {{completed}}/{{total}} done",
   "live.runningUnknown": "  Running...  {{completed}}/{{total}} done",
   "live.waiting": "waiting for a slot...",
-  "local.commandTimeout": "Command timed out after {{timeoutMs}}ms",
-  "local.dirMissing":
-    "local sandbox directory does not exist: {{dir}}. Create it first, or point localSandbox({ dir }) at an existing directory.",
-  "local.dirNotWritable": "local sandbox directory is not writable: {{dir}} ({{message}})",
-  "local.notARepo":
-    "the current directory (and its parents) is not inside a git repository, so localSandbox() has no deterministic root to run in. cd into the repository you want to evaluate, or pass an explicit directory: localSandbox({ dir: \"/path/to/repo\" }).",
-  "local.userUnsupported":
-    'the local sandbox provider does not support execution identity overrides, got { user: "{{user}}" } — niceeval does not escalate or switch identity on your machine. Use a container provider (docker / e2b / vercel) for steps that need a different user.',
   "report.assertionThreshold": " (got {{score}} < {{threshold}})",
   "report.error": "error",
   "report.errored": "errored",
@@ -512,9 +504,9 @@ export const en = {
   "sandbox.deadlineExceedsSession":
     "error: this attempt's timeout ({{timeoutMs}}ms) is longer than what a single {{provider}} session lives ({{limitMs}}ms); the sandbox would be reclaimed mid-attempt.\n" +
     "  fix: lower timeoutMs below {{limitMs}}ms, or declare a longer lifetimeMs on the sandbox spec if your plan allows it.\n",
-  "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, e2b, or local",
+  "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, or e2b",
   "sandbox.missingSpec":
-    "sandbox agent needs a template-bearing SandboxLayer, but neither the Eval nor Experiment declared one — use dockerSandbox({ source: { type: \"image\", image } }), dockerSandbox({ source: { type: \"dockerfile\", context } }), dockerComposeSandbox({ file, workspaceService }), vercelSandbox({ snapshotId }), e2bSandbox({ template }), or localSandbox() from \"niceeval/sandbox\".\n" +
+    "sandbox agent needs a template-bearing SandboxLayer, but neither the Eval nor Experiment declared one — use dockerSandbox({ source: { type: \"image\", image } }), dockerSandbox({ source: { type: \"dockerfile\", context } }), dockerComposeSandbox({ file, workspaceService }), vercelSandbox({ snapshotId }), or e2bSandbox({ template }) from \"niceeval/sandbox\".\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/sandbox-providers.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",

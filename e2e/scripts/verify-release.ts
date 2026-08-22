@@ -76,12 +76,16 @@ async function readPlan(planPath: string): Promise<ReleasePlanEntry[]> {
   } catch (error) {
     throw new Error(`could not parse release plan ${planPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!Array.isArray(raw) || raw.length === 0) {
-    throw new Error("release plan must be a non-empty JSON array emitted by `pnpm e2e plan --lane release --batch --json`");
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error("release plan must be the JSON document emitted by `pnpm e2e plan --lane release --batch --json`");
+  }
+  const document = raw as { schemaVersion?: unknown; mode?: unknown; cells?: unknown };
+  if (document.schemaVersion !== 1 || !(["full", "fail-open-full"] as unknown[]).includes(document.mode) || !Array.isArray(document.cells) || document.cells.length === 0) {
+    throw new Error("release plan must have schemaVersion 1, a full mode, and a non-empty cells array");
   }
   const ids = new Set<string>();
   const entries: ReleasePlanEntry[] = [];
-  for (const entry of raw) {
+  for (const entry of document.cells) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry) || typeof (entry as { id?: unknown }).id !== "string") {
       throw new Error("release plan contains an entry without a string cell id");
     }

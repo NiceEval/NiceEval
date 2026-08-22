@@ -13,8 +13,7 @@
 - **可并发** —— 几十个 case 同时跑,各自独立。
 - **可采集** —— 跑完用 `git diff` 取改动、读 transcript,Sandbox 随后销毁;要进活现场 debug 时用 [`--keep-sandbox`](cli.md) 显式留存,事后 `niceeval sandbox stop` 停止。
 
-这些默认由容器 / 微 VM provider 兑现。
-[本地执行 `localSandbox()`](local.md) 是刻意的例外——明码放弃隔离,换「就地评你手边的仓库」的零成本入口,它的安全边界在自己那篇里定义。
+这些约束由容器 / 微 VM provider 兑现。`defineSandbox` 接入的自定义 provider 也必须由作者负责提供与其用途相符的隔离边界；NiceEval 不会替自定义实现补上文件系统、进程、网络或凭据隔离。
 
 ## 已封口事实的归属
 
@@ -94,7 +93,6 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 - [内置 prepare 命令](prepare-commands.md) —— `checkout()` / `installTool()` 官方写法与 `niceeval debug` 可证明边界。
 - [Library](library.md) —— 路径与 workdir、执行身份、Provider 选择、准备命令、自定义 provider。
 - [Case](case.md) —— 一份 Sandbox 声明的完整运行单位:五类 case、BuildKey / CaseKey、构建协调、Compose、能力矩阵。
-- [本地执行](local.md) —— `localSandbox()` 在宿主机本地目录直接跑,只观察 diff 不还原仓库,最小的 provider。
 - [预制实例](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从中启动。
 - [Docker 执行配置](docker-profiles/README.md) —— raw与 managed DinD的 profile、私有 Docker data allocation、硬配额与故障回收。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。

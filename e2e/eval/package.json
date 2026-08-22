@@ -2,6 +2,9 @@
   "name": "niceeval-e2e-eval",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "description": "Eval, Context, and public Assertion contract E2E consumer",
   "scripts": {

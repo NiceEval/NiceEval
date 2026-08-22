@@ -59,7 +59,7 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async ()
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       // invoke：完整 argv 走安装后的 candidate binary；Docker capability 已由
-      // e2e.json 的 requires.docker 在 root runner preflight 统一证明。
+      // project.json metadata 的 requires.docker 在 root runner preflight 统一证明。
       const run = await niceeval.run(["exp", "--rerun", "all", "--json"], {
         timeoutMs: 36 * 60_000,
       });

@@ -2,6 +2,9 @@
   "name": "niceeval-e2e-cli",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "scripts": {
     "e2e": "vitest run",
@@ -10,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "dockerode": "^4.0.2",
     "effect": "3.22.1",
     "niceeval": "^0.9.1",
     "react": "^19.2.7",

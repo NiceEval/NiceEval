@@ -1,6 +1,9 @@
 {
   "name": "e2e-repo-bub",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "description": "niceeval E2E adapter repo: bub (bubAgent, Docker sandbox) — see docs/engineering/testing/e2e/adapter/bub.md",
   "scripts": {

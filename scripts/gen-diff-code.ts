@@ -1,4 +1,4 @@
-// 生成「接入 niceeval 前后」的代码对比 MDX，供 docs-site 阅读。
+// 生成「接入 niceeval 前后」的代码对比 MDX，供 apps/docs-site 阅读。
 //
 // 用法：pnpm run gen:diff-code
 //
@@ -8,15 +8,15 @@
 // 渲染成 GitHub PR 式的 diff 视图（双行号列、文件头栏、红绿行、hunk 行）。
 // Mintlify 的代码块表达不了行号和文件头，所以这里在生成时用 Shiki 做
 // GitHub 配色的语法高亮，直接产出带 className 的 HTML 表格，样式在
-// docs-site/github-diff.css（同样由本脚本生成，Mintlify 自动加载仓库里的 .css）。
+// apps/docs-site/github-diff.css（同样由本脚本生成，Mintlify 自动加载仓库里的 .css）。
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeToTokens, type ThemedToken } from "shiki";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const CSS_OUT = "docs-site/github-diff.css";
-const JS_OUT = "docs-site/github-diff.js";
+const CSS_OUT = "apps/docs-site/github-diff.css";
+const JS_OUT = "apps/docs-site/github-diff.js";
 
 /** 折叠参数：变更行上下各留几行上下文；藏起来的行少于阈值就不折 */
 const FOLD_CONTEXT = 3;
@@ -56,7 +56,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/pi-sdk",
     target: "examples/zh/tier1/pi-sdk",
-    out: "docs-site/zh/examples/integrations/pi-sdk.mdx",
+    out: "apps/docs-site/zh/examples/integrations/pi-sdk.mdx",
     frontmatter: {
       title: "pi-agent-core 如何非侵入式接入 NiceEval",
       sidebarTitle: "pi-agent-core 如何接入",
@@ -87,7 +87,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/claude-sdk",
     target: "examples/zh/tier1/claude-sdk",
-    out: "docs-site/zh/examples/integrations/claude-sdk.mdx",
+    out: "apps/docs-site/zh/examples/integrations/claude-sdk.mdx",
     frontmatter: {
       title: "Claude Agent SDK 如何非侵入式接入 NiceEval",
       sidebarTitle: "Claude Agent SDK 如何接入",
@@ -118,7 +118,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/codex-sdk",
     target: "examples/zh/tier1/codex-sdk",
-    out: "docs-site/zh/examples/integrations/codex-sdk.mdx",
+    out: "apps/docs-site/zh/examples/integrations/codex-sdk.mdx",
     frontmatter: {
       title: "Codex SDK 如何非侵入式接入 NiceEval",
       sidebarTitle: "Codex SDK 如何接入",
@@ -153,7 +153,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/langgraph",
     target: "examples/zh/tier1/langgraph",
-    out: "docs-site/zh/examples/integrations/langgraph.mdx",
+    out: "apps/docs-site/zh/examples/integrations/langgraph.mdx",
     frontmatter: {
       title: "LangGraph 如何非侵入式接入 NiceEval",
       sidebarTitle: "LangGraph 如何接入",
@@ -190,7 +190,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/ai-sdk-v7",
     target: "examples/zh/tier1/ai-sdk-v7",
-    out: "docs-site/zh/examples/integrations/ai-sdk-v7.mdx",
+    out: "apps/docs-site/zh/examples/integrations/ai-sdk-v7.mdx",
     frontmatter: {
       title: "AI SDK v7 如何非侵入式接入 NiceEval",
       sidebarTitle: "AI SDK v7 如何接入",
@@ -239,7 +239,7 @@ function englishPair(
 
 const ENGLISH_PAIRS: DiffPair[] = [
   englishPair(PAIRS[0], {
-    out: "docs-site/examples/integrations/pi-sdk.mdx",
+    out: "apps/docs-site/examples/integrations/pi-sdk.mdx",
     frontmatter: {
       title: "Integrate pi-agent-core with NiceEval non-invasively",
       sidebarTitle: "pi-agent-core integration",
@@ -260,7 +260,7 @@ const ENGLISH_PAIRS: DiffPair[] = [
     statGroups: ENGLISH_TIER1_STAT_GROUPS,
   }),
   englishPair(PAIRS[1], {
-    out: "docs-site/examples/integrations/claude-sdk.mdx",
+    out: "apps/docs-site/examples/integrations/claude-sdk.mdx",
     frontmatter: {
       title: "Integrate Claude Agent SDK with NiceEval non-invasively",
       sidebarTitle: "Claude Agent SDK integration",
@@ -281,7 +281,7 @@ const ENGLISH_PAIRS: DiffPair[] = [
     statGroups: ENGLISH_TIER1_STAT_GROUPS,
   }),
   englishPair(PAIRS[2], {
-    out: "docs-site/examples/integrations/codex-sdk.mdx",
+    out: "apps/docs-site/examples/integrations/codex-sdk.mdx",
     frontmatter: {
       title: "Integrate Codex SDK with NiceEval non-invasively",
       sidebarTitle: "Codex SDK integration",
@@ -302,7 +302,7 @@ const ENGLISH_PAIRS: DiffPair[] = [
     statGroups: ENGLISH_TIER1_STAT_GROUPS,
   }),
   englishPair(PAIRS[3], {
-    out: "docs-site/examples/integrations/langgraph.mdx",
+    out: "apps/docs-site/examples/integrations/langgraph.mdx",
     frontmatter: {
       title: "Integrate LangGraph with NiceEval non-invasively",
       sidebarTitle: "LangGraph integration",
@@ -326,7 +326,7 @@ const ENGLISH_PAIRS: DiffPair[] = [
     ],
   }),
   englishPair(PAIRS[4], {
-    out: "docs-site/examples/integrations/ai-sdk-v7.mdx",
+    out: "apps/docs-site/examples/integrations/ai-sdk-v7.mdx",
     frontmatter: {
       title: "Integrate AI SDK v7 with NiceEval non-invasively",
       sidebarTitle: "AI SDK v7 integration",

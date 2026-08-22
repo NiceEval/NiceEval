@@ -104,6 +104,8 @@ lifecycle/finalizer scope barrier 与 Experiment teardown barrier 都阻止第�
 
 等待同 key 的 Experiment 即使使用同一条 exclusive Provider lane，也不占用那条 lane。另一个不依赖该 key 的
 Experiment 必须能先进入自己的 Sandbox 与 Agent body；Provider 的实际 Sandbox / Agent body 仍按 lane 串行。
+该 owner 使用仅测试的 custom exclusive Provider，并把 `HOME`、`CODEX_HOME` 与 `TMPDIR` 固定在 case 的隔离项目副本内；
+它只证明 generic exclusive scheduler，不代表任何公开 host Sandbox 产品能力。
 
 ### runner-shared-state-scheduler
 
