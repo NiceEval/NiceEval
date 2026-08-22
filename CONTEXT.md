@@ -107,11 +107,11 @@ reuse eligibility。
 _Avoid_: Reuse guess, Cache reason
 
 **Pricing profile**:
-带内容身份与 coverage 的价格规则集合，只供 Report Calculation 投影成本。它不覆盖 Record 中的 observed
+带内容身份与 coverage 的价格规则集合，只供 Analysis cost Measure 投影成本。它不覆盖 Record 中的 observed
 usage 或 cost。
 
 **Built-in pricing catalog**:
-NiceEval 随包发布的完整模型价格 Profile。Report 未显式声明 Pricing profile 时自动使用；目录 coverage 只按完整
+NiceEval 随包发布的完整模型价格 Profile。Analysis query 未显式声明 Pricing profile 时自动使用；目录 coverage 只按完整
 model 字面值匹配，不把 Usage provider 当作计费商，也不做去前缀、去日期或缺桶回退。
 _Avoid_: Record repricing, Mutable price table
 
@@ -124,7 +124,7 @@ _Avoid_: Experiment alias, Short ID
 也不按时间排序。
 _Avoid_: Latest runs, Recovery sample
 
-## 分析与报告
+## 分析与交付
 
 **Analysis**:
 在同一 frozen Record view 上固定分母、解释 owner-local facts、建立关系并形成 metric、coverage 与 evidence
@@ -188,32 +188,30 @@ _Avoid_: Group callback, Report field
 refs 只存在于 materialized MetricValue。
 _Avoid_: Report calculation, Numeric column
 
-**Report sample**:
-Report Host 在当前作用域内签发给 Page 与组合组件的固定 `Sample`。它只能交给公开
-Analysis calculation 或 projection 得到闭合值，不能读取 Record、改变 population 或越过作用域保存。
-_Avoid_: ReportSample, AnalysisSampleHandle, Record reader
+**Analysis materializer**:
+把 exact selection、已注册 descriptor 与显式 alignment 关闭为 `SemanticFrame`、`DomainView` 或 Bundle resource 的唯一语义内核。它不拥有 CLI 文案、Insight 页面或用户网站。
+_Avoid_: Report runtime, Browser query engine
 
-**Target report execution**:
-在固定 Report sample 上只选择、执行并闭合一个 Page 的 Report 结果。`show` 消费它，无关 Page
-的失败不能影响该结果。
-_Avoid_: Partial site revision, Show SSG
+**Insight**:
+NiceEval 自己维护、供用户排查一次运行与证据的固定交互界面。它不是用户网页作者平台，也不定义公开组件 ABI。
+_Avoid_: Report site, Custom dashboard, View
 
-**Resolved page**:
-一个 Page 的作者 callback 与 component resolve 各执行一次后得到的 Host-private 制品。text 与 web
-只投影这一份制品；它不是作者 API、machine schema 或持久站点数据。
-_Avoid_: Semantic author tree, Machine face
+**Insight revision**:
+Insight 内部绑定一个 frozen Sample 的不可变交互版本。Record 变化只提示新版本，用户刷新后才原子切换。
+_Avoid_: Live Sample, Current results
 
-**Closed site revision**:
-`view` 与 static 共用的全站不可变发布单位，完整绑定所有 route、HTML、asset、download 与
-identity。它不保存 Sample、reader、callback 或延迟计算，也不是 `show` 的前置条件。
-_Avoid_: Live site, Show result
+**BenchmarkBundleDefinition**:
+受信任 TypeScript 中声明有限、具名 closed Analysis resources 与纯数据 parameter slots 的发布定义。它不包含 Page、route、style、任意函数或浏览器 query。
+_Avoid_: BenchmarkDefinition, Report definition, Dataset
 
-**Report machine result**:
-与同一 Report sample 和 execution identity 绑定的 Host-owned 闭合机器结果。内建 Report 交付具名
-领域 schema，自定义 Report 交付目标 Page manifest；两者都不从 React、HTML 或 text 反推。
-_Avoid_: Machine component face, Semantic tree dump
+**BenchmarkBundle**:
+一份 BenchmarkBundleDefinition 对 exact selection 与 canonical parameters 的不可变、内容寻址 materialization。它是可重建派生物，不是 Record 或站点。
+_Avoid_: BundleRevision, Static report, Snapshot
 
-**Report component**:
-Report 中组合 closed Analysis rows、DomainView 与 text/web 双面显示原语的 component。它不读取
-Record、不定义业务 measure，也不改变 denominator。
-_Avoid_: Generic semantic component, Analysis component, Record component
+**Bundle resource**:
+BenchmarkBundle 内一份具名 `semantic-frame`、`domain-view` 或显式 `blob` 内容。它只保存闭合值与逻辑 Evidence identity，不保存 reader 或部署 URL。
+_Avoid_: Page data, Lazy query, Record blob locator
+
+**Bundle identity**:
+由 canonical manifest 与全部 exact resource bytes 形成的内容身份。时间、host path、部署 URL 与 current pointer 不参与。
+_Avoid_: Latest bundle, Site revision
