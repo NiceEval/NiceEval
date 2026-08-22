@@ -14,9 +14,9 @@ Basalt：近黑面、`#262626` 发丝线、灰阶三级文字、
 | 报告组件（`niceeval/report`） | 官方 stylesheet 每个用点读 `var(--niceeval-*, <basalt 兜底>)` | [Reports · 闭合语义树](docs/feature/reports/library.md#closed-semantic-report-tree) |
 | `niceeval view` 宿主 chrome | `src/view/styles.css` 的 `:root` 短名读同一组令牌、同一份兜底 | [Reports CLI · view](docs/feature/reports/cli.md#niceeval-view) |
 | 内部文档与公开站的手绘 SVG | 共用样式段手抄 basalt 值，`pnpm lint` 逐张比对 | [SVG 图示的视觉契约](docs/SVG-DESIGN.md) |
-| 产品站点（`site/`） | `app/globals.css` 的 `:root` 短名直接钉死 basalt 值 | [site/README.md](site/README.md) |
+| 产品站点（`apps/site/`） | `app/globals.css` 的 `:root` 短名直接钉死 basalt 值 | [apps/site/README.md](apps/site/README.md) |
 
-产品站点 `site/`（landing page）的叙事自由，观感不自由：色板、零圆角、无渐变无阴影
+产品站点 `apps/site/`（landing page）的叙事自由，观感不自由：色板、零圆角、无渐变无阴影
 三条按本纲走。站点不装主题机制，令牌值抄 basalt，只有暗色一套。
 
 ## 主题机制：观感不写死在官方样式里

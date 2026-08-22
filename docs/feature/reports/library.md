@@ -31,6 +31,7 @@ NiceEval JSX runtime、generic semantic author model、Record capability 或 Hos
 
 `Cell` 与 `VerdictCounts` 的唯一声明 owner 是 `definition/cell.tsx`。root `niceeval/report` 以 type-only export 提供它们。
 `metric` Cell 默认显示完整的 `MetricValue`。只有相邻的命名区域已经显示同一份结果完整度时，才可设 `showCoverage: false` 让该格只显示业务值。
+`score` Cell 的 `missedScoreItems` 可选携带已完整求值且 `earned < points` 的得分项数；显式的零值必须显示，省略字段才表示该格没有这项附加读数。
 
 `stack` Cell 按顺序把多个非嵌套 Cell 合成一个显示格，并以首项作为排序值。它只表达紧凑组合，不解释其中的领域含义。
 这不会删除 `metric` 自身的 state、samples、total、issues 或 refs。
@@ -402,6 +403,7 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 `ExperimentTable` 与 `ExperimentScatter` 是具名比较组件。它们只接受 `ExperimentComparisonScope` 或该 scope 产生的同组 branded projection，不接受普通 Sample 或任意 rows。多组输入以 `analysis-comparison-group-mismatch` 失败；同组 member 即使 Eval population 不同也正常渲染，各自指标使用实际运行的 Slot 和自己的分母。没有运行的 Eval 不合成为失败，也不进入共同交集。中立 `Table` 与 `Scatter` 仍可显示任意已闭合值，不承担实验组语义。
 
 `ExperimentTable` 的每个实验行只在实验名后显示一次 `samples/total`；耗时、Tokens、成本与主结果格不重复同一比值。展开后的 Eval、分组与 Attempt 行仍各自保留自己的读数完整度，因为它们回答的是下钻范围而不是实验行的重复摘要。
+计分制的实验、分组与 Eval 行把 earned score 和未挣满的得分项数放在主结果格。未挣满的得分项指已封口且 `earned < points` 的 score contribution；计数为零也是有意义的完整结果。正常 Score Attempt 的 `passed` 不显示；非零的 `failed`、`errored` 与 `skipped` 仍单独显示，不与丢分项合并。
 
 `AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。Assertion 展开区先把 matcher 或检查名、sealed 状态与有界 diagnostic children 投影成可逐层展开的状态树；它不重新执行 matcher。
 

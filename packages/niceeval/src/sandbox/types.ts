@@ -16,7 +16,7 @@ export interface CommandResult {
 }
 
 /** 内置 provider 名；ProviderModule 的完成态计划使用普通 string 兼容自定义 provider。 */
-export type SandboxProvider = "docker" | "vercel" | "e2b" | "local";
+export type SandboxProvider = "docker" | "vercel" | "e2b";
 
 /** 镜像/模板里的 Node 运行时版本。 */
 export type SandboxRuntime = "node20" | "node24";
@@ -80,11 +80,11 @@ export interface CommandOptions {
   readonly onStderr?: (chunk: string) => void | Promise<void>;
   /**
    * 覆盖本条命令的执行身份;省略 = Sandbox 默认身份(沿用环境自己声明的身份——Docker 镜像 `USER`、
-   * Compose service `user:`、E2B template 默认用户、宿主当前用户,见
+   * Compose service `user:`、E2B template 默认用户,见
    * docs/feature/sandbox/library.md「执行身份」)。
    *
    * 语义跨 provider 一致,各 provider 映射到自己的原生机制(docker:`exec --user`;E2B:
-   * `{ user }`;Vercel:只认 `"root"`,映射 `{ sudo: true }`,其它值报错;local:任何值都报错)。
+   * `{ user }`;Vercel:只认 `"root"`,映射 `{ sudo: true }`,其它值报错)。
    * 本就全程 root 的 provider 视作 no-op；完全无法换身份的 provider 可不支持（抛错）——但**省略与
    * 显式值的语义保持一致**,不因 provider 而变。
    */

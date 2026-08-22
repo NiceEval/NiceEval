@@ -169,7 +169,7 @@ provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不�
 Agent 的原生双向协议使用 provider-only `managedProcess` capability。它包含 argv/env/cwd、stdin bytes、单消费者 stdout/stderr 原始 chunk 流、closeStdin、wait 与 terminate。
 它不是公开 `t.sandbox` 作者 facade，也不内建 JSONL、question 或 provider schema。
 
-Local 与 Docker 支持。E2B 的 2.31.0 `CommandHandle` 映射尚未通过安装后公开入口 E2E，因此与缺少双向字节流的 Vercel 一样显式拒绝，不把未经接管的实现声明成可用能力。
+Docker 支持。E2B 的 2.31.0 `CommandHandle` 映射尚未通过安装后公开入口 E2E，因此与缺少双向字节流的 Vercel 一样显式拒绝，不把未经接管的实现声明成可用能力。
 Vercel Sandbox 2.2.1 没有双向 stdin 与 raw output chunk，因此明确 Unsupported。
 custom Sandbox 也明确 Unsupported。Agent setup 在写配置或启动进程前抛具名 capability error，不做鸭子类型探测。
 
@@ -221,7 +221,6 @@ entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时�
 - 停驻的容器不会自己消失,仍是唯一需要用户主动 stop 的 provider。两个否决项:`docker pause` 不用于留存(内存驻留,daemon 重启即失,反而更脆);`docker commit` 转镜像也不用(引入第二种要管理的资源面,停驻容器已给出同等持久性)。
 - **E2B** —— suspend = `pause`:文件系统与内存整体持久化,暂停期间停止计费,现场无限期保留、可 `resume` 找回;没有自然过期时刻,`expiresAt` 不写。
 - **Vercel Sandbox** —— suspend = `stop`:sandbox 默认持久,stop 自动打一次 Run 保存文件系统,之后经 `Sandbox.get` / `getOrCreate` 恢复(SDK 原生能力);内存态不保留,唤醒后进程要重新启动。`expiresAt` 写 `keptAt` 加上 Run 的默认保留期限——`snapshotExpiration` 默认 30 天(2,592,000,000ms,从 Run 最后一次使用起算),niceeval 不改写这个参数,默认值就是留存现场实际的保留期限。
-- **Local** —— 不参与留存,`--keep-sandbox` 组合在创建前报错:本地档从不销毁,现场天然留在用户的工作树里,无需注册表纳管(见[本地执行](local.md))。
 - **`defineSandbox` 自定义 provider** —— 不参与留存。`niceeval sandbox` 刻意不加载 config / eval 模块,新进程只有序列化登记项,无法安全找回用户对象上的任意 `stopDetached` 函数;只删登记项又会违反「stop = 销毁」。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
 
 `Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。是否已停驻、何时过期或收尾成功与否只留在注册表，`phases` 无 `sandbox.stop` 条目。
@@ -322,16 +321,6 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 - `commands.run` 的 event stream EOF 不是直接 shell 的完成边界。正常 shell 已退出、但 `nohup ... &` 等任务服务仍持有 stdout/stderr 时，provider 采集前台输出与 exit code 后断开 transport；它不等待该服务退出，也不杀它。完成帧只接受 supervisor 在取得子进程状态后写出的十进制 exit code，wrapper 源码、转义诊断或子进程回显中出现的 marker 字面量都不是完成边界。timeout、取消、协议完整性失败或 interruption 仍退休整台 VM，避免未确认终止的命令树进入 reuse / keep。
 - 文件用 `files.read` / `files.write`(文本 + 二进制)。
 - node 版本由模板决定 —— `runtime` 字段对 e2b 仅作说明。要 node24 / 烘焙好 agent CLI,用预制模板 `e2bSandbox({ template: "niceeval-agents" })`——参数的典型用途正是把 agent CLI 烘焙进模板,让后续 eval 跳过安装直接开跑(构建工作流见 [Library · 预制实例](library/prebuilt-environments.md))。
-
-## Local provider(宿主机,零隔离)
-
-契约与安全边界的唯一出处是[本地执行](local.md),这里只列实现要点:
-
-- **直跑宿主进程** —— `runCommand` 按 argv `child_process` 起进程(不经 shell),`runShell` 整段交给宿主 shell;`cwd` 默认 `workdir`,`env` 叠加宿主默认变量。路径定位共用 `src/sandbox/paths.ts` 的同一份实现。
-- **私有 GIT_DIR 在 workdir 外的宿主侧** —— 变更分类账以用户目录为 work-tree、git 目录放 runner 自有路径,不写用户的 `.git`,`stop()` 时随 runner 资源一并删除;工作树本身一个字节不动。
-- **独占串行声明** —— provider 元数据声明 `exclusive`,并发语义由 [Runner](../../runner.md#调度有界并发) 按中性声明执行,核心无 provider 名分支;推荐并发默认值 1。
-- **不参与 provisioning 重试** —— 创建不经网络控制面,失败都是确定性错误,第一次如实抛出。
-- **不参与预制实例** —— 无 image / template / snapshot 参数,宿主机本身就充当 Sandbox。
 
 ## Provisioning 失败与重试
 

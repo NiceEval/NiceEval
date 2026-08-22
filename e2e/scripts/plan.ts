@@ -1,248 +1,107 @@
 #!/usr/bin/env -S npx tsx
-// Pure E2E selection and matrix planning.
-//
-// Planning deliberately stops at discovery and selection. It never packs the
-// candidate, installs a repo, or reads the secret environment.
+// Nx-backed E2E selection. Planning is graph-only: no pack, secret read,
+// scenario child process, Testkit build, or artifact creation occurs here.
 
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 
-import { discoverAllRepos, e2eRootDir, type DiscoveredRepo } from "./discovery.ts";
+import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { LANES, type Area, type BatchId, type Executor, type Lane, type RepoRequires } from "./manifest.ts";
 
+const NX_DATA_DIR = join(tmpdir(), `niceeval-nx-plan-${process.pid}`);
+function nxEnvironment(): NodeJS.ProcessEnv {
+  return { ...process.env, NX_DAEMON: "false", NX_WORKSPACE_DATA_DIRECTORY: NX_DATA_DIR };
+}
+
 export interface SelectionOptions {
-  /** When omitted, run.ts keeps its historical all-lanes behavior. */
   lane?: Lane;
-  /** Repeating --repo is a union; duplicate ids are run/planned once. */
   repoIds?: readonly string[];
-  /** An unavailable/empty diff is intentionally fail-open. */
-  diffPaths?: readonly string[];
-  /** Matches a manifest area (the manifest's capability vocabulary). */
   capability?: string;
-  /** Excludes live repos that require outbound network/provider access. */
   excludeExternalNetwork?: boolean;
+  affectedProjectNames?: readonly string[];
 }
 
 export interface PlanEntry {
-  /** Stable matrix-cell identity. Singleton cells retain the repo id. */
   id: string;
-  /** Exact scenario repos executed by this cell. */
   repoIds: readonly string[];
-  /** Opaque manifest placement key shared by every Repo in this cell. */
   batch: BatchId;
-  /** Backward-compatible singleton directory; absent for a multi-repo cell. */
   dir?: string;
-  /** Paths relative to e2e/, in the same order as repoIds. */
   dirs: readonly string[];
   executor: Executor;
-  /** Union of the cell's manifest areas; manifests remain the source of truth. */
   capabilities: readonly Area[];
-  /** Stable diagnostic shard identity. */
   shard: string;
   requires?: RepoRequires;
+}
+
+export type PlanMode = "invalid" | "affected" | "full" | "fail-open-full";
+
+export interface PlanDocument {
+  schemaVersion: 1;
+  mode: PlanMode;
+  reason: string;
+  detail?: string;
+  lane: Lane;
+  range?: { base: string; head: string };
+  changedPaths: readonly string[];
+  projectIds: readonly string[];
+  cells: readonly PlanEntry[];
+  graph: {
+    selector: "nx show projects --affected --with-target e2e";
+    nxVersion: "23.1.1";
+    affectedProjectNames: readonly string[];
+    selectedE2EProjectNames: readonly string[];
+    e2eProjectNames: readonly string[];
+  };
 }
 
 export interface PlanCli {
   lane: Lane;
   repoIds: readonly string[];
   diffPaths?: readonly string[];
-  /** Explicitly disable both supplied and implicit working-tree path filtering. */
   noDiff: boolean;
+  base?: string;
+  head?: string;
   capability?: string;
-  /** Explicitly omit repos whose manifest requires external network access. */
   excludeExternalNetwork: boolean;
-  /** Group selected repos by their explicit manifest batch placement key. */
   batch: boolean;
   json: boolean;
-}
-
-function normalizePath(value: string): string {
-  const normalized = value.replaceAll("\\", "/").replace(/^\.\//, "");
-  return normalized === "." ? "" : normalized;
-}
-
-function escapeRegExpChar(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** Match the small glob vocabulary used by manifest.paths without a package dependency. */
-export function pathMatches(pattern: string, path: string): boolean {
-  const source = normalizePath(pattern);
-  const value = normalizePath(path);
-  let expression = "^";
-
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index];
-    if (character === "*" && source[index + 1] === "*") {
-      index += 1;
-      if (source[index + 1] === "/") {
-        index += 1;
-        expression += "(?:.*/)?";
-      } else {
-        expression += ".*";
-      }
-    } else if (character === "*") {
-      expression += "[^/]*";
-    } else if (character === "?") {
-      expression += "[^/]";
-    } else {
-      expression += escapeRegExpChar(character);
-    }
-  }
-
-  return new RegExp(`${expression}$`).test(value);
-}
-
-function hasChangedPath(repo: DiscoveredRepo, diffPaths: readonly string[]): boolean {
-  // An empty paths declaration means that this repo has opted out of the
-  // optimization. Keeping it selected is the safe interpretation.
-  if (repo.manifest.paths.length === 0) return true;
-  return repo.manifest.paths.some((pattern) => diffPaths.some((path) => pathMatches(pattern, path)));
-}
-
-/**
- * Changes to the candidate, the shared harness, the Testkit, the root
- * workspace/lock, the injection contract, or any packed package input
- * invalidate every repo path optimization: plan must fail open and select the
- * whole lane instead of silently running fewer repos.
- */
-export function hasGlobalImpact(diffPaths: readonly string[]): boolean {
-  return diffPaths.some((rawPath) => {
-    const path = normalizePath(rawPath);
-    const rootPackMetadata =
-      path === ".npmrc" ||
-      path === ".npmignore" ||
-      path === ".gitignore" ||
-      path === "package-lock.json" ||
-      path === "npm-shrinkwrap.json" ||
-      path === "pnpmfile.cjs" ||
-      path === ".pnpmfile.cjs" ||
-      /^README(?:\.[^/]+)?\.md$/i.test(path) ||
-      /^(?:LICENSE|NOTICE|CHANGELOG)(?:\.[^/]+)?$/i.test(path);
-    return (
-      path.startsWith("packages/niceeval/") ||
-      path.startsWith("packages/niceeval/src/") ||
-      path.startsWith("packages/testkit/") ||
-      path.startsWith("e2e/scripts/") ||
-      path.startsWith("packages/niceeval/bin/") ||
-      // `dist/` is a published package input even when its normal producer is
-      // `src/`; a checked-in or generated dist-only change must not be omitted
-      // by the path optimization.
-      path.startsWith("packages/niceeval/dist/") ||
-      path.startsWith("packages/niceeval/scripts/package-runtime/") ||
-      path === "scripts/generate-reference.ts" ||
-      path === "packages/niceeval/INDEX.md" ||
-      path === "packages/niceeval/INDEX.template.md" ||
-      path.startsWith("docs-site/zh/") ||
-      path.startsWith("docs-site/images/") ||
-      path === ".github/workflows/e2e.yml" ||
-      path === "package.json" ||
-      path === "pnpm-lock.yaml" ||
-      path === "pnpm-workspace.yaml" ||
-      /^packages\/niceeval\/tsconfig(?:\.[^/]+)?\.json$/.test(path) ||
-      rootPackMetadata
-    );
-  });
 }
 
 function collectRepoIds(repoIds: readonly string[]): string[] {
   return [...new Set(repoIds)].filter((id) => id.length > 0);
 }
 
-/**
- * Apply the formal selection contract in a deterministic order supplied by
- * discovery: lane, explicit repo union, optional capability, optional paths.
- * Missing diff paths do not reject anything; callers must fail open when the
- * diff cannot be computed.
- */
 export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOptions): DiscoveredRepo[] {
   const repoIds = collectRepoIds(options.repoIds ?? []);
-  let explicitlyRequested: readonly DiscoveredRepo[] = [];
-  if (repoIds.length > 0) {
-    const knownIds = new Set(all.map((repo) => repo.manifest.id));
-    const missing = repoIds.filter((id) => !knownIds.has(id));
-    if (missing.length > 0) {
-      const known = all.map((repo) => repo.manifest.id).join(", ") || "(none discovered)";
-      throw new Error(`--repo requested unknown id(s): ${missing.join(", ")}. Known ids: ${known}`);
-    }
-    const requested = new Set(repoIds);
-    explicitlyRequested = all.filter((repo) => requested.has(repo.manifest.id));
+  const knownIds = new Set(all.map((repo) => repo.manifest.id));
+  const missing = repoIds.filter((id) => !knownIds.has(id));
+  if (missing.length > 0) {
+    throw new Error(`--repo requested unknown id(s): ${missing.join(", ")}. Known ids: ${[...knownIds].join(", ")}`);
   }
-
-  const requestedLane = options.lane;
-  if (requestedLane !== undefined && explicitlyRequested.length > 0) {
-    const unavailable = explicitlyRequested.filter((repo) => !repo.manifest.lanes.includes(requestedLane));
+  const requested = repoIds.length > 0 ? new Set(repoIds) : undefined;
+  const affected = options.affectedProjectNames === undefined ? undefined : new Set(options.affectedProjectNames);
+  const explicitlyRequested = requested === undefined ? [] : all.filter((repo) => requested.has(repo.manifest.id));
+  if (options.lane !== undefined) {
+    const unavailable = explicitlyRequested.filter((repo) => !repo.manifest.lanes.includes(options.lane!));
     if (unavailable.length > 0) {
-      const available = unavailable
-        .map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`)
-        .join("; ");
-      throw new Error(
-        `--repo selection is unavailable in lane ${JSON.stringify(requestedLane)} for: ${available}`,
-      );
+      throw new Error(`--repo selection is unavailable in lane ${JSON.stringify(options.lane)} for: ${unavailable.map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`).join("; ")}`);
     }
   }
-
-  if (options.excludeExternalNetwork === true && explicitlyRequested.length > 0) {
-    const live = explicitlyRequested.filter((repo) => repo.manifest.requires?.externalNetwork === true);
-    if (live.length > 0) {
-      throw new Error(
-        `--repo selection requires external network but --exclude-external-network was set: ${live.map((repo) => repo.manifest.id).join(", ")}`,
-      );
-    }
+  if (options.excludeExternalNetwork && explicitlyRequested.some((repo) => repo.manifest.requires?.externalNetwork === true)) {
+    throw new Error(`--repo selection requires external network but --exclude-external-network was set: ${explicitlyRequested.filter((repo) => repo.manifest.requires?.externalNetwork === true).map((repo) => repo.manifest.id).join(", ")}`);
   }
-
-  const requestedIds = repoIds.length > 0 ? new Set(repoIds) : undefined;
-  const requestedDiffPaths = options.diffPaths && options.diffPaths.length > 0 ? options.diffPaths : undefined;
-  const diffPaths = repoIds.length === 0 && requestedDiffPaths !== undefined && !hasGlobalImpact(requestedDiffPaths)
-    ? requestedDiffPaths
-    : undefined;
-
   return all.filter((repo) => {
-    const manifest = repo.manifest;
-    if (options.lane !== undefined && !manifest.lanes.includes(options.lane)) return false;
-    if (requestedIds !== undefined && !requestedIds.has(manifest.id)) return false;
-    if (options.capability !== undefined && !manifest.areas.some((area) => area === options.capability)) return false;
-    if (options.excludeExternalNetwork === true && manifest.requires?.externalNetwork === true) return false;
-    // An explicit --repo is an operator decision, not a path-filter hint.
-    // Never turn it into a false-green empty plan merely because an unrelated
-    // --diff-path happened to be supplied by a caller.
-    if (diffPaths !== undefined && !hasChangedPath(repo, diffPaths)) return false;
+    if (options.lane !== undefined && !repo.manifest.lanes.includes(options.lane)) return false;
+    if (requested !== undefined && !requested.has(repo.manifest.id)) return false;
+    if (options.capability !== undefined && !repo.manifest.areas.includes(options.capability as Area)) return false;
+    if (options.excludeExternalNetwork && repo.manifest.requires?.externalNetwork === true) return false;
+    if (requested === undefined && affected !== undefined && !affected.has(repo.projectName)) return false;
     return true;
   });
-}
-
-/** Read-only best effort diff lookup. Any failure, including an empty result, is fail-open. */
-export function tryReadDiffPaths(cwd: string): readonly string[] | undefined {
-  try {
-    const tracked = spawnSync("git", ["diff", "--name-only", "--no-renames", "HEAD"], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    if (
-      tracked.error ||
-      tracked.status !== 0 ||
-      typeof tracked.stdout !== "string" ||
-      untracked.error ||
-      untracked.status !== 0 ||
-      typeof untracked.stdout !== "string"
-    ) {
-      return undefined;
-    }
-    const paths = [...tracked.stdout.split(/\r?\n/), ...untracked.stdout.split("\0")]
-      .map(normalizePath)
-      .filter((path) => path.length > 0);
-    return paths.length > 0 ? [...new Set(paths)] : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function valueAsStrings(value: unknown): string[] {
@@ -262,213 +121,249 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
   const { values } = parseArgs({
     args: [...argv],
     options: {
-      lane: { type: "string" },
-      repo: { type: "string", multiple: true, default: [] },
-      "diff-path": { type: "string", multiple: true },
-      diff: { type: "string", multiple: true },
-      "no-diff": { type: "boolean", default: false },
-      capability: { type: "string" },
-      "exclude-external-network": { type: "boolean", default: false },
-      batch: { type: "boolean", default: false },
-      json: { type: "boolean", default: false },
+      lane: { type: "string" }, repo: { type: "string", multiple: true, default: [] },
+      "diff-path": { type: "string", multiple: true }, diff: { type: "string", multiple: true },
+      "no-diff": { type: "boolean", default: false }, base: { type: "string" }, head: { type: "string" },
+      capability: { type: "string" }, "exclude-external-network": { type: "boolean", default: false },
+      batch: { type: "boolean", default: false }, json: { type: "boolean", default: false },
     },
-    allowPositionals: false,
-    strict: true,
+    allowPositionals: false, strict: true,
   });
-
-  const lane = parseLane(values.lane);
   const diffPaths = [...valueAsStrings(values["diff-path"]), ...valueAsStrings(values.diff)];
   const noDiff = values["no-diff"] === true;
-  if (noDiff && diffPaths.length > 0) {
-    throw new Error("--no-diff cannot be combined with --diff-path or --diff");
-  }
-  const capability = typeof values.capability === "string" ? values.capability : undefined;
-
+  const base = typeof values.base === "string" ? values.base : undefined;
+  const head = typeof values.head === "string" ? values.head : undefined;
+  if (noDiff && (diffPaths.length > 0 || base !== undefined || head !== undefined)) throw new Error("--no-diff cannot be combined with diff paths or --base/--head");
+  if ((base === undefined) !== (head === undefined)) throw new Error("--base and --head must be supplied together");
+  if (diffPaths.length > 0 && base !== undefined) throw new Error("diff paths cannot be combined with --base/--head");
   return {
-    lane,
-    repoIds: valueAsStrings(values.repo),
-    diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
-    noDiff,
-    capability,
+    lane: parseLane(values.lane), repoIds: valueAsStrings(values.repo),
+    ...(diffPaths.length > 0 ? { diffPaths } : {}), noDiff, ...(base === undefined ? {} : { base, head }),
+    ...(typeof values.capability === "string" ? { capability: values.capability } : {}),
     excludeExternalNetwork: values["exclude-external-network"] === true,
-    batch: values.batch === true,
-    json: values.json === true,
+    batch: values.batch === true, json: values.json === true,
   };
 }
 
 function singletonEntry(repo: DiscoveredRepo, root: string): PlanEntry {
-  const dir = relative(root, repo.dir);
-  return {
-    id: repo.manifest.id,
-    repoIds: [repo.manifest.id],
-    batch: repo.manifest.batch,
-    dir,
-    dirs: [dir],
-    executor: repo.manifest.executor,
-    capabilities: repo.manifest.areas,
-    shard: repo.manifest.id,
-    ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }),
-  };
+  const dir = relative(root, repo.dir).replaceAll("\\", "/");
+  return { id: repo.manifest.id, repoIds: [repo.manifest.id], batch: repo.manifest.batch, dir, dirs: [dir], executor: repo.manifest.executor, capabilities: repo.manifest.areas, shard: repo.manifest.id, ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }) };
 }
 
 function mergedRequires(entries: readonly PlanEntry[]): RepoRequires | undefined {
   const requirements = entries.flatMap((entry) => entry.requires === undefined ? [] : [entry.requires]);
   if (requirements.length === 0) return undefined;
-  const runtimes = [...new Set(requirements.flatMap((requirement) => requirement.runtimes ?? []))];
-  const browsers = [...new Set(requirements.flatMap((requirement) => requirement.browsers ?? []))];
-  const platformSets = requirements
-    .flatMap((requirement) => requirement.platforms === undefined ? [] : [new Set(requirement.platforms)]);
-  const platforms = platformSets.length === 0
-    ? []
-    : [...platformSets[0]!].filter((platform) => platformSets.slice(1).every((allowed) => allowed.has(platform)));
-  if (platformSets.length > 0 && platforms.length === 0) {
-    throw new Error("E2E batch has no host platform accepted by every Repo");
-  }
-  return {
-    ...(requirements.some((requirement) => requirement.docker === true) ? { docker: true } : {}),
-    ...(requirements.some((requirement) => requirement.externalNetwork === true) ? { externalNetwork: true } : {}),
-    ...(platforms.length === 0 ? {} : { platforms }),
-    ...(runtimes.length === 0 ? {} : { runtimes }),
-    ...(browsers.length === 0 ? {} : { browsers }),
-  };
+  const runtimes = [...new Set(requirements.flatMap((r) => r.runtimes ?? []))];
+  const browsers = [...new Set(requirements.flatMap((r) => r.browsers ?? []))];
+  const sets = requirements.flatMap((r) => r.platforms === undefined ? [] : [new Set(r.platforms)]);
+  const platforms = sets.length === 0 ? [] : [...sets[0]!].filter((p) => sets.slice(1).every((set) => set.has(p)));
+  if (sets.length > 0 && platforms.length === 0) throw new Error("E2E batch has no host platform accepted by every Repo");
+  return { ...(requirements.some((r) => r.docker) ? { docker: true } : {}), ...(requirements.some((r) => r.externalNetwork) ? { externalNetwork: true } : {}), ...(platforms.length ? { platforms } : {}), ...(runtimes.length ? { runtimes } : {}), ...(browsers.length ? { browsers } : {}) };
 }
 
-function repoBatch(entries: readonly PlanEntry[], index: number): PlanEntry {
-  const executors = new Set(entries.map((entry) => JSON.stringify(entry.executor)));
-  if (executors.size !== 1 || entries[0] === undefined) {
-    throw new Error(`E2E batch ${index + 1} requires one shared executor`);
-  }
-  const batches = new Set(entries.map((entry) => entry.batch));
-  if (batches.size !== 1) throw new Error(`E2E batch ${index + 1} contains multiple placement ids`);
-  const batch = entries[0].batch;
-  const id = `repo-batch-${batch}`;
+function repoBatch(entries: readonly PlanEntry[]): PlanEntry {
+  const first = entries[0];
+  if (!first || new Set(entries.map((e) => JSON.stringify(e.executor))).size !== 1) throw new Error("E2E batch requires one shared executor");
+  if (new Set(entries.map((e) => e.batch)).size !== 1) throw new Error("E2E batch contains multiple placement ids");
+  const id = `repo-batch-${first.batch}`;
   const requires = mergedRequires(entries);
-  return {
-    id,
-    repoIds: entries.flatMap((entry) => entry.repoIds),
-    batch,
-    dirs: entries.flatMap((entry) => entry.dirs),
-    executor: entries[0].executor,
-    capabilities: [...new Set(entries.flatMap((entry) => entry.capabilities))],
-    shard: id,
-    ...(requires === undefined ? {} : { requires }),
-  };
+  return { id, repoIds: entries.flatMap((e) => e.repoIds), batch: first.batch, dirs: entries.flatMap((e) => e.dirs), executor: first.executor, capabilities: [...new Set(entries.flatMap((e) => e.capabilities))], shard: id, ...(requires ? { requires } : {}) };
 }
 
-/**
- * Pack independent E2E repos by their explicit manifest placement key. The
- * original plan remains authoritative and is checked after packing so
- * batching cannot add, omit, or duplicate a repo.
- */
 export function batchEntries(entries: readonly PlanEntry[]): PlanEntry[] {
-  if (entries.length <= 1) return [...entries];
-
-  const groups = new Map<BatchId, PlanEntry[]>();
-  for (const entry of entries) {
-    const group = groups.get(entry.batch) ?? [];
-    group.push(entry);
-    groups.set(entry.batch, group);
-  }
-  const packed = [...groups.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([, group], index) => repoBatch(group, index));
-  const selectedRepoIds = new Set(entries.flatMap((entry) => entry.repoIds));
-  for (const entry of packed) {
-    if (selectedRepoIds.has(entry.id)) throw new Error(`E2E batch id collides with Repo id ${JSON.stringify(entry.id)}`);
-  }
-  const before = entries.flatMap((entry) => entry.repoIds).sort();
-  const after = packed.flatMap((entry) => entry.repoIds).sort();
-  if (before.length !== new Set(before).size || after.length !== new Set(after).size) {
-    throw new Error("E2E plan contains duplicate repo ids before or after batching");
-  }
-  if (JSON.stringify(before) !== JSON.stringify(after)) {
-    throw new Error("batching changed the selected E2E repo-id set");
-  }
-  return packed;
+  const groups = new Map<string, PlanEntry[]>();
+  for (const entry of entries) groups.set(entry.batch, [...(groups.get(entry.batch) ?? []), entry]);
+  const result = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, group]) => repoBatch(group));
+  const before = entries.flatMap((e) => e.repoIds).sort();
+  const after = result.flatMap((e) => e.repoIds).sort();
+  if (new Set(after).size !== after.length || JSON.stringify(before) !== JSON.stringify(after)) throw new Error("batching changed the selected E2E repo-id set");
+  return result;
 }
 
-export function makePlan(
-  repos: readonly DiscoveredRepo[],
-  root: string,
-  options: SelectionOptions,
-  batch = false,
-): PlanEntry[] {
-  const entries = selectRepos(repos, options)
-    .map((repo) => singletonEntry(repo, root))
-    .sort((left, right) => left.id.localeCompare(right.id));
-  return batch ? batchEntries(entries) : entries;
+function runGit(args: readonly string[], cwd: string): string {
+  const result = spawnSync("git", [...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (result.error || result.status !== 0) throw new Error((result.stderr || result.error?.message || `git ${args[0]} failed`).trim());
+  return result.stdout.trim();
 }
 
-function printHumanPlan(entries: readonly PlanEntry[], lane: Lane): void {
-  if (entries.length === 0) {
-    console.log(`[e2e] no repos matched lane ${lane}.`);
-    return;
+function gitChangedPaths(args: readonly string[], cwd: string): string[] {
+  const result = spawnSync("git", [...args, "--name-only", "-z", "--no-renames"], { cwd, encoding: "buffer", stdio: ["ignore", "pipe", "pipe"] });
+  if (result.error || result.status !== 0 || !Buffer.isBuffer(result.stdout)) throw new Error(`git changed-path discovery failed for ${args.join(" ")}`);
+  const decoded = result.stdout.toString("utf8");
+  if (decoded.includes("�")) throw new Error("git changed paths contain a filename that is not valid UTF-8");
+  return decoded.split("\0").filter(Boolean);
+}
+
+function localChangedPaths(cwd: string): string[] {
+  const paths: string[] = [];
+  paths.push(...gitChangedPaths(["diff"], cwd), ...gitChangedPaths(["diff", "--cached"], cwd));
+  const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd, encoding: "buffer", stdio: ["ignore", "pipe", "pipe"] });
+  if (untracked.error || untracked.status !== 0 || !Buffer.isBuffer(untracked.stdout)) throw new Error("git untracked-file discovery failed");
+  const decoded = untracked.stdout.toString("utf8");
+  if (decoded.includes("�")) throw new Error("untracked paths contain a filename that is not valid UTF-8");
+  paths.push(...decoded.split("\0").filter(Boolean));
+  return [...new Set(paths.map((p) => p.replaceAll("\\", "/")))].sort();
+}
+
+function nxProjects(args: readonly string[], cwd: string, withE2ETarget: boolean): string[] {
+  const result = spawnSync("pnpm", ["exec", "nx", "show", "projects", "--affected", ...(withE2ETarget ? ["--with-target", "e2e"] : []), "--json", ...args], {
+    cwd, encoding: "utf8", env: nxEnvironment(), stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error || result.status !== 0) throw new Error((result.stderr || result.error?.message || "Nx affected selection failed").trim());
+  const parsed: unknown = JSON.parse(result.stdout);
+  if (!Array.isArray(parsed) || !parsed.every((value) => typeof value === "string")) throw new Error("Nx affected selection did not return a string array");
+  return [...new Set(parsed)].sort();
+}
+
+interface NxGraphNode { data: { root: string; tags?: string[]; targets?: Record<string, unknown> } }
+interface NxGraphDocument { graph: { nodes: Record<string, NxGraphNode>; dependencies: Record<string, Array<{ source: string; target: string }>> } }
+
+function readNxGraph(cwd: string): NxGraphDocument {
+  const result = spawnSync("pnpm", ["exec", "nx", "graph", "--file=stdout"], { cwd, encoding: "utf8", env: nxEnvironment(), stdio: ["ignore", "pipe", "pipe"] });
+  if (result.error || result.status !== 0) throw new Error((result.stderr || "could not read Nx project graph").trim());
+  const raw = JSON.parse(result.stdout) as NxGraphDocument;
+  if (!raw?.graph?.nodes || !raw.graph.dependencies) throw new Error("Nx graph JSON is missing nodes or dependencies");
+  return raw;
+}
+
+function owningProject(path: string, graph: NxGraphDocument): string | undefined {
+  const normalized = path.replaceAll("\\", "/");
+  return Object.entries(graph.graph.nodes)
+    .filter(([, node]) => node.data.root === "." || normalized === node.data.root || normalized.startsWith(`${node.data.root}/`))
+    .sort(([, left], [, right]) => right.data.root.length - left.data.root.length)[0]?.[0];
+}
+
+function downstreamE2E(project: string, graph: NxGraphDocument): string[] {
+  const reverse = new Map<string, string[]>();
+  for (const dependencies of Object.values(graph.graph.dependencies)) {
+    for (const edge of dependencies) reverse.set(edge.target, [...(reverse.get(edge.target) ?? []), edge.source]);
   }
-  console.log(`${entries.length} e2e shard(s) selected for lane ${lane}:\n`);
-  for (const entry of entries) {
-    console.log(`- ${entry.id}  [${entry.capabilities.join(", ")}]  executor=host`);
-    console.log(`    repos: ${entry.repoIds.join(", ")}  concurrency: all`);
-    console.log(`    dirs: ${entry.dirs.join(", ")}  shard: ${entry.shard}`);
+  const seen = new Set([project]);
+  const queue = [project];
+  const selected = new Set<string>();
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const node = graph.graph.nodes[current];
+    if (node?.data.targets?.e2e !== undefined && node.data.tags?.includes("kind:e2e")) selected.add(current);
+    for (const dependent of reverse.get(current) ?? []) if (!seen.has(dependent)) { seen.add(dependent); queue.push(dependent); }
   }
+  return [...selected].sort();
 }
 
-export interface ResolvedPlan {
-  cli: PlanCli;
-  entries: PlanEntry[];
+function selectAffected(nxArgs: readonly string[], changedPaths: readonly string[], cwd: string): { all: string[]; e2e: string[] } {
+  if (changedPaths.some((path) => /[\r\n,]/.test(path))) throw new Error("changed paths contain comma or newline characters that Nx --files cannot represent losslessly");
+  const graph = readNxGraph(cwd);
+  const all = nxProjects(nxArgs, cwd, false);
+  const e2e = nxProjects(nxArgs, cwd, true);
+  const expected = new Set<string>();
+  for (const path of changedPaths) {
+    const owner = owningProject(path, graph);
+    if (owner === undefined) throw new Error(`changed path has no Nx owner: ${path}`);
+    const downstream = downstreamE2E(owner, graph);
+    const tags = graph.graph.nodes[owner]?.data.tags ?? [];
+    if (downstream.length === 0 && !tags.includes("e2e:none")) throw new Error(`changed path ${path} belongs to ${owner}, which has neither E2E downstream nor e2e:none`);
+    downstream.forEach((project) => expected.add(project));
+  }
+  if (JSON.stringify([...expected].sort()) !== JSON.stringify(e2e)) throw new Error(`Nx affected selection disagrees with graph downstream closure: expected=${[...expected].sort().join(",")} actual=${e2e.join(",")}`);
+  return { all, e2e };
 }
 
-/** Resolve once so default pack/run can replay the exact planned repo-id set. */
+function validateRange(base: string, head: string, cwd: string): { base: string; head: string } {
+  const actualHead = runGit(["rev-parse", "HEAD"], cwd);
+  const resolvedHead = runGit(["rev-parse", `${head}^{commit}`], cwd);
+  const resolvedBase = runGit(["rev-parse", `${base}^{commit}`], cwd);
+  if (resolvedHead !== actualHead) throw new Error(`--head must resolve to actual checkout HEAD ${actualHead}, got ${resolvedHead}`);
+  runGit(["merge-base", "--is-ancestor", resolvedBase, resolvedHead], cwd);
+  return { base: resolvedBase, head: resolvedHead };
+}
+
+export interface ResolvedPlan { cli: PlanCli; entries: PlanEntry[]; document: PlanDocument }
+
 export function resolvePlan(argv: readonly string[]): ResolvedPlan {
+  try {
   const cli = parsePlanCli(argv);
   const e2eRoot = e2eRootDir();
-  const { repos, errors } = discoverAllRepos(e2eRoot);
-  if (errors.length > 0) {
-    throw new Error(`repo discovery found ${errors.length} problem(s): ${errors.join("; ")}`);
+  const discovery = discoverAllRepos(e2eRoot);
+  if (discovery.errors.length) throw new Error(`repo discovery found ${discovery.errors.length} problem(s): ${discovery.errors.join("; ")}`);
+  const full = cli.repoIds.length === 0 && (
+    cli.noDiff || (cli.lane !== "pr" && cli.base === undefined && cli.diffPaths === undefined)
+  );
+  let mode: PlanMode = full ? "full" : "affected";
+  let reason = cli.repoIds.length
+    ? "explicit-repo"
+    : cli.noDiff
+      ? "explicit-full"
+      : cli.lane !== "pr" && cli.base === undefined && cli.diffPaths === undefined
+        ? `full-lane-${cli.lane}`
+        : "nx-affected";
+  let detail: string | undefined;
+  let changedPaths: string[] = [];
+  let affectedNames: string[] | undefined;
+  let allAffectedNames: string[] = [];
+  let range: { base: string; head: string } | undefined;
+  if (!full && cli.repoIds.length === 0) {
+    try {
+      if (cli.base && cli.head) {
+        range = validateRange(cli.base, cli.head, repoRootDir());
+        changedPaths = gitChangedPaths(["diff", `${range.base}...${range.head}`], repoRootDir()).map((path) => path.replaceAll("\\", "/")).sort();
+        // Keep Nx on the same NUL-delimited path set that the planner validated.
+        // Nx's base/head discovery uses line-oriented Git output, which quotes
+        // non-ASCII paths and can misattribute them to the workspace root.
+        const selected = changedPaths.length === 0 ? { all: [], e2e: [] } : selectAffected(changedPaths.flatMap((path) => ["--files", path]), changedPaths, repoRootDir());
+        affectedNames = selected.e2e;
+        allAffectedNames = selected.all;
+      } else {
+        changedPaths = cli.diffPaths ? [...new Set(cli.diffPaths)].sort() : localChangedPaths(repoRootDir());
+        if (changedPaths.length === 0) {
+          affectedNames = [];
+        } else {
+          const selected = selectAffected(changedPaths.flatMap((path) => ["--files", path]), changedPaths, repoRootDir());
+          affectedNames = selected.e2e;
+          allAffectedNames = selected.all;
+        }
+        if (changedPaths.length === 0) reason = "clean-working-tree";
+      }
+    } catch (error) {
+      mode = "fail-open-full";
+      reason = "nx-selection-failed";
+      detail = error instanceof Error ? error.message : String(error);
+      affectedNames = undefined;
+    }
   }
-  const diffPaths = cli.noDiff ? undefined : cli.diffPaths ?? tryReadDiffPaths(resolve(e2eRoot, ".."));
-  return {
-    cli,
-    entries: makePlan(
-      repos,
-      e2eRoot,
-      {
-        lane: cli.lane,
-        repoIds: cli.repoIds,
-        diffPaths,
-        capability: cli.capability,
-        excludeExternalNetwork: cli.excludeExternalNetwork,
-      },
-      cli.batch,
-    ),
+  const selected = selectRepos(discovery.repos, {
+    lane: cli.lane, repoIds: cli.repoIds, capability: mode === "fail-open-full" ? undefined : cli.capability,
+    excludeExternalNetwork: cli.excludeExternalNetwork, affectedProjectNames: affectedNames,
+  });
+  const singleton = selected.map((repo) => singletonEntry(repo, e2eRoot)).sort((a, b) => a.id.localeCompare(b.id));
+  const entries = cli.batch ? batchEntries(singleton) : singleton;
+  const projectIds = selected.map((repo) => repo.manifest.id).sort();
+  const document: PlanDocument = {
+    schemaVersion: 1, mode, reason, ...(detail ? { detail } : {}), lane: cli.lane, ...(range ? { range } : {}), changedPaths, projectIds, cells: entries,
+    graph: { selector: "nx show projects --affected --with-target e2e", nxVersion: "23.1.1", affectedProjectNames: affectedNames === undefined ? discovery.repos.map((repo) => repo.projectName).sort() : allAffectedNames, selectedE2EProjectNames: affectedNames ?? discovery.repos.map((repo) => repo.projectName).sort(), e2eProjectNames: discovery.repos.map((repo) => repo.projectName).sort() },
   };
+  return { cli, entries, document };
+  } finally {
+    rmSync(NX_DATA_DIR, { recursive: true, force: true });
+  }
 }
 
 export function printResolvedPlan(plan: ResolvedPlan): void {
-  if (plan.cli.json) {
-    console.log(JSON.stringify(plan.entries));
-  } else {
-    printHumanPlan(plan.entries, plan.cli.lane);
-  }
+  if (plan.cli.json) { console.log(JSON.stringify(plan.document)); return; }
+  console.log(`[e2e] mode=${plan.document.mode} reason=${plan.document.reason} lane=${plan.cli.lane}`);
+  if (plan.document.detail) console.log(`[e2e] ${plan.document.detail}`);
+  if (!plan.entries.length) { console.log("[e2e] affected selection is empty."); return; }
+  for (const entry of plan.entries) console.log(`- ${entry.id}: ${entry.repoIds.join(", ")}`);
 }
 
-/**
- * `pnpm e2e plan` entry. Returns the number of selected entries on success
- * and a negative number on failure, so the default flow can skip pack/run
- * when nothing was selected (execution.md: 无 Repo 被选择或 manifest 非法时不
- * pack). Also sets process.exitCode for direct CLI use.
- */
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   try {
-    const plan = resolvePlan(argv);
-    printResolvedPlan(plan);
-    return plan.entries.length;
+    const plan = resolvePlan(argv); printResolvedPlan(plan); return plan.entries.length;
   } catch (error) {
-    console.error(`[e2e] ${(error as Error).message}`);
-    process.exitCode = 1;
-    return -1;
+    const message = error instanceof Error ? error.message : String(error);
+    if (argv.includes("--json")) console.log(JSON.stringify({ schemaVersion: 1, mode: "invalid", reason: "invalid-plan", detail: message, cells: [], projectIds: [], changedPaths: [] }));
+    else console.error(`[e2e] ${message}`);
+    process.exitCode = 1; return -1;
   }
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  void main();
-}
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) void main();

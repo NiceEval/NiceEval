@@ -1,0 +1,66 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "e2e-eval",
+  "root": "e2e/eval",
+  "tags": [
+    "kind:e2e",
+    "e2e:eval"
+  ],
+  "implicitDependencies": [
+    "workspace-shared",
+    "e2e-shared",
+    "niceeval-package-shared",
+    "niceeval-testkit",
+    "niceeval-src-fallback",
+    "niceeval-domain-record",
+    "niceeval-domain-sources",
+    "niceeval-domain-o11y",
+    "niceeval-domain-agents"
+  ],
+  "targets": {
+    "e2e": {
+      "executor": "nx:selection-only",
+      "cache": false,
+      "inputs": [
+        "default"
+      ],
+      "metadata": {
+        "niceeval": {
+          "schemaVersion": 3,
+          "batch": "host-3",
+          "areas": [
+            "eval"
+          ],
+          "lanes": [
+            "pr",
+            "main",
+            "nightly",
+            "release"
+          ],
+          "executor": {
+            "kind": "host"
+          },
+          "command": [
+            "pnpm",
+            "exec",
+            "vitest",
+            "run"
+          ],
+          "timeoutMinutes": 2,
+          "harness": {
+            "testkit": true
+          },
+          "secrets": [],
+          "requires": {
+            "runtimes": [
+              "node>=24"
+            ]
+          },
+          "artifacts": [
+            ".e2e-artifacts/**"
+          ]
+        }
+      }
+    }
+  }
+}

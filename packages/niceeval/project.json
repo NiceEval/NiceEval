@@ -1,0 +1,6 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "niceeval-package-shared",
+  "root": "packages/niceeval",
+  "tags": ["kind:shared"]
+}

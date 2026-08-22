@@ -9,7 +9,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE_PATH = resolve(ROOT, ".github/PULL_REQUEST_TEMPLATE.md");
 const DEFAULT_BUDGET = 62 * 1024;
 const GITHUB_LIMIT = 65_536;
-type Command = "init" | "render" | "check" | "apply";
+type Command = "init" | "render" | "check" | "apply" | "create";
 
 interface Options {
   command: Command;
@@ -17,6 +17,7 @@ interface Options {
   source?: string;
   out?: string;
   base?: string;
+  title?: string;
   budget: number;
   remote: boolean;
 }
@@ -41,18 +42,22 @@ Usage:
   pnpm pr:body render (--source <path> | --pr <number>) [--out <path>]
   pnpm pr:body check (--source <path> | --pr <number>) [--no-remote]
   pnpm pr:body apply --pr <number> [--source <path>]
+  pnpm pr:body create --source <path> --title <title> [--base <branch>]
 
 Commands:
   init    Create a draft, or initialize an existing handwritten --source draft.
   render  Expand source directives and emit the final Markdown body.
   check   Render and validate the body; with --pr, compare it with GitHub.
   apply   Validate, verify the PR head, then update the GitHub PR body.
+  create  Create a PR from the pushed HEAD, then apply and verify its body.
 
 Options:
   --pr <number>       GitHub PR number and default draft identity.
   --source <path>     Draft path. Defaults inside this worktree's Git dir.
   --out <path>        Rendered output path. Omit to print to stdout.
   --base <ref>        Locked base for a new draft. Defaults to merge-base with origin/main.
+                      With create, target branch (default main).
+  --title <title>     Pull request title. Only valid with create.
   --budget <bytes>    Review budget before GitHub's hard limit (default ${DEFAULT_BUDGET}).
   --no-remote         Skip GitHub body/head comparison during check.
 
@@ -60,8 +65,8 @@ Workflow:
   1. pnpm pr:body init --source <draft.md>
   2. Edit the initialized draft and remove unused template sections.
   3. pnpm pr:body check --source <draft.md> --no-remote
-  4. pnpm pr:body render --source <draft.md> --out <body.md>
-  5. Create the PR with <body.md>, then use apply and check --pr after the PR exists.
+  4. Commit and push the intended HEAD.
+  5. pnpm pr:body create --source <draft.md> --title <title> [--base main]
 
 Embed an exact test source in the Markdown draft:
   <!-- niceeval:test
@@ -112,7 +117,7 @@ function parseArgs(argv: string[]): Options {
     process.stdout.write(HELP);
     process.exit(command === undefined ? 1 : 0);
   }
-  if (!["init", "render", "check", "apply"].includes(command)) fail(`unknown command ${JSON.stringify(command)}\n\n${HELP}`);
+  if (!["init", "render", "check", "apply", "create"].includes(command)) fail(`unknown command ${JSON.stringify(command)}\n\n${HELP}`);
   const options: Options = { command: command as Command, budget: DEFAULT_BUDGET, remote: command === "check" };
   while (argv.length) {
     const flag = argv.shift();
@@ -121,6 +126,7 @@ function parseArgs(argv: string[]): Options {
       case "--source": options.source = argv.shift() ?? fail(`${flag} requires a path`); break;
       case "--out": options.out = argv.shift() ?? fail(`${flag} requires a path`); break;
       case "--base": options.base = argv.shift() ?? fail(`${flag} requires a git ref`); break;
+      case "--title": options.title = argv.shift() ?? fail(`${flag} requires a title`); break;
       case "--budget": options.budget = positiveInteger(argv.shift(), flag); break;
       case "--no-remote": options.remote = false; break;
       case "--help": case "-h": process.stdout.write(HELP); process.exit(0);
@@ -128,9 +134,12 @@ function parseArgs(argv: string[]): Options {
     }
   }
   if (options.command === "apply" && !options.pr) fail("apply requires --pr <number>");
+  if (options.command === "create" && !options.title) fail("create requires --title <title>");
+  if (options.command === "create" && options.pr) fail("create does not accept --pr");
   if (!options.source && !options.pr) fail(`${options.command} requires --pr <number> or --source <path>`);
   if (options.out && options.command !== "render") fail("--out is only valid with render");
-  if (options.base && options.command !== "init") fail("--base is only valid with init");
+  if (options.base && options.command !== "init" && options.command !== "create") fail("--base is only valid with init or create");
+  if (options.title && options.command !== "create") fail("--title is only valid with create");
   if (options.budget > GITHUB_LIMIT) fail(`--budget cannot exceed GitHub's ${GITHUB_LIMIT}-byte limit`);
   return options;
 }
@@ -499,6 +508,52 @@ function validate(rendered: RenderedBody, options: Options, compareRemote: boole
   process.stdout.write("PR body check passed.\n");
 }
 
+function requireCommittedSources(rendered: RenderedBody, action: string): void {
+  const dirty = rendered.referencedFiles.filter((path) => git(["status", "--short", "--", path]).length > 0);
+  if (dirty.length) fail(`${action} requires committed referenced source files:\n${dirty.map((path) => `- ${path}`).join("\n")}`);
+}
+
+function applyRendered(rendered: RenderedBody, options: Options, pr: number): void {
+  requireCommittedSources(rendered, "apply");
+  const remote = JSON.parse(gh(["pr", "view", String(pr), "--json", "body,headRefOid"])) as { body: string; headRefOid: string };
+  if (remote.headRefOid !== rendered.metadata.head) fail(`refusing to apply: GitHub PR head ${remote.headRefOid} does not match local HEAD ${rendered.metadata.head}`);
+  const managed = splitManagedBody(remote.body);
+  const appliedBody = managed.suffix ? `${rendered.body.trimEnd()}\n\n${managed.suffix}\n` : rendered.body;
+  if (Buffer.byteLength(appliedBody) > GITHUB_LIMIT) {
+    fail(`refusing to apply: authored body plus managed GitHub footer exceeds ${GITHUB_LIMIT} bytes`);
+  }
+  const output = resolve(git(["rev-parse", "--absolute-git-dir"]), "niceeval", "pr-body", `${pr}.rendered.md`);
+  mkdirSync(dirname(output), { recursive: true });
+  writeFileSync(output, appliedBody);
+  gh(["pr", "edit", String(pr), "--body-file", output]);
+  process.stdout.write(`Updated PR #${pr} from ${draftPath(options)}\n`);
+}
+
+function create(rendered: RenderedBody, options: Options): void {
+  validate(rendered, options, false);
+  requireCommittedSources(rendered, "create");
+  if (git(["status", "--porcelain"])) fail("create requires a clean working tree; commit the intended changes first");
+  const branch = git(["branch", "--show-current"]);
+  if (!branch) fail("create requires a local branch; detached HEAD is not supported");
+  const upstream = git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], true);
+  if (!upstream) fail(`create requires ${branch} to have an upstream; push it first`);
+  const upstreamHead = git(["rev-parse", "@{upstream}"]);
+  if (upstreamHead !== rendered.metadata.head) {
+    fail(`create requires pushed HEAD ${rendered.metadata.head}; upstream ${upstream} is ${upstreamHead}`);
+  }
+  const output = resolve(git(["rev-parse", "--absolute-git-dir"]), "niceeval", "pr-body", "create.rendered.md");
+  mkdirSync(dirname(output), { recursive: true });
+  writeFileSync(output, rendered.body);
+  const url = gh(["pr", "create", "--base", options.base ?? "main", "--head", branch, "--title", options.title!, "--body-file", output]);
+  const match = /\/pull\/(\d+)\/?$/.exec(url);
+  if (!match) fail(`gh pr create returned an unrecognized URL: ${JSON.stringify(url)}`);
+  const pr = Number(match[1]);
+  process.stdout.write(`Created ${url}\n`);
+  applyRendered(rendered, options, pr);
+  validate(rendered, { ...options, pr }, true);
+  process.stdout.write(`${url}\n`);
+}
+
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
   if (options.command === "init") return init(options);
@@ -512,21 +567,9 @@ function main(): void {
     return;
   }
   if (options.command === "check") return validate(rendered, options, options.remote);
+  if (options.command === "create") return create(rendered, options);
   validate(rendered, options, false);
-  const dirty = rendered.referencedFiles.filter((path) => git(["status", "--short", "--", path]).length > 0);
-  if (dirty.length) fail(`apply requires committed referenced source files:\n${dirty.map((path) => `- ${path}`).join("\n")}`);
-  const remote = JSON.parse(gh(["pr", "view", String(options.pr), "--json", "body,headRefOid"])) as { body: string; headRefOid: string };
-  if (remote.headRefOid !== rendered.metadata.head) fail(`refusing to apply: GitHub PR head ${remote.headRefOid} does not match local HEAD ${rendered.metadata.head}`);
-  const managed = splitManagedBody(remote.body);
-  const appliedBody = managed.suffix ? `${rendered.body.trimEnd()}\n\n${managed.suffix}\n` : rendered.body;
-  if (Buffer.byteLength(appliedBody) > GITHUB_LIMIT) {
-    fail(`refusing to apply: authored body plus managed GitHub footer exceeds ${GITHUB_LIMIT} bytes`);
-  }
-  const output = resolve(git(["rev-parse", "--absolute-git-dir"]), "niceeval", "pr-body", `${options.pr}.rendered.md`);
-  mkdirSync(dirname(output), { recursive: true });
-  writeFileSync(output, appliedBody);
-  gh(["pr", "edit", String(options.pr), "--body-file", output]);
-  process.stdout.write(`Updated PR #${options.pr} from ${draftPath(options)}\n`);
+  applyRendered(rendered, options, options.pr!);
 }
 
 try { main() } catch (error) {

@@ -50,7 +50,7 @@ export type { ExternalCause, ExternalCauseFact, ExternalCauseLink } from "../sha
 // span → canonical GenAI 归一(只服务瀑布图,不喂断言)。私有埋点写自己的 spanMapper 时用:
 // tagSpan 把判定写回 span(原属性只增不改),heuristicTag 是通用兜底判定;mapCodexSpans 是
 // 现成的参考实现(无侵入接 codex 后端时直接声明 `spanMapper: mapCodexSpans`)。
-// 映射目标(什么属性亮起瀑布图的什么)见 docs-site/zh/tutorials/connect-otel.mdx「瀑布图画得准不准」。
+// 映射目标(什么属性亮起瀑布图的什么)见 apps/docs-site/zh/tutorials/connect-otel.mdx「瀑布图画得准不准」。
 export { tagSpan, heuristicTag } from "../o11y/otlp/canonical.ts";
 export type { SpanTag } from "../o11y/otlp/canonical.ts";
 export { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
@@ -98,7 +98,7 @@ export type {
 export { createLangGraphEventStream } from "./langgraph.ts";
 export type { LangGraphEventLike, LangGraphContentBlockLike, LangGraphStream } from "./langgraph.ts";
 
-// 通用「拼装方式」件:逐帧驱动循环、逐 token/参数增量累加器。见 docs-site/zh/tutorials/write-send.mdx——
+// 通用「拼装方式」件:逐帧驱动循环、逐 token/参数增量累加器。见 apps/docs-site/zh/tutorials/write-send.mdx——
 // 这些和任何具体协议无关,自己写 adapter 时优先拿这些拼,只有 transport(怎么发)与
 // 「帧类型 → 操作」这张映射表才是真正要手写的。会话续接与 HITL 停轮现场不再是可选件,
 // 而是 ctx.session(AgentSession)本身的 typed slot 与 id/capture 存取器。

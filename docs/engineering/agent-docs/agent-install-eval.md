@@ -49,7 +49,7 @@ niceeval 评估自己的安装体验，本身就是 sandbox-agent 能力的一�
 - **coding agent × 模型档**：同一 fixture 在不同 agent（claude-code / codex）与不同模型档位上的通过率，区分「文档问题」和「模型能力问题」。
 - **有无随包文档的对照组**：同一 fixture 一组给完整文档链，一组只给包名只安装包（凭训练数据）。
   两组差值就是 agent-docs 机制本身带来的增量，这是这套机制最直接的价值证明。
-- **文档改版回归**：`INIT.zh.md`、`INDEX.template.md` 导语或关键 docs-site 页面改版前后各跑一轮，文案迭代从「感觉更清楚了」变成有分数的回归。
+- **文档改版回归**：`INIT.zh.md`、`INDEX.template.md` 导语或关键 `apps/docs-site` 页面改版前后各跑一轮，文案迭代从「感觉更清楚了」变成有分数的回归。
 
 成本与时长由各 experiment 的档位（模型、runs、budget、timeout）控制，不构成设计约束——同 E2E 的立场。
 
@@ -58,7 +58,7 @@ niceeval 评估自己的安装体验，本身就是 sandbox-agent 能力的一�
 评估结果的消费方是 niceeval 仓库的文档面，失败按层归位：
 
 - **路由层失败**（agent 不走 `INDEX.md`、路由到错误页面）→ 按 [agent-docs README](README.md) 的边界裁决处理：这是「以有证据的策展补一张小表」或修改 `INDEX.template.md` 导语的触发证据。
-- **产出质量层失败**（契约没被执行）→ 定位到没被读懂的那一页 docs-site，按 `docs-site/AGENTS.md` 改写该页。
+- **产出质量层失败**（契约没被执行）→ 定位到没被读懂的那一页文档，按 `apps/docs-site/AGENTS.md` 改写该页。
 - **机制层失败**（链路走不通）→ 修订 `INIT.zh.md` 对应步骤或 `init` 的行为。
 
 ## 边界

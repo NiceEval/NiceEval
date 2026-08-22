@@ -95,7 +95,7 @@ export const sharedStateAgent = defineAgent({
 });
 
 /**
- * A local-Sandbox counterpart for the provider-lane Journey. The fixture
+ * Agent counterpart for the test-only exclusive-provider lane Journey. The fixture
  * writes its externally observable marker only after the runner has entered
  * the actual Sandbox / Agent body, rather than while it is waiting for an
  * Experiment lifecycle lease.

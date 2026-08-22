@@ -123,7 +123,7 @@ PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改
 确定性自动化 owner 禁止测试级 retry；任一次意外失败、retry 后转绿、默认并行失败或遗留资源都属于可靠性失败。
 
 真实 Provider 不承担确定性产品可靠性。确定性协议 counterpart 通过上述接管门；live Adapter 只断言稳定协议事实。
-每次新增或实质修改 live owner 都由常规全量 E2E 完成真实运行与公开读回。live Repo 不用重复 takeover 证明 provider 确定性。
+每次新增或实质修改 live owner 都在可信 PR 的 affected 集或显式 full E2E 中完成真实运行与公开读回。live Repo 不用重复 takeover 证明 provider 确定性。
 结构化外部故障不算 pass，可由同一 candidate 的 AI 真实兼容性验收替代；两者都没有时状态是“未证明”。
 
 ## 不自动化
@@ -171,7 +171,7 @@ pnpm e2e --repo report -- --run test/exported-targets.test.ts
 pnpm e2e --lane main --repo adapter/codex-cli
 ```
 
-- 同仓可信 PR 使用 main lane 和最小 secret 白名单运行全部 E2E；Fork 与 Dependabot 使用无密钥 pr lane；
+- PR 先由 Nx project graph 选择受影响 E2E；同仓可信 PR 对选中集合使用 main lane 和最小 secret 白名单，Fork 与 Dependabot 使用无密钥 pr lane；
 - main、nightly 与 release 都运行各自声明的完整 Repo 集，不按 diff、成本、Docker 或 provider 类型降频；
 - release 先生成最终 tarball，验收通过后发布同一字节与 digest；
 - workflow 只负责 checkout、运行时、矩阵、cache 和 artifact，选择、注入、executor、重试和失败分类都在根 runner；
@@ -180,7 +180,8 @@ pnpm e2e --lane main --repo adapter/codex-cli
 Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Tests 数不得超过 200；Testkit 不设独立 Unit 套件。
 `test.each` 展开的每个 case 都计入。不能把独立命题合并进一个大测试规避上限，也不为接近上限而补测。
 
-完整执行契约见 [本地与 CI](e2e/execution.md)。
+完整执行契约见 [本地与 CI](e2e/execution.md)；project graph、合法空计划、fallback 与 owner 维护见
+[任务图与 E2E 选择](../task-orchestration/README.md)。
 
 ## 文档地图
 
@@ -192,6 +193,7 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 - [E2E 测试正文](e2e/README.md) —— 原生测试文件、命令收据、阶段、失败分类与浏览器写法；
 - [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
 - [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
+- [任务图与 E2E 选择](../task-orchestration/README.md) —— Nx project graph、affected、fallback 与管理收据；
 - [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
 - [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 例外类别、Fixture 与矩阵 owner；
 - [Eval](e2e/eval.md)、[`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/README.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。

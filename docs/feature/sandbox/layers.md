@@ -48,7 +48,6 @@ import {
   dockerSandbox,
   dockerSandbox,
   e2bSandbox,
-  localSandbox,
   registerSandboxContent,
   sandboxLayer,
   shell,
@@ -206,7 +205,6 @@ dockerSandbox({ source: { type: "dockerfile", context, ... } }) -> Dockerfile te
 dockerSandbox({ source: { type: "image", image } })              -> image template + Docker Provider
 e2bSandbox({ template })                         -> E2B template + E2B Provider
 vercelSandbox({ snapshotId })                    -> snapshot template + Vercel Provider
-localSandbox()                                   -> 宿主目录 template + Local Provider
 ```
 
 原生起点字段必填：`dockerSandbox` 必须给出带 `type` 的 `source`，`e2bSandbox` 必须给 `template`。
@@ -215,7 +213,6 @@ localSandbox()                                   -> 宿主目录 template + Loca
 
 Compose template 保存 service、网络、volume、ready、主执行空间与整组 finalizer,不会被压成单容器 image。
 `workspaceService` 指明 Agent、Eval、文件 API、workdir 与 diff 共同锚定的主 Sandbox。
-`localSandbox()` 的安全边界与限制见[本地执行](local.md)。
 
 ## Eval 与 Experiment 使用同一个类型
 

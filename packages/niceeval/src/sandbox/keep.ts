@@ -527,9 +527,7 @@ export function assertProviderKeepable(provider: string, isCustomCreate: boolean
   if (!KEEPABLE_PROVIDERS.has(provider)) {
     throw new Error(
       `--keep-sandbox is not supported with the "${provider}" provider: ` +
-        (provider === "local"
-          ? "it never destroys the sandbox in the first place, so there is nothing to register for later retention — the workspace already sits exactly where the agent left it. Drop --keep-sandbox, or use a built-in cloud/container provider (docker / e2b / vercel) if you need a registry-managed retained sandbox."
-          : `expected one of: ${[...KEEPABLE_PROVIDERS].join(", ")}. Drop --keep-sandbox.`),
+        `expected one of: ${[...KEEPABLE_PROVIDERS].join(", ")}. Drop --keep-sandbox.`,
     );
   }
 }

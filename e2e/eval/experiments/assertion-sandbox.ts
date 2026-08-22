@@ -2,18 +2,18 @@ import { Effect } from "effect";
 import { defineExperiment } from "niceeval";
 import { defineSandbox } from "niceeval/sandbox";
 import { deterministicSandboxAgent } from "../agents/sandbox.ts";
-import { createLimitedLocalSandbox } from "../agents/limited-local-sandbox.ts";
+import { createReadLimitedSandbox } from "../agents/read-limited-sandbox.ts";
 
 export default defineExperiment({
   description: "Public Sandbox assertion evidence",
   agent: deterministicSandboxAgent,
-  // Every native test gives this Experiment its own copied project. localSandbox
-  // therefore observes a real, writable, disposable workdir without Docker.
+  // Every native test gives this test-only Provider its own copied project and
+  // fixed HOME/CODEX_HOME/TMPDIR below that copy.
   sandbox: defineSandbox({
-    name: "limited-local-e2e",
+    name: "read-limited-e2e",
     targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
     exclusive: true,
-    create: () => Effect.promise(() => createLimitedLocalSandbox()),
+    create: () => Effect.promise(() => createReadLimitedSandbox()),
   }),
   evals: ["assertion-sandbox", "workspace-diff-cap"],
 });

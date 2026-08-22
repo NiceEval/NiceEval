@@ -66,7 +66,8 @@ Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoi
 只制造 30,001 个空文件变化，不调用模型或网络。公开 File Changes 必须只保留 1,000 条 structural changes，并登记
 `omittedAtLeast: 29,001`。
 
-这个 Experiment 使用公开 custom Sandbox provider，其 `readBytes()` 对超过 4,000,000 bytes 的单次读取报错。
+这个 Experiment 使用仅测试的 read-limited custom Sandbox provider；其子进程变量集合把 `HOME`、`CODEX_HOME` 与
+`TMPDIR` 固定在该 case 的隔离项目副本内，且 `readBytes()` 对超过 4,000,000 bytes 的单次读取报错。
 旧版 5,430,371-byte 整包导出因此红灯，候选必须靠自动分段通过。
 
 公开 Timing Page 中的 `workspace.diff` 阶段必须在 9 秒内完成。Repo 的 2 分钟预算包含整条

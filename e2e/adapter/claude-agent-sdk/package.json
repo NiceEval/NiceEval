@@ -2,6 +2,9 @@
   "name": "e2e-claude-agent-sdk",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

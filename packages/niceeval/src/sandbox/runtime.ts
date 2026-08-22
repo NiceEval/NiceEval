@@ -45,7 +45,6 @@ import {
   type DockerfileProviderPlan,
   type DockerImageProviderPlan,
   type E2BProviderPlan,
-  type LocalProviderPlan,
   type SandboxProviderCapabilities,
   type SandboxProviderLifetime,
   type SandboxProviderPlan,
@@ -736,24 +735,6 @@ export function materializeVercelProviderPlan(
       context.feedback,
     );
     return wrapSingleSandbox(backend, context, { snapshotId: plan.snapshotId });
-  }));
-}
-
-export function materializeLocalProviderPlan(
-  plan: LocalProviderPlan,
-  context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return materializationEffect(context, Effect.gen(function* () {
-    const { LocalSandbox } = yield* providerBoundaryEffect(() => import("./local.ts"));
-    return wrapSingleSandbox(
-      yield* providerBoundaryEffect(() => LocalSandbox.create({
-        ...deadlineOptions(context.deadline),
-        dir: plan.directory,
-        pathPrepend: plan.pathPrepend,
-      })),
-      context,
-      { directory: plan.directory },
-    );
   }));
 }
 

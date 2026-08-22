@@ -1,0 +1,84 @@
+---
+title: "让 Coding Agent 根据结果迭代"
+sidebarTitle: "Coding Agent 反馈闭环"
+description: "让 Coding Agent 读取 receipt 的 runIds，查看结果，再区分被测失败、证据错误与评估用例误判。"
+---
+
+Coding Agent 可以用命令行完成一次清楚的反馈闭环：阅读安装版本的文档，运行 Experiment，读取最后的 receipt，用 receipt 的 `runIds` 查看结果，再修改程序或评估用例并重新运行。
+
+## 先读取安装版本的文档
+
+NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包根提供供 Coding Agent 使用的 `INDEX.md`。Coding Agent 应先读取 `node_modules/niceeval/INDEX.md`，再从索引进入当前任务需要的页面，不依赖训练数据或其它版本的在线示例。这样可以保证 API、CLI 与安装版本一致。
+
+`npx niceeval init` 会初始化配置，并把一段托管指引写进项目的 `AGENTS.md`。如果项目只有 `CLAUDE.md`，则写入 `CLAUDE.md`。两份文件都不存在时，新建 `AGENTS.md`。升级 NiceEval 后再运行一次 `init`，即可刷新托管区块。
+
+托管指引把“编写源码”和“证明某次运行发生了什么”分开：前者当然可以读取 `evals/`、`agents/` 等项目源码；后者只使用 `niceeval show` 及其公开证据切片。不要扫描 `.niceeval/` 原始文件，也不要拿当前源码反推历史执行。公开切片缺少必要证据时，应报告 NiceEval 的呈现缺口。
+
+给 AI 的起始任务可以直接写成：
+
+```text
+先读取 node_modules/niceeval/INDEX.md。
+再按索引阅读与当前任务相关的页面。
+使用命令运行 Experiment，并根据最后的 receipt 选择要查看的 Run。
+```
+
+这样 Agent 使用的文档与项目安装的版本一致。
+
+## 运行并保留 receipt
+
+```sh
+npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
+```
+
+`--json` 的每一行都是当前进程反馈。progress 与 diagnostic 只说明这次运行正在发生什么。最后恰好一条 receipt 包含：
+
+```json
+{
+  "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
+  "runIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+  "startedAt": "2026-08-09T10:00:00.000Z",
+  "completedAt": "2026-08-09T10:01:00.000Z",
+  "completion": "completed"
+}
+```
+
+Agent 应把最后一条 receipt 当作本次调用的交接信息。它不是持久化的结果协议；业务事实仍要通过 `runIds` 从已发布的 Record 读取。
+
+## 用 Run ID 查看结果
+
+运行结束后，先读取 Run 的 Report：
+
+```sh
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+```
+
+`show` 与 `view` 选择 Sample，再取得当前目标需要的闭合分析值。`show` 只执行一个 Page；`view` 构建完整站点。Agent 应区分以下状态：
+
+| 看到的状态 | 下一步 |
+| --- | --- |
+| Attempt `failed` | 比较任务允许的结果、实际产物及证据和断言条件，再决定修被测对象、Adapter 还是评估用例。 |
+| `errored` | 检查诊断、Adapter、Sandbox 或凭据。 |
+| `not-recorded` | 检查该 expected slot 为什么没有 Member。 |
+| `core-invalid` | 阅读具名 Core issue，不要把它当成未采集。 |
+| `partial` | 阅读分母和问题，确认哪些成员没有贡献。 |
+| `migration-required` | 运行 `niceeval migrate`。 |
+| `unsupported` 或 `failed` | 只处理依赖该分析输入的查看内容，并阅读具名问题。 |
+
+处理 Attempt `failed` 时，不要为了通过一个过窄的 Match 而修改本来符合任务的产物。产物满足任务、断言却拒绝任务允许的结果时，这是评估用例的 False Negative。完整归因流程见[排查手册](/zh/troubleshooting/debugging#attempt-判定为-failed)。
+
+## 修改后再次运行
+
+让 Agent 每次只处理一个可验证假设：修改程序或评估用例，运行相同范围，再读取新的 receipt 和 Run。需要确认所有 slot 真实执行时使用：
+
+```sh
+npx niceeval exp checkout --rerun all --json
+```
+
+自动采用已有 Attempt 时，`--dry` 会说明原因。carry 与 accept 的理由随目标 Run 保存，并可在结果中查看；详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
+
+## Record 的边界
+
+Record 只保存已发布的事实，发布后不可修改。Agent 需要不同结果时修改程序或评估用例，运行新的 Invocation，再用新 receipt 的 `runIds` 查看。
+
+需要把某次结果交给他人时，使用[发布静态报告](/zh/tutorials/publish-report)，而不是把当前进程反馈当作分享格式。

@@ -12,7 +12,6 @@
 | docker | `/home/sandbox/workspace` |
 | E2B | `/home/user/workspace` |
 | Vercel Sandbox | `/vercel/sandbox` |
-| local | 你指定的目录(默认当前 git 仓库根,见[本地执行](local.md)) |
 
 契约一句话:**API 里任何沙箱侧相对路径,一律定位到 `workdir`;省略的 `targetDir` / `cwd` 默认就是 `workdir`;绝对路径原样使用。
 ** 本地侧(宿主机)的相对路径则定位到 eval 定义文件所在目录。
@@ -87,7 +86,7 @@ await t.send(`参考 ${t.sandbox.workdir}/docs/CONVENTIONS.md 里的约定实现
 
 ## 执行身份
 
-**默认沿用起点声明的身份** ——命令与 agent 以起点声明的用户跑:Docker 镜像的 `USER`(未声明时按 Docker 语义是 root)、Compose service 的 `user:` 或其镜像的 `USER`、E2B template 的默认用户、宿主机的当前用户([本地执行](local.md))。
+**默认沿用起点声明的身份** ——命令与 agent 以起点声明的用户跑:Docker 镜像的 `USER`(未声明时按 Docker 语义是 root)、Compose service 的 `user:` 或其镜像的 `USER`、E2B template 的默认用户。
 起点由题目作者写:Dockerfile 里的 `USER` 就是题目对执行身份的声明。
 runner 静默换用户不产生任何报错,只表现为一片 `Permission denied`,所以 NiceEval 不替换起点声明的身份。
 
@@ -112,7 +111,6 @@ await sandbox.runCommand("npm", ["install"]);   // 默认身份,cwd 默认 workd
 | docker(image / Dockerfile / Compose) | 镜像 `USER` 或 Compose service `user:`;未声明按 Docker 语义是 root | factory 与命令都支持任意用户(`exec --user`) |
 | E2B | template 的默认用户(`user`) | factory 与命令都支持(`commands.run` 的同名参数) |
 | Vercel Sandbox | `vercel-sandbox` | 只支持命令级 `{ user: "root" }`(映射 `sudo: true`);其它值报错,factory 不收 `user` |
-| local | 宿主当前用户 | 不支持,报错(niceeval 不在你的机器上提权或换身份,见[本地执行](local.md)) |
 
 **非 root 是预制实例的义务,不是 runner 的强加。**
 Claude Code 等 agent 在 root 下拒绝 `--dangerously-skip-permissions`,所以官方 coding agent 镜像与模板都自带非 root 用户并在配方里声明(见[预制实例](library/prebuilt-environments.md));自己写预制实例时同样在 Dockerfile / template 里声明 `USER`。
@@ -153,12 +151,11 @@ sandbox: dockerSandbox({ source: { type: "image", image: "niceeval-agents:node24
 - 属于 Sandbox 配置,进 template identity;改值会让携带的历史结果失效,与改 `image` / `user` 同一类。
   **省略与显式传空数组是同一份 identity**(absent ≡ default):身份序列化只在非空时带上这个键,作者不声明 `pathPrepend` 和显式写 `pathPrepend: []` 不会因为写法不同分裂出两份 digest。
   这是可选配置字段的通用规则,不是 `pathPrepend` 专属。任何新增的可选 factory 字段,值等于默认值时都不进身份序列化,只有偏离默认值才计入摘要;`pathPrepend` 是这条规则唯一落地的字段。
-- 各内置 provider(docker / e2b / vercel / local)一致支持;`defineSandbox` 自定义 provider 里,PATH 完全是 `create()` 返回的实例自己的事,niceeval 不替它管。
+- 各内置 provider(docker / e2b / vercel)一致支持;`defineSandbox` 自定义 provider 里,PATH 完全是 `create()` 返回的实例自己的事,niceeval 不替它管。
 
 ```typescript
 e2bSandbox({ template: "niceeval-agents", pathPrepend: ["/opt/toolchain/bin"] })
 vercelSandbox({ snapshotId: "snap_xxx", pathPrepend: ["/opt/toolchain/bin"] })
-localSandbox({ pathPrepend: ["/opt/toolchain/bin"] }) // 前置到宿主 PATH 前面
 ```
 
 ## Provider 选择:template 带出,没有默认值
@@ -167,7 +164,6 @@ Provider 由 template-bearing factory 原子带出:factory 声明完整起点,�
 
 对 Sandbox Agent,每个实际选中的 Eval × Experiment 配对必须恰好一方带 template;没有游离的 Provider 配置、项目级默认值,也没有 `--sandbox <name>` 这种 CLI 替换。
 两方都带 template 报 `sandbox.template-conflict`,两方都没有报 `sandbox.template-missing`;错误在创建任何资源前全矩阵聚合。
-这条对 [`localSandbox()`](local.md) 尤其硬:在宿主机上直接跑 agent 生成的命令是有后果的,绝不因缺配置替你悄悄落到本地档。
 配对规则、factory 目录与错误反馈的完整契约见 [Sandbox Layer](layers.md#每个配对的-link-约束)。
 
 ```typescript
@@ -193,7 +189,6 @@ import {
   dockerComposeSandbox,
   dockerSandbox,
   e2bSandbox,
-  localSandbox,
   vercelSandbox,
 } from "niceeval/sandbox";
 
@@ -205,7 +200,6 @@ dockerComposeSandbox({                                   // Docker Compose:完�
 })
 e2bSandbox({ template: "niceeval-agents" })              // E2B:指定模板
 vercelSandbox({ snapshotId: "snap_xxx" })                // Vercel:从 snapshot 起
-localSandbox()                                           // 宿主机本地目录(默认当前 git 仓库根,见 local.md)
 ```
 
 云 Provider 和 Docker 还接受 `lifetimeMs`，它声明一个 Sandbox 最长需要存活多久：

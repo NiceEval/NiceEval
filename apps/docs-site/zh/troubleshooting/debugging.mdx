@@ -1,0 +1,104 @@
+---
+title: "排查结果与报告问题"
+sidebarTitle: "排查手册"
+description: "根据可见错误、判定和 Sample 状态定位问题，区分被测失败、证据错误与评估用例误判。"
+---
+
+先用明确 Run 读取问题，不要从目录名或时间猜测目标。
+
+```sh
+pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval view --run <run-id> --no-open
+```
+
+这两条命令从同一范围形成 Sample，并执行同一份 Report。先确定选择是否正确，再检查页面中的度量和问题。
+
+## Attempt 判定为 `failed`
+
+`failed` 只说明至少一个影响 Verdict 的断言未满足。它不会自动说明被测结果违背任务，也不会指定要修 Agent 还是评估用例。
+
+先从 Run 页面给出的 Attempt locator 下钻：
+
+```sh
+pnpm exec niceeval show @<attempt-locator>
+```
+
+然后分别核对三件事：
+
+1. **任务允许什么。** 阅读评估输入、Fixture 和验收说明，确定必须满足的含义，以及是否真的要求固定表示形式。不要只用断言反推任务。
+2. **实际发生了什么。** 阅读产物、回复和断言证据，先独立判断它们是否满足任务。报告没有暴露必要证据时，记录 NiceEval 的呈现缺口，不要扫描 `.niceeval/` 私有文件补结论。
+3. **断言接受什么。** 阅读断言条件、`expected` / `received` 和断言源码，检查判据是否覆盖任务允许的正确结果。
+
+| 比较结果 | 归因与下一步 |
+| --- | --- |
+| 产物违背任务 | 修正被测应用或 Agent。 |
+| 产物满足任务，断言却拒绝了任务允许的结果 | 这是评估用例的 False Negative。修正过窄的判据，再重跑相同范围。 |
+| 产物正确，断言证据却没有如实表示它 | 修正 Adapter 映射或证据呈现。 |
+| 任务含糊或证据不足 | 先澄清任务或补足公开证据，不要强行归因。 |
+
+结构化文本可能有多种有效序列化。如果任务要求的是解析后的数据，先解析或归一化，再断言结构和值。只有字面表示本身属于任务要求时，才使用精确文本匹配。
+
+不要因为结果是红色就放宽断言。正确的修复会让判据与任务允许的结果保持一致。
+
+## 找不到或无法打开结果
+
+| 可见错误 | 含义 | 下一步 |
+| --- | --- | --- |
+| `record-root-missing` | 指定的结果集不存在。 | 检查项目目录或 `--record` 参数。 |
+| `record-migration-required` | 已发布结果需要迁移。 | 运行 `niceeval migrate`。 |
+| `record-format-unsupported` | 当前 NiceEval 不认识该结果格式。 | 安装支持该格式的 NiceEval。 |
+| `core-invalid` | 某个位置的身份或引用不能可靠读取。 | 阅读具名问题；不要把它当成缺失结果。 |
+
+已发布结果不提供手工编辑修复路径。需要不同事实时创建新的 Run；需要清理未完成残留时运行 `niceeval clean`。
+
+## Sample 中缺少预期结果
+
+Sample 会保留 Run 的预期分母。查看页面上每个位置的状态：
+
+| 状态 | 含义 | 下一步 |
+| --- | --- | --- |
+| `included` | 有可分析的 Attempt。 | 检查报告显示的度量或证据。 |
+| `not-recorded` | 计划中的位置没有结果。 | 检查 Invocation 是否完成，或重新运行该范围。 |
+| `core-invalid` | 该位置的身份或引用有问题。 | 处理具名问题，不要把它当成未采集。 |
+| `excluded` | 本次选择排除了该项。 | 检查 `--experiment`、`--eval` 或其他选择条件。 |
+
+需要判断下一次运行会做什么时，先执行：
+
+```sh
+npx niceeval exp checkout --dry
+```
+
+输出会显示每个位置会执行还是沿用已有 Attempt，并列出沿用条件不满足的原因。
+
+## 度量或详情显示不完整
+
+Measure 和领域视图会把自己的状态与问题带进页面：
+
+| 状态 | 含义 | 下一步 |
+| --- | --- | --- |
+| `partial` | 有可显示结果，但部分分母成员没有贡献。 | 检查问题和分母，不要把它当成完整结果。 |
+| `empty` | 输入完整，领域结果合法为空。 | 确认这个空结果是否符合任务。 |
+| `unsupported` | 当前环境不支持所需输入。 | 使用支持该能力的环境，或查看不依赖它的页面。 |
+| `failed` | 读取、关联或归并失败。 | 阅读具名问题并修复原因。 |
+
+需要迁移的历史结果先运行 `niceeval migrate`。度量问题不会改变 Sample 的既定分母，也不会阻止无关页面显示。
+
+## view 没有显示新的结果
+
+`view` 每次成功 rebuild 才发布一份新的完整站点。如果 Report、配置、主题或结果变化导致 rebuild 失败，页面继续显示上一份可用站点，并显示本次问题。
+
+先修复 rebuild problem，再等待下一次成功 rebuild。页面刷新本身不会绕过这个边界，也不会让旧站点重新读取结果。
+
+## JSON 中没有 receipt
+
+`npx niceeval exp <experiment> --json` 只有在成功建立 Invocation 后，最后才会输出 receipt。命令在建立 Invocation 前就因输入错误退出时，没有 `runIds` 可读取。
+
+先修正 Experiment、评估用例选择或命令参数，再重新运行。成功时，使用 receipt 的 `runIds` 运行 `show`、`view` 或 `view --out`。
+
+## 静态报告站无法导出
+
+`view --out` 只导出已经完成的完整站点。Analysis 问题可以进入导出站并保持可见；作者 callback 抛错、参数实例不合法、路由冲突或资源冲突会让导出停止。
+
+目标目录必须不存在。失败或中断后请使用新的输出目录，再重新导出。
+
+更多操作步骤见[查看结果](/zh/tutorials/viewing-results)和[发布静态报告](/zh/tutorials/publish-report)。
