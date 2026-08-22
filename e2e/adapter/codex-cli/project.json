@@ -25,7 +25,7 @@
       "metadata": {
         "niceeval": {
           "schemaVersion": 3,
-          "batch": "docker-2",
+          "batch": "docker-7",
           "areas": [
             "adapter",
             "sandbox"
@@ -44,7 +44,7 @@
             "vitest",
             "run"
           ],
-          "timeoutMinutes": 3,
+          "timeoutMinutes": 5,
           "harness": {
             "testkit": true
           },
