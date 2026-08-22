@@ -61,7 +61,14 @@ function assertionNodes(assertion: AttemptAssertionView, key: string): ReportNod
       {head}
     </Text>,
   ];
-  nodes.push(<AssertionEvidence key={`${key}:body`} content={assertion.evidence} />);
+  nodes.push(
+    <AssertionEvidence
+      key={`${key}:body`}
+      content={assertion.evidence}
+      label={assertion.name}
+      state={assertion.outcome === "passed" ? "matched" : assertion.outcome === "failed" ? "mismatched" : "unavailable"}
+    />,
+  );
   return nodes;
 }
 
