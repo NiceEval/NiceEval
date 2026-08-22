@@ -68,11 +68,18 @@ endpoint。以下任一情形会把条目标为 invalid并禁止使用：
 
 ```bash
 niceeval docker profile doctor default
-niceeval docker profile doctor default --smoke
 niceeval docker profile doctor default --json
 ```
 
-默认 doctor只读检查：
+默认 doctor 是完整诊断，按固定顺序输出同一次执行的 12 个 check：
+
+- `descriptor`、`control`、`daemon`、`cgroup`、`storage`、`journal`；
+- `assets`、`cold-build`、`cold-build-cleanup`；
+- `container-limits`、`nested-docker` 和 `container-cleanup`。
+
+状态只有 `PASS`、`BLOCKED` 与 `FAIL`。总状态按 `FAIL > BLOCKED > PASS` 折叠；只有 12 项都 PASS 才返回 PASS。
+
+它先检查：
 
 - descriptor是 root-owned callback-free data，父目录不能由运行 access group写入；
 - Docker endpoint与 control endpoint的类型、socket inode、目录权限和宿主 peer UID；
@@ -85,8 +92,9 @@ niceeval docker profile doctor default --json
 - 预建 allocation pool的 project ID、hard quota、真实 backing、占用状态与 journal匹配；
 - watchdog protocol、durable journal、active Invocation/reservation与 orphan状态一致。
 
-`--smoke`创建短命 privileged探测，设置2 CPU、512 MiB、0 extra swap、256 PID、1 GiB
-`dockerDataBytes`、只读 rootfs与64 MiB tmpfs，并从容器读取：
+随后它在同一 lease/generation 中串行进行离线最小 cold build 与短命 control-owned diagnostic container。
+
+诊断容器设置2 CPU、512 MiB、0 extra swap、256 PID、1 GiB `dockerDataBytes`、只读 rootfs与64 MiB tmpfs，并从容器读取：
 
 ```text
 cpu.max
@@ -100,7 +108,7 @@ pids.max
 内容、label与 reservation全部消失。Docker inspect中的
 HostConfig不是限额生效证据。
 
-doctor输出逐项 PASS/FAIL，任一安全项失败退出1。它不改配置、不删除 orphan、不重启 daemon；
+doctor 不从 registry 拉取运行时资产；部署必须预装并验证 digest-pinned DIND/BuildKit 资产。`--json` 只投影这一次完整执行的最终文档，不能改变能力。每个 FIFO wait 最长 30 秒；只有该容量等待超时为 BLOCKED，其余不能安全继续或前置失败都为 FAIL。任一 BLOCKED/FAIL 退出非零。它不改配置、不删除 orphan、不重启 daemon；
 修复操作属于对应宿主 package。
 
 ## 不提供任意命令代理

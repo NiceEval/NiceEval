@@ -240,7 +240,7 @@ async function managedContainerSession(
         if (finished) return;
         finished = true;
         try {
-          await releaseDockerProfileReservation(lease, reservation.reservationId);
+          await releaseDockerProfileReservation(lease, reservation.reservationId, reservation);
         } finally {
           await lease.stopHeartbeat();
         }

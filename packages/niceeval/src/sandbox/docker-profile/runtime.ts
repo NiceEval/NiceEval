@@ -30,12 +30,18 @@ export interface DockerProfileLease {
 export interface DockerProfileReservation {
   readonly reservationId: string;
   readonly provisionToken: string;
-  readonly state: "queued" | "granted" | "provisioning" | "committed" | "releasing" | "quarantined";
+  readonly state: "queued" | "blocked" | "granted" | "provisioning" | "committed" | "releasing" | "quarantined";
   readonly containerId?: string;
   readonly networkId?: string;
   readonly locator?: string;
   readonly buildTerminated?: boolean;
   readonly buildError?: string;
+  readonly slotId?: string;
+}
+
+export class DockerProfileCapacityBlockedError extends Error {
+  readonly code = "CAPACITY_QUEUE_TIMEOUT";
+  constructor() { super("Docker profile capacity queue timed out after 30 seconds"); }
 }
 
 export interface DockerProfileContainerCreateInput {
@@ -49,6 +55,10 @@ export interface DockerProfileContainerCreateInput {
   readonly tmpfs?: Readonly<Record<string, string>>;
 }
 
+export type DockerProfileContainerIntent =
+  | { readonly intent: "workload"; readonly create: DockerProfileContainerCreateInput }
+  | { readonly intent: "diagnostic" };
+
 export interface DockerProfileContainerCreateResult {
   readonly containerId: string;
   readonly networkId: string;
@@ -61,18 +71,20 @@ export interface DockerProfileBuildCreateInput {
   readonly dockerfile: string;
   readonly buildArgs?: Readonly<Record<string, string>>;
   readonly target?: string;
+  readonly retention?: "cache" | "ephemeral";
 }
 
 export interface DockerProfileBuildCreateResult {
   readonly locator: string;
   readonly state: "terminated";
+  readonly cleanupProven?: boolean;
 }
 
 export async function lookupDockerProfileBuild(
   binding: DockerProfileRuntimeBinding,
   buildKey: string,
 ): Promise<{ readonly hit: boolean; readonly locator: string }> {
-  return await controlRequest(binding.controlSocketPath, {
+  return await dockerProfileControlRequest(binding.controlSocketPath, {
     kind: "build.lookup",
     profileId: binding.profile.profileId,
     daemonGeneration: binding.daemonGeneration,
@@ -125,7 +137,7 @@ export async function loadDockerProfileRegistry(): Promise<ReturnType<typeof ind
   return loadDockerProfileRegistryAt(DOCKER_PROFILE_REGISTRY_DIR);
 }
 
-function controlRequest<T>(
+export function dockerProfileControlRequest<T>(
   path: string,
   request: Readonly<Record<string, unknown>>,
   signal?: AbortSignal,
@@ -185,7 +197,7 @@ async function attestEntry(entry: ResolvedDockerProfileEntry): Promise<DockerPro
     socketFact(profile.transport.controlSocket.path, profile.transport.controlSocket.peerUid),
   ]);
   const nonce = randomUUID();
-  const challenge = await controlRequest<{
+  const challenge = await dockerProfileControlRequest<{
     readonly protocol: string;
     readonly profileId: string;
     readonly descriptorDigest: string;
@@ -236,7 +248,7 @@ export async function attestDockerProfile(alias: string): Promise<DockerProfileR
 
 export async function createDockerProfileLease(binding: DockerProfileRuntimeBinding): Promise<DockerProfileLease> {
   const invocationId = randomUUID();
-  const created = await controlRequest<{ readonly leaseToken: string }>(binding.controlSocketPath, {
+  const created = await dockerProfileControlRequest<{ readonly leaseToken: string }>(binding.controlSocketPath, {
     kind: "lease.create",
     profileId: binding.profile.profileId,
     daemonGeneration: binding.daemonGeneration,
@@ -246,7 +258,7 @@ export async function createDockerProfileLease(binding: DockerProfileRuntimeBind
   let timer: ReturnType<typeof setInterval> | undefined;
   const heartbeat = async () => {
     if (stopped) return;
-    await controlRequest(binding.controlSocketPath, {
+    await dockerProfileControlRequest(binding.controlSocketPath, {
       kind: "lease.heartbeat", invocationId, leaseToken: created.leaseToken,
     });
   };
@@ -260,7 +272,7 @@ export async function createDockerProfileLease(binding: DockerProfileRuntimeBind
       if (stopped) return;
       stopped = true;
       if (timer !== undefined) clearInterval(timer);
-      await controlRequest(binding.controlSocketPath, {
+      await dockerProfileControlRequest(binding.controlSocketPath, {
         kind: "lease.drain", invocationId, leaseToken: created.leaseToken,
       });
     },
@@ -274,12 +286,20 @@ export async function acquireDockerProfileReservation(
   signal?: AbortSignal,
 ): Promise<DockerProfileReservation> {
   const reservationId = randomUUID();
-  let reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+  let reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
     kind: "reservation.acquire", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
     reservationId, reservationKind, resources,
   });
+  const deadline = Date.now() + 30_000;
   try {
     while (reservation.state === "queued") {
+      if (Date.now() >= deadline) {
+        const cancelled = await dockerProfileControlRequest(lease.binding.controlSocketPath, {
+          kind: "reservation.cancel", invocationId: lease.invocationId, leaseToken: lease.leaseToken, reservationId,
+        }).then(() => true).catch(() => false);
+        if (!cancelled) throw new Error("Docker profile capacity queue timeout could not be cancelled safely");
+        throw new DockerProfileCapacityBlockedError();
+      }
       if (signal?.aborted) throw signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError");
       await new Promise<void>((resolve, reject) => {
         let abort: (() => void) | undefined;
@@ -295,15 +315,16 @@ export async function acquireDockerProfileReservation(
         };
         signal.addEventListener("abort", abort, { once: true });
       });
-      reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+      reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
         kind: "reservation.get", invocationId: lease.invocationId, leaseToken: lease.leaseToken, reservationId,
       });
       if (signal?.aborted) throw signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError");
     }
+    if (reservation.state === "blocked") throw new DockerProfileCapacityBlockedError();
   } catch (error) {
-    if (signal?.aborted) {
-      await controlRequest(lease.binding.controlSocketPath, {
-        kind: reservation.state === "queued" ? "reservation.cancel" : "reservation.release",
+    if (reservation.state === "queued" || reservation.state === "blocked") {
+      await dockerProfileControlRequest(lease.binding.controlSocketPath, {
+        kind: "reservation.cancel",
         invocationId: lease.invocationId,
         leaseToken: lease.leaseToken,
         reservationId,
@@ -382,10 +403,11 @@ function controlBuildRequest<T>(
 export async function createDockerProfileContainer(
   lease: DockerProfileLease,
   reservationId: string,
-  create: DockerProfileContainerCreateInput,
+  request: DockerProfileContainerCreateInput | DockerProfileContainerIntent,
 ): Promise<DockerProfileContainerCreateResult> {
+  const create = "intent" in request ? request : { intent: "workload" as const, create: request };
   try {
-    return await controlRequest<DockerProfileContainerCreateResult>(lease.binding.controlSocketPath, {
+    return await dockerProfileControlRequest<DockerProfileContainerCreateResult>(lease.binding.controlSocketPath, {
       kind: "container.create",
       invocationId: lease.invocationId,
       leaseToken: lease.leaseToken,
@@ -395,7 +417,7 @@ export async function createDockerProfileContainer(
   } catch (error) {
     // A lost reply can leave the journal committed. Recover the control-owned IDs instead of
     // issuing a second create or asking DockerSandbox's legacy reconciler to remove them.
-    const reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+    const reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
       kind: "reservation.get",
       invocationId: lease.invocationId,
       leaseToken: lease.leaseToken,
@@ -420,7 +442,7 @@ export async function createDockerProfileBuild(
   signal?: AbortSignal,
 ): Promise<DockerProfileBuildCreateResult> {
   const cancelBuild = async () => {
-    await controlRequest(lease.binding.controlSocketPath, {
+    await dockerProfileControlRequest(lease.binding.controlSocketPath, {
       kind: "build.cancel",
       invocationId: lease.invocationId,
       leaseToken: lease.leaseToken,
@@ -448,7 +470,7 @@ export async function createDockerProfileBuild(
         await cancelBuild();
         throw error;
       }
-      const reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+      const reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
         kind: "reservation.get",
         invocationId: lease.invocationId,
         leaseToken: lease.leaseToken,
@@ -474,9 +496,37 @@ export async function createDockerProfileBuild(
 export async function releaseDockerProfileReservation(
   lease: DockerProfileLease,
   reservationId: string,
-): Promise<void> {
-  await controlRequest(lease.binding.controlSocketPath, {
-    kind: "reservation.release", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
-    reservationId,
-  });
+  proof?: Pick<DockerProfileReservation, "slotId">,
+): Promise<{ readonly cleanupProven?: boolean }> {
+  try {
+    return await dockerProfileControlRequest(lease.binding.controlSocketPath, {
+      kind: "reservation.release", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
+      reservationId,
+    });
+  } catch (primary) {
+    // A reply can be lost after the durable release.  Treat that as success
+    // only after the same profile generation confirms every owned handle is
+    // absent and no reservation-specific recovery uncertainty remains.
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      const status = await dockerProfileControlRequest<{
+        readonly profileId?: string;
+        readonly generation?: string;
+        readonly leases?: readonly { readonly invocationId?: string; readonly daemonGeneration?: string }[];
+        readonly reservations?: readonly { readonly reservationId?: string; readonly invocationId?: string }[];
+        readonly slots?: readonly { readonly slotId?: string; readonly reservationId?: string; readonly state?: string }[];
+        readonly degraded?: readonly string[];
+      }>(lease.binding.controlSocketPath, { kind: "status" }).catch(() => undefined);
+      if (status?.profileId === lease.binding.profile.profileId && status.generation === lease.binding.daemonGeneration) {
+        const reservationAbsent = !(status.reservations ?? []).some((item) => item.reservationId === reservationId);
+        const sameLease = (status.leases ?? []).some((item) => item.invocationId === lease.invocationId && item.daemonGeneration === lease.binding.daemonGeneration);
+        const slot = proof?.slotId === undefined ? undefined : (status.slots ?? []).find((item) => item.slotId === proof.slotId);
+        const slotFree = proof?.slotId === undefined || (slot?.state === "free" && slot.reservationId === undefined);
+        const uncertain = (status.degraded ?? []).some((item) => item.includes(reservationId));
+        if (reservationAbsent && sameLease && slotFree && !uncertain) return { cleanupProven: true };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    throw primary;
+  }
 }

@@ -166,7 +166,6 @@ The following table is generated from the CLI flag-parsing table. Any Flag outsi
 | `--tag` | string | Runs only Evals with this tag. See `defineEval` `tags`. |
 | `--junit` | string | Also writes a JUnit XML report to the selected path for CI consumption. |
 | `--json` | boolean | `exp` writes one ordered NDJSON event stream to stdout. `exp --dry` and `debug` each output their own single JSON plan document. `show` outputs a Host-owned built-in or custom single-target machine document; it does not form a complete site or open a second data path. |
-| `--smoke` | boolean | `docker profile doctor` only: starts a restricted DinD container and runs an inner container. |
 | `--out` | string | `view` only: statically exports the result viewer to the selected directory. |
 | `--port` | number | `view` only: selects the local server's listening port. |
 | `--host` | string | `view` only: selects the listening address. When omitted, it is 127.0.0.1; when `--host` is supplied without a value, it is 0.0.0.0. A non-loopback listener has no authentication or TLS and exposes report data to every reachable client. |

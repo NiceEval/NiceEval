@@ -26,6 +26,7 @@ import tarfile
 import threading
 import time
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -41,9 +42,29 @@ LABELS = {
 
 CREATE_KEYS = {"image", "command", "entrypoint", "environment", "workingDir", "user", "tmpfs", "attemptId"}
 FORBIDDEN_CREATE_KEYS = {"binds", "mounts", "volumes", "hostConfig", "devices", "networkMode", "ports", "extraHosts"}
-BUILD_KEYS = {"buildKey", "platform", "dockerfile", "buildArgs", "target"}
+BUILD_KEYS = {"buildKey", "platform", "dockerfile", "buildArgs", "target", "retention"}
 MAX_BUILD_CONTEXT_BYTES = 2 * 1024 * 1024 * 1024
 MAX_BUILD_CONTEXT_CHUNK_BYTES = 4 * 1024 * 1024
+QUEUE_TIMEOUT_SECONDS = 30
+CLEANUP_TIMEOUT_SECONDS = 60
+REQUIRED_ASSETS = {
+    "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c": "sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c",
+    "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8": "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
+}
+DIAGNOSTIC_COMMAND = ["sh", "-ec", "\n".join((
+    "set -eu",
+    "dockerd --host=unix:///var/run/docker.sock --shutdown-timeout=2 >/tmp/niceeval-dockerd.log 2>&1 &",
+    "daemon=$!; image=niceeval-doctor-inner; inner=niceeval-doctor-inner-run; trap 'docker rm -f \"$inner\" >/dev/null 2>&1 || true; docker image rm -f \"$image\" >/dev/null 2>&1 || true; kill \"$daemon\" 2>/dev/null || true; wait \"$daemon\" 2>/dev/null || true' EXIT",
+    "for _ in $(seq 1 120); do docker info >/dev/null 2>&1 && break; sleep 0.25; done; docker info >/dev/null",
+    "for table in /proc/net/tcp /proc/net/tcp6; do [ ! -r \"$table\" ] || ! awk '$4 == \"0A\" && ($2 ~ /:0947$/ || $2 ~ /:0948$/) { found = 1 } END { exit found ? 1 : 0 }' \"$table\"; done",
+    "cpu_max=$(cat /sys/fs/cgroup/cpu.max); memory_max=$(cat /sys/fs/cgroup/memory.max); swap_max=$(cat /sys/fs/cgroup/memory.swap.max); pids_max=$(cat /sys/fs/cgroup/pids.max)",
+    "[ \"$cpu_max\" = '200000 100000' ]; [ \"$memory_max\" = '536870912' ]; [ \"$swap_max\" = '0' ]; [ \"$pids_max\" = '256' ]",
+    "rootfs='bin/busybox lib'; [ ! -d /lib64 ] || rootfs=\"$rootfs lib64\"",
+    "tar -C / -cf - $rootfs | docker import - \"$image\" >/dev/null",
+    "docker run --name \"$inner\" --pull=never --network=none \"$image\" /bin/busybox true; docker rm \"$inner\" >/dev/null",
+    "docker image rm --force \"$image\" >/dev/null; ! docker container inspect \"$inner\" >/dev/null 2>&1; ! docker image inspect \"$image\" >/dev/null 2>&1",
+    "printf '{\"ok\":true,\"unixOnly\":true,\"nestedDocker\":true,\"limits\":{\"cpuMax\":\"%s\",\"memoryMax\":\"%s\",\"swapMax\":\"%s\",\"pidsMax\":\"%s\"}}\\n' \"$cpu_max\" \"$memory_max\" \"$swap_max\" \"$pids_max\"",
+))]
 
 
 def read_exact(reader: Any, size: int) -> bytes:
@@ -110,7 +131,8 @@ class Admission:
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.build_processes: dict[str, subprocess.Popen[str]] = {}
-        self.state: dict[str, Any] = {
+        self.asset_facts = self._asset_facts()
+        self._published_state: dict[str, Any] = {
             "schemaVersion": 1,
             "generation": self._generation(),
             "admissionOpen": True,
@@ -120,8 +142,15 @@ class Admission:
             "degraded": [],
             "slots": {},
         }
+        self._draft_state: dict[str, Any] | None = None
+        initialization_scope = self._begin_transition_scope()
         self._load()
         self._load_slots()
+        asset_issue = "fixed Docker profile assets are missing, mismatched, or unsupported"
+        self.state["degraded"] = [item for item in self.state["degraded"] if item != asset_issue]
+        if not self.asset_facts or not all(item.get("present") is True for item in self.asset_facts):
+            self.state["admissionOpen"] = False
+            self.state["degraded"].append(asset_issue)
         current = self._generation()
         if self.state.get("generation") != current:
             self.state["admissionOpen"] = False
@@ -131,6 +160,45 @@ class Admission:
             self.state["admissionOpen"] = not self.state["degraded"]
             self._commit("daemon-generation-reconciled", {})
         self._reconcile_restarted_builds()
+        if self._draft_state != self._published_state:
+            self._commit("watchdog-initialized", {})
+        self._end_transition_scope(initialization_scope)
+
+    @property
+    def state(self) -> dict[str, Any]:
+        return self._draft_state if self._draft_state is not None else self._published_state
+
+    @state.setter
+    def state(self, value: dict[str, Any]) -> None:
+        if self._draft_state is None:
+            self._published_state = value
+        else:
+            self._draft_state = value
+
+    def _begin_transition_scope(self) -> bool:
+        if self._draft_state is not None:
+            return False
+        self._draft_state = copy.deepcopy(self._published_state)
+        return True
+
+    def _end_transition_scope(self, owner: bool) -> None:
+        if owner:
+            self._draft_state = None
+
+    @contextmanager
+    def _transition(self) -> Any:
+        """Hold the state lock only for one durable state mutation.
+
+        Docker side effects deliberately live between these blocks.  In
+        particular, a long build must not prevent a heartbeat or cancellation
+        from reaching the control service.
+        """
+        with self.lock:
+            owner = self._begin_transition_scope()
+            try:
+                yield self.state
+            finally:
+                self._end_transition_scope(owner)
 
     def _load_slots(self) -> None:
         storage = self.host_config.get("storage", {}) if self.host_config else {}
@@ -184,30 +252,84 @@ class Admission:
         except Exception as error:
             raise RuntimeError(f"Docker daemon identity is unavailable: {error}") from error
         sock = os.stat(self.docker_socket)
-        return hashlib.sha256(f"{daemon_id}:{sock.st_ino}:{sock.st_ctime_ns}".encode()).hexdigest()[:32]
+        asset_identity = canonical_digest(self.asset_facts if hasattr(self, "asset_facts") else [])
+        return hashlib.sha256(f"{daemon_id}:{sock.st_ino}:{sock.st_ctime_ns}:{asset_identity}".encode()).hexdigest()[:32]
+
+    def _asset_facts(self) -> list[dict[str, Any]]:
+        manifest_path = (self.host_config or {}).get("assets", {}).get("manifestPath")
+        if not isinstance(manifest_path, str):
+            return []
+        try:
+            manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            images = manifest.get("images", [])
+            if manifest.get("schemaVersion") != 1 or manifest.get("platform") != "linux/amd64" or not isinstance(images, list):
+                raise ValueError("images must be a list")
+            declared = {
+                item.get("reference"): item.get("imageId")
+                for item in images if isinstance(item, dict)
+            }
+            if declared != REQUIRED_ASSETS:
+                raise ValueError("manifest must contain exactly the fixed DIND and BuildKit identities")
+            facts: list[dict[str, Any]] = []
+            for image in images:
+                reference = image.get("reference") if isinstance(image, dict) else None
+                expected_id = image.get("imageId") if isinstance(image, dict) else None
+                platform = image.get("platform") if isinstance(image, dict) else None
+                if (not isinstance(reference, str) or "@sha256:" not in reference
+                        or not isinstance(expected_id, str) or not expected_id.startswith("sha256:")
+                        or platform != "linux/amd64"):
+                    raise ValueError("image reference must be digest pinned")
+                inspect = self._docker("image", "inspect", "--format", "{{.Id}} {{.Os}}/{{.Architecture}}", reference, check=False)
+                fields = inspect.stdout.strip().split()
+                present = inspect.returncode == 0 and fields == [expected_id, platform]
+                facts.append({"reference": reference, "imageId": expected_id, "platform": platform, "present": present})
+            return facts
+        except Exception as error:
+            return [{"reference": "invalid-manifest", "present": False, "error": str(error)}]
 
     def _load(self) -> None:
         if not self.journal.exists():
             return
         last: dict[str, Any] | None = None
-        for line in self.journal.read_text(encoding="utf-8").splitlines():
+        raw = self.journal.read_text(encoding="utf-8")
+        if raw and not raw.endswith("\n"):
+            raise RuntimeError("watchdog journal is truncated; admission fails closed")
+        for line in raw.splitlines():
             try:
                 item = json.loads(line)
                 if isinstance(item.get("state"), dict):
                     last = item["state"]
-            except json.JSONDecodeError:
-                break
+                else:
+                    raise ValueError("journal record has no state")
+            except (json.JSONDecodeError, ValueError) as error:
+                raise RuntimeError("watchdog journal is corrupt; admission fails closed") from error
         if last is not None:
-            self.state = last
+            self._published_state = last
+            if self._draft_state is not None:
+                self._draft_state = copy.deepcopy(last)
 
     def _commit(self, event: str, detail: dict[str, Any]) -> None:
+        next_state = copy.deepcopy(self.state)
         self.journal.parent.mkdir(parents=True, exist_ok=True)
-        record = {"at": now(), "event": event, "detail": detail, "state": self.state}
+        record = {"at": now(), "event": event, "detail": detail, "state": next_state}
         encoded = json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
         fd = os.open(self.journal, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+        offset = os.lseek(fd, 0, os.SEEK_END)
         try:
             os.write(fd, encoded.encode())
             os.fsync(fd)
+            # Publish a detached snapshot.  Keep the current draft object so
+            # local references held by a multi-stage transition remain valid;
+            # its later, uncommitted mutations remain invisible and are
+            # discarded when the scope ends.
+            self._published_state = copy.deepcopy(next_state)
+        except Exception:
+            # If append reached the page cache but fsync rejected it, do not
+            # leave a readable record that a restart could mistake for a
+            # durable transition.
+            os.ftruncate(fd, offset)
+            self._draft_state = copy.deepcopy(self._published_state)
+            raise
         finally:
             os.close(fd)
 
@@ -257,6 +379,13 @@ class Admission:
             reservation = self.state["reservations"].get(self.state["queue"][0])
             if reservation is None or reservation["state"] != "queued":
                 self.state["queue"].pop(0)
+                continue
+            created = datetime.fromisoformat(str(reservation["createdAt"]).replace("Z", "+00:00"))
+            if (datetime.now(timezone.utc) - created).total_seconds() >= QUEUE_TIMEOUT_SECONDS:
+                self.state["queue"].pop(0)
+                reservation["state"] = "blocked"
+                reservation["blockedAt"] = now()
+                self._commit("reservation-blocked", {"reservationId": reservation["reservationId"], "reason": "capacity-queue-timeout"})
                 continue
             if not self._fits(reservation["resources"], reservation["kind"]):
                 break
@@ -427,7 +556,37 @@ class Admission:
         remaining = self._resource_ids(reservation)
         return not remaining[0] and not remaining[1]
 
+    def _cleanup_with_deadline(self, reservation: dict[str, Any]) -> bool:
+        deadline = time.monotonic() + CLEANUP_TIMEOUT_SECONDS
+        while True:
+            if reservation["kind"] == "build":
+                proven = self._destroy_build(reservation) and self._build_resources_absent(
+                    reservation, require_ephemeral_locator_absent=reservation.get("retention") == "ephemeral",
+                )
+            else:
+                proven = self._destroy(reservation)
+            if proven:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.1)
+
     def _validate_create(self, raw: Any) -> dict[str, Any]:
+        if isinstance(raw, dict) and raw.get("intent") == "diagnostic":
+            if set(raw) != {"intent"}:
+                raise ProtocolError("container-create-diagnostic-client-input", "diagnostic requests accept intent only")
+            assets = self.asset_facts
+            dind = next((item for item in assets if item.get("reference", "").startswith("docker:29-dind@sha256:")), None)
+            if dind is None or dind.get("present") is not True:
+                raise ProtocolError("container-create-diagnostic-asset", "verified DIND diagnostic asset is unavailable")
+            return {
+                "image": dind["reference"], "attemptId": "doctor-diagnostic",
+                "command": DIAGNOSTIC_COMMAND,
+                "tmpfs": {"/run": "rw,exec,nosuid,nodev,size=64m", "/tmp": "rw,nosuid,nodev,size=64m,mode=1777"},
+            }
+        if not isinstance(raw, dict) or raw.get("intent") != "workload" or set(raw) != {"intent", "create"}:
+            raise ProtocolError("container-create-intent-invalid", "container requests require workload or diagnostic intent")
+        raw = raw["create"]
         if not isinstance(raw, dict) or not raw.get("image") or not raw.get("attemptId"):
             raise ProtocolError("container-create-invalid", "image and attemptId are required")
         keys = set(raw)
@@ -458,6 +617,7 @@ class Admission:
         dockerfile = raw.get("dockerfile")
         build_args = raw.get("buildArgs", {})
         target = raw.get("target")
+        retention = raw.get("retention", "cache")
         if not isinstance(build_key, str) or re.fullmatch(r"[a-f0-9]{64}", build_key) is None:
             raise ProtocolError("build-create-invalid", "buildKey must be a sha256 hex digest")
         if not isinstance(platform, str) or re.fullmatch(r"linux/[A-Za-z0-9_.-]+", platform) is None:
@@ -473,6 +633,8 @@ class Admission:
             raise ProtocolError("build-create-invalid", "buildArgs must contain string keys and values")
         if target is not None and (not isinstance(target, str) or not target or "\n" in target or "\r" in target):
             raise ProtocolError("build-create-invalid", "target must be one non-empty line")
+        if retention not in ("cache", "ephemeral"):
+            raise ProtocolError("build-create-invalid", "build retention must be cache or ephemeral")
         return copy.deepcopy(raw)
 
     def validate_build_context(self, spec: dict[str, Any], context_path: Path) -> None:
@@ -505,11 +667,16 @@ class Admission:
         return "niceeval-build:" + build_key[:32]
 
     def _build_labels(self, reservation: dict[str, Any]) -> dict[str, str]:
-        return {
+        labels = {
             label: str(self.profile_id if field == "profileId" else reservation[field])
             for field, label in LABELS.items()
             if field != "attemptId"
         }
+        operation_id = reservation.get("operationId")
+        if not isinstance(operation_id, str) or not re.fullmatch(r"[a-f0-9]{32}", operation_id):
+            raise RuntimeError("build operation ID is not control-derived")
+        labels["niceeval.operation-id"] = operation_id
+        return labels
 
     def _builder_container_name(self, reservation: dict[str, Any]) -> str:
         builder = str(reservation.get("builderName", ""))
@@ -644,7 +811,7 @@ class Admission:
                 return False
         return True
 
-    def _build_resources_absent(self, reservation: dict[str, Any]) -> bool:
+    def _build_resources_absent(self, reservation: dict[str, Any], *, require_ephemeral_locator_absent: bool = False) -> bool:
         process = self.build_processes.get(reservation["reservationId"])
         if process is not None and process.poll() is None:
             return False
@@ -665,6 +832,10 @@ class Admission:
             return False
         if provisional and self._docker("image", "inspect", provisional, check=False).returncode == 0:
             return False
+        if require_ephemeral_locator_absent and reservation.get("retention") == "ephemeral":
+            locator = str(reservation.get("locator", ""))
+            if not locator or self._docker("image", "inspect", locator, check=False).returncode == 0:
+                return False
         containers, networks = self._resource_ids(reservation)
         return not containers and not networks
 
@@ -708,6 +879,10 @@ class Admission:
             "--platform", spec["platform"], "--file", spec["dockerfile"],
             "--tag", reservation["provisionalRef"],
         ]
+        if spec.get("retention") == "ephemeral":
+            args += ["--network=none", "--no-cache"]
+        for key, value in self._build_labels(reservation).items():
+            args += ["--label", f"{key}={value}"]
         for key, value in sorted(spec.get("buildArgs", {}).items()):
             args += ["--build-arg", f"{key}={value}"]
         if spec.get("target"):
@@ -726,9 +901,13 @@ class Admission:
                 process.terminate()
                 process.wait(timeout=5)
                 raise ProtocolError("build-process-attestation-failed", "cannot journal build process identity")
-            with self.lock:
+            with self._transition():
                 self.build_processes[reservation["reservationId"]] = process
-                reservation["buildProcess"] = {"pid": process.pid, "startTime": start_time}
+                current = self.state["reservations"].get(reservation["reservationId"])
+                if current is None or current.get("state") != "provisioning":
+                    process.terminate()
+                    raise ProtocolError("build-cancelled", "build reservation is no longer provisioning")
+                current["buildProcess"] = {"pid": process.pid, "startTime": start_time}
                 self._commit("build-process-started", {
                     "reservationId": reservation["reservationId"],
                     "pid": process.pid,
@@ -763,12 +942,15 @@ class Admission:
             self._validate_build(request.get("build"))
 
     def handle_build(self, request: dict[str, Any], context_path: Path) -> dict[str, Any]:
+        return self._handle_build(request, context_path)
+
+    def _handle_build(self, request: dict[str, Any], context_path: Path) -> dict[str, Any]:
         self.authorize_build_header(request)
         spec = self._validate_build(request.get("build"))
         self.validate_build_context(spec, context_path)
         reservation_id = str(request["reservationId"])
         digest = canonical_digest(spec)
-        with self.lock:
+        with self._transition():
             reservation = self.state["reservations"][reservation_id]
             if reservation["state"] == "committed":
                 if reservation.get("buildSpecDigest") != digest:
@@ -788,6 +970,7 @@ class Admission:
             reservation["builderName"] = "niceeval-build-" + reservation["operationId"][:24]
             reservation["provisionalRef"] = "niceeval-build-provisional:" + reservation["operationId"]
             reservation["locator"] = self._build_locator(spec["buildKey"])
+            reservation["retention"] = spec.get("retention", "cache")
             reservation["state"] = "provisioning"
             self._commit("build-create-intent", {
                 "reservationId": reservation_id,
@@ -795,52 +978,77 @@ class Admission:
                 "specDigest": digest,
                 "provisionalRef": reservation["provisionalRef"],
             })
+            operation = copy.deepcopy(reservation)
 
+        retention = spec.get("retention", "cache")
+        image_id = ""
         failure: Exception | None = None
         try:
-            labels = self._build_labels(reservation)
+            labels = self._build_labels(operation)
             network_args = [
                 "network", "create", "--driver", "bridge", "--opt",
                 "com.docker.network.bridge.enable_icc=false",
             ]
             for key, value in labels.items():
                 network_args += ["--label", f"{key}={value}"]
-            network_args.append("niceeval-build-" + reservation["provisionToken"][:20])
-            with self.lock:
+            network_args.append("niceeval-build-" + operation["provisionToken"][:20])
+            with self._transition():
                 self._commit("build-network-create-intent", {"reservationId": reservation_id})
             network_id = self._docker(*network_args).stdout.strip()
-            with self.lock:
-                reservation["networkId"] = network_id
+            with self._transition():
+                current = self.state["reservations"].get(reservation_id)
+                if current is None or current.get("state") != "provisioning":
+                    raise ProtocolError("build-cancelled", "build reservation is no longer provisioning")
+                current["networkId"] = network_id
                 self._commit("build-network-created", {
                     "reservationId": reservation_id, "networkId": network_id,
                 })
             self._docker(
                 "buildx", "create", "--driver", "docker-container",
                 "--driver-opt", f"network={network_id}",
-                "--name", reservation["builderName"],
+                "--driver-opt", "image=moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
+                "--name", operation["builderName"],
             )
-            with self.lock:
+            with self._transition():
                 self._commit("build-builder-created", {
-                    "reservationId": reservation_id, "builderName": reservation["builderName"],
+                    "reservationId": reservation_id, "builderName": operation["builderName"],
                 })
-            self._docker("buildx", "inspect", "--bootstrap", reservation["builderName"])
+            self._docker("buildx", "inspect", "--bootstrap", operation["builderName"])
+            with self._transition():
+                current = self.state["reservations"].get(reservation_id)
+                if current is None:
+                    raise ProtocolError("build-cancelled", "build reservation disappeared")
+                self._record_builder_resources(current)
+            self._run_build(operation, spec, context_path)
             with self.lock:
-                self._record_builder_resources(reservation)
-            self._run_build(reservation, spec, context_path)
-            self._docker("tag", reservation["provisionalRef"], reservation["locator"])
+                current = self.state["reservations"].get(reservation_id)
+                if current is None or current.get("state") != "provisioning" or current.get("cancelRequested"):
+                    raise ProtocolError("build-cancelled", "build cancellation won before image publication")
+            self._docker("tag", operation["provisionalRef"], operation["locator"])
+            if retention == "ephemeral":
+                image_id = self._docker("image", "inspect", "--format", "{{.Id}}", operation["locator"]).stdout.strip()
+                if not image_id.startswith("sha256:"):
+                    raise RuntimeError("ephemeral build did not yield an exact image identity")
         except Exception as error:
             failure = error
         try:
-            terminated = self._destroy_build(reservation)
+            with self.lock:
+                cleanup_snapshot = copy.deepcopy(self.state["reservations"].get(reservation_id, operation))
+            terminated = self._destroy_build(cleanup_snapshot)
         except Exception as error:
             terminated = False
             if failure is None:
                 failure = error
-        with self.lock:
+        with self._transition():
+            reservation = self.state["reservations"].get(reservation_id)
+            if reservation is None:
+                raise ProtocolError("build-cancelled", "build reservation disappeared during cleanup")
             reservation["buildTerminated"] = terminated
             if not terminated:
                 self._quarantine(reservation, f"build {reservation_id} termination could not be proven")
                 raise ProtocolError("build-termination-unproven", "control could not prove the build operation terminated")
+            if image_id:
+                reservation["locatorImageId"] = image_id
             reservation["state"] = "committed"
             if failure is not None:
                 reservation["buildError"] = str(failure)[-65536:]
@@ -942,6 +1150,13 @@ class Admission:
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
+            scope_owner = self._begin_transition_scope()
+            try:
+                return self._handle(request)
+            finally:
+                self._end_transition_scope(scope_owner)
+
+    def _handle(self, request: dict[str, Any]) -> dict[str, Any]:
             kind = request.get("kind")
             if kind == "challenge":
                 return {
@@ -957,13 +1172,16 @@ class Admission:
                 }
             if kind == "status":
                 used = self._used()
+                assets = self.asset_facts
                 return {"profileId": self.profile_id, "generation": self.state["generation"],
                         "admissionOpen": self.state["admissionOpen"], "used": used,
                         "capacity": self._capacity(), "leases": list(self.state["leases"].values()),
                         "reservations": list(self.state["reservations"].values()),
                         "slots": list(self.state["slots"].values()),
                         "availableQuotaSlots": sum(1 for s in self.state["slots"].values() if s["state"] == "free"),
-                        "degraded": list(self.state["degraded"])}
+                        "degraded": list(self.state["degraded"]),
+                        "journal": {"state": "healthy", "durableTransitions": True},
+                        "assets": {"state": "verified" if assets and all(item["present"] for item in assets) else "missing", "images": assets}}
             if kind == "build.lookup":
                 if request.get("profileId") != self.profile_id or request.get("daemonGeneration") != self.state["generation"]:
                     raise ProtocolError("attestation-changed", "profile or daemon generation changed")
@@ -1058,13 +1276,16 @@ class Admission:
             if reservation is None or reservation["invocationId"] != lease["invocationId"]:
                 raise ProtocolError("reservation-not-found", "reservation is not owned by this lease")
             if kind == "reservation.get":
+                self._grant_queue()
                 return copy.deepcopy(reservation)
             if kind == "reservation.cancel":
-                if reservation["state"] != "queued":
-                    raise ProtocolError("reservation-state", "only a queued reservation can cancel")
-                self.state["queue"].remove(reservation_id)
+                if reservation["state"] not in ("queued", "blocked"):
+                    raise ProtocolError("reservation-state", "only a queued or blocked reservation can cancel")
+                if reservation_id in self.state["queue"]:
+                    self.state["queue"].remove(reservation_id)
                 del self.state["reservations"][reservation_id]
                 self._commit("reservation-cancelled", {"reservationId": reservation_id})
+                self._grant_queue()
                 return {"cancelled": True}
             if kind == "reservation.commit":
                 raise ProtocolError("control-create-unimplemented", "container create must be owned by the control service; client-supplied IDs are forbidden")
@@ -1104,11 +1325,26 @@ class Admission:
                 if reservation["kind"] == "build":
                     if "terminationEvidence" in request:
                         raise ProtocolError("build-release-client-evidence-forbidden", "build termination proof is control-owned")
-                    if reservation.get("buildTerminated") is not True or not self._build_resources_absent(reservation):
+                    if reservation.get("retention") == "ephemeral":
+                        locator = str(reservation.get("locator", ""))
+                        expected_image_id = str(reservation.get("locatorImageId", ""))
+                        actual_image_id = self._docker("image", "inspect", "--format", "{{.Id}}", locator).stdout.strip()
+                        operation_label = self._docker(
+                            "image", "inspect", "--format", "{{index .Config.Labels \"niceeval.operation-id\"}}", locator,
+                        ).stdout.strip()
+                        if (not expected_image_id or actual_image_id != expected_image_id
+                                or operation_label != reservation.get("operationId")):
+                            raise ProtocolError("build-release-unproven", "ephemeral locator no longer names the control-owned image")
+                        self._docker("image", "rm", "--force", locator)
+                    if reservation.get("buildTerminated") is not True or not self._build_resources_absent(
+                        reservation, require_ephemeral_locator_absent=True,
+                    ):
                         raise ProtocolError("build-still-active", "control has not proven complete build termination")
+                    if reservation.get("retention") == "ephemeral":
+                        reservation["ephemeralCleanupProven"] = True
                 reservation["state"] = "releasing"
                 self._commit("reservation-release-intent", {"reservationId": reservation_id})
-                if reservation["kind"] == "container" and not self._destroy(reservation):
+                if reservation["kind"] == "container" and not self._cleanup_with_deadline(reservation):
                     self.state["degraded"].append(f"could not prove resources absent for {reservation_id}")
                     self._commit("reservation-release-blocked", {"reservationId": reservation_id})
                     raise ProtocolError("recovery-blocked", "container/network are still visible")
@@ -1117,10 +1353,18 @@ class Admission:
                 del self.state["reservations"][reservation_id]
                 self._commit("reservation-released", {"reservationId": reservation_id})
                 self._grant_queue()
-                return {"released": True}
+                return {"released": True, **({"cleanupProven": True} if reservation.get("ephemeralCleanupProven") else {})}
             raise ProtocolError("request-unknown", f"unknown request kind {kind!r}")
 
     def _reconcile_restarted_builds(self) -> None:
+        with self.lock:
+            scope_owner = self._begin_transition_scope()
+            try:
+                self._reconcile_restarted_builds_impl()
+            finally:
+                self._end_transition_scope(scope_owner)
+
+    def _reconcile_restarted_builds_impl(self) -> None:
         with self.lock:
             active = [
                 reservation for reservation in self.state["reservations"].values()
@@ -1158,6 +1402,14 @@ class Admission:
             })
 
     def _recover_once(self) -> None:
+        with self.lock:
+            scope_owner = self._begin_transition_scope()
+            try:
+                self._recover_once_impl()
+            finally:
+                self._end_transition_scope(scope_owner)
+
+    def _recover_once_impl(self) -> None:
         with self.lock:
             changed = False
             for lease in self.state["leases"].values():
@@ -1207,15 +1459,20 @@ class Admission:
                 if not unresolved:
                     lease["state"] = "recovered"
                     changed = True
+                else:
+                    self.state["admissionOpen"] = False
+                    changed = True
             if changed:
                 self._grant_queue()
+                if not self.state["degraded"]:
+                    self.state["admissionOpen"] = True
                 self._commit("recovery-converged", {})
 
     def recovery_loop(self) -> None:
         while not self.stop.wait(1.0):
             try:
                 cutoff = time.time() - self.grace
-                with self.lock:
+                with self._transition():
                     for lease in self.state["leases"].values():
                         if lease["state"] != "active":
                             continue
@@ -1225,7 +1482,7 @@ class Admission:
                             self._commit("lease-lost", {"invocationId": lease["invocationId"]})
                 self._recover_once()
             except Exception as error:
-                with self.lock:
+                with self._transition():
                     message = f"recovery loop blocked: {error}"
                     self.state["admissionOpen"] = False
                     self.state["degraded"] = [

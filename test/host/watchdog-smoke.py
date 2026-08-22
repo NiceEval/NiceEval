@@ -6,10 +6,12 @@ import importlib.util
 import io
 import json
 import os
+import copy
 import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 from pathlib import Path
 
 
@@ -50,21 +52,38 @@ def fake_docker(self, *args: str, check: bool = True):
         if not self.__dict__.get("fake_builder_rm_leaves_volume"):
             self.__dict__.pop("fake_builder_volume", None)
         output = ""
+    elif args[:2] == ("image", "inspect") and args[-1] in watchdog.REQUIRED_ASSETS:
+        output = f"{watchdog.REQUIRED_ASSETS[args[-1]]} linux/amd64\n"
     elif args[:2] == ("image", "inspect"):
         images = self.__dict__.setdefault("fake_images", set())
-        code = 0 if args[2] in images else 1
-        result = subprocess.CompletedProcess(args, code, "", "")
+        reference = args[-1]
+        code = 0 if reference in images else 1
+        output = ""
+        if code == 0 and "--format" in args:
+            image_ids = self.__dict__.setdefault("fake_image_ids", {})
+            image_labels = self.__dict__.setdefault("fake_image_labels", {})
+            format_value = args[args.index("--format") + 1]
+            if format_value == "{{.Id}}":
+                output = image_ids[reference] + "\n"
+            elif "niceeval.operation-id" in format_value:
+                output = image_labels[reference] + "\n"
+        result = subprocess.CompletedProcess(args, code, output, "")
         if check and code != 0:
             raise subprocess.CalledProcessError(code, args)
         return result
     elif args[:2] == ("image", "rm"):
-        self.__dict__.setdefault("fake_images", set()).discard(args[-1])
+        reference = args[-1]
+        self.__dict__.setdefault("fake_images", set()).discard(reference)
+        self.__dict__.setdefault("fake_image_ids", {}).pop(reference, None)
+        self.__dict__.setdefault("fake_image_labels", {}).pop(reference, None)
         output = ""
     elif args[:1] == ("tag",):
         images = self.__dict__.setdefault("fake_images", set())
         if args[1] not in images:
             raise subprocess.CalledProcessError(1, args, stderr="source image missing")
         images.add(args[2])
+        self.__dict__.setdefault("fake_image_ids", {})[args[2]] = self.fake_image_ids[args[1]]
+        self.__dict__.setdefault("fake_image_labels", {})[args[2]] = self.fake_image_labels[args[1]]
         output = ""
     elif args[:1] == ("create",):
         self.__dict__["fake_container"] = "container-a"
@@ -109,7 +128,10 @@ def fake_run_build(self, reservation, spec, context_path):
     self.__dict__["fake_build_runs"] = self.__dict__.get("fake_build_runs", 0) + 1
     with tarfile.open(context_path, "r:*") as archive:
         assert archive.extractfile("Dockerfile").read() == b"FROM scratch\n"
-    self.__dict__.setdefault("fake_images", set()).add(reservation["provisionalRef"])
+    provisional = reservation["provisionalRef"]
+    self.__dict__.setdefault("fake_images", set()).add(provisional)
+    self.__dict__.setdefault("fake_image_ids", {})[provisional] = "sha256:" + "1" * 64
+    self.__dict__.setdefault("fake_image_labels", {})[provisional] = reservation["operationId"]
 
 
 def tar_bytes(entries):
@@ -215,10 +237,16 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     descriptor["backend"]["filesystem"] = {"dockerDataPool": {
         "count": 1, "bytesPerAllocation": 512, "attestation": "linux-project-quota/v1",
     }}
+    asset_manifest = root / "assets-v1.json"
+    asset_manifest.write_text(json.dumps({"schemaVersion": 1, "platform": "linux/amd64", "images": [
+        {"reference": reference, "imageId": image_id, "platform": "linux/amd64"}
+        for reference, image_id in watchdog.REQUIRED_ASSETS.items()
+    ]}), encoding="utf-8")
     host_config = root / "default.host.json"
-    host_config.write_text(json.dumps({"storage": {
-        "slotRegistryPath": str(slot_registry), "slotRootPath": str(slot_root),
-    }}), encoding="utf-8")
+    host_config.write_text(json.dumps({
+        "storage": {"slotRegistryPath": str(slot_registry), "slotRootPath": str(slot_root)},
+        "assets": {"manifestPath": str(asset_manifest)},
+    }), encoding="utf-8")
     descriptor_path = root / "default.json"
     descriptor_path.write_text(json.dumps(descriptor), encoding="utf-8")
     journal = root / "events.ndjson"
@@ -234,6 +262,31 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     })
     token = created["leaseToken"]
     common = {"invocationId": "invocation-a", "leaseToken": token}
+    # A failed fsync cannot publish a heartbeat mutation in memory or after a
+    # restart.  This exercises the normal handle() transition scope.
+    published_before_fsync_failure = copy.deepcopy(admission._published_state)
+    original_fsync = watchdog.os.fsync
+    watchdog.os.fsync = lambda _fd: (_ for _ in ()).throw(OSError("injected fsync failure"))
+    try:
+        admission.handle({**common, "kind": "lease.heartbeat"})
+    except OSError:
+        pass
+    else:
+        raise AssertionError("injected journal fsync failure must reject the transition")
+    finally:
+        watchdog.os.fsync = original_fsync
+    assert admission._published_state == published_before_fsync_failure
+    restarted_after_fsync_failure = watchdog.Admission(descriptor_path, journal, str(docker_socket), 5, host_config)
+    assert restarted_after_fsync_failure._published_state == published_before_fsync_failure
+    # A diagnostic request is capability-free: any client-selected image,
+    # command, environment, mount, tag or label is rejected before Docker I/O.
+    for forbidden in ("image", "command", "environment", "mounts", "tag", "labels"):
+        try:
+            admission._validate_create({"intent": "diagnostic", forbidden: "client-controlled"})
+        except watchdog.ProtocolError as error:
+            assert error.code == "container-create-diagnostic-client-input"
+        else:
+            raise AssertionError("diagnostic intent must reject every client-controlled create field")
     for reservation_id, resources in (
         ("invalid-nan", {"cpus": float("nan"), "memoryBytes": 1, "pids": 1,
                          "containers": 1, "ephemeralDiskBytes": 1}),
@@ -270,6 +323,15 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
         "resources": {"cpus": 1, "memoryBytes": 1, "pids": 1, "containers": 1,
                       "ephemeralDiskBytes": 1}})
     assert queued["state"] == "queued"
+    # FIFO head timeouts are durably blocked and removed before the same-lock
+    # grant pass can consider later work.
+    with admission._transition():
+        admission.state["reservations"]["reservation-b"]["createdAt"] = "2000-01-01T00:00:00Z"
+        admission._commit("fixture-queue-timeout", {"reservationId": "reservation-b"})
+    assert admission.handle({**common_b, "kind": "reservation.get", "reservationId": "reservation-b"})["state"] == "blocked"
+    assert "reservation-b" not in admission.state["queue"]
+    # Cancelling the timed-out head removes its durable blocked reservation and
+    # runs the next FIFO grant pass under the same control lock.
     assert admission.handle({**common_b, "kind": "reservation.cancel",
         "reservationId": "reservation-b"}) == {"cancelled": True}
     assert "reservation-b" not in admission.state["reservations"]
@@ -280,17 +342,17 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
         {"image": "image:test", "attemptId": "attempt-a", "hostConfig": {"Binds": ["/host:/x"]}},
     ):
         try:
-            admission.handle({**common, "kind": "container.create", "reservationId": "reservation-a", "create": create})
+            admission.handle({**common, "kind": "container.create", "reservationId": "reservation-a", "create": {"intent": "workload", "create": create}})
         except watchdog.ProtocolError as error:
             assert error.code == "container-create-host-input"
         else:
             raise AssertionError("host path input must fail closed")
 
     try:
-        admission.handle({**common, "kind": "container.create", "reservationId": "reservation-a", "create": {
+        admission.handle({**common, "kind": "container.create", "reservationId": "reservation-a", "create": {"intent": "workload", "create": {
             "image": "image:test", "attemptId": "attempt-a",
             "tmpfs": {"/var/lib/docker/cache": "rw,size=16m"},
-        }})
+        }}})
     except watchdog.ProtocolError as error:
         assert error.code == "container-create-invalid"
     else:
@@ -307,10 +369,10 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
         },
     }
     created_container = admission.handle({**common, "kind": "container.create",
-        "reservationId": "reservation-a", "create": create_a})
+        "reservationId": "reservation-a", "create": {"intent": "workload", "create": create_a}})
     assert created_container == {"containerId": "container-a", "networkId": "network-a", "state": "active"}
     assert admission.handle({**common, "kind": "container.create",
-        "reservationId": "reservation-a", "create": create_a}) == created_container
+        "reservationId": "reservation-a", "create": {"intent": "workload", "create": create_a}}) == created_container
     create_argv = next(argv for argv in admission.fake_commands if argv[:1] == ("create",))
     assert "--privileged" in create_argv
     mount = create_argv[create_argv.index("--mount") + 1]
@@ -357,7 +419,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
         "reservationKind": "container", "resources": {"cpus": 1, "memoryBytes": 1, "pids": 1,
         "containers": 1, "ephemeralDiskBytes": 1}})
     restarted.handle({**common_c, "kind": "container.create", "reservationId": "reservation-c",
-        "create": {"image": "image:test", "attemptId": "attempt-c"}})
+        "create": {"intent": "workload", "create": {"image": "image:test", "attemptId": "attempt-c"}}})
     (slot_path / "orphaned").write_text("data", encoding="utf-8")
     restarted.fake_query_failure = True
     assert restarted.handle({**common_c, "kind": "lease.drain"}) == {"state": "draining"}
@@ -365,6 +427,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     assert restarted.state["slots"]["slot-0000"]["state"] == "active"
     assert any(item.startswith("recovery blocked for reservation-c:")
                for item in restarted.state["degraded"])
+    assert restarted.state["admissionOpen"] is False
     restarted.fake_query_failure = False
     restarted._recover_once()
     assert restarted.state["leases"]["invocation-c"]["state"] == "recovered"
@@ -372,6 +435,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
                    for item in restarted.state["degraded"])
     assert restarted.state["slots"]["slot-0000"]["generation"] == 2
     assert list(slot_path.iterdir()) == []
+    assert restarted.state["admissionOpen"] is True
 
     # Build context and all daemon lifecycle operations are control-owned. The
     # client supplies no network ID, builder name, tag, or termination booleans.
@@ -403,12 +467,73 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
             assert error.code == expected_code
         else:
             raise AssertionError("untrusted tar paths/types must fail before Docker sees the context")
+
+    # A build's Docker process is deliberately outside the short COW lock
+    # sections.  While it is running both heartbeat and cancellation must
+    # enter, and cancellation wins before the locator can be published.
+    entered_build = threading.Event()
+    allow_build_exit = threading.Event()
+    original_run_build = watchdog.Admission._run_build
+
+    def blocking_run_build(self, reservation, spec, context_path):
+        self.__dict__.setdefault("fake_images", set()).add(reservation["provisionalRef"])
+        entered_build.set()
+        allow_build_exit.wait(timeout=2)
+
+    watchdog.Admission._run_build = blocking_run_build
+    concurrent_id = "reservation-build"
+    concurrent_request = {**build_request, "reservationId": concurrent_id}
+    concurrent_errors = []
+
+    def run_concurrent_build():
+        try:
+            restarted.handle_build(concurrent_request, context_path)
+        except Exception as error:
+            concurrent_errors.append(error)
+
+    concurrent_thread = threading.Thread(target=run_concurrent_build)
+    concurrent_thread.start()
+    assert entered_build.wait(timeout=1), "build did not reach the unlocked Docker phase"
+    assert restarted.handle({**common_build, "kind": "lease.heartbeat"}) == {"state": "active"}
+    assert restarted.handle({**common_build, "kind": "build.cancel",
+        "reservationId": concurrent_id}) == {"cancelRequested": True}
+    allow_build_exit.set()
+    concurrent_thread.join(timeout=2)
+    assert not concurrent_thread.is_alive(), "cancellation must not wait for the build lock"
+    assert len(concurrent_errors) == 1 and isinstance(concurrent_errors[0], watchdog.ProtocolError)
+    assert concurrent_errors[0].code == "build-cancelled"
+    watchdog.Admission._run_build = original_run_build
+    assert restarted.handle({**common_build, "kind": "reservation.release",
+        "reservationId": concurrent_id}) == {"released": True}
+    restarted.handle({**common_build, "kind": "reservation.acquire",
+        "reservationId": concurrent_id, "reservationKind": "build",
+        "resources": {"cpus": 0, "memoryBytes": 0, "pids": 0, "containers": 0,
+                      "ephemeralDiskBytes": 0}})
+
+    # An fsync failure in build admission has the same COW property as a
+    # heartbeat: neither memory nor a restarted watchdog observes the intent.
+    build_fsync_before = copy.deepcopy(restarted._published_state)
+    original_fsync = watchdog.os.fsync
+    watchdog.os.fsync = lambda _fd: (_ for _ in ()).throw(OSError("injected build fsync failure"))
+    try:
+        restarted.handle_build(build_request, context_path)
+    except OSError:
+        pass
+    else:
+        raise AssertionError("build intent fsync failure must reject the create")
+    finally:
+        watchdog.os.fsync = original_fsync
+    assert restarted._published_state == build_fsync_before
+    assert watchdog.Admission(descriptor_path, journal, str(docker_socket), 5, host_config)._published_state == build_fsync_before
+
+    ephemeral_build_request = copy.deepcopy(build_request)
+    ephemeral_build_request["build"]["retention"] = "ephemeral"
     restarted.fake_builder_rm_leaves_container = True
     restarted.fake_builder_rm_leaves_volume = True
-    built = restarted.handle_build(build_request, context_path)
+    built = restarted.handle_build(ephemeral_build_request, context_path)
     assert built == {"locator": "niceeval-build:" + build_key[:32], "state": "terminated"}
     assert restarted.fake_build_runs == 1
-    assert restarted.handle_build(build_request, context_path) == built
+    assert restarted.handle_build(ephemeral_build_request, context_path) == built
     assert restarted.fake_build_runs == 1
     assert restarted.__dict__.get("fake_builder_container") is None
     assert restarted.__dict__.get("fake_builder_volume") is None
@@ -430,8 +555,16 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
         assert error.code == "build-release-client-evidence-forbidden"
     else:
         raise AssertionError("client-supplied build termination evidence must be rejected")
+    published_build = restarted._published_state["reservations"]["reservation-build"]
+    assert published_build["retention"] == "ephemeral"
+    assert published_build["locatorImageId"] == "sha256:" + "1" * 64
+    restart_probe = watchdog.Admission(descriptor_path, journal, str(docker_socket), 5, host_config)
+    journaled_build = restart_probe.state["reservations"]["reservation-build"]
+    assert journaled_build["retention"] == "ephemeral"
+    assert journaled_build["locatorImageId"] == "sha256:" + "1" * 64
     assert restarted.handle({**common_build, "kind": "reservation.release",
-        "reservationId": "reservation-build"}) == {"released": True}
+        "reservationId": "reservation-build"}) == {"released": True, "cleanupProven": True}
+    assert built["locator"] not in restarted.fake_images
     build_events = [json.loads(line)["event"] for line in journal.read_text(encoding="utf-8").splitlines()]
     assert build_events.index("build-create-intent") < build_events.index("build-network-created")
     assert build_events.index("build-network-created") < build_events.index("build-builder-created")
@@ -469,6 +602,29 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     assert restarted.handle({**common_build, "kind": "lease.drain"}) == {"state": "recovered"}
     assert restarted.state["leases"]["invocation-build"]["state"] == "recovered"
 
+    # Recovery has its own entry point, so exercise a failed durable recovery
+    # transition rather than relying only on the request handler's fsync case.
+    with restarted._transition():
+        restarted.state["leases"]["recovery-fsync"] = {
+            "invocationId": "recovery-fsync", "profileId": "profile-test",
+            "daemonGeneration": restarted.state["generation"], "tokenDigest": "fixture",
+            "createdAt": watchdog.now(), "lastHeartbeatAt": watchdog.now(), "state": "draining",
+        }
+        restarted._commit("fixture-recovery-fsync", {"invocationId": "recovery-fsync"})
+    recovery_fsync_before = copy.deepcopy(restarted._published_state)
+    original_fsync = watchdog.os.fsync
+    watchdog.os.fsync = lambda _fd: (_ for _ in ()).throw(OSError("injected recovery fsync failure"))
+    try:
+        restarted._recover_once()
+    except OSError:
+        pass
+    else:
+        raise AssertionError("recovery fsync failure must reject publication")
+    finally:
+        watchdog.os.fsync = original_fsync
+    assert restarted._published_state == recovery_fsync_before
+    assert watchdog.Admission(descriptor_path, journal, str(docker_socket), 5, host_config)._published_state == recovery_fsync_before
+
     # Any uncertain activity quarantines durably and replay never re-grants it.
     lease_d = restarted.handle({"kind": "lease.create", "profileId": "profile-test",
         "daemonGeneration": challenge["daemonGeneration"], "invocationId": "invocation-d"})
@@ -487,4 +643,28 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     assert replayed.state["slots"]["slot-0000"]["state"] == "quarantined"
     assert replayed.handle({"kind": "status"})["availableQuotaSlots"] == 0
 
+    # Missing fixed assets fail closed at watchdog startup; status exposes the
+    # attested absence rather than attempting a runtime pull.
+    assets_host_config = root / "assets-missing.host.json"
+    assets_host_config.write_text(json.dumps({"storage": {
+        "slotRegistryPath": str(slot_registry), "slotRootPath": str(slot_root),
+    }}), encoding="utf-8")
+    assets_closed = watchdog.Admission(
+        descriptor_path, root / "assets-events.ndjson", str(docker_socket), 5, assets_host_config,
+    )
+    assert assets_closed.state["admissionOpen"] is False
+    assert assets_closed.handle({"kind": "status"})["assets"]["state"] == "missing"
+
+    # A journal may never silently discard a corrupt or unterminated tail.
+    for name, contents in (("corrupt", "not-json\n"), ("truncated", '{"state":{}')):
+        broken = root / f"{name}.ndjson"
+        broken.write_text(contents, encoding="utf-8")
+        try:
+            watchdog.Admission(descriptor_path, broken, str(docker_socket), 5, host_config)
+        except RuntimeError as error:
+            assert "fails closed" in str(error)
+        else:
+            raise AssertionError(f"{name} journal must fail closed")
+
 print("watchdog-smoke ok")
+subprocess.run(["pnpm", "exec", "tsx", "test/host/docker-profile-public-smoke.ts"], cwd=ROOT, check=True)

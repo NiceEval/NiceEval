@@ -29,6 +29,7 @@ interface HostJournalRecord {
       readonly kind?: string;
       readonly locator?: string;
       readonly builderName?: string;
+      readonly retention?: "cache" | "ephemeral";
     }>>;
   };
 }
@@ -117,7 +118,7 @@ test("profile-bound Dockerfile cold build starts the Attempt through the public 
             "--ready-file", activeFixture.readyFile,
             "--socket-mode", "0o600",
           ],
-          { processGroup: true, timeoutMs: 180_000, graceMs: 5_000 },
+          { processGroup: true, timeoutMs: 330_000, graceMs: 5_000 },
           async (watchdog) => {
             await Promise.race([
               pollUntil(() => fileExists(activeFixture.readyFile), {
@@ -131,7 +132,7 @@ test("profile-bound Dockerfile cold build starts the Attempt through the public 
             ]);
 
             const driver = await docker.run([
-              "run", "--rm", "--user", "0:0",
+              "run", "--rm", "--network", "none", "--user", "0:0",
               "--mount", `type=bind,src=${process.cwd()},dst=${process.cwd()},readonly`,
               "--mount", `type=bind,src=${projectRoot},dst=${projectRoot}`,
               "--mount", `type=bind,src=${hostRoot},dst=${hostRoot}`,
@@ -140,11 +141,103 @@ test("profile-bound Dockerfile cold build starts the Attempt through the public 
               "--env", "NICEEVAL_E2E_DOCKER_PROFILE_ALIAS=e2e-cold-build",
               driverImage,
               "sh", "-ec",
-              `trap 'chown -R ${process.getuid!()}:${process.getgid!()} ${projectRoot}/.niceeval 2>/dev/null || true' EXIT
+              `holder_pid=''; doctor_pid=''; fault_socket=''
+cleanup_holder() { if [ -n "\${holder_pid}" ] && kill -0 "\${holder_pid}" 2>/dev/null; then kill -TERM "\${holder_pid}" 2>/dev/null || true; wait "\${holder_pid}" || true; fi; }
+cleanup_doctor() { if [ -n "\${doctor_pid}" ] && kill -0 "\${doctor_pid}" 2>/dev/null; then kill -KILL "\${doctor_pid}" 2>/dev/null || true; wait "\${doctor_pid}" || true; fi; }
+restore_fault_socket() { if [ -n "\${fault_socket}" ] && [ -S "\${fault_socket}" ]; then mv "\${fault_socket}" '${activeFixture.controlSocket}'; fi; }
+trap 'restore_fault_socket; cleanup_doctor; cleanup_holder; chown -R ${process.getuid!()}:${process.getgid!()} ${projectRoot}/.niceeval 2>/dev/null || true' EXIT
 mkdir -p /etc/niceeval/docker-profiles
 cp '${activeFixture.descriptor}' /etc/niceeval/docker-profiles/e2e-cold-build.json
 chown root:root /etc/niceeval/docker-profiles/e2e-cold-build.json
 chmod 600 /etc/niceeval/docker-profiles/e2e-cold-build.json
+docker_api() { node - "$@" <<'NODE'
+const Docker=require('dockerode'),d=new Docker({socketPath:'/run/docker.sock'}),[action,...args]=process.argv.slice(2);const labels=Object.fromEntries((args[0]||'').split(',').filter(Boolean).map(x=>x.split('=')));const filters={label:Object.entries(labels).map(([k,v])=>v?k+'='+v:k)};(async()=>{if(action==='image'){await d.getImage(args[0]).inspect();return}if(action==='find'){const c=await d.listContainers({all:false,filters});if(c[0])process.stdout.write(JSON.stringify({id:c[0].Id,labels:c[0].Labels}))}if(action==='kill'){await d.getContainer(args[0]).kill()}if(action==='absent'){const c=await d.listContainers({all:true,filters}),n=await d.listNetworks({filters});if(c.length||n.length)throw Error('owned resource remains')}})().catch(e=>{console.error(e);process.exit(1)})
+NODE
+}
+docker_api image 'docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c'
+docker_api image 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
+rm -f /tmp/niceeval-preoccupier.json /tmp/niceeval-preoccupier.ready
+node - '${activeFixture.controlSocket}' /tmp/niceeval-preoccupier.json /tmp/niceeval-preoccupier.ready <<'NODE' &
+const net=require('net'), fs=require('fs'), crypto=require('crypto'); const [path,out,ready]=process.argv.slice(2);
+const call=(request)=>new Promise((resolve,reject)=>{let text=''; const s=net.createConnection(path); s.on('connect',()=>s.end(JSON.stringify(request)+'\\n')); s.on('data',b=>text+=b); s.on('error',reject); s.on('close',()=>{try { const r=JSON.parse(text); if(!r.ok) throw Error(r.error?.message||'control error'); resolve(r.result) } catch(e) { reject(e) }});});
+(async()=>{const status=await call({kind:'status'}); const invocationId=crypto.randomUUID(), reservationId=crypto.randomUUID(); const lease=await call({kind:'lease.create',profileId:status.profileId,daemonGeneration:status.generation,invocationId}); const held={invocationId,reservationId,leaseToken:lease.leaseToken}; const reservation=await call({kind:'reservation.acquire',...held,reservationKind:'build',resources:{cpus:0,memoryBytes:0,pids:0,containers:0,ephemeralDiskBytes:0}}); if(reservation.state!=='granted') throw Error('preoccupier was not granted'); fs.writeFileSync(out,JSON.stringify(held)); fs.writeFileSync(ready,'ready'); const beat=setInterval(()=>call({kind:'lease.heartbeat',invocationId,leaseToken:lease.leaseToken}).catch(()=>{}),4000); let done=false; const stop=async()=>{if(done)return;done=true;clearInterval(beat);await call({kind:'reservation.release',...held}).catch(()=>{});await call({kind:'lease.drain',invocationId,leaseToken:lease.leaseToken}).catch(()=>{});process.exit(0)};process.on('SIGTERM',stop);process.on('SIGINT',stop);})().catch(e=>{console.error(e);process.exit(1)});
+NODE
+holder_pid=$!
+for _ in $(seq 1 100); do [ -f /tmp/niceeval-preoccupier.ready ] && break; sleep 0.1; done
+[ -f /tmp/niceeval-preoccupier.ready ] || { echo 'preoccupier did not become ready' >&2; exit 1; }
+set +e
+node_modules/.bin/niceeval docker profile doctor e2e-cold-build --json >/tmp/niceeval-doctor.json
+doctor_status=$?
+set -e
+cat /tmp/niceeval-doctor.json
+DOCTOR_STATUS="$doctor_status" node - '${activeFixture.controlSocket}' /tmp/niceeval-preoccupier.json <<'NODE'
+const net=require('net'), fs=require('fs'); const path=process.argv[2], held=JSON.parse(fs.readFileSync(process.argv[3]));
+const call=(request)=>new Promise((resolve,reject)=>{let text=''; const s=net.createConnection(path); s.on('connect',()=>s.end(JSON.stringify(request)+'\\n')); s.on('data',b=>text+=b); s.on('error',reject); s.on('close',()=>{try {const r=JSON.parse(text);if(!r.ok)throw Error(r.error?.message||'control error');resolve(r.result)}catch(e){reject(e)}})});
+(async()=>{const d=JSON.parse(fs.readFileSync('/tmp/niceeval-doctor.json','utf8')); const ids=['descriptor','control','daemon','cgroup','storage','journal','assets','cold-build','cold-build-cleanup','container-limits','nested-docker','container-cleanup']; if(process.env.DOCTOR_STATUS==='0'||d.status!=='BLOCKED'||JSON.stringify(d.checks?.map(c=>c.id))!==JSON.stringify(ids)||d.checks.some(c=>c.status==='FAIL')||d.checks.filter(c=>ids.slice(7).includes(c.id)).some(c=>c.status!=='BLOCKED'||c.code!=='CAPACITY_QUEUE_TIMEOUT')) throw Error('doctor did not report only capacity BLOCKED')})().catch(e=>{console.error(e);process.exit(1)});
+NODE
+kill -TERM "$holder_pid"
+wait "$holder_pid"
+holder_pid=''
+node - '${activeFixture.controlSocket}' /tmp/niceeval-preoccupier.json <<'NODE'
+const net=require('net'),fs=require('fs');const path=process.argv[2],held=JSON.parse(fs.readFileSync(process.argv[3]));const call=r=>new Promise((resolve,reject)=>{let t='';const s=net.createConnection(path);s.on('connect',()=>s.end(JSON.stringify(r)+'\\n'));s.on('data',b=>t+=b);s.on('error',reject);s.on('close',()=>{try{const v=JSON.parse(t);if(!v.ok)throw Error(v.error?.message);resolve(v.result)}catch(e){reject(e)}})});(async()=>{for(let i=0;i<50;i++){const s=await call({kind:'status'}),lease=s.leases.find(l=>l.invocationId===held.invocationId);if(!s.reservations.some(r=>r.reservationId===held.reservationId)&&lease?.state==='recovered'&&s.used.builds===0&&s.admissionOpen&&s.degraded.length===0)return;await new Promise(r=>setTimeout(r,100))}throw Error('preoccupier cleanup did not converge')})().catch(e=>{console.error(e);process.exit(1)});
+NODE
+rm -f /tmp/niceeval-doctor-kill.json /tmp/niceeval-doctor-owned.json
+node_modules/.bin/niceeval docker profile doctor e2e-cold-build --json >/tmp/niceeval-doctor-kill.json 2>&1 &
+doctor_pid=$!
+for _ in $(seq 1 300); do
+  doctor_owned=$(docker_api find 'niceeval.attempt-id=doctor-diagnostic')
+  if [ -n "$doctor_owned" ]; then
+    printf '%s' "$doctor_owned" >/tmp/niceeval-doctor-owned.json
+    node - /tmp/niceeval-doctor-owned.json <<'NODE'
+const x=require('fs').readFileSync(process.argv[2],'utf8'),l=JSON.parse(x).labels;if(l['niceeval.attempt-id']!=='doctor-diagnostic'||['niceeval.profile-id','niceeval.invocation-id','niceeval.reservation-id','niceeval.provision-token'].some(k=>!l[k]))process.exit(1)
+NODE
+    break
+  fi
+  kill -0 "$doctor_pid" 2>/dev/null || { cat /tmp/niceeval-doctor-kill.json >&2; exit 1; }
+  sleep 0.1
+done
+[ -s /tmp/niceeval-doctor-owned.json ] || { echo 'doctor diagnostic did not become running' >&2; exit 1; }
+kill -KILL "$doctor_pid"
+set +e; wait "$doctor_pid"; doctor_kill_status=$?; set -e
+[ "$doctor_kill_status" -eq 137 ] || { echo 'doctor did not exit from SIGKILL' >&2; exit 1; }
+doctor_pid=''
+node - '${activeFixture.controlSocket}' /tmp/niceeval-doctor-owned.json <<'NODE'
+const net=require('net'),fs=require('fs'),path=process.argv[2],o=JSON.parse(fs.readFileSync(process.argv[3])).labels;const call=r=>new Promise((ok,no)=>{let t='';const s=net.createConnection(path);s.on('connect',()=>s.end(JSON.stringify(r)+'\\n'));s.on('data',b=>t+=b);s.on('error',no);s.on('close',()=>{try{const v=JSON.parse(t);if(!v.ok)throw Error(v.error?.message);ok(v.result)}catch(e){no(e)}})});(async()=>{for(let i=0;i<300;i++){const s=await call({kind:'status'}),r=o['niceeval.reservation-id'],l=o['niceeval.invocation-id'];if(!s.reservations.some(x=>x.reservationId===r)&&s.leases.find(x=>x.invocationId===l)?.state==='recovered'&&s.used.builds===0&&s.used.containers===0&&s.slots.every(x=>x.reservationId!==r&&x.state==='free')&&s.availableQuotaSlots===1&&s.admissionOpen&&s.degraded.length===0)return;await new Promise(x=>setTimeout(x,100))}throw Error('SIGKILL recovery did not converge')})().catch(e=>{console.error(e);process.exit(1)})
+NODE
+profile_label=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-owned.json")).labels["niceeval.profile-id"])')
+reservation_label=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-owned.json")).labels["niceeval.reservation-id"])')
+docker_api absent "niceeval.profile-id=$profile_label,niceeval.reservation-id=$reservation_label"
+docker_api image 'docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c'
+docker_api image 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
+rm -f /tmp/niceeval-doctor-fault.json /tmp/niceeval-doctor-fault-owned.json
+node_modules/.bin/niceeval docker profile doctor e2e-cold-build --json >/tmp/niceeval-doctor-fault.json 2>&1 &
+doctor_pid=$!
+for _ in $(seq 1 300); do
+  fault_owned=$(docker_api find 'niceeval.attempt-id=doctor-diagnostic')
+  if [ -n "$fault_owned" ]; then printf '%s' "$fault_owned" >/tmp/niceeval-doctor-fault-owned.json; break; fi
+  kill -0 "$doctor_pid" 2>/dev/null || { cat /tmp/niceeval-doctor-fault.json >&2; exit 1; }; sleep 0.1
+done
+[ -s /tmp/niceeval-doctor-fault-owned.json ] || { echo 'fault diagnostic did not become running' >&2; exit 1; }
+fault_socket='${activeFixture.controlSocket}.fault'
+mv '${activeFixture.controlSocket}' "$fault_socket"
+fault_container=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-fault-owned.json")).id)')
+docker_api kill "$fault_container"
+set +e; wait "$doctor_pid"; doctor_fault_status=$?; set -e
+[ "$doctor_fault_status" -eq 1 ] || { cat /tmp/niceeval-doctor-fault.json >&2; exit 1; }
+doctor_pid=''
+node - /tmp/niceeval-doctor-fault.json <<'NODE'
+const fs=require('fs'),d=JSON.parse(fs.readFileSync(process.argv[2],'utf8')),ids=['descriptor','control','daemon','cgroup','storage','journal','assets','cold-build','cold-build-cleanup','container-limits','nested-docker','container-cleanup'];const fail=d.checks.find(x=>x.status==='FAIL');if(d.status!=='FAIL'||JSON.stringify(d.checks.map(x=>x.id))!==JSON.stringify(ids)||!fail||!fail.detail.includes('primary:')||!fail.detail.includes('cleanup:')||!fail.detail.includes('control-owned diagnostic'))process.exit(1)
+NODE
+mv "$fault_socket" '${activeFixture.controlSocket}'
+fault_socket=''
+node - '${activeFixture.controlSocket}' /tmp/niceeval-doctor-fault-owned.json <<'NODE'
+const net=require('net'),fs=require('fs'),p=process.argv[2],o=JSON.parse(fs.readFileSync(process.argv[3])).labels;const call=r=>new Promise((ok,no)=>{let t='';const s=net.createConnection(p);s.on('connect',()=>s.end(JSON.stringify(r)+'\\n'));s.on('data',b=>t+=b);s.on('error',no);s.on('close',()=>{try{const v=JSON.parse(t);if(!v.ok)throw Error(v.error?.message);ok(v.result)}catch(e){no(e)}})});(async()=>{for(let i=0;i<300;i++){const s=await call({kind:'status'}),r=o['niceeval.reservation-id'],l=o['niceeval.invocation-id'],used=s.used;if(!s.reservations.some(x=>x.reservationId===r)&&s.leases.find(x=>x.invocationId===l)?.state==='recovered'&&Object.values(used).every(x=>x===0)&&s.slots.every(x=>x.reservationId!==r&&x.state==='free')&&s.availableQuotaSlots===1&&s.admissionOpen&&s.degraded.length===0)return;await new Promise(x=>setTimeout(x,100))}throw Error('fault cleanup did not converge')})().catch(e=>{console.error(e);process.exit(1)})
+NODE
+fault_profile=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-fault-owned.json")).labels["niceeval.profile-id"])')
+fault_reservation=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-fault-owned.json")).labels["niceeval.reservation-id"])')
+docker_api absent "niceeval.profile-id=$fault_profile,niceeval.reservation-id=$fault_reservation"
+docker_api image 'docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c'
+docker_api image 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
 set +e
 node_modules/.bin/niceeval exp docker-profile-cold-build --rerun all --json >/tmp/niceeval-exp.ndjson
 status=$?
@@ -160,7 +253,7 @@ if [ "$status" -ne 0 ]; then
   fi
 fi
 exit "$status"`,
-            ], { cwd: projectRoot, timeoutMs: 150_000 });
+          ], { cwd: projectRoot, timeoutMs: 300_000 });
             expect(driver.exitCode, driver.diagnostic()).toBe(0);
             const evals = driver.ndjson<ExpEvent>().filter(
               (event): event is Extract<ExpEvent, { event: "eval" }> =>
@@ -192,30 +285,40 @@ exit "$status"`,
         if (fixture !== undefined) {
           try {
             const journal = await sudo.run(["cat", fixture.journal]);
-            if (journal.exitCode !== 0) throw new Error(journal.diagnostic());
-            const records = journal.stdout
+            if (journal.exitCode !== 0 && primaryError === undefined) throw new Error(journal.diagnostic());
+            const records = journal.exitCode === 0 ? journal.stdout
               .split("\n")
               .filter(Boolean)
-              .map((line) => JSON.parse(line) as HostJournalRecord);
-            const locators = new Set<string>();
+              .map((line) => JSON.parse(line) as HostJournalRecord) : [];
+            const locators = new Map<string, "cache" | "ephemeral" | undefined>();
             const builderNames = new Set<string>();
             for (const record of records) {
               if (record.event === "build-terminated" && typeof record.detail.locator === "string") {
-                locators.add(record.detail.locator);
+                locators.set(record.detail.locator, undefined);
               }
               if (record.event === "build-builder-created" && typeof record.detail.builderName === "string") {
                 builderNames.add(record.detail.builderName);
               }
               for (const reservation of Object.values(record.state?.reservations ?? {})) {
                 if (reservation.kind === "build" && typeof reservation.locator === "string") {
-                  locators.add(reservation.locator);
+                  locators.set(reservation.locator, reservation.retention);
                 }
                 if (reservation.kind === "build" && typeof reservation.builderName === "string") {
                   builderNames.add(reservation.builderName);
                 }
               }
             }
-            for (const locator of locators) {
+            for (const [locator, retention] of locators) {
+              const inspectImage = await docker.run(["image", "inspect", locator]);
+              if (retention === "ephemeral" && inspectImage.exitCode === 0) {
+                // Clean the fixture after recording the ownership leak, but do
+                // not let cleanup turn a failed proof into a passing run.
+                await docker.run(["image", "rm", "--force", locator]);
+                throw new Error(`watchdog leaked ephemeral build locator ${locator}`);
+              }
+              if (retention === "ephemeral" && !/No such image/i.test(inspectImage.diagnostic())) {
+                throw new Error(inspectImage.diagnostic());
+              }
               const removeImage = await docker.run(["image", "rm", "--force", locator]);
               if (removeImage.exitCode !== 0 && !/No such image/i.test(removeImage.diagnostic())) {
                 throw new Error(removeImage.diagnostic());
@@ -260,4 +363,4 @@ exit "$status"`,
       }
     });
   });
-}, 240_000);
+}, 360_000);
