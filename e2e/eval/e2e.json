@@ -12,13 +12,13 @@
   "requires": { "runtimes": ["node>=24"] },
   "paths": [
     "e2e/eval/**",
-    "src/context/**",
-    "src/assertions/**",
-    "src/expect/**",
-    "src/agents/**",
-    "src/sandbox/**",
-    "src/runner/**",
-    "src/record/**"
+    "packages/niceeval/src/context/**",
+    "packages/niceeval/src/assertions/**",
+    "packages/niceeval/src/expect/**",
+    "packages/niceeval/src/agents/**",
+    "packages/niceeval/src/sandbox/**",
+    "packages/niceeval/src/runner/**",
+    "packages/niceeval/src/record/**"
   ],
   "artifacts": [".e2e-artifacts/**"]
 }

@@ -29,7 +29,7 @@ function walk(dir: string, match: (name: string) => boolean): string[] {
 const isTestFile = (name: string) => name.endsWith(".test.ts") || name.endsWith(".test.tsx");
 
 describe("Feature 测试文档 lint", () => {
-  const srcTests = walk("src", isTestFile);
+  const srcTests = walk("packages/niceeval/src", isTestFile);
   const CASES_LINE = /^\/\/ cases: (docs\/engineering\/testing\/unit\/[a-z-]+\.md)$/;
 
   it("src/ 下每个测试文件前 20 行内有且仅有一行 cases 声明,且指向真实存在的测试文档", () => {
