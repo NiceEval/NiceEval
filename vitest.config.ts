@@ -29,7 +29,7 @@ export default defineConfig({
       {
         test: {
           name: "unit",
-          include: ["src/**/*.test.ts", "src/**/*.test.tsx", "test/unit/**/*.test.ts"],
+          include: ["packages/niceeval/src/**/*.test.ts", "packages/niceeval/src/**/*.test.tsx", "test/unit/**/*.test.ts"],
           exclude: UNIT_EXCLUDE,
         },
       },

@@ -246,7 +246,7 @@ GitHub Actions 固定向 plan 传 `--no-diff`，因此每次执行所选 lane �
 manifest `paths` 与 diff filter 只保留给本地诊断选择，不参与线上完整验收。
 候选包的以下输入变化也执行整条 lane：
 
-- `bin/**`、`scripts/package-runtime/**`、`scripts/generate-reference.ts`、`INDEX.md` 与 `INDEX.template.md`；
+- `packages/niceeval/bin/**`、`packages/niceeval/scripts/package-runtime/**`、`scripts/generate-reference.ts`、`INDEX.md` 与 `INDEX.template.md`；
 - `docs-site/zh/**`、`docs-site/images/**` 与 `dist/**`；
 - root `.npmrc`、`.npmignore`、`.gitignore`、自动纳入文件、pnpm 配置、package metadata 与 root tsconfig。
 

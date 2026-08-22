@@ -8,11 +8,13 @@ node_modules/
 *.log
 .DS_Store
 dist/
+packages/niceeval/dist/
 .next/
 # vite 构建产物:由 `prepare` 在 install / publish 前自动构建(npm files:['src'] 仍会打进包)
-src/report/client-dist/
+packages/niceeval/src/report/client-dist/
 # 随包 AI 文档索引:由 `prepare`(build:index)从 INDEX.template.md + docs-site/zh frontmatter 生成
-/INDEX.md
+/packages/niceeval/INDEX.md
+/packages/niceeval/docs-site/
 # 临时探针 / 冒烟脚本
 _*.mjs
 _*.log

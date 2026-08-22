@@ -10,8 +10,8 @@ on:
       - main
     paths:
       - "sandbox/docker/**"
-      - "src/agents/coding-cli-versions.ts"
-      - "src/agents/bub-install-spec.ts"
+      - "packages/niceeval/src/agents/coding-cli-versions.ts"
+      - "packages/niceeval/src/agents/bub-install-spec.ts"
       - ".github/workflows/docker-image.yml"
   workflow_dispatch:
     inputs:
@@ -59,17 +59,17 @@ jobs:
         # 版本号的单源是 src/agents/coding-cli-versions.ts，workflow 不再拼一份自己的。
         run: |
           VERSION=$(node -e '
-            import("./src/agents/coding-cli-versions.ts").then((m) => {
+            import("./packages/niceeval/src/agents/coding-cli-versions.ts").then((m) => {
               process.stdout.write(m.agentBaselineVersionTag(process.env.AGENT));
             });
           ')
           AGENT_VERSION=$(node -e '
-            import("./src/agents/coding-cli-versions.ts").then((m) => {
+            import("./packages/niceeval/src/agents/coding-cli-versions.ts").then((m) => {
               process.stdout.write(m.AGENT_BASELINE_VERSION[process.env.AGENT]);
             });
           ')
           BUN_VERSION=$(node -e '
-            import("./src/agents/coding-cli-versions.ts").then((m) => {
+            import("./packages/niceeval/src/agents/coding-cli-versions.ts").then((m) => {
               process.stdout.write(m.DEFAULT_BUN_VERSION);
             });
           ')

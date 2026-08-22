@@ -162,7 +162,7 @@ Docker 不保证 entrypoint 会执行这些参数。
 
 ## 与 NiceEval 的映射
 
-观察日的 NiceEval Docker provider 在 [`src/sandbox/docker.ts`](../../src/sandbox/docker.ts) 中执行以下流程：
+观察日的 NiceEval Docker provider 在 [`packages/niceeval/src/sandbox/docker.ts`](../../packages/niceeval/src/sandbox/docker.ts) 中执行以下流程：
 
 1. 创建容器时不设置 `Entrypoint`，所以保留镜像 ENTRYPOINT。
 2. 把 `Cmd` 改为 `sh -c '... exec timeout <TTL> tail -F /tmp/niceeval-agent.log'`。
