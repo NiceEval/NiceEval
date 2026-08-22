@@ -1,6 +1,7 @@
 # 根 workspace 只管理内部包；E2E 场景与示例各自维持隔离安装身份。
 packages:
   - "packages/*"
+  - "site"
   - "!e2e/**"
   - "!examples/**"
 

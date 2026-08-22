@@ -9,10 +9,11 @@ import { loadZhPages, regenerateBundledIndex } from "../../scripts/generate-refe
 // 生成,不签入 git——所以没有漂移可守;这里守护的是「发版时一定能生成、生成一定不漏页」提前红灯,
 // 以及入口路径与打包链全仓库只有一套。
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 
 describe("随包 AI 文档索引", () => {
   it("模板 + 全部 zh 页面能生成完整文档树,非入口页一页不漏", async () => {
-    const template = await readFile(join(ROOT, "INDEX.template.md"), "utf-8");
+    const template = await readFile(join(PACKAGE_ROOT, "INDEX.template.md"), "utf-8");
     const pages = loadZhPages(ROOT);
     expect(pages.length).toBeGreaterThan(0);
 
@@ -27,16 +28,16 @@ describe("随包 AI 文档索引", () => {
   });
 
   it("npm 包、安装向导、init 托管指引和 prepare 打包链都使用包根 INDEX.md", async () => {
-    const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf-8")) as {
+    const pkg = JSON.parse(await readFile(join(PACKAGE_ROOT, "package.json"), "utf-8")) as {
       files?: string[];
       scripts?: Record<string, string>;
     };
     const init = await readFile(join(ROOT, "INIT.zh.md"), "utf-8");
     const initEn = await readFile(join(ROOT, "INIT.md"), "utf-8");
-    const cli = await readFile(join(ROOT, "src/cli/node-application.ts"), "utf-8");
+    const cli = await readFile(join(PACKAGE_ROOT, "src/cli/node-application.ts"), "utf-8");
 
     expect(pkg.files).toContain("INDEX.md");
-    expect(pkg.scripts?.prepare, "prepare 链必须包含 build:index,否则发出去的包缺 INDEX.md").toContain("build:index");
+    expect(pkg.scripts?.prepack, "prepack 链必须包含 build:index,否则发出去的包缺 INDEX.md").toContain("build:index");
     expect(init).toContain("node_modules/niceeval/INDEX.md");
     expect(initEn).toContain("node_modules/niceeval/INDEX.md");
     expect(cli).toContain("node_modules/niceeval/INDEX.md");

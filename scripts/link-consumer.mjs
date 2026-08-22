@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const COREPACK = process.platform === "win32" ? "corepack.cmd" : "corepack";
 
@@ -120,21 +121,22 @@ async function main() {
   try {
     runPnpm(["run", "build:package"]);
     runPnpm(["run", "build:index"]);
-    runPnpm(["--config.ignore-scripts=true", "pack", "--pack-destination", scratch], { quiet: true });
+    runPnpm(["--config.ignore-scripts=true", "pack", "--pack-destination", scratch], { cwd: PACKAGE_ROOT, quiet: true });
 
-    const packageManifest = await readJson(join(ROOT, "package.json"));
+    const packageManifest = await readJson(join(PACKAGE_ROOT, "package.json"));
     const tarball = join(scratch, `${packageManifest.name}-${packageManifest.version}.tgz`);
     const digest = await sha256(tarball);
 
-    runPnpm(["link", sourceRoot], {
+    runPnpm(["link", PACKAGE_ROOT], {
       cwd: consumerRoot,
       version: declaredPnpmVersion(consumerManifest),
     });
 
     const installedRoot = await realpath(join(consumerRoot, "node_modules", "niceeval"));
-    if (installedRoot !== sourceRoot) {
+    const packageSourceRoot = await realpath(PACKAGE_ROOT);
+    if (installedRoot !== packageSourceRoot) {
       throw new Error(
-        `link verification failed: ${join(consumerRoot, "node_modules", "niceeval")} resolves to ${installedRoot}, expected ${sourceRoot}`,
+        `link verification failed: ${join(consumerRoot, "node_modules", "niceeval")} resolves to ${installedRoot}, expected ${packageSourceRoot}`,
       );
     }
 

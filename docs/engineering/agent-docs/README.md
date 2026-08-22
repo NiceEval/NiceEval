@@ -9,7 +9,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 ## 打包方案：原样发布，不转换
 
 `package.json` 的 `files` 白名单收录三项文档面。
-`docs-site/zh/` 与 `docs-site/images/` 原样进包——不经复制、转换或搬运，包内路径与仓库路径一致，这个路径本身是托管区块与文档引用的契约；`INDEX.md` 是打包前由 `prepare` 生成的构建输出（时机链见下）：
+`docs-site/` 是仓库单源。`packages/niceeval` 的 `prepack` 每次先清空旧 staging，再把 `docs-site/zh/` 与 `docs-site/images/` 原样复制到 package closure；源、目标的完整相对清单和内容 digest 必须相同。tarball 内路径保持不变，`INDEX.md` 同样由 `prepack` 现场生成（时机链见下）：
 
 | 进包内容 | 角色 |
 | --- | --- |
@@ -76,9 +76,9 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 | 守护 | 落点 | 校验内容 |
 | --- | --- | --- |
-| 可生成 | `lint/docs-site/bundled-docs-index.lint.ts` | 复用生成器的纯函数，从模板 + 全部 zh 页面在内存生成一次：缺 `title` / `description`、模板缺区块标记时红灯，并校验每个非入口页都出现在输出里——与发版时 `prepare` 同一条失败路径，提前到 `pnpm lint:docs-site` |
+| 可生成 | `lint/docs-site/bundled-docs-index.lint.ts` | 复用生成器的纯函数，从模板 + 全部 zh 页面在内存生成一次：缺 `title` / `description`、模板缺区块标记时红灯，并校验每个非入口页都出现在输出里——与发版时 `prepack` 同一条失败路径，提前到 `pnpm lint:docs-site` |
 | 完整 | 生成器自身 | 树由文件系统枚举构造，存在与完整性天然成立；缺 `title` / `description` 的页面在生成时报错并指明落点，发布被挡下 |
-| 单点入口与打包链 | `lint/docs-site/bundled-docs-index.lint.ts` | `package.json` `files`、`INIT.zh.md`、`src/cli.ts` 托管指引三处指向的都是包根 `INDEX.md`；`prepare` 链包含 `build:index`，缺了发出去的包就没有索引 |
+| 单点入口与打包链 | `lint/docs-site/bundled-docs-index.lint.ts` | `packages/niceeval/package.json` `files`、`INIT.zh.md`、`packages/niceeval/src/cli.ts` 托管指引三处指向的都是包根 `INDEX.md`；`prepack` 链包含 `build:index`，缺了发出去的包就没有索引 |
 
 ## 生成与打包的时机链
 
@@ -87,10 +87,10 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 1. **模板签入，输出不签入。**
    手写导语在 `INDEX.template.md`；`INDEX.md` 在 gitignore 里。
    仓库里没有需要人工刷新的生成物，也就没有「忘跑生成」这类漂移。
-2. **安装与发版时生成。**
-   `prepare` 生命周期（本地 `pnpm install` 与发版 CI 的 install 步骤都会触发）运行 `pnpm run build:index`，从模板与当前各页 frontmatter 生成包根 `INDEX.md`。某页缺 `description` 时在这里报错，发布随之失败——索引与包内页面在打包那一刻由构造保证一致。
-3. **打包时只收文件。**
-   `pnpm publish` 按 `files` 白名单把刚生成的 `INDEX.md` 与原位的 `docs-site/zh/**`、`docs-site/images/**` 收进 tarball；docs 页面不经任何复制或搬运，包内路径与仓库路径一致。
+2. **打包与发版时生成。**
+   `packages/niceeval` 不声明 `prepare`。它的 `prepack` 运行 runtime、Report client、`build:index` 与 docs staging；普通 `pnpm install` 不生成发布面。某页缺 `description` 或 staging 清单、digest 不一致时，打包直接失败。
+3. **打包时只收 package closure。**
+   从 `packages/niceeval` 运行 `pnpm pack`；`files` 白名单收刚生成的 `INDEX.md` 与 staging 后的 `docs-site/zh/**`、`docs-site/images/**`。发布流程只移动并校验这一份 tarball，不再次 pack。
 
 ## 维护与验收
 

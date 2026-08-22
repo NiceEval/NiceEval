@@ -85,16 +85,17 @@ export async function buildCandidateTarball(
   options: { quiet?: boolean; control?: E2EExecutionControl } = {},
 ): Promise<CandidateTarball> {
   mkdirSync(destDir, { recursive: true });
+  const packageRoot = join(repoRoot, "packages", "niceeval");
 
   const control = options.control ?? createUnmanagedExecutionControl();
-  // `pnpm pack` runs root prepare and therefore writes shared checkout output.
+  // `pnpm pack` runs package prepack and therefore writes package-local shared output.
   // Keep only that lifecycle inside the lease; all later tarball inspection and
   // all scenario execution remain invocation-local and can run concurrently.
   const packLock = await acquireCandidatePackLock(repoRoot, control);
   let packed: OwnedProcessResult;
   try {
     packed = await control.supervisor.run(["pnpm", "pack", "--pack-destination", destDir], {
-      cwd: repoRoot,
+      cwd: packageRoot,
       env: process.env,
       // Always retain stderr for an actionable pack failure. `stream` still
       // keeps non-quiet callers' normal lifecycle output live on the terminal.
@@ -130,7 +131,7 @@ export async function buildCandidateTarball(
   const tarballPath = join(destDir, tgzFiles[0]);
   const candidate = readCandidateTarball(tarballPath);
 
-  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+  const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
     name: string;
     version: string;
   };

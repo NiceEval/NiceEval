@@ -1,6 +1,5 @@
 import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
-import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -315,7 +314,11 @@ async function buildRemarkVendor(outputRoot) {
 
 async function build() {
   await assertPublicEntryClosure();
-  const temp = await mkdtemp(join(tmpdir(), "niceeval-package-runtime-"));
+  // The final publish is an atomic rename, so staging must live on the same
+  // filesystem as dist. CI checkouts and the system temp directory are often
+  // separate mounts (Vercel/Netlify), where rename would otherwise fail with
+  // EXDEV after the full build has completed.
+  const temp = await mkdtemp(join(ROOT, ".niceeval-package-runtime-"));
   const outputRoot = join(temp, "dist");
   const rawTypes = join(temp, "types");
   try {

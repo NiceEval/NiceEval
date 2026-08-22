@@ -10,6 +10,6 @@
   "harness": { "testkit": true },
   "secrets": [],
   "requires": { "runtimes": ["node>=24"] },
-  "paths": ["e2e/runner/**", "src/coordination/**", "src/define.ts", "src/experiment/**", "src/runner/**", "src/sample/**", "src/record/**", "src/show/**"],
+  "paths": ["e2e/runner/**", "packages/niceeval/src/coordination/**", "packages/niceeval/src/define.ts", "packages/niceeval/src/experiment/**", "packages/niceeval/src/runner/**", "packages/niceeval/src/sample/**", "packages/niceeval/src/record/**", "packages/niceeval/src/show/**"],
   "artifacts": [".e2e-artifacts/**"]
 }
