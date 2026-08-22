@@ -277,7 +277,7 @@ DinD 镜像不得用 `DOCKER_HOST` 或 `DOCKER_CONTEXT` 改写默认 endpoint。
 readiness 前先验证默认 Docker context，并确认不带 endpoint 选项的 `docker info` 与显式
 `unix:///var/run/docker.sock` 到达同一个 daemon。
 
-镜像烘焙固定工具、归档和只读项目初始文件。必须等 inner daemon 就绪才能做的准备仍放进 Sandbox `.setup()`：固定离线 image 导入等确定性工作使用[可缓存 setup](../../roadmap/sandbox-materialization/setup-prefix/README.md)，恢复 checkpoint、建立租约或依赖本实例的 smoke check 使用逐实例 callback。setup 失败归入 Sandbox 创建，不会把未准备好的 Sandbox 交给 Agent。
+镜像烘焙固定工具、归档和只读项目初始文件。必须等 inner daemon 就绪才能做的确定性准备使用 Sandbox `.prepare(operation)`；固定离线 image 导入等工作可以命中[准备前缀缓存](../../roadmap/sandbox-materialization/setup-prefix/README.md)。恢复 checkpoint、建立租约或依赖本实例的 smoke check 使用 `.lifecycle()` callback。准备失败归入 Sandbox 创建，不会把未准备好的 Sandbox 交给 Agent。
 
 生命周期分工只有一条顺序：镜像提供静态内容，provider 启动并验证 daemon，Sandbox setup 准备本物理实例的动态状态，随后才运行 Agent。镜像 `ENTRYPOINT`、作者 readiness 与 Sandbox setup 不能承担
 同一项初始化职责；保留两套入口会让 build 成功但 Attempt 缺运行时状态。
@@ -322,7 +322,7 @@ layer 的 `prepare()` 只处理必须按 experiment / eval 变化的小配置、
 
 ## 准备命令:layer 的 `prepare()`
 
-跑 agent 前的预置写成 layer 的 `prepare()` 命令,每条 Attempt 都执行。
+跑 agent 前的预置写成 layer 的 `prepare()` operation。sandbox-scope 每物理实例满足一次,attempt-scope 每条 Attempt 满足一次。缓存命中 restore verified state,不调用 recipe。
 声明形状、command identity 与 cleanup 契约见 [Sandbox Layer](layers.md);执行时序见 [三方准备时序](lifecycle.md)。
 
 这一层解决的是一类特定问题:**Sandbox 内容必须按实验或题目变化,不能在构建期固定**。
@@ -338,8 +338,11 @@ export default defineExperiment({
       probe: shell("mempal --version | grep -q 0.9.0"),
       install: shell("curl -fsSL https://get.mempal.dev | sh"),
     }))
-    .setup(restoreMempalForThisPhysicalSandbox)
-    .teardown(archiveMempalFromThisPhysicalSandbox),
+    .lifecycle({
+      scope: "sandbox",
+      setup: restoreMempalForThisPhysicalSandbox,
+      teardown: archiveMempalFromThisPhysicalSandbox,
+    }),
   sandboxReuse: true,
   maxConcurrency: 1,                                          // 只维持一个连续的物理实例
 });
@@ -348,7 +351,9 @@ export default defineExperiment({
 这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;按实验变化的安装内容(这次实验要不要装某个二进制、预热)走 layer 的 `prepare()`。
 两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,prepare command 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
 
-跨 Attempt 的沙箱内状态不写进 prepare command，也不放进 Experiment 顶层字段。把它挂在现代 `SandboxLayer` 的 `.setup()` / `.teardown()`：前者在物理实例创建后一次运行，后者在 provider stop 前一次运行；`sandboxReuse: true` 时正好承接同一台被复用物理实例的首尾，需要固定顺序再声明 `maxConcurrency: 1`。
+跨 Attempt 的外部状态不放进可缓存 preparation，也不放进 Experiment 顶层字段。把它挂在 `SandboxLayer.lifecycle({ scope: "sandbox", setup, teardown })`：setup 在物理实例创建后运行一次，teardown 在 provider stop 前运行一次。
+
+`sandboxReuse: true` 时，这对动作承接同一台被复用物理实例的首尾。需要固定顺序时再声明 `maxConcurrency: 1`。
 
 prepare 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败),归属 `sandbox.prepare.<owner>`。
 cleanup 经 `context.onCleanup()` 在取得资源后就地登记,按全局准备顺序逆序执行;未执行或取得失败的命令不产生虚假 cleanup。
@@ -436,13 +441,13 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 | 要准备的东西 | 放哪 | 怎么收尾 |
 |---|---|---|
 | 所有 attempt 都相同、无需运行中 daemon 的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用构建结果 | provider 的 image/template/snapshot 生命周期管理 |
-| 必须等 Provider ready 后生成、跨实例相同的状态 | [可缓存 setup](../../roadmap/sandbox-materialization/setup-prefix/README.md) 的品牌化 recipe；按变化频率与依赖排队 | SetupPrefixKey、可选 promotion 与私有 clone |
+| 必须等 Provider ready 后生成的确定性状态 | [可缓存 preparation](../../roadmap/sandbox-materialization/setup-prefix/README.md)；typed inputs 推导 scope,变化频率只影响缓存策略 | SetupPrefixKey、可选 promotion 与私有 restore |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
-| **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`prepare()`](layers.md):每 Attempt 执行,昂贵动作靠真实检查快速命中 | `context.onCleanup()` 就地登记,逆序执行;沙箱内文件随销毁自动没了 |
+| **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`prepare()`](layers.md);scope 由输入推导,每次 occurrence 可以 restore 或 replay | 外部资源改用 `.lifecycle()` 成对登记;沙箱内文件随销毁自动没了 |
 | **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`prepare()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `context.onCleanup()` / `try/finally` |
 | Agent CLI 的精确版本(每 Attempt 探测) | Adapter 必填 `ensure` + identity 匹配的 [`AgentInstaller`](../adapters/architecture/agent-ensure.md)；Runner 负责 探测、缺失时安装、复检 | 安装失败归 `agent.ensure`；安装的文件随 Sandbox 销毁或题间复用策略处理 |
 | 连 agent、写鉴权、主配置与扩展(每 Attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量)；要读写 Agent 安装文件的后续脚本走 factory 的 [`postSetup`](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup) | 随 Sandbox 销毁；要收尾的动作挂成对的 `preTeardown`，逆序且先于 Agent teardown |
-| 跨 Attempt 的沙箱内状态(记忆库、累积笔记) | modern `SandboxLayer.setup()` / `.teardown()`；setup 接收 `(sandbox, { experimentId, signal, progress, diagnostic, fact })` | teardown 在 Agent teardown 与 Attempt cleanup 后、provider stop 前逆序运行；`maxConcurrency: 1` 只保证本 Invocation 串行，多个 Invocation 共用 checkpoint 时还要声明 Experiment `sharedState.key` |
+| 跨 Attempt 的沙箱内状态(记忆库、累积笔记) | `SandboxLayer.lifecycle({ scope: "sandbox", setup, teardown })`；setup 接收 `(sandbox, { experimentId, signal, progress, diagnostic, fact })` | teardown 在 Agent teardown 与 Attempt cleanup 后、provider stop 前逆序运行；`maxConcurrency: 1` 只保证本 Invocation 串行，多个 Invocation 共用 checkpoint 时还要声明 Experiment `sharedState.key` |
 | **跨实验共享**、这次 run 之前就该存在的外部服务(共享 DB、公司内网服务本体) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 
 分工只看两个维度——**随什么变化**(实验 / eval / 都不随)与**活在哪一侧**(宿主机 / 沙箱内)。

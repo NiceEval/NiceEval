@@ -4,28 +4,27 @@
 
 ```text
 pure link
-  → resolve immutable setup inputs
-  → validate dependencies and capability
-  → linearize setup DAG
+  → evaluate typed preparation inputs and scope
+  → validate eligibility and capability
+  → normalize sandbox scope before attempt scope
   → BuildKey ready
-  → longest verified SetupPrefix lookup
-  → replay materialize suffix
-  → optional prefix promotion
-  → private clone / private reset baseline
-  → per-instance setup callbacks in order
-  → Attempt
-  → teardown callbacks in reverse order
+  → satisfy sandbox-scope prefixes
+  → establish verified reset baseline
+  → per Attempt reset
+  → satisfy attempt-scope prefixes
+  → Agent / test
+  → lifecycle teardown in reverse order
 ```
 
-`--dry` 完成输入求值、依赖检查、线性化、SetupPrefixKey、CaseKey 与 fingerprint 计算；它不 lookup cache、不取得 lease、不创建 staging 或 Sandbox。普通 callback 保持逐实例执行，并成为 recipe 排序的硬屏障。
+`--dry` 完成输入求值、scope 推导、eligibility、规范化顺序、SetupPrefixKey、CaseKey 与 fingerprint 计算；它不 lookup cache、不取得 lease、不创建 staging 或 Sandbox。普通 lifecycle callback 始终真实执行，并截断后续共享捕获 lineage。
 
-查询、等待 single-flight 与 lease acquire 不占 Attempt permit。实际 staging、quiesce、promotion 和 clone 使用 Provider 的资源队列；长期操作不持 registry transaction、Domain 全局锁或 Attempt permit。一个前缀不被 promotion 时，最终实例直接重新执行它及后缀的 recipe，语义不变。
+查询、等待 single-flight 与 lease acquire 不占 Attempt permit。实际 staging、quiesce、promotion、restore 和 clone 使用 Provider 的资源队列；长期操作不持 registry transaction、Domain 全局锁或 Attempt permit。一个前缀不被 promotion 时，最终实例直接重新执行它及后缀，语义不变。
 
-## 逐实例 setup 与收尾
+## Lifecycle 与收尾
 
-全部可缓存操作完成后才开始逐实例 setup callback，可缓存操作不得依赖 callback 产生的状态。setup 开始前登记对应收尾义务；若某个 setup 失败，已到达节点仍按逆序 teardown。现有 setup/teardown callback 继续按其物理 Sandbox 生命周期成对执行。
+`.lifecycle({ scope, setup, teardown })` 与 preparation operation 属于同一规范化序列。setup invocation 前登记 teardown 义务；若 setup 部分失败，已到达节点仍按全局逆序 teardown。attempt-scope teardown 在该 Attempt 的 Agent/test/cleanup 后运行；sandbox-scope teardown 在最后一个 Attempt 后、Provider finalizer 前运行。teardown 使用独立 cleanup signal，永不缓存或因 prefix hit 跳过。
 
-共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可由最后的高频操作写入；secret 在 clone 后通过私有 setup overlay 注入，并在 teardown 清除。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
+共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可由最后的高频 operation 写入；secret 通过私有 lifecycle overlay 注入并在 teardown 清除。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
 
 ## Provider capacity admission
 
@@ -42,10 +41,12 @@ Runner E2E owner 通过安装后的 `niceeval exp` 与可控 profile capacity fi
 
 ## 失败
 
-- 缺失依赖、循环、重复完整身份、secret 进入 materialize 或不支持的 reuse overlay：planning fail。
+- scope 反向依赖、重复完整身份、secret 进入 operation 或不支持的 reuse overlay：planning fail。
 - hit 的 key/manifest/artifact 不一致：隔离该 generation，并从更短 verified prefix 重新执行 recipe。
 - recipe、quiesce、捕获、clone 或 ready 失败：不交付 Sandbox；资源销毁或 durable 交给 reconcile。
 - 单个 waiter 取消不取消仍有消费者的共享 operation；最后一个 waiter 取消时协作终止未发布 staging。
 - promotion 失败不能把部分状态当成命中；可安全重新执行 recipe 时回到最终私有实例，不能在部分修改的 staging 上重试。
 
-可观测状态区分 `resolving`、`querying`、`hit`、`queued`、`materializing`、`quiescing`、`promoting`、`cloning`、`activating`、`ready` 与 `failed`。频率、prefix identity、cache source 与命中事实进入 plan/debug/provenance，但不进入 CaseKey。
+运行反馈区分 `resolving`、`querying`、`hit`、`replaying`、`unsupported`、`queued`、`quiescing`、`promoting`、`restoring`、`ready` 与 `failed`。
+
+`niceeval debug` 只显示静态 scope、eligibility、prefix identity 与 Provider capability，并固定标记 `cacheLookup: not-probed`。实际 hit、generation 与 restore source 只进入运行反馈和 provenance。

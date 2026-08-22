@@ -30,7 +30,7 @@ type EvalGroupMemberSandbox =
 ```
 
 `sandboxLayer().prepare(...)` 保留 prepare-only 状态。任何 template-bearing Layer，或调用过
-`.setup()` / `.teardown()` 的 Layer，都会在 `defineEvalGroup()` 调用处产生 TypeScript 错误。
+带 `.lifecycle()` 的 Layer，都会在 `defineEvalGroup()` 调用处产生 TypeScript 错误。
 discovery 仍复核运行时品牌与实际 Layer 状态，拦住 JavaScript、宽泛断言和动态加载越界。
 
 ## `onUnavailable`

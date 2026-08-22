@@ -164,7 +164,7 @@ CaseKey
 
 **BuildKey 负责构建结果复用,CaseKey 负责完整 attempt 运行身份与 fingerprint。**
 
-当声明包含[可缓存 setup](../../roadmap/sandbox-materialization/setup-prefix/README.md)时，identity 从 base 开始，为依赖有序的每个节点链式计算 SetupPrefixKey。最终 CaseKey 再包含最终 SetupPrefixKey 与经过身份查找的 manifest digest。
+当声明包含[可缓存 preparation](../../roadmap/sandbox-materialization/setup-prefix/README.md)时，identity 从 base 开始，为 scope 与 owner 顺序规范化的每个 operation 链式计算 SetupPrefixKey。最终 CaseKey 再包含最终 SetupPrefixKey 与经过身份查找的 manifest digest。
 
 cache policy、hit/miss、entry、generation、locator 与 lease 不进入 CaseKey。因此同一内容不会因本机缓存冷热而失去可比性。
 只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果。

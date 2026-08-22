@@ -65,7 +65,7 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 |---|---|
 | Experiment `setup` / `teardown` | 每 Invocation 成对一次 |
 | `createSandbox` / `stop` | 每个 Sandbox 成对一次 |
-| `SandboxLayer.setup()` / `teardown()` | 每个实际 Sandbox 成对一次；仅 Experiment hook 可跨 Eval 共用，Eval hook 隔离该 Eval |
+| `SandboxLayer.lifecycle({ scope: "sandbox" })` | 每个实际 Sandbox 成对一次；仅 Experiment node 可跨 Eval 共用，Eval node 隔离该 Eval |
 | 两层作者 layer 的 `prepare()` 与已登记 cleanup | 每 Attempt 成对 |
 | agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
 | Agent runtime `setup` / `teardown` | 每 Attempt 成对一次 |

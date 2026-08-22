@@ -98,7 +98,7 @@ Runner Repo 增加专用 Eval；完整 fingerprint 等价类仍不在 E2E 重复
 带 `sandboxReuse` 的切片还证明两个 Attempt 使用同一物理 Sandbox。最后一个 Attempt settle 后，Sandbox
 lifecycle/finalizer scope barrier 与 Experiment teardown barrier 都阻止第二 Invocation 的 setup。
 
-前者由 `SandboxLayer.teardown` hook 确定性阻塞。实际 provider finalizer 也由同一 `Scope.close` 等待，但 fixture
+前者由 `SandboxLayer.lifecycle().teardown` hook 确定性阻塞。实际 provider finalizer 也由同一 `Scope.close` 等待，但 fixture
 不直接注入它。该 Journey 经安装后的 `niceeval exp` 证明等待方没有在共享状态区间内运行 Hook 或执行 Eval。
 
 ### runner-provider-lane

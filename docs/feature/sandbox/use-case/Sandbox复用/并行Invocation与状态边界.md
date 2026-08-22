@@ -28,8 +28,11 @@ export default defineExperiment({
 ```ts
 export default defineExperiment({
   sandbox: e2bSandbox({ template: "memorybench" })
-    .setup(restoreMempal)
-    .teardown(saveMempal),
+    .lifecycle({
+      scope: "sandbox",
+      setup: restoreMempal,
+      teardown: saveMempal,
+    }),
   sandboxReuse: true,
   maxConcurrency: 1,
   sharedState: { key: "mempal/codex/cohort-a" },

@@ -414,7 +414,7 @@ provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传�
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。
 - **Sandbox 复用** —— Experiment 的 `sandboxReuse: true` 让多条 Attempt 共用 Sandbox。
-  Case create / ready 每复用周期一次;两层作者 prepare、agent.ensure 循环与 Agent runtime 仍每 Attempt 执行,昂贵准备靠探测命中快速返回。
+  Case create / ready 与 sandbox-scope preparation 每复用周期满足一次;attempt-scope preparation、agent.ensure 循环与 Agent runtime 每 Attempt 满足一次。准备缓存命中 restore verified state,miss 或 unsupported 才调用 recipe。
   派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。
   完整契约见 [Sandbox 复用](reuse.md)。
 

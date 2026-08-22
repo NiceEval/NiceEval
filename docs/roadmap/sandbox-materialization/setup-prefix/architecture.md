@@ -2,13 +2,14 @@
 
 ## 前缀身份
 
-Base 之后每个 setup 节点产生一个链式身份：
+Base 之后每个 preparation operation 产生一个链式身份：
 
 ```text
 SetupPrefixKey[i] = hash(
-  base/provider identity,
+  domain/trust and base/provider identity,
   SetupPrefixKey[i - 1],
-  owner-qualified setup id,
+  evaluated scope,
+  owner-qualified operation id,
   optional cacheVersion,
   canonical recipe digest,
   immutable input identities after lookup,
@@ -17,9 +18,9 @@ SetupPrefixKey[i] = hash(
 )
 ```
 
-parent key 使相同操作不能从不同父状态错误复用。操作类型、命令或目标、规范化参数和 inputs 形成 canonical recipe digest；`cacheVersion` 只为这些输入无法表达的实现世代提供显式失效。`changeFrequency`、promotion、冷热、locator、lease、credential value 和调度额度不进入 key。最终 CaseKey 与 Attempt fingerprint 包含最终 SetupPrefixKey 和输入求值后的 manifest digest；carry 比较内容身份，不比较当前物理库存。
+parent key 使相同操作不能从不同 verified baseline 错误复用。操作类型、命令或目标、规范化参数和已求值 typed inputs 形成 canonical recipe digest；`cacheVersion` 只为这些输入无法表达的实现世代提供显式失效。sandbox-scope prefix 以 Provider/base 为根；attempt-scope prefix 以 verified sandbox reset baseline 为 parent。`changeFrequency`、promotion、冷热、locator、lease、credential value、Attempt UUID 和调度额度不进入 key。
 
-只有 key、manifest 与 Provider artifact 双向验证成功的前缀可以命中。查询得到最长 verified prefix；未命中的后缀按顺序重新执行 recipe。每个逻辑前缀都有 key 和缓存资格，但 Provider 不必为每一步立刻写出物理 artifact。promotion policy 可以根据频率、成本和复用证据选择前缀，并使用有界公平排队，不能让 frequent 工作永久饥饿。
+只有 key、manifest 与 Provider artifact 双向验证成功的前缀可以命中。每个 scope occurrence 都产生 preparation satisfaction：hit restore verified private state，miss 从最长 verified prefix replay，unsupported 真实执行。每个逻辑前缀都有 key 和缓存资格，但 Provider 不必为每一步立刻写出物理 artifact。promotion policy 可以根据频率、成本和复用证据选择前缀，并使用有界公平排队，不能让高频工作永久饥饿。
 
 ## Provider capability
 
@@ -33,4 +34,4 @@ Docker DinD 的一个前缀必须原子包含 outer writable rootfs、私有 `/v
 
 每个消费者取得私有 writable clone。只 `docker commit` outer container 会漏掉 inner data-root；复制运行中的 `/var/lib/docker` 会产生不一致状态；共享 writable upperdir 会破坏 Attempt 隔离。这些都不是合法前缀。Provider 无法完整、原子捕获时必须报告 Unsupported。
 
-共享或持久 SetupPrefix 一定位于逐实例 setup callback 之前。每个物理 Sandbox 可以另有私有 reset baseline，但它不能登记为共享 prefix。sandbox reuse 下，secret setup 必须位于 Provider 声明为 snapshot-excluded 且 reset 保留的 lifecycle-owned overlay；无法证明时该组合在 planning 失败。
+普通 lifecycle callback 截断整条共享捕获 lineage；后续 operation 标记 `ineligible: opaque-ancestor`。每个物理 Sandbox 可以另有私有 reset baseline，但 opaque state 不能登记为共享 prefix。sandbox reuse 下，secret setup 必须位于 Provider 声明为 snapshot-excluded 且 reset 保留的 lifecycle-owned overlay；无法证明时该组合在 planning 失败。
