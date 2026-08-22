@@ -44,7 +44,7 @@ V1 的 Agent 安装正确性路径固定为宿主内容寻址 artifact cache，�
 task × Agent commit、只读 artifact mount、OCI manifest 重组、共享 payload layer 和专属 BuildKit builder 均不属于 V1。
 共享或默认 BuildKit builder 只报告 `unverified` 容量，不进入 NiceEval GC。
 
-## Materialization Domain
+## Cache Domain
 
 Domain 是一个 cache backend 的独立所有权和回收边界：
 
@@ -60,7 +60,7 @@ interface DomainIdentity {
 host CAS、Docker image store 和 BuildKit 是三个 Domain，不能用 Docker daemon id 代替其它 backend identity。
 `cache status` 可以聚合多个 Domain 的需求，库存明细、GcPlan 和 apply 始终只属于一个 Domain。
 
-共享或默认 BuildKit builder 不满足下表的 BuildKit identity，因此不是 Materialization Domain。
+共享或默认 BuildKit builder 不满足下表的 BuildKit identity，因此不是 Cache Domain。
 它只能产生 provider-level `unverified` capacity observation，不能取得 domain id、entry、lease 或 GcPlan。
 
 `ownerId` 是当前 OS 用户保存在 `~/.local/state/niceeval/` 的随机 UUID。
@@ -114,7 +114,7 @@ base image、用户拉取的 task image、共享 parent 和 layer 都不是删�
 ```ts
 interface CacheManifest {
   schemaVersion: number;
-  kind: "agent-artifact" | "task-build";
+  kind: "agent-artifact" | "task-build" | "sandbox-setup-prefix";
   provider: {
     family: string;
     backendIdentity: string;
@@ -123,6 +123,13 @@ interface CacheManifest {
     libc?: string;
   };
   task?: { buildKey: string; locator: string };
+  setupPrefix?: {
+    setupPrefixKey: string;
+    setupManifestDigest: string;
+    storageSchemaRevision: string;
+    artifactFormatRevision: string;
+    dependency: "copied" | "parent-backed";
+  };
   agent?: {
     ensure: { agent: string; version: string; revision: string };
     installer: { agent: string; version: string; revision: string; mode: string };
@@ -134,6 +141,12 @@ interface CacheManifest {
   intentProjection?: { version: number; value: unknown };
 }
 ```
+
+`sandbox-setup-prefix` 不建立第二套 registry。它复用本页的 operation、generation fence、双向 immutable identity 验证、`published → indexed` 状态机、lease、durable root 和两阶段 GC。
+
+`copied` consumer 只在复制与验证期间持 read lease。`parent-backed` consumer 在短 lease 下建立 durable prepared root 与 Provider reference，复核后转 active；实例销毁并确认 reference 消失后才解除 root。staging scratch 是 DestroyOnly，不进入库存。任一 clone、mount、snapshot parent、lease、root 或 `unverified` 事实都否决删除。
+
+SetupPrefix 的链式身份、取消和失效语义见 [Setup Prefix Architecture](../setup-prefix/architecture.md) 与 [Lifecycle](../setup-prefix/lifecycle.md)。
 
 缺少必需兼容轴或遇到未知 schema 时，entry 为 `unverified`。
 `intentProjection` 只解释同一意图的旧配方，不授予命中、迁移或删除资格。

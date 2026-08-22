@@ -35,7 +35,7 @@ declare function checkout(options: CheckoutOptions): StableSandboxCommand;
 ```typescript
 export default defineEval({
   sandbox: sandboxLayer()
-    .prepare(checkout({
+    .before(checkout({
       repo: "https://github.com/acme/fixture-repo",
       ref: "9e107d9d",
     })),
@@ -74,7 +74,7 @@ declare function installTool(options: InstallToolOptions): StableSandboxCommand;
 ```typescript
 export default defineExperiment({
   sandbox: e2bSandbox({ template: "base-node-22" })
-    .prepare(installTool({
+    .before(installTool({
       tool: "mempal",
       identity: { version: "0.9.0" },
       probe: shell("mempal --version | grep -q 0.9.0"),
@@ -115,7 +115,7 @@ template 预装只是让 `probe` 首测即命中的一种手段。
 - `shell(script, options)` 精确投影 script。单行使用 JSON string；多行在 human 的独立区域框内按原始行显示，并保留缩进、空行与末尾换行。JSON 计划仍保存原始 script string。
 - `installTool()` 投影完整条件树：先运行 `probe` 探测命令；探测未命中才 install，再用同一命令 recheck。子命令若由 `command()` / `shell()` 创建就是 exact；普通 `defineSandboxCommand()` 虽然有稳定 fingerprint identity，仍是 opaque。
 - `checkout()` 的 cache 检查、mirror 修复、动态 workdir 与 Git 分支依赖 live Sandbox 状态，因此整体标为 opaque；计划不把内部实现源码当协议。
-- 普通 `.prepare(async (sandbox) => …)` 与 `defineSandboxCommand(identity, run)` 的 `run` 都标为 opaque。公开 identity 可由作者自行命名，不能拿 id / inputs 猜它会执行什么。
+- 普通 `.before(async (sandbox) => …)` 与 `defineSandboxCommand(identity, run)` 的 `run` 都标为 opaque。公开 identity 可由作者自行命名，不能拿 id / inputs 猜它会执行什么。
 
 `cwd`、`user`、`timeoutMs` 与 env key 可以展示；env value 与 stdin 只记 redaction，不进入 human / JSON 命令计划。argv 与 shell script 本身会原样进入计划，因此不得直接嵌 token、密码或私有正文；用 env、credential provider 或受管内容通道传递秘密。
 

@@ -31,4 +31,4 @@ Plugin family 在作者构造 Definition 时生成并冻结 occurrence。Link �
 
 一次 attachment 先激活其实际 owner fragment；如果 occurrence 还声明 `sandbox`，该 fragment沿 owner provenance 加入实际物理 Sandbox。它不是第二次 attachment，也不允许用户从 SandboxLayer 再挂一次。
 
-物理顺序遵循 Sandbox link 的既有 owner 顺序：template owner 在前，其余 owner 在后；每个 owner 内保持 `plugins` 数组顺序。Teardown 对已激活前缀整体逆序。
+物理 action 与其它 SandboxLayer action 一起进入 occurrence DAG；template owner 只决定 Provider 起点。Plugin declaration key 保留 `plugins` 数组 ordinal，changeFrequency 相同时参与稳定 tie-break，after 对已激活登记栈整体逆序。

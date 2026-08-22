@@ -70,18 +70,18 @@ fresh Case 默认在 Scope 退出时整组 stop。
 Eval template + Experiment command-only + Agent layer
   -> Eval template 选择 Provider
   -> build / start / ready Sandbox Case
-  -> Sandbox lifecycle setup
+  -> physical-instance before / around.before
+  -> 建立 verified reset baseline
   -> 每条 Attempt:
-       reset 到已知 Case 起点
-       -> Eval prepare commands(声明顺序)
-       -> Experiment prepare commands(声明顺序)
+       reset 到 verified sandbox baseline
+       -> occurrence DAG:依赖就绪后按 changeFrequency 从小到大满足 before
        -> agent.ensure 循环(按 ensure 声明顺序)
        -> 建立 Agent 可归因起点
-       -> Agent runtime setup / send / test
-       -> Agent teardown
+       -> Adapter runtime setup / Agent run / Eval test / runtime teardown
+       -> attempt after(实际登记栈逆序)
        -> Experiment 已登记 cleanup(逆序)
        -> Eval 已登记 cleanup(逆序)
-  -> Sandbox lifecycle teardown
+  -> physical-instance after / around.after(登记栈逆序)
   -> Provider Case finalizer
 ```
 
@@ -94,51 +94,42 @@ Compose Eval 自己选择 Docker Compose Provider;同一 Experiment 不需要知
 Experiment template + Eval command-only + Agent layer
   -> Experiment template 选择 Provider
   -> build / start / ready Sandbox Case
-  -> Sandbox lifecycle setup
+  -> physical-instance before / around.before
+  -> 建立 verified reset baseline
   -> 每条 Attempt:
-       reset 到已知 Case 起点
-       -> Experiment prepare commands(声明顺序)
-       -> Eval prepare commands(声明顺序)
+       reset 到 verified sandbox baseline
+       -> occurrence DAG:依赖就绪后按 changeFrequency 从小到大满足 before
        -> agent.ensure 循环(按 ensure 声明顺序)
        -> 建立 Agent 可归因起点
-       -> Agent runtime setup / send / test
-       -> Agent teardown
+       -> Adapter runtime setup / Agent run / Eval test / runtime teardown
+       -> attempt after(实际登记栈逆序)
        -> Eval 已登记 cleanup(逆序)
        -> Experiment 已登记 cleanup(逆序)
-  -> Sandbox lifecycle teardown
+  -> physical-instance after / around.after(登记栈逆序)
   -> Provider Case finalizer
 ```
 
 MemoryBench 走这条路径。
-Experiment 的 E2B template 与 mempal 检查命令先执行,Eval 的 checkout 随后执行,Agent CLI 最后收敛。
+Experiment 的 E2B template 只提供起点。mempal、checkout 与 Agent `.env` action 按依赖和 changeFrequency 排队；Agent CLI ensure 在全部 attempt before 满足后收敛。
 
-## 为什么 Agent 固定最后
+## 为什么 Agent runtime 固定最后
 
 Agent CLI 与 Adapter 配置可以依赖 template 提供的系统能力,也可以依赖 Experiment / Eval 准备的证书、runtime 或目录。
 普通题目准备不应依赖某个 Agent Adapter 的私有安装路径,否则同一 Eval 无法更换 Agent。
 
-因此 agent.ensure 循环是准备链最后一道强制屏障。
-循环完成 探测、缺失时的 install 与复检后,Runner 才进入 Agent runtime;作者不能把 Agent 提前,Adapter 也不能暗中替换 template。
+因此 agent.ensure 循环是 action schedule 后的一道强制屏障。
+Agent-owned before action 不固定最后；高频 `.env` 通常因数值较大自然靠后。循环完成探测、缺失时的 install 与复检后,Runner 才进入 Agent runtime；Adapter 不能暗中替换 template。
 
-## 单一 Attempt prepare 频次
+## Before/after occurrence
 
-普通作者 command 没有周期级 scope。
-无论 fresh 或 reuse,每条 Attempt 都在进入 Agent 前完整执行两层命令:
+公开 API 统一声明 owner 的 before、after 与 around,不暴露 scope。link 与 physical planning 根据 typed inputs 和 sharing cohort 给每个 attachment 编译 occurrenceKind。physical-instance before 先形成 verified reset baseline;每个 Attempt reset 后再满足 attempt before:
 
 ```text
-fresh: create Case -> author commands -> agent.ensure 循环 -> Agent
-reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
+fresh: create Case -> physical before -> reset baseline -> attempt before -> Agent/test -> after
+reuse: reset baseline -> attempt before -> Agent/test -> after
 ```
 
-因此命令不能依赖「上一条 Attempt 应该已经运行过我」。
-昂贵工具由领域步骤实现真实检查、缺失时安装、安装后复检;预装 template 只让检查命中,不删除 command。
-
-这项选择刻意放弃周期专属 command 的表达力:
-
-- 绑定 Case 寿命的资源归 Provider Case;
-- 无法重复执行、严格每个物理实例一次的实例动作归 Sandbox lifecycle hooks。
-
-它换来的是作者不需要理解 reset 边界与复用池就能把准备写对。
+每个 eligible before occurrence 都产生 satisfaction 事实。hit restore verified private state,action invocation 为零;miss replay;unsupported 真实执行。callback before 和全部 after 不被跳过。Provider 无法恢复最终 physical baseline 时只能创建新实例或拒绝 reuse,不能把 physical action 偷换成 attempt replay。
 
 ## Fresh 与 Reuse
 
@@ -147,21 +138,24 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 | 配对 template link | Run 规划期 | Run 规划期 |
 | Provider physical plan / fingerprint | Run 规划期 | Run 规划期 |
 | Case create / ready | 每 Attempt | 每复用周期 |
-| reset | 唯一 Attempt 进入前 | 每 Attempt 进入前 |
-| 两层作者 prepare commands | 每 Attempt | 每 Attempt 执行 |
+| physical-instance before | 每物理实例满足一次 | 每物理实例满足一次并形成 reset baseline |
+| reset | 唯一 Attempt 进入前 | 每 Attempt 回到 verified sandbox baseline |
+| attempt before | 每 Attempt 满足一次 | 每 Attempt 满足一次 |
 | agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt | 每 Attempt 重探,命中快速返回 |
-| Sandbox lifecycle hooks | 每物理实例一次 | 每台被复用的物理实例一次；纯 Experiment-owned hook 可跨 eval 共用，Eval-owned hook 按 eval 隔离 |
+| attempt after | 每 Attempt 登记栈逆序 | 每 Attempt 登记栈逆序 |
+| physical-instance after | 每物理实例登记栈逆序 | replacement 前按已到达节点逆序 |
 | Agent runtime / test | 每 Attempt | 每 Attempt |
 | command 已登记 cleanup | 每 Attempt 逆序 | 每 Attempt 逆序 |
 | Provider finalizer | 每 Attempt | 每复用周期 |
 
-复用只复用 Provider Case 与允许保留的状态;准备链仍然是每条 Attempt 的可观察事实。
-某个检查命令的已安装内容在 reset 后仍然存在时,它的检查会命中;reset 删除了该内容时,当前 Attempt 重新安装,这是正确性结果,不是缓存失败。
+复用只复用 Provider Case、verified physical baseline 与允许保留的状态。before occurrence 仍是可观察事实,但 cache hit 以 restore 满足,不调用 action。
 reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 ## 命令计划怎样投影这条时序
 
-`niceeval debug <experiment> <eval>` 直接消费 link 与 physical planning 的完成态，把本页时序投影为 Experiment → lane → slot。它不读取 fingerprint、Record、reuse 或 carry。装配器拥有生命周期语义；human 的逐节点 `COMMAND PLAN` 区域框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
+`niceeval debug <experiment> <eval>` 直接消费 link 与 physical planning 的完成态，把本页时序投影为 Experiment → lane → slot。它不读取 Record、reuse、carry 或 cache inventory。装配器拥有生命周期语义；human 的逐节点 `COMMAND PLAN` 区域框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
+
+Provider capacity reservation 是 Provider materialize 的准入条件，不是已经开始创建 Sandbox 的事实。等待 reservation 的 Attempt 保持 queued，并携带 provider-capacity reason；reservation granted 后才进入 `sandbox.create`。等待者不占普通 sandbox semaphore；公平 admission 与可缓存 preparation 的完整时序见 [Preparation Prefix Lifecycle](../../roadmap/sandbox-cache/setup-prefix/lifecycle.md)。
 
 它只声明运行器能保证的偏序：fresh Eval 与 `sandboxReuse` lane 都不保证 slot 顺序，也不生成全局序号。Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 选择只保留命中的成员；作者数组位置没有业务顺序语义。
 
@@ -169,20 +163,21 @@ fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle
 
 debug 把配置的全部 attempts 列作候选 dispatch slot。正常运行的 activation 仍受 late carry、预算、early-exit、fail-fast、取消与运行期失败影响；静态列出不等于实际执行。
 
-Sandbox lifecycle hook、test 与 Provider callback 保留其真实位置并标为 opaque。Agent setup / teardown 的 Adapter 内部步骤同样 opaque。内置 Adapter factory 已显式收到的 `postSetup` / `preTeardown` `SandboxCommand` 则在对应子阶段按真实顺序展开。
+Sandbox callback、test 与 Provider callback 保留其真实位置并标为 opaque。每个 action node 显示 declarationOrder、dependencies、changeFrequency、occurrence-local topological ordinal、schedulingReason、owner、occurrenceKind 与推导依据。
 
-`shell()` / `command()` 显示 exact 命令与脱敏后的 env key，普通 callback 只显示 opaque。`sandbox.materialize` 额外显示 template owner、provider、kind 与安全的 configured locator。
+同一节点还显示 phase、作者原始 changeFrequency、安全 prefix digest、eligibility 和 Provider 的 `persistent | invocation-local | unsupported` capability。debug 不查询 inventory,固定显示 `cacheLookup: not-probed`;实际 hit/replay 与 restore source 只进入运行反馈。
 
-这个 locator 来自 template 声明的私有 command-plan binding，不进入 Record、provider identity 或复用 fingerprint。Direct Agent 显示一个明确的 `known-no-command` materialize 节点。`preTeardown` 按执行契约逆序展开，并标明只有 setup 到达 postSetup 时点后才运行。
+`shell()` / `command()` 显示 exact 命令与脱敏后的 env key，普通 callback 只显示 opaque。`sandbox.create` 额外显示 template owner、provider、kind 与安全的 configured locator。
+
+这个 locator 来自 template 声明的私有 command-plan binding，不进入 Record、provider identity 或复用 fingerprint。Direct Agent 显示一个明确的 `known-no-command` create 节点。`preTeardown` 按执行契约逆序展开，并标明只有 setup 到达 postSetup 时点后才运行。
 
 Eval Group 的 `beforeSlots` / `afterSlots` 在 human 与 JSON 中都显式呈现 Group Plugin setup / teardown。Sandbox Plugin lifecycle 留在物理模板内；Eval Plugin lifecycle 留在各 dispatch slot 内。三者都按 attachment owner 保留身份，不能因 Plugin 恰好来自同一个 definition 就跨 owner 合并。
 
-把 hook 内的动作挪进 `.prepare()` 只为让预览变 exact 会改变执行频次与资源寿命，禁止这样改语义。
+把有外部副作用、secret 或会话的 callback 伪装成 eligible shell 只为让预览变 exact 会违反确定性资格,禁止这样改语义。
 
 ## 准备、lifecycle 与 baseline
 
-两层作者 command 和 agent.ensure 循环都属于 Agent 开始前的基础设施活动。
-Sandbox setup 在物理实例创建后、逐 Attempt prepare 前执行；teardown 在 Agent teardown 与逐 Attempt cleanup 后、provider finalizer 前执行。多个 setup 按追加序，多个 teardown 按追加的逆序；setup 失败也仍执行 teardown，teardown 失败记 diagnostic 后继续收尾。
+四类 owner 的 before 和 agent.ensure 循环都属于 Agent 开始前的基础设施活动。physical-instance node 在 reset baseline 前,attempt node 在每次 reset 后。occurrence 进入时登记 standalone after；around.before 调用前登记配对 after。attempt after 在 Adapter runtime teardown 后执行,physical after 在 provider finalizer 前执行,全部按实际登记栈全局逆序。
 
 因此:
 
@@ -201,8 +196,7 @@ Runner 只对本条 Attempt 实际取得的资源执行 cleanup,顺序为全局 
 
 ```text
 Agent runtime teardown
-  -> 第二作者 layer cleanup(命令逆序)
-  -> template owner layer cleanup(命令逆序)
+  -> attempt after / command cleanup(实际登记栈逆序)
   -> reset / 退休决策
   -> 物理实例关闭时 Sandbox lifecycle teardown
   -> Provider Case finalizer
@@ -229,11 +223,10 @@ cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;clea
 Sandbox 复用池的键只固定物理实例共享所需的输入:
 
 ```text
-(Provider physical plan identity, Agent ensure identity, physical lifecycle identity, scope)
+(Provider physical plan identity, final physical baseline identity, Agent ensure identity, owner wrapper identity)
 ```
 
-每条 Attempt 都执行命令,所以池键不包含 prepare command 或「某条命令已经执行」的证据。
-hook callback 的函数体不进入 fingerprint，也不阻断跨 Run carry。Physical lifecycle identity 包含 SandboxLayer author hook marker，以及带 attachment owner 的 Sandbox Plugin identity。
+池键包含最终 physical baseline identity,确保 reset 不会丢失 physical-instance before。callback 函数体不进入 fingerprint;opaque marker、occurrenceKind 与 attachment owner 进入 wrapper identity并截断共享捕获。
 
 Sandbox Plugin 的 attachment owner、name、instance key、behavior revision、声明 identity、顺序与 setup/teardown 形状同时进入完整 Attempt fingerprint。任一声明身份变化都会让历史结果 carry 失配并产生 fresh slot；callback 函数体仍是 opaque，行为变化时必须同步修改声明 identity 或使用 `--rerun all`。
 
@@ -251,7 +244,7 @@ reset 或 cleanup 无法恢复已知边界时退休物理实例。
 | Direct Agent 搭配 SandboxLayer | `sandbox.unexpected-for-direct-agent` |
 | template factory / 平台 / capability 不可用 | physical planning 聚合错误,零 build / create |
 | Provider build / start / ready | 形成 `errored` Verdict,归 Case |
-| template owner 的作者 command | 形成 `errored` Verdict,归 `sandbox.prepare.<templateOwner>` |
+| owner before action | 形成 `errored` Verdict,归 `sandbox.before.<owner>` |
 | 第二作者 layer 的 command | 形成 `errored` Verdict,归对应 owner 的 `sandbox.prepare` |
 | agent.ensure 循环的 探测 配对、install 或复检 | 形成 `errored` Verdict,归 `agent.ensure` |
 | Sandbox lifecycle setup | 形成 `errored` Verdict;已创建的物理实例仍依序运行 teardown 后停止 |

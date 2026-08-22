@@ -3,7 +3,7 @@
 ## 解决什么问题
 
 有些准备工作不属于 `test(t)` 的正文：装依赖、在外部服务里建临时 repo、预热数据。
-`sandbox` layer 的 `.prepare()` 承载这类逐 Attempt 的题目准备，cleanup 用 `context.onCleanup()` 就地登记。
+`sandbox` layer 的 `.before()` 承载这类逐 Attempt 的题目准备，cleanup 用 `context.onCleanup()` 就地登记。
 `t.progress` / `t.diagnostic` 让长步骤和降级情况在运行反馈里可见；`t.skip` 在前置条件不满足时把 attempt 标成跳过而不是失败。
 
 静态起始文件在第一次 `send` 前通过普通 Sandbox API 上传:
@@ -19,7 +19,7 @@ export default defineEval({
 
 ## 全流程
 
-1. 动态任务素材的准备放 `sandbox` layer 的 `.prepare()`——命令在每条 Attempt 进入 `test(t)` 之前执行，写入算 eval 归因、不进 agent diff：
+1. 动态任务素材的准备放 `sandbox` layer 的 `.before()`——命令在每条 Attempt 进入 `test(t)` 之前执行，写入算 eval 归因、不进 agent diff：
 
    ```typescript
    // evals/pr-review/close-outdated.eval.ts
@@ -27,7 +27,7 @@ export default defineEval({
    import { sandboxLayer } from "niceeval/sandbox";
 
    export default defineEval({
-     sandbox: sandboxLayer().prepare(async (sandbox, context) => {
+     sandbox: sandboxLayer().before(async (sandbox, context) => {
        context.progress({ message: "seeding fixture repo" });
        const fixture = await createFixtureRepo("pr-review/close-outdated");  // Sandbox 外的临时资源
        context.onCleanup(() => fixture.destroy());                        // 取得成功后就地登记回收

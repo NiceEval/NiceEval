@@ -12,17 +12,19 @@ import { e2bSandbox, installTool, shell } from "niceeval/sandbox";
 
 export default defineExperiment({
   sandbox: e2bSandbox({ template: "mempal-codex-v3" })
-    .prepare(installTool({
+    .before(installTool({
       tool: "mempal",
       identity: { version: "0.9.0" },
       probe: shell("mempal --version | grep -q 0.9.0"),
       install: shell("curl -fsSL https://get.mempal.dev | sh"),
     }))
-    .setup(async (sandbox) => {
-      await restoreMempalForThisPhysicalSandbox(sandbox);
-    })
-    .teardown(async (sandbox) => {
-      await archiveMempalFromThisPhysicalSandbox(sandbox);
+    .around({
+      before: async (sandbox) => {
+        await restoreMempalForThisPhysicalSandbox(sandbox);
+      },
+      after: async (sandbox) => {
+        await archiveMempalFromThisPhysicalSandbox(sandbox);
+      },
     }),
   agent: codexAgent(),
   sandboxReuse: true,
@@ -37,11 +39,11 @@ import { checkout, sandboxLayer, shell } from "niceeval/sandbox";
 
 export default defineEval({
   sandbox: sandboxLayer()
-    .prepare(checkout({
+    .before(checkout({
       repo: "https://github.com/acme/memory-tasks",
       ref: "9e107d9d",
     }))
-    .prepare(shell("yarn install --immutable")),
+    .before(shell("yarn install --immutable")),
   async test(t) {
     await t.send("完成仓库中的目标任务。");
     t.succeeded();

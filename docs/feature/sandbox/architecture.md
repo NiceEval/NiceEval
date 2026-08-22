@@ -8,10 +8,10 @@
 
 ```text
  Sandbox Case create / build / start / ready
-  → Sandbox lifecycle setup                   # 每个实际 Sandbox 一次；可恢复目录或 checkpoint
-  → reset 到已知 Case 起点                    # 复用时每 Attempt 都执行
-  → template owner 的 prepare 命令          # sandbox.prepare.<owner>:按声明顺序;owner 由配对的 template 归属决定
-  → 另一作者 owner 的 prepare 命令          # 同上,随后执行
+  → physical before                           # occurrence DAG 按依赖与 changeFrequency 排队
+  → verified reset baseline                   # 包含已满足的 physical prefix
+  → reset                                     # 复用时每 Attempt 都执行
+  → attempt before                            # occurrence DAG 按依赖与 changeFrequency 排队
   → agent.ensure 循环                      # agent.ensure:probe、缺失时配对安装层 install、复检
   → workspace baseline                     # 变更分类账的锚点 commit(runner 私有 git ledger,见下节)
   → Agent runtime setup                    # agent.setup:本 Attempt 的连接与运行配置
@@ -22,14 +22,14 @@
   → workspace.diff                         # 冻结全部 send 区间端点轨迹；失败后果由本 Attempt 的证据依赖决定
   → assertions.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
   → Agent runtime teardown                 # finally:agent 收尾先行
-  → 已登记 cleanup(全局逆序)               # context.onCleanup() 登记的清理:第二作者 layer 先清,template owner 后清,层内命令逆序
+  → attempt after(全局逆序)                 # 已登记的 Agent → Eval → Group → Experiment after
   → commitKeepOrStop()                      # 决定 Scope release 时 stop 还是 suspend
-  → Sandbox lifecycle teardown              # 每个实际 Sandbox 一次，setup 的全局逆序
+  → physical after                          # 每个实际 Sandbox 一次，按登记栈全局逆序
   → Scope release                           # Provider Case finalizer;释放或留存完成后才能提交 Record 事实
 ```
 
 这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md)为唯一权威。
-收尾是全局 LIFO:Agent runtime teardown 先行,已登记 cleanup 按全局准备顺序逆序执行；实际 Sandbox 退休时再跑 lifecycle teardown（可回存目录或 checkpoint），Provider Case finalizer 最后整组关闭。
+收尾是全局 LIFO:Agent runtime teardown 先行,attempt after 按登记栈逆序执行；实际 Sandbox 退休时再跑 physical after，Provider Case finalizer 最后整组关闭。
 收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。
 Record 事实的提交则必须等 Scope release 完成；两者不是同一个“定稿”时点。
 
@@ -140,7 +140,7 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md)。终端与网页都通过 [Reports](../reports/README.md) 请求由 Analysis `query()` 闭合的 Observability DomainView。
 
-核心固定的是这条调用链本身:Case 就绪后先按 owner 顺序执行两层 prepare 命令与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
+核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
 
 provider 的可写保证不止 `workdir`。
 runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。
@@ -409,12 +409,12 @@ provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传�
 沙箱冷启动和重复安装是关键路径上的大头。优先级如下:
 
 1. 把稳定重依赖做进 Docker image、E2B template 或 Vercel snapshot;每次 attempt 只从这个起点创建。
-2. layer 的 `prepare()` 只做按 experiment / eval 变化的小配置与预检,昂贵动作靠真实检查快速命中；跨 Attempt 的实际 Sandbox 目录、服务或 checkpoint 都归 lifecycle hook。
+2. layer 的 `before()` 按 typed inputs 自动编译 occurrence；稳定重动作形成靠前的 physical prefix，频繁变化的配置形成靠后的 prefix，资源取得与释放用 `around()`。
 3. 仍有必要时再考虑 Sandbox 预热或 Sandbox 复用。
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。
 - **Sandbox 复用** —— Experiment 的 `sandboxReuse: true` 让多条 Attempt 共用 Sandbox。
-  Case create / ready 每复用周期一次;两层作者 prepare、agent.ensure 循环与 Agent runtime 仍每 Attempt 执行,昂贵准备靠探测命中快速返回。
+  Case create / ready 与 physical-instance before 每个实际实例满足一次；attempt before、agent.ensure 循环与 Agent runtime 每 Attempt 满足一次。前缀缓存命中 restore verified state，miss 或 unsupported 才调用 action。
   派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。
   完整契约见 [Sandbox 复用](reuse.md)。
 

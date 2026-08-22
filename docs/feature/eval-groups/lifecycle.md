@@ -4,24 +4,23 @@ Group 的物理 Sandbox 在第一条真实 Attempt 前按需取得，并由整�
 
 ```text
 provider acquire
-  -> Sandbox Layer setup
+  -> physical SandboxLayer before / around.before
   -> selected resource materialize
-  -> reset anchor
+  -> verified reset baseline
   -> each real Attempt
        -> reset
        -> Group resource prepare
        -> current Eval resource prepare
-       -> Group author and Plugin prepare commands
-       -> Eval / Experiment prepare commands
+       -> occurrence DAG schedules attempt before
        -> agent ensure / setup / test / teardown
-       -> registered cleanup
+       -> attempt after in reverse registration order
   -> resource release in reverse order
-  -> Sandbox Layer teardown
+  -> physical SandboxLayer after / around.after
   -> provider finalizer
 ```
 
-Sandbox create、reset、健康检查或故障退休可能建立替代实例。因此物理 setup、resource
-materialize、release、teardown 与 finalizer 都是“每台实际实例一次”，不是“每个 Group
+Sandbox create、reset、健康检查或故障退休可能建立替代实例。因此 physical occurrence、resource
+materialize、release、after 与 finalizer 都是“每台实际实例一次”，不是“每个 Group
 文件恰好一次”。同一时刻仍只有一台实例服务 Group 的一条 Attempt。
 
 Group author 与 Plugin lifecycle 围住所选 slots，只执行 selected slice，不要求 CLI 选择自动扩回全组。`niceeval debug` 的 human 和 JSON 都在 `beforeSlots` / `afterSlots` 显示这层包裹；`physicalLifecycleTemplate` 则是每台实际实例一次，不能读成整个 Group lane 只 acquire / finalize 一次。

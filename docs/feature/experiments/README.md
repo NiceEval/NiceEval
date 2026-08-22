@@ -178,7 +178,7 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 - 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `prepare()` 命令,每条 Attempt 在变更分类账标记前执行。
 - 这条 eval 自己的题目准备写 Eval layer 的 `prepare()` 或 `test(t)` 普通代码。
 - 装 Agent CLI 归 Agent layer(Adapter 的 ensure 声明 + 配对安装层),连 agent 归 `SandboxAgent.setup`。
-- 跨 Attempt 的实际 Sandbox 目录、服务或快照由 `SandboxLayer.setup()` / `teardown()` 成对恢复与回存；声明 `sandboxReuse: true` 时，它们按每个物理 Sandbox 执行一次。
+- 跨 Attempt 的实际 Sandbox 目录、服务或快照由 `SandboxLayer.around({ before, after })` 成对恢复与回存；planning 在 owner 对 sharing cohort 稳定时把它编译为 physical-instance occurrence。
 - 跨实验、这次 run 之前就该存在的资源仍用外部编排。
 
 哪层放什么按场景查[用例手册 · 预置与收尾怎么放](use-case/生命周期/);完整分工表见 [Sandbox 预置分工](../sandbox/library.md)、准备命令的声明见 [Sandbox Layer](../sandbox/layers.md)。

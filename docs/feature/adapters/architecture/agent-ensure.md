@@ -4,12 +4,13 @@
 前者是 Adapter 的 ensure 声明(`AgentEnsure`:目标 identity 加只读 探测);后者是按 identity 配对的官方 Agent 安装层(`AgentInstaller`)。
 
 Runner 在每条 Attempt 的 `agent.ensure` 相位执行 **ensure 循环**:探测 命中就直接使用,未命中时由配对安装层执行锁定版本的安装,随后复检同一个 探测。
-`agent.ensure` 排在两方作者 layer 的 prepare command 之后、workspace baseline 之前;Agent runtime setup 仍记 `agent.setup`。
+`agent.ensure` 排在 Experiment、Group、Eval、Agent 的 before 之后、workspace baseline 之前;Agent runtime setup 仍记 `agent.setup`。
 官方 template、自建 template、任务镜像与空白 Sandbox 都走这条循环,差别只是第一次 探测 是否命中——预装 Agent 是 探测 命中的优化,不是任意任务 Sandbox 可运行的前提。
 
 ```text
 sandbox case 构建所需产物并启动实例 → 主 Sandbox
- → 每条 Attempt:reset → template owner 命令 → 另一作者 owner 命令
+ → physical before → verified reset baseline
+ → 每条 Attempt:reset → occurrence DAG 调度全部 attempt before
  → agent.ensure:逐条 ensure 声明执行循环
     ├─ probe 命中   → 记录命中的安装事实
     └─ probe 未命中 → 按 identity 配对安装层 → install → 复检 probe

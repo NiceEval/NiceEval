@@ -59,7 +59,7 @@ Eval selector 只能在 Experiment 自己的 `evals` 封闭范围内匹配。选
 人读输出和 JSON 都来自同一棵 Experiment → lane → slot 树。下面这些步骤都留在真实包裹位置：
 
 - Experiment、Group、Eval Plugin lifecycle 与 Sandbox Plugin lifecycle；
-- author hook、prepare、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。
+- Experiment/Group/Eval/Agent before/after/around、Agent runtime、test、cleanup 与 Provider finalizer。
 
 TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane、slot 与每个 lifecycle step 都分别使用全仓统一的圆角区域框；各框按计划顺序堆叠，框内列出 position、owner、label、template、命令或不可检查原因、条件与脱敏项。这样每个 Plugin occurrence 和每条 Shell 都有自己的可复制边界。完整形态见
 [command plan 输出案例](output/debug-command-plan.md)。
@@ -71,9 +71,13 @@ TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane�
 
 Human 的 lane 顺序固定为 Group before-slots → physical enter → slots → physical exit → Group after-slots。Physical teardown 与 Provider finalizer 因而始终列在使用该实例的 slot 工作之后。
 
-可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 materialize 阶段。
+可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。每个 action 使用独立圆角框，显示 owner、phase、occurrenceKind 与推导依据。
 
-每个真实 `sandbox.materialize` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
+同一框显示 `declarationOrder: { owner, ordinal }`、`dependencies` 与 `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }`。ordinal 只属于当前 occurrence，不是运行时全局序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
+
+before 与 around action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。缓存查询固定显示 `not-probed`。数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
+
+每个真实 `sandbox.create` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
 
 内建 locator 字段是闭合集合：`image`、`context`、`file`、`target`、`workspaceService`、`template`、`snapshotId`。远端 URL 的 userinfo、query 与 fragment 会先移除并登记 redaction。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`。URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，原字符串不进入输出。E2B template 与 Vercel snapshot ID 也是 Provider 管理的任意字符串，固定显示 `Opaque`。
 
@@ -85,7 +89,7 @@ Human 输出在统一终端出口把 C0、C1、ESC 与 tab/carriage return 可�
 
 `--json` 输出单个 `{ format: "niceeval.debug-plan/v1", schemaVersion: 1, experimentId, evalId, commandPlan }` 文档。它不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
 
-`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的运行期 setup、test、teardown、ensure、materialize 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
+`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、around、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
 
 计划把 Experiment 配置的全部 attempts 都列成候选 dispatch slot。这不是实际运行保证：正常 `exp` 仍可能因 carry、首过即停、预算、fail-fast 或取消而阻止某个 slot 启动。`debug` 只接受 `--json`；`--help` 与 `--version` 仍由全局 CLI 处理。
 

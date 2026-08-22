@@ -6,7 +6,7 @@
 ## 计划与调试
 
 - [dry plan](dry-plan.md) —— 已有结果与需要重新运行的 Attempt 同时出现。
-- [command plan](debug-command-plan.md) —— `debug` 展示带 Sandbox materialization 的生命周期树。
+- [command plan](debug-command-plan.md) —— `debug` 展示带 Sandbox create 的生命周期树。
 - [多行 Shell](debug-multiline-shell.md) —— 保留缩进、空行与末尾换行。
 
 ## 运行与结束

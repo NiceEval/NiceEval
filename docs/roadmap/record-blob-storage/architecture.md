@@ -10,7 +10,7 @@ Attachment payload
   └─ RecordBlobRef ──> LogicalBlob
                          ├─ byteLength
                          ├─ sha256
-                         └─ ordered private materialization
+                         └─ ordered private loading
                               ├─ manifest
                               └─ segment bytes
 ```

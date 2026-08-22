@@ -323,7 +323,7 @@ BuildKey描述“应构建哪些 bytes”，build realization按
 不能把 daemon A的完成事实交给 daemon B。Sandbox复用池同样把 domain加入 CaseKey之外的物理 pool
 key，禁止跨 profile或 generation复用 container。
 
-materialization domain只存在于当前进程的 build coordinator、Sandbox pool和资源 registry。它不
+Docker cache domain只存在于当前进程的 build coordinator、Sandbox pool和资源 registry。它不
 进入 fingerprint或可分享结果，因此 daemon restart不会使既有结果失去携带资格；restart后的
 新 Invocation仍会在新 domain重新确认 image realization。
 

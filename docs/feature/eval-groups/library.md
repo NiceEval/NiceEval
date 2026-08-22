@@ -21,16 +21,15 @@ declare function defineEvalGroup<const Sandbox extends SandboxLayer | undefined>
 
 ## 成员 type-state
 
-合法成员的 Sandbox 类型只允许两种状态：省略，或 command-only 且 prepare-only。
+合法成员的 Sandbox 类型只允许两种状态：省略，或 command-only；Group member 不能另带 template。
 
 ```ts
 type EvalGroupMemberSandbox =
-  | SandboxLayer<"command-only", "prepare-only">
+  | SandboxLayer<"command-only">
   | undefined;
 ```
 
-`sandboxLayer().prepare(...)` 保留 prepare-only 状态。任何 template-bearing Layer，或调用过
-`.setup()` / `.teardown()` 的 Layer，都会在 `defineEvalGroup()` 调用处产生 TypeScript 错误。
+`sandboxLayer().before(...)` / `.after(...)` / `.around(...)` 保留 command-only 状态。任何 template-bearing Layer 都会在 `defineEvalGroup()` 调用处产生 TypeScript 错误。
 discovery 仍复核运行时品牌与实际 Layer 状态，拦住 JavaScript、宽泛断言和动态加载越界。
 
 ## `onUnavailable`

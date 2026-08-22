@@ -8,7 +8,7 @@ Eval 与 Experiment 使用完全相同的公开 `sandbox` 字段和 `SandboxLaye
 - 恰好一方的 layer 是 template-bearing,由具体 Provider factory 构造,携带完整起点并同时选定 Provider;
 - 另一方是 command-only layer,只能在已经启动的主 Sandbox 中执行命令;
 - Agent layer 始终是 command-only,并且始终排在两方作者 layer 之后;
-- template owner 的命令先执行,另一方随后,Agent 最后;作者不能配置 priority、`dependsOn` 或另一套顺序。
+- 每个 occurrence 内跨 owner 建立依赖 DAG,按 changeFrequency 从小到大选择 ready action;after 按实际登记栈逆序退出。
 
 ```text
 one linked pair
@@ -16,8 +16,11 @@ one linked pair
   + one command-only author layer
   + one Agent layer
 
-prepare order
-  = template owner -> other author owner -> Agent
+before order
+  = dependencies -> lowest changeFrequency -> stable declaration tie-break
+
+after order
+  = actual registration stack in reverse
 ```
 
 template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 template。
@@ -30,19 +33,19 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 
 1. `dockerComposeSandbox()` / `e2bSandbox()` 等具体 factory 声明 template;`sandboxLayer()` 只声明命令。
 2. 一个配对只能有一方带 template。两边都有是 `sandbox.template-conflict`,两边都没有是 `sandbox.template-missing`。
-3. template owner 的命令先执行,另一方的命令后执行,Agent 安装最后执行;同一 layer 内按书写顺序执行。
-4. 逐 Attempt 的准备使用 `prepare()`；只属于实际 Sandbox 寿命的目录、守护进程或快照使用 `setup()` / `teardown()`，不借此表达调度 lane。
+3. Experiment、Group、Eval、Agent 使用同一种 `before()` / `after()` / `around()`；owner 只保留声明出处与归因。
+4. before 按依赖与数值排队,after 按登记栈逆序退出。资源取得与释放用 `around()` 显式配对。
 
-普通 command 只有逐 Attempt 的 `prepare()` 一种频次;开启 Sandbox 复用后也先 reset,再执行完整准备链。物理 Sandbox 生命周期另由显式的 `setup()` / `teardown()` 表达。
-预装或昂贵工具由 prepare command 检查实际版本,命中后快速返回;缺失时安装并复检。
-作者因此不必区分周期级与逐题级两种 scope,也没有放错 scope 造成的复用污染。
+声明式 before action 可以形成缓存前缀。callback before、secret、租约与外部会话始终真实执行并截断后续共享捕获。after 始终真实执行。link 与 physical planning 根据 typed inputs 和 sharing cohort 编译 physical-instance 或 attempt occurrence,但作者 API 不暴露 scope。完整资格与 Provider 降级见[可缓存准备前缀](../../roadmap/sandbox-cache/setup-prefix/README.md)。
 完整时序与 fresh / reuse 次数表见 [三方准备时序](lifecycle.md)。
 
 ## 导出入口
 
 ```typescript
 import {
+  changeFrequency,
   command,
+  copy,
   defineSandboxCommand,
   dockerComposeSandbox,
   dockerSandbox,
@@ -52,6 +55,7 @@ import {
   sandboxLayer,
   shell,
   vercelSandbox,
+  write,
   type Sandbox,
   type SandboxCommand,
   type SandboxCommandContext,
@@ -59,6 +63,8 @@ import {
   type SandboxHook,
   type SandboxHookContext,
   type SandboxLayer,
+  type SandboxAction,
+  type SandboxActionPair,
 } from "niceeval/sandbox";
 ```
 
@@ -74,9 +80,17 @@ declare const sandboxLayerKind: unique symbol;
 
 interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [sandboxLayerKind]: Kind;
-  prepare(command: SandboxCommand): SandboxLayer<Kind>;
-  setup(hook: SandboxHook): SandboxLayer<Kind>;
-  teardown(hook: SandboxHook): SandboxLayer<Kind>;
+  before(action: SandboxAction): SandboxLayer<Kind>;
+  after(action: SandboxAction): SandboxLayer<Kind>;
+  around(pair: SandboxActionPair): SandboxLayer<Kind>;
+}
+
+interface SandboxActionPair {
+  readonly id: string;
+  readonly changeFrequency?: number;
+  readonly dependsOn?: readonly SandboxActionRef[];
+  readonly before: SandboxHook;
+  readonly after: SandboxAction;
 }
 
 interface SandboxHookContext {
@@ -94,14 +108,14 @@ type SandboxHook = (
 
 hook 还可经上下文上报绑定当前生命周期的 progress 与 diagnostic；它没有 attempt、session、模型或复用池句柄。
 
-`prepare()` 每条 Attempt 都执行。`setup()` / `teardown()` 则是一对**物理 Sandbox 生命周期** hook：同一个实际 Sandbox 创建并 ready 后只 setup 一次，在它的最后一条 Attempt 收尾、Provider finalizer 前只 teardown 一次。
+link 与 physical planning 给每个 attachment 编译 `physical-instance | attempt` occurrence。含 attempt-bound input 的 action 必为 attempt;只消费 immutable input 且 owner 对完整 cohort 稳定时才可 physical-instance。求值结果进入 identity 与 debug。作者不能手写 scope 或取得 pool 句柄。
 
-setup 按声明顺序运行；teardown 按所有 setup 的全局逆序运行。setup 中途失败也仍会进入已登记的 teardown，随后才停止或释放 Provider 资源。
+进入 occurrence 时按稳定 declaration key 登记 standalone after；调用 around.before 前登记其 around.after。已登记项按全局 LIFO 使用独立 cleanup signal,失败后继续收尾。callback before 与 around 始终真实执行并截断后续共享捕获；after 即使使用 exact command 也不缓存。
 
 它们附着在配对后的实际 Sandbox 上，不引入 lane、lane id 或可由作者持有的复用池句柄。仅 Experiment 所有的 hook 不改变可共享的物理身份；Eval 所有的 hook 会把该 Eval 的物理生命周期隔离开。
 
 Plugin 自动投影的 Sandbox lifecycle 遵守同一条 owner 规则。Eval-owned fragment 也必须进入物理 lifecycle identity，不能借用另一 Eval 的 first-pair lifecycle。
-command 链只保留原 kind:不能把 command-only layer 变成 template-bearing,也不能给 template-bearing layer 追加第二个起点。
+before/after 链只保留原 kind:不能把 command-only layer 变成 template-bearing,也不能给 template-bearing layer 追加第二个起点。
 共享接口不暴露 `.template()`、`.provider()` 或可写 template 属性;起点只能由具体 factory 的 options 声明。
 
 即使 Eval 与 Experiment 声明了物理身份相同的 template,配对仍是 `sandbox.template-conflict`。
@@ -270,7 +284,7 @@ MemoryBench 反向:Experiment 携带 template,Eval 只准备题目:
 ```typescript
 export default defineExperiment({
   sandbox: e2bSandbox({ template: "mempal-codex-v3" })
-    .prepare(installTool({
+    .before(installTool({
       tool: "mempal",
       identity: { version: "0.9.0" },
       probe: shell("mempal --version | grep -q 0.9.0"),
@@ -282,7 +296,7 @@ export default defineExperiment({
 
 ```typescript
 export default defineEval({
-  sandbox: sandboxLayer().prepare(checkoutLockedRepository),
+  sandbox: sandboxLayer().before(checkoutLockedRepository),
   async test(t) {
     await t.send("完成仓库中的目标任务。");
   },
@@ -380,32 +394,24 @@ export default defineExperiment({ agent: codexAgent(), evals: ["generic/", "comp
 
 ## 顺序与依赖方向
 
-每条 Attempt 的准备顺序由 template owner 完全决定:
+template owner 只提供 Provider 起点，不参与 action 排序。每种 occurrence 都把四类 owner 的 before 与 around.before 放进同一张依赖 DAG。planning 每次从 ready set 选择 changeFrequency 最小的 action；数值相同时按 owner kind、稳定 owner id 与 owner 内 ordinal 组成的 declaration key 排序。
 
-```text
-templateOwner = eval
-  Eval commands -> Experiment commands -> agent.ensure 循环
-
-templateOwner = experiment
-  Experiment commands -> Eval commands -> agent.ensure 循环
-```
-
-每个作者 layer 内按 `.prepare()` 的追加顺序串行执行。
+`dependsOn` 与具名 `provides` / `requires` capability 形成边。普通 inputs 只参与 identity、缓存资格与 occurrence 编译，不形成边。缺失 action、重复 capability provider、跨 occurrence 依赖或循环在 Provider I/O 前报错。
 Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖,也不自动并行。
 
 依赖方向是公开契约:
 
-- template owner 的 command 只能依赖自己的 template 已经提供的能力;
-- 第二个作者 layer 可以依赖 template owner 的命令结果;
-- Agent layer 的 ensure 循环可以依赖两方作者准备;
+- action 只能依赖同一 occurrence 中显式可见的 action 或 capability;
+- owner 不自动产生依赖边，Group 的低频 action可以排在 Experiment 高频 action 前;
+- Agent ensure 与 runtime 只在全部 attempt before 满足后开始;
 - 前层不能依赖后层尚未产生的结果,重试等待后层出现也不是合法解决方案。
 
 发现反向依赖时按下面顺序修正:
 
-1. 条件本来属于后一个 owner:移动 command 所有权。
+1. 条件本来属于后一个 owner:移动 action 所有权。
 2. 条件是完整起点的一部分:放进唯一 template factory 或预制实例。
 3. 只有部分 Eval / Experiment 组合兼容:拆 selector,形成各自合法的配对图。
-4. 两方条件无法现场组合:为该组合提供已经融合双方条件的完整 template,另一方保持 command-only。
+4. 多方条件无法由 action DAG 组合:为该组合提供已经融合条件的完整 template,其它 owner 保持 command-only。
 
 融合 template 用普通 TypeScript 函数共享,不新增按配对替换的注册表;Runner 不合并两个起点。
 
@@ -511,8 +517,8 @@ declare function registerSandboxContent(
 
 ```typescript
 sandboxLayer()
-  .prepare(command("apt-get", ["install", "-y", "git"], { user: "root" }))
-  .prepare(shell("pnpm install --frozen-lockfile"));
+  .before(command("apt-get", ["install", "-y", "git"], { user: "root" }))
+  .before(shell("pnpm install --frozen-lockfile"));
 ```
 
 `command()` / `shell()` 由纯数据参数生成稳定 identity,identity 涵盖 executable / script、argv、cwd、env、user 与 stdin。
@@ -546,7 +552,7 @@ Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eva
 
 ## 相关阅读
 
-- [三方准备时序](lifecycle.md) —— owner 顺序、fresh / reuse 次数、身份与错误归属。
+- [三方准备时序](lifecycle.md) —— action schedule、fresh / reuse 次数、身份与错误归属。
 - [Case](case.md) —— template 之下的完整运行单位:BuildKey / CaseKey、构建协调、Compose。
 - [Library](library.md) —— 运行中 Sandbox 的路径、执行身份、超时与自定义 Provider。
 - [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重新执行、reset 与寿命确认。
