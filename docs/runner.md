@@ -76,6 +76,10 @@ directory。
 
 Runner 先展开 expected slots，再以全局和 Experiment 范围的并发限制派发。等待并发名额的 slot 没有 Attempt，也不会占用执行资源。跨 Invocation 的 execution claim 与同一 Experiment dispatch claim 由 Coordination 决定，不由 Record writer、Run directory 或 reader 决定。
 
+带 Docker profile的 DinD还要经过 watchdog跨进程准入。Runner提交 CPU、memory、PID、container和
+`ephemeralDiskBytes`完整向量；只有 watchdog同时授予容量与私有 Docker data allocation后才创建 Attempt。等待这笔
+准入不占用 Docker资源，且不能用稀疏文件 apparent size增加可授予磁盘容量。
+
 调度器先让每条独立 lane 的首槽位至少获得一次全局并发机会，再允许任一 lane 的后继槽位进入派发。首槽公平完成后，lane 只受自己的 predecessor、全局限制和 Experiment 限制约束；快 lane 不等待慢 lane 的下一槽位进入同一 wave。
 
 首过即停、预算耗尽和已声明的停止派发条件都保留 expected slot。正常停止前从未 reserved 的 slot 写作 `not-dispatched` Member，Sample 将它呈现为 `not-recorded`；Runner 不制造虚构的 Attempt 或 Verdict。

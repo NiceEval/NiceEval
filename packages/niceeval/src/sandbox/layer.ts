@@ -59,8 +59,8 @@ const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-p
 
 // Runtime resource/privileged coverage changed without changing Dockerfile build bytes. Keep the
 // Dockerfile builder revision stable, but advance the provider-plan/fingerprint revision.
-const DOCKERFILE_PROVIDER_PLANNER_REVISION = "dockerfile-4";
-const DOCKER_IMAGE_PROVIDER_REVISION = "docker-image-3";
+const DOCKERFILE_PROVIDER_PLANNER_REVISION = "dockerfile-5";
+const DOCKER_IMAGE_PROVIDER_REVISION = "docker-image-4";
 
 export interface SandboxLayer<
   Kind extends SandboxLayerKind = SandboxLayerKind,
@@ -147,6 +147,8 @@ export interface DockerSandboxResources {
   readonly cpus?: number;
   readonly memoryBytes?: number;
   readonly pidsLimit?: number;
+  /** Dedicated, control-owned storage mounted at /var/lib/docker for inner DinD. */
+  readonly dockerDataBytes?: number;
   /** 把镜像 rootfs 设为只读；需要写入的路径必须逐一声明为有界 tmpfs。 */
   readonly readOnlyRootfs?: boolean;
   readonly tmpfs?: Readonly<globalThis.Record<string, DockerSandboxTmpfsOptions>>;
@@ -171,6 +173,7 @@ export interface ManagedDockerResources extends DockerSandboxResources {
   readonly cpus: number;
   readonly memoryBytes: number;
   readonly pidsLimit: number;
+  readonly dockerDataBytes: number;
   readonly readOnlyRootfs: true;
 }
 
@@ -197,6 +200,8 @@ export type DockerSandboxAccess =
   | {
       readonly mode: "dind";
       readonly isolation: "raw-privileged";
+      /** Required only when resources.dockerDataBytes requests control-owned storage. */
+      readonly storageProfile?: string;
     }
   | {
       readonly mode: "dind";
@@ -212,7 +217,7 @@ export type DockerSandboxOptions =
   | (DockerSandboxCommonOptions & {
       readonly dockerAccess:
         | { readonly mode: "socket"; readonly socketPath: string }
-        | { readonly mode: "dind"; readonly isolation: "raw-privileged" };
+        | { readonly mode: "dind"; readonly isolation: "raw-privileged"; readonly storageProfile?: string };
       readonly resources?: DockerSandboxResources;
     })
   | (DockerSandboxCommonOptions & {
@@ -942,8 +947,14 @@ function dockerAccess(value: unknown, path: string): Readonly<DockerSandboxAcces
   if (mode !== "dind") throw new TypeError(`${path}.mode must be "socket" or "dind"`);
   const isolation = nonEmptyString(value.isolation, `${path}.isolation`);
   if (isolation === "raw-privileged") {
-    assertOnlyKeys(value, ["mode", "isolation"], path);
-    return Object.freeze({ mode: "dind", isolation: "raw-privileged" });
+    assertOnlyKeys(value, ["mode", "isolation", "storageProfile"], path);
+    return Object.freeze({
+      mode: "dind",
+      isolation: "raw-privileged",
+      ...(value.storageProfile === undefined
+        ? {}
+        : { storageProfile: nonEmptyString(value.storageProfile, `${path}.storageProfile`) }),
+    });
   }
   if (isolation === "managed-rootless") {
     assertOnlyKeys(value, ["mode", "isolation", "profile"], path);
@@ -972,7 +983,9 @@ function dockerAccessConfiguration(
       throw new TypeError(`${path} cannot be combined with profile or privileged`);
     }
     if (access.mode === "socket") return Object.freeze({ access, privileged: "disabled" });
-    if (access.isolation === "raw-privileged") return Object.freeze({ access, privileged: "raw" });
+    if (access.isolation === "raw-privileged") {
+      return Object.freeze({ access, profile: access.storageProfile, privileged: "raw" });
+    }
     return Object.freeze({ access, profile: access.profile, privileged: "rootless" });
   }
   const profile = dockerProfileAlias(legacyProfile, path.replace(/dockerAccess$/, "profile"));
@@ -1030,7 +1043,7 @@ function managedDockerResources(value: unknown, path: string): ManagedDockerReso
     throw dockerProfileError({
       code: "sandbox.docker-profile-resources-required",
       path,
-      message: "profile-bound Docker sandbox requires explicit CPU, memory, PID and readOnlyRootfs resources",
+      message: "managed Docker sandbox requires explicit CPU, memory, PID, dockerDataBytes and readOnlyRootfs resources",
     });
   }
   const resources = dockerResources(value, path);
@@ -1038,12 +1051,13 @@ function managedDockerResources(value: unknown, path: string): ManagedDockerReso
     resources.cpus === undefined ||
     resources.memoryBytes === undefined ||
     resources.pidsLimit === undefined ||
+    resources.dockerDataBytes === undefined ||
     resources.readOnlyRootfs !== true
   ) {
     throw dockerProfileError({
       code: "sandbox.docker-profile-resources-required",
       path,
-      message: "profile-bound Docker sandbox requires explicit CPU, memory, PID and readOnlyRootfs: true resources",
+      message: "managed Docker sandbox requires explicit CPU, memory, PID, dockerDataBytes and readOnlyRootfs: true resources",
     });
   }
   return Object.freeze({
@@ -1051,6 +1065,7 @@ function managedDockerResources(value: unknown, path: string): ManagedDockerReso
     cpus: resources.cpus,
     memoryBytes: resources.memoryBytes,
     pidsLimit: resources.pidsLimit,
+    dockerDataBytes: resources.dockerDataBytes,
     readOnlyRootfs: true,
   });
 }
@@ -1068,7 +1083,32 @@ function dockerResourcesForProfile(
       message: 'privileged: "rootless" requires an explicit Docker profile alias',
     });
   }
-  return profile === undefined ? dockerResources(value, path) : managedDockerResources(value, path);
+  const resources = dockerResources(value, path);
+  if (resources.dockerDataBytes !== undefined && privileged === "disabled") {
+    throw dockerProfileError({
+      code: "sandbox.docker-profile-required",
+      path: `${path}.dockerDataBytes`,
+      message: "dockerDataBytes is only available to profile-bound DinD",
+    });
+  }
+  if (privileged === "raw") {
+    if (resources.dockerDataBytes !== undefined && profile === undefined) {
+      throw dockerProfileError({
+        code: "sandbox.docker-profile-required",
+        path: `${path}.dockerDataBytes`,
+        message: "raw privileged DinD with dockerDataBytes requires dockerAccess.storageProfile",
+      });
+    }
+    if (profile !== undefined && resources.dockerDataBytes === undefined) {
+      throw dockerProfileError({
+        code: "sandbox.docker-profile-resources-required",
+        path,
+        message: "dockerAccess.storageProfile requires resources.dockerDataBytes",
+      });
+    }
+    return resources;
+  }
+  return profile === undefined ? resources : managedDockerResources(value, path);
 }
 
 function readinessIdentity(readiness: Readonly<DockerSandboxReadiness> | undefined): JsonValue {
@@ -1104,7 +1144,7 @@ function nonNegativeSafeInteger(value: unknown, path: string): number {
 function dockerResources(value: unknown, path: string): Readonly<DockerSandboxResources> {
   if (value === undefined) return Object.freeze({});
   assertRecord(value, path);
-  assertOnlyKeys(value, ["cpus", "memoryBytes", "pidsLimit", "readOnlyRootfs", "tmpfs"], path);
+  assertOnlyKeys(value, ["cpus", "memoryBytes", "pidsLimit", "dockerDataBytes", "readOnlyRootfs", "tmpfs"], path);
   if (value.readOnlyRootfs !== undefined && typeof value.readOnlyRootfs !== "boolean") {
     throw new TypeError(`${path}.readOnlyRootfs must be a boolean`);
   }
@@ -1114,6 +1154,9 @@ function dockerResources(value: unknown, path: string): Readonly<DockerSandboxRe
     for (const mountPath of Object.keys(value.tmpfs).sort()) {
       if (!isAbsolute(mountPath) || resolve(mountPath) !== mountPath || mountPath === "/") {
         throw new TypeError(`${path}.tmpfs keys must be normalized absolute paths other than /`);
+      }
+      if (mountPath === "/var/lib/docker") {
+        throw new TypeError(`${path}.tmpfs must not contain /var/lib/docker; use dockerDataBytes`);
       }
       const entry = value.tmpfs[mountPath];
       assertRecord(entry, `${path}.tmpfs.${mountPath}`);
@@ -1147,6 +1190,9 @@ function dockerResources(value: unknown, path: string): Readonly<DockerSandboxRe
     ...(value.pidsLimit === undefined
       ? {}
       : { pidsLimit: positiveSafeInteger(value.pidsLimit, `${path}.pidsLimit`) }),
+    ...(value.dockerDataBytes === undefined
+      ? {}
+      : { dockerDataBytes: positiveSafeInteger(value.dockerDataBytes, `${path}.dockerDataBytes`) }),
     ...(value.readOnlyRootfs === true ? { readOnlyRootfs: true } : {}),
     ...(Object.keys(tmpfs).length === 0 ? {} : { tmpfs: Object.freeze(tmpfs) }),
   });
@@ -1643,6 +1689,8 @@ export function createBuiltinSandboxFactories(
     Effect.flatMap(services.dockerBuildPlatform, targetFromDocker);
   const dockerTargetForProfile = (
     profile: string | undefined,
+    privileged: "disabled" | "raw" | "rootless",
+    resources: Readonly<DockerSandboxResources>,
   ): Effect.Effect<{
     readonly target: SandboxPlannedTarget;
     readonly profileBinding?: DockerProfileRuntimeBinding;
@@ -1658,7 +1706,34 @@ export function createBuiltinSandboxFactories(
             [`Run niceeval docker profile doctor ${profile}.`],
           ),
         }),
-        (profileBinding) => Effect.map(targetFromDocker(profileBinding.platform), (target) => ({ target, profileBinding })),
+        (profileBinding) => {
+          const rawStorage = profileBinding.profile.securityLevel === "raw-dind-storage/v1";
+          if ((privileged === "raw") !== rawStorage) {
+            return Effect.fail(providerPlanningError(
+              "sandbox.docker-profile-attestation-failed",
+              "docker",
+              privileged === "raw"
+                ? `Docker storage profile ${profile} must declare raw-dind-storage/v1`
+                : `Managed Docker profile ${profile} must declare a managed rootless security level`,
+              [`Run niceeval docker profile doctor ${profile}.`],
+            ));
+          }
+          const capacity = profileBinding.profile.capacity;
+          if (
+            (resources.cpus ?? 0) > capacity.cpus ||
+            (resources.memoryBytes ?? 0) > capacity.memoryBytes ||
+            (resources.pidsLimit ?? 0) > capacity.pids ||
+            (resources.dockerDataBytes ?? 0) > capacity.ephemeralDiskBytes
+          ) {
+            return Effect.fail(providerPlanningError(
+              "sandbox.docker-profile-attestation-failed",
+              "docker",
+              `Docker profile ${profile} does not have capacity for the declared container resource vector`,
+              [`Reduce resources or select another Docker profile.`],
+            ));
+          }
+          return Effect.map(targetFromDocker(profileBinding.platform), (target) => ({ target, profileBinding }));
+        },
       );
 
   return Object.freeze({
@@ -1876,7 +1951,7 @@ export function createBuiltinSandboxFactories(
               contextLocator.redaction === undefined ? [] : [contextLocator.redaction],
             ),
         leakGate: { _tag: "Dockerfile", context, dockerfile },
-        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTargetForProfile(profile), ({ target, profileBinding }) => Effect.gen(function* () {
+        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTargetForProfile(profile, privileged, resources), ({ target, profileBinding }) => Effect.gen(function* () {
           const plannedContext = yield* Effect.try({
             try: () => plannedLocation(context, authorBaseDir),
             catch: (cause) => providerPlanningError(
@@ -2040,7 +2115,7 @@ export function createBuiltinSandboxFactories(
         privateFingerprintIdentity: identity,
         commandPlanLocator: configuredDockerImageLocator(image),
         leakGate: { _tag: "None" },
-        plan: () => Effect.map(dockerTargetForProfile(profile), ({ target, profileBinding }) => {
+        plan: () => Effect.map(dockerTargetForProfile(profile, privileged, resources), ({ target, profileBinding }) => {
           return sandboxProviderPlan({
             provider: "docker",
             plannerRevision: DOCKER_IMAGE_PROVIDER_REVISION,

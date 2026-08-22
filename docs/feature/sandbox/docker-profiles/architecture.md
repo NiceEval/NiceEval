@@ -7,12 +7,12 @@ outer Compose编排。profile是同一个 provider的执行 binding；DinD只是
 
 ```text
 host deployment (root/admin)
-  owns descriptor + dedicated UID + systemd units + bounded filesystem
+  owns descriptor + systemd units + bounded filesystem + pre-created allocation pool
 
 profile watchdog/admission (persistent TCB)
-  owns durable leases + reservations + recovery journal
+  owns durable leases + reservations + data-slot state + recovery journal
 
-rootless Docker daemon (dedicated host UID)
+profile Docker daemon (managed uses dedicated host UID)
   owns image/cache data + outer container runtime
 
 NiceEval CLI (trusted daily UID)
@@ -41,7 +41,9 @@ interface DockerExecutionProfileV1 {
   readonly schemaVersion: 1;
   /** 宿主部署生成的稳定不透明 ID；不等于本地选择名。 */
   readonly profileId: string;
-  readonly securityLevel: "managed-rootless/v1" | "managed-vm-rootless/v1";
+  readonly securityLevel:
+    | "raw-dind-storage/v1"
+    | "managed-rootless/v1";
   /** NiceEval 从下方语义 policy 重新计算并核对，不能只信字符串。 */
   readonly semanticPolicyRevision: string;
   /** 全部路径和 UID 都属于运行 niceeval CLI 的宿主。 */
@@ -57,7 +59,7 @@ interface DockerExecutionProfileV1 {
   };
   /** 下列 identity、UID和路径全部属于执行 Docker daemon的 Linux backend。 */
   readonly backend: {
-    readonly kind: "local-systemd" | "dedicated-linux-vm";
+    readonly kind: "local-systemd";
     readonly machineIdentity: string;
     readonly owner: { readonly uid: number; readonly gid: number };
     readonly filesystem: {
@@ -65,6 +67,12 @@ interface DockerExecutionProfileV1 {
       readonly mountPath: string;
       readonly dockerRootDir: string;
       readonly limitBytes: number;
+      /** 部署时预建，不能在 Attempt create路径临时扩容。 */
+      readonly dockerDataPool: {
+        readonly count: number;
+        readonly bytesPerAllocation: number;
+        readonly attestation: "linux-project-quota/v1";
+      };
     };
     readonly cgroup: {
       readonly aggregatePath: string;
@@ -80,6 +88,8 @@ interface DockerExecutionProfileV1 {
     readonly pids: number;
     readonly maxContainers: number;
     readonly maxBuilds: number;
+    /** 可授予 Docker data allocation的硬容量；不能按 sparse apparent size计算。 */
+    readonly ephemeralDiskBytes: number;
     /** systemd aggregate cgroup 的硬上限；必须不小于 allocatable + headroom。 */
     readonly aggregate: {
       readonly cpus: number;
@@ -88,24 +98,34 @@ interface DockerExecutionProfileV1 {
       readonly pids: number;
     };
   };
-  readonly policy: {
-    readonly hostLoopback: false;
-    readonly tcpDockerEndpoint: false;
-    readonly outerSocketInjection: false;
-    readonly privilegedTranslation: "rootless-userns";
-    readonly writableRoot: "declared-tmpfs-only";
-  };
+  readonly policy:
+    | {
+        readonly level: "raw-dind-storage/v1";
+        readonly privilegedTranslation: "host-daemon";
+        readonly dockerData: "private-project-quota-allocation/v1";
+      }
+    | {
+        readonly level: "managed-rootless/v1";
+        readonly hostLoopback: false;
+        readonly tcpDockerEndpoint: false;
+        readonly outerSocketInjection: false;
+        readonly privilegedTranslation: "rootless-userns";
+        readonly writableRoot: "declared-tmpfs-only";
+        readonly dockerData: "private-project-quota-allocation/v1";
+      };
 }
 ```
 
 descriptor不含 callback、可执行路径 Hook、shell snippet、项目 module或凭据。选择名由 registry
-文件名/索引映射到 `profileId`；改名不改变稳定 ID。transport只描述 CLI宿主，backend只描述运行
-daemon的 Linux machine；本机 profile两者 machine identity相同，VM profile则不同。
+文件名/索引映射到 `profileId`；改名不改变稳定 ID。transport与 backend都描述运行 CLI和 daemon的
+Linux宿主，两个 machine identity必须相同。仅有 Docker endpoint、TLS 连接或 `docker info` 中的
+`rootless`不足以宣称受管 security level。v1只接受 Linux、systemd与 cgroup v2；其它宿主不能注册
+该 descriptor，也不能执行外部 profile提供的自定义验证 callback。
 
-external/remote profile沿用同一原则：显式 descriptor + versioned control/attestation protocol。
-仅有 Docker endpoint、TLS 连接或 `docker info` 中的 `rootless` 不足以宣称
-受管 security level。core只接受自己能完整验证的 security level，不执行外部 profile提供的
-自定义验证 callback。macOS专用 VM使用 `managed-vm-rootless/v1`，共享 Docker Desktop不符合它。
+`raw-dind-storage/v1`只证明 Docker data allocation、跨进程磁盘准入和 watchdog恢复。它允许 outer daemon是
+rootful，也不证明 network、user namespace、sibling或宿主隔离。managed security level必须包含同一
+`private-project-quota-allocation/v1` capability，再叠加本节定义的 rootless、cgroup与网络承诺。
+`securityLevel`必须与 `policy.level`相同；raw不能携带 managed policy字段来暗示更强保证。
 
 ## 宿主 TCB
 
@@ -127,28 +147,25 @@ external/remote profile沿用同一原则：显式 descriptor + versioned contro
 daemon与watchdog跨 Invocation常驻，复用可信 Dockerfile build产生的 image cache。它们、aggregate
 cgroup与 data mount是 installed infrastructure，不是某次运行的 orphan。
 
-macOS managed-vm deployment在专用 Linux VM内满足同一组 daemon、cgroup、filesystem与 watchdog
-约束。宿主 package用 machine identity绑定 VM与转发后的两个 Unix endpoint。共享 Docker Desktop
-VM不能成为该 profile的后端。
-
 ## Attestation
 
-CLI加载可信评测 module并收集 managed DinD的 `dockerAccess.profile`后，在任何 Docker discovery/build前
-完成以下检查：
+CLI加载可信评测 module并收集 raw的 `storageProfile`与 managed的 `profile`后，在任何 Docker
+discovery/build前完成以下检查：
 
 1. descriptor不是 symlink，owner/mode正确，所有父目录不可由 runtime access group写；
 2. transport中的两个 endpoint均是声明路径的 Unix socket，宿主 peer UID和 socket inode匹配；
 3. endpoint不是 `/run/docker.sock`、`/var/run/docker.sock`，daemon没有 TCP listener；
 4. control challenge返回 descriptor digest、profile ID、host/backend machine identity与当前
    daemon generation；
-5. 本机 daemon进程对应 backend owner，且 invoking UID不同；VM evidence证明 guest daemon对应
-   backend owner；
-6. Docker info中的 daemon ID、DockerRootDir、rootless、cgroup v2/systemd driver与 attestation相同；
+5. 本机 daemon进程对应 backend owner，且 invoking UID不同；
+6. Docker info中的 daemon ID与 DockerRootDir和 attestation相同；managed还要求 rootless、cgroup
+   v2与 systemd driver匹配；
 7. backend filesystem identity、mount与可见硬容量匹配；
-8. 本机 systemd事实或 VM control evidence与 aggregate descriptor一致，controllers没有退化；
-9. daemon、containerd/buildkit、shim以及 doctor 探测的 cgroup路径均为 `aggregatePath`的严格
-   backend aggregate path后代，不是同 slice下的 sibling；
-10. watchdog journal、Docker labels、active leases与 reservations可对账。
+8. 每个预建 slot的 project ID、hard limit和实际 backing匹配，且总承诺不超过可授予物理容量；
+9. managed的本机 systemd事实与 aggregate descriptor一致，controllers没有退化；
+10. managed daemon、containerd/buildkit、shim以及 doctor探测的 cgroup路径均为 `aggregatePath`的
+    严格 backend aggregate path后代，不是同 slice下的 sibling；
+11. watchdog journal、Docker labels、active leases、reservations与 data-slot状态可对账。
 
 任一检查失败，profile不进入 planner context。provider在每次 build/create前通过 control service
 重新核对 profile ID和 generation，防止 planning到 create之间切换 daemon。generation改变时整次
@@ -191,14 +208,20 @@ interface DockerProfileReservationV1 {
     readonly memoryBytes: number;
     readonly pids: number;
     readonly containers: 0 | 1;
+    readonly ephemeralDiskBytes: number;
   };
   readonly state: "queued" | "granted" | "committed" | "releasing";
 }
 ```
 
-任何绑定 profile的 `dockerSandbox()`都在类型与运行时两层要求完整 CPU、memory、PID和只读 rootfs。
-因此 container reservation始终有确定向量，managed policy没有无界 create路径。省略 profile的普通
-Docker沿用既有 provider行为，不进入该 profile的 admission或安全承诺。
+任何绑定 profile的 `dockerSandbox()`都在类型与运行时两层要求完整 CPU、memory、PID、
+`dockerDataBytes`和只读 rootfs。planner把 `dockerDataBytes`规范化为 reservation的
+`ephemeralDiskBytes`。因此 container reservation始终有确定向量，profile没有无界 create路径。
+省略 profile的普通 Docker沿用既有 provider行为，不进入该 profile的 admission或安全承诺。
+
+container create与 Dockerfile build都由 control service持有 daemon connection。CLI只提交规范化请求
+与 context stream。raw和 managed共用这条持久 owner约束，使 CLI断连后 watchdog仍能取消 build、删除
+container并回收 Docker data allocation。
 
 Build reservation另有持久 operation：
 
@@ -229,15 +252,24 @@ sum(container.cpus)        <= allocatable cpus
 sum(container.memoryBytes) <= allocatable memory
 sum(container.pids)        <= allocatable pids
 sum(container.count)       <= maxContainers
+sum(container.ephemeralDiskBytes) <= allocatable ephemeralDiskBytes
 sum(active build slots)    <= maxBuilds
 ```
+
+磁盘准入按已验证 backing上的可分配物理 bytes计算。稀疏文件的 apparent size、thin pool未兑现空间和
+可压缩后的估计值都不能增加 `ephemeralDiskBytes`。每笔 reservation还必须匹配一个 hard limit不小于
+请求值的 free allocation；容量向量与 allocation必须在同一 journal事务内授予。
 
 allocatable容量已扣除 daemon、watchdog、build和宿主 recovery headroom。一个容器请求自身超过上限时
 preflight立即失败；暂时无余量则进入跨进程公平队列，不超卖。client取消排队不留 reservation。
 Experiment/global `maxConcurrency` 先限制本进程派发，watchdog admission再限制全机；两者都通过才
 create。
 
-四路初始配置中每个 Attempt 请求 4 CPU，因此 allocatable 至少是 16 CPU；aggregate 硬上限至少是
+默认 profile使用32 GiB硬容量 filesystem、8 GiB allocation和2路 `maxContainers`。其中16 GiB可授予
+Attempt，其余空间留给 outer daemon image/cache、build、scrub和 recovery。晋升4路时 filesystem至少
+64 GiB；晋升8路时至少128 GiB，并始终保持每路8 GiB的 hard quota和同等 headroom比例。
+
+四路配置中每个 Attempt 请求 4 CPU，因此 allocatable 至少是 16 CPU；aggregate 硬上限至少是
 20 CPU，并另提供 4 CPU 给 daemon、BuildKit、watchdog 与回收。八路晋升的 allocatable 至少是
 32 CPU、48 GiB memory 与 16384 PID；aggregate 至少是 40 CPU、64 GiB memory 与 20480 PID。
 descriptor 与 CLI 输出中的 `capacity` 一律指 allocatable，`capacity.aggregate` 才指 cgroup 硬上限，
@@ -305,9 +337,22 @@ Docker HostConfig精确设置 `NanoCpus`、`Memory`、`MemorySwap=Memory`、`Pid
 `ReadonlyRootfs` 与 `Tmpfs`。rootless cgroup可能静默退化，因此 doctor和 E2E从容器读取真实 cgroup
 文件；只看 inspect不足以通过。
 
-`readOnlyRootfs + bounded tmpfs` 把一条 Attempt的可写面限制在声明路径。inner
-`/var/lib/docker`是有界 tmpfs，计入该容器 memory cgroup；它不会用 outer data-root保存不受限
-的 inner layers。
+`readOnlyRootfs + bounded tmpfs`限制普通可写路径。inner `/var/lib/docker`使用每 Attempt私有的
+disk-backed Docker data allocation，不使用大 tmpfs。control service以固定 `rprivate` bind把已授予的目录挂到该
+路径；mount propagation不能把 inner mount传播回宿主。source路径、allocation ID和 token不通过 inspect、
+mount metadata、子进程变量或文件暴露给不可信 workload。
+
+allocation由部署事务预建，不跨 Attempt复用已写状态。watchdog拥有如下状态机：
+
+```text
+free -> preparing -> granted -> attaching -> active
+  -> draining -> scrubbing -> verified-free -> free
+```
+
+`preparing`核对 project ID与 hard quota；`attaching`只允许匹配 reservation token的 control owner执行。
+收尾先卸载并确认无引用，再删除 slot全部内容和 inner Docker metadata。只有独立验证目录为空、quota用量
+归零且没有 mount或进程引用后才进入 `verified-free`。任何证据不确定、token不匹配或 scrub失败都进入
+`quarantined`；该 allocation继续计入已占容量，不能重新授予。
 
 ## 单容器 DinD readiness
 

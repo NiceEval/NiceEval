@@ -108,7 +108,9 @@ async function smokeProfile(alias: string): Promise<Check[]> {
         MemorySwap: 512 * 1024 * 1024,
         PidsLimit: 256,
         ReadonlyRootfs: true,
-        Dns: [...binding.profile.policy.network.dns.servers],
+        ...(binding.profile.policy.level === "managed-rootless/v1"
+          ? { Dns: [...binding.profile.policy.network.dns.servers] }
+          : {}),
         Tmpfs: {
           "/var/lib/docker": "rw,exec,nosuid,nodev,size=256m",
           "/run": "rw,exec,nosuid,nodev,size=64m",
@@ -190,8 +192,10 @@ export async function runDockerProfileCommand(
       checks.push(
         { name: "descriptor and registry", status: "PASS", detail: binding.descriptorDigest },
         { name: "Docker/control attestation", status: "PASS", detail: `generation ${binding.daemonGeneration}` },
-        { name: "rootless cgroup backend", status: "PASS", detail: `${binding.platform} · ${binding.profile.backend.cgroup.aggregatePath}` },
-        { name: "network policy", status: "PASS", detail: `v${binding.profile.policy.network.version} · IPv6 disabled · pinned DNS` },
+        { name: "cgroup backend", status: "PASS", detail: `${binding.platform} · ${binding.profile.backend.cgroup.aggregatePath}` },
+        binding.profile.policy.level === "managed-rootless/v1"
+          ? { name: "network policy", status: "PASS", detail: `v${binding.profile.policy.network.version} · IPv6 disabled · pinned DNS` }
+          : { name: "raw storage policy", status: "PASS", detail: "project-quota Docker data allocation; no rootless/network claim" },
       );
       if (options.smoke) checks.push(...await smokeProfile(alias));
     } catch (error) {

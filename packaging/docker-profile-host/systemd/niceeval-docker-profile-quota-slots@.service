@@ -1,0 +1,13 @@
+[Unit]
+Description=NiceEval project-quota slot installer (%i)
+After=local-fs.target niceeval-docker-profile-storage@%i.service
+Before=niceeval-docker-profile-watchdog@%i.service
+ConditionPathExists=/etc/niceeval/docker-profiles/%i.host.json
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/niceeval/install-quota-slots --host-config=/etc/niceeval/docker-profiles/%i.host.json
+
+[Install]
+WantedBy=multi-user.target

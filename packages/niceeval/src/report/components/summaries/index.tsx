@@ -123,15 +123,6 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
       </Col>
     );
   }
-  if (props.comparison.comparison.state === "non-comparable") {
-    return (
-      <Col className={joinClassNames("niceeval-experiment-scatter", props.className)}>
-        <Text className="niceeval-experiment-scatter-note">
-          {props.comparison.comparison.issues.map((issue) => issue.reason).join(", ")}
-        </Text>
-      </Col>
-    );
-  }
   const sample = sampleForExperimentComparisonScope(props.comparison);
   const experiments = await experimentListData(sample, pricing);
   const data = await experimentScatterData(sample, {
@@ -150,6 +141,7 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
   }
   const passPoints = data.points.filter((point) => point.evaluationKind === "pass");
   const scorePoints = data.points.filter((point) => point.evaluationKind !== "pass");
+  const scoreConnect = props.connect === true && data.connect;
   const pointTarget = props.pointTarget ?? defaultExperimentPointTarget;
   return (
     <Col className={props.className}>
@@ -180,7 +172,7 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
             mark="scatter"
             points="experiment"
             by="series"
-            connect={data.connect}
+            connect={scoreConnect}
           />
         </Chart>
       )}

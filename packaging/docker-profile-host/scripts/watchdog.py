@@ -13,10 +13,13 @@ import copy
 import hashlib
 import hmac
 import json
+import math
 import os
+import posixpath
 import secrets
 import signal
 import socketserver
+import stat
 import subprocess
 import threading
 import time
@@ -30,7 +33,11 @@ LABELS = {
     "invocationId": "niceeval.invocation-id",
     "reservationId": "niceeval.reservation-id",
     "provisionToken": "niceeval.provision-token",
+    "attemptId": "niceeval.attempt-id",
 }
+
+CREATE_KEYS = {"image", "command", "entrypoint", "environment", "workingDir", "user", "tmpfs", "attemptId"}
+FORBIDDEN_CREATE_KEYS = {"binds", "mounts", "volumes", "hostConfig", "devices", "networkMode", "ports", "extraHosts"}
 
 
 def now() -> str:
@@ -52,11 +59,18 @@ class ProtocolError(Exception):
         self.code = code
 
 
+SLOT_STATES = ("free", "preparing", "granted", "attaching", "active", "draining",
+               "scrubbing", "verified-free", "quarantined")
+
+
 class Admission:
-    def __init__(self, descriptor: Path, journal: Path, docker_socket: str, grace: float) -> None:
+    def __init__(self, descriptor: Path, journal: Path, docker_socket: str, grace: float,
+                 host_config: Path | None = None) -> None:
         self.descriptor_path = descriptor
         self.descriptor = json.loads(descriptor.read_text(encoding="utf-8"))
         self.descriptor_digest = canonical_digest(self.descriptor)
+        self.host_config = (json.loads(host_config.read_text(encoding="utf-8"))
+                            if host_config is not None else None)
         self.profile_id = str(self.descriptor["profileId"])
         self.journal = journal
         self.docker_socket = docker_socket
@@ -71,8 +85,10 @@ class Admission:
             "reservations": {},
             "queue": [],
             "degraded": [],
+            "slots": {},
         }
         self._load()
+        self._load_slots()
         current = self._generation()
         if self.state.get("generation") != current:
             self.state["admissionOpen"] = False
@@ -81,6 +97,41 @@ class Admission:
             self._recover_once()
             self.state["admissionOpen"] = not self.state["degraded"]
             self._commit("daemon-generation-reconciled", {})
+
+    def _load_slots(self) -> None:
+        storage = self.host_config.get("storage", {}) if self.host_config else {}
+        pool = self.descriptor.get("backend", {}).get("filesystem", {}).get("dockerDataPool")
+        config = ({"registryPath": storage.get("slotRegistryPath"),
+                   "rootPath": storage.get("slotRootPath"),
+                   "count": pool.get("count") if pool else None}
+                  if storage and pool else None)
+        if not config:
+            return
+        if not all(config.values()):
+            self.state["admissionOpen"] = False
+            self.state["degraded"].append("host quota-slot paths are incomplete")
+            return
+        registry = Path(config["registryPath"])
+        if not registry.is_file():
+            self.state["admissionOpen"] = False
+            message = "project-quota slot registry is absent; admission fails closed"
+            if message not in self.state["degraded"]:
+                self.state["degraded"].append(message)
+            return
+        installed = json.loads(registry.read_text(encoding="utf-8"))
+        root = Path(config["rootPath"]).resolve()
+        existing = self.state.setdefault("slots", {})
+        for raw in installed.get("slots", []):
+            slot_id = str(raw["slotId"])
+            source = Path(str(raw["path"]))
+            if source.is_symlink() or source.resolve().parent != root or source.name != slot_id:
+                self.state["admissionOpen"] = False
+                self.state["degraded"].append(f"slot registry path is not attested for {slot_id}")
+                continue
+            existing.setdefault(slot_id, {**raw, "state": "free", "generation": int(raw.get("generation", 0))})
+        if len(existing) != int(config["count"]):
+            self.state["admissionOpen"] = False
+            self.state["degraded"].append("project-quota slot count does not match descriptor")
 
     def _docker(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -96,8 +147,8 @@ class Admission:
         try:
             info = json.loads(self._docker("info", "--format", "{{json .}}", check=True).stdout)
             daemon_id = str(info.get("ID", "unknown"))
-        except Exception:
-            daemon_id = "unavailable"
+        except Exception as error:
+            raise RuntimeError(f"Docker daemon identity is unavailable: {error}") from error
         sock = os.stat(self.docker_socket)
         return hashlib.sha256(f"{daemon_id}:{sock.st_ino}:{sock.st_ctime_ns}".encode()).hexdigest()[:32]
 
@@ -146,22 +197,23 @@ class Admission:
             "pids": float(cap["pids"]),
             "containers": float(cap["maxContainers"]),
             "builds": float(cap["maxBuilds"]),
+            "ephemeralDiskBytes": float(cap.get("ephemeralDiskBytes", 0)),
         }
 
     def _used(self) -> dict[str, float]:
-        used = {"cpus": 0.0, "memoryBytes": 0.0, "pids": 0.0, "containers": 0.0, "builds": 0.0}
+        used = {"cpus": 0.0, "memoryBytes": 0.0, "pids": 0.0, "containers": 0.0, "builds": 0.0, "ephemeralDiskBytes": 0.0}
         for reservation in self.state["reservations"].values():
-            if reservation["state"] not in ("granted", "committed", "releasing"):
+            if reservation["state"] not in ("granted", "provisioning", "committed", "releasing", "quarantined"):
                 continue
             resources = reservation["resources"]
-            for key in ("cpus", "memoryBytes", "pids", "containers"):
+            for key in ("cpus", "memoryBytes", "pids", "containers", "ephemeralDiskBytes"):
                 used[key] += float(resources.get(key, 0))
             used["builds"] += 1 if reservation["kind"] == "build" else 0
         return used
 
     def _fits(self, resources: dict[str, Any], kind: str) -> bool:
         used, cap = self._used(), self._capacity()
-        for key in ("cpus", "memoryBytes", "pids", "containers"):
+        for key in ("cpus", "memoryBytes", "pids", "containers", "ephemeralDiskBytes"):
             if used[key] + float(resources.get(key, 0)) > cap[key]:
                 return False
         return used["builds"] + (1 if kind == "build" else 0) <= cap["builds"]
@@ -174,18 +226,162 @@ class Admission:
                 continue
             if not self._fits(reservation["resources"], reservation["kind"]):
                 break
+            if reservation["kind"] == "container":
+                available = next((s for s in self.state["slots"].values() if s["state"] == "free"), None)
+                if available is None:
+                    break
+                available["state"] = "preparing"
+                available["invocationId"] = reservation["invocationId"]
+                available["reservationId"] = reservation["reservationId"]
+                available["provisionToken"] = reservation["provisionToken"]
+                reservation["slotId"] = available["slotId"]
+                reservation["slotGeneration"] = available["generation"]
+                self._commit("slot-preparing", {"slotId": available["slotId"], "reservationId": reservation["reservationId"]})
+                available["state"] = "granted"
             reservation["state"] = "granted"
             reservation["grantedAt"] = now()
             self.state["queue"].pop(0)
             self._commit("reservation-granted", {"reservationId": reservation["reservationId"]})
 
+    def _quarantine(self, reservation: dict[str, Any], reason: str) -> None:
+        slot_id = reservation.get("slotId")
+        if slot_id in self.state["slots"]:
+            slot = self.state["slots"][slot_id]
+            slot["state"] = "quarantined"
+            slot["quarantineReason"] = reason
+        reservation["state"] = "quarantined"
+        if reason not in self.state["degraded"]:
+            self.state["degraded"].append(reason)
+        self._commit("slot-quarantined", {"slotId": slot_id, "reservationId": reservation["reservationId"], "reason": reason})
+
+    def _run_host(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              check=True, timeout=30)
+
+    def _slot_facts(self, slot: dict[str, Any]) -> dict[str, Any]:
+        path = Path(slot["path"])
+        st = path.lstat()
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+            raise RuntimeError("slot is not a real directory")
+        project = self._run_host("lsattr", "-p", "-d", str(path)).stdout.split()[0]
+        mount = str(Path(self.descriptor["backend"]["filesystem"]["mountPath"]))
+        quota = self._run_host("repquota", "-P", "-O", "csv", mount).stdout
+        usage: int | None = None
+        hard: int | None = None
+        for line in quota.splitlines():
+            fields = [field.strip().strip('"') for field in line.split(",")]
+            if fields and fields[0].lstrip("#") == str(slot["projectId"]):
+                numbers = [int(field) for field in fields[1:] if field.isdigit()]
+                if len(numbers) >= 3:
+                    usage, hard = numbers[0] * 1024, numbers[2] * 1024
+                    break
+        if usage is None or hard is None:
+            raise RuntimeError("project quota usage is not reportable")
+        return {"projectId": int(project), "usageBytes": usage, "hardBytes": hard,
+                "uid": st.st_uid, "gid": st.st_gid, "mode": stat.S_IMODE(st.st_mode)}
+
+    def _slot_references(self, slot: dict[str, Any]) -> list[str]:
+        source = str(Path(slot["path"]).resolve())
+        refs: list[str] = []
+        for line in Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines():
+            fields = line.split()
+            if len(fields) > 4 and (fields[3] == source or fields[4] == source or fields[3].startswith(source + "/")):
+                refs.append("mount:" + line)
+        for proc in Path("/proc").iterdir():
+            if not proc.name.isdigit() or int(proc.name) == os.getpid():
+                continue
+            for leaf in ("cwd", "root"):
+                try:
+                    target = os.readlink(proc / leaf)
+                    if target == source or target.startswith(source + "/"):
+                        refs.append(f"pid:{proc.name}:{leaf}")
+                except OSError:
+                    pass
+            try:
+                for fd in (proc / "fd").iterdir():
+                    try:
+                        target = os.readlink(fd)
+                        if target == source or target.startswith(source + "/"):
+                            refs.append(f"pid:{proc.name}:fd")
+                            break
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+        return refs
+
+    def _scrub_fd(self, directory_fd: int) -> None:
+        for name in os.listdir(directory_fd):
+            item = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            if stat.S_ISDIR(item.st_mode):
+                child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory_fd)
+                try:
+                    self._scrub_fd(child)
+                finally:
+                    os.close(child)
+                os.rmdir(name, dir_fd=directory_fd)
+            else:
+                os.unlink(name, dir_fd=directory_fd)
+
+    def _scrub_slot(self, slot: dict[str, Any]) -> None:
+        root_fd = os.open(slot["path"], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            self._scrub_fd(root_fd)
+            os.fsync(root_fd)
+        finally:
+            os.close(root_fd)
+
+    def _verify_and_free_slot(self, reservation: dict[str, Any]) -> bool:
+        slot_id = reservation.get("slotId")
+        if slot_id is None:
+            return True
+        slot = self.state["slots"][slot_id]
+        prior_quarantine_reason = slot.get("quarantineReason")
+        slot["state"] = "scrubbing"
+        self._commit("slot-scrubbing", {"slotId": slot_id})
+        try:
+            if self._slot_references(slot):
+                raise RuntimeError("slot still has mount or process references")
+            self._scrub_slot(slot)
+            if os.listdir(slot["path"]):
+                raise RuntimeError("slot is not empty after scrub")
+            os.chown(slot["path"], int(slot["ownerUid"]), int(slot["ownerGid"]))
+            os.chmod(slot["path"], int(slot.get("mode", 0o700)))
+            facts = self._slot_facts(slot)
+            expected = {"projectId": int(slot["projectId"]), "usageBytes": int(slot.get("baselineUsageBytes", 0)),
+                        "hardBytes": int(slot["limitBytes"]), "uid": int(slot["ownerUid"]),
+                        "gid": int(slot["ownerGid"]), "mode": int(slot.get("mode", 0o700))}
+            if facts != expected:
+                raise RuntimeError(f"slot attestation mismatch: {facts!r}")
+            slot["state"] = "verified-free"
+            self._commit("slot-verified-free", {"slotId": slot_id, "generation": slot["generation"]})
+            slot["generation"] = int(slot["generation"]) + 1
+            slot["state"] = "free"
+            for field in ("invocationId", "reservationId", "provisionToken", "quarantineReason"):
+                slot.pop(field, None)
+            if prior_quarantine_reason is not None:
+                self.state["degraded"] = [
+                    reason for reason in self.state["degraded"] if reason != prior_quarantine_reason
+                ]
+            self._commit("slot-free", {"slotId": slot_id, "generation": slot["generation"]})
+            return True
+        except Exception as error:
+            self._quarantine(reservation, f"slot {slot_id} verified-free failed: {error}")
+            return False
+
     def _resource_ids(self, reservation: dict[str, Any]) -> tuple[list[str], list[str]]:
         filters: list[str] = []
         for field, label in LABELS.items():
+            if field == "attemptId" and not reservation.get(field):
+                continue
             value = reservation["profileId"] if field == "profileId" else reservation[field]
             filters.extend(["--filter", f"label={label}={value}"])
-        containers = self._docker("ps", "-aq", *filters, check=False).stdout.split()
-        networks = self._docker("network", "ls", "-q", *filters, check=False).stdout.split()
+        container_query = self._docker("ps", "-aq", *filters, check=False)
+        network_query = self._docker("network", "ls", "-q", *filters, check=False)
+        if container_query.returncode != 0 or network_query.returncode != 0:
+            raise RuntimeError("Docker resource query failed; refusing to infer absence")
+        containers = container_query.stdout.split()
+        networks = network_query.stdout.split()
         return containers, networks
 
     def _destroy(self, reservation: dict[str, Any]) -> bool:
@@ -196,6 +392,102 @@ class Admission:
             self._docker("network", "rm", resource_id, check=False)
         remaining = self._resource_ids(reservation)
         return not remaining[0] and not remaining[1]
+
+    def _validate_create(self, raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict) or not raw.get("image") or not raw.get("attemptId"):
+            raise ProtocolError("container-create-invalid", "image and attemptId are required")
+        keys = set(raw)
+        if keys & FORBIDDEN_CREATE_KEYS or not keys <= CREATE_KEYS:
+            raise ProtocolError("container-create-host-input", "host paths and host/network configuration are control-owned")
+        if not isinstance(raw.get("command", []), list) or not isinstance(raw.get("environment", []), list):
+            raise ProtocolError("container-create-invalid", "command and environment must be arrays")
+        tmpfs = raw.get("tmpfs", {})
+        invalid_tmpfs = not isinstance(tmpfs, dict) or any(
+            not isinstance(path, str)
+            or not isinstance(options, str)
+            or not path.startswith("/")
+            or path == "/"
+            or posixpath.normpath(path) != path
+            or path == "/var/lib/docker"
+            or path.startswith("/var/lib/docker/")
+            for path, options in (tmpfs.items() if isinstance(tmpfs, dict) else ())
+        )
+        if invalid_tmpfs:
+            raise ProtocolError("container-create-invalid", "tmpfs paths are not permitted")
+        return copy.deepcopy(raw)
+
+    def _create_container(self, reservation: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+        slot = self.state["slots"][reservation["slotId"]]
+        reservation["attemptId"] = str(spec["attemptId"])
+        labels = {label: str(reservation[field] if field != "profileId" else self.profile_id)
+                  for field, label in LABELS.items()}
+        reservation["createSpecDigest"] = canonical_digest(spec)
+        reservation["state"] = "provisioning"
+        slot["state"] = "attaching"
+        self._commit("container-create-intent", {"reservationId": reservation["reservationId"],
+                                                  "specDigest": reservation["createSpecDigest"]})
+        network_name = "niceeval-" + reservation["provisionToken"][:20]
+        network_args = ["network", "create", "--driver", "bridge"]
+        for key, value in labels.items():
+            network_args += ["--label", f"{key}={value}"]
+        network_args.append(network_name)
+        self._commit("container-network-create-intent", {"reservationId": reservation["reservationId"],
+                                                          "networkName": network_name})
+        try:
+            network_id = self._docker(*network_args).stdout.strip()
+        except subprocess.CalledProcessError as error:
+            _, networks = self._resource_ids(reservation)
+            if len(networks) != 1:
+                detail = (error.stderr or error.stdout or str(error)).strip()[-2000:]
+                raise ProtocolError("container-network-create-failed", detail)
+            network_id = networks[0]
+        except Exception:
+            _, networks = self._resource_ids(reservation)
+            if len(networks) != 1:
+                self._quarantine(reservation, "ambiguous network create could not be reconciled by provision token")
+                raise ProtocolError("container-create-ambiguous", "network create outcome is ambiguous")
+            network_id = networks[0]
+        reservation["networkId"] = network_id
+        self._commit("container-network-created", {"reservationId": reservation["reservationId"], "networkId": network_id})
+        memory = str(int(reservation["resources"]["memoryBytes"]))
+        args = ["create", "--network", network_id, "--privileged", "--read-only", "--memory", memory,
+                "--memory-swap", memory, "--pids-limit", str(int(reservation["resources"]["pids"])),
+                "--cpus", str(reservation["resources"]["cpus"]), "--mount",
+                f"type=bind,src={slot['path']},dst=/var/lib/docker,bind-propagation=rprivate"]
+        for key, value in labels.items():
+            args += ["--label", f"{key}={value}"]
+        for path, options in spec.get("tmpfs", {}).items():
+            args += ["--tmpfs", f"{path}:{options}"]
+        for value in spec.get("environment", []):
+            args += ["--env", str(value)]
+        if spec.get("workingDir"):
+            args += ["--workdir", str(spec["workingDir"])]
+        if spec.get("user"):
+            args += ["--user", str(spec["user"])]
+        if spec.get("entrypoint"):
+            args += ["--entrypoint", str(spec["entrypoint"])]
+        args.append(str(spec["image"]))
+        args += [str(item) for item in spec.get("command", [])]
+        try:
+            container_id = self._docker(*args).stdout.strip()
+        except subprocess.CalledProcessError as error:
+            containers, _ = self._resource_ids(reservation)
+            if len(containers) != 1:
+                detail = (error.stderr or error.stdout or str(error)).strip()[-2000:]
+                raise ProtocolError("container-create-failed", detail)
+            container_id = containers[0]
+        except Exception:
+            containers, _ = self._resource_ids(reservation)
+            if len(containers) != 1:
+                self._quarantine(reservation, "ambiguous container create could not be reconciled by provision token")
+                raise ProtocolError("container-create-ambiguous", "container create outcome is ambiguous")
+            container_id = containers[0]
+        reservation["containerId"] = container_id
+        self._commit("container-created", {"reservationId": reservation["reservationId"], "containerId": container_id})
+        reservation["state"] = "committed"
+        slot["state"] = "active"
+        self._commit("container-active", {"reservationId": reservation["reservationId"]})
+        return {"containerId": container_id, "networkId": network_id, "state": "active"}
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
@@ -218,6 +510,8 @@ class Admission:
                         "admissionOpen": self.state["admissionOpen"], "used": used,
                         "capacity": self._capacity(), "leases": list(self.state["leases"].values()),
                         "reservations": list(self.state["reservations"].values()),
+                        "slots": list(self.state["slots"].values()),
+                        "availableQuotaSlots": sum(1 for s in self.state["slots"].values() if s["state"] == "free"),
                         "degraded": list(self.state["degraded"])}
             if kind == "lease.create":
                 if not self.state["admissionOpen"]:
@@ -253,6 +547,39 @@ class Admission:
                 resources = request.get("resources")
                 if reservation_kind not in ("container", "build") or not isinstance(resources, dict):
                     raise ProtocolError("reservation-invalid", "invalid reservation kind or resources")
+                cap = self._capacity()
+                resource_fields = ("cpus", "memoryBytes", "pids", "containers", "ephemeralDiskBytes")
+                if set(resources) != set(resource_fields):
+                    raise ProtocolError("reservation-invalid", "resource vector must contain only the complete known fields")
+                normalized: dict[str, float] = {}
+                for field in resource_fields:
+                    raw_value = resources[field]
+                    if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+                        raise ProtocolError("reservation-invalid", f"{field} must be numeric")
+                    value = float(raw_value)
+                    if not math.isfinite(value) or value < 0 or value > cap[field]:
+                        raise ProtocolError("reservation-exceeds-capacity", f"{field} exceeds allocatable capacity")
+                    if field != "cpus" and not value.is_integer():
+                        raise ProtocolError("reservation-invalid", f"{field} must be an integer")
+                    normalized[field] = value
+                if reservation_kind == "container" and (
+                    normalized["cpus"] <= 0 or normalized["memoryBytes"] <= 0 or normalized["pids"] <= 0
+                ):
+                    raise ProtocolError("reservation-invalid", "CPU, memory and PID resources must be positive")
+                if reservation_kind == "container" and (
+                    normalized["containers"] != 1 or normalized["ephemeralDiskBytes"] <= 0
+                ):
+                    raise ProtocolError("reservation-invalid", "container requires containers=1 and positive ephemeralDiskBytes")
+                allocation_limit = float(
+                    self.descriptor["backend"]["filesystem"]["dockerDataPool"]["bytesPerAllocation"]
+                )
+                if reservation_kind == "container" and normalized["ephemeralDiskBytes"] > allocation_limit:
+                    raise ProtocolError(
+                        "reservation-exceeds-capacity",
+                        "container ephemeralDiskBytes exceeds one Docker data allocation",
+                    )
+                if reservation_kind == "build" and normalized["containers"] != 0:
+                    raise ProtocolError("reservation-invalid", "build requires containers=0")
                 if reservation_id in self.state["reservations"]:
                     raise ProtocolError("reservation-exists", "reservation already exists")
                 provision = secrets.token_urlsafe(24)
@@ -272,15 +599,30 @@ class Admission:
                 raise ProtocolError("reservation-not-found", "reservation is not owned by this lease")
             if kind == "reservation.get":
                 return copy.deepcopy(reservation)
+            if kind == "reservation.cancel":
+                if reservation["state"] != "queued":
+                    raise ProtocolError("reservation-state", "only a queued reservation can cancel")
+                self.state["queue"].remove(reservation_id)
+                del self.state["reservations"][reservation_id]
+                self._commit("reservation-cancelled", {"reservationId": reservation_id})
+                return {"cancelled": True}
             if kind == "reservation.commit":
-                if reservation["state"] != "granted":
-                    raise ProtocolError("reservation-state", "only a granted reservation can commit")
-                reservation["state"] = "committed"
-                reservation["attemptId"] = request.get("attemptId")
-                reservation["containerId"] = request.get("containerId")
-                reservation["networkId"] = request.get("networkId")
-                self._commit("reservation-committed", {"reservationId": reservation_id})
-                return copy.deepcopy(reservation)
+                raise ProtocolError("control-create-unimplemented", "container create must be owned by the control service; client-supplied IDs are forbidden")
+            if kind == "container.create":
+                if reservation["kind"] != "container" or reservation["state"] not in ("granted", "provisioning"):
+                    raise ProtocolError("reservation-state", "container reservation is not createable")
+                spec = self._validate_create(request.get("create"))
+                if reservation["state"] == "provisioning":
+                    if reservation.get("createSpecDigest") != canonical_digest(spec):
+                        raise ProtocolError("container-create-conflict", "retry does not match journaled create intent")
+                    containers, networks = self._resource_ids(reservation)
+                    if len(containers) == 1 and len(networks) == 1:
+                        reservation["containerId"], reservation["networkId"] = containers[0], networks[0]
+                        reservation["state"] = "committed"
+                        self.state["slots"][reservation["slotId"]]["state"] = "active"
+                        self._commit("container-create-reconciled", {"reservationId": reservation_id})
+                        return {"containerId": containers[0], "networkId": networks[0], "state": "active"}
+                return self._create_container(reservation, spec)
             if kind == "reservation.release":
                 if reservation["kind"] == "build":
                     evidence = request.get("terminationEvidence", {})
@@ -293,6 +635,8 @@ class Admission:
                     self.state["degraded"].append(f"could not prove resources absent for {reservation_id}")
                     self._commit("reservation-release-blocked", {"reservationId": reservation_id})
                     raise ProtocolError("recovery-blocked", "container/network are still visible")
+                if reservation["kind"] == "container" and not self._verify_and_free_slot(reservation):
+                    raise ProtocolError("slot-quarantined", "slot could not be proven verified-free")
                 del self.state["reservations"][reservation_id]
                 self._commit("reservation-released", {"reservationId": reservation_id})
                 self._grant_queue()
@@ -308,15 +652,35 @@ class Admission:
                 owned = [r for r in self.state["reservations"].values() if r["invocationId"] == lease["invocationId"]]
                 unresolved = False
                 for reservation in owned:
+                    recovery_error = f"recovery blocked for {reservation['reservationId']}"
                     if reservation["kind"] == "build" and reservation["state"] in ("committed", "releasing"):
                         message = f"build {reservation['reservationId']} lacks termination evidence"
                         if message not in self.state["degraded"]:
                             self.state["degraded"].append(message)
                         unresolved = True
                         continue
-                    if reservation["kind"] == "container" and not self._destroy(reservation):
+                    try:
+                        if reservation["kind"] == "container" and not self._destroy(reservation):
+                            unresolved = True
+                            continue
+                        if reservation["kind"] == "container" and not self._verify_and_free_slot(reservation):
+                            unresolved = True
+                            continue
+                    except Exception as error:
+                        message = f"{recovery_error}: {error}"
+                        self.state["degraded"] = [
+                            item for item in self.state["degraded"] if not item.startswith(f"{recovery_error}:")
+                        ]
+                        self.state["degraded"].append(message)
+                        self._commit("recovery-blocked", {
+                            "reservationId": reservation["reservationId"],
+                            "reason": str(error),
+                        })
                         unresolved = True
                         continue
+                    self.state["degraded"] = [
+                        item for item in self.state["degraded"] if not item.startswith(f"{recovery_error}:")
+                    ]
                     self.state["reservations"].pop(reservation["reservationId"], None)
                     if reservation["reservationId"] in self.state["queue"]:
                         self.state["queue"].remove(reservation["reservationId"])
@@ -330,16 +694,29 @@ class Admission:
 
     def recovery_loop(self) -> None:
         while not self.stop.wait(1.0):
-            cutoff = time.time() - self.grace
-            with self.lock:
-                for lease in self.state["leases"].values():
-                    if lease["state"] != "active":
-                        continue
-                    stamp = datetime.fromisoformat(lease["lastHeartbeatAt"].replace("Z", "+00:00")).timestamp()
-                    if stamp < cutoff:
-                        lease["state"] = "lost"
-                        self._commit("lease-lost", {"invocationId": lease["invocationId"]})
-            self._recover_once()
+            try:
+                cutoff = time.time() - self.grace
+                with self.lock:
+                    for lease in self.state["leases"].values():
+                        if lease["state"] != "active":
+                            continue
+                        stamp = datetime.fromisoformat(lease["lastHeartbeatAt"].replace("Z", "+00:00")).timestamp()
+                        if stamp < cutoff:
+                            lease["state"] = "lost"
+                            self._commit("lease-lost", {"invocationId": lease["invocationId"]})
+                self._recover_once()
+            except Exception as error:
+                with self.lock:
+                    message = f"recovery loop blocked: {error}"
+                    self.state["admissionOpen"] = False
+                    self.state["degraded"] = [
+                        item for item in self.state["degraded"] if not item.startswith("recovery loop blocked:")
+                    ]
+                    self.state["degraded"].append(message)
+                    try:
+                        self._commit("recovery-loop-blocked", {"reason": str(error)})
+                    except Exception:
+                        pass
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -370,6 +747,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--control-socket", required=True)
     parser.add_argument("--descriptor", required=True)
+    parser.add_argument("--host-config", required=True)
     parser.add_argument("--docker-socket", required=True)
     parser.add_argument("--journal", required=True)
     parser.add_argument("--socket-mode", default="0o660")
@@ -380,7 +758,8 @@ def main() -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() or path.is_socket():
         path.unlink()
-    admission = Admission(Path(args.descriptor), Path(args.journal), args.docker_socket, args.orphan_grace_seconds)
+    admission = Admission(Path(args.descriptor), Path(args.journal), args.docker_socket,
+                          args.orphan_grace_seconds, Path(args.host_config))
     server = Server(str(path), admission)
     os.chmod(path, int(args.socket_mode, 0))
     if args.ready_file:

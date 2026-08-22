@@ -96,7 +96,7 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 - [Case](case.md) —— 一份 Sandbox 声明的完整运行单位:五类 case、BuildKey / CaseKey、构建协调、Compose、能力矩阵。
 - [本地执行](local.md) —— `localSandbox()` 在宿主机本地目录直接跑,只观察 diff 不还原仓库,最小的 provider。
 - [预制实例](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从中启动。
-- [Docker 执行配置](docker-profiles/README.md) —— 官方 Docker Sandbox 的 profile、rootless privileged 单容器 DinD、硬配额与故障回收。
+- [Docker 执行配置](docker-profiles/README.md) —— raw与 managed DinD的 profile、私有 Docker data allocation、硬配额与故障回收。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
 - [Sandbox 复用](reuse.md) —— Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox；Provider 用 `lifetimeMs` 单独声明 Sandbox 存活时间。
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 的用户用例全流程。

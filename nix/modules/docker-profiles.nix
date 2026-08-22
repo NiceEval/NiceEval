@@ -37,7 +37,34 @@ let
     { name, ... }:
     {
       options = {
-        enable = mkEnableOption "NiceEval managed-rootless docker profile ${name}";
+        enable = mkEnableOption "NiceEval docker profile ${name}";
+
+        securityLevel = mkOption {
+          type = types.enum [
+            "managed-rootless/v1"
+            "raw-dind-storage/v1"
+          ];
+          default = "managed-rootless/v1";
+          description = "Security capability published by this host profile.";
+        };
+
+        rawDockerSocket = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = "Existing rootful Docker Unix socket; required only for raw-dind-storage/v1.";
+        };
+
+        rawDockerRootDir = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = "DockerRootDir reported by the existing raw daemon; required only for raw-dind-storage/v1.";
+        };
+
+        rawDaemonService = mkOption {
+          type = types.str;
+          default = "docker.service";
+          description = "systemd service owning the existing raw Docker socket.";
+        };
 
         accessUsers = mkOption {
           type = types.listOf types.str;
@@ -72,6 +99,15 @@ let
                 type = types.ints.unsigned;
                 default = 0;
                 description = "Must remain 0 under managed policy.";
+              };
+              ephemeralDiskBytes = mkOption {
+                type = types.either types.ints.positive types.str;
+                description = "Per-container Docker data allocation hard limit.";
+              };
+              dockerDataAllocationCount = mkOption {
+                type = types.ints.positive;
+                default = 1;
+                description = "Number of Docker data allocations prebuilt at deployment time.";
               };
             };
           };
@@ -197,6 +233,9 @@ let
         profileName = name;
       };
       storageBytes = capacityLib.parseBytes profile.storage.size;
+      managed = profile.securityLevel == "managed-rootless/v1";
+      dockerSocket = if managed then p.dockerSocket else profile.rawDockerSocket;
+      dockerRootDir = if managed then p.dockerRootDir else profile.rawDockerRootDir;
       daemonSettings = {
         hosts = [ "unix://${p.dockerSocket}" ];
         data-root = p.dockerRootDir;
@@ -223,13 +262,14 @@ let
       );
       hostConfig = {
         inherit name;
+        securityLevel = profile.securityLevel;
         userName = p.userName;
         userGroup = p.userGroup;
         accessGroup = p.accessGroup;
-        dockerSocket = p.dockerSocket;
+        inherit dockerSocket;
         controlSocket = p.controlSocket;
         dataMount = p.dataMount;
-        dockerRootDir = p.dockerRootDir;
+        inherit dockerRootDir;
         journalDir = p.journalDir;
         aggregateCgroupPath = p.aggregateCgroupPath;
         capacity = {
@@ -240,6 +280,8 @@ let
           maxContainers = validated.capacity.maxContainers;
           maxBuilds = validated.capacity.maxBuilds;
           memorySwapBytes = 0;
+          ephemeralDiskBytes = capacityLib.parseBytes profile.capacity.ephemeralDiskBytes;
+          dockerDataAllocationCount = profile.capacity.dockerDataAllocationCount;
         };
         aggregate = {
           cpus = validated.aggregate.cpus;
@@ -252,13 +294,15 @@ let
           size = profile.storage.size;
           sizeBytes = storageBytes;
           backing = profile.storage.backing;
+          slotRootPath = "${p.dataMount}/quota-slots";
+          slotRegistryPath = "${p.journalDir}/quota-slots.json";
         };
         policy = {
           hostLoopback = false;
           tcpDockerEndpoint = false;
         };
         # Host-local network hard policy (not a descriptor schema extension).
-        networkPolicy = {
+        networkPolicy = lib.optionalAttrs managed {
           rootlessPortDriver = "none";
           dnsServers = profile.network.dnsServers;
           blockedCidrs = profile.network.blockedCidrs;
@@ -298,6 +342,9 @@ let
         p
         validated
         storageBytes
+        managed
+        dockerSocket
+        dockerRootDir
         daemonFile
         hostConfigFile
         resolvFile
@@ -312,10 +359,9 @@ in
     type = types.attrsOf profileType;
     default = { };
     description = ''
-      Managed-rootless Docker execution profiles.
-      Each enabled alias installs dedicated UID/subids, aggregate cgroup slice,
-      bounded data-root, rootless dockerd, watchdog/control socket, and a
-      root-owned callback-free descriptor under /etc/niceeval/docker-profiles/.
+      Docker execution profiles. Managed profiles install a dedicated rootless
+      daemon; raw profiles bind an explicitly configured existing Unix socket.
+      Both install quota storage, admission/recovery, and a root-owned descriptor.
     '';
     example = {
       default = {
@@ -327,6 +373,8 @@ in
           pids = 8192;
           maxContainers = 4;
           maxBuilds = 2;
+          ephemeralDiskBytes = "6G";
+          dockerDataAllocationCount = 4;
         };
         aggregate = {
           cpus = 20;
@@ -353,8 +401,15 @@ in
       {
         assertion =
           (!c.profile.enable)
-          || (c.validated.aggregate.cpus >= c.validated.capacity.cpus);
-        message = "docker profile ${name}: aggregate must be >= allocatable capacity";
+          || ((c.validated.aggregate.cpus >= c.validated.capacity.cpus)
+            && (c.profile.capacity.dockerDataAllocationCount >= c.profile.capacity.maxContainers)
+            && ((capacityLib.parseBytes c.profile.capacity.ephemeralDiskBytes) * c.profile.capacity.dockerDataAllocationCount <= c.storageBytes)
+            && (c.managed || (c.profile.rawDockerSocket != null
+              && lib.hasPrefix "/" c.profile.rawDockerSocket
+              && c.profile.rawDockerRootDir != null
+              && lib.hasPrefix "/" c.profile.rawDockerRootDir
+              && c.profile.rawDaemonService != "")));
+        message = "docker profile ${name}: aggregate/quota capacity is invalid, or raw mode lacks absolute rawDockerSocket/rawDockerRootDir and rawDaemonService";
       }
     ) profileNames;
 
@@ -463,6 +518,7 @@ in
               "noatime"
               "nodev"
               "nosuid"
+              "prjquota"
             ];
             neededForBoot = false;
           }
@@ -513,7 +569,9 @@ in
               "systemd-tmpfiles-setup.service"
             ]
             ++ optional loop "niceeval-docker-profile-storage-${name}.service"
-            ++ optional loop c.mountUnit;
+            ++ optional loop c.mountUnit
+            ++ optional (!c.managed) profile.rawDaemonService;
+            requires = optional (!c.managed) profile.rawDaemonService;
             before = [
               "niceeval-docker-profile-${name}.service"
               "niceeval-docker-profile-watchdog-${name}.service"
@@ -529,7 +587,22 @@ in
               ];
             };
           }))
-          (nameValuePair "niceeval-docker-profile-${name}" (mkIf enabled {
+          (nameValuePair "niceeval-docker-profile-quota-slots-${name}" (mkIf enabled {
+            description = "NiceEval project-quota slots (${name})";
+            after = [ "niceeval-docker-profile-descriptor-${name}.service" ]
+              ++ optional loop c.mountUnit;
+            before = [ "niceeval-docker-profile-watchdog-${name}.service" ];
+            requiredBy = [ "niceeval-docker-profile-watchdog-${name}.service" ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = concatStringsSep " " [
+                "${hostPackage}/libexec/niceeval/install-quota-slots"
+                "--host-config ${p.registryDir}/${name}.host.json"
+              ];
+            };
+          }))
+          (nameValuePair "niceeval-docker-profile-${name}" (mkIf (enabled && c.managed) {
             description = "NiceEval managed rootless dockerd (${name})";
             wantedBy = [ "multi-user.target" ];
             after = [
@@ -622,11 +695,14 @@ in
             description = "NiceEval docker profile watchdog (${name})";
             wantedBy = [ "multi-user.target" ];
             after = [
-              "niceeval-docker-profile-${name}.service"
               "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-quota-slots-${name}.service"
+            ] ++ [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
+            wants = [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
+            requires = [
+              "niceeval-docker-profile-${name}.slice"
+              "niceeval-docker-profile-quota-slots-${name}.service"
             ];
-            wants = [ "niceeval-docker-profile-${name}.service" ];
-            requires = [ "niceeval-docker-profile-${name}.slice" ];
             path = [ profile.package ];
             environment = {
               HOME = p.homeDir;
@@ -634,8 +710,8 @@ in
             };
             serviceConfig = {
               Type = "simple";
-              User = p.userName;
-              Group = p.userGroup;
+              User = "root";
+              Group = "root";
               Slice = "niceeval-docker-profile-${name}.slice";
               Delegate = true;
               WorkingDirectory = p.journalDir;
@@ -644,7 +720,8 @@ in
                 exec ${profile.watchdogPackage}/libexec/niceeval/docker-profile-watchdog \
                   --control-socket=${p.controlSocket} \
                   --descriptor=${p.descriptorPath} \
-                  --docker-socket=${p.dockerSocket} \
+                  --host-config=${p.registryDir}/${name}.host.json \
+                  --docker-socket=${c.dockerSocket} \
                   --journal=${p.journalDir}/events.ndjson \
                   --socket-mode=0o660 \
                   --ready-file=${p.runtimeDir}/watchdog.ready
@@ -662,6 +739,11 @@ in
               TimeoutStopSec = 30;
               KillMode = "mixed";
               UMask = "0007";
+              ReadWritePaths = [
+                "${p.dataMount}/quota-slots"
+                p.journalDir
+                p.runtimeDir
+              ];
             };
           }))
         ]

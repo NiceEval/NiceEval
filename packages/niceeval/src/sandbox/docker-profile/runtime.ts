@@ -29,6 +29,25 @@ export interface DockerProfileReservation {
   readonly reservationId: string;
   readonly provisionToken: string;
   readonly state: "queued" | "granted" | "committed" | "releasing";
+  readonly containerId?: string;
+  readonly networkId?: string;
+}
+
+export interface DockerProfileContainerCreateInput {
+  readonly image: string;
+  readonly attemptId: string;
+  readonly command?: readonly string[];
+  readonly entrypoint?: string;
+  readonly environment?: readonly string[];
+  readonly workingDir?: string;
+  readonly user?: string;
+  readonly tmpfs?: Readonly<Record<string, string>>;
+}
+
+export interface DockerProfileContainerCreateResult {
+  readonly containerId: string;
+  readonly networkId: string;
+  readonly state: "active";
 }
 
 function modeOf(value: number): number {
@@ -137,7 +156,9 @@ async function attestEntry(entry: ResolvedDockerProfileEntry): Promise<DockerPro
   const { default: Docker } = await import("dockerode");
   const docker = new Docker({ socketPath: profile.transport.dockerSocket.path });
   const info = await docker.info();
-  if (!rootlessSecurityOptions(info)) throw new Error(`Docker profile ${entry.alias} daemon is not rootless`);
+  if (profile.securityLevel !== "raw-dind-storage/v1" && !rootlessSecurityOptions(info)) {
+    throw new Error(`Docker profile ${entry.alias} daemon is not rootless`);
+  }
   if (info.DockerRootDir !== profile.backend.filesystem.dockerRootDir) {
     throw new Error(`Docker profile ${entry.alias} DockerRootDir does not match descriptor`);
   }
@@ -200,17 +221,45 @@ export async function acquireDockerProfileReservation(
   lease: DockerProfileLease,
   reservationKind: "container" | "build",
   resources: Readonly<Record<string, number>>,
+  signal?: AbortSignal,
 ): Promise<DockerProfileReservation> {
   const reservationId = randomUUID();
   let reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
     kind: "reservation.acquire", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
     reservationId, reservationKind, resources,
   });
-  while (reservation.state === "queued") {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
-      kind: "reservation.get", invocationId: lease.invocationId, leaseToken: lease.leaseToken, reservationId,
-    });
+  try {
+    while (reservation.state === "queued") {
+      if (signal?.aborted) throw signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError");
+      await new Promise<void>((resolve, reject) => {
+        let abort: (() => void) | undefined;
+        const timer = setTimeout(() => {
+          if (abort !== undefined) signal?.removeEventListener("abort", abort);
+          resolve();
+        }, 100);
+        if (signal === undefined) return;
+        abort = () => {
+          clearTimeout(timer);
+          signal.removeEventListener("abort", abort!);
+          reject(signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError"));
+        };
+        signal.addEventListener("abort", abort, { once: true });
+      });
+      reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+        kind: "reservation.get", invocationId: lease.invocationId, leaseToken: lease.leaseToken, reservationId,
+      });
+      if (signal?.aborted) throw signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError");
+    }
+  } catch (error) {
+    if (signal?.aborted) {
+      await controlRequest(lease.binding.controlSocketPath, {
+        kind: reservation.state === "queued" ? "reservation.cancel" : "reservation.release",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+      }).catch(() => undefined);
+    }
+    throw error;
   }
   return reservation;
 }
@@ -224,6 +273,39 @@ export async function commitDockerProfileReservation(
     kind: "reservation.commit", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
     reservationId, ...input,
   });
+}
+
+export async function createDockerProfileContainer(
+  lease: DockerProfileLease,
+  reservationId: string,
+  create: DockerProfileContainerCreateInput,
+): Promise<DockerProfileContainerCreateResult> {
+  try {
+    return await controlRequest<DockerProfileContainerCreateResult>(lease.binding.controlSocketPath, {
+      kind: "container.create",
+      invocationId: lease.invocationId,
+      leaseToken: lease.leaseToken,
+      reservationId,
+      create,
+    });
+  } catch (error) {
+    // A lost reply can leave the journal committed. Recover the control-owned IDs instead of
+    // issuing a second create or asking DockerSandbox's legacy reconciler to remove them.
+    const reservation = await controlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+      kind: "reservation.get",
+      invocationId: lease.invocationId,
+      leaseToken: lease.leaseToken,
+      reservationId,
+    }).catch(() => undefined);
+    if (
+      reservation?.state === "committed" &&
+      reservation.containerId !== undefined &&
+      reservation.networkId !== undefined
+    ) {
+      return { containerId: reservation.containerId, networkId: reservation.networkId, state: "active" };
+    }
+    throw error;
+  }
 }
 
 export async function releaseDockerProfileReservation(

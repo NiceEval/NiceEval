@@ -1,7 +1,7 @@
 # Docker 执行配置 —— CLI
 
-运行命令从 managed DinD的 `dockerAccess.profile`取得 profile别名。CLI不要求额外 flag；它只提供 profile的
-只读发现与 doctor。宿主部署由 NixOS module、systemd host package或 macOS VM package完成。
+运行命令从 raw DinD的 `dockerAccess.storageProfile`或 managed DinD的 `dockerAccess.profile`取得别名。CLI不要求额外 flag；它只提供 profile的
+只读发现与 doctor。宿主部署由 NixOS module或 systemd host package完成。
 
 ## 运行
 
@@ -34,9 +34,10 @@ endpoint，不从 Experiment或 Agent子进程变量改写它。
 
 - 非 privileged Docker继续使用既有 Docker endpoint查找规则；
 - managed DinD缺 `profile`在 factory求值阶段报配置错误；
+- raw DinD缺 `storageProfile`在 factory求值阶段报配置错误；
 - 禁止回退 `/var/run/docker.sock`、rootful daemon、TCP endpoint或日常 UID的 rootless daemon。
 
-声明 profile的普通或 rootless privileged分支都必须提供完整 CPU、memory、PID与只读 rootfs。
+声明 profile的 raw或 managed privileged分支都必须提供完整 CPU、memory、PID、`dockerDataBytes`与只读 rootfs。
 缺少任一字段在连接 daemon前报 `sandbox.docker-profile-resources-required`，不能以零值或无界值进入
 admission。
 
@@ -75,20 +76,17 @@ niceeval docker profile doctor default --json
 
 - descriptor是 root-owned callback-free data，父目录不能由运行 access group写入；
 - Docker endpoint与 control endpoint的类型、socket inode、目录权限和宿主 peer UID；
-- 本机 daemon由专用 UID持有，且 invoking UID不同；VM evidence证明 VM内部的 backend owner；
-- daemon security options含 rootless，且无 TCP listener、host socket或 host loopback开放；
+- 本机 daemon由专用 UID持有，且 invoking UID不同；
+- managed daemon security options含 rootless，且无 TCP listener、host socket或 host loopback开放；
 - daemon ID、generation、DockerRootDir与 runtime attestation一致；
-- cgroup v2 controllers、systemd driver、aggregate properties与 policy revision一致；
-- daemon、buildkit、containerd/shim和 探测 container的 cgroup path都是 aggregate path的后代；
+- managed cgroup v2 controllers、systemd driver、aggregate properties与 policy revision一致；
+- managed daemon、buildkit、containerd/shim和探测 container的 cgroup path都是 aggregate path的后代；
 - data-root的 filesystem identity与硬容量证明匹配；
+- 预建 allocation pool的 project ID、hard quota、真实 backing、占用状态与 journal匹配；
 - watchdog protocol、durable journal、active Invocation/reservation与 orphan状态一致。
 
-VM profile由 control service返回同一组 remote evidence，并用宿主 package建立的 machine identity核验。
-本机 CLI不能直接读取 VM中的 `/proc`，但 smoke仍须从 探测 container读取真实 cgroup文件，并由
-control service证明它们属于 VM aggregate subtree。
-
-`--smoke`创建短命 rootless privileged 探测，设置2 CPU、512 MiB、0 extra swap、256 PID、只读
-rootfs与64 MiB tmpfs，并从容器读取：
+`--smoke`创建短命 privileged探测，设置2 CPU、512 MiB、0 extra swap、256 PID、1 GiB
+`dockerDataBytes`、只读 rootfs与64 MiB tmpfs，并从容器读取：
 
 ```text
 cpu.max
@@ -98,7 +96,8 @@ pids.max
 ```
 
 四项必须与请求一致，探测 cgroup必须处于 aggregate subtree。探测随后运行最小 nested Alpine，
-再验证 outer container、inner process、mount、label与 reservation全部消失。Docker inspect中的
+写满 Docker data allocation确认 project quota拒绝超额写入，再验证 outer container、inner process、mount、allocation
+内容、label与 reservation全部消失。Docker inspect中的
 HostConfig不是限额生效证据。
 
 doctor输出逐项 PASS/FAIL，任一安全项失败退出1。它不改配置、不删除 orphan、不重启 daemon；
@@ -140,7 +139,7 @@ services.niceeval.dockerProfiles.default = {
     cpus = 16;
     memory = "28G";
     pids = 8192;
-    maxContainers = 4;
+    maxContainers = 2;
     maxBuilds = 2;
   };
   aggregate = {
@@ -149,7 +148,8 @@ services.niceeval.dockerProfiles.default = {
     pids = 12288;
   };
   storage = {
-    size = "30G";
+    size = "32G";
+    slotSize = "8G";
     backing = "loop-ext4";
   };
 };
@@ -167,21 +167,11 @@ tmpfiles/sysusers配置。它还提供 watchdog/admission service、host-side do
 host package拒绝普通根分区子目录和只靠容量告警的配置。它可以使用 loop-backed ext4，也可以接收
 管理员预建的 LVM、ZFS或独立 filesystem。具体 backing不进入 Docker factory。
 
-### macOS
+### 其它平台
 
-官方 macOS package创建专用 Linux VM，在 VM内部署与 Linux相同的 rootless daemon、aggregate
-cgroup和 watchdog，再把受认证的 Docker/control Unix endpoint提供给宿主。package把该后端登记为
-`default`，由 launchd管理 VM生命周期与开机恢复。
-
-共享 Docker Desktop仍可服务省略 profile的普通非 privileged Docker Sandbox。它不能满足
-managed rootless DinD，因为 privileged workload可以控制 Docker Desktop VM中的 sibling与
-daemon，无法兑现 profile的隔离和 watchdog所有权。
-
-### External profile
-
-专用远端 Linux host或 VM可以发布相同的 descriptor与 versioned control protocol。它必须显式登记
-别名，不能靠当前 Docker context自动升级为安全 profile。NiceEval只接受内置 security level能完整
-核验的事实，不运行第三方验证 callback。
+macOS、Windows、非 systemd Linux和不能证明 project quota的 filesystem拒绝加载 v1 profile，并返回
+稳定 unsupported错误。普通非 privileged Docker仍可按既有规则连接 Docker Desktop；raw与 managed
+DinD都不能回退到该 endpoint。
 
 ## 运行反馈
 
@@ -189,10 +179,10 @@ human plan按实际用到的每个 profile显示一段摘要：
 
 ```text
 DOCKER PROFILE  default · managed-rootless/v1 · policy 8f31c0d2
-  allocatable 16 CPU · 28 GiB memory · 0 swap · 8192 PID · max 4
-  aggregate hard limit 20 CPU · 32 GiB memory · 0 swap · 12288 PID · 30 GiB disk
-  this invocation up to 4 containers · 4 CPU / 6 GiB / 2048 PID each
-  shared admission 3 active invocations · 3/4 containers reserved
+  allocatable 16 CPU · 28 GiB memory · 0 swap · 8192 PID · 16 GiB ephemeral disk · max 2
+  aggregate hard limit 20 CPU · 32 GiB memory · 0 swap · 12288 PID · 32 GiB disk
+  this invocation up to 2 containers · 4 CPU / 6 GiB / 2048 PID / 8 GiB disk each
+  shared admission 3 active invocations · 1/2 containers · 8/16 GiB disk reserved
 ```
 
 可发布 JSON只包含 security level、semantic policy revision、aggregate公开容量、单容器请求与有效
