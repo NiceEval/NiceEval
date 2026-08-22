@@ -13,6 +13,11 @@ description: "根据任务信任边界选择 Docker socket、raw privileged DinD
 | Raw privileged DinD | 一次性 VM 或专用 runner，需要独立 image、network 和 cache | 每个 Sandbox 启动 inner daemon | outer container 是 raw privileged，不是安全隔离方案 |
 | Managed rootless DinD | 不可信 Agent、共享宿主、并发评估、需要资源准入和强杀恢复 | 最高，需要宿主 profile | privileged 限制在受管 rootless user namespace 或专用 VM，并有 watchdog 与容量契约 |
 
+完整的 Docker profile 依赖 Linux cgroup v2、systemd 和支持 project quota 的文件系统。NixOS 可以用
+NiceEval module 部署；Ubuntu、Debian 与其它 systemd Linux 需要安装等价的宿主服务。macOS 上的
+Docker Desktop 运行在 Linux VM 中，不能直接提供同一份宿主保证。macOS 用户应把评估放到 Linux runner，
+或在受管 Linux VM 内部署 profile。
+
 三种模式都要求镜像预装 Docker CLI。两种 DinD 模式只接受从官方
 `docker:<version>-dind` 派生的兼容镜像。镜像需要 Docker daemon、Node 和评估工具，
 但不需要自定义 NiceEval `ENTRYPOINT`。NiceEval 负责启动与监督 inner daemon、
@@ -173,13 +178,18 @@ export default defineExperiment({
     dockerAccess: {
       mode: "dind",
       isolation: "raw-privileged",
+      storageProfile: "default",
+    },
+    resources: {
+      dockerDataBytes: 6 * 1024 ** 3,
     },
   }),
 });
 ```
 
 必填的 `raw-privileged` 字面量是风险授权。NiceEval 不会把 raw 模式描述成 rootless，也不会在失败时
-自动改用 managed profile。
+自动改用 managed profile。`storageProfile` 为 inner `/var/lib/docker` 分配磁盘配额；不要把该路径放进
+`tmpfs`。这个 profile 只增加磁盘准入、配额和强杀恢复，不会把 raw privileged 变成安全隔离方案。
 
 ### Managed rootless DinD
 
@@ -216,9 +226,9 @@ export default defineExperiment({
       cpus: 4,
       memoryBytes: 6 * GiB,
       pidsLimit: 2048,
+      dockerDataBytes: 6 * GiB,
       readOnlyRootfs: true,
       tmpfs: {
-        "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
         "/home/sandbox/workspace": {
           sizeBytes: 2 * GiB,
           mode: 0o755,
@@ -238,6 +248,10 @@ export default defineExperiment({
 profile 缺失、拼错、attestation 失败或容量不足时，NiceEval 会在模型调用前失败，绝不降级成 raw
 privileged。宿主部署完成后先检查 profile：
 
+`dockerDataBytes` 是每个 Attempt 的 inner Docker data 硬上限。watchdog 从磁盘配额池中授予一份私有
+allocation，并把它挂到 `/var/lib/docker`。Docker image layer 与 BuildKit cache 因而占磁盘，不计入宿主
+`Shmem`；workspace、`/tmp` 等确实需要内存语义的路径仍可使用有界 `tmpfs`。
+
 ```bash
 npx niceeval docker profile list
 npx niceeval docker profile doctor default --smoke
@@ -250,16 +264,16 @@ Dockerfile。项目镜像仍由默认 `docker info` readiness 验证。
 
 ### 为 DinD 设置运行并发
 
-`resources.memoryBytes` 限制一台 Sandbox，不会自动设置 Run 的并发数。DinD 还会占用 inner
-image、BuildKit、tmpfs 和 page cache，默认并发对本机可能过高。先用较小并发完成 smoke run：
+`resources.memoryBytes` 限制一台 Sandbox，`dockerDataBytes` 限制它的 inner Docker data。profile 会对
+所有 NiceEval 进程执行共享容量准入；当前没有足够的内存或磁盘 allocation 时，新 Attempt 会等待。先用
+较小并发完成 smoke run：
 
 ```bash
 pnpm exec niceeval exp dind-managed --max-concurrency 2
 ```
 
-再根据宿主的可用内存、CPU 和磁盘吞吐逐步增加。可以先用
-`可用内存 ÷ memoryBytes` 估算保守上限，同时为宿主 Docker、NiceEval 和其它进程留余量。
-Experiment 只服务这类重型 Sandbox 时，也可以直接设置 `maxConcurrency`。
+再根据宿主的可用内存、CPU 和磁盘吞吐逐步增加。profile 的总预算负责阻止多个 Experiment 合计超过宿主
+容量，`maxConcurrency` 仍负责限制单次 Run 的并行度。两者不能互相替代。
 
 ### 定位 DinD 创建失败
 
