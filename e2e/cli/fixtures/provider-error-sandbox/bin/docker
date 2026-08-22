@@ -1,9 +1,32 @@
 #!/bin/sh
+volume_root="${XDG_STATE_HOME:?}/fake-provider-error-volume"
+case "$*" in
+  "volume inspect --format "*)
+    if [ ! -f "$volume_root/domain-id" ]; then exit 1; fi
+    sed -n '1p' "$volume_root/domain-id"
+    exit 0
+    ;;
+  "volume create --label "*)
+    mkdir -p "$volume_root"
+    label=$4
+    printf '%s\n' "${label#*=}" > "$volume_root/domain-id"
+    printf '%s\n' "$5"
+    exit 0
+    ;;
+  "info --format {{.ID}}") printf '%s\n' "provider-error-daemon"; exit 0 ;;
+  "info --format {{.Driver}}") printf '%s\n' "overlay2"; exit 0 ;;
+esac
 if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
   exit 1
 fi
-case "$*" in
-  *provider-error-sandbox-secondary*)
+secondary=false
+for candidate in "$@"; do
+  if [ -f "$candidate" ] && grep -q 'niceeval-e2e-secondary-build' "$candidate"; then
+    secondary=true
+  fi
+done
+case "$secondary" in
+  true)
     printf '%s\n' '409 Conflict · DOCKER_BUILD_DENIED: the secondary sandbox build was rejected after provider validation; this deliberately long safe explanation repeats context context context context context context context context context context context context context context context context context context context context; request req_docker_secondary_987' >&2
     ;;
   *)

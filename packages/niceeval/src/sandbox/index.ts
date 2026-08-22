@@ -147,11 +147,18 @@ export type {
 export type {
   SandboxBuildWork,
   SandboxBuildProvider,
+  SandboxBuildRef,
+  MaterializationScopeId,
+  SandboxBuildLookup,
+  SandboxBuildArtifactSource,
+  SandboxBuildUseHandle,
   SandboxBuildExecutionContext,
   SandboxBuildPreparation,
   SandboxBuildFailure,
   PrepareSandboxBuildsOptions,
 } from "./build-coordinator.ts";
+
+export { materializationScopeId, sandboxBuildRef } from "./build-coordinator.ts";
 
 export {
   DockerProfileError,
