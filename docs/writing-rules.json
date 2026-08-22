@@ -9,6 +9,7 @@
     "firstSuccess": "首次成功路径在给出运行命令前，必须说明被测对象如何启动、示例请求和响应需要替换什么；没有可启动对象时，链接到可运行示例。",
     "adapterTransport": "HTTP 服务、SDK 和函数型 Agent 都可以由 Adapter 连接。只在针对 HTTP 服务的段落要求通过公开 HTTP 接口调用，不能把该限制泛化到 SDK 或函数型 Agent。",
     "resultViewing": "查看结果的任务页先给 show 或 view 的最小命令；Record、Sample、projector 与 Report Host 的内部数据路径只在读者需要理解原理时链接到 Explanation。",
+    "failedAttribution": "`failed` 只说明至少一个影响判定的断言未满足，不能单独证明被测结果违背任务。排查时分别核对任务允许范围、实际产物及证据和断言条件；产物违背任务时修被测对象，产物符合任务而断言拒绝时修评估用例，任务或证据不足以裁决时先澄清，不能为变绿任意放宽判据。",
     "codingAgent": "Coding Agent 路径必须说明指令发往何处，并要求 Agent 输出后续命令需要的 Experiment ID 或路径。",
     "chineseTerminology": "公开中文正文把 Eval 写成“评估”或“评估用例”，把运行隔离环境写成 Sandbox；代码标识、路径、包名和代码块不受影响。",
     "chineseTypography": "公开中文正文中的英文产品词按正式名称大写，并在中文与英文、数字之间保留空格；代码标识和原样输出不改写。",

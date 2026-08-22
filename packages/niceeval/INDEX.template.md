@@ -21,8 +21,8 @@
 ## 发现并解决问题
 
 1. **从公开入口收集证据。** 选择问题对应的固定 Run；先用 `show --run` 看覆盖、Verdict 和 diagnostics，再从页面给出的 Attempt locator 用 `show @<locator>` 下钻 Assertion、Judge、工具调用、用量、时间和文件变化。不要直接读取或修改 `.niceeval/` 私有文件。
-2. **先分类，再修改。** 选择或发现错误查 `exp list` 与 `--dry`；Plugin、Sandbox、Agent、Fixture 顺序查 `debug`；基础设施和保留现场查 Troubleshooting；Judge 不可用先验证模型、密钥和端点；`failed` 才表示断言未满足，`errored`、`skipped`、`not-dispatched` 与 `unavailable` 不能当成零分或普通失败。
-3. **修产生错误的那一层。** 被测应用行为错就修应用；事件或用量映射错就修 Adapter；题意或判据错就修评估用例；Provider、凭据或生命周期错就修运行配置。不要通过放松断言、伪造事件或改历史 Record 让结果变绿。
+2. **先分类，再修改。** 选择或发现错误查 `exp list` 与 `--dry`；Plugin、Sandbox、Agent、Fixture 顺序查 `debug`；基础设施和保留现场查 Troubleshooting；Judge 不可用先验证模型、密钥和端点；`failed` 只表示影响 Verdict 的断言未满足，不自动证明被测结果违背任务。`errored`、`skipped`、`not-dispatched` 与 `unavailable` 不能当成零分或普通失败。
+3. **修产生错误的那一层。** 处理 `failed` 时，先比较任务允许的结果、实际产物及证据和断言条件。被测应用行为错就修应用；事件或用量映射错就修 Adapter；产物满足任务而断言拒绝了任务允许的结果，就修评估用例；Provider、凭据或生命周期错就修运行配置。不要通过任意放宽断言、伪造事件或改历史 Record 让结果变绿。
 4. **只复验受影响范围。** 修改后重复同一条精确选择命令。默认结果沿用会跳过身份仍匹配的结果；需要重验失败项用 `--rerun`，需要重验全部选中位置才用 `--rerun all`。只有在身份变化但历史证据经人工核对仍然有效时，才用 `niceeval accept` 明确发布新的采用 Run。
 5. **闭环验证。** 用新 Run ID 再次查看固定分母，确认原 diagnostic 消失且没有新增错误；需要比较修复前后时，把两个明确 Run ID 一起交给 `show` 或 `view`，不要用「最新」代替实验边界。
 

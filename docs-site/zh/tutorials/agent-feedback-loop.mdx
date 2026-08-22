@@ -1,7 +1,7 @@
 ---
 title: "让 Coding Agent 根据结果迭代"
 sidebarTitle: "Coding Agent 反馈闭环"
-description: "让 Coding Agent 读取 receipt 的 runIds，再用 show 或 view 查看已发布 Record 中的结果。"
+description: "让 Coding Agent 读取 receipt 的 runIds，查看结果，再区分被测失败、证据错误与评估用例误判。"
 ---
 
 Coding Agent 可以用命令行完成一次清楚的反馈闭环：阅读安装版本的文档，运行 Experiment，读取最后的 receipt，用 receipt 的 `runIds` 查看结果，再修改程序或评估用例并重新运行。
@@ -57,13 +57,15 @@ pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 
 | 看到的状态 | 下一步 |
 | --- | --- |
-| `failed` | 检查任务结果与断言，修正被测程序或评估逻辑。 |
+| Attempt `failed` | 比较任务允许的结果、实际产物及证据和断言条件，再决定修被测对象、Adapter 还是评估用例。 |
 | `errored` | 检查诊断、Adapter、Sandbox 或凭据。 |
 | `not-recorded` | 检查该 expected slot 为什么没有 Member。 |
 | `core-invalid` | 阅读具名 Core issue，不要把它当成未采集。 |
 | `partial` | 阅读分母和问题，确认哪些成员没有贡献。 |
 | `migration-required` | 运行 `niceeval migrate`。 |
 | `unsupported` 或 `failed` | 只处理依赖该分析输入的查看内容，并阅读具名问题。 |
+
+处理 Attempt `failed` 时，不要为了通过一个过窄的 Match 而修改本来符合任务的产物。产物满足任务、断言却拒绝任务允许的结果时，这是评估用例的 False Negative。完整归因流程见[排查手册](/zh/troubleshooting/debugging#attempt-判定为-failed)。
 
 ## 修改后再次运行
 

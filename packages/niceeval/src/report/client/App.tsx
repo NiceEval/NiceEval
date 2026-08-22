@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent,
@@ -25,6 +26,10 @@ function localized(
   locale: Locale,
 ): string {
   return value[locale] || value.en;
+}
+function FragmentHtml({ html }: { readonly html: string }) {
+  const markup = useMemo(() => ({ __html: html }), [html]);
+  return <div dangerouslySetInnerHTML={markup} />;
 }
 function useFragment(page: ReportPageManifest): [LoadState, () => void] {
   const [reload, setReload] = useState(0);
@@ -108,13 +113,7 @@ function FragmentBody({
         </button>
       </div>
     );
-  return (
-    <div
-      dangerouslySetInnerHTML={{
-        __html: localized(state.fragment.html, locale),
-      }}
-    />
-  );
+  return <FragmentHtml html={localized(state.fragment.html, locale)} />;
 }
 export function ReportPage({
   page,
@@ -146,64 +145,59 @@ export function ReportOverlay({
     else navigate(navigation.defaultRoute, { replace: true });
   }, [background.fromHistory, navigate, navigation]);
   return (
-    <>
-      <div className="niceeval-view-report-slot">
-        <ReportPage page={background.page} locale={locale} />
-      </div>
-      <Dialog.Root
-        open
-        onOpenChange={(open) => {
-          if (!open) close();
-        }}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgb(0 0 0 / 50%)",
-              zIndex: 20,
-            }}
-          />
-          <Dialog.Content
-            className="niceeval-view-dialog"
-            style={{
-              position: "fixed",
-              left: "50%",
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-              zIndex: 21,
-            }}
-            aria-describedby={undefined}
-          >
-            <div className="niceeval-view-dialog-head">
-              <Dialog.Title className="niceeval-view-dialog-title">
-                {state.status === "ready"
-                  ? localized(state.fragment.title, locale)
-                  : message(locale, "details")}
-              </Dialog.Title>
-              <Dialog.Close
-                className="niceeval-view-dialog-close"
-                aria-label={message(locale, "close")}
-              >
-                x
-              </Dialog.Close>
-            </div>
-            <div
-              className="niceeval-view-dialog-body niceeval-view-report-slot"
-              aria-busy={state.status === "loading"}
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgb(0 0 0 / 50%)",
+            zIndex: 20,
+          }}
+        />
+        <Dialog.Content
+          className="niceeval-view-dialog"
+          style={{
+            position: "fixed",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            zIndex: 21,
+          }}
+          aria-describedby={undefined}
+        >
+          <div className="niceeval-view-dialog-head">
+            <Dialog.Title className="niceeval-view-dialog-title">
+              {state.status === "ready"
+                ? localized(state.fragment.title, locale)
+                : message(locale, "details")}
+            </Dialog.Title>
+            <Dialog.Close
+              className="niceeval-view-dialog-close"
+              aria-label={message(locale, "close")}
             >
-              <FragmentBody
-                state={state}
-                locale={locale}
-                retry={retry}
-                overlay
-              />
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-    </>
+              x
+            </Dialog.Close>
+          </div>
+          <div
+            className="niceeval-view-dialog-body niceeval-view-report-slot"
+            aria-busy={state.status === "loading"}
+          >
+            <FragmentBody
+              state={state}
+              locale={locale}
+              retry={retry}
+              overlay
+            />
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 export function App({
@@ -287,6 +281,11 @@ export function App({
         </div>
       </header>
       <main className="niceeval-view-main">
+        {visible && (
+          <div className="niceeval-view-report-slot">
+            <ReportPage page={visible} locale={locale} />
+          </div>
+        )}
         <Outlet context={{ locale }} />
       </main>
     </div>
