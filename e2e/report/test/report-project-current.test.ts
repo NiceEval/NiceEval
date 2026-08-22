@@ -48,7 +48,11 @@ interface ShowOverview {
     | { readonly kind: "groups"; readonly groups: readonly unknown[] }
     | {
         readonly kind: "experiment-group";
-        readonly comparison: { readonly state: string; readonly rows: readonly LeaderboardRow[] };
+        readonly comparison: {
+          readonly members: readonly string[];
+          readonly coverage: readonly unknown[];
+          readonly rows: readonly LeaderboardRow[];
+        };
       };
   readonly problems: readonly ReportProblem[];
 }

@@ -67,9 +67,15 @@ interface BuiltInShowDocument {
         readonly group:
           | { readonly kind: "named"; readonly groupId: string; readonly key: `named/${string}` }
           | { readonly kind: "singleton"; readonly experimentId: string; readonly key: `singleton/${string}` };
-        readonly comparison:
-          | { readonly state: "comparable"; readonly members: readonly string[]; readonly rows: readonly unknown[] }
-          | { readonly state: "non-comparable"; readonly members: readonly string[]; readonly issues: readonly { readonly reason: string }[] };
+        readonly comparison: {
+          readonly members: readonly string[];
+          readonly coverage: readonly {
+            readonly member: string;
+            readonly coveredEvalCount: number;
+            readonly groupEvalCount: number;
+          }[];
+          readonly rows: readonly unknown[];
+        };
       }
     | {
         readonly kind: "run-membership";
@@ -176,7 +182,7 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
         data: {
           kind: "experiment-group",
           group: { kind: "singleton", experimentId: "main", key: "singleton/main" },
-          comparison: { state: "comparable", members: ["main"] },
+          comparison: { members: ["main"] },
         },
       });
       expectCanonicalProblemTable(singleDocument.problems, "group-singleton");
@@ -222,7 +228,7 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
         data: {
           kind: "experiment-group",
           group: { kind: "singleton", experimentId: "main", key: "singleton/main" },
-          comparison: { state: "comparable", members: ["main"] },
+          comparison: { members: ["main"] },
         },
       });
 
@@ -230,7 +236,7 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
   );
 });
 
-test("show 保留 named identity，并把同组不同 Eval population 闭合为 non-comparable", async () => {
+test("show 保留 named identity，并按各实验实际运行的 Eval population 比较", async () => {
   await reportE2E.case(
     "show-named-group-comparison",
     { artifacts: reportCaseArtifacts() },
@@ -249,9 +255,13 @@ test("show 保留 named identity，并把同组不同 Eval population 闭合为 
           kind: "experiment-group",
           group: { kind: "named", groupId: "classic", key: "named/classic" },
           comparison: {
-            state: "non-comparable",
             members: ["classic/baseline", "classic/incompatible", "classic/memory-a"],
-            issues: [{ reason: "eval-population-mismatch" }],
+            coverage: [
+              { member: "classic/baseline", coveredEvalCount: 9, groupEvalCount: 10 },
+              { member: "classic/incompatible", coveredEvalCount: 1, groupEvalCount: 10 },
+              { member: "classic/memory-a", coveredEvalCount: 9, groupEvalCount: 10 },
+            ],
+            rows: expect.any(Array),
           },
         },
       });

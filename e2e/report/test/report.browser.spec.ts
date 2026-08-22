@@ -86,7 +86,11 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
     "browser-classic-attempt-overlay",
     { artifacts: reportCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
-      for (const id of ["classic/baseline", "classic/memory-a", "classic/memory-b"] as const) {
+      for (const id of [
+        "classic/baseline",
+        "classic/memory-a",
+        "classic/incompatible",
+      ] as const) {
         const run = await niceeval.run(["exp", id, "--rerun", "all", "--json"]);
         expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       }
