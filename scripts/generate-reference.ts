@@ -885,7 +885,7 @@ function repoRoot(): string {
 export function loadSources(root: string): SourceMap {
   const sources = {} as SourceMap;
   for (const rel of SOURCE_FILES) {
-    sources[rel] = readFileSync(join(root, rel), "utf8");
+    sources[rel] = readFileSync(join(root, "packages/niceeval", rel), "utf8");
   }
   return sources;
 }
@@ -911,8 +911,9 @@ function main(): void {
     }
   }
 
-  const template = readFileSync(join(root, "INDEX.template.md"), "utf8");
-  writeFileSync(join(root, "INDEX.md"), regenerateBundledIndex(template, loadZhPages(root)), "utf8");
+  const packageRoot = join(root, "packages/niceeval");
+  const template = readFileSync(join(packageRoot, "INDEX.template.md"), "utf8");
+  writeFileSync(join(packageRoot, "INDEX.md"), regenerateBundledIndex(template, loadZhPages(root)), "utf8");
   process.stdout.write("generated INDEX.md\n");
 }
 

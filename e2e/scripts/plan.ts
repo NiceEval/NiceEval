@@ -122,25 +122,26 @@ export function hasGlobalImpact(diffPaths: readonly string[]): boolean {
       /^README(?:\.[^/]+)?\.md$/i.test(path) ||
       /^(?:LICENSE|NOTICE|CHANGELOG)(?:\.[^/]+)?$/i.test(path);
     return (
-      path.startsWith("src/") ||
+      path.startsWith("packages/niceeval/") ||
+      path.startsWith("packages/niceeval/src/") ||
       path.startsWith("packages/testkit/") ||
       path.startsWith("e2e/scripts/") ||
-      path.startsWith("bin/") ||
+      path.startsWith("packages/niceeval/bin/") ||
       // `dist/` is a published package input even when its normal producer is
       // `src/`; a checked-in or generated dist-only change must not be omitted
       // by the path optimization.
-      path.startsWith("dist/") ||
-      path.startsWith("scripts/package-runtime/") ||
+      path.startsWith("packages/niceeval/dist/") ||
+      path.startsWith("packages/niceeval/scripts/package-runtime/") ||
       path === "scripts/generate-reference.ts" ||
-      path === "INDEX.md" ||
-      path === "INDEX.template.md" ||
+      path === "packages/niceeval/INDEX.md" ||
+      path === "packages/niceeval/INDEX.template.md" ||
       path.startsWith("docs-site/zh/") ||
       path.startsWith("docs-site/images/") ||
       path === ".github/workflows/e2e.yml" ||
       path === "package.json" ||
       path === "pnpm-lock.yaml" ||
       path === "pnpm-workspace.yaml" ||
-      /^tsconfig(?:\.[^/]+)?\.json$/.test(path) ||
+      /^packages\/niceeval\/tsconfig(?:\.[^/]+)?\.json$/.test(path) ||
       rootPackMetadata
     );
   });

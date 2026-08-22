@@ -148,8 +148,8 @@ CI 应把 ID 当成部署产物管理，并定期重建，而不是在每个 Att
 ## Bub 一致性约定
 
 Bub 的默认版本、OTel 插件和安装指纹的唯一代码源是
-[`src/agents/bub-install-spec.ts`](../src/agents/bub-install-spec.ts)（版本位本身在
-[`src/agents/coding-cli-versions.ts`](../src/agents/coding-cli-versions.ts)）。E2B 和 Vercel 构建
+[`src/agents/bub-install-spec.ts`](../packages/niceeval/src/agents/bub-install-spec.ts)（版本位本身在
+[`src/agents/coding-cli-versions.ts`](../packages/niceeval/src/agents/coding-cli-versions.ts)）。E2B 和 Vercel 构建
 代码直接复用它；Dockerfile 不能导入 TypeScript，修改该文件后必须同步
 [`docker/bub-override.txt`](./docker/bub-override.txt)、Dockerfile 的插件 URL 和 marker hash，
 再重建制品。`src/sandbox/official-baselines.test.ts` 守护这些值不漂移。

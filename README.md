@@ -4,7 +4,7 @@
 
 **Progressive, agent-native evals tool for AI agents, with excellent DX**
 
-[![typescript](https://img.shields.io/badge/typescript-5.6-blue?style=flat-square)](tsconfig.json)
+[![typescript](https://img.shields.io/badge/typescript-5.6-blue?style=flat-square)](packages/niceeval/tsconfig.json)
 [![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)](package.json)
 [![docs](https://img.shields.io/badge/docs-readable-111827?style=flat-square)](docs/README.md)
 [![discord](https://img.shields.io/badge/discord-join%20chat-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/yTMdZjFFJ)

@@ -12,9 +12,9 @@
   "requires": { "runtimes": ["node>=24"] },
   "paths": [
     "e2e/adapter/codex-app-server/**",
-    "src/agents/codex-app-server.ts",
-    "src/o11y/parsers/codex.ts",
-    "src/runner/feedback/**",
+    "packages/niceeval/src/agents/codex-app-server.ts",
+    "packages/niceeval/src/o11y/parsers/codex.ts",
+    "packages/niceeval/src/runner/feedback/**",
     "package.json",
     "pnpm-lock.yaml",
     "e2e/scripts/**"

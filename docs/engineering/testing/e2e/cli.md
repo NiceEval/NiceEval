@@ -47,6 +47,24 @@ When 从安装后的 candidate 运行 `niceeval exp provider-error --rerun all`�
 Then：
 
 - 四条安全封口后的 `error:` 都可见，长文本按显示宽度折行并以 head + tail 收口；不同 message 不因 phase/code 或跨 Run 的局部 `n1` 相同而合并；
+- 两个唯一 BuildKey 各显示一次 cache query 和失败，每行明确只有一条依赖 Attempt，不把共享构建写成 Sandbox 数；
+
+#### cli-cache-inventory
+
+Given Docker 的共享 BuildKit builder 报告总容量和 Provider reclaimable estimate，但没有 NiceEval Domain identity、entry 或 lease。
+
+When 从安装后的 candidate 运行 `niceeval cache inventory --json`。
+
+Then 输出把 BuildKit 放进独立的 `providerObservations`，状态为 `unverified`，不产生 `domainId`、`evictable` 或 GcPlan。
+
+#### cli-docker-task-build-cache
+
+Given 一个 Dockerfile Sandbox 的 BuildKey 未变化，且前一次 Invocation 已把 image 与 manifest 写入受管 registry。
+
+When 从安装后的 candidate 连续两次运行同一 Experiment，并明确要求 rerun Attempt。
+
+Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`，fake Docker 的 build 计数仍为一。
+两次等待 build 与 consumer use lease 都不占 Attempt permit；测试不读取 `.niceeval` 私有结果证明缓存命中。
 - Human 不出现 cause secret、`n1`、BuildKey、timing node、failureId、`cause:` 或 `fix:`；
 - 两条 post-Attempt error 各自紧跟 `details: niceeval show @<locator>`；pre-Attempt error 在 receipt 后的 `NEXT`
   按 Experiment 紧跟 `details: niceeval show --run <runId>`；

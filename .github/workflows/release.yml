@@ -66,7 +66,7 @@ jobs:
             exit 1
           fi
           VERSION="${RELEASE_TAG#v}"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm --prefix packages/niceeval version "$VERSION" --no-git-tag-version --allow-same-version
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 

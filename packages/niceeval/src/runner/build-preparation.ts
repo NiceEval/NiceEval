@@ -2,7 +2,7 @@
 // 本模块只去重 BuildKey、路由 provider，并跳过已经完整携带的 pair。
 
 import { Effect, Option } from "effect";
-import type { SandboxBuildProvider, SandboxBuildWork } from "../sandbox/build-coordinator.ts";
+import type { SandboxBuildProvider, SandboxBuildRef, SandboxBuildWork } from "../sandbox/build-coordinator.ts";
 import { routeBuildProviders } from "../sandbox/dockerfile-build.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
 import {
@@ -14,7 +14,7 @@ import type { RunOptions } from "./types.ts";
 
 export interface CollectedBuildPreparation {
   readonly works: readonly SandboxBuildWork[];
-  readonly pairBuildKeys: Readonly<globalThis.Record<string, readonly BuildKey[]>>;
+  readonly pairBuildKeys: Readonly<globalThis.Record<string, readonly SandboxBuildRef[]>>;
   readonly provider: SandboxBuildProvider;
 }
 
@@ -32,9 +32,9 @@ export function collectBuildPreparation(opts: {
   SandboxRuntimeMaterializationError
 > {
   return Effect.gen(function* () {
-    const worksByKey = new Map<BuildKey, SandboxBuildWork>();
-    const providerByKey = new Map<BuildKey, SandboxBuildProvider>();
-    const pairBuildKeys = new Map<string, BuildKey[]>();
+    const worksByKey = new Map<SandboxBuildRef, SandboxBuildWork>();
+    const providerByKey = new Map<SandboxBuildRef, SandboxBuildProvider>();
+    const pairBuildKeys = new Map<string, SandboxBuildRef[]>();
 
     for (const pair of opts.preparedPairs) {
       const carried = opts.carriedAttemptsByKey.get(pair.key);
@@ -72,11 +72,11 @@ export function collectBuildPreparation(opts: {
           cause: new Error("build key mismatch"),
         });
       }
-      const keys: BuildKey[] = [];
+      const keys: SandboxBuildRef[] = [];
       for (const work of collected.works) {
-        if (!worksByKey.has(work.buildKey)) worksByKey.set(work.buildKey, work);
-        providerByKey.set(work.buildKey, opts.provider ?? collected.provider);
-        if (!keys.includes(work.buildKey)) keys.push(work.buildKey);
+        if (!worksByKey.has(work.ref)) worksByKey.set(work.ref, work);
+        providerByKey.set(work.ref, opts.provider ?? collected.provider);
+        if (!keys.includes(work.ref)) keys.push(work.ref);
       }
       if (keys.length > 0) pairBuildKeys.set(pair.key, keys);
     }

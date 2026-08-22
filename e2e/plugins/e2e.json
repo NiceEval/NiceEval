@@ -12,11 +12,11 @@
   "requires": { "runtimes": ["node>=24"], "docker": true },
   "paths": [
     "e2e/plugins/**",
-    "src/plugin/**",
-    "src/define.ts",
-    "src/index.ts",
-    "src/runner/**",
-    "src/sandbox/**"
+    "packages/niceeval/src/plugin/**",
+    "packages/niceeval/src/define.ts",
+    "packages/niceeval/src/index.ts",
+    "packages/niceeval/src/runner/**",
+    "packages/niceeval/src/sandbox/**"
   ],
   "artifacts": [".niceeval/**", "plugin-lifecycle.ndjson"]
 }

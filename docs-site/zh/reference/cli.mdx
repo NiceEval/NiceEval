@@ -181,6 +181,8 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--owner-token` | string | `--recover-shared-state` 专用:要恢复的不可变 owner token；错误或过期 token 不会修改 lease。 |
 | `--confirm-owner-terminated` | boolean | `--recover-shared-state` 专用:确认原 owner 已终止。 |
 | `--confirm-remote-quiesced` | boolean | `--recover-shared-state` 专用:确认远端外部状态已静止。 |
+| `--domain` | string | `cache inventory\|gc` 专用：选择一个精确 Materialization Domain。 |
+| `--apply` | string | `cache gc` 专用：执行先前持久化的精确 plan id；省略时只创建预览。 |
 | `--dry` | boolean | 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 |
 | `--force` | boolean | `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 |
 | `--rerun` | boolean | `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 |

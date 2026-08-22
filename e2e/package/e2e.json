@@ -10,6 +10,6 @@
   "harness": { "testkit": true },
   "secrets": [],
   "requires": { "runtimes": ["node>=24"] },
-  "paths": ["e2e/package/**", "package.json", "pnpm-lock.yaml"],
+  "paths": ["e2e/package/**", "packages/niceeval/**", "package.json", "pnpm-lock.yaml"],
   "artifacts": []
 }
