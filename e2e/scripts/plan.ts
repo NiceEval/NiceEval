@@ -306,7 +306,10 @@ export function resolvePlan(argv: readonly string[]): ResolvedPlan {
       if (cli.base && cli.head) {
         range = validateRange(cli.base, cli.head, repoRootDir());
         changedPaths = gitChangedPaths(["diff", `${range.base}...${range.head}`], repoRootDir()).map((path) => path.replaceAll("\\", "/")).sort();
-        const selected = changedPaths.length === 0 ? { all: [], e2e: [] } : selectAffected([`--base=${range.base}`, `--head=${range.head}`], changedPaths, repoRootDir());
+        // Keep Nx on the same NUL-delimited path set that the planner validated.
+        // Nx's base/head discovery uses line-oriented Git output, which quotes
+        // non-ASCII paths and can misattribute them to the workspace root.
+        const selected = changedPaths.length === 0 ? { all: [], e2e: [] } : selectAffected(changedPaths.flatMap((path) => ["--files", path]), changedPaths, repoRootDir());
         affectedNames = selected.e2e;
         allAffectedNames = selected.all;
       } else {
