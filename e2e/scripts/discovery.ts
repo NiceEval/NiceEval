@@ -1,152 +1,138 @@
-// Shared discovery for the e2e root orchestrator.
-//
-// Layout (docs/engineering/testing/e2e/scenario-repos.md): e2e/adapter/ is the
-// only collection — one repo per immediate subdirectory — and every other
-// immediate child of e2e/ that carries its own e2e.json is a standalone
-// feature repo (undo/, scripts/ carry no top-level e2e.json and are never
-// scanned). Physical location is grouping only, not identity.
-//
-// Identity rules: every repo declares `id` in its e2e.json (schema in
-// manifest.ts); adapter collection repos must declare `adapter/<leaf>` and ids
-// are globally unique across the whole discovered set.
+// Nx project-graph backed discovery for the E2E root orchestrator.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseManifest, type E2ERepoManifest } from "./manifest.ts";
+import { isCanonicalRelativePath, parseManifest, type E2ERepoManifest } from "./manifest.ts";
 
 export type { E2ERepoManifest, RepoRequires } from "./manifest.ts";
 
 export interface DiscoveredRepo {
-  /** Absolute path to the repo directory (e.g. e2e/adapter/ai-sdk or e2e/cli). */
   dir: string;
+  projectName: string;
   manifest: E2ERepoManifest;
 }
 
 export interface DiscoveryResult {
   repos: DiscoveredRepo[];
-  /** Empty when discovery is clean. Non-empty means the caller must treat the whole run as invalid. */
   errors: string[];
 }
 
 export const ADAPTER_COLLECTION = "adapter";
-const ADAPTER_ID_PREFIX = "adapter/";
 
-/** Absolute path to the niceeval checkout root (two levels up from e2e/scripts/). */
 export function repoRootDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   return resolve(here, "..", "..");
 }
 
-/** Absolute path to e2e/, the root every test repo lives under. */
 export function e2eRootDir(): string {
   return join(repoRootDir(), "e2e");
 }
 
-/** Absolute path to e2e/adapter/, the collection holding every adapter test repo. */
 export function adapterRootDir(): string {
   return join(e2eRootDir(), ADAPTER_COLLECTION);
 }
 
-function describe(reposRoot: string, manifestPath: string): string {
-  return relative(reposRoot, manifestPath) || manifestPath;
+export function canonicalRepoId(projectRoot: string): string {
+  const normalized = projectRoot.replaceAll("\\", "/");
+  if (!normalized.startsWith("e2e/") || normalized === "e2e/adapter") return "";
+  return normalized.slice("e2e/".length);
 }
 
-type LoadedManifest = { ok: true; manifest: E2ERepoManifest } | { ok: false; errors: string[] };
+export function e2eProjectName(id: string): string {
+  return `e2e-${id.replaceAll("/", "-")}`;
+}
 
-function loadManifestFile(manifestPath: string, source: string): LoadedManifest {
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function collectLeafDirs(root: string, adapter: boolean): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(root, entry.name))
+    .filter((dir) => adapter || dir !== join(root, ADAPTER_COLLECTION))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function loadProject(checkoutRoot: string, dir: string): { repo?: DiscoveredRepo; errors: string[] } {
+  const errors: string[] = [];
+  const packagePath = join(dir, "package.json");
+  const projectPath = join(dir, "project.json");
+  const source = relative(checkoutRoot, projectPath).replaceAll("\\", "/");
+  const hasPackage = existsSync(packagePath);
+  const hasProject = existsSync(projectPath);
+
+  if (hasPackage && !hasProject) return { errors: [`${relative(checkoutRoot, dir)}: scenario package.json is missing project.json`] };
+  if (!hasPackage && !hasProject) return { errors };
+  if (!hasPackage) return { errors: [`${source}: E2E project is missing scenario package.json`] };
+
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(manifestPath, "utf8"));
-  } catch (err) {
-    return { ok: false, errors: [`${source}: invalid JSON (${(err as Error).message})`] };
+    raw = JSON.parse(readFileSync(projectPath, "utf8"));
+  } catch (error) {
+    return { errors: [`${source}: invalid JSON (${(error as Error).message})`] };
   }
-  const result = parseManifest(raw, source);
-  if (!result.ok) return { ok: false, errors: result.errors };
-  return { ok: true, manifest: result.manifest };
+  if (!isObject(raw)) return { errors: [`${source}: project.json must be a JSON object`] };
+
+  const expectedRoot = relative(checkoutRoot, dir).replaceAll("\\", "/");
+  const id = canonicalRepoId(expectedRoot);
+  const expectedName = e2eProjectName(id);
+  if (!isCanonicalRelativePath(id)) errors.push(`${source}: derived E2E id is not a canonical contained path: ${JSON.stringify(id)}`);
+  if (raw.root !== expectedRoot) errors.push(`${source}: "root" must be ${JSON.stringify(expectedRoot)}`);
+  if (raw.name !== expectedName) errors.push(`${source}: "name" must be ${JSON.stringify(expectedName)}`);
+  if (!Array.isArray(raw.tags) || !raw.tags.includes("kind:e2e") || !raw.tags.includes(`e2e:${id}`)) {
+    errors.push(`${source}: tags must include "kind:e2e" and ${JSON.stringify(`e2e:${id}`)}`);
+  }
+  const targets = isObject(raw.targets) ? raw.targets : undefined;
+  const target = targets && isObject(targets.e2e) ? targets.e2e : undefined;
+  if (target === undefined) errors.push(`${source}: targets.e2e is required`);
+  if (target?.executor !== "nx:selection-only") {
+    errors.push(`${source}: targets.e2e.executor must be the non-resolvable selection guard "nx:selection-only"`);
+  }
+  if (target && ("command" in target || "options" in target)) {
+    errors.push(`${source}: targets.e2e is selection-only and must not declare command or options`);
+  }
+  if (target?.cache !== false) errors.push(`${source}: targets.e2e.cache must be false`);
+  const metadata = target && isObject(target.metadata) && isObject(target.metadata.niceeval)
+    ? target.metadata.niceeval
+    : undefined;
+  if (metadata === undefined) errors.push(`${source}: targets.e2e.metadata.niceeval is required`);
+  const parsed = metadata === undefined ? undefined : parseManifest(metadata, source);
+  if (parsed && !parsed.ok) errors.push(...parsed.errors);
+  if (errors.length > 0 || parsed === undefined || !parsed.ok) return { errors };
+
+  return {
+    errors,
+    repo: { dir, projectName: expectedName, manifest: { ...parsed.manifest, id } },
+  };
 }
 
-/**
- * Discover every repo under one flat root: each `<root>/<name>/e2e.json`.
- *
- * When `enforceAdapterId` is set, every manifest id must be `adapter/<name>`
- * — adapter identity is location-derived and cannot drift from its directory.
- * Zero repos under `root` (directory missing or empty) is not an error.
- */
-function collectRepos(root: string, enforceAdapterId: boolean): { repos: DiscoveredRepo[]; errors: string[] } {
-  const repos: DiscoveredRepo[] = [];
-  const errors: string[] = [];
-
-  if (!existsSync(root)) return { repos, errors };
-
-  const names = readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-    .sort((a, b) => a.localeCompare(b));
-
-  for (const name of names) {
-    const dir = join(root, name);
-    const manifestPath = join(dir, "e2e.json");
-    if (!existsSync(manifestPath)) continue; // not a repo (yet) — not an error
-
-    const source = describe(root, manifestPath);
-    const loaded = loadManifestFile(manifestPath, source);
-    if (!loaded.ok) {
-      errors.push(...loaded.errors);
-      continue;
-    }
-    const manifest = loaded.manifest;
-
-    if (enforceAdapterId) {
-      const expected = `${ADAPTER_ID_PREFIX}${name}`;
-      if (manifest.id !== expected) {
-        errors.push(
-          `${source}: "id" must be ${JSON.stringify(expected)} for adapter repos, got ${JSON.stringify(manifest.id)}`,
-        );
-        continue;
-      }
-    }
-
-    repos.push({ dir, manifest });
-  }
-
-  return { repos, errors };
-}
-
-/**
- * Discover every repo across the e2e/ layout: each adapter repo under
- * `adapter/<leaf>/` plus every standalone feature repo `e2e/<name>/` that
- * carries its own e2e.json. Ids are globally unique across the whole set;
- * a duplicate or a malformed manifest lands in `errors`, and callers must
- * treat a non-empty `errors` as fatal (the whole discovery result is
- * untrustworthy, not just the bad repo).
- */
 export function discoverAllRepos(e2eRoot: string): DiscoveryResult {
+  const checkoutRoot = resolve(e2eRoot, "..");
+  const dirs = [
+    ...collectLeafDirs(e2eRoot, false),
+    ...collectLeafDirs(join(e2eRoot, ADAPTER_COLLECTION), true),
+  ];
   const repos: DiscoveredRepo[] = [];
   const errors: string[] = [];
-
-  const adapter = collectRepos(join(e2eRoot, ADAPTER_COLLECTION), true);
-  repos.push(...adapter.repos);
-  errors.push(...adapter.errors);
-
-  const standalone = collectRepos(e2eRoot, false);
-  for (const repo of standalone.repos) {
-    if (repo.dir !== join(e2eRoot, ADAPTER_COLLECTION)) repos.push(repo);
+  for (const dir of dirs) {
+    const loaded = loadProject(checkoutRoot, dir);
+    if (loaded.repo) repos.push(loaded.repo);
+    errors.push(...loaded.errors);
   }
-  errors.push(...standalone.errors);
-
-  const byId = new Map<string, string[]>();
-  for (const r of repos) {
-    const list = byId.get(r.manifest.id) ?? [];
-    list.push(relative(e2eRoot, r.dir));
-    byId.set(r.manifest.id, list);
+  const ids = new Set<string>();
+  const names = new Map<string, string[]>();
+  for (const repo of repos) {
+    if (ids.has(repo.manifest.id)) errors.push(`duplicate E2E id ${JSON.stringify(repo.manifest.id)}`);
+    ids.add(repo.manifest.id);
+    names.set(repo.projectName, [...(names.get(repo.projectName) ?? []), repo.manifest.id]);
   }
-  for (const [id, dirs] of byId) {
-    if (dirs.length > 1) {
-      errors.push(`duplicate id ${JSON.stringify(id)} declared by: ${dirs.join(", ")}`);
-    }
+  for (const [name, repoIds] of names) {
+    if (repoIds.length > 1) errors.push(`duplicate E2E project name ${JSON.stringify(name)} derived by: ${repoIds.join(", ")}`);
   }
-
+  if (repos.length === 0) errors.push("E2E discovery found no scenario projects");
   return { repos, errors };
 }

@@ -4,12 +4,12 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 本机制把中文文档随 npm 包发布，让 agent 永远读「与当前安装版本一起发布」的文档：官网服务人，`node_modules/niceeval/` 里的文档服务 AI。
 
-用户面契约（AI 应该怎么读、init 写什么）单源在 [`docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`docs-site/zh/reference/cli.mdx`](../../../docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](agent-debug-eval.md)。
+用户面契约（AI 应该怎么读、init 写什么）单源在 [`apps/docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../apps/docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`apps/docs-site/zh/reference/cli.mdx`](../../../apps/docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](agent-debug-eval.md)。
 
 ## 打包方案：原样发布，不转换
 
 `package.json` 的 `files` 白名单收录三项文档面。
-`docs-site/` 是仓库单源。`packages/niceeval` 的 `prepack` 每次先清空旧 staging，再把 `docs-site/zh/` 与 `docs-site/images/` 原样复制到 package closure；源、目标的完整相对清单和内容 digest 必须相同。tarball 内路径保持不变，`INDEX.md` 同样由 `prepack` 现场生成（时机链见下）：
+`apps/docs-site/` 是仓库单源。`packages/niceeval` 的 `prepack` 每次先清空旧 staging，再把 `apps/docs-site/zh/` 与 `apps/docs-site/images/` 原样复制到 package closure。源、目标的完整相对清单和内容 digest 必须相同。tarball 内仍使用 `docs-site/**`，`INDEX.md` 同样由 `prepack` 现场生成（时机链见下）：
 
 | 进包内容 | 角色 |
 | --- | --- |
@@ -27,8 +27,8 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 - `INIT.zh.md` / `INIT.md`：安装自举文件。
   它们工作的阶段包还不在 `node_modules`，从官网 / GitHub raw 读取，因此内容收敛到安装前就能定稿的三件事：心智模型、前置条件、安装命令。装完立即交接给随包 `INDEX.md`。
-  自举文件**不含任何线上文档链接**：线上 URL 既没有守护（页面改名即静默断链），版本也与将要装到的包无关。接入流程正文住在随包页面 [`docs-site/zh/tutorials/agent-onboarding.mdx`](../../../docs-site/zh/tutorials/agent-onboarding.mdx)，`test/docs-site/bundled-docs-index.test.ts` 拦截向导里出现的线上文档链接。
-- `docs-site/` 英文入口与站点配置（`docs.json` 等）：服务网站构建，不服务包内读者。
+  自举文件**不含任何线上文档链接**：线上 URL 既没有守护（页面改名即静默断链），版本也与将要装到的包无关。接入流程正文住在随包页面 [`apps/docs-site/zh/tutorials/agent-onboarding.mdx`](../../../apps/docs-site/zh/tutorials/agent-onboarding.mdx)，`lint/docs-site/bundled-docs-index.lint.ts` 拦截向导里出现的线上文档链接。
+- `apps/docs-site/` 的英文入口与站点配置（`docs.json` 等）：服务网站构建，不服务包内读者。
 - `docs/`、`memory/`：内部设计契约与过程条目，读者是维护 niceeval 仓库的人，不是用户项目里的 agent。
 
 ## 发现机制：两跳静态路径
@@ -56,9 +56,9 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 **单源关系**：树里每一行的文案单源在对应页面的 frontmatter `title` / `description`。
 
-页面自述与正文同文件、同次修改演进，索引输出又在每次打包时现算，因此不存在任何需要人同步的第二份文案；`docs-site/AGENTS.md` 对标题与描述的任务表述纪律，就是索引行的质量纪律。
+页面自述与正文同文件、同次修改演进，索引输出又在每次打包时现算，因此不存在任何需要人同步的第二份文案；`apps/docs-site/AGENTS.md` 对标题与描述的任务表述纪律，就是索引行的质量纪律。
 
-生成器对缺 `title` 或 `description` 的页面直接报错——「这页帮 agent 完成什么任务」必须在页面定稿时答出，答不出说明页面定位有问题，回到 [`docs-site/zh/README.md`](../../../docs-site/zh/README.md) 的信息架构裁决。
+生成器对缺 `title` 或 `description` 的页面直接报错——「这页帮 agent 完成什么任务」必须在页面定稿时答出，答不出说明页面定位有问题，回到 [`apps/docs-site/zh/README.md`](../../../apps/docs-site/zh/README.md) 的信息架构裁决。
 
 这与参考页 `{/* GENERATED */}` 区块是同一个模式：文案单源在内容紧邻处，生成器只拼装、不承载文案，同一个 `scripts/generate-reference.ts` 承载。
 
@@ -94,8 +94,8 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 ## 维护与验收
 
-- 增删、移动、重命名 `docs-site/zh` 页面，或修改任何页面的 `title` / `description`：索引零手动动作，下一次安装 / 发版自动反映；本地想预览输出运行 `pnpm run build:index`（`pnpm docs:reference` 也会顺带产出）。
-  `docs-site/AGENTS.md` 规定的 `docs.json` 与 redirect 义务照旧。
+- 增删、移动、重命名 `apps/docs-site/zh` 页面，或修改任何页面的 `title` / `description`：索引零手动动作，下一次安装 / 发版自动反映；本地想预览输出运行 `pnpm run build:index`（`pnpm docs:reference` 也会顺带产出）。
+  `apps/docs-site/AGENTS.md` 规定的 `docs.json` 与 redirect 义务照旧。
 - 修改导语或分区说明：改 `INDEX.template.md`。
 - 以 link / 本地路径把仓库工作树当包消费时，直接在 NiceEval checkout 运行
   `pnpm dev:link <consumer-directory>`。该命令会重建 package runtime、Report 与 `INDEX.md`，

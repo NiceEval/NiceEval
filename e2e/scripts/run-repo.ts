@@ -53,6 +53,7 @@ import {
   type Category,
   type CommandCapture,
   type RepoReceipt,
+  type SelectionReceipt,
   type StageName,
   type StageReceipt,
   type TestkitReceipt,
@@ -227,6 +228,8 @@ export interface RunRepoOptions {
   keepWorkdir?: boolean;
   /** Prefix streamed install/test output when multiple repos share one runner. */
   logPrefix?: string;
+  /** Exact plan mode/reason/cell provenance for distributed CI execution. */
+  selection?: SelectionReceipt;
 }
 
 function withInvocationContext(
@@ -521,7 +524,7 @@ export async function runRepo(
                           detail: testCapture.cancelled
                             ? `cancelled during test invocation ${attempt} (${testCapture.signal ?? "root signal"})`
                             : testCapture.timedOut
-                              ? `test invocation ${attempt} exceeded e2e.json timeoutMinutes; owned group received TERM → grace → KILL`
+                              ? `test invocation ${attempt} exceeded project.json E2E timeoutMinutes; owned group received TERM → grace → KILL`
                               : hasUnconfirmedOwnedGroup(testCapture)
                                 ? `test invocation ${attempt} leader exited but owned process-group cleanup was not confirmed: ${testCapture.groupCleanup.detail}`
                               : testOk
@@ -649,6 +652,7 @@ export async function runRepo(
       : undefined;
   const receipt: RepoReceipt = {
     repoId,
+    ...(options.selection === undefined ? {} : { selection: options.selection }),
     invocationIds,
     testInvocations: stages.filter((stage) => stage.stage === "test" && stage.capture !== undefined).length,
     ...(options.copyId === undefined ? {} : { copyId: options.copyId }),

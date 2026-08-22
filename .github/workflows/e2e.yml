@@ -10,8 +10,8 @@ name: e2e
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
 #
 # Lane: 同仓可信 PR / push main=main | fork / Dependabot PR=pr(无 secret)
-#       schedule=nightly | dispatch=输入。同仓可信 PR、main push 与 schedule 跑 lane 全集；
-#       fork / Dependabot PR 无 secret，dispatch 由 live_providers 显式选择。
+#       schedule=nightly | dispatch=输入。所有 PR 使用 Nx affected；main push、
+#       schedule、release 与显式 full 跑 lane 全集。fork / Dependabot PR 无 secret。
 # 可信自动触发与显式启用 live provider 的 dispatch 按 manifest 白名单读取 secret；
 # 同仓 PR 使用仓库级 secret，其它可信 lane 挂同名 GitHub Environment。
 
@@ -58,6 +58,8 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       has-jobs: ${{ steps.plan.outputs.has-jobs }}
+      plan-mode: ${{ steps.plan.outputs.mode }}
+      plan-reason: ${{ steps.plan.outputs.reason }}
       lane: ${{ steps.lane.outputs.lane }}
       inject-secrets: ${{ steps.lane.outputs.inject-secrets }}
       environment: ${{ steps.lane.outputs.environment }}
@@ -173,9 +175,16 @@ jobs:
           LANE: ${{ steps.lane.outputs.lane }}
           DISPATCH_REPO: ${{ github.event.inputs.repo }}
           INCLUDE_LIVE_PROVIDERS: ${{ steps.lane.outputs.include-live }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          args=(--lane "$LANE" --no-diff --json --batch)
+          args=(--lane "$LANE" --json --batch)
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            checkout_head="$(git rev-parse HEAD)"
+            args+=(--base "$BASE_SHA" --head "$checkout_head")
+          else
+            args+=(--no-diff)
+          fi
           include_live=false
           if [ "$INCLUDE_LIVE_PROVIDERS" = "true" ]; then
             include_live=true
@@ -187,13 +196,29 @@ jobs:
             args+=(--repo "$repo")
           fi
           plan_file="${RUNNER_TEMP}/e2e-plan.json"
-          pnpm e2e plan "${args[@]}" > "$plan_file"
-          if ! jq -e 'type == "array"' "$plan_file" >/dev/null; then
-            echo "::error::plan --json did not emit a JSON array"
+          set +e
+          pnpm --silent e2e plan "${args[@]}" > "$plan_file"
+          plan_status=$?
+          set -e
+          if jq -e '.schemaVersion == 1 and (.mode | type == "string") and (.reason | type == "string")' "$plan_file" >/dev/null 2>&1; then
+            {
+              echo "### E2E plan"
+              echo
+              echo "- mode: \`$(jq -r '.mode' "$plan_file")\`"
+              echo "- reason: \`$(jq -r '.reason' "$plan_file")\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$plan_status" -ne 0 ]; then
+            echo "::error::E2E planning failed"
+            cat "$plan_file" || true
+            exit "$plan_status"
+          fi
+          if ! jq -e '.schemaVersion == 1 and (.mode == "affected" or .mode == "full" or .mode == "fail-open-full") and (.cells | type == "array")' "$plan_file" >/dev/null; then
+            echo "::error::plan --json did not emit a valid plan document"
             cat "$plan_file" || true
             exit 1
           fi
-          count="$(jq 'length' "$plan_file")"
+          count="$(jq '.cells | length' "$plan_file")"
           playwright_version="$(node -p "require('./package.json').devDependencies['@playwright/test']")"
           if ! [[ "$playwright_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::@playwright/test must use an exact version for the CI browser image, got ${playwright_version}"
@@ -201,7 +226,7 @@ jobs:
           fi
           playwright_image="mcr.microsoft.com/playwright:v${playwright_version}-noble"
           matrix="$(jq -c --arg playwright_image "$playwright_image" '
-            map(. + {
+            .cells | map(. + {
               container: (
                 if ((.requires.browsers // []) | length) > 0
                 then $playwright_image
@@ -212,20 +237,35 @@ jobs:
           ' "$plan_file")"
           {
             echo "matrix=${matrix}"
+            echo "mode=$(jq -r '.mode' "$plan_file")"
+            echo "reason=$(jq -r '.reason' "$plan_file")"
             if [ "$count" -gt 0 ]; then
               echo "has-jobs=true"
             else
               echo "has-jobs=false"
             fi
           } >> "$GITHUB_OUTPUT"
-          repo_count="$(jq '[.[].repoIds[]] | length' "$plan_file")"
-          unique_repo_count="$(jq '[.[].repoIds[]] | unique | length' "$plan_file")"
+          repo_count="$(jq '[.cells[].repoIds[]] | length' "$plan_file")"
+          unique_repo_count="$(jq '[.cells[].repoIds[]] | unique | length' "$plan_file")"
           if [ "$repo_count" -ne "$unique_repo_count" ]; then
             echo "::error::batched plan contains duplicate Repo ids"
             exit 1
           fi
-          browser_cells="$(jq '[.[] | select(((.requires.browsers // []) | length) > 0)] | length' "$plan_file")"
-          echo "[e2e] plan lane=${LANE} live_providers=${include_live} selected ${repo_count} Repo(s) in ${count} cell(s) (${browser_cells} Playwright container): $(jq -r '[.[].repoIds[]] | join(", ")' "$plan_file")"
+          browser_cells="$(jq '[.cells[] | select(((.requires.browsers // []) | length) > 0)] | length' "$plan_file")"
+          echo "[e2e] plan mode=$(jq -r '.mode' "$plan_file") reason=$(jq -r '.reason' "$plan_file") lane=${LANE} live_providers=${include_live} selected ${repo_count} Repo(s) in ${count} cell(s) (${browser_cells} Playwright container): $(jq -r '[.cells[].repoIds[]] | join(", ")' "$plan_file")"
+          {
+            echo "- projects: ${repo_count}"
+            echo "- cells: ${count}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload machine-readable E2E plan
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: niceeval-e2e-plan
+          path: ${{ runner.temp }}/e2e-plan.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Typecheck Testkit
         if: steps.plan.outputs.has-jobs == 'true'
@@ -285,7 +325,7 @@ jobs:
     # cell 的 matrix.container 为 null，仍直接运行在普通 GitHub runner。镜像已经包含 browser
     # 与系统依赖，不在每次 job 中运行 apt / `playwright install --with-deps`。
     container: ${{ matrix.container }}
-    # Each Repo owns its test budget through e2e.json timeoutMinutes. A cell may
+    # Each Repo owns its test budget through project.json E2E metadata. A cell may
     # host several Repos concurrently, so a second job-wide budget would race
     # their independent setup, test, collection, and cleanup lifecycles.
     # 同仓 PR 直接使用仓库级 secret；push、schedule 与显式 live dispatch 挂
@@ -366,7 +406,7 @@ jobs:
           }
           const manifests = ids.map((id, index) => ({
             id,
-            manifest: `e2e/${dirs[index]}/e2e.json`,
+            manifest: `e2e/${dirs[index]}/project.json`,
           }))
           fs.writeFileSync(outputPath, `${JSON.stringify(manifests)}\n`)
           console.log(`[e2e] cell ${process.env.CELL_ID}: ${ids.join(", ")}`)
@@ -435,7 +475,7 @@ jobs:
           ]);
           const cells = JSON.parse(fs.readFileSync(process.env.MANIFESTS_FILE, "utf8"));
           const declared = [...new Set(cells.flatMap(({ manifest }) =>
-            JSON.parse(fs.readFileSync(manifest, "utf8")).secrets
+            JSON.parse(fs.readFileSync(manifest, "utf8")).targets.e2e.metadata.niceeval.secrets
           ))];
           const lines = [];
           let injected = 0;
@@ -487,7 +527,7 @@ jobs:
           const root = process.env.ARTIFACT_ROOT;
           const cells = JSON.parse(fs.readFileSync(process.env.MANIFESTS_FILE, "utf8"));
           const declared = [...new Set(cells.flatMap(({ manifest }) =>
-            JSON.parse(fs.readFileSync(manifest, "utf8")).secrets
+            JSON.parse(fs.readFileSync(manifest, "utf8")).targets.e2e.metadata.niceeval.secrets
           ))];
           const replacements = declared
             .map((name) => ({ name, value: process.env[name] }))

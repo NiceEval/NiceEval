@@ -5,8 +5,8 @@
 ## 接入分层(origin → tier1 → tier2 → tier3)
 
 同一个应用按接入深度在 `examples/zh/` 下存多层目录,相邻两层的 diff 就是那一档的全部投入
-(分档定义见 [docs-site · Tier](../../../docs-site/zh/explanation/tier.mdx),层间同步机制见
-[docs/tier-sync](../../../docs/engineering/tier-sync/README.md),各层细节见各自 README):
+(分档定义见 [docs-site · Tier](../../../apps/docs-site/zh/explanation/tier.mdx),层间同步机制见
+[docs/tier-sync](../../../docs/engineering/example-tier-sync/README.md),各层细节见各自 README):
 
 | 层 | ai-sdk-v7 | claude-sdk | codex-sdk | pi-sdk | langgraph |
 |---|---|---|---|---|---|

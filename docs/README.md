@@ -37,7 +37,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 从契约找到实现 | [Source Map](source-map.md) |
 | 查一处设计从哪个系统学来 | [Research](research/README.md)；RFC、OWASP 等基础规范仍见对应 Feature 的 `reference/` |
 | 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |
-| 写公开用户文档 | [`docs-site/AGENTS.md`](../docs-site/AGENTS.md) |
+| 写公开用户文档 | [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) |
 
 ## 目录索引
 
@@ -122,6 +122,7 @@ docs/
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
+│   ├── task-orchestration/              Nx 项目图、affected E2E 与 fail-open 管理
 │   ├── testing/                         测试体系总纲 + unit/ 与 e2e/ 两个子体系
 │   ├── benchmark/                       阶段耗时与安装 benchmark
 │   └── example-tier-sync/               示例同步机制
@@ -148,7 +149,7 @@ docs/
 | 需要对比多个候选方案的架构 / 技术选型决策 | `docs/design/` |
 | 带日期的外部产品事实、竞品映射与产品启发 | `docs/research/` |
 | 仓库自身如何测试、维护、同步或 benchmark | `docs/engineering/` |
-| 用户如何完成任务 | `docs-site/zh/` |
+| 用户如何完成任务 | `apps/docs-site/zh/` |
 | 设计翻案、被否决方案、踩坑与反直觉修法 | `memory/` |
 | 本次修改了什么、为什么 | commit message |
 
@@ -195,7 +196,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 ## 写给人读
 
 `docs/` 的读者是照着它做设计决策、写实现的人，不是只被 grep 的语料。
-`docs-site/zh/` 的读者要边读边完成任务，同样需要短句和可扫读的段落。
+`apps/docs-site/zh/` 的读者要边读边完成任务，同样需要短句和可扫读的段落。
 契约再准确，段落读不动也等于没写：读者会转去翻源码，`docs/` 就失去唯一现状出处的地位。
 句长、段长和禁词检查只负责拦住明确的退化，不负责证明文案好读。通过 lint 后仍要逐段朗读，确认主语、动作和结果都能一次听懂。
 
@@ -250,7 +251,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 
 ## 校验与同步
 
-修改 `docs/`、`docs-site/` 或根 README 后统一运行：
+修改 `docs/`、`apps/docs-site/` 或根 README 后统一运行：
 
 ```sh
 pnpm lint
@@ -260,7 +261,7 @@ pnpm lint
 
 - `lint/docs/docs-consistency.lint.ts` 检查索引涵盖与相对链接。
   新增设计页必须从本索引或所属二级目录的 `README.md` 可发现。
-- `lint/docs/docs-writing.lint.ts` 检查 `docs/` 与 `docs-site/zh/` 的句长、段长，并按各自作用域检查禁用写法与两条立词纪律。MDX 的 frontmatter 元数据、代码、JSX 实现和明确的生成区块不算手写正文。
+- `lint/docs/docs-writing.lint.ts` 检查 `docs/` 与 `apps/docs-site/zh/` 的句长、段长，并按各自作用域检查禁用写法与两条立词纪律。MDX 的 frontmatter 元数据、代码、JSX 实现和明确的生成区块不算手写正文。
   括号嵌套靠人读，没有守护。
 - `lint/docs-site/**/*.lint.ts` 检查参考区块、随包索引与站点迁移，再运行 Mintlify 校验和断链检查。
 
@@ -272,7 +273,7 @@ pnpm lint
 
 两条立词纪律都读 [`concepts.md`](concepts.md) 的术语总表，术语因此只在那一张表里裁决一次：
 
-- **死词**：一个词条声明的写法（中文名、English 名、括号里的代码标识）在 `docs/` 与 `docs-site/` 正文一次都没出现，说明立了没人用。
+- **死词**：一个词条声明的写法（中文名、English 名、括号里的代码标识）在 `docs/` 与 `apps/docs-site/` 正文一次都没出现，说明立了没人用。
   删掉那一行，或者让正文改用它。
 - **非首选同义词**：一格里并列多个写法、其中一个加粗时，粗体那个是首选，其余出现在正文即提示改用首选。
   没有粗体的多写法格是几个并列词条，不是同义词，不产生裁决。
@@ -283,5 +284,5 @@ pnpm lint
 如果设计同时改变公开 API、CLI、结果格式或用户任务路径，还要沿对应入口完成同步：
 
 - 公开参考区块：修改源码 TSDoc / CLI flag JSDoc 后运行 `pnpm docs:reference`。
-- 公开中文文档：按 [`docs-site/AGENTS.md`](../docs-site/AGENTS.md) 更新并运行 `docs:validate`、`docs:links`。
+- 公开中文文档：按 [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) 更新并运行 `docs:validate`、`docs:links`。
 - 示例：按 [`examples/README.md`](../examples/README.md) 与对应示例目录说明验证。

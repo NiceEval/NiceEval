@@ -99,7 +99,7 @@ describe("docs 一致性", () => {
   it("指向本仓库的 GitHub 链接对应的路径真实存在", () => {
     const sources = [
       ...docsFiles,
-      ...walk("docs-site", ".mdx"),
+      ...walk("apps/docs-site", ".mdx"),
       "README.md",
       "README.zh.md",
     ];
@@ -120,7 +120,7 @@ describe("docs 一致性", () => {
 
   it("代码注释里的 docs/….md 路径指向真实文档", () => {
     // 路径按仓库根解析:注释写 `docs/feature/reports/view.md`,markdown 相对链接写
-    // `../docs/…`,两种写法抠出来的都是同一个仓库根路径。`docs-site/` 不匹配(docs 后面不是 /)。
+    // `../docs/…`,两种写法抠出来的都是同一个仓库根路径。`apps/docs-site/` 不匹配(docs 后面不是 /)。
     const broken: string[] = [];
     for (const dir of CODE_DIRS) {
       // 测试重置期间部分代码域可以暂时不存在。clean checkout 不应因为可选扫描入口

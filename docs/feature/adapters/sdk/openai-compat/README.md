@@ -47,7 +47,7 @@ Adapter 增加旁路 transcript 后，可以在自己的声明里据实升级。
   当成「确实没发生」。
 
 这条差异体现在转换器声明的证据完整性上，两者产出的 `Turn` 形状本身相同。
-用户侧写法与「零映射」表格见 [docs-site 的 send 指南](../../../../../docs-site/zh/tutorials/write-send.mdx)。
+用户侧写法与「零映射」表格见 [docs-site 的 send 指南](../../../../../apps/docs-site/zh/tutorials/write-send.mdx)。
 
 确定性 owner 用 `openai@6.49.0` 的官方客户端完整返回值直入 converter；live
 owner 各用一次真实 Chat Completions 与 Responses 请求完成兼容性验收。见

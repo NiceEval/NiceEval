@@ -823,7 +823,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // usage.costUSD 不参与 budget。之前的实现会按
   // 「平均成本 × 在飞数」预扣,快到顶就让还没起飞的 attempt 排队等——这在探测阶段(还没有任何
   // 成本样本时)等价于把同一 budgetKey 的并发摁到一个很小的数,且完全没有文档承诺过这个副作用
-  // (`docs-site/zh/tutorials/write-experiment.mdx` 对 `budget` 的描述只有一句「这一格配置的预算
+  // (`apps/docs-site/zh/tutorials/write-experiment.mdx` 对 `budget` 的描述只有一句「这一格配置的预算
   // 上限」)。新语义:已完成 attempt 的花费加总一旦到顶,就不再放新 attempt 起飞(已经在飞的
   // 照常跑完,不会被中途打断);到顶之前不做任何预测性限流,并发完全由 globalSem / runSem 决定。
   // 代价是「已花 + 在飞未结算」的总花费可能短暂超出 budget——这是有意识的取舍:budget 是防止
@@ -992,10 +992,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   }
 
   // provider 级独占串行闸(见 docs/runner.md「调度:有界并发」):声明了 exclusive 的 provider
-  // (如 local——同一棵真实工作树不允许并发写)按 provider 名共享一把 permit=1 的信号量,
+  // 按 provider 名共享一把 permit=1 的信号量,
   // --max-concurrency / 实验级 maxConcurrency 都不解除。核心不认 provider 名分支:这里只读
   // physical plan 的中性 admission/lane 字段；相同 lane 共用一把锁，表示它们竞争同一份
-  // 不可并发底层资源，不是 `provider === "local"` 的行为分支。
+  // 不可并发底层资源。
   const providerExclusiveSems = new Map<string, Effect.Semaphore>();
   for (const attempt of attempts) {
     if (
@@ -2884,7 +2884,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           });
         // ③ 全局并发位 → sharedState（如声明，先于 Eval lock）→ 派发时刻试锁 → preflight
         // → 实验级 setup → provider/Sandbox/body。
-        // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁。
+        // 独占串行 provider:同一 provider 名的所有 attempt 共享一把 permit=1 的锁。
         // sharedState 获取与 Experiment setup 都是宿主协调，不能让等待者占着该 Provider lane；
         // permit 只包真正触及 provider、Sandbox 与 Attempt body 的执行段。
         const exclusiveSem = exclusiveSemFor(a.plan);

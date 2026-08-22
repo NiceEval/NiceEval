@@ -16,7 +16,7 @@ ai-sdk-v7 应用本身（`src/backend/`）**一行没改**——服务端零状�
 
 adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不改被测应用一行代码。全套断言
 都在这一档。往上还有两档，同一个应用各有一个目录，逐层只加一层 delta（分档定义见
-[docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx)）：
+[docs-site · Tier](../../../../apps/docs-site/zh/explanation/tier.mdx)）：
 
 - **Tier 2（send + OTel）**：[`../../tier2/ai-sdk-v7/`](../../tier2/ai-sdk-v7/)——config 加
   `telemetry`、adapter 加 `settleMs`，换 `niceeval view` 的调用瀑布图，断言不变。

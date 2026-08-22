@@ -245,12 +245,6 @@ export interface VercelSandboxOptions {
   readonly pathPrepend?: readonly string[];
 }
 
-export interface LocalSandboxOptions {
-  readonly dir?: string;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
-  readonly pathPrepend?: readonly string[];
-}
-
 export interface CustomProviderSandboxOptions {
   readonly name: string;
   readonly targetPlatform: SandboxTargetPlatform;
@@ -525,7 +519,6 @@ export interface SandboxTemplateDefinition {
 export interface BuiltinSandboxPlannerServices {
   /** 只读 control-plane 探测；测试可注入确定值或 typed failure。 */
   readonly dockerBuildPlatform: Effect.Effect<string, SandboxProviderPlanningError>;
-  readonly hostPlatform: SandboxTargetPlatform;
 }
 
 export interface BuiltinSandboxFactories {
@@ -540,7 +533,6 @@ export interface BuiltinSandboxFactories {
   ) => SandboxLayer<"template-bearing", "prepare-only">;
   readonly e2bSandbox: (options: E2BSandboxOptions) => SandboxLayer<"template-bearing", "prepare-only">;
   readonly vercelSandbox: (options: VercelSandboxOptions) => SandboxLayer<"template-bearing", "prepare-only">;
-  readonly localSandbox: (options?: LocalSandboxOptions) => SandboxLayer<"template-bearing", "prepare-only">;
 }
 
 export interface CommandOnlySandboxLayerState {
@@ -1508,11 +1500,6 @@ export interface VercelProviderPlan {
   readonly pathPrepend: readonly string[];
 }
 
-export interface LocalProviderPlan {
-  readonly directory: string;
-  readonly pathPrepend: readonly string[];
-}
-
 export interface CustomProviderPlan {
   readonly name: string;
 }
@@ -1629,20 +1616,6 @@ const vercelProviderModule = Object.freeze({
   ),
   collectBuildPreparation: noBuildPreparation,
 } satisfies SandboxProviderModule<VercelProviderPlan>);
-
-const localProviderModule = Object.freeze({
-  id: "niceeval/local-directory",
-  capabilities: Object.freeze({
-    retention: Object.freeze({ _tag: "DestroyOnly" }),
-    reuse: Object.freeze({ _tag: "Unsupported", reason: "local sandbox state is shared with the host" }),
-    sessionLimit: Object.freeze({ _tag: "Unlimited" }),
-  }),
-  materialize: (plan, context) => Effect.flatMap(
-    loadProviderRuntime(),
-    (runtime) => runtime.materializeLocalProviderPlan(plan, context),
-  ),
-  collectBuildPreparation: noBuildPreparation,
-} satisfies SandboxProviderModule<LocalProviderPlan>);
 
 function customProviderModule(
   name: string,
@@ -2277,60 +2250,7 @@ export function createBuiltinSandboxFactories(
       });
     },
 
-    localSandbox(options: LocalSandboxOptions = {}) {
-      assertRecord(options, "localSandbox options");
-      assertOnlyKeys(options, ["dir", "pathPrepend"], "localSandbox options");
-      const directory = options.dir === undefined
-        ? Object.freeze({ _tag: "AuthorBaseDir" as const })
-        : Object.freeze({
-            _tag: "Configured" as const,
-            value: nonEmptyString(options.dir, "localSandbox options.dir"),
-          });
-      const pathPrepend = pathPrependList(options.pathPrepend, "localSandbox options.pathPrepend");
-      const identity: JsonValue = { provider: "local", kind: "directory", directory, ...pathPrependIdentityField(pathPrepend) };
-      return defineSandboxTemplate({
-        provider: "local",
-        kind: "directory",
-        publishableIdentity: { directory: { _tag: directory._tag }, ...pathPrependIdentityField(pathPrepend) },
-        privateFingerprintIdentity: identity,
-        commandPlanLocator: directory._tag === "AuthorBaseDir"
-          ? configuredLocator([{ name: "dir", value: "author-base-dir" }])
-          : configuredPathLocator(),
-        leakGate: { _tag: "None" },
-        plan: ({ authorBaseDir }) => {
-          const configured = directory._tag === "AuthorBaseDir"
-            ? authorBaseDir
-            : resolve(authorBaseDir, directory.value);
-          return Effect.succeed(sandboxProviderPlan({
-            provider: "local",
-            plannerRevision: "local-directory-1",
-            caseKind: "prebuilt",
-            target: { platform: services.hostPlatform, source: "host" },
-            scheduling: exclusiveScheduling("local-worktree"),
-            module: localProviderModule,
-            build: providerBuildPlan({
-              caseKind: "prebuilt",
-              materializerRevision: "local-directory-1",
-              buildKeys: [],
-              caseParams: { directory: configured, ...pathPrependIdentityField(pathPrepend) },
-            }),
-            runtimePlan: Object.freeze({ directory: configured, pathPrepend }),
-            publishableIdentity: { directory: { _tag: directory._tag }, ...pathPrependIdentityField(pathPrepend) },
-            privateFingerprintIdentity: { directory: configured, ...pathPrependIdentityField(pathPrepend) },
-          }));
-        },
-      });
-    },
   });
-}
-
-function hostPlatform(): SandboxTargetPlatform {
-  const arch = normalizeArch(process.arch);
-  return process.platform === "linux"
-    ? Object.freeze({ _tag: "Linux", os: "linux", arch, libc: "gnu" })
-    : process.platform === "darwin"
-      ? Object.freeze({ _tag: "Darwin", os: "darwin", arch })
-      : Object.freeze({ _tag: "Windows", os: "windows", arch });
 }
 
 const LIVE_FACTORIES = createBuiltinSandboxFactories({
@@ -2343,7 +2263,6 @@ const LIVE_FACTORIES = createBuiltinSandboxFactories({
       ["Make the Docker control plane available or set DOCKER_DEFAULT_PLATFORM."],
     ),
   }),
-  hostPlatform: hostPlatform(),
 });
 
 export const dockerComposeSandbox = LIVE_FACTORIES.dockerComposeSandbox;
@@ -2351,7 +2270,6 @@ const dockerfileSourceLayer = LIVE_FACTORIES.dockerfileSourceLayer;
 const dockerImageSourceLayer = LIVE_FACTORIES.dockerImageSourceLayer;
 export const e2bSandbox = LIVE_FACTORIES.e2bSandbox;
 export const vercelSandbox = LIVE_FACTORIES.vercelSandbox;
-export const localSandbox = LIVE_FACTORIES.localSandbox;
 
 /**
  * 统一的单容器 Docker factory。Docker access用判别联合选择显式socket、raw DinD或managed DinD；

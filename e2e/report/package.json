@@ -2,6 +2,9 @@
   "name": "niceeval-e2e-report",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "description": "Report E2E consumer: public show/view/export and one browser journey",
   "scripts": {

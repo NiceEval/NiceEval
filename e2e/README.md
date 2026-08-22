@@ -4,7 +4,7 @@
 
 ## 目录
 
-每个带 `e2e.json` 的叶子目录都是一个独立消费项目，自带 `package.json`、lockfile 和原生 Vitest 或 Playwright 测试。根 runner 把候选 `niceeval` tarball 安装进仓库外副本；需要 Testkit 的 Repo 还会从当前 checkout clean-build 私有 workspace package，并只在该副本中注入目录依赖，随后执行 manifest 声明的命令。
+每个带 `project.json` 与 `kind:e2e` tag 的叶子目录都是一个独立消费项目，自带 `package.json`、lockfile 和原生 Vitest 或 Playwright 测试。根 runner 把候选 `niceeval` tarball 安装进仓库外副本；需要 Testkit 的 Repo 还会从当前 checkout clean-build 私有 workspace package，并只在该副本中注入目录依赖，随后执行 `targets.e2e.metadata.niceeval` 声明的命令。
 
 ```text
 e2e/
@@ -21,7 +21,7 @@ e2e/
 └── scripts/                # 发现、计划、pack、注入、执行、收据与 artifact
 ```
 
-目录结构本身不决定测试身份；`e2e.json.id` 才是稳定 Repo id。`adapter/` 只是物理 collection，不提供共享依赖或共享结果根。
+`project.json.root` 是 E2E identity 的唯一真源；canonical Repo id 从 `e2e/` 后的 leaf root 推导。`adapter/` 只是物理 collection，不提供共享依赖或共享结果根。
 
 功能 Repo 签入自己的 Eval / Experiment，并在每次 invocation 中完整运行生成 `.niceeval` 后再做公开读回；不签入或跨 Repo
 复制预生成结果。某个 case 需要另一种 verdict、事件、source 或 Sandbox evidence 时，直接在所属 Repo 增加专用 Eval。
@@ -29,8 +29,8 @@ e2e/
 ## 根入口
 
 ```sh
-pnpm e2e plan --lane pr --json
-pnpm e2e plan --lane release --no-diff --json
+pnpm --silent e2e plan --lane pr --json
+pnpm --silent e2e plan --lane release --no-diff --json
 pnpm e2e pack --out /tmp/niceeval-candidate.tgz
 pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo cli
 pnpm e2e run --candidate /tmp/niceeval-candidate.tgz \
@@ -53,7 +53,7 @@ Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，
 
 - `plan` 只读 manifest，不 pack、不安装、不读取 secret。
 - `run` 在临时副本依次执行 capability preflight、install、injection attestation、browser preflight、test、artifact collection 与 cleanup。
-- 选择使用 `--lane`、`--repo`、`--diff-path`、`--no-diff` 和 capability；不存在旧 `group` 参数。CI 固定传 `--no-diff`，不依赖 checkout 是否干净来决定完整矩阵。
+- 选择使用 `--lane`、`--repo`、`--diff-path`、`--no-diff` 和 capability；不存在旧 `group` 参数。PR CI 传入已验证的 base 与实际 checkout HEAD，main、nightly、release 和显式 full 才传 `--no-diff`。
 - 显式 `--repo` 不受 `--diff-path` 过滤；candidate 的 `packages/niceeval/bin/`、`packages/niceeval/dist/`、package-runtime/reference/docs 输入、root pack 配置或共享 runner 改动会 fail-open 选择整条 lane。
 - 默认入口只生成一次 plan；run 只接收该 plan 的精确 Repo ID 集。local diff 同时含 tracked 与未忽略 untracked 路径。
 - 测试非零退出归 regression；安装、注入、artifact 或 cleanup 失败归 infra；缺 runtime、Docker daemon、browser 或 declared secret 归 configuration；根 signal 归 cancelled。Adapter 不用 exit 75 或日志正则猜分类。

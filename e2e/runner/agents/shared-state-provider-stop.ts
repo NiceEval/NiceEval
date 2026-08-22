@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { acquireProcessFileLock } from "@niceeval/testkit";
 import { Effect } from "effect";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import {
@@ -14,6 +15,7 @@ import {
 
 const barrierRoot = process.env.NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER;
 const failProviderStop = process.env.NICEEVAL_SHARED_STATE_PROVIDER_STOP_FAIL === "1";
+const HOST_LEDGER_LOCK = "/tmp/niceeval-e2e-host-sandbox-ledger.lock";
 
 function pathIn(workdir: string, path: string): string {
   return isAbsolute(path) ? path : resolve(workdir, path);
@@ -27,6 +29,7 @@ async function mark(name: string): Promise<void> {
 
 function runProcess(
   workdir: string,
+  controlledEnv: NodeJS.ProcessEnv,
   command: string,
   args: readonly string[],
   options: CommandOptions = {},
@@ -34,7 +37,7 @@ function runProcess(
   return new Promise((resolveResult, reject) => {
     const child = spawn(command, [...args], {
       cwd: pathIn(workdir, options.cwd ?? workdir),
-      env: { ...process.env, ...options.env },
+      env: { ...controlledEnv, ...options.env },
     });
     let stdout = "";
     let stderr = "";
@@ -80,11 +83,36 @@ function runProcess(
 }
 
 /** A public custom Provider whose group.stop boundary can fail deterministically. */
-function createProviderStopSandbox(workdir = process.cwd()): Sandbox {
+async function createProviderStopSandbox(workdir = process.cwd()): Promise<Sandbox> {
+  const releaseHostLedgerLock = await acquireProcessFileLock(HOST_LEDGER_LOCK, {
+    timeoutMs: 120_000,
+    label: "provider-stop fixture host ledger lock",
+  });
+  const runtimeRoot = resolve(workdir, ".niceeval-e2e-runtime", "provider-stop");
+  const home = resolve(runtimeRoot, "home");
+  const codexHome = resolve(runtimeRoot, "codex-home");
+  const tmpdir = resolve(runtimeRoot, "tmp");
+  try {
+    await Promise.all([
+      mkdir(home, { recursive: true }),
+      mkdir(codexHome, { recursive: true }),
+      mkdir(tmpdir, { recursive: true }),
+    ]);
+  } catch (error) {
+    await releaseHostLedgerLock();
+    throw error;
+  }
+  const controlledEnv: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    HOME: home,
+    CODEX_HOME: codexHome,
+    TMPDIR: tmpdir,
+    LANG: "C.UTF-8",
+  };
   const runCommand = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
-    runProcess(workdir, command, args, options);
+    runProcess(workdir, controlledEnv, command, args, options);
   const runShell = (script: string, options: CommandOptions = {}) =>
-    runProcess(workdir, "bash", ["-c", script], options);
+    runProcess(workdir, controlledEnv, "bash", ["-c", script], options);
   const orThrow = async (result: Promise<CommandResult>): Promise<SuccessfulCommandResult> => {
     const settled = await result;
     if (settled.exitCode !== 0) throw new Error(settled.stderr || settled.stdout || `command exited ${settled.exitCode}`);
@@ -122,17 +150,27 @@ function createProviderStopSandbox(workdir = process.cwd()): Sandbox {
       await cp(pathIn(workdir, sourceDir), targetDir, { recursive: true });
     },
     stop: async () => {
-      await mark("provider-group-stop-started");
-      if (failProviderStop) throw new Error("deterministic Provider group.stop failure");
-      await mark("provider-group-stop-complete");
+      try {
+        await mark("provider-group-stop-started");
+        if (failProviderStop) throw new Error("deterministic Provider group.stop failure");
+        await mark("provider-group-stop-complete");
+      } finally {
+        await releaseHostLedgerLock();
+      }
     },
   };
 }
 
 export const sharedStateProviderStopSandbox = defineSandbox({
   name: "runner-provider-stop-failure",
-  targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-  create: () => Effect.sync(() => createProviderStopSandbox()),
+  targetPlatform: {
+    _tag: "Linux",
+    os: "linux",
+    arch: process.arch === "arm64" ? "arm64" : "x64",
+    libc: "gnu",
+  },
+  exclusive: true,
+  create: () => Effect.promise(() => createProviderStopSandbox()),
 });
 
 export function sharedStateProviderStopHooks(role: string) {

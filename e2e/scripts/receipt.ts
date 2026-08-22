@@ -6,6 +6,8 @@
 // never decide a product verdict from .niceeval contents.
 
 import type { OwnedProcessGroupCleanup } from "./owned-process.ts";
+import type { Lane } from "./manifest.ts";
+import type { PlanMode } from "./plan.ts";
 
 export type StageName =
   | "preflight"
@@ -18,6 +20,16 @@ export type StageName =
   | "cleanup";
 
 export type Category = "pass" | "regression" | "infra" | "configuration" | "cancelled";
+
+/** Selection provenance copied from the exact plan cell consumed by a run. */
+export interface SelectionReceipt {
+  schemaVersion: 1;
+  mode: Exclude<PlanMode, "invalid">;
+  reason: string;
+  lane: Lane;
+  cellId: string;
+  range?: { base: string; head: string };
+}
 
 export interface CommandCapture {
   exitCode: number | null;
@@ -78,6 +90,8 @@ export interface StageReceipt {
 
 export interface RepoReceipt {
   repoId: string;
+  /** Present when this repo was executed from a machine-readable plan cell. */
+  selection?: SelectionReceipt;
   /** Fresh opaque IDs injected into setup and every test command for this repo run. */
   invocationIds: readonly string[];
   /** Number of deliberate test invocations made in this one isolated copy. */
@@ -211,7 +225,7 @@ export function classifyFromReceipt(receipt: Pick<RepoReceipt, "stages" | "detai
     category = "regression";
     detail = stageFailureDetail(
       tests.find((test) => test.capture?.timedOut)!,
-      "exceeded e2e.json timeoutMinutes; owned process group terminated",
+      "exceeded project.json E2E timeoutMinutes; owned process group terminated",
     );
   } else if (tests.some((test) => test.capture?.exitCode === null && !test.capture.timedOut)) {
     category = "infra";

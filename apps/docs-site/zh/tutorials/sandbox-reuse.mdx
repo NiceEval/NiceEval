@@ -1,0 +1,210 @@
+---
+title: "复用 Sandbox：一批评估共用环境，公共准备只付一次"
+sidebarTitle: "复用 Sandbox"
+description: "在 Experiment 里声明 sandboxReuse 让多条 Attempt 共用 Sandbox：写对四层生命周期、配好 lifetimeMs。准备代码做不到幂等重放时改用并发，不要复用。"
+---
+
+import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
+
+一批评估共用同一套环境准备（同一个工具链、同一个仓库 checkout）时，每条 Attempt
+都新建 Sandbox 意味着这套准备要付 N 次。在 Experiment 里声明 `sandboxReuse: true`，
+多条 Attempt 依次共用同一个 Sandbox：Sandbox 创建和公共准备每个 Sandbox 只付一次，
+每道题之间 NiceEval 自动把工作目录 `git reset` 回公共准备完成时的状态。
+
+<Note>
+  本页讲 Experiment 级的 `sandboxReuse`。只有几组兼容的评估需要各自的复用边界时，使用
+  [评估组](/zh/tutorials/eval-groups)：同组串行复用，不同组继续并行。选中评估组的
+  Experiment 不能再声明 `sandboxReuse: true`。
+</Note>
+
+<Warning>
+  题间 reset 不是整台 Sandbox 归零。NiceEval 只按分类账恢复 `workdir`。`/opt`、`$HOME`、`/tmp` 等 workdir 外状态、全局安装、包缓存和后台进程会保留。大型持久 build/cache 由作者负责选择容量上限、阈值告警、清理或轮换策略。无法安全继续时还要有退休 Sandbox 的策略。
+</Warning>
+
+先说清代价，再说怎么开：
+
+- **复用运行的结果照常进缓存。** pair 具备稳定 carry identity 时，终态结果指纹匹配就直接
+  沿用，不创建 Sandbox。Sandbox Plugin 的 attachment owner、name、instance key、behavior
+  revision、声明 identity、顺序与 setup/teardown 形状都属于 carry identity；任一项变化都会
+  让 slot 变为 fresh。Callback 函数体仍是 opaque；行为变化时需同步修改声明 identity 或使用
+  `--rerun all`。只有未沿用的 Attempt 才会在本次共用 Sandbox 中执行。
+- **中断不等于外部状态回滚。** 只在跨 Attempt 状态能回到最后一个终态提交边界时，续跑才是
+  同一条实验轨迹。否则应换干净 cohort 从头重建。
+- **工作目录之外的状态会留下。** `$HOME`、`/tmp`、全局安装、后台进程都活过题间重置。
+  评估的准备代码必须能接受这一点（下面「把准备代码写对」）。
+- 与 `--keep-sandbox` 互斥。
+
+适合的场景：本地冒烟一批评估、同一道题重复跑 N 次看稳定性、验证接线——要的是快，
+同时保留结果沿用与 `--rerun` 的选择。
+
+## 开启：Experiment 三件套
+
+```typescript
+import { defineExperiment } from "niceeval";
+import { e2bSandbox } from "niceeval/sandbox";
+import { codexAgent } from "niceeval/adapter";
+
+export default defineExperiment({
+  evals: ["react-datepicker/"],
+  agent: codexAgent(),
+  sandbox: e2bSandbox({
+    template: "acme-evals",
+    lifetimeMs: 60 * 60_000,   // ① Sandbox 的寿命：复用时必填，不填在派发前报错
+  }),
+  sandboxReuse: true,          // ② 声明复用
+  maxConcurrency: 3,           // ③ 几条 Sandbox 泳道并行，每条依次承接多条 Attempt
+  timeoutMs: 20 * 60_000,
+});
+```
+
+`timeoutMs` 和 `lifetimeMs` 是两个时钟，量的是两个对象：前者限一条 Attempt 跑多久，
+后者限一个 Sandbox 活多久。想让 Sandbox 活得久一点，调 `lifetimeMs`，
+不要调大 `timeoutMs`——那会同时放宽对卡死 Agent 的保护。`lifetimeMs` 的上限
+由 Provider 账号档位决定（例如 e2b 免费档是 1 小时），超了会在创建时报 Provider 的原话。
+
+## 多开终端时 Sandbox 不共享
+
+Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池。NiceEval 不把运行中的 Sandbox handle 交给另一个进程；两个 Invocation 可以并发向同一个 Record root 追加已发布结果。
+
+Record maintenance 是独占操作。`clean` 或其它维护命令报告 `record-maintenance-busy` 时，先停止占用该 root 的 reader 和 writer，再重试维护命令。正常并发运行不需要为了避开 writer 冲突而拆成多个 Record root。
+
+如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。Sandbox Hook 恢复、回存同一个外部 checkpoint 时，为 Experiment 声明稳定且不含秘密的 key：
+
+```typescript
+export default defineExperiment({
+  sandbox: e2bSandbox({ template: "mempal" })
+    .setup(restoreMempal)
+    .teardown(saveMempal),
+  sandboxReuse: true,
+  maxConcurrency: 1,
+  sharedState: { key: "mempal/codex/cohort-a" },
+});
+```
+
+NiceEval 会在 Experiment setup 或创建 Sandbox 前取得这个 key，直到 Sandbox `teardown`、Provider finalizer 与 Experiment `teardown` 全部完成才释放。等待方不会创建 Sandbox；租约释放后，它继续自己的计划，不读取或采用另一条 Run 的结果。
+
+key 会进入结果的配置身份。更换 key 就是更换状态 cohort，旧结果不会混进来。租约只保护外部 checkpoint，与 Record root 无关；普通 append writer 仍可并发使用同一个 root。不同机器或 working copy 仍需外部分布式锁。
+
+## 生命周期：谁跑几次
+
+| 阶段 | 复用时跑几次 |
+|---|---|
+| Sandbox 创建 / 停止 | 每个 Sandbox 一次 |
+| Sandbox 级 `setup` / `teardown` | 每个 Sandbox 一次，在题间重置点之前 |
+| Agent 级 `setup` / `teardown` | 每条 Attempt 一次 |
+| 评估用例的 `setup` / `teardown`、`test(t)` | 每条 Attempt 一次 |
+
+<SandboxLanes />
+
+每条 Attempt 结束后，NiceEval 对 `workdir` 执行 `git reset --hard` + `git clean`
+回到重置点，再开始下一条。这个 reset 只管 `workdir`。`/opt`、`$HOME`、`/tmp`、
+全局安装、包缓存和后台进程不会因此消失。它们要么由评估用例的 `teardown` 自己收，
+要么就是作者明确留给下一条用的持久状态。
+
+大型持久 build/cache 不能只依赖「一直增长」。作者应明确容量上限和达到上限前的阈值。
+正常大小和命中情况用 `facts` 记录，达到风险阈值才用 `diagnostic` 告警，并提供清理、
+轮换或退休 Sandbox 的策略。
+
+## 把准备代码写对：按「随什么变化」分层
+
+- **所有实验都要的重依赖**（Agent CLI、语言运行时）→ 烘进 Provider 的
+  image / template / snapshot，不进任何 `setup`。
+- **整批评估共用的准备**（装工具链、clone 共同仓库、预热构建缓存）→ Sandbox 级
+  `.setup()`。它每个 Sandbox 只跑一次，产物成为题间重置点的一部分，每道题白拿。
+- **只有这道题要的素材**（它自己的仓库、数据、依赖）→ 评估用例自己的 `setup` 或
+  `test(t)`。每题重置后重放，所以必须是重放一遍还对的代码。每题各自 clone 时，
+  整个 Experiment 使用同一个具名临时目录，例如 `.niceeval-task-clone`，并把它加进
+  `diff.ignore`。clone 前只运行 `rm -rf .niceeval-task-clone` 清掉上一题的残留。
+  绝不能删除 `workdir` 根的 `.git`：题间 `git reset` 依赖它，且它会活过题间重置。
+- **起了后台进程、占了端口** → 评估用例的 `teardown` 自己收，题间重置不杀进程。
+
+## 幂等是硬要求：一反一正
+
+Sandbox 级和评估用例级的准备代码都可能面对「上一次留下的半截状态」。两种写法：
+
+```bash
+# 反例：探测到就整块跳过。rustup 装了一半（有 cargo、没配默认工具链）时，
+# 探测通过、安装跳过，下一步 cargo build 报错，整条 Attempt errored。
+if ! command -v cargo; then curl https://sh.rustup.rs | sh; fi
+
+# 正例：把目标状态直接声明出来，重放多少次都收敛到同一个结果。
+rustup default 1.79.0
+npm install          # 调和到 package.json/lockfile 声明的状态，本身就是幂等的
+```
+
+判据一句话：**准备代码描述目标状态，不描述「要不要做」**。探测-跳过式的守卫
+把半截状态当成完成态，恰好只在复用时炸，本地单跑永远发现不了。
+
+## Agent 原生 Plugin：安装由 Adapter 收敛
+
+`codexAgent({ plugins: [...] })`、`claudeCodeAgent({ plugins: [...] })` 和
+`sandboxReuse` 可以同时声明。Agent 原生 Plugin 装在 `$HOME` 里，`$HOME` 活过题间重置，
+但这不用你处理：每条 Attempt 开始前，Adapter 把 Plugin 安装收敛到你声明的配置——
+上一条 Attempt 留下的同名 marketplace 注册和插件，被替换成按声明 `source` 和 `ref`
+的全新安装。插件自带脚本改写 marketplace 注册（比如换成托管源）也被同一条规则吸收。
+
+这里说的是 Agent factory 里的原生 Plugin。评估用例、实验和评估组顶层的 `plugins` 字段
+承载 NiceEval 条件，两者的分工见[用 Plugin 复用完整评估条件](/zh/tutorials/plugins)。
+
+两件事仍归你：
+
+- **`postSetup` 脚本必须幂等**。它每条 Attempt 都在残留的 `$HOME` 上重跑，
+  往全局配置登记 hook 的脚本，重跑一遍要收敛到同一份配置。开复用前先拿两三道题
+  压一条 Sandbox 泳道跑一轮——第二题起才是真正的判据。
+- **插件数据放哪**。插件安装目录每条 Attempt 都被重装覆盖。插件运行时要留到下一题的数据，
+  只能写在安装目录之外。留下的数据会不会污染下一题，是你的实验设计要回答的问题。
+
+收敛不等于省钱：插件安装每条 Attempt 照付，复用省的是 Sandbox 创建和 Sandbox 级
+`setup`。marketplace 拉取太慢时用 `sparse` 只拉插件路径，或把插件烘进 template
+并从 `plugins` 里拿掉声明——代价是安装 manifest 里就没有插件与解析版本的记录了。
+
+## 一批里混了不同 Sandbox layer
+
+选中的评估用例声明不同 template-bearing `sandbox` layer 时，不需要拆命令。Link planning
+逐条解析评估用例 × Experiment 配对。物理 Sandbox identity 不同的 Attempt 不共享 Sandbox，
+也不共享 Sandbox 级 `setup` 产物；实验的 `maxConcurrency` 约束全部选中工作的同时执行数。
+
+## 典型节奏
+
+```sh
+# 1. 改完公共配置，先看计划再花钱
+npx niceeval exp smoke memory/commit0 --dry
+
+# 2. 声明了 sandboxReuse 的实验，快速过一遍
+npx niceeval exp smoke memory/commit0
+
+# 3. 某道题失败，换一个不声明复用的实验单独重跑，拿现场
+npx niceeval exp baseline memory/commit0/tool-first --keep-sandbox
+
+# 4. 修完，用不声明复用的实验验证，出可采信的结果
+npx niceeval exp baseline memory/commit0
+```
+
+第 3 步必须换实验：`--keep-sandbox` 与 `sandboxReuse` 互斥，而且复用的 Sandbox 被整批共享，
+留下来对任何一道题都不忠实。「串起来挂、单独跑过」出现时同样这么办——不要在共用批次里
+排查这种问题。流程见[保留 Sandbox 现场排查问题](/zh/troubleshooting/debug-sandbox)。
+
+## 做不到？用并发，别复用
+
+准备代码改不成幂等、或者评估依赖全新的 `$HOME`（记忆类被测对象、有状态服务），
+不要声明 `sandboxReuse`。提速走并发就够了：
+
+```typescript
+export default defineExperiment({
+  // 不声明 sandboxReuse：每条 Attempt 全新 Sandbox，状态零残留
+  maxConcurrency: 8,   // 并行照样有
+  // ...
+});
+```
+
+复用比纯并发多省的只有「每个 Sandbox 一次的创建 + 公共准备」这一段。这段时间
+远小于单条 Attempt 的执行时间时，并发已经拿到几乎全部墙钟收益，还不用背复用的
+状态语义。先并发，量出公共准备确实是大头，再考虑复用。
+
+## 相关阅读
+
+- [评估组](/zh/tutorials/eval-groups)——显式声明组内成员和顺序，同时保留组间并发。
+- [重跑与沿用](/zh/tutorials/rerun-and-cache)——复用 Sandbox 如何沿用终态结果，以及何时使用 `--rerun`。
+- [并发与执行顺序](/zh/tutorials/concurrency)——不复用时怎么用并发拿到同一份提速。
+- [Sandbox Provider 配置](/zh/tutorials/sandbox-providers)——各 Provider 的
+  template / image / snapshot 怎么做。

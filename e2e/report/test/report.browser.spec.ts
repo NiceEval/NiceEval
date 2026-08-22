@@ -110,7 +110,7 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
           has: page.locator("title").filter({ hasText: "classic/memory-a" }),
         });
         const experimentSummary = page.locator("summary").filter({
-          has: page.getByText("classic/memory-a", { exact: true }),
+          has: page.getByText("classic/memory-a (9/9)", { exact: true }),
         });
         await expect(experimentSummary).toHaveCount(1);
         await expect(experimentSummary).toContainText("classic/memory-a (9/9)");

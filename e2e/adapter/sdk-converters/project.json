@@ -1,0 +1,65 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "e2e-adapter-sdk-converters",
+  "root": "e2e/adapter/sdk-converters",
+  "tags": [
+    "kind:e2e",
+    "e2e:adapter/sdk-converters"
+  ],
+  "implicitDependencies": [
+    "workspace-shared",
+    "e2e-shared",
+    "niceeval-package-shared",
+    "niceeval-testkit",
+    "niceeval-src-fallback",
+    "niceeval-domain-o11y",
+    "niceeval-domain-agents"
+  ],
+  "targets": {
+    "e2e": {
+      "executor": "nx:selection-only",
+      "cache": false,
+      "inputs": [
+        "default"
+      ],
+      "metadata": {
+        "niceeval": {
+          "schemaVersion": 3,
+          "batch": "host-3",
+          "areas": [
+            "adapter"
+          ],
+          "lanes": [
+            "pr",
+            "main",
+            "nightly",
+            "release"
+          ],
+          "executor": {
+            "kind": "host"
+          },
+          "command": [
+            "pnpm",
+            "run",
+            "e2e"
+          ],
+          "timeoutMinutes": 2,
+          "harness": {
+            "testkit": true
+          },
+          "secrets": [],
+          "requires": {
+            "externalNetwork": false,
+            "runtimes": [
+              "node>=24"
+            ]
+          },
+          "artifacts": [
+            ".e2e-artifacts/**",
+            "junit/**"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -22,7 +22,7 @@ async function digest(root, list) {
 }
 
 for (const subtree of ["zh", "images"]) {
-  const source = join(repoRoot, "docs-site", subtree);
+  const source = join(repoRoot, "apps", "docs-site", subtree);
   const target = join(packageRoot, "docs-site", subtree);
   await rm(target, { recursive: true, force: true });
   await mkdir(dirname(target), { recursive: true });
