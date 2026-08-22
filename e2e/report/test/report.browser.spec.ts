@@ -119,6 +119,12 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         const route = href!.slice(1);
         const detail = new URL(`_niceeval/fragments${route}.json`, origin!);
 
+        const overlayRequests: string[] = [];
+        page.on("request", (request) => {
+          if (new URL(request.url()).pathname.includes("/_niceeval/fragments/"))
+            overlayRequests.push(request.url());
+        });
+
         let detailRequested!: () => void;
         const requested = new Promise<void>((done) => { detailRequested = done; });
         let releaseDetail!: () => void;
@@ -138,7 +144,9 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
           await expect(page).toHaveURL(new RegExp(`#${route}$`));
           await expect(dialog).toBeVisible();
           await expect(dialog.getByRole("status")).toContainText("Loading details…");
-          await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+          await expect(
+            page.locator("h1", { hasText: "NiceEval overview" }),
+          ).toBeVisible();
         } finally {
           releaseDetail();
           await continued;
@@ -150,6 +158,7 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         await page.getByRole("button", { name: "Close" }).click();
         await expect(dialog).not.toBeVisible();
         expect(new URL(page.url()).hash).toBe("");
+        expect(overlayRequests).toEqual([detail.href]);
 
         await page.goForward();
         await expect(dialog).toBeVisible();
