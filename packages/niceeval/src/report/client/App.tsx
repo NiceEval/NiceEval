@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent,
@@ -25,6 +26,10 @@ function localized(
   locale: Locale,
 ): string {
   return value[locale] || value.en;
+}
+function FragmentHtml({ html }: { readonly html: string }) {
+  const markup = useMemo(() => ({ __html: html }), [html]);
+  return <div dangerouslySetInnerHTML={markup} />;
 }
 function useFragment(page: ReportPageManifest): [LoadState, () => void] {
   const [reload, setReload] = useState(0);
@@ -108,13 +113,7 @@ function FragmentBody({
         </button>
       </div>
     );
-  return (
-    <div
-      dangerouslySetInnerHTML={{
-        __html: localized(state.fragment.html, locale),
-      }}
-    />
-  );
+  return <FragmentHtml html={localized(state.fragment.html, locale)} />;
 }
 export function ReportPage({
   page,
