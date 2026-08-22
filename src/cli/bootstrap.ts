@@ -2,10 +2,13 @@
 // Effect values; this file is the only place NiceEval starts a runtime.
 
 import { Cause, Effect, Exit, Layer } from "effect";
-import { cliProgram, renderCliFailure, type CliInterruptionOwnership } from "./program.ts";
+import { cliProgram, CORE_CLI_COMMANDS, renderCliFailure, type CliInterruptionOwnership } from "./program.ts";
+import { composeCliCommands } from "./contribution.ts";
+import { dockerCliCommand } from "./features/docker.ts";
 import { NodeCliPlatformLive } from "./node-application.ts";
 import { ConfigModuleLoaderLive, ProjectConfigurationLayer, ProjectCredentialsLive } from "./project-configuration.ts";
 import { NodeRecordLive } from "../record/index.ts";
+import { DockerCacheAdministrationLive } from "../docker/cache-live.ts";
 
 // There is exactly one synchronous ownership state for the first signal. Node
 // invokes both signal handlers and Effect continuations serially, so the CLI's
@@ -71,10 +74,14 @@ const onInterrupt = (signal: NodeJS.Signals): void => {
 process.on("SIGINT", onInterrupt);
 process.on("SIGTERM", onInterrupt);
 
-const application = Effect.scoped(cliProgram(interruption)).pipe(
+const featureCommands = composeCliCommands(CORE_CLI_COMMANDS, [dockerCliCommand]);
+
+const application = Effect.scoped(cliProgram(interruption, featureCommands)).pipe(
   // Application bootstrap is the sole provider of concrete Node services.
   // Command and library modules retain their real requirements for callers.
   Effect.provide(NodeRecordLive),
+  // This is a lazy service value: ordinary commands and help do not probe Docker.
+  Effect.provide(DockerCacheAdministrationLive),
   Effect.provide(NodeCliApplicationLive),
   Effect.provide(NodeCliPlatformLive),
   // Typed CLI failures are expected, user-actionable outcomes. They become an

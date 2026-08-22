@@ -53,7 +53,7 @@ Then：
 
 Given Docker 的共享 BuildKit builder 报告总容量和 Provider reclaimable estimate，但没有 NiceEval Domain identity、entry 或 lease。
 
-When 从安装后的 candidate 运行 `niceeval cache inventory --json`。
+When 从安装后的 candidate 运行 `niceeval docker cache inventory --json`。
 
 Then 输出把 BuildKit 放进独立的 `providerObservations`，状态为 `unverified`，不产生 `domainId`、`evictable` 或 GcPlan。
 

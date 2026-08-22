@@ -27,9 +27,14 @@ Effect 边界按生命周期分层：
 - Layer 只在具体 provider 的 composition root 组装 live adapter，不承载策略。
 
 Docker provider 私有组合 Docker Engine port、Docker registry 与 task-build cache。E2B、Vercel 与未来 provider
-无需实现 Docker Domain、SQLite、image lease 或 GC。CLI 也不直接导入 Docker cache：受信任的 provider admin
-adapter 只负责 `listDomains()` 与 `observeProviderCapacity()`；每个受管 Domain 再打开独立的
-`DomainAdministration`。共享 BuildKit observation 没有 Domain controller，类型上不存在 plan/apply。
+无需实现 Docker Domain、SQLite、image lease 或 GC。Docker feature 的 CLI handler 直接依赖 Docker-owned
+administration service；不建立 provider-neutral cache registry，也不要求其它 Sandbox provider 补齐相同能力。
+共享 BuildKit observation 没有 Domain controller，类型上不存在 plan/apply。
+
+CLI host 只挂载一个 `docker` contribution，不解释其 `profile`、`cache`、`inventory`、`gc` 或私有 flag。
+Contribution 是不可变命令描述和 Effect handler；Docker Layer 由 Node composition edge 提供，handler 不启动
+第二个 runtime。Sandbox 命令仍只处理跨 provider 的实例生命周期与留存；Docker image、BuildKit 和 GC 不进入
+Sandbox service，也不借 `sandbox prune` 回收 cache。
 
 ## V1 架构裁决
 

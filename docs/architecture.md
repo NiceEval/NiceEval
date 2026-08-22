@@ -102,6 +102,34 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 Record definition、fixed family catalog 与 migration step factory 仍是 package-private；第三方不能注册 family
 或 migration。五个入口也不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
 
+## CLI feature composition
+
+CLI 是命令的中立 host，不是所有命令背后领域能力的 owner。根程序只拥有 argv 的根命令切分、稳定 help 顺序、
+重复命令拒绝、统一输出端口和唯一 Effect runtime。Core 与每个具体 feature 各自导出不可变的 command
+contribution；Node composition edge 显式组合这些值，并提供 handler 所要求的 Layer。
+
+```ts
+interface CliCommandContribution<R, E> {
+  readonly name: string;
+  readonly summary: string;
+  readonly run: (argv: readonly string[]) => Effect.Effect<number, E, R>;
+}
+```
+
+Contribution 是纯值，不是 `Context.Tag`、全局 registry 或模块加载副作用。
+它也不携带或私自提供 Layer。
+
+根 router 在调用全局 flag parser 前先切分原始 argv。
+Core command 继续进入 core parser；feature command 取得未经改写的 remainder。
+Feature 自己拥有子命令、flag、help、human/JSON presentation 与 typed failure。
+因此中央 CLI 不知道 `docker profile`、`docker cache inventory` 或 `docker cache gc` 的参数。
+
+Docker CLI contribution 和 Docker Sandbox adapter 可以依赖同一个 Docker-owned client capability；
+这不把 Docker image、BuildKit、profile 或 GC 提升为通用 Sandbox 能力。E2B、Vercel 与未来 provider 可以
+贡献完全不同的命令树，也可以不贡献命令。命令描述和路由保持纯函数；无状态 client 使用普通 Layer，
+真正持有连接、builder 或 finalizer 的实现才使用 scoped Layer。提供 Layer 不得使 `niceeval --help`
+或普通 core command 在启动时探测 Docker。
+
 `niceeval debug` 有独立的只读命令数据流：
 
 ```text

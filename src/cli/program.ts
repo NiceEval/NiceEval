@@ -11,6 +11,12 @@
 import { Cause, Clock, Data, Effect, Either, Exit, Schema } from "effect";
 import { BrowserLauncher, CliArguments, CliInvocationFacts, CliOutput, CliPath, CliReportPlatform, CliTerminal, PackageMetadata, ProjectInitializer, type CliParsedTokens, type CliPathService, type CliReportPlatformService } from "./application.ts";
 import { ProjectConfiguration } from "./project-configuration.ts";
+import {
+  matchCliFeatureCommand,
+  renderFeatureCommandIndex,
+  CliFeatureError,
+  type CliCommandContribution,
+} from "./contribution.ts";
 
 const invocationFacts = Effect.flatMap(CliInvocationFacts, (service) => service.facts).pipe(
   Effect.mapError((cause) => cliFailure("read invocation facts", cause)),
@@ -156,7 +162,8 @@ export class CliOperationError extends Data.TaggedError("CliOperationError")<{
 
 export type CliFailure =
   | CliUsageError
-  | CliOperationError;
+  | CliOperationError
+  | CliFeatureError;
 
 /**
  * Bootstrap owns process signals until an Eval has reached actual dispatch.
@@ -176,7 +183,7 @@ function usageError(message: string, exitCode = 1): CliUsageError {
 }
 
 function cliFailure(operation: string, cause: unknown, exitCode = 1): CliFailure {
-  return cause instanceof CliUsageError || cause instanceof CliOperationError
+  return cause instanceof CliUsageError || cause instanceof CliOperationError || cause instanceof CliFeatureError
     ? cause
     : new CliOperationError({ operation, cause, exitCode });
 }
@@ -200,6 +207,9 @@ function cliEffect<A, E, R>(operation: string, effect: Effect.Effect<A, E, R>): 
 /** Bootstrap owns presentation of typed failures; defects and interruption stay in Cause. */
 export function renderCliFailure(failure: CliFailure): string {
   if (failure._tag === "CliUsageError") return failure.message;
+  if (failure._tag === "CliFeatureError") {
+    return `${failure.feature} ${failure.operation} failed: ${formatThrown(failure.cause)}\n`;
+  }
   if (failure.cause instanceof SandboxLayerLinkError) return `${formatSandboxLayerLinkError(failure.cause)}\n`;
   if (failure.cause instanceof SandboxPhysicalPlanningError) return `${formatSandboxPhysicalPlanningError(failure.cause)}\n`;
   const assertionsMessage = runnerAssertionsMessage(failure.cause);
@@ -265,8 +275,6 @@ export interface Flags {
   junit?: string;
   /** `exp` 命令专用:机器面(NDJSON 事件流)。省略即人读文本(见 `resolveOutputForm`)。 */
   json: boolean;
-  /** `docker profile doctor` 专用：运行一次真实嵌套 Docker 冒烟。 */
-  smoke: boolean;
   open?: boolean;
   out?: string;
   port?: number;
@@ -313,10 +321,6 @@ export interface Flags {
   confirmOwnerTerminated: boolean;
   /** 明确确认远端外部状态已静止；没有它恢复拒绝执行。 */
   confirmRemoteQuiesced: boolean;
-  /** `cache inventory|gc` 专用：选择一个精确 Materialization Domain。 */
-  domain?: string;
-  /** `cache gc` 专用：执行先前持久化的精确 plan id。 */
-  apply?: string;
 }
 
 // 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明，不依赖 Node 20.14+
@@ -359,8 +363,6 @@ export const FLAG_OPTIONS = {
   junit: { type: "string" },
   /** `exp` 运行在 stdout 输出单一有序的 NDJSON 事件流；`exp --dry` 与 `debug` 输出各自的单个 JSON 计划文档。`show` 输出 Host 拥有的内建或自定义单目标机器文档，不形成完整站点或打开第二条取数路径。 */
   json: { type: "boolean" },
-  /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
-  smoke: { type: "boolean" },
   /** `view` 命令专用:把结果查看器静态导出到指定目录。 */
   out: { type: "string" },
   /** `view` 命令专用:指定本地服务器监听端口。 */
@@ -408,10 +410,6 @@ export const FLAG_OPTIONS = {
   "confirm-owner-terminated": { type: "boolean" },
   /** `--recover-shared-state` 专用:确认远端外部状态已静止。 */
   "confirm-remote-quiesced": { type: "boolean" },
-  /** `cache inventory|gc` 专用：选择一个精确 Materialization Domain。 */
-  domain: { type: "string" },
-  /** `cache gc` 专用：执行先前持久化的精确 plan id；省略时只创建预览。 */
-  apply: { type: "string" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
   /** `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 */
@@ -442,7 +440,8 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   return n;
 }
 
-const CLI_COMMANDS = ["check", "exp", "debug", "accept", "show", "list", "view", "clean", "migrate", "init", "run", "sandbox", "session", "docker", "cache"] as const;
+export const CORE_CLI_COMMANDS = ["check", "exp", "debug", "accept", "show", "list", "view", "clean", "migrate", "init", "run", "sandbox", "session"] as const;
+const CLI_COMMANDS = CORE_CLI_COMMANDS;
 type CliCommand = (typeof CLI_COMMANDS)[number];
 
 interface ParsedCliArgs {
@@ -588,7 +587,6 @@ function parseArgs(
     tag: values.tag as string | undefined,
     junit: values.junit as string | undefined,
     json: values.json === true,
-    smoke: values.smoke === true,
     out: values.out as string | undefined,
     port: numberFlag("port", values.port as string | undefined),
     host: values.host as string | undefined,
@@ -626,8 +624,6 @@ function parseArgs(
     ownerToken: values["owner-token"] as string | undefined,
     confirmOwnerTerminated: values["confirm-owner-terminated"] === true,
     confirmRemoteQuiesced: values["confirm-remote-quiesced"] === true,
-    domain: values.domain as string | undefined,
-    apply: values.apply as string | undefined,
   };
   return { command, positionals, flags, providedOptions };
 }
@@ -862,7 +858,6 @@ function firstRecordMaintenanceUnsupportedFlag(flags: Flags): string | undefined
     ["--tag", flags.tag],
     ["--junit", flags.junit],
     ["--json", flags.json],
-    ["--smoke", flags.smoke],
     ["--dry", flags.dry],
     ["--force", flags.force],
     ["--rerun", flags.rerun],
@@ -1364,48 +1359,6 @@ function releaseCliResources(): Effect.Effect<void> {
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-function runDockerCommand(
-  positionals: readonly string[],
-  flags: Flags,
-): Effect.Effect<number, CliFailure> {
-  return Effect.gen(function* () {
-    const { runDockerProfileCommand } = (yield* cliPromise(
-      "load Docker profile command",
-      () => import("../sandbox/docker-profile/cli.ts"),
-    )) as {
-      runDockerProfileCommand(
-        positionals: readonly string[],
-        options: { readonly json: boolean; readonly smoke: boolean },
-      ): Promise<number>;
-    };
-    return yield* cliPromise(
-      "run Docker profile command",
-      () => runDockerProfileCommand(positionals, { json: flags.json, smoke: flags.smoke }),
-    );
-  });
-}
-
-function runCacheCliCommand(
-  positionals: readonly string[],
-  flags: Flags,
-): Effect.Effect<number, CliFailure> {
-  return Effect.gen(function* () {
-    const { runCacheCommand } = (yield* cliPromise(
-      "load Provider cache command",
-      () => import("../sandbox/cache-cli.ts"),
-    )) as {
-      runCacheCommand(
-        positionals: readonly string[],
-        options: { readonly json: boolean; readonly domain?: string; readonly apply?: string },
-      ): Promise<number>;
-    };
-    return yield* cliPromise(
-      "run Provider cache command",
-      () => runCacheCommand(positionals, { json: flags.json, domain: flags.domain, apply: flags.apply }),
-    );
-  });
 }
 
 function runSandboxCliCommand(
@@ -2638,7 +2591,6 @@ function reportUnsupportedFlag(command: ReportCliCommand, flags: Flags): string 
     ["--tag", flags.tag],
     ["--junit", flags.junit],
     ["--json", command === "view" && flags.json],
-    ["--smoke", flags.smoke],
     ["--dry", flags.dry],
     ["--force", flags.force],
     ["--rerun", flags.rerun],
@@ -3378,8 +3330,17 @@ function reportViewRebuildFailure(failure: CliFailure): { readonly summary: stri
   return Object.freeze({ summary });
 }
 
-export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.gen(function* () {
+export const cliProgram = <R, E>(
+  interruption?: CliInterruptionOwnership,
+  featureCommands: readonly CliCommandContribution<R, E>[] = [],
+) => Effect.gen(function* () {
   const facts = yield* invocationFacts;
+  const feature = matchCliFeatureCommand(facts.argv, featureCommands);
+  if (feature !== undefined) {
+    return yield* feature.command.run(feature.argv).pipe(
+      Effect.mapError((cause) => cliFailure(`run ${feature.command.name} command`, cause)),
+    );
+  }
   const cliArguments = yield* CliArguments;
   const cwd = facts.cwd;
   const projectConfiguration = yield* ProjectConfiguration;
@@ -3389,7 +3350,7 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
   });
 
   if (flags.help) {
-    yield* writeStdout(t("cli.help"));
+    yield* writeStdout(t("cli.help") + renderFeatureCommandIndex(featureCommands));
     return 0;
   }
   if (command === "exp" && positionals.length === 1 && positionals[0] === "help") {
@@ -3401,9 +3362,9 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
     return 0;
   }
 
-  // Help/version and Session / Docker profile queries are config-free paths.
+  // Help/version and Session queries are config-free paths.
   // In particular, asking for usage must not read or mutate cwd/.env.
-  if (command !== "session" && command !== "docker") {
+  if (command !== "session") {
     yield* projectConfiguration.prepare(cwd).pipe(Effect.mapError((cause) => cliFailure("prepare project credentials", cause)));
   }
 
@@ -3437,9 +3398,6 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
     }
     return yield* runDebugCommand(cwd, positionals, flags);
   }
-
-  if (command === "docker") return yield* runDockerCommand(positionals, flags);
-  if (command === "cache") return yield* runCacheCliCommand(positionals, flags);
 
   if (command === "accept") {
     const locators = yield* Effect.try({

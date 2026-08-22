@@ -11,6 +11,8 @@ Record、Analysis 与 Report 是三个数据层。CLI 只进入各自的 Host SD
 | 目标行为 | 当前源码区域 |
 |---|---|
 | argv 读取、命令分派、退出状态与项目初始化 | `src/cli/program.ts` 拥有 platform-neutral command program 与唯一 flag schema；`src/cli/application.ts` 定义窄 capability contract；`src/cli/node-application.ts` 只实现 Node adapter，`src/cli/bootstrap.ts` 是唯一 Node Live Layer composition edge |
+| Feature command 挂载 | `src/cli/contribution.ts` 纯组合根命令；`src/cli/features/` 拥有具体 feature 的 argv、help 与 presentation；`src/cli/bootstrap.ts` 显式挂载 contribution 并提供其 Layer |
+| Docker profile、image cache 与 BuildKit 管理 CLI | `src/cli/features/docker.ts` 拥有 `niceeval docker` 命令树；`src/sandbox/docker-task-build-cache.ts` 与 `src/sandbox/docker-profile/` 提供 Docker-owned 领域操作，不进入通用 Sandbox contract |
 | `exp`、`--dry`、`accept` 的 list、plan、run 与 accept | `src/experiment/host/index.ts` 的 `experimentHost` |
 | Record 打开、创建、封口与 maintenance | `src/record/host/{index,runtime,types}.ts` 的 `recordHost` |
 | 由 reader 与 selection 签发 Sample | `src/analysis/host.ts` 的 `analysisHost` |
