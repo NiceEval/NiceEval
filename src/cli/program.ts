@@ -434,7 +434,7 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   return n;
 }
 
-const CLI_COMMANDS = ["check", "exp", "debug", "accept", "show", "list", "view", "clean", "migrate", "init", "run", "sandbox", "session", "docker"] as const;
+const CLI_COMMANDS = ["check", "exp", "debug", "accept", "show", "list", "view", "clean", "migrate", "init", "run", "sandbox", "session", "docker", "cache"] as const;
 type CliCommand = (typeof CLI_COMMANDS)[number];
 
 interface ParsedCliArgs {
@@ -1373,6 +1373,27 @@ function runDockerCommand(
     return yield* cliPromise(
       "run Docker profile command",
       () => runDockerProfileCommand(positionals, { json: flags.json, smoke: flags.smoke }),
+    );
+  });
+}
+
+function runCacheCliCommand(
+  positionals: readonly string[],
+  flags: Flags,
+): Effect.Effect<number, CliFailure> {
+  return Effect.gen(function* () {
+    const { runCacheCommand } = (yield* cliPromise(
+      "load Provider cache command",
+      () => import("../sandbox/cache-cli.ts"),
+    )) as {
+      runCacheCommand(
+        positionals: readonly string[],
+        options: { readonly json: boolean },
+      ): Promise<number>;
+    };
+    return yield* cliPromise(
+      "run Provider cache command",
+      () => runCacheCommand(positionals, { json: flags.json }),
     );
   });
 }
@@ -3408,6 +3429,7 @@ export const cliProgram = (interruption?: CliInterruptionOwnership) => Effect.ge
   }
 
   if (command === "docker") return yield* runDockerCommand(positionals, flags);
+  if (command === "cache") return yield* runCacheCliCommand(positionals, flags);
 
   if (command === "accept") {
     const locators = yield* Effect.try({
