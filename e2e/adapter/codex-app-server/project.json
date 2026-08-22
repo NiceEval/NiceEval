@@ -25,9 +25,10 @@
       "metadata": {
         "niceeval": {
           "schemaVersion": 3,
-          "batch": "host-2",
+          "batch": "docker-2",
           "areas": [
-            "adapter"
+            "adapter",
+            "sandbox"
           ],
           "lanes": [
             "pr",
@@ -44,7 +45,7 @@
             "vitest",
             "run"
           ],
-          "timeoutMinutes": 2,
+          "timeoutMinutes": 3,
           "harness": {
             "testkit": true
           },
@@ -52,6 +53,10 @@
           "requires": {
             "runtimes": [
               "node>=24"
+            ],
+            "docker": true,
+            "platforms": [
+              "linux"
             ]
           },
           "artifacts": [

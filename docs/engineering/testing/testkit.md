@@ -54,6 +54,7 @@ Testkit 不依赖 NiceEval、根 runner 或 scenario，保持 bootstrap 无环�
 | 命令执行、完整 ProcessReceipt、严格 JSON / NDJSON | Testkit |
 | 长驻进程、readiness、timeout 与资源终结 | Testkit 的窄接口 |
 | 临时目录与带显式策略的项目副本 | Testkit |
+| 同一宿主上跨 Repo 测试进程的具名文件锁 | Testkit |
 | 显式 source / destination 的 artifact staging | Testkit |
 | Browser、context、trace 与 screenshot | Playwright Test |
 | stdin / PTY 的产品语义 | 对应 CLI Repo，形成跨 Repo 稳定机械协议前不上移 |
@@ -320,12 +321,28 @@ export function pollUntil<T>(
   probe: () => Promise<T | undefined>,
   options: { timeoutMs: number; intervalMs: number; label: string },
 ): Promise<T>;
+
+export function acquireProcessFileLock(
+  lockPath: string,
+  options: {
+    timeoutMs: number;
+    intervalMs?: number;
+    malformedStaleAfterMs?: number;
+    label: string;
+  },
+): Promise<() => Promise<void>>;
 ```
 
 `waitForOutput` 先检查句柄从 spawn 起保存的字节，再订阅新 chunk，不能因 waiter 挂得稍晚而漏掉 readiness。
+
 `only` 只检查“恰好一个”，谓词与对象身份留在测试。`pollUntil` 只负责时间和最后一次错误；`/health`、信息文件、HTTP 状态等
 ready 条件由 Repo 提供。
+
 `withTempDir` 在系统临时目录下为每次调用创建唯一路径，并在正文成功或失败后删除。它用于短命 fixture 收据，不用于要收集的结果根、JUnit 或 trace。
+
+`acquireProcessFileLock` 只协调同一宿主上的独立 E2E 进程：同一进程对同一路径复用引用计数锁，PID 让进程终止后的
+successor 接管，随机 token 让迟到的 release 不能删除 successor 的锁。调用方给出具名 lock path，并把 release 绑定到 fixture 自己的资源终态；
+它不把 host custom provider 伪装成产品隔离边界，也不替代根 runner 的进程组或 container cleanup。
 
 ### 隔离目录与 artifact staging
 
@@ -424,6 +441,8 @@ Node 没有可移植的“目录 `rename` 且禁止替换”原语，因此提�
 
 - CLI、Runner、Package 与 Lifecycle 用 `command()`、`withProjectCopy()` 和进程收据执行仓库外用户动作；
 - Runner 与 Lifecycle 用 `only()`、`defined()` 和 `pollUntil()`核对真实结果与资源终态；
+- Runner 与 Eval 的 test-only host custom provider 用同一 `acquireProcessFileLock()` 保护固定 ledger 路径。
+  两个 owner 通过并发公开入口运行证明不会互删；
 - Report 与确定性 UI Message Stream 场景用 `withProcess()`、`waitForOutput()`和严格数据解码观察长驻进程；
 - Record 与 Lifecycle 用 `withTempDir()`证明临时资源在正文结束后消失；
 - Eval 与 Report 在 `withProjectCopy()` 的声明式 staging 中保留本轮 artifact，供 runner 收集而不作为下一 case 的输入。

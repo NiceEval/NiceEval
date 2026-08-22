@@ -21,7 +21,7 @@ Understand the trade-offs before enabling it:
 - **Results from a reused run still enter the cache.** When a pair has a stable carry identity and a terminal-result fingerprint matches, NiceEval adopts it directly and creates no Sandbox. A Sandbox Plugin's attachment owner, name, instance key, behavior revision, declared identity, order, and setup/teardown shape all belong to carry identity; changing any of them makes the slot fresh. Callback function bodies remain opaque. When behavior changes, update declared identity too or use `--rerun all`. Only unadopted Attempts execute in the shared Sandbox for this Invocation.
 - **Interruption does not roll back external state.** Resuming is the same Experiment trajectory only when cross-Attempt state can return to the boundary of the last terminal commit. Otherwise, rebuild a clean cohort from the beginning.
 - **State outside the workdir remains.** `$HOME`, `/tmp`, global installations, and background processes survive the between-task reset. Eval setup code must account for this, as described in [Write Setup Code Correctly](#write-setup-code-correctly-layer-it-by-what-changes).
-- It is incompatible with `--keep-sandbox` and `localSandbox()`.
+- It is incompatible with `--keep-sandbox`.
 
 Good use cases include locally smoke-testing a batch of Evals, running the same task N times to assess stability, and validating an integration. You get speed while retaining result adoption and the choice of `--rerun`.
 

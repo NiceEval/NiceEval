@@ -303,7 +303,7 @@ function decodeJsonRecord(
 function assertSandboxLayer(value: unknown, factory: string): void {
   if (value !== undefined && !isSandboxLayer(value)) {
     throw new TypeError(
-      `${factory} sandbox must be a SandboxLayer created by a niceeval/sandbox factory (for example dockerImage(), dockerCompose(), e2bTemplate(), or localSandbox()).`,
+      `${factory} sandbox must be a SandboxLayer created by a niceeval/sandbox factory (for example dockerSandbox(), dockerComposeSandbox(), e2bSandbox(), or vercelSandbox()).`,
     );
   }
 }

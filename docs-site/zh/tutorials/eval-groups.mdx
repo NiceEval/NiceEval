@@ -104,8 +104,7 @@ export default defineExperiment({
 这里不要写 `sandboxReuse: true`。`maxConcurrency: 4` 是整个 Experiment 的上限，不会让
 同组同时跑四条；它允许其它评估组或未分组评估用例使用剩余并发位。
 
-评估组只支持 Sandbox 型 Agent 和支持复用的 Provider。Direct Agent 与 `localSandbox()`
-不能运行评估组。
+评估组只支持 Sandbox 型 Agent 和支持复用的 Provider。Direct Agent 不能运行评估组。
 
 ## 第 4 步：先检查组 ID 和选择结果
 

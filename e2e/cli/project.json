@@ -23,7 +23,7 @@
       "metadata": {
         "niceeval": {
           "schemaVersion": 3,
-          "batch": "host-2",
+          "batch": "docker-2",
           "areas": [
             "cli"
           ],
@@ -50,6 +50,10 @@
           "requires": {
             "runtimes": [
               "node>=24"
+            ],
+            "docker": true,
+            "platforms": [
+              "linux"
             ]
           },
           "artifacts": [

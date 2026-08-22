@@ -10,7 +10,6 @@ export {
   dockerComposeSandbox,
   e2bSandbox,
   vercelSandbox,
-  localSandbox,
   defineSandboxCase,
 } from "./layer.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
@@ -78,7 +77,6 @@ export type {
   DockerSandboxTmpfsOptions,
   E2BSandboxOptions,
   VercelSandboxOptions,
-  LocalSandboxOptions,
   CustomProviderSandboxOptions,
   CustomCaseSandboxOptions,
   CustomCaseServices,

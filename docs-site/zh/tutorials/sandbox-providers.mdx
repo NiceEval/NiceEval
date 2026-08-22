@@ -51,7 +51,6 @@ export default defineExperiment({
 | `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })` | `pnpm add dockerode @types/dockerode` |
 | `vercelSandbox({ snapshotId })` | `pnpm add @vercel/sandbox` |
 | `e2bSandbox({ template })` | `pnpm add e2b` |
-| `localSandbox()` | 无需额外安装 |
 
 漏装时不会静默失败：NiceEval 在创建 sandbox 的那一刻报错并直接给出上面的安装命令，例如 `Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode`。
 
@@ -381,35 +380,9 @@ Docker 适合本地开发和标准 CI。优点是简单、可控、无云端依�
 
 Vercel Sandbox 适合需要云端隔离、更多资源或更稳定环境的任务。需要相应 token 或 OIDC 配置。
 
-## 本地目录
-
-`localSandbox()` 让 Agent 直接在你机器上的一个 Git 仓库里跑，不需要 Docker，也不需要云凭据：
-
-```ts
-import { defineExperiment } from "niceeval";
-import { localSandbox } from "niceeval/sandbox";
-
-export default defineExperiment({
-  agent: myCodingAgent,
-  sandbox: localSandbox(), // 默认用当前 Git 仓库根做工作目录
-});
-```
-
-要评别的目录，传 `localSandbox({ dir: "/path/to/repo" })`。
-
-NiceEval 只观察、不还原：Agent 改了什么会真实落在你的工作树上。NiceEval 用一份独立的私有 Git 记录采集 diff 和评分，不碰你自己的 `.git`、暂存区和未提交改动，跑完也不会执行任何 `git reset`。要保留还是丢弃 Agent 的改动，由你决定。
-
-使用前记住三件事：
-
-- Agent 以你的身份、在你的机器上执行命令。只在你信任任务和 Prompt 的时候用它。要隔离就用 Docker 或云 Provider。
-- 本地目录同一时刻只跑一个 Attempt（强制串行），`--max-concurrency` 抬不高它。
-- 连续跑多个评估用例时，前一个的改动会留在工作树上，成为后一个的起点。要每题干净起点，用容器 Provider。
-
-`{ user: "..." }` 和 `--keep-sandbox` 对本地目录不可用，会直接报错：NiceEval 不在你的机器上提权或换身份，也不需要「留存」一个本来就在你工作树里的现场。
-
 ## 自定义 Provider
 
-用 `defineSandbox` 接入其它服务。`create` 的 `feedback` 已绑定到 `sandbox.create` 阶段，可以报告分配实例、拉镜像或恢复 Sandbox 快照的状态：
+用 `defineSandbox` 接入其它服务。自定义 Provider 的作者必须负责文件系统、进程、网络与凭据隔离；NiceEval 不会为一个任意 `Sandbox` 实现自动补上这些安全边界。`create` 的 `feedback` 已绑定到 `sandbox.create` 阶段，可以报告分配实例、拉镜像或恢复 Sandbox 快照的状态：
 
 ```ts
 import { defineSandbox } from "niceeval/sandbox";

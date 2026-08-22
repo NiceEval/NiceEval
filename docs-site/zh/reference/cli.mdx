@@ -126,7 +126,7 @@ Human 输出在每条 lane 内固定依次显示 Group before-slot、physical en
 
 Sandbox materialize 节点会显示 template owner、provider、kind 和安全的 configured locator。`Exact` 只代表原样显示作者配置，不代表 image tag、远端内容或最终实例已经冻结。远端 URL 的凭据、query 与 fragment 会脱敏。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`；URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，且不输出原字符串。
 
-作者提供的本地 path、`file:` URL、Dockerfile file 或 local dir 整项显示 `Opaque`，原路径不会进入输出。只有未配置 `localSandbox.dir` 时的固定 `author-base-dir` 标签可以显示 `Exact`。env value、credential、stdin、build arg value 和 custom identity 不输出。
+作者提供的本地 path、`file:` URL 或 Dockerfile file 整项显示 `Opaque`，原路径不会进入输出。env value、credential、stdin、build arg value 和 custom identity 不输出。
 
 E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串，因此完整 locator 同样显示 `Opaque`。Human 命令计划在统一终端出口把 C0、C1、ESC、tab 与 carriage return 显示成转义文本，覆盖 template metadata 与 Shell 行。JSON 保留结构化值，并依靠 JSON string escaping。
 
@@ -143,7 +143,6 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 - `dockerSandbox({ source: { type: "dockerfile", context } })`
 - `vercelSandbox({ snapshotId })`
 - `e2bSandbox({ template })`
-- `localSandbox()`
 
 {/* GENERATED:BEGIN cli-flags */}
 

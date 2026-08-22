@@ -202,6 +202,9 @@ Lifecycle Repo 保留原生测试 runner 的默认并行。每条 case 按场景
 - 下一次独立消费者可以正常启动；
 - cleanup 失败不会遮蔽原始失败。
 
+Managed-process 的确定性 owner 只保留 Docker Sandbox 形态，验证双工 bytes、stdout/stderr 分流、EOF、自然退出、
+terminate 与 Attempt cleanup。它不再用 host provider 做对比；host 进程变量与个人配置不是该生命周期命题的输入。
+
 ### process-group-terminal-state
 
 `e2e/lifecycle/test/process-group-zombie-cleanup.test.ts` 是安装后 Testkit `ProcessHandle` 的 Linux process-group

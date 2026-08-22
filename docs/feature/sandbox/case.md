@@ -375,7 +375,6 @@ folder eval 的测试文件与构建输入共址时，materializer 与普通上�
 | Docker | image | Dockerfile / context | 原生 Compose case |
 | E2B | template | 单 Dockerfile 构建成内容寻址 template | 不声明;兑现 DinD 或原生组网全部义务并通过真机契约测试后才开放 |
 | Vercel Sandbox | snapshot | 不声明 | 不声明 |
-| Local | 宿主机即 Sandbox,无构建结果参数 | 不声明 | 不声明 |
 
 云 provider 不因为「是完整 Linux VM」就自动支持云端 Compose；未通过契约测试就不声明。selector 应在运行前排除不支持的配对；若仍选中，physical planning 聚合报错并保持整个 Run 零资源，而不是把配置错误记成 `skipped`。
 没有声明 Compose 能力的 provider 仍完整支持单 Sandbox 实例；外部编排继续作为 provider 无对应实现时的用户侧退路(见 [Library · 沙箱预置放哪](library.md#沙箱预置放哪))。

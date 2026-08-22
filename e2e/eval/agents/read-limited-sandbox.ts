@@ -1,78 +1,11 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile, access, cp, open, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, access, cp } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
+import { acquireProcessFileLock } from "@niceeval/testkit";
 import type { CommandOptions, CommandResult, Sandbox, SuccessfulCommandResult } from "niceeval/sandbox";
 
 const MAXIMUM_SINGLE_READ_BYTES = 4_000_000;
-const HOST_LEDGER_LOCK = "/tmp/niceeval-limited-local-e2e.lock";
-
-function errorCode(error: unknown): string | undefined {
-  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
-    ? error.code
-    : undefined;
-}
-
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return errorCode(error) === "EPERM";
-  }
-}
-
-async function moveExactLockAside(expected: string, suffix: string): Promise<void> {
-  const current = await readFile(HOST_LEDGER_LOCK, "utf8").catch(() => undefined);
-  if (current !== expected) return;
-  const quarantine = `${HOST_LEDGER_LOCK}.${suffix}`;
-  await rename(HOST_LEDGER_LOCK, quarantine).catch((error: unknown) => {
-    if (errorCode(error) !== "ENOENT") throw error;
-  });
-  await rm(quarantine, { force: true });
-}
-
-/**
- * This E2E custom Provider deliberately runs on the host, while NiceEval's
- * fallback ledger path is fixed for isolated VMs. Serialize only this fixture
- * across native test processes so concurrent takeover matrices cannot remove
- * one another's private Git ledger. The exact token prevents stale cleanup
- * from deleting a successor's lock.
- */
-async function acquireHostLedgerLock(): Promise<() => Promise<void>> {
-  const token = `${process.pid}:${randomUUID()}`;
-  const deadline = Date.now() + 120_000;
-  for (;;) {
-    try {
-      const handle = await open(HOST_LEDGER_LOCK, "wx", 0o600);
-      try {
-        await handle.writeFile(token, "utf8");
-      } finally {
-        await handle.close();
-      }
-      return async () => moveExactLockAside(token, `released-${randomUUID()}`);
-    } catch (error) {
-      if (errorCode(error) !== "EEXIST") throw error;
-    }
-
-    const current = await readFile(HOST_LEDGER_LOCK, "utf8").catch(() => undefined);
-    const ownerPid = current?.match(/^(\d+):/u)?.[1];
-    const malformedAgeMs = ownerPid === undefined
-      ? await stat(HOST_LEDGER_LOCK).then(({ mtimeMs }) => Date.now() - mtimeMs, () => 0)
-      : 0;
-    if (
-      (ownerPid !== undefined && !processIsAlive(Number(ownerPid))) ||
-      (ownerPid === undefined && malformedAgeMs > 5_000)
-    ) {
-      await moveExactLockAside(current ?? "", `stale-${randomUUID()}`);
-      continue;
-    }
-    if (Date.now() >= deadline) {
-      throw new Error(`timed out waiting for host ledger fixture lock ${HOST_LEDGER_LOCK}`);
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
-  }
-}
+const HOST_LEDGER_LOCK = "/tmp/niceeval-e2e-host-sandbox-ledger.lock";
 
 function pathIn(workdir: string, path: string): string {
   return isAbsolute(path) ? path : resolve(workdir, path);
@@ -80,6 +13,7 @@ function pathIn(workdir: string, path: string): string {
 
 function runProcess(
   workdir: string,
+  controlledEnv: NodeJS.ProcessEnv,
   command: string,
   args: readonly string[],
   options: CommandOptions = {},
@@ -87,7 +21,7 @@ function runProcess(
   return new Promise((resolveResult, reject) => {
     const child = spawn(command, [...args], {
       cwd: pathIn(workdir, options.cwd ?? workdir),
-      env: { ...process.env, ...options.env },
+      env: { ...controlledEnv, ...options.env },
     });
     let stdout = "";
     let stderr = "";
@@ -119,11 +53,11 @@ function runProcess(
       options.signal?.removeEventListener("abort", abort);
       void callbacks.then(() => {
         if (termination === "abort") {
-          reject(options.signal?.reason ?? new Error("limited local Sandbox command aborted"));
+          reject(options.signal?.reason ?? new Error("read-limited Sandbox command aborted"));
           return;
         }
         if (termination === "timeout") {
-          reject(new Error(`limited local Sandbox command timed out after ${options.timeoutMs}ms`));
+          reject(new Error(`read-limited Sandbox command timed out after ${options.timeoutMs}ms`));
           return;
         }
         resolveResult({ stdout, stderr, exitCode: code ?? 0 });
@@ -132,13 +66,37 @@ function runProcess(
   });
 }
 
-/** Public custom-provider boundary whose file API rejects every read over 4,000,000 bytes. */
-export async function createLimitedLocalSandbox(workdir = process.cwd()): Promise<Sandbox> {
-  const releaseHostLedgerLock = await acquireHostLedgerLock();
+/** Test-only custom provider whose file API rejects every read over 4,000,000 bytes. */
+export async function createReadLimitedSandbox(workdir = process.cwd()): Promise<Sandbox> {
+  const releaseHostLedgerLock = await acquireProcessFileLock(HOST_LEDGER_LOCK, {
+    timeoutMs: 120_000,
+    label: "read-limited provider host ledger lock",
+  });
+  const runtimeRoot = resolve(workdir, ".niceeval-e2e-runtime", "read-limited-provider");
+  const home = resolve(runtimeRoot, "home");
+  const codexHome = resolve(runtimeRoot, "codex-home");
+  const tmpdir = resolve(runtimeRoot, "tmp");
+  try {
+    await Promise.all([
+      mkdir(home, { recursive: true }),
+      mkdir(codexHome, { recursive: true }),
+      mkdir(tmpdir, { recursive: true }),
+    ]);
+  } catch (error) {
+    await releaseHostLedgerLock();
+    throw error;
+  }
+  const controlledEnv: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    HOME: home,
+    CODEX_HOME: codexHome,
+    TMPDIR: tmpdir,
+    LANG: "C.UTF-8",
+  };
   const runCommand = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
-    runProcess(workdir, command, args, options);
+    runProcess(workdir, controlledEnv, command, args, options);
   const runShell = (script: string, options: CommandOptions = {}) =>
-    runProcess(workdir, "bash", ["-c", script], options);
+    runProcess(workdir, controlledEnv, "bash", ["-c", script], options);
   const orThrow = async (result: Promise<CommandResult>): Promise<SuccessfulCommandResult> => {
     const settled = await result;
     if (settled.exitCode !== 0) throw new Error(settled.stderr || settled.stdout || `command exited ${settled.exitCode}`);
@@ -157,7 +115,7 @@ export async function createLimitedLocalSandbox(workdir = process.cwd()): Promis
     await writeFile(target, content);
   };
   return {
-    sandboxId: "limited-local-e2e",
+    sandboxId: "read-limited-e2e",
     workdir,
     otlpHost: "localhost",
     runCommand,

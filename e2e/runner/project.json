@@ -54,6 +54,9 @@
           "requires": {
             "runtimes": [
               "node>=24"
+            ],
+            "platforms": [
+              "linux"
             ]
           },
           "artifacts": [

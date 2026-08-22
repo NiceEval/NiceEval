@@ -992,10 +992,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   }
 
   // provider 级独占串行闸(见 docs/runner.md「调度:有界并发」):声明了 exclusive 的 provider
-  // (如 local——同一棵真实工作树不允许并发写)按 provider 名共享一把 permit=1 的信号量,
+  // 按 provider 名共享一把 permit=1 的信号量,
   // --max-concurrency / 实验级 maxConcurrency 都不解除。核心不认 provider 名分支:这里只读
   // physical plan 的中性 admission/lane 字段；相同 lane 共用一把锁，表示它们竞争同一份
-  // 不可并发底层资源，不是 `provider === "local"` 的行为分支。
+  // 不可并发底层资源。
   const providerExclusiveSems = new Map<string, Effect.Semaphore>();
   for (const attempt of attempts) {
     if (
@@ -2884,7 +2884,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           });
         // ③ 全局并发位 → sharedState（如声明，先于 Eval lock）→ 派发时刻试锁 → preflight
         // → 实验级 setup → provider/Sandbox/body。
-        // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁。
+        // 独占串行 provider:同一 provider 名的所有 attempt 共享一把 permit=1 的锁。
         // sharedState 获取与 Experiment setup 都是宿主协调，不能让等待者占着该 Provider lane；
         // permit 只包真正触及 provider、Sandbox 与 Attempt body 的执行段。
         const exclusiveSem = exclusiveSemFor(a.plan);

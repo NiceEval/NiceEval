@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { acquireManagedProcess, completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
-import { dockerSandbox, localSandbox, shell } from "niceeval/sandbox";
+import { dockerSandbox, shell } from "niceeval/sandbox";
 
 const evidenceCoverage = {
   ...completeEvidenceCoverage,
@@ -23,8 +23,7 @@ export const lifecycleSandbox = dockerSandbox({
   },
 });
 
-export const managedProcessLocalSandbox = localSandbox({ dir: process.cwd() });
-export const managedProcessDockerSandbox = dockerSandbox({
+export const managedProcessSandbox = dockerSandbox({
   source: { type: "image", image: NODE_IMAGE },
   user: "node",
   resources: { cpus: 1, memoryBytes: 512 * 1024 ** 2, pidsLimit: 128 },

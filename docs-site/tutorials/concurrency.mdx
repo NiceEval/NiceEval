@@ -67,7 +67,7 @@ When a run feels slow, concurrency is only one control. First identify where the
 | Experiment concurrency cap | `maxConcurrency` in the Experiment file | How many Attempts this Experiment runs at the same time | Counted separately; values from two terminals add together |
 | Shared-state lease | `sharedState.key` in the Experiment file | The entire restore, execution, and write-back window for the same checkpoint | Windows with the same key run serially |
 
-Global precedence is `--max-concurrency` → `maxConcurrency` in config → the current Sandbox Provider's recommended default (`docker` 10, `e2b` 20, `vercel` 1, `local` 1). The recommendation reflects Provider-side constraints. Use `--max-concurrency` to cap the rate of your own Agent interface.
+Global precedence is `--max-concurrency` → `maxConcurrency` in config → the current Sandbox Provider's recommended default (`docker` 10, `e2b` 20, `vercel` 1). The recommendation reflects Provider-side constraints. Use `--max-concurrency` to cap the rate of your own Agent interface.
 
 ```bash
 npx niceeval exp compare --max-concurrency 19
@@ -213,7 +213,7 @@ There are four boundaries:
 ## Boundaries
 
 - A concurrency cap controls resource use, not spending. Use `--budget` to cap cost.
-- Providers such as `local` that declare exclusive serialization have a Provider-level serial limit. `--max-concurrency` does not remove it; it is a correctness constraint, not a scheduling option.
+- Providers that declare exclusive serialization have a Provider-level serial limit. `--max-concurrency` does not remove it; it is a correctness constraint, not a scheduling option.
 - For Agent services that bill or rate-limit by the number of concurrent runs, setting a global cap exactly at the service limit is unstable: a slot released for backoff is immediately filled by a new Attempt, so service-side concurrency stays at the limit. In one terminal, leave headroom with an Experiment-level `maxConcurrency`. Across terminals, values add together, so lower each side for an account-level quota or use external orchestration.
 - Experiments that declare `sandboxReuse: true` run serially inside each Sandbox and in parallel across Sandboxes. See [Reuse Sandboxes](/tutorials/sandbox-reuse).
 - Eval groups serialize stably within a group while different groups still run in parallel. See [Eval Groups](/tutorials/eval-groups).

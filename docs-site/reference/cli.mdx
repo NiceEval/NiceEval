@@ -126,7 +126,7 @@ Within each lane, Human output always displays Group before-slot, physical enter
 
 A Sandbox materialize node shows the template owner, Provider, kind, and safe configured locator. `Exact` means only that the author's configuration is displayed verbatim; it does not mean an image tag, remote content, or final instance has been frozen. Credentials, query strings, and fragments in a remote URL are redacted. A Docker image displays `Exact` only for a conservative credential-safe reference, optionally with a standard `sha256` digest. A URL, non-digest userinfo, or other unsafe syntax displays the whole item as `Opaque` and does not print its original string.
 
-An author-supplied local path, `file:` URL, Dockerfile file, or local directory displays as `Opaque` as a whole; its original path never enters output. Only the fixed `author-base-dir` label when `localSandbox.dir` is not configured may display as `Exact`. Environment values, credentials, stdin, build-argument values, and custom identity are not output.
+An author-supplied local path, `file:` URL, or Dockerfile file displays as `Opaque` as a whole; its original path never enters output. Environment values, credentials, stdin, build-argument values, and custom identity are not output.
 
 An E2B template name and Vercel snapshot ID are Provider-managed arbitrary strings, so the full locator likewise displays as `Opaque`. At the shared terminal boundary, the Human command plan renders C0, C1, ESC, tab, and carriage return as escaped text in both template metadata and Shell lines. JSON retains structured values and relies on JSON string escaping.
 
@@ -143,7 +143,6 @@ The following table is generated from the CLI flag-parsing table. Any Flag outsi
 - `dockerSandbox({ source: { type: "dockerfile", context } })`
 - `vercelSandbox({ snapshotId })`
 - `e2bSandbox({ template })`
-- `localSandbox()`
 
 {/* GENERATED:BEGIN cli-flags */}
 

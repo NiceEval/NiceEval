@@ -32,7 +32,7 @@ import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
   同一条实验轨迹。否则应换干净 cohort 从头重建。
 - **工作目录之外的状态会留下。** `$HOME`、`/tmp`、全局安装、后台进程都活过题间重置。
   评估的准备代码必须能接受这一点（下面「把准备代码写对」）。
-- 与 `--keep-sandbox`、`localSandbox()` 互斥。
+- 与 `--keep-sandbox` 互斥。
 
 适合的场景：本地冒烟一批评估、同一道题重复跑 N 次看稳定性、验证接线——要的是快，
 同时保留结果沿用与 `--rerun` 的选择。

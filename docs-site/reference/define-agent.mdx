@@ -582,9 +582,9 @@ The stderr counterpart to `onStdout`; complete stderr remains in `CommandResult`
 readonly user?: string;
 ```
 
-Overrides the execution identity for this command. When omitted, it uses the Sandbox default identity declared by the environment itself: Docker image `USER`, Compose service `user:`, E2B template default user, or the current host user. See Execution identity in `docs/feature/sandbox/library.md`.
+Overrides the execution identity for this command. When omitted, it uses the Sandbox default identity declared by the environment itself: Docker image `USER`, Compose service `user:`, or E2B template default user. See Execution identity in `docs/feature/sandbox/library.md`.
 
-The semantics are consistent across Providers, while each maps it to its native mechanism: docker uses `exec --user`; E2B uses `{ user }`; Vercel accepts only `"root"` and maps it to `{ sudo: true }`, with other values erroring; local errors for any value. A Provider that is root for the whole lifetime treats it as a no-op. A Provider that cannot change identity at all can reject it, but **omission and an explicit value keep the same semantics** across Providers.
+The semantics are consistent across Providers, while each maps it to its native mechanism: Docker uses `exec --user`; E2B uses `{ user }`; Vercel accepts only `"root"` and maps it to `{ sudo: true }`, with other values erroring. A Provider that is root for the whole lifetime treats it as a no-op. A Provider that cannot change identity at all can reject it, but **omission and an explicit value keep the same semantics** across Providers.
 
 #### `timeoutMs`
 
