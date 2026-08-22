@@ -38,16 +38,17 @@ src/
 │                           #   Sandbox 接口、resolve、各 provider
 │
 ├─ o11y/                    # transcript 归一化 → 标准事件流;OTLP 接收与归一;派生事实与成本
-├─ experiment/host/         # experimentHost；公开 Host SDK，供 exp / debug / accept 组合
+├─ eval/{host,cli}/         # Eval catalog Host 与 list contribution
+├─ experiment/host/         # experimentHost；公开 Host SDK 与 Experiment CLI contributions
 ├─ runner/                  # experimentHost 后的调度、生命周期、缓存与 receipt 实现
 ├─ coordination/            # coordinationHost；execution claim 与 Record lease 协调
-├─ record/                  # recordHost；持久布局 owner，definition 与 codec 保持包私有
+├─ record/                  # recordHost + Record CLI；持久布局 owner，definition 与 codec 保持包私有
 ├─ analysis/                # analysisHost 签发 Sample；作者定义与 query / aggregate
-├─ report/                  # 作者 DSL + reportHost；单目标页与全站 revision 的执行、呈现与导出
-├─ show/                    # 终端命令胶水，只消费 Report Host 的单目标输出
-├─ view/                    # 浏览器 Host shell，只消费已闭合的站点 bytes
+├─ report/                  # 作者 DSL + reportHost + Report CLI；单目标页与全站 revision
+├─ project/                 # projectHost + init contribution
+├─ docker/cli/              # Docker 专属 profile/cache/BuildKit 命令树
 │
-└─ cli.ts                   # CLI 入口
+└─ cli/                     # 中立 router、应用 capability、bootstrap 与唯一 runtime
 ```
 
 逐个能力落到哪个文件,查 [Source Map](source-map.md) ——那份表是源码定位的单一出处,本图只表达分层。
@@ -86,21 +87,63 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 
 ## 公开 Host composition SDK
 
-下面五个 package export 都是公开、受支持的高级 Host composition SDK。NiceEval CLI 是它们的一个调用者；
+下面各 package export 都是公开、受支持的高级 Host composition SDK。NiceEval CLI 是它们的一个调用者；
 替代 CLI、Web host 或深度应用集成者也可以按相同边界组合。普通 Eval、Analysis、Report 作者继续使用各自的
 作者 API，通常不导入这些 Host entry。
 
 | 导入面 | Host 操作 | CLI 映射 | 不授予的能力 |
 |---|---|---|---|
-| `niceeval/experiment/host` | `experimentHost.list`、`experimentHost.plan`、具名只读 `experimentHost.debug()`、`experimentHost.run`、`experimentHost.accept` | `exp`、`debug` 与 `accept` | 重新拼装 selector、Runner 或 adoption 内部状态 |
+| `niceeval/eval/host` | `evalHost.catalog` | `list` | Eval definition、discovery loader 或 Runner 类型 |
+| `niceeval/experiment/host` | `catalog`、`check`、`invocation.plan/run`、`debug`、`rename`、`teardown`、`accept`、project-current 与 Invocation status 操作 | `check`、`exp`、`debug`、`accept`、`session` | 重新拼装 selector、Runner、lease 或 adoption 内部状态 |
 | `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
-| `niceeval/record` / `niceeval/record/host` | `recordHost.current.openRead`、`recordHost.current.createRun`、`recordHost.current.createReferenceRun`；`recordHost.maintenance.open` | Record I/O | durable layout、generic Attachment、family 或 migration registration |
+| `niceeval/record` / `niceeval/record/host` | current read/write、自动 migration 与 typed clean/migrate 操作 | Record I/O、`clean`、`migrate` | durable layout、generic Attachment、family 或 migration registration |
 | `niceeval/analysis/host` | `analysisHost.openSample` | Sample 签发 | 作者构造 Sample、注册 AnalysisInput，或让 Report author 取得 Record reader |
-| `niceeval/report/host` | `reportHost.show`、`reportHost.serve`、`reportHost.export` | `show`、`view` 与静态 export | loader、renderer、watcher 或 Record reader 的可组合接口 |
+| `niceeval/report/host` | 单目标 show、整站 build、scoped view 与 static export | `show`、`view` 与 `view --out` | loader、renderer、watcher 或 Record reader 的可组合接口 |
+| `niceeval/project/host` | `projectHost.initialize` | `init` | Node filesystem、manifest loader 或模板写入细节 |
 
 “公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
 Record definition、fixed family catalog 与 migration step factory 仍是 package-private；第三方不能注册 family
-或 migration。五个入口也不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
+或 migration。这些入口也不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
+
+## CLI feature composition
+
+CLI 是命令的中立 host，不是所有命令背后领域能力的 owner。根程序只拥有 argv 的根命令切分、稳定 help 顺序、
+重复命令拒绝、统一输出端口和唯一 Effect runtime。Core 与每个具体 feature 各自导出不可变的 command
+contribution；Node composition edge 显式组合这些值，并提供 handler 所要求的 Layer。
+
+```ts
+interface CliCommandContribution<R, E> {
+  readonly name: string;
+  readonly summary: string;
+  readonly options: Readonly<Record<string, CliOptionDefinition>>;
+  readonly run: (argv: readonly string[]) => Effect.Effect<number, E, R>;
+}
+```
+
+Contribution 是纯值，不是 `Context.Tag`、全局 registry 或模块加载副作用。
+它也不携带或私自提供 Layer。
+
+Host SDK 同样是普通冻结对象：operation 是返回 `Effect` 的函数，不因为“属于一个领域”就变成 Service。
+只有需要由应用替换或注入的外部 I/O、平台能力和有状态资源才使用 `Context.Tag`，例如文件系统、终端、Docker
+client 或 Record coordination。`Layer` 只负责在 bootstrap 组合这些 Service；真正持有连接、lease 或 finalizer
+的实现才使用 scoped Layer。一个 Feature 可以依赖另一个 Host 或 Service，但不能在 handler 内自行 `provide`
+一套 Live Layer，也不能启动内层 runtime。
+
+每个 contribution 连同 parser shape、help metadata 和 handler 一起冻结。根 router 聚合这些 schema，只为让
+`parseArgs` 在不知道命令位置时取得 indexed tokens；第一个 positional token 是 root，投影时只删除这一个
+token，root 前后的 option 与 `--` 都保持原顺序。聚合 parse 不是 option 的语义验收：命令取得投影后的 argv
+后必须用自己的 schema 再做语法检查。因此其它命令也拥有的 `--json` 不会让 `sandbox list --json` 合法，它会在
+Sandbox 读取凭据、配置或 Provider 之前以 unknown option 失败。
+
+Feature 自己拥有子命令、有效 option、command help、human/JSON presentation 与 typed failure。应用级
+`--help` / `--version`、最终 failure/exit、OS signal 和唯一 Effect runtime 仍由 CLI core/bootstrap 拥有。
+因此中央 CLI 不知道 `docker profile`、`docker cache inventory` 或 `docker cache gc` 的参数。
+
+Docker CLI contribution 和 Docker Sandbox adapter 可以依赖同一个 Docker-owned client capability；
+这不把 Docker image、BuildKit、profile 或 GC 提升为通用 Sandbox 能力。E2B、Vercel 与未来 provider 可以
+贡献完全不同的命令树，也可以不贡献命令。命令描述和路由保持纯函数；无状态 client 使用普通 Layer，
+真正持有连接、builder 或 finalizer 的实现才使用 scoped Layer。提供 Layer 不得使 `niceeval --help`
+或普通 core command 在启动时探测 Docker。
 
 `niceeval debug` 有独立的只读命令数据流：
 

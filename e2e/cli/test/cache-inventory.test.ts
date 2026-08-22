@@ -9,7 +9,30 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
   await cliE2E.case("cache-inventory", {}, async ({ commands: { niceeval }, paths }) => {
     const fakeBin = join(paths.projectRoot, "fixtures/cache-inventory/bin");
     const stateRoot = join(paths.projectRoot, "state");
-    const result = await niceeval.run(["cache", "inventory", "--json"], {
+    const rootHelp = await niceeval.run(["--help"]);
+    expect(rootHelp.exitCode, rootHelp.diagnostic()).toBe(0);
+    expect(rootHelp.stdout).toContain("niceeval docker");
+    expect(rootHelp.stdout).not.toContain("niceeval cache");
+
+    const dockerHelp = await niceeval.run(["docker", "--help"]);
+    expect(dockerHelp.exitCode, dockerHelp.diagnostic()).toBe(0);
+    expect(dockerHelp.stdout).toContain("profile");
+    expect(dockerHelp.stdout).toContain("cache");
+
+    const cacheHelp = await niceeval.run(["docker", "cache", "--help"]);
+    expect(cacheHelp.exitCode, cacheHelp.diagnostic()).toBe(0);
+    expect(cacheHelp.stdout).toContain("docker cache inventory");
+    expect(cacheHelp.stdout).toContain("docker cache gc");
+
+    const unknownDocker = await niceeval.run(["docker", "volume", "list"]);
+    expect(unknownDocker.exitCode, unknownDocker.diagnostic()).not.toBe(0);
+    expect(unknownDocker.stderr).toContain('Unknown Docker command "volume"');
+
+    const removedRoot = await niceeval.run(["cache", "inventory", "--json"]);
+    expect(removedRoot.exitCode, removedRoot.diagnostic()).not.toBe(0);
+    expect(removedRoot.stderr).toContain('Unknown command "cache"');
+
+    const result = await niceeval.run(["docker", "cache", "inventory", "--json"], {
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
     });
 
@@ -41,8 +64,17 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
     expect(result.stdout).not.toContain("evictable");
     expect(result.stdout).not.toContain("planId");
 
+    const human = await niceeval.run(["--", "docker", "cache", "inventory"], {
+      env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
+    });
+    expect(human.exitCode, human.diagnostic()).toBe(0);
+    expect(human.stderr).toBe("");
+    expect(human.stdout).toContain("Docker images · managed");
+    expect(human.stdout).toContain("BuildKit · unverified shared-builder capacity");
+    expect(human.stdout).toContain("NiceEval ownership unknown · not eligible for NiceEval GC");
+
     const domainId = (document.domains[0] as { domainId: string }).domainId;
-    const detail = await niceeval.run(["cache", "inventory", "--domain", domainId, "--json"], {
+    const detail = await niceeval.run(["docker", "cache", "inventory", "--domain", domainId, "--json"], {
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
     });
     expect(detail.exitCode, detail.diagnostic()).toBe(0);
@@ -52,7 +84,7 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
       providerObservations: [],
     });
 
-    const preview = await niceeval.run(["cache", "gc", "--domain", domainId, "--json"], {
+    const preview = await niceeval.run(["docker", "cache", "gc", "--domain", domainId, "--json"], {
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
     });
     expect(preview.exitCode, preview.diagnostic()).toBe(0);
@@ -60,7 +92,7 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
     expect(previewDocument.format).toBe("niceeval.cache-gc-plan");
     expect(previewDocument.plan.candidates).toEqual([]);
 
-    const apply = await niceeval.run(["cache", "gc", "--domain", domainId, "--apply", previewDocument.plan.planId, "--json"], {
+    const apply = await niceeval.run(["docker", "cache", "gc", "--domain", domainId, "--apply", previewDocument.plan.planId, "--json"], {
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
     });
     expect(apply.exitCode, apply.diagnostic()).toBe(0);

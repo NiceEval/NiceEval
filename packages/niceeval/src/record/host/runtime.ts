@@ -91,6 +91,7 @@ import type {
 } from "../model/read-state.ts";
 import {
   RecordPathAlreadyExists,
+  RecordMaintenanceBusy,
   RecordPathTypeInvalid,
   type RecordFileSystemError,
 } from "../platform/errors.ts";
@@ -111,6 +112,7 @@ import {
   RecordHandleInvalid,
   RecordMigrationInvalid,
   RecordMigrationRequired,
+  RecordAutoMigrationGitSaveRequired,
   RecordMigrationGitRestoreRequired,
   RecordMigrationInterruptedState,
   RecordMigrationPlanStale,
@@ -146,6 +148,10 @@ import {
 import { RECORD_JSON_MAXIMUM_BYTES, encodeRecordJsonUtf8 } from "../writer/limits.ts";
 import type { RecordWriteError } from "../writer/types.ts";
 import {
+  cleanIncompleteRuns,
+  inspectIncompleteRuns,
+} from "../maintenance/runtime.ts";
+import {
   attemptWriteSessionBrand,
   runWriteSessionBrand,
   selectedAttemptRefBrand,
@@ -163,7 +169,12 @@ import {
   type ReadableRun,
   type RecordFormatInspection,
   type RecordHostSDK,
+  type RecordCleanOperationPlan,
+  type RecordMaintenanceOperationFailure,
   type RecordAttachmentMigrationTarget,
+  type RecordAutomaticMigrationResult,
+  type RecordMigrateOperationPlan,
+  type RecordMigrateReadyPlan,
   type RecordMaintenanceSession,
   type RecordMigrationPlan,
   type RecordMigrationReceipt,
@@ -3389,11 +3400,230 @@ function openMaintenance(input: {
   });
 }
 
+/**
+ * The ordinary-entry migration transaction deliberately closes the read
+ * Scope before asking Coordination for maintenance. Returning from here also
+ * closes maintenance, so the caller's next open is necessarily fresh.
+ */
+function ensureAutomaticMigration(input: {
+  readonly root: RecordRoot;
+}) {
+  return Effect.gen(function* () {
+    const fileSystem = yield* RecordFileSystem;
+    if ((yield* fileSystem.pathKind(recordPortablePath(input.root, "record.json"))) === "missing") {
+      return Object.freeze({ state: "record-missing" as const });
+    }
+
+    const checked = yield* Effect.either(Effect.scoped(openCurrentRead(input)));
+    if (Either.isRight(checked)) {
+      return Object.freeze({ state: "already-current" as const });
+    }
+    if (!(checked.left instanceof RecordMigrationRequired)) {
+      return yield* Effect.fail(checked.left);
+    }
+
+    return yield* Effect.scoped(Effect.gen(function* () {
+      const session = yield* openMaintenance(input);
+      const plan = yield* session.planMigrate();
+      if (plan.state !== "migration-required") {
+        return yield* Effect.fail(checked.left);
+      }
+      if (plan.backup.state !== "git-restore-point") {
+        return yield* Effect.fail(new RecordAutoMigrationGitSaveRequired({
+          code: "record-auto-migration-git-save-required",
+        }));
+      }
+      const receipt = yield* session.applyMigrate(plan).pipe(
+        Effect.catchTag("RecordMigrationGitRestoreRequired", () =>
+          Effect.fail(new RecordAutoMigrationGitSaveRequired({
+            code: "record-auto-migration-git-save-required",
+          }))),
+      );
+      return Object.freeze({
+        state: "migrated" as const,
+        restoreCommit: plan.backup.commit,
+        attachments: Object.freeze(
+          receipt.state === "migrated" ? [...receipt.attachments] : [],
+        ),
+      }) satisfies RecordAutomaticMigrationResult;
+    }));
+  });
+}
+
+interface CodedRecordMaintenanceFailure {
+  readonly code: string;
+}
+
+function closeMaintenanceFailure(
+  error: CodedRecordMaintenanceFailure,
+): RecordMaintenanceOperationFailure {
+  if (error instanceof RecordMaintenanceBusy) {
+    return Object.freeze({
+      _tag: "RecordMaintenanceBusy" as const,
+      code: "record-maintenance-busy" as const,
+    });
+  }
+  if (error instanceof RecordMigrationInterruptedState) {
+    return Object.freeze({
+      _tag: "RecordMigrationInterrupted" as const,
+      code: "record-migration-interrupted" as const,
+      ...(error.restoreCommit === undefined ? {} : { restoreCommit: error.restoreCommit }),
+      ...(error.restoreSafe === undefined ? {} : { restoreSafe: error.restoreSafe }),
+    });
+  }
+  if (error instanceof RecordMigrationPlanStale) {
+    return Object.freeze({
+      _tag: "RecordMigrationPlanStale" as const,
+      code: "record-migration-plan-stale" as const,
+    });
+  }
+  if (error instanceof RecordMigrationGitRestoreRequired) {
+    return Object.freeze({
+      _tag: "RecordMigrationGitRestoreRequired" as const,
+      code: "record-migration-git-restore-required" as const,
+    });
+  }
+  if (error instanceof RecordMigrationInvalid) {
+    return Object.freeze({
+      _tag: "RecordMigrationInvalid" as const,
+      code: "record-migration-invalid" as const,
+    });
+  }
+  if (error instanceof RecordMigrationRecoveryRequired) {
+    return Object.freeze({
+      _tag: "RecordMigrationRecoveryRequired" as const,
+      code: "record-migration-recovery-required" as const,
+      causeCode: error.causeCode,
+      restoreCommit: error.restoreCommit,
+      restoreSafe: error.restoreSafe,
+    });
+  }
+  if (error instanceof RecordFormatUnsupported) {
+    return Object.freeze({
+      _tag: "RecordFormatUnsupported" as const,
+      code: "record-format-unsupported" as const,
+    });
+  }
+  if (error instanceof RecordMigrationRequired) {
+    return Object.freeze({
+      _tag: "RecordMigrationRequired" as const,
+      code: "record-migration-required" as const,
+    });
+  }
+  return Object.freeze({
+    _tag: "RecordMaintenanceOperationFailed" as const,
+    code: error.code,
+  });
+}
+
+const migrateOperationPlans = new WeakMap<RecordMigrateReadyPlan, RecordMigrationPlan>();
+
+function planCleanOperation(input: { readonly root: RecordRoot }) {
+  return inspectIncompleteRuns(input).pipe(
+    Effect.map((incomplete): RecordCleanOperationPlan => incomplete.length === 0
+      ? Object.freeze({ _tag: "RecordCleanAlreadyClean" as const })
+      : Object.freeze({
+          _tag: "RecordCleanConfirmationRequired" as const,
+          runIds: Object.freeze(incomplete.map(({ runId }) => runId)),
+        })),
+    Effect.mapError(closeMaintenanceFailure),
+  );
+}
+
+function applyCleanOperation(input: {
+  readonly root: RecordRoot;
+  readonly plan: Extract<RecordCleanOperationPlan, { readonly _tag: "RecordCleanConfirmationRequired" }>;
+}) {
+  return cleanIncompleteRuns({ root: input.root, runIds: input.plan.runIds }).pipe(
+    Effect.map((receipt) => Object.freeze({
+      _tag: "RecordCleanApplied" as const,
+      deleted: Object.freeze([...receipt.deleted]),
+      skipped: Object.freeze([...receipt.skipped]),
+    })),
+    Effect.mapError(closeMaintenanceFailure),
+  );
+}
+
+function planMigrateOperation(input: { readonly root: RecordRoot }) {
+  return Effect.scoped(Effect.gen(function* () {
+    const session = yield* openMaintenance(input);
+    const plan = yield* session.planMigrate();
+    if (plan.state === "already-current") {
+      return Object.freeze({
+        _tag: "RecordMigrationAlreadyCurrent" as const,
+        format: plan.format,
+      }) satisfies RecordMigrateOperationPlan;
+    }
+    if (plan.state === "unsupported-format") {
+      return Object.freeze({
+        _tag: "RecordMigrationUnsupported" as const,
+        format: plan.format,
+      }) satisfies RecordMigrateOperationPlan;
+    }
+    if (plan.backup.state !== "git-restore-point") {
+      return Object.freeze({
+        _tag: "RecordMigrationRestoreRequired" as const,
+        format: plan.format,
+        backup: plan.backup,
+        attachments: plan.attachments,
+      }) satisfies RecordMigrateOperationPlan;
+    }
+    const closed = Object.freeze({
+      _tag: "RecordMigrationReady" as const,
+      format: plan.format,
+      restoreCommit: plan.backup.commit,
+      attachments: plan.attachments,
+    });
+    migrateOperationPlans.set(closed, plan);
+    return closed satisfies RecordMigrateOperationPlan;
+  })).pipe(
+    Effect.catchTag("RecordFormatUnsupported", (error) => Effect.succeed(Object.freeze({
+      _tag: "RecordMigrationUnsupported" as const,
+      format: error.format,
+    }) satisfies RecordMigrateOperationPlan)),
+    Effect.mapError(closeMaintenanceFailure),
+  );
+}
+
+function applyMigrateOperation(input: {
+  readonly root: RecordRoot;
+  readonly plan: RecordMigrateReadyPlan;
+}) {
+  const sourcePlan = migrateOperationPlans.get(input.plan);
+  if (sourcePlan === undefined) {
+    return Effect.fail(Object.freeze({
+      _tag: "RecordMigrationPlanStale" as const,
+      code: "record-migration-plan-stale" as const,
+    }));
+  }
+  return Effect.scoped(Effect.gen(function* () {
+    const session = yield* openMaintenance({ root: input.root });
+    const receipt = yield* session.applyMigrate(sourcePlan);
+    return receipt.state === "already-current"
+      ? Object.freeze({
+          _tag: "RecordMigrationAlreadyCurrent" as const,
+          format: receipt.format,
+        })
+      : Object.freeze({
+          _tag: "RecordMigrationApplied" as const,
+          format: receipt.format,
+          attachments: receipt.attachments,
+        });
+  })).pipe(Effect.mapError(closeMaintenanceFailure));
+}
+
 export const recordHost: RecordHostSDK = Object.freeze({
+  ensureAutomaticMigration,
   current: Object.freeze({
     openRead: openCurrentRead,
     createRun: openNewRun,
     createReferenceRun: openNewReferenceRun,
   }),
-  maintenance: Object.freeze({ open: openMaintenance }),
+  maintenance: Object.freeze({
+    planClean: planCleanOperation,
+    applyClean: applyCleanOperation,
+    planMigrate: planMigrateOperation,
+    applyMigrate: applyMigrateOperation,
+    open: openMaintenance,
+  }),
 });

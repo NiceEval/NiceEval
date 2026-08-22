@@ -12,6 +12,8 @@ import {
 export interface DockerProfileCliOptions {
   readonly json: boolean;
   readonly smoke: boolean;
+  readonly out: (text: string) => void;
+  readonly err: (text: string) => void;
 }
 
 interface Check {
@@ -156,7 +158,7 @@ export async function runDockerProfileCommand(
   options: DockerProfileCliOptions,
 ): Promise<number> {
   if (positionals[0] !== "profile") {
-    process.stderr.write("Usage: niceeval docker profile list [--json]\n" +
+    options.err("Usage: niceeval docker profile list [--json]\n" +
       "       niceeval docker profile doctor <alias> [--smoke] [--json]\n");
     return 1;
   }
@@ -172,13 +174,13 @@ export async function runDockerProfileCommand(
         endpointKind: entry.profile.transport.kind,
         health: "descriptor-valid",
       }));
-      if (options.json) process.stdout.write(`${JSON.stringify({ format: "niceeval.docker-profiles", schemaVersion: 1, profiles: rows })}\n`);
-      else for (const row of rows) process.stdout.write(
+      if (options.json) options.out(`${JSON.stringify({ format: "niceeval.docker-profiles", schemaVersion: 1, profiles: rows })}\n`);
+      else for (const row of rows) options.out(
         `${row.alias}\t${row.profileId.slice(0, 12)}\t${row.securityLevel}\tpolicy ${row.semanticPolicyRevision.slice(0, 12)}\t${row.health}\n`,
       );
       return 0;
     } catch (error) {
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      options.err(`${error instanceof Error ? error.message : String(error)}\n`);
       return 1;
     }
   }
@@ -199,11 +201,11 @@ export async function runDockerProfileCommand(
     } catch (error) {
       checks.push({ name: "profile", status: "FAIL", detail: error instanceof Error ? error.message : String(error) });
     }
-    if (options.json) process.stdout.write(`${JSON.stringify({ format: "niceeval.docker-profile-doctor", schemaVersion: 1, alias, checks })}\n`);
-    else for (const check of checks) process.stdout.write(`${check.status}  ${check.name}  ${check.detail}\n`);
+    if (options.json) options.out(`${JSON.stringify({ format: "niceeval.docker-profile-doctor", schemaVersion: 1, alias, checks })}\n`);
+    else for (const check of checks) options.out(`${check.status}  ${check.name}  ${check.detail}\n`);
     return checks.some((check) => check.status === "FAIL") ? 1 : 0;
   }
-  process.stderr.write("Usage: niceeval docker profile list [--json]\n" +
+  options.err("Usage: niceeval docker profile list [--json]\n" +
     "       niceeval docker profile doctor <alias> [--smoke] [--json]\n");
   return 1;
 }

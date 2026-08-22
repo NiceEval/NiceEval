@@ -3,31 +3,30 @@ import { assembleCommandPlan, type CommandPlan } from "../../runner/command-plan
 import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
 import { planProjectTarget } from "../../runner/fingerprint.ts";
 import { resolveExperimentEvals } from "../../runner/eval-selection.ts";
-import {
-  prepareRunnerRecordReuse,
-  withRunnerCurrentReusePreview,
-} from "../../runner/record.ts";
-import {
-  projectCurrentReuseReadback,
-} from "../../runner/reuse-readback.ts";
-import { acceptLocators } from "../../runner/accept.ts";
-import { runEvals } from "../../runner/run.ts";
-import type {
-  AcceptLocatorsOptions,
-} from "../../runner/accept.ts";
-import type { ProjectTargetPlan } from "../../runner/fingerprint.ts";
-import type { CurrentReuseReadbackSnapshot } from "../../runner/reuse-readback.ts";
-import type { ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { resolveRunTimeout } from "../../runner/timeout.ts";
 import type {
   AgentRun,
   Config,
   DiscoveredEval,
   DiscoveredExperiment,
-  RunOptions,
 } from "../../runner/types.ts";
-import type { RecordRoot } from "../../record/platform/root.ts";
 import { matchExperimentSelector } from "../../shared/aggregate.ts";
+import {
+  accept,
+  applyRename,
+  catalog,
+  check,
+  listInvocationStatus,
+  planInvocation,
+  planRename,
+  resolveProjectCurrentTarget,
+  runInvocation,
+  showInvocationStatus,
+} from "./operations.ts";
+import { inspectTeardown, runTeardown } from "./teardown.ts";
+import { ExperimentHostError, type ExperimentHostHighLevelSDK } from "./types.ts";
+
+export * from "./types.ts";
 
 /**
  * Public, supported high-level Host composition SDK for the NiceEval CLI,
@@ -36,7 +35,7 @@ import { matchExperimentSelector } from "../../shared/aggregate.ts";
  */
 
 /** One discovered Experiment after its author selector and CLI prefixes close. */
-export interface ExperimentHostSelection {
+interface ExperimentHostSelection {
   readonly experiment: DiscoveredExperiment;
   readonly selectedEvalIds: readonly string[];
   /** The Experiment-owned set before CLI eval-prefix narrowing. */
@@ -44,7 +43,7 @@ export interface ExperimentHostSelection {
 }
 
 /** Discovery result used by both `exp list` and execution planning. */
-export interface ExperimentHostListResult {
+interface ExperimentHostListResult {
   readonly evals: readonly DiscoveredEval[];
   readonly experimentIds: readonly string[];
   readonly selections: readonly ExperimentHostSelection[];
@@ -54,7 +53,7 @@ export interface ExperimentHostListResult {
  * Discovery and selection are owned here so consumers cannot invoke an
  * Experiment's predicate a second time while reconstructing an AgentRun.
  */
-function list(input: {
+function discoverSelection(input: {
   readonly cwd: string;
   /** Keep the CLI's public `--tag` selection inside the Experiment boundary. */
   readonly tag?: string;
@@ -184,9 +183,9 @@ function debugAgentRun(experiment: DiscoveredExperiment, evalId: string): AgentR
  */
 function debug(
   input: ExperimentHostDebugPlanRequest,
-): Effect.Effect<ExperimentHostDebugPlanResult, unknown> {
+): Effect.Effect<ExperimentHostDebugPlanResult, ExperimentHostError> {
   return Effect.gen(function* () {
-    const listed = yield* list({ cwd: input.cwd });
+    const listed = yield* discoverSelection({ cwd: input.cwd });
     const selectedExperiments = uniqueExactOrPrefix(
       listed.selections,
       input.experimentSelector,
@@ -254,102 +253,28 @@ function debug(
       evalId: evalDef.id,
       commandPlan,
     });
-  });
+  }).pipe(Effect.mapError((cause) => new ExperimentHostError({
+    operation: "debug",
+    code: typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
+      ? String(Reflect.get(cause, "code"))
+      : "experiment-host-operation-failed",
+    message: cause instanceof Error ? cause.message : String(cause),
+  })));
 }
 
-export interface ExperimentHostPlanRequest {
-  readonly evals: readonly DiscoveredEval[];
-  readonly agentRuns: readonly AgentRun[];
-  readonly config: Config;
-  readonly recordRoot: RecordRoot;
-  readonly rerun?: "failed" | "all";
-  readonly keepSandbox?: "failed" | "all";
-  /** Omit for a dispatch plan; include only for the read-only `exp --dry` path. */
-  readonly previewStartedAt?: number;
-}
-
-export interface ExperimentHostCurrentPlan {
-  readonly slots: readonly ExecutionReusePlanSlot[];
-  readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
-}
-
-export interface ExperimentHostPlan {
-  readonly target: ProjectTargetPlan;
-  readonly current?: ExperimentHostCurrentPlan;
-}
-
-/**
- * Reuses the production physical planner and frozen Record reuse planner.
- * It never creates a Run; current history is read only when a dry preview was
- * explicitly requested.
- */
-function plan(input: ExperimentHostPlanRequest) {
-  return Effect.gen(function* () {
-    const target = yield* planProjectTarget(
-      input.evals,
-      input.agentRuns,
-      input.config.timeoutMs,
-      {
-        configJudge: input.config.judge,
-        ...(input.keepSandbox === undefined ? {} : { keepSandbox: input.keepSandbox }),
-      },
-    );
-    const reuse = yield* prepareRunnerRecordReuse({
-      evals: input.evals,
-      runs: input.agentRuns,
-      config: { timeoutMs: input.config.timeoutMs },
-      plannedFingerprints: target.plannedFingerprints,
-      plannedConfigHashes: target.plannedConfigHashes,
-      ...(input.rerun === undefined ? {} : { rerun: input.rerun }),
-      ...(input.keepSandbox === undefined ? {} : { keepSandbox: input.keepSandbox }),
-    });
-    const current = input.previewStartedAt === undefined
-      ? undefined
-      : yield* withRunnerCurrentReusePreview({
-        recordRoot: input.recordRoot,
-        startedAt: input.previewStartedAt,
-        evals: input.evals,
-        runs: input.agentRuns,
-        reuse,
-        use: ({ reusePlan, readReadbacks }) => readReadbacks().pipe(
-          Effect.map((readbacks): ExperimentHostCurrentPlan => Object.freeze({
-            slots: Object.freeze([...reusePlan.slots]),
-            readbacks: Object.freeze(readbacks.map(projectCurrentReuseReadback)),
-          })),
-        ),
-      });
-    return Object.freeze({
-      target,
-      ...(current === undefined ? {} : { current }),
-    });
-  });
-}
-
-/** The existing Runner remains the one execution implementation. */
-function run<AttachmentError, AttachmentRequirements>(
-  input: RunOptions<AttachmentError, AttachmentRequirements>,
-) {
-  return runEvals(input);
-}
-
-/** The existing adoption flow remains the one acceptance implementation. */
-function accept(input: AcceptLocatorsOptions) {
-  return acceptLocators(input);
-}
-
-export interface ExperimentHostSDK {
-  readonly list: typeof list;
-  readonly plan: typeof plan;
+export interface ExperimentHostSDK extends ExperimentHostHighLevelSDK {
   readonly debug: typeof debug;
-  readonly run: typeof run;
-  readonly accept: typeof accept;
 }
 
 /** The fixed public Host surface; discovery, Runner, and adoption internals stay private. */
 export const experimentHost: ExperimentHostSDK = Object.freeze({
-  list,
-  plan,
+  catalog,
+  check,
+  invocation: Object.freeze({ plan: planInvocation, run: runInvocation }),
+  resolveProjectCurrentTarget,
+  invocationStatus: Object.freeze({ list: listInvocationStatus, show: showInvocationStatus }),
+  rename: Object.freeze({ plan: planRename, apply: applyRename }),
+  teardown: Object.freeze({ inspect: inspectTeardown, run: runTeardown }),
   debug,
-  run,
   accept,
 });

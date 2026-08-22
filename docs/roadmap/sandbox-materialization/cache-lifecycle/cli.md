@@ -1,9 +1,33 @@
 # CLI
 
+## 命令归属与帮助
+
+根 CLI 显式挂载 Docker feature，但不处理 Docker 的子命令或 flag。根级不存在 `niceeval cache`；
+Docker inventory、GC 与 execution profile 全部位于同一个不损失能力的命令树：
+
+```text
+$ niceeval docker --help
+niceeval docker — Docker-specific administration
+
+Usage:
+  niceeval docker profile list [--json]
+  niceeval docker profile doctor <alias> [--smoke] [--json]
+  niceeval docker cache inventory [--domain <domain-id>] [--json]
+  niceeval docker cache gc --domain <domain-id> [--apply <plan-id>] [--json]
+
+Commands:
+  profile    inspect and diagnose managed Docker execution profiles
+  cache      inspect and safely reclaim NiceEval-owned Docker image cache
+```
+
+`niceeval docker cache --help` 只显示 cache 子树；未知根命令由 CLI host 报错，未知 Docker 子命令由
+Docker feature 报错。进入 `docker` 后，`--domain`、`--apply`、`--smoke` 及未来 Docker 私有 flag
+都不经过 core flag parser。JSON stdout 始终只有一个完整文档，诊断只写 stderr。
+
 ## 当前选择
 
 ```sh
-niceeval cache status <experiment-prefix> [eval-prefix...] [--json]
+niceeval exp <experiment-prefix> [eval-prefix...] --dry [--json]
 ```
 
 该命令复用 `exp --dry` 的发现、选择、link 和 physical planning，只读取冻结选择的精确需求。
@@ -94,8 +118,8 @@ interface MaterializationCacheEvent extends ExperimentOutputFields {
 ## Domain 库存
 
 ```sh
-niceeval cache inventory [--json]
-niceeval cache inventory --domain <domain-id> [--json]
+niceeval docker cache inventory [--json]
+niceeval docker cache inventory --domain <domain-id> [--json]
 ```
 
 库存命令不加载项目 config、Eval 或 Experiment。
@@ -137,6 +161,17 @@ BuildKit · unverified shared-builder capacity
   NiceEval ownership unknown · not eligible for NiceEval GC
 ```
 
+一次没有受管 entry 的真实输出仍完整显示两个不同的所有权范围：
+
+```text
+$ niceeval docker cache inventory
+Docker images · managed · 8c3d90b7e5b94458 · 0 entries
+BuildKit · unverified shared-builder capacity
+  total 40.3 GB · provider reclaimable estimate 21.5 GB
+  NiceEval ownership unknown · not eligible for NiceEval GC
+  Provider prune may affect other projects, builder sessions, and builds currently in progress.
+```
+
 Domain 明细 JSON 示例：
 
 ```json
@@ -165,8 +200,8 @@ Domain 明细 JSON 示例：
 ## 两阶段回收
 
 ```sh
-niceeval cache gc --domain <domain-id> [--json]
-niceeval cache gc --domain <domain-id> --apply <plan-id> [--json]
+niceeval docker cache gc --domain <domain-id> [--json]
+niceeval docker cache gc --domain <domain-id> --apply <plan-id> [--json]
 ```
 
 第一条命令只创建预览，并把 immutable GcPlan 持久化到 Domain registry。
@@ -244,7 +279,7 @@ interface CacheGcPlanDocumentV1 {
 GC preview 3b3e7f0d… · domain 8c3d90b7e5b94458 · expires in 15m
   2 candidates · rule max-age/task-build
   exact reclaim unknown
-Apply with: niceeval cache gc --domain 8c3d90b7e5b94458 --apply 3b3e7f0d…
+Apply with: niceeval docker cache gc --domain 8c3d90b7e5b94458 --apply 3b3e7f0d…
 ```
 
 ## Apply JSON

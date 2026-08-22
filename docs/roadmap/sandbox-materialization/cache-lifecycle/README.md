@@ -41,7 +41,7 @@ Agent 安装固定从宿主内容寻址 cache 注入 Sandbox，不创建 task ×
 Sandbox 实例的停驻和销毁归 [Sandbox 默认停驻与回收](../../sandbox-retention/README.md)。
 执行容量、reservation 与 admission 归 [Docker 执行配置](../../../feature/sandbox/docker-profiles/README.md)。
 
-- [CLI](cli.md)定义需求、库存与回收命令。
+- [CLI](cli.md)定义需求反馈，以及 Docker feature 自己拥有的库存与回收命令。
 - [Architecture](architecture.md)定义 Cache Manifest、Domain、lease 和删除不变量。
 - [并行运行的共享任务镜像](use-case/并行运行的共享任务镜像.md)定义多个 Attempt 怎样等待、命中和复用少量 BuildKey。
 - [回收过期任务镜像](use-case/回收过期任务镜像.md)定义 task-build image 的安全淘汰路径。

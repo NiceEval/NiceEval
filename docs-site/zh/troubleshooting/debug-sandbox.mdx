@@ -45,6 +45,12 @@ niceeval sandbox stop a3f9c2d1     # 销毁指定沙箱（id 可以只写唯一�
 niceeval sandbox stop --all        # 全部销毁
 ```
 
+这些管理命令不读取 `niceeval.config.ts`。即使配置文件暂时无法执行，你仍可以查看或销毁现场。命令会读取
+`.env` 来准备 Provider 凭据；`.env` 不可读时先修复它，再重试。
+
+`sandbox` 没有 `--json` 输出。`niceeval sandbox list --json` 会直接提示 `Unknown option '--json'`，不会继续
+打印人读文本。机器输出参数只属于明确声明它的命令。
+
 `stop` 是幂等的：Sandbox 已经不在了（手动删过、云端过期）不算错误，只会把记录移掉并说明。如果 provider 销毁失败，命令会保留记录并返回错误，方便稍后重试，不会把仍活着的资源从列表里藏掉。忘了清也有提醒——下次运行开始时，如果还有上次保留的 Sandbox，会打一行提示。
 
 ## 各 Provider 的差别
