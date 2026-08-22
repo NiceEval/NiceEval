@@ -3,6 +3,7 @@ node_modules/
 .niceeval/
 .fasteval/
 .pnpm-store/
+.nx/
 /.omo/
 /.playwright-mcp/
 *.log

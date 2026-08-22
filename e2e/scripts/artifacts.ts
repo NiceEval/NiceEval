@@ -122,7 +122,7 @@ export interface CollectResult {
 }
 
 /**
- * Copy e2e.json `artifacts` patterns out of the isolated copy into destDir.
+ * Copy project.json E2E `artifacts` patterns out of the isolated copy into destDir.
  * The manifest has already rejected unsafe patterns; this remains a defensive
  * second boundary for direct callers. Paths are containment checked before
  * every read/write, and source symlinks/special files are rejected rather

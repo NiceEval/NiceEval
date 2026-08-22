@@ -438,11 +438,11 @@ Node 没有可移植的“目录 `rename` 且禁止替换”原语，因此提�
 3. runner 只在隔离副本中加入指向该 scratch snapshot 的绝对 `file:` 目录依赖。真实 `pnpm install` 必须产生唯一 directory
    resolution，安装后的包名与版本正确，realpath 位于副本自己的 virtual store，而不是 checkout 源目录。
 4. NiceEval candidate tgz 不得包含 `packages/testkit/**`，任何 dependency 字段也不得声明 `@niceeval/testkit`。
-5. 场景以 `e2e.json` 的 `harness.testkit: true` 声明消费意图；场景源 `package.json` / lockfile 不包含 Testkit、`workspace:`
+5. 场景以 `project.json` 的 `targets.e2e.metadata.niceeval.harness.testkit: true` 声明消费意图；场景源 `package.json` / lockfile 不包含 Testkit、`workspace:`
    或预先签入的本地目录引用。
 6. receipt 只保存 Testkit version、checkout 相对 source path、snapshot digest 与副本内 installed realpath；这些字段只供诊断。
    exact replay 只描述保留的 NiceEval candidate 字节，不把当前 checkout 的 Testkit 伪装成可独立重新执行的 artifact。
-7. Testkit、根 workspace/lock 或注入契约变化时，plan 使 path 优化 fail-open，选中该 lane 全集。未来若缓存 Testkit 构建，
+7. Testkit、根 workspace/lock 或注入契约变化时，project graph 的共享输入选中该 lane 全集。未来若缓存 Testkit 构建，
    cache key 必须来自源码与构建输入，不能用 version 或 pnpm store 命中代替当前 checkout 身份。
 
 删除或移动文件后，收尾必须检查并删除本次产生的空目录。

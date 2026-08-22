@@ -2,6 +2,9 @@
   "name": "niceeval-e2e-lifecycle",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "scripts": {
     "e2e": "vitest run",

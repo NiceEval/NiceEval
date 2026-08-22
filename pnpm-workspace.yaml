@@ -11,6 +11,7 @@ allowBuilds:
   cpu-features: false
   esbuild: false
   msgpackr-extract: false
+  nx: true
   protobufjs: false
   sharp: true
   ssh2: false

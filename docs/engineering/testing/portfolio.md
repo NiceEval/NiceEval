@@ -35,7 +35,7 @@ Unit 只作为可证伪的例外，同一矩阵不在多层复制。
 | `#commonjs-init-list` | CJS 项目 `init → list` | Journey E2E | `e2e/package/test/commonjs-init-list.test.ts` | PR / release | `b44420d3` |
 | `#codex-tool-identity` | Codex CLI 工具事件读回为 `shell` | Adapter E2E | `e2e/adapter/codex-cli/test/tool-identity.test.ts` | main / nightly | — |
 
-表只回答 owner 和运行档，不复制 argv、fixture、expected 或步骤。执行真相仍在测试文件，lane 真相在 Repo manifest。
+表只回答 owner 和运行档，不复制 argv、fixture、expected 或步骤。执行真相仍在测试文件，lane 真相在 Repo project metadata。
 测试文件第一行写 `// owner: <文档路径#Owner-ID>`，一份文件只指向一个 owner。
 
 Journey 的检查点只证明终态所需身份、接线和前置事实。

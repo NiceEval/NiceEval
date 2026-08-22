@@ -1,6 +1,9 @@
 {
   "name": "e2e-repo-codex-sdk",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "description": "niceeval E2E adapter repo: Codex SDK converter live compatibility — see docs/engineering/testing/e2e/adapter/codex-sdk.md",
   "engines": {

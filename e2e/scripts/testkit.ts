@@ -259,7 +259,7 @@ export function checkTestkitSourceClean(copyDir: string): string[] {
     const deps = pkg[field];
     if (isRecord(deps) && Object.prototype.hasOwnProperty.call(deps, "@niceeval/testkit")) {
       violations.push(
-        `source package.json declares "@niceeval/testkit" in ${field} — e2e.json harness.testkit is the only true source of testkit intent`,
+        `source package.json declares "@niceeval/testkit" in ${field} — project.json targets.e2e metadata is the only true source of testkit intent`,
       );
     }
   }

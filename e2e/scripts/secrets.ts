@@ -1,6 +1,6 @@
 // Minimal-injection secret env construction for the e2e orchestrator.
 //
-// A repo must only ever see the secrets it declared in its own e2e.json —
+// A repo must only ever see the secrets declared by its Nx E2E target metadata —
 // never another repo's secrets, even though the orchestrator's own process
 // env holds the whole matrix's worth of keys (CI injects them all once).
 

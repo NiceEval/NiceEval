@@ -35,6 +35,7 @@ import { selectRepos } from "./plan.ts";
 import { LANES, type Lane } from "./manifest.ts";
 import { appendNativeArgs, materializeCandidateArtifact, runRepo, type RepoRunResult } from "./run-repo.ts";
 import type { Category } from "./receipt.ts";
+import type { SelectionReceipt } from "./receipt.ts";
 import {
   createUnmanagedExecutionControl,
   isExecutionCancelled,
@@ -53,7 +54,6 @@ interface Cli {
   repoIds: string[];
   lane?: Lane;
   capability?: string;
-  diffPaths?: string[];
   candidatePath: string;
   artifactRoot: string | undefined;
   nativeArgs: string[];
@@ -61,10 +61,12 @@ interface Cli {
   repoConcurrency: number;
   planPath?: string;
   cellId?: string;
+  selection?: SelectionReceipt;
 }
 
 interface RunPlanCell {
   repoIds: readonly string[];
+  selection: SelectionReceipt;
 }
 
 function readRunPlanCell(planPath: string, cellId: string): RunPlanCell {
@@ -74,10 +76,39 @@ function readRunPlanCell(planPath: string, cellId: string): RunPlanCell {
   } catch (error) {
     throw new Error(`could not parse E2E plan ${planPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!Array.isArray(raw) || raw.length === 0) {
-    throw new Error("E2E plan must be a non-empty JSON array emitted by `pnpm e2e plan --batch --json`");
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error("E2E plan must be the JSON document emitted by `pnpm e2e plan --batch --json`");
   }
-  const matches = raw.filter((entry): entry is Record<string, unknown> =>
+  const document = raw as {
+    schemaVersion?: unknown;
+    mode?: unknown;
+    reason?: unknown;
+    lane?: unknown;
+    range?: unknown;
+    cells?: unknown;
+  };
+  if (
+    document.schemaVersion !== 1 ||
+    !(["affected", "full", "fail-open-full"] as unknown[]).includes(document.mode) ||
+    typeof document.reason !== "string" ||
+    document.reason.length === 0 ||
+    !(LANES as readonly unknown[]).includes(document.lane) ||
+    !Array.isArray(document.cells)
+  ) {
+    throw new Error("E2E plan must have schemaVersion 1, a valid mode/reason/lane, and a cells array");
+  }
+  const range = document.range;
+  if (
+    range !== undefined &&
+    (
+      typeof range !== "object" ||
+      range === null ||
+      Array.isArray(range) ||
+      typeof (range as { base?: unknown }).base !== "string" ||
+      typeof (range as { head?: unknown }).head !== "string"
+    )
+  ) throw new Error("E2E plan range must contain string base/head commits");
+  const matches = document.cells.filter((entry): entry is Record<string, unknown> =>
     typeof entry === "object" && entry !== null && !Array.isArray(entry) && entry.id === cellId
   );
   if (matches.length !== 1) {
@@ -93,7 +124,17 @@ function readRunPlanCell(planPath: string, cellId: string): RunPlanCell {
   ) {
     throw new Error(`E2E plan cell ${JSON.stringify(cellId)} must contain unique non-empty string repoIds`);
   }
-  return { repoIds: repoIds as string[] };
+  return {
+    repoIds: repoIds as string[],
+    selection: {
+      schemaVersion: 1,
+      mode: document.mode as SelectionReceipt["mode"],
+      reason: document.reason,
+      lane: document.lane as Lane,
+      cellId,
+      ...(range === undefined ? {} : { range: range as { base: string; head: string } }),
+    },
+  };
 }
 
 function splitNativeArgs(argv: readonly string[]): { optionArgs: readonly string[]; nativeArgs: string[] } {
@@ -112,7 +153,6 @@ export function parseRunCli(argv: readonly string[]): Cli {
       lane: { type: "string" },
       capability: { type: "string" },
       "artifact-root": { type: "string" },
-      "diff-path": { type: "string", multiple: true },
       "keep-workdir": { type: "boolean", default: false },
       "repo-concurrency": { type: "string" },
       plan: { type: "string" },
@@ -132,9 +172,6 @@ export function parseRunCli(argv: readonly string[]): Cli {
   }
 
   let repoIds = Array.isArray(values.repo) ? values.repo.filter((value): value is string => typeof value === "string") : [];
-  const diffPaths = Array.isArray(values["diff-path"])
-    ? values["diff-path"].filter((value): value is string => typeof value === "string")
-    : [];
   const planValue = values.plan;
   const cellValue = values.cell;
   if ((planValue === undefined) !== (cellValue === undefined)) {
@@ -143,12 +180,12 @@ export function parseRunCli(argv: readonly string[]): Cli {
   let repoConcurrency = 1;
   let planPath: string | undefined;
   let cellId: string | undefined;
+  let selection: SelectionReceipt | undefined;
   if (typeof planValue === "string" && typeof cellValue === "string") {
     if (
       repoIds.length > 0 ||
       values.lane !== undefined ||
       values.capability !== undefined ||
-      values["diff-path"] !== undefined ||
       values["repo-concurrency"] !== undefined
     ) {
       throw new Error("--plan/--cell cannot be combined with selection options or --repo-concurrency");
@@ -159,6 +196,7 @@ export function parseRunCli(argv: readonly string[]): Cli {
     const planned = readRunPlanCell(planPath, cellId);
     repoIds = [...planned.repoIds];
     repoConcurrency = planned.repoIds.length;
+    selection = planned.selection;
   } else {
     const concurrencyValue = values["repo-concurrency"] ?? "1";
     if (!/^\d+$/.test(concurrencyValue)) {
@@ -173,7 +211,6 @@ export function parseRunCli(argv: readonly string[]): Cli {
     repoIds,
     lane: typeof laneValue === "string" ? (laneValue as Lane) : undefined,
     capability: typeof values.capability === "string" ? values.capability : undefined,
-    diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
     candidatePath: values.candidate,
     artifactRoot: typeof values["artifact-root"] === "string"
       ? resolve(values["artifact-root"])
@@ -183,6 +220,7 @@ export function parseRunCli(argv: readonly string[]): Cli {
     repoConcurrency,
     ...(planPath === undefined ? {} : { planPath }),
     ...(cellId === undefined ? {} : { cellId }),
+    ...(selection === undefined ? {} : { selection }),
   };
 }
 
@@ -244,6 +282,8 @@ export interface RunSummary {
   category: Category;
   detail: string;
   runner: RunnerTerminalSummary;
+  /** Present when this process executed one machine-readable plan cell. */
+  selection?: SelectionReceipt;
 }
 
 export interface RunnerTerminalSummary {
@@ -281,6 +321,7 @@ export function buildSummary(
     detail: "root orchestrator completed",
     scratchDisposition: { kind: "not-created", ok: true, detail: "scratch root not created" },
   },
+  selection?: SelectionReceipt,
 ): RunSummary {
   const summaryPath = join(artifactRoot, "summary.json");
   const category = primaryCategory(results, runner);
@@ -307,6 +348,7 @@ export function buildSummary(
       primaryResult?.detail ??
       (category === "pass" ? "clean pass" : runner.detail),
     runner,
+    ...(selection === undefined ? {} : { selection }),
   };
 }
 
@@ -348,6 +390,7 @@ export async function main(
   let runnerFailure: string | undefined;
   let cancelled = false;
   let keepWorkdir = false;
+  let selection: SelectionReceipt | undefined;
   let scratchDisposition: ScratchDisposition = {
     kind: "not-created",
     ok: true,
@@ -357,6 +400,7 @@ export async function main(
   try {
     const cli = parseRunCli(argv);
     keepWorkdir = cli.keepWorkdir;
+    selection = cli.selection;
     if (keepWorkdir && process.env.CI !== undefined) {
       throw new Error("--keep-workdir is local-only and is rejected whenever CI is set");
     }
@@ -408,7 +452,12 @@ export async function main(
           allSecretNames,
           cli.nativeArgs,
           testkit,
-          { execution, keepWorkdir: cli.keepWorkdir, logPrefix: `e2e:${repo.manifest.id}` },
+          {
+            execution,
+            keepWorkdir: cli.keepWorkdir,
+            logPrefix: `e2e:${repo.manifest.id}`,
+            ...(cli.selection === undefined ? {} : { selection: cli.selection }),
+          },
         );
         console.log(`[e2e] ${repo.manifest.id}: artifactDir=${result.artifactDir}`);
         console.log(`[e2e] ${repo.manifest.id}: receiptPath=${result.receiptPath}`);
@@ -460,7 +509,7 @@ export async function main(
       scratchDisposition,
     };
     if (artifactRoot !== undefined) {
-      const summary = buildSummary(artifactRoot, results, runner);
+      const summary = buildSummary(artifactRoot, results, runner, selection);
       let summaryPersisted = false;
       try {
         await writeContainedUtf8File(

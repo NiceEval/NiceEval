@@ -122,6 +122,7 @@ docs/
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
+│   ├── task-orchestration/              Nx 项目图、affected E2E 与 fail-open 管理
 │   ├── testing/                         测试体系总纲 + unit/ 与 e2e/ 两个子体系
 │   ├── benchmark/                       阶段耗时与安装 benchmark
 │   └── example-tier-sync/               示例同步机制

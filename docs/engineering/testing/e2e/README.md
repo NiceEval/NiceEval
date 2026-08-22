@@ -15,11 +15,11 @@ E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../README.md#bu
 
 - 自己的 `package.json` 与签入 lockfile；
 - NiceEval dependency，由根 runner 在副本中替换成候选 tarball；
-- `e2e.json` 的 `harness.testkit: true`；根 runner 把当前 checkout 的 Testkit
-  直接编译到 invocation-local scratch snapshot，并只在副本中注入该目录依赖；
+- `project.json` 中 `targets.e2e.metadata.niceeval.harness.testkit: true` 声明消费意图。根 runner 把当前 checkout 的
+  Testkit 直接编译到 invocation-local scratch snapshot，并只在副本中注入该目录依赖；
 - `niceeval.config.ts`、`evals/`、`experiments/`、需要时的 `reports/`、agent、服务或 Docker Compose；
 - 原生 Vitest / Playwright 测试；
-- 只描述运行条件的 `e2e.json`。
+- 用 Nx graph 描述 affected owner、用 target metadata 描述运行条件的 `project.json`。
 
 它不能从 workspace 相对路径 import NiceEval 源码，也不能用“生成过 evidence”代替断言。完整规则见
 [真实场景 Repo](scenario-repos.md)。
@@ -34,7 +34,8 @@ E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../README.md#bu
 
 这与 [Vite / Vitest / Playwright 等框架工具的自测方式](../../../research/framework-e2e/README.md)相同：复用通用 test runner，
 再为自身的真实项目、CLI、server 或候选构建写薄的产品 fixture。NiceEval 不另造 assertion DSL、browser runner
-或第二套测试调度器。
+或第二套测试执行器。Nx 只接管 project discovery、affected 和 task graph；完整边界见
+[任务图与 E2E 选择](../../task-orchestration/README.md)。
 
 ## 单边界 E2E
 
@@ -233,7 +234,7 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 
 新增、接管或实质修改确定性 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的隔离副本、同副本连续运行、
 默认并行与单项重跑组合。任一次意外失败都不合格；测试级 retry 不得把失败改写成通过。
-真实 provider live owner 随常规全量 E2E 完成真实运行与公开读回。provider 随机性不能证明确定性，
+真实 provider live owner 在可信 PR 的 affected 集或 main / nightly 全量 E2E 中完成真实运行与公开读回。provider 随机性不能证明确定性，
 因此 live Repo 不用重复 takeover 承担确定性可靠性门。
 
 本地、Docker 与 GitHub Actions 见 [Execution](execution.md)。

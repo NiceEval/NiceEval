@@ -1,0 +1,73 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "e2e-adapter-opencode",
+  "root": "e2e/adapter/opencode",
+  "tags": [
+    "kind:e2e",
+    "e2e:adapter/opencode"
+  ],
+  "implicitDependencies": [
+    "workspace-shared",
+    "e2e-shared",
+    "niceeval-package-shared",
+    "niceeval-testkit",
+    "niceeval-src-fallback",
+    "niceeval-domain-o11y",
+    "niceeval-domain-agents"
+  ],
+  "targets": {
+    "e2e": {
+      "executor": "nx:selection-only",
+      "cache": false,
+      "inputs": [
+        "default"
+      ],
+      "metadata": {
+        "niceeval": {
+          "schemaVersion": 3,
+          "batch": "docker-2",
+          "areas": [
+            "adapter",
+            "sandbox"
+          ],
+          "lanes": [
+            "main",
+            "nightly",
+            "release"
+          ],
+          "executor": {
+            "kind": "host"
+          },
+          "command": [
+            "pnpm",
+            "exec",
+            "vitest",
+            "run"
+          ],
+          "timeoutMinutes": 3,
+          "harness": {
+            "testkit": true
+          },
+          "secrets": [
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENCODE_API_KEY"
+          ],
+          "requires": {
+            "docker": true,
+            "externalNetwork": true,
+            "runtimes": [
+              "node>=24"
+            ]
+          },
+          "artifacts": [
+            ".niceeval/**",
+            "junit.xml",
+            "junit-skill.xml",
+            "junit-go.xml"
+          ]
+        }
+      }
+    }
+  }
+}

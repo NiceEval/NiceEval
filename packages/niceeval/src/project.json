@@ -1,0 +1,6 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "niceeval-src-fallback",
+  "root": "packages/niceeval/src",
+  "tags": ["kind:source-fallback"]
+}
