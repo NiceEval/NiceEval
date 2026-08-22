@@ -91,6 +91,8 @@ const en = {
   "experimentList.passRateDescription": "End-to-end pass rate: passed = 1; failed and errored = 0",
   "experimentList.totalScore": "Total score",
   "experimentList.totalScoreDescription": "Total score: sum of points earned across evals",
+  "experimentList.missedScoreItems.one": "{n} missed check",
+  "experimentList.missedScoreItems.other": "{n} missed checks",
   "experimentList.tokens": "Tokens",
   "experimentList.cost": "Cost",
   "experimentList.result": "Result",
@@ -301,6 +303,8 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "experimentList.passRateDescription": "端到端通过率：passed = 1；failed 和 errored = 0",
   "experimentList.totalScore": "总分",
   "experimentList.totalScoreDescription": "总分：各 Eval 挣分之和",
+  "experimentList.missedScoreItems.one": "{n} 项未满足",
+  "experimentList.missedScoreItems.other": "{n} 项未满足",
   "experimentList.tokens": "Tokens",
   "experimentList.cost": "成本",
   "experimentList.result": "结果",
@@ -488,6 +492,7 @@ export function countText(
     | "scoreboard.notRun"
     | "scoreboard.unscorable"
     | "scoreboard.ignored"
+    | "experimentList.missedScoreItems"
     | "entityList.moreFailures"
     | "entityList.moreLostPoints"
     | "cell.evidence"

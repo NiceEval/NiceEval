@@ -66,6 +66,8 @@ export interface AttemptListItem {
   readonly evaluationKind: "pass" | "points";
   /** Complete earned score for this Attempt; absent for pass or incomplete score evidence. */
   readonly totalScore?: number;
+  /** Count of complete score contributions with earned < points; absent with incomplete score evidence. */
+  readonly missedScoreItems?: number;
   readonly passRate: MetricValue<number>;
   readonly durationMs: MetricValue<number>;
   /** Present only when the owning Report declares a PricingProfile. */
@@ -195,6 +197,7 @@ interface AttemptFact {
   readonly failureSummary: string | null;
   readonly evaluationKind: "pass" | "points";
   readonly totalScore?: number;
+  readonly missedScoreItems?: number;
 }
 
 interface SlotSelection {
@@ -237,11 +240,15 @@ async function evidenceFacts(sample: Sample): Promise<ReadonlyMap<AttemptLocator
     const completeScore = scoreContributions.length > 0 && earned.length === scoreContributions.length
       ? earned.reduce((sum, score) => sum + score.earned, 0)
       : undefined;
+    const missedScoreItems = completeScore === undefined
+      ? undefined
+      : earned.filter((score) => score.earned < score.points).length;
     facts.set(locator, Object.freeze({
       verdict: entry.state === "available" ? (entry.detail.verdict as Verdict) : null,
       failureSummary: closedFailureSummary(entry),
       evaluationKind: scoreContributions.length > 0 ? "points" : "pass",
       ...(completeScore === undefined ? {} : { totalScore: completeScore }),
+      ...(missedScoreItems === undefined ? {} : { missedScoreItems }),
     }));
   }
   return facts;
@@ -464,6 +471,7 @@ export async function attemptListData(
       failureSummary: fact.failureSummary,
       evaluationKind: fact.evaluationKind,
       ...(fact.totalScore === undefined ? {} : { totalScore: fact.totalScore }),
+      ...(fact.missedScoreItems === undefined ? {} : { missedScoreItems: fact.missedScoreItems }),
       passRate: metric.passRate,
       durationMs: metric.durationMs,
       ...(metric.costUSD === undefined ? {} : { costUSD: metric.costUSD }),

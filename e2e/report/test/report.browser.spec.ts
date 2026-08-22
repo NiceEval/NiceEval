@@ -112,6 +112,9 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         const experimentRow = page.locator("summary").filter({ hasText: "classic/memory-a" }).first();
         await expect(experimentRow).toContainText("classic/memory-a (9/9)");
         expect((await experimentRow.textContent())?.match(/9\/9/g)).toHaveLength(1);
+        const scoreExperimentRow = page.locator("summary").filter({ hasText: "classic/incompatible" }).first();
+        await expect(scoreExperimentRow).toContainText("7 · 1 missed check");
+        await expect(scoreExperimentRow).not.toContainText("passed");
         await experiment.click();
         await expect(page).toHaveURL(/#\/experiment\//);
 
