@@ -92,6 +92,31 @@ function verdictCountsCell(attempts: readonly AttemptListItem[]): Cell {
   return { kind: "verdict", counts: tallyVerdicts(attempts) };
 }
 
+/** Score 行不重复必然的 passed，只保留会改变用户判断的异常计数。 */
+function exceptionalVerdictCountsCell(attempts: readonly AttemptListItem[]): Cell {
+  const counts = tallyVerdicts(attempts);
+  if (counts.failed + counts.errored + counts.skipped === 0) return { kind: "notApplicable" };
+  return { kind: "verdict", counts: { ...counts, passed: 0 } };
+}
+
+/** 只有所有 Score Attempt 都给出完整计数时才汇总；未知不冒充零。 */
+function missedScoreItems(attempts: readonly AttemptListItem[]): number | undefined {
+  const scoreAttempts = attempts.filter((attempt) => attempt.evaluationKind === "points");
+  if (scoreAttempts.length === 0 || scoreAttempts.some((attempt) => attempt.missedScoreItems === undefined)) {
+    return undefined;
+  }
+  return scoreAttempts.reduce((total, attempt) => total + attempt.missedScoreItems!, 0);
+}
+
+function scoreCell(earned: number, attempts: readonly AttemptListItem[]): Cell {
+  const missed = missedScoreItems(attempts);
+  return {
+    kind: "score",
+    earned,
+    ...(missed === undefined ? {} : { missedScoreItems: missed }),
+  };
+}
+
 function evalVerdictCell(attempts: readonly AttemptListItem[]): Cell {
   const only = attempts.length === 1 ? attempts[0]?.verdict : null;
   return only === null || only === undefined ? verdictCountsCell(attempts) : verdictCell(only);
@@ -241,8 +266,8 @@ function evalRow(
       : stackCell(
           row.totalScore === undefined
             ? { kind: "notApplicable" }
-            : { kind: "score", earned: row.totalScore },
-          evalVerdictCell(row.attempts),
+            : scoreCell(row.totalScore, row.attempts),
+          exceptionalVerdictCountsCell(row.attempts),
         ),
     ...(row.costUSD === undefined ? {} : { costUSD: measureCell(row.costUSD) }),
   };
@@ -303,7 +328,7 @@ function groupTableRow(
   const primary = evalRows.every((row) => row.evaluationKind === "pass")
     ? groupMetricValue(metrics, "passRate")
     : evalRows.some((row) => row.totalScore !== undefined)
-    ? { kind: "score", earned: evalRows.reduce((sum, row) => sum + (row.totalScore ?? 0), 0) } as const
+    ? scoreCell(evalRows.reduce((sum, row) => sum + (row.totalScore ?? 0), 0), attempts)
     : { kind: "notApplicable" } as const;
 
   const bag: CellBag = {
@@ -311,7 +336,10 @@ function groupTableRow(
     durationMs: groupMetricValue(metrics, "durationMs"),
     tokens: groupMetricValue(metrics, "tokens"),
     ...(metrics?.costUSD === undefined ? {} : { costUSD: measureCell(metrics.costUSD) }),
-    summary: stackCell(primary, verdicts),
+    summary: stackCell(
+      primary,
+      evalRows.every((row) => row.evaluationKind === "pass") ? verdicts : exceptionalVerdictCountsCell(attempts),
+    ),
   };
   return {
     key: `group:${node.prefix}`,
@@ -353,7 +381,7 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
     ? measureCell(item.endToEndPassRate, false)
     : item.totalScore === undefined
     ? { kind: "notApplicable" } as const
-    : { kind: "score", earned: item.totalScore } as const;
+    : scoreCell(item.totalScore, attempts);
   const bag: CellBag = {
     entity: identityCell(
       item.experimentId,
@@ -364,7 +392,10 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
     durationMs: measureCell(item.durationMs, false),
     tokens: measureCell(item.tokens, false),
     ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD, false) }),
-    summary: stackCell(primary, verdictCountsCell(attempts)),
+    summary: stackCell(
+      primary,
+      item.evaluationKind === "pass" ? verdictCountsCell(attempts) : exceptionalVerdictCountsCell(attempts),
+    ),
   };
   return {
     key: item.experimentId,

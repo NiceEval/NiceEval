@@ -62,7 +62,9 @@ key 完全相同。`show` 不调用 `enumerate()`，却要求 `PageLoadContext` 
 `Section` 显示区域框，`Grid` 与 `Table` 显示数据格线；非 TTY 或过窄终端选择 plain projection，组件、数据状态与顺序不变。
 `NO_COLOR` 只禁用颜色，不删除表达组件边界的结构框。`show --json` 的 `renderedText` 始终读取固定 80 列 plain projection，不继承 TTY。
 
-`standard` 只遇到一个实验组时，Overview 直接呈现该组的比较结果。遇到多个组时，`show` 默认输出实验索引和可复制的 `niceeval show --experiment <selector>` 命令，不生成跨组 leaderboard，也不引入另一套实验组 CLI 参数。具名组 Page 在唯一 `ExperimentComparisonScope` 内使用 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。Result 是唯一主结果列：Pass Eval 把通过率与判定摘要放在同一格，Score Eval 把 earned score 与判定摘要放在同一格；两种题型分面板呈现，不互排。
+`standard` 只遇到一个实验组时，Overview 直接呈现该组的比较结果。遇到多个组时，`show` 默认输出实验索引和可复制的 `niceeval show --experiment <selector>` 命令，不生成跨组 leaderboard，也不引入另一套实验组 CLI 参数。具名组 Page 在唯一 `ExperimentComparisonScope` 内使用 `ExperimentTable` 呈现 Pass Eval 与 Score Eval。
+
+Result 是唯一主结果列：Pass Eval 把通过率与判定摘要放在同一格；Score Eval 把 earned score 与未挣满的得分项数放在同一格，不重复显示正常封口时必然的 `passed`。Score Eval 若有 `failed`、`errored` 或 `skipped` 则在同格追加非零计数，不把执行错误伪装成丢分项。两种题型分面板呈现，不互排。
 
 Pass Eval 只有一个 Attempt 时，Eval 行不重复显示必为 `0%` 或 `100%` 的通过率，Result 直接显示 `passed`、`failed` 或
 `errored` 判定。相同 Eval 有多个 Attempt 时，Eval 行显示聚合通过率与判定计票。Experiment 与 Eval group 行始终保留汇总通过率。

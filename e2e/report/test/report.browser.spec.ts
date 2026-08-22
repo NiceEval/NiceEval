@@ -119,6 +119,12 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         await experimentSummary.click();
         await expect(expandedExperiment).toHaveAttribute("open", "");
         const dialog = page.getByRole("dialog");
+        const scoreExperimentSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^classic\/incompatible /,
+        });
+        await expect(scoreExperimentSummary).toHaveCount(1);
+        await expect(scoreExperimentSummary).toContainText("7 · 1 missed check");
+        await expect(scoreExperimentSummary).not.toContainText("passed");
         await experiment.click();
         await expect(page).toHaveURL(/#\/experiment\//);
         await expect(dialog).toBeVisible();

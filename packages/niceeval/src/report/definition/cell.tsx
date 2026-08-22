@@ -9,6 +9,7 @@ import { formatMetricScalar, missingText, verdictMark } from "../model/format.ts
 import { formatCostProjectionCellText, isCostMetricValue } from "../model/pricing.ts";
 import {
   DEFAULT_REPORT_LOCALE,
+  countText,
   localeText,
   resolveLocalizedText,
   type ReportLocale,
@@ -51,7 +52,13 @@ export type Cell =
       /** 单判定形态省略判定词、只留判定符(如对照矩阵逐格只放得下一个符号的场景)。 */
       readonly bare?: boolean;
     }
-  | { readonly kind: "score"; readonly earned: number; readonly possible?: number }
+  | {
+      readonly kind: "score";
+      readonly earned: number;
+      readonly possible?: number;
+      /** Fully evaluated score contributions whose earned value is below their declared points. */
+      readonly missedScoreItems?: number;
+    }
   | { readonly kind: "summary"; readonly text: string; readonly more?: number }
   | {
       readonly kind: "locator";
@@ -125,8 +132,12 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       const more = cell.more && cell.more > 0 ? ` +${cell.more} more` : "";
       return `${cell.text}${more}`;
     }
-    case "score":
-      return cell.possible !== undefined ? `${cell.earned} / ${cell.possible}` : String(cell.earned);
+    case "score": {
+      const score = cell.possible !== undefined ? `${cell.earned} / ${cell.possible}` : String(cell.earned);
+      if (cell.missedScoreItems === undefined) return score;
+      const loc = locale ?? DEFAULT_REPORT_LOCALE;
+      return `${score} · ${countText(loc, "experimentList.missedScoreItems", cell.missedScoreItems)}`;
+    }
     case "verdict": {
       const loc = locale ?? DEFAULT_REPORT_LOCALE;
       if (cell.counts) {
