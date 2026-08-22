@@ -67,9 +67,35 @@ function FragmentBody({
 }) {
   if (state.status === "loading")
     return (
-      <p role="status" aria-live="polite">
-        {message(locale, overlay ? "loadingDetails" : "loading")}
-      </p>
+      <div
+        className={`niceeval-view-skeleton${overlay ? " niceeval-view-skeleton-overlay" : ""}`}
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <span className="niceeval-view-sr-only">
+          {message(locale, overlay ? "loadingDetails" : "loading")}
+        </span>
+        <div className="niceeval-view-skeleton-heading" aria-hidden="true">
+          <span className="niceeval-view-skeleton-line niceeval-view-skeleton-eyebrow" />
+          <span className="niceeval-view-skeleton-line niceeval-view-skeleton-title" />
+          <span className="niceeval-view-skeleton-line niceeval-view-skeleton-copy" />
+        </div>
+        <div className="niceeval-view-skeleton-cards" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="niceeval-view-skeleton-content" aria-hidden="true">
+          <span className="niceeval-view-skeleton-chart" />
+          <span className="niceeval-view-skeleton-table">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+        </div>
+      </div>
     );
   if (state.status === "error")
     return (
