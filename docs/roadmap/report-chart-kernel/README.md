@@ -1,5 +1,7 @@
 # Report 图表语义内核
 
+> 本公共三面图表方向已由 [CLI、Insight 与 Benchmark Web](../../design/cli-insight-benchmark-web/DECISION.md) 取消。仍有效的 MetricValue、missing、Evidence 与精确值语义进入 Bundle contract；浏览器图表无障碍归 Insight 或用户网站。
+
 ## 要解决的问题
 
 同一张图必须在 terminal、网页和静态站中表达同一组读数、缺失、完整度、Evidence 与下钻入口。空间布局可以不同，但不能让任一呈现面重新计算数值、删除缺失或用 tooltip 隐藏精确值。

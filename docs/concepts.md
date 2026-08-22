@@ -244,23 +244,24 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
 | 收窄 | Narrowing | 在既有 Sample 上显式排除范围，同时保留状态与分母问题 | [Analysis Library](feature/analysis/library.md) |
 
-### 报告
+### 结果交付（设计目标）
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 报告 | `Report` | `defineReport({ pages })` 返回的标准 React JSX 作者定义；作者面没有通用 semantic model，JSX 只交给 React 处理 | [Report Library](feature/reports/library.md) |
-| 页 | Report Page | 直接写在 `defineReport({ pages })` 中，以 `params / load / render` 形成可寻址页面；`show` 只执行选中页，站点路径才枚举全部实例 | [Report Library](feature/reports/library.md) |
-| 报告组件 | Report component | `defineComponent()` 定义组合组件或 text / web 双面原语；双面原语先调用一次 `resolve()` 取得关闭输入，再由两面同步消费 | [Report Library](feature/reports/library.md) |
-| 已求值页（私有） | `ResolvedPage` | Host 在固定 Sample 存活时短存的单目标页值；不是作者 API、机器文档或站点版本的一部分 | [Reports architecture](feature/reports/architecture.md#私有页值与闭合站点版本) |
-| 闭合站点版本 | `ClosedSiteRevision` | view 与 static 在全站枚举、校验和资源闭包后共用的最终页面、asset 与下载 bytes 集合；show 不形成它 | [Reports architecture](feature/reports/architecture.md#私有页值与闭合站点版本) |
-| 静态报告 | Static report | 由完整 `ClosedSiteRevision` 写出的无源 Record 离线目录；每个 route 的页面 body 与 view 相同 | [Reports CLI](feature/reports/cli.md#niceeval-view---out) |
+| Analysis materializer | `AnalysisMaterializer` | CLI、Bundle 与 Insight 共用的 descriptor、comparison 与闭合 codec 语义内核；不拥有呈现 | [新交付边界](design/cli-insight-benchmark-web/PLAN-4/architecture.md#唯一语义内核) |
+| Insight | Insight | NiceEval 自己维护、供用户排查运行与证据的固定界面；不是网页作者平台 | [新交付边界](design/cli-insight-benchmark-web/PLAN-4/README.md#insight) |
+| Insight revision | `InsightRevision` | Insight 内部绑定一个 frozen Sample 的不可变交互版本；显式刷新后才切换 | [新交付边界](design/cli-insight-benchmark-web/PLAN-4/architecture.md#insightrevision) |
+| BenchmarkBundleDefinition | `BenchmarkBundleDefinition` | 受信任 TypeScript 中声明有限 Bundle resources 与纯数据 parameter slots 的发布定义；不简称 `BenchmarkDefinition` | [Bundle Library](design/cli-insight-benchmark-web/PLAN-4/library.md#benchmarkbundledefinition) |
+| BenchmarkBundle | `BenchmarkBundle` | 一份 Definition 对 exact selection 与 canonical parameters 的不可变、内容寻址 materialization | [Bundle Library](design/cli-insight-benchmark-web/PLAN-4/library.md#manifest) |
+| Bundle resource | `BundleResource` | Bundle 内一份具名 semantic-frame、domain-view 或显式 blob 内容 | [Bundle Library](design/cli-insight-benchmark-web/PLAN-4/library.md#resource-body) |
+| Bundle identity | `BundleIdentity` | 由 canonical manifest 与全部 exact resource bytes 形成的内容身份 | [Bundle architecture](design/cli-insight-benchmark-web/PLAN-4/architecture.md#bundle-identity) |
 
 ### 配置与 CLI
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 预置准备 | —(用普通代码表达) | 跑 agent 前的准备逻辑,按职责分层:layer 的 `prepare()`、Agent Ensure、`test(t)` 普通代码与外部编排；`SandboxAgent.setup` 只连 runtime / 鉴权 | [Sandbox library](feature/sandbox/library.md) |
-| CLI flag | CLI flag | 命令行开关（如 `--report`）；写作时一律带「CLI」限定或写字面 `--xxx`，不与实验 flags 混用 | [CLI](cli.md) |
+| CLI flag | CLI flag | 命令行开关（如 `--model`）；写作时一律带「CLI」限定或写字面 `--xxx`，不与实验 flags 混用 | [CLI](cli.md) |
 
 ## 候选术语
 
@@ -287,7 +288,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Eval Trajectory | Eval trajectory | 由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG | [Eval Trajectory](roadmap/eval-trajectories/README.md) |
 | Workspace 访问证据 | Workspace access evidence | 可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合 | [Workspace 访问证据](roadmap/workspace-access-evidence/README.md) |
 | 发现边界 | Discovery boundary | 显式目录入口拥有的递归 Eval discovery 范围；父级扫描在入口处停止向内发现 | [发现边界](roadmap/discovery-boundaries/README.md) |
-| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Report Calculation 投影成本的价格规则集合 | [成本投影](feature/reports/cost-projections/README.md) |
+| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Analysis cost Measure 投影成本的价格规则集合 | [新交付边界](design/cli-insight-benchmark-web/DECISION.md#迁移门) |
 | Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-authoring/display-names/README.md) |
 | Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不构造 Sample 或推导最新结果 | [Record 库存](roadmap/record-inventory/README.md) |
 
