@@ -11,21 +11,21 @@ BuildKey ready
   → replay remaining materialize recipes
   → optional prefix promotion
   → private clone
-  → activate → Attempt → deactivate
+  → per-instance setup → Attempt → teardown
 ```
 
-`changeFrequency` 不是缓存开关。每个符合协议的 materialize 节点都具有内容身份并有资格缓存；`rare | normal | frequent` 只帮助 NiceEval 在依赖允许的 frontier 中排序，以及决定排队、promotion、保留和回收的积极度。它不进入 key，也不能越过显式依赖。
+`changeFrequency` 不是缓存开关。每个符合协议的 setup 操作都具有内容身份并有资格缓存；任意有限非负数只帮助 NiceEval 在依赖允许的 frontier 中排序，以及决定排队、promotion、保留和回收的积极度。数值越大表示预计变化越频繁，`rare`、`normal` 与 `frequent` 只是数字常量。它不进入 key，也不能越过显式依赖。
 
 ## 两类 setup
 
 | setup 内容 | 执行语义 |
 |---|---|
-| 品牌化 materialize recipe | 可从最长前缀跳过或重新执行；结果可以 promotion 为共享只读前缀 |
-| 普通 callback，或节点的 activate/deactivate | 每个物理 Sandbox 执行；不被缓存命中跳过 |
+| `setup.exec()` / `setup.write()` / `setup.copy()` | 可从最长前缀跳过或重新执行；结果可以 promotion 为共享只读前缀 |
+| 普通 callback | 每个物理 Sandbox 执行；不被缓存命中跳过 |
 
-现有 `.setup(callback)` / `.teardown(callback)` 保持原语义。普通 callback 是不可跨越的逐实例顺序屏障，不能因频率排序被悄悄移动。可缓存 setup 仍通过 `.setup(node)` 注册，不新增 `.deploy()`。
+现有 `.setup(callback)` / `.teardown(callback)` 保持原语义。普通 callback 是不可跨越的逐实例顺序屏障，不能因频率排序被悄悄移动。可缓存操作在写出时直接传给 `.setup()`，不需要先定义 setup 容器，也不新增 `.deploy()`。
 
-共享或持久 SetupPrefix 永远位于 activate 之前。普通 fixture 配置和无密钥 `.env` 模板可以 materialize；secret、租约、checkpoint、外部会话和实例 locator 只能进入 activate/deactivate 或现有逐实例 callback，不能进入共享 prefix、key、manifest 或日志。
+共享或持久 SetupPrefix 永远位于逐实例 callback 之前。普通 fixture 配置和无密钥 `.env` 模板可以进入可缓存操作；secret、租约、checkpoint、外部会话和实例 locator 只能进入逐实例 setup/teardown callback，不能进入共享 prefix、key、manifest 或日志。
 
 ## 入口
 

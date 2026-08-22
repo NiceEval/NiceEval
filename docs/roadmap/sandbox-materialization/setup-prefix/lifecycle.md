@@ -12,20 +12,20 @@ pure link
   → replay materialize suffix
   → optional prefix promotion
   → private clone / private reset baseline
-  → activate in order
+  → per-instance setup callbacks in order
   → Attempt
-  → deactivate in reverse order
+  → teardown callbacks in reverse order
 ```
 
 `--dry` 完成输入求值、依赖检查、线性化、SetupPrefixKey、CaseKey 与 fingerprint 计算；它不 lookup cache、不取得 lease、不创建 staging 或 Sandbox。普通 callback 保持逐实例执行，并成为 recipe 排序的硬屏障。
 
 查询、等待 single-flight 与 lease acquire 不占 Attempt permit。实际 staging、quiesce、promotion 和 clone 使用 Provider 的资源队列；长期操作不持 registry transaction、Domain 全局锁或 Attempt permit。一个前缀不被 promotion 时，最终实例直接重新执行它及后缀的 recipe，语义不变。
 
-## 激活与收尾
+## 逐实例 setup 与收尾
 
-全部 materialize 完成后才开始 activate，materialize 不得依赖 activation。activate 开始前登记对应收尾义务；若某个 activate 失败，已到达节点仍按逆序 deactivate。现有 setup/teardown callback 继续按其物理 Sandbox 生命周期成对执行。
+全部可缓存操作完成后才开始逐实例 setup callback，可缓存操作不得依赖 callback 产生的状态。setup 开始前登记对应收尾义务；若某个 setup 失败，已到达节点仍按逆序 teardown。现有 setup/teardown callback 继续按其物理 Sandbox 生命周期成对执行。
 
-共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可在最后的 frequent materialize 中写入；secret 在 clone 后通过私有 activation overlay 注入，并在 deactivate 清除。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
+共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可由最后的高频操作写入；secret 在 clone 后通过私有 setup overlay 注入，并在 teardown 清除。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
 
 ## Provider capacity admission
 
