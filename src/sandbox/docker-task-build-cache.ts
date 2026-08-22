@@ -38,6 +38,7 @@ export interface TaskBuildInventoryEntry {
 
 export interface TaskBuildDomainInventory {
   readonly domainId: string;
+  readonly providerFamily: "docker";
   readonly backendKind: "docker-images";
   readonly state: "verified-managed";
   readonly entries: readonly TaskBuildInventoryEntry[];
@@ -445,7 +446,7 @@ export async function inventoryTaskBuildDomain(dockerSocketPath?: string): Promi
     });
   }
   domain.db.close();
-  return { domainId: domain.domainId, backendKind: "docker-images", state: "verified-managed", entries };
+  return { domainId: domain.domainId, providerFamily: "docker", backendKind: "docker-images", state: "verified-managed", entries };
 }
 
 export async function planTaskBuildGc(domainId: string): Promise<TaskBuildGcPlan> {

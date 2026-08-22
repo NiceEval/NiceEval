@@ -23,6 +23,7 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
     expect(document.format).toBe("niceeval.cache-inventory");
     expect(document.domains).toEqual([{
       domainId: expect.any(String),
+      providerFamily: "docker",
       backendKind: "docker-images",
       state: "verified-managed",
       entryCount: 0,
@@ -41,6 +42,16 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
     expect(result.stdout).not.toContain("planId");
 
     const domainId = (document.domains[0] as { domainId: string }).domainId;
+    const detail = await niceeval.run(["cache", "inventory", "--domain", domainId, "--json"], {
+      env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
+    });
+    expect(detail.exitCode, detail.diagnostic()).toBe(0);
+    expect(JSON.parse(detail.stdout)).toMatchObject({
+      scope: { kind: "domain", domainId },
+      entries: [],
+      providerObservations: [],
+    });
+
     const preview = await niceeval.run(["cache", "gc", "--domain", domainId, "--json"], {
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
     });
