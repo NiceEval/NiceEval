@@ -399,7 +399,7 @@ ledger 与 reason data types 同样仅以 type-only export 提供。精确调用
 官方组合组件。它们只接收关闭数据，详情 overlay 一律通过 `attemptDetailTarget()`、`experimentDetailTarget()` 与
 `libraryDetailRoute()` 建立。
 
-`ExperimentTable` 与 `ExperimentScatter` 是具名比较组件。它们只接受 `ExperimentComparisonScope` 或该 scope 产生的同组 branded projection，不接受普通 Sample 或任意 rows。多组输入以 `analysis-comparison-group-mismatch` 失败；单组的 `non-comparable` 闭合原因与 Evidence，不渲染排名或散点。中立 `Table` 与 `Scatter` 仍可显示任意已闭合值，不承担实验组语义。
+`ExperimentTable` 与 `ExperimentScatter` 是具名比较组件。它们只接受 `ExperimentComparisonScope` 或该 scope 产生的同组 branded projection，不接受普通 Sample 或任意 rows。多组输入以 `analysis-comparison-group-mismatch` 失败；同组 member 即使 Eval population 不同也正常渲染，各自指标使用实际运行的 Slot 和自己的分母。没有运行的 Eval 不合成为失败，也不进入共同交集。中立 `Table` 与 `Scatter` 仍可显示任意已闭合值，不承担实验组语义。
 
 `AttemptDetails` 把 source navigation 精确关联的每次物理 `send` 嵌回对应源码行。Assertion 展开区对值比较、scope 检查、Sandbox、Judge 与 score 使用同一套中立结构：
 

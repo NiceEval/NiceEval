@@ -92,11 +92,6 @@ export interface ExperimentTableProps {
 }
 
 export const ExperimentTable = defineComponent<ExperimentTableProps>(async (props, ctx) => {
-  if (props.comparison.comparison.state === "non-comparable") {
-    return <Text className={props.className}>
-      {props.comparison.comparison.issues.map((issue) => issue.reason).join(", ")}
-    </Text>;
-  }
   const sample = sampleForExperimentComparisonScope(props.comparison);
   const rows = await experimentListData(sample, ctx.report.pricing);
   const defaultSort = "summary";

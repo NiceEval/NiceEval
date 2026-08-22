@@ -105,9 +105,15 @@ interface BuiltInShowDocument {
     | {
         readonly kind: "experiment-group";
         readonly group: ExperimentGroupIdentity;
-        readonly comparison:
-          | { readonly state: "comparable"; readonly members: readonly string[]; readonly rows: JsonValue }
-          | { readonly state: "non-comparable"; readonly members: readonly string[]; readonly issues: readonly NonComparableIssue[] };
+        readonly comparison: {
+          readonly members: readonly string[];
+          readonly coverage: readonly {
+            readonly member: string;
+            readonly coveredEvalCount: number;
+            readonly groupEvalCount: number;
+          }[];
+          readonly rows: JsonValue;
+        };
       }
     | {
         readonly kind: "run-membership";
@@ -256,8 +262,8 @@ server。这个输入错误不同于某个已选中结果的 MetricValue 为 `em
 | 全站构建的 Sample 零选中结果 | 返回 `report-sample-empty`，不形成 revision 或输出目录。 |
 | 全站 Page、枚举、路径、asset 或预算失败 | view 保留 last-good；static 不创建完整目录。 |
 | MetricValue 是 partial、empty、unsupported 或 failed | 成功呈现状态、issues 与 refs。 |
-| 实验组结构不可比 | 成功呈现 `non-comparable`、成员、原因与 Evidence，不生成排名或散点。 |
-| 比较组件收到多组输入 | 返回 `analysis-comparison-group-mismatch`，不降级成 `non-comparable`。 |
+| 同组实验的 Eval population 不同 | 成功呈现全部成员；各自指标保留实际分母，coverage 给出成员数与组内并集数。 |
+| 比较组件收到多组输入 | 返回 `analysis-comparison-group-mismatch`。 |
 | 未知或非规范 route | 用法错误，说明可用 route 或参数格式。 |
 | 输出目录已存在 | 返回 `report-export-target-exists`，不改动目录。 |
 | 静态写入失败 | 返回 `report-export-write-failed`，不泄露任意系统路径或内部 cause。 |

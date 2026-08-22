@@ -12,7 +12,12 @@ interface ExperimentGroupShow {
   data: {
     kind: "experiment-group";
     comparison: {
-      state: "comparable";
+      members: readonly string[];
+      coverage: readonly {
+        member: string;
+        coveredEvalCount: number;
+        groupEvalCount: number;
+      }[];
       rows: readonly {
         experiment: string;
         passRate: null;
@@ -81,7 +86,8 @@ test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
         data: {
           kind: "experiment-group",
           comparison: {
-            state: "comparable",
+            members: ["assertion-score"],
+            coverage: [{ member: "assertion-score", coveredEvalCount: 4, groupEvalCount: 4 }],
             rows: [{
               experiment: "assertion-score",
               passRate: null,

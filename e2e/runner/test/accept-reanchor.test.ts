@@ -44,7 +44,12 @@ interface ExperimentGroupShow {
   data: {
     kind: "experiment-group";
     comparison: {
-      state: "comparable";
+      members: readonly string[];
+      coverage: readonly {
+        member: string;
+        coveredEvalCount: number;
+        groupEvalCount: number;
+      }[];
       rows: readonly {
         experiment: string;
         passRate: {
@@ -136,7 +141,8 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       data: {
         kind: "experiment-group",
         comparison: {
-          state: "comparable",
+          members: ["accept"],
+          coverage: [{ member: "accept", coveredEvalCount: 1, groupEvalCount: 1 }],
           rows: [{
             experiment: "accept",
             passRate: { state: "available", value: 1, samples: 1, total: 1 },
@@ -159,7 +165,8 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       data: {
         kind: "experiment-group",
         comparison: {
-          state: "comparable",
+          members: ["accept"],
+          coverage: [{ member: "accept", coveredEvalCount: 1, groupEvalCount: 1 }],
           rows: [{
             experiment: "accept",
             passRate: { state: "available", value: 1, samples: 1, total: 1 },
