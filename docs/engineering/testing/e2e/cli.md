@@ -70,6 +70,15 @@ Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`�
   按 Experiment 紧跟 `details: niceeval show --run <runId>`；
 - 测试实际执行四个 details 命令，并分别读回所属错误；两个默认 Run Human 页错误优先且不展示空 KPI、证据、分析或内部 membership 字段；旧 candidate 对上述长期结果为红，新 candidate 为绿。
 
+### Sandbox 管理入口
+
+#### cli-sandbox-project-preflight
+
+`niceeval sandbox list` 在解析成功后准备当前项目的 `.env` 凭据，因此凭据文件不可读时会在调用
+Sandbox Provider 前失败；它不加载或求值 `niceeval.config.*`，空留存表仍输出
+`No kept sandboxes.`。这个单边界 owner 使用本机空注册表，不连接 Docker、E2B、Vercel 或其它
+Sandbox Provider。
+
 ### 缓存
 
 1. 首次带 `--rerun all` 执行并保存对照 Run。
