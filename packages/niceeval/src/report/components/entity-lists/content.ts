@@ -55,14 +55,14 @@ function projectCells(bag: CellBag, columns: readonly ColumnSpec[]): globalThis.
   return cells;
 }
 
-function measureCell(value: MetricValue): Cell {
+function measureCell(value: MetricValue, showCoverage = value.state !== "available"): Cell {
   return {
     kind: "metric",
     metric: value,
     // A complete denominator adds no actionable information to every text
     // cell. Keep partial and exceptional states explicit; the MetricValue
     // itself remains intact for both renderers and machine output.
-    showCoverage: value.state !== "available",
+    showCoverage,
   };
 }
 
@@ -350,17 +350,20 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
   const members: readonly EvalLayoutNode[] = experimentEvalLayout([...new Set([...evalIds, ...item.missingEvalIds])]);
   const attempts = item.evalRows.flatMap((row) => row.attempts);
   const primary = item.evaluationKind === "pass"
-    ? measureCell(item.endToEndPassRate)
+    ? measureCell(item.endToEndPassRate, false)
     : item.totalScore === undefined
     ? { kind: "notApplicable" } as const
     : { kind: "score", earned: item.totalScore } as const;
   const bag: CellBag = {
-    entity: textCell(item.experimentId),
+    entity: identityCell(
+      item.experimentId,
+      `${item.endToEndPassRate.samples}/${item.endToEndPassRate.total}`,
+    ),
     model: item.model === null ? { kind: "notApplicable" } : textCell(item.model),
     agent: item.agent === null ? { kind: "notApplicable" } : textCell(item.agent),
-    durationMs: measureCell(item.durationMs),
-    tokens: measureCell(item.tokens),
-    ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD) }),
+    durationMs: measureCell(item.durationMs, false),
+    tokens: measureCell(item.tokens, false),
+    ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD, false) }),
     summary: stackCell(primary, verdictCountsCell(attempts)),
   };
   return {
