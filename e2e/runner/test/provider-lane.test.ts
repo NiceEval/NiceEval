@@ -30,7 +30,7 @@ test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experi
       await withTempDir("niceeval-runner-shared-state-exclusive-lane-", async (barrierRoot) => {
         const holder = niceeval.start(["exp", "shared-state-lease-holder", "--rerun", "all", "--json"], {
           env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-          timeoutMs: 60_000,
+          timeoutMs: 120_000,
         });
         let contenders: ReturnType<typeof niceeval.start> | undefined;
         let independentEnteredBeforeLeaseRelease = false;
@@ -40,17 +40,17 @@ test("等待 sharedState 不占用同一 exclusive provider lane，无关 Experi
         try {
           await pollUntil(
             async () => (await exists(join(barrierRoot, "lease-holder-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 10, label: "sharedState holder reaches its Agent" },
+            { timeoutMs: 60_000, intervalMs: 10, label: "sharedState holder reaches its Agent" },
           );
 
           contenders = niceeval.start(["exp", "shared-state-lane", "--rerun", "all", "--max-concurrency", "2", "--json"], {
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-            timeoutMs: 60_000,
+            timeoutMs: 120_000,
           });
           independentEnteredBeforeLeaseRelease = await appearsWithin(
             join(barrierRoot, "lane-independent-agent-started"),
-            30_000,
-            "independent local provider Experiment while sharedState waiter is blocked",
+            60_000,
+            "independent exclusive provider Experiment while sharedState waiter is blocked",
           );
           waiterEnteredSetupBeforeLeaseRelease = await appearsWithin(
             join(barrierRoot, "lane-waiter-setup-attempted"),

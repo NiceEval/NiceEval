@@ -3,7 +3,7 @@
 ## adapter-codex-app-server-failed-turn
 
 Repo ID 是 `adapter/codex-app-server`。它以签入的外部 `codex app-server` JSON-RPC
-fixture 驱动安装后的 `codexAgent()`、Local Sandbox 与公开 CLI，不使用 provider 凭据。
+fixture 驱动安装后的 `codexAgent()`、digest-pinned Node Docker Sandbox 与公开 CLI，不使用 provider 凭据。
 
 这个 owner 固定验证以下结果：
 
@@ -11,6 +11,17 @@ fixture 驱动安装后的 `codexAgent()`、Local Sandbox 与公开 CLI，不使
 - Record 把结果归为 assertion `failed`，而不是 execution `errored`；
 - Human 反馈展示 scope assertion 的 expected / received 与原生 `turn.error.message`；
 - 反馈不能退化为 `error: failed`，也不能抛出 adapter 组装的 SendFailure 文本。
+
+## adapter-codex-app-server-host-config-isolation
+
+Repo ID 是 `adapter/codex-app-server`。这个单边界 owner 为每个 case 创建测试自有的
+`HOME` 与 `CODEX_HOME`，在两处写入不同的合法 sentinel config，再通过安装后 CLI、
+`codexAgent()`、digest-pinned Node Docker Sandbox 与真实 app-server 协议运行。容器使用固定非 root 用户，
+并把签入 fixture Codex 安装到自己的 `PATH`。fixture 只通过协议返回 Sandbox 进程的 HOME 身份与
+config-present 布尔值；测试在进程结束后逐字节核对两份 sentinel，证明容器既不读取也不改写宿主 Codex 配置。
+
+该 owner 的所有 Codex 初始化进程都显式继承 case 私有的 `HOME` 与 `CODEX_HOME`；它不读取、
+检查或依赖执行机的真实 HOME 与 `.codex`，收据也不保存配置内容或进程变量内容。
 
 ## adapter-codex-cli-live-compatibility
 

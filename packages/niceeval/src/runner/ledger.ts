@@ -13,18 +13,13 @@ import { createHash } from "node:crypto";
 import type { DiffArtifact, DiffWindow, Sandbox, WindowChange } from "../types.ts";
 import type { AgentWorkspaceDiffPolicy } from "../assertions/workspace-diff.ts";
 import { sandboxSupportsRootCommands } from "../sandbox/backend.ts";
-import { DEFAULT_LEDGER_GIT_DIR, ledgerPathsFor } from "../sandbox/ledger-paths.ts";
+import { DEFAULT_LEDGER_EXPORT_DIR, DEFAULT_LEDGER_GIT_DIR } from "../sandbox/ledger-paths.ts";
 
 /**
  * ledger 的私有 git 目录:workdir 之外、runner 控制;agent 的工具默认不会去 /tmp 翻它。这是
- * 沙箱内 provider(docker/e2b/vercel)的默认值——每个实例都是全新隔离文件系统,固定路径不会
- * 跨实例踩踏。宿主本身即工作树的 provider(如 local)按 sandboxId 登记专属路径覆盖它
- * (见 sandbox/ledger-paths.ts),避免同机多次运行共享同一个 /tmp。
+ * 沙箱内 provider(docker/e2b/vercel)的固定值——每个实例都是全新隔离文件系统。
  */
 export const LEDGER_GIT_DIR = DEFAULT_LEDGER_GIT_DIR;
-
-/** 整相导出文件的落点(与 ledger 同前缀,同样是 runner 私有路径;覆盖规则同上)。 */
-const EXPORT_DIR = "/tmp/.niceeval-ledger-export";
 
 /** 默认归因排除清单(锚点时冻结):依赖、构建产物、包管理器缓存与用户项目里的 .niceeval 记录目录。
  *  框架自己不往 workdir 写任何东西(见 docs/observability.md「宿主侧行为断言:t.o11y」),
@@ -106,8 +101,6 @@ const EXPORT_MANIFEST_HEADER = "niceeval-ledger-export-parts v1";
 function buildExportScript(exportDir: string): string {
   return [
     "set -eu",
-    // shellQuote:多数 provider 的 exportDir 是固定字面量(无空格);local 的 exportDir 来自
-    // mkdtemp(可能落在含空格的自定义 TMPDIR 下),赋值行不加引号会被 shell 拆成多个词。
     `D=${shellQuote(exportDir)}`,
     'rm -rf "$D" && mkdir -p "$D"',
     'OUT=$D/export.bin',
@@ -315,12 +308,8 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   const includes = canonicalPolicyEntries(opts?.include ?? [], "include");
   const ignored = canonicalPolicyEntries(opts?.ignore ?? [], "ignore");
   const excludes = [...DEFAULT_EXCLUDES, ...ignored];
-  // 多数 provider 用固定的宿主内私有路径(每实例全新隔离文件系统,天然不冲突);宿主本身即
-  // 工作树的 provider(如 local)按 sandboxId 登记专属路径,避免同机多次运行互相踩踏
-  // (见 sandbox/ledger-paths.ts —— 这里不认 provider 名,只问登记表)。
-  const paths = ledgerPathsFor(sandbox.sandboxId);
-  const gitDir = paths?.gitDir ?? LEDGER_GIT_DIR;
-  const exportDir = paths?.exportDir ?? EXPORT_DIR;
+  const gitDir = LEDGER_GIT_DIR;
+  const exportDir = DEFAULT_LEDGER_EXPORT_DIR;
   const env = gitEnv(sandbox, gitDir);
   const rootCommands = sandboxSupportsRootCommands(sandbox);
   // 只给 runner 私有 ledger 命令提权，以便读取题目故意设置的受限文件。脚本不 chmod/chown

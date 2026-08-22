@@ -1,0 +1,239 @@
+---
+title: "Tune Concurrency: Throughput, Shared State, and a Stable Execution Order"
+sidebarTitle: "Concurrency and Execution Order"
+description: "Global concurrency slots and an Experiment's own maxConcurrency are two levels of concurrency control. Learn what each controls, how to serialize shared state, how execution order stays stable, and why another terminal can speed work up."
+---
+
+import { Picker, Schedule } from '/snippets/widgets.jsx';
+
+The number of Attempts that run at once is determined by two concurrency limits: **global concurrency slots** control what this machine and Provider can sustain, while an Experiment's own **`maxConcurrency`** controls how many of its Attempts it is willing to run in parallel. Work starts only after it passes both gates.
+
+When a run feels slow, concurrency is only one control. First identify where the time goes:
+
+<Picker
+  name="ne-speed"
+  title="Where time goes"
+  hint="Choose a panel to see which control to adjust"
+  note="Result carry skips execution itself. Sandbox reuse still executes work for real; it only spreads creation and shared preparation costs."
+  items={[
+    {
+      tab: "Unchanged tasks run again",
+      lead: "Check whether result carry is working first",
+      why: [
+        <>When you run the same command again, evaluated results do not cost money again by default. If every run reruns everything, something is invalidating fingerprints—most often a helper shared by 30 evals changed, or a tunnel address that changes every run was put in <code>flags</code>.</>,
+        <>See <a href="/tutorials/rerun-and-cache">Rerun and Carry Results</a>. Until this is fixed, changing concurrency only makes duplicate work finish faster.</>,
+      ],
+    },
+    {
+      tab: "I only want to recheck failures",
+      lead: <>Use `--rerun` to rerun failures only</>,
+      why: [
+        <>A bare `--rerun` trusts only `passed` results and reruns every failure. You do not need to dig through the result tree for failed eval IDs yourself.</>,
+        <>See <a href="/tutorials/rerun-and-cache">Rerun and Carry Results</a> for usage.</>,
+      ],
+    },
+    {
+      tab: "The machine still has unused capacity",
+      lead: "Tune the two concurrency gates on this page",
+      why: [
+        <>When evals do not share mutable state, do not give the Experiment a <code>maxConcurrency</code>. Let the scheduler dispatch the longest-running work first and naturally mix fast and slow work. Lower <code>--max-concurrency</code> only when local resources are exhausted or the Provider rate-limits you.</>,
+        "Do not serialize by default just to make a run feel more certain. That simply gives up throughput.",
+      ],
+    },
+    {
+      tab: "Sandbox startup and environment setup dominate",
+      lead: "Let several Attempts share a Sandbox",
+      why: [
+        <>When Sandbox creation and Sandbox-level <code>setup</code> consume most wall-clock time and the whole batch can run in any order, declare <code>sandboxReuse: true</code> on the Experiment. When only a few compatible task groups need their own reuse, use <a href="/tutorials/eval-groups">eval groups</a> instead so the rest of the work does not become serial too.</>,
+        <>State outside the work directory remains; see <a href="/tutorials/sandbox-reuse">Reuse Sandboxes</a>. Results still carry by fingerprint. Bake stable heavy dependencies into an image or template first.</>,
+      ],
+    },
+    {
+      tab: "I only need to know whether it can pass once",
+      lead: <>Enable `--early-exit`</>,
+      why: [
+        <>By default, all `attempts` run to give a real pass rate. Use this when you only need to know whether the task can be done and do not care about the distribution; after one pass, remaining Attempts are not dispatched.</>,
+        "To save money in practice, Attempts must also run one after another. See “Make early exit actually save money” on this page.",
+      ],
+    },
+  ]}
+/>
+
+## What the two concurrency limits control
+
+| Concurrency limit | Where to set it | What it controls | Across terminals |
+| --- | --- | --- | --- |
+| Global concurrency slots | `--max-concurrency`, or `maxConcurrency` in `niceeval.config.ts` | Total throughput for this invocation | Counted separately; values from two terminals add together |
+| Experiment concurrency cap | `maxConcurrency` in the Experiment file | How many Attempts this Experiment runs at the same time | Counted separately; values from two terminals add together |
+| Shared-state lease | `sharedState.key` in the Experiment file | The entire restore, execution, and write-back window for the same checkpoint | Windows with the same key run serially |
+
+Global precedence is `--max-concurrency` → `maxConcurrency` in config → the current Sandbox Provider's recommended default (`docker` 10, `e2b` 20, `vercel` 1). The recommendation reflects Provider-side constraints. Use `--max-concurrency` to cap the rate of your own Agent interface.
+
+```bash
+npx niceeval exp compare --max-concurrency 19
+```
+
+## How slots are allocated
+
+This batch mixes work: there are three global slots, `fast` is a regular Experiment, and `slow` declares `maxConcurrency: 1`.
+
+<Schedule
+  title="3 global slots · slow limits itself to 1"
+  hint="Vertical lines mark time; hover to pause"
+  lanes={[
+    { label: "Slot 1", bars: [
+      { text: "slow · a1", from: 1, to: 5, tone: "serial" },
+      { text: "slow · a2", from: 5, to: 9, tone: "serial" },
+      { text: "slow · a3", from: 9, to: 13, tone: "serial" },
+    ] },
+    { label: "Slot 2", bars: [
+      { text: "fast · a1", from: 1, to: 4 },
+      { text: "fast · a3", from: 4, to: 8 },
+      { text: "fast · a5", from: 8, to: 13 },
+    ] },
+    { label: "Slot 3", bars: [
+      { text: "fast · a2", from: 1, to: 3 },
+      { text: "fast · a4", from: 3, to: 7 },
+      { text: "fast · a6", from: 7, to: 13 },
+    ] },
+    { label: "No slot", bars: [
+      { text: "fast · a2 backs off for retry", from: 3, to: 6, tone: "backoff" },
+    ] },
+  ]}
+  legend={[
+    { text: "Regular Experiment: claims an available slot" },
+    { tone: "serial", text: "Declares maxConcurrency: 1, so it always occupies one lane" },
+    { tone: "backoff", text: "Backs off for retry: releases a global slot but remains running" },
+  ]}
+/>
+
+Three things follow from this diagram:
+
+- **`slow` always occupies one lane.** Its second Attempt starts only after the first one's teardown and Sandbox destruction finish. Other Experiments in the batch are not held back; they use the remaining slots normally.
+- **Slots favor the Experiments that need the most rounds to finish.** Mixing fast and slow Experiments in one command is safe. You do not need to make waves manually or reserve slots for fast tasks. Fast work fills gaps as they open.
+- **An Attempt in backoff releases a global slot, but not its Experiment's own slot.** When rate-limited, the live panel's `running` count can exceed the limit by exactly the number of Attempts in backoff. At any instant, the work actually executing still does not exceed the limit. This is not failed concurrency control.
+
+Attempts waiting for Experiment-level `setup`—for example, while starting a tunnel or shared service—neither hold nor reserve a concurrency slot and remain `queued`. A slow-starting tunnel does not turn a long period of “0 running, N queued” into a concurrency configuration problem.
+
+## Confirm applied concurrency in the live panel
+
+The `PLAN` panel first tells you how many lanes this execution will open and where that number came from. Experiments that declare `maxConcurrency` follow with their own caps:
+
+```text
+│ 45 attempts · 9 evals × 5 configs · concurrency 19 (from flag) · slow ≤1 │
+```
+
+`(from flag)` means 19 came from `--max-concurrency`. When neither the flag nor config supplies a value, you see a Provider recommendation such as `(from vercel default)`: one lane is not a scheduler failure; `vercel` recommends one. `slow ≤1` means this Experiment is bounded by its own cap, so increasing `--max-concurrency` will not make it open more lanes.
+
+During execution, inspect the top-line count:
+
+```text
+│ 45 total · 6 reused · 19 running · 12 queued · 6 passed · 2 failed · 0 errored · 0 skipped │
+```
+
+When `running` stays at the limit while `queued` steadily drains, concurrency slots are the bottleneck, so increase the limit if capacity remains. When `running` remains below it, the bottleneck is elsewhere: an Experiment's own cap (listed in `PLAN`), Provider-exclusive serialization, or waiting for Experiment-level `setup`.
+
+## Serialize work that shares state across Attempts
+
+When several evals load, modify, and write back the same host file or central service state, reduce this Experiment to one lane:
+
+```ts
+export default defineExperiment({
+  agent: codexAgent(),
+  sandboxReuse: true,
+  maxConcurrency: 1,   // One at a time within this Invocation
+  sharedState: { key: "mempal/codex/cohort-a" },
+  // ...
+});
+```
+
+`maxConcurrency: 1` serializes only Attempts within this Invocation. `sharedState.key` protects the same checkpoint across Invocations in the same project Coordination domain. The lease is acquired before Experiment and Sandbox `setup`, then released only after Sandbox `teardown`, the Provider finalizer, and Experiment `teardown` finish. A waiting Invocation does not create a Sandbox early. After it acquires the lease, it continues its own plan; it does not read or carry results from another Run.
+
+`sharedState` provides mutual exclusion only. It does not store the checkpoint, make write-back atomic, roll changes back, or repair a partial business write after a forced kill. Write back atomically when possible; otherwise use a new key and rebuild a clean cohort. Coordination across machines still belongs to external orchestration.
+
+NiceEval does not automatically take over a lease based on a timeout, PID check, or heartbeat age. A paused owner—even a process stopped with `SIGSTOP`—continues to hold its lease.
+
+After a forced kill or cleanup failure, the lease remains held and waiters remain blocked. This prevents two Invocations from modifying the same state. After you confirm that the original owner has terminated and external state is quiescent, use the [public recovery inspection command](/troubleshooting/recover-after-kill#recover-a-shared-state-lease) to inspect the exact owner token. Then recover explicitly with that token and both confirmation flags.
+
+When only one Agent service rate-limits frequently, set `maxConcurrency: N` on that Experiment instead of lowering the global cap. Lowering the global cap harms other Experiments in the batch. During backoff, an Experiment cap does not admit the N+1 Attempt, so a rate-limited service is not put under even more pressure.
+
+### Store Hook state by Sandbox
+
+Under concurrency, the same module serves more than one Sandbox at once. A handle obtained in `setup` cannot live in a regular module variable because a later concurrent Attempt would overwrite it. Store it by Sandbox instance:
+
+```ts
+const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void> }>();
+```
+
+If those Attempts really must read and write the same business state in order, do not use a `WeakMap` to hide that meaning. Set the Experiment to `maxConcurrency: 1` directly.
+
+## Reuse a Sandbox for related evals by group
+
+When only a few eval groups need a shared environment, use `defineEvalGroup()` to list compatible members explicitly. Each group dispatches only one Attempt at a time and reuses at most one Sandbox. Other groups and ungrouped evals keep competing for the remaining concurrency slots. You do not need to set the entire Experiment to `maxConcurrency: 1`.
+
+The `evals` array declares members, not business order. The Runner serializes normalized eval IDs stably. When `attempts > 1`, the Attempts that must actually dispatch for one member enter the group lane consecutively. See [Reuse Sandboxes with Eval Groups](/tutorials/eval-groups) for the complete directory layout, Experiment shape, and `--dry` output.
+
+Eval groups are not task dependency graphs. Result carry and CLI filtering can leave an earlier item unexecuted, while the reset between tasks can remove its `workdir` changes. Put steps that require a later step to read an earlier step's file into the same eval; do not rely on group dispatch order for correctness.
+
+### You do not need serialization just for an ordered display
+
+Results always appear in discovery order, independent of the current concurrency. Terminal and Report rows are stable and easy to diff as a result. If ordered output is all you want, stop there: naming prefixes still work and you do not need to sacrifice throughput.
+
+## Make early exit actually save money
+
+`earlyExit` stops Attempts that have **not been dispatched yet**. With normal concurrency, several Attempts for the same eval can already be dispatched together. By the time the first one passes, the later ones are already running, so no money is saved. To get the one-after-another behavior—run once, stop after a pass, and only run the next attempt after a failure—use:
+
+```ts
+export default defineExperiment({
+  attempts: 5,
+  earlyExit: true,
+  maxConcurrency: 1,   // The first pass takes effect before the next Attempt is dispatched
+  // ...
+});
+```
+
+## Open another terminal against the same Record
+
+One Record root accepts concurrent append writers, but it does not let two Invocations divide work automatically. When the machine, Provider, and Agent service all have remaining capacity, both terminals may use the same root:
+
+```bash
+niceeval exp compare --record .niceeval/record --max-concurrency 2
+niceeval exp compare --record .niceeval/record --max-concurrency 2
+```
+
+Each side plans its complete selection independently. They can execute the same Evals twice because neither side reads the other's in-progress Attempts. Completed Runs are published atomically into the shared Record. Use different roots only when you intentionally need isolated Runs, Samples, and Reports; NiceEval does not merge separate roots automatically.
+
+There are four boundaries:
+
+- The two CLI caps add together; Provider capacity does not. Lower both when capacity is tight.
+- An Experiment's `maxConcurrency` also counts separately per terminal: if both commands declare 3, up to six Attempts run in total.
+- The two Sandbox pools are independent too. Declare `sharedState.key` only when an external checkpoint is genuinely shared; it does not merge Records.
+- Concurrent append writers are allowed. Record maintenance remains exclusive; stop readers and writers before retrying a `record-maintenance-busy` operation.
+
+## Boundaries
+
+- A concurrency cap controls resource use, not spending. Use `--budget` to cap cost.
+- Providers that declare exclusive serialization have a Provider-level serial limit. `--max-concurrency` does not remove it; it is a correctness constraint, not a scheduling option.
+- For Agent services that bill or rate-limit by the number of concurrent runs, setting a global cap exactly at the service limit is unstable: a slot released for backoff is immediately filled by a new Attempt, so service-side concurrency stays at the limit. In one terminal, leave headroom with an Experiment-level `maxConcurrency`. Across terminals, values add together, so lower each side for an account-level quota or use external orchestration.
+- Experiments that declare `sandboxReuse: true` run serially inside each Sandbox and in parallel across Sandboxes. See [Reuse Sandboxes](/tutorials/sandbox-reuse).
+- Eval groups serialize stably within a group while different groups still run in parallel. See [Eval Groups](/tutorials/eval-groups).
+
+## Continue reading
+
+<CardGroup cols={2}>
+  <Card title="Rerun and Carry Results" icon="rotate-right" href="/tutorials/rerun-and-cache">
+    See which results do not cost money again in this run.
+  </Card>
+  <Card title="Reuse Sandboxes" icon="box" href="/tutorials/sandbox-reuse">
+    Another path to speed: pay common preparation once.
+  </Card>
+  <Card title="Eval Groups" icon="layer-group" href="/tutorials/eval-groups">
+    Reuse a Sandbox with stable serial order within a group while other groups keep running in parallel.
+  </Card>
+  <Card title="Write Experiments" icon="flask" href="/tutorials/write-experiment">
+    Where `maxConcurrency` and Experiment-level lifecycle belong.
+  </Card>
+  <Card title="Runner" icon="gear" href="/explanation/runner">
+    The full mechanism for discovery, dispatch, retries, and budgets.
+  </Card>
+</CardGroup>

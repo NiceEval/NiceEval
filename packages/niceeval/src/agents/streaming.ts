@@ -1,7 +1,7 @@
 // 官方的「拼装方式」件:把一个手写 send 里反复出现的事收成可复用的小东西,
 // 而不是每接一个新后端就重写一遍循环 + Map + if/else。
 //
-// 背景(见 docs-site/zh/tutorials/write-send.mdx):一轮交互里真正互不相干的事只有几类——
+// 背景(见 apps/docs-site/zh/tutorials/write-send.mdx):一轮交互里真正互不相干的事只有几类——
 //   1. 怎么把输入发出去(transport)——真做不掉,adapter 只写这个;
 //   2. 原始数据怎么变成 StreamEvent[]——按数据到达形状分「整段落地」(sdk-streams.ts 的
 //      fromXxxEvents,已有)和「逐 token / 逐参数增量」(deltaStream,这里新增)两种官方 reducer;

@@ -75,9 +75,9 @@ Human 的 lane 顺序固定为 Group before-slots → physical enter → slots �
 
 每个真实 `sandbox.materialize` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
 
-内建 locator 字段是闭合集合：`image`、`context`、`file`、`target`、`workspaceService`、`template`、`snapshotId`、`dir`。远端 URL 的 userinfo、query 与 fragment 会先移除并登记 redaction。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`。URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，原字符串不进入输出。E2B template 与 Vercel snapshot ID 也是 Provider 管理的任意字符串，固定显示 `Opaque`。
+内建 locator 字段是闭合集合：`image`、`context`、`file`、`target`、`workspaceService`、`template`、`snapshotId`。远端 URL 的 userinfo、query 与 fragment 会先移除并登记 redaction。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`。URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，原字符串不进入输出。E2B template 与 Vercel snapshot ID 也是 Provider 管理的任意字符串，固定显示 `Opaque`。
 
-作者提供的本地 path、`file:` URL、Dockerfile file 或 local dir 无法仅凭语法证明不含宿主用户名、私有目录或秘密片段，因此整个 locator 固定显示 `Opaque`，原路径不进入输出。只有 `localSandbox()` 未配置 `dir` 时使用的固定 `author-base-dir` 标签可以显示 `Exact`。
+作者提供的本地 path、`file:` URL 或 Dockerfile file 无法仅凭语法证明不含宿主用户名、私有目录或秘密片段，因此整个 locator 固定显示 `Opaque`，原路径不进入输出。
 
 custom provider / case 也只显示 `Opaque`。build args、env value、credential、stdin 与 custom identity 不进入这个投影。
 

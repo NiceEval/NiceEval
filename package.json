@@ -1,5 +1,9 @@
 {
+  "name": "niceeval-workspace",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "packageManager": "pnpm@11.18.0",
   "engines": { "node": ">=24" },
   "scripts": {
@@ -23,9 +27,9 @@
     "site:dev": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run dev",
     "site:build": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run build && tsx scripts/submit-indexnow.ts",
     "docs:dev": "node scripts/docs-dev.mjs",
-    "docs:mint": "cd docs-site && npx --yes mint@4.2.812 --version",
-    "docs:validate": "cd docs-site && npx --yes mint@4.2.812 validate",
-    "docs:links": "cd docs-site && npx --yes mint@4.2.812 broken-links --check-anchors --check-redirects"
+    "docs:mint": "cd apps/docs-site && npx --yes mint@4.2.812 --version",
+    "docs:validate": "cd apps/docs-site && npx --yes mint@4.2.812 validate",
+    "docs:links": "cd apps/docs-site && npx --yes mint@4.2.812 broken-links --check-anchors --check-redirects"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
@@ -34,6 +38,7 @@
     "concurrently": "^10.0.5",
     "husky": "^9.1.7",
     "next": "16.3.0",
+    "nx": "23.1.1",
     "tar-stream": "^3.1.7",
     "tsx": "^4.19.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2",

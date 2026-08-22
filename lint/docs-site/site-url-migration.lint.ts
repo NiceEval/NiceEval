@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
-import { getAllBlogPosts } from "../../site/lib/blog";
-import { proxy } from "../../site/proxy";
-import { absoluteUrl, copy, withLocale } from "../../site/lib/content";
-import { createPagesSitemap } from "../../site/lib/sitemap";
+import { getAllBlogPosts } from "../../apps/site/lib/blog";
+import { proxy } from "../../apps/site/proxy";
+import { absoluteUrl, copy, withLocale } from "../../apps/site/lib/content";
+import { createPagesSitemap } from "../../apps/site/lib/sitemap";
 
 // 仓库守护:产品站英文正式 URL 是无前缀路径,旧 /en/* 永久去前缀,根路径不按请求语言漂移。
 // 删除这组守护后,站内链接/SEO 产物或 Proxy 任一处回到旧口径,构建仍可能成功而搜索引擎与用户
@@ -59,14 +59,14 @@ describe("产品站英文 URL 迁移", () => {
   });
 
   it("next.config 把无前缀根路径 rewrite 到 /en 渲染源,并排除 zh 与静态/外部接管路径", () => {
-    const nextConfig = readFileSync(join(ROOT, "site/next.config.mjs"), "utf8");
+    const nextConfig = readFileSync(join(ROOT, "apps/site/next.config.mjs"), "utf8");
     expect(nextConfig).toContain('source: "/:path((?!_next|docs|showcase|zh|.*\\\\..*).*)"');
     expect(nextConfig).toContain('destination: "/en/:path"');
   });
 
   it("sitemap 与 llms.txt 只发布正式英文地址并声明 x-default", () => {
-    const sitemap = createPagesSitemap(getAllBlogPosts(join(ROOT, "site")));
-    const llms = readFileSync(join(ROOT, "site/public/llms.txt"), "utf8");
+    const sitemap = createPagesSitemap(getAllBlogPosts(join(ROOT, "apps/site")));
+    const llms = readFileSync(join(ROOT, "apps/site/public/llms.txt"), "utf8");
 
     expect(sitemap).not.toContain("https://niceeval.com/en");
     expect(sitemap).toContain('hreflang="x-default" href="https://niceeval.com/"');

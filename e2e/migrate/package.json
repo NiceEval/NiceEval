@@ -2,6 +2,9 @@
   "name": "niceeval-e2e-migrate",
   "version": "0.1.0",
   "private": true,
+  "nx": {
+    "includedScripts": []
+  },
   "type": "module",
   "description": "Bootstrap for persisted Record handoff between replaceable NiceEval command identities",
   "engines": { "node": ">=24" },

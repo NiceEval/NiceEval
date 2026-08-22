@@ -1,7 +1,7 @@
 // agent 域类型:Agent / Adapter 契约、会话与 tracing 导出配置。
 
 import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
-// 「连到哪个被测对象、协议怎么说」的全部契约在这里(见 docs-site/zh/explanation/adapter.mdx)。
+// 「连到哪个被测对象、协议怎么说」的全部契约在这里(见 apps/docs-site/zh/explanation/adapter.mdx)。
 // 能力不再是问卷式声明:t 上解锁什么完全由构造证据决定(见 docs-site 「能力从哪来」一节)。
 
 import type { DiagnosticInput, JsonValue, ProgressUpdate } from "../shared/types.ts";
@@ -166,7 +166,7 @@ export interface InputFile {
 
 /**
  * HITL 回答轮里,人的裁决以结构化形式随 `input.responses` 到达——adapter 不需要解析
- * `text` 去猜哪句回答对应哪个请求、算不算批准。见 docs-site/zh/explanation/adapter.mdx
+ * `text` 去猜哪句回答对应哪个请求、算不算批准。见 apps/docs-site/zh/explanation/adapter.mdx
  * 「不同回答的入参」一节的四种典型形态。
  */
 export type AnswerValue =

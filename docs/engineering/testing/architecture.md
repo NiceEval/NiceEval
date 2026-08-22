@@ -31,19 +31,20 @@
 所有自动化形态都无法同时满足稳定与可靠要求时，不再向下发明测试形态。
 该变更使用 AI 真实验收，并在 PR Test impact 中声明未守护风险。
 
-E2E 编排层包在 Repo 外侧：
+E2E 选择与编排层包在 Repo 外侧：
 
 ```text
-e2e.json → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → executor
-                                                        │
-                                                        ▼
-                                      Vitest / Playwright / 用户命令
-                                                        │
-                                                        ▼
-                                        artifact + 阶段摘要 + cleanup
+project.json / Nx graph → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → executor
+                                                                     │
+                                                                     ▼
+                                                   Vitest / Playwright / 用户命令
+                                                                     │
+                                                                     ▼
+                                                     artifact + 阶段摘要 + cleanup
 ```
 
-编排层不读取 `.niceeval/`，不解码 NiceEval 产品输出，不计算 expected，也不决定测试是否正确。
+Nx 只计算受影响的 project；NiceEval 根 runner 才拥有 lane、候选、隔离和执行生命周期。两层都不读取 `.niceeval/`，
+不解码 NiceEval 产品输出，不计算 expected，也不决定测试是否正确。
 
 ## 三层观察白名单
 
@@ -224,7 +225,7 @@ sandbox lease 或同等公开收据。只有父进程 PID 消失不能证明没�
 三个彼此隔离的副本检查随机漂移；同一副本连续两次检查残留；Repo 默认并行检查顺序依赖；单项重跑检查独立身份。
 这几类运行缺一不可，不能用测试级 retry 把一次意外失败改写成通过。
 
-真实 provider live owner 随常规全量 E2E 频繁运行；provider 随机性不能充当确定性产品可靠性证明，
+真实 provider live owner 在可信 PR 的 affected 集或 main / nightly 全量 E2E 中运行；provider 随机性不能充当确定性产品可靠性证明，
 因此 live Repo 不用重复 takeover 证明确定性。
 
 可靠性接管门只比较稳定语义。动态 ID、临时端口和 duration 可以变化；Verdict、实体关系、公开错误分类和资源终态必须相同。

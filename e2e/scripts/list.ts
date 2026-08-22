@@ -1,5 +1,5 @@
 #!/usr/bin/env -S npx tsx
-// Discover and print every e2e.json across the flat e2e/ layout.
+// Discover and print every Nx E2E leaf project.
 
 import { fileURLToPath } from "node:url";
 import { relative, resolve } from "node:path";
@@ -45,7 +45,6 @@ interface MatrixEntry {
   lanes: E2ERepoManifest["lanes"];
   executor: E2ERepoManifest["executor"];
   requires?: RepoRequires;
-  paths: E2ERepoManifest["paths"];
 }
 
 function toMatrixEntry(repo: DiscoveredRepo, e2eRoot: string): MatrixEntry {
@@ -57,7 +56,6 @@ function toMatrixEntry(repo: DiscoveredRepo, e2eRoot: string): MatrixEntry {
     lanes: repo.manifest.lanes,
     executor: repo.manifest.executor,
     requires: repo.manifest.requires,
-    paths: repo.manifest.paths,
   };
 }
 
@@ -76,12 +74,6 @@ export function main(argv: readonly string[] = process.argv.slice(2)): void {
   const sorted = [...repos].sort((left, right) => left.manifest.id.localeCompare(right.manifest.id));
   if (jsonMode) {
     console.log(JSON.stringify(sorted.map((repo) => toMatrixEntry(repo, e2eRoot))));
-    return;
-  }
-
-  if (sorted.length === 0) {
-    console.log("No e2e test repos found under e2e/ yet.");
-    console.log("This is expected before the matrix repos land — not an error.");
     return;
   }
 

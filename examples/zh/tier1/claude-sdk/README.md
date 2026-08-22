@@ -12,7 +12,7 @@ claude-sdk 应用本身（`src/backend/`）**一行没改**——真实 agent �
 ## 这是 Tier 1（只接 send）
 
 adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval,不改被测应用一行代码(分档定义见
-[docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx))。这个应用没有 Tier 2——
+[docs-site · Tier](../../../../apps/docs-site/zh/explanation/tier.mdx))。这个应用没有 Tier 2——
 Claude Code CLI 的原生遥测只有 metrics+logs,niceeval 只消费 trace spans,没有 span 可接。
 **Tier 3(侵入改造 + experiment flags)**在 [`../../tier3/claude-sdk/`](../../tier3/claude-sdk/):
 应用侧把 system prompt 暴露成请求体可选字段,解锁 feature A/B test。

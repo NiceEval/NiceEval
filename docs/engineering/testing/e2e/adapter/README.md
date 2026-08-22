@@ -4,7 +4,7 @@
 是否仍与真实上游、真实模型兼容。**
 
 确定性协议 E2E 与 live 兼容性 E2E 使用独立 Repo，分别承担产品可靠性与上游兼容性。
-仓库协议（`e2e.json`、`pnpm e2e`、候选包注入）见[总则](../README.md)。
+仓库协议（Nx `project.json`、`pnpm e2e`、候选包注入）见[总则](../README.md)。
 完整 Agent 工厂与只提供 converter 的 SDK 分开登记：前者由工厂 live Repo 直接实例化；后者只有同时具备可核查的上游帧 provenance、
 确定性产品 owner 与受限 consumer live Repo 时，才获得相应层级的证明。没有这些证据的入口明确写作 `unproven`，不以示例或
 按本包 `*Like` 类型反写的 fixture 冒充 owner。

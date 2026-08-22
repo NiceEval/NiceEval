@@ -1,0 +1,67 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "e2e-adapter-openai-compat",
+  "root": "e2e/adapter/openai-compat",
+  "tags": [
+    "kind:e2e",
+    "e2e:adapter/openai-compat"
+  ],
+  "implicitDependencies": [
+    "workspace-shared",
+    "e2e-shared",
+    "niceeval-package-shared",
+    "niceeval-testkit",
+    "niceeval-src-fallback",
+    "niceeval-domain-o11y",
+    "niceeval-domain-agents"
+  ],
+  "targets": {
+    "e2e": {
+      "executor": "nx:selection-only",
+      "cache": false,
+      "inputs": [
+        "default"
+      ],
+      "metadata": {
+        "niceeval": {
+          "schemaVersion": 3,
+          "batch": "host-1",
+          "areas": [
+            "adapter"
+          ],
+          "lanes": [
+            "main",
+            "nightly",
+            "release"
+          ],
+          "executor": {
+            "kind": "host"
+          },
+          "command": [
+            "pnpm",
+            "run",
+            "e2e"
+          ],
+          "timeoutMinutes": 3,
+          "harness": {
+            "testkit": true
+          },
+          "secrets": [
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL"
+          ],
+          "requires": {
+            "externalNetwork": true,
+            "runtimes": [
+              "node>=24"
+            ]
+          },
+          "artifacts": [
+            ".e2e-artifacts/**",
+            "junit/**"
+          ]
+        }
+      }
+    }
+  }
+}
