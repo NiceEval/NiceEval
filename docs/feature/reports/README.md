@@ -28,7 +28,7 @@ Report 有两条明确不同的执行路径。它们共享同一份作者定义�
 
 `show` 不调用参数 Page 的 `enumerate()`，不建立 `ClosedSiteRevision`，也不为未选 route 执行作者 callback。
 
-`project-current` 仍是整个项目的 Sample。只有一个可比实验范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`。有多个范围时，标准 Report 内容交付各范围的普通 Page 链接；通用 Header 不理解实验组。Hero、通知、Summary、图表和 Table 都消费目标 Page 背后的同一 narrowed Sample。
+`project-current` 仍是整个项目的 Sample。只有一个实验组范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`。有多个范围时，标准 Report 内容交付各范围的普通 Page 链接；通用 Header 不理解实验组。Hero、通知、Summary、图表和 Table 都消费目标 Page 背后的同一 narrowed Sample。
 
 切换选项只改变根 document 的 hash，不新增 CLI 参数或 HTTP 路径。`show` 的多组默认输出仍是可复制命令的实验索引。每个 Page 把唯一 scope 交给具名比较组件；任何比较组件都不能跨范围。
 `view` 与静态导出则必须完成全站枚举、链接校验、资源闭包和限额检查；它们只从同一个 revision 读取最终 bytes。
@@ -90,8 +90,7 @@ view 不注入只在本机有效的作者脚本。
 
 所有内建 `show --json` Page 使用同一个 `niceeval.show` 文档 format；format 只标识机器文档类型，不承担版本或迁移语义，
 也不随当前 Page 改变。该 API 与生产者同步演进；持久化版本只属于 Record。
-单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard；实验组 Page 的 `comparison` 穷尽
-`comparable | non-comparable`。
+单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard；实验组 Page 的 `comparison` 输出成员、各成员 distinct Eval coverage 与组内 Eval 并集大小。population 不同不会产生另一种状态。
 
 报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 左侧放品牌，中间居中整个
 Page router，右侧放实验与语言两个原生选择器；Page router 无论含一个还是多个 Page 都作为整体居中。Shell 不重绘 Report 内容。

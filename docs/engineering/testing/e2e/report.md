@@ -60,7 +60,10 @@ niceeval view --report <fixture> --no-open
 每对 response body 与文件 body 必须逐字节相同；固定 Host asset 也必须来自同一 revision。下载字节合同仍属于产品契约，但这个
 不发布 public Download 的代表 fixture 不为它伪造作者入口。
 
-浏览器默认进入稳定排序的第一个实验组 Page；多组 Header 实验 selector 始终有当前值，语言也由原生 selector 切换。完整 Page router
+浏览器默认进入稳定排序的第一个实验组 Page；多组 Header 实验 selector 始终有当前值，语言也由原生 selector 切换。
+同组实验命中不同 Eval population 时，表格和详情入口仍可用。各实验指标保留自己的实际分母；内建机器文档同时给出各 member 的 distinct Eval coverage 与组内并集大小。
+
+完整 Page router
 作为一组居中，不能因当前只有一个 Page 就退化成左右栏布局。切换实验后，Hero、告警、Summary、图表与 Table 都只反映所选组。
 浏览器在断网但启用 JavaScript 时打开根页、参数页、Source 和 Diff，仍能读取 marker、正文、导航、完整度与问题；禁用 JavaScript 时只显示明确的启用提示，且不泄露报告正文。
 测试拦截外部网络请求；任何为补读 Analysis、Source 详情或页面数据发出的请求都是失败。
@@ -160,6 +163,6 @@ niceeval view --report <fixture> --no-open
 ### report-browser-journey
 
 `report.browser.spec.ts` 通过真实 href、HTTP、可访问身份、可见内容、断网阅读和禁用 JavaScript 的明确提示验证浏览器 Journey。
-经典旅程通过真实浏览器完成筛选、原生 `details` 展开、Attempt href 下钻与中文切换。它只锁 role、text、href 和
+经典旅程使用同组但 Eval population 不同的实验，并通过真实浏览器完成筛选、原生 `details` 展开、Attempt href 下钻与中文切换。它只锁 role、text、href 和
 原生标签语义，不锁 CSS class、像素或精确颜色。Assertion 展开同时守住 record-only 的 `recorded` 状态，以及
 `notCalledTool` 零命中或决定性命中的人读诊断。

@@ -1,10 +1,7 @@
 import type {
   ExperimentComparisonScope,
-  ExperimentComparisonState,
   ExperimentGroupIdentity,
   ExperimentId,
-  JsonValue,
-  NonComparableIssue,
   Sample,
 } from "./contracts.ts";
 import { narrowSample } from "../sample/capability.ts";
@@ -56,7 +53,7 @@ export function experimentComparisonScope(
     .filter((run) => memberSet.has(String(run.experimentId)))
     .map((run) => run.runId);
   const narrowed = narrowSample(sample, { runIds });
-  const comparison = comparisonState(narrowed, summary.members);
+  const comparison = comparisonDescription(narrowed, summary.members);
   const scope = Object.freeze({
     group: summary.group,
     comparison,
@@ -78,7 +75,7 @@ export function sampleForExperimentComparisonScope(scope: ExperimentComparisonSc
   return sample;
 }
 
-function comparisonState(sample: Sample, members: readonly ExperimentId[]): ExperimentComparisonState {
+function comparisonDescription(sample: Sample, members: readonly ExperimentId[]) {
   const populations = members.map((member) => {
     const values = [...new Set(sample.snapshot.slots
       .filter((slot) => slot.state !== "excluded" && String(slot.experimentId) === String(member))
@@ -86,22 +83,15 @@ function comparisonState(sample: Sample, members: readonly ExperimentId[]): Expe
       .sort(compareUtf8);
     return Object.freeze({ member, population: Object.freeze(values) });
   });
-  const reference = JSON.stringify(populations[0]?.population ?? []);
-  if (populations.every((entry) => JSON.stringify(entry.population) === reference)) {
-    return Object.freeze({ state: "comparable" as const, members });
-  }
-  const issue: NonComparableIssue = Object.freeze({
-    reason: "eval-population-mismatch" as const,
+  const groupEvalCount = new Set(populations.flatMap((entry) => entry.population)).size;
+  return Object.freeze({
     members,
-    actual: Object.freeze(populations.map((entry) => Object.freeze({
+    coverage: Object.freeze(populations.map((entry) => Object.freeze({
       member: entry.member,
-      population: entry.population as JsonValue,
-      basis: null,
+      coveredEvalCount: entry.population.length,
+      groupEvalCount,
     }))),
-    refs: Object.freeze([]),
-    params: Object.freeze({ expected: populations[0]?.population as JsonValue ?? [] }),
   });
-  return Object.freeze({ state: "non-comparable" as const, members, issues: Object.freeze([issue]) });
 }
 
 function sameGroup(left: ExperimentGroupIdentity, right: ExperimentGroupIdentity): boolean {

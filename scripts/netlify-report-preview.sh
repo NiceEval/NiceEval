@@ -5,8 +5,9 @@ readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly NICEEVAL_ROOT="$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)"
 readonly MEMORYBENCH_REPOSITORY="https://github.com/NiceEval/MemoryBench.git"
 # Keep the preview on a reviewed, immutable fixture while exercising current
-# Assertions v2 evidence. This commit contains the focused 12-attempt rerun.
-readonly MEMORYBENCH_COMMIT="67249ba646a14d7d92c8b30bbc8646593db2601f"
+# Assertions v2 evidence. This commit contains the focused 12-attempt rerun and
+# consumes the current group-comparison shape in its optional custom report.
+readonly MEMORYBENCH_COMMIT="8cf407c7ef9e65640e8972ba3d9a5c9ede542076"
 readonly PUBLISH_DIRECTORY="$NICEEVAL_ROOT/netlify-report-preview"
 
 if [[ "${CONTEXT:-}" != "deploy-preview" ]]; then
