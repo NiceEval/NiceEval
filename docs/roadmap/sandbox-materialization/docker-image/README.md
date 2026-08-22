@@ -44,7 +44,7 @@ build 分支在 physical Sandbox 创建前求出 BuildKey。它至少包含：
 
 因此产品承诺是“首次 miss 构建，后续精确命中复用”，不是“永远只构建一次”。库存、lease、归因与安全回收继续由 [Provider Cache 生命周期](../cache-lifecycle/README.md)拥有。
 
-Build 只处理不依赖运行中 Provider 的静态输入。必须等 Sandbox daemon ready 后才能完成、又在多个物理实例之间保持相同的准备，进入 [Sandbox Deployment](../deployment/README.md)。DeploymentBaseKey 引用 BuildKey；DeploymentKey 变化不会反向改写已经构建的 image identity。
+Build 只处理不依赖运行中 Provider 的静态输入。必须等 Sandbox daemon ready 后才能完成、又在多个物理实例之间保持相同的准备，进入[可缓存 setup](../setup-prefix/README.md)。SetupPrefixKey 从 BuildKey 对应的 base identity 开始链式计算；后缀变化不会反向改写已经构建的 image identity。
 
 ## Remem package 示例
 

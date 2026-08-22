@@ -1,6 +1,6 @@
 # Provider Cache 生命周期
 
-NiceEval 会为 Sandbox 准备 Agent npm tarball、任务 image、Sandbox Deployment 和 provider 原生 build cache。
+NiceEval 会为 Sandbox 准备 Agent npm tarball、任务 image、SetupPrefix artifact 和 provider 原生 build cache。
 这些 cache 可以跨 Run 加速准备，但不属于 Eval 结果携带，也不属于留存 Sandbox。
 创建者若只会写入而不会解释和回收，用户最终只能把整套 Docker cache 一次删光。
 
@@ -34,7 +34,7 @@ NiceEval 会为 Sandbox 准备 Agent npm tarball、任务 image、Sandbox Deploy
 
 ## 范围
 
-V1 管理 NiceEval 拥有的宿主 Agent artifact cache、任务 build image、Sandbox Deployment artifact，以及其 DestroyOnly 临时资源。
+V1 管理 NiceEval 拥有的宿主 Agent artifact cache、任务 build image、SetupPrefix artifact，以及其 DestroyOnly 临时资源。
 Agent 安装固定从宿主内容寻址 cache 注入 Sandbox，不创建 task × Agent image。
 共享 Docker BuildKit cache 只作为 `unverified` 容量事实展示，不自动 prune。
 
@@ -44,6 +44,6 @@ Sandbox 实例的停驻和销毁归 [Sandbox 默认停驻与回收](../../sandbo
 - [CLI](cli.md)定义需求反馈，以及 Docker feature 自己拥有的库存与回收命令。
 - [Architecture](architecture.md)定义 Cache Manifest、Domain、lease 和删除不变量。
 - [并行运行的共享任务镜像](use-case/并行运行的共享任务镜像.md)定义多个 Attempt 怎样等待、命中和复用少量 BuildKey。
-- [Sandbox Deployment](../deployment/README.md)定义 Provider ready 后的准备怎样按 DeploymentKey 发布、克隆和进入同一库存。
+- [Setup 前缀缓存](../setup-prefix/README.md)定义 Provider ready 后的 setup 怎样按 SetupPrefixKey promotion、克隆和进入同一库存。
 - [回收过期任务镜像](use-case/回收过期任务镜像.md)定义 task-build image 的安全淘汰路径。
 - [盘点共享 BuildKit 缓存](use-case/盘点共享BuildKit缓存.md)定义未验证容量怎样展示，以及用户自行回收的责任边界。

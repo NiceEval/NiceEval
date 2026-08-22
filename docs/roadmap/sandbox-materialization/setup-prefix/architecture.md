@@ -1,0 +1,36 @@
+# Architecture
+
+## 前缀身份
+
+Base 之后每个 setup 节点产生一个链式身份：
+
+```text
+SetupPrefixKey[i] = hash(
+  base/provider identity,
+  SetupPrefixKey[i - 1],
+  owner-qualified setup id,
+  setup revision,
+  canonical recipe digest,
+  immutable input identities after lookup,
+  target platform and execution user,
+  storage schema / quiesce / materializer revisions
+)
+```
+
+parent key 使相同 recipe 不能从不同父状态错误复用。`changeFrequency`、promotion、冷热、locator、lease、credential value 和调度额度不进入 key。最终 CaseKey 与 Attempt fingerprint 包含最终 SetupPrefixKey 和输入求值后的 manifest digest；carry 比较内容身份，不比较当前物理库存。
+
+只有 key、manifest 与 Provider artifact 双向验证成功的前缀可以命中。查询得到最长 verified prefix；未命中的后缀按顺序重新执行 recipe。每个逻辑前缀都有 key 和缓存资格，但 Provider 不必为每一步立刻写出物理 artifact。promotion policy 可以根据频率、成本和复用证据选择前缀，并使用有界公平排队，不能让 frequent 工作永久饥饿。
+
+## Provider capability
+
+Provider binding 对 core 暴露 lookup、创建 staging/clone、quiesce、capture、verify 与 instantiate 的等价 typed capability。`Unsupported` 与 operational failure 分离；不支持 prefix cache 时可以明确重新执行 recipe，但不能伪造命中。共享 prefix 复用 cache lifecycle 的 registry、operation、generation fence、lease、durable root 与两阶段 GC，cache kind 为 `sandbox-setup-prefix`。
+
+同一 `(domainId, SetupPrefixKey)` 只有一个 active promotion。旧 writer 在发布前失去 generation fence 后不得发布。staging scratch 始终 DestroyOnly。复制型 clone 验证独立后可释放 read lease；parent-backed clone 必须先登记 durable root，销毁并复核 Provider reference 消失后才能解除。
+
+## DinD 捕获面
+
+Docker DinD 的一个前缀必须原子包含 outer writable rootfs、私有 `/var/lib/docker` 和声明纳入的 volume。Provider 在捕获前完成 recipe、确认没有遗留进程或 inner container、优雅停止 inner dockerd/containerd、等待退出并 sync；随后排除 socket、PID、lock、网络 namespace、实例 identity 与 secret channel。
+
+每个消费者取得私有 writable clone。只 `docker commit` outer container 会漏掉 inner data-root；复制运行中的 `/var/lib/docker` 会产生不一致状态；共享 writable upperdir 会破坏 Attempt 隔离。这些都不是合法前缀。Provider 无法完整、原子捕获时必须报告 Unsupported。
+
+共享或持久 SetupPrefix 一定位于 activate 之前。每个物理 Sandbox 可以另有私有 reset baseline，但它不能登记为共享 prefix。sandbox reuse 下，secret activation 必须位于 Provider 声明为 snapshot-excluded 且 reset 保留的 lifecycle-owned overlay；无法证明时该组合在 planning 失败。

@@ -61,7 +61,7 @@ status 不会产生删除候选，也不会刷新 last successful use。
 
 ## Invocation 任务构建反馈
 
-真正运行 Experiment 时，`niceeval exp` 在 Attempt 行之外分别显示运行级任务构建与 Sandbox Deployment 摘要。
+真正运行 Experiment 时，`niceeval exp` 在 Attempt 行之外分别显示运行级任务构建与 Setup prefix 摘要。
 它按 `(domainId, BuildKey)` 去重，不把 BuildKey 数写成 Sandbox 数，也不把多个依赖者写成多个 build。
 
 人类反馈使用以下形态：
@@ -115,11 +115,11 @@ interface MaterializationCacheEvent extends ExperimentOutputFields {
 `materializationCache` 不进入 `sandboxReuse`、结果携带、Sandbox retention 或 orphan 词表。
 共享 build failure 的 key 只有一个 operation origin；依赖它的 Attempt 继续按既有结果契约投影各自结局。
 
-Deployment 摘要按 `(domainId, DeploymentKey)` 去重。逐 key 状态为 `resolving`、`querying`、`hit`、`queued`、`deploying`、`quiescing`、`publishing`、`instantiating`、`uncached`、`ready` 或 `failed`。
+Setup prefix 摘要按 `(domainId, SetupPrefixKey)` 去重。逐 key 状态为 `resolving`、`querying`、`hit`、`queued`、`materializing`、`quiescing`、`promoting`、`cloning`、`ready` 或 `failed`。
 
-等待 Deployment single-flight 或 Provider reservation 的 Attempt 保持 `queued`，并显示 `deployment` 或 `provider-capacity` reason。只有 reservation granted 后才显示 `creating sandbox`。
+等待 setup prefix single-flight 或 Provider reservation 的 Attempt 保持 `queued`，并显示 `setup-prefix` 或 `provider-capacity` reason。只有 reservation granted 后才显示 `creating sandbox`；等待者不占普通 sandbox semaphore。
 
-`niceeval exp` 接受独立的 `--max-deployment-concurrency <positive-integer>`，默认 1。它只限制实际 staging，不限制 query、wait、lease acquire、per-consumer instantiate 或 Attempt concurrency。
+Setup prefix promotion 使用 Provider materialization queue。`changeFrequency` 只提供有界公平的排序、promotion 与 retention 提示；不新增作者侧 no-cache，也不改变 key。
 
 ## Domain 库存
 
@@ -135,7 +135,7 @@ niceeval docker cache inventory --domain <domain-id> [--json]
 不指定 Domain 的库存摘要把它放在独立的 `provider observations` 区块，只显示 `unverified` 总量和 reclaimable estimate。
 它不会出现在 `entries`、`evictable` 或 GcPlan 中。
 
-明细按 kind、状态、owner、lease、last successful use 和容量分组。`sandbox-deployment` 额外显示 DeploymentKey、storage schema、artifact format 与 `copied | parent-backed` dependency。
+明细按 kind、状态、owner、lease、last successful use 和容量分组。`sandbox-setup-prefix` 额外显示 SetupPrefixKey、change frequency、storage schema、artifact format 与 `copied | parent-backed` dependency。
 逻辑大小、共享大小、estimate 与 exact marginal reclaim 分栏展示，不能相加的数字标为 `not additive`。
 
 legacy 明细可以显示 immutable provider id、当前协议不再命中的证明链，以及不带 force 的人工 provider 命令。
