@@ -1648,6 +1648,29 @@ table.niceeval-report,
   display: grid;
   gap: 10px;
 }
+.niceeval-match-facts {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  font: 11px/1.5 var(--font-mono);
+}
+.niceeval-match-facts > div {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, max-content) minmax(0, 1fr);
+  gap: 10px;
+}
+.niceeval-match-facts dt { color: var(--soft); }
+.niceeval-match-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.niceeval-match-coverage {
+  margin: 0;
+  color: var(--soft);
+  font: 10px/1.5 var(--font-mono);
+}
 .niceeval-match-raw {
   min-width: 0;
   border-top: 1px dashed var(--line);

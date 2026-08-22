@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { and, includes, or } from "niceeval/expect";
+import { and, commandSucceeded, includes, or } from "niceeval/expect";
 
 function recallMatch() {
   return and(
@@ -34,6 +34,12 @@ export default {
       await turn.succeeded().orStop();
       turn.calledTool("write_note", { count: 1 });
       t.check(t.reply, recallMatch());
+      t.check({
+        command: "pnpm test",
+        exitCode: 0,
+        stdout: "",
+        stderr: "PASS src/example.test.ts",
+      }, commandSucceeded());
     },
   }),
 };
