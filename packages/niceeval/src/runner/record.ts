@@ -26,8 +26,8 @@ import {
   assertionsRecordFamily,
   runArtifactsRecordFamily,
 } from "../record/family/catalog.ts";
-import type { AssertionSourceSite } from "../record/family/assertions.ts";
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import type { AssertionSourceSite } from "../record/family/assertions/definition.ts";
+import type { AttemptObservabilityAttachment } from "../record/family/observability/definition.ts";
 import { ArtifactsAttachmentSchema } from "../record/family/artifacts.ts";
 import type { ArtifactsAttachment } from "../record/family/artifacts.ts";
 import {

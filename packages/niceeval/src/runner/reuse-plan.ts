@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { RecordIssue } from "../record/errors/record-errors.ts";
 import type {
   AssertionsAttachment,
-} from "../record/family/assertions.ts";
+} from "../record/family/assertions/definition.ts";
 import {
   readAttemptExecutionDuration,
   type DurationLimit,

@@ -18,7 +18,7 @@ import {
 import {
   AttemptObservabilityAttachmentSchema,
   RunObservabilityAttachmentSchema,
-} from "../../record/family/observability.ts";
+} from "../../record/family/observability/definition.ts";
 import {
   MAX_COMMAND_INLINE_STREAM_BYTES,
 } from "./limits.ts";
@@ -28,19 +28,32 @@ import {
   type Collection,
   type ObservabilityLimitation,
 } from "./model.ts";
-import type {
-  AttemptDiagnostic,
-  AttemptDiagnosticsAttachment,
-  AttemptTimingAttachment,
-  CommandManifest,
+import {
+  AttemptDiagnosticsAttachmentSchema,
+  AttemptTimingAttachmentSchema,
+  CommandManifestSchema,
   CommandOutcomeSchema,
-  ConversationAttachment,
-  ConversationItem,
-  RunDiagnostic,
-  RunDiagnosticsAttachment,
-  RunTimingAttachment,
-  UsageAttachment,
+  ConversationAttachmentSchema,
+  RunDiagnosticsAttachmentSchema,
+  RunTimingAttachmentSchema,
+  UsageAttachmentSchema,
+  type AttemptDiagnostic,
+  type AttemptDiagnosticsAttachment,
+  type AttemptTimingAttachment,
+  type CommandManifest,
+  type ConversationAttachment,
+  type ConversationItem,
+  type RunDiagnostic,
+  type RunDiagnosticsAttachment,
+  type RunTimingAttachment,
+  type UsageAttachment,
 } from "./families.ts";
+import {
+  CollectionSchema,
+  CommandIdSchema,
+  NonNegativeSafeIntegerSchema,
+  SafeTextSchema,
+} from "./codec.ts";
 import {
   observabilityOwnerOrSchemaInvalidError,
   type ObservabilityRecordContractError,
@@ -49,46 +62,54 @@ import {
 type CommandOutcome = Schema.Schema.Type<typeof CommandOutcomeSchema>;
 
 /**
- * The old component shapes are capture-only intermediate data. Sealing always
- * produces one owner-local `niceeval.observability` closure.
+ * Pure JSON capture boundary between O11y collection and the Record family.
+ * Blob refs are intentionally absent: the Attachment builder mints them only
+ * after this schema has accepted the capture.
  */
+export const NormalizedCommandStreamCaptureSchema = Schema.Struct({
+  text: SafeTextSchema,
+  totalSafeUtf8Bytes: NonNegativeSafeIntegerSchema,
+});
+
+export const NormalizedCommandObservationCaptureSchema = Schema.Struct({
+  commandId: CommandIdSchema,
+  manifest: CommandManifestSchema,
+  result: Schema.Struct({
+    outcome: CommandOutcomeSchema,
+    stdout: NormalizedCommandStreamCaptureSchema,
+    stderr: NormalizedCommandStreamCaptureSchema,
+  }),
+});
+
+export const NormalizedCommandsCaptureSchema = Schema.Struct({
+  collection: CollectionSchema,
+  commands: Schema.Array(NormalizedCommandObservationCaptureSchema),
+});
+
+export const NormalizedAttemptObservabilityCaptureSchema = Schema.Struct({
+  conversation: ConversationAttachmentSchema,
+  commands: NormalizedCommandsCaptureSchema,
+  usage: UsageAttachmentSchema,
+  timing: AttemptTimingAttachmentSchema,
+  diagnostics: AttemptDiagnosticsAttachmentSchema,
+});
+
+export const NormalizedRunObservabilityCaptureSchema = Schema.Struct({
+  timing: RunTimingAttachmentSchema,
+  diagnostics: RunDiagnosticsAttachmentSchema,
+});
+
 export type NormalizedConversationCapture = ConversationAttachment;
 export type NormalizedUsageCapture = UsageAttachment;
 export type NormalizedAttemptTimingCapture = AttemptTimingAttachment;
 export type NormalizedRunTimingCapture = RunTimingAttachment;
 export type NormalizedAttemptDiagnosticsCapture = AttemptDiagnosticsAttachment;
 export type NormalizedRunDiagnosticsCapture = RunDiagnosticsAttachment;
-
-export interface NormalizedCommandStreamCapture {
-  readonly text: string;
-  readonly totalSafeUtf8Bytes: number;
-}
-export interface NormalizedCommandObservationCapture {
-  readonly commandId: string;
-  readonly manifest: CommandManifest;
-  readonly result: {
-    readonly outcome: CommandOutcome;
-    readonly stdout: NormalizedCommandStreamCapture;
-    readonly stderr: NormalizedCommandStreamCapture;
-  };
-  readonly refs: readonly unknown[];
-}
-export interface NormalizedCommandsCapture {
-  readonly collection: Collection;
-  readonly commands: readonly NormalizedCommandObservationCapture[];
-}
-
-export interface NormalizedAttemptObservabilityCapture {
-  readonly conversation: NormalizedConversationCapture;
-  readonly commands: NormalizedCommandsCapture;
-  readonly usage: NormalizedUsageCapture;
-  readonly timing: NormalizedAttemptTimingCapture;
-  readonly diagnostics: NormalizedAttemptDiagnosticsCapture;
-}
-export interface NormalizedRunObservabilityCapture {
-  readonly timing: NormalizedRunTimingCapture;
-  readonly diagnostics: NormalizedRunDiagnosticsCapture;
-}
+export type NormalizedCommandStreamCapture = Schema.Schema.Type<typeof NormalizedCommandStreamCaptureSchema>;
+export type NormalizedCommandObservationCapture = Schema.Schema.Type<typeof NormalizedCommandObservationCaptureSchema>;
+export type NormalizedCommandsCapture = Schema.Schema.Type<typeof NormalizedCommandsCaptureSchema>;
+export type NormalizedAttemptObservabilityCapture = Schema.Schema.Type<typeof NormalizedAttemptObservabilityCaptureSchema>;
+export type NormalizedRunObservabilityCapture = Schema.Schema.Type<typeof NormalizedRunObservabilityCaptureSchema>;
 
 export type ObservabilityAttachmentBuildError = {
   readonly code: "observability-attachment-input-invalid";
@@ -231,8 +252,14 @@ function decodeRun(value: unknown): Either.Either<Schema.Schema.Type<typeof RunO
 
 /** Builds exactly one fixed Attempt Observability write, including command blobs. */
 export function createAttemptObservabilityAttachmentWrite(
-  input: NormalizedAttemptObservabilityCapture,
+  raw: NormalizedAttemptObservabilityCapture,
 ): Either.Either<RecordAttachmentWrite<"attempt", never, never>, ObservabilityAttachmentBuildError> {
+  const capture = Schema.decodeUnknownEither(
+    NormalizedAttemptObservabilityCaptureSchema,
+    RecordExactParseOptions,
+  )(raw);
+  if (Either.isLeft(capture)) return Either.left(invalid());
+  const input = capture.right;
   const preflight = decodeAttempt(Object.freeze({
     owner: "attempt" as const,
     conversation: Object.freeze({
@@ -285,8 +312,14 @@ export function createAttemptObservabilityAttachmentWrite(
 
 /** Builds the fixed Run Observability payload (timing and diagnostics only). */
 export function createRunObservabilityAttachmentWrite(
-  input: NormalizedRunObservabilityCapture,
+  raw: NormalizedRunObservabilityCapture,
 ): Either.Either<RecordAttachmentWrite<"run", never, never>, ObservabilityAttachmentBuildError> {
+  const capture = Schema.decodeUnknownEither(
+    NormalizedRunObservabilityCaptureSchema,
+    RecordExactParseOptions,
+  )(raw);
+  if (Either.isLeft(capture)) return Either.left(invalid());
+  const input = capture.right;
   const candidate = Object.freeze({
     owner: "run" as const,
     timing: Object.freeze({ collection: fixedCollection(input.timing.collection), intervals: Object.freeze(input.timing.intervals.map(({ refs: _refs, ...value }) => Object.freeze(value))) }),

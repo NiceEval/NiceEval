@@ -49,11 +49,11 @@ import {
   observabilitySourceFrameIntegrityIssues,
   type AttemptObservabilityAttachment,
   type ObservabilityAttachment,
-} from "../family/observability.ts";
+} from "../family/observability/definition.ts";
 import {
   assertionsSourceSiteIntegrityIssues,
   type AssertionsAttachment,
-} from "../family/assertions.ts";
+} from "../family/assertions/definition.ts";
 import {
   sourceNavigationIntegrityIssues,
   type SourceNavigationAttachment,
@@ -3071,6 +3071,8 @@ function migrateKnownAttachment(input: {
   readonly expectedPayloadBytes: Uint8Array;
   readonly expectedRemovedBlobs: readonly { readonly key: string; readonly bytes: Uint8Array }[];
   readonly rewritePayload: boolean;
+  /** Marks the transaction dirty immediately before its first portable mutation. */
+  readonly markPortableWrite: () => void;
 }): Effect.Effect<void, RecordMaintenanceError> {
   return Effect.gen(function* () {
     const descriptor = input.location.descriptor;
@@ -3166,6 +3168,7 @@ function migrateKnownAttachment(input: {
         blobKeys: validated.blobKeys,
       });
       if (Either.isLeft(durablePayload)) return yield* Effect.fail(migrationInvalid(input.target.family));
+      input.markPortableWrite();
       yield* input.fileSystem.writeFile({
         file: payloadPath,
         bytes: jsonBytes(durablePayload.right),
@@ -3187,6 +3190,7 @@ function migrateKnownAttachment(input: {
       if (beforeDelete === undefined || !bytesEqual(beforeDelete, blob.bytes)) {
         return yield* Effect.fail(migrationPlanStale());
       }
+      input.markPortableWrite();
       yield* input.fileSystem.removeFile(recordPortablePath(
         input.root,
         ...migrationAttachmentDirectory(input.root, location).segments,
@@ -3194,6 +3198,7 @@ function migrateKnownAttachment(input: {
         blob.key,
       ));
     }
+    input.markPortableWrite();
     yield* input.fileSystem.writeFile({
       file: envelopePath,
       bytes: jsonBytes(envelope.right),
@@ -3357,8 +3362,8 @@ function openMaintenance(input: {
                 expectedPayloadBytes: source.payloadBytes,
                 expectedRemovedBlobs: source.removedBlobs,
                 rewritePayload: source.rewritePayload,
+                markPortableWrite: () => { portableTargetWritten = true; },
               });
-              portableTargetWritten = true;
             }
             const current = yield* readCurrentRecordFormat(fileSystem, input.root);
             yield* validateSealedCoreForMigration(fileSystem, input.root, current.document);

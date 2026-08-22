@@ -6,7 +6,7 @@ import type {
 } from "../attachment/types.ts";
 import type {
   AssertionsAttachment,
-} from "../family/assertions.ts";
+} from "../family/assertions/definition.ts";
 import type {
   ArtifactsAttachment,
 } from "../family/artifacts.ts";
@@ -16,7 +16,7 @@ import type {
 import type {
   AttemptObservabilityAttachment,
   RunObservabilityAttachment,
-} from "../family/observability.ts";
+} from "../family/observability/definition.ts";
 import type {
   SourcesAttachment,
 } from "../family/sources.ts";

@@ -49,7 +49,7 @@ import type {
   SlotId,
 } from "../analysis/contracts.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import type { AttemptObservabilityAttachment } from "../record/family/observability/definition.ts";
 import type {
   FixedFamilyRead,
   ReadableAttempt,

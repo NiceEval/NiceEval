@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { Either, ParseResult, Schema } from "effect";
-import type { RecordBlobRef } from "../attachment/blob-ref.ts";
-import { RecordExactParseOptions } from "../codec/core.ts";
-import type { RecordAttachmentMaintenanceFacet } from "../definition/attachment.ts";
-import { AssertionsAttachmentSchema, AssertionsAttachmentV1Schema } from "./assertions.ts";
+import type { RecordBlobRef } from "../../../attachment/blob-ref.ts";
+import { RecordExactParseOptions } from "../../../codec/core.ts";
+import type { RecordAttachmentMaintenanceFacet } from "../../../definition/attachment.ts";
+import { AssertionsAttachmentSchema, AssertionsAttachmentV1Schema } from "../definition.ts";
 
 function parseAssertionsV1(value: unknown): Schema.Schema.Type<typeof AssertionsAttachmentV1Schema> {
   const decoded = Schema.decodeUnknownEither(AssertionsAttachmentV1Schema, RecordExactParseOptions)(value);

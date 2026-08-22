@@ -5,7 +5,7 @@ import type {
   RecordAttachmentPayloadSnapshot,
   RecordBlobRef,
 } from "../record/attachment/types.ts";
-import type { AssertionsAttachment } from "../record/family/assertions.ts";
+import type { AssertionsAttachment } from "../record/family/assertions/definition.ts";
 import {
   assertionsRecordFamily,
   attemptObservabilityRecordFamily,
@@ -14,7 +14,7 @@ import {
   sourcesRecordFamily,
 } from "../record/family/catalog.ts";
 import type { FileChangesAttachment } from "../record/family/file-changes.ts";
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import type { AttemptObservabilityAttachment } from "../record/family/observability/definition.ts";
 import type { SourceNavigationAttachment } from "../record/family/source-navigation.ts";
 import type { SourcesAttachment } from "../record/family/sources.ts";
 import type {

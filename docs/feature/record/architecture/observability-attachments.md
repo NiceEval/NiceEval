@@ -504,3 +504,11 @@ bytes，并升级 envelope 后完整验证；它不把旧 label 猜成新 coordi
 
 较早 reader 遇到 v2，或当前 reader 遇到未知/future family 时，必须在 ordinary session 形成前拒绝整份 Record。
 Analysis 与 Report 不再接收来自非 current catalog 的 `unsupported` 或 `migration-required` 局部值。
+## Capture 到 Attachment 的边界
+
+O11y collector 先形成由 Effect Schema 描述的纯 JSON capture。它包含对话、命令、usage、timing 与 diagnostics，
+但不含 `RecordBlobRef`、路径或文件 bytes。这个中间结构是 collector 与固定 family 之间唯一可序列化的边界。
+
+`niceeval.observability` 的 Attachment writer 在 decode capture 后决定命令 stream 是 inline 还是 own blob，并且只在
+这一刻 mint owner-local ref。通用 Record Attachment 层随后负责 canonical encode、budget、closure 与 physical I/O；
+它不解释 Observability 的字段语义。

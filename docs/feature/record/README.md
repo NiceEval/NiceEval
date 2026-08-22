@@ -77,8 +77,11 @@ NiceEval current 固定 Attachment catalog 有以下六个 family（附件族）
 | `niceeval.sources` | 1 | `{ run }` | 当时源码闭包的 manifest 与 own blob |
 | `niceeval.artifacts` | 1 | `{ attempt, run }` | 有媒体类型、身份和 own blob 的大型文件 |
 
-每个 family 的模块把自己的 declaration、复杂 payload Schema、durable JSON 键、limits 与 blob closure / integrity
-相邻放置。总 catalog 只列这六个 declaration，不重新描述任何 payload。
+每个 family 目录的 `definition.ts` 放置唯一的 declaration、复杂 payload Schema、durable JSON 键、limits 与
+blob closure / integrity。
+
+每个历史相邻迁移位于 `migrate/<from>-to-<to>.ts`。它与自己的 decoder、transform 和 retention 相邻。
+总 catalog 只列这六个 declaration，不重新描述任何 payload。
 
 Adapter 与 collector 只能提交 NiceEval 提供的固定输入。没有调用方可用的 generic definition、family、
 registration point 或 migration registration。此前未保存且不可恢复的事实必须经过 NiceEval 裁决，

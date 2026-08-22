@@ -11,13 +11,13 @@ import type {
   RecordAttachmentOwnerDefinition,
   RecordAttachmentOwnerInputs,
 } from "../definition/index.ts";
-import { assertionsRecordAttachment } from "./assertions.ts";
+import { assertionsRecordAttachment } from "./assertions/definition.ts";
 import { artifactsRecordAttachment } from "./artifacts.ts";
 import {
   type FixedRecordAttachmentOwner,
 } from "./common.ts";
 import { fileChangesRecordAttachment } from "./file-changes.ts";
-import { observabilityRecordAttachment } from "./observability.ts";
+import { observabilityRecordAttachment } from "./observability/definition.ts";
 import { sourceNavigationRecordAttachment } from "./source-navigation.ts";
 import { sourcesRecordAttachment } from "./sources.ts";
 
