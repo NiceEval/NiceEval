@@ -1644,19 +1644,10 @@ table.niceeval-report,
   display: grid;
   gap: 10px;
 }
-.niceeval-match-facts,
 .niceeval-match-evidence-grid {
   display: grid;
   gap: 10px;
 }
-.niceeval-match-facts { margin: 0; }
-.niceeval-match-facts > div {
-  display: grid;
-  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
-  gap: 10px;
-}
-.niceeval-match-facts dt { color: var(--soft); }
-.niceeval-match-facts dd { min-width: 0; margin: 0; }
 .niceeval-match-raw {
   min-width: 0;
   border-top: 1px dashed var(--line);

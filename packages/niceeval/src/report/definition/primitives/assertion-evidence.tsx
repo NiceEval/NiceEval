@@ -15,7 +15,6 @@ export interface AssertionEvidenceContent {
 type MatchState = "matched" | "mismatched" | "unavailable";
 
 interface MatchDiagnosticView {
-  readonly fields: readonly { readonly label: string; readonly value: ClosedAssertionFactValue }[];
   readonly children: readonly MatchChildView[];
 }
 
@@ -111,7 +110,6 @@ function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagn
       })
     : [];
   return {
-    fields: value.fields.filter((entry) => entry.label !== "children"),
     children,
   };
 }
@@ -200,10 +198,10 @@ function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, 
   readonly root?: boolean;
   readonly children?: ReactElement;
 }): ReactElement {
+  const accessibleLabel = `${nodeLabel}: ${stateLabel(state, locale)}`;
   const summary = (
     <span className={`niceeval-match-summary niceeval-match-summary--${state}`}>
       <code>{nodeLabel}</code>
-      <span>· {stateLabel(state, locale)}</span>
     </span>
   );
   const nested = diagnostic?.children ?? [];
@@ -223,24 +221,14 @@ function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, 
               ))}
             </div>
           ) : null}
-          {diagnostic !== null && diagnostic.fields.length > 0 ? (
-            <dl className="niceeval-match-facts">
-              {diagnostic.fields.map((entry, index) => (
-                <div key={`${entry.label}:${index}`}>
-                  <dt>{entry.label}</dt>
-                  <dd><Value value={entry.value} locale={locale} /></dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
           {children}
         </div>
       )
     : null;
-  if (body === null) return <div className="niceeval-match-node">{summary}</div>;
+  if (body === null) return <div className="niceeval-match-node" aria-label={accessibleLabel}>{summary}</div>;
   return (
     <details className={`niceeval-match-node${root ? " niceeval-match-node--root" : ""}`}>
-      <summary>{summary}</summary>
+      <summary aria-label={accessibleLabel}>{summary}</summary>
       {body}
     </details>
   );
@@ -254,18 +242,20 @@ function web(
 ): ReactElement {
   const diagnostic = diagnosticView(content.explanation);
   const name = matcherName(content.check) ?? labelText ?? label(locale, "Match", "检查");
+  const input = field(content.source, "input") ?? content.source;
   return (
     <div className="niceeval-assertion-evidence">
       <MatchNode label={name} state={state} diagnostic={diagnostic} locale={locale} root>
         <div className="niceeval-match-body">
           <div className="niceeval-match-evidence-grid">
-            <Section heading={label(locale, "Input", "输入")} value={content.source} locale={locale} />
+            <Section heading={label(locale, "Input", "输入")} value={input} locale={locale} />
             <Section heading={label(locale, "Observed", "实际结果")} value={content.observed} locale={locale} />
             <Section heading={label(locale, "Expected", "预期结果")} value={content.expected} locale={locale} />
           </div>
           <details className="niceeval-match-raw">
             <summary>{label(locale, "Raw assertion data", "原始断言数据")}</summary>
             <div>
+              <Section heading={label(locale, "Source", "来源")} value={content.source} locale={locale} />
               <Section heading={label(locale, "Check", "检查条件")} value={content.check} locale={locale} />
               <Section heading={label(locale, "Explanation", "解释")} value={content.explanation} locale={locale} />
             </div>

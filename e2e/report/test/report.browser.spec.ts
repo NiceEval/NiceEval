@@ -151,17 +151,15 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
 
         const assertionLine = dialog.locator("summary").filter({ hasText: "t.check(t.reply" }).first();
         await assertionLine.click();
-        const rootMatch = dialog.locator("summary").filter({ hasText: "and(includes" }).first();
+        const rootMatch = dialog.getByLabel(/^and\(includes.+: matched$/).first();
         await expect(rootMatch).toBeVisible();
-        await expect(rootMatch).toContainText("matched");
         await rootMatch.click();
-        const orMatch = dialog.locator("summary").filter({ hasText: "or(includes" }).first();
-        await expect(orMatch).toContainText("matched");
+        const orMatch = dialog.getByLabel(/^or\(includes.+: matched$/).first();
+        await expect(orMatch).toBeVisible();
         await orMatch.click();
-        const matchedLeaf = dialog.locator("summary").filter({ hasText: 'includes("RECALL_OK")' }).last();
-        const mismatchedLeaf = dialog.locator("summary").filter({ hasText: 'includes("NEVER_PRESENT")' }).last();
-        await expect(matchedLeaf).toContainText("matched");
-        await expect(mismatchedLeaf).toContainText("mismatched");
+        const orNode = orMatch.locator("xpath=..");
+        await expect(orNode.getByLabel('includes("RECALL_OK"): matched')).toBeVisible();
+        await expect(orNode.getByLabel('includes("NEVER_PRESENT"): mismatched')).toBeVisible();
 
         const copiedUrl = page.url();
         await page.getByRole("button", { name: "Close" }).click();
