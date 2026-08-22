@@ -48,6 +48,9 @@ export interface PlanCli {
   lane: Lane;
   repoIds: readonly string[];
   diffPaths?: readonly string[];
+  /** Exact committed range used by CI; both values are required together. */
+  diffBase?: string;
+  diffHead?: string;
   /** Explicitly disable both supplied and implicit working-tree path filtering. */
   noDiff: boolean;
   capability?: string;
@@ -194,7 +197,7 @@ export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOp
   }
 
   const requestedIds = repoIds.length > 0 ? new Set(repoIds) : undefined;
-  const requestedDiffPaths = options.diffPaths && options.diffPaths.length > 0 ? options.diffPaths : undefined;
+  const requestedDiffPaths = options.diffPaths;
   const diffPaths = repoIds.length === 0 && requestedDiffPaths !== undefined && !hasGlobalImpact(requestedDiffPaths)
     ? requestedDiffPaths
     : undefined;
@@ -245,6 +248,25 @@ export function tryReadDiffPaths(cwd: string): readonly string[] | undefined {
   }
 }
 
+/** Read an exact committed range. An empty successful diff is a valid empty selection. */
+export function tryReadDiffPathsBetween(
+  cwd: string,
+  base: string,
+  head: string,
+): readonly string[] | undefined {
+  try {
+    const diff = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z", base, head], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    if (diff.error || diff.status !== 0 || typeof diff.stdout !== "string") return undefined;
+    return [...new Set(diff.stdout.split("\0").map(normalizePath).filter((path) => path.length > 0))];
+  } catch {
+    return undefined;
+  }
+}
+
 function valueAsStrings(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
   return typeof value === "string" ? [value] : [];
@@ -266,6 +288,8 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
       repo: { type: "string", multiple: true, default: [] },
       "diff-path": { type: "string", multiple: true },
       diff: { type: "string", multiple: true },
+      "diff-base": { type: "string" },
+      "diff-head": { type: "string" },
       "no-diff": { type: "boolean", default: false },
       capability: { type: "string" },
       "exclude-external-network": { type: "boolean", default: false },
@@ -279,8 +303,16 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
   const lane = parseLane(values.lane);
   const diffPaths = [...valueAsStrings(values["diff-path"]), ...valueAsStrings(values.diff)];
   const noDiff = values["no-diff"] === true;
-  if (noDiff && diffPaths.length > 0) {
-    throw new Error("--no-diff cannot be combined with --diff-path or --diff");
+  const diffBase = typeof values["diff-base"] === "string" ? values["diff-base"] : undefined;
+  const diffHead = typeof values["diff-head"] === "string" ? values["diff-head"] : undefined;
+  if ((diffBase === undefined) !== (diffHead === undefined)) {
+    throw new Error("--diff-base and --diff-head must be supplied together");
+  }
+  if (noDiff && (diffPaths.length > 0 || diffBase !== undefined)) {
+    throw new Error("--no-diff cannot be combined with diff selection");
+  }
+  if (diffPaths.length > 0 && diffBase !== undefined) {
+    throw new Error("--diff-base/--diff-head cannot be combined with --diff-path or --diff");
   }
   const capability = typeof values.capability === "string" ? values.capability : undefined;
 
@@ -288,6 +320,8 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
     lane,
     repoIds: valueAsStrings(values.repo),
     diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
+    diffBase,
+    diffHead,
     noDiff,
     capability,
     excludeExternalNetwork: values["exclude-external-network"] === true,
@@ -425,7 +459,13 @@ export function resolvePlan(argv: readonly string[]): ResolvedPlan {
   if (errors.length > 0) {
     throw new Error(`repo discovery found ${errors.length} problem(s): ${errors.join("; ")}`);
   }
-  const diffPaths = cli.noDiff ? undefined : cli.diffPaths ?? tryReadDiffPaths(resolve(e2eRoot, ".."));
+  const repoRoot = resolve(e2eRoot, "..");
+  const rangeDiffPaths = cli.diffBase !== undefined && cli.diffHead !== undefined
+    ? tryReadDiffPathsBetween(repoRoot, cli.diffBase, cli.diffHead)
+    : undefined;
+  const diffPaths = cli.noDiff
+    ? undefined
+    : cli.diffPaths ?? rangeDiffPaths ?? tryReadDiffPaths(repoRoot);
   return {
     cli,
     entries: makePlan(

@@ -10,7 +10,8 @@ name: e2e
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
 #
 # Lane: 同仓可信 PR / push main=main | fork / Dependabot PR=pr(无 secret)
-#       schedule=nightly | dispatch=输入。同仓可信 PR、main push 与 schedule 跑 lane 全集；
+#       schedule=nightly | dispatch=输入。PR 与 main push 按 base→head 路径选择 owner；
+#       schedule 与显式 dispatch 跑所选 lane 全集；
 #       fork / Dependabot PR 无 secret，dispatch 由 live_providers 显式选择。
 # 可信自动触发与显式启用 live provider 的 dispatch 按 manifest 白名单读取 secret；
 # 同仓 PR 使用仓库级 secret，其它可信 lane 挂同名 GitHub Environment。
@@ -173,9 +174,19 @@ jobs:
           LANE: ${{ steps.lane.outputs.lane }}
           DISPATCH_REPO: ${{ github.event.inputs.repo }}
           INCLUDE_LIVE_PROVIDERS: ${{ steps.lane.outputs.include-live }}
+          DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          args=(--lane "$LANE" --no-diff --json --batch)
+          args=(--lane "$LANE" --json --batch)
+          case "$GITHUB_EVENT_NAME" in
+            pull_request|push)
+              args+=(--diff-base "$DIFF_BASE" --diff-head "$DIFF_HEAD")
+              ;;
+            *)
+              args+=(--no-diff)
+              ;;
+          esac
           include_live=false
           if [ "$INCLUDE_LIVE_PROVIDERS" = "true" ]; then
             include_live=true

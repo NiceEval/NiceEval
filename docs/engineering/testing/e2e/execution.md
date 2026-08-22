@@ -47,6 +47,8 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 ```
 
 - `plan --json` 只输出 Repo、host executor、能力和分片，不包含产品断言；
+- PR 与 `main` push 把 GitHub 事件的精确 base→head 交给同一个 plan 实现，按各 Repo 的 `paths` 选择 owner；文档、站点等不进入 candidate 或 E2E harness 的改动得到合法空计划，不 pack candidate，也不启动 matrix；
+- schedule、release 与显式 dispatch 不依赖增量历史，仍以 `--no-diff` 跑所选 lane 全集；diff 无法读取时 fail-open 跑完整 lane；
 - 本地默认顺序是 plan → pack NiceEval candidate → run；
 - 默认入口只生成一次 plan，并把该 plan 的精确 Repo ID 集传给 run；隐式 dirty diff 也不会在 run 时扩大选择；
 - `run` 在选中 Testkit consumer 时构建当前 workspace Testkit 的 invocation-local scratch snapshot 一次；
