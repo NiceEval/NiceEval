@@ -277,13 +277,9 @@ DinD 镜像不得用 `DOCKER_HOST` 或 `DOCKER_CONTEXT` 改写默认 endpoint。
 readiness 前先验证默认 Docker context，并确认不带 endpoint 选项的 `docker info` 与显式
 `unix:///var/run/docker.sock` 到达同一个 daemon。
 
-镜像烘焙固定工具、归档和只读项目初始文件；必须等
-inner daemon 就绪才能做的初始化放进 Sandbox `.setup()`。例如导入离线 image、把项目初始文件复制到
-可写 workspace，或执行依赖 inner Docker 的 smoke check。setup 失败归入 Sandbox 创建，不会把
-未准备好的 Sandbox 交给 Agent。
+镜像烘焙固定工具、归档和只读项目初始文件。必须等 inner daemon 就绪才能做的每物理实例初始化放进 Sandbox `.setup()`，例如恢复 checkpoint、建立租约或执行依赖本实例 daemon 的 smoke check。固定离线 image 的重复导入属于可复现起点准备，目标形态见 [Sandbox Deployment](../../roadmap/sandbox-materialization/deployment/README.md)。setup 失败归入 Sandbox 创建，不会把未准备好的 Sandbox 交给 Agent。
 
-生命周期分工只有一条顺序：镜像提供静态内容，provider 启动并验证 daemon，Sandbox setup 准备本次
-Attempt 的可写状态，随后才运行 Agent。镜像 `ENTRYPOINT`、作者 readiness 与 Sandbox setup 不能承担
+生命周期分工只有一条顺序：镜像提供静态内容，provider 启动并验证 daemon，Sandbox setup 准备本物理实例的动态状态，随后才运行 Agent。镜像 `ENTRYPOINT`、作者 readiness 与 Sandbox setup 不能承担
 同一项初始化职责；保留两套入口会让 build 成功但 Attempt 缺运行时状态。
 
 bootstrap、supervisor 与 dockerd 以 root 运行；Agent、普通 Sandbox 命令与默认
@@ -439,7 +435,8 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 
 | 要准备的东西 | 放哪 | 怎么收尾 |
 |---|---|---|
-| 所有 attempt 都相同的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用构建结果 | provider 的 image/template/snapshot 生命周期管理 |
+| 所有 attempt 都相同、无需运行中 daemon 的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用构建结果 | provider 的 image/template/snapshot 生命周期管理 |
+| 必须等 Provider ready 后生成、跨实例相同的固定状态 | [Sandbox Deployment](../../roadmap/sandbox-materialization/deployment/README.md) 的品牌化 recipe | DeploymentKey、不可变 artifact 与私有 clone |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
 | **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`prepare()`](layers.md):每 Attempt 执行,昂贵动作靠真实检查快速命中 | `context.onCleanup()` 就地登记,逆序执行;沙箱内文件随销毁自动没了 |
 | **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`prepare()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `context.onCleanup()` / `try/finally` |

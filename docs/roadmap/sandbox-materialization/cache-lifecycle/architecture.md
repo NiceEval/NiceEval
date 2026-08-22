@@ -114,7 +114,7 @@ base image、用户拉取的 task image、共享 parent 和 layer 都不是删�
 ```ts
 interface CacheManifest {
   schemaVersion: number;
-  kind: "agent-artifact" | "task-build";
+  kind: "agent-artifact" | "task-build" | "sandbox-deployment";
   provider: {
     family: string;
     backendIdentity: string;
@@ -123,6 +123,13 @@ interface CacheManifest {
     libc?: string;
   };
   task?: { buildKey: string; locator: string };
+  deployment?: {
+    deploymentKey: string;
+    deploymentManifestDigest: string;
+    storageSchemaRevision: string;
+    artifactFormatRevision: string;
+    dependency: "copied" | "parent-backed";
+  };
   agent?: {
     ensure: { agent: string; version: string; revision: string };
     installer: { agent: string; version: string; revision: string; mode: string };
@@ -134,6 +141,12 @@ interface CacheManifest {
   intentProjection?: { version: number; value: unknown };
 }
 ```
+
+`sandbox-deployment` 不建立第二套 registry。它复用本页的 operation、generation fence、双向 immutable identity 验证、`published → indexed` 状态机、lease、durable root 和两阶段 GC。
+
+`copied` consumer 只在复制与验证期间持 read lease。`parent-backed` consumer 在短 lease 下建立 durable prepared root 与 Provider reference，复核后转 active；实例销毁并确认 reference 消失后才解除 root。staging scratch 是 DestroyOnly，不进入库存。任一 clone、mount、snapshot parent、lease、root 或 `unverified` 事实都否决删除。
+
+Deployment 的两级协调、取消和失效语义见 [Deployment Architecture](../deployment/architecture.md#cachelease-与-invalidation) 与 [Lifecycle](../deployment/lifecycle.md)。
 
 缺少必需兼容轴或遇到未知 schema 时，entry 为 `unverified`。
 `intentProjection` 只解释同一意图的旧配方，不授予命中、迁移或删除资格。

@@ -163,6 +163,8 @@ reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 `niceeval debug <experiment> <eval>` 直接消费 link 与 physical planning 的完成态，把本页时序投影为 Experiment → lane → slot。它不读取 fingerprint、Record、reuse 或 carry。装配器拥有生命周期语义；human 的逐节点 `COMMAND PLAN` 区域框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
 
+Provider capacity reservation 是 materialize 的准入条件，不是已经开始创建 Sandbox 的事实。等待 reservation 的 Attempt 保持 queued，并携带 provider-capacity reason；reservation granted 后才进入 `sandbox.create`。可缓存的 Provider-ready 准备与完整 staging/instantiate 时序见 [Sandbox Deployment Lifecycle](../../roadmap/sandbox-materialization/deployment/lifecycle.md)。
+
 它只声明运行器能保证的偏序：fresh Eval 与 `sandboxReuse` lane 都不保证 slot 顺序，也不生成全局序号。Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 选择只保留命中的成员；作者数组位置没有业务顺序语义。
 
 fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 提供 `physicalLifecycleTemplate`。这份模板分别套用到每台实际实例，并包住分配给该实例的 slots；它不是整个 lane 只执行一次的统一前后边。reset 失败、寿命不足或故障退休会换实例并重跑模板；普通 reuse 的多台实例也可能并发存在。

@@ -96,6 +96,8 @@ hook 还可经上下文上报绑定当前生命周期的 progress 与 diagnostic
 
 `prepare()` 每条 Attempt 都执行。`setup()` / `teardown()` 则是一对**物理 Sandbox 生命周期** hook：同一个实际 Sandbox 创建并 ready 后只 setup 一次，在它的最后一条 Attempt 收尾、Provider finalizer 前只 teardown 一次。
 
+它们不表达可发布起点。跨实例相同、必须在 Provider ready 后执行的可复现准备属于 [Sandbox Deployment](../../roadmap/sandbox-materialization/deployment/README.md)；checkpoint、租约、临时凭据和每实例状态继续属于 `setup()` / `teardown()`。
+
 setup 按声明顺序运行；teardown 按所有 setup 的全局逆序运行。setup 中途失败也仍会进入已登记的 teardown，随后才停止或释放 Provider 资源。
 
 它们附着在配对后的实际 Sandbox 上，不引入 lane、lane id 或可由作者持有的复用池句柄。仅 Experiment 所有的 hook 不改变可共享的物理身份；Eval 所有的 hook 会把该 Eval 的物理生命周期隔离开。
