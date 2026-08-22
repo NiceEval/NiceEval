@@ -37,13 +37,13 @@ interface ManagedBody { authored: string; suffix?: string }
 const HELP = `NiceEval PR body compiler
 
 Usage:
-  pnpm pr:body init --pr <number> [--source <path>] [--base <ref>]
-  pnpm pr:body render --pr <number> [--source <path>] [--out <path>]
-  pnpm pr:body check --pr <number> [--source <path>] [--no-remote]
+  pnpm pr:body init (--source <path> | --pr <number>) [--base <ref>]
+  pnpm pr:body render (--source <path> | --pr <number>) [--out <path>]
+  pnpm pr:body check (--source <path> | --pr <number>) [--no-remote]
   pnpm pr:body apply --pr <number> [--source <path>]
 
 Commands:
-  init    Create a worktree-local Markdown draft from the PR template.
+  init    Create a draft, or initialize an existing handwritten --source draft.
   render  Expand source directives and emit the final Markdown body.
   check   Render and validate the body; with --pr, compare it with GitHub.
   apply   Validate, verify the PR head, then update the GitHub PR body.
@@ -55,6 +55,13 @@ Options:
   --base <ref>        Locked base for a new draft. Defaults to merge-base with origin/main.
   --budget <bytes>    Review budget before GitHub's hard limit (default ${DEFAULT_BUDGET}).
   --no-remote         Skip GitHub body/head comparison during check.
+
+Workflow:
+  1. pnpm pr:body init --source <draft.md>
+  2. Edit the initialized draft and remove unused template sections.
+  3. pnpm pr:body check --source <draft.md> --no-remote
+  4. pnpm pr:body render --source <draft.md> --out <body.md>
+  5. Create the PR with <body.md>, then use apply and check --pr after the PR exists.
 
 Embed an exact test source in the Markdown draft:
   <!-- niceeval:test
@@ -142,12 +149,21 @@ function metadataComment(metadata: DraftMetadata | FinalMetadata): string {
 }
 function init(options: Options): void {
   const target = draftPath(options);
-  if (existsSync(target)) fail(`draft already exists: ${target}`);
   const template = currentTemplate();
   const metadata: DraftMetadata = {
     base: git(["rev-parse", options.base ?? defaultBase()]),
     templateSha256: template.hash,
   };
+  if (existsSync(target)) {
+    if (!options.source) fail(`draft already exists: ${target}`);
+    const existing = readFileSync(target, "utf8");
+    if (/<!-- niceeval:pr-body\b/.test(existing)) fail(`draft is already initialized: ${target}`);
+    if (existing.trim()) {
+      writeFileSync(target, `${metadataComment(metadata)}\n\n${existing}`);
+      process.stdout.write(`Initialized existing draft ${target}\n`);
+      return;
+    }
+  }
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, `${metadataComment(metadata)}\n\n${template.text.trimEnd()}\n`);
   process.stdout.write(`Created ${target}\n`);
@@ -281,6 +297,9 @@ function render(options: Options): RenderedBody {
   const source = draftPath(options);
   if (!existsSync(source)) fail(`draft does not exist: ${source}\nRun pnpm pr:body init first.`);
   const draft = readFileSync(source, "utf8");
+  if (!/<!-- niceeval:pr-body\b/.test(draft)) {
+    fail(`draft is not initialized: ${source}\nRun pnpm pr:body init --source <draft-path> to preserve the existing content and add metadata.`);
+  }
   const metadata = parseMetadata(draft);
   const template = currentTemplate();
   if (metadata.templateSha256 !== template.hash) fail("PR template changed after this draft was created; reconcile the draft and update templateSha256");
