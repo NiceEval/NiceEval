@@ -6,6 +6,7 @@
 // 内部是 Effect 协调:逐 key 结算用 Deferred、整批收工用 Fiber 观察、退避用 Clock.sleep、
 // 并发闸用 Semaphore;公开 RunningSandboxBuilds 保持 Promise ABI,只在方法边界 runPromise。
 
+import { createHash, randomUUID } from "node:crypto";
 import { Deferred, Duration, Effect, Exit, Fiber, FiberId, Random } from "effect";
 import type { JsonValue } from "../shared/types.ts";
 import type { RunTimingRecorder } from "../runner/timing.ts";
@@ -16,8 +17,31 @@ import type { BuildKey } from "./identity.ts";
 /** Run 级开放 activity key;与 Record 契约同名。 */
 export const SANDBOX_BUILD_ACTIVITY = "sandbox.build" as const;
 
+declare const MaterializationScopeIdBrand: unique symbol;
+export type MaterializationScopeId = string & { readonly [MaterializationScopeIdBrand]: true };
+declare const SandboxBuildRefBrand: unique symbol;
+export type SandboxBuildRef = string & { readonly [SandboxBuildRefBrand]: true };
+
+export function materializationScopeId(input: {
+  readonly providerFamily: string;
+  readonly authorityFingerprint: string;
+  readonly materializationProtocolVersion: number;
+}): MaterializationScopeId {
+  return createHash("sha256").update(JSON.stringify([
+    input.providerFamily,
+    input.authorityFingerprint,
+    input.materializationProtocolVersion,
+  ])).digest("hex") as MaterializationScopeId;
+}
+
+export function sandboxBuildRef(scopeId: MaterializationScopeId, buildKey: BuildKey): SandboxBuildRef {
+  return createHash("sha256").update(`${scopeId}\0${buildKey}`).digest("hex") as SandboxBuildRef;
+}
+
 /** 一条待协调的构建工作(同 BuildKey 只保留第一次出现的 inputs / provider)。 */
 export interface SandboxBuildWork {
+  readonly ref: SandboxBuildRef;
+  readonly scopeId: MaterializationScopeId;
   readonly buildKey: BuildKey;
   readonly provider: string;
   /** 解析后的构建输入投影;不含凭据值。 */
@@ -26,18 +50,36 @@ export interface SandboxBuildWork {
   readonly label?: string;
 }
 
+export interface SandboxBuildUseHandle {
+  readonly locator: JsonValue;
+  release(): Promise<void> | void;
+}
+
+export interface SandboxBuildArtifactSource {
+  readonly locator: JsonValue;
+  readonly source: "cache" | "build";
+  acquireUse(signal: AbortSignal): Promise<SandboxBuildUseHandle>;
+  release(): Promise<void> | void;
+}
+
+export type SandboxBuildLookup =
+  | { readonly _tag: "Hit"; readonly source: SandboxBuildArtifactSource }
+  | { readonly _tag: "Miss" }
+  | { readonly _tag: "Unsupported" };
+
 /** provider 侧 cache 查询与真实构建。 */
 export interface SandboxBuildProvider {
   /** 查 provider 原生 cache / 本地 build registry;命中返回 locator。 */
-  lookup(work: SandboxBuildWork, signal: AbortSignal): Promise<JsonValue | undefined>;
+  lookup(work: SandboxBuildWork, signal: AbortSignal): Promise<SandboxBuildLookup>;
   /** cache miss 时调用原生构建 API。 */
-  build(work: SandboxBuildWork, ctx: SandboxBuildExecutionContext): Promise<JsonValue>;
+  build(work: SandboxBuildWork, ctx: SandboxBuildExecutionContext): Promise<SandboxBuildArtifactSource>;
   /** 可选:Invocation abort / timeout 时取消远端 build。 */
   cancel?(work: SandboxBuildWork): Promise<void>;
 }
 
 /** 构建执行上下文:子 activity 挂在当前 sandbox.build 节点下。 */
 export interface SandboxBuildExecutionContext {
+  readonly operationId: string;
   readonly signal: AbortSignal;
   readonly timing: RunTimingRecorder;
   readonly parent: TimingActivity;
@@ -69,6 +111,7 @@ export interface PrepareSandboxBuildsOptions {
 export type SandboxBuildActivityEvent =
   | {
       status: "started";
+      ref: SandboxBuildRef;
       buildKey: BuildKey;
       id: string;
       key: typeof SANDBOX_BUILD_ACTIVITY;
@@ -76,6 +119,8 @@ export type SandboxBuildActivityEvent =
     }
   | {
       status: "done" | "failed";
+      outcome: SandboxBuildRecord["status"];
+      ref: SandboxBuildRef;
       buildKey: BuildKey;
       id: string;
       key: typeof SANDBOX_BUILD_ACTIVITY;
@@ -84,6 +129,7 @@ export type SandboxBuildActivityEvent =
     };
 
 export interface SandboxBuildFailure {
+  readonly ref: SandboxBuildRef;
   readonly buildKey: BuildKey;
   readonly timingNodeId: string;
   readonly status: "failed" | "cancelled";
@@ -92,21 +138,21 @@ export interface SandboxBuildFailure {
 
 export interface SandboxBuildPreparation {
   /** 成功(hit / built)的 BuildKey → locator。 */
-  readonly locators: ReadonlyMap<BuildKey, JsonValue>;
+  readonly sources: ReadonlyMap<SandboxBuildRef, SandboxBuildArtifactSource>;
   /** 实际查询或构建过的每条 provenance(不含完全携带、从未过问的 key)。 */
   readonly records: readonly SandboxBuildRecord[];
   /** 失败或取消的 BuildKey → 共用同一 Run timing origin 的错误。 */
-  readonly failures: ReadonlyMap<BuildKey, SandboxBuildFailure>;
+  readonly failures: ReadonlyMap<SandboxBuildRef, SandboxBuildFailure>;
 }
 
 /** 进行中的 Run 级共享准备:逐 BuildKey 放行,依赖者只等自己引用的那几个 key。 */
 export interface RunningSandboxBuilds {
   /** 已结算 key 的实时视图(随构建推进增补,不等整批收工)。 */
-  readonly locators: ReadonlyMap<BuildKey, JsonValue>;
+  readonly sources: ReadonlyMap<SandboxBuildRef, SandboxBuildArtifactSource>;
   /** 已失败 / 已取消 key 的实时视图。 */
-  readonly failures: ReadonlyMap<BuildKey, SandboxBuildFailure>;
+  readonly failures: ReadonlyMap<SandboxBuildRef, SandboxBuildFailure>;
   /** 等某个 BuildKey 结算;不在本次协调范围内的 key 立即返回。 */
-  settled(buildKey: BuildKey): Promise<void>;
+  settled(ref: SandboxBuildRef): Promise<void>;
   /** 全部 key 结算后的汇总(provenance 在这里齐全)。 */
   readonly done: Promise<SandboxBuildPreparation>;
 }
@@ -132,9 +178,9 @@ export function startSandboxBuilds(
 ): RunningSandboxBuilds {
   const unique = dedupeWorks(works);
   if (unique.length === 0) {
-    const empty: SandboxBuildPreparation = { locators: new Map(), records: [], failures: new Map() };
+    const empty: SandboxBuildPreparation = { sources: new Map(), records: [], failures: new Map() };
     return {
-      locators: empty.locators,
+      sources: empty.sources,
       failures: empty.failures,
       async settled() {},
       done: Promise.resolve(empty),
@@ -142,9 +188,9 @@ export function startSandboxBuilds(
   }
 
   const maxConcurrency = Math.max(1, opts.maxConcurrency ?? 2);
-  const locators = new Map<BuildKey, JsonValue>();
+  const sources = new Map<SandboxBuildRef, SandboxBuildArtifactSource>();
   const records: SandboxBuildRecord[] = [];
-  const failures = new Map<BuildKey, SandboxBuildFailure>();
+  const failures = new Map<SandboxBuildRef, SandboxBuildFailure>();
 
   const prepareSignal = combineSignals([
     opts.signal,
@@ -155,9 +201,9 @@ export function startSandboxBuilds(
   // 不等同批其它 key(single-flight 仍靠这张表,同 key 的第二个 work 复用同一条)。
   // 在方法边界同步创建,settled() 在任意时刻调用都拿到同一结果;
   // Deferred 结算后状态保持,迟到等待方同样立即放行。
-  const perKey = new Map<BuildKey, Deferred.Deferred<void, never>>();
+  const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void, never>>();
   for (const work of unique) {
-    perKey.set(work.buildKey, Deferred.unsafeMake(FiberId.unsafeMake()));
+    perKey.set(work.ref, Deferred.unsafeMake(FiberId.unsafeMake()));
   }
 
   const ctx = {
@@ -165,7 +211,7 @@ export function startSandboxBuilds(
     provider: opts.provider,
     buildTimeoutMs: opts.buildTimeoutMs,
     signal: prepareSignal,
-    locators,
+    sources,
     records,
     failures,
     onActivity: opts.onActivity,
@@ -181,22 +227,22 @@ export function startSandboxBuilds(
     const fibers = yield* Effect.forEach(unique, (work) =>
       Effect.fork(
         gate.withPermits(1)(prepareOne(work, ctx)).pipe(
-          Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.buildKey)!, undefined))),
+          Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined))),
         ),
       ));
     const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
     const failed = exits.find(Exit.isFailure);
     if (failed !== undefined && Exit.isFailure(failed)) return yield* Effect.failCause(failed.cause);
-    return { locators, records, failures } satisfies SandboxBuildPreparation;
+    return { sources, records, failures } satisfies SandboxBuildPreparation;
   });
   // 边界:唯一一次把 Effect 驱动进公开 Promise ABI。
   const done = Effect.runPromise(coordination);
 
   return {
-    locators,
+    sources,
     failures,
-    async settled(buildKey) {
-      const deferred = perKey.get(buildKey);
+    async settled(ref) {
+      const deferred = perKey.get(ref);
       if (deferred === undefined) return;
       await Effect.runPromise(Deferred.await(deferred));
     },
@@ -220,9 +266,9 @@ export function buildFailureOrigin(
 }
 
 function dedupeWorks(works: readonly SandboxBuildWork[]): SandboxBuildWork[] {
-  const seen = new Map<BuildKey, SandboxBuildWork>();
+  const seen = new Map<SandboxBuildRef, SandboxBuildWork>();
   for (const work of works) {
-    if (!seen.has(work.buildKey)) seen.set(work.buildKey, work);
+    if (!seen.has(work.ref)) seen.set(work.ref, work);
   }
   return [...seen.values()];
 }
@@ -234,9 +280,9 @@ function prepareOne(
     provider: SandboxBuildProvider;
     buildTimeoutMs: number | undefined;
     signal: AbortSignal;
-    locators: Map<BuildKey, JsonValue>;
+    sources: Map<SandboxBuildRef, SandboxBuildArtifactSource>;
     records: SandboxBuildRecord[];
-    failures: Map<BuildKey, SandboxBuildFailure>;
+    failures: Map<SandboxBuildRef, SandboxBuildFailure>;
     onActivity?: (event: SandboxBuildActivityEvent) => void;
     buildAttempts: number;
     buildRetryBaseMs: number;
@@ -255,6 +301,7 @@ function prepareOne(
     });
     ctx.onActivity?.({
       status: "started",
+      ref: work.ref,
       buildKey: work.buildKey,
       id: parent.id,
       key: SANDBOX_BUILD_ACTIVITY,
@@ -266,7 +313,7 @@ function prepareOne(
       ctx.buildTimeoutMs !== undefined ? AbortSignal.timeout(ctx.buildTimeoutMs) : undefined,
     ]);
 
-    const finish = (status: SandboxBuildRecord["status"], locator?: JsonValue, error?: SandboxBuildRecord["error"]) => {
+    const finish = (status: SandboxBuildRecord["status"], source?: SandboxBuildArtifactSource, error?: SandboxBuildRecord["error"]) => {
       parent.durationMs = Math.max(0, ctx.timing.offsetNow() - startOffsetMs);
       if (status === "failed" || status === "cancelled") parent.failed = true;
       const record: SandboxBuildRecord = {
@@ -275,15 +322,16 @@ function prepareOne(
         status,
         timingNodeId: parent.id,
         inputs: work.inputs,
-        ...(locator !== undefined ? { locator } : {}),
+        ...(source !== undefined ? { locator: source.locator } : {}),
         ...(error !== undefined ? { error } : {}),
       };
       ctx.records.push(record);
-      if (locator !== undefined && (status === "hit" || status === "built")) {
-        ctx.locators.set(work.buildKey, locator);
+      if (source !== undefined && (status === "hit" || status === "built")) {
+        ctx.sources.set(work.ref, source);
       }
       if (error !== undefined && (status === "failed" || status === "cancelled")) {
-        ctx.failures.set(work.buildKey, {
+        ctx.failures.set(work.ref, {
+          ref: work.ref,
           buildKey: work.buildKey,
           timingNodeId: parent.id,
           status,
@@ -292,6 +340,8 @@ function prepareOne(
       }
       ctx.onActivity?.({
         status: status === "failed" || status === "cancelled" ? "failed" : "done",
+        ref: work.ref,
+        outcome: status,
         buildKey: work.buildKey,
         id: parent.id,
         key: SANDBOX_BUILD_ACTIVITY,
@@ -325,16 +375,18 @@ function prepareOne(
       catch: (error) => error,
     }));
     if (lookup._tag === "Left") return yield* finishFailure(lookup.left);
-    if (lookup.right !== undefined) {
-      finish("hit", lookup.right);
+    if (lookup.right._tag === "Hit") {
+      finish("hit", lookup.right.source);
       return;
     }
 
     // 瞬时构建失败(基线镜像拉取限流、传输层中断)退避重试:构建产物是镜像与 template,
     // 没有计费实例的泄漏面,歧义类同样可重试(case.md「Run 级构建协调」第 5 条)。
-    const build = (attempt: number): Effect.Effect<JsonValue, unknown> =>
+    const operationId = randomUUID();
+    const build = (attempt: number): Effect.Effect<SandboxBuildArtifactSource, unknown> =>
       Effect.tryPromise({
         try: () => ctx.provider.build(work, {
+          operationId,
           signal: keySignal,
           timing: ctx.timing,
           parent,

@@ -609,7 +609,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const runTiming = createRunTimingRecorder();
   let sandboxBuildRecords: SandboxBuildRecord[] = [];
   const buildFailureByPair = new Map<string, AttemptError>();
-  const buildLocatorsByPair = new Map<string, Map<BuildKey, JsonValue>>();
 
   const collected =
     opts.buildPreparation === undefined
@@ -622,6 +621,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     ? Option.flatMap(collected, toBuildPreparation)
     : Option.some(opts.buildPreparation);
   const buildPrep = Option.getOrUndefined(buildPreparation);
+  const buildDependents = new Map<import("../sandbox/build-coordinator.ts").SandboxBuildRef, number>();
+  if (buildPrep !== undefined) {
+    for (const attempt of attempts) {
+      const keys = buildPrep.pairBuildKeys[cacheKey(attempt.run, attempt.evalDef.id)] ?? [];
+      for (const key of keys) buildDependents.set(key, (buildDependents.get(key) ?? 0) + 1);
+    }
+  }
   // 共享构建**不阻塞派发**:整批 key 同时开工,每条 attempt 只等自己引用的那几个 key
   // (case.md「Run 级构建协调」第 4 条的逐 key 放行)。全局 barrier 会让 10 个已就绪的镜像
   // 陪着最慢的那个构建干等(台账见 memory/shared-build-single-barrier-not-per-buildkey.md)。
@@ -636,10 +642,21 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           signal: opts.signal,
           // 最小反馈钩子:共享构建投影为运行级 active 行 / 非 TTY 起止事件,不占 attempt 位。
           onActivity: (event) => {
+            const dependents = buildDependents.get(event.ref) ?? 0;
+            const shared = `${dependents} attempt${dependents === 1 ? "" : "s"}`;
+            const action = event.status === "started"
+              ? "checking build cache"
+              : event.outcome === "hit"
+              ? "build cache hit"
+              : event.outcome === "built"
+              ? "built once"
+              : event.outcome === "cancelled"
+              ? "build cancelled"
+              : "build failed";
             reportRunActivity({
               id: event.id,
               key: event.key,
-              label: event.label,
+              label: `${action} · ${event.label} · ${shared}`,
               status: event.status,
               ...("durationMs" in event ? { durationMs: event.durationMs } : {}),
             });
@@ -648,15 +665,23 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       : undefined;
 
   // 逐 pair 的放行闸:第一次问到就记下等待,之后同 pair 的其它 attempt 复用同一条。
+  const buildUseKey = (a: Attempt): string => `${cacheKey(a.run, a.evalDef.id)}|${a.attempt}`;
   const buildWaits = new Map<string, Promise<void>>();
-  const awaitBuildsFor = (pairKey: string): Promise<void> => {
+  const buildUseHandles = new Map<string, Array<{ release(): Promise<void> | void }>>();
+  const buildLocatorsByAttempt = new Map<string, Map<BuildKey, JsonValue>>();
+  const buildWorkByRef = new Map(buildPrep?.works.map((work) => [work.ref, work]) ?? []);
+  const awaitBuildsFor = (a: Attempt): Promise<void> => {
+    const pairKey = cacheKey(a.run, a.evalDef.id);
     const keys = buildPrep?.pairBuildKeys[pairKey];
     if (runningBuilds === undefined || keys === undefined || keys.length === 0) return Promise.resolve();
-    let pending = buildWaits.get(pairKey);
+    const useKey = buildUseKey(a);
+    let pending = buildWaits.get(useKey);
     if (pending !== undefined) return pending;
     pending = (async () => {
       for (const key of keys) await runningBuilds.settled(key);
       const locators = new Map<BuildKey, JsonValue>();
+      const handles: Array<{ release(): Promise<void> | void }> = [];
+      buildUseHandles.set(useKey, handles);
       for (const key of keys) {
         const failure = runningBuilds.failures.get(key);
         if (failure !== undefined) {
@@ -669,14 +694,27 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           });
           return;
         }
-        const locator = runningBuilds.locators.get(key);
-        if (locator !== undefined) locators.set(key, locator);
+        const source = runningBuilds.sources.get(key);
+        const work = buildWorkByRef.get(key);
+        if (source !== undefined && work !== undefined) {
+          const handle = await source.acquireUse(opts.signal ?? new AbortController().signal);
+          handles.push(handle);
+          locators.set(work.buildKey, handle.locator);
+        }
       }
-      if (locators.size > 0) buildLocatorsByPair.set(pairKey, locators);
+      if (locators.size > 0) buildLocatorsByAttempt.set(useKey, locators);
     })();
-    buildWaits.set(pairKey, pending);
+    buildWaits.set(useKey, pending);
     return pending;
   };
+  const releaseBuildUsesFor = (a: Attempt): Effect.Effect<void> => Effect.tryPromise({
+    try: async () => {
+      const handles = buildUseHandles.get(buildUseKey(a)) ?? [];
+      buildUseHandles.delete(buildUseKey(a));
+      await Promise.all(handles.map((handle) => handle.release()));
+    },
+    catch: () => undefined,
+  }).pipe(Effect.ignore);
 
   // Run 级 Agent artifact prepare:由 attempt 内探测到目标 Sandbox 平台后触发 single-flight。
   // 绝不能在这里按宿主平台 eager prepare：macOS 宿主跑 Linux Sandbox 会拿到错误制品。
@@ -2510,7 +2548,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             ]);
             // BuildKey / CaseKey 已在 Attempt.plan 的 physical completion state 中确定；
             // 这里只把协调器执行结果作为必填运行输入传给 materializer，不回写 Attempt。
-            const buildLocators = buildLocatorsByPair.get(cacheKey(a.run, a.evalDef.id)) ?? new Map<BuildKey, JsonValue>();
+            const buildLocators = buildLocatorsByAttempt.get(buildUseKey(a)) ?? new Map<BuildKey, JsonValue>();
 
             // 派发前的确定性失败(实验级 setup 失败 / 判分预检失败):不派发 agent、不建沙箱。
             // 这类 Slot 没有 origin Attempt，因而会使 V1 draft 保持 incomplete；不能为它
@@ -2918,9 +2956,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           }
           // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
-          const pairKey = cacheKey(a.run, a.evalDef.id);
           yield* Effect.tryPromise({
-            try: () => awaitBuildsFor(pairKey),
+            try: () => awaitBuildsFor(a),
             catch: (error) => error,
           });
           for (;;) {
@@ -2967,6 +3004,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
             );
         const withWaveLifecycle = withCaseLifecycle.pipe(
+          Effect.ensuring(releaseBuildUsesFor(a)),
           Effect.ensuring(arriveAtDispatchWave),
         );
         if (predecessor === undefined) return withWaveLifecycle;
@@ -2989,10 +3027,18 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         return Effect.failCause(cause); // 非中断的意外缺陷:照常抛出
       }),
     );
+  const releaseBuildSources = Effect.tryPromise({
+    try: async () => {
+      const sources = new Set(runningBuilds?.sources.values() ?? []);
+      await Promise.all([...sources].map((source) => source.release()));
+    },
+    catch: () => undefined,
+  }).pipe(Effect.ignore);
   const exit = yield* Effect.exit(
-    opts.signal === undefined
+    (opts.signal === undefined
       ? dispatchEffect
-      : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)),
+      : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)))
+      .pipe(Effect.ensuring(releaseBuildSources)),
   );
   // A full-carry / zero-Attempt invocation has no dispatch fiber that could
   // await startup recovery. Seal its selected-Experiment obligation here; for

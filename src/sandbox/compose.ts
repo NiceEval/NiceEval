@@ -20,7 +20,13 @@ import {
   type BuildContextSpec,
   type LeakGateHints,
 } from "../runner/leak-gate.ts";
-import type { SandboxBuildExecutionContext, SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
+import {
+  materializationScopeId,
+  sandboxBuildRef,
+  type SandboxBuildExecutionContext,
+  type SandboxBuildProvider,
+  type SandboxBuildWork,
+} from "./build-coordinator.ts";
 import type {
   MaterializedSandboxCase,
   SandboxMaterializeContext,
@@ -923,7 +929,14 @@ function collectComposeBuildsInternal(
             );
           }
           buildKeys.push(collected.buildKey);
+          const scopeId = materializationScopeId({
+            providerFamily: "docker",
+            authorityFingerprint: JSON.stringify(providerIdentityMarker ?? ["docker", "default"]),
+            materializationProtocolVersion: 1,
+          });
           works.push({
+            ref: sandboxBuildRef(scopeId, collected.buildKey),
+            scopeId,
             buildKey: collected.buildKey,
             provider: "docker",
             label: `compose:${service.name}`,
@@ -984,7 +997,14 @@ export function dockerComposeBuildProvider(opts?: {
     async lookup(work) {
       const tag = composeBuildTag(work.buildKey);
       const hit = await dockerImageExists(tag);
-      return hit ? tag : undefined;
+      return hit
+        ? { _tag: "Hit", source: {
+            locator: tag,
+            source: "cache",
+            acquireUse: async () => ({ locator: tag, release() {} }),
+            release() {},
+          } }
+        : { _tag: "Miss" };
     },
     async build(work, ctx) {
       const inputs = work.inputs as globalThis.Record<string, unknown>;
@@ -1019,7 +1039,12 @@ export function dockerComposeBuildProvider(opts?: {
       // 构建产物以 service 镜像为准;再打 BuildKey tag 便于 lookup。
       const imageId = await composeServiceImageId(composeFile, service, cwd, composeEnv, runCompose);
       if (imageId) await dockerTag(imageId, tag);
-      return tag;
+      return {
+        locator: tag,
+        source: "build",
+        acquireUse: async () => ({ locator: tag, release() {} }),
+        release() {},
+      };
     },
   };
 }
