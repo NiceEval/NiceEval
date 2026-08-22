@@ -180,6 +180,21 @@ export interface DockerSandboxOptions {
   pathPrepend?: readonly string[];
 }
 
+export interface DockerControlCreateSpec {
+  readonly image: string;
+  readonly command: readonly string[];
+  readonly entrypoint?: string;
+  readonly environment: readonly string[];
+  readonly workingDir: string;
+  readonly user?: string;
+  readonly tmpfs: Readonly<Record<string, string>>;
+}
+
+export interface DockerControlCreateResult {
+  readonly containerId: string;
+  readonly networkId: string;
+}
+
 export function assertRootlessPrivilegedDaemon(
   info: {
     readonly ID?: string;
@@ -637,6 +652,59 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       throw initializationError;
     }
     return sandbox;
+  }
+
+  /** Control service owns create/remove; this handle only starts, initializes and detaches. */
+  static async createControlled(
+    options: DockerSandboxOptions,
+    create: (spec: DockerControlCreateSpec) => Promise<DockerControlCreateResult>,
+  ): Promise<DockerSandbox> {
+    const sandbox = new DockerSandbox(options);
+    const imageName = sandbox.image ?? DOCKER_IMAGES[sandbox.runtime];
+    if (!imageName) throw new Error(t("docker.unsupportedRuntime", { runtime: sandbox.runtime }));
+    await sandbox.ensureImage(imageName);
+    const isDind = sandbox.dockerAccess?.mode === "dind";
+    if (isDind) {
+      const inspectedImage = await sandbox.docker.getImage(imageName).inspect();
+      const declaredUser = inspectedImage.Config?.User?.trim();
+      sandbox.imageDefaultUser = declaredUser === "" ? undefined : declaredUser;
+    }
+    const ttlSec = Math.ceil(Math.max(
+      sandbox.lifetimeMs ?? (sandbox.timeout ?? TTL_BASE_WITHOUT_DEADLINE) * TTL_MULTIPLIER,
+      TTL_FLOOR_MS,
+    ) / 1000);
+    sandbox.expiresAtMs = Date.now() + ttlSec * 1000;
+    const dindCommand = isDind ? dindContainerCommand(ttlSec, CONTAINER_LOG) : undefined;
+    const tmpfs = dockerHostConfig(sandbox.privileged, sandbox.resources).Tmpfs ?? {};
+    const created = await create({
+      image: imageName,
+      command: dindCommand === undefined
+        ? ["sh", "-c", `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`]
+        : [...dindCommand.Entrypoint.slice(1), ...dindCommand.Cmd],
+      ...(dindCommand === undefined ? {} : { entrypoint: dindCommand.Entrypoint[0]! }),
+      environment: [],
+      workingDir: sandbox.workdir,
+      ...(isDind ? { user: ROOT_USER } : sandbox.userOverride === undefined ? {} : { user: sandbox.userOverride }),
+      tmpfs,
+    });
+    sandbox.container = sandbox.docker.getContainer(created.containerId);
+    sandbox.network = sandbox.docker.getNetwork(created.networkId);
+    sandbox._containerId = created.containerId;
+    sandbox.releaseMode = "detach";
+    try {
+      await sandbox.container.start();
+      await sandbox.waitForReadiness();
+      await sandbox.ensureRunnerTools();
+      await sandbox.resolveDefaultIdentity();
+      await sandbox.runCommandAsRoot("mkdir", ["-p", sandbox.workdir]);
+      await sandbox.runCommandAsRoot("chown", ["-R", sandbox.chownTarget(), sandbox.workdir]);
+      await sandbox.runCommandAsRoot("mkdir", ["-p", sandbox.npmGlobalDir]);
+      await sandbox.runCommandAsRoot("chown", ["-R", sandbox.chownTarget(), sandbox.npmGlobalDir]);
+      await sandbox.runCommand("npm", ["config", "set", "prefix", sandbox.npmGlobalDir]);
+      return sandbox;
+    } catch (error) {
+      throw await sandbox.withInitializationDiagnostics(error);
+    }
   }
 
   /** DinD 容器 kill-on-failure 前收集有界诊断，普通 Docker 保持原错误形状。 */
@@ -1450,6 +1518,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (!this.container) return;
     if (this.releaseMode === "detach") {
       this.container = null;
+      this.network = null;
+      await this.afterStop?.();
       return;
     }
     const container = this.container;

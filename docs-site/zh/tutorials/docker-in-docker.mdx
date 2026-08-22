@@ -14,9 +14,18 @@ description: "根据任务信任边界选择 Docker socket、raw privileged DinD
 | Managed rootless DinD | 不可信 Agent、共享宿主、并发评估、需要资源准入和强杀恢复 | 最高，需要宿主 profile | privileged 限制在受管 rootless user namespace 或专用 VM，并有 watchdog 与容量契约 |
 
 完整的 Docker profile 依赖 Linux cgroup v2、systemd 和支持 project quota 的文件系统。NixOS 可以用
-NiceEval module 部署；Ubuntu、Debian 与其它 systemd Linux 需要安装等价的宿主服务。macOS 上的
-Docker Desktop 运行在 Linux VM 中，不能直接提供同一份宿主保证。macOS 用户应把评估放到 Linux runner，
-或在受管 Linux VM 内部署 profile。
+NiceEval module 部署；Ubuntu、Debian 与其它 systemd Linux 需要安装等价的宿主服务。
+
+macOS 上的实际选择是 OrbStack 或 Apple `container`：
+
+- OrbStack 的 Docker engine 可以用于可信任务的 Docker socket 模式。需要完整 profile 时，在 OrbStack
+  Linux machine 内运行 NiceEval，并按该发行版的 Linux 安装方式部署宿主服务。
+- Apple 官方 [`container`](https://github.com/apple/container) 在 Apple silicon 和 macOS 26 上把 Linux
+  container 作为轻量 VM 运行。当前 NiceEval Docker Provider 不操作它的 CLI 或 API，因此不能直接选择
+  `container`；这需要独立 Provider。
+
+Apple `container` 使用 Containerization framework，不是 containerd。直接安装 containerd 也不会让 Darwin
+获得 Linux cgroup 或 project quota；它仍需要 Linux VM。
 
 三种模式都要求镜像预装 Docker CLI。两种 DinD 模式只接受从官方
 `docker:<version>-dind` 派生的兼容镜像。镜像需要 Docker daemon、Node 和评估工具，
@@ -190,6 +199,28 @@ export default defineExperiment({
 必填的 `raw-privileged` 字面量是风险授权。NiceEval 不会把 raw 模式描述成 rootless，也不会在失败时
 自动改用 managed profile。`storageProfile` 为 inner `/var/lib/docker` 分配磁盘配额；不要把该路径放进
 `tmpfs`。这个 profile 只增加磁盘准入、配额和强杀恢复，不会把 raw privileged 变成安全隔离方案。
+
+### 在 macOS 上使用 OrbStack
+
+可信的本地评估可以复用 OrbStack Docker engine。先让 OrbStack 创建 Docker context，再读取实际 Unix socket：
+
+```bash
+docker context inspect orbstack --format '{{.Endpoints.docker.Host}}'
+```
+
+把输出的 `unix://` 路径去掉 scheme 后填入 `dockerAccess.socketPath`。这仍是 Docker socket 模式；Agent
+可以完全控制 OrbStack daemon，不适合不可信任务。
+
+需要 managed profile 时，使用 OrbStack 的完整 Ubuntu machine，而不是把 profile 服务装进 macOS：
+
+```bash
+orb create ubuntu niceeval-runner
+orb -m niceeval-runner
+```
+
+进入 machine 后，按 Ubuntu 的宿主安装流程准备 systemd、cgroup v2 和 project-quota 文件系统，并在该
+machine 内运行 NiceEval。Ubuntu 安装包发布前，这条路径不是开箱即用能力；不要用 OrbStack Docker engine
+冒充 managed profile。
 
 ### Managed rootless DinD
 

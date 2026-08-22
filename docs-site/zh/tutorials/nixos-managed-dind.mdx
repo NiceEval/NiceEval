@@ -9,8 +9,9 @@ Managed rootless DinD 适合在共享 NixOS 宿主上运行不可信 Agent。Nic
 不需要 `sudo`，但首次部署和更新系统配置需要管理员权限。
 
 本页只介绍 NixOS 的部署入口。Docker profile 本身是 Linux 宿主能力，不是 NixOS 专属能力。Ubuntu、
-Debian 与其它 systemd Linux 需要安装等价的宿主服务；macOS 应使用 Linux runner 或受管 Linux VM。
-Docker Desktop 不能直接提供这里声明的 cgroup、project quota 和强杀恢复保证。
+Debian 与其它 systemd Linux 需要安装等价的宿主服务。macOS 用户可以在 OrbStack Linux machine 内运行
+NiceEval 和对应的 Linux 宿主服务；Apple `container` 当前需要独立 NiceEval Provider。具体边界与命令见
+[让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker#在-macos-上使用-orbstack)。
 
 如果任务可以信任 Agent，或者只在一次性 VM 中运行，先阅读[让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker)
 选择 Docker socket 或 raw privileged DinD。它们不需要本页的宿主 profile。
@@ -71,7 +72,7 @@ Docker Desktop 不能直接提供这里声明的 cgroup、project quota 和强�
       maxContainers = 2;
       maxBuilds = 1;
       ephemeralDiskBytes = "6G";
-      quotaSlots = 2;
+      dockerDataAllocationCount = 2;
     };
 
     aggregate = {
@@ -89,7 +90,7 @@ Docker Desktop 不能直接提供这里声明的 cgroup、project quota 和强�
 ```
 
 `capacity` 是 NiceEval 可以分配给评估任务的预算。`ephemeralDiskBytes` 是每个 Docker data allocation
-的硬上限，`quotaSlots` 是 profile 可同时授予的 allocation 数量。`aggregate` 是 daemon、构建进程、
+的硬上限，`dockerDataAllocationCount` 是 profile 可同时授予的 Docker data allocation 数量。`aggregate` 是 daemon、构建进程、
 watchdog 和评估容器共同受到的硬限制，因此每一项都不能小于 `capacity`。两者之间的余量留给宿主侧开销。
 
 `loop-ext4` 会在 `/var/lib/niceeval/docker-profiles/default.img` 创建独立的 ext4 quota 文件系统。

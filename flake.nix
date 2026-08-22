@@ -100,17 +100,19 @@
             test -x ${hostPackage}/libexec/niceeval/generate-descriptor
             test -x ${hostPackage}/libexec/niceeval/docker-profile-watchdog
             test -x ${hostPackage}/libexec/niceeval/prepare-loop-storage
+            test -x ${hostPackage}/libexec/niceeval/install-quota-slots
             test -x ${hostPackage}/libexec/niceeval/apply-rootless-network-policy
             test -x ${hostPackage}/libexec/niceeval/verify-sibling-isolation
             test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile@.service
             test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile-watchdog@.service
+            test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile-quota-slots@.service
             test -f ${hostPackage}/lib/systemd/system/niceeval-docker-profile-watchdog@.socket
             test -f ${hostPackage}/lib/sysusers.d/niceeval-docker-profile.conf
             test -f ${hostPackage}/lib/tmpfiles.d/niceeval-docker-profile.conf
             grep -q 'PORT_DRIVER=none' ${hostPackage}/lib/systemd/system/niceeval-docker-profile@.service
             grep -q 'apply-rootless-network-policy' ${hostPackage}/lib/systemd/system/niceeval-docker-profile@.service
             grep -q '198.18.0.0/15' ${hostPackage}/libexec/niceeval/apply-rootless-network-policy
-            grep -q 'Durable admission' ${hostPackage}/libexec/niceeval/docker-profile-watchdog
+            grep -q 'Durable admission' ${hostPackage}/libexec/niceeval/.docker-profile-watchdog-wrapped
 
             ${hostPackage}/bin/niceeval-docker-profile-validate-capacity \
               ${./packaging/docker-profile-host/config/default.host.json.example} --json > $out
