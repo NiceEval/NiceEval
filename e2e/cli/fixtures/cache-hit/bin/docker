@@ -1,0 +1,33 @@
+#!/bin/sh
+fixture_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+volume_root="$fixture_root/cache-volume"
+image_state="$fixture_root/image-id"
+case "$*" in
+  "volume inspect --format "*)
+    if [ ! -f "$volume_root/domain-id" ]; then exit 1; fi
+    sed -n '1p' "$volume_root/domain-id"
+    ;;
+  "volume create --label "*)
+    mkdir -p "$volume_root"
+    label=$4
+    printf '%s\n' "${label#*=}" > "$volume_root/domain-id"
+    printf '%s\n' "$5"
+    ;;
+  "info --format {{.ID}}") printf '%s\n' "cache-hit-daemon" ;;
+  "info --format {{.Driver}}") printf '%s\n' "overlay2" ;;
+  "image inspect --format {{.Id}} "*)
+    if [ ! -f "$image_state" ]; then exit 1; fi
+    sed -n '1p' "$image_state"
+    ;;
+  build\ *)
+    printf '%s\n' "sha256:cache-hit-image" > "$image_state"
+    count=0
+    if [ -f "$fixture_root/build-count" ]; then count=$(sed -n '1p' "$fixture_root/build-count"); fi
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$fixture_root/build-count"
+    ;;
+  *)
+    printf '%s\n' "unexpected docker argv: $*" >&2
+    exit 64
+    ;;
+esac

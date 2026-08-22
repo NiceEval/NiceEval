@@ -1290,7 +1290,7 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
     readonly works: readonly import("../sandbox/build-coordinator.ts").SandboxBuildWork[];
     readonly provider: import("../sandbox/build-coordinator.ts").SandboxBuildProvider;
     /** `${experimentId}|${evalId}` → 该 pair 的 fresh attempt 依赖的 BuildKey。 */
-    readonly pairBuildKeys: Readonly<globalThis.Record<string, readonly BuildKey[]>>;
+    readonly pairBuildKeys: Readonly<globalThis.Record<string, readonly import("../sandbox/build-coordinator.ts").SandboxBuildRef[]>>;
     readonly maxConcurrency?: number;
     readonly buildTimeoutMs?: number;
     readonly prepareBudgetMs?: number;

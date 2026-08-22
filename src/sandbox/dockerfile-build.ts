@@ -3,12 +3,21 @@
 // 契约单源：docs/feature/sandbox/case.md「按需构建单 Sandbox」「Run 级构建协调」。
 
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { Data, Effect } from "effect";
-import type { SandboxBuildExecutionContext, SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
+import {
+  materializationScopeId,
+  sandboxBuildRef,
+  type SandboxBuildArtifactSource,
+  type SandboxBuildExecutionContext,
+  type SandboxBuildProvider,
+  type SandboxBuildWork,
+} from "./build-coordinator.ts";
 import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
 import { computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
+import { dockerTaskBuildAuthorityFingerprint, makeTaskBuildCacheService } from "./docker-task-build-cache.ts";
 import {
   DOCKERFILE_MATERIALIZER_REVISION,
   resolveDockerfileBuildIdentity,
@@ -71,6 +80,12 @@ export function collectDockerfileBuildFromIdentity(input: {
         message: "Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.",
       }));
     }
+    const authorityFingerprint = input.provider === "docker" && input.dockerSocketPath === undefined
+      ? yield* Effect.tryPromise({
+          try: () => dockerTaskBuildAuthorityFingerprint(),
+          catch: (cause) => new DockerfileBuildCollectionError({ message: cause instanceof Error ? cause.message : String(cause) }),
+        })
+      : JSON.stringify(identity.providerIdentityMarker ?? [input.provider, input.dockerSocketPath ?? "default"]);
     return yield* Effect.try({
       try: () => {
         const caseKey = computeCaseKey({
@@ -89,12 +104,19 @@ export function collectDockerfileBuildFromIdentity(input: {
           platform: input.platform,
           ...(input.dockerSocketPath === undefined ? {} : { dockerSocketPath: input.dockerSocketPath }),
         };
+        const scopeId = materializationScopeId({
+          providerFamily: input.provider,
+          authorityFingerprint,
+          materializationProtocolVersion: 1,
+        });
         return Object.freeze({
           buildKey: identity.buildKey,
           caseKey,
           details,
           ...(identity.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: identity.providerIdentityMarker }),
           work: Object.freeze({
+            ref: sandboxBuildRef(scopeId, identity.buildKey),
+            scopeId,
             buildKey: identity.buildKey,
             provider: input.provider,
             label: `${input.provider}:dockerfile:${input.profile}`,
@@ -142,6 +164,27 @@ export function dockerfileBuildProvider(
   const runDockerBuild = hooks.runDockerBuild ?? defaultRunDockerBuild;
   const templateExists = hooks.e2bTemplateExists ?? defaultE2BTemplateExists;
   const buildE2BTemplate = hooks.buildE2BTemplate ?? defaultBuildE2BTemplate;
+  const managedDockerCache = hooks.dockerImageExists === undefined && hooks.runDockerBuild === undefined &&
+    collections.every((collection) => collection.details.dockerSocketPath === undefined)
+    ? makeTaskBuildCacheService()
+    : undefined;
+
+  const source = (
+    work: SandboxBuildWork,
+    locator: string,
+    origin: "cache" | "build",
+    detail: DockerfileBuildDetails,
+  ): SandboxBuildArtifactSource => ({
+    locator,
+    source: origin,
+    acquireUse: async () => {
+      const lease = detail.provider === "docker" && managedDockerCache !== undefined
+        ? await managedDockerCache.acquireUse(work.buildKey, locator, buildManifestDigest(work), detail.dockerSocketPath)
+        : { release() {} };
+      return { locator, release: () => lease.release() };
+    },
+    release() {},
+  });
 
   const detailFor = (work: SandboxBuildWork): DockerfileBuildDetails => {
     const detail = details.get(work.buildKey);
@@ -156,30 +199,50 @@ export function dockerfileBuildProvider(
       const detail = detailFor(work);
       if (detail.provider === "docker") {
         const tag = dockerBuildTag(work.buildKey);
-        return (await imageExists(tag, detail.dockerSocketPath)) ? tag : undefined;
+        if (managedDockerCache !== undefined) {
+          return await managedDockerCache.lookup(work.buildKey, tag, buildManifestDigest(work), detail.dockerSocketPath)
+            ? { _tag: "Hit", source: source(work, tag, "cache", detail) }
+            : { _tag: "Miss" };
+        }
+        return (await imageExists(tag, detail.dockerSocketPath))
+          ? { _tag: "Hit", source: source(work, tag, "cache", detail) }
+          : { _tag: "Miss" };
       }
       const name = e2bBuildName(work.buildKey);
-      return (await templateExists(name, signal)) ? name : undefined;
+      return (await templateExists(name, signal))
+        ? { _tag: "Hit", source: source(work, name, "cache", detail) }
+        : { _tag: "Miss" };
     },
     async build(work, ctx) {
       const detail = detailFor(work);
       if (detail.provider === "docker") {
         const tag = dockerBuildTag(work.buildKey);
         await runDockerBuild(detail, tag, ctx);
-        return tag;
+        await managedDockerCache?.publish(work.buildKey, tag, buildManifestDigest(work), ctx.operationId, detail.dockerSocketPath);
+        return source(work, tag, "build", detail);
       }
       const name = e2bBuildName(work.buildKey);
       await buildE2BTemplate(detail, name, ctx);
-      return name;
+      return source(work, name, "build", detail);
     },
   };
 }
 
+function buildManifestDigest(work: SandboxBuildWork): string {
+  return createHash("sha256").update(JSON.stringify({
+    schemaVersion: 1,
+    scopeId: work.scopeId,
+    buildKey: work.buildKey,
+    provider: work.provider,
+    inputs: work.inputs,
+  })).digest("hex");
+}
+
 export function routeBuildProviders(
-  routes: ReadonlyMap<BuildKey, SandboxBuildProvider>,
+  routes: ReadonlyMap<import("./build-coordinator.ts").SandboxBuildRef, SandboxBuildProvider>,
 ): SandboxBuildProvider {
   const providerFor = (work: SandboxBuildWork): SandboxBuildProvider => {
-    const provider = routes.get(work.buildKey);
+    const provider = routes.get(work.ref);
     if (provider === undefined) throw new Error(`no sandbox build provider for BuildKey ${work.buildKey.slice(0, 12)}…`);
     return provider;
   };

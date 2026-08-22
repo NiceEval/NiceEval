@@ -125,6 +125,43 @@ interface CacheInventoryDocumentV1 {
 }
 ```
 
+人类输出示例：
+
+```text
+Docker task builds · verified-managed · domain 8c3d90b7e5b94458
+  4 entries · 1 active-leased · 2 cold-reusable · 1 unverified
+  exact marginal reclaim unknown · shared bytes not additive
+
+BuildKit · unverified shared-builder capacity
+  total 402.6 GB · provider reclaimable estimate 221.6 GB
+  NiceEval ownership unknown · not eligible for NiceEval GC
+```
+
+Domain 明细 JSON 示例：
+
+```json
+{
+  "format": "niceeval.cache-inventory",
+  "schemaVersion": 1,
+  "scope": { "kind": "domain", "domainId": "8c3d90b7e5b94458" },
+  "domains": [{
+    "domainId": "8c3d90b7e5b94458",
+    "providerFamily": "docker",
+    "backendKind": "docker-images",
+    "state": "verified-managed",
+    "entryCount": 4
+  }],
+  "providerObservations": [],
+  "entries": [{
+    "entryId": "task-build:7d38…",
+    "state": "cold-reusable",
+    "immutableResourceIdentity": "sha256:91ac…",
+    "lastSuccessfulUseAt": "2026-08-01T02:10:00.000Z",
+    "exactMarginalReclaimBytes": null
+  }]
+}
+```
+
 ## 两阶段回收
 
 ```sh
@@ -203,6 +240,13 @@ interface CacheGcPlanDocumentV1 {
 每个候选保存 policy version、rule id、observed time、时间与容量 evidence 以及确定 order key。
 人类输出用这些字段解释“为什么该删”，而不是用 repository 名、创建时间或容器引用数单独推断。
 
+```text
+GC preview 3b3e7f0d… · domain 8c3d90b7e5b94458 · expires in 15m
+  2 candidates · rule max-age/task-build
+  exact reclaim unknown
+Apply with: niceeval cache gc --domain 8c3d90b7e5b94458 --apply 3b3e7f0d…
+```
+
 ## Apply JSON
 
 `cache gc --apply <plan-id> --json` 的 stdout 只有一个 JSON 文档：
@@ -247,6 +291,12 @@ interface CacheGcOutcomeDocumentV1 {
 
 重复 apply 读取已有 outcome，并按 architecture 的 deleting 状态机恢复，结果幂等。
 JSON 模式的 stdout 不含日志；诊断写入 stderr。
+
+```text
+GC outcome 3b3e7f0d… · 1 deleted · 1 skipped · 0 failed
+  deleted task-build:7d38… · max-age/task-build
+  skipped task-build:a102… · lease-acquired
+```
 
 ## 退出码
 

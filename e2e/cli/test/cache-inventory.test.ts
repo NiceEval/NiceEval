@@ -8,8 +8,9 @@ import { cliE2E } from "./context.ts";
 test("共享 BuildKit 容量只作为未验证 Provider observation 展示", async () => {
   await cliE2E.case("cache-inventory", {}, async ({ commands: { niceeval }, paths }) => {
     const fakeBin = join(paths.projectRoot, "fixtures/cache-inventory/bin");
+    const stateRoot = join(paths.projectRoot, "state");
     const result = await niceeval.run(["cache", "inventory", "--json"], {
-      env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+      env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
     });
 
     expect(result.exitCode, result.diagnostic()).toBe(0);
@@ -20,9 +21,15 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
       providerObservations: Array<Record<string, unknown>>;
     };
     expect(document.format).toBe("niceeval.cache-inventory");
-    expect(document.domains).toEqual([]);
+    expect(document.domains).toEqual([{
+      domainId: expect.any(String),
+      backendKind: "docker-images",
+      state: "verified-managed",
+      entryCount: 0,
+    }]);
     expect(document.providerObservations).toEqual([{
       scope: "provider",
+      providerFamily: "docker",
       backendKind: "buildkit",
       state: "unverified",
       observedAt: expect.any(String),
@@ -30,8 +37,22 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
       reclaimableEstimateBytes: 21_500_000_000,
       reason: "shared-builder-unattributed",
     }]);
-    expect(result.stdout).not.toContain("domainId");
     expect(result.stdout).not.toContain("evictable");
     expect(result.stdout).not.toContain("planId");
+
+    const domainId = (document.domains[0] as { domainId: string }).domainId;
+    const preview = await niceeval.run(["cache", "gc", "--domain", domainId, "--json"], {
+      env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
+    });
+    expect(preview.exitCode, preview.diagnostic()).toBe(0);
+    const previewDocument = JSON.parse(preview.stdout) as { format: string; plan: { planId: string; candidates: unknown[] } };
+    expect(previewDocument.format).toBe("niceeval.cache-gc-plan");
+    expect(previewDocument.plan.candidates).toEqual([]);
+
+    const apply = await niceeval.run(["cache", "gc", "--domain", domainId, "--apply", previewDocument.plan.planId, "--json"], {
+      env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot },
+    });
+    expect(apply.exitCode, apply.diagnostic()).toBe(0);
+    expect(JSON.parse(apply.stdout)).toMatchObject({ format: "niceeval.cache-gc-outcome", outcomes: [] });
   });
 });

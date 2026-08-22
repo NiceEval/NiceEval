@@ -26,6 +26,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
           env: {
             PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
             DOCKER_DEFAULT_PLATFORM: "linux/amd64",
+            XDG_STATE_HOME: join(paths.projectRoot, "state"),
           },
         },
       );

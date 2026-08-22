@@ -1,6 +1,24 @@
 #!/bin/sh
-if [ "$*" != "system df --format json" ]; then
-  printf '%s\n' "unexpected docker argv: $*" >&2
-  exit 64
-fi
-printf '%s\n' '{"Active":"0","Reclaimable":"21.5GB","Size":"40.3GB","TotalCount":"17","Type":"Build Cache"}'
+fixture_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+volume_root="$fixture_root/volume"
+case "$*" in
+  "volume inspect --format "*)
+    if [ ! -f "$volume_root/domain-id" ]; then exit 1; fi
+    sed -n '1p' "$volume_root/domain-id"
+    ;;
+  "volume create --label "*)
+    mkdir -p "$volume_root"
+    label=$4
+    printf '%s\n' "${label#*=}" > "$volume_root/domain-id"
+    printf '%s\n' "$5"
+    ;;
+  "info --format {{.ID}}") printf '%s\n' "niceeval-e2e-daemon" ;;
+  "info --format {{.Driver}}") printf '%s\n' "overlay2" ;;
+  "system df --format json")
+    printf '%s\n' '{"Active":"0","Reclaimable":"21.5GB","Size":"40.3GB","TotalCount":"17","Type":"Build Cache"}'
+    ;;
+  *)
+    printf '%s\n' "unexpected docker argv: $*" >&2
+    exit 64
+    ;;
+esac

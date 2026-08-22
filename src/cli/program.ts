@@ -313,6 +313,10 @@ export interface Flags {
   confirmOwnerTerminated: boolean;
   /** 明确确认远端外部状态已静止；没有它恢复拒绝执行。 */
   confirmRemoteQuiesced: boolean;
+  /** `cache inventory|gc` 专用：选择一个精确 Materialization Domain。 */
+  domain?: string;
+  /** `cache gc` 专用：执行先前持久化的精确 plan id。 */
+  apply?: string;
 }
 
 // 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明，不依赖 Node 20.14+
@@ -404,6 +408,10 @@ export const FLAG_OPTIONS = {
   "confirm-owner-terminated": { type: "boolean" },
   /** `--recover-shared-state` 专用:确认远端外部状态已静止。 */
   "confirm-remote-quiesced": { type: "boolean" },
+  /** `cache inventory|gc` 专用：选择一个精确 Materialization Domain。 */
+  domain: { type: "string" },
+  /** `cache gc` 专用：执行先前持久化的精确 plan id；省略时只创建预览。 */
+  apply: { type: "string" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
   dry: { type: "boolean" },
   /** `sandbox prune` 专用:除 orphan 外也销毁 unverified 实例;`exp` 明确拒绝此 flag,重跑失败项或全部项请用 `--rerun` / `--rerun all`。 */
@@ -618,6 +626,8 @@ function parseArgs(
     ownerToken: values["owner-token"] as string | undefined,
     confirmOwnerTerminated: values["confirm-owner-terminated"] === true,
     confirmRemoteQuiesced: values["confirm-remote-quiesced"] === true,
+    domain: values.domain as string | undefined,
+    apply: values.apply as string | undefined,
   };
   return { command, positionals, flags, providedOptions };
 }
@@ -1388,12 +1398,12 @@ function runCacheCliCommand(
     )) as {
       runCacheCommand(
         positionals: readonly string[],
-        options: { readonly json: boolean },
+        options: { readonly json: boolean; readonly domain?: string; readonly apply?: string },
       ): Promise<number>;
     };
     return yield* cliPromise(
       "run Provider cache command",
-      () => runCacheCommand(positionals, { json: flags.json }),
+      () => runCacheCommand(positionals, { json: flags.json, domain: flags.domain, apply: flags.apply }),
     );
   });
 }
