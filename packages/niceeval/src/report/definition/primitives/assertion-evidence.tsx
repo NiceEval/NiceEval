@@ -12,6 +12,19 @@ export interface AssertionEvidenceContent {
   readonly explanation: ClosedAssertionFactValue;
 }
 
+type MatchState = "matched" | "mismatched" | "unavailable";
+
+interface MatchDiagnosticView {
+  readonly fields: readonly { readonly label: string; readonly value: ClosedAssertionFactValue }[];
+  readonly children: readonly MatchChildView[];
+}
+
+interface MatchChildView {
+  readonly label: string;
+  readonly state: MatchState;
+  readonly diagnostic: MatchDiagnosticView | null;
+}
+
 const INLINE_STRING_CHARACTER_LIMIT = 240;
 const STRING_PREVIEW_CHARACTER_LIMIT = 120;
 
@@ -62,6 +75,45 @@ function valueText(value: ClosedAssertionFactValue): string {
     case "list":
       return value.items.map(valueText).join("; ");
   }
+}
+
+function field(value: ClosedAssertionFactValue | undefined, name: string): ClosedAssertionFactValue | undefined {
+  return value?.kind === "fields"
+    ? value.fields.find((entry) => entry.label === name)?.value
+    : undefined;
+}
+
+function stringValue(value: ClosedAssertionFactValue | undefined): string | undefined {
+  return value?.kind === "value" && typeof value.value === "string" ? value.value : undefined;
+}
+
+function matcherName(check: ClosedAssertionFactValue): string | undefined {
+  return stringValue(field(field(field(check, "data"), "matcher"), "name"));
+}
+
+function matchState(value: ClosedAssertionFactValue | undefined): MatchState | undefined {
+  const state = stringValue(value);
+  return state === "matched" || state === "mismatched" || state === "unavailable" ? state : undefined;
+}
+
+function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagnosticView | null {
+  if (value?.kind !== "fields") return null;
+  const childrenValue = field(value, "children");
+  const children = childrenValue?.kind === "list"
+    ? childrenValue.items.flatMap((item, index): MatchChildView[] => {
+        const state = matchState(field(item, "state"));
+        if (state === undefined) return [];
+        return [{
+          label: stringValue(field(item, "label")) ?? `matcher ${index + 1}`,
+          state,
+          diagnostic: diagnosticView(field(item, "diagnostic")),
+        }];
+      })
+    : [];
+  return {
+    fields: value.fields.filter((entry) => entry.label !== "children"),
+    children,
+  };
 }
 
 function LongString({ value, locale, quoted }: {
@@ -131,19 +183,104 @@ function Section({ heading, value, locale }: {
   );
 }
 
-function web(content: AssertionEvidenceContent, locale: string): ReactElement {
+function stateLabel(state: MatchState, locale: string): string {
+  if (locale === "zh-CN") {
+    if (state === "matched") return "命中";
+    if (state === "mismatched") return "未命中";
+    return "无法判断";
+  }
+  return state;
+}
+
+function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, children }: {
+  readonly label: string;
+  readonly state: MatchState;
+  readonly diagnostic: MatchDiagnosticView | null;
+  readonly locale: string;
+  readonly root?: boolean;
+  readonly children?: ReactElement;
+}): ReactElement {
+  const summary = (
+    <span className={`niceeval-match-summary niceeval-match-summary--${state}`}>
+      <code>{nodeLabel}</code>
+      <span>· {stateLabel(state, locale)}</span>
+    </span>
+  );
+  const nested = diagnostic?.children ?? [];
+  const body = diagnostic !== null || children !== undefined
+    ? (
+        <div className="niceeval-match-detail">
+          {nested.length > 0 ? (
+            <div className="niceeval-match-children">
+              {nested.map((child, index) => (
+                <MatchNode
+                  key={`${child.label}:${index}`}
+                  label={child.label}
+                  state={child.state}
+                  diagnostic={child.diagnostic}
+                  locale={locale}
+                />
+              ))}
+            </div>
+          ) : null}
+          {diagnostic !== null && diagnostic.fields.length > 0 ? (
+            <dl className="niceeval-match-facts">
+              {diagnostic.fields.map((entry, index) => (
+                <div key={`${entry.label}:${index}`}>
+                  <dt>{entry.label}</dt>
+                  <dd><Value value={entry.value} locale={locale} /></dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+          {children}
+        </div>
+      )
+    : null;
+  if (body === null) return <div className="niceeval-match-node">{summary}</div>;
+  return (
+    <details className={`niceeval-match-node${root ? " niceeval-match-node--root" : ""}`}>
+      <summary>{summary}</summary>
+      {body}
+    </details>
+  );
+}
+
+function web(
+  content: AssertionEvidenceContent,
+  locale: string,
+  labelText: string | undefined,
+  state: MatchState,
+): ReactElement {
+  const diagnostic = diagnosticView(content.explanation);
+  const name = matcherName(content.check) ?? labelText ?? label(locale, "Match", "检查");
   return (
     <div className="niceeval-assertion-evidence">
-      <Section heading={label(locale, "Source", "来源")} value={content.source} locale={locale} />
-      <Section heading={label(locale, "Check", "检查条件")} value={content.check} locale={locale} />
-      <Section heading={label(locale, "Observed", "实际结果")} value={content.observed} locale={locale} />
-      <Section heading={label(locale, "Expected", "预期结果")} value={content.expected} locale={locale} />
-      <Section heading={label(locale, "Explanation", "解释")} value={content.explanation} locale={locale} />
+      <MatchNode label={name} state={state} diagnostic={diagnostic} locale={locale} root>
+        <div className="niceeval-match-body">
+          <div className="niceeval-match-evidence-grid">
+            <Section heading={label(locale, "Input", "输入")} value={content.source} locale={locale} />
+            <Section heading={label(locale, "Observed", "实际结果")} value={content.observed} locale={locale} />
+            <Section heading={label(locale, "Expected", "预期结果")} value={content.expected} locale={locale} />
+          </div>
+          <details className="niceeval-match-raw">
+            <summary>{label(locale, "Raw assertion data", "原始断言数据")}</summary>
+            <div>
+              <Section heading={label(locale, "Check", "检查条件")} value={content.check} locale={locale} />
+              <Section heading={label(locale, "Explanation", "解释")} value={content.explanation} locale={locale} />
+            </div>
+          </details>
+        </div>
+      </MatchNode>
     </div>
   );
 }
 
-export const AssertionEvidence = defineComponent<{ readonly content: AssertionEvidenceContent }>({
+export const AssertionEvidence = defineComponent<{
+  readonly content: AssertionEvidenceContent;
+  readonly label?: string;
+  readonly state?: MatchState;
+}>({
   dimensions: () => ({}),
   text({ content }) {
     return [
@@ -154,8 +291,8 @@ export const AssertionEvidence = defineComponent<{ readonly content: AssertionEv
       `Explanation: ${valueText(content.explanation)}`,
     ].join("\n");
   },
-  web({ content }, ctx) {
-    return web(content, ctx.locale);
+  web({ content, label: labelText, state }, ctx) {
+    return web(content, ctx.locale, labelText, state ?? "unavailable");
   },
 });
 

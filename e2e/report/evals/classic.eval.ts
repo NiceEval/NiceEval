@@ -1,5 +1,12 @@
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { and, includes, or } from "niceeval/expect";
+
+function recallMatch() {
+  return and(
+    includes("RECALL_OK"),
+    or(includes("RECALL_OK"), includes("NEVER_PRESENT")),
+  );
+}
 
 function recallEval(topic: string, prompt: string) {
   return defineEval({
@@ -7,7 +14,7 @@ function recallEval(topic: string, prompt: string) {
     async test(t) {
       const turn = await t.send(prompt);
       await turn.succeeded().orStop();
-      t.check(t.reply, includes("RECALL_OK"));
+      t.check(t.reply, recallMatch());
     },
   });
 }
@@ -26,7 +33,7 @@ export default {
       const turn = await t.send("Write a memory note, then recall it.");
       await turn.succeeded().orStop();
       turn.calledTool("write_note", { count: 1 });
-      t.check(t.reply, includes("RECALL_OK"));
+      t.check(t.reply, recallMatch());
     },
   }),
 };

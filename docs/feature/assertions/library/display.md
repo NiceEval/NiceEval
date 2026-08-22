@@ -16,6 +16,8 @@ Pass Eval 的区块顺序是 Execution、Verdict、检查项。Score Eval 的区
 
 `notCalledTool` matched 时，展开区显示期望零命中与 `0 definite matches`。mismatched 时显示实际命中数、决定结果的 tool occurrence，以及命中输入内的位置。诊断采样或截断不能删除 sealed result 与决定性见证。
 
+Web 详情把 matcher 自身作为可展开行：`matched`、`mismatched` 与 `unavailable` 分别使用成功、失败与警告色，并始终同时显示状态文字，颜色不是唯一表达。点击 matcher 后，输入、实际结果、预期结果与诊断在其下方展开；原始 criterion 与 explanation 再收进技术详情。组合 matcher 按原声明层级展开，每个 `and`、`or` 与叶子 matcher 都显示自己的 sealed 状态，因此父组合命中时仍能辨认没有命中的分支。
+
 Assertions display 不携带 source path、origin source snapshot 或跨 family blob ref。需要源码导航时，Analysis 的 source-navigation DomainView 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
 没有对应 row 或 Sources 无法形成可用值时，entry 位置显示 `unmapped`，不能猜测当前 worktree。`.orStop()` 已执行的位置可由 role 为 `stop` 的 source site 显示，不能由未保存的控制流推断。
 
