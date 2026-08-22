@@ -4,7 +4,9 @@ set -euo pipefail
 readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly NICEEVAL_ROOT="$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)"
 readonly MEMORYBENCH_REPOSITORY="https://github.com/NiceEval/MemoryBench.git"
-readonly MEMORYBENCH_COMMIT="9f2a67d26b243902e8cd1c07af1effc9f752fff1"
+# Keep the preview on a reviewed, immutable fixture while exercising current
+# Assertions v2 evidence. This commit contains the focused 12-attempt rerun.
+readonly MEMORYBENCH_COMMIT="55dbfb00b39ff9405902f8d966e9eda03affe8b2"
 readonly PUBLISH_DIRECTORY="$NICEEVAL_ROOT/netlify-report-preview"
 
 if [[ "${CONTEXT:-}" != "deploy-preview" ]]; then
