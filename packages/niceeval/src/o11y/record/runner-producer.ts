@@ -1636,7 +1636,6 @@ function normalizeCommands(
       commandId: captured.commandId,
       manifest,
       result: Object.freeze({ outcome: result.outcome, stdout, stderr }),
-      refs: Object.freeze([]),
     }));
   }
   return Object.freeze({
