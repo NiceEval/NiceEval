@@ -24,13 +24,13 @@ export default defineExperiment({
 
 - workdir 在 Attempt 之间回到复用 Sandbox 的题间重置点；
 - 题间 reset 只恢复 workdir，workdir 外的状态可能继续存在；
-- 两层作者 layer 的 `prepare()` 每条 Attempt 重新执行,昂贵动作靠真实检查快速命中(官方写法见[内置 prepare 命令](prepare-commands.md))；
+- 编译为 attempt occurrence 的 before 每条 Attempt 满足；编译为 physical-instance 的 before 已包含在 verified reset baseline；
 - agent.ensure 循环与 Agent runtime 每 Attempt 执行；
 - `maxConcurrency > 1` 时，不保证哪些 Attempt 共用同一个 Sandbox。
 
 如果结果依赖严格的跨 Attempt 顺序或累积状态，必须同时声明 `maxConcurrency: 1`。
 需要同一条连续实例时声明 `sandboxReuse: true`；结果依赖固定顺序时再显式声明 `maxConcurrency: 1`。
-跨 run checkpoint 的恢复与回存始终放在该物理 Sandbox 的 `setup()` / `teardown()`；多个 Invocation 指向同一 checkpoint 时再用 Experiment `sharedState.key` 标识独占边界。
+跨 run checkpoint 的恢复与回存使用该物理 Sandbox 的 `around({ before, after })`；多个 Invocation 指向同一 checkpoint 时再用 Experiment `sharedState.key` 标识独占边界。
 
 如果 Attempt 不能接受 workdir 之外的状态残留，就不能声明 `sandboxReuse`。
 这里允许的是**已经成功 settle 的命令有意留下的任务服务**，不是超时或取消后失控的命令树。异常命令树必须先确认终止；Provider 做不到时整台 Sandbox 退休，绝不进入复用池。
@@ -65,8 +65,8 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 |---|---|
 | Experiment `setup` / `teardown` | 每 Invocation 成对一次 |
 | `createSandbox` / `stop` | 每个 Sandbox 成对一次 |
-| `SandboxLayer.lifecycle({ scope: "sandbox" })` | 每个实际 Sandbox 成对一次；仅 Experiment node 可跨 Eval 共用，Eval node 隔离该 Eval |
-| 两层作者 layer 的 `prepare()` 与已登记 cleanup | 每 Attempt 成对 |
+| physical-instance `before` / `after` | 每个实际 Sandbox occurrence 成对一次 |
+| attempt `before` / `after` | 每 Attempt occurrence 成对一次 |
 | agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
 | Agent runtime `setup` / `teardown` | 每 Attempt 成对一次 |
 | `test(t)`、断言求值与证据收集 | 每 Attempt 一次 |
@@ -76,17 +76,17 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 - cleanup 只在 command 成功取得资源后经 `context.onCleanup()` 登记,按全局准备顺序逆序执行;
 - Attempt 的 Agent 与 cleanup 收尾完成后,Sandbox 才能 reset、轮换或停止。
 
-Runner 不把 `prepare()` 提升成每个 Sandbox 一次；只有作者显式声明的 `setup()` / `teardown()` 是物理 Sandbox 的生命周期。
-稳定 Agent CLI 应进入预制实例;随 Experiment 变化的准备写在 Experiment layer 的 `prepare()`,由真实检查控制重新执行成本。
+Runner 不按 API 名猜次数；planning 根据 typed inputs 与完整 sharing cohort 编译 occurrence，无法证明稳定时保守使用 attempt。
+稳定 Agent CLI 应进入预制实例；其余准备写成所属 owner 的 `before()`，由前缀缓存控制重复成本。
 
 Agent CLI 先由 ensure 重新 探测；缺失或 identity 不符时由配对 Installer 安装并复检。
 随后 runtime setup 的扩展步骤按声明收敛，不假设 Sandbox 空白：同名 marketplace 注册与 Plugin 安装被替换成按声明出处与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
-「可重复执行」的作者义务只涉及作者自己写的代码:两层 layer 的 `prepare()` 与 Agent factory 的 `postSetup`。
+「可重复执行」的作者义务只涉及作者自己写的代码:layer action 与 Agent factory 的 `postSetup`。
 
 ## 复用池按物理身份分组
 
 一个 Experiment 的混合批次里,不同 Eval 的 template 可以各不相同。
-Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 lifecycle owner marker 分组。不同 Eval 即使 `prepare()` 命令不同，只要物理计划相同仍可共享同一个 Sandbox，prepare 会在每次领取时重新执行；Eval 声明 lifecycle hook 时带入 Eval marker，因此不会和其他 Eval 共享。
+Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 owner-qualified physical prefix 分组。不同 Eval 的 attempt before 可以在同一物理 cohort 展开；Eval action 只有对完整 cohort 稳定时才能编译为 physical-instance。
 
 - 同一个 Sandbox 只承接同键 Attempt；
 - 每组建立自己的题间重置点；

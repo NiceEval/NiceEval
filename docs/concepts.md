@@ -96,7 +96,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Sandbox 实例 | Sandbox instance | Provider 启动的主 Sandbox；存在 sidecar、网络或服务时，同时点名这些伴随资源 | [Sandbox 实例与伴随资源](feature/sandbox/case.md) |
 | 主 Sandbox | —(`workspaceService` 对应实例) | Provider 启动的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#主-sandbox-不变量) |
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
-| 准备前缀 | SetupPrefix | Base 加上 scope 与 owner 顺序规范化的零个或多个可缓存 preparation operation 所形成的内容寻址 Sandbox 起点 | [准备前缀缓存](roadmap/sandbox-materialization/setup-prefix/README.md) |
+| 准备前缀 | SetupPrefix | Base 加上 occurrence 与 owner 包裹顺序规范化的零个或多个可缓存 before action 所形成的内容寻址 Sandbox 起点 | [准备前缀缓存](roadmap/sandbox-materialization/setup-prefix/README.md) |
 | SetupPrefixKey | SetupPrefixKey | parent 前缀、setup recipe、immutable inputs 与 Provider 捕获协议的链式内容身份 | [Setup Prefix Architecture](roadmap/sandbox-materialization/setup-prefix/architecture.md#前缀身份) |
 | CaseKey | CaseKey | 完整 attempt 运行条件身份,携带门的判据 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | Provider cache | Provider cache | Provider 为后续 Sandbox 保留的 Agent npm tarball、任务构建结果或原生 build cache；不属于结果携带或留存 Sandbox | [Provider Cache 生命周期](roadmap/sandbox-materialization/cache-lifecycle/README.md) |
@@ -110,9 +110,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| template owner | template owner | 为当前配对提供 template 的 Eval 或 Experiment owner;它的 layer 命令先执行 | [Sandbox Layer](feature/sandbox/layers.md#顺序与依赖方向) |
-| owner stack | owner stack | template owner、另一 owner 与 Agent 在同一主 Sandbox 上的固定准备顺序 | [三方准备时序](feature/sandbox/lifecycle.md) |
-| Sandbox command | SandboxCommand | Eval 与 Experiment layer 共用的顺序执行单元；对 Sandbox 的效果只通过命令与文件 API 产生 | [Sandbox Layer](feature/sandbox/layers.md#command-形状与-identity) |
+| template owner | template owner | 为当前配对提供 template 的 Eval 或 Experiment owner;它只决定 Provider 起点,不改变 Experiment → Group → Eval → Agent 包裹顺序 | [Sandbox Layer](feature/sandbox/layers.md#顺序与依赖方向) |
+| owner stack | owner stack | Experiment、Eval Group、Eval 与 Agent 在同一 occurrence 中固定正序进入、按登记栈逆序退出的包裹顺序 | [三方准备时序](feature/sandbox/lifecycle.md) |
+| Sandbox action | SandboxAction | 四类 owner 共用的 `before` / `after` 执行单元；声明位置保留 owner 与 ordinal，planning 再编译 occurrence | [Sandbox Layer](feature/sandbox/layers.md#command-形状与-identity) |
 | 探测 | 探测 | 只读探测命令,零副作用;退出码零为命中,非零是未命中而不是失败 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |
 | ensure | ensure | 「探测 → 缺失才 install → 复检」的循环语义;`installTool` 是工具版,`agent.ensure` 相位是 Agent 版 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |
 | 内置 prepare 命令 | —(`checkout` / `installTool`) | 官方提供、自带 探测、缓存与稳定 identity 的 prepare 命令 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |

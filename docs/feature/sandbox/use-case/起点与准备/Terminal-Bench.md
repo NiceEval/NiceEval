@@ -44,8 +44,8 @@ export default defineExperiment({
 
 ```text
 Eval Compose template
-  -> Eval prepare commands(本题为空)
-  -> Experiment prepare commands(本实验为空)
+  -> Experiment before(本实验为空)
+  -> Eval before(本题为空)
   -> agent.ensure(probe 命中即过,未命中由 Agent 安装层补齐)
   -> Agent runtime
 ```
@@ -60,7 +60,7 @@ template 按配对求值,Experiment 不需要按 Provider 分叉。
 
 ```typescript
 export default defineExperiment({
-  sandbox: sandboxLayer().prepare(installCompanyCertificate),
+  sandbox: sandboxLayer().before(installCompanyCertificate),
   agent: codexAgent(),
   evals: ["terminal-bench/"],
 });

@@ -28,10 +28,9 @@ export default defineExperiment({
 ```ts
 export default defineExperiment({
   sandbox: e2bSandbox({ template: "memorybench" })
-    .lifecycle({
-      scope: "sandbox",
-      setup: restoreMempal,
-      teardown: saveMempal,
+    .around({
+      before: restoreMempal,
+      after: saveMempal,
     }),
   sandboxReuse: true,
   maxConcurrency: 1,

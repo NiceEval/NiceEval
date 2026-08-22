@@ -4,27 +4,29 @@
 
 ```text
 pure link
-  → evaluate typed preparation inputs and scope
+  → evaluate typed action inputs
+  → compile occurrence kind from inputs and sharing cohort
   → validate eligibility and capability
-  → normalize sandbox scope before attempt scope
+  → link owner wrappers
   → BuildKey ready
-  → satisfy sandbox-scope prefixes
+  → satisfy physical-instance before prefixes
   → establish verified reset baseline
   → per Attempt reset
-  → satisfy attempt-scope prefixes
-  → Agent / test
-  → lifecycle teardown in reverse order
+  → satisfy attempt before prefixes
+  → Adapter runtime setup → Agent → Eval test → runtime teardown
+  → attempt after in global reverse order
+  → physical after in global reverse order
 ```
 
-`--dry` 完成输入求值、scope 推导、eligibility、规范化顺序、SetupPrefixKey、CaseKey 与 fingerprint 计算；它不 lookup cache、不取得 lease、不创建 staging 或 Sandbox。普通 lifecycle callback 始终真实执行，并截断后续共享捕获 lineage。
+`--dry` 完成输入求值、occurrence 编译、eligibility、owner 链接顺序、SetupPrefixKey、CaseKey 与 fingerprint 计算；它不 lookup cache、不取得 lease、不创建 staging 或 Sandbox。普通 callback before 始终真实执行，并截断后续共享捕获 lineage。
 
 查询、等待 single-flight 与 lease acquire 不占 Attempt permit。实际 staging、quiesce、promotion、restore 和 clone 使用 Provider 的资源队列；长期操作不持 registry transaction、Domain 全局锁或 Attempt permit。一个前缀不被 promotion 时，最终实例直接重新执行它及后缀，语义不变。
 
-## Lifecycle 与收尾
+## After 与收尾
 
-`.lifecycle({ scope, setup, teardown })` 与 preparation operation 属于同一规范化序列。setup invocation 前登记 teardown 义务；若 setup 部分失败，已到达节点仍按全局逆序 teardown。attempt-scope teardown 在该 Attempt 的 Agent/test/cleanup 后运行；sandbox-scope teardown 在最后一个 Attempt 后、Provider finalizer 前运行。teardown 使用独立 cleanup signal，永不缓存或因 prefix hit 跳过。
+owner occurrence 进入时登记全部 `.after()`；调用 `around.before` 前登记配对 `around.after`。before 部分失败或 cache restore 命中都不撤销已登记项。attempt after 在 Adapter runtime teardown 后运行；physical after 在最后一个 Attempt 后、Provider finalizer 前运行。全部 after 使用独立 cleanup signal，按实际登记栈全局逆序执行，永不缓存或因 prefix hit 跳过。
 
-共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可由最后的高频 operation 写入；secret 通过私有 lifecycle overlay 注入并在 teardown 清除。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
+共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可由最后的高频 before 写入；secret 通过私有 callback 注入并在 after 清除。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
 
 ## Provider capacity admission
 
@@ -41,7 +43,7 @@ Runner E2E owner 通过安装后的 `niceeval exp` 与可控 profile capacity fi
 
 ## 失败
 
-- scope 反向依赖、重复完整身份、secret 进入 operation 或不支持的 reuse overlay：planning fail。
+- occurrence 无法安全编译、重复完整身份、secret 进入 eligible action 或不支持的 reuse overlay：planning fail。
 - hit 的 key/manifest/artifact 不一致：隔离该 generation，并从更短 verified prefix 重新执行 recipe。
 - recipe、quiesce、捕获、clone 或 ready 失败：不交付 Sandbox；资源销毁或 durable 交给 reconcile。
 - 单个 waiter 取消不取消仍有消费者的共享 operation；最后一个 waiter 取消时协作终止未发布 staging。

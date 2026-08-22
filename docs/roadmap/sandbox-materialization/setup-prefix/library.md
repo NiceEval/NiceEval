@@ -1,161 +1,149 @@
 # Library
 
-## 统一的准备 API
+## 所有 owner 使用同一 API
 
-`prepare` 表示“在 Agent/test 前准备 Sandbox”，不再等同于“每 Attempt 必定调用一次命令”。求值后的 scope 决定 occurrence 属于物理 Sandbox 还是 Attempt；缓存只决定该 occurrence 通过 restore 还是 recipe invocation 得到满足。
+Experiment、Eval Group、Eval 与 Agent 都向同一个 `SandboxLayer` 贡献 before/after 包裹。作者不选择 sandbox 或 attempt scope，也不需要理解 prepare/setup 的区别：
 
 ```ts
-type PreparationScope = "sandbox" | "attempt";
-
 const changeFrequency = {
   rare: 10,
   normal: 100,
   frequent: 1_000,
 } as const;
 
-interface PreparationOperationOptions {
-  readonly id: string;
-  readonly inputs: readonly PreparationInput[];
-  readonly scope?: PreparationScope;
-  readonly changeFrequency?: number;
-  readonly cacheVersion?: string;
-}
-
-declare function shell(
-  input: PreparationOperationOptions & ShellInput,
-): SandboxPreparationOperation;
-declare function write(
-  input: PreparationOperationOptions & WriteInput,
-): SandboxPreparationOperation;
-declare function copy(
-  input: PreparationOperationOptions & CopyInput,
-): SandboxPreparationOperation;
-
-interface SandboxLifecycleNode {
-  readonly scope: PreparationScope;
-  readonly setup: SandboxLifecycleAction;
-  readonly teardown: SandboxLifecycleAction;
-}
-
 interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
-  prepare(operation: SandboxPreparationOperation): SandboxLayer<Kind>;
-  lifecycle(node: SandboxLifecycleNode): SandboxLayer<Kind>;
+  before(action: SandboxAction): SandboxLayer<Kind>;
+  after(action: SandboxAction): SandboxLayer<Kind>;
+  around(pair: SandboxActionPair): SandboxLayer<Kind>;
 }
-```
 
-操作在写出时直接传给 `.prepare()`，不需要先定义 setup 容器再传一次：
+interface SandboxActionPair {
+  readonly before: SandboxAction;
+  readonly after: SandboxAction;
+}
+
+declare function shell(input: ShellActionInput): SandboxAction;
+declare function write(input: WriteActionInput): SandboxAction;
+declare function copy(input: CopyActionInput): SandboxAction;
+```
 
 ```ts
 dockerSandbox({
   source: { type: "dockerfile", context: HARNESS_CONTEXT },
 })
-  .prepare(shell({
+  .before(shell({
     id: "runtimes",
     command: "./import-runtimes.sh",
     inputs: [runtimeV09, runtimeV012],
     changeFrequency: changeFrequency.rare,
   }))
-  .prepare(shell({
+  .before(shell({
     id: "fixture",
     command: "./install-fixture.sh",
     inputs: [fixtureArchive],
     changeFrequency: 40,
   }))
-  .prepare(write({
+  .before(write({
     id: "adapter-env",
     path: ".env",
     input: publicAdapterConfig,
+    inputs: [publicAdapterConfig],
     changeFrequency: changeFrequency.frequent,
   }))
-  .lifecycle({
-    scope: "attempt",
-    setup: injectCredentialOverlay,
-    teardown: removeCredentialOverlay,
+  .around({
+    before: injectCredentialOverlay,
+    after: removeCredentialOverlay,
   });
 ```
 
-`shell()`、`write()` 与 `copy()` 的返回值同时是规范化操作、缓存节点和 `.prepare()` 参数。命令、目标、规范化参数及 inputs 形成 recipe identity；只有这些输入无法表达的实现世代变化才使用 `cacheVersion` 显式失效。
+`before(action)` 是不需要配对 after 的前置动作。`after(action)` 是 owner occurrence 的 finally；进入该 owner occurrence 时就登记，即使后续 before 部分失败也会执行。`around({ before, after })` 用于资源取得与释放；调用其 before 前登记配对 after。API 不把 fluent after 隐式绑定到最近 before，避免书写重排改变配对。
 
-## Scope 推导
+## Owner 包裹顺序
 
-每个 typed input 携带最小安全 scope。planning 对输入求 join：
+同一种 occurrence 内，before 固定正序进入：
 
 ```text
-requiredScope(inputs):
-  含 attempt-bound handle → attempt
-  只有 immutable handle  → sandbox-capable
+Experiment → Eval Group → Eval → Agent
 ```
 
-省略 `scope` 时，sandbox-capable 求值为 `sandbox`，attempt-bound 求值为 `attempt`。作者可以把 sandbox-capable 显式收紧为 `attempt`，让 occurrence 更频繁；不能把 attempt-required 放宽为 `sandbox`。违反时 planning 在创建资源前失败。求值后的 scope 进入 PrefixKey、debug 与诊断。
-
-fixture、sample、seed、transfer/config manifest 只有被该操作实际消费时才通过 typed handle 进入 inputs。model、timeout、Attempt UUID 与其它不可见配置不会仅因属于同一个 Attempt 就击穿缓存。inputs 同时负责运行时交付与 identity，不是额外的 cache tag。
-
-## 频率与顺序
-
-`changeFrequency` 接受任意有限非负数，默认 `changeFrequency.normal`。数值越大表示作者预计它变化越频繁；三个预设只是普通数字。该值只影响 promotion、retention、GC 与缓存工作排队，不进入 PrefixKey，也绝不改变执行顺序。
-
-规范化顺序固定为：
+退出时按实际登记栈全局逆序：
 
 ```text
-Provider ready
-  → 所有 sandbox-scope nodes
-  → verified sandbox reset baseline
+Agent → Eval → Eval Group → Experiment
+```
+
+每个 owner 内按作者声明顺序执行 before 与 around.before；after 和 around.after 按登记栈逆序。`changeFrequency` 绝不重排程序。旧的 template-owner-first command precedence 不再存在；template 只决定 Provider 起点，不决定 owner 顺序。
+
+Attempt 内 Agent body 固定为：
+
+```text
+Agent before / around.before
+  → Adapter runtime setup
+  → Agent run
+  → Eval test
+  → Adapter runtime teardown
+  → Agent after / around.after
+  → Eval / Group / Experiment after
+```
+
+Eval test 因而始终发生在 Adapter runtime 存活期间。runtime teardown 即使 run 或 test 失败也真实执行；随后继续全局 LIFO cleanup。
+
+## Occurrence 由 planning 编译
+
+公开 API 不暴露 scope。link 与 physical planning 把每个 attachment 编译为 `physical-instance | attempt` occurrence：
+
+- 消费 attempt-bound typed input 的 action 必为 attempt；
+- 只消费 immutable input 的 action，只有当其 owner identity 对整个 physical sharing cohort 稳定时才是 physical-instance；
+- 不能证明 cohort 稳定时使用 attempt；
+- Agent action 默认 attempt；未来只有完整 Agent owner 对 cohort 稳定时才能成为 physical-instance。
+
+Experiment action 跨多个 Eval 或 template 时，会在每个对应物理实例或 Attempt 展开，不是整个 Run 一次。Group action 只有在 lane 实例对完整 Group identity 稳定时才能成为 physical-instance。Group 共享实例中的 Eval action 通常是 attempt。
+
+SandboxLayer 不提供 invocation occurrence。没有具体 Sandbox 的 Experiment once hook 继续属于 Experiment/Plugin host lifecycle。Direct Agent 配对中，任何显式 SandboxLayer——即使为空或只有 after——都在 pure link 报 `sandbox.unexpected-for-direct-agent`，且不触发 Provider I/O。
+
+跨 occurrence 的规范顺序是：
+
+```text
+Provider start
+  → physical before / around.before
+  → verified reset baseline
   → 每个 Attempt:
       reset
-      → 所有 attempt-scope nodes
-      → Agent/test
-      → attempt teardown / cleanup
-  → sandbox teardown
+      → attempt before / around.before
+      → Agent body
+      → attempt after / around.after
+  → physical after / around.after
   → Provider finalizer
 ```
 
-每个 scope 内使用 framework phase、template owner、另一 author owner、Agent owner和作者书写顺序。跨 scope 只能从 sandbox 指向 attempt；反向依赖 planning fail。API 不提供越过 owner precedence 或书写顺序的任意重排。
+Provider replacement 或 retirement 开启新的 physical occurrence，重新经历 start、physical before、baseline、physical after 与 finalizer。Provider 无法恢复 physical baseline 时，只能创建新实例或让 reuse planning 失败；不能把 physical action 偷换成 attempt replay。
 
-## 确定性边界
+## 缓存资格
 
-可缓存 operation 是确定性承诺，只允许改变 Sandbox 内状态。执行面清空 ambient env、默认阻断网络，并禁止 secret、租约、外部会话、当前时间、随机数和外部写入。宿主文件与浮动引用先经内容求值或身份查找，得到 canonical value、digest 或只读 handle。漏报输入违反 eligibility，但 NiceEval 不宣称可以自动发现任意 shell 的全部隐藏读取。
+声明式 `before(shell/write/copy)` 是确定性承诺，只允许改变 Sandbox 内状态。它在每个 occurrence 都得到满足：
 
-需要凭据、外部副作用、长驻会话或任意 callback 的动作使用 `.lifecycle()`：
-
-```ts
-layer.lifecycle({
-  scope: "sandbox",
-  setup: startFixtureService,
-  teardown: stopFixtureService,
-});
+```text
+hit         → restore verified private state
+miss        → replay action and optionally capture
+unsupported → execute action without capture
 ```
 
-scope 对 callback 必填，不能从函数体推导。lifecycle node 始终真实执行且不可缓存，并截断所在物理状态的共享捕获 lineage；后续 operation 仍执行，但标记 `ineligible: opaque-ancestor`。只有框架与 Provider 类型共同证明 snapshot-excluded 的私有 overlay 可以例外。
+callback before 始终真实执行、显示 opaque，并关闭后续共享 capture lineage。secret、租约、外部会话、当前时间、随机数、外部写入和无法原子捕获的 DinD 状态也关闭 lineage。后续 action 可以在私有实例继续执行，但不能被其它 owner、lane、Eval 或 Agent 当作共享 prefix 命中。
 
-teardown 义务在 setup invocation 前登记，因此 setup 部分失败也会收尾。所有已到达节点按规范化 forward 顺序的全局逆序 teardown。即使 lifecycle action 使用可精确展示的 `shell()`，它也不缓存、不因任何 prefix hit 跳过。
+after 和 around.after 永不缓存。owner after 在进入 owner occurrence 时登记；around.after 在调用配对 before 前登记。cache restore 也算到达 before。全部已登记 after 使用独立 cleanup signal，失败只产生 diagnostic，不能阻止后续收尾和 Provider finalizer。
+
+## 频率
+
+`changeFrequency` 接受任意有限非负数。作者可以写任意数值；`rare = 10`、`normal = 100` 与 `frequent = 1000` 只是可读常量。
+
+该值只影响 promotion、retention、GC 与缓存工作排队。它不进入 PrefixKey，也不改变 owner、声明或执行顺序。debug 显示作者原始数值；只有数值恰好等于预设时才附加预设标签。作者未声明时显示 `not-configured`，after 不适用时显示 `not-applicable`，不能虚构作者输入。
 
 ## Provider 中立
 
-`.prepare()` 属于 `SandboxLayer`，不属于 Docker：
+before/after/around 属于 `SandboxLayer`，不属于 Docker。Docker、E2B、Vercel 与自定义 Provider 使用相同 API。Provider 对每个 eligible prefix 报告：
 
-```ts
-const prepareProject = <Kind extends SandboxLayerKind>(layer: SandboxLayer<Kind>) =>
-  layer
-    .prepare(copy({
-      id: "fixture",
-      source: fixtureArchive,
-      destination: "/workspace",
-      inputs: [fixtureArchive],
-      changeFrequency: 40,
-    }))
-    .prepare(write({
-      id: "adapter-env",
-      path: "/workspace/.env",
-      input: publicAdapterConfig,
-      inputs: [publicAdapterConfig],
-      changeFrequency: changeFrequency.frequent,
-    }));
+- `persistent`：可以跨 Invocation 命中；
+- `invocation-local`：只在本次 Invocation build once 并私有 clone；
+- `unsupported`：每个 occurrence 真实执行。
 
-prepareProject(dockerSandbox({ source: { type: "image", image } }));
-prepareProject(e2bSandbox({ template }));
-prepareProject(vercelSandbox({ snapshotId }));
-```
-
-Provider 对每个 scoped prefix 分别报告 `persistent | invocation-local | unsupported`。persistent 可以跨 Invocation 命中；invocation-local 只能在本次运行 build once；unsupported 仍真实执行合法 operation。Provider 不得忽略准备、伪造 hit 或交付共享 writable state。
-
-最终 sandbox-scope state 是物理实例的 reset baseline。Provider 无法可靠恢复它时，只能为每个 Attempt 创建新实例或拒绝 reuse，不能把 sandbox-scope operation 偷换成每 Attempt replay。
+三档能力不改变 occurrenceKind 或执行顺序。每个消费者始终取得私有 writable state；Provider 不得忽略 action、伪造 hit 或共享 writable 实例。
