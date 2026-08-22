@@ -1,0 +1,7 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "niceeval-e2e-runner",
+  "root": "packages/e2e-runner",
+  "tags": ["kind:shared"],
+  "implicitDependencies": ["niceeval-testkit"]
+}

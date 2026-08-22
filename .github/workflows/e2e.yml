@@ -267,6 +267,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Typecheck E2E runner
+        if: steps.plan.outputs.has-jobs == 'true'
+        run: pnpm --filter @niceeval/e2e-runner run typecheck
+
       - name: Typecheck Testkit
         if: steps.plan.outputs.has-jobs == 'true'
         run: pnpm --filter @niceeval/testkit run typecheck

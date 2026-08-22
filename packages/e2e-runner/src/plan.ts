@@ -140,7 +140,8 @@ export function parsePlanCli(argv: readonly string[]): PlanCli {
   if (diffPaths.length > 0 && base !== undefined) throw new Error("diff paths cannot be combined with --base/--head");
   return {
     lane: parseLane(values.lane), repoIds: valueAsStrings(values.repo),
-    ...(diffPaths.length > 0 ? { diffPaths } : {}), noDiff, ...(base === undefined ? {} : { base, head }),
+    ...(diffPaths.length > 0 ? { diffPaths } : {}), noDiff,
+    ...(base === undefined || head === undefined ? {} : { base, head }),
     ...(typeof values.capability === "string" ? { capability: values.capability } : {}),
     excludeExternalNetwork: values["exclude-external-network"] === true,
     batch: values.batch === true, json: values.json === true,
@@ -343,9 +344,13 @@ export function resolvePlan(argv: readonly string[]): ResolvedPlan {
       affectedNames = undefined;
     }
   }
+  const capability = mode === "fail-open-full" ? undefined : cli.capability;
   const selected = selectRepos(discovery.repos, {
-    lane: cli.lane, repoIds: cli.repoIds, capability: mode === "fail-open-full" ? undefined : cli.capability,
-    excludeExternalNetwork: cli.excludeExternalNetwork, affectedProjectNames: affectedNames,
+    lane: cli.lane,
+    repoIds: cli.repoIds,
+    ...(capability === undefined ? {} : { capability }),
+    excludeExternalNetwork: cli.excludeExternalNetwork,
+    ...(affectedNames === undefined ? {} : { affectedProjectNames: affectedNames }),
   });
   const singleton = selected.map((repo) => singletonEntry(repo, e2eRoot)).sort((a, b) => a.id.localeCompare(b.id));
   const entries = cli.batch ? batchEntries(singleton) : singleton;

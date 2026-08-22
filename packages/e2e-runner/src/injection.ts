@@ -122,13 +122,14 @@ export async function buildCandidateTarball(
   }
 
   const tgzFiles = readdirSync(destDir).filter((f) => f.endsWith(".tgz"));
-  if (tgzFiles.length !== 1) {
+  const [tgzFile] = tgzFiles;
+  if (tgzFile === undefined || tgzFiles.length !== 1) {
     throw new Error(
       `expected exactly one .tgz in ${destDir} after \`pnpm pack\`, found ${tgzFiles.length}: ${JSON.stringify(tgzFiles)}`,
     );
   }
 
-  const tarballPath = join(destDir, tgzFiles[0]);
+  const tarballPath = join(destDir, tgzFile);
   const candidate = readCandidateTarball(tarballPath);
 
   const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
@@ -159,7 +160,11 @@ export function extractNiceevalIntegrity(lockfileText: string): string {
       `found ${matches.length} "niceeval@file:..." package entries in pnpm-lock.yaml — expected exactly one local candidate; a partial or ambiguous injection`,
     );
   }
-  return matches[0][1];
+  const integrity = matches[0]?.[1];
+  if (integrity === undefined) {
+    throw new Error('the local "niceeval@file:..." package entry is missing resolution.integrity');
+  }
+  return integrity;
 }
 
 export type InjectionVerdict = { ok: true } | { ok: false; reason: string };

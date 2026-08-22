@@ -55,7 +55,7 @@ function toMatrixEntry(repo: DiscoveredRepo, e2eRoot: string): MatrixEntry {
     areas: repo.manifest.areas,
     lanes: repo.manifest.lanes,
     executor: repo.manifest.executor,
-    requires: repo.manifest.requires,
+    ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }),
   };
 }
 

@@ -49,8 +49,9 @@ apps/
 ├── site/       # Landing Page，独立部署，不拥有产品 E2E
 └── docs-site/  # Mintlify 文档站，其中中文正文与图片会进入 niceeval tarball
 packages/
-├── niceeval/   # 发布包
-└── testkit/    # 私有 E2E harness
+├── niceeval/    # 发布包
+├── testkit/     # 私有、guest-side E2E harness
+└── e2e-runner/  # 私有、host-side E2E 编排器
 ```
 
 目录位置只表达所有权，不直接决定 affected 结果。`apps/site` 用 `e2e:none` 表达合法空计划；
@@ -143,7 +144,7 @@ mutation 收据。
 planner 用 Nx 同一套 `.gitignore` + `.nxignore` 语义交叉校验 changed paths，不能在 workflow 或 planner 里再复制 glob 表。
 修改 `.nxignore` 自身会触发全量，分类边界的变化必须先经过完整无密钥 lane。
 
-共享输入不建伪产品域。Testkit、根 `e2e/scripts/**`、package root / runtime builder、lockfile、workspace / Nx 配置以及
+共享输入不建伪产品域。Testkit、`packages/e2e-runner/**`、package root / runtime builder、lockfile、workspace / Nx 配置以及
 E2E workflow 的变化属于所有 `e2e` target 的 workspace inputs，必须产生当前 lane 全量。单个 `e2e/<id>/**` 仍只影响该叶子；
 多个叶子同时变化时取并集，只有共享 runner、选择器、注入或 receipt 设施变化才扩为全量。
 
@@ -222,7 +223,7 @@ base/head 和 Nx graph JSON：
 | `apps/docs-site/zh/**` | 只选 Package owner |
 | `record/**` | `eval`、`migrate`、`report`、`runner` |
 | 单个 `e2e/<id>/**` | 只选该 Repo |
-| Testkit、package root、E2E scripts / workflow | 当前 lane 全量 |
+| Testkit、E2E runner、package root、E2E workflow | 当前 lane 全量 |
 | 顶层、新目录、未归域产品源码 | fallback，当前 lane 全量 |
 | 非法 project metadata | `invalid`，零副作用红灯 |
 | 坏 SHA 或 Nx 选择失败 | `fail-open-full`，完整执行而非空计划 |

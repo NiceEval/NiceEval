@@ -28,7 +28,7 @@ import {
   verifyTestkitSnapshot,
   verifyTestkitDirectoryResolution,
   type TestkitPackage,
-} from "./testkit.ts";
+} from "./testkit-snapshot.ts";
 import { buildChildEnv } from "./secrets.ts";
 import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
 import {
@@ -204,7 +204,7 @@ export async function runCommand(
     stream: true,
     timeoutMs,
     abortSignal: execution.abortSignal,
-    streamPrefix,
+    ...(streamPrefix === undefined ? {} : { streamPrefix }),
   });
   return commandCapture(result);
 }

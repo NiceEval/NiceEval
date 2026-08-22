@@ -60,12 +60,16 @@ export async function packCandidate(
   try {
     const build = dependencies.buildCandidateTarball ?? buildCandidateTarball;
     const read = dependencies.readCandidateTarball ?? readCandidateTarball;
-    const packed = await build(repoRoot, temporaryDirectory, { quiet: true, control: execution });
+    const packed = await build(repoRoot, temporaryDirectory, {
+      quiet: true,
+      ...(execution === undefined ? {} : { control: execution }),
+    });
     const generated = (await readdir(temporaryDirectory)).filter((name) => name.endsWith(".tgz"));
-    if (generated.length !== 1) {
+    const [generatedFile] = generated;
+    if (generatedFile === undefined || generated.length !== 1) {
       throw new Error(`expected exactly one generated candidate in ${temporaryDirectory}`);
     }
-    await rename(join(temporaryDirectory, generated[0]), outputPath);
+    await rename(join(temporaryDirectory, generatedFile), outputPath);
     await assertContainedRegularFile(outputRoot, declaredOutputPath, "candidate pack output");
     const fingerprint = read(outputPath);
     return { ...fingerprint, name: packed.name, version: packed.version };

@@ -30,7 +30,7 @@ import { parseArgs } from "node:util";
 
 import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
 import { readCandidateTarball } from "./injection.ts";
-import { buildTestkitPackage, verifyTestkitSnapshot } from "./testkit.ts";
+import { buildTestkitPackage, verifyTestkitSnapshot } from "./testkit-snapshot.ts";
 import { selectRepos } from "./plan.ts";
 import { LANES, type Lane } from "./manifest.ts";
 import { appendNativeArgs, materializeCandidateArtifact, runRepo, type RepoRunResult } from "./run-repo.ts";
@@ -209,8 +209,8 @@ export function parseRunCli(argv: readonly string[]): Cli {
   }
   return {
     repoIds,
-    lane: typeof laneValue === "string" ? (laneValue as Lane) : undefined,
-    capability: typeof values.capability === "string" ? values.capability : undefined,
+    ...(typeof laneValue === "string" ? { lane: laneValue as Lane } : {}),
+    ...(typeof values.capability === "string" ? { capability: values.capability } : {}),
     candidatePath: values.candidate,
     artifactRoot: typeof values["artifact-root"] === "string"
       ? resolve(values["artifact-root"])

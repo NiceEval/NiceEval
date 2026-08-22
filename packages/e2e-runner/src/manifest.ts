@@ -369,7 +369,7 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
       command: raw.command as [string, ...string[]],
       timeoutMinutes: raw.timeoutMinutes as number,
       secrets: raw.secrets as string[],
-      requires,
+      ...(requires === undefined ? {} : { requires }),
       ...(harness === undefined ? {} : { harness }),
       artifacts: raw.artifacts as string[],
     },

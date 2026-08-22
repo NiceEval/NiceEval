@@ -15,11 +15,13 @@ e2e/
 ├── report/                 # show、view、导出与浏览器 Journey
 ├── lifecycle/              # signal、资源终结与下一消费者
 ├── migrate/                # 可替换 producer 与当前 candidate 的持久化交接脚手架
-├── adapter/
-│   ├── local-protocol/     # 无密钥 transport 与可控故障
-│   └── <id>/               # 每个真实 SDK / CLI / provider 一个 live Repo
-└── scripts/                # 发现、计划、pack、注入、执行、收据与 artifact
+└── adapter/
+    ├── local-protocol/     # 无密钥 transport 与可控故障
+    └── <id>/               # 每个真实 SDK / CLI / provider 一个 live Repo
 ```
+
+Host-side 的发现、计划、pack、注入、执行、收据与 artifact 编排位于独立的私有 workspace package
+`packages/e2e-runner/`；`e2e/` 只保存场景 Repo 与本入口说明。
 
 `project.json.root` 是 E2E identity 的唯一真源；canonical Repo id 从 `e2e/` 后的 leaf root 推导。`adapter/` 只是物理 collection，不提供共享依赖或共享结果根。
 

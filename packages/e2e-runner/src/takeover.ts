@@ -28,7 +28,7 @@ import {
   runRepo,
   type RepoRunResult,
 } from "./run-repo.ts";
-import { buildTestkitPackage, type TestkitPackage } from "./testkit.ts";
+import { buildTestkitPackage, type TestkitPackage } from "./testkit-snapshot.ts";
 import type { StageReceipt } from "./receipt.ts";
 import { ensureRealDirectory, writeContainedUtf8File } from "./durable-path.ts";
 
@@ -448,7 +448,9 @@ export async function runTakeover(
         workdirKey: `${label}/${repo.manifest.id}`,
         testRuns,
         copyId,
-        sourceSnapshotDigest: checkout?.sourceSnapshot?.digest,
+        ...(checkout?.sourceSnapshot === undefined
+          ? {}
+          : { sourceSnapshotDigest: checkout.sourceSnapshot.digest }),
       },
     );
     results.push(result);

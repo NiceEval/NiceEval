@@ -23,7 +23,7 @@ export const ADAPTER_COLLECTION = "adapter";
 
 export function repoRootDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  return resolve(here, "..", "..");
+  return resolve(here, "..", "..", "..");
 }
 
 export function e2eRootDir(): string {
