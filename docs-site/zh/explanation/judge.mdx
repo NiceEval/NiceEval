@@ -5,7 +5,8 @@ description: "用 t.judge 和 turn.judge 直接登记 Judge Assertion，再在�
 ---
 
 Judge 用独立裁判模型评估难以用精确 Match 表达的质量，例如事实一致性、摘要忠实度和说明是否清楚。
-它的三个 recipe 都直接登记 measurement Assertion，分数是 `[0, 1]` 内的有限数字。调用即登记；handle 只配置同一条 Assertion。
+它的三个 recipe 都直接登记 measurement Assertion，measurement 是 `[0, 1]` 内的有限数字。这个区间是统一的数据格式，不表示每个 recipe 都会给任意连续分数。
+调用即登记；handle 只配置同一条 Assertion。
 
 ```ts
 const turn = await t.send("用两句话说明这项变更的风险。");
@@ -16,11 +17,13 @@ turn.judge.autoevals.closedQA("回答是否清楚说明了风险？")
 
 ## 三个 recipe
 
-| Recipe | 用途 |
-|---|---|
-| `closedQA(question, material)` | 判断输出是否满足一条开放式标准 |
-| `factuality(reference, material)` | 判断输出是否与参考文本一致 |
-| `summarizes(source, material)` | 判断输出是否忠实总结原文 |
+| Recipe | 用途 | 当前可能的 measurement |
+|---|---|---|
+| `closedQA(question, material)` | 判断输出是否满足一条开放式标准 | `0` 或 `1` |
+| `factuality(reference, material)` | 判断输出是否与参考文本一致 | `0`、`0.4`、`0.6` 或 `1` |
+| `summarizes(source, material)` | 判断输出是否忠实总结原文 | `0` 或 `1` |
+
+`factuality` 的中间档位有固定含义：提交内容是参考答案的一致子集时为 `0.4`，是一致超集时为 `0.6`。它不是按事实条数计算覆盖率。只回答一个事实和回答两个事实，都可能落在同一个 `0.4` 档位。
 
 `turn.judge.autoevals.*` 已经绑定该 Turn 的原始用户输入和助手输出，因此只传标准：
 
@@ -41,6 +44,25 @@ t.judge.autoevals.closedQA("文档是否说明了安装和回滚？", {
 ```
 
 文件先经公开 Sandbox API 读取成字符串。Judge API 不接收路径、`{ on }`、隐式最后一条输入或单次模型覆盖。`session.judge` 也不是公开 API；跨 session 的材料由作者显式组合。
+
+## 一条标准对应一个 Judge
+
+先判断评分标准能否独立成立。可以独立判断、独立计权或需要单独显示失败原因的要求，分别登记 Judge Assertion。
+
+```ts
+turn.judge.autoevals.closedQA("回答是否说明了兼容性风险？")
+  .gate(1)
+  .label("兼容性风险");
+turn.judge.autoevals.closedQA("回答是否给出了回滚方法？")
+  .gate(1)
+  .label("回滚方法");
+```
+
+不要把独立要求合成“回答是否准确、完整、清楚，并说明风险和回滚？”。一个 `closedQA` 只会给这组要求一个 `0` 或 `1`，报告无法指出是哪一项失败，也无法给各项不同权重。
+
+只有标准描述同一个不可分割的整体质量时，才使用一个 Judge。例如“风险说明整体是否清楚”是一个维度；它的 measurement 可以作为这一项的结果。标准中出现“并且”不一定要拆，但如果其中一半可以成立、可以单独给分或失败后需要单独修复，就应该拆。
+
+能用确定性证据验证的条件不交给 Judge。命令是否成功、文件是否存在和工具是否调用，分别使用对应的 Match 或 scoped Assertion；Judge 只评价传入文本中的开放式语义。
 
 ## 声明 capability 和配置
 
@@ -77,7 +99,7 @@ export default defineConfig({
 
 ## 阈值与分数
 
-通过制评估用 `.gate(n)` 把 Judge measurement 纳入 failed；`.atLeast(n)` 只记录局部 condition。
+通过制评估用 `.gate(n)` 把 Judge measurement 纳入 failed；`.atLeast(n)` 只记录局部 condition。每个必须成立的开放式要求使用一条独立 Judge，并分别设置 gate。这样任何一项失败都会使 Attempt 失败，报告也会保留各自的理由。
 
 ```ts
 const quality = turn.judge.autoevals.closedQA("回答是否准确且完整？")
@@ -88,11 +110,20 @@ await quality.orStop();
 
 `.orStop()` 是同一 handle 的 async barrier。低于阈值时它停止当前 continuation；正常 stop 后 Attempt 仍得到 `failed` Verdict。
 
-计分制评估直接调用 `.score(n)`：measurement `m` 贡献 `m * n`。`.atLeast(n)` 只增加局部 condition，可以单独配置，也可以与 `.score(n)` 同一条 Assertion 共存。
+计分制评估直接调用 `.score(n)`：measurement `m` 贡献 `m * n`。这里的 `n` 是这一评分项的权重，不是评估的固定总分。多个独立要求分别调用 `.score(n)`，各项 contribution 再累加。
 
 ```ts
-turn.judge.autoevals.closedQA("回答质量如何？").score(20).atLeast(0.5);
+turn.judge.autoevals.closedQA("回答是否说明了兼容性风险？")
+  .score(8)
+  .label("兼容性风险");
+turn.judge.autoevals.closedQA("回答是否给出了回滚方法？")
+  .score(12)
+  .label("回滚方法");
 ```
+
+上例两项各自得到 `0` 或 `1`，因此分别贡献 `0/8` 和 `0/12`。如果评价的是一个整体维度，也可以只登记一条 Judge，再用 `.score(n)` 乘这一项的 measurement。例如 `factuality` 得到 `0.4` 且该项 `.score(20)` 时贡献 `8` 分。这个 `0.4` 表示固定的“一致子集”档位，不表示完成了 40% 的独立要求。
+
+`.atLeast(n)` 只增加局部 condition，可以单独配置，也可以与 `.score(n)` 同一条 Assertion 共存。它不会改变 contribution，也不会让计分制评估产生 failed Verdict。
 
 两种配置都只运行一次 Judge evaluator，写一条 AssertionResult。没有配置 `.score()` 的 Judge Assertion 默认只保存 evaluation。
 

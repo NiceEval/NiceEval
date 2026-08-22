@@ -79,22 +79,53 @@ export default defineScoreEval({
 
 ## Judge 也是 measurement
 
-Judge recipe 直接登记 measurement Assertion。先声明 `judge` capability，再在同一 handle 上配置阈值或分数：
+Judge recipe 直接登记 measurement Assertion。先声明 `judge` capability，再根据评估类型消费同一条结果。
+
+通过制评估表达“这些要求都必须成立”。把每个可以独立失败的开放式要求拆成一条 Judge，并分别调用 `.gate(n)`：
+
+```ts
+export default defineEval({
+  judge: true,
+  async test(t) {
+    const turn = await t.send("说明这项变更的动机、风险和回滚方法。");
+
+    turn.judge.autoevals.closedQA("说明是否交代了变更动机？")
+      .gate(1)
+      .label("变更动机");
+    turn.judge.autoevals.closedQA("说明是否识别了具体风险？")
+      .gate(1)
+      .label("具体风险");
+    turn.judge.autoevals.closedQA("说明是否给出了可执行的回滚方法？")
+      .gate(1)
+      .label("回滚方法");
+  },
+});
+```
+
+三项中的任意一项失败，Attempt 都会失败。不要只写一个“是否说明了动机、风险和回滚”的 Judge；`closedQA` 只返回 `0` 或 `1`，合并后既没有部分分，也看不出哪项失败。
+
+计分制评估表达“各项完成多少就累计多少”。独立要求仍然拆开，并用 `.score(n)` 写出各自权重：
 
 ```ts
 export default defineScoreEval({
   judge: true,
   async test(t) {
     const turn = await t.send("说明这项变更的动机和风险。");
-    turn.judge.autoevals.closedQA("说明是否具体、准确？")
-      .score(20)
-      .atLeast(0.7)
-      .label("说明质量");
+    turn.judge.autoevals.closedQA("说明是否交代了变更动机？")
+      .score(8)
+      .label("变更动机");
+    turn.judge.autoevals.closedQA("说明是否识别了具体风险？")
+      .score(12)
+      .label("具体风险");
   },
 });
 ```
 
-同一条 Judge Assertion 可以同时配置 `.score(n)` 与 `.atLeast(n)`，evaluator 只运行一次。Judge 没有单独的消费 API。
+如果两项都满足，上例贡献 `20` 分；只满足风险要求时贡献 `12` 分。`.score(n)` 的 `n` 是单项权重，不是自动声明的固定总分。
+
+评价一个不可分割的整体质量时，可以只使用一条 Judge。例如“整段说明相对参考答案的事实一致性”可以用一条 `factuality(...).score(20)`。它只会按 recipe 的固定档位贡献 `0`、`8`、`12` 或 `20` 分，不能表示“三个要求完成了两个，所以得到三分之二”。
+
+同一条 Judge Assertion 可以同时配置 `.score(n)` 与 `.atLeast(n)`，evaluator 只运行一次。`.atLeast(n)` 只记录该项是否达到阈值，不改变分数，也不会让计分制评估失败。Judge 没有单独的消费 API。
 
 ## 代码任务用真实命令验收
 
@@ -110,6 +141,8 @@ await t.check(
 ## 实用建议
 
 - 把每个必须成立的条件登记为 Boolean Assertion，让一次 Attempt 收集完整失败信息。
+- 把可以独立失败、独立计权或需要单独诊断的开放式标准拆成多个 Judge。
+- 只有不可分割的整体质量维度才使用一个 Judge 的 measurement 乘单项权重。
 - 后续步骤依赖某条结果时，`await handle.orStop()`。
 - 任务存在有意义的部分完成度时使用 `defineScoreEval`；`test` 正常返回时自动收尾。
 - 开放式语义用 Judge；可精确检查的文件、命令与结构化输出优先用确定性 Match。
