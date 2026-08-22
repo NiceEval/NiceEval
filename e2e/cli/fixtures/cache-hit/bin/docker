@@ -1,7 +1,7 @@
 #!/bin/sh
-fixture_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-volume_root="$fixture_root/cache-volume"
-image_state="$fixture_root/image-id"
+fixture_state="${XDG_STATE_HOME:?}/fake-cache-hit-docker"
+volume_root="$fixture_state/volume"
+image_state="$fixture_state/image-id"
 case "$*" in
   "volume inspect --format "*)
     if [ ! -f "$volume_root/domain-id" ]; then exit 1; fi
@@ -22,9 +22,10 @@ case "$*" in
   build\ *)
     printf '%s\n' "sha256:cache-hit-image" > "$image_state"
     count=0
-    if [ -f "$fixture_root/build-count" ]; then count=$(sed -n '1p' "$fixture_root/build-count"); fi
+    if [ -f "$fixture_state/build-count" ]; then count=$(sed -n '1p' "$fixture_state/build-count"); fi
     count=$((count + 1))
-    printf '%s\n' "$count" > "$fixture_root/build-count"
+    mkdir -p "$fixture_state"
+    printf '%s\n' "$count" > "$fixture_state/build-count"
     ;;
   *)
     printf '%s\n' "unexpected docker argv: $*" >&2

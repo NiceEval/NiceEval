@@ -9,16 +9,17 @@ import { cliE2E } from "./context.ts";
 test("Docker task build 在不同 Invocation 复用受管 image cache", async () => {
   await cliE2E.case("cache-hit", {}, async ({ commands: { niceeval }, paths }) => {
     const fakeBin = join(paths.projectRoot, "fixtures/cache-hit/bin");
+    const stateRoot = join(paths.projectRoot, "state");
     const env = {
       PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-      XDG_STATE_HOME: join(paths.projectRoot, "state"),
+      XDG_STATE_HOME: stateRoot,
       DOCKER_DEFAULT_PLATFORM: "linux/amd64",
     };
     const first = await niceeval.run(["exp", "cache-hit", "--rerun", "all"], { env });
-    expect(first.stdout.replace(/\s+/gu, " "), first.diagnostic()).toContain("built once · docker:dockerfile:cache-hit");
+    expect(first.stdout.replace(/\s+/gu, " "), first.diagnostic()).toContain("built once · docker:dockerfile:greet/hello");
 
     const second = await niceeval.run(["exp", "cache-hit", "--rerun", "all"], { env });
-    expect(second.stdout.replace(/\s+/gu, " "), second.diagnostic()).toContain("build cache hit · docker:dockerfile:cache-hit");
-    expect(await readFile(join(paths.projectRoot, "fixtures/cache-hit/build-count"), "utf8")).toBe("1\n");
+    expect(second.stdout.replace(/\s+/gu, " "), second.diagnostic()).toContain("build cache hit · docker:dockerfile:greet/hello");
+    expect(await readFile(join(stateRoot, "fake-cache-hit-docker/build-count"), "utf8")).toBe("1\n");
   });
 });

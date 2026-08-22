@@ -1,6 +1,5 @@
 #!/bin/sh
-fixture_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-volume_root="$fixture_root/cache-volume"
+volume_root="${XDG_STATE_HOME:?}/fake-provider-error-volume"
 case "$*" in
   "volume inspect --format "*)
     if [ ! -f "$volume_root/domain-id" ]; then exit 1; fi
