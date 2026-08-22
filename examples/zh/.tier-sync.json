@@ -34,49 +34,49 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "f38f326e35982677cc4a36926b93a9ee6f590372"
+      "baseTree": "0b743b13831538a6734872ae7dabb146eceb1706"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "a32a1cf74b77676c911b8f8ba02cef22e1b96bb1"
+      "baseTree": "41c9eff83795504fd1a97cb6f65825f79d51627e"
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "1f4eb5274099c7be915acd6374cb5cc2ad900dcb"
+      "baseTree": "8f9724d2ba0a3a167a4c82e6ade3c8e326b60111"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "50e26f3cb77757e0bf43f5409d702fb32f9b407c"
+      "baseTree": "3de8d41c3132b3c624b3e7f97959b0d35be17113"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "c6cc74e1543d23b117d84f0ef5b2ac28a3d54826"
+      "baseTree": "7e91bab76f3e60da031e189285ff5a767b3fc450"
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "9f7bef32b8f8452d60df7bd547e40cdd23ff07f7"
+      "baseTree": "5ec79519c16bac41de00d86c5b35e18c97016fe4"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "1d49a1ae9a4a923486443694f8fb2c4a60f61385"
+      "baseTree": "1bd7e5b9b7dfce8f6b7eab6f0b67c49df0b20a10"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "e6857857cba197a8aa253f1367a2ce38081040da"
+      "baseTree": "8dd259d2e6a6faef10cd84f16fd96e46caacede3"
     }
   ]
 }
