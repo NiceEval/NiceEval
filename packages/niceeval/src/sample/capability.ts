@@ -23,7 +23,6 @@ import type { LogicalSlot } from "../analysis/definitions.ts";
 import type { PricingProfile } from "../analysis/cost.ts";
 import type { CostMetricValue } from "../analysis/cost.ts";
 import {
-  noTurnZeroCostSlot,
   projectCostUsage,
   unavailableCostSlot,
   type CostSlotProjection,
@@ -915,7 +914,7 @@ function readCostSlot(
           refs,
         });
       case "not-recorded":
-        return noTurnZeroCostSlot(included, refs);
+        return unavailableCostSlot(included, "usage-not-recorded", refs);
       case "unsupported":
         return unavailableCostSlot(included, "usage-unsupported", refs);
       case "migration-required":
