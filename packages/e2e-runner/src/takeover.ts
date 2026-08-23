@@ -10,7 +10,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { readCandidateTarball, type CandidateTarball } from "./injection.ts";
 import { hasConfirmedOwnedGroupCleanup, hasSuccessfulOwnedProcessResult, OwnedProcess, runOwnedProcess } from "./owned-process.ts";
-import { appendNativeArgs, copyRepoIsolated, E2E_COPY_EXCLUDED_BASENAMES, runRepoEffect, type RepoRunResult } from "./run-repo.ts";
+import { appendNativeArgs, copyRepoIsolated, E2E_COPY_EXCLUDED_BASENAMES, materializeCandidateArtifact, runRepoEffect, type RepoRunResult } from "./run-repo.ts";
 import { buildTestkitPackage, type TestkitPackage } from "./testkit-snapshot.ts";
 import type { StageReceipt } from "./receipt.ts";
 import { ensureRealDirectory, writeContainedUtf8File } from "./durable-path.ts";
@@ -290,6 +290,12 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const root = repoRootDir();
   const declaredArtifactRoot = options.artifactRoot ?? (yield* fileSystem.makeTempDirectory({ prefix: "niceeval-e2e-takeover-artifacts-" }).pipe(Effect.mapError((cause) => operationError("artifact", cause))));
   const artifactRoot = yield* ensureRealDirectory(declaredArtifactRoot, "takeover durable artifact root").pipe(Effect.mapError((cause) => operationError("artifact", cause)));
+  const materializedCandidate = {
+    ...candidate,
+    path: yield* materializeCandidateArtifact(artifactRoot, candidate).pipe(
+      Effect.mapError((cause) => operationError("artifact", cause)),
+    ),
+  };
   let sourceSnapshotCleanup: TakeoverSummary["sourceSnapshotCleanup"] = { ok: true, detail: "source snapshot scratch was not created" };
   const scratchRoot = yield* Effect.acquireRelease(
     fileSystem.makeTempDirectory({ prefix: "niceeval-e2e-takeover-scratch-" }).pipe(Effect.mapError((cause) => operationError("snapshot", cause))),
@@ -310,7 +316,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
     if (repo.manifest.harness?.testkit === true) testkit = yield* buildTestkitPackage(root, scratchRoot).pipe(Effect.mapError((cause) => operationError("snapshot", cause)));
     const allSecretNames = new Set(discovered.repos.flatMap((entry) => entry.manifest.secrets));
     for (const required of REQUIRED_TAKEOVER_RUNS) {
-      const result = yield* runRepoEffect(repo, candidate, scratchRoot, artifactRoot, allSecretNames, required.target ? options.nativeArgs : [], testkit, { sourceDir: sourceSnapshotDir, runLabel: required.label, workdirKey: `${required.label}/${repo.manifest.id}`, testRuns: required.attempts, copyId: required.copyId, sourceSnapshotDigest: sourceSnapshot.digest }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
+      const result = yield* runRepoEffect(repo, materializedCandidate, scratchRoot, artifactRoot, allSecretNames, required.target ? options.nativeArgs : [], testkit, { sourceDir: sourceSnapshotDir, runLabel: required.label, workdirKey: `${required.label}/${repo.manifest.id}`, testRuns: required.attempts, copyId: required.copyId, sourceSnapshotDigest: sourceSnapshot.digest }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
       results.push(result);
     }
   }).pipe(Effect.catchAll((cause) => Effect.sync(() => {

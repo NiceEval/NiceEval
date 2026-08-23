@@ -80,7 +80,15 @@ const problem = (
   new RepoRunError({
     repoId,
     operation,
-    detail: cause instanceof Error ? cause.message : String(cause),
+    detail:
+      typeof cause === "object" &&
+      cause !== null &&
+      "detail" in cause &&
+      typeof cause.detail === "string"
+        ? cause.detail
+        : cause instanceof Error
+          ? cause.message
+          : String(cause),
   });
 const fs = <A>(
   repoId: string,
@@ -407,7 +415,14 @@ export const runRepoEffect = (
         "repo durable artifact directory",
       ),
     );
-    const tarball = yield* materializeCandidateArtifact(durableRoot, candidate);
+    const tarball = yield* durable(
+      id,
+      assertContainedRegularFile(
+        durableRoot,
+        candidate.path,
+        "durable candidate artifact",
+      ),
+    );
     const baseEnv = buildChildEnv(
       process.env,
       allSecretNames,
@@ -479,7 +494,7 @@ export const runRepoEffect = (
             Effect.mapError((cause) => problem(id, "run", cause)),
           );
         }
-        const installCommand = ["pnpm", "install", "--no-frozen-lockfile"] as [
+        const installCommand = ["pnpm", "install", "--no-frozen-lockfile", "--prefer-offline"] as [
           string,
           ...string[],
         ];
