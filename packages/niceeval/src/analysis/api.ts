@@ -8,8 +8,8 @@ import {
   sourceNavigationDomainBinding,
   sourcesDomainBinding,
   type BuiltinDomainViewBinding,
-  type FixedFamilyBinding,
   type FixedFamilyOwnerRequirement,
+  type RecordReadBinding,
 } from "./bindings.ts";
 import type {
   BuiltinDomainDetail,
@@ -216,9 +216,9 @@ const publishedDomainViewBindings = new WeakMap<object, PublishedDomainViewRegis
 function publishedDomainViewRequest<
   Kind extends BuiltinDomainViewKind,
   Payload,
-  Family extends FixedFamilyBinding<FixedFamilyOwnerRequirement, Payload, any>,
+  Source extends RecordReadBinding<FixedFamilyOwnerRequirement, Payload>,
 >(
-  binding: BuiltinDomainViewBinding<Kind, Payload, Family>,
+  binding: BuiltinDomainViewBinding<Kind, Payload, Source>,
 ): DomainViewRequest<BuiltinDomainView<Kind>> {
   const request: DomainViewRequest<BuiltinDomainView<Kind>> = Object.freeze({
     kind: "domain-view-request" as const,

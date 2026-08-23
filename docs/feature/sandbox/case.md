@@ -208,7 +208,7 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 5. 瞬时构建失败(基础镜像拉取限流、传输层中断)由 builder 按 [Provisioning 的性质分类](architecture.md#provisioning-失败与重试)指数退避重试、封顶次数。构建结果是镜像与 template,没有计费实例的泄漏面,歧义类失败同样可重试——一次镜像拉取的 EOF 不该让整批依赖该 key 的 Attempt 形成 `errored` Verdict。
 6. 重试耗尽或确定性构建失败（构建定义错误、基础镜像不存在）按共享该 key 的范围止损。
    失败的 BuildKey 只执行一次；每个依赖它、本应 fresh 执行的 Slot 保持 `not-dispatched`，不制造 Attempt。
-   Runner 在既有 Run-owned Observability diagnostics 中为这些 Slot 保存同一 shared failure identity；Analysis
+   Runner 在既有 Run-owned `niceeval.runner-diagnostics` source 中为这些 Slot 保存同一 shared failure identity；Analysis
    据此显示 slot outcome `errored`。历史 Record 没有采集该诊断时只保留 membership，不反推错误。
 
 预算分两层,口径不混:
@@ -217,9 +217,10 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 - **attempt 级启动**:从 image / template / snapshot 启动主 Sandbox 实例和伴随资源、等待服务 ready;Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline。attempt deadline 从拿到构建结果并开始启动 Sandbox 时起算。
 
 共享构建不属于任一 attempt,不计入任何 attempt 的 `executionMs`;一次十分钟的冷构建在整份 Record 里只出现一次时间。
-构建命令、计时与失败诊断都由 Run-owned Observability 收口；用于解释构建输入的源码 closure 归 Sources，需要保留的大型构建输出归 Artifacts。
+共享构建的 activity 与失败诊断分别归 Run-owned Runner Activities 与 Runner Diagnostics；Attempt 内的受管命令才归 Sandbox Commands。用于解释构建输入的源码 closure 归 Sources，需要保留的大型构建输出归 Artifacts。
+
 每个 BuildKey 是一个可并发 activity 实例,内部可挂 `provider.image.pull`、`provider.build.execute` 等开放子 key。
-六族运行事实的 exact durable shape 只由 [Record Architecture](../record/architecture.md) 定义。
+九族运行事实的 exact durable shape 只由 [Record Architecture](../record/architecture.md) 定义。
 
 这个前置阶段不是无预算后台工作:Ctrl+C 停止新构建并调用 provider 的 build cancellation;无法取消的远端 build 进入可核对 registry,后续按 provider locator 认领或销毁。
 不依赖失败 BuildKey 的 attempt 继续执行,除非失败分类触发 eval / experiment scope 止损;carried attempt 不因查看历史结果触发构建,也不引用本 Run 不存在的 build。
@@ -323,12 +324,12 @@ defineSandboxCase({
 |---|---|---|
 | template 缺失、冲突或 case 声明非法 | link 期配置错误 | 一次穷举报错,零 Sandbox 创建 |
 | 声明合法但平台、能力或 locator 不可用 | physical planning 聚合错误 | 整个 Run 零资源失败;作者用 selector 显式排除 |
-| 共享构建失败 | 依赖它的 Attempt 形成 `errored` Verdict | 引用 Run-owned Observability diagnostic；同一 owner 的 timing 读出归属 |
-| Sandbox 启动、ready、服务中途退出 | Attempt 形成 `errored` Verdict | Attempt 运行归属,附服务状态、命令与 diagnostics 的 Observability |
+| 共享构建失败 | 依赖它的 Attempt 形成 `errored` Verdict | 引用 Run-owned Runner Diagnostic；同一 owner 的 Runner Activity 读出归属 |
+| Sandbox 启动、ready、服务中途退出 | Attempt 形成 `errored` Verdict | Attempt 运行归属，附 Sandbox Command、Runner Activity 与 Runner Diagnostic |
 | Agent Ensure 失败 | Attempt 形成 `errored` Verdict | `agent.ensure` 归属(见 [Agent Ensure](../adapters/architecture/agent-ensure.md)) |
 
 Agent 完成任务但断言未达标时，才形成 `failed` Verdict。
-每个 case 至少产出创建与 ready 的 command、timing 与 diagnostics；它们归 Observability。声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready timing；大型具类型日志归 Artifacts。provider locator、容器名与可 detached 操作的句柄只留在运行期或留存注册表。
+每个 case 至少产出创建与 ready 的 command、activity 与 diagnostic；它们分别归 Sandbox Commands、Runner Activities 与 Runner Diagnostics。声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready activity；大型具类型日志归 Artifacts。provider locator、容器名与可 detached 操作的句柄只留在运行期或留存注册表。
 证据字段是中性的,采集手段留在 provider。
 
 ## 收尾、留存与注册表

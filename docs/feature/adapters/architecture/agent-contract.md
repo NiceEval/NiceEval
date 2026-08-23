@@ -93,7 +93,8 @@ interface SandboxAgentContext extends AgentContext {
 }
 ```
 
-`AgentContext` 不是 Record writer。Adapter 不取得任意 JSON 的 durable 写入、family、schema、blob、查询或 migration 权限。运行时观测只有通过 NiceEval 已发布的 typed collector 或 Adapter 能力，且符合该能力的既有语义时，才能进入固定的 Observability、FileChanges、Assertions、Sources 或 Artifacts。
+`AgentContext` 不是 Record writer。Adapter 不取得任意 JSON 的 durable 写入、family、schema、blob、查询或 migration 权限。
+运行时观测只有通过 NiceEval 已发布的 typed collector 或 Adapter 能力，且符合该能力的既有语义时，才能进入对应的固定 family。raw transport、SDK frame 与 OTLP 不进入 Record。
 未发布 collector 的第三方值不自动持久化或查询。
 
 `ctx` 是驱动 Agent 的低层上下文,eval 的 `t` 是运行器构造的断言视图。

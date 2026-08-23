@@ -106,7 +106,7 @@ docs/
 │   ├── benchmark-web-consumption/       自定义 benchmark 网页使用数据、组件或分层能力的待选接入面
 │   ├── cli-insight/                     AI-native CLI、Human show 与第一方本地 Insight
 │   ├── record-runtime/                  Record access runtime：独立 open 与统一资源 owner
-│   ├── observability-package-layout/    Observability 持久包：七 family 与 physical packages
+│   ├── observability-package-layout/    Observability 持久包：reader view 与 source receipt layout
 │   ├── projection-api/                  单包投影：runtime calls 与 static graph
 │   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
 │   ├── report-authoring/                已被新交付边界取代的双面 Report 作者面历史

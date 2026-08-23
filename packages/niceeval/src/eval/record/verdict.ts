@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import type { AssertionsAttachment } from "../../record/family/assertions.ts";
+import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
 import { sealedAssertionResult } from "../../assertions/record/model.ts";
 import type { AttemptOutcome } from "../../record/model/core.ts";
 import type { Verdict } from "../../shared/types.ts";

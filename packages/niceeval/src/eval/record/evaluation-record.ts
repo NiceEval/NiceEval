@@ -11,12 +11,17 @@ import { recordAttachmentWriteContents } from "../../record/attachment/internal.
 import type { RecordAttachmentClosureInvalid, RecordAttachmentWrite } from "../../record/attachment/index.ts";
 import {
   assertionsRecordFamily,
+  agentTurnsRecordFamily,
   attemptArtifactsRecordFamily,
-  attemptObservabilityRecordFamily,
+  attemptRunnerActivitiesRecordFamily,
+  attemptRunnerDiagnosticsRecordFamily,
   fileChangesRecordFamily,
   runArtifactsRecordFamily,
-  runObservabilityRecordFamily,
+  runRunnerActivitiesRecordFamily,
+  runRunnerDiagnosticsRecordFamily,
+  sandboxCommandsRecordFamily,
   sourcesRecordFamily,
+  turnContextsRecordFamily,
   type AssertionSourceSite,
 } from "../../record/family/index.ts";
 import type { RecordSlotIdentity } from "../../record/model/core.ts";
@@ -157,13 +162,18 @@ function planRuntime<Error, Requirements>(plan: EvaluationRecordPlan<Error, Requ
 
 function fixedAttemptFamily(fixed: unknown): string | undefined {
   if (fixed === assertionsRecordFamily.write) return assertionsRecordFamily.family;
-  if (fixed === attemptObservabilityRecordFamily.write) return attemptObservabilityRecordFamily.family;
+  if (fixed === agentTurnsRecordFamily.write) return agentTurnsRecordFamily.family;
+  if (fixed === turnContextsRecordFamily.write) return turnContextsRecordFamily.family;
+  if (fixed === sandboxCommandsRecordFamily.write) return sandboxCommandsRecordFamily.family;
+  if (fixed === attemptRunnerActivitiesRecordFamily.write) return attemptRunnerActivitiesRecordFamily.family;
+  if (fixed === attemptRunnerDiagnosticsRecordFamily.write) return attemptRunnerDiagnosticsRecordFamily.family;
   if (fixed === fileChangesRecordFamily.write) return fileChangesRecordFamily.family;
   if (fixed === attemptArtifactsRecordFamily.write) return attemptArtifactsRecordFamily.family;
   return undefined;
 }
 function fixedRunFamily(fixed: unknown): string | undefined {
-  if (fixed === runObservabilityRecordFamily.write) return runObservabilityRecordFamily.family;
+  if (fixed === runRunnerActivitiesRecordFamily.write) return runRunnerActivitiesRecordFamily.family;
+  if (fixed === runRunnerDiagnosticsRecordFamily.write) return runRunnerDiagnosticsRecordFamily.family;
   if (fixed === sourcesRecordFamily.write) return sourcesRecordFamily.family;
   if (fixed === runArtifactsRecordFamily.write) return runArtifactsRecordFamily.family;
   return undefined;

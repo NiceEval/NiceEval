@@ -12,7 +12,7 @@ Invocation
       │       ├─ relation：origin | reference（由关系推导）
       │       ├─ action：executed / carried / accepted / not-dispatched / interrupted
       │       └─ Attempt（Core outcome）
-      ├─ Attempt 固定事实：Assertions、Observability、FileChanges、SourceNavigation、Artifacts
+      ├─ Attempt 固定事实：Assertions、五类 source receipt、File Changes、Artifacts
       └─ Run 固定事实：Observability、Sources、Artifacts
 ```
 
@@ -24,7 +24,9 @@ Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experimen
 每个 `RunWriteSession`（Run 写入会话）只排他创建并写入自己的 `runs/<RunId>/`。目标 Run 在规划完成前
 没有 `complete`，不会成为自己的 source barrier。不存在全局 Record writer lock（写入锁）。
 
-Invocation receipt 以 `runIds` 关联本次调用，但不是可扩展的 Record 事实面。Run/Member/Attempt 的身份、分母、action、reference 与 outcome 由 Core 唯一保存。Assertions、Observability、FileChanges、SourceNavigation、Sources 与 Artifacts 按 Record catalog 的 owner 各自保存固定事实。`points` 只在 Assertion 的 score facts 中出现，Report 只能从这些既有事实投影，不能另存 evaluation 或 verdict 家族。
+Invocation receipt 以 `runIds` 关联本次调用，但不是可扩展的 Record 事实面。Run/Member/Attempt 的身份、分母、action、reference 与 outcome 由 Core 唯一保存。
+
+Assertions、五类 Observability source receipt、File Changes、Sources 与 Artifacts 按九项 Record catalog 的 owner 各自保存固定事实。source navigation 仅由 Turn Contexts、Runner Activities 与 Sources 在读侧形成。`points` 只在 Assertion 的 score facts 中出现，Report 只能从这些既有事实投影，不能另存 evaluation 或 verdict 家族。
 
 Run 的 expected membership 是本次分母。每个 slot 最多有一个 Member；任何 Member 都无条件表示该 slot 由一个精确 Attempt 完整占据。Member 不保存会持续扩张的业务 kind。
 

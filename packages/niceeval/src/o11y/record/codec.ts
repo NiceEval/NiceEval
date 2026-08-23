@@ -365,43 +365,43 @@ export const CollectionSchema = Schema.Union(
 );
 
 const ConversationTurnReferenceTargetSchema = Schema.Struct({
-  family: Schema.Literal("niceeval.observability"),
+  family: Schema.Literal("niceeval.agent-turns"),
   kind: Schema.Literal("turn"),
   id: TurnIdSchema,
 });
 
 const ConversationItemReferenceTargetSchema = Schema.Struct({
-  family: Schema.Literal("niceeval.observability"),
+  family: Schema.Literal("niceeval.agent-turns"),
   kind: Schema.Literal("item"),
   id: ItemIdSchema,
 });
 
 const ConversationCallReferenceTargetSchema = Schema.Struct({
-  family: Schema.Literal("niceeval.observability"),
+  family: Schema.Literal("niceeval.agent-turns"),
   kind: Schema.Literal("call"),
   id: CallIdSchema,
 });
 
 const CommandReferenceTargetSchema = Schema.Struct({
-  family: Schema.Literal("niceeval.observability"),
+  family: Schema.Literal("niceeval.sandbox-commands"),
   kind: Schema.Literal("command"),
   id: CommandIdSchema,
 });
 
 const UsageObservationReferenceTargetSchema = Schema.Struct({
-  family: Schema.Literal("niceeval.observability"),
+  family: Schema.Literal("niceeval.agent-turns"),
   kind: Schema.Literal("usage-observation"),
   id: UsageObservationIdSchema,
 });
 
 const IntervalReferenceTargetSchema = Schema.Struct({
-  family: Schema.Literal("niceeval.observability"),
+  family: Schema.Literal("niceeval.runner-activities"),
   kind: Schema.Literal("interval"),
   id: IntervalIdSchema,
 });
 
 const DiagnosticReferenceTargetSchema = Schema.Struct({
-  family: Schema.Literal("niceeval.observability"),
+  family: Schema.Literal("niceeval.runner-diagnostics"),
   kind: Schema.Literal("diagnostic"),
   id: DiagnosticIdSchema,
 });
@@ -426,21 +426,21 @@ export const ConversationReferencesSchema = Schema.Array(
 ).pipe(
   Schema.filter((refs): refs is readonly ConversationReferences[] =>
     refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.observability"),
+    canonicalAttemptReferences(refs, "niceeval.agent-turns"),
   ),
 );
 
 export const CommandsReferencesSchema = Schema.Array(AttemptReferenceTargetSchema).pipe(
   Schema.filter((refs): refs is readonly CommandsReferences[] =>
     refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.observability"),
+    canonicalAttemptReferences(refs, "niceeval.sandbox-commands"),
   ),
 );
 
 export const UsageReferencesSchema = Schema.Array(AttemptReferenceTargetSchema).pipe(
   Schema.filter((refs): refs is readonly UsageReferences[] =>
     refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.observability"),
+    canonicalAttemptReferences(refs, "niceeval.agent-turns"),
   ),
 );
 
@@ -449,7 +449,7 @@ export const AttemptTimingReferencesSchema = Schema.Array(
 ).pipe(
   Schema.filter((refs): refs is readonly AttemptTimingReferences[] =>
     refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.observability"),
+    canonicalAttemptReferences(refs, "niceeval.runner-activities"),
   ),
 );
 
@@ -458,14 +458,14 @@ export const AttemptDiagnosticsReferencesSchema = Schema.Array(
 ).pipe(
   Schema.filter((refs): refs is readonly AttemptDiagnosticsReferences[] =>
     refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.observability"),
+    canonicalAttemptReferences(refs, "niceeval.runner-diagnostics"),
   ),
 );
 
 export const RunTimingReferencesSchema = Schema.Array(RunReferenceTargetSchema).pipe(
   Schema.filter((refs): refs is readonly RunTimingReferences[] =>
     refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalRunReferences(refs, "niceeval.observability"),
+    canonicalRunReferences(refs, "niceeval.runner-activities"),
   ),
 );
 
@@ -474,6 +474,6 @@ export const RunDiagnosticsReferencesSchema = Schema.Array(
 ).pipe(
   Schema.filter((refs): refs is readonly RunDiagnosticsReferences[] =>
     refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalRunReferences(refs, "niceeval.observability"),
+    canonicalRunReferences(refs, "niceeval.runner-diagnostics"),
   ),
 );

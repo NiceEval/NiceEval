@@ -251,11 +251,11 @@ function detailsFor(input: {
           }) as Verdict,
         })
       : nonAvailableRead(assertions);
-    const observability = yield* input.reader.readAttemptObservability(input.attempt.owner);
-    const executionErrors: CurrentRecordRead<readonly CurrentReusedExecutionError[]> = observability.state === "available"
+    const diagnostics = yield* input.reader.readAttemptRunnerDiagnostics(input.attempt.owner);
+    const executionErrors: CurrentRecordRead<readonly CurrentReusedExecutionError[]> = diagnostics.state === "available"
       ? Object.freeze({
           state: "available" as const,
-          value: Object.freeze(observability.value.diagnostics.diagnostics
+          value: Object.freeze(diagnostics.value.segments
             .filter((diagnostic) => diagnostic.kind === "execution-error")
             .map((diagnostic) => Object.freeze({
               kind: "execution-error" as const,
@@ -268,7 +268,7 @@ function detailsFor(input: {
               }))),
             }))),
         })
-      : nonAvailableRead(observability);
+      : nonAvailableRead(diagnostics);
     const scoreAttachment: CurrentRecordRead<{
       readonly state: "complete" | "partial" | "unavailable";
       readonly earned?: number;

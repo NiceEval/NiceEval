@@ -225,15 +225,19 @@ entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时�
 
 `Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。是否已停驻、何时过期或收尾成功与否只留在注册表，`phases` 无 `sandbox.stop` 条目。
 
-## Sandbox 的可携带事实只用六个固定运行事实 family
+## Sandbox 的可携带事实只用九个固定运行事实 family
 
 Sandbox 不定义自己的可携带 schema。创建、prepare、复用和留存仍完整执行，但它们产生的可观察结果按内容封入既有 family：
 
 | 内容 | owner 与 family |
 |---|---|
-| provider 创建、prepare、受管命令、计时、诊断，以及 conversation / usage | origin Attempt 或 Run 的 Observability |
-| agent 归因的文件变化 | origin Attempt 的 FileChanges |
-| 每个物理 send 的 source/timing join | origin Attempt 的 SourceNavigation |
+| Adapter terminal Turn 与 usage | origin Attempt 的 Agent Turns |
+| 每个物理 send 的 session、顺序与源码位置 | origin Attempt 的 Turn Contexts |
+| Sandbox command manifest、结果与 stdout/stderr | origin Attempt 的 Sandbox Commands |
+| provider 创建、prepare 与 lifecycle timing | origin Attempt 或 Run 的 Runner Activities |
+| Runner diagnostic sink | origin Attempt 或 Run 的 Runner Diagnostics |
+| agent 归因的文件变化 | origin Attempt 的 File Changes |
+| 每个物理 send 的 source/timing join | Turn Contexts、Runner Activities 与 Sources 的 reader-side relation |
 | source frame 或 build 输入所需的源码闭包 | origin Run 的 Sources |
 | Assertion 的 result、coverage 与 Evidence refs | origin Attempt 的 Assertions |
 | 超出有界命令摘要的大型具类型对象 | Attempt 或 Run 的 Artifacts |
@@ -241,8 +245,9 @@ Sandbox 不定义自己的可携带 schema。创建、prepare、复用和留存�
 provider 实例 id、复用池编号、承接序号、live / dormant 状态、workdir、URL、credentials 与 detached cleanup locator
 都只属于运行期 Case 或留存注册表。它们不进入 portable Record，不能因读取历史 Attempt 而重建，也不能在恢复现场后补写。
 
-读取一个 family 只会得到 `available`、`not-recorded`、`unsupported` 或 `invalid`。这四态描述已发布 closure
-的可读性；I/O 与 permission failure 仍是值形成前的 typed Record read error。schema 演进和 migration 只由
+读取一个已知 current family 只会得到 `available`、`not-recorded` 或 `invalid`。这三态描述已发布 closure
+的可读性；unknown/future durable bytes 在 reader session 形成前返回 `unsupported-format`，I/O 与 permission
+failure 仍是值形成前的 typed Record read error。schema 演进和 migration 只由
 Record maintenance 安排，Sandbox 不建立 converter、group 或读取侧 fallback。
 
 公开读取经过 Analysis 的闭合 `DomainView`，而不是 Sandbox 直接暴露存储能力：

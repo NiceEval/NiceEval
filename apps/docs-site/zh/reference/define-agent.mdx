@@ -137,7 +137,7 @@ spanMapper?: SpanMapper;
 #### `send`
 
 ```ts
-send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
+send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
 ```
 
 每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。
@@ -223,7 +223,7 @@ spanMapper?: SpanMapper;
 #### `send`
 
 ```ts
-send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
+send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
 ```
 
 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。

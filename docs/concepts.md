@@ -194,6 +194,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 采集状态 | Collection | 一个已写入 Attachment 的 complete 或 partial 完备度；不是 reader 的 unavailable 或 invalid 状态 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | 采集限制 | limitation | partial collection 必有的 closed、非空原因；表达上限、截断、脱敏或采集不足 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | owner-local identity | owner-local identity | producer 为 Attachment 内 turn、item、call、command、usage、interval 与 diagnostic mint 的稳定身份 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
+| Source receipt | Source receipt | 一个 capture authority 在真实边界产生的已归一、脱敏且不可变事实 segment | [Observability Source receipts](feature/record/architecture/observability-attachments.md) |
 | 报告器 | Reporter | 运行中流式消费结果的插件;与运行后的 Report 不同 | [Observability](observability.md) |
 
 ### 结果落盘
@@ -209,11 +210,12 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
 | 执行槽位 | Slot | Run 在调度前展开的一个预期位置；最多对应一个 Member，并作为分析分母。它不是并发位，默认 Human CLI 也不把它作为列名展示 | [Record Architecture](feature/record/architecture.md) |
 | Run 完成标识 | Run completion marker | writer 在内容校验与刷盘后最后排他创建的 zero-byte `complete`，是 Run 对 reader 可见的发布点 | [Record Architecture](feature/record/architecture.md) |
+| Seal manifest | Seal manifest | 与 `complete` 在同一次原子目录发布中出现、穷尽 Core、Attachment、source segment 与 blob 的 canonical portable inventory | [Record Architecture](feature/record/architecture.md) |
 | 未完成 Run | Incomplete Run | 缺少规范零字节普通文件 `complete` 的目录；不是已发布事实，只能由取得独占维护 lease 的 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md) |
 | Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 NiceEval 固定定义的 immutable payload 与 owner-local blob closure | [Record Architecture](feature/record/architecture.md) |
-| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、Observability、FileChanges、SourceNavigation、Sources 与 Artifacts 六类封闭联合；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
+| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、FileChanges、Sources、Artifacts 与五个 Observability source family 组成的九类封闭联合；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
 | Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、Git safety 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
 | Record migration receipt | `RecordMigrationReceipt` | migration 完整校验并刷盘后返回的 immutable outcome；未需改写时为 `already-current`，成功改写时为 `migrated` | [Record Library](feature/record/library.md) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources`（envelope `schemaVersion: 1`）；保存当时 source closure 的 manifest 与 own blobs | [Record Architecture](feature/record/architecture.md) |
@@ -269,11 +271,15 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Analysis Library](feature/analysis/library.md) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
-| Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
-| Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生新的不可变 grading claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Session、Turn、Action、显式材料、provenance 与 ExecutionOutcome 的 sealed semantic source graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#execution-source) |
+| Grading | Grading | 当前 GradingDefinition 对一份 sealed Execution graph 复用或产生 Judge Evaluation，再建立不可变 Grading Claim | [Replayable Architecture](roadmap/replayable-grading/architecture.md#judgeevaluation-与-gradingclaim) |
 | GradingRun | GradingRun | 对一个 Experiment Run 已写入 Record 的 SampleManifest 执行或复用全部 Grading 的持久批次 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
-| GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingresult) |
-| SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、ExecutionGraph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#samplemanifest-与-current) |
+| GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、Execution graph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| Judge Material View | Judge Material View | 从受管 Execution 或 Grading definition source 创建、只能绑定到 recipe slot 的私有品牌 Judge 输入句柄 | [Judge Material Library](roadmap/judge-runtimes/material/library.md) |
+| Action Result Selector | `ActionResultSelector` | 按 occurrence 或封存动作元数据精确选择 Action result、且不能读取 output 的持久选择器 | [Judge Material Library](roadmap/judge-runtimes/material/library.md#action-result-selector) |
+| 材料绑定清单 | `MaterialBindingManifest` | 穷尽保存一次 Judge Check 的 slot 声明、已定位 source、已交付 representation 与授权能力的 canonical manifest | [Judge Material Architecture](roadmap/judge-runtimes/material/architecture.md#materialbindingmanifest) |
+| Judge Evaluation | `JudgeEvaluation` | 一次 evaluator occurrence 的 manifest、presentation 或 investigation closure 与 Decision；不拥有 threshold 或 score policy | [Judge Material Architecture](roadmap/judge-runtimes/material/architecture.md#实体与-owner) |
 | Pilot 选择 | Pilot selection | 在 attempts 展开前按共同 Eval ID 总体执行 first 或固定 seed sample，并保留 non-final coverage | [Experiment Pilot 抽样](roadmap/experiment-pilot-sampling/README.md) |
 | 具名 Experiment 族 | Experiment family (`defineExperiments`) | 用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID | [具名 Experiment 族](roadmap/experiment-authoring/families/README.md) |
 | Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-prepare/fixture-content/README.md) |

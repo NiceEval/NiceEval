@@ -303,7 +303,7 @@ export function registerCommandCapture(
     captureState.sealed ||
     entityState === undefined ||
     entityState.capture !== captureState ||
-    entityState.target.family !== "niceeval.observability" ||
+    entityState.target.family !== "niceeval.sandbox-commands" ||
     entityState.target.kind !== "command"
   ) {
     return undefined;

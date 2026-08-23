@@ -139,27 +139,31 @@ maintenance lease 不做自动回收。
 RunContext，并 refine `context.experimentId === experimentId`；它把这个已验证值带入 draft，只有 `seal()` 时
 将它作为 `RunDocument.context` 写入 `run.json`。不能在 session 创建后以当前配置或补丁重新设定 context。
 
-`current` 的 root 领域值只有 `{ format: "niceeval.record", recordId }` 与匹配的 Core。旧 root 上名为
-`schemaVersion` 的键只在 JSON 边界无条件丢弃，不读取其值，也不进入该值；其它额外键拒绝。root format / Core 不兼容时返回
-`unsupported-format`；session 根本不会形成。带 `/vN` 后缀的未发布 family 草案也是
+`current` 的 root 领域值只有 `{ format: "niceeval.record.source-receipts", recordId }` 与匹配的 Core/Seal
+manifest。旧 `niceeval.record`、额外 root 字段或不兼容 Core 均返回 `unsupported-format`；session 根本不会
+形成。带 `/vN` 后缀的未发布 family 草案也是
 `unsupported-format`，不能伪装成独立 future family。
 
 ## fixed family 与内部读取
 
-current catalog 的六个 fixed family 由 definition 关闭：
+current catalog 由 definition 关闭；source receipts 与既有非 source facts 使用同一静态 Host boundary：
 
 | family | current | `owners` |
 |---|---:|---|
 | `niceeval.assertions` | 2 | `{ attempt }` |
-| `niceeval.observability` | 2 | `{ attempt, run }` |
+| `niceeval.agent-turns` | 1 | `{ attempt }` |
+| `niceeval.turn-contexts` | 1 | `{ attempt }` |
+| `niceeval.sandbox-commands` | 1 | `{ attempt }` |
+| `niceeval.runner-activities` | 1 | `{ attempt, run }` |
+| `niceeval.runner-diagnostics` | 1 | `{ attempt, run }` |
 | `niceeval.file-changes` | 1 | `{ attempt }` |
-| `niceeval.source-navigation` | 1 | `{ attempt }` |
 | `niceeval.sources` | 1 | `{ run }` |
 | `niceeval.artifacts` | 1 | `{ attempt, run }` |
 
 Attachment envelope 的 shape 是 `{ family, schemaVersion }`。family 是稳定 identity，schemaVersion 是数值。
-Observability 与 Artifacts 各自只有一个 package-private definition；其 owner-specific payload 位于同一
-`owners` map，不是公开的 attempt / run family pair。
+`runner-activities`、`runner-diagnostics` 与 Artifacts 的 owner-specific payload 位于同一 `owners` map，
+不是公开的 attempt / run family pair。conversation、usage、timing、diagnostics 与 source navigation 只在读侧
+按已声明 dependency 组装。
 
 future NiceEval catalog 可加入 `niceeval.energy` 等独立 fixed family，而不改变 Record root。应用作者
 仍不能定义 family。较早 reader 发现未知 stable family 时在 session 形成前 fail closed，不跳过 catalog 验证。
@@ -339,7 +343,7 @@ open → sealing → sealed
 |---|---|
 | `open` | 接受本 Run 的 Attempt、reference 与 fixed collector 写入。 |
 | `sealing` | 拒绝新 mutation，等待既有 Attempt 和 collector 停稳。 |
-| `sealed` | 已创建 `complete`；所有 writer handle 同步 consumed。 |
+| `sealed` | staging 已连同 Seal manifest 与 `complete` 发布，destination 完整重读验证成功；所有 writer handle 同步 consumed。 |
 | `failed` | marker 前的 typed failure、defect 或 interruption 使本 session 不可重用。 |
 
 `recordTerminalMember()` 为没有 Attempt 的 expected Slot 写入 `not-dispatched` 或 `interrupted`，并把

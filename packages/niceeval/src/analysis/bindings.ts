@@ -1,27 +1,34 @@
-import { Either } from "effect";
+import { Effect, Either } from "effect";
 import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
 import type {
   RecordAttachmentBlobs,
   RecordAttachmentPayloadSnapshot,
   RecordBlobRef,
 } from "../record/attachment/types.ts";
-import type { AssertionsAttachment } from "../record/family/assertions.ts";
+import type { AssertionsAttachment } from "../record/family/assertions/definition.ts";
 import {
+  agentTurnsRecordFamily,
   assertionsRecordFamily,
-  attemptObservabilityRecordFamily,
+  attemptRunnerActivitiesRecordFamily,
   fileChangesRecordFamily,
-  sourceNavigationRecordFamily,
+  sandboxCommandsRecordFamily,
   sourcesRecordFamily,
 } from "../record/family/catalog.ts";
+import type { AgentTurnsAttachment } from "../record/family/agent-turns/definition.ts";
 import type { FileChangesAttachment } from "../record/family/file-changes.ts";
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
-import type { SourceNavigationAttachment } from "../record/family/source-navigation.ts";
+import type { AttemptRunnerActivitiesAttachment } from "../record/family/runner-activities/definition.ts";
+import type { AttemptRunnerDiagnosticsAttachment } from "../record/family/runner-diagnostics/definition.ts";
+import type { SandboxCommandsAttachment } from "../record/family/sandbox-commands/definition.ts";
 import type { SourcesAttachment } from "../record/family/sources.ts";
+import type { TurnContextsAttachment } from "../record/family/turn-contexts/definition.ts";
 import type {
   FixedFamilyRead,
+  ReadableAttempt,
   RecordReadSession,
   SelectedOwnerRef,
 } from "../record/host/types.ts";
+import type { SourceNavigationRelation } from "../record/host/source-navigation-relation.ts";
+import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import type {
   JsonValue,
 } from "./contracts.ts";
@@ -38,14 +45,17 @@ import type {
   ClosedCommandOutcome,
   ClosedCommandStream,
   ClosedCommandWorkingDirectory,
+  ClosedCommandsDetail,
   ClosedConversationDetail,
   ClosedConversationItem,
   ClosedDiagnosticsDetail,
   ClosedFileChangesCollectionLimitation,
   ClosedTimingDetail,
   ClosedTraceCollection,
+  ClosedSourceDependency,
   ClosedUsageDetail,
   FileChangesDomainDetail,
+  SandboxHistoryDomainDetail,
   SourceNavigationDomainDetail,
   SourcesDomainDetail,
 } from "./domain-view.ts";
@@ -64,23 +74,54 @@ import type { LogicalSlot } from "./definitions.ts";
  */
 export type FixedFamilyOwnerRequirement = "attempt" | "origin-run";
 
+type ReaderSourceState<Payload> =
+  | Readonly<{
+      readonly state: "complete" | "partial";
+      readonly limitations: readonly unknown[];
+      readonly value: RecordAttachmentPayloadSnapshot<Payload>;
+    }>
+  | Readonly<{
+      readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid";
+    }>;
+
+/** Logical fields assembled by Analysis from source receipts; never durable. */
+interface AttemptObservabilityReaderView {
+  readonly agentTurns: ReaderSourceState<AgentTurnsAttachment>;
+  readonly turnContexts: ReaderSourceState<TurnContextsAttachment>;
+  readonly sandboxCommands: ReaderSourceState<SandboxCommandsAttachment>;
+  readonly runnerActivities: ReaderSourceState<AttemptRunnerActivitiesAttachment>;
+  readonly runnerDiagnostics: ReaderSourceState<AttemptRunnerDiagnosticsAttachment>;
+}
+
+interface SandboxHistoryReaderView {
+  readonly sandboxCommands: ReaderSourceState<SandboxCommandsAttachment>;
+  readonly runnerActivities: ReaderSourceState<AttemptRunnerActivitiesAttachment>;
+  readonly runnerDiagnostics: ReaderSourceState<AttemptRunnerDiagnosticsAttachment>;
+}
+
+/** Fact relation assembled from Turn Contexts, Runner Activities, and origin Sources; never durable. */
+interface SourceNavigationReaderView {
+  readonly relation: ReaderSourceState<SourceNavigationRelation>;
+  readonly turnContexts: ReaderSourceState<TurnContextsAttachment>;
+  readonly runnerActivities: ReaderSourceState<AttemptRunnerActivitiesAttachment>;
+  readonly originSources: ReaderSourceState<SourcesAttachment>;
+}
+
 /**
- * Static only: each binding retains the exact declaration-owned descriptor.
- * There is no runtime family lookup or field-token surface.
+ * Static only: each binding retains an exact declaration-owned descriptor or
+ * an explicit reader-side view identity. There is no runtime family lookup or
+ * field-token surface.
  */
-export interface FixedFamilyBinding<
+export interface RecordReadBinding<
   Owner extends FixedFamilyOwnerRequirement,
   Payload,
-  Descriptor extends {
-    readonly family: string;
-    readonly owner: "attempt" | "run";
-  },
 > {
   readonly owner: Owner;
-  readonly descriptor: Descriptor;
+  /** Exact fixed descriptor or an explicit reader-side view identity. */
+  readonly cacheKey: object;
   readonly read: (
     reader: RecordReadSession,
-    owner: SelectedOwnerRef,
+    attempt: ReadableAttempt,
   ) => import("effect").Effect.Effect<FixedFamilyRead<Payload>, import("../record/reader/errors.ts").RecordReaderReadError>;
 }
 
@@ -91,14 +132,23 @@ export type InputProjection<Value> =
       readonly message: string;
     };
 
-/** One semantic input owns an immutable owner/family requirement and projector. */
+/** One semantic input owns an immutable owner/source requirement and projector. */
 export interface PublishedAnalysisInputBinding<
   Value,
   Payload,
-  Family extends FixedFamilyBinding<FixedFamilyOwnerRequirement, Payload, any>,
+  Source extends RecordReadBinding<FixedFamilyOwnerRequirement, Payload>,
 > {
   readonly id: string;
-  readonly family: Family;
+  readonly source: Source;
+  /**
+   * A semantic input may close source absence from immutable Core alone. The
+   * fallback receives no payload so it cannot manufacture a source receipt or
+   * reinterpret `not-recorded` as an empty durable family.
+   */
+  readonly projectNotRecorded?: (input: {
+    readonly member: LogicalSlot;
+    readonly core: ClosedAttemptCore;
+  }) => InputProjection<Value>;
   readonly project: (input: {
     readonly member: LogicalSlot;
     /** Closed with the successful ReadableAttempt resolution. */
@@ -111,11 +161,11 @@ export interface PublishedAnalysisInputBinding<
 export interface BuiltinDomainViewBinding<
   Kind extends BuiltinDomainViewKind,
   Payload,
-  Family extends FixedFamilyBinding<FixedFamilyOwnerRequirement, Payload, any>,
+  Source extends RecordReadBinding<FixedFamilyOwnerRequirement, Payload>,
 > {
   readonly id: string;
   readonly kind: Kind;
-  readonly family: Family;
+  readonly source: Source;
   readonly project: (input: {
     /** Closed with the successful ReadableAttempt resolution, never exposed as a capability. */
     readonly core: ClosedAttemptCore;
@@ -129,9 +179,9 @@ type DomainBindingPayload<Binding extends AnyBuiltinDomainViewBinding> =
     ? Payload
     : never;
 
-type DomainBindingFamily<Binding extends AnyBuiltinDomainViewBinding> =
-  Binding extends BuiltinDomainViewBinding<BuiltinDomainViewKind, any, infer Family>
-    ? Family
+type DomainBindingSource<Binding extends AnyBuiltinDomainViewBinding> =
+  Binding extends BuiltinDomainViewBinding<BuiltinDomainViewKind, any, infer Source>
+    ? Source
     : never;
 
 function fixedFamilyBinding<
@@ -141,7 +191,29 @@ function fixedFamilyBinding<
     readonly family: string;
     readonly owner: "attempt" | "run";
   },
->(input: FixedFamilyBinding<Owner, Payload, Descriptor>): FixedFamilyBinding<Owner, Payload, Descriptor> {
+>(input: {
+  readonly owner: Owner;
+  readonly descriptor: Descriptor;
+  readonly read: (
+    reader: RecordReadSession,
+    owner: SelectedOwnerRef,
+  ) => Effect.Effect<FixedFamilyRead<Payload>, RecordReaderReadError>;
+}): RecordReadBinding<Owner, Payload> {
+  return Object.freeze({
+    owner: input.owner,
+    cacheKey: input.descriptor,
+    read: (reader: RecordReadSession, attempt: ReadableAttempt) => input.read(
+      reader,
+      input.owner === "attempt" ? attempt.owner : attempt.origin.owner,
+    ),
+  });
+}
+
+function readerSideViewBinding<Owner extends FixedFamilyOwnerRequirement, Payload>(input: {
+  readonly owner: Owner;
+  readonly cacheKey: object;
+  readonly read: RecordReadBinding<Owner, Payload>["read"];
+}): RecordReadBinding<Owner, Payload> {
   return Object.freeze({ ...input });
 }
 
@@ -151,11 +223,22 @@ const assertionsFamily = fixedFamilyBinding({
   read: (reader, owner) => reader.readAssertions(owner),
 });
 
-/** @internal Cost projection owns this sealed, attempt-scoped Usage seam. */
-export const attemptObservabilityFamily = fixedFamilyBinding({
+export const agentTurnsSource = fixedFamilyBinding({
   owner: "attempt" as const,
-  descriptor: attemptObservabilityRecordFamily,
-  read: (reader, owner) => reader.readAttemptObservability(owner),
+  descriptor: agentTurnsRecordFamily,
+  read: (reader, owner) => reader.readAgentTurns(owner),
+});
+
+const sandboxCommandsSource = fixedFamilyBinding({
+  owner: "attempt" as const,
+  descriptor: sandboxCommandsRecordFamily,
+  read: (reader, owner) => reader.readSandboxCommands(owner),
+});
+
+const attemptRunnerActivitiesSource = fixedFamilyBinding({
+  owner: "attempt" as const,
+  descriptor: attemptRunnerActivitiesRecordFamily,
+  read: (reader, owner) => reader.readAttemptRunnerActivities(owner),
 });
 
 const fileChangesFamily = fixedFamilyBinding({
@@ -164,10 +247,25 @@ const fileChangesFamily = fixedFamilyBinding({
   read: (reader, owner) => reader.readFileChanges(owner),
 });
 
-const sourceNavigationFamily = fixedFamilyBinding({
+const attemptObservabilityViewKey = Object.freeze({ kind: "reader-side-attempt-observability" });
+const attemptObservabilityViewSource = readerSideViewBinding<"attempt", AttemptObservabilityReaderView>({
   owner: "attempt" as const,
-  descriptor: sourceNavigationRecordFamily,
-  read: (reader, owner) => reader.readSourceNavigation(owner),
+  cacheKey: attemptObservabilityViewKey,
+  read: readAttemptObservabilityView,
+});
+
+const sandboxHistoryViewKey = Object.freeze({ kind: "reader-side-sandbox-history" });
+const sandboxHistoryViewSource = readerSideViewBinding<"attempt", SandboxHistoryReaderView>({
+  owner: "attempt" as const,
+  cacheKey: sandboxHistoryViewKey,
+  read: readSandboxHistoryView,
+});
+
+const sourceNavigationViewKey = Object.freeze({ kind: "reader-side-source-navigation" });
+const sourceNavigationViewSource = readerSideViewBinding<"attempt", SourceNavigationReaderView>({
+  owner: "attempt" as const,
+  cacheKey: sourceNavigationViewKey,
+  read: readSourceNavigationView,
 });
 
 const originSourcesFamily = fixedFamilyBinding({
@@ -176,11 +274,108 @@ const originSourcesFamily = fixedFamilyBinding({
   read: (reader, owner) => reader.readSources(owner),
 });
 
+const emptyRecordBlobs: RecordAttachmentBlobs = Object.freeze({
+  refs: () => Object.freeze([]),
+  bytes: (_ref: RecordBlobRef) => Either.left(Object.freeze({ code: "record-blob-handle-invalid" as const })),
+});
+
+function receiptSourceState<Payload extends {
+  readonly collection: {
+    readonly state: "complete" | "partial";
+    readonly limitations: readonly unknown[];
+  };
+}>(read: FixedFamilyRead<Payload>): ReaderSourceState<Payload> {
+  if (read.state !== "available") return Object.freeze({ state: read.state });
+  return Object.freeze({
+    state: read.value.collection.state,
+    limitations: Object.freeze([...read.value.collection.limitations]),
+    value: read.value,
+  });
+}
+
+function completeSourceState<Payload>(read: FixedFamilyRead<Payload>): ReaderSourceState<Payload> {
+  if (read.state !== "available") return Object.freeze({ state: read.state });
+  return Object.freeze({
+    state: "complete" as const,
+    limitations: Object.freeze([]),
+    value: read.value,
+  });
+}
+
+function readAttemptObservabilityView(
+  reader: RecordReadSession,
+  attempt: ReadableAttempt,
+): Effect.Effect<FixedFamilyRead<AttemptObservabilityReaderView>, RecordReaderReadError> {
+  return Effect.gen(function* () {
+    const owner = attempt.owner;
+    const turns = yield* reader.readAgentTurns(owner);
+    const contexts = yield* reader.readTurnContexts(owner);
+    const commands = yield* reader.readSandboxCommands(owner);
+    const activities = yield* reader.readAttemptRunnerActivities(owner);
+    const diagnostics = yield* reader.readAttemptRunnerDiagnostics(owner);
+
+    return Object.freeze({
+      state: "available" as const,
+      value: Object.freeze({
+        agentTurns: receiptSourceState(turns),
+        turnContexts: receiptSourceState(contexts),
+        sandboxCommands: receiptSourceState(commands),
+        runnerActivities: receiptSourceState(activities),
+        runnerDiagnostics: receiptSourceState(diagnostics),
+      }),
+      blobs: commands.state === "available" ? commands.blobs : emptyRecordBlobs,
+    });
+  });
+}
+
+function readSandboxHistoryView(
+  reader: RecordReadSession,
+  attempt: ReadableAttempt,
+): Effect.Effect<FixedFamilyRead<SandboxHistoryReaderView>, RecordReaderReadError> {
+  return Effect.gen(function* () {
+    const owner = attempt.owner;
+    const commands = yield* reader.readSandboxCommands(owner);
+    const activities = yield* reader.readAttemptRunnerActivities(owner);
+    const diagnostics = yield* reader.readAttemptRunnerDiagnostics(owner);
+    return Object.freeze({
+      state: "available" as const,
+      value: Object.freeze({
+        sandboxCommands: receiptSourceState(commands),
+        runnerActivities: receiptSourceState(activities),
+        runnerDiagnostics: receiptSourceState(diagnostics),
+      }),
+      blobs: commands.state === "available" ? commands.blobs : emptyRecordBlobs,
+    });
+  });
+}
+
+function readSourceNavigationView(
+  reader: RecordReadSession,
+  attempt: ReadableAttempt,
+): Effect.Effect<FixedFamilyRead<SourceNavigationReaderView>, RecordReaderReadError> {
+  return Effect.gen(function* () {
+    const relation = yield* reader.readSourceNavigationRelation(attempt.owner);
+    const contexts = yield* reader.readTurnContexts(attempt.owner);
+    const activities = yield* reader.readAttemptRunnerActivities(attempt.owner);
+    const sources = yield* reader.readSources(attempt.origin.owner);
+    return Object.freeze({
+      state: "available" as const,
+      value: Object.freeze({
+        relation: receiptSourceState(relation),
+        turnContexts: receiptSourceState(contexts),
+        runnerActivities: receiptSourceState(activities),
+        originSources: completeSourceState(sources),
+      }),
+      blobs: emptyRecordBlobs,
+    });
+  });
+}
+
 /** The complete published input catalog; ids are semantic, never schema ids. */
 export const publishedAnalysisInputBindings = Object.freeze({
   attemptPassed: Object.freeze({
     id: "niceeval.attempt-passed",
-    family: assertionsFamily,
+    source: assertionsFamily,
     project: ({ core, payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
@@ -192,49 +387,52 @@ export const publishedAnalysisInputBindings = Object.freeze({
   }),
   attemptLatencyMs: Object.freeze({
     id: "niceeval.attempt-latency-ms",
-    family: attemptObservabilityFamily,
+    source: attemptRunnerActivitiesSource,
     project: ({ payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
-      readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
+      readonly payload: RecordAttachmentPayloadSnapshot<AttemptRunnerActivitiesAttachment>;
     }): InputProjection<number> => {
-      const timing = payload.timing;
-      if (timing.collection.state !== "complete") {
-        return collectionProjection(timing.collection, "timing", "timing collection is incomplete");
+      if (payload.collection.state !== "complete") {
+        return collectionProjection(payload.collection, "activity", "activity collection is incomplete");
       }
-      const intervals = timing.intervals.filter((interval) => interval.phase === "eval.run");
-      if (intervals.length === 0) {
+      const activities = payload.segments.filter((activity) => activity.phase === "eval.run");
+      if (activities.length === 0) {
         return Object.freeze({ state: "value" as const, value: 0 });
       }
       return Object.freeze({
         state: "value" as const,
-        value: intervals.reduce((total, interval) => total + interval.durationMs, 0),
+        value: activities.reduce((total, activity) => total + activity.durationMs, 0),
       });
     },
   }),
   /**
    * The final token reading is `inputTokens + outputTokens`. It keeps that
-   * exact, non-overlapping pair from the fixed Usage family: cache buckets
+   * exact, non-overlapping pair from Agent Turn usage observations: cache buckets
    * are separately accounted input and reasoning is already included in the
    * output bucket, so neither belongs in this total.
    */
   attemptTokens: Object.freeze({
     id: "niceeval.attempt-input-output-tokens",
-    family: attemptObservabilityFamily,
+    source: agentTurnsSource,
+    projectNotRecorded: (_input: {
+      readonly member: LogicalSlot;
+      readonly core: ClosedAttemptCore;
+    }): InputProjection<number> => Object.freeze({ state: "value" as const, value: 0 }),
     project: ({ payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
-      readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
+      readonly payload: RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>;
     }): InputProjection<number> => {
-      const usage = payload.usage;
-      if (usage.collection.state !== "complete") {
-        return collectionProjection(usage.collection, "usage", "usage collection is incomplete");
+      if (payload.collection.state !== "complete") {
+        return collectionProjection(payload.collection, "usage-observation", "usage collection is incomplete");
       }
+      const observations = payload.segments.flatMap((segment) => segment.usage);
       let input = 0;
       let output = 0;
       let hasInput = false;
       let hasOutput = false;
-      for (const observation of usage.observations) {
+      for (const observation of observations) {
         if (observation.kind !== "token-bucket") continue;
         if (observation.bucket === "input") {
           input += observation.tokens;
@@ -244,7 +442,7 @@ export const publishedAnalysisInputBindings = Object.freeze({
           hasOutput = true;
         }
       }
-      if (!hasInput && !hasOutput && usage.observations.every((observation) => observation.kind !== "token-bucket")) {
+      if (!hasInput && !hasOutput && observations.every((observation) => observation.kind !== "token-bucket")) {
         return Object.freeze({ state: "value" as const, value: 0 });
       }
       if (!hasInput || !hasOutput) {
@@ -265,21 +463,20 @@ export const publishedAnalysisInputBindings = Object.freeze({
   }),
   attemptToolFailure: Object.freeze({
     id: "niceeval.attempt-tool-failure",
-    family: attemptObservabilityFamily,
+    source: sandboxCommandsSource,
     project: ({ payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
-      readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
+      readonly payload: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>;
     }): InputProjection<boolean> => {
-      const commands = payload.commands;
-      const failed = commands.commands.some((command) =>
-        command.result.outcome.kind !== "exited" || command.result.outcome.exitCode !== 0
+      const failed = payload.segments.some((segment) =>
+        segment.outcome.kind !== "exited" || segment.outcome.exitCode !== 0
       );
       if (failed) return Object.freeze({ state: "value" as const, value: true });
-      if (commands.collection.state === "complete") {
+      if (payload.collection.state === "complete") {
         return Object.freeze({ state: "value" as const, value: false });
       }
-      return collectionProjection(commands.collection, "command", "command collection is incomplete");
+      return collectionProjection(payload.collection, "command", "command collection is incomplete");
     },
   }),
 });
@@ -287,7 +484,7 @@ export const publishedAnalysisInputBindings = Object.freeze({
 export const attemptEvidenceDomainBinding = Object.freeze({
   id: "niceeval.domain.attempt-evidence",
   kind: "attempt-evidence" as const,
-  family: assertionsFamily,
+  source: assertionsFamily,
   project: ({ core, payload, blobs }: {
     readonly core: ClosedAttemptCore;
     readonly payload: RecordAttachmentPayloadSnapshot<AssertionsAttachment>;
@@ -302,21 +499,21 @@ export const attemptEvidenceDomainBinding = Object.freeze({
 export const attemptObservabilityDomainBinding = Object.freeze({
   id: "niceeval.domain.attempt-observability",
   kind: "attempt-observability" as const,
-  family: attemptObservabilityFamily,
+  source: attemptObservabilityViewSource,
   project: ({ payload, blobs }: {
-    readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
+    readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>;
     readonly blobs: RecordAttachmentBlobs;
-  }): AttemptObservabilityDomainDetail => closeObservability(payload, blobs, false),
+  }): AttemptObservabilityDomainDetail => closeObservability(payload, blobs),
 }) satisfies BuiltinDomainViewBinding<
   "attempt-observability",
-  AttemptObservabilityAttachment,
-  typeof attemptObservabilityFamily
+  AttemptObservabilityReaderView,
+  typeof attemptObservabilityViewSource
 >;
 
 export const fileChangesDomainBinding = Object.freeze({
   id: "niceeval.domain.file-changes",
   kind: "file-changes" as const,
-  family: fileChangesFamily,
+  source: fileChangesFamily,
   project: ({ payload, blobs }: {
     readonly payload: RecordAttachmentPayloadSnapshot<FileChangesAttachment>;
     readonly blobs: RecordAttachmentBlobs;
@@ -330,21 +527,21 @@ export const fileChangesDomainBinding = Object.freeze({
 export const sourceNavigationDomainBinding = Object.freeze({
   id: "niceeval.domain.source-navigation",
   kind: "source-navigation" as const,
-  family: sourceNavigationFamily,
+  source: sourceNavigationViewSource,
   project: ({ payload }: {
-    readonly payload: RecordAttachmentPayloadSnapshot<SourceNavigationAttachment>;
+    readonly payload: RecordAttachmentPayloadSnapshot<SourceNavigationReaderView>;
     readonly blobs: RecordAttachmentBlobs;
   }): SourceNavigationDomainDetail => closeSourceNavigation(payload),
 }) satisfies BuiltinDomainViewBinding<
   "source-navigation",
-  SourceNavigationAttachment,
-  typeof sourceNavigationFamily
+  SourceNavigationReaderView,
+  typeof sourceNavigationViewSource
 >;
 
 export const sourcesDomainBinding = Object.freeze({
   id: "niceeval.domain.sources",
   kind: "sources" as const,
-  family: originSourcesFamily,
+  source: originSourcesFamily,
   project: ({ payload, blobs }: {
     readonly payload: RecordAttachmentPayloadSnapshot<SourcesAttachment>;
     readonly blobs: RecordAttachmentBlobs;
@@ -358,15 +555,15 @@ export const sourcesDomainBinding = Object.freeze({
 export const sandboxHistoryDomainBinding = Object.freeze({
   id: "niceeval.domain.sandbox-history",
   kind: "sandbox-history" as const,
-  family: attemptObservabilityFamily,
+  source: sandboxHistoryViewSource,
   project: ({ payload, blobs }: {
-    readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>;
+    readonly payload: RecordAttachmentPayloadSnapshot<SandboxHistoryReaderView>;
     readonly blobs: RecordAttachmentBlobs;
-  }): AttemptObservabilityDomainDetail => closeObservability(payload, blobs, true),
+  }): SandboxHistoryDomainDetail => closeSandboxHistory(payload, blobs),
 }) satisfies BuiltinDomainViewBinding<
   "sandbox-history",
-  AttemptObservabilityAttachment,
-  typeof attemptObservabilityFamily
+  SandboxHistoryReaderView,
+  typeof sandboxHistoryViewSource
 >;
 
 export const builtinDomainViewBindings = Object.freeze({
@@ -386,8 +583,8 @@ export type AnyBuiltinDomainViewBinding =
   | typeof sourcesDomainBinding
   | typeof sandboxHistoryDomainBinding;
 
-/** @internal Keeps the exact payload/family correlation inside Sample. */
-export type { DomainBindingFamily, DomainBindingPayload };
+/** @internal Keeps the exact payload/source correlation inside Sample. */
+export type { DomainBindingSource, DomainBindingPayload };
 
 function closeAssertions(
   core: ClosedAttemptCore,
@@ -448,18 +645,24 @@ function closeAssertions(
 }
 
 function closeSourceNavigation(
-  payload: RecordAttachmentPayloadSnapshot<SourceNavigationAttachment>,
+  payload: RecordAttachmentPayloadSnapshot<SourceNavigationReaderView>,
 ): SourceNavigationDomainDetail {
+  const relation = payload.relation;
   return Object.freeze({
-    collection: Object.freeze({
-      state: payload.collection.state,
-      limitations: Object.freeze(payload.collection.limitations.map((limitation) => Object.freeze({
-        code: limitation.code,
-        target: limitation.target,
-        omittedAtLeast: limitation.omittedAtLeast,
-      }))),
+    dependencies: Object.freeze([
+      "niceeval.turn-contexts",
+      "niceeval.runner-activities",
+      "niceeval.sources",
+    ] as const),
+    sources: Object.freeze({
+      turnContexts: closeSourceDependency("niceeval.turn-contexts", payload.turnContexts),
+      runnerActivities: closeSourceDependency("niceeval.runner-activities", payload.runnerActivities),
+      originSources: closeSourceDependency("niceeval.sources", payload.originSources),
     }),
-    rows: Object.freeze(payload.rows.map((row) => Object.freeze({
+    collection: closeTraceCollection(relation),
+    rows: Object.freeze((relation.state === "complete" || relation.state === "partial"
+      ? relation.value.rows
+      : []).map((row) => Object.freeze({
       turnId: row.turnId,
       sourceOrder: row.sourceOrder,
       source: row.source.state === "mapped"
@@ -469,6 +672,11 @@ function closeSourceNavigation(
             sha256: row.source.sha256,
             start: Object.freeze({ line: row.source.start.line, column: row.source.start.column }),
             end: Object.freeze({ line: row.source.end.line, column: row.source.end.column }),
+            verification: closeSourceAnchorVerification(
+              payload.originSources,
+              row.source.sourceItemId,
+              row.source.sha256,
+            ),
           })
         : Object.freeze({ state: "unmapped" as const, reason: row.source.reason }),
       timing: row.timing.state === "linked"
@@ -476,6 +684,41 @@ function closeSourceNavigation(
         : Object.freeze({ state: "unavailable" as const, reason: row.timing.reason }),
     }))),
   });
+}
+
+function closeSourceAnchorVerification(
+  sources: RecordAttachmentPayloadSnapshot<SourceNavigationReaderView>["originSources"],
+  sourceItemId: string,
+  sha256: string,
+): Extract<SourceNavigationDomainDetail["rows"][number]["source"], { readonly state: "mapped" }>["verification"] {
+  if (sources.state !== "complete" && sources.state !== "partial") {
+    return Object.freeze({
+      state: sources.state,
+      reason: "source-dependency-unavailable" as const,
+    });
+  }
+  const source = sources.value.items.find((item) => item.sourceItemId === sourceItemId);
+  return source?.sha256 === sha256
+    ? Object.freeze({ state: "verified" as const })
+    : Object.freeze({ state: "invalid" as const, reason: "source-anchor-mismatch" as const });
+}
+
+function closeSourceDependency<Source extends string>(
+  source: Source,
+  value: { readonly state: "complete" | "partial"; readonly limitations: readonly unknown[] }
+    | { readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid" },
+): ClosedSourceDependency<Source> {
+  return value.state === "complete" || value.state === "partial"
+    ? Object.freeze({
+        source,
+        state: value.state,
+        limitations: Object.freeze(value.limitations.map(closeJson)),
+      })
+    : Object.freeze({
+        source,
+        state: value.state,
+        limitations: Object.freeze([]) as readonly [],
+      });
 }
 
 function collectionProjection(
@@ -501,70 +744,68 @@ function isObservationLimitation(value: unknown, code: string, target: string): 
 }
 
 function closeObservability(
-  payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>,
+  payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>,
   blobs: RecordAttachmentBlobs,
-  sandboxOnly: boolean,
 ): AttemptObservabilityDomainDetail {
-  const isSandboxPhase = (phase: string): boolean =>
-    phase === "sandbox.prepare" || phase === "sandbox.command";
-  const commands = payload.commands.commands
-    .filter((command) => !sandboxOnly || isSandboxPhase(command.manifest.phase))
-    .map((command) => closeCommand(command, blobs));
-  const timing = payload.timing.intervals
-    .filter((interval) => !sandboxOnly || isSandboxPhase(interval.phase))
-    .map(closeTimingInterval);
-  const diagnostics = payload.diagnostics.diagnostics
-    .filter((diagnostic) => !sandboxOnly || isSandboxPhase(diagnostic.phase))
-    .map(closeDiagnostic);
   return Object.freeze({
-    conversation: sandboxOnly
-      ? Object.freeze({
-        collection: closeTraceCollection(payload.conversation.collection),
-        turns: Object.freeze([]),
-        items: Object.freeze([]),
-      })
-      : closeConversation(payload.conversation),
-    commands: Object.freeze({
-      collection: closeTraceCollection(payload.commands.collection),
-      entries: Object.freeze(commands),
+    sources: Object.freeze({
+      agentTurns: closeSourceDependency("niceeval.agent-turns", payload.agentTurns),
+      turnContexts: closeSourceDependency("niceeval.turn-contexts", payload.turnContexts),
+      sandboxCommands: closeSourceDependency("niceeval.sandbox-commands", payload.sandboxCommands),
+      runnerActivities: closeSourceDependency("niceeval.runner-activities", payload.runnerActivities),
+      runnerDiagnostics: closeSourceDependency("niceeval.runner-diagnostics", payload.runnerDiagnostics),
     }),
-    usage: sandboxOnly
-      ? Object.freeze({
-        collection: closeTraceCollection(payload.usage.collection),
-        observations: Object.freeze([]),
-      })
-      : closeUsage(payload.usage),
-    timing: Object.freeze({
-      collection: closeTraceCollection(payload.timing.collection),
-      intervals: Object.freeze(timing),
+    conversation: closeConversation(payload.agentTurns),
+    commands: closeCommands(payload.sandboxCommands, blobs, false),
+    usage: closeUsage(payload.agentTurns),
+    timing: closeTiming(payload.runnerActivities, false),
+    diagnostics: closeDiagnostics(payload.runnerDiagnostics, false),
+  });
+}
+
+function closeSandboxHistory(
+  payload: RecordAttachmentPayloadSnapshot<SandboxHistoryReaderView>,
+  blobs: RecordAttachmentBlobs,
+): SandboxHistoryDomainDetail {
+  return Object.freeze({
+    sources: Object.freeze({
+      sandboxCommands: closeSourceDependency("niceeval.sandbox-commands", payload.sandboxCommands),
+      runnerActivities: closeSourceDependency("niceeval.runner-activities", payload.runnerActivities),
+      runnerDiagnostics: closeSourceDependency("niceeval.runner-diagnostics", payload.runnerDiagnostics),
     }),
-    diagnostics: Object.freeze({
-      collection: closeTraceCollection(payload.diagnostics.collection),
-      diagnostics: Object.freeze(diagnostics),
-    }),
+    commands: closeCommands(payload.sandboxCommands, blobs, true),
+    timing: closeTiming(payload.runnerActivities, true),
+    diagnostics: closeDiagnostics(payload.runnerDiagnostics, true),
   });
 }
 
 function closeConversation(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["conversation"],
+  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["agentTurns"],
 ): ClosedConversationDetail {
+  const segments = value.state === "complete" || value.state === "partial"
+    ? value.value.segments
+    : [];
   return Object.freeze({
-    collection: closeTraceCollection(value.collection),
-    turns: Object.freeze(value.turns.map((turn) => Object.freeze({
-      turnId: turn.turnId,
-      sequence: turn.sequence,
-      outcome: turn.outcome,
+    dependencies: Object.freeze(["niceeval.agent-turns", "niceeval.turn-contexts"] as const),
+    collection: closeTraceCollection(value),
+    turns: Object.freeze(segments.map((segment) => Object.freeze({
+      turnId: segment.turnId,
+      sequence: segment.sequence,
+      outcome: segment.outcome,
     }))),
-    items: Object.freeze(value.items.map(closeConversationItem)),
+    items: Object.freeze(segments.flatMap((segment) =>
+      segment.items.map((item) => closeConversationItem(item, segment.turnId))
+    )),
   });
 }
 
 function closeConversationItem(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["conversation"]["items"][number],
+  value: RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>["segments"][number]["items"][number],
+  turnId: string,
 ): ClosedConversationItem {
   const base = {
     itemId: value.itemId,
-    turnId: value.turnId,
+    turnId,
     sequence: value.sequence,
   };
   switch (value.kind) {
@@ -594,27 +835,44 @@ function closeConversationItem(
   }
 }
 
+function closeCommands(
+  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["sandboxCommands"],
+  blobs: RecordAttachmentBlobs,
+  sandboxOnly: boolean,
+): ClosedCommandsDetail {
+  const segments = value.state === "complete" || value.state === "partial"
+    ? value.value.segments
+    : [];
+  return Object.freeze({
+    dependencies: Object.freeze(["niceeval.sandbox-commands"] as const),
+    collection: closeTraceCollection(value),
+    entries: Object.freeze(segments
+      .filter((command) => !sandboxOnly || isSandboxPhase(command.phase))
+      .map((command) => closeCommand(command, blobs))),
+  });
+}
+
 function closeCommand(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["commands"]["commands"][number],
+  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number],
   blobs: RecordAttachmentBlobs,
 ) {
   return Object.freeze({
     commandId: value.commandId,
     manifest: Object.freeze({
-      phase: value.manifest.phase,
-      invocation: closeCommandInvocation(value.manifest.invocation),
-      workingDirectory: closeWorkingDirectory(value.manifest.workingDirectory),
+      phase: value.phase,
+      invocation: closeCommandInvocation(value.invocation),
+      workingDirectory: closeWorkingDirectory(value.workingDirectory),
     }),
     result: Object.freeze({
-      outcome: closeCommandOutcome(value.result.outcome),
-      stdout: closeCommandStream(value.result.stdout, blobs),
-      stderr: closeCommandStream(value.result.stderr, blobs),
+      outcome: closeCommandOutcome(value.outcome),
+      stdout: closeCommandStream(value.stdout, blobs),
+      stderr: closeCommandStream(value.stderr, blobs),
     }),
   });
 }
 
 function closeCommandInvocation(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["commands"]["commands"][number]["manifest"]["invocation"],
+  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number]["invocation"],
 ): ClosedCommandInvocation {
   return value.kind === "argv"
     ? Object.freeze({ kind: "argv" as const, executable: value.executable, arguments: Object.freeze([...value.arguments]) })
@@ -622,21 +880,21 @@ function closeCommandInvocation(
 }
 
 function closeWorkingDirectory(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["commands"]["commands"][number]["manifest"]["workingDirectory"],
+  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number]["workingDirectory"],
 ): ClosedCommandWorkingDirectory {
   if (value.kind === "project-relative") return Object.freeze({ kind: value.kind, path: value.path });
   return Object.freeze({ kind: value.kind });
 }
 
 function closeCommandOutcome(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["commands"]["commands"][number]["result"]["outcome"],
+  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number]["outcome"],
 ): ClosedCommandOutcome {
   if (value.kind === "exited") return Object.freeze({ kind: value.kind, exitCode: value.exitCode });
   return Object.freeze({ kind: value.kind, reason: value.reason });
 }
 
 function closeCommandStream(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["commands"]["commands"][number]["result"]["stdout"],
+  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number]["stdout"],
   blobs: RecordAttachmentBlobs,
 ): ClosedCommandStream {
   if (value.storage.kind === "inline") {
@@ -656,11 +914,15 @@ function closeCommandStream(
 }
 
 function closeUsage(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["usage"],
+  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["agentTurns"],
 ): ClosedUsageDetail {
+  const observations = value.state === "complete" || value.state === "partial"
+    ? value.value.segments.flatMap((segment) => segment.usage)
+    : [];
   return Object.freeze({
-    collection: closeTraceCollection(value.collection),
-    observations: Object.freeze(value.observations.map((observation) => {
+    dependencies: Object.freeze(["niceeval.agent-turns"] as const),
+    collection: closeTraceCollection(value),
+    observations: Object.freeze(observations.map((observation) => {
       switch (observation.kind) {
         case "token-bucket":
           return Object.freeze({
@@ -687,22 +949,54 @@ function closeUsage(
   });
 }
 
+function closeTiming(
+  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["runnerActivities"],
+  sandboxOnly: boolean,
+): ClosedTimingDetail {
+  const segments = value.state === "complete" || value.state === "partial"
+    ? value.value.segments
+    : [];
+  return Object.freeze({
+    dependencies: Object.freeze(["niceeval.runner-activities"] as const),
+    collection: closeTraceCollection(value),
+    intervals: Object.freeze(segments
+      .filter((activity) => !sandboxOnly || isSandboxPhase(activity.phase))
+      .map(closeTimingInterval)),
+  });
+}
+
 function closeTimingInterval(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["timing"]["intervals"][number],
+  value: RecordAttachmentPayloadSnapshot<AttemptRunnerActivitiesAttachment>["segments"][number],
 ) {
   return Object.freeze({
-    intervalId: value.intervalId,
+    intervalId: value.activityId,
     phase: value.phase,
     label: value.label,
     startOffsetMs: value.startOffsetMs,
     durationMs: value.durationMs,
-    parentIntervalId: value.parentIntervalId,
+    parentIntervalId: value.parentActivityId,
     outcome: value.outcome,
   });
 }
 
+function closeDiagnostics(
+  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["runnerDiagnostics"],
+  sandboxOnly: boolean,
+): ClosedDiagnosticsDetail {
+  const segments = value.state === "complete" || value.state === "partial"
+    ? value.value.segments
+    : [];
+  return Object.freeze({
+    dependencies: Object.freeze(["niceeval.runner-diagnostics"] as const),
+    collection: closeTraceCollection(value),
+    diagnostics: Object.freeze(segments
+      .filter((diagnostic) => !sandboxOnly || isSandboxPhase(diagnostic.phase))
+      .map(closeDiagnostic)),
+  });
+}
+
 function closeDiagnostic(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["diagnostics"]["diagnostics"][number],
+  value: RecordAttachmentPayloadSnapshot<AttemptRunnerDiagnosticsAttachment>["segments"][number],
 ) {
   return Object.freeze({
     diagnosticId: value.diagnosticId,
@@ -726,9 +1020,16 @@ function closeDiagnostic(
 }
 
 function closeTraceCollection(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["conversation"]["collection"],
+  value: { readonly state: "complete" | "partial"; readonly limitations: readonly unknown[] }
+    | { readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid" },
 ): ClosedTraceCollection {
-  return Object.freeze({ state: value.state, limitations: Object.freeze(value.limitations.map(closeJson)) });
+  return value.state === "complete" || value.state === "partial"
+    ? Object.freeze({ state: value.state, limitations: Object.freeze(value.limitations.map(closeJson)) })
+    : Object.freeze({ state: value.state, limitations: Object.freeze([]) as readonly [] });
+}
+
+function isSandboxPhase(phase: string): boolean {
+  return phase === "sandbox.prepare" || phase === "sandbox.command";
 }
 
 function closeFileChanges(

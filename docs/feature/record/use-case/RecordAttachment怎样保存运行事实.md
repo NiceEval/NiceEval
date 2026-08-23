@@ -3,15 +3,19 @@
 NiceEval 不把运行事实放进开放 JSON bag。每份事实都属于一个固定 Attachment family、一个 owner 和一个
 exact payload。调用方不能追加字段或改变 durable shape，更不能定义自己的 family。
 
-契约单源始终在 [五个固定 Attachment family](../architecture.md#五个固定-attachment-family) 与
-[Record Library](../library.md#固定-attachment-family-与-blob-closure)。
+契约单源始终在 [Fixed Attachment catalog](../architecture.md#fixed-attachment-catalog) 与
+[Record Library](../library.md#fixed-family-与内部读取)。
 
 ## 先选 owner 与 family
 
 | 事实 | family | owner | 原因 |
 |---|---|---|---|
 | AssertionResult、Evidence 与 sealed result | `niceeval.assertions` | `owners.attempt` | 来自一次实际检查 |
-| 对话、OTel、事件、命令、用量、时间与诊断 | `niceeval.observability` | `owners.attempt` 或 `owners.run` | 由对应 owner 的 collector 封口 |
+| terminal Turn 与 provider usage observation | `niceeval.agent-turns` | `owners.attempt` | Adapter 只交付已解释、脱敏的 terminal Turn |
+| 每个物理 `t.send` 的 source context | `niceeval.turn-contexts` | `owners.attempt` | SessionManager 保存 capture-time anchor |
+| command lifecycle 与安全 stream | `niceeval.sandbox-commands` | `owners.attempt` | Sandbox wrapper 保存 manifest、唯一终态与 stream |
+| owner-local activity | `niceeval.runner-activities` | `owners.attempt` 或 `owners.run` | Runner monotonic clock 保存 activity |
+| advisory 与 execution error | `niceeval.runner-diagnostics` | `owners.attempt` 或 `owners.run` | Runner diagnostic sink 保存安全诊断 |
 | Sandbox 观察到的 send 区间文件变化轨迹 | `niceeval.file-changes` | Attempt | 保留 agent 归因、策略与时序 |
 | Eval 与 loader 的源码闭包 | `niceeval.sources` | origin Run | 同 Run 的 Attempt 共用当时源码 |
 | 有媒体类型的大型文件 | `niceeval.artifacts` | `owners.attempt` 或 `owners.run` | 归属由文件生命周期决定 |
@@ -19,8 +23,10 @@ exact payload。调用方不能追加字段或改变 durable shape，更不能�
 owner 不是展示层的选择。它决定目录、identity、reference 和 blob closure。reference Member 不产生新
 Attempt，也不复制任何 Attachment；读取时沿精确 origin Attempt 和 origin Run 追溯。
 
-Observability 与 Artifacts 各有一个 NiceEval internal definition，两个 owner shape 写在同一 `owners` map。
-没有 attempt / run 的重复 family，也没有应用作者可调用的 `defineRecordAttachment`。
+Runner Activities、Runner Diagnostics 与 Artifacts 各有一个 NiceEval internal definition，两个 owner shape
+写在同一 `owners` map。没有 attempt / run 的重复 family，也没有应用作者可调用的
+`defineRecordAttachment`。conversation、usage、commands、timing、diagnostics 与 source navigation 都是
+reader-side view 或 relation，不额外占 catalog entry。
 
 File Changes 允许同一路径出现在不同 send 区间。若 agent 在 `turn1` 创建 `src/app.ts`，Eval 在两个 send 之间
 写入它，agent 在 `turn2` 再修改它，两个 send 区间各有一条 `src/app.ts` 变化。同一 send 区间内的变化按
@@ -40,13 +46,13 @@ attachments/<family>/
 例如 Assertions 的 envelope 是：
 
 ```json
-{ "family": "niceeval.assertions", "schemaVersion": 1 }
+{ "family": "niceeval.assertions", "schemaVersion": 2 }
 ```
 
 payload 中的每个 `RecordBlobRef` 都必须有且只有一份本 directory 的 blob。反过来，每个 blob 也必须
 恰被 payload 引用一次。producer 不能提交 raw path、raw key、raw bytes 或另一个 owner 的 ref。
 
-例如 command stdout、文件文本、源码和 Artifact 内容可成为本 family 的 blob。一个 Sources blob
+例如 command stdout、文件文本、源码和 Artifact 内容可成为各自 family 的 blob。一个 Sources blob
 不能被 Attempt 直接引用；source site 只保存 source item identity 和 digest 的 semantic join（语义连接）。
 
 缺 key、多 key、重复 key、手写 key、跨 owner ref 或 root 外路径会让这份 Attachment 成为 `invalid`。
@@ -89,5 +95,5 @@ chain 存在时可 maintenance migrate。未知独立 future family、已知 fut
 ## 相关阅读
 
 - [Sources manifest](../architecture.md#sources-manifest)
-- [Observability Attachment](../architecture/observability-attachments.md)
+- [Observability Source receipts](../architecture/observability-attachments.md)
 - [Assertions](../../assertions/README.md)

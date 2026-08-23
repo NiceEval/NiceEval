@@ -3,11 +3,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { AttemptLocator } from "../attempt-locator.ts";
 import type {
   BuiltinDomainViewBinding,
-  FixedFamilyBinding,
   FixedFamilyOwnerRequirement,
   PublishedAnalysisInputBinding,
+  RecordReadBinding,
 } from "../analysis/bindings.ts";
-import { attemptObservabilityFamily } from "../analysis/bindings.ts";
+import { agentTurnsSource } from "../analysis/bindings.ts";
 import type {
   BuiltinDomainView,
   ClosedRunDiagnosticsEntry,
@@ -49,7 +49,7 @@ import type {
   SlotId,
 } from "../analysis/contracts.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import type { AgentTurnsAttachment } from "../record/family/agent-turns/definition.ts";
 import type {
   FixedFamilyRead,
   ReadableAttempt,
@@ -73,7 +73,7 @@ interface SampleLifecycle {
   readonly inFlight: Set<AbortController>;
   readonly issueCaptures: Set<AnalysisIssueCaptureState>;
   readonly attempts: AttemptLazyCache;
-  readonly attachments: FixedFamilyLazyCache;
+  readonly attachments: RecordReadLazyCache;
   readonly costProjections: CostProjectionLazyCache;
   closed: boolean;
 }
@@ -151,12 +151,12 @@ type CachedAttemptRead =
 
 type AttemptCacheDeferred = Deferred.Deferred<CachedAttemptRead, SampleClosedError>;
 
-type CachedFixedFamilyRead<Payload> =
-  | { readonly state: "family"; readonly read: FixedFamilyRead<Payload> }
+type CachedRecordRead<Payload> =
+  | { readonly state: "result"; readonly read: FixedFamilyRead<Payload> }
   | { readonly state: "read-failed"; readonly message: string };
 
 type CacheDeferred = Deferred.Deferred<
-  CachedFixedFamilyRead<unknown>,
+  CachedRecordRead<unknown>,
   SampleClosedError
 >;
 
@@ -241,37 +241,40 @@ class AttemptLazyCache {
 
 /**
  * A Sample-local exact-once cache. Keys are the nominal owner capability and
- * the exact static descriptor object, not a family string or an input id.
+ * the exact static source key, not a family string or an input id. Reader-side
+ * assembled views use their own identity object and cannot masquerade as a
+ * durable descriptor.
  * Deferreds keep concurrent readers in one in-flight operation and retain all
- * fixed-family states plus Record read failures for the remainder of Scope.
+ * source states plus Record read failures for the remainder of Scope.
  */
-class FixedFamilyLazyCache {
+class RecordReadLazyCache {
   private readonly byOwner = new Map<SelectedOwnerRef, Map<object, CacheDeferred>>();
 
   read<
     Payload,
-    Family extends FixedFamilyBinding<FixedFamilyOwnerRequirement, Payload, any>,
+    Source extends RecordReadBinding<FixedFamilyOwnerRequirement, Payload>,
   >(input: {
     readonly sample: Sample;
     readonly lifecycle: SampleLifecycle;
     readonly reader: RecordReadSession;
+    readonly attempt: ReadableAttempt;
     readonly owner: SelectedOwnerRef;
-    readonly family: Family;
-  }): Effect.Effect<CachedFixedFamilyRead<Payload>, SampleClosedError> {
+    readonly source: Source;
+  }): Effect.Effect<CachedRecordRead<Payload>, SampleClosedError> {
     return Effect.uninterruptibleMask((restore) =>
       Effect.gen(this, function* () {
-        const fresh = yield* Deferred.make<CachedFixedFamilyRead<Payload>, SampleClosedError>();
+        const fresh = yield* Deferred.make<CachedRecordRead<Payload>, SampleClosedError>();
         const flight = yield* Effect.sync(() => {
           let descriptors = this.byOwner.get(input.owner);
           if (descriptors === undefined) {
             descriptors = new Map();
             this.byOwner.set(input.owner, descriptors);
           }
-          const pending = descriptors.get(input.family.descriptor);
+          const pending = descriptors.get(input.source.cacheKey);
           if (pending !== undefined) {
-            return { _tag: "Follower" as const, deferred: pending as Deferred.Deferred<CachedFixedFamilyRead<Payload>, SampleClosedError> };
+            return { _tag: "Follower" as const, deferred: pending as Deferred.Deferred<CachedRecordRead<Payload>, SampleClosedError> };
           }
-          descriptors.set(input.family.descriptor, fresh as CacheDeferred);
+          descriptors.set(input.source.cacheKey, fresh as CacheDeferred);
           return { _tag: "Leader" as const, deferred: fresh };
         });
         if (flight._tag === "Follower") return yield* restore(Deferred.await(flight.deferred));
@@ -281,11 +284,11 @@ class FixedFamilyLazyCache {
             Effect.flatMap(assertSampleOpen(input.sample), () =>
               Effect.catchAll(
                 Effect.map(
-                  input.family.read(input.reader, input.owner),
-                  (read): CachedFixedFamilyRead<Payload> =>
-                    Object.freeze({ state: "family" as const, read }),
+                  input.source.read(input.reader, input.attempt),
+                  (read): CachedRecordRead<Payload> =>
+                    Object.freeze({ state: "result" as const, read }),
                 ),
-                (error): Effect.Effect<CachedFixedFamilyRead<Payload>> => Effect.succeed(
+                (error): Effect.Effect<CachedRecordRead<Payload>> => Effect.succeed(
                   Object.freeze({
                     state: "read-failed" as const,
                     message: safeErrorMessage(error),
@@ -363,7 +366,7 @@ export function openSample(input: {
       inFlight: new Set(),
       issueCaptures: new Set(),
       attempts: new AttemptLazyCache(),
-      attachments: new FixedFamilyLazyCache(),
+      attachments: new RecordReadLazyCache(),
       costProjections: new CostProjectionLazyCache(),
     };
     const sample = bindSample({
@@ -590,16 +593,16 @@ export function readCostProjection(
 
 /**
  * Reads one statically published input through its immutable binding. There is
- * no input-id lookup: the descriptor carries its semantic id, owner contract,
- * fixed family descriptor/property tokens, and pure projector together.
+ * no input-id lookup: the binding carries its semantic id, owner contract,
+ * exact source identity, and pure projector together.
  */
 export function readPublishedInput<
   Value,
   Payload,
-  Family extends FixedFamilyBinding<FixedFamilyOwnerRequirement, Payload, any>,
+  Source extends RecordReadBinding<FixedFamilyOwnerRequirement, Payload>,
 >(
   sample: Sample,
-  input: PublishedAnalysisInputBinding<Value, Payload, Family>,
+  input: PublishedAnalysisInputBinding<Value, Payload, Source>,
   member: LogicalSlot,
 ): Effect.Effect<SampleInputObservation<Value>, SampleClosedError> {
   if (member.state === "not-recorded") return Effect.succeed(missingObservation(member));
@@ -611,14 +614,25 @@ export function readPublishedInput<
     const binding = sampleBindings.get(sample);
     if (binding === undefined) return yield* Effect.fail(sampleClosed(sample.snapshot.identity));
     const resolved = yield* resolveAttempt(sample, binding, included);
-    const cached = yield* readFixedFamily<Payload, Family>(
+    const cached = yield* readRecordSource<Payload, Source>(
       sample,
       binding,
       resolved.attempt,
-      input.family,
+      input.source,
     );
     if (cached.state === "read-failed") {
       return failedObservation(included, `Record read failed: ${cached.message}`);
+    }
+    if (cached.read.state === "not-recorded" && input.projectNotRecorded !== undefined) {
+      const projected = input.projectNotRecorded({
+        member: included,
+        core: resolved.core,
+      });
+      if (projected.state === "value") return valueObservation(projected.value, evidenceRefs(included));
+      if (projected.state === "migration-required") return migrationRequiredObservation(included, projected.message);
+      if (projected.state === "unsupported") return unsupportedObservation(included, projected.message);
+      if (projected.state === "failed") return failedObservation(included, projected.message);
+      return missingObservation(included, projected.message);
     }
     if (cached.read.state !== "available") {
       return observationFromFamily(included, cached.read, input.id);
@@ -645,10 +659,10 @@ export function readPublishedInput<
 export function readBuiltinDomainView<
   Kind extends BuiltinDomainViewKind,
   Payload,
-  Family extends FixedFamilyBinding<FixedFamilyOwnerRequirement, Payload, any>,
+  Source extends RecordReadBinding<FixedFamilyOwnerRequirement, Payload>,
 >(
   sample: Sample,
-  binding: BuiltinDomainViewBinding<Kind, Payload, Family>,
+  binding: BuiltinDomainViewBinding<Kind, Payload, Source>,
   locator?: AttemptLocator,
 ): Effect.Effect<BuiltinDomainView<Kind>, SampleClosedError> {
   return Effect.gen(function* () {
@@ -715,40 +729,40 @@ export function readRunDiagnosticsDomainView(
           state: runRead.right.state === "missing" ? "not-recorded" as const : "invalid" as const,
         });
       } else {
-        const observability = yield* Effect.either(
-          binding.reader.readRunObservability(runRead.right.value.owner),
+        const diagnostics = yield* Effect.either(
+          binding.reader.readRunRunnerDiagnostics(runRead.right.value.owner),
         );
-        if (Either.isLeft(observability)) {
+        if (Either.isLeft(diagnostics)) {
           entry = Object.freeze({
             runId,
             experimentId,
             state: "failed" as const,
-            detail: `Record read failed: ${safeErrorMessage(observability.left)}`,
+            detail: `Record read failed: ${safeErrorMessage(diagnostics.left)}`,
           });
-        } else if (observability.right.state !== "available") {
+        } else if (diagnostics.right.state !== "available") {
           entry = Object.freeze({
             runId,
             experimentId,
-            state: observability.right.state === "not-recorded"
+            state: diagnostics.right.state === "not-recorded"
               ? "not-recorded" as const
-              : observability.right.state === "migration-required"
+              : diagnostics.right.state === "migration-required"
                 ? "migration-required" as const
-                : observability.right.state === "unsupported"
+                : diagnostics.right.state === "unsupported"
                   ? "unsupported" as const
                   : "invalid" as const,
           });
         } else {
-          const diagnostics = observability.right.value.diagnostics;
           entry = Object.freeze({
             runId,
             experimentId,
             state: "available" as const,
             detail: Object.freeze({
+              dependencies: Object.freeze(["niceeval.runner-diagnostics"] as const),
               collection: Object.freeze({
-                state: diagnostics.collection.state,
-                limitations: Object.freeze([...diagnostics.collection.limitations]),
+                state: diagnostics.right.value.collection.state,
+                limitations: Object.freeze([...diagnostics.right.value.collection.limitations]),
               }),
-              diagnostics: Object.freeze(diagnostics.diagnostics.map((diagnostic) => Object.freeze({
+              diagnostics: Object.freeze(diagnostics.right.value.segments.map((diagnostic) => Object.freeze({
                 diagnosticId: String(diagnostic.diagnosticId),
                 kind: diagnostic.kind,
                 code: String(diagnostic.code),
@@ -836,23 +850,24 @@ function resolveAttempt(
   );
 }
 
-function readFixedFamily<
+function readRecordSource<
   Payload,
-  Family extends FixedFamilyBinding<FixedFamilyOwnerRequirement, Payload, any>,
+  Source extends RecordReadBinding<FixedFamilyOwnerRequirement, Payload>,
 >(
   sample: Sample,
   binding: SampleBinding,
   attempt: ReadableAttempt,
-  family: Family,
-): Effect.Effect<CachedFixedFamilyRead<Payload>, SampleClosedError> {
-  const owner = family.owner === "attempt" ? attempt.owner : attempt.origin.owner;
+  source: Source,
+): Effect.Effect<CachedRecordRead<Payload>, SampleClosedError> {
+  const owner = source.owner === "attempt" ? attempt.owner : attempt.origin.owner;
   return Effect.flatMap(
-    binding.lifecycle.attachments.read<Payload, Family>({
+    binding.lifecycle.attachments.read<Payload, Source>({
       sample,
       lifecycle: binding.lifecycle,
       reader: binding.reader,
+      attempt,
       owner,
-      family,
+      source,
     }),
     (cached) => Effect.as(assertSampleOpen(sample), cached),
   );
@@ -874,14 +889,14 @@ function readCostSlot(
   const refs = Object.freeze([evidenceRef(included.attempt)]);
   const operation = Effect.gen(function* () {
     const resolved = yield* resolveAttempt(sample, binding, included);
-    const cached = yield* readFixedFamily<
-      AttemptObservabilityAttachment,
-      typeof attemptObservabilityFamily
+    const cached = yield* readRecordSource<
+      AgentTurnsAttachment,
+      typeof agentTurnsSource
     >(
       sample,
       binding,
       resolved.attempt,
-      attemptObservabilityFamily,
+      agentTurnsSource,
     );
     if (cached.state === "read-failed") {
       return unavailableCostSlot(included, "usage-unavailable", refs);
@@ -891,7 +906,10 @@ function readCostSlot(
         return projectCostUsage({
           member: included,
           core: resolved.core,
-          usage: cached.read.value.usage,
+          usage: Object.freeze({
+            collection: cached.read.value.collection,
+            observations: Object.freeze(cached.read.value.segments.flatMap((segment) => segment.usage)),
+          }),
           profile,
           refs,
         });
@@ -921,12 +939,12 @@ function readCostSlot(
 function readDomainEntry<
   Kind extends BuiltinDomainViewKind,
   Payload,
-  Family extends FixedFamilyBinding<FixedFamilyOwnerRequirement, Payload, any>,
+  Source extends RecordReadBinding<FixedFamilyOwnerRequirement, Payload>,
 >(
   sample: Sample,
   binding: SampleBinding,
   slot: IncludedAnalysisSlot,
-  domain: BuiltinDomainViewBinding<Kind, Payload, Family>,
+  domain: BuiltinDomainViewBinding<Kind, Payload, Source>,
 ): Effect.Effect<
   { readonly value: ClosedDomainEntry<Kind>; readonly issues: readonly AnalysisIssue[] },
   SampleClosedError
@@ -934,7 +952,7 @@ function readDomainEntry<
   const operation = Effect.gen(function* () {
     const run = analysisRunForSlot(sample.snapshot, slot);
     const resolved = yield* resolveAttempt(sample, binding, logicalSlotFromIncluded(slot, run));
-    const cached = yield* readFixedFamily<Payload, Family>(sample, binding, resolved.attempt, domain.family);
+    const cached = yield* readRecordSource<Payload, Source>(sample, binding, resolved.attempt, domain.source);
     if (cached.state === "read-failed") {
       return domainFailure<Kind>(
         slot.attempt,
