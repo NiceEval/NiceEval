@@ -1193,7 +1193,8 @@ class Admission:
                 return {"hit": hit, "locator": locator}
             if kind == "lease.create":
                 if not self.state["admissionOpen"]:
-                    raise ProtocolError("admission-closed", "profile recovery has not converged")
+                    degraded = "; ".join(str(reason) for reason in self.state["degraded"])
+                    raise ProtocolError("admission-closed", degraded or "profile recovery has not converged")
                 if request.get("profileId") != self.profile_id or request.get("daemonGeneration") != self.state["generation"]:
                     raise ProtocolError("attestation-changed", "profile or daemon generation changed")
                 invocation_id = str(request.get("invocationId", ""))
