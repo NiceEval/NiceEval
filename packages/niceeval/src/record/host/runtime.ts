@@ -702,6 +702,31 @@ function sameOrderedStrings(left: readonly string[], right: readonly string[]): 
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function validateOrdinaryRunRootShape(
+  storage: RunStorageView,
+  manifest: SealManifestPublicationDocument,
+): Effect.Effect<boolean, RecordFileSystemError> {
+  return Effect.gen(function* () {
+    if ((yield* storage.pathKind([])) !== "directory") return false;
+    const expected = new Map<string, "file" | "directory">([
+      ["complete", "file"],
+      ["seal-manifest.json", "file"],
+    ]);
+    for (const entry of manifest.entries) {
+      const [head, ...tail] = entry.path.split("/");
+      const kind = tail.length === 0 ? "file" as const : "directory" as const;
+      const previous = expected.get(head!);
+      if (previous !== undefined && previous !== kind) return false;
+      expected.set(head!, kind);
+    }
+    const entries = orderedEntries(yield* storage.listDirectory([]));
+    if (entries.length !== expected.size) return false;
+    return entries.every((entry) =>
+      expected.get(entry.name) === entry.kind && isPortableSegment(entry.name)
+    );
+  });
+}
+
 function validateRunPublication(input: {
   readonly storage: RunStorageView;
   readonly runId: RunId;
@@ -733,17 +758,21 @@ function validateRunPublication(input: {
     if (strictDecoded !== undefined && Either.isLeft(strictDecoded)) return undefined;
     const strictManifest = strictDecoded === undefined ? undefined : strictDecoded.right;
 
-    const shape = yield* scanRunStorageShape(input.storage);
-    if (shape === undefined) return undefined;
-    const expectedFiles = [
-      ...manifest.entries.map((entry) => entry.path),
-      "complete",
-      "seal-manifest.json",
-    ].sort(compareCanonicalIdentity);
-    if (
-      !sameOrderedStrings(shape.files, expectedFiles) ||
-      !sameOrderedStrings(shape.directories, expectedInventoryDirectories(expectedFiles))
-    ) return undefined;
+    if (input.fullAttachmentHashes) {
+      const shape = yield* scanRunStorageShape(input.storage);
+      if (shape === undefined) return undefined;
+      const expectedFiles = [
+        ...manifest.entries.map((entry) => entry.path),
+        "complete",
+        "seal-manifest.json",
+      ].sort(compareCanonicalIdentity);
+      if (
+        !sameOrderedStrings(shape.files, expectedFiles) ||
+        !sameOrderedStrings(shape.directories, expectedInventoryDirectories(expectedFiles))
+      ) return undefined;
+    } else if (!(yield* validateOrdinaryRunRootShape(input.storage, manifest))) {
+      return undefined;
+    }
 
     for (const entry of manifest.entries) {
       if (!input.fullAttachmentHashes && entry.kind !== "core") continue;
@@ -902,6 +931,20 @@ function readRunAttempts(
       if (entry.kind !== "directory") return undefined;
       const attemptId = decodeAttemptId(entry.name);
       if (attemptId === undefined) return undefined;
+      const attemptEntries = orderedEntries(yield* fileSystem.listDirectory({
+        directory: runPath(root, runId, "attempts", attemptId),
+        maximumEntries: 3,
+      }));
+      const attemptEntriesByName = new Map(
+        attemptEntries.map((attemptEntry) => [attemptEntry.name, attemptEntry] as const),
+      );
+      if (
+        attemptEntriesByName.size !== attemptEntries.length ||
+        attemptEntriesByName.get("attempt.json")?.kind !== "file" ||
+        (attemptEntriesByName.size === 2 &&
+          attemptEntriesByName.get("attachments")?.kind !== "directory") ||
+        (attemptEntriesByName.size !== 1 && attemptEntriesByName.size !== 2)
+      ) return undefined;
       const document = yield* readAttemptDocument(fileSystem, root, {
         originRunId: runId,
         attemptId,
@@ -941,6 +984,10 @@ function maintenanceReaderRuntime(root: RecordRoot, record: RecordDocument): Rea
 function loadSealedCoreSnapshot(
   runtime: ReaderRuntime,
   fileSystem: RecordFileSystemService,
+  options: {
+    readonly fullAttachmentHashes?: boolean;
+    readonly strictSources?: boolean;
+  } = {},
 ): Effect.Effect<SealedCoreSnapshot, RecordFileSystemError> {
   return Effect.gen(function* () {
     const entries = orderedEntries(yield* fileSystem.listDirectory({
@@ -962,6 +1009,8 @@ function loadSealedCoreSnapshot(
         fileSystem,
         runtime.root,
         runId,
+        options.fullAttachmentHashes ?? false,
+        options.strictSources ?? false,
       );
       // A valid zero-byte completion marker declares this Run published. Once
       // declared, malformed Core/manifest/inventory cannot be reinterpreted as
@@ -977,6 +1026,17 @@ function loadSealedCoreSnapshot(
         ? undefined
         : yield* readRunAttempts(fileSystem, runtime.root, runId);
       if (run === undefined || members === undefined || attempts === undefined) {
+        return Object.freeze({ state: "core-invalid" as const, issues: coreInvalid().issues });
+      }
+      const corePaths = publication.manifest.entries
+        .filter((entry) => entry.kind === "core")
+        .map((entry) => entry.path);
+      const expectedCorePaths = [
+        "run.json",
+        ...members.map((member) => `members/${member.slotId}.json`),
+        ...attempts.map((attempt) => `attempts/${attempt.attemptId}/attempt.json`),
+      ].sort(compareCanonicalIdentity);
+      if (!sameOrderedStrings(corePaths, expectedCorePaths)) {
         return Object.freeze({ state: "core-invalid" as const, issues: coreInvalid().issues });
       }
       runtime.manifestsByRunId.set(runId, publication.manifest);
@@ -1283,7 +1343,11 @@ function sourceManifestMatchesPayload(input: {
 
 type AttachmentManifestGate =
   | { readonly state: "not-recorded" }
-  | { readonly state: "valid"; readonly manifest: SealManifestPublicationDocument }
+  | {
+      readonly state: "valid";
+      readonly manifest: SealManifestPublicationDocument;
+      readonly entries: readonly SealManifestEntry[];
+    }
   | { readonly state: "invalid" };
 
 function validateAttachmentManifestGate(input: {
@@ -1297,7 +1361,22 @@ function validateAttachmentManifestGate(input: {
   if (manifest === undefined) return Effect.succeed(Object.freeze({ state: "invalid" as const }));
   const entries = attachmentManifestEntries(manifest, input.owner, input.family);
   if (entries.length === 0) {
-    return Effect.succeed(Object.freeze({ state: "not-recorded" as const }));
+    const attachment = input.owner.kind === "run"
+      ? runPath(input.runtime.root, runId, "attachments", input.family)
+      : runPath(
+          input.runtime.root,
+          runId,
+          "attempts",
+          input.owner.ref.attemptId,
+          "attachments",
+          input.family,
+        );
+    return Effect.map(
+      input.fileSystem.pathKind(attachment),
+      (kind): AttachmentManifestGate => kind === "missing"
+        ? Object.freeze({ state: "not-recorded" as const })
+        : Object.freeze({ state: "invalid" as const }),
+    );
   }
   return Effect.map(
     validateManifestEntryBytes({
@@ -1307,12 +1386,16 @@ function validateAttachmentManifestGate(input: {
       entries,
     }),
     (valid): AttachmentManifestGate => valid
-      ? Object.freeze({ state: "valid" as const, manifest })
+      ? Object.freeze({ state: "valid" as const, manifest, entries })
       : Object.freeze({ state: "invalid" as const }),
   );
 }
 
 function invalidFixedFamilyRead<Payload>(): FixedFamilyRead<Payload> {
+  return Object.freeze({ state: "invalid" as const, issues: coreInvalid().issues });
+}
+
+function invalidFixedAttachmentRead<Payload>(): FixedRecordAttachmentRead<Payload> {
   return Object.freeze({ state: "invalid" as const, issues: coreInvalid().issues });
 }
 
@@ -1349,6 +1432,7 @@ function readFixedFamily<
             root: input.runtime.root,
             location: Object.freeze({ owner: "run" as const, runId: owner.runId }),
             descriptor: input.descriptor as FixedRecordFamilyDescriptor<Family, "run", Payload>,
+            expectedManifestEntries: gate.entries,
           })
         : readFixedRecordAttachment({
             fileSystem: input.fileSystem,
@@ -1359,6 +1443,7 @@ function readFixedFamily<
               attemptId: owner.ref.attemptId,
             }),
             descriptor: input.descriptor as FixedRecordFamilyDescriptor<Family, "attempt", Payload>,
+            expectedManifestEntries: gate.entries,
           });
 
       return read.pipe(Effect.flatMap((value): Effect.Effect<FixedFamilyRead<Payload>, RecordFileSystemError> => {
@@ -1385,6 +1470,7 @@ function readFixedFamily<
           ...(owner.kind === "attempt" ? { attemptId: owner.ref.attemptId } : {}),
           descriptor: input.descriptor as FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>,
           payload: value.value,
+          manifest: gate.manifest,
         }).pipe(Effect.map((join): FixedFamilyRead<Payload> =>
           join.state === "joined"
             ? value
@@ -1432,21 +1518,57 @@ function dependentFamilyJoin(read: FixedRecordAttachmentRead<unknown>): FixedCro
   return invalidCrossFamily;
 }
 
+function readSourcesForCrossFamilyJoin(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly runId: RunId;
+  readonly manifest?: SealManifestPublicationDocument;
+}): Effect.Effect<FixedRecordAttachmentRead<SourcesAttachment>, RecordFileSystemError> {
+  const location = Object.freeze({ owner: "run" as const, runId: input.runId });
+  if (input.manifest === undefined) {
+    return readFixedRecordAttachment({
+      fileSystem: input.fileSystem,
+      root: input.root,
+      location,
+      descriptor: NiceEvalRecordFamilyCatalog.sources,
+    });
+  }
+  const owner = Object.freeze({ kind: "run" as const, runId: input.runId });
+  const entries = attachmentManifestEntries(
+    input.manifest,
+    owner,
+    NiceEvalRecordFamilyCatalog.sources.family,
+  );
+  if (entries.length === 0) {
+    return Effect.succeed(invalidFixedAttachmentRead<SourcesAttachment>());
+  }
+  return Effect.flatMap(validateManifestEntryBytes({
+    fileSystem: input.fileSystem,
+    root: input.root,
+    runId: input.runId,
+    entries,
+  }), (valid) => valid
+    ? readFixedRecordAttachment({
+        fileSystem: input.fileSystem,
+        root: input.root,
+        location,
+        descriptor: NiceEvalRecordFamilyCatalog.sources,
+        expectedManifestEntries: entries,
+      })
+    : Effect.succeed(invalidFixedAttachmentRead<SourcesAttachment>()));
+}
+
 /** Common cross-family closure boundary used by both reader and writer seal. */
 function validateRunnerDiagnosticsSourceFrameJoin(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
   readonly runId: RunId;
   readonly payload: RunnerDiagnosticsAttachment;
+  readonly manifest?: SealManifestPublicationDocument;
 }): Effect.Effect<FixedCrossFamilyJoin, RecordFileSystemError> {
   return Effect.gen(function* () {
     if (!hasSourceFrames(input.payload)) return joinedCrossFamily;
-    const sources = yield* readFixedRecordAttachment({
-      fileSystem: input.fileSystem,
-      root: input.root,
-      location: Object.freeze({ owner: "run" as const, runId: input.runId }),
-      descriptor: NiceEvalRecordFamilyCatalog.sources,
-    });
+    const sources = yield* readSourcesForCrossFamilyJoin(input);
     if (sources.state !== "available") return dependentFamilyJoin(sources);
     return runnerDiagnosticsSourceFrameIntegrityIssues(
       input.payload,
@@ -1467,6 +1589,7 @@ function validateFixedCrossFamilyJoin(input: {
   readonly attemptId?: AttemptId;
   readonly descriptor: FixedRecordFamilyDescriptor<NiceEvalFamily, RecordAttachmentOwner, unknown>;
   readonly payload: unknown;
+  readonly manifest?: SealManifestPublicationDocument;
 }): Effect.Effect<FixedCrossFamilyJoin, RecordFileSystemError> {
   if (isRunnerDiagnosticsDescriptor(input.descriptor)) {
     return validateRunnerDiagnosticsSourceFrameJoin({
@@ -1474,18 +1597,14 @@ function validateFixedCrossFamilyJoin(input: {
       root: input.root,
       runId: input.runId,
       payload: input.payload as RunnerDiagnosticsAttachment,
+      ...(input.manifest === undefined ? {} : { manifest: input.manifest }),
     });
   }
   if (isAssertionsDescriptor(input.descriptor)) {
     const payload = input.payload as AssertionsAttachment;
     if (payload.sourceSites.length === 0) return Effect.succeed(joinedCrossFamily);
     return Effect.gen(function* () {
-      const sources = yield* readFixedRecordAttachment({
-        fileSystem: input.fileSystem,
-        root: input.root,
-        location: Object.freeze({ owner: "run" as const, runId: input.runId }),
-        descriptor: NiceEvalRecordFamilyCatalog.sources,
-      });
+      const sources = yield* readSourcesForCrossFamilyJoin(input);
       if (sources.state !== "available") return dependentFamilyJoin(sources);
       return assertionsSourceSiteIntegrityIssues(payload, sources.value as SourcesAttachment).length === 0
         ? joinedCrossFamily
@@ -1912,6 +2031,7 @@ function validateRecoveredPublication(input: {
       const snapshot = yield* loadSealedCoreSnapshot(
         maintenanceReaderRuntime(input.root, input.record),
         input.fileSystem,
+        { fullAttachmentHashes: true, strictSources: true },
       );
       if (snapshot.state !== "available") return undefined;
       const existing = [...snapshot.byRunId.values()]
@@ -4285,7 +4405,10 @@ function validateSealedCoreForMigration(
   record: RecordDocument,
 ): Effect.Effect<void, RecordMaintenanceError> {
   return Effect.flatMap(
-    loadSealedCoreSnapshot(maintenanceReaderRuntime(root, record), fileSystem),
+    loadSealedCoreSnapshot(maintenanceReaderRuntime(root, record), fileSystem, {
+      fullAttachmentHashes: true,
+      strictSources: true,
+    }),
     (snapshot) => snapshot.state === "available"
       ? Effect.void
       : Effect.fail(migrationInvalid("niceeval.core")),
