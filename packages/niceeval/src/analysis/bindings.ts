@@ -415,15 +415,10 @@ export const publishedAnalysisInputBindings = Object.freeze({
   attemptTokens: Object.freeze({
     id: "niceeval.attempt-input-output-tokens",
     source: agentTurnsSource,
-    projectNotRecorded: ({ core }: {
+    projectNotRecorded: (_input: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
-    }): InputProjection<number> => core.outcome === "completed"
-      ? Object.freeze({ state: "value" as const, value: 0 })
-      : Object.freeze({
-        state: "missing" as const,
-        message: "agent turns were not recorded for an Attempt without a completed outcome",
-      }),
+    }): InputProjection<number> => Object.freeze({ state: "value" as const, value: 0 }),
     project: ({ payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;

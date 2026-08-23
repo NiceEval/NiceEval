@@ -90,12 +90,12 @@ export function unavailableCostSlot(
 }
 
 /**
- * @internal Closes a zero-cost Slot from a completed Core and source absence.
+ * @internal Closes a zero-cost Slot from Core and Agent Turns source absence.
  * No provider coordinate, Usage observation, or Agent Turn receipt is
- * invented: an Attempt that completed before any send has no chargeable
- * coordinate, while the completed Core proves the logical total is zero.
+ * invented: no Agent Turns receipt means no physical send started, so the
+ * attempt has no chargeable coordinate regardless of its terminal outcome.
  */
-export function completedZeroCostSlot(
+export function noTurnZeroCostSlot(
   member: LogicalSlot,
   refs: readonly EvidenceRef[] = [],
 ): CostSlotProjection {
