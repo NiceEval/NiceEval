@@ -54,7 +54,7 @@ automatic-safe 的固定 chain，CLI 先释放检查 scope，再取得 exclusive
 复核 Git HEAD、Record identity、portable inventory、source bytes 与 migration identity。成功后释放 maintenance
 并重新打开。未知/future family、无完整 chain 或任何安全门失败都返回 typed error，不进入 Analysis 或 Report。
 
-读到 `available` 后，payload 已 deep-freeze，blob closure 已验证并 materialize。Analysis 与 Report
+读到 `available` 后，payload 已 deep-freeze，blob closure 已验证并载入内存。Analysis 与 Report
 不会再次打开 storage。形成 value 前的 I/O 或 permission failure 仍是 typed read failure，不会伪装成
 空数据。
 

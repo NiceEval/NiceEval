@@ -255,7 +255,8 @@ main push、schedule、release 验收和显式 full dispatch 固定传 `--no-dif
 
 候选包的以下输入变化执行整条 lane：
 
-- `packages/niceeval/bin/**`、`packages/niceeval/scripts/package-runtime/**`、`scripts/generate-reference.ts`、`INDEX.md` 与 `INDEX.template.md`；
+- `packages/niceeval/bin/**` 与 `packages/niceeval/scripts/package-runtime/**`；
+- `packages/repo-tools/src/docs/reference-compiler.ts`、`INDEX.md` 与 `INDEX.template.md`；
 - `apps/docs-site/zh/**`、`apps/docs-site/images/**` 与 `dist/**`；
 - root `.npmrc`、`.npmignore`、`.gitignore`、自动纳入文件、pnpm 配置、package metadata 与 root tsconfig。
 

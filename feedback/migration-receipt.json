@@ -1,0 +1,620 @@
+{
+  "format": "niceeval.frog-migration/v1",
+  "sourceRoot": ".agents/friction-log",
+  "expectedCount": 34,
+  "migratedCount": 34,
+  "entries": [
+    {
+      "legacyId": "20260806205427-deepseek-v4-flash",
+      "legacyPath": ".agents/friction-log/20260806205427-deepseek-v4-flash/friction.md",
+      "feedbackId": "20260806205427-deepseek-v4-flash",
+      "originalTime": "20260806205427",
+      "severity": "minor",
+      "body": "---\ntitle: 'DeepSeek V4 Flash 的 #low/#max 预设无法启动'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\nAGENTS.md 中的 `flash-low-researcher` 与 `flash-max-worker` 预设可以直接启动，并固定对应 effort。\n\n## Current Behavior\n\n使用 `opencode-go/deepseek-v4-flash#low` 或 `opencode-go/deepseek-v4-flash#max` 时，OpenCode 因模型变体无法解析而退出，worker 没有进入可提示状态。只有裸模型 `opencode-go/deepseek-v4-flash` 能启动，因此绕行会失去 low/max 档位固定。\n\n## Possible Solution\n\n校准 provider 实际支持的模型引用，或更新两个预设与就绪检查，让无效变体在创建 worker 前给出明确错误。\n\n## Minimal Reproducible Example\n\n```sh\nherdr agent start audit --kind opencode --pane PANE_ID --timeout 120000 -- \\\n  --mini --model opencode-go/deepseek-v4-flash#low --auto\n```\n\n把 `#low` 改成 `#max` 结果相同。\n\n## Context\n\n父 agent 必须识别失败 pane、读取现场、关闭 pane，再用裸模型重启。该问题在同一任务中用 low 与 max 各复现一次。\n",
+      "bodySha256": "5057a9a4359d4683a3f44a5410e60cf5523b950077f9f4cca5be15516bd96202",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260807120930-opencode-interactive-worker",
+      "legacyPath": ".agents/friction-log/20260807120930-opencode-interactive-worker/friction.md",
+      "feedbackId": "20260807120930-opencode-interactive-worker",
+      "originalTime": "20260807120930",
+      "severity": "minor",
+      "body": "---\ntitle: 'OpenCode interactive worker 的 READY 与 idle 状态无法可靠续传 prompt'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\nHerdr 按 flash-max-worker 预设启动 OpenCode run --interactive 后，可以先收到 READY，再通过 herdr agent prompt 下发完整任务；idle 状态与 prompt 的停止指令应准确生效。\n\n## Current Behavior\n\n初始消息只要求回复 READY 时，OpenCode 回复后立即退出，下一条 herdr agent prompt 返回 agent_not_found。改为把完整任务放进初始消息后，Herdr 长期显示 idle，但 worker 仍在连续执行；父 agent 连续两次要求停止写入并只交接，worker 仍继续创建和修改临时校验文件，最终只能发送 Ctrl-C。\n\n## Possible Solution\n\n让 run --interactive 在完成首轮后保持可提示会话；Herdr 的 OpenCode 检测应区分模型采样、等待输入与退出，并让 prompt/中断在消息边界可靠生效。\n\n## Minimal Reproducible Example\n\n1. herdr agent start audit --kind opencode --pane PANE -- run --interactive --model opencode-go/deepseek-v4-flash --variant max --auto 只回复READY\n2. herdr agent prompt audit 完整任务\n3. 观察 agent_not_found；若首条消息直接给完整任务，则观察 agent_status=idle 与实际持续执行不一致。\n\n## Context\n\n本轮为了取得交接，父 agent 需要重启会话；worker 无视停止指令后又必须用 herdr agent send-keys C-c 强制中止，并手工删除它创建的临时配置与空目录。\n",
+      "bodySha256": "fbf40cd7e31666645195a149c04dff2992daf4dc4a201506835dd3376cefc42c",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260808192533-docker-镜像工作流自身更新触发六个伪发布-job",
+      "legacyPath": ".agents/friction-log/20260808192533-docker-镜像工作流自身更新触发六个伪发布-job/friction.md",
+      "feedbackId": "20260808192533-docker-镜像工作流自身更新触发六个伪发布-job",
+      "originalTime": "20260808192533",
+      "severity": "minor",
+      "body": "---\ntitle: 'Docker 镜像工作流自身更新触发六个伪发布 job'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n只有 Docker 基线配方或对应 Agent 版本发生变化时，镜像发布工作流才启动；仅升级 GitHub Action 的版本不应制造看起来像六个发布的 job。\n\n## Current Behavior\n\n`.github/workflows/docker-image.yml` 把自身列在 `push.paths`。因此提交 `2406801c` 仅将 `actions/checkout` 和 `actions/setup-node` 从 v4 升为 v6，仍触发全部六个 `Publish niceeval/*` matrix job。tag gate 正确发现现有 tag（HTTP 200）并跳过登录、构建和 `push: true`，但 GitHub UI 只显示成功的 Publish job，容易误判为自动发版。\n\n## Possible Solution\n\n缩小触发路径至实际影响镜像内容和版本的文件，或将 workflow 自身改动走显式 `workflow_dispatch` / 独立验证路径；同时把 gate 后的 job/step 命名改成能明确显示“已跳过、未推送”。\n\n## Minimal Reproducible Example\n\n1. 修改并推送 `.github/workflows/docker-image.yml` 中与镜像内容无关的 Action 版本。\n2. 查看 Publish Docker image run：六个 matrix job 启动。\n3. 查看任一 job：`Decide whether to publish` 输出 `<image>:<version> 已发布，跳过`，且 `Build and push multi-platform image` 为 skipped。\n\n## Context\n\n2026-08-08 的 run `31254622038` 由 `2406801c` 触发；六个镜像均未实际推送。\n",
+      "bodySha256": "aee3a2e7328f1ed5c365f2202f9a1773e796060d62276765c9c1c06f5e4b2686",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260809100703-show-隐藏-accept",
+      "legacyPath": ".agents/friction-log/20260809100703-show-隐藏-accept/friction.md",
+      "feedbackId": "20260809100703-show-隐藏-accept",
+      "originalTime": "20260809100703",
+      "severity": "minor",
+      "body": "---\ntitle: 'show 隐藏 accept 新条目与 acceptedFrom 审计'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n执行 `niceeval accept @<old-locator>` 后，公开的 `niceeval show --history` 或 `niceeval show @<new-locator>` 能显示新条目的 `acceptedFrom`：旧 locator、旧/新 fingerprint 与差异摘要，用户无需改用库 API 才能审计人工接受。\n\n## Current Behavior\n\naccept 成功创建新 locator，后续 dry/exp 也会 carry；`niceeval/record` 的 `openRecord()` + `resolveLocator()` 能读到完整 `acceptedFrom`。但 `show --history` 以 `experimentId|evalId|attempt|startedAt` 去重，accept 新条目复制来源 `startedAt` 后与旧条目碰撞，新条目整行消失；`show @<new-locator>` 的 attempt 视图也不投影 `acceptedFrom`。\n\n## Possible Solution\n\n让 history 身份保留 accept 产生的新 locator，或在去重时合并/展示 provenance；同时在 locator attempt task Result 中公开 `acceptedFrom`，使 text/JSON 两面都能审计人工重锚。\n\n## Minimal Reproducible Example\n\n在一个 Eval 完整跑出 passed 结果后修改其源码，运行 `niceeval accept @<old-locator>`。随后：\n1. `niceeval show <eval-id> --history --json` 只含旧 locator；\n2. `niceeval show @<new-locator> --json` 的 data 不含 `acceptedFrom`；\n3. 同一 results root 用 `niceeval/record` 解码新 locator，`result.acceptedFrom` 完整存在。\n\n对应稳定复现 Journey：`e2e/runner/test/accept-reanchor.test.ts`。\n\n## Context\n\n重构 Runner accept/dry E2E 时，为保留审计断言只能从 show 切到公开 Record API。测试仍覆盖产品数据，但 CLI 用户的事后诊断链不完整。\n",
+      "bodySha256": "34618f73d10a5d345b892848a9d7eba9ce85ae978e0a299686b8feadb98bca6b",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260809124939-experiment-官方视图没有统一的人读短名投影",
+      "legacyPath": ".agents/friction-log/20260809124939-experiment-官方视图没有统一的人读短名投影/friction.md",
+      "feedbackId": "20260809124939-experiment-官方视图没有统一的人读短名投影",
+      "originalTime": "20260809124939",
+      "severity": "minor",
+      "body": "---\ntitle: 'Experiment 官方视图没有统一的人读短名投影'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\nExperiment 应允许作者声明与稳定 `experimentId` 分离的人读短名；官方 `ExperimentScatter`、`ExperimentTable` 和下钻标题应统一显示短名，同时继续用完整 id 做身份键与链接参数。\n\n## Current Behavior\n\n`ExperimentAuthorFields` 只有 `description` 与报告归类用 `labels`，没有统一 `shortName` / display label 契约。MemoryBench 只能在 `reports/components/leaderboard.tsx` 里用 `labels.line + flags.memory` 手写 `codex+nowledge` 等短名；官方 `ExperimentScatter` 的 `experiment` 分组函数仍直接返回 `subject.experimentId`，并以 `point=\"experiment\"` 显示完整 id。`ExperimentTable` 同样只把 `experimentId` 作为主名称。因此同一页榜单是短名，散点和表格是长 id。\n\n## Possible Solution\n\n先定稿身份键与展示标签分离的公共契约：可以是 Experiment 自身的人读字段，也可以是官方可复用的 display projection，但必须由 `ExperimentScatter`、`ExperimentTable`、详情标题与自定义报告共同消费，不能要求每个下游复制字符串拼接。\n\n## Minimal Reproducible Example\n\n1. 在 MemoryBench 打开报告页。\n2. 对比榜单中的 `codex+nowledge` 与散点中的 `codex-gpt-5.6-luna--nowledge`。\n3. 代码证据：`reports/components/leaderboard.tsx` 手写 `displayName()`；`src/report/model/calculation.ts` 的 `experiment` 返回完整 id；`src/report/components/summaries/index.tsx` 固定 `point=\"experiment\"`；`src/report/components/entity-lists/compute.ts` 仅输出 `experimentId`。\n\n## Context\n\nMemoryBench commit `4f39607` 在 2026-07-25 明确加入了“人读短名”，但范围只在排行榜。commit `f309011` 在 2026-07-29 切换官方 Experiment 视图后没有补统一展示名契约。当前 GitHub issue / PR 与既有 Frog 均未跟踪此缺口。\n",
+      "bodySha256": "eb2c9a6046f46949e63283853033a9abd0c8ca068c000f377dc290071f1ca28d",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260809162035-只读-herdr-codex",
+      "legacyPath": ".agents/friction-log/20260809162035-只读-herdr-codex/friction.md",
+      "feedbackId": "20260809162035-只读-herdr-codex",
+      "originalTime": "20260809162035",
+      "severity": "minor",
+      "body": "---\ntitle: '只读 Herdr Codex worker 无法发送完成通知'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n以 `-s read-only -a never` 启动的 Herdr Codex worker 完成只读研究后，可以按父任务约定执行一次 `herdr agent prompt <parent-pane-id> <message>`，只向父 pane 发送完成通知。\n\n## Current Behavior\n\n四个独立的 `gpt-5.6-sol` read-only worker 都完成研究，但执行完成通知时返回 `Operation not permitted`。研究本身正常，父 agent 只能靠轮询发现完成。\n\n## Possible Solution\n\n将向已存在父 agent 发送一条 prompt 视为只读 worker 的受限调度能力，或由 Herdr 提供不要求文件系统写权限的专用 completion signal。\n\n## Minimal Reproducible Example\n\n1. 在 Herdr pane 中执行 `herdr agent start child --kind codex --pane <child-pane> -- -m gpt-5.6-sol -c model_reasoning_effort=max -s read-only -a never`。\n2. 向 child 下发只读任务，并要求结束前执行一次 `herdr agent prompt <parent-pane-id> \"[WORKER_READY_FOR_ACCEPTANCE] ...\"`。\n3. worker 完成后该命令返回 `Error: Os { code: 1, kind: PermissionDenied, message: \"Operation not permitted\" }`。\n\n## Context\n\n本次并行研究要求 worker 主动提醒父 agent 开始 wait/get/read/验收。四个 worker 的通知都失败，增加了遗漏回收义务的风险。\n",
+      "bodySha256": "ff2b53e43014645877088aa737eccc2beacebb5d5d715e844abe19937a8319a0",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260809164436-codex-速率选择器会吞掉-herdr",
+      "legacyPath": ".agents/friction-log/20260809164436-codex-速率选择器会吞掉-herdr/friction.md",
+      "feedbackId": "20260809164436-codex-速率选择器会吞掉-herdr",
+      "originalTime": "20260809164436",
+      "severity": "minor",
+      "body": "---\ntitle: 'Codex 速率选择器会吞掉 Herdr agent prompt 并静默切换模型'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\nHerdr 对已经停稳的 Codex worker 调用 `herdr agent prompt <worker> <task>` 时，新任务应原子提交给 agent；若终端被速率提示或其它选择器占用，应返回明确错误，且固定模型的 worker 不应被静默改成另一模型。\n\n## Current Behavior\n\n`gpt-5.6-sol` design_grill 完成一轮后停在 Codex 的速率提示选择器。父 agent 调用 `herdr agent prompt` 返回成功，但文本没有成为新任务；选择器反而选中推荐项，把 pane 切换为 `gpt-5.6-luna`。Herdr 仍报告 prompt 成功与 agent done，只有读取 pane 才能发现任务未执行和模型已改变。\n\n## Possible Solution\n\nHerdr 在提交 prompt 前识别 Codex modal/choice 状态并拒绝，或先显式关闭选择器再原子提交；同时校验运行中模型仍符合 `agent start` 的固定模型参数，发生变化时返回可观察的 routing error。\n\n## Minimal Reproducible Example\n\n1. 以 `herdr agent start grill --kind codex --pane <pane> -- -m gpt-5.6-sol -c model_reasoning_effort=max -s read-only -a never` 启动 worker。\n2. 让 worker 运行至 Codex 显示速率限制模型选择器并停稳。\n3. 执行 `herdr agent prompt grill 继续只读复审`。\n4. 命令返回 prompted，但 `herdr agent read grill` 看不到新任务，底部模型从 Sol 变为 Luna。\n\n## Context\n\n重大设计挑战硬性要求独立 Sol/max。该静默切换会让父 agent 误把未执行或错误模型的结果当成正式验收，因此本轮只能关闭旧 pane 并重新启动全新 Sol worker。\n",
+      "bodySha256": "c3b1a491a395207a9b5582eed5fd0ba463e8362107d9d38ece0fad73d3551f77",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260809220011-claude-官方-marketplace",
+      "legacyPath": ".agents/friction-log/20260809220011-claude-官方-marketplace/friction.md",
+      "feedbackId": "20260809220011-claude-官方-marketplace",
+      "originalTime": "20260809220011",
+      "severity": "major",
+      "body": "---\ntitle: 'Claude 官方 marketplace 配 ref 后被本地 clone 触发保留名拒绝'\nseverity: 'major'\n---\n\n## Expected Behavior\n\n`claudeCodeAgent.plugins[].marketplace` 同时声明官方 GitHub source 与 `ref` 时，应能从该固定 revision 安装官方 Plugin。\n\n## Current Behavior\n\n适配器为实现 `ref` 先把仓库 clone 到临时本地目录，再执行 `claude plugin marketplace add <local-path>`。Claude Code 2.1.207 会拒绝这种注册：官方保留 marketplace 名只允许来自 Anthropic 组织的 GitHub source，因此固定 revision 无法使用。去掉 `ref`、直接添加 `anthropics/claude-plugins-official` 可以安装。\n\n## Possible Solution\n\n为官方 GitHub marketplace 保留远程来源身份并以 Claude CLI 支持的方式固定 revision；若 CLI 本身不支持 ref，则在配置解析时给出明确的不支持错误，不要晚到 setup 阶段才失败。\n\n## Minimal Reproducible Example\n\n配置 marketplace `{ name: \"claude-plugins-official\", source: \"anthropics/claude-plugins-official\", ref: \"3160b166dcefc641f84e48ea2d136b8890f1de65\" }` 后运行 experiment；setup clone 成功，但 marketplace add 报保留名只能使用 Anthropic GitHub source。\n\n## Context\n\n为 Claude Code 新增官方远程 Plugin E2E 时复现。最终实验去掉 `ref` 后，在线安装 `frontend-design` 并加载其 namespaced Skill 成功。\n",
+      "bodySha256": "cdf4f1b29d16f103807f5bbe6322ef697b19226ef85801e0ee1861bac8523330",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260810085155-e2e-run-输出的",
+      "legacyPath": ".agents/friction-log/20260810085155-e2e-run-输出的/friction.md",
+      "feedbackId": "20260810085155-e2e-run-输出的",
+      "originalTime": "20260810085155",
+      "severity": "minor",
+      "body": "---\ntitle: 'E2E run 输出的 candidate 路径在命令结束后已被删除'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n`pnpm e2e --repo eval -- ...` 输出 candidate tarball 路径后，该路径应可供紧接着的 `pnpm e2e takeover --candidate <path>` 复用；或者输出应明确标注它会被清理，并给出生成持久 candidate 的下一步命令。\n\n## Current Behavior\n\n普通 E2E run 打印 `/tmp/niceeval-e2e-default-*/candidate.tgz` 和 fingerprint，并在 summary 里重复该路径。命令成功结束后对应临时目录已删除；把打印出的路径传给 takeover 立即得到 `ENOENT`。\n\n## Possible Solution\n\n需要 takeover 的 run 可保留 candidate，或把 candidate 复制到 durable artifact root；若仍清理，则不要把临时路径表现成可复用交接物，并在 summary 提示先运行 `pnpm e2e pack --out <持久路径>`。\n\n## Minimal Reproducible Example\n\n先运行 `pnpm e2e --repo eval -- --run test/assertion-score.test.ts`，记录输出的 candidate path。随后运行 `pnpm e2e takeover --candidate <该路径> --repo eval -- --run test/assertion-score.test.ts`，观察 `ENOENT: no such file or directory`。\n\n## Context\n\n修改既有 Eval E2E owner 后按 testing 契约执行 deterministic takeover 时复现。首轮 E2E 本身 clean pass；只有从其输出接续 takeover 的路径失效。\n",
+      "bodySha256": "7abd274d0aee7876ec4fb8778915d6ae463a577f507f79d271ff1ecb4f83c749",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260810093352-grill-me-技能引用的",
+      "legacyPath": ".agents/friction-log/20260810093352-grill-me-技能引用的/friction.md",
+      "feedbackId": "20260810093352-grill-me-技能引用的",
+      "originalTime": "20260810093352",
+      "severity": "minor",
+      "body": "---\ntitle: 'grill-me 技能引用的 /grilling 在 Codex CLI 不存在'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\ngrill-me 技能要求运行 /grilling session 时，Herdr 中的 Codex worker 能识别该入口并开始交互式设计挑战。\n\n## Current Behavior\n\ngpt-5.6-sol worker 完整读取 grill-me/SKILL.md 后输入 /grilling，Codex CLI 返回未知 slash command。worker 只能由父 agent 提供等价的逐轮质询 prompt，技能正文没有给出 fallback。\n\n## Possible Solution\n\n让当前 Codex CLI 提供 /grilling，或把 grill-me/SKILL.md 改成当前可执行的明确 prompt 流程，并写清没有 slash command 时的 fallback。\n\n## Minimal Reproducible Example\n\n1. 通过 Herdr 启动 Codex worker。\n2. 让 worker 完整读取 .agents/skills/grill-me/SKILL.md。\n3. 按技能正文运行 /grilling。\n4. Codex CLI 报告未知 slash command，没有启动 grilling session。\n\n## Context\n\n本次重大 Record 契约设计必须通过 grill-me。为了不跳过设计门禁，父 agent 只能显式下发等价质询流程，增加了技能解释分歧。\n",
+      "bodySha256": "40ec3fcf8711ecbfecfc7298d2a0d457665863cabd1353e4466eec391279c616",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260812122121-herdr-worker-repeatedly",
+      "legacyPath": ".agents/friction-log/20260812122121-herdr-worker-repeatedly/friction.md",
+      "feedbackId": "20260812122121-herdr-worker-repeatedly",
+      "originalTime": "20260812122121",
+      "severity": "minor",
+      "body": "---\ntitle: 'Herdr worker repeatedly receives unrelated user steers'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\nOnly prompts explicitly addressed to a Herdr worker should steer or interrupt that worker.\n\n## Current Behavior\n\nA read-only design_grill worker repeatedly received unrelated prompts such as `Summarize recent commits` and `Find and fix a bug in @filename`. Each prompt interrupted the active review.\n\n## Possible Solution\n\nRoute user steers only to the active parent pane unless the target worker is explicitly addressed.\n\n## Minimal Reproducible Example\n\n1. Start a Herdr Codex worker in a sibling pane.\n2. Prompt it with a long read-only review.\n3. While it is working, inspect `herdr agent read <name>`.\n4. Observe unrelated user prompts entering and interrupting the worker every roughly 30 seconds.\n\n## Context\n\nThe parent had to interrupt, resume, and restart the design reviewer. Even a requested one-word final verdict was repeatedly interrupted before eventually returning PASS.\n",
+      "bodySha256": "c86b11cbede24c918979bd51acd04795b9beea7f20bf8e60ccd3b035f68ac9fa",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260813115630-friction",
+      "legacyPath": ".agents/friction-log/20260813115630-friction/friction.md",
+      "feedbackId": "20260813115630-friction",
+      "originalTime": "20260813115630",
+      "severity": "minor",
+      "body": "---\ntitle: '测试指南要求 pnpm test 但根 script 不存在'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n测试指南要求统一复用 `pnpm test` 时，根 `package.json` 应提供该 script，并运行仓库约定的代码测试入口；如果重置期明确禁止统一入口，指南应给出当前可执行的替代命令。\n\n## Current Behavior\n\n根 `package.json` 没有 `test` script。运行 `pnpm test` 立即以 exit 1 结束且没有输出，无法区分“脚本缺失”与测试失败；直接运行 `pnpm exec vitest run --reporter=verbose` 才能得到 12 files / 45 tests passed。\n\n## Possible Solution\n\n补上与当前 Vitest projects 对齐的根 `test` script，或在测试重置期文档中明确唯一的临时验证入口与预期退出行为。\n\n## Minimal Reproducible Example\n\n在仓库根运行：\n\n```sh\npnpm test\necho $?\nnode -e 'console.log(require(\"./package.json\").scripts.test)'\npnpm exec vitest run --reporter=verbose\n```\n\n前两步分别得到无输出的 exit 1 和 `undefined`；最后一步正常执行并报告测试结果。\n\n## Context\n\n为 Adapter E2E 并发装箱 PR 做统一验收时，按照仓库测试指南执行 `pnpm test`，需要额外排查才确认不是本次改动导致的测试失败。\n",
+      "bodySha256": "a91aa2c9209237583a5932cf7e7add2c7c0ea0da4229cb3f3e4697874e617d12",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260813204135-niceeval-exp-无法一次精确选择多个离散实验",
+      "legacyPath": ".agents/friction-log/20260813204135-niceeval-exp-无法一次精确选择多个离散实验/friction.md",
+      "feedbackId": "20260813204135-niceeval-exp-无法一次精确选择多个离散实验",
+      "originalTime": "20260813204135",
+      "severity": "minor",
+      "body": "---\ntitle: 'niceeval exp 无法一次精确选择多个离散实验'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n`niceeval exp` 应允许一次 run 精确选择多个离散 experiment id，并让它们共享同一个全局并发闸与 Record writer；未选择的实验不应被运行。\n\n## Current Behavior\n\nMemoryBench 需要同时选择 Codex baseline、Mempal、Obelisk、Remem 和 Bub baseline，同时排除其它实验。CLI 没有正式的离散多选入口，只能拆成多个 shell/run，进一步放大 Record 单写者限制。\n\n## Possible Solution\n\n为 `niceeval exp` 增加可重复的 experiment selector 或显式 id 列表，并在 dry run、run metadata 与报告中保留选择集合。\n\n## Minimal Reproducible Example\n\n在一个包含五个目标实验和若干非目标实验的项目中，尝试用一条 `niceeval exp` 命令只选择五个不连续 id。当前没有可表达该集合的正式参数，只能分开运行或扩大选择范围。\n\n## Context\n\nMemoryBench 五条件正式比较因此拆成五个独立 shell 和五个 Record。下游曾记录同一问题；本条进入 NiceEval 上游 Frog 作为产品入口。\n",
+      "bodySha256": "33d113e384e0a78baae801c80724b094d68598a69bdf566fbf11b0a7eb584bd0",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260813204135-record-单写者锁阻止多个独立-runner",
+      "legacyPath": ".agents/friction-log/20260813204135-record-单写者锁阻止多个独立-runner/friction.md",
+      "feedbackId": "20260813204135-record-单写者锁阻止多个独立-runner",
+      "originalTime": "20260813204135",
+      "severity": "major",
+      "body": "---\ntitle: 'Record 单写者锁阻止多个独立 runner 共享正式结果目录'\nseverity: 'major'\n---\n\n## Expected Behavior\n\n同一批互不重叠的实验可由多个独立 shell 并行执行，并安全写入同一个 Record；至少应提供官方的多写者协调机制，使一批结果天然落在一个可查看、可审计的目录中。\n\n## Current Behavior\n\nRecord 采用单写者锁。MemoryBench 五条件批次若让五个独立 shell 指向同一 Record，后启动者无法写入，因此只能为每个 shell 创建隔离 Record。结果虽可分别判定，但正式批次被拆散。\n\n## Possible Solution\n\n让 Record writer 支持进程间安全协调，或提供由一个协调器接收多个 runner 事件的官方写入拓扑，并明确锁的生命周期、崩溃恢复与冲突语义。\n\n## Minimal Reproducible Example\n\n1. 在两个 shell 中启动两个互不重叠的 `niceeval exp`。\n2. 两者配置同一个 Record 目录。\n3. 第一个进程取得 writer lock；第二个进程无法并行写入。\n4. 改用两个 Record 后均能运行，但批次结果不再位于同一正式 Record。\n\n## Context\n\nMemoryBench 五条件正式批次需要五个独立 shell 并行执行，最终不得不保留五个隔离 Record，结果根目录为 `/home/ctrdh/.herdr/memorybench-five-KEhUrv`。\n",
+      "bodySha256": "aea9dd76f1441a78ba7b9f9d90e1fdb79af3d20e83dbd45f46721147a781854f",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260813204136-niceeval-缺少多个-record",
+      "legacyPath": ".agents/friction-log/20260813204136-niceeval-缺少多个-record/friction.md",
+      "feedbackId": "20260813204136-niceeval-缺少多个-record",
+      "originalTime": "20260813204136",
+      "severity": "major",
+      "body": "---\ntitle: 'NiceEval 缺少多个 Record 的正式合并入口'\nseverity: 'major'\n---\n\n## Expected Behavior\n\n当并行或故障恢复使同一批实验产生多个 Record 时，NiceEval 应提供正式合并入口，校验身份与冲突后生成一个可由 show、view 和 report 消费的统一 Record。\n\n## Current Behavior\n\nNiceEval 没有 Record merge 命令或 API。MemoryBench 五个独立 shell 因单写者锁各自写入隔离 Record，完成后只能永久保留整个约 813MB 的结果树；不能生成一个统一正式结果，也不能通过官方入口跨 Record 汇总。\n\n## Possible Solution\n\n提供 `niceeval record merge` 或等价 API，定义 run/attempt id 冲突、attachment 去重、provenance、原子输出、失败恢复和只读源 Record 语义。\n\n## Minimal Reproducible Example\n\n1. 分别在 Record A 与 Record B 完成两个不重叠实验。\n2. 尝试用 NiceEval CLI/API 生成同时包含 A、B 的新 Record。\n3. 当前没有正式入口，只能分别查看或自行操作私有产物。\n\n## Context\n\n正式结果保留在 `/home/ctrdh/.herdr/memorybench-five-KEhUrv`，约 813MB。两份失败临时副本另移至可恢复目录，但不能替代正式合并。\n",
+      "bodySha256": "b370e14fded999c40e622744516ed89bfe4cb0af47c0de7c36a44692da1c4b78",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260813204137-sandbox-teardown-只剩",
+      "legacyPath": ".agents/friction-log/20260813204137-sandbox-teardown-只剩/friction.md",
+      "feedbackId": "20260813204137-sandbox-teardown-只剩",
+      "originalTime": "20260813204137",
+      "severity": "major",
+      "body": "---\ntitle: 'Sandbox teardown 只剩 1ms deadline 导致 checkpoint 回存失败'\nseverity: 'major'\n---\n\n## Expected Behavior\n\nSandbox teardown 应获得独立、可配置且足以完成资源收尾的 deadline；特别是 checkpoint 回存不能只继承已耗尽的 attempt deadline。teardown 超时应清晰记录，同时不反改已经完成的任务 verdict。\n\n## Current Behavior\n\nMemoryBench Mempal 条件在 teardown 保存 checkpoint 时，NiceEval 传入的剩余 deadline 只有 1ms。任务 verdict 不受影响，但 checkpoint 可能未保存，从而破坏后续 attempt/run 的状态继承。\n\n## Possible Solution\n\n为 teardown 设置单独的 grace period 或生命周期 deadline，并在进入 hook 前保证最低预算；将 attempt verdict deadline 与资源清理/checkpoint deadline 分离。\n\n## Minimal Reproducible Example\n\n1. 运行一个接近 attempt timeout 的 Mempal attempt。\n2. 在 Sandbox teardown hook 中保存 checkpoint。\n3. 观察 hook 获得约 1ms 的剩余 deadline，保存来不及完成。\n4. 当前 attempt verdict 仍可产生，但下一次状态恢复缺少可靠 checkpoint。\n\n## Context\n\n此问题出现在 MemoryBench 五条件正式批次。它不影响本批 verdict，却使后续纵向记忆状态是否继承存在风险。\n",
+      "bodySha256": "c211862627325b5717a4ba6f06035ba5c2324f012508143a672b3fc659a4824a",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260813204137-官方-bub-镜像声明非",
+      "legacyPath": ".agents/friction-log/20260813204137-官方-bub-镜像声明非/friction.md",
+      "feedbackId": "20260813204137-官方-bub-镜像声明非",
+      "originalTime": "20260813204137",
+      "severity": "major",
+      "body": "---\ntitle: '官方 Bub 镜像声明非 root 用户但运行时安装前缀不可写'\nseverity: 'major'\n---\n\n## Expected Behavior\n\nNiceEval 官方 Bub 镜像在声明 `USER node` 后，Bub 条件需要的标准运行时安装路径应对该用户可写，或官方契约应提供无需临时提权的扩展安装位置。\n\n## Current Behavior\n\n官方 Bub 0.4.0-r2 镜像声明 `USER node`，但 `/usr/local` 仍归 root 所有。MemoryBench lightbox 的 Group setup 需要安装扩展时触发 permission denied，导致正式批次中的相关 slots 必须修镜像后补跑。\n\n## Possible Solution\n\n在镜像构建阶段完成所需安装，或把公开扩展前缀的 ownership/permissions 与声明用户对齐，并为镜像加入非 root 安装 smoke check。\n\n## Minimal Reproducible Example\n\n1. 启动官方 Bub 0.4.0-r2 镜像并保持默认 `USER node`。\n2. 在 Group setup 中向 `/usr/local` 执行标准全局安装。\n3. 操作以 permission denied 失败；切到预制安装或修正 ownership 后通过。\n\n## Context\n\nMemoryBench Bub 与受影响 lightbox slots 采用修复后的派生镜像完成 fix-forward；原 verdict 不应依赖仓库长期 workaround。\n",
+      "bodySha256": "6dc9f818ea4a00eab9b45bb77faf2e92c6156bf7c330c165679294f47e5910f8",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260813204138-bub-缺少-context",
+      "legacyPath": ".agents/friction-log/20260813204138-bub-缺少-context/friction.md",
+      "feedbackId": "20260813204138-bub-缺少-context",
+      "originalTime": "20260813204138",
+      "severity": "major",
+      "body": "---\ntitle: 'Bub 缺少 context compaction 导致长任务触及上下文窗口'\nseverity: 'major'\n---\n\n## Expected Behavior\n\nBub runner 应在长任务接近模型上下文窗口时执行可观察、可配置的 context compaction，并继续任务；报告应能区分 compaction 与真实任务失败。\n\n## Current Behavior\n\nMemoryBench Bub primary run 的 `react-tooltip/pr-1282` 因上下文窗口耗尽而 errored。Bub 没有可用的 compaction 路径，只能另开一次 one-slot fix-forward 才完成，造成同一正式条件被拆为 primary 与补跑。\n\n## Possible Solution\n\n在 runner 中增加基于 token budget 的自动 compaction，保留关键系统约束、任务状态和工具证据，并把 compaction 次数与前后 token 使用记录进 telemetry。\n\n## Minimal Reproducible Example\n\n运行 MemoryBench Bub baseline 的长任务 `react-tooltip/pr-1282`。primary run 在长工具轨迹后触及 context window 并 errored；新开干净上下文的单 slot fix-forward 可通过。\n\n## Context\n\nBub primary run id 为 `7aa5b902-56f1-4a66-b309-82fbfa4e7f51`；fix-forward run id 为 `36a3fcb5-cb7f-4b37-a474-8510849a2046`。\n",
+      "bodySha256": "fb0350cfa764b6caf3db133d4a1ce913e755b5daa1a0c14fd588574e321215cd",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260814191842-agent-ensure-的缺字段身份退化成",
+      "legacyPath": ".agents/friction-log/20260814191842-agent-ensure-的缺字段身份退化成/friction.md",
+      "feedbackId": "20260814191842-agent-ensure-的缺字段身份退化成",
+      "originalTime": "20260814191842",
+      "severity": "minor",
+      "body": "---\ntitle: 'Agent ensure 的缺字段身份退化成 undefined.trim'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n从 TypeScript 发现模块加载 Agent ensure 时，缺少 agent、version 或 revision 的 identity 应在配置/发现阶段得到具名 schema 错误，并指出缺失字段。\n\n## Current Behavior\n\nensure.identity 只有任意字段与 revision 时仍能进入运行。assertStableAgentIdentity 先调用 identity.version.trim()，因此得到 agent.ensure / unexpected-error: Cannot read properties of undefined (reading trim)，没有指出真正缺少 version 与 agent。\n\n## Possible Solution\n\n在 discovery 或 defineSandboxAgent 边界验证 AgentIdentity 的三个必填非空字段；assertStableAgentIdentity 也应先做 typeof 检查，再调用 trim，并返回既有的具名 identity 错误。\n\n## Minimal Reproducible Example\n\n定义 Sandbox Agent，ensure.identity 传 { fixture: command-plan, revision: 1 }，probe 传一个成功 shell。运行任意 Eval，观察 agent.ensure 阶段出现 undefined.trim；改成 { agent: acceptance-sandbox, version: 24.19.0, revision: 1 } 后通过。\n\n## Context\n\n为 --dry --commands 的安装后候选验收搭建最小消费项目时复现。公开 show Attempt 只显示 unexpected-error，增加了定位时间。\n",
+      "bodySha256": "fc4b95f0b9bc6864d0a8fa14f94af96821fad35e09923c6ed8a2067facba5e00",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260815015955-openclaw-真实模型-e2e",
+      "legacyPath": ".agents/friction-log/20260815015955-openclaw-真实模型-e2e/friction.md",
+      "feedbackId": "20260815015955-openclaw-真实模型-e2e",
+      "originalTime": "20260815015955",
+      "severity": "minor",
+      "body": "---\ntitle: 'OpenClaw 真实模型 E2E 的 coding-task 首轮重复抖动'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\nPR 的 docker E2E 在产品候选与 OpenClaw adapter 契约没有变化时应稳定裁决；外部模型单次任务波动不应让整条必需 gate 在首次运行失败、仅重跑又通过。\n\n## Current Behavior\n\nPR #51 的两个不同 head 上，`adapter/openclaw` 都只有 `coding-task/write-and-verify` 在首次运行判定 failed，另外 3 个 OpenClaw eval 与同 lane 的另外 7 个 repo 全部通过。较早一轮只重跑失败 lane 后整体通过；后一轮再次命中同一 eval。E2E orchestrator 将它分类为 `regression`，无法与产品代码回归区分。\n\n## Possible Solution\n\n为真实模型行为 gate 定义有界、可审计的单 eval 重试或稳定性预算，并在 receipt 中区分“首次模型判定波动后通过”与产品回归；也可把非确定性 coding task 从每个 PR 的硬 gate 移到独立持续评估，同时保留确定性的 adapter 协议 gate。\n\n## Minimal Reproducible Example\n\n在 PR #51 上运行完整 `e2e` workflow。Actions run `31823960212` 与 `31826116754` 的 `repo-batch-docker-1` 都在 `adapter/openclaw/test/openclaw.test.ts:65` 观察到 `niceeval exp --rerun all --json` exit 1；事件中只有 `coding-task/write-and-verify` failed。对前一 run 执行 failed-jobs rerun 后 attempt 2 全绿。\n\n## Context\n\n两次失败分别发生在仅英文文档变更的 `ea1fd096` 与 locator/terminal 安全修复的 `39382b0e`；两轮 host、browser、CI 以及 docker lane 的其它 repo 都通过。\n",
+      "bodySha256": "40edab711e6a0bbadaa9a397fddfc131008d14c395c2cf35dd18a3fe19799647",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260816091356-e2e-candidate-构建会短暂删除共享",
+      "legacyPath": ".agents/friction-log/20260816091356-e2e-candidate-构建会短暂删除共享/friction.md",
+      "feedbackId": "20260816091356-e2e-candidate-构建会短暂删除共享",
+      "originalTime": "20260816091356",
+      "severity": "major",
+      "body": "---\ntitle: 'E2E candidate 构建会短暂删除共享 link 消费的 dist'\nseverity: 'major'\n---\n\n## Expected Behavior\n\n`pnpm e2e` 构建 candidate 时，当前工作树的 `dist/` 应原子替换，或在隔离输出目录构建；通过 `link:` 消费该工作树的真实下游不应观察到缺失的 package export。\n\n## Current Behavior\n\n运行 `pnpm e2e --repo report -- --run test/report-execution.test.ts` 期间，candidate build 会原地清理再重建 NiceEval 工作树的 `dist/`。并发运行的 MemoryBench `pnpm exec niceeval view` 从 `node_modules/niceeval -> NiceEval/record` 动态 import `dist/index.mjs` 时撞到清理窗口，报 `Cannot find module .../dist/index.mjs`。E2E 完成后文件重新出现，同一 view 命令恢复。\n\n## Possible Solution\n\n在临时目录构建 candidate，或把完整 dist 构建到 staging 后原子发布；不要让 candidate 打包过程暴露半构建的共享工作树。\n\n## Minimal Reproducible Example\n\n让下游以 `niceeval: link:../../NiceEval/record` 消费本工作树。一边运行根 `pnpm e2e --repo report -- --run test/report-execution.test.ts`，另一边反复运行下游 `pnpm exec niceeval view --no-open`。在 candidate build 清理 dist 的窗口会出现 `discovery.import-failed`，原因是 `dist/index.mjs` 不存在。\n\n## Context\n\n2026-08-16 在 `/home/ctrdh/.herdr/worktrees/MemoryBench/2-0` 真实 dogfood 时复现；E2E 结束后 `dist/index.mjs` 时间戳更新，同一 view 成功启动。\n",
+      "bodySha256": "fcd51a191ffa24719d01f28d8c35cb27cd89bbbeaafdeb92ac608c583fb56e20",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260816125214-无-blob-recordattachment",
+      "legacyPath": ".agents/friction-log/20260816125214-无-blob-recordattachment/friction.md",
+      "feedbackId": "20260816125214-无-blob-recordattachment",
+      "originalTime": "20260816125214",
+      "severity": "minor",
+      "body": "---\ntitle: '无 blob RecordAttachment 无法声明零 blob budget'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\nA fixed RecordAttachment family whose `refs()` is permanently empty and whose writer emits no blobs should be able to declare an exact zero blob budget.\n\n## Current Behavior\n\n`defineRecordAttachment` rejects `maximumBlobs: 0`, `maximumBlobBytes: 0`, and `maximumTotalBytes: 0` at module load with `Record Attachment owners must declare a bounded blob policy`. A genuinely no-blob family therefore has to advertise the artificial positive budget `1/1/1` even though no ref can be minted.\n\n## Possible Solution\n\nAllow the exact all-zero tuple as a bounded no-blob policy while continuing to reject mixed or unbounded invalid tuples. Verify that `refs(payload)` and writer closure membership are empty.\n\n## Minimal Reproducible Example\n\nDeclare a fixed family owner with `refs: () => []`, a writer that returns `blobs: []`, and budget `{ maximumBlobs: 0, maximumBlobBytes: 0, maximumTotalBytes: 0 }`. Importing the family throws from `validBlobBudget` before any Record operation runs.\n\n## Context\n\nFound while adding the Attempt-owned `niceeval.source-navigation` family, which intentionally stores only exact IDs/digests/coordinates and no blob closure. The temporary compatible declaration is `1/1/1`.\n",
+      "bodySha256": "03a3c6bebd6f07339faaaf84d3ed36f0a1da32e501d0844f8bc032de9841481b",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260816141817-e2e-takeover-把已漂移的默认",
+      "legacyPath": ".agents/friction-log/20260816141817-e2e-takeover-把已漂移的默认/friction.md",
+      "feedbackId": "20260816141817-e2e-takeover-把已漂移的默认",
+      "originalTime": "20260816141817",
+      "severity": "minor",
+      "body": "---\ntitle: 'E2E takeover 把已漂移的默认 suite 算作目标 owner 回归'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n`pnpm e2e takeover --candidate ... --repo <id> -- --run <target>` 应能区分目标 owner 的不稳定、目标造成的干扰，以及在同一 candidate 下本来就失败的默认 owner；后者应有可核查的 baseline 分类，避免阻断无关目标的可靠性收据。\n\n## Current Behavior\n\n本轮 runner 与 report 的目标 owner 在 3 个 isolated copy、same-copy 双跑和 target-single 全部通过，但 takeover 仍 exit 1。runner 默认并行阶段的 `accept-reanchor.test.ts` 仍断言旧 `niceeval.show` envelope；report 默认并行阶段的 `report-show.test.ts` / `report-export.test.ts` 仍断言 `pricingProfile: null`，而当前 candidate 交付内建 pricing profile。summary 只把它们统一归为 regression，无法表示目标 owner 自身已稳定而默认 suite 契约已漂移。\n\n## Possible Solution\n\n接管前固定一次 default-suite baseline，最终将“目标失败/目标干扰默认 suite/default baseline 已红”分开分类；或者要求 Repo 在进入 takeover 前有独立的全绿 baseline receipt，并在 summary 中引用该 receipt。\n\n## Minimal Reproducible Example\n\n使用同一 candidate 运行：\n\n```sh\npnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo runner --artifact-root artifacts/e2e/takeover-runner-wave -- --run test/group-wave-gap-dispatch.test.ts\npnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo report --artifact-root artifacts/e2e/takeover-report-session-log -- --run test/report.browser.spec.ts -t \"经典 MemoryBench\"\n```\n\n查看两个 `takeover-summary.json`：目标阶段全部通过，`repo-default-parallel` 因上述非目标旧断言失败，命令最终 exit 1。\n\n## Context\n\ncandidate sha256 为 `dd477640b99274993e118698ade3a855bf93f9bf143cce148c399654e8f3fa31`。这项摩擦不改变本轮目标 E2E 的普通运行结果，但意味着不能把这两份 takeover summary 宣称为完整接管通过。\n",
+      "bodySha256": "cd8fc77da633266ed9a1abbb0f62cddf271a1cf0d064a71aca95f96e4db66a2a",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260817204635-默认-e2e-入口吞掉",
+      "legacyPath": ".agents/friction-log/20260817204635-默认-e2e-入口吞掉/friction.md",
+      "feedbackId": "20260817204635-默认-e2e-入口吞掉",
+      "originalTime": "20260817204635",
+      "severity": "major",
+      "body": "---\ntitle: '默认 E2E 入口吞掉 regression 的非零退出码'\nseverity: 'major'\n---\n\n## Expected Behavior\n\n`pnpm e2e --repo eval -- --run test/context.test.ts` 在所选 Repo 的测试失败、summary 分类为 `regression` 时，顶层命令应返回非零退出码。\n\n## Current Behavior\n\n同一次运行的 durable `summary.json` 显示 `results[0].exitCode: 1`、`category: regression`，receipt 的 test stage 也显示 `capture.exitCode: 1`，但外层 `pnpm e2e` 进程返回 0。CI 直接调用 `pnpm e2e run` 时仍能失败，因此当前主要影响本地诊断和脚本门禁。\n\n## Possible Solution\n\n默认 flow 在 run/summarize 完成后，把封闭的最终 category 映射到进程退出码；`regression`、`infra`、`configuration` 与非 signal cancellation 均不得被 plan/pack 成功覆盖。\n\n## Minimal Reproducible Example\n\n运行 `pnpm e2e --repo eval -- --run test/context.test.ts; echo $?`。当测试输出 `1 failed` 且 artifact root 下 `summary.json` 为 `category: regression` 时，观察 shell 仍打印 `0`。\n\n## Context\n\n定位线上 E2E 失败时，在 commit `93a8c50d`、Node 24.18.0、pnpm 11.18.0 下复现。对应 summary 位于本次临时 artifact root，未签入私有运行产物。\n",
+      "bodySha256": "baaa56b4b53b4d4cb9a2f7d0bd6bf34d39067ee2dad2f0fe951bad6b86233262",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260819182318-opencode-不识别规则固定的-opencode",
+      "legacyPath": ".agents/friction-log/20260819182318-opencode-不识别规则固定的-opencode/friction.md",
+      "feedbackId": "20260819182318-opencode-不识别规则固定的-opencode",
+      "originalTime": "20260819182318",
+      "severity": "minor",
+      "body": "---\ntitle: 'OpenCode 不识别规则固定的 opencode-go/MiMo-V2.5'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n按 AGENTS.md 创建的 mimo-max-worker 使用 pane-local OPENCODE_CONFIG_CONTENT 指定 opencode-go/MiMo-V2.5 与 variant=max 后，应由 OpenCode build agent 正常接受任务。\n\n## Current Behavior\n\nherdr agent start 能启动 pane，但提交 prompt 后 OpenCode 立即返回 ProviderModelNotFoundError: Model not found: opencode-go/MiMo-V2.5，并只建议 mimo-v2.5 或 mimo-v2.5-pro。仓库路由规则禁止擅自改用其它 OpenCode model id，因此 worker 无法执行。\n\n## Possible Solution\n\n统一 Herdr/OpenCode provider 暴露的 model id 与 AGENTS.md 固定路由，或让 OpenCode 对 opencode-go/MiMo-V2.5 提供稳定 alias；启动时也可在接受 prompt 前验证 pane-local model 是否可解析。\n\n## Minimal Reproducible Example\n\n创建带 OPENCODE_CONFIG_CONTENT 的 pane，其中 build model 为 opencode-go/MiMo-V2.5、variant 为 max，然后运行 opencode --mini --agent build --auto 并提交任意 prompt。OpenCode 立即报上述 ProviderModelNotFoundError。\n\n## Context\n\n2026-08-19 在 Herdr workspace w1Q 的 report-test-finish worker 稳定复现；同一 pane 的权限配置已按仓库模板设置。\n",
+      "bodySha256": "b7be4f0cacfa929d57ac82333474fa479868c305693fc98a4a3800cf85367bfd",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260820005511-e2e-takeover-把标题零命中的",
+      "legacyPath": ".agents/friction-log/20260820005511-e2e-takeover-把标题零命中的/friction.md",
+      "feedbackId": "20260820005511-e2e-takeover-把标题零命中的",
+      "originalTime": "20260820005511",
+      "severity": "major",
+      "body": "---\ntitle: 'E2E takeover 把标题零命中的 skipped 当作 pass'\nseverity: 'major'\n---\n\n## Expected Behavior\n\n`pnpm e2e takeover ... -- --run <file> -t <title>` 的每个 target 阶段必须至少执行一个测试；标题零命中或全部 skipped 应使 takeover 非零退出，并明确分类为配置错误。\n\n## Current Behavior\n\n标题 `uiMessageStreamAgent 只接受在 [DONE] 前完整形成的 Turn` 未转义传给 Vitest `-t` 时，`[DONE]` 被解释为正则字符集，三个 isolated copy、same-copy 两次与 target-single 都报告 `1 skipped` / `0ms tests`。takeover 却把每个阶段记为 `pass`，最终 exit 0；只有 repo-default-parallel 实际执行了五个测试。\n\n## Possible Solution\n\n在 takeover 校验每份原生测试收据的 collected/executed/passed/skipped 数量：target 阶段必须 executed > 0 且 skipped < collected；same-copy 的两次 invocation 分别校验。零命中应拒绝收据，不能只看进程 exit code。\n\n## Minimal Reproducible Example\n\n```sh\npnpm e2e takeover --candidate /tmp/pr66-late-green.tgz --repo adapter/local-protocol --artifact-root /tmp/pr66-late-title-takeover -- --run test/disconnect.test.ts -t \"uiMessageStreamAgent 只接受在 [DONE] 前完整形成的 Turn\"\n```\n\n查看 `/tmp/pr66-late-title-takeover/takeover-summary.json`：target 阶段显示 pass，但 Vitest 输出均为 `Tests 1 skipped (1)`。\n\n## Context\n\ncandidate sha256 `9d913c3579f1c89da972a73f1a9ddbef35adcfd43243a450c7079f679c72d9a3`；正确的临时规避是给标题中的方括号加正则转义并确认每个 target 阶段实际运行 1 test。\n",
+      "bodySha256": "9e5426cbae7bde672ccca53579d736d6527fc98c87b614f1b39a815b165775fc",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260820005953-e2e-takeover-取消后",
+      "legacyPath": ".agents/friction-log/20260820005953-e2e-takeover-取消后/friction.md",
+      "feedbackId": "20260820005953-e2e-takeover-取消后",
+      "originalTime": "20260820005953",
+      "severity": "major",
+      "body": "---\ntitle: 'E2E takeover 取消后 cleanup 收据误报成功并残留进程组'\nseverity: 'major'\n---\n\n## Expected Behavior\n\n`pnpm e2e takeover` 收到 Ctrl-C 后，应终止本次创建的全部 owned process group；takeover summary 只有在进程组确认消失后才能写 `cleanupOk: true` 并删除 scratch。\n\n## Current Behavior\n\n取消 `shared-state-lifecycle` takeover 的 `repo-default-parallel` 阶段后，summary 报告该 run `category: cancelled`、`cleanupOk: true` 且 scratch 已删除，但 PGID `552994` 仍有 `niceeval exp shared-state-pause-holder --rerun all --json` 与 esbuild 子进程存活，PPID 已变为 1。父流程必须额外对精确 PGID 执行 TERM/KILL 才能清理。\n\n## Possible Solution\n\n让 cancellation 路径等待 owned process-group supervisor 的终结确认后再写 cleanup receipt/删除 scratch；对暂停/恢复场景覆盖父进程退出和 reparent 后的组扫描，cleanup 失败必须 fail closed。\n\n## Minimal Reproducible Example\n\n运行 `pnpm e2e takeover --candidate <tgz> --repo runner -- --run test/shared-state-lifecycle.test.ts`，在 `takeover/repo-default-parallel` 的 pause-holder 活跃时发送 Ctrl-C。命令退出 130 且 summary 写 cleanup success；`pgrep -af niceeval-e2e-takeover-scratch` 仍能看到该 pause-holder 进程组。\n\n## Context\n\n本次 artifact 为 `/tmp/niceeval-pr64-takeover-sharedlifecycle-bguK1g/takeover-summary.json`；残留 PGID `552994` 已由父任务精确终止并确认消失。\n",
+      "bodySha256": "1938d5ca93eef898cc671c7a8b807be7a3607ed3a62fdc01564ed3c50f3209f7",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260820131045-成本迁移状态逐-slot-重复且缺少",
+      "legacyPath": ".agents/friction-log/20260820131045-成本迁移状态逐-slot-重复且缺少/friction.md",
+      "feedbackId": "20260820131045-成本迁移状态逐-slot-重复且缺少",
+      "originalTime": "20260820131045",
+      "severity": "minor",
+      "body": "---\ntitle: '成本迁移状态逐 slot 重复且缺少 niceeval migrate 动作'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n当所有选中 slot 都因 Observability v1 无法读取 Usage 时，顶层成本投影应汇总为 `migration-required`，并在 `niceeval show` 中给出一次明确的 `niceeval migrate` 恢复动作；逐 slot 原因应保持可诊断但不淹没摘要。\n\n## Current Behavior\n\n在 NiceEval-Eval 的历史 Record 上运行 `pnpm exec niceeval show`，Total cost 显示 `cost projection unavailable`，随后在同一单元格逐行重复数十个 `usage-migration-required` 与 `member-not-recorded`。输出没有给出 `niceeval migrate`，用户无法从默认报告判断这是可恢复的 Observability v1 → v2 迁移，而容易误解为所有成本事实损坏。\n\n## Possible Solution\n\n让标准 Report 识别顶层 `CostProjectionMigrationRequired`，只显示一次 migration-required 摘要与 `niceeval migrate` 动作；把 canonicalized per-slot reasons 放在显式详情页或折叠视图。混合 current/v1 且仍有金额时继续保持 partial。\n\n## Minimal Reproducible Example\n\n1. 使用当前 NiceEval 打开一个包含 Observability v1 Usage 的已封口 Record。\n2. 运行 `pnpm exec niceeval show`。\n3. 观察 Total cost 单元格重复输出 `usage-migration-required`，但没有文档要求的 `niceeval migrate` 恢复动作。\n\nNiceEval-Eval 当前 Record 的 Run range 为 2026-08-18 13:17 至 2026-08-19 11:48；Observability v2 于 2026-08-19 20:07 合入。\n\n## Context\n\n`docs/feature/reports/cost-projections/library.md` 明确要求：所有 slot 都因 Observability v1 不可读时，顶层 projection 与 metric state 为 `migration-required`，Report 显示 `niceeval migrate`，不能只把原因藏在 reasons。当前输出与该契约不符。\n",
+      "bodySha256": "308780b4f968334aa432f400f5405fc74ce9bf91fe8234ed372c3b5fdbb55b13",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260821090001-scope-status-失败在",
+      "legacyPath": ".agents/friction-log/20260821090001-scope-status-失败在/friction.md",
+      "feedbackId": "20260821090001-scope-status-失败在",
+      "originalTime": "20260821090001",
+      "severity": "major",
+      "body": "---\ntitle: 'scope-status 失败在 Human 面板退化为 error: failed'\nseverity: 'major'\n---\n\n## Expected Behavior\n\nPass Eval 因 `turn.succeeded().orStop()` 的 scope-status 断言失败时，Human FAILURES 行应显示失败的具名检查和可行动原因；若该 Turn 含 `error` 事件，公开详情还应能读到对应 conversation error。\n\n## Current Behavior\n\n`failureDetailFromResult()` 只会从带 `factId` 的 Fact/use 形成 `PrimaryFactSummary`。scope-status 断言没有可进入该分支的 Fact identity，于是 failed terminal 既没有 fact，也没有 `AttemptError`，reason 最终退化为 verdict 字面值。TTY 只显示 `error: failed`，无法区分 Agent Turn 失败、普通命令断言失败或其它 scope-status 失败。\n\n## Possible Solution\n\n让 scope-status 等非 Fact assertion 形成自己的稳定 failure summary，或在 sealed assertion readback 中提供统一的 primary failing assertion 投影；Human feedback 应消费它，不把 `result.verdict` 当失败原因。\n\n## Minimal Reproducible Example\n\nEval 执行 `await t.send(...).then((turn) => turn.succeeded().orStop())`，令 Adapter 返回 `{ status: \"failed\", events: [{ type: \"error\", message: \"native failure detail\" }] }`。运行 Human TTY `niceeval exp`，观察 FAILURES 行只显示 `error: failed`。\n\n## Context\n\n2026-08-21 在 MemoryBench `compare/codex-mempal` 的 `react-tooltip/pr-1269` live 运行中观察到。相邻的 Codex app-server execution error 能显示完整 `Codex app-server turn failed: ...`，说明这是 failed assertion 投影与 errored execution error 两条通道的差异。\n",
+      "bodySha256": "f0b5a82df331b3daff098cfce24d010964425318d08b473f970ef9bdbd6a366e",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260821112308-herdr-启动-codex",
+      "legacyPath": ".agents/friction-log/20260821112308-herdr-启动-codex/friction.md",
+      "feedbackId": "20260821112308-herdr-启动-codex",
+      "originalTime": "20260821112308",
+      "severity": "minor",
+      "body": "---\ntitle: 'Herdr 启动 Codex 只读 worker 时丢失可用认证'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n父 Codex agent 已正常运行时，Herdr 用同一受支持的 Codex runtime 启动只读设计 worker，应继承或复用可用认证并能接收 prompt；无需伪造新的 secret。\n\n## Current Behavior\n\n`herdr agent start assertion-projection-grill-0821 --kind codex --pane w1Z:p9 --timeout 120000 -- codex -s read-only -a never` 能启动进程，但完整 prompt 下发后 worker 立即以 `Missing environment variable: CODEX_API_KEY` 结束。父 agent 本身仍可正常工作，说明新进程没有取得当前可用认证。设计挑战因此无法执行，只能缩小为不改变持久语义的局部呈现修正。\n\n## Possible Solution\n\nHerdr 的 Codex runtime 启动路径应复用已登录 session，或在启动前给出结构化认证 preflight，明确当前 runtime 只支持哪种认证来源；不要等 prompt 下发后才在 worker 内失败。\n\n## Minimal Reproducible Example\n\n在 `HERDR_ENV=1` 且父 Codex pane 正常运行时，新建空闲 pane，执行：\n\n```sh\nherdr agent start repro-codex-readonly --kind codex --pane <pane-id> --timeout 120000 -- codex -s read-only -a never\nherdr agent prompt repro-codex-readonly \"只读检查并回复 PASS\"\nherdr agent wait repro-codex-readonly --timeout 120000\nherdr agent read repro-codex-readonly\n```\n\nworker 输出 `Missing environment variable: CODEX_API_KEY`。\n\n## Context\n\n发生在 NiceEval assertion evidence 设计挑战流程。父侧已按要求读取失败输出、确认没有设计结论并关闭本轮创建的 pane；未改用内置 subagent，也未伪造凭据。\n",
+      "bodySha256": "fb77c3ec136b3b0d7c9d9991d8270506e021f193e4204c94f6aadf9a00a40700",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260821150630-niceeval-的-git",
+      "legacyPath": ".agents/friction-log/20260821150630-niceeval-的-git/friction.md",
+      "feedbackId": "20260821150630-niceeval-的-git",
+      "originalTime": "20260821150630",
+      "severity": "major",
+      "body": "---\ntitle: 'NiceEval 的 Git dependency prepare 在无 .git 的包缓存中失败'\nseverity: 'major'\n---\n\n## Expected Behavior\n\nConsumer 可把 NiceEval 钉到公开 Git commit；pnpm 在包缓存中完成构建，非 Git 环境跳过 Husky 配置。\n\n## Current Behavior\n\nprepare 完成 build:package 与 build:index 后，`scripts/configure-husky.mjs` 执行 `git rev-parse --git-common-dir`。codeload tarball 没有 `.git`，安装以 `ERR_PNPM_PREPARE_PACKAGE` 失败。\n\n## Possible Solution\n\nconfigure-husky 在非 Git package 环境直接跳过，同时保留 package build。\n\n## Minimal Reproducible Example\n\n在 consumer 的 package.json 中加入 `niceeval: https://github.com/NiceEval/NiceEval.git#69b42445c71727c485754b87997bc00c401f1ba9`，在 pnpm allowBuilds 允许该精确依赖，然后运行 `pnpm install --lockfile-only`。\n\n## Context\n\n这阻止下游在正式 npm release 之前用精确 Git SHA 做可重现 CI/Netlify dogfood；本机 link 和另行分发 tarball 都不适合云端 PR preview。\n",
+      "bodySha256": "f02a13e96c5465a52590d706b8108815ae1183d79ca302197472bfe8adf45b23",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260821172751-build-package-跨文件系统移动",
+      "legacyPath": ".agents/friction-log/20260821172751-build-package-跨文件系统移动/friction.md",
+      "feedbackId": "20260821172751-build-package-跨文件系统移动",
+      "originalTime": "20260821172751",
+      "severity": "major",
+      "body": "---\ntitle: 'build:package 跨文件系统移动 dist 时以 EXDEV 失败'\nseverity: 'major'\n---\n\n## Expected Behavior\n\n`pnpm run build:package` 在 CI 的任意标准临时目录布局中完成，并把已构建 runtime 安全发布到仓库 `dist/`。\n\n## Current Behavior\n\n`scripts/package-runtime/build.mjs` 在系统临时目录构建后直接 `rename(temp/dist, repo/dist)`。当 `/tmp` 与 checkout 分属不同文件系统时，Node 抛出 `EXDEV: cross-device link not permitted`，Netlify 构建失败。\n\n## Possible Solution\n\n保持同文件系统的原子 rename；检测 `EXDEV` 时复制到目标文件系统内的临时目录，再原子替换，或默认把 staging 建在目标目录所在文件系统。\n\n## Minimal Reproducible Example\n\n在 `/tmp` 与 checkout 为不同 mount 的环境运行 `pnpm run build:package`。Netlify Noble build image 可稳定复现：`rename /tmp/niceeval-package-runtime-*/dist -> /opt/build/repo/dist` 返回 `EXDEV`。\n\n## Context\n\nPR report preview 目前通过为该命令设置 checkout 内的 `TMPDIR` 绕过；通用 `build:package` 仍受影响。\n",
+      "bodySha256": "5d5bbe64fe75457722e3894c62a8b7dac349ae83841535c04340b8caea9dbd18",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260822113707-accept-无法迁移-errored",
+      "legacyPath": ".agents/friction-log/20260822113707-accept-无法迁移-errored/friction.md",
+      "feedbackId": "20260822113707-accept-无法迁移-errored",
+      "originalTime": "20260822113707",
+      "severity": "major",
+      "body": "---\ntitle: 'accept 无法迁移 errored attempt 导致身份变更后结果缺失'\nseverity: 'major'\n---\n\n## Expected Behavior\n当项目因 workspace 包路径调整而改变 execution identity 时，用户可通过公开 CLI 将历史 run 的全部 attempt（包括 errored attempt）明确采纳到当前 identity，无需重跑付费模型。\n\n## Current Behavior\n`niceeval accept` 对包含 errored attempt 的 locator 返回 `attempt-not-completed`，且事务整体失败。只能逐个排除 errored locator 后采纳其余 completed attempt，导致原有错误结果在新 identity 下显示为 not-recorded。\n\n## Possible Solution\n允许 accept 显式采纳 completed/failed/errored 的终态 attempt，或提供公开的 run identity migration 命令；批量采纳时也可报告并跳过不可采纳项而不是整批回滚。\n\n## Minimal Reproducible Example\n1. 运行实验并产生至少一个 errored attempt。\n2. 调整 workspace package 路径，使 execution identity 改变。\n3. 对旧 run 执行 `niceeval accept @<errored-locator>`。\n4. CLI 返回 `attempt-not-completed`，无法在不重跑 provider 的前提下保留该错误结果。\n\n## Context\nMemoryBench PR preview 从 NiceEval 根包迁移到 `packages/niceeval` 后，旧结果全部 identity-mismatch。46 个 completed attempt 可采纳，但 2 个 errored attempt 无法迁移，因此标准报告中成为缺失数据。\n",
+      "bodySha256": "3ce5d8bbe86b492bf1627bb42e5a4a29fce05247fe1cd6d520e4fd9223af8796",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    },
+    {
+      "legacyId": "20260822152351-open-dagr-后桌面焦点跳到错误",
+      "legacyPath": ".agents/friction-log/20260822152351-open-dagr-后桌面焦点跳到错误/friction.md",
+      "feedbackId": "20260822152351-open-dagr-后桌面焦点跳到错误",
+      "originalTime": "20260822152351",
+      "severity": "minor",
+      "body": "---\ntitle: 'open-dagr 后桌面焦点跳到错误 workspace'\nseverity: 'minor'\n---\n\n## Expected Behavior\n\n在 Herdr 管理的父 pane 中执行 `herdr plugin action invoke open-dagr --plugin herdr-dagr` 后，Dagr 应在当前 workspace 打开，并保持父 pane 可见；若动作要切焦点，也只能切到同一 workspace 的 Dagr pane。\n\n## Current Behavior\n\nDagr pane 确实创建在当前 workspace，但桌面焦点跳到了另一个 workspace。父 agent 仍在原 pane 工作，用户看到的却不是当前任务；需要额外执行 `herdr agent focus w27:p1` 才恢复。\n\n## Possible Solution\n\nplugin action 应把调用者 workspace/pane 作为显式焦点目标，完成布局后原子恢复父 pane，或返回新 Dagr pane 让调用者自行选择是否 focus。\n\n## Minimal Reproducible Example\n\n1. 在 Herdr workspace 的 Codex 父 pane 中记录 `HERDR_WORKSPACE_ID` 与 `HERDR_PANE_ID`。\n2. 执行 `herdr plugin action invoke open-dagr --plugin herdr-dagr`。\n3. 观察 Dagr pane 出现在原 workspace，但桌面当前焦点落到其它 workspace。\n4. 执行 `herdr agent focus <原父 pane id>` 后恢复。\n\n## Context\n\n多 worker CLI 重构期间按用户要求打开 Dagr 时复现。Dagr 数据与 pane 本身可用，问题只在跨 workspace 的可见焦点，容易让用户误以为主 agent 已停住。\n",
+      "bodySha256": "389cbdbaabe4fffd2ef395e2e2a3b3a043e9a5d54a4ef66cc76ee1accb2816aa",
+      "artifacts": [],
+      "provenance": {
+        "kind": "frog",
+        "repository": "NiceEval/NiceEval"
+      },
+      "memoryDisposition": {
+        "kind": "none",
+        "reason": "Mechanical Frog migration preserves the observation without inventing an investigation or Memory conclusion."
+      }
+    }
+  ]
+}

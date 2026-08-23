@@ -56,7 +56,7 @@ planner 只做只读文件与网络读取,不 build、不创建资源。
 
 planner 与启动器由同一个 `ProviderModule<Plan>` 保持静态类型联系。
 planning 产出的 provider 私有 `Plan` 被闭包捕获。
-build preparation 与 materialize 都消费这一个值。
+build preparation 与 `materialize` 都消费这一个值。
 core 不把计划降成 JSON 后再 Schema decode，也不把新 plan 逆向拼回旧 Case。
 
 启动函数返回带 `Scope.Scope` 要求的 Effect。
@@ -165,7 +165,7 @@ reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 它只声明运行器能保证的偏序：fresh Eval 与 `sandboxReuse` lane 都不保证 slot 顺序，也不生成全局序号。Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 选择只保留命中的成员；作者数组位置没有业务顺序语义。
 
-fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 提供 `physicalLifecycleTemplate`。这份模板分别套用到每台实际实例，并包住分配给该实例的 slots；它不是整个 lane 只执行一次的统一前后边。reset 失败、寿命不足或故障退休会换实例并重跑模板；普通 reuse 的多台实例也可能并发存在。
+fresh slot 把 Case `materialize` / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 提供 `physicalLifecycleTemplate`。这份模板分别套用到每台实际实例，并包住分配给该实例的 slots；它不是整个 lane 只执行一次的统一前后边。reset 失败、寿命不足或故障退休会换实例并重跑模板；普通 reuse 的多台实例也可能并发存在。
 
 debug 把配置的全部 attempts 列作候选 dispatch slot。正常运行的 activation 仍受 late carry、预算、early-exit、fail-fast、取消与运行期失败影响；静态列出不等于实际执行。
 
@@ -173,7 +173,7 @@ Sandbox lifecycle hook、test 与 Provider callback 保留其真实位置并标�
 
 `shell()` / `command()` 显示 exact 命令与脱敏后的 env key，普通 callback 只显示 opaque。`sandbox.materialize` 额外显示 template owner、provider、kind 与安全的 configured locator。
 
-这个 locator 来自 template 声明的私有 command-plan binding，不进入 Record、provider identity 或复用 fingerprint。Direct Agent 显示一个明确的 `known-no-command` materialize 节点。`preTeardown` 按执行契约逆序展开，并标明只有 setup 到达 postSetup 时点后才运行。
+这个 locator 来自 template 声明的私有 command-plan binding，不进入 Record、provider identity 或复用 fingerprint。Direct Agent 显示一个明确的 `known-no-command` `materialize` 节点。`preTeardown` 按执行契约逆序展开，并标明只有 setup 到达 postSetup 时点后才运行。
 
 Eval Group 的 `beforeSlots` / `afterSlots` 在 human 与 JSON 中都显式呈现 Group Plugin setup / teardown。Sandbox Plugin lifecycle 留在物理模板内；Eval Plugin lifecycle 留在各 dispatch slot 内。三者都按 attachment owner 保留身份，不能因 Plugin 恰好来自同一个 definition 就跨 owner 合并。
 

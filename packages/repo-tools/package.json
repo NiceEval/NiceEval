@@ -15,7 +15,7 @@
     "@effect/printer": "0.51.0",
     "@effect/printer-ansi": "0.51.0",
     "effect": "3.22.1",
-    "frog": "1.1.0",
+    "shiki": "4.3.0",
     "yaml": "2.9.0"
   },
   "devDependencies": {

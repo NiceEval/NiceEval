@@ -7,7 +7,7 @@
 | Owner | 声明 | 运行职责 |
 |---|---|---|
 | EvalDef | Environment、setup、test、teardown | 题目准备、Agent 交互、文件传输与判分 |
-| SandboxSpec | Provider、默认 case、`environments` 映射表、materializer、setup | 选定一个 case 并准备 Experiment 条件 |
+| SandboxSpec | Provider、默认 case、`environments` 映射表、Sandbox source builder、setup | 选定一个 case 并准备 Experiment 条件 |
 | Agent | Agent setup | 安装 CLI、配置 runtime、执行 turn |
 | Sandbox 实例 | build/start/ready/finalizer | 创建并销毁完整的隔离 Sandbox |
 

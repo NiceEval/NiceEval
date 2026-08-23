@@ -5,6 +5,7 @@ node_modules/
 .pnpm-store/
 .nx/
 /.omo/
+/.repo-tools/docs-runs/
 /.playwright-mcp/
 *.log
 .DS_Store

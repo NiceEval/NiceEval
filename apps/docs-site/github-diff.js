@@ -1,4 +1,4 @@
-// 本文件由 scripts/gen-diff-code.ts 生成（pnpm run gen:diff-code），不要手工编辑
+// 本文件由 packages/repo-tools/src/docs/diff-code-compiler.ts 生成（pnpm docs:diff-code），不要手工编辑
 // GitHub 式 diff 展开条：点击后显示折叠的未变更行（配合 github-diff.css 的 .gd-fold）
 document.addEventListener("click", (e) => {
   const tr = e.target && e.target.closest ? e.target.closest("tr.gd-expand") : null;

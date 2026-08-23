@@ -27,7 +27,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Record blob 透明分段与存取](record-blob-materialization/README.md) —— 让 Record Host 隐藏大 blob 的流式写入、物理分段、校验与 Attachment 内去重。
 - [Record 库存](record-inventory/README.md) —— 盘点 receipt 交付前中断留下的 Run。
 - [可重评分 Eval](replayable-grading/README.md) —— 分离多轮 Execution 与只读 Grading，并对 sealed Record 独立重判。
-- [Sandbox Materialization](sandbox-materialization/README.md) —— 统一 Docker Image 声明与 Provider Cache 生命周期。
+- [Sandbox Provider 构建与缓存恢复](sandbox-materialization/README.md) —— 统一 Docker Image 声明与 Provider Cache 生命周期。
 - [Sandbox Prepare](sandbox-prepare/README.md) —— 收拢 checkout、Fixture 内容传输与官方命令的瞬时重试。
 - [Sandbox 默认停驻与回收](sandbox-retention/README.md) —— 失败类 Sandbox 的有界停驻、明确销毁、持久管理与安全 GC。
 - [Sandbox 复用反馈](sandbox-reuse-feedback/README.md) —— 补齐 Sandbox 物理复用的运行级摘要。

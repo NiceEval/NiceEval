@@ -39,7 +39,7 @@ export default defineEval({
 ```
 
 Eval 不返回 Provider-native 的 Sandbox 实例。
-source 只有经过当前 SandboxSpec 的 `environments` 映射表或 materializer,才成为运行 case。
+source 只有经过当前 SandboxSpec 的 `environments` 映射表或 Sandbox source builder,才成为运行 case。
 
 ## 数据集 adapter 派生 Environment
 
@@ -116,7 +116,7 @@ export default defineEval({
 `nodeRepositoryFixture()` 只是减少重复的领域 setup 函数;作者也可以写现有的 async setup function。
 
 仓库 checkout、项目依赖与可见 Fixture 在 Agent 前完成。
-隐藏 verifier 不属于 setup,必须等最后一次 Agent turn 返回后再 materialize。
+隐藏 verifier 不属于 setup,必须等最后一次 Agent turn 返回后再挂载。
 
 ## 可验证 setup 函数
 
@@ -168,7 +168,7 @@ environments[profile]
   > Provider neutral case
 ```
 
-有 source 但当前 SandboxSpec 没有对应映射或 materializer 时,该 Eval 在计划期 `skipped`。
+有 source 但当前 SandboxSpec 没有对应映射或 Sandbox source builder 时,该 Eval 在计划期 `skipped`。
 Runner 不回退到默认 template。
 
 ## Agent 保持独立

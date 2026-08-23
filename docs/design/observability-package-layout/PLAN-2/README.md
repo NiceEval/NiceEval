@@ -79,7 +79,7 @@ closed reader 与 interruption 是 typed Effect failure。
 ## 取舍
 
 本方案保留采集原子性和 source-qualified observations，减少把同一 observation 拆散后再拼回的成本。
-代价是读取一个 usage view 可能 materialize 整份 OTel closure，单 schema migration 的 blast radius 也更大。
+代价是生成一个 usage view 可能需要读取并解码整份 OTel closure，单 schema migration 的 blast radius 也更大。
 
 ## 采用条件
 

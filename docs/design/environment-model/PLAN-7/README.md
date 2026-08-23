@@ -47,16 +47,16 @@ PLAN-7 采用一条更中立的规则：本地路径或 URL 进入普通上传 A
 1. 首次执行真实运行并产生 transfer manifest；
 2. 后续携带在派发前重算上一份 manifest 的文件身份；
 3. Eval 源码闭包变化时不信任旧 manifest，直接重跑；
-4. materializer 写入 Agent 可见的 build/mount closure；
+4. Provider builder 写入 Agent 可见的 build/mount closure；
 5. 判定封口前，把本次 `send` 区间外上传的本地 source 与该 closure 比对，命中则结果无效。
 
 首次执行的事后比对保证判定不会采信把测试材料泄露给 Agent 的 Sandbox，但不能倒流阻止已经发生的暴露。
-需要保密而不仅是保证评测有效性时，测试材料必须物理放在 build context 外，或由 materializer 在启动前提供 filtered context。
+需要保密而不仅是保证评测有效性时，测试材料必须物理放在 build context 外，或由 Provider builder 在启动前提供 filtered context。
 
 ## 模块求值保持纯声明
 
 Eval 模块顶层只构造定义。
-运行期 nonce、Compose project/container 名、宿主临时目录与日志收集属于 Sandbox materializer，不允许每题在 `defineEval()` 外用 `randomBytes()` 或 `mkdirSync()` 准备。
+运行期 nonce、Compose project/container 名、宿主临时目录与日志收集属于 Sandbox creator，不允许每题在 `defineEval()` 外用 `randomBytes()` 或 `mkdirSync()` 准备。
 
 ## 不抽走每题定义
 
@@ -69,5 +69,5 @@ PLAN-7 不新增 Terminal-Bench Eval 工厂。
 2. 删除 `loadCriteria`、`loadPrivate`、`fixture.files`、`criteria`、`privateFiles`、`verifier` 与 `afterAgent` 候选面。
 3. 普通 `uploadFile` / `uploadDirectory` 接受 Eval 模块相对 `URL`，并把 source tree、内容摘要、调用区间与 Sandbox 目标写进 transfer manifest。
 4. carry planner 读取上次 transfer manifest；源码或依赖变化时重跑。
-5. materializer 写入 Agent 可见 closure，判定封口前执行动态泄漏比对。
+5. Provider builder 写入 Agent 可见 closure，判定封口前执行动态泄漏比对。
 6. agent diff 继续只认 `send` 区间；区间外上传与跑测不需要 `diff.ignore`。

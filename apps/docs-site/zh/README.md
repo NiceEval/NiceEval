@@ -29,7 +29,7 @@ Tutorial 和 How-to 都属于用户完成任务时阅读的教程，因此统一
 Technical Reference 不等于整页都由生成器拼出来。页面仍可手写短导语、最小示例和去往 How-to 的链接，但代码形状不能手抄：
 
 - `{/* GENERATED:BEGIN ... */}` 与 `{/* GENERATED:END ... */}` 之间的 API 成员、字段和 CLI flags 由 `pnpm docs:reference` 从源码紧邻注释生成。
-- 新增需要穷举的接口字段、函数、联合类型或 CLI flag 时，扩展 `scripts/generate-reference.ts` 的 region 映射，不在 MDX 里另写一份字段全集。
+- 新增需要穷举的接口字段、函数、联合类型或 CLI flag 时，扩展 `packages/repo-tools/src/docs/reference-compiler.ts` 的 region 映射，不在 MDX 里另写一份字段全集。
 - 能力矩阵、选择表和行为约束暂时由手写 Reference 承担。它们必须只描述当前实现，并避免重复已经生成的类型签名。
 - `reference/` 中没有生成区块的页面不因此成为 API 事实的第二来源。出现代码形状时，优先链接已有生成页。确实缺少生成入口时先补生成器。
 

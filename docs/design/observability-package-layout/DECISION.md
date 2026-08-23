@@ -20,7 +20,7 @@
 
 [PLAN-2](PLAN-2/README.md) 能保留 OTel package 的 source-qualified observations 与不可拆 seal transaction，
 但会引入 Capture Receipt、representation selection 和更大的 migration blast radius。读取一个 timing view 也可能
-materialize 整份 OTel closure。本 Roadmap 优先选择明确的 owner-local value 与独立 schema 演进。
+读取并解码整份 OTel closure。本 Roadmap 优先选择明确的 owner-local value 与独立 schema 演进。
 
 PLAN-1 不声称 `niceeval.timing/v1` 保存 OTel provenance。无法绑定 owner、verified clock domain、稳定 phase 或
 durable anchor 的 span 不进入 interval，并使 timing collection 为 partial。

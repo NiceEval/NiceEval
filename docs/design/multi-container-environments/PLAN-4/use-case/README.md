@@ -214,7 +214,7 @@ Sandbox 泄漏门核对。更理想的实现可以由发现器自动关联，不
 `composeSandbox` 产出 folder-local sandbox 声明，
 默认 profile id 从 `eval.ts` 所在目录推导，即
 `terminal-bench/debug-long-program`。它不是
-provider-specific materializer，也没有声称任意 provider
+provider-specific Sandbox creator，也没有声称任意 provider
 都支持 Compose。
 
 Terminal-Bench compatibility adapter 为每个 attempt 生成
@@ -398,7 +398,7 @@ provider 清单全绿。
   约定，不负责解释或改写 Compose 网络语义。
 - Eval folder 声明 sandbox source、题面与判据；不运行
   `docker compose build/up`，也不维护 template alias。
-- Experiment 选择 Agent、provider materializer、构建并发与
+- Experiment 选择 Agent、Provider builder、构建并发与
   attempt 并发；不复制四道题的拓扑。
 - Agent Adapter 只在 case 返回的主 Sandbox 做
   check→install→recheck；Sandbox 是否预装 Codex 不改变 eval。

@@ -1,11 +1,14 @@
 ---
 name: docs-terminology
 description: Maintain NiceEval documentation banned wording and diagnose writing-rule failures. Use when listing, adding, removing, or checking entries in docs/writing-rules.json; use docs/concepts.md instead when establishing a preferred domain term.
+metadata:
+  command: pnpm docs:terms
+  design: docs/engineering/repository-tools/README.md
 ---
 
 # Documentation terminology
 
-Read the [writing rules](../../../docs/README.md#写给人读) before changing terminology. The repository capability design is [documented here](../../../docs/engineering/repository-capabilities/README.md#多步维护工作流).
+Read the [writing rules](../../../docs/README.md#写给人读) before changing terminology. Its command owner is defined by [Repository Tools](../../../docs/engineering/repository-tools/README.md#七个领域).
 
 Use `pnpm docs:terms --help` as the command reference. Do not hand-edit a second occurrence list.
 

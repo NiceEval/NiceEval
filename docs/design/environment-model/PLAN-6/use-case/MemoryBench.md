@@ -96,4 +96,4 @@ baseline Experiment 使用公共 Codex template,不追加 mempal setup、skill �
 两组 Experiment 选择完全相同的 Eval,所以题目准备不随实验分叉。
 
 某条 Eval 后续需要自己的 Compose 时,它开始声明或由 adapter 派生 Environment source。
-同一 Experiment 下只有该 Eval 改走 materializer 或 `environments[profile]`;其它 Eval 继续使用默认 E2B template。
+同一 Experiment 下只有该 Eval 改走 Sandbox source builder 或 `environments[profile]`;其它 Eval 继续使用默认 E2B template。

@@ -10,7 +10,7 @@
 |---|---|
 | C1 | Eval 声明 folder-local Environment source |
 | C2 | SandboxSpec 默认 case 与 sandbox setup |
-| C3 | materializer 从 Eval source 构建并启动 Sandbox 后执行 Experiment setup |
+| C3 | Sandbox source builder 从 Eval source 构建并启动 Sandbox 后执行 Experiment setup |
 | C4 | SandboxSpec setup 链显式排序 |
 | C5 | 领域 setup 函数 check/install/recheck |
 | C6-C7 | 独立 state lifecycle 与 Sandbox 复用契约 |

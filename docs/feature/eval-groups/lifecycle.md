@@ -21,7 +21,7 @@ provider acquire
 ```
 
 Sandbox create、reset、健康检查或故障退休可能建立替代实例。因此物理 setup、resource
-materialize、release、teardown 与 finalizer 都是“每台实际实例一次”，不是“每个 Group
+`materialize`、release、teardown 与 finalizer 都是“每台实际实例一次”，不是“每个 Group
 文件恰好一次”。同一时刻仍只有一台实例服务 Group 的一条 Attempt。
 
 Group author 与 Plugin lifecycle 围住所选 slots，只执行 selected slice，不要求 CLI 选择自动扩回全组。`niceeval debug` 的 human 和 JSON 都在 `beforeSlots` / `afterSlots` 显示这层包裹；`physicalLifecycleTemplate` 则是每台实际实例一次，不能读成整个 Group lane 只 acquire / finalize 一次。
@@ -30,7 +30,7 @@ Group author 与 Plugin lifecycle 围住所选 slots，只执行 selected slice�
 
 ## carry 与选择
 
-全量 carry 不建立 Sandbox，也不 materialize resource。部分 carry 在规划期冻结 Group demand
+全量 carry 不建立 Sandbox，也不调用 resource `materialize`。部分 carry 在规划期冻结 Group demand
 与所有 selected Eval demand，但只有真实派发的 Attempt 调用 Group demand 和当前 Eval demand
 的 `prepare`。CLI 过滤、预算、首过即停与取消都可能让后续成员不进入本轮 Sandbox；Group
 不补造前缀完成状态。

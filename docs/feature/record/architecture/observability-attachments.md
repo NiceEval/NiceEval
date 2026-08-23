@@ -308,7 +308,7 @@ collector 先进行非 fatal UTF-8 decode、已登记敏感值脱敏和 control 
 `retainedBytes` 等于 saved text 的 UTF-8 长度。小内容 inline，大内容使用本 Attachment 自己 closure
 的 blob；`sha256` 是 exact retained safe UTF-8 bytes 的 SHA-256。
 
-seal 和 reader materialization 都对实际 bytes 重算 byte length、digest 与 family budget；即使篡改后的
+seal 和 reader 读取都对实际 bytes 重算 byte length、digest 与 family budget；即使篡改后的
 blob 长度不变也使 Attachment `invalid`。projector 统一两种 storage，因此 consumer 看不到物理差异。
 
 ## Usage

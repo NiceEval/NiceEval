@@ -461,7 +461,7 @@ declare function query<View extends DomainView>(
 
 `fileChangesView` 被请求时才读取目标 Attempt 的 File Changes Attachment。它关闭 attribution、collection 和
 按 send 区间排序的 `windows`，保留 window ID、sequence、change ID、path、端点形态与 collection limitation。
-这份 trajectory 是领域视图的主体；每个 send 区间仍保留自己的数组，也不 materialize 一个持久 patch 或 hunk。
+这份 trajectory 是领域视图的主体；每个 send 区间仍保留自己的数组，也不生成持久 patch 或 hunk。
 
 `net` 只是一项 reader 派生值，绝不回写 Attachment。Analysis 仅在 collection 为 complete，且每条重复 path 的
 相邻端点连续可证明、端点没有未知时给出 reliable `net`。端点不连续、`unavailable` revision 或结构为

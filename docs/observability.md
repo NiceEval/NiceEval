@@ -59,7 +59,7 @@ Record Host 通过 `readAttemptObservability()` 或 `readRunObservability()` 读
 
 | state | 含义 |
 |---|---|
-| `available` | exact payload 与 owner-local blob closure 已验证并 materialize |
+| `available` | exact payload 与 owner-local blob closure 已验证并载入内存 |
 | `not-recorded` | 已封口 owner 没有该 fixed family，不等于空 collection |
 | `unsupported` | family schema 不是当前 reader 支持的 exact schema |
 | `invalid` | envelope、payload、identity、ref 或 closure 无效 |

@@ -319,7 +319,7 @@ discovery + selection
 Compose、Dockerfile、E2B 等互不共享 `adapter: string + input: JsonValue` 信封。
 
 factory 完成 planning 后，用闭包把 `Plan` 与 module 一起绑定到公开 `SandboxProviderPlan`。
-core 只取得已经消去泛型的 materialize / build closure。
+core 只取得已经消去泛型的 `materialize` / `build` closure。
 core 不读取 provider 私有字段，也不按 provider 名或 adapter 字符串分支。
 
 公开 plan 是不可伪造的冻结完成态。

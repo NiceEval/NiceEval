@@ -1,4 +1,4 @@
-/* 本文件由 scripts/gen-diff-code.ts 生成（pnpm run gen:diff-code），不要手工编辑 */
+/* 本文件由 packages/repo-tools/src/docs/diff-code-compiler.ts 生成（pnpm docs:diff-code），不要手工编辑 */
 /* GitHub PR 式 diff 视图，配合生成的 diff MDX 页面使用 */
 
 .gd-file {

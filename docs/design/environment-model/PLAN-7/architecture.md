@@ -52,7 +52,7 @@ PLAN-7 不用 AST 猜路径，不用 planning mode 假执行 callback，也不�
 
 ## 泄漏检查
 
-Sandbox materializer 写入 Agent 启动前实际可见的 build context、image provenance 与 bind-mount closure。
+Provider builder 写入 Agent 启动前实际可见的 build context、image provenance 与 bind-mount closure。
 Attempt 封口前，Runner 把 `send` 区间外上传的本地 source 与该 closure 比对。
 
 若同一内容已经在 Agent 可见面中，Attempt `errored`，不接受跑测判分结果。
@@ -63,7 +63,7 @@ solution 从未被 Eval 读取时，不进入 transfer manifest，也不需要 `
 
 ## 模块求值没有运行期副作用
 
-Compose project 名、容器名、临时目录与日志归档由 materializer 按 Attempt 创建。
+Compose project 名、容器名、临时目录与日志归档由 Sandbox creator 按 Attempt 创建。
 顶层随机数或宿主目录创建既污染身份，也没有 lifecycle owner。
 
 ## 不建立文件子框架

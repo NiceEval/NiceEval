@@ -65,12 +65,12 @@ format、better 与 evidence policy。materialized `MetricValue` 才保存本次
 ```text
 descriptor definition
   → compile finite dependency closure
-  → once-per-execution projection + Analysis materialization
+  → once-per-execution projection + Analysis execution
   → PageFamily expansion + semantic tree closure
 ```
 
-同一 projection 与 field-set materializer 在一次 execution 中至多执行一次。cycle、population mismatch 与 identity
-collision 在 I/O 前拒绝。materialization 后的 row／route／render callback 只能消费 closed row，不能返回新的
+同一 projection 与 field-set executor 在一次 execution 中至多执行一次。cycle、population mismatch 与 identity
+collision 在 I/O 前拒绝。Analysis 计算结束后的 row／route／render callback 只能消费 closed row，不能返回新的
 `ReportData`。
 
 这是一张“每次调用闭合”的有限 DAG，不是全程序、动态或可由 callback 扩张的查询 graph。

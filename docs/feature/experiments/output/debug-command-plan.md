@@ -13,7 +13,7 @@
 │ template: docker:image                                               │
 │ template owner: experiment:suite/one                                 │
 │ configured locator: exact · image="node@sha256:cd849..."             │
-│ reason: provider materialization is a runtime operation              │
+│ reason: provider Sandbox creation is a runtime operation             │
 ╰──────────────────────────────────────────────────────────────────────╯
 
 ╭─ sandbox.prepare ──────────────────────────────────────────── EXACT ─╮
