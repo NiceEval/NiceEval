@@ -3,8 +3,8 @@ set -euo pipefail
 
 readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly NICEEVAL_ROOT="$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)"
-readonly MEMORYBENCH_REPOSITORY="https://github.com/NiceEval/MemoryBench.git"
-readonly MEMORYBENCH_BRANCH="2-0"
+readonly PREVIEW_REPOSITORY="${NICEEVAL_PREVIEW_REPOSITORY:-https://github.com/NiceEval/NiceEval-Preview.git}"
+readonly PREVIEW_REF="${NICEEVAL_PREVIEW_REF:-main}"
 readonly PUBLISH_DIRECTORY="$NICEEVAL_ROOT/netlify-report-preview"
 
 if [[ "${CONTEXT:-}" != "deploy-preview" ]]; then
@@ -21,21 +21,22 @@ PREVIEW_SCRATCH="$(mktemp -d)"
 mkdir -p "$NICEEVAL_ROOT/.netlify"
 PACKAGE_SCRATCH="$(mktemp -d "$NICEEVAL_ROOT/.netlify/package-runtime.XXXXXX")"
 trap 'rm -rf "$PREVIEW_SCRATCH" "$PACKAGE_SCRATCH"' EXIT
-readonly MEMORYBENCH_ROOT="$PREVIEW_SCRATCH/MemoryBench"
+readonly PREVIEW_ROOT="$PREVIEW_SCRATCH/NiceEval-Preview"
 
-git clone --filter=blob:none --single-branch --branch "$MEMORYBENCH_BRANCH" \
-  "$MEMORYBENCH_REPOSITORY" "$MEMORYBENCH_ROOT"
+git clone --filter=blob:none --single-branch --branch "$PREVIEW_REF" \
+  "$PREVIEW_REPOSITORY" "$PREVIEW_ROOT"
+echo "NiceEval preview fixture: $(git -C "$PREVIEW_ROOT" rev-parse HEAD)"
 
 # Netlify installs the isolated netlify-preview base, not the repository root.
 # Build the linked candidate from the root lockfile rather than a stale cache.
 corepack pnpm@11.18.0 --dir "$NICEEVAL_ROOT" install --frozen-lockfile --ignore-scripts
-corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" install --frozen-lockfile
+corepack pnpm@11.18.0 --dir "$PREVIEW_ROOT" install --frozen-lockfile
 TMPDIR="$PACKAGE_SCRATCH" \
-corepack pnpm@11.18.0 --dir "$NICEEVAL_ROOT" consumer:link apply "$MEMORYBENCH_ROOT"
+corepack pnpm@11.18.0 --dir "$NICEEVAL_ROOT" consumer:link apply "$PREVIEW_ROOT"
 
-corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" exec niceeval --version
+corepack pnpm@11.18.0 --dir "$PREVIEW_ROOT" exec niceeval --version
+# Keep V8's old-space collector inside the preview's fixed Report RSS budget;
+# the product budget remains unchanged and still rejects real excess output.
 NODE_OPTIONS="--max-old-space-size=1024" \
-CODEX_BASE_URL="https://preview.invalid/v1" \
-CODEX_API_KEY="netlify-report-preview-no-secret" \
-corepack pnpm@11.10.0 --dir "$MEMORYBENCH_ROOT" exec niceeval view \
+corepack pnpm@11.18.0 --dir "$PREVIEW_ROOT" exec niceeval view \
   --out "$PUBLISH_DIRECTORY"
