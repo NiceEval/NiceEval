@@ -2201,12 +2201,13 @@ function openCurrentRead(input: {
     // Compatibility is decided before Core reconstruction. A structurally
     // closed Run from a future writer may contain a family this package does
     // not know; that is unsupported format, not corrupt or absent Core.
-    yield* ensureOrdinaryCurrentAttachments({
+    const pendingMigration = yield* inspectOrdinaryCurrentAttachments({
       fileSystem,
       root: input.root,
     });
     const snapshot = yield* readSealedCoreSnapshot(runtime, fileSystem);
     if (snapshot.state === "core-invalid") return yield* Effect.fail(bootstrapInvalid());
+    if (pendingMigration !== undefined) return yield* Effect.fail(pendingMigration);
     yield* coordination.verifyRecordIdentity({ root: input.root, recordId: current.document.recordId });
     yield* Effect.addFinalizer(() => Effect.sync(() => { lifecycle.closed = true; }));
     return makeReadSession(runtime, fileSystem);
@@ -3842,6 +3843,14 @@ const attemptMigrationDescriptors = Object.freeze([
   ...NiceEvalRecordFamilyDescriptorsByOwner.attempt.map(migrationDescriptor),
 ]);
 
+const runMigrationDescriptorsByFamily: ReadonlyMap<string, AnyMigrationDescriptor> = new Map(
+  runMigrationDescriptors.map((descriptor) => [descriptor.family, descriptor] as const),
+);
+
+const attemptMigrationDescriptorsByFamily: ReadonlyMap<string, AnyMigrationDescriptor> = new Map(
+  attemptMigrationDescriptors.map((descriptor) => [descriptor.family, descriptor] as const),
+);
+
 function validateAttachmentDirectoryInventory(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly directory: ReturnType<typeof recordPortablePath>;
@@ -4318,37 +4327,122 @@ function planAttachmentMigration(input: {
   });
 }
 
+function inspectOrdinaryCurrentAttachments(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly runIds?: ReadonlySet<RunId>;
+}): Effect.Effect<RecordMigrationRequired | undefined, RecordReaderOpenError> {
+  return Effect.gen(function* () {
+    let pendingMigration: RecordMigrationRequired | undefined;
+    // Root inventory remains fail-closed: an unknown durable family is not a
+    // source-local fact. Known current payload closures are read lazily by
+    // their own methods so one invalid source never prevents unrelated sources
+    // from being selected and read.
+    const inspectDirectory = (
+      directory: ReturnType<typeof recordPortablePath>,
+      owner: RecordAttachmentOwner,
+      runId: RunId,
+      attemptId?: AttemptId,
+    ): Effect.Effect<void, RecordReaderOpenError> => Effect.gen(function* () {
+      const kind = yield* input.fileSystem.pathKind(directory);
+      if (kind === "missing") return;
+      if (kind !== "directory") {
+        return yield* Effect.fail(new RecordFormatUnsupported({
+          code: "record-format-unsupported",
+          format: "attachment-inventory",
+        }));
+      }
+      const entries = yield* input.fileSystem.listDirectory({ directory, maximumEntries: 256 });
+      const descriptors = owner === "run"
+        ? runMigrationDescriptorsByFamily
+        : attemptMigrationDescriptorsByFamily;
+      for (const entry of entries) {
+        const descriptor = entry.kind === "directory" ? descriptors.get(entry.name) : undefined;
+        if (descriptor === undefined) {
+          return yield* Effect.fail(new RecordFormatUnsupported({
+            code: "record-format-unsupported",
+            format: `unknown-family:${entry.name}`,
+          }));
+        }
+        const location: KnownMigrationAttachment = owner === "run"
+          ? Object.freeze({ owner, runId, descriptor })
+          : Object.freeze({ owner, runId, attemptId: attemptId!, descriptor });
+        const envelope = yield* inspectFixedRecordAttachmentEnvelope({
+          fileSystem: input.fileSystem,
+          root: input.root,
+          location: migrationReaderLocation(location),
+          descriptor,
+        });
+        if (envelope.state === "unsupported") {
+          return yield* Effect.fail(new RecordFormatUnsupported({
+            code: "record-format-unsupported",
+            format: `${envelope.family}@${envelope.schemaVersion}`,
+          }));
+        }
+        if (envelope.state === "migration-required" && pendingMigration === undefined) {
+          pendingMigration = new RecordMigrationRequired({
+            code: "record-migration-required",
+            source: `${envelope.family}@${envelope.fromSchemaVersion}`,
+            target: `${envelope.family}@${envelope.toSchemaVersion}`,
+            command: envelope.command,
+          });
+        }
+      }
+    });
+
+    const runs = yield* input.fileSystem.listDirectory({
+      directory: recordPortablePath(input.root, "runs"),
+      maximumEntries: MAXIMUM_RUN_ENTRIES,
+    });
+    for (const entry of runs) {
+      if (entry.kind !== "directory") continue;
+      const runId = decodeRunId(entry.name);
+      if (
+        runId === undefined ||
+        (input.runIds !== undefined && !input.runIds.has(runId)) ||
+        !(yield* input.fileSystem.isCompleteMarker({ root: input.root, runId }))
+      ) continue;
+      yield* inspectDirectory(
+        recordPortablePath(input.root, "runs", runId, "attachments"),
+        "run",
+        runId,
+      );
+      const attemptsDirectory = recordPortablePath(input.root, "runs", runId, "attempts");
+      if ((yield* input.fileSystem.pathKind(attemptsDirectory)) !== "directory") continue;
+      const attempts = yield* input.fileSystem.listDirectory({
+        directory: attemptsDirectory,
+        maximumEntries: MAXIMUM_ATTEMPT_ENTRIES,
+      });
+      for (const attempt of attempts) {
+        if (attempt.kind !== "directory") continue;
+        const attemptId = decodeAttemptId(attempt.name);
+        if (attemptId === undefined) continue;
+        yield* inspectDirectory(
+          recordPortablePath(
+            input.root,
+            "runs",
+            runId,
+            "attempts",
+            attemptId,
+            "attachments",
+          ),
+          "attempt",
+          runId,
+          attemptId,
+        );
+      }
+    }
+    return pendingMigration;
+  });
+}
+
 function ensureOrdinaryCurrentAttachments(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
   readonly runIds?: ReadonlySet<RunId>;
 }): Effect.Effect<void, RecordReaderOpenError> {
-  return Effect.gen(function* () {
-    // Root inventory remains fail-closed: an unknown durable family is not a
-    // source-local fact. Known current payload closures are read lazily by
-    // their own methods so one invalid source never prevents unrelated sources
-    // from being selected and read.
-    const locations = yield* validateCurrentFamilyInventory(
-      input.fileSystem,
-      input.root,
-      input.runIds,
-    );
-    for (const location of locations) {
-      const envelope = yield* inspectFixedRecordAttachmentEnvelope({
-        fileSystem: input.fileSystem,
-        root: input.root,
-        location: migrationReaderLocation(location),
-        descriptor: location.descriptor,
-      });
-      if (envelope.state !== "migration-required") continue;
-      return yield* Effect.fail(new RecordMigrationRequired({
-        code: "record-migration-required",
-        source: `${envelope.family}@${envelope.fromSchemaVersion}`,
-        target: `${envelope.family}@${envelope.toSchemaVersion}`,
-        command: envelope.command,
-      }));
-    }
-  });
+  return Effect.flatMap(inspectOrdinaryCurrentAttachments(input), (migration) =>
+    migration === undefined ? Effect.void : Effect.fail(migration));
 }
 
 function migrationPlan(input: {
