@@ -230,24 +230,24 @@ export async function runDockerProfileCommand(
     const checks: Check[] = [];
     try {
       const binding = await attestDockerProfile(alias);
-      const control = await dockerProfileControlRequest<ControlStatus>(binding.controlSocketPath, { kind: "status" });
-      if (control.journal?.state !== "healthy" || control.journal.durableTransitions !== true) {
-        throw new Error("watchdog did not attest a healthy durable journal");
-      }
-      const assets = control.assets?.images ?? [];
-      const doctorAsset = assets.find((asset) => asset.reference === DOCKER_PROFILE_DOCTOR_DIND_IMAGE);
-      if (control.assets?.state !== "verified" || doctorAsset?.present !== true) {
-        throw new Error("watchdog did not attest the required preloaded diagnostic asset");
-      }
       checks.push(
         { id: "descriptor", status: "PASS", detail: binding.descriptorDigest },
         { id: "control", status: "PASS", detail: `generation ${binding.daemonGeneration}` },
         { id: "daemon", status: "PASS", detail: binding.platform },
         { id: "cgroup", status: "PASS", detail: binding.profile.backend.cgroup.aggregatePath },
         { id: "storage", status: "PASS", detail: binding.profile.backend.filesystem.identity },
-        { id: "journal", status: "PASS", detail: "watchdog attested a complete fsync-backed journal" },
-        { id: "assets", status: "PASS", detail: doctorAsset.reference! },
       );
+      const control = await dockerProfileControlRequest<ControlStatus>(binding.controlSocketPath, { kind: "status" });
+      if (control.journal?.state !== "healthy" || control.journal.durableTransitions !== true) {
+        throw new Error("watchdog did not attest a healthy durable journal");
+      }
+      checks.push({ id: "journal", status: "PASS", detail: "watchdog attested a complete fsync-backed journal" });
+      const assets = control.assets?.images ?? [];
+      const doctorAsset = assets.find((asset) => asset.reference === DOCKER_PROFILE_DOCTOR_DIND_IMAGE);
+      if (control.assets?.state !== "verified" || doctorAsset?.present !== true) {
+        throw new Error("watchdog did not attest the required preloaded diagnostic asset");
+      }
+      checks.push({ id: "assets", status: "PASS", detail: doctorAsset.reference! });
       checks.push(...await runDynamicChecks(alias));
     } catch (error) {
       const errorDetail = error instanceof AggregateError

@@ -1,13 +1,25 @@
-FROM docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c AS docker-runtime
+FROM scratch AS node-runtime
 
-FROM node:24-slim@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f
+ADD node-rootfs.tar /
 
-COPY --from=docker-runtime /usr/local/bin/ /usr/local/bin/
+FROM scratch
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git iptables \
-  && rm -rf /var/lib/apt/lists/* \
-  && groupadd --system docker \
-  && usermod --append --groups docker node
+ADD docker-rootfs.tar /
+
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /bin/bash /bin/bash
+COPY --from=node-runtime /lib/x86_64-linux-gnu/ /lib/x86_64-linux-gnu/
+COPY --from=node-runtime /usr/lib64/ /usr/lib64/
+COPY --from=node-runtime /usr/bin/ldd /usr/bin/ldd
+
+RUN ln -s usr/lib64 /lib64 \
+  && addgroup -g 1000 node \
+  && adduser -D -u 1000 -G node node \
+  && addgroup node docker \
+  && node --version \
+  && bash --version \
+  && ldd --version \
+  && docker --version \
+  && dockerd --version
 
 ENTRYPOINT ["dockerd-entrypoint.sh"]

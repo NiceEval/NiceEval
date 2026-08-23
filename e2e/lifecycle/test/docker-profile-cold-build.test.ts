@@ -37,6 +37,8 @@ interface HostJournalRecord {
 const docker = command(["docker"]);
 const sudo = command(["sudo", "-n"]);
 const driverImage = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f";
+const dindImage = "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c";
+const buildkitImage = "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
 const projectCopy = {
   from: process.cwd(),
   prefix: "niceeval-e2e-docker-profile-project-",
@@ -70,6 +72,21 @@ async function quotaPath(): Promise<string> {
   throw new Error("project-quota tools (setquota/repquota) are required by this E2E");
 }
 
+async function exportImageRootfs(image: string, destination: string): Promise<void> {
+  const created = await docker.run(["create", image]);
+  expect(created.exitCode, created.diagnostic()).toBe(0);
+  const containerId = created.stdout.trim();
+  try {
+    const exported = await docker.run(["export", "--output", destination, containerId], {
+      timeoutMs: 60_000,
+    });
+    expect(exported.exitCode, exported.diagnostic()).toBe(0);
+  } finally {
+    const removed = await docker.run(["rm", "--force", containerId]);
+    expect(removed.exitCode, removed.diagnostic()).toBe(0);
+  }
+}
+
 test("profile-bound Dockerfile cold build starts the Attempt through the public CLI", async () => {
   const scripts = process.env.NICEEVAL_E2E_DOCKER_PROFILE_HOST_SCRIPTS;
   expect(scripts, "runner must inject the actual Docker profile host scripts").toBeTruthy();
@@ -83,6 +100,9 @@ test("profile-bound Dockerfile cold build starts the Attempt through the public 
   expect(id.exitCode, id.diagnostic()).toBe(0);
 
   await withProjectCopy(projectCopy, async ({ root: projectRoot }) => {
+    const fixtureContext = join(projectRoot, "fixtures/profile-cold-build");
+    await exportImageRootfs(driverImage, join(fixtureContext, "node-rootfs.tar"));
+    await exportImageRootfs(dindImage, join(fixtureContext, "docker-rootfs.tar"));
     // The unique context byte keeps this owner a real cold build even when the
     // daemon already carries an image from an earlier reliability repetition.
     await appendFile(
@@ -141,11 +161,12 @@ test("profile-bound Dockerfile cold build starts the Attempt through the public 
               "--env", "NICEEVAL_E2E_DOCKER_PROFILE_ALIAS=e2e-cold-build",
               driverImage,
               "sh", "-ec",
-              `holder_pid=''; doctor_pid=''; fault_socket=''
+              `holder_pid=''; doctor_pid=''; fault_socket=''; compat_proxy_pid=''; compat_socket=''
 cleanup_holder() { if [ -n "\${holder_pid}" ] && kill -0 "\${holder_pid}" 2>/dev/null; then kill -TERM "\${holder_pid}" 2>/dev/null || true; wait "\${holder_pid}" || true; fi; }
 cleanup_doctor() { if [ -n "\${doctor_pid}" ] && kill -0 "\${doctor_pid}" 2>/dev/null; then kill -KILL "\${doctor_pid}" 2>/dev/null || true; wait "\${doctor_pid}" || true; fi; }
 restore_fault_socket() { if [ -n "\${fault_socket}" ] && [ -S "\${fault_socket}" ]; then mv "\${fault_socket}" '${activeFixture.controlSocket}'; fi; }
-trap 'restore_fault_socket; cleanup_doctor; cleanup_holder; chown -R ${process.getuid!()}:${process.getgid!()} ${projectRoot}/.niceeval 2>/dev/null || true' EXIT
+restore_compat_socket() { if [ -n "\${compat_proxy_pid}" ] && kill -0 "\${compat_proxy_pid}" 2>/dev/null; then kill -TERM "\${compat_proxy_pid}" 2>/dev/null || true; wait "\${compat_proxy_pid}" || true; fi; if [ -n "\${compat_socket}" ] && [ -S "\${compat_socket}" ]; then rm -f '${activeFixture.controlSocket}'; mv "\${compat_socket}" '${activeFixture.controlSocket}'; fi; }
+trap 'restore_fault_socket; restore_compat_socket; cleanup_doctor; cleanup_holder; chown -R ${process.getuid!()}:${process.getgid!()} ${projectRoot}/.niceeval 2>/dev/null || true' EXIT
 mkdir -p /etc/niceeval/docker-profiles
 cp '${activeFixture.descriptor}' /etc/niceeval/docker-profiles/e2e-cold-build.json
 chown root:root /etc/niceeval/docker-profiles/e2e-cold-build.json
@@ -154,8 +175,29 @@ docker_api() { node - "$@" <<'NODE'
 const Docker=require('dockerode'),d=new Docker({socketPath:'/run/docker.sock'}),[action,...args]=process.argv.slice(2);const labels=Object.fromEntries((args[0]||'').split(',').filter(Boolean).map(x=>x.split('=')));const filters={label:Object.entries(labels).map(([k,v])=>v?k+'='+v:k)};(async()=>{if(action==='image'){await d.getImage(args[0]).inspect();return}if(action==='find'){const c=await d.listContainers({all:false,filters});if(c[0])process.stdout.write(JSON.stringify({id:c[0].Id,labels:c[0].Labels}))}if(action==='kill'){await d.getContainer(args[0]).kill()}if(action==='absent'){const c=await d.listContainers({all:true,filters}),n=await d.listNetworks({filters});if(c.length||n.length)throw Error('owned resource remains')}})().catch(e=>{console.error(e);process.exit(1)})
 NODE
 }
-docker_api image 'docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c'
-docker_api image 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
+docker_api image '${dindImage}'
+docker_api image '${buildkitImage}'
+compat_socket='${activeFixture.controlSocket}.compat'
+mv '${activeFixture.controlSocket}' "$compat_socket"
+node - '${activeFixture.controlSocket}' "$compat_socket" <<'NODE' &
+const net=require('net'),[front,back]=process.argv.slice(2);const server=net.createServer({allowHalfOpen:true},client=>{let request='',response='';client.on('data',b=>request+=b);client.on('end',()=>{const upstream=net.createConnection(back);upstream.on('connect',()=>upstream.end(request));upstream.on('data',b=>response+=b);upstream.on('error',e=>client.destroy(e));upstream.on('close',()=>{try{const value=JSON.parse(response),input=JSON.parse(request);if(input.kind==='status'&&value.ok)delete value.result.journal;client.end(JSON.stringify(value)+String.fromCharCode(10))}catch(e){client.destroy(e)}})})});server.listen(front);process.on('SIGTERM',()=>server.close(()=>process.exit(0)))
+NODE
+compat_proxy_pid=$!
+for _ in $(seq 1 100); do [ -S '${activeFixture.controlSocket}' ] && break; kill -0 "$compat_proxy_pid" 2>/dev/null || exit 1; sleep 0.05; done
+[ -S '${activeFixture.controlSocket}' ] || { echo 'compatibility control proxy did not become ready' >&2; exit 1; }
+set +e
+node_modules/.bin/niceeval docker profile doctor e2e-cold-build --json >/tmp/niceeval-doctor-compat.json
+compat_status=$?
+set -e
+COMPAT_STATUS="$compat_status" node - /tmp/niceeval-doctor-compat.json <<'NODE'
+const fs=require('fs'),d=JSON.parse(fs.readFileSync(process.argv[2],'utf8')),ids=['descriptor','control','daemon','cgroup','storage','journal','assets','cold-build','cold-build-cleanup','container-limits','nested-docker','container-cleanup'];const invalid=process.env.COMPAT_STATUS==='0'||d.status!=='FAIL'||JSON.stringify(d.checks.map(x=>x.id))!==JSON.stringify(ids)||ids.slice(0,5).some((id,i)=>d.checks[i].status!=='PASS')||d.checks[5].status!=='FAIL'||d.checks[5].code!=='UNSAFE_TO_CONTINUE'||!d.checks[5].detail.includes('durable journal')||d.checks.slice(6).some(x=>x.status!=='FAIL'||x.code!=='PREREQUISITE_FAILED');if(invalid){console.error(JSON.stringify({compatStatus:process.env.COMPAT_STATUS,doctor:d},null,2));process.exit(1)}
+NODE
+kill -TERM "$compat_proxy_pid"
+wait "$compat_proxy_pid"
+compat_proxy_pid=''
+rm -f '${activeFixture.controlSocket}'
+mv "$compat_socket" '${activeFixture.controlSocket}'
+compat_socket=''
 rm -f /tmp/niceeval-preoccupier.json /tmp/niceeval-preoccupier.ready
 node - '${activeFixture.controlSocket}' /tmp/niceeval-preoccupier.json /tmp/niceeval-preoccupier.ready <<'NODE' &
 const net=require('net'), fs=require('fs'), crypto=require('crypto'); const [path,out,ready]=process.argv.slice(2);
@@ -207,8 +249,8 @@ NODE
 profile_label=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-owned.json")).labels["niceeval.profile-id"])')
 reservation_label=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-owned.json")).labels["niceeval.reservation-id"])')
 docker_api absent "niceeval.profile-id=$profile_label,niceeval.reservation-id=$reservation_label"
-docker_api image 'docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c'
-docker_api image 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
+docker_api image '${dindImage}'
+docker_api image '${buildkitImage}'
 rm -f /tmp/niceeval-doctor-fault.json /tmp/niceeval-doctor-fault-owned.json
 node_modules/.bin/niceeval docker profile doctor e2e-cold-build --json >/tmp/niceeval-doctor-fault.json 2>&1 &
 doctor_pid=$!
@@ -236,8 +278,8 @@ NODE
 fault_profile=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-fault-owned.json")).labels["niceeval.profile-id"])')
 fault_reservation=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/niceeval-doctor-fault-owned.json")).labels["niceeval.reservation-id"])')
 docker_api absent "niceeval.profile-id=$fault_profile,niceeval.reservation-id=$fault_reservation"
-docker_api image 'docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c'
-docker_api image 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
+docker_api image '${dindImage}'
+docker_api image '${buildkitImage}'
 set +e
 node_modules/.bin/niceeval exp docker-profile-cold-build --rerun all --json >/tmp/niceeval-exp.ndjson
 status=$?
