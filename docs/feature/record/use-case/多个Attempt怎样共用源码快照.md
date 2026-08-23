@@ -49,7 +49,7 @@ Core 公理。这不是 Sources payload 的小改，而是下一 Record format �
 
 ## 惰性读取不改变 ownership
 
-`RecordReadSession` 只在 source viewer 或 Analysis query 实际请求 Sources 时 materialize payload 和
+`RecordReadSession` 只在 source viewer 或 Analysis query 实际请求 Sources 时读取 payload 和
 closure。形成 `available` value 后，payload 已 deep-freeze，blob bytes 以 defensive copy 提供；Scope
 关闭后展示继续消费内存 snapshot，不再触发磁盘 I/O。
 

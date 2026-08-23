@@ -174,7 +174,7 @@ snapshot；全部 own blob 通过 closure 验证后才可从内存获得 defensi
 
 `not-recorded` 表示已封口 owner 没有 current catalog 中被请求的 fixed family。它不等于空 collection。
 缺 key、多 key、重复 key、手写 key、跨 owner ref 或 root 外路径使请求的 Attachment 为 `invalid`。I/O、
-permission 或 materialize failure 仍是 `RecordReadError`。
+permission 或 payload 读取失败仍是 `RecordReadError`。
 
 对 `niceeval.file-changes`，`not-recorded` 只表示 Sandbox 归因采集器不适用于该 Attempt。适用的 collector
 开始后，即使导出失败、中断或达到限额，也会写入带 limitation 的 `collection.state: "partial"` Attachment；完整空轨迹、

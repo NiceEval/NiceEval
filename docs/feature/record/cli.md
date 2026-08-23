@@ -53,7 +53,7 @@ Run 从 selection 中移除。
 由对应 lazy source read 独立验证，因此一个 source 的 `migration-required`、`unsupported` 或 `invalid` 不阻断
 无关 source。显式 `niceeval migrate` 仍只处理 current root 内具备完整固定 chain 的已知 predecessor。
 
-读到 `available` 后，payload 已 deep-freeze，blob closure 已验证并 materialize。Analysis 与 Report
+读到 `available` 后，payload 已 deep-freeze，blob closure 已验证并载入内存。Analysis 与 Report
 不会再次打开 storage。形成 value 前的 I/O 或 permission failure 仍是 typed read failure，不会伪装成
 空数据。
 

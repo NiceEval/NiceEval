@@ -251,7 +251,7 @@
     "view:build": "vite build --config src/report/client/vite.config.ts",
     "build:report": "pnpm run build:package",
     "build:package": "pnpm run view:build && node scripts/package-runtime/build.mjs",
-    "build:index": "tsx ../../scripts/generate-reference.ts --bundled-index",
+    "build:index": "pnpm --dir ../.. run build:index",
     "stage:docs": "node scripts/stage-docs.mjs",
     "prepack": "pnpm exec concurrently --kill-others-on-fail --names package,index,docs \"pnpm run build:package\" \"pnpm run build:index\" \"pnpm run stage:docs\""
   },

@@ -127,7 +127,7 @@ Attempt Record 保存所选 case、每层 setup 的 activity、可验证 setup �
 ## 正交生命周期
 
 外部 Experiment state 在 Agent CLI 就位后按独立 Feature 契约 load/save。
-turn 后 hidden verifier 在 Agent 完成后 materialize 并 cleanup。
+turn 后 hidden verifier 在 Agent 完成后挂载并 cleanup。
 
 这些相位不改变 Environment 起点选择或 setup owner。
 多容器的 ready、主 Sandbox、finalizer 与 stop 继续属于 Sandbox 实例。

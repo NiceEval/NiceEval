@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { loadZhPages, regenerateBundledIndex } from "../../scripts/generate-reference.ts";
+import { regenerateBundledIndex } from "../../packages/repo-tools/src/docs/reference-compiler.ts";
+import { loadBundledPages } from "../../packages/repo-tools/src/docs/generators.ts";
 
 // 包根 INDEX.md 是 coding agent 读随包文档的单点入口(机制见 docs/engineering/agent-docs/)。
 // 它是构建产物:`prepare`(build:index)在安装/发版打包前从 INDEX.template.md + 各页 frontmatter
@@ -14,7 +15,7 @@ const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 describe("随包 AI 文档索引", () => {
   it("模板 + 全部 zh 页面能生成完整文档树,非入口页一页不漏", async () => {
     const template = await readFile(join(PACKAGE_ROOT, "INDEX.template.md"), "utf-8");
-    const pages = loadZhPages(ROOT);
+    const pages = loadBundledPages();
     expect(pages.length).toBeGreaterThan(0);
 
     // 缺 title/description 或模板缺区块标记时,这里抛错——与发版 CI 的 prepare 同一条失败路径,提前到 pnpm test。

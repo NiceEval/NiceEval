@@ -141,7 +141,7 @@ Page。聚合口径与 refs 由领域自己的具名结果类型保留。
 
 Analysis SDK 在 nominal population 上导出 Dimension 与 Measure。Report 作者用 `aggregate({ by, values })` 形成静态
 `ReportData`，再交给 `Bars`、`Table`、`Scatter` 或纯组合组件。host 从 descriptor 编译本次有限依赖闭包，在 Page
-展开前一次 materialize。
+展开前一次性执行完这份闭包。
 
 ## 当前支持
 

@@ -3,14 +3,14 @@
 修改 tier 目录或同步机制前，先读 [`memory/tier-sync-merge-tree-pitfalls.md`](../memory/tier-sync-merge-tree-pitfalls.md)。完成后运行：
 
 ```sh
-pnpm tiers:sync
+pnpm examples:sync
 ```
 
 文档和 README 中的示例链接必须指向真实目录。
 
 `examples/zh/` 按**接没接 niceeval** 分两组：
 
-- `zh/origin/` —— **还没接 niceeval 的普通应用**。每个都是独立可跑的项目，不 import niceeval，且都是真调用各自 SDK 的最小 MVP（有基本的前后端，前后端接口按各 SDK 自己的最佳实践实现，没有 mock 模式）。它们是接入的 before 基线：接入后的版本放到 `zh/tier1/<同名目录>`（Tier 1 = 无侵入接入，见 [`docs/origin-integration.md`](../docs/origin-integration.md)），用 `pnpm run gen:diff-code` 统一对比"接入前后代码动了多少"。
+- `zh/origin/` —— **还没接 niceeval 的普通应用**。每个都是独立可跑的项目，不 import niceeval，且都是真调用各自 SDK 的最小 MVP（有基本的前后端，前后端接口按各 SDK 自己的最佳实践实现，没有 mock 模式）。它们是接入的 before 基线：接入后的版本放到 `zh/tier1/<同名目录>`（Tier 1 = 无侵入接入，见 [`docs/origin-integration.md`](../docs/origin-integration.md)），用 `pnpm docs:diff-code` 统一对比"接入前后代码动了多少"。
 - `zh/tier1/<name>` —— **接入 niceeval 之后的完整评测项目**，定义了 evals / experiments，能 `niceeval exp` 跑起来（需要先 `npm install -D niceeval`；这里的示例以 link 方式指向仓库根）。
 
 `zh/tier1/<name>` 每个目录有独立的 `README.md`；`zh/origin/` 不再逐目录写 README，模型、HITL、跑法汇总在 [`zh/origin/README.md`](zh/origin/README.md) 的表格里，环境变量看各目录的 `.env.example`。

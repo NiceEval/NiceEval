@@ -108,15 +108,15 @@ export default defineEval({
 两种写法在 SandboxSpec 上各有一个入口:`environments` 表按
 profile 名映射完整 case;`materializers` 表按 source kind
 (如 `compose`、`dockerfile`)注册 folder-local 声明的
-materializer。同一 profile 两处都命中时,显式 `environments` 表项
+Sandbox source builder。同一 profile 两处都命中时,显式 `environments` 表项
 优先——这就是 provider 让预建输出优先于按需构建的口子。
 内部最终都归一成「稳定 profile + provider-specific
 SandboxCase」,Runner 不按 inline / central 两种写法
 分支。
 
-Docker SandboxSpec 可以注册原生 Compose materializer。E2B
-只有明确配置并实现 DinD/Pod materializer 后才支持 Compose
-source;没有对应 materializer 时按能力缺失处理(见下)。
+Docker SandboxSpec 可以注册原生 Compose source builder。E2B
+只有明确配置并实现 DinD/Pod Sandbox creator 后才支持 Compose
+source;没有对应 source builder 时按能力缺失处理(见下)。
 
 内置 case 的表值是 provider 原生纯数据,靠判别键区分,
 类型由 spec 工厂的参数类型给出——表值已经在该 provider 的
@@ -160,7 +160,7 @@ e2bSandbox({
 自己也没有 folder-local source,是键名笔误的形状:启动期
 配置错误,一次穷举,零 Sandbox 创建。声明合法、但当前
 provider 既无该 profile 的 `environments` 表项、也无该
-source kind 的 materializer,是能力缺失:该组合零成本
+source kind 的 Sandbox source builder,是能力缺失:该组合零成本
 计划期 `skipped`。skipReason 同时列 eval id、source kind
 与可补的映射位置;选中集合全部 `skipped` 时升级为启动期
 报错,不产出绿色空跑。
@@ -198,7 +198,7 @@ Dockerfile、Compose、task data、初始 fixture 与 verifier,
 context 的 `.dockerignore` 求值结果做交叉检查。仍会被发送
 进 build context 的隐藏文件默认是配置错误,因为
 `COPY . .` 足以把它泄给 Agent。用户可以把它移出 context,
-写进 `.dockerignore`,或让 materializer 生成
+写进 `.dockerignore`,或让 Provider builder 生成
 等价的 filtered context;过滤规则自身进入 BuildKey。只有
 显式改成普通 fixture 才允许 Agent 可见,不能用一个
 `allowVerifierLeak` 开关绕过。
@@ -241,7 +241,7 @@ Compose 路径、精确 build context 清单、基座提示与内容哈希。
 ### 按需构建 case
 
 `SandboxCase` 可以引用预制输出,也可以声明按需构建。
-按需构建是 provider materializer 的完整 case,不是
+按需构建由 Provider builder 按完整 case 执行,不是
 `sandbox.setup` 里的一段无身份 shell:
 
 ```typescript
@@ -333,7 +333,7 @@ attempt 引用该条 provenance。这样冷 cache 的十分钟构建不会
 | 按需构建单 Sandbox | Dockerfile / OCI context | 构建输出实例 | 无 | 声明支持构建的 provider |
 | Docker Compose | Compose + overlay | `mainService` 容器 | 同项目 services / network | Docker provider |
 | 云端 Compose | Compose + provider 配置 | main 容器 | DinD、Pod 或原生组网 | 声明支持的云 provider |
-| 自定义 case | 用户纯数据身份 + materializer | 用户返回的 Sandbox | 用户句柄 | 自定义 provider |
+| 自定义 case | 用户纯数据身份 + Sandbox creator callback | 用户返回的 Sandbox | 用户句柄 | 自定义 provider |
 
 E2B、Vercel 等 provider 不因为「是完整 Linux VM」就自动
 进入云端 Compose case。只有实现了主容器代理、同网服务、
@@ -388,7 +388,7 @@ provider 的进程结构:
   包装成返回的 Sandbox。
 - **Pod:**一个 Pod 里 main + sidecars,由 provider API
   实现逐容器 exec、文件和日志。
-- **原生组网:**多个实例接入 provider 私网,由 materializer
+- **原生组网:**多个实例接入 provider 私网,由 Sandbox creator
   建立稳定服务名和资源集合。
 
 DinD 路径把任务 context 上传到外层 Sandbox,按 BuildKey 在
@@ -418,7 +418,7 @@ DinD 或原生组网的全部义务后才开放。把依赖 DNS、
 ### 自定义 case
 
 自定义 provider 可以开放与内置 provider 同形的 environment
-映射。每个自定义 case 必须给出纯数据身份与 materializer:
+映射。每个自定义 case 必须给出纯数据身份与 `materialize` callback:
 
 ```typescript
 defineSandboxCase({
@@ -484,7 +484,7 @@ deadline:主 Sandbox 创建、伴随服务 ready、Agent Ensure、
 
 - profile 键任何表都查不到、case 配置非法:启动期配置
   错误;
-- 映射与声明合法、当前 provider 缺 materializer 或能力位:
+- 映射与声明合法、当前 provider 缺 Sandbox source builder 或能力位:
   计划期 `skipped`,写明缺项,不进通过率分母;选中集合
   全部 `skipped` 升级为启动期报错;
 - 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready、ready、服务中途退出:attempt `errored`;
@@ -593,11 +593,11 @@ Group keep 是独立能力。支持者必须能整组 suspend / resume、
    upload、Agent cwd、分类账与 diff 全部落在 main 容器,
    外层 VM / Pod 不泄漏成第二套坐标。
 6. **不支持不假绿。** E2B 未提供 `"tb-sheets"` 映射也未
-   注册 compose materializer 时,该题计划期 `skipped` 并
+   注册 Compose source builder 时,该题计划期 `skipped` 并
    点名缺项;选中集合全部 `skipped` 时启动期报错;两条路
    都不把 Docker Compose 静默换成基础 template。
 7. **指纹分型。** 改 Compose、build context、template id
-   或 materializer revision 都触发重跑;无法读取浮动身份时
+   或 Sandbox source builder revision 都触发重跑;无法读取浮动身份时
    不携带旧结果。
 8. **服务失败归因。** sidecar ready 失败或评分前退出得到
    `errored`,artifact 含对应服务日志,不进入 Agent 失败分母。

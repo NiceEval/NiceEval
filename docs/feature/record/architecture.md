@@ -531,7 +531,7 @@ type SourceItem = {
 
 `path` 用 `/` 分隔，不以 `/` 开头，且没有空、`.` 或 `..` segment。`sourceItemId` 不是数组下标、path、
 digest 或 blob key 的函数。每个 item 的 `byteLength` 与 `sha256` 都声明 own blob 的 exact bytes；reader
-在 materialize 完整 closure 后验证它们。
+在读取完整 closure 后验证它们。
 
 Attempt 的 source site 或 diagnostic frame 只能以 schema-declared identity join origin Run 的 item。
 join 不授予跨 owner blob capability，也不把 path、host handle 或 storage address 交给 Attempt。
@@ -555,7 +555,7 @@ portable inventory。source payload 与 blob closure 只在请求该 source 时�
 预期分母和问题；不会把 Attempt、OTel、Evidence、diff 或 blob 复制进内存。
 
 Analysis 的 Sample 才按 `AnalysisInput` 或 `DomainViewRequest` 请求精确 Attachment。Sample 在 Scope 内
-以 `{ owner, internal attachment definition }` 缓存一次完整验证结果。already materialized 的 JSON snapshot
+以 `{ owner, internal attachment definition }` 缓存一次完整验证结果。已经读取并验证的 JSON snapshot
 与 defensive blob copy 可在 Scope 后同步消费；cache 不成为 candidate、absence 或 latest 的权威依据。
 
 Report 不取得 reader、Attachment、blob handle、Scope 或 raw payload。它只消费 Analysis 已闭合的

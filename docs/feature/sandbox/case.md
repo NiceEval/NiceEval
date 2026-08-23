@@ -24,7 +24,7 @@ Agent、`test(t)` 的命令、文件上传、workdir、变更分类账与 diff �
 Compose case 里主 Sandbox 是 `workspaceService` 对应的容器。
 云 provider 在 VM / Pod 内启动 Compose 时,返回的 Sandbox 必须把所有命令和文件操作代理进 main 容器;外层 VM 只承载主容器与伴随服务,不能冒充 Agent 的执行空间。
 
-额外能力不进 `Sandbox` 接口,由 case 在创建时附带穷尽的能力句柄。运行期 materialize 结果为:
+额外能力不进 `Sandbox` 接口,由 case 在创建时附带穷尽的能力句柄。运行期 `materialize` 结果为:
 
 ```typescript
 interface MaterializedSandboxCase {
@@ -117,7 +117,7 @@ Provider 无法承诺的选项不进公共类型:Docker 的 build args 与 targe
 | 按需构建单 Sandbox | Dockerfile / OCI context | 构建结果实例 | 无 | 声明支持构建的 provider |
 | Docker Compose | Compose + overlay | `workspaceService` 容器 | 同项目 services / network | Docker provider |
 | 云端 Compose | Compose + provider 配置 | main 容器 | DinD、Pod 或原生组网 | 声明支持的云 provider |
-| 自定义 case | 用户纯数据身份 + materializer | 用户返回的 Sandbox | 用户句柄 | 自定义 provider |
+| 自定义 case | 用户纯数据身份 + Sandbox creator callback | 用户返回的 Sandbox | 用户句柄 | 自定义 provider |
 
 「provider-specific」不是少做契约:每一种公开 case 都要给齐启动、就绪、Agent 可见面、判分、证据、指纹、收尾与留存故事,只是不把不同 image、template、snapshot 或 Compose 实现伪装成同一种实现。
 
@@ -147,13 +147,13 @@ target platform 是构建事实,不是一个写在代码里的默认值,并且**
 
 一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,登记其声明的 image ref；可取得的实际 digest 是创建期 provider observation。
 构建结果另有 provider 原生 locator(Docker image digest、E2B template id)。
-BuildKey 回答「为什么应该得到同一构建结果」,locator 回答「本次从哪里启动」。前者参与 planning 与 fingerprint；后者只服务 materialize 或留存注册表，不建立 Sandbox 专属的可携带事实。
+BuildKey 回答「为什么应该得到同一构建结果」,locator 回答「本次从哪里启动」。前者参与 planning 与 fingerprint；后者只服务 `materialize` 或留存注册表，不建立 Sandbox 专属的可携带事实。
 
 完整 Sandbox 另算 `CaseKey`:
 
 ```text
 CaseKey
- = case kind + materializer revision
+ = case kind + Sandbox creator revision
  + Compose / overlay bytes
  + 所有 BuildKey
  + 无 build 的 service 的声明 image ref(已 pin 时含 digest,未 pin 时是原始 tag 文本;不是本地 daemon 解析出的实际 digest)
@@ -171,9 +171,9 @@ Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent En
 
 Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不改变上面的任务身份语义:
 
-- 任务 `BuildKey` / `niceeval-build` 永远不含 Agent;派生身份只在 DockerfileProviderPlan 的运行 materialize 阶段计算。
+- 任务 `BuildKey` / `niceeval-build` 永远不含 Agent;派生身份只在 DockerfileProviderPlan 的运行 `materialize` 阶段计算。
 - 只有内置 `createNpmCliInstaller()` 产生并明确标记为 cache-safe 的 staged installer 可以 opt in;其它 installer 走普通 task image 路径。
-- 派生 key 由不可变 task image locator 或 digest、目标平台、ensure / installer 的稳定 identity 与安装 mode、以及派生 materializer revision 组成,不读取 `prepare()`、credentials 或 Agent setup。
+- 派生 key 由不可变 task image locator 或 digest、目标平台、ensure / installer 的稳定 identity 与安装 mode、以及派生 image builder revision 组成,不读取 `prepare()`、credentials 或 Agent setup。
 - 派生 key 命中时跨 Run 先做 Docker image inspect。同 key 在进程内 single-flight。
 - miss 时从干净 task image 创建临时 Docker sandbox。
 - 临时 sandbox 照常执行 Agent ensure、staged install 与复检。
@@ -273,7 +273,7 @@ Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或�
 
 - **DinD**:在云 Sandbox 内启动 daemon 与 Compose,主容器包装成返回的 Sandbox;外层 template 只预装 daemon、Compose 与共享基础 cache,不预烘每一道题。
 - **Pod**:一个 Pod 里 main + sidecars,由 provider API 实现逐容器 exec、文件和日志。
-- **原生组网**:多个实例接入 provider 私网,由 materializer 建立稳定服务名并保存网络与实例定位。
+- **原生组网**:多个实例接入 provider 私网,由 Sandbox creator 建立稳定服务名并保存网络与实例定位。
 
 三种实现都必须满足相同的结果不变量:
 
@@ -289,7 +289,7 @@ Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或�
 ## 自定义 case
 
 自定义 Provider 连同自己的 template factory 与 planner 一起导出。
-每个自定义 case 必须给出纯数据身份与 materializer:
+每个自定义 case 必须给出纯数据身份与 `materialize` callback:
 
 ```typescript
 import { Effect } from "effect";
@@ -356,13 +356,13 @@ Group keep 是独立能力:支持者必须能整组 suspend / wake、恢复后�
 
 ## 动态泄漏检查:本地上传与 Agent 可见 closure
 
-folder eval 的测试文件与构建输入共址时，materializer 与普通上传共同给出泄漏证据:
+folder eval 的测试文件与构建输入共址时，Provider builder 与普通上传共同给出泄漏证据:
 
-- materializer 登记全部 build context 经 `.dockerignore` / filtered context 求值后的实际 closure，以及 Agent 可达 bind mounts；需要在已发布 Record 中解释它时，closure 归 Sources。
+- Provider builder 登记全部 build context 经 `.dockerignore` / filtered context 求值后的实际 closure，以及 Agent 可达 bind mounts；需要在已发布 Record 中解释它时，closure 归 Sources。
 - `test(t)` 中的普通本地上传登记 source tree 与内容摘要，并按同一 Sources 边界交叉比对。
 - 判定封口前交叉比对两份输入；send 区间外才上传的测试若已在 Agent 可见 closure 中，写入 Observability diagnostic 并形成本次 Attempt 的 `errored` Verdict。
 - 后续运行可用历史 transfer manifest 在启动 Agent 前预检；首次运行只能事后拒绝结果，不能宣称阻止了暴露。
-- 修法是移出 context、写进 `.dockerignore`，或让 materializer 生成 filtered context；过滤规则自身进入 BuildKey。
+- 修法是移出 context、写进 `.dockerignore`，或让 Provider builder 生成 filtered context；过滤规则自身进入 BuildKey。
 
 需要保密时必须用物理隔离或 filtered context，不能把动态检查当保密边界。
 完整规则见 [Eval · 本地测试文件](../eval/use-case/criteria-files.md)。

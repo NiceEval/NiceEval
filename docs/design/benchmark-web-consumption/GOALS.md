@@ -18,7 +18,7 @@
 - **G6 — 浏览器无 Host capability。** Record reader、Sample、host path、migration 与其它 authority 不能进入浏览器。
 - **G7 — Closed value 完整。** Partial、missing、Evidence 与大型材料不能因为 UI 方便而丢失或伪装。
 - **G8 — 长期 ABI 成本显式。** Framework、schema、DOM、CSS、SSR / hydration、版本与恢复都进入比较。
-- **G9 — 共同材料方案中立。** 不预设 transport、materializer、public server、组件 framework 或 static / dynamic 同义。
+- **G9 — 共同材料方案中立。** 不预设 transport、closed data builder、public server、组件 framework 或 static / dynamic 同义。
 
 ## 可验证要求
 

@@ -102,6 +102,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.17)
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.4
       typescript:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'
@@ -308,6 +311,40 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@29.1.1)(vite@8.1.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/repo-tools:
+    dependencies:
+      '@effect/cli':
+        specifier: 0.77.0
+        version: 0.77.0(@effect/platform@0.97.1(effect@3.22.1))(@effect/printer-ansi@0.51.0(@effect/typeclass@0.41.0(effect@3.22.1))(effect@3.22.1))(@effect/printer@0.51.0(@effect/typeclass@0.41.0(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)
+      '@effect/platform':
+        specifier: 0.97.1
+        version: 0.97.1(effect@3.22.1)
+      '@effect/platform-node':
+        specifier: 0.108.1
+        version: 0.108.1(@effect/cluster@0.60.2(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.76.2(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/sql@0.52.1(@effect/experimental@0.61.1(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/workflow@0.19.1(@effect/experimental@0.61.1(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.76.2(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.76.2(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/sql@0.52.1(@effect/experimental@0.61.1(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)
+      '@effect/printer':
+        specifier: 0.51.0
+        version: 0.51.0(@effect/typeclass@0.41.0(effect@3.22.1))(effect@3.22.1)
+      '@effect/printer-ansi':
+        specifier: 0.51.0
+        version: 0.51.0(@effect/typeclass@0.41.0(effect@3.22.1))(effect@3.22.1)
+      effect:
+        specifier: 3.22.1
+        version: 3.22.1
+      shiki:
+        specifier: 4.3.0
+        version: 4.3.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
 
   packages/testkit:
     dependencies:

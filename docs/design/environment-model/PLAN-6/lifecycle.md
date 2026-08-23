@@ -7,7 +7,7 @@
 | Owner | 起点输入 | 启动后的职责 |
 |---|---|---|
 | EvalDef | 可选 profile 或 folder-local source;可由 adapter 派生 | 当前题目的 setup、test 与 verifier |
-| SandboxSpec | Provider、默认 case、`environments` 与 materializers | 随 Experiment 变化的 sandbox setup |
+| SandboxSpec | Provider、默认 case、`environments` 与 `materializers` | 随 Experiment 变化的 sandbox setup |
 | Agent | 无 | Agent CLI 与 runtime setup |
 | Sandbox 实例 | SandboxSpec 选定的起点 | build/start、ready、能力、证据、finalizer 与 stop |
 
@@ -91,4 +91,4 @@ SandboxSpec setup 在一个复用周期内只运行一次。
 | C7 活 Sandbox 状态 | 每复用周期一个 case | setup 生命周期按复用周期/Attempt owner 分开 |
 | C8 Experiment 起点 | Eval 无 source,使用默认 template | EvalDef setup 在其上安装题目依赖 |
 | C9 预制组合 | `environments[profile]` 的完整 case | setup 函数仍检查实际状态 |
-| C10 混合批次 | 有 source 走映射/materializer,无 source 走默认 case | 各层 setup 规则不变 |
+| C10 混合批次 | 有 source 走映射或 Sandbox source builder,无 source 走默认 case | 各层 setup 规则不变 |

@@ -21,7 +21,7 @@ PLAN-6 不公开 Environment Requirement、Eval Base、Experiment Base、融合 
 ## 两条真实路径
 
 Terminal-Bench 的上游 task package 自带 Compose。
-数据集 adapter 从原始 task 目录派生 Eval 与 Environment source;Experiment 选择 Docker materializer,其 sandbox setup 再向最终主 Sandbox 安装 mempal。
+数据集 adapter 从原始 task 目录派生 Eval 与 Environment source;Experiment 选择 Docker source builder,其 sandbox setup 再向最终主 Sandbox 安装 mempal。
 
 MemoryBench 的 Experiment 选择预装 mempal 的 E2B template。
 Eval 没有 Environment source,其 EvalDef setup 在该 Sandbox 中 checkout 仓库并安装项目依赖。
@@ -47,7 +47,7 @@ Agent 怎么安装仍由 Adapter 负责。
 ```text
 解析后的 Eval 有 Environment profile/source
   -> SandboxSpec environments[profile] 覆盖
-  -> 否则由匹配的 materializer 物化 source
+  -> 否则由匹配的 Sandbox source builder 构建并启动 source
 
 解析后的 Eval 没有 Environment
   -> SandboxSpec 默认 image / template / snapshot

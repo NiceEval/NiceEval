@@ -4,12 +4,12 @@
 
 ## 稳定公共面
 
-NiceEval 发布 framework-neutral 的 closed data definition、materialization 与 reader contract。网页组件、DOM、CSS、router、chart、a11y 与 i18n 全部由用户拥有。
+NiceEval 发布 framework-neutral 的 closed data definition、生成流程与 reader contract。网页组件、DOM、CSS、router、chart、a11y 与 i18n 全部由用户拥有。
 
 ```text
-trusted build/server → NiceEval data materialization → closed public data
-                                                        ↓
-                                     user React/Vue/Astro/chart/HTML
+trusted build/server → NiceEval 生成 closed public data
+                                      ↓
+                   user React/Vue/Astro/chart/HTML
 ```
 
 候选 API 形状：
@@ -29,7 +29,7 @@ const snapshot = await materializeBenchmarkData({ definition, selection, paramet
 
 ## Static / dynamic
 
-Static build 在受信任进程中 materialize 完整关闭的数据，再交给用户站点 build。Dynamic 由用户 server 完成鉴权、selection 与 materialization，再向 browser 返回 closed data。
+Static build 在受信任进程中生成完整关闭的数据，再交给用户站点 build。Dynamic 由用户 server 完成鉴权、selection 与数据生成，再向 browser 返回 closed data。
 
 本候选倾向让两条路径使用相同版本化数据 schema，但是否采用同一文件 transport、内容身份、分页或公共 server 仍需通过 W3–W6 证明。
 

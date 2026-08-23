@@ -55,13 +55,13 @@ export default defineEval({
 两个 URL 上传由普通 Sandbox 包装写入 transfer manifest。
 后续运行可在派发前重算这些 source；测试文件变化会使本题重跑，未读取的 `solution.sh` 不参与本题身份。
 
-materializer 写入 Compose build/mount closure。
+Provider builder 写入 Compose build/mount closure。
 判定封口前若发现实际上传的测试字节早已对 Agent 可见，本次 Attempt `errored`；Terminal-Bench 同时用 `.dockerignore` 从物理上隔离测试和 solution。
 
 ## Experiment
 
 Experiment 只选择能消费 Compose source 的 SandboxSpec。
-materializer 按 Attempt 分配 Compose project 名并接管日志，不要求每道 Eval 在模块顶层生成 nonce 或创建宿主目录。
+Sandbox creator 按 Attempt 分配 Compose project 名并接管日志，不要求每道 Eval 在模块顶层生成 nonce 或创建宿主目录。
 
-materializer 不读取 instruction、测试脚本或 solution，也不生成 EvalDef。
+Provider builder 不读取 instruction、测试脚本或 solution，也不生成 EvalDef。
 每道 Eval 的定义仍完整留在自己的文件中。

@@ -25,7 +25,7 @@ Runner 先启动 Base Case,再在这个 Sandbox 中逐项检查并补齐 Eval、
 | Eval | Eval Base | Eval Requirement 描述题目 Sandbox 事实;turn 前 Fixture 准备可见工作区,隐藏判分材料只在 turn 后挂载 |
 | Experiment | 条件基底与按 profile 声明的融合 case | Experiment Requirement 描述实验条件;ExperimentStateLifecycle 独立载入和回存外部状态 |
 | Agent | 不可以 | AgentProvisioner 确保 CLI;Agent runtime lifecycle 收敛并验证鉴权、配置、Plugin、Skill 与 MCP |
-| SandboxSpec | 默认 case 与 `environments[profile]` | 选择 Provider、materializer、普通默认起点与早期 setup/teardown Hook,不拥有实验条件 |
+| SandboxSpec | 默认 case 与 `environments[profile]` | 选择 Provider、Sandbox source builder、普通默认起点与早期 setup/teardown Hook,不拥有实验条件 |
 
 Agent CLI 可以预装在任意一种 Base Case 中。
 预装只会让 AgentProvisioner 检查命中,不会把 Agent 变成 Base owner。

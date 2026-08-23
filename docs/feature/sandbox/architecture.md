@@ -391,7 +391,7 @@ Provisioning 的分类只涵盖"创建沙箱"这一步。沙箱创建成功后�
   路径定位直接用 `src/sandbox/paths.ts`，不要自己再写一份。
   同时交付 template-bearing factory 与只读 `ProviderModule<Plan>`。
   factory 以 provider 原生纯数据声明完整起点，同时选定 Provider。
-  planner 产出 provider 私有 typed Plan；module 的 build/materialize 闭包消费同一 Plan。
+  planner 产出 provider 私有 typed Plan；module 的 `build` / `materialize` 闭包消费同一 Plan。
   case 义务清单见 [Case](case.md)。
 - **只在自己项目里用,不改 niceeval**:用 [`defineSandbox`](library.md#自定义-providerdefinesandbox),身份与留存义务见 [Case · 自定义 case](case.md#自定义-case)。
 
@@ -405,7 +405,7 @@ Provisioning 的分类只涵盖"创建沙箱"这一步。沙箱创建成功后�
 
 不要硬编码 `/workspace`——它不是任何 provider 的真实 workdir,按它写的文件会落在 agent cwd 和变更分类账之外(agent 看不见、diff 采不到)。写法是省略 `targetDir` / `cwd`,需要绝对路径时用 `sandbox.workdir`。
 
-包装或装饰 `Sandbox` 实例(路径归一化、日志代理这类中间层)时，只转发正式接口：`SandboxOperations`、宿主传输、`stop()` 与可选 `appendLog()`。留存不藏在 `Sandbox` 的动态成员上，而是 Case materialize 时单独返回 `SandboxRetention`；wrapper 因此不可能把 suspend/wake 能力静默吃掉。
+包装或装饰 `Sandbox` 实例(路径归一化、日志代理这类中间层)时，只转发正式接口：`SandboxOperations`、宿主传输、`stop()` 与可选 `appendLog()`。留存不藏在 `Sandbox` 的动态成员上，而是 Case `materialize` 时单独返回 `SandboxRetention`；wrapper 因此不可能把 suspend/wake 能力静默吃掉。
 
 provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传——需要新能力时显式建模成接口成员或 case 能力句柄,不开 `sandbox.native` 逃生口(裁决见 [memory 条目](../../../memory/sandbox-native-escape-hatch-rejected.md))。
 

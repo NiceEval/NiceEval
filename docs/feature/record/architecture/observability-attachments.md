@@ -199,7 +199,7 @@ type CommandStream = {
 ```
 
 collector 先执行非 fatal UTF-8 decode、已登记敏感值脱敏与 control removal，再按 stream 上限保留 prefix。
-seal 与 materialization 都对 retained bytes 重算长度和 digest。inline 与 blob 只是同一事实的物理存储选择。
+seal 和 reader 读取都对 retained bytes 重算长度和 digest。inline 与 blob 只是同一事实的物理存储选择。
 
 ## Runner Activity receipts
 

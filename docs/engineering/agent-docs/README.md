@@ -60,7 +60,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 生成器对缺 `title` 或 `description` 的页面直接报错——「这页帮 agent 完成什么任务」必须在页面定稿时答出，答不出说明页面定位有问题，回到 [`apps/docs-site/zh/README.md`](../../../apps/docs-site/zh/README.md) 的信息架构裁决。
 
-这与参考页 `{/* GENERATED */}` 区块是同一个模式：文案单源在内容紧邻处，生成器只拼装、不承载文案，同一个 `scripts/generate-reference.ts` 承载。
+这与参考页 `{/* GENERATED */}` 区块是同一个模式：文案单源在内容紧邻处，生成器只拼装、不承载文案。两种输出共享 `packages/repo-tools/src/docs/reference-compiler.ts`，但由独立正式命令拥有。
 
 三条边界裁决：
 
@@ -98,7 +98,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
   `apps/docs-site/AGENTS.md` 规定的 `docs.json` 与 redirect 义务照旧。
 - 修改导语或分区说明：改 `INDEX.template.md`。
 - 以 link / 本地路径把仓库工作树当包消费时，直接在 NiceEval checkout 运行
-  `pnpm dev:link <consumer-directory>`。该命令会重建 package runtime、Report 与 `INDEX.md`，
+  `pnpm consumer:link <consumer-directory>`。该命令会重建 package runtime、Report 与 `INDEX.md`，
   对发布闭包执行一次真实 `pnpm pack`，再建立开发链接并核对下游实际解析的 realpath；它不修改下游
   `package.json`，但 pnpm 会把开发 link 持久化到下游 workspace override 与 lockfile；这些机器本地路径
   通常不提交。手工 `pnpm link` 不会触发完整重建，容易让下游继续消费旧的预编译产物。

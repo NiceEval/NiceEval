@@ -41,7 +41,7 @@
    Report host 不按 entry 数或 transport coverage 猜这个权重。
 2. 「测不了」（读数返回 `null`）与「没跑到」（涵盖缺口）在同一张表里区分得开。
 3. 跨 Run 计算先按 Record 的 attempt 身份键去重。
-4. 计算失败与缺数据严格分开：Analysis materializer defect／problem 形成 execution failure／problem，不伪装成测不了。
+4. 计算失败与缺数据严格分开：Analysis field executor defect／problem 形成 execution failure／problem，不伪装成测不了。
 
 ### 可追溯
 

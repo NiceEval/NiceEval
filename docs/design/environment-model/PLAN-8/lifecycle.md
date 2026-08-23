@@ -98,7 +98,7 @@ Agent CLI 预装只优化 AgentProvisioner 的 ensure 命中，不让 Agent 成�
 
 | Case | PLAN-8 路径 |
 |---|---|
-| C1 | Eval Environment 由 Docker Provider 内建规划，无 Experiment materializer 注册 |
+| C1 | Eval Environment 由 Docker Provider 内建规划，无 Experiment source builder 注册 |
 | C2 | defaultEnvironment 后执行 Experiment sandbox setup |
 | C3 | Eval Compose Case 启动后执行 Experiment、Eval 与 Agent 三层准备 |
 | C4 | Experiment setup 链按阅读顺序串行 |

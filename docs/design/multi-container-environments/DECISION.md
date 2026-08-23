@@ -44,12 +44,12 @@ PLAN-4 正文遗留的含糊处,按下面裁定并已写回
 - **部分不支持判什么**:分两类。eval 引用了不存在的
   profile 键、或 source 声明本身非法,是启动期配置错误,
   一次穷举。映射与声明合法、但当前 provider 缺对应
-  materializer 或能力位,是能力缺失——该组合零沙箱创建、
+  Sandbox source builder 或能力位,是能力缺失——该组合零沙箱创建、
   计划期 `skipped` 并写明缺项;选中集合全部 `skipped` 时
   升级为启动期报错。与 R5 / R11 对齐。
 - **配置面两个入口**:SandboxSpec 的 `environments` 表按
   profile 名映射完整 case;`materializers` 表按 source kind
-  注册 folder-local 声明的materializer。同一 profile 两处都命中
+  注册 folder-local 声明的 Sandbox source builder。同一 profile 两处都命中
   时显式 `environments` 表项优先——这就是 provider 让
   预建输出优先于按需构建的口子。
 - **命名:Environment 只留给 eval 侧的轴**。
@@ -66,7 +66,7 @@ PLAN-4 正文遗留的含糊处,按下面裁定并已写回
   - 保留构造函数的只有真需要函数的两处。eval 侧
     `composeSandbox`:中性 source 声明,要从 eval 目录推导
     默认 profile 并 brand 防同形误换;`defineSandboxCase`:
-    携带 materialize 行为。materializer 工厂照旧;
+    携带 `materialize` 行为。source builder 工厂照旧;
   - 内部实体 `SandboxCase`,注册表条目 `SandboxGroupEntry`;
   - 身份 key 的正式名就是 `BuildKey` 与 `CaseKey`,run 数据
     字段叫 `sandboxBuilds`。
@@ -123,13 +123,13 @@ Docker case 直接
   - PLAN-2 曾用 `composeEnvironment({ agentService })` 命名
     其读取子集的 config 实体。PLAN-4 的同类声明按上面的命名
     裁决定名 `composeSandbox({ mainService })`,是不承诺
-    读取、交给 materializer 的 source 声明;两者不同物,
+    读取、交给 Sandbox source builder 的 source 声明;两者不同物,
     名字也不撞。
 - **PLAN-3(仅外部编排)**:作为终态维持否决,R2 / R3 /
   R6 / R7 / R9 / R10 结构性缺席的论证不受本次改判影响。
   其能力协商切片被 PLAN-4 换形状继承:协商输入从 profile
   上的 `requires` 抽象标签,换成「source kind × 当前
-  SandboxSpec 有无对应 materializer / case」;`requires`
+  SandboxSpec 有无对应 Sandbox source builder / case」;`requires`
   标签退出待实现清单。外部编排继续作为 provider 无对应
   case 时的用户侧退路。
 
