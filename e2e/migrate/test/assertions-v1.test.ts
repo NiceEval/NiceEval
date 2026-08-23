@@ -7,28 +7,23 @@ import { expect, test } from "vitest";
 import {
   ATTEMPT_ID,
   commitRecord,
-  copyAssertionsV1Fixture,
+  copySourceFirstAssertionsV1Fixture,
   e2e,
   RUN_ID,
 } from "./support.ts";
 
-test("Assertions v1 经统一 maintenance 改写为诚实的 current 语义记录", async () => {
+test("Assertions v1 迁移且 invalid Agent Turns 保持 source-local", async () => {
   await e2e.case("assertions-v1-to-v2", async ({ paths, commands: { candidate }, run }) => {
     const recordRoot = join(paths.projectRoot, ".niceeval", "record");
-    const { discardedBlobPath } = copyAssertionsV1Fixture(paths.sourceRoot, recordRoot);
+    const { discardedBlobPath } = copySourceFirstAssertionsV1Fixture(paths.sourceRoot, recordRoot);
     const rootBefore = readFileSync(join(recordRoot, "record.json"), "utf8");
     await commitRecord(run, "fixture: assertions v1");
 
-    const migrated = await candidate.run(["migrate", "--yes"]);
-    expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
-    expect(migrated.stdout, migrated.diagnostic()).toContain("impact niceeval.assertions@1->2");
-    expect(migrated.stdout, migrated.diagnostic()).toContain("dropped facts: criterion, subject, evidence");
-    expect(migrated.stdout, migrated.diagnostic()).toContain("Rerun the affected evaluation");
+    const runView = await candidate.run(["show", "--run", RUN_ID, "--json"]);
+    expect(runView.exitCode, runView.diagnostic()).toBe(0);
     expect(readFileSync(join(recordRoot, "record.json"), "utf8")).toBe(rootBefore);
     expect(existsSync(discardedBlobPath)).toBe(false);
 
-    const runView = await candidate.run(["show", "--run", RUN_ID, "--json"]);
-    expect(runView.exitCode, runView.diagnostic()).toBe(0);
     const member = only(
       runView.json<{ data: { members: readonly { locator: string; verdict: string }[] } }>().data.members,
       () => true,
@@ -71,6 +66,8 @@ test("Assertions v1 经统一 maintenance 改写为诚实的 current 语义记�
     expect(shown).not.toContain("recorded v1 fact");
     expect(shown).not.toContain("historical source that migration must discard");
     expect(shown).not.toContain('"answer":42');
+    expect(shown).toContain("niceeval.agent-turns");
+    expect(shown).toContain("invalid");
     expect(evidence.verdict).toBe("errored");
     const requiredUnavailable = only(
       evidence.entries,

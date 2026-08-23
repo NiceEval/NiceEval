@@ -1,17 +1,18 @@
 // owner: docs/engineering/testing/e2e/migrate.md#strict-complete-marker-clean
-// regression: malformed complete markers must remain incomplete
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { e2e } from "./support.ts";
+import { copySourceFirstAssertionsV1Fixture, e2e } from "./support.ts";
 
 const NON_EMPTY_MARKER_RUN_ID = "11111111-1111-4111-8111-111111111111";
 const DIRECTORY_MARKER_RUN_ID = "22222222-2222-4222-8222-222222222222";
 
 test("clean 只把零字节普通文件 complete 视为 Run 已完成", async () => {
   await e2e.case("strict-complete-marker-clean", async ({ paths, commands: { candidate } }) => {
-    const runs = join(paths.projectRoot, ".niceeval", "record", "runs");
+    const recordRoot = join(paths.projectRoot, ".niceeval", "record");
+    copySourceFirstAssertionsV1Fixture(paths.sourceRoot, recordRoot);
+    const runs = join(recordRoot, "runs");
     mkdirSync(join(runs, NON_EMPTY_MARKER_RUN_ID), { recursive: true });
     writeFileSync(join(runs, NON_EMPTY_MARKER_RUN_ID, "complete"), "not sealed\n");
     mkdirSync(join(runs, DIRECTORY_MARKER_RUN_ID, "complete"), { recursive: true });
@@ -26,7 +27,10 @@ test("clean 只把零字节普通文件 complete 视为 Run 已完成", async ()
     expect(cleaned.exitCode, cleaned.diagnostic()).toBe(0);
     expect(cleaned.stdout, cleaned.diagnostic()).toContain(`deleted: ${NON_EMPTY_MARKER_RUN_ID}`);
     expect(cleaned.stdout, cleaned.diagnostic()).toContain(`deleted: ${DIRECTORY_MARKER_RUN_ID}`);
-    expect(existsSync(join(runs, NON_EMPTY_MARKER_RUN_ID))).toBe(false);
-    expect(existsSync(join(runs, DIRECTORY_MARKER_RUN_ID))).toBe(false);
+
+    const after = await candidate.run(["clean"]);
+    expect(after.exitCode, after.diagnostic()).toBe(0);
+    expect(after.stdout, after.diagnostic()).not.toContain(NON_EMPTY_MARKER_RUN_ID);
+    expect(after.stdout, after.diagnostic()).not.toContain(DIRECTORY_MARKER_RUN_ID);
   });
 });
