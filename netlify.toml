@@ -9,7 +9,7 @@
 
 [context.deploy-preview]
   command = "bash build-report-preview.sh"
-  ignore = "exit 1"
+  ignore = "bash ./ignore-report-preview.sh"
 
 [context.deploy-preview.environment]
   NICEEVAL_REPORT_PREVIEW = "1"

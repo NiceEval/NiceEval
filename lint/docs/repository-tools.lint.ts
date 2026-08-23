@@ -108,7 +108,9 @@ describe("Repository Tools 动态发现", () => {
 
     const netlify = readFileSync(join(ROOT, "netlify.toml"), "utf8");
     expect(netlify).toContain('command = "bash build-report-preview.sh"');
+    expect(netlify).toContain('ignore = "bash ./ignore-report-preview.sh"');
     expect(existsSync(join(ROOT, "netlify-preview/build-report-preview.sh"))).toBe(true);
+    expect(existsSync(join(ROOT, "netlify-preview/ignore-report-preview.sh"))).toBe(true);
 
     const rootManifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
       scripts?: Record<string, string>;
