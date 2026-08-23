@@ -129,10 +129,10 @@ journalctl -u niceeval-docker-profile-watchdog-default.service -b
 
 ```bash
 pnpm exec niceeval docker profile list
-pnpm exec niceeval docker profile doctor default --smoke
+pnpm exec niceeval docker profile doctor default
 ```
 
-`list` 应显示 `default`。`doctor --smoke` 会检查 descriptor、Unix socket、cgroup、容量和 watchdog，
+`list` 应显示 `default`。`doctor` 始终检查 descriptor、Unix socket、cgroup、容量、watchdog、离线资产、cold build，
 然后启动一个受限的外层容器及一个内层 Alpine 容器。所有项目都通过后，宿主 profile 才可以用于正式
 评估。
 

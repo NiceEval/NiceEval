@@ -54,7 +54,7 @@ declare const attemptToolFailure: AnalysisInput<LogicalSlot, boolean>;
 
 `AnalysisInput.id` 只标识投影语义。它既不是 Record property token id，也不是 TS field 或 durableKey。
 例如 `attemptLatencyMs` 可以有 `niceeval.analysis.attempt-latency-ms` 这个 input id，同时读取
-`niceeval.observability` 中的多个固定 property。把任何 JSON key 或内部 property token 当成 input id
+`niceeval.runner-activities` 中的多个 source receipt property。把任何 JSON key 或内部 property token 当成 input id
 都会把 durable format 与统计语义绑在一起。
 
 每个已发布 input 都有 NiceEval package-private binding。它声明 member 要定位的 owner 与所需 fixed Attachment
@@ -63,7 +63,7 @@ definition。它还定义读取失败怎样成为 issue，以及从已验证 pay
 
 ```text
 attemptPassed     → attempt / niceeval.assertions
-attemptLatencyMs  → attempt / niceeval.observability
+attemptLatencyMs  → attempt / niceeval.runner-activities
 DomainViewRequest → its declared owner and fixed Attachment requirements
 ```
 
@@ -78,13 +78,13 @@ binding 对一个 member 的闭合观察只有以下五种状态：
 | `value` | 有 | current input 已验证并形成值 |
 | `missing` | 无 | current catalog 中应有的事实缺席 |
 | `migration-required` | 无 | 已知旧 schemaVersion 有固定迁移路径；issue code 同为 `migration-required` |
-| `unsupported` | 无 | reader 不认识所需的 future family，或 producer 不支持该 input |
+| `unsupported` | 无 | producer 不支持该 input |
 | `failed` | 无 | 读取、验证或 pure projection 失败 |
 
-较早 reader 若不认识 binding 需要的独立 future family，例如 `niceeval.energy`，保留该 family 的磁盘 bytes
-而不解码它。Sample 把这一次 input / view request 形成 `unsupported`，不影响不依赖它的
-Measure、Core selection 或闭合 Report 输出。这个局部结果不同于 current catalog family 缺失的
-`not-recorded`，也不同于已知 family 的旧 schemaVersion 所需的 `migration-required`。
+unknown family、known future schemaVersion 与不相容 Core 在 current `RecordReadSession` 形成前
+`unsupported-format`。Sample 不跳过未知 durable bytes。局部 `unsupported` 只表示 producer 无法提供已发布
+input；它不同于 current catalog family 缺失的 `not-recorded`，也不同于已知 family predecessor 所需的
+`migration-required`。
 
 `PopulationMembers` 同样由 NiceEval 或领域包发布。它固定一个总体的成员穷尽规则，且不含 Record reader、
 路径或原始 payload。
@@ -347,7 +347,7 @@ declare function decodeSampleSnapshot(value: unknown): SampleSnapshot;
 ```
 
 解码在 JSON 边界 exact 校验、按稳定 identity 规范化排序并 deep-freeze。失败返回
-`SampleSnapshotCodecError`。它不接受 reader、root、路径或 Attachment，也不会读取 OTel、diff 或
+`SampleSnapshotCodecError`。它不接受 reader、root、路径或 Attachment，也不会读取 Runner Activities、File Changes 或
 blob。
 
 ```ts
@@ -461,7 +461,7 @@ declare function query<View extends DomainView>(
 
 `fileChangesView` 被请求时才读取目标 Attempt 的 File Changes Attachment。它关闭 attribution、collection 和
 按 send 区间排序的 `windows`，保留 window ID、sequence、change ID、path、端点形态与 collection limitation。
-这份 trajectory 是领域视图的主体；每个 send 区间仍保留自己的数组，也不 materialize 一个持久 patch 或 hunk。
+这份 trajectory 是领域视图的主体；每个 send 区间仍保留自己的数组，也不生成持久 patch 或 hunk。
 
 `net` 只是一项 reader 派生值，绝不回写 Attachment。Analysis 仅在 collection 为 complete，且每条重复 path 的
 相邻端点连续可证明、端点没有未知时给出 reliable `net`。端点不连续、`unavailable` revision 或结构为
@@ -473,16 +473,16 @@ collection 状态。它们都不是 query 失败，也不等同于 `net` 的 rel
 
 ### Source Navigation DomainView
 
-`sourceNavigationView` 只在请求时读取 Attempt-owned `niceeval.source-navigation`。它关闭 collection 与每个
-`turnId`、`sourceOrder`。mapped frame 保留 `sourceItemId`、`sha256` 和坐标；linked timing 保留 `agent.send`
-interval。
+`sourceNavigationView` 是 `niceeval.turn-contexts`、`niceeval.runner-activities` 与 exact origin Run
+`niceeval.sources` 的 reader-side Fact relation。它不是 durable family。view 只在请求时读取这些 dependency，
+并逐 source 保留 `complete`、`partial`、`not-recorded` 或 `invalid`。
 
-它保留 `unmapped` 的精确原因和 unavailable timing 的 `timing-not-recorded`。limitation 的
-`navigation-row` 表示遗漏的行，`timing-link` 表示遗漏的 timing link。它不复制 outcome 或 duration。
+Turn Context receipt 提供 `turnId`、`sourceOrder` 与 mapped / unmapped source。mapped frame 保留
+`sourceItemId`、`sha256` 和坐标；Runner Activity 可用同一 `turnId` 连接 `agent.send` interval。relation 不复制
+outcome 或 duration，也不用一个完整 source 替代另一个缺失或损坏的 source。
 
-Host 已在 family read 前验证 Navigation 对同一 Attempt Observability 与 exact origin Sources 的显式 join。
-Analysis 因而不扫描 source blob、不重建 sourceOrder，也不以数组位置拼 turn、source 或 timing；它只交付闭合
-值。若 family 缺席，entry 保留 `not-recorded`，不能伪造成一条 unmapped send。
+Analysis 不扫描 source blob、不重建 sourceOrder，也不以数组位置、文本、path 或 clock proximity 拼 turn、source
+与 timing。dependency 缺席时，view 保留对应 `not-recorded`，不能伪造成 unmapped send 或空 timing。
 
 `attempt-evidence` 是一个闭合的非表格视图。Sample 在同一次成功读取 `ReadableAttempt` 时取得 Core `outcome`。
 
@@ -527,7 +527,7 @@ interface MetricValue<Value = number> {
 | `unavailable` | null | 由专门的闭合投影定义 | 该投影没有可报告值；原因由它自己的闭合 reason union 说明 |
 | `empty` | null | `samples === total` | Measure 的领域结果合法为空，且没有缺失、unsupported 或失败问题 |
 | `migration-required` | null | `samples === 0` 且 `total > 0` | 全部预期输入，或 across reduction，都只因已知旧 schemaVersion 而不可读；先运行 `niceeval migrate` |
-| `unsupported` | null | 没有可形成结果的 current 输入 | host / producer 未提供 input，或 reader 不认识它依赖的 future family |
+| `unsupported` | null | 没有可形成结果的 current 输入 | host / producer 未提供已发布 input |
 | `failed` | null | 已贡献数可小于或等于 total | 读取、验证、relation、producer 或 reduction 出现阻断性失败 |
 
 合法零值始终是 `available` 或 `partial` 的 `value: 0`，绝不是 `empty`。`samples` 只数实际贡献

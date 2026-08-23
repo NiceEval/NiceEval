@@ -8,7 +8,7 @@
   ],
   "implicitDependencies": [
     "workspace-shared",
-    "e2e-shared",
+    "niceeval-e2e-runner",
     "niceeval-package-shared",
     "niceeval-testkit",
     "niceeval-src-fallback"

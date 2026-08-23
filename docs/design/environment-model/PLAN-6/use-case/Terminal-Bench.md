@@ -114,12 +114,12 @@ export async function loadTerminalBench(options: Options) {
 | 上游事实 | NiceEval 归属 | 可见时机与身份 |
 |---|---|---|
 | `task.yaml` instruction、timeouts、tags | Eval definition | 发现期读取,进入 Eval 数据指纹 |
-| Compose、Dockerfile、公开 build inputs | Environment source | build/start 前交给 materializer,进入 BuildKey / CaseKey |
+| Compose、Dockerfile、公开 build inputs | Environment source | build/start 前交给 Provider builder,进入 BuildKey / CaseKey |
 | `run-tests.sh`、`tests/**` | hidden verifier | 最后一次 Agent turn 后挂载,进入判据指纹 |
 | `solution.sh`、`solution.yaml` | private reference | 永不进入 build context、Sandbox 或 Agent 可见面 |
 | 上游要求的容器名、镜像名、日志与 test env | Terminal-Bench compatibility adapter | 确定规则进入 CaseKey,逐 Attempt 值进入运行事实 |
 
-materializer 必须构造过滤后的 build context。
+Provider builder 必须构造过滤后的 build context。
 即使上游 Dockerfile 后续增加 `COPY . .`,private reference 与 hidden verifier 也不能被发送给 Docker daemon;Compose bind mount 同样要经过泄漏检查。
 
 ## Experiment

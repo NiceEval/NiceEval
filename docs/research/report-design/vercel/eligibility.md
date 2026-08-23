@@ -175,11 +175,11 @@ VBG class、token 和 DOM child relationship 是页面 API 约束，但没有 se
 `/design.md` 发布源码、VBG 生成器、内部数据库和正式变更流程都未公开。
 所以不能声称 Vercel 内部没有 migration，只能说公开的 `design.md` 没有向使用者提供 migration 契约。
 
-## 哪些 derived value 会 materialize
+## 哪些 derived value 会生成资源
 
 [`vercel-brand.css`](https://vercel.com/geist/vercel-brand.css) 把 Geist color、type 与 spacing 语义整理成 VBG token 和 primitive。
 它把 upstream snapshot 与 source hash 放进 bundle 注释。
-这是预先 materialize 的派生样式 asset，不是用户实验结果。
+这是预先生成的派生样式 asset，不是用户实验结果。
 
 Calculator 的 default result 必须 pre-render。
 一个可由 formula 计算的值因而会进入初始 HTML，确保脚本交互开始前就可读。

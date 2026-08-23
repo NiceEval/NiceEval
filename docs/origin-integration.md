@@ -11,7 +11,7 @@
    从 origin 复制整个应用,被复制的文件保持逐字节不变。
    例外只有 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个集成脚手架文件,以及 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量。
    接入代码全部是**新增**文件。
-   `pnpm run gen:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页。
+   `pnpm docs:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页。
    "应用侧零改动"是这些页面的核心卖点,改一个字节都会破坏它。
    这条铁律由 `pnpm test` 的 verbatim 校验看守,见 [tier-sync](engineering/example-tier-sync/README.md)。
 2. **协议以实际输出为准。**
@@ -28,7 +28,7 @@
 `tier1/<name>` 是纯无侵入的全套断言。
 `tier2/<name>` 为有 OTel 输出的三个应用(ai-sdk-v7、codex-sdk、langgraph)加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图。
 `tier3/<name>` 五个应用都有,按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags。
-哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin-tier1-tier2-tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](engineering/example-tier-sync/README.md))。
+哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin-tier1-tier2-tier3);层间用 `pnpm examples:sync` 保持同步(机制见 [tier-sync](engineering/example-tier-sync/README.md))。
 本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
 
 ## 统一的接入配方
@@ -247,4 +247,4 @@ experiment 侧用 `flags` → `ctx.flags` 透传,写法见 [Experiments](feature
   它是 `tier1/codex-sdk` 事件断言的唯一数据出处,不依赖任何 span 派生。
 - **`mapCodexSpans`**(`src/o11y/otlp/mappers/codex.ts`,从 `niceeval/adapter` 导出):把 codex 自家 span 命名归一成 canonical GenAI 语义,只用来让瀑布图和内置 `codexAgent` 保持一致。
 
-五个应用各有一个 before/after 文档页(`gen:diff-code` 生成),挂在 `apps/docs-site/docs.json` 导航。
+五个应用各有一个 before/after 文档页(`docs:diff-code` 生成),挂在 `apps/docs-site/docs.json` 导航。

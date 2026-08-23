@@ -1,0 +1,938 @@
+// 生成「接入 niceeval 前后」的代码对比 MDX，供 apps/docs-site 阅读。
+//
+// 正式入口：pnpm docs:diff-code
+//
+// 每个对比是 PAIRS 里的一项（source = 接入前目录，target = 接入后目录），
+// 未来有新的 before/after 示例时往 PAIRS 里加一项即可。
+//
+// 渲染成 GitHub PR 式的 diff 视图（双行号列、文件头栏、红绿行、hunk 行）。
+// Mintlify 的代码块表达不了行号和文件头，所以这里在生成时用 Shiki 做
+// GitHub 配色的语法高亮，直接产出带 className 的 HTML 表格，样式在
+// apps/docs-site/github-diff.css（同样由本 compiler 生成，Mintlify 自动加载仓库里的 .css）。
+import { readFileSync, readdirSync } from "node:fs";
+import { join, basename } from "node:path";
+import { codeToTokens } from "shiki";
+
+interface ThemedToken {
+  readonly content: string;
+  readonly htmlStyle?: string | Readonly<Record<string, string>>;
+}
+
+const CSS_OUT = "apps/docs-site/github-diff.css";
+const JS_OUT = "apps/docs-site/github-diff.js";
+
+export interface GeneratedDiffOutput {
+  readonly path: string;
+  readonly content: string;
+}
+
+/** 折叠参数：变更行上下各留几行上下文；藏起来的行少于阈值就不折 */
+const FOLD_CONTEXT = 3;
+const FOLD_MIN_HIDDEN = 4;
+
+interface DiffPair {
+  /** 接入前的目录，相对仓库根 */
+  source: string;
+  /** 接入后的目录，相对仓库根 */
+  target: string;
+  /** 输出的 MDX 路径，相对仓库根 */
+  out: string;
+  frontmatter: { title: string; sidebarTitle?: string; description: string };
+  /** 正文开头的说明（frontmatter 之后、文件清单之前） */
+  intro: string;
+  /** 阅读顺序：按前缀匹配排序，越靠前越先读；不匹配的排最后按字母序 */
+  order: string[];
+  /** 页面分节：文件按前缀归入第一个匹配的节；不匹配的进最后一节 */
+  sections: Array<{ title: string; files: string[] }>;
+  /** 变更统计的分类（页面开头的表格）：文件按最长前缀归组，行数从实际 diff 统计 */
+  statGroups: Array<{ label: string; files: string[] }>;
+  /** 这个对比额外排除的文件（精确路径或目录前缀），如 README、env 模板等与接入无关的 */
+  exclude?: string[];
+  /** 页面语言；省略时沿用中文，英文页和中文页由同一份示例 diff 生成。 */
+  locale?: "zh" | "en";
+}
+
+/** Tier 1 示例的统一分类:必要 = 不写接不上;评测内容按需增长。应用由用户自己启动,
+ *  eval 侧不代管进程、不开新端口。 */
+const TIER1_STAT_GROUPS: DiffPair["statGroups"] = [
+  { label: "应用侧配置（必要：依赖声明）", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+  { label: "Adapter（必要：连接应用，协议映射由 NiceEval 提供）", files: ["niceeval.config.ts", "agents/"] },
+  { label: "评估用例与实验（按需增长）", files: ["evals/", "experiments/"] },
+];
+
+const PAIRS: DiffPair[] = [
+  {
+    source: "examples/zh/origin/pi-sdk",
+    target: "examples/zh/tier1/pi-sdk",
+    out: "apps/docs-site/zh/examples/integrations/pi-sdk.mdx",
+    frontmatter: {
+      title: "pi-agent-core 如何非侵入式接入 NiceEval",
+      sidebarTitle: "pi-agent-core 如何接入",
+      description:
+        "一个 pi-agent-core(@earendil-works)助手后端，接入 NiceEval 前后的完整代码 diff：应用侧只加了一个 devDependency。",
+    },
+    intro: [
+      "对比对象：",
+      "",
+      "- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk) —— 独立的 `@earendil-works/pi-agent-core` HTTP 服务，还没接任何评估用例。",
+      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
+      "",
+      "**接入方式**：`createPiAgentEventStream`（从 `\"niceeval/adapter\"` 导出）把 pi 原生 `AgentEvent` 转成 NiceEval 的标准事件。",
+      "",
+      "Adapter 只需填写应用地址和审批接口地址。示例中的 `calculate` 工具需要人工审批。",
+      "",
+      "运行评估前，请先用 `pnpm start` 启动应用。NiceEval 不会启动或停止应用进程。",
+      "除依赖声明外，应用的 `src/backend/*` 代码没有改动。",
+    ].join("\n"),
+    order: ["package.json", "tsconfig.json", "pnpm-workspace.yaml", "niceeval.config.ts", "agents/", "evals/", "experiments/"],
+    sections: [
+      { title: "应用侧的变更(只有依赖声明)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "新增的 Adapter、评估用例与实验", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: TIER1_STAT_GROUPS,
+    exclude: ["README.md", ".env.example"],
+  },
+  {
+    source: "examples/zh/origin/claude-sdk",
+    target: "examples/zh/tier1/claude-sdk",
+    out: "apps/docs-site/zh/examples/integrations/claude-sdk.mdx",
+    frontmatter: {
+      title: "Claude Agent SDK 如何非侵入式接入 NiceEval",
+      sidebarTitle: "Claude Agent SDK 如何接入",
+      description:
+        "一个 Claude Agent SDK 助手后端，接入 NiceEval 前后的完整代码 diff：应用侧一行没改，全部新增在评估用例侧。",
+    },
+    intro: [
+      "对比对象：",
+      "",
+      "- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk) —— 独立的 `@anthropic-ai/claude-agent-sdk` HTTP 服务，还没接任何评估用例。",
+      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
+      "",
+      "**接入方式**：`createClaudeSdkEventStream`（从 `\"niceeval/adapter\"` 导出）把 Claude Agent SDK 的 `SDKMessage` 转成 NiceEval 的标准事件。",
+      "",
+      "Adapter 负责把评估请求发给应用。应用通过 `canUseTool` 要求用户审批 `calculate` 调用时，Adapter 会让当前 Turn 等待用户选择。",
+      "",
+      "运行评估前，请先用 `pnpm start` 启动应用。NiceEval 不会启动或停止应用进程。",
+      "应用的 `src/backend/*` 代码没有改动。",
+    ].join("\n"),
+    order: ["package.json", "tsconfig.json", "pnpm-workspace.yaml", "niceeval.config.ts", "agents/", "evals/", "experiments/"],
+    sections: [
+      { title: "应用侧的变更(只有依赖声明)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "新增的 Adapter、评估用例与实验", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: TIER1_STAT_GROUPS,
+    exclude: ["README.md", ".env.example"],
+  },
+  {
+    source: "examples/zh/origin/codex-sdk",
+    target: "examples/zh/tier1/codex-sdk",
+    out: "apps/docs-site/zh/examples/integrations/codex-sdk.mdx",
+    frontmatter: {
+      title: "Codex SDK 如何非侵入式接入 NiceEval",
+      sidebarTitle: "Codex SDK 如何接入",
+      description:
+        "一个 Codex SDK（目录里的编码 agent）后端，接入 NiceEval 前后的完整代码 diff：应用侧一行没改。",
+    },
+    intro: [
+      "对比对象：",
+      "",
+      "- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk) —— 独立的 `@openai/codex-sdk` HTTP 服务，还没接任何评估用例。",
+      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
+      "",
+      "**接入方式**：`createCodexThreadEventStream`（从 `\"niceeval/adapter\"` 导出）把 Codex SDK 的 `ThreadEvent` 转成 NiceEval 的标准事件。",
+      "消息文本直接来自事件流。转换器会把 `command_execution`、`mcp_tool_call` 和 `file_change` 配对成 `operation.started` 与 `operation.finished`。",
+      "`turn.completed` 提供用量数据。Adapter 只需连接应用接口。",
+      "",
+      "Codex SDK 不支持 HITL。示例会执行真实编码任务，例如写文件和运行命令。断言直接检查磁盘上的结果。",
+      "运行评估前，请先用 `pnpm start` 启动应用。NiceEval 不会启动或停止应用进程。",
+      "",
+      "应用的 `src/backend/*` 代码没有改动。若要查看 OTel 调用瀑布图，请使用 `tier2/` 示例；若要比较功能配置，请使用 `tier3/` 示例。",
+    ].join("\n"),
+    order: ["package.json", "tsconfig.json", "pnpm-workspace.yaml", "niceeval.config.ts", "agents/", "evals/", "experiments/"],
+    sections: [
+      { title: "应用侧的变更(只有依赖声明)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "新增的 Adapter、评估用例与实验", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: TIER1_STAT_GROUPS,
+    // workspace/ 是 Codex 落地编辑结果的 scratch 目录(已 gitignore),eval 一跑就会留下
+    // 新文件;不排除的话运行残留会混进"应用侧一行没改"的 diff 页
+    exclude: ["README.md", ".env.example", "workspace"],
+  },
+  {
+    source: "examples/zh/origin/langgraph",
+    target: "examples/zh/tier1/langgraph",
+    out: "apps/docs-site/zh/examples/integrations/langgraph.mdx",
+    frontmatter: {
+      title: "LangGraph 如何非侵入式接入 NiceEval",
+      sidebarTitle: "LangGraph 如何接入",
+      description:
+        "一个纯 Python LangGraph + LangSmith OTel 导出的应用，接入 NiceEval 前后的完整代码 diff。",
+    },
+    intro: [
+      "对比对象：",
+      "",
+      "- **before**：[`origin/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) —— 纯 Python 的 `create_agent`（LangChain 1.x / LangGraph）HTTP 服务，还没接任何评估用例。",
+      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) —— 同一个应用接入 NiceEval 之后的样子。",
+      "",
+      "**接入方式**：这个应用使用自定义 JSON 帧，因此 Adapter 需要自行把每一帧转成 NiceEval 的标准事件。",
+      "`tool-input` 映射为 `operation.started`，`tool-output` 映射为 `operation.finished`，`text-delta` 累积成 `message`。",
+      "",
+      "收到 `tool-approval-request` 后，当前 Turn 会等待用户选择，并产生 `input.requested` 事件。Adapter 把尚未读完的流保存在 `ctx.session` 中，收到选择后继续读取。",
+      "",
+      "被测应用使用 Python，评估代码则放在独立的 TypeScript 项目中。接入过程没有修改应用的 `src/backend/*.py`。",
+      "若要查看 OTel 调用瀑布图，请使用 `tier2/` 示例；若要比较功能配置，请使用 `tier3/` 示例。",
+    ].join("\n"),
+    order: ["package.json", "tsconfig.json", "pnpm-workspace.yaml", "niceeval.config.ts", "agents/", "evals/", "experiments/"],
+    sections: [
+      { title: "新增的 TS 侧脚手架(应用本身零改动)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "新增的 Adapter、评估用例与实验", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    // 被测应用是 Python,origin 侧没有这三个文件——它们是 eval 侧全新的 TS 项目脚手架,
+    // 不是"往应用配置里加依赖声明",所以第一类的说法和其它四个不同
+    statGroups: [
+      { label: "评估用例侧 TS 项目脚手架（必要：被测应用是 Python，全新文件）", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      ...TIER1_STAT_GROUPS.slice(1),
+    ],
+    exclude: ["README.md", ".env.example"],
+  },
+  {
+    source: "examples/zh/origin/ai-sdk-v7",
+    target: "examples/zh/tier1/ai-sdk-v7",
+    out: "apps/docs-site/zh/examples/integrations/ai-sdk-v7.mdx",
+    frontmatter: {
+      title: "AI SDK v7 如何非侵入式接入 NiceEval",
+      sidebarTitle: "AI SDK v7 如何接入",
+      description:
+        "一个 AI SDK v7 聊天应用，对着它的 HTTP 接口无侵入接入 NiceEval 前后的完整代码 diff：应用侧一行没改。",
+    },
+    intro: [
+      "对比对象：",
+      "",
+      "- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7) —— 普通的 AI SDK v7 聊天应用（HTTP 服务器 + React 聊天 UI），还没接任何评估用例。",
+      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7) —— 同一个应用接入 NiceEval 之后的样子。",
+      "",
+      "**接入方式**：内置的 `uiMessageStreamAgent` 可以直接连接 AI SDK UI Message Stream，也就是 `useChat` 后端使用的标准 SSE 协议。",
+      "Adapter 只需填写接口地址，并说明如何把 `model` 放进请求体。NiceEval 会处理会话重放、HITL 审批，以及工具和消息事件。",
+      "Endpoint 必须像标准 AI SDK 实现一样用 `data: [DONE]` 结束响应。自定义兼容 endpoint 若省略该标记，NiceEval 会把响应视为截断并返回 send failure；升级前请补上结束记录。",
+      "",
+      "这个协议不提供用量数据，因此示例没有用量断言。接入过程没有修改应用的 `src/backend/*`。",
+      "",
+      "若要查看 OTel 调用瀑布图，请使用 `tier2/` 示例；若要比较功能配置，请使用 `tier3/` 示例。",
+    ].join("\n"),
+    order: ["package.json", "tsconfig.json", "pnpm-workspace.yaml", "niceeval.config.ts", "agents/", "evals/", "experiments/"],
+    sections: [
+      { title: "应用侧的变更(只有依赖声明)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "新增的 Adapter、评估用例与实验", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: TIER1_STAT_GROUPS,
+    exclude: ["README.md", ".env.example"],
+  },
+  // openllmetry / openinference 的 before-after 配置连同两个示例目录一起移除了
+  // (2026-07,待 langgraph 那批做完后重做,见 examples/README.md)。2026-07 langgraph 那批
+  // 已做完(examples/zh/tier1/*),上面五个配置已按 docs/origin-integration.md 重做。
+];
+
+const ENGLISH_TIER1_STAT_GROUPS: DiffPair["statGroups"] = [
+  { label: "App-side config (required: dependency declarations)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+  { label: "adapter (required: transport glue; protocol mapping is in the official package)", files: ["niceeval.config.ts", "agents/"] },
+  { label: "evals and experiments (test content, grows as needed)", files: ["evals/", "experiments/"] },
+];
+
+function englishPair(
+  base: DiffPair,
+  page: Pick<DiffPair, "out" | "frontmatter" | "intro" | "sections" | "statGroups">,
+): DiffPair {
+  return { ...base, ...page, locale: "en" };
+}
+
+const ENGLISH_PAIRS: DiffPair[] = [
+  englishPair(PAIRS[0]!, {
+    out: "apps/docs-site/examples/integrations/pi-sdk.mdx",
+    frontmatter: {
+      title: "Integrate pi-agent-core with NiceEval non-invasively",
+      sidebarTitle: "pi-agent-core integration",
+      description: "The complete before/after diff for connecting a pi-agent-core (@earendil-works) assistant backend to NiceEval: the app side only adds one devDependency.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk) -- a standalone `@earendil-works/pi-agent-core` HTTP service, before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: official converter -- mapping pi native `AgentEvent` events into standard events is handled by `createPiAgentEventStream` (exported from `\"niceeval/adapter\"`). The adapter only keeps transport glue: which URL the app uses and which endpoint handles approvals (`calculate` goes through HITL approval). You start the app yourself in its normal way (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged.",
+    ].join("\n"),
+    sections: [
+      { title: "App-side changes (dependency declarations only)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: ENGLISH_TIER1_STAT_GROUPS,
+  }),
+  englishPair(PAIRS[1]!, {
+    out: "apps/docs-site/examples/integrations/claude-sdk.mdx",
+    frontmatter: {
+      title: "Integrate Claude Agent SDK with NiceEval non-invasively",
+      sidebarTitle: "Claude Agent SDK integration",
+      description: "The complete before/after diff for connecting a Claude Agent SDK assistant backend to NiceEval: zero app-side code changes; everything is added on the eval side.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk) -- a standalone `@anthropic-ai/claude-agent-sdk` HTTP service, before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: official converter -- mapping Claude Agent SDK native `SDKMessage` events into standard events is handled by `createClaudeSdkEventStream` (exported from `\"niceeval/adapter\"`). The adapter only keeps transport glue and HITL stop-turn detection (`calculate` is gated through the official `canUseTool` callback). You start the app yourself in its normal way (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged.",
+    ].join("\n"),
+    sections: [
+      { title: "App-side changes (dependency declarations only)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: ENGLISH_TIER1_STAT_GROUPS,
+  }),
+  englishPair(PAIRS[2]!, {
+    out: "apps/docs-site/examples/integrations/codex-sdk.mdx",
+    frontmatter: {
+      title: "Integrate Codex SDK with NiceEval non-invasively",
+      sidebarTitle: "Codex SDK integration",
+      description: "The complete before/after diff for connecting a Codex SDK coding-agent backend to NiceEval: zero app-side code changes.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk) -- a standalone `@openai/codex-sdk` HTTP service, before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: official converter -- mapping Codex native `ThreadEvent` events into standard events is handled by `createCodexThreadEventStream` (exported from `\"niceeval/adapter\"`). Message text, tool items (`command_execution` / `mcp_tool_call` / `file_change` -> paired `operation.started` / `operation.finished` events), and `turn.completed` usage all come from this stream, leaving only transport glue in the adapter. There is no HITL because Codex SDK does not support it. The evals run real coding tasks (writing files and running commands in a working directory), and assertions read the disk directly. You start the app yourself (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.",
+    ].join("\n"),
+    sections: [
+      { title: "App-side changes (dependency declarations only)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: ENGLISH_TIER1_STAT_GROUPS,
+  }),
+  englishPair(PAIRS[3]!, {
+    out: "apps/docs-site/examples/integrations/langgraph.mdx",
+    frontmatter: {
+      title: "Integrate LangGraph with NiceEval non-invasively",
+      sidebarTitle: "LangGraph integration",
+      description: "The complete before/after diff for connecting a pure Python LangGraph app with LangSmith OTel export to NiceEval.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) -- a pure Python `create_agent` (LangChain 1.x / LangGraph) HTTP service, before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: handwritten frame mapping -- custom JSON frames from `server.py` are translated one by one into standard events (`tool-input` -> `operation.started`, `tool-output` -> `operation.finished`, accumulated `text-delta` -> `message`, `tool-approval-request` -> stop turn + `input.requested`). HITL stop-turn state is stored through a typed `ctx.session` slot. The subject app is Python, while the eval side is a separate TypeScript project. App-side `src/backend/*.py` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.",
+    ].join("\n"),
+    sections: [
+      { title: "Added TypeScript-side scaffolding (the app itself is unchanged)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: [
+      { label: "Eval-side TypeScript scaffolding (required because the subject app is Python; all-new files)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      ...ENGLISH_TIER1_STAT_GROUPS.slice(1),
+    ],
+  }),
+  englishPair(PAIRS[4]!, {
+    out: "apps/docs-site/examples/integrations/ai-sdk-v7.mdx",
+    frontmatter: {
+      title: "Integrate AI SDK v7 with NiceEval non-invasively",
+      sidebarTitle: "AI SDK v7 integration",
+      description: "The complete before/after diff for connecting an AI SDK v7 chat app to NiceEval through its HTTP interface: zero app-side code changes.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7) -- a regular AI SDK v7 chat app (HTTP server + React chat UI), before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: built-in **`uiMessageStreamAgent`** -- the official non-invasive adapter for the AI SDK UI Message Stream protocol (the standard SSE backend used by `useChat`). The adapter file only declares where the endpoint lives and how to pass `model` in the request body. Session replay, HITL approval (rewriting and resending `needsApproval` tool parts), and tool/message events built directly from protocol frames are all handled by the factory. The protocol frames do not include usage data, so this example does not assert usage. App-side `src/backend/*` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.",
+    ].join("\n"),
+    sections: [
+      { title: "App-side changes (dependency declarations only)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: ENGLISH_TIER1_STAT_GROUPS,
+  }),
+];
+
+// 与学习无关的目录/文件，不进 diff
+const EXCLUDES = [
+  /(^|\/)node_modules(\/|$)/,
+  /(^|\/)\.venv(\/|$)/,
+  /(^|\/)__pycache__(\/|$)/,
+  /(^|\/)\.niceeval(\/|$)/,
+  /(^|\/)pnpm-lock\.yaml$/,
+  /(^|\/)\.env$/,
+  /(^|\/)\.DS_Store$/,
+];
+
+type Status = "新增" | "修改" | "删除";
+
+function listFiles(root: string, dir: string, prefix = ""): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(join(root, dir, prefix), { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (EXCLUDES.some((re) => re.test(rel))) continue;
+    if (entry.isDirectory()) files.push(...listFiles(root, dir, rel));
+    else if (entry.isFile()) files.push(rel);
+  }
+  return files;
+}
+
+function rank(file: string, order: string[]): number {
+  const i = order.findIndex((prefix) => file === prefix || file.startsWith(prefix));
+  return i === -1 ? order.length : i;
+}
+
+function isBinary(buf: Buffer): boolean {
+  return buf.subarray(0, 8192).includes(0);
+}
+
+function shikiLang(file: string): string {
+  if (/\.tsx?$/.test(file)) return "typescript";
+  if (/\.json$/.test(file)) return "json";
+  if (/\.ya?ml$/.test(file)) return "yaml";
+  if (/\.mdx?$/.test(file)) return "markdown";
+  if (/\.m?js$/.test(file)) return "javascript";
+  if (/\.env(\.|$)/.test(basename(file))) return "ini";
+  return "txt";
+}
+
+// ---- diff（纯实现，避免依赖外部 diff 命令或库）----
+
+type Op = { t: " " | "-" | "+"; line: string };
+
+function diffOps(a: string[], b: string[]): Op[] {
+  // LCS 动态规划；示例文件都在几百行以内，O(n·m) 足够
+  const n = a.length;
+  const m = b.length;
+  const dp: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i]![j] = a[i] === b[j]
+        ? dp[i + 1]![j + 1]! + 1
+        : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+    }
+  }
+  const ops: Op[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      ops.push({ t: " ", line: a[i]! });
+      i++;
+      j++;
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) ops.push({ t: "-", line: a[i++]! });
+    else ops.push({ t: "+", line: b[j++]! });
+  }
+  while (i < n) ops.push({ t: "-", line: a[i++]! });
+  while (j < m) ops.push({ t: "+", line: b[j++]! });
+  return ops;
+}
+
+function splitLines(text: string): string[] {
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+/** 完整文件的 diff op 序列：像 GitHub PR 展开全部行那样展示，不截 hunk 上下文 */
+function fullFileOps(beforeText: string, afterText: string): Op[] {
+  return diffOps(splitLines(beforeText), splitLines(afterText));
+}
+
+// ---- Shiki 高亮：token → 调色板 class，颜色集中到生成的 CSS 里 ----
+
+/** `${light}|${dark}` → class 名，跨所有文件共享，调色板很小（十几个） */
+const palette = new Map<string, string>();
+
+/** 折叠区的全局唯一 id 计数 */
+let foldSeq = 0;
+
+function tokenClass(token: ThemedToken): string | undefined {
+  const style = typeof token.htmlStyle === "object" ? token.htmlStyle : undefined;
+  const light = style?.color;
+  const dark = style?.["--shiki-dark"];
+  if (!light && !dark) return undefined;
+  const key = `${light ?? ""}|${dark ?? ""}`;
+  let cls = palette.get(key);
+  if (!cls) {
+    cls = `gdt${palette.size}`;
+    palette.set(key, cls);
+  }
+  return cls;
+}
+
+/** 整个文件一次性 tokenize（保住多行结构：模板字符串、块注释），返回逐行 JSX */
+async function highlightLines(text: string, lang: string): Promise<string[]> {
+  const { tokens } = await codeToTokens(text.replace(/\n$/, ""), {
+    lang: lang as never,
+    themes: { light: "github-light", dark: "github-dark" },
+  });
+  const typedTokens = tokens as readonly (readonly ThemedToken[])[];
+  return typedTokens.map((line) => {
+    if (line.length === 0) return jsxText(" ");
+    return line
+      .map((token) => {
+        if (token.content === "") return "";
+        const cls = tokenClass(token);
+        return cls ? `<span className="${cls}">${jsxText(token.content)}</span>` : jsxText(token.content);
+      })
+      .join("");
+  });
+}
+
+/** MDX 里最稳的转义方式：包成 JS 字符串字面量表达式 */
+function jsxText(text: string): string {
+  return `{${JSON.stringify(text)}}`;
+}
+
+// ---- 文件树 ----
+
+interface TreeNode {
+  children: Map<string, TreeNode>;
+  status?: Status;
+}
+
+function renderTree(
+  entries: Array<{ file: string; status: Status }>,
+  rootLabel: string,
+  order: string[],
+  locale: DiffPair["locale"],
+): string {
+  const root: TreeNode = { children: new Map() };
+  for (const { file, status } of entries) {
+    let node = root;
+    for (const part of file.split("/")) {
+      let child = node.children.get(part);
+      if (!child) {
+        child = { children: new Map() };
+        node.children.set(part, child);
+      }
+      node = child;
+    }
+    node.status = status;
+  }
+
+  // 节点排序：按其下所有文件的最小阅读顺序，其次按名字
+  const nodeRank = (node: TreeNode, path: string): number => {
+    if (node.children.size === 0) return rank(path, order);
+    return Math.min(...[...node.children].map(([name, child]) => nodeRank(child, `${path}/${name}`.replace(/^\//, ""))));
+  };
+
+  const rows: Array<[string, string]> = [[`${rootLabel}/`, ""]];
+  const walk = (node: TreeNode, path: string, indent: string) => {
+    const children = [...node.children].sort(([na, a], [nb, b]) => {
+      const pa = path ? `${path}/${na}` : na;
+      const pb = path ? `${path}/${nb}` : nb;
+      return nodeRank(a, pa) - nodeRank(b, pb) || na.localeCompare(nb);
+    });
+    children.forEach(([name, child], i) => {
+      const isLast = i === children.length - 1;
+      const childPath = path ? `${path}/${name}` : name;
+      const label = child.children.size > 0 ? `${name}/` : name;
+      rows.push([`${indent}${isLast ? "└── " : "├── "}${label}`, child.status ?? ""]);
+      walk(child, childPath, indent + (isLast ? "    " : "│   "));
+    });
+  };
+  walk(root, "", "");
+
+  const width = Math.max(...rows.map(([tree]) => tree.length));
+  const statusLabel = (status: string) => {
+    if (locale !== "en") return status;
+    return ({ 新增: "added", 修改: "modified", 删除: "deleted" } as const)[status as Status];
+  };
+  return rows.map(([tree, status]) => (status ? `${tree.padEnd(width + 3)}${statusLabel(status)}` : tree)).join("\n");
+}
+
+// ---- GitHub PR 式 diff 表格 ----
+
+interface FileDiff {
+  html: string[];
+  /** 变更行数（二进制文件计 0），供页面开头的自动统计用 */
+  adds: number;
+  dels: number;
+}
+
+async function renderFileDiff(root: string, pair: DiffPair, file: string, status: Status): Promise<FileDiff> {
+  const before = status === "新增" ? Buffer.alloc(0) : readFileSync(join(root, pair.source, file));
+  const after = status === "删除" ? Buffer.alloc(0) : readFileSync(join(root, pair.target, file));
+
+  // Mintlify 会剥掉 <details>/<summary>，只能用 div（不做折叠）
+  const head = (extra: string) =>
+    `<div className="gd-head"><span className="gd-name">${jsxText(file)}</span>${extra}</div>`;
+
+  if (isBinary(before) || isBinary(after)) {
+    const size = status === "删除" ? before.length : after.length;
+    return {
+      html: [
+        `<div className="gd-file">`,
+        head(`<span className="gd-stats">${jsxText("BIN")}</span>`),
+        `<div className="gd-note">${jsxText(pair.locale === "en" ? `Binary file, ${size} bytes, omitted` : `二进制文件，${size} bytes，略`)}</div>`,
+        `</div>`,
+      ],
+      adds: 0,
+      dels: 0,
+    };
+  }
+
+  const lang = shikiLang(file);
+  const beforeLines = await highlightLines(before.toString("utf8"), lang);
+  const afterLines = await highlightLines(after.toString("utf8"), lang);
+  // 展示机制：完整文件全部行（像 GitHub PR 展开全部），变更行红绿标注，
+  // 不截 hunk 上下文，也就没有 @@ 行
+  const ops = fullFileOps(before.toString("utf8"), after.toString("utf8"));
+
+  const adds = ops.filter((o) => o.t === "+").length;
+  const dels = ops.filter((o) => o.t === "-").length;
+  const stats =
+    `<span className="gd-stats">` +
+    (adds ? `<span className="gd-plus">${jsxText(`+${adds}`)}</span>` : "") +
+    (dels ? `<span className="gd-minus">${jsxText(`−${dels}`)}</span>` : "") +
+    `</span>`;
+
+  // 折叠：离最近变更行超过 FOLD_CONTEXT 的上下文行默认隐藏，像 GitHub 一样
+  // 用蓝色展开条占位（点击展开由 github-diff.js 处理）；藏的行太少就不折
+  const dist = new Array<number>(ops.length).fill(Number.POSITIVE_INFINITY);
+  {
+    let last = Number.NEGATIVE_INFINITY;
+    for (let k = 0; k < ops.length; k++) {
+      if (ops[k]!.t !== " ") last = k;
+      dist[k] = k - last;
+    }
+    let next = Number.POSITIVE_INFINITY;
+    for (let k = ops.length - 1; k >= 0; k--) {
+      if (ops[k]!.t !== " ") next = k;
+      dist[k] = Math.min(dist[k]!, next - k);
+    }
+  }
+  const hide = dist.map((d) => d > FOLD_CONTEXT);
+  for (let k = 0; k < ops.length; ) {
+    if (!hide[k]) {
+      k++;
+      continue;
+    }
+    let j = k;
+    while (j < ops.length && hide[j]) j++;
+    if (j - k < FOLD_MIN_HIDDEN) for (let x = k; x < j; x++) hide[x] = false;
+    k = j;
+  }
+
+  const rows: string[] = [];
+  let aLine = 1;
+  let bLine = 1;
+  const pushRow = (op: Op, extraClass = "") => {
+    // 上下文行和 + 行取 after 的高亮，- 行取 before 的高亮
+    const code = op.t === "-" ? beforeLines[aLine - 1] : afterLines[bLine - 1];
+    const cells =
+      op.t === "+"
+        ? `<td className="gd-ln"></td><td className="gd-ln">${jsxText(String(bLine))}</td><td className="gd-sign">${jsxText("+")}</td>`
+        : op.t === "-"
+          ? `<td className="gd-ln">${jsxText(String(aLine))}</td><td className="gd-ln"></td><td className="gd-sign">${jsxText("−")}</td>`
+          : `<td className="gd-ln">${jsxText(String(aLine))}</td><td className="gd-ln">${jsxText(String(bLine))}</td><td className="gd-sign"></td>`;
+    const base = op.t === "+" ? "gd-add" : op.t === "-" ? "gd-del" : "";
+    const cls = [base, extraClass].filter(Boolean).join(" ");
+    rows.push(`<tr${cls ? ` className="${cls}"` : ""}>${cells}<td className="gd-code">${code ?? jsxText(" ")}</td></tr>`);
+    if (op.t !== "+") aLine++;
+    if (op.t !== "-") bLine++;
+  };
+
+  for (let k = 0; k < ops.length; ) {
+    if (!hide[k]) {
+      pushRow(ops[k]!);
+      k++;
+      continue;
+    }
+    let j = k;
+    while (j < ops.length && hide[j]) j++;
+    const id = `gdf${foldSeq++}`;
+    rows.push(
+      `<tr className="gd-expand" data-fold="${id}"><td className="gd-ln" colSpan={2}>${jsxText("⇕")}</td><td className="gd-sign"></td><td className="gd-code">${jsxText(pair.locale === "en" ? `Expand ${j - k} unchanged lines` : `展开 ${j - k} 行未变更代码`)}</td></tr>`,
+    );
+    for (; k < j; k++) pushRow(ops[k]!, `gd-fold ${id}`);
+  }
+
+  return {
+    html: [
+      `<div className="gd-file">`,
+      head(stats),
+      `<div className="gd-body">`,
+      // table 内部不能出现空白文本节点（React 对 <tbody> 里的文本会 hydration 失败、
+      // 整块丢弃），所以所有行拼成一行、标签间零空白
+      `<table className="gd-table"><tbody>${rows.join("")}</tbody></table>`,
+      `</div>`,
+      `</div>`,
+    ],
+    adds,
+    dels,
+  };
+}
+
+// ---- MDX 生成 ----
+
+async function generate(root: string, pair: DiffPair): Promise<GeneratedDiffOutput> {
+  const english = pair.locale === "en";
+  const excluded = (f: string) => pair.exclude?.some((p) => f === p || f.startsWith(`${p}/`)) ?? false;
+  const beforeFiles = new Set(listFiles(root, pair.source).filter((f) => !excluded(f)));
+  const afterFiles = new Set(listFiles(root, pair.target).filter((f) => !excluded(f)));
+
+  const entries: Array<{ file: string; status: Status }> = [];
+  for (const f of afterFiles) {
+    if (!beforeFiles.has(f)) entries.push({ file: f, status: "新增" });
+    else if (!readFileSync(join(root, pair.source, f)).equals(readFileSync(join(root, pair.target, f)))) {
+      entries.push({ file: f, status: "修改" });
+    }
+  }
+  for (const f of beforeFiles) {
+    if (!afterFiles.has(f)) entries.push({ file: f, status: "删除" });
+  }
+  entries.sort((a, b) => rank(a.file, pair.order) - rank(b.file, pair.order) || a.file.localeCompare(b.file));
+
+  const rendered: Array<{ file: string; status: Status; diff: FileDiff }> = [];
+  for (const e of entries) rendered.push({ ...e, diff: await renderFileDiff(root, pair, e.file, e.status) });
+
+  const lines: string[] = [];
+  lines.push("---");
+  lines.push(`title: "${pair.frontmatter.title}"`);
+  if (pair.frontmatter.sidebarTitle) lines.push(`sidebarTitle: "${pair.frontmatter.sidebarTitle}"`);
+  lines.push(`description: "${pair.frontmatter.description}"`);
+  lines.push("---");
+  lines.push("");
+  lines.push(
+    english
+      ? `{/* Generated by packages/repo-tools/src/docs/diff-code-compiler.ts (pnpm docs:diff-code). Do not edit by hand. */}`
+      : `{/* 本文件由 packages/repo-tools/src/docs/diff-code-compiler.ts 生成（pnpm docs:diff-code），不要手工编辑 */}`,
+  );
+  lines.push("");
+  lines.push(pair.intro);
+  lines.push("");
+
+  // 变更统计从两个目录的实际 diff 计算,不是手写数字。文件按最长匹配前缀归组,
+  // 归不进任何组的落进"其它"(正常不该出现,出现说明 statGroups 漏配了)
+  const groupOf = (file: string): number => {
+    let best = pair.statGroups.length; // 兜底:其它
+    let bestLen = -1;
+    pair.statGroups.forEach((g, gi) => {
+      for (const p of g.files) {
+        if ((file === p || file.startsWith(p)) && p.length > bestLen) {
+          best = gi;
+          bestLen = p.length;
+        }
+      }
+    });
+    return best;
+  };
+  const fmtLines = (adds: number, dels: number) =>
+    [adds ? `+${adds}` : "", dels ? `−${dels}` : ""].filter(Boolean).join(" ") || "0";
+  lines.push(english ? "All integration code changes (measured from both directories when generated):" : "接入的全部代码变更（生成时从两个目录实测统计）：");
+  lines.push("");
+  // 统计表必须用 JSX 表格,不能用 markdown 管道表:同一页里出现 GFM 表格 + diff 的超长
+  // 单行 JSX 时,MDX 编译直接 Maximum call stack size exceeded(实测,五页全挂),
+  // 见 memory/mintlify-mdx-html-rendering-limits.md
+  const statRows: string[] = [
+    `<tr><th>${jsxText(english ? "Category" : "类别")}</th><th>${jsxText(english ? "Files" : "文件数")}</th><th>${jsxText(english ? "Lines" : "行数")}</th></tr>`,
+  ];
+  let totalN = 0;
+  let totalAdds = 0;
+  let totalDels = 0;
+  for (let gi = 0; gi <= pair.statGroups.length; gi++) {
+    const rs = rendered.filter((r) => groupOf(r.file) === gi);
+    if (rs.length === 0) continue;
+    const adds = rs.reduce((a, r) => a + r.diff.adds, 0);
+    const dels = rs.reduce((a, r) => a + r.diff.dels, 0);
+    totalN += rs.length;
+    totalAdds += adds;
+    totalDels += dels;
+    const label = gi < pair.statGroups.length ? pair.statGroups[gi]!.label : english ? "Other" : "其它";
+    statRows.push(
+      `<tr><td>${jsxText(label)}</td><td>${jsxText(String(rs.length))}</td><td>${jsxText(fmtLines(adds, dels))}</td></tr>`,
+    );
+  }
+  statRows.push(
+    `<tr className="gd-total"><td>${jsxText(english ? "Total" : "合计")}</td><td>${jsxText(String(totalN))}</td><td>${jsxText(fmtLines(totalAdds, totalDels))}</td></tr>`,
+  );
+  lines.push(`<table className="gd-summary"><tbody>${statRows.join("")}</tbody></table>`);
+  lines.push("");
+
+  lines.push(english ? "## File list" : "## 文件清单");
+  lines.push("");
+  lines.push("```text");
+  lines.push(renderTree(entries, basename(pair.target), pair.order, pair.locale));
+  lines.push("```");
+  lines.push("");
+
+  const sectionOf = (file: string): number => {
+    const i = pair.sections.findIndex((s) => s.files.some((prefix) => file === prefix || file.startsWith(prefix)));
+    return i === -1 ? pair.sections.length - 1 : i;
+  };
+
+  for (let si = 0; si < pair.sections.length; si++) {
+    const sectionEntries = rendered.filter((e) => sectionOf(e.file) === si);
+    if (sectionEntries.length === 0) continue;
+    lines.push(`## ${pair.sections[si]!.title}`);
+    lines.push("");
+    for (const { diff } of sectionEntries) {
+      lines.push(...diff.html);
+      lines.push("");
+    }
+  }
+
+  return { path: pair.out, content: lines.join("\n") };
+}
+
+// ---- CSS 生成（GitHub PR 配色，浅色 + .dark 深色）----
+
+function renderAssets(): readonly GeneratedDiffOutput[] {
+  const scaffold = `/* 本文件由 packages/repo-tools/src/docs/diff-code-compiler.ts 生成（pnpm docs:diff-code），不要手工编辑 */
+/* GitHub PR 式 diff 视图，配合生成的 diff MDX 页面使用 */
+
+.gd-file {
+  margin: 1rem 0;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.dark .gd-file { border-color: #30363d; }
+
+.gd-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f6f8fa;
+  border-bottom: 1px solid #d0d7de;
+  user-select: none;
+}
+.dark .gd-head { background: #161b22; border-bottom-color: #30363d; }
+
+.gd-name {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-weight: 600;
+  color: #1f2328;
+}
+.dark .gd-name { color: #e6edf3; }
+
+.gd-stats { margin-left: auto; font-weight: 600; display: flex; gap: 6px; }
+.gd-plus { color: #1a7f37; }
+.gd-minus { color: #cf222e; }
+.dark .gd-plus { color: #3fb950; }
+.dark .gd-minus { color: #f85149; }
+
+.gd-body { overflow-x: auto; background: #ffffff; }
+.dark .gd-body { background: #0d1117; }
+
+.gd-note { padding: 12px; color: #656d76; background: #ffffff; }
+.dark .gd-note { color: #8b949e; background: #0d1117; }
+
+table.gd-table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 20px;
+  display: table;
+}
+.gd-table tr { border: 0; background: transparent; }
+.gd-table td { border: 0; padding: 0; background: transparent; }
+
+td.gd-ln {
+  width: 1%;
+  min-width: 40px;
+  padding: 0 10px;
+  text-align: right;
+  color: #656d76;
+  user-select: none;
+  vertical-align: top;
+}
+.dark td.gd-ln { color: #6e7681; }
+
+td.gd-sign {
+  width: 1%;
+  padding: 0 4px;
+  text-align: center;
+  user-select: none;
+  color: #1f2328;
+  vertical-align: top;
+}
+.dark td.gd-sign { color: #e6edf3; }
+
+td.gd-code {
+  padding: 0 10px 0 4px;
+  white-space: pre;
+  color: #1f2328;
+  tab-size: 2;
+}
+.dark td.gd-code { color: #e6edf3; }
+
+/* 背景挂在 td 而不是 tr 上：tr 背景在 Safari / 非整数缩放下行间会出 hairline */
+tr.gd-add td { background: #e6ffec; }
+tr.gd-add td.gd-ln { background: #ccffd8; }
+.dark tr.gd-add td { background: rgba(46, 160, 67, 0.15); }
+.dark tr.gd-add td.gd-ln { background: rgba(63, 185, 80, 0.3); color: #c9d1d9; }
+
+tr.gd-del td { background: #ffebe9; }
+tr.gd-del td.gd-ln { background: #ffd7d5; }
+.dark tr.gd-del td { background: rgba(248, 81, 73, 0.1); }
+.dark tr.gd-del td.gd-ln { background: rgba(248, 81, 73, 0.3); color: #c9d1d9; }
+
+/* 页面开头的变更统计表（JSX 表格：同页有超长 JSX 行时 GFM 管道表格会压爆 MDX 编译栈） */
+table.gd-summary { border-collapse: collapse; margin: 1rem 0; font-size: 14px; display: table; width: auto; }
+.gd-summary th, .gd-summary td { border: 1px solid #d0d7de; padding: 6px 12px; text-align: left; background: transparent; }
+.gd-summary th { background: #f6f8fa; font-weight: 600; }
+.gd-summary th:nth-child(n+2), .gd-summary td:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
+tr.gd-total td { font-weight: 600; background: #f6f8fa; }
+.dark .gd-summary th, .dark .gd-summary td { border-color: #30363d; }
+.dark .gd-summary th { background: #161b22; }
+.dark tr.gd-total td { background: #161b22; }
+
+/* 折叠的未变更行 + GitHub 式蓝色展开条（点击逻辑在 github-diff.js） */
+tr.gd-fold { display: none; }
+tr.gd-expand { cursor: pointer; }
+tr.gd-expand td { background: #ddf4ff; }
+tr.gd-expand td.gd-ln { color: #0969da; text-align: center; }
+tr.gd-expand td.gd-code { color: #57606a; }
+tr.gd-expand:hover td { background: #b6e3ff; }
+.dark tr.gd-expand td { background: rgba(56, 139, 253, 0.15); }
+.dark tr.gd-expand td.gd-ln { color: #58a6ff; }
+.dark tr.gd-expand td.gd-code { color: #8b949e; }
+.dark tr.gd-expand:hover td { background: rgba(56, 139, 253, 0.3); }
+`;
+
+  const paletteCss = [...palette.entries()]
+    .map(([key, cls]) => {
+      const [light, dark] = key.split("|");
+      const rules: string[] = [];
+      if (light) rules.push(`.${cls} { color: ${light}; }`);
+      if (dark) rules.push(`.dark .${cls} { color: ${dark}; }`);
+      return rules.join("\n");
+    })
+    .join("\n");
+
+  const js = `// 本文件由 packages/repo-tools/src/docs/diff-code-compiler.ts 生成（pnpm docs:diff-code），不要手工编辑
+// GitHub 式 diff 展开条：点击后显示折叠的未变更行（配合 github-diff.css 的 .gd-fold）
+document.addEventListener("click", (e) => {
+  const tr = e.target && e.target.closest ? e.target.closest("tr.gd-expand") : null;
+  if (!tr) return;
+  const id = tr.getAttribute("data-fold");
+  const tbody = tr.closest("tbody");
+  if (!id || !tbody) return;
+  tbody.querySelectorAll("tr." + id).forEach((row) => row.classList.remove("gd-fold"));
+  tr.remove();
+});
+`;
+  return [
+    { path: CSS_OUT, content: `${scaffold}\n/* Shiki 调色板（github-light / github-dark） */\n${paletteCss}\n` },
+    { path: JS_OUT, content: js },
+  ];
+}
+
+export async function compileDiffCode(root: string): Promise<readonly GeneratedDiffOutput[]> {
+  palette.clear();
+  foldSeq = 0;
+  const pages: GeneratedDiffOutput[] = [];
+  for (const pair of [...PAIRS, ...ENGLISH_PAIRS]) pages.push(await generate(root, pair));
+  return [...pages, ...renderAssets()];
+}

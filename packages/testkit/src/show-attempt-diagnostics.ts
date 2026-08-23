@@ -4,7 +4,10 @@ import {
   decodeShowSchema,
   NonEmptyStringSchema,
   ShowAttemptEnvelopeFields,
+  ShowSourceCollectionSchema,
+  showSourceDependencySchema,
 } from "./show-schema.js";
+import { ShowTimingDetailSchema } from "./show-timing.js";
 
 const ShowAttemptDiagnosticOutputSchema = Schema.Struct({
   code: NonEmptyStringSchema,
@@ -19,6 +22,34 @@ const ShowAttemptDiagnosticSchema = Schema.Struct({
   causes: Schema.Array(Schema.Unknown),
   redaction: Schema.Unknown,
   sourceFrame: Schema.Unknown,
+});
+
+const ShowConversationDetailSchema = Schema.Struct({
+  dependencies: Schema.Tuple(
+    Schema.Literal("niceeval.agent-turns"),
+    Schema.Literal("niceeval.turn-contexts"),
+  ),
+  collection: ShowSourceCollectionSchema,
+  turns: Schema.Array(Schema.Unknown),
+  items: Schema.Array(Schema.Unknown),
+});
+
+const ShowCommandsDetailSchema = Schema.Struct({
+  dependencies: Schema.Tuple(Schema.Literal("niceeval.sandbox-commands")),
+  collection: ShowSourceCollectionSchema,
+  entries: Schema.Array(Schema.Unknown),
+});
+
+const ShowUsageDetailSchema = Schema.Struct({
+  dependencies: Schema.Tuple(Schema.Literal("niceeval.agent-turns")),
+  collection: ShowSourceCollectionSchema,
+  observations: Schema.Array(Schema.Unknown),
+});
+
+const ShowDiagnosticsDetailSchema = Schema.Struct({
+  dependencies: Schema.Tuple(Schema.Literal("niceeval.runner-diagnostics")),
+  collection: ShowSourceCollectionSchema,
+  diagnostics: Schema.Array(ShowAttemptDiagnosticSchema),
 });
 
 const ShowAttemptDiagnosticsDocumentSchema = Schema.Struct({
@@ -37,14 +68,18 @@ const ShowAttemptDiagnosticsDocumentSchema = Schema.Struct({
         state: Schema.Literal("available"),
         view: Schema.Literal("attempt-observability"),
         detail: Schema.Struct({
-          conversation: Schema.Unknown,
-          commands: Schema.Unknown,
-          usage: Schema.Unknown,
-          timing: Schema.Unknown,
-          diagnostics: Schema.Struct({
-            collection: Schema.Unknown,
-            diagnostics: Schema.Array(ShowAttemptDiagnosticSchema),
+          sources: Schema.Struct({
+            agentTurns: showSourceDependencySchema("niceeval.agent-turns"),
+            turnContexts: showSourceDependencySchema("niceeval.turn-contexts"),
+            sandboxCommands: showSourceDependencySchema("niceeval.sandbox-commands"),
+            runnerActivities: showSourceDependencySchema("niceeval.runner-activities"),
+            runnerDiagnostics: showSourceDependencySchema("niceeval.runner-diagnostics"),
           }),
+          conversation: ShowConversationDetailSchema,
+          commands: ShowCommandsDetailSchema,
+          usage: ShowUsageDetailSchema,
+          timing: ShowTimingDetailSchema,
+          diagnostics: ShowDiagnosticsDetailSchema,
         }),
       })),
     }),

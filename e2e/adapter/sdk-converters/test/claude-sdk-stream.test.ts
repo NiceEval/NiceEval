@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#claude-sdk-stream-deterministic
-// rerun: pnpm e2e --repo adapter/sdk-converters -- --run test/claude-sdk-stream.test.ts
+// rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/claude-sdk-stream.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";

@@ -3168,7 +3168,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // boundary; the invocation-wide Run timing tree deliberately remains
       // unbound because it cannot be safely attributed to individual Runs.
       for (const run of opts.agentRuns) {
-        bindRunnerRunObservabilityDiagnostics({
+        yield* bindRunnerRunObservabilityDiagnostics({
           run,
           diagnostics: experimentDiagnostics.get(run.experimentId) ?? [],
         });

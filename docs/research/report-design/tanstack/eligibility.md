@@ -69,7 +69,7 @@ DOM host 的真实顺序是：
 2. 应用调用 `mountChart(container, options)`；它建立 renderer 与 runtime host。
 3. host 根据显式 size、容器测量或 `initialWidth` 确定当前 surface size。
 4. `ChartRuntime.render()` 展开 responsive definition，再调用 `createChartScene()`。
-5. compiler 初始化 marks，materialize channels，计算 scales、guide / legend layout、nodes、points 与 controls。
+5. compiler 初始化 marks，按 mark encodings 生成 channels，计算 scales、guide / legend layout、nodes、points 与 controls。
 6. compiler 返回完整 `ChartScene`；renderer 投影到 surface，再调用可选 `onRender`。
 7. resize、font load 或 `host.update()` 会重新编译并渲染。
 8. `host.destroy()` 清 observer、listener、scheduled frame、tooltip、surface 与 markup。

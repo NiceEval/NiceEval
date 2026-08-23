@@ -90,7 +90,7 @@ export default defineExperiment({
 
 {/* GENERATED:BEGIN agent-def */}
 
-{/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
+{/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
 ### `DirectAgentDef`
 
@@ -137,7 +137,7 @@ spanMapper?: SpanMapper;
 #### `send`
 
 ```ts
-send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
+send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
 ```
 
 每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。
@@ -223,7 +223,7 @@ spanMapper?: SpanMapper;
 #### `send`
 
 ```ts
-send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
+send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
 ```
 
 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。
@@ -392,7 +392,7 @@ Sandbox 型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄。`
 
 {/* GENERATED:BEGIN sandbox-methods */}
 
-{/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
+{/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
 ### `SandboxOperations`
 

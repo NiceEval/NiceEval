@@ -426,7 +426,7 @@ Terminal-Bench 的多容器 Eval 可以用 `composeSandbox(...)`，单机 Eval �
 
 ## Provider 与 template factory
 
-`composeSandbox()` 与 `dockerSandbox()` 由 Docker Provider 包提供；`e2bSandbox()` 由 E2B Provider 包提供。普通 Experiment 不注册 materializer，也不选择另一份 Provider。
+`composeSandbox()` 与 `dockerSandbox()` 由 Docker Provider 包提供；`e2bSandbox()` 由 E2B Provider 包提供。普通 Experiment 不注册 source builder，也不选择另一份 Provider。
 
 自定义 Provider 必须连同自己的 template factory 与 planner 一起导出。支持能力与实现不能由每个 Experiment 临时拼成注册表。
 

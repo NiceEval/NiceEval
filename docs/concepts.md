@@ -196,6 +196,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 采集状态 | Collection | 一个已写入 Attachment 的 complete 或 partial 完备度；不是 reader 的 unavailable 或 invalid 状态 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | 采集限制 | limitation | partial collection 必有的 closed、非空原因；表达上限、截断、脱敏或采集不足 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | owner-local identity | owner-local identity | producer 为 Attachment 内 turn、item、call、command、usage、interval 与 diagnostic mint 的稳定身份 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
+| Source receipt | Source receipt | 一个 capture authority 在真实边界产生的已归一、脱敏且不可变事实 segment | [Observability Source receipts](feature/record/architecture/observability-attachments.md) |
 | 报告器 | Reporter | 运行中流式消费结果的插件;与运行后的 Report 不同 | [Observability](observability.md) |
 
 ### 结果落盘
@@ -211,11 +212,12 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
 | 执行槽位 | Slot | Run 在调度前展开的一个预期位置；最多对应一个 Member，并作为分析分母。它不是并发位，默认 Human CLI 也不把它作为列名展示 | [Record Architecture](feature/record/architecture.md) |
 | Run 完成标识 | Run completion marker | writer 在内容校验与刷盘后最后排他创建的 zero-byte `complete`，是 Run 对 reader 可见的发布点 | [Record Architecture](feature/record/architecture.md) |
+| Seal manifest | Seal manifest | 与 `complete` 在同一次原子目录发布中出现、穷尽 Core、Attachment、source segment 与 blob 的 canonical portable inventory | [Record Architecture](feature/record/architecture.md) |
 | 未完成 Run | Incomplete Run | 缺少规范零字节普通文件 `complete` 的目录；不是已发布事实，只能由取得独占维护 lease 的 `niceeval clean` 删除 | [Record CLI](feature/record/cli.md) |
 | Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 NiceEval 固定定义的 immutable payload 与 owner-local blob closure | [Record Architecture](feature/record/architecture.md) |
-| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、Observability、FileChanges、SourceNavigation、Sources 与 Artifacts 六类封闭联合；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
+| 固定 Attachment catalog | `BuiltinAttachment` | Assertions、FileChanges、Sources、Artifacts 与五个 Observability source family 组成的九类封闭联合；第三方不能增加 durable family | [Record Library](feature/record/library.md) |
 | Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、Git safety 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
 | Record migration receipt | `RecordMigrationReceipt` | migration 完整校验并刷盘后返回的 immutable outcome；未需改写时为 `already-current`，成功改写时为 `migrated` | [Record Library](feature/record/library.md) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources`（envelope `schemaVersion: 1`）；保存当时 source closure 的 manifest 与 own blobs | [Record Architecture](feature/record/architecture.md) |
@@ -246,23 +248,22 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 执行缺口 | Execution gap | 当前目标中没有可复用 Attempt、必须交给 planner/scheduler 执行的 slot；不是 Record 状态 | [Cache](feature/experiments/cache.md#错误与缺口作用域) |
 | 收窄 | Narrowing | 在既有 Sample 上显式排除范围，同时保留状态与分母问题 | [Analysis Library](feature/analysis/library.md) |
 
-### 报告
+### 结果交付（设计目标）
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 报告 | `Report` | `defineReport({ pages })` 返回的标准 React JSX 作者定义；作者面没有通用 semantic model，JSX 只交给 React 处理 | [Report Library](feature/reports/library.md) |
-| 页 | Report Page | 直接写在 `defineReport({ pages })` 中，以 `params / load / render` 形成可寻址页面；`show` 只执行选中页，站点路径才枚举全部实例 | [Report Library](feature/reports/library.md) |
-| 报告组件 | Report component | `defineComponent()` 定义组合组件或 text / web 双面原语；双面原语先调用一次 `resolve()` 取得关闭输入，再由两面同步消费 | [Report Library](feature/reports/library.md) |
-| 已求值页（私有） | `ResolvedPage` | Host 在固定 Sample 存活时短存的单目标页值；不是作者 API、机器文档或站点版本的一部分 | [Reports architecture](feature/reports/architecture.md#私有页值与闭合站点版本) |
-| 闭合站点版本 | `ClosedSiteRevision` | view 与 static 在全站枚举、校验和资源闭包后共用的最终页面、asset 与下载 bytes 集合；show 不形成它 | [Reports architecture](feature/reports/architecture.md#私有页值与闭合站点版本) |
-| 静态报告 | Static report | 由完整 `ClosedSiteRevision` 写出的无源 Record 离线目录；每个 route 的页面 body 与 view 相同 | [Reports CLI](feature/reports/cli.md#niceeval-view---out) |
+| Analysis 选择目录快照 | `AnalysisSelectionCatalogSnapshot` | 在 frozen Record view 上关闭 public handles、target 与 typed selectors 的内容寻址目录；不等于 Record inventory 或 runtime generation | [CLI / Insight architecture](design/cli-insight/PLAN-2/architecture.md#analysis-selection-catalog) |
+| Analysis 选择基准 | Analysis selection basis | Exact selection 成员代表 `logical-slot` 还是 `attempt`；source kind 与 Population 共同限制合法 basis | [CLI / Insight CLI](design/cli-insight/PLAN-2/cli.md#选择与-member-basis) |
+| 多集合分析 | Multi-set analysis | 在同一 frozen Record view 内为多个具名 selection 形成 Sample，并原子关闭 frames 与 comparability 的 Analysis operation | [CLI / Insight architecture](design/cli-insight/PLAN-2/architecture.md#multi-set-operation) |
+| Insight | Insight | NiceEval 自己维护、供用户排查运行与证据的固定本地界面；不是网页作者平台 | [CLI / Insight](design/cli-insight/PLAN-2/README.md) |
+| Insight revision | `InsightRevision` | 一个 Insight 进程中所有标签页共享的 server-global 数据版本；刷新成功后原子切换 | [Insight lifecycle](design/cli-insight/PLAN-2/lifecycle.md#更新与刷新) |
 
 ### 配置与 CLI
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 预置准备 | —(用普通代码表达) | 跑 agent 前的准备逻辑,按职责分层:layer 的 `prepare()`、Agent Ensure、`test(t)` 普通代码与外部编排；`SandboxAgent.setup` 只连 runtime / 鉴权 | [Sandbox library](feature/sandbox/library.md) |
-| CLI flag | CLI flag | 命令行开关（如 `--report`）；写作时一律带「CLI」限定或写字面 `--xxx`，不与实验 flags 混用 | [CLI](cli.md) |
+| CLI flag | CLI flag | 命令行开关（如 `--model`）；写作时一律带「CLI」限定或写字面 `--xxx`，不与实验 flags 混用 | [CLI](cli.md) |
 
 ## 候选术语
 
@@ -272,11 +273,15 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Analysis Library](feature/analysis/library.md) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
-| Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
-| Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生新的不可变 grading claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Session、Turn、Action、显式材料、provenance 与 ExecutionOutcome 的 sealed semantic source graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#execution-source) |
+| Grading | Grading | 当前 GradingDefinition 对一份 sealed Execution graph 复用或产生 Judge Evaluation，再建立不可变 Grading Claim | [Replayable Architecture](roadmap/replayable-grading/architecture.md#judgeevaluation-与-gradingclaim) |
 | GradingRun | GradingRun | 对一个 Experiment Run 已写入 Record 的 SampleManifest 执行或复用全部 Grading 的持久批次 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
-| GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingresult) |
-| SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、ExecutionGraph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#samplemanifest-与-current) |
+| GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、Execution graph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| Judge Material View | Judge Material View | 从受管 Execution 或 Grading definition source 创建、只能绑定到 recipe slot 的私有品牌 Judge 输入句柄 | [Judge Material Library](roadmap/judge-runtimes/material/library.md) |
+| Action Result Selector | `ActionResultSelector` | 按 occurrence 或封存动作元数据精确选择 Action result、且不能读取 output 的持久选择器 | [Judge Material Library](roadmap/judge-runtimes/material/library.md#action-result-selector) |
+| 材料绑定清单 | `MaterialBindingManifest` | 穷尽保存一次 Judge Check 的 slot 声明、已定位 source、已交付 representation 与授权能力的 canonical manifest | [Judge Material Architecture](roadmap/judge-runtimes/material/architecture.md#materialbindingmanifest) |
+| Judge Evaluation | `JudgeEvaluation` | 一次 evaluator occurrence 的 manifest、presentation 或 investigation closure 与 Decision；不拥有 threshold 或 score policy | [Judge Material Architecture](roadmap/judge-runtimes/material/architecture.md#实体与-owner) |
 | Pilot 选择 | Pilot selection | 在 attempts 展开前按共同 Eval ID 总体执行 first 或固定 seed sample，并保留 non-final coverage | [Experiment Pilot 抽样](roadmap/experiment-pilot-sampling/README.md) |
 | 具名 Experiment 族 | Experiment family (`defineExperiments`) | 用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID | [具名 Experiment 族](roadmap/experiment-authoring/families/README.md) |
 | Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-prepare/fixture-content/README.md) |
@@ -289,7 +294,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Eval Trajectory | Eval trajectory | 由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG | [Eval Trajectory](roadmap/eval-trajectories/README.md) |
 | Workspace 访问证据 | Workspace access evidence | 可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合 | [Workspace 访问证据](roadmap/workspace-access-evidence/README.md) |
 | 发现边界 | Discovery boundary | 显式目录入口拥有的递归 Eval discovery 范围；父级扫描在入口处停止向内发现 | [发现边界](roadmap/discovery-boundaries/README.md) |
-| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Report Calculation 投影成本的价格规则集合 | [成本投影](feature/reports/cost-projections/README.md) |
+| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Analysis cost Measure 投影成本的价格规则集合 | [CLI / Insight 迁移门](design/cli-insight/DECISION.md#迁移门) |
 | Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-authoring/display-names/README.md) |
 | Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不构造 Sample 或推导最新结果 | [Record 库存](roadmap/record-inventory/README.md) |
 

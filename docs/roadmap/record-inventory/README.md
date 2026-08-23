@@ -192,11 +192,11 @@ Record 库存以一次 FrozenRecordView 建立读边界。
 `--latest` 与 `latest-runs` 不属于本方向的命令 grammar 或选择模型。
 本契约不定义 alias、fallback 或并存语义。
 
-## DX 与 frog
+## DX 与 Feedback
 
-frog 只保存可复现的 DX 摩擦条目，不是 receipt、Record 库存或审计数据的 owner。
+Feedback 只保存可复现的 DX observation，不是 receipt、Record 库存或审计数据的 owner。
 这项 DX 的证据是正常 Invocation 的完整交接，以及强杀后按 invocationId 找回 stranded Run。
-命令本身不创建、更新或依赖 frog 条目。
+命令本身不创建、更新或依赖 Feedback 条目。
 
 ## 验收 owner 与生产可观察结果
 

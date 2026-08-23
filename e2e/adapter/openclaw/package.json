@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "e2e": "vitest run",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo adapter/openclaw'); process.exit(1)\"",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo adapter/openclaw'); process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

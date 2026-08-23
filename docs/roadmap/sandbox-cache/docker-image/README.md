@@ -33,7 +33,7 @@ declare function dockerImage(
 
 build 分支在 physical Sandbox 创建前求出 BuildKey。它至少包含：
 
-- Dockerfile 内容与 materializer / builder revision；
+- Dockerfile 内容与 image builder revision；
 - `.dockerignore` 过滤后的 context 路径、类型、权限与内容；
 - 规范化 build args、target 与目标 platform；
 - 经过 identity 查找的基础镜像稳定值。

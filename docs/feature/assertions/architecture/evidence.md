@@ -8,10 +8,10 @@ Assertion 的材料必须在 Attempt 发布前归一为有界 snapshot，或 Ass
 
 | 层次 | 说明 |
 |---|---|
-| family Host | 请求的 Assertions family 是 `available`、`not-recorded`、`unsupported` 或 `invalid`。只有 `available` 已保证 exact payload 与完整 own blob closure。 |
+| family Host | 请求的 Assertions family 是 `available`、`not-recorded` 或 `invalid`。只有 `available` 已保证 exact payload 与完整 own blob closure。 |
 | entry coverage | 当 Assertions 为 `available` 时，每条 Assertion 的 material 是 `complete`、`partial`、`unavailable` 或 `not-applicable`，并带该 entry 的 limitations／原因。 |
 
-v1 没有通用 Attachment 完整度字段。producer 少采、sampling、redaction 与 truncation 都写进受影响 entry 的 coverage 和 limitations；reader 不会把它们消掉。缺少固定 family 是 `not-recorded`，不属于当前固定 catalog 的 family 或 schema 是 `unsupported`，envelope、payload、blob 或 closure 损坏是 `invalid`。完整闭包与四态 Host 的定义见 [Record architecture](../../record/architecture.md#attachment-closure-与读取状态)。
+v1 没有通用 Attachment 完整度字段。producer 少采、sampling、redaction 与 truncation 都写进受影响 entry 的 coverage 和 limitations；reader 不会把它们消掉。缺少固定 family 是 `not-recorded`，envelope、payload、blob 或 closure 损坏是 `invalid`。unknown、future 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整闭包与 source-local read 的定义见 [Record architecture](../../record/architecture.md#attachment-closure-惰性读取与-cache)。
 
 ## 显式 value snapshot
 

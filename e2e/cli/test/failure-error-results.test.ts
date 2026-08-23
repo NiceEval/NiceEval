@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/cli.md#cli-failure-error-results
-// rerun: pnpm e2e --repo cli -- --run test/failure-error-results.test.ts
+// rerun: pnpm e2e test --repo cli -- --run test/failure-error-results.test.ts
 
 import { only } from "@niceeval/testkit";
 import { mkdirSync, readFileSync } from "node:fs";

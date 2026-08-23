@@ -22,6 +22,12 @@ export const SHA256_DIGEST_BRAND = "@niceeval/record/Sha256Digest" as const;
 export const SOURCE_ITEM_ID_BRAND = "@niceeval/record/SourceItemId" as const;
 export const FILE_CHANGE_ID_BRAND = "@niceeval/record/FileChangeId" as const;
 export const ARTIFACT_ID_BRAND = "@niceeval/record/ArtifactId" as const;
+export const RECORD_BLOB_KEY_BRAND =
+  "@niceeval/record/RecordBlobKey" as const;
+export const SOURCE_SEGMENT_ID_BRAND =
+  "@niceeval/record/SourceSegmentId" as const;
+export const CANONICAL_RUN_RELATIVE_PATH_BRAND =
+  "@niceeval/record/CanonicalRunRelativePath" as const;
 export const CANONICAL_PROJECT_RELATIVE_PATH_BRAND =
   "@niceeval/record/CanonicalProjectRelativePath" as const;
 
@@ -51,13 +57,21 @@ export type SourceItemId = string & Brand.Brand<typeof SOURCE_ITEM_ID_BRAND>;
 export type FileChangeId = string & Brand.Brand<typeof FILE_CHANGE_ID_BRAND>;
 /** An opaque identity inside one Artifacts payload. */
 export type ArtifactId = string & Brand.Brand<typeof ARTIFACT_ID_BRAND>;
+/** Opaque portable file name for one Attachment-owned blob. */
+export type RecordBlobKey = string & Brand.Brand<typeof RECORD_BLOB_KEY_BRAND>;
+/** Opaque identity minted when one source receipt segment starts. */
+export type SourceSegmentId = string & Brand.Brand<typeof SOURCE_SEGMENT_ID_BRAND>;
+/** Slash-separated path inside one published Run directory. */
+export type CanonicalRunRelativePath = string & Brand.Brand<
+  typeof CANONICAL_RUN_RELATIVE_PATH_BRAND
+>;
 /** Slash-separated path relative to the recorded project root. */
 export type CanonicalProjectRelativePath = string & Brand.Brand<
   typeof CANONICAL_PROJECT_RELATIVE_PATH_BRAND
 >;
 
 /** Fixed root identity; an incompatible root format must use a different identity. */
-export const RECORD_FORMAT = "niceeval.record" as const;
+export const RECORD_FORMAT = "niceeval.record.source-receipts" as const;
 
 export type RecordFormat =
   typeof RECORD_FORMAT & Brand.Brand<typeof RECORD_FORMAT_ID_BRAND>;
@@ -71,7 +85,7 @@ const RECORD_ATTACHMENT_LABEL =
 const RECORD_ATTACHMENT_NAME_PATTERN = new RegExp(
   `^(?:${RECORD_ATTACHMENT_LABEL}\\.)+${RECORD_ATTACHMENT_LABEL}$`,
 );
-const RECORD_FORMAT_ID_PATTERN = /^niceeval\.record$/;
+const RECORD_FORMAT_ID_PATTERN = /^niceeval\.record\.source-receipts$/;
 const SHA256_DIGEST_PATTERN = /^[a-f0-9]{64}$/;
 
 /**
@@ -113,6 +127,26 @@ export function isRecordDomainIdentity(value: string): boolean {
 
 export function isSha256Digest(value: string): boolean {
   return SHA256_DIGEST_PATTERN.test(value);
+}
+
+export function isRecordBlobKey(value: string): boolean {
+  return isPortableSegment(value);
+}
+
+export function isSourceSegmentId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(value);
+}
+
+/** A portable path relative to a single sealed Run, never a host path. */
+export function isCanonicalRunRelativePath(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= 4_096 &&
+    !value.startsWith("/") &&
+    !value.startsWith("\\") &&
+    !value.includes("\\") &&
+    value.split("/").every(isPortableSegment)
+  );
 }
 
 /** A project-relative portable path; it is never a host filesystem path. */

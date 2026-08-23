@@ -326,8 +326,8 @@ interface HiddenVerifierController {
 ```
 
 `t.verifier.using()` 只能在最后一次 Agent turn 返回后进入。
-一旦进入,该 Eval 的 `send/reply` 面永久关闭;Runner 先 materialize,再执行 evaluate,最后在 `finally` 中按 LIFO 运行全部 cleanup。
-每个外部副作用必须在取得资源前先 `onCleanup`;这样 materialize 中途失败也有可执行的收尾栈。
+一旦进入,该 Eval 的 `send/reply` 面永久关闭;Runner 先运行 `materialize`,再执行 evaluate,最后在 `finally` 中按 LIFO 运行全部 cleanup。
+每个外部副作用必须在取得资源前先 `onCleanup`;这样 `materialize` 中途失败也有可执行的收尾栈。
 
 Terminal-Bench 可以把现有搬运与判分改成:
 
@@ -374,7 +374,7 @@ export default defineEval({
 ```
 
 判据文件仍由 `loadCriteria` 一类 loader 登记内容指纹。
-`HiddenVerifierFixture.identity` 只描述 materialize / cleanup 配方。
+`HiddenVerifierFixture.identity` 只描述 `materialize` / cleanup 配方。
 cleanup 失败把 Attempt 改为 `errored`,跳过 state save、退休该复用周期并停止依赖该状态的序列;这条语义不同于只追加诊断的普通 `EvalDef.teardown`。
 
 ## Experiment Requirement 集合

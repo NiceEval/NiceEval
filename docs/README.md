@@ -33,6 +33,9 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 对比多个候选方案、给出架构 / 技术选型裁决 | [Design](design/README.md) |
 | 研究外部产品及其对 NiceEval 的启发 | [Research](research/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
+| 查仓库命令、维护 Skill 与对应守护 | [Repository Tools](engineering/repository-tools/README.md) |
+| 收取 issue / dogfood / dev Feedback 或沉淀开发 Memory | [Feedback 与 Memory](engineering/feedback-memory/README.md) |
+| 切分互斥的多 Agent 文档工作 | [并行文档工作](engineering/docs-work/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
 | 查一处设计从哪个系统学来 | [Research](research/README.md)；RFC、OWASP 等基础规范仍见对应 Feature 的 `reference/` |
@@ -101,12 +104,14 @@ docs/
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
+│   ├── benchmark-web-consumption/       自定义 benchmark 网页使用数据、组件或分层能力的待选接入面
+│   ├── cli-insight/                     AI-native CLI、Human show 与第一方本地 Insight
 │   ├── record-runtime/                  Record access runtime：独立 open 与统一资源 owner
-│   ├── observability-package-layout/    Observability 持久包：七 family 与 physical packages
+│   ├── observability-package-layout/    Observability 持久包：reader view 与 source receipt layout
 │   ├── projection-api/                  单包投影：runtime calls 与 static graph
 │   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
-│   ├── report-authoring/                报告作者面:组件粒度与取数形态
-│   ├── record-to-report-stack.md         Record 到 Report 的依赖、组合与决策地图
+│   ├── report-authoring/                已被新交付边界取代的双面 Report 作者面历史
+│   ├── record-to-report-stack.md         已被新交付边界取代的 Record 到 Report 历史地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
 │   ├── ori-eval.md                      Eval authoring：Ori Eval、Skill 与完整评估工作流
@@ -123,6 +128,9 @@ docs/
 │   ├── _template/                       新工程主题模板
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
 │   ├── task-orchestration/              Nx 项目图、affected E2E 与 fail-open 管理
+│   ├── repository-tools/                七个仓库维护领域、动态发现与脚本退役边界
+│   ├── feedback-memory/                 Feedback、Memory、E2E regression 与提升工作流
+│   ├── docs-work/                       多 Agent 文档切片、收据与 finalizer
 │   ├── testing/                         测试体系总纲 + unit/ 与 e2e/ 两个子体系
 │   ├── benchmark/                       阶段耗时与安装 benchmark
 │   └── example-tier-sync/               示例同步机制

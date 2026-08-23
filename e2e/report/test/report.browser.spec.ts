@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-browser-journey
-// rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
+// rerun: pnpm e2e test --repo report -- --run test/report.browser.spec.ts
 //
 // This Journey observes only the installed candidate, exported files, HTTP,
 // hash navigation, and browser-visible content. It never reads Record files.
@@ -123,7 +123,9 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
           hasText: /^classic\/incompatible /,
         });
         await expect(scoreExperimentSummary).toHaveCount(1);
-        await expect(scoreExperimentSummary).toContainText("7 · 1 missed check");
+        await expect(scoreExperimentSummary).toContainText("classic/incompatible (1/1)");
+        await expect(scoreExperimentSummary).toContainText("7");
+        await expect(scoreExperimentSummary).not.toContainText("missed check");
         await expect(scoreExperimentSummary).not.toContainText("passed");
         await experiment.click();
         await expect(page).toHaveURL(/#\/experiment\//);

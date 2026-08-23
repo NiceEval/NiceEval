@@ -22,7 +22,7 @@ Case 读取、Addon 调度、生命周期、身份和错误只见 [Architecture]
 ## Base 与收敛规则
 
 `Sandbox Case` 是唯一 Base。
-Eval 的 folder-local source、profile 映射或 Provider 默认起点读取成一份完整 Case；`environments` 表项可以用预制 Case 替换同 profile 的现场 materialize。
+Eval 的 folder-local source、profile 映射或 Provider 默认起点读取成一份完整 Case；`environments` 表项可以用预制 Case 替换同 profile 的现场构建与启动。
 
 Experiment 不提供 Base，只提供 Addon。
 每个 Addon 先检查实际状态，miss 后才准备 payload 和安装，安装后复检。

@@ -69,7 +69,7 @@ descriptor definition
   → PageFamily expansion + semantic tree closure
 ```
 
-同一 projection 与 field-set materializer 在一次 execution 中至多执行一次。cycle、population mismatch 与 identity
+同一 projection 与 field-set loader 在一次 execution 中至多执行一次。cycle、population mismatch 与 identity
 collision 在 I/O 前拒绝。loading 后的 row／route／render callback 只能消费 closed row，不能返回新的
 `ReportData`。
 

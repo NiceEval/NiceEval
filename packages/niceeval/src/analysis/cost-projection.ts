@@ -1,4 +1,4 @@
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+import type { AgentTurnsAttachment } from "../record/family/agent-turns/definition.ts";
 import type { RecordAttachmentPayloadSnapshot } from "../record/attachment/types.ts";
 import type {
   CanonicalDecimal,
@@ -57,7 +57,10 @@ export interface CostSlotProjection {
   readonly refs: readonly EvidenceRef[];
 }
 
-type UsageSnapshot = RecordAttachmentPayloadSnapshot<AttemptObservabilityAttachment>["usage"];
+type UsageSnapshot = Readonly<{
+  readonly collection: RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>["collection"];
+  readonly observations: readonly RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>["segments"][number]["usage"][number][];
+}>;
 
 /** @internal Builds a missing denominator Slot without inventing a provider. */
 export function unavailableCostSlot(

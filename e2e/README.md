@@ -4,7 +4,7 @@
 
 ## 目录
 
-每个带 `project.json` 与 `kind:e2e` tag 的叶子目录都是一个独立消费项目，自带 `package.json`、lockfile 和原生 Vitest 或 Playwright 测试。根 runner 把候选 `niceeval` tarball 安装进仓库外副本；需要 Testkit 的 Repo 还会从当前 checkout clean-build 私有 workspace package，并只在该副本中注入目录依赖，随后执行 `targets.e2e.metadata.niceeval` 声明的命令。
+每个带 `project.json` 与 `kind:e2e` tag 的叶子目录都是一个独立消费项目，自带 `package.json`、lockfile 和原生 Vitest 或 Playwright 测试。根 runner 把候选 `niceeval` tarball 安装进仓库外副本；需要 Testkit 的 Repo 还会从当前 checkout clean-build 私有 workspace package，需要受信任 harness asset 的 Repo 也只在该副本中获得对应材料，随后执行 `targets.e2e.metadata.niceeval` 声明的命令。
 
 ```text
 e2e/
@@ -15,11 +15,13 @@ e2e/
 ├── report/                 # show、view、导出与浏览器 Journey
 ├── lifecycle/              # signal、资源终结与下一消费者
 ├── migrate/                # 可替换 producer 与当前 candidate 的持久化交接脚手架
-├── adapter/
-│   ├── local-protocol/     # 无密钥 transport 与可控故障
-│   └── <id>/               # 每个真实 SDK / CLI / provider 一个 live Repo
-└── scripts/                # 发现、计划、pack、注入、执行、收据与 artifact
+└── adapter/
+    ├── local-protocol/     # 无密钥 transport 与可控故障
+    └── <id>/               # 每个真实 SDK / CLI / provider 一个 live Repo
 ```
+
+Host-side 的发现、计划、pack、注入、执行、收据与 artifact 编排位于独立的私有 workspace package
+`packages/e2e-runner/`；`e2e/` 只保存场景 Repo 与本入口说明。
 
 `project.json.root` 是 E2E identity 的唯一真源；canonical Repo id 从 `e2e/` 后的 leaf root 推导。`adapter/` 只是物理 collection，不提供共享依赖或共享结果根。
 
@@ -41,10 +43,10 @@ pnpm e2e verify-release --plan /tmp/release-plan.json --candidate /tmp/niceeval-
   --receipt-root /tmp/release-receipts --tag v0.4.6
 
 # 默认模式依次 plan → pack 一次 candidate → 按需 build 一次 Testkit → 运行
-pnpm e2e --lane pr
-pnpm e2e --lane main
-pnpm e2e --repo report -- --run test/report.test.ts
-pnpm e2e --repo report -- --run test/report.browser.spec.ts -t "打开"
+pnpm e2e test --lane pr
+pnpm e2e test --lane main
+pnpm e2e test --repo report -- --run test/report.test.ts
+pnpm e2e test --repo report -- --run test/report.browser.spec.ts -t "打开"
 ```
 
 Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，不是发布候选；`harness.testkit: true` 是唯一消费声明。runner 会在一次 invocation 中 build 一次 `packages/testkit`，再把该目录作为本地依赖注入隔离副本。场景源 `package.json` 和 lockfile 不声明 Testkit，也不直接链接 workspace。

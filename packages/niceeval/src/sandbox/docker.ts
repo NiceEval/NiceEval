@@ -260,6 +260,18 @@ function benignRemoveError(error: unknown): boolean {
   return dockerStatusCode(error) === 404;
 }
 
+async function startContainerIdempotently(container: Docker.Container): Promise<void> {
+  if ((await container.inspect()).State?.Running === true) return;
+  try {
+    await container.start();
+  } catch (error) {
+    // A control-owned committed create may be replayed after readiness failed.
+    // Accept Docker's 304 only when a fresh inspect proves the same container is running.
+    if (dockerStatusCode(error) === 304 && (await container.inspect()).State?.Running === true) return;
+    throw error;
+  }
+}
+
 export function dockerHostConfig(
   privileged: "disabled" | "raw" | "rootless",
   resources: Readonly<DockerSandboxResources>,
@@ -692,7 +704,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     sandbox._containerId = created.containerId;
     sandbox.releaseMode = "detach";
     try {
-      await sandbox.container.start();
+      await startContainerIdempotently(sandbox.container);
       await sandbox.waitForReadiness();
       await sandbox.ensureRunnerTools();
       await sandbox.resolveDefaultIdentity();

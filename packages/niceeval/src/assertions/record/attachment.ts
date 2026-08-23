@@ -17,7 +17,7 @@ import { Sha256DigestSchema } from "../../record/codec/identifiers.ts";
 import type {
   AssertionSourceSite,
   AssertionsAttachment,
-} from "../../record/family/assertions.ts";
+} from "../../record/family/assertions/definition.ts";
 import type { Sha256Digest } from "../../record/model/identifiers.ts";
 import type {
   AssertionCoverage,

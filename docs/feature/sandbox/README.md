@@ -18,19 +18,27 @@
 ## 已封口事实的归属
 
 Sandbox 负责创建、准备、复用和留存隔离实例，但它不拥有独立的可携带 Record family。一次 Attempt 封口时，Sandbox
-相关事实按内容进入 Record catalog 中的六个运行事实 family。family 名是稳定 identity；每份 Attachment envelope 的 `schemaVersion` 由对应 family 契约拥有：
+相关事实与相邻运行事实按 capture authority 进入 Record 的九项 fixed catalog。family 名是稳定 identity；每份
+Attachment envelope 的 `schemaVersion` 由对应 family 契约拥有：
 
 | 事实 | family 与 owner |
 |---|---|
-| 创建、prepare 与受管命令的历史，计时，诊断，以及 agent 的 conversation / usage | origin Attempt 或 Run 的 `niceeval.observability` |
+| Adapter 解释、脱敏后的 terminal Turn 与 provider usage observation | origin Attempt 的 `niceeval.agent-turns` |
+| 每个物理 `t.send` 当时已知的 source context | origin Attempt 的 `niceeval.turn-contexts` |
+| Sandbox 受管命令的 manifest、唯一终态与安全 stream | origin Attempt 的 `niceeval.sandbox-commands` |
+| 创建、prepare、命令与 Attempt / Run 阶段的 owner-local activity | origin Attempt 或 Run 的 `niceeval.runner-activities` |
+| advisory 与 execution error | origin Attempt 或 Run 的 `niceeval.runner-diagnostics` |
 | agent 归因的 workdir 文件变化轨迹、归因策略与采集状态 | origin Attempt 的 `niceeval.file-changes` |
-| 每个物理 send 的 source/timing join | origin Attempt 的 `niceeval.source-navigation` |
 | source frame 与可复现输入所需的源码闭包 | origin Run 的 `niceeval.sources` |
 | diff Assertion 的 result、coverage 与 Evidence refs | origin Attempt 的 `niceeval.assertions` |
 | 需要保留的大型、具类型对象 | Attempt 或 Run 的 `niceeval.artifacts` |
 
 provider 的实例 id、池内承接序号、live / dormant 状态与 detached cleanup locator 只服务本次运行或留存注册表。
-它们不成为可携带 Record 事实。销毁现场不会影响已经封口的六族运行事实 closure；恢复现场也不会把新的事实补写回旧 Attempt。
+它们不成为可携带 Record 事实。销毁现场不会影响已经封口的九项 fixed catalog closure；恢复现场也不会把新的事实补写回旧 Attempt。
+
+conversation、usage、commands、timing 与 diagnostics 只在 reader side 从上述 source 投影。source navigation
+由 Turn Contexts、Runner Activities 与 origin Run Sources 形成 relation，不是 durable family。Adapter 不向
+Record 交付 raw tape、frame、provider payload 或 secret。
 
 持久事实不由 Sandbox API 直接读取。Analysis 以 `query()` 闭合发布的 `DomainView`，例如命令历史使用
 `sandboxHistoryView`，文件变化使用 `fileChangesView`。这使 Sandbox 的运行能力与 Record 的读取能力保持分界。

@@ -44,5 +44,5 @@ gateway errors are failures, not passes or skips.
 Run it only after explicit cost authorization:
 
 ```sh
-pnpm e2e --lane main --repo adapter/openai-compat
+pnpm e2e test --lane main --repo adapter/openai-compat
 ```

@@ -182,7 +182,7 @@ Sandbox,再在既有 `agent.setup` 时点执行 Ensure:
 ```
 
 Sandbox BuildKey 只认题目 Dockerfile、Compose、build context、
-基座与 materializer 修订;Agent 身份单独进入 attempt 指纹。
+基座与任务 Sandbox 构建器修订;Agent 身份单独进入 attempt 指纹。
 因此数百份逐题 Sandbox 不会再乘上 Codex / Claude Code 等 Agent
 版本形成image 或 template 组合矩阵。同一份题目构建输出可以被多个 Agent
 experiment 消费,每个 Agent 在主 Sandbox 内自行检查或安装。

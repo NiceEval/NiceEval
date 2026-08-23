@@ -11,7 +11,7 @@ Eval、Experiment 与 Agent 都可能需要准备同一个主 Sandbox。
 - 现场安装不可行时,作者怎样改用一份已经融合条件的完整 template，而不是让 Runner 合并两个起点。
 
 本主题保留完整 `Sandbox Case` 与 Agent Ensure 的领域义务。
-候选必须保留 `SandboxTemplate`、完整 `Sandbox Case` 与运行中的 Sandbox 的边界，不要求普通作者学习 materializer 注册或通用 Requirement/Base 组合语言。
+候选必须保留 `SandboxTemplate`、完整 `Sandbox Case` 与运行中的 Sandbox 的边界，不要求普通作者学习 Sandbox source builder 注册或通用 Requirement/Base 组合语言。
 
 十个 PLAN 都按 Feature Design Package 独立给出 Library、Architecture、Lifecycle 与 Use Case。
 [Cases](CASES.md) 固定共同输入和验收结果;候选用例只说明各自怎样守护,不能改写 Case 来降低要求。

@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-show-json
-// rerun: pnpm e2e --repo report -- --run test/report-show.test.ts
+// rerun: pnpm e2e test --repo report -- --run test/report-show.test.ts
 
 import { only } from "@niceeval/testkit";
 import { stripVTControlCharacters } from "node:util";

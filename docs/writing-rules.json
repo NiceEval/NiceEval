@@ -461,11 +461,6 @@
   ],
   "bannedTerms": [
     {
-      "term": "materialization",
-      "use": "按实际阶段写创建 Sandbox、构建 Provider 输出、恢复缓存、读取 payload 或生成资源",
-      "why": "同一个抽象词混指资源创建、缓存生成和延迟读取，读者无法判断发生了哪个动作"
-    },
-    {
       "term": "<code>",
       "use": "Markdown 行内代码使用反引号；路径中的尖括号直接写在反引号内",
       "why": "HTML code tag 让简单标识多一层转义，并与仓库已经采用的 Markdown 行内代码写法混用"
@@ -1098,6 +1093,21 @@
       "term": "水位",
       "use": "按对象写 Run、执行批次、当前结果集、发布结果范围、并发数或 input token 数",
       "why": "这个比喻同时被用于持久化 Run、Sample 选择、发布范围、并发上限和上下文用量，无法说明实体、时间范围或选择口径"
+    },
+    {
+      "term": "materialization",
+      "use": "按实际阶段写创建 Sandbox、构建 Provider 输出、恢复缓存、读取 payload 或生成资源",
+      "why": "同一个抽象词混指资源创建、缓存生成和延迟读取，读者无法判断发生了哪个动作"
+    },
+    {
+      "term": "materialize",
+      "use": "按实际动作写 create、build、restore、read、load 或 generate；代码标识符写进反引号",
+      "why": "动词没有说明生成或读取的对象，也把多个生命周期阶段压成一个含糊步骤"
+    },
+    {
+      "term": "materializer",
+      "use": "按职责写 Sandbox creator、Provider builder、cache restorer、payload reader 或 resource factory；代码标识符写进反引号",
+      "why": "施动者名称没有说明它创建、构建、恢复或读取什么对象"
     }
   ]
 }

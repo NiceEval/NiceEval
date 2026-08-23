@@ -71,7 +71,7 @@ export default defineExperiment({
 });
 ```
 
-普通 Experiment 不导入或注册 Compose materializer。
+普通 Experiment 不导入或注册 Compose source builder。
 Docker Provider 对 Compose Environment 的支持属于 Provider 自己，支持声明与实现不能在两个调用点分离。
 
 ## 相对 PLAN-7 的改变

@@ -21,6 +21,8 @@ for f in \
   packaging/docker-profile-host/scripts/generate-descriptor.py \
   packaging/docker-profile-host/scripts/prepare-loop-storage.sh \
   packaging/docker-profile-host/scripts/watchdog.py \
+  packaging/docker-profile-host/scripts/preload-verify-assets.py \
+  packaging/docker-profile-host/config/assets-v1.json \
   packaging/docker-profile-host/scripts/install-quota-slots.py \
   packaging/docker-profile-host/scripts/host-doctor.sh \
   packaging/docker-profile-host/scripts/apply-rootless-network-policy.sh \

@@ -35,9 +35,10 @@ current Record 事实。
 一次 Selection 固定 Run、logical Slot、预期成员与 Core 问题。它不是执行规划：reuse planning 决定下一次
 执行什么；Analysis 只解释已经封口的 Run。`not-recorded` 也是历史事实，不能被解释成待执行工作。
 
-OTel、事件、Evidence、文件差异与 blob 都保持在 Record 中。打开 Sample、查看样本命中范围或编解码
-Snapshot 不读取它们。只有某个 `AnalysisInput`（分析输入）或 `DomainView`（领域视图）请求它们时，
-Analysis 才在当前 Scope（资源作用域）内读取所需 Attachment（附属事实）。
+Agent Turns、Turn Contexts、Sandbox Commands、Runner Activities、Runner Diagnostics、Evidence、File Changes
+与 blob 都保持在 Record 中。打开 Sample、查看样本命中范围或编解码 Snapshot 不读取它们。只有某个
+`AnalysisInput`（分析输入）或 `DomainView`（领域视图）请求它们时，Analysis 才在当前 Scope（资源作用域）
+内读取所需 Attachment（附属事实）。
 
 `fileChangesView` 也只在被 `query()` 请求时惰性读取。它先把归因、采集状态和按 send 区间排序的 trajectory
 （轨迹）关闭为不可变领域值，不把路径折成持久 `net`（净变化）或 hunk。仅当同一路径的相邻归因端点连续可证明、
@@ -49,16 +50,15 @@ Evidence 再把该 Outcome 与已验证 Assertions 交给 Eval 的权威 fold，
 从不等同于 `verdict`。Core 不可用或不可读时，相关 DomainView entry 以 failed 和带 Evidence 引用的问题明确
 呈现，不能伪造 `completed`、空 Assertions 或 Verdict。
 
-例如 `attemptLatencyMs` 请求一个 Attempt 的 Observability input。Sample 只在 Measure 实际评估到该
-Attempt 时读取 `niceeval.observability`，把已验证结果以 `{ owner, fixed definition }` 缓存。第二个
+例如 `attemptLatencyMs` 请求一个 Attempt 的 timing projection。Sample 只在 Measure 实际评估到该
+Attempt 时读取 `niceeval.runner-activities`，把已验证 source 以 `{ owner, fixed definition }` 缓存。第二个
 需要相同 input 的 Measure 复用该缓存；它不会预读 Assertions、Sources、Artifacts 或其它 Attempt。
 
-如果已发布的 input 或 DomainView 需要较早 reader 不认识的独立 future family，例如 `niceeval.energy`，
-Sample 不解释该 family 的 bytes。它把这个请求闭合为 `unsupported`，并继续计算不依赖它的
-Measure。未知 family 不把 Core、其它 Attachment 或 Report 的闭合输出变成全局失败。
+current reader 在 Sample 形成前拒绝 unknown family、known future schemaVersion 与不相容 Core。Sample 内的
+`unsupported` 只表达已发布 input 不适用于某个 producer，不容忍或跳过未知 durable bytes。
 
 ```text
-attemptLatencyMs ──▶ Sample cache ──▶ attempt / niceeval.observability
+attemptLatencyMs ──▶ Sample cache ──▶ attempt / niceeval.runner-activities
                                                      │
                                                      ▼
                                       MetricValue（度量值） / ClosedRows（闭合行）

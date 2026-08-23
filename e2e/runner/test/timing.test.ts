@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-generic-timing
-// rerun: pnpm e2e --repo runner -- --run test/timing.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/timing.test.ts
 import {
   assertExpEvalOutcomes,
   decodeShowTiming,

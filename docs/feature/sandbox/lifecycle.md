@@ -56,7 +56,7 @@ planner 只做只读文件与网络读取,不 build、不创建资源。
 
 planner 与启动器由同一个 `ProviderModule<Plan>` 保持静态类型联系。
 planning 产出的 provider 私有 `Plan` 被闭包捕获。
-build preparation 与 materialize 都消费这一个值。
+build preparation 与 `materialize` 都消费这一个值。
 core 不把计划降成 JSON 后再 Schema decode，也不把新 plan 逆向拼回旧 Case。
 
 启动函数返回带 `Scope.Scope` 要求的 Effect。
@@ -155,11 +155,11 @@ reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 `niceeval debug <experiment> <eval>` 直接消费 link 与 physical planning 的完成态，把本页时序投影为 Experiment → lane → slot。它不读取 Record、reuse、carry 或 cache inventory。装配器拥有生命周期语义；human 的逐节点 `COMMAND PLAN` 区域框和 JSON 的 `commandPlan` 只投影同一棵树，不能各自重排节点。
 
-Provider capacity reservation 是 Provider materialize 的准入条件，不是已经开始创建 Sandbox 的事实。等待 reservation 的 Attempt 保持 queued，并携带 provider-capacity reason；reservation granted 后才进入 `sandbox.create`。等待者不占普通 sandbox semaphore；公平 admission 与可缓存 preparation 的完整时序见 [Preparation Prefix Lifecycle](../../roadmap/sandbox-cache/setup-prefix/lifecycle.md)。
+Provider capacity reservation 是 Provider 创建 Sandbox 的准入条件，不是已经开始创建 Sandbox 的事实。等待 reservation 的 Attempt 保持 queued，并携带 provider-capacity reason；reservation granted 后才进入 `sandbox.create`。等待者不占普通 sandbox semaphore；公平 admission 与可缓存 preparation 的完整时序见 [Preparation Prefix Lifecycle](../../roadmap/sandbox-cache/setup-prefix/lifecycle.md)。
 
 它只声明运行器能保证的偏序：fresh Eval 与 `sandboxReuse` lane 都不保证 slot 顺序，也不生成全局序号。Eval Group lane 按规范化 Eval ID、再按 Attempt index 串行。Group 选择只保留命中的成员；作者数组位置没有业务顺序语义。
 
-fresh slot 把 Case materialize / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 提供 `physicalLifecycleTemplate`。这份模板分别套用到每台实际实例，并包住分配给该实例的 slots；它不是整个 lane 只执行一次的统一前后边。reset 失败、寿命不足或故障退休会换实例并重跑模板；普通 reuse 的多台实例也可能并发存在。
+fresh slot 把 Case `materialize` / lifecycle setup、逐 Attempt body、lifecycle teardown / Provider finalizer 放在自己的 steps 内。reuse 与 Group lane 提供 `physicalLifecycleTemplate`。这份模板分别套用到每台实际实例，并包住分配给该实例的 slots；它不是整个 lane 只执行一次的统一前后边。reset 失败、寿命不足或故障退休会换实例并重跑模板；普通 reuse 的多台实例也可能并发存在。
 
 debug 把配置的全部 attempts 列作候选 dispatch slot。正常运行的 activation 仍受 late carry、预算、early-exit、fail-fast、取消与运行期失败影响；静态列出不等于实际执行。
 

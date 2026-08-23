@@ -1,7 +1,7 @@
 # Record 架构
 
 Record 是可携带的已封口运行事实。它冻结 identity（身份）、owner（归属者）、精确引用、固定
-Attachment family 和发布边界。Experiment 的调度、execution claim（执行占用）、Analysis 的分母和
+Attachment catalog、Seal manifest 和发布边界。Experiment 的调度、execution claim（执行占用）、Analysis 的分母和
 Report 的页面都在 Record 之外。
 
 外部消费者把 `<project>/.niceeval/record/` 当作 opaque directory（不透明目录），通过 CLI 与上层数据面
@@ -12,12 +12,16 @@ Report 的页面都在 Record 之外。
 
 | 边界 | 内容 | 是否可复制、纳入 Git |
 |---|---|---|
-| portable Record | `record.json`、已封口 Run、Core 与 fixed family closure | 是 |
-| local operation state | execution claim、lease、session 与 verified-read cache | 否 |
+| portable Record | `record.json`、已封口 Run、Core、Seal manifest 与 fixed family closure | 是 |
+| local operation state | execution claim、lease、session、staging、recovery manifest 与 verified-read cache | 否 |
 
 execution claim、session 与 gate 位于项目 `.niceeval/`，并由 Coordination SDK 拥有。默认 Record 的
 read / append / maintenance lease 位于 `.niceeval/coordination/records/<recordKey>/`。custom Record 的
 lease 位于其 parent 的同形目录。`recordKey` 绑定 canonical physical root，并由不可变 `recordId` 复核。
+
+每个 writer 的 staging 与 recovery manifest 也位于这份 Record 的 local coordination sidecar，并按 session ID
+隔离。staging 必须与 durable destination 在同一文件系统，但不能位于 portable Record root 内。`.gitignore` 与
+path validation 要同时保证 local state 不进入 Git inventory，也不能越出已签发的 sidecar root。
 
 exclusive maintenance 建立 fence 后，会保守回收被强杀进程遗留的 shared read / append lease。只有
 sidecar 所属同一 host、payload 完整且 OS 以 `ESRCH` 明确证明 PID 不存在时才回收；活 PID、异宿主、
@@ -46,20 +50,25 @@ record/
       │  ├─ attachment.json
       │  ├─ payload.json
       │  └─ blobs/<opaque-key>
+      ├─ seal-manifest.json
       └─ complete
 ```
 
 `record.json` 建立 Record 时写一次，保存 format 与 `recordId`，不是 Run 索引。根目录没有
-`manifest.json`、递增编号、权威 `latest` 或共享 summary。可删除重建的索引只能是 local cache，不能决定
+递增编号、权威 `latest` 或共享 summary。可删除重建的索引只能是 local cache，不能决定
 事实是否存在。
 
-`complete` 是零字节普通文件，也是排他创建的唯一发布信号。writer 在它之前关闭并 flush 本 Run 的每份文件和目录；
-它之后永不修改这个 Run。缺少它，或该路径为非空文件、目录、symlink 等其它形态的 Run 不进入选择、Sample 或 reuse。
-reader 保留 `incomplete-run` maintenance warning 供 `clean` 检查，但 Analysis 与 Report 不把正常 residue 当成用户数据问题。
+`complete` 是零字节普通文件。它与 canonical `seal-manifest.json` 一起位于 sealed staging Run，并通过同一次
+no-replace directory rename 发布。Seal manifest inventory 穷尽本 Run 的 Core、Attachment envelope、payload
+与 blob。缺少二者之一、形态错误或 manifest / Core publication identity 不合法的 Run 不进入选择、Sample 或
+reuse。manifest 声明的 source payload 或 blob 损坏只使对应 source `invalid`。
+
+发布后的 Run 永不修改。普通 reader 不扫描 local staging；未发布 residue 与 recovery state 只由 maintenance
+检查。Analysis 与 Report 不把正常的 writer residue 当成用户数据问题。
 
 ## NiceEval 内部的 Effect Schema 作者模型
 
-NiceEval 以 package-private Schema declaration 描述 root、Core 与 current catalog 的六个固定 Attachment。
+NiceEval 以 package-private Schema declaration 描述 root、Core 与 current fixed Attachment catalog。
 它是读取、写入、校验、canonical encode 与 migration 的共同输入；不存在另一份手写的当前模型。
 
 唯一的作者入口是 `defineRecordCore` 与 `defineRecordAttachment`。两者不从公开 package 导出，也不是
@@ -128,49 +137,45 @@ package-private physical write set（envelope 总会改写，payload 是否改�
 
 ```ts
 // NiceEval internal only.
-const observability = defineRecordAttachment({
-  family: "niceeval.observability",
+const agentTurns = defineRecordAttachment({
+  family: "niceeval.agent-turns",
   current: {
-    schemaVersion: 2,
+    schemaVersion: 1,
     owners: {
       attempt: {
-        schema: AttemptObservabilitySchema,
-        limits: AttemptObservabilityLimits,
+        schema: AgentTurnsSchema,
+        limits: AgentTurnsLimits,
         blobs: {
-          refs: AttemptObservabilityBlobRefs,
-          budget: AttemptObservabilityBlobBudget,
-          verify: verifyAttemptObservability,
-        },
-      },
-      run: {
-        schema: RunObservabilitySchema,
-        limits: RunObservabilityLimits,
-        blobs: {
-          refs: RunObservabilityBlobRefs,
-          budget: RunObservabilityBlobBudget,
-          verify: verifyRunObservability,
+          refs: noBlobRefs,
+          budget: noBlobBudget,
+          verify: verifyAgentTurns,
         },
       },
     },
   },
-  adjacentMigrationLinks: [{ fromSchemaVersion: 1, toSchemaVersion: 2 }],
-  maintenance: async () => loadObservabilityMaintenanceV2(),
 });
 
 const currentAttachmentCatalog = [
   assertions,
-  observability,
+  agentTurns,
+  turnContexts,
+  sandboxCommands,
+  runnerActivities,
+  runnerDiagnostics,
   fileChanges,
-  sourceNavigation,
   sources,
   artifacts,
 ] as const;
 ```
 
-每个 family 模块包含自己的 declaration、复杂 payload Schema、encoded-side durable JSON 键、limits、blob
-closure 与 integrity 验证。当前每个 family 文件恰有一个 `defineRecordAttachment` 调用。复杂 family 可拆成目录，
-但只有 `definition.ts` 保留该入口。总 catalog 只列六个 declaration，不复制 owner shape 或 payload Schema。
-Observability 与 Artifacts 各有一个 family declaration；`owners.attempt` 与 `owners.run` 不会形成第二个 family。
+每个 family 目录包含自己的 declaration、复杂 payload Schema、encoded-side durable JSON 键、limits、blob
+closure 与 integrity 验证。当前每个 family 目录恰有一个 `definition.ts`，并且只有它保留
+`defineRecordAttachment` 调用。
+
+每个历史相邻步骤位于 `migrate/<from>-to-<to>.ts`。该文件把历史 decoder、纯 transform 和 retention 放在
+同一个可审查单元，且不触碰 I/O。总 catalog 只列 declaration，不复制 owner shape 或 payload Schema。
+Runner Activities、Runner Diagnostics 与 Artifacts 各有一个 family declaration；它们的 Attempt 与 Run owner
+不会形成第二个 family。
 
 ordinary reader 与 writer 只接受 exact current catalog。未知 stable family、known family 的 future 版本与
 不相容 Core 都在 session 形成前拒绝；Attachment 历史版本只可由所属 family maintenance 的固定完整 chain 迁移。
@@ -215,10 +220,13 @@ root 的 exact JSON 是：
 
 ```ts
 type RecordDocument = {
-  readonly format: "niceeval.record";
+  readonly format: "niceeval.record.source-receipts";
   readonly recordId: RecordId;
 };
 ```
+
+这个 format identity 要求每个 Run 以 Seal manifest 与 `complete` 同步发布。旧
+`niceeval.record` aggregate layout 是独立 legacy format；reader 不把两种格式的 bytes 当成同一 Core。
 
 Run、Member 与 Attempt 由 current Core definition 生成如下已验证值。它们是 definition 的输出形状，
 不是第二份独立 wire model。
@@ -273,7 +281,27 @@ type AttemptDocument = {
   readonly executionIdentityDigest: ExecutionIdentityDigest;
   readonly outcome: "completed" | "errored" | "cancelled" | "interrupted";
 };
+
+type SealManifestDocument = {
+  readonly format: "niceeval.seal-manifest";
+  readonly runId: RunId;
+  readonly entries: readonly SealManifestEntry[];
+  readonly sources: readonly SourceReceiptManifestEntry[];
+};
+
+type SealManifestEntry = {
+  readonly kind: "core" | "attachment-envelope" | "payload" | "blob";
+  readonly path: CanonicalRunRelativePath;
+  readonly byteLength: NonNegativeSafeInteger;
+  readonly sha256: Sha256Digest;
+  readonly owner: "run" | AttemptId;
+  readonly family: FixedFamily | null;
+};
 ```
+
+`entries` 以 canonical path 排列且不重复，穷尽 staged Run 中除 Seal manifest 本身与固定零字节 `complete`
+之外的 portable bytes。`sources` 以 owner、family 排列，另列每个 Observability source 的 schemaVersion、payload、
+ordered segment identity 与 own blob inventory。两张表必须相互闭合，不能声明不同 payload 或 blob 集合。
 
 Core refine 强制以下不变量：
 
@@ -293,7 +321,7 @@ Core refine 强制以下不变量：
 Experiment、RunContext、Eval、Slot identity、execution identity digest 与 Member action 是离线解释不可缺的
 Core 历史事实。matcher、当前输入、cache hit、通行率、排名与页面模型不进入 Core。
 
-## 六个固定 Attachment family
+## Fixed Attachment catalog
 
 每个 owner 对每个 family 至多有一个 envelope。`attachment.json` 使用稳定 family identity 与数值版本：
 
@@ -308,65 +336,26 @@ type AttachmentEnvelope = {
 
 | family | current | `owners` map | exact payload root | 写入语义 |
 |---|---:|---|---|---|
-| `niceeval.assertions` | 2 | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口唯一的 criterion、materials、evaluation、decision、policy、contribution 与 explanation retention |
-| `niceeval.observability` | 2 | `{ attempt, run }` | `AttemptObservabilityAttachment` / `RunObservabilityAttachment` | collector 封口对话、命令、用量、时间、诊断与 OTel |
+| `niceeval.assertions` | 2 | `{ attempt }` | `AssertionsDocument` | Assertion producer 封口 criterion、materials、evaluation、decision、policy、contribution 与 explanation retention |
+| `niceeval.agent-turns` | 1 | `{ attempt }` | `AgentTurnsAttachment` | Adapter 封口 provider-neutral terminal Turn 与原生 usage observation |
+| `niceeval.turn-contexts` | 1 | `{ attempt }` | `TurnContextsAttachment` | SessionManager 封口每个物理 `t.send` 的 source context |
+| `niceeval.sandbox-commands` | 1 | `{ attempt }` | `SandboxCommandsAttachment` | Sandbox wrapper 封口 command manifest、终态与 stream |
+| `niceeval.runner-activities` | 1 | `{ attempt, run }` | `RunnerActivitiesAttachment` | Runner 以 owner-monotonic clock 封口 activity |
+| `niceeval.runner-diagnostics` | 1 | `{ attempt, run }` | `RunnerDiagnosticsAttachment` | Runner diagnostic sink 封口 advisory 与 execution error |
 | `niceeval.file-changes` | 1 | `{ attempt }` | `FileChangesAttachment` | Sandbox collector 封口归因策略与 send 区间文件变化轨迹 |
-| `niceeval.source-navigation` | 1 | `{ attempt }` | `SourceNavigationAttachment` | Runner 封口每个物理 send 的 source/timing join |
 | `niceeval.sources` | 1 | `{ run }` | `SourcesAttachment` | Runner 封口源码闭包 manifest 与 own blobs |
 | `niceeval.artifacts` | 1 | `{ attempt, run }` | `ArtifactsAttachment` | artifact collector 封口有类型文件 |
 
-`niceeval.source-navigation` 只有 Attempt owner，schemaVersion 固定为 `1`，并且 `blobs.refs()` 永远为空。
-它不拆分或改写 `niceeval.observability` 的 v2 payload。
+Observability durable facts 只使用五个 source family。conversation、usage、commands、timing 与 diagnostics
+是 reader-side view；source navigation 是 `turn-contexts`、`runner-activities` 与 `sources` 的 Fact relation。
+它们都不占 catalog entry。
 
-```ts
-type SourceNavigationAttachment = {
-  readonly collection:
-    | { readonly state: "complete"; readonly limitations: readonly [] }
-    | {
-        readonly state: "partial";
-        readonly limitations: readonly (
-          | {
-              readonly code: "collection-cap-reached";
-              readonly target: "navigation-row";
-              readonly omittedAtLeast: PositiveSafeInteger;
-            }
-          | {
-              readonly code: "capture-unrecoverable";
-              readonly target: "timing-link";
-              readonly omittedAtLeast: PositiveSafeInteger;
-            }
-        )[];
-      };
-  readonly rows: readonly SourceNavigationRow[];
-};
-
-type SourceNavigationRow = {
-  readonly turnId: TurnId;
-  readonly sourceOrder: PositiveSafeInteger | null;
-  readonly source:
-    | { readonly state: "mapped"; readonly sourceItemId: SourceItemId; readonly sha256: Sha256Digest; readonly start: SourcePosition; readonly end: SourcePosition }
-    | { readonly state: "unmapped"; readonly reason: "location-not-captured" | "source-snapshot-not-recorded" | "position-unrepresentable" };
-  readonly timing:
-    | { readonly state: "linked"; readonly intervalId: IntervalId }
-    | { readonly state: "unavailable"; readonly reason: "timing-not-recorded" };
-};
-```
-
-`rows` 最多 256 条，`turnId`、非 null `sourceOrder` 与 linked `intervalId` 各自唯一。row order 必须与同一
-Attempt ConversationTurn 的显式 `sequence` 完全相同，且两边 `turnId` 集合相同。
-
-Host 只接受 mapped row 对 exact origin Sources 的 `sourceItemId`、`sha256` 和有序坐标 join。linked row 只接受
-同一 Attempt 的 `agent.send` interval。它不扫描 source blob，也不按数组位置、path、digest 或时间接近度补配。
-
-cap 或不可恢复 capture 时，Conversation 与 Navigation 保留同一确定性前缀并各自 `partial`。cap 的两个
-`omittedAtLeast` 必须相等。Navigation 的 `collection-cap-reached` 固定 target 为 `navigation-row`，所以它的
-`omittedAtLeast` 只表示遗漏的行。
-
-无法形成 timing identity 时，Navigation 以 `capture-unrecoverable` / `timing-link` 表示遗漏的 timing link。
-它绝不把两种遗漏混写。
+每个 source family 独立形成 `complete` 或 `partial` 的安全 receipt set。manifest 未列出某 owner 的 source 时，
+该 source 为 `not-recorded`；已列出却无法通过 payload、identity、canonical order 或 blob closure 验证时，
+只有该 source 为 `invalid`。reader 不把这些状态折叠成 aggregate Observability 状态。
 
 Assertions 的 criterion、Evidence 与局部错误规则由 [Assertions architecture](../assertions/architecture.md)
-拥有。Observability 的精确 shape 由 [Observability Attachment](architecture/observability-attachments.md)
+拥有。Observability source receipt 的精确 shape 由 [Observability Source receipts](architecture/observability-attachments.md)
 拥有。本页定义它们共同的 durable boundary。
 
 future NiceEval catalog 可以增加独立 fixed family，例如 `niceeval.energy`，而不改变 Record root。它仍有自己的
@@ -542,7 +531,7 @@ type SourceItem = {
 
 `path` 用 `/` 分隔，不以 `/` 开头，且没有空、`.` 或 `..` segment。`sourceItemId` 不是数组下标、path、
 digest 或 blob key 的函数。每个 item 的 `byteLength` 与 `sha256` 都声明 own blob 的 exact bytes；reader
-在 materialize 完整 closure 后验证它们。
+在读取完整 closure 后验证它们。
 
 Attempt 的 source site 或 diagnostic frame 只能以 schema-declared identity join origin Run 的 item。
 join 不授予跨 owner blob capability，也不把 path、host handle 或 storage address 交给 Attempt。
@@ -559,53 +548,81 @@ join 不授予跨 owner blob capability，也不把 path、host handle 或 stora
 缺 key、多 key、重复 key、手写 key、跨 owner ref 或 root 外路径使 Attachment 为 `invalid`。它不会产生
 “可用但少一个 blob”的值。I/O 与 permission failure 在值形成前产生 typed `RecordReadError`。
 
-`RecordReadSession` 打开时只验证 root 与 current definition。`selectRuns()` 扫描 `runs/*/complete`，
-并读取选择所需的最小 Run Core 与 Member identity。它形成的 `RecordSelection` 只保存 RunId、SlotId、
+`RecordReadSession` 打开时验证 root 与 current definition。`selectRuns()` 枚举同时含规范 `complete` 与
+`seal-manifest.json` 的 Run，验证 manifest shape、publication identity 与选择所需的 Core entries，并冻结完整
+portable inventory。source payload 与 blob closure 只在请求该 source 时验证；失败形成 source-local `invalid`。
+`RecordSelection` 只保存 RunId、SlotId、
 预期分母和问题；不会把 Attempt、OTel、Evidence、diff 或 blob 复制进内存。
 
 Analysis 的 Sample 才按 `AnalysisInput` 或 `DomainViewRequest` 请求精确 Attachment。Sample 在 Scope 内
-以 `{ owner, internal attachment definition }` 缓存一次完整验证结果。already materialized 的 JSON snapshot
+以 `{ owner, internal attachment definition }` 缓存一次完整验证结果。已经读取并验证的 JSON snapshot
 与 defensive blob copy 可在 Scope 后同步消费；cache 不成为 candidate、absence 或 latest 的权威依据。
 
 Report 不取得 reader、Attachment、blob handle、Scope 或 raw payload。它只消费 Analysis 已闭合的
 `ClosedRows`、`SemanticFrame` 与 `DomainView`。
 
-## 直接写入与发布状态机
+## Staging、Seal manifest 与发布状态机
 
-一个 Run writer 直接写 `runs/<RunId>/`，不建立 staging root。不同 writer 的目录不重叠：
-
-```text
-writer A ──▶ runs/<RunId-A>/ ──▶ complete
-writer B ──▶ runs/<RunId-B>/ ──▶ complete
-```
+每个 Run writer 在 portable Record 之外建立 owner-private staging。staging 位于同一文件系统，并以
+`recordId`、canonical Record root、writer session 与 `runId` 隔离。它属于 local operation state，不进入
+Git、copy、Report 或 ordinary reader。
 
 session 状态如下：
 
 ```text
-open → sealing → sealed
-               ↘ failed
+open → sealing → ready-to-publish → published
+               ↘ failed          ↘ recovering
 ```
 
-1. `createRun()` 或 `createReferenceRun()` 先接收必填 `context`，验证它的 exact Core shape 与
-   `context.experimentId === experimentId`，再排他创建新目录并把 context 带入本 Run 的 mutable draft。
-2. `createAttempt()` 为每个实际执行的 Attempt 排他创建目录；fixed collector 在内存收集并封口其 family。
+1. `createRun()` 或 `createReferenceRun()` 先接收必填 `context`。它验证 exact Core shape 与
+   `context.experimentId === experimentId`，再排他创建 local staging Run，并把 context 带入 mutable draft。
+2. `createAttempt()` 为每个实际执行的 Attempt 排他创建 staging 目录；fixed collector 在自己的 owner staging
+   中形成 payload 与 own blobs。
 3. `referenceAttempt()` 只写 Member reference，不复制历史 Attempt 或 Attachment。
 4. `recordTerminalMember()` 为 `not-dispatched` 或 `interrupted` 显式写入 `attempt: null`。
    受控中断时，已经 reserved 的 Attempt 则以 Attempt Core `outcome: "interrupted"` 关闭，不改写成空 Member。
-5. `seal()` 拒绝新 mutation，等待既有 Attempt 和 collector 停稳，并用 current definition 验证
-   `RunDocument.context`、其余 Core、references、family 与 closure。
-   验证完成后，它把已验证的 context 写入 `run.json`。
-6. `seal()` 在短暂 `Effect.uninterruptibleMask` 中 final flush/close、排他创建 `complete`，并同步 consume writer。
+5. `seal()` 拒绝新 mutation，并等待既有 Attempt 与 capture authority 停稳。它用 current definition 验证
+   `RunDocument.context`、其余 Core、references、每个 source receipt、Attachment 与 own blob closure。
+6. publisher canonical encode Core、envelope 与 payload，并形成 `seal-manifest.json`。manifest 按 canonical
+   path 列出每个 Core、Attachment envelope、payload 与 blob 的 byte length 和 SHA-256。source entry 另列
+   owner、family、schemaVersion 与 ordered segment identity。
+7. publisher 在 staging 中创建 `complete`，同步每份 manifest / Core / payload / blob 文件和所有相关目录。
+   它随后在 local sidecar 持久化 recovery manifest；该 manifest 绑定 staging、destination、Record / Run identity、
+   Seal manifest digest 与完整 portable inventory。
+8. publisher 以同文件系统 no-replace directory rename 把 sealed staging Run 移到 `runs/<RunId>/`。它同步
+   source 与 destination parent，重读 destination 并验证 Seal manifest 后才报告 `published`。
 
-第 6 步前的 typed failure、defect、interruption 或进程退出都不发布 Run。directory 保留为 incomplete，
-以便 `niceeval clean` 明确处理。第 6 步后 Run 已发布；即使 receipt 未被观察到，也不会撤销事实。finalizer
-只释放 lease 和 handle，绝不删除目录。
+第 8 步前的 typed failure、defect、interruption 或进程退出都不会暴露部分 Run。第 8 步后 Run 已发布；即使
+调用方未观察到 receipt，也不会撤销事实。finalizer 只释放 lease 与 handle，不删除已经发布的目录。
 
-Runner 收到可处理的 `SIGINT` 后会先停止派发并关闭每个已知 Slot，再调用同一个 `seal()`。这条路径没有部分读取协议：Run 要么以 `complete` 发布，已完成 Attempt 可按 locator 使用；要么因收尾写入失败保持整体 incomplete，并继续由 warning 与 `clean` 处理。
+`complete` 不是脱离 manifest 的第二个真源。两者在 staging 内一起封口，再由同一次 directory rename 发布。
+reader 对 source-local 损坏保留其它 source；Seal manifest、Core identity 或 publication identity 自身损坏时，
+整份 Run 不能形成事实。
+
+Runner 收到可处理的 `SIGINT` 后会先停止派发并关闭每个已知 Slot，再调用同一个 `seal()`。这条路径没有部分
+读取协议：Run 要么以 `complete`、Seal manifest 和完整 inventory 同步发布，要么留在 local staging 并进入恢复。
+
+## 发布恢复与 Git-safe inventory
+
+recovery 不继续 Agent、Sandbox、Adapter 或 Runner 工作。maintenance 只按持久化 recovery manifest 检查 staging
+与 destination：
+
+| staging | destination | 动作 |
+|---|---|---|
+| exact sealed inventory | 不存在 | 重验全部 Core、payload 与 blob 后重试同一 no-replace publish |
+| 不存在 | 与 manifest 完全一致 | 视为 rename 已完成，重验并删除 local recovery state |
+| 存在 | 存在 | fail closed；不替换 destination，也不合并两份 inventory |
+| 缺失或漂移 | 不存在或漂移 | fail closed；只允许按 exact session 明确 abandon local residue |
+
+publish 从不改写、删除或替换现有 portable path，也不触碰 Git index。Run destination 已存在时，即使内容看似相同
+也不替换。新 Run 的 Seal manifest、Core、payload 与 blob 要么作为完整目录一次出现，要么全留在 Git 排除的
+local staging。whole-Record copy、Git add、commit、checkout 或 maintenance 只在 writer 与 recovery 停稳后进行，
+并把 Seal manifest 声明的全部 portable bytes 当成不可拆 inventory。
 
 ## Maintenance、兼容性与相邻迁移
 
-Record root 没有 schemaVersion；fixed family 各自拥有 current 版本。已声明的 family predecessor
+Record root 没有 schemaVersion；`niceeval.record.source-receipts` 是 current format identity，fixed family 各自
+拥有 current 版本。已声明的 family predecessor
 只有在所属 family 的固定完整相邻 chain 中才可迁移：
 
 | 发现的内容 | ordinary reader | maintenance |
@@ -619,18 +636,24 @@ Record root 没有 schemaVersion；fixed family 各自拥有 current 版本。�
 未知 family 没有 payload schema、closure rule 或 projection 可供当前版本验证，因此整个 ordinary open
 fail closed；它不能再作为局部 `unsupported` 进入 Analysis。
 
-Observability 与 Assertions 各由自己的 `maintenance` facet 提供固定 `1 → 2` step。Record migration
-framework 只调度这些 Attachment steps；plan/receipt 没有 root target。step 只接收已验证、hydrate 的历史 payload 并返回 current payload，绝不执行文件 I/O。
+Assertions 由自己的 `maintenance` facet 提供固定 `1 → 2` step。Record migration framework 只调度 current
+format 内有可信 provenance 的 Attachment step；plan / receipt 没有 root target。step 只接收已验证、hydrate 的
+历史 payload 并返回 current payload，绝不执行文件 I/O。
 
-Observability 的 physical write set 是 envelope-only；Assertions 是 envelope + payload，以及失去引用时应删除的
-own blobs。执行时 transform 结果只用于核对该 metadata，不作为 recovery 猜测依据；`record.json` 不在 write set。
+旧 `niceeval.record` 中的 `niceeval.observability` aggregate 不能迁移为 source receipt。它缺少 capture authority
+与 segment provenance，拆分会制造事实。当前 beta cutover 将该 root 明确报告为 `unsupported-format`，要求使用
+写出它的 NiceEval 版本读取；current writer 不双写 legacy aggregate。
 
 有相邻步骤时，maintenance 在首次写 portable byte 前完成 Git preflight：Record 位于 Git worktree，
 完整 portable inventory 由 HEAD 跟踪，index 与 worktree 对该 inventory 干净。计划还绑定 repository
 identity、HEAD、Record path、`recordId`、source inventory 与 NiceEval migration implementation identity。
 
-迁移在 exclusive maintenance lease 下原地逐步执行，完整校验 exact current Core、完整 catalog 与所有 blob
-closure 后才结束。未知或 future family 使计划失败。NiceEval 不创建 staging、backup、rollback 或 root replacement。
+迁移在 exclusive maintenance lease 下原地逐步执行。任一 payload、blob 或 envelope 首次改写前，事务立即把自身
+标记为已写入。之后即使发现 source bytes changed，也保留 sentinel 进入恢复边界。
+
+完成后完整校验 exact current Core、Seal manifest、完整 catalog 与所有 payload / blob closure。未知或 future
+family 使计划失败。maintenance 的 migration staging 与 Run publication staging 相互隔离，不能共享 recovery
+manifest、session identity 或 portable destination。
 
 `show`、`view` 与 `exp` 在 ordinary session、Run/claim/Sandbox 或付费调用前先做短检查。current fast path
 直接 ordinary open，不要求 Git clean。
@@ -656,7 +679,7 @@ lease busy、不完整 chain、future/unknown 或失败都给出 typed blocker�
 | 从已保存事实计算新统计或视图 | Analysis / Report | 不改 Record |
 | 此前未保存且不可恢复的事实 | NiceEval catalog | 扩展既有 family，或增加新的 static fixed family；不升级 Core |
 | fixed family 的字段、单位、cardinality 或 closure 语义改变 | NiceEval Record | 发布相邻 schemaVersion migration |
-| Core identity、owner、引用、目录或原子发布边界改变 | NiceEval Record | 发布相邻 Record migration |
+| Core identity、owner、引用、Seal manifest、目录或原子发布边界改变 | NiceEval Record | 发布新的 format identity 与显式 conversion；不能伪造 provenance |
 
 新增 Query、Measure、页面、组件、输出媒介或 Adapter mapper 不能推动 Record migration。它们只能消费
 NiceEval 已发布的 current data plane。

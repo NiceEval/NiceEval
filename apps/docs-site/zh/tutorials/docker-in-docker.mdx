@@ -285,11 +285,11 @@ allocation，并把它挂到 `/var/lib/docker`。Docker image layer 与 BuildKit
 
 ```bash
 npx niceeval docker profile list
-npx niceeval docker profile doctor default --smoke
+npx niceeval docker profile doctor default
 npx niceeval exp dind-managed
 ```
 
-`doctor --smoke` 会在该 profile 上启动一次 DinD 容器，并实际运行内层
+`doctor` 会在该 profile 上启动一次 DinD 容器，并实际运行内层
 `docker run --rm alpine:3.20 true`。它证明 profile 支持 nested Docker，但不会检查项目自己的
 Dockerfile。项目镜像仍由默认 `docker info` readiness 验证。
 

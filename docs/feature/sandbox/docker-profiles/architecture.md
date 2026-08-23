@@ -304,7 +304,7 @@ attested daemon target platform
   -> eval container create
 ```
 
-不能在 materialize看到 Docker access后临时换 daemon。managed rootless DinD、规范化 resources、
+不能在 `materialize` 阶段看到 Docker access 后临时换 daemon。managed rootless DinD、规范化 resources、
 target platform与 semantic policy revision进入 ProviderPlan、CaseKey和 Attempt fingerprint。
 Dockerfile BuildKey仍只认会改变 image bytes的 context、Dockerfile、args、platform与 base image；
 CPU/memory/tmpfs不误入 BuildKey。

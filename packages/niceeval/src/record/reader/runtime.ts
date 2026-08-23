@@ -16,6 +16,7 @@ import type {
 } from "../family/catalog.ts";
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import type { AttemptId, RunId } from "../model/identifiers.ts";
+import type { SealManifestEntry } from "../model/seal-manifest.ts";
 import {
   nonEmptyRecordIssues,
   recordIssue,
@@ -308,10 +309,25 @@ export function readFixedRecordAttachment<
   readonly root: RecordRoot;
   readonly location: FixedRecordAttachmentLocation<Owner>;
   readonly descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>;
+  readonly expectedManifestEntries?: readonly SealManifestEntry[];
 }): Effect.Effect<FixedRecordAttachmentRead<Payload>, RecordFileSystemError> {
   return Effect.gen(function* () {
     const envelope = yield* inspectFixedRecordAttachmentEnvelope(input);
     if (envelope.state !== "current") return envelope;
+
+    const directory = attachmentPath(input.root, input.location, input.descriptor.family);
+    const inventory = yield* input.fileSystem.listDirectory({
+      directory,
+      maximumEntries: 256,
+    });
+    const byName = new Map(inventory.map((entry) => [entry.name, entry] as const));
+    if (
+      byName.size !== inventory.length ||
+      byName.get("attachment.json")?.kind !== "file" ||
+      byName.get("payload.json")?.kind !== "file" ||
+      (byName.size === 3 && byName.get("blobs")?.kind !== "directory") ||
+      (byName.size !== 2 && byName.size !== 3)
+    ) return attachmentInvalid<Payload>([]);
 
     const payloadDocument = yield* readJson(
       input.fileSystem,
@@ -324,6 +340,41 @@ export function readFixedRecordAttachment<
       input.descriptor.write.budget.maximumBlobs,
     );
     if (blobs.state === "invalid") return attachmentInvalid<Payload>(["blobs"]);
+
+    if (input.expectedManifestEntries !== undefined) {
+      const owner = input.location.owner === "run" ? "run" : input.location.attemptId;
+      if (owner === undefined) return attachmentInvalid<Payload>([]);
+      const prefix = input.location.owner === "run"
+        ? `attachments/${input.descriptor.family}`
+        : `attempts/${owner}/attachments/${input.descriptor.family}`;
+      const physicalEntries = [
+        { kind: "attachment-envelope" as const, path: `${prefix}/attachment.json` },
+        { kind: "payload" as const, path: `${prefix}/payload.json` },
+        ...(blobs.state === "available"
+          ? blobs.entries.map((entry) => ({
+              kind: "blob" as const,
+              path: `${prefix}/blobs/${entry.name}`,
+            }))
+          : []),
+      ].sort((left, right) => left.path.localeCompare(right.path));
+      const declaredEntries = input.expectedManifestEntries
+        .map((entry) => ({
+          kind: entry.kind,
+          path: entry.path,
+          owner: entry.owner,
+          family: entry.family,
+        }))
+        .sort((left, right) => left.path.localeCompare(right.path));
+      if (
+        declaredEntries.length !== physicalEntries.length ||
+        declaredEntries.some((entry, index) => {
+          const physical = physicalEntries[index];
+          return physical === undefined || entry.kind !== physical.kind || entry.path !== physical.path ||
+            entry.owner !== owner || entry.family !== input.descriptor.family;
+        }) ||
+        (blobs.state === "available" && blobs.entries.length === 0)
+      ) return attachmentInvalid<Payload>([]);
+    }
 
     const hydrated = hydrateDurablePayload(payloadDocument.value);
     if (hydrated.invalid) return attachmentInvalid<Payload>(["payload.json"]);

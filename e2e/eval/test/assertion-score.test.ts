@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-score
-// rerun: pnpm e2e --repo eval -- --run test/assertion-score.test.ts
+// rerun: pnpm e2e test --repo eval -- --run test/assertion-score.test.ts
 
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
