@@ -27,7 +27,7 @@ const MINT_VERSION = "4.2.812";
 interface GeneratedOutput {
   readonly path: string;
   readonly content: string;
-  readonly original: string;
+  readonly original: string | undefined;
 }
 
 function writeChangedOutputs(
@@ -96,7 +96,8 @@ export function generateBundledIndex(dryRun = false): Effect.Effect<CommandRecei
   return Effect.try({
     try: (): GeneratedOutput => {
       const template = readFileSync(absolutePath("packages/niceeval/INDEX.template.md"), "utf8");
-      const original = readFileSync(absolutePath(BUNDLED_INDEX_OUTPUT), "utf8");
+      const output = absolutePath(BUNDLED_INDEX_OUTPUT);
+      const original = existsSync(output) ? readFileSync(output, "utf8") : undefined;
       return {
         path: BUNDLED_INDEX_OUTPUT,
         original,
