@@ -13,15 +13,15 @@ SetupPrefixKey[i] = hash(
   linked topological order and changeFrequency,
   explicit dependency and typed capability edges,
   action id,
-  optional cacheVersion,
-  canonical recipe digest,
+  optional supplemental fingerprint,
+  canonical steps digest,
   immutable input identities after lookup,
   target platform and execution user,
-  storage schema / quiesce / materializer revisions
+  storage schema / quiesce / capture revisions
 )
 ```
 
-parent key 使相同 action 不能从不同 verified baseline 错误复用。action 类型、命令或目标、规范化参数和已求值 typed inputs 形成 canonical recipe digest；`cacheVersion` 只为这些输入无法表达的实现世代提供显式失效。
+parent key 使相同 action 不能从不同 verified baseline 错误复用。action 类型、命令或目标、规范化参数和已求值 typed inputs 形成 canonical steps digest；`cache.fingerprint` 只为自动观察不到的协议或实现世代补充身份，不能替换自动指纹。
 
 physical-instance prefix 以 Provider/base 和 cohort 为根；attempt prefix 以 verified reset baseline 为 parent。`changeFrequency` 通过 linked topological order 与祖先链进入身份。promotion、冷热、locator、lease、credential value、Attempt UUID 和调度额度不进入 key。
 
@@ -31,13 +31,13 @@ physical-instance prefix 以 Provider/base 和 cohort 为根；attempt prefix �
 
 ## Provider capability
 
-Provider binding 对 core 暴露 lookup、创建 staging/clone、quiesce、capture、verify 与 instantiate 的等价 typed capability。`Unsupported` 与 operational failure 分离；不支持 prefix cache 时可以明确重新执行 recipe，但不能伪造命中。共享 prefix 复用 cache lifecycle 的 registry、operation、generation fence、lease、durable root 与两阶段 GC，cache kind 为 `sandbox-setup-prefix`。
+Provider binding 对 core 暴露 lookup、创建 staging/clone、quiesce、capture、verify 与 instantiate 的等价 typed capability。`Unsupported` 与 operational failure 分离；不支持 prefix cache 时可以明确重新执行 steps，但不能伪造命中。共享 prefix 复用 cache lifecycle 的 registry、operation、generation fence、lease、durable root 与两阶段 GC，cache kind 为 `sandbox-setup-prefix`。
 
 同一 `(domainId, SetupPrefixKey)` 只有一个 active promotion。旧 writer 在发布前失去 generation fence 后不得发布。staging scratch 始终 DestroyOnly。复制型 clone 验证独立后可释放 read lease；parent-backed clone 必须先登记 durable root，销毁并复核 Provider reference 消失后才能解除。
 
 ## DinD 捕获面
 
-Docker DinD 的一个前缀必须原子包含 outer writable rootfs、私有 `/var/lib/docker` 和声明纳入的 volume。Provider 在捕获前完成 recipe、确认没有遗留进程或 inner container、优雅停止 inner dockerd/containerd、等待退出并 sync；随后排除 socket、PID、lock、网络 namespace、实例 identity 与 secret channel。
+Docker DinD 的一个前缀必须原子包含 outer writable rootfs、私有 `/var/lib/docker` 和声明纳入的 volume。Provider 在捕获前完成全部 steps，并确认没有遗留进程或 inner container。随后优雅停止 inner dockerd/containerd、等待退出并 sync，再排除 socket、PID、lock、网络 namespace、实例 identity 与 secret channel。
 
 每个消费者取得私有 writable clone。只 `docker commit` outer container 会漏掉 inner data-root；复制运行中的 `/var/lib/docker` 会产生不一致状态；共享 writable upperdir 会破坏 Attempt 隔离。这些都不是合法前缀。Provider 无法完整、原子捕获时必须报告 Unsupported。
 
@@ -45,8 +45,8 @@ Docker DinD 的一个前缀必须原子包含 outer writable rootfs、私有 `/v
 
 ## SandboxStep 解释边界
 
-core 统一解释封闭的 `SandboxStep` protocol，并通过私有窄目标调用标准 Sandbox operations。Action 定义者、recipe 与 step 都不能取得 Sandbox；Provider 也不解释 family 或 recipe，不得按 family name 分支。
+core 统一解释封闭的 `SandboxStep` protocol，并通过私有窄目标调用标准 Sandbox operations。Action 定义者与 step 都不能取得 Sandbox；Provider 也不解释 family 或 steps，不得按 family name 分支。
 
 Provider 只声明标准 operation 与 capture capability。core 从规范化 step 自动推导 operation requirements；全部 step 成功后，Provider 才负责 quiesce、capture 与 restore。Action 中途失败不发布内部半成品前缀。
 
-step protocol 的解释语义由 `interpreterRevision` 标识，并进入 linked prefix 与 fingerprint。family `behaviorRevision` 只表达 family 自身无法从 canonical input、recipe 与身份查找结果看出的语义变化；纯重构或已经改变 emitted recipe 的修改不要求重复升级 revision。
+step protocol 的解释语义由 `interpreterRevision` 标识，并进入 linked prefix 与 fingerprint。family 自身无法从 canonical input、steps 与身份查找结果看出的语义变化，统一写入补充的 `cache.fingerprint`。steps 已变化时自动指纹随之变化，不要求作者重复维护 revision。

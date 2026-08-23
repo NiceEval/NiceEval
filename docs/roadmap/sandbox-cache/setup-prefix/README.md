@@ -22,7 +22,7 @@ BuildKey ready
 | 内容 | 执行语义 |
 |---|---|
 | `.before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` | 每个 planning 编译出的 occurrence 都要满足；hit restore，miss replay，结果可以 promotion |
-| `.before(customFamily(input, options))` | 与内置 Action 同路；封闭 step recipe 形成一个原子前缀节点 |
+| `.before(customFamily(input, options))` | 与内置 Action 同路；封闭 steps 形成一个原子前缀节点 |
 | `.before(callback)` / `.before(defineSandboxCommand(...))` | 始终真实执行，显示 opaque，并截断后续共享捕获；成功取得资源后用 `context.onCleanup()` 登记释放 |
 | `.after(action)` | occurrence 无条件、幂等 finally；入口登记、始终真实执行，按实际登记栈逆序 |
 
@@ -30,7 +30,7 @@ BuildKey ready
 
 普通 fixture 配置和无密钥 `.env` 模板可以进入可缓存 before action；secret、租约、checkpoint、外部会话和实例 locator 只能进入 callback 或 after，不能进入共享 prefix、key、manifest 或日志。opaque before 之后的 action 仍执行，但因 `opaque-ancestor` 不再 capture。
 
-`upload`、Git clone、Plugin 安装和 shell 不是四套缓存机制。它们与第三方 `defineSandboxAction()` family 都产生带稳定 recipe 与输入身份的 before action。NiceEval 先固定本地内容或远端 ref，再由 Provider 恢复或执行相同的 Sandbox 状态变化。内容已经固定不等于可以提前暴露：隐藏判据可以先登记为不可变内容，但只能在 Agent 返回后的 Eval test 中传入 Sandbox，不能进入 Agent 前缀。
+`upload`、Git clone、Plugin 安装和 shell 不是四套缓存机制。它们与第三方 `defineSandboxAction()` family 都产生带稳定 steps 与输入身份的 before action。NiceEval 先固定本地内容或远端 ref，再由 Provider 恢复或执行相同的 Sandbox 状态变化。内容已经固定不等于可以提前暴露：隐藏判据可以先登记为不可变内容，但只能在 Agent 返回后的 Eval test 中传入 Sandbox，不能进入 Agent 前缀。
 
 ## 入口
 

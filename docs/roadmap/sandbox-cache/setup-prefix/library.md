@@ -68,9 +68,8 @@ import { defineSandboxAction, sandboxStep } from "niceeval/sandbox";
 
 const installTool = defineSandboxAction({
   name: "@acme/niceeval-tools/install",
-  behaviorRevision: "1",
   input: Schema.Struct({ version: Schema.String }),
-  recipe: ({ version }) => [
+  steps: ({ version }) => [
     sandboxStep.exec({
       executable: "tool",
       args: ["install", version],
@@ -94,9 +93,11 @@ sandboxLayer().before(installTool(
 
 V1 的公开 `sandboxStep` 只有 `exec()`、`putText()`、`putBytes()`、`transferFile()`、`transferDirectory()` 与 `checkoutGit()`。step 不能直接传入 `.before()`，没有自己的 id、频率、依赖、capability 或缓存节点。整个 Action 才是原子的调度、identity、执行、capture 与 satisfaction 单元。
 
-family recipe 必须同步返回非空、无分支、无循环的 step tuple。它不能取得 Sandbox 或运行任意 callback。调用 `defineSandboxAction()` 就表示作者承诺 recipe 只依赖声明 input、只改变 Sandbox、可重复执行并可捕获；无法承诺的逻辑继续使用 callback 或 `defineSandboxCommand()`，始终 opaque、真实执行并截断共享 capture。
+family `steps` 必须同步返回非空、无分支、无循环的 step tuple。它不能取得 Sandbox 或运行任意 callback。调用 `defineSandboxAction()` 就表示作者承诺 steps 只依赖声明 input、只改变 Sandbox、可重复执行并可捕获；无法承诺的逻辑继续使用 callback 或 `defineSandboxCommand()`，始终 opaque、真实执行并截断共享 capture。
 
-family input 使用无 requirements 的同步 Effect Schema。实例化依次执行 `Schema.validateSync()`、`Schema.encodeSync()` 与 canonical JSON 校验，再规范化并冻结 recipe。semantic identity 包含 family name、behavior revision、canonical input、canonical recipe，以及固定后的内容 digest 与 Git commit；不包含函数源码、对象身份、模块路径或加载顺序。
+family input 使用无 requirements 的同步 Effect Schema。实例化依次执行 `Schema.validateSync()`、`Schema.encodeSync()` 与 canonical JSON 校验，再规范化并冻结 steps。自动指纹包含 family name、canonical input、canonical steps，以及 steps 引用的文件、目录、完整 Git commit 与 image digest。
+
+可选的 `cache.fingerprint` 是 JSON 值或根据已验证 input 计算 JSON 值的同步函数，只补充自动观察不到的身份。最终指纹是自动指纹与补充指纹的 hash；补充项不能关闭或替换自动观察。需要手动失效时直接写 `cache: { fingerprint: "2" }`，不再提供另一套 revision 字段。函数源码、对象身份、模块路径和加载顺序不进入 identity。
 
 `command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义都调用同一个公开 `defineSandboxAction()` 与 `sandboxStep`。core 不识别 family name，也没有 built-in 专用排序、identity、执行或缓存旁路；第三方不能注册新的 step kind。
 
@@ -108,18 +109,18 @@ instance 的 `requires` / `provides` 只形成 action DAG。core 从 step kinds 
 
 Provider 不能执行某个 step 时 planning 失败。能执行但不能 capture 时真实 replay，并显示 `cache capability: unsupported`。
 
-定义、Schema、canonical JSON、recipe 或 metadata 不合法时，同步抛出 `SandboxActionDefinitionError`。它带稳定 `_tag`、`reason` 与结构化字段，Schema ParseError 保存为 cause。调用方按数据字段识别，不使用 `instanceof`。
+定义、Schema、canonical JSON、`cache.fingerprint`、steps 或 metadata 不合法时，同步抛出 `SandboxActionDefinitionError`。它带稳定 `_tag`、`reason` 与结构化字段，Schema ParseError 保存为 cause。调用方按数据字段识别，不使用 `instanceof`。
 
 依赖图、固定内容 manifest 与 ref 身份查找、secret 或动态 input、Provider operation requirement 属于 planning typed failure。step、quiesce、capture 与 restore 属于 execution typed failure。
 
 公开入口的验收矩阵包含：
 
-- TypeScript 推导 Schema type；空或 async recipe、`.before(step)`、带频率或依赖的 after instance 都不能通过编译。
+- TypeScript 推导 Schema type；空或 async steps、`.before(step)`、带频率或依赖的 after instance 都不能通过编译。
 - 第三方 package 的 family 可直接使用，也可经 Plugin 投影，不需要 registry。
-- input、recipe、behavior revision、内容 digest 与完整 Git commit 分别变化时产生新 identity。
+- input、steps、补充 fingerprint、内容 digest 与完整 Git commit 分别变化时产生新 identity。
 - custom Action 的频率、依赖和 DAG capability 与内置 Action 使用同一调度路径。
 - Provider 验证 persistent、invocation-local、unsupported，以及缺少 execution operation 的 planning failure。
-- debug 对 custom 与 built-in Action 都投影 exact recipe；redaction 正交，callback 与 `defineSandboxCommand()` 保持 opaque。
+- debug 对 custom 与 built-in Action 都投影 exact steps 与自动/补充指纹组成；redaction 正交，callback 与 `defineSandboxCommand()` 保持 opaque。
 - `command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义真实调用公开 family 与 step API。
 
 ```ts
@@ -156,7 +157,7 @@ dockerSandbox({
   }));
 ```
 
-`before(action)` 表达有序准备。声明式 recipe 可命中准备前缀；callback 与 `defineSandboxCommand()` 的 run 始终真实执行，并截断后续共享 capture。运行期资源成功取得后，由当前 callback 同步调用 `context.onCleanup()` 登记条件释放。
+`before(action)` 表达有序准备。声明式 action 可命中准备前缀；callback 与 `defineSandboxCommand()` 的 run 始终真实执行，并截断后续共享 capture。运行期资源成功取得后，由当前 callback 同步调用 `context.onCleanup()` 登记条件释放。
 
 `after(action)` 是无条件、幂等的 occurrence finally。拥有可用 Sandbox 的 occurrence 进入后就登记全部 standalone after，即使后续 before 未执行或失败也会执行。它不隐式绑定最近的 before，也不能释放依赖成功 acquire 或 handle 的资源。
 
@@ -166,7 +167,7 @@ dockerSandbox({
 
 ## 内容与远端 repository
 
-作者在声明 action 的同时把它传给 `before()`，不先定义一份 recipe 再登记第二次：
+作者在声明 action 的同时把它传给 `before()`，不先定义一份配置再登记第二次：
 
 ```ts
 sandboxLayer()
@@ -187,7 +188,7 @@ sandboxLayer()
 
 `uploadFile()` 与 `uploadDirectory()` 在 planning 时读取本地输入，生成规范化 manifest，并把内容 digest 直接纳入 action identity。作者不再额外调用 `registerSandboxContent()`，也不把同一 URL 再写进 `inputs`。目录 manifest 包含相对路径、节点类型、模式与文件 digest；mtime、宿主绝对路径和遍历顺序不进入身份。符号链接越出声明根时 planning 失败。
 
-`gitCheckout()` 接受无凭据的公开 HTTPS repository、ref、目标目录和可选 sparse 路径。NiceEval 在本次 Invocation 首次需要它时查找 ref 对应的完整 commit；recipe、fingerprint、debug 与缓存 key 只使用规范化 repository、完整 commit、sparse 选择和目标目录。移动 branch、tag 或默认分支仍可声明；它们指向同一 commit 时命中，推进到新 commit 时自动 miss。查找结果在同一次 Invocation 内冻结，不能让不同 Attempt 看见不同 commit。
+`gitCheckout()` 接受无凭据的公开 HTTPS repository、ref、目标目录和可选 sparse 路径。NiceEval 在本次 Invocation 首次需要它时查找 ref 对应的完整 commit；steps、fingerprint、debug 与缓存 key 只使用规范化 repository、完整 commit、sparse 选择和目标目录。移动 branch、tag 或默认分支仍可声明；它们指向同一 commit 时命中，推进到新 commit 时自动 miss。查找结果在同一次 Invocation 内冻结，不能让不同 Attempt 看见不同 commit。
 
 远端 identity lookup 与对象下载分离。查找 ref 是不修改 Sandbox 的 source lookup；checkout action 只消费完成态 commit 和 Git object content。凭据仓库、宿主 credential provider、SSH URL 与运行时交互认证不具备共享资格，应使用 opaque callback 或先由受信任系统发布不可变内容 handle。
 

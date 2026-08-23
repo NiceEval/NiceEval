@@ -40,7 +40,7 @@ resolve marketplace ref to exact commit
 
 ## 安装后动作
 
-能由纯命令和固定输入表达的安装后动作放进 Plugin 声明的 `install.after`。它依赖 Adapter 提供的 `agent.plugin-installed:<name>` capability，不靠数组位置猜顺序。作者改变脚本、argv、公开 env 或内容输入时，recipe digest 自动变化。
+能由纯命令和固定输入表达的安装后动作放进 Plugin 声明的 `install.after`。它依赖 Adapter 提供的 `agent.plugin-installed:<name>` capability，不靠数组位置猜顺序。作者改变脚本、argv、公开 env 或内容输入时，steps digest 自动变化。
 
 需要读取 secret、调用远端服务、建立租约或按当前 cohort 写配置的动作继续使用 `postSetup` callback。callback 不伪装成稳定 action，也不能因为函数名相同而命中旧前缀。
 
@@ -72,7 +72,7 @@ const toolchain = definePlugin<{ archive: URL }>({
 });
 ```
 
-Plugin occurrence 保留 name、instanceKey、behaviorRevision、attachment owner 与最终 `attachmentOrdinal`。action 自己保留 recipe、内容 digest、频率与依赖。相同 Plugin definition 挂在 Experiment 和 Eval 上仍是两个 owner occurrence，不能跨 owner 合并身份。
+Plugin occurrence 保留 name、instanceKey、behaviorRevision、attachment owner 与最终 `attachmentOrdinal`。action 自己保留 steps、自动/补充指纹、内容 digest、频率与依赖。相同 Plugin definition 挂在 Experiment 和 Eval 上仍是两个 owner occurrence，不能跨 owner 合并身份。
 
 ## 不能固定的状态
 

@@ -97,7 +97,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 主 Sandbox | —(`workspaceService` 对应实例) | Provider 启动的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#主-sandbox-不变量) |
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | 准备前缀 | SetupPrefix | Base 加上 occurrence 与 owner 包裹顺序规范化的零个或多个可缓存 before action 所形成的内容寻址 Sandbox 起点 | [准备前缀缓存](roadmap/sandbox-cache/setup-prefix/README.md) |
-| SetupPrefixKey | SetupPrefixKey | parent 前缀、setup recipe、immutable inputs 与 Provider 捕获协议的链式内容身份 | [Setup Prefix Architecture](roadmap/sandbox-cache/setup-prefix/architecture.md#前缀身份) |
+| SetupPrefixKey | SetupPrefixKey | parent 前缀、规范化 steps、immutable inputs 与 Provider 捕获协议的链式内容身份 | [Setup Prefix Architecture](roadmap/sandbox-cache/setup-prefix/architecture.md#前缀身份) |
 | CaseKey | CaseKey | 完整 attempt 运行条件身份,携带门的判据 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | Provider cache | Provider cache | Provider 为后续 Sandbox 保留的 Agent npm tarball、任务构建结果或原生 build cache；不属于结果携带或留存 Sandbox | [Provider Cache 生命周期](roadmap/sandbox-cache/cache-lifecycle/README.md) |
 | Cache Domain | Cache Domain | 单一 cache backend 的所有权、命中、lease 与回收边界；identity 改变时形成新 Domain | [Provider Cache Architecture](roadmap/sandbox-cache/cache-lifecycle/architecture.md#cache-domain) |

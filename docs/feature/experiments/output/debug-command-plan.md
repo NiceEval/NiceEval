@@ -36,9 +36,10 @@
 ╭─ sandbox.before ───────────────────────────────────────────── EXACT ─╮
 │ owner: experiment:suite/one                                          │
 │ action family: @acme/niceeval-tools/install                          │
-│ behavior revision: 1                                                 │
 │ action id: install-tool                                              │
-│ recipe: sha256:849c... · 2 steps                                     │
+│ action fingerprint: sha256:849c... · automatic                       │
+│ supplemental fingerprint: none                                      │
+│ steps: 2                                                             │
 │ step 1: exec tool install 1.4.0                                      │
 │ step 2: putText .tool-version · sha256:35b4... · 5 bytes             │
 │ redaction: content projected as digest and size                      │
@@ -83,7 +84,7 @@
 
 standalone after 的静态节点显示 `condition: occurrence-entered`、`registration: occurrence-entry` 与 `cache: never`。动态 cleanup 后登记，因此先按 LIFO 执行；standalone after 随后按逆登记顺序执行，Provider finalizer 最后运行。
 
-内置与第三方 `SandboxAction` 都在同一种 Action 框内展开规范化 steps。可规范化 recipe 标为 `EXACT`；bytes、本地内容和大文本只投影 digest/size，字段脱敏与 exact 正交。只有 callback 与 `defineSandboxCommand()` 标为 `OPAQUE`，family 不能提供自定义 formatter 隐藏真实 recipe。
+内置与第三方 `SandboxAction` 都在同一种 Action 框内展开规范化 steps。可规范化 steps 标为 `EXACT`；bytes、本地内容和大文本只投影 digest/size，字段脱敏与 exact 正交。只有 callback 与 `defineSandboxCommand()` 标为 `OPAQUE`，family 不能提供自定义 formatter 隐藏真实 steps。
 
 Human 框与 JSON `commandPlan` 投影同一棵结构化树和同一组字段；框中的标签只是 JSON 字段的人读投影：
 

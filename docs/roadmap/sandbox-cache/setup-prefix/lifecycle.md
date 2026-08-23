@@ -47,10 +47,10 @@ Runner E2E owner 通过安装后的 `niceeval exp` 与可控 profile capacity fi
 ## 失败
 
 - occurrence 无法安全编译、重复完整身份、secret 进入 eligible action 或不支持的 reuse overlay：planning fail。
-- hit 的 key/manifest/artifact 不一致：隔离该 generation，并从更短 verified prefix 重新执行 recipe。
-- recipe、quiesce、捕获、clone 或 ready 失败：不交付 Sandbox；资源销毁或 durable 交给 reconcile。
+- hit 的 key/manifest/artifact 不一致：隔离该 generation，并从更短 verified prefix 重新执行 steps。
+- steps、quiesce、捕获、clone 或 ready 失败：不交付 Sandbox；资源销毁或 durable 交给 reconcile。
 - 单个 waiter 取消不取消仍有消费者的共享 operation；最后一个 waiter 取消时协作终止未发布 staging。
-- promotion 失败不能把部分状态当成命中；可安全重新执行 recipe 时回到最终私有实例，不能在部分修改的 staging 上重试。
+- promotion 失败不能把部分状态当成命中；可安全重新执行 steps 时回到最终私有实例，不能在部分修改的 staging 上重试。
 
 运行反馈区分 `resolving`、`querying`、`hit`、`replaying`、`unsupported`、`queued`、`quiescing`、`promoting`、`restoring`、`ready` 与 `failed`。
 

@@ -429,9 +429,11 @@ type NonEmptySandboxSteps =
 
 interface SandboxActionDefinition<A, I extends JsonValue> {
   readonly name: string;
-  readonly behaviorRevision: string;
   readonly input: Schema.Schema<A, I, never>;
-  readonly recipe: (input: A) => NonEmptySandboxSteps;
+  readonly cache?: {
+    readonly fingerprint?: JsonValue | ((input: A) => JsonValue);
+  };
+  readonly steps: (input: A) => NonEmptySandboxSteps;
 }
 
 interface SandboxBeforeActionOptions {
@@ -471,9 +473,8 @@ declare const sandboxStep: {
 ```typescript
 const installToolVersion = defineSandboxAction({
   name: "@acme/niceeval-tools/install",
-  behaviorRevision: "1",
   input: Schema.Struct({ version: Schema.String }),
-  recipe: ({ version }) => [
+  steps: ({ version }) => [
     sandboxStep.exec({
       executable: "tool",
       args: ["install", version],
@@ -495,15 +496,33 @@ export const tools = sandboxLayer().before(installToolVersion(
 ));
 ```
 
-一个 Action instance 是单一的调度、identity、执行、capture 与 satisfaction 单元。step 只有线性执行语义，没有 `id`、频率、依赖或 capability，不能直接传给 `.before()`。V1 recipe 必须同步返回非空、无分支、无循环的 step tuple；Runner 顺序解释全部 step，全部成功并 quiesce 后才允许捕获，不发布内部半成品前缀。
+一个 Action instance 是单一的调度、identity、执行、capture 与 satisfaction 单元。step 只有线性执行语义，没有 `id`、频率、依赖或 capability，不能直接传给 `.before()`。V1 `steps` 必须同步返回非空、无分支、无循环的 step tuple；Runner 顺序解释全部 step，全部成功并 quiesce 后才允许捕获，不发布内部半成品前缀。
 
-定义 family 就是作者作出确定性承诺：recipe 只依赖已声明 input，只改变 Sandbox，可重复执行并可捕获。读取 secret、租约、时间、随机数、未固定网络状态或外部可变状态的逻辑必须使用 callback 或 `defineSandboxCommand()`，不能伪装成 Action。第三方只能组合公开 step，不能注册新的 primitive kind。
+定义 family 就是作者作出确定性承诺：`steps` 只依赖已声明 input，只改变 Sandbox，可重复执行并可捕获。读取 secret、租约、时间、随机数、未固定网络状态或外部可变状态的逻辑必须使用 callback 或 `defineSandboxCommand()`，不能伪装成 Action。第三方只能组合公开 step，不能注册新的 primitive kind。
 
-family 调用时先用 `Schema.validateSync()` 验证 type side，再用 `Schema.encodeSync()` 得到 canonical JSON input。recipe 接收验证后的值；steps 随即规范化并冻结。Schema 必须无 requirements、可同步验证与编码，encoded side 必须能规范化为 JSON。
+family 调用时先用 `Schema.validateSync()` 验证 type side，再用 `Schema.encodeSync()` 得到 canonical JSON input。`steps` 接收验证后的值；返回值随即规范化并冻结。Schema 必须无 requirements、可同步验证与编码，encoded side 必须能规范化为 JSON。
 
-action semantic identity 包含 family `name`、`behaviorRevision`、canonical input、canonical recipe，以及固定后的内容 digest 与 Git commit。函数源码、对象身份、模块路径和加载顺序不进入 identity。linked prefix 与 fingerprint 再加入 owner、ordinal、本 occurrence 的 action id、频率、依赖、capability、cohort、Provider identity 与 `interpreterRevision`。
+action 自动指纹包含 family `name`、canonical input、规范化后的 steps，以及 steps 引用的内容 digest、目录内容、完整 Git commit 与 image digest。函数源码、对象身份、模块路径和加载顺序不进入 identity。
 
-定义、Schema、JSON 或 recipe 不合法时，同步抛出带稳定 `_tag`、`reason` 和结构化字段的 `SandboxActionDefinitionError`；Schema 失败作为 cause 保存。依赖图、动态输入求值和 Provider operation requirement 属于 planning typed failure；step、quiesce、capture 与 restore 属于 execution typed failure。错误识别读取数据字段，不依赖 `instanceof`。
+可选 `cache.fingerprint` 接受 JSON 值，或接收已验证 input 并返回 JSON 值。它只补充自动观察不到的身份，不能替换自动指纹。最终 action 指纹固定为 `hash(automaticFingerprint, supplementalFingerprint)`。不写时只使用自动指纹；需要强制失效时可直接写 `cache: { fingerprint: "2" }`。
+
+linked prefix 再加入 owner、ordinal、本 occurrence 的 action id、频率、依赖、capability、cohort、Provider identity 与 `interpreterRevision`。
+
+只有自动观察不到的协议版本才写补充指纹：
+
+```typescript
+cache: {
+  fingerprint: ({ version }) => ({
+    installerProtocol: 2,
+    distribution: version,
+  }),
+}
+
+// 只需要手动失效整个 family 时：
+cache: { fingerprint: "2" }
+```
+
+定义、Schema、JSON、`cache.fingerprint` 或 steps 不合法时，同步抛出带稳定 `_tag`、`reason` 和结构化字段的 `SandboxActionDefinitionError`；Schema 失败作为 cause 保存。依赖图、动态输入求值和 Provider operation requirement 属于 planning typed failure；step、quiesce、capture 与 restore 属于 execution typed failure。错误识别读取数据字段，不依赖 `instanceof`。
 
 `command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 都由导出的 `defineSandboxAction()` 和 `sandboxStep` 实际定义。core 只认识封闭 step kinds，不按官方 family name 或 package 路径走旁路。内置函数可以把领域 input 与 before metadata 摊平成一个对象，但生成的品牌值、identity、调度、执行、缓存与第三方 family 完全同路。
 
@@ -627,16 +646,16 @@ sandboxLayer()
 `command()` / `shell()` 由纯数据参数生成稳定 identity,identity 涵盖 executable / script、argv、cwd、env、user 与 stdin。
 复杂探测、分支与文件 IO 可以直接写 callback。JavaScript 无法可靠提取它读取的 `process.env`、时间或其它闭包状态，因此直接 callback 不向 fingerprint 增加 identity；Runner 也不用 `Function.prototype.toString()` 或函数名猜闭包。
 
-需要稳定 identity 或跨 owner 排序元数据的自定义步骤使用 `defineSandboxCommand()`，所有动态输入进入 `inputs`。`id`、`revision` 与 `inputs` 决定 recipe identity。
+需要稳定 identity 或跨 owner 排序元数据的自定义步骤使用 `defineSandboxCommand()`，所有动态输入进入 `inputs`。`id`、`revision` 与 `inputs` 决定 command identity。
 
-`changeFrequency`、`dependsOn`、`requires` 与 `provides` 只决定 linked schedule、DAG、fingerprint 与 debug。这些字段不会把 callback 变成声明式 recipe。
+`changeFrequency`、`dependsOn`、`requires` 与 `provides` 只决定 linked schedule、DAG、fingerprint 与 debug。这些字段不会把 callback 变成声明式 action。
 普通本地传输直接使用 `uploadFile()` / `uploadDirectory()` action；它们在一次声明中完成内容登记、identity 与目标写入。只有内容必须晚于 Agent 可见时，才用 `sandboxContent.file()` / `sandboxContent.directory()` 取得 digest-backed handle，并在 Eval test 中调用 `t.sandbox.upload()`。
 
 声明式 action 与运行期 `Sandbox` 刻意共用文件动词：已有文本或字节使用 `writeText()` / `writeBytes()`，声明的宿主路径使用 `uploadFile()` / `uploadDirectory()`。前者的内容、后者的规范化 manifest 都直接进入 identity。`before()` 不能把尚不存在的 Sandbox 传给这些 action；只有 callback before 在执行期取得 `Sandbox`，代价是 opaque 且不能共享捕获。
 
 `run` 的函数体、函数名与闭包不进入 identity。只改实现而保持 `id`、`revision`、`inputs` 不变时,Runner 不会发现语义已经变化,旧结果仍可能沿用。实现语义变化必须提高 `revision`;外部输入变化必须反映到 `inputs`。若作者漏改 identity 后已经产生或沿用了结果,先修正 `revision` 或 `inputs`,再按[全量重验](../experiments/use-case/重新运行/全量重验.md)对受影响选择执行 `--rerun all`。`--rerun all` 只修复这一次结果集,不能替代永久 identity 修正。
 
-`defineSandboxCommand()` 的稳定 identity 只提供失效与排序依据。它的 `run` 始终 opaque，在每个 occurrence 真实执行并截断后续共享 capture，绝不因 identity 稳定而命中准备前缀。只有 `shell()`、`writeText()`、`writeBytes()`、`upload*()`、`gitCheckout()` 等完全声明式 recipe 具备前缀缓存资格。
+`defineSandboxCommand()` 的稳定 identity 只提供失效与排序依据。它的 `run` 始终 opaque，在每个 occurrence 真实执行并截断后续共享 capture，绝不因 identity 稳定而命中准备前缀。只有 `shell()`、`writeText()`、`writeBytes()`、`upload*()`、`gitCheckout()` 等完全声明式 action 具备前缀缓存资格。
 
 `putContent()` 对大文件自动拆成有界的 provider 写入,全部到达后才在 Sandbox 内原子替换目标；SDK 单次请求超时不会留下半个目标文件。
 未登记 identity 的 callback 默认允许跨 Run 携带，避免一个声明遗漏让昂贵 Attempt 永久重跑。这个默认只代表 callback 没有增加失效条件，不代表 Runner 已证明其语义稳定。
