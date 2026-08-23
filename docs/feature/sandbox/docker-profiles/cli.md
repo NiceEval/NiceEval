@@ -55,6 +55,9 @@ niceeval docker profile list --json
 显示本地别名、稳定 ID缩写、security level、policy revision、endpoint kind与健康摘要；JSON输出
 稳定 schema。
 
+registry目录中的 `*.host.json`、`*.daemon.json`与版本化 `assets-vN.json`属于宿主部署材料，不是 profile descriptor，
+发现时必须忽略。它们可以与 `<alias>.json`并存，不能占用 alias或让整个 registry失效。
+
 别名可以随机器不同，也可以改名。stable profile ID来自宿主部署，让 detached operation找回原
 endpoint。以下任一情形会把条目标为 invalid并禁止使用：
 
