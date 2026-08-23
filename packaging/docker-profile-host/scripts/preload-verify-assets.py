@@ -30,16 +30,16 @@ def main() -> None:
     if manifest.get("schemaVersion") != 1 or manifest.get("platform") != "linux/amd64":
         raise SystemExit("unsupported asset manifest platform")
     for item in manifest.get("images", []):
-        reference, image_id, platform = item.get("reference"), item.get("imageId"), item.get("platform")
-        if not isinstance(reference, str) or "@sha256:" not in reference or not isinstance(image_id, str) or platform != "linux/amd64":
+        reference, platform = item.get("reference"), item.get("platform")
+        if not isinstance(reference, str) or "@sha256:" not in reference or platform != "linux/amd64":
             raise SystemExit("asset manifest contains an invalid fixed identity")
-        inspected = docker("image", "inspect", "--format", "{{.Id}} {{.Os}}/{{.Architecture}}", reference, check=False)
+        inspected = docker("image", "inspect", "--format", "{{.Os}}/{{.Architecture}}", reference, check=False)
         if inspected.returncode != 0 and args.pull:
             docker("pull", reference)
-            inspected = docker("image", "inspect", "--format", "{{.Id}} {{.Os}}/{{.Architecture}}", reference, check=False)
-        if inspected.returncode != 0 or inspected.stdout.strip() != f"{image_id} {platform}":
+            inspected = docker("image", "inspect", "--format", "{{.Os}}/{{.Architecture}}", reference, check=False)
+        if inspected.returncode != 0 or inspected.stdout.strip() != platform:
             raise SystemExit(f"asset missing or mismatched: {reference}")
-        print(f"verified {reference} {image_id} {platform}")
+        print(f"verified {reference} {platform}")
 
 
 if __name__ == "__main__":

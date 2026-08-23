@@ -52,7 +52,7 @@ def fake_docker(self, *args: str, check: bool = True):
             self.__dict__.pop("fake_builder_volume", None)
         output = ""
     elif args[:2] == ("image", "inspect") and args[-1] in watchdog.REQUIRED_ASSETS:
-        output = f"{watchdog.REQUIRED_ASSETS[args[-1]]} linux/amd64\n"
+        output = "linux/amd64\n"
     elif args[:2] == ("image", "inspect"):
         images = self.__dict__.setdefault("fake_images", set())
         reference = args[-1]
@@ -238,8 +238,8 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     }}
     asset_manifest = root / "assets-v1.json"
     asset_manifest.write_text(json.dumps({"schemaVersion": 1, "platform": "linux/amd64", "images": [
-        {"reference": reference, "imageId": image_id, "platform": "linux/amd64"}
-        for reference, image_id in watchdog.REQUIRED_ASSETS.items()
+        {"reference": reference, "platform": "linux/amd64"}
+        for reference in watchdog.REQUIRED_ASSETS
     ]}), encoding="utf-8")
     host_config = root / "default.host.json"
     host_config.write_text(json.dumps({

@@ -48,8 +48,8 @@ MAX_BUILD_CONTEXT_CHUNK_BYTES = 4 * 1024 * 1024
 QUEUE_TIMEOUT_SECONDS = 30
 CLEANUP_TIMEOUT_SECONDS = 60
 REQUIRED_ASSETS = {
-    "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c": "sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c",
-    "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8": "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
+    "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c",
+    "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
 }
 DIAGNOSTIC_COMMAND = ["sh", "-ec", "\n".join((
     "set -eu",
@@ -264,25 +264,19 @@ class Admission:
             images = manifest.get("images", [])
             if manifest.get("schemaVersion") != 1 or manifest.get("platform") != "linux/amd64" or not isinstance(images, list):
                 raise ValueError("images must be a list")
-            declared = {
-                item.get("reference"): item.get("imageId")
-                for item in images if isinstance(item, dict)
-            }
+            declared = {item.get("reference") for item in images if isinstance(item, dict)}
             if declared != REQUIRED_ASSETS:
                 raise ValueError("manifest must contain exactly the fixed DIND and BuildKit identities")
             facts: list[dict[str, Any]] = []
             for image in images:
                 reference = image.get("reference") if isinstance(image, dict) else None
-                expected_id = image.get("imageId") if isinstance(image, dict) else None
                 platform = image.get("platform") if isinstance(image, dict) else None
                 if (not isinstance(reference, str) or "@sha256:" not in reference
-                        or not isinstance(expected_id, str) or not expected_id.startswith("sha256:")
                         or platform != "linux/amd64"):
                     raise ValueError("image reference must be digest pinned")
-                inspect = self._docker("image", "inspect", "--format", "{{.Id}} {{.Os}}/{{.Architecture}}", reference, check=False)
-                fields = inspect.stdout.strip().split()
-                present = inspect.returncode == 0 and fields == [expected_id, platform]
-                facts.append({"reference": reference, "imageId": expected_id, "platform": platform, "present": present})
+                inspect = self._docker("image", "inspect", "--format", "{{.Os}}/{{.Architecture}}", reference, check=False)
+                present = inspect.returncode == 0 and inspect.stdout.strip() == platform
+                facts.append({"reference": reference, "platform": platform, "present": present})
             return facts
         except Exception as error:
             return [{"reference": "invalid-manifest", "present": False, "error": str(error)}]

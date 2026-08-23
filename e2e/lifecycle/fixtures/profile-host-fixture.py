@@ -89,8 +89,8 @@ def setup(args: argparse.Namespace) -> None:
         descriptor = root / "profile.json"
         assets = root / "assets-v1.json"
         assets.write_text(json.dumps({"schemaVersion": 1, "platform": "linux/amd64", "images": [
-            {"purpose": "doctor-dind", "reference": "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c", "imageId": "sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c", "platform": "linux/amd64"},
-            {"purpose": "doctor-buildkit", "reference": "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8", "imageId": "sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8", "platform": "linux/amd64"},
+            {"purpose": "doctor-dind", "reference": "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c", "platform": "linux/amd64"},
+            {"purpose": "doctor-buildkit", "reference": "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8", "platform": "linux/amd64"},
         ]}) + "\n", encoding="utf-8")
         config = {
             "name": "e2e-cold-build",
