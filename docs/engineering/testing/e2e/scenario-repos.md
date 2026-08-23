@@ -99,10 +99,11 @@ interface E2EMetadata {
   lanes: readonly ("pr" | "main" | "nightly" | "release")[];
   executor: Executor;
   command: readonly [string, ...string[]];
-  /** Maximum runtime for one test invocation; deterministic Repo 2 minutes, live provider Repo 3 minutes. */
+  /** Per-invocation upper bound; sized to the owner plus bounded resource cleanup. */
   timeoutMinutes: number;
   harness?: {
     testkit?: boolean;
+    assets?: readonly "docker-profile-host-scripts"[];
   };
   secrets: readonly string[];
   requires?: {
@@ -111,6 +112,7 @@ interface E2EMetadata {
     platforms?: readonly ("linux" | "darwin")[];
     runtimes?: readonly string[];
     browsers?: readonly ("chromium" | "firefox" | "webkit")[];
+    hostCapabilities?: readonly "linux-loop-project-quota"[];
   };
   artifacts: readonly string[];
 }
@@ -135,6 +137,17 @@ metadata 不含测试标题、expected、page matrix、历史 bug、contract anc
 `root` 去掉 `e2e/` 推导；产品 owner 由 `implicitDependencies` 指向的 source domain project 表达。详细管理规则见
 [任务图与 E2E 选择](../../task-orchestration/README.md)。
 
+`harness.testkit: true` 是 Testkit 消费意图的唯一真源。
+
+`harness.assets: ["docker-profile-host-scripts"]` 要求根 runner 从受信任的内部 asset 表
+把当前 checkout 的 `packaging/docker-profile-host/scripts` 复制进隔离 Repo。runner 只通过
+`NICEEVAL_E2E_DOCKER_PROFILE_HOST_SCRIPTS` 暴露副本路径。场景必须自行启动这份真实 watchdog 并拥有其 cleanup；
+runner 不替换宿主已安装 service，也不提供 mock control service。未声明该 harness 的 Repo 不会获得脚本路径。
+
+`requires.hostCapabilities: ["linux-loop-project-quota"]` 独立声明宿主需要 loop device、project quota 工具与内核支持。
+planner 把同一 cell 的 capability 取并集，CI 只消费 plan matrix 完成 provisioning；runner 在 test 前写入结构化 capability
+check。asset 与 host capability 分开声明：前者是隔离 Repo 获得的材料，后者是运行机器必须具备的条件。
+
 `batch` 是必填的 canonical lowercase placement ID，例如 `host-1`、`docker-1` 或 `browser-1`。它只决定 CI 共机分组，
 不表示资源 capability；完整宿主运行条件仍以 `requires` 为唯一真源。
 
@@ -143,7 +156,7 @@ metadata 不含测试标题、expected、page matrix、历史 bug、contract anc
 
 无法计算 diff 时多跑，不能静默少跑。显式 `--repo <id>` 不受 `--diff-path` 过滤。
 多个显式 Repo 中任一个不在所选 lane 时，命令必须非零退出并列出该 Repo 的可用 lane。
-`requires.runtimes`、`docker`、`browsers`、platform 与 secret 在 test 前有结构化 preflight。
+`requires.runtimes`、`docker`、`browsers`、`hostCapabilities`、platform 与 secret 在 test 前有结构化 preflight。
 `externalNetwork: true` 在 receipt 中写为“声明但未主动预检”。通用探测不能替代 Repo 自己拥有的 provider/network 行为。
 
 同仓可信 PR 在 affected 集命中 live owner 时、main push 与 schedule 在完整 lane 中纳入这些 live Repo，并按 metadata 白名单注入已登记 secret；

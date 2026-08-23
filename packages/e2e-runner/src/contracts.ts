@@ -59,6 +59,8 @@ export const AreaSchema = Schema.Literal(
 );
 export const PlatformSchema = Schema.Literal("linux", "darwin");
 export const BrowserSchema = Schema.Literal("chromium", "firefox", "webkit");
+export const HostCapabilitySchema = Schema.Literal("linux-loop-project-quota");
+export const HarnessAssetSchema = Schema.Literal("docker-profile-host-scripts");
 export const PlanModeSchema = Schema.Literal("invalid", "affected", "full", "fail-open-full");
 export const CategorySchema = Schema.Literal("pass", "regression", "infra", "configuration", "cancelled");
 export const StageNameSchema = Schema.Literal(
@@ -119,6 +121,12 @@ const UniqueAreaListSchema = Schema.NonEmptyArray(AreaSchema).pipe(Schema.filter
 const UniqueLaneListSchema = Schema.NonEmptyArray(LaneSchema).pipe(Schema.filter(unique, { identifier: "UniqueLanes" }));
 const UniquePlatformListSchema = Schema.Array(PlatformSchema).pipe(Schema.filter(unique, { identifier: "UniquePlatforms" }));
 const UniqueBrowserListSchema = Schema.Array(BrowserSchema).pipe(Schema.filter(unique, { identifier: "UniqueBrowsers" }));
+const UniqueHostCapabilityListSchema = Schema.Array(HostCapabilitySchema).pipe(
+  Schema.filter(unique, { identifier: "UniqueHostCapabilities" }),
+);
+const UniqueHarnessAssetListSchema = Schema.Array(HarnessAssetSchema).pipe(
+  Schema.filter(unique, { identifier: "UniqueHarnessAssets" }),
+);
 
 export const ExecutorSchema = Schema.Struct({ kind: Schema.Literal("host") });
 export const RepoRequiresSchema = Schema.Struct({
@@ -127,8 +135,12 @@ export const RepoRequiresSchema = Schema.Struct({
   platforms: Schema.optional(UniquePlatformListSchema),
   runtimes: Schema.optional(UniqueStringListSchema),
   browsers: Schema.optional(UniqueBrowserListSchema),
+  hostCapabilities: Schema.optional(UniqueHostCapabilityListSchema),
 });
-export const RepoHarnessSchema = Schema.Struct({ testkit: Schema.optional(Schema.Boolean) });
+export const RepoHarnessSchema = Schema.Struct({
+  testkit: Schema.optional(Schema.Boolean),
+  assets: Schema.optional(UniqueHarnessAssetListSchema),
+});
 
 /** The target metadata itself: repo identity is deliberately derived by discovery. */
 export const ManifestMetadataSchema = Schema.Struct({
@@ -221,7 +233,7 @@ export const CommandCaptureSchema = Schema.Struct({
   groupCleanup: OwnedProcessGroupCleanupSchema,
 });
 export const CapabilityCheckSchema = Schema.Struct({
-  kind: Schema.Literal("platform", "runtime", "docker", "browser", "secret", "externalNetwork"),
+  kind: Schema.Literal("platform", "runtime", "docker", "browser", "secret", "externalNetwork", "hostCapability"),
   subject: Schema.String,
   ok: Schema.Boolean,
   verification: Schema.optional(Schema.Literal("checked", "declared-unverified")),
@@ -241,6 +253,7 @@ export const StageReceiptSchema = Schema.Struct({
   attempt: Schema.optional(PositiveSafeIntegerSchema),
   invocationId: Schema.optional(NonEmptyStringSchema),
   checks: Schema.optional(Schema.Array(CapabilityCheckSchema)),
+  assets: Schema.optional(UniqueHarnessAssetListSchema),
   collected: Schema.optional(Schema.Array(RepoIdSchema)),
   path: Schema.optional(Schema.String),
 });
@@ -351,6 +364,8 @@ export type Lane = Schema.Schema.Type<typeof LaneSchema>;
 export type Area = Schema.Schema.Type<typeof AreaSchema>;
 export type Platform = Schema.Schema.Type<typeof PlatformSchema>;
 export type Browser = Schema.Schema.Type<typeof BrowserSchema>;
+export type HostCapability = Schema.Schema.Type<typeof HostCapabilitySchema>;
+export type HarnessAsset = Schema.Schema.Type<typeof HarnessAssetSchema>;
 export type PlanMode = Schema.Schema.Type<typeof PlanModeSchema>;
 export type Category = Schema.Schema.Type<typeof CategorySchema>;
 export type StageName = Schema.Schema.Type<typeof StageNameSchema>;

@@ -1,5 +1,7 @@
 # Report 图表语义内核
 
+> 本公共三面图表方向已由 [CLI 与 Insight](../../design/cli-insight/DECISION.md) 取消。MetricValue、missing、Evidence 与精确值语义仍归 Analysis；Insight 的图表是第一方私有实现，外部网页的 data / component 接入面仍在[独立决策](../../design/benchmark-web-consumption/README.md)中比较。
+
 ## 要解决的问题
 
 同一张图必须在 terminal、网页和静态站中表达同一组读数、缺失、完整度、Evidence 与下钻入口。空间布局可以不同，但不能让任一呈现面重新计算数值、删除缺失或用 tooltip 隐藏精确值。

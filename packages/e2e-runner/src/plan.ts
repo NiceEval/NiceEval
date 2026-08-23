@@ -318,10 +318,11 @@ const mergedRequires = (entries: readonly PlanEntry[]): Either.Either<RepoRequir
   if (requirements.length === 0) return Either.right(undefined);
   const runtimes = [...new Set(requirements.flatMap((requirement) => requirement.runtimes ?? []))];
   const browsers = [...new Set(requirements.flatMap((requirement) => requirement.browsers ?? []))];
+  const hostCapabilities = [...new Set(requirements.flatMap((requirement) => requirement.hostCapabilities ?? []))];
   const sets = requirements.flatMap((requirement) => requirement.platforms === undefined ? [] : [new Set(requirement.platforms)]);
   const platforms = sets.length === 0 ? [] : [...sets[0]!].filter((platform) => sets.slice(1).every((set) => set.has(platform)));
   if (sets.length > 0 && platforms.length === 0) return Either.left(new PlanSelectionError({ reason: "batch-platform-conflict", detail: "E2E batch has no host platform accepted by every Repo" }));
-  return Either.right({ ...(requirements.some((requirement) => requirement.docker) ? { docker: true } : {}), ...(requirements.some((requirement) => requirement.externalNetwork) ? { externalNetwork: true } : {}), ...(platforms.length ? { platforms } : {}), ...(runtimes.length ? { runtimes } : {}), ...(browsers.length ? { browsers } : {}) });
+  return Either.right({ ...(requirements.some((requirement) => requirement.docker) ? { docker: true } : {}), ...(requirements.some((requirement) => requirement.externalNetwork) ? { externalNetwork: true } : {}), ...(platforms.length ? { platforms } : {}), ...(runtimes.length ? { runtimes } : {}), ...(browsers.length ? { browsers } : {}), ...(hostCapabilities.length ? { hostCapabilities } : {}) });
 };
 
 const repoBatch = (entries: readonly PlanEntry[]): Either.Either<PlanEntry, PlanSelectionError> => {

@@ -46,9 +46,12 @@
             "vitest",
             "run"
           ],
-          "timeoutMinutes": 2,
+          "timeoutMinutes": 8,
           "harness": {
-            "testkit": true
+            "testkit": true,
+            "assets": [
+              "docker-profile-host-scripts"
+            ]
           },
           "secrets": [],
           "requires": {
@@ -59,6 +62,9 @@
             "docker": true,
             "platforms": [
               "linux"
+            ],
+            "hostCapabilities": [
+              "linux-loop-project-quota"
             ]
           },
           "artifacts": [

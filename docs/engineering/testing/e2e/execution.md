@@ -64,7 +64,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 - matrix run 消费 candidate artifact、同一次生成的 plan 与当前 checkout，通过 `--plan/--cell` 精确执行该格；它不再把 Repo 列表和并发数翻译成 workflow shell，也不下载第二份 Testkit artifact；
 - matrix run 把 plan 的 mode、reason、lane、cell ID 与可选 base/head 写入根 summary 和每个 Repo receipt；
 - 声明 browser capability 的 matrix cell 使用与根 `@playwright/test` 精确版本相同的官方 Playwright Noble container；
-- 浏览器与 Linux 系统依赖来自镜像，不在 job 内运行 apt 或 `playwright install --with-deps`。没有 browser requirement 的 host / docker cell 仍直接运行在普通 GitHub runner；
+- 浏览器与通用 Linux 系统依赖来自镜像，不运行 `playwright install --with-deps`。没有 browser requirement 的 host / docker cell 仍直接运行在普通 GitHub runner。plan cell 声明 `requires.hostCapabilities: ["linux-loop-project-quota"]` 时才安装 project-quota 工具与当前内核模块。脚本材料由 Repo 的 `harness.assets` 独立声明；
 - `plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；显式 `run --candidate` 不重新 pack。
 
 `verify-release` 只接受 `mode` 合法且 cells 非空的 full `plan --json`、candidate `.tgz`、receipt root 与 tag。

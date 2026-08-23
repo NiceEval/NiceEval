@@ -4,7 +4,7 @@
 
 ## 目录
 
-每个带 `project.json` 与 `kind:e2e` tag 的叶子目录都是一个独立消费项目，自带 `package.json`、lockfile 和原生 Vitest 或 Playwright 测试。根 runner 把候选 `niceeval` tarball 安装进仓库外副本；需要 Testkit 的 Repo 还会从当前 checkout clean-build 私有 workspace package，并只在该副本中注入目录依赖，随后执行 `targets.e2e.metadata.niceeval` 声明的命令。
+每个带 `project.json` 与 `kind:e2e` tag 的叶子目录都是一个独立消费项目，自带 `package.json`、lockfile 和原生 Vitest 或 Playwright 测试。根 runner 把候选 `niceeval` tarball 安装进仓库外副本；需要 Testkit 的 Repo 还会从当前 checkout clean-build 私有 workspace package，需要受信任 harness asset 的 Repo 也只在该副本中获得对应材料，随后执行 `targets.e2e.metadata.niceeval` 声明的命令。
 
 ```text
 e2e/

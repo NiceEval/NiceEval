@@ -3,9 +3,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
 import { FileSystem } from "@effect/platform";
-import { Data, Effect, Scope } from "effect";
+import { Data, Effect, Either, Scope } from "effect";
 import * as Cause from "effect/Cause";
-import type { DiscoveredRepo } from "./discovery.ts";
+import { repoRootDir, type DiscoveredRepo } from "./discovery.ts";
+import { materializeHarnessAssets } from "./harness-assets.ts";
 import type { CandidateTarball } from "./injection.ts";
 import { verifyInjection } from "./injection.ts";
 import {
@@ -329,10 +330,12 @@ const withInvocation = (
   env: NodeJS.ProcessEnv,
   id: string,
   copy: string,
+  harnessEnvironment: Readonly<Record<string, string>> = {},
 ): NodeJS.ProcessEnv => ({
   ...env,
   NICEEVAL_E2E_INVOCATION_ID: id,
   NICEEVAL_E2E_ARTIFACT_STAGING_ROOT: join(copy, ".e2e-artifacts"),
+  ...harnessEnvironment,
 });
 
 const collectStage = (
@@ -461,6 +464,16 @@ export const runRepoEffect = (
     let testkitResolvedPath: string | undefined;
     if (preflight.ok) {
       yield* copyRepoIsolated(options.sourceDir ?? repo.dir, copy);
+      const declaredAssets = repo.manifest.harness?.assets ?? [];
+      const harnessResult = yield* Effect.either(
+        materializeHarnessAssets(repoRootDir(), copy, declaredAssets),
+      );
+      const harness = Either.isRight(harnessResult)
+        ? harnessResult.right
+        : { assets: [] as const, environment: {} };
+      const harnessViolation = Either.isLeft(harnessResult)
+        ? `harness asset ${harnessResult.left.asset} ${harnessResult.left.operation} failed: ${harnessResult.left.detail}`
+        : undefined;
       const clean = yield* checkTestkitSourceClean(copy).pipe(
         Effect.mapError((cause) => problem(id, "run", cause)),
       );
@@ -470,6 +483,7 @@ export const runRepoEffect = (
             Effect.mapError((cause) => problem(id, "run", cause)),
           );
       const violations = [
+        ...(harnessViolation === undefined ? [] : [harnessViolation]),
         ...clean,
         ...(consumesTestkit && testkit === undefined
           ? ["harness.testkit declared but no snapshot was supplied"]
@@ -479,9 +493,12 @@ export const runRepoEffect = (
       stage(stages, {
         stage: "prepare",
         ok: violations.length === 0,
+        assets: harness.assets,
         detail:
           violations.length === 0
-            ? "source clean"
+            ? harness.assets.length === 0
+              ? "source clean; no harness assets declared"
+              : `source clean; materialized harness assets: ${harness.assets.join(", ")}`
             : `prepare failed: ${violations.join("; ")}`,
       });
       if (violations.length === 0) {
@@ -505,6 +522,7 @@ export const runRepoEffect = (
             buildChildEnv(process.env, allSecretNames, []),
             setup,
             copy,
+            harness.environment,
           ),
           30 * 60_000,
           options.logPrefix,
@@ -611,7 +629,12 @@ export const runRepoEffect = (
                     const result = yield* runCommand(
                       command,
                       copy,
-                      withInvocation(baseEnv, invocation, copy),
+                      withInvocation(
+                        baseEnv,
+                        invocation,
+                        copy,
+                        harness.environment,
+                      ),
                       repo.manifest.timeoutMinutes * 60_000,
                       options.logPrefix,
                     );

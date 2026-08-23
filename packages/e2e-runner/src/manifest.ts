@@ -13,6 +13,8 @@ import {
   type Area,
   type BatchId,
   type Browser,
+  type HostCapability,
+  type HarnessAsset,
   type Lane,
   type Manifest,
   type ManifestMetadata,
@@ -24,8 +26,10 @@ export const AREAS = ["eval", "cli", "report", "record", "package", "runner", "a
 export const LANES = ["pr", "main", "nightly", "release"] as const;
 export const PLATFORMS = ["linux", "darwin"] as const;
 export const BROWSERS = ["chromium", "firefox", "webkit"] as const;
+export const HOST_CAPABILITIES = ["linux-loop-project-quota"] as const;
+export const HARNESS_ASSETS = ["docker-profile-host-scripts"] as const;
 
-export type { Area, BatchId, Browser, Lane, Platform } from "./contracts.ts";
+export type { Area, BatchId, Browser, HarnessAsset, HostCapability, Lane, Platform } from "./contracts.ts";
 export type Executor = ManifestMetadata["executor"];
 export type RepoRequires = NonNullable<ManifestMetadata["requires"]>;
 export type RepoHarness = NonNullable<ManifestMetadata["harness"]>;

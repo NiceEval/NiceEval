@@ -1,156 +1,197 @@
-import { randomUUID } from "node:crypto";
 import type Docker from "dockerode";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import {
   acquireDockerProfileReservation,
   attestDockerProfile,
-  commitDockerProfileReservation,
+  DockerProfileCapacityBlockedError,
+  createDockerProfileContainer,
+  createDockerProfileBuild,
   createDockerProfileLease,
+  dockerProfileControlRequest,
   loadDockerProfileRegistry,
   releaseDockerProfileReservation,
 } from "./runtime.ts";
 
 export interface DockerProfileCliOptions {
   readonly json: boolean;
-  readonly smoke: boolean;
   readonly out: (text: string) => void;
   readonly err: (text: string) => void;
 }
 
+function doctorBuildContext(): Readable {
+  const content = Buffer.from(`FROM scratch\nLABEL niceeval.doctor.nonce=${randomUUID()}\n`);
+  const header = Buffer.alloc(512);
+  header.write("Dockerfile", 0, "utf8");
+  header.write("0000644\0", 100, "ascii");
+  header.write("0000000\0", 108, "ascii");
+  header.write("0000000\0", 116, "ascii");
+  header.write(content.length.toString(8).padStart(11, "0") + "\0", 124, "ascii");
+  header.write(Math.floor(Date.now() / 1000).toString(8).padStart(11, "0") + "\0", 136, "ascii");
+  header.fill(0x20, 148, 156);
+  header[156] = "0".charCodeAt(0);
+  header.write("ustar\0", 257, "ascii");
+  header.write("00", 263, "ascii");
+  const checksum = header.reduce((sum, byte) => sum + byte, 0);
+  header.write(checksum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii");
+  return Readable.from([header, content, Buffer.alloc((512 - content.length % 512) % 512), Buffer.alloc(1024)]);
+}
+
+type DoctorStatus = "PASS" | "BLOCKED" | "FAIL";
+
 interface Check {
-  readonly name: string;
-  readonly status: "PASS" | "FAIL";
+  readonly id: DoctorCheckId;
+  readonly status: DoctorStatus;
+  readonly code?: string;
   readonly detail: string;
 }
 
-/** Keep Docker's official entrypoint, but bypass its automatic TCP/TLS selection. */
-export const DOCKER_PROFILE_DOCTOR_DIND_CMD = Object.freeze([
-  "dockerd",
-  "--host=unix:///var/run/docker.sock",
-  "--shutdown-timeout=2",
-] as const);
-
-/** `/proc/net/tcp{,6}` exposes listening sockets without requiring an extra image tool. */
-export const DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK = Object.freeze([
-  "sh",
-  "-ec",
-  [
-    "for table in /proc/net/tcp /proc/net/tcp6; do",
-    "  [ -r \"$table\" ] || continue",
-    "  awk '$4 == \"0A\" && ($2 ~ /:0947$/ || $2 ~ /:0948$/) { found = 1 } END { exit found ? 1 : 0 }' \"$table\"",
-    "done",
-  ].join("\n"),
-] as const satisfies readonly [string, ...string[]]);
-
-export function dockerProfileDoctorDindConfig(): { Cmd: string[] } {
-  return Object.freeze({ Cmd: [...DOCKER_PROFILE_DOCTOR_DIND_CMD] });
+interface ControlStatus {
+  readonly journal?: { readonly state?: string; readonly durableTransitions?: boolean };
+  readonly assets?: { readonly state?: string; readonly images?: readonly { readonly reference?: string; readonly present?: boolean }[] };
 }
 
-async function pull(docker: Docker, image: string): Promise<void> {
+const DOCTOR_CHECK_IDS = [
+  "descriptor", "control", "daemon", "cgroup", "storage", "journal", "assets",
+  "cold-build", "cold-build-cleanup", "container-limits", "nested-docker", "container-cleanup",
+] as const;
+type DoctorCheckId = typeof DOCTOR_CHECK_IDS[number];
+
+const DOCKER_PROFILE_DOCTOR_DOCKER_DATA_BYTES = 1024 ** 3;
+/** Installed by the profile deployment; doctor must never fetch it. */
+const DOCKER_PROFILE_DOCTOR_DIND_IMAGE =
+  "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c";
+
+function dockerStatusCode(error: unknown): number | undefined {
+  return typeof error === "object" && error !== null && "statusCode" in error
+    ? (error as { readonly statusCode?: number }).statusCode
+    : undefined;
+}
+
+async function startDoctorContainerIdempotently(container: Docker.Container): Promise<void> {
+  if ((await container.inspect()).State?.Running === true) return;
   try {
-    await docker.getImage(image).inspect();
-    return;
-  } catch {}
-  const stream = await docker.pull(image);
-  await new Promise<void>((resolve, reject) => docker.modem.followProgress(stream, (error) => error ? reject(error) : resolve()));
+    await container.start();
+  } catch (error) {
+    if (dockerStatusCode(error) === 304 && (await container.inspect()).State?.Running === true) return;
+    throw error;
+  }
 }
 
-async function exec(container: Docker.Container, command: readonly string[]): Promise<{ code: number; output: string }> {
-  const process = await container.exec({ Cmd: [...command], AttachStdout: true, AttachStderr: true });
-  const stream = await process.start({});
-  const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    stream.on("data", (chunk: Buffer) => chunks.push(chunk));
-    stream.on("end", resolve);
-    stream.on("error", reject);
-  });
-  const inspected = await process.inspect();
-  return { code: inspected.ExitCode ?? 1, output: Buffer.concat(chunks).toString().replace(/[\x00-\x08]/g, "") };
+function decodeDockerMultiplexedLogs(raw: Buffer): string {
+  const lines: Buffer[] = [];
+  let offset = 0;
+  while (offset < raw.length) {
+    if (raw.length - offset < 8) throw new Error("diagnostic logs have a truncated Docker multiplex header");
+    const size = raw.readUInt32BE(offset + 4);
+    offset += 8;
+    if (size > 64 * 1024 || offset + size > raw.length) throw new Error("diagnostic logs exceed the bounded multiplex framing");
+    lines.push(raw.subarray(offset, offset + size));
+    offset += size;
+  }
+  return Buffer.concat(lines).toString("utf8");
 }
 
-async function smokeProfile(alias: string): Promise<Check[]> {
+function failedPrerequisites(after: readonly DoctorCheckId[], code: "PREREQUISITE_FAILED" | "UNSAFE_TO_CONTINUE"): Check[] {
+  return after.map((id) => ({ id, status: "FAIL", code, detail: "the preceding diagnostic stage did not establish a safe precondition" }));
+}
+
+async function runDynamicChecks(alias: string): Promise<Check[]> {
   const binding = await attestDockerProfile(alias);
   const lease = await createDockerProfileLease(binding);
-  const reservation = await acquireDockerProfileReservation(lease, "container", {
-    cpus: 2,
-    memoryBytes: 512 * 1024 * 1024,
-    pids: 256,
-    containers: 1,
-  });
-  const labels = {
-    "niceeval.profile-id": binding.profile.profileId,
-    "niceeval.invocation-id": lease.invocationId,
-    "niceeval.reservation-id": reservation.reservationId,
-    "niceeval.provision-token": reservation.provisionToken,
-    "niceeval.attempt-id": "doctor-smoke",
-  };
-  // doctor 的非 smoke 路径也不应要求安装 optional dockerode peer。
-  const { default: DockerClient } = await import("dockerode");
-  const docker = new DockerClient({ socketPath: binding.dockerSocketPath });
-  let container: Docker.Container | undefined;
-  let network: Docker.Network | undefined;
+  let buildReservation: Awaited<ReturnType<typeof acquireDockerProfileReservation>> | undefined;
+  let containerReservation: Awaited<ReturnType<typeof acquireDockerProfileReservation>> | undefined;
+  let buildReleased = false;
+  let containerReleased = false;
+  let primary: unknown;
+  let limits = "";
   try {
-    await pull(docker, "docker:29-dind");
-    network = await docker.createNetwork({
-      Name: `niceeval-doctor-${randomUUID()}`,
-      Driver: "bridge",
-      Options: { "com.docker.network.bridge.enable_icc": "false" },
-      Labels: labels,
+    buildReservation = await acquireDockerProfileReservation(lease, "build", {
+      cpus: 0, memoryBytes: 0, pids: 0, containers: 0, ephemeralDiskBytes: 0,
     });
-    container = await docker.createContainer({
-      Image: "docker:29-dind",
-      ...dockerProfileDoctorDindConfig(),
-      Labels: labels,
-      HostConfig: {
-        Privileged: true,
-        NetworkMode: network.id,
-        NanoCpus: 2_000_000_000,
-        Memory: 512 * 1024 * 1024,
-        MemorySwap: 512 * 1024 * 1024,
-        PidsLimit: 256,
-        ReadonlyRootfs: true,
-        ...(binding.profile.policy.level === "managed-rootless/v1"
-          ? { Dns: [...binding.profile.policy.network.dns.servers] }
-          : {}),
-        Tmpfs: {
-          "/var/lib/docker": "rw,exec,nosuid,nodev,size=256m",
-          "/run": "rw,exec,nosuid,nodev,size=64m",
-          "/tmp": "rw,nosuid,nodev,size=64m,mode=1777",
-        },
-      },
+    const build = await createDockerProfileBuild(lease, buildReservation.reservationId, {
+      buildKey: createHash("sha256").update("niceeval-doctor-cold-build-v1").digest("hex"),
+      platform: "linux/amd64", dockerfile: "Dockerfile", retention: "ephemeral",
+    }, doctorBuildContext());
+    const buildRelease = await releaseDockerProfileReservation(lease, buildReservation.reservationId);
+    if (buildRelease.cleanupProven !== true) throw new Error("control could not prove ephemeral cold-build cleanup after release");
+    buildReleased = true;
+    containerReservation = await acquireDockerProfileReservation(lease, "container", {
+      cpus: 2,
+      memoryBytes: 512 * 1024 * 1024,
+      pids: 256,
+      containers: 1,
+      ephemeralDiskBytes: DOCKER_PROFILE_DOCTOR_DOCKER_DATA_BYTES,
     });
-    await commitDockerProfileReservation(lease, reservation.reservationId, {
-      containerId: container.id,
-      networkId: network.id,
-      attemptId: "doctor-smoke",
+    // doctor 的完整路径也不应要求安装 optional dockerode peer until dynamic checks begin.
+    const { default: DockerClient } = await import("dockerode");
+    const docker = new DockerClient({ socketPath: binding.dockerSocketPath });
+    const created = await createDockerProfileContainer(lease, containerReservation.reservationId, {
+      intent: "diagnostic",
     });
-    await container.start();
-    let ready = false;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      const result = await exec(container, ["docker", "info"]);
-      if (result.code === 0) { ready = true; break; }
-      await new Promise((resolve) => setTimeout(resolve, 250));
+    const container = docker.getContainer(created.containerId);
+    await startDoctorContainerIdempotently(container);
+    let waitTimer: ReturnType<typeof setTimeout> | undefined;
+    let waited: Awaited<ReturnType<typeof container.wait>>;
+    try {
+      waited = await Promise.race([
+        container.wait(),
+        new Promise<never>((_, reject) => { waitTimer = setTimeout(() => reject(new Error("control-owned diagnostic exceeded 60 seconds")), 60_000); }),
+      ]);
+    } finally {
+      if (waitTimer !== undefined) clearTimeout(waitTimer);
     }
-    if (!ready) throw new Error("inner dockerd did not become ready within 30 seconds");
-    const unixOnly = await exec(container, [...DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK]);
-    if (unixOnly.code !== 0) {
-      throw new Error(`inner dockerd unexpectedly listens on TCP 2375 or 2376: ${unixOnly.output}`);
+    const logs = decodeDockerMultiplexedLogs(Buffer.from(await container.logs({ stdout: true, stderr: true })));
+    if (Buffer.byteLength(logs) > 64 * 1024) throw new Error("control-owned diagnostic logs exceed 64 KiB");
+    const results = logs.split(/\r?\n/).flatMap((line) => {
+      try {
+        return [JSON.parse(line) as {
+          ok?: boolean;
+          unixOnly?: boolean;
+          nestedDocker?: boolean;
+          limits?: { cpuMax?: string; memoryMax?: string; swapMax?: string; pidsMax?: string };
+        }];
+      } catch { return []; }
+    });
+    if (results.length !== 1) throw new Error("control-owned diagnostic must emit exactly one JSON result");
+    const result = results[0];
+    const expectedLimits = {
+      cpuMax: "200000 100000",
+      memoryMax: String(512 * 1024 * 1024),
+      swapMax: "0",
+      pidsMax: "256",
+    };
+    if (
+      waited.StatusCode !== 0 || result?.ok !== true || result.unixOnly !== true || result.nestedDocker !== true
+      || JSON.stringify(result.limits) !== JSON.stringify(expectedLimits)
+    ) {
+      throw new Error(`control-owned diagnostic failed: ${logs.slice(-4096)}`);
     }
-    const limits = await exec(container, ["sh", "-c", "cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.swap.max /sys/fs/cgroup/pids.max"]);
-    if (limits.code !== 0) throw new Error(`cgroup probe failed: ${limits.output}`);
-    const nested = await exec(container, ["docker", "run", "--rm", "alpine:3.20", "true"]);
-    if (nested.code !== 0) throw new Error(`nested Docker failed: ${nested.output}`);
-    return [
-      { name: "Unix-only Docker endpoint", status: "PASS", detail: "no TCP listener on 2375 or 2376" },
-      { name: "outer hard limits", status: "PASS", detail: limits.output.trim().replace(/\n/g, " · ") },
-      { name: "nested Docker", status: "PASS", detail: "docker:29-dind ran alpine:3.20" },
-    ];
+    await releaseDockerProfileReservation(lease, containerReservation.reservationId, containerReservation);
+    containerReleased = true;
+    limits = `cpu.max=${expectedLimits.cpuMax} memory.max=${expectedLimits.memoryMax} memory.swap.max=${expectedLimits.swapMax} pids.max=${expectedLimits.pidsMax}`;
+  } catch (error) {
+    primary = error;
   } finally {
-    await releaseDockerProfileReservation(lease, reservation.reservationId).catch(async () => {
-      await container?.remove({ force: true }).catch(() => undefined);
-      await network?.remove().catch(() => undefined);
-    });
-    await lease.stopHeartbeat().catch(() => undefined);
+    const cleanupErrors: unknown[] = [];
+    if (containerReservation !== undefined && !containerReleased) {
+      await releaseDockerProfileReservation(lease, containerReservation.reservationId, containerReservation).catch((error) => cleanupErrors.push(error));
+    }
+    if (buildReservation !== undefined && !buildReleased) {
+      await releaseDockerProfileReservation(lease, buildReservation.reservationId).catch((error) => cleanupErrors.push(error));
+    }
+    await lease.stopHeartbeat().catch((error) => cleanupErrors.push(error));
+    if (primary !== undefined && cleanupErrors.length > 0) throw new AggregateError([primary, ...cleanupErrors], "doctor primary operation and cleanup both failed");
+    if (primary !== undefined) throw primary;
+    if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, "doctor cleanup failed");
   }
+  return [
+      { id: "cold-build", status: "PASS", detail: "control-owned offline FROM scratch build completed" },
+      { id: "cold-build-cleanup", status: "PASS", detail: "ephemeral build locator and builder resources are absent" },
+      { id: "container-limits", status: "PASS", detail: limits },
+      { id: "nested-docker", status: "PASS", detail: "offline nested Docker completed with --pull=never" },
+      { id: "container-cleanup", status: "PASS", detail: "control-owned diagnostic reservation released" },
+    ];
 }
 
 export async function runDockerProfileCommand(
@@ -159,11 +200,11 @@ export async function runDockerProfileCommand(
 ): Promise<number> {
   if (positionals[0] !== "profile") {
     options.err("Usage: niceeval docker profile list [--json]\n" +
-      "       niceeval docker profile doctor <alias> [--smoke] [--json]\n");
+      "       niceeval docker profile doctor <alias> [--json]\n");
     return 1;
   }
   const subcommand = positionals[1];
-  if (subcommand === "list" && positionals.length === 2 && !options.smoke) {
+  if (subcommand === "list" && positionals.length === 2) {
     try {
       const registry = await loadDockerProfileRegistry();
       const rows = registry.entries.map((entry) => ({
@@ -190,22 +231,53 @@ export async function runDockerProfileCommand(
     try {
       const binding = await attestDockerProfile(alias);
       checks.push(
-        { name: "descriptor and registry", status: "PASS", detail: binding.descriptorDigest },
-        { name: "Docker/control attestation", status: "PASS", detail: `generation ${binding.daemonGeneration}` },
-        { name: "cgroup backend", status: "PASS", detail: `${binding.platform} · ${binding.profile.backend.cgroup.aggregatePath}` },
-        binding.profile.policy.level === "managed-rootless/v1"
-          ? { name: "network policy", status: "PASS", detail: `v${binding.profile.policy.network.version} · IPv6 disabled · pinned DNS` }
-          : { name: "raw storage policy", status: "PASS", detail: "project-quota Docker data allocation; no rootless/network claim" },
+        { id: "descriptor", status: "PASS", detail: binding.descriptorDigest },
+        { id: "control", status: "PASS", detail: `generation ${binding.daemonGeneration}` },
+        { id: "daemon", status: "PASS", detail: binding.platform },
+        { id: "cgroup", status: "PASS", detail: binding.profile.backend.cgroup.aggregatePath },
+        { id: "storage", status: "PASS", detail: binding.profile.backend.filesystem.identity },
       );
-      if (options.smoke) checks.push(...await smokeProfile(alias));
+      const control = await dockerProfileControlRequest<ControlStatus>(binding.controlSocketPath, { kind: "status" });
+      if (control.journal?.state !== "healthy" || control.journal.durableTransitions !== true) {
+        throw new Error("watchdog did not attest a healthy durable journal");
+      }
+      checks.push({ id: "journal", status: "PASS", detail: "watchdog attested a complete fsync-backed journal" });
+      const assets = control.assets?.images ?? [];
+      const doctorAsset = assets.find((asset) => asset.reference === DOCKER_PROFILE_DOCTOR_DIND_IMAGE);
+      if (control.assets?.state !== "verified" || doctorAsset?.present !== true) {
+        throw new Error("watchdog did not attest the required preloaded diagnostic asset");
+      }
+      checks.push({ id: "assets", status: "PASS", detail: doctorAsset.reference! });
+      checks.push(...await runDynamicChecks(alias));
     } catch (error) {
-      checks.push({ name: "profile", status: "FAIL", detail: error instanceof Error ? error.message : String(error) });
+      const errorDetail = error instanceof AggregateError
+        ? error.errors.map((item, index) => {
+          const role = error.message.includes("primary operation") && index === 0 ? "primary" : "cleanup";
+          return `${role}: ${item instanceof Error ? item.message : String(item)}`;
+        }).join(" | ")
+        : error instanceof Error ? error.message : String(error);
+      const completed = new Set(checks.map((check) => check.id));
+      const next = DOCTOR_CHECK_IDS.find((id) => !completed.has(id)) ?? "container-cleanup";
+      if (error instanceof DockerProfileCapacityBlockedError) {
+        checks.push({ id: next, status: "BLOCKED", code: error.code, detail: error.message });
+        checks.push(...DOCTOR_CHECK_IDS
+          .filter((id) => !new Set(checks.map((check) => check.id)).has(id))
+          .map((id) => ({ id, status: "BLOCKED" as const, code: error.code, detail: "capacity queue is blocked; dynamic stage was not started" })));
+      } else {
+        checks.push({ id: next, status: "FAIL", code: "UNSAFE_TO_CONTINUE", detail: errorDetail });
+        checks.push(...failedPrerequisites(DOCTOR_CHECK_IDS.filter((id) => !new Set(checks.map((check) => check.id)).has(id)), "PREREQUISITE_FAILED"));
+      }
     }
-    if (options.json) options.out(`${JSON.stringify({ format: "niceeval.docker-profile-doctor", schemaVersion: 1, alias, checks })}\n`);
-    else for (const check of checks) options.out(`${check.status}  ${check.name}  ${check.detail}\n`);
-    return checks.some((check) => check.status === "FAIL") ? 1 : 0;
+    const ordered = DOCTOR_CHECK_IDS.map((id) => checks.find((check) => check.id === id) ?? {
+      id, status: "FAIL" as const, code: "PREREQUISITE_FAILED", detail: "diagnostic produced no result",
+    });
+    const status: DoctorStatus = ordered.some((check) => check.status === "FAIL") ? "FAIL"
+      : ordered.some((check) => check.status === "BLOCKED") ? "BLOCKED" : "PASS";
+    if (options.json) options.out(`${JSON.stringify({ format: "niceeval.docker-profile-doctor", schemaVersion: 1, alias, status, checks: ordered })}\n`);
+    else for (const check of ordered) options.out(`${check.status}  ${check.id}${check.code === undefined ? "" : ` · ${check.code}`}  ${check.detail}\n`);
+    return status === "PASS" ? 0 : 1;
   }
   options.err("Usage: niceeval docker profile list [--json]\n" +
-    "       niceeval docker profile doctor <alias> [--smoke] [--json]\n");
+    "       niceeval docker profile doctor <alias> [--json]\n");
   return 1;
 }

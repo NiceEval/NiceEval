@@ -1,7 +1,7 @@
 // Structured capability receipts. Missing prerequisites are results, not faults.
 
 import { Data, Effect, Scope } from "effect";
-import type { Browser, E2ERepoManifest } from "./manifest.ts";
+import type { Browser, E2ERepoManifest, HostCapability } from "./manifest.ts";
 import { hasConfirmedOwnedGroupCleanup, runOwnedProcess, type OwnedProcessResult } from "./owned-process.ts";
 import type { CapabilityCheck, CommandCapture } from "./receipt.ts";
 
@@ -36,13 +36,40 @@ function checkDocker(env: NodeJS.ProcessEnv): Effect.Effect<CapabilityCheck, Cap
   return runOwnedProcess(command, { cwd: process.cwd(), env, output: "capture", stream: false, timeoutMs: 30_000 }).pipe(Effect.mapError((error) => new CapabilityPreflightError({ operation: "host", detail: error.detail })), Effect.map((executed): CapabilityCheck => ({ kind: "docker", subject: "daemon", ok: successful(executed), ...(!successful(executed) ? { failureCategory: category(executed) } : {}), detail: successful(executed) ? "Docker daemon available" : `Docker daemon is unavailable (${unavailable(executed)})`, command, capture: capture(executed) })));
 }
 
+const hostCapabilityCommands = {
+  "linux-loop-project-quota": [
+    "sh",
+    "-c",
+    "test \"$(uname -s)\" = Linux && command -v sudo >/dev/null && command -v losetup >/dev/null && command -v setquota >/dev/null && command -v repquota >/dev/null && command -v mount >/dev/null && command -v umount >/dev/null && command -v findmnt >/dev/null && command -v truncate >/dev/null && command -v blkid >/dev/null && command -v mkfs.ext4 >/dev/null && command -v lsattr >/dev/null && command -v chattr >/dev/null && test -d /sys/module/loop && test -d /sys/module/quota_v2 && sudo --non-interactive losetup --find >/dev/null",
+  ],
+} as const satisfies Readonly<Record<HostCapability, readonly string[]>>;
+
+function checkHostCapability(capability: HostCapability, env: NodeJS.ProcessEnv): Effect.Effect<CapabilityCheck, CapabilityPreflightError, Scope.Scope | import("./owned-process.ts").OwnedProcess> {
+  const command = hostCapabilityCommands[capability];
+  return runOwnedProcess(command, { cwd: process.cwd(), env, output: "capture", stream: false, timeoutMs: 10_000 }).pipe(
+    Effect.mapError((error) => new CapabilityPreflightError({ operation: "host", detail: error.detail })),
+    Effect.map((executed): CapabilityCheck => ({
+      kind: "hostCapability",
+      subject: capability,
+      ok: successful(executed),
+      ...(!successful(executed) ? { failureCategory: category(executed) } : {}),
+      detail: successful(executed) ? `host capability ${capability} available` : `host capability ${capability} is unavailable (${unavailable(executed)})`,
+      command,
+      capture: capture(executed),
+    })),
+  );
+}
+
 /** Runs every declared host capability; one failed check never hides later checks. */
 export function preflightHostCapabilities(manifest: E2ERepoManifest, env: NodeJS.ProcessEnv): Effect.Effect<CapabilityPreflightResult, CapabilityPreflightError, Scope.Scope | import("./owned-process.ts").OwnedProcess> {
   const requires = manifest.requires; const staticChecks: CapabilityCheck[] = [];
   if (requires?.platforms !== undefined) { const actual = hostPlatform(); staticChecks.push({ kind: "platform", subject: actual, ok: requires.platforms.includes(actual as "linux" | "darwin"), detail: requires.platforms.includes(actual as "linux" | "darwin") ? `host platform ${actual} available` : `host platform ${actual} is not one of ${requires.platforms.join(", ")}` }); }
   for (const secret of manifest.secrets) { const available = typeof env[secret] === "string" && env[secret]!.length > 0; staticChecks.push({ kind: "secret", subject: secret, ok: available, detail: available ? `declared secret ${secret} available` : `declared secret ${secret} is missing or empty` }); }
   if (requires?.externalNetwork === true) staticChecks.push({ kind: "externalNetwork", subject: "outbound-network", ok: true, verification: "declared-unverified", detail: "external network declared; runner does not make a synthetic network request before test (declared but unverified)" });
-  return Effect.forEach(requires?.runtimes ?? [], (name) => checkRuntime(name, env)).pipe(Effect.flatMap((runtimeChecks) => requires?.docker === true ? checkDocker(env).pipe(Effect.map((docker) => result([...staticChecks, ...runtimeChecks, docker]))) : Effect.succeed(result([...staticChecks, ...runtimeChecks]))));
+  return Effect.all({
+    runtimes: Effect.forEach(requires?.runtimes ?? [], (name) => checkRuntime(name, env)),
+    hostCapabilities: Effect.forEach(requires?.hostCapabilities ?? [], (capability) => checkHostCapability(capability, env)),
+  }).pipe(Effect.flatMap(({ runtimes, hostCapabilities }) => requires?.docker === true ? checkDocker(env).pipe(Effect.map((docker) => result([...staticChecks, ...runtimes, ...hostCapabilities, docker]))) : Effect.succeed(result([...staticChecks, ...runtimes, ...hostCapabilities]))));
 }
 
 const browserProgram = "const fs=require('node:fs');const p=require('playwright');const b=process.argv[1];const l=p[b];if(!l||typeof l.executablePath!=='function')process.exit(2);const x=process.env[b.toUpperCase()+'_EXECUTABLE_PATH']||l.executablePath();if(!x||!fs.existsSync(x))process.exit(3);";
