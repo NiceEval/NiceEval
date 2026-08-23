@@ -2008,14 +2008,25 @@ function recoverRunPublications(input: {
             destinationPath: paths.destinationPath,
           })
         ) {
-          return yield* Effect.fail(recoveryInvalid(
-            paths.stagingPath,
-            "Staged Run does not match its publish recovery inventory",
-          ));
+          // A live append writer can rename a complete staging directory while
+          // this recovery actor is validating it. In that case the staging
+          // reads legitimately become unavailable; finish validation against
+          // the published destination below instead of reporting corruption.
+          const [remainingStaging, publishedDestination] = yield* Effect.all([
+            input.fileSystem.stagingPathKind(recordStagingPath(staging)),
+            input.fileSystem.pathKind(runPath(input.root, recovery.runId)),
+          ]);
+          if (remainingStaging !== "missing" || publishedDestination !== "directory") {
+            return yield* Effect.fail(recoveryInvalid(
+              paths.stagingPath,
+              "Staged Run does not match its publish recovery inventory",
+            ));
+          }
+        } else {
+          yield* input.fileSystem.publishRunStaging(staging).pipe(
+            Effect.catchTag("RecordPathAlreadyExists", () => Effect.void),
+          );
         }
-        yield* input.fileSystem.publishRunStaging(staging).pipe(
-          Effect.catchTag("RecordPathAlreadyExists", () => Effect.void),
-        );
         const [remainingStaging, publishedDestination] = yield* Effect.all([
           input.fileSystem.stagingPathKind(recordStagingPath(staging)),
           input.fileSystem.pathKind(runPath(input.root, recovery.runId)),
