@@ -45,15 +45,17 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 import {
   changeFrequency,
   command,
-  copy,
   defineSandboxCommand,
   dockerComposeSandbox,
   dockerSandbox,
   dockerSandbox,
   e2bSandbox,
-  registerSandboxContent,
+  gitCheckout,
+  sandboxContent,
   sandboxLayer,
   shell,
+  uploadDirectory,
+  uploadFile,
   vercelSandbox,
   write,
   type Sandbox,
@@ -458,7 +460,7 @@ interface AttemptRef {
 
 interface SandboxCommandTarget extends SandboxOperations {
   copyPath(sourcePath: string, targetPath: string): Promise<void>;
-  putContent(content: RegisteredSandboxContent, targetPath: string): Promise<void>;
+  putContent(content: SandboxContent, targetPath: string): Promise<void>;
 }
 ```
 
@@ -487,7 +489,7 @@ interface SandboxCommandOptions {
   readonly stdin?: string;
 }
 
-interface RegisteredSandboxContent {
+interface SandboxContent {
   readonly digest: string;
   readonly kind: "file" | "directory";
 }
@@ -508,9 +510,14 @@ declare function defineSandboxCommand(
   run: SandboxCommand,
 ): StableSandboxCommand;
 
-declare function registerSandboxContent(
-  source: string | URL,
-): RegisteredSandboxContent;
+declare const sandboxContent: {
+  file(source: string | URL): SandboxContent;
+  directory(source: string | URL): SandboxContent;
+};
+
+declare function uploadFile(input: UploadFileActionInput): SandboxAction;
+declare function uploadDirectory(input: UploadDirectoryActionInput): SandboxAction;
+declare function gitCheckout(input: GitCheckoutActionInput): SandboxAction;
 ```
 
 普通 shell 步骤不必写 callback:
@@ -525,7 +532,7 @@ sandboxLayer()
 复杂探测、分支与文件 IO 可以直接写 callback。JavaScript 无法可靠提取它读取的 `process.env`、时间或其它闭包状态，因此直接 callback 不向 fingerprint 增加 identity；Runner 也不用 `Function.prototype.toString()` 或函数名猜闭包。
 
 需要稳定 identity 的自定义步骤用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记,所有动态输入进入 `inputs`。
-本地文件或目录先经 `registerSandboxContent()` 取得 digest-backed handle,再放进 `inputs` 并用 `putContent()` 送入 Sandbox。
+普通本地传输直接使用 `uploadFile()` / `uploadDirectory()` action；它们在一次声明中完成内容登记、identity 与目标写入。只有内容必须晚于 Agent 可见时，才用 `sandboxContent.file()` / `sandboxContent.directory()` 取得 digest-backed handle，并在 Eval test 中调用 `t.sandbox.upload()`。
 
 `run` 的函数体、函数名与闭包不进入 identity。只改实现而保持 `id`、`revision`、`inputs` 不变时,Runner 不会发现语义已经变化,旧结果仍可能沿用。实现语义变化必须提高 `revision`;外部输入变化必须反映到 `inputs`。若作者漏改 identity 后已经产生或沿用了结果,先修正 `revision` 或 `inputs`,再按[全量重验](../experiments/use-case/重新运行/全量重验.md)对受影响选择执行 `--rerun all`。`--rerun all` 只修复这一次结果集,不能替代永久 identity 修正。
 
@@ -533,7 +540,7 @@ sandboxLayer()
 未登记 identity 的 callback 默认允许跨 Run 携带，避免一个声明遗漏让昂贵 Attempt 永久重跑。这个默认只代表 callback 没有增加失效条件，不代表 Runner 已证明其语义稳定。
 Provider 的声明 identity、BuildKey 或 opaque marker 直接进入 fingerprint，不再额外保存或判定 provider carry eligibility。
 
-源码检出与慢工具安装这两类常见昂贵动作有内置命令(`checkout()` / `installTool()`),自带检查、缓存与稳定 identity,见[内置 prepare 命令](prepare-commands.md)。
+源码检出使用 `gitCheckout()`，慢工具安装使用 `installTool()`；二者自带检查、缓存与稳定 identity，见[内置 prepare 命令](prepare-commands.md)。本地上传与隐藏判据的完整边界见[固定 Fixture 与隐藏判据](../../roadmap/sandbox-cache/setup-prefix/use-case/固定Fixture与隐藏判据.md)。
 
 ### Cleanup
 

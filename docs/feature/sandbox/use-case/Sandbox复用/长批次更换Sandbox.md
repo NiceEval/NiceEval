@@ -24,7 +24,7 @@ Runner 为每个 Sandbox 确认 Sandbox 复用寿命。
 
 寿命足够或 Provider 成功续期时，Attempt 进入原 Sandbox。
 Provider 无法满足时，原 Sandbox 停止领取新任务并销毁，绑定 Case 的资源由 Provider finalizer 整组关闭。
-Runner 创建替代 Sandbox，Case 就绪、落下题间重置点后再派发；两层 `prepare()` 照常在每条 Attempt 进入前重新执行。
+Runner 创建替代 Sandbox，Case 就绪并恢复 verified physical baseline 后再派发；每条 Attempt 继续按 occurrence schedule 满足 before action。
 
 ```text
 Sandbox reuse: replacing sandbox 1 before memory/commit-18

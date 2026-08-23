@@ -66,7 +66,7 @@ Experiment E2B template
 template 已预装正确版本时首测即命中;缺失时现场安装并复检;template 名本身不代替实际检查。
 
 开启 Sandbox 复用后,Runner 每条 Attempt 仍先 reset,再重新执行 installTool、checkout 与 `agent.ensure`。
-mempal 装在 workdir 外,reset 后 探测 命中;`checkout()` 的镜像让第二条 Attempt 起零网络,只付本地写入。
+mempal 装在 workdir 外，reset 后探测命中；`gitCheckout()` 的完成态 commit 与前缀身份让相同 checkout 直接 restore。Provider 只能提供 invocation-local 缓存时，同一次运行的后续 Attempt 也不再访问远端。
 逐 Attempt 的命令仍只有 `prepare()` 一种频次；物理实例的记忆目录则明确由 lifecycle hook 管理。
 
 Mempal 的 `$HOME` 目录属于实际 Sandbox，`setup()` 在实例 ready 后恢复一次，`teardown()` 在其退休、Provider finalizer 前封存一次。

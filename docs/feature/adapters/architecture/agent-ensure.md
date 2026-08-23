@@ -105,7 +105,7 @@ interface AgentArtifactContext {
 }
 
 interface PreparedAgentPayload {
-  readonly content: RegisteredSandboxContent;
+  readonly content: SandboxContent;
   readonly digest: string;
   readonly targetPlatform: string;
 }

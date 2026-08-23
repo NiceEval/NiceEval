@@ -29,7 +29,31 @@ interface SandboxActionPair {
 
 declare function shell(input: ShellActionInput): SandboxAction;
 declare function write(input: WriteActionInput): SandboxAction;
-declare function copy(input: CopyActionInput): SandboxAction;
+declare function uploadFile(input: UploadFileActionInput): SandboxAction;
+declare function uploadDirectory(input: UploadDirectoryActionInput): SandboxAction;
+declare function gitCheckout(input: GitCheckoutActionInput): SandboxAction;
+
+interface UploadFileActionInput {
+  readonly id: string;
+  readonly source: string | URL;
+  readonly to: string;
+  readonly changeFrequency?: number;
+  readonly dependsOn?: readonly SandboxActionRef[];
+}
+
+interface UploadDirectoryActionInput extends UploadFileActionInput {
+  readonly source: string | URL;
+}
+
+interface GitCheckoutActionInput {
+  readonly id: string;
+  readonly repository: string;
+  readonly ref: string;
+  readonly to: string;
+  readonly sparse?: { readonly include?: readonly string[]; readonly exclude?: readonly string[] };
+  readonly changeFrequency?: number;
+  readonly dependsOn?: readonly SandboxActionRef[];
+}
 ```
 
 ```ts
@@ -65,6 +89,33 @@ dockerSandbox({
 ```
 
 `before(action)` 是不需要配对 after 的前置动作。`after(action)` 是 occurrence 的 finally；进入 occurrence 时就登记，即使后续 before 部分失败也会执行。`around({ before, after })` 用于资源取得与释放；它始终真实执行，调用其 before 前登记配对 after。API 不把 fluent after 隐式绑定到最近 before，避免书写重排改变配对。
+
+## 内容与远端 repository
+
+作者在声明 action 的同时把它传给 `before()`，不先定义一份 recipe 再登记第二次：
+
+```ts
+sandboxLayer()
+  .before(uploadDirectory({
+    id: "terminal-bench.regex-log",
+    source: new URL("./repo/", import.meta.url),
+    to: ".",
+    changeFrequency: changeFrequency.rare,
+  }))
+  .before(gitCheckout({
+    id: "react-hook-form",
+    repository: "https://github.com/react-hook-form/react-hook-form.git",
+    ref: "4a1f5b7b7c7d4bfa54c9c4dc8448ac4f728d8c16",
+    to: ".",
+    changeFrequency: 20,
+  }));
+```
+
+`uploadFile()` 与 `uploadDirectory()` 在 planning 时读取本地输入，生成规范化 manifest，并把内容 digest 直接纳入 action identity。作者不再额外调用 `registerSandboxContent()`，也不把同一 URL 再写进 `inputs`。目录 manifest 包含相对路径、节点类型、模式与文件 digest；mtime、宿主绝对路径和遍历顺序不进入身份。符号链接越出声明根时 planning 失败。
+
+`gitCheckout()` 接受无凭据的公开 HTTPS repository、ref、目标目录和可选 sparse 路径。NiceEval 在本次 Invocation 首次需要它时查找 ref 对应的完整 commit；recipe、fingerprint、debug 与缓存 key 只使用规范化 repository、完整 commit、sparse 选择和目标目录。移动 branch、tag 或默认分支仍可声明；它们指向同一 commit 时命中，推进到新 commit 时自动 miss。查找结果在同一次 Invocation 内冻结，不能让不同 Attempt 看见不同 commit。
+
+远端 identity lookup 与对象下载分离。查找 ref 是不修改 Sandbox 的 source lookup；checkout action 只消费完成态 commit 和 Git object content。凭据仓库、宿主 credential provider、SSH URL 与运行时交互认证不具备共享资格，应使用 opaque callback 或先由受信任系统发布不可变内容 handle。
 
 ## 跨 owner 排队
 
@@ -146,7 +197,7 @@ Provider replacement 或 retirement 开启新的 physical occurrence，重新经
 
 ## 缓存资格
 
-声明式 `before(shell/write/copy)` 是确定性承诺，只允许改变 Sandbox 内状态。它在每个 occurrence 都得到满足：
+声明式 `before(shell/write/upload/gitCheckout)` 是确定性承诺，只允许改变 Sandbox 内状态。它在每个 occurrence 都得到满足：
 
 ```text
 hit         → restore verified private state

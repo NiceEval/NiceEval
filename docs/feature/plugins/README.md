@@ -1,6 +1,6 @@
 # Plugins
 
-Plugin 是带稳定身份的生命周期组合语法。它不提供新的资源系统、Agent 配置协议或 Sandbox 命令 DSL；这些能力继续由 Experiment、Agent、SandboxLayer 和 Provider 自己拥有。
+Plugin 是带稳定身份的生命周期组合语法。它不提供新的资源系统、Agent 配置协议或 Sandbox 命令 DSL；这些能力继续由 Experiment、Agent、SandboxLayer 和 Provider 自己拥有。Plugin 的 Sandbox fragment 返回普通 `SandboxLayer`，因此固定上传、checkout 与 shell action 自动进入同一份准备缓存，不另声明 Plugin cache。
 
 ```ts
 import { definePlugin } from "niceeval/plugin";
@@ -24,7 +24,7 @@ export default defineExperiment({
 });
 ```
 
-`plugins` 始终是数组，因此一个位置可以组合多个 occurrence。Plugin 可以声明 `experiment`、`group`、`eval` 和 `sandbox` fragment；调用方只在 Experiment、Eval Group 或 Eval 的 `plugins` 数组挂一次。若 occurrence 同时声明 `sandbox`，runner 会把该 fragment 自动注入这次配对的实际物理 Sandbox，不在 SandboxLayer 上另写 `.plugins()`。
+`plugins` 始终是数组，因此一个位置可以组合多个 occurrence。Plugin 可以声明 `experiment`、`group`、`eval` 和 `sandbox` fragment；调用方只在 Experiment、Eval Group 或 Eval 的 `plugins` 数组挂一次。若 occurrence 同时声明 `sandbox`，runner 会把该 layer 自动注入这次配对的实际物理 Sandbox，不在 SandboxLayer 上另写 `.plugins()`。
 
 Plugin 不按目录、Config 或注册表隐式继承，也不拥有 Sandbox template、Provider、Agent 替换、flags、labels、Assertion、Verdict 或 Report。
 

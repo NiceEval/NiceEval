@@ -1,10 +1,8 @@
-# 内置 prepare 命令 —— checkout、installTool 与命令计划
+# 内置 before action —— gitCheckout、installTool 与命令计划
 
-`prepare()` 命令每条 Attempt 都重新执行,昂贵动作靠真实检查快速命中;这条 cadence 由[三方准备时序](lifecycle.md)固定。
-本页定义两件事:最常见昂贵动作的官方写法(`checkout()` 与 `installTool()`),以及 `niceeval debug` 怎样在创建任何 Sandbox 前诚实展示它们能证明的命令分支。
+本页定义最常见昂贵动作的官方写法：`gitCheckout()`、`installTool()`，以及 `niceeval debug` 怎样在创建任何 Sandbox 前展示它们的 identity、依赖与缓存资格。
 
-两条内置命令都是 `defineSandboxCommand()` 的封装:检查、缺失时执行、执行后复检一次成型,identity 由纯数据参数构成。
-Runner 与 [SandboxLayer](layers.md) 协议不含任何内置命令专属分支;对框架而言它们就是带稳定 identity 的普通 prepare 命令。
+两条内置 action 都实现普通 `SandboxAction` 协议，identity 由纯数据参数构成。Runner 不按 action 名称决定顺序；依赖 DAG 与 `changeFrequency` 统一决定执行位置。
 
 ## 不用 `prepare()` 安装 Agent CLI
 
@@ -17,27 +15,33 @@ Adapter 知道目标 CLI 的精确版本、官方发行物、目标平台与复�
 ## 导出入口
 
 ```typescript
-import { checkout, installTool } from "niceeval/sandbox";
+import { gitCheckout, installTool } from "niceeval/sandbox";
 ```
 
-## `checkout()`:源码检出与镜像缓存
+## `gitCheckout()`:源码检出
 
 ```typescript
-interface CheckoutOptions {
-  readonly repo: string;
+interface GitCheckoutActionInput {
+  readonly id: string;
+  readonly repository: string;
   readonly ref: string;
-  readonly into?: string;
+  readonly to: string;
+  readonly sparse?: { readonly include?: readonly string[]; readonly exclude?: readonly string[] };
+  readonly changeFrequency?: number;
 }
 
-declare function checkout(options: CheckoutOptions): StableSandboxCommand;
+declare function gitCheckout(options: GitCheckoutActionInput): SandboxAction;
 ```
 
 ```typescript
 export default defineEval({
   sandbox: sandboxLayer()
-    .before(checkout({
-      repo: "https://github.com/acme/fixture-repo",
-      ref: "9e107d9d",
+    .before(gitCheckout({
+      id: "fixture-repo",
+      repository: "https://github.com/acme/fixture-repo.git",
+      ref: "9e107d9d4f6a6af8f1d53d4dc37b22d7d98c23af",
+      to: ".",
+      changeFrequency: changeFrequency.rare,
     })),
   async test(t) {
     await t.send("完成仓库中的目标任务。");
@@ -47,15 +51,14 @@ export default defineEval({
 
 语义:
 
-- 目标目录得到 HEAD 指向 `ref` 的 git 检出;`into` 是 workdir 相对路径,省略时检出到 workdir 根。
-- 命令在 workdir 外维护按 `(repo, ref)` 键控的镜像。首条 Attempt 走网络,同一 Sandbox 的后续 Attempt 从镜像写入 workdir,零网络。
-- identity 是 `(repo, ref, into)`，进入 Attempt fingerprint 与命令自己的检查标记；它不进入物理复用池键，因为命令在每条 Attempt 都会重新执行。换 `ref` 会让旧结果不能携带，并使旧检查标记失效。
-- 凭据走宿主与 Sandbox 的 git 原生机制,不进入 identity,也不落运行 Record。
+- 目标目录得到 HEAD 指向完成态 commit 的 Git checkout；`to` 是 workdir 相对路径。
+- NiceEval 在本次 Invocation 内查找 ref 对应的完整 commit，并冻结查找结果。相同 commit 命中相同前缀；ref 推进后自动 miss。
+- identity 包含规范化 repository、完整 commit、`to`、sparse 选择、action id、频率与祖先前缀。
+- 只接受无凭据的公开 HTTPS repository。凭据仓库使用 opaque callback 或受信任系统发布的不可变内容 handle。
 
-`ref` 是 checkout 的声明 identity，推荐使用不可变引用(commit SHA 或 tag)。
-浮动 ref 仍可执行并把 ref 与换算出的 commit SHA 记入事实；同名 ref 后来移动时 Runner 不自动感知，历史终态按默认规则沿用。作者应改用明确 revision、提升声明，或用 `--rerun all` 重验。
+完整 commit 跳过远端 ref lookup。branch、tag 与默认分支可以移动，但不会把新 commit 错当成旧缓存。
 
-`checkout()` 装载的是 Agent 应当看见的题目起点。
+`gitCheckout()` 装载的是 Agent 应当看见的题目起点。
 隐藏判分材料不走它,仍按[本地测试文件](../eval/use-case/criteria-files.md)的规则在 `send` 区间后经普通上传进入。
 
 ## `installTool()`:探测、安装与复检
@@ -114,7 +117,7 @@ template 预装只是让 `probe` 首测即命中的一种手段。
 - `command(executable, args, options)` 精确投影 argv 数组。
 - `shell(script, options)` 精确投影 script。单行使用 JSON string；多行在 human 的独立区域框内按原始行显示，并保留缩进、空行与末尾换行。JSON 计划仍保存原始 script string。
 - `installTool()` 投影完整条件树：先运行 `probe` 探测命令；探测未命中才 install，再用同一命令 recheck。子命令若由 `command()` / `shell()` 创建就是 exact；普通 `defineSandboxCommand()` 虽然有稳定 fingerprint identity，仍是 opaque。
-- `checkout()` 的 cache 检查、mirror 修复、动态 workdir 与 Git 分支依赖 live Sandbox 状态，因此整体标为 opaque；计划不把内部实现源码当协议。
+- `gitCheckout()` 显示 repository、作者 ref、完成态 commit、sparse 选择、目标、频率、依赖、缓存资格与 prefix identity。
 - 普通 `.before(async (sandbox) => …)` 与 `defineSandboxCommand(identity, run)` 的 `run` 都标为 opaque。公开 identity 可由作者自行命名，不能拿 id / inputs 猜它会执行什么。
 
 `cwd`、`user`、`timeoutMs` 与 env key 可以展示；env value 与 stdin 只记 redaction，不进入 human / JSON 命令计划。argv 与 shell script 本身会原样进入计划，因此不得直接嵌 token、密码或私有正文；用 env、credential provider 或受管内容通道传递秘密。
@@ -124,13 +127,13 @@ template 预装只是让 `probe` 首测即命中的一种手段。
 ## 不做什么
 
 - 不新增执行频次、window scope 或按配对的替换表;内置命令在两层 layer 的既有位置执行。
-- fixture 物料沿用 `registerSandboxContent()` / `putContent()` 与 `test(t)` 普通上传,不建平行 API。
-- 不提供 `t.sandbox.cloneRepo` 一类 test 期装载 API;`checkout()` 是 prepare 相位的 layer 命令。
-- 不做跨 Provider 的周期内快照或恢复原语;成本分摊面由 workdir reset 这一唯一恢复原语决定。
+- Agent 前 fixture 使用 `uploadFile()` / `uploadDirectory()` action；隐藏判据使用 `sandboxContent.*()` 登记，在 `test(t)` 中传入。
+- 不提供 `t.sandbox.cloneRepo` 一类 test 期装载 API；`gitCheckout()` 是 before action。
+- Provider 不支持跨 Invocation 前缀时降级为 invocation-local 或真实 replay，不能伪造 hit。
 
 ## 相关阅读
 
-- [Sandbox Layer](layers.md) —— `prepare()`、command identity 与 opaque 规则。
-- [三方准备时序](lifecycle.md) —— 每 Attempt 重新执行的 cadence 与错误归属。
+- [Sandbox Layer](layers.md) —— before action、command identity 与 opaque 规则。
+- [三方准备时序](lifecycle.md) —— occurrence、缓存满足与错误归属。
 - [Sandbox 复用](reuse.md) —— reset、复用池键与污染诊断。
 - [选型存档](../../design/prepare-commands/DECISION.md) —— 为什么是官方内置命令而不是意图分类或纯惯用法。
