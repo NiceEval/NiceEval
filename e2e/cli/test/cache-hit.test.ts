@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/cli.md#cli-docker-task-build-cache
-// rerun: pnpm e2e --repo cli -- --run test/cache-hit.test.ts
+// rerun: pnpm e2e test --repo cli -- --run test/cache-hit.test.ts
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";

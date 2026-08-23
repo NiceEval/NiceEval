@@ -18,6 +18,11 @@ Generic systemd Linux (Ubuntu/Debian-style)
    Ordinary root-partition subdirectories without a hard limit are rejected.
 4. Install root-owned host config under /etc/niceeval/docker-profiles/<alias>.host.json
    with capacity (allocatable) and aggregate (cgroup hard limits) separated.
+   Preload and verify the fixed linux/amd64 DIND and BuildKit assets before
+   starting watchdog (deployment may load an administrator-provided OCI archive
+   or explicitly pull these exact digests; runtime never pulls):
+     niceeval-docker-profile-preload-verify-assets \
+       --manifest /etc/niceeval/docker-profiles/assets-v1.json --load-archive /path/assets.oci.tar
 5. systemctl daemon-reload && systemctl enable --now \
      niceeval-docker-profile-storage@<alias>.service \
      niceeval-docker-profile@<alias>.service \
@@ -30,7 +35,7 @@ Generic systemd Linux (Ubuntu/Debian-style)
 7. Static check:
      niceeval-docker-profile-host-doctor <alias>
 8. Runtime doctor (as access user, no sudo):
-     niceeval docker profile doctor <alias> --smoke
+     niceeval docker profile doctor <alias>
 
 NixOS
 -----
@@ -42,7 +47,7 @@ services.niceeval.dockerProfiles.<alias> = {
   storage = { size = "30G"; backing = "loop-ext4"; };
 };
 # then: sudo nixos-rebuild switch
-# daily work: niceeval docker profile doctor default --smoke
+# daily work: niceeval docker profile doctor default
 
 Hard constraints (must hold)
 ----------------------------

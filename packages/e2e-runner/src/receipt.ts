@@ -5,140 +5,34 @@
 // any test runs. Command failures retain stdout/stderr/timeout; receipts
 // never decide a product verdict from .niceeval contents.
 
-import type { OwnedProcessGroupCleanup } from "./owned-process.ts";
-import type { Lane } from "./manifest.ts";
-import type { PlanMode } from "./plan.ts";
+import type {
+  CandidateIdentity,
+  CapabilityCheck,
+  Category,
+  CommandCapture,
+  RepoReceipt,
+  SelectionReceipt,
+  StageName,
+  StageReceipt,
+  TestkitReceipt,
+} from "./contracts.ts";
 
-export type StageName =
-  | "preflight"
-  | "prepare"
-  | "install"
-  | "injection"
-  | "browser"
-  | "test"
-  | "collect"
-  | "cleanup";
-
-export type Category = "pass" | "regression" | "infra" | "configuration" | "cancelled";
-
-/** Selection provenance copied from the exact plan cell consumed by a run. */
-export interface SelectionReceipt {
-  schemaVersion: 1;
-  mode: Exclude<PlanMode, "invalid">;
-  reason: string;
-  lane: Lane;
-  cellId: string;
-  range?: { base: string; head: string };
-}
-
-export interface CommandCapture {
-  exitCode: number | null;
-  signal: NodeJS.Signals | null;
-  timedOut: boolean;
-  /** True when root cancellation stopped this owned command group. */
-  cancelled: boolean;
-  stdout: string;
-  stderr: string;
-  /** Spawn failure, if the command could not start. */
-  error?: string;
-  /** Whether the runner created an owned detached POSIX process group. */
-  processGroupOwned: boolean;
-  /** Post-close evidence that an owned detached group no longer exists. */
-  groupCleanup: OwnedProcessGroupCleanup;
-}
-
-export interface CapabilityCheck {
-  kind: "platform" | "runtime" | "docker" | "browser" | "secret" | "externalNetwork";
-  /** Requirement name only; secret values are never placed in a receipt. */
-  subject: string;
-  ok: boolean;
-  /** A declared requirement may be recorded without a synthetic probe. */
-  verification?: "checked" | "declared-unverified";
-  /** An ownership-cleanup failure is runner infrastructure, not a missing capability. */
-  failureCategory?: "configuration" | "infra";
-  detail: string;
-  command?: readonly string[];
-  capture?: CommandCapture;
-}
-
-export interface StageReceipt {
-  stage: StageName;
-  ok: boolean;
-  /** This stage was stopped by root SIGINT/SIGTERM rather than failed normally. */
-  cancelled?: boolean;
-  /** Lets preflight distinguish unavailable capabilities from runner cleanup infra. */
-  failureCategory?: "configuration" | "infra";
-  /** Human-readable detail; never parsed for product verdict. */
-  detail?: string;
-  command?: readonly string[];
-  capture?: CommandCapture;
-  /** 1-based test invocation when a takeover run deliberately reuses one copy. */
-  attempt?: number;
-  /**
-   * Opaque invocation namespace given to the child command that owns this
-   * stage. In particular, every native test command gets a unique value even
-   * when a takeover deliberately reuses the same installed copy.
-   */
-  invocationId?: string;
-  /** Structured environment/capability facts for preflight and browser stages. */
-  checks?: readonly CapabilityCheck[];
-  /** Paths written under the external artifact root (collect only). */
-  collected?: readonly string[];
-  /** Filesystem path cleaned or targeted (cleanup only). */
-  path?: string;
-}
-
-export interface RepoReceipt {
-  repoId: string;
-  /** Present when this repo was executed from a machine-readable plan cell. */
-  selection?: SelectionReceipt;
-  /** Fresh opaque IDs injected into setup and every test command for this repo run. */
-  invocationIds: readonly string[];
-  /** Number of deliberate test invocations made in this one isolated copy. */
-  testInvocations: number;
-  /** Present for a takeover receipt that intentionally names its isolated copy. */
-  copyId?: string;
-  /** Durable receipt scope, such as takeover/isolated-copy-1. */
-  runLabel?: string;
-  /** Fixed source snapshot digest shared by all takeover observations. */
-  sourceSnapshotDigest?: string;
-  /** Absolute durable directory under independent artifactRoot. */
-  artifactDir: string;
-  /** Absolute path of this receipt JSON on disk. */
-  receiptPath: string;
-  stages: StageReceipt[];
-  exitCode: number | null;
-  category: Category;
-  detail: string;
-  /** The candidate tarball identity retained for this run, when materialized. */
-  candidate: CandidateReceipt;
-  /** Present when the checkout-sourced Testkit snapshot was injected. */
-  testkit?: TestkitReceipt;
-}
-
-/** Candidate identity; digest/SRI are authoritative, never its file name. */
-export interface CandidateReceipt {
-  sha256: string;
-  integrity: string;
-  /** Content-addressed path relative to artifactRoot; absent if persistence failed. */
-  artifactPath?: string;
-  /** Command that replays this repo with the retained candidate bytes. */
-  reproduce: string;
-  /** True only while the durable candidate tarball remains available. */
-  exactReplay: boolean;
-}
-
-/** Checkout-local Testkit diagnostics; it is deliberately not replayable. */
-export interface TestkitReceipt {
-  /** Package version, diagnostic only. */
-  version: string;
-  /** Checkout-relative build source. */
-  sourcePath: "packages/testkit";
-  /** Copy-relative installed path recorded before cleanup. */
-  resolvedPath: string;
-  /** Immutable invocation-local snapshot identity verified before and after use. */
-  digest: string;
-}
+/**
+ * Receipt shape ownership is centralised in contracts.ts.  This module only
+ * owns pure classification and capture folding; it deliberately has no JSON
+ * schema version or durable-I/O knowledge.
+ */
+export type {
+  CandidateIdentity as CandidateReceipt,
+  CapabilityCheck,
+  Category,
+  CommandCapture,
+  RepoReceipt,
+  SelectionReceipt,
+  StageName,
+  StageReceipt,
+  TestkitReceipt,
+};
 
 export function commandFailedCapture(capture: CommandCapture): boolean {
   return (

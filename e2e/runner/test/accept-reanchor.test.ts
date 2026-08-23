@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-accept-reanchor
 // regression: memory/accept-source-run-diverges-from-project-current-identity.md
-// rerun: pnpm e2e --repo runner -- --run test/accept-reanchor.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/accept-reanchor.test.ts
 
 import { only } from "@niceeval/testkit";
 import { readFileSync, writeFileSync } from "node:fs";

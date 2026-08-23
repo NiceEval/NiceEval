@@ -301,7 +301,7 @@ Run the scenario through the root runner. It packs and installs the candidate
 tarball rather than resolving the working tree directly:
 
 ```sh
-pnpm e2e --repo adapter/sdk-converters
+pnpm e2e test --repo adapter/sdk-converters
 ```
 
 Do not run the leaf's `typecheck` script from the checked-in source directory.

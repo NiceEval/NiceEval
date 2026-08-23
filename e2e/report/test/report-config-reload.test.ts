@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-config-reload
-// rerun: pnpm e2e --repo report -- --run test/report-config-reload.test.ts
+// rerun: pnpm e2e test --repo report -- --run test/report-config-reload.test.ts
 
 import { pollUntil, waitForOutput } from "@niceeval/testkit";
 import { Buffer } from "node:buffer";

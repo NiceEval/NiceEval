@@ -50,6 +50,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [docker-profile-control-create-migration-incomplete](docker-profile-control-create-migration-incomplete.md) — profile-bound Dockerfile cold build 与 doctor smoke 仍由客户端 create/commit，遇到拒绝旧语义的新 watchdog 会在 Attempt 前报 control-create-unimplemented；改为 control 持有 build context、network/container create 与终止证明
 - 已修 [group-wave-barrier-starves-fast-lanes](group-wave-barrier-starves-fast-lanes.md) — 连续跨 lane wave 闸让慢 Group 的下一槽挡住快 Group 后继，出现真实空闲与 timing 空白；公平闸收窄为只保护各 lane 首槽
 - 已修 [interrupted-run-completed-attempt-hidden](interrupted-run-completed-attempt-hidden.md) — 同 Run 的快 Attempt 已完成并有 locator，慢 Attempt 在飞时 SIGINT 却让整 Run 无 complete、全部不可见；受控中断改为关闭在飞 Attempt 后正常 seal
 - [compose-project-namespace-escape-destabilizes-case-identity](compose-project-namespace-escape-destabilizes-case-identity.md) — 10 个 Terminal-Bench Compose Eval 把逐次随机容器名塞进 fingerprinted env,导致 CaseKey/private identity 每次规划漂移；修法是 Provider 规划期拒绝受管资源逃逸 project namespace,下游删除 `container_name` nonce

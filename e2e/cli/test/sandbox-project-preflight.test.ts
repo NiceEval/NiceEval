@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/cli.md#cli-sandbox-project-preflight
-// rerun: pnpm e2e --repo cli -- --run test/sandbox-project-preflight.test.ts
+// rerun: pnpm e2e test --repo cli -- --run test/sandbox-project-preflight.test.ts
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";

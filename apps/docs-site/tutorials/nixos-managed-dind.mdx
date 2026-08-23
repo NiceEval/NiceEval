@@ -112,10 +112,10 @@ In an eval project with NiceEval installed, run these commands as the day-to-day
 
 ```bash
 pnpm exec niceeval docker profile list
-pnpm exec niceeval docker profile doctor default --smoke
+pnpm exec niceeval docker profile doctor default
 ```
 
-`list` should show `default`. `doctor --smoke` checks the descriptor, Unix socket, cgroup, capacity, and watchdog, then starts a constrained outer container and an inner Alpine container. Use the host profile for production evals only after every check passes.
+`list` should show `default`. `doctor` always checks the descriptor, Unix socket, cgroup, capacity, watchdog, offline assets, a cold build, and a constrained outer container with nested Docker. Use the host profile for production evals only after every check passes.
 
 Do not use `sudo pnpm exec niceeval ...` to bypass a permissions error. If the day-to-day user cannot access the profile, first confirm that the username is in `accessUsers`, then sign in again and rerun doctor.
 

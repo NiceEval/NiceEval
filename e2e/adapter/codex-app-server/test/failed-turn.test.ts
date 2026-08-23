@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/adapter/codex-cli.md#adapter-codex-app-server-failed-turn
-// rerun: pnpm e2e --repo adapter/codex-app-server
+// rerun: pnpm e2e test --repo adapter/codex-app-server
 
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";

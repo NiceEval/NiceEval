@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-group-wave-gap-dispatch
-// rerun: pnpm e2e --repo runner -- --run test/group-wave-gap-dispatch.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/group-wave-gap-dispatch.test.ts
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 

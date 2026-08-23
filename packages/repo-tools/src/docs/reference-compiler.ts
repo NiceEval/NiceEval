@@ -595,7 +595,6 @@ const CHINESE_CLI_REFERENCE_SUMMARIES: Readonly<Record<string, string>> = Object
   help: "打印该命令的帮助。",
   version: "打印当前安装的 NiceEval 版本。",
   yes: "确认计划中的 Record maintenance 操作。",
-  smoke: "运行 Docker profile 的探测诊断。",
   domain: "选择一个由 NiceEval 管理的 Docker 缓存域。",
   apply: "应用先前签发的 Docker 缓存回收计划。",
   window: "选择一个已记录的改动窗口。",
@@ -663,7 +662,6 @@ const CLI_OPTION_COMMAND_OWNERSHIP: Readonly<Record<string, Readonly<Record<stri
   }),
   "src/docker/cli/contribution.ts#DOCKER_OPTIONS": Object.freeze({
     json: Object.freeze(["docker profile list", "docker profile doctor", "docker cache inventory", "docker cache gc"]),
-    smoke: Object.freeze(["docker profile doctor"]),
     domain: Object.freeze(["docker cache inventory", "docker cache gc"]),
     apply: Object.freeze(["docker cache gc"]),
   }),

@@ -27,7 +27,7 @@
 - Bug 修复统一采用公开入口的 E2E TDD：先让安装后候选经真实 Library、CLI、HTTP、浏览器或 adapter 复现，并取得旧实现或最小逆补丁的红灯收据，再修改生产代码。不得用源码调用、私有产物、mock 核心实现或 Unit 代替这条红灯。
 - 先加强拥有同一长期结果的既有 E2E owner；没有合格 owner 时新增一个最小 Journey 或单边界 E2E。测试标题仍描述长期用户结果，Bug 历史只作为 regression 凭据，不另建按 Bug 命名的目录或第二套 owner。
 - 无法稳定自动化的外部条件、安全限制或不可固定 Provider 才可暂停 E2E TDD；必须在开工前写明具体阻塞，并把当前候选安装到隔离消费环境做公开入口 AI 真实验收。测试重置、工期或“只是内部实现”不构成跳过理由。
-- E2E 按产品域放在 `e2e/{eval,cli,runner,record,report,package,lifecycle}`，adapter 放在 `e2e/adapter/<id>`；测试文件留在所属 Repo 的原生 `test/`，机械共享能力才进入 Testkit 或根 `e2e/scripts/`。不按 Bug 编号、日期或实现模块另建目录。
+- E2E 按产品域放在 `e2e/{eval,cli,runner,record,report,package,lifecycle}`，adapter 放在 `e2e/adapter/<id>`；测试文件留在所属 Repo 的原生 `test/`，机械共享能力才进入 Testkit，host-side 编排进入 `packages/e2e-runner/`。不按 Bug 编号、日期或实现模块另建目录。
 - 完整 E2E 只承担开工红灯、候选转绿与最终接管，不作为反复猜测 DOM、时序或 fixture 的交互式调试循环。首次完整运行需要继续定位时，使用 `--keep-workdir` 保留已安装的隔离副本，并在同一 candidate、fixture 与原生 runner 上收窄重跑；先用最小浏览器动作或进程实验确定稳定观察，再改长期 owner。不得反复 pack / install 来试探测试写法，也不得把临时 `only`、短 timeout、日志或诊断断言留进 owner。
 - 复杂 E2E 定位确有多条独立证据线时，可通过 Herdr 并行启动只读检索 worker，分别检查生产根因、trace / DOM 与稳定公开观察；主 agent 独占长期 owner 和生产修复。不得让多个 worker 同时修改同一测试文件，不得并行重复完整候选准备，也不得把 reviewer 安排在尚未停稳的实现上。
 

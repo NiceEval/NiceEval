@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/report.md#report-project-current
 // regression: 052b13bb (design: memory/current-result-single-state-ruling.md)
-// rerun: pnpm e2e --repo report -- --run test/report-project-current.test.ts
+// rerun: pnpm e2e test --repo report -- --run test/report-project-current.test.ts
 
 import { only, type ExpEvent } from "@niceeval/testkit";
 import { readFile, writeFile } from "node:fs/promises";

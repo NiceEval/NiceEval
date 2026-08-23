@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-browser-journey
-// rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
+// rerun: pnpm e2e test --repo report -- --run test/report.browser.spec.ts
 //
 // This Journey observes only the installed candidate, exported files, HTTP,
 // hash navigation, and browser-visible content. It never reads Record files.

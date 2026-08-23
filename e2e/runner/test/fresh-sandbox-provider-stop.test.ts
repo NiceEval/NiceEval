@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-fresh-sandbox-provider-stop
-// rerun: pnpm e2e --repo runner -- --run test/fresh-sandbox-provider-stop.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/fresh-sandbox-provider-stop.test.ts
 import { pollUntil, withTempDir } from "@niceeval/testkit";
 import { access } from "node:fs/promises";
 import { join } from "node:path";

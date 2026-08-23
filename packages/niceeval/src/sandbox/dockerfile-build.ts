@@ -4,9 +4,11 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve as resolvePath } from "node:path";
+import { createReadStream } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import { isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import { Data, Effect } from "effect";
+import * as tar from "tar-stream";
 import {
   materializationScopeId,
   sandboxBuildRef,
@@ -24,10 +26,11 @@ import {
   type DockerfileBuildIdentity,
 } from "./dockerfile-identity.ts";
 import type { SandboxLocation } from "./layer.ts";
+import { listFilteredBuildContextFiles } from "../runner/leak-gate.ts";
 
 export { DOCKERFILE_MATERIALIZER_REVISION } from "./dockerfile-identity.ts";
 
-interface DockerfileBuildDetails {
+export interface DockerfileBuildDetails {
   readonly provider: "docker" | "e2b";
   readonly contextDir: string;
   readonly dockerfilePath: string;
@@ -35,6 +38,7 @@ interface DockerfileBuildDetails {
   readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
   readonly target?: string;
   readonly platform: string;
+  readonly contextFiles: readonly string[];
   readonly dockerSocketPath?: string;
   /** managed profile 在 daemon bridge=none 时为本次 build 创建的独占 bridge。 */
   readonly dockerNetworkMode?: string;
@@ -80,6 +84,10 @@ export function collectDockerfileBuildFromIdentity(input: {
         message: "Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.",
       }));
     }
+    const contextFiles = yield* listFilteredBuildContextFiles({
+      contextDir: identity.contextDir,
+      label: `sandbox profile ${input.profile}`,
+    });
     const authorityFingerprint = input.provider === "docker" && input.dockerSocketPath === undefined
       ? yield* Effect.tryPromise({
           try: () => dockerTaskBuildAuthorityFingerprint(),
@@ -102,6 +110,7 @@ export function collectDockerfileBuildFromIdentity(input: {
           buildArgs: input.buildArgs,
           ...(input.target === undefined ? {} : { target: input.target }),
           platform: input.platform,
+          contextFiles: Object.freeze([...contextFiles]),
           ...(input.dockerSocketPath === undefined ? {} : { dockerSocketPath: input.dockerSocketPath }),
         };
         const scopeId = materializationScopeId({
@@ -255,8 +264,40 @@ export function routeBuildProviders(
   };
 }
 
-function dockerBuildTag(buildKey: BuildKey): string {
+export function dockerBuildTag(buildKey: BuildKey): string {
   return `niceeval-build:${buildKey.slice(0, 32)}`;
+}
+
+/** Stream the exact filtered context whose file list contributed to BuildKey. */
+export function packDockerfileBuildContext(details: DockerfileBuildDetails): tar.Pack {
+  const pack = tar.pack();
+  void (async () => {
+    const dockerfile = relative(details.contextDir, details.dockerfilePath).split(sep).join("/");
+    if (dockerfile === "" || dockerfile === ".." || dockerfile.startsWith("../") || isAbsolute(dockerfile)) {
+      throw new Error("Dockerfile must be inside its build context for a control-owned build");
+    }
+    const files = [...new Set([...details.contextFiles, dockerfile])].sort();
+    for (const name of files) {
+      const path = resolvePath(details.contextDir, name);
+      const facts = await stat(path);
+      if (!facts.isFile()) throw new Error(`build context entry is no longer a regular file: ${name}`);
+      await new Promise<void>((resolve, reject) => {
+        const input = createReadStream(path);
+        const entry = pack.entry({
+          name,
+          type: "file",
+          size: facts.size,
+          mode: facts.mode & 0o777,
+          mtime: new Date(0),
+        }, (error) => error ? reject(error) : resolve());
+        input.on("error", reject);
+        entry.on("error", reject);
+        input.pipe(entry);
+      });
+    }
+    pack.finalize();
+  })().catch((error: unknown) => pack.destroy(error instanceof Error ? error : new Error(String(error))));
+  return pack;
 }
 
 function e2bBuildName(buildKey: BuildKey): string {
