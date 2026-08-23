@@ -19,7 +19,6 @@ import {
   type RecordAttachmentBlobDraft,
   type RecordAttachmentWrite,
 } from "../record/attachment/index.ts";
-import { recordAttachmentWriteContents } from "../record/attachment/internal.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
 import {
   attemptArtifactsRecordFamily,
@@ -27,16 +26,17 @@ import {
   runArtifactsRecordFamily,
 } from "../record/family/catalog.ts";
 import type { AssertionSourceSite } from "../record/family/assertions/definition.ts";
-import type { AttemptObservabilityAttachment } from "../record/family/observability/definition.ts";
 import { ArtifactsAttachmentSchema } from "../record/family/artifacts.ts";
 import type { ArtifactsAttachment } from "../record/family/artifacts.ts";
 import {
-  createAttemptObservabilityAttachmentWrite,
-  createRunObservabilityAttachmentWrite,
+  createAttemptSourceReceiptAttachmentWrites,
+  createRunSourceReceiptAttachmentWrites,
+  type AttemptSourceReceiptAttachmentWrites,
+  type RunSourceReceiptAttachmentWrites,
 } from "../o11y/record/family-writers.ts";
 import {
-  createRunnerAttemptObservabilityCapture,
-  createRunnerRunObservabilityCapture,
+  createRunnerAttemptSourceReceiptsCapture,
+  createRunnerRunSourceReceiptsCapture,
 } from "../o11y/record/runner-producer.ts";
 import {
   EvalIdSchema,
@@ -101,7 +101,7 @@ import {
   type CurrentReuseReadbackPlanInvalid,
 } from "./reuse-readback.ts";
 import {
-  createRunnerSourceNavigationWrite,
+  createRunnerTurnContextsWrite,
   createRunnerSourceWritePlan,
   type RunnerSourceProducerInvalid,
 } from "./source-producer.ts";
@@ -706,10 +706,6 @@ function attemptArtifactsWrite(
   // deliberately an Artifact rather than Observability: it answers what was
   // installed, without making a sixth family or reconstructing sandbox files.
   if (result.agentSetup !== undefined) appendJson("agent-setup.json", result.agentSetup);
-  if (result.trace !== undefined && result.trace.length > 0) {
-    appendJson("otel-trace.json", result.trace);
-  }
-
   // No collector input means the outer Host state stays `not-recorded`;
   // a known empty artifact collection would instead claim that one ran.
   if (captures.length === 0 && omittedAtLeast === 0) return Either.right(undefined);
@@ -732,50 +728,50 @@ function runArtifactsWrite(): Either.Either<
   });
 }
 
-function attemptObservabilityWrite(input: {
+function attemptSourceReceiptWrites(input: {
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
-}): Effect.Effect<RecordAttachmentWrite<"attempt", never, never>, RunnerRecordObservabilityInvalid> {
+}): Effect.Effect<AttemptSourceReceiptAttachmentWrites, RunnerRecordObservabilityInvalid> {
   return Effect.gen(function* () {
-    const capture = yield* createRunnerAttemptObservabilityCapture(input).pipe(
+    const capture = yield* createRunnerAttemptSourceReceiptsCapture(input).pipe(
       Effect.mapError(() => Object.freeze({
         code: "runner-record-observability-invalid" as const,
         owner: "attempt" as const,
         stage: "capture" as const,
       })),
     );
-    const write = createAttemptObservabilityAttachmentWrite(capture);
-    if (Either.isLeft(write)) {
+    const writes = createAttemptSourceReceiptAttachmentWrites(capture);
+    if (Either.isLeft(writes)) {
       return yield* Effect.fail(Object.freeze({
         code: "runner-record-observability-invalid" as const,
         owner: "attempt" as const,
         stage: "attachment" as const,
       }));
     }
-    return write.right;
+    return writes.right;
   });
 }
 
-function runObservabilityWrite(
+function runSourceReceiptWrites(
   run: AgentRun,
-): Effect.Effect<RecordAttachmentWrite<"run", never, never>, RunnerRecordObservabilityInvalid> {
+): Effect.Effect<RunSourceReceiptAttachmentWrites, RunnerRecordObservabilityInvalid> {
   return Effect.gen(function* () {
-    const capture = yield* createRunnerRunObservabilityCapture({ run }).pipe(
+    const capture = yield* createRunnerRunSourceReceiptsCapture({ run }).pipe(
       Effect.mapError(() => Object.freeze({
         code: "runner-record-observability-invalid" as const,
         owner: "run" as const,
         stage: "capture" as const,
       })),
     );
-    const write = createRunObservabilityAttachmentWrite(capture);
-    if (Either.isLeft(write)) {
+    const writes = createRunSourceReceiptAttachmentWrites(capture);
+    if (Either.isLeft(writes)) {
       return yield* Effect.fail(Object.freeze({
         code: "runner-record-observability-invalid" as const,
         owner: "run" as const,
         stage: "attachment" as const,
       }));
     }
-    return write.right;
+    return writes.right;
   });
 }
 
@@ -1104,29 +1100,29 @@ export function openRunnerRecordCoordinator(input: {
         if (Either.isLeft(assertions)) return yield* Effect.fail(assertions.left);
         yield* active.session.writeAssertions(assertions.right.write);
 
-        const observability = yield* attemptObservabilityWrite({ result: richResult, sealed });
-        yield* active.session.writeAttemptObservability(observability);
-
-        const observabilityContents = recordAttachmentWriteContents(observability);
-        if (Either.isLeft(observabilityContents)) {
-          return yield* Effect.fail(Object.freeze({
-            code: "runner-record-observability-invalid" as const,
-            owner: "attempt" as const,
-            stage: "attachment" as const,
-          }));
+        const sourceReceipts = yield* attemptSourceReceiptWrites({ result: richResult, sealed });
+        if (sourceReceipts.agentTurns !== undefined) {
+          yield* active.session.writeAgentTurns(sourceReceipts.agentTurns);
         }
-        const navigation = createRunnerSourceNavigationWrite({
+        if (sourceReceipts.sandboxCommands !== undefined) {
+          yield* active.session.writeSandboxCommands(sourceReceipts.sandboxCommands);
+        }
+        yield* active.session.writeAttemptRunnerActivities(sourceReceipts.runnerActivities);
+        yield* active.session.writeAttemptRunnerDiagnostics(sourceReceipts.runnerDiagnostics);
+
+        const turnContexts = createRunnerTurnContextsWrite({
           result: richResult,
           sources: sources.right.sources,
-          observability: observabilityContents.right.payload as AttemptObservabilityAttachment,
         });
-        if (Either.isLeft(navigation)) {
+        if (Either.isLeft(turnContexts)) {
           return yield* Effect.fail(Object.freeze({
             code: "runner-record-sources-invalid" as const,
-            issue: navigation.left,
+            issue: turnContexts.left,
           }));
         }
-        yield* active.session.writeSourceNavigation(navigation.right);
+        if (turnContexts.right !== undefined) {
+          yield* active.session.writeTurnContexts(turnContexts.right);
+        }
 
         const fileChangesCapture = runnerAttemptFileChangesCaptureForResult(richResult);
         if (fileChangesCapture !== undefined) {
@@ -1144,8 +1140,13 @@ export function openRunnerRecordCoordinator(input: {
         recordRun.gapActions.set(slotId, "executed");
       }
 
-      const observability = yield* runObservabilityWrite(recordRun.run);
-      yield* recordRun.session.writeRunObservability(observability);
+      const sourceReceipts = yield* runSourceReceiptWrites(recordRun.run);
+      if (sourceReceipts.runnerActivities !== undefined) {
+        yield* recordRun.session.writeRunRunnerActivities(sourceReceipts.runnerActivities);
+      }
+      if (sourceReceipts.runnerDiagnostics !== undefined) {
+        yield* recordRun.session.writeRunRunnerDiagnostics(sourceReceipts.runnerDiagnostics);
+      }
       const artifacts = runArtifactsWrite();
       if (Either.isLeft(artifacts)) return yield* Effect.fail(artifacts.left);
       yield* recordRun.session.writeRunArtifacts(artifacts.right);
@@ -1256,31 +1257,15 @@ export function openRunnerRecordCoordinator(input: {
         const receipts: RecordSealReceipt[] = [];
         for (const recordRun of publishableRuns) {
           const exit = yield* Effect.exit(publishOne(recordRun));
-          if (!Exit.isSuccess(exit)) {
+          if (Exit.isSuccess(exit)) {
+            receipts.push(exit.value);
+          } else {
             const failure = Cause.failureOption(exit.cause);
-            if (Option.isSome(failure)) noteFailure(failure.value, recordRun);
-          }
-          const markerExit = yield* Effect.exit(fileSystem.pathKind(recordPortablePath(
-            input.recordRoot,
-            "runs",
-            recordRun.session.runId,
-            "complete",
-          )));
-          if (Exit.isSuccess(markerExit) && markerExit.value === "file") {
-            // `seal` can fail during a post-marker directory sync. The marker,
-            // not its return value, is the durable publication truth.
-            receipts.push(Object.freeze({ runId: recordRun.session.runId, state: "sealed" as const }));
-          } else if (!Exit.isSuccess(markerExit)) {
-            const markerFailure = Cause.failureOption(markerExit.cause);
-            if (Option.isSome(markerFailure)) {
-              noteFailure(markerFailure.value, recordRun);
+            if (Option.isSome(failure)) {
+              noteFailure(failure.value, recordRun);
             } else {
               noteFailure(publishStateInvalid(recordRun.session.runId), recordRun);
             }
-          } else if (Exit.isSuccess(exit)) {
-            noteFailure(publishStateInvalid(recordRun.session.runId), recordRun);
-          } else if (Cause.isEmpty(exit.cause)) {
-            noteFailure(publishStateInvalid(recordRun.session.runId), recordRun);
           }
         }
         return Object.freeze(receipts);

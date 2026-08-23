@@ -62,13 +62,13 @@ export interface ExecutionDurationLimit {
 
 /**
  * Reuse compares current execution identity with the immutable Core Slot,
- * folds Core outcome with Assertions, and reads duration from fixed
- * Observability. None of these facts is a separate eligibility/verdict family.
+ * folds Core outcome with Assertions, and reads duration from Runner Activity
+ * receipts. None of these facts is a separate eligibility/verdict family.
  */
 export type ExecutionComparisonAttachment =
   | "core"
   | "niceeval.assertions"
-  | "niceeval.observability";
+  | "niceeval.runner-activities";
 export type ExecutionComparisonSourceState =
   | "available"
   | "unavailable"
@@ -545,9 +545,9 @@ function planTargetSlot(input: {
         comparisons: [verdictComparison(verdict, "ineligible")],
       });
     }
-    const observability = yield* input.reader.readAttemptObservability(readAttempt.value.owner);
-    if (observability.state !== "available") {
-      const problem = attachmentProblem(observability);
+    const activities = yield* input.reader.readAttemptRunnerActivities(readAttempt.value.owner);
+    if (activities.state !== "available") {
+      const problem = attachmentProblem(activities);
       return gapSlot(input.target, {
         reason: problem.reason,
         scope: "slot",
@@ -555,7 +555,7 @@ function planTargetSlot(input: {
         sourceBarrier,
         candidate,
         comparisons: [comparison(
-          "niceeval.observability",
+          "niceeval.runner-activities",
           "execution-duration",
           problem.state,
           "not-comparable",
@@ -563,7 +563,7 @@ function planTargetSlot(input: {
         )],
       });
     }
-    const durationRead = readAttemptExecutionDuration(observability.value);
+    const durationRead = readAttemptExecutionDuration(activities.value);
     if (durationRead.state !== "available") {
       return gapSlot(input.target, {
         reason: "source-attachment-unavailable",
@@ -572,7 +572,7 @@ function planTargetSlot(input: {
         sourceBarrier,
         candidate,
         comparisons: [comparison(
-          "niceeval.observability",
+          "niceeval.runner-activities",
           "execution-duration",
           "unavailable",
           "not-comparable",
@@ -798,7 +798,7 @@ function durationComparison(input: {
   if (input.target === undefined) {
     return {
       comparison: comparison(
-        "niceeval.observability",
+        "niceeval.runner-activities",
         "execution-duration",
         "available",
         "match",
@@ -809,7 +809,7 @@ function durationComparison(input: {
   if (input.source.domain !== input.target.domain) {
     return {
       comparison: comparison(
-        "niceeval.observability",
+        "niceeval.runner-activities",
         "execution-duration",
         "available",
         "mismatch",
@@ -821,7 +821,7 @@ function durationComparison(input: {
   if (input.source.milliseconds > input.target.milliseconds) {
     return {
       comparison: comparison(
-        "niceeval.observability",
+        "niceeval.runner-activities",
         "execution-duration",
         "available",
         "mismatch",
@@ -832,7 +832,7 @@ function durationComparison(input: {
   }
   return {
     comparison: comparison(
-      "niceeval.observability",
+      "niceeval.runner-activities",
       "execution-duration",
       "available",
       "match",

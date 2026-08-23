@@ -1,5 +1,5 @@
 /**
- * Shared implementation surface for the seven built-in Observability Record
+ * Shared implementation surface for the source-first Observability Record
  * families. This directory is intentionally not re-exported from NiceEval's
  * public root API; individual family modules consume it internally.
  */
@@ -8,7 +8,5 @@ export * from "./model.ts";
 export * from "./codec.ts";
 export * from "./errors.ts";
 export * from "./capture.ts";
-export * from "./validation.ts";
 export * from "./families.ts";
 export * from "./family-writers.ts";
-export * from "./family-projectors.ts";

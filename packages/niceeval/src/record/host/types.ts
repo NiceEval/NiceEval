@@ -13,16 +13,21 @@ import type {
 import type {
   FileChangesAttachment,
 } from "../family/file-changes.ts";
+import type { AgentTurnsAttachment } from "../family/agent-turns/definition.ts";
+import type { TurnContextsAttachment } from "../family/turn-contexts/definition.ts";
+import type { SandboxCommandsAttachment } from "../family/sandbox-commands/definition.ts";
 import type {
-  AttemptObservabilityAttachment,
-  RunObservabilityAttachment,
-} from "../family/observability/definition.ts";
+  AttemptRunnerActivitiesAttachment,
+  RunRunnerActivitiesAttachment,
+} from "../family/runner-activities/definition.ts";
+import type {
+  AttemptRunnerDiagnosticsAttachment,
+  RunRunnerDiagnosticsAttachment,
+} from "../family/runner-diagnostics/definition.ts";
 import type {
   SourcesAttachment,
 } from "../family/sources.ts";
-import type {
-  SourceNavigationAttachment,
-} from "../family/source-navigation.ts";
+import type { SourceNavigationRelation } from "./source-navigation-relation.ts";
 import type {
   AttemptDocument,
   MemberDocument,
@@ -121,11 +126,6 @@ export type SourcesWrite<E = never, R = never> = RecordAttachmentWrite<
   E,
   R
 >;
-export type RunObservabilityWrite<E = never, R = never> = RecordAttachmentWrite<
-  "run",
-  E,
-  R
->;
 export type RunArtifactsWrite<E = never, R = never> = RecordAttachmentWrite<
   "run",
   E,
@@ -136,17 +136,14 @@ export type AssertionsWrite<E = never, R = never> = RecordAttachmentWrite<
   E,
   R
 >;
-export type AttemptObservabilityWrite<E = never, R = never> = RecordAttachmentWrite<
-  "attempt",
-  E,
-  R
->;
+export type AgentTurnsWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
+export type TurnContextsWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
+export type SandboxCommandsWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
+export type AttemptRunnerActivitiesWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
+export type AttemptRunnerDiagnosticsWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
+export type RunRunnerActivitiesWrite<E = never, R = never> = RecordAttachmentWrite<"run", E, R>;
+export type RunRunnerDiagnosticsWrite<E = never, R = never> = RecordAttachmentWrite<"run", E, R>;
 export type FileChangesWrite<E = never, R = never> = RecordAttachmentWrite<
-  "attempt",
-  E,
-  R
->;
-export type SourceNavigationWrite<E = never, R = never> = RecordAttachmentWrite<
   "attempt",
   E,
   R
@@ -245,30 +242,39 @@ export interface RecordReadSession {
   readonly readAssertions: (
     owner: SelectedOwnerRef,
   ) => Effect.Effect<FixedFamilyRead<AssertionsAttachment>, RecordReaderReadError>;
-  readonly readAttemptObservability: (
+  readonly readAgentTurns: (
     owner: SelectedOwnerRef,
-  ) => Effect.Effect<
-    FixedFamilyRead<AttemptObservabilityAttachment>,
-    RecordReaderReadError
-  >;
+  ) => Effect.Effect<FixedFamilyRead<AgentTurnsAttachment>, RecordReaderReadError>;
+  readonly readTurnContexts: (
+    owner: SelectedOwnerRef,
+  ) => Effect.Effect<FixedFamilyRead<TurnContextsAttachment>, RecordReaderReadError>;
+  readonly readSandboxCommands: (
+    owner: SelectedOwnerRef,
+  ) => Effect.Effect<FixedFamilyRead<SandboxCommandsAttachment>, RecordReaderReadError>;
+  readonly readAttemptRunnerActivities: (
+    owner: SelectedOwnerRef,
+  ) => Effect.Effect<FixedFamilyRead<AttemptRunnerActivitiesAttachment>, RecordReaderReadError>;
+  readonly readAttemptRunnerDiagnostics: (
+    owner: SelectedOwnerRef,
+  ) => Effect.Effect<FixedFamilyRead<AttemptRunnerDiagnosticsAttachment>, RecordReaderReadError>;
   readonly readFileChanges: (
     owner: SelectedOwnerRef,
   ) => Effect.Effect<FixedFamilyRead<FileChangesAttachment>, RecordReaderReadError>;
-  readonly readSourceNavigation: (
+  readonly readSourceNavigationRelation: (
     owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<SourceNavigationAttachment>, RecordReaderReadError>;
+  ) => Effect.Effect<FixedFamilyRead<SourceNavigationRelation>, RecordReaderReadError>;
   readonly readAttemptArtifacts: (
     owner: SelectedOwnerRef,
   ) => Effect.Effect<FixedFamilyRead<ArtifactsAttachment>, RecordReaderReadError>;
   readonly readSources: (
     owner: SelectedOwnerRef,
   ) => Effect.Effect<FixedFamilyRead<SourcesAttachment>, RecordReaderReadError>;
-  readonly readRunObservability: (
+  readonly readRunRunnerActivities: (
     owner: SelectedOwnerRef,
-  ) => Effect.Effect<
-    FixedFamilyRead<RunObservabilityAttachment>,
-    RecordReaderReadError
-  >;
+  ) => Effect.Effect<FixedFamilyRead<RunRunnerActivitiesAttachment>, RecordReaderReadError>;
+  readonly readRunRunnerDiagnostics: (
+    owner: SelectedOwnerRef,
+  ) => Effect.Effect<FixedFamilyRead<RunRunnerDiagnosticsAttachment>, RecordReaderReadError>;
   readonly readRunArtifacts: (
     owner: SelectedOwnerRef,
   ) => Effect.Effect<FixedFamilyRead<ArtifactsAttachment>, RecordReaderReadError>;
@@ -304,14 +310,23 @@ export interface AttemptWriteSession {
   readonly writeAssertions: <E, R>(
     value: AssertionsWrite<E, R>,
   ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeAttemptObservability: <E, R>(
-    value: AttemptObservabilityWrite<E, R>,
+  readonly writeAgentTurns: <E, R>(
+    value: AgentTurnsWrite<E, R>,
+  ) => Effect.Effect<void, RecordWriteError | E, R>;
+  readonly writeTurnContexts: <E, R>(
+    value: TurnContextsWrite<E, R>,
+  ) => Effect.Effect<void, RecordWriteError | E, R>;
+  readonly writeSandboxCommands: <E, R>(
+    value: SandboxCommandsWrite<E, R>,
+  ) => Effect.Effect<void, RecordWriteError | E, R>;
+  readonly writeAttemptRunnerActivities: <E, R>(
+    value: AttemptRunnerActivitiesWrite<E, R>,
+  ) => Effect.Effect<void, RecordWriteError | E, R>;
+  readonly writeAttemptRunnerDiagnostics: <E, R>(
+    value: AttemptRunnerDiagnosticsWrite<E, R>,
   ) => Effect.Effect<void, RecordWriteError | E, R>;
   readonly writeFileChanges: <E, R>(
     value: FileChangesWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeSourceNavigation: <E, R>(
-    value: SourceNavigationWrite<E, R>,
   ) => Effect.Effect<void, RecordWriteError | E, R>;
   readonly writeAttemptArtifacts: <E, R>(
     value: AttemptArtifactsWrite<E, R>,
@@ -346,8 +361,11 @@ export interface RunWriteSession {
   readonly writeSources: <E, R>(
     value: SourcesWrite<E, R>,
   ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeRunObservability: <E, R>(
-    value: RunObservabilityWrite<E, R>,
+  readonly writeRunRunnerActivities: <E, R>(
+    value: RunRunnerActivitiesWrite<E, R>,
+  ) => Effect.Effect<void, RecordWriteError | E, R>;
+  readonly writeRunRunnerDiagnostics: <E, R>(
+    value: RunRunnerDiagnosticsWrite<E, R>,
   ) => Effect.Effect<void, RecordWriteError | E, R>;
   readonly writeRunArtifacts: <E, R>(
     value: RunArtifactsWrite<E, R>,
@@ -364,14 +382,15 @@ export interface ReferenceRunWriteSession {
   readonly referenceAttempt: RunWriteSession["referenceAttempt"];
   readonly recordAcceptedMembership: RunWriteSession["recordAcceptedMembership"];
   readonly recordTerminalMember: RunWriteSession["recordTerminalMember"];
-  readonly writeRunObservability: RunWriteSession["writeRunObservability"];
+  readonly writeRunRunnerActivities: RunWriteSession["writeRunRunnerActivities"];
+  readonly writeRunRunnerDiagnostics: RunWriteSession["writeRunRunnerDiagnostics"];
   readonly writeRunArtifacts: RunWriteSession["writeRunArtifacts"];
   readonly seal: RunWriteSession["seal"];
 }
 
 export type RecordFormatInspection =
-  | { readonly state: "already-current"; readonly format: "niceeval.record" }
-  | { readonly state: "migration-required"; readonly format: "niceeval.record" }
+  | { readonly state: "already-current"; readonly format: "niceeval.record.source-receipts" }
+  | { readonly state: "migration-required"; readonly format: "niceeval.record.source-receipts" }
   | { readonly state: "unsupported-format"; readonly format: string };
 
 export interface RecordAttachmentMigrationTarget {
@@ -387,11 +406,11 @@ export interface RecordAttachmentMigrationTarget {
 export type RecordMigrationPlan =
   | {
       readonly state: "already-current";
-      readonly format: "niceeval.record";
+      readonly format: "niceeval.record.source-receipts";
     }
   | {
       readonly state: "migration-required";
-      readonly format: "niceeval.record";
+      readonly format: "niceeval.record.source-receipts";
       readonly backup: RecordBackupState;
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     }
@@ -401,10 +420,10 @@ export type RecordMigrationPlan =
     };
 
 export type RecordMigrationReceipt =
-  | { readonly state: "already-current"; readonly format: "niceeval.record" }
+  | { readonly state: "already-current"; readonly format: "niceeval.record.source-receipts" }
   | {
       readonly state: "migrated";
-      readonly format: "niceeval.record";
+      readonly format: "niceeval.record.source-receipts";
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     };
 
@@ -453,7 +472,7 @@ export interface RecordCleanOperationReceipt {
 export type RecordMigrateOperationPlan =
   | {
       readonly _tag: "RecordMigrationAlreadyCurrent";
-      readonly format: "niceeval.record";
+      readonly format: "niceeval.record.source-receipts";
     }
   | {
       readonly _tag: "RecordMigrationUnsupported";
@@ -461,7 +480,7 @@ export type RecordMigrateOperationPlan =
     }
   | {
       readonly _tag: "RecordMigrationRestoreRequired";
-      readonly format: "niceeval.record";
+      readonly format: "niceeval.record.source-receipts";
       readonly backup: Exclude<RecordBackupState, { readonly state: "git-restore-point" }>;
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     }
@@ -469,7 +488,7 @@ export type RecordMigrateOperationPlan =
 
 export interface RecordMigrateReadyPlan {
   readonly _tag: "RecordMigrationReady";
-  readonly format: "niceeval.record";
+  readonly format: "niceeval.record.source-receipts";
   readonly restoreCommit: string;
   readonly attachments: readonly RecordAttachmentMigrationTarget[];
 }
@@ -477,11 +496,11 @@ export interface RecordMigrateReadyPlan {
 export type RecordMigrateOperationReceipt =
   | {
       readonly _tag: "RecordMigrationAlreadyCurrent";
-      readonly format: "niceeval.record";
+      readonly format: "niceeval.record.source-receipts";
     }
   | {
       readonly _tag: "RecordMigrationApplied";
-      readonly format: "niceeval.record";
+      readonly format: "niceeval.record.source-receipts";
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
     };
 

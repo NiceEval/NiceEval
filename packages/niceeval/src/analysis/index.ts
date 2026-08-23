@@ -157,6 +157,8 @@ export type {
   ClosedFileChangesCollectionLimitation,
   ClosedFileRevision,
   ClosedSourceFrame,
+  ClosedSourceDependency,
+  ClosedSourceState,
   ClosedTimingDetail,
   ClosedTimingInterval,
   ClosedTraceCollection,
@@ -164,6 +166,7 @@ export type {
   ClosedUsageObservation,
   FileChangesDomainDetail,
   FileChangesNet,
+  SandboxHistoryDomainDetail,
   SourceNavigationDomainDetail,
   SourcesDomainDetail,
 } from "./domain-view.ts";

@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { Effect } from "effect";
+import { Effect, Either, Schema } from "effect";
 
 import type { SealedAttemptAssertions } from "../../assertions/api.ts";
+import type { ResolvedEvidenceCoverage } from "../../assertions/coverage.ts";
 import { redactSensitiveText } from "../../sandbox/redaction.ts";
 import type { CommandOptions } from "../../sandbox/types.ts";
 import type {
@@ -34,19 +35,41 @@ import {
 } from "./capture.ts";
 import {
   type AttemptDiagnostic,
+  type AttemptDiagnosticsAttachment,
   type AttemptTimingInterval,
+  type AttemptTimingAttachment,
   type CommandManifest,
   type ConversationItem,
   type ConversationTurn,
   type RunDiagnostic,
+  type RunDiagnosticsAttachment,
   type UsageObservation,
 } from "./families.ts";
 import type {
-  NormalizedCommandObservationCapture,
-  NormalizedCommandStreamCapture,
-  NormalizedAttemptObservabilityCapture,
-  NormalizedRunObservabilityCapture,
-} from "./family-writers.ts";
+  NormalizedAgentTurnTerminal,
+  RunnerAttemptSourceReceiptsCapture,
+  RunnerRunSourceReceiptsCapture,
+  StagedCommandStream,
+  StagedSandboxCommandReceipt,
+} from "./source-capture.ts";
+import {
+  AgentTurnsAttachmentSchema,
+  type AgentTurnsAttachment,
+} from "../../record/family/agent-turns/definition.ts";
+import {
+  AttemptRunnerActivitiesAttachmentSchema,
+  type AttemptRunnerActivitiesAttachment,
+} from "../../record/family/runner-activities/definition.ts";
+import {
+  AttemptRunnerDiagnosticsAttachmentSchema,
+  RunRunnerDiagnosticsAttachmentSchema,
+  type AttemptRunnerDiagnosticsAttachment,
+  type RunRunnerDiagnosticsAttachment,
+} from "../../record/family/runner-diagnostics/definition.ts";
+import type {
+  SourceReceiptCollection,
+  SourceReceiptLimitation,
+} from "../../record/family/source-receipt.ts";
 import {
   MAX_COMMAND_ARGUMENT_BYTES,
   MAX_COMMAND_ARGUMENTS,
@@ -75,6 +98,7 @@ import {
   makeSafeIdentifier,
   makeSourceNativeToolName,
   makeStableLabel,
+  limitationTarget,
   utf8ByteLength,
   type AttemptReferenceTarget,
   type CommandId,
@@ -117,8 +141,26 @@ export type RunnerObservabilityProducerError =
       readonly code: "runner-observability-capture-missing";
     }
   | {
-      readonly code: "runner-observability-command-registration-invalid";
+    readonly code: "runner-observability-command-registration-invalid";
     };
+
+function isRunnerObservabilityProducerError(
+  value: unknown,
+): value is RunnerObservabilityProducerError {
+  if (typeof value !== "object" || value === null || !("code" in value)) return false;
+  const code = value.code;
+  switch (code) {
+    case "runner-observability-capture-missing":
+    case "runner-observability-command-registration-invalid":
+      return true;
+    case "runner-observability-capture-seal-invalid":
+      return "owner" in value && (value.owner === "attempt" || value.owner === "run");
+    case "runner-observability-entity-id-invalid":
+      return "kind" in value && typeof value.kind === "string";
+    default:
+      return false;
+  }
+}
 
 function producerEntityIdInvalid(
   kind: ObservabilityEntityKind,
@@ -318,6 +360,77 @@ class RunnerCollectionLimitations {
   }
 }
 
+type SourceStage =
+  | "adapter"
+  | "sandbox-wrapper"
+  | "runner-clock"
+  | "runner-diagnostic-sink";
+
+function sourceTarget(target: CollectionTarget): SourceReceiptLimitation["target"] {
+  switch (target) {
+    case "conversation-item":
+    case "conversation-text": return "turn-item";
+    case "usage-observation": return "usage-observation";
+    case "command-manifest": return "command";
+    case "command-stdout": return "stdout";
+    case "command-stderr": return "stderr";
+    case "timing-interval": return "activity";
+    case "diagnostic": return "diagnostic";
+  }
+}
+
+function sourceLimitation(
+  limitation: ObservabilityLimitation,
+  stage: SourceStage,
+): SourceReceiptLimitation {
+  const target = sourceTarget(limitationTarget(limitation));
+  switch (limitation.code) {
+    case "capture-failed":
+    case "capture-interrupted":
+      return Object.freeze({ code: limitation.code, stage, target });
+    case "collection-cap-reached":
+    case "unsupported-input":
+      return Object.freeze({ code: limitation.code, target, omittedAtLeast: limitation.omittedAtLeast });
+    case "text-truncated":
+      return Object.freeze({ code: "text-truncated", target, replacementOrOmittedCount: limitation.omittedBytes });
+    case "redacted":
+      return Object.freeze({ code: "redacted", target, replacementOrOmittedCount: limitation.replacementCount });
+    case "stream-truncated":
+      return Object.freeze({ code: "text-truncated", target, replacementOrOmittedCount: limitation.omittedBytes });
+    case "invalid-utf8-replaced":
+      return Object.freeze({ code: "invalid-utf8-replaced", target, replacementOrOmittedCount: limitation.replacementCount });
+    case "unsafe-control-stripped":
+      return Object.freeze({ code: "unsafe-control-stripped", target, replacementOrOmittedCount: limitation.strippedCount });
+  }
+}
+
+function sourceCollection(
+  sources: readonly { readonly collection: Collection; readonly stage: SourceStage }[],
+): SourceReceiptCollection {
+  const limitations = sources.flatMap(({ collection, stage }) =>
+    collection.limitations.map((limitation) => sourceLimitation(limitation, stage))
+  );
+  const byKey = new Map(limitations.map((limitation) => [JSON.stringify(limitation), limitation] as const));
+  const canonical = [...byKey.entries()]
+    .sort(([left], [right]) => left === right ? 0 : left < right ? -1 : 1)
+    .map(([, limitation]) => limitation);
+  if (canonical.length === 0) {
+    return Object.freeze({
+      state: "complete" as const,
+      limitations: Object.freeze([]) as readonly [],
+    });
+  }
+  const [first, ...rest] = canonical;
+  if (first === undefined) throw new Error("A partial source collection needs a limitation");
+  return Object.freeze({
+    state: "partial" as const,
+    limitations: Object.freeze([first, ...rest]) as readonly [
+      SourceReceiptLimitation,
+      ...SourceReceiptLimitation[],
+    ],
+  });
+}
+
 interface RetainedText {
   readonly text: SafeText;
   readonly retainedBytes: NonNegativeSafeInteger;
@@ -353,7 +466,21 @@ function retainSafeText(value: string, maximumBytes: number): RetainedText | und
   });
 }
 
-function jsonSummary(value: unknown): RetainedText | undefined {
+function retainConversationText(
+  value: string,
+  runtime: RunnerAttemptObservabilityRuntimeState,
+  limitations: RunnerCollectionLimitations,
+): RetainedText | undefined {
+  const redacted = redactSensitiveText(value, runtime.sensitiveValues);
+  if (redacted !== value) limitations.addRedacted("conversation-text");
+  return retainSafeText(redacted, MAX_CONVERSATION_TEXT_BYTES);
+}
+
+function jsonConversationSummary(
+  value: unknown,
+  runtime: RunnerAttemptObservabilityRuntimeState,
+  limitations: RunnerCollectionLimitations,
+): RetainedText | undefined {
   let summary: string | undefined;
   try {
     const encoded = JSON.stringify(value);
@@ -363,7 +490,7 @@ function jsonSummary(value: unknown): RetainedText | undefined {
   }
   return summary === undefined
     ? undefined
-    : retainSafeText(summary, MAX_CONVERSATION_TEXT_BYTES);
+    : retainConversationText(summary, runtime, limitations);
 }
 
 function uuidEntropyBytes(uuid: string): Uint8Array | undefined {
@@ -385,43 +512,43 @@ function attemptTargetForEntity<Kind extends ObservabilityEntityKind>(
   switch (kind) {
     case "turn":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.agent-turns" as const,
         kind: "turn" as const,
         id: id as TurnId,
       });
     case "item":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.agent-turns" as const,
         kind: "item" as const,
         id: id as ItemId,
       });
     case "call":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.agent-turns" as const,
         kind: "call" as const,
         id: id as CallId,
       });
     case "command":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.sandbox-commands" as const,
         kind: "command" as const,
         id: id as import("./model.ts").CommandId,
       });
     case "usage-observation":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.agent-turns" as const,
         kind: "usage-observation" as const,
         id: id as import("./model.ts").UsageObservationId,
       });
     case "interval":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.runner-activities" as const,
         kind: "interval" as const,
         id: id as IntervalId,
       });
     case "diagnostic":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.runner-diagnostics" as const,
         kind: "diagnostic" as const,
         id: id as DiagnosticId,
       });
@@ -464,18 +591,16 @@ interface CapturedCommandResult {
         readonly kind: "not-started";
         readonly reason: "spawn-failed" | "cancelled-before-start";
       };
-  readonly stdout: string;
-  readonly stderr: string;
+  readonly stdout: StagedCommandStream;
+  readonly stderr: StagedCommandStream;
 }
 
 interface CapturedCommandRuntime {
+  readonly segmentId: SafeIdentifier;
   readonly commandId: CommandId;
   readonly registered: RegisteredCommandCapture;
-  readonly phase: LifecyclePhase;
-  readonly invocationKind: "argv" | "shell";
-  readonly command: string;
-  readonly args: readonly string[] | undefined;
-  readonly options: unknown;
+  readonly sequence: PositiveSafeInteger;
+  readonly manifest: CommandManifest;
   result?: CapturedCommandResult;
 }
 
@@ -492,29 +617,35 @@ interface RunnerAttemptObservabilityRuntimeState {
   nextEntityOrdinal: number;
   readonly commands: CapturedCommandRuntime[];
   readonly commandLimitations: RunnerCollectionLimitations;
-  readonly usage: UsageObservation[];
   readonly usageLimitations: RunnerCollectionLimitations;
-  /** One immutable record is allocated at each physical SessionManager send exit. */
+  /** One receipt slot is allocated at each physical SessionManager send start. */
   readonly conversationTurns: CapturedConversationTurn[];
   readonly conversationLimitations: RunnerCollectionLimitations;
+  snapshot?: RunnerAttemptSourceReceiptsCapture;
   failure?: RunnerObservabilityProducerError;
 }
 
 interface CapturedConversationTurn {
   readonly turnId: TurnId;
+  readonly segmentId: SafeIdentifier;
   readonly sequence: PositiveSafeInteger;
-  readonly outcome: ConversationTurn["outcome"];
-  readonly events: readonly StreamEvent[];
+  readonly items: ConversationItem[];
+  readonly usage: UsageObservation[];
+  outcome?: ConversationTurn["outcome"];
+  adapterStatus?: "completed" | "failed" | "waiting";
+  evidenceCoverage?: ResolvedEvidenceCoverage;
 }
 
 const runnerAttemptRuntimeStates = new WeakMap<object, RunnerAttemptObservabilityRuntimeState>();
 const runnerAttemptResultStates = new WeakMap<object, RunnerAttemptObservabilityRuntimeState>();
-const runnerAttemptResultTurnIntervals = new WeakMap<object, ReadonlyMap<TurnId, IntervalId>>();
 const runnerCommandHandleStates = new WeakMap<object, {
   readonly runtime: RunnerAttemptObservabilityRuntimeState;
   readonly command: CapturedCommandRuntime;
 }>();
-const runnerRunDiagnostics = new WeakMap<object, readonly DiagnosticRecord[]>();
+const runnerRunCaptures = new WeakMap<object, {
+  readonly capture: RunObservabilityCaptureIdentity;
+  readonly snapshot: RunnerRunSourceReceiptsCapture;
+}>();
 
 function runtimeState(
   runtime: RunnerAttemptObservabilityRuntime,
@@ -601,7 +732,7 @@ function mintRuntimeCommand(
     return undefined;
   }
   const entity = mintAttemptObservabilityEntity<CommandReferenceTarget>(runtime.capture, {
-    family: "niceeval.observability" as const,
+    family: "niceeval.sandbox-commands" as const,
     kind: "command" as const,
     id: commandId,
   });
@@ -616,7 +747,6 @@ function makeAttemptEntityMinter(
   runtime: RunnerAttemptObservabilityRuntimeState,
 ): {
   readonly mint: AttemptEntityMinter;
-  readonly seal: () => boolean;
 } {
   return Object.freeze({
     mint: <Kind extends ObservabilityEntityKind>(kind: Kind) =>
@@ -627,7 +757,6 @@ function makeAttemptEntityMinter(
           ? Effect.fail(runtime.failure ?? producerEntityIdInvalid(kind))
           : Effect.succeed(id);
       }),
-    seal: () => sealAttemptObservabilityCaptureIdentity(runtime.capture),
   });
 }
 
@@ -644,13 +773,13 @@ function runTargetForEntity<Kind extends RunObservabilityEntityKind>(
   switch (kind) {
     case "interval":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.runner-activities" as const,
         kind: "interval" as const,
         id: id as IntervalId,
       });
     case "diagnostic":
       return Object.freeze({
-        family: "niceeval.observability" as const,
+        family: "niceeval.runner-diagnostics" as const,
         kind: "diagnostic" as const,
         id: id as DiagnosticId,
       });
@@ -678,7 +807,6 @@ function makeRunEntityMinter(
   capture: RunObservabilityCaptureIdentity,
 ): {
   readonly mint: RunEntityMinter;
-  readonly seal: () => boolean;
 } {
   return Object.freeze({
     mint: <Kind extends RunObservabilityEntityKind>(kind: Kind) =>
@@ -688,7 +816,6 @@ function makeRunEntityMinter(
           ? Effect.fail(producerEntityIdInvalid(kind))
           : Effect.succeed(id);
       }),
-    seal: () => sealRunObservabilityCaptureIdentity(capture),
   });
 }
 
@@ -707,7 +834,6 @@ export function createRunnerAttemptObservabilityRuntime(input: {
     nextEntityOrdinal: 0,
     commands: [],
     commandLimitations: new RunnerCollectionLimitations(),
-    usage: [],
     usageLimitations: new RunnerCollectionLimitations(),
     conversationTurns: [],
     conversationLimitations: new RunnerCollectionLimitations(),
@@ -723,52 +849,92 @@ export function createRunnerAttemptObservabilityRuntime(input: {
 export function bindRunnerAttemptObservabilityCapture(
   result: EvalResult,
   runtime: RunnerAttemptObservabilityRuntime,
-): void {
+): Effect.Effect<void, RunnerObservabilityProducerError> {
   const state = runtimeState(runtime);
-  if (state === undefined) return;
+  if (state === undefined) return Effect.fail(producerCaptureMissing());
   const existing = runnerAttemptResultStates.get(result);
   if (existing !== undefined && existing !== state) {
     markRuntimeFailure(state, producerCaptureSealInvalid("attempt"));
-    return;
+    return Effect.fail(state.failure ?? producerCaptureSealInvalid("attempt"));
   }
-  runnerAttemptResultStates.set(result, state);
+  return captureRunnerAttemptSourceSnapshot(result, state).pipe(
+    Effect.tap((snapshot) => Effect.sync(() => {
+      state.snapshot = snapshot;
+      runnerAttemptResultStates.set(result, state);
+    })),
+    Effect.asVoid,
+  );
 }
 
-/** Exact physical-turn timing joins produced during the same final seal. */
-export function runnerAttemptConversationTimingForResult(
-  result: EvalResult,
-): ReadonlyMap<TurnId, IntervalId> | undefined {
-  return runnerAttemptResultTurnIntervals.get(result);
-}
-
-/**
- * Captures the terminal fact of one physical public `t.send` at the exact
- * Effect Exit boundary. IDs are minted here, not reconstructed from the
- * later aggregate event stream, so repeated source locations remain distinct.
- */
+/** Finishes the receipt slot allocated before the Adapter send began. */
 export function captureRunnerPhysicalConversationTurn(input: {
   readonly runtime: RunnerAttemptObservabilityRuntime;
+  readonly turnId: TurnId;
   readonly outcome: ConversationTurn["outcome"];
   readonly events: readonly StreamEvent[];
-}): TurnId | undefined {
+  readonly adapterStatus?: "completed" | "failed" | "waiting";
+  readonly evidenceCoverage?: ResolvedEvidenceCoverage;
+}): void {
   const runtime = runtimeState(input.runtime);
-  if (runtime === undefined || runtime.failure !== undefined) return undefined;
+  if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return;
+  const captured = runtime.conversationTurns.find((turn) => turn.turnId === input.turnId);
+  if (captured === undefined && runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) return;
+  if (captured === undefined || captured.outcome !== undefined) {
+    markRuntimeFailure(runtime, producerCaptureSealInvalid("attempt"));
+    return;
+  }
+  captured.outcome = input.outcome;
+  normalizeConversationTurn(runtime, captured, input.events);
+  if (input.adapterStatus !== undefined && input.evidenceCoverage !== undefined) {
+    captured.adapterStatus = input.adapterStatus;
+    captured.evidenceCoverage = input.evidenceCoverage;
+    if (input.evidenceCoverage.usage.status === "unavailable") {
+      runtime.usageLimitations.addUnsupported("usage-observation");
+    } else if (input.evidenceCoverage.usage.status === "partial") {
+      runtime.usageLimitations.addCaptureFailed("usage-capture", "usage-observation");
+    }
+  } else if (input.outcome === "interrupted") {
+    runtime.conversationLimitations.addCaptureInterrupted("adapter", "conversation-item");
+  } else {
+    runtime.conversationLimitations.addCaptureFailed("adapter", "conversation-item");
+  }
+}
+
+/** Allocates the stable physical-send identity before Adapter invocation. */
+export function beginRunnerPhysicalConversationTurn(
+  runtimeHandle: RunnerAttemptObservabilityRuntime,
+  turnId: TurnId,
+): boolean {
+  const runtime = runtimeState(runtimeHandle);
+  if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return false;
   if (runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) {
     runtime.conversationLimitations.addCap(
       "conversation-item",
       runtime.conversationTurns.length,
     );
-    return undefined;
+    return false;
   }
-  const turnId = mintRuntimeEntity(runtime, "turn");
-  if (turnId === undefined) return undefined;
-  runtime.conversationTurns.push(Object.freeze({
+  const registered = mintAttemptObservabilityEntity(
+    runtime.capture,
+    attemptTargetForEntity("turn", turnId),
+  );
+  if (registered === undefined) {
+    markRuntimeFailure(runtime, producerEntityIdInvalid("turn"));
+    return false;
+  }
+  const segmentId = sourceSegmentId();
+  if (segmentId === undefined) {
+    markRuntimeFailure(runtime, producerEntityIdInvalid("turn"));
+    return false;
+  }
+  runtime.conversationTurns.push({
     turnId,
+    segmentId,
     sequence: requiredPositive(runtime.conversationTurns.length + 1),
-    outcome: input.outcome,
-    events: Object.freeze([...input.events]),
-  }));
-  return turnId;
+    items: [],
+    usage: [],
+  });
+  return true;
 }
 
 /**
@@ -780,8 +946,48 @@ export function captureRunnerPhysicalConversationTurn(input: {
 export function bindRunnerRunObservabilityDiagnostics(input: {
   readonly run: AgentRun;
   readonly diagnostics: readonly DiagnosticRecord[];
-}): void {
-  runnerRunDiagnostics.set(input.run, Object.freeze([...input.diagnostics]));
+}): Effect.Effect<void, RunnerObservabilityProducerError> {
+  const capture = makeRunObservabilityCaptureIdentity();
+  const minter = makeRunEntityMinter(capture);
+  return Effect.gen(function* () {
+    const normalization = yield* normalizeRunDiagnostics({
+      diagnostics: input.diagnostics,
+      mint: minter.mint,
+    });
+    const segmentIdByDiagnosticId = segmentIds(
+      normalization.diagnostics.map((diagnostic) => diagnostic.diagnosticId),
+    );
+    if (segmentIdByDiagnosticId === undefined) {
+      return yield* Effect.fail(producerEntityIdInvalid("diagnostic"));
+    }
+    const candidate = Object.freeze({
+      collection: sourceCollection([
+        { collection: normalization.collection, stage: "runner-diagnostic-sink" },
+      ]),
+      segments: Object.freeze(normalization.diagnostics.map((diagnostic, index) => Object.freeze({
+        segmentId: segmentIdByDiagnosticId.get(diagnostic.diagnosticId),
+        diagnosticId: diagnostic.diagnosticId,
+        sequence: index + 1,
+        kind: diagnostic.kind,
+        code: diagnostic.code,
+        phase: diagnostic.phase === "collection" ? "run.teardown" : diagnostic.phase,
+        turnId: null,
+        summary: diagnostic.summary,
+        causes: Object.freeze(diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary }))),
+        redaction: receiptDiagnosticRedaction(diagnostic.redaction),
+        sourceFrame: diagnostic.sourceFrame,
+      }))),
+    });
+    const runnerDiagnostics = yield* decodeReceipt(
+      RunRunnerDiagnosticsAttachmentSchema,
+      candidate,
+      "run",
+    );
+    runnerRunCaptures.set(input.run, Object.freeze({
+      capture,
+      snapshot: Object.freeze({ runnerDiagnostics }),
+    }));
+  });
 }
 
 function commandManifestPhase(
@@ -832,7 +1038,7 @@ export function captureRunnerCommandStart(input: {
 }): RunnerCommandCaptureHandle | undefined {
   const runtime = runtimeState(input.runtime);
   if (runtime === undefined) return undefined;
-  if (runtime.failure !== undefined) return undefined;
+  if (runtime.failure !== undefined || runtime.snapshot !== undefined) return undefined;
   if (runtime.commands.length >= MAX_COMMANDS) {
     runtime.commandLimitations.addCap("command-manifest", runtime.commands.length);
     return undefined;
@@ -840,19 +1046,30 @@ export function captureRunnerCommandStart(input: {
   const minted = mintRuntimeCommand(runtime);
   if (minted === undefined) return undefined;
   const { commandId } = minted;
+  const segmentId = sourceSegmentId();
+  if (segmentId === undefined) {
+    markRuntimeFailure(runtime, producerEntityIdInvalid("command"));
+    return undefined;
+  }
   const registered = registerCommandCapture(runtime.capture, minted.entity);
   if (registered === undefined || registeredCommandId(registered) !== commandId) {
     markRuntimeFailure(runtime, producerCommandRegistrationInvalid());
     return undefined;
   }
-  const command: CapturedCommandRuntime = {
+  const manifest = commandManifest({
     commandId,
-    registered,
     phase: input.phase,
     invocationKind: input.invocationKind,
     command: input.command,
-    args: input.args === undefined ? undefined : [...input.args],
+    args: input.args,
     options: input.options,
+  }, runtime);
+  const command: CapturedCommandRuntime = {
+    segmentId,
+    commandId,
+    registered,
+    sequence: requiredPositive(runtime.commands.length + 1),
+    manifest,
   };
   runtime.commands.push(command);
   const handle = Object.freeze({
@@ -872,6 +1089,7 @@ function acceptRegisteredCommandResult(state: {
   readonly runtime: RunnerAttemptObservabilityRuntimeState;
   readonly command: CapturedCommandRuntime;
 }): boolean {
+  if (state.runtime.snapshot !== undefined) return false;
   const registration = recordRegisteredCommandResult(
     state.runtime.capture,
     state.command.registered,
@@ -893,8 +1111,8 @@ function recordTerminalCommandResult(
   if (!acceptRegisteredCommandResult(state)) return;
   state.command.result = Object.freeze({
     outcome: Object.freeze(outcome),
-    stdout: "",
-    stderr: "",
+    stdout: emptyCommandStream(),
+    stderr: emptyCommandStream(),
   });
 }
 
@@ -916,8 +1134,8 @@ export function captureRunnerCommandResult(input: {
     state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
     state.command.result = Object.freeze({
       outcome: Object.freeze({ kind: "terminated" as const, reason: "transport-lost" as const }),
-      stdout: "",
-      stderr: "",
+      stdout: emptyCommandStream(),
+      stderr: emptyCommandStream(),
     });
     return;
   }
@@ -927,8 +1145,18 @@ export function captureRunnerCommandResult(input: {
   if (typeof input.stderr !== "string") state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
   state.command.result = Object.freeze({
     outcome: Object.freeze({ kind: "exited" as const, exitCode: input.exitCode }),
-    stdout,
-    stderr,
+    stdout: commandStream({
+      commandId: state.command.commandId,
+      stream: "stdout",
+      value: stdout,
+      runtime: state.runtime,
+    }),
+    stderr: commandStream({
+      commandId: state.command.commandId,
+      stream: "stderr",
+      value: stderr,
+      runtime: state.runtime,
+    }),
   });
 }
 
@@ -1013,10 +1241,17 @@ function expandExponentialDecimal(value: string): string | undefined {
 
 function appendUsageObservation(
   runtime: RunnerAttemptObservabilityRuntimeState,
+  turnId: TurnId,
   create: (usageObservationId: UsageObservationId, provider: SafeIdentifier) => UsageObservation,
 ): void {
-  if (runtime.usage.length >= MAX_USAGE_OBSERVATIONS) {
-    runtime.usageLimitations.addCap("usage-observation", runtime.usage.length);
+  const capturedTurn = runtime.conversationTurns.find((turn) => turn.turnId === turnId);
+  if (capturedTurn === undefined) {
+    runtime.usageLimitations.addCaptureFailed("usage-capture", "usage-observation");
+    return;
+  }
+  const usageCount = runtime.conversationTurns.reduce((count, turn) => count + turn.usage.length, 0);
+  if (usageCount >= MAX_USAGE_OBSERVATIONS) {
+    runtime.usageLimitations.addCap("usage-observation", usageCount);
     return;
   }
   const provider = makeSafeIdentifier(runtime.providerName);
@@ -1026,7 +1261,7 @@ function appendUsageObservation(
   }
   const usageObservationId = mintRuntimeEntity(runtime, "usage-observation");
   if (usageObservationId === undefined) return;
-  runtime.usage.push(create(usageObservationId, provider));
+  capturedTurn.usage.push(create(usageObservationId, provider));
 }
 
 /**
@@ -1036,10 +1271,19 @@ function appendUsageObservation(
  */
 export function captureRunnerTurnUsage(
   runtimeHandle: RunnerAttemptObservabilityRuntime,
+  turnId: TurnId,
   usage: Usage,
 ): void {
   const runtime = runtimeState(runtimeHandle);
-  if (runtime === undefined || runtime.failure !== undefined) return;
+  if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return;
+  if (
+    runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS &&
+    !runtime.conversationTurns.some((turn) => turn.turnId === turnId)
+  ) {
+    const usageCount = runtime.conversationTurns.reduce((count, turn) => count + turn.usage.length, 0);
+    runtime.usageLimitations.addCap("usage-observation", usageCount);
+    return;
+  }
   const tokenBuckets: readonly [keyof Pick<
     Usage,
     "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens" | "reasoningTokens"
@@ -1058,7 +1302,7 @@ export function captureRunnerTurnUsage(
       runtime.usageLimitations.addUnsupported("usage-observation");
       continue;
     }
-    appendUsageObservation(runtime, (usageObservationId, provider) => Object.freeze({
+    appendUsageObservation(runtime, turnId, (usageObservationId, provider) => Object.freeze({
       usageObservationId,
       provider,
       kind: "token-bucket" as const,
@@ -1073,14 +1317,15 @@ export function captureRunnerTurnUsage(
       runtime.usageLimitations.addUnsupported("usage-observation");
     } else {
       for (let request = 0; request < requests; request += 1) {
-        appendUsageObservation(runtime, (usageObservationId, provider) => Object.freeze({
+        appendUsageObservation(runtime, turnId, (usageObservationId, provider) => Object.freeze({
           usageObservationId,
           provider,
           kind: "request" as const,
           requestKind: "model" as const,
           refs: Object.freeze([]),
         }));
-        if (runtime.usage.length >= MAX_USAGE_OBSERVATIONS) break;
+        const usageCount = runtime.conversationTurns.reduce((count, turn) => count + turn.usage.length, 0);
+        if (usageCount >= MAX_USAGE_OBSERVATIONS) break;
       }
     }
   }
@@ -1091,7 +1336,7 @@ export function captureRunnerTurnUsage(
     } else {
       const currency = makeCurrencyCode("USD");
       if (currency === undefined) throw new Error("USD must be a CurrencyCode");
-      appendUsageObservation(runtime, (usageObservationId, provider) => Object.freeze({
+      appendUsageObservation(runtime, turnId, (usageObservationId, provider) => Object.freeze({
         usageObservationId,
         provider,
         kind: "provider-cost" as const,
@@ -1160,265 +1405,215 @@ function appendConversationTextLimitation(
   }
 }
 
-function normalizeConversation(input: {
-  readonly mint: AttemptEntityMinter;
-  readonly runtime: RunnerAttemptObservabilityRuntimeState;
-}): Effect.Effect<NormalizedAttemptObservabilityCapture["conversation"], RunnerObservabilityProducerError> {
-  return Effect.gen(function* () {
-    const limitations = input.runtime.conversationLimitations;
+/** Adapter boundary: raw terminal events do not survive this call. */
+function normalizeConversationTurn(
+  runtime: RunnerAttemptObservabilityRuntimeState,
+  turn: CapturedConversationTurn,
+  events: readonly StreamEvent[],
+): void {
+  const limitations = runtime.conversationLimitations;
+  const openTools = new Map<string, CallId>();
+  const openSubagents = new Map<string, SafeIdentifier>();
+  const append = (
+    create: (ids: {
+      readonly itemId: ItemId;
+      readonly turnId: TurnId;
+      readonly sequence: PositiveSafeInteger;
+    }) => ConversationItem,
+  ): ConversationItem | undefined => {
+    const itemCount = runtime.conversationTurns.reduce((count, entry) => count + entry.items.length, 0);
+    if (!hasConversationCapacity({ itemCount, hasTurn: true, limitations })) return undefined;
+    const itemId = mintRuntimeEntity(runtime, "item");
+    if (itemId === undefined) return undefined;
+    const item = create(Object.freeze({
+      itemId,
+      turnId: turn.turnId,
+      sequence: requiredPositive(itemCount + 1),
+    }));
+    turn.items.push(item);
+    return item;
+  };
 
-    const items: ConversationItem[] = [];
-    let turnId: TurnId | undefined;
-    const openTools = new Map<string, { readonly callId: CallId; readonly turnId: TurnId }>();
-    const openSubagents = new Map<string, { readonly label: SafeIdentifier }>();
-
-    const ensureTurn = (): Effect.Effect<TurnId | undefined, RunnerObservabilityProducerError> => {
-      if (turnId !== undefined) return Effect.succeed(turnId);
-      return Effect.succeed(undefined);
-    };
-
-    const appendItem = (
-      create: (ids: {
-        readonly itemId: ItemId;
-        readonly turnId: TurnId;
-        readonly sequence: PositiveSafeInteger;
-      }) => ConversationItem,
-    ): Effect.Effect<ConversationItem | undefined, RunnerObservabilityProducerError> => {
-      if (!hasConversationCapacity({
-        itemCount: items.length,
-        hasTurn: turnId !== undefined,
-        limitations,
-      })) {
-        return Effect.succeed(undefined);
-      }
-      return Effect.gen(function* () {
-        const currentTurn = yield* ensureTurn();
-        if (currentTurn === undefined) return undefined;
-        const itemId = yield* input.mint("item");
-        const item = create(Object.freeze({
-          itemId,
-          turnId: currentTurn,
-          sequence: requiredPositive(items.length + 1),
-        }));
-        items.push(item);
-        return item;
-      });
-    };
-
-    for (const capturedTurn of input.runtime.conversationTurns) {
-      turnId = capturedTurn.turnId;
-      for (const event of capturedTurn.events) {
-      if (eventCannotBePersisted(event, limitations)) continue;
-      switch (event.type) {
-        case "message": {
-          const text = retainSafeText(event.text, MAX_CONVERSATION_TEXT_BYTES);
-          if (text === undefined) {
-            limitations.addUnsupported("conversation-item");
-            continue;
-          }
-          const item = yield* appendItem((ids) => Object.freeze({
-            ...ids,
-            kind: "message" as const,
-            role: event.role,
-            text: text.text,
-            refs: Object.freeze([]),
-          }));
-          appendConversationTextLimitation(item, text, limitations);
-          break;
-        }
-        case "operation.started": {
-          if (event.operation.kind === "tool") {
-            // Conversation is the source-native execution record. Canonical
-            // ToolName is useful to runtime assertions, but must never replace
-            // or rescue the provider's real identity in durable evidence.
-            const tool = sourceNativeToolName(event.operation.name);
-            const summary = jsonSummary(event.operation.input);
-            if (tool === undefined || summary === undefined) {
-              limitations.addUnsupported("conversation-item");
-              continue;
-            }
-            if (!hasConversationCapacity({
-              itemCount: items.length,
-              hasTurn: turnId !== undefined,
-              limitations,
-            })) continue;
-            const callId = yield* input.mint("call");
-            const item = yield* appendItem((ids) => Object.freeze({
-              ...ids,
-              kind: "tool-call" as const,
-              callId,
-              tool,
-              inputSummary: summary.text,
-              refs: Object.freeze([]),
-            }));
-            if (item !== undefined) {
-              openTools.set(event.operationId, Object.freeze({ callId, turnId: item.turnId }));
-            }
-            appendConversationTextLimitation(item, summary, limitations);
-            break;
-          }
-
-          const label = safeIdentifier(event.operation.name);
-          if (label === undefined) {
-            limitations.addUnsupported("conversation-item");
-            continue;
-          }
-          const item = yield* appendItem((ids) => Object.freeze({
-            ...ids,
-            kind: "subagent" as const,
-            state: "started" as const,
-            label,
-            summary: makeBoundedSafeText("Subagent started.", MAX_CONVERSATION_TEXT_BYTES)!,
-            refs: Object.freeze([]),
-          }));
-          if (item !== undefined) openSubagents.set(event.operationId, Object.freeze({ label }));
-          break;
-        }
-        case "operation.finished": {
-          if (event.kind === "tool") {
-            const open = openTools.get(event.operationId);
-            const summary = event.output === undefined ? undefined : jsonSummary(event.output);
-            if (open === undefined || summary === undefined) {
-              limitations.addUnsupported("conversation-item");
-              continue;
-            }
-            const item = yield* appendItem((ids) => Object.freeze({
-              ...ids,
-              turnId: open.turnId,
-              kind: "tool-result" as const,
-              callId: open.callId,
-              outcome: event.status,
-              outputSummary: summary.text,
-              refs: Object.freeze([]),
-            }));
-            if (item !== undefined) openTools.delete(event.operationId);
-            appendConversationTextLimitation(item, summary, limitations);
-            break;
-          }
-
-          const open = openSubagents.get(event.operationId);
-          if (open === undefined) {
-            limitations.addUnsupported("conversation-item");
-            continue;
-          }
-          const item = yield* appendItem((ids) => Object.freeze({
-            ...ids,
-            kind: "subagent" as const,
-            state: event.status,
-            label: open.label,
-            summary: makeBoundedSafeText(
-              event.status === "completed" ? "Subagent completed." : "Subagent failed.",
-              MAX_CONVERSATION_TEXT_BYTES,
-            )!,
-            refs: Object.freeze([]),
-          }));
-          if (item !== undefined) openSubagents.delete(event.operationId);
-          break;
-        }
-        case "skill.loaded": {
-          const skill = safeIdentifier(event.skill);
-          if (skill === undefined) {
-            limitations.addUnsupported("conversation-item");
-            continue;
-          }
-          yield* appendItem((ids) => Object.freeze({
-            ...ids,
-            kind: "skill-load" as const,
-            skill,
-            outcome: "loaded" as const,
-            refs: Object.freeze([]),
-          }));
-          break;
-        }
-        case "input.requested": {
-          const source = event.request.prompt ?? event.request.display;
-          const summary = source === undefined
-            ? (event.request.input === undefined ? undefined : jsonSummary(event.request.input))
-            : retainSafeText(source, MAX_CONVERSATION_TEXT_BYTES);
-          if (summary === undefined) {
-            limitations.addUnsupported("conversation-item");
-            continue;
-          }
-          const item = yield* appendItem((ids) => Object.freeze({
-            ...ids,
-            kind: "input-request" as const,
-            state: "requested" as const,
-            promptSummary: summary.text,
-            responseSummary: null,
-            refs: Object.freeze([]),
-          }));
-          appendConversationTextLimitation(item, summary, limitations);
-          // StreamEvent has no corresponding response event, so null cannot
-          // claim a complete request/response capture.
-          limitations.addCaptureFailed("adapter", "conversation-item");
-          break;
-        }
-        case "context.injected": {
-          const source = event.source;
-          const summary = retainSafeText(event.text, MAX_CONVERSATION_TEXT_BYTES);
-          if (
-            summary === undefined ||
-            (source !== "system" && source !== "memory" && source !== "skill" && source !== "user")
-          ) {
-            limitations.addUnsupported("conversation-item");
-            continue;
-          }
-          const item = yield* appendItem((ids) => Object.freeze({
-            ...ids,
-            kind: "context-injection" as const,
-            source,
-            summary: summary.text,
-            refs: Object.freeze([]),
-          }));
-          appendConversationTextLimitation(item, summary, limitations);
-          break;
-        }
-        case "error": {
-          const redacted = redactSensitiveText(event.message, input.runtime.sensitiveValues);
-          if (redacted !== event.message) limitations.addRedacted("conversation-text");
-          const summary = retainSafeText(redacted, MAX_CONVERSATION_TEXT_BYTES);
-          if (summary === undefined) {
-            limitations.addUnsupported("conversation-item");
-            continue;
-          }
-          const item = yield* appendItem((ids) => Object.freeze({
-            ...ids,
-            kind: "conversation-error" as const,
-            code: makeSafeIdentifier("stream-error")!,
-            summary: summary.text,
-            refs: Object.freeze([]),
-          }));
-          appendConversationTextLimitation(item, summary, limitations);
-          break;
-        }
-        // Thinking can contain hidden reasoning, and compaction has no safe
-        // item count in StreamEvent. Both are deliberately retained only as
-        // structured partial coverage, never as invented summaries.
-        case "thinking":
-        case "compaction":
+  for (const event of events) {
+    if (eventCannotBePersisted(event, limitations)) continue;
+    switch (event.type) {
+      case "message": {
+        const text = retainConversationText(event.text, runtime, limitations);
+        if (text === undefined) {
           limitations.addUnsupported("conversation-item");
           break;
+        }
+        const item = append((ids) => Object.freeze({
+          ...ids,
+          kind: "message" as const,
+          role: event.role,
+          text: text.text,
+          refs: Object.freeze([]),
+        }));
+        appendConversationTextLimitation(item, text, limitations);
+        break;
       }
+      case "operation.started": {
+        if (event.operation.kind === "tool") {
+          const tool = sourceNativeToolName(event.operation.name);
+          const summary = jsonConversationSummary(event.operation.input, runtime, limitations);
+          const callId = mintRuntimeEntity(runtime, "call");
+          if (tool === undefined || summary === undefined || callId === undefined) {
+            limitations.addUnsupported("conversation-item");
+            break;
+          }
+          const item = append((ids) => Object.freeze({
+            ...ids,
+            kind: "tool-call" as const,
+            callId,
+            tool,
+            inputSummary: summary.text,
+            refs: Object.freeze([]),
+          }));
+          if (item !== undefined) openTools.set(event.operationId, callId);
+          appendConversationTextLimitation(item, summary, limitations);
+          break;
+        }
+        const label = safeIdentifier(event.operation.name);
+        if (label === undefined) {
+          limitations.addUnsupported("conversation-item");
+          break;
+        }
+        const item = append((ids) => Object.freeze({
+          ...ids,
+          kind: "subagent" as const,
+          state: "started" as const,
+          label,
+          summary: makeBoundedSafeText("Subagent started.", MAX_CONVERSATION_TEXT_BYTES)!,
+          refs: Object.freeze([]),
+        }));
+        if (item !== undefined) openSubagents.set(event.operationId, label);
+        break;
       }
+      case "operation.finished": {
+        if (event.kind === "tool") {
+          const callId = openTools.get(event.operationId);
+          const summary = event.output === undefined
+            ? undefined
+            : jsonConversationSummary(event.output, runtime, limitations);
+          if (callId === undefined || summary === undefined) {
+            limitations.addUnsupported("conversation-item");
+            break;
+          }
+          const item = append((ids) => Object.freeze({
+            ...ids,
+            kind: "tool-result" as const,
+            callId,
+            outcome: event.status,
+            outputSummary: summary.text,
+            refs: Object.freeze([]),
+          }));
+          if (item !== undefined) openTools.delete(event.operationId);
+          appendConversationTextLimitation(item, summary, limitations);
+          break;
+        }
+        const label = openSubagents.get(event.operationId);
+        if (label === undefined) {
+          limitations.addUnsupported("conversation-item");
+          break;
+        }
+        const item = append((ids) => Object.freeze({
+          ...ids,
+          kind: "subagent" as const,
+          state: event.status,
+          label,
+          summary: makeBoundedSafeText(
+            event.status === "completed" ? "Subagent completed." : "Subagent failed.",
+            MAX_CONVERSATION_TEXT_BYTES,
+          )!,
+          refs: Object.freeze([]),
+        }));
+        if (item !== undefined) openSubagents.delete(event.operationId);
+        break;
+      }
+      case "skill.loaded": {
+        const skill = safeIdentifier(event.skill);
+        if (skill === undefined) {
+          limitations.addUnsupported("conversation-item");
+          break;
+        }
+        append((ids) => Object.freeze({
+          ...ids,
+          kind: "skill-load" as const,
+          skill,
+          outcome: "loaded" as const,
+          refs: Object.freeze([]),
+        }));
+        break;
+      }
+      case "input.requested": {
+        const source = event.request.prompt ?? event.request.display;
+        const summary = source === undefined
+          ? (event.request.input === undefined
+            ? undefined
+            : jsonConversationSummary(event.request.input, runtime, limitations))
+          : retainConversationText(source, runtime, limitations);
+        if (summary === undefined) {
+          limitations.addUnsupported("conversation-item");
+          break;
+        }
+        const item = append((ids) => Object.freeze({
+          ...ids,
+          kind: "input-request" as const,
+          state: "requested" as const,
+          promptSummary: summary.text,
+          responseSummary: null,
+          refs: Object.freeze([]),
+        }));
+        appendConversationTextLimitation(item, summary, limitations);
+        limitations.addCaptureFailed("adapter", "conversation-item");
+        break;
+      }
+      case "context.injected": {
+        const source = event.source;
+        const summary = retainConversationText(event.text, runtime, limitations);
+        if (
+          summary === undefined ||
+          (source !== "system" && source !== "memory" && source !== "skill" && source !== "user")
+        ) {
+          limitations.addUnsupported("conversation-item");
+          break;
+        }
+        const item = append((ids) => Object.freeze({
+          ...ids,
+          kind: "context-injection" as const,
+          source,
+          summary: summary.text,
+          refs: Object.freeze([]),
+        }));
+        appendConversationTextLimitation(item, summary, limitations);
+        break;
+      }
+      case "error": {
+        const summary = retainConversationText(event.message, runtime, limitations);
+        if (summary === undefined) {
+          limitations.addUnsupported("conversation-item");
+          break;
+        }
+        const item = append((ids) => Object.freeze({
+          ...ids,
+          kind: "conversation-error" as const,
+          code: makeSafeIdentifier("stream-error")!,
+          summary: summary.text,
+          refs: Object.freeze([]),
+        }));
+        appendConversationTextLimitation(item, summary, limitations);
+        break;
+      }
+      case "thinking":
+      case "compaction":
+        limitations.addUnsupported("conversation-item");
+        break;
     }
-
-    if (openTools.size > 0 || openSubagents.size > 0) {
-      limitations.addUnsupported("conversation-item", openTools.size + openSubagents.size);
-    }
-    const turns: readonly ConversationTurn[] = Object.freeze(
-      input.runtime.conversationTurns.map((capturedTurn) => Object.freeze({
-        turnId: capturedTurn.turnId,
-        sequence: capturedTurn.sequence,
-        outcome: capturedTurn.outcome,
-        refs: Object.freeze([]),
-      })),
-    );
-    return Object.freeze({
-      collection: limitations.collection(),
-      turns,
-      items: Object.freeze([...items]),
-    });
-  });
+  }
+  if (openTools.size > 0 || openSubagents.size > 0) {
+    limitations.addUnsupported("conversation-item", openTools.size + openSubagents.size);
+  }
 }
 
 function commandSafeText(input: {
@@ -1486,7 +1681,14 @@ function commandWorkingDirectory(
 }
 
 function commandManifest(
-  command: CapturedCommandRuntime,
+  command: {
+    readonly commandId: CommandId;
+    readonly phase: LifecyclePhase;
+    readonly invocationKind: "argv" | "shell";
+    readonly command: string;
+    readonly args: readonly string[] | undefined;
+    readonly options: unknown;
+  },
   runtime: RunnerAttemptObservabilityRuntimeState,
 ): CommandManifest {
   const phase = commandManifestPhase(command.phase);
@@ -1555,10 +1757,15 @@ function stripUnsafeCommandControls(value: string): { readonly text: string; rea
   return Object.freeze({ text, count });
 }
 
-function emptyCommandStream(): NormalizedCommandStreamCapture {
+function emptyCommandStream(): StagedCommandStream {
   const text = makeBoundedSafeText("", MAX_COMMAND_STREAM_BYTES);
   if (text === undefined) throw new Error("An empty command stream must be SafeText");
-  return Object.freeze({ text, totalSafeUtf8Bytes: requiredNonNegative(0) });
+  return Object.freeze({
+    text,
+    retainedBytes: requiredNonNegative(0),
+    totalSafeUtf8Bytes: requiredNonNegative(0),
+    sha256: createHash("sha256").update(new Uint8Array()).digest("hex"),
+  });
 }
 
 function commandStream(input: {
@@ -1566,7 +1773,7 @@ function commandStream(input: {
   readonly stream: "stdout" | "stderr";
   readonly value: string;
   readonly runtime: RunnerAttemptObservabilityRuntimeState;
-}): NormalizedCommandStreamCapture {
+}): StagedCommandStream {
   const target = input.stream === "stdout" ? "command-stdout" as const : "command-stderr" as const;
   const redacted = redactSensitiveText(input.value, input.runtime.sensitiveValues);
   if (redacted !== input.value) input.runtime.commandLimitations.addRedacted(target);
@@ -1594,82 +1801,11 @@ function commandStream(input: {
   const totalSafeUtf8Bytes = retained.omittedBytes === undefined
     ? retained.retainedBytes
     : requiredNonNegative(retained.retainedBytes + retained.omittedBytes);
-  return Object.freeze({ text: retained.text, totalSafeUtf8Bytes });
-}
-
-function normalizeCommands(
-  runtime: RunnerAttemptObservabilityRuntimeState,
-): NormalizedAttemptObservabilityCapture["commands"] {
-  const commands: NormalizedCommandObservationCapture[] = [];
-  for (const captured of runtime.commands) {
-    if (captured.result === undefined) {
-      // The manifest was registered before the sandbox call. If its normal
-      // result never arrived, retain it with the only accurate fallback: the
-      // transport did not provide a terminal command result.
-      runtime.commandLimitations.addCaptureFailed("command-capture", "command-manifest");
-      runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
-      runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
-      recordTerminalCommandResult(
-        Object.freeze({ runtime, command: captured }),
-        Object.freeze({ kind: "terminated" as const, reason: "transport-lost" as const }),
-      );
-    }
-    const result = captured.result;
-    if (result === undefined) {
-      markRuntimeFailure(runtime, producerCommandRegistrationInvalid());
-      continue;
-    }
-    const manifest = commandManifest(captured, runtime);
-    const stdout = commandStream({
-      commandId: captured.commandId,
-      stream: "stdout",
-      value: result.stdout,
-      runtime,
-    });
-    const stderr = commandStream({
-      commandId: captured.commandId,
-      stream: "stderr",
-      value: result.stderr,
-      runtime,
-    });
-    commands.push(Object.freeze({
-      commandId: captured.commandId,
-      manifest,
-      result: Object.freeze({ outcome: result.outcome, stdout, stderr }),
-    }));
-  }
   return Object.freeze({
-    collection: runtime.commandLimitations.collection(),
-    commands: Object.freeze(
-      [...commands].sort((left, right) => compareObservabilityText(left.commandId, right.commandId)),
-    ),
-  });
-}
-
-function normalizeUsage(input: {
-  readonly result: EvalResult;
-  readonly runtime: RunnerAttemptObservabilityRuntimeState;
-}): NormalizedAttemptObservabilityCapture["usage"] {
-  // EvalResult.usage remains an aggregate for legacy consumers. Only records
-  // captured from actual Session onTurn values above enter this family.
-  if (input.result.evidenceCoverage.usage.status === "unavailable") {
-    input.runtime.usageLimitations.addUnsupported("usage-observation");
-  } else if (input.result.evidenceCoverage.usage.status === "partial") {
-    input.runtime.usageLimitations.addCaptureFailed("usage-capture", "usage-observation");
-  }
-  if (input.result.retryAttempts?.some((attempt) => attempt.usage !== undefined) === true) {
-    // Retry attempts carry real Usage, but Session's terminal onTurn callback
-    // did not expose a separate turn for them. Do not reconstruct them from
-    // the aggregate; state the missing atomic capture instead.
-    input.runtime.usageLimitations.addCaptureFailed("usage-capture", "usage-observation");
-  }
-  return Object.freeze({
-    collection: input.runtime.usageLimitations.collection(),
-    observations: Object.freeze(
-      [...input.runtime.usage].sort((left, right) =>
-        compareObservabilityText(left.usageObservationId, right.usageObservationId),
-      ),
-    ),
+    text: retained.text,
+    retainedBytes: retained.retainedBytes,
+    totalSafeUtf8Bytes,
+    sha256: createHash("sha256").update(new TextEncoder().encode(retained.text)).digest("hex"),
   });
 }
 
@@ -1788,7 +1924,7 @@ function timingSpanContains(input: {
 }
 
 interface NormalizedAttemptTimingWithTurnIntervals {
-  readonly timing: NormalizedAttemptObservabilityCapture["timing"];
+  readonly timing: AttemptTimingAttachment;
   readonly intervalByTurnId: ReadonlyMap<TurnId, IntervalId>;
 }
 
@@ -2012,7 +2148,7 @@ function attemptDiagnosticPhase(
 function normalizeAttemptDiagnostics(input: {
   readonly result: EvalResult;
   readonly mint: AttemptEntityMinter;
-}): Effect.Effect<NormalizedAttemptObservabilityCapture["diagnostics"], RunnerObservabilityProducerError> {
+}): Effect.Effect<AttemptDiagnosticsAttachment, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
     const limitations = new RunnerCollectionLimitations();
     const diagnostics: AttemptDiagnostic[] = [];
@@ -2113,16 +2249,11 @@ function runDiagnosticPhase(
 }
 
 function normalizeRunDiagnostics(input: {
-  readonly diagnostics: readonly DiagnosticRecord[] | undefined;
+  readonly diagnostics: readonly DiagnosticRecord[];
   readonly mint: RunEntityMinter;
-}): Effect.Effect<NormalizedRunObservabilityCapture["diagnostics"], RunnerObservabilityProducerError> {
+}): Effect.Effect<RunDiagnosticsAttachment, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
     const limitations = new RunnerCollectionLimitations();
-    if (input.diagnostics === undefined) {
-      limitations.addCaptureFailed("run-teardown", "diagnostic");
-      return Object.freeze({ collection: limitations.collection(), diagnostics: Object.freeze([]) });
-    }
-
     const diagnostics: RunDiagnostic[] = [];
     for (const source of input.diagnostics) {
       const code = makeSafeIdentifier(source.code);
@@ -2170,44 +2301,256 @@ function normalizeRunDiagnostics(input: {
  * Normalizes only facts already sealed by Runner. It never reads legacy
  * result.json, raw transcript/provider data, Report/Sample data, or paths.
  */
-export function createRunnerAttemptObservabilityCapture(input: {
-  readonly result: EvalResult;
-  readonly sealed: SealedAttemptAssertions;
-}): Effect.Effect<
-  NormalizedAttemptObservabilityCapture,
-  RunnerObservabilityProducerError
-> {
+function sourceSegmentId(): SafeIdentifier | undefined {
+  try {
+    return makeSafeIdentifier(`seg.${randomUUID().replaceAll("-", "")}`);
+  } catch {
+    return undefined;
+  }
+}
+
+function agentTurnTerminal(
+  turn: CapturedConversationTurn,
+): NormalizedAgentTurnTerminal {
+  if (turn.adapterStatus !== undefined && turn.evidenceCoverage !== undefined) {
+    return Object.freeze({
+      state: "recorded" as const,
+      status: turn.adapterStatus,
+      evidenceCoverage: Object.freeze({
+        events: turn.evidenceCoverage.events.status,
+        actions: turn.evidenceCoverage.actions.status,
+        messages: turn.evidenceCoverage.messages.status,
+        usage: turn.evidenceCoverage.usage.status,
+        status: turn.evidenceCoverage.status.status,
+        data: turn.evidenceCoverage.data.status,
+      }),
+    });
+  }
+  return Object.freeze({
+    state: "unavailable" as const,
+    reason: turn.outcome === "interrupted"
+      ? "send-interrupted" as const
+      : "send-failed" as const,
+  });
+}
+
+function segmentIds<Id extends string>(ids: readonly Id[]): Map<Id, SafeIdentifier> | undefined {
+  const result = new Map<Id, SafeIdentifier>();
+  for (const id of ids) {
+    const segmentId = sourceSegmentId();
+    if (segmentId === undefined) return undefined;
+    result.set(id, segmentId);
+  }
+  return result;
+}
+
+function receiptConversationItem(item: ConversationItem): object {
+  const base = { itemId: item.itemId, sequence: item.sequence };
+  switch (item.kind) {
+    case "message": return Object.freeze({ ...base, kind: item.kind, role: item.role, text: item.text });
+    case "tool-call": return Object.freeze({ ...base, kind: item.kind, callId: item.callId, tool: item.tool, inputSummary: item.inputSummary });
+    case "tool-result": return Object.freeze({ ...base, kind: item.kind, callId: item.callId, outcome: item.outcome, outputSummary: item.outputSummary });
+    case "thinking-summary": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
+    case "subagent": return Object.freeze({ ...base, kind: item.kind, state: item.state, label: item.label, summary: item.summary });
+    case "input-request": return Object.freeze({ ...base, kind: item.kind, state: item.state, promptSummary: item.promptSummary, responseSummary: item.responseSummary });
+    case "skill-load": return Object.freeze({
+      ...base,
+      kind: item.kind,
+      code: item.skill,
+      summary: makeBoundedSafeText(
+        item.outcome === "loaded" ? "Skill loaded." : "Skill load failed.",
+        MAX_CONVERSATION_TEXT_BYTES,
+      )!,
+    });
+    case "context-injection": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
+    case "compaction": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
+    case "conversation-error": return Object.freeze({ ...base, kind: item.kind, code: item.code, summary: item.summary });
+  }
+}
+
+function receiptDiagnosticRedaction(redaction: AttemptDiagnostic["redaction"]): object {
+  if (redaction.state === "none") return Object.freeze({ state: "none" as const });
+  return Object.freeze({
+    state: "applied" as const,
+    replacements: redaction.summaryReplacements + redaction.causeReplacements + redaction.contextReplacements,
+  });
+}
+
+function decodeReceipt<Value, Encoded>(
+  schema: Schema.Schema<Value, Encoded, never>,
+  candidate: unknown,
+  owner: "attempt" | "run",
+): Effect.Effect<Value, RunnerObservabilityProducerError> {
+  const decoded = Schema.validateEither(schema)(candidate);
+  return Either.isLeft(decoded)
+    ? Effect.fail(producerCaptureSealInvalid(owner))
+    : Effect.succeed(decoded.right);
+}
+
+function captureRunnerAttemptSourceSnapshot(
+  result: EvalResult,
+  runtime: RunnerAttemptObservabilityRuntimeState,
+): Effect.Effect<RunnerAttemptSourceReceiptsCapture, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    const runtime = runnerAttemptResultStates.get(input.result);
-    if (runtime === undefined) return yield* Effect.fail(producerCaptureMissing());
+    for (const turn of runtime.conversationTurns) {
+      if (turn.outcome !== undefined) continue;
+      runtime.conversationLimitations.addCaptureInterrupted("adapter", "conversation-item");
+      turn.outcome = "interrupted";
+    }
+    for (const command of runtime.commands) {
+      if (command.result !== undefined) continue;
+      runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-manifest");
+      runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-stdout");
+      runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-stderr");
+      recordTerminalCommandResult(
+        Object.freeze({ runtime, command }),
+        Object.freeze({ kind: "terminated" as const, reason: "cancelled" as const }),
+      );
+    }
     if (runtime.failure !== undefined) return yield* Effect.fail(runtime.failure);
+
     const minter = makeAttemptEntityMinter(runtime);
-    const commands = normalizeCommands(runtime);
-    const usage = normalizeUsage({ result: input.result, runtime });
     const timingNormalization = yield* normalizeAttemptTiming({
-      result: input.result,
+      result,
       mint: minter.mint,
       turns: runtime.conversationTurns,
     });
-    if (runtime.conversationTurns.some((turn) => !timingNormalization.intervalByTurnId.has(turn.turnId))) {
-      runtime.conversationLimitations.addCaptureFailed("timing-capture", "conversation-item");
+    const diagnosticsNormalization = yield* normalizeAttemptDiagnostics({ result, mint: minter.mint });
+    const activitySegmentIds = segmentIds(
+      timingNormalization.timing.intervals.map((interval) => interval.intervalId),
+    );
+    const diagnosticSegmentIds = segmentIds(
+      diagnosticsNormalization.diagnostics.map((diagnostic) => diagnostic.diagnosticId),
+    );
+    if (activitySegmentIds === undefined || diagnosticSegmentIds === undefined) {
+      return yield* Effect.fail(producerEntityIdInvalid("interval"));
     }
-    const conversation = yield* normalizeConversation({
-      mint: minter.mint,
-      runtime,
+
+    const agentTurnsCandidate = runtime.conversationTurns.length === 0
+      ? undefined
+      : Object.freeze({
+          collection: sourceCollection([
+            { collection: runtime.conversationLimitations.collection(), stage: "adapter" },
+            { collection: runtime.usageLimitations.collection(), stage: "adapter" },
+          ]),
+          segments: Object.freeze(runtime.conversationTurns.map((turn) => Object.freeze({
+            segmentId: turn.segmentId,
+            turnId: turn.turnId,
+            sequence: turn.sequence,
+            outcome: turn.outcome ?? "interrupted",
+            terminal: agentTurnTerminal(turn),
+            items: Object.freeze(turn.items.map(receiptConversationItem)),
+            usage: Object.freeze(turn.usage.map(({ refs: _refs, ...usage }) => Object.freeze(usage))),
+          }))),
+        });
+    const agentTurns = agentTurnsCandidate === undefined
+      ? undefined
+      : yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt");
+
+    const commandSegments: StagedSandboxCommandReceipt[] = [];
+    for (const command of runtime.commands) {
+      if (command.result === undefined) return yield* Effect.fail(producerCommandRegistrationInvalid());
+      commandSegments.push(Object.freeze({
+        segmentId: command.segmentId,
+        commandId: command.commandId,
+        sequence: command.sequence,
+        turnId: null,
+        phase: command.manifest.phase,
+        invocation: command.manifest.invocation,
+        workingDirectory: command.manifest.workingDirectory,
+        outcome: command.result.outcome,
+        stdout: command.result.stdout,
+        stderr: command.result.stderr,
+      }));
+    }
+
+    const activitiesCandidate = Object.freeze({
+      collection: sourceCollection([
+        { collection: timingNormalization.timing.collection, stage: "runner-clock" },
+      ]),
+      segments: Object.freeze(timingNormalization.timing.intervals.map((interval, index) => Object.freeze({
+        segmentId: activitySegmentIds.get(interval.intervalId),
+        activityId: interval.intervalId,
+        sequence: index + 1,
+        phase: interval.phase,
+        label: interval.label,
+        turnId: [...timingNormalization.intervalByTurnId]
+          .find(([, intervalId]) => intervalId === interval.intervalId)?.[0] ?? null,
+        startOffsetMs: interval.startOffsetMs,
+        durationMs: interval.durationMs,
+        parentActivityId: interval.parentIntervalId,
+        outcome: interval.outcome,
+      }))),
     });
-    const diagnostics = yield* normalizeAttemptDiagnostics({ result: input.result, mint: minter.mint });
-    if (runtime.failure !== undefined) return yield* Effect.fail(runtime.failure);
-    if (!minter.seal()) return yield* Effect.fail(producerCaptureSealInvalid("attempt"));
-    runnerAttemptResultTurnIntervals.set(input.result, new Map(timingNormalization.intervalByTurnId));
+    const runnerActivities = yield* decodeReceipt(
+      AttemptRunnerActivitiesAttachmentSchema,
+      activitiesCandidate,
+      "attempt",
+    );
+
+    const diagnosticsCandidate = Object.freeze({
+      collection: sourceCollection([
+        { collection: diagnosticsNormalization.collection, stage: "runner-diagnostic-sink" },
+      ]),
+      segments: Object.freeze(diagnosticsNormalization.diagnostics.map((diagnostic, index) => Object.freeze({
+        segmentId: diagnosticSegmentIds.get(diagnostic.diagnosticId),
+        diagnosticId: diagnostic.diagnosticId,
+        sequence: index + 1,
+        kind: diagnostic.kind,
+        code: diagnostic.code,
+        phase: diagnostic.phase === "collection" ? "attempt.teardown" : diagnostic.phase,
+        turnId: null,
+        summary: diagnostic.summary,
+        causes: Object.freeze(diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary }))),
+        redaction: receiptDiagnosticRedaction(diagnostic.redaction),
+        sourceFrame: diagnostic.sourceFrame,
+      }))),
+    });
+    const runnerDiagnostics = yield* decodeReceipt(
+      AttemptRunnerDiagnosticsAttachmentSchema,
+      diagnosticsCandidate,
+      "attempt",
+    );
+
     return Object.freeze({
-      conversation,
-      commands,
-      usage,
-      timing: timingNormalization.timing,
-      diagnostics,
+      ...(agentTurns === undefined ? {} : { agentTurns }),
+      ...(commandSegments.length === 0 && runtime.commandLimitations.collection().state === "complete"
+        ? {}
+        : { sandboxCommands: Object.freeze({
+            collection: sourceCollection([
+              { collection: runtime.commandLimitations.collection(), stage: "sandbox-wrapper" },
+            ]),
+            segments: Object.freeze(commandSegments),
+          }) }),
+      runnerActivities,
+      runnerDiagnostics,
     });
   });
+}
+
+export function createRunnerAttemptSourceReceiptsCapture(input: {
+  readonly result: EvalResult;
+  readonly sealed: SealedAttemptAssertions;
+}): Effect.Effect<
+  RunnerAttemptSourceReceiptsCapture,
+  RunnerObservabilityProducerError
+> {
+  const capture = Effect.gen(function* () {
+    const runtime = runnerAttemptResultStates.get(input.result);
+    if (runtime === undefined) return yield* Effect.fail(producerCaptureMissing());
+    if (runtime.failure !== undefined) return yield* Effect.fail(runtime.failure);
+    if (runtime.snapshot === undefined) return yield* Effect.fail(producerCaptureMissing());
+    if (!sealAttemptObservabilityCaptureIdentity(runtime.capture)) {
+      return yield* Effect.fail(producerCaptureSealInvalid("attempt"));
+    }
+    return runtime.snapshot;
+  });
+  return capture.pipe(
+    Effect.catchAll((error) =>
+      isRunnerObservabilityProducerError(error)
+        ? Effect.fail(error)
+        : Effect.die(error)),
+  );
 }
 
 /**
@@ -2217,25 +2560,15 @@ export function createRunnerAttemptObservabilityCapture(input: {
  * attribution. Settled Run diagnostics are bound by run.ts immediately before
  * this same publish boundary.
  */
-export function createRunnerRunObservabilityCapture(input: {
+export function createRunnerRunSourceReceiptsCapture(input: {
   readonly run: AgentRun;
-}): Effect.Effect<NormalizedRunObservabilityCapture, RunnerObservabilityProducerError> {
+}): Effect.Effect<RunnerRunSourceReceiptsCapture, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    const capture = makeRunObservabilityCaptureIdentity();
-    const minter = makeRunEntityMinter(capture);
-    const timingLimitations = new RunnerCollectionLimitations();
-    timingLimitations.addCaptureFailed("run-teardown", "timing-interval");
-    const diagnostics = yield* normalizeRunDiagnostics({
-      diagnostics: runnerRunDiagnostics.get(input.run),
-      mint: minter.mint,
-    });
-    if (!minter.seal()) return yield* Effect.fail(producerCaptureSealInvalid("run"));
-    return Object.freeze({
-      timing: Object.freeze({
-        collection: timingLimitations.collection(),
-        intervals: Object.freeze([]),
-      }),
-      diagnostics,
-    });
+    const captured = runnerRunCaptures.get(input.run);
+    if (captured === undefined) return Object.freeze({});
+    if (!sealRunObservabilityCaptureIdentity(captured.capture)) {
+      return yield* Effect.fail(producerCaptureSealInvalid("run"));
+    }
+    return captured.snapshot;
   });
 }

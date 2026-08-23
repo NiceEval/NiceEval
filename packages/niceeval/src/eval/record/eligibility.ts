@@ -7,7 +7,7 @@ import {
 /**
  * Eligibility is a current reuse-policy calculation. Record persists neither
  * an eligibility payload nor a second duration claim: source identity lives in
- * Core and source timing lives in fixed Observability.
+ * Core and source timing lives in Runner Activity receipts.
  */
 export const EXECUTION_DURATION_DOMAIN = "niceeval.execution-duration/v1" as const;
 export const EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH = 255 as const;
@@ -47,16 +47,14 @@ export type AttemptExecutionDurationRead =
         | "timing-window-incomplete";
     };
 
-/** The narrow fixed Observability surface needed for execution-time policy. */
+/** The narrow Runner Activity receipt surface needed for execution-time policy. */
 export interface AttemptExecutionTimingFacts {
-  readonly timing: {
-    readonly collection: { readonly state: string };
-    readonly intervals: readonly {
-      readonly startOffsetMs: number;
-      readonly durationMs: number;
-      readonly parentIntervalId: string | null;
-    }[];
-  };
+  readonly collection: { readonly state: string };
+  readonly segments: readonly {
+    readonly startOffsetMs: number;
+    readonly durationMs: number;
+    readonly parentActivityId: string | null;
+  }[];
 }
 
 /**
@@ -67,27 +65,26 @@ export interface AttemptExecutionTimingFacts {
  * zero.
  */
 export function readAttemptExecutionDuration(
-  observability: AttemptExecutionTimingFacts,
+  activities: AttemptExecutionTimingFacts,
 ): AttemptExecutionDurationRead {
-  const timing = observability.timing;
-  if (timing.collection.state !== "complete") {
+  if (activities.collection.state !== "complete") {
     return Object.freeze({ state: "unavailable" as const, reason: "timing-partial" as const });
   }
-  const roots = timing.intervals.filter((interval) => interval.parentIntervalId === null);
+  const roots = activities.segments.filter((activity) => activity.parentActivityId === null);
   if (roots.length === 0) {
     return Object.freeze({ state: "unavailable" as const, reason: "timing-empty" as const });
   }
   const sortedRoots = [...roots].sort((left, right) => left.startOffsetMs - right.startOffsetMs);
   let coveredEnd = 0;
-  for (const interval of sortedRoots) {
-    const end = interval.startOffsetMs + interval.durationMs;
+  for (const activity of sortedRoots) {
+    const end = activity.startOffsetMs + activity.durationMs;
     if (
-      !Number.isSafeInteger(interval.startOffsetMs)
-      || interval.startOffsetMs < 0
-      || !Number.isSafeInteger(interval.durationMs)
-      || interval.durationMs < 0
+      !Number.isSafeInteger(activity.startOffsetMs)
+      || activity.startOffsetMs < 0
+      || !Number.isSafeInteger(activity.durationMs)
+      || activity.durationMs < 0
       || !Number.isSafeInteger(end)
-      || interval.startOffsetMs > coveredEnd
+      || activity.startOffsetMs > coveredEnd
     ) {
       return Object.freeze({
         state: "unavailable" as const,

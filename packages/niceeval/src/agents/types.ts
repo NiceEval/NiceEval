@@ -364,6 +364,15 @@ export interface SandboxAgentContext extends AgentContext {
   readonly sandbox: Sandbox;
 }
 
+/** Per-send context; setup and teardown deliberately never receive a turn identity. */
+export interface AgentSendContext extends AgentContext {
+  readonly turnId: import("../o11y/record/model.ts").TurnId;
+}
+
+export interface SandboxAgentSendContext extends SandboxAgentContext {
+  readonly turnId: import("../o11y/record/model.ts").TurnId;
+}
+
 /**
  * Agent `setup` 的上下文:沙箱上下文再加一条宿主侧安装清单回执通道。只有 `setup` 收得到它——
  * 安装事实在这一步产生,`send` / `teardown` 不再补写。
@@ -550,7 +559,7 @@ export interface SandboxAgent extends AgentBase {
   readonly installers: readonly AgentInstaller[];
   setup?: AgentSetup;
   tracing?: AgentTracing;
-  send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
+  send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
   teardown?: AgentTeardown;
 }
 
@@ -559,7 +568,7 @@ export interface DirectAgent extends AgentBase {
   readonly kind: "direct";
   setup?: DirectAgentSetup;
   tracing?: Omit<AgentTracing, "configure">;
-  send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
+  send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
   teardown?: DirectAgentTeardown;
 }
 
@@ -590,7 +599,7 @@ export interface SandboxAgentDef {
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
   /** 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。 */
-  send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
+  send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
   /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
   classifySendFailure?: SendFailureClassifier;
   /** Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
@@ -613,7 +622,7 @@ export interface DirectAgentDef {
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
   /** 每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。 */
-  send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
+  send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
   /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
   classifySendFailure?: SendFailureClassifier;
   /** 运行结束前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),

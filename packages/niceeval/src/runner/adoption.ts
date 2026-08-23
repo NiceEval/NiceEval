@@ -775,7 +775,7 @@ export function readAdoptionVerdict(
 }
 
 /**
- * Timing is a fixed Observability fact. No missing, partial, or invalid
+ * Timing is a fixed Runner Activity receipt. No missing, partial, or invalid
  * timing collection is eligible for adoption, including an unbounded target.
  */
 export function readAdoptionExecutionDuration(
@@ -790,15 +790,15 @@ export function readAdoptionExecutionDuration(
         `Source timing for locator "${source.locator.text}" has no readable Attempt.`,
       ));
     }
-    const observability = yield* reader.readAttemptObservability(attempt.value.owner);
-    if (observability.state !== "available") {
-      const detail = observability.state === "invalid" ? "invalid" : observability.state;
+    const activities = yield* reader.readAttemptRunnerActivities(attempt.value.owner);
+    if (activities.state !== "available") {
+      const detail = activities.state === "invalid" ? "invalid" : activities.state;
       return yield* Effect.fail(adoptionError(
         "adoption-source-observability-unavailable",
         `Source timing for locator "${source.locator.text}" is ${detail}.`,
       ));
     }
-    const duration = readAttemptExecutionDuration(observability.value);
+    const duration = readAttemptExecutionDuration(activities.value);
     if (duration.state !== "available") {
       return yield* Effect.fail(adoptionError(
         "adoption-source-observability-unavailable",
@@ -835,7 +835,7 @@ function durationComparison(input: {
   if (input.target === undefined) {
     return Object.freeze({
       comparison: Object.freeze({
-        attachment: "niceeval.observability" as const,
+        attachment: "niceeval.runner-activities" as const,
         recordedClaim: "execution-duration" as const,
         sourceState: "available" as const,
         result: "match" as const,
@@ -846,7 +846,7 @@ function durationComparison(input: {
   if (input.source.domain !== input.target.domain) {
     return Object.freeze({
       comparison: Object.freeze({
-        attachment: "niceeval.observability" as const,
+        attachment: "niceeval.runner-activities" as const,
         recordedClaim: "execution-duration" as const,
         sourceState: "available" as const,
         result: "mismatch" as const,
@@ -858,7 +858,7 @@ function durationComparison(input: {
   if (input.source.milliseconds > input.target.milliseconds) {
     return Object.freeze({
       comparison: Object.freeze({
-        attachment: "niceeval.observability" as const,
+        attachment: "niceeval.runner-activities" as const,
         recordedClaim: "execution-duration" as const,
         sourceState: "available" as const,
         result: "mismatch" as const,
@@ -869,7 +869,7 @@ function durationComparison(input: {
   }
   return Object.freeze({
     comparison: Object.freeze({
-      attachment: "niceeval.observability" as const,
+      attachment: "niceeval.runner-activities" as const,
       recordedClaim: "execution-duration" as const,
       sourceState: "available" as const,
       result: "match" as const,
@@ -881,7 +881,7 @@ function durationComparison(input: {
 /**
  * Builds one accepted reference intent. The Core combined execution identity
  * is compared exactly, but an explicit operator decision may accept a mismatch.
- * The folded Verdict and complete fixed Observability timing remain hard gates.
+ * The folded Verdict and complete Runner Activity timing remain hard gates.
  */
 export function prepareExplicitAdoptionMember(input: {
   readonly reader: RecordReadSession;

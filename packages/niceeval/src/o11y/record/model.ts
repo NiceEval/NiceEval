@@ -413,11 +413,15 @@ export function entityIdFromEntropy<Kind extends ObservabilityEntityKind>(
 }
 
 export const ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS = Object.freeze([
-  "niceeval.observability",
+  "niceeval.agent-turns",
+  "niceeval.sandbox-commands",
+  "niceeval.runner-activities",
+  "niceeval.runner-diagnostics",
 ] as const);
 
 export const RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS = Object.freeze([
-  "niceeval.observability",
+  "niceeval.runner-activities",
+  "niceeval.runner-diagnostics",
 ] as const);
 
 export type AttemptObservabilityFamilySchemaId =
@@ -446,37 +450,37 @@ export function isRunObservabilityFamilySchemaId(
 }
 
 export type ConversationTurnReferenceTarget = {
-  readonly family: "niceeval.observability";
+  readonly family: "niceeval.agent-turns";
   readonly kind: "turn";
   readonly id: TurnId;
 };
 export type ConversationItemReferenceTarget = {
-  readonly family: "niceeval.observability";
+  readonly family: "niceeval.agent-turns";
   readonly kind: "item";
   readonly id: ItemId;
 };
 export type ConversationCallReferenceTarget = {
-  readonly family: "niceeval.observability";
+  readonly family: "niceeval.agent-turns";
   readonly kind: "call";
   readonly id: CallId;
 };
 export type CommandReferenceTarget = {
-  readonly family: "niceeval.observability";
+  readonly family: "niceeval.sandbox-commands";
   readonly kind: "command";
   readonly id: CommandId;
 };
 export type UsageObservationReferenceTarget = {
-  readonly family: "niceeval.observability";
+  readonly family: "niceeval.agent-turns";
   readonly kind: "usage-observation";
   readonly id: UsageObservationId;
 };
 export type IntervalReferenceTarget = {
-  readonly family: "niceeval.observability";
+  readonly family: "niceeval.runner-activities";
   readonly kind: "interval";
   readonly id: IntervalId;
 };
 export type DiagnosticReferenceTarget = {
-  readonly family: "niceeval.observability";
+  readonly family: "niceeval.runner-diagnostics";
   readonly kind: "diagnostic";
   readonly id: DiagnosticId;
 };
@@ -535,22 +539,21 @@ export function isAttemptReferenceTarget(
   value: unknown,
 ): value is AttemptReferenceTarget {
   if (!isReferenceFields(value)) return false;
-  if (value.family !== "niceeval.observability") return false;
   switch (value.kind) {
     case "turn":
-      return isTurnId(value.id);
+      return value.family === "niceeval.agent-turns" && isTurnId(value.id);
     case "item":
-      return isItemId(value.id);
+      return value.family === "niceeval.agent-turns" && isItemId(value.id);
     case "call":
-      return isCallId(value.id);
+      return value.family === "niceeval.agent-turns" && isCallId(value.id);
     case "command":
-      return isCommandId(value.id);
+      return value.family === "niceeval.sandbox-commands" && isCommandId(value.id);
     case "usage-observation":
-      return isUsageObservationId(value.id);
+      return value.family === "niceeval.agent-turns" && isUsageObservationId(value.id);
     case "interval":
-      return isIntervalId(value.id);
+      return value.family === "niceeval.runner-activities" && isIntervalId(value.id);
     case "diagnostic":
-      return isDiagnosticId(value.id);
+      return value.family === "niceeval.runner-diagnostics" && isDiagnosticId(value.id);
     default:
       return false;
   }
@@ -559,10 +562,10 @@ export function isAttemptReferenceTarget(
 export function isRunReferenceTarget(value: unknown): value is RunReferenceTarget {
   if (!isReferenceFields(value)) return false;
   return (
-    (value.family === "niceeval.observability" &&
+    (value.family === "niceeval.runner-activities" &&
       value.kind === "interval" &&
       isIntervalId(value.id)) ||
-    (value.family === "niceeval.observability" &&
+    (value.family === "niceeval.runner-diagnostics" &&
       value.kind === "diagnostic" &&
       isDiagnosticId(value.id))
   );

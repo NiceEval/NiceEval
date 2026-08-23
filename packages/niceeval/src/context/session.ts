@@ -1,9 +1,12 @@
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
+import { randomBytes } from "node:crypto";
+
 import { Cause, Effect, Exit, Option } from "effect";
 
-import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
+import type { Agent, AgentContext, AgentSendContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentSendContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
+import { entityIdFromEntropy, type TurnId } from "../o11y/record/model.ts";
 import type { AgentOtelChannel, TurnSpans } from "../o11y/otlp/turn-otel.ts";
 import {
   downgradeEvidenceCoverage,
@@ -152,15 +155,20 @@ export interface SessionDeps {
    * 每轮 send 结束后回报单调时钟包络(runner 挂成 eval.run 下的 turn 时间树节点)。`usage` 是该轮
    * `Turn.usage` 落盘原样(有记录才传;`--execution`/`--timing` 的 turn 头行读 TimingNode.usage)。
    */
-  onTurn?: (info: {
+  onTurn?: ((info: {
+    turnId: TurnId;
     sessionIndex: number;
     turnIndex: number;
     /** Exact terminal label allocated by this SessionManager. */
     label: string;
     /** One physical public send is sealed with this exact terminal outcome. */
     outcome: "completed" | "failed" | "interrupted";
-    /** The exact user event plus terminal provider events for this send only. */
+    /** The interpreted terminal Adapter events for this physical send only. */
     events: readonly StreamEvent[];
+    /** Present only when the Adapter returned a terminal Turn. */
+    adapterStatus?: Turn["status"];
+    /** Resolved Adapter-default plus Turn-local evidence coverage. */
+    evidenceCoverage?: ResolvedEvidenceCoverage;
     startOffsetMs: number;
     durationMs: number;
     failed?: boolean;
@@ -172,7 +180,16 @@ export interface SessionDeps {
     traceAttribution?: "traceparent" | "window" | "none";
     otelWindow?: TurnSpans["window"];
     usage?: Usage;
-  }) => TimingActivity | undefined;
+  }) => TimingActivity | undefined) & {
+    /** Runs synchronously before ledger hooks or Adapter invocation. */
+    readonly onStart?: (info: {
+      readonly turnId: TurnId;
+      readonly sessionIndex: number;
+      readonly turnIndex: number;
+      readonly loc?: ReturnType<typeof captureLoc>;
+      readonly sourceOrder?: number;
+    }) => void;
+  };
   /** 路径推导出的实验 id(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
   experimentId?: string;
   /** tracing agent 的 OTLP 端点(经 send ctx 透给 adapter,用于注入导出 env)。 */
@@ -252,6 +269,12 @@ export class SessionManager {
     this.primary = this.newSession();
   }
 
+  private mintPhysicalTurnId(): TurnId {
+    const turnId = entityIdFromEntropy("turn", randomBytes(16));
+    if (turnId === undefined) throw new Error("SessionManager failed to mint a TurnId");
+    return turnId;
+  }
+
   /** A ledger checkpoint failure is attempt state, not a synthetic empty diff. */
   get ledgerCaptureFailure(): LedgerCaptureFailure | undefined {
     return this.ledgerCaptureFailureValue;
@@ -316,26 +339,6 @@ export class SessionManager {
     responses?: readonly InputResponse[],
   ): Effect.Effect<Turn, unknown> {
     return Effect.suspend(() => {
-      const ctx: AgentContext = bindAttemptResources({
-        signal: this.deps.signal,
-        evalId: this.deps.evalId,
-        attempt: this.deps.attempt,
-        evalGroup: this.deps.evalGroup,
-        model: this.deps.model,
-        reasoningEffort: this.deps.reasoningEffort,
-        flags: this.deps.flags,
-        experimentId: this.deps.experimentId,
-        session,
-        telemetry: this.deps.telemetry,
-        progress: (u) =>
-          this.deps.feedback
-            ? this.deps.feedback.progress(u)
-            : this.deps.log(u.current !== undefined && u.total !== undefined ? `${u.message} (${u.current}/${u.total})` : u.message),
-        diagnostic: (d) => this.deps.feedback?.diagnostic(d),
-        // log 是 progress({ message }) 的别名(见 AgentContext.log)。
-        log: this.deps.log,
-      }, this.deps.resources);
-
       const n = ++this.turnCount;
       const attach = files?.length ? ` 📎${files.length}` : "";
       const preview = (text.replace(/\s+/g, " ").slice(0, 36) || (files?.[0]?.filename ?? t("session.fileFallback"))) + attach;
@@ -362,6 +365,33 @@ export class SessionManager {
       session.pendingInputRequests.length = 0;
       const turnIndex = ++session.turnCount;
       const windowLabel = formatTurnLabel(session.index, turnIndex);
+      const turnId = this.mintPhysicalTurnId();
+      this.deps.onTurn?.onStart?.({
+        turnId,
+        sessionIndex: session.index,
+        turnIndex,
+        ...(loc === undefined ? {} : { loc }),
+        ...(sourceOrder === undefined ? {} : { sourceOrder }),
+      });
+      const ctx: AgentSendContext = bindAttemptResources({
+        turnId,
+        signal: this.deps.signal,
+        evalId: this.deps.evalId,
+        attempt: this.deps.attempt,
+        evalGroup: this.deps.evalGroup,
+        model: this.deps.model,
+        reasoningEffort: this.deps.reasoningEffort,
+        flags: this.deps.flags,
+        experimentId: this.deps.experimentId,
+        session,
+        telemetry: this.deps.telemetry,
+        progress: (u) =>
+          this.deps.feedback
+            ? this.deps.feedback.progress(u)
+            : this.deps.log(u.current !== undefined && u.total !== undefined ? `${u.message} (${u.current}/${u.total})` : u.message),
+        diagnostic: (d) => this.deps.feedback?.diagnostic(d),
+        log: this.deps.log,
+      }, this.deps.resources);
       const beforeSend = this.deps.ledgerHooks === undefined
         ? Effect.void
         : Effect.tryPromise({
@@ -439,13 +469,16 @@ export class SessionManager {
               if (Exit.isSuccess(exit)) {
                 const { turn, traceId, attribution, window } = exit.value;
                 const traceAttribution = attribution ?? "none";
-                const terminalEvents = Object.freeze([userEvent, ...turn.events]);
+                const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
                 const timingActivity = this.deps.onTurn?.({
+                  turnId,
                   sessionIndex: session.index,
                   turnIndex,
                   label: windowLabel,
                   outcome: turn.status === "failed" ? "failed" : "completed",
-                  events: terminalEvents,
+                  events: Object.freeze([...turn.events]),
+                  adapterStatus: turn.status,
+                  evidenceCoverage: turnEvidenceCoverage,
                   startOffsetMs,
                   durationMs,
                   failed: turn.status === "failed" ? true : undefined,
@@ -472,6 +505,7 @@ export class SessionManager {
                 accumulateUsage(session.usage, sendFailure.usage);
               }
               this.deps.onTurn?.({
+                turnId,
                 sessionIndex: session.index,
                 turnIndex,
                 label: windowLabel,
@@ -536,7 +570,7 @@ export class SessionManager {
 
   private sendAgentEffect(
     input: TurnInput,
-    ctx: AgentContext,
+    ctx: AgentSendContext,
   ): Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>> {
     return Effect.tryPromise({
       try: (signal) => this.sendAgent(input, this.withFiberSignal(ctx, signal)),
@@ -552,10 +586,10 @@ export class SessionManager {
   private sendWithOtelEffect(
     otel: AgentOtelChannel,
     input: { text: string; files?: readonly InputFile[]; responses?: readonly InputResponse[] },
-    ctx: AgentContext,
+    ctx: AgentSendContext,
   ): Effect.Effect<PhysicalSendResult, ReturnType<typeof normalizeSendFailure>> {
     return otel.runTurnEffect((headers) => {
-      const turnCtx: AgentContext = ctx.telemetry
+      const turnCtx: AgentSendContext = ctx.telemetry
         ? { ...ctx, telemetry: { ...ctx.telemetry, headers } }
         : ctx;
       return this.sendAgentEffect(input, turnCtx);
@@ -582,7 +616,7 @@ export class SessionManager {
     );
   }
 
-  private withFiberSignal(ctx: AgentContext, fiberSignal: AbortSignal): AgentContext {
+  private withFiberSignal(ctx: AgentSendContext, fiberSignal: AbortSignal): AgentSendContext {
     if (ctx.signal === fiberSignal) return ctx;
     return { ...ctx, signal: AbortSignal.any([ctx.signal, fiberSignal]) };
   }
@@ -630,10 +664,10 @@ export class SessionManager {
     return attributed;
   }
 
-  private sendAgent(input: TurnInput, ctx: AgentContext): Promise<Turn> {
+  private sendAgent(input: TurnInput, ctx: AgentSendContext): Promise<Turn> {
     const agent = this.deps.agent;
     if (agent.kind === "sandbox") {
-      const sandboxCtx: SandboxAgentContext = bindAttemptResources(
+      const sandboxCtx: SandboxAgentSendContext = bindAttemptResources(
         { ...ctx, sandbox: this.deps.sandbox },
         this.deps.resources,
       );

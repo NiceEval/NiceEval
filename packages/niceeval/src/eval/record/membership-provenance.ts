@@ -28,7 +28,7 @@ export type MembershipAttemptOrigin = Schema.Schema.Type<typeof MembershipAttemp
 export const ComparisonAttachmentSchema = Schema.Literal(
   "core",
   "niceeval.assertions",
-  "niceeval.observability",
+  "niceeval.runner-activities",
 );
 export type ComparisonAttachment = Schema.Schema.Type<typeof ComparisonAttachmentSchema>;
 export const RecordedAttemptClaimSchema = Schema.Literal(

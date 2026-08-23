@@ -59,25 +59,15 @@ import {
   MAX_USAGE_OBSERVATIONS,
 } from "./limits.ts";
 import {
-  ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS,
-  RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS,
   compareObservabilityText,
   isSafeText,
   isStableLabel,
   jsonUtf8ByteLength,
   limitationTarget,
   type AttemptDiagnosticsReferences,
-  type AttemptReferenceTarget,
   type Collection,
-  type CommandId,
-  type CommandsReferences,
   type RunDiagnosticsReferences,
 } from "./model.ts";
-import {
-  makeAttemptObservabilityFamilyValidation,
-  makeRunObservabilityFamilyValidation,
-  type ObservabilityFamilyValidation,
-} from "./validation.ts";
 
 function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
   return Object.freeze([...values]);
@@ -1031,170 +1021,3 @@ export const RunDiagnosticsAttachmentSchema = RunDiagnosticsAttachmentStructural
 export type RunDiagnosticsAttachment = Schema.Schema.Type<
   typeof RunDiagnosticsAttachmentSchema
 >;
-
-const attemptConversationFamilySchemaId = "niceeval.observability" as const;
-const attemptCommandsFamilySchemaId = "niceeval.observability" as const;
-const attemptUsageFamilySchemaId = "niceeval.observability" as const;
-const attemptTimingFamilySchemaId = "niceeval.observability" as const;
-const attemptDiagnosticsFamilySchemaId = "niceeval.observability" as const;
-const runTimingFamilySchemaId = "niceeval.observability" as const;
-const runDiagnosticsFamilySchemaId = "niceeval.observability" as const;
-
-/** Semantic cross-family facts intentionally remain independent of writes. */
-export function makeAttemptConversationAttachmentFamilyValidation(
-  payload: ConversationAttachment,
-): ObservabilityFamilyValidation<"attempt"> {
-  const entities: AttemptReferenceTarget[] = [
-    ...payload.turns.map((turn) =>
-      Object.freeze({
-        family: attemptConversationFamilySchemaId,
-        kind: "turn" as const,
-        id: turn.turnId,
-      }),
-    ),
-    ...payload.items.map((item) =>
-      Object.freeze({
-        family: attemptConversationFamilySchemaId,
-        kind: "item" as const,
-        id: item.itemId,
-      }),
-    ),
-    ...payload.items.flatMap((item) =>
-      item.kind === "tool-call"
-        ? [
-            Object.freeze({
-              family: attemptConversationFamilySchemaId,
-              kind: "call" as const,
-              id: item.callId,
-            }),
-          ]
-        : [],
-    ),
-  ];
-  return makeAttemptObservabilityFamilyValidation({
-    schemaId: attemptConversationFamilySchemaId,
-    entities,
-    references: [
-      ...payload.turns.map((turn) =>
-        Object.freeze({ sourceId: turn.turnId, refs: turn.refs }),
-      ),
-      ...payload.items.map((item) =>
-        Object.freeze({ sourceId: item.itemId, refs: item.refs }),
-      ),
-    ],
-  });
-}
-
-export function makeAttemptCommandsAttachmentFamilyValidation(input: {
-  readonly commands: readonly {
-    readonly commandId: CommandId;
-    readonly refs: readonly CommandsReferences[];
-  }[];
-}): ObservabilityFamilyValidation<"attempt"> {
-  return makeAttemptObservabilityFamilyValidation({
-    schemaId: attemptCommandsFamilySchemaId,
-    entities: input.commands.map((command) =>
-      Object.freeze({
-        family: attemptCommandsFamilySchemaId,
-        kind: "command" as const,
-        id: command.commandId,
-      }),
-    ),
-    references: input.commands.map((command) =>
-      Object.freeze({ sourceId: command.commandId, refs: command.refs }),
-    ),
-  });
-}
-
-export function makeAttemptUsageAttachmentFamilyValidation(
-  payload: UsageAttachment,
-): ObservabilityFamilyValidation<"attempt"> {
-  return makeAttemptObservabilityFamilyValidation({
-    schemaId: attemptUsageFamilySchemaId,
-    entities: payload.observations.map((observation) =>
-      Object.freeze({
-        family: attemptUsageFamilySchemaId,
-        kind: "usage-observation" as const,
-        id: observation.usageObservationId,
-      }),
-    ),
-    references: payload.observations.map((observation) =>
-      Object.freeze({
-        sourceId: observation.usageObservationId,
-        refs: observation.refs,
-      }),
-    ),
-  });
-}
-
-export function makeAttemptTimingAttachmentFamilyValidation(
-  payload: AttemptTimingAttachment,
-): ObservabilityFamilyValidation<"attempt"> {
-  return makeAttemptObservabilityFamilyValidation({
-    schemaId: attemptTimingFamilySchemaId,
-    entities: payload.intervals.map((interval) =>
-      Object.freeze({
-        family: attemptTimingFamilySchemaId,
-        kind: "interval" as const,
-        id: interval.intervalId,
-      }),
-    ),
-    references: payload.intervals.map((interval) =>
-      Object.freeze({ sourceId: interval.intervalId, refs: interval.refs }),
-    ),
-  });
-}
-
-export function makeAttemptDiagnosticsAttachmentFamilyValidation(
-  payload: AttemptDiagnosticsAttachment,
-): ObservabilityFamilyValidation<"attempt"> {
-  return makeAttemptObservabilityFamilyValidation({
-    schemaId: attemptDiagnosticsFamilySchemaId,
-    entities: payload.diagnostics.map((diagnostic) =>
-      Object.freeze({
-        family: attemptDiagnosticsFamilySchemaId,
-        kind: "diagnostic" as const,
-        id: diagnostic.diagnosticId,
-      }),
-    ),
-    references: payload.diagnostics.map((diagnostic) =>
-      Object.freeze({ sourceId: diagnostic.diagnosticId, refs: diagnostic.refs }),
-    ),
-  });
-}
-
-export function makeRunTimingAttachmentFamilyValidation(
-  payload: RunTimingAttachment,
-): ObservabilityFamilyValidation<"run"> {
-  return makeRunObservabilityFamilyValidation({
-    schemaId: runTimingFamilySchemaId,
-    entities: payload.intervals.map((interval) =>
-      Object.freeze({
-        family: runTimingFamilySchemaId,
-        kind: "interval" as const,
-        id: interval.intervalId,
-      }),
-    ),
-    references: payload.intervals.map((interval) =>
-      Object.freeze({ sourceId: interval.intervalId, refs: interval.refs }),
-    ),
-  });
-}
-
-export function makeRunDiagnosticsAttachmentFamilyValidation(
-  payload: RunDiagnosticsAttachment,
-): ObservabilityFamilyValidation<"run"> {
-  return makeRunObservabilityFamilyValidation({
-    schemaId: runDiagnosticsFamilySchemaId,
-    entities: payload.diagnostics.map((diagnostic) =>
-      Object.freeze({
-        family: runDiagnosticsFamilySchemaId,
-        kind: "diagnostic" as const,
-        id: diagnostic.diagnosticId,
-      }),
-    ),
-    references: payload.diagnostics.map((diagnostic) =>
-      Object.freeze({ sourceId: diagnostic.diagnosticId, refs: diagnostic.refs }),
-    ),
-  });
-}

@@ -39,10 +39,23 @@ export interface ClosedAttemptCore {
   };
 }
 
-export interface ClosedTraceCollection {
-  readonly state: "complete" | "partial";
-  readonly limitations: readonly JsonValue[];
-}
+export type ClosedSourceState =
+  | {
+      readonly state: "complete" | "partial";
+      readonly limitations: readonly JsonValue[];
+    }
+  | {
+      readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid";
+      readonly limitations: readonly [];
+    };
+
+/** One declared source dependency and its source-local read/collection state. */
+export type ClosedSourceDependency<Source extends string = string> =
+  & { readonly source: Source }
+  & ClosedSourceState;
+
+/** Collection state for the source that owns a component's retained values. */
+export type ClosedTraceCollection = ClosedSourceState;
 
 export interface ClosedConversationTurn {
   readonly turnId: string;
@@ -97,6 +110,7 @@ export type ClosedConversationItem =
     });
 
 export interface ClosedConversationDetail {
+  readonly dependencies: readonly ["niceeval.agent-turns", "niceeval.turn-contexts"];
   readonly collection: ClosedTraceCollection;
   readonly turns: readonly ClosedConversationTurn[];
   readonly items: readonly ClosedConversationItem[];
@@ -113,6 +127,7 @@ export interface ClosedTimingInterval {
 }
 
 export interface ClosedTimingDetail {
+  readonly dependencies: readonly ["niceeval.runner-activities"];
   readonly collection: ClosedTraceCollection;
   readonly intervals: readonly ClosedTimingInterval[];
 }
@@ -164,6 +179,7 @@ export interface ClosedCommandEntry {
 }
 
 export interface ClosedCommandsDetail {
+  readonly dependencies: readonly ["niceeval.sandbox-commands"];
   readonly collection: ClosedTraceCollection;
   readonly entries: readonly ClosedCommandEntry[];
 }
@@ -188,6 +204,7 @@ export type ClosedUsageObservation =
     };
 
 export interface ClosedUsageDetail {
+  readonly dependencies: readonly ["niceeval.agent-turns"];
   readonly collection: ClosedTraceCollection;
   readonly observations: readonly ClosedUsageObservation[];
 }
@@ -204,6 +221,7 @@ export interface ClosedSourceFrame {
 }
 
 export interface ClosedDiagnosticsDetail {
+  readonly dependencies: readonly ["niceeval.runner-diagnostics"];
   readonly collection: ClosedTraceCollection;
   readonly diagnostics: readonly {
     readonly diagnosticId: string;
@@ -219,9 +237,28 @@ export interface ClosedDiagnosticsDetail {
 
 /** Closed, display-safe projection of one attempt-owned Observability value. */
 export interface AttemptObservabilityDomainDetail {
+  readonly sources: {
+    readonly agentTurns: ClosedSourceDependency<"niceeval.agent-turns">;
+    readonly turnContexts: ClosedSourceDependency<"niceeval.turn-contexts">;
+    readonly sandboxCommands: ClosedSourceDependency<"niceeval.sandbox-commands">;
+    readonly runnerActivities: ClosedSourceDependency<"niceeval.runner-activities">;
+    readonly runnerDiagnostics: ClosedSourceDependency<"niceeval.runner-diagnostics">;
+  };
   readonly conversation: ClosedConversationDetail;
   readonly commands: ClosedCommandsDetail;
   readonly usage: ClosedUsageDetail;
+  readonly timing: ClosedTimingDetail;
+  readonly diagnostics: ClosedDiagnosticsDetail;
+}
+
+/** Sandbox-only assembled view; it does not manufacture conversation or usage. */
+export interface SandboxHistoryDomainDetail {
+  readonly sources: {
+    readonly sandboxCommands: ClosedSourceDependency<"niceeval.sandbox-commands">;
+    readonly runnerActivities: ClosedSourceDependency<"niceeval.runner-activities">;
+    readonly runnerDiagnostics: ClosedSourceDependency<"niceeval.runner-diagnostics">;
+  };
+  readonly commands: ClosedCommandsDetail;
   readonly timing: ClosedTimingDetail;
   readonly diagnostics: ClosedDiagnosticsDetail;
 }
@@ -462,15 +499,18 @@ export interface SourcesDomainDetail {
 
 /** Closed physical-send navigation rows; mapped frames retain exact digest joins. */
 export interface SourceNavigationDomainDetail {
-  readonly collection: {
-    readonly state: "complete" | "partial";
-    readonly limitations: readonly {
-      readonly code: "collection-cap-reached" | "capture-unrecoverable";
-      /** Distinguishes retained-row omission from a missing timing identity. */
-      readonly target: "navigation-row" | "timing-link";
-      readonly omittedAtLeast: number;
-    }[];
+  readonly dependencies: readonly [
+    "niceeval.turn-contexts",
+    "niceeval.runner-activities",
+    "niceeval.sources",
+  ];
+  readonly sources: {
+    readonly turnContexts: ClosedSourceDependency<"niceeval.turn-contexts">;
+    readonly runnerActivities: ClosedSourceDependency<"niceeval.runner-activities">;
+    readonly originSources: ClosedSourceDependency<"niceeval.sources">;
   };
+  /** Reader-side relation state; source states remain separate above. */
+  readonly collection: ClosedTraceCollection;
   readonly rows: readonly {
     readonly turnId: string;
     readonly sourceOrder: number | null;
@@ -481,6 +521,13 @@ export interface SourceNavigationDomainDetail {
           readonly sha256: string;
           readonly start: { readonly line: number; readonly column: number };
           readonly end: { readonly line: number; readonly column: number };
+          readonly verification:
+            | { readonly state: "verified" }
+            | { readonly state: "invalid"; readonly reason: "source-anchor-mismatch" }
+            | {
+                readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid";
+                readonly reason: "source-dependency-unavailable";
+              };
         }
       | {
           readonly state: "unmapped";
@@ -497,7 +544,8 @@ export interface SourceNavigationDomainDetail {
 
 export type BuiltinDomainDetail<Kind extends BuiltinDomainViewKind> =
   Kind extends "attempt-evidence" ? AttemptEvidenceDomainDetail
-    : Kind extends "attempt-observability" | "sandbox-history" ? AttemptObservabilityDomainDetail
+    : Kind extends "attempt-observability" ? AttemptObservabilityDomainDetail
+    : Kind extends "sandbox-history" ? SandboxHistoryDomainDetail
     : Kind extends "file-changes" ? FileChangesDomainDetail
     : Kind extends "source-navigation" ? SourceNavigationDomainDetail
     : Kind extends "sources" ? SourcesDomainDetail
