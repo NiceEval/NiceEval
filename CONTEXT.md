@@ -188,30 +188,22 @@ _Avoid_: Group callback, Report field
 refs 只存在于 materialized MetricValue。
 _Avoid_: Report calculation, Numeric column
 
-**Analysis materializer**:
-把 exact selection、已注册 descriptor 与显式 alignment 关闭为 `SemanticFrame`、`DomainView` 或 Bundle resource 的唯一语义内核。它不拥有 CLI 文案、Insight 页面或用户网站。
-_Avoid_: Report runtime, Browser query engine
+**Analysis selection catalog snapshot**:
+在一个 frozen Record view 上，把公开 Run、Slot、Attempt handles、current target 与 typed selectors 关闭成可发现目录的内容寻址纯值。它只服务 Analysis 选择，不是 Record inventory 或 runtime generation。
+_Avoid_: Record inventory, Live selection session
+
+**Analysis selection basis**:
+一个 exact selection 成员所代表的位置种类。`logical-slot` 与 `attempt` 不可互换；source kind 与 Population capability 共同限制合法 basis。
+_Avoid_: Row kind, Locator type
+
+**Multi-set analysis**:
+在同一 frozen Record view 与父 Scope 内，为多个具名 exact selections 分别形成 Sample，并以显式 alignment 原子关闭 frames 与 comparability 的 Analysis operation。它不由 CLI 或 formatter 拼接。
+_Avoid_: CLI comparison, Frame join
 
 **Insight**:
 NiceEval 自己维护、供用户排查一次运行与证据的固定交互界面。它不是用户网页作者平台，也不定义公开组件 ABI。
 _Avoid_: Report site, Custom dashboard, View
 
 **Insight revision**:
-Insight 内部绑定一个 frozen Sample 的不可变交互版本。Record 变化只提示新版本，用户刷新后才原子切换。
+一个 Insight 进程内 server-global 的不可变交互版本，绑定固定 target、catalog 与 Sample。Record 变化只提示，用户刷新成功后才原子切换。
 _Avoid_: Live Sample, Current results
-
-**BenchmarkBundleDefinition**:
-受信任 TypeScript 中声明有限、具名 closed Analysis resources 与纯数据 parameter slots 的发布定义。它不包含 Page、route、style、任意函数或浏览器 query。
-_Avoid_: BenchmarkDefinition, Report definition, Dataset
-
-**BenchmarkBundle**:
-一份 BenchmarkBundleDefinition 对 exact selection 与 canonical parameters 的不可变、内容寻址 materialization。它是可重建派生物，不是 Record 或站点。
-_Avoid_: BundleRevision, Static report, Snapshot
-
-**Bundle resource**:
-BenchmarkBundle 内一份具名 `semantic-frame`、`domain-view` 或显式 `blob` 内容。它只保存闭合值与逻辑 Evidence identity，不保存 reader 或部署 URL。
-_Avoid_: Page data, Lazy query, Record blob locator
-
-**Bundle identity**:
-由 canonical manifest 与全部 exact resource bytes 形成的内容身份。时间、host path、部署 URL 与 current pointer 不参与。
-_Avoid_: Latest bundle, Site revision

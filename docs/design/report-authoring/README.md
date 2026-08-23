@@ -1,6 +1,6 @@
 # 报告作者面：组件粒度与取数形态
 
-> 本主题的双面 Report 作者面已被 [CLI、Insight 与 Benchmark Web](../cli-insight-benchmark-web/DECISION.md) 取代。本目录只保留候选与裁决历史。
+> 本主题的双面 Report 作者面已被 [CLI 与 Insight](../cli-insight/DECISION.md) 取代。本目录只保留候选与裁决历史。外部用户网页的数据 / 组件接入面仍在[独立决策](../benchmark-web-consumption/README.md)中比较。
 
 **相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
 

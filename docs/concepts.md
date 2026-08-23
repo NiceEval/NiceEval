@@ -248,13 +248,11 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Analysis materializer | `AnalysisMaterializer` | CLI、Bundle 与 Insight 共用的 descriptor、comparison 与闭合 codec 语义内核；不拥有呈现 | [新交付边界](design/cli-insight-benchmark-web/PLAN-4/architecture.md#唯一语义内核) |
-| Insight | Insight | NiceEval 自己维护、供用户排查运行与证据的固定界面；不是网页作者平台 | [新交付边界](design/cli-insight-benchmark-web/PLAN-4/README.md#insight) |
-| Insight revision | `InsightRevision` | Insight 内部绑定一个 frozen Sample 的不可变交互版本；显式刷新后才切换 | [新交付边界](design/cli-insight-benchmark-web/PLAN-4/architecture.md#insightrevision) |
-| BenchmarkBundleDefinition | `BenchmarkBundleDefinition` | 受信任 TypeScript 中声明有限 Bundle resources 与纯数据 parameter slots 的发布定义；不简称 `BenchmarkDefinition` | [Bundle Library](design/cli-insight-benchmark-web/PLAN-4/library.md#benchmarkbundledefinition) |
-| BenchmarkBundle | `BenchmarkBundle` | 一份 Definition 对 exact selection 与 canonical parameters 的不可变、内容寻址 materialization | [Bundle Library](design/cli-insight-benchmark-web/PLAN-4/library.md#manifest) |
-| Bundle resource | `BundleResource` | Bundle 内一份具名 semantic-frame、domain-view 或显式 blob 内容 | [Bundle Library](design/cli-insight-benchmark-web/PLAN-4/library.md#resource-body) |
-| Bundle identity | `BundleIdentity` | 由 canonical manifest 与全部 exact resource bytes 形成的内容身份 | [Bundle architecture](design/cli-insight-benchmark-web/PLAN-4/architecture.md#bundle-identity) |
+| Analysis 选择目录快照 | `AnalysisSelectionCatalogSnapshot` | 在 frozen Record view 上关闭 public handles、target 与 typed selectors 的内容寻址目录；不等于 Record inventory 或 runtime generation | [CLI / Insight architecture](design/cli-insight/PLAN-2/architecture.md#analysis-selection-catalog) |
+| Analysis 选择基准 | Analysis selection basis | Exact selection 成员代表 `logical-slot` 还是 `attempt`；source kind 与 Population 共同限制合法 basis | [CLI / Insight CLI](design/cli-insight/PLAN-2/cli.md#选择与-member-basis) |
+| 多集合分析 | Multi-set analysis | 在同一 frozen Record view 内为多个具名 selection 形成 Sample，并原子关闭 frames 与 comparability 的 Analysis operation | [CLI / Insight architecture](design/cli-insight/PLAN-2/architecture.md#multi-set-operation) |
+| Insight | Insight | NiceEval 自己维护、供用户排查运行与证据的固定本地界面；不是网页作者平台 | [CLI / Insight](design/cli-insight/PLAN-2/README.md) |
+| Insight revision | `InsightRevision` | 一个 Insight 进程中所有标签页共享的 server-global 数据版本；刷新成功后原子切换 | [Insight lifecycle](design/cli-insight/PLAN-2/lifecycle.md#更新与刷新) |
 
 ### 配置与 CLI
 
@@ -288,7 +286,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Eval Trajectory | Eval trajectory | 由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG | [Eval Trajectory](roadmap/eval-trajectories/README.md) |
 | Workspace 访问证据 | Workspace access evidence | 可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合 | [Workspace 访问证据](roadmap/workspace-access-evidence/README.md) |
 | 发现边界 | Discovery boundary | 显式目录入口拥有的递归 Eval discovery 范围；父级扫描在入口处停止向内发现 | [发现边界](roadmap/discovery-boundaries/README.md) |
-| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Analysis cost Measure 投影成本的价格规则集合 | [新交付边界](design/cli-insight-benchmark-web/DECISION.md#迁移门) |
+| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Analysis cost Measure 投影成本的价格规则集合 | [CLI / Insight 迁移门](design/cli-insight/DECISION.md#迁移门) |
 | Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-authoring/display-names/README.md) |
 | Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不构造 Sample 或推导最新结果 | [Record 库存](roadmap/record-inventory/README.md) |
 
