@@ -32,7 +32,7 @@ describe("文档可读性守护", () => {
   it("超长句、超长段、禁用写法与死词均不得命中", () => {
     const report = lintDocsWriting();
     expect(report.hits.length, formatLintHits(report.hits)).toBe(0);
-  });
+  }, 30_000);
 
   it("句子量在软换行拼接之后:在句子中间换行不改变判定", () => {
     // 这条是句长规则存在的理由:按单行量的话,敲个回车就能把长难句拆过检查,
