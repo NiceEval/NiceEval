@@ -164,7 +164,6 @@ export const PlanEntrySchema = Schema.Struct({
   Schema.filter((entry) => entry.dir === undefined || entry.dirs.includes(entry.dir), { identifier: "PlanEntryDirectoryCoherence" }),
 );
 export const PlanDocumentSchema = Schema.Struct({
-  schemaVersion: Schema.Literal(2),
   mode: Schema.Literal("affected", "full", "fail-open-full"),
   reason: NonEmptyStringSchema,
   detail: Schema.optional(Schema.String),
@@ -184,7 +183,6 @@ export const PlanDocumentSchema = Schema.Struct({
   }),
 });
 export const InvalidPlanOutputSchema = Schema.Struct({
-  schemaVersion: Schema.Literal(2),
   mode: Schema.Literal("invalid"),
   reason: Schema.Literal("invalid-plan"),
   detail: NonEmptyStringSchema,
@@ -247,7 +245,6 @@ export const StageReceiptSchema = Schema.Struct({
   path: Schema.optional(Schema.String),
 });
 export const SelectionReceiptSchema = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
   mode: Schema.Literal("affected", "full", "fail-open-full"),
   reason: NonEmptyStringSchema,
   lane: LaneSchema,
@@ -267,8 +264,7 @@ export const TestkitReceiptSchema = Schema.Struct({
   resolvedPath: NonEmptyStringSchema,
   digest: Sha256HexSchema,
 });
-export const RepoReceiptV1Schema = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
+export const RepoReceiptSchema = Schema.Struct({
   repoId: RepoIdSchema,
   selection: Schema.optional(SelectionReceiptSchema),
   invocationIds: NonEmptyUniqueStringListSchema,
@@ -377,7 +373,7 @@ export type CapabilityCheck = Schema.Schema.Type<typeof CapabilityCheckSchema>;
 export type StageReceipt = Schema.Schema.Type<typeof StageReceiptSchema>;
 export type CandidateIdentity = Schema.Schema.Type<typeof CandidateIdentitySchema>;
 export type TestkitReceipt = Schema.Schema.Type<typeof TestkitReceiptSchema>;
-export type RepoReceiptV1 = Schema.Schema.Type<typeof RepoReceiptV1Schema>;
+export type RepoReceipt = Schema.Schema.Type<typeof RepoReceiptSchema>;
 export type PackageJson = Schema.Schema.Type<typeof PackageJsonSchema>;
 export type TestkitPackage = Schema.Schema.Type<typeof TestkitPackageSchema>;
 export type PnpmLock = Schema.Schema.Type<typeof PnpmLockSchema>;
@@ -400,7 +396,7 @@ export const decodeCapabilityCheck = decodeOwned(CapabilityCheckSchema, "Capabil
 export const decodeStageReceipt = decodeOwned(StageReceiptSchema, "StageReceipt");
 export const decodeCandidateIdentity = decodeOwned(CandidateIdentitySchema, "CandidateIdentity");
 export const decodeTestkitReceipt = decodeOwned(TestkitReceiptSchema, "TestkitReceipt");
-export const decodeRepoReceiptV1 = decodeOwned(RepoReceiptV1Schema, "RepoReceiptV1");
+export const decodeRepoReceipt = decodeOwned(RepoReceiptSchema, "RepoReceipt");
 
 export const decodePackageJson = decodeExternal(PackageJsonSchema, "PackageJson");
 export const decodeTestkitPackage = decodeExternal(TestkitPackageSchema, "TestkitPackage");
