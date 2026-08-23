@@ -139,6 +139,7 @@ def setup(args: argparse.Namespace) -> None:
         os.chmod(descriptor, 0o600)
         run(sys.executable, str(scripts / "install-quota-slots.py"), "--host-config", str(host_config))
         print(json.dumps({
+            "assets": str(assets),
             "controlSocket": str(root / "control.sock"),
             "descriptor": str(descriptor),
             "hostConfig": str(host_config),
