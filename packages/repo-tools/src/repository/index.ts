@@ -202,8 +202,11 @@ function inspectRepository(
         configured: hooksConfigured,
       },
       host,
-      actions: operation === "setup" && !hooksConfigured
-        ? [`set repository-local core.hooksPath to ${expectedHooks}`]
+      actions: operation === "setup"
+        ? [
+          ...(hooksExist ? [] : ["install repository-owned Git hook shims"]),
+          ...((hooksConfigured && hooksExist) ? [] : [`set repository-local core.hooksPath to ${expectedHooks}`]),
+        ]
         : [],
       problems,
     };
@@ -215,10 +218,12 @@ function setupRepository(): Effect.Effect<RepositoryReceipt, RepositoryError, Re
     const before = yield* inspectRepository("setup", false);
     if (before.status === "skipped") return before;
     const hostProblems = before.host.some((entry) => !entry.ok)
-      || before.hooks.status === "skipped"
-      || !before.hooks.directoryExists;
+      || before.hooks.status === "skipped";
     if (hostProblems) return yield* new RepositoryPrerequisiteError({ receipt: before });
-    if (before.hooks.status === "checked" && !before.hooks.configured) {
+    if (before.hooks.status === "checked" && !before.hooks.directoryExists) {
+      yield* runProcess("pnpm", ["exec", "husky"], ROOT);
+    }
+    if (before.hooks.status === "checked" && (!before.hooks.directoryExists || !before.hooks.configured)) {
       yield* runProcess("git", ["config", "--local", "core.hooksPath", before.hooks.expected], ROOT);
     }
     const after = yield* inspectRepository("setup", false);
