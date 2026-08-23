@@ -53,6 +53,7 @@ REQUIRED_ASSETS = {
 }
 DIAGNOSTIC_COMMAND = ["sh", "-ec", "\n".join((
     "set -eu",
+    "export DOCKER_HOST=unix:///var/run/docker.sock",
     "dockerd --host=unix:///var/run/docker.sock --shutdown-timeout=2 >/tmp/niceeval-dockerd.log 2>&1 &",
     "daemon=$!; image=niceeval-doctor-inner; inner=niceeval-doctor-inner-run; trap 'docker rm -f \"$inner\" >/dev/null 2>&1 || true; docker image rm -f \"$image\" >/dev/null 2>&1 || true; kill \"$daemon\" 2>/dev/null || true; wait \"$daemon\" 2>/dev/null || true' EXIT",
     "for _ in $(seq 1 120); do docker info >/dev/null 2>&1 && break; sleep 0.25; done; docker info >/dev/null",

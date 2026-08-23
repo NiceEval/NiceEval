@@ -1,5 +1,7 @@
 // owner: docs/engineering/testing/e2e/README.md#docker-profile-cold-build
 // regression: memory/docker-profile-control-create-migration-incomplete.md
+// regression: memory/docker-profile-assets-manifest-registry-collision.md
+// regression: memory/docker-profile-doctor-inherits-dind-docker-host.md
 import { appendFile, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
@@ -14,6 +16,7 @@ import {
 import { expect, test } from "vitest";
 
 interface HostFixture {
+  readonly assets: string;
   readonly controlSocket: string;
   readonly descriptor: string;
   readonly hostConfig: string;
@@ -174,8 +177,11 @@ restore_compat_socket() { if [ -n "\${compat_proxy_pid}" ] && kill -0 "\${compat
 trap 'restore_fault_socket; restore_compat_socket; cleanup_doctor; cleanup_holder; chown -R ${process.getuid!()}:${process.getgid!()} ${projectRoot}/.niceeval 2>/dev/null || true' EXIT
 mkdir -p /etc/niceeval/docker-profiles
 cp '${activeFixture.descriptor}' /etc/niceeval/docker-profiles/e2e-cold-build.json
+cp '${activeFixture.assets}' /etc/niceeval/docker-profiles/assets-v1.json
 chown root:root /etc/niceeval/docker-profiles/e2e-cold-build.json
+chown root:root /etc/niceeval/docker-profiles/assets-v1.json
 chmod 600 /etc/niceeval/docker-profiles/e2e-cold-build.json
+chmod 644 /etc/niceeval/docker-profiles/assets-v1.json
 docker_api() { node - "$@" <<'NODE'
 const Docker=require('dockerode'),d=new Docker({socketPath:'/run/docker.sock'}),[action,...args]=process.argv.slice(2);const labels=Object.fromEntries((args[0]||'').split(',').filter(Boolean).map(x=>x.split('=')));const filters={label:Object.entries(labels).map(([k,v])=>v?k+'='+v:k)};(async()=>{if(action==='image'){await d.getImage(args[0]).inspect();return}if(action==='find'){const c=await d.listContainers({all:false,filters});if(c[0])process.stdout.write(JSON.stringify({id:c[0].Id,labels:c[0].Labels}))}if(action==='kill'){await d.getContainer(args[0]).kill()}if(action==='absent'){const c=await d.listContainers({all:true,filters}),n=await d.listNetworks({filters});if(c.length||n.length)throw Error('owned resource remains')}})().catch(e=>{console.error(e);process.exit(1)})
 NODE
@@ -285,6 +291,14 @@ fault_reservation=$(node -e 'process.stdout.write(JSON.parse(require("fs").readF
 docker_api absent "niceeval.profile-id=$fault_profile,niceeval.reservation-id=$fault_reservation"
 docker_api image '${dindImage}'
 docker_api image '${buildkitImage}'
+set +e
+node_modules/.bin/niceeval docker profile doctor e2e-cold-build --json >/tmp/niceeval-doctor-pass.json
+doctor_pass_status=$?
+set -e
+cat /tmp/niceeval-doctor-pass.json
+DOCTOR_PASS_STATUS="$doctor_pass_status" node - /tmp/niceeval-doctor-pass.json <<'NODE'
+const d=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));if(process.env.DOCTOR_PASS_STATUS!=='0'||d.status!=='PASS'||d.checks.length!==12||d.checks.some(x=>x.status!=='PASS')){console.error(JSON.stringify(d,null,2));process.exit(1)}
+NODE
 set +e
 node_modules/.bin/niceeval exp docker-profile-cold-build --rerun all --json >/tmp/niceeval-exp.ndjson
 status=$?

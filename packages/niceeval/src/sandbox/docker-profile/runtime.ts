@@ -113,7 +113,10 @@ export async function loadDockerProfileRegistryAt(
   registryDir: string,
 ): Promise<ReturnType<typeof indexDockerProfiles>> {
   const names = (await readdir(registryDir)).filter((name) =>
-    name.endsWith(".json") && !name.endsWith(".host.json") && !name.endsWith(".daemon.json")
+    name.endsWith(".json")
+    && !name.endsWith(".host.json")
+    && !name.endsWith(".daemon.json")
+    && !/^assets-v[1-9]\d*\.json$/.test(name)
   ).sort();
   const entries = await Promise.all(names.map(async (name) => {
     const source = join(registryDir, name);
