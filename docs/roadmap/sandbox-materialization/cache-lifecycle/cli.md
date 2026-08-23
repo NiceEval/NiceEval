@@ -11,7 +11,7 @@ niceeval docker — Docker-specific administration
 
 Usage:
   niceeval docker profile list [--json]
-  niceeval docker profile doctor <alias> [--smoke] [--json]
+  niceeval docker profile doctor <alias> [--json]
   niceeval docker cache inventory [--domain <domain-id>] [--json]
   niceeval docker cache gc --domain <domain-id> [--apply <plan-id>] [--json]
 
@@ -21,7 +21,7 @@ Commands:
 ```
 
 `niceeval docker cache --help` 只显示 cache 子树；未知根命令由 CLI host 报错，未知 Docker 子命令由
-Docker feature 报错。进入 `docker` 后，`--domain`、`--apply`、`--smoke` 及未来 Docker 私有 flag
+Docker feature 报错。进入 `docker` 后，`--domain`、`--apply` 及未来 Docker 私有 flag
 都不经过 core flag parser。JSON stdout 始终只有一个完整文档，诊断只写 stderr。
 
 ## 当前选择

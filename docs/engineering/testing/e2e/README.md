@@ -223,6 +223,17 @@ terminal-only 不能由一次非原子 procfs 快照直接接受。只要 kernel
 Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置；运行结束后两台 owned Sandbox 都已释放。
 测试只通过安装后 CLI 的 result 事件与 `show --history --json` 读回公开结果，不读取 `.niceeval/` 私有布局。
 
+### Docker profile cold build
+
+`e2e/lifecycle/test/docker-profile-cold-build.test.ts` 是 profile-bound Dockerfile cold build 的公开入口 owner。
+
+它把同一 checkout 的真实 host watchdog 脚本放进隔离现场，以 root-owned descriptor、Unix control socket、
+真实 Docker daemon 与 project-quota allocation 启动 raw profile。
+
+安装后候选必须经 `niceeval exp` 完成 cold build。control service 创建 outer container，Attempt 内跑通 nested Docker。
+
+测试只从 CLI event 与 control journal 观察阶段和终态。它不以源码调用、mock control 或客户端提交 Docker resource ID 代替。
+
 ## 单项重跑
 
 任何 E2E 必须能按 Repo、文件和标题重跑：

@@ -46,9 +46,10 @@
             "vitest",
             "run"
           ],
-          "timeoutMinutes": 2,
+          "timeoutMinutes": 5,
           "harness": {
-            "testkit": true
+            "testkit": true,
+            "dockerProfileHost": true
           },
           "secrets": [],
           "requires": {

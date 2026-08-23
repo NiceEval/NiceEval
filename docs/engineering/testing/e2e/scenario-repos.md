@@ -101,6 +101,7 @@ interface E2EMetadata {
   timeoutMinutes: number;
   harness?: {
     testkit?: boolean;
+    dockerProfileHost?: boolean;
   };
   secrets: readonly string[];
   requires?: {
@@ -132,6 +133,13 @@ interface E2EProject {
 metadata 不含测试标题、expected、page matrix、历史 bug、contract anchor 或 affected paths。canonical Repo ID 由
 `root` 去掉 `e2e/` 推导；产品 owner 由 `implicitDependencies` 指向的 source domain project 表达。详细管理规则见
 [任务图与 E2E 选择](../../task-orchestration/README.md)。
+
+`harness.testkit: true` 是 Testkit 消费意图的唯一真源。
+
+`harness.dockerProfileHost: true` 要求根 runner
+把当前 checkout 的 `packaging/docker-profile-host/scripts` 复制进隔离 Repo。runner 只通过
+`NICEEVAL_E2E_DOCKER_PROFILE_HOST_SCRIPTS` 暴露副本路径。场景必须自行启动这份真实 watchdog 并拥有其 cleanup；
+runner 不替换宿主已安装 service，也不提供 mock control service。未声明该 harness 的 Repo 不会获得脚本路径。
 
 `batch` 是必填的 canonical lowercase placement ID，例如 `host-1`、`docker-1` 或 `browser-1`。它只决定 CI 共机分组，
 不表示资源 capability；完整宿主运行条件仍以 `requires` 为唯一真源。

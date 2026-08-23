@@ -234,11 +234,11 @@ privileged mode. After the host deployment is complete, inspect the profile firs
 
 ```bash
 npx niceeval docker profile list
-npx niceeval docker profile doctor default --smoke
+npx niceeval docker profile doctor default
 npx niceeval exp dind-managed
 ```
 
-`doctor --smoke` starts a DinD container on that profile and actually runs inner
+`doctor` starts a DinD container on that profile and actually runs inner
 `docker run --rm alpine:3.20 true`. It proves that the profile supports nested Docker, but does not inspect your project's
 Dockerfile. The project image is still verified by its default `docker info` readiness.
 

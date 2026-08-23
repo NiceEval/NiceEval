@@ -31,6 +31,9 @@
     "slotRootPath": "/var/lib/niceeval/docker-profiles/default/data/quota-slots",
     "slotRegistryPath": "/var/lib/niceeval/docker-profiles/default/journal/quota-slots.json"
   },
+  "assets": {
+    "manifestPath": "/etc/niceeval/docker-profiles/assets-v1.json"
+  },
   "policy": {
     "hostLoopback": false,
     "tcpDockerEndpoint": false

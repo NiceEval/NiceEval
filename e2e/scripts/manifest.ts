@@ -53,6 +53,8 @@ export interface RepoRequires {
 export interface RepoHarness {
   /** Declares that the repo consumes @niceeval/testkit; injection intent. */
   testkit?: boolean;
+  /** Injects the checkout-local Docker profile host scripts for the real host/control E2E. */
+  dockerProfileHost?: boolean;
 }
 
 export interface E2ERepoManifest {
@@ -96,7 +98,7 @@ const REQUIRES_FIELDS = new Set([
   "runtimes",
   "browsers",
 ]);
-const HARNESS_FIELDS = new Set(["testkit"]);
+const HARNESS_FIELDS = new Set(["testkit", "dockerProfileHost"]);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -347,6 +349,15 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
           errors.push(`${source}: "harness.testkit" must be a boolean, got ${JSON.stringify(h.testkit)}`);
         } else {
           harness.testkit = h.testkit;
+        }
+      }
+      if (h.dockerProfileHost !== undefined) {
+        if (typeof h.dockerProfileHost !== "boolean") {
+          errors.push(
+            `${source}: "harness.dockerProfileHost" must be a boolean, got ${JSON.stringify(h.dockerProfileHost)}`,
+          );
+        } else {
+          harness.dockerProfileHost = h.dockerProfileHost;
         }
       }
     }

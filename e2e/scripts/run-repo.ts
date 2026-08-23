@@ -13,7 +13,7 @@
 // a link back to the checkout.
 
 import { createHash, randomUUID } from "node:crypto";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
@@ -236,11 +236,15 @@ function withInvocationContext(
   env: NodeJS.ProcessEnv,
   invocationId: string,
   copyDir: string,
+  dockerProfileHostScripts?: string,
 ): NodeJS.ProcessEnv {
   return {
     ...env,
     NICEEVAL_E2E_INVOCATION_ID: invocationId,
     NICEEVAL_E2E_ARTIFACT_STAGING_ROOT: join(copyDir, ".e2e-artifacts"),
+    ...(dockerProfileHostScripts === undefined
+      ? {}
+      : { NICEEVAL_E2E_DOCKER_PROFILE_HOST_SCRIPTS: dockerProfileHostScripts }),
   };
 }
 
@@ -337,6 +341,16 @@ export async function runRepo(
       if (preflight.ok && !preflight.cancelled) {
         await copyRepoIsolated(sourceDir, copyDir);
         copyCreated = true;
+        const dockerProfileHostScripts = repo.manifest.harness?.dockerProfileHost === true
+          ? join(copyDir, ".niceeval-e2e-host", "scripts")
+          : undefined;
+        if (dockerProfileHostScripts !== undefined) {
+          await cp(
+            resolve(repo.dir, "..", "..", "packaging", "docker-profile-host", "scripts"),
+            dockerProfileHostScripts,
+            { recursive: true },
+          );
+        }
 
         if (isExecutionCancelled(execution)) {
           stages.push(cancelledStage("prepare", "cancelled before source prepare"));
@@ -385,6 +399,7 @@ export async function runRepo(
                 buildChildEnv(process.env, allSecretNames, []),
                 setupInvocationId,
                 copyDir,
+                dockerProfileHostScripts,
               );
               const installCapture = await runCommand(
                 installCmd,
@@ -497,6 +512,7 @@ export async function runRepo(
                           buildChildEnv(process.env, allSecretNames, repo.manifest.secrets, repoId),
                           invocationId,
                           copyDir,
+                          dockerProfileHostScripts,
                         );
                         const testCapture = await runCommand(
                           testCmd,
