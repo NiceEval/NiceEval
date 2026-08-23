@@ -28,7 +28,8 @@ interface SandboxActionPair {
 }
 
 declare function shell(input: ShellActionInput): SandboxAction;
-declare function write(input: WriteActionInput): SandboxAction;
+declare function writeText(input: WriteTextActionInput): SandboxAction;
+declare function writeBytes(input: WriteBytesActionInput): SandboxAction;
 declare function uploadFile(input: UploadFileActionInput): SandboxAction;
 declare function uploadDirectory(input: UploadDirectoryActionInput): SandboxAction;
 declare function gitCheckout(input: GitCheckoutActionInput): SandboxAction;
@@ -43,6 +44,18 @@ interface UploadFileActionInput {
 
 interface UploadDirectoryActionInput extends UploadFileActionInput {
   readonly source: string | URL;
+}
+
+interface WriteTextActionInput {
+  readonly id: string;
+  readonly path: string;
+  readonly text: string;
+  readonly changeFrequency?: number;
+  readonly dependsOn?: readonly SandboxActionRef[];
+}
+
+interface WriteBytesActionInput extends Omit<WriteTextActionInput, "text"> {
+  readonly bytes: Uint8Array;
 }
 
 interface GitCheckoutActionInput {
@@ -72,11 +85,10 @@ dockerSandbox({
     inputs: [fixtureArchive],
     changeFrequency: 40,
   }))
-  .before(write({
+  .before(writeText({
     id: "adapter-env",
     path: ".env",
-    input: publicAdapterConfig,
-    inputs: [publicAdapterConfig],
+    text: publicAdapterConfig,
     changeFrequency: changeFrequency.frequent,
   }))
   .around({
@@ -89,6 +101,10 @@ dockerSandbox({
 ```
 
 `before(action)` 是不需要配对 after 的前置动作。`after(action)` 是 occurrence 的 finally；进入 occurrence 时就登记，即使后续 before 部分失败也会执行。`around({ before, after })` 用于资源取得与释放；它始终真实执行，调用其 before 前登记配对 after。API 不把 fluent after 隐式绑定到最近 before，避免书写重排改变配对。
+
+`before()` 接收 action，也接受 `(sandbox, context) => …` callback。声明式 action 在 Sandbox 创建前就必须可检查，NiceEval 才能排序、计算 identity 并选择 restore；因此 `shell()`、`writeText()`、`writeBytes()` 与 `upload*()` 不接收运行中的 `Sandbox`。确实依赖实例、secret、租约或当前时间的步骤才写 callback；它取得真实 `Sandbox`，但显示为 opaque、每次执行并截断共享 capture lineage。
+
+固定 action 与运行期 `Sandbox` 使用同一组文件动词：`writeText` / `writeBytes` 表示调用方已经持有文本或字节，`uploadFile` / `uploadDirectory` 表示从声明的宿主路径传输内容。两者只在输入形态和 manifest 形态上不同，不是两套生命周期或缓存语义。
 
 ## 内容与远端 repository
 
@@ -197,7 +213,7 @@ Provider replacement 或 retirement 开启新的 physical occurrence，重新经
 
 ## 缓存资格
 
-声明式 `before(shell/write/upload/gitCheckout)` 是确定性承诺，只允许改变 Sandbox 内状态。它在每个 occurrence 都得到满足：
+声明式 `before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` 是确定性承诺，只允许改变 Sandbox 内状态。它在每个 occurrence 都得到满足：
 
 ```text
 hit         → restore verified private state

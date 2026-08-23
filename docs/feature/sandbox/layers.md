@@ -517,6 +517,8 @@ declare const sandboxContent: {
 
 declare function uploadFile(input: UploadFileActionInput): SandboxAction;
 declare function uploadDirectory(input: UploadDirectoryActionInput): SandboxAction;
+declare function writeText(input: WriteTextActionInput): SandboxAction;
+declare function writeBytes(input: WriteBytesActionInput): SandboxAction;
 declare function gitCheckout(input: GitCheckoutActionInput): SandboxAction;
 ```
 
@@ -533,6 +535,8 @@ sandboxLayer()
 
 需要稳定 identity 的自定义步骤用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记,所有动态输入进入 `inputs`。
 普通本地传输直接使用 `uploadFile()` / `uploadDirectory()` action；它们在一次声明中完成内容登记、identity 与目标写入。只有内容必须晚于 Agent 可见时，才用 `sandboxContent.file()` / `sandboxContent.directory()` 取得 digest-backed handle，并在 Eval test 中调用 `t.sandbox.upload()`。
+
+声明式 action 与运行期 `Sandbox` 刻意共用文件动词：已有文本或字节使用 `writeText()` / `writeBytes()`，声明的宿主路径使用 `uploadFile()` / `uploadDirectory()`。前者的内容、后者的规范化 manifest 都直接进入 identity。`before()` 不能把尚不存在的 Sandbox 传给这些 action；只有 callback before 在执行期取得 `Sandbox`，代价是 opaque 且不能共享捕获。
 
 `run` 的函数体、函数名与闭包不进入 identity。只改实现而保持 `id`、`revision`、`inputs` 不变时,Runner 不会发现语义已经变化,旧结果仍可能沿用。实现语义变化必须提高 `revision`;外部输入变化必须反映到 `inputs`。若作者漏改 identity 后已经产生或沿用了结果,先修正 `revision` 或 `inputs`,再按[全量重验](../experiments/use-case/重新运行/全量重验.md)对受影响选择执行 `--rerun all`。`--rerun all` 只修复这一次结果集,不能替代永久 identity 修正。
 

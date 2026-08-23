@@ -21,7 +21,7 @@ BuildKey ready
 
 | 内容 | 执行语义 |
 |---|---|
-| `.before(shell/write/upload/gitCheckout)` | 每个 planning 编译出的 occurrence 都要满足；hit restore，miss replay，结果可以 promotion |
+| `.before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` | 每个 planning 编译出的 occurrence 都要满足；hit restore，miss replay，结果可以 promotion |
 | `.before(callback)` | 始终真实执行，显示 opaque，并截断后续共享捕获 |
 | `.around({ before, after })` | 成对取得与释放；两侧始终真实执行，配对 after 按实际登记栈逆序 |
 | `.after(action)` | occurrence finally；始终真实执行，按实际登记栈逆序 |
