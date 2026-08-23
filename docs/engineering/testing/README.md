@@ -165,10 +165,10 @@ E2E 不承诺指出生产源码行，但要把问题收窄到最近的公开接�
 本地与 CI 共用根入口和同一个候选 tarball 注入链：
 
 ```sh
-pnpm e2e --lane pr
-pnpm e2e --repo report
-pnpm e2e --repo report -- --run test/exported-targets.test.ts
-pnpm e2e --lane main --repo adapter/codex-cli
+pnpm e2e test --lane pr
+pnpm e2e test --repo report
+pnpm e2e test --repo report -- --run test/exported-targets.test.ts
+pnpm e2e test --lane main --repo adapter/codex-cli
 ```
 
 - PR 先由 Nx project graph 选择受影响 E2E；同仓可信 PR 对选中集合使用 main lane 和最小 secret 白名单，Fork 与 Dependabot 使用无密钥 pr lane；

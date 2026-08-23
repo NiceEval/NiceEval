@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-execution-evidence
-// rerun: pnpm e2e --repo report -- --run test/report-execution.test.ts
+// rerun: pnpm e2e test --repo report -- --run test/report-execution.test.ts
 
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";

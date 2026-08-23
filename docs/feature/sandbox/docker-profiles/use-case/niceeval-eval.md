@@ -148,7 +148,7 @@ services.niceeval.dockerProfiles.default = {
 普通运行不 sudo：
 
 ```bash
-pnpm exec niceeval docker profile doctor default --smoke
+pnpm exec niceeval docker profile doctor default
 pnpm exec niceeval exp harness --dry
 pnpm exec niceeval exp harness
 ```

@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-provider-lane
-// rerun: pnpm e2e --repo runner -- --run test/provider-lane.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/provider-lane.test.ts
 import { pollUntil, withTempDir } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";

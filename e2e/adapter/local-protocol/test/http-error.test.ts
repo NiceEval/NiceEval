@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#http-error-owner
-// rerun: pnpm e2e --repo adapter/local-protocol -- --run test/http-error.test.ts
+// rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/http-error.test.ts
 
 import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
 import { expect, test } from "vitest";

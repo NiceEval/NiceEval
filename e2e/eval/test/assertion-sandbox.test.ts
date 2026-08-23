@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/eval.md#eval-assertion-sandbox
 // regression: memory/workspace-diff-path-cap-skips-partial-capture.md
-// rerun: pnpm e2e --repo eval -- --run test/assertion-sandbox.test.ts
+// rerun: pnpm e2e test --repo eval -- --run test/assertion-sandbox.test.ts
 
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";

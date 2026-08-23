@@ -7,8 +7,6 @@ import { runDockerProfileCommand } from "../../sandbox/docker-profile/cli.ts";
 export const DOCKER_OPTIONS = Object.freeze({
   /** Render Docker administration results as JSON. */
   json: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Render Docker administration results as JSON.", visibility: "public" }) }),
-  /** Run Docker profile smoke diagnostics. */
-  smoke: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Run Docker profile smoke diagnostics.", visibility: "public" }) }),
   /** Select one NiceEval-owned Docker cache domain. */
   domain: Object.freeze({ type: "string", help: Object.freeze({ summary: "Select one NiceEval-owned Docker cache domain.", visibility: "public" }) }),
   /** Apply a previously issued Docker cache GC plan. */
@@ -23,7 +21,7 @@ const DOCKER_HELP = `niceeval docker — Docker-specific administration
 
 Usage:
   niceeval docker profile list [--json]
-  niceeval docker profile doctor <alias> [--smoke] [--json]
+  niceeval docker profile doctor <alias> [--json]
   niceeval docker cache inventory [--domain <domain-id>] [--json]
   niceeval docker cache gc --domain <domain-id> [--apply <plan-id>] [--json]
 
@@ -44,7 +42,7 @@ const dockerFailure = (operation: string, cause: unknown, exitCode = 4) =>
 
 const DOCKER_COMMAND_OPTIONS = Object.freeze({
   "profile/list": Object.freeze(["json", "help"]),
-  "profile/doctor": Object.freeze(["json", "smoke", "help"]),
+  "profile/doctor": Object.freeze(["json", "help"]),
   "cache/inventory": Object.freeze(["json", "domain", "help"]),
   "cache/gc": Object.freeze(["json", "domain", "apply", "help"]),
   profile: Object.freeze(["help"]),
@@ -264,7 +262,6 @@ export const dockerCliCommand: CliCommandContribution<
       return yield* Effect.tryPromise({
         try: () => runDockerProfileCommand(positionals, {
           json,
-          smoke: parsed.values.smoke === true,
           out: io.writeStdoutSync,
           err: io.writeStderrSync,
         }),
