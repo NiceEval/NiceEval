@@ -6,7 +6,9 @@
 interface EvalGroupInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> {
   readonly evals: readonly [EvalGroupMember, ...EvalGroupMember[]];
   readonly sandbox?: Sandbox;
-  readonly plugins?: readonly PluginInstance<"group">[];
+  readonly plugins?:
+    | PluginStack<"group">
+    | readonly PluginAttachment<"group">[];
   readonly onUnavailable: "stop-group" | "replace-sandbox";
 }
 

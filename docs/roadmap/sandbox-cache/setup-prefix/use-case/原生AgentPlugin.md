@@ -72,7 +72,7 @@ const toolchain = definePlugin<{ archive: URL }>({
 });
 ```
 
-Plugin occurrence 保留 name、instanceKey、behaviorRevision、attachment owner 与数组位置。action 自己保留 recipe、内容 digest、频率与依赖。相同 Plugin definition 挂在 Experiment 和 Eval 上仍是两个 owner occurrence，不能跨 owner 合并身份。
+Plugin occurrence 保留 name、instanceKey、behaviorRevision、attachment owner 与最终 `attachmentOrdinal`。action 自己保留 recipe、内容 digest、频率与依赖。相同 Plugin definition 挂在 Experiment 和 Eval 上仍是两个 owner occurrence，不能跨 owner 合并身份。
 
 ## 不能固定的状态
 

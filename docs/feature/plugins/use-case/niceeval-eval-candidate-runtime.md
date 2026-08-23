@@ -27,12 +27,11 @@ export default defineExperiment({
     version: candidate.version,
     runtime: "node",
   }),
-  plugins: [
-    candidateRuntime({
+  plugins: pluginStack()
+    .use(candidateRuntime({
       version: candidate.version,
       runtime: "node",
-    }),
-  ],
+    })),
 });
 ```
 
@@ -63,7 +62,7 @@ Node / pnpm / Docker / Compose 的实际检查值、setup provenance 与 contrib
 ```text
 候选查找 / 下载       → 独立资源工作流,返回精确 version
 Sandbox template      → candidateHarnessSandbox({ version, runtime })
-候选运行条件与验收   → plugins: [candidateRuntime({ version, runtime })]
+候选运行条件与验收   → plugins: pluginStack().use(candidateRuntime({ version, runtime }))
 ```
 
 插件可以检查 template 完成后的 Sandbox 实例，但不能反过来修改 template 让它“碰巧兼容”，也不能把检查细节作为自定义 Record 值写入。V1 不提供通用 planning requirement 求解器。
