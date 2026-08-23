@@ -7,6 +7,7 @@ import json
 import os
 import pwd
 import grp
+import shlex
 import shutil
 import subprocess
 import sys
@@ -18,14 +19,20 @@ sys.dont_write_bytecode = True
 
 
 def run(*args: str) -> str:
-    return subprocess.run(
+    result = subprocess.run(
         args,
-        check=True,
+        check=False,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-    ).stdout.strip()
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{shlex.join(args)} failed with exit {result.returncode}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    return result.stdout.strip()
 
 
 def checked_root(raw: str) -> Path:
@@ -41,7 +48,7 @@ def cleanup(root: Path, *, remove_root: bool) -> None:
         raise SystemExit(f"refusing to clean unmarked fixture root: {root}")
     mount = root / "data"
     mounted = subprocess.run(
-        ["findmnt", "-n", "--target", str(mount)],
+        ["findmnt", "-n", "--mountpoint", str(mount)],
         text=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
