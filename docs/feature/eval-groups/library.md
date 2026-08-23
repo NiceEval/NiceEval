@@ -31,7 +31,7 @@ type EvalGroupMemberSandbox =
   | undefined;
 ```
 
-`sandboxLayer().before(...)` / `.after(...)` / `.around(...)` 保留 command-only 状态。任何 template-bearing Layer 都会在 `defineEvalGroup()` 调用处产生 TypeScript 错误。
+`sandboxLayer().before(...)` / `.after(...)` 保留 command-only 状态。任何 template-bearing Layer 都会在 `defineEvalGroup()` 调用处产生 TypeScript 错误。
 discovery 仍复核运行时品牌与实际 Layer 状态，拦住 JavaScript、宽泛断言和动态加载越界。
 
 ## `onUnavailable`

@@ -30,7 +30,7 @@ export default defineExperiment({
 
 如果结果依赖严格的跨 Attempt 顺序或累积状态，必须同时声明 `maxConcurrency: 1`。
 需要同一条连续实例时声明 `sandboxReuse: true`；结果依赖固定顺序时再显式声明 `maxConcurrency: 1`。
-跨 run checkpoint 的恢复与回存使用该物理 Sandbox 的 `around({ before, after })`；多个 Invocation 指向同一 checkpoint 时再用 Experiment `sharedState.key` 标识独占边界。
+跨 run checkpoint 的恢复使用该物理 Sandbox 的 callback before，成功后通过 `context.onCleanup()` 登记回存；多个 Invocation 指向同一 checkpoint 时再用 Experiment `sharedState.key` 标识独占边界。
 
 如果 Attempt 不能接受 workdir 之外的状态残留，就不能声明 `sandboxReuse`。
 这里允许的是**已经成功 settle 的命令有意留下的任务服务**，不是超时或取消后失控的命令树。异常命令树必须先确认终止；Provider 做不到时整台 Sandbox 退休，绝不进入复用池。

@@ -23,11 +23,13 @@ pure link
 
 查询、等待 single-flight 与 lease acquire 不占 Attempt permit。实际 staging、quiesce、promotion、restore 和 clone 使用 Provider 的资源队列；长期操作不持 registry transaction、Domain 全局锁或 Attempt permit。一个前缀不被 promotion 时，最终实例直接重新执行它及后缀，语义不变。
 
-## After 与收尾
+## Cleanup、After 与收尾
 
-occurrence 进入时按稳定 declaration key 登记全部 `.after()`；调用 `around.before` 前登记配对 `around.after`。around 的 before 与 after 都始终真实执行。standalone before 的 cache restore 产生 satisfaction fact并释放依赖节点。attempt after 在 Adapter runtime teardown 后运行；physical after 在最后一个 Attempt 后、Provider finalizer 前运行。全部 after 使用独立 cleanup signal，按实际登记栈全局逆序执行，永不按 changeFrequency 或第二张 DAG 重排。
+拥有可用 Sandbox 的 occurrence 进入时，Runner 按稳定 declaration key 登记全部 `.after()`。callback before 成功取得资源后，通过 `context.onCleanup()` 同步登记条件释放。standalone before 的 cache restore 产生 satisfaction fact 并释放依赖节点。
 
-共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可由最后的高频 before 写入；secret 通过私有 callback 注入并在 after 清除。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
+attempt cleanup 在 Adapter runtime teardown 后运行。physical cleanup 在最后一个 Attempt 后、Provider finalizer 前运行。所有收尾使用独立 cleanup signal，按实际登记栈全局逆序执行，永不按 changeFrequency 或第二张 DAG 重排。
+
+共享 prefix 不含 checkpoint、租约、secret 或外部会话。无密钥配置可由最后的高频 before 写入；secret 通过私有 callback 注入，成功后立即登记 cleanup。Provider 还要在 promotion 前扫描框架已知的敏感值残留；扫描是纵深防御，不替代类型和 capability 边界。
 
 ## Provider capacity admission
 

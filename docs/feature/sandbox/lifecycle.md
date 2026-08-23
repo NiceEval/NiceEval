@@ -70,7 +70,7 @@ fresh Case 默认在 Scope 退出时整组 stop。
 Eval template + Experiment command-only + Agent layer
   -> Eval template 选择 Provider
   -> build / start / ready Sandbox Case
-  -> physical-instance before / around.before
+  -> physical-instance before
   -> 建立 verified reset baseline
   -> 每条 Attempt:
        reset 到 verified sandbox baseline
@@ -81,7 +81,7 @@ Eval template + Experiment command-only + Agent layer
        -> attempt after(实际登记栈逆序)
        -> Experiment 已登记 cleanup(逆序)
        -> Eval 已登记 cleanup(逆序)
-  -> physical-instance after / around.after(登记栈逆序)
+  -> physical-instance cleanup / after(登记栈逆序)
   -> Provider Case finalizer
 ```
 
@@ -94,7 +94,7 @@ Compose Eval 自己选择 Docker Compose Provider;同一 Experiment 不需要知
 Experiment template + Eval command-only + Agent layer
   -> Experiment template 选择 Provider
   -> build / start / ready Sandbox Case
-  -> physical-instance before / around.before
+  -> physical-instance before
   -> 建立 verified reset baseline
   -> 每条 Attempt:
        reset 到 verified sandbox baseline
@@ -105,7 +105,7 @@ Experiment template + Eval command-only + Agent layer
        -> attempt after(实际登记栈逆序)
        -> Eval 已登记 cleanup(逆序)
        -> Experiment 已登记 cleanup(逆序)
-  -> physical-instance after / around.after(登记栈逆序)
+  -> physical-instance cleanup / after(登记栈逆序)
   -> Provider Case finalizer
 ```
 
@@ -122,7 +122,7 @@ Agent-owned before action 不固定最后；高频 `.env` 通常因数值较大�
 
 ## Before/after occurrence
 
-公开 API 统一声明 owner 的 before、after 与 around,不暴露 scope。link 与 physical planning 根据 typed inputs 和 sharing cohort 给每个 attachment 编译 occurrenceKind。physical-instance before 先形成 verified reset baseline;每个 Attempt reset 后再满足 attempt before:
+公开 API 统一声明 owner 的 before 与 after，不暴露 scope。link 与 physical planning 根据 typed inputs 和 sharing cohort 给每个 attachment 编译 occurrenceKind。physical-instance before 先形成 verified reset baseline;每个 Attempt reset 后再满足 attempt before:
 
 ```text
 fresh: create Case -> physical before -> reset baseline -> attempt before -> Agent/test -> after
@@ -177,7 +177,7 @@ Eval Group 的 `beforeSlots` / `afterSlots` 在 human 与 JSON 中都显式呈�
 
 ## 准备、lifecycle 与 baseline
 
-四类 owner 的 before 和 agent.ensure 循环都属于 Agent 开始前的基础设施活动。physical-instance node 在 reset baseline 前,attempt node 在每次 reset 后。occurrence 进入时登记 standalone after；around.before 调用前登记配对 after。attempt after 在 Adapter runtime teardown 后执行,physical after 在 provider finalizer 前执行,全部按实际登记栈全局逆序。
+四类 owner 的 before 和 agent.ensure 循环都属于 Agent 开始前的基础设施活动。physical-instance node 在 reset baseline 前,attempt node 在每次 reset 后。拥有可用 Sandbox 的 occurrence 进入时登记 standalone after；callback before 成功取得资源后立即登记动态 cleanup。attempt cleanup 在 Adapter runtime teardown 后执行,physical cleanup 在 provider finalizer 前执行,全部按实际登记栈全局逆序。
 
 因此:
 

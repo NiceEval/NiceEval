@@ -28,9 +28,9 @@ export default defineExperiment({
 ```ts
 export default defineExperiment({
   sandbox: e2bSandbox({ template: "memorybench" })
-    .around({
-      before: restoreMempal,
-      after: saveMempal,
+    .before(async (sandbox, context) => {
+      const checkpoint = await restoreMempal(sandbox);
+      context.onCleanup(() => saveMempal(sandbox, checkpoint));
     }),
   sandboxReuse: true,
   maxConcurrency: 1,

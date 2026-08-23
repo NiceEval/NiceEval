@@ -14,17 +14,6 @@ const changeFrequency = {
 interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   before(action: SandboxAction): SandboxLayer<Kind>;
   after(action: SandboxAction): SandboxLayer<Kind>;
-  around(pair: SandboxActionPair): SandboxLayer<Kind>;
-}
-
-interface SandboxActionPair {
-  readonly id: string;
-  readonly changeFrequency?: number;
-  readonly dependsOn?: readonly SandboxActionRef[];
-  readonly requires?: readonly SandboxCapability[];
-  readonly provides?: readonly SandboxCapability[];
-  readonly before: SandboxHook;
-  readonly after: SandboxAction;
 }
 
 declare function shell(input: ShellActionInput): SandboxAction;
@@ -91,16 +80,21 @@ dockerSandbox({
     text: publicAdapterConfig,
     changeFrequency: changeFrequency.frequent,
   }))
-  .around({
+  .before(defineSandboxCommand({
     id: "credential-overlay",
+    revision: "1",
+    inputs: [],
     changeFrequency: changeFrequency.frequent,
     dependsOn: [actionRef("adapter-env")],
-    before: injectCredentialOverlay,
-    after: removeCredentialOverlay,
-  });
+  }, async (sandbox, context) => {
+    const overlay = await injectCredentialOverlay(sandbox);
+    context.onCleanup(() => removeCredentialOverlay(sandbox, overlay));
+  }));
 ```
 
-`before(action)` 是不需要配对 after 的前置动作。`after(action)` 是 occurrence 的 finally；进入 occurrence 时就登记，即使后续 before 部分失败也会执行。`around({ before, after })` 用于资源取得与释放；它始终真实执行，调用其 before 前登记配对 after。API 不把 fluent after 隐式绑定到最近 before，避免书写重排改变配对。
+`before(action)` 表达有序准备。声明式 recipe 可命中准备前缀；callback 与 `defineSandboxCommand()` 的 run 始终真实执行，并截断后续共享 capture。运行期资源成功取得后，由当前 callback 同步调用 `context.onCleanup()` 登记条件释放。
+
+`after(action)` 是无条件、幂等的 occurrence finally。拥有可用 Sandbox 的 occurrence 进入后就登记全部 standalone after，即使后续 before 未执行或失败也会执行。它不隐式绑定最近的 before，也不能释放依赖成功 acquire 或 handle 的资源。
 
 `before()` 接收 action，也接受 `(sandbox, context) => …` callback。声明式 action 在 Sandbox 创建前就必须可检查，NiceEval 才能排序、计算 identity 并选择 restore；因此 `shell()`、`writeText()`、`writeBytes()` 与 `upload*()` 不接收运行中的 `Sandbox`。确实依赖实例、secret、租约或当前时间的步骤才写 callback；它取得真实 `Sandbox`，但显示为 opaque、每次执行并截断共享 capture lineage。
 
@@ -147,7 +141,7 @@ ready actions
 
 因此 Group 的稳定 action 可以排到 Experiment 的高频 action 前面，Agent 写 `.env` 的 action 也可以自然位于准备链末端。owner 仍进入 identity、debug 与失败归因。
 
-每个 before 与 `around.before` 都求值出有限非负 `changeFrequency`。省略时固定为 `normal = 100`；数值越小越早。相同数值使用 owner kind、稳定 owner id 与 owner 内 ordinal 组成的全局 declaration key 排序，不能使用发现时机或对象枚举顺序。
+每个 before 都求值出有限非负 `changeFrequency`。省略时固定为 `normal = 100`；数值越小越早。相同数值使用 owner kind、稳定 owner id 与 owner 内 ordinal 组成的全局 declaration key 排序，不能使用发现时机或对象枚举顺序。
 
 依赖边来自两种公开声明：
 
@@ -158,7 +152,7 @@ ready actions
 
 改动 `changeFrequency` 可以改变可观察执行顺序、PrefixKey 祖先链与 fingerprint，这是公开语义变化，不只是缓存运营提示。
 
-## After 顺序
+## Cleanup 与 After 顺序
 
 所有 after 都按实际登记栈全局逆序：
 
@@ -166,17 +160,17 @@ ready actions
 last registered → first registered
 ```
 
-`changeFrequency` 不适用于 after，也不提供 `teardownPriority`、`afterOrder` 或第二张 teardown DAG。`around.after` 是实际取得动作的结构化逆操作；允许它独立重排会提前释放仍被其它 action 使用的资源。独立 `.after()` 在 occurrence 进入时按稳定 declaration key 登记，`around.after` 在调用配对 before 前登记。
+`changeFrequency` 不适用于 cleanup 或 after，也不提供 `teardownPriority`、`afterOrder` 或第二张 teardown DAG。独立 `.after()` 在拥有可用 Sandbox 的 occurrence 进入时按稳定 declaration key 登记。callback 成功取得资源后通过 `context.onCleanup()` 立即登记条件释放；动态 cleanup 比 standalone after 更晚入栈，因此更早退出。
 
 Attempt 内 Agent body 固定为：
 
 ```text
-scheduled attempt before / around.before
+scheduled attempt before
   → Adapter runtime setup
   → Agent run
   → Eval test
   → Adapter runtime teardown
-  → registered attempt after / around.after in LIFO order
+  → registered dynamic cleanup / attempt after in LIFO order
 ```
 
 Eval test 因而始终发生在 Adapter runtime 存活期间。runtime teardown 即使 run 或 test 失败也真实执行；随后继续全局 LIFO cleanup。Provider finalizer 是硬边界，永远晚于本物理 occurrence 的 physical after。
@@ -198,14 +192,14 @@ SandboxLayer 不提供 invocation occurrence。没有具体 Sandbox 的 Experime
 
 ```text
 Provider start
-  → physical before / around.before
+  → physical before
   → verified reset baseline
   → 每个 Attempt:
       reset
-      → attempt before / around.before
+      → attempt before
       → Agent body
-      → attempt after / around.after
-  → physical after / around.after
+      → dynamic cleanup / attempt after
+  → dynamic cleanup / physical after
   → Provider finalizer
 ```
 
@@ -223,7 +217,7 @@ unsupported → execute action without capture
 
 callback before 始终真实执行、显示 opaque，并关闭后续共享 capture lineage。secret、租约、外部会话、当前时间、随机数、外部写入和无法原子捕获的 DinD 状态也关闭 lineage。它们仍是 DAG 节点并参与依赖与数值排序，不能因 opaque 而从计划中删除。后续 action 可以在私有实例继续执行，但不能被其它 owner、lane、Eval 或 Agent 当作共享 prefix 命中。
 
-after、around.before 与 around.after 永不缓存。standalone before 的 cache restore 产生与 replay 相同的 satisfaction fact，可以释放依赖它的节点。全部已登记 after 使用独立 cleanup signal，失败只产生 diagnostic，不能阻止后续收尾和 Provider finalizer。
+callback before、`defineSandboxCommand()`、cleanup 与 after 永不缓存。standalone before 的 cache restore 产生与 replay 相同的 satisfaction fact，可以释放依赖它的节点。全部已登记收尾使用独立 cleanup signal，失败只产生 diagnostic，不能阻止后续收尾和 Provider finalizer。
 
 ## 频率
 
@@ -233,7 +227,7 @@ after、around.before 与 around.after 永不缓存。standalone before 的 cach
 
 ## Provider 中立
 
-before/after/around 属于 `SandboxLayer`，不属于 Docker。Docker、E2B、Vercel 与自定义 Provider 使用相同 API。Provider 对每个 eligible prefix 报告：
+before/after 属于 `SandboxLayer`，不属于 Docker。Docker、E2B、Vercel 与自定义 Provider 使用相同 API。Provider 对每个 eligible prefix 报告：
 
 - `persistent`：可以跨 Invocation 命中；
 - `invocation-local`：只在本次 Invocation build once 并私有 clone；

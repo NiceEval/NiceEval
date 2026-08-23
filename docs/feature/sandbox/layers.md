@@ -33,8 +33,8 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 
 1. `dockerComposeSandbox()` / `e2bSandbox()` 等具体 factory 声明 template;`sandboxLayer()` 只声明命令。
 2. 一个配对只能有一方带 template。两边都有是 `sandbox.template-conflict`,两边都没有是 `sandbox.template-missing`。
-3. Experiment、Group、Eval、Agent 使用同一种 `before()` / `after()` / `around()`；owner 只保留声明出处与归因。
-4. before 按依赖与数值排队,after 按登记栈逆序退出。资源取得与释放用 `around()` 显式配对。
+3. Experiment、Group、Eval、Agent 使用同一种 `before()` / `after()`；owner 只保留声明出处与归因。
+4. before 按依赖与数值排队。成功取得资源后用 `context.onCleanup()` 登记释放；无条件 after 在入口登记，所有收尾按实际登记栈逆序退出。
 
 声明式 before action 可以形成缓存前缀。callback before、secret、租约与外部会话始终真实执行并截断后续共享捕获。after 始终真实执行。link 与 physical planning 根据 typed inputs 和 sharing cohort 编译 physical-instance 或 attempt occurrence,但作者 API 不暴露 scope。完整资格与 Provider 降级见[可缓存准备前缀](../../roadmap/sandbox-cache/setup-prefix/README.md)。
 完整时序与 fresh / reuse 次数表见 [三方准备时序](lifecycle.md)。
@@ -66,7 +66,6 @@ import {
   type SandboxHookContext,
   type SandboxLayer,
   type SandboxAction,
-  type SandboxActionPair,
 } from "niceeval/sandbox";
 ```
 
@@ -84,21 +83,13 @@ interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [sandboxLayerKind]: Kind;
   before(action: SandboxAction): SandboxLayer<Kind>;
   after(action: SandboxAction): SandboxLayer<Kind>;
-  around(pair: SandboxActionPair): SandboxLayer<Kind>;
-}
-
-interface SandboxActionPair {
-  readonly id: string;
-  readonly changeFrequency?: number;
-  readonly dependsOn?: readonly SandboxActionRef[];
-  readonly before: SandboxHook;
-  readonly after: SandboxAction;
 }
 
 interface SandboxHookContext {
   readonly experimentId: string;
   readonly signal: AbortSignal;
   fact(name: string, value: JsonValue): void;
+  onCleanup(command: SandboxCleanupCommand): void;
   // 另有与当前生命周期绑定的 progress() / diagnostic() 反馈入口。
 }
 
@@ -109,10 +100,13 @@ type SandboxHook = (
 ```
 
 hook 还可经上下文上报绑定当前生命周期的 progress 与 diagnostic；它没有 attempt、session、模型或复用池句柄。
+`SandboxHookContext.onCleanup()` 与 `SandboxCommandContext.onCleanup()` 使用同一个 `SandboxCleanupCommand` 类型和同一套登记语义。
 
 link 与 physical planning 给每个 attachment 编译 `physical-instance | attempt` occurrence。含 attempt-bound input 的 action 必为 attempt;只消费 immutable input 且 owner 对完整 cohort 稳定时才可 physical-instance。求值结果进入 identity 与 debug。作者不能手写 scope 或取得 pool 句柄。
 
-进入 occurrence 时按稳定 declaration key 登记 standalone after；调用 around.before 前登记其 around.after。已登记项按全局 LIFO 使用独立 cleanup signal,失败后继续收尾。callback before 与 around 始终真实执行并截断后续共享捕获；after 即使使用 exact command 也不缓存。
+拥有可用 Sandbox 的 occurrence 进入后，Runner 按稳定 declaration key 登记 standalone after。callback before 与 `defineSandboxCommand()` 始终真实执行并截断后续共享捕获；成功取得资源后可同步调用 `context.onCleanup()`，把本次 invocation 的释放动作立即压入同一栈。所有已登记项按全局 LIFO 使用独立 cleanup signal，失败后继续收尾；after 即使使用 exact command 也不缓存。
+
+`onCleanup()` 只能在登记它的 callback 尚未 settle 时调用，返回 `void`，cleanup 内不能再次登记 cleanup。callback 后续失败或取消不撤销已登记项。每次 physical-instance 或 attempt invocation 都拥有独立 registry；定义级对象不保存 handle。standalone after 必须能在任意后续 before 未执行或失败时安全运行，因此它只能表达无条件、幂等 finally，不能释放依赖成功 acquire 的资源。
 
 它们附着在配对后的实际 Sandbox 上，不引入 lane、lane id 或可由作者持有的复用池句柄。仅 Experiment 所有的 hook 不改变可共享的物理身份；Eval 所有的 hook 会把该 Eval 的物理生命周期隔离开。
 
@@ -396,7 +390,7 @@ export default defineExperiment({ agent: codexAgent(), evals: ["generic/", "comp
 
 ## 顺序与依赖方向
 
-template owner 只提供 Provider 起点，不参与 action 排序。每种 occurrence 都把四类 owner 的 before 与 around.before 放进同一张依赖 DAG。planning 每次从 ready set 选择 changeFrequency 最小的 action；数值相同时按 owner kind、稳定 owner id 与 owner 内 ordinal 组成的 declaration key 排序。
+template owner 只提供 Provider 起点，不参与 action 排序。每种 occurrence 都把四类 owner 的 before 放进同一张依赖 DAG。planning 每次从 ready set 选择 changeFrequency 最小的 action；数值相同时按 owner kind、稳定 owner id 与 owner 内 ordinal 组成的 declaration key 排序。
 
 `dependsOn` 与具名 `provides` / `requires` capability 形成边。普通 inputs 只参与 identity、缓存资格与 occurrence 编译，不形成边。缺失 action、重复 capability provider、跨 occurrence 依赖或循环在 Provider I/O 前报错。
 Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖,也不自动并行。
@@ -431,9 +425,9 @@ interface SandboxCommandContext {
   readonly phase: "prepare" | "agent.post-setup" | "agent.pre-teardown";
   readonly owner:
     | { readonly kind: "eval"; readonly id: string }
+    | { readonly kind: "group"; readonly id: string }
     | { readonly kind: "experiment"; readonly id: string }
     | { readonly kind: "agent"; readonly id: string };
-  readonly attempt: AttemptRef;
   readonly signal: AbortSignal;
   readonly progress: SandboxProgress;
   readonly diagnostic: SandboxDiagnosticSink;
@@ -452,11 +446,6 @@ type SandboxCleanupCommand = (
   sandbox: SandboxCommandTarget,
   context: Omit<SandboxCommandContext, "onCleanup">,
 ) => MaybePromise<void>;
-
-interface AttemptRef {
-  readonly id: string;
-  readonly index: number;
-}
 
 interface SandboxCommandTarget extends SandboxOperations {
   copyPath(sourcePath: string, targetPath: string): Promise<void>;
@@ -478,6 +467,13 @@ interface SandboxCommandIdentity {
   readonly id: string;
   readonly revision: string;
   readonly inputs: SandboxCommandIdentityValue;
+}
+
+interface SandboxCommandDefinition extends SandboxCommandIdentity {
+  readonly changeFrequency?: number;
+  readonly dependsOn?: readonly SandboxActionRef[];
+  readonly requires?: readonly SandboxCapability[];
+  readonly provides?: readonly SandboxCapability[];
 }
 
 /** 可进入稳定 command identity 的 CommandOptions 子集；函数、signal 与运行时回调不在其中。 */
@@ -506,7 +502,7 @@ declare function shell(
 ): StableSandboxCommand;
 
 declare function defineSandboxCommand(
-  identity: SandboxCommandIdentity,
+  definition: SandboxCommandDefinition,
   run: SandboxCommand,
 ): StableSandboxCommand;
 
@@ -533,12 +529,16 @@ sandboxLayer()
 `command()` / `shell()` 由纯数据参数生成稳定 identity,identity 涵盖 executable / script、argv、cwd、env、user 与 stdin。
 复杂探测、分支与文件 IO 可以直接写 callback。JavaScript 无法可靠提取它读取的 `process.env`、时间或其它闭包状态，因此直接 callback 不向 fingerprint 增加 identity；Runner 也不用 `Function.prototype.toString()` 或函数名猜闭包。
 
-需要稳定 identity 的自定义步骤用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记,所有动态输入进入 `inputs`。
+需要稳定 identity 或跨 owner 排序元数据的自定义步骤使用 `defineSandboxCommand()`，所有动态输入进入 `inputs`。`id`、`revision` 与 `inputs` 决定 recipe identity。
+
+`changeFrequency`、`dependsOn`、`requires` 与 `provides` 只决定 linked schedule、DAG、fingerprint 与 debug。这些字段不会把 callback 变成声明式 recipe。
 普通本地传输直接使用 `uploadFile()` / `uploadDirectory()` action；它们在一次声明中完成内容登记、identity 与目标写入。只有内容必须晚于 Agent 可见时，才用 `sandboxContent.file()` / `sandboxContent.directory()` 取得 digest-backed handle，并在 Eval test 中调用 `t.sandbox.upload()`。
 
 声明式 action 与运行期 `Sandbox` 刻意共用文件动词：已有文本或字节使用 `writeText()` / `writeBytes()`，声明的宿主路径使用 `uploadFile()` / `uploadDirectory()`。前者的内容、后者的规范化 manifest 都直接进入 identity。`before()` 不能把尚不存在的 Sandbox 传给这些 action；只有 callback before 在执行期取得 `Sandbox`，代价是 opaque 且不能共享捕获。
 
 `run` 的函数体、函数名与闭包不进入 identity。只改实现而保持 `id`、`revision`、`inputs` 不变时,Runner 不会发现语义已经变化,旧结果仍可能沿用。实现语义变化必须提高 `revision`;外部输入变化必须反映到 `inputs`。若作者漏改 identity 后已经产生或沿用了结果,先修正 `revision` 或 `inputs`,再按[全量重验](../experiments/use-case/重新运行/全量重验.md)对受影响选择执行 `--rerun all`。`--rerun all` 只修复这一次结果集,不能替代永久 identity 修正。
+
+`defineSandboxCommand()` 的稳定 identity 只提供失效与排序依据。它的 `run` 始终 opaque，在每个 occurrence 真实执行并截断后续共享 capture，绝不因 identity 稳定而命中准备前缀。只有 `shell()`、`writeText()`、`writeBytes()`、`upload*()`、`gitCheckout()` 等完全声明式 recipe 具备前缀缓存资格。
 
 `putContent()` 对大文件自动拆成有界的 provider 写入,全部到达后才在 Sandbox 内原子替换目标；SDK 单次请求超时不会留下半个目标文件。
 未登记 identity 的 callback 默认允许跨 Run 携带，避免一个声明遗漏让昂贵 Attempt 永久重跑。这个默认只代表 callback 没有增加失效条件，不代表 Runner 已证明其语义稳定。
@@ -549,8 +549,24 @@ Provider 的声明 identity、BuildKey 或 opaque marker 直接进入 fingerprin
 ### Cleanup
 
 命令需要 cleanup 时,在本次执行成功取得资源后调用 `context.onCleanup()` 登记。
-Runner 对已成功登记的 cleanup 按全局准备顺序逆序执行;未执行或取得失败的命令不会产生虚假 cleanup。
+`onCleanup()` 同步立即登记并返回 `void`，只能在当前 command callback 尚未 settle 时调用；cleanup 不能递归登记 cleanup。callback 后续失败或取消不撤销已经登记的动作。每次 invocation 使用独立 registry，闭包捕获的 handle 不跨 physical instance 或 Attempt 复用。
+
+Runner 对已成功登记的 cleanup 按全局准备顺序逆序执行；未执行或取得失败的命令不会产生虚假 cleanup。cleanup 保留登记时的 phase、owner 与反馈归因，只把 signal 替换成独立有界 cleanup signal。
+
+单项失败追加 `teardown-failed` diagnostic 后继续收尾。动态 cleanup 先于入口登记的 standalone after，Provider finalizer 最后运行。
 绑定完整 Case 的资源由 Provider finalizer 回收；属于该物理 Sandbox 的持久路径，以及跨 run checkpoint 的恢复与回存，都由 `setup()` / `teardown()` 成对处理；三者都不走 `onCleanup()`。
+
+公开入口的生命周期验收涉及以下最小矩阵：
+
+| 场景 | 必须观察到的结果 |
+|---|---|
+| acquire 未执行或取得失败 | 不登记、不执行对应 cleanup |
+| acquire 成功，后续 before 或主体失败 | 已登记 cleanup 仍执行 |
+| callback 部分取得后失败 | 每个已取得 handle 的补偿都执行，未取得部分没有虚假 cleanup |
+| 多 owner 的 DAG 改变实际执行顺序 | cleanup 按实际登记顺序 LIFO，不按 owner 或频率另排 |
+| physical-instance 与 attempt 并发 | registry 和闭包 handle 彼此隔离 |
+| `defineSandboxCommand()` 有稳定 identity | run 仍真实执行，不命中准备前缀 |
+| 同时存在动态 cleanup 与 standalone after | 动态 cleanup 先执行，standalone after 随后逆序执行 |
 
 ## Agent layer
 

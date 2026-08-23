@@ -18,13 +18,11 @@ export default defineExperiment({
       probe: shell("mempal --version | grep -q 0.9.0"),
       install: shell("curl -fsSL https://get.mempal.dev | sh"),
     }))
-    .around({
-      before: async (sandbox) => {
-        await restoreMempalForThisPhysicalSandbox(sandbox);
-      },
-      after: async (sandbox) => {
-        await archiveMempalFromThisPhysicalSandbox(sandbox);
-      },
+    .before(async (sandbox, context) => {
+      const checkpoint = await restoreMempalForThisPhysicalSandbox(sandbox);
+      context.onCleanup(() =>
+        archiveMempalFromThisPhysicalSandbox(sandbox, checkpoint),
+      );
     }),
   agent: codexAgent(),
   sandboxReuse: true,

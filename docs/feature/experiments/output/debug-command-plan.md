@@ -50,9 +50,9 @@
 │ command: shell "printf fixture-ready"                                │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.around.before ───────────────────────────────────── OPAQUE ─╮
+╭─ sandbox.before ───────────────────────────────────────────── OPAQUE ─╮
 │ owner: adapter:codex                                                 │
-│ phase: around.before                                                 │
+│ phase: before                                                        │
 │ occurrence: attempt · Agent default                                  │
 │ declaration order: adapter:codex · 2                                 │
 │ dependencies: eval:group/first#fixture · explicit                    │
@@ -62,10 +62,13 @@
 │ scheduling reason: dependency-released-then-lowest-frequency        │
 │ reason: callback body cannot be inspected or captured                │
 │ capture lineage: closed · opaque-ancestor                            │
-│ paired after: slot[group/first,attempt:0].after[agent:2]             │
-│ after condition: registered before callback invocation              │
+│ cleanup registration: runtime-conditional · global LIFO              │
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
+
+静态计划不执行 callback，因此不伪造 cleanup 节点、handle 或数量。实际调用 `context.onCleanup()` 后，运行反馈写入 `cleanup.registered`。后续事件是 `cleanup.started` 与 `cleanup.completed` / `cleanup.failed`，并关联登记它的 before、owner 与 declaration key。
+
+standalone after 的静态节点显示 `condition: occurrence-entered`、`registration: occurrence-entry` 与 `cache: never`。动态 cleanup 后登记，因此先按 LIFO 执行；standalone after 随后按逆登记顺序执行，Provider finalizer 最后运行。
 
 Human 框与 JSON `commandPlan` 投影同一棵结构化树和同一组字段；框中的标签只是 JSON 字段的人读投影：
 

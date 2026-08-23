@@ -60,7 +60,7 @@ export default defineExperiment({
 
 有参数 family 必须声明稳定的 `instanceKey(options)`。无参数 family 可省略它，固定实例键为 `"default"`，但仍通过 `family()` 产生 attachment specification。它可以被多个 Definition 或共享栈复用；owner 消费时才为每个挂载产生 occurrence。
 
-`experiment`、`group` 与 `eval` fragment 只能包含可选 `identity`，以及至少一个 `setup` / `teardown`。公开 callback 返回 `void | Promise<void>`；Plugin 不暴露 Effect、资源 handle、cleanup 返回值或依赖注入协议。`sandbox` fragment 返回 command-only `SandboxLayer`，使用统一的 `before()` / `after()` / `around()` API；它不能提供 template。
+`experiment`、`group` 与 `eval` fragment 只能包含可选 `identity`，以及至少一个 `setup` / `teardown`。公开 callback 返回 `void | Promise<void>`；Plugin 不暴露 Effect、资源 handle、cleanup 返回值或依赖注入协议。`sandbox` fragment 返回 command-only `SandboxLayer`，使用统一的 `before()` / `after()` API；它不能提供 template。
 
 Plugin 的写法没有另起一套 action API。固定内容直接返回 `sandboxLayer().before(writeText(...) / uploadDirectory(...))`；需要运行中实例的步骤可写 `.before(async (sandbox, context) => …)`，但它是每次真实执行的 opaque callback。Plugin 仍只在 owner 的 `plugins` 字段挂一次，runner 自动投影其中的 SandboxLayer。
 

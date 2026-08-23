@@ -4,7 +4,7 @@ Group 的物理 Sandbox 在第一条真实 Attempt 前按需取得，并由整�
 
 ```text
 provider acquire
-  -> physical SandboxLayer before / around.before
+  -> physical SandboxLayer before
   -> selected resource materialize
   -> verified reset baseline
   -> each real Attempt
@@ -15,7 +15,7 @@ provider acquire
        -> agent ensure / setup / test / teardown
        -> attempt after in reverse registration order
   -> resource release in reverse order
-  -> physical SandboxLayer after / around.after
+  -> physical SandboxLayer cleanup / after
   -> provider finalizer
 ```
 

@@ -409,7 +409,7 @@ provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传�
 沙箱冷启动和重复安装是关键路径上的大头。优先级如下:
 
 1. 把稳定重依赖做进 Docker image、E2B template 或 Vercel snapshot;每次 attempt 只从这个起点创建。
-2. layer 的 `before()` 按 typed inputs 自动编译 occurrence；稳定重动作形成靠前的 physical prefix，频繁变化的配置形成靠后的 prefix，资源取得与释放用 `around()`。
+2. layer 的 `before()` 按 typed inputs 自动编译 occurrence；稳定重动作形成靠前的 physical prefix，频繁变化的配置形成靠后的 prefix。运行期资源成功取得后用 `context.onCleanup()` 登记释放。
 3. 仍有必要时再考虑 Sandbox 预热或 Sandbox 复用。
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。
