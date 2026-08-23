@@ -2,7 +2,7 @@
 
 `niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 2`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
 
-它是 [Record architecture](../record/architecture.md) 定义的六个固定 durable family 之一。Record protocol 不提供第三方 family、字段 writer 或 schema registry：第三方只能在 Assertions entry 内提供可解释的 criterion schema。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与既有固定 family 的 sealed 事实读侧形成，不能各自变成新的持久 family。
+它是 [Record architecture](../record/architecture.md) 定义的九个固定 durable family 之一。Record protocol 不提供第三方 family、字段 writer 或 schema registry：第三方只能在 Assertions entry 内提供可解释的 criterion schema。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与既有固定 family 的 sealed 事实读侧形成，不能各自变成新的持久 family。
 
 ## 版本边界
 
@@ -365,7 +365,7 @@ v1 `gate` 为 `satisfied`、`failed`、`unavailable` 或 `not-applicable` 已证
 
 ## 读取与读侧形成
 
-固定 family 的 Host 只可能形成 `available`、`not-recorded`、`unsupported` 或 `invalid`。`available` 才会提供 immutable payload 与 own blob closure；其余三态不会被消费端补成空 entries、零分或 passed。完整 Host 契约见 [Record architecture](../record/architecture.md#attachment-closure-与读取状态)。
+固定 family 的 Host 只可能形成 `available`、`not-recorded` 或 `invalid`。`available` 才会提供 immutable payload 与 own blob closure；其余状态不会被消费端补成空 entries、零分或 passed。unknown、future 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整 Host 契约见 [Record architecture](../record/architecture.md#attachment-closure-惰性读取与-cache)。
 
 Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Score 从 Assertions contribution 与 rubric 形成。source navigation 则由 [Analysis Library](../analysis/library.md) 的 `query()` 产生已发布 `DomainView`。
 这些读侧值不打开 Record path、不猜当前 worktree、不重跑 evaluator，也不回写 durable bytes。
@@ -377,5 +377,5 @@ Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Sco
 - [Source sites](architecture/source-sites.md) —— Assertions 内嵌 mapping 与 Sources join。
 - [Score Eval](library/score-points.md) —— score state、points 与 rubric。
 - [Verdict architecture](../verdict/architecture.md) —— 四态折叠。
-- [Record architecture](../record/architecture.md) —— owner、closure、六个 fixed family 与四态 Host。
+- [Record architecture](../record/architecture.md) —— owner、closure、九个 fixed family 与 source-local read。
 - [Analysis Library](../analysis/library.md) —— `query()` 与 `DomainView`。

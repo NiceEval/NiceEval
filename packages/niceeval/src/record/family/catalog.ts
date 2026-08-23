@@ -11,31 +11,40 @@ import type {
   RecordAttachmentOwnerDefinition,
   RecordAttachmentOwnerInputs,
 } from "../definition/index.ts";
-import { assertionsRecordAttachment } from "./assertions.ts";
+import { assertionsRecordAttachment } from "./assertions/definition.ts";
+import { agentTurnsRecordAttachment } from "./agent-turns/definition.ts";
 import { artifactsRecordAttachment } from "./artifacts.ts";
 import {
   type FixedRecordAttachmentOwner,
 } from "./common.ts";
 import { fileChangesRecordAttachment } from "./file-changes.ts";
-import { observabilityRecordAttachment } from "./observability.ts";
-import { sourceNavigationRecordAttachment } from "./source-navigation.ts";
+import { runnerActivitiesRecordAttachment } from "./runner-activities/definition.ts";
+import { runnerDiagnosticsRecordAttachment } from "./runner-diagnostics/definition.ts";
+import { sandboxCommandsRecordAttachment } from "./sandbox-commands/definition.ts";
 import { sourcesRecordAttachment } from "./sources.ts";
+import { turnContextsRecordAttachment } from "./turn-contexts/definition.ts";
 
 /** The catalog lists declarations only; family identities come from them. */
 export const NiceEvalRecordAttachments = Object.freeze({
   assertions: assertionsRecordAttachment,
-  observability: observabilityRecordAttachment,
+  agentTurns: agentTurnsRecordAttachment,
+  turnContexts: turnContextsRecordAttachment,
+  sandboxCommands: sandboxCommandsRecordAttachment,
+  runnerActivities: runnerActivitiesRecordAttachment,
+  runnerDiagnostics: runnerDiagnosticsRecordAttachment,
   fileChanges: fileChangesRecordAttachment,
-  sourceNavigation: sourceNavigationRecordAttachment,
   sources: sourcesRecordAttachment,
   artifacts: artifactsRecordAttachment,
 });
 
 export const NICE_EVAL_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.assertions.family,
-  NiceEvalRecordAttachments.observability.family,
+  NiceEvalRecordAttachments.agentTurns.family,
+  NiceEvalRecordAttachments.turnContexts.family,
+  NiceEvalRecordAttachments.sandboxCommands.family,
+  NiceEvalRecordAttachments.runnerActivities.family,
+  NiceEvalRecordAttachments.runnerDiagnostics.family,
   NiceEvalRecordAttachments.fileChanges.family,
-  NiceEvalRecordAttachments.sourceNavigation.family,
   NiceEvalRecordAttachments.sources.family,
   NiceEvalRecordAttachments.artifacts.family,
 ] as const);
@@ -128,10 +137,14 @@ function fixedFamily(
 }
 
 export const assertionsRecordFamily = fixedFamily(NiceEvalRecordAttachments.assertions, "attempt");
-export const attemptObservabilityRecordFamily = fixedFamily(NiceEvalRecordAttachments.observability, "attempt");
-export const runObservabilityRecordFamily = fixedFamily(NiceEvalRecordAttachments.observability, "run");
+export const agentTurnsRecordFamily = fixedFamily(NiceEvalRecordAttachments.agentTurns, "attempt");
+export const turnContextsRecordFamily = fixedFamily(NiceEvalRecordAttachments.turnContexts, "attempt");
+export const sandboxCommandsRecordFamily = fixedFamily(NiceEvalRecordAttachments.sandboxCommands, "attempt");
+export const attemptRunnerActivitiesRecordFamily = fixedFamily(NiceEvalRecordAttachments.runnerActivities, "attempt");
+export const runRunnerActivitiesRecordFamily = fixedFamily(NiceEvalRecordAttachments.runnerActivities, "run");
+export const attemptRunnerDiagnosticsRecordFamily = fixedFamily(NiceEvalRecordAttachments.runnerDiagnostics, "attempt");
+export const runRunnerDiagnosticsRecordFamily = fixedFamily(NiceEvalRecordAttachments.runnerDiagnostics, "run");
 export const fileChangesRecordFamily = fixedFamily(NiceEvalRecordAttachments.fileChanges, "attempt");
-export const sourceNavigationRecordFamily = fixedFamily(NiceEvalRecordAttachments.sourceNavigation, "attempt");
 export const sourcesRecordFamily = fixedFamily(NiceEvalRecordAttachments.sources, "run");
 export const attemptArtifactsRecordFamily = fixedFamily(NiceEvalRecordAttachments.artifacts, "attempt");
 export const runArtifactsRecordFamily = fixedFamily(NiceEvalRecordAttachments.artifacts, "run");
@@ -139,12 +152,18 @@ export const runArtifactsRecordFamily = fixedFamily(NiceEvalRecordAttachments.ar
 /** The static Record v1 catalog is closed; family protocol remains at each declaration. */
 export const NiceEvalRecordFamilyCatalog = Object.freeze({
   assertions: assertionsRecordFamily,
-  observability: Object.freeze({
-    attempt: attemptObservabilityRecordFamily,
-    run: runObservabilityRecordFamily,
+  agentTurns: agentTurnsRecordFamily,
+  turnContexts: turnContextsRecordFamily,
+  sandboxCommands: sandboxCommandsRecordFamily,
+  runnerActivities: Object.freeze({
+    attempt: attemptRunnerActivitiesRecordFamily,
+    run: runRunnerActivitiesRecordFamily,
+  }),
+  runnerDiagnostics: Object.freeze({
+    attempt: attemptRunnerDiagnosticsRecordFamily,
+    run: runRunnerDiagnosticsRecordFamily,
   }),
   fileChanges: fileChangesRecordFamily,
-  sourceNavigation: sourceNavigationRecordFamily,
   sources: sourcesRecordFamily,
   artifacts: Object.freeze({
     attempt: attemptArtifactsRecordFamily,
@@ -156,13 +175,17 @@ export const NiceEvalRecordFamilyCatalog = Object.freeze({
 export const NiceEvalRecordFamilyDescriptorsByOwner = Object.freeze({
   attempt: Object.freeze([
     assertionsRecordFamily,
-    attemptObservabilityRecordFamily,
+    agentTurnsRecordFamily,
+    turnContextsRecordFamily,
+    sandboxCommandsRecordFamily,
+    attemptRunnerActivitiesRecordFamily,
+    attemptRunnerDiagnosticsRecordFamily,
     fileChangesRecordFamily,
-    sourceNavigationRecordFamily,
     attemptArtifactsRecordFamily,
   ]),
   run: Object.freeze([
-    runObservabilityRecordFamily,
+    runRunnerActivitiesRecordFamily,
+    runRunnerDiagnosticsRecordFamily,
     sourcesRecordFamily,
     runArtifactsRecordFamily,
   ]),
@@ -209,10 +232,14 @@ type DescriptorPayload<Descriptor> =
 
 export type FixedRecordFamilyPayload =
   | DescriptorPayload<typeof assertionsRecordFamily>
-  | DescriptorPayload<typeof attemptObservabilityRecordFamily>
-  | DescriptorPayload<typeof runObservabilityRecordFamily>
+  | DescriptorPayload<typeof agentTurnsRecordFamily>
+  | DescriptorPayload<typeof turnContextsRecordFamily>
+  | DescriptorPayload<typeof sandboxCommandsRecordFamily>
+  | DescriptorPayload<typeof attemptRunnerActivitiesRecordFamily>
+  | DescriptorPayload<typeof runRunnerActivitiesRecordFamily>
+  | DescriptorPayload<typeof attemptRunnerDiagnosticsRecordFamily>
+  | DescriptorPayload<typeof runRunnerDiagnosticsRecordFamily>
   | DescriptorPayload<typeof fileChangesRecordFamily>
-  | DescriptorPayload<typeof sourceNavigationRecordFamily>
   | DescriptorPayload<typeof sourcesRecordFamily>
   | DescriptorPayload<typeof attemptArtifactsRecordFamily>
   | DescriptorPayload<typeof runArtifactsRecordFamily>;

@@ -18,14 +18,13 @@ import type {
 import {
   AssertionSourceSiteSchema,
   type AssertionSourceSite,
-} from "../record/family/assertions.ts";
+} from "../record/family/assertions/definition.ts";
 import type { SourcesAttachment } from "../record/family/sources.ts";
 import {
-  createSourceNavigationAttachmentWrite,
-  type SourceNavigationRow,
-} from "../record/family/source-navigation.ts";
-import { sourceNavigationRecordFamily } from "../record/family/catalog.ts";
-import type { AttemptObservabilityAttachment } from "../record/family/observability.ts";
+  createTurnContextsAttachmentWrite,
+  type TurnContextsAttachment,
+} from "../record/family/turn-contexts/definition.ts";
+import { turnContextsRecordFamily } from "../record/family/catalog.ts";
 import {
   assertionsRuntimeSourceCaptureSnapshot,
   attachAssertionsRuntimeSourceCapture,
@@ -36,7 +35,7 @@ import {
 import type { AssertionsRuntime } from "../assertions/api.ts";
 import type { AssertionEntryId } from "../assertions/identity.ts";
 import type { TurnId } from "../o11y/record/model.ts";
-import { runnerAttemptConversationTimingForResult } from "../o11y/record/runner-producer.ts";
+import { makeSafeIdentifier } from "../o11y/record/model.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import type { SourceArtifact, SourceLoc, SourcePathFrame } from "../shared/types.ts";
 import { createSourcesAttachmentWrite } from "../sources/attachment.ts";
@@ -47,7 +46,10 @@ import {
 import type { EvalResult } from "./types.ts";
 
 interface CapturedSend {
+  readonly segmentId: string;
   readonly turnId: TurnId;
+  readonly sessionIndex: number;
+  readonly turnIndex: number;
   readonly sourceOrder: number | null;
   readonly location: SourceLoc | undefined;
 }
@@ -56,7 +58,7 @@ interface CapturedSend {
 export interface RunnerAttemptSourceCaptureSnapshot {
   readonly entries: AssertionsRuntimeSourceCaptureSnapshot["entries"];
   readonly sends: readonly CapturedSend[];
-  readonly omittedAtLeast: number;
+  readonly captureFailed: boolean;
 }
 
 export interface RunnerAttemptSourceCapture {
@@ -64,15 +66,11 @@ export interface RunnerAttemptSourceCapture {
   readonly nextSourceOrder: () => number;
   /** Binds the original Assert-first runtime to its private source journal. */
   readonly attachAssertions: (runtime: AssertionsRuntime<"pass" | "score">) => void;
-  /** Receives the exact Runner turn terminal fact, never reconstructs one from events. */
-  readonly onTurn: (input: {
-    /** Undefined means Conversation hit its shared 256-row cap. */
-    readonly turnId?: TurnId;
-    readonly label: string;
-    readonly outcome: "completed" | "failed" | "interrupted";
-    readonly events: readonly import("../types.ts").StreamEvent[];
-    readonly durationMs: number;
-    readonly failed?: boolean;
+  /** Captures SessionManager context synchronously before Adapter invocation. */
+  readonly onTurnStart: (input: {
+    readonly turnId: TurnId;
+    readonly sessionIndex: number;
+    readonly turnIndex: number;
     readonly loc?: SourceLoc;
     readonly sourceOrder?: number;
   }) => void;
@@ -136,7 +134,7 @@ export function createRunnerAttemptSourceCapture(
 ): RunnerAttemptSourceCapture {
   let sourceOrder = 0;
   const sends: CapturedSend[] = [];
-  let omittedAtLeast = 0;
+  let captureFailed = false;
   let assertionsRuntime: AssertionsRuntime<"pass" | "score"> | undefined;
   const nextSourceOrder = (): number => ++sourceOrder;
 
@@ -153,22 +151,28 @@ export function createRunnerAttemptSourceCapture(
       );
       assertionsRuntime = runtime;
     },
-    onTurn(input: {
-      readonly turnId?: TurnId;
-      readonly label: string;
-      readonly outcome: "completed" | "failed" | "interrupted";
-      readonly events: readonly import("../types.ts").StreamEvent[];
-      readonly durationMs: number;
-      readonly failed?: boolean;
+    onTurnStart(input: {
+      readonly turnId: TurnId;
+      readonly sessionIndex: number;
+      readonly turnIndex: number;
       readonly loc?: SourceLoc;
       readonly sourceOrder?: number;
     }) {
-      if (input.turnId === undefined) {
-        omittedAtLeast += 1;
+      let segmentId: string | undefined;
+      try {
+        segmentId = makeSafeIdentifier(`seg.${randomBytes(16).toString("hex")}`);
+      } catch {
+        segmentId = undefined;
+      }
+      if (segmentId === undefined) {
+        captureFailed = true;
         return;
       }
       sends.push(Object.freeze({
+        segmentId,
         turnId: input.turnId,
+        sessionIndex: input.sessionIndex,
+        turnIndex: input.turnIndex,
         sourceOrder: input.sourceOrder ?? null,
         location: input.loc === undefined ? undefined : cloneLocation(input.loc),
       }));
@@ -185,7 +189,7 @@ export function createRunnerAttemptSourceCapture(
       return Object.freeze({
         entries: assertions?.entries ?? Object.freeze([]),
         sends: Object.freeze(sends.map((send) => Object.freeze({ ...send }))),
-        omittedAtLeast,
+        captureFailed,
       });
     },
   });
@@ -212,7 +216,7 @@ export interface RunnerSourceProducerInvalid {
     | "sources-write-invalid"
     | "sources-closure-invalid"
     | "source-sites-invalid"
-    | "source-navigation-invalid";
+    | "turn-contexts-invalid";
 }
 
 function invalid(
@@ -443,11 +447,11 @@ function localSourceTexts(result: EvalResult): ReadonlyMap<CanonicalProjectRelat
   return files;
 }
 
-function sourceNavigationFrame(input: {
+function turnContextSource(input: {
   readonly capture: CapturedSend;
   readonly local: ReadonlyMap<CanonicalProjectRelativePath, string>;
   readonly sources: SourcesAttachment;
-}): SourceNavigationRow["source"] {
+}): TurnContextsAttachment["segments"][number]["source"] {
   if (input.capture.location === undefined) {
     return Object.freeze({ state: "unmapped" as const, reason: "location-not-captured" as const });
   }
@@ -474,80 +478,43 @@ function sourceNavigationFrame(input: {
 }
 
 /**
- * Assembles the Attempt-owned no-blob navigation payload only after the
- * same-seal Observability writer has fixed physical turn IDs and timing IDs.
+ * Assembles the Attempt-owned no-blob context receipt from SessionManager's
+ * physical-send capture and the same-seal immutable Sources closure.
  */
-export function createRunnerSourceNavigationWrite(input: {
+export function createRunnerTurnContextsWrite(input: {
   readonly result: EvalResult;
   readonly sources: SourcesAttachment;
-  readonly observability: AttemptObservabilityAttachment;
-}): Either.Either<RecordAttachmentWrite<"attempt", never, never>, RunnerSourceProducerInvalid> {
+}): Either.Either<RecordAttachmentWrite<"attempt", never, never> | undefined, RunnerSourceProducerInvalid> {
   const capture = sourceCaptureForResult(input.result);
-  const timingByTurn = runnerAttemptConversationTimingForResult(input.result);
-  if (capture === undefined || timingByTurn === undefined) {
-    return Either.left(invalid("source-navigation-invalid"));
+  if (capture === undefined) {
+    return Either.left(invalid("turn-contexts-invalid"));
   }
-  const turns = [...input.observability.conversation.turns]
-    .sort((left, right) => left.sequence - right.sequence);
-  if (turns.length !== capture.sends.length) {
-    return Either.left(invalid("source-navigation-invalid"));
+  if (capture.sends.length === 0 && !capture.captureFailed) {
+    return Either.right(undefined);
   }
   const local = localSourceTexts(input.result);
-  const rows: SourceNavigationRow[] = [];
-  let missingTiming = 0;
-  for (const [index, turn] of turns.entries()) {
-    const captured = capture.sends[index];
-    if (captured === undefined || captured.turnId !== turn.turnId) {
-      return Either.left(invalid("source-navigation-invalid"));
-    }
-    const intervalId = timingByTurn.get(captured.turnId);
-    if (intervalId === undefined) missingTiming += 1;
-    rows.push(Object.freeze({
+  const segments = capture.sends.map((captured, index) => Object.freeze({
+      segmentId: captured.segmentId,
+      sequence: index + 1,
       turnId: captured.turnId,
+      sessionIndex: captured.sessionIndex,
+      turnIndex: captured.turnIndex,
       sourceOrder: captured.sourceOrder,
-      source: sourceNavigationFrame({ capture: captured, local, sources: input.sources }),
-      timing: intervalId === undefined
-        ? Object.freeze({ state: "unavailable" as const, reason: "timing-not-recorded" as const })
-        : Object.freeze({ state: "linked" as const, intervalId }),
+      source: turnContextSource({ capture: captured, local, sources: input.sources }),
     }));
-  }
-  const limitations = [] as (
-    | {
-      readonly code: "collection-cap-reached";
-      readonly target: "navigation-row";
-      readonly omittedAtLeast: number;
-    }
-    | {
-      readonly code: "capture-unrecoverable";
-      readonly target: "timing-link";
-      readonly omittedAtLeast: number;
-    }
-  )[];
-  if (capture.omittedAtLeast > 0) {
-    limitations.push(Object.freeze({
-      code: "collection-cap-reached" as const,
-      target: "navigation-row" as const,
-      omittedAtLeast: capture.omittedAtLeast,
-    }));
-  }
-  if (missingTiming > 0) {
-    limitations.push(Object.freeze({
-      code: "capture-unrecoverable" as const,
-      target: "timing-link" as const,
-      omittedAtLeast: missingTiming,
-    }));
-  }
-  limitations.sort((left, right) =>
-    `${left.code}\u0000${left.target}\u0000${left.omittedAtLeast}`.localeCompare(
-      `${right.code}\u0000${right.target}\u0000${right.omittedAtLeast}`,
-    )
-  );
+  const limitations: readonly unknown[] = capture.captureFailed
+    ? Object.freeze([Object.freeze({
+        code: "capture-failed" as const,
+        stage: "session-manager" as const,
+        target: "turn-context" as const,
+      })])
+    : Object.freeze([]);
   const payload = Object.freeze({
     collection: limitations.length === 0
       ? Object.freeze({ state: "complete" as const, limitations: Object.freeze([]) })
       : Object.freeze({ state: "partial" as const, limitations: Object.freeze([...limitations]) }),
-    rows: Object.freeze(rows),
+    segments: Object.freeze(segments),
   });
-  const write = createSourceNavigationAttachmentWrite(payload, sourceNavigationRecordFamily.write);
-  return Either.isLeft(write) ? Either.left(invalid("source-navigation-invalid")) : Either.right(write.right);
+  const write = createTurnContextsAttachmentWrite(payload, turnContextsRecordFamily.write);
+  return Either.isLeft(write) ? Either.left(invalid("turn-contexts-invalid")) : Either.right(write.right);
 }

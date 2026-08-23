@@ -2,7 +2,9 @@
 
 Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 2`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Analysis 只读取已封口的事实，不重新执行 matcher 或作者代码。
 
-Record current durable catalog 有 Assertions、Observability、FileChanges、Source Navigation、Sources 与 Artifacts 六个固定 family。第三方可以提供 Assertion criterion 的解释 schema，却不能增加 family、字段 writer 或自己的持久化通道。完整 catalog、owner 与 closure 规则见 [Record architecture](../record/architecture.md)。
+Record current durable catalog 有九个固定 family。Assertions、File Changes、Sources 与 Artifacts 保存各自具名事实。Agent Turns、Turn Contexts、Sandbox Commands、Runner Activities、Runner Diagnostics 保存五类 source receipt。
+
+conversation、usage 与 source navigation 都只在读侧投影。第三方可以提供 Assertion criterion 的解释 schema，却不能增加 family、字段 writer 或自己的持久化通道。完整 catalog、owner 与 closure 规则见 [Record architecture](../record/architecture.md)。
 
 ## Assertions 持久化什么
 
@@ -98,6 +100,6 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— Assertions payload 内的源码位置与 Sources join。
 - [Type reference](reference/README.md) —— 可编译的作者类型边界。
-- [Record architecture](../record/architecture.md) —— 六个 fixed family、closure 与四态 Host。
+- [Record architecture](../record/architecture.md) —— 九个 fixed family、closure 与 source-local read。
 - [Verdict architecture](../verdict/architecture.md) —— 每个 Attempt 的四态折叠。
 - [Analysis Library](../analysis/library.md) —— `Sample`、`query()` 与 `DomainView`。

@@ -55,7 +55,7 @@ import {
   type AssertFirstAttemptBridge,
   type AttemptAuthorCompletion,
 } from "./assert-first-bridge.ts";
-import { createAgentSession } from "../context/session.ts";
+import { createAgentSession, type SessionDeps } from "../context/session.ts";
 import { EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
@@ -95,6 +95,7 @@ import {
 import { retainRunnerAttemptFileChangesCapture } from "./sandbox-record-producer.ts";
 import {
   bindRunnerAttemptObservabilityCapture,
+  beginRunnerPhysicalConversationTurn,
   captureRunnerCommandCaptureFailed,
   captureRunnerCommandInterrupted,
   captureRunnerCommandResult,
@@ -1308,9 +1309,11 @@ export function runAttemptEffect<
       if (capture !== undefined) {
         retainRunnerAttemptFileChangesCapture(finalResult, capture);
       }
-      bindRunnerAttemptObservabilityCapture(finalResult, observabilityRuntime);
       return finalResult;
     }),
+    Effect.tap((finalResult) =>
+      bindRunnerAttemptObservabilityCapture(finalResult, observabilityRuntime)
+    ),
   );
 }
 
@@ -1898,29 +1901,39 @@ async function runAttemptBody(
       // OTel 接入时再带 traceId,trace.json 的 spans 由消费方按它临时挂到 turn 下。usage 有记录
       // 才带(show `--execution`/`--timing` 的 turn 头行读 TimingNode.usage,见 docs/feature/
       // results/architecture.md「result.json」TimingNode.usage)。
-      onTurn: (info) => {
-        const turnId = captureRunnerPhysicalConversationTurn({
-          runtime: observabilityRuntime,
-          outcome: info.outcome,
-          events: info.events,
-        });
-        sourceCapture.onTurn({ ...info, ...(turnId === undefined ? {} : { turnId }) });
-        if (info.usage !== undefined) {
-          captureRunnerTurnUsage(observabilityRuntime, info.usage);
-        }
-        return recorder.child(turnActivity({
-          label: info.label,
-          startOffsetMs: info.startOffsetMs,
-          durationMs: info.durationMs,
-          ...(info.failed ? { failed: true as const } : {}),
-          sessionIndex: info.sessionIndex,
-          turnIndex: info.turnIndex,
-          ...(turnId === undefined ? {} : { turnId }),
-          ...(info.traceId !== undefined ? { traceId: info.traceId } : {}),
-          ...(info.traceAttribution !== undefined ? { traceAttribution: info.traceAttribution } : {}),
-          ...(info.usage !== undefined ? { usage: info.usage } : {}),
-        }));
-      },
+      onTurn: Object.assign(
+        (info: Parameters<NonNullable<SessionDeps["onTurn"]>>[0]) => {
+          captureRunnerPhysicalConversationTurn({
+            runtime: observabilityRuntime,
+            turnId: info.turnId,
+            outcome: info.outcome,
+            events: info.events,
+            ...(info.adapterStatus === undefined ? {} : { adapterStatus: info.adapterStatus }),
+            ...(info.evidenceCoverage === undefined ? {} : { evidenceCoverage: info.evidenceCoverage }),
+          });
+          if (info.usage !== undefined) {
+            captureRunnerTurnUsage(observabilityRuntime, info.turnId, info.usage);
+          }
+          return recorder.child(turnActivity({
+            label: info.label,
+            startOffsetMs: info.startOffsetMs,
+            durationMs: info.durationMs,
+            ...(info.failed ? { failed: true as const } : {}),
+            sessionIndex: info.sessionIndex,
+            turnIndex: info.turnIndex,
+            turnId: info.turnId,
+            ...(info.traceId !== undefined ? { traceId: info.traceId } : {}),
+            ...(info.traceAttribution !== undefined ? { traceAttribution: info.traceAttribution } : {}),
+            ...(info.usage !== undefined ? { usage: info.usage } : {}),
+          }));
+        },
+        {
+          onStart: (info: Parameters<NonNullable<NonNullable<SessionDeps["onTurn"]>["onStart"]>>[0]) => {
+            beginRunnerPhysicalConversationTurn(observabilityRuntime, info.turnId);
+            sourceCapture.onTurnStart(info);
+          },
+        },
+      ),
     });
     sourceCapture.attachAssertions(state.assertions);
     // 登记回外层:超时中断后由 onTimeout 直接读这两个句柄组装 events/usage(见

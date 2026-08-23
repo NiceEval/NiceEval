@@ -4,19 +4,13 @@ import {
   CanonicalAttemptLocatorSchema,
   decodeShowSchema,
   ShowAttemptEnvelopeFields,
+  ShowSourceCollectionSchema,
 } from "./show-schema.js";
 
 const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
   Schema.filter((value) => Number.isSafeInteger(value) && value >= 0, {
     identifier: "ShowNonNegativeSafeInteger",
     description: "a non-negative safe integer",
-  }),
-);
-
-const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
-  Schema.filter((value) => Number.isSafeInteger(value) && value > 0, {
-    identifier: "ShowPositiveSafeInteger",
-    description: "a positive safe integer",
   }),
 );
 
@@ -37,66 +31,6 @@ const PortableSegmentSchema = Schema.String.pipe(
       description: "a portable non-reserved path segment",
     },
   ),
-);
-
-const CollectionTargetSchema = Schema.Literal(
-  "conversation",
-  "command",
-  "usage",
-  "timing",
-  "diagnostic",
-);
-
-const CollectionStageSchema = Schema.Literal(
-  "adapter",
-  "command-capture",
-  "usage-capture",
-  "timing-capture",
-  "diagnostic-capture",
-  "attempt-finalizer",
-  "run-teardown",
-);
-
-const ObservabilityLimitationSchema = Schema.Union(
-  Schema.Struct({
-    code: Schema.Literal("capture-failed", "capture-interrupted"),
-    stage: CollectionStageSchema,
-    target: CollectionTargetSchema,
-  }),
-  Schema.Struct({
-    code: Schema.Literal("collection-cap-reached", "unsupported-input"),
-    omittedAtLeast: PositiveSafeIntegerSchema,
-    target: CollectionTargetSchema,
-  }),
-  Schema.Struct({
-    code: Schema.Literal("text-truncated", "redacted"),
-    replacementOrOmittedCount: PositiveSafeIntegerSchema,
-    target: CollectionTargetSchema,
-  }),
-  Schema.Struct({
-    code: Schema.Literal("stream-truncated"),
-    commandId: SafeIdentifierSchema,
-    omittedBytes: PositiveSafeIntegerSchema,
-    retainedBytes: NonNegativeSafeIntegerSchema,
-    stream: Schema.Literal("stdout", "stderr"),
-  }),
-  Schema.Struct({
-    code: Schema.Literal("invalid-utf8-replaced", "unsafe-control-stripped"),
-    commandId: SafeIdentifierSchema,
-    count: PositiveSafeIntegerSchema,
-    stream: Schema.Literal("stdout", "stderr"),
-  }),
-);
-
-const TimingCollectionSchema = Schema.Union(
-  Schema.Struct({
-    state: Schema.Literal("complete"),
-    limitations: Schema.Tuple(),
-  }),
-  Schema.Struct({
-    state: Schema.Literal("partial"),
-    limitations: Schema.NonEmptyArray(ObservabilityLimitationSchema),
-  }),
 );
 
 const ShowTimingIntervalSchema = Schema.Struct({
@@ -121,8 +55,9 @@ const ShowTimingIntervalSchema = Schema.Struct({
 
 export type ShowTimingInterval = Schema.Schema.Type<typeof ShowTimingIntervalSchema>;
 
-const ShowTimingDetailSchema = Schema.Struct({
-  collection: TimingCollectionSchema,
+export const ShowTimingDetailSchema = Schema.Struct({
+  dependencies: Schema.Tuple(Schema.Literal("niceeval.runner-activities")),
+  collection: ShowSourceCollectionSchema,
   intervals: Schema.Array(ShowTimingIntervalSchema),
 }).pipe(
   Schema.filter(
@@ -191,7 +126,7 @@ export function decodeShowTiming(receipt: ProcessReceipt): ShowTimingDocument {
 }
 
 function hasCanonicalTimingIntervals(
-  collectionState: "complete" | "partial",
+  collectionState: "complete" | "partial" | "not-recorded" | "migration-required" | "unsupported" | "invalid",
   intervals: readonly ShowTimingInterval[],
 ): boolean {
   let previousId: string | undefined;

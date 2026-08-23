@@ -8,6 +8,7 @@ export const RecordPlatformOperationSchema = Schema.Literal(
   "write-file",
   "sync-file",
   "sync-directory",
+  "publish-directory",
   "remove-path",
   "release-record-lease",
   "inspect-git",

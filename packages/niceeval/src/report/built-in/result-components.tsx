@@ -277,6 +277,45 @@ function conversationText(item: ClosedConversationItem): string {
   }
 }
 
+interface ConversationResultRow {
+  readonly key: string;
+  readonly sequence: number;
+  readonly turn: string;
+  readonly event: string;
+  readonly detail: string;
+}
+
+/**
+ * Keep retained conversation text byte-contiguous in the human CLI output.
+ *
+ * The generic Table text face must hard-wrap an over-wide word to keep every
+ * column inside the requested width. Conversation evidence has a stronger
+ * requirement: users grep and copy exact provider markers from stdout. Render
+ * its compact identity columns as a table, then put each exact detail on its
+ * own line. A terminal may soft-wrap that line visually without inserting a
+ * newline into the captured output. The web face retains the ordinary table.
+ */
+const ConversationResultTable = defineComponent<{
+  readonly rows: readonly ConversationResultRow[];
+}>({
+  dimensions: () => ({}),
+  web({ rows }) {
+    return <Table rows={rows} columns={["sequence", "turn", "event", "detail"]} />;
+  },
+  text({ rows }, ctx) {
+    const identityRows = rows.map(({ key, sequence, turn, event }) => ({ key, sequence, turn, event }));
+    const identity = ctx.render(
+      <Table rows={identityRows} columns={["sequence", "turn", "event"]} />,
+      ctx.width,
+    );
+    const details = rows
+      .map((row) => `detail · ${row.sequence} · ${row.event}\n${row.detail}`)
+      .join("\n\n");
+    return identity.length === 0 ? details : `${identity}\n\n${details}`;
+  },
+});
+ConversationResultTable.displayName = "ConversationResultTable";
+
 function commandText(command: ClosedCommandEntry) {
   const invocation = command.manifest.invocation.kind === "argv"
     ? [command.manifest.invocation.executable, ...command.manifest.invocation.arguments].join(" ")
@@ -373,7 +412,7 @@ function traceEntryTree(
       />
       <Section title="Conversation" meta={detail.conversation.collection.state}>
         {conversationRows.length === 0 ? <Text>No recorded conversation entries match this view.</Text> : (
-          <Table rows={limited(conversationRows)} columns={["sequence", "turn", "event", "detail"]} />
+          <ConversationResultTable rows={limited(conversationRows)} />
         )}
         {omittedText(conversationRows.length, Math.min(conversationRows.length, DETAIL_ROWS_MAX), "conversation entries")}
       </Section>

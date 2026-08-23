@@ -2,7 +2,7 @@ import { defineEval } from "niceeval-legacy-0-13";
 import { excludes, includes } from "niceeval-legacy-0-13/expect";
 
 export default defineEval({
-  description: "Persist one deterministic legacy result for automatic migration",
+  description: "Persist one deterministic legacy aggregate for current-format rejection",
   async test(t) {
     const turn = await t.send("handoff-input");
     await turn.succeeded().label("legacy turn succeeded").orStop();

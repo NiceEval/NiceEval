@@ -2,21 +2,26 @@ import { Schema } from "effect";
 import {
   ATTEMPT_ID_BRAND,
   ARTIFACT_ID_BRAND,
+  CANONICAL_RUN_RELATIVE_PATH_BRAND,
   CANONICAL_PROJECT_RELATIVE_PATH_BRAND,
   EVAL_ID_BRAND,
   EXECUTION_IDENTITY_DIGEST_BRAND,
   EXPERIMENT_ID_BRAND,
   FILE_CHANGE_ID_BRAND,
+  isCanonicalRunRelativePath,
   isPortableSegment,
   isCanonicalProjectRelativePath,
   isRecordDomainIdentity,
   isRecordAttachmentName,
   isRecordAttachmentSchemaId,
+  isRecordBlobKey,
   isRecordFormatId,
   isSha256Digest,
+  isSourceSegmentId,
   isUtcMillis,
   RECORD_ATTACHMENT_NAME_BRAND,
   RECORD_ATTACHMENT_SCHEMA_ID_BRAND,
+  RECORD_BLOB_KEY_BRAND,
   RECORD_FORMAT,
   RECORD_FORMAT_ID_BRAND,
   RECORD_ID_BRAND,
@@ -24,9 +29,11 @@ import {
   SHA256_DIGEST_BRAND,
   SLOT_ID_BRAND,
   SOURCE_ITEM_ID_BRAND,
+  SOURCE_SEGMENT_ID_BRAND,
   UTC_MILLIS_BRAND,
   type AttemptId,
   type ArtifactId,
+  type CanonicalRunRelativePath,
   type CanonicalProjectRelativePath,
   type EvalId,
   type ExecutionIdentityDigest,
@@ -34,6 +41,7 @@ import {
   type FileChangeId,
   type RecordAttachmentName,
   type RecordAttachmentSchemaId,
+  type RecordBlobKey,
   type RecordFormat,
   type RecordFormatId,
   type RecordId,
@@ -41,6 +49,7 @@ import {
   type Sha256Digest,
   type SlotId,
   type SourceItemId,
+  type SourceSegmentId,
   type UtcMillis,
 } from "../model/identifiers.ts";
 
@@ -106,6 +115,35 @@ export const FileChangeIdSchema: Schema.Schema<FileChangeId, string> =
 export const ArtifactIdSchema: Schema.Schema<ArtifactId, string> =
   PortableSegmentTextSchema.pipe(Schema.brand(ARTIFACT_ID_BRAND));
 
+export const RecordBlobKeySchema: Schema.Schema<RecordBlobKey, string> =
+  Schema.String.pipe(
+    Schema.filter(isRecordBlobKey, {
+      identifier: "RecordBlobKey",
+      description: "an opaque portable Attachment blob key",
+    }),
+    Schema.brand(RECORD_BLOB_KEY_BRAND),
+  );
+
+export const SourceSegmentIdSchema: Schema.Schema<SourceSegmentId, string> =
+  Schema.String.pipe(
+    Schema.filter(isSourceSegmentId, {
+      identifier: "SourceSegmentId",
+      description: "a bounded opaque source receipt segment identity",
+    }),
+    Schema.brand(SOURCE_SEGMENT_ID_BRAND),
+  );
+
+export const CanonicalRunRelativePathSchema: Schema.Schema<
+  CanonicalRunRelativePath,
+  string
+> = Schema.String.pipe(
+  Schema.filter(isCanonicalRunRelativePath, {
+    identifier: "CanonicalRunRelativePath",
+    description: "a slash-separated portable path inside one sealed Run",
+  }),
+  Schema.brand(CANONICAL_RUN_RELATIVE_PATH_BRAND),
+);
+
 export const CanonicalProjectRelativePathSchema: Schema.Schema<
   CanonicalProjectRelativePath,
   string
@@ -152,7 +190,7 @@ export const RecordFormatIdSchema: Schema.Schema<RecordFormatId, string> =
   Schema.String.pipe(
     Schema.filter(isRecordFormatId, {
       identifier: "RecordFormatId",
-      description: "a fixed niceeval.record format identity",
+      description: "the fixed source-receipt Record format identity",
     }),
     Schema.brand(RECORD_FORMAT_ID_BRAND),
   );

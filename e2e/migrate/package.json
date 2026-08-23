@@ -6,7 +6,7 @@
     "includedScripts": []
   },
   "type": "module",
-  "description": "Bootstrap for persisted Record handoff between replaceable NiceEval command identities",
+  "description": "Persisted source-first Record handoff and maintenance boundaries",
   "engines": { "node": ">=24" },
   "scripts": {
     "e2e": "tsc --noEmit && vitest run",

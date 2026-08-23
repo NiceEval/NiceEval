@@ -20,6 +20,96 @@ export const CanonicalAttemptLocatorSchema = Schema.String.pipe(
   }),
 );
 
+const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
+  Schema.filter((value) => Number.isSafeInteger(value) && value > 0, {
+    identifier: "ShowPositiveSafeInteger",
+    description: "a positive safe integer",
+  }),
+);
+
+const SourceReceiptStageSchema = Schema.Literal(
+  "adapter",
+  "session-manager",
+  "sandbox-wrapper",
+  "runner-clock",
+  "runner-diagnostic-sink",
+  "attempt-finalizer",
+  "run-teardown",
+);
+
+const SourceRetentionTargetSchema = Schema.Literal(
+  "turn",
+  "turn-item",
+  "usage-observation",
+  "turn-context",
+  "command",
+  "stdout",
+  "stderr",
+  "activity",
+  "diagnostic",
+  "diagnostic-cause",
+  "payload-byte",
+  "blob-byte",
+);
+
+const ShowSourceLimitationSchema = Schema.Union(
+  Schema.Struct({
+    code: Schema.Literal("capture-failed", "capture-interrupted"),
+    stage: SourceReceiptStageSchema,
+    target: SourceRetentionTargetSchema,
+  }),
+  Schema.Struct({
+    code: Schema.Literal("collection-cap-reached", "unsupported-input"),
+    target: SourceRetentionTargetSchema,
+    omittedAtLeast: PositiveSafeIntegerSchema,
+  }),
+  Schema.Struct({
+    code: Schema.Literal(
+      "text-truncated",
+      "redacted",
+      "invalid-utf8-replaced",
+      "unsafe-control-stripped",
+    ),
+    target: SourceRetentionTargetSchema,
+    replacementOrOmittedCount: PositiveSafeIntegerSchema,
+  }),
+);
+
+export const ShowSourceCollectionSchema = Schema.Union(
+  Schema.Struct({
+    state: Schema.Literal("complete"),
+    limitations: Schema.Tuple(),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("partial"),
+    limitations: Schema.NonEmptyArray(ShowSourceLimitationSchema),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("not-recorded", "migration-required", "unsupported", "invalid"),
+    limitations: Schema.Tuple(),
+  }),
+);
+
+export function showSourceDependencySchema<const Source extends string>(source: Source) {
+  return Schema.Union(
+    Schema.Struct({
+      source: Schema.Literal(source),
+      state: Schema.Literal("complete"),
+      limitations: Schema.Tuple(),
+    }),
+    Schema.Struct({
+      source: Schema.Literal(source),
+      state: Schema.Literal("partial"),
+      limitations: Schema.NonEmptyArray(ShowSourceLimitationSchema),
+    }),
+    Schema.Struct({
+      source: Schema.Literal(source),
+      state: Schema.Literal("not-recorded", "migration-required", "unsupported", "invalid"),
+      limitations: Schema.Tuple(),
+    }),
+  );
+}
+
 const LocalizedTextSchema = Schema.Union(
   Schema.String,
   Schema.Record({ key: NonEmptyStringSchema, value: Schema.String }).pipe(

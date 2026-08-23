@@ -462,12 +462,11 @@ export const logicalSlots: Population<LogicalSlot> = logicalSlotsCatalog;
 function createPublishedInput<
   Input,
   Payload,
-  Family extends import("./bindings.ts").FixedFamilyBinding<
+  Source extends import("./bindings.ts").RecordReadBinding<
     import("./bindings.ts").FixedFamilyOwnerRequirement,
-    Payload,
-    any
+    Payload
   >,
->(input: PublishedAnalysisInputBinding<Input, Payload, Family>): AnalysisInput<LogicalSlot, Input> {
+>(input: PublishedAnalysisInputBinding<Input, Payload, Source>): AnalysisInput<LogicalSlot, Input> {
   const descriptor: AnalysisInput<LogicalSlot, Input> = Object.freeze({
     kind: "analysis-input",
     id: input.id,

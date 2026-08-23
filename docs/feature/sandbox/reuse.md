@@ -208,7 +208,7 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 「prepare 可重复执行、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。
 框架必须自己把线索说出来。
 Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接序号聚合判定。
-当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中形成 `errored` Verdict 且指向同一生命周期阶段时，结束反馈追加一条 Run-owned Observability diagnostic，点名实例、序号区间与阶段，提示复用残留的可能性。
+当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中形成 `errored` Verdict 且指向同一生命周期阶段时，结束反馈追加一条 Run-owned Runner Diagnostic，点名实例、序号区间与阶段，提示复用残留的可能性。
 诊断只指路，不改判定。
 
 携带结果不会伪造 Sandbox 生命周期：它只复用已落盘的判定和证据。后续实际派发的 Attempt 仍从本次 Invocation 创建的 Sandbox 开始，并按当前复用规则运行。

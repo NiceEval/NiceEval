@@ -8,14 +8,16 @@
 完整 current Record 的 root 是：
 
 ```json
-{ "format": "niceeval.record", "recordId": "..." }
+{ "format": "niceeval.record.source-receipts", "recordId": "..." }
 ```
 
 它没有已发布 predecessor。所有 fixed family 也处于 current 时，命令不写盘：
 
 ```sh
 niceeval migrate --record .niceeval/record
-# Record is already current: niceeval.record
+# Record migration plan: already-current
+# format: niceeval.record.source-receipts
+# Record migration already-current.
 ```
 
 兼容性不把所有未认识 bytes 混成一个错误：
@@ -30,14 +32,11 @@ niceeval migrate --record .niceeval/record
 
 未知 family 不再局部容忍；一旦 portable inventory 出现它，ordinary reader 和 migration 都 fail closed。
 
-## Observability `1 → 2` 的固定步骤
+## 已知 family 的固定步骤
 
-`niceeval.observability` current schemaVersion 是 `2`。它的静态 definition 同批提供固定
-`1 → 2` maintenance step。步骤只处理已保存的 attempt / run payload 与 own blob closure，
-逐字保留 label、blob refs 和 blob bytes，只更新 envelope。
-
-Observability `1 → 2` 只迁移该 family 的 Attachment。framework 统一负责物理写入、Git 与恢复，
-但不会改写 `record.json`，plan/receipt 也没有 root target。
+只有 current source-receipts root 内、由静态 definition 提供完整相邻 chain 的已知 family 能进入 maintenance。
+步骤处理已保存的 payload 与 own blob closure，并同步更新 Seal manifest inventory。旧
+`niceeval.observability` aggregate 属于另一个 root format，不是 migration source。
 
 迁移可以重新编码 bytes、mint 新 blob ref 或重排 canonical object key。它不能：
 
