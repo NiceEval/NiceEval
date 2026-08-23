@@ -2,7 +2,7 @@
 // launch belong to the future command host; this module accepts typed input.
 import { join, resolve } from "node:path";
 import { FileSystem } from "@effect/platform";
-import { Data, Effect, Either, Exit, Scope } from "effect";
+import { Data, Effect, Either, Exit, Option, Scope } from "effect";
 import * as Cause from "effect/Cause";
 import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
 import { readCandidateTarball } from "./injection.ts";
@@ -85,9 +85,15 @@ export interface RunSummary {
   readonly runner: RunnerTerminalSummary;
   readonly selection?: SelectionReceipt;
 }
+const errorDetail = (cause: unknown): string =>
+  typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string"
+    ? cause.detail
+    : cause instanceof Error
+      ? cause.message
+      : String(cause);
 const rootError = (cause: unknown): E2ERunError =>
   new E2ERunError({
-    detail: cause instanceof Error ? cause.message : String(cause),
+    detail: errorDetail(cause),
   });
 const fs = <A>(
   use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown>,
@@ -120,8 +126,11 @@ const failedRepo = (
     const artifactDir = join(artifactRoot, id);
     const receiptPath = join(artifactDir, "receipt.json");
     const detail = Cause.isCause(cause)
-      ? Cause.pretty(cause)
-      : rootError(cause).detail;
+      ? Option.match(Cause.failureOption(cause), {
+          onNone: () => Cause.pretty(cause),
+          onSome: errorDetail,
+        })
+      : errorDetail(cause);
     yield* ensureContainedRealDirectory(
       artifactRoot,
       artifactDir,

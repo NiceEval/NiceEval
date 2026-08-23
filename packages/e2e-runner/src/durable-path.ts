@@ -52,7 +52,10 @@ const walk = (physicalRoot: string, parts: readonly string[], create: boolean, l
   let current = physicalRoot;
   for (const part of parts) {
     yield* realDirectory(yield* lstatPath(current), current, label); const next = join(current, part); const before = yield* lstatOptional(next);
-    if (before === undefined && create) yield* fs("mkdir", (service) => service.makeDirectory(next));
+    // Sibling repo runs can discover the same missing domain directory at the
+    // same time. Recursive mkdir makes that creation idempotent; the lstat
+    // below still enforces that the resulting segment is a real directory.
+    if (before === undefined && create) yield* fs("mkdir", (service) => service.makeDirectory(next, { recursive: true }));
     const after = yield* lstatOptional(next); if (after === undefined) return yield* Effect.fail(new DurablePathError({ operation: "walk", detail: `${label} directory is missing: ${next}` }));
     yield* realDirectory(after, next, label); current = next;
   }
