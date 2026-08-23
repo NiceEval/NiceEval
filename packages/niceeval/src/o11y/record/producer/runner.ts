@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { Effect, Either, Schema } from "effect";
 
-import type { SealedAttemptAssertions } from "../../assertions/api.ts";
-import type { ResolvedEvidenceCoverage } from "../../assertions/coverage.ts";
-import { redactSensitiveText } from "../../sandbox/redaction.ts";
-import type { CommandOptions } from "../../sandbox/types.ts";
+import type { SealedAttemptAssertions } from "../../../assertions/api.ts";
+import type { ResolvedEvidenceCoverage } from "../../../assertions/coverage.ts";
+import { redactSensitiveText } from "../../../sandbox/redaction.ts";
+import type { CommandOptions } from "../../../sandbox/types.ts";
 import type {
   AgentRun,
   DiagnosticRecord,
@@ -14,10 +14,10 @@ import type {
   PhaseTiming,
   TimingActivity,
   TimingOrigin,
-} from "../../runner/types.ts";
-import { formatTurnLabel } from "../../shared/turn-label.ts";
-import type { StreamEvent } from "../../types.ts";
-import type { Usage } from "../types.ts";
+} from "../../../runner/types.ts";
+import { formatTurnLabel } from "../../../shared/turn-label.ts";
+import type { StreamEvent } from "../../../types.ts";
+import type { Usage } from "../../types.ts";
 import {
   makeAttemptObservabilityCaptureIdentity,
   makeRunObservabilityCaptureIdentity,
@@ -32,7 +32,7 @@ import {
   type AttemptCapturedObservabilityEntity,
   type RegisteredCommandCapture,
   type RunObservabilityCaptureIdentity,
-} from "./capture.ts";
+} from "./capture-identity.ts";
 import {
   type AttemptDiagnostic,
   type AttemptDiagnosticsAttachment,
@@ -44,32 +44,32 @@ import {
   type RunDiagnostic,
   type RunDiagnosticsAttachment,
   type UsageObservation,
-} from "./families.ts";
+} from "./model.ts";
 import type {
   NormalizedAgentTurnTerminal,
   RunnerAttemptSourceReceiptsCapture,
   RunnerRunSourceReceiptsCapture,
   StagedCommandStream,
   StagedSandboxCommandReceipt,
-} from "./source-capture.ts";
+} from "./source-receipts.ts";
 import {
   AgentTurnsAttachmentSchema,
   type AgentTurnsAttachment,
-} from "../../record/family/agent-turns/definition.ts";
+} from "../../../record/family/agent-turns/definition.ts";
 import {
   AttemptRunnerActivitiesAttachmentSchema,
   type AttemptRunnerActivitiesAttachment,
-} from "../../record/family/runner-activities/definition.ts";
+} from "../../../record/family/runner-activities/definition.ts";
 import {
   AttemptRunnerDiagnosticsAttachmentSchema,
   RunRunnerDiagnosticsAttachmentSchema,
   type AttemptRunnerDiagnosticsAttachment,
   type RunRunnerDiagnosticsAttachment,
-} from "../../record/family/runner-diagnostics/definition.ts";
+} from "../../../record/family/runner-diagnostics/definition.ts";
 import type {
   SourceReceiptCollection,
   SourceReceiptLimitation,
-} from "../../record/family/source-receipt.ts";
+} from "../../../record/family/source-receipt.ts";
 import {
   MAX_COMMAND_ARGUMENT_BYTES,
   MAX_COMMAND_ARGUMENTS,
@@ -85,7 +85,7 @@ import {
   MAX_DIAGNOSTICS,
   MAX_TIMING_INTERVALS,
   MAX_USAGE_OBSERVATIONS,
-} from "./limits.ts";
+} from "../limits.ts";
 import {
   compareObservabilityText,
   compareObservabilityLimitation,
@@ -122,7 +122,7 @@ import {
   type TurnId,
   type CallId,
   type UsageObservationId,
-} from "./model.ts";
+} from "../model.ts";
 
 /**
  * The Runner never exposes raw provider frames to the Record layer. These
@@ -532,13 +532,13 @@ function attemptTargetForEntity<Kind extends ObservabilityEntityKind>(
       return Object.freeze({
         family: "niceeval.sandbox-commands" as const,
         kind: "command" as const,
-        id: id as import("./model.ts").CommandId,
+        id: id as CommandId,
       });
     case "usage-observation":
       return Object.freeze({
         family: "niceeval.agent-turns" as const,
         kind: "usage-observation" as const,
-        id: id as import("./model.ts").UsageObservationId,
+        id: id as UsageObservationId,
       });
     case "interval":
       return Object.freeze({

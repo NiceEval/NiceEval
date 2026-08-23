@@ -9,9 +9,9 @@ import {
   type RecordAttachmentBlobBuilder,
   type RecordAttachmentBlobDraft,
   type RecordAttachmentWrite,
-} from "../../record/attachment/index.ts";
-import { RecordExactParseOptions } from "../../record/codec/core.ts";
-import { Sha256DigestSchema } from "../../record/codec/identifiers.ts";
+} from "../../../record/attachment/index.ts";
+import { RecordExactParseOptions } from "../../../record/codec/core.ts";
+import { Sha256DigestSchema } from "../../../record/codec/identifiers.ts";
 import {
   agentTurnsRecordFamily,
   attemptRunnerActivitiesRecordFamily,
@@ -19,35 +19,28 @@ import {
   runRunnerActivitiesRecordFamily,
   runRunnerDiagnosticsRecordFamily,
   sandboxCommandsRecordFamily,
-} from "../../record/family/catalog.ts";
+} from "../../../record/family/catalog.ts";
 import {
   AgentTurnsAttachmentSchema,
-  type AgentTurnsAttachment,
-} from "../../record/family/agent-turns/definition.ts";
+} from "../../../record/family/agent-turns/definition.ts";
 import {
   AttemptRunnerActivitiesAttachmentSchema,
   RunRunnerActivitiesAttachmentSchema,
-  type AttemptRunnerActivitiesAttachment,
-  type RunRunnerActivitiesAttachment,
-} from "../../record/family/runner-activities/definition.ts";
+} from "../../../record/family/runner-activities/definition.ts";
 import {
   AttemptRunnerDiagnosticsAttachmentSchema,
   RunRunnerDiagnosticsAttachmentSchema,
-  type AttemptRunnerDiagnosticsAttachment,
-  type RunRunnerDiagnosticsAttachment,
-} from "../../record/family/runner-diagnostics/definition.ts";
+} from "../../../record/family/runner-diagnostics/definition.ts";
 import {
   SandboxCommandsAttachmentSchema,
   type SandboxCommandsAttachment,
-} from "../../record/family/sandbox-commands/definition.ts";
-import { MAX_COMMAND_INLINE_STREAM_BYTES } from "./limits.ts";
+} from "../../../record/family/sandbox-commands/definition.ts";
+import { MAX_COMMAND_INLINE_STREAM_BYTES } from "../limits.ts";
 import type {
   RunnerAttemptSourceReceiptsCapture,
   RunnerRunSourceReceiptsCapture,
   StagedCommandStream,
-} from "./source-capture.ts";
-
-export * from "./source-capture.ts";
+} from "../producer/source-receipts.ts";
 
 export type SourceReceiptAttachmentBuildError = {
   readonly code: "source-receipt-attachment-input-invalid";
@@ -215,13 +208,3 @@ export function createRunSourceReceiptAttachmentWrites(
     }),
   }));
 }
-
-export type AttemptSourceReceiptAttachments =
-  | AgentTurnsAttachment
-  | SandboxCommandsAttachment
-  | AttemptRunnerActivitiesAttachment
-  | AttemptRunnerDiagnosticsAttachment;
-
-export type RunSourceReceiptAttachments =
-  | RunRunnerActivitiesAttachment
-  | RunRunnerDiagnosticsAttachment;

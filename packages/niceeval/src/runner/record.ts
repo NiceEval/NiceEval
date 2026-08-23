@@ -33,11 +33,11 @@ import {
   createRunSourceReceiptAttachmentWrites,
   type AttemptSourceReceiptAttachmentWrites,
   type RunSourceReceiptAttachmentWrites,
-} from "../o11y/record/family-writers.ts";
+} from "../o11y/record/write/source-receipts.ts";
 import {
   createRunnerAttemptSourceReceiptsCapture,
   createRunnerRunSourceReceiptsCapture,
-} from "../o11y/record/runner-producer.ts";
+} from "../o11y/record/producer/runner.ts";
 import {
   EvalIdSchema,
   ExecutionIdentityDigestSchema,

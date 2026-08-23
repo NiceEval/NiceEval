@@ -11,7 +11,7 @@ import {
   type RunObservabilityFamilySchemaId,
   type RunReferenceTarget,
   type RunReferencesForFamily,
-} from "./model.ts";
+} from "../model.ts";
 
 const attemptObservabilityCaptureIdentityTypeId: unique symbol = Symbol(
   "@niceeval/o11y/AttemptObservabilityCaptureIdentity",

@@ -1,10 +1,10 @@
 import { Schema } from "effect";
-import { isCanonicalTurnLabel } from "../../shared/turn-label.ts";
-import type { RecordBlobRef } from "../../record/attachment/index.ts";
+import { isCanonicalTurnLabel } from "../../../shared/turn-label.ts";
+import type { RecordBlobRef } from "../../../record/attachment/index.ts";
 import {
   Sha256DigestSchema,
   SourceFileItemIdSchema,
-} from "../../sources/codec.ts";
+} from "../../../sources/codec.ts";
 import {
   AttemptDiagnosticsReferencesSchema,
   AttemptReferenceTargetSchema,
@@ -31,7 +31,7 @@ import {
   IntervalIdSchema,
   ItemIdSchema,
   TurnIdSchema,
-} from "./codec.ts";
+} from "../codec.ts";
 import {
   MAX_COMMAND_ARGUMENT_BYTES,
   MAX_COMMAND_ARGUMENTS,
@@ -57,7 +57,7 @@ import {
   MAX_TIMING_INTERVALS,
   MAX_USAGE_ATTACHMENT_BYTES,
   MAX_USAGE_OBSERVATIONS,
-} from "./limits.ts";
+} from "../limits.ts";
 import {
   compareObservabilityText,
   isSafeText,
@@ -67,7 +67,7 @@ import {
   type AttemptDiagnosticsReferences,
   type Collection,
   type RunDiagnosticsReferences,
-} from "./model.ts";
+} from "../model.ts";
 
 function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
   return Object.freeze([...values]);
