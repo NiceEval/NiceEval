@@ -28,6 +28,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
+| 从 Feature 或测试反查 Use Case、E2E、Roadmap、Design 与 Memory | [仓库文档追溯](engineering/docs-traceability/README.md) |
 | 设计或评审公开 API | [API 设计](api-design.md) |
 | 查看已经定稿、等待落地的方向 | [Roadmap](roadmap/README.md) |
 | 对比多个候选方案、给出架构 / 技术选型裁决 | [Design](design/README.md) |
@@ -109,7 +110,9 @@ docs/
 │   ├── observability-package-layout/    Observability 持久包：reader view 与 source receipt layout
 │   ├── projection-api/                  单包投影：runtime calls 与 static graph
 │   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
+│   ├── docs-traceability/               仓库文档、E2E owner 与 Memory 的关系查询和结构 mutation
 │   ├── report-authoring/                已被新交付边界取代的双面 Report 作者面历史
+│   ├── user-readable-testing/            原生 E2E 与可读测试作者面的选型裁决
 │   ├── record-to-report-stack.md         已被新交付边界取代的 Record 到 Report 历史地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
@@ -128,6 +131,7 @@ docs/
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
 │   ├── task-orchestration/              Nx 项目图、affected E2E 与 fail-open 管理
 │   ├── repository-tools/                七个仓库维护领域、动态发现与脚本退役边界
+│   ├── docs-traceability/               文档节点、测试 owner、Memory 与模板创建的统一追溯入口
 │   ├── feedback-memory/                 Feedback、Memory、E2E regression 与提升工作流
 │   ├── docs-work/                       多 Agent 文档切片、收据与 finalizer
 │   ├── testing/                         测试体系总纲 + unit/ 与 e2e/ 两个子体系

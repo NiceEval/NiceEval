@@ -5,6 +5,7 @@
 
 正文写工程机制应满足的目标、使用方式和验收方式，不写当前`实现进度`——同 [Feature](../feature/README.md) 的目标状态规则。
 
-新开一个工程主题子目录,从 [`_template/`](_template/README.md) 复制起步。
+新开工程主题使用 `pnpm docs:trace create engineering <name> --title <title>`。
+命令从 [`_template/`](_template/README.md) 创建最小结构，不手工复制模板。
 
 子目录清单见 [`docs/README.md`](../README.md)。

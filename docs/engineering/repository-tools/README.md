@@ -23,12 +23,13 @@ packages/repo-tools/src/
 | Feedback | `pnpm feedback --help` | 保存 issue / dogfood / dev 原始观察，导入、分类、去重、关闭与重开 |
 | Memory | `pnpm memory --help` | 保存开发问题、根因、思考和裁决，连接 E2E，并提升到 Roadmap / Feature / Engineering |
 | PR | `pnpm pr:body --help` | 初始化、渲染、检查、创建和更新 PR 正文 |
-| Docs | `pnpm docs:*` | 禁词、参考文档、diff 示例、文档检查和并行文档任务切片 |
+| Docs | `pnpm docs:*` | 文档关系、模板创建、禁词、参考文档、diff 示例、文档检查和并行文档任务切片 |
 | Examples | `pnpm examples:sync --help` | 示例 tier 同步、冲突检查和同步收据 |
 | Consumer | `pnpm consumer:link --help` | 构建当前候选并安装到真实下游仓库 |
 | Repository | `pnpm repo:setup --help` | Git hooks、本地宿主前置条件初始化和仓库级一致性检查 |
 
-Docs 领域的正式子入口是 `pnpm docs:terms`、`pnpm docs:work`、`pnpm docs:diff-code`、`pnpm docs:reference` 与 `pnpm docs:dev`；各自的 Skill 只指向这一处长期 owner。
+Docs 领域的正式子入口是 `pnpm docs:trace`、`pnpm docs:terms`、`pnpm docs:work`、`pnpm docs:diff-code`、`pnpm docs:reference` 与 `pnpm docs:dev`；各自的 Skill 只指向这一处长期 owner。
+`docs:trace` 的节点、关系、创建和可恢复 mutation 契约见[仓库文档追溯](../docs-traceability/README.md)。
 
 以下能力保留在自己的 owner，不进入 Repository Tools：
 
@@ -36,7 +37,7 @@ Docs 领域的正式子入口是 `pnpm docs:terms`、`pnpm docs:work`、`pnpm do
 - 产品 runtime 留在 `packages/niceeval`。
 - IndexNow 等部署能力留在 `apps/site`。
 - GitHub Actions、Netlify 与 hooks 只保存平台接线，业务判断由正式 pnpm 入口拥有。
-- lint 实现留在 `lint/**`，内部规则函数不为可发现性伪造 CLI。
+- lint adapter 留在 `lint/**`。需要被正式 Docs 命令复用的领域 Schema 与 pure checker 留在 Docs domain，不为 lint 复制 parser 或启动 CLI 子进程。
 
 ## 动态发现
 
@@ -52,7 +53,7 @@ Docs 领域的正式子入口是 `pnpm docs:terms`、`pnpm docs:work`、`pnpm do
 
 AGENTS 只说明从哪里开始，不复制参数。Skill 保存需要判断的顺序、安全边界和验收方式；完整参数只由 `--help` 定义。设计页解释长期语义；package script 提供人和 Agent 共用的稳定入口。
 
-统一 lint 从现有事实推导关系，不读取另一份命令清单：
+统一 lint 从现有事实推导关系，不读取另一份命令清单或中央 Trace Registry：
 
 1. 从 root `package.json` 读取正式 pnpm script。
 2. 从 `.agents/skills/*/SKILL.md` 的 `command` 与 `design` frontmatter 读取多步工作流 owner。
