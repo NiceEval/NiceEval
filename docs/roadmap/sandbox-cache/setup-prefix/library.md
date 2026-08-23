@@ -12,8 +12,8 @@ const changeFrequency = {
 } as const;
 
 interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
-  before(action: SandboxAction): SandboxLayer<Kind>;
-  after(action: SandboxAction): SandboxLayer<Kind>;
+  before(action: SandboxAction | SandboxCommand | SandboxHook): SandboxLayer<Kind>;
+  after(action: SandboxAfterAction | SandboxCleanupCommand): SandboxLayer<Kind>;
 }
 
 declare function shell(input: ShellActionInput): SandboxAction;
@@ -57,6 +57,70 @@ interface GitCheckoutActionInput {
   readonly dependsOn?: readonly SandboxActionRef[];
 }
 ```
+
+## 自定义声明式 Action
+
+`SandboxAction` 是 action family 的一次实例，不是 Plugin。`defineSandboxAction()` 返回可复用、可跨 package 导出的 branded family；调用 family 时才提供领域 input 与本 occurrence 的排序信息。
+
+```ts
+import { Schema } from "effect";
+import { defineSandboxAction, sandboxStep } from "niceeval/sandbox";
+
+const installTool = defineSandboxAction({
+  name: "@acme/niceeval-tools/install",
+  behaviorRevision: "1",
+  input: Schema.Struct({ version: Schema.String }),
+  recipe: ({ version }) => [
+    sandboxStep.exec({
+      executable: "tool",
+      args: ["install", version],
+    }),
+    sandboxStep.putText({
+      path: ".tool-version",
+      text: version,
+    }),
+  ] as const,
+});
+
+sandboxLayer().before(installTool(
+  { version: "1.4.0" },
+  {
+    id: "install-tool",
+    changeFrequency: 20,
+    dependsOn: [actionRef("fixture")],
+  },
+));
+```
+
+V1 的公开 `sandboxStep` 只有 `exec()`、`putText()`、`putBytes()`、`transferFile()`、`transferDirectory()` 与 `checkoutGit()`。step 不能直接传入 `.before()`，没有自己的 id、频率、依赖、capability 或缓存节点。整个 Action 才是原子的调度、identity、执行、capture 与 satisfaction 单元。
+
+family recipe 必须同步返回非空、无分支、无循环的 step tuple。它不能取得 Sandbox 或运行任意 callback。调用 `defineSandboxAction()` 就表示作者承诺 recipe 只依赖声明 input、只改变 Sandbox、可重复执行并可捕获；无法承诺的逻辑继续使用 callback 或 `defineSandboxCommand()`，始终 opaque、真实执行并截断共享 capture。
+
+family input 使用无 requirements 的同步 Effect Schema。实例化依次执行 `Schema.validateSync()`、`Schema.encodeSync()` 与 canonical JSON 校验，再规范化并冻结 recipe。semantic identity 包含 family name、behavior revision、canonical input、canonical recipe，以及固定后的内容 digest 与 Git commit；不包含函数源码、对象身份、模块路径或加载顺序。
+
+`command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义都调用同一个公开 `defineSandboxAction()` 与 `sandboxStep`。core 不识别 family name，也没有 built-in 专用排序、identity、执行或缓存旁路；第三方不能注册新的 step kind。
+
+同一个 family 的 `.after(input, { id })` 产生 `SandboxAfterAction`，不接受 changeFrequency、dependsOn、requires 或 provides。`.after()` 只接收这种声明式 finally 或 `SandboxCleanupCommand`；`context.onCleanup()` 只接收运行期 `SandboxCleanupCommand`。
+
+family 不进入全局 registry。Plugin 和第三方 package 直接传递 branded family 或实例；对象身份、模块副本与加载顺序不影响语义身份。同一 occurrence 内的 action `id` 必须唯一，`actionRef()` 也在该范围查找。
+
+instance 的 `requires` / `provides` 只形成 action DAG。core 从 step kinds 自动推导 Provider operation requirements，作者不能声明或替换推导结果。
+
+Provider 不能执行某个 step 时 planning 失败。能执行但不能 capture 时真实 replay，并显示 `cache capability: unsupported`。
+
+定义、Schema、canonical JSON、recipe 或 metadata 不合法时，同步抛出 `SandboxActionDefinitionError`。它带稳定 `_tag`、`reason` 与结构化字段，Schema ParseError 保存为 cause。调用方按数据字段识别，不使用 `instanceof`。
+
+依赖图、固定内容 manifest 与 ref 身份查找、secret 或动态 input、Provider operation requirement 属于 planning typed failure。step、quiesce、capture 与 restore 属于 execution typed failure。
+
+公开入口的验收矩阵包含：
+
+- TypeScript 推导 Schema type；空或 async recipe、`.before(step)`、带频率或依赖的 after instance 都不能通过编译。
+- 第三方 package 的 family 可直接使用，也可经 Plugin 投影，不需要 registry。
+- input、recipe、behavior revision、内容 digest 与完整 Git commit 分别变化时产生新 identity。
+- custom Action 的频率、依赖和 DAG capability 与内置 Action 使用同一调度路径。
+- Provider 验证 persistent、invocation-local、unsupported，以及缺少 execution operation 的 planning failure。
+- debug 对 custom 与 built-in Action 都投影 exact recipe；redaction 正交，callback 与 `defineSandboxCommand()` 保持 opaque。
+- `command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义真实调用公开 family 与 step API。
 
 ```ts
 dockerSandbox({

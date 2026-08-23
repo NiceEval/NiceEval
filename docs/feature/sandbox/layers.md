@@ -45,6 +45,7 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 import {
   changeFrequency,
   command,
+  defineSandboxAction,
   defineSandboxCommand,
   dockerComposeSandbox,
   dockerSandbox,
@@ -53,6 +54,7 @@ import {
   gitCheckout,
   sandboxContent,
   sandboxLayer,
+  sandboxStep,
   shell,
   uploadDirectory,
   uploadFile,
@@ -66,6 +68,9 @@ import {
   type SandboxHookContext,
   type SandboxLayer,
   type SandboxAction,
+  type SandboxActionFamily,
+  type SandboxAfterAction,
+  type SandboxStep,
 } from "niceeval/sandbox";
 ```
 
@@ -81,8 +86,8 @@ declare const sandboxLayerKind: unique symbol;
 
 interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [sandboxLayerKind]: Kind;
-  before(action: SandboxAction): SandboxLayer<Kind>;
-  after(action: SandboxAction): SandboxLayer<Kind>;
+  before(action: SandboxAction | SandboxCommand | SandboxHook): SandboxLayer<Kind>;
+  after(action: SandboxAfterAction | SandboxCleanupCommand): SandboxLayer<Kind>;
 }
 
 interface SandboxHookContext {
@@ -411,6 +416,99 @@ Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖,�
 
 融合 template 用普通 TypeScript 函数共享,不新增按配对替换的注册表;Runner 不合并两个起点。
 
+## Action family 与 Step
+
+`SandboxAction` 是可缓存声明式准备的实例，不是 Plugin。作者用 `defineSandboxAction()` 定义可复用 family，再在 `.before()` 中直接实例化。family 只组合 NiceEval 提供的封闭 `SandboxStep`，不能取得运行中的 Sandbox，也不能接收任意 callback。
+
+```typescript
+import { Schema } from "effect";
+import { defineSandboxAction, sandboxStep } from "niceeval/sandbox";
+
+type NonEmptySandboxSteps =
+  readonly [SandboxStep, ...SandboxStep[]];
+
+interface SandboxActionDefinition<A, I extends JsonValue> {
+  readonly name: string;
+  readonly behaviorRevision: string;
+  readonly input: Schema.Schema<A, I, never>;
+  readonly recipe: (input: A) => NonEmptySandboxSteps;
+}
+
+interface SandboxBeforeActionOptions {
+  readonly id: string;
+  readonly changeFrequency?: number;
+  readonly dependsOn?: readonly SandboxActionRef[];
+  readonly requires?: readonly SandboxCapability[];
+  readonly provides?: readonly SandboxCapability[];
+}
+
+interface SandboxAfterActionOptions {
+  readonly id: string;
+}
+
+interface SandboxActionFamily<A> {
+  (input: A, options: SandboxBeforeActionOptions): SandboxAction;
+  readonly after: (
+    input: A,
+    options: SandboxAfterActionOptions,
+  ) => SandboxAfterAction;
+}
+
+declare function defineSandboxAction<A, I extends JsonValue>(
+  definition: SandboxActionDefinition<A, I>,
+): SandboxActionFamily<A>;
+
+declare const sandboxStep: {
+  exec(input: ExecSandboxStepInput): SandboxStep;
+  putText(input: PutTextSandboxStepInput): SandboxStep;
+  putBytes(input: PutBytesSandboxStepInput): SandboxStep;
+  transferFile(input: TransferFileSandboxStepInput): SandboxStep;
+  transferDirectory(input: TransferDirectorySandboxStepInput): SandboxStep;
+  checkoutGit(input: CheckoutGitSandboxStepInput): SandboxStep;
+};
+```
+
+```typescript
+const installToolVersion = defineSandboxAction({
+  name: "@acme/niceeval-tools/install",
+  behaviorRevision: "1",
+  input: Schema.Struct({ version: Schema.String }),
+  recipe: ({ version }) => [
+    sandboxStep.exec({
+      executable: "tool",
+      args: ["install", version],
+    }),
+    sandboxStep.putText({
+      path: ".tool-version",
+      text: version,
+    }),
+  ] as const,
+});
+
+export const tools = sandboxLayer().before(installToolVersion(
+  { version: "1.4.0" },
+  {
+    id: "install-tool",
+    changeFrequency: 20,
+    dependsOn: [actionRef("fixture")],
+  },
+));
+```
+
+一个 Action instance 是单一的调度、identity、执行、capture 与 satisfaction 单元。step 只有线性执行语义，没有 `id`、频率、依赖或 capability，不能直接传给 `.before()`。V1 recipe 必须同步返回非空、无分支、无循环的 step tuple；Runner 顺序解释全部 step，全部成功并 quiesce 后才允许捕获，不发布内部半成品前缀。
+
+定义 family 就是作者作出确定性承诺：recipe 只依赖已声明 input，只改变 Sandbox，可重复执行并可捕获。读取 secret、租约、时间、随机数、未固定网络状态或外部可变状态的逻辑必须使用 callback 或 `defineSandboxCommand()`，不能伪装成 Action。第三方只能组合公开 step，不能注册新的 primitive kind。
+
+family 调用时先用 `Schema.validateSync()` 验证 type side，再用 `Schema.encodeSync()` 得到 canonical JSON input。recipe 接收验证后的值；steps 随即规范化并冻结。Schema 必须无 requirements、可同步验证与编码，encoded side 必须能规范化为 JSON。
+
+action semantic identity 包含 family `name`、`behaviorRevision`、canonical input、canonical recipe，以及固定后的内容 digest 与 Git commit。函数源码、对象身份、模块路径和加载顺序不进入 identity。linked prefix 与 fingerprint 再加入 owner、ordinal、本 occurrence 的 action id、频率、依赖、capability、cohort、Provider identity 与 `interpreterRevision`。
+
+定义、Schema、JSON 或 recipe 不合法时，同步抛出带稳定 `_tag`、`reason` 和结构化字段的 `SandboxActionDefinitionError`；Schema 失败作为 cause 保存。依赖图、动态输入求值和 Provider operation requirement 属于 planning typed failure；step、quiesce、capture 与 restore 属于 execution typed failure。错误识别读取数据字段，不依赖 `instanceof`。
+
+`command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 都由导出的 `defineSandboxAction()` 和 `sandboxStep` 实际定义。core 只认识封闭 step kinds，不按官方 family name 或 package 路径走旁路。内置函数可以把领域 input 与 before metadata 摊平成一个对象，但生成的品牌值、identity、调度、执行、缓存与第三方 family 完全同路。
+
+同一 family 的 `.after(input, { id })` 产生 `SandboxAfterAction`。它不含频率、依赖、capability 或缓存字段，只能表达无条件、幂等 finally。需要本次 acquire handle 的释放仍由 callback 通过 `context.onCleanup()` 登记。
+
 ## Command 形状与 identity
 
 ```typescript
@@ -494,12 +592,12 @@ declare function command(
   executable: string,
   args?: readonly string[],
   options?: SandboxCommandOptions,
-): StableSandboxCommand;
+): SandboxAction;
 
 declare function shell(
   script: string,
   options?: SandboxCommandOptions,
-): StableSandboxCommand;
+): SandboxAction;
 
 declare function defineSandboxCommand(
   definition: SandboxCommandDefinition,

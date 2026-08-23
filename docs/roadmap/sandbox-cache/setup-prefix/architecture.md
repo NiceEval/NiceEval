@@ -42,3 +42,11 @@ Docker DinD 的一个前缀必须原子包含 outer writable rootfs、私有 `/v
 每个消费者取得私有 writable clone。只 `docker commit` outer container 会漏掉 inner data-root；复制运行中的 `/var/lib/docker` 会产生不一致状态；共享 writable upperdir 会破坏 Attempt 隔离。这些都不是合法前缀。Provider 无法完整、原子捕获时必须报告 Unsupported。
 
 普通 callback before 截断整条共享捕获 lineage；后续 action 标记 `ineligible: opaque-ancestor`。callback、secret 与 external-I/O action 仍参与 DAG 调度。每个物理 Sandbox 可以另有私有 reset baseline，但 opaque state 不能登记为共享 prefix。sandbox reuse 下，secret overlay 由始终真实执行的 callback 注入，成功后通过 `context.onCleanup()` 登记移除；无法证明隔离时该组合在 planning 失败。
+
+## SandboxStep 解释边界
+
+core 统一解释封闭的 `SandboxStep` protocol，并通过私有窄目标调用标准 Sandbox operations。Action 定义者、recipe 与 step 都不能取得 Sandbox；Provider 也不解释 family 或 recipe，不得按 family name 分支。
+
+Provider 只声明标准 operation 与 capture capability。core 从规范化 step 自动推导 operation requirements；全部 step 成功后，Provider 才负责 quiesce、capture 与 restore。Action 中途失败不发布内部半成品前缀。
+
+step protocol 的解释语义由 `interpreterRevision` 标识，并进入 linked prefix 与 fingerprint。family `behaviorRevision` 只表达 family 自身无法从 canonical input、recipe 与身份查找结果看出的语义变化；纯重构或已经改变 emitted recipe 的修改不要求重复升级 revision。
