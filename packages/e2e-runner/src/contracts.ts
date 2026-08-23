@@ -93,6 +93,12 @@ export const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
     description: "a positive JSON-safe integer",
   }),
 );
+const PositiveFiniteNumberSchema = Schema.Number.pipe(
+  Schema.filter((value) => Number.isFinite(value) && value > 0, {
+    identifier: "PositiveFiniteNumber",
+    description: "a finite positive number",
+  }),
+);
 export const Sha256HexSchema = Schema.String.pipe(
   Schema.filter((value) => /^[a-f0-9]{64}$/.test(value), { identifier: "Sha256Hex", description: "a lowercase SHA-256 hex digest" }),
 );
@@ -132,7 +138,7 @@ export const ManifestMetadataSchema = Schema.Struct({
   lanes: UniqueLaneListSchema,
   executor: ExecutorSchema,
   command: Schema.NonEmptyArray(NonEmptyStringSchema),
-  timeoutMinutes: PositiveSafeIntegerSchema,
+  timeoutMinutes: PositiveFiniteNumberSchema,
   secrets: UniqueStringListSchema,
   requires: Schema.optional(RepoRequiresSchema),
   harness: Schema.optional(RepoHarnessSchema),
@@ -143,9 +149,7 @@ export const ManifestSchema = Schema.extend(
   Schema.Struct({ id: RepoIdSchema }),
 );
 
-export const PlanRangeSchema = Schema.Struct({ base: NonEmptyStringSchema, head: NonEmptyStringSchema }).pipe(
-  Schema.filter((range) => range.base !== range.head, { identifier: "DistinctPlanRange" }),
-);
+export const PlanRangeSchema = Schema.Struct({ base: NonEmptyStringSchema, head: NonEmptyStringSchema });
 export const PlanEntrySchema = Schema.Struct({
   id: NonEmptyStringSchema,
   repoIds: Schema.NonEmptyArray(RepoIdSchema).pipe(Schema.filter(unique, { identifier: "UniquePlanRepoIds" })),
@@ -160,7 +164,7 @@ export const PlanEntrySchema = Schema.Struct({
   Schema.filter((entry) => entry.dir === undefined || entry.dirs.includes(entry.dir), { identifier: "PlanEntryDirectoryCoherence" }),
 );
 export const PlanDocumentSchema = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
+  schemaVersion: Schema.Literal(2),
   mode: Schema.Literal("affected", "full", "fail-open-full"),
   reason: NonEmptyStringSchema,
   detail: Schema.optional(Schema.String),
@@ -180,7 +184,7 @@ export const PlanDocumentSchema = Schema.Struct({
   }),
 });
 export const InvalidPlanOutputSchema = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
+  schemaVersion: Schema.Literal(2),
   mode: Schema.Literal("invalid"),
   reason: Schema.Literal("invalid-plan"),
   detail: NonEmptyStringSchema,
@@ -264,6 +268,7 @@ export const TestkitReceiptSchema = Schema.Struct({
   digest: Sha256HexSchema,
 });
 export const RepoReceiptV1Schema = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
   repoId: RepoIdSchema,
   selection: Schema.optional(SelectionReceiptSchema),
   invocationIds: NonEmptyUniqueStringListSchema,
