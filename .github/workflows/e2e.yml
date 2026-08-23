@@ -200,7 +200,7 @@ jobs:
           pnpm --silent e2e plan "${args[@]}" > "$plan_file"
           plan_status=$?
           set -e
-          if jq -e '.schemaVersion == 1 and (.mode | type == "string") and (.reason | type == "string")' "$plan_file" >/dev/null 2>&1; then
+          if jq -e '(.mode | type == "string") and (.reason | type == "string")' "$plan_file" >/dev/null 2>&1; then
             {
               echo "### E2E plan"
               echo
@@ -213,7 +213,7 @@ jobs:
             cat "$plan_file" || true
             exit "$plan_status"
           fi
-          if ! jq -e '.schemaVersion == 1 and (.mode == "affected" or .mode == "full" or .mode == "fail-open-full") and (.cells | type == "array")' "$plan_file" >/dev/null; then
+          if ! jq -e '(.mode == "affected" or .mode == "full" or .mode == "fail-open-full") and (.reason | type == "string") and (.cells | type == "array")' "$plan_file" >/dev/null; then
             echo "::error::plan --json did not emit a valid plan document"
             cat "$plan_file" || true
             exit 1
@@ -266,6 +266,10 @@ jobs:
           path: ${{ runner.temp }}/e2e-plan.json
           if-no-files-found: error
           retention-days: 14
+
+      - name: Typecheck E2E runner
+        if: steps.plan.outputs.has-jobs == 'true'
+        run: pnpm --filter @niceeval/e2e-runner run typecheck
 
       - name: Typecheck Testkit
         if: steps.plan.outputs.has-jobs == 'true'
@@ -408,17 +412,13 @@ jobs:
             id,
             manifest: `e2e/${dirs[index]}/project.json`,
           }))
-          const dockerProfileHost = manifests.some(({ manifest }) =>
-            JSON.parse(fs.readFileSync(manifest, "utf8")).targets.e2e.metadata.niceeval.harness?.dockerProfileHost === true
-          )
           fs.writeFileSync(outputPath, `${JSON.stringify(manifests)}\n`)
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `docker-profile-host=${dockerProfileHost}\n`)
           console.log(`[e2e] cell ${process.env.CELL_ID}: ${ids.join(", ")}`)
           NODE
           echo "manifests-file=${manifests_file}" >> "$GITHUB_OUTPUT"
 
       - name: Install Docker profile host prerequisites
-        if: steps.cell.outputs.docker-profile-host == 'true'
+        if: contains(toJSON(matrix.requires.hostCapabilities), '"linux-loop-project-quota"')
         run: |
           set -euo pipefail
           sudo apt-get update

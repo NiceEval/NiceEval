@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-static-export
-// rerun: pnpm e2e --repo report -- --run test/report-export.test.ts
+// rerun: pnpm e2e test --repo report -- --run test/report-export.test.ts
 
 import { only } from "@niceeval/testkit";
 import { readFile, stat, writeFile } from "node:fs/promises";

@@ -8,7 +8,7 @@
   ],
   "implicitDependencies": [
     "workspace-shared",
-    "e2e-shared",
+    "niceeval-e2e-runner",
     "niceeval-package-shared",
     "niceeval-testkit",
     "niceeval-src-fallback",
@@ -46,10 +46,12 @@
             "vitest",
             "run"
           ],
-          "timeoutMinutes": 5,
+          "timeoutMinutes": 8,
           "harness": {
             "testkit": true,
-            "dockerProfileHost": true
+            "assets": [
+              "docker-profile-host-scripts"
+            ]
           },
           "secrets": [],
           "requires": {
@@ -60,6 +62,9 @@
             "docker": true,
             "platforms": [
               "linux"
+            ],
+            "hostCapabilities": [
+              "linux-loop-project-quota"
             ]
           },
           "artifacts": [

@@ -38,6 +38,37 @@ export function isSensitiveEnvName(name: string): boolean {
   );
 }
 
+/** Values are derived at the process boundary and only passed to pure folds. */
+export function sensitiveEnvValues(env: NodeJS.ProcessEnv): readonly string[] {
+  return [...new Set(Object.entries(env)
+    .filter(([name, value]) => isSensitiveEnvName(name) && typeof value === "string" && value.length > 0)
+    .map(([, value]) => value!))]
+    .sort((left, right) => right.length - left.length);
+}
+
+/** Pure receipt/log fold: never return a secret value, including overlapping values. */
+export function redactSecretText(text: string, secretValues: readonly string[]): string {
+  return secretValues.reduce((redacted, value) => redacted.replaceAll(value, "[REDACTED]"), text);
+}
+
+export function redactSecretStrings(values: readonly string[], secretValues: readonly string[]): string[] {
+  return values.map((value) => redactSecretText(value, secretValues));
+}
+
+export function redactSecretCapture<T extends {
+  stdout: string;
+  stderr: string;
+  error?: string | undefined;
+}>(capture: T, secretValues: readonly string[]): T {
+  const redacted = {
+    ...capture,
+    stdout: redactSecretText(capture.stdout, secretValues),
+    stderr: redactSecretText(capture.stderr, secretValues),
+  };
+  if (!("error" in capture)) return redacted;
+  return { ...redacted, error: capture.error === undefined ? undefined : redactSecretText(capture.error, secretValues) };
+}
+
 /**
  * Build the environment a single repo's isolated command runs under.
  *
