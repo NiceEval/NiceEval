@@ -422,8 +422,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends quota
+          sudo apt-get install --yes --no-install-recommends quota "linux-modules-extra-$(uname -r)"
           sudo modprobe loop
+          sudo modprobe quota_v2
           sudo losetup --find >/dev/null
 
       - name: Set up Python
