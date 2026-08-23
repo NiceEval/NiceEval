@@ -33,6 +33,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 对比多个候选方案、给出架构 / 技术选型裁决 | [Design](design/README.md) |
 | 研究外部产品及其对 NiceEval 的启发 | [Research](research/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
+| 查仓库命令、维护 Skill 与对应守护 | [仓库能力入口](engineering/repository-capabilities/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
 | 查一处设计从哪个系统学来 | [Research](research/README.md)；RFC、OWASP 等基础规范仍见对应 Feature 的 `reference/` |
@@ -123,6 +124,7 @@ docs/
 │   ├── _template/                       新工程主题模板
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
 │   ├── task-orchestration/              Nx 项目图、affected E2E 与 fail-open 管理
+│   ├── repository-capabilities/         根 pnpm 命令、维护 Skill 与 lint guard 的发现目录
 │   ├── testing/                         测试体系总纲 + unit/ 与 e2e/ 两个子体系
 │   ├── benchmark/                       阶段耗时与安装 benchmark
 │   └── example-tier-sync/               示例同步机制

@@ -10,7 +10,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-const ROOT = resolve(import.meta.dirname, "..");
+const ROOT = resolve(import.meta.dirname, "../../..");
 const RULES_FILE = "docs/writing-rules.json";
 const CONCEPTS_FILE = "docs/concepts.md";
 // 判「这个词有没有人用」要连中文站一起看:词在 apps/docs-site/zh 用着、只是设计文档里没提,
@@ -142,7 +142,11 @@ export function parseConcepts(content?: string): ConceptTerm[] {
         // 表头声明「代码标识与标准术语不同时,英文列把代码标识放在括号里」——
         // 括号里那个是独立的一种写法,正文用它同样算这个词有人在用。
         const parenthesized = writing.match(/^(.+?)\s*\((.+)\)$/);
-        if (parenthesized) writings.push(parenthesized[1].trim(), parenthesized[2].trim());
+        const standard = parenthesized?.[1];
+        const identifier = parenthesized?.[2];
+        if (standard !== undefined && identifier !== undefined) {
+          writings.push(standard.trim(), identifier.trim());
+        }
         // 一格里并列多个写法、其中恰好一个加粗 = 这是同义词组,粗体那个是首选。
         // 没有粗体的多写法格(报告组件表把七个组件挤在一行)不是同义词,不产生裁决。
         if (parts.length > 1 && bold.length === 1) {
@@ -151,7 +155,14 @@ export function parseConcepts(content?: string): ConceptTerm[] {
         }
       }
     }
-    if (writings.length > 0) terms.push({ line: index + 1, writings, preferred, deprecated });
+    if (writings.length > 0) {
+      terms.push({
+        line: index + 1,
+        writings,
+        deprecated,
+        ...(preferred === undefined ? {} : { preferred }),
+      });
+    }
   }
   return terms;
 }
@@ -306,7 +317,9 @@ function topLevelObjectFields(text: string): string[] {
     if (braces !== 1) continue;
     const field = /^(?:\s|,)*(?:readonly\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*:/.exec(text.slice(index));
     if (field === null) continue;
-    fields.add(field[1]);
+    const name = field[1];
+    if (name === undefined) continue;
+    fields.add(name);
     index += field[0].length - 1;
   }
   return [...fields];
@@ -716,7 +729,10 @@ const XML_ENTITIES: Record<string, string> = {
 export function svgTexts(svg: string): SvgText[] {
   const texts: SvgText[] = [];
   for (const match of svg.matchAll(/<(text|title|desc)\b([^>]*)>([\s\S]*?)<\/\1>/g)) {
-    const [, tag, attributes, inner] = match;
+    const tag = match[1];
+    const attributes = match[2];
+    const inner = match[3];
+    if (tag === undefined || attributes === undefined || inner === undefined) continue;
     const classes = (/class="([^"]*)"/.exec(attributes)?.[1] ?? "").split(/\s+/).filter(Boolean);
     const text = inner
       // 不带定位的 tspan 只是同一行里换个颜色,直接拼:「已<tspan>受理</tspan>」是一个词,
@@ -724,7 +740,7 @@ export function svgTexts(svg: string): SvgText[] {
       // 另起一行或移位,那才是词的边界。
       .replace(/<tspan\b(?![^>]*\s(?:x|y|dx|dy)=)[^>]*>|<\/tspan>/g, "")
       .replace(/<[^>]*>/g, " ")
-      .replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => XML_ENTITIES[e])
+      .replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => XML_ENTITIES[entity] ?? entity)
       .replace(/\s+/g, " ")
       .trim();
     texts.push({

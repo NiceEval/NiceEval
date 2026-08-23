@@ -7,7 +7,8 @@
 不要从本文件学习整个项目。先按任务进入对应目录，读取该目录最近的 `README.md`、`AGENTS.md` 或索引，再沿链接只加载相关正文：
 
 - 产品、架构或内部设计：[`docs/README.md`](docs/README.md)
-- 文档用词审查：先把裁决写进 `docs/writing-rules.json`，再运行 `pnpm lint`，按 lint 输出逐项修改；不手工搜索并维护另一份命中清单
+- 仓库命令、lint、Frog、PR 与维护 know-how：先运行 `pnpm repo:capabilities list <关键词>`，按返回的设计入口与可选 Skill 继续；不从本文件复制命令手册
+- 文档用词审查：先读 `.agents/skills/docs-terminology/SKILL.md`，用 `pnpm docs:terms` 维护裁决并运行 `pnpm lint`；不手工搜索并维护另一份命中清单
 - 设计到源码的定位：[`docs/source-map.md`](docs/source-map.md)
 - 修 Bug、写改或评审测试：先读产品 Feature 契约，再读 [`docs/engineering/testing/README.md`](docs/engineering/testing/README.md) 的「Bug 修复的 E2E TDD」与「稳定性：变更预算」；随后依次读 [`portfolio.md`](docs/engineering/testing/portfolio.md) 找 owner、[`e2e/README.md`](docs/engineering/testing/e2e/README.md) 选体裁、[`scenario-repos.md`](docs/engineering/testing/e2e/scenario-repos.md) 确认布局及对应领域页，真正写和运行时再读 [`authoring.md`](docs/engineering/testing/e2e/authoring.md) 与 [`execution.md`](docs/engineering/testing/e2e/execution.md)；写 Unit 前再读 [`unit/README.md`](docs/engineering/testing/unit/README.md) 与对应 Feature 例外登记
 - 历史踩坑与设计裁决：[`memory/INDEX.md`](memory/INDEX.md)，命中索引项后才读正文
@@ -61,10 +62,10 @@
 
 本仓库用 [frog](https://github.com/wevm/frog) 记录工作摩擦，条目落在 `.agents/friction-log/` 下、随代码提交。本仓库作为上游已开启 inbound（config.json），接受下游仓库上报的摩擦。
 
-- **遇到摩擦当场记**：`pnpx frog log`（工具、文档、API、测试、约定等 papercut）。只记「可复现、该修」的摩擦，不加全局、系统或内部摩擦（那是 memory 的活）。
-- **先查重**：`pnpx frog list` 看是否已知，别堆重复条目。
+- **遇到摩擦当场记**：`pnpm frog log`（工具、文档、API、测试、约定等 papercut）。只记「可复现、该修」的摩擦，不加全局、系统或内部摩擦（那是 memory 的活）。
+- **先查重**：`pnpm frog list` 看是否已知，别堆重复条目。
 - 可复现素材放进该条目的 `artifacts/` 并在写记里引用；下一任跑复现，不重新搭现场。
-- **收尾的 DX 反思环节必须对账**：跑一遍 `pnpx frog list`，把过程中「绕过去了但没记」的摩擦补 `pnpx frog log`。这条是兜底——即时记录会漏，收尾对账不漏。
+- **收尾的 DX 反思环节必须对账**：跑一遍 `pnpm frog list`，把过程中「绕过去了但没记」的摩擦补 `pnpm frog log`。这条是兜底——即时记录会漏，收尾对账不漏。
 - 条目上报成 GitHub issue 靠 `frog publish`；issue 关闭后 `frog sync` 删条目，日志只留未解决的。未配 workflow 时手动跑即可。
 
 ## Git 与协作安全

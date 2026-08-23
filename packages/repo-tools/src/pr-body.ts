@@ -3,21 +3,24 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const TEMPLATE_PATH = resolve(ROOT, ".github/PULL_REQUEST_TEMPLATE.md");
-const DEFAULT_BUDGET = 62 * 1024;
-const GITHUB_LIMIT = 65_536;
-type Command = "init" | "render" | "check" | "apply" | "create";
+import { errorMessage, RepoToolError } from "./errors.js";
 
-interface Options {
-  command: Command;
-  pr?: number;
-  source?: string;
-  out?: string;
-  base?: string;
-  title?: string;
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const TEMPLATE_PATH = resolve(ROOT, ".github/PULL_REQUEST_TEMPLATE.md");
+export const DEFAULT_PR_BODY_BUDGET = 62 * 1024;
+const GITHUB_LIMIT = 65_536;
+export type PrBodyCommand = "init" | "render" | "check" | "apply" | "create";
+
+export interface PrBodyOptions {
+  command: PrBodyCommand;
+  pr: number | undefined;
+  source: string | undefined;
+  out: string | undefined;
+  base: string | undefined;
+  title: string | undefined;
   budget: number;
   remote: boolean;
 }
@@ -34,57 +37,6 @@ interface TestDirective {
 }
 interface RenderedBody { body: string; metadata: FinalMetadata; referencedFiles: string[] }
 interface ManagedBody { authored: string; suffix?: string }
-
-const HELP = `NiceEval PR body compiler
-
-Usage:
-  pnpm pr:body init (--source <path> | --pr <number>) [--base <ref>]
-  pnpm pr:body render (--source <path> | --pr <number>) [--out <path>]
-  pnpm pr:body check (--source <path> | --pr <number>) [--no-remote]
-  pnpm pr:body apply --pr <number> [--source <path>]
-  pnpm pr:body create --source <path> --title <title> [--base <branch>]
-
-Commands:
-  init    Create a draft, or initialize an existing handwritten --source draft.
-  render  Expand source directives and emit the final Markdown body.
-  check   Render and validate the body; with --pr, compare it with GitHub.
-  apply   Validate, verify the PR head, then update the GitHub PR body.
-  create  Create a PR from the pushed HEAD, then apply and verify its body.
-
-Options:
-  --pr <number>       GitHub PR number and default draft identity.
-  --source <path>     Draft path. Defaults inside this worktree's Git dir.
-  --out <path>        Rendered output path. Omit to print to stdout.
-  --base <ref>        Locked base for a new draft. Defaults to merge-base with origin/main.
-                      With create, target branch (default main).
-  --title <title>     Pull request title. Only valid with create.
-  --budget <bytes>    Review budget before GitHub's hard limit (default ${DEFAULT_BUDGET}).
-  --no-remote         Skip GitHub body/head comparison during check.
-
-Workflow:
-  1. pnpm pr:body init --source <draft.md>
-  2. Edit the initialized draft and remove unused template sections.
-  3. pnpm pr:body check --source <draft.md> --no-remote
-  4. Commit and push the intended HEAD.
-  5. pnpm pr:body create --source <draft.md> --title <title> [--base main]
-
-Embed an exact test source in the Markdown draft:
-  <!-- niceeval:test
-  path: e2e/report/test/report-show.test.ts
-  purpose: feature + bug regression
-  protects: Public behavior that would escape without this owner.
-  runs: Public commands or browser actions exercised by the test.
-  asserts: Independent expected outcomes checked by the test.
-  source: full
-  -->
-
-To excerpt a large file, replace source with unique complete-line anchors:
-  source:
-    reason: unchanged helpers unrelated to this PR
-    fragments:
-      - from: 'test("first retained owner", async () => {'
-        through: '}); // first retained owner'
-`;
 
 function fail(message: string): never { throw new Error(message) }
 
@@ -104,34 +56,9 @@ function gh(args: string[]): string {
   }
 }
 function sha256(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex") }
-function positiveInteger(value: string | undefined, flag: string): number {
-  if (!value || !/^\d+$/.test(value)) fail(`${flag} requires a positive integer`);
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) fail(`${flag} requires a positive integer`);
-  return parsed;
-}
-
-function parseArgs(argv: string[]): Options {
-  const command = argv.shift();
-  if (command === "--help" || command === "-h" || command === undefined) {
-    process.stdout.write(HELP);
-    process.exit(command === undefined ? 1 : 0);
-  }
-  if (!["init", "render", "check", "apply", "create"].includes(command)) fail(`unknown command ${JSON.stringify(command)}\n\n${HELP}`);
-  const options: Options = { command: command as Command, budget: DEFAULT_BUDGET, remote: command === "check" };
-  while (argv.length) {
-    const flag = argv.shift();
-    switch (flag) {
-      case "--pr": options.pr = positiveInteger(argv.shift(), flag); break;
-      case "--source": options.source = argv.shift() ?? fail(`${flag} requires a path`); break;
-      case "--out": options.out = argv.shift() ?? fail(`${flag} requires a path`); break;
-      case "--base": options.base = argv.shift() ?? fail(`${flag} requires a git ref`); break;
-      case "--title": options.title = argv.shift() ?? fail(`${flag} requires a title`); break;
-      case "--budget": options.budget = positiveInteger(argv.shift(), flag); break;
-      case "--no-remote": options.remote = false; break;
-      case "--help": case "-h": process.stdout.write(HELP); process.exit(0);
-      default: fail(`unknown option ${JSON.stringify(flag)}`);
-    }
+function validateOptions(options: PrBodyOptions): void {
+  for (const [name, value] of [["--pr", options.pr], ["--budget", options.budget]] as const) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) fail(`${name} requires a positive integer`);
   }
   if (options.command === "apply" && !options.pr) fail("apply requires --pr <number>");
   if (options.command === "create" && !options.title) fail("create requires --title <title>");
@@ -141,10 +68,9 @@ function parseArgs(argv: string[]): Options {
   if (options.base && options.command !== "init" && options.command !== "create") fail("--base is only valid with init or create");
   if (options.title && options.command !== "create") fail("--title is only valid with create");
   if (options.budget > GITHUB_LIMIT) fail(`--budget cannot exceed GitHub's ${GITHUB_LIMIT}-byte limit`);
-  return options;
 }
 
-function draftPath(options: Options): string {
+function draftPath(options: PrBodyOptions): string {
   if (options.source) return resolve(ROOT, options.source);
   return resolve(git(["rev-parse", "--absolute-git-dir"]), "niceeval", "pr-body", `${options.pr}.md`);
 }
@@ -156,7 +82,7 @@ function defaultBase(): string { return git(["merge-base", "HEAD", "origin/main"
 function metadataComment(metadata: DraftMetadata | FinalMetadata): string {
   return `<!-- niceeval:pr-body\n${stringifyYaml(metadata).trimEnd()}\n-->`;
 }
-function init(options: Options): void {
+function init(options: PrBodyOptions): void {
   const target = draftPath(options);
   const template = currentTemplate();
   const metadata: DraftMetadata = {
@@ -181,7 +107,7 @@ function init(options: Options): void {
 function parseMetadata(draft: string): DraftMetadata {
   const matches = [...draft.matchAll(/<!-- niceeval:pr-body\s*\n([\s\S]*?)\n-->/g)];
   if (matches.length !== 1) fail(`draft must contain exactly one niceeval:pr-body metadata block; found ${matches.length}`);
-  const parsed = parseYaml(matches[0][1]) as unknown;
+  const parsed = parseYaml(matches[0]![1]!) as unknown;
   if (!parsed || typeof parsed !== "object") fail("niceeval:pr-body metadata must be a YAML object");
   const value = parsed as Record<string, unknown>;
   if (typeof value.base !== "string" || !value.base) fail("niceeval:pr-body metadata requires base");
@@ -189,7 +115,11 @@ function parseMetadata(draft: string): DraftMetadata {
   if (value.forbid !== undefined && (!Array.isArray(value.forbid) || value.forbid.some((item) => typeof item !== "string"))) {
     fail("niceeval:pr-body forbid must be a list of literal strings");
   }
-  return { base: value.base, templateSha256: value.templateSha256, forbid: value.forbid as string[] | undefined };
+  return {
+    base: value.base,
+    templateSha256: value.templateSha256,
+    ...(value.forbid === undefined ? {} : { forbid: value.forbid as string[] }),
+  };
 }
 
 function repositoryPath(path: string): { absolute: string; relative: string } {
@@ -202,7 +132,7 @@ function repositoryPath(path: string): { absolute: string; relative: string } {
 function uniqueLineIndex(lines: string[], anchor: string, label: string, path: string): number {
   const matches = lines.flatMap((line, index) => line === anchor ? [index] : []);
   if (matches.length !== 1) fail(`${path}: ${label} anchor must match one exact complete line; found ${matches.length}: ${JSON.stringify(anchor)}`);
-  return matches[0];
+  return matches[0]!;
 }
 function changedFinalLines(base: string, path: string): Set<number> {
   if (!git(["ls-files", "--error-unmatch", "--", path], true)) {
@@ -228,7 +158,9 @@ function omissionMarker(path: string, before: string, after: string, reason: str
 function nearestUniqueLine(lines: string[], indices: number[], label: string, path: string): string {
   for (const index of indices) {
     const candidate = lines[index];
-    if (candidate.trim() && lines.filter((line) => line === candidate).length === 1) return candidate;
+    if (candidate !== undefined && candidate.trim() && lines.filter((line) => line === candidate).length === 1) {
+      return candidate;
+    }
   }
   fail(`${path}: cannot find a unique non-blank ${label} omission anchor; retain more source around the boundary`);
 }
@@ -243,7 +175,9 @@ function renderFragments(path: string, source: string, spec: Exclude<TestDirecti
     if (end < start) fail(`${path}: fragment ${index + 1} ends before it starts`);
     return { start, end };
   }).sort((left, right) => left.start - right.start);
-  for (let index = 1; index < ranges.length; index++) if (ranges[index].start <= ranges[index - 1].end) fail(`${path}: source fragments overlap`);
+  for (let index = 1; index < ranges.length; index++) {
+    if (ranges[index]!.start <= ranges[index - 1]!.end) fail(`${path}: source fragments overlap`);
+  }
   const included = new Set<number>();
   for (const range of ranges) for (let index = range.start; index <= range.end; index++) included.add(index + 1);
   const missed = [...changedFinalLines(base, path)].filter((line) => !included.has(line));
@@ -253,16 +187,16 @@ function renderFragments(path: string, source: string, spec: Exclude<TestDirecti
   for (const range of ranges) {
     if (range.start > previousEnd + 1) {
       const before = previousEnd >= 0
-        ? lines[previousEnd]
+        ? lines[previousEnd]!
         : nearestUniqueLine(lines, Array.from({ length: range.start }, (_unused, index) => range.start - index - 1), "before", path);
-      rendered.push(omissionMarker(path, before, lines[range.start], spec.reason));
+      rendered.push(omissionMarker(path, before, lines[range.start]!, spec.reason));
     }
     rendered.push(lines.slice(range.start, range.end + 1).join("\n"));
     previousEnd = range.end;
   }
   if (previousEnd < lines.length - 1) {
     const after = nearestUniqueLine(lines, Array.from({ length: lines.length - previousEnd - 1 }, (_unused, index) => previousEnd + index + 1), "after", path);
-    rendered.push(omissionMarker(path, lines[previousEnd], after, spec.reason));
+    rendered.push(omissionMarker(path, lines[previousEnd]!, after, spec.reason));
   }
   return rendered.join("\n");
 }
@@ -302,7 +236,7 @@ function expandTestDirectives(draft: string, base: string): { markdown: string; 
 function stripAuthoringComments(markdown: string): string {
   return markdown.replace(/<!--[\s\S]*?-->/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
-function render(options: Options): RenderedBody {
+function render(options: PrBodyOptions): RenderedBody {
   const source = draftPath(options);
   if (!existsSync(source)) fail(`draft does not exist: ${source}\nRun pnpm pr:body init first.`);
   const draft = readFileSync(source, "utf8");
@@ -327,10 +261,10 @@ function render(options: Options): RenderedBody {
 function sectionMap(markdown: string): Map<string, string> {
   const matches = [...markdown.matchAll(/^## (.+)$/gm)];
   const sections = new Map<string, string>();
-  matches.forEach((match, index) => sections.set(match[1].trim(), markdown.slice(match.index! + match[0].length, matches[index + 1]?.index ?? markdown.length)));
+  matches.forEach((match, index) => sections.set(match[1]!.trim(), markdown.slice(match.index! + match[0].length, matches[index + 1]?.index ?? markdown.length)));
   return sections;
 }
-function templateSections(): string[] { return [...currentTemplate().text.matchAll(/^## (.+)$/gm)].map((match) => match[1].trim()) }
+function templateSections(): string[] { return [...currentTemplate().text.matchAll(/^## (.+)$/gm)].map((match) => match[1]!.trim()) }
 function templatePlaceholders(): string[] {
   return [...new Set([...stripAuthoringComments(currentTemplate().text).matchAll(/<[^>\n]+>/g)].map((match) => match[0]))];
 }
@@ -342,9 +276,9 @@ function requireBulletFields(errors: string[], label: string, block: string, fie
 function headingContent(block: string, level: number, name: string): string | undefined {
   const marker = "#".repeat(level);
   const headings = [...block.matchAll(new RegExp(`^${marker} (.+)$`, "gm"))];
-  const index = headings.findIndex((heading) => heading[1].trim() === name);
+  const index = headings.findIndex((heading) => heading[1]!.trim() === name);
   if (index === -1) return undefined;
-  return block.slice(headings[index].index! + headings[index][0].length, headings[index + 1]?.index ?? block.length).trim();
+  return block.slice(headings[index]!.index! + headings[index]![0].length, headings[index + 1]?.index ?? block.length).trim();
 }
 function requireHeadingFields(errors: string[], label: string, block: string, level: number, fields: string[]): void {
   for (const field of fields) {
@@ -381,14 +315,14 @@ function validateProductCaseSection(errors: string[], name: string, content: str
 }
 function subsection(content: string, name: string): string | undefined {
   const headings = [...content.matchAll(/^### (.+)$/gm)];
-  const index = headings.findIndex((heading) => heading[1].trim() === name);
+  const index = headings.findIndex((heading) => heading[1]!.trim() === name);
   if (index === -1) return undefined;
-  return content.slice(headings[index].index! + headings[index][0].length, headings[index + 1]?.index ?? content.length);
+  return content.slice(headings[index]!.index! + headings[index]![0].length, headings[index + 1]?.index ?? content.length);
 }
 function validateStructure(body: string, metadata: FinalMetadata): string[] {
   const errors: string[] = [];
   const content = body.replace(/<!-- niceeval:pr-body\s*\n[\s\S]*?\n-->/, "");
-  const sections = [...body.matchAll(/^## (.+)$/gm)].map((match) => match[1].trim());
+  const sections = [...body.matchAll(/^## (.+)$/gm)].map((match) => match[1]!.trim());
   const allowed = templateSections();
   const seen = new Set<string>();
   let previous = -1;
@@ -469,14 +403,14 @@ function validateStructure(body: string, metadata: FinalMetadata): string[] {
     }
   }
   for (const match of body.matchAll(/^- Purpose:\s*(.+)$/gm)) {
-    const purpose = match[1].trim().replace(/^`|`$/g, "");
+    const purpose = match[1]!.trim().replace(/^`|`$/g, "");
     if (!["feature", "bug regression", "feature + bug regression"].includes(purpose)) errors.push(`invalid test Purpose: ${purpose}`);
   }
   return errors;
 }
 function byteReport(body: string): string {
   const matches = [...body.matchAll(/^## (.+)$/gm)];
-  const rows = matches.map((match, index) => ({ name: match[1].trim(), bytes: Buffer.byteLength(body.slice(match.index!, matches[index + 1]?.index ?? body.length)) })).sort((a, b) => b.bytes - a.bytes);
+  const rows = matches.map((match, index) => ({ name: match[1]!.trim(), bytes: Buffer.byteLength(body.slice(match.index!, matches[index + 1]?.index ?? body.length)) })).sort((a, b) => b.bytes - a.bytes);
   const width = Math.max(7, ...rows.map((row) => row.name.length));
   return [`PR body: ${Buffer.byteLength(body).toLocaleString("en-US")} bytes`, ...rows.map((row) => `${row.name.padEnd(width)}  ${row.bytes.toLocaleString("en-US").padStart(8)}`)].join("\n");
 }
@@ -492,7 +426,7 @@ function splitManagedBody(body: string): ManagedBody {
     suffix: body.slice(start, end + endMarker.length).trim(),
   };
 }
-function validate(rendered: RenderedBody, options: Options, compareRemote: boolean): void {
+function validate(rendered: RenderedBody, options: PrBodyOptions, compareRemote: boolean): void {
   const errors = validateStructure(rendered.body, rendered.metadata);
   const bytes = Buffer.byteLength(rendered.body);
   if (bytes > GITHUB_LIMIT) errors.push(`body is ${bytes - GITHUB_LIMIT} bytes over GitHub's ${GITHUB_LIMIT}-byte hard limit`);
@@ -513,7 +447,7 @@ function requireCommittedSources(rendered: RenderedBody, action: string): void {
   if (dirty.length) fail(`${action} requires committed referenced source files:\n${dirty.map((path) => `- ${path}`).join("\n")}`);
 }
 
-function applyRendered(rendered: RenderedBody, options: Options, pr: number): void {
+function applyRendered(rendered: RenderedBody, options: PrBodyOptions, pr: number): void {
   requireCommittedSources(rendered, "apply");
   const remote = JSON.parse(gh(["pr", "view", String(pr), "--json", "body,headRefOid"])) as { body: string; headRefOid: string };
   if (remote.headRefOid !== rendered.metadata.head) fail(`refusing to apply: GitHub PR head ${remote.headRefOid} does not match local HEAD ${rendered.metadata.head}`);
@@ -529,7 +463,7 @@ function applyRendered(rendered: RenderedBody, options: Options, pr: number): vo
   process.stdout.write(`Updated PR #${pr} from ${draftPath(options)}\n`);
 }
 
-function create(rendered: RenderedBody, options: Options): void {
+function create(rendered: RenderedBody, options: PrBodyOptions): void {
   validate(rendered, options, false);
   requireCommittedSources(rendered, "create");
   if (git(["status", "--porcelain"])) fail("create requires a clean working tree; commit the intended changes first");
@@ -554,8 +488,8 @@ function create(rendered: RenderedBody, options: Options): void {
   process.stdout.write(`${url}\n`);
 }
 
-function main(): void {
-  const options = parseArgs(process.argv.slice(2));
+function execute(options: PrBodyOptions): void {
+  validateOptions(options);
   if (options.command === "init") return init(options);
   const rendered = render(options);
   if (options.command === "render") {
@@ -572,7 +506,9 @@ function main(): void {
   applyRendered(rendered, options, options.pr!);
 }
 
-try { main() } catch (error) {
-  process.stderr.write(`pr:body: ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+export function runPrBody(options: PrBodyOptions): Effect.Effect<void, RepoToolError> {
+  return Effect.try({
+    try: () => execute(options),
+    catch: (error) => new RepoToolError({ operation: `pr body ${options.command}`, message: errorMessage(error) }),
+  });
 }
