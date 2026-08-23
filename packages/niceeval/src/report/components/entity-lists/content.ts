@@ -99,22 +99,8 @@ function exceptionalVerdictCountsCell(attempts: readonly AttemptListItem[]): Cel
   return { kind: "verdict", counts: { ...counts, passed: 0 } };
 }
 
-/** 只有所有 Score Attempt 都给出完整计数时才汇总；未知不冒充零。 */
-function missedScoreItems(attempts: readonly AttemptListItem[]): number | undefined {
-  const scoreAttempts = attempts.filter((attempt) => attempt.evaluationKind === "points");
-  if (scoreAttempts.length === 0 || scoreAttempts.some((attempt) => attempt.missedScoreItems === undefined)) {
-    return undefined;
-  }
-  return scoreAttempts.reduce((total, attempt) => total + attempt.missedScoreItems!, 0);
-}
-
-function scoreCell(earned: number, attempts: readonly AttemptListItem[]): Cell {
-  const missed = missedScoreItems(attempts);
-  return {
-    kind: "score",
-    earned,
-    ...(missed === undefined ? {} : { missedScoreItems: missed }),
-  };
+function scoreCell(earned: number): Cell {
+  return { kind: "score", earned };
 }
 
 function evalVerdictCell(attempts: readonly AttemptListItem[]): Cell {
@@ -266,7 +252,7 @@ function evalRow(
       : stackCell(
           row.totalScore === undefined
             ? { kind: "notApplicable" }
-            : scoreCell(row.totalScore, row.attempts),
+            : scoreCell(row.totalScore),
           exceptionalVerdictCountsCell(row.attempts),
         ),
     ...(row.costUSD === undefined ? {} : { costUSD: measureCell(row.costUSD) }),
@@ -328,7 +314,7 @@ function groupTableRow(
   const primary = evalRows.every((row) => row.evaluationKind === "pass")
     ? groupMetricValue(metrics, "passRate")
     : evalRows.some((row) => row.totalScore !== undefined)
-    ? scoreCell(evalRows.reduce((sum, row) => sum + (row.totalScore ?? 0), 0), attempts)
+    ? scoreCell(evalRows.reduce((sum, row) => sum + (row.totalScore ?? 0), 0))
     : { kind: "notApplicable" } as const;
 
   const bag: CellBag = {
@@ -381,11 +367,13 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
     ? measureCell(item.endToEndPassRate, false)
     : item.totalScore === undefined
     ? { kind: "notApplicable" } as const
-    : scoreCell(item.totalScore, attempts);
+    : scoreCell(item.totalScore);
+  const coveredEvalCount = item.evalRows.length;
+  const totalEvalCount = coveredEvalCount + item.missingEvalIds.length;
   const bag: CellBag = {
     entity: identityCell(
       item.experimentId,
-      `${item.endToEndPassRate.samples}/${item.endToEndPassRate.total}`,
+      `${coveredEvalCount}/${totalEvalCount}`,
     ),
     model: item.model === null ? { kind: "notApplicable" } : textCell(item.model),
     agent: item.agent === null ? { kind: "notApplicable" } : textCell(item.agent),

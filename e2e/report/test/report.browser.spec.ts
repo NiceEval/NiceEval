@@ -123,7 +123,9 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
           hasText: /^classic\/incompatible /,
         });
         await expect(scoreExperimentSummary).toHaveCount(1);
-        await expect(scoreExperimentSummary).toContainText("7 · 1 missed check");
+        await expect(scoreExperimentSummary).toContainText("classic/incompatible (1/1)");
+        await expect(scoreExperimentSummary).toContainText("7");
+        await expect(scoreExperimentSummary).not.toContainText("missed check");
         await expect(scoreExperimentSummary).not.toContainText("passed");
         await experiment.click();
         await expect(page).toHaveURL(/#\/experiment\//);
