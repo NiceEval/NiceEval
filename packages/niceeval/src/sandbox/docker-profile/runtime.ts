@@ -205,10 +205,9 @@ async function attestEntry(entry: ResolvedDockerProfileEntry): Promise<DockerPro
     readonly backendMachineIdentity: string;
     readonly daemonGeneration: string;
     readonly clientNonce: string;
-    readonly admissionOpen: boolean;
   }>(profile.transport.controlSocket.path, { kind: "challenge", clientNonce: nonce });
   if (challenge.protocol !== profile.transport.controlSocket.protocol || challenge.profileId !== profile.profileId ||
-      challenge.descriptorDigest !== entry.descriptorDigest || challenge.clientNonce !== nonce || challenge.admissionOpen !== true ||
+      challenge.descriptorDigest !== entry.descriptorDigest || challenge.clientNonce !== nonce ||
       challenge.hostMachineIdentity !== profile.transport.hostMachineIdentity ||
       challenge.backendMachineIdentity !== profile.backend.machineIdentity) {
     throw new Error(`Docker profile ${entry.alias} control attestation does not match its descriptor`);
