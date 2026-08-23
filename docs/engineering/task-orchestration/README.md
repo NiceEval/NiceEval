@@ -127,13 +127,25 @@ metadata 非法或重复 name 时，discovery 聚合报错并进入 `invalid`，
 增加图依赖；不能在 planner 里补一张 owner 表。要缩减上述边界，必须先用安装后 candidate 做能杀死错误映射的红灯 / 绿灯
 mutation 收据。
 
-### 明确不拥有产品 E2E 的项目
+### 明确不拥有产品 E2E 的项目与路径
 
 `apps/site` 和内部 `docs` project 带 `e2e:none` tag。合法空计划只在所有 changed paths 都由这类 project 解释时成立。
 `apps/docs-site` 不带该 tag：中文随包文档和图片进入 candidate，因此它至少影响 Package E2E。
 
+不属于任何产品、candidate、Testkit 或根 E2E runner 的仓库维护面统一写进根 `.nxignore`。
+它是“不触发产品 E2E”的集中黑名单，不是 E2E 输入白名单。以下内容可以整类排除：
+
+- agent / editor 配置和 friction log；
+- 历史材料、独立示例和静态 README 素材；
+- 由其它 workflow 或 suite 验收的部署与宿主镜像文件。
+
+任何未明确排除的新路径仍落入 workspace shared input，并 fail-open 为当前 lane 全量。
+planner 用 Nx 同一套 `.gitignore` + `.nxignore` 语义交叉校验 changed paths，不能在 workflow 或 planner 里再复制 glob 表。
+修改 `.nxignore` 自身会触发全量，分类边界的变化必须先经过完整无密钥 lane。
+
 共享输入不建伪产品域。Testkit、根 `e2e/scripts/**`、package root / runtime builder、lockfile、workspace / Nx 配置以及
-E2E workflow 的变化属于所有 `e2e` target 的 workspace inputs，必须产生当前 lane 全量。
+E2E workflow 的变化属于所有 `e2e` target 的 workspace inputs，必须产生当前 lane 全量。单个 `e2e/<id>/**` 仍只影响该叶子；
+多个叶子同时变化时取并集，只有共享 runner、选择器、注入或 receipt 设施变化才扩为全量。
 
 ## Changed path 完整性
 
@@ -150,7 +162,8 @@ rename 按 delete 与 add 两条路径处理。选择收据保存最终 base/hea
 
 1. 归属于会传播到 E2E 的 project；
 2. 归属于 `e2e:none` project；
-3. 落入源码 fallback 或共享 full input。
+3. 被根 `.nxignore` 明确归类为不影响产品 E2E；
+4. 落入源码 fallback 或共享 full input。
 
 路径存在但 Nx 没有归属、Nx 输出不可解码、base/head 无效或选择命令失败时，planner 进入 `fail-open-full`。它不能把“没有
 选出项目”当成合法空计划。
@@ -205,6 +218,7 @@ base/head 和 Nx graph JSON：
 | 变更样本 | 预期 |
 |---|---|
 | `apps/site/**`、`docs/**` | `affected`，零产品 E2E |
+| `.agents/**`、`memory/**` 等 `.nxignore` 路径 | `affected`，零产品 E2E |
 | `apps/docs-site/zh/**` | 只选 Package owner |
 | `record/**` | `eval`、`migrate`、`report`、`runner` |
 | 单个 `e2e/<id>/**` | 只选该 Repo |

@@ -1,0 +1,37 @@
+# Repository collaboration and local developer tooling do not affect product E2E.
+/.agents/
+/.claude/
+/.husky/
+/.vscode/
+
+# Prose, history, static README assets, and standalone examples have their own
+# lint or review surface. Internal docs and the product site remain Nx projects
+# with explicit e2e:none ownership instead of being hidden here.
+/*.md
+/assets/
+/examples/
+/lint/
+/memory/
+/screenshots/
+
+# Deployment, host-image, and standalone validation surfaces are not consumed
+# by the product candidate or the root E2E runner.
+/.github/ISSUE_TEMPLATE/
+/.github/PULL_REQUEST_TEMPLATE.md
+/.github/workflows/canary.yml
+/.github/workflows/ci.yml
+/.github/workflows/docker-image.yml
+/.github/workflows/release.yml
+/netlify-preview/
+/nix/
+/packaging/
+/sandbox/
+/test/
+/.env.example
+/flake.lock
+/flake.nix
+/netlify.toml
+/skills-lock.json
+/vercel.json
+/vitest.config.ts
+/vitest.docker.config.ts

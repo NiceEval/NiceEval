@@ -86,7 +86,6 @@ docs/
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── report-chart-kernel/              中立图表的三面同事实语义内核
 │   ├── record-blob-materialization/       Record Host 透明分段、保存与读取逻辑 blob
 │   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
@@ -104,12 +103,14 @@ docs/
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
+│   ├── benchmark-web-consumption/       自定义 benchmark 网页使用数据、组件或分层能力的待选接入面
+│   ├── cli-insight/                     AI-native CLI、Human show 与第一方本地 Insight
 │   ├── record-runtime/                  Record access runtime：独立 open 与统一资源 owner
 │   ├── observability-package-layout/    Observability 持久包：七 family 与 physical packages
 │   ├── projection-api/                  单包投影：runtime calls 与 static graph
 │   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
-│   ├── report-authoring/                报告作者面:组件粒度与取数形态
-│   ├── record-to-report-stack.md         Record 到 Report 的依赖、组合与决策地图
+│   ├── report-authoring/                已被新交付边界取代的双面 Report 作者面历史
+│   ├── record-to-report-stack.md         已被新交付边界取代的 Record 到 Report 历史地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
 │   ├── ori-eval.md                      Eval authoring：Ori Eval、Skill 与完整评估工作流
