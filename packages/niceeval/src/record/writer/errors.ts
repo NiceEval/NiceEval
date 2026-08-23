@@ -48,6 +48,13 @@ export interface RecordAttachmentEncodeError {
   readonly issues: NonEmptyRecordAttachmentIssues;
 }
 
+/** A writer was paired with a definition for the other owner kind. */
+export interface RecordOwnerDefinitionMismatch {
+  readonly code: "record-owner-definition-mismatch";
+  readonly expected: "run" | "attempt";
+  readonly actual: "run" | "attempt";
+}
+
 const writerClosed: RecordWriterClosed = Object.freeze({
   code: "record-writer-closed",
 });
@@ -95,4 +102,11 @@ export function recordAttachmentEncodeError(
     code: "record-attachment-encode-error",
     issues: source.issues,
   });
+}
+
+export function recordOwnerDefinitionMismatch(input: {
+  readonly expected: "run" | "attempt";
+  readonly actual: "run" | "attempt";
+}): RecordOwnerDefinitionMismatch {
+  return Object.freeze({ code: "record-owner-definition-mismatch", ...input });
 }

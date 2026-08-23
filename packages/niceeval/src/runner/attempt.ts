@@ -105,7 +105,7 @@ import {
   captureRunnerTurnUsage,
   createRunnerAttemptObservabilityRuntime,
   type RunnerAttemptObservabilityRuntime,
-} from "../o11y/record/producer/runner.ts";
+} from "./source-receipts/runtime.ts";
 import {
   attemptFailureInfo,
   resolveAttemptFailureClass,

@@ -54,6 +54,8 @@ export interface RecordBlobSource<out E, out R> {
 
 export interface RecordAttachmentBlobDraft<out E, out R> {
   readonly ref: RecordBlobRef;
+  /** Storage-neutral spelling used by the family SPI logical value. */
+  readonly content: RecordBlobRef;
   readonly [recordAttachmentBlobDraftTypeId]: () => {
     readonly error: E;
     readonly requirements: R;
@@ -91,11 +93,15 @@ export interface RecordAttachmentWrite<
   out Owner extends RecordAttachmentOwner,
   out E,
   out R,
+  out Family extends string = string,
+  out SchemaVersion extends number = number,
 > {
   readonly [recordAttachmentWriteTypeId]: () => {
     readonly owner: Owner;
     readonly error: E;
     readonly requirements: R;
+    readonly family: Family;
+    readonly schemaVersion: SchemaVersion;
   };
 }
 
@@ -109,8 +115,8 @@ export type RecordAttachmentJson =
   | { readonly [key: string]: RecordAttachmentJson };
 
 /**
- * A static owner codec and closure primitive, minted from exactly one
- * `defineRecordAttachment(...).current.owners[owner]` value. It contains no
+ * A static owner codec and closure primitive, derived from exactly one
+ * branded `defineRecordAttachment(...)` value. It contains no
  * lookup, registration, historic decoder, or migration chain.
  */
 export interface FixedAttachmentWriteSpec<
@@ -129,6 +135,11 @@ export interface FixedAttachmentWriteSpec<
   readonly refs: (payload: Payload) => readonly RecordBlobRef[];
   readonly budget: RecordAttachmentBlobBudget;
   readonly verify: RecordAttachmentMaterializedRefine<Payload>;
+  /** Generic dependency closure carried by the prepared write; no family switch. */
+  readonly references?: (
+    payload: Payload,
+  ) => readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
+  readonly maximumReferences?: number;
   readonly [fixedAttachmentWriteSpecTypeId]: () => {
     readonly owner: Owner;
     readonly payload: Payload;

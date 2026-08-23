@@ -2,7 +2,6 @@ import { Data, type Effect } from "effect";
 
 import type { Config } from "../../types.ts";
 import type { AnalysisCurrentSlotIdentity, AnalysisSelectionRequest } from "../../analysis/contracts.ts";
-import type { RecordAutomaticMigrationResult } from "../../record/host/types.ts";
 import type { FeedbackCoordinator } from "../../runner/feedback/coordinator.ts";
 import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
@@ -20,7 +19,6 @@ export type ExperimentHostJsonValue =
 export type ExperimentHostRequirements =
   | import("../../record/platform/services.ts").RecordFileSystem
   | import("../../record/platform/services.ts").RecordEntropy
-  | import("../../record/platform/services.ts").RecordGit
   | import("../../coordination/record-leases.ts").RecordCoordination;
 
 export type ExperimentHostOperation =
@@ -191,7 +189,7 @@ export interface ExperimentHostDryPlan {
   readonly lockedPairs: readonly string[];
 }
 
-export type ExperimentHostInvocationPlanResult = (
+export type ExperimentHostInvocationPlanResult =
   | ExperimentHostSelectionProblem
   | {
       readonly status: "ready";
@@ -203,11 +201,7 @@ export type ExperimentHostInvocationPlanResult = (
         readonly occurrences: readonly ExperimentHostJsonValue[];
       };
       readonly dry?: ExperimentHostDryPlan;
-    }
-) & {
-  /** Exact Record Host result for the ordinary-entry migration notice. */
-  readonly automaticMigration: RecordAutomaticMigrationResult;
-};
+    };
 
 export interface ExperimentHostInvocationPlanRequest extends ExperimentHostSelectionInput {
   readonly config: Config;

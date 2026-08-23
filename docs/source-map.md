@@ -30,17 +30,18 @@ Report loader。Host 内部才取得 Scope、Layer、lease、reader、writer 或
 |---|---|
 | Experiment 发现、调度、Invocation-local 并发、共享状态租约、Sandbox 生命周期、reuse 与 receipt | `packages/niceeval/src/runner/{run,lock,shared-state-lease}.ts` 及同目录协作者；由 `experimentHost` 调用 |
 | execution claim 与 Record lease 协调 | `packages/niceeval/src/coordination/` 与 `packages/niceeval/src/record/` 的 Host 实现 |
-| Record Core、Seal manifest、staging / recovery、Run 原子发布与 migration 编解码 | `packages/niceeval/src/record/{model,codec,migration,host}/`；local sidecar 必须纳入 Core、manifest、payload 与 blob inventory |
-| fixed catalog declaration 与各 family collector / decoder | `packages/niceeval/src/record/family/`、`packages/niceeval/src/assertions/record/`、`packages/niceeval/src/o11y/record/`、`packages/niceeval/src/sandbox/record/`、`packages/niceeval/src/runner/source-producer.ts` 与 `packages/niceeval/src/sources/` |
-| Observability 五个 source family | Adapter terminal Turn 进入 `niceeval.agent-turns`；SessionManager context 进入 `niceeval.turn-contexts`；Sandbox wrapper 进入 `niceeval.sandbox-commands`；Runner clock / diagnostic sink 分别进入 `niceeval.runner-activities` 与 `niceeval.runner-diagnostics`。实现落点以 `packages/niceeval/src/{adapters,agents,o11y,sandbox,runner,record}/` 的 capture boundary 与 family declaration 为准。 |
+| Record Core、Seal manifest、staging / recovery、Run 原子发布与 migration 编解码 | `packages/niceeval/src/record/{model,codec,migration,host}/`；portable inventory 与 `.niceeval/coordination/` local state 保持分离 |
+| Attachment definition、source-receipt schema 与 content source builder | `packages/niceeval/src/record/family/`、`packages/niceeval/src/assertions/record/`、`packages/niceeval/src/sandbox/record/` 与 `packages/niceeval/src/sources/` |
+| Runner source-receipt capture authority 与 normalization | `packages/niceeval/src/runner/source-receipts/` 与 `packages/niceeval/src/runner/source-producer.ts` |
+| Observability 五个 source family | Adapter terminal Turn 进入 `niceeval.agent-turns`；SessionManager context 进入 `niceeval.turn-contexts`；Sandbox wrapper 进入 `niceeval.sandbox-commands`；Runner clock / diagnostic sink 分别进入 `niceeval.runner-activities` 与 `niceeval.runner-diagnostics`。实现落点以 `packages/niceeval/src/{adapters,agents,sandbox,runner,record}/` 的 capture boundary 与 family declaration 为准。 |
 | Observability reader-side view 与 source navigation relation | `packages/niceeval/src/analysis/` 的 conversation、usage、commands、timing、diagnostics projection 与 relation；source navigation 连接 Turn Contexts、Runner Activities 和 Sources，不进入 `record/family/` |
 | Assertions current semantic entry、v1→v2 纯迁移与有界 collection receipt | `packages/niceeval/src/assertions/{api,runtime,match}.ts`、`packages/niceeval/src/assertions/record/` 与 `packages/niceeval/src/record/family/assertions/{definition.ts,migrate/1-to-2.ts}` |
 | Scope-bound reader 与按需读取 | `packages/niceeval/src/record/reader/`；只能经 `recordHost` 到达 |
 
 Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 解释，不另建 durable family。
 source receipt 的 `partial` 属于对应 payload；未声明 source 是 `not-recorded`，已声明但 payload、segment 或 blob
-closure 不合法是 `invalid`。这些状态保持 source-local。未知 format / family 的引导是 Record open error，不是
-reader-side aggregate 值。
+closure 不合法是 `invalid`。这些状态保持 source-local。未知 root format 是 open error；未贡献 family 只在
+direct read、reference closure 或完整性检查需要它时返回 `family-definition-required`。
 
 ## Analysis 与 Report
 

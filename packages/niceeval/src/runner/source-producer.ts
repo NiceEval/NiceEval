@@ -34,8 +34,8 @@ import {
 } from "../assertions/runtime.ts";
 import type { AssertionsRuntime } from "../assertions/api.ts";
 import type { AssertionEntryId } from "../assertions/identity.ts";
-import type { TurnId } from "../o11y/record/model.ts";
-import { makeSafeIdentifier } from "../o11y/record/model.ts";
+import type { TurnId } from "../record/family/source-receipt/model.ts";
+import { makeSafeIdentifier } from "../record/family/source-receipt/model.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import type { SourceArtifact, SourceLoc, SourcePathFrame } from "../shared/types.ts";
 import { createSourcesAttachmentWrite } from "../sources/attachment.ts";

@@ -4,7 +4,7 @@ import {
   utf8ByteLength,
   type PositiveSafeInteger,
   type SafeIdentifier,
-} from "../../o11y/record/model.ts";
+} from "../../record/family/source-receipt/model.ts";
 
 /** The durable bound for a provider-native Sandbox identifier. */
 export const MAX_SOURCE_NATIVE_SANDBOX_ID_UTF8_BYTES = 256;

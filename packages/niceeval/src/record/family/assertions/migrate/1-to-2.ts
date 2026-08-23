@@ -1,26 +1,20 @@
-import { createHash } from "node:crypto";
-import { Either, ParseResult, Schema } from "effect";
-import type { RecordBlobRef } from "../../../attachment/blob-ref.ts";
+import { Effect, Either, ParseResult, Schema } from "effect";
+
+import { recordAttachmentMigration } from "../../../attachment/index.ts";
 import { RecordExactParseOptions } from "../../../codec/core.ts";
-import type { RecordAttachmentMaintenanceFacet } from "../../../definition/attachment.ts";
-import { AssertionsAttachmentSchema, AssertionsAttachmentV1Schema } from "../definition.ts";
+import {
+  AssertionsAttachmentSchema,
+  type AssertionsAttachment,
+  type AssertionsAttachmentV1,
+} from "../schema.ts";
+import { assertionsV1, assertionsV2 } from "../version.ts";
 
-function parseAssertionsV1(value: unknown): Schema.Schema.Type<typeof AssertionsAttachmentV1Schema> {
-  const decoded = Schema.decodeUnknownEither(AssertionsAttachmentV1Schema, RecordExactParseOptions)(value);
-  if (Either.isLeft(decoded)) throw new Error("Assertions v1 payload is invalid");
-  return decoded.right;
-}
-
-function decodeAssertionsV1(value: unknown): unknown {
-  parseAssertionsV1(value);
-  return value;
-}
-
-/** Pure adjacent payload transform. Record maintenance exclusively owns physical I/O. */
-function migrateAssertionsV1(value: unknown): unknown {
-  const previous = parseAssertionsV1(value);
+/** Pure logical transform shared by the branded SPI and the current Host bridge. */
+export function migrateAssertionsV1Value(
+  previous: AssertionsAttachmentV1,
+): AssertionsAttachment {
   const migrated = Object.freeze({
-    "entries-data": Object.freeze(previous.entries.map((entry) => Object.freeze({
+    entries: Object.freeze(previous.entries.map((entry) => Object.freeze({
       entryId: entry.entryId,
       display: entry.display,
       criterion: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
@@ -47,58 +41,25 @@ function migrateAssertionsV1(value: unknown): unknown {
       contribution: entry.result.score,
       explanationRetention: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
     }))),
-    "source-sites-data": previous.sourceSites,
+    sourceSites: previous.sourceSites,
   });
-  const decoded = Schema.decodeUnknownEither(AssertionsAttachmentSchema, RecordExactParseOptions)(migrated);
-  if (Either.isLeft(decoded)) {
-    throw new Error(`Assertions v1 migration did not produce a current payload: ${ParseResult.TreeFormatter.formatErrorSync(decoded.left)}`);
+  const validated = Schema.validateEither(
+    AssertionsAttachmentSchema,
+    RecordExactParseOptions,
+  )(migrated);
+  if (Either.isLeft(validated)) {
+    throw new Error(
+      `Assertions v1 migration did not produce a current payload: ${ParseResult.TreeFormatter.formatErrorSync(validated.left)}`,
+    );
   }
-  return migrated;
+  return validated.right;
 }
 
-export const assertionsV1Maintenance: RecordAttachmentMaintenanceFacet = Object.freeze({
-  historicalCodecs: Object.freeze([
-    Object.freeze({
-      schemaVersion: 1,
-      decode: decodeAssertionsV1,
-      verify: (payload: unknown, blobs: readonly { readonly ref: RecordBlobRef; readonly bytes: Uint8Array }[]) => {
-        const previous = parseAssertionsV1(payload);
-        const byRef = new Map(blobs.map((blob) => [blob.ref, blob.bytes] as const));
-        const materials = previous.entries.flatMap((entry) => [entry.subject, ...entry.evidence]);
-        return materials.every((material) => {
-          if (material.kind !== "blob") return true;
-          const bytes = byRef.get(material.ref);
-          return bytes !== undefined &&
-            bytes.byteLength === material.byteLength &&
-            createHash("sha256").update(bytes).digest("hex") === material.sha256;
-        });
-      },
-    }),
-  ]),
-  adjacentMigrations: Object.freeze([
-    Object.freeze({
-      fromSchemaVersion: 1,
-      toSchemaVersion: 2,
-      retention: Object.freeze({
-        retainedFacts: Object.freeze([
-          "display",
-          "decision",
-          "provable-policy",
-          "contribution",
-          "source-sites",
-        ]),
-        droppedFacts: Object.freeze([
-          "criterion",
-          "subject",
-          "evidence",
-          "coverage",
-          "limitations",
-          "result.diagnostic",
-          "result.receipt",
-        ]),
-        rerunRecommendation: "Rerun the affected evaluation to collect current assertion facts.",
-      }),
-      migrate: migrateAssertionsV1,
-    }),
-  ]),
+export const assertionsV1ToV2 = recordAttachmentMigration({
+  from: assertionsV1,
+  to: assertionsV2,
+  migrate: (input) => Effect.sync(() => Object.freeze({
+    value: migrateAssertionsV1Value(input.value),
+    sources: Object.freeze([]),
+  })),
 });

@@ -1,9 +1,5 @@
 import { Context, Effect, Stream } from "effect";
-import type {
-  RecordFileSystemError,
-  RecordGitError,
-  RecordPathKind,
-} from "./errors.ts";
+import type { RecordFileSystemError, RecordPathKind } from "./errors.ts";
 import type { RecordRoot } from "./root.ts";
 
 /**
@@ -171,6 +167,10 @@ export interface RecordFileSystemService {
   readonly writeFile: (
     input: RecordWriteFileInput,
   ) => Effect.Effect<void, RecordFileSystemError>;
+  /** Same-directory fsync + rename commit for an existing portable file. */
+  readonly replaceFileAtomic: (
+    input: Omit<RecordWriteFileInput, "mode">,
+  ) => Effect.Effect<void, RecordFileSystemError>;
   readonly writeFileStream: <E, R>(
     input: RecordWriteFileStreamInput<E, R>,
   ) => Effect.Effect<void, RecordFileSystemError | E, R>;
@@ -265,25 +265,6 @@ export interface RecordFileSystemService {
     input: { readonly root: RecordRoot; readonly runId: string },
   ) => Effect.Effect<boolean, RecordFileSystemError>;
 
-  readonly migrationSentinelPresent: (
-    root: RecordRoot,
-  ) => Effect.Effect<boolean, RecordFileSystemError>;
-  readonly createMigrationSentinel: (
-    root: RecordRoot,
-    restoreCommit: string,
-    expectedRelativePaths: readonly string[],
-  ) => Effect.Effect<void, RecordFileSystemError>;
-  /** Returns the exact physical plan recorded by a current migration sentinel. */
-  readonly readMigrationSentinel: (
-    root: RecordRoot,
-  ) => Effect.Effect<{
-    readonly restoreCommit: string;
-    readonly expectedRelativePaths: readonly string[];
-  } | undefined, RecordFileSystemError>;
-  readonly removeMigrationSentinel: (
-    root: RecordRoot,
-  ) => Effect.Effect<void, RecordFileSystemError>;
-
   /** The caller already owns the exclusive maintenance lease before deletion. */
   readonly deleteIncompleteRun: (
     input: { readonly root: RecordRoot; readonly runId: string },
@@ -302,33 +283,3 @@ export interface RecordEntropyService {
 export class RecordEntropy extends Context.Tag(
   "@niceeval/record/RecordEntropy",
 )<RecordEntropy, RecordEntropyService>() {}
-
-/**
- * A migration asks whether local Git can restore the current portable root;
- * absence of proof is data for the CLI confirmation flow, not an implicit OK.
- */
-export type RecordBackupState =
-  | { readonly state: "git-restore-point"; readonly commit: string }
-  | { readonly state: "not-git-worktree" }
-  | { readonly state: "root-outside-worktree" }
-  | {
-      readonly state: "portable-root-dirty";
-      readonly entries: readonly string[];
-    };
-
-export interface RecordGitService {
-  readonly inspectBackupState: (
-    root: RecordRoot,
-  ) => Effect.Effect<RecordBackupState, RecordGitError>;
-  /** Proves HEAD is unchanged and every dirty path is an expected migration write. */
-  readonly recoveryChangesAreExpected: (input: {
-    readonly root: RecordRoot;
-    readonly restoreCommit: string;
-    readonly expectedPaths: readonly RecordPortablePath[];
-  }) => Effect.Effect<boolean, RecordGitError | RecordFileSystemError>;
-}
-
-export class RecordGit extends Context.Tag("@niceeval/record/RecordGit")<
-  RecordGit,
-  RecordGitService
->() {}

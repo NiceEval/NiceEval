@@ -1,33 +1,15 @@
 import type { Effect } from "effect";
 import type {
+  AnyRecordAttachmentVersion,
+  RecordAttachmentCatalog,
+  RecordAttachmentFamilyDefinition,
+  RecordAttachmentVersionValue,
+} from "../attachment/index.ts";
+import type {
   RecordAttachmentBlobs,
   RecordAttachmentPayloadSnapshot,
   RecordAttachmentWrite,
 } from "../attachment/types.ts";
-import type {
-  AssertionsAttachment,
-} from "../family/assertions/definition.ts";
-import type {
-  ArtifactsAttachment,
-} from "../family/artifacts.ts";
-import type {
-  FileChangesAttachment,
-} from "../family/file-changes.ts";
-import type { AgentTurnsAttachment } from "../family/agent-turns/definition.ts";
-import type { TurnContextsAttachment } from "../family/turn-contexts/definition.ts";
-import type { SandboxCommandsAttachment } from "../family/sandbox-commands/definition.ts";
-import type {
-  AttemptRunnerActivitiesAttachment,
-  RunRunnerActivitiesAttachment,
-} from "../family/runner-activities/definition.ts";
-import type {
-  AttemptRunnerDiagnosticsAttachment,
-  RunRunnerDiagnosticsAttachment,
-} from "../family/runner-diagnostics/definition.ts";
-import type {
-  SourcesAttachment,
-} from "../family/sources.ts";
-import type { SourceNavigationRelation } from "./source-navigation-relation.ts";
 import type {
   AttemptDocument,
   MemberDocument,
@@ -43,19 +25,17 @@ import type {
   UtcMillis,
 } from "../model/identifiers.ts";
 import type { RecordRoot } from "../platform/root.ts";
-import type { RecordBackupState } from "../platform/services.ts";
 import type { RecordCoreRead, RecordWarning } from "../model/read-state.ts";
 import type { NonEmptyRecordIssues } from "../errors/record-errors.ts";
 import type {
   RecordMaintenanceError,
   RecordMaintenanceOpenError,
+  RecordCompletenessError,
   RecordReaderOpenError,
   RecordReaderReadError,
 } from "../reader/errors.ts";
 import type { RecordWriteError } from "../writer/types.ts";
-import type { RecordAttachmentMigrationRetention } from "../definition/attachment.ts";
 import type { RecordFileSystemError } from "../platform/errors.ts";
-import type { RecordAutoMigrationGitSaveRequired } from "../reader/errors.ts";
 
 export const selectedRunRefBrand: unique symbol = Symbol(
   "@niceeval/record/SelectedRunRef",
@@ -86,18 +66,20 @@ export interface SelectedAttemptRef {
   readonly [selectedAttemptRefBrand]: () => void;
 }
 
-/** Owner handle for a later lazy fixed-family read. */
-export interface SelectedOwnerRef {
+/** Owner handle for a later catalog-authorized Attachment read. */
+export interface SelectedOwnerRef<out Owner extends "run" | "attempt" = "run" | "attempt"> {
   readonly [selectedOwnerRefBrand]: () => void;
+  /** Nominal type witness only; the actual owner identity stays Host-private. */
+  readonly __owner?: () => Owner;
 }
 
 /**
- * The Host exposes the fixed-family states without importing maintenance.
+ * The Host exposes current Attachment states without importing maintenance.
  * A reachable older version is migration-required. Any other well-formed,
  * non-current version remains unsupported data; malformed envelopes and
  * closures are invalid, never a reader-wide failure.
  */
-export type FixedFamilyRead<Payload> =
+export type RecordAttachmentRead<Payload> =
   | {
       readonly state: "migration-required";
       readonly family: string;
@@ -115,44 +97,6 @@ export type FixedFamilyRead<Payload> =
   | { readonly state: "not-recorded" }
   | { readonly state: "unsupported"; readonly family: string; readonly schemaVersion: number }
   | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
-
-/**
- * These aliases are deliberately owner- and method-specific. Runtime checks
- * additionally require the one installed static descriptor for each method,
- * so a caller cannot introduce another family through this boundary.
- */
-export type SourcesWrite<E = never, R = never> = RecordAttachmentWrite<
-  "run",
-  E,
-  R
->;
-export type RunArtifactsWrite<E = never, R = never> = RecordAttachmentWrite<
-  "run",
-  E,
-  R
->;
-export type AssertionsWrite<E = never, R = never> = RecordAttachmentWrite<
-  "attempt",
-  E,
-  R
->;
-export type AgentTurnsWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
-export type TurnContextsWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
-export type SandboxCommandsWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
-export type AttemptRunnerActivitiesWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
-export type AttemptRunnerDiagnosticsWrite<E = never, R = never> = RecordAttachmentWrite<"attempt", E, R>;
-export type RunRunnerActivitiesWrite<E = never, R = never> = RecordAttachmentWrite<"run", E, R>;
-export type RunRunnerDiagnosticsWrite<E = never, R = never> = RecordAttachmentWrite<"run", E, R>;
-export type FileChangesWrite<E = never, R = never> = RecordAttachmentWrite<
-  "attempt",
-  E,
-  R
->;
-export type AttemptArtifactsWrite<E = never, R = never> = RecordAttachmentWrite<
-  "attempt",
-  E,
-  R
->;
 
 export type RecordSelectionProblem =
   | {
@@ -202,7 +146,7 @@ export interface RecordSelection {
 
 export interface ReadableRun {
   readonly ref: SelectedRunRef;
-  readonly owner: SelectedOwnerRef;
+  readonly owner: SelectedOwnerRef<"run">;
   readonly document: RunDocument;
   readonly members: readonly {
     readonly document: MemberDocument;
@@ -212,7 +156,7 @@ export interface ReadableRun {
 
 export interface ReadableAttempt {
   readonly ref: SelectedAttemptRef;
-  readonly owner: SelectedOwnerRef;
+  readonly owner: SelectedOwnerRef<"attempt">;
   readonly document: AttemptDocument;
   /**
    * Verified while resolving the exact nominal Attempt reference. It is the
@@ -221,7 +165,7 @@ export interface ReadableAttempt {
    * substituting the selected target Run.
    */
   readonly origin: {
-    readonly owner: SelectedOwnerRef;
+    readonly owner: SelectedOwnerRef<"run">;
     readonly runId: RunId;
     readonly experimentId: ExperimentId;
     readonly startedAt: UtcMillis;
@@ -239,45 +183,26 @@ export interface RecordReadSession {
   readonly readAttempt: (
     ref: SelectedAttemptRef,
   ) => Effect.Effect<RecordCoreRead<ReadableAttempt>, RecordReaderReadError>;
-  readonly readAssertions: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<AssertionsAttachment>, RecordReaderReadError>;
-  readonly readAgentTurns: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<AgentTurnsAttachment>, RecordReaderReadError>;
-  readonly readTurnContexts: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<TurnContextsAttachment>, RecordReaderReadError>;
-  readonly readSandboxCommands: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<SandboxCommandsAttachment>, RecordReaderReadError>;
-  readonly readAttemptRunnerActivities: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<AttemptRunnerActivitiesAttachment>, RecordReaderReadError>;
-  readonly readAttemptRunnerDiagnostics: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<AttemptRunnerDiagnosticsAttachment>, RecordReaderReadError>;
-  readonly readFileChanges: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<FileChangesAttachment>, RecordReaderReadError>;
-  readonly readSourceNavigationRelation: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<SourceNavigationRelation>, RecordReaderReadError>;
-  readonly readAttemptArtifacts: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<ArtifactsAttachment>, RecordReaderReadError>;
-  readonly readSources: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<SourcesAttachment>, RecordReaderReadError>;
-  readonly readRunRunnerActivities: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<RunRunnerActivitiesAttachment>, RecordReaderReadError>;
-  readonly readRunRunnerDiagnostics: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<RunRunnerDiagnosticsAttachment>, RecordReaderReadError>;
-  readonly readRunArtifacts: (
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<ArtifactsAttachment>, RecordReaderReadError>;
+  readonly read: <
+    Owner extends "run" | "attempt",
+    Family extends string,
+    Current extends AnyRecordAttachmentVersion,
+  >(
+    owner: SelectedOwnerRef<Owner>,
+    definition: RecordAttachmentFamilyDefinition<Owner, Family, Current>,
+  ) => Effect.Effect<
+    RecordAttachmentRead<RecordAttachmentVersionValue<Current>>,
+    RecordReaderReadError
+  >;
+  readonly requireComplete: (
+    selection: RecordSelection,
+  ) => Effect.Effect<RecordCompleteView, RecordCompletenessError>;
+}
+
+/** Complete only for this session's frozen selection and immutable catalog. */
+export interface RecordCompleteView {
+  readonly selection: RecordSelection;
+  readonly attachments: RecordAttachmentCatalog;
 }
 
 export interface CreateRunRequest {
@@ -307,30 +232,14 @@ export interface AttemptWriteSession {
   readonly complete: (
     outcome: AttemptDocument["outcome"],
   ) => Effect.Effect<void, RecordWriteError>;
-  readonly writeAssertions: <E, R>(
-    value: AssertionsWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeAgentTurns: <E, R>(
-    value: AgentTurnsWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeTurnContexts: <E, R>(
-    value: TurnContextsWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeSandboxCommands: <E, R>(
-    value: SandboxCommandsWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeAttemptRunnerActivities: <E, R>(
-    value: AttemptRunnerActivitiesWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeAttemptRunnerDiagnostics: <E, R>(
-    value: AttemptRunnerDiagnosticsWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeFileChanges: <E, R>(
-    value: FileChangesWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeAttemptArtifacts: <E, R>(
-    value: AttemptArtifactsWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
+  readonly attach: OwnerAttachmentWriter<"attempt">;
+}
+
+export interface OwnerAttachmentWriter<Owner extends "run" | "attempt"> {
+  <Family extends string, Current extends AnyRecordAttachmentVersion, E, R>(
+    definition: RecordAttachmentFamilyDefinition<Owner, Family, Current>,
+    preparedWrite: RecordAttachmentWrite<Owner, E, R, Family, Current["version"]>,
+  ): Effect.Effect<void, RecordWriteError | E, R>;
 }
 
 /** One session owns exactly one freshly exclusive RunId directory. */
@@ -358,18 +267,7 @@ export interface RunWriteSession {
     readonly slotId: SlotId;
     readonly action: "not-dispatched" | "interrupted";
   }) => Effect.Effect<void, RecordWriteError>;
-  readonly writeSources: <E, R>(
-    value: SourcesWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeRunRunnerActivities: <E, R>(
-    value: RunRunnerActivitiesWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeRunRunnerDiagnostics: <E, R>(
-    value: RunRunnerDiagnosticsWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
-  readonly writeRunArtifacts: <E, R>(
-    value: RunArtifactsWrite<E, R>,
-  ) => Effect.Effect<void, RecordWriteError | E, R>;
+  readonly attach: OwnerAttachmentWriter<"run">;
   readonly seal: (
     completion: RunCompletion,
   ) => Effect.Effect<RecordSealReceipt, RecordWriteError>;
@@ -382,15 +280,13 @@ export interface ReferenceRunWriteSession {
   readonly referenceAttempt: RunWriteSession["referenceAttempt"];
   readonly recordAcceptedMembership: RunWriteSession["recordAcceptedMembership"];
   readonly recordTerminalMember: RunWriteSession["recordTerminalMember"];
-  readonly writeRunRunnerActivities: RunWriteSession["writeRunRunnerActivities"];
-  readonly writeRunRunnerDiagnostics: RunWriteSession["writeRunRunnerDiagnostics"];
-  readonly writeRunArtifacts: RunWriteSession["writeRunArtifacts"];
+  readonly attach: RunWriteSession["attach"];
   readonly seal: RunWriteSession["seal"];
 }
 
 export type RecordFormatInspection =
-  | { readonly state: "already-current"; readonly format: "niceeval.record.source-receipts" }
-  | { readonly state: "migration-required"; readonly format: "niceeval.record.source-receipts" }
+  | { readonly state: "already-current"; readonly format: "niceeval.record.attachments" }
+  | { readonly state: "migration-required"; readonly format: "niceeval.record.attachments" }
   | { readonly state: "unsupported-format"; readonly format: string };
 
 export interface RecordAttachmentMigrationTarget {
@@ -400,19 +296,25 @@ export interface RecordAttachmentMigrationTarget {
   readonly attemptId?: AttemptId;
   readonly fromSchemaVersion: number;
   readonly toSchemaVersion: number;
-  readonly retention: RecordAttachmentMigrationRetention;
+  readonly retention: {
+    readonly retainedFacts: readonly string[];
+    readonly droppedFacts: readonly string[];
+    readonly rerunRecommendation: string | null;
+  };
 }
 
 export type RecordMigrationPlan =
   | {
       readonly state: "already-current";
-      readonly format: "niceeval.record.source-receipts";
+      readonly format: "niceeval.record.attachments";
     }
   | {
       readonly state: "migration-required";
-      readonly format: "niceeval.record.source-receipts";
-      readonly backup: RecordBackupState;
+      readonly format: "niceeval.record.attachments";
+      readonly sourceFormat: "niceeval.record.attachments" | "niceeval.record.source-receipts";
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
+      readonly pendingSeals: readonly RunId[];
+      readonly resumedSteps: number;
     }
   | {
       readonly state: "unsupported-format";
@@ -420,33 +322,16 @@ export type RecordMigrationPlan =
     };
 
 export type RecordMigrationReceipt =
-  | { readonly state: "already-current"; readonly format: "niceeval.record.source-receipts" }
+  | { readonly state: "already-current"; readonly format: "niceeval.record.attachments" }
   | {
       readonly state: "migrated";
-      readonly format: "niceeval.record.source-receipts";
+      readonly format: "niceeval.record.attachments";
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
+      readonly committed: number;
+      readonly skipped: number;
+      readonly failed: number;
+      readonly rebuiltSeals: readonly RunId[];
     };
-
-/**
- * Closed result of the ordinary-entry automatic migration preflight. A caller
- * opens its current reader only after this operation returns, so read and
- * maintenance leases can never overlap.
- */
-export type RecordAutomaticMigrationResult =
-  | { readonly state: "record-missing" }
-  | { readonly state: "already-current" }
-  | {
-      readonly state: "migrated";
-      readonly restoreCommit: string;
-      readonly attachments: readonly RecordAttachmentMigrationTarget[];
-    };
-
-export type RecordAutomaticMigrationError =
-  | RecordFileSystemError
-  | RecordReaderOpenError
-  | RecordMaintenanceOpenError
-  | RecordMaintenanceError
-  | RecordAutoMigrationGitSaveRequired;
 
 /** Closed, presentation-neutral plan for explicit incomplete-Run cleanup. */
 export type RecordCleanOperationPlan =
@@ -472,36 +357,36 @@ export interface RecordCleanOperationReceipt {
 export type RecordMigrateOperationPlan =
   | {
       readonly _tag: "RecordMigrationAlreadyCurrent";
-      readonly format: "niceeval.record.source-receipts";
+      readonly format: "niceeval.record.attachments";
     }
   | {
       readonly _tag: "RecordMigrationUnsupported";
       readonly format: string;
     }
-  | {
-      readonly _tag: "RecordMigrationRestoreRequired";
-      readonly format: "niceeval.record.source-receipts";
-      readonly backup: Exclude<RecordBackupState, { readonly state: "git-restore-point" }>;
-      readonly attachments: readonly RecordAttachmentMigrationTarget[];
-    }
   | RecordMigrateReadyPlan;
 
 export interface RecordMigrateReadyPlan {
   readonly _tag: "RecordMigrationReady";
-  readonly format: "niceeval.record.source-receipts";
-  readonly restoreCommit: string;
+  readonly format: "niceeval.record.attachments";
+  readonly sourceFormat: "niceeval.record.attachments" | "niceeval.record.source-receipts";
   readonly attachments: readonly RecordAttachmentMigrationTarget[];
+  readonly pendingSeals: readonly RunId[];
+  readonly resumedSteps: number;
 }
 
 export type RecordMigrateOperationReceipt =
   | {
       readonly _tag: "RecordMigrationAlreadyCurrent";
-      readonly format: "niceeval.record.source-receipts";
+      readonly format: "niceeval.record.attachments";
     }
   | {
       readonly _tag: "RecordMigrationApplied";
-      readonly format: "niceeval.record.source-receipts";
+      readonly format: "niceeval.record.attachments";
       readonly attachments: readonly RecordAttachmentMigrationTarget[];
+      readonly committed: number;
+      readonly skipped: number;
+      readonly failed: number;
+      readonly rebuiltSeals: readonly RunId[];
     };
 
 /** Exhaustive failure vocabulary consumed by Record-owned CLI presentation. */
@@ -511,29 +396,12 @@ export type RecordMaintenanceOperationFailure =
       readonly code: "record-maintenance-busy";
     }
   | {
-      readonly _tag: "RecordMigrationInterrupted";
-      readonly code: "record-migration-interrupted";
-      readonly restoreCommit?: string;
-      readonly restoreSafe?: boolean;
-    }
-  | {
       readonly _tag: "RecordMigrationPlanStale";
       readonly code: "record-migration-plan-stale";
     }
   | {
-      readonly _tag: "RecordMigrationGitRestoreRequired";
-      readonly code: "record-migration-git-restore-required";
-    }
-  | {
       readonly _tag: "RecordMigrationInvalid";
       readonly code: "record-migration-invalid";
-    }
-  | {
-      readonly _tag: "RecordMigrationRecoveryRequired";
-      readonly code: "record-migration-recovery-required";
-      readonly causeCode: string;
-      readonly restoreCommit: string;
-      readonly restoreSafe: boolean;
     }
   | {
       readonly _tag: "RecordFormatUnsupported";
@@ -557,20 +425,6 @@ export interface RecordMaintenanceSession {
 }
 
 export interface RecordHostSDK {
-  /**
-   * Ordinary-entry read check followed, when required, by one Git-safe
-   * maintenance migration. Every internally acquired Scope is closed before
-   * this Effect completes; the caller must then perform a fresh current open.
-   */
-  readonly ensureAutomaticMigration: (input: {
-    readonly root: RecordRoot;
-  }) => Effect.Effect<
-    RecordAutomaticMigrationResult,
-    RecordAutomaticMigrationError,
-    import("../platform/services.ts").RecordFileSystem
-      | import("../platform/services.ts").RecordGit
-      | import("../../coordination/record-leases.ts").RecordCoordination
-  >;
   readonly current: {
     readonly openRead: (input: {
       readonly root: RecordRoot;
@@ -606,7 +460,6 @@ export interface RecordHostSDK {
       RecordMigrateOperationPlan,
       RecordMaintenanceOperationFailure,
       import("../platform/services.ts").RecordFileSystem
-        | import("../platform/services.ts").RecordGit
         | import("../../coordination/record-leases.ts").RecordCoordination
     >;
     readonly applyMigrate: (input: {
@@ -616,11 +469,10 @@ export interface RecordHostSDK {
       RecordMigrateOperationReceipt,
       RecordMaintenanceOperationFailure,
       import("../platform/services.ts").RecordFileSystem
-        | import("../platform/services.ts").RecordGit
         | import("../../coordination/record-leases.ts").RecordCoordination
     >;
     readonly open: (input: {
       readonly root: RecordRoot;
-    }) => Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../platform/services.ts").RecordGit | import("../../coordination/record-leases.ts").RecordCoordination>;
+    }) => Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | import("../platform/services.ts").RecordFileSystem | import("../../coordination/record-leases.ts").RecordCoordination>;
   };
 }

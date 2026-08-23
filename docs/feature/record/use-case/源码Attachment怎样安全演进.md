@@ -28,22 +28,22 @@ Sources schemaVersion `2` 发布时，NiceEval 必须同时判断 `1 → 2` 是�
 - 目标 schema 能以 exact legacy state 表达缺失事实时，migration 写该 state；
 - 无法如实表达时，不发布“看似成功”的 converter；计划拒绝改盘，历史 bytes 保持不动。
 
-步骤只读取 `SourcesAttachment` 的 self-contained payload 和 closure。它不能运行 Eval、重新执行依赖发现、
-读取当前 worktree 或调用第三方 code。目标 blob 重新属于 schemaVersion `2` 的 own closure，不能把旧 `RecordBlobRef`、path
-或 key 冒充新 ref。
+步骤只读取 `SourcesAttachment` 的 self-contained value 和 closure。它不能运行 Eval、重新执行依赖发现、
+读取当前 worktree 或动态加载 catalog 外代码。目标 content 重新属于 schemaVersion `2` 的 own closure，不能把旧
+handle、path 或 digest 冒充新 handle。
 
-已知 `niceeval.sources` 的旧 schemaVersion 使 ordinary open 在 session 形成前拒绝，再由入口的
-automatic maintenance gate 决定是否可无确认迁移。独立未知 future family 不会被当成 Sources 的旧版本；
-它会让整份 Record fail closed，也不会进入 migration plan。
+已知 `niceeval.sources` 的旧 schemaVersion 使 direct read 返回 `migration-required`；只有显式 `niceeval migrate`
+可以运行相邻步骤。独立未贡献 family 不会被当成 Sources 的旧版本，也不阻塞无关局部读取；complete migration
+仍要求调用方贡献对应 definition。
 
 ## Source identity 保持或整体改变
 
 只要 `SourceItemId`、path、digest 和 source-site join 的语义不变，schemaVersion `2` 可以单独演进 Sources payload。
 source-site reader 继续以相同 identity 连接 origin Run 的 manifest。
 
-如果 `SourceItemId` 或 source-site join 的语义需要改变，migration 必须把 Sources 与依赖该 identity 的
-Assertions / diagnostics mapping 作为同一 atomic migration unit。不能分别迁移它们，也不能按 path、digest、
-数组位置或当前 worktree 猜 mapping。Run 要么保留完整旧事实，要么以一致的新 identity 发布。
+如果 `SourceItemId` 或 source-site join 的语义需要改变，migration plan 必须同时包含 Sources 与依赖该 identity 的
+Assertions / diagnostics definitions。各 Attachment 仍以自己的 envelope 提交，只有全部 current 后才替换 Seal。
+步骤不能按 path、digest、数组位置或当前 worktree 猜 mapping。
 
 ## 什么仍然不是 Sources migration
 

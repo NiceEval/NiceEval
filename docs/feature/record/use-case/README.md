@@ -38,6 +38,6 @@ execution claim，重新读取已封口历史，再决定引用或执行。承�
 | 让多个 Attempt 和 reference Run 读取同一源码快照 | [多个 Attempt 怎样共用源码快照](多个Attempt怎样共用源码快照.md) |
 | 把本地 import 与 loader 输入纳入源码闭包 | [跨文件 Eval 怎样进入源码闭包](跨文件Eval怎样进入源码闭包.md) |
 | 演进 Sources 而不伪造历史事实 | [源码 Attachment 怎样安全演进](源码Attachment怎样安全演进.md) |
-| 识别格式、运行 migration 或用 Git 从中断中恢复 | [显式 migration](显式迁移Record-major.md) |
+| 识别格式、运行可续跑 migration，并自行用 Git 保存历史 | [显式 migration](显式迁移Record-major.md) |
 
 统计解释进入 Analysis；终端、网页与静态呈现进入 [Reports](../../reports/README.md)。

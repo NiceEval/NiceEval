@@ -1,8 +1,4 @@
 import { Either, Stream } from "effect";
-import {
-  isRecordAttachmentOwnerDefinition,
-  type RecordAttachmentOwnerDefinition,
-} from "../definition/attachment.ts";
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import {
   getRecordBlobRefBuilderOwner,
@@ -13,13 +9,12 @@ import {
 } from "./blob-ref.ts";
 import {
   recordAttachmentClosureInvalid,
-  recordAttachmentDefinitionInvalid,
   recordAttachmentIssue,
   recordAttachmentPayloadInvalid,
   type RecordAttachmentClosureInvalid,
-  type RecordAttachmentDefinitionError,
   type RecordAttachmentIssue,
   type RecordAttachmentPayloadInvalid,
+  type RecordAttachmentSpiFailure,
 } from "./errors.ts";
 import {
   fixedAttachmentWriteSpecBrand,
@@ -71,6 +66,7 @@ const blobSources = new WeakMap<object, BlobSourceRuntime>();
 const blobDrafts = new WeakMap<object, DraftRuntime>();
 const writes = new WeakMap<object, WriteRuntime>();
 const fixedWriteSpecs = new WeakSet<object>();
+const claimedPreparedBuilders = new WeakSet<object>();
 
 const recordBlobHandleInvalid = Object.freeze({
   code: "record-blob-handle-invalid" as const,
@@ -106,12 +102,6 @@ function closureInvalid(): RecordAttachmentClosureInvalid {
   ]);
 }
 
-function fixedSpecInvalid(): RecordAttachmentDefinitionError {
-  return recordAttachmentDefinitionInvalid([
-    recordAttachmentIssue("record-attachment-family-invalid", []),
-  ]);
-}
-
 export { isRecordBlobRef, makeRecordBlobRef } from "./blob-ref.ts";
 
 /** Build a source capability from an Effect stream; raw bytes never enter this API. */
@@ -135,6 +125,7 @@ function makeBuilder(): { readonly builder: RecordAttachmentBlobBuilder; readonl
       const ref = makeRecordBlobRef(runtime.owner);
       const draft = {
         ref,
+        content: ref,
         [recordAttachmentBlobDraftBrand]: () =>
           recordAttachmentTypeWitness<{ readonly error: E; readonly requirements: R }>(),
       } as unknown as RecordAttachmentBlobDraft<E, R>;
@@ -149,6 +140,18 @@ function makeBuilder(): { readonly builder: RecordAttachmentBlobBuilder; readonl
     [recordAttachmentBlobBuilderBrand]: () => recordAttachmentTypeWitness<void>(),
   } as unknown as RecordAttachmentBlobBuilder;
   return Object.freeze({ builder: Object.freeze(builder), runtime });
+}
+
+/**
+ * Prepare source drafts before a family value is assembled. The returned
+ * drafts share one unforgeable Attachment-private namespace; no Stream is
+ * consumed here.
+ */
+export function makeRecordAttachmentBlobDrafts<const Blobs extends RecordBlobDrafts>(
+  build: (blobs: RecordAttachmentBlobBuilder) => Blobs,
+): Blobs {
+  const { builder } = makeBuilder();
+  return build(builder);
 }
 
 function isJsonArrayIndex(key: string): boolean {
@@ -223,56 +226,19 @@ function deepFreezePayload<Payload>(
   return value as RecordAttachmentPayloadSnapshot<Payload>;
 }
 
-function encodeThroughCodec<Payload>(
-  ownerDefinition: RecordAttachmentOwnerDefinition<RecordAttachmentOwner, Payload>,
-  payload: Payload,
-): Either.Either<RecordAttachmentJson, RecordAttachmentPayloadInvalid> {
-  const encoded = ownerDefinition.codec.encode(payload);
-  if (Either.isLeft(encoded)) return Either.left(payloadInvalid());
-  return isAttachmentJson(encoded.right)
-    ? Either.right(encoded.right)
-    : Either.left(payloadInvalid());
-}
-
-function decodeThroughCodec<Payload>(
-  ownerDefinition: RecordAttachmentOwnerDefinition<RecordAttachmentOwner, Payload>,
-  input: unknown,
-): Either.Either<Payload, RecordAttachmentPayloadInvalid> {
-  const decoded = ownerDefinition.codec.decode(input);
-  if (Either.isLeft(decoded)) return Either.left(payloadInvalid());
-  return Either.right(decoded.right as Payload);
-}
-
-/**
- * Mint the sole owner-local primitive from a static declaration value. This is
- * deliberately not a registration API: all identity comes from the caller's
- * exact fixed declaration and no global table is kept here.
- */
-export function makeFixedAttachmentWriteSpec<
+/** @internal Mint the same low-level primitive for the generic family algebra. */
+export function makeRecordAttachmentWriteSpec<
   Owner extends RecordAttachmentOwner,
   Payload,
->(ownerDefinition: RecordAttachmentOwnerDefinition<Owner, Payload>): Either.Either<
-  FixedAttachmentWriteSpec<Owner, Payload>,
-  RecordAttachmentDefinitionError
-> {
-  if (!isRecordAttachmentOwnerDefinition(ownerDefinition)) {
-    return Either.left(fixedSpecInvalid());
-  }
-  const exactOwner = ownerDefinition as RecordAttachmentOwnerDefinition<RecordAttachmentOwner, Payload>;
+>(input: Omit<FixedAttachmentWriteSpec<Owner, Payload>, typeof fixedAttachmentWriteSpecBrand>): FixedAttachmentWriteSpec<Owner, Payload> {
   const spec = {
-    owner: ownerDefinition.owner,
-    family: ownerDefinition.family,
-    schemaVersion: ownerDefinition.schemaVersion,
-    encodePayload: (payload: Payload) => encodeThroughCodec(exactOwner, payload),
-    decodePayload: (inputValue: unknown) => decodeThroughCodec<Payload>(exactOwner, inputValue),
-    refs: ownerDefinition.refs,
-    budget: Object.freeze({ ...ownerDefinition.budget }),
-    verify: ownerDefinition.verify,
+    ...input,
+    budget: Object.freeze({ ...input.budget }),
     [fixedAttachmentWriteSpecBrand]: () =>
       recordAttachmentTypeWitness<{ readonly owner: Owner; readonly payload: Payload }>(),
-  } as unknown as FixedAttachmentWriteSpec<Owner, Payload>;
+  } as FixedAttachmentWriteSpec<Owner, Payload>;
   fixedWriteSpecs.add(spec);
-  return Either.right(Object.freeze(spec));
+  return Object.freeze(spec);
 }
 
 function validateProjectedRefs(
@@ -387,6 +353,72 @@ export function makeFixedRecordAttachmentWrite<
     build: buildRuntime,
   }));
   return Object.freeze(write);
+}
+
+/** @internal Family.prepare(value, sources) adapter over the existing draft primitive. */
+export function makeFixedRecordAttachmentWriteFromDrafts<
+  Owner extends RecordAttachmentOwner,
+  Payload,
+  const Blobs extends RecordBlobDrafts,
+>(
+  fixed: FixedAttachmentWriteSpec<Owner, Payload>,
+  payload: Payload,
+  blobs: Blobs,
+): RecordAttachmentWrite<Owner, RecordBlobErrors<Blobs>, RecordBlobRequirements<Blobs>> {
+  const blobArray = Array.isArray(blobs) ? blobs : undefined;
+  let builder: BuilderRuntime | undefined = blobArray?.length === 0
+    ? makeBuilder().runtime
+    : undefined;
+  if (blobArray !== undefined) {
+    for (const draft of blobArray) {
+      const runtime = isObject(draft) ? blobDrafts.get(draft) : undefined;
+      if (runtime === undefined || (builder !== undefined && runtime.builder !== builder)) {
+        builder = undefined;
+        break;
+      }
+      builder = runtime.builder;
+    }
+  }
+  if (builder !== undefined && claimedPreparedBuilders.has(builder)) builder = undefined;
+  const validFixed = isObject(fixed) && fixedWriteSpecs.has(fixed);
+  const write = {
+    [recordAttachmentWriteBrand]: () =>
+      recordAttachmentTypeWitness<{
+        readonly owner: Owner;
+        readonly error: RecordBlobErrors<Blobs>;
+        readonly requirements: RecordBlobRequirements<Blobs>;
+        readonly family: string;
+        readonly schemaVersion: number;
+      }>(),
+  } as unknown as RecordAttachmentWrite<Owner, RecordBlobErrors<Blobs>, RecordBlobRequirements<Blobs>>;
+  const runtime = Object.freeze({
+    fixed: validFixed && builder !== undefined
+      ? fixed as FixedAttachmentWriteSpec<RecordAttachmentOwner, unknown>
+      : undefined,
+    builder,
+    build: builder === undefined ? undefined : Object.freeze({ payload, blobs }),
+  });
+  writes.set(write, runtime);
+  if (builder !== undefined) claimedPreparedBuilders.add(builder);
+  return Object.freeze(write);
+}
+
+/** Owner-scoped writer runtime gate; generic type arguments are not authority. */
+export function validateRecordAttachmentWriteOwner(
+  expected: RecordAttachmentOwner,
+  write: RecordAttachmentWrite<RecordAttachmentOwner, unknown, unknown>,
+): Either.Either<void, RecordAttachmentSpiFailure> {
+  const runtime = isObject(write) ? writes.get(write) : undefined;
+  if (runtime?.fixed === undefined) {
+    return Either.left(Object.freeze({ code: "content-closure-failed" }));
+  }
+  return runtime.fixed.owner === expected
+    ? Either.right(undefined)
+    : Either.left(Object.freeze({
+        code: "owner-mismatch",
+        expected,
+        actual: runtime.fixed.owner,
+      }));
 }
 
 /** Pure closure check used before any blob Stream is consumed. */

@@ -1,12 +1,18 @@
 # Persisted Record handoff
 
 `e2e/migrate/` 承载 producer 写入的 opaque Record，供另一个进程中的 candidate 通过安装后的
-`niceeval migrate`、`show`、`clean` 与 Report 入口读取。该 Repo 归属 Record 域，不把目录布局变成
-普通用户或测试作者 API，也不取代公开 Record API owner。
+`niceeval migrate`、`show`、`clean` 与 Report 入口读取。它也从安装后的 `niceeval/record` 验证公开
+Attachment composition。该 Repo 归属 Record 域，不把目录布局变成普通用户或测试作者 API。
 
-current root identity 固定为 `niceeval.record.source-receipts`。旧 `niceeval.record` aggregate 是独立的
-beta legacy format。它没有把 aggregate Observability 拆成 source receipts 所需的 capture authority 与
-segment provenance，因此 current 不自动转换它。
+## Third-party Attachment family composition
+
+`third-party-family.test.ts` 从安装后的 `niceeval/record` 定义两个 Run-owned family，并把它们显式组成 writer
+Host。另一个 reader Host 只贡献其中一个 definition：已贡献 family 仍可局部读回；直接读取未贡献 family 返回
+`family-definition-required`，`requireComplete()` 也 fail closed。这个 owner 证明第三方 definition 不依赖全局
+registry，局部读取不会因无关未知 inventory 失败，而完整操作不能把未知 bytes 当作成功。
+
+current root identity 固定为 `niceeval.record.attachments`。`niceeval.record.source-receipts` 是本 Repo 验证的
+受支持 predecessor；更早的 `niceeval.record` aggregate 是独立 beta legacy format，不进入这条 migration。
 
 ## Current-to-current handoff bootstrap
 
@@ -53,37 +59,35 @@ future schemaVersion，用于区分 `unsupported-format` 与 payload/schema inva
 display、可证明 decision/policy/contribution 与 source sites 按声明保留；criterion、subject、evidence 与旧
 diagnostic 不可证明，因此丢弃并给出 rerun 建议。required-unavailable gate 迁移后仍公开显示为 errored。
 
-该 owner 的产品结果只从 CLI `show` 读取。它仅在同一文件保留一个窄的物理 rewrite 例外：核对 root identity
-bytes 未变、Assertions envelope/payload 已成为 v2，以及被声明丢弃的 own blob 已移除。它不扫描或断言
-Observability/source-navigation 私有布局。
+该 owner 的产品结果只从 CLI `show` 读取。它不扫描或断言 Attachment、Observability 或 source-navigation
+私有布局；第二次公开 migration 的 `already-current` 结果证明操作可续跑。
 
 ## Interrupted migration recovery
 
-`interrupted-recovery.test.ts` 证明 source-first Assertions rewrite 的 sentinel 恢复、Git-safe 验证、清除与重试。
-缺少 physical write set 的旧 sentinel 只能进入人工恢复。current sentinel 必须绑定 Assertions envelope、payload、
-removed blob 与受影响 Seal manifest。只有 dirty paths 精确匹配这组 bytes 时，CLI 才输出限定到 Record root 的
-restore 命令。
+`interrupted-recovery.test.ts` 从安装后的 Library 打开真实 maintenance session，等待它取得 lease 后用 `SIGKILL`
+终止进程。下一次公开 `niceeval migrate --yes` 必须识别 dead same-host owner、恢复 maintenance 并完成迁移；
+随后 `show` 能读取结果。owner 不使用 sentinel、Git shim 或伪造 lock fixture。
 
 ## Plan change preserves concurrent edit
 
-`stale-plan.test.ts` 证明第二次 Git preflight 发现 source-first root 并发编辑时返回
-`record-migration-plan-stale`，保留编辑且不输出旧计划的恢复命令。
+`stale-plan.test.ts` 先从安装后的 Library 取得 nominal migration plan，再由独立 CLI process 提交 migration。
+旧 plan 的 `applyMigrate()` 必须返回 `record-migration-plan-stale`，不能重复应用已失效的 source-byte plan。
 
 ## Migration no-follow replace
 
-`symlink-race.test.ts` 在最终 source 校验后，把 Assertions envelope 换成指向 Record 外文件的 symlink。
-owner 证明 migration fail closed、外部文件 bytes 不变，并进入 recovery-required。写入不能 follow raced symlink。
+`symlink-race.test.ts` 把 Assertions envelope 换成指向 Record 外文件的 symlink。公开 migration 必须以
+`record-path-type-invalid` fail closed，并保持外部文件 bytes 不变。写入不能 follow symlink。
 
 ## Pre-write invalid Record
 
-`prewrite-invalid.test.ts` 从 source-first fixture 制造 sealed Core 缺失 Member。candidate 必须在首个 portable
-write 前返回 `record-migration-invalid`，不输出 restore command，并保持 Git-visible Record 状态不变。
+`prewrite-invalid.test.ts` 从 predecessor fixture 制造 sealed Core 缺失 Member。candidate 必须在首个 portable
+write 前返回 `record-migration-invalid`，并保持整个 Record tree digest 不变。owner 不依赖 Git repository。
 
 ## Future or unknown family
 
-`future-version.test.ts` 使用 closed literal future fixture。它分别经公开 `migrate` 与 `show` 证明 known family
-的 future schemaVersion 与 unknown future family 都返回 `unsupported-format`，不误报 migration/Core invalid，
-也不形成 selection。
+`future-version.test.ts` 使用 closed literal future fixture。known family 的 future schemaVersion 让 migration
+返回 `record-format-unsupported`；ordinary `show` 仍先要求 root migration。unknown future family 则让 migration
+返回 `family-definition-required`，证明 maintenance 不会从目录名猜 definition，也不误报 Core invalid。
 
 ## Strict complete marker clean
 

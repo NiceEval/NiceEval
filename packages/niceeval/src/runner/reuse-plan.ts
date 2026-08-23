@@ -4,6 +4,7 @@ import type { RecordIssue } from "../record/errors/record-errors.ts";
 import type {
   AssertionsAttachment,
 } from "../record/family/assertions/definition.ts";
+import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import {
   readAttemptExecutionDuration,
   type DurationLimit,
@@ -494,7 +495,10 @@ function planTargetSlot(input: {
         comparisons: [identityMismatchComparison()],
       });
     }
-    const assertions = yield* input.reader.readAssertions(readAttempt.value.owner);
+    const assertions = yield* input.reader.read(
+      readAttempt.value.owner,
+      NiceEvalRecordAttachments.assertions,
+    );
     if (assertions.state !== "available") {
       const problem = attachmentProblem(assertions);
       return gapSlot(input.target, {
@@ -545,7 +549,10 @@ function planTargetSlot(input: {
         comparisons: [verdictComparison(verdict, "ineligible")],
       });
     }
-    const activities = yield* input.reader.readAttemptRunnerActivities(readAttempt.value.owner);
+    const activities = yield* input.reader.read(
+      readAttempt.value.owner,
+      NiceEvalRecordAttachments.runnerActivities.attempt,
+    );
     if (activities.state !== "available") {
       const problem = attachmentProblem(activities);
       return gapSlot(input.target, {

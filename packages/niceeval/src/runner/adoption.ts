@@ -23,6 +23,7 @@ import {
   type VerdictState,
 } from "../eval/record/verdict.ts";
 import { recordHost } from "../record/host/runtime.ts";
+import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import type {
   RecordReadSession,
   SelectedAttemptRef,
@@ -742,7 +743,10 @@ export function readAdoptionAttemptFacts(
         "Source Attempt/Core is unavailable.",
       ));
     }
-    const assertions = yield* reader.readAssertions(attempt.value.owner);
+    const assertions = yield* reader.read(
+      attempt.value.owner,
+      NiceEvalRecordAttachments.assertions,
+    );
     if (assertions.state !== "available") {
       const detail = assertions.state === "invalid" ? "invalid" : assertions.state;
       return yield* Effect.fail(adoptionError(
@@ -790,7 +794,10 @@ export function readAdoptionExecutionDuration(
         `Source timing for locator "${source.locator.text}" has no readable Attempt.`,
       ));
     }
-    const activities = yield* reader.readAttemptRunnerActivities(attempt.value.owner);
+    const activities = yield* reader.read(
+      attempt.value.owner,
+      NiceEvalRecordAttachments.runnerActivities.attempt,
+    );
     if (activities.state !== "available") {
       const detail = activities.state === "invalid" ? "invalid" : activities.state;
       return yield* Effect.fail(adoptionError(

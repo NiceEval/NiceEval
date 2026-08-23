@@ -1,92 +1,82 @@
-# 显式 migration 与 Git 恢复
+# 显式 migration 与 Git 边界
 
-本页说明 `niceeval migrate` 怎样区分 Core 不兼容、已知 family 的升级与未知 future family。契约单源
-始终在 [Record Architecture](../architecture.md) 和 [Record CLI](../cli.md#migrate)。
+本页说明 `niceeval migrate` 怎样区分 current Attachment、可达的历史版本、未知 family 与 legacy root。
+契约单源始终在 [Record Architecture](../architecture.md) 和 [Record CLI](../cli.md#migrate)。
 
-## 无版本 root 的结果
+## 无版本 current root
 
 完整 current Record 的 root 是：
 
 ```json
-{ "format": "niceeval.record.source-receipts", "recordId": "..." }
+{ "format": "niceeval.record.attachments", "recordId": "..." }
 ```
 
-它没有已发布 predecessor。所有 fixed family 也处于 current 时，命令不写盘：
+root 没有递增 schemaVersion；版本只属于 `(ownerKind, family, schemaVersion)`。所有 inventory 都 current 时，
+命令不写盘：
 
 ```sh
 niceeval migrate --record .niceeval/record
 # Record migration plan: already-current
-# format: niceeval.record.source-receipts
+# format: niceeval.record.attachments
 # Record migration already-current.
 ```
 
-兼容性不把所有未认识 bytes 混成一个错误：
+ordinary reader 从不迁移或写盘：
 
-| 发现的 bytes | 普通读取 | `migrate` |
+| 发现的 bytes | ordinary read | `migrate` |
 |---|---|---|
-| root format / Core 与 current 不兼容 | `unsupported-format` | 不由 Attachment migration 猜测或改写 |
-| 已知 family 的旧 schemaVersion | `migration-required` | 显式迁移该 known family |
-| 未知独立 future family | `unsupported-format`，不形成 session | 拒绝迁移，不触碰 bytes |
-| current catalog family 缺失 | 请求时 `not-recorded` | 不补写历史事实 |
-| 带 `/vN` 后缀的未发布 family 草案 | `unsupported-format` | 不推测、也不迁移 |
+| current root、请求 family 已 current | 局部读取 | `already-current` 或迁移其它 family |
+| 已贡献 definition 的受支持 predecessor | `migration-required` | 运行严格相邻单链 |
+| 已知 future version 或 migration chain 缺口 | `unsupported-format` | 拒绝且不触碰 bytes |
+| inventory 含未贡献 family，但当前读取不依赖它 | 继续无关局部读取 | complete plan 返回 `family-definition-required` |
+| direct/reference closure 需要未贡献 family | `family-definition-required` | 取得 definition 前不迁移 |
+| legacy root `niceeval.record.source-receipts` | `record-migration-required`，不动态加载 decoder | 显式 migration 选择固定 decoder |
+| legacy root `niceeval.record` | `record-format-unsupported` | 安装支持该 beta format 的 NiceEval |
 
-未知 family 不再局部容忍；一旦 portable inventory 出现它，ordinary reader 和 migration 都 fail closed。
+未知 family 既不是 valid，也不是 invalid。局部读取可以绕过无关 inventory；`requireComplete()`、Seal rebuild
+与 migration completion 必须拥有全部 definition 才能成功。
 
-## 已知 family 的固定步骤
+## Family-owned 相邻步骤
 
-只有 current source-receipts root 内、由静态 definition 提供完整相邻 chain 的已知 family 能进入 maintenance。
-步骤处理已保存的 payload 与 own blob closure，并同步更新 Seal manifest inventory。旧
-`niceeval.observability` aggregate 属于另一个 root format，不是 migration source。
+`defineRecordAttachment()` 声明每个持久版本和纯 adjacent migration。Record core 只执行统一协议：
 
-迁移可以重新编码 bytes、mint 新 blob ref 或重排 canonical object key。它不能：
+1. 用 source version schema exact decode，并验证 source content / reference closure 与预算。
+2. 调用 family 提供的纯 migration。
+3. 用 target schema、invariant、content / reference descriptor 重新验证。
+4. 先写并同步新的 immutable content objects。
+5. 最后 atomic replace `attachment.json`，提交这一个相邻步骤。
+6. 所有 Attachment current 后重建、验证并 atomic replace Seal。
 
-- 读取当前 Eval、项目文件、网络或 provider 补缺失事实；
-- 重新运行 matcher、Assertion evaluator、reuse planning 或 Report；
-- 改写仍表示同一对象的 RecordId、RunId、SlotId 或 AttemptId；
-- 接受第三方 converter、调用方 durable family 或物理字段；
-- 解释、删除或重写未知 future family 的 bytes。
+步骤不能读取当前 Eval、项目文件、网络、provider、时钟或随机源，也不能重新运行 matcher、Assertion evaluator、
+reuse planning 或 Report。它可以显式丢弃无法保持语义的旧字段，但 plan / receipt 必须列出 dropped facts 与重跑建议。
 
-如果已知 bytes 不能形成目标 schema，迁移计划在写盘前拒绝。相邻步骤可以明确丢弃无法等价映射的旧事实，
-但必须在 plan/receipt 列出 dropped facts 与重跑建议，并把 current 字段写成 unavailable 或空集合。
-未知字段或 unknown family 仍不得默默丢弃。
+官方、第三方 package 与 Plugin family 使用同一机制。migration plan 来自调用方显式组成的 immutable catalog，
+不是全局 registry，也不接受运行中后写替换。
 
-## Git preflight 与执行
+## 中断、续跑与失败
 
-有固定相邻步骤时，maintenance 先确认：
+Record 不创建 migration sentinel、journal、backup、restore commit 或 rollback metadata。每个 envelope 是所属
+Attachment 的唯一 durable commit record：
 
-1. Record 位于 Git worktree，完整 portable inventory 由 HEAD 跟踪；
-2. 该 inventory 在 index 和 worktree 中干净；
-3. repository、HEAD、Record path、`recordId`、source inventory 与 migration implementation identity
-   仍与计划相同。
+- target content 已写但 envelope 未替换时，旧 envelope 仍是 truth；重跑可以复用相同 digest object。
+- envelope 已替换但 receipt 未返回时，重跑跳过已提交版本并继续下一步。
+- 部分 Attachment current、Seal 尚旧时，ordinary complete read fail closed；显式 migration 继续 pending steps，
+  最后重建 Seal。
+- 任一步失败时保留已提交 envelope，报告 committed、pending、failed 与 orphan candidates，不做隐藏 rollback。
 
-通过后才执行：
+迁移必须确定性、可续跑。相同 source envelope 和 content 产生相同 target logical value 与 content identity；已经
+current 的步骤不会重复执行。
 
-```text
-exclusive maintenance lease
-        ↓
-原地运行固定的相邻步骤
-        ↓
-完整校验 Core 与认识的 family closure
-        ↓
-完成后才允许新的 openRead
-```
+## Git 只属于用户历史
 
-migration 是 maintenance 的内部工作，不是 family read，也不是 Analysis 或 Report 的输入。
+NiceEval 不调用 `git status`、不检查 HEAD / index，也不执行或生成 `git restore` 命令。Record 是否跟踪、dirty
+或位于 Git worktree 都不影响 migration 的合法性。
 
-## 中断后的唯一恢复路径
-
-NiceEval 不创建 staging、backup、rollback、root replacement 或自己的恢复日志。被 kill、断电、I/O failure
-或校验失败时，ordinary reader 不形成 reader session。计划绑定目标 envelope 的 exact source bytes；首个目标
-改写前发现变化时移除 sentinel、保留并发编辑并返回 `record-migration-plan-stale`。
-
-sentinel 后的恢复只有在 HEAD 未变化，且 dirty path
-只含 sentinel 与 physical plan 明确写入的 canonical current 目标时才显示 Git restore 命令；其它现场要求人工检查，不能改写并发编辑。
-
-用户必须用 Git 把 `.niceeval/record` 的 tracked 与迁移新增内容完整恢复到预检显示的 commit，再重新运行
-`niceeval migrate`。恢复后由新 preflight 再次判断格式和计划；工具不会从半完成的 known-family bytes 继续。
+用户可以在迁移前自行 commit 或复制 `.niceeval/record`，并用 Git 查看 diff、restore 或 rollback。这个历史恢复
+能力不进入 Record service、plan identity 或 portable bytes。
 
 ## 相关阅读
 
 - [Record CLI](../cli.md#migrate)
-- [固定 family 与 closure](../architecture.md#五个固定-attachment-family)
+- [Attachment definition 与 closure](../architecture.md#defineRecordAttachment-spi)
 - [源码 Attachment 怎样安全演进](源码Attachment怎样安全演进.md)

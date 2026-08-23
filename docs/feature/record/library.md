@@ -1,452 +1,256 @@
 # Record Library
 
-本页定义 `niceeval/record` 与 `niceeval/record/host` 共用的 `recordHost` 契约。两个导入面都导出这个
-公开、受支持的高级 Host composition SDK，供 NiceEval CLI、替代 CLI / Web host 或深度应用集成使用。
-普通 Eval、Analysis 与 Report 作者不导入它，不读取 Record directory，也不把这些类型当作作者协议。
+`niceeval/record` 导出通用 RecordAttachment SPI、显式 Host composition 与 Node Layer。NiceEval CLI 使用官方
+`recordHost`；替代 CLI、Web host 与 Plugin host 可以用 `makeRecordHost()` 组合第三方 definitions。
 
-Record definition 的两个 package-private 作者入口是 `defineRecordCore` 与 `defineRecordAttachment`。它们、
-固定 family declaration 与 migration steps 都不向外部导出；外部没有 generic family、definition 或 migration
-registration。`compileRecordSchemaCodec` 是消费已声明 Schema 的实现叶子，不是作者入口、扩展点或 barrel 导出。
+Library 是 Effect v3 API。内部不调用 `Effect.runPromise`；application 只在最外层提供 Layer 并运行 Effect。
+typed failure、defect 与 interruption 在拥有该结果的边界前保持分离。
 
-Library 是 Effect v3 API。它不在内部调用 `Effect.runPromise`；CLI 或 Host 边界只在最外层组合 Node
-Layer 并运行一次 Effect。typed error、defect 与 interruption 在到达这个边界前保持分离。
-
-## Host、root 与 identity
+## 最小公开导出
 
 ```ts
-import { Brand, Context, Effect, Either, Scope, Stream } from "effect";
-
-type RecordId = string & Brand.Brand<"RecordId">;
-type RunId = string & Brand.Brand<"RunId">;
-type ExperimentId = string & Brand.Brand<"ExperimentId">;
-type SlotId = string & Brand.Brand<"SlotId">;
-type AttemptId = string & Brand.Brand<"AttemptId">;
-type UtcMillis = number & Brand.Brand<"UtcMillis">;
-
-type SourceItemId = string & Brand.Brand<"SourceItemId">;
-type CanonicalProjectRelativePath = string & Brand.Brand<
-  "CanonicalProjectRelativePath"
->;
-type Sha256Digest = string & Brand.Brand<"Sha256Digest">;
-
-declare const recordRootTypeId: unique symbol;
-interface RecordRoot {
-  readonly [recordRootTypeId]: typeof recordRootTypeId;
-}
-
-type RecordRootConstructionError =
-  | { readonly code: "record-root-empty" }
-  | { readonly code: "record-root-relative" }
-  | { readonly code: "record-root-non-file-url"; readonly protocol: string }
-  | { readonly code: "record-root-file-url-invalid" };
-
-declare const makeRecordRoot: (
-  input: string | URL,
-) => Either.Either<RecordRoot, RecordRootConstructionError>;
+import {
+  defineRecordAttachment,
+  makeRecordAttachmentBlobDrafts,
+  makeRecordAttachmentCatalog,
+  makeRecordHost,
+  makeRecordRoot,
+  NodeRecordLive,
+  recordAttachmentMigration,
+  recordAttachmentVersion,
+  recordHost,
+  RecordContent,
+  RecordContentHandleSchema,
+  RecordOwner,
+} from "niceeval/record";
 ```
 
-`RecordRoot` 接受 lexical-normalized（词法规范化）的绝对 host path 或 `file:` URL。构造不做 I/O、
-不 realpath，也不把 host path 放进 portable Record。所有落盘路径都是受控的 root-relative segment。
+`recordHost` 只预组合 NiceEval 官方 definitions。`makeRecordHost({ attachments })` 创建另一个冻结 Host 值；
+它不修改 `recordHost`，也不把 definitions 放进进程全局状态。
 
-```ts
-class RecordFileSystem extends Context.Tag("@niceeval/record/RecordFileSystem")<
-  RecordFileSystem,
-  RecordFileSystemService
->() {}
+## Root、服务与能力
 
-class RecordCoordination extends Context.Tag("@niceeval/record/RecordCoordination")<
-  RecordCoordination,
-  RecordCoordinationService
->() {}
+`makeRecordRoot(path)` 接受 lexical-normalized 的绝对 host path 或 `file:` URL。构造不做 I/O、不 realpath，
+也不把 path 放进 portable Record。
 
-class RecordEntropy extends Context.Tag("@niceeval/record/RecordEntropy")<
-  RecordEntropy,
-  RecordEntropyService
->() {}
+`NodeRecordLive` 提供文件系统、身份生成和进程协调。文件系统负责 no-follow root-relative I/O、同步、atomic
+replace 与 no-replace publish；协调层只提供 read、append 与 maintenance lease。Record 没有 Git service。
 
-class RecordGit extends Context.Tag("@niceeval/record/RecordGit")<
-  RecordGit,
-  RecordGitService
->() {}
-```
+## Definition identity
 
-`RecordFileSystem` 负责 definition 驱动的 exact JSON、目录排他创建、blob I/O、flush、close 与
-incomplete Run directory 删除。`RecordCoordination` 只提供具名 read、append 与 maintenance lease；
-它不导出通用 `lock()`。`RecordGit` 只服务 maintenance 的恢复预检。
-
-## current 与 maintenance facet
-
-Host 只有两个 facet。它们的划分阻止 ordinary reader 取得迁移能力：
-
-```ts
-interface RecordHostSDK {
-  readonly current: {
-    readonly openRead: (
-      request: RecordOpenReadRequest,
-    ) => Effect.Effect<RecordReadSession, RecordOpenReadError, Scope.Scope>;
-
-    readonly createRun: (
-      request: CreateRunRequest,
-    ) => Effect.Effect<RunWriteSession, RecordCreateRunError, Scope.Scope>;
-
-    readonly createReferenceRun: (
-      request: CreateReferenceRunRequest,
-    ) => Effect.Effect<ReferenceRunWriteSession, RecordCreateRunError, Scope.Scope>;
-  };
-
-  readonly maintenance: {
-    readonly open: (
-      request: RecordMaintenanceRequest,
-    ) => Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, Scope.Scope>;
-  };
-}
-```
-
-```ts
-interface RunContext {
-  readonly experimentId: ExperimentId;
-  readonly execution: {
-    readonly agentId: string;
-    readonly model: string | null;
-    readonly reasoningEffort: string | null;
-    readonly flags: RecordJsonObject;
-  };
-  readonly labels: Readonly<Record<string, string>>;
-}
-
-interface CreateRunRequest {
-  readonly root: RecordRoot;
-  readonly experimentId: ExperimentId;
-  /** Required Core history; it is persisted once as RunDocument.context. */
-  readonly context: RunContext;
-  readonly startedAt: UtcMillis;
-  readonly expectedSlots: readonly RecordSlotIdentity[];
-}
-
-interface CreateReferenceRunRequest extends CreateRunRequest {}
-```
-
-`current.openRead()` 与 `current.createRun()` 分别取得 shared read / append lease；两者可以并存。
-`maintenance.open()` 取得 exclusive maintenance lease，因此 format inspection、migration 与 clean
-不会和 ordinary read/write 交错。execution claim、`maxConcurrency` 与 Slot 去重属于
-`niceeval/coordination/host`，不属于 Record directory 的所有权。
-
-取得 exclusive fence 后，Node Host 可删除同一 host 上 PID 已被 OS 明确判定不存在的遗留 shared
-read / append lease。不能确认死亡的 owner 一律保留并返回 `RecordMaintenanceBusy`；固定路径的
-maintenance lease 不做自动回收。
-
-`CreateRunRequest` 与 `CreateReferenceRunRequest` 都必须带入完整 `context`。writer 在创建目录前验证 exact
-RunContext，并 refine `context.experimentId === experimentId`；它把这个已验证值带入 draft，只有 `seal()` 时
-将它作为 `RunDocument.context` 写入 `run.json`。不能在 session 创建后以当前配置或补丁重新设定 context。
-
-`current` 的 root 领域值只有 `{ format: "niceeval.record.source-receipts", recordId }` 与匹配的 Core/Seal
-manifest。旧 `niceeval.record`、额外 root 字段或不兼容 Core 均返回 `unsupported-format`；session 根本不会
-形成。带 `/vN` 后缀的未发布 family 草案也是
-`unsupported-format`，不能伪装成独立 future family。
-
-## fixed family 与内部读取
-
-current catalog 由 definition 关闭；source receipts 与既有非 source facts 使用同一静态 Host boundary：
-
-| family | current | `owners` |
-|---|---:|---|
-| `niceeval.assertions` | 2 | `{ attempt }` |
-| `niceeval.agent-turns` | 1 | `{ attempt }` |
-| `niceeval.turn-contexts` | 1 | `{ attempt }` |
-| `niceeval.sandbox-commands` | 1 | `{ attempt }` |
-| `niceeval.runner-activities` | 1 | `{ attempt, run }` |
-| `niceeval.runner-diagnostics` | 1 | `{ attempt, run }` |
-| `niceeval.file-changes` | 1 | `{ attempt }` |
-| `niceeval.sources` | 1 | `{ run }` |
-| `niceeval.artifacts` | 1 | `{ attempt, run }` |
-
-Attachment envelope 的 shape 是 `{ family, schemaVersion }`。family 是稳定 identity，schemaVersion 是数值。
-`runner-activities`、`runner-diagnostics` 与 Artifacts 的 owner-specific payload 位于同一 `owners` map，
-不是公开的 attempt / run family pair。conversation、usage、timing、diagnostics 与 source navigation 只在读侧
-按已声明 dependency 组装。
-
-future NiceEval catalog 可加入 `niceeval.energy` 等独立 fixed family，而不改变 Record root。应用作者
-仍不能定义 family。较早 reader 发现未知 stable family 时在 session 形成前 fail closed，不跳过 catalog 验证。
-
-每个 fixed collector 通过 private definition mint `RecordBlobRef`。它写出的 payload 是 deep-frozen JSON
-snapshot；全部 own blob 通过 closure 验证后才可从内存获得 defensive copy。没有可从
-`niceeval/record/host` 交给 Report 的公开 generic Attachment value 类型。
-
-`not-recorded` 表示已封口 owner 没有 current catalog 中被请求的 fixed family。它不等于空 collection。
-缺 key、多 key、重复 key、手写 key、跨 owner ref 或 root 外路径使请求的 Attachment 为 `invalid`。I/O、
-permission 或 payload 读取失败仍是 `RecordReadError`。
-
-对 `niceeval.file-changes`，`not-recorded` 只表示 Sandbox 归因采集器不适用于该 Attempt。适用的 collector
-开始后，即使导出失败、中断或达到限额，也会写入带 limitation 的 `collection.state: "partial"` Attachment；完整空轨迹、
-partial 空前缀和 `not-recorded` 因而保持可区分。内部 reader 只把归因策略、collection 与 ordered send 区间
-trajectory（轨迹）交给 Analysis，绝不提供按 path 汇总的 `changes` 或 durable `net`。
-
-已知 family 的旧 schemaVersion 只有命中完整 maintenance chain 时可迁移；ordinary reader 不做局部兼容读。
-未知 independent future family、known future version 与无完整 chain 的旧版本都拒绝 ordinary open。它们不同于
-current catalog family 缺失所表达的 `not-recorded`。
-
-## Reader：RecordReadSession
-
-```ts
-declare const selectedRunRefTypeId: unique symbol;
-declare const selectedAttemptRefTypeId: unique symbol;
-
-interface SelectedRunRef {
-  readonly runId: RunId;
-  readonly [selectedRunRefTypeId]: typeof selectedRunRefTypeId;
-}
-
-interface SelectedAttemptRef {
-  readonly originRunId: RunId;
-  readonly attemptId: AttemptId;
-  readonly [selectedAttemptRefTypeId]: typeof selectedAttemptRefTypeId;
-}
-
-interface RecordReadSession {
-  readonly selectRuns: (
-    request: RecordSelectionRequest,
-  ) => Effect.Effect<RecordSelection, RecordSelectionError>;
-}
-
-interface RecordSelection {
-  readonly identity: RecordSelectionIdentity;
-  readonly runRefs: readonly SelectedRunRef[];
-  readonly expectedSlots: readonly SelectedLogicalSlot[];
-  readonly problems: readonly RecordSelectionProblem[];
-}
-```
-
-Host composition caller 使用 `selectRuns()`；它不会传入 family 名、file path、raw JSON、schema object 或
-blob ref。`RecordReadSession` 的 definition-driven Core / Attachment access capability 只交给 Analysis Host
-的 package-private adapter。普通应用代码与 Report author 不存在通用 `readAttachment()` 或 `readFamily()` API。
-
-打开 reader 在一次有界候选枚举中逐 Run 观察规范 `complete`，冻结所观察到的 RunId 集合，并用同一集合
-验证 Core、family inventory 与 Attachment version。`selectRuns()` 只从该 snapshot 读取最小 Core，固定 RunId、
-SlotId、预期分母和问题；它不携带 payload。扫描时尚未观察到 complete 的 Run 留给下一 session。
-
-selected ref 都是当前 session 签发的 nominal handle（名义句柄）。它们不能靠对象复制、ID 拼接或跨 Scope
-重用。Analysis 的 `AnalysisInput` 或 `DomainViewRequest` 真正需要事实时，package-private adapter 才以
-`{ owner, fixed definition }` 读取并缓存对应 Attachment。未知或 future family 已在 session 形成前被拒绝，
-不会进入 Analysis cache。verified cache 可以省 I/O，不能成为 absence、
-candidate set 或 latest 的权威依据。
-
-## Writer：RunWriteSession
-
-```ts
-interface RunWriteSession {
-  readonly runId: RunId;
-
-  readonly createAttempt: (input: {
-    readonly slotId: SlotId;
-  }) => Effect.Effect<AttemptWriteSession, RecordWriteError, Scope.Scope>;
-
-  readonly referenceAttempt: (input: {
-    readonly slotId: SlotId;
-    readonly action: "carried" | "accepted";
-    readonly attempt: SelectedAttemptRef;
-  }) => Effect.Effect<void, RecordWriteError>;
-
-  readonly recordAcceptedMembership: (input: {
-    readonly slotId: SlotId;
-    readonly attempt: SelectedAttemptRef;
-  }) => Effect.Effect<void, RecordWriteError>;
-
-  readonly recordTerminalMember: (input: {
-    readonly slotId: SlotId;
-    readonly action: "not-dispatched" | "interrupted";
-  }) => Effect.Effect<void, RecordWriteError>;
-
-  readonly writeSources: (
-    value: SourcesWrite,
-  ) => Effect.Effect<void, RecordWriteError>;
-
-  readonly writeRunObservability: (
-    value: RunObservabilityWrite,
-  ) => Effect.Effect<void, RecordWriteError>;
-
-  readonly attachArtifact: (
-    value: ArtifactWrite,
-  ) => Effect.Effect<ArtifactRef, RecordWriteError>;
-
-  readonly seal: (
-    completion: RunCompletion,
-  ) => Effect.Effect<RecordSealReceipt, RecordWriteError>;
-}
-
-interface ReferenceRunWriteSession {
-  readonly runId: RunId;
-  readonly referenceAttempt: RunWriteSession["referenceAttempt"];
-  readonly recordAcceptedMembership: RunWriteSession["recordAcceptedMembership"];
-  readonly recordTerminalMember: RunWriteSession["recordTerminalMember"];
-  readonly writeRunObservability: RunWriteSession["writeRunObservability"];
-  readonly attachArtifact: RunWriteSession["attachArtifact"];
-  readonly seal: RunWriteSession["seal"];
-}
-
-interface AttemptWriteSession {
-  readonly attemptId: AttemptId;
-  readonly slotId: SlotId;
-
-  readonly appendAssertion: (
-    value: AssertionResult,
-  ) => Effect.Effect<AssertionEntryRef, AttemptWriteError>;
-
-  readonly appendOtel: (
-    value: OTelBatch,
-  ) => Effect.Effect<void, AttemptWriteError>;
-
-  readonly appendEvent: (
-    value: NiceEvalEvent,
-  ) => Effect.Effect<void, AttemptWriteError>;
-
-  readonly recordFileChanges: (
-    value: FileChanges,
-  ) => Effect.Effect<void, AttemptWriteError>;
-
-  readonly attachArtifact: (
-    value: ArtifactWrite,
-  ) => Effect.Effect<ArtifactRef, AttemptWriteError>;
-
-  readonly complete: (
-    outcome: AttemptOutcome,
-  ) => Effect.Effect<AttemptCompletionReceipt, AttemptWriteError>;
-}
-```
-
-`createRun()` 与 `createReferenceRun()` 都把 request 的 `experimentId`、必填 `context`、`startedAt` 和
-`expectedSlots` 交给同一 writer 路径。创建目录前，它会：
-
-- canonicalize / exact-validate context，并执行 experimentId refine；
-- 验证 SlotId canonical order、SlotId 唯一及 `(evalId, attemptOrdinal)` 唯一。ordinal 不要求连续，也不从
-  数组位置推断。
-
-随后该路径确认或一次性初始化 `record.json`，生成 collision-resistant RunId，并排他创建
-`runs/<RunId>/`。冲突时重新生成，绝不接管已有目录。一个 session 只写这一个 Run；其 Attempt 也各自排他
-创建目录，所以多个 Attempt 与多个 Run writer 都可以并行。
-
-这些是 fixed collector 的窄入口，不是 generic Attachment writer。它们把输入交给内部 definition，
-不会暴露 raw JSON、path、blob key、`family`、schemaVersion 或写入 schema。`writeRunObservability()` 与
-`attachArtifact()` 分别写入同一个 Observability 或 Artifacts definition 的 `owners.run` branch。
-
-`referenceAttempt()` 只接受当前 reader selection 中已封口的精确 Attempt。它不猜 latest、不引用本 Run
-尚未封口的 Attempt，也不复制历史 Attachment。`recordAcceptedMembership()` 是 explicit adoption 的具名写入：
-当前 target Slot identity 可以不同于 origin Attempt，Member 仍引用 `{ originRunId, attemptId }`。
-
-每个 Run session 状态严格为：
+一个 definition 的 durable identity 是：
 
 ```text
-open → sealing → sealed
-               ↘ failed
+(owner, family, schemaVersion)
 ```
 
-| 状态 | 行为 |
-|---|---|
-| `open` | 接受本 Run 的 Attempt、reference 与 fixed collector 写入。 |
-| `sealing` | 拒绝新 mutation，等待既有 Attempt 和 collector 停稳。 |
-| `sealed` | staging 已连同 Seal manifest 与 `complete` 发布，destination 完整重读验证成功；所有 writer handle 同步 consumed。 |
-| `failed` | marker 前的 typed failure、defect 或 interruption 使本 session 不可重用。 |
+`owner` 是 `run` 或 `attempt`；`family` 是不含版本后缀的稳定身份；`schemaVersion` 是正整数。definition object
+带 nominal brand。单独的 family 字符串、结构相同的对象或类型断言都不是读写 capability。
 
-`recordTerminalMember()` 为没有 Attempt 的 expected Slot 写入 `not-dispatched` 或 `interrupted`，并把
-`attempt` 固定为 `null`。
-
-`seal()` 在 marker 前验证每个 expected Slot 都有 Member，并按 current definition 验证含必填
-`RunDocument.context` 的 Core、references、family schema 与每个 closure。它将已验证 context 随 run document
-一起写入 `run.json`。
-
-随后 `seal()` 只在短暂 `Effect.uninterruptibleMask` 中执行 final flush/close、排他创建零字节 `complete`，并把
-session 置为 `sealed`。
-
-marker 前中断不发布；marker 后即使 Effect 未交付 receipt，Run 仍已发布。Scope finalizer 只释放 lease 和
-handle，绝不删除 incomplete directory。
-
-## Maintenance 与 Git recovery
+一个 family 先声明版本，再组装 definition：
 
 ```ts
-interface RecordMaintenanceSession {
-  readonly inspect: () => Effect.Effect<RecordFormatInspection, RecordMaintenanceError>;
-  readonly planMigrate: () => Effect.Effect<RecordMigrationPlan, RecordMaintenanceError>;
-  readonly applyMigrate: (
-    plan: RecordMigrationPlan,
-  ) => Effect.Effect<RecordMigrationReceipt, RecordMaintenanceError>;
+import { Schema } from "effect";
+import {
+  defineRecordAttachment,
+  recordAttachmentIssue,
+  recordAttachmentVersion,
+  RecordOwner,
+} from "niceeval/record";
+
+const energyV1 = recordAttachmentVersion({
+  version: 1,
+  schema: Schema.Struct({ joules: Schema.Number }),
+  invariants: value => value.joules >= 0 ? [] : [
+    recordAttachmentIssue("record-attachment-schema-invalid", ["joules"]),
+  ],
+  contents: {
+    select: () => [],
+    valueLimits: {
+      maximumJsonBytes: 4_096,
+      maximumDepth: 4,
+      maximumNodes: 64,
+      maximumObjectKeys: 16,
+      maximumArrayItems: 16,
+      maximumKeyUtf8Bytes: 128,
+      maximumStringUtf8Bytes: 1_024,
+    },
+    budget: {
+      maximumBlobs: 1,
+      maximumBlobBytes: 1,
+      maximumTotalBytes: 1,
+    },
+  },
+  references: {
+    select: () => [],
+    maximumReferences: 0,
+  },
+});
+
+export const runEnergy = defineRecordAttachment({
+  owner: RecordOwner.run,
+  family: "acme.energy",
+  current: energyV1,
+  versions: [energyV1],
+  migrations: [],
+});
+```
+
+Schema、invariant、content projection、reference projection 与 migration 不取得 root、path、文件系统、网络、
+clock 或 random capability。它们只定义 family 的持久业务语义；Record Core 统一执行 codec、预算、closure 与 I/O。
+
+definition 创建时检查版本从 `1` 连续递增、`current` 是最后一个版本，migration 严格相邻且形成单链。
+定义错误同步抛出 `RecordAttachmentSpiDefinitionError`；运行时输入错误由 `prepare()` 返回 `Either.Left`。
+
+## Content source 与 opaque ref
+
+`RecordContent.bytes()`、`text()` 与 `stream()` 创建 capture-only source。`makeRecordAttachmentBlobDrafts()`
+为一次 Attachment 准备不可伪造的 owner-local refs；它不消费 Stream。
+
+```ts
+const drafts = makeRecordAttachmentBlobDrafts(blobs => {
+  const stdout = blobs.add(RecordContent.text(commandStdout));
+  return [stdout] as const;
+});
+
+const prepared = commandFamily.prepare({
+  commandId: "command-1",
+  stdout: drafts[0].content,
+}, drafts);
+```
+
+logical Schema 中 content 位置使用 `RecordContentHandleSchema`。这个 handle 是 opaque ref，不公开 path、digest、
+content key 或物理表示。definition 的 `contents.select(value)` 必须返回 value 中的完整 ref closure；Core 要求
+每个 ref 恰好对应同一次 draft builder 的一个 source，且没有漏项、重复项或额外项。
+
+`prepare(value, drafts)` 执行 exact encode/decode、invariant、reference 与 content closure 验证，成功后返回 opaque
+`RecordAttachmentWrite`。真正读取 Stream、计算 digest、执行 byte budget 和写 content object发生在 `attach()`。
+
+reader 返回 `{ value, blobs }`。`blobs.bytes(ref)` 只接受该次读取签发的 ref，并返回 defensive copy；伪造、复制到
+其它 Attachment 或跨 session 使用会返回 `record-blob-handle-invalid`。
+
+## Catalog 与显式 composition
+
+```ts
+import { Either } from "effect";
+import {
+  makeRecordAttachmentCatalog,
+  makeRecordHost,
+} from "niceeval/record";
+
+const catalog = makeRecordAttachmentCatalog([
+  ...niceevalRecordAttachments,
+  ...energyPlugin.recordAttachments,
+]);
+if (Either.isLeft(catalog)) throw new Error(catalog.left.code);
+
+const customRecordHost = makeRecordHost({ attachments: catalog.right });
+```
+
+`makeRecordAttachmentCatalog()` 是纯函数。它只接受 branded definitions，按 `(owner, family)` 排序并拒绝重复。
+没有 `registerAttachment()`、global map、module side effect、last-one-wins 或 dynamic family loader。
+
+catalog 只授予解释 bytes 的能力。真正的 I/O 仍由 Host session 与 Effect Layer 持有。第三方 package 仅调用
+`defineRecordAttachment()` 不会取得 reader、writer、path、lease 或 migration executor。
+
+## Host composition
+
+`RecordHostSDK` 分成两个入口：
+
+- `current.openRead()`、`createRun()` 与 `createReferenceRun()` 只处理 current root。
+- `maintenance.planClean()` / `applyClean()` 与 `planMigrate()` / `applyMigrate()` 执行显式维护。
+
+`makeRecordHost()` 只预绑定 immutable catalog，不增加逐 family method，不提供 Live Layer，也不启动 runtime。
+
+## Reader
+
+```ts
+const result = yield* Effect.scoped(Effect.gen(function* () {
+  const reader = yield* customRecordHost.current.openRead({ root });
+  const selection = yield* reader.selectRuns({ runIds: [runId] });
+  const run = yield* reader.readRun(selection.runRefs[0]);
+  if (run.state !== "available") return run;
+  return yield* reader.read(run.value.owner, runEnergy);
+}));
+```
+
+`openRead()` 验证 current root、Core navigation 与 structural inventory，并冻结观察到的 published RunId。
+它不要求 catalog 认识 inventory 中每个 family。
+
+`read(owner, definition)` 只解码传入 definition。owner 没有该 family 时返回 `not-recorded`；current Attachment
+可返回 `available` 或 `invalid`。已知 predecessor 返回 `migration-required`，future version 返回 `unsupported`。
+直接请求未贡献 definition 返回 `family-definition-required`。
+
+`requireComplete(selection)` 遍历 selection 的完整 inventory。未知 identity、非 current version、invalid
+Attachment、reference closure 或 Seal 不一致都会 fail closed。返回值只证明本次 frozen selection 与 immutable
+catalog，不是可跨 session 更新的证明。
+
+## Owner-scoped writer
+
+```ts
+const prepared = runEnergy.prepare({ joules: 42 }, []);
+if (Either.isLeft(prepared)) return yield* Effect.fail(prepared.left);
+
+yield* run.attach(runEnergy, prepared.right);
+```
+
+Run session 的 `attach()` 只接受 Run definition 与匹配它的 prepared write；Attempt session 只接受 Attempt
+definition。TypeScript 保留 owner、family、version、content error 与 Effect requirements，dynamic JavaScript
+边界再次验证 brand 与 owner。
+
+writer 没有 `appendAssertion()`、`writeSources()`、`attachArtifact()`、raw JSON、path 或 blob writer。producer
+负责 capture 和构造 current value；Record Core 负责持久化。
+
+一个 owner/family 最多提交一次。`seal()` 等待所有 Attempt 与 attach Effect 停稳，再验证 Core、inventory、
+definitions、references、contents 与预算，最后发布完整 Run。
+
+## 显式 migration
+
+family 的 migration 内容属于 family，执行协议属于 Record Core：
+
+```ts
+const energyV1ToV2 = recordAttachmentMigration({
+  from: energyV1,
+  to: energyV2,
+  migrate: ({ value, sources }) => Effect.succeed({
+    value: { joules: value.joules, source: "measured" },
+    sources,
+  }),
+});
+```
+
+migration callback 返回 Effect，但 requirements 固定为 `never`。它不能读写文件、访问网络、读取当前时间、生成随机身份或
+capture 新事实。Core 严格解码 source version、运行相邻 step、验证 target version、重建 content/reference
+closure，并以 envelope-last、Seal-last 顺序提交。
+
+Library maintenance 使用 plan/apply 两阶段：
+
+```ts
+const plan = yield* customRecordHost.maintenance.planMigrate({ root });
+if (plan._tag === "RecordMigrationReady") {
+  const receipt = yield* customRecordHost.maintenance.applyMigrate({ root, plan });
 }
 ```
 
-Record root 没有 schemaVersion。所有 fixed family 也处于 current 时，
-`inspect()` 与 `planMigrate()` 返回 `already-current`；`applyMigrate()` 不运行，也不写 portable byte。
+ordinary `openRead()`、`show`、`view` 与 `exp` 不自动迁移。`applyMigrate()` 取得 exclusive maintenance lease；
+已经 current 的 Attachment 会跳过，所以进程中断后可重新 plan 并续跑。
 
-root format / Core 不相容时，`inspect()` 返回 `unsupported-format`。已知 family 的旧 schemaVersion
-需要显式 migration。
+迁移不要求 Git clean，不读 HEAD / index，也不写 sentinel、journal、backup 或 rollback metadata。每个目标
+envelope 用临时文件加 atomic replace 保证单文件完整；Git 只由用户保存、比较或恢复历史。
 
-未知/future family、known family 的 future/无链版本和未发布的斜杠版本草案返回 `unsupported-format`，不会被
-猜测成损坏数据或 migration source。
+## Typed failure 与 Scope
 
-Assertions 与 Observability 分别提供 package-private `1 → 2` step。plan 与 receipt 只保留准确的 Attachment targets，不存在 root target 或 steps。
+`not-recorded`、`unsupported` 与已知 current `invalid` 是读取状态。缺 definition、I/O、permission、closed
+Scope、invalid handle、maintenance busy、旧 plan 与 migration invalid 是 typed failure。
 
-相邻 transform 只接收已 hydrate 的 payload，不能做文件 I/O；maintenance framework 统一拥有历史 codec、blob closure、Git/sentinel/no-follow replace 与最终 exact-current 验证。
+每个 error 只带 stable code 与有界安全上下文。raw filesystem error、Schema tree、stack、source bytes、secret
+与第三方 message 不进入默认 CLI JSON。interruption 不属于 typed union；finalizer 释放 lease、Stream 与文件
+handle 后保留原 Cause。
 
-adjacent link 的 physical write-set metadata 供 plan、execute 与 recovery 共用。Observability 是 envelope-only，Assertions 是 envelope + payload；运行时 transform identity 只作一致性校验。
+## 资源与并发
 
-计划绑定 Git repository、HEAD、Record path、`recordId`、current format 与 portable-byte inventory。它还绑定每个目标 envelope/payload 的 exact source bytes、physical write set 和 NiceEval migration implementation identity。`applyMigrate()` 重新验证这些值，避免把陈旧计划应用到变化后的 Record。
+`openRead()` 与 `createRun()` 分别取得 shared read / append lease。`migrate()` 与 `clean()` 取得 exclusive
+maintenance lease；冲突时返回 `record-maintenance-busy`。
 
-迁移只允许 Record 已纳入 Git 且 worktree/index 干净时执行。它在 exclusive maintenance lease 下原地
-逐步改写，并完整校验 exact current Core、完整 catalog 与 blob closure。未知/future family 使计划失败。
-NiceEval 不创建 staging、backup、rollback 或 root replacement。migration 只改写计划中的 Attachment bytes，
-不会读写 `record.json`。
-
-ordinary Host 入口在建立任何 read/append session 或执行外部副作用前调用内部 automatic gate。current fast path
-不检查 Git clean。需要迁移时，检查 Scope 必须先关闭。随后 exclusive maintenance session 在同一
-session 内完成 plan/apply，并绑定、复核 HEAD、Record identity、portable inventory、source bytes 与
-migration identity。成功全量 exact-current 验证并释放 maintenance 后，调用方只能全新打开 ordinary
-session，不得升级既有 read lease。
-
-首次改写前的 `migration.in-progress` 保存已验证的 restore commit。失败或中断后，maintenance 先证明 HEAD 未变化，且 dirty path 只有 sentinel 与 physical plan 明确写入的 canonical current 目标；envelope-only family 的 payload 不在 expected paths。证明成立时，CLI 才给出限定到 Record root 的 Git restore 与 tracked-byte 验证命令；否则只要求人工检查并保留并发编辑。验证 worktree/index 都等于该 commit 后才清除 sentinel，再重新形成计划。
-
-这里的“失败”只指 sentinel 已成功创建后的失败；apply 前的计划指纹变化、preflight 或 create-sentinel 错误
-不携带恢复动作，并保留造成计划变化的编辑。post-sentinel 错误闭合为
-`RecordMigrationRecoveryRequired`，携带 `restoreCommit`、`restoreSafe` 与原始 `causeCode`。`restoreSafe`
-只有在上述 HEAD 与 dirty-path 证明成立时为 true。恢复完成前
-`current.openRead()` 不产生 session。
-
-`clean` 同样取得 maintenance lease。它只删除取得 lease 后重验仍缺少规范零字节普通文件 `complete` 的目录；
-已封口但 Core invalid 的 Run 不是 clean 的对象。
-
-## Typed error、Cause 与 Stream 边界
-
-```ts
-type RecordOpenError =
-  | RecordIoError
-  | RecordPermissionError
-  | RecordMaintenanceBusy
-  | RecordBootstrapInvalid
-  | RecordFormatUnsupported;
-
-type RecordReadError =
-  | RecordIoError
-  | RecordPermissionError
-  | RecordReaderClosed
-  | RecordHandleInvalid;
-
-type RecordWriteError =
-  | RecordIoError
-  | RecordPermissionError
-  | RecordAppendBusy
-  | RecordWriterClosed
-  | RecordWriteStateInvalid
-  | RecordReferenceInvalid
-  | RecordCoreInvalid
-  | RecordAttachmentClosureInvalid;
-
-type RecordMaintenanceError =
-  | RecordMaintenanceOpenError
-  | RecordMigrationPlanStale
-  | RecordMigrationGitRestoreRequired
-  | RecordMigrationInvalid
-  | RecordMigrationRecoveryRequired
-  | RecordGitError;
-```
-
-每个 typed error 只有稳定 `code` 和有界安全上下文。raw filesystem error、Schema tree、stack、secret 和
-任意第三方 message 不进入 portable data 或默认 CLI JSON。interruption 不属于这些 union；finalizer 释放
-资源后继续保留原 Cause。内部不变量冲突与 callback throw 是 defect。
-
-`Stream` 只用于内部扫描、写入和形成 blob snapshot。它不进入 Selection、Analysis 或 Report 的闭合值。
+多个 Run 可以并行写各自 staging。一个 owner 的不同 family 可以并发 prepare 与 attach；envelope commit 仍以
+owner/family 排他。Scope finalizer 关闭 Stream、文件 handle 与 lease，且不会删除已发布 Run。

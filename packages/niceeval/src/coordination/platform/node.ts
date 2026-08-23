@@ -242,9 +242,9 @@ function ownerIsKnownDead(payload: LeasePayload): boolean {
   }
 }
 
-function sharedLeaseIsKnownStale(
+function leaseFileIsKnownStale(
   path: string,
-  expectedKind: "read" | "append",
+  expectedKind: RecordLeaseKind,
 ): Effect.Effect<boolean, RecordFileSystemError> {
   return Effect.gen(function* () {
     const metadata = yield* nodeIo({
@@ -277,6 +277,19 @@ function sharedLeaseIsKnownStale(
   });
 }
 
+function liveMaintenanceLeasePresent(
+  layout: LeaseLayout,
+): Effect.Effect<boolean, RecordFileSystemError> {
+  return Effect.gen(function* () {
+    if (!(yield* pathPresent(layout.maintenanceFile))) return false;
+    if (!(yield* leaseFileIsKnownStale(layout.maintenanceFile, "maintenance"))) {
+      return true;
+    }
+    yield* removeFileIfPresent(layout.maintenanceFile);
+    return false;
+  });
+}
+
 function makeLease(kind: RecordLeaseKind, path: string): RecordLease {
   const lease = issueRecordLease(kind);
   leases.set(lease, path);
@@ -305,7 +318,7 @@ function liveSharedEntriesPresent(
       });
       for (const entry of entries) {
         const path = join(directory.path, entry);
-        if (yield* sharedLeaseIsKnownStale(path, directory.kind)) {
+        if (yield* leaseFileIsKnownStale(path, directory.kind)) {
           yield* removeFileIfPresent(path);
         } else {
           occupied = true;
@@ -330,7 +343,7 @@ function enterSharedLease(
     const layout = yield* layoutFor(root);
     const directory = sharedDirectory(layout, kind);
     yield* ensureDirectory(directory);
-    if (yield* pathPresent(layout.maintenanceFile)) {
+    if (yield* liveMaintenanceLeasePresent(layout)) {
       return yield* Effect.fail(maintenanceBusy("shared"));
     }
 
@@ -348,7 +361,7 @@ function enterSharedLease(
       return yield* Effect.fail(maintenanceBusy("shared"));
     }
 
-    const maintenancePresent = yield* pathPresent(layout.maintenanceFile).pipe(
+    const maintenancePresent = yield* liveMaintenanceLeasePresent(layout).pipe(
       Effect.tapError(() => removeFileIfPresent(path).pipe(Effect.orDie)),
     );
     if (maintenancePresent) {
@@ -365,7 +378,7 @@ function enterMaintenanceLease(
   return Effect.gen(function* () {
     const layout = yield* layoutFor(root);
     yield* ensureDirectory(dirname(layout.maintenanceFile));
-    const created = yield* writeExclusiveFile(
+    const tryCreate = () => writeExclusiveFile(
       layout.maintenanceFile,
       leasePayload("maintenance"),
     ).pipe(
@@ -377,6 +390,10 @@ function enterMaintenanceLease(
         onSuccess: () => Effect.succeed(true),
       }),
     );
+    let created = yield* tryCreate();
+    if (!created && !(yield* liveMaintenanceLeasePresent(layout))) {
+      created = yield* tryCreate();
+    }
     if (!created) {
       return yield* Effect.fail(maintenanceBusy("exclusive"));
     }

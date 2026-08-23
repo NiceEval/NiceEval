@@ -4,12 +4,21 @@
  */
 export {
   isRecordBlobRef,
-  makeFixedAttachmentWriteSpec,
   makeFixedRecordAttachmentWrite,
+  makeFixedRecordAttachmentWriteFromDrafts,
+  makeRecordAttachmentBlobDrafts,
+  makeRecordAttachmentWriteSpec,
   makeFixedRecordAttachmentValueFromDecoded,
   makeRecordBlobRef,
   recordAttachmentWriteContents,
+  validateRecordAttachmentWriteOwner,
 } from "./runtime.ts";
+
+export {
+  getRecordAttachmentFixedWriteSpec,
+  getRecordAttachmentVersionWriteSpec,
+} from "./family.ts";
+export { withRecordAttachmentMaterializedRefine } from "./compatibility.ts";
 
 export type {
   FixedMaterializedAttachment,

@@ -45,7 +45,13 @@ import type {
   RunCore,
   RunDocument,
 } from "../model/core.ts";
+import { RECORD_ATTACHMENT_ENVELOPE_FORMAT } from "../model/core.ts";
 import { RunContextSchema } from "../model/run-context.ts";
+import { isRecordAttachmentName } from "../model/identifiers.ts";
+import {
+  RecordBlobKeySchema,
+  Sha256DigestSchema,
+} from "./identifiers.ts";
 
 /** Kept as the one exact Schema options object for nearby non-Core codecs. */
 export const RecordExactParseOptions = RecordSchemaParseOptions;
@@ -60,8 +66,17 @@ export type RunCoreEncoded = RecordJsonObject;
 export type RecordCoreEncoded = RecordJsonObject;
 
 export interface RecordAttachmentEnvelopeEncoded {
+  readonly format: typeof RECORD_ATTACHMENT_ENVELOPE_FORMAT;
+  readonly ownerKind: "run" | "attempt";
   readonly family: string;
   readonly schemaVersion: number;
+  readonly payload: { readonly sha256: string; readonly byteLength: number };
+  readonly contents: readonly {
+    readonly key: string;
+    readonly sha256: string;
+    readonly byteLength: number;
+  }[];
+  readonly references: readonly { readonly owner: "run" | "attempt"; readonly family: string }[];
 }
 
 /** Keep each source Schema's exact encoded side (notably branded IDs -> string). */
@@ -90,13 +105,57 @@ export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Li
   "interrupted",
 );
 
+const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
+  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0),
+);
+
+const PositiveSafeIntegerSchema = Schema.JsonNumber.pipe(
+  Schema.filter((value) => Number.isSafeInteger(value) && value > 0),
+);
+
+const RecordAttachmentBytePointerSchema = Schema.Struct({
+  sha256: Sha256DigestSchema,
+  byteLength: NonNegativeSafeIntegerSchema,
+});
+
+const RecordAttachmentContentPointerSchema = Schema.Struct({
+  key: RecordBlobKeySchema,
+  sha256: Sha256DigestSchema,
+  byteLength: NonNegativeSafeIntegerSchema,
+});
+
+const RecordAttachmentReferenceSchema = Schema.Struct({
+  owner: Schema.Literal("run", "attempt"),
+  family: Schema.String.pipe(Schema.filter(isRecordAttachmentName)),
+});
+
+function canonicalEnvelopeCollections(value: RecordAttachmentEnvelope): boolean {
+  let previousContent: string | undefined;
+  for (const content of value.contents) {
+    if (previousContent !== undefined && previousContent >= content.key) return false;
+    previousContent = content.key;
+  }
+  let previousReference: string | undefined;
+  for (const reference of value.references) {
+    const key = `${reference.owner}\u0000${reference.family}`;
+    if (previousReference !== undefined && previousReference >= key) return false;
+    previousReference = key;
+  }
+  return true;
+}
+
 export const RecordAttachmentEnvelopeSchema: Schema.Schema<
   RecordAttachmentEnvelope,
   RecordAttachmentEnvelopeEncoded
 > = Schema.Struct({
-  family: Schema.String.pipe(Schema.minLength(1)),
-  schemaVersion: Schema.Int.pipe(Schema.positive()),
-});
+  format: Schema.Literal(RECORD_ATTACHMENT_ENVELOPE_FORMAT),
+  ownerKind: Schema.Literal("run", "attempt"),
+  family: Schema.String.pipe(Schema.filter(isRecordAttachmentName)),
+  schemaVersion: PositiveSafeIntegerSchema,
+  payload: RecordAttachmentBytePointerSchema,
+  contents: Schema.Array(RecordAttachmentContentPointerSchema),
+  references: Schema.Array(RecordAttachmentReferenceSchema),
+}).pipe(Schema.filter(canonicalEnvelopeCollections));
 
 function schemaFailure(document: RecordCodecDocument): RecordCodecError {
   return recordCodecError({

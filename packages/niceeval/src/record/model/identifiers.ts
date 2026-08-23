@@ -70,8 +70,11 @@ export type CanonicalProjectRelativePath = string & Brand.Brand<
   typeof CANONICAL_PROJECT_RELATIVE_PATH_BRAND
 >;
 
-/** Fixed root identity; an incompatible root format must use a different identity. */
-export const RECORD_FORMAT = "niceeval.record.source-receipts" as const;
+/** Current generic Attachment root identity. */
+export const RECORD_FORMAT = "niceeval.record.attachments" as const;
+
+/** Explicit-migration-only predecessor; ordinary readers never open it. */
+export const LEGACY_RECORD_FORMAT = "niceeval.record.source-receipts" as const;
 
 export type RecordFormat =
   typeof RECORD_FORMAT & Brand.Brand<typeof RECORD_FORMAT_ID_BRAND>;
@@ -85,7 +88,7 @@ const RECORD_ATTACHMENT_LABEL =
 const RECORD_ATTACHMENT_NAME_PATTERN = new RegExp(
   `^(?:${RECORD_ATTACHMENT_LABEL}\\.)+${RECORD_ATTACHMENT_LABEL}$`,
 );
-const RECORD_FORMAT_ID_PATTERN = /^niceeval\.record\.source-receipts$/;
+const RECORD_FORMAT_ID_PATTERN = /^niceeval\.record\.attachments$/;
 const SHA256_DIGEST_PATTERN = /^[a-f0-9]{64}$/;
 
 /**

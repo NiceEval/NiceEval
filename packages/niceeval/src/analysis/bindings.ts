@@ -7,12 +7,7 @@ import type {
 } from "../record/attachment/types.ts";
 import type { AssertionsAttachment } from "../record/family/assertions/definition.ts";
 import {
-  agentTurnsRecordFamily,
-  assertionsRecordFamily,
-  attemptRunnerActivitiesRecordFamily,
-  fileChangesRecordFamily,
-  sandboxCommandsRecordFamily,
-  sourcesRecordFamily,
+  NiceEvalRecordAttachments,
 } from "../record/family/catalog.ts";
 import type { AgentTurnsAttachment } from "../record/family/agent-turns/definition.ts";
 import type { FileChangesAttachment } from "../record/family/file-changes.ts";
@@ -22,7 +17,7 @@ import type { SandboxCommandsAttachment } from "../record/family/sandbox-command
 import type { SourcesAttachment } from "../record/family/sources.ts";
 import type { TurnContextsAttachment } from "../record/family/turn-contexts/definition.ts";
 import type {
-  FixedFamilyRead,
+  RecordAttachmentRead,
   ReadableAttempt,
   RecordReadSession,
   SelectedOwnerRef,
@@ -122,7 +117,7 @@ export interface RecordReadBinding<
   readonly read: (
     reader: RecordReadSession,
     attempt: ReadableAttempt,
-  ) => import("effect").Effect.Effect<FixedFamilyRead<Payload>, import("../record/reader/errors.ts").RecordReaderReadError>;
+  ) => import("effect").Effect.Effect<RecordAttachmentRead<Payload>, import("../record/reader/errors.ts").RecordReaderReadError>;
 }
 
 export type InputProjection<Value> =
@@ -196,16 +191,18 @@ function fixedFamilyBinding<
   readonly descriptor: Descriptor;
   readonly read: (
     reader: RecordReadSession,
-    owner: SelectedOwnerRef,
-  ) => Effect.Effect<FixedFamilyRead<Payload>, RecordReaderReadError>;
+    owner: SelectedOwnerRef<Descriptor["owner"]>,
+  ) => Effect.Effect<RecordAttachmentRead<Payload>, RecordReaderReadError>;
 }): RecordReadBinding<Owner, Payload> {
   return Object.freeze({
     owner: input.owner,
     cacheKey: input.descriptor,
-    read: (reader: RecordReadSession, attempt: ReadableAttempt) => input.read(
-      reader,
-      input.owner === "attempt" ? attempt.owner : attempt.origin.owner,
-    ),
+    read: (reader: RecordReadSession, attempt: ReadableAttempt) => {
+      const owner = (input.owner === "attempt"
+        ? attempt.owner
+        : attempt.origin.owner) as SelectedOwnerRef<Descriptor["owner"]>;
+      return input.read(reader, owner);
+    },
   });
 }
 
@@ -219,32 +216,32 @@ function readerSideViewBinding<Owner extends FixedFamilyOwnerRequirement, Payloa
 
 const assertionsFamily = fixedFamilyBinding({
   owner: "attempt" as const,
-  descriptor: assertionsRecordFamily,
-  read: (reader, owner) => reader.readAssertions(owner),
+  descriptor: NiceEvalRecordAttachments.assertions,
+  read: (reader, owner) => reader.read(owner, NiceEvalRecordAttachments.assertions),
 });
 
 export const agentTurnsSource = fixedFamilyBinding({
   owner: "attempt" as const,
-  descriptor: agentTurnsRecordFamily,
-  read: (reader, owner) => reader.readAgentTurns(owner),
+  descriptor: NiceEvalRecordAttachments.agentTurns,
+  read: (reader, owner) => reader.read(owner, NiceEvalRecordAttachments.agentTurns),
 });
 
 const sandboxCommandsSource = fixedFamilyBinding({
   owner: "attempt" as const,
-  descriptor: sandboxCommandsRecordFamily,
-  read: (reader, owner) => reader.readSandboxCommands(owner),
+  descriptor: NiceEvalRecordAttachments.sandboxCommands,
+  read: (reader, owner) => reader.read(owner, NiceEvalRecordAttachments.sandboxCommands),
 });
 
 const attemptRunnerActivitiesSource = fixedFamilyBinding({
   owner: "attempt" as const,
-  descriptor: attemptRunnerActivitiesRecordFamily,
-  read: (reader, owner) => reader.readAttemptRunnerActivities(owner),
+  descriptor: NiceEvalRecordAttachments.runnerActivities.attempt,
+  read: (reader, owner) => reader.read(owner, NiceEvalRecordAttachments.runnerActivities.attempt),
 });
 
 const fileChangesFamily = fixedFamilyBinding({
   owner: "attempt" as const,
-  descriptor: fileChangesRecordFamily,
-  read: (reader, owner) => reader.readFileChanges(owner),
+  descriptor: NiceEvalRecordAttachments.fileChanges,
+  read: (reader, owner) => reader.read(owner, NiceEvalRecordAttachments.fileChanges),
 });
 
 const attemptObservabilityViewKey = Object.freeze({ kind: "reader-side-attempt-observability" });
@@ -270,8 +267,8 @@ const sourceNavigationViewSource = readerSideViewBinding<"attempt", SourceNaviga
 
 const originSourcesFamily = fixedFamilyBinding({
   owner: "origin-run" as const,
-  descriptor: sourcesRecordFamily,
-  read: (reader, owner) => reader.readSources(owner),
+  descriptor: NiceEvalRecordAttachments.sources,
+  read: (reader, owner) => reader.read(owner, NiceEvalRecordAttachments.sources),
 });
 
 const emptyRecordBlobs: RecordAttachmentBlobs = Object.freeze({
@@ -284,7 +281,7 @@ function receiptSourceState<Payload extends {
     readonly state: "complete" | "partial";
     readonly limitations: readonly unknown[];
   };
-}>(read: FixedFamilyRead<Payload>): ReaderSourceState<Payload> {
+}>(read: RecordAttachmentRead<Payload>): ReaderSourceState<Payload> {
   if (read.state !== "available") return Object.freeze({ state: read.state });
   return Object.freeze({
     state: read.value.collection.state,
@@ -293,7 +290,7 @@ function receiptSourceState<Payload extends {
   });
 }
 
-function completeSourceState<Payload>(read: FixedFamilyRead<Payload>): ReaderSourceState<Payload> {
+function completeSourceState<Payload>(read: RecordAttachmentRead<Payload>): ReaderSourceState<Payload> {
   if (read.state !== "available") return Object.freeze({ state: read.state });
   return Object.freeze({
     state: "complete" as const,
@@ -305,14 +302,14 @@ function completeSourceState<Payload>(read: FixedFamilyRead<Payload>): ReaderSou
 function readAttemptObservabilityView(
   reader: RecordReadSession,
   attempt: ReadableAttempt,
-): Effect.Effect<FixedFamilyRead<AttemptObservabilityReaderView>, RecordReaderReadError> {
+): Effect.Effect<RecordAttachmentRead<AttemptObservabilityReaderView>, RecordReaderReadError> {
   return Effect.gen(function* () {
     const owner = attempt.owner;
-    const turns = yield* reader.readAgentTurns(owner);
-    const contexts = yield* reader.readTurnContexts(owner);
-    const commands = yield* reader.readSandboxCommands(owner);
-    const activities = yield* reader.readAttemptRunnerActivities(owner);
-    const diagnostics = yield* reader.readAttemptRunnerDiagnostics(owner);
+    const turns = yield* reader.read(owner, NiceEvalRecordAttachments.agentTurns);
+    const contexts = yield* reader.read(owner, NiceEvalRecordAttachments.turnContexts);
+    const commands = yield* reader.read(owner, NiceEvalRecordAttachments.sandboxCommands);
+    const activities = yield* reader.read(owner, NiceEvalRecordAttachments.runnerActivities.attempt);
+    const diagnostics = yield* reader.read(owner, NiceEvalRecordAttachments.runnerDiagnostics.attempt);
 
     return Object.freeze({
       state: "available" as const,
@@ -331,12 +328,12 @@ function readAttemptObservabilityView(
 function readSandboxHistoryView(
   reader: RecordReadSession,
   attempt: ReadableAttempt,
-): Effect.Effect<FixedFamilyRead<SandboxHistoryReaderView>, RecordReaderReadError> {
+): Effect.Effect<RecordAttachmentRead<SandboxHistoryReaderView>, RecordReaderReadError> {
   return Effect.gen(function* () {
     const owner = attempt.owner;
-    const commands = yield* reader.readSandboxCommands(owner);
-    const activities = yield* reader.readAttemptRunnerActivities(owner);
-    const diagnostics = yield* reader.readAttemptRunnerDiagnostics(owner);
+    const commands = yield* reader.read(owner, NiceEvalRecordAttachments.sandboxCommands);
+    const activities = yield* reader.read(owner, NiceEvalRecordAttachments.runnerActivities.attempt);
+    const diagnostics = yield* reader.read(owner, NiceEvalRecordAttachments.runnerDiagnostics.attempt);
     return Object.freeze({
       state: "available" as const,
       value: Object.freeze({
@@ -349,15 +346,80 @@ function readSandboxHistoryView(
   });
 }
 
+function assembleSourceNavigationRelation(
+  reader: RecordReadSession,
+  owner: SelectedOwnerRef<"attempt">,
+): Effect.Effect<RecordAttachmentRead<SourceNavigationRelation>, RecordReaderReadError> {
+  return Effect.gen(function* () {
+    const contexts = yield* reader.read(owner, NiceEvalRecordAttachments.turnContexts);
+    if (contexts.state !== "available") {
+      return contexts as RecordAttachmentRead<SourceNavigationRelation>;
+    }
+    const activities = yield* reader.read(
+      owner,
+      NiceEvalRecordAttachments.runnerActivities.attempt,
+    );
+    const activityByTurn = activities.state === "available"
+      ? new Map(activities.value.segments.flatMap((activity) =>
+          activity.phase !== "agent.send" || activity.turnId === null
+            ? []
+            : [[activity.turnId, activity.activityId] as const]
+        ))
+      : new Map<string, string>();
+    const missingTiming = contexts.value.segments.filter((context) =>
+      !activityByTurn.has(context.turnId)
+    ).length;
+    const limitations = [
+      ...(contexts.value.collection.state === "partial"
+        ? [{
+            code: "collection-cap-reached" as const,
+            target: "navigation-row" as const,
+            omittedAtLeast: 1,
+          }]
+        : []),
+      ...(missingTiming > 0
+        ? [{
+            code: "capture-unrecoverable" as const,
+            target: "timing-link" as const,
+            omittedAtLeast: missingTiming,
+          }]
+        : []),
+    ].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    const value = Object.freeze({
+      collection: limitations.length === 0
+        ? Object.freeze({ state: "complete" as const, limitations: Object.freeze([]) })
+        : Object.freeze({ state: "partial" as const, limitations: Object.freeze(limitations) }),
+      rows: Object.freeze(contexts.value.segments.map((context) => {
+        const intervalId = activityByTurn.get(context.turnId);
+        return Object.freeze({
+          turnId: context.turnId,
+          sourceOrder: context.sourceOrder,
+          source: context.source,
+          timing: intervalId === undefined
+            ? Object.freeze({
+                state: "unavailable" as const,
+                reason: "timing-not-recorded" as const,
+              })
+            : Object.freeze({ state: "linked" as const, intervalId }),
+        });
+      })),
+    }) as SourceNavigationRelation;
+    return Object.freeze({ state: "available" as const, value, blobs: contexts.blobs });
+  });
+}
+
 function readSourceNavigationView(
   reader: RecordReadSession,
   attempt: ReadableAttempt,
-): Effect.Effect<FixedFamilyRead<SourceNavigationReaderView>, RecordReaderReadError> {
+): Effect.Effect<RecordAttachmentRead<SourceNavigationReaderView>, RecordReaderReadError> {
   return Effect.gen(function* () {
-    const relation = yield* reader.readSourceNavigationRelation(attempt.owner);
-    const contexts = yield* reader.readTurnContexts(attempt.owner);
-    const activities = yield* reader.readAttemptRunnerActivities(attempt.owner);
-    const sources = yield* reader.readSources(attempt.origin.owner);
+    const relation = yield* assembleSourceNavigationRelation(reader, attempt.owner);
+    const contexts = yield* reader.read(attempt.owner, NiceEvalRecordAttachments.turnContexts);
+    const activities = yield* reader.read(
+      attempt.owner,
+      NiceEvalRecordAttachments.runnerActivities.attempt,
+    );
+    const sources = yield* reader.read(attempt.origin.owner, NiceEvalRecordAttachments.sources);
     return Object.freeze({
       state: "available" as const,
       value: Object.freeze({

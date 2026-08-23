@@ -1,10 +1,11 @@
 # Attachment 怎样保存运行事实
 
-NiceEval 不把运行事实放进开放 JSON bag。每份事实都属于一个固定 Attachment family、一个 owner 和一个
-exact payload。调用方不能追加字段或改变 durable shape，更不能定义自己的 family。
+NiceEval 不把运行事实放进开放 JSON bag。每份事实都属于一个 branded Attachment family、一个 owner 和一个
+exact logical value。调用方不能追加字段或绕过 definition 改变 durable shape；第三方 package 可以定义自己的
+family，但必须显式贡献给 Host catalog。
 
-契约单源始终在 [Fixed Attachment catalog](../architecture.md#fixed-attachment-catalog) 与
-[Record Library](../library.md#fixed-family-与内部读取)。
+契约单源始终在 [SPI identity 与 owner brand](../architecture.md#spi-identity-与-owner-brand) 与
+[Record Library](../library.md#definition-identity)。
 
 ## 先选 owner 与 family
 
@@ -23,10 +24,9 @@ exact payload。调用方不能追加字段或改变 durable shape，更不能�
 owner 不是展示层的选择。它决定目录、identity、reference 和 blob closure。reference Member 不产生新
 Attempt，也不复制任何 Attachment；读取时沿精确 origin Attempt 和 origin Run 追溯。
 
-Runner Activities、Runner Diagnostics 与 Artifacts 各有一个 NiceEval internal definition，两个 owner shape
-写在同一 `owners` map。没有 attempt / run 的重复 family，也没有应用作者可调用的
-`defineRecordAttachment`。conversation、usage、commands、timing、diagnostics 与 source navigation 都是
-reader-side view 或 relation，不额外占 catalog entry。
+Runner Activities、Runner Diagnostics 与 Artifacts 对 Run / Attempt 分别定义 owner-branded family value；
+family 名可以相同，但 definition 只能绑定一个 owner kind。conversation、usage、commands、timing、diagnostics
+与 source navigation 都是 reader-side view 或 relation，不额外占 catalog entry。
 
 File Changes 允许同一路径出现在不同 send 区间。若 agent 在 `turn1` 创建 `src/app.ts`，Eval 在两个 send 之间
 写入它，agent 在 `turn2` 再修改它，两个 send 区间各有一条 `src/app.ts` 变化。同一 send 区间内的变化按
@@ -38,19 +38,28 @@ ASCII path 排序且不重复；这让读侧能保留 agent 的完整轨迹，�
 
 ```text
 attachments/<family>/
-├─ attachment.json   stable family 与 numeric schemaVersion
-├─ payload.json      exact JSON
-└─ blobs/<opaque-key>
+├─ attachment.json              family、numeric schemaVersion、payload/content/reference pointers
+├─ payload/sha256/<digest>      canonical logical value
+└─ content/sha256/<digest>      本 Attachment 私有的 immutable content object
 ```
 
-例如 Assertions 的 envelope 是：
+例如 Assertions envelope 的结构是：
 
 ```json
-{ "family": "niceeval.assertions", "schemaVersion": 2 }
+{
+  "format": "niceeval.record-attachment",
+  "ownerKind": "attempt",
+  "family": "niceeval.assertions",
+  "schemaVersion": 2,
+  "payload": { "sha256": "...", "byteLength": 123 },
+  "contents": [],
+  "references": []
+}
 ```
 
-payload 中的每个 `RecordBlobRef` 都必须有且只有一份本 directory 的 blob。反过来，每个 blob 也必须
-恰被 payload 引用一次。producer 不能提交 raw path、raw key、raw bytes 或另一个 owner 的 ref。
+logical value 中的每个 `RecordContentHandle` 都必须有且只有一份本 directory 的 content object。反过来，每个
+content object 也必须被当前 envelope inventory 引用。producer 不能提交 raw path、raw digest、raw storage bytes
+或另一个 owner 的 handle。
 
 例如 command stdout、文件文本、源码和 Artifact 内容可成为各自 family 的 blob。一个 Sources blob
 不能被 Attempt 直接引用；source site 只保存 source item identity 和 digest 的 semantic join（语义连接）。
@@ -61,27 +70,27 @@ payload 中的每个 `RecordBlobRef` 都必须有且只有一份本 directory �
 ## 采集到读取的路径
 
 ```text
-fixed collector
-  → exact payload + own blob drafts
+capture authority
+  → family.prepare(exact value, own content drafts)
   → Run seal validates closure
   → complete
   → RecordReadSession reads on demand
-  → internal deep-frozen snapshot
+  → deep-frozen value 与 owner-local blob closure
   → Analysis query
 ```
 
-Adapter、Sandbox 和 Assertion producer 只调用 NiceEval 已发布的窄 collector 方法。此前未保存的事实
-由 NiceEval 扩展既有 family，或加入新的 static fixed family；调用方不能定义 family，也不能绕过 collector
-写入 `payload.json`。
+Adapter、Sandbox 和 Assertion producer 在各自 capture authority 内构造 definition 的 current value，再调用
+owner-scoped `attach(definition, preparedWrite)`。第三方 package / Plugin 使用同一边界；它们不能绕过 family
+schema、content closure 或 owner brand 写入物理文件。
 
 `RecordReadSession` 的 internal adapter 只在 Sample 的 `AnalysisInput` 或 `DomainView` 首次需要某份
-owner/family 时读取和验证它。`available` snapshot 包含 deep-frozen payload 和完整内存 blob snapshot；
-读取 blob 时返回 defensive copy，不重开文件。Scope 关闭后，已经形成的 snapshot 仍可同步消费。
+owner/family 时读取和验证它。`available` 包含 deep-frozen payload 和完整内存 blob closure；`bytes(ref)`
+返回 defensive copy，不重开文件。Scope 关闭后，已经形成的值仍可同步消费。
 
-历史 owner 缺少 current catalog 中请求的 family 时返回 `not-recorded`。`invalid` 只影响请求该事实的 query，
-不能把其它 Core 或 family 伪装为失败。已知 family 的旧 schemaVersion 不进入 ordinary reader；只在完整固定
-chain 存在时可 maintenance migrate。未知独立 future family、已知 future 版本与带 `/vN` 后缀的未发布草案都使
-整份 Record 在 session 形成前返回 `unsupported-format`。
+历史 owner 缺少请求 family 时返回 `not-recorded`。`invalid` 只影响请求该事实的 query，不能把其它 Core 或
+family 伪装为失败。已知 family 的旧 schemaVersion 不进入 ordinary reader；只在完整相邻 chain 存在时可显式
+migrate。未贡献 family 不阻塞无关局部读取；direct/reference closure 与 `requireComplete()` 返回
+`family-definition-required`。
 
 ## 不能写进 Attachment 的内容
 
@@ -90,7 +99,7 @@ chain 存在时可 maintenance migrate。未知独立 future family、已知 fut
 - execution claim、lease、session、cache 和 global `latest` 属于 local operation state；
 - matcher 实现、计划、reuse 判断和当前 worktree 属于 behavior / Experiment；
 - total、平均值、通过率、排名、分母和页面树属于 Analysis 或 Report；
-- 此前未保存的不可恢复事实必须进入 NiceEval 的固定协议，不得由 Adapter 扩充 catalog。
+- 此前未保存的不可恢复事实必须进入具名 family definition，不得由 Adapter 绕过 catalog 直接写物理 bytes。
 
 ## 相关阅读
 

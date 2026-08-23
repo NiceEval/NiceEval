@@ -6,7 +6,7 @@ import {
 import {
   IntervalIdSchema,
   TurnIdSchema,
-} from "../../o11y/record/codec.ts";
+} from "../family/source-receipt/codec.ts";
 import {
   EmptyArraySchema,
   PositiveSafeIntegerSchema,

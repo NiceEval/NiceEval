@@ -50,8 +50,9 @@ import type {
 } from "../analysis/contracts.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import type { AgentTurnsAttachment } from "../record/family/agent-turns/definition.ts";
+import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import type {
-  FixedFamilyRead,
+  RecordAttachmentRead,
   ReadableAttempt,
   RecordReadSession,
   RecordSelection,
@@ -152,7 +153,7 @@ type CachedAttemptRead =
 type AttemptCacheDeferred = Deferred.Deferred<CachedAttemptRead, SampleClosedError>;
 
 type CachedRecordRead<Payload> =
-  | { readonly state: "result"; readonly read: FixedFamilyRead<Payload> }
+  | { readonly state: "result"; readonly read: RecordAttachmentRead<Payload> }
   | { readonly state: "read-failed"; readonly message: string };
 
 type CacheDeferred = Deferred.Deferred<
@@ -730,7 +731,10 @@ export function readRunDiagnosticsDomainView(
         });
       } else {
         const diagnostics = yield* Effect.either(
-          binding.reader.readRunRunnerDiagnostics(runRead.right.value.owner),
+          binding.reader.read(
+            runRead.right.value.owner,
+            NiceEvalRecordAttachments.runnerDiagnostics.run,
+          ),
         );
         if (Either.isLeft(diagnostics)) {
           entry = Object.freeze({
@@ -1062,7 +1066,7 @@ function analysisRunForSlot(snapshot: SampleSnapshot, slot: IncludedAnalysisSlot
 function domainFamilyState<Kind extends BuiltinDomainViewKind, Payload>(
   identity: AttemptEvidenceIdentity,
   view: Kind,
-  read: Exclude<FixedFamilyRead<Payload>, { readonly state: "available" }>,
+  read: Exclude<RecordAttachmentRead<Payload>, { readonly state: "available" }>,
   reportIssue = true,
 ): { readonly value: ClosedDomainEntry<Kind>; readonly issues: readonly AnalysisIssue[] } {
   const state = read.state === "not-recorded"
@@ -1107,7 +1111,7 @@ function domainFailure<Kind extends BuiltinDomainViewKind>(
 
 function observationFromFamily<Payload>(
   member: LogicalSlot,
-  read: Exclude<FixedFamilyRead<Payload>, { readonly state: "available" }>,
+  read: Exclude<RecordAttachmentRead<Payload>, { readonly state: "available" }>,
   label: string,
 ): SampleInputObservation<never> {
   if (read.state === "not-recorded") return missingObservation(member);

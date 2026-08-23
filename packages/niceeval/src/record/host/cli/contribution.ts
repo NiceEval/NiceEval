@@ -16,7 +16,7 @@ import {
   type RecordRoot,
   type RecordRootConstructionError,
 } from "../../platform/root.ts";
-import { RecordFileSystem, RecordGit } from "../../platform/services.ts";
+import { RecordFileSystem } from "../../platform/services.ts";
 import { recordHost } from "../runtime.ts";
 import type {
   RecordCleanOperationPlan,
@@ -212,7 +212,7 @@ function runClean(
 
 function runMigrate(
   input: ParsedRecordCommand,
-): Effect.Effect<number, RecordCliError, CliOutput | RecordCoordination | RecordFileSystem | RecordGit> {
+): Effect.Effect<number, RecordCliError, CliOutput | RecordCoordination | RecordFileSystem> {
   return Effect.gen(function* () {
     const planned = yield* Effect.either(recordHost.maintenance.planMigrate({ root: input.root }));
     if (Either.isLeft(planned)) return yield* emitMaintenanceFailure("migrate", planned.left, input.rootPath);
@@ -228,14 +228,6 @@ function runMigrate(
           "migrate",
           "stderr",
           "record-format-unsupported\nInstall a NiceEval version that supports this Record format.\n",
-        );
-        return 1;
-      case "RecordMigrationRestoreRequired":
-        yield* write("migrate", "stdout", planText);
-        yield* write(
-          "migrate",
-          "stderr",
-          "record-migration-git-restore-required\nA clean Git restore point is required; --yes cannot bypass this preflight.\n",
         );
         return 1;
       case "RecordMigrationReady": {
@@ -258,7 +250,11 @@ function runMigrate(
             yield* write("migrate", "stdout", "Record migration already-current.\n");
             return 0;
           case "RecordMigrationApplied":
-            yield* write("migrate", "stdout", "Record migration migrated.\n");
+            yield* write(
+              "migrate",
+              "stdout",
+              `Record migration migrated: committed ${applied.right.committed}, skipped ${applied.right.skipped}, failed ${applied.right.failed}.\n`,
+            );
             return 0;
           default:
             return assertNever(applied.right);

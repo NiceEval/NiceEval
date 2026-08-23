@@ -1,15 +1,15 @@
-import type { AgentTurnsAttachment } from "../../../record/family/agent-turns/definition.ts";
+import type { AgentTurnsAttachment } from "../../record/family/agent-turns/definition.ts";
 import type {
   AttemptRunnerActivitiesAttachment,
   RunRunnerActivitiesAttachment,
-} from "../../../record/family/runner-activities/definition.ts";
+} from "../../record/family/runner-activities/definition.ts";
 import type {
   AttemptRunnerDiagnosticsAttachment,
   RunRunnerDiagnosticsAttachment,
-} from "../../../record/family/runner-diagnostics/definition.ts";
-import type { SandboxCommandsAttachment } from "../../../record/family/sandbox-commands/definition.ts";
-import type { SourceReceiptCollection } from "../../../record/family/source-receipt.ts";
-import type { SafeText } from "../model.ts";
+} from "../../record/family/runner-diagnostics/definition.ts";
+import type { SandboxCommandsAttachment } from "../../record/family/sandbox-commands/definition.ts";
+import type { SourceReceiptCollection } from "../../record/family/source-receipt/index.ts";
+import type { SafeText } from "../../record/family/source-receipt/model.ts";
 import type { CommandManifest } from "./model.ts";
 
 /**

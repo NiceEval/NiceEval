@@ -95,7 +95,7 @@ import {
   prepareRunnerRecordReuse,
   type RunnerRecordAttempt,
 } from "./record.ts";
-import { bindRunnerRunObservabilityDiagnostics } from "../o11y/record/producer/runner.ts";
+import { bindRunnerRunObservabilityDiagnostics } from "./source-receipts/runtime.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{

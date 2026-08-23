@@ -11,7 +11,6 @@ export const RecordPlatformOperationSchema = Schema.Literal(
   "publish-directory",
   "remove-path",
   "release-record-lease",
-  "inspect-git",
 );
 
 export type RecordPlatformOperation = Schema.Schema.Type<
@@ -30,7 +29,6 @@ export type RecordPathKind = Schema.Schema.Type<typeof RecordPathKindSchema>;
 export const RecordPlatformResourceSchema = Schema.Literal(
   "directory-entries",
   "file-bytes",
-  "git-output",
 );
 
 export type RecordPlatformResource = Schema.Schema.Type<
@@ -131,15 +129,6 @@ export class RecordMaintenanceBusy extends Schema.TaggedError<RecordMaintenanceB
   requested: Schema.Literal("shared", "exclusive"),
 }) {}
 
-/** Git inspection failed for a reason other than an ordinary no-restore-point state. */
-export class RecordGitCommandError extends Schema.TaggedError<RecordGitCommandError>(
-  "@niceeval/record/RecordGitCommandError",
-)("RecordGitCommandError", {
-  code: Schema.Literal("record-git-command-failed"),
-  operation: Schema.Literal("locate-worktree", "read-head", "inspect-status"),
-  cause: Schema.Defect,
-}) {}
-
 export type RecordFileSystemError =
   | RecordRootInvalid
   | RecordPathInvalid
@@ -149,9 +138,3 @@ export type RecordFileSystemError =
   | RecordResourceLimitExceeded
   | RecordIoError
   | RecordPermissionError;
-
-export type RecordGitError =
-  | RecordRootInvalid
-  | RecordResourceLimitInvalid
-  | RecordResourceLimitExceeded
-  | RecordGitCommandError;

@@ -8,7 +8,7 @@ import {
   makeCanonicalDecimal,
   type CanonicalDecimal,
   type NonNegativeSafeInteger,
-} from "../o11y/record/model.ts";
+} from "../record/family/source-receipt/model.ts";
 
 const TOKENS_PER_MILLION_SCALE = 6;
 

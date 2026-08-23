@@ -190,7 +190,7 @@ export const RecordFormatIdSchema: Schema.Schema<RecordFormatId, string> =
   Schema.String.pipe(
     Schema.filter(isRecordFormatId, {
       identifier: "RecordFormatId",
-      description: "the fixed source-receipt Record format identity",
+      description: "the current generic Attachment Record format identity",
     }),
     Schema.brand(RECORD_FORMAT_ID_BRAND),
   );

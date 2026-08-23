@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import {
   PositiveSafeIntegerSchema,
   SafeIdentifierSchema,
-} from "../../o11y/record/codec.ts";
+} from "../../record/family/source-receipt/codec.ts";
 import {
   isSourceNativeSandboxId,
   type SandboxAssignedPayload,

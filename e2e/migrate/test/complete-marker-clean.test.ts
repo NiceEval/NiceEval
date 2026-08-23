@@ -12,6 +12,8 @@ test("clean 只把零字节普通文件 complete 视为 Run 已完成", async ()
   await e2e.case("strict-complete-marker-clean", async ({ paths, commands: { candidate } }) => {
     const recordRoot = join(paths.projectRoot, ".niceeval", "record");
     copySourceFirstAssertionsV1Fixture(paths.sourceRoot, recordRoot);
+    const migrated = await candidate.run(["migrate", "--yes"]);
+    expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
     const runs = join(recordRoot, "runs");
     mkdirSync(join(runs, NON_EMPTY_MARKER_RUN_ID), { recursive: true });
     writeFileSync(join(runs, NON_EMPTY_MARKER_RUN_ID, "complete"), "not sealed\n");

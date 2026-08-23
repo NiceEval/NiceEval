@@ -6,12 +6,7 @@ import type { AnalysisSelectionRequest, ExperimentId, RunId } from "../../analys
 import { ExperimentIdSchema } from "../../record/codec/identifiers.ts";
 import { makeRecordRoot, RunIdSchema, type RecordRoot } from "../../record/index.ts";
 import type { RecordCoordination } from "../../coordination/record-leases.ts";
-import type { RecordFileSystem, RecordGit } from "../../record/platform/services.ts";
-import { recordHost } from "../../record/host/runtime.ts";
-import {
-  renderAutomaticMigrationFailure,
-  renderAutomaticMigrationResult,
-} from "../../record/host/cli/presentation.ts";
+import type { RecordFileSystem } from "../../record/platform/services.ts";
 import { experimentHost, type ExperimentHostRequirements } from "../../experiment/host/index.ts";
 import {
   CliArguments,
@@ -70,7 +65,7 @@ const VIEW_HELP = `niceeval view — build a complete Report site\n\nUsage:\n  n
 
 type Values = Record<string, string | boolean | string[] | undefined>;
 type ReportCliRequirements = CliArguments | CliInvocationFacts | CliOutput | CliPath | ReportModulePlatform |
-  ProjectConfiguration | ReportBrowser | RecordFileSystem | RecordGit | RecordCoordination | ReportFileSystem |
+  ProjectConfiguration | ReportBrowser | RecordFileSystem | RecordCoordination | ReportFileSystem |
   ExperimentHostRequirements | Scope.Scope;
 type ReportCliError = CliFeatureError;
 
@@ -258,25 +253,6 @@ function build(request: Request, inputs: LoadedInputs) {
     selection: request.target.kind === "selection" ? request.target.selection : inputs.selection!, report: inputs.report, theme: inputs.theme });
 }
 
-function ensureCurrentRecord(command: "show" | "view", request: Request) {
-  return recordHost.ensureAutomaticMigration({ root: request.root }).pipe(
-    Effect.mapError((cause) => failure(
-      command,
-      "ensure automatic Record migration",
-      cause,
-      renderAutomaticMigrationFailure(cause),
-    )),
-    Effect.tap((result) => {
-      const notice = renderAutomaticMigrationResult(result);
-      return notice === undefined
-        ? Effect.void
-        : write("stderr", notice).pipe(
-            Effect.mapError((cause) => failure(command, "write automatic Record migration notice", cause)),
-          );
-    }),
-  );
-}
-
 function showCommand(argv: readonly string[]): Effect.Effect<number, ReportCliError, ReportCliRequirements> {
   return Effect.gen(function* () {
     const parser = yield* CliArguments;
@@ -288,7 +264,6 @@ function showCommand(argv: readonly string[]): Effect.Effect<number, ReportCliEr
     const request = parseRequest("show", facts.cwd, parsed.positionals, parsed.values, path, platform);
     if (typeof request === "string") return yield* usage("show", request);
     if (parsed.values.out !== undefined || parsed.values.host !== undefined || parsed.values.port !== undefined || parsed.values.open !== undefined || parsed.values["no-open"] !== undefined) return yield* usage("show", "niceeval show does not accept view server/export options.");
-    yield* ensureCurrentRecord("show", request);
     const inputs = yield* loadInputs("show", request, false);
     const projection = parsed.values.json === true ? undefined : panelCapabilityOf({ isTTY: facts.stdout.isTTY, width: facts.stdout.columns });
     const output = yield* reportHost.show({ root: request.root,
@@ -320,7 +295,6 @@ function viewCommand(argv: readonly string[]): Effect.Effect<number, ReportCliEr
     if (out !== undefined && (parsed.values.host !== undefined || parsed.values.port !== undefined || parsed.values.open === true || request.page !== undefined)) {
       return yield* usage("view", "view --out does not accept --host, --port, --open, or --page.");
     }
-    yield* ensureCurrentRecord("view", request);
     const inputs = yield* loadInputs("view", request, true);
     const initial = yield* build(request, inputs).pipe(Effect.mapError((cause) => failure("view", "build Report site", cause)));
     if (out !== undefined) {
@@ -330,7 +304,6 @@ function viewCommand(argv: readonly string[]): Effect.Effect<number, ReportCliEr
       return 0;
     }
     const rebuild = () => Effect.gen(function* () {
-      yield* ensureCurrentRecord("view", request);
       const next = yield* loadInputs("view", request, true);
       const revision = yield* build(request, next).pipe(Effect.mapError((cause) => ({ summary: reportFailureSummary(cause) })));
       return Object.freeze({ kind: "site" as const, site: revision, watchInputs: next.watchInputs });

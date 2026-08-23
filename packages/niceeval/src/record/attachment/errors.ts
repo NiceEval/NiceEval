@@ -66,6 +66,76 @@ export interface RecordAttachmentClosureInvalid {
   readonly issues: NonEmptyRecordAttachmentIssues;
 }
 
+/**
+ * Stable failures of the registry-free Attachment SPI. Callback causes stay on
+ * the in-memory failure and must not be serialized into a Record envelope.
+ */
+export type RecordAttachmentSpiFailure =
+  | {
+      readonly code: "invalid-family-definition";
+      readonly cause?: unknown;
+    }
+  | {
+      readonly code: "duplicate-family";
+      readonly owner: "run" | "attempt";
+      readonly family: string;
+    }
+  | {
+      readonly code: "owner-mismatch";
+      readonly expected: "run" | "attempt";
+      readonly actual: "run" | "attempt";
+    }
+  | {
+      readonly code: "exact-decode-failed";
+      readonly cause?: unknown;
+    }
+  | {
+      readonly code: "invariant-failed";
+      readonly issues: NonEmptyRecordAttachmentIssues;
+      readonly cause?: unknown;
+    }
+  | {
+      readonly code: "content-closure-failed";
+      readonly issues?: NonEmptyRecordAttachmentIssues;
+      readonly cause?: unknown;
+    }
+  | {
+      readonly code: "reference-closure-failed";
+      readonly cause?: unknown;
+    }
+  | {
+      readonly code: "resource-budget-exceeded";
+      readonly resource: "value" | "content" | "reference";
+      readonly cause?: unknown;
+    }
+  | {
+      readonly code: "migration-chain-invalid";
+      readonly cause?: unknown;
+    }
+  | {
+      readonly code: "migration-step-failed";
+      readonly from: number;
+      readonly to: number;
+      readonly cause: unknown;
+    };
+
+/** Synchronous declaration factories fail before a catalog can gain authority. */
+export class RecordAttachmentSpiDefinitionError extends Error {
+  constructor(
+    readonly code: "invalid-family-definition" | "migration-chain-invalid" =
+      "invalid-family-definition",
+    readonly cause?: unknown,
+  ) {
+    super(
+      code === "migration-chain-invalid"
+        ? "Invalid Record Attachment migration chain"
+        : "Invalid Record Attachment family definition",
+      { cause },
+    );
+    this.name = "RecordAttachmentSpiDefinitionError";
+  }
+}
+
 export function recordAttachmentDefinitionInvalid(
   issues: readonly RecordAttachmentIssue[],
 ): RecordAttachmentDefinitionError {

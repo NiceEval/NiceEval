@@ -11,6 +11,7 @@ import type {
 } from "../model/identifiers.ts";
 import type { RecordCoreInvalid, RecordReferenceInvalid } from "../errors/record-errors.ts";
 import type { RecordAttachmentClosureInvalid } from "../attachment/errors.ts";
+import type { FamilyDefinitionRequired } from "../reader/errors.ts";
 import type { RecordFileSystemError } from "../platform/errors.ts";
 import type { RecordRoot } from "../platform/root.ts";
 import type {
@@ -23,6 +24,7 @@ import type {
   RecordWriteSessionInvalid,
   RecordWriterClosed,
   RecordRunAlreadyCreated,
+  RecordOwnerDefinitionMismatch,
 } from "./errors.ts";
 
 export const recordWriteSessionBrand: unique symbol = Symbol(
@@ -45,7 +47,9 @@ export type RecordWriteError =
   | RecordReferenceInvalid
   | RecordCoreInvalid
   | RecordAttachmentEncodeError
-  | RecordAttachmentClosureInvalid;
+  | RecordAttachmentClosureInvalid
+  | FamilyDefinitionRequired
+  | RecordOwnerDefinitionMismatch;
 
 export interface RecordPublishReceipt {
   readonly runId: RunId;

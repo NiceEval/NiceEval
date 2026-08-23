@@ -1,4 +1,5 @@
-import { cpSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createE2EContext } from "@niceeval/testkit";
 import { expect } from "vitest";
@@ -65,21 +66,24 @@ export function copySourceFirstUnknownFamilyFixture(
   });
 }
 
-export async function commitRecord(
-  run: (command: readonly [string, ...string[]]) => Promise<{
-    readonly exitCode: number | null;
-    readonly diagnostic: () => string;
-  }>,
-  message: string,
-): Promise<void> {
-  for (const args of [
-    ["init", "-q"],
-    ["config", "user.email", "e2e@niceeval.local"],
-    ["config", "user.name", "NiceEval E2E"],
-    ["add", "-f", ".niceeval/record"],
-    ["commit", "-qm", message],
-  ] as const) {
-    const git = await run(["git", ...args]);
-    expect(git.exitCode, git.diagnostic()).toBe(0);
+export function recordTreeDigest(root: string): string {
+  const hash = createHash("sha256");
+  const visit = (directory: string, prefix: string): void => {
+    const entries = readdirSync(directory, { withFileTypes: true })
+      .toSorted((left, right) => left.name.localeCompare(right.name, "en"));
+    for (const entry of entries) {
+      const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+      hash.update(entry.isDirectory() ? "directory\0" : "file\0");
+      hash.update(relative);
+      hash.update("\0");
+      if (entry.isDirectory()) {
+        visit(join(directory, entry.name), relative);
+      } else {
+        hash.update(readFileSync(join(directory, entry.name)));
+      }
+      hash.update("\0");
+    }
   }
+  visit(root, "");
+  return hash.digest("hex");
 }

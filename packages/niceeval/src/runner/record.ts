@@ -15,14 +15,17 @@ import {
   makeFixedRecordAttachmentWrite,
   makeRecordBlobSource,
   validateRecordAttachmentWrite,
+  type AnyRecordAttachmentVersion,
   type FixedAttachmentWriteSpec,
   type RecordAttachmentBlobDraft,
+  type RecordAttachmentFamilyDefinition,
   type RecordAttachmentWrite,
 } from "../record/attachment/index.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
 import {
   attemptArtifactsRecordFamily,
   assertionsRecordFamily,
+  NiceEvalRecordAttachments,
   runArtifactsRecordFamily,
 } from "../record/family/catalog.ts";
 import type { AssertionSourceSite } from "../record/family/assertions/definition.ts";
@@ -33,11 +36,11 @@ import {
   createRunSourceReceiptAttachmentWrites,
   type AttemptSourceReceiptAttachmentWrites,
   type RunSourceReceiptAttachmentWrites,
-} from "../o11y/record/write/source-receipts.ts";
+} from "./source-receipts/attachment-writes.ts";
 import {
   createRunnerAttemptSourceReceiptsCapture,
   createRunnerRunSourceReceiptsCapture,
-} from "../o11y/record/producer/runner.ts";
+} from "./source-receipts/runtime.ts";
 import {
   EvalIdSchema,
   ExecutionIdentityDigestSchema,
@@ -49,7 +52,6 @@ import {
 import { recordHost } from "../record/host/runtime.ts";
 import type {
   AttemptWriteSession,
-  AssertionsWrite,
   RecordSealReceipt,
   RunWriteSession,
 } from "../record/host/types.ts";
@@ -140,6 +142,24 @@ const runnerReuseContract = Object.freeze({
   domain: "niceeval.reuse/base-v1",
   value: "project-target/v1",
 });
+
+/**
+ * Official capture helpers still return the storage-neutral base write type.
+ * Pairing it with its exact branded definition restores the static identity;
+ * Host.attach independently verifies the retained definition/spec at runtime.
+ */
+function exactPreparedWrite<
+  Owner extends "run" | "attempt",
+  Family extends string,
+  Current extends AnyRecordAttachmentVersion,
+  E,
+  R,
+>(
+  _definition: RecordAttachmentFamilyDefinition<Owner, Family, Current>,
+  write: RecordAttachmentWrite<Owner, E, R>,
+): RecordAttachmentWrite<Owner, E, R, Family, Current["version"]> {
+  return write as RecordAttachmentWrite<Owner, E, R, Family, Current["version"]>;
+}
 
 /**
  * Builds all current identity facts before any Record read. These values feed
@@ -573,7 +593,7 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
 }
 
 interface PreparedAssertionsWrite {
-  readonly write: AssertionsWrite;
+  readonly write: RecordAttachmentWrite<"attempt", never, never>;
   readonly entryIds: readonly AssertionEntryId[];
 }
 
@@ -1078,7 +1098,10 @@ export function openRunnerRecordCoordinator(input: {
           issue: sources.left,
         }));
       }
-      yield* recordRun.session.writeSources(sources.right.runWrite);
+      yield* recordRun.session.attach(
+        NiceEvalRecordAttachments.sources,
+        exactPreparedWrite(NiceEvalRecordAttachments.sources, sources.right.runWrite),
+      );
 
       const richBySlot = new Map(origins.map((origin) => [origin.slotId, origin] as const));
       for (const terminal of terminalAttempts) {
@@ -1098,17 +1121,32 @@ export function openRunnerRecordCoordinator(input: {
           sourceSites: sources.right.sourceSitesBySlot.get(slotId) ?? Object.freeze([]),
         });
         if (Either.isLeft(assertions)) return yield* Effect.fail(assertions.left);
-        yield* active.session.writeAssertions(assertions.right.write);
+        yield* active.session.attach(
+          NiceEvalRecordAttachments.assertions,
+          exactPreparedWrite(NiceEvalRecordAttachments.assertions, assertions.right.write),
+        );
 
         const sourceReceipts = yield* attemptSourceReceiptWrites({ result: richResult, sealed });
         if (sourceReceipts.agentTurns !== undefined) {
-          yield* active.session.writeAgentTurns(sourceReceipts.agentTurns);
+          yield* active.session.attach(
+            NiceEvalRecordAttachments.agentTurns,
+            sourceReceipts.agentTurns,
+          );
         }
         if (sourceReceipts.sandboxCommands !== undefined) {
-          yield* active.session.writeSandboxCommands(sourceReceipts.sandboxCommands);
+          yield* active.session.attach(
+            NiceEvalRecordAttachments.sandboxCommands,
+            sourceReceipts.sandboxCommands,
+          );
         }
-        yield* active.session.writeAttemptRunnerActivities(sourceReceipts.runnerActivities);
-        yield* active.session.writeAttemptRunnerDiagnostics(sourceReceipts.runnerDiagnostics);
+        yield* active.session.attach(
+          NiceEvalRecordAttachments.runnerActivities.attempt,
+          sourceReceipts.runnerActivities,
+        );
+        yield* active.session.attach(
+          NiceEvalRecordAttachments.runnerDiagnostics.attempt,
+          sourceReceipts.runnerDiagnostics,
+        );
 
         const turnContexts = createRunnerTurnContextsWrite({
           result: richResult,
@@ -1121,20 +1159,30 @@ export function openRunnerRecordCoordinator(input: {
           }));
         }
         if (turnContexts.right !== undefined) {
-          yield* active.session.writeTurnContexts(turnContexts.right);
+          yield* active.session.attach(
+            NiceEvalRecordAttachments.turnContexts,
+            exactPreparedWrite(NiceEvalRecordAttachments.turnContexts, turnContexts.right),
+          );
         }
 
         const fileChangesCapture = runnerAttemptFileChangesCaptureForResult(richResult);
         if (fileChangesCapture !== undefined) {
-          yield* active.session.writeFileChanges(
-            createFileChangesCaptureAttachmentWrite(fileChangesCapture),
+          yield* active.session.attach(
+            NiceEvalRecordAttachments.fileChanges,
+            exactPreparedWrite(
+              NiceEvalRecordAttachments.fileChanges,
+              createFileChangesCaptureAttachmentWrite(fileChangesCapture),
+            ),
           );
         }
 
         const artifacts = attemptArtifactsWrite(richResult);
         if (Either.isLeft(artifacts)) return yield* Effect.fail(artifacts.left);
         if (artifacts.right !== undefined) {
-          yield* active.session.writeAttemptArtifacts(artifacts.right);
+          yield* active.session.attach(
+            NiceEvalRecordAttachments.artifacts.attempt,
+            exactPreparedWrite(NiceEvalRecordAttachments.artifacts.attempt, artifacts.right),
+          );
         }
         yield* active.session.complete(outcomeFor(richResult));
         recordRun.gapActions.set(slotId, "executed");
@@ -1142,14 +1190,23 @@ export function openRunnerRecordCoordinator(input: {
 
       const sourceReceipts = yield* runSourceReceiptWrites(recordRun.run);
       if (sourceReceipts.runnerActivities !== undefined) {
-        yield* recordRun.session.writeRunRunnerActivities(sourceReceipts.runnerActivities);
+        yield* recordRun.session.attach(
+          NiceEvalRecordAttachments.runnerActivities.run,
+          sourceReceipts.runnerActivities,
+        );
       }
       if (sourceReceipts.runnerDiagnostics !== undefined) {
-        yield* recordRun.session.writeRunRunnerDiagnostics(sourceReceipts.runnerDiagnostics);
+        yield* recordRun.session.attach(
+          NiceEvalRecordAttachments.runnerDiagnostics.run,
+          sourceReceipts.runnerDiagnostics,
+        );
       }
       const artifacts = runArtifactsWrite();
       if (Either.isLeft(artifacts)) return yield* Effect.fail(artifacts.left);
-      yield* recordRun.session.writeRunArtifacts(artifacts.right);
+      yield* recordRun.session.attach(
+        NiceEvalRecordAttachments.artifacts.run,
+        exactPreparedWrite(NiceEvalRecordAttachments.artifacts.run, artifacts.right),
+      );
     });
 
     const pendingGap = (recordRun: RunnerRecordRun): SlotId | undefined => {

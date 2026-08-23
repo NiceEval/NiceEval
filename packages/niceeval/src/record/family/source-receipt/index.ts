@@ -4,7 +4,7 @@ import {
   EmptyArraySchema,
   PositiveSafeIntegerSchema,
   SafeIdentifierSchema,
-} from "./common.ts";
+} from "../common.ts";
 
 export const SourceSegmentIdSchema = SafeIdentifierSchema;
 

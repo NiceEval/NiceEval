@@ -1,10 +1,53 @@
-/**
- * Public Record and Host-composition surface. `recordHost` is also exported
- * from `niceeval/record/host`; fixed definitions, generic attachment
- * capabilities, and migration factories remain package-private.
- */
-export { recordHost } from "./host/index.ts";
-export type { RecordHostSDK } from "./host/index.ts";
+/** Public Effect-native Record and generic Attachment composition surface. */
+export { makeRecordHost, recordHost } from "./host/index.ts";
+export type {
+  AttemptWriteSession,
+  RecordAttachmentRead,
+  RecordCompleteView,
+  RecordHostSDK,
+  RecordReadSession,
+  ReferenceRunWriteSession,
+  RunWriteSession,
+} from "./host/index.ts";
+
+export {
+  defineRecordAttachment,
+  makeRecordAttachmentBlobDrafts,
+  makeRecordAttachmentCatalog,
+  recordAttachmentIssue,
+  recordAttachmentMigration,
+  recordAttachmentVersion,
+  RecordAttachmentSpiDefinitionError,
+  RecordContent,
+  RecordContentHandleSchema,
+  RecordOwner,
+} from "./attachment/index.ts";
+export type {
+  AnyRecordAttachmentFamilyDefinition,
+  AnyRecordAttachmentMigration,
+  AnyRecordAttachmentVersion,
+  NonEmptyRecordAttachmentIssues,
+  RecordAttachmentBlobBuilder,
+  RecordAttachmentBlobDraft,
+  RecordAttachmentCatalog,
+  RecordAttachmentContentDescriptor,
+  RecordAttachmentDefinition,
+  RecordAttachmentFamilyDefinition,
+  RecordAttachmentInvariants,
+  RecordAttachmentIssue,
+  RecordAttachmentIssueCode,
+  RecordAttachmentMigration,
+  RecordAttachmentMigrationInput,
+  RecordAttachmentMigrationOutput,
+  RecordAttachmentOwner,
+  RecordAttachmentReferenceDescriptor,
+  RecordAttachmentReferencesDescriptor,
+  RecordAttachmentSpiFailure,
+  RecordAttachmentVersion,
+  RecordAttachmentVersionValue,
+  RecordContentHandle,
+  RecordContentSource,
+} from "./attachment/index.ts";
 
 export {
   cleanIncompleteRuns,

@@ -362,15 +362,6 @@ function recordRoot(input: ExperimentHostInvocationPlanRequest) {
   return makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval/record"));
 }
 
-/** Only the four explicit mutation/plan entry points may trigger migration. */
-function ensureAutomaticMigration(input: { readonly cwd: string; readonly recordRoot?: string }) {
-  return Effect.gen(function* () {
-    const root = makeRecordRoot(resolve(input.cwd, input.recordRoot ?? ".niceeval/record"));
-    if (Either.isLeft(root)) return yield* Effect.fail(root.left);
-    return yield* recordHost.ensureAutomaticMigration({ root: root.right });
-  });
-}
-
 function comparisonOf(slot: ExecutionReusePlanSlot): readonly ExperimentHostDryComparison[] {
   return freezeArray(slot.comparisons.map((comparison) => Object.freeze({ ...comparison })));
 }
@@ -443,13 +434,9 @@ export function planInvocation(
   input: ExperimentHostInvocationPlanRequest,
 ): Effect.Effect<ExperimentHostInvocationPlanResult, ExperimentHostError, ExperimentHostRequirements> {
   return closeOperation("invocation-plan", Effect.gen(function* () {
-    // Invocation planning is the explicit `exp` / `exp --dry` boundary. Do
-    // not move this to catalog, check, debug, teardown, or session reads: those
-    // operations must remain migration-free observations.
-    const automaticMigration = yield* ensureAutomaticMigration(input);
     const prepared = yield* prepareRuns(input);
     if (prepared.status === "problem") {
-      return Object.freeze({ ...prepared.problem, automaticMigration });
+      return Object.freeze({ ...prepared.problem });
     }
     const root = recordRoot(input);
     if (Either.isLeft(root)) return yield* Effect.fail(root.left);
@@ -564,7 +551,6 @@ export function planInvocation(
     }
     return Object.freeze({
       status: "ready" as const,
-      automaticMigration,
       plan,
       shape,
       experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
@@ -780,8 +766,7 @@ function freezeRenamePlan(plan: RunnerExperimentRenamePlan): ExperimentHostRenam
 export function planRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("rename-plan", ensureAutomaticMigration(input).pipe(
-    Effect.zipRight(planExperimentRename(input)),
+  return closeOperation("rename-plan", planExperimentRename(input).pipe(
     Effect.map(freezeRenamePlan),
   ));
 }
@@ -790,7 +775,6 @@ export function applyRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenameResult, ExperimentHostError, ExperimentHostRequirements> {
   return closeOperation("rename-apply", Effect.gen(function* () {
-    yield* ensureAutomaticMigration(input);
     const outcome = yield* Effect.either(renameExperiment(input));
     if (Either.isLeft(outcome)) {
       if (!(outcome.left instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.left);
@@ -828,8 +812,7 @@ export function applyRename(
 export function accept(
   input: ExperimentHostAcceptRequest,
 ): Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("accept", ensureAutomaticMigration(input).pipe(
-    Effect.zipRight(acceptLocators(input)),
+  return closeOperation("accept", acceptLocators(input).pipe(
     Effect.map((receipts) => freezeArray(receipts.map((receipt) => Object.freeze({
     invocationId: receipt.invocationId,
     runId: receipt.runId,

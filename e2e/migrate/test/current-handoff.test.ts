@@ -39,7 +39,7 @@ test("source-first current producer 的持久化结果可由独立 candidate 读
       const migration = await candidate.run(["migrate"]);
       expect(migration.exitCode, migration.diagnostic()).toBe(0);
       expect(migration.stdout, migration.diagnostic()).toContain(
-        "Record migration plan: already-current\nformat: niceeval.record.source-receipts\n",
+        "Record migration plan: already-current\nformat: niceeval.record.attachments\n",
       );
       expect(migration.stdout, migration.diagnostic()).toContain("Record migration already-current.");
 

@@ -1,28 +1,40 @@
 // owner: docs/engineering/testing/e2e/migrate.md#assertions-v1-to-v2
 
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import {
-  ATTEMPT_ID,
-  commitRecord,
   copySourceFirstAssertionsV1Fixture,
   e2e,
   RUN_ID,
 } from "./support.ts";
 
-test("Assertions v1 迁移且 invalid Agent Turns 保持 source-local", async () => {
-  await e2e.case("assertions-v1-to-v2", async ({ paths, commands: { candidate }, run }) => {
+test("Assertions v1 只经显式迁移后可由 current reader 读回", async () => {
+  await e2e.case("assertions-v1-to-v2", async ({ paths, commands: { candidate } }) => {
     const recordRoot = join(paths.projectRoot, ".niceeval", "record");
-    const { discardedBlobPath } = copySourceFirstAssertionsV1Fixture(paths.sourceRoot, recordRoot);
-    const rootBefore = readFileSync(join(recordRoot, "record.json"), "utf8");
-    await commitRecord(run, "fixture: assertions v1");
+    copySourceFirstAssertionsV1Fixture(paths.sourceRoot, recordRoot);
+
+    const before = await candidate.run(["show", "--run", RUN_ID, "--json"]);
+    expect(before.exitCode, before.diagnostic()).toBe(1);
+    expect(before.stderr, before.diagnostic()).toContain("record-migration-required");
+
+    const planned = await candidate.run(["migrate"]);
+    expect(planned.exitCode, planned.diagnostic()).toBe(1);
+    expect(planned.stdout, planned.diagnostic()).toContain("Record migration plan");
+    expect(planned.stderr, planned.diagnostic()).toContain("record-migration-confirmation-required");
+
+    const migrated = await candidate.run(["migrate", "--yes"]);
+    expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
+    expect(migrated.stdout, migrated.diagnostic()).toContain(
+      "Record migration migrated: committed 2, skipped 0, failed 0.",
+    );
+
+    const repeated = await candidate.run(["migrate", "--yes"]);
+    expect(repeated.exitCode, repeated.diagnostic()).toBe(0);
+    expect(repeated.stdout, repeated.diagnostic()).toContain("Record migration already-current.");
 
     const runView = await candidate.run(["show", "--run", RUN_ID, "--json"]);
     expect(runView.exitCode, runView.diagnostic()).toBe(0);
-    expect(readFileSync(join(recordRoot, "record.json"), "utf8")).toBe(rootBefore);
-    expect(existsSync(discardedBlobPath)).toBe(false);
 
     const member = only(
       runView.json<{ data: { members: readonly { locator: string; verdict: string }[] } }>().data.members,
@@ -82,23 +94,5 @@ test("Assertions v1 迁移且 invalid Agent Turns 保持 source-local", async ()
       },
     });
 
-    const attachment = join(
-      recordRoot,
-      "runs", RUN_ID, "attempts", ATTEMPT_ID,
-      "attachments", "niceeval.assertions",
-    );
-    expect(JSON.parse(readFileSync(join(attachment, "attachment.json"), "utf8"))).toEqual({
-      family: "niceeval.assertions",
-      schemaVersion: 2,
-    });
-    const payloadText = readFileSync(join(attachment, "payload.json"), "utf8");
-    expect(payloadText).toContain('"materials"');
-    expect(payloadText).toContain('"explanationRetention"');
-    expect(payloadText).toContain('"source":{"kind":"unavailable","reason":"not-recorded"}');
-    expect(payloadText).toContain('"evidence":[]');
-    expect(payloadText).not.toContain('"subject"');
-    expect(payloadText).not.toContain("historical-match");
-    expect(payloadText).not.toContain("recorded v1 fact");
-    expect(payloadText).not.toContain('"result":{"state"');
   });
 });

@@ -5,13 +5,13 @@ import type {
   CurrencyCode,
   NonNegativeSafeInteger,
   SafeIdentifier,
-} from "../o11y/record/model.ts";
+} from "../record/family/source-receipt/model.ts";
 import {
   makeCanonicalDecimal,
   makeCurrencyCode,
   makeNonNegativeSafeInteger,
   makeSafeIdentifier,
-} from "../o11y/record/model.ts";
+} from "../record/family/source-receipt/model.ts";
 import type { ClosedAttemptCore } from "./domain-view.ts";
 import type { LogicalSlot } from "./definitions.ts";
 import type { AnalysisSlotRef, EvidenceRef } from "./contracts.ts";

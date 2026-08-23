@@ -16,14 +16,14 @@ import type {
   CanonicalDecimal,
   CurrencyCode,
   SafeIdentifier,
-} from "../o11y/record/model.ts";
+} from "../record/family/source-receipt/model.ts";
 import {
   isCanonicalDecimal,
   isCurrencyCode,
   isSafeIdentifier,
   isStrictUnicodeText,
   utf8ByteLength,
-} from "../o11y/record/model.ts";
+} from "../record/family/source-receipt/model.ts";
 import type {
   ExecutionIdentityDigest,
   UtcMillis,
