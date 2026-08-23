@@ -102,7 +102,7 @@ docs/
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
 │   ├── record-runtime/                  Record access runtime：独立 open 与统一资源 owner
-│   ├── observability-package-layout/    Observability 持久包：七 family 与 physical packages
+│   ├── observability-package-layout/    Observability 持久包：reader view 与 source receipt layout
 │   ├── projection-api/                  单包投影：runtime calls 与 static graph
 │   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态

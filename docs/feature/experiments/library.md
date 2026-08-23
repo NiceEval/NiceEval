@@ -63,7 +63,7 @@ export default defineExperiment({
 
 隧道 URL、临时服务地址和实际服务版本在运行时才知道，因此不写进 `flags` 或 `labels`。Hook 可以通过闭包把它交给后续的 Agent factory 或 Sandbox command；这不授予 Hook 通用 Record writer。
 
-运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入固定的 Assertions、Observability、FileChanges、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能从 Record、Sample 或 Report 查询；需要成为产品事实时，先进入 NiceEval 的领域设计与版本治理。
+运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入九个固定 family 中对应的 Assertions、source receipt、File Changes、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能从 Record、Sample 或 Report 查询；需要成为产品事实时，先进入 NiceEval 的领域设计与版本治理。
 
 | 值 | 何时决定 | 入口 | 结果 |
 |---|---|---|---|

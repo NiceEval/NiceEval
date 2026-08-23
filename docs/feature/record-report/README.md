@@ -21,7 +21,7 @@ NiceEval 把不可恢复的运行事实、统计解释和结果呈现分成三�
                                │ （惰性读取会话 / 事实选择）
 ┌──────────────────────────────┴───────────────────────────────┐
 │ ① Record（持久事实层）                                      │
-│ Assertion / OTel / events / file diff                       │
+│ Assertions / source receipts / file changes / artifacts     │
 │ lazy read / parallel append / seal / validate / migrate     │
 │ （惰性读取 / 并行追加 / 封口 / 校验 / 迁移）                │
 └──────────────────────────────────────────────────────────────┘
@@ -31,7 +31,7 @@ NiceEval 把不可恢复的运行事实、统计解释和结果呈现分成三�
 
 | 层 | 心智模型 | 只回答的问题 | 详细入口 |
 |---|---|---|---|
-| ① Record（持久事实层） | 已发生事实的唯一账本 | 运行中发生了什么，旧格式怎样显式迁移为当前格式 | [Record](../record/README.md) |
+| ① Record（持久事实层） | 已发生事实的唯一账本 | 运行中发生了什么，current format 怎样读取、封口与维护 | [Record](../record/README.md) |
 | ② Analysis（分析层） | 统计口径合同 | 事实怎样进入总体、分母、归并、比较和闭合结果 | [Analysis](../analysis/README.md) |
 | ③ Report（报告层） | 可执行的阅读产品 | 查询结果怎样组成组件与页面，并呈现到终端、网页和静态站 | [Report](../reports/README.md) |
 
@@ -47,14 +47,14 @@ Experiment、Eval、Run、logical Slot 与 Attempt 是 NiceEval 的核心领域�
                └─▶ logical Slot
                     └─▶ Attempt
                          ├─ Assertions / Evidence
-                         ├─ OTel spans / events
+                         ├─ source receipts
                          ├─ file changes
                          └─ Artifacts
 ```
 
-Record 固定这些实体的 identity（身份）、owner（归属者）、cardinality（基数）和引用关系。业务事实继续使用模块化 Attachment envelope（附件信封），但 Assertions、OTel、event、file changes 与 Artifact 的 family catalog 和 schema 只由 NiceEval 定义。它不提供 schema、字段或 migration registry（迁移注册表）。
+Record 固定这些实体的 identity（身份）、owner（归属者）、cardinality（基数）和引用关系。业务事实继续使用模块化 Attachment envelope（附件信封），但 Assertions、五个 Observability source、File Changes、Sources 与 Artifacts 的 family catalog 和 schema 只由 NiceEval 定义。它不提供 schema、字段或 migration registry（迁移注册表）。
 
-用户不能定义另一种 Attempt、改变 Run→Attempt 关系，或把 OTel event 当作 Analysis result（分析结果）保存。NiceEval 需要新增不可恢复事实时，直接修改 Record 契约并提供具体迁移；不先抽象成未来可能开放的扩展 API。
+用户不能定义另一种 Attempt、改变 Run→Attempt 关系，或把 runner activity 当作 Analysis result（分析结果）保存。NiceEval 需要新增不可恢复事实时，直接修改 Record 契约；不先抽象成未来可能开放的扩展 API。
 
 公开作者面只有两类定义扩展：
 
@@ -63,21 +63,21 @@ Record 固定这些实体的 identity（身份）、owner（归属者）、cardi
 
 Report 作者使用标准 React JSX。Host 可以在内部保留 `ResolvedPage`，但作者面不发布通用 semantic model，JSX 只交给 React 处理。
 
-外部 Adapter（适配器）可以调用 NiceEval 已发布的 OTel、事件、Artifact 或 diff collector（差异采集器），但不能注册新的 Record family（事实族）、迁移函数或物理字段。若一种新事实值得持久化，先进入 NiceEval 的领域设计与版本治理。
+外部 Adapter（适配器）只能向 NiceEval 交付已解释、脱敏的 terminal Turn。raw tape、frame、provider payload 与 secret 不进入 Record。其它 capture authority 可以调用 NiceEval 已发布的 Runner、Sandbox、Artifact 或 diff collector（差异采集器），但不能注册新的 Record family（事实族）、迁移函数或物理字段。
 
 ## 核心术语与最小例子
 
 | 术语 | 在本架构中的意思 | 最小例子 |
 |---|---|---|
-| `RecordReadSession`（事实读取会话） | ① Record 的 Scope-bound（资源作用域绑定）惰性 reader；按需读取和校验选中的 Run / Attempt | 查询 latency 时读取 OTel，未查询的 diff 与 Evidence 不进入内存 |
+| `RecordReadSession`（事实读取会话） | ① Record 的 Scope-bound（资源作用域绑定）惰性 reader；按需读取和校验选中的 Run / Attempt | 查询 latency 时读取 Runner Activities，未查询的 File Changes 与 Evidence 不进入内存 |
 | `RecordSelection`（事实选择） | ① Record 一次扫描后固定的 RunId、SlotId、预期分母和问题；不含完整 payload | Run A 与 Run B 的身份和 logical Slot 集合 |
 | `RunWriteSession`（运行写会话） | ① Record 中只写一个新 RunId 的能力 | 一个 `niceeval exp` 创建 Run，并并行创建自己的 Attempt 后封口 |
-| `AnalysisInput`（分析输入） | ② Analysis 公开的只读输入能力；由 NiceEval 从当前 Record schema 发布 | `attemptLatencyMs` 从 OTel record 投影出毫秒数，但不暴露原始 spans |
+| `AnalysisInput`（分析输入） | ② Analysis 公开的只读输入能力；由 NiceEval 从当前 Record schema 发布 | `attemptLatencyMs` 从 Runner Activities 投影出毫秒数，但不暴露 source receipt |
 | `Population`（总体） | ② Analysis 要解释的完整成员集合 | 一次实验预期运行的 10 个 logical slot（逻辑槽位） |
 | `Dimension`（维度） | 用来分组或标识总体成员的字段 | `model = "gpt-5"`、`condition = "memory-on"` |
 | `Measure`（度量） | 一次声明归并、分母、缺失和证据规则的统计口径 | 通过率以 10 个预期 slot 为分母，而不是只数 8 个有结果的 slot |
 | `SemanticFrame`（语义数据帧） | 高级 `query()` 的闭合表格结果；中立组件只接收它转换后的 rows | 每行是一组维度坐标，每个度量单元仍是完整 `MetricValue` |
-| `DomainView`（领域视图） | 不能压成规则表格的闭合领域结构 | 某个 Attempt 的 span 树、事件时序或 Evidence 详情 |
+| `DomainView`（领域视图） | 不能压成规则表格的闭合领域结构 | 某个 Attempt 的 activity 树、命令时序或 Evidence 详情 |
 | `ResolvedPage`（私有已求值页） | ③ Host 在固定 Sample 存活时短存的单目标 Page 值 | `show` 选中 Overview 或一个 Attempt 详情页后交付文字或机器文档；它不是作者 API 或站点版本 |
 | `ClosedSiteRevision`（闭合站点版本） | ③ view 与 static 在全站枚举、校验后共用的最终页面、asset 和下载 bytes | Overview、Comparison 与全部枚举的 Attempt 详情页；view HTTP 与静态目录读取相同 route body |
 
@@ -116,14 +116,14 @@ SemanticFrame（语义数据帧）
 
 这行表示“预期 10 个 slot，8 个实际贡献，通过率按既定口径得到 0.8，另有 2 个缺失”。Report 先取得 `frame.rows`，再把闭合 rows 交给 `Table` 或 `Bars`；组件不得只拿 `0.8` 再猜分母。
 
-`DomainView` 保留树或时序。例如 `TraceView`（追踪视图）包含父子 span、开始结束时间、问题和 Evidence refs；把它写入 `SemanticFrame` 会丢失层级，所以交给 `TraceViewer`（追踪查看器）而不是中立图表。
+`DomainView` 保留树或时序。例如 Timing View 包含父子 activity、开始结束时间、问题和 Evidence refs；把它写入 `SemanticFrame` 会丢失层级，所以交给领域组件而不是中立图表。
 
 ## 什么可以定义成 Measure
 
 Record 中的数字不自动等于指标。建议使用三个不同术语：
 
 ```text
-Observation field（观测字段）  span.durationMs = 412.8      Record 事实
+Observation field（观测字段）  activity.durationMs = 412    Record 事实
 Measure definition（度量定义） mean latency per logical slot Analysis 口径
 MetricValue（指标值）           value / state / samples / total  query 输出
 ```
@@ -135,7 +135,7 @@ MetricValue（指标值）           value / state / samples / total  query 输�
 - 计算是纯的、可重复的，不读取网络、当前文件或当前时间；
 - 返回的 `MetricValue` 保留 state、samples、total、basis、issues 与 refs。
 
-可以基于已发布输入定义通过率、平均延迟、P95 token usage、tool-call failure rate 和每个 model 的 Judge score。`model`、`condition` 这类分组字段应定义为 Dimension；原始 OTel span、事件时序和文件 diff 应保留为 Record fact，并按需投影为 `DomainView`，不应伪装成 Measure。若 NiceEval 没有发布 GPU 能耗输入，用户不能仅靠 `defineMeasure()` 把它写进 Record；必须先修改 NiceEval 的固定 Record schema，并发布对应 Analysis input。
+可以基于已发布输入定义通过率、平均延迟、P95 token usage、tool-call failure rate 和每个 model 的 Judge score。`model`、`condition` 这类分组字段应定义为 Dimension；Runner Activities、Agent Turns 和 File Changes 应保留为 Record fact，并按需投影为 `DomainView`，不应伪装成 Measure。若 NiceEval 没有发布 GPU 能耗输入，用户不能仅靠 `defineMeasure()` 把它写进 Record；必须先修改 NiceEval 的固定 Record schema，并发布对应 Analysis input。
 
 Query（查询）、`SemanticFrame`（语义数据帧）和 `DomainView`（领域视图）由 Analysis 拥有。Components（组件）、Page（页面）、terminal/Web/static renderer（终端 / 网页 / 静态渲染器）由 Report 拥有。NiceEval 不建立 `niceeval/fact`、`niceeval/query`、`niceeval/view`、`niceeval/components` 或 `niceeval/delivery` 公共入口。
 
@@ -281,7 +281,7 @@ write ──▶ ① Record Host SDK：recordHost.maintenance()
 ## 数据怎样穿过三层
 
 ```text
-Assertion-first API / OTel bridge / Adapter / diff collector
+Assertion producer / Adapter / SessionManager / Sandbox / Runner / collectors
                           │
                           ▼
 AttemptWriteSession → Run seal → runs/<RunId>/complete
@@ -307,40 +307,44 @@ AttemptWriteSession → Run seal → runs/<RunId>/complete
 ```
 
 Record 只保存无法从已有事实重新计算的内容。通过率、均值、排名、denominator（分母）、missing（缺失）汇总、图表点位与页面树都由上层按定义重新形成。
-六个固定 family 名是稳定 identity；下表 Attachment envelope 的 `schemaVersion` 均为 `1`。
+current catalog 固定为九个 family；每个 family 自己拥有稳定 identity、owner 与 numeric `schemaVersion`。
 
 ## Record 数据边界
 
 | 数据 | 进入 Record 的方式 | 持久边界 |
 |---|---|---|
 | AssertionResult / Evidence | Assertion producer 自动封口 | 固定 `niceeval.assertions` Attachment 与有界 Evidence refs（证据引用） |
-| OTel | Adapter 或平台 bridge 提交给 Attempt 的固定 collector（采集器） | 固定 `niceeval.observability` Attachment |
+| terminal Turn 与 provider usage observation | Adapter 先解释、归一和脱敏协议输入 | Attempt-owned `niceeval.agent-turns`；不含 raw tape、frame 或 secret |
+| 物理 send 的 source context | SessionManager 在每个 `t.send` 保存 capture-time anchor | Attempt-owned `niceeval.turn-contexts` |
+| command lifecycle 与安全 stream | Sandbox wrapper 在调用和结束边界采集 | Attempt-owned `niceeval.sandbox-commands` 与自身 stream blob closure |
+| owner-local activity | Runner monotonic clock 或可证明归属的 OTel capture input | Attempt 或 Run-owned `niceeval.runner-activities`；不含 raw OTLP |
+| advisory 与 execution error | Runner diagnostic sink 封口 | Attempt 或 Run-owned `niceeval.runner-diagnostics` |
 | 文件差异 | Sandbox diff collector（沙箱差异采集器） | 固定 `niceeval.file-changes` Attachment；大型内容进入本 family 的 blob closure |
-| 物理 send 导航 | Runner 在每个 `t.send` Exit 封口 | 固定 `niceeval.source-navigation` Attachment；无 blob，只 join turn、source 与 timing |
 | 源码闭包 | Runner 在 origin Run 封口前采集 | 固定 `niceeval.sources` Attachment 与自身 blob closure |
 | 大型文件 | NiceEval 发布的 Artifact collector | 固定 `niceeval.artifacts` Attachment 保存媒体类型、身份与 blob 引用 |
 
 Adapter 只能向 NiceEval 已发布的 collector 提交合法值，不能借此建立第三方 schema。
 
-Record 固定每个事实族的 payload shape（载荷形状）、owner（所有者）与语义。改变字段类型、scope（作用域）、cardinality（基数）、单位或坐标域必须发布下一 Record 版本和具体 migration。显示名、格式、颜色、统计口径和组件配置不属于持久 schema。
+conversation、usage、commands、timing 与 diagnostics 由 Analysis 从对应 source 投影。source navigation 是
+`turn-contexts`、`runner-activities` 与 origin Run `niceeval.sources` 的 Fact relation，不是第十个 family。
+
+Record 固定每个事实族的 payload shape（载荷形状）、owner（所有者）与语义。改变 Attachment 字段类型、scope（作用域）、cardinality（基数）、单位或坐标域时，需要提高该 family 的 `schemaVersion` 并提供可信相邻 migration；改变 Core 或发布边界时使用新的 format identity。显示名、格式、颜色、统计口径和组件配置不属于持久 schema。
 
 ## Migration（迁移）边界
 
-Record 只向上层提供当前 schema。`Record Core v1` 与六个 fixed family 的 `schemaVersion: 1` 构成第一版正式协议，当前 migration chain（迁移链）为空。
+Record 只向上层提供 current schema。root 使用稳定的 `niceeval.record.source-receipts` format identity；数值版本
+只属于各 Attachment envelope。已知 family 只有具备固定、完整相邻 chain 时才能在 current format 内维护，
+普通 reader 永远不会静默改盘。
 
-```text
-Record v1（第一版正式事实集）
-        │ 未来发布 v2 时同时提供 v1 → v2
-        ▼
-Current Record v2（届时的当前事实集）
-        │
-        ▼
-Analysis（分析层）
-```
+旧 `niceeval.record` beta format 及其 `niceeval.observability` aggregate 明确返回 `unsupported-format`。它没有
+可证明的 capture authority 与 segment provenance，不能拆成五个 source receipt，也不能伪造 source-navigation
+relation。用户需要用写出该格式的 NiceEval 版本读取。
 
-版本识别、具体 converter（转换函数）、Git preflight（Git 预检）、`migration.in-progress` 与最终校验属于 Record Host SDK（持久事实宿主开发工具包）。第一版的 `niceeval migrate` 对 v1 返回 `already-current`，对未知格式返回 `unsupported-format`。未来发布 v2 时必须同时提供 `v1 → v2`；从那时起 Maintenance 才按相邻版本逐条原地运行。普通 `show`、`view` 和 `exp` 永远不会静默改盘。
+版本识别、具体 converter（转换函数）、Git preflight（Git 预检）、`migration.in-progress` 与最终校验属于 Record Host SDK（持久事实宿主开发工具包）。maintenance 只运行已声明 family 的可信相邻步骤；未知 family、future schemaVersion、不相容 Core 或缺少完整 chain 都拒绝打开。
 
-Git 负责恢复历史字节。NiceEval 不维护 staging Record、backup、rollback、root replacement 或恢复日志。迁移失败后 Record 拒绝正常读取，直到用户通过 Git 完整恢复 `.niceeval/record` 并重新迁移。
+Git 负责恢复历史 portable bytes。maintenance 用 local staging 与 `migration.in-progress` 约束可证明的恢复边界，
+不把 backup、rollback 或恢复日志写进 portable Record。迁移失败后，只有验证 worktree 与 index 等于已绑定的
+restore commit，才能清除 sentinel 并重新迁移。
 
 新增 Query、Measure、组件、Page 或 renderer 不能推动 Record schema 升版。只有新增不可恢复事实、修复无法正确解释的持久语义，或改变必须原子提交的事实关系时，才允许新增显式 migration。
 

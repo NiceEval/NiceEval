@@ -54,6 +54,17 @@ _Avoid_: Optional write, Best-effort telemetry
 不是整个 Record，也不是 Analysis 派生值。
 _Avoid_: Record value, Fact value
 
+**Source receipt**:
+一个固定 capture authority 在一个明确边界产生的、已归一、脱敏并 canonical encode 的不可变事实 segment。
+它只进入该 authority 的 durable family；conversation、usage、timing 与 diagnostics 是跨一个或多个
+source receipt 形成的 reader-side view。
+_Avoid_: Raw provider frame, Logical view, Aggregate observability payload
+
+**Seal manifest**:
+与 Run 的 `complete` 在同一次原子目录发布中出现的 canonical portable inventory。它穷尽 Core、fixed family、
+payload、source-receipt segment 与 blob。未声明的 source 是 not-recorded；已声明却缺失或不合法的 source 是 invalid。
+_Avoid_: Cache index, Latest pointer, Optional attachment list
+
 **Capture internal grant**:
 host 从 Attempt 的 Capture obligations 推导出的内部 exact envelope command 集合。
 它不出现在 Eval、Experiment、Plugin callback 或 TestContext，也不授予 migration 或任意 Attachment 写入。

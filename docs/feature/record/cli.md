@@ -1,7 +1,7 @@
 # Record CLI
 
 CLI 通过 [Record Library](library.md) 打开 exact current Record protocol：root 的领域值是
-`{ format: "niceeval.record", recordId }`。`show`、`view` 与 `exp` 在任何 ordinary session、Run、
+`{ format: "niceeval.record.source-receipts", recordId }`。`show`、`view` 与 `exp` 在任何 ordinary session、Run、
 claim、Sandbox 或付费调用前检查格式；完整且 automatic-safe 的旧格式在 Git 安全门后无确认原地迁移，再以全新
 ordinary session 继续。缺少规范的零字节普通文件 `complete` 的目录不是 Run。
 
@@ -49,10 +49,9 @@ details: niceeval clean
 fixed family 显示 `not-recorded`；closure 或 exact payload 无效显示 `invalid`。这些局部问题不把其它有效
 Run 从 selection 中移除。
 
-fixed catalog 或 family version 不 exact current 时不形成 reader。若 Attachment 命中完整、无损且
-automatic-safe 的固定 chain，CLI 先释放检查 scope，再取得 exclusive maintenance session。该 session
-复核 Git HEAD、Record identity、portable inventory、source bytes 与 migration identity。成功后释放 maintenance
-并重新打开。未知/future family、无完整 chain 或任何安全门失败都返回 typed error，不进入 Analysis 或 Report。
+未知 durable family 使 root inventory fail closed。已知 family 的 envelope、payload、canonicality 与 blob closure
+由对应 lazy source read 独立验证，因此一个 source 的 `migration-required`、`unsupported` 或 `invalid` 不阻断
+无关 source。显式 `niceeval migrate` 仍只处理 current root 内具备完整固定 chain 的已知 predecessor。
 
 读到 `available` 后，payload 已 deep-freeze，blob closure 已验证并 materialize。Analysis 与 Report
 不会再次打开 storage。形成 value 前的 I/O 或 permission failure 仍是 typed read failure，不会伪装成
@@ -61,8 +60,9 @@ automatic-safe 的固定 chain，CLI 先释放检查 scope，再取得 exclusive
 ## `exp` 与 `exp --dry`
 
 `niceeval exp` 在模型、Sandbox、外部命令、claim 或付费调用前完成上述 current/automatic maintenance gate，再取得 shared append
-lease。它创建一个全新的 RunId 和 `runs/<RunId>/`；不会锁住其它 Run writer，也不会更新 root manifest、
-counter、`latest` 或共享 summary。
+lease。它创建一个全新的 RunId 并在 Record 外的同文件系统 local staging 中写完整 Run；不会锁住其它 Run
+writer，也不会更新 root counter、`latest` 或共享 summary。seal 验证并 sync Core、Seal manifest、payload 与
+blob closure 后，以不替换既有目录的原子 publish 使 `runs/<RunId>/` 可见。
 
 Experiment Host 在取得 append lease 前形成必填 `RunContext`：
 `{ experimentId, execution: { agentId, model, reasoningEffort, flags }, labels }`。普通 Run 的
@@ -103,26 +103,19 @@ niceeval migrate [--record <root>] [--yes]
 所有 fixed family 都处于各自 current version 时，`migrate` 对完整 current Record 返回：
 
 ```text
-Record is already current: niceeval.record
+Record migration plan: already-current
+format: niceeval.record.source-receipts
+Record migration already-current.
 ```
 
 root format 或 Core 不相容时直接返回 `unsupported-format`，并且不写盘。已知 family 的旧 schemaVersion
 经这条 maintenance 路径迁移。未发布的斜杠版本草案不是 migration source。
 未知或 future family 不迁移，直接拒绝。CLI 不猜测中间格式，不接受第三方 converter。
 
-npm `niceeval@0.13.0` 写出的 Observability v1 由该 Attachment 自己的固定 `1 → 2` maintenance step 迁移；
-两个 owner 的 payload、label、blob refs 与 blob bytes 逐字保留。历史 Attachment 完成迁移或由 Git恢复后，才可打开为 current reader。
-
 Assertions 等 fixed family 的 schemaVersion 只存在于各自 Attachment envelope。Assertions `1 → 2`
-只重写该 attachment 的 envelope、payload 与必要的 blob closure；`record migrate` 从不改写 `record.json`。
-
-该步骤只保留旧格式能证明的 decision、display、score 等事实。无法映射的 criterion、subject、evidence、coverage、
-limitations 与 diagnostic 会被声明为 dropped，current 字段写成诚实的 unavailable 或空集合。失去引用的 own blob
-同时删除；用户需要完整审计材料时必须重跑受影响的 Eval。
-
-旧 Record 的 `record.json` 可以多一个 `schemaVersion` 键。reader 在 JSON 边界无条件丢弃这个无语义键，
-完全不读取或判断它的值，再以 exact `{ format, recordId }` 形成 RecordDocument；其它额外键仍拒绝。新 writer
-不再写它，它也不进入 plan、receipt、错误或展示。未来不相容的根格式只由新的 `format` identity 表达。
+只重写该 attachment 的 envelope、payload、必要的 blob closure 与 Seal manifest inventory；`record migrate`
+不改变 root format identity。旧 `niceeval.record` 及其 aggregate Observability 不进入该 migration graph，当前
+版本对它返回 `unsupported-format`。未来不相容的根格式同样只由新的 `format` identity 表达。
 
 automatic policy 与本节 explicit policy 分开：自动路径不打印计划、不询问确认，只接受完整 automatic-safe chain，
 并要求 HEAD 已跟踪全部 portable bytes且 Record path 的 index/worktree clean。非 Git、未保存、dirty、untracked、

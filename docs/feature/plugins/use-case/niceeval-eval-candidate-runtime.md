@@ -44,7 +44,7 @@ Experiment 明确拥有 `candidateVersion` flag 与报告 label：前者是会�
 - 对应的 teardown，以及生命周期中的 progress / diagnostic；
 - 由 `{ version, runtime }` 组成的稳定行为 identity，使同一 Plugin occurrence 只在同一候选条件下参与 reuse identity。
 
-Node / pnpm / Docker / Compose 的实际检查值、setup provenance 与 contribution refs 不是 Plugin 可自定义的持久数据。它们只有恰好符合 NiceEval 已发布 typed collector 或 Adapter 能力时，才能进入固定的 Observability、FileChanges、Assertions、Sources 或 Artifacts；没有 collector 时不自动持久化或查询。
+Node / pnpm / Docker / Compose 的实际检查值、setup provenance 与 contribution refs 不是 Plugin 可自定义的持久数据。它们只有恰好符合 NiceEval 已发布 typed collector 或 Adapter 能力时，才能进入九个固定 family 中对应的 source、File Changes、Assertions、Sources 或 Artifacts；没有 collector 时不自动持久化或查询。
 
 这样同一个插件可用于 stable、previous 与 canary 三格；每个 Experiment link 出独立 instance，不会共享 setup 状态或取得 Record writer capability。
 

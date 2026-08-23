@@ -2,14 +2,17 @@
 
 本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。Assertions 当前 envelope 是 `schemaVersion: 2`，Sources 是 `schemaVersion: 1`；两者都保存已经发生的审计事实，不保存可执行的作者调用图。
 
-Record catalog 固定为六个 family。Attempt-owned `niceeval.source-navigation` 只拥有物理 send 到 source/timing 的 join，不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources manifest 规则见 [Record architecture](../../record/architecture.md)。
+Record catalog 固定为九个 family。物理 send 到 source / timing 的 navigation 是 reader-side Fact relation，
+不拥有 durable family，也不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources
+manifest 规则见 [Record architecture](../../record/architecture.md)。
 
 ## owner 与 semantic join
 
 | family | owner | 精确事实 |
 |---|---|---|
 | `niceeval.assertions` | Attempt | `entryId`、criterion、materials、evaluation、decision、policy、contribution，以及 `sourceSites` row。 |
-| `niceeval.source-navigation` | Attempt | `turnId`、source frame 与 `agent.send` timing join；不含 `entryId`。 |
+| `niceeval.turn-contexts` | Attempt | 每个物理 `t.send` 的 `turnId` 与 source context；不含 `entryId`。 |
+| `niceeval.runner-activities` | Attempt | 可按 `turnId` 连接的 `agent.send` activity；不含 `entryId`。 |
 | `niceeval.sources` | origin Run | 当时源码闭包的 item manifest 与本 family own blobs。 |
 
 `sourceSites` 的 `entryId` 只能 join 同一 Attempt 的 Assertions entry。`sourceItemId` 与 `sha256` 只能 join 该 Attempt exact origin Run 的 Sources manifest。这些字段是 immutable semantic join，不是 blob ref、Attachment address、Record path、owner handle 或读取 capability。
@@ -69,16 +72,17 @@ type AssertionsAttachment = {
 
 Sources family 拥有 `sourceItemId`、path、byteLength、sha256 与 content blob；`sourceItemId` 不是 path、digest、数组下标或 blob key 的函数。Assertions row 只能引用 item identity 与 digest，不能取得或借用 Sources blob capability。
 
-因此 Assertion source site 需要两种已验证 family value：Assertions 提供 entry 与位置 join，Sources 提供用于展示的 origin snapshot。物理 send navigation 另由 `niceeval.source-navigation` 使用同一 exact Sources manifest；两个 family 不复制对方的 result、turn、duration 或 blob capability。
+因此 Assertion source site 需要两种已验证 family value：Assertions 提供 entry 与位置 join，Sources 提供用于展示的 origin snapshot。物理 send navigation 由 Turn Contexts、Runner Activities 与同一 exact Sources manifest 形成 reader-side relation。这些 family 不复制彼此的 result、turn、duration 或 blob capability。
 
 ## Analysis DomainView 与局部 unmapped
 
 consumer 通过 [Analysis Library](../../analysis/library.md) 的 `query()` 请求已发布的 source-navigation `DomainView`。它从当前 `Sample` 的 sealed source facts 形成闭合输出，不直接打开 Record、blob path 或当前 worktree，也不重新执行 Assertion。
 
-family Host 仍只有 `available`、`not-recorded`、`unsupported` 与 `invalid`。`unmapped` 不是第五个 Host state，而是 DomainView 对某个可读 entry 或位置的局部导航结果：
+普通 Attachment read 保留 `available`、`not-recorded` 与 `invalid`；不相容或未知 durable bytes 在 session 形成前
+返回 `unsupported-format`。`unmapped` 不是 Host state，而是 DomainView 对某个可读 entry 或位置的局部导航结果：
 
 - Assertions 没有该 entry 的 `sourceSites` row；
-- Sources 是 `not-recorded`、`unsupported` 或 `invalid`；
+- Sources 是 `not-recorded` 或 `invalid`；
 - `sourceItemId` 找不到、digest 不匹配，或保存的坐标无法在 snapshot 中显示。
 
 上述情况只影响相应 location。Assertion 的 criterion 与 sealed result 仍按自己的规则读取；source mapping 不重复计算 check、points、missing／partial、gate 或 Verdict。若 Assertions family 本身不是 `available`，Analysis 仅保留相应问题，绝不补成成功、零分或空 Assertion。
@@ -87,6 +91,6 @@ family Host 仍只有 `available`、`not-recorded`、`unsupported` 与 `invalid`
 
 - [Assertions architecture](../architecture.md) —— entry、criterion、result 与内嵌 sourceSites。
 - [Evidence](evidence.md) —— 受限 material 与 own closure。
-- [Record architecture](../../record/architecture.md) —— Sources manifest、六个 fixed family 与四态 Host。
+- [Record architecture](../../record/architecture.md) —— Sources manifest、九个 fixed family 与 reader 边界。
 - [Verdict architecture](../../verdict/architecture.md) —— Core 与 Assertions 的读侧 fold。
 - [Analysis Library](../../analysis/library.md) —— `Sample`、`query()` 与 `DomainView`。
