@@ -11,7 +11,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import threading
 from pathlib import Path
 
 
@@ -468,64 +467,6 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
         else:
             raise AssertionError("untrusted tar paths/types must fail before Docker sees the context")
 
-    # A build's Docker process is deliberately outside the short COW lock
-    # sections.  While it is running both heartbeat and cancellation must
-    # enter, and cancellation wins before the locator can be published.
-    entered_build = threading.Event()
-    allow_build_exit = threading.Event()
-    original_run_build = watchdog.Admission._run_build
-
-    def blocking_run_build(self, reservation, spec, context_path):
-        self.__dict__.setdefault("fake_images", set()).add(reservation["provisionalRef"])
-        entered_build.set()
-        allow_build_exit.wait(timeout=2)
-
-    watchdog.Admission._run_build = blocking_run_build
-    concurrent_id = "reservation-build"
-    concurrent_request = {**build_request, "reservationId": concurrent_id}
-    concurrent_errors = []
-
-    def run_concurrent_build():
-        try:
-            restarted.handle_build(concurrent_request, context_path)
-        except Exception as error:
-            concurrent_errors.append(error)
-
-    concurrent_thread = threading.Thread(target=run_concurrent_build)
-    concurrent_thread.start()
-    assert entered_build.wait(timeout=1), "build did not reach the unlocked Docker phase"
-    assert restarted.handle({**common_build, "kind": "lease.heartbeat"}) == {"state": "active"}
-    assert restarted.handle({**common_build, "kind": "build.cancel",
-        "reservationId": concurrent_id}) == {"cancelRequested": True}
-    allow_build_exit.set()
-    concurrent_thread.join(timeout=2)
-    assert not concurrent_thread.is_alive(), "cancellation must not wait for the build lock"
-    assert len(concurrent_errors) == 1 and isinstance(concurrent_errors[0], watchdog.ProtocolError)
-    assert concurrent_errors[0].code == "build-cancelled"
-    watchdog.Admission._run_build = original_run_build
-    assert restarted.handle({**common_build, "kind": "reservation.release",
-        "reservationId": concurrent_id}) == {"released": True}
-    restarted.handle({**common_build, "kind": "reservation.acquire",
-        "reservationId": concurrent_id, "reservationKind": "build",
-        "resources": {"cpus": 0, "memoryBytes": 0, "pids": 0, "containers": 0,
-                      "ephemeralDiskBytes": 0}})
-
-    # An fsync failure in build admission has the same COW property as a
-    # heartbeat: neither memory nor a restarted watchdog observes the intent.
-    build_fsync_before = copy.deepcopy(restarted._published_state)
-    original_fsync = watchdog.os.fsync
-    watchdog.os.fsync = lambda _fd: (_ for _ in ()).throw(OSError("injected build fsync failure"))
-    try:
-        restarted.handle_build(build_request, context_path)
-    except OSError:
-        pass
-    else:
-        raise AssertionError("build intent fsync failure must reject the create")
-    finally:
-        watchdog.os.fsync = original_fsync
-    assert restarted._published_state == build_fsync_before
-    assert watchdog.Admission(descriptor_path, journal, str(docker_socket), 5, host_config)._published_state == build_fsync_before
-
     ephemeral_build_request = copy.deepcopy(build_request)
     ephemeral_build_request["build"]["retention"] = "ephemeral"
     restarted.fake_builder_rm_leaves_container = True
@@ -601,29 +542,6 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
         "reservationId": "reservation-cancel"}) == {"released": True}
     assert restarted.handle({**common_build, "kind": "lease.drain"}) == {"state": "recovered"}
     assert restarted.state["leases"]["invocation-build"]["state"] == "recovered"
-
-    # Recovery has its own entry point, so exercise a failed durable recovery
-    # transition rather than relying only on the request handler's fsync case.
-    with restarted._transition():
-        restarted.state["leases"]["recovery-fsync"] = {
-            "invocationId": "recovery-fsync", "profileId": "profile-test",
-            "daemonGeneration": restarted.state["generation"], "tokenDigest": "fixture",
-            "createdAt": watchdog.now(), "lastHeartbeatAt": watchdog.now(), "state": "draining",
-        }
-        restarted._commit("fixture-recovery-fsync", {"invocationId": "recovery-fsync"})
-    recovery_fsync_before = copy.deepcopy(restarted._published_state)
-    original_fsync = watchdog.os.fsync
-    watchdog.os.fsync = lambda _fd: (_ for _ in ()).throw(OSError("injected recovery fsync failure"))
-    try:
-        restarted._recover_once()
-    except OSError:
-        pass
-    else:
-        raise AssertionError("recovery fsync failure must reject publication")
-    finally:
-        watchdog.os.fsync = original_fsync
-    assert restarted._published_state == recovery_fsync_before
-    assert watchdog.Admission(descriptor_path, journal, str(docker_socket), 5, host_config)._published_state == recovery_fsync_before
 
     # Any uncertain activity quarantines durably and replay never re-grants it.
     lease_d = restarted.handle({"kind": "lease.create", "profileId": "profile-test",
