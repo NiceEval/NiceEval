@@ -1585,9 +1585,6 @@ function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemSer
         attemptId: ref.attemptId,
       };
       return Effect.gen(function* () {
-        if (!(yield* isSealedRun(fileSystem, contents.root, exact.originRunId))) {
-          return Object.freeze({ state: "missing" as const }) satisfies RecordCoreRead<ReadableAttempt>;
-        }
         const snapshot = yield* readSealedCoreSnapshot(runtime, fileSystem);
         const core = snapshot.state === "available"
           ? snapshot.byRunId.get(exact.originRunId)
@@ -3757,7 +3754,7 @@ function validateCurrentFamilyInventory(
   fileSystem: RecordFileSystemService,
   root: RecordRoot,
   runIds?: ReadonlySet<RunId>,
-): Effect.Effect<void, RecordFileSystemError | RecordFormatUnsupported> {
+): Effect.Effect<readonly KnownMigrationAttachment[], RecordFileSystemError | RecordFormatUnsupported> {
   const runFamilies = new Set(runMigrationDescriptors.map((descriptor) => descriptor.family));
   const attemptFamilies = new Set(attemptMigrationDescriptors.map((descriptor) => descriptor.family));
   return Effect.gen(function* () {
@@ -3795,7 +3792,8 @@ function validateCurrentFamilyInventory(
         });
       }
     }
-    for (const location of yield* knownMigrationAttachments(fileSystem, root, runIds)) {
+    const locations = yield* knownMigrationAttachments(fileSystem, root, runIds);
+    for (const location of locations) {
       const envelope = yield* inspectFixedRecordAttachmentEnvelope({
         fileSystem,
         root,
@@ -3809,6 +3807,7 @@ function validateCurrentFamilyInventory(
         }));
       }
     }
+    return locations;
   });
 }
 
@@ -4209,12 +4208,12 @@ function ensureOrdinaryCurrentAttachments(input: {
     // source-local fact. Known current payload closures are read lazily by
     // their own methods so one invalid source never prevents unrelated sources
     // from being selected and read.
-    yield* validateCurrentFamilyInventory(input.fileSystem, input.root, input.runIds);
-    for (const location of yield* knownMigrationAttachments(
+    const locations = yield* validateCurrentFamilyInventory(
       input.fileSystem,
       input.root,
       input.runIds,
-    )) {
+    );
+    for (const location of locations) {
       const envelope = yield* inspectFixedRecordAttachmentEnvelope({
         fileSystem: input.fileSystem,
         root: input.root,
