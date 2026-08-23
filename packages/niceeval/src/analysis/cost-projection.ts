@@ -89,6 +89,27 @@ export function unavailableCostSlot(
   });
 }
 
+/**
+ * @internal Closes a zero-cost Slot from a completed Core and source absence.
+ * No provider coordinate, Usage observation, or Agent Turn receipt is
+ * invented: an Attempt that completed before any send has no chargeable
+ * coordinate, while the completed Core proves the logical total is zero.
+ */
+export function completedZeroCostSlot(
+  member: LogicalSlot,
+  refs: readonly EvidenceRef[] = [],
+): CostSlotProjection {
+  return Object.freeze({
+    slot: closeSlot(member),
+    complete: true,
+    observed: Object.freeze([]),
+    estimated: Object.freeze(["0" as CanonicalDecimal]),
+    reasons: Object.freeze([]),
+    ledger: Object.freeze([]),
+    refs: freezeRefs(refs),
+  });
+}
+
 /** @internal Closes one available Usage family with origin-only profile matching. */
 export function projectCostUsage(input: {
   readonly member: LogicalSlot;
@@ -427,7 +448,7 @@ function projectedMoneyFromDecimal(
 }
 
 function slotHasQuoteAmount(slot: CostSlotProjection, currency: string): boolean {
-  return slot.ledger.some((entry) =>
+  return slot.estimated.length > 0 || slot.ledger.some((entry) =>
     entry.branch === "estimated" ||
     (entry.branch === "observed" && entry.components.every((component) => component.currency === currency))
   );

@@ -23,6 +23,7 @@ import type { LogicalSlot } from "../analysis/definitions.ts";
 import type { PricingProfile } from "../analysis/cost.ts";
 import type { CostMetricValue } from "../analysis/cost.ts";
 import {
+  completedZeroCostSlot,
   projectCostUsage,
   unavailableCostSlot,
   type CostSlotProjection,
@@ -623,6 +624,17 @@ export function readPublishedInput<
     if (cached.state === "read-failed") {
       return failedObservation(included, `Record read failed: ${cached.message}`);
     }
+    if (cached.read.state === "not-recorded" && input.projectNotRecorded !== undefined) {
+      const projected = input.projectNotRecorded({
+        member: included,
+        core: resolved.core,
+      });
+      if (projected.state === "value") return valueObservation(projected.value, evidenceRefs(included));
+      if (projected.state === "migration-required") return migrationRequiredObservation(included, projected.message);
+      if (projected.state === "unsupported") return unsupportedObservation(included, projected.message);
+      if (projected.state === "failed") return failedObservation(included, projected.message);
+      return missingObservation(included, projected.message);
+    }
     if (cached.read.state !== "available") {
       return observationFromFamily(included, cached.read, input.id);
     }
@@ -903,7 +915,9 @@ function readCostSlot(
           refs,
         });
       case "not-recorded":
-        return unavailableCostSlot(included, "usage-not-recorded", refs);
+        return resolved.core.outcome === "completed"
+          ? completedZeroCostSlot(included, refs)
+          : unavailableCostSlot(included, "usage-not-recorded", refs);
       case "unsupported":
         return unavailableCostSlot(included, "usage-unsupported", refs);
       case "migration-required":

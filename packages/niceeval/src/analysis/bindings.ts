@@ -140,6 +140,15 @@ export interface PublishedAnalysisInputBinding<
 > {
   readonly id: string;
   readonly source: Source;
+  /**
+   * A semantic input may close source absence from immutable Core alone. The
+   * fallback receives no payload so it cannot manufacture a source receipt or
+   * reinterpret `not-recorded` as an empty durable family.
+   */
+  readonly projectNotRecorded?: (input: {
+    readonly member: LogicalSlot;
+    readonly core: ClosedAttemptCore;
+  }) => InputProjection<Value>;
   readonly project: (input: {
     readonly member: LogicalSlot;
     /** Closed with the successful ReadableAttempt resolution. */
@@ -406,6 +415,15 @@ export const publishedAnalysisInputBindings = Object.freeze({
   attemptTokens: Object.freeze({
     id: "niceeval.attempt-input-output-tokens",
     source: agentTurnsSource,
+    projectNotRecorded: ({ core }: {
+      readonly member: LogicalSlot;
+      readonly core: ClosedAttemptCore;
+    }): InputProjection<number> => core.outcome === "completed"
+      ? Object.freeze({ state: "value" as const, value: 0 })
+      : Object.freeze({
+        state: "missing" as const,
+        message: "agent turns were not recorded for an Attempt without a completed outcome",
+      }),
     project: ({ payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
