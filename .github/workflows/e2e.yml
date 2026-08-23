@@ -408,10 +408,21 @@ jobs:
             id,
             manifest: `e2e/${dirs[index]}/project.json`,
           }))
+          const dockerProfileHost = manifests.some(({ manifest }) =>
+            JSON.parse(fs.readFileSync(manifest, "utf8")).targets.e2e.metadata.niceeval.harness?.dockerProfileHost === true
+          )
           fs.writeFileSync(outputPath, `${JSON.stringify(manifests)}\n`)
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `docker-profile-host=${dockerProfileHost}\n`)
           console.log(`[e2e] cell ${process.env.CELL_ID}: ${ids.join(", ")}`)
           NODE
           echo "manifests-file=${manifests_file}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Docker profile host prerequisites
+        if: steps.cell.outputs.docker-profile-host == 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends quota
 
       - name: Set up Python
         if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
