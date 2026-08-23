@@ -103,6 +103,11 @@ test("profile-bound Dockerfile cold build starts the Attempt through the public 
     const fixtureContext = join(projectRoot, "fixtures/profile-cold-build");
     await exportImageRootfs(driverImage, join(fixtureContext, "node-rootfs.tar"));
     await exportImageRootfs(dindImage, join(fixtureContext, "docker-rootfs.tar"));
+    const inspectedBuildkit = await docker.run(["image", "inspect", buildkitImage]);
+    if (inspectedBuildkit.exitCode !== 0) {
+      const pulledBuildkit = await docker.run(["pull", buildkitImage], { timeoutMs: 120_000 });
+      expect(pulledBuildkit.exitCode, pulledBuildkit.diagnostic()).toBe(0);
+    }
     // The unique context byte keeps this owner a real cold build even when the
     // daemon already carries an image from an earlier reliability repetition.
     await appendFile(
