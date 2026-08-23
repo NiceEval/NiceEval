@@ -271,11 +271,15 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | Report 行身份 | `ReportRowKey` | 由 nominal population identity 与完整 group coordinate 形成的 opaque 行身份；不受排序、截断或格式影响 | [Analysis Library](feature/analysis/library.md) |
 | 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
-| Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
-| Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生新的不可变 grading claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Session、Turn、Action、显式材料、provenance 与 ExecutionOutcome 的 sealed semantic source graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#execution-source) |
+| Grading | Grading | 当前 GradingDefinition 对一份 sealed Execution graph 复用或产生 Judge Evaluation，再建立不可变 Grading Claim | [Replayable Architecture](roadmap/replayable-grading/architecture.md#judgeevaluation-与-gradingclaim) |
 | GradingRun | GradingRun | 对一个 Experiment Run 已写入 Record 的 SampleManifest 执行或复用全部 Grading 的持久批次 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
-| GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingresult) |
-| SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、ExecutionGraph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#samplemanifest-与-current) |
+| GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、Execution graph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| Judge Material View | Judge Material View | 从受管 Execution 或 Grading definition source 创建、只能绑定到 recipe slot 的私有品牌 Judge 输入句柄 | [Judge Material Library](roadmap/judge-runtimes/material/library.md) |
+| Action Result Selector | `ActionResultSelector` | 按 occurrence 或封存动作元数据精确选择 Action result、且不能读取 output 的持久选择器 | [Judge Material Library](roadmap/judge-runtimes/material/library.md#action-result-selector) |
+| 材料绑定清单 | `MaterialBindingManifest` | 穷尽保存一次 Judge Check 的 slot 声明、已定位 source、已交付 representation 与授权能力的 canonical manifest | [Judge Material Architecture](roadmap/judge-runtimes/material/architecture.md#materialbindingmanifest) |
+| Judge Evaluation | `JudgeEvaluation` | 一次 evaluator occurrence 的 manifest、presentation 或 investigation closure 与 Decision；不拥有 threshold 或 score policy | [Judge Material Architecture](roadmap/judge-runtimes/material/architecture.md#实体与-owner) |
 | Pilot 选择 | Pilot selection | 在 attempts 展开前按共同 Eval ID 总体执行 first 或固定 seed sample，并保留 non-final coverage | [Experiment Pilot 抽样](roadmap/experiment-pilot-sampling/README.md) |
 | 具名 Experiment 族 | Experiment family (`defineExperiments`) | 用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID | [具名 Experiment 族](roadmap/experiment-authoring/families/README.md) |
 | Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-prepare/fixture-content/README.md) |
