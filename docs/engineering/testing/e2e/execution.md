@@ -5,28 +5,36 @@
 根 runner 不建立一套与真实场景平行的模拟系统，也不拥有 `test/unit/e2e-runner/`。发现、选择、注入、安装、收据和 cleanup
 通过真实 Repo 与根 CLI 运行验收；workflow 的发布顺序由真实 preflight / release 和 review 验收，不用 Vitest 对 YAML 或源码文本做 syntax parse。
 
-## 目标命令
+## 六命令接口
+
+根 CLI 只有六个显式命令：高阶本地入口是 `test`；低阶生命周期命令是 `plan`、`pack`、`run`、`takeover` 与
+`verify-release`。无子命令的 `pnpm e2e` 只显示 Effect CLI help，不选择、打包或运行任何场景。
+
+`test` 严格执行一次 plan → 对合法非空计划打包一次 candidate → 运行该 plan 的精确 Repo 集；合法空计划在 pack 之前成功短路。
+CI 与 `run --plan` 消费同一份当前 checkout 生成的 plan，不会在 run 阶段重新选择。
+
+## 高阶本地入口
 
 ```sh
 # 本地默认：无密钥集合；根目录 `.env` 可让显式可信 lane 运行全量
-pnpm e2e --lane pr
+pnpm e2e test --lane pr
 
 # 按 Repo / 原生测试参数收窄
-pnpm e2e --repo report
-pnpm e2e --repo report -- --run test/exported-targets.test.ts
+pnpm e2e test --repo report
+pnpm e2e test --repo report -- --run test/exported-targets.test.ts
 
 # 全量 E2E；缺 secret 在 prepare 前一次列清
-pnpm e2e --lane main --repo adapter/codex-cli
+pnpm e2e test --lane main --repo adapter/codex-cli
 
 # 本地无密钥 adapter protocol / transport / fault；与 live Repo 分开选择
-pnpm e2e --lane pr --repo adapter/local-protocol
+pnpm e2e test --lane pr --repo adapter/local-protocol
 ```
 
 本地运行只从仓库根目录的 `.env` 读取私有凭据与宿主浏览器路径；各功能 Repo / Adapter Repo 不保存自己的 `.env`。
 根 runner 在 `plan` 与 `pack` 阶段不读取该文件，只在真正进入 `run` 时加载一次，并继续按各 Repo project metadata 的
 `secrets` 白名单做最小注入。复制根目录 `.env.example` 后即可直接执行上述命令；CI 仍由 workflow 注入同名变量。
 
-内部可以拆成 `pack`、`plan`、`run` 三个子动作供 CI 分布式执行；本地默认命令包装同一实现：
+低阶命令供 CI 分布式执行与显式收据核验；它们不改变 `test` 的一次 plan / pack / run 语义：
 
 ```sh
 pnpm e2e pack --out artifacts/niceeval-candidate.tgz
@@ -48,8 +56,8 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 ```
 
 - `plan --json` 输出 selection mode / reason、base / head、精确 Repo、host executor、能力和分片，不包含产品断言；
-- 本地默认顺序是 plan → pack NiceEval candidate → run；
-- 默认入口只生成一次 plan，并把该 plan 的精确 Repo ID 集传给 run；隐式 dirty diff 也不会在 run 时扩大选择；
+- `test` 的本地默认顺序是 plan → pack NiceEval candidate → run；
+- `test` 只生成一次 plan，并把该 plan 的精确 Repo ID 集传给 run；隐式 dirty diff 也不会在 run 时扩大选择；
 - `run` 在选中 Testkit consumer 时构建当前 workspace Testkit 的 invocation-local scratch snapshot 一次；
 - 合法 affected 空计划不 pack、不 build；project / metadata 非法时以 `invalid` 红灯退出；
 - CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
@@ -103,8 +111,8 @@ summary 写入按相对路径、字节数和 SHA-256 排序所得的文件清单
 
 ### Testkit 构建与注入
 
-`pnpm e2e --repo <id>` 在选中 `harness.testkit: true` Repo 后，直接把当前
-checkout 的 Testkit 源码编译到新的 scratch staging package，并在同一 filesystem
+`pnpm e2e test --repo <id>` 会选择 `harness.testkit: true` Repo。
+根 runner 随后把当前 checkout 的 Testkit 源码编译到新的 scratch staging package，并在同一 filesystem
 发布成 invocation-local snapshot。它不读取、删除或写入共享 checkout `dist/`；
 每次 invocation 只做一次。Testkit 没有 CLI artifact 参数，也不参与 candidate 的发布信任链。
 

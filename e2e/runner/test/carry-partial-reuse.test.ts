@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-carry-partial-reuse
-// rerun: pnpm e2e --repo runner -- --run test/carry-partial-reuse.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/carry-partial-reuse.test.ts
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { only } from "@niceeval/testkit";

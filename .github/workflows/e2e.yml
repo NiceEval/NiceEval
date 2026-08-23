@@ -200,7 +200,7 @@ jobs:
           pnpm --silent e2e plan "${args[@]}" > "$plan_file"
           plan_status=$?
           set -e
-          if jq -e '.schemaVersion == 1 and (.mode | type == "string") and (.reason | type == "string")' "$plan_file" >/dev/null 2>&1; then
+          if jq -e '(.mode | type == "string") and (.reason | type == "string")' "$plan_file" >/dev/null 2>&1; then
             {
               echo "### E2E plan"
               echo
@@ -213,7 +213,7 @@ jobs:
             cat "$plan_file" || true
             exit "$plan_status"
           fi
-          if ! jq -e '.schemaVersion == 1 and (.mode == "affected" or .mode == "full" or .mode == "fail-open-full") and (.cells | type == "array")' "$plan_file" >/dev/null; then
+          if ! jq -e '(.mode == "affected" or .mode == "full" or .mode == "fail-open-full") and (.reason | type == "string") and (.cells | type == "array")' "$plan_file" >/dev/null; then
             echo "::error::plan --json did not emit a valid plan document"
             cat "$plan_file" || true
             exit 1

@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/cli.md#cli-no-experiment-feedback
-// rerun: pnpm e2e --repo cli -- --run test/no-experiment-feedback.test.ts
+// rerun: pnpm e2e test --repo cli -- --run test/no-experiment-feedback.test.ts
 
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";

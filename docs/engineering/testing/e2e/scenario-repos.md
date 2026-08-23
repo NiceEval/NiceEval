@@ -45,7 +45,7 @@ snapshot。它只在隔离副本中注入 `file:` 目录依赖；场景源本身
 link。
 
 直接进入场景执行 `pnpm test` 不是正式入口；它必须非零退出并引导用户在根目录运行
-`pnpm e2e --repo <id>`。project metadata 的 `command` 直接调用原生 Vitest / Playwright 命令，仅由完成 candidate 与 Testkit 注入的根 runner 执行。
+`pnpm e2e test --repo <id>`。project metadata 的 `command` 直接调用原生 Vitest / Playwright 命令，仅由完成 candidate 与 Testkit 注入的根 runner 执行。
 
 按需要增加 `agents/`、`reports/`、`src/`、`compose.yaml`、`Dockerfile` 和静态 fixture。
 目录不必为了形式把每个子功能拆成 Repo。`runner/carry-reuse.test.ts` 与 `runner/history-dedup.test.ts` 可以消费相同的

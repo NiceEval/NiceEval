@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/runner.md#runner-history-dedup
 // regression: memory/multi-open-residual-window-closed-by-narrow-read.md
-// rerun: pnpm e2e --repo runner -- --run test/history-dedup.test.ts
+// rerun: pnpm e2e test --repo runner -- --run test/history-dedup.test.ts
 import { only, pollUntil, withTempDir } from "@niceeval/testkit";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -30,15 +30,16 @@ NiceEval runner ── candidate / Testkit / native tests / receipts / cleanup
 |---|---|---|
 | `project.json` | project 身份、E2E target metadata、图依赖和项目级输入 | pack、读取 secret、启动测试或收 artifact |
 | `nx.json` | workspace 级 named inputs、target defaults 与插件版本行为 | 产品 owner 断言或 CI lane 政策 |
-| `pnpm e2e plan` | 校验 changed paths、读取 Nx affected、应用 lane 并产出可执行 cells | 执行场景 |
-| `pnpm e2e` / `run` | 一次候选、一次 Testkit snapshot、真实场景与完整生命周期 | 重新推导 affected 集合 |
+| `pnpm e2e plan` | 校验 changed paths、读取 Nx affected、应用 lane 并产出当前格式的可执行 cells | 执行场景 |
+| `pnpm e2e test` | 一次 plan、合法空选择短路、一次 candidate、一次 Testkit snapshot 与精确计划的真实场景生命周期 | 重新推导 affected 集合 |
+| `pnpm e2e pack` / `run` / `takeover` / `verify-release` | 显式低阶 candidate、执行、可靠性收据与发布核验 | 改变 `test` 的一次 plan / pack / run 语义 |
 | GitHub Actions | checkout、传递 base/head、分发 cells、cache 与上传 artifact | 维护第二份 Repo、path 或 owner 清单 |
 
 `targets.e2e` 是选择标记，不是可独立运行的任务。它只带 Nx 找不到的
 `executor: "nx:selection-only"` 哨兵，没有真实 command；维护者用
 `nx show projects --affected --with-target e2e` 查看选择，但不能用 `nx affected -t e2e` 绕过根 runner。
 直接执行后者必须因哨兵 executor 不存在而在 pack、secret 注入、场景子进程和 artifact 创建前明确失败。正式执行入口始终是
-`pnpm e2e`。
+`pnpm e2e test`；无子命令的 `pnpm e2e` 只显示 Effect CLI help，不产生副作用。
 
 ## Workspace 目录管理
 
@@ -209,7 +210,7 @@ receipt；artifact 离开 Actions 后仍能说明该 Repo 为什么被选择。
 ### 修改共享编排设施
 
 Nx 版本、`nx.json`、planner、Testkit、candidate 打包 / 注入、receipt、cleanup 或 E2E workflow 变化都按 full 处理。
-变更必须证明 graph-only 无副作用、直接 Nx task 早失败、`pnpm e2e` 仍只 plan 一次、pack 一次并构建一次 Testkit snapshot。
+变更必须证明 graph-only 无副作用、直接 Nx task 早失败、`pnpm e2e test` 仍只 plan 一次、pack 一次并构建一次 Testkit snapshot。
 
 ## 验收收据
 

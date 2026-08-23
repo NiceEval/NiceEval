@@ -28,7 +28,7 @@ E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../README.md#bu
 
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
 - Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
-- 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
+- 根 `pnpm e2e test` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
 - 独立 [Testkit](../testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
 - 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
 
@@ -228,9 +228,9 @@ Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置
 任何 E2E 必须能按 Repo、文件和标题重跑：
 
 ```sh
-pnpm e2e --repo report
-pnpm e2e --repo report -- --run test/exported-targets.test.ts
-pnpm e2e --repo report -- --run test/exported-targets.test.ts -t "打开 case target"
+pnpm e2e test --repo report
+pnpm e2e test --repo report -- --run test/exported-targets.test.ts
+pnpm e2e test --repo report -- --run test/exported-targets.test.ts -t "打开 case target"
 ```
 
 E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选择的线性脚本不拥有长期测试命题。

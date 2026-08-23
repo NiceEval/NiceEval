@@ -43,10 +43,10 @@ pnpm e2e verify-release --plan /tmp/release-plan.json --candidate /tmp/niceeval-
   --receipt-root /tmp/release-receipts --tag v0.4.6
 
 # 默认模式依次 plan → pack 一次 candidate → 按需 build 一次 Testkit → 运行
-pnpm e2e --lane pr
-pnpm e2e --lane main
-pnpm e2e --repo report -- --run test/report.test.ts
-pnpm e2e --repo report -- --run test/report.browser.spec.ts -t "打开"
+pnpm e2e test --lane pr
+pnpm e2e test --lane main
+pnpm e2e test --repo report -- --run test/report.test.ts
+pnpm e2e test --repo report -- --run test/report.browser.spec.ts -t "打开"
 ```
 
 Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，不是发布候选；`harness.testkit: true` 是唯一消费声明。runner 会在一次 invocation 中 build 一次 `packages/testkit`，再把该目录作为本地依赖注入隔离副本。场景源 `package.json` 和 lockfile 不声明 Testkit，也不直接链接 workspace。

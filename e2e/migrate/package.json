@@ -10,7 +10,7 @@
   "engines": { "node": ">=24" },
   "scripts": {
     "e2e": "tsc --noEmit && vitest run",
-    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo migrate'); process.exit(1)\"",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo migrate'); process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

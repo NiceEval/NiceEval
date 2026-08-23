@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/e2e/cli.md#cli-positive-selection
-// rerun: pnpm e2e --repo cli -- --run test/selection.test.ts
+// rerun: pnpm e2e test --repo cli -- --run test/selection.test.ts
 
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
