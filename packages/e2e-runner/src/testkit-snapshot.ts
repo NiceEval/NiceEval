@@ -1,456 +1,83 @@
-// Workspace Testkit build, isolated directory injection and verification.
-//
-// Testkit is private harness code from the same checkout, not a release
-// artifact. Every root invocation compiles an immutable package snapshot
-// inside its own scratch tree and injects that absolute directory as a `file:`
-// devDependency only into each isolated scenario copy. The shared checkout
-// dist is never read, removed, or written. pnpm must materialize the snapshot
-// in the copy's virtual store; a symlink back to it is rejected.
-
+// Checkout-local Testkit snapshots are built once per root scope and injected
+// only into isolated copies.
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { FileSystem } from "@effect/platform";
+import { Data, Effect, Scope } from "effect";
 import { parse } from "yaml";
+import { lstatPath } from "./durable-path.ts";
+import { hasSuccessfulOwnedProcessResult, runOwnedProcess, type OwnedProcess } from "./owned-process.ts";
 
-import {
-  createUnmanagedExecutionControl,
-  isExecutionCancelled,
-  E2EExecutionCancelledError,
-  hasSuccessfulOwnedProcessResult,
-  throwIfExecutionCancelled,
-  type E2EExecutionControl,
-} from "./owned-process.ts";
+export class TestkitSnapshotError extends Data.TaggedError("TestkitSnapshotError")<{ readonly operation: "build" | "verify" | "inject"; readonly detail: string }> {}
+export interface TestkitPackage { readonly path: string; readonly sourcePath: "packages/testkit"; readonly name: "@niceeval/testkit"; readonly version: string; readonly digest: string; }
+export interface TestkitBuildDependencies { readonly buildTestkit?: (sourceDir: string, stagingDir: string) => Effect.Effect<number, TestkitSnapshotError, OwnedProcess | Scope.Scope>; }
+const error = (operation: TestkitSnapshotError["operation"], cause: unknown) => new TestkitSnapshotError({ operation, detail: cause instanceof Error ? cause.message : String(cause) });
+const fs = <A>(operation: TestkitSnapshotError["operation"], use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown>) => Effect.flatMap(FileSystem.FileSystem, use).pipe(Effect.mapError((cause) => error(operation, cause)));
+const lstat = (operation: TestkitSnapshotError["operation"], path: string) => lstatPath(path).pipe(Effect.mapError((cause) => error(operation, cause)));
+const fileText = (operation: TestkitSnapshotError["operation"], path: string) => fs(operation, (service) => service.readFileString(path));
+const exists = (operation: TestkitSnapshotError["operation"], path: string) => fs(operation, (service) => service.exists(path));
 
-export interface TestkitPackage {
-  /** Absolute immutable package snapshot inside this invocation's scratch tree. */
-  path: string;
-  /** Stable checkout-relative diagnostic; never used as package identity. */
-  sourcePath: "packages/testkit";
-  name: "@niceeval/testkit";
-  version: string;
-  /** Ordered path/content identity used to detect mutation by package managers or tests. */
-  digest: string;
-}
-
-export interface TestkitBuildDependencies {
-  /** Compiles Testkit source into the supplied staging package; returns exit code. */
-  buildTestkit?: (sourceDir: string, stagingDir: string) => Promise<number>;
-}
-
-async function buildTestkitSource(
-  sourceDir: string,
-  stagingDir: string,
-  control: E2EExecutionControl,
-): Promise<number> {
-  const builds = [
-    ["pnpm", "exec", "tsc6", "-p", join(sourceDir, "tsconfig.esm.json"), "--outDir", join(stagingDir, "dist", "esm")],
-    ["pnpm", "exec", "tsc6", "-p", join(sourceDir, "tsconfig.cjs.json"), "--outDir", join(stagingDir, "dist", "cjs")],
-  ] as const;
-  for (const command of builds) {
-    const result = await control.supervisor.run(command, {
-      cwd: sourceDir,
-      env: process.env,
-      output: "inherit",
-      timeoutMs: 30 * 60_000,
-      abortSignal: control.abortSignal,
-    });
-    if (result.cancelled || isExecutionCancelled(control)) {
-      throw new E2EExecutionCancelledError("workspace Testkit snapshot build cancelled");
+const fingerprintDirectory = (root: string): Effect.Effect<string, TestkitSnapshotError, FileSystem.FileSystem> => Effect.gen(function* () {
+  const hash = createHash("sha256");
+  const walk = (directory: string): Effect.Effect<void, TestkitSnapshotError, FileSystem.FileSystem> => Effect.gen(function* () {
+    const entries = yield* fs("verify", (service) => service.readDirectory(directory));
+    for (const name of entries.sort((left, right) => left.localeCompare(right))) {
+      const path = join(directory, name); const stat = yield* lstat("verify", path);
+      if (stat.isSymbolicLink()) return yield* Effect.fail(new TestkitSnapshotError({ operation: "verify", detail: `Testkit snapshot contains a symlink: ${path}` }));
+      if (stat.isDirectory()) { yield* walk(path); continue; }
+      if (!stat.isFile()) return yield* Effect.fail(new TestkitSnapshotError({ operation: "verify", detail: `Testkit snapshot contains a special file: ${path}` }));
+      const bytes = yield* fs("verify", (service) => service.readFile(path)); hash.update(`${relative(root, path).split(sep).join("/")}\0${bytes.byteLength}\0`); hash.update(bytes); hash.update("\n");
     }
-    if (!hasSuccessfulOwnedProcessResult(result)) return 1;
-  }
-  return 0;
-}
+  });
+  yield* walk(root); return hash.digest("hex");
+});
+export const verifyTestkitSnapshot = (testkit: TestkitPackage): Effect.Effect<void, TestkitSnapshotError, FileSystem.FileSystem> => Effect.gen(function* () { const digest = yield* fingerprintDirectory(testkit.path); if (digest !== testkit.digest) return yield* Effect.fail(new TestkitSnapshotError({ operation: "verify", detail: `Testkit snapshot mutated: expected sha256:${testkit.digest}, got sha256:${digest} at ${testkit.path}` })); });
+const packageEntries = (value: Record<string, unknown>): readonly string[] => { const found: string[] = []; const collect = (item: unknown): void => { if (typeof item === "string") found.push(item); else if (item !== null && typeof item === "object" && !Array.isArray(item)) for (const nested of Object.values(item)) collect(nested); }; collect(value.main); collect(value.module); collect(value.types); collect(value.exports); return found; };
 
-async function fingerprintDirectory(root: string): Promise<string> {
-  const digest = createHash("sha256");
-  const walk = async (dir: string): Promise<void> => {
-    const entries = await readdir(dir, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-    for (const entry of entries) {
-      const path = join(dir, entry.name);
-      const stat = await lstat(path);
-      if (stat.isSymbolicLink()) throw new Error(`Testkit snapshot contains a symlink: ${path}`);
-      if (stat.isDirectory()) {
-        await walk(path);
-        continue;
-      }
-      if (!stat.isFile()) throw new Error(`Testkit snapshot contains a special file: ${path}`);
-      const bytes = await readFile(path);
-      digest.update(`${relative(root, path).split(sep).join("/")}\0${bytes.byteLength}\0`);
-      digest.update(bytes);
-      digest.update("\n");
-    }
-  };
-  await walk(root);
-  return digest.digest("hex");
-}
+export const buildTestkitPackage = (repoRoot: string, scratchRoot: string, dependencies: TestkitBuildDependencies = {}): Effect.Effect<TestkitPackage, TestkitSnapshotError, FileSystem.FileSystem | OwnedProcess | Scope.Scope> => Effect.gen(function* () {
+  const source = resolve(repoRoot, "packages/testkit"); const packagePath = join(source, "package.json"); const text = yield* fileText("build", packagePath);
+  let pkg: Record<string, unknown>; try { const value: unknown = JSON.parse(text); if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("package metadata is not an object"); pkg = value as Record<string, unknown>; } catch (cause) { return yield* Effect.fail(error("build", cause)); }
+  if (pkg.name !== "@niceeval/testkit" || pkg.private !== true || typeof pkg.version !== "string" || pkg.version.length === 0) return yield* Effect.fail(new TestkitSnapshotError({ operation: "build", detail: "packages/testkit/package.json must describe private @niceeval/testkit with a version" }));
+  const staging = resolve(scratchRoot, `.testkit-staging-${randomUUID()}`); const snapshot = join(scratchRoot, "testkit", "package");
+  yield* fs("build", (service) => service.makeDirectory(staging, { recursive: true }));
+  yield* fs("build", (service) => service.copyFile(packagePath, join(staging, "package.json")));
+  yield* fs("build", (service) => service.copyFile(join(source, "README.md"), join(staging, "README.md")));
+  const commands = [["pnpm", "exec", "tsc6", "-p", join(source, "tsconfig.esm.json"), "--outDir", join(staging, "dist", "esm")], ["pnpm", "exec", "tsc6", "-p", join(source, "tsconfig.cjs.json"), "--outDir", join(staging, "dist", "cjs")]] as const;
+  const exit = dependencies.buildTestkit === undefined ? yield* Effect.forEach(commands, (command) => runOwnedProcess(command, { cwd: source, env: process.env, output: "inherit", timeoutMs: 30 * 60_000 }).pipe(Effect.mapError((cause) => error("build", cause)), Effect.map((result) => hasSuccessfulOwnedProcessResult(result) ? 0 : 1))) : yield* dependencies.buildTestkit(source, staging);
+  if (Array.isArray(exit) ? exit.some((code) => code !== 0) : exit !== 0) return yield* Effect.fail(new TestkitSnapshotError({ operation: "build", detail: `Testkit snapshot build failed from ${source}` }));
+  yield* fs("build", (service) => service.makeDirectory(join(staging, "dist", "cjs"), { recursive: true })); yield* fs("build", (service) => service.writeFileString(join(staging, "dist", "cjs", "package.json"), '{"type":"commonjs"}\n'));
+  for (const entry of packageEntries(pkg)) if (!entry.startsWith("./") || !(yield* exists("build", resolve(staging, entry)))) return yield* Effect.fail(new TestkitSnapshotError({ operation: "build", detail: `Testkit snapshot did not produce package entry ${JSON.stringify(entry)}` }));
+  yield* fs("build", (service) => service.makeDirectory(dirname(snapshot), { recursive: true })); yield* fs("build", (service) => service.rename(staging, snapshot));
+  return { path: snapshot, sourcePath: "packages/testkit", name: "@niceeval/testkit", version: pkg.version, digest: yield* fingerprintDirectory(snapshot) };
+});
+export const acquireTestkitPackage = (repoRoot: string, scratchRoot: string, dependencies: TestkitBuildDependencies = {}) => Effect.acquireRelease(buildTestkitPackage(repoRoot, scratchRoot, dependencies), (testkit) => fs("build", (service) => service.remove(resolve(testkit.path, ".."), { recursive: true })).pipe(Effect.catchAll(() => Effect.void)));
 
-/** Fail if an allegedly immutable invocation-local Testkit snapshot changed. */
-export async function verifyTestkitSnapshot(testkit: TestkitPackage): Promise<void> {
-  const actual = await fingerprintDirectory(testkit.path);
-  if (actual !== testkit.digest) {
-    throw new Error(
-      `Testkit snapshot mutated: expected sha256:${testkit.digest}, got sha256:${actual} at ${testkit.path}`,
-    );
-  }
-}
-
-function packageEntries(pkg: Record<string, unknown>): string[] {
-  const entries = [pkg.main, pkg.module, pkg.types];
-  const collect = (value: unknown): void => {
-    if (typeof value === "string") entries.push(value);
-    else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      for (const nested of Object.values(value)) collect(nested);
-    }
-  };
-  collect(pkg.exports);
-  return entries.filter((entry): entry is string => typeof entry === "string");
-}
-
-/** Build and validate one invocation-local private Testkit package snapshot. */
-export async function buildTestkitPackage(
-  repoRoot: string,
-  scratchRoot: string,
-  dependencies: TestkitBuildDependencies = {},
-  execution: E2EExecutionControl | undefined = undefined,
-): Promise<TestkitPackage> {
-  const control = execution ?? createUnmanagedExecutionControl();
-  throwIfExecutionCancelled(control);
-  const pkgDir = resolve(repoRoot, "packages", "testkit");
-  const pkgJsonPath = join(pkgDir, "package.json");
-  if (!existsSync(pkgJsonPath)) {
-    throw new Error(`no packages/testkit/package.json under ${repoRoot} — cannot build the workspace Testkit`);
-  }
-
-  const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as Record<string, unknown>;
-  if (pkg.name !== "@niceeval/testkit") {
-    throw new Error(
-      `packages/testkit/package.json name must be "@niceeval/testkit", got ${JSON.stringify(pkg.name)}`,
-    );
-  }
-  if (pkg.private !== true) {
-    throw new Error("packages/testkit/package.json must remain private — Testkit is checkout-local harness code");
-  }
-  if (typeof pkg.version !== "string" || pkg.version.length === 0) {
-    throw new Error("packages/testkit/package.json must declare a non-empty version for diagnostics");
-  }
-
-  const snapshotRoot = resolve(scratchRoot, "testkit");
-  const stagingDir = resolve(scratchRoot, `.testkit-staging-${randomUUID()}`);
-  const snapshotDir = join(snapshotRoot, "package");
-  await mkdir(stagingDir, { recursive: true });
-  try {
-    await Promise.all([
-      copyFile(pkgJsonPath, join(stagingDir, "package.json")),
-      copyFile(join(pkgDir, "README.md"), join(stagingDir, "README.md")),
-    ]);
-    throwIfExecutionCancelled(control);
-    const buildCode = dependencies.buildTestkit === undefined
-      ? await buildTestkitSource(pkgDir, stagingDir, control)
-      : await dependencies.buildTestkit(pkgDir, stagingDir);
-    throwIfExecutionCancelled(control);
-    if (buildCode !== 0) {
-      throw new Error(`Testkit snapshot build failed (exit ${buildCode}) from ${pkgDir}`);
-    }
-    await mkdir(join(stagingDir, "dist", "cjs"), { recursive: true });
-    await writeFile(join(stagingDir, "dist", "cjs", "package.json"), '{"type":"commonjs"}\n', "utf8");
-
-    for (const entry of packageEntries(pkg)) {
-      if (!entry.startsWith("./") || !existsSync(resolve(stagingDir, entry))) {
-        throw new Error(`Testkit snapshot did not produce package entry ${JSON.stringify(entry)}`);
-      }
-    }
-
-    await mkdir(snapshotRoot, { recursive: true });
-    await rename(stagingDir, snapshotDir);
-    const digest = await fingerprintDirectory(snapshotDir);
-    return {
-      path: snapshotDir,
-      sourcePath: "packages/testkit",
-      name: "@niceeval/testkit",
-      version: pkg.version as string,
-      digest,
-    };
-  } catch (error) {
-    await rm(stagingDir, { recursive: true, force: true });
-    throw error;
-  }
-}
-
-const PACKAGE_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const;
-const LOCK_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies"] as const;
-type LocalSpecifierScheme = "file" | "workspace";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function localSpecifierScheme(value: unknown): LocalSpecifierScheme | undefined {
-  if (typeof value !== "string") return undefined;
-  if (value.startsWith("file:")) return "file";
-  if (value.startsWith("workspace:")) return "workspace";
-  return undefined;
-}
-
-function collectLocalResolutionSchemes(value: unknown, schemes: Set<LocalSpecifierScheme>): void {
-  const direct = localSpecifierScheme(value);
-  if (direct !== undefined) {
-    schemes.add(direct);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) collectLocalResolutionSchemes(item, schemes);
-    return;
-  }
-  if (isRecord(value)) {
-    for (const item of Object.values(value)) collectLocalResolutionSchemes(item, schemes);
-  }
-}
-
-/** Inspect only pnpm dependency specifiers and package resolutions. */
-function pnpmLocalSpecifierSchemes(lockText: string): Set<LocalSpecifierScheme> {
-  const schemes = new Set<LocalSpecifierScheme>();
-  let lock: unknown;
-  try {
-    lock = parse(lockText);
-  } catch {
-    return schemes;
-  }
-  if (!isRecord(lock)) return schemes;
-
-  const importers = lock.importers;
-  if (isRecord(importers)) {
-    for (const importer of Object.values(importers)) {
-      if (!isRecord(importer)) continue;
-      for (const field of LOCK_DEP_FIELDS) {
-        const dependencies = importer[field];
-        if (!isRecord(dependencies)) continue;
-        for (const dependency of Object.values(dependencies)) {
-          const direct = localSpecifierScheme(dependency);
-          if (direct !== undefined) schemes.add(direct);
-          if (!isRecord(dependency)) continue;
-          for (const key of ["specifier", "version"]) {
-            const scheme = localSpecifierScheme(dependency[key]);
-            if (scheme !== undefined) schemes.add(scheme);
-          }
-        }
-      }
-    }
-  }
-
-  for (const section of [lock.packages, lock.snapshots]) {
-    if (!isRecord(section)) continue;
-    for (const [key, entry] of Object.entries(section)) {
-      const keyScheme = key.match(/(?:^|@)(file|workspace):/)?.[1] as LocalSpecifierScheme | undefined;
-      if (keyScheme !== undefined) schemes.add(keyScheme);
-      if (isRecord(entry)) collectLocalResolutionSchemes(entry.resolution, schemes);
-    }
-  }
-  return schemes;
-}
-
-/** Scenario sources stay portable; only the isolated copy receives Testkit. */
-export function checkTestkitSourceClean(copyDir: string): string[] {
-  const violations: string[] = [];
-  const pkg = JSON.parse(readFileSync(join(copyDir, "package.json"), "utf8")) as Record<string, unknown>;
-  for (const field of PACKAGE_DEP_FIELDS) {
-    const deps = pkg[field];
-    if (isRecord(deps) && Object.prototype.hasOwnProperty.call(deps, "@niceeval/testkit")) {
-      violations.push(
-        `source package.json declares "@niceeval/testkit" in ${field} — project.json targets.e2e metadata is the only true source of testkit intent`,
-      );
-    }
-  }
-
-  const lockPath = join(copyDir, "pnpm-lock.yaml");
-  if (existsSync(lockPath)) {
-    const lock = readFileSync(lockPath, "utf8");
-    if (lock.includes("@niceeval/testkit@")) {
-      violations.push(
-        'checked-in pnpm-lock.yaml contains an "@niceeval/testkit" resolution — scenario lockfiles must not declare testkit',
-      );
-    }
-    const localSchemes = pnpmLocalSpecifierSchemes(lock);
-    if (localSchemes.has("workspace")) {
-      violations.push('checked-in pnpm-lock.yaml contains a "workspace:" reference — scenarios must not use workspace links');
-    }
-    if (localSchemes.has("file")) {
-      violations.push(
-        'checked-in pnpm-lock.yaml contains a "file:" specifier — local directories are only injected by the runner inside the isolated copy',
-      );
-    }
-  }
-  return violations;
-}
-
-const TESTKIT_IMPORT_PATTERN = /(?:(?:from|import|require)\s*\(?\s*|import\s+)(["'])@niceeval\/testkit\1/;
-const SCAN_EXCLUDED = new Set(["node_modules", ".git", ".niceeval"]);
-const SCAN_SOURCE_EXTENSIONS = new Set([".js", ".cjs", ".mjs", ".ts", ".cts", ".mts", ".tsx", ".jsx"]);
-
-export function scanForTestkitImports(copyDir: string): string[] {
-  const matches: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (SCAN_EXCLUDED.has(entry.name)) continue;
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (entry.name === "package.json" || entry.name === "pnpm-lock.yaml") continue;
-      if (!SCAN_SOURCE_EXTENSIONS.has(extname(entry.name))) continue;
-      try {
-        if (TESTKIT_IMPORT_PATTERN.test(readFileSync(full, "utf8"))) matches.push(relative(copyDir, full));
-      } catch {
-        // Binary or unreadable file — not an import surface.
-      }
-    }
-  };
-  walk(copyDir);
-  return matches.sort();
-}
-
-/** Inject an absolute checkout directory reference only into the isolated copy. */
-export async function injectTestkitDirectory(copyDir: string, testkit: TestkitPackage): Promise<void> {
-  const pkgPath = join(copyDir, "package.json");
-  const pkg = JSON.parse(await readFile(pkgPath, "utf8")) as Record<string, unknown>;
-  const devDeps = (pkg.devDependencies ??= {}) as Record<string, string>;
-  devDeps["@niceeval/testkit"] = `file:${testkit.path}`;
-  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
-}
-
-function fileSpecifierPath(specifier: string, baseDir: string): string | undefined {
-  if (!specifier.startsWith("file:")) return undefined;
-  const value = specifier.slice("file:".length);
-  return resolve(isAbsolute(value) ? value : join(baseDir, value));
-}
-
-export interface TestkitDirectoryResolution {
-  key: string;
-  directory: string;
-}
-
-/** Verify pnpm recorded one directory package and the injected importer spec. */
-export function verifyTestkitDirectoryResolution(
-  lockfileText: string,
-  expectedDirectory: string,
-  copyDir: string,
-): { ok: true; resolution: TestkitDirectoryResolution } | { ok: false; reason: string } {
-  let lock: unknown;
-  try {
-    lock = parse(lockfileText);
-  } catch (error) {
-    return { ok: false, reason: `pnpm-lock.yaml is invalid YAML: ${(error as Error).message}` };
-  }
-  if (!isRecord(lock)) return { ok: false, reason: "pnpm-lock.yaml root is not an object" };
-
-  const expected = resolve(expectedDirectory);
-  const importerMatches: Array<{ specifier: string; version?: string }> = [];
-  if (isRecord(lock.importers)) {
-    for (const importer of Object.values(lock.importers)) {
-      if (!isRecord(importer)) continue;
-      for (const field of LOCK_DEP_FIELDS) {
-        const dependencies = importer[field];
-        if (!isRecord(dependencies) || !("@niceeval/testkit" in dependencies)) continue;
-        const dependency = dependencies["@niceeval/testkit"];
-        if (typeof dependency === "string") {
-          importerMatches.push({ specifier: dependency });
-        } else if (isRecord(dependency) && typeof dependency.specifier === "string") {
-          importerMatches.push({
-            specifier: dependency.specifier,
-            ...(typeof dependency.version === "string" ? { version: dependency.version } : {}),
-          });
-        }
-      }
-    }
-  }
-  if (importerMatches.length !== 1) {
-    return {
-      ok: false,
-      reason: `found ${importerMatches.length} @niceeval/testkit importer declarations in pnpm-lock.yaml; expected exactly one`,
-    };
-  }
-  const importerPath = fileSpecifierPath(importerMatches[0]!.specifier, copyDir);
-  if (importerPath !== expected) {
-    return {
-      ok: false,
-      reason: `@niceeval/testkit importer specifier ${JSON.stringify(importerMatches[0]!.specifier)} does not resolve to ${expected}`,
-    };
-  }
-
-  const resolutions: TestkitDirectoryResolution[] = [];
-  if (isRecord(lock.packages)) {
-    for (const [key, value] of Object.entries(lock.packages)) {
-      if (!key.startsWith("@niceeval/testkit@file:") || !isRecord(value) || !isRecord(value.resolution)) continue;
-      const directory = value.resolution.directory;
-      if (value.resolution.type === "directory" && typeof directory === "string") {
-        resolutions.push({ key, directory });
-      }
-    }
-  }
-  if (resolutions.length !== 1) {
-    return {
-      ok: false,
-      reason: `found ${resolutions.length} @niceeval/testkit directory resolutions in pnpm-lock.yaml; expected exactly one`,
-    };
-  }
-  const recorded = resolve(isAbsolute(resolutions[0]!.directory) ? resolutions[0]!.directory : join(copyDir, resolutions[0]!.directory));
-  if (recorded !== expected) {
-    return {
-      ok: false,
-      reason: `@niceeval/testkit directory resolution ${JSON.stringify(resolutions[0]!.directory)} does not resolve to ${expected}`,
-    };
-  }
-  return { ok: true, resolution: resolutions[0]! };
-}
-
-export function testkitInstallPath(copyDir: string): string {
-  return join(copyDir, "node_modules", "@niceeval", "testkit");
-}
-
-function isWithin(parent: string, child: string): boolean {
-  const parentPath = resolve(parent);
-  const childPath = resolve(child);
-  return childPath === parentPath || childPath.startsWith(`${parentPath}${sep}`);
-}
-
-/** Verify package identity and that pnpm materialized it in the isolated store. */
-export function verifyInstalledTestkit(
-  copyDir: string,
-  testkit: TestkitPackage,
-): { ok: true; installedPath: string; realPath: string } | { ok: false; reason: string } {
-  const installedPath = testkitInstallPath(copyDir);
-  const installedPkgJson = join(installedPath, "package.json");
-  if (!existsSync(installedPkgJson)) {
-    return { ok: false, reason: `installed testkit metadata missing at ${installedPkgJson}` };
-  }
-  let installed: { name?: unknown; version?: unknown };
-  try {
-    installed = JSON.parse(readFileSync(installedPkgJson, "utf8")) as { name?: unknown; version?: unknown };
-  } catch (error) {
-    return { ok: false, reason: `installed testkit package.json is unreadable: ${(error as Error).message}` };
-  }
-  if (installed.name !== testkit.name || installed.version !== testkit.version) {
-    return {
-      ok: false,
-      reason: `installed testkit identity is ${JSON.stringify(installed.name)}@${JSON.stringify(installed.version)}, expected ${testkit.name}@${testkit.version}`,
-    };
-  }
-
-  let realPath: string;
-  try {
-    realPath = realpathSync(installedPath);
-  } catch (error) {
-    return { ok: false, reason: `cannot resolve installed testkit path: ${(error as Error).message}` };
-  }
-  if (isWithin(testkit.path, realPath)) {
-    return { ok: false, reason: `installed testkit resolves back to checkout source ${realPath}; expected an isolated pnpm materialization` };
-  }
-  const virtualStore = join(copyDir, "node_modules", ".pnpm");
-  if (!isWithin(virtualStore, realPath)) {
-    return { ok: false, reason: `installed testkit realpath ${realPath} is outside isolated virtual store ${virtualStore}` };
-  }
-  return { ok: true, installedPath, realPath };
-}
+const localScheme = (value: unknown): "file" | "workspace" | undefined => typeof value === "string" && (value.startsWith("file:") || value.startsWith("workspace:")) ? value.startsWith("file:") ? "file" : "workspace" : undefined;
+const localSchemes = (text: string): ReadonlySet<string> => { const found = new Set<string>(); let value: unknown; try { value = parse(text); } catch { return found; } const visit = (item: unknown): void => { const direct = localScheme(item); if (direct !== undefined) found.add(direct); if (Array.isArray(item)) item.forEach(visit); else if (item !== null && typeof item === "object") Object.values(item).forEach(visit); }; visit(value); return found; };
+export const checkTestkitSourceClean = (copyDir: string): Effect.Effect<readonly string[], TestkitSnapshotError, FileSystem.FileSystem> => Effect.gen(function* () { const violations: string[] = []; let pkg: Record<string, unknown>; try { const decoded: unknown = JSON.parse(yield* fileText("verify", join(copyDir, "package.json"))); pkg = decoded as Record<string, unknown>; } catch (cause) { return yield* Effect.fail(error("verify", cause)); } for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) if (pkg[field] !== null && typeof pkg[field] === "object" && Object.hasOwn(pkg[field] as object, "@niceeval/testkit")) violations.push(`source package.json declares "@niceeval/testkit" in ${field}`); const lock = join(copyDir, "pnpm-lock.yaml"); if (yield* exists("verify", lock)) { const text = yield* fileText("verify", lock); const schemes = localSchemes(text); if (text.includes("@niceeval/testkit@")) violations.push("checked-in pnpm-lock.yaml contains an @niceeval/testkit resolution"); if (schemes.has("workspace")) violations.push('checked-in pnpm-lock.yaml contains a "workspace:" reference'); if (schemes.has("file")) violations.push('checked-in pnpm-lock.yaml contains a "file:" specifier'); } return violations; });
+const sourceExtensions = new Set([".js", ".cjs", ".mjs", ".ts", ".cts", ".mts", ".tsx", ".jsx"]); const excluded = new Set(["node_modules", ".git", ".niceeval"]); const importPattern = /(?:(?:from|import|require)\s*\(?\s*|import\s+)(["'])@niceeval\/testkit\1/;
+export const scanForTestkitImports = (copyDir: string): Effect.Effect<readonly string[], TestkitSnapshotError, FileSystem.FileSystem> => Effect.gen(function* () { const matches: string[] = []; const walk = (dir: string): Effect.Effect<void, TestkitSnapshotError, FileSystem.FileSystem> => Effect.gen(function* () { for (const name of yield* fs("verify", (service) => service.readDirectory(dir))) { if (excluded.has(name)) continue; const path = join(dir, name); const stat = yield* lstat("verify", path); if (stat.isDirectory()) { yield* walk(path); continue; } if (name !== "package.json" && name !== "pnpm-lock.yaml" && sourceExtensions.has(extname(name)) && importPattern.test(yield* fileText("verify", path))) matches.push(relative(copyDir, path)); } }); yield* walk(copyDir); return matches.sort(); });
+export const injectTestkitDirectory = (copyDir: string, testkit: TestkitPackage): Effect.Effect<void, TestkitSnapshotError, FileSystem.FileSystem> => Effect.gen(function* () { const path = join(copyDir, "package.json"); let pkg: Record<string, unknown>; try { pkg = JSON.parse(yield* fileText("inject", path)) as Record<string, unknown>; } catch (cause) { return yield* Effect.fail(error("inject", cause)); } const deps = pkg.devDependencies !== null && typeof pkg.devDependencies === "object" ? pkg.devDependencies as Record<string, string> : {}; deps["@niceeval/testkit"] = `file:${testkit.path}`; pkg.devDependencies = deps; yield* fs("inject", (service) => service.writeFileString(path, `${JSON.stringify(pkg, null, 2)}\n`)); });
+export interface TestkitDirectoryResolution { readonly key: string; readonly directory: string; }
+export const verifyTestkitDirectoryResolution = (lockfileText: string, expectedDirectory: string, copyDir: string): { readonly ok: true; readonly resolution: TestkitDirectoryResolution } | { readonly ok: false; readonly reason: string } => {
+  let lockfile: unknown;
+  try { lockfile = parse(lockfileText); }
+  catch (cause) { return { ok: false, reason: `could not parse installed pnpm-lock.yaml: ${cause instanceof Error ? cause.message : String(cause)}` }; }
+  if (lockfile === null || typeof lockfile !== "object" || Array.isArray(lockfile)) return { ok: false, reason: "installed pnpm-lock.yaml is not an object" };
+  const packages = (lockfile as Record<string, unknown>).packages;
+  if (packages === null || typeof packages !== "object" || Array.isArray(packages)) return { ok: false, reason: "installed pnpm-lock.yaml has no packages map" };
+  const candidates = Object.entries(packages).filter(([key]) => key.startsWith("@niceeval/testkit@file:"));
+  if (candidates.length !== 1) return { ok: false, reason: `found ${candidates.length} @niceeval/testkit package resolutions; expected exactly one` };
+  const [key, entry] = candidates[0]!;
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return { ok: false, reason: "testkit package resolution is not an object" };
+  const resolution = (entry as Record<string, unknown>).resolution;
+  if (resolution === null || typeof resolution !== "object" || Array.isArray(resolution)) return { ok: false, reason: "testkit package resolution has no resolution object" };
+  const declaredDirectory = (resolution as Record<string, unknown>).directory;
+  if (typeof declaredDirectory !== "string" || declaredDirectory.length === 0) return { ok: false, reason: "testkit package resolution has no directory" };
+  const directory = resolve(copyDir, declaredDirectory);
+  return directory === resolve(expectedDirectory)
+    ? { ok: true, resolution: { key, directory } }
+    : { ok: false, reason: "testkit directory resolution does not match snapshot" };
+};
+export const testkitInstallPath = (copyDir: string): string => join(copyDir, "node_modules", "@niceeval", "testkit");
+export const verifyInstalledTestkit = (copyDir: string, testkit: TestkitPackage): Effect.Effect<{ readonly ok: true; readonly installedPath: string; readonly realPath: string } | { readonly ok: false; readonly reason: string }, TestkitSnapshotError, FileSystem.FileSystem> => Effect.gen(function* () { const installedPath = testkitInstallPath(copyDir); const metadata = join(installedPath, "package.json"); if (!(yield* exists("verify", metadata))) return { ok: false, reason: `installed testkit metadata missing at ${metadata}` }; let value: { name?: unknown; version?: unknown }; try { value = JSON.parse(yield* fileText("verify", metadata)) as { name?: unknown; version?: unknown }; } catch (cause) { return { ok: false, reason: error("verify", cause).detail }; } if (value.name !== testkit.name || value.version !== testkit.version) return { ok: false, reason: "installed testkit identity differs from snapshot" }; const real = yield* fs("verify", (service) => service.realPath(installedPath)); const virtual = resolve(copyDir, "node_modules", ".pnpm"); if (!real.startsWith(`${virtual}${sep}`)) return { ok: false, reason: `installed testkit realpath ${real} is outside isolated virtual store ${virtual}` }; return { ok: true, installedPath, realPath: real }; });

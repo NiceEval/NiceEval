@@ -1,235 +1,73 @@
-// Durable artifact-path boundary for the root E2E runner.
-//
-// `resolve()` only proves lexical containment. It cannot show whether a
-// later write will follow a symlink. A declared durable root may live under a
-// system alias such as macOS /var -> /private/var, so this module first
-// resolves only that root's ancestors to a physical anchor. The declared root
-// itself, and every component below it, must then be a real directory.
+// Durable path operations. Lexical containment is pure; filesystem work is
+// service-owned. lstat is deliberately a tiny callback leaf because the
+// platform FileSystem stat operation follows links and cannot prove this
+// security boundary.
+import { lstat, type Stats } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { FileSystem } from "@effect/platform";
+import { Data, Effect } from "effect";
 
-import { constants } from "node:fs";
-import { copyFile, lstat, mkdir, realpath, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+export class DurablePathError extends Data.TaggedError("DurablePathError")<{
+  readonly operation: string;
+  readonly detail: string;
+}> {}
 
-async function lstatOrUndefined(path: string) {
-  try {
-    return await lstat(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-}
+const detail = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
+const failure = (operation: string, cause: unknown) => new DurablePathError({ operation, detail: detail(cause) });
+const fs = <A>(operation: string, use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown>) =>
+  Effect.flatMap(FileSystem.FileSystem, use).pipe(Effect.mapError((cause) => failure(operation, cause)));
 
-function isContainedRelative(path: string): boolean {
-  return path !== "" && path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
-}
+/** Callback-only lstat leaf: do not replace with stat, which follows links. */
+export const lstatPath = (path: string): Effect.Effect<Stats, DurablePathError> =>
+  Effect.async((resume) => { lstat(path, (error, stat) => resume(error === null ? Effect.succeed(stat) : Effect.fail(failure("lstat", error)))); });
+export const lstatOptional = (path: string): Effect.Effect<Stats | undefined, DurablePathError> =>
+  lstatPath(path).pipe(Effect.catchAll((error) => /ENOENT/.test(error.detail) ? Effect.succeed(undefined) : Effect.fail(error)));
 
-function relativeSegments(root: string, target: string, label: string, allowRoot = false): string[] {
-  const rootPath = resolve(root);
-  const targetPath = resolve(target);
-  const tail = relative(rootPath, targetPath);
-  if (tail === "") {
-    if (allowRoot) return [];
-    throw new Error(`${label} must be below its durable root: ${target}`);
-  }
-  if (!isContainedRelative(tail)) throw new Error(`${label} escapes its durable root: ${target}`);
+const containedTail = (value: string): boolean => value !== "" && value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value);
+const partsOf = (root: string, target: string, label: string, allowRoot = false): readonly string[] => {
+  const tail = relative(resolve(root), resolve(target));
+  if (tail === "") { if (allowRoot) return []; throw new DurablePathError({ operation: "validate", detail: `${label} must be below its durable root: ${target}` }); }
+  if (!containedTail(tail)) throw new DurablePathError({ operation: "validate", detail: `${label} escapes its durable root: ${target}` });
   const parts = tail.split(sep);
-  if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
-    throw new Error(`${label} has an invalid durable path segment: ${target}`);
-  }
+  if (parts.some((part) => part === "" || part === "." || part === "..")) throw new DurablePathError({ operation: "validate", detail: `${label} has an invalid durable path segment: ${target}` });
   return parts;
-}
+};
+export const containedDurablePath = (root: string, target: string, label: string, allowRoot = false): string => { partsOf(root, target, label, allowRoot); return resolve(target); };
+const realDirectory = (stat: Stats, path: string, label: string): Effect.Effect<void, DurablePathError> => stat.isDirectory() && !stat.isSymbolicLink() ? Effect.void : Effect.fail(new DurablePathError({ operation: "validate", detail: `${label} must be a real directory, not a symlink or special file: ${path}` }));
 
-/** Lexical containment is necessary; durable read/write helpers also pin a physical root below. */
-export function containedDurablePath(root: string, target: string, label: string, allowRoot = false): string {
-  const targetPath = resolve(target);
-  relativeSegments(root, targetPath, label, allowRoot);
-  return targetPath;
-}
-
-function assertRealDirectoryStat(
-  stat: Awaited<ReturnType<typeof lstat>>,
-  path: string,
-  label: string,
-): void {
-  if (stat.isSymbolicLink() || !stat.isDirectory()) {
-    throw new Error(`${label} must be a real directory, not a symlink or special file: ${path}`);
-  }
-}
-
-async function resolveExistingDurableRoot(declaredRoot: string, label: string): Promise<string> {
-  const before = await lstatOrUndefined(declaredRoot);
-  if (before === undefined) throw new Error(`${label} directory is missing: ${declaredRoot}`);
-  // This lstat intentionally addresses the declared path. It rejects a root
-  // symlink before realpath can hide it, while allowing a system-level parent
-  // alias to normalize below.
-  assertRealDirectoryStat(before, declaredRoot, label);
-  const physicalRoot = await realpath(declaredRoot);
-  const after = await lstat(physicalRoot);
-  assertRealDirectoryStat(after, physicalRoot, label);
-  if (before.dev !== after.dev || before.ino !== after.ino) {
-    throw new Error(`${label} changed while resolving its physical durable root: ${declaredRoot}`);
-  }
-  return physicalRoot;
-}
-
-async function nearestExistingAncestor(path: string): Promise<{ path: string; missing: string[] }> {
-  let current = path;
-  const missing: string[] = [];
-  while (true) {
-    if (await lstatOrUndefined(current)) return { path: current, missing };
-    const parent = dirname(current);
-    if (parent === current) throw new Error(`could not find an existing ancestor for durable root ${path}`);
-    missing.unshift(basename(current));
-    current = parent;
-  }
-}
-
-async function createDeclaredDurableRoot(declaredRoot: string, label: string): Promise<string> {
-  const ancestor = await nearestExistingAncestor(declaredRoot);
-  const physicalAncestor = await realpath(ancestor.path);
-  const ancestorStat = await lstat(physicalAncestor);
-  assertRealDirectoryStat(ancestorStat, physicalAncestor, `${label} ancestor`);
-
-  let current = physicalAncestor;
-  for (const part of ancestor.missing) {
-    assertRealDirectoryStat(await lstat(current), current, label);
-    const next = join(current, part);
-    let stat = await lstatOrUndefined(next);
-    if (stat === undefined) {
-      try {
-        await mkdir(next);
-      } catch (error) {
-        // Parallel repo runs can converge on a shared canonical parent such
-        // as artifactRoot/adapter. EEXIST is safe only after the lstat below
-        // proves the winner created the real directory we expected.
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-      stat = await lstat(next);
-    }
-    assertRealDirectoryStat(stat, next, label);
-    current = next;
-  }
-
-  // Re-check through the declared spelling. A root symlink introduced during
-  // creation is rejected rather than silently becoming the trusted anchor.
-  return resolveExistingDurableRoot(declaredRoot, label);
-}
-
-/**
- * Return the physical durable-root anchor. Ancestor aliases are normalized;
- * the declared root itself must exist as a real directory.
- */
-async function resolveDurableRoot(root: string, label: string, createMissing: boolean): Promise<string> {
-  const declaredRoot = resolve(root);
-  const stat = await lstatOrUndefined(declaredRoot);
-  if (stat !== undefined) return resolveExistingDurableRoot(declaredRoot, label);
-  if (!createMissing) throw new Error(`${label} directory is missing: ${declaredRoot}`);
-  return createDeclaredDurableRoot(declaredRoot, label);
-}
-
-async function walkBelowPhysicalRoot(
-  physicalRoot: string,
-  parts: readonly string[],
-  createMissing: boolean,
-  label: string,
-): Promise<string> {
+const existingRoot = (declaredRoot: string, label: string): Effect.Effect<string, DurablePathError, FileSystem.FileSystem> => Effect.gen(function* () {
+  const declared = resolve(declaredRoot); const before = yield* lstatOptional(declared);
+  if (before === undefined) return yield* Effect.fail(new DurablePathError({ operation: "resolve-root", detail: `${label} directory is missing: ${declared}` }));
+  yield* realDirectory(before, declared, label);
+  const physical = yield* fs("realpath", (service) => service.realPath(declared)); const after = yield* lstatPath(physical);
+  yield* realDirectory(after, physical, label);
+  if (before.dev !== after.dev || before.ino !== after.ino) return yield* Effect.fail(new DurablePathError({ operation: "resolve-root", detail: `${label} changed while resolving its physical durable root: ${declared}` }));
+  return physical;
+});
+const ensureRoot = (declaredRoot: string, label: string): Effect.Effect<string, DurablePathError, FileSystem.FileSystem> => Effect.gen(function* () {
+  const absolute = resolve(declaredRoot); if ((yield* lstatOptional(absolute)) === undefined) yield* fs("mkdir", (service) => service.makeDirectory(absolute, { recursive: true }));
+  return yield* existingRoot(absolute, label);
+});
+const walk = (physicalRoot: string, parts: readonly string[], create: boolean, label: string): Effect.Effect<string, DurablePathError, FileSystem.FileSystem> => Effect.gen(function* () {
   let current = physicalRoot;
   for (const part of parts) {
-    assertRealDirectoryStat(await lstat(current), current, label);
-    const next = join(current, part);
-    let stat = await lstatOrUndefined(next);
-    if (stat === undefined && createMissing) {
-      try {
-        await mkdir(next);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-      stat = await lstat(next);
-    }
-    if (stat === undefined) throw new Error(`${label} directory is missing: ${next}`);
-    assertRealDirectoryStat(stat, next, label);
-    current = next;
+    yield* realDirectory(yield* lstatPath(current), current, label); const next = join(current, part); const before = yield* lstatOptional(next);
+    if (before === undefined && create) yield* fs("mkdir", (service) => service.makeDirectory(next));
+    const after = yield* lstatOptional(next); if (after === undefined) return yield* Effect.fail(new DurablePathError({ operation: "walk", detail: `${label} directory is missing: ${next}` }));
+    yield* realDirectory(after, next, label); current = next;
   }
   return current;
-}
-
-async function physicalTarget(
-  root: string,
-  target: string,
-  label: string,
-  allowRoot: boolean,
-  createRoot: boolean,
-): Promise<{ physicalRoot: string; parts: string[] }> {
-  const parts = relativeSegments(root, target, label, allowRoot);
-  const physicalRoot = await resolveDurableRoot(root, `${label} root`, createRoot);
-  return { physicalRoot, parts };
-}
-
-/** Ensure a declared durable root exists and return its physical anchor. */
-export async function ensureRealDirectory(path: string, label: string): Promise<string> {
-  return resolveDurableRoot(path, label, true);
-}
-
-/** Assert a declared durable root exists and return its physical anchor. */
-export async function assertRealDirectory(path: string, label: string): Promise<string> {
-  return resolveDurableRoot(path, label, false);
-}
-
-/** Ensure a contained directory has no symlink at or below its physical durable root. */
-export async function ensureContainedRealDirectory(root: string, target: string, label: string): Promise<string> {
-  const anchored = await physicalTarget(root, target, label, true, true);
-  return walkBelowPhysicalRoot(anchored.physicalRoot, anchored.parts, true, label);
-}
-
-/** Prepare a regular-file target below the physical root without following a symlink. */
-export async function prepareContainedRegularFile(root: string, target: string, label: string): Promise<string> {
-  const anchored = await physicalTarget(root, target, label, false, true);
-  const parentParts = anchored.parts.slice(0, -1);
-  const fileName = anchored.parts.at(-1);
-  if (fileName === undefined) throw new Error(`${label} must name a file below its durable root`);
-  const parent = await walkBelowPhysicalRoot(anchored.physicalRoot, parentParts, true, `${label} parent`);
-  const physicalTargetPath = join(parent, fileName);
-  const existing = await lstatOrUndefined(physicalTargetPath);
-  if (existing !== undefined && (!existing.isFile() || existing.isSymbolicLink())) {
-    throw new Error(`${label} target is not a regular non-symlink file: ${physicalTargetPath}`);
-  }
-  return physicalTargetPath;
-}
-
-/** Assert an existing regular file and every directory component below the physical root. */
-export async function assertContainedRegularFile(root: string, target: string, label: string): Promise<string> {
-  const anchored = await physicalTarget(root, target, label, false, false);
-  const parentParts = anchored.parts.slice(0, -1);
-  const fileName = anchored.parts.at(-1);
-  if (fileName === undefined) throw new Error(`${label} must name a file below its durable root`);
-  const parent = await walkBelowPhysicalRoot(anchored.physicalRoot, parentParts, false, `${label} parent`);
-  const physicalTargetPath = join(parent, fileName);
-  const stat = await lstatOrUndefined(physicalTargetPath);
-  if (stat === undefined || !stat.isFile() || stat.isSymbolicLink()) {
-    throw new Error(`${label} must be an existing regular non-symlink file: ${physicalTargetPath}`);
-  }
-  return physicalTargetPath;
-}
-
-/**
- * Create a durable UTF-8 receipt/summary only after its full physical
- * directory chain has been verified. Exclusive creation is intentional: an
- * existing regular path could be a hard link to an inode outside the durable
- * root, so overwriting it would violate the boundary even without a symlink.
- */
-export async function writeContainedUtf8File(root: string, target: string, contents: string, label: string): Promise<string> {
-  const targetPath = await prepareContainedRegularFile(root, target, label);
-  await writeFile(targetPath, contents, { encoding: "utf8", flag: "wx" });
-  return assertContainedRegularFile(root, target, label);
-}
-
-/**
- * Exclusively copy one file into a verified durable target and confirm it did
- * not become a symlink. COPYFILE_EXCL also prevents an existing hard link from
- * turning this copy into an out-of-root inode mutation.
- */
-export async function copyIntoContainedFile(root: string, source: string, target: string, label: string): Promise<string> {
-  const targetPath = await prepareContainedRegularFile(root, target, label);
-  await copyFile(source, targetPath, constants.COPYFILE_EXCL);
-  return assertContainedRegularFile(root, target, label);
-}
+});
+const anchored = (root: string, target: string, label: string, allowRoot: boolean, create: boolean): Effect.Effect<{ readonly physicalRoot: string; readonly parts: readonly string[] }, DurablePathError, FileSystem.FileSystem> => Effect.map(create ? ensureRoot(root, `${label} root`) : existingRoot(root, `${label} root`), (physicalRoot) => ({ physicalRoot, parts: partsOf(root, target, label, allowRoot) }));
+export const ensureRealDirectory = (path: string, label: string) => ensureRoot(path, label);
+export const assertRealDirectory = (path: string, label: string) => existingRoot(path, label);
+export const ensureContainedRealDirectory = (root: string, target: string, label: string) => Effect.flatMap(anchored(root, target, label, true, true), ({ physicalRoot, parts }) => walk(physicalRoot, parts, true, label));
+const file = (root: string, target: string, label: string, create: boolean): Effect.Effect<string, DurablePathError, FileSystem.FileSystem> => Effect.gen(function* () {
+  const value = yield* anchored(root, target, label, false, create); const name = value.parts.at(-1);
+  if (name === undefined) return yield* Effect.fail(new DurablePathError({ operation: "file", detail: `${label} must name a file below its durable root` }));
+  return join(yield* walk(value.physicalRoot, value.parts.slice(0, -1), create, `${label} parent`), name);
+});
+export const prepareContainedRegularFile = (root: string, target: string, label: string) => Effect.gen(function* () { const path = yield* file(root, target, label, true); const stat = yield* lstatOptional(path); if (stat !== undefined && (!stat.isFile() || stat.isSymbolicLink())) return yield* Effect.fail(new DurablePathError({ operation: "prepare-file", detail: `${label} target is not a regular non-symlink file: ${path}` })); return path; });
+export const assertContainedRegularFile = (root: string, target: string, label: string) => Effect.gen(function* () { const path = yield* file(root, target, label, false); const stat = yield* lstatOptional(path); if (stat === undefined || !stat.isFile() || stat.isSymbolicLink()) return yield* Effect.fail(new DurablePathError({ operation: "assert-file", detail: `${label} must be an existing regular non-symlink file: ${path}` })); return path; });
+export const writeContainedUtf8File = (root: string, target: string, contents: string, label: string) => Effect.gen(function* () { const path = yield* prepareContainedRegularFile(root, target, label); yield* fs("write-file", (service) => service.writeFileString(path, contents)); return yield* assertContainedRegularFile(root, path, label); });
+export const copyIntoContainedFile = (root: string, source: string, target: string, label: string) => Effect.gen(function* () { const path = yield* prepareContainedRegularFile(root, target, label); yield* fs("copy-file", (service) => service.copyFile(source, path)); return yield* assertContainedRegularFile(root, path, label); });

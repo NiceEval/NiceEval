@@ -1,51 +1,50 @@
-// One isolated repo run: ephemeral working copy under scratchRoot/runs/,
-// durable artifacts+receipt under independent artifactRoot, unconditional
-// copy cleanup. Never writes the e2e source tree. Never parses .niceeval
-// for verdict.
-//
-// Harness pre-flight (prepare stage): scenario source package.json/lockfile
-// must not contain @niceeval/testkit, `workspace:` or `file:` references; a
-// repo declaring harness.testkit: true receives the invocation-local immutable
-// snapshot, while an undeclared repo must not import it. Injection adds an
-// absolute `file:` directory devDependency only inside the isolated copy.
-// After install the lockfile must hold exactly one directory resolution and
-// the installed package must live in that copy's pnpm virtual store, never as
-// a link back to the checkout.
-
+// One Scope-owned isolated repository run. Operational filesystem and process
+// faults are typed failures; failed user commands remain receipt data.
 import { createHash, randomUUID } from "node:crypto";
-import { basename, join, relative } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-
+import { basename, join, relative, resolve } from "node:path";
+import { FileSystem } from "@effect/platform";
+import { Data, Effect, Scope } from "effect";
+import * as Cause from "effect/Cause";
 import type { DiscoveredRepo } from "./discovery.ts";
 import type { CandidateTarball } from "./injection.ts";
 import { verifyInjection } from "./injection.ts";
 import {
-  checkTestkitSourceClean,
-  injectTestkitDirectory,
-  scanForTestkitImports,
-  verifyInstalledTestkit,
-  verifyTestkitSnapshot,
-  verifyTestkitDirectoryResolution,
-  type TestkitPackage,
-} from "./testkit-snapshot.ts";
-import { buildChildEnv } from "./secrets.ts";
-import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
+  collectArtifacts,
+  repoArtifactDir,
+  repoReceiptPath,
+} from "./artifacts.ts";
 import {
   assertContainedRegularFile,
   copyIntoContainedFile,
   ensureContainedRealDirectory,
   ensureRealDirectory,
+  lstatOptional,
+  lstatPath,
   prepareContainedRegularFile,
   writeContainedUtf8File,
 } from "./durable-path.ts";
 import { preflightBrowsers, preflightHostCapabilities } from "./preflight.ts";
 import {
-  createUnmanagedExecutionControl,
-  isExecutionCancelled,
-  type E2EExecutionControl,
+  hasSuccessfulOwnedProcessResult,
+  runOwnedProcess,
+  type OwnedProcess,
   type OwnedProcessResult,
 } from "./owned-process.ts";
+import {
+  buildChildEnv,
+  redactSecretCapture,
+  redactSecretStrings,
+  sensitiveEnvValues,
+} from "./secrets.ts";
+import {
+  checkTestkitSourceClean,
+  injectTestkitDirectory,
+  scanForTestkitImports,
+  verifyInstalledTestkit,
+  verifyTestkitDirectoryResolution,
+  verifyTestkitSnapshot,
+  type TestkitPackage,
+} from "./testkit-snapshot.ts";
 import {
   classifyFromReceipt,
   hasUnconfirmedOwnedGroup,
@@ -54,217 +53,310 @@ import {
   type CommandCapture,
   type RepoReceipt,
   type SelectionReceipt,
-  type StageName,
   type StageReceipt,
   type TestkitReceipt,
 } from "./receipt.ts";
 
-function candidateTarballFileName(sha256: string): string {
-  return `niceeval-candidate-${sha256}.tgz`;
+export interface RepoRunResult {
+  readonly id: string;
+  readonly exitCode: number | null;
+  readonly category: Category;
+  readonly detail: string;
+  readonly attempts: number;
+  readonly receipt: RepoReceipt;
+  readonly artifactDir: string;
+  readonly receiptPath: string;
 }
+export class RepoRunError extends Data.TaggedError("RepoRunError")<{
+  readonly repoId: string;
+  readonly operation: "candidate" | "command" | "run";
+  readonly detail: string;
+}> {}
+const problem = (
+  repoId: string,
+  operation: RepoRunError["operation"],
+  cause: unknown,
+) =>
+  new RepoRunError({
+    repoId,
+    operation,
+    detail: cause instanceof Error ? cause.message : String(cause),
+  });
+const fs = <A>(
+  repoId: string,
+  operation: RepoRunError["operation"],
+  use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown>,
+) =>
+  Effect.flatMap(FileSystem.FileSystem, use).pipe(
+    Effect.mapError((cause) => problem(repoId, operation, cause)),
+  );
+const durable = <A>(
+  repoId: string,
+  effect: Effect.Effect<A, { readonly detail: string }, FileSystem.FileSystem>,
+) => effect.pipe(Effect.mapError((cause) => problem(repoId, "run", cause)));
+export const appendNativeArgs = (
+  command: readonly string[],
+  nativeArgs: readonly string[],
+): readonly string[] => [...command, ...nativeArgs];
+export const E2E_COPY_EXCLUDED_BASENAMES = new Set([
+  "node_modules",
+  ".niceeval",
+  ".git",
+  ".env",
+]);
 
-export async function materializeCandidateArtifact(
+export const materializeCandidateArtifact = (
   artifactRoot: string,
   candidate: CandidateTarball,
-): Promise<string> {
-  const targetDir = await ensureContainedRealDirectory(
-    artifactRoot,
-    join(artifactRoot, "candidate"),
-    "durable candidate directory",
-  );
-  const target = join(targetDir, candidateTarballFileName(candidate.sha256));
-  const preparedTarget = await prepareContainedRegularFile(artifactRoot, target, "durable candidate artifact");
-  const sha256 = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
-  if (!existsSync(preparedTarget) || sha256(preparedTarget) !== candidate.sha256) {
-    await copyIntoContainedFile(artifactRoot, candidate.path, preparedTarget, "durable candidate artifact");
-  }
-  await assertContainedRegularFile(artifactRoot, preparedTarget, "durable candidate artifact");
-  if (sha256(preparedTarget) !== candidate.sha256) {
-    throw new Error(`durable candidate artifact at ${preparedTarget} does not match sha256:${candidate.sha256}`);
-  }
-  return preparedTarget;
-}
-
-async function isRetainedArtifact(artifactRoot: string, tarballPath: string): Promise<boolean> {
-  try {
-    await assertContainedRegularFile(artifactRoot, tarballPath, "durable candidate artifact");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export interface RepoRunResult {
-  id: string;
-  exitCode: number | null;
-  category: Category;
-  detail: string;
-  attempts: number;
-  receipt: RepoReceipt;
-  /** Absolute durable artifact directory (under independent artifactRoot). */
-  artifactDir: string;
-  /** Absolute path of written receipt.json for workflow upload. */
-  receiptPath: string;
-}
-
-export function appendNativeArgs(command: readonly string[], nativeArgs: readonly string[]): string[] {
-  return [...command, ...nativeArgs];
-}
-
-/** Basenames deliberately omitted from every isolated scenario/source snapshot. */
-export const E2E_COPY_EXCLUDED_BASENAMES = new Set(["node_modules", ".niceeval", ".git", ".env"]);
-
-export async function copyRepoIsolated(sourceDir: string, destDir: string): Promise<void> {
-  await mkdir(destDir, { recursive: true });
-  await cp(sourceDir, destDir, {
-    recursive: true,
-    filter: (src) => !E2E_COPY_EXCLUDED_BASENAMES.has(basename(src)),
-  });
-}
-
-/** Mutates only the isolated copy's package.json — never the checked-in repo. */
-export async function pointAtCandidateTarball(copyDir: string, tarballPath: string): Promise<void> {
-  const pkgPath = join(copyDir, "package.json");
-  const pkg = JSON.parse(await readFile(pkgPath, "utf8")) as Record<string, unknown>;
-  const spec = `file:${tarballPath}`;
-
-  let found = false;
-  for (const field of ["dependencies", "devDependencies"]) {
-    const deps = pkg[field];
-    if (deps && typeof deps === "object" && Object.prototype.hasOwnProperty.call(deps, "niceeval")) {
-      (deps as Record<string, string>).niceeval = spec;
-      found = true;
-    }
-  }
-  if (!found) {
-    throw new Error(
-      `${copyDir}/package.json declares no "niceeval" dependency (checked dependencies and devDependencies) — nothing to inject the candidate tarball into`,
+): Effect.Effect<string, RepoRunError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const targetDir = yield* durable(
+      "<candidate>",
+      ensureContainedRealDirectory(
+        artifactRoot,
+        join(artifactRoot, "candidate"),
+        "durable candidate directory",
+      ),
     );
-  }
+    const target = join(
+      targetDir,
+      `niceeval-candidate-${candidate.sha256}.tgz`,
+    );
+    const prepared = yield* durable(
+      "<candidate>",
+      prepareContainedRegularFile(
+        artifactRoot,
+        target,
+        "durable candidate artifact",
+      ),
+    );
+    const present = yield* durable("<candidate>", lstatOptional(prepared));
+    const digest = (bytes: Uint8Array): string =>
+      createHash("sha256").update(bytes).digest("hex");
+    if (
+      present === undefined ||
+      digest(
+        yield* fs("<candidate>", "candidate", (service) =>
+          service.readFile(prepared),
+        ),
+      ) !== candidate.sha256
+    )
+      yield* durable(
+        "<candidate>",
+        copyIntoContainedFile(
+          artifactRoot,
+          candidate.path,
+          prepared,
+          "durable candidate artifact",
+        ),
+      );
+    yield* durable(
+      "<candidate>",
+      assertContainedRegularFile(
+        artifactRoot,
+        prepared,
+        "durable candidate artifact",
+      ),
+    );
+    if (
+      digest(
+        yield* fs("<candidate>", "candidate", (service) =>
+          service.readFile(prepared),
+        ),
+      ) !== candidate.sha256
+    )
+      return yield* Effect.fail(
+        problem(
+          "<candidate>",
+          "candidate",
+          `durable candidate artifact at ${prepared} does not match sha256:${candidate.sha256}`,
+        ),
+      );
+    return prepared;
+  });
 
-  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
-}
+const copyIsolatedEntry = (
+  source: string,
+  destination: string,
+): Effect.Effect<void, RepoRunError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const stat = yield* lstatPath(source).pipe(
+      Effect.mapError((cause) => problem("<copy>", "run", cause)),
+    );
 
-/**
- * Verify the candidate tarball and the optional Testkit directory resolution
- * from the isolated copy's own lockfile and node_modules.
- */
-function verifyAllInjections(
-  lockfileText: string,
-  candidate: CandidateTarball,
-  testkit: TestkitPackage | undefined,
+    if (stat.isSymbolicLink()) {
+      return yield* Effect.fail(
+        problem(
+          "<copy>",
+          "run",
+          `isolated source symlink is not allowed: ${source}`,
+        ),
+      );
+    }
+    if (stat.isFile()) {
+      yield* fs("<copy>", "run", (service) =>
+        service.copyFile(source, destination),
+      );
+      return;
+    }
+    if (!stat.isDirectory()) {
+      return yield* Effect.fail(
+        problem(
+          "<copy>",
+          "run",
+          `isolated source special file is not allowed: ${source}`,
+        ),
+      );
+    }
+
+    yield* fs("<copy>", "run", (service) =>
+      service.makeDirectory(destination, { recursive: true }),
+    );
+    const entries = yield* fs("<copy>", "run", (service) =>
+      service.readDirectory(source),
+    );
+    for (const entry of entries.sort((left, right) =>
+      left.localeCompare(right),
+    )) {
+      if (E2E_COPY_EXCLUDED_BASENAMES.has(basename(entry))) continue;
+      yield* copyIsolatedEntry(join(source, entry), join(destination, entry));
+    }
+  });
+
+/** Copy only permitted source entries; excluded names are never read or copied. */
+export const copyRepoIsolated = (
+  source: string,
+  destination: string,
+): Effect.Effect<void, RepoRunError, FileSystem.FileSystem> =>
+  copyIsolatedEntry(source, destination);
+export const pointAtCandidateTarball = (
   copyDir: string,
-): { ok: true; testkitDetail?: string; testkitResolvedPath?: string } | { ok: false; reason: string } {
-  const candidateVerdict = verifyInjection(lockfileText, candidate.integrity);
-  if (!candidateVerdict.ok) return { ok: false, reason: candidateVerdict.reason };
-  if (testkit === undefined) return { ok: true };
-
-  const lockVerdict = verifyTestkitDirectoryResolution(lockfileText, testkit.path, copyDir);
-  if (!lockVerdict.ok) return { ok: false, reason: lockVerdict.reason };
-  const installedVerdict = verifyInstalledTestkit(copyDir, testkit);
-  if (!installedVerdict.ok) return { ok: false, reason: installedVerdict.reason };
-
-  return {
-    ok: true,
-    testkitDetail: `Testkit snapshot (@niceeval/testkit@${testkit.version}) has one directory resolution; isolated realpath verified at ${installedVerdict.realPath}`,
-    testkitResolvedPath: relative(copyDir, installedVerdict.installedPath),
-  };
-}
-
-/**
- * Spawn a command, stream output to the parent, and retain full stdout/stderr
- * for receipts (especially on failure / timeout).
- */
-function commandCapture(result: OwnedProcessResult): CommandCapture {
-  return {
-    exitCode: result.exitCode,
-    signal: result.signal,
-    timedOut: result.timedOut,
-    cancelled: result.cancelled,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    ...(result.error === undefined ? {} : { error: result.error }),
-    processGroupOwned: result.processGroupOwned,
-    groupCleanup: result.groupCleanup,
-  };
-}
-
-export async function runCommand(
+  tarball: string,
+): Effect.Effect<void, RepoRunError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const path = join(copyDir, "package.json");
+    let value: Record<string, unknown>;
+    try {
+      value = JSON.parse(
+        yield* fs("<copy>", "run", (service) => service.readFileString(path)),
+      ) as Record<string, unknown>;
+    } catch (cause) {
+      return yield* Effect.fail(problem("<copy>", "run", cause));
+    }
+    let found = false;
+    for (const field of ["dependencies", "devDependencies"]) {
+      const deps = value[field];
+      if (
+        deps !== null &&
+        typeof deps === "object" &&
+        Object.hasOwn(deps as object, "niceeval")
+      ) {
+        (deps as Record<string, string>).niceeval = `file:${tarball}`;
+        found = true;
+      }
+    }
+    if (!found)
+      return yield* Effect.fail(
+        problem(
+          "<copy>",
+          "run",
+          `${copyDir}/package.json declares no niceeval dependency`,
+        ),
+      );
+    yield* fs("<copy>", "run", (service) =>
+      service.writeFileString(path, `${JSON.stringify(value, null, 2)}\n`),
+    );
+  });
+const capture = (result: OwnedProcessResult): CommandCapture => ({
+  exitCode: result.exitCode,
+  signal: result.signal,
+  timedOut: result.timedOut,
+  cancelled: result.cancelled,
+  stdout: result.stdout,
+  stderr: result.stderr,
+  ...(result.error === undefined ? {} : { error: result.error }),
+  processGroupOwned: result.processGroupOwned,
+  groupCleanup: result.groupCleanup,
+});
+export const runCommand = (
   command: readonly string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
-  execution: E2EExecutionControl,
-  streamPrefix?: string,
-): Promise<CommandCapture> {
-  const result = await execution.supervisor.run(command, {
+  prefix?: string,
+): Effect.Effect<CommandCapture, RepoRunError, OwnedProcess | Scope.Scope> =>
+  runOwnedProcess(command, {
     cwd,
     env,
     output: "capture",
     stream: true,
     timeoutMs,
-    abortSignal: execution.abortSignal,
-    ...(streamPrefix === undefined ? {} : { streamPrefix }),
-  });
-  return commandCapture(result);
-}
+    ...(prefix === undefined ? {} : { streamPrefix: prefix }),
+  }).pipe(
+    Effect.map(capture),
+    Effect.mapError((cause) => problem("<command>", "command", cause)),
+  );
 
 export interface RunRepoOptions {
-  /** Shared top-level cancellation and process ownership state. */
-  execution?: E2EExecutionControl;
-  /** A fixed source snapshot for takeover, otherwise the discovered repo directory. */
-  sourceDir?: string;
-  /** Durable subdirectory under artifactRoot, used to keep takeover receipts distinct. */
-  runLabel?: string;
-  /** Scratch subdirectory under runs/, used to name an intentionally shared copy. */
-  workdirKey?: string;
-  /** Deliberate repeated tests in one installed copy; this is not a retry mechanism. */
-  testRuns?: number;
-  /** Human-readable identity recorded when a takeover deliberately reuses one copy. */
-  copyId?: string;
-  /** Digest of the fixed takeover source snapshot that produced this copy. */
-  sourceSnapshotDigest?: string;
-  /** Retain this isolated repo copy for explicit local diagnosis. */
-  keepWorkdir?: boolean;
-  /** Prefix streamed install/test output when multiple repos share one runner. */
-  logPrefix?: string;
-  /** Exact plan mode/reason/cell provenance for distributed CI execution. */
-  selection?: SelectionReceipt;
+  readonly sourceDir?: string;
+  readonly runLabel?: string;
+  readonly workdirKey?: string;
+  readonly testRuns?: number;
+  readonly copyId?: string;
+  readonly sourceSnapshotDigest?: string;
+  readonly keepWorkdir?: boolean;
+  readonly logPrefix?: string;
+  readonly selection?: SelectionReceipt;
 }
-
-function withInvocationContext(
+const stage = (stages: StageReceipt[], value: StageReceipt): void => {
+  stages.push(value);
+};
+const testOk = (value: CommandCapture): boolean =>
+  value.exitCode === 0 &&
+  !value.timedOut &&
+  !value.cancelled &&
+  value.error === undefined &&
+  !hasUnconfirmedOwnedGroup(value);
+const withInvocation = (
   env: NodeJS.ProcessEnv,
-  invocationId: string,
-  copyDir: string,
-): NodeJS.ProcessEnv {
-  return {
-    ...env,
-    NICEEVAL_E2E_INVOCATION_ID: invocationId,
-    NICEEVAL_E2E_ARTIFACT_STAGING_ROOT: join(copyDir, ".e2e-artifacts"),
-  };
-}
+  id: string,
+  copy: string,
+): NodeJS.ProcessEnv => ({
+  ...env,
+  NICEEVAL_E2E_INVOCATION_ID: id,
+  NICEEVAL_E2E_ARTIFACT_STAGING_ROOT: join(copy, ".e2e-artifacts"),
+});
 
-function cancelledStage(stage: StageName, detail: string): StageReceipt {
-  return { stage, ok: false, cancelled: true, detail };
-}
+const collectStage = (
+  copy: string,
+  artifactDir: string,
+  patterns: readonly string[],
+  stages: StageReceipt[],
+  detailPrefix = "",
+): Effect.Effect<void, never, FileSystem.FileSystem> =>
+  Effect.exit(collectArtifacts(copy, artifactDir, patterns)).pipe(
+    Effect.tap((outcome) =>
+      Effect.sync(() => {
+        if (outcome._tag === "Success") {
+          stage(stages, {
+            stage: "collect",
+            ok: true,
+            collected: outcome.value.collected,
+            detail: `${detailPrefix}artifact collection completed`,
+          });
+        } else {
+          stage(stages, {
+            stage: "collect",
+            ok: false,
+            detail: `${detailPrefix}artifact collection failed: ${Cause.pretty(outcome.cause)}`,
+          });
+        }
+      }),
+    ),
+    Effect.asVoid,
+  );
 
-function nextFailureStage(stages: readonly StageReceipt[]): StageName {
-  if (!stages.some((stage) => stage.stage === "preflight")) return "preflight";
-  if (!stages.some((stage) => stage.stage === "prepare")) return "prepare";
-  if (!stages.some((stage) => stage.stage === "install")) return "install";
-  if (!stages.some((stage) => stage.stage === "injection")) return "injection";
-  if (!stages.some((stage) => stage.stage === "browser")) return "browser";
-  return "test";
-}
-
-/**
- * Run one discovered repo in an external temp copy under scratchRoot/runs/.
- * Artifacts + receipt land under independent artifactRoot (or runLabel) and
- * the working copy is removed unless explicit local diagnosis retains it. A
- * `testRuns` value above one is an explicit takeover observation in the same
- * installed copy, never retry.
- */
-export async function runRepo(
+export const runRepoEffect = (
   repo: DiscoveredRepo,
   candidate: CandidateTarball,
   scratchRoot: string,
@@ -273,433 +365,386 @@ export async function runRepo(
   nativeArgs: readonly string[],
   testkit?: TestkitPackage,
   options: RunRepoOptions = {},
-): Promise<RepoRunResult> {
-  const execution = options.execution ?? createUnmanagedExecutionControl();
-  const repoId = repo.manifest.id;
-  const copyDir = join(scratchRoot, "runs", options.workdirKey ?? repoId);
-  let durableArtifactRoot = artifactRoot;
-  let scopedArtifactRoot = artifactRoot;
-  let artifactDir = repoArtifactDir(scopedArtifactRoot, repoId);
-  let receiptPath = repoReceiptPath(scopedArtifactRoot, repoId);
-  const sourceDir = options.sourceDir ?? repo.dir;
-  const testRuns = options.testRuns ?? 1;
-  if (!Number.isInteger(testRuns) || testRuns < 1) {
-    throw new Error(`testRuns must be a positive integer, got ${testRuns}`);
-  }
-
-  const stages: StageReceipt[] = [];
-  const invocationIds: string[] = [];
-  let testExitCode: number | null = null;
-  let copyCreated = false;
-  let testkitInjected = false;
-  let testkitResolvedPath: string | undefined;
-  let durableCandidatePath = candidate.path;
-
-  try {
-    durableArtifactRoot = await ensureRealDirectory(artifactRoot, "repo durable artifact root");
-    scopedArtifactRoot = options.runLabel === undefined
-      ? durableArtifactRoot
-      : await ensureContainedRealDirectory(
-          durableArtifactRoot,
-          join(durableArtifactRoot, options.runLabel),
-          "takeover durable artifact scope",
-        );
-    artifactDir = repoArtifactDir(scopedArtifactRoot, repoId);
-    receiptPath = repoReceiptPath(scopedArtifactRoot, repoId);
-    await ensureContainedRealDirectory(scopedArtifactRoot, artifactDir, "repo durable artifact directory");
-    durableCandidatePath = await materializeCandidateArtifact(durableArtifactRoot, candidate);
-    const setupInvocationId = randomUUID();
-    invocationIds.push(setupInvocationId);
-    const preflightEnv = withInvocationContext(
-      buildChildEnv(process.env, allSecretNames, repo.manifest.secrets, repoId),
-      setupInvocationId,
-      copyDir,
+): Effect.Effect<
+  RepoRunResult,
+  RepoRunError,
+  FileSystem.FileSystem | OwnedProcess | Scope.Scope
+> =>
+  Effect.gen(function* () {
+    const id = repo.manifest.id;
+    const copy = join(scratchRoot, "runs", options.workdirKey ?? id);
+    const stages: StageReceipt[] = [];
+    const invocationIds: [string, ...string[]] = [randomUUID()];
+    const secretValues = sensitiveEnvValues(process.env);
+    const runs = options.testRuns ?? 1;
+    const consumesTestkit = repo.manifest.harness?.testkit === true;
+    if (!Number.isSafeInteger(runs) || runs < 1)
+      return yield* Effect.fail(
+        problem(id, "run", "testRuns must be a positive integer"),
+      );
+    const durableRoot = yield* durable(
+      id,
+      ensureRealDirectory(artifactRoot, "repo durable artifact root"),
     );
-
-    if (isExecutionCancelled(execution)) {
-      stages.push(cancelledStage("preflight", "cancelled before capability preflight"));
-    } else {
-      const preflight = await preflightHostCapabilities(repo.manifest, preflightEnv, execution);
-      stages.push({
-        stage: "preflight",
-        ok: preflight.ok,
-        invocationId: setupInvocationId,
-        ...(preflight.cancelled ? { cancelled: true } : {}),
-        ...(preflight.failureCategory === undefined ? {} : { failureCategory: preflight.failureCategory }),
-        checks: preflight.checks,
-        detail: preflight.cancelled
-          ? "cancelled during capability preflight"
-          : preflight.ok
-            ? "declared host capabilities available"
-            : `configuration preflight failed: ${preflight.checks.filter((check) => !check.ok).map((check) => check.detail).join("; ")}`,
-      });
-
-      if (preflight.ok && !preflight.cancelled) {
-        await copyRepoIsolated(sourceDir, copyDir);
-        copyCreated = true;
-
-        if (isExecutionCancelled(execution)) {
-          stages.push(cancelledStage("prepare", "cancelled before source prepare"));
-        } else {
-          // --- prepare: harness pre-flight guards (fail before any install/test) ---
-          const consumesTestkit = repo.manifest.harness?.testkit === true;
-          const prepareViolations = checkTestkitSourceClean(copyDir);
-          if (consumesTestkit && testkit === undefined) {
-            prepareViolations.push(
-              "harness.testkit: true declared but the workspace Testkit was not built — declared-but-not-injected must fail before test",
-            );
-          }
-          if (!consumesTestkit) {
-            const imports = scanForTestkitImports(copyDir);
-            if (imports.length > 0) {
-              prepareViolations.push(
-                `repo imports @niceeval/testkit without declaring harness.testkit: true (${imports.join(", ")}) — undeclared imports must fail before test`,
-              );
-            }
-          }
-          const prepareOk = prepareViolations.length === 0;
-          stages.push({
-            stage: "prepare",
-            ok: prepareOk,
-            detail: prepareOk
-              ? consumesTestkit
-                ? "source clean; harness.testkit declared"
-                : "source clean; no testkit declared"
-              : `prepare failed: ${prepareViolations.join("; ")}`,
-          });
-
-          if (prepareOk) {
-            if (isExecutionCancelled(execution)) {
-              stages.push(cancelledStage("install", "cancelled before candidate injection and install"));
-            } else {
-              await pointAtCandidateTarball(copyDir, durableCandidatePath);
-              if (consumesTestkit) {
-                await verifyTestkitSnapshot(testkit as TestkitPackage);
-                await injectTestkitDirectory(copyDir, testkit as TestkitPackage);
-                testkitInjected = true;
-              }
-
-              // --- install ---
-              const installCmd = ["pnpm", "install", "--no-frozen-lockfile"] as const;
-              const installEnv = withInvocationContext(
-                buildChildEnv(process.env, allSecretNames, []),
-                setupInvocationId,
-                copyDir,
-              );
-              const installCapture = await runCommand(
-                installCmd,
-                copyDir,
-                installEnv,
-                30 * 60_000,
-                execution,
-                options.logPrefix,
-              );
-              const installOk =
-                installCapture.exitCode === 0 &&
-                !installCapture.timedOut &&
-                !installCapture.cancelled &&
-                installCapture.error === undefined &&
-                !hasUnconfirmedOwnedGroup(installCapture);
-              stages.push({
-                stage: "install",
-                ok: installOk,
-                invocationId: setupInvocationId,
-                ...(installCapture.cancelled ? { cancelled: true } : {}),
-                command: [...installCmd],
-                capture: retainCapture(installCapture, installOk),
-                detail: installCapture.cancelled
-                  ? `cancelled during pnpm install (${installCapture.signal ?? "root signal"})`
-                  : installOk
-                    ? "pnpm install ok"
-                    : hasUnconfirmedOwnedGroup(installCapture)
-                      ? `pnpm install leader exited but owned process-group cleanup was not confirmed: ${installCapture.groupCleanup.detail}`
-                    : installCapture.timedOut
-                      ? "pnpm install timed out after TERM → grace → KILL"
-                      : `pnpm install failed (${installCapture.error ?? installCapture.signal ?? `exit ${installCapture.exitCode}`}) in the isolated copy`,
-              });
-
-              if (installOk) {
-                if (isExecutionCancelled(execution)) {
-                  stages.push(cancelledStage("injection", "cancelled before injection verification"));
-                } else {
-                  // --- injection: candidate bytes plus optional Testkit directory ---
-                  let injectionOk = false;
-                  let injectionDetail: string;
-                  try {
-                    if (testkitInjected && testkit !== undefined) {
-                      await verifyTestkitSnapshot(testkit);
-                    }
-                    if (!existsSync(join(copyDir, "pnpm-lock.yaml"))) {
-                      injectionOk = false;
-                      injectionDetail = "could not read isolated copy's pnpm-lock.yaml: file missing";
-                    } else {
-                      const lockText = readFileSync(join(copyDir, "pnpm-lock.yaml"), "utf8");
-                      const verdict = verifyAllInjections(
-                        lockText,
-                        candidate,
-                        testkitInjected ? testkit : undefined,
-                        copyDir,
-                      );
-                      injectionOk = verdict.ok;
-                      if (verdict.ok) testkitResolvedPath = verdict.testkitResolvedPath;
-                      injectionDetail = verdict.ok
-                        ? testkitInjected
-                          ? `candidate integrity matches lockfile; ${verdict.testkitDetail}`
-                          : "candidate integrity matches lockfile"
-                        : `injection verification failed: ${verdict.reason}`;
-                    }
-                  } catch (error) {
-                    injectionOk = false;
-                    injectionDetail = `could not read isolated copy's pnpm-lock.yaml: ${(error as Error).message}`;
-                  }
-                  stages.push({
-                    stage: "injection",
-                    ok: injectionOk,
-                    invocationId: setupInvocationId,
-                    detail: injectionDetail,
-                  });
-
-                  // Never run an unproven candidate: skip test and collection on failure.
-                  if (injectionOk) {
-                    const browser = await preflightBrowsers(
-                      repo.manifest.requires?.browsers,
-                      copyDir,
-                      preflightEnv,
-                      execution,
-                    );
-                    if (repo.manifest.requires?.browsers !== undefined) {
-                      stages.push({
-                        stage: "browser",
-                        ok: browser.ok,
-                        invocationId: setupInvocationId,
-                        ...(browser.cancelled ? { cancelled: true } : {}),
-                        ...(browser.failureCategory === undefined ? {} : { failureCategory: browser.failureCategory }),
-                        checks: browser.checks,
-                        detail: browser.cancelled
-                          ? "cancelled during browser preflight"
-                          : browser.ok
-                            ? "declared browser capabilities available"
-                            : `browser preflight failed: ${browser.checks.filter((check) => !check.ok).map((check) => check.detail).join("; ")}`,
-                      });
-                    }
-
-                    if (browser.ok && !browser.cancelled) {
-                      const timeoutMs = repo.manifest.timeoutMinutes * 60_000;
-                      const testCmd = appendNativeArgs(repo.manifest.command, nativeArgs);
-                      for (let attempt = 1; attempt <= testRuns; attempt += 1) {
-                        if (isExecutionCancelled(execution)) {
-                          stages.push(cancelledStage("test", `cancelled before test invocation ${attempt}`));
-                          break;
-                        }
-                        const invocationId = randomUUID();
-                        invocationIds.push(invocationId);
-                        const childEnv = withInvocationContext(
-                          buildChildEnv(process.env, allSecretNames, repo.manifest.secrets, repoId),
-                          invocationId,
-                          copyDir,
-                        );
-                        const testCapture = await runCommand(
-                          testCmd,
-                          copyDir,
-                          childEnv,
-                          timeoutMs,
-                          execution,
-                          options.logPrefix,
-                        );
-                        testExitCode = testCapture.exitCode;
-                        const testOk =
-                          testCapture.exitCode === 0 &&
-                          !testCapture.timedOut &&
-                          !testCapture.cancelled &&
-                          testCapture.error === undefined &&
-                          !hasUnconfirmedOwnedGroup(testCapture);
-                        stages.push({
-                          stage: "test",
-                          attempt,
-                          invocationId,
-                          ok: testOk,
-                          ...(testCapture.cancelled ? { cancelled: true } : {}),
-                          command: testCmd,
-                          capture: retainCapture(testCapture, testOk),
-                          detail: testCapture.cancelled
-                            ? `cancelled during test invocation ${attempt} (${testCapture.signal ?? "root signal"})`
-                            : testCapture.timedOut
-                              ? `test invocation ${attempt} exceeded project.json E2E timeoutMinutes; owned group received TERM → grace → KILL`
-                              : hasUnconfirmedOwnedGroup(testCapture)
-                                ? `test invocation ${attempt} leader exited but owned process-group cleanup was not confirmed: ${testCapture.groupCleanup.detail}`
-                              : testOk
-                                ? `test invocation ${attempt} exited 0`
-                                : `test invocation ${attempt} failed (${testCapture.error ?? testCapture.signal ?? `exit ${testCapture.exitCode}`})`,
-                        });
-                        if (testCapture.cancelled) break;
-                      }
-
-                      // --- collect into durable artifactRoot only (never source or scratch) ---
-                      try {
-                        const { collected, warnings } = await collectArtifacts(
-                          copyDir,
-                          artifactDir,
-                          repo.manifest.artifacts,
-                        );
-                        for (const warning of warnings) console.warn(`[e2e] ${warning}`);
-                        stages.push({
-                          stage: "collect",
-                          ok: true,
-                          collected,
-                          detail:
-                            collected.length > 0
-                              ? `wrote ${collected.length} artifact path(s) under ${artifactDir}`
-                              : `no artifacts matched under ${artifactDir}`,
-                        });
-                      } catch (error) {
-                        stages.push({
-                          stage: "collect",
-                          ok: false,
-                          detail: `collect failed: ${(error as Error).message}`,
-                        });
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  } catch (error) {
-    stages.push({
-      stage: nextFailureStage(stages),
-      ok: false,
-      ...(isExecutionCancelled(execution) ? { cancelled: true } : {}),
-      ...(isExecutionCancelled(execution) ? {} : { failureCategory: "infra" }),
-      detail: isExecutionCancelled(execution)
-        ? `cancelled while preparing runner state: ${(error as Error).message}`
-        : (error as Error).message,
+    const scopedRoot =
+      options.runLabel === undefined
+        ? durableRoot
+        : yield* durable(
+            id,
+            ensureContainedRealDirectory(
+              durableRoot,
+              join(durableRoot, options.runLabel),
+              "takeover durable artifact scope",
+            ),
+          );
+    const artifactDir = repoArtifactDir(scopedRoot, id);
+    const receiptPath = repoReceiptPath(scopedRoot, id);
+    yield* durable(
+      id,
+      ensureContainedRealDirectory(
+        scopedRoot,
+        artifactDir,
+        "repo durable artifact directory",
+      ),
+    );
+    const tarball = yield* materializeCandidateArtifact(durableRoot, candidate);
+    const baseEnv = buildChildEnv(
+      process.env,
+      allSecretNames,
+      repo.manifest.secrets,
+      id,
+    );
+    const setup = invocationIds[0]!;
+    const preflight = yield* preflightHostCapabilities(
+      repo.manifest,
+      withInvocation(baseEnv, setup, copy),
+    ).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
+    stage(stages, {
+      stage: "preflight",
+      ok: preflight.ok,
+      invocationId: setup,
+      ...(preflight.cancelled ? { cancelled: true } : {}),
+      checks: preflight.checks.map((check) => ({
+        ...check,
+        ...(check.command === undefined
+          ? {}
+          : { command: redactSecretStrings(check.command, secretValues) }),
+        ...(check.capture === undefined
+          ? {}
+          : { capture: redactSecretCapture(check.capture, secretValues) }),
+      })),
+      ...(preflight.failureCategory === undefined
+        ? {}
+        : { failureCategory: preflight.failureCategory }),
+      detail: preflight.cancelled
+        ? "cancelled during capability preflight"
+        : preflight.ok
+          ? "declared host capabilities available"
+          : "capability preflight failed",
     });
-  } finally {
-    // A root signal stops new child stages, but a copy that already exists
-    // still gets its declared diagnostics collected before cleanup. This is
-    // intentionally filesystem-only work after the supervisor has drained
-    // the owned process group.
-    if (
-      isExecutionCancelled(execution) &&
-      (copyCreated || existsSync(copyDir)) &&
-      !stages.some((stage) => stage.stage === "collect")
-    ) {
-      try {
-        const { collected, warnings } = await collectArtifacts(copyDir, artifactDir, repo.manifest.artifacts);
-        for (const warning of warnings) console.warn(`[e2e] ${warning}`);
-        stages.push({
-          stage: "collect",
-          ok: true,
-          collected,
-          detail: `collected diagnostics after cancellation under ${artifactDir}`,
-        });
-      } catch (error) {
-        stages.push({ stage: "collect", ok: false, detail: `collect after cancellation failed: ${(error as Error).message}` });
-      }
-    }
-
-    // Working-copy disposition never changes process/resource cleanup. Explicit
-    // local retention keeps the installed copy; otherwise removal is mandatory.
-    if (copyCreated || existsSync(copyDir)) {
-      let cleanupOk = true;
-      let cleanupDetail: string;
-      if (options.keepWorkdir === true) {
-        cleanupDetail = `retained ${copyDir} because --keep-workdir was requested`;
-      } else {
-        cleanupDetail = `removed ${copyDir}`;
-        try {
-          await rm(copyDir, { recursive: true, force: true });
-        } catch (error) {
-          cleanupOk = false;
-          cleanupDetail = `cleanup failed for ${copyDir}: ${(error as Error).message}`;
-          console.error(`[e2e] ${cleanupDetail}`);
-        }
-      }
-      if (testkit !== undefined) {
-        try {
-          await verifyTestkitSnapshot(testkit);
-          cleanupDetail += `; Testkit snapshot sha256:${testkit.digest} unchanged`;
-        } catch (error) {
-          cleanupOk = false;
-          cleanupDetail += `; ${(error as Error).message}`;
-          console.error(`[e2e] ${cleanupDetail}`);
-        }
-      }
-      stages.push({
-        stage: "cleanup",
-        ok: cleanupOk,
-        path: copyDir,
-        detail: cleanupDetail,
+    let exitCode: number | null = null;
+    let testkitResolvedPath: string | undefined;
+    if (preflight.ok) {
+      yield* copyRepoIsolated(options.sourceDir ?? repo.dir, copy);
+      const clean = yield* checkTestkitSourceClean(copy).pipe(
+        Effect.mapError((cause) => problem(id, "run", cause)),
+      );
+      const imports = consumesTestkit
+        ? []
+        : yield* scanForTestkitImports(copy).pipe(
+            Effect.mapError((cause) => problem(id, "run", cause)),
+          );
+      const violations = [
+        ...clean,
+        ...(consumesTestkit && testkit === undefined
+          ? ["harness.testkit declared but no snapshot was supplied"]
+          : []),
+        ...imports,
+      ];
+      stage(stages, {
+        stage: "prepare",
+        ok: violations.length === 0,
+        detail:
+          violations.length === 0
+            ? "source clean"
+            : `prepare failed: ${violations.join("; ")}`,
       });
-    }
-  }
-
-  // Classify and persist only after cleanup is on the stages list so receipt.json
-  // always includes the final cleanup stage under durable artifactDir.
-  const classified = classifyFromReceipt({ stages, detail: "" });
-  const candidateRetained = await isRetainedArtifact(durableArtifactRoot, durableCandidatePath);
-  const testkitReceipt: TestkitReceipt | undefined =
-    testkitInjected && testkit !== undefined && testkitResolvedPath !== undefined
-      ? {
-          version: testkit.version,
-          sourcePath: testkit.sourcePath,
-          resolvedPath: testkitResolvedPath,
-          digest: testkit.digest,
+      if (violations.length === 0) {
+        yield* pointAtCandidateTarball(copy, tarball);
+        if (testkit !== undefined && consumesTestkit) {
+          yield* verifyTestkitSnapshot(testkit).pipe(
+            Effect.mapError((cause) => problem(id, "run", cause)),
+          );
+          yield* injectTestkitDirectory(copy, testkit).pipe(
+            Effect.mapError((cause) => problem(id, "run", cause)),
+          );
         }
-      : undefined;
-  const receipt: RepoReceipt = {
-    repoId,
-    ...(options.selection === undefined ? {} : { selection: options.selection }),
-    invocationIds,
-    testInvocations: stages.filter((stage) => stage.stage === "test" && stage.capture !== undefined).length,
-    ...(options.copyId === undefined ? {} : { copyId: options.copyId }),
-    ...(options.runLabel === undefined ? {} : { runLabel: options.runLabel }),
-    ...(options.sourceSnapshotDigest === undefined ? {} : { sourceSnapshotDigest: options.sourceSnapshotDigest }),
-    artifactDir,
-    receiptPath,
-    stages,
-    exitCode: testExitCode,
-    category: classified.category,
-    detail: classified.detail,
-    candidate: {
-      sha256: candidate.sha256,
-      integrity: candidate.integrity,
-      ...(candidateRetained ? { artifactPath: relative(durableArtifactRoot, durableCandidatePath) } : {}),
-      reproduce: `pnpm e2e run --candidate ${durableCandidatePath} --repo ${repoId}`,
-      exactReplay: candidateRetained,
-    },
-    ...(testkitReceipt === undefined ? {} : { testkit: testkitReceipt }),
-  };
+        const installCommand = ["pnpm", "install", "--no-frozen-lockfile"] as [
+          string,
+          ...string[],
+        ];
+        const install = yield* runCommand(
+          installCommand,
+          copy,
+          withInvocation(
+            buildChildEnv(process.env, allSecretNames, []),
+            setup,
+            copy,
+          ),
+          30 * 60_000,
+          options.logPrefix,
+        );
+        const installOk = testOk(install);
+        stage(stages, {
+          stage: "install",
+          ok: installOk,
+          invocationId: setup,
+          ...(install.cancelled ? { cancelled: true } : {}),
+          command: installCommand,
+          capture: retainCapture(
+            redactSecretCapture(install, secretValues),
+            installOk,
+          ),
+          detail: install.cancelled
+            ? "cancelled during pnpm install"
+            : installOk
+              ? "pnpm install ok"
+              : "pnpm install failed",
+        });
+        if (installOk) {
+          const injection = yield* Effect.exit(
+            Effect.gen(function* () {
+              const lockText = yield* fs(id, "run", (service) =>
+                service.readFileString(join(copy, "pnpm-lock.yaml")),
+              );
+              const candidateVerdict = verifyInjection(
+                lockText,
+                candidate.integrity,
+              );
+              if (!candidateVerdict.ok)
+                return { ok: false as const, detail: candidateVerdict.reason };
 
-  try {
-    await writeContainedUtf8File(
-      scopedArtifactRoot,
-      receiptPath,
-      `${JSON.stringify(receipt, null, 2)}\n`,
-      "repo receipt",
+              if (!consumesTestkit || testkit === undefined) {
+                return { ok: true as const };
+              }
+              const lockVerdict = verifyTestkitDirectoryResolution(
+                lockText,
+                testkit.path,
+                copy,
+              );
+              if (!lockVerdict.ok)
+                return { ok: false as const, detail: lockVerdict.reason };
+              const installed = yield* verifyInstalledTestkit(
+                copy,
+                testkit,
+              ).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
+              if (!installed.ok)
+                return { ok: false as const, detail: installed.reason };
+              testkitResolvedPath = relative(copy, installed.installedPath);
+              return { ok: true as const };
+            }),
+          );
+          const injectionOk =
+            injection._tag === "Success" && injection.value.ok;
+          const injectionDetail =
+            injection._tag === "Success"
+              ? injection.value.ok
+                ? "candidate integrity matches lockfile"
+                : `injection verification failed: ${injection.value.detail}`
+              : `injection verification failed: ${Cause.pretty(injection.cause)}`;
+          stage(stages, {
+            stage: "injection",
+            ok: injectionOk,
+            invocationId: setup,
+            detail: injectionDetail,
+          });
+          if (injectionOk) {
+            const browser = yield* preflightBrowsers(
+              repo.manifest.requires?.browsers,
+              copy,
+              withInvocation(baseEnv, setup, copy),
+            ).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
+            if (repo.manifest.requires?.browsers !== undefined) {
+              stage(stages, {
+                stage: "browser",
+                ok: browser.ok,
+                invocationId: setup,
+                ...(browser.cancelled ? { cancelled: true } : {}),
+                ...(browser.failureCategory === undefined
+                  ? {}
+                  : { failureCategory: browser.failureCategory }),
+                checks: browser.checks,
+                detail: browser.cancelled
+                  ? "cancelled during browser preflight"
+                  : browser.ok
+                    ? "declared browser capabilities available"
+                    : "browser preflight failed",
+              });
+            }
+            const runTests = (
+              attempt: number,
+            ): Effect.Effect<void, RepoRunError, OwnedProcess | Scope.Scope> =>
+              attempt > runs || !browser.ok
+                ? Effect.void
+                : Effect.gen(function* () {
+                    const invocation = randomUUID();
+                    invocationIds.push(invocation);
+                    const command = [
+                      ...repo.manifest.command,
+                      ...nativeArgs,
+                    ] as [string, ...string[]];
+                    const result = yield* runCommand(
+                      command,
+                      copy,
+                      withInvocation(baseEnv, invocation, copy),
+                      repo.manifest.timeoutMinutes * 60_000,
+                      options.logPrefix,
+                    );
+                    exitCode = result.exitCode;
+                    const ok = testOk(result);
+                    stage(stages, {
+                      stage: "test",
+                      attempt,
+                      invocationId: invocation,
+                      ok,
+                      ...(result.cancelled ? { cancelled: true } : {}),
+                      command: redactSecretStrings(command, secretValues),
+                      capture: retainCapture(
+                        redactSecretCapture(result, secretValues),
+                        ok,
+                      ),
+                      detail: result.cancelled
+                        ? `cancelled during test invocation ${attempt}`
+                        : ok
+                          ? `test invocation ${attempt} exited 0`
+                          : `test invocation ${attempt} failed`,
+                    });
+                    if (!result.cancelled) yield* runTests(attempt + 1);
+                  });
+            yield* runTests(1);
+          }
+          yield* collectStage(
+            copy,
+            artifactDir,
+            repo.manifest.artifacts,
+            stages,
+          );
+        }
+      }
+    }
+    const cancelled = stages.some(
+      (entry) => entry.cancelled === true || entry.capture?.cancelled === true,
     );
-  } catch (error) {
-    const detail = `failed to write receipt ${receiptPath}: ${(error as Error).message}`;
-    console.error(`[e2e] ${detail}`);
-    stages.push({ stage: "collect", ok: false, detail });
-    const persistenceFailure = classifyFromReceipt({ stages, detail: receipt.detail });
-    receipt.category = persistenceFailure.category;
-    receipt.detail = persistenceFailure.detail;
-  }
+    const copied = yield* fs(id, "run", (service) => service.exists(copy));
+    if (
+      cancelled &&
+      copied &&
+      !stages.some((entry) => entry.stage === "collect")
+    ) {
+      yield* collectStage(
+        copy,
+        artifactDir,
+        repo.manifest.artifacts,
+        stages,
+        "after cancellation: ",
+      );
+    }
 
-  return {
-    id: repoId,
-    exitCode: testExitCode,
-    category: receipt.category,
-    detail: receipt.detail,
-    attempts: receipt.testInvocations,
-    receipt,
-    artifactDir,
-    receiptPath,
-  };
-}
-
-export type { Category };
+    let cleanupDetail = !copied
+      ? "no isolated working copy was created"
+      : options.keepWorkdir === true
+        ? `retained ${copy} because keep-workdir was requested`
+        : `removed ${copy}`;
+    let cleanupOk = true;
+    if (options.keepWorkdir !== true && copied) {
+      const outcome = yield* Effect.exit(
+        fs(id, "run", (service) =>
+          service.remove(copy, { recursive: true, force: true }),
+        ),
+      );
+      if (outcome._tag === "Failure") {
+        cleanupOk = false;
+        cleanupDetail = `cleanup failed for ${copy}: ${Cause.pretty(outcome.cause)}`;
+      }
+    }
+    if (consumesTestkit && testkit !== undefined) {
+      const snapshot = yield* Effect.exit(verifyTestkitSnapshot(testkit));
+      if (snapshot._tag === "Failure") {
+        cleanupOk = false;
+        cleanupDetail += `; Testkit snapshot changed: ${Cause.pretty(snapshot.cause)}`;
+      }
+    }
+    stage(stages, {
+      stage: "cleanup",
+      ok: cleanupOk,
+      path: copy,
+      detail: cleanupDetail,
+    });
+    const classified = classifyFromReceipt({ stages, detail: "" });
+    const retained = (yield* durable(id, lstatOptional(tarball))) !== undefined;
+    const testkitReceipt: TestkitReceipt | undefined =
+      consumesTestkit &&
+      testkit !== undefined &&
+      testkitResolvedPath !== undefined
+        ? {
+            version: testkit.version,
+            sourcePath: testkit.sourcePath,
+            resolvedPath: testkitResolvedPath,
+            digest: testkit.digest,
+          }
+        : undefined;
+    const receipt: RepoReceipt = {
+      repoId: id,
+      ...(options.selection === undefined
+        ? {}
+        : { selection: options.selection }),
+      invocationIds,
+      testInvocations: stages.filter((value) => value.stage === "test").length,
+      ...(options.copyId === undefined ? {} : { copyId: options.copyId }),
+      ...(options.runLabel === undefined ? {} : { runLabel: options.runLabel }),
+      ...(options.sourceSnapshotDigest === undefined
+        ? {}
+        : { sourceSnapshotDigest: options.sourceSnapshotDigest }),
+      artifactDir,
+      receiptPath,
+      stages,
+      exitCode,
+      category: classified.category,
+      detail: classified.detail,
+      candidate: {
+        sha256: candidate.sha256,
+        integrity: candidate.integrity,
+        ...(retained ? { artifactPath: relative(durableRoot, tarball) } : {}),
+        reproduce: [
+          "pnpm",
+          "e2e",
+          "run",
+          "--candidate",
+          tarball,
+          "--repo",
+          id,
+        ].join(" "),
+        exactReplay: retained,
+      },
+      ...(testkitReceipt === undefined ? {} : { testkit: testkitReceipt }),
+    };
+    yield* durable(
+      id,
+      writeContainedUtf8File(
+        scopedRoot,
+        receiptPath,
+        `${JSON.stringify(receipt, null, 2)}\n`,
+        "repo receipt",
+      ),
+    );
+    return {
+      id,
+      exitCode,
+      category: receipt.category,
+      detail: receipt.detail,
+      attempts: receipt.testInvocations,
+      receipt,
+      artifactDir,
+      receiptPath,
+    };
+  });

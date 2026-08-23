@@ -1,97 +1,29 @@
-#!/usr/bin/env -S npx tsx
-// Create exactly one candidate .tgz at the requested path and print its
-// independently recomputed sha512/sha256 digests.
+// Candidate output placement; command execution lives in injection.ts.
 
-import { mkdtemp, readdir, rename, rm } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { parseArgs } from "node:util";
-
-import { repoRootDir } from "./discovery.ts";
+import { Data, Effect } from "effect";
+import { FileSystem } from "@effect/platform";
 import { buildCandidateTarball, readCandidateTarball, type CandidateTarball } from "./injection.ts";
-import type { E2EExecutionControl } from "./owned-process.ts";
 import { assertContainedRegularFile, prepareContainedRegularFile } from "./durable-path.ts";
 
-export interface PackDependencies {
-  buildCandidateTarball?: typeof buildCandidateTarball;
-  readCandidateTarball?: typeof readCandidateTarball;
-}
+export class PackCandidateError extends Data.TaggedError("PackCandidateError")<{ readonly operation: "prepare-output" | "move" | "fingerprint"; readonly detail: string; }> {}
 
-export interface PackCli {
-  out: string;
-}
-
-export function parsePackCli(argv: readonly string[]): PackCli {
-  const { values } = parseArgs({
-    args: [...argv],
-    options: { out: { type: "string" } },
-    allowPositionals: false,
-    strict: true,
-  });
-  if (typeof values.out !== "string" || values.out.length === 0) {
-    throw new Error("pack requires --out <exact .tgz>");
-  }
-  if (!values.out.endsWith(".tgz")) {
-    throw new Error(`pack --out must end with .tgz, got ${JSON.stringify(values.out)}`);
-  }
-  return { out: values.out };
-}
-
-/** Pack once into a private directory, then move the one resulting file exactly to out. */
-export async function packCandidate(
-  repoRoot: string,
-  out: string,
-  dependencies: PackDependencies = {},
-  execution: E2EExecutionControl | undefined = undefined,
-): Promise<CandidateTarball> {
-  const declaredOutputPath = resolve(out);
-  if (!declaredOutputPath.endsWith(".tgz")) {
-    throw new Error(`pack --out must end with .tgz, got ${JSON.stringify(out)}`);
-  }
-
-  const outputRoot = dirname(declaredOutputPath);
-  const outputPath = await prepareContainedRegularFile(
-    outputRoot,
-    declaredOutputPath,
-    "candidate pack output",
-  );
-  const temporaryDirectory = await mkdtemp(join(tmpdir(), "niceeval-e2e-pack-"));
-  try {
-    const build = dependencies.buildCandidateTarball ?? buildCandidateTarball;
-    const read = dependencies.readCandidateTarball ?? readCandidateTarball;
-    const packed = await build(repoRoot, temporaryDirectory, {
-      quiet: true,
-      ...(execution === undefined ? {} : { control: execution }),
-    });
-    const generated = (await readdir(temporaryDirectory)).filter((name) => name.endsWith(".tgz"));
-    const [generatedFile] = generated;
-    if (generatedFile === undefined || generated.length !== 1) {
-      throw new Error(`expected exactly one generated candidate in ${temporaryDirectory}`);
-    }
-    await rename(join(temporaryDirectory, generatedFile), outputPath);
-    await assertContainedRegularFile(outputRoot, declaredOutputPath, "candidate pack output");
-    const fingerprint = read(outputPath);
-    return { ...fingerprint, name: packed.name, version: packed.version };
-  } finally {
-    await rm(temporaryDirectory, { recursive: true, force: true });
-  }
-}
-
-export async function main(
-  argv: readonly string[] = process.argv.slice(2),
-  execution: E2EExecutionControl | undefined = undefined,
-): Promise<void> {
-  try {
-    const cli = parsePackCli(argv);
-    const candidate = await packCandidate(repoRootDir(), cli.out, {}, execution);
-    console.log(JSON.stringify({ path: candidate.path, sha512: candidate.integrity, sha256: candidate.sha256 }));
-  } catch (error) {
-    console.error(`[e2e] ${(error as Error).message}`);
-    process.exitCode = 1;
-  }
-}
-
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  void main();
+/** Creates exactly one requested .tgz; its temporary directory is scope-owned. */
+export function packCandidate(repoRoot: string, out: string): Effect.Effect<CandidateTarball, PackCandidateError, import("./owned-process.ts").OwnedProcess | FileSystem.FileSystem> {
+  return Effect.scoped(Effect.gen(function* () {
+    const declared = resolve(out);
+    if (!declared.endsWith(".tgz")) return yield* Effect.fail(new PackCandidateError({ operation: "prepare-output", detail: `pack --out must end with .tgz, got ${JSON.stringify(out)}` }));
+    const root = dirname(declared);
+    const output = yield* prepareContainedRegularFile(root, declared, "candidate pack output").pipe(Effect.mapError((error) => new PackCandidateError({ operation: "prepare-output", detail: error.detail })));
+    const fs = yield* FileSystem.FileSystem;
+    const temporary = yield* fs.makeTempDirectoryScoped({ directory: tmpdir(), prefix: "niceeval-e2e-pack-" }).pipe(Effect.mapError((error) => new PackCandidateError({ operation: "prepare-output", detail: error.message })));
+    const packed = yield* buildCandidateTarball(repoRoot, temporary, { quiet: true }).pipe(Effect.mapError((error) => new PackCandidateError({ operation: "prepare-output", detail: error.detail })));
+    const generated = yield* fs.readDirectory(temporary).pipe(Effect.map((names) => names.filter((name) => name.endsWith(".tgz"))), Effect.mapError((error) => new PackCandidateError({ operation: "move", detail: error.message })));
+    if (generated.length !== 1 || generated[0] === undefined) return yield* Effect.fail(new PackCandidateError({ operation: "move", detail: `expected exactly one generated candidate in ${temporary}` }));
+    yield* fs.rename(join(temporary, generated[0]!), output).pipe(Effect.mapError((error) => new PackCandidateError({ operation: "move", detail: error.message })));
+    yield* assertContainedRegularFile(root, declared, "candidate pack output").pipe(Effect.mapError((error) => new PackCandidateError({ operation: "fingerprint", detail: error.detail })));
+    const candidate = yield* readCandidateTarball(output).pipe(Effect.mapError((error) => new PackCandidateError({ operation: "fingerprint", detail: error.detail })));
+    return { ...candidate, name: packed.name, version: packed.version };
+  }));
 }
