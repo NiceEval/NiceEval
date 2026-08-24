@@ -398,6 +398,7 @@ function assertionEventId(
 
 /** @internal Project a raw message into the closed assertion-event surface. */
 export function makeAssertionMessageEvent(input: {
+  readonly eventId?: string;
   readonly session: string;
   readonly turn: string;
   readonly turnOrdinal: number;
@@ -406,7 +407,9 @@ export function makeAssertionMessageEvent(input: {
   readonly text: string;
 }): Extract<AssertionEvent, { readonly type: "message" }> {
   return Object.freeze({
-    id: assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal),
+    id: input.eventId === undefined
+      ? assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal)
+      : input.eventId as AssertionEventIdentity,
     position: freezeEventPosition(input.turnOrdinal, input.eventOrdinal),
     type: "message" as const,
     role: input.role,
@@ -416,6 +419,8 @@ export function makeAssertionMessageEvent(input: {
 
 /** @internal Project a correlated tool lifecycle row without exposing raw adapter fields. */
 export function makeAssertionToolEvent(input: {
+  readonly eventId?: string;
+  readonly toolOccurrenceId?: string;
   readonly session: string;
   readonly turn: string;
   readonly turnOrdinal: number;
@@ -425,10 +430,12 @@ export function makeAssertionToolEvent(input: {
   readonly status?: "completed" | "failed" | "rejected";
 }): Extract<AssertionEvent, { readonly type: "operation.started" | "operation.finished" }> {
   const base = {
-    id: assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal),
+    id: input.eventId === undefined
+      ? assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal)
+      : input.eventId as AssertionEventIdentity,
     position: freezeEventPosition(input.turnOrdinal, input.eventOrdinal),
     tool: Object.freeze({
-      id: input.occurrence.id as ToolOccurrenceIdentity,
+      id: (input.toolOccurrenceId ?? input.occurrence.id) as ToolOccurrenceIdentity,
       name: input.occurrence.name.canonical ?? input.occurrence.name.original,
     }),
   };

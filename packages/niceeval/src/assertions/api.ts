@@ -143,6 +143,137 @@ export interface AssertionCollectionReceipt {
   readonly decisive: boolean;
 }
 
+export type MatcherRelationStatus =
+  | { readonly state: "exact" }
+  | {
+      readonly state: "unavailable";
+      readonly reason:
+        | "historical-not-recorded"
+        | "source-unavailable"
+        | "ambiguous";
+    };
+
+export type MatcherSourceLocator =
+  | {
+      readonly kind: "tool-occurrence";
+      readonly toolOccurrenceId: string;
+      readonly relation: MatcherRelationStatus;
+    }
+  | {
+      readonly kind: "event";
+      readonly eventId: string;
+      readonly toolOccurrenceId?: string;
+      readonly relation: MatcherRelationStatus;
+    };
+
+export interface MatcherRetainedRow {
+  readonly locator: MatcherSourceLocator;
+  readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated";
+  readonly difference?: AssertionSnapshotValue;
+}
+
+export interface MatcherQueryStep {
+  readonly step: number;
+  readonly summary: AssertionSnapshotValue;
+}
+
+export type MatcherSourceSnapshot =
+  | {
+      readonly scope: "turn";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly scopeId: string;
+      readonly throughSessionSequence: number;
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    }
+  | {
+      readonly scope: "session";
+      readonly sessionId: string;
+      readonly scopeId: string;
+      readonly throughSessionSequence: number;
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    }
+  | {
+      readonly scope: "attempt";
+      readonly scopeId: string;
+      readonly sessions: readonly {
+        readonly sessionId: string;
+        readonly throughSessionSequence: number;
+      }[];
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    };
+
+export interface OrderStepReceipt {
+  readonly step: number;
+  readonly comparisons: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+}
+
+export interface OrderEvaluationReceipt {
+  readonly sourceRows: number;
+  readonly comparisons: number;
+  readonly unavailableComparisons: number;
+  readonly definitePrefixLength: number;
+  readonly possiblePrefixLength: number;
+  readonly stepReceipts: readonly OrderStepReceipt[];
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
+}
+
+export interface MatcherOrderPathNode {
+  readonly step: number;
+  readonly locator: MatcherSourceLocator;
+  readonly sessionId: string;
+  readonly sessionSequence: number;
+  readonly result: "matched" | "unavailable";
+}
+
+export interface MatcherFailureFrontier {
+  readonly longestDefinitePrefix: readonly MatcherOrderPathNode[];
+  readonly longestPossiblePrefix: readonly MatcherOrderPathNode[];
+  readonly firstBlockingStep: number;
+  readonly suffixChecked: AssertionCollectionReceipt;
+  readonly representatives: readonly MatcherRetainedRow[];
+}
+
+export type MatcherQueryArtifact =
+  | {
+      readonly kind: "collection-filter";
+      readonly sourceSnapshot: MatcherSourceSnapshot;
+      readonly query: MatcherQueryStep;
+      readonly receipt: AssertionCollectionReceipt;
+      readonly retainedRows: readonly MatcherRetainedRow[];
+    }
+  | {
+      readonly kind: "ordered-sequence";
+      readonly sourceSnapshot: Extract<
+        MatcherSourceSnapshot,
+        { readonly scope: "turn" | "session" }
+      >;
+      readonly querySteps: readonly MatcherQueryStep[];
+      readonly receipt: OrderEvaluationReceipt;
+      readonly result:
+        | { readonly state: "matched"; readonly witnessPath: readonly MatcherOrderPathNode[] }
+        | { readonly state: "mismatched"; readonly failureFrontier: MatcherFailureFrontier }
+        | { readonly state: "unavailable"; readonly reason: string };
+      readonly retainedRows: readonly MatcherRetainedRow[];
+    };
+
 export type AssertionConditionPolicy =
   | { readonly kind: "boolean"; readonly expected: true }
   | { readonly kind: "at-least"; readonly threshold: number }
@@ -212,6 +343,7 @@ export interface SealedAssertionEntry {
   readonly result: AssertionResult;
   readonly policy: AssertionPolicy;
   readonly observed: AssertionObserved;
+  readonly matcherArtifact?: MatcherQueryArtifact;
 }
 
 /**
@@ -283,11 +415,13 @@ export type BooleanAssertionEvaluation<Refined> =
       readonly value: Refined;
       readonly diagnostic?: MatchDiagnostic;
       readonly receipt?: AssertionCollectionReceipt;
+      readonly matcherArtifact?: MatcherQueryArtifact;
     }
   | {
       readonly state: "mismatched";
       readonly diagnostic?: MatchDiagnostic;
       readonly receipt?: AssertionCollectionReceipt;
+      readonly matcherArtifact?: MatcherQueryArtifact;
     }
   | {
       readonly state: "unavailable";
@@ -297,8 +431,13 @@ export type BooleanAssertionEvaluation<Refined> =
         | "redacted";
       readonly diagnostic?: MatchDiagnostic;
       readonly receipt?: AssertionCollectionReceipt;
+      readonly matcherArtifact?: MatcherQueryArtifact;
     }
-  | { readonly state: "not-applicable"; readonly diagnostic?: MatchDiagnostic };
+  | {
+      readonly state: "not-applicable";
+      readonly diagnostic?: MatchDiagnostic;
+      readonly matcherArtifact?: MatcherQueryArtifact;
+    };
 
 /** A measurement is always a finite unit-interval value when it is available. */
 export type MeasurementAssertionEvaluation =
@@ -335,6 +474,8 @@ export interface AssertionRegistrationBase {
  */
 export interface BooleanAssertionRegistration<Refined>
   extends AssertionRegistrationBase {
+  /** Sealed when Attempt interruption prevents the ordinary evaluator from running. */
+  readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
   readonly evaluate: () => Effect.Effect<
     BooleanAssertionEvaluation<Refined>,
     unknown,

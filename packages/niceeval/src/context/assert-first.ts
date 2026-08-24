@@ -21,9 +21,18 @@ import type {
   BooleanAssertionHandle,
   BooleanAssertionEvaluation,
   DirectScoreAssertionHandle,
+  MatcherSourceLocator,
+  MatcherSourceSnapshot,
   MeasurementAssertionHandle,
   PostRunBooleanAssertionHandle,
 } from "../assertions/api.ts";
+import {
+  evaluateMatcherCollection,
+  evaluateMatcherOrder,
+  interruptedMatcherArtifact,
+  type MatcherQuery,
+  type MatcherSourceRow,
+} from "../assertions/matcher-artifact.ts";
 import {
   assertJudgeCapability,
   evaluateJudgeMeasurement,
@@ -47,7 +56,6 @@ import {
   assertManagedEventMatch,
   assertManagedToolMatch,
   evaluateBooleanMatch,
-  evaluateToolMatchCollection,
   makeAssertionMessageEvent,
   makeAssertionToolEvent,
   toolMatch,
@@ -58,7 +66,19 @@ import {
   type ToolMatch,
   type ToolMatchQuantifier,
 } from "../assertions/match.ts";
-import { buildO11ySummary, deriveRunFacts, deriveScopedLogicalToolOccurrences } from "../o11y/derive.ts";
+import {
+  buildO11ySummary,
+  deriveRunFacts,
+  deriveScopedLogicalToolOccurrences,
+  projectObservedSourceEvents,
+  type ObservedEventLedgerRow,
+  type ObservedToolOccurrenceLedgerRow,
+} from "../o11y/derive.ts";
+import {
+  observedSnapshotForTurn,
+  type ObservedSourceEvent,
+  type ObservedTurnSnapshot,
+} from "../o11y/observed.ts";
 import { estimateCost } from "../o11y/cost.ts";
 import { UNCLASSIFIED_TOOL_ACTIONS_REASON } from "../o11y/command-projection.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
@@ -367,22 +387,131 @@ function succeededHandle<Kind extends RuntimeKind>(input: {
   });
 }
 
+interface MatcherScopeTurn {
+  readonly observed: ObservedTurnSnapshot;
+  readonly events: readonly StreamEvent[];
+  readonly outcome: "completed" | "failed" | "waiting";
+}
+
+type ProjectedMatcherCandidate<Candidate> =
+  | { readonly state: "available"; readonly value: Candidate }
+  | { readonly state: "unavailable"; readonly reason: string };
+
+interface MatcherSourceProjection {
+  readonly state: "available" | "invalid";
+  readonly events: readonly ObservedEventLedgerRow[];
+  readonly toolOccurrences: readonly ObservedToolOccurrenceLedgerRow[];
+  readonly occurrenceCandidates: ReadonlyMap<string, LogicalToolOccurrence>;
+  readonly orphanFinishes: readonly OrphanToolOperationFinish[];
+}
+
 interface ToolScopeSnapshot {
   readonly occurrences: readonly LogicalToolOccurrence[];
+  readonly rows: readonly MatcherSourceRow<ProjectedMatcherCandidate<LogicalToolOccurrence>>[];
   readonly orphanFinishes: readonly OrphanToolOperationFinish[];
+  readonly sourceSnapshot: MatcherSourceSnapshot;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }
 
+function unavailableSourceSnapshot(
+  snapshot: MatcherSourceSnapshot,
+): MatcherSourceSnapshot {
+  return Object.freeze({ ...snapshot, collectionAtCut: "unavailable" as const });
+}
+
+function projectMatcherSources(
+  turns: readonly MatcherScopeTurn[],
+): MatcherSourceProjection {
+  const projected = projectObservedSourceEvents(turns.map((turn) => Object.freeze({
+    sessionId: turn.observed.sessionId,
+    turnId: turn.observed.turnId,
+    items: turn.observed.items,
+  })));
+  const logicalTurns: readonly LogicalToolOccurrenceScopeTurn[] = Object.freeze(
+    turns.map((turn, index) => Object.freeze({
+      session: turn.observed.sessionId,
+      turn: turn.observed.turnId,
+      turnOrdinal: index + 1,
+      events: turn.events,
+      outcome: turn.outcome,
+    })),
+  );
+  const logical = deriveScopedLogicalToolOccurrences(logicalTurns);
+  if (projected.state === "invalid") {
+    return Object.freeze({
+      state: "invalid" as const,
+      events: Object.freeze([]),
+      toolOccurrences: Object.freeze([]),
+      occurrenceCandidates: new Map<string, LogicalToolOccurrence>(),
+      orphanFinishes: logical.orphanFinishes,
+    });
+  }
+
+  const occurrenceCandidates = new Map<string, LogicalToolOccurrence>();
+  for (const occurrence of logical.occurrences) {
+    const turn = turns[occurrence.start.turnOrdinal - 1];
+    const start = turn?.observed.items[occurrence.start.eventOrdinal];
+    if (turn === undefined || start?.kind !== "tool-start") continue;
+    occurrenceCandidates.set(start.toolOccurrenceId, Object.freeze({
+      ...occurrence,
+      id: start.toolOccurrenceId,
+      session: turn.observed.sessionId,
+      turn: turn.observed.turnId,
+    }));
+  }
+  return Object.freeze({
+    state: "available" as const,
+    events: projected.events,
+    toolOccurrences: projected.toolOccurrences,
+    occurrenceCandidates,
+    orphanFinishes: logical.orphanFinishes,
+  });
+}
+
+function exactToolLocator(toolOccurrenceId: string): MatcherSourceLocator {
+  return Object.freeze({
+    kind: "tool-occurrence" as const,
+    toolOccurrenceId,
+    relation: Object.freeze({ state: "exact" as const }),
+  });
+}
+
 function projectToolScope(input: {
-  readonly turns: readonly LogicalToolOccurrenceScopeTurn[];
+  readonly turns: readonly MatcherScopeTurn[];
+  readonly sourceSnapshot: MatcherSourceSnapshot;
+  readonly homeTurnId?: string;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }): ToolScopeSnapshot {
-  const projection = deriveScopedLogicalToolOccurrences(input.turns);
+  const projection = projectMatcherSources(input.turns);
+  const sourceSnapshot = projection.state === "invalid"
+    ? unavailableSourceSnapshot(input.sourceSnapshot)
+    : input.sourceSnapshot;
+  const sourceRows = input.homeTurnId === undefined
+    ? projection.toolOccurrences
+    : projection.toolOccurrences.filter((row) => row.homeTurnId === input.homeTurnId);
+  const rows = Object.freeze(sourceRows.map((row) => {
+    const candidate = projection.occurrenceCandidates.get(row.toolOccurrenceId);
+    return Object.freeze({
+      locator: exactToolLocator(row.toolOccurrenceId),
+      sessionId: row.sessionId,
+      sessionSequence: row.startSessionSequence,
+      candidate: candidate === undefined
+        ? Object.freeze({
+            state: "unavailable" as const,
+            reason: "source-occurrence-material-unavailable",
+          })
+        : Object.freeze({ state: "available" as const, value: candidate }),
+    });
+  }));
   return Object.freeze({
-    occurrences: projection.occurrences,
+    occurrences: Object.freeze(rows.flatMap((row) =>
+      row.candidate.state === "available" ? [row.candidate.value] : []
+    )),
+    rows,
     orphanFinishes: projection.orphanFinishes,
+    sourceSnapshot,
     coverage: input.coverage,
     snapshot: input.snapshot,
   });
@@ -454,22 +583,38 @@ function toolScopeCoverageReason(snapshot: ToolScopeSnapshot): string | undefine
   return undefined;
 }
 
-function collectionAssertionEvaluation(
-  result: Awaited<ReturnType<typeof evaluateToolMatchCollection>>,
-): BooleanAssertionEvaluation<void> {
-  switch (result.state) {
-    case "matched":
-      return Object.freeze({ state: "matched" as const, value: undefined, diagnostic: result.diagnostic, receipt: result.receipt });
-    case "mismatched":
-      return Object.freeze({ state: "mismatched" as const, diagnostic: result.diagnostic, receipt: result.receipt });
-    case "unavailable":
-      return Object.freeze({
-        state: "unavailable" as const,
-        reason: "evidence-unavailable" as const,
-        diagnostic: result.diagnostic,
-        receipt: result.receipt,
-      });
-  }
+function unavailableMatcherCandidate(
+  reason: string,
+): BooleanMatchEvaluation<never> {
+  return Object.freeze({
+    state: "unavailable" as const,
+    reason,
+    diagnostic: Object.freeze({
+      code: "source-candidate-unavailable",
+      message: "the matcher candidate could not be resolved from the immutable source ledger",
+      path: Object.freeze([]),
+      reason,
+    }),
+  });
+}
+
+function toolMatcherQuery(
+  match: ToolMatch,
+  summary: import("../assertions/api.ts").AssertionSnapshotValue = Object.freeze({
+    matcher: match.name,
+  }),
+): MatcherQuery<ProjectedMatcherCandidate<LogicalToolOccurrence>> {
+  return Object.freeze({
+    summary,
+    evaluate: async (
+      candidate: ProjectedMatcherCandidate<LogicalToolOccurrence>,
+    ) => candidate.state === "unavailable"
+      ? unavailableMatcherCandidate(candidate.reason)
+      : toolMatchEvaluation(
+          candidate.value,
+          await evaluateBooleanMatch(match, candidate.value),
+        ),
+  });
 }
 
 function toolAssertionHandle<Kind extends RuntimeKind>(input: {
@@ -484,30 +629,36 @@ function toolAssertionHandle<Kind extends RuntimeKind>(input: {
     occurrence: "tool",
     matcher: input.match.name,
     quantifier: input.quantifier,
-    candidateCount: input.snapshot.occurrences.length,
+    candidateCount: input.snapshot.rows.length,
     orphanFinishCount: input.snapshot.orphanFinishes.length,
     coverage: input.snapshot.coverage.actions,
     snapshot: input.snapshot.snapshot,
+  });
+  const query = toolMatcherQuery(input.match, Object.freeze({
+    matcher: input.match.name,
+    quantifier: input.quantifier,
+  }));
+  const interrupted = interruptedMatcherArtifact({
+    sourceSnapshot: input.snapshot.sourceSnapshot,
+    sourceRows: input.snapshot.rows.length,
+    queries: Object.freeze([query.summary]),
+    kind: "collection-filter",
   });
   return input.runtime.registerBoolean<void>({
     criterion: occurrenceCriterion(input.scope, "tool", input.match.name, input.quantifier),
     subject: captured.material,
     coverage: captured.coverage,
     limitations: captured.limitations,
-    evaluate: () => {
-      const coverageReason = toolScopeCoverageReason(input.snapshot);
-      return Effect.tryPromise({
-        try: async () => collectionAssertionEvaluation(await evaluateToolMatchCollection(
-          input.match,
-          input.snapshot.occurrences,
-          {
-            quantifier: input.quantifier,
-            ...(coverageReason === undefined ? {} : { coverageReason }),
-          },
-        )),
-        catch: (error) => error,
-      });
-    },
+    interruptedMatcherArtifact: interrupted,
+    evaluate: () => Effect.tryPromise({
+      try: () => evaluateMatcherCollection({
+        sourceSnapshot: input.snapshot.sourceSnapshot,
+        rows: input.snapshot.rows,
+        query,
+        quantifier: input.quantifier,
+      }),
+      catch: (error) => error,
+    }),
   });
 }
 
@@ -566,6 +717,7 @@ function scopedBooleanHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
   readonly criterion: AssertionCriterion;
   readonly snapshot: unknown;
+  readonly interruptedMatcherArtifact?: import("../assertions/api.ts").MatcherQueryArtifact;
   readonly evaluate: () => Effect.Effect<BooleanAssertionEvaluation<void>, unknown, never>;
 }): BooleanAssertionHandle<Kind, void> {
   const captured = captureAssertionSnapshot(input.snapshot);
@@ -574,6 +726,9 @@ function scopedBooleanHandle<Kind extends RuntimeKind>(input: {
     subject: captured.material,
     coverage: captured.coverage,
     limitations: captured.limitations,
+    ...(input.interruptedMatcherArtifact === undefined
+      ? {}
+      : { interruptedMatcherArtifact: input.interruptedMatcherArtifact }),
     evaluate: input.evaluate,
   });
 }
@@ -602,27 +757,43 @@ function usedNoToolsHandle<Kind extends RuntimeKind>(input: {
   readonly scope: AssertionScope;
   readonly snapshot: ToolScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
+  const query: MatcherQuery<ProjectedMatcherCandidate<LogicalToolOccurrence>> = Object.freeze({
+    summary: Object.freeze({ matcher: "any-tool-occurrence" }),
+    evaluate: async (candidate: ProjectedMatcherCandidate<LogicalToolOccurrence>) =>
+      Object.freeze({ state: "matched" as const, value: candidate }),
+  });
+  const quantifier = Object.freeze({ kind: "absent" as const });
+  const interrupted = interruptedMatcherArtifact({
+    sourceSnapshot: input.snapshot.sourceSnapshot,
+    sourceRows: input.snapshot.rows.length,
+    queries: Object.freeze([query.summary]),
+    kind: "collection-filter",
+  });
   return scopedBooleanHandle({
     runtime: input.runtime,
     criterion: occurrenceCriterion(
       input.scope,
       "tool",
       undefined,
-      Object.freeze({ kind: "absent" as const }),
+      quantifier,
     ),
     snapshot: Object.freeze({
       scope: input.scope,
       assertion: "used-no-tools",
-      occurrenceCount: input.snapshot.occurrences.length,
+      occurrenceCount: input.snapshot.rows.length,
       orphanFinishCount: input.snapshot.orphanFinishes.length,
       coverage: input.snapshot.coverage.actions,
       snapshot: input.snapshot.snapshot,
     }),
-    evaluate: () => Effect.sync(() => {
-      if (input.snapshot.occurrences.length > 0) return mismatchedVoid();
-      return toolScopeCoverageReason(input.snapshot) === undefined
-        ? matchedVoid()
-        : unavailableVoid();
+    interruptedMatcherArtifact: interrupted,
+    evaluate: () => Effect.tryPromise({
+      try: () => evaluateMatcherCollection({
+        sourceSnapshot: input.snapshot.sourceSnapshot,
+        rows: input.snapshot.rows,
+        query,
+        quantifier,
+      }),
+      catch: (error) => error,
     }),
   });
 }
@@ -641,14 +812,15 @@ function maxToolCallsHandle<Kind extends RuntimeKind>(input: {
       scope: input.scope,
       assertion: "max-tool-calls",
       max: input.max,
-      occurrenceCount: input.snapshot.occurrences.length,
+      occurrenceCount: input.snapshot.rows.length,
       orphanFinishCount: input.snapshot.orphanFinishes.length,
       coverage: input.snapshot.coverage.actions,
       snapshot: input.snapshot.snapshot,
     }),
     evaluate: () => Effect.sync(() => {
-      if (input.snapshot.occurrences.length > input.max) return mismatchedVoid();
-      return toolScopeCoverageReason(input.snapshot) === undefined
+      if (input.snapshot.rows.length > input.max) return mismatchedVoid();
+      return toolScopeCoverageReason(input.snapshot) === undefined &&
+          input.snapshot.sourceSnapshot.collectionAtCut === "complete"
         ? matchedVoid()
         : unavailableVoid();
     }),
@@ -734,25 +906,6 @@ function orderedMatchList<Match>(
   return Object.freeze(value.map((match, index) => assertMatch(match, `${label} match ${index + 1}`)));
 }
 
-function hasOrderedPath(
-  matrix: readonly (readonly BooleanMatchEvaluation<unknown>[])[],
-  allowed: (result: BooleanMatchEvaluation<unknown>) => boolean,
-): boolean {
-  let cursor = 0;
-  for (const row of matrix) {
-    let found = -1;
-    for (let index = cursor; index < row.length; index += 1) {
-      if (allowed(row[index]!)) {
-        found = index;
-        break;
-      }
-    }
-    if (found < 0) return false;
-    cursor = found + 1;
-  }
-  return true;
-}
-
 function toolMatchEvaluation(
   occurrence: LogicalToolOccurrence,
   result: BooleanMatchEvaluation<unknown>,
@@ -779,6 +932,17 @@ function toolOrderHandle<Kind extends RuntimeKind>(input: {
   readonly snapshot: ToolScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
   const matches = orderedMatchList(input.matches, "toolOrder()", assertManagedToolMatch);
+  const orderedSourceSnapshot = input.snapshot.sourceSnapshot;
+  if (orderedSourceSnapshot.scope === "attempt") {
+    throw new TypeError("toolOrder() is unavailable at Attempt scope");
+  }
+  const queries = Object.freeze(matches.map(toolMatcherQuery));
+  const interrupted = interruptedMatcherArtifact({
+    sourceSnapshot: orderedSourceSnapshot,
+    sourceRows: input.snapshot.rows.length,
+    queries: Object.freeze(queries.map((query) => query.summary)),
+    kind: "ordered-sequence",
+  });
   return scopedBooleanHandle({
     runtime: input.runtime,
     criterion: valueMatchCriterion(),
@@ -786,30 +950,18 @@ function toolOrderHandle<Kind extends RuntimeKind>(input: {
       scope: input.scope,
       assertion: "tool-order",
       matches: matches.map((match) => match.name),
-      occurrenceCount: input.snapshot.occurrences.length,
+      occurrenceCount: input.snapshot.rows.length,
       orphanFinishCount: input.snapshot.orphanFinishes.length,
       coverage: input.snapshot.coverage.actions,
       snapshot: input.snapshot.snapshot,
     }),
+    interruptedMatcherArtifact: interrupted,
     evaluate: () => Effect.tryPromise({
-      try: async () => {
-        const matrix: BooleanMatchEvaluation<unknown>[][] = [];
-        for (const match of matches) {
-          const row: BooleanMatchEvaluation<unknown>[] = [];
-          for (const occurrence of input.snapshot.occurrences) {
-            row.push(toolMatchEvaluation(occurrence, await evaluateBooleanMatch(match, occurrence)));
-          }
-          matrix.push(row);
-        }
-        if (hasOrderedPath(matrix, (result) => result.state === "matched")) return matchedVoid();
-        if (
-          toolScopeCoverageReason(input.snapshot) !== undefined
-          || hasOrderedPath(matrix, (result) => result.state === "matched" || result.state === "unavailable")
-        ) {
-          return unavailableVoid();
-        }
-        return mismatchedVoid();
-      },
+      try: () => evaluateMatcherOrder({
+        sourceSnapshot: orderedSourceSnapshot,
+        rows: input.snapshot.rows,
+        queries,
+      }),
       catch: (error) => error,
     }),
   });
@@ -817,73 +969,144 @@ function toolOrderHandle<Kind extends RuntimeKind>(input: {
 
 interface EventScopeSnapshot {
   readonly events: readonly MatchableEvent[];
+  readonly rows: readonly MatcherSourceRow<ProjectedMatcherCandidate<MatchableEvent>>[];
   readonly unassociatedOperation: boolean;
+  readonly sourceSnapshot: MatcherSourceSnapshot;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }
 
-function eventPositionKey(position: { readonly turnOrdinal: number; readonly eventOrdinal: number }): string {
-  return `${position.turnOrdinal}:${position.eventOrdinal}`;
+function eventLocator(row: ObservedEventLedgerRow): MatcherSourceLocator {
+  if (row.event.kind === "tool-start") {
+    return Object.freeze({
+      kind: "event" as const,
+      eventId: row.eventId,
+      toolOccurrenceId: row.event.toolOccurrenceId,
+      relation: Object.freeze({ state: "exact" as const }),
+    });
+  }
+  if (row.event.kind === "tool-finish") {
+    return row.event.occurrence.state === "exact"
+      ? Object.freeze({
+          kind: "event" as const,
+          eventId: row.eventId,
+          toolOccurrenceId: row.event.occurrence.toolOccurrenceId,
+          relation: Object.freeze({ state: "exact" as const }),
+        })
+      : Object.freeze({
+          kind: "event" as const,
+          eventId: row.eventId,
+          relation: Object.freeze({
+            state: "unavailable" as const,
+            reason: "ambiguous" as const,
+          }),
+        });
+  }
+  return Object.freeze({
+    kind: "event" as const,
+    eventId: row.eventId,
+    relation: Object.freeze({ state: "exact" as const }),
+  });
 }
 
 function projectEventScope(input: {
-  readonly turns: readonly LogicalToolOccurrenceScopeTurn[];
+  readonly turns: readonly MatcherScopeTurn[];
+  readonly sourceSnapshot: MatcherSourceSnapshot;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }): EventScopeSnapshot {
-  const derivation = deriveScopedLogicalToolOccurrences(input.turns);
-  const starts = new Map<string, LogicalToolOccurrence>();
-  const finishes = new Map<string, LogicalToolOccurrence>();
-  for (const occurrence of derivation.occurrences) {
-    starts.set(eventPositionKey(occurrence.start), occurrence);
-    if (occurrence.lifecycle.state === "available" && occurrence.lifecycle.status !== "pending") {
-      finishes.set(eventPositionKey(occurrence.lifecycle.finish), occurrence);
+  const projection = projectMatcherSources(input.turns);
+  const sourceSnapshot = projection.state === "invalid"
+    ? unavailableSourceSnapshot(input.sourceSnapshot)
+    : input.sourceSnapshot;
+  const turnIndex = new Map(input.turns.map((turn, index) => [turn.observed.turnId, index]));
+  const rows: MatcherSourceRow<ProjectedMatcherCandidate<MatchableEvent>>[] = [];
+  for (const row of projection.events) {
+    if (row.event.kind !== "message" && row.event.kind !== "tool-start" && row.event.kind !== "tool-finish") {
+      continue;
     }
-  }
-  const events: MatchableEvent[] = [];
-  let unassociatedOperation = false;
-  for (const turn of [...input.turns].sort((left, right) => left.turnOrdinal - right.turnOrdinal)) {
-    for (const [eventOrdinal, event] of turn.events.entries()) {
-      const position = { turnOrdinal: turn.turnOrdinal, eventOrdinal };
-      if (event.type === "message") {
-        events.push(makeAssertionMessageEvent({
-          session: turn.session,
-          turn: turn.turn,
-          ...position,
-          role: event.role,
-          text: event.text,
-        }));
-      } else if (event.type === "operation.started" && event.operation.kind === "tool") {
-        const occurrence = starts.get(eventPositionKey(position));
-        if (occurrence === undefined) unassociatedOperation = true;
-        else {
-          events.push(makeAssertionToolEvent({
-            session: turn.session,
-            turn: turn.turn,
-            ...position,
-            type: "operation.started",
+    const turnOrdinal = turnIndex.get(row.turnId);
+    const sourceTurn = turnOrdinal === undefined ? undefined : input.turns[turnOrdinal];
+    const eventOrdinal = sourceTurn?.observed.items.findIndex(
+      (event) => event.eventId === row.eventId,
+    ) ?? -1;
+    let candidate: ProjectedMatcherCandidate<MatchableEvent>;
+    if (sourceTurn === undefined || eventOrdinal < 0) {
+      candidate = Object.freeze({
+        state: "unavailable" as const,
+        reason: "source-event-material-unavailable",
+      });
+    } else if (row.event.kind === "message") {
+      candidate = Object.freeze({
+        state: "available" as const,
+        value: makeAssertionMessageEvent({
+          eventId: row.eventId,
+          session: row.sessionId,
+          turn: row.turnId,
+          turnOrdinal: (turnOrdinal ?? 0) + 1,
+          eventOrdinal,
+          role: row.event.role,
+          text: row.event.text,
+        }),
+      });
+    } else {
+      const toolOccurrenceId = row.event.kind === "tool-start"
+        ? row.event.toolOccurrenceId
+        : row.event.occurrence.state === "exact"
+        ? row.event.occurrence.toolOccurrenceId
+        : undefined;
+      const occurrence = toolOccurrenceId === undefined
+        ? undefined
+        : projection.occurrenceCandidates.get(toolOccurrenceId);
+      const rawEvent = sourceTurn.events[eventOrdinal];
+      if (
+        occurrence === undefined ||
+        rawEvent === undefined ||
+        (row.event.kind === "tool-finish" &&
+          (rawEvent.type !== "operation.finished" || rawEvent.kind !== "tool"))
+      ) {
+        candidate = Object.freeze({
+          state: "unavailable" as const,
+          reason: "tool-event-relation-unavailable",
+        });
+      } else {
+        candidate = Object.freeze({
+          state: "available" as const,
+          value: makeAssertionToolEvent({
+            eventId: row.eventId,
+            toolOccurrenceId,
+            session: row.sessionId,
+            turn: row.turnId,
+            turnOrdinal: (turnOrdinal ?? 0) + 1,
+            eventOrdinal,
+            type: row.event.kind === "tool-start"
+              ? "operation.started" as const
+              : "operation.finished" as const,
             occurrence,
-          }));
-        }
-      } else if (event.type === "operation.finished" && event.kind === "tool") {
-        const occurrence = finishes.get(eventPositionKey(position));
-        if (occurrence === undefined) unassociatedOperation = true;
-        else {
-          events.push(makeAssertionToolEvent({
-            session: turn.session,
-            turn: turn.turn,
-            ...position,
-            type: "operation.finished",
-            occurrence,
-            status: event.status,
-          }));
-        }
+            ...(row.event.kind === "tool-finish" && rawEvent.type === "operation.finished" && rawEvent.kind === "tool"
+              ? { status: rawEvent.status }
+              : {}),
+          }),
+        });
       }
     }
+    rows.push(Object.freeze({
+      locator: eventLocator(row),
+      sessionId: row.sessionId,
+      sessionSequence: row.sessionSequence,
+      candidate,
+    }));
   }
+  const immutableRows = Object.freeze(rows);
   return Object.freeze({
-    events: Object.freeze(events),
-    unassociatedOperation,
+    events: Object.freeze(immutableRows.flatMap((row) =>
+      row.candidate.state === "available" ? [row.candidate.value] : []
+    )),
+    rows: immutableRows,
+    unassociatedOperation: projection.state === "invalid" || immutableRows.some(
+      (row) => row.candidate.state === "unavailable",
+    ),
+    sourceSnapshot,
     coverage: input.coverage,
     snapshot: input.snapshot,
   });
@@ -897,8 +1120,23 @@ function eventMatchEvaluation(
   return occurrence === undefined ? result : toolMatchEvaluation(occurrence, result);
 }
 
-function eventCoverageComplete(snapshot: EventScopeSnapshot): boolean {
-  return hasCompleteCoverage(snapshot.coverage, "events") && !snapshot.unassociatedOperation;
+function eventMatcherQuery(
+  match: EventMatch,
+  summary: import("../assertions/api.ts").AssertionSnapshotValue = Object.freeze({
+    matcher: match.name,
+  }),
+): MatcherQuery<ProjectedMatcherCandidate<MatchableEvent>> {
+  return Object.freeze({
+    summary,
+    evaluate: async (
+      candidate: ProjectedMatcherCandidate<MatchableEvent>,
+    ) => candidate.state === "unavailable"
+      ? unavailableMatcherCandidate(candidate.reason)
+      : eventMatchEvaluation(
+          candidate.value,
+          await evaluateBooleanMatch(match, candidate.value),
+        ),
+  });
 }
 
 function normalizeEventCount(value: EventOptions | undefined): number | undefined {
@@ -917,22 +1155,6 @@ function normalizeEventCount(value: EventOptions | undefined): number | undefine
   return options.count;
 }
 
-function eventCollectionEvaluation(
-  evaluations: readonly BooleanMatchEvaluation<unknown>[],
-  count: number | undefined,
-  complete: boolean,
-): BooleanAssertionEvaluation<void> {
-  const matched = evaluations.filter((evaluation) => evaluation.state === "matched").length;
-  const unavailable = evaluations.some((evaluation) => evaluation.state === "unavailable");
-  if (count === undefined) {
-    if (matched > 0) return matchedVoid();
-    return unavailable || !complete ? unavailableVoid() : mismatchedVoid();
-  }
-  if (matched > count) return mismatchedVoid();
-  if (matched === count && !unavailable && complete) return matchedVoid();
-  return unavailable || !complete ? unavailableVoid() : mismatchedVoid();
-}
-
 function eventAssertionHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
   readonly scope: AssertionScope;
@@ -943,6 +1165,16 @@ function eventAssertionHandle<Kind extends RuntimeKind>(input: {
   const quantifier: ToolMatchQuantifier = input.count === undefined
     ? Object.freeze({ kind: "at-least" as const, count: 1 })
     : Object.freeze({ kind: "exact" as const, count: input.count });
+  const query = eventMatcherQuery(input.match, Object.freeze({
+    matcher: input.match.name,
+    quantifier,
+  }));
+  const interrupted = interruptedMatcherArtifact({
+    sourceSnapshot: input.snapshot.sourceSnapshot,
+    sourceRows: input.snapshot.rows.length,
+    queries: Object.freeze([query.summary]),
+    kind: "collection-filter",
+  });
   return scopedBooleanHandle({
     runtime: input.runtime,
     criterion: occurrenceCriterion(input.scope, "event", input.match.name, quantifier),
@@ -951,19 +1183,19 @@ function eventAssertionHandle<Kind extends RuntimeKind>(input: {
       occurrence: "event",
       matcher: input.match.name,
       quantifier,
-      candidateCount: input.snapshot.events.length,
+      candidateCount: input.snapshot.rows.length,
       unassociatedOperation: input.snapshot.unassociatedOperation,
       coverage: input.snapshot.coverage.events,
       snapshot: input.snapshot.snapshot,
     }),
+    interruptedMatcherArtifact: interrupted,
     evaluate: () => Effect.tryPromise({
-      try: async () => {
-        const evaluations: BooleanMatchEvaluation<unknown>[] = [];
-        for (const event of input.snapshot.events) {
-          evaluations.push(eventMatchEvaluation(event, await evaluateBooleanMatch(input.match, event)));
-        }
-        return eventCollectionEvaluation(evaluations, input.count, eventCoverageComplete(input.snapshot));
-      },
+      try: () => evaluateMatcherCollection({
+        sourceSnapshot: input.snapshot.sourceSnapshot,
+        rows: input.snapshot.rows,
+        query,
+        quantifier,
+      }),
       catch: (error) => error,
     }),
   });
@@ -975,35 +1207,43 @@ function notEventHandle<Kind extends RuntimeKind>(input: {
   readonly match: EventMatch;
   readonly snapshot: EventScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
+  const quantifier = Object.freeze({ kind: "absent" as const });
+  const query = eventMatcherQuery(input.match, Object.freeze({
+    matcher: input.match.name,
+    quantifier,
+  }));
+  const interrupted = interruptedMatcherArtifact({
+    sourceSnapshot: input.snapshot.sourceSnapshot,
+    sourceRows: input.snapshot.rows.length,
+    queries: Object.freeze([query.summary]),
+    kind: "collection-filter",
+  });
   return scopedBooleanHandle({
     runtime: input.runtime,
     criterion: occurrenceCriterion(
       input.scope,
       "event",
       input.match.name,
-      Object.freeze({ kind: "absent" as const }),
+      quantifier,
     ),
     snapshot: Object.freeze({
       scope: input.scope,
       occurrence: "event",
       matcher: input.match.name,
-      quantifier: Object.freeze({ kind: "absent" as const }),
-      candidateCount: input.snapshot.events.length,
+      quantifier,
+      candidateCount: input.snapshot.rows.length,
       unassociatedOperation: input.snapshot.unassociatedOperation,
       coverage: input.snapshot.coverage.events,
       snapshot: input.snapshot.snapshot,
     }),
+    interruptedMatcherArtifact: interrupted,
     evaluate: () => Effect.tryPromise({
-      try: async () => {
-        const evaluations: BooleanMatchEvaluation<unknown>[] = [];
-        for (const event of input.snapshot.events) {
-          evaluations.push(eventMatchEvaluation(event, await evaluateBooleanMatch(input.match, event)));
-        }
-        if (evaluations.some((evaluation) => evaluation.state === "matched")) return mismatchedVoid();
-        return evaluations.some((evaluation) => evaluation.state === "unavailable") || !eventCoverageComplete(input.snapshot)
-          ? unavailableVoid()
-          : matchedVoid();
-      },
+      try: () => evaluateMatcherCollection({
+        sourceSnapshot: input.snapshot.sourceSnapshot,
+        rows: input.snapshot.rows,
+        query,
+        quantifier,
+      }),
       catch: (error) => error,
     }),
   });
@@ -1016,6 +1256,17 @@ function eventOrderHandle<Kind extends RuntimeKind>(input: {
   readonly snapshot: EventScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
   const matches = orderedMatchList(input.matches, "eventOrder()", assertManagedEventMatch);
+  const orderedSourceSnapshot = input.snapshot.sourceSnapshot;
+  if (orderedSourceSnapshot.scope === "attempt") {
+    throw new TypeError("eventOrder() is unavailable at Attempt scope");
+  }
+  const queries = Object.freeze(matches.map(eventMatcherQuery));
+  const interrupted = interruptedMatcherArtifact({
+    sourceSnapshot: orderedSourceSnapshot,
+    sourceRows: input.snapshot.rows.length,
+    queries: Object.freeze(queries.map((query) => query.summary)),
+    kind: "ordered-sequence",
+  });
   return scopedBooleanHandle({
     runtime: input.runtime,
     criterion: valueMatchCriterion(),
@@ -1023,30 +1274,18 @@ function eventOrderHandle<Kind extends RuntimeKind>(input: {
       scope: input.scope,
       assertion: "event-order",
       matches: matches.map((match) => match.name),
-      candidateCount: input.snapshot.events.length,
+      candidateCount: input.snapshot.rows.length,
       unassociatedOperation: input.snapshot.unassociatedOperation,
       coverage: input.snapshot.coverage.events,
       snapshot: input.snapshot.snapshot,
     }),
+    interruptedMatcherArtifact: interrupted,
     evaluate: () => Effect.tryPromise({
-      try: async () => {
-        const matrix: BooleanMatchEvaluation<unknown>[][] = [];
-        for (const match of matches) {
-          const row: BooleanMatchEvaluation<unknown>[] = [];
-          for (const event of input.snapshot.events) {
-            row.push(eventMatchEvaluation(event, await evaluateBooleanMatch(match, event)));
-          }
-          matrix.push(row);
-        }
-        if (hasOrderedPath(matrix, (result) => result.state === "matched")) return matchedVoid();
-        if (
-          !eventCoverageComplete(input.snapshot)
-          || hasOrderedPath(matrix, (result) => result.state === "matched" || result.state === "unavailable")
-        ) {
-          return unavailableVoid();
-        }
-        return mismatchedVoid();
-      },
+      try: () => evaluateMatcherOrder({
+        sourceSnapshot: orderedSourceSnapshot,
+        rows: input.snapshot.rows,
+        queries,
+      }),
       catch: (error) => error,
     }),
   });
@@ -1567,14 +1806,84 @@ export function createAssertFirstEvalContext(
 
   interface SessionScopeState {
     readonly session: RunSession;
-    readonly turns: LogicalToolOccurrenceScopeTurn[];
+    readonly turns: MatcherScopeTurn[];
     started: boolean;
     inFlight: number;
     failed: boolean;
   }
 
   const sessions: SessionScopeState[] = [];
-  let toolTurnOrdinal = 0;
+  const matcherSource = Object.freeze({
+    family: "niceeval.agent-turns" as const,
+    schemaVersion: 2,
+  });
+  const attemptScopeId = deps.attempt === undefined
+    ? JSON.stringify(["niceeval.attempt-scope/1", manager.primary.sessionScopeId])
+    : JSON.stringify([
+        "niceeval.attempt-scope/1",
+        deps.experimentId ?? null,
+        deps.attempt.id,
+        deps.attempt.index,
+      ]);
+
+  const collectionAtCut = (
+    turns: readonly MatcherScopeTurn[],
+    coverage: ScopeCoverage["actions" | "events"],
+    allowUnclassifiedActions = false,
+  ): "complete" | "partial" | "unavailable" => {
+    if (coverage.status === "unavailable") return "unavailable";
+    if (
+      coverage.status === "partial" &&
+      !(allowUnclassifiedActions && coverage.reason === UNCLASSIFIED_TOOL_ACTIONS_REASON)
+    ) {
+      return "partial";
+    }
+    return turns.every((turn) => turn.observed.collectionAtCut === "complete")
+      ? "complete"
+      : "partial";
+  };
+
+  const turnSourceSnapshot = (
+    turn: MatcherScopeTurn,
+    coverage: ScopeCoverage["actions" | "events"],
+    allowUnclassifiedActions = false,
+  ): Extract<MatcherSourceSnapshot, { readonly scope: "turn" }> => Object.freeze({
+    scope: "turn" as const,
+    sessionId: turn.observed.sessionId,
+    turnId: turn.observed.turnId,
+    scopeId: turn.observed.turnId,
+    throughSessionSequence: turn.observed.throughSessionSequence,
+    source: matcherSource,
+    collectionAtCut: collectionAtCut([turn], coverage, allowUnclassifiedActions),
+  });
+
+  const sessionSourceSnapshot = (
+    scope: SessionScopeState,
+    coverage: ScopeCoverage["actions" | "events"],
+    allowUnclassifiedActions = false,
+  ): Extract<MatcherSourceSnapshot, { readonly scope: "session" }> => {
+    const observed = scope.session.observedSnapshot();
+    return Object.freeze({
+      scope: "session" as const,
+      sessionId: observed.sessionId,
+      scopeId: observed.sessionId,
+      throughSessionSequence: observed.throughSessionSequence,
+      source: matcherSource,
+      collectionAtCut: collectionAtCut(scope.turns, coverage, allowUnclassifiedActions),
+    });
+  };
+
+  const attemptSourceSnapshot = (
+    turns: readonly MatcherScopeTurn[],
+    coverage: ScopeCoverage["actions" | "events"],
+    allowUnclassifiedActions = false,
+  ): Extract<MatcherSourceSnapshot, { readonly scope: "attempt" }> => Object.freeze({
+    scope: "attempt" as const,
+    scopeId: attemptScopeId,
+    sessions: manager.observedAttemptCut().sessions,
+    source: matcherSource,
+    collectionAtCut: collectionAtCut(turns, coverage, allowUnclassifiedActions),
+  });
 
   const coverageWhileInFlight = (coverage: ScopeCoverage): ScopeCoverage =>
     Object.freeze({
@@ -1634,6 +1943,7 @@ export function createAssertFirstEvalContext(
     const coverage = sessionCoverage(scope);
     return projectToolScope({
       turns: Object.freeze([...scope.turns]),
+      sourceSnapshot: sessionSourceSnapshot(scope, coverage.actions, true),
       coverage,
       snapshot: Object.freeze({
         sessionIndex: scope.session.index,
@@ -1647,8 +1957,10 @@ export function createAssertFirstEvalContext(
   const attemptToolScope = (): ToolScopeSnapshot => {
     const active = sessions.filter((scope) => scope.started);
     const coverage = attemptCoverage();
+    const turns = Object.freeze(active.flatMap((scope) => scope.turns));
     return projectToolScope({
-      turns: Object.freeze(active.flatMap((scope) => scope.turns)),
+      turns,
+      sourceSnapshot: attemptSourceSnapshot(turns, coverage.actions, true),
       coverage,
       snapshot: Object.freeze({
         sessions: Object.freeze(active.map((scope) => ({
@@ -1670,6 +1982,7 @@ export function createAssertFirstEvalContext(
     const coverage = sessionCoverage(scope);
     return projectEventScope({
       turns: Object.freeze([...scope.turns]),
+      sourceSnapshot: sessionSourceSnapshot(scope, coverage.events),
       coverage,
       snapshot: sessionSnapshot(scope),
     });
@@ -1685,8 +1998,10 @@ export function createAssertFirstEvalContext(
   const attemptEventScope = (): EventScopeSnapshot => {
     const active = sessions.filter((scope) => scope.started);
     const coverage = attemptCoverage();
+    const turns = Object.freeze(active.flatMap((scope) => scope.turns));
     return projectEventScope({
-      turns: Object.freeze(active.flatMap((scope) => scope.turns)),
+      turns,
+      sourceSnapshot: attemptSourceSnapshot(turns, coverage.events),
       coverage,
       snapshot: attemptSnapshot(),
     });
@@ -1704,26 +2019,32 @@ export function createAssertFirstEvalContext(
     ]);
     const toolCalls = Object.freeze([...deriveRunFacts(events).toolCalls]);
     const coverage = manager.resolveTurnEvidenceCoverage(turn);
-    const occurrenceTurn: LogicalToolOccurrenceScopeTurn = Object.freeze({
-      session: `session-${scope.session.index}`,
-      turn: `turn-${scope.session.turnCount}`,
-      turnOrdinal: ++toolTurnOrdinal,
+    const observed = observedSnapshotForTurn(turn);
+    if (observed === undefined) {
+      throw new Error("SessionManager returned a Turn without its sealed observed source snapshot");
+    }
+    const matcherTurn: MatcherScopeTurn = Object.freeze({
+      observed,
       events: scopedEvents,
       outcome: turn.status,
     });
-    scope.turns.push(occurrenceTurn);
+    scope.turns.push(matcherTurn);
     const scopeSnapshot = Object.freeze({
-      sessionIndex: scope.session.index,
-      turnIndex: scope.session.turnCount,
+      sessionId: observed.sessionId,
+      turnId: observed.turnId,
+      throughSessionSequence: observed.throughSessionSequence,
       events: scopedEvents.length,
     });
     const toolScope = projectToolScope({
-      turns: Object.freeze([occurrenceTurn]),
+      turns: Object.freeze([matcherTurn]),
+      sourceSnapshot: turnSourceSnapshot(matcherTurn, coverage.actions, true),
+      homeTurnId: observed.turnId,
       coverage,
       snapshot: scopeSnapshot,
     });
     const eventScope = projectEventScope({
-      turns: Object.freeze([occurrenceTurn]),
+      turns: Object.freeze([matcherTurn]),
+      sourceSnapshot: turnSourceSnapshot(matcherTurn, coverage.events),
       coverage,
       snapshot: scopeSnapshot,
     });
@@ -1808,7 +2129,7 @@ export function createAssertFirstEvalContext(
       return noFailedActionsHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
-        events: occurrenceTurn.events,
+        events: matcherTurn.events,
         coverage,
         snapshot: scopeSnapshot,
       });

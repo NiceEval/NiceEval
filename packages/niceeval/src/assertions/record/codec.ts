@@ -23,6 +23,8 @@ import {
   type CriterionOuterEnvelope,
   type EarnedScoreContribution,
   type NoScoreContribution,
+  type MatcherQueryArtifact,
+  type MatcherSourceSnapshot,
   type SealedAssertionResult,
   type ThirdPartyCriterion,
   type UnavailableScoreContribution,
@@ -31,6 +33,7 @@ import {
 
 /** Durable document-size limit; unlike runtime capture limits it belongs to this codec. */
 export const MAX_ASSERTION_DOCUMENT_BYTES = 4 * 1_024 * 1_024;
+export const MAX_MATCHER_QUERY_ARTIFACT_BYTES = 64 * 1_024;
 
 /** All contract-owned objects use aggregate failures and exact object fields. */
 export const AssertionsExactParseOptions = Object.freeze({
@@ -142,6 +145,13 @@ const AssertionDisplayTextSchema = Schema.String.pipe(
   Schema.filter(isDisplayText, {
     identifier: "AssertionDisplayText",
     description: "text without control characters and at most 256 code points",
+  }),
+);
+
+const MatcherIdentitySchema = BoundedJsonStringSchema.pipe(
+  Schema.filter((value) => value.length > 0 && !CONTROL_CHARACTER.test(value), {
+    identifier: "MatcherSourceIdentity",
+    description: "a non-empty bounded source identity without control characters",
   }),
 );
 
@@ -542,7 +552,26 @@ const UnavailableScoreContributionSchema: Schema.Schema<UnavailableScoreContribu
     reason: Schema.Literal("source-unavailable", "evaluation-errored", "not-applicable"),
   });
 
-const AssertionCollectionReceiptSchema = Schema.Struct({
+function hasValidCollectionReceipt(receipt: {
+  readonly examined: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+  readonly knownTotal: number | null;
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+}): boolean {
+  if (receipt.matched + receipt.mismatched + receipt.unavailable !== receipt.examined) {
+    return false;
+  }
+  if (receipt.knownTotal !== null && receipt.examined > receipt.knownTotal) return false;
+  if (receipt.complete && receipt.knownTotal === null) return false;
+  return !receipt.exhaustive || (
+    receipt.knownTotal !== null && receipt.examined === receipt.knownTotal
+  );
+}
+
+export const AssertionCollectionReceiptSchema = Schema.Struct({
   examined: NonNegativeIntegerSchema,
   matched: NonNegativeIntegerSchema,
   mismatched: NonNegativeIntegerSchema,
@@ -551,7 +580,12 @@ const AssertionCollectionReceiptSchema = Schema.Struct({
   complete: Schema.Boolean,
   exhaustive: Schema.Boolean,
   decisive: Schema.Boolean,
-});
+}).pipe(
+  Schema.filter(hasValidCollectionReceipt, {
+    identifier: "AssertionCollectionReceipt",
+    description: "a collection receipt whose counts and completion boundary agree",
+  }),
+);
 
 const AssertionFactValueSchema: Schema.Schema<AssertionFactValue> = Schema.suspend(
   (): Schema.Schema<AssertionFactValue> => Schema.Union(
@@ -568,6 +602,305 @@ const AssertionFactValueSchema: Schema.Schema<AssertionFactValue> = Schema.suspe
     }),
   ),
 );
+
+const MatcherRelationStatusSchema = Schema.Union(
+  Schema.Struct({ state: Schema.Literal("exact") }),
+  Schema.Struct({
+    state: Schema.Literal("unavailable"),
+    reason: Schema.Literal(
+      "historical-not-recorded",
+      "source-unavailable",
+      "ambiguous",
+    ),
+  }),
+);
+
+const MatcherSourceLocatorSchema = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("tool-occurrence"),
+    toolOccurrenceId: MatcherIdentitySchema,
+    relation: MatcherRelationStatusSchema,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("event"),
+    eventId: MatcherIdentitySchema,
+    toolOccurrenceId: Schema.optional(MatcherIdentitySchema),
+    relation: MatcherRelationStatusSchema,
+  }),
+);
+
+const MatcherRetainedRowSchema = Schema.Struct({
+  locator: MatcherSourceLocatorSchema,
+  result: Schema.Literal("matched", "mismatched", "unavailable", "not-evaluated"),
+  difference: Schema.optional(AssertionFactValueSchema),
+});
+
+const MatcherRetainedRowsSchema = Schema.Array(MatcherRetainedRowSchema).pipe(
+  Schema.filter((rows) => rows.length <= 8, {
+    identifier: "MatcherRetainedRows",
+    description: "at most eight representative matcher rows",
+  }),
+);
+
+const MatcherQueryStepSchema = Schema.Struct({
+  step: PositiveIntegerSchema,
+  summary: AssertionFactValueSchema,
+});
+
+const MatcherSourceReferenceSchema = Schema.Struct({
+  family: Schema.Literal("niceeval.agent-turns"),
+  schemaVersion: PositiveIntegerSchema,
+});
+
+const MatcherSourceCollectionStateSchema = Schema.Literal(
+  "complete",
+  "partial",
+  "unavailable",
+);
+
+const MatcherTurnSourceSnapshotSchema = Schema.Struct({
+  scope: Schema.Literal("turn"),
+  sessionId: MatcherIdentitySchema,
+  turnId: MatcherIdentitySchema,
+  scopeId: MatcherIdentitySchema,
+  throughSessionSequence: NonNegativeIntegerSchema,
+  source: MatcherSourceReferenceSchema,
+  collectionAtCut: MatcherSourceCollectionStateSchema,
+});
+
+const MatcherSessionSourceSnapshotSchema = Schema.Struct({
+  scope: Schema.Literal("session"),
+  sessionId: MatcherIdentitySchema,
+  scopeId: MatcherIdentitySchema,
+  throughSessionSequence: NonNegativeIntegerSchema,
+  source: MatcherSourceReferenceSchema,
+  collectionAtCut: MatcherSourceCollectionStateSchema,
+});
+
+const MatcherAttemptSourceSnapshotSchema = Schema.Struct({
+  scope: Schema.Literal("attempt"),
+  scopeId: MatcherIdentitySchema,
+  sessions: Schema.Array(Schema.Struct({
+    sessionId: MatcherIdentitySchema,
+    throughSessionSequence: NonNegativeIntegerSchema,
+  })).pipe(
+    Schema.filter((sessions) => sessions.every((session, index) =>
+      index === 0 || sessions[index - 1]!.sessionId < session.sessionId
+    ), {
+      identifier: "MatcherAttemptVectorCut",
+      description: "a unique vector cut in canonical session identity order",
+    }),
+  ),
+  source: MatcherSourceReferenceSchema,
+  collectionAtCut: MatcherSourceCollectionStateSchema,
+});
+
+export const MatcherSourceSnapshotSchema: Schema.Schema<MatcherSourceSnapshot> =
+  Schema.Union(
+    MatcherTurnSourceSnapshotSchema,
+    MatcherSessionSourceSnapshotSchema,
+    MatcherAttemptSourceSnapshotSchema,
+  );
+
+const OrderStepReceiptSchema = Schema.Struct({
+  step: PositiveIntegerSchema,
+  comparisons: NonNegativeIntegerSchema,
+  matched: NonNegativeIntegerSchema,
+  mismatched: NonNegativeIntegerSchema,
+  unavailable: NonNegativeIntegerSchema,
+}).pipe(
+  Schema.filter((receipt) =>
+    receipt.matched + receipt.mismatched + receipt.unavailable === receipt.comparisons, {
+      identifier: "MatcherOrderStepReceipt",
+      description: "an order step receipt whose result counts equal its comparisons",
+    }),
+);
+
+const OrderEvaluationReceiptSchema = Schema.Struct({
+  sourceRows: NonNegativeIntegerSchema,
+  comparisons: NonNegativeIntegerSchema,
+  unavailableComparisons: NonNegativeIntegerSchema,
+  definitePrefixLength: NonNegativeIntegerSchema,
+  possiblePrefixLength: NonNegativeIntegerSchema,
+  stepReceipts: Schema.Array(OrderStepReceiptSchema),
+  complete: Schema.Boolean,
+  exhaustive: Schema.Boolean,
+  decisive: Schema.Boolean,
+});
+
+const MatcherOrderPathNodeSchema = Schema.Struct({
+  step: PositiveIntegerSchema,
+  locator: MatcherSourceLocatorSchema,
+  sessionId: MatcherIdentitySchema,
+  sessionSequence: PositiveIntegerSchema,
+  result: Schema.Literal("matched", "unavailable"),
+});
+
+const MatcherFailureFrontierSchema = Schema.Struct({
+  longestDefinitePrefix: Schema.Array(MatcherOrderPathNodeSchema),
+  longestPossiblePrefix: Schema.Array(MatcherOrderPathNodeSchema),
+  firstBlockingStep: PositiveIntegerSchema,
+  suffixChecked: AssertionCollectionReceiptSchema,
+  representatives: MatcherRetainedRowsSchema,
+});
+
+function isPathWithinSourceCut(
+  path: readonly Schema.Schema.Type<typeof MatcherOrderPathNodeSchema>[],
+  snapshot: Schema.Schema.Type<typeof MatcherTurnSourceSnapshotSchema> |
+    Schema.Schema.Type<typeof MatcherSessionSourceSnapshotSchema>,
+  expectedLength: number,
+  allowed: "matched" | "possible",
+): boolean {
+  if (path.length !== expectedLength) return false;
+  let previousSequence = 0;
+  for (const [index, node] of path.entries()) {
+    if (
+      node.step !== index + 1 ||
+      node.sessionId !== snapshot.sessionId ||
+      node.sessionSequence <= previousSequence ||
+      node.sessionSequence > snapshot.throughSessionSequence ||
+      (allowed === "matched" && node.result !== "matched") ||
+      (node.result === "matched" && node.locator.relation.state !== "exact")
+    ) {
+      return false;
+    }
+    previousSequence = node.sessionSequence;
+  }
+  return true;
+}
+
+function hasValidOrderedArtifact(
+  artifact: Schema.Schema.Type<typeof MatcherOrderedSequenceShapeSchema>,
+): boolean {
+  const stepCount = artifact.querySteps.length;
+  const receipt = artifact.receipt;
+  if (
+    artifact.querySteps.some((step, index) => step.step !== index + 1) ||
+    receipt.stepReceipts.length !== stepCount ||
+    receipt.stepReceipts.some((step, index) => step.step !== index + 1) ||
+    receipt.definitePrefixLength > receipt.possiblePrefixLength ||
+    receipt.possiblePrefixLength > stepCount ||
+    receipt.comparisons !== receipt.stepReceipts.reduce((sum, step) => sum + step.comparisons, 0) ||
+    receipt.unavailableComparisons !== receipt.stepReceipts.reduce((sum, step) => sum + step.unavailable, 0) ||
+    receipt.complete !== (artifact.sourceSnapshot.collectionAtCut === "complete") ||
+    receipt.stepReceipts.some((step) => step.comparisons > receipt.sourceRows) ||
+    receipt.stepReceipts.some((step, index) =>
+      index > 0 && step.comparisons !== receipt.stepReceipts[0]!.comparisons
+    ) ||
+    (receipt.exhaustive && receipt.stepReceipts.some((step) =>
+      step.comparisons !== receipt.sourceRows
+    ))
+  ) {
+    return false;
+  }
+  switch (artifact.result.state) {
+    case "matched":
+      return receipt.definitePrefixLength === stepCount &&
+        receipt.possiblePrefixLength === stepCount &&
+        receipt.decisive &&
+        isPathWithinSourceCut(
+          artifact.result.witnessPath,
+          artifact.sourceSnapshot,
+          stepCount,
+          "matched",
+        );
+    case "mismatched": {
+      const frontier = artifact.result.failureFrontier;
+      return receipt.complete && receipt.exhaustive && receipt.decisive &&
+        receipt.possiblePrefixLength < stepCount &&
+        frontier.firstBlockingStep === receipt.possiblePrefixLength + 1 &&
+        frontier.suffixChecked.complete &&
+        frontier.suffixChecked.exhaustive &&
+        frontier.suffixChecked.decisive &&
+        frontier.suffixChecked.knownTotal === frontier.suffixChecked.examined &&
+        frontier.suffixChecked.matched === 0 &&
+        frontier.suffixChecked.unavailable === 0 &&
+        isPathWithinSourceCut(
+          frontier.longestDefinitePrefix,
+          artifact.sourceSnapshot,
+          receipt.definitePrefixLength,
+          "matched",
+        ) &&
+        isPathWithinSourceCut(
+          frontier.longestPossiblePrefix,
+          artifact.sourceSnapshot,
+          receipt.possiblePrefixLength,
+          "possible",
+        );
+    }
+    case "unavailable":
+      return artifact.result.reason.length > 0 && !receipt.decisive;
+  }
+}
+
+const MatcherCollectionFilterSchema = Schema.Struct({
+  kind: Schema.Literal("collection-filter"),
+  sourceSnapshot: MatcherSourceSnapshotSchema,
+  query: MatcherQueryStepSchema,
+  receipt: AssertionCollectionReceiptSchema,
+  retainedRows: MatcherRetainedRowsSchema,
+}).pipe(
+  Schema.filter((artifact) =>
+    artifact.query.step === 1 &&
+    artifact.receipt.knownTotal !== null &&
+    artifact.receipt.complete === (artifact.sourceSnapshot.collectionAtCut === "complete"), {
+      identifier: "MatcherCollectionFilterArtifact",
+      description: "a collection matcher artifact with one query and a matching source cut",
+    }),
+);
+
+const MatcherOrderedSequenceShapeSchema = Schema.Struct({
+  kind: Schema.Literal("ordered-sequence"),
+  sourceSnapshot: Schema.Union(
+    MatcherTurnSourceSnapshotSchema,
+    MatcherSessionSourceSnapshotSchema,
+  ),
+  querySteps: Schema.Array(MatcherQueryStepSchema).pipe(
+    Schema.filter((steps) => steps.length >= 2 && steps.length <= 64, {
+      identifier: "MatcherOrderQuerySteps",
+      description: "between two and 64 ordered matcher query steps",
+    }),
+  ),
+  receipt: OrderEvaluationReceiptSchema,
+  result: Schema.Union(
+    Schema.Struct({
+      state: Schema.Literal("matched"),
+      witnessPath: Schema.Array(MatcherOrderPathNodeSchema),
+    }),
+    Schema.Struct({
+      state: Schema.Literal("mismatched"),
+      failureFrontier: MatcherFailureFrontierSchema,
+    }),
+    Schema.Struct({
+      state: Schema.Literal("unavailable"),
+      reason: MatcherIdentitySchema,
+    }),
+  ),
+  retainedRows: MatcherRetainedRowsSchema,
+});
+
+const MatcherOrderedSequenceSchema = MatcherOrderedSequenceShapeSchema.pipe(
+  Schema.filter(hasValidOrderedArtifact, {
+    identifier: "MatcherOrderedSequenceArtifact",
+    description: "an ordered matcher artifact with consistent receipts, paths, and cut",
+  }),
+);
+
+function isMatcherArtifactWithinSizeLimit(value: unknown): boolean {
+  try {
+    return utf8ByteLength(JSON.stringify(value)) <= MAX_MATCHER_QUERY_ARTIFACT_BYTES;
+  } catch {
+    return false;
+  }
+}
+
+export const MatcherQueryArtifactSchema: Schema.Schema<MatcherQueryArtifact> =
+  Schema.Union(MatcherCollectionFilterSchema, MatcherOrderedSequenceSchema).pipe(
+    Schema.filter(isMatcherArtifactWithinSizeLimit, {
+      identifier: "MatcherQueryArtifactSize",
+      description: "a matcher query artifact no larger than 64 KiB",
+    }),
+  );
 
 const AssertionDecisionPolicySchema = Schema.Struct({
   requirement: Schema.Union(
@@ -688,10 +1021,30 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
     identifier: "AssertionCoverageLimitations",
     description: "coverage and limitations with a consistent sealed relationship",
   }));
-  const evaluation = Schema.Struct({
+  const historicalV2Evaluation = Schema.Struct({
     observed: AssertionFactValueSchema,
     receipt: Schema.optional(AssertionCollectionReceiptSchema),
   });
+  const evaluation = Schema.Union(
+    Schema.Struct({
+      kind: Schema.Literal("ordinary"),
+      observed: AssertionFactValueSchema,
+      receipt: Schema.optional(AssertionCollectionReceiptSchema),
+    }),
+    Schema.Struct({
+      kind: Schema.Literal("matcher-current"),
+      observed: AssertionFactValueSchema,
+      artifact: MatcherQueryArtifactSchema,
+      receipt: Schema.optional(Schema.Never),
+    }),
+    Schema.Struct({
+      kind: Schema.Literal("matcher-legacy"),
+      observed: AssertionFactValueSchema,
+      reason: Schema.Literal("historical-not-recorded"),
+      legacyDiagnostic: Schema.optional(AssertionFactValueSchema),
+      receipt: Schema.optional(Schema.Never),
+    }),
+  );
   const decision = Schema.Struct({
     result: Schema.Literal("matched", "mismatched", "unavailable", "errored", "not-applicable"),
     reason: Schema.NullOr(Schema.Literal(
@@ -704,6 +1057,21 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
     Schema.Struct({ state: Schema.Literal("retained"), value: AssertionFactValueSchema }),
     Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
   );
+
+  const historicalV2OuterEntry = Schema.Struct({
+    entryId: AssertionEntryIdSchema,
+    display: AssertionDisplaySchema,
+    criterion: Schema.Union(
+      Schema.Struct({ state: Schema.Literal("available"), value: BoundedJsonObjectSchema }),
+      Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
+    ),
+    materials,
+    evaluation: historicalV2Evaluation,
+    decision,
+    policy: AssertionDecisionPolicySchema,
+    contribution: Schema.Union(NoScoreContributionSchema, EarnedScoreContributionSchema, UnavailableScoreContributionSchema),
+    explanationRetention,
+  });
 
   const outerEntry = Schema.Struct({
     entryId: AssertionEntryIdSchema,
@@ -718,9 +1086,23 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
     policy: AssertionDecisionPolicySchema,
     contribution: Schema.Union(NoScoreContributionSchema, EarnedScoreContributionSchema, UnavailableScoreContributionSchema),
     explanationRetention,
-  });
+  }).pipe(
+    Schema.filter((entry) =>
+      entry.evaluation.kind === "ordinary" ||
+      entry.explanationRetention.state === "unavailable", {
+        identifier: "MatcherExplanationOwnership",
+        description: "matcher artifacts and legacy diagnostics are not duplicated in explanation retention",
+      }),
+  );
 
   const historicalEntries = Schema.Array(historicalOuterEntry).pipe(
+    Schema.filter((values) => values.length <= assertionRuntimeLimits.entries, {
+      identifier: "AssertionsEntryCount",
+      description: "at most 4,096 assertion entries",
+    }),
+  );
+
+  const historicalV2Entries = Schema.Array(historicalV2OuterEntry).pipe(
     Schema.filter((values) => values.length <= assertionRuntimeLimits.entries, {
       identifier: "AssertionsEntryCount",
       description: "at most 4,096 assertion entries",
@@ -778,7 +1160,14 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
     }),
   );
 
-  return Object.freeze({ material, entries, historicalEntries, outerDocument, document });
+  return Object.freeze({
+    material,
+    entries,
+    historicalEntries,
+    historicalV2Entries,
+    outerDocument,
+    document,
+  });
 }
 
 export interface AssertionsRecordCodecError {

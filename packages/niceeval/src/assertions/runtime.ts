@@ -28,6 +28,7 @@ import {
   type CapturedAssertionSnapshot,
   type MeasurementAssertionEvaluation,
   type MeasurementAssertionRegistration,
+  type MatcherQueryArtifact,
   type PassBooleanAssertionHandle,
   type PostRunBooleanAssertionHandle,
   type ScoreBooleanAssertionHandle,
@@ -59,6 +60,7 @@ interface SettlementDiagnostic {
   readonly diagnostic?: MatchDiagnostic;
   readonly explanation?: AssertionSnapshotObject;
   readonly receipt?: AssertionCollectionReceipt;
+  readonly matcherArtifact?: MatcherQueryArtifact;
 }
 
 type AvailableResult =
@@ -94,6 +96,7 @@ interface AssertionEntry {
     groupPath: string[];
   };
   readonly directScorePoints: number | undefined;
+  readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
   optionalConfigured: boolean;
   gateConfigured: boolean;
   threshold: number | undefined;
@@ -800,9 +803,11 @@ class AssertionsRuntimeImplementation {
       evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
+      interruptedMatcherArtifact: definition.interruptedMatcherArtifact,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.booleanSettlement(evaluation)),
+          this.captureEvaluationFailure(definition.interruptedMatcherArtifact),
         ),
     });
     return new BooleanHandle(this, entry);
@@ -1028,7 +1033,12 @@ class AssertionsRuntimeImplementation {
         this.closing = true;
         for (const entry of this.entries) {
           if (entry.settled === undefined) {
-            entry.settled = Object.freeze({ state: "interrupted" as const });
+            entry.settled = Object.freeze({
+              state: "interrupted" as const,
+              ...(entry.interruptedMatcherArtifact === undefined
+                ? {}
+                : { matcherArtifact: entry.interruptedMatcherArtifact }),
+            });
           }
         }
         return Effect.sync(() => this.finishSeal({
@@ -1066,6 +1076,7 @@ class AssertionsRuntimeImplementation {
     readonly limitations: readonly AssertionLimitation[];
     readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
     readonly directScorePoints?: number;
+    readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
   }): AssertionEntry {
     if (this.entries.length >= assertionRuntimeLimits.entries) {
       throw new Error(
@@ -1083,6 +1094,7 @@ class AssertionsRuntimeImplementation {
       evaluate: input.evaluate,
       display: { key: undefined, label: undefined, groupPath: [...this.groupStack] },
       directScorePoints: input.directScorePoints,
+      interruptedMatcherArtifact: input.interruptedMatcherArtifact,
       optionalConfigured: false,
       gateConfigured: false,
       threshold: undefined,
@@ -1171,14 +1183,19 @@ class AssertionsRuntimeImplementation {
     );
   }
 
-  private captureEvaluationFailure(): <Value>(
+  private captureEvaluationFailure(
+    matcherArtifact?: MatcherQueryArtifact,
+  ): <Value>(
     effect: Effect.Effect<Value, unknown, never>,
   ) => Effect.Effect<Value | EntrySettlement, never, never> {
     return (effect) => effect.pipe(
       Effect.catchAllCause((cause) =>
         Cause.isInterruptedOnly(cause)
           ? Effect.interrupt
-          : Effect.succeed(Object.freeze({ state: "errored" as const })),
+          : Effect.succeed(Object.freeze({
+              state: "errored" as const,
+              ...(matcherArtifact === undefined ? {} : { matcherArtifact }),
+            })),
       ),
     );
   }
@@ -1193,12 +1210,14 @@ class AssertionsRuntimeImplementation {
           value: evaluation.value,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
           ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
         });
       case "mismatched":
         return Object.freeze({
           state: "mismatched" as const,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
           ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
         });
       case "unavailable":
         return Object.freeze({
@@ -1206,11 +1225,13 @@ class AssertionsRuntimeImplementation {
           reason: evaluation.reason,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
           ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
         });
       case "not-applicable":
         return Object.freeze({
           state: "not-applicable" as const,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
         });
     }
   }
@@ -1383,6 +1404,9 @@ class AssertionsRuntimeImplementation {
           : settlement.state === "measured"
             ? Object.freeze({ kind: "direct-score" as const, state: "available" as const, value: settlement.value })
             : Object.freeze({ kind: "direct-score" as const, state: "unavailable" as const }),
+      ...(settlement.matcherArtifact === undefined
+        ? {}
+        : { matcherArtifact: settlement.matcherArtifact }),
     });
   }
 

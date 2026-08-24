@@ -27,6 +27,8 @@ import type {
   AssertionResult,
   AssertionSnapshotObject,
   AssertionSnapshotValue,
+  MatcherQueryArtifact as RuntimeMatcherQueryArtifact,
+  MatcherOrderPathNode as RuntimeMatcherOrderPathNode,
   SealedAssertionEntry,
 } from "../api.ts";
 import {
@@ -50,6 +52,7 @@ import {
 import type {
   AssertionEntryId,
   AssertionFactValue,
+  MatcherQueryArtifact as RecordMatcherQueryArtifact,
   AssertionEntry,
   AssertionEntryOuter,
   AssertionCoverage as RecordAssertionCoverage,
@@ -190,6 +193,76 @@ function explanationValue(value: unknown): AssertionFactValue {
     });
   }
   return Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" as const });
+}
+
+function encodeRetainedRows(
+  rows: RuntimeMatcherQueryArtifact["retainedRows"],
+): RecordMatcherQueryArtifact["retainedRows"] {
+  return Object.freeze(rows.map((row) => Object.freeze({
+    locator: row.locator,
+    result: row.result,
+    ...(row.difference === undefined
+      ? {}
+      : { difference: explanationValue(row.difference) }),
+  })));
+}
+
+function encodeMatcherArtifact(
+  artifact: RuntimeMatcherQueryArtifact,
+): RecordMatcherQueryArtifact {
+  if (artifact.kind === "collection-filter") {
+    return Object.freeze({
+      kind: "collection-filter" as const,
+      sourceSnapshot: artifact.sourceSnapshot,
+      query: Object.freeze({
+        step: artifact.query.step,
+        summary: explanationValue(artifact.query.summary),
+      }),
+      receipt: artifact.receipt,
+      retainedRows: encodeRetainedRows(artifact.retainedRows),
+    });
+  }
+  const path = (nodes: readonly RuntimeMatcherOrderPathNode[]) =>
+    Object.freeze(nodes.map((node) => Object.freeze({ ...node })));
+  const result: Extract<RecordMatcherQueryArtifact, { readonly kind: "ordered-sequence" }>["result"] =
+    artifact.result.state === "matched"
+      ? Object.freeze({
+          state: "matched" as const,
+          witnessPath: path(artifact.result.witnessPath),
+        })
+      : artifact.result.state === "mismatched"
+      ? Object.freeze({
+          state: "mismatched" as const,
+          failureFrontier: Object.freeze({
+            longestDefinitePrefix: path(artifact.result.failureFrontier.longestDefinitePrefix),
+            longestPossiblePrefix: path(artifact.result.failureFrontier.longestPossiblePrefix),
+            firstBlockingStep: artifact.result.failureFrontier.firstBlockingStep,
+            suffixChecked: artifact.result.failureFrontier.suffixChecked,
+            representatives: encodeRetainedRows(
+              artifact.result.failureFrontier.representatives,
+            ),
+          }),
+        })
+      : Object.freeze({
+          state: "unavailable" as const,
+          reason: artifact.result.reason,
+        });
+  return Object.freeze({
+    kind: "ordered-sequence" as const,
+    sourceSnapshot: artifact.sourceSnapshot,
+    querySteps: Object.freeze(artifact.querySteps.map((step) => Object.freeze({
+      step: step.step,
+      summary: explanationValue(step.summary),
+    }))),
+    receipt: Object.freeze({
+      ...artifact.receipt,
+      stepReceipts: Object.freeze(artifact.receipt.stepReceipts.map((step) =>
+        Object.freeze({ ...step })
+      )),
+    }),
+    result,
+    retainedRows: encodeRetainedRows(artifact.retainedRows),
+  });
 }
 
 function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelope {
@@ -452,10 +525,17 @@ export function encodeSealedAssertionEntry(
       coverage: encodeCoverage(entry.coverage),
       limitations: encodeLimitations(entry.limitations),
     }),
-    evaluation: Object.freeze({
-      observed: explanationValue(entry.observed),
-      ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
-    }),
+    evaluation: entry.matcherArtifact === undefined
+      ? Object.freeze({
+          kind: "ordinary" as const,
+          observed: explanationValue(entry.observed),
+          ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
+        })
+      : Object.freeze({
+          kind: "matcher-current" as const,
+          observed: explanationValue(entry.observed),
+          artifact: encodeMatcherArtifact(entry.matcherArtifact),
+        }),
     decision: Object.freeze({
       result: result.state,
       reason: "reason" in result ? result.reason : null,
@@ -466,7 +546,9 @@ export function encodeSealedAssertionEntry(
       condition: Object.freeze({ state: "available" as const, value: entry.policy.condition }),
     }),
     contribution: result.score,
-    explanationRetention: result.diagnostic === undefined
+    explanationRetention: entry.matcherArtifact !== undefined
+      ? Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const })
+      : result.diagnostic === undefined
       ? Object.freeze({ state: "retained" as const, value: Object.freeze({
           kind: "unavailable" as const,
           reason: "not-declared" as const,
