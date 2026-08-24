@@ -4104,6 +4104,9 @@ interface ResolvedAdjacentMigrationChain {
   readonly rewritePayload: boolean;
 }
 
+/** Invalid source bytes stay invalid; only their known envelope generation advances. */
+type PlannedMigrationMode = "migrate-payload" | "normalize-invalid-source";
+
 function uniqueStrings(values: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(values)]);
 }
@@ -4210,6 +4213,19 @@ function executeAdjacentMigrationChain(
   throw new Error("Adjacent migration chain is empty");
 }
 
+function migrationRetentionForMode(
+  chain: ResolvedAdjacentMigrationChain,
+  mode: PlannedMigrationMode,
+): RecordAttachmentMigrationRetention {
+  return mode === "migrate-payload"
+    ? chain.retention
+    : Object.freeze({
+        retainedFacts: Object.freeze([]),
+        droppedFacts: Object.freeze([]),
+        rerunRecommendation: chain.retention.rerunRecommendation,
+      });
+}
+
 function migrationTarget(
   location: KnownMigrationAttachment,
   fromSchemaVersion: number,
@@ -4269,6 +4285,7 @@ function validateProspectiveCrossFamilyJoins(
 interface PlannedMigrationSource {
   readonly target: RecordAttachmentMigrationTarget;
   readonly location: KnownMigrationAttachment;
+  readonly mode: PlannedMigrationMode;
   readonly envelopeBytes: Uint8Array;
   readonly payloadBytes: Uint8Array;
   readonly removedBlobs: readonly { readonly key: string; readonly bytes: Uint8Array }[];
@@ -4288,7 +4305,7 @@ interface PlannedMigrationSources {
   readonly implementationIdentity: typeof RECORD_MIGRATION_IMPLEMENTATION_ID;
 }
 
-const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/current-attachments/v4" as const;
+const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/current-attachments/v5" as const;
 const migrationPlanSources = new WeakMap<object, PlannedMigrationSources>();
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -4341,6 +4358,7 @@ function sameMigrationPlan(left: RecordMigrationPlan, right: RecordMigrationPlan
     return candidate !== undefined &&
       bytesEqual(source.envelopeBytes, candidate.envelopeBytes) &&
       bytesEqual(source.payloadBytes, candidate.payloadBytes) &&
+      source.mode === candidate.mode &&
       source.rewritePayload === candidate.rewritePayload &&
       source.removedBlobs.length === candidate.removedBlobs.length &&
       source.removedBlobs.every((blob, blobIndex) => {
@@ -4388,12 +4406,6 @@ function planAttachmentMigration(input: {
           return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         }
         const historical = chain.steps[0]!.historical;
-        const target = migrationTarget(
-          location,
-          read.fromSchemaVersion,
-          read.toSchemaVersion,
-          chain.retention,
-        );
         const prepared = yield* validateFixedRecordAttachmentMigrationSource({
           fileSystem: input.fileSystem,
           root: input.root,
@@ -4404,10 +4416,22 @@ function planAttachmentMigration(input: {
           ...(historical.verify === undefined ? {} : { verifyHistorical: historical.verify }),
           migrate: (payload, blobs) => executeAdjacentMigrationChain(chain, payload, blobs),
         });
-        if (prepared === false || prepared.rewritePayload !== chain.rewritePayload) {
+        const mode: PlannedMigrationMode = prepared === false && sourceFamily(location.descriptor.family)
+          ? "normalize-invalid-source"
+          : "migrate-payload";
+        if (
+          (prepared === false && mode === "migrate-payload") ||
+          (prepared !== false && prepared.rewritePayload !== chain.rewritePayload)
+        ) {
           return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         }
-        prospective.push(Object.freeze({ location, payload: prepared.payload }));
+        const target = migrationTarget(
+          location,
+          read.fromSchemaVersion,
+          read.toSchemaVersion,
+          migrationRetentionForMode(chain, mode),
+        );
+        if (prepared !== false) prospective.push(Object.freeze({ location, payload: prepared.payload }));
         const payloadBytes = yield* input.fileSystem.readFile({
           file: recordPortablePath(
             input.root,
@@ -4421,10 +4445,11 @@ function planAttachmentMigration(input: {
         sources.push(Object.freeze({
           target,
           location,
+          mode,
           envelopeBytes,
           payloadBytes,
-          removedBlobs: prepared.removedBlobs,
-          rewritePayload: chain.rewritePayload,
+          removedBlobs: prepared === false ? Object.freeze([]) : prepared.removedBlobs,
+          rewritePayload: prepared === false ? false : chain.rewritePayload,
         }));
         continue;
       }
@@ -4649,6 +4674,7 @@ function migrateKnownAttachment(input: {
   readonly root: RecordRoot;
   readonly location: KnownMigrationAttachment;
   readonly target: RecordAttachmentMigrationTarget;
+  readonly mode: PlannedMigrationMode;
   readonly expectedEnvelopeBytes: Uint8Array;
   readonly expectedPayloadBytes: Uint8Array;
   readonly expectedRemovedBlobs: readonly { readonly key: string; readonly bytes: Uint8Array }[];
@@ -4666,10 +4692,15 @@ function migrateKnownAttachment(input: {
       fromSchemaVersion: input.target.fromSchemaVersion,
       toSchemaVersion: input.target.toSchemaVersion,
     });
-    if (chain === undefined || chain.rewritePayload !== input.rewritePayload) {
+    if (chain === undefined) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
-    if (JSON.stringify(chain.retention) !== JSON.stringify(input.target.retention)) {
+    if (
+      JSON.stringify(migrationRetentionForMode(chain, input.mode)) !== JSON.stringify(input.target.retention) ||
+      (input.mode === "migrate-payload" && chain.rewritePayload !== input.rewritePayload) ||
+      (input.mode === "normalize-invalid-source" &&
+        (!sourceFamily(descriptor.family) || input.rewritePayload || input.expectedRemovedBlobs.length !== 0))
+    ) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
     const historical = chain.steps[0]!.historical;
@@ -4703,7 +4734,7 @@ function migrateKnownAttachment(input: {
       ...(historical.verify === undefined ? {} : { verifyHistorical: historical.verify }),
       migrate: (payload, blobs) => executeAdjacentMigrationChain(chain, payload, blobs),
     });
-    if (validated === false) {
+    if (validated === false && input.mode === "migrate-payload") {
       const sourceAfterInvalid = yield* input.fileSystem.readFile({
         file: envelopePath,
         maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
@@ -4711,6 +4742,9 @@ function migrateKnownAttachment(input: {
       if (sourceAfterInvalid === undefined || !bytesEqual(sourceAfterInvalid, input.expectedEnvelopeBytes)) {
         return yield* Effect.fail(migrationPlanStale());
       }
+      return yield* Effect.fail(migrationInvalid(input.target.family));
+    }
+    if (validated !== false && input.mode === "normalize-invalid-source") {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
     const envelope = encodeFixedRecordAttachmentEnvelope({
@@ -4724,6 +4758,19 @@ function migrateKnownAttachment(input: {
     });
     if (sourceBeforeWrite === undefined || !bytesEqual(sourceBeforeWrite, input.expectedEnvelopeBytes)) {
       return yield* Effect.fail(migrationPlanStale());
+    }
+    if (input.mode === "normalize-invalid-source") {
+      input.markPortableWrite();
+      yield* input.fileSystem.writeFile({
+        file: envelopePath,
+        bytes: jsonBytes(envelope.right),
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+        mode: "replace-no-follow",
+      });
+      return;
+    }
+    if (validated === false) {
+      return yield* Effect.fail(migrationInvalid(input.target.family));
     }
     if (validated.rewritePayload !== input.rewritePayload) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
@@ -4900,6 +4947,13 @@ function rewriteMigratedSealManifest(input: {
       const attachment = attachments.get(key);
       if (attachment === undefined) {
         sources.push(source);
+        continue;
+      }
+      if (attachment.mode === "normalize-invalid-source") {
+        sources.push(Object.freeze({
+          ...source,
+          schemaVersion: attachment.target.toSchemaVersion,
+        }));
         continue;
       }
       const read = yield* readKnownMigrationAttachment(
@@ -5151,6 +5205,7 @@ function openMaintenance(input: {
                 root: input.root,
                 location: source.location,
                 target: source.target,
+                mode: source.mode,
                 expectedEnvelopeBytes: source.envelopeBytes,
                 expectedPayloadBytes: source.payloadBytes,
                 expectedRemovedBlobs: source.removedBlobs,
