@@ -2100,20 +2100,21 @@ function recoverRunPublications(input: {
         // before creating `complete`; only a completed staging is eligible for
         // takeover, and incomplete local residue remains outside portable data.
         if (!(yield* input.fileSystem.isStagingCompleteMarker(staging))) continue;
-        const sealed = yield* validateRecoveredPublication({
+        const stagedValidation = yield* Effect.either(validateRecoveredPublication({
           fileSystem: input.fileSystem,
           root: input.root,
           record: input.record,
           runId: recovery.runId,
           staging,
-        });
+        }));
         if (
-          sealed === undefined ||
+          Either.isLeft(stagedValidation) ||
+          stagedValidation.right === undefined ||
           !recordPublishRecoveryMatches({
             recovery,
             recordId: input.record.recordId,
-            sealManifest: sealed.strictManifest,
-            sealManifestSha256: sealed.manifestSha256,
+            sealManifest: stagedValidation.right.strictManifest,
+            sealManifestSha256: stagedValidation.right.manifestSha256,
             stagingPath: paths.stagingPath,
             destinationPath: paths.destinationPath,
           })
@@ -2127,6 +2128,9 @@ function recoverRunPublications(input: {
             input.fileSystem.pathKind(runPath(input.root, recovery.runId)),
           ]);
           if (remainingStaging !== "missing" || publishedDestination !== "directory") {
+            if (Either.isLeft(stagedValidation)) {
+              return yield* Effect.fail(stagedValidation.left);
+            }
             return yield* Effect.fail(recoveryInvalid(
               paths.stagingPath,
               "Staged Run does not match its publish recovery inventory",

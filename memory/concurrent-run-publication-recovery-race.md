@@ -10,7 +10,8 @@ kind:
     kind: fixed
     proof:
       - "E2E red: GitHub Actions run 32733524084 installed main candidate e4ea74e7a5b5b5c04290175a0de91670147cf341 and failed e2e/runner/test/shared-state-lifecycle.test.ts through niceeval exp shared-state-second --json with Staged Run does not match its publish recovery inventory."
-      - "E2E green: candidate SHA-256 1f84f9717a251ac4ae1208a7f4c2443debb37c4dadc50afd1a099aca0f670dba ran pnpm e2e test --repo runner -- --run test/shared-state-lifecycle.test.ts with 1 file / 4 tests passed and clean scratch removal."
+      - "E2E red refinement: GitHub Actions run 32735973760 installed candidate b22a1d9980f52b19423367918208a92f93345bcf and failed e2e/runner/test/shared-state-recovery.test.ts through niceeval exp shared-state-crash-third --rerun all --json when the same atomic rename surfaced as typed read-file ENOENT for the staging complete marker."
+      - "E2E green: candidate SHA-256 409294aa1f3297272c0d5229f8a6c627431dd1c49eee04906ae874eeeba8fb9f ran pnpm e2e test --repo runner -- --run test/shared-state-recovery.test.ts with 1 file / 9 tests passed and clean scratch removal; the earlier lifecycle owner also passed 1 file / 4 tests on candidate 1f84f9717a251ac4ae1208a7f4c2443debb37c4dadc50afd1a099aca0f670dba."
 promotions: []
 ---
 # 并发 Run 发布被 recovery 误判为 inventory 损坏
@@ -30,3 +31,19 @@ promotions: []
 ## 回归凭据
 
 GitHub Actions run 32733524084 从安装后的 main candidate 经公开 `niceeval exp shared-state-second --json` 取得红灯；长期 owner 是 `e2e/runner/test/shared-state-lifecycle.test.ts`。
+
+## Resolution history
+
+<!-- niceeval.memory-resolution-history/v1 -->
+
+### Reopened at `b22a1d9980f52b19423367918208a92f93345bcf`
+
+```json
+{
+  "kind": "fixed",
+  "proof": [
+    "E2E red: GitHub Actions run 32733524084 installed main candidate e4ea74e7a5b5b5c04290175a0de91670147cf341 and failed e2e/runner/test/shared-state-lifecycle.test.ts through niceeval exp shared-state-second --json with Staged Run does not match its publish recovery inventory.",
+    "E2E green: candidate SHA-256 1f84f9717a251ac4ae1208a7f4c2443debb37c4dadc50afd1a099aca0f670dba ran pnpm e2e test --repo runner -- --run test/shared-state-lifecycle.test.ts with 1 file / 4 tests passed and clean scratch removal."
+  ]
+}
+```
