@@ -397,17 +397,37 @@ function isToolCollectionDiagnostic(diagnostic: MatchDiagnosticView | null): boo
     diagnostic?.code === "tool-absence-unavailable";
 }
 
-function candidateToolName(diagnostic: MatchDiagnosticView | null): string | undefined {
-  if (diagnostic?.locator !== undefined && diagnostic.received !== undefined) return diagnostic.received;
+function candidateSubject(diagnostic: MatchDiagnosticView | null): string | undefined {
+  if (diagnostic?.received !== undefined) return diagnostic.received;
   const name = diagnostic?.children.find((child) => child.label === "name");
   if (name?.diagnostic?.received !== undefined) return name.diagnostic.received;
   return name?.state === "matched" ? name.diagnostic?.expected : undefined;
 }
 
-function candidateLabel(index: number, diagnostic: MatchDiagnosticView | null, locale: string): string {
-  const call = label(locale, "Call", "调用");
-  const name = candidateToolName(diagnostic);
-  return name === undefined ? `${call} ${index + 1}` : `${call} ${index + 1} · ${name}`;
+function candidateLabel(
+  index: number,
+  nodeLabel: string,
+  diagnostic: MatchDiagnosticView | null,
+  locale: string,
+): string {
+  const kind = nodeLabel === "command-candidate"
+    ? label(locale, "Command", "命令")
+    : nodeLabel === "tool-candidate"
+      ? label(locale, "Tool call", "工具调用")
+      : label(locale, "Candidate", "候选");
+  const subject = candidateSubject(diagnostic);
+  const unavailable = label(locale, "invocation details not recorded", "调用详情未记录");
+  return `${kind} ${index + 1} · ${subject ?? unavailable}`;
+}
+
+function toolFieldLabel(value: string, locale: string): string {
+  if (locale !== "zh-CN") return value;
+  if (value === "name") return "名称";
+  if (value === "input") return "输入";
+  if (value === "output") return "输出";
+  if (value === "command") return "命令";
+  if (value === "status") return "状态";
+  return value;
 }
 
 function summaryFacts(diagnostic: MatchDiagnosticView | null, locale: string): readonly {
@@ -431,18 +451,28 @@ function summaryFacts(diagnostic: MatchDiagnosticView | null, locale: string): r
   ];
 }
 
-function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, toolCandidateIndex, children }: {
+function MatchNode({
+  label: nodeLabel,
+  state,
+  diagnostic,
+  locale,
+  root = false,
+  toolCandidateIndex,
+  toolField = false,
+  children,
+}: {
   readonly label: string;
   readonly state: MatchState;
   readonly diagnostic: MatchDiagnosticView | null;
   readonly locale: string;
   readonly root?: boolean;
   readonly toolCandidateIndex?: number;
+  readonly toolField?: boolean;
   readonly children?: ReactElement;
 }): ReactElement {
   const displayLabel = toolCandidateIndex === undefined
-    ? nodeLabel
-    : candidateLabel(toolCandidateIndex, diagnostic, locale);
+    ? toolField ? toolFieldLabel(nodeLabel, locale) : nodeLabel
+    : candidateLabel(toolCandidateIndex, nodeLabel, diagnostic, locale);
   const visibleState = stateLabel(state, locale);
   const accessibleLabel = `${displayLabel}: ${visibleState}`;
   const facts = summaryFacts(diagnostic, locale);
@@ -480,6 +510,7 @@ function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, 
                   diagnostic={child.diagnostic}
                   locale={locale}
                   {...(childrenAreToolCandidates ? { toolCandidateIndex: child.index } : {})}
+                  {...(toolCandidateIndex === undefined ? {} : { toolField: true })}
                 />
               ))}
             </div>

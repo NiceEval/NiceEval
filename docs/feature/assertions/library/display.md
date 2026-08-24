@@ -26,7 +26,9 @@ generic input 的 scalar 直接显示。array 默认只显示 `Array(n)`，展�
 
 组合 matcher 按原声明层级展开，每个 `and`、`or`、`not` 与叶子 matcher 都携带自己的 sealed 状态，因此父组合命中时仍能辨认没有命中的分支。
 
-Tool matcher 的候选 occurrence 也使用同一分支树：候选标题按检查顺序显示 `Call N`，可从闭合诊断确定时同时显示实际工具名；内部 occurrence identity 只作为技术 locator，不作为候选标题。调用名称、input、output、status 与命令 token 等子 matcher 各自显示状态，折叠态内联显示有界的 expected、observed 或 unavailable reason。
+Tool matcher 的候选 occurrence 也使用同一分支树。候选标题先说明实际 invocation 类型，再按检查顺序编号以区分重复项：普通工具显示 `Tool call N · <actual tool name>`，可用的逻辑命令显示 `Command N · <actual argv preview>`。编号只用于定位，不能代替调用身份；旧 Record 或闭合诊断没有保存身份时明确显示 invocation details not recorded。
+
+命令 preview 只消费已闭合、已按已知 sensitive value 脱敏的逻辑投影，并遵守统一显示上限；读取端不从自由文本猜测或清洗 secret。内部 occurrence identity 只作为技术 locator，不作为候选标题。调用名称、input、output、status 与命令 token 等子 matcher 各自显示状态，并随 Report locale 使用界面用语；折叠态内联显示有界的 expected、observed 或 unavailable reason。
 
 只有还存在子节点或技术事实的行才可展开；没有额外内容的叶子保持静态，不能出现空白展开区。展开后保留完整诊断事实与调用 locator。未知或第三方 matcher 使用 generic fallback，不因没有专用展示而丢失输入和闭合诊断。
 

@@ -503,6 +503,22 @@ function jsonPreview(value: JsonValue): string {
     : `${characters.slice(0, limit - 1).join("")}…`;
 }
 
+function commandTokenPreview(value: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/u.test(value) ? value : quoted(value);
+}
+
+function commandPreview(projection: CommandProjection | undefined): string | undefined {
+  if (projection?.kind !== "command" || projection.logical.state !== "available") return undefined;
+  const rendered = [projection.logical.executable, ...projection.logical.args]
+    .map(commandTokenPreview)
+    .join(" ");
+  const characters = Array.from(rendered);
+  const limit = assertionRuntimeLimits.displayCodePoints;
+  return characters.length <= limit
+    ? rendered
+    : `${characters.slice(0, limit - 1).join("")}…`;
+}
+
 function resultChild(
   result: BooleanMatchEvaluation<unknown>,
   index: number,
@@ -1582,17 +1598,22 @@ export async function evaluateToolMatchCollection(
     const candidateName = candidate.candidate.name.canonical === undefined || candidate.candidate.name.canonical === "unknown"
       ? candidate.candidate.name.original
       : candidate.candidate.name.canonical;
+    const command = commandPreview(candidate.candidate.command);
+    const candidateKind = candidate.candidate.command?.kind === "command"
+      ? "command-candidate"
+      : "tool-candidate";
+    const subject = candidateKind === "command-candidate" ? command : candidateName;
     const base = candidate.result.diagnostic;
     return Object.freeze({
       index: candidate.index,
-      label: "candidate",
+      label: candidateKind,
       state: candidate.result.state,
       ...(base === undefined
         ? {}
         : {
             diagnostic: Object.freeze({
               ...base,
-              ...(candidateName === undefined ? {} : { received: quoted(candidateName) }),
+              ...(subject === undefined ? {} : { received: subject }),
               locator: { kind: "tool-occurrence" as const, id: candidate.candidate.id },
             }),
           }),
