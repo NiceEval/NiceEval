@@ -10,6 +10,10 @@ const controlRoot = process.env.NICEEVAL_E2E_PROVIDER_CAPACITY_CONTROL_ROOT;
 
 export default defineExperiment({
   description: "two Attempts share one controlled Docker profile slot",
+  // This fixture deliberately keeps the second Attempt queued for more than
+  // 30 seconds. Leave enough Attempt budget for slow CI Sandbox startup before
+  // that controlled wait begins.
+  timeoutMs: 120_000,
   agent: providerCapacityAgent,
   sandbox: dockerSandbox({
     source: { type: "image", image: profileImage ?? NODE_IMAGE },
