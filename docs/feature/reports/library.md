@@ -214,9 +214,9 @@ type Page<Params extends JsonValue | void = void, Input = Sample> =
     : ParameterizedPage<Extract<Params, JsonValue>, Input>;
 ```
 
-`role.kind: "experiment-group"` 只参与标准 Report 在关闭阶段形成 `ExperimentComparisonScope`；它不进入通用客户端 manifest，也不驱动 Host shell UI。实验组访问入口由标准 Report 自己渲染为普通 Page 链接。未声明该 role 时不补造 Page、route 或选择器。
+`role.kind: "experiment-group"` 在最后一个同时拥有 Page declaration 与已关闭 parameter instance 的 Host 边界形成实验导航投影。role 和 raw params 不进入客户端 manifest；manifest 只携带按 canonical route 排序的 `{ route, label }` 闭合选项，通用 Header 据此呈现原生 selector。未声明该 role 时不补造 Page、route 或选择器，也不从 title、page id 或 path 猜测。
 
-参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，并用它们形成 canonical hash。标准 Report 内容链接直接指向这些最终 hash route；禁用 JavaScript 时根 shell 明确报错。
+参数 Page 仍只消费一个 canonical key segment。标准 Report 因此显式声明 `path: "/group/named"` 和 `path: "/group/singleton"` 两个 Page，并用它们形成 canonical hash。named role 的 `groupId`、singleton role 的 `experimentId` 必须与本轮已经验证的 canonical key 原文相同；无效或歧义 role 使整站关闭失败。根入口进入稳定排序的第一组，禁用 JavaScript 时根 shell 明确报错。
 
 标准实验组 Page 是完整的 scoped Overview，不是只替换 Experiment Table。它把 `ExperimentComparisonScope` 的 backing Sample 显式交给 Hero、`SampleNotices` 与 `SampleSummary`，再把同一 scope 交给 `ExperimentScatter` 和 `ExperimentTable`。因此告警数、Pass rate、Experiments、Evals、Attempts、Eval results、Total cost 与 Run range 都随选择范围变化。
 
