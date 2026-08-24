@@ -419,7 +419,7 @@ export function readFixedRecordAttachment<
 /**
  * Maintenance-only validation of one exact historical attachment before its
  * envelope advances. The historical decoder proves the old shape, the pure
- * adjacent migration constructs the current payload, and the current
+ * migration callback executes the complete adjacent chain, and the current
  * descriptor proves its exact shape and blob closure. Physical rewrite policy
  * remains host-owned metadata; `rewritePayload` is only its consistency check.
  */
@@ -438,7 +438,13 @@ export function validateFixedRecordAttachmentMigrationSource<
     payload: unknown,
     blobs: readonly RecordAttachmentMaterializedBlob[],
   ) => boolean;
-  readonly migrate: (value: unknown) => unknown;
+  readonly migrate: (
+    value: unknown,
+    blobs: readonly RecordAttachmentMaterializedBlob[],
+  ) => {
+    readonly payload: unknown;
+    readonly rewritePayload: boolean;
+  };
 }): Effect.Effect<false | {
   readonly payload: Payload;
   readonly blobKeys: ReadonlyMap<object, string>;
@@ -510,13 +516,16 @@ export function validateFixedRecordAttachmentMigrationSource<
       return false;
     }
 
-    let migrated: unknown;
+    let migrated: {
+      readonly payload: unknown;
+      readonly rewritePayload: boolean;
+    };
     try {
-      migrated = input.migrate(historical);
+      migrated = input.migrate(historical, materialized);
     } catch {
       return false;
     }
-    const payload = input.descriptor.write.decodePayload(migrated);
+    const payload = input.descriptor.write.decodePayload(migrated.payload);
     if (Either.isLeft(payload)) return false;
     const currentRefs = new Set(input.descriptor.write.refs(payload.right));
     const currentMaterialized = materialized.filter((blob) => currentRefs.has(blob.ref));
@@ -535,7 +544,7 @@ export function validateFixedRecordAttachmentMigrationSource<
         .filter(([, ref]) => currentRefs.has(ref))
         .map(([key, ref]) => [ref as object, key] as const)),
       removedBlobs: Object.freeze(removedBlobs),
-      rewritePayload: migrated !== historical,
+      rewritePayload: migrated.rewritePayload,
     });
   });
 }

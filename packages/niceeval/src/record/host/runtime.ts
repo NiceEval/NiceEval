@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Deferred, Effect, Either, Exit, Schema } from "effect";
 import { RecordCoordination } from "../../coordination/record-leases.ts";
 import {
+  isRecordBlobRef,
   recordAttachmentWriteContents,
 } from "../attachment/internal.ts";
 import {
@@ -11,9 +12,17 @@ import {
 } from "../attachment/errors.ts";
 import type {
   RecordAttachmentJson,
+  RecordAttachmentMaterializedBlob,
   RecordAttachmentWrite,
   RecordBlobRef,
 } from "../attachment/types.ts";
+import type {
+  RecordAttachmentAdjacentMigration,
+  RecordAttachmentAdjacentMigrationLink,
+  RecordAttachmentHistoricalCodec,
+  RecordAttachmentMaintenanceFacet,
+  RecordAttachmentMigrationRetention,
+} from "../definition/attachment.ts";
 import {
   AttemptIdSchema,
   CanonicalRunRelativePathSchema,
@@ -4063,7 +4072,7 @@ function migrationFailureCode(error: unknown): string {
 
 function normalizedMigrationRetention(
   value: unknown,
-): import("../definition/attachment.ts").RecordAttachmentMigrationRetention | undefined {
+): RecordAttachmentMigrationRetention | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const retention = value as Record<string, unknown>;
   const retainedFacts = retention.retainedFacts;
@@ -4082,11 +4091,130 @@ function normalizedMigrationRetention(
   });
 }
 
+interface ResolvedAdjacentMigrationStep {
+  readonly link: RecordAttachmentAdjacentMigrationLink;
+  readonly historical: RecordAttachmentHistoricalCodec;
+  readonly migration: RecordAttachmentAdjacentMigration;
+  readonly retention: RecordAttachmentMigrationRetention;
+}
+
+interface ResolvedAdjacentMigrationChain {
+  readonly steps: readonly ResolvedAdjacentMigrationStep[];
+  readonly retention: RecordAttachmentMigrationRetention;
+  readonly rewritePayload: boolean;
+}
+
+function uniqueStrings(values: readonly string[]): readonly string[] {
+  return Object.freeze([...new Set(values)]);
+}
+
+/** Resolve one deterministic, complete adjacent chain shared by plan and apply. */
+function resolveAdjacentMigrationChain(input: {
+  readonly descriptor: AnyMigrationDescriptor;
+  readonly facet: RecordAttachmentMaintenanceFacet;
+  readonly fromSchemaVersion: number;
+  readonly toSchemaVersion: number;
+}): ResolvedAdjacentMigrationChain | undefined {
+  if (
+    input.fromSchemaVersion >= input.toSchemaVersion ||
+    input.toSchemaVersion !== input.descriptor.schemaVersion
+  ) return undefined;
+
+  const steps: ResolvedAdjacentMigrationStep[] = [];
+  for (let version = input.fromSchemaVersion; version < input.toSchemaVersion; version += 1) {
+    const links = input.descriptor.adjacentMigrationLinks.filter((candidate) =>
+      candidate.fromSchemaVersion === version && candidate.toSchemaVersion === version + 1
+    );
+    const historicalCodecs = input.facet.historicalCodecs.filter((candidate) =>
+      candidate.schemaVersion === version
+    );
+    const migrations = input.facet.adjacentMigrations.filter((candidate) =>
+      candidate.fromSchemaVersion === version && candidate.toSchemaVersion === version + 1
+    );
+    if (links.length !== 1 || historicalCodecs.length !== 1 || migrations.length !== 1) {
+      return undefined;
+    }
+    const retention = normalizedMigrationRetention(migrations[0]!.retention);
+    if (retention === undefined) return undefined;
+    steps.push(Object.freeze({
+      link: links[0]!,
+      historical: historicalCodecs[0]!,
+      migration: migrations[0]!,
+      retention,
+    }));
+  }
+
+  const recommendations = uniqueStrings(steps.flatMap((step) =>
+    step.retention.rerunRecommendation === null ? [] : [step.retention.rerunRecommendation]
+  ));
+  const laterDroppedFacts = new Set(steps.slice(1).flatMap((step) => step.retention.droppedFacts));
+  return Object.freeze({
+    steps: Object.freeze(steps),
+    retention: Object.freeze({
+      retainedFacts: Object.freeze(steps[0]!.retention.retainedFacts.filter((fact) =>
+        !laterDroppedFacts.has(fact)
+      )),
+      droppedFacts: uniqueStrings(steps.flatMap((step) => step.retention.droppedFacts)),
+      rerunRecommendation: recommendations.length === 0 ? null : recommendations.join(" "),
+    }),
+    rewritePayload: steps.some((step) => step.link.rewritePayload),
+  });
+}
+
+function materializedBlobsReferencedBy(
+  payload: unknown,
+  materialized: readonly RecordAttachmentMaterializedBlob[],
+): readonly RecordAttachmentMaterializedBlob[] {
+  const available = new Map(materialized.map((blob) => [blob.ref, blob] as const));
+  const referenced = new Set<RecordBlobRef>();
+  const visited = new WeakSet<object>();
+  const visit = (value: unknown): void => {
+    if (isRecordBlobRef(value)) {
+      if (!available.has(value)) throw new Error("Migration introduced an unknown blob ref");
+      referenced.add(value);
+      return;
+    }
+    if (value === null || typeof value !== "object" || visited.has(value)) return;
+    visited.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    for (const key of Object.keys(value)) visit(Reflect.get(value, key));
+  };
+  visit(payload);
+  return Object.freeze(materialized.filter((blob) => referenced.has(blob.ref)));
+}
+
+function executeAdjacentMigrationChain(
+  chain: ResolvedAdjacentMigrationChain,
+  source: unknown,
+  materialized: readonly RecordAttachmentMaterializedBlob[],
+): { readonly payload: unknown; readonly rewritePayload: boolean } {
+  let decoded = source;
+  for (const [index, step] of chain.steps.entries()) {
+    const migrated = step.migration.migrate(decoded);
+    if ((migrated !== decoded) !== step.link.rewritePayload) {
+      throw new Error("Migration payload rewrite does not match its declared physical write set");
+    }
+    const next = chain.steps[index + 1];
+    if (next === undefined) {
+      return Object.freeze({ payload: migrated, rewritePayload: chain.rewritePayload });
+    }
+    decoded = next.historical.decode(migrated);
+    const nextBlobs = materializedBlobsReferencedBy(decoded, materialized);
+    if (next.historical.verify !== undefined && !next.historical.verify(decoded, nextBlobs)) {
+      throw new Error("Adjacent migration did not produce valid historical payload material");
+    }
+  }
+  throw new Error("Adjacent migration chain is empty");
+}
+
 function migrationTarget(
   location: KnownMigrationAttachment,
   fromSchemaVersion: number,
   toSchemaVersion: number,
-  retention: import("../definition/attachment.ts").RecordAttachmentMigrationRetention,
+  retention: RecordAttachmentMigrationRetention,
 ): RecordAttachmentMigrationTarget {
   return Object.freeze({
     family: location.descriptor.family,
@@ -4160,7 +4288,7 @@ interface PlannedMigrationSources {
   readonly implementationIdentity: typeof RECORD_MIGRATION_IMPLEMENTATION_ID;
 }
 
-const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/current-attachments/v3" as const;
+const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/current-attachments/v4" as const;
 const migrationPlanSources = new WeakMap<object, PlannedMigrationSources>();
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -4241,11 +4369,7 @@ function planAttachmentMigration(input: {
         prospective.push(Object.freeze({ location, payload: read.value }));
         continue;
       }
-      const migrationLink = read.state === "migration-required"
-        ? location.descriptor.adjacentMigrationLinks.find((link) =>
-            link.fromSchemaVersion === read.fromSchemaVersion && link.toSchemaVersion === read.toSchemaVersion)
-        : undefined;
-      if (read.state === "migration-required" && migrationLink !== undefined) {
+      if (read.state === "migration-required") {
         const envelopeBytes = yield* input.fileSystem.readFile({
           file: migrationEnvelopePath(input.root, location),
           maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
@@ -4254,22 +4378,21 @@ function planAttachmentMigration(input: {
           return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         }
         const facet = yield* loadAttachmentMaintenance(location.descriptor);
-        const historical = facet.historicalCodecs.find((codec) => codec.schemaVersion === read.fromSchemaVersion);
-        const step = facet.adjacentMigrations.find((migration) =>
-          migration.fromSchemaVersion === read.fromSchemaVersion &&
-          migration.toSchemaVersion === read.toSchemaVersion);
-        if (historical === undefined || step === undefined) {
+        const chain = resolveAdjacentMigrationChain({
+          descriptor: location.descriptor,
+          facet,
+          fromSchemaVersion: read.fromSchemaVersion,
+          toSchemaVersion: read.toSchemaVersion,
+        });
+        if (chain === undefined) {
           return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         }
-        const retention = normalizedMigrationRetention(step.retention);
-        if (retention === undefined) {
-          return yield* Effect.fail(migrationInvalid(location.descriptor.family));
-        }
+        const historical = chain.steps[0]!.historical;
         const target = migrationTarget(
           location,
           read.fromSchemaVersion,
           read.toSchemaVersion,
-          retention,
+          chain.retention,
         );
         const prepared = yield* validateFixedRecordAttachmentMigrationSource({
           fileSystem: input.fileSystem,
@@ -4279,9 +4402,9 @@ function planAttachmentMigration(input: {
           fromSchemaVersion: read.fromSchemaVersion,
           decodeHistorical: historical.decode,
           ...(historical.verify === undefined ? {} : { verifyHistorical: historical.verify }),
-          migrate: step.migrate,
+          migrate: (payload, blobs) => executeAdjacentMigrationChain(chain, payload, blobs),
         });
-        if (prepared === false || prepared.rewritePayload !== migrationLink.rewritePayload) {
+        if (prepared === false || prepared.rewritePayload !== chain.rewritePayload) {
           return yield* Effect.fail(migrationInvalid(location.descriptor.family));
         }
         prospective.push(Object.freeze({ location, payload: prepared.payload }));
@@ -4301,7 +4424,7 @@ function planAttachmentMigration(input: {
           envelopeBytes,
           payloadBytes,
           removedBlobs: prepared.removedBlobs,
-          rewritePayload: migrationLink.rewritePayload,
+          rewritePayload: chain.rewritePayload,
         }));
         continue;
       }
@@ -4535,26 +4658,21 @@ function migrateKnownAttachment(input: {
 }): Effect.Effect<void, RecordMaintenanceError> {
   return Effect.gen(function* () {
     const descriptor = input.location.descriptor;
-    const migrationLink = descriptor.adjacentMigrationLinks.find((link) =>
-      link.fromSchemaVersion === input.target.fromSchemaVersion &&
-      link.toSchemaVersion === input.target.toSchemaVersion);
-    if (migrationLink === undefined || migrationLink.rewritePayload !== input.rewritePayload) {
-      return yield* Effect.fail(migrationInvalid(input.target.family));
-    }
     const location = input.location;
     const facet = yield* loadAttachmentMaintenance(descriptor);
-    const historical = facet.historicalCodecs.find((codec) => codec.schemaVersion === input.target.fromSchemaVersion);
-    const step = facet.adjacentMigrations.find(
-      (migration) => migration.fromSchemaVersion === input.target.fromSchemaVersion &&
-        migration.toSchemaVersion === input.target.toSchemaVersion,
-    );
-    if (historical === undefined || step === undefined) {
+    const chain = resolveAdjacentMigrationChain({
+      descriptor,
+      facet,
+      fromSchemaVersion: input.target.fromSchemaVersion,
+      toSchemaVersion: input.target.toSchemaVersion,
+    });
+    if (chain === undefined || chain.rewritePayload !== input.rewritePayload) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
-    const retention = normalizedMigrationRetention(step.retention);
-    if (retention === undefined || JSON.stringify(retention) !== JSON.stringify(input.target.retention)) {
+    if (JSON.stringify(chain.retention) !== JSON.stringify(input.target.retention)) {
       return yield* Effect.fail(migrationInvalid(input.target.family));
     }
+    const historical = chain.steps[0]!.historical;
     const envelopePath = migrationEnvelopePath(input.root, location);
     const sourceBeforeValidation = yield* input.fileSystem.readFile({
       file: envelopePath,
@@ -4583,7 +4701,7 @@ function migrateKnownAttachment(input: {
       fromSchemaVersion: input.target.fromSchemaVersion,
       decodeHistorical: historical.decode,
       ...(historical.verify === undefined ? {} : { verifyHistorical: historical.verify }),
-      migrate: step.migrate,
+      migrate: (payload, blobs) => executeAdjacentMigrationChain(chain, payload, blobs),
     });
     if (validated === false) {
       const sourceAfterInvalid = yield* input.fileSystem.readFile({
