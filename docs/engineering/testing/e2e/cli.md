@@ -22,6 +22,11 @@
 
 - 未命中任何 Experiment 的选择器按用法错误退出，错误信息给出下一步。
 
+#### cli-evaluation-kind-admission
+
+- 普通 `niceeval exp` 在任何 Agent、Sandbox、fingerprint 或 Record 写入前拒绝同时选中 Pass Eval 与 Score Eval 的 Experiment；错误分别列出两类 Eval ID，并要求按题型拆分或收窄。
+- Eval Group 的闭合成员集若同时包含 Pass Eval 与 Score Eval，同一公开 preflight 以 Group ID 和两类成员 ID 拒绝；不能靠 Experiment 或 CLI 只选中其中一类绕过非法 Group 定义。
+
 ### 退出码折叠
 
 #### cli-failure-error-results

@@ -108,8 +108,8 @@ export interface ExperimentScatterProps {
 
 /**
  * An Experiment comparison whose primary y axis follows the evaluation kind.
- * Pass-only Experiments use pass rate; Score and mixed Experiments use total
- * earned score. A mixed Sample renders the two incomparable units separately.
+ * Pass-only Experiments use pass rate and Score Experiments use total earned
+ * score. Historical mixed Samples remain readable with separate units.
  */
 export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (props, ctx) => {
   const locale = props.locale ?? DEFAULT_REPORT_LOCALE;

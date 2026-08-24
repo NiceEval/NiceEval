@@ -102,8 +102,8 @@ export interface EvaluationKindSplit {
 }
 
 /**
- * 按题型(`EvalDescriptor.evaluationKind`)把选中的 eval 分桶。混型是合法运行形状；报告按桶分别
- * 计算通过率与总分，不把两者相加。
+ * 按题型(`EvalDescriptor.evaluationKind`)把选中的 eval 分桶。Experiment admission 与 Eval Group
+ * discovery 用它拒绝混型；Report 仍用同一投影读取 admission 生效前留下的历史 mixed Record。
  */
 export function splitByEvaluationKind(selectedEvals: readonly DiscoveredEval[]): EvaluationKindSplit {
   const pass: string[] = [];

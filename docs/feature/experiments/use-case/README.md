@@ -9,7 +9,7 @@
 - [并发用例](并发/) —— 独立执行、共享状态、固定顺序、服务限流、严格重试与多 Invocation 协作。
 - [生命周期用例](生命周期/) —— 装依赖、起服务、载入状态分别写在哪层 setup。
 - [实验值归属](实验值归属/) —— flags、labels 与运行时观测分别放哪里。
-- [选择 Eval](选择评测/) —— `evals` 声明、tag 谓词、CLI 收窄与混型读数。
+- [选择 Eval](选择评测/) —— `evals` 声明、tag 谓词、CLI 收窄与题型拆分。
 
 ## 位置参数(选择器)
 
@@ -35,7 +35,7 @@
 
 ## 对比怎么计分
 
-一个实验可以同时选择两种题型:通过制 eval(`defineEval`)读 Verdict 的通过率;计分制 eval(`defineScoreEval`)读
-sealed Assertions score facts 的 earned score。Pass Eval 使用四态 Verdict；Score Eval 使用 scored、skipped、errored Analysis status，并显示
-complete、partial 或 unavailable。混型时两种主读数分列、不相加。
+通过制 eval(`defineEval`)读 Verdict 的通过率；计分制 eval(`defineScoreEval`)读 sealed Assertions score facts 的 earned score。
+Pass Eval 使用四态 Verdict；Score Eval 使用 scored、skipped、errored Analysis status，并显示 complete、partial 或 unavailable。
+两种题型拆成两个 Experiment；一次实际选择混型会在启动前失败。
 「死在哪层」「部分完成」「质量差」各有下钻读法,契约见[计分粒度](../../assertions/library/score-points.md)。

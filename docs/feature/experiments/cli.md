@@ -213,8 +213,9 @@ TTY 结束反馈显示 Invocation completion、Run ID、终态计数、`RESULTS`
 1. 有 execution error：`ERRORED`；
 2. 有未被满足的结果缺口：`INCOMPLETE`；
 3. 纯 Pass：有未通过时 `FAILED`，否则 `PASSED`；
-4. 纯 Score：`SCORED`；
-5. mixed：有未通过的 Pass Eval 时 `FAILED`，否则 `COMPLETED`。
+4. 纯 Score：`SCORED`。
+
+Pass 与 Score 混型在 Invocation planning 前拒绝，不进入结束标题折叠。
 
 预算耗尽和无法解释的 `not-dispatched` 是结果缺口；已满足契约的 early exit 不是缺口。受控中断
 显示 `INTERRUPTED`，Record 发布失败显示 `FAILED TO PUBLISH`，两者不冒充正常结果摘要。标题不替代退出码：

@@ -19,8 +19,8 @@ test("view --out 导出完整参数化站点并保护已有目标目录", async 
       const mainEvaluations = mainRun.expEvalEvents();
       const mainSlots = mainEvaluations.length;
       const sourceSlots = sourceRun.expEvalEvents().length;
-      expect(mainSlots, "main must seal four logical slots").toBe(4);
-      expect(mainSlots + sourceSlots, "the fixture Sample must stay small").toBe(5);
+      expect(mainSlots, "main must seal three logical slots").toBe(3);
+      expect(mainSlots + sourceSlots, "the fixture Sample must stay small").toBe(4);
       const failed = only(
         mainEvaluations,
         (event) => event.evalId === "deliberate-fail",
