@@ -10,9 +10,9 @@ kind:
     kind: fixed
     proof:
       - "Installed-candidate E2E red: candidate SHA-256 82b7507542e1febf2c65d94db16e8db179df2c12058fd7b43f2f771d140ec1f5 failed e2e/report/test/report-show.test.ts because classic/baseline Tokens was partial with 1/9 samples and eight analysis-missing usage collection is incomplete problems while agentTurns carried only unsupported-input(target=turn-item)."
-      - "Installed-candidate E2E green: candidate SHA-256 f32967516356bdb2e70bc63454f97eaa1785133bb4ac81d8af74699ff6d68537 passed the targeted regression, all six Report files / 13 Vitest tests, and both Chromium browser journeys."
+      - "Installed-candidate E2E green: candidate SHA-256 3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc passed the targeted regression, all six Report files / 13 Vitest tests, and both Chromium browser journeys."
       - "E2E reliability takeover: artifacts/e2e/takeover-report-usage/takeover-summary.json reports all three isolated copies, the same-installed-copy repeat, repo-default-parallel, and target-single as clean pass with matrixValidation ok and complete."
-      - "Public downstream check: NiceEval/NiceEval-Preview commit 705d90329848825b25b1fbde389905b513ccb93a with its existing sealed Records and candidate f32967516356bdb2e70bc63454f97eaa1785133bb4ac81d8af74699ff6d68537 returned zero usage collection is incomplete problems for /group/named/pass-gallery; pass-gallery/candidate was available with 4/4 samples and 208 tokens."
+      - "Public downstream check: NiceEval/NiceEval-Preview commit 705d90329848825b25b1fbde389905b513ccb93a with its existing sealed Records and candidate 3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc returned zero usage collection is incomplete problems for /group/named/pass-gallery; pass-gallery/candidate was available with 4/4 samples and 208 tokens."
 promotions:
   - kind: feature
     current:

@@ -23,7 +23,7 @@ closure:
   kind: fixed
   memory: analysis-usage-projection-conflates-conversation-limitations
   proof:
-    - Installed-candidate E2E red/green and the complete reliability takeover passed for e2e/report/test/report-show.test.ts with fixed candidate SHA-256 f32967516356bdb2e70bc63454f97eaa1785133bb4ac81d8af74699ff6d68537.
+    - Installed-candidate E2E red/green and the complete reliability takeover passed for e2e/report/test/report-show.test.ts with fixed candidate SHA-256 3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc.
     - The unchanged NiceEval-Preview commit 705d90329848825b25b1fbde389905b513ccb93a and sealed Records produced zero usage collection is incomplete problems for /group/named/pass-gallery; pass-gallery/candidate remained 4/4 available at 208 tokens.
 ---
 # Preview 把完整 usage 报成 collection incomplete
