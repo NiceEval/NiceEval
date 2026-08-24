@@ -1,6 +1,8 @@
 import { Effect } from "effect";
 import {
+  SandboxSetupPrefixCacheAmbiguityError,
   SandboxSetupPrefixCacheCaptureError,
+  SandboxSetupPrefixCacheCancellationError,
   SandboxSetupPrefixCacheLookupError,
   SandboxSetupPrefixCacheRestoreError,
   type SandboxSetupPrefixCacheCapability,
@@ -90,6 +92,42 @@ function artifactReceipt(
     generation: reservation.slotGeneration ?? 0,
     artifactId: artifact.artifactId,
   };
+}
+
+function captureFailure(
+  cause: Error,
+  target: DockerProfileSetupPrefixTarget,
+  input: SandboxSetupPrefixCacheOperation,
+) {
+  const common = {
+    operation: "publish Docker profile setup-prefix artifact",
+    setupPrefixKey: input.manifest.setupPrefixKey,
+    domainId: target.session.lease.binding.profile.profileId,
+    operationId: input.operationId,
+  } as const;
+  if (cause instanceof DockerProfileControlCancellationError ||
+      (cause instanceof DockerProfileControlAmbiguityError && cause.terminal === "cancel-fenced")) {
+    return new SandboxSetupPrefixCacheCancellationError({
+      ...common,
+      terminal: "cancel-fenced",
+      reason: "the Host fenced the operation and proved its unpublished state was scrubbed",
+    });
+  }
+  if (cause instanceof DockerProfileControlAmbiguityError) {
+    return new SandboxSetupPrefixCacheAmbiguityError({
+      ...common,
+      terminal: "unresolved",
+      reason: "the Host could not prove whether setup-prefix publication completed",
+      diagnosticCommand: `niceeval docker profile doctor ${target.session.lease.binding.alias}`,
+    });
+  }
+  return new SandboxSetupPrefixCacheCaptureError({
+    operation: "capture Docker profile setup-prefix and restore a private continuation",
+    reason: reasonOf(cause),
+    setupPrefixKey: input.manifest.setupPrefixKey,
+    domainId: target.session.lease.binding.profile.profileId,
+    cause,
+  });
 }
 
 /**
@@ -186,15 +224,7 @@ export function makeDockerProfileSetupPrefixCacheCapability(
         ...artifactReceipt(captured.artifact, reservation),
         sandboxId,
       };
-    }).pipe(Effect.mapError((cause) => cause instanceof DockerProfileControlAmbiguityError || cause instanceof DockerProfileControlCancellationError
-      ? cause
-      : new SandboxSetupPrefixCacheCaptureError({
-        operation: "capture Docker profile setup-prefix and restore a private continuation",
-        reason: reasonOf(cause),
-        setupPrefixKey: input.manifest.setupPrefixKey,
-        domainId: target.session.lease.binding.profile.profileId,
-        cause,
-      }))),
+    }).pipe(Effect.mapError((cause) => captureFailure(cause, target, input))),
 
     recoverCleanBase: () => Effect.gen(function* () {
       yield* promiseEffect((signal) => target.quiesceAndStop(signal));

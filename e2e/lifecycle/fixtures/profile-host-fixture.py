@@ -9,8 +9,12 @@ import pwd
 import grp
 import shlex
 import shutil
+import signal
+import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 
@@ -18,8 +22,6 @@ MARKER = ".niceeval-docker-profile-e2e"
 SETUP_PREFIX_FILESYSTEM_BYTES = 512 * 1024 * 1024
 SETUP_PREFIX_SLOT_COUNT = 2
 SETUP_PREFIX_SEED_COUNT = 4
-SETUP_PREFIX_TEMPORARY_CLONE_HEADROOM = 1
-SETUP_PREFIX_CAPACITY_BYTES = 4 * 1024**3
 PROFILE_MEMORY = "2G"
 AGGREGATE_MEMORY = "4G"
 sys.dont_write_bytecode = True
@@ -71,9 +73,9 @@ def cleanup(root: Path, *, remove_root: bool) -> None:
         raise SystemExit(f"refusing to clean unmarked fixture root: {root}")
     slot_count, seed_count = fixture_counts(marker)
     fixed_mounts = [
-        *(root / "data" / "setup-prefix-seeds" / f"seed-e2e{index:05d}"
+        *(root / "data" / "fixed-image-v1" / "seeds" / f"seed-{index:08d}"
           for index in reversed(range(seed_count))),
-        *(root / "data" / "quota-slots" / f"slot-{index:04d}"
+        *(root / "data" / "fixed-image-v1" / "slots" / f"slot-{index:04d}"
           for index in reversed(range(slot_count))),
     ]
     for fixed_mount in fixed_mounts:
@@ -98,6 +100,108 @@ def cleanup(root: Path, *, remove_root: bool) -> None:
         shutil.rmtree(root)
 
 
+def proxy_prepared_response(root: Path) -> None:
+    """Hold one public capture receipt after Host prepare while other frames pass."""
+    if os.geteuid() != 0:
+        raise SystemExit("profile E2E control proxy requires root")
+    if not (root / MARKER).is_file():
+        raise SystemExit(f"refusing to proxy unmarked fixture root: {root}")
+    control = root / "control.sock"
+    upstream = root / "control.upstream.sock"
+    ready = root / "control-proxy.ready"
+    prepared = root / "control-proxy.prepared.json"
+    release = root / "control-proxy.release"
+    trace = root / "control-proxy.trace.ndjson"
+    if not control.exists() or upstream.exists():
+        raise SystemExit("control proxy requires one live watchdog socket")
+
+    stop = threading.Event()
+    workers: list[threading.Thread] = []
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        stop.set()
+
+    def receive_line(peer: socket.socket) -> bytes:
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            chunk = peer.recv(64 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > 2 * 1024 * 1024:
+                raise RuntimeError("control proxy frame exceeds the fixture limit")
+            if b"\n" in chunk:
+                break
+        return b"".join(chunks)
+
+    def relay(client: socket.socket) -> None:
+        try:
+            request = receive_line(client)
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as host:
+                host.connect(str(upstream))
+                host.sendall(request)
+                response = receive_line(host)
+            request_value = json.loads(request.decode("utf-8"))
+            response_value = json.loads(response.decode("utf-8"))
+            with trace.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"request": request_value, "response": response_value}) + "\n")
+                stream.flush()
+            result = response_value.get("result") if isinstance(response_value, dict) else None
+            result_status = result.get("status") if isinstance(result, dict) else None
+            status = response_value.get("status") if isinstance(response_value, dict) else None
+            prepared_state = (
+                isinstance(status, dict) and status.get("state") == "prepared"
+            ) or (
+                isinstance(response_value, dict) and response_value.get("state") == "prepared"
+            ) or (
+                isinstance(result_status, dict) and result_status.get("state") == "prepared"
+            )
+            if prepared_state \
+                    and not prepared.exists():
+                prepared.write_text(json.dumps({
+                    "operationId": request_value.get("operationId"),
+                    "response": response_value,
+                }) + "\n", encoding="utf-8")
+                while not stop.is_set() and not release.exists():
+                    time.sleep(0.01)
+            if not stop.is_set():
+                client.sendall(response)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            client.close()
+
+    os.replace(control, upstream)
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        listener.bind(str(control))
+        os.chmod(control, 0o600)
+        listener.listen(32)
+        listener.settimeout(0.1)
+        signal.signal(signal.SIGTERM, request_stop)
+        signal.signal(signal.SIGINT, request_stop)
+        ready.write_text("ready\n", encoding="utf-8")
+        while not stop.is_set():
+            try:
+                client, _ = listener.accept()
+            except TimeoutError:
+                continue
+            worker = threading.Thread(target=relay, args=(client,), daemon=True)
+            workers.append(worker)
+            worker.start()
+    finally:
+        stop.set()
+        listener.close()
+        for worker in workers:
+            worker.join(timeout=1)
+        for path in (ready, prepared, release, trace, control):
+            path.unlink(missing_ok=True)
+        if upstream.exists():
+            os.replace(upstream, control)
+
+
 def setup(args: argparse.Namespace) -> None:
     if os.geteuid() != 0:
         raise SystemExit("profile E2E host fixture setup requires root")
@@ -107,12 +211,14 @@ def setup(args: argparse.Namespace) -> None:
     seed_count = args.setup_prefix_seed_count
     if filesystem_bytes <= 0 or slot_count <= 0 or seed_count <= 0:
         raise SystemExit("setup-prefix filesystem bytes and slot/seed counts must be positive")
-    required_setup_prefix_capacity = (
-        slot_count
-        + seed_count
-        + SETUP_PREFIX_TEMPORARY_CLONE_HEADROOM
-    ) * filesystem_bytes
-    setup_prefix_capacity = max(SETUP_PREFIX_CAPACITY_BYTES, required_setup_prefix_capacity)
+    fixed_ledger = (slot_count + seed_count + slot_count) * filesystem_bytes
+    # The provisioner proves the complete ledger plus 1/8 of the outer image
+    # from f_bavail, after ext4 metadata and reserved blocks.  A bare 1/8 byte
+    # addition is therefore insufficient on the real loop filesystem.
+    fixed_store_bytes = max(
+        fixed_ledger + 2 * filesystem_bytes,
+        fixed_ledger * 3,
+    )
     scripts = Path(args.scripts).resolve()
     if not (scripts / "watchdog.py").is_file():
         raise SystemExit(f"actual Docker profile host scripts are absent: {scripts}")
@@ -123,15 +229,23 @@ def setup(args: argparse.Namespace) -> None:
     }) + "\n", encoding="utf-8")
     os.chmod(root / MARKER, 0o600)
     mount = root / "data"
-    image = root / "storage.img"
+    if args.setup_prefix:
+        storage_root = Path(args.storage_root).resolve() if args.storage_root else root
+        if storage_root != root and root not in storage_root.parents:
+            raise SystemExit("fixture storage override must remain inside its marked root")
+        image = storage_root / "fixed-image-v1" / "store.img"
+    else:
+        storage_root = root
+        image = root / "storage.img"
     try:
         run(
             str(scripts / "prepare-loop-storage.sh"),
             "--image", str(image),
-            "--size", str((4 * 1024**3) if args.setup_prefix else (1536 * 1024**2)),
+            "--size", str(fixed_store_bytes if args.setup_prefix else (1536 * 1024**2)),
             "--mount", str(mount),
+            *(["--fully-allocate"] if args.setup_prefix else []),
         )
-        run("mount", "-o", "loop,prjquota", str(image), str(mount))
+        run("mount", "-o", "loop" + ("" if args.setup_prefix else ",prjquota"), str(image), str(mount))
         run("mount", "--make-rprivate", str(mount))
 
         user = pwd.getpwnam(args.user)
@@ -157,6 +271,10 @@ def setup(args: argparse.Namespace) -> None:
             "dockerRootDir": args.docker_root,
             "journalDir": str(journal),
             "aggregateCgroupPath": "/sys/fs/cgroup/system.slice/docker.service",
+            "activationDependency": {
+                "class": "direct-exclusive-process-scan/v1",
+                "cgroupPath": None,
+            },
             "capacity": {
                 "cpus": 2,
                 "memory": args.profile_memory,
@@ -174,164 +292,37 @@ def setup(args: argparse.Namespace) -> None:
                 "memorySwapBytes": 0,
             },
             "storage": {
-                "size": "4G" if args.setup_prefix else "1536M",
-                "backing": "existing-mount" if args.setup_prefix else "loop-ext4",
+                "size": fixed_store_bytes if args.setup_prefix else "1536M",
+                "backing": "fixed-image-ext4" if args.setup_prefix else "loop-ext4",
+                "outerImagePath": str(image),
+                "legacyOuterImagePath": str(root / "storage.img"),
+                "rootDir": str(storage_root),
                 "slotRootPath": str(mount / "quota-slots"),
                 "slotRegistryPath": str(journal / "quota-slots.json"),
-                **({"slotAttestation": "independent-fixed-filesystem/v1"}
-                   if args.setup_prefix else {}),
             },
             "assets": {"manifestPath": str(assets)},
             "policy": {"hostLoopback": False, "tcpDockerEndpoint": False},
         }
         if args.setup_prefix:
-            slot_root = mount / "quota-slots"
-            image_root = root / "setup-prefix-images"
-            image_root.mkdir(mode=0o700)
-            slots = []
-            for index in range(slot_count):
-                slot_id = f"slot-{index:04d}"
-                slot = slot_root / slot_id
-                slot_image = image_root / f"docker-data-{slot_id}.img"
-                run(
-                    str(scripts / "prepare-loop-storage.sh"),
-                    "--image", str(slot_image),
-                    "--size", str(filesystem_bytes),
-                    "--mount", str(slot),
-                )
-                run("fallocate", "--length", str(filesystem_bytes), str(slot_image))
-                run("mount", "-o", "loop,rw", str(slot_image), str(slot))
-                run("mount", "--make-rprivate", str(slot))
-                lost_found = slot / "lost+found"
-                if lost_found.is_dir():
-                    lost_found.rmdir()
-                os.chown(slot, user.pw_uid, group.gr_gid)
-                os.chmod(slot, 0o700)
-                slot_stat = slot.stat()
-                slot_filesystem = os.statvfs(slot)
-                slot_baseline = (
-                    slot_filesystem.f_blocks - slot_filesystem.f_bfree
-                ) * slot_filesystem.f_frsize
-                slots.append({
-                    "slotId": slot_id,
-                    "projectId": 0,
-                    "path": str(slot),
-                    "imagePath": str(slot_image),
-                    "limitBytes": filesystem_bytes,
-                    "baselineUsageBytes": slot_baseline,
-                    "ownerUid": user.pw_uid,
-                    "ownerGid": group.gr_gid,
-                    "mode": 0o700,
-                    "generation": 0,
-                    "state": "free",
-                    "attestation": "independent-fixed-filesystem/v1",
-                    "filesystemIdentity": f"dev={slot_stat.st_dev}:ino={slot_stat.st_ino}",
-                    "fsType": "ext4",
-                    "mountOptions": ["rw"],
-                })
-            registry = {
-                "schemaVersion": 1,
-                "mount": str(mount),
-                "slotAttestation": "independent-fixed-filesystem/v1",
-                "slots": slots,
-            }
-            (journal / "quota-slots.json").write_text(
-                json.dumps(registry, indent=2) + "\n", encoding="utf-8",
-            )
-            os.chmod(journal / "quota-slots.json", 0o600)
-            image_root_stat = image_root.stat()
-            seed_root = mount / "setup-prefix-seeds"
-            seed_root.mkdir(mode=0o700)
-            seeds = []
-            for index in range(seed_count):
-                seed_id = f"seed-e2e{index:05d}"
-                seed = seed_root / seed_id
-                seed_image = image_root / f"setup-prefix-{seed_id}.img"
-                run(
-                    str(scripts / "prepare-loop-storage.sh"),
-                    "--image", str(seed_image),
-                    "--size", str(filesystem_bytes),
-                    "--mount", str(seed),
-                )
-                run("fallocate", "--length", str(filesystem_bytes), str(seed_image))
-                run("mount", "-o", "loop,rw", str(seed_image), str(seed))
-                run("mount", "--make-rprivate", str(seed))
-                seed_lost_found = seed / "lost+found"
-                if seed_lost_found.is_dir():
-                    seed_lost_found.rmdir()
-                os.chown(seed, 0, 0)
-                os.chmod(seed, 0o700)
-                seed_filesystem = os.statvfs(seed)
-                seed_baseline = (
-                    seed_filesystem.f_blocks - seed_filesystem.f_bfree
-                ) * seed_filesystem.f_frsize
-                run("umount", str(seed))
-                if subprocess.run(
-                    ["findmnt", "-n", "--mountpoint", str(seed)],
-                    text=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                ).returncode == 0:
-                    raise RuntimeError(f"published seed fixture remained mounted: {seed}")
-                seed_stat = seed.stat()
-                seeds.append({
-                    "seedId": seed_id,
-                    "path": str(seed),
-                    "imagePath": str(seed_image),
-                    "limitBytes": filesystem_bytes,
-                    "baselineUsageBytes": seed_baseline,
-                    "ownerUid": 0,
-                    "ownerGid": 0,
-                    "mode": 0o700,
-                    "generation": 0,
-                    "state": "free",
-                    "attestation": "independent-fixed-filesystem/v1",
-                    "filesystemIdentity": f"dev={seed_stat.st_dev}:ino={seed_stat.st_ino}",
-                    "fsType": "ext4",
-                    "mountOptions": ["ro", "noload"],
-                })
-            seed_registry = journal / "setup-prefix-seeds.json"
-            seed_registry.write_text(json.dumps({
-                "schemaVersion": 1,
-                "slotAttestation": "independent-fixed-filesystem/v1",
-                "filesystemIdentity": f"dev={image_root_stat.st_dev}:ino={image_root_stat.st_ino}",
-                "seeds": seeds,
-            }, indent=2) + "\n", encoding="utf-8")
-            os.chmod(seed_registry, 0o600)
             config["setupPrefix"] = {
-                "enabled": True,
-                "protocol": "niceeval-docker-profile-state/docker-data-snapshot/v1",
-                "coverage": "dockerData",
-                "requiredState": "dockerData",
-                "helperRevision": "niceeval-docker-profile-host/docker-data-snapshot/v1",
-                "copyProtocol": "raw-image/v1",
-                "copyRevision": "niceeval-docker-profile-host/raw-image-copy/v1",
-                "quiesceRevision": "niceeval-docker-profile-host/docker-data-quiesce/v1",
-                "slotAttestation": "independent-fixed-filesystem/v1",
-                "filesystemSizeBytes": filesystem_bytes,
-                "filesystemFeatures": [
-                    "ext4",
-                    "fixed-size",
-                    "fully-allocated",
-                    "independent-image",
-                ],
-                "seedPolicy": "immutable-unmounted/v1",
-                "publicationRevision": "journal-first-atomic-publish/v1",
-                "recoveryRevision": "scrub-quarantine-cancel-restart/v1",
-                "seedRegistryPath": str(seed_registry),
-                "imageRootPath": str(image_root),
-                "copyStrategy": "raw-image/v1",
-                "filesystemIdentity": f"dev={image_root_stat.st_dev}:ino={image_root_stat.st_ino}",
-                "filesystemLimitBytes": setup_prefix_capacity,
-                "seedLimitBytes": seed_count * filesystem_bytes,
+                "enable": True,
+                "seedCount": seed_count,
             }
         host_config.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         os.chmod(host_config, 0o600)
-        run(
-            sys.executable, str(scripts / "generate-descriptor.py"),
-            "--host-config", str(host_config),
-            "--output", str(descriptor),
-        )
+        if args.setup_prefix:
+            run(
+                sys.executable, str(scripts / "activate-fixed-images.py"),
+                "--host-config", str(host_config),
+                "--descriptor", str(descriptor),
+                "--lock", str(root / "activation.lock"),
+            )
+        else:
+            run(
+                sys.executable, str(scripts / "generate-descriptor.py"),
+                "--host-config", str(host_config),
+                "--output", str(descriptor),
+            )
         os.chmod(descriptor, 0o600)
         if not args.setup_prefix:
             run(sys.executable, str(scripts / "install-quota-slots.py"), "--host-config", str(host_config))
@@ -340,7 +331,7 @@ def setup(args: argparse.Namespace) -> None:
             "controlSocket": str(root / "control.sock"),
             "descriptor": str(descriptor),
             "hostConfig": str(host_config),
-            "journal": str(journal / "events.ndjson"),
+            "journal": str(journal / ("fixed-image-v1/events.ndjson" if args.setup_prefix else "events.ndjson")),
             "profileId": json.loads(descriptor.read_text(encoding="utf-8"))["profileId"],
             "readyFile": str(root / "ready"),
         }))
@@ -362,6 +353,7 @@ def main() -> None:
     create.add_argument("--profile-memory", default=PROFILE_MEMORY)
     create.add_argument("--aggregate-memory", default=AGGREGATE_MEMORY)
     create.add_argument("--setup-prefix", action="store_true")
+    create.add_argument("--storage-root")
     create.add_argument(
         "--setup-prefix-filesystem-bytes",
         type=int,
@@ -379,14 +371,18 @@ def main() -> None:
     )
     remove = subparsers.add_parser("cleanup")
     remove.add_argument("--root", required=True)
+    proxy = subparsers.add_parser("proxy-prepared-response")
+    proxy.add_argument("--root", required=True)
     args = parser.parse_args()
     root = checked_root(args.root)
     if args.command == "setup":
         setup(args)
-    else:
+    elif args.command == "cleanup":
         if os.geteuid() != 0:
             raise SystemExit("profile E2E host fixture cleanup requires root")
         cleanup(root, remove_root=True)
+    else:
+        proxy_prepared_response(root)
 
 
 if __name__ == "__main__":

@@ -1986,6 +1986,41 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     reportHaltNotice(gate);
   };
 
+  const haltInvocationForEnvironment = (
+    failure: import("../sandbox/backend.ts").SandboxSetupPrefixCacheAmbiguityError,
+  ): void => {
+    const message =
+      `Sandbox environment is incomplete: setup-prefix operation ${JSON.stringify(failure.operationId)} ` +
+      `has no proven publish terminal. Run \`${failure.diagnosticCommand}\` before starting another Invocation.`;
+    const seen = new Set<HaltGate>();
+    for (const attempt of attempts) {
+      const gate = haltGateOf(attempt.run, undefined);
+      if (seen.has(gate)) continue;
+      seen.add(gate);
+      recordExperimentDiagnostic({
+        experimentId: gate.persistedExperimentId,
+        code: "sandbox-environment-incomplete",
+        level: "error",
+        message,
+        phase: "sandbox.prepare",
+        dedupeKey: `sandbox-environment-incomplete:${failure.operationId}`,
+        data: {
+          scope: "invocation",
+          operationId: failure.operationId,
+          terminal: failure.terminal,
+          diagnosticCommand: failure.diagnosticCommand,
+        },
+      });
+      if (!gate.halted) {
+        gate.message = message;
+        gate.phase = "sandbox.prepare";
+        gate.halted = true;
+        gate.latch.unsafeOpen();
+      }
+      reportHaltNotice(gate);
+    }
+  };
+
   /**
    * 未派发记账:与 run 级 fail-fast / budget 停派发同一条通路——每个未派发 attempt 各发一次
    * `attempt:early-exit`(queued → completed,反馈层五项计数守恒),再把当次累计的未派发数刷进
@@ -2782,6 +2817,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                     onFailureClass: (declaration) => closeHaltGate(a, declaration),
+                    onEnvironmentIncomplete: haltInvocationForEnvironment,
                     ...(a.run.sharedState !== undefined
                       ? {
                           onSandboxCleanupFailure: (failure: SandboxCleanupFailure) => {

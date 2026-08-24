@@ -753,16 +753,25 @@ export async function captureDockerProfileSetupPrefix(
   let response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input);
   let state = response.status.state;
   if (state === "prepared") {
+    // Copy/prepare may legitimately use the caller's long control budget. Publish is
+    // only a journal transition, so response-loss reconciliation owns a separate,
+    // short budget. It must also outlive caller abort: once prepare succeeded, only
+    // the Host can prove published or cancel-fenced for this operation identity.
+    const publishReconciliationDeadline = Date.now() + 30_000;
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const reconcileController = new AbortController();
-      const reconcileTimer = setTimeout(() => reconcileController.abort(), controlTimeoutMs);
+      const reconcileTimeoutMs = Math.max(
+        1,
+        Math.min(10_000, publishReconciliationDeadline - Date.now()),
+      );
+      const reconcileTimer = setTimeout(() => reconcileController.abort(), reconcileTimeoutMs);
       try {
         rawResponse = await dockerProfileControlRequest<unknown>(
           lease.binding.controlSocketPath,
           setupPrefixControlFrame("setup-prefix.capture.publish", lease, reservation, input),
           reconcileController.signal,
-          controlTimeoutMs,
+          reconcileTimeoutMs,
         );
         response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input);
         lastError = undefined;

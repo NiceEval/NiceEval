@@ -85,6 +85,7 @@ import {
   inheritSandboxCapabilities,
   sandboxCapabilities,
   setupPrefixCacheCapability,
+  SandboxSetupPrefixCacheAmbiguityError,
   type SandboxSetupPrefixCacheCapability,
   type SandboxSetupPrefixCacheEligibility,
   type SandboxSetupPrefixCacheManifest,
@@ -245,6 +246,8 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
    * 分类照常决议、只是无人消费。回调必须不抛错:它跑在 attempt 的失败路径上,不得掩盖原始失败。
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
+  /** An unresolved Host publication stops later Invocation dispatch without interrupting running siblings. */
+  onEnvironmentIncomplete?: (failure: SandboxSetupPrefixCacheAmbiguityError) => void;
   /**
    * Sandbox cleanup normally turns errors into diagnostics so the remaining
    * finalizers can run. An Experiment with sharedState must still retain every
@@ -292,6 +295,7 @@ export function runAttemptEffect<
     concurrencySlot,
     providerAdmission,
     onFailureClass,
+    onEnvironmentIncomplete,
     onSandboxCleanupFailure,
     onSealedEvaluation,
     reusedSandbox,
@@ -1140,6 +1144,7 @@ export function runAttemptEffect<
             ...(materializedCase === undefined ? {} : { materializedCase }),
             concurrencySlot,
             declareFailure,
+            onEnvironmentIncomplete,
             isDeadlineTimedOut: () => timedOut,
             layerCleanups,
             attemptResources,
@@ -1536,6 +1541,15 @@ export function errorFromThrown(
   phase: LifecyclePhase | undefined,
   deadline?: { timeoutMs: number; source: TimeoutSource },
 ): AttemptError {
+  if (e instanceof SandboxSetupPrefixCacheAmbiguityError) {
+    return {
+      code: "sandbox-environment-incomplete",
+      message:
+        `Setup-prefix operation ${JSON.stringify(e.operationId)} has no proven publish terminal; ` +
+        `run \`${e.diagnosticCommand}\` before starting another Invocation.`,
+      origin: attemptOrigin(phase ?? "sandbox.prepare"),
+    };
+  }
   if (isSendFailure(e)) {
     const detail = e.cause === undefined ? undefined : describeExternalCause(e.cause);
     return {
@@ -1659,6 +1673,7 @@ interface AttemptResources {
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
   declareFailure: (phase: LifecyclePhase, e: unknown) => void;
+  onEnvironmentIncomplete?: (failure: SandboxSetupPrefixCacheAmbiguityError) => void;
   /** `timeoutTo` 已经裁定 deadline 后才为 true；用于区分它触发的协作式 abort 与外层 fiber 取消。 */
   isDeadlineTimedOut: () => boolean;
   /** 作者 prepare 成功后登记的 cleanup；由外层 Scope 全局 LIFO 执行。 */
@@ -2056,6 +2071,7 @@ async function runAttemptBody(
     observabilityRuntime,
     concurrencySlot,
     declareFailure,
+    onEnvironmentIncomplete,
     isDeadlineTimedOut,
     layerCleanups,
     registerEvidence,
@@ -2484,6 +2500,25 @@ async function runAttemptBody(
           capability.captureAndRebase(setupPrefixOperation(candidate, [...sensitiveValues])),
         ));
         if (Either.isLeft(captured)) {
+          if (captured.left instanceof SandboxSetupPrefixCacheAmbiguityError) {
+            feedback.diagnostic({
+              code: "sandbox-environment-incomplete",
+              level: "error",
+              message:
+                `Sandbox environment is incomplete because setup-prefix operation ` +
+                `${JSON.stringify(captured.left.operationId)} has no proven publish terminal. ` +
+                `Run \`${captured.left.diagnosticCommand}\` before starting another Invocation.`,
+              data: {
+                operation: "capture",
+                state: "environment-incomplete",
+                operationId: captured.left.operationId,
+                terminal: captured.left.terminal,
+                diagnosticCommand: captured.left.diagnosticCommand,
+              },
+              dedupeKey: `sandbox-environment-incomplete:${captured.left.operationId}`,
+            });
+            onEnvironmentIncomplete?.(captured.left);
+          }
           feedback.diagnostic({
             code: "cache-capture-failed-after-execution",
             level: "error",

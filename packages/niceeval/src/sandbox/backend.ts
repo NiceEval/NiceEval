@@ -105,13 +105,30 @@ export class SandboxSetupPrefixCacheCleanupError extends Data.TaggedError("Sandb
   SandboxSetupPrefixCacheErrorFields
 > {}
 
+export class SandboxSetupPrefixCacheAmbiguityError extends Data.TaggedError(
+  "SandboxSetupPrefixCacheAmbiguityError",
+)<SandboxSetupPrefixCacheErrorFields & {
+  readonly operationId: string;
+  readonly terminal: "unresolved";
+  readonly diagnosticCommand: string;
+}> {}
+
+export class SandboxSetupPrefixCacheCancellationError extends Data.TaggedError(
+  "SandboxSetupPrefixCacheCancellationError",
+)<SandboxSetupPrefixCacheErrorFields & {
+  readonly operationId: string;
+  readonly terminal: "cancel-fenced";
+}> {}
+
 export type SandboxSetupPrefixCacheError =
   | SandboxSetupPrefixCacheRegistryError
   | SandboxSetupPrefixCacheLookupError
   | SandboxSetupPrefixCacheCaptureError
   | SandboxSetupPrefixCacheRestoreError
   | SandboxSetupPrefixCacheValidationError
-  | SandboxSetupPrefixCacheCleanupError;
+  | SandboxSetupPrefixCacheCleanupError
+  | SandboxSetupPrefixCacheAmbiguityError
+  | SandboxSetupPrefixCacheCancellationError;
 
 export type SandboxSetupPrefixCacheLookupResult =
   | Exclude<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>

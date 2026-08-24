@@ -9,7 +9,7 @@ validate Linux/systemd/cgroup v2/admin authority
   -> record deployment intent
   -> provision dedicated UID/GID + subuid/subgid
   -> provision or attest bounded filesystem
-  -> pre-create project-quota Docker data allocations
+  -> 按 backing 预建 project-quota allocations，或 fixed-image slots 与 seeds
   -> install aggregate cgroup + daemon + watchdog units
   -> create root-owned descriptor and socket ACL
   -> start watchdog and rootless daemon
@@ -18,8 +18,56 @@ validate Linux/systemd/cgroup v2/admin authority
   -> commit deployment
 ```
 
-失败按 host deployment journal逆序回滚本轮新建资源。已有 user、unit、mount、filesystem或 profile
+失败按 host deployment journal逆序回滚本轮未发布临时资源。已经发布的 fixed store、slot、seed 与
+registry 默认保留；rollback/uninstall 不删除数据。已有 user、unit、mount、filesystem或 profile
 只在稳定 identity和 intent完全匹配时收养；同名异主资源拒绝替换。
+
+raw profile 可选择 `storage.backing = "fixed-image-ext4"`，并用 `setupPrefix.enable` 与
+`setupPrefix.seedCount` 声明策略。slot 数量和大小来自 `capacity.dockerDataAllocationCount` 与
+`capacity.ephemeralDiskBytes`；协议常量、registry、identity 和 limits 全部由 provisioner 生成。
+managed profile 选择该 backing 会在配置求值时失败，因为 managed daemon 尚无独立 bounded storage 契约。
+
+fixed backing 默认使用 profile state 下的 `fixed-image-v1/store.img`；`storage.rootDir` 可把完整 outer
+store 明确放到独立磁盘（例如 `/data/niceeval/docker-profiles/harness-raw`）。该值必须是规范化后的非根
+绝对路径，不能与 active data mount 或旧 sparse image 冲突。manifest、mount dependency 与
+`ReadWritePaths` 都从同一值派生，infra 不复制内部子路径。
+
+部署不会收养、扩容或改写同 alias 的旧 sparse loop image。
+它也使用版本化 host config、slot/seed registry 和 event journal。切换 backing 会改变 descriptor digest、
+slot attestation、filesystem identity 与 Setup Prefix execution domain；stable profile ID 与 daemon generation
+保持不变。旧 image、host config 与 journal 留在原路径，供 cold rollback 使用。
+
+outer store 与其中的 slot/seed image 都必须 fully allocated。物理校验按
+`slots + seeds + slot-count temporary clones` 记账，并保留至少八分之一 store 容量。2 个 4 GiB slot、
+10 个 4 GiB seed 与 2 个临时 clone 的 ledger 是 56 GiB，因此 outer store 至少为 64 GiB。
+seed 没有 GC；用尽后 admission fail closed，不改写 published seed。
+
+部署依次准备并挂载 outer store，再显式启动 `fixed-activation` transaction。该 unit 不加入
+`multi-user.target`。它先让旧/新 watchdog 与 socket 停止并确认 PID/socket 消失，再取得 alias exclusive lock。
+锁内依次完成双 journal、Docker resource、mount、process 与 profile cgroup closure。随后才 provision、生成
+descriptor，并原子提交 root-owned activation manifest/epoch。
+
+steady-state boot 只拉 verify-only fixed-image attestation、descriptor 与 watchdog。descriptor 对 attestation
+同时声明 `Requires` 与 `After`，restart 不会再次切 backing。
+首次部署或在线重切先 `systemctl start ...fixed-activation...`，成功后才 enable/start steady-state watchdog；
+activation 失败会留下 marker 且 admission 保持关闭。
+
+activation 要求旧、新 journal 中的 lease、reservation、queue、build 和 container 全为零。它也检查 container、
+network、volume、image、BuildKit state volume、provisional image 与 slot mount。
+
+检查范围还包括所有进程的 fd/cwd/root/maps。systemd 部署还要求 manifest 绑定的 profile slice 在 activation 时
+`populated=0`，且所有 descendant `cgroup.procs` 为空。任何查询/权限错误都 fail closed。
+
+默认 daemon 上的 proxy、parent Attempt network 或旧式无法证明属于 detached cache 的 NiceEval label 同样阻断。
+只有同时带 stable profile identity 与 `niceeval.ownership-class=detached-cache/v1`、且没有 active ownership 字段的
+realization 可以保留，并写入 manifest。
+
+raw image copy 只操作未挂载 temporary。它先核对 source digest，byte-copy 后恢复目标稳定 UUID。fully allocate、
+只读 e2fsck、blkid 与最终 digest 全部通过才 atomic replace。
+
+capture 的 artifact ID 是恢复 seed UUID 后的 published seed 最终 raw digest；restore slot digest 单独记账。
+copy/re-UUID/attest/replace/publication 阶段及 source/target/temporary 的 UUID、digest 都进入版本化 journal。
+事实不唯一时 scrub unpublished capture 或 quarantine restore，不猜测 roll-forward，也不原地修改 published seed。
 
 daemon、watchdog、data mount与 aggregate cgroup可以常驻。日常 Invocation不拥有它们，也不在
 结束时停止它们。NixOS removal或 host package uninstall才负责宿主资源；删除 data必须由管理员
@@ -100,11 +148,21 @@ profile attested
   -> hit: stop inner workload and daemon, release the private slot
   -> restore immutable seed into a fresh private slot
   -> create a new outer container and restart provider-owned transient state
-  -> replay the first all/opaque barrier and every suffix action
+  -> execute the first all/opaque barrier and every suffix action again
   -> agent.ensure -> Agent -> Eval test
 ```
 
 capture 在 Action 成功后停止 inner workload 与 dockerd/containerd，卸载当前 slot，把 raw image 发布为 immutable seed。Runner 再恢复到新 slot 继续后缀，不把 staging slot 直接交给 Agent。capture/restore request 携带 required state、SetupPrefixKey、manifest digest 与 generation；Host 拒绝 `all`、缺失字段或 identity mismatch。
+
+capture publish 使用同一个 `operationId` 完成 prepare 与 publish。调用方丢失 publish response 时，
+以该 identity 向 Host 对账。已提交返回 `already-published`，不得重新执行已经成功的 Action。
+
+release/abort 已先取得 fence 时返回 `cancel-fenced`。Host 以 scrub 完成作为确定终态，
+不把该结果标记为 ambiguity。
+
+连续对账仍无法证明终态时，Runner 将当前 Invocation 标为 environment-level incomplete。
+公开诊断包含该 `operationId` 与 `niceeval docker profile doctor <alias>` 修复提示，
+但不包含 Host 文件路径。Runner 停止派发剩余 Attempt，也不自动重试或再次执行成功 Action。
 
 `all` 或 opaque barrier 之后的 action 都真实执行，显示 `unsupported-state-ancestor` 或 `opaque-ancestor`。shared Profile 不向 watchdog 申请 artifact seed、copy slot 或 restore；可观测结果是 `unsupported`，不是 cache hit 或 degraded restore。
 
