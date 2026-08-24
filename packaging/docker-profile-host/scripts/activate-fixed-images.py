@@ -304,6 +304,48 @@ def last_state(path: Path) -> dict[str, Any] | None:
     return result
 
 
+def durable_last_state(path: Path) -> dict[str, Any] | None:
+    """Read one fsynced, append-stable watchdog journal snapshot.
+
+    The activation lock fixes the active epoch, but the steady-state watchdog
+    deliberately holds that lock shared and keeps appending state.  Read a
+    bounded file length, fsync it, and accept it only if that length stayed
+    unchanged across the flush.  A later append can then linearize after this
+    status read, while every record used here is durable for restart replay.
+    """
+    if not path.exists():
+        return None
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        snapshot: bytes | None = None
+        for _ in range(32):
+            size = os.fstat(descriptor).st_size
+            candidate = os.pread(descriptor, size, 0)
+            os.fsync(descriptor)
+            if len(candidate) == size and os.fstat(descriptor).st_size == size:
+                snapshot = candidate
+                break
+        if snapshot is None:
+            raise RuntimeError("watchdog journal did not reach a stable durable read boundary")
+    finally:
+        os.close(descriptor)
+    if snapshot and not snapshot.endswith(b"\n"):
+        raise RuntimeError("watchdog journal is truncated; status fails closed")
+    result = None
+    for line in snapshot.splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RuntimeError("watchdog journal is corrupt; status fails closed") from error
+        if not isinstance(item.get("state"), dict):
+            raise RuntimeError("watchdog journal record has no durable state")
+        result = item["state"]
+    return result
+
+
 def assert_journals_drained(paths: list[Path]) -> None:
     for path in paths:
         state = last_state(path)
@@ -746,6 +788,37 @@ def load_current(generation: Path) -> tuple[dict[str, Any], dict[str, Any], byte
     return pointer, config, descriptor_bytes, manifest
 
 
+def active_seed_status(generation: Path, capsule: dict[str, Any]) -> tuple[dict[str, int], str]:
+    registry_path = Path(str(capsule.get("seedRegistry", {}).get("path", "")))
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    registry_seeds = registry.get("seeds")
+    if not isinstance(registry_seeds, list) or not registry_seeds:
+        raise RuntimeError("active seed registry has no seed inventory")
+    seed_ids = [seed.get("seedId") for seed in registry_seeds if isinstance(seed, dict)]
+    if len(seed_ids) != len(registry_seeds) or any(not isinstance(seed_id, str) or not seed_id
+                                                   for seed_id in seed_ids) \
+            or len(set(seed_ids)) != len(seed_ids):
+        raise RuntimeError("active seed registry inventory is invalid")
+
+    latest = durable_last_state(generation / "events.ndjson")
+    if latest is None:
+        raise RuntimeError("durable watchdog state is absent; active seed capacity is unknown")
+    seeds = latest.get("setupPrefix", {}).get("seeds")
+    if not isinstance(seeds, dict) or set(seeds) != set(seed_ids) \
+            or any(not isinstance(seed, dict) for seed in seeds.values()):
+        raise RuntimeError("durable watchdog seed inventory differs from the active epoch registry")
+    source = "durable-watchdog-latest-state"
+
+    counts = {"total": len(seed_ids), "free": 0, "published": 0, "quarantined": 0, "other": 0}
+    for seed in seeds.values():
+        state = seed.get("state")
+        if state in ("free", "published", "quarantined"):
+            counts[state] += 1
+        else:
+            counts["other"] += 1
+    return counts, source
+
+
 def epoch_status(generation: Path) -> dict[str, Any]:
     pointer, _, _, current_manifest = load_current(generation)
     current_epoch = str(pointer["epoch"])
@@ -753,7 +826,8 @@ def epoch_status(generation: Path) -> dict[str, Any]:
     tombstone_root = generation / "retired"
     retired = {path.stem for path in tombstone_root.glob("*.json")} if tombstone_root.is_dir() else set()
     epochs: list[dict[str, Any]] = []
-    active_seed_remaining = 0
+    active_seeds: dict[str, int] | None = None
+    active_seed_source: str | None = None
     retained_bytes = 0
     retirable_bytes = 0
     reclaimable_bytes = 0
@@ -772,16 +846,36 @@ def epoch_status(generation: Path) -> dict[str, Any]:
         if state == "retired":
             reclaimable_bytes += size
         if state == "current":
-            registry = json.loads(Path(capsule["seedRegistry"]["path"]).read_text(encoding="utf-8"))
-            active_seed_remaining = sum(seed.get("state") == "free" for seed in registry.get("seeds", []))
+            active_seeds, active_seed_source = active_seed_status(generation, capsule)
         epochs.append({"epoch": root.name, "state": state, "outerBytes": size})
+    if active_seeds is None or active_seed_source is None:
+        raise RuntimeError("current activation epoch has no retained capsule")
+    active_seed_remaining = active_seeds["free"]
+    warnings: list[dict[str, Any]] = []
+    if active_seed_remaining == 0:
+        warnings.append({
+            "code": "active-seed-capacity-exhausted",
+            "severity": "error",
+            "remaining": 0,
+            "message": "Active immutable seed capacity is exhausted; rotate seeds before publishing.",
+        })
+    elif active_seed_remaining == 1:
+        warnings.append({
+            "code": "active-seed-capacity-low",
+            "severity": "warning",
+            "remaining": 1,
+            "message": "Only one active immutable seed remains; rotate seeds before exhaustion.",
+        })
     return {
         "schema": "niceeval-docker-profile-epoch-capacity/v1",
         "currentEpoch": current_epoch,
         "activeSeedRemaining": active_seed_remaining,
+        "activeSeeds": active_seeds,
+        "activeSeedStateSource": active_seed_source,
         "retainedEpochBytes": retained_bytes,
         "retirableBytes": retirable_bytes,
         "reclaimableBytes": reclaimable_bytes,
+        "warnings": warnings,
         "epochs": epochs,
     }
 
