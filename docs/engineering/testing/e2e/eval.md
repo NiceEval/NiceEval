@@ -22,6 +22,9 @@
 
 ## eval-context
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [assertions](../../../feature/assertions/README.md)
+
 Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可区分 marker。测试分别证明 turn、session 与 `t` scope 的消息、
 工具、usage 和输出边界，以及新旧 session 的隔离。Direct Agent 足以产生的 case 不为“更真实”接外部模型；HITL、文件或 shell
 确实是契约输入时，增加对应的确定性 Agent / Sandbox Eval。
@@ -30,6 +33,9 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 
 ## eval-assertion-values
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [assertions](../../../feature/assertions/README.md)
+
 值 Match 在本轮确定性回复上登记并封口为 Assertion，随后折叠为 `passed` Verdict。
 这个 owner 明确接管 `niceeval/expect` 的全部 factory。
 每个 value、score、tool、command 与 event matcher 都以 matched 和 mismatched 两种结果运行，并从公开 Attempt readback 逐项核对结果。
@@ -37,6 +43,9 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 公开 `show --json` 必须读到这些 Assertion 与 Verdict。
 
 ## eval-assertion-scopes
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [assertions](../../../feature/assertions/README.md)
 
 turn、session 与 attempt scope 必须以同一批真实工具事件完成断言。
 这个 owner 明确接管 tool、command 与 event matcher，以及 present、absent、count、order、scope status 与 failed-action 等 scope assertion。
@@ -50,12 +59,18 @@ tool occurrences，涉及末尾 decisive witness、absence/exact/at-least 与 pa
 
 ## eval-assertion-score
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [assertions](../../../feature/assertions/README.md)
+
 计分制正常返回由 Runner 自动封口。匹配与不匹配的 points Assertion、直接给分都可由公开 Report
 读回；不匹配只贡献零分且 Verdict 仍为 passed。没有分值贡献时 Score 仍是完整的零分 outcome，
 由 Assertions 与 Attempt outcome 解释，不另设 durable family。即使 Experiment 开启 earlyExit，
 每个 Score Attempt 仍完整运行。
 
 ## eval-assertion-sandbox
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [assertions](../../../feature/assertions/README.md)
 
 Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用
 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试经
@@ -75,6 +90,9 @@ Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoi
 误当成 Experiment 或 `workspace.diff` 的性能。
 
 ## eval-assertion-judge-unavailable
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [assertions](../../../feature/assertions/README.md)
 
 未配置 Judge 时，声明 capability 后 required Judge Assertion 保留 `unavailable` 并报告 model unresolved。
 Attempt 为 `errored`，CLI 退出码为 1。该场景以公开 Record 的精确原因证明未进入预检或 evaluator 网络路径，

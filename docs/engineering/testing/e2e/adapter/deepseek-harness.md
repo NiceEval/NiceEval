@@ -2,6 +2,9 @@
 
 ## adapter-deepseek-harness-target-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 `adapter/deepseek-harness` 从安装后的候选包导入 `deepSeekHarnessAgent`，在
 `NICEEVAL_DEEPSEEK_HARNESS_DOCKER_IMAGE` 声明的官方预装 Sandbox image 中运行。目标是锁定版本的真实
 `dsh --profile headless`。场景通过 `DEEPSEEK_API_KEY` 使用 live `deepseek-official` provider 与

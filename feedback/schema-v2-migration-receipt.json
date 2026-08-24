@@ -1,0 +1,330 @@
+{
+  "format": "niceeval.feedback-schema-migration/v2",
+  "sourceCommit": "4e6b028e1c3bb0062fbaf311c804c3407a21777a",
+  "resultCommit": "24c3f973b21bbd5895be7a6d0bbe4095335dd3db",
+  "before": {
+    "v1": 35,
+    "v2": 0
+  },
+  "after": {
+    "v1": 0,
+    "v2": 35
+  },
+  "entries": [
+    {
+      "id": "20260806205427-deepseek-v4-flash",
+      "v1MetadataDigest": "sha256:ff9a21effd88566738df72ff1134924bdbec7bd290ed8b1328c1a3e87cca256b",
+      "v2MetadataDigest": "sha256:13141922ba6ab0871b539826033e72b1c3a452e1be848a0b3addcfb8d90ec906",
+      "observationDigest": "sha256:5057a9a4359d4683a3f44a5410e60cf5523b950077f9f4cca5be15516bd96202",
+      "impactDigest": "sha256:a70ffa6370a9480bfd312c5ee5d464487be9983cb8a857062a5cf07388889d33",
+      "bodyDigest": "sha256:5057a9a4359d4683a3f44a5410e60cf5523b950077f9f4cca5be15516bd96202",
+      "artifacts": []
+    },
+    {
+      "id": "20260807120930-opencode-interactive-worker",
+      "v1MetadataDigest": "sha256:0bd833504754cc40dabbfba62aa36c160904038c83530730a2013f1aadc1edd9",
+      "v2MetadataDigest": "sha256:acdec253657d096565eda59f4ca51a7b41bbeef7a89eddd039f2b7d397b80a3b",
+      "observationDigest": "sha256:fbf40cd7e31666645195a149c04dff2992daf4dc4a201506835dd3376cefc42c",
+      "impactDigest": "sha256:29151ac269ce2f5bcb162b18a5be7e04aaa18657c242a9326a2b6fd29ffe5cf7",
+      "bodyDigest": "sha256:fbf40cd7e31666645195a149c04dff2992daf4dc4a201506835dd3376cefc42c",
+      "artifacts": []
+    },
+    {
+      "id": "20260808192533-docker-镜像工作流自身更新触发六个伪发布-job",
+      "v1MetadataDigest": "sha256:6165b37f43493b95a7b505e598228ba7e7497bef645a21221b10c8933e1fd279",
+      "v2MetadataDigest": "sha256:65f77972b0ed69f1954319ad5ffeb0d1b9e06f00b9a80055b61d5ac29846715b",
+      "observationDigest": "sha256:aee3a2e7328f1ed5c365f2202f9a1773e796060d62276765c9c1c06f5e4b2686",
+      "impactDigest": "sha256:3f5847aecafe4f0f4283f6f3e1db132b57e8e4521d7d21690af5306dd169a3e5",
+      "bodyDigest": "sha256:aee3a2e7328f1ed5c365f2202f9a1773e796060d62276765c9c1c06f5e4b2686",
+      "artifacts": []
+    },
+    {
+      "id": "20260809100703-show-隐藏-accept",
+      "v1MetadataDigest": "sha256:052fe89e9dabf31c2c78a07d5d1a3d6b325ec1f50549ec65c869dbb701033b67",
+      "v2MetadataDigest": "sha256:b9eb859f2529b681cbdd390be4e00a1883e440ee4a84a9788190373b8cf8110a",
+      "observationDigest": "sha256:34618f73d10a5d345b892848a9d7eba9ce85ae978e0a299686b8feadb98bca6b",
+      "impactDigest": "sha256:a8356f6db29066fa0e2614b1741eee71abc8d8956d6985aff4c7ad303807349b",
+      "bodyDigest": "sha256:34618f73d10a5d345b892848a9d7eba9ce85ae978e0a299686b8feadb98bca6b",
+      "artifacts": []
+    },
+    {
+      "id": "20260809124939-experiment-官方视图没有统一的人读短名投影",
+      "v1MetadataDigest": "sha256:b4fc3cfe6f1d8b896c6c7951ce218bda31781cb7f03def51fd9f2c03e4e8e27d",
+      "v2MetadataDigest": "sha256:0e014cf81e237a92761a681ff36c28b535cbef6d4574e9aa2ca004ee1bb29d8b",
+      "observationDigest": "sha256:eb2c9a6046f46949e63283853033a9abd0c8ca068c000f377dc290071f1ca28d",
+      "impactDigest": "sha256:b6388c3fa749383fe9be635b290ad40697958c8090063afdbab8e51b9c8a091c",
+      "bodyDigest": "sha256:eb2c9a6046f46949e63283853033a9abd0c8ca068c000f377dc290071f1ca28d",
+      "artifacts": []
+    },
+    {
+      "id": "20260809162035-只读-herdr-codex",
+      "v1MetadataDigest": "sha256:622792319fd873073a0f1543b344252616d92be83557f54fe6d357423f0c15fc",
+      "v2MetadataDigest": "sha256:ca733cb8f5e309cac27c2de928f61c83a6f229915536f2110c37fe2daa197f22",
+      "observationDigest": "sha256:ff2b53e43014645877088aa737eccc2beacebb5d5d715e844abe19937a8319a0",
+      "impactDigest": "sha256:709ca9ecd168c7c16ecf8431e2d5098301a2e1547272e5987b77caa4f02bc1fb",
+      "bodyDigest": "sha256:ff2b53e43014645877088aa737eccc2beacebb5d5d715e844abe19937a8319a0",
+      "artifacts": []
+    },
+    {
+      "id": "20260809164436-codex-速率选择器会吞掉-herdr",
+      "v1MetadataDigest": "sha256:1d4b92c82c3e3530156bb5e3c16b542859159d6c52784815a33351749a2921ab",
+      "v2MetadataDigest": "sha256:65242b689cb4e02e55145955afa026fb740ea41f3ce418ab1cf1e047959ff1dc",
+      "observationDigest": "sha256:c3b1a491a395207a9b5582eed5fd0ba463e8362107d9d38ece0fad73d3551f77",
+      "impactDigest": "sha256:3c481a58edfea3ee3a942ae7179f6f833d6f585be93396d895f53d87f386d8be",
+      "bodyDigest": "sha256:c3b1a491a395207a9b5582eed5fd0ba463e8362107d9d38ece0fad73d3551f77",
+      "artifacts": []
+    },
+    {
+      "id": "20260809220011-claude-官方-marketplace",
+      "v1MetadataDigest": "sha256:41295f7c8e7275f29867a68eb8ad9ae78bcf0b30a254f62297a06599c8edbdef",
+      "v2MetadataDigest": "sha256:3dc7e25b418eab0ef2b950f8924375e063aab17c173e50a4ddcc05750939f134",
+      "observationDigest": "sha256:cdf4f1b29d16f103807f5bbe6322ef697b19226ef85801e0ee1861bac8523330",
+      "impactDigest": "sha256:43ba49077733a66bd40214e618a39d2845416158aff813a7e885712688bc9149",
+      "bodyDigest": "sha256:cdf4f1b29d16f103807f5bbe6322ef697b19226ef85801e0ee1861bac8523330",
+      "artifacts": []
+    },
+    {
+      "id": "20260810085155-e2e-run-输出的",
+      "v1MetadataDigest": "sha256:f76d4444849a83e793c1887d81450e202bbfe157777681fa25b1a988198b98fc",
+      "v2MetadataDigest": "sha256:b3383f1c1594f1b3daeaa6256717c6667c6f7b30fb453815a0876123fd9afc1e",
+      "observationDigest": "sha256:7abd274d0aee7876ec4fb8778915d6ae463a577f507f79d271ff1ecb4f83c749",
+      "impactDigest": "sha256:4568b19a50eb7d0071703e2e23b71df9c26b83337fa81679d5b0ead9ad832dfd",
+      "bodyDigest": "sha256:7abd274d0aee7876ec4fb8778915d6ae463a577f507f79d271ff1ecb4f83c749",
+      "artifacts": []
+    },
+    {
+      "id": "20260810093352-grill-me-技能引用的",
+      "v1MetadataDigest": "sha256:218391d902adf611a57b3e6f2a92dbca6898b8ec19c6e80fdb4b7da91e44dcd2",
+      "v2MetadataDigest": "sha256:bceaa6a81da4862fd222b3c20bcb842229d18ee338bc4768b322c6617ef8ac31",
+      "observationDigest": "sha256:40ec3fcf8711ecbfecfc7298d2a0d457665863cabd1353e4466eec391279c616",
+      "impactDigest": "sha256:707c67a63e7d7ce354fa4e4955dac1ee1e67bec04294fd292874543c6b43210d",
+      "bodyDigest": "sha256:40ec3fcf8711ecbfecfc7298d2a0d457665863cabd1353e4466eec391279c616",
+      "artifacts": []
+    },
+    {
+      "id": "20260812122121-herdr-worker-repeatedly",
+      "v1MetadataDigest": "sha256:04a5feb744b07307cf257066b62b7ddd1d969ae83e607a685d6554652d94d361",
+      "v2MetadataDigest": "sha256:bee8edac0162295936d2e315f6f1c4ed019fc91e69e51f34aeac724b903b1ead",
+      "observationDigest": "sha256:c86b11cbede24c918979bd51acd04795b9beea7f20bf8e60ccd3b035f68ac9fa",
+      "impactDigest": "sha256:8b6f7d619d12587e1a7bdaf11b17368bd6815a3f4974479d6514f857d092f6d5",
+      "bodyDigest": "sha256:c86b11cbede24c918979bd51acd04795b9beea7f20bf8e60ccd3b035f68ac9fa",
+      "artifacts": []
+    },
+    {
+      "id": "20260813115630-friction",
+      "v1MetadataDigest": "sha256:93090af2f1658d2610b962286d4df1ca936ac1a50dfdfb56b74b202a87bfaba4",
+      "v2MetadataDigest": "sha256:3086af026981c1d715523f0b4afc732f810eb06cd36983c00571ba056ff14559",
+      "observationDigest": "sha256:a91aa2c9209237583a5932cf7e7add2c7c0ea0da4229cb3f3e4697874e617d12",
+      "impactDigest": "sha256:15dbc438e7c1264a4506199d55bbf640d0fda0f4d177a09c20965b5a981d1ded",
+      "bodyDigest": "sha256:a91aa2c9209237583a5932cf7e7add2c7c0ea0da4229cb3f3e4697874e617d12",
+      "artifacts": []
+    },
+    {
+      "id": "20260813204135-niceeval-exp-无法一次精确选择多个离散实验",
+      "v1MetadataDigest": "sha256:bc983e9ed2cc9c8d3a02777003fe5b97bd3d8ed91116a1961b61ae8ec93edb8b",
+      "v2MetadataDigest": "sha256:074dd57c4a1b143b3ddbfe87c5df853df15910060cb98c6bfe0ea56efe122e0f",
+      "observationDigest": "sha256:33d113e384e0a78baae801c80724b094d68598a69bdf566fbf11b0a7eb584bd0",
+      "impactDigest": "sha256:db2c936f1ae7939bba9ba76db5a647240a24b44085dccbe7f2e8fa8c1a63ddb1",
+      "bodyDigest": "sha256:33d113e384e0a78baae801c80724b094d68598a69bdf566fbf11b0a7eb584bd0",
+      "artifacts": []
+    },
+    {
+      "id": "20260813204135-record-单写者锁阻止多个独立-runner",
+      "v1MetadataDigest": "sha256:965c8c9de1302c4c06abdfc5341f880aa99a8a9beb1daf26d7ec8c6c3a335fa3",
+      "v2MetadataDigest": "sha256:36afd2cdb7720cf6e030961f40ccf509a6b705dc97bf87e23b37fbac1eacaaf1",
+      "observationDigest": "sha256:aea9dd76f1441a78ba7b9f9d90e1fdb79af3d20e83dbd45f46721147a781854f",
+      "impactDigest": "sha256:5f484a0d67b0a7ece81c42db7f2ff104335e588959e530137220840fe2d1cc7e",
+      "bodyDigest": "sha256:aea9dd76f1441a78ba7b9f9d90e1fdb79af3d20e83dbd45f46721147a781854f",
+      "artifacts": []
+    },
+    {
+      "id": "20260813204136-niceeval-缺少多个-record",
+      "v1MetadataDigest": "sha256:06e5abdc5fac73e70506e2d48f19f3702366e5501e6cf871be29c26587f5908c",
+      "v2MetadataDigest": "sha256:df7a0541a5a5c4dc74e5c46deac1721b22916b6ce0725e5bd22a16fb7f8a538e",
+      "observationDigest": "sha256:b370e14fded999c40e622744516ed89bfe4cb0af47c0de7c36a44692da1c4b78",
+      "impactDigest": "sha256:5eccbb3c6a17562a7047c02762e2dc1af6afdc922358ed2fe47d845ee534cea1",
+      "bodyDigest": "sha256:b370e14fded999c40e622744516ed89bfe4cb0af47c0de7c36a44692da1c4b78",
+      "artifacts": []
+    },
+    {
+      "id": "20260813204137-sandbox-teardown-只剩",
+      "v1MetadataDigest": "sha256:e024cbf62a37abef3ebdcc6ffa041b8902c3de8b33689bee3f32e1dc1832fc46",
+      "v2MetadataDigest": "sha256:39e1300fec0c3549484763800582f1c0e2621c04eeb5d4a09945989568b52474",
+      "observationDigest": "sha256:c211862627325b5717a4ba6f06035ba5c2324f012508143a672b3fc659a4824a",
+      "impactDigest": "sha256:fe2b767f46c7155dc16c38b0685ddb5818abd6fde1e883e49975792209273411",
+      "bodyDigest": "sha256:c211862627325b5717a4ba6f06035ba5c2324f012508143a672b3fc659a4824a",
+      "artifacts": []
+    },
+    {
+      "id": "20260813204137-官方-bub-镜像声明非",
+      "v1MetadataDigest": "sha256:f29ca035ec6ae2b2f34cf96041d8d8ffe7d45b08c890582ae9e7790c4b35829f",
+      "v2MetadataDigest": "sha256:eae7604c0137782b0cf91dfbf7a3caf89e7efd0e18b79467baad5d019988bcf8",
+      "observationDigest": "sha256:6dc9f818ea4a00eab9b45bb77faf2e92c6156bf7c330c165679294f47e5910f8",
+      "impactDigest": "sha256:14ce5d0392e371673ba9c4f3308201e0d8971febbe3cd352feb2aea76c1a5c4c",
+      "bodyDigest": "sha256:6dc9f818ea4a00eab9b45bb77faf2e92c6156bf7c330c165679294f47e5910f8",
+      "artifacts": []
+    },
+    {
+      "id": "20260813204138-bub-缺少-context",
+      "v1MetadataDigest": "sha256:08e4b3e8f5daf613fac27fb9cc5b00ee32b2e2a1a1b02f1965873d3ca076810b",
+      "v2MetadataDigest": "sha256:0a99d41201fc0eee7137a13d40b271522d54de659d2114da355cf059ed5d9e75",
+      "observationDigest": "sha256:fb0350cfa764b6caf3db133d4a1ce913e755b5daa1a0c14fd588574e321215cd",
+      "impactDigest": "sha256:1ab6e37d4912e2993af2f35efaac75adb31b0e32693918ee71da6560ab6c89ff",
+      "bodyDigest": "sha256:fb0350cfa764b6caf3db133d4a1ce913e755b5daa1a0c14fd588574e321215cd",
+      "artifacts": []
+    },
+    {
+      "id": "20260814191842-agent-ensure-的缺字段身份退化成",
+      "v1MetadataDigest": "sha256:c7f839315000f4ff35638afe6b45af2ba40abafa37a4ca507e80aa01dc6b1bd4",
+      "v2MetadataDigest": "sha256:90f0bb7df44546dad2cd11ba7041978442abc5152d0a3d58475ce1a5bf5d8ea5",
+      "observationDigest": "sha256:fc4b95f0b9bc6864d0a8fa14f94af96821fad35e09923c6ed8a2067facba5e00",
+      "impactDigest": "sha256:3bba01e538d65cb206fd31909bb7b5770d79fb11b9b61363c775c92c20f95cbd",
+      "bodyDigest": "sha256:fc4b95f0b9bc6864d0a8fa14f94af96821fad35e09923c6ed8a2067facba5e00",
+      "artifacts": []
+    },
+    {
+      "id": "20260815015955-openclaw-真实模型-e2e",
+      "v1MetadataDigest": "sha256:2325d113d46db309f1f22daf24d1a521958968e2ff4a8d55ee929dc3211b5238",
+      "v2MetadataDigest": "sha256:37fedcf8432619eeb63145085d7f51c5281341758902236e4608d4a1ed213284",
+      "observationDigest": "sha256:40edab711e6a0bbadaa9a397fddfc131008d14c395c2cf35dd18a3fe19799647",
+      "impactDigest": "sha256:535aa458616db77824f6991200723af15363420393a3b0e5c244e3f1fac00f2b",
+      "bodyDigest": "sha256:40edab711e6a0bbadaa9a397fddfc131008d14c395c2cf35dd18a3fe19799647",
+      "artifacts": []
+    },
+    {
+      "id": "20260816091356-e2e-candidate-构建会短暂删除共享",
+      "v1MetadataDigest": "sha256:ae489173300909d6f4f6b2b3554037a3c4c68687b4ba839312707e5aa9b26fb0",
+      "v2MetadataDigest": "sha256:9ead5d66141b7999a2335f1a9a547cd8db29298b47bfa53cfde81c365c58931d",
+      "observationDigest": "sha256:fcd51a191ffa24719d01f28d8c35cb27cd89bbbeaafdeb92ac608c583fb56e20",
+      "impactDigest": "sha256:1fb6c82299130efd3aaa9efab146ecb3593fe6ec1f5dbafd38a8209b9de9e088",
+      "bodyDigest": "sha256:fcd51a191ffa24719d01f28d8c35cb27cd89bbbeaafdeb92ac608c583fb56e20",
+      "artifacts": []
+    },
+    {
+      "id": "20260816125214-无-blob-recordattachment",
+      "v1MetadataDigest": "sha256:76c536104531a4adc6a72833a9d8e29a9889d4f822fcb02673100e03d84c0dd6",
+      "v2MetadataDigest": "sha256:8b7bc12e84ecbebb1b04516ac4b4a89c94c36019f5cab2c90f7ed4902a5816bf",
+      "observationDigest": "sha256:03a3c6bebd6f07339faaaf84d3ed36f0a1da32e501d0844f8bc032de9841481b",
+      "impactDigest": "sha256:0596217e81c17b6481ac03ce78b570de97e492ad05d0cf1af30cb73df6ecc1cf",
+      "bodyDigest": "sha256:03a3c6bebd6f07339faaaf84d3ed36f0a1da32e501d0844f8bc032de9841481b",
+      "artifacts": []
+    },
+    {
+      "id": "20260816141817-e2e-takeover-把已漂移的默认",
+      "v1MetadataDigest": "sha256:a8b18d3865b964c1f65a7d520a427d07b03308b44369582db4521207a1357b3e",
+      "v2MetadataDigest": "sha256:2e52bda4af9e9fc912f3b0e1976662190204ec308f57b6cf7aa12825c2ee111a",
+      "observationDigest": "sha256:cd8fc77da633266ed9a1abbb0f62cddf271a1cf0d064a71aca95f96e4db66a2a",
+      "impactDigest": "sha256:5a5b3590abdb568df9939c062c2226f41d3cf21cc3b487e1f2ecc5c8709d4a5c",
+      "bodyDigest": "sha256:cd8fc77da633266ed9a1abbb0f62cddf271a1cf0d064a71aca95f96e4db66a2a",
+      "artifacts": []
+    },
+    {
+      "id": "20260817204635-默认-e2e-入口吞掉",
+      "v1MetadataDigest": "sha256:cb58aac7f5e1ddea3123770bbc2030d432b3899128b2f3f0730b854223b58f32",
+      "v2MetadataDigest": "sha256:4fb6e4de6749922808f798894c8bdd98024fd2e68c0352282b484116ac08de40",
+      "observationDigest": "sha256:baaa56b4b53b4d4cb9a2f7d0bd6bf34d39067ee2dad2f0fe951bad6b86233262",
+      "impactDigest": "sha256:8a742d79cc4172ab2601c2eb09c1e829228cae2eeadc99e690154f828f86e87a",
+      "bodyDigest": "sha256:baaa56b4b53b4d4cb9a2f7d0bd6bf34d39067ee2dad2f0fe951bad6b86233262",
+      "artifacts": []
+    },
+    {
+      "id": "20260819182318-opencode-不识别规则固定的-opencode",
+      "v1MetadataDigest": "sha256:dc2a49dd2a1b78e740c3d030d53450fd0841df1eaf379d7d814c7cb0431a8732",
+      "v2MetadataDigest": "sha256:3a83fb36ecd3334926976d6620ba992f3e9ab9f2629a7b79bbce56850b2286d9",
+      "observationDigest": "sha256:b7be4f0cacfa929d57ac82333474fa479868c305693fc98a4a3800cf85367bfd",
+      "impactDigest": "sha256:a72bf1e78ff80b5097017ba85471ce783f58d8e0d14314b8a1ff9bc98ea0bb49",
+      "bodyDigest": "sha256:b7be4f0cacfa929d57ac82333474fa479868c305693fc98a4a3800cf85367bfd",
+      "artifacts": []
+    },
+    {
+      "id": "20260820005511-e2e-takeover-把标题零命中的",
+      "v1MetadataDigest": "sha256:6f1f99b41810b73ada7c9f2562b7ff71e116c882f9349ec3502310fd7d91d9f3",
+      "v2MetadataDigest": "sha256:3c362b2f7e6f86d2f86d4ceb313670a7ff446ba8f71a252ebf3d9bcf3c558c6f",
+      "observationDigest": "sha256:9e5426cbae7bde672ccca53579d736d6527fc98c87b614f1b39a815b165775fc",
+      "impactDigest": "sha256:8877edbcf88092d88c920d129d33842120709e8d48caf1d0c6a2546ea6aa303a",
+      "bodyDigest": "sha256:9e5426cbae7bde672ccca53579d736d6527fc98c87b614f1b39a815b165775fc",
+      "artifacts": []
+    },
+    {
+      "id": "20260820005953-e2e-takeover-取消后",
+      "v1MetadataDigest": "sha256:0f9635b95c8114f8f1dac592d0bd12e6eb550783a0487c71cbb30c89ca3e00de",
+      "v2MetadataDigest": "sha256:22ebc2845a679f8b62bbb31772d66426991b0b232647004d98712ef310432a58",
+      "observationDigest": "sha256:1938d5ca93eef898cc671c7a8b807be7a3607ed3a62fdc01564ed3c50f3209f7",
+      "impactDigest": "sha256:5f1f4add21b881114dfbcda12220760e4ede497dad6a9a394294572783593eb1",
+      "bodyDigest": "sha256:1938d5ca93eef898cc671c7a8b807be7a3607ed3a62fdc01564ed3c50f3209f7",
+      "artifacts": []
+    },
+    {
+      "id": "20260820131045-成本迁移状态逐-slot-重复且缺少",
+      "v1MetadataDigest": "sha256:ffe996f9a320a4db2e62b2ae674ac9100d528bd6ec6cbf5f17d052028b25dda4",
+      "v2MetadataDigest": "sha256:d1b96abec5d8167200854d648fbc038fc2abf4b9fd5883a66976d021f2af32a3",
+      "observationDigest": "sha256:308780b4f968334aa432f400f5405fc74ce9bf91fe8234ed372c3b5fdbb55b13",
+      "impactDigest": "sha256:3ff520f5df0b7f8c1163482f0036553d82e18a0467ad339b985b956f5ceb6102",
+      "bodyDigest": "sha256:308780b4f968334aa432f400f5405fc74ce9bf91fe8234ed372c3b5fdbb55b13",
+      "artifacts": []
+    },
+    {
+      "id": "20260821090001-scope-status-失败在",
+      "v1MetadataDigest": "sha256:53693cf5a6a4ef5bced87dfdd8d3c00c4d663d78daa043a2e0f43438e9f10a32",
+      "v2MetadataDigest": "sha256:3e1f05d18e7386f972a8b239ab21d3b8d515edb786569423d00c444df69c8325",
+      "observationDigest": "sha256:f0b5a82df331b3daff098cfce24d010964425318d08b473f970ef9bdbd6a366e",
+      "impactDigest": "sha256:b3cb0e5af09693f962ef02767d76c6514574e9e8b17d79da3cbc80a9aeb8e260",
+      "bodyDigest": "sha256:f0b5a82df331b3daff098cfce24d010964425318d08b473f970ef9bdbd6a366e",
+      "artifacts": []
+    },
+    {
+      "id": "20260821112308-herdr-启动-codex",
+      "v1MetadataDigest": "sha256:2b5f62e4d30abf989569976fb642530a7cd31be117fd17b1db4b4e6bc58ad996",
+      "v2MetadataDigest": "sha256:b9e3246a4d9ffb753e31fe5e1b558c0603a5ff6280a9dd28001d284123fccab7",
+      "observationDigest": "sha256:fb77c3ec136b3b0d7c9d9991d8270506e021f193e4204c94f6aadf9a00a40700",
+      "impactDigest": "sha256:e7bc71ce1a61107550ffb82c483b5bc4aecd68999066d7e6ee2ff05cbf207626",
+      "bodyDigest": "sha256:fb77c3ec136b3b0d7c9d9991d8270506e021f193e4204c94f6aadf9a00a40700",
+      "artifacts": []
+    },
+    {
+      "id": "20260821150630-niceeval-的-git",
+      "v1MetadataDigest": "sha256:5883c5e01ed75af0c5dd036d8d79b35b40cd2453afa9acbee122ae6e360f7f74",
+      "v2MetadataDigest": "sha256:83ca07e11a474c4c8d05f3ee27ce8aee1244cbbe6cb2d243ac196a7474ffe697",
+      "observationDigest": "sha256:f02a13e96c5465a52590d706b8108815ae1183d79ca302197472bfe8adf45b23",
+      "impactDigest": "sha256:6165596fe1c45789e0d89a6dd466ab39823cbe01ff5083c96924d164f47236f4",
+      "bodyDigest": "sha256:f02a13e96c5465a52590d706b8108815ae1183d79ca302197472bfe8adf45b23",
+      "artifacts": []
+    },
+    {
+      "id": "20260821172751-build-package-跨文件系统移动",
+      "v1MetadataDigest": "sha256:8b5a2966bb576a04ff9e6dc67b45e622c55d49db4c3dca16797de503445dd3e1",
+      "v2MetadataDigest": "sha256:a97439e7809962ccc1b555f54731f2496182c64a0f73ab66cfcb4f5e4e84825c",
+      "observationDigest": "sha256:5d5bbe64fe75457722e3894c62a8b7dac349ae83841535c04340b8caea9dbd18",
+      "impactDigest": "sha256:e4c99fc88f9f4a09ee67d619fa5866afdc5535126c8a70547a6b81eab0d8e0a3",
+      "bodyDigest": "sha256:5d5bbe64fe75457722e3894c62a8b7dac349ae83841535c04340b8caea9dbd18",
+      "artifacts": []
+    },
+    {
+      "id": "20260822113707-accept-无法迁移-errored",
+      "v1MetadataDigest": "sha256:7c79244a2c4f2e26ff424e580f7c460b5282f0f600c60611344eca560fbce4ca",
+      "v2MetadataDigest": "sha256:6560076d1f0e669069340157f399a3aa623c7328df5d0ed50cda99e07374e279",
+      "observationDigest": "sha256:3ce5d8bbe86b492bf1627bb42e5a4a29fce05247fe1cd6d520e4fd9223af8796",
+      "impactDigest": "sha256:dcdc1816c0e98f4c2c719f0510011db0776c0e9ea45061add07e8bd33266a399",
+      "bodyDigest": "sha256:3ce5d8bbe86b492bf1627bb42e5a4a29fce05247fe1cd6d520e4fd9223af8796",
+      "artifacts": []
+    },
+    {
+      "id": "20260822152351-open-dagr-后桌面焦点跳到错误",
+      "v1MetadataDigest": "sha256:adaca5fb503b7cd3a8762dd9bc741729e2cb8c747bdadbb61e6e8835b116b19f",
+      "v2MetadataDigest": "sha256:5c9e7ddcd851aa3dcb0b237d2a7a5b0f8f99e40e6391812966c84a5b20b5f199",
+      "observationDigest": "sha256:389cbdbaabe4fffd2ef395e2e2a3b3a043e9a5d54a4ef66cc76ee1accb2816aa",
+      "impactDigest": "sha256:76647602a2d413a3c11ce2dd99b802c925c7a6829d7ce521dbf98d12d5ed4742",
+      "bodyDigest": "sha256:389cbdbaabe4fffd2ef395e2e2a3b3a043e9a5d54a4ef66cc76ee1accb2816aa",
+      "artifacts": []
+    },
+    {
+      "id": "20260822205314-pr-body-create",
+      "v1MetadataDigest": "sha256:fa82a6775fec7573ca7f955263c47dc7a4e9213e3ab4376f2e1bb2758bd8b60e",
+      "v2MetadataDigest": "sha256:d43df29e468dad07becce0af171145553e19cde9eaf980eebbbc2383ac4c1cb8",
+      "observationDigest": "sha256:cddecac5a02db4cf49b09afddd0d069806dfd572755de2a9199f9c4c05077b07",
+      "impactDigest": "sha256:c63d61b1298fa3099d5ed0bca0172236e9e567fd45a846b080d7bc88d3748c51",
+      "bodyDigest": "sha256:cddecac5a02db4cf49b09afddd0d069806dfd572755de2a9199f9c4c05077b07",
+      "artifacts": []
+    }
+  ]
+}

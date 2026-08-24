@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 验证 Agent 真的完成了所需操作
 
 这条评估先要求 Agent 查询天气，再运行项目检查并说明结果。每个 Assertion 紧跟在它观察到的 Turn 后面，所以失败报告能指出缺少的是查询、命令还是回答。

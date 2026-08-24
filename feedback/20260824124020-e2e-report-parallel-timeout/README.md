@@ -1,5 +1,6 @@
 ---
-format: niceeval.feedback/v1
+---
+format: niceeval.feedback/v2
 id: 20260824124020-e2e-report-parallel-timeout
 title: 多 Repo E2E 并跑把已通过的 Report suite 超时报成 regression
 state: open
@@ -12,6 +13,9 @@ claim: friction
 observation: 同时运行 CLI、Eval 与 Report E2E 时，Report 的 Vitest 6 files / 13 tests 已全部通过，Playwright 随后开始运行，但仓库原生 test invocation 达到总时限后收到 SIGTERM，并被 E2E runner 归类为 regression。复用同一 candidate 单独运行 Report browser owner 时 2 tests 全部通过。
 impact: 受影响仓库的多 Repo 一次性验收会产生假回归收据，维护者必须拆开 Report 的 Vitest 与 Playwright 运行才能证明同一 candidate 实际全绿。
 memoryRelations: []
+adoptions:
+  current: []
+  history: []
 ---
 ## Expected Behavior
 

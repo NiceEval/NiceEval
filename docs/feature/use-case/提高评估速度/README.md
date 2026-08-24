@@ -1,3 +1,12 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations:
+  composes:
+    - docs/feature/experiments/use-case/并发/独立评测并行执行.md
+    - docs/feature/experiments/use-case/缓存与沿用/主动重新运行.md
+---
+
 # 如何提高评估速度
 
 提速不是一个开关。先判断时间花在哪里：

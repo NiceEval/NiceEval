@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 抛出点声明死因:一次命中,按波及范围止损
 
 ## 解决什么问题

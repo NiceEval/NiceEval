@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # ② Analysis（分析层）
 
 Analysis（分析层）是 current Record（当前持久事实集）之上唯一解释事实的层。它固定选择、总体、分母、

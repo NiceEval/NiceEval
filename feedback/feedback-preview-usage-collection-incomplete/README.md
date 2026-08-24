@@ -1,5 +1,6 @@
 ---
-format: niceeval.feedback/v1
+---
+format: niceeval.feedback/v2
 id: feedback-preview-usage-collection-incomplete
 title: Preview 把完整 usage 报成 collection incomplete
 state: closed
@@ -13,9 +14,6 @@ subject: product
 claim: defect
 observation: 在 https://deploy-preview-110--niceeval-report-preview.netlify.app/#/group/named/pass-gallery 的数据说明中，重复出现十条 `analysis-missing — usage collection is incomplete`；该 preview 使用刚重新生成并提交的示例 Record。
 impact: Report 把样本已经记录的 input/output token usage 显示为无数据，并用十条重复告警暗示新跑 Record 的 usage 采集不完整，读者无法比较实验 Tokens，也无法判断问题来自样本还是 NiceEval。
-adoptedContract:
-  path: docs/feature/analysis/library.md
-  anchor: 已发布的输入与成员集
 memoryRelations:
   - kind: root-cause
     memory: analysis-usage-projection-conflates-conversation-limitations
@@ -25,6 +23,10 @@ closure:
   proof:
     - Installed-candidate E2E red/green and the complete reliability takeover passed for e2e/report/test/report-show.test.ts with fixed candidate SHA-256 3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc.
     - The unchanged NiceEval-Preview commit 705d90329848825b25b1fbde389905b513ccb93a and sealed Records produced zero usage collection is incomplete problems for /group/named/pass-gallery; pass-gallery/candidate remained 4/4 available at 208 tokens.
+adoptions:
+  current:
+    - docs/feature/analysis/library.md#已发布的输入与成员集
+  history: []
 ---
 # Preview 把完整 usage 报成 collection incomplete
 

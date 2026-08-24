@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # Fixture 与反馈：prepare 与长步骤报告
 
 ## 解决什么问题

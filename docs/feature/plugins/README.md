@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Plugins
 
 Plugin 是带稳定身份的生命周期组合语法。它不提供新的资源系统、Agent 配置协议或 Sandbox 命令 DSL；这些能力继续由 Experiment、Agent、SandboxLayer 和 Provider 自己拥有。

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 选择与收窄一个分析范围
 
 契约单源始终在 [Analysis Library](../library.md)。本页说明已封口 Run 怎样形成固定 Sample，

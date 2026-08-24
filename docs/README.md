@@ -27,14 +27,17 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
-| 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
+| 设计或修改一个用户功能 | [Feature Skill](../.agents/skills/feature/SKILL.md) → [Feature](feature/README.md) → 对应功能目录 |
+| 从 Feature 或测试反查 Use Case、E2E、Roadmap、Design 与 Memory | [仓库文档追溯](engineering/docs-traceability/README.md) |
 | 设计或评审公开 API | [API 设计](api-design.md) |
-| 查看已经定稿、等待落地的方向 | [Roadmap](roadmap/README.md) |
+| 查看或修改已经定稿、等待采用的方向 | [Roadmap Skill](../.agents/skills/roadmap/SKILL.md) → [Roadmap](roadmap/README.md) |
 | 对比多个候选方案、给出架构 / 技术选型裁决 | [Design](design/README.md) |
 | 研究外部产品及其对 NiceEval 的启发 | [Research](research/README.md) |
-| 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
+| 查询、设计或评审测试 | [Testing Skill](../.agents/skills/testing/SKILL.md) → [Testing](engineering/testing/README.md) |
+| 设计仓库其它维护或 benchmark | [Engineering](engineering/README.md) |
 | 查仓库命令、维护 Skill 与对应守护 | [Repository Tools](engineering/repository-tools/README.md) |
-| 收取 issue / dogfood / dev Feedback 或沉淀开发 Memory | [Feedback 与 Memory](engineering/feedback-memory/README.md) |
+| 跟进公开、脱敏且需 maintainer 处理的 Observation | [GitHub Issue 与 Memory](engineering/issues/README.md) |
+| 沉淀调查后的 Problem、Decision 或可复用 know-how | [Memory Skill](../.agents/skills/memory/SKILL.md) |
 | 切分互斥的多 Agent 文档工作 | [并行文档工作](engineering/docs-work/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
@@ -109,7 +112,9 @@ docs/
 │   ├── observability-package-layout/    Observability 持久包：reader view 与 source receipt layout
 │   ├── projection-api/                  单包投影：runtime calls 与 static graph
 │   ├── relations-api/                   跨包关系：pure assembler 与 typed builder
+│   ├── docs-traceability/               仓库文档、E2E owner 与 Memory 的关系查询和结构 mutation
 │   ├── report-authoring/                已被新交付边界取代的双面 Report 作者面历史
+│   ├── user-readable-testing/            原生 E2E 与可读测试作者面的选型裁决
 │   ├── record-to-report-stack.md         已被新交付边界取代的 Record 到 Report 历史地图
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
@@ -128,7 +133,9 @@ docs/
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
 │   ├── task-orchestration/              Nx 项目图、affected E2E 与 fail-open 管理
 │   ├── repository-tools/                七个仓库维护领域、动态发现与脚本退役边界
-│   ├── feedback-memory/                 Feedback、Memory、E2E regression 与提升工作流
+│   ├── docs-traceability/               文档节点、测试 owner、Memory 与模板创建的统一追溯入口
+│   ├── issues/                          公开 Observation、GitHub Issue 分诊与 Memory 关系
+│   ├── feedback-memory/                 存量 Feedback、Memory、E2E regression 与提升工作流
 │   ├── docs-work/                       多 Agent 文档切片、收据与 finalizer
 │   ├── testing/                         测试体系总纲 + unit/ 与 e2e/ 两个子体系
 │   ├── benchmark/                       阶段耗时与安装 benchmark

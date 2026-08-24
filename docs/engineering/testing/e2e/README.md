@@ -193,6 +193,9 @@ CLI Repo 验证 argv、stdin / stdout / stderr、pipe、PTY、exit 与 JSON / ND
 
 ## Lifecycle
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [sandbox](../../../feature/sandbox/README.md)
+
 Lifecycle Repo 保留原生测试 runner 的默认并行。每条 case 按场景独占自己的进程组、容器或 Sandbox，不靠兄弟文件的执行顺序隔离。
 只有无法分配独立身份的外部资源才在局部关闭并行，并在 Repo README 说明限制。Lifecycle 不仅检查第一条命令退出，还检查：
 
@@ -207,6 +210,9 @@ terminate 与 Attempt cleanup。它不再用 host provider 做对比；host 进�
 
 ### process-group-terminal-state
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [sandbox](../../../feature/sandbox/README.md)
+
 `e2e/lifecycle/test/process-group-zombie-cleanup.test.ts` 是安装后 Testkit `ProcessHandle` 的 Linux process-group
 终态 owner。它在 `PR_SET_CHILD_SUBREAPER` 固定的 Linux 场景中制造一组唯一成员为 `Z` 的 owned child：`signal 0`
 仍报告该组存在，但 TERM 和 KILL 都不能改变这个终态。`dispose()` 必须把它视为已经终止；fixture 随后自行 reap 并核对该组物理消失。
@@ -218,12 +224,18 @@ terminal-only 不能由一次非原子 procfs 快照直接接受。只要 kernel
 
 ### Eval Group shared Sandbox
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [准备可复用评测](../../../feature/sandbox/use-case/Sandbox复用/准备可复用评测.md)
+
 `e2e/lifecycle/test/eval-group-shared-sandbox.test.ts` 是 Eval Group 物理生命周期的单边界 owner。
 它用两个同时进入调度的 Group 证明：不同 Group 可以并行；同一 Group 的成员按规范化 Eval ID 串行；成员之间复用同一台
 Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置；运行结束后两台 owned Sandbox 都已释放。
 测试只通过安装后 CLI 的 result 事件与 `show --history --json` 读回公开结果，不读取 `.niceeval/` 私有布局。
 
 ### Docker profile cold build
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命周期/重依赖烘进镜像.md)
 
 `e2e/lifecycle/test/docker-profile-cold-build.test.ts` 是 profile-bound Dockerfile cold build 的公开入口 owner。
 

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # Terminal-Bench:Eval 带 template
 
 契约单源见 [Sandbox Layer · Template-bearing factory](../../layers.md#template-bearing-factory)、[顺序与依赖方向](../../layers.md#顺序与依赖方向)与[三方准备时序 · Eval template 路径](../../lifecycle.md#eval-template-路径)。

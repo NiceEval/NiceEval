@@ -12,17 +12,29 @@
 
 #### cli-positive-selection
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
+
 - eval id 位置参数按前缀收窄实际运行的 Eval 集合；experiment 选择器按 CLI 契约命中。
 
 #### cli-no-eval-feedback
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
 
 - Experiment 命中但 Eval 前缀零命中时按用法错误退出，错误信息给出下一步。
 
 #### cli-no-experiment-feedback
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
+
 - 未命中任何 Experiment 的选择器按用法错误退出，错误信息给出下一步。
 
 #### cli-evaluation-kind-admission
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [拆开混型评测](../../../feature/experiments/use-case/选择评测/拆开混型评测.md)
 
 - 普通 `niceeval exp` 在任何 Agent、Sandbox、fingerprint 或 Record 写入前拒绝同时选中 Pass Eval 与 Score Eval 的 Experiment；错误分别列出两类 Eval ID，并要求按题型拆分或收窄。
 - Eval Group 的闭合成员集若同时包含 Pass Eval 与 Score Eval，同一公开 preflight 以 Group ID 和两类成员 ID 拒绝；不能靠 Experiment 或 CLI 只选中其中一类绕过非法 Group 定义。
@@ -30,6 +42,9 @@
 ### 退出码折叠
 
 #### cli-failure-error-results
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [experiments](../../../feature/experiments/README.md)
 
 仓库包含四个 Experiment，验收脚本把预期非零退出转换为仓库级成功：
 
@@ -42,6 +57,9 @@
 | judge-precheck-error | 两次 Attempt 创建前 Judge endpoint 预检失败 | NDJSON warning 携带 Experiment、Eval 与 `planned: 2` / `errored: 2`，receipt 正常闭合 |
 
 #### cli-provider-error-feedback
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [experiments](../../../feature/experiments/README.md)
 
 Given 同一次 Human invocation 选中四个 Experiment。两个 custom provider 在 `sandbox.create` 以相同
 phase/code、不同长 `message` 失败，分别代表 E2B 与 Vercel 外部边界。另两个 Dockerfile sandbox 在不同 Run
@@ -56,6 +74,9 @@ Then：
 
 #### cli-cache-inventory
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [experiments](../../../feature/experiments/README.md)
+
 Given Docker 的共享 BuildKit builder 报告总容量和 Provider reclaimable estimate，但没有 NiceEval Domain identity、entry 或 lease。
 
 When 从安装后的 candidate 运行 `niceeval docker cache inventory --json`。
@@ -63,6 +84,9 @@ When 从安装后的 candidate 运行 `niceeval docker cache inventory --json`�
 Then 输出把 BuildKit 放进独立的 `providerObservations`，状态为 `unverified`，不产生 `domainId`、`evictable` 或 GcPlan。
 
 #### cli-docker-task-build-cache
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命周期/重依赖烘进镜像.md)
 
 Given 一个 Dockerfile Sandbox 的 BuildKey 未变化，且前一次 Invocation 已把 image 与 manifest 写入受管 registry。
 
@@ -78,6 +102,9 @@ Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`�
 ### Sandbox 管理入口
 
 #### cli-sandbox-project-preflight
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [experiments](../../../feature/experiments/README.md)
 
 `niceeval sandbox list` 在语法检查成功后准备当前项目的 `.env` 凭据，因此凭据文件不可读时会在调用
 Sandbox Provider 前失败；它不加载或求值 `niceeval.config.*`，空留存表仍输出

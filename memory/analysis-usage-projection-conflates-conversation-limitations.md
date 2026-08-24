@@ -16,8 +16,7 @@ kind:
 promotions:
   - kind: feature
     current:
-      path: docs/feature/analysis/library.md
-      anchor: 已发布的输入与成员集
+      - docs/feature/analysis/library.md#已发布的输入与成员集
     history: []
 ---
 # Analysis usage 投影混入 conversation limitation

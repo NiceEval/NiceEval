@@ -218,3 +218,13 @@ _Avoid_: Report site, Custom dashboard, View
 **Insight revision**:
 一个 Insight 进程内 server-global 的不可变交互版本，绑定固定 target、catalog 与 Sample。Record 变化只提示，用户刷新成功后才原子切换。
 _Avoid_: Live Sample, Current results
+
+## Repository engineering
+
+**Observation**:
+A source-attributed account of observed behavior, expectation, and impact captured before investigation establishes a root cause or decision.
+_Avoid_: Feedback, Report
+
+**Issue**:
+A public, sanitized maintainer-owned work item created from an Observation that requires NiceEval follow-up.
+_Avoid_: Feedback, Report, Memory

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Agents 与 Adapters
 
 Adapter 把一个被测对象接入 niceeval。
