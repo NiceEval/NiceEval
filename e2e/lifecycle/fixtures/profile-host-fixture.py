@@ -87,6 +87,23 @@ def cleanup(root: Path, *, remove_root: bool) -> None:
         ).returncode == 0
         if mounted:
             run("umount", str(fixed_mount))
+
+    def detach_loops_backed_by(prefix: Path) -> None:
+        devices = json.loads(run(
+            "losetup", "--list", "--json", "--output", "NAME,BACK-FILE",
+        ) or '{"loopdevices":[]}').get("loopdevices", [])
+        prefix_text = str(prefix.resolve()) + os.sep
+        for device in devices:
+            name = device.get("name") if isinstance(device, dict) else None
+            backing = device.get("back-file") if isinstance(device, dict) else None
+            if isinstance(name, str) and isinstance(backing, str) \
+                    and backing.removesuffix(" (deleted)").startswith(prefix_text):
+                run("losetup", "--detach", name)
+
+    # An unmounted inner ext4 loop still holds its image file open on the outer
+    # filesystem.  Detach those loops before attempting to unmount the outer
+    # store, then detach the outer image loop after the mount is gone.
+    detach_loops_backed_by(root / "data")
     mount = root / "data"
     mounted = subprocess.run(
         ["findmnt", "-n", "--mountpoint", str(mount)],
@@ -95,7 +112,11 @@ def cleanup(root: Path, *, remove_root: bool) -> None:
         stderr=subprocess.DEVNULL,
     ).returncode == 0
     if mounted:
-        run("umount", str(mount))
+        # Crash/recovery tests may leave a private slot mount below the outer
+        # fixture filesystem.  Unmount the marker-guarded fixture subtree
+        # deepest-first instead of relying on the nominal slot directory list.
+        run("umount", "--recursive", str(mount))
+    detach_loops_backed_by(root)
     if remove_root:
         shutil.rmtree(root)
 

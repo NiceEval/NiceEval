@@ -274,29 +274,38 @@ async function fixedSlotPrefixMarkers(fixture: HostFixture): Promise<readonly st
   return Object.freeze([...new Set(result.stdout.trim().split(/\r?\n/u).filter(Boolean))].sort());
 }
 
-async function publishedSeedObservation(path: string): Promise<PublishedSeedObservation> {
+async function publishedSeedObservation(
+  path: string,
+  expectedMarker?: string,
+): Promise<PublishedSeedObservation> {
   const lines = (await readFixtureHostFile(path)).trim().split(/\r?\n/u);
   const latest = JSON.parse(lines.at(-1) ?? "{}") as JsonRecord;
   const state = isRecord(latest.state) ? latest.state : {};
   const setupPrefix = isRecord(state.setupPrefix) ? state.setupPrefix : {};
-  const artifacts = isRecord(setupPrefix.artifacts)
+  const publishedArtifacts = isRecord(setupPrefix.artifacts)
     ? Object.values(setupPrefix.artifacts).filter(isRecord)
     : [];
-  expect(artifacts).toHaveLength(1);
-  const artifact = artifacts[0]!;
-  expect(artifact).toMatchObject({ state: "published", artifactId: expect.any(String), seedId: expect.any(String) });
   const seeds = isRecord(setupPrefix.seeds) ? setupPrefix.seeds : {};
-  const seed = isRecord(seeds[String(artifact.seedId)]) ? seeds[String(artifact.seedId)] as JsonRecord : {};
-  expect(seed).toMatchObject({ state: "published", imagePath: expect.any(String) });
-  const listed = await sudo.run(["debugfs", "-R", "ls -p /volumes", String(seed.imagePath)]);
-  expect(listed.exitCode, listed.diagnostic()).toBe(0);
-  const markers = [...new Set(listed.stdout.match(/niceeval-setup-prefix-prefix-[a-f0-9-]{36}/gu) ?? [])];
-  expect(markers, `published seed ${String(artifact.seedId)} must contain one prefix marker`).toHaveLength(1);
-  return Object.freeze({
-    artifactId: String(artifact.artifactId),
-    seedId: String(artifact.seedId),
-    marker: markers[0]!,
-  });
+  const observations: PublishedSeedObservation[] = [];
+  for (const artifact of publishedArtifacts) {
+    expect(artifact).toMatchObject({ state: "published", artifactId: expect.any(String), seedId: expect.any(String) });
+    const seed = isRecord(seeds[String(artifact.seedId)]) ? seeds[String(artifact.seedId)] as JsonRecord : {};
+    expect(seed).toMatchObject({ state: "published", imagePath: expect.any(String) });
+    const listed = await sudo.run(["debugfs", "-R", "ls -p /volumes", String(seed.imagePath)]);
+    expect(listed.exitCode, listed.diagnostic()).toBe(0);
+    const markers = [...new Set(listed.stdout.match(/niceeval-setup-prefix-prefix-[a-f0-9-]{36}/gu) ?? [])];
+    expect(markers, `published seed ${String(artifact.seedId)} must contain one prefix marker`).toHaveLength(1);
+    observations.push(Object.freeze({
+      artifactId: String(artifact.artifactId),
+      seedId: String(artifact.seedId),
+      marker: markers[0]!,
+    }));
+  }
+  const matches = expectedMarker === undefined
+    ? observations
+    : observations.filter((observation) => observation.marker === expectedMarker);
+  expect(matches).toHaveLength(1);
+  return matches[0]!;
 }
 
 async function latestSetupPrefixRestore(path: string): Promise<JsonRecord> {
@@ -1574,7 +1583,9 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
             const crashedPreparedOperation = await runHeldPreparedCapture(
               "prepared-watchdog-crash",
               async ({ invocation }) => {
-                expect(watchdog.signal("SIGKILL")).toBe(true);
+                expect(watchdog.pid).toBeTypeOf("number");
+                const crashed = await sudo.run(["kill", "-KILL", "--", `-${watchdog.pid!}`]);
+                expect(crashed.exitCode, crashed.diagnostic()).toBe(0);
                 await watchdog.done;
                 expect(invocation.signal("SIGINT")).toBe(true);
                 await invocation.done;
@@ -1594,11 +1605,23 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
               ],
               { processGroup: true, timeoutMs: 90_000, graceMs: 5_000 },
               async (recoveryWatchdog) => {
-                await pollUntil(() => fileExists(fixture!.readyFile), {
-                  timeoutMs: 15_000,
-                  intervalMs: 100,
-                  label: "watchdog ready after prepared crash",
-                });
+                await Promise.race([
+                  pollUntil(async () => {
+                    const events = await setupPrefixLedgerEvents(fixture!.journal);
+                    return events.some((event) =>
+                      event.event === "setup-prefix-capture-recovered" &&
+                      event.operationId === crashedPreparedOperation && event.seedScrubbed)
+                      ? true
+                      : undefined;
+                  }, {
+                    timeoutMs: 30_000,
+                    intervalMs: 100,
+                    label: "watchdog recovery after prepared crash",
+                  }),
+                  recoveryWatchdog.done.then((receipt) => {
+                    throw new Error(`recovery watchdog exited before prepared scrub\n${receipt.diagnostic()}`);
+                  }),
+                ]);
                 const crashEvents = await setupPrefixLedgerEvents(fixture!.journal);
                 expect(crashEvents).toContainEqual(expect.objectContaining({
                   event: "setup-prefix-capture-recovered",
@@ -1608,12 +1631,23 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
                 expect(crashEvents.some((event) =>
                   event.event === "setup-prefix-captured" && event.operationId === crashedPreparedOperation))
                   .toBe(false);
-                expect((await setupPrefixHostObservation(fixture!.journal)).operations).toHaveLength(0);
-                expect(recoveryWatchdog.signal("SIGTERM")).toBe(true);
+                await pollUntil(async () => {
+                  const observation = await setupPrefixHostObservation(fixture!.journal);
+                  if (!observation.settled) return undefined;
+                  return (await profileRuntimeResources(fixture!.profileId)).length === 0 ? true : undefined;
+                }, {
+                  timeoutMs: 30_000,
+                  intervalMs: 100,
+                  label: "watchdog reconciliation after prepared crash",
+                });
+                await recoveryWatchdog.dispose();
               },
             );
             fixedFactsBeforeRestart = await fixedIdentityFacts();
-            publishedSeedBeforeRestart = await publishedSeedObservation(fixture!.journal);
+            publishedSeedBeforeRestart = await publishedSeedObservation(
+              fixture!.journal,
+              cold.dockerDataPrefixMarker,
+            );
             expect(publishedSeedBeforeRestart.marker).toBe(cold.dockerDataPrefixMarker);
             expect(publishedSeedBeforeRestart.marker).not.toBe(cancelledPrefixMarker);
           },
@@ -1726,7 +1760,8 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
             if (journalPath === fixture.journal) {
               expect(existed, "the fixed-image ownership journal must not disappear during residue injection")
                 .toBe(true);
-              expect(await publishedSeedObservation(journalPath)).toEqual(publishedSeedBeforeRestart);
+              expect(await publishedSeedObservation(journalPath, coldPrefixMarker))
+                .toEqual(publishedSeedBeforeRestart);
             }
           }
         }
@@ -1773,7 +1808,10 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
         }
         expect(fixedFactsAfterRestart.filter((fact) => fact.seed).map((fact) => fact.digest))
           .toEqual(fixedFactsBeforeRestart.filter((fact) => fact.seed).map((fact) => fact.digest));
-        const publishedSeedAfterRestart = await publishedSeedObservation(fixture.journal);
+        const publishedSeedAfterRestart = await publishedSeedObservation(
+          fixture.journal,
+          coldPrefixMarker,
+        );
         expect(publishedSeedAfterRestart).toEqual(publishedSeedBeforeRestart);
 
         let watchdogStoppedForAmbiguity = false;
@@ -1827,106 +1865,112 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
             expect(afterRestart.evidence.dockerDataPrefixMarker).not.toBe(cancelledPrefixMarker);
 
             await withProjectCopy(projectCopy, async ({ root: ambiguityRoot }) => {
-              await copyPreparedProfileBuildContext(root, ambiguityRoot);
-              const experimentPath = join(ambiguityRoot, "experiments/setup-prefix-cache.ts");
-              const originalExperiment = await readFile(experimentPath, "utf8");
-              const ambiguityToken = randomUUID().replaceAll("-", "");
-              const changedExperiment = originalExperiment
-                .replace(
-                  "docker volume create --label niceeval.e2e.setup-prefix-role=docker-data-prefix ",
-                  `docker volume create --label niceeval.e2e.setup-prefix-role=docker-data-prefix --label niceeval.e2e.ambiguity=${ambiguityToken} `,
-                )
-                .replace("attempts: 1,\n  maxConcurrency: 1,", "attempts: 3,\n  maxConcurrency: 1,");
-              expect(changedExperiment).not.toBe(originalExperiment);
-              await writeFile(experimentPath, changedExperiment, "utf8");
-              const capturedBefore = (await setupPrefixLedgerEvents(fixture!.journal))
-                .filter((event) => event.event === "setup-prefix-captured").length;
-              const unreachableStartedAt = Date.now();
-              const incomplete = await withProcess(
-                [
-                  "docker", "run", "--rm", "--network", "none", "--user", "0:0",
-                  "--mount", `type=bind,src=${process.cwd()},dst=${process.cwd()},readonly`,
-                  "--mount", `type=bind,src=${ambiguityRoot},dst=${ambiguityRoot}`,
-                  "--mount", `type=bind,src=${hostRoot},dst=${hostRoot}`,
-                  "--mount", "type=bind,src=/run/docker.sock,dst=/run/docker.sock",
-                  "--workdir", ambiguityRoot,
-                  "--env", `NICEEVAL_E2E_DOCKER_PROFILE_ALIAS=${profile}`,
-                  "--env", "NICEEVAL_E2E_SETUP_PREFIX_MODE=profile-full-copy",
-                  "--env", "NICEEVAL_E2E_SETUP_PREFIX_PUBLIC_ENV=PUBLIC_MODE=alpha\n",
-                  "--env", `XDG_STATE_HOME=${join(hostRoot, "state-ambiguity")}`,
-                  nodeImage,
-                  "sh", "-ec",
-                  `${profileRegistrySetup(fixture!, profile, hostRoot)}
-exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
-                ],
-                { processGroup: true, timeoutMs: 180_000, graceMs: 10_000 },
-                async (invocation) => {
-                  await pollUntil(
-                    async () => {
-                      const events = await setupPrefixLedgerEvents(fixture!.journal);
-                      return events.filter((event) => event.event === "setup-prefix-captured").length > capturedBefore
-                        ? true
-                        : undefined;
-                    },
-                    { timeoutMs: 90_000, intervalMs: 10, label: "committed capture with lost caller response" },
-                  );
-                  expect(restartedWatchdog.signal("SIGTERM")).toBe(true);
-                  await restartedWatchdog.done;
-                  watchdogStoppedForAmbiguity = true;
-                  // The three independent publish reconciliations exhaust quickly even
-                  // though prepare/copy retains its long production budget. Restart only
-                  // after that bounded window so Scope cleanup can prove reservation release.
-                  await new Promise((resolve) => setTimeout(resolve, 2_000));
-                  return withProcess(
-                    [
-                      "sudo", "-n", "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
-                      "python3", join(scripts!, "watchdog.py"),
-                      "--control-socket", fixture!.controlSocket,
-                      "--descriptor", fixture!.descriptor,
-                      "--host-config", fixture!.hostConfig,
-                      "--docker-socket", "/run/docker.sock",
-                      "--journal", fixture!.journal,
-                      "--ready-file", fixture!.readyFile,
-                      "--socket-mode", "0o600",
-                    ],
-                    { processGroup: true, timeoutMs: 90_000, graceMs: 5_000 },
-                    async (cleanupWatchdog) => {
-                      await pollUntil(() => fileExists(fixture!.readyFile), {
-                        timeoutMs: 15_000,
-                        intervalMs: 100,
-                        label: "watchdog ready for incomplete Invocation cleanup",
-                      });
-                      const receipt = await invocation.done;
-                      expect(cleanupWatchdog.signal("SIGTERM")).toBe(true);
-                      return receipt;
-                    },
-                  );
-                },
-              );
-              expect(Date.now() - unreachableStartedAt).toBeLessThan(45_000);
-              expect(incomplete.exitCode, incomplete.diagnostic()).not.toBe(0);
-              const publicDiagnostic = `${incomplete.stdout}\n${incomplete.stderr}`;
-              expect(publicDiagnostic).toContain("sandbox-environment-incomplete");
-              expect(publicDiagnostic).toMatch(/setup-prefix-[0-9a-f-]{36}/u);
-              expect(publicDiagnostic).toContain(`niceeval docker profile doctor ${profile}`);
-              expect(publicDiagnostic).not.toContain(hostRoot);
-              expect(incomplete.expReceipt(), incomplete.diagnostic()).toMatchObject({ completion: "completed" });
-              expect(
-                only(
-                  incomplete.expEvalEvents(),
-                  (event) => event.evalId === "setup-prefix-cache",
-                  incomplete.diagnostic(),
-                ),
-              ).toMatchObject({
-                verdict: "errored",
-                attempts: 1,
-                planned: 3,
-                unstarted: 2,
-                reason: "early_exit",
-              });
-              expect((await setupPrefixLedgerEvents(fixture!.journal))
-                .filter((event) => event.event === "setup-prefix-captured").length - capturedBefore)
-                .toBe(1);
+              try {
+                await copyPreparedProfileBuildContext(root, ambiguityRoot);
+                const experimentPath = join(ambiguityRoot, "experiments/setup-prefix-cache.ts");
+                const originalExperiment = await readFile(experimentPath, "utf8");
+                const ambiguityToken = randomUUID().replaceAll("-", "");
+                const changedExperiment = originalExperiment
+                  .replace(
+                    "docker volume create --label niceeval.e2e.setup-prefix-role=docker-data-prefix ",
+                    `docker volume create --label niceeval.e2e.setup-prefix-role=docker-data-prefix --label niceeval.e2e.ambiguity=${ambiguityToken} `,
+                  )
+                  .replace("attempts: 1,\n  maxConcurrency: 1,", "attempts: 3,\n  maxConcurrency: 1,");
+                expect(changedExperiment).not.toBe(originalExperiment);
+                await writeFile(experimentPath, changedExperiment, "utf8");
+                const capturedBefore = (await setupPrefixLedgerEvents(fixture!.journal))
+                  .filter((event) => event.event === "setup-prefix-captured").length;
+                const unreachableStartedAt = Date.now();
+                const incomplete = await withProcess(
+                  [
+                    "docker", "run", "--rm", "--network", "none", "--user", "0:0",
+                    "--mount", `type=bind,src=${process.cwd()},dst=${process.cwd()},readonly`,
+                    "--mount", `type=bind,src=${ambiguityRoot},dst=${ambiguityRoot}`,
+                    "--mount", `type=bind,src=${hostRoot},dst=${hostRoot}`,
+                    "--mount", "type=bind,src=/run/docker.sock,dst=/run/docker.sock",
+                    "--workdir", ambiguityRoot,
+                    "--env", `NICEEVAL_E2E_DOCKER_PROFILE_ALIAS=${profile}`,
+                    "--env", "NICEEVAL_E2E_SETUP_PREFIX_MODE=profile-full-copy",
+                    "--env", "NICEEVAL_E2E_SETUP_PREFIX_PUBLIC_ENV=PUBLIC_MODE=alpha\n",
+                    "--env", `XDG_STATE_HOME=${join(hostRoot, "state-ambiguity")}`,
+                    nodeImage,
+                    "sh", "-ec",
+                    `${profileRegistrySetup(fixture!, profile, hostRoot)}
+  exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
+                  ],
+                  { processGroup: true, timeoutMs: 180_000, graceMs: 10_000 },
+                  async (invocation) => {
+                    await pollUntil(
+                      async () => {
+                        const events = await setupPrefixLedgerEvents(fixture!.journal);
+                        return events.filter((event) => event.event === "setup-prefix-captured").length > capturedBefore
+                          ? true
+                          : undefined;
+                      },
+                      { timeoutMs: 90_000, intervalMs: 10, label: "committed capture with lost caller response" },
+                    );
+                    await restartedWatchdog.dispose();
+                    watchdogStoppedForAmbiguity = true;
+                    // The three independent publish reconciliations exhaust quickly even
+                    // though prepare/copy retains its long production budget. Restart only
+                    // after that bounded window so Scope cleanup can prove reservation release.
+                    await new Promise((resolve) => setTimeout(resolve, 2_000));
+                    return withProcess(
+                      [
+                        "sudo", "-n", "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
+                        "python3", join(scripts!, "watchdog.py"),
+                        "--control-socket", fixture!.controlSocket,
+                        "--descriptor", fixture!.descriptor,
+                        "--host-config", fixture!.hostConfig,
+                        "--docker-socket", "/run/docker.sock",
+                        "--journal", fixture!.journal,
+                        "--ready-file", fixture!.readyFile,
+                        "--socket-mode", "0o600",
+                      ],
+                      { processGroup: true, timeoutMs: 90_000, graceMs: 5_000 },
+                      async (cleanupWatchdog) => {
+                        await pollUntil(() => fileExists(fixture!.readyFile), {
+                          timeoutMs: 15_000,
+                          intervalMs: 100,
+                          label: "watchdog ready for incomplete Invocation cleanup",
+                        });
+                        const receipt = await invocation.done;
+                        await cleanupWatchdog.dispose();
+                        return receipt;
+                      },
+                    );
+                  },
+                );
+                expect(Date.now() - unreachableStartedAt).toBeLessThan(45_000);
+                expect(incomplete.exitCode, incomplete.diagnostic()).not.toBe(0);
+                const publicDiagnostic = `${incomplete.stdout}\n${incomplete.stderr}`;
+                expect(publicDiagnostic).toContain("sandbox-environment-incomplete");
+                expect(publicDiagnostic).toMatch(/setup-prefix-[0-9a-f-]{36}/u);
+                expect(publicDiagnostic).toContain(`niceeval docker profile doctor ${profile}`);
+                expect(publicDiagnostic).not.toContain(hostRoot);
+                expect(incomplete.expReceipt(), incomplete.diagnostic()).toMatchObject({ completion: "completed" });
+                expect(
+                  only(
+                    incomplete.expEvalEvents(),
+                    (event) => event.evalId === "setup-prefix-cache",
+                    incomplete.diagnostic(),
+                  ),
+                ).toMatchObject({
+                  verdict: "errored",
+                  attempts: 1,
+                  planned: 3,
+                  unstarted: 2,
+                  reason: "early_exit",
+                });
+                expect((await setupPrefixLedgerEvents(fixture!.journal))
+                  .filter((event) => event.event === "setup-prefix-captured").length - capturedBefore)
+                  .toBe(1);
+              } finally {
+                const ownership = await sudo.run([
+                  "chown", "-R", `${process.getuid!()}:${process.getgid!()}`, join(ambiguityRoot, ".niceeval"),
+                ]);
+                expect(ownership.exitCode, ownership.diagnostic()).toBe(0);
+              }
             });
           },
         );
@@ -1949,7 +1993,7 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
                 async () => (await setupPrefixHostObservation(fixture!.journal)).settled ? true : undefined,
                 { timeoutMs: 30_000, intervalMs: 100, label: "watchdog restart reconciliation after ambiguity" },
               );
-              expect(recoveryWatchdog.signal("SIGTERM")).toBe(true);
+              await recoveryWatchdog.dispose();
             },
           );
         }
@@ -1965,7 +2009,10 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
           if (cleanup.exitCode !== 0) {
             const cleanupError = new Error(cleanup.diagnostic());
             if (primaryError !== undefined) {
-              throw new AggregateError([primaryError, cleanupError], "Profile SetupPrefix owner and cleanup both failed");
+              throw new AggregateError(
+                [primaryError, cleanupError],
+                `Profile SetupPrefix owner failed: ${String(primaryError)}; cleanup also failed: ${cleanupError.message}`,
+              );
             }
             throw cleanupError;
           }
@@ -1973,7 +2020,7 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
       }
     });
   });
-}, 600_000);
+}, 1_200_000);
 
 test("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 rebase", async () => {
   await withTempDir("niceeval-e2e-setup-prefix-cancellation-state-", async (stateRoot) => {
