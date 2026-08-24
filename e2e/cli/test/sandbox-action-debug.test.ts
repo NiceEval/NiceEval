@@ -1,7 +1,7 @@
 // owner: docs/engineering/testing/e2e/cli.md#cli-sandbox-action-debug
 // rerun: pnpm e2e test --repo cli -- --run test/sandbox-action-debug.test.ts
 
-import { access } from "node:fs/promises";
+import { access, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
@@ -380,6 +380,10 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     expect(human.stdout).not.toContain(PRIVATE_ENV_VALUE);
     expect(human.stdout).not.toContain(PRIVATE_STDIN.trim());
 
+    await copyFile(
+      join(paths.projectRoot, "fixtures", "sandbox-action-debug-invalid.ts"),
+      join(paths.projectRoot, "experiments", "sandbox-action-debug-invalid.ts"),
+    );
     const invalid = await niceeval.run([
       "debug",
       "sandbox-action-debug-invalid",
