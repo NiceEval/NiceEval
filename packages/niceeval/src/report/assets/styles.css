@@ -1618,15 +1618,52 @@ table.niceeval-report,
   display: flex;
   min-width: 0;
   align-items: baseline;
+  justify-content: space-between;
   gap: 7px;
   font: 12px/1.5 var(--font-mono);
   font-weight: 650;
 }
-.niceeval-match-summary code {
+.niceeval-match-summary-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 10px;
+}
+.niceeval-match-summary-main > code {
   overflow: hidden;
   color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.niceeval-match-summary-facts {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--soft);
+  font-weight: 450;
+}
+.niceeval-match-summary-fact {
+  display: inline-flex;
+  min-width: 0;
+  gap: 5px;
+}
+.niceeval-match-summary-fact > code {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.niceeval-match-state {
+  flex: none;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 17px;
 }
 .niceeval-match-summary--matched { color: var(--good); }
 .niceeval-match-summary--mismatched { color: var(--bad); }

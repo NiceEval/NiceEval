@@ -24,6 +24,7 @@ interface MatchDiagnosticView {
 }
 
 interface MatchChildView {
+  readonly index: number;
   readonly label: string;
   readonly state: MatchState;
   readonly diagnostic: MatchDiagnosticView | null;
@@ -122,6 +123,7 @@ function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagn
         const state = matchState(field(item, "state"));
         if (state === undefined) return [];
         return [{
+          index: numberValue(field(item, "index")) ?? index,
           label: stringValue(field(item, "label")) ?? `matcher ${index + 1}`,
           state,
           diagnostic: diagnosticView(field(item, "diagnostic")),
@@ -385,21 +387,84 @@ function stateLabel(state: MatchState, locale: string): string {
   return state;
 }
 
-function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, children }: {
+function isToolCollectionDiagnostic(diagnostic: MatchDiagnosticView | null): boolean {
+  return diagnostic?.code === "tool-count-match" ||
+    diagnostic?.code === "tool-count-mismatch" ||
+    diagnostic?.code === "tool-count-exceeded" ||
+    diagnostic?.code === "tool-count-unavailable" ||
+    diagnostic?.code === "tool-absence-match" ||
+    diagnostic?.code === "tool-absence-mismatch" ||
+    diagnostic?.code === "tool-absence-unavailable";
+}
+
+function candidateToolName(diagnostic: MatchDiagnosticView | null): string | undefined {
+  const name = diagnostic?.children.find((child) => child.label === "name");
+  if (name?.diagnostic?.received !== undefined) return name.diagnostic.received;
+  return name?.state === "matched" ? name.diagnostic?.expected : undefined;
+}
+
+function candidateLabel(index: number, diagnostic: MatchDiagnosticView | null, locale: string): string {
+  const call = label(locale, "Call", "调用");
+  const name = candidateToolName(diagnostic);
+  return name === undefined ? `${call} ${index + 1}` : `${call} ${index + 1} · ${name}`;
+}
+
+function summaryFacts(diagnostic: MatchDiagnosticView | null, locale: string): readonly {
+  readonly label: string;
+  readonly value: string;
+}[] {
+  if (diagnostic === null || diagnostic.children.length > 0) return [];
+  return [
+    ...(diagnostic.expected === undefined ? [] : [{
+      label: label(locale, "Expected", "预期"),
+      value: diagnostic.expected,
+    }]),
+    ...(diagnostic.received === undefined ? [] : [{
+      label: label(locale, "Observed", "实际"),
+      value: diagnostic.received,
+    }]),
+    ...(diagnostic.reason === undefined ? [] : [{
+      label: label(locale, "Reason", "原因"),
+      value: diagnostic.reason,
+    }]),
+  ];
+}
+
+function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, toolCandidateIndex, children }: {
   readonly label: string;
   readonly state: MatchState;
   readonly diagnostic: MatchDiagnosticView | null;
   readonly locale: string;
   readonly root?: boolean;
+  readonly toolCandidateIndex?: number;
   readonly children?: ReactElement;
 }): ReactElement {
-  const accessibleLabel = `${nodeLabel}: ${stateLabel(state, locale)}`;
+  const displayLabel = toolCandidateIndex === undefined
+    ? nodeLabel
+    : candidateLabel(toolCandidateIndex, diagnostic, locale);
+  const visibleState = stateLabel(state, locale);
+  const accessibleLabel = `${displayLabel}: ${visibleState}`;
+  const facts = summaryFacts(diagnostic, locale);
   const summary = (
     <span className={`niceeval-match-summary niceeval-match-summary--${state}`}>
-      <code>{nodeLabel}</code>
+      <span className="niceeval-match-summary-main">
+        <code>{displayLabel}</code>
+        {facts.length === 0 ? null : (
+          <span className="niceeval-match-summary-facts">
+            {facts.map((fact) => (
+              <span key={fact.label} className="niceeval-match-summary-fact">
+                <span>{fact.label}</span>
+                <code>{fact.value}</code>
+              </span>
+            ))}
+          </span>
+        )}
+      </span>
+      <span className="niceeval-match-state">{visibleState}</span>
     </span>
   );
   const nested = diagnostic?.children ?? [];
+  const childrenAreToolCandidates = isToolCollectionDiagnostic(diagnostic);
   const body = diagnostic !== null || children !== undefined
     ? (
         <div className="niceeval-match-detail">
@@ -412,6 +477,7 @@ function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, 
                   state={child.state}
                   diagnostic={child.diagnostic}
                   locale={locale}
+                  {...(childrenAreToolCandidates ? { toolCandidateIndex: child.index } : {})}
                 />
               ))}
             </div>
