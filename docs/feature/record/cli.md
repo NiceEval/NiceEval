@@ -118,7 +118,7 @@ niceeval clean [--record <root>] [--yes]
 niceeval migrate [--record <root>] [--yes]
 ```
 
-命令处理 current `niceeval.record.attachments` 的 Attachment versions，也处理受支持的
+命令处理 current `niceeval.record.attachments` 的 Attachment revisions，也处理受支持的
 `niceeval.record.source-receipts` predecessor。它先形成只读确定性 plan：
 
 ```text

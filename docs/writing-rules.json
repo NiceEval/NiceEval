@@ -1108,6 +1108,11 @@
       "term": "materializer",
       "use": "按职责写 Sandbox creator、Provider builder、cache restorer、payload reader 或 resource factory；代码标识符写进反引号",
       "why": "施动者名称没有说明它创建、构建、恢复或读取什么对象"
+    },
+    {
+      "term": "Attachment persistence version",
+      "use": "Attachment persistence revision",
+      "why": "同一 family 的持久化解释只沿 numeric revision 与相邻 migration 演进；version 会与包、API 和 Record root format 混淆。"
     }
   ]
 }

@@ -19,7 +19,7 @@
 
 Sandbox 负责创建、准备、复用和留存隔离实例，但它不拥有独立的可携带 Record family。一次 Attempt 封口时，Sandbox
 相关事实与相邻运行事实按 capture authority 进入 Record 的九项 fixed catalog。family 名是稳定 identity；每份
-Attachment envelope 的 `schemaVersion` 由对应 family 契约拥有：
+Attachment envelope 的 `revision` 由对应 persistence 拥有：
 
 | 事实 | family 与 owner |
 |---|---|

@@ -32,7 +32,7 @@ Score Eval 把 earned score 与 `complete`、`partial` 或 `unavailable` 保存�
 
 ## 唯一 owner 与读时失败
 
-Core Attempt 是 execution outcome 的唯一 owner，固定 `niceeval.assertions` family（envelope `schemaVersion: 1`）是 assertion result 与 score facts 的唯一 owner。Diagnostics 属于固定 Observability；其它固定 families 仍各自拥有 file changes、sources 与 artifacts。它们共同构成读取 Verdict 所需的固定 owner。
+Core Attempt 是 execution outcome 的唯一 owner，固定 `niceeval.assertions` family（persistence revision `3`）是 assertion result 与 score facts 的唯一 owner。Diagnostics 属于固定 Observability；其它固定 families 仍各自拥有 file changes、sources 与 artifacts。它们共同构成读取 Verdict 所需的固定 owner。
 
 折叠前必须能读取 Core Attempt 和 sealed Assertions。任一非 available 的 Assertions 读取状态都不是领域 Verdict，也不能被替换成 `passed`；planner 必须形成 gap。`errored`、`cancelled` 与 `interrupted` Attempt 也必须按其真实 Core outcome 折叠，不能由 assertions 洗成 `passed`。
 

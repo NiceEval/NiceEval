@@ -270,7 +270,7 @@ service locator。
 | 返回对象 | 词根指向哪个领域对象 |
 | 正交选项 | 哪些约束不属于基础方式，不进入判别字段 |
 
-`AnalysisSample.selection.policy` 是上层 ABI，不版本化。内建 identity 是 `explicit-runs` 与 `project-current`，输入分别由自己的具名类型承载。`project-current` 比较当前项目目标与已有 Eligibility identity，并保留全部匹配结果；它不是按时间排序的模式。durable RecordAttachment identity 仍保留版本。不要把 execution `reuse | gap` 混进同一个 slot 联合。
+`AnalysisSample.selection.policy` 是上层 ABI，不版本化。内建 identity 是 `explicit-runs` 与 `project-current`，输入分别由自己的具名类型承载。`project-current` 比较当前项目目标与已有 Eligibility identity，并保留全部匹配结果；它不是按时间排序的模式。durable RecordAttachment persistence 仍保留独立 revision。不要把 execution `reuse | gap` 混进同一个 slot 联合。
 
 正交约束必须写成独立字段，但前提是它对应明确用户旅途。
 adoption、rename 或其它出处事实留在 Run-owned RecordAttachment，不进入 Member 核心，也不膨胀成组合选择模式。

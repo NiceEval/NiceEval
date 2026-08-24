@@ -127,7 +127,7 @@ export default defineScoreEval({
 });
 ```
 
-每条 Assertion 在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 中封口 `evaluation`、evidence 与 diagnostic。
+每条 Assertion 在 `niceeval.assertions` family 的 persistence revision `3` envelope 中封口 `evaluation`、evidence 与 diagnostic。
 `.score(points)` 还将 `points` 与 earned contribution 封口到同一 entry：Boolean matched 贡献
 `points`、mismatched 贡献 `0`；measurement `m` 贡献 `m * points`。`t.score(points)` 直接登记
 direct-score Assertion entry，返回的 handle 只能配置 key 与 label。

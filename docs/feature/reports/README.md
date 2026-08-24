@@ -89,7 +89,7 @@ view 不注入只在本机有效的作者脚本。
 选中 Page 的已呈现文字，不序列化通用作者树或 site revision。format、locale、route 选择与 canonical order 由 [CLI](cli.md) 定义。
 
 所有内建 `show --json` Page 使用同一个 `niceeval.show` 文档 format；format 只标识机器文档类型，不承担版本或迁移语义，
-也不随当前 Page 改变。该 API 与生产者同步演进；持久化版本只属于 Record。
+也不随当前 Page 改变。该 API 与生产者同步演进；persistence revision 只属于对应的 Record Attachment family。
 单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard；实验组 Page 的 `comparison` 输出成员、各成员 distinct Eval coverage 与组内 Eval 并集大小。population 不同不会产生另一种状态。
 
 报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 左侧放品牌，中间居中整个

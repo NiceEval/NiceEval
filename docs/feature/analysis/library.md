@@ -77,11 +77,11 @@ binding 对一个 member 的闭合观察只有以下五种状态：
 |---|---|---|
 | `value` | 有 | current input 已验证并形成值 |
 | `missing` | 无 | current catalog 中应有的事实缺席 |
-| `migration-required` | 无 | 已知旧 schemaVersion 有固定迁移路径；issue code 同为 `migration-required` |
+| `migration-required` | 无 | 已知旧 revision 有固定迁移路径；issue code 同为 `migration-required` |
 | `unsupported` | 无 | producer 不支持该 input |
 | `failed` | 无 | 读取、验证或 pure projection 失败 |
 
-unknown family、known future schemaVersion 与不相容 Core 在 current `RecordReadSession` 形成前
+unknown family、known future revision 与不相容 Core 在 current `RecordReadSession` 形成前
 `unsupported-format`。Sample 不跳过未知 durable bytes。局部 `unsupported` 只表示 producer 无法提供已发布
 input；它不同于 current catalog family 缺失的 `not-recorded`，也不同于已知 family predecessor 所需的
 `migration-required`。
@@ -526,7 +526,7 @@ interface MetricValue<Value = number> {
 | `partial` | 有贡献时非 null；零贡献时为 null | `samples < total` 且 `total > 0` | 每个未贡献成员都有 missing、unsupported 或可恢复的数据问题 |
 | `unavailable` | null | 由专门的闭合投影定义 | 该投影没有可报告值；原因由它自己的闭合 reason union 说明 |
 | `empty` | null | `samples === total` | Measure 的领域结果合法为空，且没有缺失、unsupported 或失败问题 |
-| `migration-required` | null | `samples === 0` 且 `total > 0` | 全部预期输入，或 across reduction，都只因已知旧 schemaVersion 而不可读；先运行 `niceeval migrate` |
+| `migration-required` | null | `samples === 0` 且 `total > 0` | 全部预期输入，或 across reduction，都只因已知旧 revision 而不可读；先运行 `niceeval migrate` |
 | `unsupported` | null | 没有可形成结果的 current 输入 | host / producer 未提供已发布 input |
 | `failed` | null | 已贡献数可小于或等于 total | 读取、验证、relation、producer 或 reduction 出现阻断性失败 |
 

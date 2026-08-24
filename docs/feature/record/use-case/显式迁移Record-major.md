@@ -1,9 +1,9 @@
 # 显式 migration 与 Git 边界
 
-本页说明 `niceeval migrate` 怎样区分 current Attachment、可达的历史版本、未知 family 与 legacy root。
+本页说明 `niceeval migrate` 怎样区分 current Attachment、可达的历史 revision、未知 family 与 legacy root。
 契约单源始终在 [Record Architecture](../architecture.md) 和 [Record CLI](../cli.md#migrate)。
 
-## 无版本 current root
+## 没有 numeric revision 的 current root
 
 完整 current Record 的 root 是：
 

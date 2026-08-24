@@ -18,7 +18,7 @@ subject、callsite、source order 与 groupPath；后续配置只作用于同一
 
 ## 两种 grading
 
-Pass Eval 与 Score Eval 的 Assertion 都封口到 `niceeval.assertions` family 的 `schemaVersion: 1` envelope。Verdict 在读侧折叠 Core
+Pass Eval 与 Score Eval 的 Assertion 都封口到 `niceeval.assertions` family 的 persistence revision `3` envelope。Verdict 在读侧折叠 Core
 `outcome`、sealed Assertions 与显式 skip；它不从分数推导，Score 也不从 Verdict 推导。
 
 Score Eval 的显式 contribution 将 `points`、earned 与完整度输入封口到 Assertion entry。Score 按同一份

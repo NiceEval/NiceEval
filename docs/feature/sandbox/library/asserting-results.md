@@ -36,7 +36,7 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 
 Runner 在作者 settle 后只导出并冻结一次 workspace diff 语义值。它是 Assertion evaluator 与 FileChanges collector
 共享的内存输入。封口时 collector 以归因策略、采集状态和按顺序排列的 send 区间端点轨迹形成 origin Attempt 的
-`niceeval.file-changes` closure；其 envelope 的 `schemaVersion` 是 `1`。它不是另一种 diff schema。
+`niceeval.file-changes` closure；其 persistence revision 是 `2`。它不是另一种 diff schema。
 
 运行时的 changed-hunk corpus 只服务 `notInDiff()` 求值和该 Assertion 自己的 Evidence。持久 File Changes 不保存
 hunk、patch、跨区间 path 汇总或 `net`。它保留 agent send 区间端点归因、有效 include/ignore/default-policy identity、

@@ -165,7 +165,7 @@ Analysis 逐 source 消费 `complete` 或 `partial` payload，并在需要 comma
 读取 inline 或 blob storage。它可以组合多个已声明 source 来形成 Calculation，却不修改 Record、选择新的 owner
 或把缺失数据解释为“没有发生”。Report 只消费闭合的 Analysis 结果，没有私有 reader 或额外数据权限。
 
-五个 source family 各自拥有稳定 family identity 与 numeric `schemaVersion`。current reader 只接受当前
+五个 source family 各自拥有稳定 family identity 与 numeric persistence `revision`。current reader 只接受当前
 source-first format；旧 aggregate 不会交给 Analysis、Report 或相邻 Attachment migration。
 
 ## 宿主侧行为断言：t.o11y

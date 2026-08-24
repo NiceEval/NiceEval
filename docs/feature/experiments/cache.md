@@ -70,8 +70,8 @@ interface ExecutionComparison {
 }
 ```
 
-`attachment` 保存稳定的 fixed family（固定附件族）名称。数值版本只在对应的 envelope（信封）
-`{ family, schemaVersion }` 中表达，不能拼进 family 名称。
+`attachment` 保存稳定的 fixed family（固定附件族）名称。numeric revision 只在对应的 envelope（信封）
+`{ family, revision }` 中表达，不能拼进 family 名称。
 
 当前 input/config/timeout 只在本次 target builder 内计算，最终以 Core expected slot 的组合
 `executionIdentityDigest` 表达；历史 Attempt 不把同一 digest 伪装成两份 input/config identity。source outcome

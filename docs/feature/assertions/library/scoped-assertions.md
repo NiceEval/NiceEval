@@ -94,7 +94,7 @@ Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session �
 `ToolMatch`、scoped Assertion、Analysis 与 Report 作者 API 都不用 `V1` 或 `V2` 后缀。中高层 breaking
 change 通过包与 API 升级交付，不要求用户改写已封口的 Record。
 
-只有 `RecordAttachment` 的持久 schema 与跨进程 wire codec 使用版本号。Assertions current envelope 是
-persistence revision `3`；持久 payload 规则见 [Architecture](../architecture.md)。
+只有 `RecordAttachment` 的持久解释使用 numeric revision。Assertions current envelope 的 persistence revision
+是 `3`；持久 payload 规则见 [Architecture](../architecture.md)。
 
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。

@@ -44,7 +44,7 @@ sealed Assertions 与显式 skip 读侧折叠。continuous measurement 用 `.gat
 `defineScoreEval` 创建 Score Eval。Assertion 默认 record-only；用 `.score(points)` 或 `t.score(points)`
 显式贡献 score。
 
-`points`、earned contribution 与完整度都封口在 `niceeval.assertions` family 的 `schemaVersion: 1` envelope 中，Score 按同一份
+`points`、earned contribution 与完整度都封口在 `niceeval.assertions` family 的 persistence revision `3` envelope 中，Score 按同一份
 rubric 在读侧形成。Score Eval 不声明 gate、max 或百分比；低分和零分不导致 `failed`，正常封口为 `passed`。
 execution error 读为 `errored`，显式 `t.skip(reason)` 读为 `skipped`。`.orStop()` 只停止当前 continuation。
 

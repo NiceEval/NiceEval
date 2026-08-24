@@ -215,6 +215,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 branded family definition 解释的 immutable logical value 与 owner-local content closure | [Record Architecture](feature/record/architecture.md) |
+| Record 附件定义 | `RecordAttachmentDefinition` | 描述一个 owner/family 的 branded current logical fact；包含 current Schema 与 named validate，不包含 revision 或 migration | [Record Library](feature/record/library.md#definition-identity) |
+| Attachment persistence | `RecordAttachmentPersistence` | 把 exact Record 附件定义绑定到 current revision 与严格相邻的私有 migration 链 | [Record Library](feature/record/library.md#definition-identity) |
+| Attachment persistence revision | `RecordAttachmentPersistence.revision` | 同一 owner/family 持久化解释规则的正整数修订号；不属于 Record root、logical definition 或 NiceEval 包版本 | [Record Library](feature/record/library.md#definition-identity) |
 | Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、session catalog 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources` current logical fact；保存当时 source closure 的 logical tokens 与 own content | [Record Architecture](feature/record/architecture.md) |
 | 源码项 | source item | Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-256 与 own content 标识的一项源码 | [Record Architecture](feature/record/architecture.md) |

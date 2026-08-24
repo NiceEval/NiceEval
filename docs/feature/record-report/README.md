@@ -307,7 +307,7 @@ AttemptWriteSession → Run seal → runs/<RunId>/complete
 ```
 
 Record 只保存无法从已有事实重新计算的内容。通过率、均值、排名、denominator（分母）、missing（缺失）汇总、图表点位与页面树都由上层按定义重新形成。
-current catalog 固定为九个 family；每个 family 自己拥有稳定 identity、owner 与 numeric `schemaVersion`。
+current catalog 固定为九个 family；每个 family 自己拥有稳定 identity、owner 与 numeric persistence `revision`。
 
 ## Record 数据边界
 
@@ -328,7 +328,7 @@ Adapter 只能向 NiceEval 已发布的 collector 提交合法值，不能借此
 conversation、usage、commands、timing 与 diagnostics 由 Analysis 从对应 source 投影。source navigation 是
 `turn-contexts`、`runner-activities` 与 origin Run `niceeval.sources` 的 Fact relation，不是第十个 family。
 
-Record 固定每个事实族的 payload shape（载荷形状）、owner（所有者）与语义。改变 Attachment 字段类型、scope（作用域）、cardinality（基数）、单位或坐标域时，需要提高该 family 的 `schemaVersion` 并提供可信相邻 migration；改变 Core 或发布边界时使用新的 format identity。显示名、格式、颜色、统计口径和组件配置不属于持久 schema。
+Record 固定每个事实族的 payload shape（载荷形状）、owner（所有者）与语义。改变 Attachment 字段类型、scope（作用域）、cardinality（基数）、单位或坐标域时，需要提高该 family 的 persistence `revision` 并提供可信相邻 migration；改变 Core 或发布边界时使用新的 format identity。显示名、格式、颜色、统计口径和组件配置不属于持久 schema。
 
 ## Migration（迁移）边界
 
@@ -340,7 +340,7 @@ Record 只向上层提供 current schema。root 使用稳定的 `niceeval.record
 可证明的 capture authority 与 segment provenance，不能拆成五个 source receipt，也不能伪造 source-navigation
 relation。用户需要用写出该格式的 NiceEval 版本读取。
 
-版本识别、具体 converter（转换函数）、Git preflight（Git 预检）、`migration.in-progress` 与最终校验属于 Record Host SDK（持久事实宿主开发工具包）。maintenance 只运行已声明 family 的可信相邻步骤；未知 family、future schemaVersion、不相容 Core 或缺少完整 chain 都拒绝打开。
+revision 识别、具体 converter（转换函数）、Git preflight（Git 预检）、`migration.in-progress` 与最终校验属于 Record Host SDK（持久事实宿主开发工具包）。maintenance 只运行已声明 family 的可信相邻步骤；未知 family、future revision、不相容 Core 或缺少完整 chain 都拒绝打开。
 
 Git 负责恢复历史 portable bytes。maintenance 用 local staging 与 `migration.in-progress` 约束可证明的恢复边界，
 不把 backup、rollback 或恢复日志写进 portable Record。迁移失败后，只有验证 worktree 与 index 等于已绑定的

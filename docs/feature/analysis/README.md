@@ -54,7 +54,7 @@ Evidence 再把该 Outcome 与已验证 Assertions 交给 Eval 的权威 fold，
 Attempt 时读取 `niceeval.runner-activities`，把已验证 source 以 `{ owner, fixed definition }` 缓存。第二个
 需要相同 input 的 Measure 复用该缓存；它不会预读 Assertions、Sources、Artifacts 或其它 Attempt。
 
-current reader 在 Sample 形成前拒绝 unknown family、known future schemaVersion 与不相容 Core。Sample 内的
+current reader 在 Sample 形成前拒绝 unknown family、known future revision 与不相容 Core。Sample 内的
 `unsupported` 只表达已发布 input 不适用于某个 producer，不容忍或跳过未知 durable bytes。
 
 ```text
