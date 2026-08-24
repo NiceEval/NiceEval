@@ -136,6 +136,7 @@ export type FrogMigrationReceipt = typeof FrogMigrationReceiptSchema.Type;
 export const FeedbackV2MigrationReceiptSchema = Schema.Struct({
   format: Schema.Literal("niceeval.feedback-schema-migration/v2"),
   sourceCommit: GitCommit,
+  resultCommit: GitCommit,
   before: Schema.Struct({ v1: Schema.Number.pipe(Schema.int(), Schema.nonNegative()), v2: Schema.Number.pipe(Schema.int(), Schema.nonNegative()) }),
   after: Schema.Struct({ v1: Schema.Number.pipe(Schema.int(), Schema.nonNegative()), v2: Schema.Number.pipe(Schema.int(), Schema.nonNegative()) }),
   entries: Schema.Array(Schema.Struct({

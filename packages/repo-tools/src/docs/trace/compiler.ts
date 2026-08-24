@@ -236,6 +236,46 @@ function deriveFeaturePages(
 function hasHeading(source: string, anchor: string): boolean {
   return source.split(/\r?\n/u).some((line) => markdownAnchor(line) === anchor);
 }
+
+function plainOwnerDescription(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]\([^)]+\)/gu, "$1")
+    .replace(/`([^`]+)`/gu, "$1")
+    .replace(/[*_~]/gu, "")
+    .replace(/^[-+*]\s+/u, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function conciseOwnerDescription(value: string): string {
+  const normalized = plainOwnerDescription(value);
+  const sentences = normalized.match(/.*?(?:[。！？!?]|[.](?=\s|$))|.+$/gu)?.map((sentence) => sentence.trim()).filter(Boolean) ?? [];
+  const useful = sentences.filter((sentence) => !/^(?:Provenance\b|Repo ID\b|Manifest\b|仓库 ID\b)/iu.test(sentence));
+  const selected = useful.find((sentence) => /被测|证明|验证|必须|不得|确保|\b(?:must|should|prove|verify|ensure|reject|return|keep)s?\b/iu.test(sentence)) ??
+    useful[0] ?? sentences[0] ?? normalized;
+  const points = [...selected.replace(/[。！？!?]+$/u, "")];
+  return points.length <= 120 ? points.join("") : `${points.slice(0, 119).join("")}…`;
+}
+
+function ownerDescription(lines: readonly string[], anchor: string, contractLine: number): string {
+  for (const line of lines) {
+    if (!line.trimStart().startsWith("|") || !line.includes(`(#${anchor})`)) continue;
+    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    const description = conciseOwnerDescription(cells[1] ?? "");
+    if (description.length > 0) return description;
+  }
+  let cursor = contractLine + 1;
+  const paragraph: string[] = [];
+  while (cursor < lines.length) {
+    const line = lines[cursor]?.trim() ?? "";
+    if (markdownAnchor(line) !== undefined || line === "<!-- niceeval.e2e-owner-contract/v1 -->") break;
+    if (line.length > 0 && !line.startsWith("|")) paragraph.push(line);
+    cursor += 1;
+  }
+  const description = conciseOwnerDescription(paragraph.join(" "));
+  return description.length > 0 ? description : anchor.replace(/-+/gu, " ");
+}
+
 function parseOwner(ownerRef: string, ownerPath: string, text: string): TraceOwner {
   const hash = ownerRef.lastIndexOf("#");
   if (hash <= 0 || hash === ownerRef.length - 1) {
@@ -271,7 +311,7 @@ function parseOwner(ownerRef: string, ownerPath: string, text: string): TraceOwn
   if (contract.startsWith("../") || contract === "..") {
     throw new TraceFormatError({ path: ownerPath, subject: "contract", message: "escapes repository" });
   }
-  return { ref: ownerRef, path: ownerPath, anchor, contract };
+  return { ref: ownerRef, path: ownerPath, anchor, contract, description: ownerDescription(lines, anchor, cursor) };
 }
 
 function ownerContracts(documents: readonly (readonly [string, string])[]): readonly TraceOwner[] {

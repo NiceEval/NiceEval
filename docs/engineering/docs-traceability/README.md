@@ -138,6 +138,7 @@ Contract: [Reports CLI](../../feature/reports/cli.md#niceeval-show-json)
 ```
 
 owner anchor 不是 docs-node kind，也不复制产品语义。owner 文档可以说明体裁和稳定结果，但不保存测试 path 的反向列表或 lane。
+人读测试树的 `Description` 来自 owner 文档：同文件有精确 anchor inventory 行时取其结果摘要，否则取 `Contract:` 后的第一段说明，最后才使用 anchor 的人读形式。它是 formatter 文本，不读取 `test()` 标题，也不产生新的关系 owner。
 lane、areas 与 executor 的真相仍在所属 E2E Repo metadata；Trace 只在测试投影中读取并显示它们。
 
 每个 test/spec 恰好一个 owner，每个 owner anchor 恰好被一个 test/spec 引用。一个 contract 可以拥有零到多个 owners；这不形成 coverage cardinality。
@@ -175,11 +176,12 @@ pnpm memory retire <memory-id> --from <repo-ref> [--dry-run] [--json]
 ### list
 
 两个 `list` 都只做浅发现。`feature list` 输出 Feature ID、标题与 canonical path。
-`test list` 的测试叶子输出 test/spec path 与 Repo。其子树展开 owner 指向的 Feature/Use Case、Regression Memory 与直接 `issue:` provenance；没有关系时显式显示 `None`。
+`test list` 的测试叶子直接输出完整 test/spec path 与 Repo。第二行输出 owner-owned `Description`，其余子树展开 Feature/Use Case、Regression Memory 与直接 `issue:` provenance；没有关系时显式显示 `None`。
+
 Feature pattern 匹配 ID、path 或标题；test pattern 还会匹配 owner/contract、Feature、Regression Memory 与 Issue。它们只用于缩小列表，不隐式扩大 Trace 闭包。
 列表中的 ID 或 path 必须能原样传给同类 `show`。
 
-人读 formatter 把 Feature 按父子 package、Test 按 E2E Repo 与目录渲染成树；树中的叶子仍显示可复制的精确 selector，关系子树不写回测试或文档 metadata。
+人读 formatter 把 Feature 按父子 package、Test 按 E2E Repo 与目录渲染成树；树中的叶子显示可复制的完整测试路径，关系子树不写回测试或文档 metadata。
 `--json` 保持 `niceeval.docs-trace/list-v1` 的稳定扁平数组，调用方不必拆解人读树，也不因 formatter 改版迁移。
 
 ### feature show

@@ -202,8 +202,10 @@ pnpm trace    recover
 `niceeval.feedback/v2` 一次切换，不在 regular codec 保留 v1 reader。迁移器是独立、可重复校验的受控入口；它逐条解码 v1，
 把 `adoptedContract` 转成 `adoptions.current`，把 `duplicateOf` 收敛到 duplicate closure，并保持 observation、impact、正文和附件字节不变。
 
-`feedback/schema-v2-migration-receipt.json` 逐 ID 保存 v1/v2 metadata digest、正文 digest 与附件 path/size/digest，顶层写明迁移前的 `sourceCommit` 与迁移前后数量。
-验收从该 commit 重新读取并迁移全部 35 条历史 v1，逐条复算两个 metadata digest，且要求当前 v1=0；本轮新增的 2 条 Feedback 直接以 v2 创建，不伪装成历史迁移输入。470 条 legacy Memory 以迁移前后 digest 证明逐字节不变。
+`feedback/schema-v2-migration-receipt.json` 逐 ID 保存 v1/v2 metadata digest、正文 digest 与附件 path/size/digest。顶层同时绑定迁移前的 `sourceCommit`、首次完整 v2 owner 所在的 `resultCommit` 与迁移前后数量。
+验收从 `sourceCommit` 重新读取并迁移全部 35 条历史 v1，再逐条复算两个 metadata digest。它还从 `resultCommit` 读取首次签入的完整 v2 metadata、正文和附件，证明真实迁移结果曾与确定性输出一致。
+
+当前仓库必须保持 v1=0。本轮新增的 2 条 Feedback 直接以 v2 创建，不伪装成历史迁移输入。470 条 legacy Memory 以迁移前后 digest 证明逐字节不变。
 
 v2 metadata digest 是迁移时刻的历史审计值；后续合法 mutation 不会反过来改写收据，也不会因当前 metadata 已变化而失败。
 长期 `feedback check` 仍核对 ID 完整性、当前 v2 Schema/状态，以及不可改写正文与附件的 digest。

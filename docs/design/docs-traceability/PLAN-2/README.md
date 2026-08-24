@@ -90,7 +90,7 @@ Feature 投影只走固定闭包。它包含本节点的派生页面、直接子
 它不继续遍历相关对象的其它边。第一批查询不展开 promotion history 与 supersession；普通 mentions 不进入默认结果。
 
 测试投影返回 Repo/file、owner anchor、contract、所属 Features、regressions，以及从 Repo metadata 读取的 lane/areas/executor。
-Trace 不读取或返回测试标题、scenario companion 与正文。没有 owner 的 Use Case 显示空数组和
+Trace 不读取或返回测试标题、scenario companion 与正文。人读测试 description 从 owner inventory 摘要或 owner contract 后的说明派生，不把测试源码标题升级成真源。没有 owner 的 Use Case 显示空数组和
 `No long-term automated owner`，仍成功退出。
 
 JSON show receipt 使用 v2、canonical path、稳定排序与显式空数组；list-v1 保持扁平兼容。人读树只是同一 receipt 的 renderer。

@@ -427,12 +427,25 @@ export class FeedbackRepository {
         cwd: this.#root,
         stdio: ["ignore", "ignore", "pipe"],
       });
+      execFileSync("git", ["merge-base", "--is-ancestor", receipt.sourceCommit, receipt.resultCommit], {
+        cwd: this.#root,
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      execFileSync("git", ["merge-base", "--is-ancestor", receipt.resultCommit, "HEAD"], {
+        cwd: this.#root,
+        stdio: ["ignore", "ignore", "pipe"],
+      });
       const trackedPaths = execFileSync(
         "git",
         ["-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", receipt.sourceCommit, "feedback"],
         { cwd: this.#root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 128 * 1024 * 1024 },
       ).split(/\r?\n/u).filter((item) => item.length > 0);
       const sourceOwners = trackedPaths.filter((item) => /^feedback\/[^/]+\/README\.md$/u.test(item));
+      const resultPaths = execFileSync(
+        "git",
+        ["-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", receipt.resultCommit, "feedback"],
+        { cwd: this.#root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 128 * 1024 * 1024 },
+      ).split(/\r?\n/u).filter((item) => item.length > 0);
       const historical = new Map<string, {
         readonly metadata: FeedbackV1MigrationSource;
         readonly body: string;
@@ -490,6 +503,35 @@ export class FeedbackRepository {
         if (digestText(source.metadata.observation) !== item.observationDigest) findings.push(`${item.id}: historical observation digest disagrees with sourceCommit`);
         if (digestText(source.metadata.impact) !== item.impactDigest) findings.push(`${item.id}: historical impact digest disagrees with sourceCommit`);
         if (JSON.stringify(source.artifacts) !== JSON.stringify(item.artifacts)) findings.push(`${item.id}: historical artifacts disagree with sourceCommit`);
+        const baselinePath = `feedback/${item.id}/README.md`;
+        if (!resultPaths.includes(baselinePath)) {
+          findings.push(`${item.id}: migrated Feedback is absent from resultCommit`);
+        } else {
+          const baselineSource = execFileSync("git", ["show", `${receipt.resultCommit}:${baselinePath}`], {
+            cwd: this.#root,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+            maxBuffer: 128 * 1024 * 1024,
+          });
+          const baseline = decodeFeedbackDocument(baselinePath, baselineSource);
+          if (baseline.metadata.id !== item.id) findings.push(`${item.id}: resultCommit directory and metadata IDs disagree`);
+          if (metadataDigest(baseline.metadata) !== item.v2MetadataDigest) findings.push(`${item.id}: resultCommit metadata differs from the deterministic v2 migration`);
+          if (digestText(baseline.body) !== item.bodyDigest) findings.push(`${item.id}: resultCommit body differs from the migration receipt`);
+          const artifactPrefix = `feedback/${item.id}/artifacts/`;
+          const baselineArtifacts = resultPaths.filter((path) => path.startsWith(artifactPrefix)).map((artifactPath) => {
+            const bytes = execFileSync("git", ["show", `${receipt.resultCommit}:${artifactPath}`], {
+              cwd: this.#root,
+              stdio: ["ignore", "pipe", "pipe"],
+              maxBuffer: 128 * 1024 * 1024,
+            });
+            return {
+              path: artifactPath.slice(`feedback/${item.id}/`.length),
+              byteLength: bytes.byteLength,
+              digest: traceDigest(bytes),
+            };
+          }).sort((left, right) => left.path.localeCompare(right.path));
+          if (JSON.stringify(baselineArtifacts) !== JSON.stringify(item.artifacts)) findings.push(`${item.id}: resultCommit artifacts differ from the migration receipt`);
+        }
         const current = byId.get(item.id);
         if (current === undefined) {
           findings.push(`${item.id}: migrated Feedback is missing`);

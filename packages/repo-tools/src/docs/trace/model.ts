@@ -21,6 +21,7 @@ export interface TraceOwner {
   readonly path: string;
   readonly anchor: string;
   readonly contract: string;
+  readonly description: string;
 }
 
 export interface TraceTest {

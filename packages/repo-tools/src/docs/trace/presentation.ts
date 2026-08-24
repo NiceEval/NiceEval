@@ -81,7 +81,6 @@ function testListTree(receipt: TestListReceipt, details: readonly TestShowReceip
       }
       cursor = child;
     }
-    const filename = parts.at(-1) ?? test.path;
     const detail = detailByPath.get(test.path);
     const relationChildren: TreeNode[] = detail === undefined ? [] : [
       {
@@ -100,8 +99,11 @@ function testListTree(receipt: TestListReceipt, details: readonly TestShowReceip
         : { label: `${issue.repository}#${issue.number} ${issue.url}` })),
     ];
     cursor.leaves.push({
-      label: `${filename} [selector: ${test.path}; repo: ${test.repo}]`,
-      children: relationChildren,
+      label: `${test.path} [repo: ${test.repo}]`,
+      children: detail === undefined ? relationChildren : [
+        { label: `Description: ${detail.owner.description}` },
+        ...relationChildren,
+      ],
     });
   }
   const freeze = (node: MutableTreeNode): TreeNode => ({
@@ -231,7 +233,10 @@ function testShowTree(receipt: TestShowReceipt): string {
       section("Metadata", metadata),
       {
         label: `Owner: ${receipt.owner.ref}`,
-        children: [{ label: `Contract (${receipt.contract.kind}): ${receipt.contract.ref}` }],
+        children: [
+          { label: `Description: ${receipt.owner.description}` },
+          { label: `Contract (${receipt.contract.kind}): ${receipt.contract.ref}` },
+        ],
       },
       section("Features", receipt.features.map((feature) => ({
         label: `${feature.id} — ${feature.title} [${feature.path}]`,
