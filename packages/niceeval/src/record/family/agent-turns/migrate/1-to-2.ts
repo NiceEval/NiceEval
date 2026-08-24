@@ -18,12 +18,37 @@ function decodeV1(value: unknown): unknown {
   return value;
 }
 
+const LegacyTurnItemLimitation = Object.freeze({
+  code: "unsupported-input" as const,
+  target: "turn-item" as const,
+  omittedAtLeast: 1,
+});
+
+function migrateLegacyCollection(
+  collection: Schema.Schema.Type<typeof AgentTurnsAttachmentV1Schema>["collection"],
+): unknown {
+  const limitations = collection.limitations.some((limitation) =>
+    limitation.code === LegacyTurnItemLimitation.code &&
+    limitation.target === LegacyTurnItemLimitation.target
+  )
+    ? collection.limitations
+    : Object.freeze(
+      [...collection.limitations, LegacyTurnItemLimitation].sort((left, right) => {
+        const leftKey = JSON.stringify(left);
+        const rightKey = JSON.stringify(right);
+        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+      }),
+    );
+
+  return Object.freeze({ state: "partial" as const, limitations });
+}
+
 /** Pure wrapping migration: no current identity, cut, or cross-Turn relation is invented. */
 function migrateV1(value: unknown): unknown {
   const previous = parseV1(value);
   const migrated = Object.freeze({
     state: "legacy" as const,
-    "collection-data": previous.collection,
+    "collection-data": migrateLegacyCollection(previous.collection),
     "segments-data": previous.segments,
   });
   const decoded = Schema.decodeUnknownEither(AgentTurnsAttachmentSchema, RecordExactParseOptions)(migrated);
