@@ -29,7 +29,6 @@ import {
   AssertionEntryIdSchema,
   AssertionsExactParseOptions,
   BoundedJsonObjectSchema,
-  BoundedJsonValueSchema,
   MAX_ASSERTION_DOCUMENT_BYTES,
   createAssertionsRecordSchemas,
   isBoundedJsonObject,
@@ -270,13 +269,6 @@ function encodeMaterial(
     case "snapshot": {
       const value = encodeSnapshotValue(material.value);
       const bytes = new TextEncoder().encode(JSON.stringify(value));
-      const validated = Schema.decodeUnknownEither(
-        BoundedJsonValueSchema,
-        AssertionsExactParseOptions,
-      )(value);
-      if (Either.isLeft(validated)) {
-        throw new Error("Assertions snapshot is outside the bounded JSON contract");
-      }
       return Object.freeze({
         kind: "content" as const,
         source: Stream.succeed(bytes),
