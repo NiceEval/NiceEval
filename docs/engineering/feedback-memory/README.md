@@ -201,7 +201,7 @@ pnpm trace    recover
 `feedback/schema-v2-migration-receipt.json` 逐 ID 保存 v1/v2 metadata digest、正文 digest 与附件 path/size/digest。顶层同时绑定迁移前的 `sourceCommit`、首次完整 v2 owner 所在的 `resultCommit` 与迁移前后数量。
 验收从 `sourceCommit` 重新读取并迁移全部 35 条历史 v1，再逐条复算两个 metadata digest。它还从 `resultCommit` 读取首次签入的完整 v2 metadata、正文和附件，证明真实迁移结果曾与确定性输出一致。
 
-当前仓库必须保持 v1=0，35 条存量 Feedback 都来自迁移结果。新的 Observation 进入 Issue，不追加 v2 Feedback。470 条 legacy Memory 以迁移前后 digest 证明逐字节不变。
+当前仓库必须保持 v1=0。收据锁定 `sourceCommit` 上 35 条存量 Feedback 的一次迁移；该提交之后、Issue 入口切换之前并发进入 `main` 的 3 条 v1 Feedback 在主线合并时按同一映射补迁，因此当前共有 38 条 v2 Feedback。新的 Observation 进入 Issue，不追加 v2 Feedback。470 条 legacy Memory 以迁移前后 digest 证明逐字节不变。
 
 v2 metadata digest 是迁移时刻的历史审计值；后续合法 mutation 不会反过来改写收据，也不会因当前 metadata 已变化而失败。
 长期 `feedback check` 仍核对 ID 完整性、当前 v2 Schema/状态，以及不可改写正文与附件的 digest。
