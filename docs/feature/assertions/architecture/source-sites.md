@@ -1,6 +1,6 @@
 # Assertions —— source sites
 
-本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。Assertions 当前 envelope 是 `schemaVersion: 2`，Sources 是 `schemaVersion: 1`；两者都保存已经发生的审计事实，不保存可执行的作者调用图。
+本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。Assertions 当前 envelope 是 `schemaVersion: 3`，Sources 是 `schemaVersion: 1`；两者都保存已经发生的审计事实，不保存可执行的作者调用图。
 
 Record catalog 固定为九个 family。物理 send 到 source / timing 的 navigation 是 reader-side Fact relation，
 不拥有 durable family，也不拥有 Assertion source site。第三方不能增加 family。完整 owner、closure 与 Sources

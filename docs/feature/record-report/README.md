@@ -122,13 +122,19 @@ SemanticFrame（语义数据帧）
 
 Matcher Filter Debugger 由 Analysis 发布具名 composite `MatcherFilterDebuggerView`。它一次组合 Assertions 的 query artifact 与 source owner 的 tool／event ledger。这个视图交付 Query summary、权威聚合计数、source-owned ledger、coverage-aware assertion overlay 和 selected-row detail。Report 只消费这一个闭合 DomainView。
 
-Record source owner 为每条独立事件持久化 `eventId`，为每笔 logical tool occurrence 持久化 `toolOccurrenceId`，并保存准确的 scope relation 与 `scopeId`。`operation.started` 和 `operation.finished` 的 `eventId` 不同；属于同一生命周期时，它们共享 `toolOccurrenceId`。Agent Turns 中 producer-minted `callId` 只表达 producer 配对输入，不能替代这些跨 family identity。
+Record source owner 只持久化一次已经归一、脱敏的 observed event ledger。它在 event 对 Assertion runtime 可见前为每条独立事件封口 `eventId`、scope 与 per-Session sequence，并在 tool start 时 mint `toolOccurrenceId`。`operation.started` 和 `operation.finished` 的 `eventId` 不同；属于同一生命周期时，它们共享 `toolOccurrenceId`。Agent Turns 中 producer-minted `callId` 只表达 legacy source-local 配对输入，不能替代这些跨 family identity。
 
-tool lifecycle 可以跨 Turn。source owner 分别保存 started／finished 的 Turn relation，并让同一个 `toolOccurrenceId` 连接两端；Analysis 不能把 lifecycle 归入单个 Turn，也不能按时间邻近配对。Assertions 只持久化 bounded locators、receipt、witness path 或 `failure frontier`，不复制 ledger。
+tool lifecycle 可以跨 Turn。唯一 package-owned source projector 保存 started／finished 的 Turn relation，并让同一个 `toolOccurrenceId` 连接两端。occurrence 只属于 started 所在的 home Turn；finish event 保留真实 finish Turn。
 
-Analysis 只在 `eventId`、`toolOccurrenceId`、scope relation 与 `scopeId` 能精确验证时建立 overlay。它把 source collection、evaluation receipt、identity relation 和 overlay retention 分别留在 `MatcherFilterDebuggerView` 中。React component 不接收两组待 join 的数组，不按位置 zip，也不按名称、时间或人类编号猜关系。
+Assertions runtime 与 Analysis reader 都消费这一个 projector。writer 不持久化 materialized occurrence ledger，Analysis 也不按时间邻近重新配对。Assertions 只持久化 scope cut、bounded locators、receipt、witness path 或 `failure frontier`，不复制 ledger。
 
-历史 Record 若能形成 ledger，却没有 Assertion locator 或准确 scope relation，Analysis 仍返回中立 ledger，并把 identity relation 标为 unavailable。Report 显示 `会话已记录 N 条，但此历史 Record 未保存断言与记录的逐条关联`。source partial、observability unavailable 与 retained old diagnostics 保持为三个独立状态；任何读侧都不重跑 matcher，也不把旧 diagnostic 与 ledger 合并推断。
+Turn／Session cut 使用 inclusive per-Session sequence。Attempt collection 使用按稳定 Session identity 排序的 vector cut，不能产生跨 Session order。
+
+Analysis 只在 `eventId`、`toolOccurrenceId`、scope relation、cut 与 source-owned collection completeness 能精确验证时建立 overlay。它把四个完整性维度分别留在 `MatcherFilterDebuggerView` 中，并直接返回已经查得的 conversation target 或 unavailable reason。React component 不接收两组待 join 的数组，也不猜测关系。
+
+历史 Record 若能形成 ledger，却没有 Assertion locator、准确 scope relation 或 cut，Analysis 仍返回中立 ledger，并把 identity relation 标为 unavailable。Agent Turns v1 的 `callId` 最多形成与 current identity 类型不相容的同 segment `legacy-source-local` 调用详情。Assertions v2 的旧解释只进入独立 `legacyDiagnostic`。
+
+二者都不能进入 current locator、overlay、witness／frontier或 exact navigation。Report 显示 `会话已记录 N 条，但此历史 Record 未保存断言与记录的逐条关联`。source partial、observability unavailable 与 retained old diagnostics 保持为三个独立状态。任何读侧都不重跑 matcher，也不把旧 diagnostic 与 ledger 合并推断。
 
 ## 什么可以定义成 Measure
 

@@ -489,6 +489,153 @@ outcome 或 duration，也不用一个完整 source 替代另一个缺失或损�
 Analysis 不扫描 source blob、不重建 sourceOrder，也不以数组位置、文本、path 或 clock proximity 拼 turn、source
 与 timing。dependency 缺席时，view 保留对应 `not-recorded`，不能伪造成 unmapped send 或空 timing。
 
+### Matcher Filter Debugger DomainView
+
+```ts
+type MatcherConversationTarget =
+  | {
+      readonly state: "exact";
+      readonly turnId: TurnId;
+      readonly eventId: EventId;
+      readonly anchor: string;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "historical-not-recorded" | "source-unavailable" | "ambiguous";
+    };
+
+type CurrentMatcherLedgerRow =
+  | {
+      readonly kind: "tool";
+      readonly rowId: string;
+      readonly number: string;
+      readonly phase: "at-evaluation" | "outside-evaluation-snapshot";
+      readonly locator: { readonly kind: "tool-occurrence"; readonly toolOccurrenceId: ToolOccurrenceId };
+      readonly summary: string;
+      readonly detail: MatcherToolDetail;
+      readonly conversationTarget: MatcherConversationTarget;
+    }
+  | {
+      readonly kind: "event";
+      readonly rowId: string;
+      readonly number: string;
+      readonly phase: "at-evaluation" | "outside-evaluation-snapshot";
+      readonly locator: { readonly kind: "event"; readonly eventId: EventId };
+      readonly summary: string;
+      readonly detail: MatcherEventDetail;
+      readonly conversationTarget: MatcherConversationTarget;
+    };
+
+type LegacyMatcherLedgerRow = {
+  readonly kind: "legacy-source-row";
+  readonly rowId: string;
+  readonly number: string;
+  readonly summary: string;
+  readonly detail: LegacyMatcherSourceDetail;
+  readonly conversationTarget: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
+};
+
+type CurrentMatcherLedgerCollection =
+  | {
+      readonly state: "complete" | "partial";
+      readonly rows: readonly CurrentMatcherLedgerRow[];
+      readonly limitation?: MatcherSourceLimitation;
+    }
+  | { readonly state: "unavailable"; readonly reason: MatcherSourceUnavailableReason };
+
+type LegacyMatcherLedgerCollection =
+  | {
+      readonly state: "complete" | "partial";
+      readonly rows: readonly LegacyMatcherLedgerRow[];
+      readonly limitation?: MatcherSourceLimitation;
+    }
+  | { readonly state: "unavailable"; readonly reason: MatcherSourceUnavailableReason };
+
+type CurrentMatcherOverlay =
+  | {
+      readonly retention: "complete";
+      readonly rows: readonly {
+        readonly locator: MatcherSourceLocator;
+        readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated";
+        readonly difference?: AssertionFactValue;
+      }[];
+      readonly examined: number;
+    }
+  | {
+      readonly retention: "partial";
+      readonly rows: readonly {
+        readonly locator: MatcherSourceLocator;
+        readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated";
+        readonly difference?: AssertionFactValue;
+      }[];
+      readonly retained: number;
+      readonly examined: number;
+    }
+  | { readonly retention: "unavailable"; readonly reason: string };
+
+type CurrentMatcherFilterDebuggerView = DomainView & {
+  readonly kind: "matcher-filter-debugger";
+  readonly state: "current";
+  readonly source: {
+    readonly final: CurrentMatcherLedgerCollection;
+    readonly atEvaluation: CurrentMatcherLedgerCollection;
+  };
+  readonly identityRelation:
+    | { readonly state: "exact" }
+    | { readonly state: "unavailable"; readonly reason: "source-unavailable" | "ambiguous" };
+  readonly overlay: CurrentMatcherOverlay;
+} & (
+  | {
+      readonly query: { readonly kind: "collection-filter"; readonly summary: MatcherCollectionQuerySummary };
+      readonly receipt: AssertionCollectionReceipt;
+    }
+  | {
+      readonly query: { readonly kind: "ordered-sequence"; readonly summary: MatcherOrderQuerySummary };
+      readonly receipt: OrderEvaluationReceipt;
+    }
+);
+
+type LegacyMatcherFilterDebuggerView = DomainView & {
+  readonly kind: "matcher-filter-debugger";
+  readonly state: "legacy";
+  readonly query: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
+  readonly source: {
+    readonly final: LegacyMatcherLedgerCollection;
+    readonly atEvaluation: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
+  };
+  readonly receipt: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
+  readonly identityRelation: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
+  readonly overlay: { readonly retention: "unavailable"; readonly reason: "historical-not-recorded" };
+  readonly legacyDiagnostic?: AssertionFactValue;
+};
+
+type MatcherFilterDebuggerView =
+  | CurrentMatcherFilterDebuggerView
+  | LegacyMatcherFilterDebuggerView;
+
+declare const matcherFilterDebuggerView: DomainViewRequest<MatcherFilterDebuggerView>;
+```
+
+`matcherFilterDebuggerView` 是 Assertions query artifact 与 Agent Turns source ledger 的具名 composite。Agent Turns 只提供一次归一、脱敏的 observed event rows。
+
+package-owned source projector 先把 current rows闭合为 final event ledger 与 logical-occurrence ledger，再按 artifact 的 scope cut 纯投影 evaluation-cut ledger。source projector 独占 lifecycle pairing、home Turn、finish endpoint 与 ambiguous／unavailable relation。Analysis binding 不实现第二套配对。
+
+view 分别交付 final source collection、evaluation-cut source collection、evaluation receipt、identity relation 与 overlay retention。Assertions 的 `collectionAtCut` 不能替代 source owner 的 limitation。
+
+top-level `current | legacy` 联合禁止两类 row 混装。current 分支再以 query kind 绑定对应 receipt；collection filter 只能携带 collection receipt，ordered sequence 只能携带 order receipt。overlay 的 `retention` 是唯一完整度字段，partial rows 是有界代表项与决定性 locator 的集合，不承诺是 source prefix。
+
+只有 final source complete，且 scope、cut 与 per-Session sequence 全部可验证时，evaluation-cut source 才能确认为 complete。source partial 且没有 source-owned cut checkpoint／limitation boundary 时，evaluation cut 保守为 partial／unverifiable。sealed decision 与 receipt 原样保留，但 view 不合成 complete overlay 或 failure frontier。
+
+package-owned assembler 只验证 locator 唯一且位于 exact scope/cut、witness sequence严格递增、retention数量不越过 receipt。它不重跑 matcher，也不重算 receipt、decision 或 lifecycle。
+
+current locator 只按 `eventId`／`toolOccurrenceId` 建立 relation。Agent Turns v1 的 `legacy-source-local` call/result关系与 Assertions 的 `legacyDiagnostic` 属于不相容类型。它们只能形成中立历史详情，不能进入 current overlay、witness／frontier或 exact navigation。
+
+`MatcherFilterDebuggerView` 直接返回已经查得的 conversation target，或具名 unavailable reason。Report 只滚动并短暂高亮这个 target。React 不再接收另一组 conversation rows 后按 ID、Turn、名称、位置或 DOM 邻近查找。
+
+最终 ledger 可以包含 evaluation cut 之后的 rows，但它们固定标为 outside evaluation snapshot，只是上下文。Query、receipt、overlay 与结果过滤只作用于 evaluation-cut ledger。
+
+每个 row 自带 `detail`，选中行直接显示这个已闭合值。component 不再把 row id 与另一张 detail 表连接。`conversationTarget.anchor` 也由 view 封口；Report 只把它交给滚动与短暂高亮行为。
+
 `attempt-evidence` 是一个闭合的非表格视图。Sample 在同一次成功读取 `ReadableAttempt` 时取得 Core `outcome`。
 
 它将该 Outcome 和已验证 Assertions 交给权威 fold，形成 detail 的派生 `verdict`。Outcome 是执行终态，Verdict

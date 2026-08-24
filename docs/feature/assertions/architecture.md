@@ -1,14 +1,14 @@
 # Assertions —— 架构
 
-`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 2`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
+`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 3`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
 
 它是 [Record architecture](../record/architecture.md) 定义的九个固定 durable family 之一。Record protocol 不提供第三方 family、字段 writer 或 schema registry：第三方只能在 Assertions entry 内提供可解释的 criterion schema。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与既有固定 family 的 sealed 事实读侧形成，不能各自变成新的持久 family。
 
 ## 版本边界
 
-`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `2`。当前领域类型不带版本后缀；v1/v2 只存在于 package-private wire codec 与相邻 migration identity。普通 reader 只接受 exact-current，普通 writer 只写 v2。
+`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `3`。当前领域类型不带版本后缀；v1／v2／v3 只存在于 package-private wire codec 与相邻 migration identity。普通 reader 只接受 exact-current，普通 writer 只写 v3。
 
-Record maintenance 独占历史 codec、blob closure、文件 I/O、Git restore point、sentinel、atomic physical rewrite 与最终 exact-current 验证。Assertions attachment 只提供纯 `1→2` payload transform。未来升级必须继续形成 `1→2→3` 相邻链。
+Record maintenance 独占历史 codec、blob closure、文件 I/O、Git restore point、sentinel、atomic physical rewrite 与最终 exact-current 验证。Assertions attachment 提供纯 `1→2` 与 `2→3` payload transform。未来升级必须继续扩展这条相邻链。
 
 ```text
 author calls / evaluator internals / producer control flow
@@ -77,15 +77,30 @@ type AssertionEntry = {
     readonly coverage: AssertionCoverage;
     readonly limitations: readonly AssertionLimitation[];
   };
-  readonly evaluation: {
-    readonly observed: AssertionFactValue;
-    readonly receipt?: AssertionCollectionReceipt;
-  };
+  readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
   readonly policy: AssertionDecisionPolicy;
   readonly contribution: ScoreContribution;
   readonly explanationRetention: ExplanationRetention;
 };
+
+type AssertionEvaluation =
+  | {
+      readonly kind: "ordinary";
+      readonly observed: AssertionFactValue;
+      readonly receipt?: AssertionCollectionReceipt;
+    }
+  | {
+      readonly kind: "matcher-current";
+      readonly observed: AssertionFactValue;
+      readonly artifact: MatcherQueryArtifact;
+    }
+  | {
+      readonly kind: "matcher-legacy";
+      readonly observed: AssertionFactValue;
+      readonly reason: "historical-not-recorded";
+      readonly legacyDiagnostic?: AssertionFactValue;
+    };
 
 type AssertionEntryOuter = Omit<AssertionEntry, "criterion"> & {
   readonly criterion:
@@ -301,8 +316,66 @@ type MatcherQueryStep = {
   readonly summary: AssertionFactValue;
 };
 
+type MatcherSourceSnapshot =
+  | {
+      readonly scope: "turn";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly scopeId: string;
+      readonly throughSessionSequence: number;
+      readonly source: { readonly family: "niceeval.agent-turns"; readonly schemaVersion: number };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    }
+  | {
+      readonly scope: "session";
+      readonly sessionId: string;
+      readonly scopeId: string;
+      readonly throughSessionSequence: number;
+      readonly source: { readonly family: "niceeval.agent-turns"; readonly schemaVersion: number };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    }
+  | {
+      readonly scope: "attempt";
+      readonly scopeId: string;
+      readonly sessions: readonly {
+        readonly sessionId: string;
+        readonly throughSessionSequence: number;
+      }[];
+      readonly source: { readonly family: "niceeval.agent-turns"; readonly schemaVersion: number };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    };
+
+type OrderStepReceipt = {
+  readonly step: number;
+  readonly comparisons: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+};
+
+type OrderEvaluationReceipt = {
+  readonly sourceRows: number;
+  readonly comparisons: number;
+  readonly unavailableComparisons: number;
+  readonly definitePrefixLength: number;
+  readonly possiblePrefixLength: number;
+  readonly stepReceipts: readonly OrderStepReceipt[];
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
+};
+
+type MatcherOrderPathNode = {
+  readonly step: number;
+  readonly locator: MatcherSourceLocator;
+  readonly sessionId: string;
+  readonly sessionSequence: number;
+  readonly result: "matched" | "unavailable";
+};
+
 type MatcherFailureFrontier = {
-  readonly longestMatchedPrefix: readonly MatcherSourceLocator[];
+  readonly longestDefinitePrefix: readonly MatcherOrderPathNode[];
+  readonly longestPossiblePrefix: readonly MatcherOrderPathNode[];
   readonly firstBlockingStep: number;
   readonly suffixChecked: AssertionCollectionReceipt;
   readonly representatives: readonly MatcherRetainedRow[];
@@ -311,27 +384,62 @@ type MatcherFailureFrontier = {
 type MatcherQueryArtifact =
   | {
       readonly kind: "collection-filter";
+      readonly sourceSnapshot: MatcherSourceSnapshot;
       readonly query: MatcherQueryStep;
       readonly receipt: AssertionCollectionReceipt;
       readonly retainedRows: readonly MatcherRetainedRow[];
     }
   | {
       readonly kind: "ordered-sequence";
+      readonly sourceSnapshot: Extract<MatcherSourceSnapshot, { readonly scope: "turn" | "session" }>;
       readonly querySteps: readonly [MatcherQueryStep, MatcherQueryStep, ...MatcherQueryStep[]];
-      readonly receipt: AssertionCollectionReceipt;
+      readonly receipt: OrderEvaluationReceipt;
       readonly result:
-        | { readonly state: "matched"; readonly witnessPath: readonly MatcherSourceLocator[] }
+        | { readonly state: "matched"; readonly witnessPath: readonly MatcherOrderPathNode[] }
         | { readonly state: "mismatched"; readonly failureFrontier: MatcherFailureFrontier }
         | { readonly state: "unavailable"; readonly reason: string };
       readonly retainedRows: readonly MatcherRetainedRow[];
     };
 ```
 
-`witnessPath` 是 canonical source order 中按 query step 逐项选择的字典序最早路径。失败只在 complete source 上成立：producer 保存可成立的最长前缀、紧随其后的 first blocking step、从该前缀末端到 source 末尾的 checked counts，以及有界的代表差异。这个结构叫 `failure frontier`，不叫 `minimal counterexample`；partial source 或任一步 unavailable 时，order artifact 的 result 必须是 unavailable。
+`MatcherSourceSnapshot` 是按 scope 封闭的联合，不存在跨 Session 的伪全局 `throughSequence`。Turn 与 Session 使用该 Session 的 inclusive `throughSessionSequence`。Attempt 使用按稳定 `sessionId` 规范化排序的 vector cut。根 `t` 只做 collection filter，不能从 vector 的数组位置创造 `toolOrder` 或 `eventOrder`。
+
+`witnessPath` 是 per-Session canonical source order 中按 query step 逐项选择的字典序最早 definite path。order 不复用 collection receipt。producer 对每条 source row 倒序更新 definite 与 possible frontier，保证同一 row 不能满足两个 step。
+
+算法可以使用 `O(steps × rows)` 时间，但只能使用 `O(steps + representatives)` 内存，不保存 matrix。query 最多 64 步，representative diagnostics 最多 8 个。
+
+失败只在 source complete、evaluation exhaustive，且 possible frontier 仍无法到达全部 steps 时成立。`failure frontier` 同时保留字典序最早的 longest definite prefix 与 longest possible prefix。possible path 的每个节点明确是 `matched` 或 `unavailable`。
+
+`firstBlockingStep` 紧随 possible prefix。`suffixChecked` 只统计 possible path 末端之后 canonical suffix 上对 blocking matcher 的比较。possible frontier 能到达全部 steps、definite frontier 却不能时，结果是 unavailable，不保存失败边界。这个结构叫 `failure frontier`，不叫 `minimal counterexample`。
+
+current decoder 还验证以下 order 不变量：
+
+- `stepReceipts` 与 `querySteps` 一一对应，step 从 1 连续编号；
+- 每个 step 的 matched、mismatched 与 unavailable 之和等于 comparisons；
+- order receipt 的 comparisons 与 unavailableComparisons 分别等于各 step 对应计数之和；
+- `definitePrefixLength <= possiblePrefixLength <= querySteps.length`；
+- matched witness 的长度等于 query steps，所有节点均为 matched；
+- mismatched frontier 的两条 path 长度分别匹配 receipt，`firstBlockingStep` 等于 `possiblePrefixLength + 1`；
+- witness 与 frontier locator 都位于 source cut，同一 path 的 session sequence 严格递增；
+- unavailable result 不携带 failure frontier，retained representatives 不超过 8 个。
 
 Assertions 只保存上面的有界 locator 与差异，不保存 tool ledger 或 event ledger。source owner 为每条事件 mint `eventId`，为每笔 logical tool occurrence mint `toolOccurrenceId`，并保存准确的 scope relation 与 `scopeId`。同一工具生命周期的 started／finished 使用不同 `eventId`，但共享 `toolOccurrenceId`；producer-minted `callId` 不能替代这两种 identity。
 
-tool lifecycle 可以跨 Turn。source owner 因而分别保存 started 与 finished 所属的 Turn relation，并把两端连接到同一个 `toolOccurrenceId`；它不能把 occurrence 压成单一 Turn，也不能让 reader 按相邻位置配对。
+tool lifecycle 可以跨 Turn。logical occurrence 的 Turn membership 只属于 operation.started 所在的 home Turn。finished event 保留自己的真实 finish Turn，却不会让 occurrence 成为第二个 Turn 的 tool candidate。
+
+Turn-scoped `calledTool`／`toolOrder` 只检查该 Turn 发起的调用；跨 Turn 完成由 `event`／`eventOrder` 检查。Turn receiver 使用 Turn 封口 cut，Session／Attempt receiver 使用 Assertion 登记时的 cut。后续 finish 或新增 row 不能改写已登记 evaluation。
+
+唯一 ingestion owner 必须在 event 对 Assertion runtime 可见前，先封口 immutable observed event 的 `eventId`、scope 与 per-Session `sessionSequence`。tool start 同时 mint `toolOccurrenceId`。
+
+open-operation key 是 `(sessionId, adapterOperationId)`，finish 只复用已经封口的 occurrence identity。Adapter `operationId`、Record producer 的 `callId`、名称、时间与数组位置都不能成为跨 family identity。
+
+Agent Turns 只持久化一次 observed event ledger，不再持久化 materialized occurrence ledger。package-owned `o11y` source projector 是 lifecycle 的唯一实现。它负责以下不变量：
+
+- 每个 Session 的 sequence 跨 segment 唯一且严格递增；
+- 一个 occurrence 恰有一个 start，最多有一个同 Session 的较晚 finish；
+- duplicate open operation、重复 finish与 orphan finish成为 typed ambiguous／unavailable relation。
+
+Assertions runtime 与 Analysis reader 都消费这个 projector。writer 只编码它收到的 observed event，不重新配对或 mint identity。
 
 Debugger 独立报告四个完整性维度：
 
@@ -342,7 +450,15 @@ Debugger 独立报告四个完整性维度：
 | identity relation | Assertion locator 与 source row 是否 exact、ambiguous 或 unavailable | 名称、时间和数组位置不能建立 relation |
 | overlay retention | 每个已检查 row 的逐行结果是否完整保留 | 聚合计数不能还原逐行状态 |
 
+`collectionAtCut` 只表达 evaluator 当时观察到的 cut receipt，不能单独把最终 ledger 升格为 complete。Analysis 只有在 source owner 的 final collection complete，且 scope、cut 与 sequence 都可验证时，才能确认 evaluation-cut source complete。
+
+final source partial 时，除非 source owner 另有可验证的 cut checkpoint 或 limitation sequence boundary，evaluation cut 也只能是 partial／unverifiable。Assertions 的 receipt、locator 数量与 witness 末端都不能反向证明 source complete。二者冲突时保留 sealed decision 与 receipt，但不形成 complete overlay 或 failure frontier。
+
 ledger 是中立 source facts，不能写入 `matched`、`mismatched`、`unavailable` 或 `not-evaluated`。这些状态只来自保留的 Assertion overlay。逐行 overlay 没有保留时，Debugger 显示“逐行结果未保留”。只有 exact identity relation、canonical order，以及 receipt 或 `failure frontier` 共同证明短路边界时，Analysis 才能把 source row 标为 `not-evaluated`。
+
+current artifact 与 legacy fallback 是编译期不相容的联合。Agent Turns v1 的 `callId` 只能形成同 segment 的 `legacy-source-local` 中立详情。它不能赋给 `toolOccurrenceId`、`MatcherSourceLocator`、current witness／frontier、exact navigation target 或 Assertion overlay。
+
+Assertions v2 的旧 diagnostic 迁入与 current artifact 互斥的 `legacyDiagnostic`，不能进入 retained rows、witness 或 frontier。历史迁移不从旧顺序、`callId` 或新随机值补造 capture-time identity、scope 或 cut。
 
 overlay retention complete 表示每条 source row 都有已保留状态，或能由上述短路边界精确证明为 `not-evaluated`。只有这种状态才能形成 exact matched、mismatched 与 unavailable filters。其它状态只形成 All Records 与 Retained Evidence，并显示 `retained X / examined Y`；聚合总数仍以 receipt 为权威。
 
@@ -399,7 +515,7 @@ type AssertionDecisionPolicy = {
 };
 
 type ExplanationRetention =
-  | { readonly state: "retained"; readonly value: AssertionFactValue | MatcherQueryArtifact }
+  | { readonly state: "retained"; readonly value: AssertionFactValue }
   | { readonly state: "unavailable"; readonly reason: "not-recorded" };
 ```
 
@@ -460,6 +576,18 @@ v1 没有持久化 criterion expression、measurement/threshold、Judge rational
 v1 `gate` 为 `satisfied`、`failed`、`unavailable` 或 `not-applicable` 已证明该 entry 是 required gate，因此迁移为 requirement available/required。condition 仍 unavailable/not-recorded。只有 `gate: "not-gate"` 时 requirement 也是 unavailable/not-recorded。这样 required-unavailable 的旧 Verdict 保持 errored。
 
 物理 payload 与 envelope 的 rewrite、Git/sentinel/recovery 和最终验证由 Record maintenance 执行。transform 本身绝不读写磁盘。
+
+## v2 → v3 相邻迁移
+
+v3 把 matcher artifact 从普通 explanation 中分离，放入 `evaluation` 的封闭联合。`matcher-current` 的权威 receipt 只存在于 artifact 内，不能再与 ordinary `evaluation.receipt` 双写。pure transform 先用 v2 的 published criterion 与 source snapshot discriminator 识别 matcher entry：
+
+- `occurrence/v1` 且 domain 是 tool 或 event，属于 collection matcher；
+- source snapshot 的 `assertion` 精确为 `tool-order` 或 `event-order`，属于 order matcher；
+- 其它 entry 迁入 `ordinary` evaluation。
+
+识别出的旧 matcher entry 一律写 `{ kind: "matcher-legacy", reason: "historical-not-recorded" }`。v2 retained explanation 若存在，只移动到这个分支的 `legacyDiagnostic`；它不再同时留在 `explanationRetention`。迁移不生成 current artifact，也不从 candidate count、旧 path、`callId`、source 顺序或新随机值补造 source cut 与 locator。
+
+非 matcher entry 迁入 `kind: "ordinary"`，原 evaluation 与 explanation 无损保留。`observed`、decision、policy、contribution、materials 与 source sites 都无损复制。maintenance 随后以 v3 exact decoder 验证完整 payload；transform 本身不执行 matcher，也不读取 Agent Turns。
 
 ### 历史 Record 的 Matcher 降级
 

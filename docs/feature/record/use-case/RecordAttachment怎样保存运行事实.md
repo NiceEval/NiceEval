@@ -46,7 +46,7 @@ attachments/<family>/
 例如 Assertions 的 envelope 是：
 
 ```json
-{ "family": "niceeval.assertions", "schemaVersion": 2 }
+{ "family": "niceeval.assertions", "schemaVersion": 3 }
 ```
 
 payload 中的每个 `RecordBlobRef` 都必须有且只有一份本 directory 的 blob。反过来，每个 blob 也必须

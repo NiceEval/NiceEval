@@ -80,9 +80,13 @@ turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 
 `calledTool`、`notCalledTool`、`event` 与 `notEvent` 对 scope 中每条候选 source row 独立求值，再按 quantifier 聚合。tool 候选是一笔 logical tool occurrence；event 候选是一条独立事件。`operation.started` 与 `operation.finished` 因而是两个 event 候选，即使它们共享同一个 `toolOccurrenceId`。
 
-`toolOrder` 与 `eventOrder` 是 query steps 对 canonical source order 的 subsequence 查询。每一步必须选择严格晚于前一步的 source row；无关 row 可以穿插，同一 row 不能满足两个 step。成功结果保留稳定的最早 witness path，因此相同 Record、scope 与 query 总是选择同一路径。
+`toolOrder` 与 `eventOrder` 是 query steps 对一个 Turn 或 Session 的 per-Session observed ingestion order 做 subsequence 查询。这个顺序只表示 source owner 让 event 对 runtime 可见的顺序，不冒充 provider wall-clock。每一步必须选择严格晚于前一步的 source row；无关 row 可以穿插，同一 row 不能满足两个 step。成功结果保留字典序最早的 definite witness path，因此相同 Record、scope 与 query 总是选择同一路径。query 最多 64 步。
 
-失败结果保留 `failure frontier`：可成立的 longest matched prefix、first blocking step、从前缀末端开始的 suffix checked counts，以及有界 representative differences。它不是 `minimal counterexample`。只有 complete source 与 exhaustive receipt 能证明 failure frontier；source partial、identity relation 不可用，或仍可能延伸成 witness 的逐项 unavailable 都使 order 结果保持 unavailable。
+order 使用自己的 receipt，不把 step × row comparison 强行折成 collection 的 matched count。producer 流式维护 definite 与 matched-or-unavailable possible frontier，不保存 matrix。
+
+失败结果保留 `failure frontier`：字典序最早的 longest definite prefix、longest possible prefix，以及 possible prefix 后的 first blocking step。它还保存从该处开始的 suffix checked counts，以及最多 8 个 representative differences。它不是 `minimal counterexample`。
+
+只有 complete source、exhaustive receipt 且 possible frontier 无法形成完整 witness 时才失败。possible frontier 能完成而 definite frontier 不能完成时，结果为 unavailable。
 
 query artifact 必须保存 query steps、witness path 或 `failure frontier`、suffix aggregate、有界 representative diagnostics，以及所用 source locator 与 relation status。只保存 final tri-state 加 raw matches array 不能离线解释 order，也不是合法的 current artifact。
 
@@ -96,11 +100,13 @@ HITL 等待中的工具已有 `operation.started`，却还没有相配的 finish
 
 ## receiver、Session 与 vector cut
 
-Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session 在调用处之前的全部 Turn，所以可以断言跨 Turn 的工具行为。
+Turn receiver 只读取该不可变 Turn 封口时的 source cut。Session receiver 读取该 Session 在调用处之前的全部 Turn，所以可以断言跨 Turn 的工具行为；两者都保存 inclusive per-Session sequence cut。后续完成或新增事件不能改写这个 evaluation cut。
 
-根 `t` 在调用处冻结所有已启动 Session 的 vector cut。每个 Session 保留自己的前缀，根 scope 不把多个 Session 伪造成一条全局时间线。之后新增的 Turn、Session 或工具调用不进入已登记 Assertion。
+根 `t` 在调用处冻结所有已启动 Session 的 vector cut。每个成员由稳定 `sessionId` 与 inclusive through-sequence 标识，并按 `sessionId` 规范化；根 scope 不把多个 Session 伪造成一条全局时间线，也不提供 `toolOrder`／`eventOrder`。之后新增的 Turn、Session 或工具调用不进入已登记 Assertion。
 
-tool lifecycle 可以跨 Turn：started 与 finished 分别保留各自的 Turn relation，并通过 `toolOccurrenceId` 属于同一 occurrence。scope snapshot 保存准确的 scope relation 与 `scopeId`；Report 不能用 producer-minted `callId`、时间相邻或数组位置决定某个 ledger row 是否属于这次 Assertion。
+tool lifecycle 可以跨 Turn：started 与 finished 分别保留各自的 Turn relation，并通过 `toolOccurrenceId` 属于同一 occurrence。occurrence 的 Turn membership 只取 started 所在的 home Turn。finish event 不让它成为 finish Turn 的第二个 tool candidate。
+
+旧 Turn handle 永远观察封口时的 lifecycle，状态可能是 pending。Session handle 则观察登记时 cut 内已经出现的 finish。scope snapshot 保存准确的 scope relation、`scopeId` 与 cut。Report 不能用 producer-minted `callId`、时间相邻或数组位置决定某个 ledger row 是否属于这次 Assertion。
 
 ## 三值计数
 
@@ -119,6 +125,6 @@ tool lifecycle 可以跨 Turn：started 与 finished 分别保留各自的 Turn 
 change 通过包与 API 升级交付，不要求用户改写已封口的 Record。
 
 只有 `RecordAttachment` 的持久 schema 与跨进程 wire codec 使用版本号。Assertions current envelope 是
-schemaVersion `2`；持久 payload 规则见 [Architecture](../architecture.md)。
+schemaVersion `3`；持久 payload 规则见 [Architecture](../architecture.md)。
 
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。

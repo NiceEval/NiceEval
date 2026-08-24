@@ -150,8 +150,8 @@ current catalog 由 definition 关闭；source receipts 与既有非 source fact
 
 | family | current | `owners` |
 |---|---:|---|
-| `niceeval.assertions` | 2 | `{ attempt }` |
-| `niceeval.agent-turns` | 1 | `{ attempt }` |
+| `niceeval.assertions` | 3 | `{ attempt }` |
+| `niceeval.agent-turns` | 2 | `{ attempt }` |
 | `niceeval.turn-contexts` | 1 | `{ attempt }` |
 | `niceeval.sandbox-commands` | 1 | `{ attempt }` |
 | `niceeval.runner-activities` | 1 | `{ attempt, run }` |
@@ -380,11 +380,11 @@ root format / Core 不相容时，`inspect()` 返回 `unsupported-format`。已�
 未知/future family、known family 的 future/无链版本和未发布的斜杠版本草案返回 `unsupported-format`，不会被
 猜测成损坏数据或 migration source。
 
-Assertions 与 Observability 分别提供 package-private `1 → 2` step。plan 与 receipt 只保留准确的 Attachment targets，不存在 root target 或 steps。
+Assertions 提供 package-private `1 → 2 → 3` chain，Agent Turns 提供 `1 → 2` step。plan 与 receipt 只保留准确的 Attachment targets，不存在 root target 或 steps。
 
 相邻 transform 只接收已 hydrate 的 payload，不能做文件 I/O；maintenance framework 统一拥有历史 codec、blob closure、Git/sentinel/no-follow replace 与最终 exact-current 验证。
 
-adjacent link 的 physical write-set metadata 供 plan、execute 与 recovery 共用。Observability 是 envelope-only，Assertions 是 envelope + payload；运行时 transform identity 只作一致性校验。
+adjacent link 的 physical write-set metadata 供 plan、execute 与 recovery 共用。Assertions 与 Agent Turns 都迁移 envelope 和 payload；运行时 transform identity 只作一致性校验。
 
 计划绑定 Git repository、HEAD、Record path、`recordId`、current format 与 portable-byte inventory。它还绑定每个目标 envelope/payload 的 exact source bytes、physical write set 和 NiceEval migration implementation identity。`applyMigrate()` 重新验证这些值，避免把陈旧计划应用到变化后的 Record。
 
