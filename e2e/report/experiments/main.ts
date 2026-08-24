@@ -9,5 +9,5 @@ export default defineExperiment({
   model: "report-fixture-v1",
   labels: { line: "codex" },
   flags: { memory: "baseline" },
-  evals: ["tool-call", "deliberate-fail", "deliberate-error", "score"],
+  evals: ["tool-call", "deliberate-fail", "deliberate-error"],
 });

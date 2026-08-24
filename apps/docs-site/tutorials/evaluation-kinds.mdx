@@ -6,6 +6,8 @@ description: "Use defineEval and defineScoreEval to write pass/fail and scored e
 
 [NiceEval](https://niceeval.com/) provides two eval kinds. `defineEval` answers whether one run meets requirements, and the default Report reads pass rate. `defineScoreEval` answers how much work was completed, and the default Report reads accumulated score. Both kinds register an Assertion when you call it; the handle only configures that same entry.
 
+Keep each Experiment and Eval Group homogeneous: all pass/fail Evals or all scored Evals. `niceeval check`, dry runs, and normal runs reject a mixed selection before an Agent or Sandbox starts. Split the selection into two Experiment or Group definitions when a project needs both readings.
+
 ## Use `defineEval` for requirements that must hold
 
 ```ts

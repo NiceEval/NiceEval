@@ -158,7 +158,6 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
       expect(evals.map((event) => [event.evalId, event.verdict]).sort()).toEqual([
         ["deliberate-error", "errored"],
         ["deliberate-fail", "failed"],
-        ["score", "passed"],
         ["tool-call", "passed"],
       ]);
 
@@ -414,7 +413,7 @@ test("自定义 Report 的 show 是单目标阅读面，JSON 只含 target-execu
       );
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("Report fixture static");
-      expect(shown.stdout).toMatch(/Fixture pass rate is\s+available \(5\/5\)/);
+      expect(shown.stdout).toMatch(/Fixture pass rate is\s+available \(4\/4\)/);
       expect(shown.stdout).toContain("Source detail");
       expect(shown.stdout).toContain("Diff detail");
       const json = await niceeval.run(

@@ -44,7 +44,7 @@ pnpm exec niceeval view \
   --run <candidate-run-id>
 ```
 
-通过制评估比较通过率，计分制评估比较 earned score。混合 Experiment 分别保留两种主读数，不把它们合成一个百分比。
+通过制评估比较通过率，计分制评估比较 earned score。新的 Experiment 必须同型；读取旧的 mixed Record 时仍分别保留两种主读数，不把它们合成一个百分比。
 
 成本和时长只在有完整 Observability 时比较。缺失、部分采集或不支持的数据必须保持可见，不能填成零。
 

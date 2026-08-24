@@ -45,6 +45,10 @@ export default defineExperiment({
 
 谓词对已发现的 `EvalDescriptor` 求值。`e.id` 是项目内逻辑 ID；简单前缀可写成 `evals: ["memory/"]`，全部运行可以省略或写成 `"*"`。
 
+一次实际选择只能包含一种 `evaluationKind`。同时命中 `defineEval()` 与 `defineScoreEval()` 时，`niceeval check`、
+`niceeval exp --dry` 与普通运行在 Agent、Sandbox、fingerprint 和 Record 写入前拒绝，并分别列出 Pass/Score Eval ID。
+两种题型需要复用同一 Agent 配置时仍写两个 Experiment 文件；CLI 前缀可以继续收窄一个本来更宽的选择，只要本次实际集合保持同型。
+
 Invocation builder 先把求值结果形成 `ExecutionTarget` 的 expected slots。reuse planning 完成后，writer 才原样写入 Run；`Sample` 以后只读取这份已落盘分母，不重新执行谓词，也不从当前源码猜历史范围。
 
 ## labels 与运行时观测

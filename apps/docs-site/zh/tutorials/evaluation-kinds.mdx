@@ -6,6 +6,8 @@ description: "用 defineEval 与 defineScoreEval 编写通过制和计分制评�
 
 [NiceEval](https://niceeval.com/) 提供两种评估题型。`defineEval` 回答一次运行是否满足要求，默认报告读通过率；`defineScoreEval` 回答完成了多少，默认报告读累计分数。两种题型都调用即登记 Assertion，handle 只配置同一条 entry。
 
+每个 Experiment 与 Eval Group 必须同型：要么全是通过制，要么全是计分制。`niceeval check`、dry run 与普通运行会在 Agent 或 Sandbox 启动前拒绝混型；项目需要两种读数时拆成两个 Experiment 或 Group 定义。
+
 ## 必须做到的事用 `defineEval`
 
 ```ts
