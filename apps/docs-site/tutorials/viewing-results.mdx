@@ -87,7 +87,7 @@ The default report chooses its primary metric by Eval kind:
 
 - Pass/fail Evals show a pass rate.
 - Scored Evals show earned score.
-- A mixed Experiment shows Score and gives pass/fail Eval subrows their pass rate; it does not combine them into one percentage.
+- Historical Records created before mixed-kind admission was enforced remain readable: their scored and pass/fail rows keep separate primary metrics and are never combined into one percentage.
 
 `points` declared on a scored Eval are contribution weights for scoring items, not an Experiment's fixed maximum score. Dynamic execution, conditional branches, or unavailable material can yield different scoring-item sets, so the default report does not automatically divide earned score by every `points` value declared in source.
 
