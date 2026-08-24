@@ -62,7 +62,7 @@ services:
       - langfuse-postgres:/var/lib/postgresql/data
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8-alpine
+    image: clickhouse/clickhouse-server:26.6-alpine
     restart: unless-stopped
     environment:
       CLICKHOUSE_DB: default
