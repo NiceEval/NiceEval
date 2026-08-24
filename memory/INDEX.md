@@ -170,6 +170,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [concurrent-run-publication-recovery-race](concurrent-run-publication-recovery-race.md) — 并发 append writer 在 recovery 校验 staging 时完成原子发布，旧逻辑把合法 rename 误报为 inventory 损坏；仅在 staging 消失且 destination 已出现时转去完整校验不可变 destination
 - 已修 [shared-state-zombie-owner-recovery](shared-state-zombie-owner-recovery.md) — Linux zombie 保留 starttime 却不能执行 cleanup，显式 sharedState recovery 曾误拒绝；仅将 `Z` / `X` / `x` 判为终态，其余身份不确定继续 fail closed
 - 已修 [testkit-procfs-scan-race](testkit-procfs-scan-race.md) — 单次 terminal procfs scan 可漏掉 snapshot 后 fork 的同组 descendant；per-handle snapshot handshake 固定红灯，连续 scan 与可验证 resource cleanup 收口
 - 已修 [testkit-zombie-only-process-group](testkit-zombie-only-process-group.md) — Linux 的 `kill(-pgid, 0)` 对仅含 zombie 的 owned group 仍成功，旧 cleanup 无法改变终态却在两轮信号后报残留；Lifecycle 安装后 E2E 用固定 subreaper fixture 取得旧实现红灯，procfs terminal-only 判定转绿
