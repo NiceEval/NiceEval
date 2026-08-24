@@ -234,6 +234,11 @@ export function App({
   const pages = manifest.pages.filter(
     (page) => page.presentation === "page" && page.navigation,
   );
+  const experimentOptions = manifest.experimentSelection?.options ?? [];
+  const currentExperiment = experimentOptions.find(
+    (option) => option.route === visible?.route,
+  );
+  const experimentLabel = locale === "zh-CN" ? "实验" : "Experiments";
   return (
     <div onClickCapture={onDocumentClick}>
       <header className="niceeval-view-shell">
@@ -255,9 +260,14 @@ export function App({
               {pages.map((page) => (
                 <li key={page.pageId}>
                   <a
-                    href={`#${page.route}`}
+                    href={`#${page.route === "/" && currentExperiment !== undefined
+                      ? currentExperiment.route
+                      : page.route}`}
                     aria-current={
-                      visible?.route === page.route ? "page" : undefined
+                      visible?.route === page.route ||
+                        (page.route === "/" && currentExperiment !== undefined)
+                        ? "page"
+                        : undefined
                     }
                   >
                     {localized(page.title, locale)}
@@ -268,6 +278,31 @@ export function App({
           </nav>
         </div>
         <div className="niceeval-view-controls">
+          {experimentOptions.length >= 2 && currentExperiment !== undefined && (
+            <div className="niceeval-view-experiment">
+              <label>
+                <span>{experimentLabel}</span>
+                <select
+                  aria-label={experimentLabel}
+                  value={currentExperiment.route}
+                  onChange={(event) => {
+                    const route = event.target.value;
+                    if (route !== currentExperiment.route) {
+                      navigate(route, {
+                        replace: current?.presentation === "overlay",
+                      });
+                    }
+                  }}
+                >
+                  {experimentOptions.map((option) => (
+                    <option key={option.route} value={option.route}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           <label className="niceeval-view-language">
             <select
               aria-label="Language"

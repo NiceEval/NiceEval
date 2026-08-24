@@ -60,7 +60,7 @@ niceeval view --report <fixture> --no-open
 每对 response body 与文件 body 必须逐字节相同；固定 Host asset 也必须来自同一 revision。下载字节合同仍属于产品契约，但这个
 不发布 public Download 的代表 fixture 不为它伪造作者入口。
 
-浏览器默认进入稳定排序的第一个实验组 Page；多组 Header 实验 selector 始终有当前值，语言也由原生 selector 切换。
+浏览器默认进入稳定排序的第一个实验组 Page；单组直接进入且不显示单项控件，多组 Header 实验 selector 始终有当前值并位于语言 selector 之前。named 与 singleton identity 同名时，公开 option 文本仍能无歧义区分。组间切换、详情 overlay、Back/Forward 与直接深链都从基础 Page route 恢复同一当前值，语言由独立的原生 selector 切换。
 同组实验命中不同 Eval population 时，表格和详情入口仍可用。各实验指标保留自己的实际分母；内建机器文档同时给出各 member 的 distinct Eval coverage 与组内并集大小。
 
 完整 Page router

@@ -107,6 +107,13 @@ export interface ReportSiteRouteConflict {
   readonly pageIds: readonly [string, string];
 }
 
+export interface ReportExperimentSelectionInvalid {
+  readonly code: "report-experiment-selection-invalid";
+  readonly pageId: string;
+  readonly route: string;
+  readonly reason: string;
+}
+
 export type ReportExecutionError =
   | SampleClosedError
   | AnalysisRequestError
@@ -115,6 +122,7 @@ export type ReportExecutionError =
   | ReportTargetRouteInvalid
   | ReportPageExecutionFailed
   | ReportSiteRouteConflict
+  | ReportExperimentSelectionInvalid
   | ReportProjectionBuildFailure
   | ReportBuildBudgetExceeded;
 
@@ -130,6 +138,13 @@ export interface ClosedSitePage {
   readonly presentation: "page" | "overlay";
 }
 
+export interface ClosedExperimentSelection {
+  readonly options: readonly {
+    readonly route: string;
+    readonly label: string;
+  }[];
+}
+
 /** Host-private complete page closure used only while forming a revision. */
 export interface ClosedReportSite {
   /** Monotonic-enough wall clock anchor for the full Sample-open + byte build budget. */
@@ -141,6 +156,7 @@ export interface ClosedReportSite {
   readonly title: import("../model/locale.ts").LocalizedText;
   readonly theme?: ThemeDefinition;
   readonly pages: readonly ClosedSitePage[];
+  readonly experimentSelection?: ClosedExperimentSelection;
   readonly projections: ReportProjections;
   readonly problems: readonly ReportProblem[];
 }
@@ -209,6 +225,7 @@ export function executeReportSite(input: {
     return yield* Effect.ensuring(
       Effect.gen(function* () {
         const pages: ClosedSitePage[] = [];
+        const experimentSelectionCandidates: ExperimentSelectionCandidate[] = [];
         const routeOwners = new Map<string, string>();
         const siteProblems: ReportProblem[] = [];
         const projectionCosts: ReportProjectionCostInput[] = [];
@@ -288,6 +305,16 @@ export function executeReportSite(input: {
               capturePage: (capture) => capturedProjectionCosts(capture, route, definition.id),
             });
             yield* addSitePage(pages, routeOwners, page, false, definition.presentation);
+            const candidate = experimentSelectionCandidate({
+              role: definition.role,
+              presentation: definition.presentation,
+              key,
+              page,
+            });
+            if (candidate !== undefined && "code" in candidate) {
+              return yield* Effect.fail(candidate);
+            }
+            if (candidate !== undefined) experimentSelectionCandidates.push(candidate);
             yield* registerProjectionCosts(pricingProfile, projectionCosts, pageCosts);
             siteProblems.push(...analysisProblems(issues, page.target.pageId));
             yield* checkBuildBudgets(input.budget);
@@ -295,6 +322,10 @@ export function executeReportSite(input: {
         }
 
         siteProblems.push(...analysisProblems(outerCapture.issues()));
+        const experimentSelection = closeExperimentSelection(experimentSelectionCandidates);
+        if (experimentSelection !== undefined && "code" in experimentSelection) {
+          return yield* Effect.fail(experimentSelection);
+        }
 
         return Object.freeze({
           startedAtMs,
@@ -304,6 +335,7 @@ export function executeReportSite(input: {
           title: resolveReportTitle(input.report),
           ...(input.report.theme === undefined ? {} : { theme: input.report.theme }),
           pages: Object.freeze(pages),
+          ...(experimentSelection === undefined ? {} : { experimentSelection }),
           projections: buildReportProjections({
             pricingProfile,
             costs: projectionCosts,
@@ -552,6 +584,102 @@ function invokeAuthor<Value>(
   });
 }
 
+interface ExperimentSelectionCandidate {
+  readonly pageId: string;
+  readonly route: string;
+  readonly identity: string;
+  readonly taggedIdentity: string;
+}
+
+function experimentSelectionCandidate(input: {
+  readonly role?: {
+    readonly kind: "experiment-group";
+    readonly groupKind: "named" | "singleton";
+  };
+  readonly presentation: "page" | "overlay";
+  readonly key: string;
+  readonly page: ResolvedPage;
+}): ExperimentSelectionCandidate | ReportExperimentSelectionInvalid | undefined {
+  if (input.role === undefined) return undefined;
+  if (input.presentation !== "page") {
+    return experimentSelectionInvalid(input.page, "an experiment-group Page must use page presentation");
+  }
+  const params = input.page.target.params;
+  const field = input.role.groupKind === "named" ? "groupId" : "experimentId";
+  const identity = typeof params === "object" && params !== null && !Array.isArray(params)
+    ? Reflect.get(params, field)
+    : undefined;
+  if (typeof identity !== "string" || identity.length === 0) {
+    return experimentSelectionInvalid(
+      input.page,
+      `an ${input.role.groupKind} experiment-group Page requires a non-empty ${field}`,
+    );
+  }
+  if (identity !== input.key) {
+    return experimentSelectionInvalid(
+      input.page,
+      `${field} must equal the canonical parameter key`,
+    );
+  }
+  return Object.freeze({
+    pageId: input.page.target.pageId,
+    route: input.page.target.route,
+    identity,
+    taggedIdentity: `${input.role.groupKind}/${identity}`,
+  });
+}
+
+function closeExperimentSelection(
+  candidates: readonly ExperimentSelectionCandidate[],
+): ClosedExperimentSelection | ReportExperimentSelectionInvalid | undefined {
+  if (candidates.length === 0) return undefined;
+  const byTaggedIdentity = new Map<string, ExperimentSelectionCandidate>();
+  for (const candidate of candidates) {
+    const prior = byTaggedIdentity.get(candidate.taggedIdentity);
+    if (prior !== undefined) {
+      return experimentSelectionInvalid(
+        candidate,
+        `${candidate.taggedIdentity} is already owned by ${prior.pageId} at ${prior.route}`,
+      );
+    }
+    byTaggedIdentity.set(candidate.taggedIdentity, candidate);
+  }
+  const labelCounts = new Map<string, number>();
+  for (const candidate of candidates) {
+    labelCounts.set(candidate.identity, (labelCounts.get(candidate.identity) ?? 0) + 1);
+  }
+  const options = candidates.map((candidate) => Object.freeze({
+    route: candidate.route,
+    label: labelCounts.get(candidate.identity) === 1
+      ? candidate.identity
+      : candidate.taggedIdentity,
+  })).sort((left, right) => compareUtf8(left.route, right.route));
+  const labels = new Set<string>();
+  for (const option of options) {
+    if (labels.has(option.label)) {
+      const candidate = candidates.find((entry) => entry.route === option.route)!;
+      return experimentSelectionInvalid(candidate, `closed experiment label ${option.label} is ambiguous`);
+    }
+    labels.add(option.label);
+  }
+  return Object.freeze({ options: Object.freeze(options) });
+}
+
+function experimentSelectionInvalid(
+  page: Pick<ResolvedPage, "target"> | Pick<ExperimentSelectionCandidate, "pageId" | "route">,
+  reason: string,
+): ReportExperimentSelectionInvalid {
+  const target = "target" in page
+    ? { pageId: page.target.pageId, route: page.target.route }
+    : page;
+  return Object.freeze({
+    code: "report-experiment-selection-invalid" as const,
+    pageId: target.pageId,
+    route: target.route,
+    reason: reason.slice(0, 512),
+  });
+}
+
 function addSitePage(
   pages: ClosedSitePage[],
   routeOwners: Map<string, string>,
@@ -724,6 +852,7 @@ export function reportDefinitionIdentity(report: ReportDefinition): string {
       title: page.title,
       navigation: page.navigation,
       presentation: page.presentation,
+      role: "role" in page ? page.role ?? null : null,
       parameterized: page.params !== undefined,
       load: page.load?.toString() ?? null,
       render: page.render.toString(),
