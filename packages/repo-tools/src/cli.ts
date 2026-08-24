@@ -13,6 +13,8 @@ import {
   isTraceError,
   listFeatures,
   listTests,
+  recoverTrace,
+  renderTestListReceipt,
   renderTraceError,
   renderTraceReceipt,
   showFeature,
@@ -100,6 +102,21 @@ function renderError(error: unknown): string {
   return String(error);
 }
 
+function jsonError(error: unknown): string {
+  const fields = typeof error === "object" && error !== null
+    ? Object.fromEntries(Object.entries(error))
+    : {};
+  const tag = typeof fields._tag === "string" ? fields._tag : "RepositoryToolError";
+  return JSON.stringify({
+    ok: false,
+    error: {
+      ...fields,
+      _tag: tag,
+      message: typeof fields.message === "string" ? fields.message : renderError(error),
+    },
+  }, null, 2);
+}
+
 const feedbackAdd = Command.make("add", {
   input: inputOption,
   dryRun: dryRunOption,
@@ -163,6 +180,34 @@ const feedbackLink = Command.make("link", {
   Command.withDescription("Relate Feedback to an existing Memory."),
 );
 
+const feedbackAdopt = Command.make("adopt", {
+  id: Args.text({ name: "feedback-id" }),
+  to: Options.text("to").pipe(Options.withDescription("Exact repository ref adopted by this Feedback.")),
+  dryRun: dryRunOption,
+  json: jsonOption,
+}, ({ dryRun, id, json, to }) => runFeedbackCommand({
+  operation: "adopt",
+  id,
+  to,
+  dryRun,
+}).pipe(Effect.flatMap((outcome) => emit(outcome, json)))).pipe(
+  Command.withDescription("Adopt Feedback into one Roadmap, Feature, Use Case, or Engineering target."),
+);
+
+const feedbackRetire = Command.make("retire", {
+  id: Args.text({ name: "feedback-id" }),
+  from: Options.text("from").pipe(Options.withDescription("Exact current repository ref to retire.")),
+  dryRun: dryRunOption,
+  json: jsonOption,
+}, ({ dryRun, from, id, json }) => runFeedbackCommand({
+  operation: "retire",
+  id,
+  from,
+  dryRun,
+}).pipe(Effect.flatMap((outcome) => emit(outcome, json)))).pipe(
+  Command.withDescription("Retire one current Feedback adoption while preserving its history."),
+);
+
 const feedbackClose = Command.make("close", {
   id: Args.text({ name: "feedback-id" }),
   closure: Options.text("closure").pipe(Options.withDescription("Closure JSON path.")),
@@ -195,6 +240,8 @@ const feedback = Command.make("feedback").pipe(
     feedbackList,
     feedbackShow,
     feedbackLink,
+    feedbackAdopt,
+    feedbackRetire,
     feedbackClose,
     feedbackReopen,
     feedbackCheck,
@@ -262,14 +309,21 @@ const memorySupersede = Command.make("supersede", {
 
 const memoryPromote = Command.make("promote", {
   id: Args.text({ name: "memory-id" }),
-  promotion: Options.text("promotion").pipe(Options.withDescription("Promotion JSON path.")),
-  commit: Options.text("commit").pipe(Options.withDescription("Commit preserving the previous target.")),
+  to: Options.text("to").pipe(Options.withDescription("Exact repository ref promoted by this Memory.")),
   dryRun: dryRunOption,
   json: jsonOption,
-}, ({ commit, dryRun, id, json, promotion }) => readJson(promotion).pipe(
-  Effect.flatMap((value) => runMemoryCommand({ operation: "promote", id, promotion: value, commit, dryRun })),
+}, ({ dryRun, id, json, to }) => runMemoryCommand({ operation: "promote", id, to, dryRun }).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
-)).pipe(Command.withDescription("Promote Memory into a current Roadmap, Feature, or Engineering target."));
+)).pipe(Command.withDescription("Promote Memory into one Roadmap, Feature, Use Case, or Engineering target."));
+
+const memoryRetire = Command.make("retire", {
+  id: Args.text({ name: "memory-id" }),
+  from: Options.text("from").pipe(Options.withDescription("Exact current repository ref to retire.")),
+  dryRun: dryRunOption,
+  json: jsonOption,
+}, ({ dryRun, from, id, json }) => runMemoryCommand({ operation: "retire", id, from, dryRun }).pipe(
+  Effect.flatMap((outcome) => emit(outcome, json)),
+)).pipe(Command.withDescription("Retire one current Memory promotion while preserving its history."));
 
 const memoryCheck = Command.make("check", { json: jsonOption }, ({ json }) =>
   runMemoryCommand({ operation: "check" }).pipe(
@@ -287,6 +341,7 @@ const memory = Command.make("memory").pipe(
     memoryReopen,
     memorySupersede,
     memoryPromote,
+    memoryRetire,
     memoryCheck,
   ]),
 );
@@ -328,13 +383,16 @@ const feature = Command.make("feature").pipe(
 const testList = Command.make("list", {
   pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
   json: jsonOption,
-}, ({ json, pattern }) => runTraceQuery(
-  (snapshot) => {
+}, ({ json, pattern }) => compileTrace(ROOT).pipe(
+  Effect.flatMap((snapshot) => {
     const selected = Option.getOrUndefined(pattern);
-    return Effect.succeed(listTests(snapshot, selected === undefined ? {} : { pattern: selected }));
-  },
-  json,
-)).pipe(Command.withDescription("List E2E test/spec paths that can be passed to test show."));
+    const receipt = listTests(snapshot, selected === undefined ? {} : { pattern: selected });
+    if (json) return emit(receipt, true);
+    return Effect.forEach(receipt.tests, (item) => showTest(snapshot, item.path)).pipe(
+      Effect.flatMap((details) => emit(receipt, false, `${renderTestListReceipt(receipt, details)}\n`)),
+    );
+  }),
+)).pipe(Command.withDescription("List E2E tests with their Feature/Use Case, regression Memory, and Issue relations."));
 
 const testShow = Command.make("show", {
   test: Args.text({ name: "test-path" }),
@@ -347,6 +405,22 @@ const testShow = Command.make("show", {
 const test = Command.make("test").pipe(
   Command.withDescription("Discover E2E tests and the product contracts they protect."),
   Command.withSubcommands([testList, testShow]),
+);
+
+const traceRecover = Command.make("recover", { json: jsonOption }, ({ json }) =>
+  recoverTrace(ROOT).pipe(
+    Effect.flatMap((receipt) => emit(
+      receipt,
+      json,
+      receipt.recovered
+        ? `Trace recovery: ${receipt.action}; generation ${receipt.generation}${receipt.owner === undefined ? "" : `; owner ${receipt.owner}`}\n`
+        : `Trace recovery: nothing pending; generation ${receipt.generation}\n`,
+    )),
+  )).pipe(Command.withDescription("Recover or finish one interrupted trace relation publication."));
+
+const trace = Command.make("trace").pipe(
+  Command.withDescription("Coordinate and recover repository trace relation publications."),
+  Command.withSubcommands([traceRecover]),
 );
 
 const prNumberOption = Options.integer("pr").pipe(Options.withDescription("GitHub pull request number."));
@@ -521,7 +595,7 @@ const repository = Command.make("repository").pipe(
 
 const root = Command.make("niceeval-repo").pipe(
   Command.withDescription("NiceEval repository maintenance commands."),
-  Command.withSubcommands([feature, test, feedback, memory, pr, docs, examples, consumer, repository]),
+  Command.withSubcommands([feature, test, trace, feedback, memory, pr, docs, examples, consumer, repository]),
 );
 
 const run = Command.run(root, { name: "NiceEval repository tools", version: "1" });
@@ -534,7 +608,7 @@ const live = Layer.mergeAll(
 
 run(process.argv).pipe(
   Effect.catchAll((error) => Effect.sync(() => {
-    process.stderr.write(`${renderError(error)}\n`);
+    process.stderr.write(`${process.argv.includes("--json") ? jsonError(error) : renderError(error)}\n`);
     process.exitCode = 1;
   })),
   Effect.provide(live),

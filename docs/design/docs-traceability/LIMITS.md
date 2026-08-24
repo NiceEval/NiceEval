@@ -54,6 +54,15 @@ E2E Repo ID、areas、`implicitDependencies` 与产品 Feature 是不同维度�
 
 正式命令应进入 Docs domain。纯 compiler 只能有一个 owner；CLI、lint adapter 与 Memory check 不得分别实现关系 parser。
 
+### L12：页面角色不等于关系 metadata
+
+README、Library、CLI、Architecture、Lifecycle 与 Reference 可由 Feature package placement 稳定辨认。为了树形展示把这些角色写进 frontmatter 或 sidecar 会复制目录事实，并把 formatter 变成持久 Schema。
+
+### L13：Feedback、Memory 与 Issue 各有事实 owner
+
+Feedback 保存原始观察、Issue source 与 adoption；Memory 保存调查/裁决与 promotion；test/spec 保存 regression 与测试 Issue header。
+Use Case 只保存自己的产品语义和 `composes`，不能反向抄写这些 provenance 边。
+
 ## 候选清单
 
 - [PLAN-1：中央 Trace Registry](PLAN-1/README.md) —— 以签入 Registry 保存节点、边和反向索引。

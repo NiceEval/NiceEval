@@ -22,11 +22,45 @@ export class TraceSelectorAmbiguous extends Data.TaggedError("TraceSelectorAmbig
   readonly candidates: readonly string[];
 }> {}
 
-export type TraceError = TraceIoError | TraceFormatError | TraceSelectorMissing | TraceSelectorAmbiguous;
+export class TraceSnapshotChanged extends Data.TaggedError("TraceSnapshotChanged")<{
+  readonly path: string;
+  readonly before: number;
+  readonly after: number;
+  readonly attempts: number;
+}> {}
+
+export class TraceMutationActive extends Data.TaggedError("TraceMutationActive")<{
+  readonly path: string;
+  readonly attempts: number;
+}> {}
+
+export class TraceInputChanged extends Data.TaggedError("TraceInputChanged")<{
+  readonly path: string;
+  readonly attempts: number;
+  readonly changed: readonly string[];
+}> {}
+
+export class TraceRecoveryRequired extends Data.TaggedError("TraceRecoveryRequired")<{
+  readonly path: string;
+  readonly nextStep: "pnpm trace recover";
+}> {}
+
+export class TraceRecoveryConflict extends Data.TaggedError("TraceRecoveryConflict")<{
+  readonly path: string;
+  readonly message: string;
+}> {}
+
+export type TraceError = TraceIoError | TraceFormatError | TraceSelectorMissing | TraceSelectorAmbiguous |
+  TraceSnapshotChanged | TraceMutationActive | TraceInputChanged | TraceRecoveryRequired | TraceRecoveryConflict;
 
 export function isTraceError(value: unknown): value is TraceError {
   return value instanceof TraceIoError ||
     value instanceof TraceFormatError ||
     value instanceof TraceSelectorMissing ||
-    value instanceof TraceSelectorAmbiguous;
+    value instanceof TraceSelectorAmbiguous ||
+    value instanceof TraceSnapshotChanged ||
+    value instanceof TraceMutationActive ||
+    value instanceof TraceInputChanged ||
+    value instanceof TraceRecoveryRequired ||
+    value instanceof TraceRecoveryConflict;
 }

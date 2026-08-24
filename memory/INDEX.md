@@ -454,6 +454,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## docs · docs-site · reference
 
+- [docs-trace-relations-are-source-owned](docs-trace-relations-are-source-owned.md) — 裁决(2026-08-24):Feature 与 Use Case 的反向追溯由 Feedback、Memory、E2E 等事实 owner 动态投影；页面角色从 placement 派生，formatter 不进入持久 metadata
 - [overview-diagram-copies-field-shapes](overview-diagram-copies-field-shapes.md) — 已修:三层总纲图复制字段级形状,五处全漂移(locator/verdict 搬错层、flags 提到 run.json 顶层、目录名违反清洗规则、MetricCell 丢 samples/total);修法=图只留类型名与层间调用
 - 已修 [line-width-guard-cannot-catch-long-sentences](line-width-guard-cannot-catch-long-sentences.md) — 裁决(2026-07-26):行宽是代理指标,agent 靠句中换行零成本绕过;改为在软换行拼接后量单句 ≤140 字 / 一段 ≤320 字,分号不算断句;行宽先降级、2026-07-30 整条删除
 - 已修 [docs-line-width-cjk-token-exemption](docs-line-width-cjk-token-exemption.md) — 行宽检查的「长 token 豁免」按空格切 token,中文整段就是一个巨长 token,三百多行中文被静默放过;豁免只认不含宽字符的 token

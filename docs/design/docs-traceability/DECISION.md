@@ -11,6 +11,9 @@
 PLAN-2 保留现有 ownership：产品语义归 Feature，测试组合身份归 Engineering owner anchor，测试动作归原生 test/spec，历史证据归 Memory。
 它只给这些 owner 增加可机器辨认的正向指针，反向列表每次编译，不签入中央 graph。
 
+同一原则延伸到用户场景 provenance：原始观察及 adoption 归 Feedback，调查/裁决及 promotion 归 Memory，测试回归与 Issue header 归 test/spec。
+Feature/Use Case 不回写 Feedback、Memory 或 Issue 列表，也不增加 sidecar JSON。README、Library、CLI、Architecture 等页面角色由 package placement 派生；formatter 只消费 Snapshot，不进入 metadata。
+
 path-derived identity 与现有目录生命周期一致。Roadmap 采用会替换身份，因此由受锁 `adopt` 显式重写强关系与 promotion history，而不是增加永久 ID 或 alias。
 
 固定的 kind-specific 投影足以回答 Feature 和测试查询。公开命令按用户正在操作的对象命名，底层仍只编译一份 Snapshot。
@@ -42,7 +45,9 @@ Registry 还会自然吸收 coverage、状态与反向列表，最终成为 Feat
 - 所有文档节点按 placement 补 frontmatter；普通分组、category README 与 reference 不升级为节点。
 - strict check 切换时一次性清除自由文本 regression，不保留 doc-node legacy reader；Memory legacy reader 保留。
 - Design 写作规则改用 `selectedPlan` 作为机器真源；标题中的“推荐”只供人读。
-- 结构命令用可恢复 journal，不声称全仓瞬时原子写入。
+- 所有 Trace-visible owner publication 都先写 Git-private recovery journal；journal 保护提交与崩溃恢复，不成为关系 Registry，也不声称全仓瞬时原子写入。
+- Feedback 与 Memory 的关系 mutation 共用 shared/read、exclusive/write advisory lease、两次稳定输入捕获、preimage 与 generation；current/history 只能由具名命令维护。
+- generation durable replace 是唯一 commit point。恢复只在 owner、HEAD、Git index、mode、worktree identity 与 journal 全部匹配时自动回滚；未知状态保留 owner 与 journal并失败。
 
 ## 复审触发条件
 

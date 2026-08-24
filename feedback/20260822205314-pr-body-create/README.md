@@ -1,9 +1,9 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: 20260822205314-pr-body-create
-title: "pr:body create 未建立 check --pr 所需编号草稿"
+title: pr:body create 未建立 check --pr 所需编号草稿
 state: open
-reportedAt: "2026-08-22T20:53:14+08:00"
+reportedAt: 2026-08-22T20:53:14+08:00
 source:
   kind: dev
   repository: NiceEval/NiceEval
@@ -41,6 +41,9 @@ observation: |
   在 PR #101 的创建流程中复现。具名 source 本身通过 `check --no-remote`，create 也确认远端正文一致；摩擦只影响 create 后独立复验的文档化路径。
 impact: "`pnpm pr:body create` 成功后，按帮助继续运行编号草稿检查会稳定失败；维护者必须额外保留并再次传入原 source。"
 memoryRelations: []
+adoptions:
+  current: []
+  history: []
 ---
 ---
 title: 'pr:body create 未建立 check --pr 所需编号草稿'

@@ -20,8 +20,9 @@ packages/repo-tools/src/
 
 | 领域 | 正式入口 | 唯一职责 |
 |---|---|---|
-| Feedback | `pnpm feedback --help` | 保存 issue / dogfood / dev 原始观察，导入、分类、去重、关闭与重开 |
-| Memory | `pnpm memory --help` | 保存开发问题、根因、思考和裁决，连接 E2E，并提升到 Roadmap / Feature / Engineering |
+| Feedback | `pnpm feedback --help` | 保存 issue / dogfood / dev 原始观察，关联 Memory，并采用到 Roadmap / Feature / Use Case / Engineering |
+| Memory | `pnpm memory --help` | 保存开发问题、根因、思考和裁决，连接 E2E，并提升到 Roadmap / Feature / Use Case / Engineering |
+| Trace | `pnpm trace --help` | 显式恢复被中断的关系 publication；查询仍由 Feature / Test 入口承担 |
 | PR | `pnpm pr:body --help` | 初始化、渲染、检查、创建和更新 PR 正文 |
 | Docs | `pnpm docs:*` | 文档关系、模板创建、禁词、参考文档、diff 示例、文档检查和并行文档任务切片 |
 | Examples | `pnpm examples:sync --help` | 示例 tier 同步、冲突检查和同步收据 |
@@ -29,9 +30,12 @@ packages/repo-tools/src/
 | Repository | `pnpm repo:setup --help` | Git hooks、本地宿主前置条件初始化和仓库级一致性检查 |
 
 Docs 领域当前可运行的查询入口是 `pnpm feature` 与 `pnpm test`。目标结构创建入口是 `pnpm feature`、`pnpm roadmap`、
-`pnpm design`、`pnpm engineering` 与 `pnpm use-case`；跨对象检查和恢复的目标入口是 `pnpm docs:trace`。
+`pnpm design`、`pnpm engineering` 与 `pnpm use-case`；当前恢复入口是 `pnpm trace recover`，跨对象 check/move 仍是后续 `pnpm docs:trace` 的目标能力。
+
 其它正式入口是 `pnpm docs:terms`、`pnpm docs:work`、`pnpm docs:diff-code`、`pnpm docs:reference` 与 `pnpm docs:dev`。
-这些入口共用同一棵 Effect CLI 命令树和 Node runtime；追溯关系与 mutation 契约见[仓库文档追溯](../docs-traceability/README.md)。
+这些入口共用同一棵 Effect CLI 命令树和 Node runtime；Feedback adoption 与 Memory promotion 的写命令也复用 Docs Trace 的 RepoRef、target validation、锁与 generation。
+
+追溯关系与 mutation 契约见[仓库文档追溯](../docs-traceability/README.md)。
 
 以下能力保留在自己的 owner，不进入 Repository Tools：
 

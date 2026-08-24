@@ -18,6 +18,7 @@ relations: {}
 Doc node frontmatter ─┐
 owner contract link ──┼──► pure Trace compiler ──► immutable Snapshot ──► list/show/check
 test owner/regression ┤
+Feedback frontmatter ─┤
 Memory frontmatter ───┘
 
 generated README blocks ◄── create/move/adopt
@@ -42,6 +43,9 @@ Snapshot 不写入 Git、不跨 invocation 缓存，也不接受任意查询语�
 Category README、普通分组 README、reference、模板和普通契约页不标节点。它们归最近节点所有，仍可用 path+anchor 定位。
 `use-case-group` 不存在；跨 Feature 目标 README 与真正叶子文件才是 `use-case`。
 
+Feature package 的 overview/library/cli/architecture/lifecycle/reference 页面由 placement 派生，既不加展示 metadata，也不另建 sidecar。
+树形 formatter 是 Snapshot 的人读投影；JSON list 继续返回稳定扁平数组。
+
 Design 的 `selectedPlan` 恰好一个，且只能指向直接包含的 `design-plan`。scaffold 可以暂缺，但 strict `check` 与 lint 必须失败，不增加 status 字段。
 
 未知关系字段、非法 target kind、绝对路径、反斜杠、dot traversal、重复 canonical ref 与 kind/placement 不一致全部失败。
@@ -59,12 +63,14 @@ Design 的 `selectedPlan` 恰好一个，且只能指向直接包含的 `design-
 | `owner` | E2E test/spec 首行 | Engineering testing owner anchor | 测试定位长期结果 owner |
 | `contract` | testing owner anchor | Feature anchor 或叶子 Use Case | 契约反查 owners/tests |
 | `regression` | E2E 顶部 metadata block | Memory 文件 | 测试显示历史回归证据 |
-| promotion | structured Memory | Roadmap、Feature 或 Engineering anchor | 目标显示 current/history 关系 |
+| adoption | Feedback | Roadmap、Feature、Use Case 或 Engineering exact ref | 目标显示原始观察及 Issue source |
+| memory relation | Feedback | Memory | 目标显示调查、根因、裁决或交付依据 |
+| promotion | structured Memory | Roadmap、Feature、Use Case 或 Engineering exact ref | 目标显示 current/history 关系 |
 
 owner anchor 不是 docs-node kind，只是固定投影的 relation endpoint。每个 anchor 紧邻一个版本化 `contract` link，每个 test/spec 恰好指向一个 anchor。
 每个 owner anchor 恰好对应一个 test/spec；一个 contract 可以关联零到多个 owners。lane 只从 E2E Repo metadata 读取，不在 owner 文档复制。
 
-编译器只读取 test/spec 文件顶部的连续 metadata block。`test()` 标题、scenario companion、fixture 和正文注释不产生边。
+编译器只在 test/spec 文件顶部连续 `//` comment block 中识别 canonical relation。同一 block 的 rerun/reliability 注释不会阻止后续关系识别。`test()` 标题、scenario companion、fixture 和正文注释不产生边。
 
 ## 查询面
 
@@ -78,15 +84,16 @@ pnpm test show <test-path> [--json]
 `list` 只做浅发现，并输出可原样传给同类 `show` 的 Feature ID 或 test/spec path。
 `show` 只做精确选择；歧义非零退出并列出候选。
 
-Feature 投影只走固定闭包。它包含本节点页面、直接子 Feature、本地 Use Cases 与反向 composed Use Cases。
-它还包含这些契约的 owner anchors/tests、直接 Roadmap/Design/Engineering、current promotions，以及这些 tests 的 regressions。
+Feature 投影只走固定闭包。它包含本节点的派生页面、直接子 Feature、本地 Use Cases 与反向 composed Use Cases。
+它还包含这些精确契约的 owner anchors/tests、Feedback adoptions、Memory relations、current promotions 与 Issue provenance。
+直接 Roadmap/Design/Engineering 和这些 tests 的 regressions 也在同一固定投影中。
 它不继续遍历相关对象的其它边。第一批查询不展开 promotion history 与 supersession；普通 mentions 不进入默认结果。
 
 测试投影返回 Repo/file、owner anchor、contract、所属 Features、regressions，以及从 Repo metadata 读取的 lane/areas/executor。
 Trace 不读取或返回测试标题、scenario companion 与正文。没有 owner 的 Use Case 显示空数组和
 `No long-term automated owner`，仍成功退出。
 
-JSON receipt 使用独立 format/version、canonical path、稳定排序与显式空数组。人读输出只是同一 receipt 的 renderer。
+JSON show receipt 使用 v2、canonical path、稳定排序与显式空数组；list-v1 保持扁平兼容。人读树只是同一 receipt 的 renderer。
 
 ## 后续创建与模板
 
@@ -115,7 +122,7 @@ pnpm use-case create <slug> --title <title> --parent <ref> [--dry-run] [--json]
 pnpm docs:trace move <ref> --to <repo-path> [--dry-run] [--json]
 pnpm roadmap adopt prepare <roadmap-ref> --to <feature-ref> [--json]
 pnpm roadmap adopt apply --manifest <git-private-path> [--dry-run] [--json]
-pnpm docs:trace recover [--json]
+pnpm trace recover [--json]
 ```
 
 自动改写只处理 typed refs、生成区，以及随整个 package 移动且 referent 不变的内部相对链接。
@@ -126,16 +133,24 @@ pnpm docs:trace recover [--json]
 
 结构化 promotion 的旧 current 先连同 pre-move commit 追加到 immutable history，再写新 current。source package、typed ref owners 与 promotion 文件必须通过 scoped-clean preflight；无关工作树改动不阻断。
 
-mutation 使用 repo-wide docs lock、Git-private journal 与 generation。journal 提供可恢复事务，不宣称多文件瞬时原子 rename。
-写入前重新核对全部 preimage digest；read/check/lint 在 active mutation 或 recovery 期间等待、重试或具名失败。
-读取前后 generation 变化时不得返回混合 Snapshot。每个 journal phase 的 interruption 验收必须只得到完整旧状态或完整新状态。
+mutation 使用 repo-wide advisory lease、Git-private journal 与 generation。
+
+读命令持有 shared lease，且绝不执行恢复。首次读取只允许初始化 Git-private 持久 lock inode，不改 owner、journal 或 generation。写入与显式 recover 持有 exclusive lease。
+
+journal 提供可恢复 publication，不宣称多文件瞬时原子 rename。写入在 journal durable 前后各完成一次全量 Trace 输入捕获，并重新核对 Snapshot digest、全部 preimage、HEAD、Git index、mode 与 publication manifest。generation durable replace 是唯一 commit point。
+
+两次完整捕获的文件集合与 bytes 必须相同。这是一项 quiescence 检查，不宣称线性一致或识别 ABA。每个 journal phase 的 interruption 验收只能得到完整旧状态、完整新状态或保留全部证据的具名 conflict。
 
 ## Memory 分层
 
-默认强关系只有 `promotions.current` 与 canonical `regression`。promotion history 与 supersession 只在 history 区域显示；普通 mentions 默认隐藏。
+默认强关系包括 Feedback `adoptions.current`、Feedback `memoryRelations`、Memory `promotions.current` 与 canonical `regression`。
+adoption/promotion history 与 supersession 只在 history/findings 区域显示；普通 mentions 默认隐藏。
 
-结构化 regression 必须指向 Problem。legacy regression 继续显示为 `legacy/unstructured`，不能称为 Problem、Bug 或具有结构化终态，也不能满足 Problem-only gate。
+结构化 regression 必须指向 Problem；`resolved(fixed)` 还必须至少被一个真实 E2E 顶部 metadata block 以 canonical regression 拥有，自由文本 proof 不满足该门。legacy regression 继续显示为 `legacy/unstructured`，不能称为 Problem、Bug 或具有结构化终态，也不能满足 Problem-only gate。
 superseded Decision/Insight 不得保留 current promotion。
+
+Feedback 使用 v2 多目标 current/history；Memory 每个 kind 使用一个多目标 current/history bucket，并增加 `use-case` kind。
+调用方只通过 adopt/retire/promote 命令传 exact ref，历史 commit 由工具生成。关系写入复用 Trace lease、generation、journal 与 preimage；journal 是单笔在途 publication，不保存反向关系，也不是中央 Registry。
 
 ## 实现 owner
 
