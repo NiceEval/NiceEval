@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import fcntl
 import hashlib
 import hmac
 import json
@@ -19,6 +20,7 @@ import posixpath
 import re
 import secrets
 import signal
+import socket
 import socketserver
 import stat
 import subprocess
@@ -55,7 +57,7 @@ SETUP_PREFIX_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v1"
 SETUP_PREFIX_REQUIRED_STATE = "dockerData"
 SETUP_PREFIX_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v1"
 SETUP_PREFIX_COPY_PROTOCOL = "raw-image/v1"
-SETUP_PREFIX_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy/v1"
+SETUP_PREFIX_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy-reuuid/v2"
 SETUP_PREFIX_QUIESCE_REVISION = "niceeval-docker-profile-host/docker-data-quiesce/v1"
 SETUP_PREFIX_SLOT_ATTESTATION = "independent-fixed-filesystem/v1"
 SETUP_PREFIX_FILESYSTEM_FEATURES = [
@@ -65,12 +67,14 @@ SETUP_PREFIX_FILESYSTEM_FEATURES = [
     "independent-image",
 ]
 SETUP_PREFIX_SEED_POLICY = "immutable-unmounted/v1"
-SETUP_PREFIX_PUBLICATION_REVISION = "journal-first-atomic-publish/v1"
-SETUP_PREFIX_RECOVERY_REVISION = "scrub-quarantine-cancel-restart/v1"
+SETUP_PREFIX_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v4"
+SETUP_PREFIX_RECOVERY_REVISION = "no-guess-scrub-or-quarantine/v2"
+SETUP_PREFIX_MANIFEST_SCHEMA = "niceeval-docker-profile-activation/v2"
 SETUP_PREFIX_WIRE_FIELDS = (
     "protocol", "requiredState", "setupPrefixKey", "setupManifestDigest",
     "providerIdentity", "baseIdentity", "executionDomain", "helperRevision",
     "copyProtocol", "copyRevision", "quiesceRevision", "filesystemSizeBytes",
+    "publicationRevision", "recoveryRevision", "manifestSchema",
     "filesystemFeatures", "daemonGeneration", "slotGeneration",
 )
 SETUP_PREFIX_ARTIFACT_BINDING_FIELDS = tuple(
@@ -103,6 +107,77 @@ def read_exact(reader: Any, size: int) -> bytes:
         chunks.append(chunk)
         remaining -= len(chunk)
     return b"".join(chunks)
+
+
+def _activation_file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(16 * 1024 * 1024), b""):
+            digest.update(block)
+    return "sha256:" + digest.hexdigest()
+
+
+def _verify_fixed_activation(host_config_path: Path, descriptor_path: Path,
+                             expected_manifest_digest: str | None = None) -> tuple[dict[str, Any], Any] | None:
+    host = json.loads(host_config_path.read_text(encoding="utf-8"))
+    if host.get("storage", {}).get("backing") != "fixed-image-ext4":
+        return None
+    activation = host.get("activation")
+    if not isinstance(activation, dict) or activation.get("schema") != SETUP_PREFIX_MANIFEST_SCHEMA:
+        raise RuntimeError("fixed watchdog has no activation manifest binding")
+    manifest_path = Path(str(activation.get("manifestPath", "")))
+    digest_path = Path(str(activation.get("manifestDigestPath", "")))
+    lock_path = Path(str(activation.get("lockPath", "")))
+    for path in (manifest_path, digest_path, lock_path):
+        if not path.is_absolute() or path.is_symlink() or not path.is_file():
+            raise RuntimeError("fixed watchdog activation path is absent or not root-owned")
+        info = path.stat()
+        if info.st_uid != 0 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o600:
+            raise RuntimeError("fixed watchdog activation path owner/mode is invalid")
+    marker = manifest_path.with_name("activation.pending.json")
+    if marker.exists():
+        raise RuntimeError("fixed activation has an unresolved transition marker")
+    lock_file = lock_path.open("r+b")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+        manifest_digest = "sha256:" + hashlib.sha256(encoded).hexdigest()
+        expected_digest = digest_path.read_text(encoding="utf-8").strip()
+        descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+        host_dependency = host.get("activationDependency", {})
+        expected_empty = True if host_dependency.get("class") == "systemd-profile-slice/v1" else None
+        if manifest_digest != expected_digest \
+                or expected_manifest_digest not in (None, "", manifest_digest) \
+                or manifest.get("schema") != SETUP_PREFIX_MANIFEST_SCHEMA \
+                or manifest.get("state") != "committed" or manifest.get("backing") != "fixed-image-ext4" \
+                or manifest.get("alias") != host.get("name") \
+                or manifest.get("profileId") != descriptor.get("profileId") \
+                or manifest.get("hostConfigPath") != str(host_config_path.resolve()) \
+                or manifest.get("hostConfigDigest") != _activation_file_digest(host_config_path) \
+                or manifest.get("descriptorPath") != str(descriptor_path.resolve()) \
+                or manifest.get("descriptorDigest") != _activation_file_digest(descriptor_path) \
+                or manifest.get("activationDependency", {}).get("class") \
+                    != host.get("activationDependency", {}).get("class") \
+                or manifest.get("activationDependency", {}).get("cgroupPath") \
+                    != host_dependency.get("cgroupPath") \
+                or manifest.get("activationDependency", {}).get("emptyAtActivation") != expected_empty:
+            raise RuntimeError("fixed activation manifest does not bind the active profile facts")
+        for key, actual_path in (
+            ("slotRegistry", Path(host["storage"]["slotRegistryPath"])),
+            ("seedRegistry", Path(host["setupPrefix"]["seedRegistryPath"])),
+        ):
+            fact = manifest.get(key, {})
+            if fact.get("path") != str(actual_path.resolve()) \
+                    or fact.get("digest") != _activation_file_digest(actual_path):
+                raise RuntimeError(f"fixed activation manifest does not bind {key}")
+        if manifest.get("outerImagePath") != str(Path(host["storage"]["outerImagePath"]).resolve()) \
+                or manifest.get("dataMount") != str(Path(host["dataMount"]).resolve()):
+            raise RuntimeError("fixed activation manifest does not bind normalized storage paths")
+        return manifest, lock_file
+    except BaseException:
+        lock_file.close()
+        raise
 
 
 def receive_framed_build_context(reader: Any, output: Any) -> int:
@@ -337,6 +412,7 @@ class Admission:
             "seedPolicy": SETUP_PREFIX_SEED_POLICY,
             "publicationRevision": SETUP_PREFIX_PUBLICATION_REVISION,
             "recoveryRevision": SETUP_PREFIX_RECOVERY_REVISION,
+            "manifestSchema": SETUP_PREFIX_MANIFEST_SCHEMA,
         }
         if any(capability.get(key) != value or raw.get(key) != value
                for key, value in expected.items()):
@@ -805,6 +881,14 @@ class Admission:
                 digest.update(block)
         return "sha256:" + digest.hexdigest()
 
+    def _raw_image_identity(self, path: Path) -> str:
+        result = self._run_host("blkid", "-s", "UUID", "-o", "value", str(path))
+        value = result.stdout.strip().lower()
+        fstype = self._run_host("blkid", "-s", "TYPE", "-o", "value", str(path)).stdout.strip()
+        if fstype != "ext4" or re.fullmatch(r"[0-9a-f-]{16,64}", value) is None:
+            raise RuntimeError("raw dockerData image has no attested ext4 UUID")
+        return f"ext4-uuid:{value}"
+
     def _raw_image_record(self, record: dict[str, Any]) -> tuple[Path, Path, int]:
         mountpoint = Path(str(record.get("path", "")))
         image = Path(str(record.get("imagePath", "")))
@@ -829,7 +913,8 @@ class Admission:
                 or len({"rw", "ro"} & set(options)) != 1:
             raise RuntimeError("raw dockerData registry lacks fixed ext4 remount facts")
         identity = record.get("filesystemIdentity")
-        if not isinstance(identity, str) or not identity or len(identity) > 256:
+        if not isinstance(identity, str) or not identity.startswith("ext4-uuid:") \
+                or identity != self._raw_image_identity(image):
             raise RuntimeError("raw dockerData registry lacks a filesystem identity")
         return mountpoint, image, limit
 
@@ -870,6 +955,26 @@ class Admission:
         if self._raw_image_mount_source(mountpoint) is None:
             self._mount_raw_image(record)
 
+    def _restore_fixed_slot_allocation(self, slot: dict[str, Any]) -> None:
+        """Restore physical allocation lost while scrubbing a writable ext4 slot."""
+        if slot.get("attestation") != SETUP_PREFIX_SLOT_ATTESTATION:
+            return
+        mountpoint = Path(str(slot["path"]))
+        image = Path(str(slot["imagePath"]))
+        limit = int(slot["limitBytes"])
+        if self._slot_references(slot):
+            raise RuntimeError("fixed slot still has a nested mount or process reference")
+        if self._raw_image_mount_source(mountpoint) is not None:
+            self._run_host("umount", "--", str(mountpoint))
+        try:
+            self._run_host("fallocate", "-l", str(limit), "--", str(image))
+            info = image.stat()
+            if info.st_size != limit or info.st_blocks * 512 < limit:
+                raise RuntimeError("fixed slot physical allocation could not be restored after scrub")
+        finally:
+            if self._raw_image_mount_source(mountpoint) is None:
+                self._mount_raw_image(slot)
+
     def _scrub_setup_prefix_seed(
         self,
         seed: dict[str, Any],
@@ -904,9 +1009,12 @@ class Admission:
 
     @staticmethod
     def _temporary_clone_path(target_image: Path, operation_id: str) -> Path:
-        if re.fullmatch(r"[a-f0-9]{32}", operation_id) is None:
+        if not isinstance(operation_id, str) or not operation_id \
+                or len(operation_id.encode("utf-8")) > 512 \
+                or any(ord(character) < 0x20 or ord(character) == 0x7f for character in operation_id):
             raise RuntimeError("raw dockerData operation identity is invalid")
-        return target_image.with_name(f".{target_image.name}.niceeval-{operation_id}.clone")
+        safe_operation_id = hashlib.sha256(operation_id.encode("utf-8")).hexdigest()[:32]
+        return target_image.with_name(f".{target_image.name}.niceeval-{safe_operation_id}.clone")
 
     def _remove_temporary_clone(self, target: dict[str, Any], operation_id: str) -> None:
         _, target_image, _ = self._raw_image_record(target)
@@ -938,6 +1046,14 @@ class Admission:
         if temporary.exists() or temporary.is_symlink():
             raise RuntimeError("raw dockerData temporary clone already exists")
         target_info = target_image.stat()
+        source_identity = self._raw_image_identity(source_image)
+        target_identity = self._raw_image_identity(target_image)
+        expected_target_identity = str(target["filesystemIdentity"])
+        if source_identity != source.get("filesystemIdentity") \
+                or target_identity != expected_target_identity \
+                or source_identity == target_identity:
+            raise RuntimeError("raw dockerData source/target UUID attestation is not independent")
+        target_previous_digest = self._raw_image_digest(target_image)
         unmounted: list[dict[str, Any]] = []
         published = False
         try:
@@ -949,23 +1065,43 @@ class Admission:
                     self._run_host("umount", "--", str(mountpoint))
                     unmounted.append(record)
             self._run_host(
-                "cp", "--sparse=always", "--reflink=never", "--",
+                "cp", "--sparse=never", "--reflink=never", "--",
                 str(source_image), str(temporary), timeout=15 * 60,
             )
-            self._run_host("fallocate", "-l", str(target_limit), "--", str(temporary))
             os.chown(temporary, target_info.st_uid, target_info.st_gid)
             os.chmod(temporary, stat.S_IMODE(target_info.st_mode))
             self._run_host("sync", "-f", "--", str(temporary))
+            source_digest = self._raw_image_digest(source_image)
+            transferred_digest = self._raw_image_digest(temporary)
+            if source_digest != transferred_digest:
+                raise RuntimeError("raw dockerData image digest verification failed")
+            self._record_copy_stage(operation_id, "copied", {
+                "sourceArtifactDigest": source_digest,
+                "sourceFilesystemIdentity": source_identity,
+                "targetPreviousDigest": target_previous_digest,
+                "targetPreviousFilesystemIdentity": target_identity,
+                "expectedTargetFilesystemIdentity": expected_target_identity,
+                "temporaryTransferredDigest": transferred_digest,
+            })
+            expected_uuid = expected_target_identity.removeprefix("ext4-uuid:")
+            self._run_host("tune2fs", "-U", expected_uuid, str(temporary), timeout=15 * 60)
+            self._record_copy_stage(operation_id, "reuuid", {
+                "expectedTargetFilesystemIdentity": expected_target_identity,
+            })
+            self._run_host("fallocate", "-l", str(target_limit), "--", str(temporary))
+            checked = self._run_host("e2fsck", "-fn", str(temporary), check=False, timeout=15 * 60)
+            if checked.returncode not in (0, 1):
+                raise RuntimeError("raw dockerData ext4 verification failed")
             clone_info = temporary.stat()
             if clone_info.st_size != target_limit or clone_info.st_blocks * 512 < target_limit:
                 raise RuntimeError("raw dockerData temporary image is not fixed-size and fully allocated")
-            checked = self._run_host("e2fsck", "-fn", str(temporary), check=False)
-            if checked.returncode not in (0, 1):
-                raise RuntimeError("raw dockerData ext4 verification failed")
-            source_digest = self._raw_image_digest(source_image)
-            clone_digest = self._raw_image_digest(temporary)
-            if source_digest != clone_digest:
-                raise RuntimeError("raw dockerData image digest verification failed")
+            if self._raw_image_identity(temporary) != expected_target_identity:
+                raise RuntimeError("raw dockerData temporary image UUID differs after re-UUID")
+            final_digest = self._raw_image_digest(temporary)
+            self._record_copy_stage(operation_id, "attested", {
+                "temporaryFinalDigest": final_digest,
+                "expectedTargetFilesystemIdentity": expected_target_identity,
+            })
             os.replace(temporary, target_image)
             parent_fd = os.open(target_image.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             try:
@@ -973,7 +1109,14 @@ class Admission:
             finally:
                 os.close(parent_fd)
             published = True
-            return clone_digest
+            if self._raw_image_identity(target_image) != expected_target_identity \
+                    or self._raw_image_digest(target_image) != final_digest:
+                raise RuntimeError("raw dockerData atomic replacement attestation failed")
+            self._record_copy_stage(operation_id, "replaced", {
+                "temporaryFinalDigest": final_digest,
+                "expectedTargetFilesystemIdentity": expected_target_identity,
+            })
+            return final_digest
         finally:
             temporary.unlink(missing_ok=True)
             parent_fd = os.open(target_image.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -990,6 +1133,18 @@ class Admission:
             if remount_error is not None:
                 state = "after atomic publish" if published else "before atomic publish"
                 raise RuntimeError(f"raw dockerData remount failed {state}: {remount_error}") from remount_error
+
+    def _record_copy_stage(self, operation_id: str, stage: str, facts: dict[str, Any]) -> None:
+        with self._transition():
+            operation = self.state["setupPrefix"]["operations"].get(operation_id)
+            if operation is None:
+                raise RuntimeError("raw dockerData copy lost its journaled operation")
+            operation.update({"state": stage, "copyStage": stage, **facts})
+            self._commit("setup-prefix-copy-stage", {
+                "operationId": operation_id,
+                "stage": stage,
+                **facts,
+            })
 
     def _copy_docker_data_image(self, source: dict[str, Any], target: dict[str, Any],
                                 operation_id: str) -> str:
@@ -1100,7 +1255,8 @@ class Admission:
     @staticmethod
     def _clear_setup_prefix_seed_state(seed: dict[str, Any]) -> None:
         for field in (*SETUP_PREFIX_WIRE_FIELDS, "operationId", "artifactId", "sizeBytes",
-                      "sourceSlotGeneration", "quarantineReason", "corruptReason"):
+                      "sourceSlotGeneration", "publicationOperationId", "publishedAt",
+                      "preparedAt", "quarantineReason", "corruptReason"):
             seed.pop(field, None)
 
     def _setup_prefix_request(
@@ -1120,11 +1276,18 @@ class Admission:
             )
         allowed = {"kind", "invocationId", "leaseToken", "reservationId", "daemonGeneration",
                    "slotGeneration", "protocol", "requiredState", "descriptorDigest",
+                   "operationId",
                    "setupPrefixKey", "setupManifestDigest", "providerIdentity", "baseIdentity",
                    "executionDomain", "helperRevision", "copyProtocol", "copyRevision", "quiesceRevision",
+                   "publicationRevision", "recoveryRevision", "manifestSchema",
                    "filesystemSizeBytes", "filesystemFeatures"}
         if set(request) != allowed:
             raise ProtocolError("setup-prefix-host-input", "setup-prefix frames accept no host paths or helper controls")
+        operation_id = request.get("operationId")
+        if not isinstance(operation_id, str) or not operation_id \
+                or len(operation_id.encode("utf-8")) > 512 \
+                or any(ord(character) < 0x20 or ord(character) == 0x7f for character in operation_id):
+            raise ProtocolError("setup-prefix-operation-invalid", "setup-prefix operationId is invalid")
         expected_wire = {
             "protocol": SETUP_PREFIX_PROTOCOL,
             "providerIdentity": self.setup_prefix["providerIdentity"],
@@ -1133,6 +1296,9 @@ class Admission:
             "copyProtocol": SETUP_PREFIX_COPY_PROTOCOL,
             "copyRevision": SETUP_PREFIX_COPY_REVISION,
             "quiesceRevision": SETUP_PREFIX_QUIESCE_REVISION,
+            "publicationRevision": SETUP_PREFIX_PUBLICATION_REVISION,
+            "recoveryRevision": SETUP_PREFIX_RECOVERY_REVISION,
+            "manifestSchema": SETUP_PREFIX_MANIFEST_SCHEMA,
             "filesystemSizeBytes": self.setup_prefix["filesystemSizeBytes"],
             "filesystemFeatures": self.setup_prefix["filesystemFeatures"],
         }
@@ -1250,6 +1416,45 @@ class Admission:
         self._commit(event, {"operationId": operation_id, "reservationId": reservation_id,
                              **detail, "operation": operation})
 
+    def _fence_cancelled_captures(self, invocation_id: str, reason: str) -> list[dict[str, Any]]:
+        prepared: list[dict[str, Any]] = []
+        fenced: list[str] = []
+        for operation in self.state["setupPrefix"].get("operations", {}).values():
+            if operation.get("kind") != "capture" or operation.get("invocationId") != invocation_id:
+                continue
+            operation["cancelRequested"] = True
+            operation["cancelReason"] = reason
+            operation["cancelFencedAt"] = now()
+            fenced.append(str(operation.get("operationId", "")))
+            if operation.get("state") == "prepared":
+                prepared.append(copy.deepcopy(operation))
+        if fenced:
+            self._commit("setup-prefix-capture-cancel-fenced", {
+                "invocationId": invocation_id,
+                "operationIds": fenced,
+                "reason": reason,
+            })
+        return prepared
+
+    def _scrub_cancelled_prepared_captures(self, operations: list[dict[str, Any]]) -> None:
+        for operation in operations:
+            operation_id = str(operation["operationId"])
+            seed = self.state["setupPrefix"]["seeds"].get(operation.get("seedId"))
+            if seed is None:
+                raise RuntimeError("cancelled prepared capture lost its seed")
+            self._remove_temporary_clone(seed, operation_id)
+            self._scrub_setup_prefix_seed(seed)
+            self._verify_seed_target(seed)
+            seed["state"] = "free"
+            self._clear_setup_prefix_seed_state(seed)
+            self._clear_setup_operation(
+                operation_id,
+                str(operation["reservationId"]),
+                "setup-prefix-capture-cancelled",
+                {"status": "scrubbed-unpublished-seed", "seedId": seed["seedId"],
+                 "seedScrubbed": True},
+            )
+
     def _handle_setup_prefix_capture(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._transition():
             _, reservation, slot, wire = self._setup_prefix_request(request, capture=True)
@@ -1262,7 +1467,15 @@ class Admission:
                         "published artifact identity does not match this dockerData request",
                     )
                 return self._setup_prefix_response(wire, existing, "already-published")
-            if reservation.get("setupPrefixOperation"):
+            operation_id = str(request["operationId"])
+            active_operation_id = reservation.get("setupPrefixOperation")
+            if active_operation_id == operation_id:
+                active_operation = self.state["setupPrefix"]["operations"].get(operation_id)
+                candidate = active_operation.get("candidateArtifact") if isinstance(active_operation, dict) else None
+                if active_operation is not None and active_operation.get("state") == "prepared" \
+                        and isinstance(candidate, dict) and self._artifact_matches_wire(candidate, wire):
+                    return self._setup_prefix_response(wire, candidate, "prepared")
+            if active_operation_id:
                 raise ProtocolError("setup-prefix-operation-active", "reservation already has a setup-prefix operation")
             seed = next((item for item in self.state["setupPrefix"]["seeds"].values()
                          if item.get("state") == "free"
@@ -1270,7 +1483,8 @@ class Admission:
             if seed is None:
                 raise ProtocolError("setup-prefix-capacity-exhausted",
                                     "no free equal-size independent seed filesystem is available")
-            operation_id = secrets.token_hex(16)
+            if operation_id in self.state["setupPrefix"]["operations"]:
+                raise ProtocolError("setup-prefix-operation-active", "setup-prefix operationId is already active")
             operation = {
                 "operationId": operation_id, "kind": "capture", "state": "capturing",
                 "invocationId": reservation["invocationId"], "reservationId": reservation["reservationId"],
@@ -1317,7 +1531,7 @@ class Admission:
                         "sourceSlotGeneration": wire["slotGeneration"],
                         "artifactId": artifact_id, "sizeBytes": size,
                         "chargedBytes": int(seed_snapshot["limitBytes"]),
-                        "state": "published", "publishedAt": now()}
+                        "state": "prepared", "preparedAt": now()}
             with self._transition():
                 current = self.state["setupPrefix"]["operations"].get(operation_id)
                 reservation = self.state["reservations"].get(reservation_snapshot["reservationId"])
@@ -1325,23 +1539,27 @@ class Admission:
                 slot = self.state["slots"].get(slot_snapshot["slotId"])
                 if current is None or reservation is None or lease is None or slot is None \
                         or lease.get("state") != "active" \
+                        or current.get("cancelRequested") is True \
                         or reservation.get("setupPrefixOperation") != operation_id \
                         or int(slot.get("generation", -1)) != int(slot_snapshot["generation"]) \
                         or self.state["generation"] != wire["daemonGeneration"]:
                     raise ProtocolError(
                         "setup-prefix-operation-cancelled",
-                        "capture ownership, lease, or slot generation changed before publication",
+                        "capture ownership, lease, or slot generation changed before staging",
                     )
                 seed = self.state["setupPrefix"]["seeds"][seed_snapshot["seedId"]]
-                seed.update({**wire, "state": "published", "setupPrefixKey": key,
+                seed.update({**wire, "state": "prepared", "setupPrefixKey": key,
                              "artifactId": artifact_id, "sizeBytes": size})
-                seed.pop("operationId", None)
-                self.state["setupPrefix"]["artifacts"][key] = artifact
-                self._clear_setup_operation(operation_id, reservation_snapshot["reservationId"],
-                                            "setup-prefix-captured",
-                                            {"setupPrefixKey": key, "artifactId": artifact_id,
-                                             "sizeBytes": size, "seedId": seed["seedId"]})
-                return self._setup_prefix_response(wire, artifact, "captured")
+                current.update({"state": "prepared", "candidateArtifact": artifact})
+                self._commit("setup-prefix-capture-prepared", {
+                    "operationId": operation_id,
+                    "reservationId": reservation_snapshot["reservationId"],
+                    "setupPrefixKey": key,
+                    "artifactId": artifact_id,
+                    "sizeBytes": size,
+                    "seedId": seed["seedId"],
+                })
+                return self._setup_prefix_response(wire, artifact, "prepared")
         except Exception as error:
             scrub_error: Exception | None = None
             if copy_started:
@@ -1366,6 +1584,63 @@ class Admission:
             if isinstance(error, ProtocolError):
                 raise
             raise ProtocolError("setup-prefix-capture-failed", str(error)[-2000:]) from error
+
+    def _handle_setup_prefix_capture_publish(self, request: dict[str, Any]) -> dict[str, Any]:
+        with self._transition():
+            lease, reservation, slot, wire = self._setup_prefix_request(request, capture=True)
+            key = wire["setupPrefixKey"]
+            operation_id = str(request["operationId"])
+            existing = self.state["setupPrefix"]["artifacts"].get(key)
+            if existing is not None:
+                if existing.get("publicationOperationId") != operation_id \
+                        or not self._artifact_matches_wire(existing, wire):
+                    raise ProtocolError(
+                        "setup-prefix-publication-conflict",
+                        "published artifact does not belong to this capture commit",
+                    )
+                return self._setup_prefix_response(wire, existing, "already-published")
+            operation = self.state["setupPrefix"]["operations"].get(operation_id)
+            candidate = operation.get("candidateArtifact") if isinstance(operation, dict) else None
+            if operation is None or operation.get("kind") != "capture" \
+                    or operation.get("state") != "prepared" \
+                    or operation.get("cancelRequested") is True \
+                    or operation.get("reservationId") != reservation["reservationId"] \
+                    or operation.get("slotId") != slot["slotId"] \
+                    or operation.get("wire") != wire \
+                    or reservation.get("setupPrefixOperation") != operation_id \
+                    or not isinstance(candidate, dict):
+                raise ProtocolError(
+                    "setup-prefix-publication-not-prepared",
+                    "capture commit has no matching uncancelled prepared copy",
+                )
+            seed = self.state["setupPrefix"]["seeds"].get(operation.get("seedId"))
+            if seed is None or seed.get("state") != "prepared" \
+                    or seed.get("operationId") != operation_id \
+                    or seed.get("artifactId") != candidate.get("artifactId"):
+                raise ProtocolError("setup-prefix-publication-corrupt", "prepared seed ownership is invalid")
+            self._verify_seed_target(seed)
+            _, seed_image, seed_size = self._raw_image_record(seed)
+            if self._raw_image_digest(seed_image) != candidate.get("artifactId") \
+                    or seed_size != int(candidate.get("sizeBytes", -1)):
+                raise ProtocolError("setup-prefix-publication-corrupt", "prepared seed digest is invalid")
+            published = {
+                **candidate,
+                "state": "published",
+                "publishedAt": now(),
+                "publicationOperationId": operation_id,
+            }
+            seed.update({"state": "published", "publishedAt": published["publishedAt"],
+                         "publicationOperationId": operation_id})
+            seed.pop("operationId", None)
+            self.state["setupPrefix"]["artifacts"][key] = published
+            self._clear_setup_operation(
+                operation_id,
+                reservation["reservationId"],
+                "setup-prefix-captured",
+                {"setupPrefixKey": key, "artifactId": published["artifactId"],
+                 "sizeBytes": published["sizeBytes"], "seedId": seed["seedId"]},
+            )
+            return self._setup_prefix_response(wire, published, "captured")
 
     def _handle_setup_prefix_restore(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._transition():
@@ -1437,15 +1712,18 @@ class Admission:
             self._commit("setup-prefix-restore-intent", {"operationId": operation_id,
                                                           "reservationId": reservation["reservationId"],
                                                           "setupPrefixKey": key,
-                                                          "artifactId": artifact_snapshot["artifactId"]})
+                                                          "sourceSeedId": artifact_snapshot["seedId"],
+                                                          "sourceArtifactId": artifact_snapshot["artifactId"],
+                                                          "targetSlotId": slot["slotId"]})
             reservation_snapshot, slot_snapshot, seed_snapshot = (
                 copy.deepcopy(reservation), copy.deepcopy(slot), copy.deepcopy(seed)
             )
         try:
             self._verify_restore_target(slot_snapshot)
-            restored_artifact_id = self._copy_docker_data_image(seed_snapshot, slot_snapshot, operation_id)
-            if restored_artifact_id != artifact_snapshot["artifactId"]:
-                raise RuntimeError("dockerData raw-image restore verification failed")
+            restored_slot_digest = self._copy_docker_data_image(seed_snapshot, slot_snapshot, operation_id)
+            if self._raw_image_identity(Path(str(slot_snapshot["imagePath"]))) \
+                    != slot_snapshot["filesystemIdentity"]:
+                raise RuntimeError("dockerData raw-image restore target UUID verification failed")
             with self._transition():
                 reservation = self.state["reservations"].get(reservation_snapshot["reservationId"])
                 slot = self.state["slots"].get(slot_snapshot["slotId"])
@@ -1467,7 +1745,10 @@ class Admission:
                 self._clear_setup_operation(operation_id, reservation["reservationId"],
                                             "setup-prefix-restored",
                                             {"setupPrefixKey": key,
-                                             "artifactId": artifact_snapshot["artifactId"],
+                                             "sourceSeedId": artifact_snapshot["seedId"],
+                                             "sourceArtifactId": artifact_snapshot["artifactId"],
+                                             "targetSlotId": slot["slotId"],
+                                             "restoredSlotDigest": restored_slot_digest,
                                              "sizeBytes": size})
                 return self._setup_prefix_response(wire, artifact_snapshot, "restored")
         except Exception as error:
@@ -1504,7 +1785,8 @@ class Admission:
                     self._clear_setup_operation(operation_id, reservation_id,
                                                 "setup-prefix-capture-recovered",
                                                 {"status": "scrubbed-unpublished-seed",
-                                                 "seedId": seed["seedId"]})
+                                                 "seedId": seed["seedId"],
+                                                 "seedScrubbed": True})
                 elif operation.get("kind") == "restore":
                     reservation = self.state["reservations"].get(reservation_id)
                     slot = self.state["slots"].get(operation.get("slotId"))
@@ -1526,18 +1808,10 @@ class Admission:
                     seed = self.state["setupPrefix"]["seeds"].get(operation.get("seedId"))
                     if seed is None:
                         raise RuntimeError("stale setup-prefix seed disappeared from its registry")
-                    self._scrub_setup_prefix_seed(seed, recover_mounted=True)
-                    self._verify_seed_target(seed)
-                    artifact = self.state["setupPrefix"]["artifacts"].get(key)
-                    if artifact is not None and artifact.get("seedId") == seed.get("seedId"):
-                        self.state["setupPrefix"]["artifacts"].pop(key, None)
-                    seed["state"] = "free"
-                    self._clear_setup_prefix_seed_state(seed)
-                    self._clear_setup_operation(
-                        operation_id,
-                        reservation_id,
-                        "setup-prefix-stale-artifact-scrubbed",
-                        {"setupPrefixKey": key, "seedId": seed["seedId"]},
+                    seed["state"] = "quarantined"
+                    seed["quarantineReason"] = "published seed belongs to a stale daemon generation"
+                    raise RuntimeError(
+                        f"published seed {seed['seedId']} is immutable; explicit offline disposition is required"
                     )
                 else:
                     raise RuntimeError("journaled setup-prefix operation kind is invalid")
@@ -1565,28 +1839,21 @@ class Admission:
                     "setupPrefixKey": key, "reason": reason,
                 })
                 continue
-            operation_id = secrets.token_hex(16)
-            operation = {
-                "operationId": operation_id,
-                "kind": "stale-artifact",
-                "state": "scrubbing",
-                "reservationId": "",
-                "seedId": seed["seedId"],
-                "setupPrefixKey": key,
-                "startedAt": now(),
-            }
-            self.state["setupPrefix"]["operations"][operation_id] = operation
             artifact["state"] = "stale"
-            seed["state"] = "scrubbing-stale"
-            seed["operationId"] = operation_id
-            self._commit("setup-prefix-stale-artifact-intent", {
-                "operationId": operation_id,
+            artifact["staleReason"] = "daemon generation changed"
+            seed["state"] = "quarantined"
+            seed["quarantineReason"] = "published seed belongs to a stale daemon generation"
+            self.state["admissionOpen"] = False
+            reason = f"published setup-prefix seed {seed['seedId']} is immutable across daemon generations"
+            if reason not in self.state["degraded"]:
+                self.state["degraded"].append(reason)
+            self._commit("setup-prefix-stale-artifact-blocked", {
                 "setupPrefixKey": key,
                 "seedId": seed["seedId"],
                 "artifactDaemonGeneration": artifact.get("daemonGeneration"),
                 "daemonGeneration": current_generation,
+                "reason": reason,
             })
-        self._recover_setup_prefix_operations()
 
     def _verify_and_free_slot(self, reservation: dict[str, Any]) -> bool:
         slot_id = reservation.get("slotId")
@@ -1602,6 +1869,7 @@ class Admission:
             self._scrub_slot(slot)
             if os.listdir(slot["path"]):
                 raise RuntimeError("slot is not empty after scrub")
+            self._restore_fixed_slot_allocation(slot)
             os.chown(slot["path"], int(slot["ownerUid"]), int(slot["ownerGid"]))
             os.chmod(slot["path"], int(slot.get("mode", 0o700)))
             facts = self._slot_facts(slot)
@@ -2248,6 +2516,8 @@ class Admission:
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         if request.get("kind") == "setup-prefix.capture":
             return self._handle_setup_prefix_capture(request)
+        if request.get("kind") == "setup-prefix.capture.publish":
+            return self._handle_setup_prefix_capture_publish(request)
         if request.get("kind") == "setup-prefix.restore":
             return self._handle_setup_prefix_restore(request)
         with self.lock:
@@ -2346,7 +2616,11 @@ class Admission:
                 return {"state": lease["state"]}
             if kind == "lease.drain":
                 lease["state"] = "draining"
+                prepared = self._fence_cancelled_captures(
+                    lease["invocationId"], "lease drain before capture publication commit",
+                )
                 self._commit("lease-draining", {"invocationId": lease["invocationId"]})
+                self._scrub_cancelled_prepared_captures(prepared)
                 self._recover_once()
                 return {"state": lease["state"]}
             if kind == "reservation.acquire":
@@ -2455,6 +2729,10 @@ class Admission:
                 return {"cancelRequested": True}
             if kind == "reservation.release":
                 if reservation.get("setupPrefixOperation"):
+                    prepared = self._fence_cancelled_captures(
+                        lease["invocationId"], "reservation release before capture publication commit",
+                    )
+                    self._scrub_cancelled_prepared_captures(prepared)
                     raise ProtocolError("setup-prefix-operation-active", "reservation release cannot race setup-prefix operation")
                 if reservation["kind"] == "build":
                     if "terminationEvidence" in request:
@@ -2682,6 +2960,9 @@ class Handler(socketserver.StreamRequestHandler):
                     "copyProtocol": request.get("copyProtocol"),
                     "copyRevision": request.get("copyRevision"),
                     "quiesceRevision": request.get("quiesceRevision"),
+                    "publicationRevision": request.get("publicationRevision"),
+                    "recoveryRevision": request.get("recoveryRevision"),
+                    "manifestSchema": request.get("manifestSchema"),
                     "filesystemSizeBytes": request.get("filesystemSizeBytes"),
                     "filesystemFeatures": request.get("filesystemFeatures"),
                     "daemonGeneration": admission.state["generation"] if admission is not None else None,
@@ -2697,6 +2978,13 @@ class Handler(socketserver.StreamRequestHandler):
             if context_path is not None:
                 context_path.unlink(missing_ok=True)
         try:
+            if (request is not None and request.get("kind") == "setup-prefix.capture.publish"
+                    and os.environ.pop("NICEEVAL_TEST_DROP_CAPTURE_PUBLISH_RESPONSE_ONCE", "") == "1"
+                    and response.get("ok") is True):
+                # Test-only transport fault: commit has completed, but the
+                # response is lost.  The client must retry the same operationId.
+                self.connection.shutdown(socket.SHUT_RDWR)
+                return
             self.wfile.write((json.dumps(response, separators=(",", ":")) + "\n").encode())
         except BrokenPipeError:
             pass
@@ -2721,9 +3009,16 @@ def main() -> None:
     parser.add_argument("--socket-mode", default="0o660")
     parser.add_argument("--ready-file")
     parser.add_argument("--orphan-grace-seconds", type=float, default=15.0)
+    parser.add_argument("--activation-manifest-digest",
+                        default=os.environ.get("NICEEVAL_ACTIVATION_MANIFEST_DIGEST"))
     args = parser.parse_args()
     path = Path(args.control_socket)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if args.ready_file:
+        Path(args.ready_file).unlink(missing_ok=True)
+    activation = _verify_fixed_activation(
+        Path(args.host_config), Path(args.descriptor), args.activation_manifest_digest,
+    )
     if path.exists() or path.is_socket():
         path.unlink()
     admission = Admission(Path(args.descriptor), Path(args.journal), args.docker_socket,
@@ -2731,7 +3026,17 @@ def main() -> None:
     server = Server(str(path), admission)
     os.chmod(path, int(args.socket_mode, 0))
     if args.ready_file:
-        Path(args.ready_file).write_text(admission.state["generation"] + "\n", encoding="utf-8")
+        ready = admission.state["generation"] + "\n"
+        if activation is not None:
+            activation_manifest_digest = "sha256:" + hashlib.sha256(
+                json.dumps(activation[0], sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            ready += json.dumps({
+                "activationEpoch": activation[0]["epoch"],
+                "manifestDigest": activation_manifest_digest,
+                "copyRevision": SETUP_PREFIX_COPY_REVISION,
+            }, sort_keys=True) + "\n"
+        Path(args.ready_file).write_text(ready, encoding="utf-8")
     thread = threading.Thread(target=admission.recovery_loop, daemon=True)
     thread.start()
     def stop(*_: object) -> None:
@@ -2743,6 +3048,10 @@ def main() -> None:
     server.server_close()
     if path.exists():
         path.unlink()
+    if args.ready_file:
+        Path(args.ready_file).unlink(missing_ok=True)
+    if activation is not None:
+        activation[1].close()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 import socket
@@ -129,6 +130,19 @@ def control_roundtrip(admission, path: Path, request: dict) -> dict:
     return json.loads(response)
 
 
+def control_drop_then_retry(admission, path: Path, request: dict) -> dict:
+    os.environ["NICEEVAL_TEST_DROP_CAPTURE_PUBLISH_RESPONSE_ONCE"] = "1"
+    server = watchdog.Server(str(path), admission)
+    worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+    worker.start()
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.connect(str(path)); client.sendall((json.dumps(request) + "\n").encode())
+    assert client.recv(65536) == b""
+    client.close(); server.shutdown(); worker.join(timeout=10); server.server_close()
+    path.unlink(missing_ok=True)
+    return control_roundtrip(admission, path, request)
+
+
 with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     root = Path(raw)
     docker_socket = root / "docker.sock"
@@ -141,6 +155,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     slot_root.mkdir()
     slot_limit = 2 * 1024 * 1024
     slots = []
+    fake_identities: dict[Path, str] = {}
     for index in range(8):
         path = slot_root / f"slot-{index:04d}"
         path.mkdir()
@@ -151,7 +166,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             "path": str(path),
             "imagePath": str(image),
             "attestation": "independent-fixed-filesystem/v1",
-            "filesystemIdentity": f"dev={path.stat().st_dev}:ino={path.stat().st_ino}",
+            "filesystemIdentity": f"ext4-uuid:00000000-0000-0000-0000-{index:012d}",
             "projectId": 0,
             "limitBytes": slot_limit,
             "baselineUsageBytes": 0,
@@ -163,6 +178,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             "generation": 0,
             "state": "free",
         })
+        fake_identities[image] = slots[-1]["filesystemIdentity"]
     slot_registry = root / "slots.json"
     slot_registry.write_text(json.dumps({
         "schemaVersion": 1,
@@ -190,7 +206,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             "path": str(seed_path),
             "imagePath": str(seed_image),
             "attestation": "independent-fixed-filesystem/v1",
-            "filesystemIdentity": "seed-device:test",
+            "filesystemIdentity": "ext4-uuid:10000000-0000-0000-0000-000000000001",
             "projectId": 0,
             "limitBytes": slot_limit,
             "baselineUsageBytes": 0,
@@ -201,18 +217,20 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             "mountOptions": ["ro", "noload"],
         }],
     }), encoding="utf-8")
+    fake_identities[seed_image] = "ext4-uuid:10000000-0000-0000-0000-000000000001"
     capability = {
         "protocol": "niceeval-docker-profile-state/docker-data-snapshot/v1",
         "coverage": "dockerData",
         "requiredState": "dockerData",
         "helperRevision": "niceeval-docker-profile-host/docker-data-snapshot/v1",
         "copyProtocol": "raw-image/v1",
-        "copyRevision": "niceeval-docker-profile-host/raw-image-copy/v1",
+        "copyRevision": "niceeval-docker-profile-host/raw-image-copy-reuuid/v2",
         "quiesceRevision": "niceeval-docker-profile-host/docker-data-quiesce/v1",
         "slotAttestation": "independent-fixed-filesystem/v1",
         "seedPolicy": "immutable-unmounted/v1",
-        "publicationRevision": "journal-first-atomic-publish/v1",
-        "recoveryRevision": "scrub-quarantine-cancel-restart/v1",
+        "publicationRevision": "prepared-copy-client-commit-publish/v4",
+        "recoveryRevision": "no-guess-scrub-or-quarantine/v2",
+        "manifestSchema": "niceeval-docker-profile-activation/v2",
         "providerIdentity": "pending",
         "executionDomain": "pending",
         "filesystemSizeBytes": slot_limit,
@@ -266,10 +284,11 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             "copyProtocol": capability["copyProtocol"],
             "copyRevision": capability["copyRevision"],
             "quiesceRevision": capability["quiesceRevision"],
-            "slotAttestation": capability["slotAttestation"],
-            "seedPolicy": capability["seedPolicy"],
             "publicationRevision": capability["publicationRevision"],
             "recoveryRevision": capability["recoveryRevision"],
+            "manifestSchema": capability["manifestSchema"],
+            "slotAttestation": capability["slotAttestation"],
+            "seedPolicy": capability["seedPolicy"],
             "filesystemSizeBytes": capability["filesystemSizeBytes"],
             "filesystemFeatures": capability["filesystemFeatures"],
         },
@@ -306,6 +325,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             "seedPolicy": capability["seedPolicy"],
             "publicationRevision": capability["publicationRevision"],
             "recoveryRevision": capability["recoveryRevision"],
+            "manifestSchema": capability["manifestSchema"],
             "seedRegistryPath": str(seed_registry),
             "imageRootPath": str(root),
             "copyStrategy": "raw-image/v1",
@@ -324,9 +344,15 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     production_copy_raw_image = watchdog.Admission._copy_raw_image
     production_ensure_raw_image_mounted = watchdog.Admission._ensure_raw_image_mounted
     production_raw_image_mount_source = watchdog.Admission._raw_image_mount_source
+    production_restore_fixed_slot_allocation = watchdog.Admission._restore_fixed_slot_allocation
+    production_raw_image_identity = watchdog.Admission._raw_image_identity
     watchdog.Admission._copy_raw_image = coordination_copy
     watchdog.Admission._ensure_raw_image_mounted = lambda self, record: None
     watchdog.Admission._raw_image_mount_source = lambda self, mountpoint: None
+    watchdog.Admission._restore_fixed_slot_allocation = lambda self, slot: subprocess.run(
+        ["fallocate", "-l", str(slot["limitBytes"]), "--", str(slot["imagePath"])], check=True,
+    )
+    watchdog.Admission._raw_image_identity = lambda self, path: fake_identities[Path(path)]
     watchdog.Admission._scrub_setup_prefix_seed = lambda self, seed, **kwargs: self._scrub_slot(seed)
 
     shared_host_config = root / "shared.host.json"
@@ -364,6 +390,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             **common,
             "kind": kind,
             "reservationId": reservation_id,
+            "operationId": hashlib.sha256(reservation_id.encode()).hexdigest(),
             "protocol": capability["protocol"],
             "requiredState": "dockerData",
             "descriptorDigest": admission.descriptor_digest,
@@ -376,6 +403,9 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             "copyProtocol": capability["copyProtocol"],
             "copyRevision": capability["copyRevision"],
             "quiesceRevision": capability["quiesceRevision"],
+            "publicationRevision": capability["publicationRevision"],
+            "recoveryRevision": capability["recoveryRevision"],
+            "manifestSchema": capability["manifestSchema"],
             "filesystemSizeBytes": capability["filesystemSizeBytes"],
             "filesystemFeatures": capability["filesystemFeatures"],
             "daemonGeneration": challenge["daemonGeneration"],
@@ -472,6 +502,9 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     expect_code("setup-prefix-descriptor-mismatch", lambda: admission.handle({
         **capture, "copyRevision": "niceeval-docker-profile-host/raw-image-copy/v0",
     }))
+    expect_code("setup-prefix-descriptor-mismatch", lambda: admission.handle({
+        **capture, "publicationRevision": "prepared-copy-client-commit-publish/v3",
+    }))
     expect_code("setup-prefix-base-identity", lambda: admission.handle({
         **capture, "baseIdentity": "sha256:" + "4" * 64,
     }))
@@ -482,7 +515,9 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     failed_wire = control_roundtrip(admission, root / "failed-wire.sock",
                                     {**capture, "daemonGeneration": "stale"})
     assert failed_wire["ok"] is False
-    receipt_wire_fields = set(capture) - {"kind", "invocationId", "leaseToken", "reservationId"}
+    receipt_wire_fields = set(capture) - {
+        "kind", "invocationId", "leaseToken", "reservationId", "operationId",
+    }
     assert set(failed_wire["error"]) == receipt_wire_fields | {
         "code", "message", "artifact", "status",
     }
@@ -505,7 +540,19 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     admission.fake_busy = False
     assert admission.state["setupPrefix"]["seeds"]["seed-fullcopy01"]["state"] == "free", admission.state["setupPrefix"]["seeds"]
 
-    captured = admission.handle(capture)
+    prepared = admission.handle(capture)
+    assert prepared["status"]["state"] == "prepared"
+    assert prefix_a not in admission.state["setupPrefix"]["artifacts"]
+    assert admission.handle(capture)["status"]["state"] == "prepared"
+    expect_code("setup-prefix-operation-active", lambda: admission.handle({
+        **common, "kind": "reservation.release", "reservationId": "capture",
+    }))
+    assert prefix_a not in admission.state["setupPrefix"]["artifacts"]
+    assert not admission.state["setupPrefix"]["operations"]
+    assert admission.state["setupPrefix"]["seeds"]["seed-fullcopy01"]["state"] == "free"
+    prepared = admission.handle(capture)
+    assert prepared["status"]["state"] == "prepared"
+    captured = admission.handle({**capture, "kind": "setup-prefix.capture.publish"})
     assert set(captured) == receipt_wire_fields | {"artifact", "status"}
     assert captured["daemonGeneration"] == challenge["daemonGeneration"]
     assert captured["slotGeneration"] == 0
@@ -520,6 +567,11 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     }
     assert "operationId" not in captured["artifact"]
     assert captured["status"]["state"] == "captured"
+    # Host commit is durable before the response; a lost response is safely
+    # reconciled by retrying the same operationId and returns already-published.
+    retry = control_drop_then_retry(admission, root / "publish-drop.sock",
+                                    {**capture, "kind": "setup-prefix.capture.publish"})
+    assert retry["ok"] is True and retry["result"]["status"]["state"] == "already-published"
     assert set(captured["status"]) == {"state", "capacity"}
     assert admission.handle(capture)["status"]["state"] == "already-published"
     expect_code("setup-prefix-capacity-exhausted",
@@ -786,6 +838,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     assert status["capacity"]["recoveryBytes"] == 3 * slot_limit
     events = [json.loads(line)["event"] for line in journal.read_text(encoding="utf-8").splitlines()]
     assert "setup-prefix-capture-intent" in events
+    assert "setup-prefix-capture-prepared" in events
     assert "setup-prefix-captured" in events
     assert "setup-prefix-capture-recovered" in events
     assert "setup-prefix-restore-intent" in events
@@ -804,14 +857,14 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
         )
     finally:
         watchdog.Admission._generation = production_generation
-    assert not admission.state["setupPrefix"]["artifacts"]
-    assert admission.state["setupPrefix"]["seeds"]["seed-fullcopy01"]["state"] == "free"
+    assert admission.state["setupPrefix"]["artifacts"][prefix_a]["state"] == "stale"
+    assert admission.state["setupPrefix"]["seeds"]["seed-fullcopy01"]["state"] == "quarantined"
+    assert admission.state["admissionOpen"] is False
     generation_events = [
         json.loads(line)["event"]
         for line in journal.read_text(encoding="utf-8").splitlines()
     ]
-    assert "setup-prefix-stale-artifact-intent" in generation_events
-    assert "setup-prefix-stale-artifact-scrubbed" in generation_events
+    assert "setup-prefix-stale-artifact-blocked" in generation_events
 
     # The production copy boundary uses the benchmarked raw-image recipe. The
     # mount/fsck syscalls are deterministic host fakes; cp/fallocate/sync and
@@ -819,6 +872,8 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     watchdog.Admission._copy_raw_image = production_copy_raw_image
     watchdog.Admission._ensure_raw_image_mounted = production_ensure_raw_image_mounted
     watchdog.Admission._raw_image_mount_source = production_raw_image_mount_source
+    watchdog.Admission._restore_fixed_slot_allocation = production_restore_fixed_slot_allocation
+    watchdog.Admission._raw_image_identity = production_raw_image_identity
     raw_root = root / "raw-image-boundary"
     raw_root.mkdir()
     raw_source_mount, raw_target_mount = raw_root / "source", raw_root / "target"
@@ -835,16 +890,16 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     raw_source = {
         "path": str(raw_source_mount), "imagePath": str(raw_source_image),
         "limitBytes": raw_size, "fsType": "ext4", "mountOptions": ["rw"],
-        "filesystemIdentity": "raw-source:test",
+        "filesystemIdentity": f"ext4-uuid:{subprocess.check_output(['blkid', '-s', 'UUID', '-o', 'value', str(raw_source_image)], text=True).strip().lower()}",
     }
     raw_target = {
         "path": str(raw_target_mount), "imagePath": str(raw_target_image),
         "limitBytes": raw_size, "fsType": "ext4", "mountOptions": ["rw"],
-        "filesystemIdentity": "raw-target:test",
+        "filesystemIdentity": f"ext4-uuid:{subprocess.check_output(['blkid', '-s', 'UUID', '-o', 'value', str(raw_target_image)], text=True).strip().lower()}",
     }
     mounted = {str(raw_source_mount), str(raw_target_mount)}
     commands = []
-    fault = {"fallocate": False}
+    fault = {"command": None}
 
     def raw_run(*args, check=True, timeout=30):
         commands.append(args)
@@ -860,14 +915,18 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
             if args[1] != "--make-rprivate":
                 mounted.add(args[-1])
             return subprocess.CompletedProcess(args, 0, "", "")
-        if args[0] == "fallocate" and fault["fallocate"]:
-            raise RuntimeError("injected raw-image writer crash")
+        if args[0] == fault["command"]:
+            if args[0] == "e2fsck":
+                return subprocess.CompletedProcess(args, 4, "", "injected attest failure")
+            raise RuntimeError(f"injected raw-image {args[0]} crash")
         return subprocess.run(args, check=check, text=True, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=timeout)
 
     raw_admission = object.__new__(watchdog.Admission)
     raw_admission.setup_prefix = {"copyStrategy": "raw-image/v1", "imageRootPath": raw_root}
     raw_admission.fake_busy = False
+    copy_stages = []
+    raw_admission._record_copy_stage = lambda operation_id, stage, facts: copy_stages.append((stage, facts))
     raw_admission._run_host = raw_run
     parent_mount = raw_root.parent
     raw_admission._run_host = lambda *args, **kwargs: subprocess.CompletedProcess(
@@ -886,16 +945,36 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
         raw_source, raw_target, "a" * 32
     )
     assert artifact_id == watchdog.Admission._raw_image_digest(raw_target_image)
-    assert raw_source_image.read_bytes() == raw_target_image.read_bytes()
+    assert raw_source_image.read_bytes() != raw_target_image.read_bytes()
+    assert raw_admission._raw_image_identity(raw_target_image) == raw_target["filesystemIdentity"]
     assert raw_target_image.stat().st_ino not in (target_inode, raw_source_image.stat().st_ino)
     assert raw_target_image.stat().st_size == raw_size
     assert raw_target_image.stat().st_blocks * 512 >= raw_size
     assert mounted == {str(raw_source_mount), str(raw_target_mount)}
-    assert any(command[:3] == ("cp", "--sparse=always", "--reflink=never") for command in commands)
+    assert any(command[:3] == ("cp", "--sparse=never", "--reflink=never") for command in commands)
     assert any(command[:3] == ("fallocate", "-l", str(raw_size)) for command in commands)
     assert any(command[:3] == ("sync", "-f", "--") for command in commands)
     assert any(command[:2] == ("e2fsck", "-fn") for command in commands)
+    assert [stage for stage, _ in copy_stages[:4]] == ["copied", "reuuid", "attested", "replaced"]
+    assert copy_stages[0][1]["sourceArtifactDigest"] == watchdog.Admission._raw_image_digest(raw_source_image)
+    assert copy_stages[0][1]["expectedTargetFilesystemIdentity"] == raw_target["filesystemIdentity"]
+    assert copy_stages[2][1]["temporaryFinalDigest"] == artifact_id
     assert not any(command[0] == "dd" or "--archive" in command for command in commands)
+
+    # Scrub may release physical blocks from the loop backing. The journaled
+    # fixed-slot recovery boundary must restore allocation before reuse.
+    subprocess.run([
+        "fallocate", "--punch-hole", "--keep-size", "-o", str(raw_size // 2), "-l", str(raw_size // 4),
+        "--", str(raw_target_image),
+    ], check=True)
+    assert raw_target_image.stat().st_blocks * 512 < raw_size
+    raw_admission._restore_fixed_slot_allocation({
+        **raw_target,
+        "attestation": "independent-fixed-filesystem/v1",
+        "projectId": 0,
+    })
+    assert raw_target_image.stat().st_blocks * 512 >= raw_size
+    assert str(raw_target_mount) in mounted
 
     # Restore reads a published seed image without mounting it. Only the
     # private destination slot is unmounted/remounted around atomic replace.
@@ -907,19 +986,79 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     assert restored_artifact_id == watchdog.Admission._raw_image_digest(raw_target_image)
     assert mounted == {str(raw_target_mount)}
 
+    # Every disk phase before replace preserves the published target. The
+    # temporary is always removed and the slot is remounted; no failure may be
+    # guessed into a publication.
+    for phase, command in (("copy", "cp"), ("reuuid", "tune2fs"), ("attest", "e2fsck")):
+        operation_id = hashlib.sha256(phase.encode()).hexdigest()[:32]
+        stable_inode = raw_target_image.stat().st_ino
+        stable_digest = watchdog.Admission._raw_image_digest(raw_target_image)
+        fault["command"] = command
+        try:
+            raw_admission._copy_docker_data_image(immutable_seed, raw_target, operation_id)
+        except RuntimeError as error:
+            assert "injected" in str(error) or "verification failed" in str(error)
+        else:
+            raise AssertionError(f"injected {phase} failure must fail")
+        finally:
+            fault["command"] = None
+        assert raw_target_image.stat().st_ino == stable_inode
+        assert watchdog.Admission._raw_image_digest(raw_target_image) == stable_digest
+        assert not raw_admission._temporary_clone_path(raw_target_image, operation_id).exists()
+        assert mounted == {str(raw_target_mount)}
+
+    replace_operation = "e" * 32
+    stable_inode = raw_target_image.stat().st_ino
+    original_replace = watchdog.os.replace
+    watchdog.os.replace = lambda source, target: (_ for _ in ()).throw(
+        RuntimeError("injected raw-image replace crash")
+    ) if Path(target) == raw_target_image else original_replace(source, target)
+    try:
+        raw_admission._copy_docker_data_image(immutable_seed, raw_target, replace_operation)
+    except RuntimeError as error:
+        assert "replace crash" in str(error)
+    else:
+        raise AssertionError("injected replace failure must fail")
+    finally:
+        watchdog.os.replace = original_replace
+    assert raw_target_image.stat().st_ino == stable_inode
+    assert not raw_admission._temporary_clone_path(raw_target_image, replace_operation).exists()
+
+    # A journal commit failure after atomic replace is not rolled forward by
+    # the copier. Actual UUID remains the stable target identity; outer capture
+    # recovery scrubs unpublished data and outer restore recovery quarantines.
+    commit_operation = "f" * 32
+    original_record_stage = raw_admission._record_copy_stage
+    def fail_replaced_commit(operation_id, stage, facts):
+        if stage == "replaced":
+            raise RuntimeError("injected publication commit crash")
+        original_record_stage(operation_id, stage, facts)
+    raw_admission._record_copy_stage = fail_replaced_commit
+    try:
+        raw_admission._copy_docker_data_image(immutable_seed, raw_target, commit_operation)
+    except RuntimeError as error:
+        assert "publication commit crash" in str(error)
+    else:
+        raise AssertionError("injected publication commit failure must fail")
+    finally:
+        raw_admission._record_copy_stage = original_record_stage
+    assert raw_admission._raw_image_identity(raw_target_image) == raw_target["filesystemIdentity"]
+    assert not raw_admission._temporary_clone_path(raw_target_image, commit_operation).exists()
+
     # Failure before atomic replace removes the temporary clone, preserves the
     # prior target inode, restores the destination, and leaves the seed unmounted.
     stable_inode = raw_target_image.stat().st_ino
-    fault["fallocate"] = True
+    fault["command"] = "fallocate"
     try:
         raw_admission._copy_docker_data_image(immutable_seed, raw_target, "b" * 32)
     except RuntimeError as error:
-        assert "writer crash" in str(error)
+        assert "fallocate crash" in str(error)
     else:
         raise AssertionError("injected raw-image writer crash must fail")
     assert raw_target_image.stat().st_ino == stable_inode
     assert mounted == {str(raw_target_mount)}
     assert not raw_admission._temporary_clone_path(raw_target_image, "b" * 32).exists()
+    fault["command"] = None
 
     raw_admission.setup_prefix["copyStrategy"] = "filesystem-tree/v1"
     try:

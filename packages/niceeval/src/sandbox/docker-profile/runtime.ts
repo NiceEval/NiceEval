@@ -171,6 +171,26 @@ export class DockerProfileControlError extends Error {
   }
 }
 
+/** The publish outcome is unknown after transport loss; callers must inspect
+ * terminal rather than treating this as a cache miss or ordinary domain error. */
+export class DockerProfileControlAmbiguityError extends Error {
+  constructor(
+    readonly operationId: string,
+    readonly terminal: "cancel-fenced" | "unresolved",
+    message: string,
+  ) {
+    super(message);
+    this.name = "DockerProfileControlAmbiguityError";
+  }
+}
+
+export class DockerProfileControlCancellationError extends Error {
+  constructor(readonly operationId: string, message: string) {
+    super(message);
+    this.name = "DockerProfileControlCancellationError";
+  }
+}
+
 interface DockerProfileReleaseReceipt {
   readonly released: true;
   readonly cleanupProven?: true;
@@ -489,6 +509,9 @@ function setupPrefixExpectedWire(
     copyProtocol: capability.copyProtocol,
     copyRevision: capability.copyRevision,
     quiesceRevision: capability.quiesceRevision,
+    publicationRevision: capability.publicationRevision,
+    recoveryRevision: capability.recoveryRevision,
+    manifestSchema: capability.manifestSchema,
     filesystemSizeBytes: capability.filesystemSizeBytes,
     filesystemFeatures: Object.freeze([...capability.filesystemFeatures]),
     daemonGeneration: lease.binding.daemonGeneration,
@@ -497,7 +520,7 @@ function setupPrefixExpectedWire(
 }
 
 function setupPrefixControlFrame(
-  kind: "setup-prefix.capture" | "setup-prefix.restore",
+  kind: "setup-prefix.capture" | "setup-prefix.capture.publish" | "setup-prefix.restore",
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
   input: SandboxSetupPrefixCacheOperation,
@@ -513,7 +536,7 @@ function setupPrefixControlFrame(
   ) {
     throw new Error("Docker profile setup-prefix key is not bound to its complete canonical manifest identity");
   }
-  if (input.operationId.length === 0 || input.operationId.length > 256 || input.operationId.includes("\0")) {
+  if (input.operationId.length === 0 || input.operationId.length > 512 || /[\u0000-\u001f\u007f]/u.test(input.operationId)) {
     throw new Error("Docker profile setup-prefix operationId is invalid");
   }
   return Object.freeze({
@@ -521,6 +544,7 @@ function setupPrefixControlFrame(
     invocationId: lease.invocationId,
     leaseToken: lease.leaseToken,
     reservationId: reservation.reservationId,
+    operationId: input.operationId,
     ...setupPrefixExpectedWire(lease, reservation, input),
   });
 }
@@ -726,8 +750,42 @@ export async function captureDockerProfileSetupPrefix(
     validateSetupPrefixControlError(cause, lease, reservation, input);
     throw cause;
   }
-  const response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input);
-  const state = response.status.state;
+  let response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input);
+  let state = response.status.state;
+  if (state === "prepared") {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const reconcileController = new AbortController();
+      const reconcileTimer = setTimeout(() => reconcileController.abort(), controlTimeoutMs);
+      try {
+        rawResponse = await dockerProfileControlRequest<unknown>(
+          lease.binding.controlSocketPath,
+          setupPrefixControlFrame("setup-prefix.capture.publish", lease, reservation, input),
+          reconcileController.signal,
+          controlTimeoutMs,
+        );
+        response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input);
+        lastError = undefined;
+        clearTimeout(reconcileTimer);
+        break;
+      } catch (cause) {
+        clearTimeout(reconcileTimer);
+        validateSetupPrefixControlError(cause, lease, reservation, input);
+        lastError = cause;
+        if (cause instanceof DockerProfileControlError &&
+            (cause.code === "setup-prefix-operation-cancelled" || cause.code === "setup-prefix-operation-cancel-fenced")) {
+          throw new DockerProfileControlCancellationError(input.operationId, "setup-prefix capture was fenced and scrubbed");
+        }
+        if (attempt === 2) break;
+        await new Promise<void>((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+      }
+    }
+    if (lastError !== undefined) {
+      throw new DockerProfileControlAmbiguityError(input.operationId, "unresolved",
+        "setup-prefix publish outcome is ambiguous; retry/reconcile is exhausted");
+    }
+    state = response.status.state;
+  }
   if (state !== "captured" && state !== "already-published") {
     throw new Error(`Docker profile setup-prefix capture returned invalid state ${JSON.stringify(state)}`);
   }

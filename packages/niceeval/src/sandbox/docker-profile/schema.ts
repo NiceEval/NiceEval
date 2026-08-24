@@ -92,8 +92,9 @@ export interface DockerProfileSetupPrefixFullCopyCapabilityV1 {
   readonly quiesceRevision: string;
   readonly slotAttestation: "independent-fixed-filesystem/v1";
   readonly seedPolicy: "immutable-unmounted/v1";
-  readonly publicationRevision: "journal-first-atomic-publish/v1";
-  readonly recoveryRevision: "scrub-quarantine-cancel-restart/v1";
+  readonly publicationRevision: "prepared-copy-client-commit-publish/v4";
+  readonly recoveryRevision: "no-guess-scrub-or-quarantine/v2";
+  readonly manifestSchema: "niceeval-docker-profile-activation/v2";
   readonly providerIdentity: string;
   readonly executionDomain: string;
   readonly filesystemSizeBytes: number;
@@ -340,8 +341,9 @@ const SetupPrefixFullCopyCapabilitySchema = plainStruct({
   quiesceRevision: nonEmptyString("DockerProfileSetupPrefixQuiesceRevision"),
   slotAttestation: Schema.Literal("independent-fixed-filesystem/v1"),
   seedPolicy: Schema.Literal("immutable-unmounted/v1"),
-  publicationRevision: Schema.Literal("journal-first-atomic-publish/v1"),
-  recoveryRevision: Schema.Literal("scrub-quarantine-cancel-restart/v1"),
+  publicationRevision: Schema.Literal("prepared-copy-client-commit-publish/v4"),
+  recoveryRevision: Schema.Literal("no-guess-scrub-or-quarantine/v2"),
+  manifestSchema: Schema.Literal("niceeval-docker-profile-activation/v2"),
   providerIdentity: sha256Identity("DockerProfileSetupPrefixProviderIdentity"),
   executionDomain: sha256Identity("DockerProfileSetupPrefixExecutionDomain"),
   filesystemSizeBytes: positiveSafeInteger("DockerProfileSetupPrefixFilesystemSizeBytes"),
@@ -704,6 +706,7 @@ function canonicalJson(profile: DockerExecutionProfileV1): JsonValue {
                 seedPolicy: profile.backend.filesystem.setupPrefix.seedPolicy,
                 publicationRevision: profile.backend.filesystem.setupPrefix.publicationRevision,
                 recoveryRevision: profile.backend.filesystem.setupPrefix.recoveryRevision,
+                manifestSchema: profile.backend.filesystem.setupPrefix.manifestSchema,
                 providerIdentity: profile.backend.filesystem.setupPrefix.providerIdentity,
                 executionDomain: profile.backend.filesystem.setupPrefix.executionDomain,
                 filesystemSizeBytes: profile.backend.filesystem.setupPrefix.filesystemSizeBytes,

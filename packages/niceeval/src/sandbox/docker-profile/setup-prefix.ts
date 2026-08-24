@@ -10,6 +10,8 @@ import {
 import {
   captureDockerProfileSetupPrefix,
   DockerProfileControlError,
+  DockerProfileControlAmbiguityError,
+  DockerProfileControlCancellationError,
   restoreDockerProfileSetupPrefix,
   type DockerProfileLease,
   type DockerProfileReservation,
@@ -184,13 +186,15 @@ export function makeDockerProfileSetupPrefixCacheCapability(
         ...artifactReceipt(captured.artifact, reservation),
         sandboxId,
       };
-    }).pipe(Effect.mapError((cause) => new SandboxSetupPrefixCacheCaptureError({
-      operation: "capture Docker profile setup-prefix and restore a private continuation",
-      reason: reasonOf(cause),
-      setupPrefixKey: input.manifest.setupPrefixKey,
-      domainId: target.session.lease.binding.profile.profileId,
-      cause,
-    }))),
+    }).pipe(Effect.mapError((cause) => cause instanceof DockerProfileControlAmbiguityError || cause instanceof DockerProfileControlCancellationError
+      ? cause
+      : new SandboxSetupPrefixCacheCaptureError({
+        operation: "capture Docker profile setup-prefix and restore a private continuation",
+        reason: reasonOf(cause),
+        setupPrefixKey: input.manifest.setupPrefixKey,
+        domainId: target.session.lease.binding.profile.profileId,
+        cause,
+      }))),
 
     recoverCleanBase: () => Effect.gen(function* () {
       yield* promiseEffect((signal) => target.quiesceAndStop(signal));

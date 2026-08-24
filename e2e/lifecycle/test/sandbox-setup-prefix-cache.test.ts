@@ -57,11 +57,18 @@ interface SetupPrefixLedgerEvent {
 
 interface SetupPrefixHostObservation {
   readonly settled: boolean;
+  readonly degraded: readonly unknown[];
   readonly leases: readonly JsonRecord[];
   readonly reservations: readonly JsonRecord[];
   readonly queue: readonly unknown[];
   readonly slots: readonly JsonRecord[];
   readonly operations: readonly JsonRecord[];
+}
+
+interface PublishedSeedObservation {
+  readonly artifactId: string;
+  readonly seedId: string;
+  readonly marker: string;
 }
 
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -170,6 +177,12 @@ async function readFixtureHostFile(path: string): Promise<string> {
   return result.stdout;
 }
 
+async function fixtureHostFileExists(path: string): Promise<boolean> {
+  const result = await sudo.run(["test", "-f", path]);
+  expect([0, 1]).toContain(result.exitCode);
+  return result.exitCode === 0;
+}
+
 async function setupPrefixLedgerEvents(path: string): Promise<readonly SetupPrefixLedgerEvent[]> {
   const raw = await readFixtureHostFile(path);
   return Object.freeze(raw.split(/\r?\n/u).flatMap((line): SetupPrefixLedgerEvent[] => {
@@ -210,6 +223,7 @@ async function setupPrefixHostObservation(path: string): Promise<SetupPrefixHost
     slotId: slot.slotId,
     state: slot.state,
     reservationId: slot.reservationId,
+    quarantineReason: slot.quarantineReason,
   }));
   const operationSummary = Object.values(operations).filter(isRecord).map((operation) => ({
     operationId: operation.operationId,
@@ -227,12 +241,82 @@ async function setupPrefixHostObservation(path: string): Promise<SetupPrefixHost
     slotSummary.every((slot) => slot.state === "free" && slot.reservationId === undefined);
   return Object.freeze({
     settled,
+    degraded: Object.freeze(Array.isArray(state.degraded) ? [...state.degraded] : []),
     leases: Object.freeze(leaseSummary),
     reservations: Object.freeze(reservationSummary),
     queue: Object.freeze([...queue]),
     slots: Object.freeze(slotSummary),
     operations: Object.freeze(operationSummary),
   });
+}
+
+async function fixedSlotPrefixMarkers(fixture: HostFixture): Promise<readonly string[]> {
+  const config = JSON.parse(await readFixtureHostFile(fixture.hostConfig)) as JsonRecord;
+  const storage = isRecord(config.storage) ? config.storage : {};
+  expect(storage.slotRegistryPath).toEqual(expect.any(String));
+  const registry = JSON.parse(await readFixtureHostFile(String(storage.slotRegistryPath))) as JsonRecord;
+  const slots = Array.isArray(registry.slots) ? registry.slots.filter(isRecord) : [];
+  const paths = slots.map((slot) => String(slot.path));
+  expect(paths.length).toBeGreaterThan(0);
+  const result = await sudo.run([
+    "find", ...paths, "-type", "d",
+    "-name", "niceeval-setup-prefix-prefix-*", "-printf", "%f\n",
+  ]);
+  expect(result.exitCode, result.diagnostic()).toBe(0);
+  return Object.freeze([...new Set(result.stdout.trim().split(/\r?\n/u).filter(Boolean))].sort());
+}
+
+async function publishedSeedObservation(path: string): Promise<PublishedSeedObservation> {
+  const lines = (await readFixtureHostFile(path)).trim().split(/\r?\n/u);
+  const latest = JSON.parse(lines.at(-1) ?? "{}") as JsonRecord;
+  const state = isRecord(latest.state) ? latest.state : {};
+  const setupPrefix = isRecord(state.setupPrefix) ? state.setupPrefix : {};
+  const artifacts = isRecord(setupPrefix.artifacts)
+    ? Object.values(setupPrefix.artifacts).filter(isRecord)
+    : [];
+  expect(artifacts).toHaveLength(1);
+  const artifact = artifacts[0]!;
+  expect(artifact).toMatchObject({ state: "published", artifactId: expect.any(String), seedId: expect.any(String) });
+  const seeds = isRecord(setupPrefix.seeds) ? setupPrefix.seeds : {};
+  const seed = isRecord(seeds[String(artifact.seedId)]) ? seeds[String(artifact.seedId)] as JsonRecord : {};
+  expect(seed).toMatchObject({ state: "published", imagePath: expect.any(String) });
+  const listed = await sudo.run(["debugfs", "-R", "ls -p /volumes", String(seed.imagePath)]);
+  expect(listed.exitCode, listed.diagnostic()).toBe(0);
+  const markers = [...new Set(listed.stdout.match(/niceeval-setup-prefix-prefix-[a-f0-9-]{36}/gu) ?? [])];
+  expect(markers, `published seed ${String(artifact.seedId)} must contain one prefix marker`).toHaveLength(1);
+  return Object.freeze({
+    artifactId: String(artifact.artifactId),
+    seedId: String(artifact.seedId),
+    marker: markers[0]!,
+  });
+}
+
+async function latestSetupPrefixRestore(path: string): Promise<JsonRecord> {
+  const records = (await readFixtureHostFile(path)).trim().split(/\r?\n/u)
+    .map((line) => JSON.parse(line) as JsonRecord)
+    .filter((record) => record.event === "setup-prefix-restored");
+  expect(records.length).toBeGreaterThan(0);
+  const detail = records.at(-1)!.detail;
+  expect(isRecord(detail)).toBe(true);
+  return detail as JsonRecord;
+}
+
+async function activeCaptureCopying(path: string): Promise<boolean> {
+  const records = (await readFixtureHostFile(path)).trim().split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as JsonRecord);
+  const latest = records.at(-1);
+  const state = latest !== undefined && isRecord(latest.state) ? latest.state : {};
+  const setupPrefix = isRecord(state.setupPrefix) ? state.setupPrefix : {};
+  const operations = isRecord(setupPrefix.operations)
+    ? Object.values(setupPrefix.operations).filter(isRecord)
+    : [];
+  if (operations.length !== 1) return false;
+  const operation = operations[0]!;
+  if (operation.kind !== "capture" || operation.state !== "capturing") return false;
+  return records.some((record) =>
+    record.event === "setup-prefix-capture-copying" &&
+    isRecord(record.detail) && record.detail.operationId === operation.operationId);
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -434,7 +518,7 @@ async function interruptProfileCapture(
   hostRoot: string,
   fixture: HostFixture,
   profile: string,
-): Promise<void> {
+): Promise<string> {
   const interrupted = await (async () => {
     try {
       return await withProcess(
@@ -469,11 +553,22 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
             },
             { timeoutMs: 60_000, intervalMs: 25, label: "fixed Profile stopped for setup-prefix capture" },
           );
+          const cancelledMarkers = await pollUntil(
+            async () => {
+              const markers = await fixedSlotPrefixMarkers(fixture);
+              if (markers.length > 1) {
+                throw new Error(`cancelled Attempt exposed multiple dockerData prefix markers: ${markers.join(", ")}`);
+              }
+              if (markers.length !== 1) return undefined;
+              return await activeCaptureCopying(fixture.journal) ? markers : undefined;
+            },
+            { timeoutMs: 10_000, intervalMs: 25, label: "active capture copy with cancelled Attempt marker" },
+          );
           expect(controlled.signal("SIGINT")).toBe(true);
           const receipt = await controlled.done;
           expect(receipt.exitCode, receipt.diagnostic()).toBe(130);
           expect(receipt.expReceipt(), receipt.diagnostic()).toMatchObject({ completion: "interrupted" });
-          return receipt;
+          return { receipt, cancelledMarker: cancelledMarkers[0]! };
         },
       );
     } finally {
@@ -483,7 +578,7 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
       expect(ownership.exitCode, ownership.diagnostic()).toBe(0);
     }
   })();
-  expect(interrupted.exitCode).toBe(130);
+  expect(interrupted.receipt.exitCode).toBe(130);
   try {
     await pollUntil(
       async () => {
@@ -499,6 +594,7 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
       { cause },
     );
   }
+  return interrupted.cancelledMarker;
 }
 
 async function invoke(
@@ -942,10 +1038,57 @@ test("Profile 在取消后回收 Host ownership，并为后续 Invocation 恢复
       }
     });
 
+    await withTempDir("niceeval-e2e-docker-profile-", async (defaultRoot) => {
+      const defaultSetup = await sudo.run([
+        "env", `PATH=${hostPath}`,
+        "python3", fixtureScript, "setup",
+        "--root", defaultRoot,
+        "--scripts", scripts!,
+        "--docker-root", dockerInfo.stdout.trim(),
+        "--user", user!,
+        "--group", group.stdout.trim(),
+        "--name", `e2e-setup-prefix-default-${randomUUID()}`,
+        "--setup-prefix",
+        "--setup-prefix-filesystem-bytes", String(64 * 1024 * 1024),
+        "--setup-prefix-slot-count", "1",
+        "--setup-prefix-seed-count", "1",
+      ], { timeoutMs: 60_000 });
+      expect(defaultSetup.exitCode, defaultSetup.diagnostic()).toBe(0);
+      const defaultCleanup = await sudo.run([
+        "env", `PATH=${hostPath}`,
+        "python3", fixtureScript, "cleanup", "--root", defaultRoot,
+      ], { timeoutMs: 30_000 });
+      expect(defaultCleanup.exitCode, defaultCleanup.diagnostic()).toBe(0);
+    });
+
     await withTempDir("niceeval-e2e-docker-profile-", async (hostRoot) => {
       const profile = `e2e-setup-prefix-${randomUUID()}`;
       let fixture: HostFixture | undefined;
       let primaryError: unknown;
+      let coldPrefixMarker: string | undefined;
+      let cancelledPrefixMarker: string | undefined;
+      let fixedFactsBeforeRestart: readonly JsonRecord[] = [];
+      let publishedSeedBeforeRestart: PublishedSeedObservation | undefined;
+      const fixedIdentityFacts = async (): Promise<readonly JsonRecord[]> => {
+        const script = [
+          "import hashlib,json,subprocess,sys",
+          "c=json.load(open(sys.argv[1]))",
+          "paths=[c['storage']['slotRegistryPath'],c['setupPrefix']['seedRegistryPath']]",
+          "records=[]",
+          "[records.extend(json.load(open(p)).get('slots',json.load(open(p)).get('seeds',[]))) for p in paths]",
+          "out=[]",
+          "for r in records:",
+          " p=r['imagePath']; u=subprocess.check_output(['blkid','-s','UUID','-o','value',p],text=True).strip().lower()",
+          " h=hashlib.sha256(open(p,'rb').read()).hexdigest()",
+          " out.append({'id':r.get('slotId',r.get('seedId')),'registryIdentity':r['filesystemIdentity'],'actualUuid':u,'digest':'sha256:'+h,'seed':('seedId' in r)})",
+          "print(json.dumps(out))",
+        ].join("\n");
+        const result = await sudo.run([
+          "env", `PATH=${hostPath}`, "python3", "-c", script, fixture!.hostConfig,
+        ], { timeoutMs: 30_000 });
+        expect(result.exitCode, result.diagnostic()).toBe(0);
+        return JSON.parse(result.stdout.trim()) as readonly JsonRecord[];
+      };
       try {
         const setup = await sudo.run([
           "env", `PATH=${hostPath}`,
@@ -957,13 +1100,110 @@ test("Profile 在取消后回收 Host ownership，并为后续 Invocation 恢复
           "--group", group.stdout.trim(),
           "--name", profile,
           "--setup-prefix",
+          "--storage-root", join(hostRoot, "nvme-store"),
         ], { timeoutMs: 60_000 });
         expect(setup.exitCode, setup.diagnostic()).toBe(0);
         fixture = JSON.parse(setup.stdout.trim().split("\n").at(-1)!) as HostFixture;
 
+        const activationManifest = join(hostRoot, "journal/fixed-image-v1/activation.json");
+        const activationDigest = join(hostRoot, "journal/fixed-image-v1/activation.sha256");
+        for (const [label, tamperPath, tamperScript] of [
+          ["manifest", activationManifest,
+            "import json,sys; p=sys.argv[1]; v=json.load(open(p)); v['epoch']='tampered'; open(p,'w').write(json.dumps(v)+'\\n')"],
+          ["digest sidecar", activationDigest,
+            "import sys; p=sys.argv[1]; open(p,'w').write('sha256:'+'0'*64+'\\n')"],
+          ["host config", fixture.hostConfig,
+            "import sys; p=sys.argv[1]; open(p,'ab').write(b' \\n')"],
+        ] as const) {
+          const backupPath = `${tamperPath}.tamper-backup`;
+          const backup = await sudo.run(["cp", "--archive", "--", tamperPath, backupPath]);
+          expect(backup.exitCode, backup.diagnostic()).toBe(0);
+          const tamper = await sudo.run([
+            "python3", "-c", tamperScript, tamperPath,
+          ]);
+          expect(tamper.exitCode, tamper.diagnostic()).toBe(0);
+          const rejected = await sudo.run([
+            "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
+            "python3", join(scripts!, "watchdog.py"),
+            "--control-socket", fixture.controlSocket,
+            "--descriptor", fixture.descriptor,
+            "--host-config", fixture.hostConfig,
+            "--docker-socket", "/run/docker.sock",
+            "--journal", fixture.journal,
+            "--ready-file", fixture.readyFile,
+            "--socket-mode", "0o600",
+          ], { timeoutMs: 15_000 });
+          expect(rejected.exitCode, `${label} tamper unexpectedly opened admission\n${rejected.diagnostic()}`)
+            .not.toBe(0);
+          expect(await fileExists(fixture.controlSocket)).toBeUndefined();
+          const restore = await sudo.run(["cp", "--archive", "--", backupPath, tamperPath]);
+          expect(restore.exitCode, restore.diagnostic()).toBe(0);
+          const removeBackup = await sudo.run(["unlink", "--", backupPath]);
+          expect(removeBackup.exitCode, removeBackup.diagnostic()).toBe(0);
+          const rebound = await sudo.run([
+            "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
+            "python3", join(scripts!, "activate-fixed-images.py"),
+            "--host-config", fixture.hostConfig,
+            "--descriptor", fixture.descriptor,
+            "--lock", join(hostRoot, "activation.lock"),
+          ], { timeoutMs: 60_000 });
+          expect(rebound.exitCode, rebound.diagnostic()).toBe(0);
+        }
+
+        const activationArgv = [
+          "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
+          "python3", join(scripts!, "activate-fixed-images.py"),
+          "--host-config", fixture.hostConfig,
+          "--descriptor", fixture.descriptor,
+          "--lock", join(hostRoot, "activation.lock"),
+        ];
+        const dataMount = join(hostRoot, "data");
+        const ownerFile = join(dataMount, "activation-owner.bin");
+        const holderCases = [
+          {
+            label: "cwd",
+            script: "import os,sys,time; os.chdir(sys.argv[1]); open(sys.argv[2],'w').write('ready'); time.sleep(60)",
+          },
+          {
+            label: "fd",
+            script: "import sys,time; f=open(sys.argv[1],'ab'); open(sys.argv[2],'w').write('ready'); time.sleep(60)",
+          },
+          {
+            label: "maps",
+            script: "import mmap,os,sys,time; f=open(sys.argv[1],'w+b'); f.truncate(4096); m=mmap.mmap(f.fileno(),4096); open(sys.argv[2],'w').write('ready'); time.sleep(60)",
+          },
+          {
+            label: "root",
+            script: "import os,sys,time; marker=open(sys.argv[2],'w'); os.chroot(sys.argv[1]); os.chdir('/'); marker.write('ready'); marker.flush(); time.sleep(60)",
+          },
+        ] as const;
+        for (const holder of holderCases) {
+          const ready = join(hostRoot, `owner-${holder.label}.ready`);
+          await withProcess(
+            ["sudo", "-n", "python3", "-c", holder.script,
+              holder.label === "cwd" || holder.label === "root" ? dataMount : ownerFile, ready],
+            { processGroup: true, timeoutMs: 15_000, graceMs: 2_000 },
+            async (process) => {
+              await Promise.race([
+                pollUntil(() => fileExists(ready), {
+                  timeoutMs: 5_000, intervalMs: 50, label: `${holder.label} storage owner ready`,
+                }),
+                process.done.then((receipt) => {
+                  throw new Error(`${holder.label} storage owner exited early\n${receipt.diagnostic()}`);
+                }),
+              ]);
+              const rejected = await sudo.run(activationArgv, { timeoutMs: 15_000 });
+              expect(rejected.exitCode, `${holder.label} owner did not block activation\n${rejected.diagnostic()}`)
+                .not.toBe(0);
+              expect(rejected.stderr).toMatch(/process ownership of profile storage|mapped profile storage/u);
+            },
+          );
+        }
+
         await withProcess(
           [
             "sudo", "-n", "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
+            "NICEEVAL_TEST_DROP_CAPTURE_PUBLISH_RESPONSE_ONCE=1",
             "python3", join(scripts!, "watchdog.py"),
             "--control-socket", fixture.controlSocket,
             "--descriptor", fixture.descriptor,
@@ -985,6 +1225,12 @@ test("Profile 在取消后回收 Host ownership，并为后续 Invocation 恢复
                 throw new Error(`watchdog exited before readiness\n${receipt.diagnostic()}`);
               }),
             ]);
+
+            const onlineActivation = await sudo.run(activationArgv, { timeoutMs: 15_000 });
+            expect(
+              onlineActivation.exitCode,
+              `an online watchdog must keep the alias lock and admission closed to activation\n${onlineActivation.diagnostic()}`,
+            ).not.toBe(0);
 
             const actions = await debugProfileSetupPrefix(root, hostRoot, fixture!, profile);
             const cache = actions.prefix.cache as JsonRecord;
@@ -1051,13 +1297,14 @@ test("Profile 在取消后回收 Host ownership，并为后续 Invocation 恢复
               },
             });
 
-            await interruptProfileCapture(root, hostRoot, fixture!, profile);
+            cancelledPrefixMarker = await interruptProfileCapture(root, hostRoot, fixture!, profile);
             const coldRun = await invokeProfile(root, hostRoot, fixture!, profile, "v1", "PUBLIC_MODE=alpha\n");
             expect(
               coldRun.execution,
               "the first fixed Profile retry after cancellation must replay A instead of restoring a cancelled publish",
             ).toContain("niceeval.e2e.setup-prefix-role=docker-data-prefix");
             const cold = coldRun.evidence;
+            coldPrefixMarker = cold.dockerDataPrefixMarker;
             const restoredReaders = await withProjectCopy(projectCopy, async ({ root: firstReaderRoot }) =>
               withProjectCopy(projectCopy, async ({ root: secondReaderRoot }) => {
                 await Promise.all([
@@ -1089,6 +1336,7 @@ test("Profile 在取消后回收 Host ownership，并为后续 Invocation 恢复
                 `warm setupPrefixKey=${JSON.stringify(restoredReaders.map((reader) => reader.setupPrefixKeys))}; ` +
                 `host ledger=${JSON.stringify(ledgerEvents)}`,
             ).toEqual([cold.dockerDataPrefixMarker, cold.dockerDataPrefixMarker]);
+            expect(cold.dockerDataPrefixMarker).not.toBe(cancelledPrefixMarker);
             expect(restoredReaders.map((reader) => reader.evidence.dockerDataPrefixSideEffectCount))
               .toEqual([1, 1]);
             expect(restored.evidence.buildToken, restored.diagnostic).toBe(cold.buildToken);
@@ -1155,6 +1403,217 @@ test("Profile 在取消后回收 Host ownership，并为后续 Invocation 恢复
                 label: "Profile SetupPrefix containers and networks released",
               },
             );
+            fixedFactsBeforeRestart = await fixedIdentityFacts();
+            publishedSeedBeforeRestart = await publishedSeedObservation(fixture!.journal);
+            expect(publishedSeedBeforeRestart.marker).toBe(cold.dockerDataPrefixMarker);
+            expect(publishedSeedBeforeRestart.marker).not.toBe(cancelledPrefixMarker);
+          },
+        );
+
+        const residueToken = randomUUID().replaceAll("-", "");
+        const residueCases = [
+          {
+            label: "container",
+            create: ["create", "--label", `niceeval.profile-id=${fixture.profileId}`,
+              "--name", `niceeval-activation-${residueToken}`, nodeImage, "true"],
+            remove: (id: string) => ["rm", "--force", id],
+          },
+          {
+            label: "network",
+            create: ["network", "create", "--label", `niceeval.profile-id=${fixture.profileId}`,
+              `niceeval-activation-${residueToken}`],
+            remove: (id: string) => ["network", "rm", id],
+          },
+          {
+            label: "volume",
+            create: ["volume", "create", "--label", `niceeval.profile-id=${fixture.profileId}`,
+              `niceeval-activation-${residueToken}`],
+            remove: (id: string) => ["volume", "rm", "--force", id],
+          },
+          {
+            label: "builder state volume",
+            create: ["volume", "create", `buildx_buildkit_niceeval-build-${residueToken.slice(0, 24)}0_state`],
+            remove: (id: string) => ["volume", "rm", "--force", id],
+          },
+          {
+            label: "builder container",
+            create: ["create", "--name", `buildx_buildkit_niceeval-build-${residueToken.slice(0, 24)}0`,
+              nodeImage, "true"],
+            remove: (id: string) => ["rm", "--force", id],
+          },
+        ] as const;
+        for (const residue of residueCases) {
+          const created = await docker.run(residue.create);
+          expect(created.exitCode, created.diagnostic()).toBe(0);
+          const identity = created.stdout.trim();
+          try {
+            const rejected = await sudo.run(activationArgv, { timeoutMs: 15_000 });
+            expect(rejected.exitCode, `${residue.label} residue did not block activation\n${rejected.diagnostic()}`)
+              .not.toBe(0);
+          } finally {
+            const removed = await docker.run(residue.remove(identity));
+            expect(removed.exitCode, removed.diagnostic()).toBe(0);
+          }
+        }
+        const provisionalRef = `niceeval-build-provisional:${residueToken}`;
+        const tagProvisional = await docker.run(["tag", nodeImage, provisionalRef]);
+        expect(tagProvisional.exitCode, tagProvisional.diagnostic()).toBe(0);
+        try {
+          const rejected = await sudo.run(activationArgv, { timeoutMs: 15_000 });
+          expect(rejected.exitCode, `provisional image residue did not block activation\n${rejected.diagnostic()}`)
+            .not.toBe(0);
+        } finally {
+          const removed = await docker.run(["image", "rm", provisionalRef]);
+          expect(removed.exitCode, removed.diagnostic()).toBe(0);
+        }
+
+        const activeImageSource = await docker.run(["create", nodeImage, "true"]);
+        expect(activeImageSource.exitCode, activeImageSource.diagnostic()).toBe(0);
+        const activeImageRef = `niceeval-activation-active:${residueToken}`;
+        try {
+          const committed = await docker.run([
+            "commit", "--change", `LABEL niceeval.profile-id=${fixture.profileId}`,
+            activeImageSource.stdout.trim(), activeImageRef,
+          ]);
+          expect(committed.exitCode, committed.diagnostic()).toBe(0);
+          const rejected = await sudo.run(activationArgv, { timeoutMs: 15_000 });
+          expect(rejected.exitCode, `profile-owned image residue did not block activation\n${rejected.diagnostic()}`)
+            .not.toBe(0);
+        } finally {
+          const removeContainer = await docker.run(["rm", "--force", activeImageSource.stdout.trim()]);
+          expect(removeContainer.exitCode, removeContainer.diagnostic()).toBe(0);
+          const removeImage = await docker.run(["image", "rm", "--force", activeImageRef]);
+          expect(removeImage.exitCode, removeImage.diagnostic()).toBe(0);
+        }
+
+        for (const journalPath of [join(hostRoot, "journal/events.ndjson"), fixture.journal]) {
+          for (const [kind, state] of [
+            ["lease", { leases: { "unfinished-lease": { state: "active" } } }],
+            ["reservation", { reservations: { "unfinished-reservation": { state: "granted" } } }],
+            ["build", { reservations: { "unfinished-build": { kind: "build", state: "provisioning" } } }],
+          ] as const) {
+            const backup = `${journalPath}.${kind}.backup`;
+            const existed = await fixtureHostFileExists(journalPath);
+            if (existed) {
+              const copied = await sudo.run(["cp", "--archive", "--", journalPath, backup]);
+              expect(copied.exitCode, copied.diagnostic()).toBe(0);
+            }
+            const injected = await sudo.run([
+              "python3", "-c",
+              "import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True,exist_ok=True); p.open('a').write(json.dumps({'state':json.loads(sys.argv[2])})+'\\n')",
+              journalPath, JSON.stringify(state),
+            ]);
+            expect(injected.exitCode, injected.diagnostic()).toBe(0);
+            const rejected = await sudo.run(activationArgv, { timeoutMs: 15_000 });
+            expect(
+              rejected.exitCode,
+              `${kind} in ${journalPath} did not block activation\n${rejected.diagnostic()}`,
+            ).not.toBe(0);
+            const restored = existed
+              ? await sudo.run(["mv", "--force", "--", backup, journalPath])
+              : await sudo.run(["unlink", "--", journalPath]);
+            expect(restored.exitCode, restored.diagnostic()).toBe(0);
+            expect(await fixtureHostFileExists(journalPath)).toBe(existed);
+            if (journalPath === fixture.journal) {
+              expect(existed, "the fixed-image ownership journal must not disappear during residue injection")
+                .toBe(true);
+              expect(await publishedSeedObservation(journalPath)).toEqual(publishedSeedBeforeRestart);
+            }
+          }
+        }
+
+        const detachedSource = await docker.run(["create", nodeImage, "true"]);
+        expect(detachedSource.exitCode, detachedSource.diagnostic()).toBe(0);
+        const detachedRef = `niceeval-activation-detached:${residueToken}`;
+        try {
+          const committed = await docker.run([
+            "commit",
+            "--change", `LABEL niceeval.profile-id=${fixture.profileId}`,
+            "--change", "LABEL niceeval.ownership-class=detached-cache/v1",
+            detachedSource.stdout.trim(), detachedRef,
+          ]);
+          expect(committed.exitCode, committed.diagnostic()).toBe(0);
+          const allowed = await sudo.run(activationArgv, { timeoutMs: 60_000 });
+          expect(allowed.exitCode, allowed.diagnostic()).toBe(0);
+          const manifest = JSON.parse(await readFixtureHostFile(activationManifest)) as JsonRecord;
+          expect(manifest.detachedRealizations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: "image" }),
+          ]));
+        } finally {
+          const removeContainer = await docker.run(["rm", "--force", detachedSource.stdout.trim()]);
+          expect(removeContainer.exitCode, removeContainer.diagnostic()).toBe(0);
+          const removeImage = await docker.run(["image", "rm", "--force", detachedRef]);
+          expect(removeImage.exitCode, removeImage.diagnostic()).toBe(0);
+        }
+
+        const reactivate = await sudo.run([
+          "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
+          "python3", join(scripts!, "activate-fixed-images.py"),
+          "--host-config", fixture.hostConfig,
+          "--descriptor", fixture.descriptor,
+          "--lock", join(hostRoot, "activation.lock"),
+        ], { timeoutMs: 60_000 });
+        expect(reactivate.exitCode, reactivate.diagnostic()).toBe(0);
+        const fixedFactsAfterRestart = await fixedIdentityFacts();
+        expect(fixedFactsAfterRestart.map((fact) => fact.actualUuid))
+          .toEqual(fixedFactsBeforeRestart.map((fact) => fact.actualUuid));
+        expect(new Set(fixedFactsAfterRestart.map((fact) => fact.actualUuid)).size)
+          .toBe(fixedFactsAfterRestart.length);
+        for (const fact of fixedFactsAfterRestart) {
+          expect(fact.registryIdentity).toBe(`ext4-uuid:${String(fact.actualUuid)}`);
+        }
+        expect(fixedFactsAfterRestart.filter((fact) => fact.seed).map((fact) => fact.digest))
+          .toEqual(fixedFactsBeforeRestart.filter((fact) => fact.seed).map((fact) => fact.digest));
+        const publishedSeedAfterRestart = await publishedSeedObservation(fixture.journal);
+        expect(publishedSeedAfterRestart).toEqual(publishedSeedBeforeRestart);
+
+        await withProcess(
+          [
+            "sudo", "-n", "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
+            "python3", join(scripts!, "watchdog.py"),
+            "--control-socket", fixture.controlSocket,
+            "--descriptor", fixture.descriptor,
+            "--host-config", fixture.hostConfig,
+            "--docker-socket", "/run/docker.sock",
+            "--journal", fixture.journal,
+            "--ready-file", fixture.readyFile,
+            "--socket-mode", "0o600",
+          ],
+          { processGroup: true, timeoutMs: 180_000, graceMs: 5_000 },
+          async (restartedWatchdog) => {
+            await Promise.race([
+              pollUntil(() => fileExists(fixture!.readyFile), {
+                timeoutMs: 15_000, intervalMs: 100, label: "restarted fixed watchdog ready file",
+              }),
+              restartedWatchdog.done.then((receipt) => {
+                throw new Error(`restarted watchdog exited before readiness\n${receipt.diagnostic()}`);
+              }),
+            ]);
+            const afterRestart = await withProjectCopy(projectCopy, async ({ root: restartReaderRoot }) => {
+              await copyPreparedProfileBuildContext(root, restartReaderRoot);
+              await copyFile(
+                join(root, "evals/setup-prefix-cache.eval.ts"),
+                join(restartReaderRoot, "evals/setup-prefix-cache.eval.ts"),
+              );
+              return invokeProfile(
+                root, hostRoot, fixture!, profile, "v2", "PUBLIC_MODE=beta\n", restartReaderRoot,
+              );
+            });
+            const restartLedger = await setupPrefixLedgerEvents(fixture!.journal);
+            const restore = await latestSetupPrefixRestore(fixture!.journal);
+            expect(restore).toMatchObject({
+              sourceSeedId: publishedSeedAfterRestart.seedId,
+              sourceArtifactId: publishedSeedAfterRestart.artifactId,
+              targetSlotId: expect.any(String),
+              restoredSlotDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+            });
+            expect(
+              afterRestart.evidence.dockerDataPrefixMarker,
+              `watchdog restart must restore the published immutable seed; ` +
+                `setupPrefixKeys=${JSON.stringify(afterRestart.setupPrefixKeys)}; ` +
+                `host ledger=${JSON.stringify(restartLedger)}`,
+            ).toBe(coldPrefixMarker);
+            expect(afterRestart.evidence.dockerDataPrefixMarker).not.toBe(cancelledPrefixMarker);
           },
         );
       } catch (error) {
