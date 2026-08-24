@@ -78,7 +78,7 @@ services:
       - ./clickhouse-config/disable-analyzer.xml:/etc/clickhouse-server/config.d/disable-analyzer.xml:ro
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     command: ["sh", "-c", "redis-server --requirepass \"$${REDIS_PASSWORD}\""]
     environment:
