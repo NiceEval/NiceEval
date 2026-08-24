@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { createE2EContext } from "@niceeval/testkit";
+import { createE2EContext, runProcess } from "@niceeval/testkit";
 import type { PluginLifecycleEvent } from "../fixtures/events.ts";
 
 export const e2e = createE2EContext({
@@ -23,4 +23,18 @@ export function lifecycleEvents(root: string): PluginLifecycleEvent[] {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as PluginLifecycleEvent);
+}
+
+export function typecheckInstalledPluginConsumer(root: string) {
+  return runProcess([join(root, "node_modules", ".bin", "tsc"), "--noEmit"], {
+    cwd: root,
+    timeoutMs: 60_000,
+  });
+}
+
+export function validateDynamicPluginConsumer(root: string) {
+  return runProcess([process.execPath, "fixtures/dynamic-plugin-validation.mjs"], {
+    cwd: root,
+    timeoutMs: 30_000,
+  });
 }

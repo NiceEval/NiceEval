@@ -1,6 +1,6 @@
 // Provider Promise SDK 与公共 Sandbox facade 之间的唯一边界。
 
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import type {
   CommandOptions,
   CommandResult,
@@ -15,6 +15,161 @@ export type SandboxBackendSupport<T> =
   | { readonly _tag: "Supported"; readonly value: T }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
+export type SandboxSetupPrefixCacheUnsupportedCode =
+  | "provider-unsupported"
+  | "profile-managed"
+  | "compose"
+  | "host-socket"
+  | "read-only-rootfs"
+  | "base-image-unverified"
+  | "dynamic-runner-tools"
+  | "mounted-state"
+  | "profile-backed-dind";
+
+export type SandboxSetupPrefixCacheEligibility =
+  | {
+      readonly _tag: "Eligible";
+      readonly persistence: "persistent";
+      readonly dependency: "parent-backed";
+      /** Exact immutable Base resolved and verified during provider initialization. */
+      readonly baseImageId: string;
+    }
+  | {
+      readonly _tag: "Unsupported";
+      readonly code: SandboxSetupPrefixCacheUnsupportedCode;
+      readonly reason: string;
+    };
+
+export interface SandboxSetupPrefixCacheManifest {
+  /** Exact immutable Base identity; floating source references never enter the durable root key alone. */
+  readonly baseImageId: string;
+  /** Content-addressed key planned by the provider-neutral runtime. */
+  readonly setupPrefixKey: string;
+  readonly setupManifestDigest: string;
+  readonly storageSchemaRevision: string;
+  readonly artifactFormatRevision: string;
+  readonly changeFrequency: number;
+  /** Frozen, non-sensitive declaration metadata used for bidirectional registry validation. */
+  readonly declarationMetadata: unknown;
+}
+
+export interface SandboxSetupPrefixCacheOperation {
+  readonly operationId: string;
+  readonly manifest: SandboxSetupPrefixCacheManifest;
+  /** Defense-in-depth only; values are checked before an image is published and are never persisted. */
+  readonly knownSensitiveValues?: readonly string[];
+}
+
+interface SandboxSetupPrefixCacheErrorFields {
+  readonly operation: string;
+  readonly reason: string;
+  readonly setupPrefixKey?: string;
+  readonly domainId?: string;
+  readonly cause?: unknown;
+}
+
+export class SandboxSetupPrefixCacheRegistryError extends Data.TaggedError("SandboxSetupPrefixCacheRegistryError")<
+  SandboxSetupPrefixCacheErrorFields
+> {}
+
+export class SandboxSetupPrefixCacheLookupError extends Data.TaggedError("SandboxSetupPrefixCacheLookupError")<
+  SandboxSetupPrefixCacheErrorFields
+> {}
+
+export class SandboxSetupPrefixCacheCaptureError extends Data.TaggedError("SandboxSetupPrefixCacheCaptureError")<
+  SandboxSetupPrefixCacheErrorFields
+> {}
+
+export class SandboxSetupPrefixCacheRestoreError extends Data.TaggedError("SandboxSetupPrefixCacheRestoreError")<
+  SandboxSetupPrefixCacheErrorFields
+> {}
+
+export class SandboxSetupPrefixCacheValidationError extends Data.TaggedError("SandboxSetupPrefixCacheValidationError")<
+  SandboxSetupPrefixCacheErrorFields
+> {}
+
+export class SandboxSetupPrefixCacheCleanupError extends Data.TaggedError("SandboxSetupPrefixCacheCleanupError")<
+  SandboxSetupPrefixCacheErrorFields
+> {}
+
+export type SandboxSetupPrefixCacheError =
+  | SandboxSetupPrefixCacheRegistryError
+  | SandboxSetupPrefixCacheLookupError
+  | SandboxSetupPrefixCacheCaptureError
+  | SandboxSetupPrefixCacheRestoreError
+  | SandboxSetupPrefixCacheValidationError
+  | SandboxSetupPrefixCacheCleanupError;
+
+export type SandboxSetupPrefixCacheLookupResult =
+  | Exclude<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>
+  | {
+      readonly _tag: "Miss";
+      readonly setupPrefixKey: string;
+      /** A failed hit was scrubbed in the same private slot before this clean miss receipt. */
+      readonly recovery?: "restore-failed-replayed";
+    }
+  | {
+      readonly _tag: "Restored";
+      readonly setupPrefixKey: string;
+      readonly entryId: string;
+      readonly generation: number;
+      readonly imageId: string;
+      readonly sandboxId: string;
+    };
+
+export type SandboxSetupPrefixCacheCaptureResult =
+  | Exclude<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>
+  | {
+      readonly _tag: "Contended";
+      readonly setupPrefixKey: string;
+      readonly reason: "active-writer" | "indexed-generation";
+    }
+  | {
+      /**
+       * The action already succeeded and the same private sandbox is still a
+       * verified active continuation. The Runner must never clean-base/replay
+       * that action and must disable publication for the remainder of Attempt.
+       */
+      readonly _tag: "ContinuedUncached";
+      readonly setupPrefixKey: string;
+      readonly reason: "capture-failed" | "publish-failed";
+      readonly sandboxId: string;
+    }
+  | {
+      readonly _tag: "Captured";
+      readonly setupPrefixKey: string;
+      readonly entryId: string;
+      readonly generation: number;
+      readonly imageId: string;
+      readonly sandboxId: string;
+    };
+
+export type SandboxSetupPrefixCacheRecoveryResult =
+  | Exclude<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>
+  | {
+      readonly _tag: "RecoveredCleanBase";
+      readonly baseImageId: string;
+      readonly sandboxId: string;
+    };
+
+export interface SandboxSetupPrefixCacheCapability {
+  eligibility(): SandboxSetupPrefixCacheEligibility;
+  lookupAndRebase(
+    input: SandboxSetupPrefixCacheOperation,
+  ): Effect.Effect<SandboxSetupPrefixCacheLookupResult, SandboxSetupPrefixCacheError>;
+  captureAndRebase(
+    input: SandboxSetupPrefixCacheOperation,
+  ): Effect.Effect<SandboxSetupPrefixCacheCaptureResult, SandboxSetupPrefixCacheError>;
+  /**
+   * One-shot degraded-path seam, only valid before any Action has succeeded in
+   * the current Attempt. The provider DestroyOnly-retires a failed lookup
+   * instance and rebases this stable backend onto the exact Base. Capture
+   * failure paths must return ContinuedUncached or fail; they must never call
+   * this seam and replay an already-successful Action.
+   */
+  recoverCleanBase(): Effect.Effect<SandboxSetupPrefixCacheRecoveryResult, SandboxSetupPrefixCacheError>;
+}
+
 export interface SandboxBackendCapabilities {
   /** Provider 能否兑现 CommandOptions.user 的 root 覆盖；runner 私有基础设施按这项能力选择身份。 */
   readonly rootCommands: SandboxBackendSupport<true>;
@@ -25,9 +180,11 @@ export interface SandboxBackendCapabilities {
   >;
   readonly setCommandDeadline: SandboxBackendSupport<(deadlineAt?: number) => void>;
   readonly managedProcess: SandboxBackendSupport<(input: ManagedProcessStart) => Promise<ManagedProcess>>;
+  /** Missing providers are normalized to an explicit Unsupported result by setupPrefixCacheCapability(). */
+  readonly setupPrefixCache?: SandboxBackendSupport<SandboxSetupPrefixCacheCapability>;
 }
 
-export interface SandboxProviderBackend extends SandboxTransferOperations {
+export interface SandboxProviderBackend extends Omit<SandboxTransferOperations, "upload"> {
   readonly workdir: string;
   readonly sandboxId: string;
   readonly otlpHost: string | null;
@@ -62,6 +219,15 @@ export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.f
 
 export function supportedBackendCapability<T>(value: T): SandboxBackendSupport<T> {
   return Object.freeze({ _tag: "Supported", value });
+}
+
+/** Provider-neutral query seam; absence never masquerades as a cache miss. */
+export function setupPrefixCacheCapability(
+  capabilities: SandboxBackendCapabilities,
+): SandboxBackendSupport<SandboxSetupPrefixCacheCapability> {
+  return capabilities.setupPrefixCache ?? unsupportedBackendCapabilityBecause(
+    "the provider does not implement persistent sandbox setup-prefix caching",
+  );
 }
 
 function providerBoundaryError(cause: unknown): Error {

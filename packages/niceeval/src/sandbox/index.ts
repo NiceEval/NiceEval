@@ -13,9 +13,21 @@ export {
   defineSandboxCase,
 } from "./layer.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
+export {
+  actionRef,
+  changeFrequency,
+  defineSandboxAction,
+  gitCheckout,
+  sandboxStep,
+  SandboxActionDefinitionError,
+  uploadDirectory,
+  uploadFile,
+  writeBytes,
+  writeText,
+} from "./action.ts";
 export { checkout, installTool } from "./prepare-commands.ts";
 export { SandboxCommandExitError } from "./operations.ts";
-export { registerSandboxContent } from "./content.ts";
+export { registerSandboxContent, sandboxContent } from "./content.ts";
 export {
   COMPOSE_MATERIALIZER_REVISION,
   dockerComposeBuildProvider,
@@ -63,7 +75,6 @@ export {
 export type {
   SandboxLayer,
   SandboxLayerKind,
-  SandboxLayerLifecycle,
   DockerImageSource,
   DockerfileSource,
   DockerSandboxSource,
@@ -92,15 +103,67 @@ export type {
   SandboxCommandTarget,
   SandboxCleanupCommand,
   SandboxCommandIdentity,
+  SandboxCommandDefinition,
   SandboxCommandIdentityValue,
   SandboxCommandOptions,
+  SandboxExecOptions,
+  CommandActionOptions,
+  CommandAfterActionOptions,
+  CommandActionFactory,
+  ShellActionInput,
+  ShellAfterActionInput,
+  ShellActionFactory,
   StableSandboxCommand,
   AttemptRef,
 } from "./commands.ts";
 
+export type {
+  CheckoutGitSandboxStepInput,
+  ExecSandboxStepInput,
+  NonEmptySandboxSteps,
+  PutBytesSandboxStepInput,
+  PutTextSandboxStepInput,
+  SandboxAction,
+  SandboxActionDefinition,
+  SandboxActionFamily,
+  SandboxActionFingerprintPlan,
+  SandboxActionPlan,
+  SandboxActionRef,
+  SandboxActionInstanceOptions,
+  SandboxAfterAction,
+  SandboxAfterActionOptions,
+  SandboxBeforeActionOptions,
+  SandboxCapability,
+  SandboxChangeFrequency,
+  SandboxStep,
+  SandboxStepPlan,
+  SandboxTransferSource,
+  TransferDirectorySandboxStepInput,
+  TransferFileSandboxStepInput,
+  GitCheckoutActionFactory,
+  GitCheckoutActionInput,
+  GitCheckoutAfterActionInput,
+  UploadDirectoryActionFactory,
+  UploadDirectoryActionInput,
+  UploadDirectoryAfterActionInput,
+  UploadFileActionFactory,
+  UploadFileActionInput,
+  UploadFileAfterActionInput,
+  WriteBytesActionFactory,
+  WriteBytesActionInput,
+  WriteBytesAfterActionInput,
+  WriteTextActionFactory,
+  WriteTextActionInput,
+  WriteTextAfterActionInput,
+} from "./action.ts";
+
 export type { CheckoutOptions, InstallToolOptions } from "./prepare-commands.ts";
 
-export type { RegisteredSandboxContent } from "./content.ts";
+export type {
+  RegisteredSandboxContent,
+  SandboxContent,
+  SandboxContentFactory,
+} from "./content.ts";
 
 export type {
   Sandbox,
@@ -108,8 +171,6 @@ export type {
   SandboxTransferOperations,
   SandboxProvider,
   SandboxRuntime,
-  SandboxHook,
-  SandboxHookContext,
   CommandResult,
   CommandOptions,
   SuccessfulCommandResult,

@@ -8,7 +8,7 @@ const agent = codexAgent({
     marketplace: {
       name: "nowledge-community",
       source: "nowledge-co/community",
-      ref: "main",
+      ref: "4a1f5b7b7c7d4bfa54c9c4dc8448ac4f728d8c16",
       sparse: [".agents", "nowledge-mem-codex-plugin"],
     },
     name: "nowledge-mem",
@@ -24,19 +24,19 @@ const agent = codexAgent({
 Adapter 将声明编译为同一 occurrence DAG 中的节点：
 
 ```text
-resolve marketplace ref to exact commit
+pinned exact marketplace commit
   → checkout sparse plugin content
   → install marketplace/plugin files
   → run declared installation script
   → write public Agent config
-  → inject secret and cohort overlay
-  → agent.ensure barrier
+  → agent.ensure
+  → inject private runtime secret and cohort overlay
   → Agent
 ```
 
 前四项在输入固定且 Adapter 能验证安装结果时可以进入准备前缀。公开配置文件按原始字节 digest 成为高频 action。API key、远端 Space、cohort、隧道 locator 与当前 Attempt identity 使用私有 callback，始终真实执行，并关闭后续共享 capture。
 
-`ref: "main"` 不是永远复用同一份内容。Adapter 每次 Invocation 先查找它对应的完整 commit；同一 commit 命中，分支推进后自动 miss。显式完整 commit 跳过远端 ref lookup。manifest 同时保存作者 ref 与实得 commit，缓存身份只使用完成态 commit。
+`gitCheckout()` 的 `ref` 必须直接填写完整 commit。Adapter 若跟随 `main`，先在自己的可信发布流程中查询它当前指向的 commit，并把该 commit 固定到 Plugin 输入；分支推进后输入 commit 改变，前缀自然 miss。NiceEval V1 不执行这项远端身份查找，也不会把 branch 字符串当成缓存身份。
 
 ## 安装后动作
 

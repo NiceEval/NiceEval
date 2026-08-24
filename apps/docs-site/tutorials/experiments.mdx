@@ -58,7 +58,7 @@ See [Write Experiments](/tutorials/write-experiment) for `defineExperiment` fiel
 - Different models. Tier 1 integration is enough: the application interface exposes model choice and forwards `model` through `ctx.model`.
 - Different prompts or feature flags. This requires Tier 3 integration because the variant is internal to the application; it must expose it as an Experiment-selectable flag and forward it through `flags` → `ctx.flags`.
 - Different Sandbox Providers.
-- Different runtime environment conditions, such as whether a memory-tool binary is installed or state is preseeded. Write environment differences in the `.setup()` / `.teardown()` Hooks of the `sandbox` spec, one Experiment file per variant. See [Sandbox Providers · Lifecycle](/tutorials/sandbox-providers#lifecycle).
+- Different runtime environment conditions, such as whether a memory-tool binary is installed or state is preseeded. Write environment differences in the `.before()` / `.after()` actions of the `sandbox` spec, one Experiment file per variant. See [Sandbox Providers · Prepare the Sandbox in a deterministic order](/tutorials/sandbox-providers#prepare-the-sandbox-in-a-deterministic-order).
 - Pass@N for the same task.
 
 See [Tier](/explanation/tier) for the definition of Tier 1, Tier 2, and Tier 3.

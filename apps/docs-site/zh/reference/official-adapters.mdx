@@ -23,7 +23,7 @@ description: "NiceEval 内置的 Sandbox 和非 Sandbox 适配器分别是什么
   Adapter 从本地读取后上传文件，原样替换 Sandbox 中原本为空的用户级 `~/.claude/settings.json`。不继承宿主机配置，也不 deep merge 或重新序列化。`model` 和 `env` 归 Experiment 和 Adapter 管，出现在文件里会在 `setup` 阶段报错并点名冲突键。
 
   Secret 走环境变量，别写进配置文件。
-- **安装后脚本**：`postSetup: SandboxHook[]`，在写 settings、挂 MCP、装 Skill 与 Plugin 全部完成后，按数组顺序在 Sandbox 里跑你的 Hook 函数。典型用途是运行插件自带的 setup 脚本（比如它要往全局配置里登记 hook）——这类脚本必须等安装产物就位才能跑。与它成对的收尾是 `preTeardown: SandboxHook[]`：按逆序、在 agent 自己的 teardown 步骤之前执行，当且仅当 `postSetup` 的时点已经走到才触发。Hook 抛错算基础设施错误（Attempt 记 errored），不算 agent 答题失败。
+- **安装后脚本**：`postSetup: SandboxCommand[]`，在写 settings、挂 MCP、装 Skill 与 Plugin 全部完成后，按数组顺序在 Sandbox 里跑 command。典型用途是运行插件自带的 setup 脚本（比如它要往全局配置里登记 hook）——这类脚本必须等安装文件就位才能跑。与它成对的收尾是 `preTeardown: SandboxCommand[]`：按逆序、在 agent 自己的 teardown 步骤之前执行，当且仅当 `postSetup` 的时点已经走到才触发。Command 抛错算基础设施错误（Attempt 记 errored），不算 agent 答题失败。
 - **tracing**：claude CLI 的 beta 原生遥测（`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`），span 只有结构和计时，细节见 [OTel 接入](/zh/tutorials/connect-otel)。
 
 例如，用 `configs/claude-code/no-web.json` 关闭内置联网检索：
@@ -79,7 +79,7 @@ export default defineExperiment({
   Adapter 从本地读取后上传文件，原样替换 Sandbox 中原本为空的用户级 `~/.codex/config.toml`。不继承宿主机配置，也不拼接、deep merge 或解析后重写。`model`、`model_provider`、`model_providers`、`model_reasoning_effort`、`mcp_servers`、`otel` 归 Experiment 和 Adapter 管，出现在文件里会在 `setup` 阶段报错并点名冲突键。
 
   Secret 走环境变量，别写进配置文件。
-- **安装后脚本**：`postSetup: SandboxHook[]`，语义与 claude-code 相同：全部安装步骤完成后按序在 Sandbox 里跑你的 Hook 函数，适合运行插件自带的 setup 脚本。成对的 `preTeardown: SandboxHook[]` 按逆序在 agent teardown 之前收尾，当且仅当 `postSetup` 的时点已经走到才触发。脚本往 codex 全局配置登记的 hook 不需要交互式信任确认——运行时 `codex exec` 已绕过 hook 信任门槛，hook 直接生效。
+- **安装后脚本**：`postSetup: SandboxCommand[]`，语义与 claude-code 相同：全部安装步骤完成后按序在 Sandbox 里跑 command，适合运行插件自带的 setup 脚本。成对的 `preTeardown: SandboxCommand[]` 按逆序在 agent teardown 之前收尾，当且仅当 `postSetup` 的时点已经走到才触发。脚本往 codex 全局配置登记的 hook 不需要交互式信任确认——运行时 `codex exec` 已绕过 hook 信任门槛，hook 直接生效。
 - **tracing**：内置，通过 `config.toml` 的 `[otel.trace_exporter.otlp-http]` 段配置，协议 `http/json`。
 
 例如，用 `configs/codex/no-web.toml` 关闭内置联网检索：
@@ -125,7 +125,7 @@ export default defineExperiment({
 - **装插件**：`pythonPlugins: PythonPluginSpec[]`（`{ package }`：PyPI 包、版本约束或 git URL），`setup` 阶段进 `uv tool install … --with <package>`。这个类型只属于 bub。package 集合进安装 checkpoint key，插件不同的两个变体不会复用同一份安装缓存。
 - **预制 Bub**：NiceEval 的 E2B 配方会把 Bub、OTel 插件和 Python 插件集合算成安装指纹。Adapter 只复用指纹完全一致的环境。仅在 PATH 里放一个 `bub` 不足以证明兼容。构建入口见 [Sandbox provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
 - bub 没有 `mcpServers`——MCP 只属于支持它的 Adapter，Config 上压根没有这个字段。
-- **安装后脚本**：`postSetup: SandboxHook[]`，语义与另外两个 Adapter 相同：全部安装步骤完成后按序在 Sandbox 里跑你的 Hook 函数。成对的 `preTeardown: SandboxHook[]` 按逆序在 agent teardown 之前收尾，当且仅当 `postSetup` 的时点已经走到才触发。
+- **安装后脚本**：`postSetup: SandboxCommand[]`，语义与另外两个 Adapter 相同：全部安装步骤完成后按序在 Sandbox 里跑 command。成对的 `preTeardown: SandboxCommand[]` 按逆序在 agent teardown 之前收尾，当且仅当 `postSetup` 的时点已经走到才触发。
 - **安装方式**：走 `uv tool install`（PyPI 包，不是 npm 包），首次安装会建 checkpoint 缓存加速后续 Sandbox。
 - **tracing**：内置，通过环境变量注入，协议 `http/protobuf`。
 

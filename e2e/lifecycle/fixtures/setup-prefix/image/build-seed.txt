@@ -1,0 +1,1 @@
+the E2E rewrites this byte in its private project copy to force one cold BuildKey

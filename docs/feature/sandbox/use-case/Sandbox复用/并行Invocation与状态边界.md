@@ -38,7 +38,7 @@ export default defineExperiment({
 });
 ```
 
-状态 owner 从 Experiment 与 Sandbox setup 之前持有到 checkpoint save、Sandbox finalizer 与 Experiment teardown 之后。等待方不创建 Sandbox；取得状态 owner 后，它继续自己的既有计划，不打开另一个 Record。
+状态 owner 从 Experiment 与 physical before 之前持有到 checkpoint save、Sandbox finalizer 与 Experiment teardown 之后。等待方不创建 Sandbox；取得状态 owner 后，它继续自己的既有计划，不打开另一个 Record。
 
 `sharedState` 不保存 checkpoint，也不提供事务回滚。强杀可能留下半次外部写入；作者仍要原子提交 checkpoint，或换新 key 与干净 cohort。
 

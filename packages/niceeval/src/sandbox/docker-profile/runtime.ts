@@ -4,6 +4,7 @@ import { lstat, readFile, readdir, stat } from "node:fs/promises";
 import { connect } from "node:net";
 import { dirname, join, parse } from "node:path";
 import type { Readable } from "node:stream";
+import { Effect, type Scope } from "effect";
 import { indexDockerProfiles, resolveDockerProfile, type ResolvedDockerProfileEntry } from "./registry.ts";
 import type { DockerExecutionProfileV1 } from "./schema.ts";
 
@@ -40,8 +41,51 @@ export interface DockerProfileReservation {
 }
 
 export class DockerProfileCapacityBlockedError extends Error {
-  readonly code = "CAPACITY_QUEUE_TIMEOUT";
-  constructor() { super("Docker profile capacity queue timed out after 30 seconds"); }
+  readonly code: "CAPACITY_BLOCKED" | "CAPACITY_QUEUE_TIMEOUT";
+  constructor(policy: "blocked" | "doctor-timeout" = "blocked") {
+    super(policy === "doctor-timeout"
+      ? "Docker profile capacity queue timed out after 30 seconds"
+      : "Docker profile capacity is blocked");
+    this.code = policy === "doctor-timeout" ? "CAPACITY_QUEUE_TIMEOUT" : "CAPACITY_BLOCKED";
+  }
+}
+
+export class DockerProfileReservationStateError extends Error {
+  readonly code = "RESERVATION_NOT_GRANTED";
+  constructor(readonly state: DockerProfileReservation["state"]) {
+    super(`Docker profile reservation cannot run from non-granted state ${JSON.stringify(state)}`);
+  }
+}
+
+/**
+ * Runner-owned permits that must not be retained while a profile reservation is
+ * waiting in the control service's fair queue. The Effect values are stateful
+ * and idempotent at their owner; this boundary only brackets the wait.
+ */
+export interface DockerProfileReservationWaitSlot {
+  readonly release: Effect.Effect<void>;
+  readonly reacquire: Effect.Effect<void>;
+}
+
+/** Provider-neutral admission notifications supplied by the Sandbox runtime. */
+export interface DockerProfileReservationAdmission {
+  readonly queued: Effect.Effect<void>;
+  readonly granted: Effect.Effect<void>;
+  readonly slot?: DockerProfileReservationWaitSlot;
+}
+
+/**
+ * Scope-owned reservation. `release` is shared by the Scope finalizer and the
+ * provider's normal after-stop path, so either path may win without double
+ * releasing or leaving a grant-to-install ownership gap.
+ */
+export interface DockerProfileReservationOwner {
+  readonly reservation: DockerProfileReservation;
+  readonly release: () => Promise<void>;
+}
+
+interface MutableDockerProfileReservationOwner extends DockerProfileReservationOwner {
+  readonly update: (reservation: DockerProfileReservation) => void;
 }
 
 export interface DockerProfileContainerCreateInput {
@@ -257,9 +301,11 @@ export async function createDockerProfileLease(binding: DockerProfileRuntimeBind
     invocationId,
   });
   let stopped = false;
+  let heartbeatEnabled = true;
+  let drainInFlight: Promise<void> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   const heartbeat = async () => {
-    if (stopped) return;
+    if (!heartbeatEnabled) return;
     await dockerProfileControlRequest(binding.controlSocketPath, {
       kind: "lease.heartbeat", invocationId, leaseToken: created.leaseToken,
     });
@@ -272,13 +318,31 @@ export async function createDockerProfileLease(binding: DockerProfileRuntimeBind
     leaseToken: created.leaseToken,
     stopHeartbeat: async () => {
       if (stopped) return;
-      stopped = true;
-      if (timer !== undefined) clearInterval(timer);
-      await dockerProfileControlRequest(binding.controlSocketPath, {
+      heartbeatEnabled = false;
+      if (timer !== undefined) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+      if (drainInFlight !== undefined) return await drainInFlight;
+      const draining = dockerProfileControlRequest(binding.controlSocketPath, {
         kind: "lease.drain", invocationId, leaseToken: created.leaseToken,
+      }).then(() => {
+        stopped = true;
       });
+      drainInFlight = draining;
+      try {
+        await draining;
+      } finally {
+        if (!stopped && drainInFlight === draining) drainInFlight = undefined;
+      }
     },
   };
+}
+
+function nonGrantedReservationError(reservation: DockerProfileReservation): Error {
+  return reservation.state === "blocked"
+    ? new DockerProfileCapacityBlockedError()
+    : new DockerProfileReservationStateError(reservation.state);
 }
 
 export async function acquireDockerProfileReservation(
@@ -288,19 +352,19 @@ export async function acquireDockerProfileReservation(
   signal?: AbortSignal,
 ): Promise<DockerProfileReservation> {
   const reservationId = randomUUID();
-  let reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
-    kind: "reservation.acquire", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
-    reservationId, reservationKind, resources,
-  });
-  const deadline = Date.now() + 30_000;
+  // This Promise entry is shared by the ordinary build path (which always
+  // supplies its Attempt signal) and `docker profile doctor`. Only doctor owns
+  // the explicit 30-second diagnostic policy; normal builds have no queue TTL.
+  const doctorDeadline = signal === undefined ? Date.now() + 30_000 : undefined;
+  let reservation: DockerProfileReservation | undefined;
   try {
+    reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+      kind: "reservation.acquire", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
+      reservationId, reservationKind, resources,
+    }, signal);
     while (reservation.state === "queued") {
-      if (Date.now() >= deadline) {
-        const cancelled = await dockerProfileControlRequest(lease.binding.controlSocketPath, {
-          kind: "reservation.cancel", invocationId: lease.invocationId, leaseToken: lease.leaseToken, reservationId,
-        }).then(() => true).catch(() => false);
-        if (!cancelled) throw new Error("Docker profile capacity queue timeout could not be cancelled safely");
-        throw new DockerProfileCapacityBlockedError();
+      if (doctorDeadline !== undefined && Date.now() >= doctorDeadline) {
+        throw new DockerProfileCapacityBlockedError("doctor-timeout");
       }
       if (signal?.aborted) throw signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError");
       await new Promise<void>((resolve, reject) => {
@@ -319,22 +383,169 @@ export async function acquireDockerProfileReservation(
       });
       reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
         kind: "reservation.get", invocationId: lease.invocationId, leaseToken: lease.leaseToken, reservationId,
-      });
+      }, signal);
       if (signal?.aborted) throw signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError");
     }
-    if (reservation.state === "blocked") throw new DockerProfileCapacityBlockedError();
+    if (reservation.state !== "granted") throw nonGrantedReservationError(reservation);
   } catch (error) {
-    if (reservation.state === "queued" || reservation.state === "blocked") {
-      await dockerProfileControlRequest(lease.binding.controlSocketPath, {
-        kind: "reservation.cancel",
-        invocationId: lease.invocationId,
-        leaseToken: lease.leaseToken,
-        reservationId,
-      }).catch(() => undefined);
+    if (reservation !== undefined) {
+      try {
+        await releaseDockerProfileReservation(lease, reservationId, reservation);
+      } catch (releaseError) {
+        throw new AggregateError(
+          [error, releaseError],
+          `Docker profile reservation ${reservationId} acquisition and release both failed`,
+        );
+      }
     }
     throw error;
   }
   return reservation;
+}
+
+function profileControlEffect<T>(
+  lease: DockerProfileLease,
+  request: Readonly<Record<string, unknown>>,
+  signal?: AbortSignal,
+): Effect.Effect<T, Error> {
+  return Effect.tryPromise({
+    try: (runtimeSignal) => dockerProfileControlRequest<T>(
+      lease.binding.controlSocketPath,
+      request,
+      signal === undefined ? runtimeSignal : AbortSignal.any([signal, runtimeSignal]),
+    ),
+    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+  });
+}
+
+function profileQueueDelay(milliseconds: number, signal?: AbortSignal): Effect.Effect<void, Error> {
+  return Effect.tryPromise({
+    try: (runtimeSignal) => {
+      const combined = signal === undefined ? runtimeSignal : AbortSignal.any([signal, runtimeSignal]);
+      return new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          combined.removeEventListener("abort", abort);
+          resolve();
+        }, milliseconds);
+        const abort = () => {
+          clearTimeout(timer);
+          combined.removeEventListener("abort", abort);
+          reject(combined.reason instanceof Error
+            ? combined.reason
+            : new DOMException("Docker profile reservation aborted", "AbortError"));
+        };
+        if (combined.aborted) abort();
+        else combined.addEventListener("abort", abort, { once: true });
+      });
+    },
+    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+  });
+}
+
+function makeDockerProfileReservationOwner(
+  lease: DockerProfileLease,
+  reservationId: string,
+  initial: DockerProfileReservation,
+): MutableDockerProfileReservationOwner {
+  let current = initial;
+  let released = false;
+  let releaseInFlight: Promise<void> | undefined;
+  return {
+    get reservation() { return current; },
+    update(next) { current = next; },
+    async release() {
+      if (released) return;
+      if (releaseInFlight !== undefined) return await releaseInFlight;
+      const releasing = releaseDockerProfileReservation(lease, reservationId, current).then(() => {
+        released = true;
+      });
+      releaseInFlight = releasing;
+      try {
+        await releasing;
+      } finally {
+        if (!released && releaseInFlight === releasing) releaseInFlight = undefined;
+      }
+    },
+  };
+}
+
+function releaseReservationOwner(
+  owner: DockerProfileReservationOwner,
+): Effect.Effect<void> {
+  return Effect.tryPromise({
+    try: () => owner.release(),
+    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+  }).pipe(Effect.orDie);
+}
+
+/**
+ * Effect-native reservation acquisition used by the Sandbox runtime. A queued
+ * reservation is still owned by the control service, while runner permits are
+ * explicitly released before polling. A successful grant may interruptibly
+ * reacquire them; cancellation during polling or reacquisition falls through
+ * to the semaphore owners' own finalizers and the reservation Scope finalizer.
+ */
+export function acquireDockerProfileReservationEffect(
+  lease: DockerProfileLease,
+  reservationKind: "container" | "build",
+  resources: Readonly<Record<string, number>>,
+  admission: DockerProfileReservationAdmission,
+  signal?: AbortSignal,
+): Effect.Effect<DockerProfileReservationOwner, Error, Scope.Scope> {
+  const reservationId = randomUUID();
+  const request = <T>(frame: Readonly<Record<string, unknown>>, requestSignal = signal) =>
+    profileControlEffect<T>(lease, frame, requestSignal);
+
+  return Effect.gen(function* () {
+    // Effect 3.22.1 acquireRelease runs acquire and finalizer registration in
+    // one uninterruptible region. Once acquire returns the first reservation
+    // object, every later poll/grant/reacquire interruption is Scope-owned.
+    const owner = yield* Effect.acquireRelease(
+      request<DockerProfileReservation>({
+        kind: "reservation.acquire",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+        reservationKind,
+        resources,
+      }).pipe(Effect.map((initial) => makeDockerProfileReservationOwner(lease, reservationId, initial))),
+      (owned) => releaseReservationOwner(owned),
+    );
+
+    if (owner.reservation.state !== "granted") yield* admission.queued;
+    if (owner.reservation.state === "queued") {
+      const awaitGrant = Effect.gen(function* () {
+        while (owner.reservation.state === "queued") {
+          yield* profileQueueDelay(100, signal);
+          owner.update(yield* request<DockerProfileReservation>({
+            kind: "reservation.get",
+            invocationId: lease.invocationId,
+            leaseToken: lease.leaseToken,
+            reservationId,
+          }));
+        }
+        return owner;
+      });
+      if (admission.slot === undefined) {
+        yield* awaitGrant;
+      } else {
+        const slot = admission.slot;
+        // Release queue-held permits explicitly; reacquisition is interruptible
+        // and never hidden in a finalizer that could over-release.
+        yield* Effect.uninterruptible(slot.release);
+        const granted = yield* awaitGrant;
+        if (granted.reservation.state !== "granted") {
+          return yield* Effect.fail(nonGrantedReservationError(granted.reservation));
+        }
+        yield* slot.reacquire;
+      }
+    }
+    if (owner.reservation.state !== "granted") {
+      return yield* Effect.fail(nonGrantedReservationError(owner.reservation));
+    }
+    yield* admission.granted;
+    return owner;
+  });
 }
 
 async function writeControlFrame(socket: import("node:net").Socket, bytes: Buffer): Promise<void> {

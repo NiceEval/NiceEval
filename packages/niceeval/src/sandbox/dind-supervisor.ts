@@ -1,6 +1,9 @@
-const DIND_SUPERVISOR_REVISION = "niceeval-dind-supervisor-v1";
+const DIND_SUPERVISOR_REVISION = "niceeval-dind-supervisor-v2";
 const DIND_LOG_PATH = "/tmp/dockerd.log";
 const DIND_LOG_LIMIT_BYTES = 256 * 1024;
+const DIND_CONTROL_DIRECTORY = "/run/niceeval";
+export const DIND_SUPERVISOR_PID_PATH = `${DIND_CONTROL_DIRECTORY}/dind-supervisor.pid`;
+export const DIND_CAPTURE_QUIESCE_ACK_PATH = `${DIND_CONTROL_DIRECTORY}/dind-capture-quiesced`;
 export const DIND_SHUTDOWN_GRACE_SECONDS = 3;
 
 /**
@@ -13,12 +16,16 @@ const fs = require("node:fs");
 const LOG_PATH = ${JSON.stringify(DIND_LOG_PATH)};
 const LOG_LIMIT = ${DIND_LOG_LIMIT_BYTES};
 const GRACE_MS = ${DIND_SHUTDOWN_GRACE_SECONDS * 1000};
+const CONTROL_DIRECTORY = ${JSON.stringify(DIND_CONTROL_DIRECTORY)};
+const PID_PATH = ${JSON.stringify(DIND_SUPERVISOR_PID_PATH)};
+const CAPTURE_ACK_PATH = ${JSON.stringify(DIND_CAPTURE_QUIESCE_ACK_PATH)};
 const keeperArgv = process.argv.slice(1);
 let daemon;
 let keeper;
 let daemonExited = false;
 let keeperExited = false;
 let shuttingDown = false;
+let quiescingForCapture = false;
 let shutdownCode = 1;
 let daemonLog = Buffer.alloc(0);
 
@@ -53,6 +60,12 @@ function shutdown(code, printDaemonLog = false) {
   finishWhenStopped();
 }
 
+function quiesceForCapture() {
+  if (shuttingDown || quiescingForCapture) return;
+  quiescingForCapture = true;
+  terminate(daemon, daemonExited);
+}
+
 function spawnFailure(name, error) {
   process.stderr.write("dind-supervisor: failed to spawn " + name + ": " + error.message + "\n");
   shutdown(1, name === "dockerd");
@@ -68,12 +81,20 @@ daemon.stderr.on("data", recordDaemonLog);
 daemon.on("error", (error) => spawnFailure("dockerd", error));
 daemon.on("exit", (code, signal) => {
   daemonExited = true;
+  if (quiescingForCapture && !shuttingDown) {
+    fs.writeFileSync(CAPTURE_ACK_PATH, JSON.stringify({ code, signal }) + "\n");
+    return;
+  }
   if (!shuttingDown) {
     process.stderr.write("dind-supervisor: dockerd exited unexpectedly (code=" + (code ?? "null") + ", signal=" + (signal ?? "null") + ")\n");
     shutdown(code && code > 0 ? code : 1, true);
   }
   finishWhenStopped();
 });
+
+fs.mkdirSync(CONTROL_DIRECTORY, { recursive: true });
+try { fs.unlinkSync(CAPTURE_ACK_PATH); } catch (error) { if (error.code !== "ENOENT") throw error; }
+fs.writeFileSync(PID_PATH, String(process.pid) + "\n");
 
 if (keeperArgv.length === 0) {
   process.stderr.write("dind-supervisor: missing keeper argv\n");
@@ -90,6 +111,7 @@ if (keeperArgv.length === 0) {
 
 process.on("SIGTERM", () => shutdown(0, true));
 process.on("SIGINT", () => shutdown(0));
+process.on("SIGUSR1", quiesceForCapture);
 `;
 
 export const DIND_BOOTSTRAP_SOURCE = String.raw`set -eu
@@ -123,3 +145,18 @@ export function dindContainerCommand(
 export function dindSupervisorRevision(): string {
   return DIND_SUPERVISOR_REVISION;
 }
+
+/** Gracefully stop inner containers/containerd/dockerd while keeping the outer container alive for ordered capture. */
+export const DIND_CAPTURE_QUIESCE_COMMAND = Object.freeze([
+  "sh",
+  "-ec",
+  `pid="$(cat ${DIND_SUPERVISOR_PID_PATH})"
+kill -USR1 "$pid"
+remaining=150
+while test ! -f ${DIND_CAPTURE_QUIESCE_ACK_PATH}; do
+  test "$remaining" -gt 0 || { echo "timed out waiting for inner dockerd shutdown" >&2; exit 1; }
+  sleep 0.1
+  remaining=$((remaining - 1))
+done
+test ! -S /var/run/docker.sock || ! docker --host=unix:///var/run/docker.sock info >/dev/null 2>&1`,
+] as const);

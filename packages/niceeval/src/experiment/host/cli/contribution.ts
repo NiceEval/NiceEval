@@ -77,6 +77,7 @@ export const EXP_NORMAL_CLI_OPTIONS = Object.freeze({
   attempts: option("string", "Run each selected Eval this many times."),
   "max-concurrency": option("string", "Limit concurrent Attempt execution."),
   "max-build-concurrency": option("string", "Limit concurrent Sandbox build preparation."),
+  "sandbox-setup-cache": option("string", "使用或绕过 Sandbox 准备缓存。"),
   timeout: option("string", "Set the per-Attempt timeout in milliseconds."),
   budget: option("string", "Set the Invocation budget in USD."),
   tag: option("string", "Select only Evals with this tag."),
@@ -158,6 +159,8 @@ Run options:
   --attempts <n>                 run each selected Eval this many times
   --max-concurrency <n>          limit concurrent Attempt execution
   --max-build-concurrency <n>    limit concurrent Sandbox build preparation
+  --sandbox-setup-cache <use|bypass>
+                                  select the Sandbox setup cache path
   --timeout <ms>                 set the per-Attempt timeout
   --budget <usd>                 set the Invocation budget
   --tag <tag>                    select only Evals with this tag
@@ -553,6 +556,11 @@ function overrides(values: Record<string, string | boolean | string[] | undefine
   const maxBuildConcurrency = numberFlag(values["max-build-concurrency"], "--max-build-concurrency", true);
   const rerun = enumFlag(values.rerun, "--rerun", ["failed", "all"]);
   const keepSandbox = enumFlag(values["keep-sandbox"], "--keep-sandbox", ["failed", "all"]);
+  const sandboxSetupCache = enumFlag(
+    values["sandbox-setup-cache"],
+    "--sandbox-setup-cache",
+    ["use", "bypass"],
+  );
   return Object.freeze({
     ...(attempts === undefined ? {} : { attempts }),
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
@@ -561,6 +569,9 @@ function overrides(values: Record<string, string | boolean | string[] | undefine
     ...(maxBuildConcurrency === undefined ? {} : { maxBuildConcurrency }),
     ...(rerun === undefined ? {} : { rerun: rerun as "failed" | "all" }),
     ...(keepSandbox === undefined ? {} : { keepSandbox: keepSandbox as "failed" | "all" }),
+    ...(sandboxSetupCache === undefined
+      ? {}
+      : { sandboxSetupCache: sandboxSetupCache as "use" | "bypass" }),
     ...(values["no-early-exit"] === true ? { earlyExit: false } : values["early-exit"] === true ? { earlyExit: true } : {}),
   });
 }

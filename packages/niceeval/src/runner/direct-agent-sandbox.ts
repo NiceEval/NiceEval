@@ -23,6 +23,7 @@ export function createDirectAgentSandbox(): Sandbox {
     readBytes: () => directAgentUnavailable("readBytes"),
     writeBytes: () => directAgentUnavailable("writeBytes"),
     pathExists: () => directAgentUnavailable("pathExists"),
+    upload: () => directAgentUnavailable("upload"),
     uploadFile: () => directAgentUnavailable("uploadFile"),
     uploadDirectory: () => directAgentUnavailable("uploadDirectory"),
     downloadFile: () => directAgentUnavailable("downloadFile"),
@@ -54,6 +55,7 @@ export function withEvalLocalPaths(sandbox: Sandbox, baseDir: string): Sandbox {
     readBytes: (path) => sandbox.readBytes(path),
     writeBytes: (path, content) => sandbox.writeBytes(path, content),
     pathExists: (path) => sandbox.pathExists(path),
+    upload: (content, targetPath) => sandbox.upload(content, targetPath),
     uploadFile: (source, targetPath) =>
       sandbox.uploadFile(resolveEvalLocalPath(baseDir, source), targetPath),
     uploadDirectory: (sourceDir, targetDir, options) =>

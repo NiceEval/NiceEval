@@ -1,7 +1,6 @@
 # Docker 执行配置 —— CLI
 
-运行命令从 raw DinD的 `dockerAccess.storageProfile`或 managed DinD的 `dockerAccess.profile`取得别名。CLI不要求额外 flag；它只提供 profile的
-只读发现与 doctor。宿主部署由 NixOS module或 systemd host package完成。
+运行命令从 raw DinD 的 `dockerAccess.storageProfile` 或 managed DinD 的 `dockerAccess.profile` 取得别名，不要求额外 profile flag。CLI 只提供 profile 的只读发现与 doctor。宿主部署由 NixOS module 或 systemd host package 完成。
 
 ## 运行
 

@@ -1,33 +1,31 @@
-# 内置 before action —— gitCheckout、installTool 与命令计划
+# 内置 before action —— gitCheckout、shell 与命令计划
 
-本页定义最常见昂贵动作的官方写法：`gitCheckout()`、`installTool()`，以及 `niceeval debug` 怎样在创建任何 Sandbox 前展示它们的 identity、依赖与缓存资格。
+本页定义最常见昂贵动作的官方写法：`gitCheckout()`、`shell()`，以及 `niceeval debug` 怎样在创建任何 Sandbox 前展示它们的 identity、依赖与缓存资格。
 
-两条内置 action 都实现普通 `SandboxAction` 协议，identity 由纯数据参数构成。Runner 不按 action 名称决定顺序；依赖 DAG 与 `changeFrequency` 统一决定执行位置。
+这些内置 action 都实现普通 `SandboxAction` 协议，identity 由纯数据参数构成。Runner 不按 action 名称决定顺序；依赖 DAG 与 `changeFrequency` 统一决定执行位置。
 
-## 不用 `prepare()` 安装 Agent CLI
+## 不用 before action 安装 Agent CLI
 
-`prepare()` 面向题目或实验自己的运行依赖：安装系统工具、检出 fixture、预热数据或写入这次实验的配置。
+before action 面向题目或实验自己的运行依赖：安装系统工具、检出 fixture、预热数据或写入这次实验的配置。
 选择 `codexAgent()`、`claudeCodeAgent()` 等内置 Sandbox Agent 时，CLI 的检查与安装由对应 Adapter 自动完成；作者不需要复制官方安装脚本，也不应把它写进题目 fixture。
 
-Adapter 知道目标 CLI 的精确版本、官方发行物、目标平台与复检方式。这些信息进入 Agent 身份和结果可比性；把安装降成普通 prepare 命令会丢失该绑定，并让用户手工维护两份版本声明。
-需要安装的不是被测 Agent，而是实验自身的工具时，才使用本页的 `installTool()`。完整分工见 [Adapter · Agent Ensure](../adapters/architecture/agent-ensure.md)。
+Adapter 知道目标 CLI 的精确版本、官方发行物、目标平台与复检方式。这些信息进入 Agent 身份和结果可比性；把安装降成普通 Sandbox action 会丢失该绑定，并让用户手工维护两份版本声明。
+需要安装的不是被测 Agent，而是实验自身的工具时，才使用本页的 `shell()` 或第三方 `defineSandboxAction()` family。完整分工见 [Adapter · Agent Ensure](../adapters/architecture/agent-ensure.md)。
 
 ## 导出入口
 
 ```typescript
-import { gitCheckout, installTool } from "niceeval/sandbox";
+import { gitCheckout, shell } from "niceeval/sandbox";
 ```
 
 ## `gitCheckout()`:源码检出
 
 ```typescript
-interface GitCheckoutActionInput {
-  readonly id: string;
+interface GitCheckoutActionInput extends SandboxBeforeActionOptions {
   readonly repository: string;
   readonly ref: string;
   readonly to: string;
   readonly sparse?: { readonly include?: readonly string[]; readonly exclude?: readonly string[] };
-  readonly changeFrequency?: number;
 }
 
 declare function gitCheckout(options: GitCheckoutActionInput): SandboxAction;
@@ -52,36 +50,29 @@ export default defineEval({
 语义:
 
 - 目标目录得到 HEAD 指向完成态 commit 的 Git checkout；`to` 是 workdir 相对路径。
-- NiceEval 在本次 Invocation 内查找 ref 对应的完整 commit，并冻结查找结果。相同 commit 命中相同前缀；ref 推进后自动 miss。
+- `ref` 必须是完整 40/64 位 commit object id；V1 不接受 branch、tag、`HEAD` 或默认分支。
 - identity 包含规范化 repository、完整 commit、`to`、sparse 选择、action id、频率与祖先前缀。
 - 只接受无凭据的公开 HTTPS repository。凭据仓库使用 opaque callback 或受信任系统发布的不可变内容 handle。
 
-完整 commit 跳过远端 ref lookup。branch、tag 与默认分支可以移动，但不会把新 commit 错当成旧缓存。
+调用方若从 branch、tag 或默认分支取得版本，必须先在自己的可信发布流程中查询它当前指向的 commit，并把完整 commit 固定到声明中；移动 ref 不能直接进入可缓存 action。
 
 `gitCheckout()` 装载的是 Agent 应当看见的题目起点。
 隐藏判分材料不走它,仍按[本地测试文件](../eval/use-case/criteria-files.md)的规则在 `send` 区间后经普通上传进入。
 
-## `installTool()`:探测、安装与复检
-
-```typescript
-interface InstallToolOptions {
-  readonly tool: string;
-  readonly identity: SandboxCommandIdentityValue;
-  readonly probe: StableSandboxCommand;
-  readonly install: StableSandboxCommand;
-}
-
-declare function installTool(options: InstallToolOptions): StableSandboxCommand;
-```
+## 工具安装：一个 `shell()` Action
 
 ```typescript
 export default defineExperiment({
   sandbox: e2bSandbox({ template: "base-node-22" })
-    .before(installTool({
-      tool: "mempal",
-      identity: { version: "0.9.0" },
-      probe: shell("mempal --version | grep -q 0.9.0"),
-      install: shell("curl -fsSL https://get.mempal.dev | sh"),
+    .before(shell({
+      id: "install-mempal",
+      command: `
+        set -eu
+        if mempal --version | grep -q '^0.9.0$'; then exit 0; fi
+        npm install --global mempal@0.9.0
+        mempal --version | grep -q '^0.9.0$'
+      `,
+      changeFrequency: changeFrequency.rare,
     })),
   agent: codexAgent(),
 });
@@ -89,34 +80,33 @@ export default defineExperiment({
 
 语义:
 
-- `probe` 以 try 语义执行:退出码为零即命中,命令立即返回;非零是未命中,不是失败。
-- 未命中时执行 `install`,随后重跑 `probe` 复检;install 失败或复检仍非零,按执行失败计,归 `sandbox.prepare.<owner>`。
-- identity 是 `tool` 加 `identity` 参数,并折入 `probe` 与 `install` 的 command identity;任一项变化使旧命中失效。
-- `probe` 与 `install` 必须是稳定 command(`command()` / `shell()` 或 `defineSandboxCommand()` 返回的定义值)。
-  opaque callback 不能作为 `installTool` 参数，需要不透明逻辑时使用普通 `prepare()` callback，其结果仍按默认规则携带。
+- 整段 script 是一个 `shell()` Action，也就是一个 `sandboxStep.exec()`；它的 command、调度 metadata 与显式 immutable inputs 共同进入自动指纹。
+- shell 自己可以使用 `if` 做幂等探测，但 V1 `SandboxStep` tuple 仍是无分支的线性列表。NiceEval 不读取 shell 语法生成另一棵 action DAG，也不为探测分支建立内部 prefix。
+- script 的任一非零退出都使整个 action 失败并归入 `sandbox.before.<owner>`；只有整个 script 成功后才允许捕获。
+- 普通 shell、网络与时钟读取是否确定由作者承诺。版本、下载内容身份和安装协议必须固定；NiceEval 不对 script 做通用污点证明。
+- 需要实例 handle、secret、租约或外部会话时使用普通 callback before，并接受 opaque barrier。
 
-template 预装只是让 `probe` 首测即命中的一种手段。
-声明照常保留;预装缺失或漂移时命令现场补齐,与 [LIMITS「Manifest 不是状态证明」](../../design/environment-model/LIMITS.md)同向。
+template 预装只是让版本检查首测即成功的一种手段。
+声明照常保留；预装缺失或漂移时命令现场补齐，与 [LIMITS「Manifest 不是状态证明」](../../design/environment-model/LIMITS.md)同向。
 
-安装进 workdir 的内容在复用 reset 后会消失并触发重装;要享受周期内命中,安装目标应在 workdir 外(`$HOME`、`/usr/local`)。
-分摊判据见 [沙箱预置放哪](library.md#沙箱预置放哪)。
+安装进 workdir 的内容会成为 action artifact 的一部分；restore 后仍存在。Sandbox reuse reset 必须回到包含 physical prefix 的 verified baseline，不能只按旧 workdir 规则猜测安装是否存续。分摊判据见 [沙箱预置放哪](library.md#沙箱预置放哪)。
 
 ## 缓存边界
 
-- 镜像与探测不共享任何跨 Sandbox 的状态;缓存活在当前 Sandbox 的 workdir 外私有路径,随 Sandbox 销毁消失。
-- 缓存不经 `context.onCleanup()` 登记——它的价值正是跨 Attempt 存续;需要销毁整窗状态时退休或停止 Sandbox。
-- 缓存服从 reset 与活状态边界:reset 只恢复 workdir,不触碰镜像;Sandbox lifecycle hook 拥有的路径内置命令不写入。
-- 缓存不可用或损坏时按首次执行处理(重新走网络或重装),不产生额外错误类别。
+- `gitCheckout()`、`shell()` 与第三方 `defineSandboxAction()` family 是普通 eligible action。hit 恢复 verified private state，miss replay；Provider unsupported 时真实执行。
+- command 与普通 JSON/text 输入由作者声明为非敏感和确定性。需要 credential 的安装必须改用 opaque callback，不能把 token 放进 shell command。
+- opaque callback 之后的 action 仍可执行，但不能 publish 共享前缀。
+- lookup、restore、capture 或 publish 失败时使用统一 `degraded` 路径，从可信短前缀或 Base 最多干净 replay 一次。
 
 ## `niceeval debug` 的可证明边界
 
-`niceeval debug <experiment> <eval>` 按配置的每条 Attempt 展示 prepare。复用 lane 另带每台实际实例各自套用的 physical lifecycle template；每个候选 dispatch slot 都列出自己的 prepare 与 agent.ensure。debug 不读取 carry 计划，正常运行仍可能沿用结果而不派发这些 slot。
+`niceeval debug <experiment> <eval>` 按配置的每条 Attempt 展示 before。复用 lane 另带每台实际实例各自套用的 physical lifecycle template；每个候选 dispatch slot 都列出自己的 before 与 agent.ensure。debug 不读取 carry 或 cache，固定显示 `cacheLookup: "not-probed"`。
 
 命令工厂把执行闭包已经消费的同一份规范化数据私绑到计划：
 
-- `command(executable, args, options)` 精确投影 argv 数组。
-- `shell(script, options)` 精确投影 script。单行使用 JSON string；多行在 human 的独立区域框内按原始行显示，并保留缩进、空行与末尾换行。JSON 计划仍保存原始 script string。
-- `installTool()` 投影完整条件树：先运行 `probe` 探测命令；探测未命中才 install，再用同一命令 recheck。子命令若由 `command()` / `shell()` 创建就是 exact；普通 `defineSandboxCommand()` 虽然有稳定 fingerprint identity，仍是 opaque。
+- `command(executable, args, { id, ...options })` 精确投影 argv 数组。
+- `shell({ id, command, ...options })` 精确投影 command。单行使用 JSON string；多行在 human 的独立区域框内按原始行显示，并保留缩进、空行与末尾换行。
+- `shell()` 投影完整 command，但始终是一个 prefix node；script 内的条件与子命令不是嵌套 action。
 - `gitCheckout()` 显示 repository、作者 ref、完成态 commit、sparse 选择、目标、频率、依赖、缓存资格与 prefix identity。
 - 普通 `.before(async (sandbox) => …)` 与 `defineSandboxCommand(identity, run)` 的 `run` 都标为 opaque。公开 identity 可由作者自行命名，不能拿 id / inputs 猜它会执行什么。
 

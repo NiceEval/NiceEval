@@ -122,6 +122,14 @@ dockerd逃逸，应使用专用 VM或远端 profile；本功能不把本机容�
 Invocation，profile admission再限制所有 Invocation的总资源。默认32 GiB filesystem配8 GiB allocation只
 开放2路；4路与8路分别至少晋升到64 GiB与128 GiB硬容量，不能用稀疏文件超卖。
 
+## Setup Prefix cache 边界
+
+普通单容器 Docker 可以把全部可变状态收进 outer writable rootfs，因而可以用 exact image 实现 Setup Prefix cache。raw 与 managed Docker Profile 的 private data-root 位于 project-quota slot，不在该 rootfs。
+
+只 commit outer image 会丢失 inner image 和 BuildKit 状态。把 seed 或 copy 放在 slot 之外会绕过 project quota，sparse backing 的逻辑容量也不能证明物理容量。因此 Profile 绑定的 Setup Prefix capability 固定报告 `Unsupported`，before action 按统一顺序真实执行。
+
+这个 Profile 契约不包含 `ArtifactSet V2`、host artifact lease/index 或组件恢复。NiceEval 不会用缺少 data-root 的 outer image 报告 cache hit，也不会回退到未受 profile 约束的 Docker daemon。
+
 ## 范围
 
 本主题包含：
@@ -147,6 +155,7 @@ Invocation，profile admission再限制所有 Invocation的总资源。默认32 
 - Docker Compose outer sidecar/provider作为 DinD实现；
 - 仅凭 `docker info`出现 `rootless`就信任外部 endpoint；
 - rootless privileged Sandbox的 retention。
+- Profile-bound DinD 的 `ArtifactSet V2` Setup Prefix cache。
 
 ## 两个独立交付门
 

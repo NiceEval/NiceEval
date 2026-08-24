@@ -75,96 +75,135 @@ sandbox: dockerComposeSandbox({
 也可以选择 raw privileged 或 managed rootless Docker-in-Docker。三种模式的适用场景、Dockerfile 和
 完整配置见[让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker)。
 
-## 生命周期
+## 按顺序准备 Sandbox
 
-`dockerSandbox({ source: { type: "image", image } })`、`vercelSandbox({ snapshotId })` 和 `e2bSandbox({ template })` 都返回 `SandboxLayer`。返回值有 `.prepare(command)`、`.setup(fn)` 和 `.teardown(fn)` 方法。
-
-这些方法处理只有运行时才知道的环境内容。例如按实验写配置、检查预制工具、安装 hook，或在多次 Attempt 之间载入和回存状态。
-
-共享辅助函数需要显式标注回调类型时，从公开入口导入，不要从某个 provider 的 spec 反推：
+每个 Provider factory 都返回不可变的 `SandboxLayer`。用 `.before()` 声明 Agent 开始前的动作，用 `.after()` 声明无条件收尾：
 
 ```ts
-import type { SandboxHook, SandboxHookContext } from "niceeval/sandbox";
+import {
+  changeFrequency,
+  dockerSandbox,
+  shell,
+  writeText,
+} from "niceeval/sandbox";
+
+const sandbox = dockerSandbox({
+  source: { type: "image", image: "node:24-slim" },
+})
+  .before(shell({
+    id: "install-tools",
+    command: "corepack enable && pnpm install --frozen-lockfile",
+    changeFrequency: changeFrequency.rare,
+  }))
+  .before(writeText({
+    id: "experiment-env",
+    path: ".env",
+    text: "FEATURE_X=1\n",
+    changeFrequency: changeFrequency.frequent,
+  }));
 ```
 
-稳定且体积大的依赖不要在这里重复安装。系统包、Agent CLI、编译好的二进制和大模型缓存应该先做进 Docker image、Vercel Sandbox 快照或 E2B template。每个 Attempt 从预制环境启动，`.setup()` 只做薄薄的一层动态配置和 fail-fast 检查。
+`changeFrequency` 是普通非负数。数值小的稳定动作排在前面，数值大的易变动作排在后面。内置常量只是便于阅读的数字：
 
 ```ts
-export default defineExperiment({
-  agent: codexAgent({ mcpServers: [mempalMcp] }),
-  sandbox: e2bSandbox({ template: "fasteval-agents-mempal" }) // 已包含二进制和模型缓存
-    .setup(mempalSetup("codex"))        // 预检、写 hook、载入状态
-    .teardown(mempalTeardown("codex")), // 回存状态
-  maxConcurrency: 1,                    // 载入和回存之间不能并发，声明串行
-  sharedState: { key: "mempal/codex/cohort-a" },
+changeFrequency.rare     // 10
+changeFrequency.normal   // 100
+changeFrequency.frequent // 1000
+```
+
+Experiment、评估组、评估用例和 Sandbox Agent 都贡献到同一个顺序。显式 `dependsOn` 先决定依赖，再按数值排序。因此，评估组里频率较低的动作可以排到 Experiment 的易变动作之前。
+
+普通本地单容器 Docker 会按动作指纹保存成功的准备前缀，但全部可变状态必须位于外层容器的可写根文件系统。下一次运行即使评估代码变了，也可以从最长匹配前缀启动。只有最后一个 `.env` action 变了时，固定的 Git checkout、目录上传和工具安装不会重跑。每个 Attempt 都从缓存结果的私有副本启动，不会继承上一个 Agent 留下的改动。
+
+Docker Compose、使用 Profile 的 DinD、Vercel、E2B 和自定义 Provider 对准备前缀报告 `Unsupported`，仍按相同顺序真实执行动作。它们不会假装命中无法兑现的缓存。
+
+### 定义可复用 Action
+
+内置的 `shell()`、`writeText()`、`uploadDirectory()` 和 `gitCheckout()` 都是 `SandboxAction`。项目也可以用相同机制定义自己的 family：
+
+```ts
+import { Schema } from "effect";
+import {
+  defineSandboxAction,
+  sandboxStep,
+} from "niceeval/sandbox";
+
+const installTool = defineSandboxAction({
+  id: "@acme/install-tool",
+  input: Schema.Struct({ version: Schema.String }),
+  cache: { fingerprint: "2" },
+  steps: ({ version }) => [
+    sandboxStep.exec({
+      executable: "tool",
+      args: ["install", version],
+    }),
+  ] as const,
 });
+
+const sandbox = e2bSandbox({ template: "niceeval-agents" })
+  .before(installTool(
+    { version: "1.4.0" },
+    { changeFrequency: 20 },
+  ));
 ```
 
-规则一览：
+family 的 `id`、输入、展开后的 steps 和内容摘要自动进入指纹。`cache.fingerprint` 只补充框架看不到的协议版本，不能替换自动指纹。family 只组合 NiceEval 提供的固定 step，不能取得运行中的 `Sandbox`。
 
-- **签名**：Hook 函数是 `(sandbox, ctx)`，不返回值。这里的 `ctx` 是窄的 Sandbox Hook Context，只有 experiment 身份、取消信号和反馈方法，不带 Agent 会话或 telemetry。
-- **不可变**：每次 `.setup()` / `.teardown()` 都返回一个新 spec，原对象不变，可以继续链。
-- **多个 Hook**：多个 `.setup()` 按追加顺序执行。多个 `.teardown()` 按追加的逆序执行（LIFO）。`.setup()` 链中途抛错时后续 `.setup()` 不再执行，`.teardown()` 链仍完整走完——半初始化的 Sandbox 同样要扫尾。
-- **执行时机**：`setup` Hook 在 sandbox 创建后、git 基线之前最先跑——它写下的文件会进基线，不会被算进 agent 产出的 diff。`teardown` Hook 在 Adapter 的 `teardown` 之后、sandbox 销毁之前最后跑——把状态回存到外部正好用这个时机。
-- **触发规则**：`teardown` 当且仅当同一 Sandbox 的 `setup` 时点已经走到才执行——`setup` 抛错不豁免，收尾代码要对可能未赋值的句柄做防御。`setup` 没跑到（Sandbox 没创建成功）则 `teardown` 同样跳过。
-- **失败语义**：`setup` Hook 抛错，这次 Attempt 记为 `errored`（环境问题，不是 Agent 做错题）。`teardown` Hook 可以报告 diagnostic，默认不改变已经得到的判定。某个收尾动作是结果成立的必要条件时应抛错，由 runner 明确记录为致命错误。
-- **不带 Sandbox 的 Agent**：`defineAgent` 构造的 Agent 没有 Sandbox，`sandbox` 字段对它不生效，Hook 自然不会跑。
+### 写入、上传与 Git checkout
 
-### 把 setup 的产物传给 teardown
+这些内置函数都是同一种 `SandboxAction`，可以直接传给 `.before()`：
 
-`setup` 不返回值，`teardown` 要用 `setup` 建立的句柄（一个已打开的连接、一个临时文件路径）时不能存进普通模块变量——同一个 spec 被多个并发 Attempt 复用同一个模块，模块变量会被后来的 Attempt 互相覆写。以 `sandbox` 实例作键存取：每个 Attempt 有自己独立的 `sandbox`，是天然的 per-attempt 键：
+| 内容来源 | Action |
+| --- | --- |
+| 已有文本或字节 | `writeText()` / `writeBytes()` |
+| 定义模块旁的固定文件或目录 | `uploadFile()` / `uploadDirectory()` |
+| 公开 Git 仓库的固定 commit | `gitCheckout()` |
+| shell 或 argv 命令 | `shell()` / `command()` |
 
-```ts
-import type { Sandbox } from "niceeval/sandbox";
+`uploadFile()` 和 `uploadDirectory()` 接收 `new URL("fixture/", import.meta.url)`，不接收随当前目录漂移的相对路径。实际 bytes、权限与目录 manifest 自动进入指纹。`gitCheckout()` 只接受不含凭据的 HTTPS URL 和完整 commit object ID。
 
-// 并发 Attempt 各有自己的 sandbox：句柄按 sandbox 键控，不用普通模块变量
-const forwarders = new WeakMap<Sandbox, { stop(): Promise<void> }>();
+需要在 Agent 返回后才公开的隐藏内容不要放进 `.before()`。先用 `sandboxContent.file()` 或 `sandboxContent.directory()` 取得不可变 handle，再在 `test(t)` 中调用 `t.sandbox.upload(handle, targetPath)`。handle 只暴露内容摘要，不暴露宿主路径。
 
-const spec = e2bSandbox({ template: "niceeval-agents" })
-  .setup(async (sandbox, ctx) => {
-    forwarders.set(sandbox, await startLogForwarder(sandbox, { signal: ctx.signal }));
-  })
-  .teardown(async (sandbox) => {
-    await forwarders.get(sandbox)?.stop(); // setup 抛错也会进来：get 不到就跳过
-  });
-```
+### 动态回调与收尾
 
-「载入 / 回存」这类收尾不需要 setup → teardown 句柄：状态键是 `ctx.experimentId` 的外部 KV，普通代码即可，见下段。
+只有运行时才能决定的分支可以直接写 `.before(async (sandbox, context) => ...)`。回调总会真实执行，并截断后续可共享的准备前缀。
 
-Hook 里可以用 `ctx.experimentId`（路径推导的实验 id）当状态隔离的键，比如不同实验各自维护一份跨 attempt 的缓存。跨 attempt 状态的载入和回存是你自己在 Hook 里写的普通代码——[NiceEval](https://niceeval.com/) 不提供状态存储。要保证同一实验的 attempt 不并发读写同一份状态，在 experiment 上声明 `maxConcurrency: 1`。
-
-### 从 Hook 中输出进度和问题
-
-长时间安装、预热和状态恢复可以调用 `ctx.progress(...)`。它只更新当前 Attempt 的短期状态，不会把每一步都写进结果。需要运行结束后仍能看到的问题使用 `ctx.diagnostic(...)`：
+资源成功取得后，立即用 `context.onCleanup()` 登记释放。闭包可以安全保存这次调用的句柄，不需要写两份彼此猜测状态的回调：
 
 ```ts
 const sandbox = e2bSandbox({ template: "niceeval-agents" })
-  .setup(async (sandbox, ctx) => {
-    ctx.progress({ message: "检查 project 辅助函数", current: 1, total: 2 });
-    await ensureProjectHelper(sandbox);
+  .before(async (sandbox, context) => {
+    const forwarder = await startLogForwarder(sandbox, {
+      signal: context.signal,
+    });
 
-    ctx.progress({ message: "预热 project build cache", current: 2, total: 2 });
-    try {
-      await warmProjectBuildCache(sandbox);
-    } catch (error) {
-      ctx.diagnostic({
-        code: "project-build-cache-degraded",
-        level: "warning",
-        message: "构建缓存预热失败，本次不使用预热缓存继续运行",
-        data: { reason: String(error) },
-        dedupeKey: "project-build-cache-degraded",
-      });
-    }
+    context.onCleanup(async () => {
+      await forwarder.stop();
+    });
   });
 ```
 
-<Warning>
-  Hook 只有 `progress` 和 `diagnostic` 两种反馈入口。短期状态用 `progress`，真实异常、退化或需要处理的问题才用 `diagnostic`。没有第三种通用入口可记录任意运行值；连接地址、缓存大小和版本等仅供本次运行使用的信息，留在 Hook、Sandbox 或外部服务自己的配置中。环境无法继续时直接抛出异常。
-</Warning>
+callback 的 `sandbox.sandboxId` 是当前主物理 Sandbox 的 Provider-native ID。通常把它当作不透明关联值；只有这条 layer 已明确绑定具体 Provider 时，可信宿主代码才应把它交给对应 SDK 取得 Attempt 级辅助资源。辅助资源不属于 NiceEval 管理的 Case 拓扑，也不进入缓存；创建成功后必须立即登记幂等 cleanup。准备前缀可能在首个 callback 前替换主实例，但 callback 开始后，本 Attempt 的 cleanup 与 after 会看到同一 ID。
 
-`progress` 和 `diagnostic` 都不能指定全局阶段、颜色或输出流。Runner 知道当前回调属于 `sandbox.setup`，会把 Human 终端中的阶段显示为 Sandbox setup。`diagnostic` 写入 Attempt-owned 诊断通道，之后可用 `niceeval show @<attempt-locator>` 回顾。它本身不会改变判定。Sandbox 无法继续时直接抛出异常。
+无条件、幂等的收尾可以写成 `.after()`。所有已登记的收尾按实际登记顺序的反向执行，前面的动作失败时也会继续完成已经登记的项目：
 
-三种 setup 各有职责。Adapter 的 `setup` 负责连接被测 Agent，例如安装 CLI 和写入鉴权配置。评估用例中 `test(t)` 开头的代码负责准备任务起始文件。Sandbox 的 `.setup()` 负责当前实验的额外环境准备。MCP server、Skill 和 model 等被测 Agent 配置仍然只从 Adapter 工厂参数传入。
+```ts
+const sandbox = dockerSandbox({
+  source: { type: "image", image: "node:24-slim" },
+})
+  .before(shell({
+    id: "start-helper",
+    command: "./helper start",
+  }))
+  .after(shell.after({
+    id: "stop-helper",
+    command: "./helper stop || true",
+  }));
+```
+
+回调中的 `context.progress()` 只更新当前 Attempt 的短期状态。`context.diagnostic()` 保存需要回顾的问题。环境无法继续时直接抛错；NiceEval 会把它记录为环境错误，而不是 Agent 做错题。
+
+不带 Sandbox 的 `defineAgent` 没有这条准备流程。Sandbox Agent 可以在自己的 `sandbox` 字段贡献 command-only layer，但不能选择或替换 Provider template。
 
 ## 预制环境与运行时 checkpoint
 
@@ -184,7 +223,7 @@ Docker image、Vercel Sandbox 快照和 E2B template 的凭据、构建上下文
 
 Adapter 与 Sandbox 不互相猜配置：Adapter 负责检查所需 CLI，Sandbox spec 负责选择 provider 和构建输出。Claude Code 与 Codex 缺少 CLI 时会回退到运行时安装（构建输出在题面网络之外准备，经文件 API 送入），所以烘焙纯粹是提速。Codex 送进去的是该平台自带运行时的原生包，任务镜像不带 Node 也能装，Claude Code 仍要求镜像里有 npm。
 
-默认 Bub 0.4.0 配方除 OTel 插件外，还固定 `any-llm-sdk==1.17.0` 和 `openai==2.31.0`。安装指纹同时覆盖 Bub requirement、这两个 client override、OTel 插件和规范化后的 Python 插件集，不能仅凭 `command -v bub` 跳过安装。旧 marker 的预制环境会重装一次；显式选择其它 Bub 版本时，传递依赖闭包仍由调用方负责。三个 provider 的构建都只在环境依赖变化时跑一次，产物换一个版本化名字，不要写入每个 Attempt 的 `.setup()`。
+默认 Bub 0.4.0 配方除 OTel 插件外，还固定 `any-llm-sdk==1.17.0` 和 `openai==2.31.0`。安装指纹同时覆盖 Bub requirement、这两个 client override、OTel 插件和规范化后的 Python 插件集，不能仅凭 `command -v bub` 跳过安装。旧 marker 的预制环境会重装一次；显式选择其它 Bub 版本时，传递依赖闭包仍由调用方负责。三个 Provider 的构建都只在环境依赖变化时跑一次，产物换一个版本化名字，不要放进每个 Attempt 都会执行的动态回调。
 
 #### E2B：从官方与公共模板派生
 
@@ -360,7 +399,7 @@ await restoreCheckpoint(nextSandbox, data);
 
 这适合运行时缓存，不会创建可发布的 image/template/snapshot，也不管理共享、版本和过期。归档或恢复失败会直接抛错。
 
-如果这些目录或快照要跨 Attempt 延续，把 `restoreCheckpoint()` 放进 `SandboxLayer.setup()`，把 `createCheckpoint()` 放进配对的 `teardown()`。`setup()` 在实际 Sandbox 创建后恢复，因此新 run 也走同一边界。`teardown()` 在实例退休、Provider finalizer 前回存。
+如果这些目录要跨 Attempt 延续，在动态 `.before()` 中调用 `restoreCheckpoint()`。恢复成功后用 `context.onCleanup()` 登记 `createCheckpoint()`，让回存在实例退出、Provider finalizer 之前执行。
 
 `sandboxReuse: true` 只让同一个物理实例在本 Invocation 内继续存在。多个 Invocation 会读写同一 checkpoint 时，在 Experiment 顶层声明 `sharedState: { key }`。NiceEval 在 Experiment setup 或创建 Sandbox 前取得租约，等 checkpoint 回存、Provider finalizer 与 Experiment teardown 完成后释放。它只提供互斥，不负责 checkpoint 存储、事务恢复或跨机器协调。
 
@@ -416,15 +455,15 @@ export default defineSandbox({
 
 ## 性能建议
 
-- 把稳定重依赖做进 image/template/snapshot，不在每个 Attempt 的 `.setup()` 重装。
+- 把稳定重依赖做进 image/template/snapshot，或声明为低频 `.before()` action。
 - 减少 fixture 依赖体积。
 - 对动态内容使用小而明确的缓存或预检。
 - 控制 `maxConcurrency`（experiment 字段或 `--max-concurrency`），避免本地 Docker 资源耗尽。
 - 把慢测试拆成必要的 gate 和可选的 `.optional()` 检查。
 
-### 让公共准备只付一次
+### 在 Attempt 之间复用 Provider 启动
 
-冷启动（起容器、装依赖、装 Agent CLI）主导反馈时间时，在实验里声明 `sandboxReuse: true`：多条 Attempt 依次共用一个 Sandbox，创建与 Sandbox 级 `setup` 每个 Sandbox 只付一次，题与题之间只把工作目录重置回公共准备完成时的状态。
+Provider 启动主导反馈时间时，在实验里声明 `sandboxReuse: true`。多条 Attempt 可以依次共用一个 Sandbox：每个复用实例只创建一次，每条真实 Attempt 仍有 `attempt` `.before()` / `.after()` 计划，题间重置工作目录。声明式 Docker action 可另外复用匹配的准备前缀。
 
 ```ts
 export default defineExperiment({

@@ -6,15 +6,15 @@
 type PluginOwner = "experiment" | "group" | "eval";
 type PluginScope = PluginOwner | "sandbox";
 
-interface PluginAttachment<Scopes extends PluginScope = PluginScope> {
-  // 私有品牌携带 family identity 与可挂载 scope；作者不构造这个对象。
+interface PluginAttachment<EligibleOwners extends PluginOwner = PluginOwner> {
+  // 私有品牌携带 family identity 与可挂载 owner；作者不构造这个对象。
 }
 
 interface PluginStack<EligibleOwners extends PluginOwner = PluginOwner>
   extends Iterable<PluginAttachment> {
-  use<const Scopes extends PluginScope>(
-    attachment: CompatibleAttachment<EligibleOwners, Scopes>,
-  ): PluginStack<Extract<EligibleOwners, Scopes>>;
+  use<const AttachmentOwners extends PluginOwner>(
+    attachment: CompatibleAttachment<EligibleOwners, AttachmentOwners>,
+  ): PluginStack<Extract<EligibleOwners, AttachmentOwners>>;
 
   concat<const OtherOwners extends PluginOwner>(
     stack: CompatibleStack<EligibleOwners, OtherOwners>,
@@ -101,7 +101,7 @@ Plugin 类型契约必须验证以下矩阵：
 - owner 集合有交集的 `.concat()` 合法；
 - owner 集合无交集的 `.use()` / `.concat()` 在调用处报错；
 - 空栈可用于 Experiment、Eval Group 与 Eval；
-- 只声明 sandbox fragment 的 Plugin 在 `definePlugin()` 处报错；
+- 只声明 sandbox fragment 的 Plugin 默认支持 Experiment、Eval Group 与 Eval；同时声明 host fragment 时由 host owner 集合收窄；
 - 同一 attachment specification 可跨 Definition 复用，但同一 owner 中的重复 family/key 仍由 link 拒绝。
 
 不存在 `SandboxLayer.plugins()`。如果上面的 `a()` 同时声明 `sandbox` fragment，runner 自动将其 layer 投影到由该 owner 参与链接的物理 Sandbox。声明 `sandbox` 不要求用户再挂一次，也不会取得 Sandbox template 或 Provider 的所有权。
@@ -111,7 +111,7 @@ Plugin 类型契约必须验证以下矩阵：
 - `experiment`：`experimentId`、`selectedEvalIds`、`signal`、`progress`、`diagnostic`、`fact`。
 - `group`：`experimentId`、`evalGroupId`、`signal`、反馈与 `fact`。
 - `eval`：`experimentId`、`evalId`、`attempt`、可选 `evalGroupId`、`signal`、反馈与 `fact`。
-- `sandbox`：唯一额外接收实际 `Sandbox`，并使用 `SandboxHookContext`。
+- `sandbox`：定义期只接收 Plugin options 并返回 command-only `SandboxLayer`；其中只有 opaque `.before()` callback 在执行期取得实际 `Sandbox` 与 `SandboxHookContext`。
 
 ## Experiment lifecycle
 

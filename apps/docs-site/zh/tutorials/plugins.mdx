@@ -1,20 +1,26 @@
 ---
-title: "用 Plugin 组合生命周期"
+title: "用 Plugin 复用完整运行条件"
 sidebarTitle: "Plugin"
-description: "用 definePlugin 为实验、评估组、Sandbox 和评估组合多个生命周期。"
+description: "用 definePlugin 组合宿主生命周期与 command-only SandboxLayer，并在多个 owner 之间复用。"
 ---
 
-Plugin 是带稳定身份的生命周期组合方式。它适合把一项条件在不同运行范围内需要的 setup 和 teardown 放在一起。
+Plugin 把一项可复用条件的稳定身份、宿主生命周期和 Sandbox action 放在同一个 family 中。它不是另一套 Sandbox DSL，也不能选择 Provider template。
 
-Plugin 不配置 Agent，不提供另一套 Sandbox 命令或资源系统。Agent 的 Skill、MCP server、原生 Plugin 和配置文件仍直接传给 Agent factory；Sandbox image 和命令仍写在 `sandbox` 声明中。
+Agent 的 Skill、MCP server 和原生 Plugin 仍传给 Agent factory。Docker image、E2B template 或 Vercel snapshot 由 Experiment、评估组或评估用例的 `sandbox` 字段选择。
 
-## 定义多个生命周期
+## 让 Plugin 贡献统一的 SandboxLayer
 
-所有 Plugin API 都从 `niceeval/plugin` 导入：
+所有 Plugin API 从 `niceeval/plugin` 导入。`sandbox` fragment 直接返回 command-only `SandboxLayer`，里面使用和普通作者代码相同的 `.before()` / `.after()`：
 
 ```ts
 // experiments/shared/memory.ts
 import { definePlugin } from "niceeval/plugin";
+import {
+  changeFrequency,
+  sandboxLayer,
+  uploadDirectory,
+  writeText,
+} from "niceeval/sandbox";
 
 type MemoryOptions = {
   readonly model: string;
@@ -22,103 +28,125 @@ type MemoryOptions = {
 
 export const memory = definePlugin<MemoryOptions>({
   name: "acme.memory",
-  behaviorRevision: "1",
+  behaviorRevision: "2",
   instanceKey: ({ model }) => model,
+
   experiment: ({ model }) => ({
     identity: { model },
-    setup: (ctx) => ctx.progress({ message: `启动 ${model} memory service` }),
-    teardown: (ctx) => ctx.diagnostic({
-      code: "memory-service-stopped",
-      level: "warning",
-      message: `${model} memory service stopped`,
-    }),
+    setup: (context) => {
+      context.progress({ message: `启动 ${model} memory service` });
+    },
+    teardown: (context) => {
+      context.progress({ message: `停止 ${model} memory service` });
+    },
   }),
-  sandbox: ({ model }) => ({
-    identity: { model },
-    setup: (_sandbox, ctx) => ctx.progress({ message: "连接当前 Sandbox" }),
-    teardown: (_sandbox, ctx) => ctx.progress({ message: "断开当前 Sandbox" }),
-  }),
-});
 
-export const telemetry = definePlugin({
-  name: "acme.telemetry",
-  behaviorRevision: "1",
-  experiment: () => ({
-    setup: (ctx) => ctx.progress({ message: "启动 telemetry 收集" }),
-    teardown: (ctx) => ctx.progress({ message: "停止 telemetry 收集" }),
-  }),
+  sandbox: ({ model }) => sandboxLayer()
+    .before(uploadDirectory({
+      id: "memory-plugin-files",
+      source: new URL("fixtures/memory-plugin/", import.meta.url),
+      to: ".agents/plugins/memory",
+      changeFrequency: changeFrequency.rare,
+    }))
+    .before(writeText({
+      id: "memory-plugin-config",
+      path: ".memory/config.json",
+      text: JSON.stringify({ model }),
+      changeFrequency: changeFrequency.frequent,
+    })),
 });
 ```
 
-`name` 命名 Plugin family。`instanceKey(options)` 区分同一 family 的不同配置。实现语义改变时提高 `behaviorRevision`，让旧结果不再被精确沿用。
+固定文件、目录、Git checkout 和 shell 安装都走 `SandboxAction`。它们会参与统一排序、指纹和 Docker 准备前缀缓存。Plugin 不需要自己再维护一份 upload 或 clone 协议。
 
-无参数 family 可以省略 `instanceKey`，其固定实例键是 `"default"`。每个 fragment 可以声明 `identity`，并且必须至少提供 `setup` 或 `teardown`。
+需要运行中分支时，可以在返回的 layer 中写 `.before(async (sandbox, context) => ...)`。这种 callback 每次真实执行，并截断后续可共享前缀。成功取得资源后用 `context.onCleanup()` 登记释放。
 
-## 在一个位置组合多个 Plugin
+<Warning>
+  `sandbox` fragment 必须返回 `sandboxLayer()` 产生的 command-only layer。返回 `dockerSandbox()`、`e2bSandbox()` 或其它 template-bearing layer 会在定义加载时失败。Plugin 不能替换调用方选择的 Provider。
+</Warning>
 
-`plugins` 始终接收数组：
+## 固定 Git checkout
+
+可以克隆的 Plugin 源码使用 `gitCheckout()`，并填写完整 commit object ID。移动 branch 或 tag 不能作为缓存身份：
 
 ```ts
-import { defineExperiment } from "niceeval";
-import { codexAgent } from "niceeval/adapter";
-import { dockerSandbox } from "niceeval/sandbox";
-import { memory, telemetry } from "./shared/memory.ts";
+import {
+  gitCheckout,
+  sandboxLayer,
+} from "niceeval/sandbox";
 
+const pluginSource = sandboxLayer().before(gitCheckout({
+  id: "memory-plugin-source",
+  repository: "https://github.com/acme/memory-plugin.git",
+  ref: "0123456789abcdef0123456789abcdef01234567",
+  to: ".agents/plugins/memory",
+}));
+```
+
+本地目录使用 `uploadDirectory()`，其 `source` 必须是以当前定义模块为基准的 `file:` URL。目录内容、权限和 symlink manifest 自动进入指纹；改一个文件只会失效包含它的 action 及后续前缀。
+
+## 挂到 Experiment、评估组或评估用例
+
+简单场景可以继续传数组：
+
+```ts
 export default defineExperiment({
-  agent: codexAgent({
-    skills: [{ kind: "local", path: ".agents/skills/memory" }],
-  }),
-  model: "gpt-5.6-luna",
-  plugins: [
-    memory({ model: "gpt-5.6-luna" }),
-    telemetry(),
-  ],
+  agent: codexAgent(),
+  plugins: [memory({ model: "gpt-5.6-luna" })],
   sandbox: dockerSandbox({
-    source: { type: "image", image: "acme/codex-memory:1" },
+    source: { type: "image", image: "niceeval/codex:0.144.1-r1" },
   }),
 });
 ```
 
-Setup 按数组顺序运行，teardown 按逆序运行。一个 Plugin 的 setup 失败时，NiceEval 仍会调用该 occurrence 的 teardown，并继续执行其它终结 callback。
+多个共享组合使用不可变的 `PluginStack`。`.use()` 追加一个 attachment，`.concat()` 合并两个 Stack；原值不变，可以安全分叉：
 
-## 选择生命周期范围
+```ts
+import { pluginStack } from "niceeval/plugin";
 
-一个 family 可以声明四种 fragment：
+const observability = pluginStack().use(telemetry());
+const withMemory = observability.use(memory({ model: "gpt-5.6-luna" }));
+
+export default defineExperiment({
+  agent: codexAgent(),
+  plugins: withMemory,
+  sandbox: dockerSandbox({
+    source: { type: "image", image: "niceeval/codex:0.144.1-r1" },
+  }),
+});
+```
+
+类型会跟随 Plugin 支持的 owner 收窄。只支持 Eval 的 Plugin 不能放进 Experiment Stack；没有共同 owner 的两个 Stack 不能合并。空 `pluginStack()` 与省略 `plugins` 具有相同身份。
+
+Stack 不自动去重。同一 owner 重复出现相同 `(name, instanceKey)` 时，link 会在创建 Sandbox 前报错。
+
+## 宿主生命周期范围
+
+Plugin 可以声明三种宿主 fragment：
 
 | fragment | 运行次数 |
 | --- | --- |
-| `experiment(options)` | 每个有实际工作要运行的实验一次 |
-| `group(options)` | 每个实验与评估组组合一次，替换 Sandbox 时不重复 |
-| `sandbox(options)` | 每台实际物理 Sandbox 一次，替换后重新运行 |
+| `experiment(options)` | 每个有实际工作运行的 Experiment 一次 |
+| `group(options)` | 每个 Experiment 与评估组组合一次 |
 | `eval(options)` | 每条实际运行的 Attempt 一次 |
 
-调用方只在 `defineExperiment`、`defineEvalGroup` 或 `defineEval` 的 `plugins` 数组挂载 occurrence。若 occurrence 同时声明 `sandbox` fragment，NiceEval 会自动把它用于该 owner 对应的物理 Sandbox；`SandboxLayer` 没有额外的 Plugin 挂载语法。
+每个宿主 fragment 可以包含 `identity`，以及至少一个 `setup` / `teardown`。setup 按最终 attachment 顺序运行，teardown 逆序运行。完整沿用的 Attempt 不激活这些生命周期。
 
-```ts
-export default defineEval({
-  plugins: [fixtureLifecycle(), diagnosticsLifecycle()],
-  async test(t) {
-    const turn = await t.send("完成任务");
-    await turn.succeeded().orStop();
-  },
-});
-```
+`sandbox(options)` 不是第四种宿主生命周期。它只定义一次 command-only layer，再由 NiceEval 投影到 attachment 所在 owner 的 Sandbox 计划。用户不需要在 `.before()` 里再传 Plugin，也不存在 `SandboxLayer.plugins()`。
 
-完整沿用的 Attempt 不运行 Plugin lifecycle。部分沿用时，只有实际运行的范围会激活对应 lifecycle。
+修改宿主 callback 行为时提高 `behaviorRevision`。Sandbox action 的变化由 action 自动指纹负责；自定义 Action 只在自动观察不到协议变化时补 `cache.fingerprint`。
 
-## 先检查计划
-
-先确认 Plugin identity 和实际需要运行的 Attempt：
+## 运行前检查
 
 ```bash
-npx niceeval exp codex-memory --dry
-npx niceeval exp codex-memory memory/smoke
+pnpm exec niceeval debug compare/codex memory/smoke
+pnpm exec niceeval debug compare/codex memory/smoke --json
 ```
 
-修改 setup 或 teardown 的行为时，同时提高 `behaviorRevision`。只改 callback 函数体但不改身份，NiceEval 无法知道旧结果对应的行为已经变化。
+`debug` 会把 Plugin 投影的 action 与 Experiment、评估组、评估用例、Agent action 放进同一棵计划。Human 框显示 owner、执行序号、`changeFrequency`、依赖和缓存资格；JSON 保留相同结构。
 
 ## 接着看
 
-- [实验与生命周期](/zh/tutorials/write-experiment)——配置 Agent、Provider 与实验级生命周期。
-- [评估组](/zh/tutorials/eval-groups)——让同组 Attempt 串行共享一台 Sandbox。
-- [重跑与沿用](/zh/tutorials/rerun-and-cache)——身份变化怎样影响已有结果。
+- [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)——Action、频率、缓存与收尾。
+- [评估组](/zh/tutorials/eval-groups)——评估组 action 怎样进入同一顺序。
+- [运行前检查 Sandbox 计划](/zh/tutorials/debug-lifecycle-plan)——查看 Plugin 投影后的精确计划。

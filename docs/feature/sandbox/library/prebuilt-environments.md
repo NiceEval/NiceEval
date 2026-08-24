@@ -29,7 +29,7 @@ export const py39Astropy = () =>
 
 ## 为什么没有跨 provider 构建 DSL
 
-三者的构建上下文、凭据、发布、过期和销毁语义不同。把它们压成一个 `snapshot("name")` 会隐藏真实的运维边界;项目应保留 provider 原生的构建脚本,把构建结果 ID / 名字写进 factory 参数。layer 的 `prepare()` 只处理必须按 experiment / eval 变化的小配置、真实检查和 fail-fast 预检(分层判据见 [沙箱预置放哪](../library.md#沙箱预置放哪))。
+三者的构建上下文、凭据、发布、过期和销毁语义不同。把它们压成一个 `snapshot("name")` 会隐藏真实的运维边界；项目应保留 Provider 原生构建脚本，把构建结果 ID 或名字写进 factory 参数。layer 的 `before()` 只处理必须按 Experiment 或 Eval 变化的小配置、真实检查和 fail-fast 预检，分层判据见 [沙箱预置放哪](../library.md#沙箱预置放哪)。
 
 ## 用户怎么写自己的预制实例
 
@@ -40,7 +40,7 @@ export const py39Astropy = () =>
 3. **重建只在依赖变化时发生**:改了要装的 CLI 版本、系统包或模型 cache 才跑构建脚本;日常 `niceeval exp` 直接消费既有构建结果。
 4. **升级 agent CLI 版本 = 构建一个新 tag**,experiment 改引用即可、回滚可逆;不要原地重写同一个 tag——那会让"同一配置"在不同时间指向不同运行内容,跑分失去可比性。
 
-进不进预制实例的判据只有一条:**这内容是不是所有 attempt 都相同、且与本次实验的参数无关。** 按实验变化的内容(装不装某二进制、开不开预热)进 Experiment layer 的 [`prepare()`](../layers.md);按 eval 变化的任务 Fixture 进 `test(t)`。
+进不进预制实例的判据只有一条：这内容是不是所有 Attempt 都相同、且与本次实验参数无关。按实验变化的内容进入 Experiment layer 的 [`before()`](../layers.md)；按 Eval 变化的任务 Fixture 进入 Eval before 或 `test(t)`。
 
 ### Docker:Dockerfile 派生
 
@@ -197,7 +197,7 @@ Adapter 不自动替 experiment 选择 image / template / snapshot。同一个 C
 - **factory 上有一个消费字段**,语义是"从这个构建结果起实例"——对应 Docker 的 `image`、E2B 的 `template`、Vercel 的 `snapshotId`。字段名用该服务的原生词汇,不翻译成统一术语。
 - **构建留在服务原生工具**:不为新 provider 发明 niceeval 构建命令,也不包一层构建 API;项目保留原生构建脚本,spec 只引用构建结果。
 - **共享与过期语义如实文档化**:构建结果是账号私有还是可公开、会不会过期、跨 team 引用要什么 namespace,写进该 provider 的接入文档,不许诺服务给不了的可见性。
-- **服务没有可发布构建结果原语时不伪造**:factory 不加假字段;该 provider 的用户用 layer 的 [`prepare()`](../layers.md)做运行时安装,或用下面的运行时 checkpoint 缓存安装结果。
+- **服务没有可发布构建结果原语时不伪造**：factory 不加假字段；该 Provider 的用户用 layer 的 [`before()`](../layers.md)做运行时安装，或用下面的 runtime checkpoint 保存实例私有状态。
 
 ## 运行时 checkpoint:`createCheckpoint` / `restoreCheckpoint`
 

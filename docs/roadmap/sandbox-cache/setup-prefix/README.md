@@ -6,27 +6,31 @@ NiceEval 把 Experiment、Eval Group、Eval 与 Agent 的 before action 编译�
 
 ```text
 BuildKey ready
-  → compile physical-instance / attempt occurrences
+  → compile attempt occurrences
   → link dependencies and schedule ready actions by frequency
-  → longest verified SetupPrefix lookup
-  → restore hit or replay remaining recipes
-  → optional prefix promotion
-  → private clone
+  → ordinary Docker: longest verified SetupPrefix lookup
+  → restore exact-image hit or replay remaining steps
+  → commit and verify every eligible prefix
+  → private writable container
   → Agent/test → lifecycle teardown
 ```
 
-`changeFrequency` 不是缓存开关，而是 before 的语义排序字段。它接受有限非负数，省略时为 `normal = 100`；数值越小越早，`rare`、`normal` 与 `frequent` 只是数字常量。改值可以改变执行顺序、前缀祖先链与 fingerprint。它同时影响 promotion、缓存工作排队、保留和回收。
+`changeFrequency` 不是缓存开关，而是 before 的语义排序字段。它接受有限非负数，`-0` 按 `0` 处理，允许小数，省略时为 `normal = 100`。数值越小越早，`rare`、`normal` 与 `frequent` 只是数字常量。改值可以改变执行顺序、前缀祖先链与 fingerprint，但不充当 retention 或 GC policy。
+
+`verified` 只证明声明身份、Docker image 完整性与恢复后的写入隔离。`defineSandboxAction()` 同 Dockerfile `RUN` 一样，是作者对“只依赖已声明输入，只改变可捕获 Sandbox”的确定性承诺。NiceEval 会拒绝已知 secret 与 credential handle，但不声称能自动证明任意 shell、网络或时间读取的语义。
+
+这个方向的 persistent 实现只支持普通本地单容器 Docker，且全部可变状态必须位于 outer writable rootfs。Docker Compose、bind/tmpfs、E2B、Vercel、custom Provider 与 profile-bound DinD 都报告 `Unsupported`并真实执行 action。Profile 不定义 `ArtifactSet V2`，也不建立 host lease/index。
 
 ## 两类准备节点
 
 | 内容 | 执行语义 |
 |---|---|
-| `.before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` | 每个 planning 编译出的 occurrence 都要满足；hit restore，miss replay，结果可以 promotion |
+| `.before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` | 每个 planning 编译出的 occurrence 都要满足；hit restore，miss replay，普通 Docker 可发布 verified exact image |
 | `.before(customFamily(input, options))` | 与内置 Action 同路；封闭 steps 形成一个原子前缀节点 |
 | `.before(callback)` / `.before(defineSandboxCommand(...))` | 始终真实执行，显示 opaque，并截断后续共享捕获；成功取得资源后用 `context.onCleanup()` 登记释放 |
 | `.after(action)` | occurrence 无条件、幂等 finally；入口登记、始终真实执行，按实际登记栈逆序 |
 
-所有 owner 使用同一种 before/after API。owner 负责 identity 与归因，不形成排序墙。公开 API 不暴露 scope；link 与 physical planning 依据 typed inputs 和 sharing cohort 编译 physical-instance 或 attempt occurrence，再在每个 occurrence 内按依赖和数值排队。缓存命中只把 standalone before invocation 替换为 verified state restore，不删除 satisfaction fact。
+所有 owner 使用同一种 before/after API。owner 负责 identity 与归因，不形成排序墙。公开 API 不暴露 scope；link 与 physical planning 依据 typed inputs 为每个 action 编译 attempt occurrence，再在每个 occurrence 内按依赖和数值排队。缓存命中只把 standalone before invocation 替换为 verified state restore，不删除 satisfaction fact。
 
 普通 fixture 配置和无密钥 `.env` 模板可以进入可缓存 before action；secret、租约、checkpoint、外部会话和实例 locator 只能进入 callback 或 after，不能进入共享 prefix、key、manifest 或日志。opaque before 之后的 action 仍执行，但因 `opaque-ancestor` 不再 capture。
 
@@ -35,7 +39,7 @@ BuildKey ready
 ## 入口
 
 - [Library](library.md) —— 统一 before/after、条件 cleanup、owner 包裹、occurrence 编译与频率。
-- [Architecture](architecture.md) —— PrefixKey、Provider 捕获、DinD 与缓存库存。
+- [Architecture](architecture.md) —— PrefixKey、Provider 捕获、DinD 与支持边界。
 - [Lifecycle](lifecycle.md) —— 线性化、最长前缀、激活、排队与失败。
 - [固定 DinD runtime](use-case/固定DinD运行时.md) —— runtime、候选与 Adapter `.env` 的分层示例。
 - [固定 Fixture 与隐藏判据](use-case/固定Fixture与隐藏判据.md) —— 本地上传、远端 checkout 与 Agent 后可见内容。

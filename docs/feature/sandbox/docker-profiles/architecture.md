@@ -304,7 +304,7 @@ attested daemon target platform
   -> eval container create
 ```
 
-不能在 `materialize` 阶段看到 Docker access 后临时换 daemon。managed rootless DinD、规范化 resources、
+不能在 Sandbox creation 阶段看到 Docker access 后临时换 daemon。managed rootless DinD、规范化 resources、
 target platform与 semantic policy revision进入 ProviderPlan、CaseKey和 Attempt fingerprint。
 Dockerfile BuildKey仍只认会改变 image bytes的 context、Dockerfile、args、platform与 base image；
 CPU/memory/tmpfs不误入 BuildKey。
@@ -312,14 +312,14 @@ CPU/memory/tmpfs不误入 BuildKey。
 语义 identity之外另有不公开的物理执行域：
 
 ```ts
-interface DockerMaterializationDomain {
+interface DockerExecutionDomain {
   readonly profileId: string;
   readonly daemonGeneration: string;
 }
 ```
 
 BuildKey描述“应构建哪些 bytes”，build realization按
-`(DockerMaterializationDomain, BuildKey)`隔离。相同 BuildKey在两个 daemon各自保证本地 image存在，
+`(DockerExecutionDomain, BuildKey)`隔离。相同 BuildKey在两个 daemon各自保证本地 image存在，
 不能把 daemon A的完成事实交给 daemon B。Sandbox复用池同样把 domain加入 CaseKey之外的物理 pool
 key，禁止跨 profile或 generation复用 container。
 
@@ -330,6 +330,19 @@ Docker cache domain只存在于当前进程的 build coordinator、Sandbox pool�
 profile选择名、stable ID、endpoint locator、transport/backend UID、filesystem路径、aggregate容量、daemon ID和
 generation不进入可分享 identity。daemon ID/generation属于连接审计；stable ID属于 detached资源
 路由；semantic policy revision才表示可比较的执行语义。
+
+## Setup Prefix 支持边界
+
+普通本地单容器 `dockerSandbox()` 的 exact-image 缓存由 [Sandbox Architecture](../architecture.md#docker-支持边界) 定义。它要求 action 的全部可变状态都在 outer writable rootfs。Compose、bind、tmpfs 与 host socket 不满足该边界，Runner 真实 replay action。
+
+raw privileged 与 managed rootless Profile 把 `/var/lib/docker` 放在 control-owned project-quota slot。单独 commit outer image 会丢失 inner Docker state。一个另行保存 seed/copy 的设计无法在这份契约中证明两项不变量：
+
+- 所有 seed、copy 与 restore 都受同一 project-quota 边界限制，不存在 slot 外绕过路径；
+- sparse backing 已承诺的逻辑容量不超卖同一批物理 block。
+
+因此 profile binding 一律把 SetupPrefix capability 固定为 `Unsupported`。Runner 不 lookup、capture 或 restore `ArtifactSet V2`，不创建 host artifact lease/index，也不把缺少 data-root 的 outer image 当成 hit。准备 DAG 仍照常运行，每个 eligible action 都真实执行。
+
+该判定在 profile 绑定后、任何 cache lookup 前完成。如果绑定 profile 的计划反而声明 `Persistent`，planning 将其视为 capability 矛盾并 fail closed，不回退到默认 Docker endpoint。
 
 ## 单容器资源
 

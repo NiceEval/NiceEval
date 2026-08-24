@@ -174,7 +174,7 @@ export default defineEval({
     { name: "experiment.setup", what: "起隧道、起共享服务", times: "整场一次" },
     { name: "sandbox.queue", what: "等一个并发位", times: "每 Attempt" },
     { name: "sandbox.create", what: "Provider 起 Sandbox", times: "每个 Sandbox 一次" },
-    { name: "sandbox.setup", what: "装工具链、clone 公共仓库", times: "每个 Sandbox 一次" },
+    { name: "sandbox.prepare", what: "恢复缓存前缀、执行有序 before action", times: "按 occurrence" },
     { name: "workspace.baseline", what: "记下改动基线", times: "每 Attempt" },
     { name: "eval.setup", what: "这条评估用例的 Fixture", times: "每 Attempt" },
     { name: "agent.setup", what: "装 Agent CLI、写主配置", times: "每 Attempt" },
@@ -182,7 +182,7 @@ export default defineEval({
     { name: "workspace.diff", what: "折出 Agent 造成的文件改动", times: "每 Attempt" },
     { name: "assertions.evaluate", what: "断言收口与判定，含 Judge 调用", times: "每 Attempt" },
     { name: "eval.teardown", what: "收尾链第一段，Sandbox 还活着", times: "每 Attempt" },
-    { name: "sandbox.teardown", what: "Agent 收尾之后，最后销毁 Sandbox", times: "每个 Sandbox 一次" },
+    { name: "sandbox.teardown", what: "反向执行 cleanup / after，最后销毁 Sandbox", times: "按 occurrence" },
   ]}
 />
 

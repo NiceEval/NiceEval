@@ -144,7 +144,7 @@ pattern 是 gitignore 风格，以 workdir 根为基准：不带 `/` 的匹配�
 
 单个 `t.send()` 窗口最多扫描 100,000 个路径和 256 MiB 去重文本。扫描结果中，File Changes 最多保留 10,000 条 change；候选更多时，它保存确定性前缀，并用 `collection-cap-reached` 把 collection 标为 `partial`。只有超过扫描上限才会报执行错误，不会伪装成「一个文件都没改」让文件断言假通过。异常大的 workspace 应用 `diff.include` 或 `diff.ignore` 收窄。
 
-生命周期（`.setup()` / `.teardown()`）挂在 experiment `sandbox` 字段的 spec 上，用来做"按实验变化的环境准备"——装某个实验专属的二进制、预热、跨 attempt 载入和回存状态。它写下的文件属于环境，不会被算进 agent 产出的 diff。写法和规则见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
+Experiment、评估组、评估用例和 Sandbox Agent 都可以贡献 command-only `.before()` action。Agent 自己写 `.env` 时把它放在 Agent 的 `sandbox` 字段，并给较大的 `changeFrequency`，让固定工具与 Fixture 排在前面。写法和缓存规则见 [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)。
 
 ## 自定义 sandbox agent
 

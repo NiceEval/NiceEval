@@ -66,6 +66,7 @@ import type { DockerSandbox } from "./docker.ts";
 import type { E2BSandboxLifetime } from "./e2b.ts";
 import {
   acquireDockerProfileReservation,
+  acquireDockerProfileReservationEffect,
   createDockerProfileBuild,
   createDockerProfileContainer,
   createDockerProfileLease,
@@ -76,6 +77,15 @@ import {
 } from "./docker-profile/runtime.ts";
 
 export type SandboxRuntimeDeadline = SandboxRuntimeDeadlineDeclaration;
+
+/** Stable public reason for an Attempt that has reached a provider admission queue. */
+export type SandboxRuntimeQueueReason = "provider-capacity";
+
+export interface SandboxRuntimeAdmission {
+  readonly queued: (reason: SandboxRuntimeQueueReason) => Effect.Effect<void>;
+  readonly granted: Effect.Effect<void>;
+  readonly slot?: ProvisionSlot;
+}
 
 /** Scope 退出时的唯一释放协议；不以 optional callback 或 boolean 表达所有权。 */
 export type SandboxRuntimeRelease =
@@ -97,6 +107,10 @@ export interface SandboxRuntimeMaterializeInput {
   readonly provisionSlot:
     | { readonly _tag: "Detached" }
     | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
+  /** Runner projection of provider admission. Detached physical owners remain valid. */
+  readonly admission:
+    | { readonly _tag: "Detached" }
+    | { readonly _tag: "Bound"; readonly value: SandboxRuntimeAdmission };
   readonly services: SandboxRuntimeServices;
   /** Internal runner input; only Dockerfile provider consumes the staged cache opt-in. */
   readonly agent?: SandboxAgent;
@@ -127,6 +141,7 @@ export interface SandboxRuntimeCapabilities {
   readonly admission: "Shared" | "Exclusive";
   readonly retention: SandboxProviderCapabilities["retention"];
   readonly reuse: SandboxProviderCapabilities["reuse"];
+  readonly setupPrefix: SandboxProviderCapabilities["setupPrefix"];
   readonly sessionLimit: SandboxProviderCapabilities["sessionLimit"];
 }
 
@@ -206,50 +221,48 @@ function configuredLifetime(
   return value._tag === "Configured" ? value.milliseconds : undefined;
 }
 
-async function managedContainerSession(
+function managedContainerSession(
   binding: DockerProfileRuntimeBinding,
   resources: Readonly<import("./layer.ts").DockerSandboxResources>,
-  signal?: AbortSignal,
-): Promise<{
+  context: SandboxRuntimeMaterializeContext,
+): Effect.Effect<{
   readonly lease: DockerProfileLease;
   readonly reservation: import("./docker-profile/runtime.ts").DockerProfileReservation;
   readonly labels: Readonly<Record<string, string>>;
   readonly finish: () => Promise<void>;
-}> {
-  const lease = await createDockerProfileLease(binding);
-  try {
-    const reservation = await acquireDockerProfileReservation(lease, "container", {
+}, Error, Scope.Scope> {
+  return Effect.gen(function* () {
+    const lease = yield* Effect.acquireRelease(
+      providerBoundaryEffect(() => createDockerProfileLease(binding)),
+      (owned) => providerBoundaryEffect(() => owned.stopHeartbeat()).pipe(Effect.orDie),
+    );
+    const owner = yield* acquireDockerProfileReservationEffect(lease, "container", {
       cpus: resources.cpus ?? 0,
       memoryBytes: resources.memoryBytes ?? 0,
       pids: resources.pidsLimit ?? 0,
       ephemeralDiskBytes: resources.dockerDataBytes ?? 0,
       containers: 1,
-    }, signal);
+    }, dockerProfileAdmission(context), context.signal);
+    const reservation = owner.reservation;
     const labels = Object.freeze({
       "niceeval.profile-id": binding.profile.profileId,
       "niceeval.invocation-id": lease.invocationId,
       "niceeval.reservation-id": reservation.reservationId,
       "niceeval.provision-token": reservation.provisionToken,
     });
-    let finished = false;
     return {
       lease,
       reservation,
       labels,
       finish: async () => {
-        if (finished) return;
-        finished = true;
-        try {
-          await releaseDockerProfileReservation(lease, reservation.reservationId, reservation);
-        } finally {
-          await lease.stopHeartbeat();
-        }
+        // Reservation release must complete while the lease heartbeat is still
+        // valid. Scope finalizers share these idempotent owners and retry in the
+        // same reservation-before-lease order when normal after-stop fails.
+        await owner.release();
+        await lease.stopHeartbeat();
       },
     };
-  } catch (error) {
-    await lease.stopHeartbeat().catch(() => undefined);
-    throw error;
-  }
+  });
 }
 
 /**
@@ -285,6 +298,25 @@ function boundProvisionSlot(context: SandboxRuntimeMaterializeContext): Provisio
   return context.provisionSlot._tag === "Bound" ? context.provisionSlot.value : undefined;
 }
 
+function boundAdmission(context: SandboxRuntimeMaterializeContext): SandboxRuntimeAdmission | undefined {
+  return context.admission._tag === "Bound" ? context.admission.value : undefined;
+}
+
+function admitImmediately(context: SandboxRuntimeMaterializeContext): Effect.Effect<void> {
+  return boundAdmission(context)?.granted ?? Effect.void;
+}
+
+function dockerProfileAdmission(
+  context: SandboxRuntimeMaterializeContext,
+): import("./docker-profile/runtime.ts").DockerProfileReservationAdmission {
+  const admission = boundAdmission(context);
+  return {
+    queued: admission?.queued("provider-capacity") ?? Effect.void,
+    granted: admission?.granted ?? Effect.void,
+    ...(admission?.slot === undefined ? {} : { slot: admission.slot }),
+  };
+}
+
 function wrapSingleSandbox(
   backend: SandboxProviderBackend,
   context: SandboxRuntimeMaterializeContext,
@@ -296,8 +328,12 @@ function wrapSingleSandbox(
   let stopped = false;
   let stopping: Promise<void> | undefined;
   const group: SandboxResourceGroup = {
-    primary: { sandboxId: sandbox.sandboxId, provider },
-    resources: { kind: "single", provider, sandboxId: sandbox.sandboxId },
+    get primary() {
+      return { sandboxId: backend.sandboxId, provider };
+    },
+    get resources() {
+      return { kind: "single", provider, sandboxId: backend.sandboxId };
+    },
     async stop() {
       if (stopped) return;
       if (stopping !== undefined) return stopping;
@@ -341,7 +377,16 @@ function normalizeMaterialized(
   let stopped = false;
   let stopping: Promise<void> | undefined;
   const group: SandboxResourceGroup = {
-    ...materialized.group,
+    get primary() {
+      return {
+        ...materialized.group.primary,
+        sandboxId: sandbox.sandboxId,
+      };
+    },
+    get resources() {
+      return materialized.group.resources;
+    },
+    ...(materialized.group.entry === undefined ? {} : { entry: materialized.group.entry }),
     async stop() {
       if (stopped) return;
       if (stopping !== undefined) return stopping;
@@ -378,7 +423,7 @@ export function materializeDockerComposeProviderPlan(
   const materialize = context.services._tag === "Live"
     ? materializeDockerComposeProviderCase
     : context.services.materializeCompose;
-  return materializationEffect(context, materialize({
+  return materializationEffect(context, Effect.zipRight(admitImmediately(context), materialize({
     evalId: context.evalId,
     profile: context.evalId,
     mainService: plan.workspaceService,
@@ -399,13 +444,13 @@ export function materializeDockerComposeProviderPlan(
     feedback: context.feedback,
     provisionSlot: boundProvisionSlot(context),
     lifetimeMs: configuredLifetime(plan.lifetime),
-  }).pipe(Effect.map((materialized) => normalizeMaterialized(materialized, context))));
+  }).pipe(Effect.map((materialized) => normalizeMaterialized(materialized, context)))));
 }
 
 export function materializeDockerfileProviderPlan(
   plan: DockerfileProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   return Option.match(Option.fromNullable(context.buildLocators.get(plan.buildKey)), {
     onNone: () => Effect.fail(runtimeFailure(
       context,
@@ -418,17 +463,19 @@ export function materializeDockerfileProviderPlan(
           "sandbox.materialization-failed",
           new TypeError(`Dockerfile build locator for ${plan.buildKey} must be a string.`),
         ))
-      : Effect.flatMap(
-        resolveDockerfileAgentImage(plan, context, locator).pipe(
-          Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
-        ),
-        (resolved) => materializationEffect(context, Effect.gen(function* () {
+      : Effect.zipRight(
+        plan.profileBinding === undefined ? admitImmediately(context) : Effect.void,
+        Effect.flatMap(
+          resolveDockerfileAgentImage(plan, context, locator).pipe(
+            Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
+          ),
+          (resolved) => materializationEffect(context, Effect.gen(function* () {
             const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
               () => import("./docker.ts"),
             );
             const managed = plan.profileBinding === undefined
               ? undefined
-              : yield* providerBoundaryEffect(() => managedContainerSession(plan.profileBinding!, plan.resources, context.signal));
+              : yield* managedContainerSession(plan.profileBinding!, plan.resources, context);
             const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
             return yield* Effect.gen(function* () {
               const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
@@ -480,6 +527,7 @@ export function materializeDockerfileProviderPlan(
                 : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore)),
             );
           })),
+        ),
       ),
   });
 }
@@ -561,7 +609,7 @@ function buildDockerfileAgentImage(
 }
 
 export interface DockerfileAgentImageProvisionSandbox {
-  readonly operations: import("./types.ts").SandboxOperations;
+  readonly operations: import("./types.ts").SandboxOperations & Pick<import("./types.ts").Sandbox, "sandboxId">;
   readonly sandboxId: string;
   stop(): Promise<void>;
 }
@@ -628,14 +676,15 @@ export function buildDockerfileAgentImageWithServices(
 export function materializeDockerImageProviderPlan(
   plan: DockerImageProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   return materializationEffect(context, Effect.gen(function* () {
+    if (plan.profileBinding === undefined) yield* admitImmediately(context);
     const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
       () => import("./docker.ts"),
     );
     const managed = plan.profileBinding === undefined
       ? undefined
-      : yield* providerBoundaryEffect(() => managedContainerSession(plan.profileBinding!, plan.resources, context.signal));
+      : yield* managedContainerSession(plan.profileBinding!, plan.resources, context);
     const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
     return yield* Effect.gen(function* () {
       const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
@@ -694,6 +743,7 @@ export function materializeE2BProviderPlan(
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
   return materializationEffect(context, Effect.gen(function* () {
+    yield* admitImmediately(context);
     const lifetime = e2bLifetimeRequest(plan.lifetime, context.deadline);
     const { E2BSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
       () => import("./e2b.ts"),
@@ -724,6 +774,7 @@ export function materializeVercelProviderPlan(
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
   return materializationEffect(context, Effect.gen(function* () {
+    yield* admitImmediately(context);
     const { VercelSandbox, classifyProvisionError } = yield* providerBoundaryEffect(
       () => import("./vercel.ts"),
     );
@@ -750,7 +801,7 @@ export function materializeCustomProviderPlan(
   create: CustomProviderSandboxOptions["create"],
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
   return Effect.flatMap(
-    create({ deadline: context.deadline, runtime: "node24", feedback: context.feedback }).pipe(
+    Effect.zipRight(admitImmediately(context), create({ deadline: context.deadline, runtime: "node24", feedback: context.feedback })).pipe(
       Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
     ),
     (sandbox) => Effect.try({
@@ -772,12 +823,12 @@ export function materializeCustomCaseProviderPlan(
   context: SandboxRuntimeMaterializeContext,
   materialize: CustomCaseSandboxOptions["materialize"],
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return Effect.flatMap(materialize({
+  return Effect.flatMap(Effect.zipRight(admitImmediately(context), materialize({
     evalId: context.evalId,
     profile: context.evalId,
     signal: context.signal,
     buildLocators: context.buildLocators,
-  }).pipe(
+  })).pipe(
     Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
   ), (rawResult) => Effect.try({
     try: () => {
@@ -1222,8 +1273,8 @@ function verifyMaterializedIdentity(
   return Effect.void;
 }
 
-/** 完整 plan 的唯一物化入口；Scope 退出恒执行声明的 release，不允许裸资源逃逸。 */
-export function materializeSandboxRunPlan(
+/** Base acquisition only. Scope exit still owns release; author/plugin preparation is a separate boundary. */
+export function acquireSandboxRunPlan(
   input: SandboxRuntimeMaterializeInput,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   const context: SandboxRuntimeMaterializeContext = {
@@ -1235,26 +1286,63 @@ export function materializeSandboxRunPlan(
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
     provisionSlot: input.provisionSlot,
+    admission: input.admission,
     services: input.services,
     ...(input.agent !== undefined ? { agent: input.agent } : {}),
     ...(input.runTiming !== undefined ? { runTiming: input.runTiming } : {}),
   };
   return Effect.zipRight(
     verifyBuildLocators(context),
-    Effect.acquireRelease(
-      Effect.flatMap(providerBinding(input.plan), (binding) => binding.materialize(context)),
-      (owned) => releaseOwned(input, owned),
-    ).pipe(
-      Effect.tap((owned) => verifyMaterializedIdentity(context, owned)),
-      Effect.tap((owned) => runSetupHooks(
-        input.plan.pair.setupHooks,
-        owned.sandbox,
-        input.hookContext,
-      ).pipe(Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)))),
-      Effect.tap((owned) => runSandboxPluginSetups(input, owned).pipe(
-        Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
-      )),
-    ),
+    Effect.flatMap(providerBinding(input.plan), (binding) => {
+      const acquire = binding.materialize(context);
+      const release = (owned: MaterializedSandboxCase) => releaseOwned(input, owned);
+      // Profile admission registers its reservation owner before queueing. Its
+      // queue/reacquire segment must remain interruptible so an Attempt deadline
+      // can release a granted reservation while scheduler permits are unavailable.
+      // Other providers keep the conservative uninterruptible acquisition gate.
+      let acquired: MaterializedSandboxCase | undefined;
+      const owned = binding.interruptibleAcquisition
+        ? Effect.acquireReleaseInterruptible(
+            acquire.pipe(Effect.tap((value) => Effect.sync(() => { acquired = value; }))),
+            () => acquired === undefined ? Effect.void : release(acquired),
+          )
+        : Effect.acquireRelease(acquire, release);
+      return owned.pipe(Effect.tap((value) => verifyMaterializedIdentity(context, value)));
+    }),
+  );
+}
+
+/** Legacy author/plugin lifecycle is an opaque preparation barrier outside provider admission. */
+export function prepareMaterializedSandboxRunPlan(
+  input: SandboxRuntimeMaterializeInput,
+  owned: MaterializedSandboxCase,
+): Effect.Effect<void, SandboxRuntimeMaterializationError> {
+  const context: SandboxRuntimeMaterializeContext = {
+    plan: input.plan,
+    evalId: input.evalId,
+    deadline: input.deadline,
+    feedback: input.feedback,
+    signal: input.signal,
+    hookContext: input.hookContext,
+    buildLocators: input.buildLocators,
+    provisionSlot: input.provisionSlot,
+    admission: input.admission,
+    services: input.services,
+    ...(input.agent !== undefined ? { agent: input.agent } : {}),
+    ...(input.runTiming !== undefined ? { runTiming: input.runTiming } : {}),
+  };
+  return runSetupHooks(input.plan.pair.setupHooks, owned.sandbox, input.hookContext).pipe(
+    Effect.zipRight(runSandboxPluginSetups(input, owned)),
+    Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
+  );
+}
+
+/** Compatibility entry for physical-instance owners that still acquire and prepare as one Effect. */
+export function materializeSandboxRunPlan(
+  input: SandboxRuntimeMaterializeInput,
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
+  return acquireSandboxRunPlan(input).pipe(
+    Effect.tap((owned) => prepareMaterializedSandboxRunPlan(input, owned)),
   );
 }
 
@@ -1277,6 +1365,7 @@ export function sandboxRuntimeCapabilities(
     admission: plan.providerPlan.scheduling.admission._tag,
     retention: capabilities.retention,
     reuse: capabilities.reuse,
+    setupPrefix: capabilities.setupPrefix,
     sessionLimit: capabilities.sessionLimit,
   });
 }

@@ -104,13 +104,13 @@ Only after this compatibility check passes does it run author-declared readiness
 This protocol does not promise to preserve the startup semantics of an arbitrary service image. If you need to evaluate services that depend on their own
 `ENTRYPOINT` / `CMD`, use a Compose Sandbox and declare service processes with Compose.
 
-### Prepare an Attempt runtime in setup
+### Prepare an Attempt runtime with an action
 
 The Dockerfile should bake fixed tools and project starting files. Put operations that need the inner daemon in Sandbox-level
-`setup`, not in the image `ENTRYPOINT`. This self-contained setup creates a writable workspace and verifies the inner daemon. Add `docker load`, file-copy, or project smoke-check commands here only when the corresponding archives and files are baked into your image:
+`.before()` actions, not in the image `ENTRYPOINT`. This declarative action creates a writable workspace and verifies the inner daemon. Add `docker load`, file-copy, or project smoke-check commands here only when the corresponding archives and files are baked into your image:
 
 ```ts title="lib/dind-sandbox.ts"
-import { dockerSandbox } from "niceeval/sandbox";
+import { changeFrequency, dockerSandbox, shell } from "niceeval/sandbox";
 
 export const dindSandbox = dockerSandbox({
   source: {
@@ -127,23 +127,19 @@ export const dindSandbox = dockerSandbox({
     user: "node",
     timeoutMs: 30_000,
   },
-}).setup(async (sandbox, ctx) => {
-  ctx.progress({ message: "Preparing the inner Docker runtime" });
-  const result = await sandbox.runCommand("sh", ["-lc", [
+}).before(shell({
+  id: "inner-docker-runtime",
+  command: [
     "set -eu",
     "mkdir -p /workspace",
     "docker info >/dev/null",
-  ].join("\n")], {
+  ].join("\n"),
     user: "root",
-    stream: true,
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(result.stderr || "Failed to prepare the inner Docker runtime");
-  }
-});
+  changeFrequency: changeFrequency.rare,
+}));
 ```
 
-NiceEval starts and verifies the inner daemon first, then runs this setup, and finally starts the Agent. If setup exits nonzero,
+NiceEval starts and verifies the inner daemon first, then runs this action, and finally starts the Agent. If the command exits nonzero,
 the Attempt is recorded as `errored` during `sandbox.create`; a half-prepared Sandbox is never handed to the Agent. Keep fixed content in image layers.
 For each Attempt, copy or import only state that must be written to tmpfs or the inner data root to reduce repeated installation and network drift.
 

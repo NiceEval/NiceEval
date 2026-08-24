@@ -7,6 +7,7 @@ import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
 import type { DiagnosticInput, JsonValue, ProgressUpdate } from "../shared/types.ts";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
+import type { SandboxLayer } from "../sandbox/layer.ts";
 import type { AttemptRef, MaybePromise, SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
 import type { RegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SendFailureClassifier } from "../context/send-failures.ts";
@@ -553,6 +554,8 @@ export type AgentInstaller =
 /** 在 NiceEval 管理的 Sandbox 内驱动 CLI 的 Agent。 */
 export interface SandboxAgent extends AgentBase {
   readonly kind: "sandbox";
+  /** Adapter-owned command-only contribution to the unified Sandbox action DAG. */
+  readonly sandbox?: SandboxLayer<"command-only">;
   /** Runner 在 author layers 后、setup 前按声明顺序执行。 */
   readonly ensure: readonly AgentEnsure[];
   /** 官方或第三方随 adapter 提供的安装层；仅 identity 精确匹配时可接手。 */
@@ -581,6 +584,8 @@ export interface SandboxAgentDef {
   name: string;
   /** 该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。 */
   evidenceCoverage: EvidenceCoverage;
+  /** Adapter 自有的 Sandbox action；Agent 不能选择或贡献 template。 */
+  sandbox?: SandboxLayer<"command-only">;
   /** 单条或数组都按声明顺序规范化为 Agent layer。 */
   ensure: AgentEnsure | readonly AgentEnsure[];
   /**

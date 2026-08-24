@@ -30,7 +30,7 @@ export default defineExperiment({
 
 `PluginStack` 不是 `SandboxLayer`，不提供 template、缓存、资源或 action DAG。简单调用仍可给 `plugins` 传 readonly attachment 数组；链式栈用于分叉、条件追加和共享组合，两种输入在 definition 冻结前规范化成同一条有序 attachment 序列。
 
-每个 Plugin 必须至少声明一个 `experiment`、`group` 或 `eval` host fragment。`sandbox` 只能随实际 owner 自动投影；只声明 sandbox fragment 的 Plugin 没有合法挂载点，因此在 `definePlugin()` 调用处拒绝。
+每个 Plugin 至少声明一个 fragment。`sandbox` 只能随实际 owner 自动投影，不成为第四种挂载点；只声明 sandbox fragment 的 Plugin 默认可挂到 Experiment、Eval Group 或 Eval，适合只负责 clone、上传或安装固定内容的工具链。只要同时声明 host fragment，可挂 owner 就由实际声明的 `experiment` / `group` / `eval` 集合收窄。
 
 Plugin 不按目录、Config 或注册表隐式继承，也不拥有 Sandbox template、Provider、Agent 替换、flags、labels、Assertion、Verdict 或 Report。
 

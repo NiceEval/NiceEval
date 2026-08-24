@@ -13,6 +13,7 @@ import type {
   ExperimentDefinition,
   ExperimentInput,
   SharedStateConfig,
+  SandboxCacheConfig,
   SandboxAgent,
   SandboxAgentDef,
   ScoreEvalInput,
@@ -30,6 +31,7 @@ import { t } from "./i18n/index.ts";
 import {
   customProviderSandbox,
   isSandboxLayer,
+  sandboxLayerStateOf,
   type CustomProviderSandboxOptions,
   type SandboxLayer,
 } from "./sandbox/layer.ts";
@@ -80,10 +82,23 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
   if (def.ensure === undefined) throw new Error(t("define.sandboxAgentEnsureRequired"));
   const ensure = Array.isArray(def.ensure) ? def.ensure : [def.ensure];
   if (ensure.length === 0) throw new Error(t("define.sandboxAgentEnsureRequired"));
+  if (def.sandbox !== undefined) {
+    if (!isSandboxLayer(def.sandbox)) {
+      throw new TypeError(
+        "defineSandboxAgent sandbox must be a SandboxLayer created by sandboxLayer().",
+      );
+    }
+    if (sandboxLayerStateOf(def.sandbox).kind !== "command-only") {
+      throw new TypeError(
+        "defineSandboxAgent sandbox must be command-only; an Agent cannot provide a Sandbox template.",
+      );
+    }
+  }
   return {
     name: def.name,
     kind: "sandbox",
     evidenceCoverage: def.evidenceCoverage,
+    ...(def.sandbox === undefined ? {} : { sandbox: def.sandbox }),
     ensure,
     installers: def.installers ?? [],
     setup: def.setup,
@@ -191,7 +206,13 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     }
   }
   const sharedState = normalizeSharedState(def.sharedState);
-  const { id: _derivedId, sharedState: _sharedState, ...author } = def;
+  const sandboxCache = normalizeSandboxCache(def.sandboxCache, "defineExperiment");
+  const {
+    id: _derivedId,
+    sharedState: _sharedState,
+    sandboxCache: _sandboxCache,
+    ...author
+  } = def;
   return brandExperimentDefinition({
     ...author,
     flags: decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
@@ -201,8 +222,28 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
     sandboxReuse: def.sandboxReuse === true,
     ...(sharedState === undefined ? {} : { sharedState }),
+    ...(sandboxCache === undefined ? {} : { sandboxCache }),
     plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
   });
+}
+
+function normalizeSandboxCache(
+  value: unknown,
+  factory: "defineConfig" | "defineExperiment",
+): SandboxCacheConfig | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError(`${factory} sandboxCache must be an object with optional setup "use" or "bypass".`);
+  }
+  const keys = Object.keys(value);
+  const setup = Reflect.get(value, "setup");
+  if (
+    keys.some((key) => key !== "setup") ||
+    (setup !== undefined && setup !== "use" && setup !== "bypass")
+  ) {
+    throw new TypeError(`${factory} sandboxCache must be an object with optional setup "use" or "bypass".`);
+  }
+  return Object.freeze(setup === undefined ? {} : { setup });
 }
 
 const SharedStateKeyPattern = /^[a-z0-9][a-z0-9._/-]{0,127}$/u;
@@ -310,7 +351,8 @@ function assertSandboxLayer(value: unknown, factory: string): void {
 
 /** 项目级配置。 */
 export function defineConfig(config: Config): Config {
-  return config;
+  const sandboxCache = normalizeSandboxCache(config.sandboxCache, "defineConfig");
+  return sandboxCache === undefined ? config : { ...config, sandboxCache };
 }
 
 /**
@@ -319,6 +361,6 @@ export function defineConfig(config: Config): Config {
  */
 export function defineSandbox(
   def: CustomProviderSandboxOptions,
-): SandboxLayer<"template-bearing", "prepare-only"> {
+): SandboxLayer<"template-bearing"> {
   return customProviderSandbox(def);
 }

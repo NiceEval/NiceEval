@@ -84,10 +84,24 @@ request {cpu,memory,pids,container=1,ephemeralDiskBytes} reservation
   -> hand Sandbox to Attempt
 ```
 
-readiness前的 exec只用于探测，不运行 setup/prepare/agent。create/readiness失败先提交 destroy intent，
+readiness 前的 exec 只用于探测，不运行 before 或 Agent。create/readiness 失败先提交 destroy intent，
 再 force remove并由 id + token证明资源消失。watchdog随后卸载、scrub并验证 Docker data allocation，最后释放
 reservation。无法证明回收时 reservation与 slot保持占用，slot进入 `quarantined`，不能为了继续派发
 而只删账。
+
+## Setup prefix capability
+
+profile 绑定会在 planning 把 SetupPrefix capability 固定为 `Unsupported`。该结果只关闭准备缓存，不关闭正常运行：
+
+```text
+profile attested
+  -> setup-prefix capability = Unsupported
+  -> skip setup-prefix lookup/capture/restore
+  -> execute every before action in the linked global order
+  -> agent.ensure -> Agent -> Eval test
+```
+
+Runner 不向 watchdog 申请 artifact seed、copy slot、read lease 或 component restore。可观测结果是 action 的 `unsupported`，不是 cache hit 或 degraded restore。一个 profile-bound plan 如果声明 `Persistent`，就在任何 Docker I/O 前以 capability 矛盾失败。
 
 ## 正常与领域失败
 
@@ -96,7 +110,7 @@ passed、failed、errored都执行相同物理收尾：
 ```text
 abort remaining command tree
   -> agent teardown + registered cleanup
-  -> sandbox lifecycle teardown
+  -> physical after
   -> submit destroy intent to watchdog
   -> stop/force remove outer container
   -> verify id + labels + cgroup gone

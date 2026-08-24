@@ -50,6 +50,7 @@ import type {
   ExperimentHookName,
   FailureNotice,
   LifecyclePhase,
+  QueuedAttempt,
   DurableFeedbackEvent,
   RunFeedbackPlan,
   RunFeedbackState,
@@ -1062,7 +1063,7 @@ function padTrunc(s: string, width: number): string {
 // ───────────────────────── TTY:动态 dashboard ─────────────────────────
 
 function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRenderer {
-  // active slot 的稳定顺序:只在这里追加/删除(attempt:start 追加到末尾,
+  // visible attempt slot 的稳定顺序:provider queued/start 在这里追加,
   // attempt:complete/early-exit 删除),phase/detail 变化不改变顺序或成员 ——
   // 可见 attempt 完成前不会因为别的 attempt 更新而换位(checklist「active slots 稳定」)。
   const activeOrder: AttemptKey[] = [];
@@ -1170,10 +1171,10 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       const shownLockWaits = lockWaitRows.slice(0, remaining);
       const shownRunLevel =
         (shownPrecheck ? 1 : 0) + shownRunActivities.length + shownHooks.length + shownLockWaits.length;
-      const shownActive: ActiveAttempt[] = [];
+      const shownActive: Array<ActiveAttempt | QueuedAttempt> = [];
       for (const key of activeOrder) {
         if (shownRunLevel + shownActive.length >= showCount) break;
-        const active = state.active.get(key);
+        const active = state.active.get(key) ?? state.queuedAttempts.get(key);
         if (active) shownActive.push(active);
       }
       // 身份列本次运行"实际出现过的最长值"只放宽不回缩:运行级行的 label 是拼好的一整块
@@ -1290,7 +1291,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       redraw(state);
     },
     onLifecycle(event) {
-      if (event.type === "attempt:start") {
+      if (event.type === "attempt:queued" || event.type === "attempt:start") {
         const key = encodeAttemptKey(event.identity);
         if (!activeOrder.includes(key)) activeOrder.push(key);
       } else if (event.type === "attempt:complete" || event.type === "attempt:early-exit") {
@@ -1312,7 +1313,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
  *  之后剩下的全部宽度——不是某个比例或固定预留,宽终端因此把整段 phase/detail 露出来
  *  (cli.md「active 行的列序」)。 */
 function formatActiveRow(
-  active: ActiveAttempt,
+  active: ActiveAttempt | QueuedAttempt,
   io: FeedbackIO,
   columns: number,
   evalWidth: number,
@@ -1320,13 +1321,20 @@ function formatActiveRow(
 ): string {
   // 时间列从 attempt 派发起算,阶段推进不重置(见 ActiveAttempt.startedAt):这一列是存活性的
   // 唯一证明,归零会被读成「这条 eval 重跑了」。
-  const elapsed = formatElapsed(io.clock.now() - active.startedAt).padStart(6);
+  const startedAt = "queuedAt" in active ? active.queuedAt : active.startedAt;
+  const elapsed = formatElapsed(io.clock.now() - startedAt).padStart(6);
   const sym = "● ";
   const evalCol = padTrunc(active.identity.evalId, evalWidth);
   const whoCol = padTrunc(active.who, whoWidth);
   const prefix = `${sym}${evalCol}  ${whoCol}  ${elapsed}  `;
   const budget = Math.max(0, columns - prefix.length);
-  const detail = active.detail ? `${phaseLabel(active.phase)}: ${active.detail}` : phaseLabel(active.phase);
+  const detail = "reason" in active
+    ? active.reason === "provider-capacity"
+      ? "waiting for provider capacity"
+      : active.reason
+    : active.detail
+      ? `${phaseLabel(active.phase)}: ${active.detail}`
+      : phaseLabel(active.phase);
   return prefix + detail.slice(0, budget);
 }
 
@@ -1540,6 +1548,50 @@ function commandPlanOwner(step: CommandPlanStep): string | undefined {
   return `owner: ${step.owner.kind}:${step.owner.id}${step.owner.index === undefined ? "" : `#${step.owner.index}`}`;
 }
 
+function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
+  const action = step.action;
+  if (action === undefined) return [];
+
+  const order = step.executionOrder;
+  const frequency = step.changeFrequency;
+  const cache = step.cache;
+  const dependencies = step.dependencies ?? [];
+  const family = "family" in action && typeof action.family === "string"
+    ? action.family
+    : undefined;
+
+  return [
+    `action: ${action.id}`,
+    ...(family === undefined ? [] : [`family: ${family}`]),
+    ...(order === undefined
+      ? []
+      : [
+          `execution order: #${order.topologicalOrdinal} · ${order.occurrencePath.join(" > ")}`,
+        ]),
+    ...(frequency === undefined
+      ? []
+      : [
+          `change frequency: ${frequency.value} · ${frequency.source}` +
+            `${frequency.preset === undefined ? "" : ` · ${frequency.preset}`}`,
+        ]),
+    ...(step.schedulingReason === undefined ? [] : [`scheduled by: ${step.schedulingReason}`]),
+    ...(dependencies.length === 0
+      ? []
+      : [`depends on: ${dependencies.map((dependency) =>
+          `${dependency.id} (${dependency.source}${dependency.capability === undefined ? "" : `:${dependency.capability}`})`
+        ).join(", ")}`]),
+    ...(step.occurrence === undefined ? [] : [`occurrence: ${step.occurrence.kind}`]),
+    ...(cache === undefined
+      ? []
+      : [
+          `cache: ${cache.lookup} · ${cache.capability} · runtime ${cache.runtime.status} · final key ${cache.runtime.finalKey}`,
+          ...(cache.capabilityReason === undefined
+            ? []
+            : [`cache unsupported reason: ${cache.capabilityReason}`]),
+        ]),
+  ];
+}
+
 /** Command-plan 的统一 human sink 不把任何来源的控制字符直接写进终端。 */
 function visibleCommandPlanTerminalText(text: string): string {
   let visible = "";
@@ -1558,9 +1610,51 @@ function visibleCommandPlanTerminalText(text: string): string {
   return visible;
 }
 
+function commandPlanActionStepLines(step: CommandPlanStep): readonly string[] {
+  const action = step.action;
+  if (action === undefined || !("steps" in action)) return [];
+
+  return action.steps.flatMap((actionStep, index): readonly string[] => {
+    const prefix = `step #${index}`;
+    switch (actionStep.kind) {
+      case "exec":
+        return [
+          `${prefix}: argv ${JSON.stringify([actionStep.executable, ...actionStep.args])}`,
+          ...(actionStep.cwd === undefined ? [] : [`${prefix} cwd: ${JSON.stringify(actionStep.cwd)}`]),
+          ...(actionStep.user === undefined ? [] : [`${prefix} user: ${JSON.stringify(actionStep.user)}`]),
+          ...(actionStep.timeoutMs === undefined ? [] : [`${prefix} timeout: ${actionStep.timeoutMs}ms`]),
+          ...(actionStep.envKeys === undefined ? [] : [`${prefix} environment keys: ${JSON.stringify(actionStep.envKeys)}`]),
+          ...(actionStep.stdinDigest === undefined
+            ? []
+            : [`${prefix} stdin: ${actionStep.stdinDigest} · ${actionStep.stdinBytes ?? 0} bytes`]),
+        ];
+      case "putText":
+      case "putBytes":
+        return [
+          `${prefix}: ${actionStep.kind} ${JSON.stringify(actionStep.path)} · ${actionStep.digest} · ${actionStep.bytes} bytes`,
+        ];
+      case "transferFile":
+      case "transferDirectory":
+        return [
+          `${prefix}: ${actionStep.kind} ${actionStep.source.digest} -> ${JSON.stringify(actionStep.to)}`,
+        ];
+      case "checkoutGit":
+        return [
+          `${prefix}: checkoutGit ${JSON.stringify(actionStep.repository)} @ ${actionStep.ref} -> ${JSON.stringify(actionStep.to)}`,
+          ...(actionStep.sparse === undefined
+            ? []
+            : [`${prefix} sparse: include=${JSON.stringify(actionStep.sparse.include)} · exclude=${JSON.stringify(actionStep.sparse.exclude)}`]),
+        ];
+    }
+  });
+}
+
 function commandPlanExact(step: CommandPlanStep): readonly string[] {
+  const actionSteps = commandPlanActionStepLines(step);
   const command = step.command;
-  if (command === undefined) return ["command: exact command unavailable"];
+  if (command === undefined) {
+    return actionSteps.length === 0 ? ["command: exact command unavailable"] : actionSteps;
+  }
   const operation = command.kind === "argv"
     ? [`command: argv ${JSON.stringify([command.executable, ...command.args])}`]
     : command.script.includes("\n")
@@ -1578,6 +1672,7 @@ function commandPlanExact(step: CommandPlanStep): readonly string[] {
     command.envKeys === undefined ? undefined : `environment keys: ${JSON.stringify(command.envKeys)}`,
   ].filter((value): value is string => value !== undefined);
   return [
+    ...actionSteps,
     ...operation,
     ...options,
     ...(step.redactions === undefined ? [] : [`redacted: ${step.redactions.join(", ")}`]),
@@ -1631,6 +1726,7 @@ function commandPlanStepLines(step: CommandPlanStep, position: string): readonly
     `position: ${position}`,
     ...(owner === undefined ? [] : [owner]),
     ...(step.label === undefined ? [] : [`label: ${step.label}`]),
+    ...commandPlanActionLines(step),
     ...commandPlanTemplate(step),
     ...detail,
     ...(step.condition === undefined ? [] : [`if: ${step.condition.summary}`]),

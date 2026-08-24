@@ -13,6 +13,8 @@
 #### cli-positive-selection
 
 - eval id 位置参数按前缀收窄实际运行的 Eval 集合；experiment 选择器按 CLI 契约命中。
+- Setup cache 策略在 Config 与 Experiment 可声明 `use | bypass`；`exp --sandbox-setup-cache`
+  接受两个显式值与省略默认，不改变同一 Experiment / Eval 的选择 identity，其它值以用法错误退出。
 
 #### cli-no-eval-feedback
 
@@ -71,6 +73,18 @@ Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`�
 - 测试实际执行四个 details 命令，并分别读回所属错误；两个默认 Run Human 页错误优先且不展示空 KPI、证据、分析或内部 membership 字段；旧 candidate 对上述长期结果为红，新 candidate 为绿。
 
 ### Sandbox 管理入口
+
+#### cli-sandbox-action-debug
+
+`niceeval debug <experiment> <eval> --json` 从安装后的公开 CLI 交付统一的 Sandbox action plan。
+Experiment、Eval Group、Eval 与 Agent action 保留 owner、occurrence、声明次序和拓扑次序。
+
+计划先满足显式依赖，再从 ready set 选择数值最小的 `changeFrequency`。同频 action 按
+Experiment → Eval Group → Eval → Agent 与 owner 内稳定声明次序排列。声明式 action 展开 exact steps、自动与补充 fingerprint、
+eligibility、Provider capture capability，并固定显示 `cacheLookup: "not-probed"`。
+
+callback 与 legacy command 是 opaque barrier，后续 action 标记 `opaque-ancestor`。debug 只规划；它不创建 Sandbox、
+不探 cache，也不执行作者 action、callback、Agent 或 Eval。
 
 #### cli-sandbox-project-preflight
 

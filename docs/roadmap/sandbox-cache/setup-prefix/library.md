@@ -25,14 +25,14 @@ declare function gitCheckout(input: GitCheckoutActionInput): SandboxAction;
 
 interface UploadFileActionInput {
   readonly id: string;
-  readonly source: string | URL;
+  readonly source: URL;
   readonly to: string;
   readonly changeFrequency?: number;
   readonly dependsOn?: readonly SandboxActionRef[];
 }
 
 interface UploadDirectoryActionInput extends UploadFileActionInput {
-  readonly source: string | URL;
+  readonly source: URL;
 }
 
 interface WriteTextActionInput {
@@ -67,7 +67,7 @@ import { Schema } from "effect";
 import { defineSandboxAction, sandboxStep } from "niceeval/sandbox";
 
 const installTool = defineSandboxAction({
-  name: "@acme/niceeval-tools/install",
+  id: "@acme/niceeval-tools/install",
   input: Schema.Struct({ version: Schema.String }),
   steps: ({ version }) => [
     sandboxStep.exec({
@@ -83,23 +83,24 @@ const installTool = defineSandboxAction({
 
 sandboxLayer().before(installTool(
   { version: "1.4.0" },
-  {
-    id: "install-tool",
-    changeFrequency: 20,
-    dependsOn: [actionRef("fixture")],
-  },
+  { changeFrequency: 20, dependsOn: [actionRef("fixture")] },
 ));
 ```
 
+family instance 默认使用 definition `id`，不要求作者在调用点再写一遍。
+同一个 family 在同一 occurrence 出现多次时，才通过可选 instance `id` 区分节点。
+
 V1 的公开 `sandboxStep` 只有 `exec()`、`putText()`、`putBytes()`、`transferFile()`、`transferDirectory()` 与 `checkoutGit()`。step 不能直接传入 `.before()`，没有自己的 id、频率、依赖、capability 或缓存节点。整个 Action 才是原子的调度、identity、执行、capture 与 satisfaction 单元。
+
+低层 `transferFile()` / `transferDirectory()` 只接受 `registerSandboxContent()` 的 digest-backed handle；直接 path / URL 没有可验证内容身份，不能成为 step input。普通作者直接用 `uploadFile()` / `uploadDirectory()`，内容上传构造器会在同一份声明里完成登记。
 
 family `steps` 必须同步返回非空、无分支、无循环的 step tuple。它不能取得 Sandbox 或运行任意 callback。调用 `defineSandboxAction()` 就表示作者承诺 steps 只依赖声明 input、只改变 Sandbox、可重复执行并可捕获；无法承诺的逻辑继续使用 callback 或 `defineSandboxCommand()`，始终 opaque、真实执行并截断共享 capture。
 
-family input 使用无 requirements 的同步 Effect Schema。实例化依次执行 `Schema.validateSync()`、`Schema.encodeSync()` 与 canonical JSON 校验，再规范化并冻结 steps。自动指纹包含 family name、canonical input、canonical steps，以及 steps 引用的文件、目录、完整 Git commit 与 image digest。
+family input 使用无 requirements 的同步 Effect Schema。实例化依次执行 `Schema.validateSync()`、`Schema.encodeSync()` 与 canonical JSON 校验，再规范化并冻结 steps。自动指纹包含 family id、canonical input、canonical steps，以及 steps 引用的文件、目录、完整 Git commit 与 image digest。
 
 可选的 `cache.fingerprint` 是 JSON 值或根据已验证 input 计算 JSON 值的同步函数，只补充自动观察不到的身份。最终指纹是自动指纹与补充指纹的 hash；补充项不能关闭或替换自动观察。需要手动失效时直接写 `cache: { fingerprint: "2" }`，不再提供另一套 revision 字段。函数源码、对象身份、模块路径和加载顺序不进入 identity。
 
-`command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义都调用同一个公开 `defineSandboxAction()` 与 `sandboxStep`。core 不识别 family name，也没有 built-in 专用排序、identity、执行或缓存旁路；第三方不能注册新的 step kind。
+`command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义都调用同一个公开 `defineSandboxAction()` 与 `sandboxStep`。core 不识别 family id，也没有 built-in 专用排序、identity、执行或缓存旁路；第三方不能注册新的 step kind。
 
 同一个 family 的 `.after(input, { id })` 产生 `SandboxAfterAction`，不接受 changeFrequency、dependsOn、requires 或 provides。`.after()` 只接收这种声明式 finally 或 `SandboxCleanupCommand`；`context.onCleanup()` 只接收运行期 `SandboxCleanupCommand`。
 
@@ -109,7 +110,7 @@ instance 的 `requires` / `provides` 只形成 action DAG。core 从 step kinds 
 
 Provider 不能执行某个 step 时 planning 失败。能执行但不能 capture 时真实 replay，并显示 `cache capability: unsupported`。
 
-定义、Schema、canonical JSON、`cache.fingerprint`、steps 或 metadata 不合法时，同步抛出 `SandboxActionDefinitionError`。它带稳定 `_tag`、`reason` 与结构化字段，Schema ParseError 保存为 cause。调用方按数据字段识别，不使用 `instanceof`。
+定义、Schema、canonical JSON、`cache.fingerprint`、steps 或 metadata 不合法时，同步抛出 Effect `Data.TaggedError` 形状的 `SandboxActionDefinitionError`。它带稳定 `_tag`、`reason` 与结构化字段，Schema ParseError 保存为 cause。调用方按数据字段识别，不使用 `instanceof`。
 
 依赖图、固定内容 manifest 与 ref 身份查找、secret 或动态 input、Provider operation requirement 属于 planning typed failure。step、quiesce、capture 与 restore 属于 execution typed failure。
 
@@ -119,7 +120,7 @@ Provider 不能执行某个 step 时 planning 失败。能执行但不能 captur
 - 第三方 package 的 family 可直接使用，也可经 Plugin 投影，不需要 registry。
 - input、steps、补充 fingerprint、内容 digest 与完整 Git commit 分别变化时产生新 identity。
 - custom Action 的频率、依赖和 DAG capability 与内置 Action 使用同一调度路径。
-- Provider 验证 persistent、invocation-local、unsupported，以及缺少 execution operation 的 planning failure。
+- 普通 Docker 验证 persistent；Compose、profile-bound DinD、E2B、Vercel 与 custom Provider 验证 unsupported。缺少 execution operation 仍是 planning failure。
 - debug 对 custom 与 built-in Action 都投影 exact steps 与自动/补充指纹组成；redaction 正交，callback 与 `defineSandboxCommand()` 保持 opaque。
 - `command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义真实调用公开 family 与 step API。
 
@@ -188,9 +189,9 @@ sandboxLayer()
 
 `uploadFile()` 与 `uploadDirectory()` 在 planning 时读取本地输入，生成规范化 manifest，并把内容 digest 直接纳入 action identity。作者不再额外调用 `registerSandboxContent()`，也不把同一 URL 再写进 `inputs`。目录 manifest 包含相对路径、节点类型、模式与文件 digest；mtime、宿主绝对路径和遍历顺序不进入身份。符号链接越出声明根时 planning 失败。
 
-`gitCheckout()` 接受无凭据的公开 HTTPS repository、ref、目标目录和可选 sparse 路径。NiceEval 在本次 Invocation 首次需要它时查找 ref 对应的完整 commit；steps、fingerprint、debug 与缓存 key 只使用规范化 repository、完整 commit、sparse 选择和目标目录。移动 branch、tag 或默认分支仍可声明；它们指向同一 commit 时命中，推进到新 commit 时自动 miss。查找结果在同一次 Invocation 内冻结，不能让不同 Attempt 看见不同 commit。
+`gitCheckout()` 接受无凭据的公开 HTTPS repository、完整 40/64 位 commit object id、目标目录和可选 sparse 路径。steps、fingerprint、debug 与缓存 key 使用规范化 repository、完整 commit、sparse 选择和目标目录。V1 不接受 branch、tag、`HEAD` 或默认分支；这类移动 ref 在声明时失败。调用方应先在自己的可信发布流程中查询 ref 当前指向的 commit，并把完整 commit 固定到声明中。
 
-远端 identity lookup 与对象下载分离。查找 ref 是不修改 Sandbox 的 source lookup；checkout action 只消费完成态 commit 和 Git object content。凭据仓库、宿主 credential provider、SSH URL 与运行时交互认证不具备共享资格，应使用 opaque callback 或先由受信任系统发布不可变内容 handle。
+对象下载只消费已经完成的 immutable identity。凭据仓库、宿主 credential provider、SSH URL、移动 ref 与运行时交互认证不具备共享资格，应使用 opaque callback，或先由受信任系统发布不可变内容 handle / 完整 commit。
 
 ## 跨 owner 排队
 
@@ -242,33 +243,23 @@ Eval test 因而始终发生在 Adapter runtime 存活期间。runtime teardown 
 
 ## Occurrence 由 planning 编译
 
-公开 API 不暴露 scope。link 与 physical planning 把每个 attachment 编译为 `physical-instance | attempt` occurrence：
-
-- 消费 attempt-bound typed input 的 action 必为 attempt；
-- 只消费 immutable input 的 action，只有当其 owner identity 对整个 physical sharing cohort 稳定时才是 physical-instance；
-- 不能证明 cohort 稳定时使用 attempt；
-- Agent action 默认 attempt；未来只有完整 Agent owner 对 cohort 稳定时才能成为 physical-instance。
-
-Experiment action 跨多个 Eval 或 template 时，会在每个对应物理实例或 Attempt 展开，不是整个 Run 一次。Group action 只有在 lane 实例对完整 Group identity 稳定时才能成为 physical-instance。Group 共享实例中的 Eval action 通常是 attempt。
+公开 API 不暴露 scope。link 与 physical planning 把 Experiment、Eval Group、Eval 与 Agent 的每个 attachment 编译为 attempt occurrence。同一 Experiment action 在多个 Eval 或 template 中会分别展开，不是整个 Run 只执行一次。
 
 SandboxLayer 不提供 invocation occurrence。没有具体 Sandbox 的 Experiment once hook 继续属于 Experiment/Plugin host lifecycle。Direct Agent 配对中，任何显式 SandboxLayer——即使为空或只有 after——都在 pure link 报 `sandbox.unexpected-for-direct-agent`，且不触发 Provider I/O。
 
-跨 occurrence 的规范顺序是：
+规范顺序是：
 
 ```text
 Provider start
-  → physical before
-  → verified reset baseline
   → 每个 Attempt:
-      reset
-      → attempt before
+      reset to Provider baseline
+      → linked before DAG
       → Agent body
-      → dynamic cleanup / attempt after
-  → dynamic cleanup / physical after
+      → dynamic cleanup / after
   → Provider finalizer
 ```
 
-Provider replacement 或 retirement 开启新的 physical occurrence，重新经历 start、physical before、baseline、physical after 与 finalizer。Provider 无法恢复 physical baseline 时，只能创建新实例或让 reuse planning 失败；不能把 physical action 偷换成 attempt replay。
+Provider replacement 或 retirement 可以更换物理实例，但不改变 author action 的 attempt occurrence。这份契约不声明 physical-instance promotion。
 
 ## 缓存资格
 
@@ -288,14 +279,13 @@ callback before、`defineSandboxCommand()`、cleanup 与 after 永不缓存。st
 
 `changeFrequency` 接受任意有限非负数。作者可以写任意数值；`rare = 10`、`normal = 100` 与 `frequent = 1000` 只是可读常量，省略时使用 `normal`。
 
-求值后的值首先决定 occurrence 内 ready action 的执行顺序，也影响 promotion、retention、GC 与缓存工作排队。它进入 linked schedule identity、fingerprint 和由排序形成的 PrefixKey 祖先链。debug 同时显示数值和 `explicit | defaulted` 声明状态；只有数值恰好等于预设时才附加预设标签。负数、NaN 与无穷在 planning 阶段报错；after 显示 `not-applicable`。
+求值后的值决定 occurrence 内 ready action 的执行顺序，并进入 linked schedule identity、fingerprint 和由排序形成的 PrefixKey 祖先链。它不充当 publication、retention 或 GC policy。debug 同时显示数值和 `explicit | defaulted` 声明状态；只有数值恰好等于预设时才附加预设标签。负数、NaN 与无穷在 planning 阶段报错；after 显示 `not-applicable`。
 
 ## Provider 中立
 
 before/after 属于 `SandboxLayer`，不属于 Docker。Docker、E2B、Vercel 与自定义 Provider 使用相同 API。Provider 对每个 eligible prefix 报告：
 
-- `persistent`：可以跨 Invocation 命中；
-- `invocation-local`：只在本次 Invocation build once 并私有 clone；
-- `unsupported`：每个 occurrence 真实执行。
+- `persistent`：可以跨 Invocation 命中；普通本地单容器 Docker 在全部可变状态都位于 outer writable rootfs 时使用这一档；
+- `unsupported`：每个 occurrence 真实执行；Compose、profile-bound DinD、E2B、Vercel 与 custom Provider 使用这一档。
 
-三档能力不改变 occurrenceKind 或执行顺序。每个消费者始终取得私有 writable state；Provider 不得忽略 action、伪造 hit 或共享 writable 实例。
+两档能力不改变 occurrenceKind 或执行顺序。每个消费者始终取得私有 writable state；Provider 不得忽略 action、伪造 hit 或共享 writable 实例。Profile-bound DinD 不定义 `ArtifactSet V2` 或 host artifact lease/index，因此不能升级为 persistent。

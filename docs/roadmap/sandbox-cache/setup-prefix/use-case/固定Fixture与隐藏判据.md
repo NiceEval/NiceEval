@@ -33,7 +33,7 @@ sandboxLayer().before(gitCheckout({
 }));
 ```
 
-`v0.8.1` 先经 identity lookup 得到完整 commit。缓存身份不依赖 tag 字符串是否看起来固定；tag 被上游移动后会得到新 commit 和新前缀。
+发布流程先查询 `v0.8.1` 当前指向的完整 commit，再把该 commit 交给 `gitCheckout()`。缓存身份不依赖 tag 字符串；tag 被上游移动后，调用方查询到新 commit 并形成新前缀。NiceEval V1 不执行这项远端身份查找。
 
 ## Agent 后才可见的判据
 
