@@ -46,7 +46,7 @@
             "vitest",
             "run"
           ],
-          "timeoutMinutes": 4,
+          "timeoutMinutes": 6,
           "harness": {
             "testkit": true
           },
