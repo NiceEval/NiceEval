@@ -94,7 +94,7 @@ JSON 不包含其它 Page、HTML、React tree、站点 identity 或 Record 读�
 
 - 通过制评估显示通过率。
 - 计分制评估显示 earned score。
-- mixed Experiment 显示 Score，并在通过制评估子行显示通过率，不把两者合成百分比。
+- 启用混型准入前产生的历史 Record 仍可读取：计分制与通过制子行保留各自主读数，不把两者合成百分比。
 
 计分制评估上声明的 `points` 是评分项的贡献权重，不是 Experiment 的固定满分。动态执行、条件分支或不可用材料可能让评分项集合不同，因此默认报告不会自动把 earned score 除以所有源码里声明的 `points`。
 

@@ -116,9 +116,9 @@ export default defineExperiment({
 });
 ```
 
-`evals` 可以同时选择通过制与计分制 eval。
+`evals` 的一次实际选择必须全是通过制或全是计分制 eval；混型在启动前拒绝并列出两类 ID。
 题型由 `EvalDescriptor.evaluationKind` 给报告：通过制读 Verdict 的通过率，计分制读 sealed Assertions 的
-earned score；两者分别聚合、并排展示，不相加。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
+earned score。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
 另有 complete、partial 或 unavailable 的 score state。`points` 只是 Assertion 分值，不是第三种题型。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
 

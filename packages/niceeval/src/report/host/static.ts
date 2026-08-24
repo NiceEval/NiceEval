@@ -40,7 +40,11 @@ import {
   themeStylesheet,
   type ThemeDefinition,
 } from "../theme.ts";
-import type { ClosedReportSite, ClosedSitePage } from "./execute.ts";
+import type {
+  ClosedExperimentSelection,
+  ClosedReportSite,
+  ClosedSitePage,
+} from "./execute.ts";
 import {
   REPORT_STYLESHEET_PATH,
 } from "./site-assets.ts";
@@ -295,7 +299,8 @@ function buildSiteFiles(site: ClosedReportSite, theme: ThemeDefinition): readonl
   add(projections, hostStaticPath(projections.path));
 
   assertAssetBudgets(files, site.pages);
-  const landing = landingPage(pages);
+  const experimentSelection = validateExperimentSelection(site.experimentSelection, pages);
+  const defaultRoute = experimentSelection?.options[0]?.route ?? landingPage(pages).page.target.route;
   const manifestValue = Object.freeze({
     format: "niceeval.report-static/v2",
     sampleIdentity: site.sampleIdentity,
@@ -304,7 +309,8 @@ function buildSiteFiles(site: ClosedReportSite, theme: ThemeDefinition): readonl
       en: resolveLocalizedText(site.title, "en"),
       "zh-CN": resolveLocalizedText(site.title, "zh-CN"),
     },
-    defaultRoute: landing.page.target.route,
+    defaultRoute,
+    ...(experimentSelection === undefined ? {} : { experimentSelection }),
     pages: pages.map((entry) => Object.freeze({
       pageId: entry.page.target.pageId,
       route: entry.page.target.route,
@@ -374,6 +380,37 @@ function landingPage(pages: readonly ClosedSitePage[]): ClosedSitePage {
   const landing = pages.find((entry) => entry.presentation === "page");
   if (landing === undefined) throw siteFailure("render", "a report site requires at least one page presentation");
   return landing;
+}
+
+function validateExperimentSelection(
+  selection: ClosedExperimentSelection | undefined,
+  pages: readonly ClosedSitePage[],
+): ClosedExperimentSelection | undefined {
+  if (selection === undefined) return undefined;
+  if (!Array.isArray(selection.options) || selection.options.length === 0) {
+    throw siteFailure("identity", "closed experiment selection must contain at least one option");
+  }
+  const pageByRoute = new Map(pages.map((entry) => [entry.page.target.route, entry]));
+  const labels = new Set<string>();
+  let priorRoute: string | undefined;
+  for (const option of selection.options) {
+    if (typeof option.route !== "string" || typeof option.label !== "string" || option.label.length === 0) {
+      throw siteFailure("identity", "closed experiment selection contains an invalid option");
+    }
+    if (priorRoute !== undefined && compareUtf8(priorRoute, option.route) >= 0) {
+      throw siteFailure("identity", "closed experiment selection routes are not in canonical order");
+    }
+    priorRoute = option.route;
+    const page = pageByRoute.get(option.route);
+    if (page === undefined || page.presentation !== "page") {
+      throw siteFailure("identity", `closed experiment route ${option.route} is not a page presentation`);
+    }
+    if (labels.has(option.label)) {
+      throw siteFailure("identity", `closed experiment label ${option.label} is ambiguous`);
+    }
+    labels.add(option.label);
+  }
+  return selection;
 }
 
 function renderProblems(problems: readonly ReportProblem[], locale: string): string {
