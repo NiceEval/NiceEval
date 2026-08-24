@@ -191,6 +191,9 @@ interface DockerProfileInvocationLeaseV1 {
 }
 ```
 
+`recovered` 是 `lease.drain` 的终态回执，不是 `status` 中长期保存的 owner。回收一旦得到完整证明，watchdog
+就在同一提交中移除 lease；客户端以同 generation 下 lease、reservation、queue 与 slot 均不可见作为完成证明。
+
 所有权依据是随机 Invocation UUID、不可伪造的 lease token、与 watchdog保持的 authenticated control
 connection、durable journal和 Docker resource labels的组合。PID/start time只是诊断事实，不能单独
 授权删除或接管。
@@ -210,9 +213,20 @@ interface DockerProfileReservationV1 {
     readonly containers: 0 | 1;
     readonly ephemeralDiskBytes: number;
   };
-  readonly state: "queued" | "granted" | "committed" | "releasing";
+  readonly state:
+    | "queued"
+    | "blocked"
+    | "granted"
+    | "provisioning"
+    | "committed"
+    | "releasing"
+    | "quarantined";
 }
 ```
+
+`queued` / `blocked` 尚未拥有可运行容量，只能用 `reservation.cancel` 退出；从 `granted` 开始必须走
+`reservation.release`。取消与授予并发时，客户端重新读取 reservation；已经授予就转入 release，不能把失败的
+cancel当作资源已释放证明。
 
 任何绑定 profile的 `dockerSandbox()`都在类型与运行时两层要求完整 CPU、memory、PID、
 `dockerDataBytes`和只读 rootfs。planner把 `dockerDataBytes`规范化为 reservation的

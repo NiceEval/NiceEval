@@ -17,7 +17,7 @@ import {
   runAttemptEffect,
   scoreFactOutcomeForAttemptError,
   type AttemptFailureDeclaration,
-  type FreshSandboxCleanupFailure,
+  type SandboxCleanupFailure,
 } from "./attempt.ts";
 import type {
   DiagnosticRecord,
@@ -1082,11 +1082,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     state: ExperimentLifecycle;
     readonly mutex: Effect.Semaphore;
     /**
-     * Fresh Sandbox scopes are Attempt-owned, but their terminal cleanup
-     * outcome belongs to this Experiment whenever it owns sharedState. Keep a
-     * monotonic ledger here until the one physical cleanup decision is made.
+     * Attempt cleanup is occurrence-owned, but its terminal outcome belongs to
+     * this Experiment whenever it owns sharedState. Keep a monotonic ledger
+     * until the Experiment makes its one lease-release decision.
      */
-    readonly physicalCleanupFailures: FreshSandboxCleanupFailure[];
+    readonly sandboxCleanupFailures: SandboxCleanupFailure[];
     sharedStateClaim?: SharedStateLeaseEffectClaim;
   }
   const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
@@ -1100,19 +1100,19 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       expLifecycles.set(a.run, {
         state: { _tag: "Dormant", pendingAttempts: new Set([a]) },
         mutex: yield* Effect.makeSemaphore(1),
-        physicalCleanupFailures: [],
+        sandboxCleanupFailures: [],
       });
     }
   }
 
-  const recordFreshSandboxCleanupFailure = (
+  const recordSandboxCleanupFailure = (
     run: AgentRun,
-    failure: FreshSandboxCleanupFailure,
+    failure: SandboxCleanupFailure,
   ): void => {
     if (run.sharedState === undefined) return;
     const cell = expLifecycles.get(run);
     if (cell === undefined) return;
-    cell.physicalCleanupFailures.push(failure);
+    cell.sandboxCleanupFailures.push(failure);
   };
 
   // 实验域诊断累积器(docs/runner.md「实验域诊断持久化」):只接无法归属单 Attempt 的实验
@@ -1392,28 +1392,26 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           });
         }
 
-        // Fresh Sandbox Scopes close inside their owning Attempt and have
-        // therefore already reached a real terminal state by the time the
-        // final Attempt settles. Runtime converts hook/provider failures into
-        // diagnostics to preserve the remaining finalizers, so consult the
-        // Experiment cell's physical ledger before deciding whether its
-        // sharedState lease can be released.
-        if (cell.physicalCleanupFailures.length > 0) {
+        // Attempt cleanup has reached a real terminal state by the time the
+        // final Attempt settles. The Attempt keeps cleanup failures diagnostic-
+        // only so later finalizers run, therefore this Experiment ledger owns
+        // the sharedState release decision.
+        if (cell.sandboxCleanupFailures.length > 0) {
           cleanupSucceeded = false;
-          const details = cell.physicalCleanupFailures
+          const details = cell.sandboxCleanupFailures
             .map((failure) => `${failure.stage}: ${failure.error.message}`)
             .join("; ");
-          const message = `Fresh Sandbox cleanup failed before Experiment teardown: ${details}`;
+          const message = `Sandbox cleanup failed before Experiment teardown: ${details}`;
           reportDiagnostic({
-            key: `sandbox-fresh-cleanup-failed:${experimentId}`,
-            code: "sandbox-fresh-cleanup-failed",
+            key: `sandbox-cleanup-failed:${experimentId}`,
+            code: "sandbox-cleanup-failed",
             severity: "warning",
             message,
-            data: { experimentId, failureCount: cell.physicalCleanupFailures.length },
+            data: { experimentId, failureCount: cell.sandboxCleanupFailures.length },
           });
           recordExperimentDiagnostic({
             experimentId: run.experimentId,
-            code: "sandbox-fresh-cleanup-failed",
+            code: "sandbox-cleanup-failed",
             level: "warning",
             message,
             phase: "experiment.teardown",
@@ -2784,10 +2782,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                     onFailureClass: (declaration) => closeHaltGate(a, declaration),
-                    ...(a.run.sharedState !== undefined && poolSelection._tag === "Fresh"
+                    ...(a.run.sharedState !== undefined
                       ? {
-                          onFreshSandboxCleanupFailure: (failure: FreshSandboxCleanupFailure) => {
-                            recordFreshSandboxCleanupFailure(a.run, failure);
+                          onSandboxCleanupFailure: (failure: SandboxCleanupFailure) => {
+                            recordSandboxCleanupFailure(a.run, failure);
                           },
                         }
                       : {}),

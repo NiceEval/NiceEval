@@ -246,12 +246,11 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
   /**
-   * A fresh Sandbox owns its physical Scope inside this Attempt. Its lifecycle
-   * hooks normally turn cleanup errors into diagnostics so the remaining
-   * finalizers can run; an Experiment with sharedState must still retain that
+   * Sandbox cleanup normally turns errors into diagnostics so the remaining
+   * finalizers can run. An Experiment with sharedState must still retain every
    * terminal cleanup fact until it decides whether releasing its lease is safe.
    */
-  onFreshSandboxCleanupFailure?: (failure: FreshSandboxCleanupFailure) => void;
+  onSandboxCleanupFailure?: (failure: SandboxCleanupFailure) => void;
   /**
    * Invocation coordination may consume the single sealed Assert-first result
    * here and pass it to EvaluationRecordContract. The Attempt never opens a
@@ -270,9 +269,9 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
   };
 }
 
-/** Internal handoff from a fresh Attempt Scope to its owning Experiment lifecycle. */
-export interface FreshSandboxCleanupFailure {
-  readonly stage: "sandbox.lifecycle" | "sandbox.stop";
+/** Internal handoff from an Attempt Scope to its owning Experiment lifecycle. */
+export interface SandboxCleanupFailure {
+  readonly stage: "sandbox.lifecycle" | "sandbox.cleanup" | "sandbox.stop";
   readonly error: Error;
 }
 
@@ -293,7 +292,7 @@ export function runAttemptEffect<
     concurrencySlot,
     providerAdmission,
     onFailureClass,
-    onFreshSandboxCleanupFailure,
+    onSandboxCleanupFailure,
     onSealedEvaluation,
     reusedSandbox,
   }: RunAttemptEffectOptions<SealRequirements>,
@@ -512,11 +511,11 @@ export function runAttemptEffect<
     },
     diagnostic: recordDiagnostic,
   };
-  const recordFreshSandboxCleanupFailure = (
-    stage: FreshSandboxCleanupFailure["stage"],
+  const recordSandboxCleanupFailure = (
+    stage: SandboxCleanupFailure["stage"],
     cause: unknown,
   ): void => {
-    if (reusedSandbox !== undefined || onFreshSandboxCleanupFailure === undefined) return;
+    if (onSandboxCleanupFailure === undefined) return;
     const rawError = cause instanceof Error ? cause : new Error(String(cause));
     // The ledger is later surfaced as an Experiment diagnostic, outside this
     // Attempt's normal diagnostic sink. Preserve the real cleanup outcome, but
@@ -525,14 +524,14 @@ export function runAttemptEffect<
     // This receiver runs inside the Scope finalizer path. It must not let a
     // bookkeeping failure replace the provider or lifecycle cleanup outcome.
     try {
-      onFreshSandboxCleanupFailure({ stage, error });
+      onSandboxCleanupFailure({ stage, error });
     } catch {
       // The owning Experiment will still receive the original cleanup result.
     }
   };
   /**
    * Sandbox runtime deliberately keeps lifecycle cleanup diagnostic-only so it
-   * can continue other finalizers. Only this fresh-materialization wrapper
+   * can continue other finalizers. Only this fresh Sandbox wrapper
    * observes those runtime-owned diagnostics; Eval/Agent diagnostics with the
    * same public sink never enter the physical cleanup ledger.
    */
@@ -545,7 +544,7 @@ export function runAttemptEffect<
         input.code === "sandbox-stop-failed" ||
         input.code === "plugin-lifecycle-teardown-failed"
       ) {
-        recordFreshSandboxCleanupFailure(
+        recordSandboxCleanupFailure(
           "sandbox.lifecycle",
           new Error(redactSensitiveText(input.message, sensitiveValues)),
         );
@@ -766,7 +765,7 @@ export function runAttemptEffect<
                           return yield* tryPromiseAsDefect(() => owned.group.stop()).pipe(
                             Effect.onExit((exit) => Exit.isFailure(exit)
                               ? Effect.sync(() => {
-                                  recordFreshSandboxCleanupFailure("sandbox.stop", Cause.squash(exit.cause));
+                                  recordSandboxCleanupFailure("sandbox.stop", Cause.squash(exit.cause));
                                 })
                               : Effect.void),
                           );
@@ -1074,6 +1073,7 @@ export function runAttemptEffect<
                     if (node) node.failed = true;
                     declareFailure("sandbox.cleanup", error);
                     diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
+                    recordSandboxCleanupFailure("sandbox.cleanup", error);
                   })),
                   Effect.ensuring(Effect.sync(() => {
                     if (node) {

@@ -37,6 +37,11 @@ const projectRoot = process.cwd();
 const hostUid = Number(requiredEnv("NICEEVAL_E2E_HOST_UID"));
 const hostGid = Number(requiredEnv("NICEEVAL_E2E_HOST_GID"));
 const docker = new Docker({ socketPath: "/run/docker.sock" });
+const driverStartedAt = Date.now();
+
+function markStage(stage) {
+  console.error(`[provider-capacity-stage] +${Date.now() - driverStartedAt}ms ${stage}`);
+}
 
 function errorText(error) {
   return error instanceof Error ? error.stack ?? error.message : String(error);
@@ -276,7 +281,7 @@ class ControlledProfileService {
     this.scenario = initialScenario;
     this.cancelArmed = false;
     this.cancelPid = undefined;
-    this.events = { containerCreates: 0, reservationReleases: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
+    this.events = { containerCreates: 0, reservationReleases: 0, reservationCancels: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
   }
 
   validateLease(request) {
@@ -303,6 +308,7 @@ class ControlledProfileService {
   publicReservation(reservation) {
     return {
       reservationId: reservation.id,
+      invocationId: reservation.invocationId,
       provisionToken: reservation.provisionToken,
       state: reservation.state,
       ...(reservation.containerId === undefined ? {} : { containerId: reservation.containerId }),
@@ -425,6 +431,12 @@ class ControlledProfileService {
           reservations: [...this.reservations.values()].map((reservation) =>
             this.publicReservation(reservation)
           ),
+          queue: this.queue.flatMap((reservationId) => {
+            const reservation = this.reservations.get(reservationId);
+            return reservation === undefined
+              ? []
+              : [{ reservationId, invocationId: reservation.invocationId }];
+          }),
           slots: [],
           degraded: [],
           events: this.events,
@@ -439,8 +451,14 @@ class ControlledProfileService {
         return {};
       case "lease.drain":
         this.validateLease(request);
-        this.leases.get(request.invocationId).state = "drained";
-        return {};
+        this.leases.get(request.invocationId).state = "draining";
+        if (![...this.reservations.values()].some((reservation) =>
+          reservation.invocationId === request.invocationId
+        )) {
+          this.leases.delete(request.invocationId);
+          return { state: "recovered" };
+        }
+        return { state: "draining" };
       case "reservation.acquire": {
         this.validateLease(request);
         if (request.reservationKind !== "container") {
@@ -489,11 +507,12 @@ class ControlledProfileService {
       case "reservation.cancel": {
         this.validateLease(request);
         const reservation = this.reservations.get(request.reservationId);
-        if (reservation !== undefined && reservation.state === "queued") {
+        if (reservation !== undefined && (reservation.state === "queued" || reservation.state === "blocked")) {
+          this.events.reservationCancels += 1;
           this.queue = this.queue.filter((id) => id !== reservation.id);
           this.reservations.delete(reservation.id);
         }
-        return {};
+        return { cancelled: true };
       }
       case "container.create": {
         this.validateLease(request);
@@ -504,14 +523,18 @@ class ControlledProfileService {
         const input = request.create?.intent === "workload" ? request.create.create : undefined;
         if (input === undefined) throw new Error("controlled capacity fixture requires a workload create");
         this.events.containerCreates += 1;
+        markStage(`container:create:start:${this.scenario}`);
         await writeFile(join(controlRoot, "container-create"), "");
         reservation.state = "provisioning";
-        return await this.createContainer(reservation, input);
+        const created = await this.createContainer(reservation, input);
+        markStage(`container:create:complete:${this.scenario}`);
+        return created;
       }
       case "reservation.release": {
         this.validateLease(request);
         const reservation = this.reservations.get(request.reservationId);
         if (reservation !== undefined) {
+          markStage(`reservation:release:start:${this.scenario}`);
           this.events.reservationReleases += 1;
           reservation.state = "releasing";
           const hadContainer = reservation.containerId !== undefined;
@@ -523,8 +546,9 @@ class ControlledProfileService {
             await writeFile(join(controlRoot, "cancel-waiter-released"), "");
           }
           this.grantNext();
+          markStage(`reservation:release:complete:${this.scenario}`);
         }
-        return { cleanupProven: true };
+        return { released: true, cleanupProven: true };
       }
       default:
         throw new Error(`unsupported controlled-profile request ${String(request.kind)}`);
@@ -693,8 +717,9 @@ async function waitForControlClean(service, timeoutMs = 15_000) {
 }
 
 async function runEdgeScenario(service, environment, scenario) {
+  markStage(`edge:${scenario}:start`);
   service.scenario = scenario;
-  service.events = { containerCreates: 0, reservationReleases: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
+  service.events = { containerCreates: 0, reservationReleases: 0, reservationCancels: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
   const transcript = join(controlRoot, `edge-${scenario}.typescript`);
   const invocation = startProcess(["script", "-qefc", [
     "stty cols 200 rows 40",
@@ -716,13 +741,15 @@ async function runEdgeScenario(service, environment, scenario) {
   if (scenario !== "reuse" && /creating sandbox|sandbox\.create|eval:start/u.test(liveHuman)) {
     throw new Error(`edge ${scenario} exposed a start/create before granted admission: ${liveHuman}`);
   }
+  markStage(`edge:${scenario}:complete`);
   return { sessionShowJson: publicSession.sessionShowJson, exitCode: result.exitCode, control, liveHuman };
 }
 
 async function runCancelScenario(service, environment) {
+  markStage("cancel:start");
   service.scenario = "cancel";
   service.cancelArmed = true;
-  service.events = { containerCreates: 0, reservationReleases: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
+  service.events = { containerCreates: 0, reservationReleases: 0, reservationCancels: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
   const invocation = startProcess([
     "node_modules/.bin/niceeval",
     "exp",
@@ -756,12 +783,14 @@ async function runCancelScenario(service, environment) {
   }
 
   const reuse = await runEdgeScenario(service, environment, "reuse");
+  markStage("cancel:complete");
   return { cancelControl, cancelHuman, cancelPublic, reuse };
 }
 
 async function runCapacityOneScenario(service, environment) {
+  markStage("capacity-one:start");
   service.scenario = "capacity-one";
-  service.events = { containerCreates: 0, reservationReleases: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
+  service.events = { containerCreates: 0, reservationReleases: 0, reservationCancels: 0, acquiredStates: [], activeContainers: 0, maxActiveContainers: 0 };
   const transcript = join(controlRoot, "capacity-one.typescript");
   const invocation = startProcess(["script", "-qefc", [
     "stty cols 200 rows 40",
@@ -778,6 +807,7 @@ async function runCapacityOneScenario(service, environment) {
     throw new Error(`capacity-one lifecycle violated: ${JSON.stringify(service.events)}`);
   }
   const publicSession = await latestPublicSession(environment, "provider-capacity/40-capacity-one");
+  markStage("capacity-one:complete");
   return { control, sessionShowJson: publicSession.sessionShowJson, exitCode: result.exitCode, lifecycle: service.events };
 }
 
@@ -808,6 +838,7 @@ async function main() {
     NICEEVAL_E2E_PROVIDER_CAPACITY_SCENARIO: initialScenario,
   };
   try {
+    markStage("service:start");
     await service.listen();
     const transcript = join(controlRoot, "exp-human.typescript");
     const commandLine = [
@@ -818,6 +849,7 @@ async function main() {
       env: childEnvironment,
       detached: true,
     });
+    markStage("base:invoked");
 
     const firstEntered = await waitForFile(
       join(controlRoot, "profile-first-entered"),
@@ -864,12 +896,14 @@ async function main() {
       liveHuman,
     })}\n`, { mode: 0o666 });
     await chmod(join(controlRoot, "public-observation.json"), 0o666);
+    markStage("base:observation-captured");
     // Normal provider admission is bounded only by the invocation/Attempt signal
     // (or an explicit user deadline), never by an internal 30-second queue timer.
     // Keep the public queued observation alive beyond the former hidden limit.
     await delay(31_000);
     await writeFile(join(controlRoot, "observation-ready"), "", { mode: 0o666 });
     await chmod(join(controlRoot, "observation-ready"), 0o666);
+    markStage("base:long-wait-proven");
 
     const released = await waitForFile(
       join(controlRoot, "release-profile-first"),
@@ -878,6 +912,7 @@ async function main() {
       invocation,
     );
     if (!released) throw new Error("test did not release the first profile reservation");
+    markStage("base:release-received");
     const result = await invocation.done;
     if (result.exitCode !== 0) {
       throw new Error(
@@ -894,6 +929,7 @@ async function main() {
     if (!secondEntered) {
       throw new Error("second profile Attempt did not enter after the long provider-capacity wait");
     }
+    markStage("base:complete");
     const edgeBlocked = await runEdgeScenario(service, childEnvironment, "blocked");
     const edgeAbnormal = await runEdgeScenario(service, childEnvironment, "provisioning");
     const cancelled = await runCancelScenario(service, childEnvironment);
@@ -905,10 +941,12 @@ async function main() {
       capacityOne,
     })}\n`, { mode: 0o666 });
     await chmod(join(controlRoot, "matrix-observation.json"), 0o666);
+    markStage("matrix:complete");
   } catch (error) {
     primaryError = error;
     throw error;
   } finally {
+    markStage("cleanup:start");
     const cleanupErrors = [];
     try {
       await terminate(invocation);
@@ -932,6 +970,7 @@ async function main() {
         throw new AggregateError(cleanupErrors, "provider-capacity driver cleanup failed");
       }
     }
+    markStage("cleanup:complete");
   }
 }
 

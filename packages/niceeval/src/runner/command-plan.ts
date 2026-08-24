@@ -562,14 +562,17 @@ function scheduledBeforeSteps(
     const prefixIdentity = entry.kind === "action" && !opaqueAncestor && !currentOpaque
       ? linkedSetupPrefixActionIdentity(parentPrefixIdentity, entry, cumulativeState!)
       : undefined;
-    const barrier = capability === "unsupported" || providerCoverage === "unsupported"
-      ? "provider-unsupported" as const
-      : opaqueAncestor
-        ? "opaque-ancestor" as const
-        : unsupportedStateAncestor
-          ? "unsupported-state-ancestor" as const
-          : currentOpaque
-            ? "opaque-action" as const
+    // Provider capability and linked lineage are independent facts. Preserve the
+    // earliest structural barrier even when this provider cannot cache any prefix;
+    // capability/capabilityReason still report that provider-wide limitation.
+    const barrier = opaqueAncestor
+      ? "opaque-ancestor" as const
+      : currentOpaque
+        ? "opaque-action" as const
+        : capability === "unsupported" || providerCoverage === "unsupported"
+          ? "provider-unsupported" as const
+          : unsupportedStateAncestor
+            ? "unsupported-state-ancestor" as const
             : sandboxActionStateCovers(providerCoverage, projectedCumulativeState as SandboxActionState)
               ? "none" as const
               : "unsupported-state" as const;

@@ -131,18 +131,19 @@ export const sharedStateReuseSandbox = dockerSandbox({
 }).after(async (_sandbox, ctx) => {
   if (barrierRoot === undefined) return;
   if (lifecycleRole === "pool-first") {
-    await mark("sandbox-lifecycle-scope-started");
-    await waitFor(join(barrierRoot, "release-sandbox-lifecycle-scope"), ctx.signal);
-    await mark("sandbox-lifecycle-scope-complete");
+    const ordinal = ctx.attempt.index + 1;
+    await mark(`sandbox-after-attempt-${ordinal}-started`);
+    await waitFor(join(barrierRoot, `release-sandbox-after-attempt-${ordinal}`), ctx.signal);
+    await mark(`sandbox-after-attempt-${ordinal}-complete`);
     return;
   }
   if (lifecycleRole === "pool-retire-fails") {
-    await mark("pool-retire-scope-finalizer-started");
-    throw new Error("deterministic reusable Sandbox lifecycle teardown failure");
+    await mark("pool-retire-after-started");
+    throw new Error("deterministic reusable Sandbox after failure");
   }
   if (lifecycleRole === "fresh-cleanup-fails") {
-    await mark("fresh-sandbox-lifecycle-teardown-started");
-    throw new Error("deterministic fresh Sandbox lifecycle teardown failure");
+    await mark("fresh-sandbox-after-started");
+    throw new Error("deterministic fresh Sandbox after failure");
   }
 });
 

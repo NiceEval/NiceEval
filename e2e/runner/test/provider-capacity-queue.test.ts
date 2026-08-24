@@ -9,6 +9,8 @@ import { runnerE2E } from "./context.ts";
 const DRIVER_IMAGE = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f";
 const PROFILE_EXPERIMENT = "provider-capacity/base/00-profile";
 const INDEPENDENT_EXPERIMENT = "provider-capacity/base/10-independent";
+const DRIVER_DEADLINE_MS = 230_000;
+const OWNER_DEADLINE_MS = 235_000;
 const docker = command(["docker"]);
 
 interface PublicObservation {
@@ -75,14 +77,12 @@ function terminalText(value: string): string {
     .replaceAll("\b", "");
 }
 
-async function removeOwnedDockerResources(runId: string, image: string): Promise<void> {
-  const label = `niceeval.e2e.provider-capacity=${runId}`;
+async function removeOwnedDockerObjects(label: string, cleanupErrors: unknown[]): Promise<void> {
   const kinds = [
     { list: ["ps", "--all", "--quiet", "--filter", `label=${label}`], remove: ["rm", "--force", "--volumes"] },
     { list: ["network", "ls", "--quiet", "--filter", `label=${label}`], remove: ["network", "rm"] },
     { list: ["volume", "ls", "--quiet", "--filter", `label=${label}`], remove: ["volume", "rm", "--force"] },
   ] as const;
-  const cleanupErrors: unknown[] = [];
   for (const kind of kinds) {
     const listed = await docker.run(kind.list);
     if (listed.exitCode !== 0) {
@@ -94,6 +94,49 @@ async function removeOwnedDockerResources(runId: string, image: string): Promise
     const removed = await docker.run([...kind.remove, ...ids], { timeoutMs: 30_000 });
     if (removed.exitCode !== 0) cleanupErrors.push(new Error(removed.diagnostic()));
   }
+}
+
+async function restoreBindMountPermissions(
+  label: string,
+  projectRoot: string,
+  controlRoot: string,
+): Promise<void> {
+  const restored = await docker.run([
+    "run", "--rm", "--network", "none",
+    "--label", label,
+    "--mount", `type=bind,src=${projectRoot},dst=/project`,
+    "--mount", `type=bind,src=${controlRoot},dst=/control-root`,
+    DRIVER_IMAGE,
+    "sh", "-ceu",
+    'owner="$1"; shift; for target do if [ -e "$target" ]; then chown -R "$owner" "$target"; fi; done',
+    "provider-capacity-permission-recovery",
+    `${process.getuid!()}:${process.getgid!()}`,
+    "/project/.niceeval",
+    "/control-root",
+  ], { timeoutMs: 30_000 });
+  if (restored.exitCode !== 0) throw new Error(restored.diagnostic());
+}
+
+async function removeOwnedDockerResources(
+  runId: string,
+  image: string,
+  projectRoot: string,
+  controlRoot: string,
+  restorePermissions: boolean,
+): Promise<void> {
+  const label = `niceeval.e2e.provider-capacity=${runId}`;
+  const cleanupErrors: unknown[] = [];
+  await removeOwnedDockerObjects(label, cleanupErrors);
+  if (restorePermissions) {
+    try {
+      await restoreBindMountPermissions(label, projectRoot, controlRoot);
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
+  // A timed-out permission helper can outlive its Docker client. Sweep the
+  // same owned label again before removing the fixture image.
+  await removeOwnedDockerObjects(label, cleanupErrors);
   const removedImage = await docker.run(["image", "rm", "--force", image], { timeoutMs: 30_000 });
   if (removedImage.exitCode !== 0 && !/No such image/u.test(removedImage.diagnostic())) {
     cleanupErrors.push(new Error(removedImage.diagnostic()));
@@ -112,6 +155,7 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", a
         const runId = crypto.randomUUID();
         const image = `niceeval-e2e-provider-capacity:${runId}`;
         let observation: PublicObservation | undefined;
+        let driverStarted = false;
         let primaryError: unknown;
         try {
           const built = await docker.run([
@@ -136,7 +180,8 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", a
             "--env", `NICEEVAL_E2E_HOST_GID=${process.getgid!()}`,
             DRIVER_IMAGE,
             "node", "fixtures/provider-capacity/driver.mjs",
-          ], { timeoutMs: 180_000, graceMs: 10_000 });
+          ], { timeoutMs: DRIVER_DEADLINE_MS, graceMs: 10_000 });
+          driverStarted = true;
 
           const ready = join(controlRoot, "observation-ready");
           await Promise.race([
@@ -164,14 +209,20 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", a
             expect(observation.control.reservations, `${scenario} reservations must be released`).toEqual([]);
             expect(observation.control.used, `${scenario} provider capacity must be zero`).toEqual({ containers: 0, builds: 0 });
             expect(observation.control.events?.containerCreates, `${scenario} must not call container.create`).toBe(0);
-            expect(observation.control.events?.reservationReleases, `${scenario} must release its reservation`).toBeGreaterThanOrEqual(1);
+            expect(
+              (observation.control.events?.reservationReleases ?? 0) +
+              (observation.control.events?.reservationCancels ?? 0),
+              `${scenario} must relinquish its reservation`,
+            ).toBeGreaterThanOrEqual(1);
             expect(observation.liveHuman, `${scenario} must not expose sandbox creation`).not.toMatch(/creating sandbox|sandbox\.create/u);
             expect(observation.sessionShowJson, `${scenario} public session must not expose sandbox.create`).not.toContain("sandbox.create");
           };
           assertNoCreate("immediate blocked", matrix.edgeBlocked);
           assertNoCreate("abnormal non-granted", matrix.edgeAbnormal);
           expect(matrix.edgeBlocked.control.events?.acquiredStates).toContain("blocked");
+          expect(matrix.edgeBlocked.control.events?.reservationCancels).toBeGreaterThanOrEqual(1);
           expect(matrix.edgeAbnormal.control.events?.acquiredStates).toContain("provisioning");
+          expect(matrix.edgeAbnormal.control.events?.reservationReleases).toBeGreaterThanOrEqual(1);
           assertNoCreate("grant/reacquire cancellation", {
             sessionShowJson: matrix.cancelled.cancelPublic.sessionShowJson,
             control: matrix.cancelled.cancelControl,
@@ -190,7 +241,13 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", a
           throw error;
         } finally {
           try {
-            await removeOwnedDockerResources(runId, image);
+            await removeOwnedDockerResources(
+              runId,
+              image,
+              paths.projectRoot,
+              controlRoot,
+              driverStarted,
+            );
           } catch (cleanupError) {
             if (primaryError !== undefined) {
               throw new AggregateError(
@@ -245,4 +302,4 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", a
       });
     },
   );
-}, 240_000);
+}, OWNER_DEADLINE_MS);

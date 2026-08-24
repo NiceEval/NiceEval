@@ -160,7 +160,7 @@ watchdog检测 control connection断开和 heartbeat停止后，把 lease转为 
 5. running/provisioning outer container先 force remove，stopped container直接 remove；
 6. 重复枚举并验证相关 cgroup/process/mount消失；
 7. 对匹配 token的 Docker data allocation执行 draining、scrubbing与 verified-free；
-8. 释放匹配 container reservation并把 lease提交为 `recovered`。
+8. 释放匹配 container reservation，把 lease提交为瞬时 `recovered` 回执，再从活跃账本移除。
 
 没有 profile ID + Invocation UUID + provision token + journal事实的完整匹配不自动删除。无法枚举、
 卸载、scrub或验证时保持 recovery占用并隔离 slot。profile仍可在剩余容量内服务其它 Invocation，但

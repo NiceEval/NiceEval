@@ -86,7 +86,8 @@ export interface DockerProfileReservationAdmission {
 /**
  * Scope-owned reservation. `release` is shared by the Scope finalizer and the
  * provider's normal after-stop path, so either path may win without double
- * releasing or leaving a grant-to-install ownership gap.
+ * disposal or leaving a grant-to-install ownership gap. Queued/blocked owners
+ * cancel; capacity-owning states release.
  */
 export interface DockerProfileReservationOwner {
   readonly reservation: DockerProfileReservation;
@@ -175,6 +176,10 @@ interface DockerProfileReleaseReceipt {
   readonly cleanupProven?: true;
 }
 
+interface DockerProfileCancelReceipt {
+  readonly cancelled: true;
+}
+
 interface DockerProfileCleanupStatusReceipt {
   readonly profileId: string;
   readonly generation: string;
@@ -239,6 +244,16 @@ function validateReleaseReceipt(value: unknown): DockerProfileReleaseReceipt {
     released: true,
     ...(receipt.cleanupProven === true ? { cleanupProven: true as const } : {}),
   });
+}
+
+function validateCancelReceipt(value: unknown): DockerProfileCancelReceipt {
+  if (
+    typeof value !== "object" || value === null || Array.isArray(value) ||
+    Object.keys(value).length !== 1 || (value as Readonly<Record<string, unknown>>).cancelled !== true
+  ) {
+    throw new Error("Docker profile reservation cancel receipt is not exact or does not prove cancellation");
+  }
+  return Object.freeze({ cancelled: true });
 }
 
 function validateCleanupStatusReceipt(value: unknown): DockerProfileCleanupStatusReceipt {
@@ -959,15 +974,20 @@ export async function acquireDockerProfileReservation(
       }, signal);
       if (signal?.aborted) throw signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError");
     }
-    if (reservation.state !== "granted") throw nonGrantedReservationError(reservation);
+    if (reservation.state !== "granted") {
+      if (reservation.state === "blocked" && doctorDeadline !== undefined) {
+        throw new DockerProfileCapacityBlockedError("doctor-timeout");
+      }
+      throw nonGrantedReservationError(reservation);
+    }
   } catch (error) {
     if (reservation !== undefined) {
       try {
-        await releaseDockerProfileReservation(lease, reservationId, reservation);
+        await relinquishDockerProfileReservation(lease, reservationId, reservation);
       } catch (releaseError) {
         throw new AggregateError(
           [error, releaseError],
-          `Docker profile reservation ${reservationId} acquisition and release both failed`,
+          `Docker profile reservation ${reservationId} acquisition and disposal both failed`,
         );
       }
     }
@@ -1029,7 +1049,7 @@ function makeDockerProfileReservationOwner(
     async release() {
       if (released) return;
       if (releaseInFlight !== undefined) return await releaseInFlight;
-      const releasing = releaseDockerProfileReservation(lease, reservationId, current).then(() => {
+      const releasing = relinquishDockerProfileReservation(lease, reservationId, current).then(() => {
         released = true;
       });
       releaseInFlight = releasing;
@@ -1325,5 +1345,76 @@ export async function releaseDockerProfileReservation(
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     throw primary;
+  }
+}
+
+async function cancelDockerProfileReservation(
+  lease: DockerProfileLease,
+  reservationId: string,
+): Promise<void> {
+  try {
+    validateCancelReceipt(await dockerProfileControlRequest<unknown>(lease.binding.controlSocketPath, {
+      kind: "reservation.cancel",
+      invocationId: lease.invocationId,
+      leaseToken: lease.leaseToken,
+      reservationId,
+    }));
+  } catch (primary) {
+    // A successful cancellation can outlive a lost client reply. Accept that
+    // only when the attested generation proves every reservation handle gone.
+    const status = await dockerProfileControlRequest<unknown>(
+      lease.binding.controlSocketPath,
+      { kind: "status" },
+    ).then(validateCleanupStatusReceipt).catch(() => undefined);
+    const absent = status?.profileId === lease.binding.profile.profileId &&
+      status.generation === lease.binding.daemonGeneration &&
+      !status.reservations.some((item) => item.reservationId === reservationId) &&
+      !status.queue.some((item) => item.reservationId === reservationId) &&
+      !status.slots.some((item) => item.reservationId === reservationId) &&
+      !status.degraded.some((item) => item.includes(reservationId));
+    if (absent) return;
+    throw primary;
+  }
+}
+
+async function relinquishDockerProfileReservation(
+  lease: DockerProfileLease,
+  reservationId: string,
+  reservation: DockerProfileReservation,
+): Promise<void> {
+  if (reservation.state !== "queued" && reservation.state !== "blocked") {
+    await releaseDockerProfileReservation(lease, reservationId, reservation);
+    return;
+  }
+  try {
+    await cancelDockerProfileReservation(lease, reservationId);
+    return;
+  } catch (cancelError) {
+    // Capacity may become available between the last poll and cancellation.
+    // Once granted, the reservation owns provider capacity and must use the
+    // release path instead of pretending the failed cancel disposed it.
+    let current: DockerProfileReservation;
+    try {
+      current = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
+        kind: "reservation.get",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+      });
+    } catch (refreshError) {
+      throw new AggregateError(
+        [cancelError, refreshError],
+        `Docker profile reservation ${reservationId} cancellation state could not be reconciled`,
+      );
+    }
+    if (current.state === "queued" || current.state === "blocked") throw cancelError;
+    try {
+      await releaseDockerProfileReservation(lease, reservationId, current);
+    } catch (releaseError) {
+      throw new AggregateError(
+        [cancelError, releaseError],
+        `Docker profile reservation ${reservationId} raced from cancellation to release and both failed`,
+      );
+    }
   }
 }
