@@ -113,9 +113,33 @@ changeFrequency.frequent // 1000
 
 Experiment、评估组、评估用例和 Sandbox Agent 都贡献到同一个顺序。显式 `dependsOn` 先决定依赖，再按数值排序。因此，评估组里频率较低的动作可以排到 Experiment 的易变动作之前。
 
-普通本地单容器 Docker 会按动作指纹保存成功的准备前缀，但全部可变状态必须位于外层容器的可写根文件系统。下一次运行即使评估代码变了，也可以从最长匹配前缀启动。只有最后一个 `.env` action 变了时，固定的 Git checkout、目录上传和工具安装不会重跑。每个 Attempt 都从缓存结果的私有副本启动，不会继承上一个 Agent 留下的改动。
+### 声明准备缓存覆盖范围
 
-Docker Compose、使用 Profile 的 DinD、Vercel、E2B 和自定义 Provider 对准备前缀报告 `Unsupported`，仍按相同顺序真实执行动作。它们不会假装命中无法兑现的缓存。
+每个 `.before(action)` 都要如实声明它改变的完整状态范围。省略 `cache.state` 等于
+`sandboxState.all`：该 action 的全部副作用都必须能恢复。它不是让 Provider 任选一部分目录缓存的开关。
+
+只有 action 的全部副作用都局限于已经静止的 inner `/var/lib/docker` 时，才声明
+`sandboxState.dockerData`。完整的 Docker Profile Action 示例见
+[让 Sandbox 使用 Docker](/zh/tutorials/docker-in-docker#managed-rootless-dind)。
+
+把 `cache.state` 写在 action family 的 definition 或单次 instance 的任一处即可，不能两处重复，
+也不能由 instance 覆盖 definition。family ID、输入、展开后的 steps、声明的 state 和内容摘要会自动进入
+fingerprint。`cache.fingerprint` 只能补充 NiceEval 看不到的版本值，不能替代自动 fingerprint。
+
+Provider 只会发布自己能完整保存的覆盖范围：
+
+| Provider 情况 | 可用覆盖范围 | 结果 |
+| --- | --- | --- |
+| 普通本地单容器 Docker，全部可变状态都在 outer 可写 rootfs | `all` | 可恢复最长匹配前缀。 |
+| Docker Profile 的独立、完整预分配、固定大小 image slot 与 seed 都已具备 | `dockerData` | 只可恢复明确声明 `dockerData` 的连续前缀。 |
+| shared loop 或 project-quota Profile | 无 | `Unsupported`，action 真实执行。 |
+| Docker Compose、E2B、Vercel 或自定义 Provider | 无 | `Unsupported`，action 真实执行。 |
+
+第一个默认 `all`、`opaque` callback 或 Provider 不支持的 state 就是准备前缀的 barrier。该 action
+以及它后面的所有 action 都会真实执行；后缀即使声明 `dockerData`，也不能跳过缺少祖先状态的步骤。
+
+普通本地单容器 Docker 可以从最长匹配前缀启动。只有最后一个 `.env` action 变了时，固定的 Git checkout、
+目录上传和工具安装不会重跑。每个 Attempt 都从缓存结果的私有副本启动，不会继承上一个 Agent 留下的改动。
 
 ### 定义可复用 Action
 
@@ -147,7 +171,8 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
   ));
 ```
 
-family 的 `id`、输入、展开后的 steps 和内容摘要自动进入指纹。`cache.fingerprint` 只补充框架看不到的协议版本，不能替换自动指纹。family 只组合 NiceEval 提供的固定 step，不能取得运行中的 `Sandbox`。
+family 只组合 NiceEval 提供的固定 step，不能取得运行中的 `Sandbox`。上面的覆盖范围和 fingerprint
+规则同样适用于自定义 family。
 
 ### 写入、上传与 Git checkout
 

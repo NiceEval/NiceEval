@@ -4,6 +4,7 @@ import { hostname } from "node:os";
 import type { DatabaseSync } from "node:sqlite";
 import Docker from "dockerode";
 import { Effect } from "effect";
+import { sandboxActionStateCovers, sandboxState } from "./action.ts";
 import {
   SandboxSetupPrefixCacheCaptureError,
   SandboxSetupPrefixCacheCleanupError,
@@ -207,16 +208,29 @@ function validateOperation(input: SandboxSetupPrefixCacheOperation): ValidatedMa
   }
   validateIdentity(input.manifest.setupPrefixKey, "setupPrefixKey");
   validateIdentity(input.manifest.setupManifestDigest, "setupManifestDigest");
+  if (
+    input.manifest.requiredState !== sandboxState.all &&
+    input.manifest.requiredState !== sandboxState.dockerData
+  ) {
+    throw new TypeError("requiredState must be sandboxState.all or sandboxState.dockerData");
+  }
   validateIdentity(input.manifest.storageSchemaRevision, "storageSchemaRevision");
   validateIdentity(input.manifest.artifactFormatRevision, "artifactFormatRevision");
   if (!Number.isFinite(input.manifest.changeFrequency) || input.manifest.changeFrequency < 0) {
     throw new TypeError("changeFrequency must be a finite non-negative number");
   }
   const declarationJson = canonicalJson(input.manifest.declarationMetadata);
+  const declarationDigest = digest(declarationJson);
+  if (
+    input.manifest.setupPrefixKey !== `prefix:${declarationDigest}` ||
+    input.manifest.setupManifestDigest !== `sha256:${declarationDigest}`
+  ) {
+    throw new TypeError("setup-prefix key and manifest digest must match the complete canonical declaration metadata");
+  }
   return {
     value: input.manifest,
     declarationJson,
-    declarationDigest: digest(declarationJson),
+    declarationDigest,
   };
 }
 
@@ -942,6 +956,9 @@ async function lookupAndRebase(
     if (manifest.value.baseImageId !== eligibility.baseImageId) {
       throw new Error("setup-prefix lookup Base image does not match the initialized provider Base");
     }
+    if (!sandboxActionStateCovers(eligibility.coverage, manifest.value.requiredState)) {
+      throw new Error("setup-prefix lookup requires state outside the provider coverage");
+    }
   } catch (cause) {
     throw new SandboxSetupPrefixCacheValidationError({
       operation: "validate setup-prefix lookup",
@@ -961,6 +978,7 @@ async function lookupAndRebase(
       setupPrefixKey: manifest.value.setupPrefixKey,
       entryId: lease.row.entry_id,
       generation: lease.row.generation,
+      artifactId: restored.imageId,
       imageId: restored.imageId,
       sandboxId: restored.sandboxId,
     } as const;
@@ -1188,6 +1206,9 @@ async function captureAndRebase(
     if (manifest.value.baseImageId !== eligibility.baseImageId) {
       throw new Error("setup-prefix capture Base image does not match the initialized provider Base");
     }
+    if (!sandboxActionStateCovers(eligibility.coverage, manifest.value.requiredState)) {
+      throw new Error("setup-prefix capture requires state outside the provider coverage");
+    }
   } catch (cause) {
     throw new SandboxSetupPrefixCacheValidationError({
       operation: "validate setup-prefix capture",
@@ -1225,6 +1246,7 @@ async function captureAndRebase(
         setupPrefixKey: manifest.value.setupPrefixKey,
         entryId: reservedRow.entry_id,
         generation: reservedRow.generation,
+        artifactId: restored.imageId,
         imageId: restored.imageId,
         sandboxId: restored.sandboxId,
       } as const;

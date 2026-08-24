@@ -5,8 +5,16 @@ import { connect } from "node:net";
 import { dirname, join, parse } from "node:path";
 import type { Readable } from "node:stream";
 import { Effect, type Scope } from "effect";
+import type { SandboxSetupPrefixCacheOperation } from "../backend.ts";
+import type { JsonValue } from "../../shared/types.ts";
+import { digestOf } from "../identity.ts";
+import { sandboxState } from "../action.ts";
 import { indexDockerProfiles, resolveDockerProfile, type ResolvedDockerProfileEntry } from "./registry.ts";
-import type { DockerExecutionProfileV1 } from "./schema.ts";
+import {
+  DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL,
+  type DockerExecutionProfileV1,
+  type DockerProfileSetupPrefixFullCopyCapabilityV1,
+} from "./schema.ts";
 
 export const DOCKER_PROFILE_REGISTRY_DIR = "/etc/niceeval/docker-profiles";
 
@@ -38,6 +46,7 @@ export interface DockerProfileReservation {
   readonly buildTerminated?: boolean;
   readonly buildError?: string;
   readonly slotId?: string;
+  readonly slotGeneration?: number;
 }
 
 export class DockerProfileCapacityBlockedError extends Error {
@@ -124,6 +133,192 @@ export interface DockerProfileBuildCreateResult {
   readonly cleanupProven?: boolean;
 }
 
+export interface DockerProfileSetupPrefixArtifactIdentityV1 {
+  readonly requiredState: "dockerData";
+  readonly copyProtocol: DockerProfileSetupPrefixFullCopyCapabilityV1["copyProtocol"];
+  readonly copyRevision: string;
+  /** Provider-neutral identifier; it is not a Docker image id or a raw-filesystem digest slot. */
+  readonly artifactId: string;
+  readonly sizeBytes: number;
+}
+
+interface DockerProfileSetupPrefixReceiptV1 {
+  readonly daemonGeneration: string;
+  readonly slotGeneration: number;
+  readonly requiredState: "dockerData";
+  readonly setupPrefixKey: string;
+  readonly setupManifestDigest: string;
+  readonly artifact: DockerProfileSetupPrefixArtifactIdentityV1;
+}
+
+export interface DockerProfileSetupPrefixCaptureResultV1 extends DockerProfileSetupPrefixReceiptV1 {
+  readonly state: "captured" | "already-published";
+}
+
+export interface DockerProfileSetupPrefixRestoreResultV1 extends DockerProfileSetupPrefixReceiptV1 {
+  readonly state: "restored" | "already-restored";
+}
+
+export class DockerProfileControlError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details?: Readonly<Record<string, unknown>>,
+  ) {
+    super(`${code}: ${message}`);
+    this.name = "DockerProfileControlError";
+  }
+}
+
+interface DockerProfileReleaseReceipt {
+  readonly released: true;
+  readonly cleanupProven?: true;
+}
+
+interface DockerProfileCleanupStatusReceipt {
+  readonly profileId: string;
+  readonly generation: string;
+  readonly leases: readonly {
+    readonly invocationId: string;
+    readonly daemonGeneration: string;
+  }[];
+  readonly reservations: readonly {
+    readonly reservationId: string;
+    readonly invocationId: string;
+  }[];
+  readonly queue: readonly {
+    readonly reservationId: string;
+    readonly invocationId: string;
+  }[];
+  readonly slots: readonly {
+    readonly slotId: string;
+    readonly invocationId?: string;
+    readonly reservationId?: string;
+    readonly state: string;
+  }[];
+  readonly degraded: readonly string[];
+}
+
+type DockerProfileLeaseDrainState = "draining" | "recovered";
+
+const DOCKER_PROFILE_DRAIN_RECONCILE_TIMEOUT_MS = 60_000;
+const DOCKER_PROFILE_DRAIN_RECONCILE_INTERVAL_MS = 200;
+
+function validateLeaseDrainReceipt(value: unknown): DockerProfileLeaseDrainState {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Docker profile lease drain receipt is not an object");
+  }
+  const receipt = value as Readonly<Record<string, unknown>>;
+  if (Object.keys(receipt).length !== 1 || !("state" in receipt)) {
+    throw new Error("Docker profile lease drain receipt fields changed");
+  }
+  if (receipt.state !== "draining" && receipt.state !== "recovered") {
+    throw new Error("Docker profile lease drain did not reach a cleanup-owned state");
+  }
+  return receipt.state;
+}
+
+function validateReleaseReceipt(value: unknown): DockerProfileReleaseReceipt {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Docker profile reservation release receipt is not an object");
+  }
+  const receipt = value as Readonly<Record<string, unknown>>;
+  const fields = Object.keys(receipt).sort();
+  if (
+    receipt.released !== true ||
+    (receipt.cleanupProven !== undefined && receipt.cleanupProven !== true) ||
+    (
+      fields.length !== 1 &&
+      !(fields.length === 2 && fields[0] === "cleanupProven" && fields[1] === "released")
+    ) ||
+    (fields.length === 1 && fields[0] !== "released")
+  ) {
+    throw new Error("Docker profile reservation release receipt is not exact or does not prove release");
+  }
+  return Object.freeze({
+    released: true,
+    ...(receipt.cleanupProven === true ? { cleanupProven: true as const } : {}),
+  });
+}
+
+function validateCleanupStatusReceipt(value: unknown): DockerProfileCleanupStatusReceipt {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Docker profile cleanup status receipt is not an object");
+  }
+  const receipt = value as Readonly<Record<string, unknown>>;
+  if (
+    typeof receipt.profileId !== "string" ||
+    typeof receipt.generation !== "string" ||
+    !Array.isArray(receipt.leases) ||
+    !Array.isArray(receipt.reservations) ||
+    !Array.isArray(receipt.queue) ||
+    !Array.isArray(receipt.slots) ||
+    !Array.isArray(receipt.degraded)
+  ) {
+    throw new Error("Docker profile cleanup status receipt is missing ownership fields");
+  }
+  const leases = receipt.leases.map((item) => {
+    if (
+      typeof item !== "object" || item === null || Array.isArray(item) ||
+      typeof item.invocationId !== "string" || typeof item.daemonGeneration !== "string"
+    ) throw new Error("Docker profile cleanup status lease identity is invalid");
+    return { invocationId: item.invocationId, daemonGeneration: item.daemonGeneration };
+  });
+  const reservations = receipt.reservations.map((item) => {
+    if (
+      typeof item !== "object" || item === null || Array.isArray(item) ||
+      typeof item.reservationId !== "string" || typeof item.invocationId !== "string"
+    ) throw new Error("Docker profile cleanup status reservation identity is invalid");
+    return { reservationId: item.reservationId, invocationId: item.invocationId };
+  });
+  const queue = receipt.queue.map((item) => {
+    if (
+      typeof item !== "object" || item === null || Array.isArray(item) ||
+      typeof item.reservationId !== "string" || typeof item.invocationId !== "string"
+    ) throw new Error("Docker profile cleanup status queue ownership is invalid");
+    return { reservationId: item.reservationId, invocationId: item.invocationId };
+  });
+  const slots = receipt.slots.map((item) => {
+    if (
+      typeof item !== "object" || item === null || Array.isArray(item) ||
+      typeof item.slotId !== "string" || typeof item.state !== "string" ||
+      (item.invocationId !== undefined && typeof item.invocationId !== "string") ||
+      (item.reservationId !== undefined && typeof item.reservationId !== "string")
+    ) throw new Error("Docker profile cleanup status slot ownership is invalid");
+    return {
+      slotId: item.slotId,
+      state: item.state,
+      ...(item.invocationId === undefined ? {} : { invocationId: item.invocationId }),
+      ...(item.reservationId === undefined ? {} : { reservationId: item.reservationId }),
+    };
+  });
+  if (!receipt.degraded.every((item) => typeof item === "string")) {
+    throw new Error("Docker profile cleanup status diagnostics are invalid");
+  }
+  return Object.freeze({
+    profileId: receipt.profileId,
+    generation: receipt.generation,
+    leases: Object.freeze(leases),
+    reservations: Object.freeze(reservations),
+    queue: Object.freeze(queue),
+    slots: Object.freeze(slots),
+    degraded: Object.freeze([...receipt.degraded]),
+  });
+}
+
+function leaseCleanupProven(
+  receipt: DockerProfileCleanupStatusReceipt,
+  binding: DockerProfileRuntimeBinding,
+  invocationId: string,
+): boolean {
+  return receipt.profileId === binding.profile.profileId &&
+    receipt.generation === binding.daemonGeneration &&
+    !receipt.leases.some((item) => item.invocationId === invocationId) &&
+    !receipt.reservations.some((item) => item.invocationId === invocationId) &&
+    !receipt.queue.some((item) => item.invocationId === invocationId) &&
+    !receipt.slots.some((item) => item.invocationId === invocationId);
+}
+
 export async function lookupDockerProfileBuild(
   binding: DockerProfileRuntimeBinding,
   buildKey: string,
@@ -188,6 +383,7 @@ export function dockerProfileControlRequest<T>(
   path: string,
   request: Readonly<Record<string, unknown>>,
   signal?: AbortSignal,
+  timeoutMs = 10_000,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const socket = connect(path);
@@ -207,7 +403,7 @@ export function dockerProfileControlRequest<T>(
     );
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
-    socket.setTimeout(10_000);
+    socket.setTimeout(timeoutMs);
     socket.on("connect", () => socket.end(`${JSON.stringify(request)}\n`));
     socket.on("data", (chunk: Buffer) => { response += chunk.toString(); });
     socket.on("timeout", () => socket.destroy(new Error(`Docker profile control timeout: ${path}`)));
@@ -215,14 +411,356 @@ export function dockerProfileControlRequest<T>(
     socket.on("close", () => {
       if (settled) return;
       try {
-        const parsed = JSON.parse(response) as { ok?: boolean; result?: T; error?: { code?: string; message?: string } };
+        const parsed = JSON.parse(response) as {
+          ok?: boolean;
+          result?: T;
+          error?: Readonly<Record<string, unknown>> & { readonly code?: string; readonly message?: string };
+        };
         if (parsed.ok !== true || parsed.result === undefined) {
-          settle({ error: new Error(`${parsed.error?.code ?? "control-error"}: ${parsed.error?.message ?? "invalid control reply"}`) });
+          settle({
+            error: new DockerProfileControlError(
+              parsed.error?.code ?? "control-error",
+              parsed.error?.message ?? "invalid control reply",
+              parsed.error,
+            ),
+          });
         } else settle({ value: parsed.result });
       } catch (error) {
         settle({ error });
       }
     });
+  });
+}
+
+function setupPrefixCapability(
+  lease: DockerProfileLease,
+): DockerProfileSetupPrefixFullCopyCapabilityV1 {
+  const capability = lease.binding.profile.backend.filesystem.setupPrefix;
+  if (capability === undefined) {
+    throw new Error("Docker profile descriptor does not declare setup-prefix full-copy capability");
+  }
+  if (
+    capability.protocol !== DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL ||
+    capability.coverage !== sandboxState.dockerData ||
+    capability.requiredState !== sandboxState.dockerData ||
+    lease.binding.profile.backend.filesystem.dockerDataPool.attestation !==
+      capability.slotAttestation ||
+    lease.binding.profile.backend.filesystem.dockerDataPool.bytesPerAllocation !==
+      capability.filesystemSizeBytes
+  ) {
+    throw new Error(
+      "Docker profile setup-prefix capability is not backed by independent fixed-filesystem slots",
+    );
+  }
+  return capability;
+}
+
+function setupPrefixExpectedWire(
+  lease: DockerProfileLease,
+  reservation: DockerProfileReservation,
+  input: SandboxSetupPrefixCacheOperation,
+): Readonly<Record<string, unknown>> {
+  const capability = setupPrefixCapability(lease);
+  return Object.freeze({
+    protocol: capability.protocol,
+    requiredState: capability.requiredState,
+    descriptorDigest: lease.binding.descriptorDigest,
+    setupPrefixKey: input.manifest.setupPrefixKey,
+    setupManifestDigest: input.manifest.setupManifestDigest,
+    providerIdentity: capability.providerIdentity,
+    baseIdentity: input.manifest.baseImageId,
+    executionDomain: capability.executionDomain,
+    helperRevision: capability.helperRevision,
+    copyProtocol: capability.copyProtocol,
+    copyRevision: capability.copyRevision,
+    quiesceRevision: capability.quiesceRevision,
+    filesystemSizeBytes: capability.filesystemSizeBytes,
+    filesystemFeatures: Object.freeze([...capability.filesystemFeatures]),
+    daemonGeneration: lease.binding.daemonGeneration,
+    slotGeneration: reservation.slotGeneration,
+  });
+}
+
+function setupPrefixControlFrame(
+  kind: "setup-prefix.capture" | "setup-prefix.restore",
+  lease: DockerProfileLease,
+  reservation: DockerProfileReservation,
+  input: SandboxSetupPrefixCacheOperation,
+): Readonly<Record<string, unknown>> {
+  if (!Number.isSafeInteger(reservation.slotGeneration) || reservation.slotGeneration! < 0) {
+    throw new Error("Docker profile reservation has no attested private slot generation");
+  }
+  const manifestDigest = digestOf(input.manifest.declarationMetadata as JsonValue);
+  if (
+    input.manifest.requiredState !== sandboxState.dockerData ||
+    input.manifest.setupPrefixKey !== `prefix:${manifestDigest}` ||
+    input.manifest.setupManifestDigest !== `sha256:${manifestDigest}`
+  ) {
+    throw new Error("Docker profile setup-prefix key is not bound to its complete canonical manifest identity");
+  }
+  if (input.operationId.length === 0 || input.operationId.length > 256 || input.operationId.includes("\0")) {
+    throw new Error("Docker profile setup-prefix operationId is invalid");
+  }
+  return Object.freeze({
+    kind,
+    invocationId: lease.invocationId,
+    leaseToken: lease.leaseToken,
+    reservationId: reservation.reservationId,
+    ...setupPrefixExpectedWire(lease, reservation, input),
+  });
+}
+
+function setupPrefixWireRecord(value: unknown): Readonly<Record<string, unknown>> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Docker profile setup-prefix control response is not an object");
+  }
+  return value as Readonly<Record<string, unknown>>;
+}
+
+function validateExactSetupPrefixFields(
+  value: Readonly<Record<string, unknown>>,
+  expectedFields: readonly string[],
+  label: string,
+): void {
+  const actual = Object.keys(value).sort();
+  const expected = [...expectedFields].sort();
+  if (
+    actual.length !== expected.length ||
+    actual.some((field, index) => field !== expected[index])
+  ) {
+    throw new Error(
+      `Docker profile setup-prefix ${label} fields changed: ` +
+      `expected ${expected.join(", ")}; received ${actual.join(", ")}`,
+    );
+  }
+}
+
+function validateSetupPrefixArtifactIdentity(
+  value: unknown,
+  lease: DockerProfileLease,
+  expected?: DockerProfileSetupPrefixArtifactIdentityV1,
+): DockerProfileSetupPrefixArtifactIdentityV1 {
+  const artifact = setupPrefixWireRecord(value);
+  validateExactSetupPrefixFields(
+    artifact,
+    ["requiredState", "copyProtocol", "copyRevision", "artifactId", "sizeBytes"],
+    "artifact receipt",
+  );
+  const capability = setupPrefixCapability(lease);
+  if (artifact.requiredState !== capability.requiredState) {
+    throw new Error("Docker profile setup-prefix artifact requiredState does not match the descriptor");
+  }
+  if (artifact.copyProtocol !== capability.copyProtocol) {
+    throw new Error("Docker profile setup-prefix artifact copyProtocol does not match the descriptor");
+  }
+  if (artifact.copyRevision !== capability.copyRevision) {
+    throw new Error("Docker profile setup-prefix artifact copyRevision does not match the descriptor");
+  }
+  if (
+    typeof artifact.artifactId !== "string" ||
+    artifact.artifactId.length === 0 ||
+    artifact.artifactId.length > 512 ||
+    /[\u0000-\u001f\u007f]/u.test(artifact.artifactId)
+  ) {
+    throw new Error("Docker profile setup-prefix artifactId is not a bounded provider identity");
+  }
+  if (!Number.isSafeInteger(artifact.sizeBytes) || (artifact.sizeBytes as number) < 0) {
+    throw new Error("Docker profile setup-prefix artifact sizeBytes is invalid");
+  }
+  if ((artifact.sizeBytes as number) > capability.seedLimitBytes) {
+    throw new Error("Docker profile setup-prefix artifact exceeds descriptor seedLimitBytes");
+  }
+  if (
+    capability.copyProtocol === "raw-image/v1" &&
+    artifact.sizeBytes !== capability.filesystemSizeBytes
+  ) {
+    throw new Error("Docker profile raw-image artifact does not cover the complete fixed Docker data filesystem");
+  }
+  const identity = Object.freeze({
+    requiredState: capability.requiredState,
+    copyProtocol: capability.copyProtocol,
+    copyRevision: capability.copyRevision,
+    artifactId: artifact.artifactId,
+    sizeBytes: artifact.sizeBytes as number,
+  });
+  if (
+    expected !== undefined &&
+    (
+      identity.copyProtocol !== expected.copyProtocol ||
+      identity.copyRevision !== expected.copyRevision ||
+      identity.requiredState !== expected.requiredState ||
+      identity.artifactId !== expected.artifactId ||
+      identity.sizeBytes !== expected.sizeBytes
+    )
+  ) {
+    throw new Error("Docker profile setup-prefix restored artifact identity changed after capture");
+  }
+  return identity;
+}
+
+function wireValueMatches(actual: unknown, expected: unknown): boolean {
+  if (Array.isArray(expected)) {
+    return Array.isArray(actual) && actual.length === expected.length &&
+      expected.every((value, index) => actual[index] === value);
+  }
+  return actual === expected;
+}
+
+function validateSetupPrefixWireBinding(
+  receipt: Readonly<Record<string, unknown>>,
+  lease: DockerProfileLease,
+  reservation: DockerProfileReservation,
+  input: SandboxSetupPrefixCacheOperation,
+  label: string,
+): void {
+  const expected = setupPrefixExpectedWire(lease, reservation, input);
+  for (const [field, value] of Object.entries(expected)) {
+    if (!wireValueMatches(receipt[field], value)) {
+      throw new Error(`Docker profile setup-prefix ${label} ${field} changed`);
+    }
+  }
+}
+
+function validateSetupPrefixReceipt(
+  value: unknown,
+  lease: DockerProfileLease,
+  reservation: DockerProfileReservation,
+  input: SandboxSetupPrefixCacheOperation,
+  expectedArtifact?: DockerProfileSetupPrefixArtifactIdentityV1,
+): DockerProfileSetupPrefixReceiptV1 & { readonly status: Readonly<Record<string, unknown>> } {
+  const response = setupPrefixWireRecord(value);
+  validateExactSetupPrefixFields(
+    response,
+    [...Object.keys(setupPrefixExpectedWire(lease, reservation, input)), "artifact", "status"],
+    "success receipt",
+  );
+  validateSetupPrefixWireBinding(response, lease, reservation, input, "response");
+  const status = setupPrefixWireRecord(response.status);
+  validateExactSetupPrefixFields(status, ["state", "capacity"], "success status");
+  setupPrefixWireRecord(status.capacity);
+  return Object.freeze({
+    daemonGeneration: response.daemonGeneration as string,
+    slotGeneration: response.slotGeneration as number,
+    requiredState: response.requiredState as "dockerData",
+    setupPrefixKey: response.setupPrefixKey as string,
+    setupManifestDigest: response.setupManifestDigest as string,
+    artifact: validateSetupPrefixArtifactIdentity(response.artifact, lease, expectedArtifact),
+    status,
+  });
+}
+
+function validateSetupPrefixControlError(
+  cause: unknown,
+  lease: DockerProfileLease,
+  reservation: DockerProfileReservation,
+  input: SandboxSetupPrefixCacheOperation,
+): void {
+  if (!(cause instanceof DockerProfileControlError)) return;
+  try {
+    const details = setupPrefixWireRecord(cause.details);
+    validateExactSetupPrefixFields(
+      details,
+      [
+        "code",
+        "message",
+        ...Object.keys(setupPrefixExpectedWire(lease, reservation, input)),
+        "artifact",
+        "status",
+      ],
+      "failure receipt",
+    );
+    validateSetupPrefixWireBinding(details, lease, reservation, input, "failure receipt");
+    if (
+      typeof details.code !== "string" || details.code.length === 0 || details.code !== cause.code ||
+      typeof details.message !== "string" || details.message.length === 0 || details.message.length > 65_536
+    ) {
+      throw new Error("Docker profile setup-prefix failure code or message identity is invalid");
+    }
+    const artifact = setupPrefixWireRecord(details.artifact);
+    validateExactSetupPrefixFields(artifact, ["artifactId"], "failure artifact receipt");
+    if (artifact.artifactId !== null) {
+      throw new Error("Docker profile setup-prefix terminal failure must not claim an artifact identity");
+    }
+    const status = setupPrefixWireRecord(details.status);
+    validateExactSetupPrefixFields(status, ["state", "diagnostic"], "failure status");
+    if (status.state !== "failed" || status.diagnostic !== cause.code) {
+      throw new Error("Docker profile setup-prefix failure status does not match its diagnostic");
+    }
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error), { cause });
+  }
+}
+
+export async function captureDockerProfileSetupPrefix(
+  lease: DockerProfileLease,
+  reservation: DockerProfileReservation,
+  input: SandboxSetupPrefixCacheOperation,
+  signal?: AbortSignal,
+  controlTimeoutMs = 120_000,
+): Promise<DockerProfileSetupPrefixCaptureResultV1> {
+  setupPrefixCapability(lease);
+  let rawResponse: unknown;
+  try {
+    rawResponse = await dockerProfileControlRequest<unknown>(
+      lease.binding.controlSocketPath,
+      setupPrefixControlFrame("setup-prefix.capture", lease, reservation, input),
+      signal,
+      controlTimeoutMs,
+    );
+  } catch (cause) {
+    validateSetupPrefixControlError(cause, lease, reservation, input);
+    throw cause;
+  }
+  const response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input);
+  const state = response.status.state;
+  if (state !== "captured" && state !== "already-published") {
+    throw new Error(`Docker profile setup-prefix capture returned invalid state ${JSON.stringify(state)}`);
+  }
+  return Object.freeze({
+    daemonGeneration: response.daemonGeneration,
+    slotGeneration: response.slotGeneration,
+    requiredState: response.requiredState,
+    setupPrefixKey: response.setupPrefixKey,
+    setupManifestDigest: response.setupManifestDigest,
+    state,
+    artifact: response.artifact,
+  });
+}
+
+export async function restoreDockerProfileSetupPrefix(
+  lease: DockerProfileLease,
+  reservation: DockerProfileReservation,
+  input: SandboxSetupPrefixCacheOperation,
+  expected?: DockerProfileSetupPrefixArtifactIdentityV1,
+  signal?: AbortSignal,
+  controlTimeoutMs = 120_000,
+): Promise<DockerProfileSetupPrefixRestoreResultV1> {
+  setupPrefixCapability(lease);
+  let rawResponse: unknown;
+  try {
+    rawResponse = await dockerProfileControlRequest<unknown>(
+      lease.binding.controlSocketPath,
+      setupPrefixControlFrame("setup-prefix.restore", lease, reservation, input),
+      signal,
+      controlTimeoutMs,
+    );
+  } catch (cause) {
+    validateSetupPrefixControlError(cause, lease, reservation, input);
+    throw cause;
+  }
+  const response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input, expected);
+  const state = response.status.state;
+  if (state !== "restored" && state !== "already-restored") {
+    throw new Error(`Docker profile setup-prefix restore returned invalid state ${JSON.stringify(state)}`);
+  }
+  return Object.freeze({
+    daemonGeneration: response.daemonGeneration,
+    slotGeneration: response.slotGeneration,
+    requiredState: response.requiredState,
+    setupPrefixKey: response.setupPrefixKey,
+    setupManifestDigest: response.setupManifestDigest,
+    state,
+    artifact: response.artifact,
   });
 }
 
@@ -324,11 +862,46 @@ export async function createDockerProfileLease(binding: DockerProfileRuntimeBind
         timer = undefined;
       }
       if (drainInFlight !== undefined) return await drainInFlight;
-      const draining = dockerProfileControlRequest(binding.controlSocketPath, {
-        kind: "lease.drain", invocationId, leaseToken: created.leaseToken,
-      }).then(() => {
-        stopped = true;
-      });
+      const draining = (async () => {
+        const deadline = Date.now() + DOCKER_PROFILE_DRAIN_RECONCILE_TIMEOUT_MS;
+        let lastError: unknown;
+        while (true) {
+          try {
+            validateLeaseDrainReceipt(
+              await dockerProfileControlRequest<unknown>(binding.controlSocketPath, {
+                kind: "lease.drain", invocationId, leaseToken: created.leaseToken,
+              }),
+            );
+          } catch (error) {
+            // The Host operation and recovery owner outlive a client socket.
+            // A disconnect here is not cleanup proof; retry the idempotent
+            // drain and verify the ledger independently.
+            lastError = error;
+          }
+          try {
+            const status = validateCleanupStatusReceipt(
+              await dockerProfileControlRequest<unknown>(binding.controlSocketPath, { kind: "status" }),
+            );
+            if (leaseCleanupProven(status, binding, invocationId)) {
+              stopped = true;
+              return;
+            }
+            lastError = new Error(
+              `Docker profile lease ${invocationId} remains visible after drain reconciliation`,
+            );
+          } catch (error) {
+            lastError = error;
+          }
+          if (Date.now() >= deadline) {
+            throw new Error(
+              `Docker profile lease ${invocationId} did not reach recovered state within ` +
+              `${DOCKER_PROFILE_DRAIN_RECONCILE_TIMEOUT_MS}ms`,
+              lastError === undefined ? undefined : { cause: lastError },
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, DOCKER_PROFILE_DRAIN_RECONCILE_INTERVAL_MS));
+        }
+      })();
       drainInFlight = draining;
       try {
         await draining;
@@ -617,6 +1190,7 @@ export async function createDockerProfileContainer(
   lease: DockerProfileLease,
   reservationId: string,
   request: DockerProfileContainerCreateInput | DockerProfileContainerIntent,
+  signal?: AbortSignal,
 ): Promise<DockerProfileContainerCreateResult> {
   const create = "intent" in request ? request : { intent: "workload" as const, create: request };
   try {
@@ -626,7 +1200,7 @@ export async function createDockerProfileContainer(
       leaseToken: lease.leaseToken,
       reservationId,
       create,
-    });
+    }, signal);
   } catch (error) {
     // A lost reply can leave the journal committed. Recover the control-owned IDs instead of
     // issuing a second create or asking DockerSandbox's legacy reconciler to remove them.
@@ -635,7 +1209,7 @@ export async function createDockerProfileContainer(
       invocationId: lease.invocationId,
       leaseToken: lease.leaseToken,
       reservationId,
-    }).catch(() => undefined);
+    }, signal).catch(() => undefined);
     if (
       reservation?.state === "committed" &&
       reservation.containerId !== undefined &&
@@ -710,33 +1284,43 @@ export async function releaseDockerProfileReservation(
   lease: DockerProfileLease,
   reservationId: string,
   proof?: Pick<DockerProfileReservation, "slotId">,
-): Promise<{ readonly cleanupProven?: boolean }> {
-  try {
-    return await dockerProfileControlRequest(lease.binding.controlSocketPath, {
+): Promise<DockerProfileReleaseReceipt> {
+  const release = async (): Promise<DockerProfileReleaseReceipt> => validateReleaseReceipt(
+    await dockerProfileControlRequest<unknown>(lease.binding.controlSocketPath, {
       kind: "reservation.release", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
       reservationId,
-    });
+    }),
+  );
+  try {
+    return await release();
   } catch (primary) {
     // A reply can be lost after the durable release.  Treat that as success
     // only after the same profile generation confirms every owned handle is
     // absent and no reservation-specific recovery uncertainty remains.
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
-      const status = await dockerProfileControlRequest<{
-        readonly profileId?: string;
-        readonly generation?: string;
-        readonly leases?: readonly { readonly invocationId?: string; readonly daemonGeneration?: string }[];
-        readonly reservations?: readonly { readonly reservationId?: string; readonly invocationId?: string }[];
-        readonly slots?: readonly { readonly slotId?: string; readonly reservationId?: string; readonly state?: string }[];
-        readonly degraded?: readonly string[];
-      }>(lease.binding.controlSocketPath, { kind: "status" }).catch(() => undefined);
+      // Setup-prefix copy work can outlive a cancelled client socket. The host
+      // rejects release while that journaled operation is active; retry until
+      // it publishes/rolls back, then perform the same verified scrub release.
+      const retried = await release().catch(() => undefined);
+      if (retried !== undefined) return retried;
+      const status = await dockerProfileControlRequest<unknown>(
+        lease.binding.controlSocketPath,
+        { kind: "status" },
+      ).then(validateCleanupStatusReceipt).catch(() => undefined);
       if (status?.profileId === lease.binding.profile.profileId && status.generation === lease.binding.daemonGeneration) {
-        const reservationAbsent = !(status.reservations ?? []).some((item) => item.reservationId === reservationId);
-        const sameLease = (status.leases ?? []).some((item) => item.invocationId === lease.invocationId && item.daemonGeneration === lease.binding.daemonGeneration);
-        const slot = proof?.slotId === undefined ? undefined : (status.slots ?? []).find((item) => item.slotId === proof.slotId);
+        const reservationAbsent = !status.reservations.some((item) => item.reservationId === reservationId);
+        const queueAbsent = !status.queue.some((item) => item.reservationId === reservationId);
+        const leaseIdentitySafe = !status.leases.some((item) => item.invocationId === lease.invocationId) ||
+          status.leases.some((item) =>
+            item.invocationId === lease.invocationId && item.daemonGeneration === lease.binding.daemonGeneration
+          );
+        const slot = proof?.slotId === undefined ? undefined : status.slots.find((item) => item.slotId === proof.slotId);
         const slotFree = proof?.slotId === undefined || (slot?.state === "free" && slot.reservationId === undefined);
-        const uncertain = (status.degraded ?? []).some((item) => item.includes(reservationId));
-        if (reservationAbsent && sameLease && slotFree && !uncertain) return { cleanupProven: true };
+        const uncertain = status.degraded.some((item) => item.includes(reservationId));
+        if (reservationAbsent && queueAbsent && leaseIdentitySafe && slotFree && !uncertain) {
+          return { released: true, cleanupProven: true };
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 200));
     }

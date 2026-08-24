@@ -420,15 +420,15 @@ SetupPrefixKey[i] = hash(
 )
 ```
 
-action fingerprint 固定为 `hash(auto, supplemental)`。`auto` 包含 family id、canonical input、规范化 `sandboxStep` 与 immutable content identity；`cache.fingerprint` 只提供 `supplemental`。parent key 防止相同 action 从不同 Base 或祖先状态错误复用。
+action fingerprint 固定为 `hash(auto, supplemental)`。`auto` 包含 family id、canonical input、规范化 `sandboxStep`、声明 state 与 immutable content identity；`cache.fingerprint` 只提供 `supplemental`。parent key 防止相同 action 从不同 Base 或祖先状态错误复用。
 
 SetupPrefixKey 不包含 cache lookup 结果、本地 image/container locator、Attempt UUID、调度额度或运行时 secret。Eval `test`、Assertion 和 Agent/test 阶段的输入变化也不进入未改变的 SetupPrefixKey。它们仍按各自 owner 改变 Attempt 与结果 identity；BuildKey 只由构建输入决定。
 
 `verified` 只有三项含义：
 
 1. 声明 identity、SetupPrefixKey、manifest、Docker labels 与 exact image ID 双向一致。
-2. image 包含全部 action 写入 outer writable rootfs 的结果。
-3. 每个消费者从 exact image 创建独立容器，不共享 writable layer。
+2. Provider artifact 包含 action 声明 state 的全部结果；普通 Docker 是 outer writable rootfs，Profile 可以是 quiescent Docker data。
+3. 每个消费者从 immutable artifact 创建独立 writable state，不共享 writable layer 或 Docker data slot。
 
 `verified` 不证明 action 业务语义正确，也不证明任意 shell、网络、时钟或随机读取具有确定性。`defineSandboxAction()` 是作者对确定性的承诺。普通 JSON 与文本由作者声明为非敏感；已知 `Secret`、credential handle 与 runtime binding 在 planning 拒绝。发布前对框架已知 secret bytes 的扫描只做纵深防御。
 
@@ -438,9 +438,11 @@ SetupPrefixKey 不包含 cache lookup 结果、本地 image/container locator、
 
 bind mount、tmpfs、Docker Compose sidecar、host socket、E2B、Vercel 与 custom Provider 报告 `unsupported`。它们仍按同一 DAG 真实执行 action，不把部分状态或 Provider 原生 cache 伪装成 SetupPrefix hit。
 
-raw privileged 与 managed rootless Docker Profile 把 private Docker data-root 放在 project-quota slot，不在 outer writable rootfs。单独 commit outer image 会丢失 inner image 和 BuildKit 状态。把 seed 或 copy 放到 slot 之外会绕过 project quota，sparse backing 的逻辑容量也不能证明物理容量。
+raw privileged 与 managed rootless Docker Profile 把 private Docker data-root 放在 outer rootfs 之外。单独 commit outer image 会丢失 inner image 与 volume，因此不能完整保存默认 `sandboxState.all`。
 
-因此 Profile-bound DinD 的 SetupPrefix capability 固定为 `unsupported`，并在缓存边界 fail closed。它不定义、读取或恢复 `ArtifactSet V2`，不建立 host artifact lease/index，也不因 outer image 存在而报告 hit。运行可以继续，但 eligible before action 必须真实 replay。
+Profile 只在 published seed 与每个 slot 都是独立、fully allocated、fixed-size filesystem image 时声明支持 `sandboxState.dockerData`。该 state 仅包含 inner daemon quiesce 后的持久 `/var/lib/docker`；workspace、home、outer rootfs、tmpfs、socket、PID、运行中 container/BuildKit session 与 secret 都不在其中。shared loop-ext4/project-quota Profile 继续报告 `unsupported`。
+
+Runner 对排序后的 action 累积 state。第一个 `all`、opaque 或其它 Provider 不支持的 state 是 barrier；它与全部后缀都重新执行，后面的 `dockerData` action 也不能脱离祖先状态重新命中。Host 以 typed capability 与 receipt 核对 required state、SetupPrefixKey、manifest digest、filesystem identity 和 generation；每个命中从 immutable seed创建不同 writable slot。
 
 ## 前缀缓存是可失败的优化
 

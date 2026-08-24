@@ -11,6 +11,19 @@ const changeFrequency = {
   frequent: 1_000,
 } as const;
 
+const sandboxState = {
+  all: "all",
+  dockerData: "dockerData",
+} as const;
+
+type SandboxState =
+  (typeof sandboxState)[keyof typeof sandboxState];
+
+interface SandboxActionCacheOptions {
+  readonly state?: SandboxState;
+  readonly fingerprint?: JsonValue;
+}
+
 interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   before(action: SandboxAction | SandboxCommand | SandboxHook): SandboxLayer<Kind>;
   after(action: SandboxAfterAction | SandboxCleanupCommand): SandboxLayer<Kind>;
@@ -29,6 +42,7 @@ interface UploadFileActionInput {
   readonly to: string;
   readonly changeFrequency?: number;
   readonly dependsOn?: readonly SandboxActionRef[];
+  readonly cache?: SandboxActionCacheOptions;
 }
 
 interface UploadDirectoryActionInput extends UploadFileActionInput {
@@ -41,6 +55,7 @@ interface WriteTextActionInput {
   readonly text: string;
   readonly changeFrequency?: number;
   readonly dependsOn?: readonly SandboxActionRef[];
+  readonly cache?: SandboxActionCacheOptions;
 }
 
 interface WriteBytesActionInput extends Omit<WriteTextActionInput, "text"> {
@@ -55,6 +70,7 @@ interface GitCheckoutActionInput {
   readonly sparse?: { readonly include?: readonly string[]; readonly exclude?: readonly string[] };
   readonly changeFrequency?: number;
   readonly dependsOn?: readonly SandboxActionRef[];
+  readonly cache?: SandboxActionCacheOptions;
 }
 ```
 
@@ -64,7 +80,11 @@ interface GitCheckoutActionInput {
 
 ```ts
 import { Schema } from "effect";
-import { defineSandboxAction, sandboxStep } from "niceeval/sandbox";
+import {
+  defineSandboxAction,
+  sandboxState,
+  sandboxStep,
+} from "niceeval/sandbox";
 
 const installTool = defineSandboxAction({
   id: "@acme/niceeval-tools/install",
@@ -96,9 +116,13 @@ V1 的公开 `sandboxStep` 只有 `exec()`、`putText()`、`putBytes()`、`trans
 
 family `steps` 必须同步返回非空、无分支、无循环的 step tuple。它不能取得 Sandbox 或运行任意 callback。调用 `defineSandboxAction()` 就表示作者承诺 steps 只依赖声明 input、只改变 Sandbox、可重复执行并可捕获；无法承诺的逻辑继续使用 callback 或 `defineSandboxCommand()`，始终 opaque、真实执行并截断共享 capture。
 
-family input 使用无 requirements 的同步 Effect Schema。实例化依次执行 `Schema.validateSync()`、`Schema.encodeSync()` 与 canonical JSON 校验，再规范化并冻结 steps。自动指纹包含 family id、canonical input、canonical steps，以及 steps 引用的文件、目录、完整 Git commit 与 image digest。
+family input 使用无 requirements 的同步 Effect Schema。实例化依次执行 `Schema.validateSync()`、`Schema.encodeSync()` 与 canonical JSON 校验，再规范化并冻结 steps。自动指纹包含 family id、canonical input、canonical steps、规范化 state，以及 steps 引用的文件、目录、完整 Git commit 与 image digest。
 
-可选的 `cache.fingerprint` 是 JSON 值或根据已验证 input 计算 JSON 值的同步函数，只补充自动观察不到的身份。最终指纹是自动指纹与补充指纹的 hash；补充项不能关闭或替换自动观察。需要手动失效时直接写 `cache: { fingerprint: "2" }`，不再提供另一套 revision 字段。函数源码、对象身份、模块路径和加载顺序不进入 identity。
+`cache.state` 是 Action 对其全部可观察副作用的正确性承诺。V1 只有 `sandboxState.all` 与 `sandboxState.dockerData`；省略固定为 `all`。`dockerData` 只允许改变 inner Docker 的持久 data-root，不能同时写 workspace、home、outer rootfs、tmpfs、socket、进程或外部资源。
+
+definition 与 instance 都能提供单一声明点。definition 已声明 state 时，instance 重复或改写都会同步失败；内置 inline Action 直接在传给 `.before()` 的同一个对象中填写。这个字段不是选择一个待缓存子集，也不能由 NiceEval 从任意 shell 自动推导。
+
+可选的 `cache.fingerprint` 是 JSON 值或根据已验证 input 计算 JSON 值的同步函数，只补充自动观察不到的身份。最终指纹是自动指纹与补充指纹的 hash；补充项不能关闭或替换自动观察。需要手动失效时直接写 `cache: { fingerprint: "2" }`，不再提供另一套 revision 字段。state 已进入自动身份，不能用 supplemental fingerprint 模拟或改写。函数源码、对象身份、模块路径和加载顺序不进入 identity。
 
 `command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义都调用同一个公开 `defineSandboxAction()` 与 `sandboxStep`。core 不识别 family id，也没有 built-in 专用排序、identity、执行或缓存旁路；第三方不能注册新的 step kind。
 
@@ -120,7 +144,7 @@ Provider 不能执行某个 step 时 planning 失败。能执行但不能 captur
 - 第三方 package 的 family 可直接使用，也可经 Plugin 投影，不需要 registry。
 - input、steps、补充 fingerprint、内容 digest 与完整 Git commit 分别变化时产生新 identity。
 - custom Action 的频率、依赖和 DAG capability 与内置 Action 使用同一调度路径。
-- 普通 Docker 验证 persistent；Compose、profile-bound DinD、E2B、Vercel 与 custom Provider 验证 unsupported。缺少 execution operation 仍是 planning failure。
+- 普通 Docker 验证 `all` persistent；独立 fixed-image Docker Profile 验证 `dockerData` persistent；shared Profile、Compose、E2B、Vercel 与 custom Provider 验证 unsupported。缺少 execution operation 仍是 planning failure。
 - debug 对 custom 与 built-in Action 都投影 exact steps 与自动/补充指纹组成；redaction 正交，callback 与 `defineSandboxCommand()` 保持 opaque。
 - `command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 的生产定义真实调用公开 family 与 step API。
 
@@ -133,6 +157,7 @@ dockerSandbox({
     command: "./import-runtimes.sh",
     inputs: [runtimeV09, runtimeV012],
     changeFrequency: changeFrequency.rare,
+    cache: { state: sandboxState.dockerData },
   }))
   .before(shell({
     id: "fixture",
@@ -263,7 +288,7 @@ Provider replacement 或 retirement 可以更换物理实例，但不改变 auth
 
 ## 缓存资格
 
-声明式 `before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` 是确定性承诺，只允许改变 Sandbox 内状态。它在每个 occurrence 都得到满足：
+声明式 `before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` 是确定性承诺，只允许改变声明的 Sandbox 状态面。它在每个 occurrence 都得到满足：
 
 ```text
 hit         → restore verified private state
@@ -272,6 +297,8 @@ unsupported → execute action without capture
 ```
 
 callback before 始终真实执行、显示 opaque，并关闭后续共享 capture lineage。secret、租约、外部会话、当前时间、随机数、外部写入和无法原子捕获的 DinD 状态也关闭 lineage。它们仍是 DAG 节点并参与依赖与数值排序，不能因 opaque 而从计划中删除。后续 action 可以在私有实例继续执行，但不能被其它 owner、lane、Eval 或 Agent 当作共享 prefix 命中。
+
+Runner 按顺序累积 state。Provider 只能完整保存 `dockerData` 时，连续的 `dockerData` action 可以形成共享前缀；第一个默认 `all` action 是 lineage barrier。barrier 自身与所有后缀都真实执行，即使后缀再次声明 `dockerData`，也不能从缺少祖先状态的 artifact 命中。
 
 callback before、`defineSandboxCommand()`、cleanup 与 after 永不缓存。standalone before 的 cache restore 产生与 replay 相同的 satisfaction fact，可以释放依赖它的节点。全部已登记收尾使用独立 cleanup signal，失败只产生 diagnostic，不能阻止后续收尾和 Provider finalizer。
 
@@ -285,7 +312,7 @@ callback before、`defineSandboxCommand()`、cleanup 与 after 永不缓存。st
 
 before/after 属于 `SandboxLayer`，不属于 Docker。Docker、E2B、Vercel 与自定义 Provider 使用相同 API。Provider 对每个 eligible prefix 报告：
 
-- `persistent`：可以跨 Invocation 命中；普通本地单容器 Docker 在全部可变状态都位于 outer writable rootfs 时使用这一档；
-- `unsupported`：每个 occurrence 真实执行；Compose、profile-bound DinD、E2B、Vercel 与 custom Provider 使用这一档。
+- `persistent`：可以跨 Invocation 命中；普通本地单容器 Docker 在全部可变状态都位于 outer writable rootfs 时保存 `all`；具备独立 fixed-image slot 的 Docker Profile 可以只保存 `dockerData`；
+- `unsupported`：当前 action 的 state 或其祖先不在 Provider coverage 内，因而真实执行；Compose、E2B、Vercel、custom Provider 与 shared project-quota Profile 使用这一档。
 
-两档能力不改变 occurrenceKind 或执行顺序。每个消费者始终取得私有 writable state；Provider 不得忽略 action、伪造 hit 或共享 writable 实例。Profile-bound DinD 不定义 `ArtifactSet V2` 或 host artifact lease/index，因此不能升级为 persistent。
+两档能力不改变 occurrenceKind 或执行顺序。每个消费者始终取得私有 writable state；Provider 不得忽略 action、伪造 hit 或共享 writable 实例。Profile 只能把自己完整保存的 state 列入 coverage，不能用 Docker data artifact 替代默认 `all` action。

@@ -430,7 +430,14 @@ Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖,�
 
 ```typescript
 import { Schema } from "effect";
-import { defineSandboxAction, sandboxStep } from "niceeval/sandbox";
+import {
+  defineSandboxAction,
+  sandboxState,
+  sandboxStep,
+} from "niceeval/sandbox";
+
+type SandboxState =
+  (typeof sandboxState)[keyof typeof sandboxState];
 
 type NonEmptySandboxSteps =
   readonly [SandboxStep, ...SandboxStep[]];
@@ -439,6 +446,7 @@ interface SandboxActionDefinition<A, I extends JsonValue> {
   readonly id: string;
   readonly input: Schema.Schema<A, I, never>;
   readonly cache?: {
+    readonly state?: SandboxState;
     readonly fingerprint?: JsonValue | ((input: A) => JsonValue);
   };
   readonly steps: (input: A) => NonEmptySandboxSteps;
@@ -450,7 +458,10 @@ interface SandboxBeforeActionOptions {
   readonly dependsOn?: readonly SandboxActionRef[];
   readonly requires?: readonly SandboxCapability[];
   readonly provides?: readonly SandboxCapability[];
-  readonly cache?: { readonly fingerprint?: JsonValue };
+  readonly cache?: {
+    readonly state?: SandboxState;
+    readonly fingerprint?: JsonValue;
+  };
 }
 
 interface SandboxActionInstanceOptions
@@ -511,6 +522,10 @@ family instance 默认直接使用 definition `id`，所以常见调用不用再
 
 一个 Action instance 是单一的调度、identity、执行、capture 与 satisfaction 单元。step 只有线性执行语义，没有 `id`、频率、依赖或 capability，不能直接传给 `.before()`。V1 `steps` 必须同步返回非空、无分支、无循环的 step tuple；Runner 顺序解释全部 step，全部成功并 quiesce 后才允许捕获，不发布内部半成品前缀。
 
+`cache.state` 是 Action 对其全部可观察副作用作出的正确性承诺，不是“只缓存其中一部分”的性能选择器。V1 只有 `sandboxState.all` 与 `sandboxState.dockerData`；省略固定为 `all`。`dockerData` 表示该 Action 只改变 inner Docker 的持久 data-root，不写 outer rootfs、workspace、home、tmpfs、socket、运行中进程或外部资源。
+
+definition 与 instance 都可以在其自己的单一声明点填写 `cache.state`。definition 已填写时，instance 不能重复或改写；内置 inline Action 则直接在 `.before(shell({ ... }))` 的同一个对象中填写。未知值与重复声明在构造 Action 时失败。
+
 低层 `sandboxStep.transferFile()` / `transferDirectory()` 的 `source` 只接受 `registerSandboxContent()` 返回的 immutable handle，不能直接放宿主 path 或 URL。常见写法使用 `uploadFile()` / `uploadDirectory()`，由内容上传构造器在同一次声明中完成登记；这个限制保证第三方 Action 与官方 Action 都把实际 bytes、mode 与目录 manifest 纳入自动指纹。
 
 同一 occurrence 内所有 action 的 `id` 必须唯一。内置 action 与第三方 family 共用这一命名空间；重复 id、不可见 `actionRef()` 与跨 occurrence 引用都在 Provider I/O 前形成 planning typed failure。
@@ -521,9 +536,9 @@ family instance 默认直接使用 definition `id`，所以常见调用不用再
 
 family 调用时先用 `Schema.validateSync()` 验证 type side，再用 `Schema.encodeSync()` 得到 canonical JSON input。`steps` 接收验证后的值；返回值随即规范化并冻结。Schema 必须无 requirements、可同步验证与编码，encoded side 必须能规范化为 JSON。
 
-action 自动指纹包含 family `id`、canonical input、规范化后的 steps，以及 steps 引用的内容 digest、目录内容、完整 Git commit 与 image digest。函数源码、对象身份、模块路径和加载顺序不进入 identity。
+action 自动指纹包含 family `id`、canonical input、规范化后的 steps、规范化 state，以及 steps 引用的内容 digest、目录内容、完整 Git commit 与 image digest。函数源码、对象身份、模块路径和加载顺序不进入 identity。
 
-definition 的可选 `cache.fingerprint` 接受 JSON 值，或接收已验证 input 并返回 JSON 值；instance options 也可 inline 传一个 JSON fingerprint。两者只补充自动观察不到的身份并共同规范化，不能替换自动指纹。最终 action 指纹固定为 `hash(auto, supplemental)`。省略补充值时使用规范化 absent sentinel；需要强制失效时可直接写 `cache: { fingerprint: "2" }`。
+definition 的可选 `cache.fingerprint` 接受 JSON 值，或接收已验证 input 并返回 JSON 值；instance options 也可 inline 传一个 JSON fingerprint。两者只补充自动观察不到的身份并共同规范化，不能替换自动指纹。最终 action 指纹固定为 `hash(auto, supplemental)`。省略补充值时使用规范化 absent sentinel；需要强制失效时可直接写 `cache: { fingerprint: "2" }`。state 属于自动身份，不能用 supplemental fingerprint 模拟或改写。
 
 linked prefix 再加入 owner、ordinal、本 occurrence 的 action id、频率、依赖、capability、cohort、Provider identity 与 `interpreterRevision`。Eval `test` 函数、Assertion 与只发生在 Agent/test 阶段的输入不进入未改变的 SetupPrefixKey；它们仍按各自契约改变 CaseKey 之外的 Attempt 与结果 identity。
 
@@ -543,7 +558,7 @@ cache: { fingerprint: "2" }
 
 定义、Schema、JSON、`cache.fingerprint` 或 steps 不合法时，同步抛出 Effect `Data.TaggedError` 形状、带稳定 `_tag`、`reason` 和结构化字段的 `SandboxActionDefinitionError`；Schema 失败作为 cause 保存。依赖图、动态输入求值和 Provider operation requirement 属于 planning typed failure；step、quiesce、capture 与 restore 属于 execution typed failure。错误识别读取数据字段，不依赖 `instanceof`。
 
-`command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 都由导出的 `defineSandboxAction()` 和 `sandboxStep` 定义。它们统一接受 `cache: { fingerprint?: JsonValue }`。core 只认识封闭 step kinds，不按官方 family id 或 package 路径走旁路。内置函数可以把领域 input 与 before metadata 摊平成一个对象，但生成的品牌值、identity、调度、执行、缓存与第三方 family 完全同路。
+`command()`、`shell()`、`writeText()`、`writeBytes()`、`uploadFile()`、`uploadDirectory()` 与 `gitCheckout()` 都由导出的 `defineSandboxAction()` 和 `sandboxStep` 定义。它们统一接受 `cache: { state?: SandboxState; fingerprint?: JsonValue }`。core 只认识封闭 step kinds，不按官方 family id 或 package 路径走旁路。内置函数可以把领域 input 与 before metadata 摊平成一个对象，但生成的品牌值、identity、调度、执行、缓存与第三方 family 完全同路。
 
 同一 family 的 `.after(input, { id })` 产生 `SandboxAfterAction`。它不含频率、依赖、capability 或缓存字段，只能表达无条件、幂等 finally。需要本次 acquire handle 的释放仍由 callback 通过 `context.onCleanup()` 登记。
 

@@ -13,6 +13,7 @@ SetupPrefixKey[i] = hash(
   linked topological order and changeFrequency,
   explicit dependency and typed capability edges,
   action id,
+  declared and cumulative Sandbox state surface,
   automatic fingerprint + optional supplemental fingerprint,
   canonical steps digest,
   immutable input identities after lookup,
@@ -21,7 +22,7 @@ SetupPrefixKey[i] = hash(
 )
 ```
 
-parent key 使相同 action 不能从不同 verified baseline 错误复用。action 类型、命令或目标、规范化参数、已求值 typed inputs 和 steps 引用的完整内容身份形成自动指纹。`cache.fingerprint` 只补充 NiceEval 无法观察的协议或实现世代，不能关闭或替换自动指纹。
+parent key 使相同 action 不能从不同 verified baseline 错误复用。action 类型、命令或目标、规范化参数、已求值 typed inputs、声明 state 和 steps 引用的完整内容身份形成自动指纹。`cache.fingerprint` 只补充 NiceEval 无法观察的协议或实现世代，不能关闭或替换自动指纹。
 
 occurrence 固定是 attempt，不因 owner、内容稳定性或 Sandbox reuse 提升为 physical-instance。Eval test 源码变化只产生新结果需求，不进入未改 before action 的 SetupPrefixKey。
 
@@ -50,9 +51,9 @@ action id 在同一 occurrence 内必须唯一。after 与动态 cleanup 只按�
 
 ## Provider capability
 
-Provider binding 对 core 暴露 lookup、创建 staging、capture、verify 与 instantiate 的 typed capability。`Unsupported` 与 operational failure 分离；不支持 prefix cache 时明确重新执行 steps，但不能伪造命中。
+Provider binding 对 core 暴露 lookup、创建 staging、capture、verify、instantiate 与 state coverage 的 typed capability。`Unsupported` 与 operational failure 分离；不支持当前累计 state 时明确重新执行该 action 和全部后缀，但不能伪造命中。
 
-本地普通 Docker 单容器按下文 rootfs 边界报告 `Persistent`。Docker Compose、E2B、Vercel、custom Provider 与 profile-bound DinD 报告 `Unsupported`。这个缓存不进入公开 Provider Cache Domain，也不提供 inventory、精确失效或 GC 命令。普通 Docker 实现可以维护私有的 key index、single-writer lease 与 consumer ownership；这些只保护自动 lookup/capture/clone，不能成为用户管理面。
+本地普通 Docker 单容器按下文 rootfs 边界报告 `Persistent` 并保存 `all`。具备独立 fixed-image slot 的 Docker Profile 可以只保存 `dockerData`；shared project-quota/loop Profile 报告 `Unsupported`。Docker Compose、E2B、Vercel 与 custom Provider 没有相应 coverage 时同样真实执行。这个缓存不进入公开 Provider Cache Domain，也不提供 inventory、精确失效或 GC 命令。
 
 ## Docker rootfs 边界
 
@@ -64,13 +65,26 @@ Provider 要先停止 inner dockerd/containerd 与 inner container，再停止 o
 
 capture staging 的 create spec 不含 credential env、secret handle 或 Adapter runtime overlay。需要凭据才能创建 staging 或执行 action 的 case 报告 Unsupported。只在最终私有容器中注入 secret，并立即登记 cleanup。发布前检查 image config/history 与框架已知敏感值；该检查是纵深防御，不替代作者的非敏感声明。
 
-## Docker Profile 不支持 Setup Prefix cache
+## Docker Profile 的 Docker data 边界
 
-raw privileged 与 managed rootless Profile 的 private Docker data-root 位于 project-quota slot，不在 outer writable rootfs。只 commit outer image 会丢失 inner image 和 BuildKit 状态。
+raw privileged 与 managed rootless Profile 的 private Docker data-root 不在 outer writable rootfs。Profile 只在宿主为 published seed 和每个 consumer 提供独立、fully allocated、fixed-size filesystem image 时声明 `dockerData` coverage。shared loop-ext4/project-quota slot 无法同时证明物理容量与独立 seed，固定报告 `Unsupported`。
 
-这个方向不定义 `ArtifactSet V2`。把 seed 或 copy 放在 quota slot 之外会绕过 project quota，sparse backing 的逻辑容量也不能证明物理容量。因此 profile-bound DinD 固定报告 `Unsupported`，不创建 host artifact lease/index，不使用 outer image 伪造 hit，也不回退到普通 Docker endpoint。
+`dockerData` 定义为 inner daemon 完全 quiesced 后 `/var/lib/docker` 的持久状态。capture 前必须拒绝运行中 inner container 与 BuildKit session，再停止 dockerd/containerd 并证明进程退出。
 
-普通 callback before 截断整条共享捕获 lineage；后续 action 标记 `ineligible: opaque-ancestor`。callback、secret 与 external-I/O action 仍参与 DAG 调度。每个物理 Sandbox 可以另有私有 reset baseline，但 opaque state 不能登记为共享 prefix。sandbox reuse 下，secret overlay 由始终真实执行的 callback 注入，成功后通过 `context.onCleanup()` 登记移除；无法证明隔离时该组合在 planning 失败。
+socket、PID、lease、`/run`、supervisor、日志、hostname、outer rootfs、workspace、home 与 tmpfs 都不进入 artifact。新 outer container 会重新建立 Provider-owned transient state。
+
+Host 用 `docker-data-snapshot/v1` capability 明确声明 coverage。request 与 receipt 双向核对下列身份：
+
+- required state、SetupPrefixKey 与 manifest digest；
+- exact Base/Provider identity 与 execution domain；
+- filesystem identity、format/features 与 fixed size；
+- Host 复制器、copy、quiesce revision 与 daemon/slot generation。
+
+Host 必须拒绝缺失 state、`all` 或 descriptor/wire 不一致。artifact receipt 使用 provider-neutral artifact id，不能把 raw filesystem digest 伪装成 Docker image id。
+
+published seed 保持 immutable 且不挂进评估容器。capture/restore 只在 source 与 target 已卸载时复制 raw image，再给每个 Attempt 挂载独立 writable clone。lease、journal-first intent、atomic publish、capacity accounting、scrub、quarantine 与 cancel/restart recovery 都属于 capability 前置证明。
+
+Runner 从 action state 的累计 join 计算 lineage。连续 `dockerData` action 可以在 Profile 命中；第一个默认 `all`、普通 callback、secret 或 external-I/O action形成 barrier。barrier 自身与全部后缀真实执行，并标记 `unsupported-state-ancestor` 或 `opaque-ancestor`。sandbox reuse 下，secret overlay 由始终真实执行的 callback 注入，成功后通过 `context.onCleanup()` 登记移除；无法证明隔离时该组合在 planning 失败。
 
 ## SandboxStep 解释边界
 

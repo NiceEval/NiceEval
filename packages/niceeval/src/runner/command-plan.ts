@@ -25,10 +25,15 @@ import {
   type SandboxBeforeDependencyProjection,
   type SandboxDeclarationOrder,
 } from "../sandbox/link.ts";
-import type {
-  SandboxActionPlan,
-  SandboxChangeFrequency,
+import {
+  mergeSandboxActionState,
+  sandboxActionStateCovers,
+  type SandboxActionState,
+  type SandboxActionPlan,
+  type SandboxChangeFrequency,
 } from "../sandbox/action.ts";
+import { digestOf } from "../sandbox/identity.ts";
+import type { JsonValue } from "../shared/types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import {
   sandboxReusePoolDescriptor,
@@ -82,6 +87,8 @@ export interface CommandPlanStep {
   readonly cache?: {
     readonly lookup: "not-probed";
     readonly capability: CommandPlanCacheCapability;
+    /** Linked declaration identity; the runtime-only final cache key remains unprobed. */
+    readonly prefixIdentity?: string;
     /** Static provider reason; present only when capability is unsupported. */
     readonly capabilityReason?: string;
     /** Dry planning cannot resolve runtime eligibility or a final cache key. */
@@ -93,8 +100,29 @@ export interface CommandPlanStep {
       | { readonly status: "eligible" }
       | {
           readonly status: "ineligible";
-          readonly reason: { readonly code: "opaque-action" | "opaque-ancestor" };
+          readonly reason: {
+            readonly code:
+              | "opaque-action"
+              | "opaque-ancestor"
+              | "provider-unsupported"
+              | "unsupported-state"
+              | "unsupported-state-ancestor";
+          };
         };
+    readonly state: {
+      readonly declared: SandboxActionState | "opaque";
+      readonly cumulative: SandboxActionState | "opaque";
+      readonly providerCoverage: SandboxActionState | "unsupported";
+      readonly barrier:
+        | "none"
+        | "opaque-action"
+        | "opaque-ancestor"
+        | "provider-unsupported"
+        | "unsupported-state"
+        | "unsupported-state-ancestor";
+      /** First action/callback that severed this reusable lineage, when action-addressable. */
+      readonly barrierActionId?: string;
+    };
   };
 }
 
@@ -404,6 +432,14 @@ export function providerDeclaredSetupPrefixCapability(pair: PreparedRunPair): Co
     "unsupported";
 }
 
+function providerDeclaredSetupPrefixCoverage(
+  pair: PreparedRunPair,
+): SandboxActionState | "unsupported" {
+  if (pair.plan._tag !== "Sandbox") return "unsupported";
+  const declaration = pair.plan.providerPlan.capabilities.setupPrefix;
+  return declaration._tag === "Persistent" ? declaration.coverage : "unsupported";
+}
+
 function providerDeclaredSetupPrefixReason(pair: PreparedRunPair): string | undefined {
   if (pair.plan._tag !== "Sandbox") return undefined;
   const capabilities = pair.plan.providerPlan.capabilities as object;
@@ -426,6 +462,74 @@ function hasOpaqueSetupAncestor(pair: PreparedRunPair): boolean {
   return authorSetup || pluginSetup;
 }
 
+function linkedSetupPrefixBaseIdentity(pair: PreparedRunPair): string {
+  if (pair.plan._tag !== "Sandbox") return "linked-base:unsupported";
+  const provider = pair.plan.providerPlan;
+  const identity = {
+    protocol: "niceeval.setup-prefix-linked-plan/v1",
+    provider: {
+      id: provider.provider,
+      plannerRevision: provider.plannerRevision,
+      caseKind: provider.caseKind,
+      caseKey: provider.build.caseKey,
+      buildKeys: [...provider.build.buildKeys],
+      identity: provider.identity,
+    },
+    target: {
+      source: provider.target.source,
+      platform: { ...provider.target.platform },
+    },
+    occurrence: {
+      kind: "attempt",
+      cohort: {
+        experimentId: pair.plan.pair.experimentId,
+        evalId: pair.plan.pair.evalId,
+        agentName: pair.plan.pair.agentName,
+      },
+    },
+  } as unknown as JsonValue;
+  return `linked-base:${digestOf(identity)}`;
+}
+
+function linkedSetupPrefixActionIdentity(
+  parentIdentity: string,
+  entry: Extract<ScheduledSandboxBefore, { readonly kind: "action" }>,
+  cumulativeState: SandboxActionState,
+): string {
+  const identity = {
+    protocol: "niceeval.setup-prefix-linked-plan/v1",
+    parentIdentity,
+    owner: {
+      kind: entry.owner.kind,
+      id: entry.owner.id,
+      ordinal: entry.ordinal,
+    },
+    order: entry.executionOrder.topologicalOrdinal,
+    changeFrequency: {
+      value: entry.metadata.changeFrequency.value,
+      source: entry.metadata.changeFrequency.source,
+      ...(entry.metadata.changeFrequency.preset === undefined
+        ? {}
+        : { preset: entry.metadata.changeFrequency.preset }),
+    },
+    dependencyEdges: entry.dependencies.map((dependency) => ({ ...dependency })),
+    capabilities: {
+      requires: [...entry.metadata.requires],
+      provides: [...entry.metadata.provides],
+    },
+    action: {
+      id: entry.data.plan.id,
+      family: entry.data.plan.family,
+      declaredState: entry.data.plan.state,
+      cumulativeState,
+      input: entry.data.plan.input,
+      fingerprint: entry.data.plan.fingerprint,
+      steps: entry.data.plan.steps,
+    },
+  } as unknown as JsonValue;
+  return `linked-prefix:${digestOf(identity)}`;
+}
+
 function scheduledBeforeSteps(
   pair: PreparedRunPair,
   capabilityOf: (pair: PreparedRunPair) => CommandPlanCacheCapability,
@@ -433,13 +537,49 @@ function scheduledBeforeSteps(
   if (pair.plan._tag !== "Sandbox") return [];
   const scheduled = pair.plan.pair.before;
   let opaqueAncestor = hasOpaqueSetupAncestor(pair);
+  let opaqueBarrierActionId: string | undefined;
+  let unsupportedStateAncestor = false;
+  let unsupportedStateBarrierActionId: string | undefined;
+  let cumulativeState: SandboxActionState | undefined;
+  let parentPrefixIdentity = linkedSetupPrefixBaseIdentity(pair);
   const capability = capabilityOf(pair);
+  const providerCoverage = capability === "persistent"
+    ? providerDeclaredSetupPrefixCoverage(pair)
+    : "unsupported";
   const capabilityReason = capability === "unsupported"
     ? providerDeclaredSetupPrefixReason(pair)
     : undefined;
   return Object.freeze(scheduled.map((entry): CommandPlanStep => {
     const projected = stepForLinkedBefore(pair, entry);
     const currentOpaque = containsOpaque(projected);
+    const declaredState = entry.kind === "action" ? entry.data.plan.state : "opaque";
+    if (entry.kind === "action" && !opaqueAncestor) {
+      cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
+    }
+    const projectedCumulativeState = opaqueAncestor || currentOpaque
+      ? "opaque" as const
+      : cumulativeState!;
+    const prefixIdentity = entry.kind === "action" && !opaqueAncestor && !currentOpaque
+      ? linkedSetupPrefixActionIdentity(parentPrefixIdentity, entry, cumulativeState!)
+      : undefined;
+    const barrier = capability === "unsupported" || providerCoverage === "unsupported"
+      ? "provider-unsupported" as const
+      : opaqueAncestor
+        ? "opaque-ancestor" as const
+        : unsupportedStateAncestor
+          ? "unsupported-state-ancestor" as const
+          : currentOpaque
+            ? "opaque-action" as const
+            : sandboxActionStateCovers(providerCoverage, projectedCumulativeState as SandboxActionState)
+              ? "none" as const
+              : "unsupported-state" as const;
+    const barrierActionId = barrier === "opaque-action" || barrier === "unsupported-state"
+      ? entry.id
+      : barrier === "opaque-ancestor"
+        ? opaqueBarrierActionId
+        : barrier === "unsupported-state-ancestor"
+          ? unsupportedStateBarrierActionId
+          : undefined;
     const owner = Object.freeze({ kind: entry.owner.kind, id: entry.owner.id });
     const step: CommandPlanStep = Object.freeze({
       ...projected,
@@ -459,25 +599,36 @@ function scheduledBeforeSteps(
       cache: Object.freeze({
         lookup: "not-probed" as const,
         capability,
+        ...(prefixIdentity === undefined ? {} : { prefixIdentity }),
         ...(capabilityReason === undefined ? {} : { capabilityReason }),
         runtime: Object.freeze({
           status: "pending" as const,
           finalKey: "not-probed" as const,
         }),
-        eligibility: opaqueAncestor
-          ? Object.freeze({
+        eligibility: barrier === "none"
+          ? Object.freeze({ status: "eligible" as const })
+          : Object.freeze({
               status: "ineligible" as const,
-              reason: Object.freeze({ code: "opaque-ancestor" as const }),
-            })
-          : currentOpaque
-            ? Object.freeze({
-                status: "ineligible" as const,
-                reason: Object.freeze({ code: "opaque-action" as const }),
-              })
-            : Object.freeze({ status: "eligible" as const }),
+              reason: Object.freeze({ code: barrier }),
+            }),
+        state: Object.freeze({
+          declared: declaredState,
+          cumulative: projectedCumulativeState,
+          providerCoverage,
+          barrier,
+          ...(barrierActionId === undefined ? {} : { barrierActionId }),
+        }),
       }),
     });
-    if (currentOpaque) opaqueAncestor = true;
+    if (currentOpaque) {
+      opaqueAncestor = true;
+      opaqueBarrierActionId ??= entry.id;
+    }
+    if (prefixIdentity !== undefined) parentPrefixIdentity = prefixIdentity;
+    if (barrier === "unsupported-state") {
+      unsupportedStateAncestor = true;
+      unsupportedStateBarrierActionId = entry.id;
+    }
     return step;
   }));
 }

@@ -294,6 +294,12 @@ else
   fail "watchdog protocol/journal smoke"
 fi
 
+if python3 test/host/setup-prefix-watchdog-smoke.py; then
+  pass "default-off dockerData raw-image capture/restore and crash safety"
+else
+  fail "dockerData raw-image watchdog smoke"
+fi
+
 echo
 echo "== nix capacity lib =="
 if command -v nix-instantiate >/dev/null 2>&1; then

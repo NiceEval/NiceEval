@@ -29,6 +29,34 @@ export const changeFrequency = Object.freeze({
   frequent: 1_000,
 } as const);
 
+/** Complete mutable-state promises understood by V1 Setup Prefix providers. */
+export const sandboxState = Object.freeze({
+  all: "all",
+  dockerData: "dockerData",
+} as const);
+
+export type SandboxState = typeof sandboxState[keyof typeof sandboxState];
+/** @internal Provider/runtime spelling for the same public V1 state values. */
+export type SandboxActionState = SandboxState;
+
+/** @internal `all` dominates a cumulative action lineage. */
+export function mergeSandboxActionState(
+  ancestor: SandboxActionState | undefined,
+  declared: SandboxActionState,
+): SandboxActionState {
+  return ancestor === sandboxState.all || declared === sandboxState.all
+    ? sandboxState.all
+    : sandboxState.dockerData;
+}
+
+/** @internal A complete `all` provider covers either V1 state promise. */
+export function sandboxActionStateCovers(
+  coverage: SandboxActionState,
+  required: SandboxActionState,
+): boolean {
+  return coverage === sandboxState.all || required === sandboxState.dockerData;
+}
+
 export interface SandboxActionRef {
   readonly [SANDBOX_ACTION_REF]: true;
   readonly id: string;
@@ -52,6 +80,11 @@ export interface SandboxBeforeActionOptions {
 }
 
 export interface SandboxActionCacheOptions {
+  /**
+   * Complete side-effect surface changed by this action. Omission is the
+   * conservative `all` promise; this is never a partial-cache selector.
+   */
+  readonly state?: SandboxActionState;
   readonly fingerprint?: JsonValue;
 }
 
@@ -184,6 +217,7 @@ export interface SandboxActionFingerprintPlan {
 export interface SandboxActionPlan {
   readonly id: string;
   readonly family: string;
+  readonly state: SandboxActionState;
   readonly input: JsonValue;
   readonly steps: readonly SandboxStepPlan[];
   readonly fingerprint: SandboxActionFingerprintPlan;
@@ -211,6 +245,7 @@ export interface SandboxActionDefinition<A, I extends JsonValue> {
   readonly id: string;
   readonly input: Schema.Schema<A, I, never>;
   readonly cache?: {
+    readonly state?: SandboxActionState;
     readonly fingerprint?: JsonValue | ((input: A) => JsonValue);
   };
   readonly steps: (input: A) => NonEmptySandboxSteps;
@@ -226,6 +261,7 @@ export type SandboxActionDefinitionErrorReason =
   | "schema"
   | "input"
   | "canonical-input"
+  | "cache-state"
   | "cache-fingerprint"
   | "steps"
   | "metadata";
@@ -392,11 +428,23 @@ function normalizeSandboxActionCache(
 ): Readonly<SandboxActionCacheOptions> | undefined {
   if (value === undefined) return undefined;
   assertRecord(value, path);
-  assertOnlyKeys(value, new Set(["fingerprint"]), path);
+  assertOnlyKeys(value, new Set(["state", "fingerprint"]), path);
+  const state = normalizeSandboxActionState(value.state, `${path}.state`);
   if (value.fingerprint !== undefined) cloneJson(value.fingerprint, `${path}.fingerprint`);
   return Object.freeze({
+    ...(value.state === undefined ? {} : { state }),
     ...(value.fingerprint === undefined ? {} : { fingerprint: value.fingerprint as JsonValue }),
   });
+}
+
+function normalizeSandboxActionState(value: unknown, path: string): SandboxActionState {
+  if (value === undefined) return sandboxState.all;
+  if (value === sandboxState.all || value === sandboxState.dockerData) return value;
+  throw actionError(
+    "cache-state",
+    `${path} must be sandboxState.all or sandboxState.dockerData`,
+    path,
+  );
 }
 
 function envRecord(value: unknown, path: string): Readonly<globalThis.Record<string, string>> | undefined {
@@ -672,7 +720,13 @@ export function defineSandboxAction<A, I extends JsonValue>(
   }
   if (definition.cache !== undefined) {
     assertRecord(definition.cache, "defineSandboxAction definition.cache");
-    assertOnlyKeys(definition.cache, new Set(["fingerprint"]), "defineSandboxAction definition.cache");
+    assertOnlyKeys(definition.cache, new Set(["state", "fingerprint"]), "defineSandboxAction definition.cache");
+    if (definition.cache.state !== undefined) {
+      normalizeSandboxActionState(
+        definition.cache.state,
+        "defineSandboxAction definition.cache.state",
+      );
+    }
     if (
       definition.cache.fingerprint !== undefined &&
       typeof definition.cache.fingerprint !== "function"
@@ -686,6 +740,17 @@ export function defineSandboxAction<A, I extends JsonValue>(
     metadata: NormalizedSandboxBeforeMetadata,
     instanceCache?: SandboxActionCacheOptions,
   ): SandboxActionData => {
+    if (definition.cache?.state !== undefined && instanceCache?.state !== undefined) {
+      throw actionError(
+        "cache-state",
+        `Sandbox action ${JSON.stringify(familyId)} cache.state must be declared exactly once; an instance cannot repeat or override the definition state`,
+        "cache.state",
+      );
+    }
+    const state = normalizeSandboxActionState(
+      instanceCache?.state ?? definition.cache?.state,
+      `Sandbox action ${JSON.stringify(familyId)} cache.state`,
+    );
     let validated: A;
     try {
       validated = Schema.validateSync(definition.input)(input);
@@ -716,6 +781,7 @@ export function defineSandboxAction<A, I extends JsonValue>(
     const plans = Object.freeze(stepData.map((entry) => entry.plan));
     const automaticIdentity: JsonValue = Object.freeze({
       family: familyId,
+      state,
       input: canonicalInput,
       steps: stepData.map((entry) => entry.identity),
     });
@@ -766,6 +832,7 @@ export function defineSandboxAction<A, I extends JsonValue>(
       plan: Object.freeze({
         id: metadata.id,
         family: familyId,
+        state,
         input: canonicalInput,
         steps: plans,
         fingerprint: Object.freeze({ automatic, supplemental, combined }),

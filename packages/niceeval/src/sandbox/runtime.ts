@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { relative, sep } from "node:path";
-import { Data, Effect, Option, type Scope } from "effect";
+import { Data, Effect, Option, Scope } from "effect";
 import type { ProvisionSlot } from "./retry.ts";
 import { withProvisionRetry } from "./retry.ts";
 import type {
@@ -229,37 +229,66 @@ function managedContainerSession(
   readonly lease: DockerProfileLease;
   readonly reservation: import("./docker-profile/runtime.ts").DockerProfileReservation;
   readonly labels: Readonly<Record<string, string>>;
+  readonly replaceReservation: Effect.Effect<
+    import("./docker-profile/runtime.ts").DockerProfileReservation,
+    Error
+  >;
   readonly finish: () => Promise<void>;
 }, Error, Scope.Scope> {
   return Effect.gen(function* () {
+    const scope = yield* Effect.scope;
     const lease = yield* Effect.acquireRelease(
       providerBoundaryEffect(() => createDockerProfileLease(binding)),
       (owned) => providerBoundaryEffect(() => owned.stopHeartbeat()).pipe(Effect.orDie),
     );
-    const owner = yield* acquireDockerProfileReservationEffect(lease, "container", {
+    const requestedResources = {
       cpus: resources.cpus ?? 0,
       memoryBytes: resources.memoryBytes ?? 0,
       pids: resources.pidsLimit ?? 0,
       ephemeralDiskBytes: resources.dockerDataBytes ?? 0,
       containers: 1,
-    }, dockerProfileAdmission(context), context.signal);
-    const reservation = owner.reservation;
-    const labels = Object.freeze({
-      "niceeval.profile-id": binding.profile.profileId,
-      "niceeval.invocation-id": lease.invocationId,
-      "niceeval.reservation-id": reservation.reservationId,
-      "niceeval.provision-token": reservation.provisionToken,
-    });
+    } as const;
+    const admission = dockerProfileAdmission(context);
+    let owner = yield* acquireDockerProfileReservationEffect(
+      lease,
+      "container",
+      requestedResources,
+      admission,
+      context.signal,
+    );
+    const replaceReservation = Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
+      // The host must scrub/retire the current slot before another private slot can
+      // be granted. Release is uninterruptible; the new scoped acquisition remains
+      // interruptible while queued and owns its finalizer before it can be observed.
+      yield* providerBoundaryEffect(() => owner.release());
+      const replacement = yield* restore(acquireDockerProfileReservationEffect(
+        lease,
+        "container",
+        requestedResources,
+        admission,
+        context.signal,
+      ).pipe(Effect.provideService(Scope.Scope, scope)));
+      owner = replacement;
+      return replacement.reservation;
+    }));
     return {
       lease,
-      reservation,
-      labels,
+      get reservation() { return owner.reservation; },
+      get labels() {
+        return Object.freeze({
+          "niceeval.profile-id": binding.profile.profileId,
+          "niceeval.invocation-id": lease.invocationId,
+          "niceeval.reservation-id": owner.reservation.reservationId,
+          "niceeval.provision-token": owner.reservation.provisionToken,
+        });
+      },
+      replaceReservation,
       finish: async () => {
-        // Reservation release must complete while the lease heartbeat is still
-        // valid. Scope finalizers share these idempotent owners and retry in the
-        // same reservation-before-lease order when normal after-stop fails.
+        // Do not stop the heartbeat here: cancellation can land after a new
+        // owner registered its Scope finalizer but before the mutable current
+        // pointer advances. Scope closes every reservation owner (newest first)
+        // and only then runs the older lease finalizer.
         await owner.release();
-        await lease.stopHeartbeat();
       },
     };
   });
@@ -502,16 +531,22 @@ export function materializeDockerfileProviderPlan(
                       daemonId: plan.profileBinding.daemonId,
                       dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
                     },
+                    profileSetupPrefix: {
+                      lease: managed!.lease,
+                      currentReservation: () => managed!.reservation,
+                      replaceReservation: managed!.replaceReservation,
+                    },
                     afterStop: managed?.finish,
                   }),
                 };
               const backend = yield* withProvisionRetry(
                 providerBoundaryEffect(() => managed === undefined
                   ? DockerSandbox.create(createOptions)
-                  : DockerSandbox.createControlled(createOptions, (create) => createDockerProfileContainer(
+                  : DockerSandbox.createControlled(createOptions, (create, signal) => createDockerProfileContainer(
                       managed.lease,
                       managed.reservation.reservationId,
                       { ...create, attemptId: context.evalId },
+                      signal,
                     ))),
                 classifyProvisionError,
                 boundProvisionSlot(context),
@@ -711,16 +746,22 @@ export function materializeDockerImageProviderPlan(
             daemonId: plan.profileBinding.daemonId,
             dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
           },
+          profileSetupPrefix: {
+            lease: managed!.lease,
+            currentReservation: () => managed!.reservation,
+            replaceReservation: managed!.replaceReservation,
+          },
           afterStop: managed?.finish,
         }),
       };
       const backend = yield* withProvisionRetry(
         providerBoundaryEffect(() => managed === undefined
           ? DockerSandbox.create(createOptions)
-          : DockerSandbox.createControlled(createOptions, (create) => createDockerProfileContainer(
+          : DockerSandbox.createControlled(createOptions, (create, signal) => createDockerProfileContainer(
               managed.lease,
               managed.reservation.reservationId,
               { ...create, attemptId: context.evalId },
+              signal,
             ))),
       classifyProvisionError,
       boundProvisionSlot(context),

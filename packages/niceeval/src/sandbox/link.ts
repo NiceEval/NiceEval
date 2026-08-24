@@ -497,6 +497,7 @@ function actionFingerprint(
     revision: "sandbox-action/v1",
     inputs: {
       family: data.plan.family,
+      state: data.plan.state,
       input: data.plan.input,
       steps: data.plan.steps,
       fingerprint: data.plan.fingerprint,

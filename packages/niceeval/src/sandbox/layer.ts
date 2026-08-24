@@ -21,7 +21,9 @@ import { sandboxCommandDeclarationOf } from "./commands.ts";
 import {
   isSandboxAction,
   isSandboxAfterAction,
+  sandboxState,
   type SandboxAction,
+  type SandboxActionState,
   type SandboxAfterAction,
 } from "./action.ts";
 import {
@@ -395,7 +397,7 @@ export type SandboxRuntimeReuse =
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
 export type SandboxRuntimeSetupPrefix =
-  | { readonly _tag: "Persistent" }
+  | { readonly _tag: "Persistent"; readonly coverage: SandboxActionState }
   | { readonly _tag: "InvocationLocal" }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
@@ -851,6 +853,13 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
   ) {
     throw new TypeError("sandbox provider bounded session limit must be a positive finite number");
   }
+  if (
+    capabilities.setupPrefix._tag === "Persistent" &&
+    capabilities.setupPrefix.coverage !== sandboxState.all &&
+    capabilities.setupPrefix.coverage !== sandboxState.dockerData
+  ) {
+    throw new TypeError("sandbox provider persistent setup-prefix coverage is not a supported sandboxState value");
+  }
   return Object.freeze({
     retention: Object.freeze({ _tag: capabilities.retention._tag }),
     reuse: capabilities.reuse._tag === "Supported"
@@ -860,7 +869,10 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
           reason: nonEmptyString(capabilities.reuse.reason, "sandbox provider capabilities.reuse.reason"),
         }),
     setupPrefix: capabilities.setupPrefix._tag === "Persistent"
-      ? Object.freeze({ _tag: "Persistent" as const })
+      ? Object.freeze({
+          _tag: "Persistent" as const,
+          coverage: capabilities.setupPrefix.coverage,
+        })
       : capabilities.setupPrefix._tag === "InvocationLocal"
         ? Object.freeze({ _tag: "InvocationLocal" as const })
         : Object.freeze({
@@ -1643,6 +1655,18 @@ function loadProviderRuntime() {
 const noBuildPreparation = (): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>> =>
   Effect.succeed(Option.none());
 
+function profileHasDockerDataSetupPrefixCoverage(
+  binding: DockerProfileRuntimeBinding | undefined,
+): boolean {
+  if (binding === undefined) return false;
+  const filesystem = binding.profile.backend.filesystem;
+  return filesystem.setupPrefix?.coverage === sandboxState.dockerData &&
+    filesystem.setupPrefix.requiredState === sandboxState.dockerData &&
+    filesystem.setupPrefix.slotAttestation === "independent-fixed-filesystem/v1" &&
+    filesystem.setupPrefix.filesystemSizeBytes === filesystem.dockerDataPool.bytesPerAllocation &&
+    filesystem.dockerDataPool.attestation === "independent-fixed-filesystem/v1";
+}
+
 const dockerComposeProviderModule = Object.freeze({
   id: "niceeval/docker-compose",
   capabilities: Object.freeze({
@@ -1669,7 +1693,7 @@ const dockerfileProviderModule = Object.freeze({
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    setupPrefix: Object.freeze({ _tag: "Persistent" }),
+    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
   materialize: (plan, context) => Effect.flatMap(
@@ -1699,12 +1723,24 @@ const dockerfileEphemeralProviderModule = Object.freeze({
   }),
 } satisfies SandboxProviderModule<DockerfileProviderPlan>);
 
+const dockerfileProfileSetupPrefixProviderModule = Object.freeze({
+  ...dockerfileEphemeralProviderModule,
+  id: "niceeval/dockerfile-profile-docker-data",
+  capabilities: Object.freeze({
+    ...dockerfileEphemeralProviderModule.capabilities,
+    setupPrefix: Object.freeze({
+      _tag: "Persistent" as const,
+      coverage: sandboxState.dockerData,
+    }),
+  }),
+} satisfies SandboxProviderModule<DockerfileProviderPlan>);
+
 const dockerImageProviderModule = Object.freeze({
   id: "niceeval/docker-image",
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    setupPrefix: Object.freeze({ _tag: "Persistent" }),
+    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
   materialize: (plan, context) => Effect.flatMap(
@@ -1721,6 +1757,18 @@ const dockerImageEphemeralProviderModule = Object.freeze({
     ...dockerImageProviderModule.capabilities,
     retention: Object.freeze({ _tag: "DestroyOnly" }),
     setupPrefix: dockerEphemeralSetupPrefixUnsupported,
+  }),
+} satisfies SandboxProviderModule<DockerImageProviderPlan>);
+
+const dockerImageProfileSetupPrefixProviderModule = Object.freeze({
+  ...dockerImageEphemeralProviderModule,
+  id: "niceeval/docker-image-profile-docker-data",
+  capabilities: Object.freeze({
+    ...dockerImageEphemeralProviderModule.capabilities,
+    setupPrefix: Object.freeze({
+      _tag: "Persistent" as const,
+      coverage: sandboxState.dockerData,
+    }),
   }),
 } satisfies SandboxProviderModule<DockerImageProviderPlan>);
 
@@ -2123,9 +2171,13 @@ export function createBuiltinSandboxFactories(
             caseKind: "on-demand-build",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: profile !== undefined || dockerRequiresDestroyOnly(resources)
-              ? dockerfileEphemeralProviderModule
-              : dockerfileProviderModule,
+            module: profileBinding !== undefined
+              ? profileHasDockerDataSetupPrefixCoverage(profileBinding)
+                ? dockerfileProfileSetupPrefixProviderModule
+                : dockerfileEphemeralProviderModule
+              : dockerRequiresDestroyOnly(resources)
+                ? dockerfileEphemeralProviderModule
+                : dockerfileProviderModule,
             build: providerBuildPlan({
               caseKind: "on-demand-build",
               materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
@@ -2253,9 +2305,13 @@ export function createBuiltinSandboxFactories(
             caseKind: "prebuilt",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: profile !== undefined || dockerRequiresDestroyOnly(resources)
-              ? dockerImageEphemeralProviderModule
-              : dockerImageProviderModule,
+            module: profileBinding !== undefined
+              ? profileHasDockerDataSetupPrefixCoverage(profileBinding)
+                ? dockerImageProfileSetupPrefixProviderModule
+                : dockerImageEphemeralProviderModule
+              : dockerRequiresDestroyOnly(resources)
+                ? dockerImageEphemeralProviderModule
+                : dockerImageProviderModule,
             build: providerBuildPlan({
               caseKind: "prebuilt",
               materializerRevision: DOCKER_IMAGE_PROVIDER_REVISION,

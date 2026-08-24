@@ -8,8 +8,9 @@ NiceEval 把 Experiment、Eval Group、Eval 与 Agent 的 before action 编译�
 BuildKey ready
   → compile attempt occurrences
   → link dependencies and schedule ready actions by frequency
-  → ordinary Docker: longest verified SetupPrefix lookup
-  → restore exact-image hit or replay remaining steps
+  → join each action's declared Sandbox state surface
+  → Provider: longest verified SetupPrefix lookup within coverage
+  → restore exact-image or Docker-data hit, then replay the barrier and suffix
   → commit and verify every eligible prefix
   → private writable container
   → Agent/test → lifecycle teardown
@@ -17,15 +18,17 @@ BuildKey ready
 
 `changeFrequency` 不是缓存开关，而是 before 的语义排序字段。它接受有限非负数，`-0` 按 `0` 处理，允许小数，省略时为 `normal = 100`。数值越小越早，`rare`、`normal` 与 `frequent` 只是数字常量。改值可以改变执行顺序、前缀祖先链与 fingerprint，但不充当 retention 或 GC policy。
 
-`verified` 只证明声明身份、Docker image 完整性与恢复后的写入隔离。`defineSandboxAction()` 同 Dockerfile `RUN` 一样，是作者对“只依赖已声明输入，只改变可捕获 Sandbox”的确定性承诺。NiceEval 会拒绝已知 secret 与 credential handle，但不声称能自动证明任意 shell、网络或时间读取的语义。
+`verified` 只证明声明身份、Provider artifact 完整性与恢复后的写入隔离。`defineSandboxAction()` 同 Dockerfile `RUN` 一样，是作者对“只依赖已声明输入，只改变声明 state”的确定性承诺。NiceEval 会拒绝已知 secret 与 credential handle，但不声称能自动证明任意 shell、网络或时间读取的语义。
 
-这个方向的 persistent 实现只支持普通本地单容器 Docker，且全部可变状态必须位于 outer writable rootfs。Docker Compose、bind/tmpfs、E2B、Vercel、custom Provider 与 profile-bound DinD 都报告 `Unsupported`并真实执行 action。Profile 不定义 `ArtifactSet V2`，也不建立 host lease/index。
+普通本地单容器 Docker 只在全部可变状态位于 outer writable rootfs 时完整保存默认 `sandboxState.all`。Docker Profile 可以在独立 fixed-image slot 上只保存 `sandboxState.dockerData`；shared loop/project-quota Profile 仍报告 `Unsupported`。Docker Compose、E2B、Vercel 与 custom Provider 未声明相应 coverage 时真实执行 action。
+
+`cache.state` 不是缓存开关。V1 只有 `all` 与 `dockerData`；省略固定为 `all`。Provider 遇到第一个不支持的 state 后，把该 action 及全部后缀作为 lineage barrier 真实执行，不能在后缀重新制造缺少祖先状态的命中。
 
 ## 两类准备节点
 
 | 内容 | 执行语义 |
 |---|---|
-| `.before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` | 每个 planning 编译出的 occurrence 都要满足；hit restore，miss replay，普通 Docker 可发布 verified exact image |
+| `.before(shell/writeText/writeBytes/uploadFile/uploadDirectory/gitCheckout)` | 每个 planning 编译出的 occurrence 都要满足；hit restore，miss replay，Provider 只发布包含该 state 全部结果的 artifact |
 | `.before(customFamily(input, options))` | 与内置 Action 同路；封闭 steps 形成一个原子前缀节点 |
 | `.before(callback)` / `.before(defineSandboxCommand(...))` | 始终真实执行，显示 opaque，并截断后续共享捕获；成功取得资源后用 `context.onCleanup()` 登记释放 |
 | `.after(action)` | occurrence 无条件、幂等 finally；入口登记、始终真实执行，按实际登记栈逆序 |

@@ -91,17 +91,22 @@ reservation。无法证明回收时 reservation与 slot保持占用，slot进入
 
 ## Setup prefix capability
 
-profile 绑定会在 planning 把 SetupPrefix capability 固定为 `Unsupported`。该结果只关闭准备缓存，不关闭正常运行：
+profile 绑定会在 planning 读取 typed state coverage。只有独立 fixed-image slot 才能完整保存 `dockerData`；shared loop/project-quota Profile 固定为 `Unsupported`。该结果只影响准备缓存，不关闭正常运行：
 
 ```text
 profile attested
-  -> setup-prefix capability = Unsupported
-  -> skip setup-prefix lookup/capture/restore
-  -> execute every before action in the linked global order
+  -> declare coverage = dockerData | Unsupported
+  -> lookup longest cumulative dockerData prefix
+  -> hit: stop inner workload and daemon, release the private slot
+  -> restore immutable seed into a fresh private slot
+  -> create a new outer container and restart provider-owned transient state
+  -> replay the first all/opaque barrier and every suffix action
   -> agent.ensure -> Agent -> Eval test
 ```
 
-Runner 不向 watchdog 申请 artifact seed、copy slot、read lease 或 component restore。可观测结果是 action 的 `unsupported`，不是 cache hit 或 degraded restore。一个 profile-bound plan 如果声明 `Persistent`，就在任何 Docker I/O 前以 capability 矛盾失败。
+capture 在 Action 成功后停止 inner workload 与 dockerd/containerd，卸载当前 slot，把 raw image 发布为 immutable seed。Runner 再恢复到新 slot 继续后缀，不把 staging slot 直接交给 Agent。capture/restore request 携带 required state、SetupPrefixKey、manifest digest 与 generation；Host 拒绝 `all`、缺失字段或 identity mismatch。
+
+`all` 或 opaque barrier 之后的 action 都真实执行，显示 `unsupported-state-ancestor` 或 `opaque-ancestor`。shared Profile 不向 watchdog 申请 artifact seed、copy slot 或 restore；可观测结果是 `unsupported`，不是 cache hit 或 degraded restore。
 
 ## 正常与领域失败
 

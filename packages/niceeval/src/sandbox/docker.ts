@@ -36,16 +36,23 @@ import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import {
   supportedBackendCapability,
+  type SandboxBackendCapabilities,
   type SandboxProviderBackend,
   type SandboxSetupPrefixCacheEligibility,
 } from "./backend.ts";
 import type { DockerSandboxAccess, DockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
 import { DIND_CAPTURE_QUIESCE_COMMAND, dindContainerCommand } from "./dind-supervisor.ts";
+import { sandboxState } from "./action.ts";
 import { ManagedProcessOutput } from "./managed-process.ts";
 import {
   makeDockerSetupPrefixCacheCapability,
   type DockerSetupPrefixRootOwnership,
 } from "./docker-setup-prefix-cache.ts";
+import {
+  makeDockerProfileSetupPrefixCacheCapability,
+  type DockerProfileSetupPrefixSession,
+} from "./docker-profile/setup-prefix.ts";
+import { DOCKER_PROFILE_SETUP_PREFIX_CAPABILITY } from "./docker-profile/schema.ts";
 
 const execFileAsync = promisify(execFile);
 const SETUP_PREFIX_PROVIDER_CLEANUP_TIMEOUT_MS = 30_000;
@@ -207,6 +214,8 @@ export interface DockerSandboxOptions {
   /** Durable watchdog ownership labels, copied to both container and exclusive network. */
   managedLabels?: Readonly<Record<string, string>>;
   rootlessAttestation?: { readonly daemonId: string; readonly dataRoot: string };
+  /** Current profile lease/reservation; full-copy restore may only replace this reservation's private slot. */
+  profileSetupPrefix?: DockerProfileSetupPrefixSession;
   afterStop?: () => Promise<void>;
   /**
    * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
@@ -295,14 +304,17 @@ function benignRemoveError(error: unknown): boolean {
   return dockerStatusCode(error) === 404;
 }
 
-async function startContainerIdempotently(container: Docker.Container): Promise<void> {
-  if ((await container.inspect()).State?.Running === true) return;
+async function startContainerIdempotently(container: Docker.Container, signal?: AbortSignal): Promise<void> {
+  if ((await container.inspect(signal === undefined ? {} : { abortSignal: signal })).State?.Running === true) return;
   try {
-    await container.start();
+    await container.start(signal === undefined ? {} : { abortSignal: signal });
   } catch (error) {
     // A control-owned committed create may be replayed after readiness failed.
     // Accept Docker's 304 only when a fresh inspect proves the same container is running.
-    if (dockerStatusCode(error) === 304 && (await container.inspect()).State?.Running === true) return;
+    if (
+      dockerStatusCode(error) === 304 &&
+      (await container.inspect(signal === undefined ? {} : { abortSignal: signal })).State?.Running === true
+    ) return;
     throw error;
   }
 }
@@ -424,6 +436,12 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private readonly managedLabels: Readonly<Record<string, string>>;
   private containerName?: string;
   private readonly rootlessAttestation?: { readonly daemonId: string; readonly dataRoot: string };
+  private readonly profileSetupPrefix?: DockerProfileSetupPrefixSession;
+  private controlledCreate?: (
+    spec: DockerControlCreateSpec,
+    signal?: AbortSignal,
+  ) => Promise<DockerControlCreateResult>;
+  private controlledCreateSpec?: DockerControlCreateSpec;
   private readonly afterStop?: () => Promise<void>;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
@@ -437,24 +455,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private sandboxPath: string;
   private setupPrefixRoot?: DockerSetupPrefixRootOwnership;
   private setupPrefixMountReason?: string;
-  readonly capabilities = {
-    rootCommands: supportedBackendCapability(true as const),
-    appendLog: supportedBackendCapability((line: string) => this.appendLog(line)),
-    suspend: supportedBackendCapability(() => this.suspend()),
-    ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
-    setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
-    managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startManagedProcess(input)),
-    setupPrefixCache: supportedBackendCapability(makeDockerSetupPrefixCacheCapability({
-      eligibility: () => this.setupPrefixCacheEligibility(),
-      captureExactImage: (labels, knownSensitiveValues, signal) =>
-        this.captureSetupPrefixImage(labels, knownSensitiveValues, signal),
-      rebaseToExactImage: (imageId, plannedContainerName, signal) =>
-        this.rebaseSetupPrefixImage(imageId, plannedContainerName, signal),
-      destroyCurrentForCacheRecovery: () => this.destroyCurrentContainer(false),
-      adoptSetupPrefixRoot: (root) => this.adoptSetupPrefixRoot(root),
-      recoverCleanBase: (signal) => this.recoverSetupPrefixCleanBase(signal),
-    })),
-  };
+  readonly capabilities: SandboxBackendCapabilities;
 
   private async startManagedProcess(input: ManagedProcessStart): Promise<ManagedProcess> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
@@ -603,12 +604,117 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.dns = Object.freeze([...(options.dns ?? [])]);
     this.managedLabels = Object.freeze({ ...(options.managedLabels ?? {}) });
     this.rootlessAttestation = options.rootlessAttestation;
+    this.profileSetupPrefix = options.profileSetupPrefix;
     this.afterStop = options.afterStop;
     this.pathPrepend = options.pathPrepend ?? [];
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
+    const setupPrefixCache = this.profileSetupPrefix === undefined
+      ? makeDockerSetupPrefixCacheCapability({
+          eligibility: () => this.setupPrefixCacheEligibility(),
+          captureExactImage: (labels, knownSensitiveValues, signal) =>
+            this.captureSetupPrefixImage(labels, knownSensitiveValues, signal),
+          rebaseToExactImage: (imageId, plannedContainerName, signal) =>
+            this.rebaseSetupPrefixImage(imageId, plannedContainerName, signal),
+          destroyCurrentForCacheRecovery: () => this.destroyCurrentContainer(false),
+          adoptSetupPrefixRoot: (root) => this.adoptSetupPrefixRoot(root),
+          recoverCleanBase: (signal) => this.recoverSetupPrefixCleanBase(signal),
+        })
+      : makeDockerProfileSetupPrefixCacheCapability({
+          session: this.profileSetupPrefix,
+          eligibility: () => this.setupPrefixCacheEligibility(),
+          quiesceAndStop: (signal) => this.quiesceProfileSetupPrefix(signal),
+          resumeStopped: (signal) => this.resumeProfileSetupPrefix(signal),
+          retireStopped: () => this.retireProfileSetupPrefix(),
+          createFromCurrent: (signal) => this.createProfileSetupPrefixContinuation(signal),
+        });
+    this.capabilities = Object.freeze({
+      rootCommands: supportedBackendCapability(true as const),
+      appendLog: supportedBackendCapability((line: string) => this.appendLog(line)),
+      suspend: supportedBackendCapability(() => this.suspend()),
+      ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
+      setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+      managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startManagedProcess(input)),
+      setupPrefixCache: supportedBackendCapability(setupPrefixCache),
+    });
   }
 
   private setupPrefixCacheEligibility(): SandboxSetupPrefixCacheEligibility {
+    if (this.profileSetupPrefix !== undefined) {
+      const capability = this.profileSetupPrefix.lease.binding.profile.backend.filesystem.setupPrefix;
+      if (capability === undefined) {
+        return {
+          _tag: "Unsupported",
+          code: "profile-backed-dind",
+          reason:
+            `Docker Profile descriptor does not declare ${DOCKER_PROFILE_SETUP_PREFIX_CAPABILITY}; ` +
+            "shared loop/project-quota profiles remain unsupported",
+        };
+      }
+      if (
+        capability.coverage !== sandboxState.dockerData ||
+        capability.requiredState !== sandboxState.dockerData ||
+        capability.slotAttestation !== "independent-fixed-filesystem/v1" ||
+        capability.filesystemSizeBytes !==
+          this.profileSetupPrefix.lease.binding.profile.backend.filesystem.dockerDataPool.bytesPerAllocation ||
+        this.profileSetupPrefix.lease.binding.profile.backend.filesystem.dockerDataPool.attestation !==
+          "independent-fixed-filesystem/v1"
+      ) {
+        return {
+          _tag: "Unsupported",
+          code: "profile-backed-dind",
+          reason:
+            "Docker Profile raw-image/v1 requires an independently attested fixed filesystem; " +
+            "shared loop/project-quota slots are not capture-safe",
+        };
+      }
+      if (this.dockerAccess?.mode !== "dind") {
+        return {
+          _tag: "Unsupported",
+          code: "profile-backed-dind",
+          reason: "Docker Profile docker-data snapshots require a profile-bound DinD sandbox",
+        };
+      }
+      if (this.baseImageId === undefined || !/^sha256:[a-f0-9]{64}$/u.test(this.baseImageId)) {
+        return {
+          _tag: "Unsupported",
+          code: "base-image-unverified",
+          reason: "Docker Profile setup-prefix capture requires a verified exact Base image id",
+        };
+      }
+      return {
+        _tag: "Eligible",
+        persistence: "persistent",
+        dependency: "parent-backed",
+        coverage: sandboxState.dockerData,
+        baseImageId: this.baseImageId,
+        keyScope: Object.freeze({
+          protocol: capability.protocol,
+          storageSchemaRevision: capability.publicationRevision,
+          artifactFormatRevision: capability.copyRevision,
+          semanticIdentity: Object.freeze({
+            component: "durable-docker-data",
+            coverage: capability.coverage,
+            requiredState: capability.requiredState,
+            semanticPolicyRevision:
+              this.profileSetupPrefix.lease.binding.profile.semanticPolicyRevision,
+            providerIdentity: capability.providerIdentity,
+            executionDomain: capability.executionDomain,
+            helperRevision: capability.helperRevision,
+            copyProtocol: capability.copyProtocol,
+            copyRevision: capability.copyRevision,
+            quiesceRevision: capability.quiesceRevision,
+            slotAttestation: capability.slotAttestation,
+            filesystemSizeBytes: capability.filesystemSizeBytes,
+            filesystemFeatures: [...capability.filesystemFeatures],
+            seedPolicy: capability.seedPolicy,
+            publicationRevision: capability.publicationRevision,
+            recoveryRevision: capability.recoveryRevision,
+            seedLimitBytes: capability.seedLimitBytes,
+            filesystemIdentity: capability.filesystemIdentity,
+          }),
+        }),
+      };
+    }
     if (this.dockerSocketPath !== undefined || this.privileged === "rootless") {
       return {
         _tag: "Unsupported",
@@ -680,8 +786,112 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       _tag: "Eligible",
       persistence: "persistent",
       dependency: "parent-backed",
+      coverage: sandboxState.all,
       baseImageId: this.baseImageId,
     };
+  }
+
+  private async quiesceProfileSetupPrefix(signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    if (this.profileSetupPrefix === undefined || this.dockerAccess?.mode !== "dind") {
+      throw new Error("Docker profile setup-prefix quiesce requires a bound DinD reservation");
+    }
+    const container = this.container;
+    if (container === null) throw new Error("Docker profile setup-prefix private container is not available");
+    const state = await container.inspect({ abortSignal: signal });
+    if (state.State?.Running !== true) {
+      throw new Error(
+        "Docker Profile outer container was already stopped; this capture call has no graceful quiesce proof",
+      );
+    }
+    {
+      const liveState = await this.runCommand("sh", ["-ec", [
+        "running=\"$(docker --host=unix:///var/run/docker.sock ps --quiet)\"",
+        "test -z \"$running\" || { echo \"running inner containers are not durable dockerData state\" >&2; exit 1; }",
+      ].join("\n")], { user: ROOT_USER, timeoutMs: 10_000, signal });
+      if (liveState.exitCode !== 0) {
+        throw new Error(
+          `Docker Profile setup-prefix capture rejects live inner container state: ` +
+          `${liveState.stderr.trim() || liveState.stdout.trim() || `exit ${liveState.exitCode}`}`,
+        );
+      }
+      const [command, ...args] = DIND_CAPTURE_QUIESCE_COMMAND;
+      const quiesced = await this.runCommand(command, args, { user: ROOT_USER, timeoutMs: 20_000, signal });
+      if (quiesced.exitCode !== 0) {
+        throw new Error(
+          `Docker Profile could not stop every inner container/containerd/shim/dockerd before capture: ` +
+          `${quiesced.stderr.trim() || quiesced.stdout.trim() || `exit ${quiesced.exitCode}`}`,
+        );
+      }
+      const durableOnly = await this.runCommand("sh", ["-ec", [
+        "test ! -S /var/run/docker.sock || ! docker --host=unix:///var/run/docker.sock info >/dev/null 2>&1",
+        "for process in /proc/[0-9]*/comm; do",
+        "  test -r \"$process\" || continue",
+        "  name=\"$(cat \"$process\")\"",
+        "  case \"$name\" in dockerd|containerd|containerd-shim|containerd-shim-runc-v2|buildkitd) exit 1;; esac",
+        "done",
+      ].join("\n")], { user: ROOT_USER, timeoutMs: 10_000, signal });
+      if (durableOnly.exitCode !== 0) {
+        throw new Error(
+          "Docker Profile setup-prefix capture could not prove inner daemon/build/session processes quiesced",
+        );
+      }
+      try {
+        await container.stop({ t: 5, abortSignal: signal });
+      } catch (cause) {
+        if (!benignStopError(cause)) throw cause;
+      }
+    }
+    signal.throwIfAborted();
+    const stopped = await container.inspect({ abortSignal: signal });
+    if (stopped.State?.Running === true) {
+      throw new Error("Docker Profile outer container is still running after setup-prefix quiesce");
+    }
+  }
+
+  private async resumeProfileSetupPrefix(signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted();
+    if (this.container === null) throw new Error("Docker Profile stopped private container is unavailable");
+    await startContainerIdempotently(this.container, signal);
+    await this.waitForReadiness(signal);
+    await this.resolveDefaultIdentity(signal);
+    return this.sandboxId;
+  }
+
+  private retireProfileSetupPrefix(): void {
+    this.container = null;
+    this.network = null;
+    this._containerId = "";
+  }
+
+  private async createProfileSetupPrefixContinuation(signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted();
+    if (
+      this.profileSetupPrefix === undefined ||
+      this.controlledCreate === undefined ||
+      this.controlledCreateSpec === undefined
+    ) {
+      throw new Error("Docker Profile continuation has no scoped reservation/create binding");
+    }
+    const created = await this.controlledCreate(this.controlledCreateSpec, signal);
+    this.container = this.docker.getContainer(created.containerId);
+    this.network = this.docker.getNetwork(created.networkId);
+    this._containerId = created.containerId;
+    this.releaseMode = "detach";
+    await startContainerIdempotently(this.container, signal);
+    await this.initializeControlledContainer(signal);
+    return this.sandboxId;
+  }
+
+  private async initializeControlledContainer(signal?: AbortSignal): Promise<void> {
+    await this.waitForReadiness(signal);
+    await this.ensureRunnerTools();
+    await this.resolveDefaultIdentity(signal);
+    await this.runCommandAsRoot("mkdir", ["-p", this.workdir], signal === undefined ? {} : { signal });
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.workdir], signal === undefined ? {} : { signal });
+    await this.runCommandAsRoot("mkdir", ["-p", this.npmGlobalDir], signal === undefined ? {} : { signal });
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.npmGlobalDir], signal === undefined ? {} : { signal });
+    await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir], signal === undefined ? {} : { signal });
   }
 
   private adoptSetupPrefixRoot(root: DockerSetupPrefixRootOwnership): void {
@@ -807,7 +1017,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   /** Control service owns create/remove; this handle only starts, initializes and detaches. */
   static async createControlled(
     options: DockerSandboxOptions,
-    create: (spec: DockerControlCreateSpec) => Promise<DockerControlCreateResult>,
+    create: (spec: DockerControlCreateSpec, signal?: AbortSignal) => Promise<DockerControlCreateResult>,
   ): Promise<DockerSandbox> {
     const sandbox = new DockerSandbox(options);
     const imageName = sandbox.image ?? DOCKER_IMAGES[sandbox.runtime];
@@ -834,7 +1044,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     sandbox.expiresAtMs = Date.now() + ttlSec * 1000;
     const dindCommand = isDind ? dindContainerCommand(ttlSec, CONTAINER_LOG) : undefined;
     const tmpfs = dockerHostConfig(sandbox.privileged, sandbox.resources).Tmpfs ?? {};
-    const created = await create({
+    const createSpec: DockerControlCreateSpec = Object.freeze({
       image: inspectedImage.Id,
       command: dindCommand === undefined
         ? ["sh", "-c", `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`]
@@ -845,20 +1055,16 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       ...(isDind ? { user: ROOT_USER } : sandbox.userOverride === undefined ? {} : { user: sandbox.userOverride }),
       tmpfs,
     });
+    sandbox.controlledCreate = create;
+    sandbox.controlledCreateSpec = createSpec;
+    const created = await create(createSpec);
     sandbox.container = sandbox.docker.getContainer(created.containerId);
     sandbox.network = sandbox.docker.getNetwork(created.networkId);
     sandbox._containerId = created.containerId;
     sandbox.releaseMode = "detach";
     try {
       await startContainerIdempotently(sandbox.container);
-      await sandbox.waitForReadiness();
-      await sandbox.ensureRunnerTools();
-      await sandbox.resolveDefaultIdentity();
-      await sandbox.runCommandAsRoot("mkdir", ["-p", sandbox.workdir]);
-      await sandbox.runCommandAsRoot("chown", ["-R", sandbox.chownTarget(), sandbox.workdir]);
-      await sandbox.runCommandAsRoot("mkdir", ["-p", sandbox.npmGlobalDir]);
-      await sandbox.runCommandAsRoot("chown", ["-R", sandbox.chownTarget(), sandbox.npmGlobalDir]);
-      await sandbox.runCommand("npm", ["config", "set", "prefix", sandbox.npmGlobalDir]);
+      await sandbox.initializeControlledContainer();
       return sandbox;
     } catch (error) {
       throw await sandbox.withInitializationDiagnostics(error);

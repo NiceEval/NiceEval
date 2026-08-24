@@ -335,14 +335,15 @@ generation不进入可分享 identity。daemon ID/generation属于连接审计�
 
 普通本地单容器 `dockerSandbox()` 的 exact-image 缓存由 [Sandbox Architecture](../architecture.md#docker-支持边界) 定义。它要求 action 的全部可变状态都在 outer writable rootfs。Compose、bind、tmpfs 与 host socket 不满足该边界，Runner 真实 replay action。
 
-raw privileged 与 managed rootless Profile 把 `/var/lib/docker` 放在 control-owned project-quota slot。单独 commit outer image 会丢失 inner Docker state。一个另行保存 seed/copy 的设计无法在这份契约中证明两项不变量：
+raw privileged 与 managed rootless Profile 把 `/var/lib/docker` 放在 outer writable rootfs 之外。Profile 只对显式 `sandboxState.dockerData` 的 Action 发布 `docker-data-snapshot/v1` coverage，它不能替代默认 `all` Action。
 
-- 所有 seed、copy 与 restore 都受同一 project-quota 边界限制，不存在 slot 外绕过路径；
-- sparse backing 已承诺的逻辑容量不超卖同一批物理 block。
+必须证明 seed 与每个 slot 都使用独立、fully allocated、fixed-size filesystem image。published seed 不挂进评估容器，source 与 target 只在 inner workload 已停止、dockerd/containerd quiesce 且 filesystem 已卸载时复制。shared loop-ext4/project-quota slot 无法提供独立 seed 与物理容量证明，固定报告 `Unsupported`。
 
-因此 profile binding 一律把 SetupPrefix capability 固定为 `Unsupported`。Runner 不 lookup、capture 或 restore `ArtifactSet V2`，不创建 host artifact lease/index，也不把缺少 data-root 的 outer image 当成 hit。准备 DAG 仍照常运行，每个 eligible action 都真实执行。
+descriptor 声明 coverage、Host copier/copy/quiesce revision、filesystem format/features、fixed size 与 execution domain。control request 与 receipt 双向核对 required state、SetupPrefixKey、manifest digest、daemon/slot generation 与 provider-neutral artifact id。Host 拒绝缺失 state、`all`、identity mismatch 或仍在运行的 inner container/BuildKit session。
 
-该判定在 profile 绑定后、任何 cache lookup 前完成。如果绑定 profile 的计划反而声明 `Persistent`，planning 将其视为 capability 矛盾并 fail closed，不回退到默认 Docker endpoint。
+capture 与 restore 共用 watchdog 的 lease、journal-first intent、原子发布、容量记账、scrub、quarantine 与 cancel/restart recovery。恢复为每个 Attempt 创建不同 writable slot，Agent/test 对 inner image 或 volume 的修改不能污染 immutable seed。
+
+该判定在 profile 绑定后、任何 cache lookup 前完成。Runner 遇到第一个默认 `all`、opaque 或 Provider 不支持的 state 时建立 lineage barrier；该 Action 与所有后缀真实执行，不回退到默认 Docker endpoint。
 
 ## 单容器资源
 

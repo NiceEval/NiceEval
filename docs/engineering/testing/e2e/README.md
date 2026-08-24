@@ -235,6 +235,10 @@ Agent 从每次安装后运行的公开 execution view 交付 build、fixture、
 private clone 的 Agent/test 污染文件不可见，运行结束后用真实 Docker CLI 核对该 clone 已释放。fixture 与 `.env` 内容才是声明的
 确定性状态；build、fixture 与 `.env` token 是 E2E 专用执行探针，用于区分 replay 和 restore，不参与题目输入、判分或生产作者示例。
 
+同一 owner 还验证 Docker Profile 的 `dockerData` state。测试以安装后候选连续运行冷/暖 Invocation，证明 inner Docker marker 与 side-effect count 在命中后不变，outer tmpfs marker 与高频 token 每次变化。每个 consumer 使用不同 writable slot；Agent/test 对 inner volume 的污染不会进入下一次恢复。
+
+默认 `all` Action 同时写 outer 与 inner state 时，它与所有后缀必须重新执行。测试同时核对 debug 的 declared/cumulative state、barrier 与 `unsupported-state-ancestor`，以及 shared loop/project-quota Profile 仍然 `Unsupported`。capture cancel、restore 损坏、quarantine 与并发 restore 的宿主边界也由该 owner 的 Profile fixture 触发。
+
 ### Docker profile cold build
 
 `e2e/lifecycle/test/docker-profile-cold-build.test.ts` 是 profile-bound Dockerfile cold build 的公开入口 owner。

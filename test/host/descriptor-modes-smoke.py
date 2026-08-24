@@ -59,6 +59,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
         assert desc["capacity"]["ephemeralDiskBytes"] == 2 * 1024**3
         assert "dockerDataAllocationCount" not in desc["backend"]["filesystem"]
         assert "rootPath" not in json.dumps(desc) and "registryPath" not in json.dumps(desc)
+        assert "setupPrefix" not in desc["backend"]["filesystem"]
 
     assert managed["policy"]["privilegedTranslation"] == "rootless-userns"
     assert managed["policy"]["writableRoot"] == "declared-tmpfs-only"
@@ -72,6 +73,93 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
         "uid": os.stat(docker_socket).st_uid, "gid": os.stat(docker_socket).st_gid,
     }
     assert raw_desc["backend"]["filesystem"]["dockerRootDir"] == "/data/docker"
+
+    snapshot_root = root / "setup-prefix"
+    snapshot_root.mkdir()
+    snapshot_identity = generator.filesystem_identity(str(snapshot_root))
+    snapshot_host = {
+        **common,
+        "securityLevel": "managed-rootless/v1",
+        "storage": {
+            "size": "4G",
+            "backing": "existing-mount",
+            "slotAttestation": "independent-fixed-filesystem/v1",
+        },
+        "networkPolicy": managed_host["networkPolicy"],
+        "setupPrefix": {
+            "enabled": True,
+            "protocol": "niceeval-docker-profile-state/docker-data-snapshot/v1",
+            "coverage": "dockerData",
+            "requiredState": "dockerData",
+            "helperRevision": "niceeval-docker-profile-host/docker-data-snapshot/v1",
+            "copyProtocol": "raw-image/v1",
+            "copyRevision": "niceeval-docker-profile-host/raw-image-copy/v1",
+            "quiesceRevision": "niceeval-docker-profile-host/docker-data-quiesce/v1",
+            "slotAttestation": "independent-fixed-filesystem/v1",
+            "seedPolicy": "immutable-unmounted/v1",
+            "publicationRevision": "journal-first-atomic-publish/v1",
+            "recoveryRevision": "scrub-quarantine-cancel-restart/v1",
+            "seedRegistryPath": str(snapshot_root / "seeds.json"),
+            "imageRootPath": str(snapshot_root),
+            "copyStrategy": "raw-image/v1",
+            "filesystemIdentity": snapshot_identity,
+            "filesystemSizeBytes": "1G",
+            "filesystemFeatures": [
+                "ext4", "fixed-size", "fully-allocated", "independent-image",
+            ],
+            "filesystemLimitBytes": "3G",
+            "seedLimitBytes": "1G",
+        },
+    }
+    snapshot = generator.build_descriptor(snapshot_host)
+    capability = snapshot["backend"]["filesystem"]["setupPrefix"]
+    assert capability["protocol"] == "niceeval-docker-profile-state/docker-data-snapshot/v1"
+    assert capability["coverage"] == "dockerData"
+    assert capability["requiredState"] == "dockerData"
+    assert capability["copyProtocol"] == "raw-image/v1"
+    assert capability["copyRevision"] == "niceeval-docker-profile-host/raw-image-copy/v1"
+    assert capability["filesystemSizeBytes"] == 1024**3
+    assert capability["filesystemFeatures"] == [
+        "ext4", "fixed-size", "fully-allocated", "independent-image",
+    ]
+    assert capability["providerIdentity"].startswith("sha256:")
+    assert capability["executionDomain"].startswith("sha256:")
+    assert snapshot["backend"]["filesystem"]["dockerDataPool"]["attestation"] \
+        == "independent-fixed-filesystem/v1"
+
+    try:
+        generator.build_descriptor({
+            **snapshot_host,
+            "setupPrefix": {
+                **snapshot_host["setupPrefix"],
+                "filesystemIdentity": "self-reported-not-the-image-root",
+            },
+        })
+    except SystemExit as error:
+        assert "actual imageRootPath filesystem" in str(error)
+    else:
+        raise AssertionError("setup-prefix filesystem identity must be measured, not self-reported")
+
+    try:
+        generator.build_descriptor({
+            **snapshot_host,
+            "setupPrefix": {**snapshot_host["setupPrefix"], "requiredState": "all"},
+        })
+    except SystemExit as error:
+        assert "requiredState" in str(error)
+    else:
+        raise AssertionError("generic all-state capability must never be published")
+
+    try:
+        generator.build_descriptor({
+            **snapshot_host,
+            "storage": {"size": "4G", "backing": "loop-ext4",
+                        "slotAttestation": "independent-fixed-filesystem/v1"},
+        })
+    except SystemExit as error:
+        assert "loop-ext4" in str(error)
+    else:
+        raise AssertionError("shared loop-ext4 must never publish setup-prefix capability")
     generator.Path.is_socket = original_is_socket
 
 print("descriptor-modes-smoke ok")

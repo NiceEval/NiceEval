@@ -356,6 +356,8 @@ layer 的 `before()` 只处理必须按 Experiment / Eval Group / Eval / Agent �
 这一层解决的是一类特定问题:**Sandbox 内容必须按实验或题目变化,不能在构建期固定**。
 稳定的大依赖先做进 image / template / snapshot;before 是运行时的薄层,昂贵动作可以命中准备前缀,不是每 Attempt 重装工具链和下载大模型的默认位置。
 
+Action 默认声明 `cache.state = sandboxState.all`，表示命中必须恢复它的全部可观察副作用。只改变 inner Docker data-root 的 Action 可以在同一个 inline 声明中填 `cache: { state: sandboxState.dockerData }`。不同 state 的效果必须拆成有依赖的 Action；这样 Provider 才能完整恢复它可保存的前缀，并真实执行后置 barrier。完整 DinD 示例见[固定 DinD runtime](../../roadmap/sandbox-cache/setup-prefix/use-case/固定DinD运行时.md)。
+
 ```typescript
 export default defineExperiment({
   agent: codexAgent({ mcpServers: [mempalMcp] }),

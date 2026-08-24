@@ -82,7 +82,7 @@ npx niceeval debug compare/codex memory/commit0 --json
 
 两个 selector 都必须唯一。精确 ID 优先，否则可以使用唯一前缀。评估用例只能从 Experiment 自己选中的范围里匹配；零命中或多命中会列出精确候选。
 
-计划包含 Plugin lifecycle、作者 `.before()` action、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。能静态声明的 `shell()` / `command()` 展开为实际命令，普通 callback 标为 `opaque`。纯 dry 检查把缓存运行时状态显示为 `pending`，最终 key 显示为 `not-probed`；它不声称运行时命中或资格结果。
+计划包含 Plugin lifecycle、作者 `.before(action)`、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。能静态声明的 `shell()` / `command()` 展开为实际命令，普通 callback 标为 `opaque`。Human 与 `--json` 都会显示每个 Action 的 declared/cumulative state、Provider coverage 与 barrier；纯 dry 检查把缓存运行时状态显示为 `pending`，最终 key 显示为 `not-probed`，不声称运行时命中或资格结果。完整阅读方式见[运行前检查 Sandbox 计划](/zh/tutorials/debug-lifecycle-plan)。
 
 评估在 Group 内时，只选择这个成员不会把同组其它成员加回计划，但输出仍保留一次 Group lifecycle 包裹。人读输出只显示 `COMMAND PLAN`；`--json` 输出单个 `niceeval.debug-plan/v1` 文档。
 

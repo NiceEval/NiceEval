@@ -97,6 +97,11 @@ watchdog 和评估容器共同受到的硬限制，因此每一项都不能小�
 watchdog 从中分配私有目录，并把目录挂到每个 Sandbox 的 `/var/lib/docker`。不要再为该路径声明
 `tmpfs`；inner image layer 和 BuildKit cache 应占磁盘，不应计入宿主 `Shmem`。
 
+这里的 shared loop-ext4/project-quota 配置只提供运行时配额和隔离 slot，不发布准备缓存的
+`sandboxState.dockerData` 覆盖范围。`niceeval debug` 会把它显示为 `Unsupported`，并让 Action
+真实执行。只有 Host 另外具备独立、完整预分配、固定大小的 image slot 与 immutable seed 时，才可能发布
+这项覆盖范围；详见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
+
 ## 应用系统配置
 
 先检查配置能够求值，再切换系统：

@@ -1585,6 +1585,12 @@ function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
       ? []
       : [
           `cache: ${cache.lookup} · ${cache.capability} · runtime ${cache.runtime.status} · final key ${cache.runtime.finalKey}`,
+          ...(cache.prefixIdentity === undefined
+            ? []
+            : [`prefix identity: ${cache.prefixIdentity}`]),
+          `cache state: declared ${cache.state.declared} · cumulative ${cache.state.cumulative} · ` +
+            `provider coverage ${cache.state.providerCoverage} · barrier ${cache.state.barrier}` +
+            `${cache.state.barrierActionId === undefined ? "" : ` (${cache.state.barrierActionId})`}`,
           ...(cache.capabilityReason === undefined
             ? []
             : [`cache unsupported reason: ${cache.capabilityReason}`]),

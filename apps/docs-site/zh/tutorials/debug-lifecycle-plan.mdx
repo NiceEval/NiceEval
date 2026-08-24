@@ -24,7 +24,9 @@ Human 输出使用分层框，不把所有步骤压成一段文本。顶层是 E
 - 拓扑执行序号和 occurrence 路径；
 - 用户填写的 `changeFrequency` 数值、来源和匹配的 preset；
 - 依赖、排序原因与当前固定的 `attempt` occurrence；
-- Provider 的缓存能力，以及尚未探测的运行时状态。
+- Provider 的缓存能力，以及尚未探测的运行时状态；
+- 由已链接 Action、顺序、依赖、state 与 fingerprint 得出的 `prefixIdentity`；
+- `cache.state` 的 `declared`、`cumulative`、`providerCoverage` 和 `barrier`。
 
 ```text
 ╭─ sandbox.before ───────────────────────────────── EXACT ─╮
@@ -35,12 +37,18 @@ Human 输出使用分层框，不把所有步骤压成一段文本。顶层是 E
 │ change frequency: 20 · explicit                         │
 │ scheduled by: lowest ready changeFrequency              │
 │ occurrence: attempt                                     │
-│ cache: not-probed · persistent · runtime pending       │
-│ final key: not-probed                                     │
+│ cache: not-probed · persistent · runtime pending · final key not-probed │
+│ prefix identity: linked-prefix:…                                         │
+│ cache state: declared dockerData · cumulative dockerData                │
+│ provider coverage dockerData · barrier none                              │
 ╰─────────────────────────────────────────────────────────╯
 ```
 
 数字是最终 linked schedule 的数字，不是只显示声明引入顺序。依赖永远优先；两个 ready action 数值相同时，才按 owner 与声明序稳定决定顺序。评估组的低频 action 因此可以排在 Experiment 的高频 action 前面。
+
+`declared` 是这个 Action 的完整状态承诺，`cumulative` 包含它之前的准备链。`providerCoverage`
+说明 Provider 实际能恢复的范围。`barrier` 不是 `none` 时，输出还会给出 `barrierActionId`；它指出第一个
+默认 `all`、`opaque` 或不受支持的 Action。该 Action 和所有后缀会真实执行。
 
 固定 action 会展示安全的命令形状。普通 callback 标为 `OPAQUE`，因为它只能在运行时执行。环境变量只显示 key 和摘要，stdin 只显示摘要与字节数。凭据值、stdin 原文和不安全的远端 locator 不会泄露到 Human 或 JSON 输出。
 
@@ -50,7 +58,12 @@ Human 输出使用分层框，不把所有步骤压成一段文本。顶层是 E
 pnpm exec niceeval debug compare/codex memory/commit0 --json > debug-plan.json
 ```
 
-JSON 保留同一棵结构化计划，不包含终端框线。action 节点带 `declarationOrder`、`executionOrder`、`changeFrequency`、`dependencies`、`occurrence` 和 `cache`。`cache.lookup` 与 `cache.runtime.finalKey` 固定是 `not-probed`，`cache.runtime.status` 是 `pending`，因为 debug 不读取运行时缓存 inventory。
+JSON 保留同一棵结构化计划，不包含终端框线。action 节点带 `declarationOrder`、`executionOrder`、
+`changeFrequency`、`dependencies`、`occurrence` 和 `cache`。
+
+`cache.state` 固定给出 `declared`、`cumulative`、`providerCoverage`、`barrier`，并在有 barrier 时给出
+`barrierActionId`；可确定的 Action 还给出 `cache.prefixIdentity`。`cache.lookup` 与
+`cache.runtime.finalKey` 固定是 `not-probed`，`cache.runtime.status` 是 `pending`，因为 debug 不读取运行时缓存 inventory。
 
 `debug` 只接受 `--json`；预算、重跑、并发等运行 flag 不适用于这个命令。
 

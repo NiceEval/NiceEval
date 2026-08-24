@@ -1,6 +1,7 @@
 // Provider Promise SDK 与公共 Sandbox facade 之间的唯一边界。
 
 import { Data, Effect } from "effect";
+import type { SandboxActionState } from "./action.ts";
 import type {
   CommandOptions,
   CommandResult,
@@ -24,6 +25,7 @@ export type SandboxSetupPrefixCacheUnsupportedCode =
   | "base-image-unverified"
   | "dynamic-runner-tools"
   | "mounted-state"
+  | "sensitive-state"
   | "profile-backed-dind";
 
 export type SandboxSetupPrefixCacheEligibility =
@@ -31,8 +33,17 @@ export type SandboxSetupPrefixCacheEligibility =
       readonly _tag: "Eligible";
       readonly persistence: "persistent";
       readonly dependency: "parent-backed";
+      /** Complete action-state surface this provider captures and restores. */
+      readonly coverage: SandboxActionState;
       /** Exact immutable Base resolved and verified during provider initialization. */
       readonly baseImageId: string;
+      /** Provider-owned key scope; omission preserves the ordinary Docker rootfs identity exactly. */
+      readonly keyScope?: {
+        readonly protocol: string;
+        readonly storageSchemaRevision: string;
+        readonly artifactFormatRevision: string;
+        readonly semanticIdentity: import("../shared/types.ts").JsonValue;
+      };
     }
   | {
       readonly _tag: "Unsupported";
@@ -46,6 +57,8 @@ export interface SandboxSetupPrefixCacheManifest {
   /** Content-addressed key planned by the provider-neutral runtime. */
   readonly setupPrefixKey: string;
   readonly setupManifestDigest: string;
+  /** Cumulative state required by this exact logical prefix. */
+  readonly requiredState: SandboxActionState;
   readonly storageSchemaRevision: string;
   readonly artifactFormatRevision: string;
   readonly changeFrequency: number;
@@ -113,7 +126,10 @@ export type SandboxSetupPrefixCacheLookupResult =
       readonly setupPrefixKey: string;
       readonly entryId: string;
       readonly generation: number;
-      readonly imageId: string;
+      /** Provider-neutral immutable artifact identity. */
+      readonly artifactId: string;
+      /** Present only when the provider artifact is an exact Docker image. */
+      readonly imageId?: string;
       readonly sandboxId: string;
     };
 
@@ -140,7 +156,10 @@ export type SandboxSetupPrefixCacheCaptureResult =
       readonly setupPrefixKey: string;
       readonly entryId: string;
       readonly generation: number;
-      readonly imageId: string;
+      /** Provider-neutral immutable artifact identity. */
+      readonly artifactId: string;
+      /** Present only when the provider artifact is an exact Docker image. */
+      readonly imageId?: string;
       readonly sandboxId: string;
     };
 

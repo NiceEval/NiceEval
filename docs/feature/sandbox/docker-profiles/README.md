@@ -126,9 +126,11 @@ Invocation，profile admission再限制所有 Invocation的总资源。默认32 
 
 普通单容器 Docker 可以把全部可变状态收进 outer writable rootfs，因而可以用 exact image 实现 Setup Prefix cache。raw 与 managed Docker Profile 的 private data-root 位于 project-quota slot，不在该 rootfs。
 
-只 commit outer image 会丢失 inner image 和 BuildKit 状态。把 seed 或 copy 放在 slot 之外会绕过 project quota，sparse backing 的逻辑容量也不能证明物理容量。因此 Profile 绑定的 Setup Prefix capability 固定报告 `Unsupported`，before action 按统一顺序真实执行。
+只 commit outer image 会丢失 inner image 与 volume，因此 Profile 不能完整保存默认 `sandboxState.all`。只改变 inner `/var/lib/docker` 的 Action 可以显式声明 `sandboxState.dockerData`。Profile 只在 seed 与每个 slot 都是独立、fully allocated、fixed-size filesystem image 时发布该 coverage。
 
-这个 Profile 契约不包含 `ArtifactSet V2`、host artifact lease/index 或组件恢复。NiceEval 不会用缺少 data-root 的 outer image 报告 cache hit，也不会回退到未受 profile 约束的 Docker daemon。
+published seed 保持 immutable 且不挂进评估容器。Host 在 inner workload 停止、dockerd/containerd quiesce 且 source/target 已卸载后复制 raw image，再为每个 Attempt 挂载不同 writable slot。lease、journal-first intent、原子发布、容量记账、scrub、quarantine 与 cancel/restart recovery 必须同时成立。
+
+shared loop-ext4/project-quota Profile 不满足独立 seed 与物理容量证明，因而继续报告 `Unsupported`。Runner 遇到第一个默认 `all`、opaque 或 Provider 不支持的 state 后，真实执行该 Action 与所有后缀，不会用缺少祖先状态的 Docker-data artifact 伪造命中。
 
 ## 范围
 
@@ -155,7 +157,7 @@ Invocation，profile admission再限制所有 Invocation的总资源。默认32 
 - Docker Compose outer sidecar/provider作为 DinD实现；
 - 仅凭 `docker info`出现 `rootless`就信任外部 endpoint；
 - rootless privileged Sandbox的 retention。
-- Profile-bound DinD 的 `ArtifactSet V2` Setup Prefix cache。
+- 保存 outer rootfs、workspace、home 或任意 mount 的通用 Sandbox snapshot。
 
 ## 两个独立交付门
 

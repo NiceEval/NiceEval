@@ -127,10 +127,10 @@ Agent 仍以 `user: "node"` 运行。上面 Dockerfile 在构建期把 `node` �
 这个协议不承诺保留任意 service image 的启动语义。如果你要评测一个必须依赖自己
 `ENTRYPOINT` / `CMD` 的服务组，应该使用 Compose Sandbox，由 Compose 声明服务进程。
 
-### 用 action 准备 Attempt 运行时
+### 用 Action 准备 Attempt 运行时
 
 Dockerfile 只烘焙固定工具和项目初始文件。需要 inner daemon 的操作放进 Sandbox 级
-`.before()` action，不要放进镜像 `ENTRYPOINT`。下面这个声明式 action 会创建可写 workspace 并验证 inner daemon；只有镜像确实烘焙了对应归档和文件时，才在这里加入 `docker load`、文件复制或项目 smoke-check 命令：
+`.before(action)`，不要放进镜像 `ENTRYPOINT`。下面这个声明式 Action 会创建可写 workspace 并验证 inner daemon；只有镜像确实烘焙了对应归档和文件时，才在这里加入 `docker load`、文件复制或项目 smoke-check 命令：
 
 ```ts title="lib/dind-sandbox.ts"
 import { changeFrequency, dockerSandbox, shell } from "niceeval/sandbox";
@@ -167,9 +167,10 @@ Attempt 在 `sandbox.create` 阶段记为 `errored`，不会把半成品 Sandbox
 每个 Attempt 只复制或导入必须写入 tmpfs 或 inner data-root 的状态，可以减少重复安装和网络漂移。
 
 <Warning>
-  使用 Profile 的 raw privileged 与 managed rootless DinD 不支持准备前缀缓存。inner Docker data-root
-  不在外层容器的可写根文件系统内；在不能同时证明 project quota 与 sparse backing 物理容量的情况下，
-  NiceEval 会关闭这项缓存并让每个 Attempt 真实执行 action，不会把外层 image 当成命中。
+  Docker Profile 不能保存默认的 `sandboxState.all`。只有某个 Action 的全部副作用都局限于已经静止的
+  inner `/var/lib/docker`，并且 profile 已具备独立、完整预分配、固定大小的 image slot 与 seed，
+  Provider 才会为显式 `sandboxState.dockerData` 发布覆盖范围。shared loop 或 project-quota Profile
+  继续显示 `Unsupported`，让该 Action 和后续 Action 真实执行。
 </Warning>
 
 ### Raw privileged DinD
@@ -236,10 +237,19 @@ machine 内运行 NiceEval。Ubuntu 安装包发布前，这条路径不是开�
 NixOS 宿主先按照[在 NixOS 上配置 Managed DinD](/zh/tutorials/nixos-managed-dind)部署并验证 profile，
 再配置下面的 Experiment。
 
+下面假设 Dockerfile 已把固定的 runtime 归档复制到 `/opt/images/runtime.tar`。`load-fixed-runtime`
+只写 inner `/var/lib/docker`，所以它准确声明 `sandboxState.dockerData`。如果 Action 还写 workspace、
+home、tmpfs、挂载或外部系统，就不能使用这个 state。
+
 ```ts title="experiments/dind-managed.ts"
 import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";
-import { dockerSandbox } from "niceeval/sandbox";
+import {
+  changeFrequency,
+  dockerSandbox,
+  sandboxState,
+  shell,
+} from "niceeval/sandbox";
 
 const GiB = 1024 ** 3;
 const MiB = 1024 ** 2;
@@ -278,7 +288,12 @@ export default defineExperiment({
         "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
       },
     },
-  }),
+  }).before(shell({
+    id: "load-fixed-runtime",
+    command: "docker load --input /opt/images/runtime.tar",
+    changeFrequency: changeFrequency.rare,
+    cache: { state: sandboxState.dockerData },
+  })),
 });
 ```
 

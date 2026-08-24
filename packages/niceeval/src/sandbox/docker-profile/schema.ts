@@ -8,6 +8,10 @@ import { dockerProfileError, type DockerProfileError } from "./errors.ts";
 export const DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION: 1 = 1;
 export const DOCKER_PROFILE_SCHEMA_VERSION = DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION;
 export const DOCKER_PROFILE_NETWORK_POLICY_VERSION: 1 = 1;
+export const DOCKER_PROFILE_SETUP_PREFIX_CAPABILITY =
+  "niceeval-docker-profile-state/docker-data-snapshot/v1" as const;
+export const DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL =
+  DOCKER_PROFILE_SETUP_PREFIX_CAPABILITY;
 export const DOCKER_PROFILE_NETWORK_DENY_CIDRS: readonly [string, ...string[]] = Object.freeze([
   "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
   "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16",
@@ -18,6 +22,12 @@ const NETWORK_ALLOWED_PROTOCOLS: readonly ["dns", "https"] = Object.freeze(["dns
 const PROFILE_CONTROLLERS: readonly ["cpu", "memory", "pids"] = Object.freeze([
   "cpu", "memory", "pids",
 ]);
+const SETUP_PREFIX_FILESYSTEM_FEATURES: readonly [
+  "ext4",
+  "fixed-size",
+  "fully-allocated",
+  "independent-image",
+] = Object.freeze(["ext4", "fixed-size", "fully-allocated", "independent-image"]);
 
 export type DockerExecutionProfileSecurityLevel =
   | "managed-rootless/v1"
@@ -67,6 +77,36 @@ export interface DockerManagedRootlessPolicy {
   readonly network: DockerProfileNetworkPolicy;
 }
 
+/**
+ * Opt-in host capability for copying the complete profile-owned SetupPrefix
+ * state. Absence is intentional and keeps the historical structured
+ * Unsupported result for raw and managed profiles.
+ */
+export interface DockerProfileSetupPrefixFullCopyCapabilityV1 {
+  readonly protocol: typeof DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL;
+  readonly coverage: "dockerData";
+  readonly requiredState: "dockerData";
+  readonly helperRevision: string;
+  readonly copyProtocol: "raw-image/v1";
+  readonly copyRevision: string;
+  readonly quiesceRevision: string;
+  readonly slotAttestation: "independent-fixed-filesystem/v1";
+  readonly seedPolicy: "immutable-unmounted/v1";
+  readonly publicationRevision: "journal-first-atomic-publish/v1";
+  readonly recoveryRevision: "scrub-quarantine-cancel-restart/v1";
+  readonly providerIdentity: string;
+  readonly executionDomain: string;
+  readonly filesystemSizeBytes: number;
+  readonly filesystemFeatures: readonly [
+    "ext4",
+    "fixed-size",
+    "fully-allocated",
+    "independent-image",
+  ];
+  readonly seedLimitBytes: number;
+  readonly filesystemIdentity: string;
+}
+
 export interface DockerExecutionProfileV1 {
   readonly schemaVersion: 1;
   readonly profileId: string;
@@ -92,8 +132,12 @@ export interface DockerExecutionProfileV1 {
       readonly dockerDataPool: {
         readonly count: number;
         readonly bytesPerAllocation: number;
-        readonly attestation: "linux-project-quota/v1";
+        readonly attestation:
+          | "linux-project-quota/v1"
+          | "independent-fixed-filesystem/v1";
       };
+      /** Presence is the descriptor's explicit, default-off full-copy capability. */
+      readonly setupPrefix?: DockerProfileSetupPrefixFullCopyCapabilityV1;
     };
     readonly cgroup: {
       readonly aggregatePath: string;
@@ -163,6 +207,12 @@ const nonEmptyString = (identifier: string) =>
   Schema.String.pipe(Schema.filter(
     (value) => value.trim() !== "" && !value.includes("\0"),
     { identifier, description: "a non-empty string without NUL" },
+  ));
+
+const sha256Identity = (identifier: string) =>
+  nonEmptyString(identifier).pipe(Schema.filter(
+    (value) => /^sha256:[a-f0-9]{64}$/u.test(value),
+    { identifier, description: "an exact lowercase sha256 identity" },
   ));
 
 const absolutePath = (identifier: string) =>
@@ -280,6 +330,31 @@ const CapacitySchema = plainStruct({
   },
 ));
 
+const SetupPrefixFullCopyCapabilitySchema = plainStruct({
+  protocol: Schema.Literal(DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL),
+  coverage: Schema.Literal("dockerData"),
+  requiredState: Schema.Literal("dockerData"),
+  helperRevision: nonEmptyString("DockerProfileSetupPrefixHelperRevision"),
+  copyProtocol: Schema.Literal("raw-image/v1"),
+  copyRevision: nonEmptyString("DockerProfileSetupPrefixCopyRevision"),
+  quiesceRevision: nonEmptyString("DockerProfileSetupPrefixQuiesceRevision"),
+  slotAttestation: Schema.Literal("independent-fixed-filesystem/v1"),
+  seedPolicy: Schema.Literal("immutable-unmounted/v1"),
+  publicationRevision: Schema.Literal("journal-first-atomic-publish/v1"),
+  recoveryRevision: Schema.Literal("scrub-quarantine-cancel-restart/v1"),
+  providerIdentity: sha256Identity("DockerProfileSetupPrefixProviderIdentity"),
+  executionDomain: sha256Identity("DockerProfileSetupPrefixExecutionDomain"),
+  filesystemSizeBytes: positiveSafeInteger("DockerProfileSetupPrefixFilesystemSizeBytes"),
+  filesystemFeatures: Schema.Tuple(
+    Schema.Literal("ext4"),
+    Schema.Literal("fixed-size"),
+    Schema.Literal("fully-allocated"),
+    Schema.Literal("independent-image"),
+  ),
+  seedLimitBytes: positiveSafeInteger("DockerProfileSetupPrefixSeedLimitBytes"),
+  filesystemIdentity: nonEmptyString("DockerProfileSetupPrefixFilesystemIdentity"),
+});
+
 /** Wire structure only; semantic revision and frozen canonical values are checked after decode. */
 export const DockerExecutionProfileV1Schema: Schema.Schema<
   DockerExecutionProfileV1,
@@ -314,8 +389,12 @@ export const DockerExecutionProfileV1Schema: Schema.Schema<
       dockerDataPool: plainStruct({
         count: positiveSafeInteger("DockerProfileDockerDataSlotCount"),
         bytesPerAllocation: positiveSafeInteger("DockerProfileDockerDataAllocationLimitBytes"),
-        attestation: Schema.Literal("linux-project-quota/v1"),
+        attestation: Schema.Literal(
+          "linux-project-quota/v1",
+          "independent-fixed-filesystem/v1",
+        ),
       }),
+      setupPrefix: Schema.optional(SetupPrefixFullCopyCapabilitySchema),
     }),
     cgroup: plainStruct({
       aggregatePath: absolutePath("DockerProfileAggregatePath"),
@@ -367,6 +446,14 @@ function freezeProfile(profile: DockerExecutionProfileV1): DockerExecutionProfil
       filesystem: Object.freeze({
         ...profile.backend.filesystem,
         dockerDataPool: Object.freeze({ ...profile.backend.filesystem.dockerDataPool }),
+        ...(profile.backend.filesystem.setupPrefix === undefined
+          ? {}
+          : {
+              setupPrefix: Object.freeze({
+                ...profile.backend.filesystem.setupPrefix,
+                filesystemFeatures: SETUP_PREFIX_FILESYSTEM_FEATURES,
+              }),
+            }),
       }),
       cgroup: Object.freeze({ ...profile.backend.cgroup, controllers: PROFILE_CONTROLLERS }),
     }),
@@ -512,6 +599,25 @@ export function parseDockerExecutionProfileV1(value: unknown): DockerExecutionPr
       message: "Docker data allocations must cover maxContainers and allocatable ephemeralDiskBytes",
     });
   }
+  const setupPrefix = profile.backend.filesystem.setupPrefix;
+  if (
+    setupPrefix !== undefined &&
+    (
+      setupPrefix.filesystemSizeBytes !==
+        profile.backend.filesystem.dockerDataPool.bytesPerAllocation ||
+      setupPrefix.seedLimitBytes < setupPrefix.filesystemSizeBytes ||
+      setupPrefix.seedLimitBytes % setupPrefix.filesystemSizeBytes !== 0 ||
+      setupPrefix.slotAttestation !==
+        profile.backend.filesystem.dockerDataPool.attestation
+    )
+  ) {
+    throw dockerProfileError({
+      code: "sandbox.docker-profile-schema-invalid",
+      path: "profile.backend.filesystem.setupPrefix",
+      message:
+        "Docker profile setup-prefix capability must fit one independently attested fixed Docker data allocation",
+    });
+  }
   const rawStorage = profile.securityLevel === "raw-dind-storage/v1";
   if (
     profile.policy.level !== profile.securityLevel ||
@@ -577,7 +683,36 @@ function canonicalJson(profile: DockerExecutionProfileV1): JsonValue {
       kind: profile.backend.kind,
       machineIdentity: profile.backend.machineIdentity,
       owner: { ...profile.backend.owner },
-      filesystem: { ...profile.backend.filesystem },
+      filesystem: {
+        identity: profile.backend.filesystem.identity,
+        mountPath: profile.backend.filesystem.mountPath,
+        dockerRootDir: profile.backend.filesystem.dockerRootDir,
+        limitBytes: profile.backend.filesystem.limitBytes,
+        dockerDataPool: { ...profile.backend.filesystem.dockerDataPool },
+        ...(profile.backend.filesystem.setupPrefix === undefined
+          ? {}
+          : {
+              setupPrefix: {
+                protocol: profile.backend.filesystem.setupPrefix.protocol,
+                coverage: profile.backend.filesystem.setupPrefix.coverage,
+                requiredState: profile.backend.filesystem.setupPrefix.requiredState,
+                helperRevision: profile.backend.filesystem.setupPrefix.helperRevision,
+                copyProtocol: profile.backend.filesystem.setupPrefix.copyProtocol,
+                copyRevision: profile.backend.filesystem.setupPrefix.copyRevision,
+                quiesceRevision: profile.backend.filesystem.setupPrefix.quiesceRevision,
+                slotAttestation: profile.backend.filesystem.setupPrefix.slotAttestation,
+                seedPolicy: profile.backend.filesystem.setupPrefix.seedPolicy,
+                publicationRevision: profile.backend.filesystem.setupPrefix.publicationRevision,
+                recoveryRevision: profile.backend.filesystem.setupPrefix.recoveryRevision,
+                providerIdentity: profile.backend.filesystem.setupPrefix.providerIdentity,
+                executionDomain: profile.backend.filesystem.setupPrefix.executionDomain,
+                filesystemSizeBytes: profile.backend.filesystem.setupPrefix.filesystemSizeBytes,
+                filesystemFeatures: [...profile.backend.filesystem.setupPrefix.filesystemFeatures],
+                seedLimitBytes: profile.backend.filesystem.setupPrefix.seedLimitBytes,
+                filesystemIdentity: profile.backend.filesystem.setupPrefix.filesystemIdentity,
+              },
+            }),
+      },
       cgroup: { ...profile.backend.cgroup, controllers: [...profile.backend.cgroup.controllers] },
     },
     capacity: {

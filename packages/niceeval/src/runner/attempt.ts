@@ -91,7 +91,13 @@ import {
   type SandboxSetupPrefixCacheOperation,
 } from "../sandbox/backend.ts";
 import type { MaterializedSandboxCase } from "../sandbox/case-types.ts";
-import { sandboxStepExecutionOf, type SandboxActionData } from "../sandbox/action.ts";
+import {
+  mergeSandboxActionState,
+  sandboxActionStateCovers,
+  sandboxStepExecutionOf,
+  type SandboxActionData,
+  type SandboxActionState,
+} from "../sandbox/action.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import {
   commandSensitiveValues,
@@ -1707,7 +1713,7 @@ function plannedSetupPrefixActions(
 ): readonly PlannedSetupPrefixAction[] {
   if (attempt.plan._tag !== "Sandbox") return Object.freeze([]);
   const baseImageId = eligibility.baseImageId;
-  const keyScope = Object.freeze({
+  const keyScope = eligibility.keyScope ?? Object.freeze({
     protocol: "niceeval-docker-rootfs-setup-prefix/v1",
     storageSchemaRevision: SETUP_PREFIX_STORAGE_REVISION,
     artifactFormatRevision: SETUP_PREFIX_CAPTURE_REVISION,
@@ -1747,7 +1753,9 @@ function plannedSetupPrefixActions(
   })}`;
   const planned: PlannedSetupPrefixAction[] = [];
   const actionManifest: JsonValue[] = [];
+  let cumulativeState: SandboxActionState | undefined;
   for (const entry of entries) {
+    cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
     actionManifest.push(Object.freeze({
       owner: {
         kind: entry.owner.kind,
@@ -1770,6 +1778,8 @@ function plannedSetupPrefixActions(
       action: {
         id: entry.data.plan.id,
         family: entry.data.plan.family,
+        declaredState: entry.data.plan.state,
+        cumulativeState,
         input: entry.data.plan.input,
         fingerprint: entry.data.plan.fingerprint,
         steps: entry.data.plan.steps,
@@ -1796,6 +1806,7 @@ function plannedSetupPrefixActions(
         },
       },
       actionManifest: [...actionManifest],
+      requiredState: cumulativeState,
       target: targetIdentity,
       revisions: {
         storage: keyScope.storageSchemaRevision,
@@ -1810,6 +1821,7 @@ function plannedSetupPrefixActions(
       baseImageId,
       setupPrefixKey: key,
       setupManifestDigest: `sha256:${digestOf(declarationMetadata)}`,
+      requiredState: cumulativeState,
       storageSchemaRevision: keyScope.storageSchemaRevision,
       artifactFormatRevision: keyScope.artifactFormatRevision,
       changeFrequency: entry.metadata.changeFrequency.value,
@@ -2224,11 +2236,15 @@ async function runAttemptBody(
       | "replay(bypass)"
       | "replay(contended)"
       | "executed(publish-failed)"
+      | "unsupported-state"
+      | "unsupported-state-ancestor"
       | "unsupported"
       | "degraded",
     entry: ScheduledSandboxBefore,
   ): void => feedback.progress({
-    message: status === "replay(contended)"
+    message: status === "unsupported-state" || status === "unsupported-state-ancestor"
+      ? `setup-prefix cache=unsupported reason=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
+      : status === "replay(contended)"
       ? `setup-prefix cache=replay reason=contended action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
       : status === "replay(restore-failed)"
         ? `setup-prefix cache=replay reason=restore-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
@@ -2266,10 +2282,13 @@ async function runAttemptBody(
     enterPhase("sandbox.prepare");
 
     const legacyBarrier = linked.setupHooks.length > 0 || linked.pluginLifecycles.length > 0;
-    let eligibleCount = 0;
+    let structurallyEligibleCount = 0;
     if (!legacyBarrier) {
-      while (eligibleCount < linked.before.length && linked.before[eligibleCount]?.kind === "action") {
-        eligibleCount += 1;
+      while (
+        structurallyEligibleCount < linked.before.length &&
+        linked.before[structurallyEligibleCount]?.kind === "action"
+      ) {
+        structurallyEligibleCount += 1;
       }
     }
 
@@ -2277,7 +2296,7 @@ async function runAttemptBody(
       await replayAllBefore(linked.before, "replay(bypass)");
       return;
     }
-    if (materializedCase === undefined || eligibleCount === 0) {
+    if (materializedCase === undefined || structurallyEligibleCount === 0) {
       await replayAllBefore(linked.before, "unsupported");
       return;
     }
@@ -2312,6 +2331,34 @@ async function runAttemptBody(
     }
     if (eligibility._tag === "Unsupported") {
       await replayAllBefore(linked.before, "unsupported");
+      return;
+    }
+
+    let eligibleCount = 0;
+    let cumulativeState: SandboxActionState | undefined;
+    while (eligibleCount < structurallyEligibleCount) {
+      const entry = linked.before[eligibleCount];
+      if (entry?.kind !== "action") break;
+      cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
+      if (!sandboxActionStateCovers(eligibility.coverage, cumulativeState)) break;
+      eligibleCount += 1;
+    }
+    const stateBarrierIndex = eligibleCount < structurallyEligibleCount
+      ? eligibleCount
+      : undefined;
+    if (eligibleCount === 0) {
+      for (let index = 0; index < linked.before.length; index++) {
+        const entry = linked.before[index]!;
+        cacheProgress(
+          stateBarrierIndex === index
+            ? "unsupported-state"
+            : stateBarrierIndex !== undefined && index > stateBarrierIndex
+              ? "unsupported-state-ancestor"
+              : "unsupported",
+          entry,
+        );
+        await executeBefore(entry);
+      }
       return;
     }
 
@@ -2523,9 +2570,17 @@ async function runAttemptBody(
       }
     }
 
-    // Every node after the first opaque barrier is always replayed and never captured.
+    // The first opaque or unsupported-state node is a lineage barrier. Every
+    // suffix action replays even if its own declared state would fit coverage.
     for (let index = eligibleCount; index < linked.before.length; index++) {
-      cacheProgress("replay(miss)", linked.before[index]!);
+      cacheProgress(
+        stateBarrierIndex === index
+          ? "unsupported-state"
+          : stateBarrierIndex !== undefined && index > stateBarrierIndex
+            ? "unsupported-state-ancestor"
+            : "replay(miss)",
+        linked.before[index]!,
+      );
       await executeBefore(linked.before[index]!);
     }
   };
