@@ -395,6 +395,30 @@ const ValueMatchCriterionSchema = Schema.Struct({
   }),
 });
 
+const NumericComparisonCriterionSchema = Schema.Struct({
+  kind: Schema.Literal("builtin"),
+  id: Schema.Literal("numeric-comparison/v1"),
+  data: Schema.Struct({
+    comparator: Schema.Literal("less-than", "at-most", "greater-than", "at-least"),
+    threshold: Schema.JsonNumber,
+    subject: Schema.Union(
+      Schema.Struct({ kind: Schema.Literal("explicit-value") }),
+      Schema.Struct({
+        kind: Schema.Literal("scope-metric"),
+        metric: Schema.Literal("tokens"),
+        scope: Schema.Literal("turn", "session", "attempt"),
+        unit: Schema.Literal("tokens"),
+      }),
+      Schema.Struct({
+        kind: Schema.Literal("scope-metric"),
+        metric: Schema.Literal("cost"),
+        scope: Schema.Literal("turn", "session", "attempt"),
+        unit: Schema.Literal("usd"),
+      }),
+    ),
+  }),
+});
+
 const ScopeStatusCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("scope-status/v1"),
@@ -485,6 +509,7 @@ const DirectScoreCriterionSchema = Schema.Struct({
 export const BuiltInCriterionSchema: Schema.Schema<BuiltInCriterion> =
   Schema.Union(
     ValueMatchCriterionSchema,
+    NumericComparisonCriterionSchema,
     ScopeStatusCriterionSchema,
     OccurrenceCriterionSchema,
     JudgeMeasurementCriterionSchema,
@@ -1266,6 +1291,7 @@ export function makeThirdPartyCriterionRegistry(
 
 const KNOWN_BUILTIN_CRITERION_IDS: ReadonlySet<string> = new Set([
   "value-match/v1",
+  "numeric-comparison/v1",
   "scope-status/v1",
   "occurrence/v1",
   "judge-measurement/v1",

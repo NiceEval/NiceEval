@@ -2,6 +2,8 @@
 
 export {
   and,
+  atLeast,
+  atMost,
   commandMatch,
   commandSucceeded,
   defineScoreMatch,
@@ -9,6 +11,7 @@ export {
   equals,
   eventMatch,
   excludes,
+  greaterThan,
   includes,
   includesUrl,
   isDefined,
@@ -16,6 +19,7 @@ export {
   isTrue,
   jsonMatch,
   hasSections,
+  lessThan,
   matches,
   not,
   or,

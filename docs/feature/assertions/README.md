@@ -26,6 +26,8 @@ conversation、usage 与 source navigation 都只在读侧投影。第三方可�
 
 内建 criterion 是包定义的封闭判别联合，例如值比较、scope 状态、事件 occurrence、Judge measurement 和 Sandbox result。第三方 criterion 只能以自己的 `name`、版本化 `schemaId` 与 exact JSON `data` 表示；它不能冒充内建成员，也不能借此写入另一种 durable family。
 
+可解释的 number 比较统一使用 `numeric-comparison/v1`。显式值与 `maxTokens`／`maxCost` 领域包装都由 `t` 提供被检查事实，由 Match 提供 `<`、`≤`、`>` 或 `≥` 比较；Usage 包装不建立第二套 evaluator，也不公开事实 selector。
+
 `materials.source` 与 `materials.evidence` 只保存安全、有界的事实，或本 Assertions Attachment 自己 closure 中的 blob ref。它不携带另一个 Attachment 的 `RecordBlobRef`、path 或“最新状态”引用。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
 
 高基数 collection 只保存计数与 complete/exhaustive/decisive receipt，并有界保留 decisive witness 与代表样本。native producer 不复制完整 candidates、tool occurrences、diff changes 或 Agent Judge trace。

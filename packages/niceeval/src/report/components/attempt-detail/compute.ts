@@ -533,11 +533,10 @@ function matcherFilterDebuggerContent(
       queryKind: "unavailable",
       subject: debuggerView.subject,
       querySummary: "Matcher query was not retained",
-      facts: [{ kind: "coverage", value: final.state }],
+      facts: [],
       atEvaluation: {
         state: final.state,
         rows: final.rows.map(matcherFilterRowContent),
-        notice: "historical-not-recorded",
       },
       afterEvaluation: [],
       relationNotice: "historical-not-recorded",
@@ -576,30 +575,20 @@ function matcherFilterDebuggerContent(
   const afterRows = final.rows
     .filter((row) => row.phase === "outside-evaluation-snapshot")
     .map(matcherFilterRowContent);
-  const notice: MatcherFilterNotice | undefined = atEvaluation.state === "partial"
-    ? "source-partial"
-    : debuggerView.overlayRetention === "partial"
-    ? "overlay-partial"
-    : atEvaluation.state === "unavailable"
-    ? "source-unavailable"
-    : undefined;
+  const relationNotice = matcherRelationNotice(debuggerView);
+  const notices: MatcherFilterNotice[] = [
+    ...(atEvaluation.state === "partial" ? ["source-partial" as const] : []),
+    ...(debuggerView.overlayRetention === "partial" ? ["overlay-partial" as const] : []),
+    ...(atEvaluation.state === "unavailable" ? ["source-unavailable" as const] : []),
+  ].filter((notice) => notice !== relationNotice);
   return {
     state: "current",
     queryKind: debuggerView.query.kind,
     subject: debuggerView.subject,
     querySummary,
     facts: [
-      { kind: "requirement", value: querySummary },
       { kind: "observed", value: observed },
       { kind: "examined", value: examined },
-      {
-        kind: "coverage",
-        value: atEvaluation.state === "complete"
-          ? { en: "complete", "zh-CN": "完整" }
-          : atEvaluation.state === "partial"
-          ? { en: "partial", "zh-CN": "部分" }
-          : { en: "unavailable", "zh-CN": "不可用" },
-      },
     ],
     steps: debuggerView.steps.map((step) => ({
       step: step.step,
@@ -613,12 +602,10 @@ function matcherFilterDebuggerContent(
     atEvaluation: {
       state: atEvaluation.state,
       rows: atRows,
-      ...(notice === undefined ? {} : { notice }),
+      ...(notices.length === 0 ? {} : { notices }),
     },
     afterEvaluation: afterRows,
-    ...(matcherRelationNotice(debuggerView) === undefined
-      ? {}
-      : { relationNotice: matcherRelationNotice(debuggerView)! }),
+    ...(relationNotice === undefined ? {} : { relationNotice }),
   };
 }
 

@@ -3,6 +3,7 @@ import type { Effect } from "effect";
 import type {
   BooleanMatch,
   MatchDiagnostic,
+  NumericComparator,
   ScoreMatch,
   ThresholdedScoreMatch,
 } from "./match.ts";
@@ -71,6 +72,28 @@ export type AssertionCriterion =
       readonly kind: "value-match";
       readonly subject: "explicit-value";
       readonly matcher: { readonly state: "declared"; readonly name: string } | { readonly state: "unavailable" };
+    }
+  | {
+      /** Package-private runtime variant encoded as numeric-comparison/v1. */
+      readonly kind: "value-match";
+      readonly numeric: {
+        readonly comparator: NumericComparator;
+        readonly threshold: number;
+        readonly subject:
+          | { readonly kind: "explicit-value" }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "tokens";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "tokens";
+            }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "cost";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "usd";
+            };
+      };
     }
   | {
       readonly kind: "scope-status";

@@ -52,6 +52,7 @@ import {
   validateExpectedTouchedPaths,
 } from "../assertions/diff.ts";
 import {
+  atMost,
   assertionEventOccurrence,
   assertManagedEventMatch,
   assertManagedToolMatch,
@@ -66,6 +67,7 @@ import {
   type ToolMatch,
   type ToolMatchQuantifier,
 } from "../assertions/match.ts";
+import { numericBooleanRegistration } from "../assertions/numeric.ts";
 import {
   buildO11ySummary,
   deriveRunFacts,
@@ -79,7 +81,10 @@ import {
   type ObservedSourceEvent,
   type ObservedTurnSnapshot,
 } from "../o11y/observed.ts";
-import { estimateCost } from "../o11y/cost.ts";
+import {
+  pricingEstimate,
+  type PricingEstimateResult,
+} from "../o11y/cost.ts";
 import { UNCLASSIFIED_TOOL_ACTIONS_REASON } from "../o11y/command-projection.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
@@ -859,40 +864,93 @@ function noFailedActionsHandle<Kind extends RuntimeKind>(input: {
 function usageLimitHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
   readonly scope: AssertionScope;
-  readonly metric: "tokens" | "cost";
   readonly maximum: number;
   readonly usage: Usage;
-  /** metric === "cost" 时的价目表估算(estimateCost(model, usage, pricing));observed usage.costUSD 不进入预算断言。 */
-  readonly estimatedCostUSD?: number;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
-}): BooleanAssertionHandle<Kind, void> {
+} & (
+  | { readonly metric: "tokens" }
+  | {
+      readonly metric: "cost";
+      /** observed usage.costUSD 不进入预算断言。 */
+      readonly pricing: PricingEstimateResult;
+    }
+)): BooleanAssertionHandle<Kind, void> {
   assertNonNegativeFinite(input.maximum, input.metric === "tokens" ? "maxTokens() max" : "maxCost() usd");
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: valueMatchCriterion(),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: input.metric === "tokens" ? "max-tokens" : "max-cost",
-      maximum: input.maximum,
-      usage: Object.freeze({ ...input.usage }),
-      coverage: input.coverage.usage,
-      snapshot: input.snapshot,
-    }),
-    evaluate: () => Effect.sync(() => {
-      // 预算只认 estimatedCostUSD(价目表估算),never observed usage.costUSD:
-      // 两者独立并存,observed 存在也不改变估算口径(见 Usage.costUSD 单向字段契约)。
-      // 无 model / 无价格 / 无可计价 usage 时 estimate 不存在；缺测不能被当成零成本。
-      const actual = input.metric === "tokens"
-        ? (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0)
-        : input.estimatedCostUSD;
-      if (actual === undefined) return unavailableVoid();
-      if (actual > input.maximum) return mismatchedVoid();
-      return hasCompleteCoverage(input.coverage, "usage")
-        ? matchedVoid()
-        : unavailableVoid();
-    }),
-  });
+  // observed usage.costUSD intentionally never enters this material. Cost is
+  // sealed from the pricing receipt; tokens exclude cache buckets by contract.
+  const tokenBuckets = [input.usage.inputTokens, input.usage.outputTokens] as const;
+  const recordedTokenBuckets = tokenBuckets.filter((value): value is number => value !== undefined);
+  const tokenInputInvalid = recordedTokenBuckets.some((value) => !Number.isFinite(value) || value < 0);
+  const tokenValue = recordedTokenBuckets.reduce((sum, value) => sum + value, 0);
+  const tokenMaterial = tokenInputInvalid
+    ? Object.freeze({ state: "unavailable" as const, reason: "usage-input-invalid" })
+    : recordedTokenBuckets.length === 0
+    ? Object.freeze({ state: "unavailable" as const, reason: "usage-not-recorded" })
+    : recordedTokenBuckets.length === tokenBuckets.length && input.coverage.usage.status === "complete"
+    ? Object.freeze({ state: "exact" as const, value: tokenValue })
+    : Object.freeze({ state: "lower-bound" as const, value: tokenValue });
+  const material = input.metric === "tokens"
+    ? tokenMaterial
+    : input.pricing.state === "unavailable"
+    ? Object.freeze({ state: "unavailable" as const, reason: input.pricing.reason })
+    : input.pricing.receipt.charges.length === 4 && input.coverage.usage.status === "complete"
+    ? Object.freeze({ state: "exact" as const, value: input.pricing.receipt.amountUSD })
+    : Object.freeze({ state: "lower-bound" as const, value: input.pricing.receipt.amountUSD });
+  const derivation = input.metric === "tokens"
+    ? Object.freeze({
+        kind: "usage-token-sum" as const,
+        buckets: Object.freeze([
+          ...(input.usage.inputTokens === undefined ? [] : ["inputTokens"]),
+          ...(input.usage.outputTokens === undefined ? [] : ["outputTokens"]),
+        ]),
+        missingBuckets: Object.freeze([
+          ...(input.usage.inputTokens === undefined ? ["inputTokens"] : []),
+          ...(input.usage.outputTokens === undefined ? ["outputTokens"] : []),
+        ]),
+      })
+    : input.pricing.state === "available"
+    ? input.pricing.receipt
+    : Object.freeze({ kind: "pricing-estimate-unavailable" as const, reason: input.pricing.reason });
+  const captured = captureAssertionSnapshot(Object.freeze({
+    ...material,
+    cut: input.snapshot,
+    coverage: input.coverage.usage,
+    derivation,
+  }));
+  const semanticCapture = material.state === "unavailable"
+    ? Object.freeze({
+        ...captured,
+        coverage: Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const }),
+        limitations: Object.freeze([]),
+      })
+    : material.state === "lower-bound" && captured.coverage.state === "complete"
+    ? Object.freeze({
+        ...captured,
+        coverage: Object.freeze({ state: "partial" as const, reason: "provider-limited" as const }),
+        limitations: Object.freeze([{ kind: "provider-limited" as const }]),
+      })
+    : captured;
+  const criterionSubject = input.metric === "tokens"
+    ? Object.freeze({
+        kind: "scope-metric" as const,
+        metric: "tokens" as const,
+        scope: input.scope,
+        unit: "tokens" as const,
+      })
+    : Object.freeze({
+        kind: "scope-metric" as const,
+        metric: "cost" as const,
+        scope: input.scope,
+        unit: "usd" as const,
+      });
+  return input.runtime.registerBoolean(numericBooleanRegistration({
+    match: atMost(input.maximum),
+    criterionSubject,
+    material,
+    captured: semanticCapture,
+    matchedValue: () => undefined,
+  }));
 }
 
 function orderedMatchList<Match>(
@@ -1791,8 +1849,8 @@ export function createAssertFirstEvalContext(
 
   // maxCost 断言唯一认价目表估算(estimateCost);observed usage.costUSD 与之独立并存,
   // 存在也不改变估算(见 Usage.costUSD 单向字段契约)。
-  const estimatedCostFor = (usage: Usage): number | undefined =>
-    estimateCost(deps.model, usage, deps.pricing);
+  const pricingEstimateFor = (usage: Usage): PricingEstimateResult =>
+    pricingEstimate(deps.model, usage, deps.pricing);
 
   interface TurnScopeSnapshot {
     readonly events: readonly StreamEvent[];
@@ -2185,7 +2243,7 @@ export function createAssertFirstEvalContext(
         metric: "cost",
         maximum: usd,
         usage: turn.usage ?? {},
-        estimatedCostUSD: estimatedCostFor(turn.usage === undefined ? {} : turn.usage),
+        pricing: pricingEstimateFor(turn.usage === undefined ? {} : turn.usage),
         coverage,
         snapshot: scopeSnapshot,
       });
@@ -2347,7 +2405,7 @@ export function createAssertFirstEvalContext(
         metric: "cost",
         maximum: usd,
         usage: session.usage,
-        estimatedCostUSD: estimatedCostFor(session.usage),
+        pricing: pricingEstimateFor(session.usage),
         coverage,
         snapshot: sessionSnapshot(scope),
       });
@@ -2536,7 +2594,7 @@ export function createAssertFirstEvalContext(
       metric: "cost",
       maximum: usd,
       usage: manager.usage,
-      estimatedCostUSD: estimatedCostFor(manager.usage),
+      pricing: pricingEstimateFor(manager.usage),
       coverage,
       snapshot: attemptSnapshot(),
     });

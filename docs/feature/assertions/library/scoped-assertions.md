@@ -31,6 +31,9 @@ notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
 // Turn 与 Session receiver 提供有序序列查询；根 t 不伪造全局顺序。
 toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
 eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
+
+maxTokens(maximum: number): UsageAssertionHandle<Kind, void>;
+maxCost(maximumUSD: number): UsageAssertionHandle<Kind, void>;
 ```
 
 `name` 是 `toolMatch(name)` 的薄糖，只按原始工具名选择 occurrence。`calledTool` 的第二参数只含 `count`；`input`、`output` 与 `status` 都属于 `ToolMatch`。
@@ -38,6 +41,20 @@ eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): Boolean
 `count` 的数字是恰好次数，且必须为正整数。`{ atLeast: n }` 的 `n` 同样必须为正整数。省略 `count` 等于 `{ atLeast: 1 }`。数值 `0` 无效；需要证明没有匹配调用时使用 `notCalledTool`。
 
 `event` 的数值 `count` 同样表示恰好次数；省略时表示至少一次。零次使用 `notEvent`。`toolOrder` 与 `eventOrder` 至少各接收两个 Match，并检查允许无关 source row 穿插的 subsequence；`toolOrder` 只证明 logical tool occurrence 的开始顺序，不把“前一笔 finished 后下一笔才 started”藏进方法名。
+
+## Usage 上限包装
+
+`maxTokens(limit)` 与 `maxCost(limitUSD)` 在 root `t`、Session 和 Turn receiver 上可用。两者的上限都必须是有限且不小于零的 number，并在调用处冻结 receiver 的 usage scope。
+
+它们是领域包装，不是另一套比较系统：`maxTokens(limit)` 等价于把 scope token fact 交给 `atMost(limit)`，`maxCost(limitUSD)` 等价于把 scope pricing estimate fact 交给同一个 matcher。包装与 `t.check(value, atMost(limit))` 共用 numeric evaluator、`numeric-comparison/v1` criterion 和一次登记路径。公开 API 不暴露 `t.tokens`、`t.cost` 或 `metric(selector)`。
+
+`maxTokens` 的 fact 只等于 scope 内互斥桶的 `inputTokens + outputTokens`。cache read、cache write、reasoning、other 与 request 数都不计入这个上限，也不能回填缺失的 input 或 output。
+
+`maxCost` 只消费 Runner 在 Assertion 登记时以 model、usage token 桶和选中的 price source 形成的 USD pricing estimate。它绝不读取或回退到 provider／Adapter observed `usage.costUSD`。费用材料保存完整的 pricing receipt，Report 只格式化该 receipt，不按当前价格重新计算。
+
+Usage fact 有 `exact`、`lower-bound` 与 `unavailable` 三态。完整 usage 与完整 pricing 输入形成 exact；可证明安全前缀但缺少后续 usage 时形成 lower-bound；无法取得可信数值时形成 unavailable，不能补零。
+
+对 `maxTokens` 或 `maxCost` 的 `atMost` 比较，lower-bound 只有在已知下界严格大于上限时才能确定 mismatched。下界等于或小于上限都为 unavailable，因为未观察部分仍可能使总量超限。`.ifCovered()` 只把已声明 unavailable 改为 not-applicable；它不能把 lower-bound 当成完整值，也不能改变已确定的超限失败。
 
 ```ts
 import {

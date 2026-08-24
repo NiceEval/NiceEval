@@ -147,6 +147,22 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "numeric-comparison/v1";
+      readonly data: {
+        readonly comparator: "less-than" | "at-most" | "greater-than" | "at-least";
+        readonly threshold: number;
+        readonly subject:
+          | { readonly kind: "explicit-value" }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "tokens" | "cost";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "tokens" | "usd";
+            };
+      };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "scope-status/v1";
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
@@ -183,6 +199,59 @@ type BuiltInCriterion =
 ```
 
 这些 data 是可离线解释的闭合类别，不保存 `Match` object、predicate、regex、Judge client、collector 或作者 API 对象。第三方闭包不可序列化时，writer 使用诚实的 declared/unavailable 状态，不伪造 AST。criterion 以外的 materials、evaluation、decision、policy、contribution 与 explanation retention 提供本次检查的唯一审计事实。
+
+`numeric-comparison/v1` 的 `threshold` 必须 finite，并由 matcher 工厂在登记前验证。显式数值 matcher 和 Usage 上限包装都进入这个成员、同一个 evaluator 与同一次 entry registration。`subject` 是 `t` 已经提供的被检查事实描述，不是公开 selector；scope 包装把实际 receiver scope、metric 与 unit 封口进去。`value-match/v1` 没有推断迁移：旧 entry 即使 observed 是 number 或 matcher 名看似数值比较，也仍按原 criterion 读取。
+
+### 数值材料与 Usage pricing receipt
+
+数值 evaluator 只接收三态材料。`exact` 是完整有限值；`lower-bound` 是可证明的有限下界；`unavailable` 带有限 reason。producer 不能用零、`null`、缺字段或 observed provider cost 代替 unavailable。
+
+```ts
+type NumericFactMaterial =
+  | { readonly state: "exact"; readonly value: number }
+  | {
+      readonly state: "lower-bound";
+      readonly value: number;
+      readonly reason: "usage-collection-partial";
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason:
+        | "usage-not-recorded"
+        | "usage-collection-unavailable"
+        | "numeric-value-non-finite"
+        | "model-not-recorded"
+        | "price-source-not-found"
+        | "price-charge-not-found"
+        | "pricing-input-invalid";
+    };
+
+type PricingChargeReceipt = {
+  readonly bucket: "input" | "output" | "cache-read" | "cache-write";
+  readonly tokens: number;
+  readonly rateUSDPerMTok: number;
+  readonly amountUSD: number;
+};
+
+type PricingEstimateReceipt = {
+  readonly kind: "pricing-estimate";
+  readonly model: string;
+  readonly priceSource: {
+    readonly kind: "configured" | "builtin";
+    readonly selector: string;
+  };
+  readonly charges: readonly PricingChargeReceipt[];
+  readonly amountUSD: number;
+};
+```
+
+`NumericFactMaterial.value` 必须 finite；显式 value 可以是负数。Usage 的 exact／lower-bound value、charge 的数值和 `amountUSD` 都必须 finite 且不小于零，token 数还是 safe integer。number candidate 是 `NaN` 或正负 `Infinity` 时使用 `unavailable/numeric-value-non-finite`，不能把它写成 exact、作者错误或 mismatch。非 number candidate 可在调用边界作为作者错误拒绝。
+
+pricing receipt 最多四个 charge，每个 bucket 最多出现一次，`amountUSD` 等于这些已封口 charge amount 的精确和。producer 保存求值时实际使用的 model、price source kind 与 selector；selector 是选择收据，不是 reader 时重新查价的能力。
+
+`usage-tokens` 只聚合互斥的 input 与 output token 桶，不包含 cache-read、cache-write、reasoning、other 或 requests。`usage-cost-usd` 使用 pricing estimate receipt；它绝不读取 Agent Turns 中 provider／Adapter observed 的 `usage.costUSD`。pricing receipt 作为这条 Assertion 的 source material 保存，不能由 Report 根据当前 rate card 重算。
+
+lower-bound 按区间而不是按 exact number 求值。对 `at-most`，下界严格大于 threshold 才能确定 mismatched；下界小于或等于 threshold 都是 unavailable。`less-than` 在下界大于或等于 threshold 时确定 mismatched；`greater-than` 在下界严格大于 threshold 时确定 matched；`at-least` 在下界大于或等于 threshold 时确定 matched。其余 lower-bound 结果均为 unavailable。
 
 第二层按 identity 处理 criterion：已知 builtin 的 `id` 用相应 exact schema decode；third-party 的 `{ name, schemaId }` 选择已安装的精确 schema，再 decode `data`。未知 builtin `id` 或未安装的第三方 schema 使这条 entry 为 `unsupported`；envelope、known builtin data 或 third-party data 不合法时，这条 entry 为 `invalid`。二者都不重新执行 evaluator。
 

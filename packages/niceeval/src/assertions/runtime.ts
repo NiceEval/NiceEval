@@ -40,6 +40,7 @@ import {
   assertManagedValueMatch,
   evaluateBooleanMatch,
   evaluateScoreMatch,
+  isNumericComparisonMatch,
   isManagedThresholdedScoreMatch,
   looksLikeThresholdedScoreMatch,
   thresholdedScoreMatchValue,
@@ -49,6 +50,7 @@ import {
   type ThresholdedScoreMatch,
 } from "./match.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
+import { numericBooleanRegistration } from "./numeric.ts";
 
 const UTF8 = new TextEncoder();
 
@@ -765,8 +767,26 @@ class AssertionsRuntimeImplementation {
       throw new TypeError("t.check() match must be a threshold view created by ScoreMatch.atLeast()");
     }
     const managed = thresholded?.match ?? assertManagedValueMatch(match, "t.check() match");
-    const captured = captureAssertionSnapshot(value);
     if (managed.kind === "boolean") {
+      if (isNumericComparisonMatch(managed)) {
+        const material = typeof value === "number" && Number.isFinite(value)
+          ? Object.freeze({ state: "exact" as const, value })
+          : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" });
+        const captured = captureAssertionSnapshot(Object.freeze({
+          ...material,
+          cut: Object.freeze({ kind: "call-time" as const }),
+          coverage: Object.freeze({ state: "complete" as const }),
+          derivation: Object.freeze({ kind: "explicit-value" as const }),
+        }));
+        return this.registerBoolean(numericBooleanRegistration({
+          match: managed,
+          criterionSubject: Object.freeze({ kind: "explicit-value" as const }),
+          material,
+          captured,
+          matchedValue: (numericValue) => numericValue,
+        }));
+      }
+      const captured = captureAssertionSnapshot(value);
       const entry = this.createEntry({
         kind: "boolean",
         criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const, matcher: Object.freeze({ state: "declared" as const, name: managed.name }) }),
@@ -778,6 +798,7 @@ class AssertionsRuntimeImplementation {
       });
       return new BooleanHandle(this, entry);
     }
+    const captured = captureAssertionSnapshot(value);
     const entry = this.createEntry({
       kind: "measurement",
       criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const, matcher: Object.freeze({ state: "declared" as const, name: managed.name }) }),

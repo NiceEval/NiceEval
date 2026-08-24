@@ -105,6 +105,22 @@ function numberValue(value: ClosedAssertionFactValue | undefined): number | unde
 
 function matcherName(check: ClosedAssertionFactValue): string | undefined {
   const data = field(check, "data");
+  if (criterionId(check) === "numeric-comparison/v1") {
+    const comparator = stringValue(field(data, "comparator"));
+    const threshold = numberValue(field(data, "threshold"));
+    if (comparator !== undefined && threshold !== undefined) {
+      const name = comparator === "less-than"
+        ? "lessThan"
+        : comparator === "at-most"
+        ? "atMost"
+        : comparator === "greater-than"
+        ? "greaterThan"
+        : comparator === "at-least"
+        ? "atLeast"
+        : undefined;
+      if (name !== undefined) return `${name}(${threshold})`;
+    }
+  }
   const valueMatcher = stringValue(field(field(data, "matcher"), "name"));
   if (valueMatcher !== undefined) return valueMatcher;
   if (criterionId(check) !== "occurrence/v1" || stringValue(field(data, "occurrence")) !== "tool") {
@@ -154,6 +170,119 @@ function criterionId(check: ClosedAssertionFactValue): string | undefined {
 function isToolCriterion(check: ClosedAssertionFactValue): boolean {
   return criterionId(check) === "occurrence/v1" &&
     stringValue(field(field(check, "data"), "occurrence")) === "tool";
+}
+
+type NumericComparator = "less-than" | "at-most" | "greater-than" | "at-least";
+type NumericMaterialState = "exact" | "lower-bound" | "unavailable";
+
+interface NumericComparisonView {
+  readonly comparator: NumericComparator;
+  readonly threshold: number;
+  readonly subject: {
+    readonly kind: "explicit-value" | "scope-metric";
+    readonly metric?: "tokens" | "cost";
+    readonly scope?: "turn" | "session" | "attempt";
+    readonly unit?: "tokens" | "usd";
+  };
+  readonly material: {
+    readonly state: NumericMaterialState;
+    readonly value?: number;
+    readonly reason?: string;
+    readonly derivation?: ClosedAssertionFactValue;
+  };
+}
+
+interface PricingChargeView {
+  readonly bucket: "input" | "output" | "cache-read" | "cache-write";
+  readonly tokens: number;
+  readonly rateUSDPerMTok: number;
+  readonly amountUSD: number;
+}
+
+interface PricingReceiptView {
+  readonly model: string;
+  readonly sourceKind: "configured-override" | "builtin";
+  readonly sourceSelector: string;
+  readonly charges: readonly PricingChargeView[];
+  readonly amountUSD: number;
+}
+
+function numericComparator(value: string | undefined): NumericComparator | undefined {
+  return value === "less-than" || value === "at-most" || value === "greater-than" || value === "at-least"
+    ? value
+    : undefined;
+}
+
+function numericMaterialState(value: string | undefined): NumericMaterialState | undefined {
+  return value === "exact" || value === "lower-bound" || value === "unavailable" ? value : undefined;
+}
+
+function numericComparisonView(
+  check: ClosedAssertionFactValue,
+  source: ClosedAssertionFactValue,
+): NumericComparisonView | undefined {
+  if (criterionId(check) !== "numeric-comparison/v1") return undefined;
+  const data = field(check, "data");
+  const comparator = numericComparator(stringValue(field(data, "comparator")));
+  const threshold = numberValue(field(data, "threshold"));
+  const subjectValue = field(data, "subject");
+  const subjectKind = stringValue(field(subjectValue, "kind"));
+  const input = field(source, "input");
+  const materialState = numericMaterialState(stringValue(field(input, "state")));
+  if (
+    comparator === undefined || threshold === undefined || materialState === undefined ||
+    (subjectKind !== "explicit-value" && subjectKind !== "scope-metric")
+  ) return undefined;
+  const metric = stringValue(field(subjectValue, "metric"));
+  const scope = stringValue(field(subjectValue, "scope"));
+  const unit = stringValue(field(subjectValue, "unit"));
+  return {
+    comparator,
+    threshold,
+    subject: {
+      kind: subjectKind,
+      ...(metric === "tokens" || metric === "cost" ? { metric } : {}),
+      ...(scope === "turn" || scope === "session" || scope === "attempt" ? { scope } : {}),
+      ...(unit === "tokens" || unit === "usd" ? { unit } : {}),
+    },
+    material: {
+      state: materialState,
+      ...(numberValue(field(input, "value")) === undefined
+        ? {}
+        : { value: numberValue(field(input, "value"))! }),
+      ...(stringValue(field(input, "reason")) === undefined
+        ? {}
+        : { reason: stringValue(field(input, "reason"))! }),
+      ...(field(input, "derivation") === undefined ? {} : { derivation: field(input, "derivation")! }),
+    },
+  };
+}
+
+function pricingReceiptView(derivation: ClosedAssertionFactValue | undefined): PricingReceiptView | undefined {
+  if (stringValue(field(derivation, "kind")) !== "pricing-estimate") return undefined;
+  const model = stringValue(field(derivation, "model"));
+  const priceSource = field(derivation, "priceSource");
+  const sourceKind = stringValue(field(priceSource, "kind"));
+  const sourceSelector = stringValue(field(priceSource, "selector"));
+  const amountUSD = numberValue(field(derivation, "amountUSD"));
+  const chargesValue = field(derivation, "charges");
+  if (
+    model === undefined || sourceSelector === undefined || amountUSD === undefined ||
+    (sourceKind !== "configured-override" && sourceKind !== "builtin") ||
+    chargesValue?.kind !== "list"
+  ) return undefined;
+  const charges = chargesValue.items.flatMap((item): PricingChargeView[] => {
+    const bucket = stringValue(field(item, "bucket"));
+    const tokens = numberValue(field(item, "tokens"));
+    const rateUSDPerMTok = numberValue(field(item, "rateUSDPerMTok"));
+    const amount = numberValue(field(item, "amountUSD"));
+    if (
+      (bucket !== "input" && bucket !== "output" && bucket !== "cache-read" && bucket !== "cache-write") ||
+      tokens === undefined || rateUSDPerMTok === undefined || amount === undefined
+    ) return [];
+    return [{ bucket, tokens, rateUSDPerMTok, amountUSD: amount }];
+  });
+  return { model, sourceKind, sourceSelector, charges, amountUSD };
 }
 
 function semanticExpected(expected: ClosedAssertionFactValue): ClosedAssertionFactValue | undefined {
@@ -330,6 +459,212 @@ function ToolEvidence({ observed, diagnostic, locale }: {
     <section className="niceeval-assertion-evidence-section">
       <h5>{label(locale, "Tool calls", "工具调用")}</h5>
       <SemanticFacts rows={rows} />
+    </section>
+  );
+}
+
+function formatNumber(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale === "zh-CN" ? "zh-CN" : "en-US", {
+    maximumFractionDigits: 12,
+    maximumSignificantDigits: 12,
+  }).format(value);
+}
+
+function formatUSD(value: number): string {
+  const absolute = Math.abs(value);
+  if (absolute !== 0 && absolute < 0.000000001) return `$${value.toExponential(4)}`;
+  const fractionDigits = absolute === 0 || absolute >= 1
+    ? 6
+    : Math.min(12, Math.max(2, Math.ceil(-Math.log10(absolute)) + 5));
+  const formatted = value.toFixed(fractionDigits).replace(/(?:\.0+|(?:(\.[0-9]*?)0+))$/, "$1");
+  return `$${formatted}`;
+}
+
+function comparatorSymbol(comparator: NumericComparator): "<" | "≤" | ">" | "≥" {
+  if (comparator === "less-than") return "<";
+  if (comparator === "at-most") return "≤";
+  if (comparator === "greater-than") return ">";
+  return "≥";
+}
+
+function oppositeComparatorSymbol(comparator: NumericComparator): "≥" | ">" | "≤" | "<" {
+  if (comparator === "less-than") return "≥";
+  if (comparator === "at-most") return ">";
+  if (comparator === "greater-than") return "≤";
+  return "<";
+}
+
+function scopeName(scope: NumericComparisonView["subject"]["scope"], locale: string): string {
+  if (locale !== "zh-CN") {
+    if (scope === "turn") return "Turn";
+    if (scope === "session") return "Session";
+    return "Attempt";
+  }
+  if (scope === "turn") return "本轮";
+  if (scope === "session") return "本次会话";
+  return "本次 Attempt";
+}
+
+function numericSubjectLabel(view: NumericComparisonView, locale: string): string {
+  if (view.subject.kind === "explicit-value") return label(locale, "Number comparison", "数值比较");
+  const scope = scopeName(view.subject.scope, locale);
+  if (view.subject.metric === "cost") return label(locale, `${scope} estimated cost`, `${scope}估算费用`);
+  return label(locale, `${scope} token usage`, `${scope} token 用量`);
+}
+
+function numericValueText(view: NumericComparisonView, value: number, locale: string): string {
+  if (view.subject.metric === "cost") return formatUSD(value);
+  const formatted = formatNumber(value, locale);
+  return view.subject.metric === "tokens" ? `${formatted} tokens` : formatted;
+}
+
+function thresholdText(view: NumericComparisonView, locale: string): string {
+  const value = numericValueText(view, view.threshold, locale);
+  if (view.subject.metric === "tokens" || view.subject.metric === "cost") {
+    return label(locale, `limit ${value}`, `上限 ${value}`);
+  }
+  return value;
+}
+
+function unavailableReason(reason: string | undefined, locale: string): string {
+  switch (reason) {
+    case "model-not-recorded":
+      return label(locale, "The model was not recorded, so its price cannot be selected.", "没有记录模型，无法选择对应价格。");
+    case "price-source-not-found":
+      return label(locale, "No configured or built-in price was found for this model.", "没有找到该模型的配置价格或内置价格。");
+    case "pricing-input-invalid":
+      return label(locale, "The recorded pricing input is invalid.", "记录的计价输入无效。");
+    case "usage-not-recorded":
+      return label(locale, "Usage was not recorded.", "没有记录用量。");
+    case "usage-input-invalid":
+      return label(locale, "The recorded token usage is invalid.", "记录的 token 用量无效。");
+    case "non-finite-number":
+    case "numeric-value-non-finite":
+      return label(locale, "The compared number is not finite.", "被比较的数值不是有限数。");
+    default:
+      return label(locale, "The compared value is unavailable.", "没有可用于比较的数值。");
+  }
+}
+
+function numericConclusion(
+  view: NumericComparisonView,
+  state: MatchState,
+  locale: string,
+): string {
+  const value = view.material.value;
+  if (view.material.state === "unavailable" || value === undefined) {
+    return unavailableReason(view.material.reason, locale);
+  }
+  const actual = numericValueText(view, value, locale);
+  const expected = thresholdText(view, locale);
+  if (view.material.state === "lower-bound" && state === "unavailable") {
+    return label(
+      locale,
+      `At least ${actual} was recorded, but usage is incomplete, so NiceEval cannot determine whether it is ${comparatorSymbol(view.comparator)} ${expected}.`,
+      `目前至少记录了 ${actual}，但用量记录不完整，无法判断是否 ${comparatorSymbol(view.comparator)} ${expected}。`,
+    );
+  }
+  const relation = state === "mismatched"
+    ? oppositeComparatorSymbol(view.comparator)
+    : comparatorSymbol(view.comparator);
+  const knownPrefix = view.material.state === "lower-bound"
+    ? label(locale, "Known minimum", "已知至少")
+    : view.subject.metric === "cost"
+    ? label(locale, "Estimated", "估算")
+    : view.subject.metric === "tokens"
+    ? label(locale, "Used", "已用")
+    : label(locale, "Observed", "实际");
+  const outcome = state === "matched"
+    ? label(locale, "so it passes.", "所以通过。")
+    : state === "mismatched"
+    ? label(locale, "so it does not pass.", "所以未通过。")
+    : label(locale, "so the result is unavailable.", "所以无法判断。")
+  return `${knownPrefix} ${actual} ${relation} ${expected}, ${outcome}`;
+}
+
+function chargeLabel(bucket: PricingChargeView["bucket"], locale: string): string {
+  if (bucket === "input") return label(locale, "Input", "输入");
+  if (bucket === "output") return label(locale, "Output", "输出");
+  if (bucket === "cache-read") return label(locale, "Cache read", "缓存读取");
+  return label(locale, "Cache write", "缓存写入");
+}
+
+function PricingReceipt({ receipt, locale }: {
+  readonly receipt: PricingReceiptView;
+  readonly locale: string;
+}): ReactElement {
+  const source = receipt.sourceKind === "builtin"
+    ? label(locale, "Built-in price", "内置价格")
+    : label(locale, "Configured override", "配置覆盖价格");
+  return (
+    <details className="niceeval-numeric-pricing">
+      <summary>
+        <span>{label(locale, "View estimate basis", "查看估算依据")}</span>
+        <code>{receipt.model}</code>
+        <small>{source} · {receipt.sourceSelector}</small>
+      </summary>
+      <dl>
+        {receipt.charges.map((charge) => (
+          <div key={charge.bucket}>
+            <dt>{chargeLabel(charge.bucket, locale)}</dt>
+            <dd>
+              <code>{formatNumber(charge.tokens, locale)} tokens</code>
+              <span>×</span>
+              <code>{formatUSD(charge.rateUSDPerMTok)}/M</code>
+              <span>=</span>
+              <strong>{formatUSD(charge.amountUSD)}</strong>
+            </dd>
+          </div>
+        ))}
+        <div className="niceeval-numeric-pricing-total">
+          <dt>{label(locale, "Estimated total", "估算合计")}</dt>
+          <dd><strong>{formatUSD(receipt.amountUSD)}</strong></dd>
+        </div>
+      </dl>
+    </details>
+  );
+}
+
+function NumericEvidence({ view, state, locale }: {
+  readonly view: NumericComparisonView;
+  readonly state: MatchState;
+  readonly locale: string;
+}): ReactElement {
+  const value = view.material.value;
+  const formulaRelation = state === "mismatched"
+    ? oppositeComparatorSymbol(view.comparator)
+    : comparatorSymbol(view.comparator);
+  const receipt = view.subject.metric === "cost"
+    ? pricingReceiptView(view.material.derivation)
+    : undefined;
+  return (
+    <section className="niceeval-numeric-evidence" data-state={state}>
+      <span className="niceeval-numeric-evidence-label">{numericSubjectLabel(view, locale)}</span>
+      {value === undefined ? (
+        <p className="niceeval-numeric-evidence-unavailable">
+          {label(locale, "No comparable value", "没有可比较的数值")}
+        </p>
+      ) : view.material.state === "lower-bound" && state === "unavailable" ? (
+        <p className="niceeval-numeric-evidence-formula">
+          <small>{label(locale, "Known minimum", "已知至少")}</small>
+          <strong>{numericValueText(view, value, locale)}</strong>
+          <span aria-hidden="true">·</span>
+          <small>{thresholdText(view, locale)}</small>
+        </p>
+      ) : (
+        <p className="niceeval-numeric-evidence-formula">
+          {view.material.state === "lower-bound" ? (
+            <small>{label(locale, "Known minimum", "已知至少")}</small>
+          ) : null}
+          <strong>{numericValueText(view, value, locale)}</strong>
+          <span className="niceeval-numeric-evidence-operator">{formulaRelation}</span>
+          <strong>{thresholdText(view, locale)}</strong>
+        </p>
+      )}
+      <p className="niceeval-numeric-evidence-conclusion">
+        {numericConclusion(view, state, locale)}
+      </p>
+      {receipt === undefined ? null : <PricingReceipt receipt={receipt} locale={locale} />}
     </section>
   );
 }
@@ -548,7 +883,10 @@ function web(
   const name = matcherName(content.check) ?? labelText ?? label(locale, "Match", "检查");
   const input = field(content.source, "input") ?? content.source;
   const code = diagnostic?.code;
-  const primary = code === "command-succeeded" || code === "command-failed"
+  const numeric = numericComparisonView(content.check, content.source);
+  const primary = numeric !== undefined
+    ? <NumericEvidence view={numeric} state={state} locale={locale} />
+    : code === "command-succeeded" || code === "command-failed"
     ? <CommandEvidence input={input} diagnostic={diagnostic} locale={locale} />
     : isToolCriterion(content.check)
       ? <ToolEvidence observed={content.observed} diagnostic={diagnostic} locale={locale} />

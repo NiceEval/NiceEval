@@ -6,6 +6,7 @@
 正向示例说明允许的作者面。`@ts-expect-error` 说明禁止的参数数、handle 重用、Pass score、direct handle
 再配置、未 threshold 的 Pass measurement，以及旧 API。运行时数值范围不伪装成静态 literal 类型：
 `.score(n)` 在运行时拒绝非有限或不大于零的值，`t.score(n)` 拒绝非有限或负值。
+数值 matcher 工厂同样在运行时拒绝非有限 threshold；number candidate 为 `NaN` 或正负 `Infinity` 时则形成 unavailable。
 
 从仓库根运行：
 

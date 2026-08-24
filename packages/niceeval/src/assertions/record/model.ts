@@ -87,6 +87,28 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "numeric-comparison/v1";
+      readonly data: {
+        readonly comparator: "less-than" | "at-most" | "greater-than" | "at-least";
+        readonly threshold: number;
+        readonly subject:
+          | { readonly kind: "explicit-value" }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "tokens";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "tokens";
+            }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "cost";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "usd";
+            };
+      };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "scope-status/v1";
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";

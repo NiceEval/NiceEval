@@ -73,12 +73,14 @@ interface PassScope {
   succeeded(): PassBooleanHandle<void>;
   calledTool(name: string, options?: CalledToolOptions): PassBooleanHandle<void>;
   maxTokens(maximum: number): PassUsageHandle<void>;
+  maxCost(maximumUSD: number): PassUsageHandle<void>;
 }
 
 interface ScoreScope {
   succeeded(): ScoreBooleanHandle<void>;
   calledTool(name: string, options?: CalledToolOptions): ScoreBooleanHandle<void>;
   maxTokens(maximum: number): ScoreUsageHandle<void>;
+  maxCost(maximumUSD: number): ScoreUsageHandle<void>;
 }
 
 interface PassUsageHandle<out R = void> extends PassBooleanHandle<R> {
@@ -148,6 +150,11 @@ declare const hasId: BooleanMatch<unknown, { readonly id: string }>;
 declare const isTrue: BooleanMatch<boolean, true>;
 declare const quality: MeasurementMatch<string>;
 
+declare function lessThan(threshold: number): BooleanMatch<number>;
+declare function atMost(threshold: number): BooleanMatch<number>;
+declare function greaterThan(threshold: number): BooleanMatch<number>;
+declare function atLeast(threshold: number): BooleanMatch<number>;
+
 async function positiveAuthoringShapes(): Promise<void> {
   const refined = await pass.check(candidate, hasId)
     .key("candidate-id")
@@ -160,6 +167,13 @@ async function positiveAuthoringShapes(): Promise<void> {
   passSession.succeeded().label("Session 完成");
   passTurn.calledTool("write_file", { count: { atLeast: 1 } }).label("写入文件");
   pass.maxTokens(4_000).ifCovered().label("token 可读取");
+  pass.maxCost(0.25).ifCovered().label("费用可读取");
+
+  pass.check(3, lessThan(4)).label("严格小于");
+  pass.check(4, atMost(4)).label("不超过");
+  pass.check(5, greaterThan(4)).label("严格大于");
+  pass.check(4, atLeast(4)).label("至少");
+  pass.check(-1, lessThan(0)).label("负数比较");
 
   const thresholded = pass.check(reply, quality).gate(0.8).label("最低质量");
   await thresholded.orStop();
@@ -220,6 +234,14 @@ function negativeAuthoringShapes(): void {
   passBoolean.points(1);
   // @ts-expect-error Old numeric APIs are absent.
   passBoolean.weight(1);
+  // @ts-expect-error Numeric Match candidates must be numbers.
+  pass.check("4", atMost(4));
+  // @ts-expect-error Usage facts are not exposed as public selectors.
+  pass.tokens();
+  // @ts-expect-error Usage facts are not exposed as public selectors.
+  pass.cost();
+  // @ts-expect-error There is no generic metric selector.
+  pass.metric("tokens");
   // @ts-expect-error Control API is named orStop.
   passBoolean.stopOnFailure();
 }

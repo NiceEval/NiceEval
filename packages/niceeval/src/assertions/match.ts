@@ -97,6 +97,28 @@ const thresholdedScoreMatches = new WeakMap<object, {
   readonly match: ScoreMatch<unknown>;
   readonly threshold: number;
 }>();
+const numericComparisons = new WeakMap<object, NumericComparison>();
+
+export type NumericComparator = "less-than" | "at-most" | "greater-than" | "at-least";
+
+export interface NumericComparison {
+  readonly comparator: NumericComparator;
+  readonly threshold: number;
+}
+
+export type NumericMaterial =
+  | {
+      readonly state: "exact";
+      readonly value: number;
+    }
+  | {
+      readonly state: "lower-bound";
+      readonly value: number;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: string;
+    };
 
 export interface Match<in T, D extends MatchDomain> {
   readonly domain: D;
@@ -306,6 +328,16 @@ export function thresholdedScoreMatchValue(value: unknown): {
   return resolved;
 }
 
+/** @internal Returns the durable numeric identity of a managed matcher, when present. */
+export function numericComparisonOf(value: unknown): NumericComparison | undefined {
+  return isRecord(value) ? numericComparisons.get(value) : undefined;
+}
+
+/** @internal Nominal guard backed by the private managed-match registry. */
+export function isNumericComparisonMatch(value: unknown): value is BooleanMatch<number, number, "value"> {
+  return numericComparisonOf(value) !== undefined;
+}
+
 /** @internal The value-side consumer accepts only a real, value-domain Match. */
 export function assertManagedValueMatch(
   value: unknown,
@@ -343,6 +375,142 @@ function createBooleanMatch<T, R extends T, D extends MatchDomain>(
   const match = Object.freeze(result) as BooleanMatch<T, R, D>;
   matchBrands.add(match);
   return match;
+}
+
+function numericDiagnostic(
+  comparison: NumericComparison,
+  material: NumericMaterial,
+  code: string,
+  message: string,
+): MatchDiagnostic {
+  return diagnostic(code, message, {
+    expected: `${comparison.comparator} ${comparison.threshold}`,
+    received: material.state === "unavailable" ? material.reason : String(material.value),
+    ...(material.state === "unavailable" ? { reason: material.reason } : {}),
+  });
+}
+
+function compareExact(value: number, comparison: NumericComparison): boolean {
+  switch (comparison.comparator) {
+    case "less-than":
+      return value < comparison.threshold;
+    case "at-most":
+      return value <= comparison.threshold;
+    case "greater-than":
+      return value > comparison.threshold;
+    case "at-least":
+      return value >= comparison.threshold;
+  }
+}
+
+/**
+ * The sole numeric comparison evaluator. A lower bound can only decide a
+ * monotone result; all other partial observations remain unavailable.
+ */
+export function evaluateNumericComparison(
+  material: NumericMaterial,
+  comparison: NumericComparison,
+): BooleanMatchEvaluation<number> {
+  if (material.state === "unavailable") {
+    return unavailable(
+      material.reason,
+      numericDiagnostic(comparison, material, "numeric-value-unavailable", "the numeric value is unavailable"),
+    );
+  }
+  if (!Number.isFinite(material.value)) {
+    const unavailableMaterial = Object.freeze({
+      state: "unavailable" as const,
+      reason: "non-finite-number",
+    });
+    return unavailable(
+      unavailableMaterial.reason,
+      numericDiagnostic(
+        comparison,
+        unavailableMaterial,
+        "numeric-value-non-finite",
+        "the numeric value is not finite",
+      ),
+    );
+  }
+  if (material.state === "exact") {
+    return compareExact(material.value, comparison)
+      ? matched(material.value)
+      : mismatched(numericDiagnostic(
+          comparison,
+          material,
+          "numeric-comparison-failed",
+          "the numeric comparison did not match",
+        ));
+  }
+
+  const decided = comparison.comparator === "at-most"
+    ? material.value > comparison.threshold
+      ? "mismatched"
+      : undefined
+    : comparison.comparator === "less-than"
+    ? material.value >= comparison.threshold
+      ? "mismatched"
+      : undefined
+    : comparison.comparator === "at-least"
+    ? material.value >= comparison.threshold
+      ? "matched"
+      : undefined
+    : material.value > comparison.threshold
+    ? "matched"
+    : undefined;
+  if (decided === "matched") return matched(material.value);
+  if (decided === "mismatched") {
+    return mismatched(numericDiagnostic(
+      comparison,
+      material,
+      "numeric-lower-bound-exceeded",
+      "the known lower bound decides the numeric comparison",
+    ));
+  }
+  return unavailable(
+    "partial-numeric-material",
+    numericDiagnostic(
+      comparison,
+      material,
+      "numeric-lower-bound-inconclusive",
+      "the known lower bound cannot decide the numeric comparison",
+    ),
+  );
+}
+
+function numericMatch(comparator: NumericComparator, threshold: number): BooleanMatch<number, number> {
+  if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
+    throw new TypeError(`${comparator} threshold must be a finite number`);
+  }
+  const comparison = Object.freeze({ comparator, threshold });
+  const match = createBooleanMatch<number, number, "value">(
+    "value",
+    `${comparator}(${threshold})`,
+    (candidate) => evaluateNumericComparison(
+      Number.isFinite(candidate)
+        ? Object.freeze({ state: "exact" as const, value: candidate })
+        : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" }),
+      comparison,
+    ),
+  );
+  numericComparisons.set(match, comparison);
+  return match;
+}
+
+export function lessThan(threshold: number): BooleanMatch<number, number> {
+  return numericMatch("less-than", threshold);
+}
+
+export function atMost(threshold: number): BooleanMatch<number, number> {
+  return numericMatch("at-most", threshold);
+}
+
+export function greaterThan(threshold: number): BooleanMatch<number, number> {
+  return numericMatch("greater-than", threshold);
+}
+
+export function atLeast(threshold: number): BooleanMatch<number, number> {
+  return numericMatch("at-least", threshold);
 }
 
 function createScoreMatch<T>(

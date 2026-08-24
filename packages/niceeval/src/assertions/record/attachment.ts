@@ -268,6 +268,17 @@ function encodeMatcherArtifact(
 function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelope {
   switch (criterion.kind) {
     case "value-match":
+      if ("numeric" in criterion) {
+        return Object.freeze({
+          kind: "builtin" as const,
+          id: "numeric-comparison/v1" as const,
+          data: Object.freeze({
+            comparator: criterion.numeric.comparator,
+            threshold: criterion.numeric.threshold,
+            subject: criterion.numeric.subject,
+          }),
+        });
+      }
       return Object.freeze({
         kind: "builtin" as const,
         id: "value-match/v1" as const,

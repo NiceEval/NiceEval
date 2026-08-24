@@ -1675,12 +1675,15 @@ table.niceeval-report,
   padding-top: 2px;
   color: var(--muted);
 }
+.niceeval-filter-debugger[data-state="current"] + .niceeval-match-coverage,
+.niceeval-filter-debugger[data-state="legacy"][data-source-state="partial"] + .niceeval-match-coverage {
+  display: none;
+}
 .niceeval-filter-debugger-head {
   display: grid;
   gap: 4px;
 }
 .niceeval-filter-debugger-head > span,
-.niceeval-filter-ledger h5,
 .niceeval-filter-steps h5 {
   margin: 0;
   color: var(--soft);
@@ -1726,10 +1729,9 @@ table.niceeval-report,
 }
 .niceeval-filter-steps,
 .niceeval-filter-ledger {
-  display: grid;
-  gap: 8px;
   min-width: 0;
 }
+.niceeval-filter-steps { display: grid; gap: 8px; }
 .niceeval-filter-steps > ol {
   display: grid;
   gap: 1px;
@@ -1769,12 +1771,40 @@ table.niceeval-report,
   color: var(--text);
 }
 .niceeval-filter-step-state { color: var(--soft); }
-.niceeval-filter-ledger > header {
-  display: flex;
+.niceeval-filter-ledger > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--panel), black 7%);
+  color: var(--muted);
+  cursor: pointer;
+  font: 10px/1.5 var(--font-mono);
+  list-style: none;
 }
-.niceeval-filter-ledger > header > span,
+.niceeval-filter-ledger > summary::-webkit-details-marker { display: none; }
+.niceeval-filter-ledger > summary::before {
+  content: "›";
+  color: var(--soft);
+  font-size: 14px;
+  line-height: 1;
+  transition: transform .15s ease;
+}
+.niceeval-filter-ledger[open] > summary::before { transform: rotate(90deg); }
+.niceeval-filter-ledger > summary > span { min-width: 0; }
+.niceeval-filter-ledger > summary > small {
+  flex: none;
+  color: var(--soft);
+  font: 9px/1.4 var(--font-mono);
+}
+.niceeval-filter-ledger-content {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+}
 .niceeval-filter-later > summary > span {
   display: inline-grid;
   min-width: 18px;
@@ -1785,7 +1815,7 @@ table.niceeval-report,
   color: var(--soft);
   font: 9px/1 var(--font-mono);
 }
-.niceeval-filter-ledger > p,
+.niceeval-filter-ledger-content > p,
 .niceeval-filter-later > p,
 .niceeval-filter-notice,
 .niceeval-filter-empty {

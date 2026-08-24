@@ -29,6 +29,8 @@ scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。
 
 `calledTool` 与 `notCalledTool` 的签名、`ToolMatch` 和计数规则只在 [Scoped assertions](library/scoped-assertions.md) 定义。本页不复制另一份字段表。
 
+`maxTokens` 与 `maxCost` 也是 scope 方法。它们把 scope-owned usage fact 交给 `atMost(limit)`，与显式数值比较共用 evaluator、criterion 和登记语义；完整口径与 partial 规则同样只在 [Scoped assertions](library/scoped-assertions.md#usage-上限包装) 定义。
+
 ## handle 配置
 
 | 方法 | 适用范围 | 效果 |
@@ -38,7 +40,7 @@ scope 方法与 Judge recipe 已经登记 Assertion，不能再交给 `check`。
 | `.atLeast(n)` | measurement | 设置局部有限 `[0,1]` condition，不单独改变 Verdict。 |
 | `.gate(n)` | Pass Eval 的 measurement | 设置 threshold 并让不满足条件参与 [Verdict](../verdict/architecture.md) 四态 fold。Boolean Assertion 仍用 `.gate()`。 |
 | `.score(points)` | Score Eval 的已有 Assertion | 让该 entry 把 points／earned contribution 封口到 Assertions。 |
-| `.ifCovered()` | Usage Assertion | 已声明不可用时保留为 not-applicable。 |
+| `.ifCovered()` | Usage Assertion | 已声明 unavailable 时保留为 not-applicable；lower-bound 仍按数值比较规则求值。 |
 | `.orStop()` | Boolean 或已 threshold 的 measurement | 等待同一 entry，并停止当前 continuation。 |
 
 同一字段重复配置、非法数值、封口后配置与 detached async 配置都是作者错误。

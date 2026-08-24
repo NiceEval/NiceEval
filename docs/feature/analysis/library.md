@@ -622,6 +622,8 @@ type AttemptEvidenceDomainDetail = DomainView & {
 
 `attempt-evidence` 在对应 matcher assertion entry 下发布 `matcherDebugger` composite。entry 已经提供 assertion identity、decision 与材料，所以 Report 不需要先请求一份独立 debugger 再按 entry ID 做第二次关联。非 matcher entry 不带该字段。Agent Turns 只提供一次归一、脱敏的 observed event rows。
 
+数值 entry 继续使用现有的 `entry.check` 与 `entry.source` 结构化事实，不增加 numeric-comparison 专用字段。Analysis 原样关闭这两个字段；它不把 lower-bound 升格为 exact，不读取 observed `usage.costUSD`，不按当前 rate card 重算 `amountUSD`，也不生成 Report 展示文案。
+
 package-owned source projector 先把 current rows闭合为 final event ledger 与 logical-occurrence ledger，再按 artifact 的 scope cut 纯投影 evaluation-cut ledger。source projector 独占 lifecycle pairing、home Turn、finish endpoint 与 ambiguous／unavailable relation。Analysis binding 不实现第二套配对。
 
 view 分别交付 final source collection、evaluation-cut source collection、evaluation receipt、identity relation 与 overlay retention。Assertions 的 `collectionAtCut` 不能替代 source owner 的 limitation。
@@ -632,7 +634,7 @@ top-level `current | legacy` 联合禁止两类 row 混装。current 分支再�
 
 package-owned assembler 只验证 locator 唯一且位于 exact scope/cut、witness sequence严格递增、retention数量不越过 receipt。它不重跑 matcher，也不重算 receipt、decision 或 lifecycle。
 
-current locator 只按 `eventId`／`toolOccurrenceId` 建立 relation。Agent Turns v1 的 `legacy-source-local` call/result关系与 Assertions 的 `legacyDiagnostic` 属于不相容类型。它们只能形成中立历史详情，不能进入 current overlay、witness／frontier或 exact navigation。
+current locator 只按 `eventId`／`toolOccurrenceId` 建立 relation。Agent Turns v1 的 `legacy-source-local` call/result关系与 Assertions 的 `legacyDiagnostic` 属于不相容类型。它们只能形成中立历史详情，不能进入 current overlay、witness／frontier或 exact navigation。Report 对 legacy composite 只形成一条 `未记录 matcher 查询或逐条关联` 提示；source ledger 与 old diagnostic 只作为折叠技术详情，不能形成 partial 卡、筛选项或伪命中。
 
 entry 内的 `MatcherFilterDebuggerView` 直接返回已经查得的 conversation target，或具名 unavailable reason。Report 只滚动并短暂高亮这个 target。React 不再接收另一组 conversation rows 后按 ID、Turn、名称、位置或 DOM 邻近查找。
 

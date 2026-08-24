@@ -20,6 +20,33 @@ interface Price {
   cacheWrite?: number;
 }
 
+export interface PricingEstimateCharge {
+  readonly bucket: "input" | "output" | "cache-read" | "cache-write";
+  readonly tokens: number;
+  readonly rateUSDPerMTok: number;
+  readonly amountUSD: number;
+}
+
+export interface PricingEstimateReceipt {
+  readonly kind: "pricing-estimate";
+  readonly model: string;
+  readonly priceSource:
+    | { readonly kind: "configured-override"; readonly selector: string }
+    | { readonly kind: "builtin"; readonly selector: string };
+  readonly charges: readonly PricingEstimateCharge[];
+  readonly amountUSD: number;
+}
+
+export type PricingEstimateUnavailableReason =
+  | "model-not-recorded"
+  | "price-source-not-found"
+  | "pricing-input-invalid"
+  | "usage-not-recorded";
+
+export type PricingEstimateResult =
+  | { readonly state: "available"; readonly receipt: PricingEstimateReceipt }
+  | { readonly state: "unavailable"; readonly reason: PricingEstimateUnavailableReason };
+
 const PRICES: globalThis.Record<string, Price> = (() => {
   try {
     const raw = readFileSync(fileURLToPath(new URL("./prices.json", import.meta.url)), "utf-8");
@@ -37,11 +64,17 @@ function toPrice(o: PriceOverride): Price {
  * 用户覆盖表:精确 model key 优先,再退而查 `provider/*` 通配
  *(`anthropic/*` 命中 `anthropic/claude-…`,批量覆盖自托管 / 网关折扣场景)。
  */
-function lookupOverride(model: string, overrides: globalThis.Record<string, PriceOverride> | undefined): Price | undefined {
+function lookupOverride(
+  model: string,
+  overrides: globalThis.Record<string, PriceOverride> | undefined,
+): { readonly price: Price; readonly selector: string } | undefined {
   if (!overrides) return undefined;
-  if (overrides[model]) return toPrice(overrides[model]);
+  if (overrides[model]) return Object.freeze({ price: toPrice(overrides[model]), selector: model });
   const provider = model.includes("/") ? model.slice(0, model.indexOf("/")) : undefined;
-  if (provider && overrides[`${provider}/*`]) return toPrice(overrides[`${provider}/*`]);
+  const wildcard = provider === undefined ? undefined : `${provider}/*`;
+  if (wildcard !== undefined && overrides[wildcard]) {
+    return Object.freeze({ price: toPrice(overrides[wildcard]), selector: wildcard });
+  }
   return undefined;
 }
 
@@ -49,13 +82,74 @@ function lookupOverride(model: string, overrides: globalThis.Record<string, Pric
  * 把五花八门的 model 标识归一到价格表的 key:精确命中优先,再退而去掉 provider 前缀
  * (`anthropic/claude-…` → `claude-…`)和末尾日期版本(`…-4-5-20251001` → `…-4-5`)。
  */
-function lookupBuiltin(model: string): Price | undefined {
-  if (PRICES[model]) return PRICES[model];
+function lookupBuiltin(model: string): { readonly price: Price; readonly selector: string } | undefined {
+  if (PRICES[model]) return Object.freeze({ price: PRICES[model], selector: model });
   const bare = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
-  if (PRICES[bare]) return PRICES[bare];
+  if (PRICES[bare]) return Object.freeze({ price: PRICES[bare], selector: bare });
   const undated = bare.replace(/-\d{8}$/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
-  if (PRICES[undated]) return PRICES[undated];
+  if (PRICES[undated]) return Object.freeze({ price: PRICES[undated], selector: undated });
   return undefined;
+}
+
+function pricingEstimateCharge(
+  bucket: PricingEstimateCharge["bucket"],
+  tokens: number | undefined,
+  rateUSDPerMTok: number,
+): PricingEstimateCharge | undefined {
+  if (tokens === undefined) return undefined;
+  const amountUSD = tokens * rateUSDPerMTok / 1e6;
+  return Object.freeze({ bucket, tokens, rateUSDPerMTok, amountUSD });
+}
+
+/**
+ * Produces the bounded provenance receipt consumed by maxCost. The selected
+ * model key and effective fallback rates are sealed here so readers never
+ * need the mutable pricing catalog.
+ */
+export function pricingEstimate(
+  model: string | undefined,
+  usage: Usage,
+  overrides?: globalThis.Record<string, PriceOverride>,
+): PricingEstimateResult {
+  if (!model) return Object.freeze({ state: "unavailable", reason: "model-not-recorded" });
+  const override = lookupOverride(model, overrides);
+  const selected = override ?? lookupBuiltin(model);
+  if (selected === undefined) {
+    return Object.freeze({ state: "unavailable", reason: "price-source-not-found" });
+  }
+  const p = selected.price;
+  const buckets = [
+    ["input", usage.inputTokens, p.in],
+    ["output", usage.outputTokens, p.out],
+    ["cache-read", usage.cacheReadTokens, p.cacheRead ?? p.in],
+    ["cache-write", usage.cacheCreationTokens, p.cacheWrite ?? p.in],
+  ] as const;
+  if (buckets.some(([, tokens, rate]) =>
+    (tokens !== undefined && (!Number.isFinite(tokens) || tokens < 0)) ||
+    !Number.isFinite(rate) || rate < 0
+  )) return Object.freeze({ state: "unavailable", reason: "pricing-input-invalid" });
+  const charges = buckets
+    .map(([bucket, tokens, rate]) => pricingEstimateCharge(bucket, tokens, rate))
+    .filter((charge): charge is PricingEstimateCharge => charge !== undefined);
+  if (charges.length === 0) {
+    return Object.freeze({ state: "unavailable", reason: "usage-not-recorded" });
+  }
+  const amountUSD = charges.reduce((sum, charge) => sum + charge.amountUSD, 0);
+  if (!Number.isFinite(amountUSD) || amountUSD < 0) {
+    return Object.freeze({ state: "unavailable", reason: "pricing-input-invalid" });
+  }
+  return Object.freeze({
+    state: "available" as const,
+    receipt: Object.freeze({
+      kind: "pricing-estimate" as const,
+      model,
+      priceSource: Object.freeze(override === undefined
+        ? { kind: "builtin" as const, selector: selected.selector }
+        : { kind: "configured-override" as const, selector: selected.selector }),
+      charges: Object.freeze(charges),
+      amountUSD,
+    }),
+  });
 }
 
 /**
@@ -69,22 +163,6 @@ export function estimateCost(
   usage: Usage,
   overrides?: globalThis.Record<string, PriceOverride>,
 ): number | undefined {
-  if (!model) return undefined;
-  const override = lookupOverride(model, overrides);
-  const p = override === undefined ? lookupBuiltin(model) : override;
-  if (!p) return undefined;
-  const hasBillableUsage = usage.inputTokens !== undefined ||
-    usage.outputTokens !== undefined ||
-    usage.cacheReadTokens !== undefined ||
-    usage.cacheCreationTokens !== undefined;
-  if (!hasBillableUsage) return undefined;
-  const bucket = (tokens: number | undefined, price: number | undefined, fallback: number): number =>
-    tokens === undefined ? 0 : tokens * (price === undefined ? fallback : price);
-  const usd =
-    (bucket(usage.inputTokens, p.in, p.in) +
-      bucket(usage.outputTokens, p.out, p.out) +
-      bucket(usage.cacheReadTokens, p.cacheRead, p.in) +
-      bucket(usage.cacheCreationTokens, p.cacheWrite, p.in)) /
-    1e6;
-  return usd;
+  const result = pricingEstimate(model, usage, overrides);
+  return result.state === "available" ? result.receipt.amountUSD : undefined;
 }
