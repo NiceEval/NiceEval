@@ -20,7 +20,7 @@ packages/repo-tools/src/
 
 | 领域 | 正式入口 | 唯一职责 |
 |---|---|---|
-| Feedback | `pnpm feedback --help` | 保存 issue / dogfood / dev 原始观察，关联 Memory，并采用到 Roadmap / Feature / Use Case / Engineering |
+| Feedback | `pnpm feedback --help` | 审计、迁移和维护存量 Feedback 及其 Memory / contract 关系；新 Observation 进入 Issue |
 | Memory | `pnpm memory --help` | 保存开发问题、根因、思考和裁决，连接 E2E，并提升到 Roadmap / Feature / Use Case / Engineering |
 | Trace | `pnpm trace --help` | 显式恢复被中断的关系 publication；查询仍由 Feature / Test 入口承担 |
 | PR | `pnpm pr:body --help` | 初始化、渲染、检查、创建和更新 PR 正文 |

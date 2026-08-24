@@ -1,23 +1,19 @@
-# Feedback 与 Memory
+# 存量 Feedback 与 Memory
 
-Feedback 保存从外部或开发现场收到的原始观察，Memory 保存调查过程中形成的问题、根因、思考与裁决。两者都进入 Git，供人和 Agent 通过正式命令读取；命令不依赖第三方问题库。
+Feedback 是仓库既有的原始观察条目，只用于迁移、审计和既有关系维护。新的 Observation 由公开、脱敏的 [GitHub Issue](../issues/README.md) 跟进，不再创建 Feedback。Memory 保存调查过程中形成的问题、根因、思考与裁决；它可以来自 Issue、存量 Feedback 或直接开发调查。
 
 ```text
-issue / dogfood / dev
-          │
-          ▼
-       Feedback ── 调查、归因 ──▶ Memory
-          │                           │
-          └── adoption ──▶ contract ◀┘ promotion
-                                      │
-                         ┌────────────┴────────────┐
-                         ▼                         ▼
-                  E2E regression       Roadmap / Feature / Use Case / Engineering
+new Observation ──▶ GitHub Issue ── 调查、归因 ──▶ Memory
+legacy Feedback ────────────────────────────────▶ Memory
+       │                                             │
+       └── existing adoption ──▶ contract ◀──────────┘ promotion
 ```
 
-Feedback 可以在没有 Memory 时存在。Memory 也可以直接来自开发过程，不必伪造一条 Feedback。Feedback 只保存对 Memory 的正向关系；反向关系由命令扫描得出，避免两个文件分别维护同一事实。
+存量 Feedback 可以在没有 Memory 时存在。Memory 也可以直接来自开发过程，不必伪造 Feedback 或 Issue。Feedback 只保存对 Memory 的正向关系；反向关系由命令扫描得出，避免两个文件分别维护同一事实。
 
-## Feedback
+## Legacy Feedback
+
+`pnpm feedback` 继续提供存量条目的读取、校验、迁移和关系修复能力。Repository workflow 不再用 `add` 或 `import` 建立新 Observation owner；新公开工作项进入 Issue，安全或私密材料进入对应私密渠道。
 
 每条 Feedback 是 `feedback/<feedback-id>/README.md`。附件只放在同目录的 `artifacts/`，条目关闭后仍永久保留。
 
@@ -90,9 +86,9 @@ adoption 状态满足以下不变量：
 `feedback close` 不会暗中移除 adoption。若 `declined`、`invalid` 或 `duplicate` 仍有 current，命令具名失败并要求先逐条 retire；
 `delivered.target` 必须 exact 命中 current 或 history。close/reopen 与 adopt/retire 共用 Trace 锁，状态检查不会和关系 mutation 竞态。
 
-### 下游导入
+### 历史下游导入
 
-下游只生成一个只读导入包，不直接写本仓库：
+旧下游流程生成只读导入包而不直接写本仓库。该格式只用于审计或恢复已经产生的 envelope；新的下游 Observation 应准备脱敏 Issue draft：
 
 ```ts
 interface FeedbackEnvelopeV1 {
@@ -205,7 +201,7 @@ pnpm trace    recover
 `feedback/schema-v2-migration-receipt.json` 逐 ID 保存 v1/v2 metadata digest、正文 digest 与附件 path/size/digest。顶层同时绑定迁移前的 `sourceCommit`、首次完整 v2 owner 所在的 `resultCommit` 与迁移前后数量。
 验收从 `sourceCommit` 重新读取并迁移全部 35 条历史 v1，再逐条复算两个 metadata digest。它还从 `resultCommit` 读取首次签入的完整 v2 metadata、正文和附件，证明真实迁移结果曾与确定性输出一致。
 
-当前仓库必须保持 v1=0。本轮新增的 2 条 Feedback 直接以 v2 创建，不伪装成历史迁移输入。470 条 legacy Memory 以迁移前后 digest 证明逐字节不变。
+当前仓库必须保持 v1=0，35 条存量 Feedback 都来自迁移结果。新的 Observation 进入 Issue，不追加 v2 Feedback。470 条 legacy Memory 以迁移前后 digest 证明逐字节不变。
 
 v2 metadata digest 是迁移时刻的历史审计值；后续合法 mutation 不会反过来改写收据，也不会因当前 metadata 已变化而失败。
 长期 `feedback check` 仍核对 ID 完整性、当前 v2 Schema/状态，以及不可改写正文与附件的 digest。

@@ -9,6 +9,7 @@ Read the [Issue and Memory workflow](../../../docs/engineering/issues/README.md)
 
 An Issue is only for a public, sanitized Observation that still needs NiceEval maintainer follow-up.
 Send suspected vulnerabilities to Private Vulnerability Reporting, and stop if safe publication is uncertain.
+Do not create a Feedback for a new Observation; Feedback is retained only for legacy migration and audit.
 Use Memory for investigated Problems, Decisions, and reusable know-how; do not use an Issue as a root-cause record.
 
 ## Prepare

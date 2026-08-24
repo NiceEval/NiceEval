@@ -21,6 +21,8 @@ Observation 只陈述 provenance、实际观察、期望与影响。
 调查确认的问题、根因、取舍或可复用 know-how 进入 Memory。
 临时讨论、已经当场解决且没有长期价值的操作摩擦不创建 owner。
 
+现有 Feedback 只保留迁移、审计和既有关系维护，不是另一条 Observation intake。新的公开工作项只进入 Issue；不能公开的材料进入对应私密渠道。
+
 公开 Issue 不接收 secret、credential、未公开客户资料、私有仓库内容或漏洞细节。
 疑似安全问题只走 GitHub [Private Vulnerability Reporting](https://github.com/NiceEval/NiceEval/security/advisories/new)。
 
