@@ -38,3 +38,9 @@ generic matcher 的 Input 直接递归渲染 `list` 与 `fields`。数组始终�
 计分项应以 `matched`／`mismatched`／`unavailable` 表达 matcher 结果，并同时显示 `weight N pts` 与 `earned N pts`。measurement 的主要读面同时显示实际值与 threshold。generic collection 默认显示 `Array(n)`，展开后按序号和独立边界显示元素；技术详情继续保留完整闭合值。
 
 回归由 `docs/engineering/testing/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有。
+
+## 不覆盖的相邻能力
+
+这次修复只关闭计分文案、measurement 和 generic collection 边界。它没有建立 Matcher Filter Debugger 所需的 source-owned ledger、稳定 identity、scope relation、逐行 overlay 或 order artifact；`Array(n)` 也不能回答哪些记录被检查、哪一行命中或顺序在哪一步受阻。
+
+采用后的 Feature 要求 collection filter 显示权威计数与 coverage-aware overlay，并让 order 显示最早 witness path 或 `failure frontier`。这组能力不由本 Problem 的 fixed receipt 证明，也不能据此扩张原 closure 的含义。

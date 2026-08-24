@@ -27,9 +27,9 @@ author calls / evaluator internals / producer control flow
 
 `sourceSites` 是 Assertions payload 的字段，不是物理 send Navigation Attachment。它只保存已执行 entry 的 source mapping；源码内容仍属于 origin Run-owned Sources family。精确 join 与显示规则见 [Source sites](architecture/source-sites.md)。
 
-matcher diagnostic 在求值时只保留 8 个代表候选与决定结果的 witness／counterexample，并在进入 payload 前限制为 64 个节点与 64 KiB。决定性 witness 即使位于第 10,001 个候选也必须保留。
+matcher 求值不把 source ledger 复制进 Assertions。producer 只保存权威聚合 receipt、决定结果的有界 locator、order query artifact，以及不超过 8 个 representative diagnostics；这些解释进入 payload 前最多 64 个节点与 64 KiB。决定性 witness 即使位于第 10,001 条 source record 也必须保留。
 
-超限时只裁 nondecisive samples 与 root summaries。截断只影响 `explanationRetention`，不改变 criterion、materials、evaluation、decision、policy、contribution、Verdict 或 score。
+超限时只裁 nondecisive representatives 与逐行 overlay。截断只影响 `explanationRetention`，不改变 criterion、materials、evaluation、decision、policy、contribution、Verdict 或 score。source owner 的 ledger、Assertions 的 evaluation receipt、identity relation 与 overlay retention 是四个独立完整性维度，任何一个都不能替另一个升格。
 
 4 MiB 是 Assertions JSON framing 的上限，不是一次 Assertion 求值可观察材料的上限。超过 32 KiB，或深度、数组项数等 shape 不适合内联的 source / evidence snapshot 自动成为本 Attachment 自己的 blob。若解释合计仍使 framing 超限，producer 只压缩 `explanationRetention`。它不拆出重复 document，也不删除 entry 或语义字段。只有不可裁的语义 framing 自身超限时才拒绝发布。
 
@@ -248,6 +248,104 @@ scope Assertion 将 call-time vector cut 归一为 snapshot；它不保留一个
 
 evaluation/source coverage（语义）、persisted explanation retention（有界）与 display window（有界）是三个独立维度。裁剪 display 或 explanation 不得改变 evaluation、decision、gate、Verdict 或 score。
 
+## Matcher Filter Debugger 的持久边界
+
+集合过滤与有序序列查询都在 producer 封口时完成。`calledTool`、`notCalledTool`、`event` 与 `notEvent` 保存 collection receipt；`toolOrder` 与 `eventOrder` 还保存 query steps，以及 witness path 或 `failure frontier`。reader 不重跑 matcher，也不把 final tri-state 与 raw matches array 当成 order artifact。
+
+```ts
+type AssertionCollectionReceipt = {
+  readonly examined: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+  readonly knownTotal?: number;
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
+};
+
+type MatcherRelationStatus =
+  | { readonly state: "exact" }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "historical-not-recorded" | "source-unavailable" | "ambiguous";
+    };
+
+type MatcherSourceLocator =
+  | {
+      readonly kind: "tool-occurrence";
+      readonly toolOccurrenceId: string;
+      readonly relation: MatcherRelationStatus;
+    }
+  | {
+      readonly kind: "event";
+      readonly eventId: string;
+      readonly toolOccurrenceId?: string;
+      readonly relation: MatcherRelationStatus;
+    };
+
+type MatcherOverlayResult =
+  | "matched"
+  | "mismatched"
+  | "unavailable"
+  | "not-evaluated";
+
+type MatcherRetainedRow = {
+  readonly locator: MatcherSourceLocator;
+  readonly result: MatcherOverlayResult;
+  readonly difference?: AssertionFactValue;
+};
+
+type MatcherQueryStep = {
+  readonly step: number;
+  readonly summary: AssertionFactValue;
+};
+
+type MatcherFailureFrontier = {
+  readonly longestMatchedPrefix: readonly MatcherSourceLocator[];
+  readonly firstBlockingStep: number;
+  readonly suffixChecked: AssertionCollectionReceipt;
+  readonly representatives: readonly MatcherRetainedRow[];
+};
+
+type MatcherQueryArtifact =
+  | {
+      readonly kind: "collection-filter";
+      readonly query: MatcherQueryStep;
+      readonly receipt: AssertionCollectionReceipt;
+      readonly retainedRows: readonly MatcherRetainedRow[];
+    }
+  | {
+      readonly kind: "ordered-sequence";
+      readonly querySteps: readonly [MatcherQueryStep, MatcherQueryStep, ...MatcherQueryStep[]];
+      readonly receipt: AssertionCollectionReceipt;
+      readonly result:
+        | { readonly state: "matched"; readonly witnessPath: readonly MatcherSourceLocator[] }
+        | { readonly state: "mismatched"; readonly failureFrontier: MatcherFailureFrontier }
+        | { readonly state: "unavailable"; readonly reason: string };
+      readonly retainedRows: readonly MatcherRetainedRow[];
+    };
+```
+
+`witnessPath` 是 canonical source order 中按 query step 逐项选择的字典序最早路径。失败只在 complete source 上成立：producer 保存可成立的最长前缀、紧随其后的 first blocking step、从该前缀末端到 source 末尾的 checked counts，以及有界的代表差异。这个结构叫 `failure frontier`，不叫 `minimal counterexample`；partial source 或任一步 unavailable 时，order artifact 的 result 必须是 unavailable。
+
+Assertions 只保存上面的有界 locator 与差异，不保存 tool ledger 或 event ledger。source owner 为每条事件 mint `eventId`，为每笔 logical tool occurrence mint `toolOccurrenceId`，并保存准确的 scope relation 与 `scopeId`。同一工具生命周期的 started／finished 使用不同 `eventId`，但共享 `toolOccurrenceId`；producer-minted `callId` 不能替代这两种 identity。
+
+tool lifecycle 可以跨 Turn。source owner 因而分别保存 started 与 finished 所属的 Turn relation，并把两端连接到同一个 `toolOccurrenceId`；它不能把 occurrence 压成单一 Turn，也不能让 reader 按相邻位置配对。
+
+Debugger 独立报告四个完整性维度：
+
+| 维度 | 回答的问题 | 不得冒充的事实 |
+|---|---|---|
+| source collection | ledger 的 source facts 是 complete、partial 还是 unavailable | source partial 不能由 Assertion receipt 补全 |
+| evaluation receipt | 聚合计数和决定边界是否完整封口 | final tri-state 不能当作完整 receipt |
+| identity relation | Assertion locator 与 source row 是否 exact、ambiguous 或 unavailable | 名称、时间和数组位置不能建立 relation |
+| overlay retention | 每个已检查 row 的逐行结果是否完整保留 | 聚合计数不能还原逐行状态 |
+
+ledger 是中立 source facts，不能写入 `matched`、`mismatched`、`unavailable` 或 `not-evaluated`。这些状态只来自保留的 Assertion overlay。逐行 overlay 没有保留时，Debugger 显示“逐行结果未保留”。只有 exact identity relation、canonical order，以及 receipt 或 `failure frontier` 共同证明短路边界时，Analysis 才能把 source row 标为 `not-evaluated`。
+
+overlay retention complete 表示每条 source row 都有已保留状态，或能由上述短路边界精确证明为 `not-evaluated`。只有这种状态才能形成 exact matched、mismatched 与 unavailable filters。其它状态只形成 All Records 与 Retained Evidence，并显示 `retained X / examined Y`；聚合总数仍以 receipt 为权威。
+
 ## Evaluation、decision、policy 与 score contribution
 
 每个 entry 的 evaluation 一次封口。`observed` 无损区分 boolean outcome、measurement、direct score 与 Judge 的结构化 measurement；它不复制 diagnostic。
@@ -301,7 +399,7 @@ type AssertionDecisionPolicy = {
 };
 
 type ExplanationRetention =
-  | { readonly state: "retained"; readonly value: AssertionFactValue }
+  | { readonly state: "retained"; readonly value: AssertionFactValue | MatcherQueryArtifact }
   | { readonly state: "unavailable"; readonly reason: "not-recorded" };
 ```
 
@@ -362,6 +460,12 @@ v1 没有持久化 criterion expression、measurement/threshold、Judge rational
 v1 `gate` 为 `satisfied`、`failed`、`unavailable` 或 `not-applicable` 已证明该 entry 是 required gate，因此迁移为 requirement available/required。condition 仍 unavailable/not-recorded。只有 `gate: "not-gate"` 时 requirement 也是 unavailable/not-recorded。这样 required-unavailable 的旧 Verdict 保持 errored。
 
 物理 payload 与 envelope 的 rewrite、Git/sentinel/recovery 和最终验证由 Record maintenance 执行。transform 本身绝不读写磁盘。
+
+### 历史 Record 的 Matcher 降级
+
+历史 Record 的 source ledger 可读，但 Assertions 没有保存 locator 或 scope relation 时，Analysis 只交付中立 ledger 和独立的旧 diagnostic。Report 必须显示 `会话已记录 N 条，但此历史 Record 未保存断言与记录的逐条关联`，不能把旧 diagnostic 与 ledger 合并成新的 overlay。
+
+source collection partial 表示 source owner 只保留了安全前缀；observability unavailable 表示 ledger 本身不能形成；retained old diagnostics 只表示旧 Assertions 仍有一份有界解释。这三种状态分别显示。reader 绝不重跑 matcher，也不从旧 diagnostic、source 顺序、名称或 `callId` 推导缺失的 identity relation。
 
 ## 读取与读侧形成
 

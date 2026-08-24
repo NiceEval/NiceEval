@@ -45,9 +45,21 @@ niceeval show @1K1P0VJAPVJ12 --json
 已知 locator 时应使用 `show @locator` 精确下钻。要读取自定义报告的另一页，显式传入该页的 `--page <route>`。view 与静态目录读取
 同一份 `ClosedSiteRevision`；terminal 为目标 Page 生成临时 text。三种呈现面都保留同一 Sample 的 locator、Evidence refs、issues、samples 和 total。
 
-Attempt 页的源码中，带交互标记的 `.send()` 行可以原生展开。展开区显示该次物理 send 的 Session log 摘要与事件轨迹。匹配同一 call ID 的工具调用和结果在调用位置显示为一个生命周期节点，展开后同时呈现输入与结果；未闭合阶段和 assistant 消息仍按原始因果位置显示，不折成只有最终文本的一行。
+Attempt 页的源码中，带交互标记的 `.send()` 行可以原生展开。展开区显示该次物理 send 的 Session log 摘要与事件轨迹。共享同一 `toolOccurrenceId` 的工具 started／finished 在各自原始位置保留独立 `eventId`，同时连接为一个可展开生命周期；producer-minted `callId` 不能替代这两种 identity。未闭合阶段和 assistant 消息仍按原始因果位置显示，不折成只有最终文本的一行。
 
-## 4. 查看 File Changes 轨迹
+## 4. 用 Matcher Filter Debugger 复核断言
+
+读者展开 `calledTool` 或 `event` 时，先看到 Query summary 和权威聚合计数，再看到 scope 中的完整 source-owned ledger。tool ledger 以 T1、T2 编号 logical tool occurrence；event ledger 以 E1、E2 编号独立事件。同一工具的 started／finished 在 event ledger 占两行，并通过共同的 `toolOccurrenceId` 连接。
+
+Assertion overlay 只标记 Record 已保留的逐行结果。overlay 完整时可以精确筛选 matched、mismatched、unavailable，并在有证明时筛选 not-evaluated；不完整时只显示 All Records、Retained Evidence 和 `retained X / examined Y`。筛选不会改变原始 Tn／En 编号，ledger 也不会因 Assertion 失败而改写 source facts。
+
+`toolOrder` 与 `eventOrder` 先列 query steps。成功时显示稳定的最早 witness path；失败时显示 `failure frontier`，其中包含 longest matched prefix、first blocking step、suffix checked counts 和有界代表差异。source partial 或 comparison unavailable 时显示缺口，不把它渲染成失败。
+
+选择一行会在原位展开 input、output、status、matcher 分支与 relation status。“定位到会话日志”精确滚动并高亮对应 source row；页面上方 trace 只叠加当前 Assertion 的 transient overlay。切换 Assertion 后 overlay 随即替换，不污染其它断言或 source ledger。
+
+历史 Record 的 ledger 可读而逐条 relation 缺失时，页面显示 `会话已记录 N 条，但此历史 Record 未保存断言与记录的逐条关联`。source partial、observability unavailable 与 retained old diagnostics 分开呈现；Report 不重跑 matcher，也不把旧 diagnostic 与 ledger 合并推断。
+
+## 5. 查看 File Changes 轨迹
 
 `attempt-overview` 默认按 send 区间展示 File Changes trajectory 与 collection。它保留同一路径在不同 send 中的重复，
 不会按 path 合并。例如 `turn1` 创建 `src/answer.ts`、`turn2` 修改它时，两个端点变化都应可见。

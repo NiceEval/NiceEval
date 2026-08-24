@@ -30,6 +30,16 @@ conversation、usage 与 source navigation 都只在读侧投影。第三方可�
 
 高基数 collection 只保存计数与 complete/exhaustive/decisive receipt，并有界保留 decisive witness 与代表样本。native producer 不复制完整 candidates、tool occurrences、diff changes 或 Agent Judge trace。
 
+## Matcher Filter Debugger
+
+`calledTool` 与 `event` 把 scope 中的 source records 当作集合过滤；`toolOrder` 与 `eventOrder` 则把 canonical source order 当作有序序列查询。两类 Assertion 共用 Matcher Filter Debugger，但不能把 order 降格成一组独立过滤结果。
+
+Debugger 的第二层固定由五部分组成：Query summary、权威聚合计数、source-owned ledger、coverage-aware assertion overlay，以及 selected-row detail。ledger 始终显示 source owner 已保存的中立事实；overlay 只解释本次 Assertion 已保留的逐行求值证据。完整查询语义见 [Scoped assertions](library/scoped-assertions.md)，持久边界见 [Architecture](architecture.md)，交互规则见 [Display](library/display.md)。
+
+工具 ledger 的一行是一笔 logical tool occurrence。事件 ledger 的一行是一条独立事件；同一工具生命周期的 `operation.started` 与 `operation.finished` 使用不同 `eventId`，并共享同一个 `toolOccurrenceId`。source owner 还必须保存准确的 scope relation 与 `scopeId`，让 Analysis 能按 identity 组合 Assertion 与 ledger，而不是按位置猜测。
+
+order 成功时显示 canonical order 中稳定的最早 witness path。order 失败时显示 longest matched prefix、first blocking step、suffix checked counts 与有界 representative differences；这组失败边界统一称为 `failure frontier`。source partial 或逐项比较 unavailable 时，结果保持 unavailable，不能伪装成失败。
+
 Judge 的 measurement 属于 evaluation，输入属于 materials。只有 Judge 实际返回的 rationale/evidence/detail/citations 才能标为 available；未返回项分别是 unavailable/not-recorded。
 
 ## 不写入的运行时细节
@@ -95,7 +105,7 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 
 - [Library](library.md) —— 作者 API 和 handle 配置。
 - [Value assertions](library/value-assertions.md) —— Match 与 refinement。
-- [Scoped assertions](library/scoped-assertions.md) —— scope snapshot、`calledTool`、`notCalledTool` 与 `succeeded`。
+- [Scoped assertions](library/scoped-assertions.md) —— scope snapshot、tool／event collection filters 与 order queries。
 - [Score Eval](library/score-points.md) —— points、rubric 与完整度。
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— Assertions payload 内的源码位置与 Sources join。

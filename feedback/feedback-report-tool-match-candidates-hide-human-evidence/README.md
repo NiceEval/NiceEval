@@ -22,3 +22,7 @@ memoryRelations:
 # Report 的工具匹配候选隐藏可读证据
 
 用户在真实 Report 的 Attempt source 详情中观察到：工具 matcher 虽然保留了候选树，却把内部 occurrence identity 当作候选标题；字段行只显示字段名并以颜色编码状态，折叠态看不到期望与实际。
+
+## 仍缺的产品能力
+
+可读候选标题、视觉状态和 expected／observed 摘要只改善 retained diagnostic。Report 仍没有完整 source-owned ledger、稳定 `toolOccurrenceId`／`eventId`、准确 scope relation、四维完整性、coverage-aware overlay、精确过滤与跨区定位。order 也没有稳定 witness path 或 `failure frontier`；旧 Record 还不能按关系缺失诚实降级，因此本条 Feedback 保持 open。

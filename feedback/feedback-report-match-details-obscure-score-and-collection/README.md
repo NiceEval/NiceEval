@@ -28,3 +28,7 @@ closure:
 # Report 的 Match 详情混淆计分结果并摊平 collection 输入
 
 用户在真实 Report 的 Attempt source 详情中观察到两类问题：计分 matcher 使用 `soft passed`／`soft failed` 汇总状态，却省略声明的 points 或 measurement；generic `satisfies` 输入把事件数组的对象字段连续展开，无法先看 collection 摘要或辨认元素边界。
+
+## 相邻的产品能力缺口
+
+本条 closure 只证明计分语义、measurement 与 generic collection 边界已经修复。`Array(n)` 摘要不是 Matcher Filter Debugger：它没有 source-owned ledger、权威聚合计数、逐行 overlay、identity relation 或 order witness／`failure frontier`。原 observation 的 fixed 状态保持有效，这组更大的产品能力由采用后的 Feature 契约继续约束。

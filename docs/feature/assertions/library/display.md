@@ -24,13 +24,35 @@ Web 详情把 matcher 自身作为可展开行：`matched`、`mismatched` 与 `u
 
 generic input 的 scalar 直接显示。array 默认只显示 `Array(n)`，展开后按原顺序编号，每个元素保留独立视觉边界；object 字段保持同一元素内的结构。`satisfies` 等 opaque predicate 只显示作者命名、sealed result 与 input 摘要，不编造 expected、reason 或 witness。完整闭合值继续收进默认折叠的技术详情。
 
-组合 matcher 按原声明层级展开，每个 `and`、`or`、`not` 与叶子 matcher 都携带自己的 sealed 状态，因此父组合命中时仍能辨认没有命中的分支。
+组合 matcher 在 Query summary 中按原声明层级展开。每个 `and`、`or`、`not` 与叶子 matcher 都携带自己的 sealed 状态，因此父组合命中时仍能辨认没有命中的分支。完整候选集合进入 source-owned ledger，不复制成另一棵通用 candidate tree。
 
-Tool matcher 的候选 occurrence 也使用同一分支树。候选标题先说明实际 invocation 类型，再按检查顺序编号以区分重复项：普通工具显示 `Tool call N · <actual tool name>`，可用的逻辑命令显示 `Command N · <actual argv preview>`。编号只用于定位，不能代替调用身份；旧 Record 或闭合诊断没有保存身份时明确显示 invocation details not recorded。
+tool ledger 的人类编号按原始 canonical order 固定为 T1、T2；event ledger 使用 E1、E2。普通工具行显示实际工具名，可用的逻辑命令行显示已闭合 argv preview。编号只用于稳定定位，不能替代 `toolOccurrenceId` 或 `eventId`；过滤、排序和展开都不重新编号。
 
-命令 preview 只消费已闭合、已按已知 sensitive value 脱敏的逻辑投影，并遵守统一显示上限；读取端不从自由文本猜测或清洗 secret。内部 occurrence identity 只作为技术 locator，不作为候选标题。调用名称、input、output、status 与命令 token 等子 matcher 各自显示状态，并随 Report locale 使用界面用语；折叠态内联显示有界的 expected、observed 或 unavailable reason。
+命令 preview 只消费已闭合、已按已知 sensitive value 脱敏的逻辑投影，并遵守统一显示上限；读取端不从自由文本猜测或清洗 secret。内部 identity 只作为技术 locator，不作为行标题。调用名称、input、output、status 与命令 token 等子 matcher 随 Report locale 使用界面用语，并内联显示有界的 expected、observed 或 unavailable reason。
 
-只有还存在子节点或技术事实的行才可展开；没有额外内容的叶子保持静态，不能出现空白展开区。展开后保留完整诊断事实与调用 locator。未知或第三方 matcher 使用 generic fallback，不因没有专用展示而丢失输入和闭合诊断。
+ledger 行以内联展开显示详情。只有还存在子节点或技术事实的行才可展开；没有额外内容的叶子保持静态，不能出现空白展开区。未知或第三方 matcher 使用 generic fallback，不因没有专用展示而丢失输入和闭合诊断。
+
+### Matcher Filter Debugger
+
+collection 与 order matcher 展开后的第二层固定采用同一个阅读顺序：
+
+1. Query summary 显示 scope、quantifier 或有序 query steps，以及 sealed result。
+2. 权威聚合区显示 examined、matched、mismatched、unavailable、known total 与 decisive／exhaustive 状态。
+3. source-owned ledger 显示 scope 中已持久化的中立工具 occurrence 或独立事件。
+4. coverage-aware assertion overlay 把已保留的逐行求值证据叠在 ledger 上。
+5. selected-row detail 显示当前 Tn／En 的 source facts、matcher 分支、差异、locator 与 relation status。
+
+ledger 本身不染成成功或失败，也不写 `matched`、`mismatched`、`unavailable` 或 `not-evaluated`。这些状态只由当前 Assertion 的 overlay 提供。逐行结果没有保留时显示“逐行结果未保留”，不能根据 sealed result、聚合计数、颜色或 source 内容回填。
+
+Debugger 分别显示 source collection、evaluation receipt、identity relation 与 overlay retention。四者各自说明 complete、partial 或 unavailable 的原因；identity relation 另行区分 exact 与 ambiguous。source partial、observability unavailable 和 retained old diagnostics 不能合并成一个笼统 warning。
+
+overlay 完整时，过滤器提供 All Records、matched、mismatched 与 unavailable。只有 exact relation、canonical order 和 receipt／`failure frontier` 能证明某行没有被执行时，overlay 才显示 `not-evaluated`，并可提供同名过滤项。overlay 不完整时只提供 All Records 与 Retained Evidence，同时显示 `retained X / examined Y`；筛选后仍保留 T1、T2、E1 等原始编号。
+
+collection filter 以 ledger 和权威聚合计数为主。order 成功显示 query steps 与稳定的最早 witness path。order 失败显示 `failure frontier`，其中包含 longest matched prefix、first blocking step、suffix checked counts 和有界 representative differences。partial 或 unavailable 结果显示尚不能证明的 step 与缺口，不渲染失败 frontier。
+
+每个有 exact relation 的 ledger 行提供“定位到会话日志”。动作精确滚动到对应事件或 logical tool occurrence，并短暂高亮；不能跳到相邻 Turn 后让读者自行搜索。页面上方 trace 只为当前 Assertion 显示 transient overlay，切换 Assertion 或关闭详情就清除，不能把 overlay 写回 source facts。
+
+历史 Record 的 ledger 可读但缺少逐条 relation 时，显示 `会话已记录 N 条，但此历史 Record 未保存断言与记录的逐条关联`。保留的旧 diagnostic 放在独立区域，只按原样展示；页面不重跑 matcher，也不把它与 ledger 合成 inferred overlay。
 
 Assertions display 不携带 source path、origin source snapshot 或跨 family blob ref。需要源码导航时，Analysis 的 source-navigation DomainView 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
 没有对应 row 或 Sources 无法形成可用值时，entry 位置显示 `unmapped`，不能猜测当前 worktree。`.orStop()` 已执行的位置可由 role 为 `stop` 的 source site 显示，不能由未保存的控制流推断。

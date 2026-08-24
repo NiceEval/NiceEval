@@ -25,10 +25,18 @@ promotions:
 
 后续把内部 identity 换成统一的“调用 N”仍不够：collection 检查的是全部 tool occurrence，`commandMatch` 的第一个候选可能是普通工具、第二个才是命令。若诊断没有闭合每个候选的 invocation 类型与实际 subject，Report 仍只能展示无语义序号，读者无法知道“调用 1/2”分别是什么。
 
+连续的 UI 修补仍把 retained matcher diagnostic 当成完整候选集合。Assertions 只保存有界代表项，无法据此形成完整 source ledger、exact row filters 或可靠的 `retained X / examined Y`。order 还只剩 final tri-state 与普通 matcher tree，没有 query steps、稳定 witness path 或 `failure frontier`。
+
+跨区关联也缺少持久 identity。source owner 没有为每个独立事件和 logical tool occurrence 交付 `eventId`、`toolOccurrenceId` 与准确 scope relation／`scopeId`；Agent Turns 的 producer-minted `callId` 不能替代。React 若继续按数组位置或相邻节点拼接，就无法处理跨 Turn tool lifecycle，也无法让历史 Record 诚实降级。
+
 ## 修复边界
 
-工具候选的主要标题先区分普通工具与命令，再使用按检查顺序稳定编号：普通工具显示实际工具名，命令显示已闭合、已脱敏且有界的逻辑 argv preview；旧 Record 缺少身份证据时明确显示详情未记录。内部 occurrence identity 只留在技术 locator。工具字段诊断保存有界 observed preview，并随 Report locale 使用界面用语。每个 matcher 行视觉显示 sealed state，颜色不再是唯一表达。
+工具候选的主要标题先区分普通工具与命令，再使用按 canonical source order 固定的 Tn／En 编号：普通工具显示实际工具名，命令显示已闭合、已脱敏且有界的逻辑 argv preview。内部 identity 只留在技术 locator。工具字段诊断保存有界 observed preview，并随 Report locale 使用界面用语。每个 matcher 行视觉显示 sealed state，颜色不再是唯一表达。
 
 叶子 matcher 在折叠态内联显示可用的 expected、observed 或 unavailable reason。只有存在子节点或技术事实时才渲染可展开结构；没有额外内容的叶子保持静态。
+
+完整修复还必须建立固定五段式 Matcher Filter Debugger：Query summary、权威聚合计数、source-owned ledger、coverage-aware assertion overlay 与 selected-row detail。Analysis 用具名 composite DomainView 按稳定 identity 关闭跨 family join；Report 提供精确过滤、行内详情、会话日志定位和当前 Assertion 的 transient trace overlay。
+
+order artifact 保存 query steps、最早 witness path 或 `failure frontier`、suffix aggregate、有界 representative diagnostics、locators 与 relation status。旧 Record 缺少逐条 relation 时只显示中立 ledger、retained old diagnostics 和明确降级文案；任何 reader 都不重跑 matcher 或合并推断。
 
 回归由 `docs/engineering/testing/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有。

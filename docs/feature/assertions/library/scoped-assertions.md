@@ -1,6 +1,6 @@
 # Assertions —— scoped methods
 
-本页是 `calledTool`、`notCalledTool`、`ToolMatch` 与计数的唯一公开契约。其它页面只链接本页，不重复签名、字段或计数规则。
+本页是 tool／event collection filter、`toolOrder`／`eventOrder`、`ToolMatch` 与计数的唯一公开契约。其它页面只链接本页，不重复签名、字段、计数或顺序规则。
 
 每一次调用都直接登记 Boolean Assertion。receiver 在调用处取得 snapshot；随后发生的 Session 或 Turn 不能改写这条 entry。Boolean handle 仍可 `await .orStop()`，它只等待并控制同一条已登记 Assertion。
 
@@ -17,15 +17,27 @@ interface CalledToolOptions {
   readonly count?: CalledToolCount;
 }
 
+interface EventOptions {
+  readonly count?: number;
+}
+
 calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
 calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
 notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
 notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
+event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
+
+// Turn 与 Session receiver 提供有序序列查询；根 t 不伪造全局顺序。
+toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
+eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
 ```
 
 `name` 是 `toolMatch(name)` 的薄糖，只按原始工具名选择 occurrence。`calledTool` 的第二参数只含 `count`；`input`、`output` 与 `status` 都属于 `ToolMatch`。
 
 `count` 的数字是恰好次数，且必须为正整数。`{ atLeast: n }` 的 `n` 同样必须为正整数。省略 `count` 等于 `{ atLeast: 1 }`。数值 `0` 无效；需要证明没有匹配调用时使用 `notCalledTool`。
+
+`event` 的数值 `count` 同样表示恰好次数；省略时表示至少一次。零次使用 `notEvent`。`toolOrder` 与 `eventOrder` 至少各接收两个 Match，并检查允许无关 source row 穿插的 subsequence；`toolOrder` 只证明 logical tool occurrence 的开始顺序，不把“前一笔 finished 后下一笔才 started”藏进方法名。
 
 ```ts
 import {
@@ -64,6 +76,16 @@ turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 
 `toolMatch` 适用于官方工具和第三方工具。两者都按 Adapter 归一后的 occurrence、原始名称与材料状态求值，没有官方工具的特权分支。
 
+## 集合过滤与有序序列查询
+
+`calledTool`、`notCalledTool`、`event` 与 `notEvent` 对 scope 中每条候选 source row 独立求值，再按 quantifier 聚合。tool 候选是一笔 logical tool occurrence；event 候选是一条独立事件。`operation.started` 与 `operation.finished` 因而是两个 event 候选，即使它们共享同一个 `toolOccurrenceId`。
+
+`toolOrder` 与 `eventOrder` 是 query steps 对 canonical source order 的 subsequence 查询。每一步必须选择严格晚于前一步的 source row；无关 row 可以穿插，同一 row 不能满足两个 step。成功结果保留稳定的最早 witness path，因此相同 Record、scope 与 query 总是选择同一路径。
+
+失败结果保留 `failure frontier`：可成立的 longest matched prefix、first blocking step、从前缀末端开始的 suffix checked counts，以及有界 representative differences。它不是 `minimal counterexample`。只有 complete source 与 exhaustive receipt 能证明 failure frontier；source partial、identity relation 不可用，或仍可能延伸成 witness 的逐项 unavailable 都使 order 结果保持 unavailable。
+
+query artifact 必须保存 query steps、witness path 或 `failure frontier`、suffix aggregate、有界 representative diagnostics，以及所用 source locator 与 relation status。只保存 final tri-state 加 raw matches array 不能离线解释 order，也不是合法的 current artifact。
+
 ## 输入、输出与 HITL
 
 输入和输出材料各有 `complete`、`partial`、`unavailable` 三种状态。`complete` 有完整 JSON；`partial` 明示可见片段与缺失边界；`unavailable` 带具名原因，不能用空对象、`null` 或普通 mismatch 代替。
@@ -77,6 +99,8 @@ HITL 等待中的工具已有 `operation.started`，却还没有相配的 finish
 Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session 在调用处之前的全部 Turn，所以可以断言跨 Turn 的工具行为。
 
 根 `t` 在调用处冻结所有已启动 Session 的 vector cut。每个 Session 保留自己的前缀，根 scope 不把多个 Session 伪造成一条全局时间线。之后新增的 Turn、Session 或工具调用不进入已登记 Assertion。
+
+tool lifecycle 可以跨 Turn：started 与 finished 分别保留各自的 Turn relation，并通过 `toolOccurrenceId` 属于同一 occurrence。scope snapshot 保存准确的 scope relation 与 `scopeId`；Report 不能用 producer-minted `callId`、时间相邻或数组位置决定某个 ledger row 是否属于这次 Assertion。
 
 ## 三值计数
 

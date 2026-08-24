@@ -22,3 +22,7 @@ memoryRelations:
 # Report 的命令匹配候选隐藏实际调用身份
 
 用户在真实 Report 中观察到：commandMatch 将普通工具与命令候选统一显示成无语义的 `调用 N`，无法知道每个序号对应哪次实际 invocation。
+
+## 仍缺的产品能力
+
+候选标题改为工具名或命令 preview，只修复了单个 retained diagnostic 的可读性。Report 仍缺完整 source-owned ledger、`toolOccurrenceId`／`eventId` 与 scope relation、coverage-aware overlay、精确过滤和“定位到会话日志”。它也没有为 `toolOrder`／`eventOrder` 交付 witness path 或 `failure frontier`，因此这条 Feedback 保持 open。
