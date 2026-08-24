@@ -8,4 +8,7 @@
 目标写入口使用 `pnpm engineering create <name> --title <title>`。
 命令从 [`_template/`](_template/README.md) 创建最小结构，不手工复制模板。
 
+公开、已脱敏且需要 maintainer 跟进的 Observation 从 [GitHub Issue 与 Memory](issues/README.md) 进入。
+该入口定义 Issue 标签、分诊、关闭证据、授权和机器幂等规则。
+
 子目录清单见 [`docs/README.md`](../README.md)。

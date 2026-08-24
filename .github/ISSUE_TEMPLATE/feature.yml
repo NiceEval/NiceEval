@@ -1,0 +1,71 @@
+name: Feature request
+description: Describe a NiceEval workflow that should exist or become easier.
+title: ""
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the workflow and outcome you need. You do not need to diagnose a root cause or propose an implementation. Do not include secrets, private data, or security vulnerability details.
+  - type: textarea
+    id: expected_workflow
+    attributes:
+      label: Expected workflow
+      description: Describe the goal, the people or systems involved, and the result NiceEval should make possible.
+      placeholder: When I ..., I need NiceEval to ..., so that ...
+    validations:
+      required: true
+  - type: textarea
+    id: current_gap
+    attributes:
+      label: Current gap
+      description: Explain what prevents or complicates that workflow today.
+      placeholder: What can you not do, or what is unnecessarily difficult?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Explain who is affected, how often the workflow occurs, and what the current gap costs.
+      placeholder: Who is affected, and why does this matter?
+    validations:
+      required: true
+  - type: textarea
+    id: usage_example
+    attributes:
+      label: Usage example
+      description: Show a short command, API call, or end-to-end scenario that demonstrates the desired user experience. Focus on behavior rather than an internal solution.
+      placeholder: |
+        Given ...
+        When ...
+        Then ...
+    validations:
+      required: true
+  - type: input
+    id: niceeval_identity
+    attributes:
+      label: NiceEval identity
+      description: Give the package version, commit SHA, or candidate artifact involved, or say that the request is not version-specific.
+      placeholder: 0.0.0, commit SHA, candidate artifact, or Not version-specific
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Source provenance
+      description: Say whether this came from direct use, downstream dogfooding, an agent-assisted run, or another source. Include the source repository and stable origin ID when available.
+      placeholder: Direct request, or source repository plus stable origin ID
+    validations:
+      required: true
+  - type: checkboxes
+    id: sanitization
+    attributes:
+      label: Public data confirmation
+      options:
+        - label: I removed secrets, credentials, private customer data, private repository content, and other sensitive material from this issue.
+          required: true
+        - label: This request does not disclose or describe a suspected security vulnerability.
+          required: true

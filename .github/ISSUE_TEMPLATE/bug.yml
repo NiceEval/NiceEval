@@ -1,0 +1,79 @@
+name: Bug report
+description: Report an observable NiceEval behavior that differs from the expected behavior.
+title: ""
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve NiceEval. Do not include secrets, private data, or security vulnerability details here. Report suspected vulnerabilities through [Private Vulnerability Reporting](https://github.com/NiceEval/NiceEval/security/advisories/new).
+  - type: textarea
+    id: observation
+    attributes:
+      label: Actual observation
+      description: Describe what you observed. Include exact output or a short excerpt when it is safe to share.
+      placeholder: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: Expected behavior
+      description: Describe the user-visible result you expected.
+      placeholder: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Explain the workflow that was blocked, made unreliable, or made harder.
+      placeholder: Who or what is affected, and how severely?
+    validations:
+      required: true
+  - type: textarea
+    id: public_reproduction
+    attributes:
+      label: Public entry-point reproduction
+      description: Reproduce through an installed Library, CLI, HTTP, browser, or real Adapter entry point. Use a minimal sanitized example and include commands or code where useful.
+      placeholder: |
+        1. Install or select NiceEval ...
+        2. Run or call ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: niceeval_identity
+    attributes:
+      label: NiceEval identity
+      description: Give the exact package version, commit SHA, or candidate artifact identity used for the reproduction.
+      placeholder: 0.0.0, commit SHA, or candidate artifact
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the OS, Node.js runtime, package manager, and relevant Adapter, provider, browser, or container versions.
+      placeholder: OS, Node.js, package manager, and other relevant versions
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Source provenance
+      description: Say whether this came from direct use, downstream dogfooding, an agent-assisted run, or an upstream report. Include the source repository and stable origin ID when available.
+      placeholder: Direct observation, or source repository plus stable origin ID
+    validations:
+      required: true
+  - type: checkboxes
+    id: sanitization
+    attributes:
+      label: Public data confirmation
+      options:
+        - label: I removed secrets, credentials, private customer data, private repository content, and other sensitive material from this issue.
+          required: true
+        - label: This issue does not disclose or describe a suspected security vulnerability.
+          required: true

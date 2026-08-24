@@ -7,7 +7,8 @@
 不要从本文件学习整个项目。先按任务进入对应目录，读取该目录最近的 `README.md`、`AGENTS.md` 或索引，再沿链接只加载相关正文：
 
 - 产品、架构或内部设计：[`docs/README.md`](docs/README.md)
-- issue / dogfood / dev 原始反馈：先读 [`.agents/skills/feedback/SKILL.md`](.agents/skills/feedback/SKILL.md)，再用 `pnpm feedback --help` 进入正式命令
+- 公开、脱敏且需 maintainer 跟进的 Observation：先读 [`.agents/skills/issue/SKILL.md`](.agents/skills/issue/SKILL.md)，再按 [Issue 工程契约](docs/engineering/issues/README.md) 准备或处理 GitHub Issue
+- 存量 Feedback 迁移或审计：先读 [`.agents/skills/feedback/SKILL.md`](.agents/skills/feedback/SKILL.md)；不再把 Feedback 作为新 Observation 的长期 owner
 - 开发问题、根因、裁决与 know-how：先读 [`.agents/skills/memory/SKILL.md`](.agents/skills/memory/SKILL.md)，再用 `pnpm memory --help` 进入正式命令
 - PR、文档、示例、下游安装与仓库初始化：分别从 [Pull Request](.agents/skills/pull-request/SKILL.md)、[Docs Terminology](.agents/skills/docs-terminology/SKILL.md)、[Docs Work](.agents/skills/docs-work/SKILL.md)、[Docs Reference](.agents/skills/docs-reference/SKILL.md)、[Docs Diff Code](.agents/skills/docs-diff-code/SKILL.md)、[Docs Development](.agents/skills/docs-development/SKILL.md)、[Examples Sync](.agents/skills/examples-sync/SKILL.md)、[Consumer Link](.agents/skills/consumer-link/SKILL.md) 与 [Repository Setup](.agents/skills/repository-setup/SKILL.md) 继续；完整参数只看对应 pnpm 入口的 `--help`
 - 文档用词审查：先读 `.agents/skills/docs-terminology/SKILL.md`，用 `pnpm docs:terms` 维护裁决并运行 `pnpm lint`；不手工搜索并维护另一份命中清单
@@ -60,16 +61,17 @@
 - 在下游看运行结果或诊断失败时，只使用该仓库规定的 `pnpm exec niceeval show` 切片；禁止直接读取 `.niceeval/` 产物或通过相邻源码反推某次运行。CLI 无法呈现所需信息时，将其识别为 NiceEval 呈现缺口，而不是用私有产物绕过。
 - 通用契约或核心行为的根因在本仓库修复；题目、benchmark、实验和报告的特定策略留在对应下游。跨仓库任务按仓库分别修改、验证和提交，不把多个仓库的改动混成一个提交。
 
-## Feedback 与 Memory
+## Issue 与 Memory
 
-仓库用自己的 Feedback 保存来自 issue、dogfood 与 dev 的原始观察，用 Memory 保存调查后形成的问题、根因、裁决与 know-how。两者都随 Git 提交，不依赖外部摩擦工具；完整状态与关系见 [Feedback 与 Memory](docs/engineering/feedback-memory/README.md)。
+GitHub Issue 跟踪公开、已脱敏且需要 maintainer 跟进的工作项；Memory 保存调查后形成的 Problem、Decision 与可复用 know-how。完整边界、分诊和关系见 [GitHub Issue 与 Memory](docs/engineering/issues/README.md)。
 
-- 遇到可复现的工具、文档、API、测试或约定摩擦时，先运行 `pnpm feedback list [pattern]` 查重，再按 `pnpm feedback add --help` 准备一份包含 source、subject、claim、observation 与 impact 的 JSON 文档。
-- 下游 dogfood 只生成 `niceeval.feedback-envelope/v1`，本仓库用 `pnpm feedback import` 解码；下游不能直接改本仓库。
-- 调查得到 root cause、设计取舍或长期 know-how 时，用 `pnpm memory` 创建或关联 Problem、Decision 或 Insight；不要把推断改写成原始 Feedback。
+- 遇到来自 issue、dogfood 或开发现场的 Observation，先检查 open 与 closed Issue，再决定复用既有 Issue、准备新 draft 或不建立长期 owner。
+- 下游和 Agent 可以准备保留 provenance 的脱敏 draft；创建、编辑、评论、加减标签、关闭或重开远端 Issue 都需要用户对当次动作的明确授权。
+- 公开 Issue 不接收秘密、私有资料或漏洞细节；安全问题走 GitHub Private Vulnerability Reporting。
+- 调查得到 root cause、设计取舍或可复用 know-how 时，用 `pnpm memory` 创建或关联 Memory；不要把推断改写成原始 Observation。
 - 修产品 Bug 时，E2E 测试头的 `regression:` 指向 Problem Memory。只有公开入口红灯、候选转绿与可靠性接管通过后，才能把该 Problem 设为 `resolved(fixed)`。
-- 收尾时运行 `pnpm feedback list`，把过程中绕过但仍未保存的仓库摩擦补进 Feedback。已经在本轮修好且没有长期价值的瞬时操作不另建条目。
-- 创建、关闭或修改远端 issue 仍需用户当次明确授权；本地 Feedback 状态不自动同步远端。
+- Issue 只保存指向 Memory 的正向关系。Issue 的 open 或 closed 是协作状态，Memory 是工程事实，两者不做双向自动同步。
+- 收尾时检查本轮尚未持久化的 Observation。已当场修好且没有长期价值的瞬时操作不创建 Issue；仍需跟进但未获远端授权时交付 draft。
 
 ## Git 与协作安全
 
