@@ -26,7 +26,9 @@ generic input 的 scalar 直接显示。array 默认只显示 `Array(n)`，展�
 
 组合 matcher 按原声明层级展开，每个 `and`、`or`、`not` 与叶子 matcher 都携带自己的 sealed 状态，因此父组合命中时仍能辨认没有命中的分支。
 
-Tool matcher 的候选 occurrence 也使用同一分支树：候选标题按检查顺序显示 `Call N`，可从闭合诊断确定时同时显示实际工具名；内部 occurrence identity 只作为技术 locator，不作为候选标题。调用名称、input、output、status 与命令 token 等子 matcher 各自显示状态，折叠态内联显示可用的 expected、observed 或 unavailable reason，展开后保留完整诊断事实与调用 locator。未知或第三方 matcher 使用 generic fallback，不因没有专用展示而丢失输入和闭合诊断。
+Tool matcher 的候选 occurrence 也使用同一分支树：候选标题按检查顺序显示 `Call N`，可从闭合诊断确定时同时显示实际工具名；内部 occurrence identity 只作为技术 locator，不作为候选标题。调用名称、input、output、status 与命令 token 等子 matcher 各自显示状态，折叠态内联显示有界的 expected、observed 或 unavailable reason。
+
+只有还存在子节点或技术事实的行才可展开；没有额外内容的叶子保持静态，不能出现空白展开区。展开后保留完整诊断事实与调用 locator。未知或第三方 matcher 使用 generic fallback，不因没有专用展示而丢失输入和闭合诊断。
 
 Assertions display 不携带 source path、origin source snapshot 或跨 family blob ref。需要源码导航时，Analysis 的 source-navigation DomainView 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
 没有对应 row 或 Sources 无法形成可用值时，entry 位置显示 `unmapped`，不能猜测当前 worktree。`.orStop()` 已执行的位置可由 role 为 `stop` 的 source site 显示，不能由未保存的控制流推断。

@@ -398,6 +398,7 @@ function isToolCollectionDiagnostic(diagnostic: MatchDiagnosticView | null): boo
 }
 
 function candidateToolName(diagnostic: MatchDiagnosticView | null): string | undefined {
+  if (diagnostic?.locator !== undefined && diagnostic.received !== undefined) return diagnostic.received;
   const name = diagnostic?.children.find((child) => child.label === "name");
   if (name?.diagnostic?.received !== undefined) return name.diagnostic.received;
   return name?.state === "matched" ? name.diagnostic?.expected : undefined;
@@ -465,7 +466,8 @@ function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, 
   );
   const nested = diagnostic?.children ?? [];
   const childrenAreToolCandidates = isToolCollectionDiagnostic(diagnostic);
-  const body = diagnostic !== null || children !== undefined
+  const hasDiagnosticBody = nested.length > 0 || diagnostic?.locator !== undefined;
+  const body = hasDiagnosticBody || children !== undefined
     ? (
         <div className="niceeval-match-detail">
           {nested.length > 0 ? (
@@ -482,7 +484,9 @@ function MatchNode({ label: nodeLabel, state, diagnostic, locale, root = false, 
               ))}
             </div>
           ) : null}
-          {root || diagnostic === null ? null : <DiagnosticFacts diagnostic={diagnostic} locale={locale} />}
+          {root || diagnostic === null || diagnostic.locator === undefined
+            ? null
+            : <DiagnosticFacts diagnostic={diagnostic} locale={locale} />}
           {children}
         </div>
       )

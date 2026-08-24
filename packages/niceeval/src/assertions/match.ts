@@ -494,6 +494,15 @@ function quoted(value: string): string {
   return JSON.stringify(value);
 }
 
+function jsonPreview(value: JsonValue): string {
+  const serialized = JSON.stringify(value);
+  const characters = Array.from(serialized);
+  const limit = assertionRuntimeLimits.displayCodePoints;
+  return characters.length <= limit
+    ? serialized
+    : `${characters.slice(0, limit - 1).join("")}…`;
+}
+
 function resultChild(
   result: BooleanMatchEvaluation<unknown>,
   index: number,
@@ -1309,6 +1318,7 @@ function lifecycleResult(
     return matched(
       occurrence,
       diagnostic("lifecycle-unrestricted", "lifecycle is unrestricted", {
+        received: lifecycle.status,
         locator: { kind: "tool-occurrence", id: occurrence.id },
       }),
     );
@@ -1326,6 +1336,7 @@ function lifecycleResult(
     occurrence,
     diagnostic("tool-status-match", "tool lifecycle status matched", {
       expected,
+      received: lifecycle.status,
       locator: { kind: "tool-occurrence", id: occurrence.id },
     }),
   );
@@ -1354,6 +1365,7 @@ function occurrenceNameResult(occurrence: LogicalToolOccurrence, expected: strin
     occurrence,
     diagnostic("tool-name-match", "tool name matched exactly", {
       expected: quoted(expected),
+      received: quoted(observed),
       locator: { kind: "tool-occurrence", id: occurrence.id },
     }),
   );
@@ -1382,12 +1394,29 @@ async function toolEvidenceResult(
   }
 
   const result = await evaluateBooleanMatch(match, evidence.value);
-  if (evidence.state === "complete") return result;
+  const base = result.diagnostic;
+  const observedResult = Object.freeze({
+    ...result,
+    diagnostic: diagnostic(
+      base?.code ?? `tool-${field}-${result.state}`,
+      base?.message ?? `tool ${field} ${result.state}`,
+      {
+        path: base?.path,
+        expected: base?.expected ?? match.name,
+        received: jsonPreview(evidence.value),
+        reason: base?.reason,
+        locator: base?.locator ?? { kind: "tool-occurrence", id: occurrence.id },
+        children: base?.children,
+        truncation: base?.truncation,
+      },
+    ),
+  }) as BooleanMatchEvaluation<unknown>;
+  if (evidence.state === "complete") return observedResult;
 
   // partial input can only produce a positive result when the matcher itself carries the narrowed witness
   // capability. A visible reference hit survives hidden leaves; general predicates / schema checks do not.
   if (result.state === "matched" && hasPositiveWitnessCapability(match as BooleanMatch<unknown, unknown, "value">)) {
-    return result;
+    return observedResult;
   }
 
   return unavailable(
@@ -1549,6 +1578,26 @@ export async function evaluateToolMatchCollection(
   const received = `${matchCount} definite match${matchCount === 1 ? "" : "es"}`;
   const candidateLocator = (candidate: CandidateResult<LogicalToolOccurrence> | undefined) =>
     candidate === undefined ? undefined : { kind: "tool-occurrence" as const, id: candidate.candidate.id };
+  const candidateChild = (candidate: CandidateResult<LogicalToolOccurrence>): MatchDiagnosticChild => {
+    const candidateName = candidate.candidate.name.canonical === undefined || candidate.candidate.name.canonical === "unknown"
+      ? candidate.candidate.name.original
+      : candidate.candidate.name.canonical;
+    const base = candidate.result.diagnostic;
+    return Object.freeze({
+      index: candidate.index,
+      label: "candidate",
+      state: candidate.result.state,
+      ...(base === undefined
+        ? {}
+        : {
+            diagnostic: Object.freeze({
+              ...base,
+              ...(candidateName === undefined ? {} : { received: quoted(candidateName) }),
+              locator: { kind: "tool-occurrence" as const, id: candidate.candidate.id },
+            }),
+          }),
+    });
+  };
   const diagnosticSample = (
     ...decisive: readonly (CandidateResult<LogicalToolOccurrence> | undefined)[]
   ): Pick<MatchDiagnostic, "children" | "truncation"> => {
@@ -1558,11 +1607,7 @@ export async function evaluateToolMatchCollection(
     }
     const captured = [...byIndex.values()].sort((left, right) => left.index - right.index);
     return Object.freeze({
-      children: Object.freeze(captured.map((candidate) => resultChild(
-        candidate.result,
-        candidate.index,
-        `candidate ${candidate.candidate.id}`,
-      ))),
+      children: Object.freeze(captured.map(candidateChild)),
       ...(captured.length === occurrences.length
         ? {}
         : {

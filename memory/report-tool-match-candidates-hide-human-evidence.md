@@ -19,10 +19,14 @@ promotions:
 
 ## 根因
 
-`evaluateToolMatchCollection()` 把 candidate child 的 label 写成 `candidate ${occurrence.id}`，把内部关联 identity 提升成了主要展示文案。`MatchNode` 则只在 `aria-label` 中写 sealed state，视觉 summary 仅渲染 label 并以颜色区分状态；诊断中的 `expected`、`received` 和 `reason` 必须再次展开字段行才出现。因此树的结构虽然完整，第一层信息架构却没有回答用户的诊断问题。
+`evaluateToolMatchCollection()` 把 candidate child 的 label 写成 `candidate ${occurrence.id}`，把内部关联 identity 提升成了主要展示文案。工具字段的成功诊断又没有一致保存 observed 值，Report 无法展示实际 input、output 与 status。
+
+`MatchNode` 只在 `aria-label` 中写 sealed state，视觉 summary 仅渲染 label 并以颜色区分状态；诊断中的 `expected`、`received` 和 `reason` 必须再次展开字段行才出现。它还把任意非空 diagnostic 都包装成 `<details>`，即使该叶子没有子节点或可展示技术事实，点击后便得到空白区域。
 
 ## 修复边界
 
-工具候选的主要标题使用按检查顺序稳定编号的“调用 N”，并在可推导时显示观察到的工具名；内部 occurrence identity 只留在技术 locator。每个 matcher 行视觉显示 sealed state，颜色不再是唯一表达。叶子 matcher 在折叠态内联显示可用的 expected、observed 或 unavailable reason，展开后仍保留完整诊断事实。
+工具候选的主要标题使用按检查顺序稳定编号的“调用 N”，并在闭合诊断提供时显示观察到的工具名；内部 occurrence identity 只留在技术 locator。工具字段诊断保存有界 observed preview。每个 matcher 行视觉显示 sealed state，颜色不再是唯一表达。
+
+叶子 matcher 在折叠态内联显示可用的 expected、observed 或 unavailable reason。只有存在子节点或技术事实时才渲染可展开结构；没有额外内容的叶子保持静态。
 
 回归由 `docs/engineering/testing/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有。

@@ -334,7 +334,7 @@ table.niceeval-report,
 .niceeval-report .niceeval-cell-stack {
   display: inline-flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 4px 10px;
 }
 .niceeval-report .niceeval-cell-stack-item + .niceeval-cell-stack-item::before {
@@ -1618,7 +1618,7 @@ table.niceeval-report,
   display: flex;
   min-width: 0;
   align-items: baseline;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 7px;
   font: 12px/1.5 var(--font-mono);
   font-weight: 650;
@@ -1626,7 +1626,7 @@ table.niceeval-report,
 .niceeval-match-summary-main {
   display: flex;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 5px 10px;

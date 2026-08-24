@@ -5,7 +5,12 @@ import type { AttemptLocator } from "../../attempt-locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { MetricValue } from "../../analysis/index.ts";
-import { formatMetricScalar, missingText, verdictMark } from "../model/format.ts";
+import {
+  formatMetricScalar,
+  formatPlainNumber,
+  missingText,
+  verdictMark,
+} from "../model/format.ts";
 import { formatCostProjectionCellText, isCostMetricValue } from "../model/pricing.ts";
 import {
   DEFAULT_REPORT_LOCALE,
@@ -107,14 +112,55 @@ export interface TableContent {
 }
 
 /** 把 Cell 折成 text 面可见字符串(缺数据 / 不适用统一不补成 0)。 */
+function formatMetricCellText(
+  cell: Extract<Cell, { readonly kind: "metric" }>,
+  locale: ReportLocale,
+  coverageDetail = false,
+): string {
+  if (isCostMetricValue(cell.metric)) {
+    const closed = formatCostProjectionCellText(cell.metric, locale);
+    return closed.detail ? `${closed.text}\n  ${closed.detail}` : closed.text;
+  }
+  const display = formatMetricScalar(
+    cell.metric.value,
+    cell.metric.unit,
+    cell.metric.format,
+    locale,
+  );
+  if (cell.showCoverage === false) return display;
+  if (coverageDetail && cell.metric.value !== null && cell.metric.samples < cell.metric.total) {
+    return `${display}\n  ${localeText(locale, "cell.coverageDetail", {
+      samples: cell.metric.samples,
+      total: cell.metric.total,
+    })}`;
+  }
+  return `${display} · ${cell.metric.state}`;
+}
+
 export function formatCellText(cell: Cell | null | undefined, locale?: ReportLocale): string {
   if (cell == null) return "—";
   switch (cell.kind) {
-    case "stack":
-      return cell.cells
-        .map((entry) => formatCellText(entry, locale))
-        .filter((entry) => entry !== "—")
-        .join(" · ") || "—";
+    case "stack": {
+      const loc = locale ?? DEFAULT_REPORT_LOCALE;
+      const entries = cell.cells
+        .map((entry, index) =>
+          index === 0 && entry.kind === "metric"
+            ? formatMetricCellText(entry, loc, true)
+            : formatCellText(entry, locale))
+        .filter((entry) => entry !== "—");
+      if (entries.length === 0) return "—";
+      const primary: string[] = [];
+      const details: string[] = [];
+      for (const entry of entries) {
+        const [head, ...tail] = entry.split("\n");
+        if (head) primary.push(head);
+        details.push(...tail.map((line) => line.trimStart()).filter(Boolean));
+      }
+      const detail = details.length > 0
+        ? `\n${details.map((line) => `  ${line}`).join("\n")}`
+        : "";
+      return `${primary.join(" · ")}${detail}`;
+    }
     case "notApplicable":
       return "—";
     case "missing": {
@@ -133,7 +179,10 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       return `${cell.text}${more}`;
     }
     case "score": {
-      const score = cell.possible !== undefined ? `${cell.earned} / ${cell.possible}` : String(cell.earned);
+      const earned = formatPlainNumber(cell.earned);
+      const score = cell.possible !== undefined
+        ? `${earned} / ${formatPlainNumber(cell.possible)}`
+        : earned;
       if (cell.missedScoreItems === undefined) return score;
       const loc = locale ?? DEFAULT_REPORT_LOCALE;
       return `${score} · ${countText(loc, "experimentList.missedScoreItems", cell.missedScoreItems)}`;
@@ -156,25 +205,7 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       return "—";
     }
     case "metric": {
-      if (isCostMetricValue(cell.metric)) {
-        const closed = formatCostProjectionCellText(cell.metric, locale ?? DEFAULT_REPORT_LOCALE);
-        return closed.detail ? `${closed.text}\n  ${closed.detail}` : closed.text;
-      }
-      if (cell.showCoverage === false) {
-        return formatMetricScalar(
-          cell.metric.value,
-          cell.metric.unit,
-          cell.metric.format,
-          locale ?? DEFAULT_REPORT_LOCALE,
-        );
-      }
-      const display = formatMetricScalar(
-        cell.metric.value,
-        cell.metric.unit,
-        cell.metric.format,
-        locale ?? DEFAULT_REPORT_LOCALE,
-      );
-      return `${display} · ${cell.metric.state}`;
+      return formatMetricCellText(cell, locale ?? DEFAULT_REPORT_LOCALE);
     }
     default: {
       const _exhaustive: never = cell;
