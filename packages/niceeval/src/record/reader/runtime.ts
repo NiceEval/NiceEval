@@ -172,6 +172,13 @@ function exactMarker(value: unknown, key: string): unknown | undefined {
     : undefined;
 }
 
+function hasOwnMarker(value: unknown, key: string): boolean {
+  return typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function legacyEnvelopeRevision(
   value: unknown,
   owner: RecordAttachmentOwner,
@@ -363,6 +370,9 @@ export function readCurrentRecordAttachment<Definition extends AnyDefinition>(in
       const hydrated = hydrateRecordAttachmentCurrent(input.persistence.attachment, physical.payload, {
         content: (token, declaration) => {
           const key = exactMarker(token, "$niceeval.record.content");
+          if (key === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
+            return Either.right(undefined);
+          }
           const bytes = typeof key === "string" ? physical.contents.get(key) : undefined;
           if (bytes === undefined || declaration.maximumBytes !== undefined && bytes.byteLength > declaration.maximumBytes) {
             return Either.left({ code: "current-content-bind-failed" as const });
@@ -378,6 +388,9 @@ export function readCurrentRecordAttachment<Definition extends AnyDefinition>(in
         },
         reference: (token, declaration) => {
           const marker = exactMarker(token, "$niceeval.record.reference");
+          if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) {
+            return Either.right(undefined);
+          }
           if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
             return Either.left({ code: "current-reference-bind-failed" as const });
           }
