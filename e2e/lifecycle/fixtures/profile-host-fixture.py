@@ -392,16 +392,18 @@ def main() -> None:
     )
     remove = subparsers.add_parser("cleanup")
     remove.add_argument("--root", required=True)
+    reboot = subparsers.add_parser("prepare-reboot")
+    reboot.add_argument("--root", required=True)
     proxy = subparsers.add_parser("proxy-prepared-response")
     proxy.add_argument("--root", required=True)
     args = parser.parse_args()
     root = checked_root(args.root)
     if args.command == "setup":
         setup(args)
-    elif args.command == "cleanup":
+    elif args.command in ("cleanup", "prepare-reboot"):
         if os.geteuid() != 0:
             raise SystemExit("profile E2E host fixture cleanup requires root")
-        cleanup(root, remove_root=True)
+        cleanup(root, remove_root=args.command == "cleanup")
     else:
         proxy_prepared_response(root)
 

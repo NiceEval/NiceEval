@@ -186,6 +186,10 @@ async function fixtureHostFileExists(path: string): Promise<boolean> {
   return result.exitCode === 0;
 }
 
+async function readFixtureJson(path: string): Promise<JsonRecord> {
+  return JSON.parse(await readFixtureHostFile(path)) as JsonRecord;
+}
+
 async function setupPrefixLedgerEvents(path: string): Promise<readonly SetupPrefixLedgerEvent[]> {
   const raw = await readFixtureHostFile(path);
   return Object.freeze(raw.split(/\r?\n/u).flatMap((line): SetupPrefixLedgerEvent[] => {
@@ -1124,6 +1128,9 @@ test("Profile 在取消后回收 Host ownership，并为后续 Invocation 恢复
 
         const activationManifest = join(hostRoot, "journal/fixed-image-v1/activation.json");
         const activationDigest = join(hostRoot, "journal/fixed-image-v1/activation.sha256");
+        const activationGeneration = join(hostRoot, "journal/fixed-image-v1");
+        const currentPointer = join(activationGeneration, "current");
+        const initialEpoch = String((await readFixtureJson(currentPointer)).epoch);
         for (const [label, tamperPath, tamperScript] of [
           ["manifest", activationManifest,
             "import json,sys; p=sys.argv[1]; v=json.load(open(p)); v['epoch']='tampered'; open(p,'w').write(json.dumps(v)+'\\n')"],
@@ -1997,6 +2004,205 @@ exec node_modules/.bin/niceeval exp setup-prefix-cache --rerun all --json`,
             },
           );
         }
+
+        const administrativeArgv = (...mode: readonly string[]): readonly string[] => [
+          ...activationArgv,
+          ...mode,
+        ];
+        const runAdministrative = async (
+          label: string,
+          mode: readonly string[],
+          timeoutMs = 180_000,
+        ): Promise<string> => {
+          const receipt = await sudo.run(administrativeArgv(...mode), { timeoutMs });
+          expect(receipt.exitCode, `${label} failed\n${receipt.diagnostic()}`).toBe(0);
+          return receipt.stdout;
+        };
+        const committedEpoch = async (): Promise<string> =>
+          String((await readFixtureJson(currentPointer)).epoch);
+        const capsuleConfig = async (epoch: string): Promise<JsonRecord> =>
+          readFixtureJson(join(activationGeneration, "epochs", epoch, "config.json"));
+
+        await runAdministrative("first seed rotation", [
+          "--rotate-seeds",
+          "--prepare-store",
+          "--prepare-helper", join(scripts!, "prepare-loop-storage.sh"),
+        ]);
+        const firstRotatedEpoch = await committedEpoch();
+        expect(firstRotatedEpoch).not.toBe(initialEpoch);
+        const firstRotatedConfig = await capsuleConfig(firstRotatedEpoch);
+        expect(isRecord(firstRotatedConfig.storage)).toBe(true);
+        const firstRotatedOuter = String((firstRotatedConfig.storage as JsonRecord).outerImagePath);
+        expect(firstRotatedOuter).toContain(`/fixed-image-v1/rotation-epochs/${firstRotatedEpoch}/store.img`);
+
+        await runAdministrative("second seed rotation", [
+          "--rotate-seeds",
+          "--prepare-store",
+          "--prepare-helper", join(scripts!, "prepare-loop-storage.sh"),
+        ]);
+        const secondRotatedEpoch = await committedEpoch();
+        expect(secondRotatedEpoch).not.toBe(firstRotatedEpoch);
+
+        await runAdministrative("cold rollback to the original committed capsule", [
+          "--rollback-to", initialEpoch,
+        ]);
+        const rollbackEpoch = await committedEpoch();
+        expect(rollbackEpoch).not.toBe(initialEpoch);
+        const rollbackManifest = await readFixtureJson(activationManifest);
+        expect(rollbackManifest).toMatchObject({
+          epoch: rollbackEpoch,
+          previousEpoch: secondRotatedEpoch,
+          outerImagePath: String(((await capsuleConfig(initialEpoch)).storage as JsonRecord).outerImagePath),
+        });
+        const rolledBackDescriptor = await readFixtureJson(fixture.descriptor);
+        const originalDescriptor = await readFixtureJson(
+          join(activationGeneration, "epochs", initialEpoch, "descriptor.json"),
+        );
+        expect(rolledBackDescriptor).toEqual(originalDescriptor);
+
+        const statusBeforeRetire = JSON.parse(await runAdministrative(
+          "epoch status before retirement",
+          ["--status"],
+        )) as JsonRecord;
+        expect(statusBeforeRetire).toMatchObject({
+          schema: "niceeval-docker-profile-epoch-capacity/v1",
+          currentEpoch: rollbackEpoch,
+          activeSeedRemaining: expect.any(Number),
+          retainedEpochBytes: expect.any(Number),
+          retirableBytes: expect.any(Number),
+          reclaimableBytes: 0,
+          epochs: expect.arrayContaining([
+            expect.objectContaining({ epoch: firstRotatedEpoch, state: "retained" }),
+            expect.objectContaining({ epoch: secondRotatedEpoch, state: "previous" }),
+            expect.objectContaining({ epoch: rollbackEpoch, state: "current" }),
+          ]),
+        });
+
+        await runAdministrative("retire the old rotated epoch", ["--retire-epoch", firstRotatedEpoch]);
+        const tombstone = join(activationGeneration, "retired", `${firstRotatedEpoch}.json`);
+        expect(await readFixtureJson(tombstone)).toMatchObject({
+          schema: "niceeval-docker-profile-epoch-retirement/v1",
+          epoch: firstRotatedEpoch,
+          outerImagePath: firstRotatedOuter,
+          coldRollbackAvailable: false,
+        });
+
+        const reclaimDetachedSource = await docker.run(["create", nodeImage, "true"]);
+        expect(reclaimDetachedSource.exitCode, reclaimDetachedSource.diagnostic()).toBe(0);
+        const reclaimDetachedRef = `niceeval-epoch-reclaim-detached:${randomUUID()}`;
+        try {
+          const detached = await docker.run([
+            "commit",
+            "--change", `LABEL niceeval.profile-id=${fixture.profileId}`,
+            "--change", "LABEL niceeval.ownership-class=detached-cache/v1",
+            reclaimDetachedSource.stdout.trim(), reclaimDetachedRef,
+          ]);
+          expect(detached.exitCode, detached.diagnostic()).toBe(0);
+          const rejected = await sudo.run(administrativeArgv("--reclaim-epoch", firstRotatedEpoch), {
+            timeoutMs: 30_000,
+          });
+          expect(rejected.exitCode, `detached cache did not block reclaim\n${rejected.diagnostic()}`).not.toBe(0);
+          expect(rejected.stderr).toContain("detached-cache ownership references");
+        } finally {
+          expect((await docker.run(["rm", "--force", reclaimDetachedSource.stdout.trim()])).exitCode).toBe(0);
+          expect((await docker.run(["image", "rm", "--force", reclaimDetachedRef])).exitCode).toBe(0);
+        }
+
+        const journalPath = join(activationGeneration, "events.ndjson");
+        const journalBackup = `${journalPath}.reclaim-backup`;
+        expect((await sudo.run(["cp", "--archive", "--", journalPath, journalBackup])).exitCode).toBe(0);
+        try {
+          const injected = await sudo.run([
+            "python3", "-c",
+            "import json,sys; open(sys.argv[1],'a').write(json.dumps({'state':{'artifactEpoch':sys.argv[2]}})+'\\n')",
+            journalPath, firstRotatedEpoch,
+          ]);
+          expect(injected.exitCode, injected.diagnostic()).toBe(0);
+          const rejected = await sudo.run(administrativeArgv("--reclaim-epoch", firstRotatedEpoch), {
+            timeoutMs: 30_000,
+          });
+          expect(rejected.exitCode, `active artifact journal did not block reclaim\n${rejected.diagnostic()}`)
+            .not.toBe(0);
+          expect(rejected.stderr).toContain("active artifact or journal ownership references");
+        } finally {
+          expect((await sudo.run(["mv", "--force", "--", journalBackup, journalPath])).exitCode).toBe(0);
+        }
+
+        const extraCapsule = join(activationGeneration, "epochs", `reference-${randomUUID()}`);
+        expect((await sudo.run([
+          "cp", "--archive", "--",
+          join(activationGeneration, "epochs", firstRotatedEpoch), extraCapsule,
+        ])).exitCode).toBe(0);
+        try {
+          const rejected = await sudo.run(administrativeArgv("--reclaim-epoch", firstRotatedEpoch), {
+            timeoutMs: 30_000,
+          });
+          expect(rejected.exitCode, `retained capsule did not block reclaim\n${rejected.diagnostic()}`).not.toBe(0);
+          expect(rejected.stderr).toContain("another retained capsule references the retired backing");
+        } finally {
+          expect((await sudo.run([
+            "python3", "-c", "import shutil,sys; shutil.rmtree(sys.argv[1])", extraCapsule,
+          ])).exitCode).toBe(0);
+        }
+
+        const loop = await sudo.run(["losetup", "--find", "--show", firstRotatedOuter]);
+        expect(loop.exitCode, loop.diagnostic()).toBe(0);
+        try {
+          const rejected = await sudo.run(administrativeArgv("--reclaim-epoch", firstRotatedEpoch), {
+            timeoutMs: 30_000,
+          });
+          expect(rejected.exitCode, `loop reference did not block reclaim\n${rejected.diagnostic()}`).not.toBe(0);
+          expect(rejected.stderr).toContain("loop or mount reference");
+        } finally {
+          expect((await sudo.run(["losetup", "--detach", loop.stdout.trim()])).exitCode).toBe(0);
+        }
+
+        const processReady = join(hostRoot, "reclaim-process.ready");
+        await withProcess(
+          [
+            "sudo", "-n", "python3", "-c",
+            "import sys,time; f=open(sys.argv[1],'rb'); open(sys.argv[2],'w').write('ready'); time.sleep(60)",
+            firstRotatedOuter, processReady,
+          ],
+          { processGroup: true, timeoutMs: 15_000, graceMs: 2_000 },
+          async (holder) => {
+            await Promise.race([
+              pollUntil(() => fileExists(processReady), {
+                timeoutMs: 5_000, intervalMs: 50, label: "retired epoch process reference",
+              }),
+              holder.done.then((receipt) => {
+                throw new Error(`retired epoch process holder exited early\n${receipt.diagnostic()}`);
+              }),
+            ]);
+            const rejected = await sudo.run(administrativeArgv("--reclaim-epoch", firstRotatedEpoch), {
+              timeoutMs: 30_000,
+            });
+            expect(rejected.exitCode, `process reference did not block reclaim\n${rejected.diagnostic()}`).not.toBe(0);
+            expect(rejected.stderr).toContain("process ownership of retired epoch backing");
+          },
+        );
+
+        await runAdministrative("irreversible retired epoch reclaim", ["--reclaim-epoch", firstRotatedEpoch]);
+        const reclaimReceipt = join(
+          activationGeneration,
+          "reclaim",
+          `${firstRotatedEpoch}.receipt.json`,
+        );
+        expect(await readFixtureJson(reclaimReceipt)).toMatchObject({
+          schema: "niceeval-docker-profile-epoch-reclaim-receipt/v1",
+          epoch: firstRotatedEpoch,
+          outerImagePath: firstRotatedOuter,
+          coldRollbackAvailable: false,
+        });
+        expect(await fixtureHostFileExists(firstRotatedOuter)).toBe(false);
+        expect(await fixtureHostFileExists(
+          join(activationGeneration, "epochs", firstRotatedEpoch, "capsule.json"),
+        )).toBe(false);
+        const rollbackRejected = await sudo.run(
+          administrativeArgv("--rollback-to", firstRotatedEpoch),
+          { timeoutMs: 30_000 },
+        );
+        expect(rollbackRejected.exitCode, rollbackRejected.diagnostic()).not.toBe(0);
       } catch (error) {
         primaryError = error;
         throw error;
