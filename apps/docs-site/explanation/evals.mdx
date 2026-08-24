@@ -95,7 +95,7 @@ A pass-style Eval Attempt has exactly four terminal states:
 
 A score-style Eval's primary reading is its cumulative earned score; higher is better. A score of `0` is normal when there are no score items. The default report shows earned score and does not count normal closed states as pass rate.
 
-The `points` in `.score(points)` are the weight of one contribution, not a fixed total score. The default report does not automatically convert earned score into a percentage. When an Experiment contains both pass-style and score-style Evals, the report displays their primary readings separately.
+The `points` in `.score(points)` are the weight of one contribution, not a fixed total score. The default report does not automatically convert earned score into a percentage. Historical mixed Records created before homogeneous admission remain readable, with pass-style and score-style primary readings displayed separately.
 
 ## Verdicts and measurements
 

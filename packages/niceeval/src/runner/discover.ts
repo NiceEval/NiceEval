@@ -39,6 +39,7 @@ import type {
 } from "../types.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import { captureSourceClosure } from "./source-closure.ts";
+import { splitByEvaluationKind } from "./eval-selection.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
 
@@ -50,6 +51,7 @@ export type DiscoveryIssueCode =
   | "eval-group-member-unresolved"
   | "eval-group-member-overlap"
   | "eval-group-member-layer"
+  | "eval-group-evaluation-kind-mixed"
   | "discovery.invalid-dataset-key"
   | "discovery.source-capture-failed"
   | "discovery.leak-gate-failed";
@@ -704,6 +706,18 @@ export function discoverEvals(
       // `evals` is a closed set, not an author-defined business sequence. The
       // scheduler and fingerprint use the normalized Eval ID order everywhere.
       const evalIds = resolved.flatMap((matches) => matches.map((item) => item.id)).toSorted();
+      const evaluationKinds = splitByEvaluationKind(resolved.flatMap((matches) => matches.length === 1 ? matches : []));
+      if (evaluationKinds.pass.length > 0 && evaluationKinds.score.length > 0) {
+        issues.push({
+          file: label,
+          code: "eval-group-evaluation-kind-mixed",
+          message:
+            `Eval Group ${JSON.stringify(id)} contains both pass and score Evals. ` +
+            `pass (${evaluationKinds.pass.length}): ${evaluationKinds.pass.join(", ")}; ` +
+            `score (${evaluationKinds.score.length}): ${evaluationKinds.score.join(", ")}.`,
+          actions: ["Split the Eval Group into one pass Group and one score Group."],
+        });
+      }
       const groupSources = yield* Effect.tryPromise({
         try: async () => (await captureSourceClosure(file, { root, stopPaths: memberSourcePaths })).map(([path, content]) => [
           path,

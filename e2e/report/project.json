@@ -43,7 +43,7 @@
             "node",
             "scripts/run-native.mjs"
           ],
-          "timeoutMinutes": 3,
+          "timeoutMinutes": 5,
           "harness": {
             "testkit": true
           },

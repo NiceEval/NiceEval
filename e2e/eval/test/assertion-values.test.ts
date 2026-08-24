@@ -84,10 +84,13 @@ test("值 Match Eval 以 passed 终态完成", async () => {
         verdict: "passed",
       });
 
+      const outcomeRun = await niceeval.run(["exp", "assertion-match-outcomes", "--rerun", "all", "--json"]);
+      expect(outcomeRun.exitCode, outcomeRun.diagnostic()).toBe(0);
+      expect(outcomeRun.expReceipt(), outcomeRun.diagnostic()).toMatchObject({ completion: "completed" });
       const outcomes = only(
-        run.ndjson<ExpEvent>(),
+        outcomeRun.ndjson<ExpEvent>(),
         (event) => event.event === "eval" && event.evalId === "assertion-match-outcomes" && event.locator !== undefined,
-        run.diagnostic(),
+        outcomeRun.diagnostic(),
       );
       expect(outcomes).toMatchObject({ verdict: "passed" });
       const shown = await niceeval.run(["show", outcomes.locator!, "--json"]);
