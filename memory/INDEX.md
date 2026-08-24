@@ -310,6 +310,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ### 台账
 
 - 已修 [record-only-assertions-labeled-soft](record-only-assertions-labeled-soft.md) — Attempt 展开把未计分 Assertion 标成 `soft`，正常 `notCalledTool` 看不出这是已记录的零命中结果；改为 `recorded passed/failed/unavailable`，并由浏览器 E2E 守住零命中与决定性见证
+- 已修 [report-match-details-obscure-score-and-collection](report-match-details-obscure-score-and-collection.md) — Attempt Match 详情把计分 mismatch 写成 `soft failed` 并省略 weight／measurement，generic collection 又摊平元素边界；修复由 Report 浏览器 Journey 验收
 - 已修 [commandsucceeded-received-excerpt-not-tail](commandsucceeded-received-excerpt-not-tail.md) — commandSucceeded 失败摘录曾落在输出中段:合并顺序(stdout 前置让 stderr 装包噪声占末尾)+ 摘录窗口宽过终端行预算被从头收口,双因叠加;修为 stderr 在前合并 + 76 字符窗口(src/context/context.ts),合并顺序钉进 display.md;同批裁决 commands.json 落盘不截
 - 已修 [show-locator-scoped-to-current-sample](show-locator-scoped-to-current-sample.md) — `show @<locator>` 曾在 resolveLocator 之后拿 `currentSample().attempts`(现刻水位,同 evalId 只留最新)二次筛,`--history` 印出的历史 attempt 一律报「outside the selected record scope」这第四种失败,违反「作用域是一个记录根」契约;修为删掉二次筛(src/show/index.ts),身份直达不复核范围
 - [show-json-pipe-truncated-at-128k](show-json-pipe-truncated-at-128k.md) — 发现(未修):`show --json` 管进下游只出恰好 128KB,重定向文件完整;疑为 stdout 为 pipe 时异步写未 flush 即 `process.exit`;症状呈现为下游「JSON 语法错误」,极易误怪解析脚本(2026-07-30 MemoryBench 真机)

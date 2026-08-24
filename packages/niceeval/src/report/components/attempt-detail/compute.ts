@@ -9,6 +9,7 @@ import type {
   AttemptEvidenceDomainDetail,
   ClosedCommandEntry,
   ClosedAssertionLimitation,
+  ClosedAssertionDecision,
   ClosedAssertionSourceSite,
   ClosedAssertionFactValue,
   ClosedCommandsDetail,
@@ -86,8 +87,10 @@ export interface AttemptScoreView {
 export interface AttemptAssertionView {
   readonly entryId: string;
   readonly name: string;
-  /** 展示角色:失败 gate、未计分 recorded、其余带分 soft。 */
-  readonly severity: "gate" | "recorded" | "soft";
+  /** 展示角色:失败 gate、未计分 recorded、其余带分 scored。 */
+  readonly severity: "gate" | "recorded" | "scored";
+  /** 保留 sealed result，避免 scored mismatch 被改写成笼统的 failed。 */
+  readonly result: ClosedAssertionDecision["result"];
   readonly outcome: "passed" | "failed" | "unavailable";
   readonly groupPath: readonly string[];
   /** Table 等紧凑读面的中立判定摘要。 */
@@ -390,7 +393,7 @@ function assertionOutcomeOf(entry: SealedAssertionEntryView): AttemptAssertionVi
 
 function assertionSeverityOf(entry: SealedAssertionEntryView): AttemptAssertionView["severity"] {
   if (entry.decision.gate === "failed" || entry.decision.gate === "unavailable") return "gate";
-  return entry.decision.contribution.state === "not-scored" ? "recorded" : "soft";
+  return entry.decision.contribution.state === "not-scored" ? "recorded" : "scored";
 }
 
 function scoreOf(entry: SealedAssertionEntryView): AttemptScoreView | undefined {
@@ -510,6 +513,7 @@ export function assertionViewOf(entry: SealedAssertionEntryView): AttemptAsserti
     entryId: entry.entryId,
     name: assertionNameOf(entry),
     severity: assertionSeverityOf(entry),
+    result: entry.decision.result,
     outcome: assertionOutcomeOf(entry),
     groupPath: entry.display.groupPath,
     detail: assertionDetailOf(entry),

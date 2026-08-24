@@ -80,6 +80,7 @@ test("静态站与 view 只交付 SPA shell；普通页面使用 hash 和 fragme
   );
 });
 
+// regression: memory/report-match-details-obscure-score-and-collection.md
 test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 overlay", async ({ browser }) => {
   test.setTimeout(180_000);
   await reportE2E.case(
@@ -248,6 +249,47 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         await expect(dialog.getByText("pnpm test", { exact: true })).toBeVisible();
         await expect(dialog.getByText("Exit code 0", { exact: true })).toBeVisible();
         await expect(dialog.getByText("PASS src/example.test.ts", { exact: true })).not.toBeVisible();
+
+        await page.goto(origin!);
+        const scoredExperiment = page.locator("summary").filter({ hasText: /^classic\/incompatible \(1\/1\)/ }).first();
+        if (await scoredExperiment.locator("xpath=..").getAttribute("open") === null) await scoredExperiment.click();
+        const scoreEval = scoredExperiment.locator("xpath=..").locator("summary").filter({ hasText: /^score/ }).first();
+        if (await scoreEval.locator("xpath=..").getAttribute("open") === null) await scoreEval.click();
+        const scoredAttemptHref = await scoreEval.locator("xpath=..").locator('a[href^="#/attempt/"]').first().getAttribute("href");
+        expect(scoredAttemptHref).toMatch(/^#\/attempt\//);
+        await page.goto(new URL(scoredAttemptHref!, origin!).href);
+        await expect(dialog).toBeVisible({ timeout: 10_000 });
+
+        const zeroScoreLine = dialog.locator("summary").filter({ hasText: 'includes("never-present")' }).first();
+        if (await zeroScoreLine.locator("xpath=..").getAttribute("open") === null) await zeroScoreLine.click();
+        await expect(dialog.getByText(
+          "Mismatched Boolean contributes zero · mismatched · weight 5 pts · earned 0 pts",
+          { exact: true },
+        )).toBeVisible();
+
+        const measurementLine = dialog.locator("summary").filter({ hasText: "defineScoreMatch({" }).first();
+        await measurementLine.click();
+        await expect(dialog.getByText(
+          "Measurement contributes three points · matched · weight 4 pts · earned 3 pts",
+          { exact: true },
+        ).filter({ visible: true })).toBeVisible();
+        const measurementMatcher = dialog.getByLabel("rubric measurement: matched").filter({ visible: true });
+        await measurementMatcher.click();
+        const measurement = measurementMatcher.locator("xpath=..");
+        await expect(measurement.getByText("0.75", { exact: true })).toBeVisible();
+        await expect(measurement.getByText("≥ 0.5", { exact: true })).toBeVisible();
+
+        const collectionLine = dialog.locator("summary").filter({ hasText: "t.check(" }).last();
+        await collectionLine.click();
+        const collectionMatcher = dialog.getByLabel("satisfies(subagent lifecycle exists): matched").filter({ visible: true });
+        await collectionMatcher.click();
+        const collection = collectionMatcher.locator("xpath=..");
+        const collectionSummary = collection.getByText("Array(2)", { exact: true }).filter({ visible: true });
+        await expect(collectionSummary).toBeVisible();
+        const collectionItem = collection.getByText('"preview-reviewer"', { exact: true }).filter({ visible: true });
+        await expect(collectionItem).toHaveCount(0);
+        await collectionSummary.click();
+        await expect(collectionItem).toBeVisible();
 
       } finally {
         await page.close();

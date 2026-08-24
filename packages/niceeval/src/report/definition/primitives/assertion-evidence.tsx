@@ -156,6 +156,10 @@ function semanticExpected(expected: ClosedAssertionFactValue): ClosedAssertionFa
   return kind === undefined ? expected : undefined;
 }
 
+function semanticObserved(observed: ClosedAssertionFactValue): ClosedAssertionFactValue | undefined {
+  return field(observed, "value");
+}
+
 function LongString({ value, locale, quoted }: {
   readonly value: string;
   readonly locale: string;
@@ -203,9 +207,12 @@ function Value({ value, locale }: {
       );
     case "list":
       return (
-        <ul className="niceeval-assertion-evidence-list">
-          {value.items.map((item, index) => <li key={index}><Value value={item} locale={locale} /></li>)}
-        </ul>
+        <details className="niceeval-assertion-evidence-collection">
+          <summary><code>{`Array(${value.items.length})`}</code></summary>
+          <ol className="niceeval-assertion-evidence-list">
+            {value.items.map((item, index) => <li key={index}><Value value={item} locale={locale} /></li>)}
+          </ol>
+        </details>
       );
   }
 }
@@ -328,7 +335,7 @@ function GenericEvidence({ content, input, diagnostic, locale }: {
     ? semanticExpected(content.expected)
     : { kind: "text" as const, text: diagnostic.expected };
   const received = diagnostic?.received === undefined
-    ? undefined
+    ? semanticObserved(content.observed)
     : { kind: "text" as const, text: diagnostic.received };
   return (
     <div className="niceeval-match-evidence-grid">

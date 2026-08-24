@@ -1733,6 +1733,33 @@ table.niceeval-report,
 .niceeval-assertion-evidence-long-value > .niceeval-assertion-evidence-code {
   border: 0;
 }
+.niceeval-assertion-evidence-collection {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel), black 8%);
+}
+.niceeval-assertion-evidence-collection > summary {
+  padding: 8px 10px;
+  color: var(--soft);
+  cursor: pointer;
+  font: 11px/1.5 var(--font-mono);
+}
+.niceeval-assertion-evidence-collection[open] > summary { border-bottom: 1px solid var(--line); }
+.niceeval-assertion-evidence-collection > .niceeval-assertion-evidence-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px 10px 10px 34px;
+}
+.niceeval-assertion-evidence-collection > .niceeval-assertion-evidence-list > li {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.niceeval-assertion-evidence-collection > .niceeval-assertion-evidence-list > li::marker {
+  color: var(--soft);
+  font: 10px/1.5 var(--font-mono);
+}
 .niceeval-assertion-evidence-state {
   display: flex;
   flex-wrap: wrap;
