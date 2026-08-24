@@ -2,7 +2,13 @@
 
 import type { ReactElement } from "react";
 import type { ClosedAssertionFactValue } from "../../../analysis/index.ts";
+import type { ReportLocale } from "../../model/locale.ts";
 import { defineComponent } from "../tree.ts";
+import {
+  MatcherFilterDebugger,
+  matcherFilterDebuggerText,
+  type MatcherFilterDebuggerContent,
+} from "./matcher-filter-debugger.tsx";
 
 export interface AssertionEvidenceContent {
   readonly source: ClosedAssertionFactValue;
@@ -10,6 +16,7 @@ export interface AssertionEvidenceContent {
   readonly observed: ClosedAssertionFactValue;
   readonly expected: ClosedAssertionFactValue;
   readonly explanation: ClosedAssertionFactValue;
+  readonly matcherDebugger?: MatcherFilterDebuggerContent;
 }
 
 type MatchState = "matched" | "mismatched" | "unavailable";
@@ -533,7 +540,7 @@ function MatchNode({
 
 function web(
   content: AssertionEvidenceContent,
-  locale: string,
+  locale: ReportLocale,
   labelText: string | undefined,
   state: MatchState,
 ): ReactElement {
@@ -550,7 +557,9 @@ function web(
     <div className="niceeval-assertion-evidence">
       <MatchNode label={name} state={state} diagnostic={diagnostic} locale={locale} root>
         <div className="niceeval-match-body">
-          {primary}
+          {content.matcherDebugger === undefined
+            ? primary
+            : <MatcherFilterDebugger content={content.matcherDebugger} locale={locale} />}
           <CoverageNotice source={content.source} locale={locale} />
           <details className="niceeval-match-raw">
             <summary>{label(locale, "Raw assertion data", "原始断言数据")}</summary>
@@ -579,6 +588,9 @@ export const AssertionEvidence = defineComponent<{
       `Observed: ${valueText(content.observed)}`,
       `Expected: ${valueText(content.expected)}`,
       `Explanation: ${valueText(content.explanation)}`,
+      ...(content.matcherDebugger === undefined
+        ? []
+        : [`Matcher filter:\n${matcherFilterDebuggerText(content.matcherDebugger)}`]),
     ].join("\n");
   },
   web({ content, label: labelText, state }, ctx) {

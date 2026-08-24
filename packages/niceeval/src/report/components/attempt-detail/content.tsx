@@ -284,18 +284,20 @@ function jsonPreview(value: string | undefined): string {
 }
 
 function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry {
+  const target = reply.anchor === undefined ? {} : { anchor: reply.anchor };
   switch (reply.kind) {
     case "assistant":
     case "user":
     case "thinking":
     case "error":
-      return { kind: reply.kind, preview: reply.text, failed: reply.kind === "error" };
+      return { ...target, kind: reply.kind, preview: reply.text, failed: reply.kind === "error" };
     case "context":
-      return { kind: "context", preview: reply.text };
+      return { ...target, kind: "context", preview: reply.text };
     case "tool": {
       const finished = reply.outputSummary !== undefined;
       const raw = finished ? reply.outputSummary : reply.inputSummary;
       return {
+        ...target,
         kind: "tool",
         preview: finished
           ? `${reply.name} result`
@@ -319,15 +321,17 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
     }
     case "subagent":
       return {
+        ...target,
         kind: "subagent",
         preview: reply.name,
         ...(reply.failed === true ? { failed: true } : {}),
         ...(reply.summary ? { detail: <Text>{reply.summary}</Text> } : {}),
       };
     case "skill":
-      return { kind: "skill", preview: reply.text ? `${reply.skill}: ${reply.text}` : reply.skill };
+      return { ...target, kind: "skill", preview: reply.text ? `${reply.skill}: ${reply.text}` : reply.skill };
     case "input":
       return {
+        ...target,
         kind: "input",
         preview: `${reply.request.state} · ${reply.request.promptSummary}`,
         ...(reply.request.responseSummary !== null
@@ -335,7 +339,7 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
           : {}),
       };
     case "compaction":
-      return { kind: "compaction", preview: reply.text || "context compacted" };
+      return { ...target, kind: "compaction", preview: reply.text || "context compacted" };
   }
 }
 
