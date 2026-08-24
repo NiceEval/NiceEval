@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # `--json`：让 coding agent 跑、查、改、复验
 
 coding agent 不需要解读 TTY 重绘。

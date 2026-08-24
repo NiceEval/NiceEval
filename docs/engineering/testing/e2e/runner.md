@@ -22,10 +22,14 @@
 | [`#runner-shared-state-startup-authority`](#runner-shared-state-startup-authority) | 启动遗留 teardown 先取得同 key authority，健康等待不泄露 token | Journey E2E | `e2e/runner/test/shared-state-startup-authority.test.ts` | PR |
 | [`#runner-fresh-sandbox-provider-stop`](#runner-fresh-sandbox-provider-stop) | fresh custom Provider 的 group stop 失败保留 sharedState，公开输出不泄露 token | Journey E2E | `e2e/runner/test/fresh-sandbox-provider-stop.test.ts` | PR |
 | [`#runner-shared-state-recovery`](#runner-shared-state-recovery) | 暂停、崩溃或 cleanup 失败的 sharedState 只会等待或显式恢复，旧 owner 不会影响新 holder | Journey E2E | `e2e/runner/test/shared-state-recovery.test.ts` | PR |
+| [`#runner-shared-state-zombie-owner-recovery`](#runner-shared-state-zombie-owner-recovery) | Linux zombie owner 不会阻止新 sharedState holder 通过公开恢复流程取得状态 | Journey E2E | `e2e/runner/test/shared-state-zombie-owner-recovery.test.ts` | PR |
 
 ## 验收命题
 
 ### runner-carry-partial-reuse
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [修改评测源码](../../../feature/experiments/use-case/缓存与沿用/修改评测源码.md)
 
 在私有项目副本中只改变一个 Eval 源码。选中该 Eval 的 dry plan 必须标为重新派发；执行后，全量 dry plan 与真实 dispatch 必须只携带更新后的该 Eval 和从未变化的另一 Eval。该命题排除“一个改动作废全矩阵”与“改动仍误携带”的两种错误。
 
@@ -34,11 +38,17 @@
 
 ### runner-history-dedup
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [并行Invocation协作](../../../feature/experiments/use-case/并发/并行Invocation协作.md)
+
 同一 Eval 的两次 `--rerun all` 必须形成两条不同的 origin Attempt identity。之后默认 carry 不能复制新的公开 Attempt locator。不带 locator 或 `--run` 的 `show` 必须列出全部身份仍匹配的 Run，包括两次 origin Run 与 carry Run。
 
 两个终端同时运行同一个实验时，后开始的命令会等前一个命令完成发布。它随后直接使用前一个命令已经完成的题目结果，不会再次调用 agent、sandbox 或 judge 去跑同一题目。
 
 ### runner-generic-timing
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [experiments](../../../feature/experiments/README.md)
 
 确定性 Direct Agent 真实执行一次 `setup` 与一次 `send`。owner 从安装后 CLI 运行 `timing` Experiment，
 再对其唯一 Attempt 执行 `niceeval show @<locator> --timing --json`。
@@ -54,13 +64,22 @@ Experiment receipt 的唯一 Run；不能从额外 entry 中宽松挑一项继�
 
 ### runner-group-or-stop-dispatch
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [快慢实验混跑](../../../feature/experiments/use-case/并发/快慢实验混跑.md)
+
 两个 Group 的首条 Eval 以 `.orStop()` 失败时，后继成员仍须与第三个 Group 的 in-flight 成员并行进入 Agent。该 Journey 守护失败只结束当前 Eval、不同 Group lane 继续派发；排查经过见 [`memory/group-or-stop-dispatch-starvation.md`](../../../../memory/group-or-stop-dispatch-starvation.md)。
 
 ### runner-group-wave-gap-dispatch
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [快慢实验混跑](../../../feature/experiments/use-case/并发/快慢实验混跑.md)
+
 三个 Group 各自拥有三条串行 Eval。gamma 首槽在 Agent 内等待 alpha 与 beta 的第三槽到达；若调度器要求第二 wave 的所有 lane 都先取得并发位，gamma 第二槽会被自身 predecessor 挡住，alpha 与 beta 第三槽也会被第二轮统一准入挡住。正确实现只对所有 lane 的首槽做一次公平屏障，九条 Eval 全部通过。
 
 ### runner-max-concurrency-invocation-local
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [并行Invocation协作](../../../feature/experiments/use-case/并发/并行Invocation协作.md)
 
 第一条 Invocation 以三条会阻塞的 Eval 填满同一 Experiment 的较大 `maxConcurrency`。它们仍持有全部本次额度时，第二条
 Invocation 的单条检查 Eval 必须立即进入 Agent 并通过。
@@ -69,6 +88,9 @@ Invocation 的单条检查 Eval 必须立即进入 Agent 并通过。
 Invocation-local：它不会被另一条 Invocation 消耗、共享或收紧。
 
 ### runner-accept-reanchor
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [experiments](../../../feature/experiments/README.md)
 
 在私有项目副本中完整运行初始 Experiment，并从公开执行输出取得 locator。随后修改 Eval 入口或被导入源码模块。
 
@@ -91,6 +113,9 @@ Runner Repo 增加专用 Eval；完整 fingerprint 等价类仍不在 E2E 重复
 
 ### runner-shared-state-lifecycle
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [串行保护共享状态](../../../feature/experiments/use-case/并发/串行保护共享状态.md)
+
 两个不同 Experiment 声明相同 `sharedState.key`，并在各自 Experiment hook 中独占同一份外部状态。第一个 Run 从 setup
 到 teardown 尚未结束时，第二个 Run 不得进入自己的 setup；前者 teardown 完成后，后者才可取得该状态并完整运行。
 
@@ -102,6 +127,9 @@ lifecycle/finalizer scope barrier 与 Experiment teardown barrier 都阻止第�
 
 ### runner-provider-lane
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [串行保护共享状态](../../../feature/experiments/use-case/并发/串行保护共享状态.md)
+
 等待同 key 的 Experiment 即使使用同一条 exclusive Provider lane，也不占用那条 lane。另一个不依赖该 key 的
 Experiment 必须能先进入自己的 Sandbox 与 Agent body；Provider 的实际 Sandbox / Agent body 仍按 lane 串行。
 该 owner 使用仅测试的 custom exclusive Provider，并把 `HOME`、`CODEX_HOME` 与 `TMPDIR` 固定在 case 的隔离项目副本内；
@@ -109,17 +137,29 @@ Experiment 必须能先进入自己的 Sandbox 与 Agent body；Provider 的实�
 
 ### runner-shared-state-scheduler
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [串行保护共享状态](../../../feature/experiments/use-case/并发/串行保护共享状态.md)
+
 同一 Invocation 选择两个共享同 key 的 Experiment，各自至少三条 Attempt，并以 `--max-concurrency 2` 执行。holder 的第一条 Attempt 在 public Agent boundary 等待自己的第二条；同 key waiter 不得占用有限 dispatch worker，故 holder successor 必须先启动，整次 Invocation 随后完整结束。
 
 ### runner-shared-state-startup-authority
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [恢复中断运行](../../../feature/experiments/use-case/并发/恢复中断运行.md)
 
 强杀留下 teardown registration 与 active sharedState generation 后，下一条 Invocation 的启动自愈必须先等待同 key authority，不能抢先执行旧 teardown。公开 inspection 是 owner token 的唯一可见面；重启命令的健康 `state-lease-waiting` info 与 durable Run diagnostic 都不含 token。这个 owner 还验证 full-carry / zero-Attempt 的 selected Experiment：它也必须等待该安全边界，不能因没有 dispatch fiber 跳过。
 
 ### runner-fresh-sandbox-provider-stop
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [恢复中断运行](../../../feature/experiments/use-case/并发/恢复中断运行.md)
+
 未启用 `sandboxReuse` 的 fresh custom Provider 让真实 `group.stop` 确定性失败。失败必须进入 Experiment cleanup 判定并保留 sharedState，后续同 key waiter 继续等待；只有公开 explicit recovery 成功后才可进入 setup。普通 CLI 输出和 `show --json` 的 Run diagnostic 都不能泄露 inspection 才显示的 owner token。
 
 ### runner-shared-state-recovery
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [恢复中断运行](../../../feature/experiments/use-case/并发/恢复中断运行.md)
 
 暂停 owner 超过旧 heartbeat expiry 语义后仍持有 lease；等待方既不 setup 也不派发 Attempt，SIGINT 能及时取消，恢复 owner
 并完成 lifecycle 后下一位才进入。Journey 还只经 public `exp --teardown --recover-shared-state` inspection 验证活跃 owner
@@ -133,6 +173,13 @@ free generation 后新 holder 可进入，而旧 token 再次 recovery 失败，
 Experiment teardown 失败，验证 lease 留存而不是 CLI exit sweep 删除。没有声明 teardown 的 target 则在进入 recovery
 generation 前被拒绝，后续同 key waiter 仍不能 setup；`--json` 的 explicit recovery 参数组合也会非零拒绝。根帮助与
 `exp help` 都列出完整四参数恢复用法，避免机器调用方误把人读 stderr 当成 NDJSON。
+
+### runner-shared-state-zombie-owner-recovery
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [恢复中断运行](../../../feature/experiments/use-case/并发/恢复中断运行.md)
+
+Linux 上失去可执行进程的 zombie owner 会通过公开 recovery 交接 sharedState；新 holder 不会被无法继续运行的旧 owner 无限阻塞。
 
 ## 边界
 

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # CI 门禁:退出码、JUnit 与人读日志
 
 ## 解决什么问题

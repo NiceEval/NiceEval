@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # MemoryBench：分组复用记忆条件与 Git seed
 
 契约单源见 [Library](../library.md)、[Architecture](../architecture.md) 与

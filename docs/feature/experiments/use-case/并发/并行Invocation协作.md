@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 并行 Invocation 追加同一 Record
 
 ## 解决什么问题

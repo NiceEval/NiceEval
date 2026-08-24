@@ -1,17 +1,10 @@
-import {
-  closeSync,
-  existsSync,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
+
 import { Effect, Either } from "effect";
+
+import { parseRepoRef, validateRepoRefTarget, type RepoRef, type ValidatedRepoRefTarget } from "../docs/trace/ref.js";
+import type { DocsNodeKind, TraceSnapshot } from "../docs/trace/model.js";
 import { decodeMemoryDocument, encodeMemoryDocument } from "./codec.js";
 import {
   LegacyMemoryReadOnly,
@@ -22,9 +15,10 @@ import {
   MemoryReferenceConflict,
   type MemoryError,
 } from "./errors.js";
-import type { MemoryDocument, MemoryV1, ProblemResolution, Promotion } from "./schema.js";
-import { promoteMemory, reopenProblem, resolveProblem, supersedeMemory } from "./state.js";
+import type { MemoryDocument, MemoryV1, ProblemResolution, PromotionKind } from "./schema.js";
+import { promoteMemory, reopenProblem, resolveProblem, retirePromotion, supersedeMemory } from "./state.js";
 
+const PROMOTION_KINDS = ["roadmap", "feature", "use-case", "engineering"] as const satisfies readonly DocsNodeKind[];
 const message = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
 export interface MemoryCheckReceipt { readonly ok: boolean; readonly checked: number; readonly legacy: number; readonly findings: readonly string[] }
 
@@ -33,7 +27,10 @@ export class MemoryRepository {
   readonly #directory: string;
 
   constructor(root = process.cwd()) { this.#root = resolve(root); this.#directory = join(this.#root, "memory"); }
-  #path(id: string): string { return join(this.#directory, `${id}.md`); }
+  get root(): string { return this.#root; }
+  ownerPath(id: string): string { this.#guardId(id); return `memory/${id}.md`; }
+  absoluteOwnerPath(id: string): string { return join(this.#root, this.ownerPath(id)); }
+
   #guardId(id: string): void {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u.test(id) || id === "INDEX") {
       throw new MemoryContentInvalid({ operation: "resolve id", message: `unsafe Memory id ${JSON.stringify(id)}` });
@@ -50,7 +47,8 @@ export class MemoryRepository {
   }
 
   read(id: string): MemoryDocument {
-    this.#guardId(id); const path = this.#path(id);
+    this.#guardId(id);
+    const path = this.absoluteOwnerPath(id);
     if (!existsSync(path)) throw new MemoryFileMissing({ operation: "read", path: relative(this.#root, path), message: "not found" });
     try { return decodeMemoryDocument(relative(this.#root, path), id, readFileSync(path, "utf8")); }
     catch (cause) {
@@ -59,83 +57,141 @@ export class MemoryRepository {
     }
   }
 
-  create(metadata: MemoryV1, body: string, dryRun = false): MemoryV1 {
-    this.#guardId(metadata.id); mkdirSync(this.#directory, { recursive: true });
-    const path = this.#path(metadata.id);
-    if (existsSync(path)) throw new MemoryReferenceConflict({ operation: "add", path: relative(this.#root, path), message: "Memory already exists" });
-    if (dryRun) return metadata;
-    const temporary = `${path}.${process.pid}.tmp`;
-    try { this.#writeDurable(temporary, encodeMemoryDocument(metadata, body)); renameSync(temporary, path); }
-    catch (cause) {
-      rmSync(temporary, { force: true });
-      if (cause instanceof MemoryReferenceConflict) throw cause;
-      throw new MemoryIoError({ operation: "add", path: relative(this.#root, path), message: message(cause) });
-    }
-    return metadata;
+  planCreate(metadata: MemoryV1, body: string): { readonly bytes: string; readonly metadata: MemoryV1 } {
+    this.#guardId(metadata.id);
+    if (metadata.promotions.length > 0) throw new MemoryReferenceConflict({ operation: "add", message: "memory add requires promotions=[]" });
+    const initial = metadata.kind.type === "problem"
+      ? metadata.kind.state === "open" && metadata.kind.resolution === undefined
+      : metadata.kind.type === "decision"
+      ? metadata.kind.state === "adopted" && metadata.kind.supersededBy === undefined
+      : metadata.kind.state === "current" && metadata.kind.supersededBy === undefined;
+    if (!initial) throw new MemoryReferenceConflict({
+      operation: "add",
+      message: "new Memory must start problem/open, decision/adopted, or insight/current without terminal-state metadata",
+    });
+    if (existsSync(this.absoluteOwnerPath(metadata.id))) throw new MemoryReferenceConflict({ operation: "add", path: this.ownerPath(metadata.id), message: "Memory already exists" });
+    return { bytes: encodeMemoryDocument(metadata, body), metadata };
   }
 
-  update(
+  planTransition(
     id: string,
+    source: string | undefined,
     transition: (value: MemoryV1) => Either.Either<MemoryV1, MemoryReferenceConflict>,
-    dryRun = false,
-  ): MemoryV1 {
-    const apply = (): MemoryV1 => {
-      const document = this.read(id);
-      if ("legacy" in document) throw new LegacyMemoryReadOnly({
-        operation: "mutate", path: relative(this.#root, this.#path(id)),
-        message: "legacy Memory is read-only; convert it explicitly while preserving its body",
-      });
-      const result = transition(document.metadata);
-      if (Either.isLeft(result)) throw result.left;
-      if (!dryRun) this.#replace(this.#path(id), encodeMemoryDocument(result.right, document.body));
-      return result.right;
-    };
-    if (dryRun) return apply();
-    let updated: MemoryV1 | undefined;
-    this.#withLock(id, () => { updated = apply(); });
-    if (updated === undefined) throw new MemoryIoError({ operation: "update", message: "transition produced no result" });
-    return updated;
+  ): { readonly bytes: string; readonly metadata: MemoryV1 } {
+    if (source === undefined) throw new MemoryFileMissing({ operation: "mutate", path: this.ownerPath(id), message: "not found" });
+    const document = decodeMemoryDocument(this.ownerPath(id), id, source);
+    if ("legacy" in document) throw new LegacyMemoryReadOnly({
+      operation: "mutate",
+      path: this.ownerPath(id),
+      message: "legacy Memory is read-only; convert it explicitly while preserving its body",
+    });
+    if (document.metadata.id !== id) throw new MemoryContentInvalid({ operation: "mutate", path: this.ownerPath(id), message: "filename and metadata IDs disagree" });
+    const result = transition(document.metadata);
+    if (Either.isLeft(result)) throw result.left;
+    return { bytes: encodeMemoryDocument(result.right, document.body), metadata: result.right };
   }
 
-  resolve(id: string, resolution: ProblemResolution, dryRun = false): MemoryV1 {
-    return this.update(id, (value) => resolveProblem(value, resolution), dryRun);
+  planResolve(id: string, source: string | undefined, resolution: ProblemResolution, regressionOwners: readonly string[] = []) {
+    const planned = this.planTransition(id, source, (value) => resolveProblem(value, resolution));
+    if (resolution.kind === "fixed" && regressionOwners.length === 0) throw new MemoryReferenceConflict({
+      operation: "resolve",
+      path: this.ownerPath(id),
+      message: "fixed resolution requires a canonical E2E `regression: memory/...` owner",
+    });
+    return planned;
   }
-  reopen(id: string, dryRun = false): MemoryV1 { return this.update(id, reopenProblem, dryRun); }
-  supersede(id: string, replacementId: string, dryRun = false): MemoryV1 {
-    const replacement = this.read(replacementId);
-    if ("legacy" in replacement) throw new LegacyMemoryReadOnly({ operation: "supersede", message: "replacement must be structured Memory" });
-    return this.update(id, (value) => supersedeMemory(value, replacement.metadata), dryRun);
+  planReopen(id: string, source: string | undefined, commit: string) {
+    if (source === undefined) throw new MemoryFileMissing({ operation: "reopen", path: this.ownerPath(id), message: "not found" });
+    const document = decodeMemoryDocument(this.ownerPath(id), id, source);
+    if ("legacy" in document) throw new LegacyMemoryReadOnly({
+      operation: "reopen",
+      path: this.ownerPath(id),
+      message: "legacy Memory is read-only; convert it explicitly while preserving its body",
+    });
+    if (document.metadata.id !== id) throw new MemoryContentInvalid({ operation: "reopen", path: this.ownerPath(id), message: "filename and metadata IDs disagree" });
+    const previous = document.metadata.kind;
+    const changed = reopenProblem(document.metadata);
+    if (Either.isLeft(changed)) throw changed.left;
+    if (previous.type !== "problem" || previous.resolution === undefined) {
+      throw new MemoryReferenceConflict({ operation: "reopen", message: "resolved Problem has no resolution to preserve" });
+    }
+    const heading = "## Resolution history";
+    const entry = [
+      `### Reopened at \`${commit}\``,
+      "",
+      "```json",
+      JSON.stringify(previous.resolution, null, 2),
+      "```",
+    ].join("\n");
+    const body = document.body.includes(heading)
+      ? `${document.body.trimEnd()}\n\n${entry}\n`
+      : `${document.body.trimEnd()}\n\n${heading}\n\n<!-- niceeval.memory-resolution-history/v1 -->\n\n${entry}\n`;
+    return { bytes: encodeMemoryDocument(changed.right, body), metadata: changed.right };
   }
-  promote(id: string, promotion: Promotion, commit: string, dryRun = false): MemoryV1 {
-    return this.update(id, (value) => promoteMemory(value, promotion, commit), dryRun);
+  planSupersede(id: string, source: string | undefined, replacement: MemoryV1, commit: string) {
+    return this.planTransition(id, source, (value) => supersedeMemory(value, replacement, commit));
+  }
+  planPromote(id: string, source: string | undefined, kind: PromotionKind, target: RepoRef) {
+    return this.planTransition(id, source, (value) => promoteMemory(value, kind, target));
+  }
+  planRetire(id: string, source: string | undefined, kind: PromotionKind, target: RepoRef, commit: string) {
+    return this.planTransition(id, source, (value) => retirePromotion(value, kind, target, commit));
+  }
+
+  targetSource(target: unknown): { readonly path: string; readonly absolutePath: string; readonly source: string } {
+    const parsed = parseRepoRef(target);
+    if (Either.isLeft(parsed)) throw new MemoryReferenceConflict({ operation: "target", message: parsed.left.message });
+    const absolutePath = resolve(this.#root, parsed.right.path);
+    if (!absolutePath.startsWith(`${this.#root}${sep}`) || !existsSync(absolutePath) || !statSync(absolutePath).isFile()) {
+      throw new MemoryReferenceConflict({ operation: "target", path: parsed.right.path, message: "target file is missing or unsafe" });
+    }
+    return { path: parsed.right.path, absolutePath, source: readFileSync(absolutePath, "utf8") };
+  }
+
+  validateTarget(snapshot: TraceSnapshot, target: unknown): ValidatedRepoRefTarget & { readonly kind: PromotionKind } {
+    const source = this.targetSource(target);
+    const validated = validateRepoRefTarget(snapshot, target, PROMOTION_KINDS, source.source);
+    if (Either.isLeft(validated)) throw new MemoryReferenceConflict({ operation: "target", path: source.path, message: validated.left.message });
+    const kind = validated.right.kind;
+    if (kind !== "roadmap" && kind !== "feature" && kind !== "use-case" && kind !== "engineering") {
+      throw new MemoryReferenceConflict({ operation: "target", path: source.path, message: `unsupported promotion kind ${kind}` });
+    }
+    return { ...validated.right, kind };
   }
 
   search(pattern: string): readonly MemoryDocument[] {
     const needle = pattern.toLocaleLowerCase();
     return this.list().filter((document) => {
-      const metadata = "legacy" in document ? `${document.id}\n${document.title}` :
-        `${document.metadata.id}\n${document.metadata.title}`;
+      const metadata = "legacy" in document ? `${document.id}\n${document.title}` : `${document.metadata.id}\n${document.metadata.title}`;
       return `${metadata}\n${document.body}`.toLocaleLowerCase().includes(needle);
     });
   }
 
-  check(): MemoryCheckReceipt {
-    const findings: string[] = []; const documents: MemoryDocument[] = [];
+  check(snapshot: TraceSnapshot): MemoryCheckReceipt {
+    const findings: string[] = [];
+    const documents: MemoryDocument[] = [];
     try { documents.push(...this.list()); } catch (cause) { findings.push(message(cause)); }
     const structured = documents.filter((item): item is Exclude<MemoryDocument, { readonly legacy: true }> => !("legacy" in item));
     const byId = new Map(structured.map((item) => [item.metadata.id, item.metadata]));
     for (const { metadata } of structured) {
-      if (metadata.kind.type === "problem" &&
-        ((metadata.kind.state === "resolved") !== (metadata.kind.resolution !== undefined))) {
+      if (metadata.kind.type === "problem" && ((metadata.kind.state === "resolved") !== (metadata.kind.resolution !== undefined))) {
         findings.push(`${metadata.id}: Problem state and resolution disagree`);
+      }
+      if (metadata.kind.type === "problem" && metadata.kind.resolution?.kind === "fixed" && !snapshot.tests.some((test) =>
+        test.regressions.some((reference) => reference.split("#", 1)[0] === `memory/${metadata.id}.md`))) {
+        findings.push(`${metadata.id}: fixed Problem has no canonical E2E regression owner`);
       }
       if (metadata.kind.type !== "problem" && metadata.kind.state === "superseded") {
         const target = metadata.kind.supersededBy === undefined ? undefined : byId.get(metadata.kind.supersededBy);
         if (target === undefined || target.kind.type !== metadata.kind.type) findings.push(`${metadata.id}: superseding Memory is missing or wrong kind`);
+        if (metadata.promotions.some((promotion) => promotion.current.length > 0)) findings.push(`${metadata.id}: superseded Memory must have no current promotions`);
       }
       for (const promotion of metadata.promotions) {
-        if (promotion.current !== undefined && !this.#anchorExists(promotion.current.path, promotion.current.anchor)) {
-          findings.push(`${metadata.id}: promotion target ${promotion.current.path}#${promotion.current.anchor} is missing`);
+        for (const target of promotion.current) {
+          try {
+            const validated = this.validateTarget(snapshot, target);
+            if (validated.kind !== promotion.kind) findings.push(`${metadata.id}: ${target} is in the wrong ${promotion.kind} bucket`);
+          } catch (cause) { findings.push(`${metadata.id}: ${message(cause)}`); }
         }
       }
     }
@@ -147,53 +203,26 @@ export class MemoryRepository {
         seen.add(cursor.id); cursor = byId.get(cursor.kind.supersededBy);
       }
     }
-    this.#checkRegressionReferences(byId, findings);
-    return { ok: findings.length === 0, checked: documents.length,
-      legacy: documents.filter((item) => "legacy" in item).length, findings };
+    this.#checkRegressionReferences(snapshot, findings);
+    return {
+      ok: findings.length === 0,
+      checked: documents.length,
+      legacy: documents.filter((item) => "legacy" in item).length,
+      findings,
+    };
   }
 
-  #checkRegressionReferences(byId: ReadonlyMap<string, MemoryV1>, findings: string[]): void {
-    const e2e = join(this.#root, "e2e"); if (!existsSync(e2e)) return;
-    const visit = (directory: string): void => {
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const path = join(directory, entry.name);
-        if (entry.isDirectory()) visit(path);
-        else if (entry.isFile() && /\.(?:ts|tsx|js|mjs)$/u.test(entry.name)) {
-          const source = readFileSync(path, "utf8");
-          for (const match of source.matchAll(/regression:\s*memory\/([^\s]+)\.md/gu)) {
-            const id = match[1]; if (id !== undefined) {
-              const memory = byId.get(id);
-              if (memory !== undefined && memory.kind.type !== "problem") findings.push(`${relative(this.#root, path)}: regression must reference Problem Memory`);
-              else if (memory === undefined && !existsSync(this.#path(id))) findings.push(`${relative(this.#root, path)}: regression Memory ${id} is missing`);
-            }
-          }
+  #checkRegressionReferences(snapshot: TraceSnapshot, findings: string[]): void {
+    const byPath = new Map(snapshot.memory.map((memory) => [memory.path, memory]));
+    for (const test of snapshot.tests) {
+      for (const reference of test.regressions) {
+        const target = byPath.get(reference.split("#", 1)[0] ?? reference);
+        if (target === undefined) findings.push(`${test.path}: regression Memory ${reference} is missing`);
+        else if (target.kind !== "problem" && target.kind !== "legacy/unstructured") {
+          findings.push(`${test.path}: regression must reference Problem Memory`);
         }
       }
-    }; visit(e2e);
-  }
-
-  #anchorExists(path: string, anchor: string): boolean {
-    const target = resolve(this.#root, path);
-    if (!target.startsWith(`${this.#root}/`) || !existsSync(target)) return false;
-    const normalized = anchor.replace(/^#/, "");
-    return readFileSync(target, "utf8").split(/\r?\n/u).some((line) =>
-      line.startsWith("#") && line.replace(/^#+\s*/u, "").trim().toLocaleLowerCase()
-        .replace(/[^\p{Letter}\p{Number}\s-]/gu, "").replace(/\s+/gu, "-") === normalized);
-  }
-
-  #withLock(id: string, use: () => void): void {
-    const lock = join(this.#directory, ".locks", id); mkdirSync(join(this.#directory, ".locks"), { recursive: true });
-    try { mkdirSync(lock); } catch (cause) { throw new MemoryLockConflict({ operation: "lock", path: relative(this.#root, lock), message: message(cause) }); }
-    try { use(); } finally { rmSync(lock, { recursive: true, force: true }); }
-  }
-  #writeDurable(path: string, source: string): void {
-    const descriptor = openSync(path, "wx");
-    try { writeFileSync(descriptor, source); fsyncSync(descriptor); } finally { closeSync(descriptor); }
-  }
-  #replace(path: string, source: string): void {
-    const temporary = `${path}.${process.pid}.tmp`;
-    try { this.#writeDurable(temporary, source); renameSync(temporary, path); }
-    finally { rmSync(temporary, { force: true }); }
+    }
   }
 }
 

@@ -1,59 +1,47 @@
+import { FileSystem } from "@effect/platform";
 import { Clock, Effect, ParseResult, Schema } from "effect";
+
 import type { FeedbackDocument } from "./codec.js";
-import { FeedbackContentInvalid, type FeedbackError } from "./errors.js";
+import { FeedbackContentInvalid } from "./errors.js";
 import type { FeedbackCheckReceipt } from "./repository.js";
 import {
   FeedbackClosureSchema,
+  FeedbackCreateSchema,
   FeedbackEnvelopeV1Schema,
   FeedbackMemoryRelationSchema,
-  FeedbackV1Schema,
+  FeedbackV2Schema,
 } from "./schema.js";
-import { FeedbackStore } from "./services.js";
+import { FeedbackStore, type FeedbackMutationReceipt, type FeedbackStoreError } from "./services.js";
+import { RepoRefSchema } from "../docs/trace/ref.js";
 
 const NonEmpty = Schema.NonEmptyTrimmedString;
 const Body = Schema.String.pipe(Schema.minLength(1));
 const MutationFields = { dryRun: Schema.Boolean };
 
 export const FeedbackCommandInputSchema = Schema.Union(
-  Schema.Struct({
-    operation: Schema.Literal("add"),
-    ...MutationFields,
-    document: Schema.Struct({ metadata: FeedbackV1Schema, body: Body }),
-  }),
-  Schema.Struct({
-    operation: Schema.Literal("import"),
-    ...MutationFields,
-    envelope: FeedbackEnvelopeV1Schema,
-    artifacts: NonEmpty,
-  }),
+  Schema.Struct({ operation: Schema.Literal("add"), ...MutationFields, document: Schema.Struct({ metadata: FeedbackCreateSchema, body: Body }) }),
+  Schema.Struct({ operation: Schema.Literal("import"), ...MutationFields, envelope: FeedbackEnvelopeV1Schema, artifacts: NonEmpty }),
   Schema.Struct({ operation: Schema.Literal("export"), id: NonEmpty }),
   Schema.Struct({ operation: Schema.Literal("list"), pattern: Schema.optional(NonEmpty) }),
   Schema.Struct({ operation: Schema.Literal("show"), id: NonEmpty }),
-  Schema.Struct({
-    operation: Schema.Literal("link"),
-    ...MutationFields,
-    id: NonEmpty,
-    relation: FeedbackMemoryRelationSchema,
-  }),
-  Schema.Struct({
-    operation: Schema.Literal("close"),
-    ...MutationFields,
-    id: NonEmpty,
-    closure: FeedbackClosureSchema,
-  }),
+  Schema.Struct({ operation: Schema.Literal("link"), ...MutationFields, id: NonEmpty, relation: FeedbackMemoryRelationSchema }),
+  Schema.Struct({ operation: Schema.Literal("adopt"), ...MutationFields, id: NonEmpty, to: RepoRefSchema }),
+  Schema.Struct({ operation: Schema.Literal("retire"), ...MutationFields, id: NonEmpty, from: RepoRefSchema }),
+  Schema.Struct({ operation: Schema.Literal("close"), ...MutationFields, id: NonEmpty, closure: FeedbackClosureSchema }),
   Schema.Struct({ operation: Schema.Literal("reopen"), ...MutationFields, id: NonEmpty }),
   Schema.Struct({ operation: Schema.Literal("check") }),
 );
 export type FeedbackCommandInput = typeof FeedbackCommandInputSchema.Type;
 
+type MutationOperation = "add" | "import" | "link" | "adopt" | "retire" | "close" | "reopen";
 export type FeedbackCommandOutcome =
-  | { readonly domain: "feedback"; readonly operation: "add" | "import" | "link" | "close" | "reopen"; readonly dryRun: boolean; readonly feedback: typeof FeedbackV1Schema.Type }
+  | { readonly domain: "feedback"; readonly operation: MutationOperation; readonly dryRun: boolean; readonly feedback: typeof FeedbackV2Schema.Type; readonly receipt: FeedbackMutationReceipt }
   | { readonly domain: "feedback"; readonly operation: "export" | "show"; readonly document: FeedbackDocument }
-  | { readonly domain: "feedback"; readonly operation: "list"; readonly feedback: readonly (typeof FeedbackV1Schema.Type)[] }
+  | { readonly domain: "feedback"; readonly operation: "list"; readonly feedback: readonly (typeof FeedbackV2Schema.Type)[] }
   | { readonly domain: "feedback"; readonly operation: "check"; readonly receipt: FeedbackCheckReceipt };
 
 function decodeInput(input: unknown): Effect.Effect<FeedbackCommandInput, FeedbackContentInvalid> {
-  return Schema.decodeUnknown(FeedbackCommandInputSchema, { errors: "all" })(input).pipe(
+  return Schema.decodeUnknown(FeedbackCommandInputSchema, { errors: "all", onExcessProperty: "error" })(input).pipe(
     Effect.mapError((error) => new FeedbackContentInvalid({
       operation: "decode command",
       message: ParseResult.TreeFormatter.formatErrorSync(error),
@@ -61,25 +49,25 @@ function decodeInput(input: unknown): Effect.Effect<FeedbackCommandInput, Feedba
   );
 }
 
+function mutationOutcome(operation: MutationOperation, dryRun: boolean, receipt: FeedbackMutationReceipt): FeedbackCommandOutcome {
+  return { domain: "feedback", operation, dryRun, feedback: receipt.value, receipt };
+}
+
 export function runFeedbackCommand(
   input: unknown,
-): Effect.Effect<FeedbackCommandOutcome, FeedbackError, FeedbackStore> {
+): Effect.Effect<FeedbackCommandOutcome, FeedbackStoreError | FeedbackContentInvalid, FeedbackStore | FileSystem.FileSystem> {
   return decodeInput(input).pipe(Effect.flatMap((decoded) => Effect.gen(function*() {
     const store = yield* FeedbackStore;
     switch (decoded.operation) {
       case "add": {
-        const feedback = yield* store.create(decoded.document, decoded.dryRun);
-        return { domain: "feedback" as const, operation: decoded.operation, dryRun: decoded.dryRun, feedback };
+        const metadata = { ...decoded.document.metadata, adoptions: decoded.document.metadata.adoptions ?? { current: [], history: [] } };
+        const receipt = yield* store.create({ metadata, body: decoded.document.body }, decoded.dryRun);
+        return mutationOutcome(decoded.operation, decoded.dryRun, receipt);
       }
       case "import": {
         const millis = yield* Clock.currentTimeMillis;
-        const feedback = yield* store.importEnvelope(
-          decoded.envelope,
-          decoded.artifacts,
-          new Date(millis).toISOString(),
-          decoded.dryRun,
-        );
-        return { domain: "feedback" as const, operation: decoded.operation, dryRun: decoded.dryRun, feedback };
+        const receipt = yield* store.importEnvelope(decoded.envelope, decoded.artifacts, new Date(millis).toISOString(), decoded.dryRun);
+        return mutationOutcome(decoded.operation, decoded.dryRun, receipt);
       }
       case "export":
       case "show": {
@@ -94,16 +82,24 @@ export function runFeedbackCommand(
         return { domain: "feedback" as const, operation: decoded.operation, feedback };
       }
       case "link": {
-        const feedback = yield* store.link(decoded.id, decoded.relation, decoded.dryRun);
-        return { domain: "feedback" as const, operation: decoded.operation, dryRun: decoded.dryRun, feedback };
+        const receipt = yield* store.link(decoded.id, decoded.relation, decoded.dryRun);
+        return mutationOutcome(decoded.operation, decoded.dryRun, receipt);
+      }
+      case "adopt": {
+        const receipt = yield* store.adopt(decoded.id, decoded.to, decoded.dryRun);
+        return mutationOutcome(decoded.operation, decoded.dryRun, receipt);
+      }
+      case "retire": {
+        const receipt = yield* store.retire(decoded.id, decoded.from, decoded.dryRun);
+        return mutationOutcome(decoded.operation, decoded.dryRun, receipt);
       }
       case "close": {
-        const feedback = yield* store.close(decoded.id, decoded.closure, decoded.dryRun);
-        return { domain: "feedback" as const, operation: decoded.operation, dryRun: decoded.dryRun, feedback };
+        const receipt = yield* store.close(decoded.id, decoded.closure, decoded.dryRun);
+        return mutationOutcome(decoded.operation, decoded.dryRun, receipt);
       }
       case "reopen": {
-        const feedback = yield* store.reopen(decoded.id, decoded.dryRun);
-        return { domain: "feedback" as const, operation: decoded.operation, dryRun: decoded.dryRun, feedback };
+        const receipt = yield* store.reopen(decoded.id, decoded.dryRun);
+        return mutationOutcome(decoded.operation, decoded.dryRun, receipt);
       }
       case "check": {
         const receipt = yield* store.check();
@@ -113,10 +109,9 @@ export function runFeedbackCommand(
   })));
 }
 
-/** Pure contribution; parsing, presentation, exit status, and Layer assembly belong to the root. */
 export const feedbackCommandContribution = Object.freeze({
   name: "feedback",
-  summary: "Record, relate, close, and validate repository feedback.",
+  summary: "Record, relate, adopt, retire, close, and validate repository feedback.",
   input: FeedbackCommandInputSchema,
   run: runFeedbackCommand,
 });

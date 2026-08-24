@@ -12,7 +12,7 @@ export function decodeMemoryDocument(path: string, id: string, source: string): 
   if (match?.[1] === undefined || match[2] === undefined) {
     return { legacy: true, id, title: titleFromBody(id, source), body: source };
   }
-  if (!/^format:\s*["']?niceeval\.memory\/v1["']?\s*$/mu.test(match[1])) {
+  if (!/^format\s*:/mu.test(match[1])) {
     return { legacy: true, id, title: titleFromBody(id, source), body: source };
   }
   let input: unknown;
@@ -25,11 +25,20 @@ export function decodeMemoryDocument(path: string, id: string, source: string): 
       message: cause instanceof Error ? cause.message : String(cause),
     });
   }
-  if (typeof input !== "object" || input === null || !("format" in input) ||
-    input.format !== "niceeval.memory/v1") {
+  if (typeof input !== "object" || input === null || !("format" in input)) {
     return { legacy: true, id, title: titleFromBody(id, source), body: source };
   }
-  const decoded = Schema.decodeUnknownEither(MemoryV1Schema, { errors: "all" })(input);
+  if (input.format !== "niceeval.memory/v1") {
+    throw new MemoryContentInvalid({
+      operation: "decode",
+      path,
+      message: `unsupported Memory format ${JSON.stringify(input.format)}`,
+    });
+  }
+  const decoded = Schema.decodeUnknownEither(MemoryV1Schema, {
+    errors: "all",
+    onExcessProperty: "error",
+  })(input);
   if (decoded._tag === "Left") {
     throw new MemoryContentInvalid({
       operation: "decode",

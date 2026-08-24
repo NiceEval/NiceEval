@@ -1,3 +1,12 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations:
+  composes:
+    - docs/feature/experiments/use-case/生命周期/启动共享服务.md
+    - docs/feature/sandbox/use-case/留存现场/现场验证假设.md
+---
+
 # 如何调试评估
 
 按缺少的证据选择入口：

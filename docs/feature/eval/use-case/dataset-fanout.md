@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 测试集从输入数组生成多条 eval：一套逻辑跑一批 case
 
 ## 解决什么问题

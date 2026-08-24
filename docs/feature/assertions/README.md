@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Assertions
 
 Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 3`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Analysis 只读取已封口的事实，不重新执行 matcher 或作者代码。

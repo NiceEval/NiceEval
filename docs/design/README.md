@@ -17,12 +17,15 @@
   被采纳的那份标题标注"（推荐）"。
 - `DECISION.md`：综合 `GOALS.md` 与 `LIMITS.md` 后的最终裁决，包括为什么否决其它候选项。
 
-新开决策主题时,先复制 [Design Decision](../_template/design-decision/README.md) 外层。
-每新增一个 PLAN,再复制同目录下唯一的 [Feature Design Package](../_template/feature-design/README.md)。
+目标写入口使用 `pnpm design create <name> --title <title> --plans <n>`。
+命令从 [Design Decision](../_template/design-decision/README.md) 与 [Feature Design Package](../_template/feature-design/README.md) 创建外层和各 PLAN，不手工复制模板。
 
 每个 PLAN 必须独立给出完整调用面、架构、生命周期与错误语义。
 候选之间可以比较差异,不能用"未说明部分继承 PLAN-X"提供必需契约。
 根 `CASES.md` 只定义共同问题;`PLAN-N/use-case/` 只展示本候选怎样兑现对应 Case ID。
+
+定稿 Design 的 README 用唯一 `selectedPlan` typed ref 指向本目录直接包含的 PLAN。
+标题中的“推荐”和 `DECISION.md` 的普通链接供人阅读，不是机器判断选中方案的第二真源。
 
 ## 和 Feature / Roadmap 的边界
 

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Record（持久事实层）→ Analysis（分析层）→ Report（报告层）
 
 NiceEval 把不可恢复的运行事实、统计解释和结果呈现分成三层。普通用户通过 CLI（命令行界面）运行、查看、比较和迁移，不直接进入 `.niceeval`，也不接触 Record schema（持久事实格式）或执行 backend（执行后端）。

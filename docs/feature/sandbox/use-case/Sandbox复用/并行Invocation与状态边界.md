@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 并行 Invocation 隔离 Record 与 Sandbox
 
 ## 先分清三个 owner

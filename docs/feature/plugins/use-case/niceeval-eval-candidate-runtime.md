@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # NiceEval-Eval 的候选 Runtime 条件
 
 ## 现有用例

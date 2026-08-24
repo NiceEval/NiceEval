@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 用 gate 守住质量
 
 开放式质量检查先用代表性结果校准 rubric 和阈值，再用 `.gate(n)` 把已确定的要求写成稳定的 Pass Eval Assertion。

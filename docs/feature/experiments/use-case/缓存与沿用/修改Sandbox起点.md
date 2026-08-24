@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 修改 Sandbox 起点
 
 换 template-bearing factory，或改它任何一个参数（image、template、snapshotId、Compose file），都会改变起点身份。

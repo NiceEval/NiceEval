@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-show-json
+// regression: memory/analysis-usage-projection-conflates-conversation-limitations.md
 // rerun: pnpm e2e test --repo report -- --run test/report-show.test.ts
 
 import { only } from "@niceeval/testkit";
@@ -235,7 +236,6 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
   );
 });
 
-// regression: memory/analysis-usage-projection-conflates-conversation-limitations.md
 test("show 保留 named identity、实际 Eval population 与独立完整的 usage", async () => {
   await reportE2E.case(
     "show-named-group-comparison",

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 沙箱 coding 任务：从放文件到评 diff
 
 评 coding agent 要回答三件事：起始项目如何进入 Sandbox、任务完成后如何验证、以及如何只评 Agent 自己的改动。文件传输使用公开 Sandbox API；相对 `send` 的位置决定可见性，send 区间决定归因。

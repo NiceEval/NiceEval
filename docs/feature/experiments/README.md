@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Experiments —— 怎么跑这批 eval
 
 一个 eval 描述**测什么**(这轮对话该发生什么、怎么算对)。

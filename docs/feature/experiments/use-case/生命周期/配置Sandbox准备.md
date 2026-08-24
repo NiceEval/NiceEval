@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 配置 Sandbox 准备命令
 
 同一批 Eval 共享、但会随 Experiment 改变的沙箱内准备，写在 Experiment `sandbox` layer 的 `prepare()` 命令里。

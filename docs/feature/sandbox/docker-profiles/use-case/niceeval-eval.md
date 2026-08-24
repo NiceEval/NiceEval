@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # Use Case：NiceEval-Eval 单容器 DinD
 
 NiceEval-Eval用 coding agent实际安装、迁移和操作 NiceEval。Agent必须能在 Sandbox内运行用户项目

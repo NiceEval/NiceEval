@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # MemoryBench:Experiment 带 template
 
 契约单源见 [Sandbox Layer · Eval 与 Experiment 使用同一个类型](../../layers.md#eval-与-experiment-使用同一个类型)、[内置 prepare 命令](../../prepare-commands.md)与[三方准备时序 · Experiment template 路径](../../lifecycle.md#experiment-template-路径)。

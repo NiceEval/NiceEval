@@ -2,6 +2,9 @@
 
 ## adapter-codex-app-server-failed-turn
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/codex-app-server`。它以签入的外部 `codex app-server` JSON-RPC
 fixture 驱动安装后的 `codexAgent()`、digest-pinned Node Docker Sandbox 与公开 CLI，不使用 provider 凭据。
 
@@ -14,6 +17,9 @@ fixture 驱动安装后的 `codexAgent()`、digest-pinned Node Docker Sandbox �
 
 ## adapter-codex-app-server-host-config-isolation
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/codex-app-server`。这个单边界 owner 为每个 case 创建测试自有的
 `HOME` 与 `CODEX_HOME`，在两处写入不同的合法 sentinel config，再通过安装后 CLI、
 `codexAgent()`、digest-pinned Node Docker Sandbox 与真实 app-server 协议运行。容器使用固定非 root 用户，
@@ -24,6 +30,9 @@ config-present 布尔值；测试在进程结束后逐字节核对两份 sentine
 检查或依赖执行机的真实 HOME 与 `.codex`，收据也不保存配置内容或进程变量内容。
 
 ## adapter-codex-cli-live-compatibility
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。
 被测对象是 `codexAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、`codex exec --json` 行为轨与续轮（契约见[Codex CLI 契约页](../../../../feature/adapters/sdk/codex-cli/README.md)）。

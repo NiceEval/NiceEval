@@ -2,6 +2,9 @@
 
 ## adapter-claude-agent-sdk-live-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/claude-agent-sdk`。它在 host 上锁定
 `@anthropic-ai/claude-agent-sdk@0.3.226`。它声明 Node 24、external network 与 main / nightly /
 release lanes。它且仅声明 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_BASE_URL` 两项 secret。

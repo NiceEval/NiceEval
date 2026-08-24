@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 读懂一次 `errored` Verdict:框架重试过没有,为什么
 
 ## 解决什么问题
