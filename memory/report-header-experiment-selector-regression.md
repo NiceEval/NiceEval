@@ -5,7 +5,14 @@ title: Report SPA 丢失 Header 实验选择器与默认实验组
 createdAt: 2026-08-24T11:19:30+08:00
 kind:
   type: problem
-  state: open
+  state: resolved
+  resolution:
+    kind: fixed
+    proof:
+      - "E2E red: fix-parent dc3f89c243de2214555960dc9e48d7356a48157f installed candidate 3465f8f1fa110c0303c3efd4f9478247f46438e83e51fe059a14670286aaf4f2 failed e2e/report/test/report.browser.spec.ts at the earliest public root URL assertion: received /, expected #/group/named/classic."
+      - "E2E green: candidate 4c26ab7f9a42890dfe2a3e37e1e353baab56e262f026a5c92967b07b8e5ec693 ran pnpm e2e test --repo report -- --run test/report.browser.spec.ts with 2 passed; the selector Journey covered default route, Header order, group switching, Back/Forward, locale, overlay, and deep link."
+      - "E2E reliability takeover: /tmp/niceeval-report-selector-takeover.PHx3Hw completed 3 isolated copies, same-copy repeat, repo-default-parallel 6 files / 13 tests, and target-single with category pass and scratch cleanup ok."
+      - "Public regression check: https://deploy-preview-108--niceeval-report-preview.netlify.app at NiceEval commit 3756e5c479762f76dc5c6d499dd57b5781decd13 defaulted to #/group/named/gallery, exposed Experiments=gallery before Language=EN with five options, and switching states produced #/group/singleton/states plus the scoped 1 experiment / 5 eval results."
 promotions: []
 ---
 ## Problem
