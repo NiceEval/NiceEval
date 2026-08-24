@@ -21,6 +21,20 @@ assert spec and spec.loader
 watchdog = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(watchdog)
 
+ACTIVATION_MODULE = ROOT / "packaging/docker-profile-host/scripts/activate-fixed-images.py"
+activation_spec = importlib.util.spec_from_file_location(
+    "niceeval_fixed_activation", ACTIVATION_MODULE,
+)
+assert activation_spec and activation_spec.loader
+activation = importlib.util.module_from_spec(activation_spec)
+activation_spec.loader.exec_module(activation)
+
+LEGACY_PROTOCOL_REVISIONS = {
+    "publicationRevision": "prepared-copy-client-commit-publish/v3",
+    "recoveryRevision": "no-guess-scrub-or-quarantine/v2",
+    "manifestSchema": "niceeval-docker-profile-activation/v2",
+}
+
 def allocate_image(path: Path, size: int) -> None:
     fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_EXCL, 0o600)
     try:
@@ -143,8 +157,82 @@ def control_drop_then_retry(admission, path: Path, request: dict) -> dict:
     return control_roundtrip(admission, path, request)
 
 
+def verify_activation_manifest_revision(root: Path) -> None:
+    manifest_root = root / "activation-manifest-matrix"
+    manifest_root.mkdir()
+    slot_registry = manifest_root / "slots.json"
+    seed_registry = manifest_root / "seeds.json"
+    descriptor_path = manifest_root / "descriptor.json"
+    host_config_path = manifest_root / "host.json"
+    manifest_path = manifest_root / "activation.json"
+    digest_path = manifest_root / "activation.sha256"
+    slot_registry.write_text("{}\n", encoding="utf-8")
+    seed_registry.write_text("{}\n", encoding="utf-8")
+    descriptor_path.write_text("{}\n", encoding="utf-8")
+    host = {"activationDependency": {"class": "direct-process/v1"}}
+    host_config_path.write_text(json.dumps(host), encoding="utf-8")
+    manifest = {
+        "schema": "niceeval-docker-profile-activation/v3",
+        "state": "committed",
+        "hostConfigPath": str(host_config_path.resolve()),
+        "hostConfigDigest": activation.file_digest(host_config_path),
+        "descriptorPath": str(descriptor_path.resolve()),
+        "descriptorDigest": activation.file_digest(descriptor_path),
+        "activationDependency": {"class": "direct-process/v1", "emptyAtActivation": None},
+        "slotRegistry": {
+            "path": str(slot_registry.resolve()),
+            "digest": activation.file_digest(slot_registry),
+        },
+        "seedRegistry": {
+            "path": str(seed_registry.resolve()),
+            "digest": activation.file_digest(seed_registry),
+        },
+        "activationRevision": "exclusive-capsule-cutover/v1",
+        "recoveryRevision": "idempotent-four-file-mount-restore/v2",
+    }
+
+    def write_manifest(value: dict) -> None:
+        manifest_path.write_text(json.dumps(value), encoding="utf-8")
+        digest_path.write_text(activation.digest_bytes(activation.canonical(value)) + "\n",
+                               encoding="utf-8")
+
+    write_manifest(manifest)
+    activation.verify_manifest(
+        manifest_path, digest_path, host_config_path, descriptor_path, verify_capsule=False,
+    )
+    write_manifest({**manifest, "schema": "niceeval-docker-profile-activation/v2"})
+    try:
+        activation.verify_manifest(
+            manifest_path, digest_path, host_config_path, descriptor_path, verify_capsule=False,
+        )
+    except RuntimeError as error:
+        assert "binding is invalid" in str(error)
+    else:
+        raise AssertionError("legacy activation manifest schema must fail closed")
+
+
+def run_new_client_against_host(admission, socket_path: Path, fixture: dict) -> None:
+    fixture_path = socket_path.with_suffix(".json")
+    fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+    server = watchdog.Server(str(socket_path), admission)
+    worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+    worker.start()
+    try:
+        environment = {**os.environ, "NICEEVAL_PROTOCOL_MATRIX_FIXTURE": str(fixture_path)}
+        subprocess.run(
+            ["pnpm", "exec", "tsx", "test/host/docker-profile-public-smoke.ts"],
+            cwd=ROOT, env=environment, check=True,
+        )
+    finally:
+        server.shutdown()
+        worker.join(timeout=10)
+        server.server_close()
+        socket_path.unlink(missing_ok=True)
+
+
 with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     root = Path(raw)
+    verify_activation_manifest_revision(root)
     docker_socket = root / "docker.sock"
     docker_socket.touch()
     setup_root = root / "setup-prefix-fs"
@@ -484,9 +572,11 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     assert not admission.state["setupPrefix"]["operations"]
     assert admission.state["setupPrefix"]["seeds"]["seed-fullcopy01"]["state"] == "free", admission.state["setupPrefix"]["seeds"]
 
-    prefix_a = "prefix:" + "a" * 64
+    client_declaration = {"action": "new-client-new-host"}
+    client_digest = watchdog.canonical_digest(client_declaration).removeprefix("sha256:")
+    prefix_a = "prefix:" + client_digest
     capture = snapshot_request(
-        "capture", kind="setup-prefix.capture",
+        "capture", kind="setup-prefix.capture", digest_hex=client_digest,
     )
     expect_code("setup-prefix-host-input", lambda: admission.handle({**capture, "rootPath": "/host"}))
     missing_state = dict(capture)
@@ -502,9 +592,12 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     expect_code("setup-prefix-descriptor-mismatch", lambda: admission.handle({
         **capture, "copyRevision": "niceeval-docker-profile-host/raw-image-copy/v0",
     }))
-    expect_code("setup-prefix-descriptor-mismatch", lambda: admission.handle({
-        **capture, "publicationRevision": "prepared-copy-client-commit-publish/v3",
-    }))
+    for field, legacy in LEGACY_PROTOCOL_REVISIONS.items():
+        response = control_roundtrip(
+            admission, root / f"old-client-{field}.sock", {**capture, field: legacy},
+        )
+        assert response["ok"] is False
+        assert response["error"]["code"] == "setup-prefix-descriptor-mismatch"
     expect_code("setup-prefix-base-identity", lambda: admission.handle({
         **capture, "baseIdentity": "sha256:" + "4" * 64,
     }))
@@ -525,7 +618,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     assert failed_wire["error"]["slotGeneration"] == 0
     assert failed_wire["error"]["requiredState"] == "dockerData"
     assert failed_wire["error"]["setupPrefixKey"] == prefix_a
-    assert failed_wire["error"]["setupManifestDigest"] == "sha256:" + "a" * 64
+    assert failed_wire["error"]["setupManifestDigest"] == "sha256:" + client_digest
     assert failed_wire["error"]["artifact"] == {"artifactId": None}
     assert set(failed_wire["error"]["artifact"]) == {"artifactId"}
     assert failed_wire["error"]["status"] == {
@@ -550,15 +643,55 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     assert prefix_a not in admission.state["setupPrefix"]["artifacts"]
     assert not admission.state["setupPrefix"]["operations"]
     assert admission.state["setupPrefix"]["seeds"]["seed-fullcopy01"]["state"] == "free"
-    prepared = admission.handle(capture)
-    assert prepared["status"]["state"] == "prepared"
-    captured = admission.handle({**capture, "kind": "setup-prefix.capture.publish"})
+    client_socket = root / "new-client-new-host.sock"
+    run_new_client_against_host(admission, client_socket, {
+        "lease": {
+            "binding": {
+                "alias": "profile",
+                "profile": {
+                    "profileId": descriptor["profileId"],
+                    "backend": {"filesystem": {
+                        "dockerDataPool": descriptor["backend"]["filesystem"]["dockerDataPool"],
+                        "setupPrefix": capability,
+                    }},
+                },
+                "descriptorDigest": admission.descriptor_digest,
+                "daemonGeneration": challenge["daemonGeneration"],
+                "daemonId": "daemon",
+                "dockerSocketPath": "",
+                "controlSocketPath": str(client_socket),
+                "platform": "linux/amd64",
+            },
+            "invocationId": common["invocationId"],
+            "leaseToken": common["leaseToken"],
+        },
+        "reservation": {
+            "reservationId": "capture",
+            "provisionToken": capture_reservation["provisionToken"],
+            "state": "committed",
+            "slotGeneration": capture_reservation["slotGeneration"],
+        },
+        "input": {
+            "operationId": capture["operationId"],
+            "manifest": {
+                "baseImageId": base_identity,
+                "setupPrefixKey": prefix_a,
+                "setupManifestDigest": "sha256:" + client_digest,
+                "requiredState": "dockerData",
+                "storageSchemaRevision": "storage/v1",
+                "artifactFormatRevision": capability["copyRevision"],
+                "changeFrequency": 1,
+                "declarationMetadata": client_declaration,
+            },
+        },
+    })
+    captured = admission.handle(capture)
     assert set(captured) == receipt_wire_fields | {"artifact", "status"}
     assert captured["daemonGeneration"] == challenge["daemonGeneration"]
     assert captured["slotGeneration"] == 0
     assert captured["requiredState"] == "dockerData"
     assert captured["setupPrefixKey"] == prefix_a
-    assert captured["setupManifestDigest"] == "sha256:" + "a" * 64
+    assert captured["setupManifestDigest"] == "sha256:" + client_digest
     assert captured["artifact"]["copyProtocol"] == "raw-image/v1"
     assert captured["artifact"]["copyRevision"] == capability["copyRevision"]
     assert captured["artifact"]["artifactId"].startswith("sha256:")
@@ -566,7 +699,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
         "artifactId", "sizeBytes", "requiredState", "copyProtocol", "copyRevision",
     }
     assert "operationId" not in captured["artifact"]
-    assert captured["status"]["state"] == "captured"
+    assert captured["status"]["state"] == "already-published"
     # Host commit is durable before the response; a lost response is safely
     # reconciled by retrying the same operationId and returns already-published.
     retry = control_drop_then_retry(admission, root / "publish-drop.sock",
@@ -606,6 +739,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     })
     timed_request = {**snapshot_request(
         "restore-client-timeout", kind="setup-prefix.restore",
+        digest_hex=client_digest,
         slot_generation=timed_restore["slotGeneration"],
     ), **timeout_common}
     copy_started, copy_continue = threading.Event(), threading.Event()
@@ -716,6 +850,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     restore_reservation = acquire("restore-reader-cancel")
     restore = snapshot_request(
         "restore-reader-cancel", kind="setup-prefix.restore",
+        digest_hex=client_digest,
         slot_generation=restore_reservation["slotGeneration"],
     )
     socket_path = root / "reader-cancel.sock"
@@ -752,6 +887,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
         concurrent_requests.append(snapshot_request(
             reservation_id,
             kind="setup-prefix.restore",
+            digest_hex=client_digest,
             slot_generation=concurrent["slotGeneration"],
         ))
     concurrent_results = []

@@ -1,7 +1,7 @@
 /** Control-protocol reply-loss smoke, run by watchdog-smoke. */
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -9,6 +9,10 @@ import type { JsonValue } from "../../packages/niceeval/src/shared/types.ts";
 import type { SandboxSetupPrefixCacheOperation } from "../../packages/niceeval/src/sandbox/backend.ts";
 import { DockerSandbox } from "../../packages/niceeval/src/sandbox/docker.ts";
 import { digestOf } from "../../packages/niceeval/src/sandbox/identity.ts";
+import {
+  decodeDockerExecutionProfileV1,
+  makeDockerExecutionProfileV1,
+} from "../../packages/niceeval/src/sandbox/docker-profile/schema.ts";
 import { makeDockerProfileSetupPrefixCacheCapability } from "../../packages/niceeval/src/sandbox/docker-profile/setup-prefix.ts";
 import {
   captureDockerProfileSetupPrefix,
@@ -71,6 +75,11 @@ const setupPrefixWireFields = Object.freeze([
   "filesystemSizeBytes", "filesystemFeatures",
   "daemonGeneration", "slotGeneration",
 ] as const);
+const legacyProtocolRevisions = Object.freeze({
+  publicationRevision: "prepared-copy-client-commit-publish/v3",
+  recoveryRevision: "no-guess-scrub-or-quarantine/v2",
+  manifestSchema: "niceeval-docker-profile-activation/v2",
+} as const);
 
 function setupPrefixLease(path: string): DockerProfileLease {
   return {
@@ -360,6 +369,10 @@ async function exactSetupPrefixReceipts(): Promise<void> {
     ["unknown top-level field", (receipt) => { receipt.unknown = true; }],
     ["missing top-level field", (receipt) => { delete receipt.setupManifestDigest; }],
     ["top-level identity drift", (receipt) => { receipt.daemonGeneration = "other"; }],
+    ...Object.entries(legacyProtocolRevisions).map(([field, legacy]) => [
+      `legacy ${field}`,
+      (receipt: Record<string, unknown>) => { receipt[field] = legacy; },
+    ] as const),
     ["unknown artifact field", (receipt) => {
       (receipt.artifact as Record<string, unknown>).unknown = true;
     }],
@@ -426,6 +439,99 @@ async function exactSetupPrefixReceipts(): Promise<void> {
   assert.deepEqual(successFailures, [], `non-exact receipts were accepted: ${successFailures.join(", ")}`);
 }
 
+function descriptorRevisionMatrix(): void {
+  const current = makeDockerExecutionProfileV1({
+    schemaVersion: 1,
+    profileId: "profile",
+    securityLevel: "raw-dind-storage/v1",
+    transport: {
+      kind: "unix",
+      hostMachineIdentity: "host",
+      dockerSocket: { path: "/run/docker.sock", peerUid: 0 },
+      controlSocket: {
+        path: "/run/niceeval-control.sock",
+        peerUid: 0,
+        protocol: "niceeval-docker-profile-control/v1",
+      },
+    },
+    backend: {
+      kind: "local-systemd",
+      machineIdentity: "host",
+      owner: { uid: 0, gid: 0 },
+      filesystem: {
+        identity: "filesystem",
+        mountPath: "/var/lib/niceeval",
+        dockerRootDir: "/var/lib/niceeval/docker",
+        limitBytes: 8192,
+        dockerDataPool: {
+          count: 1,
+          bytesPerAllocation: filesystemSizeBytes,
+          attestation: "independent-fixed-filesystem/v1",
+        },
+        setupPrefix: {
+          ...setupPrefixDescriptor,
+          providerIdentity: `sha256:${"4".repeat(64)}`,
+          executionDomain: `sha256:${"5".repeat(64)}`,
+        },
+      },
+      cgroup: {
+        aggregatePath: "/niceeval.slice",
+        policyRevision: "policy/v1",
+        controllers: ["cpu", "memory", "pids"],
+      },
+    },
+    capacity: {
+      cpus: 1,
+      memoryBytes: 1024,
+      memorySwapBytes: 0,
+      pids: 16,
+      maxContainers: 1,
+      maxBuilds: 1,
+      ephemeralDiskBytes: filesystemSizeBytes,
+      aggregate: { cpus: 1, memoryBytes: 1024, memorySwapBytes: 0, pids: 16 },
+    },
+    policy: {
+      level: "raw-dind-storage/v1",
+      privilegedTranslation: "host-daemon",
+      dockerData: "private-project-quota-allocation/v1",
+    },
+  });
+  decodeDockerExecutionProfileV1(current);
+  for (const [field, legacy] of Object.entries(legacyProtocolRevisions)) {
+    const candidate = structuredClone(current) as unknown as Record<string, unknown>;
+    const backend = candidate.backend as Record<string, unknown>;
+    const filesystem = backend.filesystem as Record<string, unknown>;
+    const capability = filesystem.setupPrefix as Record<string, unknown>;
+    capability[field] = legacy;
+    assert.throws(
+      () => decodeDockerExecutionProfileV1(candidate),
+      undefined,
+      `descriptor accepted legacy ${field}`,
+    );
+  }
+}
+
+type ExternalFixture = Readonly<{
+  lease: DockerProfileLease;
+  reservation: DockerProfileReservation;
+  input: SandboxSetupPrefixCacheOperation;
+}>;
+
+async function runExternalNewClient(): Promise<void> {
+  const path = process.env.NICEEVAL_PROTOCOL_MATRIX_FIXTURE;
+  assert(path !== undefined && path.length > 0);
+  const fixture = JSON.parse(await readFile(path, "utf8")) as ExternalFixture;
+  const result = await captureDockerProfileSetupPrefix(
+    fixture.lease,
+    fixture.reservation,
+    fixture.input,
+    undefined,
+    10_000,
+  );
+  assert.equal(result.state, "captured");
+  console.log("docker-profile-public-smoke external new-client/new-host ok");
+}
+
 async function regressionMatrix(): Promise<void> {
   const failures: Error[] = [];
   for (const [name, check] of [
@@ -433,6 +539,7 @@ async function regressionMatrix(): Promise<void> {
     ["already-stopped quiesce", alreadyStoppedQuiesceFailsClosed],
     ["lease drain convergence", leaseDrainReconcilesToAbsent],
     ["exact receipt decoding", exactSetupPrefixReceipts],
+    ["descriptor protocol revisions", async () => descriptorRevisionMatrix()],
   ] as const) {
     try {
       await check();
@@ -445,6 +552,10 @@ async function regressionMatrix(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (process.env.NICEEVAL_PROTOCOL_MATRIX_FIXTURE !== undefined) {
+    await runExternalNewClient();
+    return;
+  }
   const good = { profileId: "profile", generation: "generation", leases: [{ invocationId: "lease", daemonGeneration: "generation" }], reservations: [], queue: [], slots: [{ slotId: "slot", state: "free" }], degraded: [] };
   await matrix(good, true);
   await matrix({ ...good, profileId: "other" }, false);
