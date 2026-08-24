@@ -67,6 +67,10 @@ interface ClosedConversationItemBase {
   readonly itemId: string;
   readonly turnId: string;
   readonly sequence: number;
+  /** Current source event identity; historical Agent Turns rows omit it. */
+  readonly eventId?: string;
+  /** Exact, display-safe target already closed by Analysis. */
+  readonly anchor?: string;
 }
 
 export type ClosedConversationItem =
@@ -277,9 +281,112 @@ export interface AttemptEvidenceDomainDetail {
     readonly expected: ClosedAssertionFactValue;
     readonly explanation: ClosedAssertionFactValue;
     readonly decision: ClosedAssertionDecision;
+    /** Present only for matcher entries whose durable query/source facts can be debugged. */
+    readonly matcherDebugger?: ClosedMatcherFilterDebugger;
   }[];
   readonly sourceSites: readonly ClosedAssertionSourceSite[];
 }
+
+export type ClosedMatcherConversationTarget =
+  | {
+      readonly state: "exact";
+      readonly turnId: string;
+      readonly eventId: string;
+      readonly anchor: string;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "historical-not-recorded" | "source-unavailable" | "ambiguous";
+    };
+
+export type ClosedMatcherSourceLocator =
+  | { readonly kind: "tool-occurrence"; readonly toolOccurrenceId: string }
+  | { readonly kind: "event"; readonly eventId: string };
+
+export interface ClosedMatcherFilterRow {
+  readonly kind: "tool" | "event" | "legacy-source-row";
+  readonly rowId: string;
+  readonly number: string;
+  readonly phase: "at-evaluation" | "outside-evaluation-snapshot" | "historical";
+  readonly summary: string;
+  readonly detail: ClosedAssertionFactValue;
+  readonly locator?: ClosedMatcherSourceLocator;
+  readonly evaluation:
+    | { readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated" | "not-retained"; readonly difference?: ClosedAssertionFactValue }
+    | { readonly result: "outside-snapshot" | "legacy" };
+  readonly conversationTarget: ClosedMatcherConversationTarget;
+}
+
+export interface ClosedMatcherOrderReceipt {
+  readonly sourceRows: number;
+  readonly comparisons: number;
+  readonly unavailableComparisons: number;
+  readonly definitePrefixLength: number;
+  readonly possiblePrefixLength: number;
+  readonly stepReceipts: readonly {
+    readonly step: number;
+    readonly comparisons: number;
+    readonly matched: number;
+    readonly mismatched: number;
+    readonly unavailable: number;
+  }[];
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
+}
+
+export interface ClosedMatcherOrderStep {
+  readonly step: number;
+  readonly summary: ClosedAssertionFactValue;
+  readonly state: "matched" | "possible" | "blocked" | "not-reached";
+  readonly sourceRow?: string;
+  readonly conversationTarget?: ClosedMatcherConversationTarget;
+}
+
+export type ClosedMatcherLedgerCollection =
+  | {
+      readonly state: "complete" | "partial";
+      readonly rows: readonly ClosedMatcherFilterRow[];
+      readonly limitations: readonly ClosedAssertionFactValue[];
+    }
+  | {
+      readonly state: "unavailable";
+      readonly reason: "historical-not-recorded" | "source-unavailable" | "ambiguous";
+      readonly rows: readonly ClosedMatcherFilterRow[];
+      readonly limitations: readonly ClosedAssertionFactValue[];
+    };
+
+export type ClosedMatcherFilterDebugger =
+  | {
+      readonly state: "current";
+      readonly subject: "tool" | "event";
+      readonly query:
+        | { readonly kind: "collection-filter"; readonly summary: ClosedAssertionFactValue }
+        | { readonly kind: "ordered-sequence"; readonly summaries: readonly ClosedAssertionFactValue[] };
+      readonly receipt: ClosedAssertionCollectionReceipt | ClosedMatcherOrderReceipt;
+      readonly source: {
+        readonly final: ClosedMatcherLedgerCollection;
+        readonly atEvaluation: ClosedMatcherLedgerCollection;
+      };
+      readonly identityRelation:
+        | { readonly state: "exact" }
+        | { readonly state: "unavailable"; readonly reason: "source-unavailable" | "ambiguous" };
+      readonly overlayRetention: "complete" | "partial" | "unavailable";
+      readonly steps: readonly ClosedMatcherOrderStep[];
+    }
+  | {
+      readonly state: "legacy";
+      readonly subject: "tool" | "event" | "source-row";
+      readonly query: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
+      readonly source: {
+        readonly final: ClosedMatcherLedgerCollection;
+        readonly atEvaluation: ClosedMatcherLedgerCollection;
+      };
+      readonly identityRelation: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
+      readonly overlayRetention: "unavailable";
+      readonly steps: readonly ClosedMatcherOrderStep[];
+      readonly legacyDiagnostic?: ClosedAssertionFactValue;
+    };
 
 export interface ClosedAssertionDisplay {
   readonly key?: string;
