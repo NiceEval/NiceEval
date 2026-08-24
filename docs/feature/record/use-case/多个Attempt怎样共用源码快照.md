@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 多个 Attempt 怎样共用源码快照
 
 源码闭包属于 origin Run 的 `niceeval.sources`。Attempt 不各自复制源码，也不把 host path 或 blob

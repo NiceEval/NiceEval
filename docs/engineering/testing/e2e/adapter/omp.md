@@ -2,6 +2,9 @@
 
 ## adapter-omp-target-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 `adapter/omp` 从安装后的候选包导入 `ompAgent`，在 `NICEEVAL_OMP_DOCKER_IMAGE` 声明的官方预装 Sandbox image 中
 运行锁定版本的 Oh My Pi 真实非交互 CLI。场景使用 live OpenAI-compatible provider，保留逐 Eval 的 `passed/1`
 oracle，并从公开 CLI 读回 marker 所在的 execution。通用 Runner timing 由

@@ -29,11 +29,17 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Transport owner
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 `test/transport.test.ts` 只拥有完整 SSE 成功及其公开 Evidence Page 文案。
 
 <a id="approval-owner"></a>
 
 ### Approval owner
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 `test/approval.test.ts` 只拥有 pending → approve / deny 的同 call 生命周期。
 
@@ -41,17 +47,26 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Disconnect owner
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 `test/disconnect.test.ts` 只拥有 `[DONE]` 两侧的非法终止：半截 SSE 在结束标记前断开，以及结束标记后的帧不能补成成功 Turn。
 
 <a id="timeout-owner"></a>
 
 ### Timeout owner
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 `test/timeout.test.ts` 只拥有挂起 body 触发 attempt timeout 的结果。
 
 <a id="http-error-owner"></a>
 
 ### HTTP error owner
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
 
 `test/http-error.test.ts` 只拥有 HTTP 500 的公开失败与可行动诊断。
 

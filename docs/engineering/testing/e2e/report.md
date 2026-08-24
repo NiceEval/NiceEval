@@ -130,15 +130,24 @@ niceeval view --report <fixture> --no-open
 
 ### report-project-current
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [审阅一次Run怎样采用结果](../../../feature/reports/use-case/审阅一次Run怎样采用结果.md)
+
 `report-project-current.test.ts` 验证不带选择项的 `show` 累积全部身份仍匹配的 Run。Eval source 改变后，旧结果从
 当前 Sample 消失；下一次 `exp` 产生匹配的新结果。验收只走公开 receipt / show，并确认 `--latest` 已移除。
 
 ### report-config-reload
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [制作可访问页面](../../../feature/reports/use-case/制作可访问页面.md)
+
 `report-config-reload.test.ts` 验证 Config、Report 与 Theme 的受控重建。它拥有 latest-intent-wins、last-good、
 固定 HTTP revision 与刷新不读取数据的公开观察。
 
 ### report-execution-evidence
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [审阅一次Run怎样采用结果](../../../feature/reports/use-case/审阅一次Run怎样采用结果.md)
 
 `report-execution.test.ts` 先让标准 React JSX 作者模块通过安装候选包的公开声明 typecheck。
 随后它在固定 Sample 上完成站点构建。
@@ -149,18 +158,30 @@ niceeval view --report <fixture> --no-open
 
 ### report-static-export
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [分享静态报告站](../../../feature/reports/use-case/分享静态报告站.md)
+
 `report-export.test.ts` 验证 `view --out` 的完整文件集合、与 view 的 body bytes 等价、零选中结果拒绝，以及已存在目标保护。
 
 ### report-show-json
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [审阅一次Run怎样采用结果](../../../feature/reports/use-case/审阅一次Run怎样采用结果.md)
 
 `report-show.test.ts` 验证 locator、project-current、human 与 JSON 的单目标公开读回。它只断言选中 route 的 format 与内容，
 不拥有全路由或 revision oracle。fixture 会让无关参数 Page 的 `enumerate()` 失败，并证明两种 show 都不受影响。
 
 ### report-source-snapshot
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [审阅一次Run怎样采用结果](../../../feature/reports/use-case/审阅一次Run怎样采用结果.md)
+
 `report-source.test.ts` 验证选中 Source Page 使用运行时快照，不读取后来修改的工作树内容，并作为已生成页面或文件交付。
 
 ### report-browser-journey
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [制作可访问页面](../../../feature/reports/use-case/制作可访问页面.md)
 
 `report.browser.spec.ts` 通过真实 href、HTTP、可访问身份、可见内容、断网阅读和禁用 JavaScript 的明确提示验证浏览器 Journey。
 经典旅程使用同组但 Eval population 不同的实验，并通过真实浏览器完成筛选、原生 `details` 展开、Attempt href 下钻与中文切换。它只锁 role、text、href 和

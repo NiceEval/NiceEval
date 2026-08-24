@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Docker 执行配置（Docker Profile）
 
 Coding agent经常需要在 Sandbox里运行 `docker build`、`docker run`与 `docker compose`。把宿主

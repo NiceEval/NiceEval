@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Judge
 
 Judge 是异步 Assertion evaluator。它给出有限 `[0,1]` measurement、理由与 evidence；它不是 Match，

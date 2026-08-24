@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 裁判评质量：规则写不出对错时
 
 “语气是否专业”“说明是否清楚”这类问题没有稳定的精确 matcher。

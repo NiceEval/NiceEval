@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # Sandbox 复用：长批次在派发前更换 Sandbox
 
 一批短 Attempt 的总时长可能超过云 Sandbox 的连续运行上限。

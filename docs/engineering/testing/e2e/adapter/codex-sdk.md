@@ -2,6 +2,9 @@
 
 ## adapter-codex-sdk-live-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/codex-sdk`。它在 host 上以 external network 和 Node 24+ 运行，锁定
 `@openai/codex-sdk` 版本，并只接收 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL` 两个 live secret。
 每次 Experiment 只有一次 Attempt；Vitest 没有 retry，也没有 Judge。

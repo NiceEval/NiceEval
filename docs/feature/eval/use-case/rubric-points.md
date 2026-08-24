@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 计分制：检查点和质量分
 
 通过制回答“是否满足要求”。需要表达“做到几成”时，使用 `defineScoreEval`，用 `.score(points)` 让已登记

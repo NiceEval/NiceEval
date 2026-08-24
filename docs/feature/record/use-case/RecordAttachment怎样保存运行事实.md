@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # Attachment 怎样保存运行事实
 
 NiceEval 不把运行事实放进开放 JSON bag。每份事实都属于一个 branded Attachment family、一个 owner 和一个

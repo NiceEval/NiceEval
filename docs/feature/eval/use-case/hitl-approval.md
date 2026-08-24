@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # HITL 审批：agent 停在人工输入上
 
 ## 解决什么问题

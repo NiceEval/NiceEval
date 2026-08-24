@@ -24,6 +24,19 @@ Record、Analysis 与 Report 是三个数据层。CLI 只进入各自的 Host SD
 `packages/niceeval/src/cli/bootstrap.ts` 只能组合这些 Host 与 Feature contribution。它不直接调用 `packages/niceeval/src/runner/`、`packages/niceeval/src/record/reader/`、family decoder 或
 Report loader。Host 内部才取得 Scope、Layer、lease、reader、writer 或 renderer 实现。
 
+## 仓库维护 CLI
+
+| 目标行为 | 当前源码区域 |
+|---|---|
+| Effect CLI 根、argv/options、Layer 组装、统一输出与唯一 `NodeRuntime.runMain` | `packages/repo-tools/src/cli.ts` |
+| Feature/Test Trace Schema、compiler、固定投影与人读树 formatter | `packages/repo-tools/src/docs/trace/{model,compiler,index,presentation}.ts` |
+| canonical RepoRef、target validation 与关系 mutation 的共享锁/generation | `packages/repo-tools/src/docs/trace/{ref,relation-mutation}.ts` |
+| Feedback v2、adoption、Memory relation 与 Issue source | `packages/repo-tools/src/feedback/` |
+| structured Memory、promotion、supersession 与 E2E regression check | `packages/repo-tools/src/memory/` |
+
+这些命令属于仓库自身，不进入发布的 `niceeval` 产品 CLI。正式入口是根 `pnpm feature`、`pnpm test`、`pnpm feedback` 与 `pnpm memory`；
+领域 handler 返回结构化 receipt，只有根 `cli.ts` 读取 argv、写 stdout/stderr 和设置退出码。
+
 ## 运行与持久事实
 
 | 目标行为 | 当前源码区域 |

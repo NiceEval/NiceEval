@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 用 Experiment 做裁判 A/B
 
 Eval 保留 rubric、材料和 consumer threshold；Experiment 只选择 Judge 执行配置：

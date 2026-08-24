@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 本地测试文件:普通上传与动态身份
 
 ## 解决什么问题

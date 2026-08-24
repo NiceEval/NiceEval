@@ -86,6 +86,11 @@ unknown family、known future revision 与不相容 Core 在 current `RecordRead
 input；它不同于 current catalog family 缺失的 `not-recorded`，也不同于已知 family predecessor 所需的
 `migration-required`。
 
+一个 fixed Attachment 同时承载多个子通道时，binding 按 limitation 的 retention target 投影自己所需的输入。
+例如 `niceeval.agent-turns` 的 `turn-item` 缺口只影响 conversation；已经完整持久化的 `usage-observation` 仍能形成 Tokens。
+整 Turn、payload 或 usage 自身的缺口才影响 usage input。DomainView 的 source dependency 继续保留整个 family 的
+`partial` 状态，各具名子视图则只显示属于自己的 collection limitation。
+
 `PopulationMembers` 同样由 NiceEval 或领域包发布。它固定一个总体的成员穷尽规则，且不含 Record reader、
 路径或原始 payload。
 

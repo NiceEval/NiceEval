@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-project-current
+// regression: memory/current-result-single-state-ruling.md
 // regression: 052b13bb (design: memory/current-result-single-state-ruling.md)
 // rerun: pnpm e2e test --repo report -- --run test/report-project-current.test.ts
 

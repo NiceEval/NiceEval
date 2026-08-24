@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Eval —— 编写 eval
 
 写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 显式 migration 与 Git 边界
 
 本页说明 `niceeval migrate` 怎样区分 current Attachment、可达的历史 revision、未知 family 与 legacy root。

@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 过程与成本：断 agent 怎么做到的
 
 结果对了不等于过程对了。作用域 Assertion 直接登记 Boolean 检查；作者决定每一条是否影响判定或贡献分数。

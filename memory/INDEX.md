@@ -170,6 +170,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [concurrent-run-publication-recovery-race](concurrent-run-publication-recovery-race.md) — 并发 append writer 在 recovery 校验 staging 时完成原子发布，旧逻辑把合法 rename 误报为 inventory 损坏；仅在 staging 消失且 destination 已出现时转去完整校验不可变 destination
 - 已修 [shared-state-zombie-owner-recovery](shared-state-zombie-owner-recovery.md) — Linux zombie 保留 starttime 却不能执行 cleanup，显式 sharedState recovery 曾误拒绝；仅将 `Z` / `X` / `x` 判为终态，其余身份不确定继续 fail closed
 - 已修 [testkit-procfs-scan-race](testkit-procfs-scan-race.md) — 单次 terminal procfs scan 可漏掉 snapshot 后 fork 的同组 descendant；per-handle snapshot handshake 固定红灯，连续 scan 与可验证 resource cleanup 收口
 - 已修 [testkit-zombie-only-process-group](testkit-zombie-only-process-group.md) — Linux 的 `kill(-pgid, 0)` 对仅含 zombie 的 owned group 仍成功，旧 cleanup 无法改变终态却在两轮信号后报残留；Lifecycle 安装后 E2E 用固定 subreaper fixture 取得旧实现红灯，procfs terminal-only 判定转绿
@@ -309,6 +310,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [analysis-usage-projection-conflates-conversation-limitations](analysis-usage-projection-conflates-conversation-limitations.md) — Preview 的完整 token buckets 因同一 agent-turns source 含 conversation-only `turn-item` limitation 被误报 usage incomplete；Analysis 改为按 retention target 投影各子通道状态
 - 已修 [report-header-experiment-selector-regression](report-header-experiment-selector-regression.md) — Report SPA 合并时丢掉实验组导航投影，根页退化成未选范围的链接索引且 Header 只剩语言；修法是 closure 交付闭合 route/label、根入口默认第一组并恢复语言左侧原生 selector
 - 已修 [record-only-assertions-labeled-soft](record-only-assertions-labeled-soft.md) — Attempt 展开把未计分 Assertion 标成 `soft`，正常 `notCalledTool` 看不出这是已记录的零命中结果；改为 `recorded passed/failed/unavailable`，并由浏览器 E2E 守住零命中与决定性见证
 - 已修 [commandsucceeded-received-excerpt-not-tail](commandsucceeded-received-excerpt-not-tail.md) — commandSucceeded 失败摘录曾落在输出中段:合并顺序(stdout 前置让 stderr 装包噪声占末尾)+ 摘录窗口宽过终端行预算被从头收口,双因叠加;修为 stderr 在前合并 + 76 字符窗口(src/context/context.ts),合并顺序钉进 display.md;同批裁决 commands.json 落盘不截
@@ -455,6 +457,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## docs · docs-site · reference
 
+- [docs-trace-relations-are-source-owned](docs-trace-relations-are-source-owned.md) — 裁决(2026-08-24):Feature 与 Use Case 的反向追溯由 Feedback、Memory、E2E 等事实 owner 动态投影；页面角色从 placement 派生，formatter 不进入持久 metadata
 - [overview-diagram-copies-field-shapes](overview-diagram-copies-field-shapes.md) — 已修:三层总纲图复制字段级形状,五处全漂移(locator/verdict 搬错层、flags 提到 run.json 顶层、目录名违反清洗规则、MetricCell 丢 samples/total);修法=图只留类型名与层间调用
 - 已修 [line-width-guard-cannot-catch-long-sentences](line-width-guard-cannot-catch-long-sentences.md) — 裁决(2026-07-26):行宽是代理指标,agent 靠句中换行零成本绕过;改为在软换行拼接后量单句 ≤140 字 / 一段 ≤320 字,分号不算断句;行宽先降级、2026-07-30 整条删除
 - 已修 [docs-line-width-cjk-token-exemption](docs-line-width-cjk-token-exemption.md) — 行宽检查的「长 token 豁免」按空格切 token,中文整段就是一个巨长 token,三百多行中文被静默放过;豁免只认不含宽字符的 token

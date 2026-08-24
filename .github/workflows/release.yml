@@ -139,7 +139,7 @@ jobs:
             echo "::error::publish candidate SHA-256 mismatch: expected=$EXPECTED_SHA256 actual=$actual"
             exit 1
           fi
-          expected_integrity="$(jq -r '.sha512' "${bundle}/candidate-pack.json")"
+          expected_integrity="$(jq -r '.integrity' "${bundle}/candidate-pack.json")"
           if ! [[ "$expected_integrity" =~ ^sha512-[A-Za-z0-9+/=]+$ ]]; then
             echo "::error::candidate pack metadata has no valid sha512 integrity"
             exit 1

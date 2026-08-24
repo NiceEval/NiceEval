@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # 执行失败分类:时间轴与空间轴
 
 一套统一的失败分类词表,回答两个正交的决策问题:**换个时机重做,能不能过**(时间轴 `retryable`,驱动 attempt 内的有界重试),以及**这个死因波及多远**(空间轴 `scope`,驱动 eval / experiment 粒度的止损机制)。

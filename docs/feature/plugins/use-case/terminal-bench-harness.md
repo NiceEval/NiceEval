@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # Terminal-Bench 的 Harness 条件
 
 ## 异构 Pair 是首要约束

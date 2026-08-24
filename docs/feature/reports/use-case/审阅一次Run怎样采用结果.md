@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 审阅一次 Run 的闭合结果
 
 这个用例把固定 Run 的计划与结果和 immutable Attempt 的关闭 Evidence、Observability、File Changes 分开阅读。

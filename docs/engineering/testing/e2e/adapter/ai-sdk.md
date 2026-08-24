@@ -2,6 +2,9 @@
 
 ## adapter-ai-sdk-live-compatibility
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [adapters](../../../../feature/adapters/README.md)
+
 Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes 与 external network。
 被测应用是仓库自带的 AI SDK 应用：一个暴露 UI Message Stream 的`useChat` 后端 HTTP 服务——涵盖[AI SDK 契约页](../../../../feature/adapters/sdk/ai-sdk/README.md)声明的官方 HTTP Agent 工厂`uiMessageStreamAgent`。
 应用接入官方 `@ai-sdk/otel`集成。该签入场景在 `src/topology.ts` 固定 HTTP 与 OTLP 拓扑，应用把 span 发到 niceeval 固定端口收的 OTLP 接收器，同时承担矩阵中 direct-agent telemetry 路径的证明；内部 endpoint 不从子进程变量读取。

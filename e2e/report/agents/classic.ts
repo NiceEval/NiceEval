@@ -81,6 +81,10 @@ export function classicMemoryAgent() {
         },
         events: [
           {
+            type: "thinking" as const,
+            text: "Private reasoning is intentionally not retained as a conversation item.",
+          },
+          {
             type: "operation.started" as const,
             operationId,
             operation: {

@@ -19,6 +19,9 @@ current root identity 固定为 `niceeval.record.attachments`。`niceeval.record
 
 ## Current-to-current handoff bootstrap
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [发布完整运行](../../../feature/record/use-case/发布完整运行.md)
+
 `current-handoff.test.ts` 把 `producer` 和 `candidate` 绑定为两个独立的当前命令身份。producer 运行确定性
 Experiment 并持久化 source-first Record；candidate 随后以独立 `migrate` 证明它 already-current，再以
 `show --run ... --json` 选中 producer 公开交付的同一 Run。
@@ -27,6 +30,9 @@ Experiment 并持久化 source-first Record；candidate 随后以独立 `migrate
 均不从 Record 私有文件反推结果。
 
 ## npm 0.13.0 beta cutover
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [未来功能不扩张核心格式](../../../feature/record/use-case/未来功能不扩张核心格式.md)
 
 `from-0-13-0.test.ts` 固定并 attest npm `niceeval@0.13.0` 及签入的 registry SRI。它由真实 CLI 运行确定性
 Experiment，产生 `niceeval.record` aggregate。current candidate 的 `migrate` 与 `show` 都必须明确返回
@@ -56,6 +62,9 @@ future revision，用于区分 `unsupported-format` 与 payload/schema invalid�
 
 ## Assertions v1 to current
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [显式迁移Record-major](../../../feature/record/use-case/显式迁移Record-major.md)
+
 `assertions-v1.test.ts` 经公开 `niceeval migrate --yes` 与 `show` 证明 Assertions v1 经过内存中的 revision 2 形成 current revision 3 Assertions 事实。
 display、可证明 decision/policy/contribution 与 source sites 按声明保留；criterion、subject、evidence 与旧
 diagnostic 不可证明，因此丢弃并给出 rerun 建议。required-unavailable gate 迁移后仍公开显示为 errored。
@@ -65,26 +74,41 @@ diagnostic 不可证明，因此丢弃并给出 rerun 建议。required-unavaila
 
 ## Interrupted migration recovery
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [显式迁移Record-major](../../../feature/record/use-case/显式迁移Record-major.md)
+
 `interrupted-recovery.test.ts` 从安装后的 Library 打开真实 maintenance session，等待它取得 lease 后用 `SIGKILL`
 终止进程。下一次公开 `niceeval migrate --yes` 必须识别 dead same-host owner、恢复 maintenance 并完成迁移；
 随后 `show` 能读取结果。owner 不使用 sentinel、Git shim 或伪造 lock fixture。
 
 ## Plan change preserves concurrent edit
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [显式迁移Record-major](../../../feature/record/use-case/显式迁移Record-major.md)
+
 `stale-plan.test.ts` 先从安装后的 Library 取得 nominal migration plan，再由独立 CLI process 提交 migration。
 旧 plan 的 `applyMigrate()` 必须返回 `record-migration-plan-stale`，不能重复应用已失效的 source-byte plan。
 
 ## Migration no-follow replace
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [显式迁移Record-major](../../../feature/record/use-case/显式迁移Record-major.md)
 
 `symlink-race.test.ts` 把 Assertions envelope 换成指向 Record 外文件的 symlink。公开 migration 必须以
 `record-path-type-invalid` fail closed，并保持外部文件 bytes 不变。写入不能 follow symlink。
 
 ## Pre-write invalid Record
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [显式迁移Record-major](../../../feature/record/use-case/显式迁移Record-major.md)
+
 `prewrite-invalid.test.ts` 从 predecessor fixture 制造 sealed Core 缺失 Member。candidate 必须在首个 portable
 write 前返回 `record-migration-invalid`，并保持整个 Record tree digest 不变。owner 不依赖 Git repository。
 
 ## Future or unknown family
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [未来功能不扩张核心格式](../../../feature/record/use-case/未来功能不扩张核心格式.md)
 
 `future-version.test.ts` 使用 closed literal future fixture。known family 的 future revision 让 migration
 返回 `record-format-unsupported`；ordinary `show` 仍先要求 root migration。unknown future family 则让 migration
@@ -92,11 +116,17 @@ write 前返回 `record-migration-invalid`，并保持整个 Record tree digest 
 
 ## Strict complete marker clean
 
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [record](../../../feature/record/README.md)
+
 `complete-marker-clean.test.ts` 从 source-first Record 起步，经公开 `niceeval clean` 证明只有零字节普通文件
 `complete` 能参与 sealed Run；非空文件或同名目录保持 incomplete，并在确认后删除。第二次公开 `clean` 不再列出
 这些 Run。
 
 ## Report migration metric guard
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [核对数据完整度](../../../feature/reports/use-case/核对数据完整度.md)
 
 `report-guard.test.ts` 用 current candidate 的真实 `exp` 生成 source-first Record，再证明 Report 拒绝 ledger
 缺少 denominator Slot 的伪造 metric；它不以 legacy Record 的前置失败掩盖 Report 边界。
