@@ -69,6 +69,16 @@ import {
   type NonEmptyRecordIssues,
 } from "../errors/record-errors.ts";
 import { NiceEvalRecordAttachmentPersistences } from "../family/catalog.ts";
+import {
+  recordDefinitionAttachment,
+  recordContributionFromAttachmentPersistence,
+  recordContributionRuntime,
+  recordWriteCommandPayload,
+  type AnyRecordDefinition,
+  type RecordContribution,
+  type RecordDefinitionValue,
+  type RecordWriteCommand,
+} from "../authoring.ts";
 import type {
   AttemptDocument,
   MemberDocument,
@@ -160,6 +170,7 @@ import {
   readVerifiedRecordAttachmentPhysical,
 } from "../reader/runtime.ts";
 import {
+  recordAlreadyWritten,
   recordAttachmentEncodeError,
   recordDraftStateError,
   recordOwnerDefinitionMismatch,
@@ -271,11 +282,11 @@ interface AttemptRuntime {
   readonly draft: RunRuntime;
   readonly attemptId: AttemptId;
   readonly slotId: SlotId;
-  readonly mutex: Effect.Semaphore;
   readonly settled: Deferred.Deferred<void>;
   state: "open" | "completing" | "completed" | "failed";
   document: AttemptDocument | undefined;
   readonly attachments: Map<string, FixedAttachmentRuntime>;
+  readonly reservedFamilies: Set<string>;
   handle: AttemptWriteSession | undefined;
 }
 
@@ -301,6 +312,7 @@ interface RunRuntime {
   readonly slotReservations: Map<SlotId, "attempt" | "reference" | "terminal">;
   readonly membership: Map<SlotId, MembershipRuntime>;
   readonly attachments: Map<string, FixedAttachmentRuntime>;
+  readonly reservedFamilies: Set<string>;
   readonly inFlightMutations: Set<Deferred.Deferred<void>>;
   closed: boolean;
   markerCreated: boolean;
@@ -1670,29 +1682,44 @@ function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemSer
     }),
     read<
       Owner extends RecordAttachmentOwner,
-      Definition extends AnyDefinition<Owner>,
+      Definition extends AnyDefinition<Owner> | AnyRecordDefinition<Owner>,
     >(
       owner: SelectedOwnerRef<Owner>,
       definition: Definition,
     ): Effect.Effect<
-      RecordAttachmentRead<DefinitionValue<Definition>>,
+      RecordAttachmentRead<
+        Definition extends AnyRecordDefinition<Owner>
+          ? RecordDefinitionValue<Definition>
+          : Definition extends AnyDefinition<Owner>
+          ? DefinitionValue<Definition>
+          : never
+      >,
       RecordReaderReadError
     > {
       return Effect.gen(function* () {
         if (runtime.lifecycle.closed) return yield* Effect.fail(readerClosed());
         const ownerRuntime = runtime.owners.get(owner);
         if (ownerRuntime === undefined) return yield* Effect.fail(handleInvalid());
+        const attachment = isRecordAttachmentDefinition(definition)
+          ? definition
+          : recordDefinitionAttachment(definition);
         const descriptor = yield* readDescriptorForDefinition({
           runtime,
           owner: ownerRuntime,
-          definition,
+          definition: attachment,
         });
         return (yield* readFixedFamily({
           runtime,
           fileSystem,
           owner,
-          persistence: descriptor as RecordAttachmentPersistence<Definition, number>,
-        })) as RecordAttachmentRead<DefinitionValue<Definition>>;
+          persistence: descriptor,
+        })) as RecordAttachmentRead<
+          Definition extends AnyRecordDefinition<Owner>
+            ? RecordDefinitionValue<Definition>
+            : Definition extends AnyDefinition<Owner>
+            ? DefinitionValue<Definition>
+            : never
+        >;
       });
     },
     requireComplete: (selection: RecordSelection) =>
@@ -2313,36 +2340,34 @@ function collectAttachmentBlob<E, R>(input: {
   );
 }
 
-function reserveFixedAttachment(input: {
+function beginAttachmentMutation(input: {
   readonly run: RunRuntime;
   readonly target: RunRuntime | AttemptRuntime;
-  readonly attachment: FixedAttachmentRuntime;
-}): Effect.Effect<void, RecordWriteError> {
+  readonly owner: RecordAttachmentOwner;
+  readonly family: string;
+}): Effect.Effect<Deferred.Deferred<void>, RecordWriteError> {
   return input.run.mutex.withPermits(1)(
-    Effect.suspend(() => {
+    Effect.gen(function* () {
+      yield* assertRunLive(input.run);
       if (input.run.state !== "open") {
-        return Effect.fail(stateError("record", input.run.state));
+        return yield* Effect.fail(stateError("record", input.run.state));
       }
-      if (
-        input.target.attachments.has(input.attachment.name)
-      ) {
-        return Effect.fail(stateError("record", input.run.state));
+      if (input.target !== input.run && (input.target as AttemptRuntime).state !== "open") {
+        return yield* Effect.fail(stateError("record", input.run.state));
       }
-      input.target.attachments.set(input.attachment.name, input.attachment);
-      return Effect.void;
+      if (input.target.reservedFamilies.has(input.family)) {
+        input.run.state = "failed";
+        consumeRunCapabilities(input.run);
+        return yield* Effect.fail(recordAlreadyWritten({
+          owner: input.owner,
+          family: input.family,
+        }));
+      }
+      input.target.reservedFamilies.add(input.family);
+      const mutation = yield* Deferred.make<void>();
+      input.run.inFlightMutations.add(mutation);
+      return mutation;
     }),
-  );
-}
-
-function assertAttemptCollecting(
-  attempt: AttemptRuntime,
-): Effect.Effect<void, RecordWriteError> {
-  return attempt.mutex.withPermits(1)(
-    Effect.suspend(() =>
-      attempt.state === "open"
-        ? Effect.void
-        : Effect.fail(stateError("record", attempt.draft.state)),
-    ),
   );
 }
 
@@ -2363,12 +2388,14 @@ function writeCurrentAttachment<
   AttachedContentRequirements<Value>
 > {
   return Effect.flatMap(
-    beginRunMutation(input.run, { operation: "record" }),
+    beginAttachmentMutation({
+      run: input.run,
+      target: input.target,
+      owner: input.owner,
+      family: input.persistence.attachment.family,
+    }),
     (mutation) =>
       Effect.gen(function* () {
-        if (input.target !== input.run) {
-          yield* assertAttemptCollecting(input.target as AttemptRuntime);
-        }
         const prepared = yield* prepareCurrentRecordAttachment({
           definition: input.persistence.attachment,
           value: input.value,
@@ -2403,7 +2430,6 @@ function writeCurrentAttachment<
             ? undefined
             : (input.target as AttemptRuntime).attemptId,
         });
-        yield* reserveFixedAttachment({ run: input.run, target: input.target, attachment });
         const attachmentRoot = [...input.baseSegments, input.persistence.attachment.family];
         yield* input.run.fileSystem.ensureStagingDirectory(
           stagedRunPath(input.run, ...input.baseSegments),
@@ -2434,6 +2460,9 @@ function writeCurrentAttachment<
           bytes: jsonBytes(encodedEnvelope.right),
           maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
           mode: "exclusive",
+        });
+        yield* Effect.sync(() => {
+          input.target.attachments.set(attachment.name, attachment);
         });
       }).pipe(Effect.onExit((exit) => finishRunMutation(input.run, mutation, exit))),
   ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
@@ -2611,23 +2640,34 @@ function writeDescriptorForDefinition<Owner extends RecordAttachmentOwner>(input
   );
 }
 
+function beginAttemptCompletion(
+  attempt: AttemptRuntime,
+): Effect.Effect<Deferred.Deferred<void>, RecordWriteError> {
+  return attempt.draft.mutex.withPermits(1)(
+    Effect.gen(function* () {
+      yield* assertRunLive(attempt.draft);
+      if (attempt.draft.state !== "open") {
+        return yield* Effect.fail(stateError("record", attempt.draft.state));
+      }
+      if (attempt.state !== "open") {
+        return yield* Effect.fail(recordWriterClosed());
+      }
+      attempt.state = "completing";
+      const mutation = yield* Deferred.make<void>();
+      attempt.draft.inFlightMutations.add(mutation);
+      return mutation;
+    }),
+  );
+}
+
 function completeAttempt(
   attempt: AttemptRuntime,
   outcome: AttemptDocument["outcome"],
 ): Effect.Effect<void, RecordWriteError> {
   return Effect.flatMap(
-    beginRunMutation(attempt.draft, { operation: "record" }),
+    beginAttemptCompletion(attempt),
     (mutation) =>
       Effect.gen(function* () {
-        yield* attempt.mutex.withPermits(1)(
-          Effect.gen(function* () {
-            yield* assertRunLive(attempt.draft);
-            if (attempt.state !== "open") {
-              return yield* Effect.fail(stateError("record", attempt.draft.state));
-            }
-            attempt.state = "completing";
-          }),
-        );
         const slot = attempt.draft.expectedBySlot.get(attempt.slotId);
         if (slot === undefined) return yield* Effect.fail(coreInvalid());
         const document: AttemptDocument = {
@@ -2668,19 +2708,15 @@ function completeAttempt(
           maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
           mode: "exclusive",
         });
-        yield* attempt.mutex.withPermits(1)(
-          attempt.draft.mutex.withPermits(1)(
-            Effect.sync(() => {
-              attempt.state = "completed";
-              attempt.document = document;
-              attempt.draft.membership.set(attempt.slotId, { document: member });
-            }),
-          ),
-        );
+        yield* attempt.draft.mutex.withPermits(1)(Effect.sync(() => {
+          attempt.state = "completed";
+          attempt.document = document;
+          attempt.draft.membership.set(attempt.slotId, { document: member });
+        }));
         yield* Deferred.succeed(attempt.settled, undefined).pipe(Effect.asVoid);
       }).pipe(
         Effect.onExit((exit) =>
-          attempt.mutex.withPermits(1)(
+          attempt.draft.mutex.withPermits(1)(
             Effect.sync(() => {
               if (!Exit.isSuccess(exit) && attempt.state === "completing") {
                 attempt.state = "failed";
@@ -2728,6 +2764,32 @@ function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
         }),
       ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
     },
+    record: Object.freeze({
+      write<Value, Error, Requirements>(
+        command: RecordWriteCommand<"attempt", Value, Error, Requirements>,
+      ): Effect.Effect<void, RecordWriteError | Error, Requirements> {
+        if (attempt.handle === undefined) return Effect.fail(recordWriterClosed());
+        const payload = recordWriteCommandPayload(command, "attempt");
+        if (payload === undefined) {
+          return Effect.fail(familyDefinitionRequired({
+            owner: "attempt",
+            family: "unbranded.record-command",
+          }));
+        }
+        return Effect.flatMap(
+          writeDescriptorForDefinition({
+            run: attempt.draft,
+            expectedOwner: "attempt",
+            definition: payload.definition,
+          }),
+          (persistence) => writeAttemptFamily({
+            attempt,
+            persistence,
+            value: payload.input,
+          }),
+        ) as Effect.Effect<void, RecordWriteError | Error, Requirements>;
+      },
+    }),
   });
   attempt.handle = session;
   attemptSessions.set(session, attempt);
@@ -2747,17 +2809,16 @@ function createAttempt(
     (mutation) =>
       Effect.gen(function* () {
         const attemptId = yield* createFreshAttemptDirectory(run);
-        const mutex = yield* Effect.makeSemaphore(1);
         const settled = yield* Deferred.make<void>();
         const attempt: AttemptRuntime = {
           draft: run,
           attemptId,
           slotId: input.slotId,
-          mutex,
           settled,
           state: "open",
           document: undefined,
           attachments: new Map(),
+          reservedFamilies: new Set(),
           handle: undefined,
         };
         yield* run.mutex.withPermits(1)(Effect.sync(() => {
@@ -3315,6 +3376,35 @@ function sealRun(run: RunRuntime, completion: RunCompletion): Effect.Effect<Reco
   );
 }
 
+function makeRunRecordWriter(run: RunRuntime): RunWriteSession["record"] {
+  return Object.freeze({
+    write<Value, Error, Requirements>(
+      command: RecordWriteCommand<"run", Value, Error, Requirements>,
+    ): Effect.Effect<void, RecordWriteError | Error, Requirements> {
+      if (run.handle === undefined) return Effect.fail(recordWriterClosed());
+      const payload = recordWriteCommandPayload(command, "run");
+      if (payload === undefined) {
+        return Effect.fail(familyDefinitionRequired({
+          owner: "run",
+          family: "unbranded.record-command",
+        }));
+      }
+      return Effect.flatMap(
+        writeDescriptorForDefinition({
+          run,
+          expectedOwner: "run",
+          definition: payload.definition,
+        }),
+        (persistence) => writeRunFamily({
+          run,
+          persistence,
+          value: payload.input,
+        }),
+      ) as Effect.Effect<void, RecordWriteError | Error, Requirements>;
+    },
+  });
+}
+
 function makeRunSession(run: RunRuntime): RunWriteSession {
   const session: RunWriteSession = Object.freeze({
     runId: run.runId,
@@ -3363,6 +3453,7 @@ function makeRunSession(run: RunRuntime): RunWriteSession {
         }),
       ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
     },
+    record: makeRunRecordWriter(run),
     seal(completion: RunCompletion) {
       return runSessions.get(this) === run
         ? sealRun(run, completion)
@@ -3417,6 +3508,7 @@ function makeReferenceRunSession(run: RunRuntime): ReferenceRunWriteSession {
         }),
       ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
     },
+    record: makeRunRecordWriter(run),
     seal(completion: RunCompletion) {
       return runSessions.get(this) === run
         ? sealRun(run, completion)
@@ -3500,6 +3592,7 @@ function openNewRuntime(
       slotReservations: new Map(),
       membership: new Map(),
       attachments: new Map(),
+      reservedFamilies: new Set(),
       inFlightMutations: new Set(),
       closed: false,
       markerCreated: false,
@@ -5322,9 +5415,16 @@ function applyMigrateOperation(input: {
 
 /** Bind one immutable, explicitly composed Attachment catalog to all sessions. */
 export function makeRecordHost(input: {
-  readonly attachments: readonly AnyRecordAttachmentPersistence[];
+  readonly records: readonly RecordContribution[];
 }): RecordHostSDK {
-  const composed = makeRecordAttachmentCatalog(input.attachments);
+  const persistences = input.records.map((record) => {
+    const runtime = recordContributionRuntime(record);
+    if (runtime === undefined) {
+      throw new TypeError("makeRecordHost rejected an invalid Record contribution");
+    }
+    return runtime.persistence;
+  });
+  const composed = makeRecordAttachmentCatalog(persistences);
   if (Either.isLeft(composed)) {
     throw new TypeError(`makeRecordHost rejected Attachment composition: ${composed.left.code}`);
   }
@@ -5353,5 +5453,7 @@ export function makeRecordHost(input: {
 }
 
 export const recordHost: RecordHostSDK = makeRecordHost({
-  attachments: NiceEvalRecordAttachmentPersistences,
+  records: (NiceEvalRecordAttachmentPersistences as readonly AnyRecordAttachmentPersistence[]).map(
+    (persistence) => recordContributionFromAttachmentPersistence(persistence),
+  ),
 });

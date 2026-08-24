@@ -39,6 +39,11 @@ import type {
 } from "../reader/errors.ts";
 import type { RecordWriteError } from "../writer/types.ts";
 import type { RecordFileSystemError } from "../platform/errors.ts";
+import type {
+  AnyRecordDefinition,
+  RecordDefinitionValue,
+  RecordWriteCommand,
+} from "../authoring.ts";
 
 export const selectedRunRefBrand: unique symbol = Symbol(
   "@niceeval/record/SelectedRunRef",
@@ -203,16 +208,28 @@ export interface RecordReadSession {
   readonly readAttempt: (
     ref: SelectedAttemptRef,
   ) => Effect.Effect<RecordCoreRead<ReadableAttempt>, RecordReaderReadError>;
-  readonly read: <
+  readonly read: {
+    <
+      Owner extends "run" | "attempt",
+      Definition extends AnyRecordDefinition<Owner>,
+    >(
+      owner: SelectedOwnerRef<Owner>,
+      definition: Definition,
+    ): Effect.Effect<
+      RecordAttachmentRead<RecordDefinitionValue<Definition>>,
+      RecordReaderReadError
+    >;
+    <
     Owner extends "run" | "attempt",
     Definition extends AnyDefinition<Owner>,
-  >(
-    owner: SelectedOwnerRef<Owner>,
-    definition: Definition,
-  ) => Effect.Effect<
-    RecordAttachmentRead<DefinitionValue<Definition>>,
-    RecordReaderReadError
-  >;
+    >(
+      owner: SelectedOwnerRef<Owner>,
+      definition: Definition,
+    ): Effect.Effect<
+      RecordAttachmentRead<DefinitionValue<Definition>>,
+      RecordReaderReadError
+    >;
+  };
   readonly requireComplete: (
     selection: RecordSelection,
   ) => Effect.Effect<RecordCompleteView, RecordCompletenessError>;
@@ -252,6 +269,13 @@ export interface AttemptWriteSession {
     outcome: AttemptDocument["outcome"],
   ) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"attempt">;
+  readonly record: OwnerRecordWriter<"attempt">;
+}
+
+export interface OwnerRecordWriter<Owner extends "run" | "attempt"> {
+  readonly write: <Value, Error, Requirements>(
+    command: RecordWriteCommand<Owner, Value, Error, Requirements>,
+  ) => Effect.Effect<void, RecordWriteError | Error, Requirements>;
 }
 
 export interface OwnerAttachmentWriter<Owner extends "run" | "attempt"> {
@@ -291,6 +315,7 @@ export interface RunWriteSession {
     readonly action: "not-dispatched" | "interrupted";
   }) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"run">;
+  readonly record: OwnerRecordWriter<"run">;
   readonly seal: (
     completion: RunCompletion,
   ) => Effect.Effect<RecordSealReceipt, RecordWriteError>;
@@ -304,6 +329,7 @@ export interface ReferenceRunWriteSession {
   readonly recordAcceptedMembership: RunWriteSession["recordAcceptedMembership"];
   readonly recordTerminalMember: RunWriteSession["recordTerminalMember"];
   readonly attach: RunWriteSession["attach"];
+  readonly record: RunWriteSession["record"];
   readonly seal: RunWriteSession["seal"];
 }
 

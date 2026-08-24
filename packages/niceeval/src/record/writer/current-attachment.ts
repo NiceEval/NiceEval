@@ -8,7 +8,9 @@ import {
   mintRecordAttachmentReference,
   recordAttachmentReferenceDefinition,
   recordAttachmentReferenceWire,
+  resolveRecordAttachmentDefinition,
   RecordAttachmentReference,
+  type RecordAttachmentReferenceTarget,
   type RecordAttachmentDefinition,
 } from "../attachment/protocol.ts";
 import {
@@ -73,10 +75,10 @@ export interface RecordAttachmentSessionBuilder {
       AttachedRecordContent<RecordBytesContentHandle, E, R>;
   };
   readonly reference: {
-    readonly to: <Definition extends AnyDefinition, Value>(
+    readonly to: <Definition extends RecordAttachmentReferenceTarget, Value>(
       definition: Definition,
       value: Value,
-    ) => import("../attachment/protocol.ts").RecordAttachmentReference<Definition, Value>;
+    ) => import("../attachment/protocol.ts").RecordAttachmentReference<AnyDefinition, Value>;
   };
 }
 
@@ -150,12 +152,13 @@ function makeBuilder(sources: Map<object, CapturedSource>): RecordAttachmentSess
         content("bytes", stream) as AttachedRecordContent<RecordBytesContentHandle, E, R>,
     }),
     reference: Object.freeze({
-      to: <Definition extends AnyDefinition, Value>(definition: Definition, value: Value) => {
-        if (!isRecordAttachmentDefinition(definition)) {
+      to: <Definition extends RecordAttachmentReferenceTarget, Value>(definition: Definition, value: Value) => {
+        const resolved = resolveRecordAttachmentDefinition(definition);
+        if (resolved === undefined) {
           throw new TypeError("Record reference requires an exact Attachment definition");
         }
         return mintRecordAttachmentReference(
-          RecordAttachmentReference.to<Definition, Value>(definition),
+          RecordAttachmentReference.to<AnyDefinition, Value>(resolved),
           value,
         );
       },

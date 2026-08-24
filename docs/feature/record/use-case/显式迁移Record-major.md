@@ -38,8 +38,10 @@ ordinary reader 从不迁移或写盘：
 
 ## Family-owned 相邻步骤
 
-`defineRecordAttachment()` 声明 current logical fact。
-`defineRecordAttachmentPersistence()` 以 exact attachment brand 绑定 durable revision 和 private adjacent migration。Record Core 只执行统一协议：
+高层 `defineAttemptRecord()` / `defineRunRecord()` 只为新 family 自动形成 revision `1`，不提供 revise API。已有 family
+演进使用底层 `defineRecordAttachment()` 声明 current logical fact。
+`defineRecordAttachmentPersistence()` 再以 exact attachment brand 绑定 durable revision 和 private adjacent migration。
+该 persistence 经 adapter 进入 Host `{ records }` composition；Record Core 只执行统一协议：
 
 1. Core 验证 source 的 storage-neutral tokenized document 与通用 physical/token closure。
 2. family-private parser 证明旧业务 closure，并调用纯 migration。
@@ -78,5 +80,5 @@ NiceEval 不调用 `git status`、不检查 HEAD / index，也不执行或生成
 ## 相关阅读
 
 - [Record CLI](../cli.md#migrate)
-- [Attachment definition 与 closure](../architecture.md#defineRecordAttachment-spi)
+- [底层 Attachment persistence SPI](../architecture.md#底层-attachment-persistence-spi)
 - [源码 Attachment 怎样安全演进](源码Attachment怎样安全演进.md)

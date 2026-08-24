@@ -12,7 +12,7 @@ definition 决定持久业务语义。Experiment 调度、execution claim、Anal
 |---|---|---|
 | Record Core | owner capability、exact codec、content source 读取、digest、预算、原子 envelope commit、Seal、发布、reader 与 migration executor | Assertions、conversation、file change 等业务字段与 capture 解释 |
 | `record/family` | attachment 的 family、owner、current Schema、named validate；persistence 的 revision 与私有相邻 migration | root I/O、staging、路径、Git、capture 生命周期 |
-| Runner / Sandbox / Adapter / producer | 在亲历边界通过 session callback capture，并使用 owner-scoped writer attach | durable layout、digest 算法、物理 content 表示或跨 owner 写入 |
+| Runner / Sandbox / Adapter / producer | 在亲历边界通过领域 collector capture，并使用 owner-scoped `record.write` 提交一次完整有界 logical value | durable layout、digest 算法、物理 content 表示、跨 owner 写入或第二个 capture authority |
 
 官方与第三方 definition 都遵守这条边界。Core 不按 family 名称分支；`record/family` 不打开 Record；capture
 authority 不写 envelope 或 content object。
@@ -90,7 +90,7 @@ payload 与 content pointer 只在当前 Attachment 的私有 namespace 定位�
 Seal manifest 穷尽本 Run 的 Core、envelope 与 materialized content。`complete` 与 Seal 在 sealed staging
 中一起形成，再经 no-replace directory rename 发布。ordinary publication 不替换已存在的 Run directory。
 
-## SPI identity 与 owner brand
+## Definition identity 与 owner brand
 
 definition identity 是唯一三元组：
 
@@ -101,51 +101,57 @@ definition identity 是唯一三元组：
 `family` 是稳定、无版本后缀的字符串。`ownerKind` 是 `run` 或 `attempt`；同一 family
 可以各有一个 Run definition 与 Attempt definition，因为两个三元组不同。
 
-`defineRecordAttachment` 返回 nominally branded definition。brand 同时携带 owner kind、family、current Schema、
-named validate 与 logical value 类型。durable revision 属于 matching persistence。字符串、对象复制、类型断言或手写 envelope 都不能构造同等 capability。
+`defineAttemptRecord` / `defineRunRecord` 返回 callable nominal definition。brand 同时携带 owner kind、family、
+current Schema 与 logical value 类型；definition 本身也是 reader selector、reference target 和 Host
+`RecordContribution`。字符串、对象复制、类型断言或手写 envelope 都不能构造同等 capability。完整作者调用形状由
+[Record Library](library.md#high-level-record-definition) 统一定义。
 
 ```ts
-const attemptEnergy = defineRecordAttachment({
-  owner: RecordOwner.attempt,
+const attemptEnergy = defineAttemptRecord({
   family: "acme.energy",
   schema: EnergySchema,
   validate: validateEnergy,
 });
-
-const attemptEnergyPersistence = defineRecordAttachmentPersistence({
-  attachment: attemptEnergy,
-  revision: 1,
-  migrations: [],
-});
 ```
 
-Run owner writer 的 `attach()` 只接受 Run-branded definition；Attempt owner writer 只接受 Attempt-branded
-definition。TypeScript 在作者面拒绝 owner mismatch，dynamic JavaScript 边界再次返回
+Run owner 的 `record.write()` 只接受 Run command；Attempt owner 只接受 Attempt command。TypeScript 在作者面拒绝 owner mismatch，dynamic JavaScript 边界再次返回
 `record-owner-definition-mismatch`。
 
-## Host-local explicit persistence composition
+## Host-local explicit contribution composition
 
-persistence 通过 Host 或 Plugin composition 显式贡献：
+高层 definition 直接通过 Host 或 Plugin composition 显式贡献；已有 persistence 经 adapter 进入同一输入：
 
 ```ts
 const host = makeRecordHost({
-  attachments: [
-    ...niceevalRecordAttachments,
-    ...energyPlugin.recordAttachments,
+  records: [
+    attemptEnergy,
+    recordContributionFromAttachmentPersistence(legacyEnergyPersistence),
   ],
 });
 const reader = yield* host.current.openRead({ root });
 ```
 
-`makeRecordHost()` 是纯 composition。它冻结 persistence，并按 exact attachment brand 与 `(owner, family)`
-检查唯一性；每项 persistence 在创建时已经验证 revision 与 migration 单链。composition 不注册模块、
+`makeRecordHost()` 的规范输入只有 `{ records }`。它冻结 contribution，并按 exact nominal brand 与 `(owner, family)`
+检查唯一性；低层 persistence 在创建时已经验证 revision 与 migration 单链。composition 不注册模块、
 不修改进程状态，也不按 import 顺序选择 winner。
 
 Host 把 immutable composition 绑定到 `openRead()`、`createRun()` 与 maintenance。一个 Host 形成后不会看见后续
-composition。第三方 Plugin 可以贡献 definition 与 matching persistence；是否把 persistence 放进某个 Host 由应用决定。
+composition。第三方 Plugin 可以贡献高层 definition 或适配后的 matching persistence；是否放进某个 Host 由应用决定。
 
-persistence composition 只授予解释 bytes 的能力。root I/O 仍由 `RecordFileSystem` 与 owner-scoped session 持有。
-任意 package 仅调用 `defineRecordAttachment()` 不会取得 reader、writer、path、lease 或 migration executor。
+composition 只授予解释 bytes 的能力。root I/O 仍由 `RecordFileSystem` 与 owner-scoped session 持有。任意 package
+仅定义 Record 不会取得 reader、writer、path、lease 或 migration executor。
+
+## 底层 Attachment persistence SPI
+
+`defineRecordAttachment()`、`defineRecordAttachmentPersistence()` 与 `defineRecordMigration()` 保留为已有 family
+演进的底层 SPI。persistence 拥有 durable revision 与严格相邻 migration。
+`recordContributionFromAttachmentPersistence(...)` 把它适配成 Host `RecordContribution`。
+
+底层 owner session 的 `attach(definition, callback)` 仍保留 exact owner、Schema、closure 与 content builder 契约；
+它只服务 persistence SPI，不是高层业务 writer。
+
+高层 definition 只自动创建 revision `1`，不提供 revise API。这个作者面与 composition 变化不改变 envelope、
+目录、Seal、migration 或任何 portable physical bytes 的格式契约。
 
 ## Definition 的业务模块
 
@@ -183,16 +189,16 @@ Turn Contexts、Runner Activities 与 Sources 的 typed relation。它们都不�
 
 ## Logical value、session callback 与 content consumption
 
-一个 definition 有两个不同输入面：
+一个 callable definition 有两个 command 输入面，另有 sealed declaration 面：
 
-- capture authority 调用 session callback。其 content input 可以来自 text、bytes 或 Scope-bound Stream。
+- `a(value)` 接受已经形成的完整 logical value；`a(builderCallback)` 延迟到 owner session 执行，其 content input 可以来自 text、bytes 或 Scope-bound Stream。
 - sealed Schema 以 `RecordTextContentSchema`、`RecordBytesContentSchema` 与 `RecordAttachmentReference.to(ExactDefinition)` 声明位置。
 
 ```ts
 type CurrentLogicalValue = unknown;
 ```
 
-session callback 的 `content` 与 `reference` builder mint 本次 attach token。Core compiler 从 sealed declaration
+session callback 的 `content` 与 `reference` builder mint 本次 owner-local token。Core compiler 从 sealed declaration
 生成 traversal 与 closure plan；它消费 source、计算 digest、执行 byte budget，并写 content object。
 
 logical schema 禁止物理 path、content object key 与跨 Attachment ref。Reader content 是 Scope-owned consumption，
@@ -327,10 +333,15 @@ Run publisher 与 migration 最终 Seal rebuild 使用同一 complete validator�
 Run writer 在 portable root 外建立 owner-private staging。owner-scoped writer 只有一个通用写入口：
 
 ```ts
-owner.attach(definition, callback)
+owner.record.write(definition(valueOrBuilderCallback))
 ```
 
-逐 family Host method、raw JSON writer、blob writer 与 family-name switch 都不属于目标形态。
+它是 create-once staging mutation；返回 `void` 不代表 durable publication。每个 family 的唯一领域 collector 在内存中
+append、排序、去重并表达 complete/partial，再提交一次完整有界 value。重复或并发同 family 在 callback、Stream
+与 I/O 前以 `record-already-written` 失败，并使未发布 Run fail closed。其余 write/append cases 见
+[Record Library](library.md#write--append-case-matrix)。
+
+逐 family Host method、通用 append、raw JSON writer、blob writer 与 family-name switch 都不属于目标形态。
 
 Run session 状态为：
 
@@ -341,7 +352,7 @@ open → sealing → ready-to-publish → published
 
 1. `createRun()` 验证 request、context 与 Slot identity，再排他创建 staging。
 2. `createAttempt()` 签发 Attempt owner writer；Run session 自身也是 Run owner writer。
-3. producer 用 session callback 形成 current logical value；`attach()` 验证 owner brand，消费 source，
+3. producer 把惰性 command 交给 matching owner；`record.write()` 先排他占有 family，再执行 callback、消费 source，
    并在 staging 中形成 committed envelope。
 4. `referenceAttempt()` 只写 Member reference，不复制历史 Attachment 或 content。
 5. `seal()` 拒绝新 mutation，等待所有 owner writer 和 capture authority 停稳。
@@ -357,7 +368,7 @@ open → sealing → ready-to-publish → published
 ordinary reader 永远不执行 maintenance。direct read 遇到非 current revision 返回 `migration-required`。
 `show`、`view`、`exp` 与 Library open 都不会自动调用 maintenance migration。
 
-一个 definition 可以携带历史 decoder 与相邻步骤，但必须形成从每个受支持 predecessor 到 current 的严格单链：
+一个底层 persistence 可以携带历史 decoder 与相邻步骤，但必须形成从每个受支持 predecessor 到 current 的严格单链：
 
 ```text
 1 → 2 → 3
@@ -455,11 +466,11 @@ content open failure 是 typed Effect failure，不伪装成 `invalid` 或 `not-
 
 新增 Analysis、Query、Measure、Page、renderer 或 Adapter mapper 不会自动推动 Record migration。
 
-## E2E 接管门
+## 公开入口验收门
 
-实现只有同时通过以下公开入口 E2E，才满足本契约：
+实现只有同时通过以下公开入口验收，才满足本契约：
 
-1. 安装后的第三方 package 定义 Attempt family，经显式 Plugin / Host composition attach、seal、read；未组合时没有全局残留。
+1. 安装后候选实验以 `defineAttemptRecord` / `defineRunRecord` 定义 family，经显式 `{ records }` composition、write、seal、read；同一 definition 也可声明和创建 reference，未组合时没有全局残留。这是 API 可用性实验，不保留逐机制断言的专用 E2E Repo。
 2. Record 含未知 family 时，已知无关 family 可读；direct / reference closure 返回
    `family-definition-required`，`requireComplete()` 与 publish fail closed。
 3. content source 由 Core 计算 digest 并验证 budget；两个 Attachment 的相同 digest 仍产生 owner-private content。
@@ -468,9 +479,8 @@ content open failure 是 typed Effect failure，不伪装成 `invalid` 或 `not-
 5. migration 过程中没有 Git 调用，也不产生 sentinel、journal、backup 或 rollback metadata；orphan 只在 full
    current Seal 后删除。
 6. legacy root 只经显式 migration 成为新 format；ordinary `show`、`view` 与 `exp` 不加载 legacy decoder。
-7. 官方 family 使用同一 session callback 与 `attach(definition, callback)` 路径。E2E 与结构守护证明 Host 没有逐 family 写 API，Core
-   没有 family-name switch。
+7. 官方 family 使用同一 callable definition 与 `record.write(a(...))` 路径；类型检查与结构守护证明 Host 没有逐 family 写 API，Core 没有 family-name switch。
 
-E2E 必须从安装后的 Library / CLI / Plugin 入口运行。第三方 composition 与真实中断恢复不能直接写私有
+耐久、迁移与恢复结果的 E2E 必须从安装后的 Library / CLI / Plugin 入口运行。第三方 composition 与真实中断恢复不能直接写私有
 envelope、复刻 Core content reader，或用 Git sentinel fixture 代替真实崩溃与续跑观察。literal migration
 fixture 可以固定历史 bytes，但结果必须从公开维护与读取入口验收。

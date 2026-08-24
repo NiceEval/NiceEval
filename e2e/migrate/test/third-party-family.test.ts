@@ -11,6 +11,7 @@ import {
   makeRecordHost,
   makeRecordRoot,
   NodeRecordLive,
+  recordContributionFromAttachmentPersistence,
 } from "niceeval/record";
 import { expect, test } from "vitest";
 
@@ -32,9 +33,14 @@ test("第三方 family 显式组合后可局部读取，完整读取对未贡献
   const visible = family("acme.visible-fact");
   const hidden = family("acme.hidden-fact");
   const writerHost = makeRecordHost({
-    attachments: [visible.persistence, hidden.persistence],
+    records: [
+      recordContributionFromAttachmentPersistence(visible.persistence),
+      recordContributionFromAttachmentPersistence(hidden.persistence),
+    ],
   });
-  const readerHost = makeRecordHost({ attachments: [visible.persistence] });
+  const readerHost = makeRecordHost({
+    records: [recordContributionFromAttachmentPersistence(visible.persistence)],
+  });
   const directory = mkdtempSync(join(tmpdir(), "niceeval-third-party-record-"));
 
   try {

@@ -12,6 +12,7 @@ const migrationTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachment
 const referenceTypeId: unique symbol = Symbol("@niceeval/record/RecordAttachmentReference");
 
 const definitions = new WeakMap<object, DefinitionRuntime>();
+const definitionAliases = new WeakMap<object, AnyDefinition>();
 const persistences = new WeakMap<object, PersistenceRuntime>();
 const migrations = new WeakSet<object>();
 const references = new WeakMap<object, ReferenceRuntime>();
@@ -19,6 +20,15 @@ const referenceDeclarations = new WeakMap<object, ReferenceDeclarationRuntime>()
 const migrationContents = new WeakSet<object>();
 
 type AnyDefinition = RecordAttachmentDefinition<RecordAttachmentOwner, string, Schema.Schema.AnyNoContext>;
+
+export interface RecordAttachmentReferenceTarget {
+  readonly owner: RecordAttachmentOwner;
+  readonly family: string;
+  readonly schema: Schema.Schema.AnyNoContext;
+}
+
+type ResolvedReferenceDefinition<Definition extends RecordAttachmentReferenceTarget> =
+  Definition extends AnyDefinition ? Definition : AnyDefinition;
 
 interface DefinitionRuntime {
   readonly codec: RecordSchemaCodec<unknown, RecordContentHandle | RecordAttachmentReference<any, unknown>>;
@@ -195,23 +205,37 @@ export function defineRecordMigration<From, To, Error = never>(input: {
 
 export const RecordAttachmentReference = Object.freeze({
   /** Builds a package-owned Schema declaration. Session later mints values matching this exact declaration. */
-  to<Definition extends AnyDefinition, Value = unknown, Encoded = Value>(definition: Definition, valueSchema?: Schema.Schema<Value, Encoded, never>): Schema.Schema<RecordAttachmentReference<Definition, Value>, RecordAttachmentReference<Definition, Value>, never> {
-    if (!isRecordAttachmentDefinition(definition)) invalid();
-    const declaration = Schema.declare<RecordAttachmentReference<Definition, Value>>(
-      (value): value is RecordAttachmentReference<Definition, Value> => {
+  to<Definition extends RecordAttachmentReferenceTarget, Value = unknown, Encoded = Value>(definition: Definition, valueSchema?: Schema.Schema<Value, Encoded, never>): Schema.Schema<RecordAttachmentReference<ResolvedReferenceDefinition<Definition>, Value>, RecordAttachmentReference<ResolvedReferenceDefinition<Definition>, Value>, never> {
+    const resolved = resolveRecordAttachmentDefinition(definition);
+    if (resolved === undefined) invalid();
+    type Resolved = ResolvedReferenceDefinition<Definition>;
+    const declaration = Schema.declare<RecordAttachmentReference<Resolved, Value>>(
+      (value): value is RecordAttachmentReference<Resolved, Value> => {
         const runtime = isRecordAttachmentReference(value) ? references.get(value) : undefined;
-        return runtime !== undefined && runtime.definition === definition &&
+        return runtime !== undefined && runtime.definition === resolved &&
           (valueSchema === undefined || !Either.isLeft(Schema.decodeUnknownEither(valueSchema)(runtime.value)));
       },
-      { identifier: `RecordAttachmentReference<${definition.owner}:${definition.family}>` },
+      { identifier: `RecordAttachmentReference<${resolved.owner}:${resolved.family}>` },
     );
-    referenceDeclarations.set(declaration, Object.freeze({ definition, valueSchema }));
-    referenceDeclarations.set(declaration.ast, Object.freeze({ definition, valueSchema }));
+    referenceDeclarations.set(declaration, Object.freeze({ definition: resolved, valueSchema }));
+    referenceDeclarations.set(declaration.ast, Object.freeze({ definition: resolved, valueSchema }));
     return declaration;
   },
 });
 
 export function isRecordAttachmentDefinition(value: unknown): value is AnyDefinition { return typeof value === "object" && value !== null && definitions.has(value); }
+/** @internal Registers one package-owned high-level callable as an alias of its exact Attachment definition. */
+export function registerRecordAttachmentDefinitionAlias(alias: object, definition: unknown): void {
+  if (!isRecordAttachmentDefinition(definition)) invalid();
+  definitionAliases.set(alias, definition);
+}
+/** @internal Resolves exact definitions and package-owned high-level aliases; structural lookalikes never resolve. */
+export function resolveRecordAttachmentDefinition(value: unknown): AnyDefinition | undefined {
+  if (isRecordAttachmentDefinition(value)) return value;
+  return (typeof value === "object" && value !== null) || typeof value === "function"
+    ? definitionAliases.get(value)
+    : undefined;
+}
 export function isRecordAttachmentPersistence(value: unknown): value is RecordAttachmentPersistence<AnyDefinition, number> { return typeof value === "object" && value !== null && persistences.has(value); }
 export function isRecordMigration(value: unknown): value is AnyRecordMigration { return typeof value === "object" && value !== null && migrations.has(value); }
 export function isRecordAttachmentReference(value: unknown): value is RecordAttachmentReference<any, unknown> { return typeof value === "object" && value !== null && references.has(value); }

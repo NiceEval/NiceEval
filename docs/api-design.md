@@ -197,6 +197,33 @@ consumer 子路径不导出 reader、selection handle 或 `executeReport()`。
 Record 不提供局部 edit/delete、mirror、proof、revision 或防伪 API。平台固定信封的表示升级通过 `niceeval migrate` 完成；事实
 含义改变时发布新的 Metric / Score identity。已发布 Run 不再修改。
 
+### Record family 作者 API
+
+Record family 作者按 owner 选择 `defineAttemptRecord()` 或 `defineRunRecord()`。两者返回同一个 callable nominal
+definition `a`，不再要求作者分别管理 command factory、reader selector、reference target 与 Host contribution：
+
+```ts
+const energy = defineAttemptRecord({
+  family: "acme.energy",
+  schema: EnergySchema,
+  validate: validateEnergy,
+});
+
+const host = makeRecordHost({ records: [energy] });
+
+yield* attempt.record.write(energy({ joules: 42 }));
+const result = yield* reader.read(attemptOwner, energy);
+```
+
+`defineX` 仍表示声明并校验定义；调用 `energy(value)` 或 `energy(builderCallback)` 只构造惰性 command，不因此写盘。
+`record.write()` 准确表达 owner/family create-once staging mutation；它返回 `void` 不暗示 durable publication，只有
+Run Seal 才发布。`attach` 降为底层 persistence SPI 词汇，不出现在高层业务调用形状；`append` 也不成为通用 Record
+动作，因为逐条 mutation、排序、去重与 complete/partial 属于每个 family 的唯一领域 collector。
+
+`makeRecordHost()` 的规范输入只有 `{ records }`。新的高层 definition 直接是 `RecordContribution`；已有 family 的
+revision 和 migration 仍由底层 Attachment persistence 管理，并经明确 adapter 进入同一数组。高层只自动创建 revision
+`1`，不能从命名规则推导尚不存在的 revise API。
+
 ### 领域 API 与内部 Record 分开
 
 普通 Eval 作者调用领域 API，不提交 Record command。一个 GPU SDK 的典型调用点是：

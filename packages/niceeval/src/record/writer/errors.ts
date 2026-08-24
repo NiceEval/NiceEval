@@ -61,6 +61,13 @@ export interface RecordOwnerDefinitionMismatch {
   readonly actual: "run" | "attempt";
 }
 
+/** A create-once owner/family already has a reserved write. */
+export interface RecordAlreadyWritten {
+  readonly code: "record-already-written";
+  readonly owner: "run" | "attempt";
+  readonly family: string;
+}
+
 const writerClosed: RecordWriterClosed = Object.freeze({
   code: "record-writer-closed",
 });
@@ -115,4 +122,11 @@ export function recordOwnerDefinitionMismatch(input: {
   readonly actual: "run" | "attempt";
 }): RecordOwnerDefinitionMismatch {
   return Object.freeze({ code: "record-owner-definition-mismatch", ...input });
+}
+
+export function recordAlreadyWritten(input: {
+  readonly owner: "run" | "attempt";
+  readonly family: string;
+}): RecordAlreadyWritten {
+  return Object.freeze({ code: "record-already-written", ...input });
 }

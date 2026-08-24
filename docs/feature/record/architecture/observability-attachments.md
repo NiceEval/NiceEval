@@ -18,8 +18,8 @@ diagnostics 是 reader-side view，不是持久 family。Adapter、SessionManage
 | `niceeval.runner-diagnostics` | Attempt、Run | 对应 owner 的 Runner diagnostic sink | 无 |
 
 这五个名称是 NiceEval 官方 Observability durable family。它们不按 Adapter 品牌、provider、Report 栏位或
-reader-side view 扩张。第三方 package 可以用同一个 `defineRecordAttachment` 定义自己的 current logical family。
-它必须用 matching persistence 绑定 durable revision，且不能重定义官方 identity 或取得 Core 写入能力。
+reader-side view 扩张。第三方 package 用 `defineAttemptRecord` / `defineRunRecord` 定义新的 current logical family；
+它不能重定义官方 identity 或取得 Core 写入能力。已有 family 的 revision / migration 仍走底层 persistence SPI。
 
 一个 family 在一个 owner 下最多有一份 Attachment。logical value 是一组有序、不可变的 Source receipt segments：
 
@@ -197,7 +197,9 @@ type CommandStream = {
 ```
 
 collector 先执行非 fatal UTF-8 decode、已登记敏感值脱敏与 control removal，再按 stream 上限保留 prefix。
-它在 session `attach(definition, ({ content }) => …)` callback 内用 `content.text()` mint sealed logical handle。Core 根据 sealed declaration 编译 closure，读取 source 并执行预算。Core 再将 content 写入私有 object。logical value 不知道它最终 inline 还是进入 object。
+它最终一次调用 `record.write(definition(({ content }) => …))`，在 owner session callback 内用 `content.text()` mint
+sealed logical handle。Core 根据 sealed declaration 编译 closure，读取 source 并执行预算，再将 content 写入私有 object。
+logical value 不知道它最终 inline 还是进入 object。
 
 ## Runner Activity receipts
 
@@ -259,8 +261,17 @@ Runner Diagnostic source，不成为新的 family。
 
 ## Capture、staging 与 Seal manifest
 
-每个 authority 在真实边界完成 decode、normalize、redact 与 limit。
-它只取得匹配 owner 的 session writer，并调用 `attach(definition, ({ content, reference }) => value)`。callback 用 `content.text()`、`content.bytes()` 或 `content.stream()` mint sealed handle，并用 `reference.to(definition, semanticValue)` mint relation token。Core 统一编译 closure plan、编码、读取 content source、写入 object、检查预算并提交 envelope。
+每个 authority 在真实边界完成 decode、normalize、redact 与 limit。每个 family 只有一个 authority；逐条 receipt 只在
+该领域 collector 中 append、排序、去重，并最终决定 `complete` 或带非空 limitation 的 `partial`。
+
+authority 只取得匹配 owner 的 session writer，并一次调用
+`record.write(definition(({ content, reference }) => value))`。definition 调用只构造惰性 command；owner session 接受
+command 后才执行 callback、Stream 与 I/O。
+
+callback 用 `content.text()`、`content.bytes()` 或 `content.stream()` mint sealed handle，并用
+`reference.to(definition, semanticValue)` mint relation token。Core 统一编译 closure plan、编码、读取 content source、
+写入 object、检查预算并提交 envelope。重复或并发同 family write 在上述 callback 前以
+`record-already-written` 失败，并使未发布 Run fail closed。
 
 Attempt 或 Run seal 冻结对应 authority，拒绝 late capture，并逐 source 验证 logical value 与 content closure。
 Run publisher 随后形成 canonical Seal manifest。manifest 穷尽每个 Attachment 的 envelope、payload 与 content

@@ -11,6 +11,21 @@ export type {
 } from "./host/index.ts";
 
 export {
+  defineAttemptRecord,
+  defineRunRecord,
+  recordContributionFromAttachmentPersistence,
+} from "./authoring.ts";
+export type {
+  AttemptRecordDefinition,
+  RecordContribution,
+  RecordDefinition,
+  RecordWriteCommand,
+  RunRecordDefinition,
+} from "./authoring.ts";
+export type { RecordWriteError } from "./writer/types.ts";
+export type { RecordAlreadyWritten } from "./writer/errors.ts";
+
+export {
   defineRecordAttachment,
   makeRecordAttachmentCatalog,
   defineRecordAttachmentPersistence,

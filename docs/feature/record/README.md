@@ -7,8 +7,9 @@ Record（持久事实集）是 `<project>/.niceeval/record/` 中可携带、可�
 Record 的边界分成三层：
 
 - Record Core 提供 owner、目录、原子提交、content source 读取、digest、预算、Seal 与读取机制。
-- `record/family` package 通过 `defineRecordAttachment` 拥有 current logical fact，再通过 `defineRecordAttachmentPersistence` 绑定 durable revision 与私有相邻 migration。
-- Runner、Sandbox、Adapter 与其它 producer 在亲历事实的边界 capture，只取得匹配 owner 的窄 writer。
+- `record/family` package 通过 `defineAttemptRecord` / `defineRunRecord` 定义新的 current logical fact。
+  需要演进已有 family 时，底层 Attachment persistence SPI 继续拥有 durable revision 与私有相邻 migration。
+- Runner、Sandbox、Adapter 与其它 producer 在亲历事实的边界 capture，只取得匹配 owner 的窄 `record.write` 能力。
 
 对产品用户，Record 是 opaque directory（不透明目录）。用户可以整体复制它、把它放进 Git，并交给
 `niceeval exp`、`show`、`view`、`clean` 与 `migrate`。普通 Eval、Analysis 与 Report 作者不读取内部布局。
@@ -46,19 +47,30 @@ Record Core 只保存完整 `attemptId`。面向人的 locator 是确定性别�
 `{ experimentId, execution: { agentId, model, reasoningEffort, flags }, labels }`。
 它是随 Run 一次写入的 Core 历史事实，不从当前配置回填。
 
-## `defineRecordAttachment` SPI
+## 作者 API 与底层 persistence
 
-`defineRecordAttachment` 是公开、通用且中立的 SPI。每个 definition 只描述一个 owner kind 下的 current logical fact：
+`defineAttemptRecord` / `defineRunRecord` 是新 family 的规范作者入口。每次调用返回同一个 callable nominal
+definition `a`：它既用 `a(value)` / `a(builderCallback)` 构造惰性 write command，也是 reader selector、
+reference target 和 Host `RecordContribution`。完整调用形状、write/append case 矩阵与 Seal 语义见
+[Record Library](library.md)。
+
+每个 definition 只描述一个 owner kind 下的 current logical fact：
 
 ```text
 (ownerKind, family, current Schema, named validate)
 ```
 
-`family` 是不含版本的稳定身份。definition 带 owner nominal brand，Run writer 不能使用 Attempt definition，Attempt writer 不能使用 Run definition。durable revision 属于 matching persistence。
+`family` 是不含版本的稳定身份。definition 带 owner nominal brand。
+Run writer 不能使用 Attempt definition，Attempt writer 不能使用 Run definition。高层 definition 自动创建 revision `1`。
 
-NiceEval 官方 family 与第三方 package / Plugin 都通过同一个 SPI 定义。第三方 definition 是纯值，不能打开
-Record root、构造路径或取得文件系统能力。Host 或 Plugin composition 必须显式贡献 persistence，owner-scoped
-writer 才能执行 `attach(definition, callback)`。
+第三方 definition 是纯值，不能打开 Record root、构造路径或取得文件系统能力。Host 或 Plugin composition 通过
+`makeRecordHost({ records })` 显式贡献它，owner-scoped writer 才能执行 `record.write(a(...))`。
+
+`defineRecordAttachment`、`defineRecordAttachmentPersistence` 与 `defineRecordMigration` 保留为底层 SPI。
+它们只负责已有 family 的演进和迁移。persistence 必须经
+`recordContributionFromAttachmentPersistence(...)` 才进入 `{ records }` composition。
+这层技术契约仍由 [Record Library](library.md#low-level-attachment-persistence-spi) 与
+[Record Architecture](architecture.md#底层-attachment-persistence-spi) 负责，高层不承诺 revise API。
 
 composition 为每个 read、write 或 migration session 建立 immutable catalog。catalog 不是进程全局 registry，
 没有模块加载副作用、动态注册或后写替换。重复 definition brand、revision 分叉与缺少相邻 migration 在 session 取得 I/O
@@ -86,7 +98,9 @@ reader 只按调用方传入的 session-local catalog 解码 current definition�
 局部读取只证明请求 definition 的 closure；`requireComplete()` 才证明整份选择所需的所有 Attachment。
 
 Observability source 可以各自为 `complete` 或 `partial`。未写该 source 是 `not-recorded`，已写但不合法是
-`invalid`。conversation、usage、commands、timing 与 diagnostics 是 reader-side view，不是 durable family。
+`invalid`。成功观察零项必须 write 该 family 的 complete-empty value；`partial` 必须显式携带 limitation。逐条事件
+只在单一领域 collector 内 append、排序和去重，再一次 write 完整有界 value。conversation、usage、commands、
+timing 与 diagnostics 是 reader-side view，不是 durable family。
 
 ## Content 与 reference
 

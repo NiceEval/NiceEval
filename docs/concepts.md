@@ -203,10 +203,10 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | Record | Record | `.niceeval/record/` 中可整体复制、进入 Git，并只由 NiceEval CLI / Report 解释的 opaque portable 事实集 | [Record](feature/record/README.md) |
 | Coordination SDK | Coordination SDK | execution claim、session 与 gate 位于项目 `.niceeval/`；Record 的 read / append / maintenance lease 位于 `.niceeval/coordination/records/<recordKey>/`（custom Record 位于其 parent 的同形目录），均不进入 portable Record | [三层总览](feature/record-report/README.md) |
-| Record 宿主 SDK | `RecordHostSDK` | 提供 `openRead()`、`createRun()`、`createReferenceRun()` 与 `maintenance()` 的窄宿主能力 | [Record Library](feature/record/library.md) |
+| Record 宿主 SDK | `RecordHostSDK` | 由 `makeRecordHost({ records })` 冻结 contributions，并提供 `openRead()`、`createRun()`、`createReferenceRun()` 与 `maintenance()` 的窄宿主能力 | [Record Library](feature/record/library.md) |
 | Record 读取会话 | `RecordReadSession` | Scope-bound 惰性 reader；先选择已封口 Run，再按需读取和验证 Run、Attempt、Attachment 或 blob | [Record Library](feature/record/library.md) |
 | Record 选择 | `RecordSelection` | 一次扫描后固定的 Run、Slot、预期分母与问题；不含完整 payload，也不携带 reader | [Record Library](feature/record/library.md) |
-| Run 写会话 | `RunWriteSession` | 只创建并封口一个新 RunId 的 Scope-bound 能力；不同 writer 不修改同一个 Run | [Record Library](feature/record/library.md) |
+| Run 写会话 | `RunWriteSession` | 只创建并封口一个新 RunId 的 Scope-bound 能力；Attempt / Run owner 通过窄 `record.write` 做 create-once staging mutation，不把 writer 暴露给普通 Eval `TestContext` | [Record Library](feature/record/library.md#owner-scoped-writer) |
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
 | 执行槽位 | Slot | Run 在调度前展开的一个预期位置；最多对应一个 Member，并作为分析分母。它不是并发位，默认 Human CLI 也不把它作为列名展示 | [Record Architecture](feature/record/architecture.md) |
 | Run 完成标识 | Run completion marker | writer 在内容校验与刷盘后最后排他创建的 zero-byte `complete`，是 Run 对 reader 可见的发布点 | [Record Architecture](feature/record/architecture.md) |
@@ -215,9 +215,12 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Member | Member | 一个 Slot 对精确 Attempt 的引用；不复制 Attempt，也不保存采用原因 | [Record Architecture](feature/record/architecture.md) |
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 branded family definition 解释的 immutable logical value 与 owner-local content closure | [Record Architecture](feature/record/architecture.md) |
-| Record 附件定义 | `RecordAttachmentDefinition` | 描述一个 owner/family 的 branded current logical fact；包含 current Schema 与 named validate，不包含 revision 或 migration | [Record Library](feature/record/library.md#definition-identity) |
-| Attachment persistence | `RecordAttachmentPersistence` | 把 exact Record 附件定义绑定到 current revision 与严格相邻的私有 migration 链 | [Record Library](feature/record/library.md#definition-identity) |
-| Attachment persistence revision | `RecordAttachmentPersistence.revision` | 同一 owner/family 持久化解释规则的正整数修订号；不属于 Record root、logical definition 或 NiceEval 包版本 | [Record Library](feature/record/library.md#definition-identity) |
+| Record definition | callable nominal definition | `defineAttemptRecord` / `defineRunRecord` 返回的同一个 `a`；既构造惰性 write command，也是 reader selector、reference target 与 Host `RecordContribution` | [Record Library](feature/record/library.md#high-level-record-definition) |
+| Record write command | Record write command | 交给 matching owner `record.write()` 的惰性 command；callback、Stream 与 I/O 只在 owner session 执行，成功 `void` 只表示 staging mutation | [Record Library](feature/record/library.md#owner-scoped-writer) |
+| Record contribution | `RecordContribution` | `makeRecordHost({ records })` 的唯一成员形态；高层 definition 直接贡献，底层 persistence 经 adapter 贡献 | [Record Library](feature/record/library.md#catalog-与显式-composition) |
+| Record 附件定义 | `RecordAttachmentDefinition` | 底层 SPI 中描述 owner/family current logical fact 的 nominal definition；包含 current Schema 与 named validate，不包含 revision 或 migration | [Record Library](feature/record/library.md#low-level-attachment-persistence-spi) |
+| Attachment persistence | `RecordAttachmentPersistence` | 底层 SPI 中把 exact Record 附件定义绑定到 current revision 与严格相邻私有 migration 链的值；须经 adapter 才成为 Host contribution | [Record Library](feature/record/library.md#low-level-attachment-persistence-spi) |
+| Attachment persistence revision | `RecordAttachmentPersistence.revision` | 同一 owner/family 持久化解释规则的正整数修订号；高层新 family 自动为 `1`，既不属于 Record root、logical definition 或 NiceEval 包版本，也没有高层 revise API | [Record Library](feature/record/library.md#low-level-attachment-persistence-spi) |
 | Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、session catalog 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
 | 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources` current logical fact；保存当时 source closure 的 logical tokens 与 own content | [Record Architecture](feature/record/architecture.md) |
 | 源码项 | source item | Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-256 与 own content 标识的一项源码 | [Record Architecture](feature/record/architecture.md) |

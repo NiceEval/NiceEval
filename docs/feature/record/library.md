@@ -1,7 +1,8 @@
 # Record Library
 
-`niceeval/record` 导出通用 RecordAttachment SPI、显式 Host composition 与 Node Layer。NiceEval CLI 使用官方
-`recordHost`；替代 CLI、Web host 与 Plugin host 可以用 `makeRecordHost()` 组合第三方 definitions。
+`niceeval/record` 导出 Record 作者 API、显式 Host composition、底层 RecordAttachment persistence SPI 与 Node Layer。
+NiceEval CLI 使用官方 `recordHost`；替代 CLI、Web host 与 Plugin host 可以用 `makeRecordHost()` 组合第三方
+Record contributions。
 
 Library 是 Effect v3 API。内部不调用 `Effect.runPromise`；application 只在最外层提供 Layer 并运行 Effect。
 typed failure、defect 与 interruption 在拥有该结果的边界前保持分离。
@@ -10,9 +11,12 @@ typed failure、defect 与 interruption 在拥有该结果的边界前保持分�
 
 ```ts
 import {
+  defineAttemptRecord,
+  defineRunRecord,
   defineRecordAttachment,
   defineRecordMigration,
   defineRecordAttachmentPersistence,
+  recordContributionFromAttachmentPersistence,
   recordAttachmentIssue,
   makeRecordHost,
   makeRecordRoot,
@@ -26,8 +30,9 @@ import {
 } from "niceeval/record";
 ```
 
-`recordHost` 只预组合 NiceEval 官方 persistence。`makeRecordHost({ attachments })` 创建另一个冻结 Host 值；
-它不修改 `recordHost`，也不把 persistence 放进进程全局状态。
+`defineAttemptRecord()` 与 `defineRunRecord()` 是新 family 的规范作者入口。`recordHost` 只预组合 NiceEval 官方
+contribution。`makeRecordHost({ records })` 创建另一个冻结 Host 值；它不修改 `recordHost`，也不把 contribution
+放进进程全局状态。
 
 ## Root、服务与能力
 
@@ -37,7 +42,7 @@ import {
 `NodeRecordLive` 提供文件系统、身份生成和进程协调。文件系统负责 no-follow root-relative I/O、同步、atomic
 replace 与 no-replace publish；协调层只提供 read、append 与 maintenance lease。Record 没有 Git service。
 
-## Definition identity
+## High-level Record definition
 
 一个 definition brand 的逻辑 identity 是：
 
@@ -45,11 +50,72 @@ replace 与 no-replace publish；协调层只提供 read、append 与 maintenanc
 (owner, family, current Schema, validate)
 ```
 
-`owner` 是 `run` 或 `attempt`；`family` 是不含版本后缀的稳定身份。definition object 带 nominal brand。
-单独的 family 字符串、结构相同的对象或类型断言都不是读写 capability。durable interpretation revision 属于
-matching persistence，不属于 definition。
+`defineAttemptRecord()` 固定 owner 为 Attempt，`defineRunRecord()` 固定 owner 为 Run；`family` 是不含版本后缀的
+稳定身份。每次调用返回同一个 callable nominal definition `a`。单独的 family 字符串、结构相同的对象或类型断言
+都不是 capability。
 
-definition 只声明 current logical fact：
+这个 `a` 同时承担四个角色：
+
+- `a(value)` 或 `a(builderCallback)` 构造惰性的 owner-scoped write command；
+- `reader.read(owner, a)` 中是 exact reader selector；
+- `RecordAttachmentReference.to(a)` 与 `reference.to(a, value)` 中是 exact reference target；
+- `makeRecordHost({ records: [a] })` 中是 Host `RecordContribution`。
+
+新 family 只声明 current logical fact；高层入口自动形成 revision `1`，不接受 migration 或任意 revision：
+
+```ts
+import { Schema } from "effect";
+import {
+  defineAttemptRecord,
+  defineRunRecord,
+  recordContent,
+  recordAttachmentIssue,
+  RecordAttachmentReference,
+  RecordTextContentSchema,
+} from "niceeval/record";
+import type { RecordAttachmentIssue } from "niceeval/record";
+
+const validateRunEnergy = (
+  value: { readonly joules: number },
+): readonly RecordAttachmentIssue[] => value.joules >= 0
+  ? []
+  : [recordAttachmentIssue("record-attachment-schema-invalid", ["joules"])];
+
+export const runActivities = defineRunRecord({
+  family: "niceeval.runner-activities",
+  schema: Schema.Struct({ activityId: Schema.String }),
+  validate: (): readonly RecordAttachmentIssue[] => [],
+});
+
+export const attemptEnergy = defineAttemptRecord({
+  family: "acme.energy",
+  schema: Schema.Struct({ joules: Schema.Number }),
+  validate: ({ joules }): readonly RecordAttachmentIssue[] => joules >= 0
+    ? []
+    : [recordAttachmentIssue("record-attachment-schema-invalid", ["joules"])],
+});
+
+export const runEnergy = defineRunRecord({
+  family: "acme.energy",
+  schema: Schema.Struct({
+    joules: Schema.Number,
+    report: RecordTextContentSchema.pipe(recordContent.maximumBytes(4_096)),
+    source: Schema.NullOr(RecordAttachmentReference.to(runActivities)),
+  }),
+  validate: validateRunEnergy,
+});
+```
+
+Schema 与具名 `validate` 不取得 root、path、文件系统、网络、clock 或 random capability。sealed content/reference
+declaration 由 Core compiler 生成 traversal 与 closure plan；应用不能遍历任意 Schema AST 或手写 selector。
+definition 创建时验证 owner、family、Schema 与具名 validate，定义错误同步抛出
+`RecordAttachmentSpiDefinitionError`；session write 还会验证 runtime input。
+
+## Low-level Attachment persistence SPI
+
+`defineRecordAttachment()`、`defineRecordAttachmentPersistence()` 与 `defineRecordMigration()` 是为现有 family
+演进和显式迁移保留的底层 SPI，不是新业务 family 的常规作者路径。低层 definition 仍显式声明 owner；persistence
+把 exact attachment brand 绑定到 durable revision 与严格相邻单链：
 
 ```ts
 import { Effect, Either, Schema } from "effect";
@@ -68,13 +134,13 @@ import type {
   RecordMigrationDocument,
 } from "niceeval/record";
 
-const validateRunEnergy = (
+const validateLegacyRunEnergy = (
   value: { readonly joules: number },
 ): readonly RecordAttachmentIssue[] => value.joules >= 0
   ? []
   : [recordAttachmentIssue("record-attachment-schema-invalid", ["joules"])];
 
-const runActivities = defineRecordAttachment({
+const legacyRunActivities = defineRecordAttachment({
   owner: RecordOwner.run,
   family: "niceeval.runner-activities",
   schema: Schema.Struct({ activityId: Schema.String }),
@@ -106,29 +172,33 @@ const runEnergyRevision1To2 = defineRecordMigration({
   }),
 });
 
-export const runEnergy = defineRecordAttachment({
+export const legacyRunEnergy = defineRecordAttachment({
   owner: RecordOwner.run,
-  family: "acme.energy",
+  family: "acme.legacy-energy",
   schema: Schema.Struct({
     joules: Schema.Number,
     report: RecordTextContentSchema.pipe(recordContent.maximumBytes(4_096)),
-    source: Schema.NullOr(RecordAttachmentReference.to(runActivities)),
+    source: Schema.NullOr(RecordAttachmentReference.to(legacyRunActivities)),
   }),
-  validate: validateRunEnergy,
+  validate: validateLegacyRunEnergy,
 });
 
-export const runEnergyPersistence = defineRecordAttachmentPersistence({
-  attachment: runEnergy,
+export const legacyRunEnergyPersistence = defineRecordAttachmentPersistence({
+  attachment: legacyRunEnergy,
   revision: 2,
   migrations: [runEnergyRevision1To2],
 });
 ```
 
-Schema 与具名 `validate` 不取得 root、path、文件系统、网络、clock 或 random capability。sealed content/reference
-declaration 由 Core compiler 生成 traversal 与 closure plan；应用不能遍历任意 Schema AST 或手写 selector。
+persistence 通过 `recordContributionFromAttachmentPersistence(legacyRunEnergyPersistence)` 适配成 Host
+`RecordContribution`。现有 family 的 revision 与 migration 继续只由这层拥有；高层 API 不提供
+`reviseAttemptRecord()`、`reviseRunRecord()` 或隐式迁移。
 
-definition 创建时验证 owner、family、Schema 与具名 validate。persistence 创建时验证 exact attachment brand、
-revision 与严格相邻单链。定义错误同步抛出 `RecordAttachmentSpiDefinitionError`；session attach 验证 runtime input。
+低层 `attach(definition, callback)` 技术契约继续存在。它只接受 matching owner 的底层 definition。
+callback 只在 SPI owner session 内取得 `content` / `reference` builder，并由 Core 验证 exact brand、Schema、
+closure 与预算。
+它不直接成为 Host contribution，也不进入高层业务调用形状；高层 session 统一使用
+`record.write(a(valueOrBuilderCallback))`，persistence adapter 在 SPI 边界完成桥接。
 
 ## Content source、reference 与消费
 
@@ -136,28 +206,37 @@ revision 与严格相邻单链。定义错误同步抛出 `RecordAttachmentSpiDe
 Core-owned sealed Schema declarations。它们不暴露 physical path、digest、object key 或 selector。
 
 ```ts
-yield* attempt.attach(commandFamily, ({ content, reference }) => ({
-  commandId: "command-1",
-  stdout: content.text(commandStdout),
-  source: reference.to(runActivities, { runId: sourceRunId }),
-}));
+yield* run.record.write(runEnergy(({ content, reference }) => ({
+  joules: 42,
+  report: content.text(energyReport),
+  source: reference.to(runActivities, { activityId: sourceActivityId }),
+})));
 ```
 
 Core compiler 从 sealed declarations 穷尽 content/reference closure。session callback 才 mint content 与 reference
-token；它不消费 Stream。Core 在 `attach()` 时读取 Stream、限制字段 `maximumBytes`、编码并写入私有 object。
+token。definition 调用本身不执行 callback，也不消费 Stream；只有匹配 owner 的 session 接受 command 后才执行。
+Core 在 `record.write()` 时读取 Stream、限制字段 `maximumBytes`、编码并写入私有 object。
 Reader content 是 Scope-owned consumption，调用者必须读尽或显式关闭；Scope finalizer 关闭遗留 stream、handle 与 lease。
 
 ## Catalog 与显式 composition
 
 ```ts
-import { makeRecordHost } from "niceeval/record";
+import {
+  makeRecordHost,
+  recordContributionFromAttachmentPersistence,
+} from "niceeval/record";
 
 const customRecordHost = makeRecordHost({
-  attachments: [...niceevalRecordAttachments, runEnergyPersistence],
+  records: [
+    attemptEnergy,
+    runEnergy,
+    recordContributionFromAttachmentPersistence(legacyRunEnergyPersistence),
+  ],
 });
 ```
 
-Host composition 是纯函数。它只接受 persistence，并按 exact attachment brand 与 identity 拒绝重复。
+`makeRecordHost()` 的规范输入只有 `{ records }`。Host composition 是纯函数，按 exact nominal brand 与
+`(owner, family)` identity 拒绝重复；高层 definition 和 persistence adapter 都实现同一个 `RecordContribution`。
 没有 `registerAttachment()`、global map、module side effect、last-one-wins 或 dynamic family loader。
 
 catalog 只授予解释 current logical bytes 的能力。真正的 I/O 仍由 Host session 与 Effect Layer 持有。第三方 package
@@ -198,22 +277,45 @@ catalog，不是可跨 session 更新的证明。
 ## Owner-scoped writer
 
 ```ts
-yield* run.attach(runEnergy, ({ content }) => ({
+yield* attempt.record.write(attemptEnergy({ joules: 42 }));
+
+yield* run.record.write(runEnergy(({ content }) => ({
   joules: 42,
   report: content.text("measured"),
   source: null,
-}));
+})));
 ```
 
-Run session 的 `attach()` 只接受 Run definition 与其 callback；Attempt session 只接受 Attempt definition。
-TypeScript 保留 owner、family、content error 与 Effect requirements，dynamic JavaScript
-边界再次验证 brand 与 owner。
+Run session 的 `record.write()` 只接受 Run command；Attempt session 只接受 Attempt command。TypeScript 保留
+owner、family、content error 与 Effect requirements，dynamic JavaScript 边界再次验证 brand 与 owner。普通 Eval
+`TestContext` 不取得 writer；只有拥有真实 capture 生命周期的 Runner、Adapter、Sandbox 或领域 collector 才收到窄能力。
 
-writer 没有 `appendAssertion()`、`writeSources()`、`attachArtifact()`、raw JSON、path 或 blob writer。producer
-负责 capture 和构造 current value；Record Core 负责持久化。
+`a(value)` 适合已经在内存中形成的 logical value；`a(builderCallback)` 只为 content/reference token 提供 session-local
+builder。两种形式都只构造惰性的 Record write command。`record.write(command)` 是 owner/family 的 create-once staging mutation；
+成功返回 `void` 只表示该完整 logical value 已进入未发布 staging，不表示 durable publication。只有 Run `seal()`
+成功后，整份 Run 才成为 reader 可见的持久事实。
 
-一个 owner/family 最多提交一次。`seal()` 等待所有 Attempt 与 attach Effect 停稳，再验证 Core、inventory、
-persistence、compiled closures 与预算，最后发布完整 Run。
+### Write / append case matrix
+
+| case | 作者动作 | 结果 |
+|---|---|---|
+| 首次完整 value | `record.write(a(value))` | staging 写入一次；`void` 不代表发布 |
+| 需要 content/reference builder | `record.write(a(callback))` | command 被 owner session 接受后才执行 callback、Stream 与 I/O |
+| 同 owner/family 重复或并发 write | 第二个 command 在 callback、Stream 或 I/O 前失败 `record-already-written` | 本次未发布 Run 被标记为 fail closed；捕获错误后也不能 seal 发布 |
+| 没有调用 write | 无 | reader 对该 owner/family 返回 `not-recorded` |
+| 已完整观察到零项 | 写入领域定义的 complete-empty value，例如 `{ collection: { state: "complete", limitations: [] }, segments: [] }` | 发布后为 `available` 的空集合，不是 `not-recorded` |
+| 只观察到有界前缀 | collector 写一次带 `partial` 与非空 limitation 的完整 bounded value | 发布后保留 partial 语义；不能把截断伪装成 complete |
+| 想逐条增加 event | 领域 collector 在内存中 append、排序、去重并决定 complete/partial，最后 write 一次 | Record 没有通用 append，也没有第二个 capture authority |
+| write 后 seal 失败或未调用 seal | 无 durable publication | reader 不观察 staging value |
+| seal 成功但调用方未收到 receipt | 不再补写 | 已发布 Run 仍是 durable fact |
+
+每个 family 只有一个 capture authority。writer 不提供 `append()`、`appendAssertion()`、`writeSources()`、
+`attachArtifact()`、raw JSON、path 或 blob writer。逐条事件属于领域 collector 的内部 mutation；collector 负责有界、
+canonical order、去重和 complete/partial 表达，Record Core 只接受最后一次完整 logical value。
+
+`seal()` 等待所有 Attempt、collector 与 write Effect 停稳，再验证 Core、inventory、persistence、compiled closures
+与预算，最后发布完整 Run。任何重复写 poison、未停稳 command、缺少 required contribution 或 closure 错误都使
+未发布 Run fail closed。
 
 ## 显式 migration
 

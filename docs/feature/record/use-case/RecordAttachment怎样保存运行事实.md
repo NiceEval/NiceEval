@@ -2,10 +2,11 @@
 
 NiceEval 不把运行事实放进开放 JSON bag。每份事实都属于一个 branded Attachment family、一个 owner 和一个
 exact logical value。调用方不能追加字段或绕过 definition 改变 durable shape；第三方 package 可以定义自己的
-family，但必须用 matching persistence 显式贡献给 Host。
+family。新的 family definition 本身作为 `RecordContribution` 显式贡献给 Host。只有已有 family 的演进使用
+matching persistence。
 
-契约单源始终在 [SPI identity 与 owner brand](../architecture.md#spi-identity-与-owner-brand) 与
-[Record Library](../library.md#definition-identity)。
+契约单源始终在 [Definition identity 与 owner brand](../architecture.md#definition-identity-与-owner-brand) 与
+[Record Library](../library.md#high-level-record-definition)。
 
 ## 先选 owner 与 family
 
@@ -69,7 +70,8 @@ Core compiler 从 sealed content/reference Schema declarations 生成完整 clos
 
 ```text
 capture authority
-  → owner session callback 构造 exact current logical value
+  → 领域 collector append / sort / deduplicate
+  → owner record.write 一次 exact current logical value
   → Run seal validates closure
   → complete
   → RecordReadSession reads on demand
@@ -77,9 +79,17 @@ capture authority
   → Analysis query
 ```
 
-Adapter、Sandbox 和 Assertion producer 在各自 capture authority 内构造 definition 的 current value，再调用
-owner-scoped `attach(definition, callback)`。callback 获得 `content` 与 `reference` builder；第三方 package / Plugin 使用同一边界；它们不能绕过 family
-schema、content closure 或 owner brand 写入物理文件。
+Adapter、Sandbox 和 Assertion producer 在各自唯一 capture authority 内收集逐条事实，按领域规则排序、去重并
+决定 complete/partial。它们最后一次调用 owner-scoped `record.write(a(value))` 或
+`record.write(a(builderCallback))`。
+
+callback 只在 matching owner session 执行并获得 `content` 与 `reference` builder。第三方 package / Plugin 使用
+同一边界，不能绕过 family schema、content closure 或 owner brand 写入物理文件。
+
+同 owner/family 没有通用 append，也不能有第二个 capture authority。重复或并发 write 在 callback、Stream 与 I/O
+前返回 `record-already-written`，并使未发布 Run fail closed。没有 write 是 `not-recorded`；完整观察到零项要 write
+complete-empty value；只保留有界前缀时要在该完整 value 中显式写 `partial` 与 limitation。完整 case 矩阵见
+[Record Library](../library.md#write--append-case-matrix)。
 
 `RecordReadSession` 的 internal adapter 只在 Sample 的 `AnalysisInput` 或 `DomainView` 首次需要某份
 owner/family 时读取和验证它。`available` 包含 deep-frozen logical value 与仅对该值 sealed handle 有效的

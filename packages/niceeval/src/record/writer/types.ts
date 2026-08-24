@@ -9,6 +9,7 @@ import type {
   RecordDraftStateError,
   RecordWriterClosed,
   RecordOwnerDefinitionMismatch,
+  RecordAlreadyWritten,
 } from "./errors.ts";
 
 export type RecordWriteError =
@@ -21,4 +22,5 @@ export type RecordWriteError =
   | RecordAttachmentCallbackFailed
   | RecordAttachmentClosureInvalid
   | FamilyDefinitionRequired
-  | RecordOwnerDefinitionMismatch;
+  | RecordOwnerDefinitionMismatch
+  | RecordAlreadyWritten;
