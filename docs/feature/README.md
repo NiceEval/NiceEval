@@ -12,7 +12,7 @@ Report；它们不是并列的 Feature 扩展槽。
 Feature 身份不声明同一时刻的源码状态；它表示后续实现与评审只能以这里的唯一目标为准。
 文档先行产生的 gap 只允许暂时存在，后续代码必须与 Feature 一致。
 
-新开功能使用 `pnpm docs:trace create feature <name> --title <title>`，再按需用 `--pages` 选择正文页。
+目标写入口使用 `pnpm feature create <name> --title <title>`，再按需用 `--pages` 选择正文页。
 命令从共用的 [Feature Design Package](../_template/feature-design/README.md) 创建最小结构，不手工复制模板。
 Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的正文都是已裁决的目标契约。
 

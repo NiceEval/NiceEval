@@ -8,7 +8,7 @@ relations: {}
 
 ## 解决的问题
 
-本方案在现有 owner 处补最少的类型信息。`pnpm docs:trace` 每次从 Git 工作树形成只读 Trace Snapshot，再输出固定投影。
+本方案在现有 owner 处补最少的类型信息。`pnpm feature`、`pnpm test` 与结构维护命令每次从 Git 工作树形成同一份只读 Trace Snapshot，再输出固定投影。
 
 ## 核心心智
 
@@ -69,26 +69,35 @@ owner anchor 不是 docs-node kind，只是固定投影的 relation endpoint。�
 ## 查询面
 
 ```sh
-pnpm docs:trace list [kind] [pattern] [--json]
-pnpm docs:trace show <qualified-ref|repo-path> [--history] [--json]
-pnpm docs:trace check [--changed] [--json]
+pnpm feature list [pattern] [--json]
+pnpm feature show <feature-id|repo-path> [--json]
+pnpm test list [pattern] [--json]
+pnpm test show <test-path> [--json]
 ```
 
-`list` 只做浅发现。`show` 精确选择一个 Doc node 或 test/spec；歧义非零退出并列出候选。
+`list` 只做浅发现，并输出可原样传给同类 `show` 的 Feature ID 或 test/spec path。
+`show` 只做精确选择；歧义非零退出并列出候选。
 
 Feature 投影只走固定闭包。它包含本节点页面、直接子 Feature、本地 Use Cases 与反向 composed Use Cases。
 它还包含这些契约的 owner anchors/tests、直接 Roadmap/Design/Engineering、current promotions，以及这些 tests 的 regressions。
-它不继续遍历相关对象的其它边。`--history` 另加 promotion history 与 supersession；普通 mentions 不进入默认结果。
+它不继续遍历相关对象的其它边。第一批查询不展开 promotion history 与 supersession；普通 mentions 不进入默认结果。
 
-测试投影返回 Repo/file、owner anchor、contract、所属 Feature、regressions，以及从 Repo metadata 读取的 lane/areas。
-Trace 不读取或返回测试标题、scenario companion 与正文。没有 owner 的 Use Case 显示空数组和“无长期自动化 owner”，仍成功退出。
+测试投影返回 Repo/file、owner anchor、contract、所属 Features、regressions，以及从 Repo metadata 读取的 lane/areas/executor。
+Trace 不读取或返回测试标题、scenario companion 与正文。没有 owner 的 Use Case 显示空数组和
+`No long-term automated owner`，仍成功退出。
 
 JSON receipt 使用独立 format/version、canonical path、稳定排序与显式空数组。人读输出只是同一 receipt 的 renderer。
 
-## 创建与模板
+## 后续创建与模板
+
+以下命令是写入面的目标契约，不属于第一批可运行查询：
 
 ```sh
-pnpm docs:trace create <feature|roadmap|engineering|design|use-case> <slug> --title <title> [--pages <list>] [--plans <n>] [--cases] [--dry-run] [--json]
+pnpm feature create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm roadmap create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm engineering create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm design create <slug> --title <title> [--plans <n>] [--cases] [--dry-run] [--json]
+pnpm use-case create <slug> --title <title> --parent <ref> [--dry-run] [--json]
 ```
 
 模板 manifest 声明 format、适用 kind、必备/可选文件与自身 digest。template version 只进入 manifest 与 create receipt，不写入节点生命周期状态。
@@ -104,8 +113,8 @@ pnpm docs:trace create <feature|roadmap|engineering|design|use-case> <slug> --ti
 
 ```sh
 pnpm docs:trace move <ref> --to <repo-path> [--dry-run] [--json]
-pnpm docs:trace adopt prepare <roadmap-ref> --to <feature-ref> [--json]
-pnpm docs:trace adopt apply --manifest <git-private-path> [--dry-run] [--json]
+pnpm roadmap adopt prepare <roadmap-ref> --to <feature-ref> [--json]
+pnpm roadmap adopt apply --manifest <git-private-path> [--dry-run] [--json]
 pnpm docs:trace recover [--json]
 ```
 
@@ -130,7 +139,8 @@ superseded Decision/Insight 不得保留 current promotion。
 
 ## 实现 owner
 
-`packages/repo-tools/src/docs/trace/**` 拥有纯 compiler、Schema、findings 与 Snapshot 投影。Effect 层只拥有文件系统、lock、journal、recovery 和 receipt。
+`packages/repo-tools/src/docs/trace/**` 拥有纯 compiler、Schema、findings、Snapshot 投影与 presentation。
+`packages/repo-tools/src/cli.ts` 只组装这些命令和唯一 Node runtime；Effect 层拥有文件系统、lock、journal、recovery 和 receipt。
 
 `lint/docs/**` 是直接调用 pure checker 的薄 adapter，不启动 CLI 子进程，也不复制 parser。`pnpm memory check` 复用 Snapshot 的 regression/promotion 关系，再追加 Memory 自己的状态门。
 

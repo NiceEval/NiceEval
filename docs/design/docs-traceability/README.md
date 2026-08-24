@@ -11,7 +11,7 @@ relations:
 
 **相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [DECISION](DECISION.md) · [工程契约](../../engineering/docs-traceability/README.md)
 
-本决策设计 `pnpm docs:trace`。它让维护者从 Feature 或测试文件出发，找到 Use Case、Roadmap、Design、Engineering、E2E owner 与 Memory。
+本决策设计同源的 `pnpm feature`、`pnpm test` 与文档结构命令。它让维护者从 Feature 或测试文件出发，找到 Use Case、Roadmap、Design、Engineering、E2E owner 与 Memory。
 
 争议不在于能否搜索 Markdown，而在于关系由谁拥有。方案还必须让创建、移动和 Roadmap 采用保持同一套模板与引用规则。
 

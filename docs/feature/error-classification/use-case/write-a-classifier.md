@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 写分类器认第三方错误:取证、裁决、声明、验证
 
 ## 解决什么问题

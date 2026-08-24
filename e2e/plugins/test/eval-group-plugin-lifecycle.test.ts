@@ -1,4 +1,4 @@
-// owner: docs/feature/plugins/README.md#v1-owner-matrix
+// owner: docs/engineering/testing/e2e/plugins.md#eval-group-plugin-lifecycle
 
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";

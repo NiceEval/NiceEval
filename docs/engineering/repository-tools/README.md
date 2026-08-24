@@ -28,8 +28,10 @@ packages/repo-tools/src/
 | Consumer | `pnpm consumer:link --help` | 构建当前候选并安装到真实下游仓库 |
 | Repository | `pnpm repo:setup --help` | Git hooks、本地宿主前置条件初始化和仓库级一致性检查 |
 
-Docs 领域的正式子入口是 `pnpm docs:trace`、`pnpm docs:terms`、`pnpm docs:work`、`pnpm docs:diff-code`、`pnpm docs:reference` 与 `pnpm docs:dev`；各自的 Skill 只指向这一处长期 owner。
-`docs:trace` 的节点、关系、创建和可恢复 mutation 契约见[仓库文档追溯](../docs-traceability/README.md)。
+Docs 领域当前可运行的查询入口是 `pnpm feature` 与 `pnpm test`。目标结构创建入口是 `pnpm feature`、`pnpm roadmap`、
+`pnpm design`、`pnpm engineering` 与 `pnpm use-case`；跨对象检查和恢复的目标入口是 `pnpm docs:trace`。
+其它正式入口是 `pnpm docs:terms`、`pnpm docs:work`、`pnpm docs:diff-code`、`pnpm docs:reference` 与 `pnpm docs:dev`。
+这些入口共用同一棵 Effect CLI 命令树和 Node runtime；追溯关系与 mutation 契约见[仓库文档追溯](../docs-traceability/README.md)。
 
 以下能力保留在自己的 owner，不进入 Repository Tools：
 

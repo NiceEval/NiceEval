@@ -13,7 +13,8 @@ PLAN-2 保留现有 ownership：产品语义归 Feature，测试组合身份归 
 
 path-derived identity 与现有目录生命周期一致。Roadmap 采用会替换身份，因此由受锁 `adopt` 显式重写强关系与 promotion history，而不是增加永久 ID 或 alias。
 
-固定的 kind-specific 投影足以回答 Feature 和测试查询。拒绝任意 traversal 可以避免工具逐步演变成测试完整度平台或第二套产品模型。
+固定的 kind-specific 投影足以回答 Feature 和测试查询。公开命令按用户正在操作的对象命名，底层仍只编译一份 Snapshot。
+拒绝任意 traversal 可以避免工具逐步演变成测试完整度平台或第二套产品模型。
 
 ## 为什么保留两跳 E2E owner
 

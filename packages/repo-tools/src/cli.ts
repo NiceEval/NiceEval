@@ -9,6 +9,19 @@ import { checkExamples, syncExamples } from "./examples/index.js";
 import { NodeFeedbackStoreLive, runFeedbackCommand } from "./feedback/index.js";
 import { NodeMemoryStoreLive, runMemoryCommand } from "./memory/index.js";
 import {
+  compileTrace,
+  isTraceError,
+  listFeatures,
+  listTests,
+  renderTraceError,
+  renderTraceReceipt,
+  showFeature,
+  showTest,
+  type TraceError,
+  type TraceReceipt,
+  type TraceSnapshot,
+} from "./docs/trace/index.js";
+import {
   DEFAULT_PR_BODY_BUDGET,
   makeNodePrLive,
   prBodyCommandContribution,
@@ -70,6 +83,7 @@ function emit(value: unknown, json: boolean, rendered?: string) {
 
 function renderError(error: unknown): string {
   if (typeof error === "object" && error !== null) {
+    if (isTraceError(error)) return renderTraceError(error);
     const tagged = error as { readonly _tag?: unknown; readonly message?: unknown };
     if (typeof tagged._tag === "string" && tagged._tag.startsWith("Pr")) {
       return prBodyCommandContribution.renderError(error as never);
@@ -277,6 +291,64 @@ const memory = Command.make("memory").pipe(
   ]),
 );
 
+function runTraceQuery(
+  query: (snapshot: TraceSnapshot) => Effect.Effect<TraceReceipt, TraceError>,
+  json: boolean,
+) {
+  return compileTrace(ROOT).pipe(
+    Effect.flatMap(query),
+    Effect.flatMap((receipt) => emit(receipt, json, `${renderTraceReceipt(receipt)}\n`)),
+  );
+}
+
+const featureList = Command.make("list", {
+  pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
+  json: jsonOption,
+}, ({ json, pattern }) => runTraceQuery(
+  (snapshot) => {
+    const selected = Option.getOrUndefined(pattern);
+    return Effect.succeed(listFeatures(snapshot, selected === undefined ? {} : { pattern: selected }));
+  },
+  json,
+)).pipe(Command.withDescription("List Feature IDs that can be passed to feature show."));
+
+const featureShow = Command.make("show", {
+  feature: Args.text({ name: "feature-id-or-path" }),
+  json: jsonOption,
+}, ({ feature: selector, json }) => runTraceQuery(
+  (snapshot) => showFeature(snapshot, selector),
+  json,
+)).pipe(Command.withDescription("Show one Feature, its Use Cases, tests, docs, and Memory."));
+
+const feature = Command.make("feature").pipe(
+  Command.withDescription("Discover Feature contracts and their related repository evidence."),
+  Command.withSubcommands([featureList, featureShow]),
+);
+
+const testList = Command.make("list", {
+  pattern: Args.text({ name: "pattern" }).pipe(Args.optional),
+  json: jsonOption,
+}, ({ json, pattern }) => runTraceQuery(
+  (snapshot) => {
+    const selected = Option.getOrUndefined(pattern);
+    return Effect.succeed(listTests(snapshot, selected === undefined ? {} : { pattern: selected }));
+  },
+  json,
+)).pipe(Command.withDescription("List E2E test/spec paths that can be passed to test show."));
+
+const testShow = Command.make("show", {
+  test: Args.text({ name: "test-path" }),
+  json: jsonOption,
+}, ({ json, test: selector }) => runTraceQuery(
+  (snapshot) => showTest(snapshot, selector),
+  json,
+)).pipe(Command.withDescription("Show the Features, Use Case, owner, and regressions for one E2E test."));
+
+const test = Command.make("test").pipe(
+  Command.withDescription("Discover E2E tests and the product contracts they protect."),
+  Command.withSubcommands([testList, testShow]),
+);
+
 const prNumberOption = Options.integer("pr").pipe(Options.withDescription("GitHub pull request number."));
 const sourceOption = Options.text("source").pipe(Options.withDescription("Authored Markdown draft path."));
 const baseOption = Options.text("base").pipe(Options.withDescription("Locked base ref or target branch."));
@@ -449,7 +521,7 @@ const repository = Command.make("repository").pipe(
 
 const root = Command.make("niceeval-repo").pipe(
   Command.withDescription("NiceEval repository maintenance commands."),
-  Command.withSubcommands([feedback, memory, pr, docs, examples, consumer, repository]),
+  Command.withSubcommands([feature, test, feedback, memory, pr, docs, examples, consumer, repository]),
 );
 
 const run = Command.run(root, { name: "NiceEval repository tools", version: "1" });

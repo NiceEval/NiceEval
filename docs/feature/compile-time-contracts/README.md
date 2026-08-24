@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # 编译期作者契约
 
 NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和运行时数据。

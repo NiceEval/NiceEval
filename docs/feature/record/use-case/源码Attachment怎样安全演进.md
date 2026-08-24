@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 源码 Attachment 怎样安全演进
 
 `niceeval.sources` 的 current envelope 是 `{ family: "niceeval.sources", schemaVersion: 1 }`。它保存

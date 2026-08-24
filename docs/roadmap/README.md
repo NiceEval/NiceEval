@@ -14,8 +14,8 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - `library.md`、`cli.md`、`architecture.md`、`lifecycle.md` 与 `use-case/` 按需使用,体裁与 Feature 完全相同。
 - Roadmap 正文不写`审查状态`、候选方案、开放问题、`实现进度`或“定稿后”清单。
 
-新开方向使用 `pnpm docs:trace create roadmap <name> --title <title>`，再按需用 `--pages` 选择正文页。
-方向被采用时使用 `pnpm docs:trace adopt`，让强引用与 Memory promotion 在同一可恢复事务中迁移；不手工移动目录。
+目标写入口使用 `pnpm roadmap create <name> --title <title>`，再按需用 `--pages` 选择正文页。
+目标采用入口使用 `pnpm roadmap adopt`，让强引用与 Memory promotion 在同一可恢复事务中迁移；不手工移动目录。
 
 一个方向出现多个需要正式比较的候选时,移入 [`../design/`](../design/README.md),让每个候选成为独立 `PLAN-N/`。
 

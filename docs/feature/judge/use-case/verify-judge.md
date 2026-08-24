@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # Judge：接上兼容网关并确认真实评估
 
 把 endpoint、model 和 credential selector 写进可签入配置。key 只来自进程变量：

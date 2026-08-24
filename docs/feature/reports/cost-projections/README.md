@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Report 成本投影
 
 本目录是 Report 成本投影的唯一完整契约。Report Feature 的上层页面只保留入口和整合边界，不重复这里的 Profile、ledger、数值或 machine 形状。

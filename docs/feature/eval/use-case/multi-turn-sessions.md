@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 多轮与并行会话：每轮各自断，跨轮显式评
 
 多轮任务里“这一轮做对了吗”和“整段对话是否一致”是不同问题。

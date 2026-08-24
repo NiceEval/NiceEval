@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Eval Group
 
 Eval Group 把一组兼容的 Eval 绑定到同一条 capacity-one 复用 lane。组内真实派发的 Attempt

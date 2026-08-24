@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: use-case
+relations: {}
+---
+
 # 跨文件 Eval 怎样进入源码闭包
 
 Eval 调用项目内另一个文件导出的函数时，入口文件本身不能代表完整执行输入。静态 local import 与

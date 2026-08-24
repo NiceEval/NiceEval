@@ -4,8 +4,8 @@
 
 | Case ID | 用户问题 | 固定输入 | 验收结果 |
 |---|---|---|---|
-| T1 | 一个 Feature 与什么相关？ | 一个精确 Feature ref | 列出直接子功能、Use Cases、直接 Roadmap/Design/Engineering、owner/tests、current promotions 与 test regressions |
-| T2 | 一份测试守护什么？ | 一个 E2E test/spec path | 列出唯一 owner anchor、唯一产品契约、所属 Feature 与全部 canonical regressions |
+| T1 | 一个 Feature 与什么相关？ | `feature list` 输出的精确 Feature ID | `feature show` 按 Use Case 列出测试，并列出直接子功能、Roadmap/Design/Engineering、current promotions 与 test regressions |
+| T2 | 一份测试守护什么？ | `test list` 输出的 E2E test/spec path | `test show` 列出唯一 owner anchor、唯一产品契约、所属 Features 与全部 canonical regressions |
 | T3 | 没有自动化是否是错误？ | 一个没有 owner 的 Use Case | 显示空测试集合并成功退出，不创建 coverage finding |
 | T4 | 跨 Feature Journey 怎样反查？ | 一个拥有 `composes` 的跨 Feature Use Case | 每个被组合 Feature 都能反查该 Use Case 及其 owner/test |
 | T5 | 怎样创建文档？ | kind、slug、title 与所选页面 | 只从模板 manifest 创建最小 package，更新生成区并返回精确 receipt |

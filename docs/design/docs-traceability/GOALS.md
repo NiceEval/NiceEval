@@ -12,7 +12,8 @@
 ### G1：从任一稳定入口得到有限答案
 
 Feature 查询应列出直接子功能、本地与跨 Feature Use Case、直接相关的 Roadmap、Design、Engineering、E2E owner、测试文件和当前 Memory。
-测试查询应列出 owner anchor、产品契约、所属 Feature 与 regression Memory。
+测试查询应列出 owner anchor、产品契约、所属 Features 与 regression Memory。
+`feature list` 与 `test list` 输出的身份必须能原样交给各自的 `show`，不要求用户拼 qualified ref。
 
 ### G2：关系只在 owner 处声明
 

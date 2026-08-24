@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Verdict
 
 Verdict 是一个 Attempt 的读侧终态解释。它把 Core `outcome`、sealed Assertions 和显式 skip 折叠为 `passed`、`failed`、`errored` 或 `skipped`。

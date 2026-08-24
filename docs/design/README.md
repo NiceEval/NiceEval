@@ -17,7 +17,7 @@
   被采纳的那份标题标注"（推荐）"。
 - `DECISION.md`：综合 `GOALS.md` 与 `LIMITS.md` 后的最终裁决，包括为什么否决其它候选项。
 
-新开决策主题使用 `pnpm docs:trace create design <name> --title <title> --plans <n>`。
+目标写入口使用 `pnpm design create <name> --title <title> --plans <n>`。
 命令从 [Design Decision](../_template/design-decision/README.md) 与 [Feature Design Package](../_template/feature-design/README.md) 创建外层和各 PLAN，不手工复制模板。
 
 每个 PLAN 必须独立给出完整调用面、架构、生命周期与错误语义。

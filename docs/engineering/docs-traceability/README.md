@@ -6,8 +6,10 @@ relations: {}
 
 # 仓库文档追溯
 
-`pnpm docs:trace` 是 Feature、Roadmap、Design、Engineering、Use Case、E2E owner 与 Memory 的仓库维护入口。
-它从各 owner 的正向关系动态形成 Trace Snapshot，不保存中央 Registry，也不改变 Nx affected graph。
+`pnpm feature` 与 `pnpm test` 是 Feature、Use Case、E2E owner 与 Memory 的日常查询入口。
+第一批可运行能力是 `feature list/show` 与 `test list/show`。Roadmap、Design、Engineering 与 Use Case
+使用各自同名命令创建、以及 `docs:trace check/move/recover`，是后续写入面的目标契约。
+这些命令从各 owner 的正向关系动态形成同一份 Trace Snapshot，不保存中央 Registry，也不改变 Nx affected graph。
 
 设计取舍见[仓库文档追溯决策](../../design/docs-traceability/DECISION.md)。原生测试正文的边界继续服从[可读测试裁决](../../design/user-readable-testing/DECISION.md)。
 
@@ -51,8 +53,9 @@ type DocsNodeV1 =
 
 数组非空且去重；未知字段直接失败。绝对路径、反斜杠、`.` / `..` traversal、重复 canonical ref、缺失 path/anchor 与非法 target kind 都是 finding。
 
-qualified ref 是 `<kind>:<repo-relative-owner-path>`，例如 `feature:docs/feature/reports/README.md`。
-它只是 path identity 的显式输入形式；节点不另存稳定 ID、title、adoption status 或 template version。
+Feature ID 是其 package path 去掉 `docs/feature/` 与结尾 `/README.md` 后的值，例如 `reports` 或
+`reports/cost-projections`。它由 `pnpm feature list` 输出，并可直接传给 `pnpm feature show`。
+节点仍以 repo-relative owner path 为 canonical identity，不另存稳定 ID、title、adoption status 或 template version。
 
 ### Placement
 
@@ -121,7 +124,7 @@ lane、areas 与 executor 的真相仍在所属 E2E Repo metadata；Trace 只在
 - structured `promotions.current` 直接指向查询契约；
 - test header 的 canonical `regression` 通过 owner/contract 链到达查询契约。
 
-`--history` 才增加 `promotions.history` 与 supersession。普通 mentions 默认隐藏。
+第一批查询不展开 `promotions.history` 与 supersession；后续历史 receipt 必须显式选择。普通 mentions 默认隐藏。
 
 结构化 regression 必须指向 Problem。legacy regression 显示为 `legacy/unstructured`，不能称为 Problem、Bug 或具有结构化终态，也不能满足 Problem-only gate。
 superseded Decision/Insight 不得保留 current promotion。`pnpm memory check` 复用同一 Snapshot 读取 regression/promotion，再应用 Memory 自己的状态门。
@@ -129,16 +132,19 @@ superseded Decision/Insight 不得保留 current promotion。`pnpm memory check`
 ## 查询命令
 
 ```sh
-pnpm docs:trace list [kind] [pattern] [--json]
-pnpm docs:trace show <qualified-ref|repo-path> [--history] [--json]
-pnpm docs:trace check [--changed] [--json]
+pnpm feature list [pattern] [--json]
+pnpm feature show <feature-id|repo-path> [--json]
+pnpm test list [pattern] [--json]
+pnpm test show <test-path> [--json]
 ```
 
 ### list
 
-`list` 只做浅发现。kind 省略时返回全部节点；pattern 匹配 canonical path 或 H1，仅用于缩小列表，不隐式进入详情。
+两个 `list` 都只做浅发现。`feature list` 输出 Feature ID、标题与 canonical path；`test list` 输出 test/spec path、Repo 与 owner。
+Feature pattern 匹配 ID、path 或标题；test pattern 匹配 path、Repo 或 owner。它们只用于缩小列表，不隐式进入详情。
+列表中的 ID 或 path 必须能原样传给同类 `show`。
 
-### show Feature
+### feature show
 
 Feature 投影的闭包固定为：
 
@@ -148,18 +154,21 @@ Feature 投影的闭包固定为：
 4. 直接 `buildsOn` Roadmap、`decides` Design、`supports` Engineering 与 current promotions；
 5. 经第 3 步 tests 到达的 regressions。
 
-查询到此停止，不继续遍历相关节点的其它边。没有 tests 时输出显式空数组，并在人读结果中显示“无长期自动化 owner”；这不是 finding。
+查询到此停止，不继续遍历相关节点的其它边。没有 tests 时输出显式空数组，并在人读结果中显示
+`No long-term automated owner`；这不是 finding。
+人读结果按 Use Case 分组列出测试；直接守护 Feature anchor、但不属于某个叶子 Use Case 的测试单列，不能伪装成用例测试。
 
-### show Test
+### test show
 
-测试投影返回 Repo、file、owner anchor、contract、所属 Feature、regressions，以及从 Repo metadata 读取的 lane/areas。
-Journey contract 为跨 Feature Use Case 时，还返回 `composes` 涉及的 Features。Trace 不读取或返回测试标题、scenario companion 与正文。
+测试投影返回 Repo、file、owner anchor、contract、所属 Features、regressions，以及从 Repo metadata 读取的 lane/areas/executor。
+Journey contract 为跨 Feature Use Case 时，Features 从 `composes` 推导。Trace 不读取或返回测试标题、scenario companion 与正文。
 
 这些内容变化后，Snapshot、digest、JSON 与人读 trace 输出都必须保持不变。
 
 ### selector 与 receipt
 
-`show` 只接受精确 qualified ref 或 repo path。歧义 selector 非零退出，并按 canonical path 排序列出候选；不得挑选第一个匹配。
+`feature show` 只接受 `feature list` 输出的精确 ID 或 canonical repo path；不做前缀猜测。
+`test show` 只接受 `test list` 输出的精确 repo path。缺失 selector 非零退出；任何歧义都按 canonical path 排序列出候选，不得挑选第一个匹配。
 
 所有 JSON 结果包含 `format`、`operation`、`snapshotDigest`、`generation` 与 canonical paths。
 数组稳定排序并显式保留 `[]`；人读 renderer 与 JSON 使用同一结构化 receipt。
@@ -167,13 +176,20 @@ Journey contract 为跨 Feature Use Case 时，还返回 `composes` 涉及的 Fe
 ```json
 {
   "format": "niceeval.docs-trace/show-v1",
-  "operation": "show",
+  "operation": "feature-show",
   "snapshotDigest": "sha256:...",
-  "generation": 12,
-  "subject": { "kind": "feature", "path": "docs/feature/reports/README.md" },
+  "generation": 0,
+  "subject": {
+    "kind": "feature",
+    "id": "reports",
+    "path": "docs/feature/reports/README.md",
+    "title": "③ Report（报告层）"
+  },
+  "children": [],
   "useCases": [],
   "owners": [],
   "tests": [],
+  "testsByUseCase": [],
   "roadmaps": [],
   "designs": [],
   "engineering": [],
@@ -182,12 +198,16 @@ Journey contract 为跨 Feature Use Case 时，还返回 `composes` 涉及的 Fe
 }
 ```
 
-## 创建命令与模板
+## 后续创建命令与模板
+
+以下命令定义未来写入面，本次可运行查询切片不接受 `create`：
 
 ```sh
-pnpm docs:trace create <feature|roadmap|engineering|design|use-case> <slug> \
-  --title <title> [--parent <ref>] [--pages <list>] [--plans <n>] [--cases] \
-  [--dry-run] [--json]
+pnpm feature create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm roadmap create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm engineering create <slug> --title <title> [--pages <list>] [--dry-run] [--json]
+pnpm design create <slug> --title <title> [--plans <n>] [--cases] [--dry-run] [--json]
+pnpm use-case create <slug> --title <title> --parent <ref> [--dry-run] [--json]
 ```
 
 Feature、Roadmap 与 Design Plan 使用 Feature Design Package；Design 外层使用 Design Decision；Engineering 使用工程主题模板。
@@ -212,8 +232,8 @@ compiler 永不读取该区块。`check` 从节点重算 exact bytes；create/mo
 
 ```sh
 pnpm docs:trace move <ref> --to <repo-path> [--dry-run] [--json]
-pnpm docs:trace adopt prepare <roadmap-ref> --to <feature-ref> [--json]
-pnpm docs:trace adopt apply --manifest <git-private-path> [--dry-run] [--json]
+pnpm roadmap adopt prepare <roadmap-ref> --to <feature-ref> [--json]
+pnpm roadmap adopt apply --manifest <git-private-path> [--dry-run] [--json]
 pnpm docs:trace recover [--json]
 ```
 
@@ -244,7 +264,7 @@ source package、所有 typed ref owner、相关 structured Memory 与生成区�
 每次写入前重新核对全部 preimage digest。每个 phase 保存已 durable 的旧/新 bytes 与下一步；中断后 `recover` 只能完成新状态或恢复完整旧状态。
 实现必须对每个 journal phase 注入 interruption，证明没有半旧半新终态。
 
-`list`、`show`、`check` 与 lint 在 active mutation/recovery 期间等待、重试或返回具名失败。
+`feature list/show`、`test list/show`、`docs:trace check` 与 lint 在 active mutation/recovery 期间等待、重试或返回具名失败。
 编译前后还要核对 generation 与已读取文件 digest；变化时重试或失败，不得返回混合 Snapshot。
 
 不同 Agent 可以并行编辑互斥正文，但所有 create、move、adopt 和生成区更新必须串行经过结构锁。
@@ -263,7 +283,9 @@ source package、所有 typed ref owner、相关 structured Memory 与生成区�
 
 `check --changed` 仍编译并验证全仓，只在 receipt 增加 `changedSubjects` 与 `impactedSubjects`。它不能隐藏未改文件的 finding，也不能形成较弱成功。
 
-`packages/repo-tools/src/docs/trace/**` 是 Schema、pure compiler、Snapshot、投影与 findings 的唯一 owner。Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
+`packages/repo-tools/src/docs/trace/**` 是 Schema、pure compiler、Snapshot、投影、presentation 与 findings 的唯一 owner。
+`packages/repo-tools/src/cli.ts` 只把 `feature`、`test` 与维护命令接进同一个 `@effect/cli` 根和 Node runtime。
+Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 `lint/docs/**` 只是直接调用 pure checker 的薄 adapter，不复制 parser，也不通过子进程调用 CLI。
 
 ## 错误语义
@@ -278,7 +300,8 @@ source package、所有 typed ref owner、相关 structured Memory 与生成区�
 - adoption manifest incomplete / `base-digest-changed`；
 - recovery conflict / mixed snapshot prevented。
 
-所有读命令离线、只读。所有写命令有同形 `--dry-run` receipt；失败不留下部分 docs diff。
+所有读命令离线、只读。`feature` 与 `test` 不是独立 runtime，也不各自保存缓存或 parser。
+所有写命令有同形 `--dry-run` receipt；失败不留下部分 docs diff。
 
 ## 切换与验收
 
@@ -295,6 +318,8 @@ source package、所有 typed ref owner、相关 structured Memory 与生成区�
 验收至少包括：
 
 - 修改测试标题、scenario 或正文不改变 Trace JSON/digest；
+- `pnpm feature list` 输出的每个 ID 都能原样交给 `pnpm feature show`；
+- `pnpm test list` 输出的每个 path 都能原样交给 `pnpm test show`；
 - contract 可关联零到多个 owners，但 test/owner 必须一对一；
 - 无 E2E Use Case 返回空数组且通过 check；
 - legacy Memory digest 在 move/adopt 前后不变；

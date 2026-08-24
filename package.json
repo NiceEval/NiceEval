@@ -16,6 +16,8 @@
     "e2e": "tsx packages/e2e-runner/src/cli.ts",
     "feedback": "tsx packages/repo-tools/src/cli.ts feedback",
     "memory": "tsx packages/repo-tools/src/cli.ts memory",
+    "feature": "tsx packages/repo-tools/src/cli.ts feature",
+    "test": "tsx packages/repo-tools/src/cli.ts test",
     "pr:body": "tsx packages/repo-tools/src/cli.ts pr body",
     "docs:terms": "tsx packages/repo-tools/src/cli.ts docs terms",
     "docs:work": "tsx packages/repo-tools/src/cli.ts docs work",

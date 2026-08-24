@@ -1,3 +1,9 @@
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Sandbox —— 在哪里跑
 
 沙箱回答"在哪里、如何隔离地运行 agent 命令"。
