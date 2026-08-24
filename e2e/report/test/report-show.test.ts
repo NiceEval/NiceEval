@@ -235,19 +235,29 @@ test("show 对单组默认直达 comparison，对多组默认列索引并以实�
   );
 });
 
-test("show 保留 named identity，并按各实验实际运行的 Eval population 比较", async () => {
+// regression: memory/analysis-usage-projection-conflates-conversation-limitations.md
+test("show 保留 named identity、实际 Eval population 与独立完整的 usage", async () => {
   await reportE2E.case(
     "show-named-group-comparison",
     { artifacts: reportCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
+      let baselineLocator: string | undefined;
       for (const experimentId of ["classic/baseline", "classic/memory-a", "classic/incompatible"] as const) {
         const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
         expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
+        if (experimentId === "classic/baseline") {
+          baselineLocator = only(
+            run.expEvalEvents(),
+            (event) => event.evalId === "classic/recall-name",
+            run.diagnostic(),
+          ).locator;
+        }
       }
 
       const shown = await niceeval.run(["show", "--experiment", "classic", "--json"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.json<BuiltInShowDocument>()).toMatchObject({
+      const document = shown.json<BuiltInShowDocument>();
+      expect(document).toMatchObject({
         format: "niceeval.show",
         page: { route: "/group/named/classic", pageId: "group-named" },
         data: {
@@ -264,6 +274,74 @@ test("show 保留 named identity，并按各实验实际运行的 Eval populatio
           },
         },
       });
+      if (document.data.kind !== "experiment-group") throw new Error("expected experiment group");
+      const rows = document.data.comparison.rows as readonly {
+        readonly experiment: string;
+        readonly tokens: {
+          readonly value: number | null;
+          readonly state: string;
+          readonly samples: number;
+          readonly total: number;
+        };
+      }[];
+      const tokensByExperiment = new Map(rows.map((row) => [row.experiment, row.tokens]));
+      expect(tokensByExperiment.get("classic/baseline")).toEqual(expect.objectContaining({
+        value: expect.closeTo(800 / 9),
+        state: "available",
+        samples: 9,
+        total: 9,
+      }));
+      expect(tokensByExperiment.get("classic/incompatible")).toEqual(expect.objectContaining({
+        value: 0,
+        state: "available",
+        samples: 2,
+        total: 2,
+      }));
+      expect(tokensByExperiment.get("classic/memory-a")).toEqual(expect.objectContaining({
+        value: expect.closeTo(1_408 / 9),
+        state: "available",
+        samples: 9,
+        total: 9,
+      }));
+      expect(document.problems).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ summary: "usage collection is incomplete" }),
+      ]));
+
+      if (baselineLocator === undefined) throw new Error("baseline usage locator was not recorded");
+      const attempt = await niceeval.run(["show", baselineLocator, "--json"]);
+      expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
+      const attemptDocument = attempt.json<BuiltInShowDocument>();
+      if (attemptDocument.data.kind !== "attempt") throw new Error("expected attempt");
+      const observability = attemptDocument.data.observability as {
+        readonly entries: readonly {
+          readonly detail: {
+            readonly sources: {
+              readonly agentTurns: {
+                readonly state: string;
+                readonly limitations: readonly { readonly code: string; readonly target: string }[];
+              };
+            };
+            readonly usage: {
+              readonly collection: { readonly state: string; readonly limitations: readonly unknown[] };
+              readonly observations: readonly {
+                readonly kind: string;
+                readonly bucket?: string;
+                readonly tokens?: number;
+              }[];
+            };
+          };
+        }[];
+      };
+      const detail = only(observability.entries, () => true, attempt.diagnostic()).detail;
+      expect(detail.sources.agentTurns).toMatchObject({
+        state: "partial",
+        limitations: [expect.objectContaining({ code: "unsupported-input", target: "turn-item" })],
+      });
+      expect(detail.usage.collection).toEqual({ state: "complete", limitations: [] });
+      expect(detail.usage.observations).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "token-bucket", bucket: "input", tokens: 80 }),
+        expect.objectContaining({ kind: "token-bucket", bucket: "output", tokens: 20 }),
+      ]));
     },
   );
 });

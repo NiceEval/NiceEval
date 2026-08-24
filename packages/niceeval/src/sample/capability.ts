@@ -7,7 +7,7 @@ import type {
   PublishedAnalysisInputBinding,
   RecordReadBinding,
 } from "../analysis/bindings.ts";
-import { agentTurnsSource } from "../analysis/bindings.ts";
+import { agentTurnsSource, agentTurnUsageCollection } from "../analysis/bindings.ts";
 import type {
   BuiltinDomainView,
   ClosedRunDiagnosticsEntry,
@@ -907,7 +907,7 @@ function readCostSlot(
           member: included,
           core: resolved.core,
           usage: Object.freeze({
-            collection: cached.read.value.collection,
+            collection: agentTurnUsageCollection(cached.read.value),
             observations: Object.freeze(cached.read.value.segments.flatMap((segment) => segment.usage)),
           }),
           profile,
