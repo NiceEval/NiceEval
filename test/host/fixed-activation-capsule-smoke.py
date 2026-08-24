@@ -17,6 +17,33 @@ activation = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(activation)
 
 
+stable_backing = {
+    "path": "/data/niceeval/profile/store.img",
+    "sizeBytes": 80 * 1024**3,
+    "allocatedBytes": 80 * 1024**3,
+    "filesystemType": "ext4",
+    "filesystemUuid": "11111111-2222-3333-4444-555555555555",
+}
+# Allocation accounting may grow after loop-mounted writes. It remains an
+# attestation fact, while path/size/type/UUID form the stable rollback identity.
+activation.assert_same_ext4_backing(
+    {**stable_backing, "allocatedBytes": stable_backing["allocatedBytes"] + 4096},
+    stable_backing,
+)
+for changed in (
+    {**stable_backing, "filesystemUuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
+    {**stable_backing, "sizeBytes": stable_backing["sizeBytes"] + 4096,
+     "allocatedBytes": stable_backing["allocatedBytes"] + 4096},
+    {**stable_backing, "allocatedBytes": stable_backing["sizeBytes"] - 4096},
+):
+    try:
+        activation.assert_same_ext4_backing(changed, stable_backing)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("changed or incompletely allocated outer backing must fail closed")
+
+
 with tempfile.TemporaryDirectory(prefix="niceeval-activation-recovery-") as raw:
     root = Path(raw)
     active = root / "active.json"

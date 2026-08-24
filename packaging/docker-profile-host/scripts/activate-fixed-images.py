@@ -161,6 +161,26 @@ def ext4_image_identity(image: Path) -> dict[str, Any]:
     }
 
 
+def assert_same_ext4_backing(current: dict[str, Any], recorded: dict[str, Any]) -> None:
+    """Bind rollback to stable backing identity while re-attesting allocation now.
+
+    ``st_blocks`` is an allocation fact, not a stable file identity: writing through
+    a loop-mounted ext4 image may change that accounting without changing the
+    backing path, byte size, filesystem type, or filesystem UUID.  The capsule
+    records the activation-time value for audit, but rollback admission proves
+    that both the recorded and current image were/are fully allocated instead of
+    requiring those two counters to be byte-for-byte equal.
+    """
+    stable_fields = ("path", "sizeBytes", "filesystemType", "filesystemUuid")
+    if any(current.get(field) != recorded.get(field) for field in stable_fields):
+        raise RuntimeError("rollback capsule outer image identity differs")
+    for label, fact in (("recorded", recorded), ("current", current)):
+        size = fact.get("sizeBytes")
+        allocated = fact.get("allocatedBytes")
+        if not isinstance(size, int) or not isinstance(allocated, int) or allocated < size:
+            raise RuntimeError(f"rollback capsule outer image {label} allocation is incomplete")
+
+
 def parent_mount_identity(root: Path) -> dict[str, Any]:
     if not root.is_absolute() or root == Path("/") or not root.exists():
         raise RuntimeError("fixed storage root is absent; refusing root-filesystem fallback")
@@ -695,8 +715,9 @@ def load_capsule(generation: Path, epoch: str) -> tuple[dict[str, Any], bytes, d
             raise RuntimeError(f"rollback capsule {key} backing fact differs")
     outer_fact = capsule.get("outerImage", {})
     outer = Path(str(outer_fact.get("path", "")))
-    if not outer.is_file() or ext4_image_identity(outer) != outer_fact:
+    if not outer.is_file():
         raise RuntimeError("rollback capsule outer image identity differs")
+    assert_same_ext4_backing(ext4_image_identity(outer), outer_fact)
     config = json.loads(config_bytes)
     if str(Path(config["dataMount"]).resolve()) != capsule.get("dataMount"):
         raise RuntimeError("rollback capsule data mount identity differs")
@@ -1032,7 +1053,17 @@ def main() -> None:
         dependency = assert_cgroup_empty(config)
         closure_config = previous_config if previous_config is not None else config
         assert_mount_and_process_closure(closure_config)
-        unmount_owned_slots(closure_config)
+        # A same-backing re-activation must leave published writable slots mounted:
+        # the provisioner attests their mounted filesystem-root ownership before it
+        # adopts the existing registry. Only a real backing cutover needs the old
+        # slot mounts released before the data mount can switch.
+        same_backing = previous_config is not None \
+            and Path(str(previous_config["storage"]["outerImagePath"])).resolve() \
+                == Path(str(config["storage"]["outerImagePath"])).resolve() \
+            and Path(str(previous_config["dataMount"])).resolve() \
+                == Path(str(config["dataMount"])).resolve()
+        if not same_backing:
+            unmount_owned_slots(closure_config)
         detached = assert_docker_closure(str(config["dockerSocket"]), stable_profile_id(config))
         if args.prepare_store:
             prepare_store(config, args.prepare_helper)
