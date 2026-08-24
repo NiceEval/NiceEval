@@ -254,7 +254,11 @@ function conciseOwnerDescription(value: string): string {
   const selected = useful.find((sentence) => /被测|证明|验证|必须|不得|确保|\b(?:must|should|prove|verify|ensure|reject|return|keep)s?\b/iu.test(sentence)) ??
     useful[0] ?? sentences[0] ?? normalized;
   const points = [...selected.replace(/[。！？!?]+$/u, "")];
-  return points.length <= 120 ? points.join("") : `${points.slice(0, 119).join("")}…`;
+  if (points.length <= 120) return points.join("");
+  const prefix = points.slice(0, 119).join("");
+  const boundary = Math.max(prefix.lastIndexOf(" "), prefix.lastIndexOf("，"), prefix.lastIndexOf("、"), prefix.lastIndexOf("；"));
+  const concise = boundary >= 80 ? prefix.slice(0, boundary).replace(/[，、；\s]+$/u, "") : prefix;
+  return `${concise}…`;
 }
 
 function ownerDescription(lines: readonly string[], anchor: string, contractLine: number): string {

@@ -120,7 +120,8 @@ function testListTree(receipt: TestListReceipt, details: readonly TestShowReceip
 
 function targetRelations(group: TraceRelationsByTarget): readonly TreeNode[] {
   const tests = group.tests.map((test) => ({
-    label: `${test.path} [repo: ${test.repo}; owner: ${test.owner}; exact target: ${test.target}]`,
+    label: `${test.path} [repo: ${test.repo}]`,
+    children: [{ label: `Description: ${test.description}` }],
   }));
   const feedback = group.feedbackAdoptions.map((relation) => ({
     label: `${relation.feedback.id} — ${relation.feedback.title} [${relation.feedback.state}; exact target: ${relation.target}; via: ${relation.via}]`,

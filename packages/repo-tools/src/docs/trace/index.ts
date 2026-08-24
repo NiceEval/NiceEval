@@ -228,6 +228,7 @@ export function showFeature(
       path: test.path,
       repo: test.repo,
       owner: test.owner,
+      description: owner.description,
       lane: test.lane,
       areas: test.areas,
       executor: test.executor,

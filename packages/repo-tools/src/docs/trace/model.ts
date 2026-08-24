@@ -127,6 +127,7 @@ export interface TraceScopedTest extends TraceTargetRelation {
   readonly path: string;
   readonly repo: string;
   readonly owner: string;
+  readonly description: string;
   readonly lane: readonly string[];
   readonly areas: readonly string[];
   readonly executor: { readonly kind: string };

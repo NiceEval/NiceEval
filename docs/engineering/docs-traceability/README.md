@@ -198,6 +198,9 @@ Feature 投影的闭包固定为：
 查询到此停止，不继续遍历相关节点的其它边。没有 tests 时输出显式空数组，并在人读结果中显示
 `No long-term automated owner`；这不是 finding。
 人读结果按 Use Case 分组列出页面、测试与具名 provenance；直接指向 Feature、但不属于某个叶子 Use Case 的关系单列为 Feature-level，不能伪装成用例关系。
+
+Feature-level 与每个 Use Case 的测试叶子都显示完整 file path；下一行显示同一个 owner-owned `Description`。所在分组已经表达 exact target，因此人读树不重复输出 owner 与 exact-target 调试字段；JSON receipt 仍保留它们。
+
 每条反向边都保留 `target`、`scope` 与 `via`，因此一个 Feature 不会因为包含某个 Use Case 就被错误显示为“直接采用”。
 
 ### test show
