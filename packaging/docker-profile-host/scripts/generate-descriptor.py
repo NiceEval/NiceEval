@@ -32,7 +32,7 @@ SETUP_PREFIX_FILESYSTEM_FEATURES = [
     "independent-image",
 ]
 SETUP_PREFIX_SEED_POLICY = "immutable-unmounted/v1"
-SETUP_PREFIX_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v3"
+SETUP_PREFIX_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v4"
 SETUP_PREFIX_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v3"
 SETUP_PREFIX_MANIFEST_SCHEMA = "niceeval-docker-profile-activation/v3"
 

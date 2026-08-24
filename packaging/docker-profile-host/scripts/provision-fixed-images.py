@@ -35,7 +35,7 @@ SETUP_CONSTANTS = {
     "slotAttestation": ATTESTATION,
     "filesystemFeatures": ["ext4", "fixed-size", "fully-allocated", "independent-image"],
     "seedPolicy": "immutable-unmounted/v1",
-    "publicationRevision": "prepared-copy-client-commit-publish/v3",
+    "publicationRevision": "prepared-copy-client-commit-publish/v4",
     "recoveryRevision": "epoch-capsule-no-guess-recovery/v3",
     "manifestSchema": "niceeval-docker-profile-activation/v3",
     "copyStrategy": "raw-image/v1",

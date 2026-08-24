@@ -709,6 +709,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
             seedPolicy: capability.seedPolicy,
             publicationRevision: capability.publicationRevision,
             recoveryRevision: capability.recoveryRevision,
+            manifestSchema: capability.manifestSchema,
             seedLimitBytes: capability.seedLimitBytes,
             filesystemIdentity: capability.filesystemIdentity,
           }),

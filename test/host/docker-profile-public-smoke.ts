@@ -33,7 +33,7 @@ const setupPrefixDescriptor = {
   quiesceRevision: "quiesce/v1",
   slotAttestation: "independent-fixed-filesystem/v1",
   seedPolicy: "immutable-unmounted/v1",
-  publicationRevision: "prepared-copy-client-commit-publish/v3",
+  publicationRevision: "prepared-copy-client-commit-publish/v4",
   recoveryRevision: "epoch-capsule-no-guess-recovery/v3",
   manifestSchema: "niceeval-docker-profile-activation/v3",
   providerIdentity: "provider:test",

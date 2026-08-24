@@ -93,8 +93,8 @@ export interface DockerProfileSetupPrefixFullCopyCapabilityV1 {
   readonly slotAttestation: "independent-fixed-filesystem/v1";
   readonly seedPolicy: "immutable-unmounted/v1";
   readonly publicationRevision: "prepared-copy-client-commit-publish/v4";
-  readonly recoveryRevision: "no-guess-scrub-or-quarantine/v2";
-  readonly manifestSchema: "niceeval-docker-profile-activation/v2";
+  readonly recoveryRevision: "epoch-capsule-no-guess-recovery/v3";
+  readonly manifestSchema: "niceeval-docker-profile-activation/v3";
   readonly providerIdentity: string;
   readonly executionDomain: string;
   readonly filesystemSizeBytes: number;
@@ -342,8 +342,8 @@ const SetupPrefixFullCopyCapabilitySchema = plainStruct({
   slotAttestation: Schema.Literal("independent-fixed-filesystem/v1"),
   seedPolicy: Schema.Literal("immutable-unmounted/v1"),
   publicationRevision: Schema.Literal("prepared-copy-client-commit-publish/v4"),
-  recoveryRevision: Schema.Literal("no-guess-scrub-or-quarantine/v2"),
-  manifestSchema: Schema.Literal("niceeval-docker-profile-activation/v2"),
+  recoveryRevision: Schema.Literal("epoch-capsule-no-guess-recovery/v3"),
+  manifestSchema: Schema.Literal("niceeval-docker-profile-activation/v3"),
   providerIdentity: sha256Identity("DockerProfileSetupPrefixProviderIdentity"),
   executionDomain: sha256Identity("DockerProfileSetupPrefixExecutionDomain"),
   filesystemSizeBytes: positiveSafeInteger("DockerProfileSetupPrefixFilesystemSizeBytes"),
