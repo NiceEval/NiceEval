@@ -1,190 +1,108 @@
 import { createHash } from "node:crypto";
-import { Effect, Either } from "effect";
+import { Effect, Either, Stream, type Schema } from "effect";
+
 import {
-  makeFixedRecordAttachmentValueFromDecoded,
-  makeRecordBlobRef,
-  type RecordAttachmentMaterializedBlob,
-} from "../attachment/internal.ts";
-import type {
-  RecordAttachmentBlobs,
-  RecordAttachmentPayloadSnapshot,
-  RecordBlobRef,
-} from "../attachment/types.ts";
+  enumerateRecordAttachmentClosure,
+  hydrateRecordAttachmentCurrent,
+  mintRecordAttachmentReference,
+  recordAttachmentReferenceDefinition,
+  recordAttachmentReferenceWire,
+  RecordAttachmentReference,
+  type RecordAttachmentDefinition,
+  type RecordAttachmentPersistence,
+} from "../attachment/protocol.ts";
+import {
+  isRecordContentHandle,
+  isRecordTextContentHandle,
+  mintRecordContentHandle,
+  type RecordContentHandle,
+  type RecordTextContentHandle,
+} from "../attachment/content.ts";
+import {
+  decodeDurableRecordAttachmentEnvelope,
+  decodeLegacyRecordAttachmentHeader,
+} from "../codec/attachment.ts";
 import { decodeRecordAttachmentEnvelope } from "../codec/core.ts";
-import type { FixedRecordFamilyDescriptor } from "../family/catalog.ts";
-import { decodeFixedRecordAttachmentEnvelope } from "../family/catalog.ts";
-import type {
-  RecordAttachmentEnvelope,
-  RecordAttachmentOwner,
-} from "../model/core.ts";
+import type { DurableRecordAttachmentEnvelope } from "../model/attachment.ts";
+import type { RecordAttachmentOwner } from "../model/core.ts";
 import type { AttemptId, RunId } from "../model/identifiers.ts";
 import type { SealManifestEntry } from "../model/seal-manifest.ts";
-import {
-  nonEmptyRecordIssues,
-  recordIssue,
-  type NonEmptyRecordIssues,
-} from "../errors/record-errors.ts";
-import {
-  RecordPathTypeInvalid,
-  type RecordFileSystemError,
-} from "../platform/errors.ts";
+import { nonEmptyRecordIssues, recordIssue, type NonEmptyRecordIssues } from "../errors/record-errors.ts";
+import type { RecordFileSystemError } from "../platform/errors.ts";
 import type { RecordRoot } from "../platform/root.ts";
+import { recordPortablePath, type RecordFileSystemService } from "../platform/services.ts";
+import { RecordHandleInvalid, RecordReaderClosed, type RecordReaderReadError } from "./errors.ts";
+import type { RecordAttachmentContentReader } from "../host/types.ts";
 import {
-  recordPortablePath,
-  type RecordFileSystemService,
-} from "../platform/services.ts";
-import { isPortableSegment } from "../model/identifiers.ts";
+  RECORD_ATTACHMENT_MAXIMUM_CONTENT_BYTES,
+  RECORD_ATTACHMENT_MAXIMUM_CONTENTS,
+  RECORD_ATTACHMENT_MAXIMUM_TOTAL_CONTENT_BYTES,
+} from "../writer/current-attachment.ts";
+import { RECORD_JSON_MAXIMUM_BYTES } from "../writer/limits.ts";
 
-/** Fixed readers materialize a family only when its explicit method is called. */
-export const RECORD_READER_MAXIMUM_ATTACHMENT_BLOB_ENTRIES = 100_000;
-export const RECORD_READER_MAXIMUM_ATTACHMENT_BLOB_BYTES = 64 * 1024 * 1024;
-export const RECORD_READER_MAXIMUM_ATTACHMENT_TOTAL_BYTES = 128 * 1024 * 1024;
-export const RECORD_READER_MAXIMUM_ATTACHMENT_DOCUMENT_BYTES = 16 * 1024 * 1024;
+type AnyDefinition = RecordAttachmentDefinition<RecordAttachmentOwner, string, Schema.Schema.AnyNoContext>;
+type AnyPersistence = RecordAttachmentPersistence<AnyDefinition, number>;
 
-/** The storage-side ref codec reserves this exact one-property JSON object. */
+/** Legacy private codec marker kept local to the old physical reader/writer. */
 export const RECORD_DURABLE_BLOB_REF_KEY = "$niceeval.record.blob";
 
-type JsonDocument =
-  | { readonly state: "available"; readonly value: unknown }
-  | { readonly state: "missing" }
-  | { readonly state: "invalid" };
-
-interface HydratedPayload {
-  readonly value: unknown;
-  readonly refsByKey: ReadonlyMap<string, RecordBlobRef>;
-  readonly invalid: boolean;
-}
-
-export interface FixedRecordAttachmentLocation<Owner extends RecordAttachmentOwner> {
+export interface RecordAttachmentLocation<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> {
   readonly owner: Owner;
   readonly runId: RunId;
   readonly attemptId?: AttemptId;
 }
 
-export type FixedRecordAttachmentEnvelopeRead =
+export type RecordAttachmentEnvelopeInspection =
   | { readonly state: "current" }
   | { readonly state: "unavailable" }
-  | {
-      readonly state: "migration-required";
-      readonly family: string;
-      readonly fromSchemaVersion: number;
-      readonly toSchemaVersion: number;
-      readonly command: "niceeval migrate";
-    }
-  | { readonly state: "unsupported"; readonly family: string; readonly schemaVersion: number }
+  | { readonly state: "migration-required"; readonly family: string; readonly fromRevision: number; readonly toRevision: number; readonly command: "niceeval migrate" }
+  | { readonly state: "unsupported"; readonly family: string; readonly revision: number }
   | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
 
-/** @internal Storage result already flattened for the Host current API. */
-export type FixedRecordAttachmentRead<Payload> =
+export type CurrentRecordAttachmentRead<Value> =
   | {
       readonly state: "available";
-      readonly value: RecordAttachmentPayloadSnapshot<Payload>;
-      readonly blobs: RecordAttachmentBlobs;
+      readonly value: Value;
+      readonly content: RecordAttachmentContentReader;
+      readonly references: readonly {
+        readonly owner: RecordAttachmentOwner;
+        readonly family: string;
+        readonly definition: AnyDefinition;
+      }[];
     }
   | { readonly state: "unavailable" }
-  | {
-      readonly state: "migration-required";
-      readonly family: string;
-      readonly fromSchemaVersion: number;
-      readonly toSchemaVersion: number;
-      readonly command: "niceeval migrate";
-    }
-  | { readonly state: "unsupported"; readonly family: string; readonly schemaVersion: number }
-  | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
+  | Exclude<RecordAttachmentEnvelopeInspection, { readonly state: "current" | "unavailable" }>;
 
-function attachmentInvalid<Payload>(
-  path: readonly string[],
-): FixedRecordAttachmentRead<Payload> {
-  const issues = nonEmptyRecordIssues([recordIssue("record-schema-invalid", path)]);
-  if (issues === undefined) throw new Error("Attachment invalid state requires one issue");
-  return Object.freeze({ state: "invalid" as const, issues });
+export interface VerifiedRecordAttachmentPhysical {
+  readonly envelope: DurableRecordAttachmentEnvelope;
+  readonly envelopeBytes: Uint8Array;
+  readonly payload: unknown;
+  readonly payloadBytes: Uint8Array;
+  readonly contents: ReadonlyMap<string, Uint8Array>;
 }
 
-function attachmentEnvelopeInvalid(path: readonly string[]): FixedRecordAttachmentEnvelopeRead {
-  const issues = nonEmptyRecordIssues([recordIssue("record-schema-invalid", path)]);
+function invalid(): Extract<RecordAttachmentEnvelopeInspection, { readonly state: "invalid" }> {
+  const issues = nonEmptyRecordIssues([recordIssue("record-schema-invalid", ["attachment"])]);
   if (issues === undefined) throw new Error("Attachment invalid state requires one issue");
-  return Object.freeze({ state: "invalid" as const, issues });
+  return Object.freeze({ state: "invalid", issues });
 }
 
 function attachmentPath(
   root: RecordRoot,
-  location: FixedRecordAttachmentLocation<RecordAttachmentOwner>,
+  location: RecordAttachmentLocation,
   family: string,
   ...segments: readonly string[]
 ) {
   return location.owner === "run"
     ? recordPortablePath(root, "runs", location.runId, "attachments", family, ...segments)
-    : recordPortablePath(
-        root,
-        "runs",
-        location.runId,
-        "attempts",
-        location.attemptId!,
-        "attachments",
-        family,
-        ...segments,
-      );
+    : recordPortablePath(root, "runs", location.runId, "attempts", location.attemptId!, "attachments", family, ...segments);
 }
 
-function parseJson(bytes: Uint8Array): JsonDocument {
+function parseJson(bytes: Uint8Array): unknown | undefined {
   try {
-    return Object.freeze({
-      state: "available" as const,
-      value: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown,
-    });
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
   } catch {
-    return Object.freeze({ state: "invalid" as const });
-  }
-}
-
-function readJson(
-  fileSystem: RecordFileSystemService,
-  file: ReturnType<typeof recordPortablePath>,
-): Effect.Effect<JsonDocument, RecordFileSystemError> {
-  return fileSystem.readFile({ file, maximumBytes: RECORD_READER_MAXIMUM_ATTACHMENT_DOCUMENT_BYTES }).pipe(
-    Effect.map((bytes) => bytes === undefined ? Object.freeze({ state: "missing" as const }) : parseJson(bytes)),
-    Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(Object.freeze({ state: "invalid" as const }))),
-  );
-}
-
-function hydrateDurablePayload(
-  input: unknown,
-  suppliedRefs?: ReadonlyMap<string, RecordBlobRef>,
-): HydratedPayload {
-  const refsByKey = new Map<string, RecordBlobRef>();
-  let invalid = false;
-  const hydrate = (value: unknown): unknown => {
-    if (value === null || typeof value !== "object") return value;
-    if (Array.isArray(value)) return value.map(hydrate);
-    const source = value as Record<string, unknown>;
-    const keys = Object.keys(source);
-    if (keys.length === 1 && keys[0] === RECORD_DURABLE_BLOB_REF_KEY) {
-      const key = source[RECORD_DURABLE_BLOB_REF_KEY];
-      if (typeof key !== "string" || !isPortableSegment(key)) {
-        invalid = true;
-        return source;
-      }
-      const prior = refsByKey.get(key) ?? suppliedRefs?.get(key);
-      if (prior !== undefined) {
-        refsByKey.set(key, prior);
-        return prior;
-      }
-      if (suppliedRefs !== undefined) {
-        invalid = true;
-        return source;
-      }
-      const ref = makeRecordBlobRef();
-      refsByKey.set(key, ref);
-      return ref;
-    }
-    const clone: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-    for (const key of keys) clone[key] = hydrate(source[key]);
-    return clone;
-  };
-  try {
-    return Object.freeze({ value: hydrate(input), refsByKey, invalid });
-  } catch {
-    return Object.freeze({ value: input, refsByKey, invalid: true });
+    return undefined;
   }
 }
 
@@ -192,248 +110,324 @@ function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function readPointer(
-  fileSystem: RecordFileSystemService,
-  file: ReturnType<typeof recordPortablePath>,
-  pointer: { readonly sha256: string; readonly byteLength: number },
-  maximumBytes: number,
-): Effect.Effect<Uint8Array | undefined, RecordFileSystemError> {
-  if (pointer.byteLength > maximumBytes) return Effect.succeed(undefined);
-  return fileSystem.readFile({ file, maximumBytes }).pipe(
-    Effect.map((bytes) => bytes !== undefined && bytes.byteLength === pointer.byteLength &&
-        digest(bytes) === pointer.sha256
-      ? bytes
-      : undefined),
-    Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(undefined)),
-    Effect.catchTag("RecordResourceLimitExceeded", () => Effect.succeed(undefined)),
+function sameReferences(
+  left: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[],
+  right: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[],
+): boolean {
+  return left.length === right.length && left.every((entry, index) =>
+    entry.owner === right[index]?.owner && entry.family === right[index]?.family
   );
 }
 
-function hasReachableAdjacentMigration<
-  Family extends string,
-  Owner extends RecordAttachmentOwner,
-  Payload,
->(
-  descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>,
-  fromSchemaVersion: number,
+function manifestMatchesPhysical(
+  location: RecordAttachmentLocation,
+  family: string,
+  physical: VerifiedRecordAttachmentPhysical,
+  entries: readonly SealManifestEntry[],
 ): boolean {
-  if (fromSchemaVersion >= descriptor.schemaVersion) return false;
-  let version = fromSchemaVersion;
-  while (version < descriptor.schemaVersion) {
-    const step = descriptor.adjacentMigrationLinks.find(
-      (link) => link.fromSchemaVersion === version && link.toSchemaVersion === version + 1,
-    );
-    if (step === undefined) return false;
-    version = step.toSchemaVersion;
+  const base = location.owner === "run"
+    ? `attachments/${family}`
+    : `attempts/${location.attemptId}/attachments/${family}`;
+  const expected = new Map<string, {
+    readonly kind: SealManifestEntry["kind"];
+    readonly byteLength: number;
+    readonly sha256: string;
+  }>();
+  expected.set(`${base}/attachment.json`, {
+    kind: "attachment-envelope",
+    byteLength: physical.envelopeBytes.byteLength,
+    sha256: digest(physical.envelopeBytes),
+  });
+  expected.set(`${base}/payload/sha256/${physical.envelope.payload.sha256}`, {
+    kind: "payload",
+    byteLength: physical.payloadBytes.byteLength,
+    sha256: physical.envelope.payload.sha256,
+  });
+  for (const pointer of physical.envelope.contents) {
+    expected.set(`${base}/content/sha256/${pointer.sha256}`, {
+      kind: "blob",
+      byteLength: pointer.byteLength,
+      sha256: pointer.sha256,
+    });
   }
-  return true;
-}
-
-/** Open-session gate: inspect only directory identity and exact envelope/version. */
-export function inspectFixedRecordAttachmentEnvelope<
-  Family extends string,
-  Owner extends RecordAttachmentOwner,
-  Payload,
->(input: {
-  readonly fileSystem: RecordFileSystemService;
-  readonly root: RecordRoot;
-  readonly location: FixedRecordAttachmentLocation<Owner>;
-  readonly descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>;
-}): Effect.Effect<FixedRecordAttachmentEnvelopeRead, RecordFileSystemError> {
-  return Effect.gen(function* () {
-    const directory = attachmentPath(input.root, input.location, input.descriptor.family);
-    const kind = yield* input.fileSystem.pathKind(directory);
-    if (kind === "missing") return Object.freeze({ state: "unavailable" as const });
-    if (kind !== "directory") return attachmentEnvelopeInvalid(["attachment"]);
-    const envelopeDocument = yield* readJson(
-      input.fileSystem,
-      attachmentPath(input.root, input.location, input.descriptor.family, "attachment.json"),
-    );
-    if (envelopeDocument.state !== "available") return attachmentEnvelopeInvalid(["attachment.json"]);
-    const envelope = decodeRecordAttachmentEnvelope(envelopeDocument.value);
-    if (Either.isLeft(envelope)) {
-      const legacy = decodeFixedRecordAttachmentEnvelope(envelopeDocument.value);
-      if (Either.isLeft(legacy) || legacy.right.family !== input.descriptor.family) {
-        return attachmentEnvelopeInvalid(["attachment.json"]);
-      }
-      if (legacy.right.schemaVersion <= input.descriptor.schemaVersion) {
-        return Object.freeze({
-          state: "migration-required" as const,
-          family: input.descriptor.family,
-          fromSchemaVersion: legacy.right.schemaVersion,
-          toSchemaVersion: input.descriptor.schemaVersion,
-          command: "niceeval migrate" as const,
-        });
-      }
-      return Object.freeze({
-        state: "unsupported" as const,
-        family: input.descriptor.family,
-        schemaVersion: legacy.right.schemaVersion,
-      });
-    }
-    if (
-      envelope.right.ownerKind !== input.location.owner ||
-      envelope.right.family !== input.descriptor.family
-    ) {
-      return attachmentEnvelopeInvalid(["attachment.json", "family"]);
-    }
-    if (
-      envelope.right.schemaVersion < input.descriptor.schemaVersion &&
-      hasReachableAdjacentMigration(input.descriptor, envelope.right.schemaVersion)
-    ) {
-      return Object.freeze({
-        state: "migration-required" as const,
-        family: input.descriptor.family,
-        fromSchemaVersion: envelope.right.schemaVersion,
-        toSchemaVersion: input.descriptor.schemaVersion,
-        command: "niceeval migrate" as const,
-      });
-    }
-    return envelope.right.schemaVersion === input.descriptor.schemaVersion
-      ? Object.freeze({ state: "current" as const })
-      : Object.freeze({
-          state: "unsupported" as const,
-          family: input.descriptor.family,
-          schemaVersion: envelope.right.schemaVersion,
-        });
+  if (entries.length !== expected.size) return false;
+  return entries.every((entry) => {
+    const pointer = expected.get(entry.path);
+    return pointer !== undefined &&
+      entry.family === family &&
+      entry.owner === (location.owner === "run" ? "run" : location.attemptId) &&
+      entry.kind === pointer.kind &&
+      entry.byteLength === pointer.byteLength &&
+      entry.sha256 === pointer.sha256;
   });
 }
 
-/**
- * Reads precisely one known static family. Unknown sibling directories are
- * intentionally neither enumerated nor decoded, so future independent
- * families remain preserved and ignored by the normal graph.
- */
-export function readFixedRecordAttachment<
-  Family extends string,
-  Owner extends RecordAttachmentOwner,
-  Payload,
->(input: {
+function exactMarker(value: unknown, key: string): unknown | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== 1 || keys[0] !== key) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor !== undefined && descriptor.enumerable && "value" in descriptor
+    ? descriptor.value
+    : undefined;
+}
+
+function legacyEnvelopeRevision(
+  value: unknown,
+  owner: RecordAttachmentOwner,
+  family: string,
+): number | undefined {
+  const addressed = decodeRecordAttachmentEnvelope(value);
+  if (Either.isRight(addressed)) {
+    return addressed.right.ownerKind === owner && addressed.right.family === family
+      ? addressed.right.schemaVersion
+      : undefined;
+  }
+  const legacy = decodeLegacyRecordAttachmentHeader(value);
+  return Either.isRight(legacy) && legacy.right.family === family
+    ? legacy.right.schemaVersion
+    : undefined;
+}
+
+export function inspectRecordAttachmentEnvelope(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
-  readonly location: FixedRecordAttachmentLocation<Owner>;
-  readonly descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>;
-  readonly expectedManifestEntries?: readonly SealManifestEntry[];
-}): Effect.Effect<FixedRecordAttachmentRead<Payload>, RecordFileSystemError> {
+  readonly location: RecordAttachmentLocation;
+  readonly persistence: AnyPersistence;
+}): Effect.Effect<RecordAttachmentEnvelopeInspection, RecordFileSystemError> {
   return Effect.gen(function* () {
-    const inspected = yield* inspectFixedRecordAttachmentEnvelope(input);
-    if (inspected.state !== "current") return inspected;
-    const envelopeDocument = yield* readJson(
-      input.fileSystem,
-      attachmentPath(input.root, input.location, input.descriptor.family, "attachment.json"),
-    );
-    if (envelopeDocument.state !== "available") return attachmentInvalid<Payload>(["attachment.json"]);
-    const decodedEnvelope = decodeRecordAttachmentEnvelope(envelopeDocument.value);
-    if (Either.isLeft(decodedEnvelope)) return attachmentInvalid<Payload>(["attachment.json"]);
-    const committed: RecordAttachmentEnvelope = decodedEnvelope.right;
-
-    const payloadBytes = yield* readPointer(
-      input.fileSystem,
-      attachmentPath(
-        input.root,
-        input.location,
-        input.descriptor.family,
-        "payload",
-        "sha256",
-        committed.payload.sha256,
-      ),
-      committed.payload,
-      RECORD_READER_MAXIMUM_ATTACHMENT_DOCUMENT_BYTES,
-    );
-    if (payloadBytes === undefined) return attachmentInvalid<Payload>(["payload"]);
-    const payloadDocument = parseJson(payloadBytes);
-    if (payloadDocument.state !== "available") return attachmentInvalid<Payload>(["payload"]);
-
-    if (committed.contents.length > input.descriptor.write.budget.maximumBlobs) {
-      return attachmentInvalid<Payload>(["content"]);
-    }
-    const refsByKey = new Map<string, RecordBlobRef>();
-    for (const content of committed.contents) refsByKey.set(content.key, makeRecordBlobRef());
-
-    if (input.expectedManifestEntries !== undefined) {
-      const owner = input.location.owner === "run" ? "run" : input.location.attemptId;
-      if (owner === undefined) return attachmentInvalid<Payload>([]);
-      const prefix = input.location.owner === "run"
-        ? `attachments/${input.descriptor.family}`
-        : `attempts/${owner}/attachments/${input.descriptor.family}`;
-      const physicalEntries = [
-        { kind: "attachment-envelope" as const, path: `${prefix}/attachment.json` },
-        {
-          kind: "payload" as const,
-          path: `${prefix}/payload/sha256/${committed.payload.sha256}`,
-        },
-        ...[...new Set(committed.contents.map((content) => content.sha256))].map((sha256) => ({
-          kind: "blob" as const,
-          path: `${prefix}/content/sha256/${sha256}`,
-        })),
-      ].sort((left, right) => left.path.localeCompare(right.path));
-      const declaredEntries = input.expectedManifestEntries
-        .map((entry) => ({
-          kind: entry.kind,
-          path: entry.path,
-          owner: entry.owner,
-          family: entry.family,
-        }))
-        .sort((left, right) => left.path.localeCompare(right.path));
-      if (
-        declaredEntries.length !== physicalEntries.length ||
-        declaredEntries.some((entry, index) => {
-          const physical = physicalEntries[index];
-          return physical === undefined || entry.kind !== physical.kind || entry.path !== physical.path ||
-            entry.owner !== owner || entry.family !== input.descriptor.family;
-        })
-      ) return attachmentInvalid<Payload>([]);
-    }
-
-    const hydrated = hydrateDurablePayload(payloadDocument.value, refsByKey);
-    if (hydrated.invalid || hydrated.refsByKey.size !== committed.contents.length) {
-      return attachmentInvalid<Payload>(["payload"]);
-    }
-
-    const payload = input.descriptor.write.decodePayload(hydrated.value);
-    if (Either.isLeft(payload)) return attachmentInvalid<Payload>(["payload"]);
-
-    let totalBytes = 0;
-    const materialized: RecordAttachmentMaterializedBlob[] = [];
-    for (const content of committed.contents) {
-      const ref = refsByKey.get(content.key);
-      if (ref === undefined) return attachmentInvalid<Payload>(["content", content.key]);
-      const bytes = yield* readPointer(
-        input.fileSystem,
-        attachmentPath(
-          input.root,
-          input.location,
-          input.descriptor.family,
-          "content",
-          "sha256",
-          content.sha256,
-        ),
-        content,
-        input.descriptor.write.budget.maximumBlobBytes,
+    const directory = attachmentPath(input.root, input.location, input.persistence.attachment.family);
+    const kind = yield* input.fileSystem.pathKind(directory);
+    if (kind === "missing") return Object.freeze({ state: "unavailable" as const });
+    if (kind !== "directory") return invalid();
+    const bytes = yield* input.fileSystem.readFile({
+      file: attachmentPath(input.root, input.location, input.persistence.attachment.family, "attachment.json"),
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+    });
+    const json = bytes === undefined ? undefined : parseJson(bytes);
+    const envelope = json === undefined ? undefined : decodeDurableRecordAttachmentEnvelope(json);
+    if (envelope === undefined) return invalid();
+    if (Either.isLeft(envelope)) {
+      const revision = legacyEnvelopeRevision(
+        json,
+        input.location.owner,
+        input.persistence.attachment.family,
       );
-      if (bytes === undefined) return attachmentInvalid<Payload>(["content", content.key]);
-      totalBytes += bytes.byteLength;
-      if (totalBytes > input.descriptor.write.budget.maximumTotalBytes) {
-        return attachmentInvalid<Payload>(["content", content.key]);
-      }
-      materialized.push(Object.freeze({ ref, bytes }));
+      if (revision === undefined) return invalid();
+      return revision <= input.persistence.revision
+        ? Object.freeze({
+            state: "migration-required" as const,
+            family: input.persistence.attachment.family,
+            fromRevision: revision,
+            toRevision: input.persistence.revision,
+            command: "niceeval migrate" as const,
+          })
+        : Object.freeze({
+            state: "unsupported" as const,
+            family: input.persistence.attachment.family,
+            revision,
+          });
     }
+    if (
+      envelope.right.ownerKind !== input.location.owner ||
+      envelope.right.family !== input.persistence.attachment.family
+    ) return invalid();
+    if (envelope.right.revision === input.persistence.revision) {
+      return Object.freeze({ state: "current" as const });
+    }
+    if (envelope.right.revision < input.persistence.revision) {
+      return Object.freeze({
+        state: "migration-required" as const,
+        family: envelope.right.family,
+        fromRevision: envelope.right.revision,
+        toRevision: input.persistence.revision,
+        command: "niceeval migrate" as const,
+      });
+    }
+    return Object.freeze({
+      state: "unsupported" as const,
+      family: envelope.right.family,
+      revision: envelope.right.revision,
+    });
+  });
+}
 
-    const materializedValue = makeFixedRecordAttachmentValueFromDecoded(
-      input.descriptor.write,
-      payload.right,
-      materialized,
-    );
-    if (Either.isLeft(materializedValue)) return attachmentInvalid<Payload>(["payload"]);
-    let references: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
-    try {
-      references = input.descriptor.write.references?.(materializedValue.right.value as Payload) ?? [];
-    } catch {
-      return attachmentInvalid<Payload>(["references"]);
+/** Reads and hashes every byte named by the sole physical commit record. */
+export function readVerifiedRecordAttachmentPhysical(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly location: RecordAttachmentLocation;
+  readonly family: string;
+}): Effect.Effect<VerifiedRecordAttachmentPhysical | undefined, RecordFileSystemError> {
+  return Effect.gen(function* () {
+    const envelopeBytes = yield* input.fileSystem.readFile({
+      file: attachmentPath(input.root, input.location, input.family, "attachment.json"),
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+    }).pipe(Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(undefined)));
+    const envelopeJson = envelopeBytes === undefined ? undefined : parseJson(envelopeBytes);
+    const decoded = envelopeJson === undefined ? undefined : decodeDurableRecordAttachmentEnvelope(envelopeJson);
+    if (envelopeBytes === undefined || decoded === undefined || Either.isLeft(decoded)) return undefined;
+    const envelope = decoded.right;
+    if (envelope.ownerKind !== input.location.owner || envelope.family !== input.family) return undefined;
+    if (envelope.contents.length > RECORD_ATTACHMENT_MAXIMUM_CONTENTS) return undefined;
+    const payloadBytes = yield* input.fileSystem.readFile({
+      file: attachmentPath(input.root, input.location, input.family, "payload", "sha256", envelope.payload.sha256),
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+    }).pipe(Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(undefined)));
+    if (
+      payloadBytes === undefined ||
+      payloadBytes.byteLength !== envelope.payload.byteLength ||
+      digest(payloadBytes) !== envelope.payload.sha256
+    ) return undefined;
+    const payload = parseJson(payloadBytes);
+    if (payload === undefined) return undefined;
+    const contents = new Map<string, Uint8Array>();
+    let total = 0;
+    for (const pointer of envelope.contents) {
+      if (pointer.byteLength > RECORD_ATTACHMENT_MAXIMUM_CONTENT_BYTES) return undefined;
+      const bytes = yield* input.fileSystem.readFile({
+        file: attachmentPath(input.root, input.location, input.family, "content", "sha256", pointer.sha256),
+        maximumBytes: RECORD_ATTACHMENT_MAXIMUM_CONTENT_BYTES,
+      }).pipe(
+        Effect.catchTag("RecordPathTypeInvalid", () => Effect.succeed(undefined)),
+        Effect.catchTag("RecordResourceLimitExceeded", () => Effect.succeed(undefined)),
+      );
+      if (bytes === undefined || bytes.byteLength !== pointer.byteLength || digest(bytes) !== pointer.sha256) return undefined;
+      total += bytes.byteLength;
+      if (total > RECORD_ATTACHMENT_MAXIMUM_TOTAL_CONTENT_BYTES) return undefined;
+      contents.set(pointer.key, bytes);
     }
-    if (JSON.stringify(references) !== JSON.stringify(committed.references)) {
-      return attachmentInvalid<Payload>(["references"]);
-    }
-    return Object.freeze({ state: "available" as const, ...materializedValue.right });
+    if (contents.size !== envelope.contents.length) return undefined;
+    return Object.freeze({ envelope, envelopeBytes, payload, payloadBytes, contents });
+  });
+}
+
+function scopedContentReader(
+  lifecycle: { readonly closed: boolean },
+  bytesByHandle: ReadonlyMap<object, Uint8Array>,
+): RecordAttachmentContentReader {
+  const bytes = (handle: RecordContentHandle): Effect.Effect<Uint8Array, RecordReaderReadError> =>
+    Effect.suspend((): Effect.Effect<Uint8Array, RecordReaderReadError> => {
+      if (lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
+      const content = isRecordContentHandle(handle) ? bytesByHandle.get(handle) : undefined;
+      return content === undefined
+        ? Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }))
+        : Effect.succeed(new Uint8Array(content));
+    });
+  return Object.freeze({
+    bytes,
+    text: (handle: RecordTextContentHandle) => Effect.flatMap(bytes(handle), (content) => {
+      if (!isRecordTextContentHandle(handle)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
+      try {
+        return Effect.succeed(new TextDecoder("utf-8", { fatal: true }).decode(content));
+      } catch {
+        return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
+      }
+    }),
+    stream: (handle: RecordContentHandle) => Stream.fromEffect(bytes(handle)),
+  });
+}
+
+export function readCurrentRecordAttachment<Definition extends AnyDefinition>(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly location: RecordAttachmentLocation<Definition["owner"]>;
+  readonly persistence: RecordAttachmentPersistence<Definition, number>;
+  readonly lifecycle: { readonly closed: boolean };
+  readonly expectedManifestEntries?: readonly SealManifestEntry[];
+}): Effect.Effect<CurrentRecordAttachmentRead<Schema.Schema.Type<Definition["schema"]>>, RecordFileSystemError> {
+  return Effect.gen(function* () {
+    const inspected = yield* inspectRecordAttachmentEnvelope(input);
+    if (inspected.state !== "current") return inspected;
+    const physical = yield* readVerifiedRecordAttachmentPhysical({
+      fileSystem: input.fileSystem,
+      root: input.root,
+      location: input.location,
+      family: input.persistence.attachment.family,
+    });
+    if (physical === undefined || physical.envelope.revision !== input.persistence.revision) return invalid();
+    if (
+      input.expectedManifestEntries !== undefined &&
+      !manifestMatchesPhysical(
+        input.location,
+        input.persistence.attachment.family,
+        physical,
+        input.expectedManifestEntries,
+      )
+    ) return invalid();
+
+    const logical = yield* Effect.sync(() => {
+      const handles = new Map<string, RecordContentHandle>();
+      const bytesByHandle = new Map<object, Uint8Array>();
+      const usedContent = new Set<string>();
+      const hydrated = hydrateRecordAttachmentCurrent(input.persistence.attachment, physical.payload, {
+        content: (token, declaration) => {
+          const key = exactMarker(token, "$niceeval.record.content");
+          const bytes = typeof key === "string" ? physical.contents.get(key) : undefined;
+          if (bytes === undefined || declaration.maximumBytes !== undefined && bytes.byteLength > declaration.maximumBytes) {
+            return Either.left({ code: "current-content-bind-failed" as const });
+          }
+          let handle = handles.get(key as string);
+          if (handle === undefined) {
+            handle = mintRecordContentHandle(declaration.kind);
+            handles.set(key as string, handle);
+            bytesByHandle.set(handle, bytes);
+          }
+          usedContent.add(key as string);
+          return Either.right(handle);
+        },
+        reference: (token, declaration) => {
+          const marker = exactMarker(token, "$niceeval.record.reference");
+          if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
+            return Either.left({ code: "current-reference-bind-failed" as const });
+          }
+          const value = marker as Record<string, unknown>;
+          if (
+            Reflect.ownKeys(value).length !== 3 ||
+            value.owner !== declaration.definition.owner ||
+            value.family !== declaration.definition.family ||
+            !("value" in value)
+          ) return Either.left({ code: "current-reference-bind-failed" as const });
+          return Either.right(mintRecordAttachmentReference(
+            RecordAttachmentReference.to(declaration.definition, declaration.valueSchema),
+            value.value,
+          ));
+        },
+      });
+      if (Either.isLeft(hydrated) || usedContent.size !== physical.contents.size) return undefined;
+      const closure = enumerateRecordAttachmentClosure(input.persistence.attachment, hydrated.right);
+      if (Either.isLeft(closure)) return undefined;
+      const referencesByIdentity = new Map<string, {
+        readonly owner: RecordAttachmentOwner;
+        readonly family: string;
+        readonly definition: AnyDefinition;
+      }>();
+      for (const reference of closure.right.references) {
+        const wire = recordAttachmentReferenceWire(reference);
+        const definition = recordAttachmentReferenceDefinition(reference);
+        if (wire === undefined || definition === undefined) return undefined;
+        const identity = `${wire.owner}\u0000${wire.family}`;
+        const existing = referencesByIdentity.get(identity);
+        if (existing !== undefined && existing.definition !== definition) return undefined;
+        referencesByIdentity.set(identity, Object.freeze({
+          owner: wire.owner,
+          family: wire.family,
+          definition,
+        }));
+      }
+      const references = [...referencesByIdentity.values()].sort((left, right) =>
+        `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`)
+      );
+      return sameReferences(references, physical.envelope.references)
+        ? Object.freeze({ value: hydrated.right, bytesByHandle, references: Object.freeze(references) })
+        : undefined;
+    }).pipe(Effect.catchAllDefect(() => Effect.succeed(undefined)));
+    if (logical === undefined) return invalid();
+    return Object.freeze({
+      state: "available" as const,
+      value: logical.value,
+      content: scopedContentReader(input.lifecycle, logical.bytesByHandle),
+      references: logical.references,
+    });
   });
 }

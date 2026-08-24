@@ -1,6 +1,5 @@
 import { Either, Schema } from "effect";
-import { isRecordBlobRef } from "../../record/attachment/blob-ref.ts";
-import { Sha256DigestSchema } from "../../record/codec/identifiers.ts";
+import { isRecordContentHandle } from "../../record/attachment/content.ts";
 import { assertionRuntimeLimits } from "../limits.ts";
 import {
   ASSERTION_ENTRY_ID_BRAND,
@@ -12,7 +11,6 @@ import {
   type AssertionEntryRead,
   type AssertionEntry,
   type AssertionLimitation,
-  type AssertionMaterial,
   type AssertionsDocumentOuter,
   type AssertionsDocument,
   type AssertionsProjection,
@@ -257,7 +255,7 @@ export function isAssertionsRawDataGraph(
     return true;
   }
   if (typeof value !== "object" || active.has(value)) return false;
-  if (isRecordBlobRef(value)) return true;
+  if (isRecordContentHandle(value)) return true;
   active.add(value);
   try {
     if (Array.isArray(value)) {
@@ -634,50 +632,15 @@ export const SealedAssertionResultSchema: Schema.Schema<SealedAssertionResult> =
   );
 
 /**
- * Record owns the opaque blob-ref codec.  Assertions owns only its shape and
- * its ordered projection, so the same exact outer schema can be used for
- * generic Record reads and for producer sealing.
+ * Assertions owns the shared current entry framing. The caller supplies the
+ * exact material declaration so current content and migration-private
+ * historical material never share a physical union.
  */
-export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
-  blobRefSchema: Schema.Schema<BlobRef, BlobRefEncoded>,
+export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
+  material: Schema.Schema<Material, MaterialEncoded>,
 ) {
-  const material = Schema.Union(
-    Schema.Struct({
-      kind: Schema.Literal("unavailable"),
-      reason: Schema.Literal("not-recorded"),
-    }),
-    Schema.Struct({
-      kind: Schema.Literal("snapshot"),
-      value: BoundedJsonValueSchema,
-    }),
-    Schema.Struct({
-      kind: Schema.Literal("blob"),
-      ref: blobRefSchema,
-      encoding: Schema.Literal("utf-8", "binary"),
-      byteLength: NonNegativeIntegerSchema,
-      sha256: Sha256DigestSchema,
-      preview: BoundedJsonStringSchema,
-    }),
-  );
-
   const evidence = Schema.Array(material);
   const limitations = Schema.Array(AssertionLimitationSchema);
-
-  const historicalOuterEntry = Schema.Struct({
-    entryId: AssertionEntryIdSchema,
-    display: AssertionDisplaySchema,
-    criterion: BoundedJsonObjectSchema,
-    subject: material,
-    evidence,
-    coverage: AssertionCoverageSchema,
-    limitations,
-    result: SealedAssertionResultSchema,
-  }).pipe(
-    Schema.filter(hasCoverageConsistentLimitations, {
-      identifier: "AssertionCoverageLimitations",
-      description: "coverage and limitations with a consistent sealed relationship",
-    }),
-  );
 
   const materials = Schema.Struct({
     source: material,
@@ -719,13 +682,6 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
     contribution: Schema.Union(NoScoreContributionSchema, EarnedScoreContributionSchema, UnavailableScoreContributionSchema),
     explanationRetention,
   });
-
-  const historicalEntries = Schema.Array(historicalOuterEntry).pipe(
-    Schema.filter((values) => values.length <= assertionRuntimeLimits.entries, {
-      identifier: "AssertionsEntryCount",
-      description: "at most 4,096 assertion entries",
-    }),
-  );
 
   const entries = Schema.Array(outerEntry).pipe(
     Schema.filter((values) => values.length <= assertionRuntimeLimits.entries, {
@@ -778,7 +734,7 @@ export function createAssertionsRecordSchemas<BlobRef, BlobRefEncoded>(
     }),
   );
 
-  return Object.freeze({ material, entries, historicalEntries, outerDocument, document });
+  return Object.freeze({ material, entries, outerDocument, document });
 }
 
 export interface AssertionsRecordCodecError {
@@ -789,10 +745,10 @@ const assertionsDocumentInvalid: AssertionsRecordCodecError = Object.freeze({
   code: "assertions-document-invalid",
 });
 
-export function decodeAssertionsDocumentOuter<BlobRef, Encoded>(
-  schema: Schema.Schema<AssertionsDocumentOuter<BlobRef>, Encoded>,
+export function decodeAssertionsDocumentOuter<Content, Encoded>(
+  schema: Schema.Schema<AssertionsDocumentOuter<Content>, Encoded>,
   input: unknown,
-): Either.Either<AssertionsDocumentOuter<BlobRef>, AssertionsRecordCodecError> {
+): Either.Either<AssertionsDocumentOuter<Content>, AssertionsRecordCodecError> {
   if (!isAssertionsRawDataGraph(input)) return Either.left(assertionsDocumentInvalid);
   const decoded = Schema.decodeUnknownEither(
     schema,
@@ -803,10 +759,10 @@ export function decodeAssertionsDocumentOuter<BlobRef, Encoded>(
     : Either.right(decoded.right);
 }
 
-export function decodeAssertionsDocument<BlobRef, Encoded>(
-  schema: Schema.Schema<AssertionsDocument<BlobRef>, Encoded>,
+export function decodeAssertionsDocument<Content, Encoded>(
+  schema: Schema.Schema<AssertionsDocument<Content>, Encoded>,
   input: unknown,
-): Either.Either<AssertionsDocument<BlobRef>, AssertionsRecordCodecError> {
+): Either.Either<AssertionsDocument<Content>, AssertionsRecordCodecError> {
   if (!isAssertionsRawDataGraph(input)) return Either.left(assertionsDocumentInvalid);
   const decoded = Schema.decodeUnknownEither(
     schema,
@@ -884,23 +840,23 @@ const KNOWN_BUILTIN_CRITERION_IDS: ReadonlySet<string> = new Set([
   "direct-score/v1",
 ]);
 
-function availableEntry<BlobRef>(
-  entry: AssertionEntryOuter<BlobRef>,
+function availableEntry<Content>(
+  entry: AssertionEntryOuter<Content>,
   criterion: WritableCriterionEnvelope,
-): AssertionEntryRead<BlobRef> {
-  const available: AssertionEntry<BlobRef> = {
+): AssertionEntryRead<Content> {
+  const available: AssertionEntry<Content> = {
     ...entry,
     criterion: Object.freeze({ state: "available" as const, value: criterion }),
   };
   return Object.freeze({ state: "available", entry: Object.freeze(available) });
 }
 
-function projectAssertionEntry<BlobRef>(
-  entry: AssertionEntryOuter<BlobRef>,
+function projectAssertionEntry<Content>(
+  entry: AssertionEntryOuter<Content>,
   registry: ThirdPartyCriterionRegistry,
-): AssertionEntryRead<BlobRef> {
+): AssertionEntryRead<Content> {
   if (entry.criterion.state === "unavailable") {
-    return Object.freeze({ state: "available", entry: entry as AssertionEntry<BlobRef> });
+    return Object.freeze({ state: "available", entry: entry as AssertionEntry<Content> });
   }
   const criterionValue = entry.criterion.value;
   const builtinEnvelope = Schema.decodeUnknownEither(
@@ -967,10 +923,10 @@ function projectAssertionEntry<BlobRef>(
  * Projection is synchronous and never re-evaluates an Assertion.  Its only
  * dynamic work is criterion interpretation inside each already-valid entry.
  */
-export function projectAssertionsDocument<BlobRef>(
-  document: AssertionsDocumentOuter<BlobRef>,
+export function projectAssertionsDocument<Content>(
+  document: AssertionsDocumentOuter<Content>,
   registry: ThirdPartyCriterionRegistry,
-): AssertionsProjection<BlobRef> {
+): AssertionsProjection<Content> {
   return Object.freeze({
     entries: Object.freeze(
       document.entries.map((entry) => projectAssertionEntry(entry, registry)),

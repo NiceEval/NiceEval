@@ -1,24 +1,26 @@
-import { defineRecordAttachment } from "../../attachment/index.ts";
 import {
-  attemptRunnerActivitiesV1,
-  runRunnerActivitiesV1,
-} from "./version.ts";
+  defineRecordAttachment,
+  RecordOwner,
+} from "../../attachment/index.ts";
+import {
+  AttemptRunnerActivitiesAttachmentSchema,
+  RunRunnerActivitiesAttachmentSchema,
+  validateAttemptRunnerActivitiesAttachment,
+  validateRunRunnerActivitiesAttachment,
+} from "./schema.ts";
 
 export * from "./schema.ts";
-export * from "./version.ts";
 
 export const attemptRunnerActivitiesRecordAttachment = defineRecordAttachment({
-  owner: "attempt",
+  owner: RecordOwner.attempt,
   family: "niceeval.runner-activities",
-  current: attemptRunnerActivitiesV1,
-  versions: [attemptRunnerActivitiesV1],
-  migrations: [],
+  schema: AttemptRunnerActivitiesAttachmentSchema,
+  validate: validateAttemptRunnerActivitiesAttachment,
 });
 
 export const runRunnerActivitiesRecordAttachment = defineRecordAttachment({
-  owner: "run",
+  owner: RecordOwner.run,
   family: "niceeval.runner-activities",
-  current: runRunnerActivitiesV1,
-  versions: [runRunnerActivitiesV1],
-  migrations: [],
+  schema: RunRunnerActivitiesAttachmentSchema,
+  validate: validateRunRunnerActivitiesAttachment,
 });

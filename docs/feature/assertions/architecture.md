@@ -1,14 +1,14 @@
 # Assertions —— 架构
 
-`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 2`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
+`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 current persistence revision 是 `3`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
 
-它是 [Record architecture](../record/architecture.md) 定义的九个固定 durable family 之一。Record protocol 不提供第三方 family、字段 writer 或 schema registry：第三方只能在 Assertions entry 内提供可解释的 criterion schema。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与既有固定 family 的 sealed 事实读侧形成，不能各自变成新的持久 family。
+它是 [Record architecture](../record/architecture.md) 定义的九个官方 durable family 之一。Record protocol 不提供全局 registry：第三方可以向自己的 Host 显式贡献独立 persistence，也可以在 Assertions entry 内提供可解释的 criterion schema，但不能扩写本 family。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与相关 sealed 事实读侧形成，不能各自变成新的持久 family。
 
 ## 版本边界
 
-`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `2`。当前领域类型不带版本后缀；v1/v2 只存在于 package-private wire codec 与相邻 migration identity。普通 reader 只接受 exact-current，普通 writer 只写 v2。
+`niceeval.assertions` 的 family identity 不带版本；current persistence revision 是 `3`。当前领域类型不带版本后缀；revision 1/2 只存在于 package-private 相邻 migration。普通 reader 只接受 exact-current，普通 writer 只写 revision 3。
 
-Record maintenance 独占历史 codec、blob closure、文件 I/O、Git restore point、sentinel、atomic physical rewrite 与最终 exact-current 验证。Assertions attachment 只提供纯 `1→2` payload transform。未来升级必须继续形成 `1→2→3` 相邻链。
+Record maintenance 独占 physical integrity、文件 I/O、migration 执行协议与最终 exact-current 验证；Git 负责 diff、restore 与 rollback。Assertions persistence 只提供私有的 `1→2`、`2→3` 相邻转换及其最小历史 parser。未来升级必须继续形成连续相邻链。
 
 ```text
 author calls / evaluator internals / producer control flow
@@ -31,7 +31,9 @@ matcher diagnostic 在求值时只保留 8 个代表候选与决定结果的 wit
 
 超限时只裁 nondecisive samples 与 root summaries。截断只影响 `explanationRetention`，不改变 criterion、materials、evaluation、decision、policy、contribution、Verdict 或 score。
 
-4 MiB 是 Assertions JSON framing 的上限，不是一次 Assertion 求值可观察材料的上限。超过 32 KiB，或深度、数组项数等 shape 不适合内联的 source / evidence snapshot 自动成为本 Attachment 自己的 blob。若解释合计仍使 framing 超限，producer 只压缩 `explanationRetention`。它不拆出重复 document，也不删除 entry 或语义字段。只有不可裁的语义 framing 自身超限时才拒绝发布。
+4 MiB 是 Assertions JSON framing 的上限，不是一次 Assertion 求值可观察材料的上限。source / evidence 通过 sealed content handle 提交，Record Core 独占物理编码与写入；family 只声明 16 MiB 的单值上限。
+
+若解释合计仍使 framing 超限，producer 只压缩 `explanationRetention`。它不拆出重复 document，也不删除 entry 或语义字段。只有不可裁的语义 framing 自身超限时才拒绝发布。
 
 ## Current 外层 payload
 
@@ -186,27 +188,26 @@ type AssertionEntryRead =
     };
 ```
 
-若 document framing、entry 字段边界、entryId 唯一性、JSON 限额或 own blob closure 无法验证，整个 Assertions family 是 `invalid`。只有已经通过 outer decode 的单条 criterion 问题才使用上面的 entry-local state；一个第三方 criterion 不会拖垮同一 Attempt 的其它 Assertions，也不会改写 Verdict。
+若 document framing、entry 字段边界、entryId 唯一性、JSON 限额或 own content closure 无法验证，整个 Assertions family 是 `invalid`。只有已经通过 outer decode 的单条 criterion 问题才使用上面的 entry-local state；一个第三方 criterion 不会拖垮同一 Attempt 的其它 Assertions，也不会改写 Verdict。
 
 ## 材料、coverage、limitations 与 diff evidence
 
-current material 只来自有界 snapshot 或本 Assertions Attachment 自己的 blob closure。`RecordBlobRef` 的 owner 与 closure 规则由 [Record architecture](../record/architecture.md#attachment-closure-与读取状态) 定义：只有该 family 的 typed builder 能 mint 它，且一个 ref 只能留在自己的 family 与 owner 内。Assertions 不保存另一个 Attachment 的 `RecordBlobRef`、attachment name、磁盘 path 或可变“最新状态”。
+current material 只来自本 Assertions Attachment 的 sealed content closure。只有 owner Session 的 typed builder 能 mint handle；family payload 不保存另一个 Attachment 的 content handle、attachment name、磁盘 path 或可变“最新状态”。
 
-每个 own blob ref 在整个 payload 中恰出现一次，符合 Record 的双向 closure 校验。同一大材料被多个 entry 需要时，producer 为每处 mint 独立 ref／bytes，或改存各自的有界 snapshot；它不能共享一个 ref。
+每个 content handle 在整个 payload 中恰出现一次，符合 Record 的双向 closure 校验。同一材料被多个 entry 需要时，producer 为每处 mint 独立 handle；它不能共享一个 handle。
 
 ```ts
 type AssertionMaterial =
   | {
-      readonly kind: "snapshot";
-      readonly value: BoundedJsonValue;
+      readonly kind: "unavailable";
+      readonly reason: "not-recorded";
     }
   | {
-      readonly kind: "blob";
-      readonly ref: RecordBlobRef;
-      readonly encoding: "utf-8" | "binary";
+      readonly kind: "content";
+      readonly content: RecordBytesContentHandle;
+      readonly encoding: "json" | "utf-8" | "binary";
       readonly byteLength: number;
-      readonly sha256: Sha256Digest;
-      readonly preview: string;
+      readonly preview: string | null;
     };
 
 type AssertionCoverage =
@@ -231,11 +232,13 @@ type AssertionLimitation =
   | { readonly kind: "provider-limited" };
 ```
 
-`byteLength`、`fieldCount`、`captured`、`knownTotal` 与 `omittedBytes` 都是 finite non-negative integers；preview 最多 8 KiB。coverage 是 entry-owned producer 事实，不是 Record envelope 的字段。`complete` 不允许 limitations；`partial` 至少有一个相符 limitation；`unavailable` 与 `not-applicable` 不伪装成空 evidence。snapshot、preview 与 blob bytes 都先经过 secret/redaction policy，不能携带函数、native bytes 或当前 worktree。
+`byteLength`、`fieldCount`、`captured`、`knownTotal` 与 `omittedBytes` 都是 finite non-negative integers；preview 最多 8 KiB。coverage 是 entry-owned producer 事实，不是 Record envelope 的字段。
 
-Sandbox diff Assertion 仍可保存实际检查过的路径、摘要和 evidence，但不能借用 FileChanges 的 blob ref。完整 file revision
+`complete` 不允许 limitations；`partial` 至少有一个相符 limitation；`unavailable` 与 `not-applicable` 不伪装成空 evidence。preview 与 content bytes 都先经过 secret/redaction policy。logical payload 不能携带函数、native bytes、physical metadata 或当前 worktree。
+
+Sandbox diff Assertion 仍可保存实际检查过的路径、摘要和 evidence，但不能借用 FileChanges 的 content handle。完整 file revision
 只属于 FileChanges family；该 family 保存按 send 区间排列的端点轨迹，不保存 `net` 或 hunk。需要同时展示 trajectory
-与 Assertion 的 consumer 由 Analysis 组合两个已验证的固定 family，而不是建立跨 owner ref。collector 的 partial
+与 Assertion 的 consumer 由 Analysis 组合两个已验证的官方 family，而不是建立跨 owner ref。collector 的 partial
 前缀不能被 Assertion 或 Report 补成完整事实。
 
 scope Assertion 将 call-time vector cut 归一为 snapshot；它不保留一个可在 reader 时打开的 Session、Turn、Conversation 或其它 Attachment ref。
@@ -309,7 +312,7 @@ type ExplanationRetention =
 
 ## 内嵌 source sites 与 Sources join
 
-source site 持久内容只能在 Assertions payload 或既有 Sources family 中出现。Assertions 保存 join 所需的最小位置事实；Sources 保存 origin Run 的源文件 manifest 与 own blobs。两者之外没有 source-navigation family。
+source site 持久内容只能在 Assertions payload 或既有 Sources family 中出现。Assertions 保存 join 所需的最小 typed reference；Sources 保存 origin Run 的源文件 manifest 与 own content。两者之外没有 source-navigation family。
 
 ```ts
 type AssertionSourceRole =
@@ -329,18 +332,22 @@ type AssertionSourceSite = {
   readonly entryId: AssertionEntryId;
   readonly sourceOrder: number;
   readonly role: AssertionSourceRole;
-  readonly sourceItemId: SourceItemId;
-  readonly sha256: Sha256Digest;
+  readonly source: RecordAttachmentReference<typeof Sources, {
+    readonly sourceItemId: SourceItemId;
+    readonly sha256: Sha256Digest;
+  }>;
   readonly start: AssertionSourcePosition;
   readonly end: AssertionSourcePosition;
 };
 ```
 
-每个 row 的 `entryId` 必须属于同一 payload 的 entry；`sourceOrder` 在整个 Attempt 的 source sites 内唯一。rows 先按 `entryId`、再按 `sourceOrder` canonical 排序。`sourceItemId` 与 `sha256` 必须共同匹配该 Attempt exact origin Run 的 Sources manifest；它们不是 path、数组下标、blob key 或跨 owner capability。`role` 只标记确实执行过的 declaration 或 modifier；没有执行到的源码不产生 row。
+每个 row 的 `entryId` 必须属于同一 payload 的 entry；`sourceOrder` 在整个 Attempt 的 source sites 内唯一。rows 先按 `entryId`、再按 `sourceOrder` canonical 排序。
+
+`source.value` 中的 `sourceItemId` 与 `sha256` 必须共同匹配该 Attempt exact origin Run 的 Sources manifest。typed reference 是 semantic relation，不是 path、数组下标、content key 或跨 owner I/O capability。`role` 只标记确实执行过的 declaration 或 modifier；没有执行到的源码不产生 row。
 
 source mapping 不能重新计算 criterion、points、gate、unavailable 或 Verdict。一个 entry 有多个 row 时，位置可以全部显示，但 Assertion summary 与 score contribution 仍按 `entryId` 只计算一次。没有 matching row、Sources 不是 `available`，或 join／坐标不成立时，source-navigation DomainView 仅把对应位置标为 `unmapped`。
 
-## v1 → v2 相邻迁移
+## revision 1 → 2 → 3 相邻迁移
 
 package-private v1 codec 只为 maintenance 存在。纯相邻 transform 只保留 v1 严格能证明的
 display、result/gate/score 与 sourceSites。
@@ -355,17 +362,17 @@ v1 的 subject、evidence 与 diagnostic 无法区分 source、检查条件、ob
 
 这些旧字段不得以 snapshot、summary、legacy marker 或递归 object 冒充 current 事实。
 
-若被丢弃的 v1 material 引用了 own blob，maintenance 同时物理删除失去引用的 blob，并把删除路径纳入 plan、sentinel 与 Git recovery write set；迁移后的双向 closure 不保留 orphan blob。
+若被丢弃的 revision 1 material 引用了 own content，Record Core 在写 current closure 时不再保留它；Git 负责迁移前后的 diff、restore 与 rollback。
 
 v1 没有持久化 criterion expression、measurement/threshold、Judge rationale/citations 时，对应 current field 一律写 `unavailable { reason: "not-recorded" }`。transform 不得从 diagnostic、score ratio 或零值反推。
 
 v1 `gate` 为 `satisfied`、`failed`、`unavailable` 或 `not-applicable` 已证明该 entry 是 required gate，因此迁移为 requirement available/required。condition 仍 unavailable/not-recorded。只有 `gate: "not-gate"` 时 requirement 也是 unavailable/not-recorded。这样 required-unavailable 的旧 Verdict 保持 errored。
 
-物理 payload 与 envelope 的 rewrite、Git/sentinel/recovery 和最终验证由 Record maintenance 执行。transform 本身绝不读写磁盘。
+物理 payload、content 与 envelope 的重建及最终验证由 Record maintenance 执行。transform 本身绝不读写磁盘；Git 不属于 migration engine，只负责历史恢复。
 
 ## 读取与读侧形成
 
-固定 family 的 Host 只可能形成 `available`、`not-recorded` 或 `invalid`。`available` 才会提供 immutable payload 与 own blob closure；其余状态不会被消费端补成空 entries、零分或 passed。unknown、future 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整 Host 契约见 [Record architecture](../record/architecture.md#attachment-closure-惰性读取与-cache)。
+已贡献 family 的 Host 只可能形成 `available`、`not-recorded` 或 `invalid`。`available` 才会提供 immutable value 与 scoped content reader；其余状态不会被消费端补成空 entries、零分或 passed。未贡献 definition 返回 `family-definition-required`，future revision 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整 Host 契约见 [Record architecture](../record/architecture.md#attachment-closure-惰性读取与-cache)。
 
 Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Score 从 Assertions contribution 与 rubric 形成。source navigation 则由 [Analysis Library](../analysis/library.md) 的 `query()` 产生已发布 `DomainView`。
 这些读侧值不打开 Record path、不猜当前 worktree、不重跑 evaluator，也不回写 durable bytes。
@@ -377,5 +384,5 @@ Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Sco
 - [Source sites](architecture/source-sites.md) —— Assertions 内嵌 mapping 与 Sources join。
 - [Score Eval](library/score-points.md) —— score state、points 与 rubric。
 - [Verdict architecture](../verdict/architecture.md) —— 四态折叠。
-- [Record architecture](../record/architecture.md) —— owner、closure、九个 fixed family 与 source-local read。
+- [Record architecture](../record/architecture.md) —— owner、closure、官方 family composition 与 source-local read。
 - [Analysis Library](../analysis/library.md) —— `query()` 与 `DomainView`。

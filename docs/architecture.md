@@ -96,14 +96,14 @@ Sandbox acquire、Sandbox lifecycle、Agent ensure、作者执行和逆序 final
 | `niceeval/eval/host` | `evalHost.catalog` | `list` | Eval definition、discovery loader 或 Runner 类型 |
 | `niceeval/experiment/host` | `catalog`、`check`、`invocation.plan/run`、`debug`、`rename`、`teardown`、`accept`、project-current 与 Invocation status 操作 | `check`、`exp`、`debug`、`accept`、`session` | 重新拼装 selector、Runner、lease 或 adoption 内部状态 |
 | `niceeval/coordination/host` | `coordinationHost.claimExecution`、`coordinationHost.enterRecordRead`、`coordinationHost.enterRecordAppend`、`coordinationHost.enterRecordMaintenance` | dispatch claim 与 Record lease | generic lock 或 portable Record writer |
-| `niceeval/record` / `niceeval/record/host` | current read/write、自动 migration 与 typed clean/migrate 操作 | Record I/O、`clean`、`migrate` | durable layout、generic Attachment、family 或 migration registration |
+| `niceeval/record` / `niceeval/record/host` | current read/write、显式 maintenance migration 与 typed clean/migrate 操作 | Record I/O、`clean`、`migrate` | durable layout、generic Attachment、family 或 migration registration |
 | `niceeval/analysis/host` | `analysisHost.openSample` | Sample 签发 | 作者构造 Sample、注册 AnalysisInput，或让 Report author 取得 Record reader |
 | `niceeval/report/host` | 单目标 show、整站 build、scoped view 与 static export | `show`、`view` 与 `view --out` | loader、renderer、watcher 或 Record reader 的可组合接口 |
 | `niceeval/project/host` | `projectHost.initialize` | `init` | Node filesystem、manifest loader 或模板写入细节 |
 
 “公开、受支持”只说明这些高层操作可由外部 Host 调用并受契约保护，不把 durable schema 变成开放扩展面。
-Record definition、fixed family catalog 与 migration step factory 仍是 package-private；第三方不能注册 family
-或 migration。这些入口也不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
+`defineRecordAttachment` 与 `defineRecordAttachmentPersistence` 是可组合 SPI；Host 只接受 exact definition brand
+绑定的 persistence。它们不组成另一个总管式应用框架：每个入口只拥有表中所属层的操作和资源边界。
 
 ## CLI feature composition
 

@@ -1,24 +1,20 @@
-import { createHash } from "node:crypto";
-
 import { Either, Schema, Stream } from "effect";
-import {
-  makeFixedRecordAttachmentWrite,
-  makeRecordBlobSource,
-  validateRecordAttachmentWrite,
-  type FixedAttachmentWriteSpec,
-  type RecordAttachmentBlobBuilder,
-  type RecordAttachmentBlobDraft,
-  type RecordAttachmentPayloadSnapshot,
-  type RecordAttachmentWrite,
-  type RecordBlobRef,
-  type RecordBlobSource,
-} from "../../record/attachment/index.ts";
-import { Sha256DigestSchema } from "../../record/codec/identifiers.ts";
+import type { RecordBytesContentHandle } from "../../record/attachment/content.ts";
 import type {
+  AttachedRecordContent,
+  RecordAttachmentSessionBuilder,
+} from "../../record/writer/current-attachment.ts";
+import type {
+  AssertionSourceAnchor,
   AssertionSourceSite,
   AssertionsAttachment,
 } from "../../record/family/assertions/definition.ts";
-import type { Sha256Digest } from "../../record/model/identifiers.ts";
+import { assertionsRecordAttachment } from "../../record/family/assertions/definition.ts";
+import { sourcesRecordAttachment } from "../../record/family/sources/definition.ts";
+import type {
+  Sha256Digest,
+  SourceItemId,
+} from "../../record/model/identifiers.ts";
 import type {
   AssertionCoverage,
   AssertionCriterion,
@@ -52,10 +48,7 @@ import type {
   AssertionFactValue,
   AssertionEntry,
   AssertionEntryOuter,
-  AssertionCoverage as RecordAssertionCoverage,
-  AssertionLimitation as RecordAssertionLimitation,
   AssertionMaterial as RecordAssertionMaterial,
-  AssertionsDocumentOuter,
   AssertionsProjection,
   BoundedJsonObject,
   BoundedJsonValue,
@@ -64,56 +57,42 @@ import type {
 } from "./model.ts";
 
 /**
- * The Record attachment runtime keeps the real ref authority private. This
- * positional schema only lets the Assertions schema carry a package ref;
- * generic Record closure validation still rejects every ref not minted by the
- * current Attachment builder.
+ * Producer preflight uses a data-only placeholder. The session callback later
+ * replaces it with a sealed content handle minted for this Attachment.
  */
-const RecordBlobRefPositionSchema: Schema.Schema<
-  RecordBlobRef,
-  RecordBlobRef,
-  never
-> = Schema.declare<RecordBlobRef>(
-  (value): value is RecordBlobRef => typeof value === "object" && value !== null,
-);
-
-/**
- * Producer preflight needs to validate the strict writer document before the
- * real Attachment builder exists. This is deliberately not a RecordBlobRef:
- * final payloads replace it with a ref minted by `blobs.add` below.
- */
-interface AssertionsProvisionalBlobRef {
-  readonly kind: "assertions-provisional-blob-ref";
+interface AssertionsProvisionalContent {
+  readonly kind: "assertions-provisional-content";
 }
 
-const AssertionsProvisionalBlobRefSchema: Schema.Schema<
-  AssertionsProvisionalBlobRef
+const AssertionsProvisionalContentSchema: Schema.Schema<
+  AssertionsProvisionalContent
 > = Schema.Struct({
-  kind: Schema.Literal("assertions-provisional-blob-ref"),
+  kind: Schema.Literal("assertions-provisional-content"),
 });
 
-export const assertionsRecordSchemas = createAssertionsRecordSchemas(
-  RecordBlobRefPositionSchema,
+const AssertionsProvisionalMaterialSchema: Schema.Schema<
+  RecordAssertionMaterial<AssertionsProvisionalContent>
+> = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("unavailable"),
+    reason: Schema.Literal("not-recorded"),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("content"),
+    content: AssertionsProvisionalContentSchema,
+    encoding: Schema.Literal("json", "utf-8", "binary"),
+    byteLength: Schema.JsonNumber.pipe(
+      Schema.filter((value) => Number.isSafeInteger(value) && value >= 0),
+    ),
+    preview: Schema.NullOr(Schema.String.pipe(
+      Schema.filter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024),
+    )),
+  }),
 );
 
 const assertionsProducerSchemas = createAssertionsRecordSchemas(
-  AssertionsProvisionalBlobRefSchema,
+  AssertionsProvisionalMaterialSchema,
 );
-
-/** Complete payload-order projection required by Record's closure validator. */
-export function assertionBlobRefs(
-  document: AssertionsDocumentOuter<RecordBlobRef>,
-): readonly RecordBlobRef[] {
-  const refs: RecordBlobRef[] = [];
-  const collect = (material: RecordAssertionMaterial<RecordBlobRef>): void => {
-    if (material.kind === "blob") refs.push(material.ref);
-  };
-  for (const entry of document.entries) {
-    collect(entry.materials.source);
-    for (const material of entry.materials.evidence) collect(material);
-  }
-  return Object.freeze(refs);
-}
 
 export type AssertionMaterialInput<E, R> =
   | {
@@ -121,33 +100,27 @@ export type AssertionMaterialInput<E, R> =
       readonly reason: "not-recorded";
     }
   | {
-      readonly kind: "snapshot";
-      readonly value: BoundedJsonValue;
-    }
-  | {
-      readonly kind: "blob";
-      readonly source: RecordBlobSource<E, R>;
-      readonly encoding: "utf-8" | "binary";
+      readonly kind: "content";
+      readonly source: Stream.Stream<Uint8Array, E, R>;
+      readonly encoding: "json" | "utf-8" | "binary";
       readonly byteLength: number;
-      /** Digest declared by the producer and checked against sealed bytes. */
-      readonly sha256: Sha256Digest;
-      readonly preview: string;
+      readonly preview: string | null;
     };
 
 export interface AssertionsAttachmentEntryInput<E, R> {
-  readonly display: AssertionEntryInput<RecordBlobRef>["display"];
-  readonly criterion: AssertionEntryInput<RecordBlobRef>["criterion"];
+  readonly display: AssertionEntryInput<AssertionsProvisionalContent>["display"];
+  readonly criterion: AssertionEntryInput<AssertionsProvisionalContent>["criterion"];
   readonly materials: {
     readonly source: AssertionMaterialInput<E, R>;
     readonly evidence: readonly AssertionMaterialInput<E, R>[];
-    readonly coverage: AssertionEntryInput<RecordBlobRef>["materials"]["coverage"];
-    readonly limitations: AssertionEntryInput<RecordBlobRef>["materials"]["limitations"];
+    readonly coverage: AssertionEntryInput<AssertionsProvisionalContent>["materials"]["coverage"];
+    readonly limitations: AssertionEntryInput<AssertionsProvisionalContent>["materials"]["limitations"];
   };
-  readonly evaluation: AssertionEntryInput<RecordBlobRef>["evaluation"];
-  readonly decision: AssertionEntryInput<RecordBlobRef>["decision"];
-  readonly policy: AssertionEntryInput<RecordBlobRef>["policy"];
-  readonly contribution: AssertionEntryInput<RecordBlobRef>["contribution"];
-  readonly explanationRetention: AssertionEntryInput<RecordBlobRef>["explanationRetention"];
+  readonly evaluation: AssertionEntryInput<AssertionsProvisionalContent>["evaluation"];
+  readonly decision: AssertionEntryInput<AssertionsProvisionalContent>["decision"];
+  readonly policy: AssertionEntryInput<AssertionsProvisionalContent>["policy"];
+  readonly contribution: AssertionEntryInput<AssertionsProvisionalContent>["contribution"];
+  readonly explanationRetention: AssertionEntryInput<AssertionsProvisionalContent>["explanationRetention"];
 }
 
 function encodeSnapshotValue(value: AssertionSnapshotValue): BoundedJsonValue {
@@ -297,41 +270,36 @@ function encodeMaterial(
     case "snapshot": {
       const value = encodeSnapshotValue(material.value);
       const bytes = new TextEncoder().encode(JSON.stringify(value));
-      const inline = Schema.decodeUnknownEither(
+      const validated = Schema.decodeUnknownEither(
         BoundedJsonValueSchema,
         AssertionsExactParseOptions,
       )(value);
-      if (bytes.byteLength > 32 * 1_024 || Either.isLeft(inline)) {
-        const digest = Schema.decodeUnknownEither(Sha256DigestSchema)(
-          createHash("sha256").update(bytes).digest("hex"),
-        );
-        if (Either.isLeft(digest)) {
-          throw new Error("Assertions snapshot produced an invalid SHA-256 digest");
-        }
-        return Object.freeze({
-          kind: "blob" as const,
-          source: makeRecordBlobSource(Stream.succeed(bytes)),
-          encoding: "utf-8" as const,
-          byteLength: bytes.byteLength,
-          sha256: digest.right,
-          preview: `JSON Assertion material stored as a ${bytes.byteLength}-byte blob`,
-        });
+      if (Either.isLeft(validated)) {
+        throw new Error("Assertions snapshot is outside the bounded JSON contract");
       }
       return Object.freeze({
-        kind: "snapshot" as const,
-        value: inline.right,
+        kind: "content" as const,
+        source: Stream.succeed(bytes),
+        encoding: "json" as const,
+        byteLength: bytes.byteLength,
+        preview: null,
       });
     }
-    case "record-attachment":
+    case "record-attachment": {
+      const bytes = new TextEncoder().encode(JSON.stringify({
+        kind: "file-changes",
+        preview: material.preview,
+      }));
       return Object.freeze({
-        // The durable Assertions closure cannot hold a capability into the
-        // File Changes family. Keep only the already-safe display material.
-        kind: "snapshot" as const,
-        value: Object.freeze({
-          kind: "file-changes",
-          preview: material.preview,
-        }),
+        // Keep only the already-safe display fact. The source Attachment
+        // capability never crosses into the Assertions closure.
+        kind: "content" as const,
+        source: Stream.succeed(bytes),
+        encoding: "json" as const,
+        byteLength: bytes.byteLength,
+        preview: material.preview,
       });
+    }
   }
 }
 
@@ -475,48 +443,67 @@ export function encodeSealedAssertionEntry(
   });
 }
 
+export interface AssertionSourceSiteInput {
+  readonly entryId: AssertionEntryId;
+  readonly sourceOrder: number;
+  readonly role: AssertionSourceSite["role"];
+  readonly sourceItemId: SourceItemId;
+  readonly sha256: Sha256Digest;
+  readonly start: AssertionSourceSite["start"];
+  readonly end: AssertionSourceSite["end"];
+}
+
+export interface AssertionsAttachmentSealInput {
+  /** Semantic joins to origin-Run Sources, embedded in this fixed family. */
+  readonly sourceSites?: readonly AssertionSourceSiteInput[];
+}
+
+type AssertionsAttachedContent<E, R> = AttachedRecordContent<
+  RecordBytesContentHandle,
+  E,
+  R
+>;
+
+export interface AssertionsAttachmentDraft<E, R> {
+  readonly entries: readonly AssertionEntryOuter<AssertionsAttachedContent<E, R>>[];
+  readonly sourceSites: readonly AssertionSourceSite[];
+}
+
+export type AssertionsAttachmentCapture<E, R> = (
+  build: RecordAttachmentSessionBuilder,
+) => AssertionsAttachmentDraft<E, R>;
+
 export interface AssertionsAttachmentProducer<E, R> {
   readonly append: (
     entry: AssertionsAttachmentEntryInput<E, R>,
   ) => Either.Either<AssertionEntryId, AssertionsProducerError>;
   readonly seal: (input?: AssertionsAttachmentSealInput) => Either.Either<
-    RecordAttachmentWrite<"attempt", E, R>,
+    AssertionsAttachmentCapture<E, R>,
     AssertionsProducerError
   >;
 }
 
-export interface AssertionsAttachmentSealInput {
-  /** Semantic joins to origin-Run Sources, embedded in this fixed family. */
-  readonly sourceSites?: readonly AssertionSourceSite[];
-}
-
-function makeProvisionalBlobRef(): AssertionsProvisionalBlobRef {
-  return Object.freeze({ kind: "assertions-provisional-blob-ref" });
+function makeProvisionalContent(): AssertionsProvisionalContent {
+  return Object.freeze({ kind: "assertions-provisional-content" });
 }
 
 function provisionalMaterial<E, R>(
   material: AssertionMaterialInput<E, R>,
-): RecordAssertionMaterial<AssertionsProvisionalBlobRef> {
-  switch (material.kind) {
-    case "unavailable":
-      return material;
-    case "snapshot":
-      return Object.freeze({ kind: "snapshot", value: material.value });
-    case "blob":
-      return Object.freeze({
-        kind: "blob",
-        ref: makeProvisionalBlobRef(),
+): RecordAssertionMaterial<AssertionsProvisionalContent> {
+  return material.kind === "unavailable"
+    ? material
+    : Object.freeze({
+        kind: "content" as const,
+        content: makeProvisionalContent(),
         encoding: material.encoding,
         byteLength: material.byteLength,
-        sha256: material.sha256,
         preview: material.preview,
       });
-  }
 }
 
 function provisionalEntry<E, R>(
   entry: AssertionsAttachmentEntryInput<E, R>,
-): AssertionEntryInput<AssertionsProvisionalBlobRef> {
+): AssertionEntryInput<AssertionsProvisionalContent> {
   return Object.freeze({
     display: entry.display,
     criterion: entry.criterion,
@@ -549,44 +536,32 @@ function captureEntrySources<E, R>(
 }
 
 function materializeMaterial<E, R>(
-  material: RecordAssertionMaterial<AssertionsProvisionalBlobRef>,
+  material: RecordAssertionMaterial<AssertionsProvisionalContent>,
   source: AssertionMaterialInput<E, R>,
-  blobs: RecordAttachmentBlobBuilder,
-  drafts: RecordAttachmentBlobDraft<E, R>[],
-): RecordAssertionMaterial<RecordBlobRef> {
+  build: RecordAttachmentSessionBuilder,
+): RecordAssertionMaterial<AssertionsAttachedContent<E, R>> {
   if (material.kind === "unavailable") {
     if (source.kind !== "unavailable") {
       throw new Error("Assertions producer changed a sealed material kind");
     }
     return material;
   }
-  if (material.kind === "snapshot") {
-    if (source.kind !== "snapshot") {
-      throw new Error("Assertions producer changed a sealed material kind");
-    }
-    return Object.freeze({ kind: "snapshot", value: material.value });
-  }
-  if (source.kind !== "blob") {
+  if (source.kind !== "content") {
     throw new Error("Assertions producer changed a sealed material kind");
   }
-  const draft = blobs.add(source.source);
-  drafts.push(draft);
   return Object.freeze({
-    kind: "blob",
-    ref: draft.ref,
+    kind: "content",
+    content: build.content.stream(source.source),
     encoding: material.encoding,
     byteLength: material.byteLength,
-    sha256: material.sha256,
     preview: material.preview,
   });
 }
 
-function outerCriterion(
-  criterion: AssertionEntry<AssertionsProvisionalBlobRef>["criterion"],
-): AssertionEntryOuter<RecordBlobRef>["criterion"] {
+function outerCriterion<Content>(
+  criterion: AssertionEntry<AssertionsProvisionalContent>["criterion"],
+): AssertionEntryOuter<Content>["criterion"] {
   if (criterion.state === "unavailable") return criterion;
-  // Effect's structural decoder reads fields before a trailing filter. Keep
-  // the descriptor-aware raw check in front so accessors are never executed.
   if (!isBoundedJsonObject(criterion.value)) {
     throw new Error("An Assertions writer criterion must be bounded JSON");
   }
@@ -602,37 +577,34 @@ function outerCriterion(
 
 function materializeDocument<E, R>(
   sources: readonly AssertionsAttachmentEntrySources<E, R>[],
-  sealedEntries: readonly AssertionEntry<AssertionsProvisionalBlobRef>[],
-  sourceSites: readonly AssertionSourceSite[],
-  blobs: RecordAttachmentBlobBuilder,
-): {
-  readonly payload: AssertionsAttachment;
-  readonly blobs: readonly RecordAttachmentBlobDraft<E, R>[];
-} {
-  const drafts: RecordAttachmentBlobDraft<E, R>[] = [];
-  const materializedEntries: AssertionEntryOuter<RecordBlobRef>[] = [];
+  sealedEntries: readonly AssertionEntry<AssertionsProvisionalContent>[],
+  sourceSites: readonly AssertionSourceSiteInput[],
+  build: RecordAttachmentSessionBuilder,
+): AssertionsAttachmentDraft<E, R> {
+  const entries: AssertionEntryOuter<AssertionsAttachedContent<E, R>>[] = [];
   for (const [index, sealed] of sealedEntries.entries()) {
-    const source = sources[index];
-    if (source === undefined) {
+    const captured = sources[index];
+    if (captured === undefined) {
       throw new Error("Assertions producer lost a sealed entry source");
     }
-    if (source.evidence.length !== sealed.materials.evidence.length) {
+    if (captured.evidence.length !== sealed.materials.evidence.length) {
       throw new Error("Assertions producer changed sealed evidence cardinality");
     }
-    materializedEntries.push(Object.freeze({
+    entries.push(Object.freeze({
       entryId: sealed.entryId,
       display: sealed.display,
       criterion: outerCriterion(sealed.criterion),
       materials: Object.freeze({
-        source: materializeMaterial(sealed.materials.source, source.source, blobs, drafts),
+        source: materializeMaterial(sealed.materials.source, captured.source, build),
         evidence: Object.freeze(
-        sealed.materials.evidence.map((material, evidenceIndex) => {
-          const evidenceSource = source.evidence[evidenceIndex];
-          if (evidenceSource === undefined) {
-            throw new Error("Assertions producer lost a sealed evidence source");
-          }
-          return materializeMaterial(material, evidenceSource, blobs, drafts);
-        })),
+          sealed.materials.evidence.map((material, evidenceIndex) => {
+            const evidenceSource = captured.evidence[evidenceIndex];
+            if (evidenceSource === undefined) {
+              throw new Error("Assertions producer lost a sealed evidence source");
+            }
+            return materializeMaterial(material, evidenceSource, build);
+          }),
+        ),
         coverage: sealed.materials.coverage,
         limitations: sealed.materials.limitations,
       }),
@@ -643,36 +615,39 @@ function materializeDocument<E, R>(
       explanationRetention: sealed.explanationRetention,
     }));
   }
+
+  const sites = sourceSites.map((site): AssertionSourceSite => {
+    const anchor: AssertionSourceAnchor = Object.freeze({
+      sourceItemId: site.sourceItemId,
+      sha256: site.sha256,
+    });
+    return Object.freeze({
+      entryId: site.entryId,
+      sourceOrder: site.sourceOrder,
+      role: site.role,
+      source: build.reference.to(sourcesRecordAttachment, anchor),
+      start: site.start,
+      end: site.end,
+    });
+  });
   return Object.freeze({
-    payload: Object.freeze({
-      entries: Object.freeze(materializedEntries),
-      // Source sites are joined into this fixed family by the runner's source
-      // capture before final sealing. A producer with no captured site writes
-      // the exact empty sequence instead of another durable family.
-      sourceSites: Object.freeze([...sourceSites]),
-    }),
-    blobs: Object.freeze(drafts),
+    entries: Object.freeze(entries),
+    sourceSites: Object.freeze(sites),
   });
 }
 
-/**
- * Collects completed facts in declaration order, then mints every blob ref
- * inside one generic RecordAttachment write. Callers never receive a raw ref,
- * path, key, or bytes channel, so cross-Attachment closure is impossible.
- */
+/** Collects facts, then returns the exact session callback that mints closure tokens. */
 export function createAssertionsAttachmentProducer<E, R>(config: {
   readonly entryIds: AssertionsEntryIdSource;
-  /** Injected by the fixed catalog consumer to avoid a catalog initialization cycle. */
-  readonly write: FixedAttachmentWriteSpec<"attempt", AssertionsAttachment>;
 }): AssertionsAttachmentProducer<E, R> {
-  const documentBuilder: AssertionsDocumentBuilder<AssertionsProvisionalBlobRef> =
+  const documentBuilder: AssertionsDocumentBuilder<AssertionsProvisionalContent> =
     createAssertionsDocumentBuilder({
       documentSchema: assertionsProducerSchemas.document,
       entryIds: config.entryIds,
     });
   const sources: AssertionsAttachmentEntrySources<E, R>[] = [];
   let sealed:
-    | Either.Either<RecordAttachmentWrite<"attempt", E, R>, AssertionsProducerError>
+    | Either.Either<AssertionsAttachmentCapture<E, R>, AssertionsProducerError>
     | undefined;
 
   const producer: AssertionsAttachmentProducer<E, R> = {
@@ -684,10 +659,23 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
     seal(sealInput: AssertionsAttachmentSealInput = {}) {
       if (sealed !== undefined) return sealed;
       const sourceSites = Object.freeze([...(sealInput.sourceSites ?? [])]);
+      const sourceSiteWireShape = sourceSites.map((site) => Object.freeze({
+        entryId: site.entryId,
+        sourceOrder: site.sourceOrder,
+        role: site.role,
+        source: Object.freeze({
+          value: Object.freeze({
+            sourceItemId: site.sourceItemId,
+            sha256: site.sha256,
+          }),
+        }),
+        start: site.start,
+        end: site.end,
+      }));
       const emptyEntriesBytes = new TextEncoder().encode(JSON.stringify({ entries: [] })).byteLength;
       const sourceSitesFramingBytes = new TextEncoder().encode(JSON.stringify({
         entries: [],
-        sourceSites,
+        sourceSites: sourceSiteWireShape,
       })).byteLength - emptyEntriesBytes;
       const document = documentBuilder.seal({
         maximumBytes: MAX_ASSERTION_DOCUMENT_BYTES - sourceSitesFramingBytes,
@@ -696,21 +684,12 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
         sealed = Either.left(document.left);
         return sealed;
       }
-      const write = makeFixedRecordAttachmentWrite(
-        config.write,
-        (blobs) =>
-          materializeDocument(
-            sources,
-            document.right.entries,
-            sourceSites,
-            blobs,
-          ),
-      );
-      const closure = validateRecordAttachmentWrite(write);
-      if (Either.isLeft(closure)) {
-        throw new Error("Assertions producer generated an invalid RecordAttachment closure");
-      }
-      sealed = Either.right(write);
+      sealed = Either.right((build) => materializeDocument(
+        sources,
+        document.right.entries,
+        sourceSites,
+        build,
+      ));
       return sealed;
     },
   };
@@ -718,20 +697,19 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
 }
 
 export interface AssertionsProjectorDefinition {
-  readonly write: FixedAttachmentWriteSpec<"attempt", AssertionsAttachment>;
+  readonly definition: typeof assertionsRecordAttachment;
   readonly project: (
-    value: RecordAttachmentPayloadSnapshot<AssertionsAttachment>,
-  ) => AssertionsProjection<RecordBlobRef>;
+    value: AssertionsAttachment,
+  ) => AssertionsProjection<RecordBytesContentHandle>;
 }
 
-/** Typed, synchronous projection over one already-materialized Attachment value. */
+/** Typed, synchronous projection over one already-validated logical value. */
 export function defineAssertionsProjector(
   registry: ThirdPartyCriterionRegistry,
-  write: FixedAttachmentWriteSpec<"attempt", AssertionsAttachment>,
 ): AssertionsProjectorDefinition {
   return Object.freeze({
-    write,
-    project(value: RecordAttachmentPayloadSnapshot<AssertionsAttachment>) {
+    definition: assertionsRecordAttachment,
+    project(value: AssertionsAttachment) {
       return projectAssertionsDocument(value, registry);
     },
   });

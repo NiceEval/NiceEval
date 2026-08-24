@@ -7,7 +7,7 @@ Record（持久事实集）是 `<project>/.niceeval/record/` 中可携带、可�
 Record 的边界分成三层：
 
 - Record Core 提供 owner、目录、原子提交、content source 读取、digest、预算、Seal 与读取机制。
-- `record/family` package 通过 `defineRecordAttachment` 拥有持久业务 schema、invariant、版本和相邻 migration。
+- `record/family` package 通过 `defineRecordAttachment` 拥有 current logical fact，再通过 `defineRecordAttachmentPersistence` 绑定 durable revision 与私有相邻 migration。
 - Runner、Sandbox、Adapter 与其它 producer 在亲历事实的边界 capture，只取得匹配 owner 的窄 writer。
 
 对产品用户，Record 是 opaque directory（不透明目录）。用户可以整体复制它、把它放进 Git，并交给
@@ -48,26 +48,25 @@ Record Core 只保存完整 `attemptId`。面向人的 locator 是确定性别�
 
 ## `defineRecordAttachment` SPI
 
-`defineRecordAttachment` 是公开、通用且中立的 SPI。每个 definition 只描述一个 owner kind 下的一类事实：
+`defineRecordAttachment` 是公开、通用且中立的 SPI。每个 definition 只描述一个 owner kind 下的 current logical fact：
 
 ```text
-(ownerKind, family, schemaVersion)
+(ownerKind, family, current Schema, named validate)
 ```
 
-这个三元组在一次 composition 中必须唯一。`family` 是不含版本的稳定身份；`schemaVersion` 是正整数。
-definition 带 owner nominal brand，Run writer 不能使用 Attempt definition，Attempt writer 也不能使用 Run definition。
+`family` 是不含版本的稳定身份。definition 带 owner nominal brand，Run writer 不能使用 Attempt definition，Attempt writer 不能使用 Run definition。durable revision 属于 matching persistence。
 
 NiceEval 官方 family 与第三方 package / Plugin 都通过同一个 SPI 定义。第三方 definition 是纯值，不能打开
-Record root、构造路径或取得文件系统能力。Host 或 Plugin composition 必须显式贡献 definition，owner-scoped
-writer 才能执行 `attach(definition, preparedWrite)`。
+Record root、构造路径或取得文件系统能力。Host 或 Plugin composition 必须显式贡献 persistence，owner-scoped
+writer 才能执行 `attach(definition, callback)`。
 
 composition 为每个 read、write 或 migration session 建立 immutable catalog。catalog 不是进程全局 registry，
-没有模块加载副作用、动态注册或后写替换。重复 identity、版本分叉与缺少相邻 migration 在 session 取得 I/O
+没有模块加载副作用、动态注册或后写替换。重复 definition brand、revision 分叉与缺少相邻 migration 在 session 取得 I/O
 能力前失败。
 
 官方 family 包括 Assertions、Agent Turns、Turn Contexts、Sandbox Commands、Runner Activities、Runner
 Diagnostics、File Changes、Sources 与 Artifacts。它们不是 Core 特权；每个 `definition.ts` 只组装所属业务模块的
-schema、invariant、budget、reference descriptor 与 migration。
+current Schema、named validate、内容值约束与 migration-private parser。Core 另有不因 family 放宽的全局安全预算。
 
 ## 局部读取与完整性
 
@@ -91,28 +90,25 @@ Observability source 可以各自为 `complete` 或 `partial`。未写该 source
 
 ## Content 与 reference
 
-capture input 中的 content source 可以来自 bytes、text 或有界 Stream。一次 draft builder 为它 mint owner-local
-opaque ref；logical Attachment value 只含这种 ref，不含物理存储分支、path、digest 或 blob key。
+capture input 中的 content source 可以来自 bytes、text 或有界 Stream。session callback 为它 mint owner-local
+token；logical Attachment value 不含物理存储分支、path、digest 或 blob key。
 
-Record Core 统一读取 source draft、计算 digest 和 byte length、执行 definition budget，并写入私有物理表示。
+Record Core 统一读取 source、计算 digest 和 byte length、执行 current Schema 的内容值约束与全局安全预算，并写入私有物理表示。
 每个 Attachment 拥有自己的 content-addressed namespace；相同 digest 也不能跨 Attachment 去重或引用。
 
-definition 的 reference descriptor 与 content descriptor 分开。reference 只表达 owner / family 之间的业务依赖，
-不授予 content capability。读取 dependency closure 时缺少目标 definition 会返回
+Core-owned sealed content/reference Schema declaration 表达 owner / family 之间的业务依赖，并由 compiler 生成 traversal 与 closure plan。reference 不授予 content capability。读取 dependency closure 时缺少目标 persistence 会返回
 `family-definition-required`，不会按字符串或目录猜测 target。
 
 ## 显式 migration
 
-ordinary reader 只读 current schemaVersion，绝不改盘。读到同 family 的 predecessor 或其它已保存版本时返回
+ordinary reader 只读 current persistence revision，绝不改盘。读到同 family 的 predecessor 或其它已保存版本时返回
 `migration-required`，并要求用户显式运行 Host maintenance 或 `niceeval migrate`。
 
-每个 family 只能声明严格相邻、无分叉的单链 migration。`planMigrate()` / `applyMigrate()` 在 exclusive
-maintenance session 中按 canonical owner / family 顺序执行。migration 只消费已保存、已验证且受预算约束的
-输入；不能读取当前 worktree、网络、时钟、随机源或 provider。
+每个 persistence 只能声明严格相邻、无分叉的单链 migration。`planMigrate()` / `applyMigrate()` 在 exclusive
+maintenance session 中按 canonical owner / family 顺序执行。migration 只消费 storage-neutral tokenized document；family-private parser 证明旧业务 closure，Core 只证明通用 physical/token closure。它不能读取当前 worktree、网络、时钟、随机源或 provider。
 
-新 content 先写入 Attachment 私有 namespace，最后以原子替换 `attachment.json` 提交一个相邻步骤。
-崩溃前未被 envelope 引用的 content 是 orphan；已提交 envelope 则是下一次续跑的起点。全部 Attachment current
-后才重建并原子替换 Seal manifest，因此重试不会重复已经提交的业务变换。
+相邻 revision 只在内存流转；只有 current revision 的完整结果才写入 Attachment 私有 namespace，并以原子替换
+`attachment.json` 提交。envelope 仍是 Core 私有 wire shape，包含 payload/content pointers。崩溃前未被 envelope 引用的 content 是 orphan；全部 Attachment current 后才重建 Seal manifest。plan/receipt 列出 retained、dropped 与 rerun impact。
 
 Record 不调用 Git preflight，也不写 migration sentinel、journal、backup 或 rollback metadata。Git 只为用户提供
 历史、diff、restore 与 rollback。迁移本身依靠 envelope commit、content address 与确定性扫描幂等续跑。
@@ -120,7 +116,7 @@ Record 不调用 Git preflight，也不写 migration sentinel、journal、backup
 ## Staging、发布与残留删除
 
 writer 在 portable Record 外、同一文件系统的 local staging 中形成整个 Run。它验证 Core、每个已贡献
-definition、reference closure、content budget 与完整 Seal，随后用 no-replace directory rename 发布。
+persistence、reference closure、内容值约束与完整 Seal，随后用 no-replace directory rename 发布。
 
 发布后的 Run 除显式 migration 外保持 immutable。`clean` 只在 exclusive maintenance 下删除重验后仍未发布的
 incomplete Run。migration 在重建完整 current Seal 后才删除可证明未被 envelope 引用的 content orphan。

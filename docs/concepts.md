@@ -216,7 +216,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Attempt | Attempt | 一次实际执行的稳定身份；只存放在 origin Run，后续 Run 可以精确引用 | [Record Architecture](feature/record/architecture.md) |
 | Record 附件 | `RecordAttachment` | Run 或 Attempt owner 下由 branded family definition 解释的 immutable logical value 与 owner-local content closure | [Record Architecture](feature/record/architecture.md) |
 | Record migration plan | `RecordMigrationPlan` | 对格式、sealed Run inventory、session catalog 与可用相邻步骤做只读预检后形成的 opaque plan | [Record Library](feature/record/library.md) |
-| 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources`（envelope `schemaVersion: 1`）；保存当时 source closure 的 manifest 与 own content | [Record Architecture](feature/record/architecture.md) |
+| 源码快照 | Sources snapshot | origin Run-owned `niceeval.sources` current logical fact；保存当时 source closure 的 logical tokens 与 own content | [Record Architecture](feature/record/architecture.md) |
 | 源码项 | source item | Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-256 与 own content 标识的一项源码 | [Record Architecture](feature/record/architecture.md) |
 | 未映射 | `unmapped` | 可读 Assertion 没有可用 source navigation；不改变 Assertion、Verdict 或 Score | [Source sites](feature/assertions/architecture/source-sites.md#局部-unmapped-与-assertion-隔离) |
 | Invocation receipt | `InvocationReceipt` | 只含 Invocation 身份、Run IDs、时间和完成状态的进程返回值 | [Record Library](feature/record/library.md#write-session) |

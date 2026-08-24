@@ -1,15 +1,15 @@
-import { createHash } from "node:crypto";
-
 import { Schema } from "effect";
+
+import {
+  RecordBytesContentSchema,
+  recordAttachmentIssue,
+  recordContent,
+  type RecordAttachmentIssue,
+} from "../../attachment/index.ts";
 import {
   ArtifactIdSchema,
   Sha256DigestSchema,
 } from "../../codec/identifiers.ts";
-import {
-  RecordBlobRefSchema,
-  type RecordBlobRef,
-} from "../../attachment/blob-ref.ts";
-import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/errors.ts";
 import {
   CollectionStateSchema,
   MediaTypeSchema,
@@ -18,13 +18,21 @@ import {
   isCanonicalIdentitySequence,
 } from "../common.ts";
 
+export const ArtifactsLimits = Object.freeze({
+  maximumArtifacts: 4_000,
+  maximumContentBytes: 64 * 1024 * 1024,
+});
+
+/** sha256 identifies the Artifact bytes fact, never its physical placement. */
 export const ArtifactSchema = Schema.Struct({
   artifactId: ArtifactIdSchema,
   mediaType: MediaTypeSchema,
   label: SafeTextSchema,
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-  content: RecordBlobRefSchema,
+  content: RecordBytesContentSchema.pipe(
+    recordContent.maximumBytes(ArtifactsLimits.maximumContentBytes),
+  ),
 });
 
 export type Artifact = Schema.Schema.Type<typeof ArtifactSchema>;
@@ -37,54 +45,35 @@ export const ArtifactsAttachmentSchema = Schema.Struct({
   artifacts: Schema.propertySignature(Schema.Array(ArtifactSchema)).pipe(
     Schema.fromKey("artifacts-data"),
   ),
-}).pipe(
-  Schema.filter(
-    (payload) =>
-      isCanonicalIdentitySequence(payload.artifacts.map((artifact) => artifact.artifactId)),
-    {
-      identifier: "ArtifactsAttachment",
-      description: "canonical artifact identities with no duplicates",
-    },
-  ),
-);
+});
 
 export type ArtifactsAttachment = Schema.Schema.Type<
   typeof ArtifactsAttachmentSchema
 >;
 
-export function artifactBlobRefs(
-  payload: ArtifactsAttachment,
-): readonly RecordBlobRef[] {
-  return Object.freeze(payload.artifacts.map((artifact) => artifact.content));
+function invalid(path: readonly string[]): RecordAttachmentIssue {
+  return recordAttachmentIssue("record-attachment-schema-invalid", path);
 }
 
-/** Binds every Artifact byte claim to the materialized fixed-family closure. */
-export function artifactsAttachmentIntegrityIssues(
-  payload: ArtifactsAttachment,
-  blobs: readonly { readonly ref: RecordBlobRef; readonly bytes: Uint8Array }[],
+/**
+ * Core enforces the content declaration limit and owns physical read
+ * integrity. This logical validator cannot open a sealed content handle;
+ * producers must derive byteLength and sha256 from the same source they seal.
+ */
+export function validateArtifactsAttachment(
+  value: ArtifactsAttachment,
 ): readonly RecordAttachmentIssue[] {
-  const bytesByRef = new Map<RecordBlobRef, Uint8Array>(
-    blobs.map((blob) => [blob.ref, blob.bytes] as const),
-  );
   const issues: RecordAttachmentIssue[] = [];
-  for (const [index, artifact] of payload.artifacts.entries()) {
-    const bytes = bytesByRef.get(artifact.content);
-    if (bytes === undefined) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["artifacts", String(index), "content"]));
-      continue;
-    }
-    if (bytes.byteLength !== artifact.byteLength) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["artifacts", String(index), "byteLength"]));
-    }
-    if (createHash("sha256").update(bytes).digest("hex") !== artifact.sha256) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["artifacts", String(index), "sha256"]));
+  if (value.artifacts.length > ArtifactsLimits.maximumArtifacts) {
+    issues.push(invalid(["artifacts"]));
+  }
+  if (!isCanonicalIdentitySequence(value.artifacts.map((artifact) => artifact.artifactId))) {
+    issues.push(invalid(["artifacts", "artifactId"]));
+  }
+  for (const [index, artifact] of value.artifacts.entries()) {
+    if (artifact.byteLength > ArtifactsLimits.maximumContentBytes) {
+      issues.push(invalid(["artifacts", String(index), "byteLength"]));
     }
   }
   return Object.freeze(issues);
 }
-
-export const ArtifactsBlobBudget = Object.freeze({
-  maximumBlobs: 4_000,
-  maximumBlobBytes: 64 * 1024 * 1024,
-  maximumTotalBytes: 128 * 1024 * 1024,
-});

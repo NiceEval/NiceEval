@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 
+import { Either, Schema } from "effect";
+
 import { redactSensitiveText } from "../../sandbox/redaction.ts";
 import type { CommandOptions } from "../../sandbox/types.ts";
 import type { LifecyclePhase } from "../types.ts";
+import { CanonicalProjectRelativePathSchema } from "../../record/codec/identifiers.ts";
 import {
   MAX_COMMAND_ARGUMENT_BYTES,
   MAX_COMMAND_ARGUMENTS,
@@ -16,10 +19,9 @@ import {
   type CommandId,
   type SafeText,
 } from "../../record/family/source-receipt/model.ts";
-import type { CommandManifest } from "./model.ts";
 import type { CommandProjectionRuntime } from "./projection-runtime.ts";
 import { retainSafeText } from "./projection-text.ts";
-import type { StagedCommandStream } from "./types.ts";
+import type { CommandManifest, StagedCommandStream } from "./types.ts";
 import { requiredNonNegative } from "./support.ts";
 
 function commandManifestPhase(
@@ -112,7 +114,10 @@ function commandWorkingDirectory(
   const redacted = redactSensitiveText(cwd, runtime.sensitiveValues);
   if (redacted !== cwd) runtime.commandLimitations.addRedacted("command-manifest");
   if (isProjectRelativeCommandPath(redacted)) {
-    return Object.freeze({ kind: "project-relative" as const, path: redacted });
+    const decoded = Schema.decodeUnknownEither(CanonicalProjectRelativePathSchema)(redacted);
+    if (Either.isRight(decoded)) {
+      return Object.freeze({ kind: "project-relative" as const, path: decoded.right });
+    }
   }
   runtime.commandLimitations.addRedacted("command-manifest");
   return Object.freeze({ kind: "redacted" as const });

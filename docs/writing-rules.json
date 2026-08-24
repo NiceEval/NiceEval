@@ -503,7 +503,7 @@
     {
       "term": "RecordChannel",
       "use": "fixed Attachment family",
-      "why": "落盘数据不是 FIFO、Stream 或通信通道；fixed family 直接表达它附着于 Run 或 Attempt"
+      "why": "落盘数据不是 FIFO、Stream 或通信通道；Attachment definition 直接表达它附着于 Run 或 Attempt"
     },
     {
       "term": "ChannelProjectorId",
@@ -512,12 +512,12 @@
     },
     {
       "term": "ChannelDescriptorSchemaId",
-      "use": "固定 envelope 的 family 与 numeric schemaVersion",
+      "use": "Attachment persistence 的 stable family 与 numeric revision",
       "why": "family identity 与版本分开，不能再造 descriptor schema 代际"
     },
     {
       "term": "descriptorSchemaId",
-      "use": "Attachment envelope 的 family 与 numeric schemaVersion；collection 留在 payload",
+      "use": "Attachment persistence 的 family 与 numeric revision；collection 留在 logical value",
       "why": "动态 descriptor table 会把一个 owner-local Attachment 拆成多余版本层"
     },
     {
@@ -552,7 +552,7 @@
     },
     {
       "term": "producer profile",
-      "use": "具名领域 aggregate contract，例如 EvaluationRecordContract",
+      "use": "具名领域 fact definition，例如 AssertionsAttachment",
       "why": "profile 没有说明它验证哪一组持久事实"
     },
     {

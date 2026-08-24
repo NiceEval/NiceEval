@@ -28,11 +28,11 @@ export type CurrentRecordRead<Value> =
   | {
       readonly state: "migration-required";
       readonly family: string;
-      readonly fromSchemaVersion: number;
-      readonly toSchemaVersion: number;
+      readonly fromRevision: number;
+      readonly toRevision: number;
       readonly command: "niceeval migrate";
     }
-  | { readonly state: "unsupported"; readonly family: string; readonly schemaVersion: number }
+  | { readonly state: "unsupported"; readonly family: string; readonly revision: number }
   | { readonly state: "invalid"; readonly issues: readonly RecordIssue[] };
 
 export interface CurrentReusedAttemptReadback {
@@ -161,14 +161,14 @@ function recordRead<Value>(value: RecordAttachmentRead<Value>): CurrentRecordRea
       return Object.freeze({
         state: "unsupported" as const,
         family: value.family,
-        schemaVersion: value.schemaVersion,
+        revision: value.revision,
       });
     case "migration-required":
       return Object.freeze({
         state: "migration-required" as const,
         family: value.family,
-        fromSchemaVersion: value.fromSchemaVersion,
-        toSchemaVersion: value.toSchemaVersion,
+        fromRevision: value.fromRevision,
+        toRevision: value.toRevision,
         command: value.command,
       });
     case "invalid":
@@ -184,14 +184,14 @@ function nonAvailableRead<Value>(value: Exclude<RecordAttachmentRead<unknown>, {
       return Object.freeze({
         state: "unsupported" as const,
         family: value.family,
-        schemaVersion: value.schemaVersion,
+        revision: value.revision,
       });
     case "migration-required":
       return Object.freeze({
         state: "migration-required" as const,
         family: value.family,
-        fromSchemaVersion: value.fromSchemaVersion,
-        toSchemaVersion: value.toSchemaVersion,
+        fromRevision: value.fromRevision,
+        toRevision: value.toRevision,
         command: value.command,
       });
     case "invalid":
@@ -394,8 +394,19 @@ function readCurrentReuseSourceFiles(input: {
       NiceEvalRecordAttachments.sources,
     );
     if (sources.state !== "available") return nonAvailableRead(sources);
-    const projection = projectSourcesAttachment(sources.value, sources.blobs);
-    if (Either.isLeft(projection)) return Object.freeze({ state: "projection-invalid" as const });
+    const projection = yield* Effect.either(
+      projectSourcesAttachment(sources.value, sources.content),
+    );
+    if (Either.isLeft(projection)) {
+      switch (projection.left.code) {
+        case "source-blob-unavailable":
+        case "source-blob-utf8-invalid":
+        case "source-blob-digest-mismatch":
+          return Object.freeze({ state: "projection-invalid" as const });
+        default:
+          return yield* Effect.fail(projection.left);
+      }
+    }
     return Object.freeze({
       state: "available" as const,
       value: Object.freeze(projection.right.items.map((item) => Object.freeze({

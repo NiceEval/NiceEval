@@ -1,15 +1,16 @@
 import { Schema } from "effect";
 
+import {
+  RecordAttachmentReference,
+  recordAttachmentIssue,
+  type RecordAttachmentIssue,
+} from "../../attachment/index.ts";
 import { TurnIdSchema } from "../source-receipt/codec.ts";
 import {
   Sha256DigestSchema,
   SourceItemIdSchema,
 } from "../../codec/identifiers.ts";
-import {
-  recordAttachmentIssue,
-  type RecordAttachmentIssue,
-} from "../../attachment/errors.ts";
-import type { SourcesAttachment } from "../sources.ts";
+import { sourcesRecordAttachment } from "../sources/definition.ts";
 import {
   PositiveSafeIntegerSchema,
   SafeIdentifierSchema,
@@ -26,12 +27,18 @@ const SourcePositionSchema = Schema.Struct({
   column: PositiveSafeIntegerSchema,
 });
 
-const SourceFrameSchema = Schema.Struct({
+export const RunnerDiagnosticSourceFrameSchema = Schema.Struct({
   sourceItemId: SourceItemIdSchema,
   sha256: Sha256DigestSchema,
   start: SourcePositionSchema,
   end: SourcePositionSchema,
 });
+
+export const RunnerDiagnosticSourceFrameReferenceSchema =
+  RecordAttachmentReference.to(
+    sourcesRecordAttachment,
+    RunnerDiagnosticSourceFrameSchema,
+  );
 
 const DiagnosticBase = {
   segmentId: SourceSegmentIdSchema,
@@ -51,7 +58,7 @@ const DiagnosticBase = {
       replacements: PositiveSafeIntegerSchema,
     }),
   ),
-  sourceFrame: Schema.NullOr(SourceFrameSchema),
+  sourceFrame: Schema.NullOr(RunnerDiagnosticSourceFrameReferenceSchema),
 } as const;
 
 export const AttemptRunnerDiagnosticReceiptSchema = Schema.Struct({
@@ -80,7 +87,7 @@ export const RunRunnerDiagnosticReceiptSchema = Schema.Struct({
   ),
 });
 
-function canonicalDiagnostics(input: {
+function validateRunnerDiagnostics(input: {
   readonly collection: { readonly limitations: readonly {
     readonly stage?: string;
     readonly target: string;
@@ -90,14 +97,36 @@ function canonicalDiagnostics(input: {
     readonly sequence: number;
     readonly diagnosticId: string;
   }[];
-}): boolean {
-  return hasCanonicalSourceSegments(input.segments) &&
-    new Set(input.segments.map((segment) => segment.diagnosticId)).size === input.segments.length &&
-    input.collection.limitations.every((limitation) =>
-      (limitation.stage === undefined || limitation.stage === "runner-diagnostic-sink" ||
-        limitation.stage === "attempt-finalizer" || limitation.stage === "run-teardown") &&
-      ["diagnostic", "diagnostic-cause", "payload-byte"].includes(limitation.target)
-    );
+}): readonly RecordAttachmentIssue[] {
+  const issues: RecordAttachmentIssue[] = [];
+  if (!hasCanonicalSourceSegments(input.segments)) {
+    issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments"]));
+  }
+  const diagnosticIds = new Set<string>();
+  input.segments.forEach((segment, index) => {
+    if (diagnosticIds.has(segment.diagnosticId)) {
+      issues.push(recordAttachmentIssue(
+        "record-attachment-schema-invalid",
+        ["segments", String(index), "diagnosticId"],
+      ));
+    }
+    diagnosticIds.add(segment.diagnosticId);
+  });
+  input.collection.limitations.forEach((limitation, index) => {
+    if (
+      (limitation.stage !== undefined &&
+        limitation.stage !== "runner-diagnostic-sink" &&
+        limitation.stage !== "attempt-finalizer" &&
+        limitation.stage !== "run-teardown") ||
+      !["diagnostic", "diagnostic-cause", "value-byte"].includes(limitation.target)
+    ) {
+      issues.push(recordAttachmentIssue(
+        "record-attachment-schema-invalid",
+        ["collection", "limitations", String(index)],
+      ));
+    }
+  });
+  return Object.freeze(issues);
 }
 
 export const AttemptRunnerDiagnosticsAttachmentSchema = Schema.Struct({
@@ -107,7 +136,7 @@ export const AttemptRunnerDiagnosticsAttachmentSchema = Schema.Struct({
   segments: Schema.propertySignature(Schema.Array(AttemptRunnerDiagnosticReceiptSchema)).pipe(
     Schema.fromKey("segments-data"),
   ),
-}).pipe(Schema.filter(canonicalDiagnostics));
+});
 
 export const RunRunnerDiagnosticsAttachmentSchema = Schema.Struct({
   collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
@@ -116,7 +145,7 @@ export const RunRunnerDiagnosticsAttachmentSchema = Schema.Struct({
   segments: Schema.propertySignature(Schema.Array(RunRunnerDiagnosticReceiptSchema)).pipe(
     Schema.fromKey("segments-data"),
   ),
-}).pipe(Schema.filter(canonicalDiagnostics));
+});
 
 export type AttemptRunnerDiagnosticsAttachment = Schema.Schema.Type<
   typeof AttemptRunnerDiagnosticsAttachmentSchema
@@ -128,21 +157,39 @@ export type RunnerDiagnosticsAttachment =
   | AttemptRunnerDiagnosticsAttachment
   | RunRunnerDiagnosticsAttachment;
 
-export function runnerDiagnosticsSourceFrameIntegrityIssues(
+function validateSourceFrames(
   payload: RunnerDiagnosticsAttachment,
-  sources: SourcesAttachment,
 ): readonly RecordAttachmentIssue[] {
-  const sourceById = new Map(sources.items.map((item) => [item.sourceItemId, item] as const));
   return Object.freeze(payload.segments.flatMap((diagnostic, index) => {
-    const frame = diagnostic.sourceFrame;
-    if (frame === null) return [];
-    const source = sourceById.get(frame.sourceItemId);
-    if (source === undefined || source.sha256 !== frame.sha256) {
+    const frame = diagnostic.sourceFrame?.value;
+    if (frame === undefined) return [];
+    if (
+      frame.start.line > frame.end.line ||
+      frame.start.line === frame.end.line && frame.start.column > frame.end.column
+    ) {
       return [recordAttachmentIssue(
-        "record-attachment-materialized-invalid",
+        "record-attachment-schema-invalid",
         ["segments", String(index), "sourceFrame"],
       )];
     }
     return [];
   }));
+}
+
+export function validateAttemptRunnerDiagnosticsAttachment(
+  value: AttemptRunnerDiagnosticsAttachment,
+): readonly RecordAttachmentIssue[] {
+  return Object.freeze([
+    ...validateRunnerDiagnostics(value),
+    ...validateSourceFrames(value),
+  ]);
+}
+
+export function validateRunRunnerDiagnosticsAttachment(
+  value: RunRunnerDiagnosticsAttachment,
+): readonly RecordAttachmentIssue[] {
+  return Object.freeze([
+    ...validateRunnerDiagnostics(value),
+    ...validateSourceFrames(value),
+  ]);
 }

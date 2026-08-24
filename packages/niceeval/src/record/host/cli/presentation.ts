@@ -18,7 +18,7 @@ export function renderRecordMaintenanceFailure(
     case "RecordMigrationPlanStale":
       return `${failure.code}\nReview the new migration plan and rerun migrate.\n`;
     case "RecordMigrationInvalid":
-      return `${failure.code}\nThe committed source is invalid; no uncommitted step was published.\n`;
+      return `${failure.code}\nfamily: ${failure.family}\nThe committed source is invalid; no uncommitted step was published.\n`;
     case "RecordFormatUnsupported":
       return `${failure.code}\nInstall a NiceEval version that supports this Record format.\n`;
     case "RecordMigrationRequired":
@@ -32,12 +32,12 @@ export function renderRecordMaintenanceFailure(
 
 function renderMigrationImpact(attachments: readonly RecordAttachmentMigrationTarget[]): string {
   return [...new Map(attachments.map((attachment) => {
-    const key = `${attachment.family}@${attachment.fromSchemaVersion}->${attachment.toSchemaVersion}`;
+    const key = `${attachment.family}@${attachment.fromRevision}->${attachment.toRevision}`;
     return [key, attachment] as const;
   })).values()].map((attachment) => {
     const retention = attachment.retention;
     const lines = [
-      `impact ${attachment.family}@${attachment.fromSchemaVersion}->${attachment.toSchemaVersion}:`,
+      `impact ${attachment.family}@${attachment.fromRevision}->${attachment.toRevision}:`,
       `  retained facts: ${retention.retainedFacts.length === 0 ? "none declared" : retention.retainedFacts.join(", ")}`,
       `  dropped facts: ${retention.droppedFacts.length === 0 ? "none declared" : retention.droppedFacts.join(", ")}`,
     ];

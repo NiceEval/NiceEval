@@ -14,12 +14,12 @@ import {
   type RunObservabilityCaptureIdentity,
 } from "../capture-identity.ts";
 import type {
-  CommandManifest,
   ConversationItem,
   ConversationTurn,
   UsageObservation,
 } from "../model.ts";
 import type {
+  CommandManifest,
   RunnerAttemptSourceReceiptsCapture,
   RunnerRunSourceReceiptsCapture,
   StagedCommandStream,

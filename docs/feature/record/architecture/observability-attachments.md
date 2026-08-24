@@ -18,8 +18,8 @@ diagnostics 是 reader-side view，不是持久 family。Adapter、SessionManage
 | `niceeval.runner-diagnostics` | Attempt、Run | 对应 owner 的 Runner diagnostic sink | 无 |
 
 这五个名称是 NiceEval 官方 Observability durable family。它们不按 Adapter 品牌、provider、Report 栏位或
-reader-side view 扩张。第三方 package 可以用同一个 `defineRecordAttachment` SPI 定义自己的 versionless family，
-但不能重定义这些 identity，也不能取得 root、staging、content object 或 publisher capability。
+reader-side view 扩张。第三方 package 可以用同一个 `defineRecordAttachment` 定义自己的 current logical family。
+它必须用 matching persistence 绑定 durable revision，且不能重定义官方 identity 或取得 Core 写入能力。
 
 一个 family 在一个 owner 下最多有一份 Attachment。logical value 是一组有序、不可变的 Source receipt segments：
 
@@ -189,7 +189,7 @@ type SandboxCommandReceipt = {
 };
 
 type CommandStream = {
-  readonly content: RecordContentHandle;
+  readonly content: RecordContent;
   readonly retainedBytes: NonNegativeSafeInteger;
   readonly totalSafeUtf8Bytes: NonNegativeSafeInteger;
   readonly sha256: Sha256Digest;
@@ -197,8 +197,7 @@ type CommandStream = {
 ```
 
 collector 先执行非 fatal UTF-8 decode、已登记敏感值脱敏与 control removal，再按 stream 上限保留 prefix。
-它把安全 prefix 作为 `RecordContentSource` 放进 source draft。Core 统一读取 source、计算长度与 digest、执行预算，
-再 mint logical `RecordContentHandle`。logical value 不知道 content 最终 inline 还是进入私有 content object。
+它在 session `attach(definition, ({ content }) => …)` callback 内用 `content.text()` mint sealed logical handle。Core 根据 sealed declaration 编译 closure，读取 source 并执行预算。Core 再将 content 写入私有 object。logical value 不知道它最终 inline 还是进入 object。
 
 ## Runner Activity receipts
 
@@ -260,9 +259,8 @@ Runner Diagnostic source，不成为新的 family。
 
 ## Capture、staging 与 Seal manifest
 
-每个 authority 在真实边界完成 decode、normalize、redact 与 limit，并构造所属 definition 的 source draft。
-它只取得匹配 owner 的 writer，先用 `definition.prepare(value, drafts)` 形成 opaque write，再调用
-`attach(definition, preparedWrite)`。Core 统一 canonical encode、content source 读取、digest、预算与 envelope commit。
+每个 authority 在真实边界完成 decode、normalize、redact 与 limit。
+它只取得匹配 owner 的 session writer，并调用 `attach(definition, ({ content, reference }) => value)`。callback 用 `content.text()`、`content.bytes()` 或 `content.stream()` mint sealed handle，并用 `reference.to(definition, semanticValue)` mint relation token。Core 统一编译 closure plan、编码、读取 content source、写入 object、检查预算并提交 envelope。
 
 Attempt 或 Run seal 冻结对应 authority，拒绝 late capture，并逐 source 验证 logical value 与 content closure。
 Run publisher 随后形成 canonical Seal manifest。manifest 穷尽每个 Attachment 的 envelope、payload 与 content

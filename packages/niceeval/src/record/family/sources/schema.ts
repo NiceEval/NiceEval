@@ -1,94 +1,82 @@
-import { createHash } from "node:crypto";
-
 import { Schema } from "effect";
+
+import {
+  RecordTextContentSchema,
+  recordAttachmentIssue,
+  recordContent,
+  type RecordAttachmentIssue,
+} from "../../attachment/index.ts";
 import {
   CanonicalProjectRelativePathSchema,
   Sha256DigestSchema,
   SourceItemIdSchema,
 } from "../../codec/identifiers.ts";
 import {
-  RecordBlobRefSchema,
-  type RecordBlobRef,
-} from "../../attachment/blob-ref.ts";
-import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/errors.ts";
-import {
   NonNegativeSafeIntegerSchema,
   isCanonicalIdentitySequence,
 } from "../common.ts";
 
-/** One immutable source snapshot item in an origin Run-owned closure. */
+export const SourcesLimits = Object.freeze({
+  maximumItems: 20_000,
+  maximumContentBytes: 16 * 1024 * 1024,
+});
+
+/**
+ * One immutable source snapshot item in an origin Run-owned closure. sha256
+ * identifies the source content fact; it is never a physical object key.
+ */
 export const SourceItemSchema = Schema.Struct({
   sourceItemId: SourceItemIdSchema,
   path: CanonicalProjectRelativePathSchema,
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-  content: RecordBlobRefSchema,
+  content: RecordTextContentSchema.pipe(
+    recordContent.maximumBytes(SourcesLimits.maximumContentBytes),
+  ),
 });
 
 export type SourceItem = Schema.Schema.Type<typeof SourceItemSchema>;
 
 /**
  * Sources are deliberately a flat manifest. `sourceItemId` is opaque and is
- * neither a path, digest, array index, nor blob-key derivation.
+ * neither a path, content identity, array index, nor storage-key derivation.
  */
 export const SourcesAttachmentSchema = Schema.Struct({
   items: Schema.propertySignature(Schema.Array(SourceItemSchema)).pipe(
     Schema.fromKey("items-data"),
   ),
-}).pipe(
-  Schema.filter(
-    (document) =>
-      isCanonicalIdentitySequence(document.items.map((item) => item.sourceItemId)) &&
-      new Set(document.items.map((item) => item.path)).size === document.items.length,
-    {
-      identifier: "SourcesAttachment",
-      description: "a canonical Sources manifest with unique item identities and paths",
-    },
-  ),
-);
+});
 
 export type SourcesAttachment = Schema.Schema.Type<
   typeof SourcesAttachmentSchema
 >;
 
-/** Complete closure projection for `niceeval.sources`. */
-export function sourcesBlobRefs(
-  payload: SourcesAttachment,
-): readonly RecordBlobRef[] {
-  return Object.freeze(payload.items.map((item) => item.content));
+function invalid(path: readonly string[]): RecordAttachmentIssue {
+  return recordAttachmentIssue("record-attachment-schema-invalid", path);
 }
 
 /**
- * Checks the Sources-specific claim over each already materialized own blob.
- * Closure membership is checked by the shared attachment reader; this fixed
- * family check binds the resulting exact bytes to its manifest metadata.
+ * Core enforces the content declaration limit and owns physical read
+ * integrity. This logical validator cannot open a sealed content handle;
+ * producers must derive byteLength and sha256 from the same source they seal.
  */
-export function sourcesAttachmentIntegrityIssues(
-  payload: SourcesAttachment,
-  blobs: readonly { readonly ref: RecordBlobRef; readonly bytes: Uint8Array }[],
+export function validateSourcesAttachment(
+  value: SourcesAttachment,
 ): readonly RecordAttachmentIssue[] {
-  const bytesByRef = new Map<RecordBlobRef, Uint8Array>(
-    blobs.map((blob) => [blob.ref, blob.bytes] as const),
-  );
   const issues: RecordAttachmentIssue[] = [];
-  for (const [index, item] of payload.items.entries()) {
-    const bytes = bytesByRef.get(item.content);
-    if (bytes === undefined) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["items", String(index), "content"]));
-      continue;
-    }
-    if (bytes.byteLength !== item.byteLength) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["items", String(index), "byteLength"]));
-    }
-    if (createHash("sha256").update(bytes).digest("hex") !== item.sha256) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", ["items", String(index), "sha256"]));
+  if (value.items.length > SourcesLimits.maximumItems) {
+    issues.push(invalid(["items"]));
+  }
+  if (!isCanonicalIdentitySequence(value.items.map((item) => item.sourceItemId))) {
+    issues.push(invalid(["items", "sourceItemId"]));
+  }
+  if (new Set(value.items.map((item) => item.path)).size !== value.items.length) {
+    issues.push(invalid(["items", "path"]));
+  }
+  for (const [index, item] of value.items.entries()) {
+    if (item.byteLength > SourcesLimits.maximumContentBytes) {
+      issues.push(invalid(["items", String(index), "byteLength"]));
     }
   }
   return Object.freeze(issues);
 }
-
-export const SourcesBlobBudget = Object.freeze({
-  maximumBlobs: 20_000,
-  maximumBlobBytes: 16 * 1024 * 1024,
-  maximumTotalBytes: 128 * 1024 * 1024,
-});

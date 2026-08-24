@@ -20,7 +20,7 @@ Web 详情把 matcher 自身作为可展开行：`matched`、`mismatched` 与 `u
 
 组合 matcher 按原声明层级展开，每个 `and`、`or`、`not` 与叶子 matcher 都携带自己的 sealed 状态，因此父组合命中时仍能辨认没有命中的分支。Tool matcher 的候选 occurrence 也使用同一分支树：调用名称、input、output、status 与命令 token 等子 matcher 各自显示状态，并在展开后显示可用的 expected、received、调用 locator 或 unavailable reason。未知或第三方 matcher 使用 generic fallback，不因没有专用展示而丢失输入和闭合诊断。
 
-Assertions display 不携带 source path、origin source snapshot 或跨 family blob ref。需要源码导航时，Analysis 的 source-navigation DomainView 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
+Assertions display 不携带 source path、origin source snapshot 或跨 family content handle。需要源码导航时，Analysis 的 source-navigation DomainView 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
 没有对应 row 或 Sources 无法形成可用值时，entry 位置显示 `unmapped`，不能猜测当前 worktree。`.orStop()` 已执行的位置可由 role 为 `stop` 的 source site 显示，不能由未保存的控制流推断。
 
 ## identity 与 route
@@ -29,9 +29,9 @@ Assertions display 不携带 source path、origin source snapshot 或跨 family 
 
 ## 相关 durable facts
 
-Turn、conversation、diff、telemetry、timing 和 diagnostic 使用各自的固定 family。页面只呈现 Analysis 已关闭的值与 Calculation results，并包装为闭合的 report document；展开详情不能重新读取 Record、请求网络或执行 criterion。
+Turn、conversation、diff、telemetry、timing 和 diagnostic 使用各自已贡献的 family。页面只呈现 Analysis 已关闭的值与 Calculation results，并包装为闭合的 report document；展开详情不能重新读取 Record、请求网络或执行 criterion。
 
-颜色、图标或悬停提示不能是状态的唯一表达。展示前剥除 ANSI 与不可打印控制字节，按显示宽度截断预览，并明确标记省略。原始大文本只在相应 owner 的 own blob closure 中；详情只保留有界入口。
+颜色、图标或悬停提示不能是状态的唯一表达。展示前剥除 ANSI 与不可打印控制字节，按显示宽度截断预览，并明确标记省略。原始大文本只在相应 owner 的 own content closure 中；详情只保留有界入口。
 
 ## 相关阅读
 

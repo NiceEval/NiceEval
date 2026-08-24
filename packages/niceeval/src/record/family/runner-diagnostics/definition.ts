@@ -1,24 +1,26 @@
-import { defineRecordAttachment } from "../../attachment/index.ts";
 import {
-  attemptRunnerDiagnosticsV1,
-  runRunnerDiagnosticsV1,
-} from "./version.ts";
+  defineRecordAttachment,
+  RecordOwner,
+} from "../../attachment/index.ts";
+import {
+  AttemptRunnerDiagnosticsAttachmentSchema,
+  RunRunnerDiagnosticsAttachmentSchema,
+  validateAttemptRunnerDiagnosticsAttachment,
+  validateRunRunnerDiagnosticsAttachment,
+} from "./schema.ts";
 
 export * from "./schema.ts";
-export * from "./version.ts";
 
 export const attemptRunnerDiagnosticsRecordAttachment = defineRecordAttachment({
-  owner: "attempt",
+  owner: RecordOwner.attempt,
   family: "niceeval.runner-diagnostics",
-  current: attemptRunnerDiagnosticsV1,
-  versions: [attemptRunnerDiagnosticsV1],
-  migrations: [],
+  schema: AttemptRunnerDiagnosticsAttachmentSchema,
+  validate: validateAttemptRunnerDiagnosticsAttachment,
 });
 
 export const runRunnerDiagnosticsRecordAttachment = defineRecordAttachment({
-  owner: "run",
+  owner: RecordOwner.run,
   family: "niceeval.runner-diagnostics",
-  current: runRunnerDiagnosticsV1,
-  versions: [runRunnerDiagnosticsV1],
-  migrations: [],
+  schema: RunRunnerDiagnosticsAttachmentSchema,
+  validate: validateRunRunnerDiagnosticsAttachment,
 });

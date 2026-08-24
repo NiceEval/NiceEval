@@ -6,10 +6,10 @@ Attachment producer 需要保存大材料时，只应提交一个逻辑 blob 及
 
 ## 核心心智
 
-RecordBlob 是 Attachment 拥有的一段逻辑 bytes，而不是单个磁盘文件或一组公开 chunk。
+Record content 是 Attachment 拥有的一段逻辑 bytes，而不是单个磁盘文件或一组公开 chunk。
 producer 声明逻辑材料，Record Host 决定怎样写入和保存；reader 仍读取一条连续且经过验证的逻辑 stream。
 
-payload 中的 `RecordBlobRef` 始终引用逻辑 blob。
+payload 中的 sealed `RecordContentHandle` 始终表示逻辑 content；它不携带 path、digest 或物理位置。
 物理 segment、manifest、临时写入与去重索引只属于 Record Host，不进入 Eval、Assertion、Analysis、Report 或用户配置。
 复制一个 Attachment closure 时，它依赖的全部物理 bytes 必须随 closure 一起移动。
 
@@ -25,7 +25,7 @@ payload 中的 `RecordBlobRef` 始终引用逻辑 blob。
 - 中断、空间不足、损坏和迁移时的原子发布与具名错误。
 
 本方向不增加 chunk size、segment ID、manifest path、去重开关或存储策略等公开 API。
-它不允许跨 Attachment 借用 blob ref，也不建立依赖全局对象库才能独立复制的 Record。
+它不允许跨 Attachment 借用 content handle，也不建立依赖全局对象库才能独立复制的 Record。
 它不改变 payload JSON 的 family 预算；大材料进入 blob 不是绕过 Attachment 总预算与安全上限的手段。
 
 ## 用户可观察边界
@@ -57,4 +57,4 @@ CLI 与 Report 只呈现材料状态、逻辑 byte length、整体 digest、prev
 ## 入口
 
 - [Architecture](architecture.md) —— owner、数据流、不变量和失败边界。
-- [当前 Record Architecture](../../feature/record/architecture.md) —— 现行 Attachment closure、blob ref 与发布状态机。
+- [当前 Record Architecture](../../feature/record/architecture.md) —— 现行 Attachment closure、sealed content 与发布状态机。

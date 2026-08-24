@@ -1,13 +1,18 @@
-import { defineRecordAttachment } from "../../attachment/index.ts";
-import { sandboxCommandsV1 } from "./version.ts";
+import {
+  defineRecordAttachment,
+  RecordOwner,
+} from "../../attachment/index.ts";
+import {
+  SandboxCommandsAttachmentSchema,
+  validateSandboxCommandsAttachment,
+} from "./schema.ts";
 
 export * from "./schema.ts";
-export { sandboxCommandsV1 } from "./version.ts";
 
+/** Current Sandbox Commands fact only; durable history is separate. */
 export const sandboxCommandsRecordAttachment = defineRecordAttachment({
-  owner: "attempt",
+  owner: RecordOwner.attempt,
   family: "niceeval.sandbox-commands",
-  current: sandboxCommandsV1,
-  versions: [sandboxCommandsV1],
-  migrations: [],
+  schema: SandboxCommandsAttachmentSchema,
+  validate: validateSandboxCommandsAttachment,
 });

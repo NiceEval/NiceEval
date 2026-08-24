@@ -1,10 +1,9 @@
-import { Effect, Either } from "effect";
+import { Effect, Stream } from "effect";
 import { foldRecordedAttemptVerdict } from "../eval/record/verdict.ts";
 import type {
-  RecordAttachmentBlobs,
-  RecordAttachmentPayloadSnapshot,
-  RecordBlobRef,
-} from "../record/attachment/types.ts";
+  RecordContentHandle,
+  RecordTextContentHandle,
+} from "../record/attachment/content.ts";
 import type { AssertionsAttachment } from "../record/family/assertions/definition.ts";
 import {
   NiceEvalRecordAttachments,
@@ -17,13 +16,17 @@ import type { SandboxCommandsAttachment } from "../record/family/sandbox-command
 import type { SourcesAttachment } from "../record/family/sources.ts";
 import type { TurnContextsAttachment } from "../record/family/turn-contexts/definition.ts";
 import type {
+  RecordAttachmentContentReader,
   RecordAttachmentRead,
   ReadableAttempt,
   RecordReadSession,
   SelectedOwnerRef,
 } from "../record/host/types.ts";
 import type { SourceNavigationRelation } from "../record/host/source-navigation-relation.ts";
-import type { RecordReaderReadError } from "../record/reader/errors.ts";
+import {
+  RecordHandleInvalid,
+  type RecordReaderReadError,
+} from "../record/reader/errors.ts";
 import type {
   JsonValue,
 } from "./contracts.ts";
@@ -73,7 +76,7 @@ type ReaderSourceState<Payload> =
   | Readonly<{
       readonly state: "complete" | "partial";
       readonly limitations: readonly unknown[];
-      readonly value: RecordAttachmentPayloadSnapshot<Payload>;
+      readonly value: Payload;
     }>
   | Readonly<{
       readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid";
@@ -148,7 +151,7 @@ export interface PublishedAnalysisInputBinding<
     readonly member: LogicalSlot;
     /** Closed with the successful ReadableAttempt resolution. */
     readonly core: ClosedAttemptCore;
-    readonly payload: RecordAttachmentPayloadSnapshot<Payload>;
+    readonly payload: Payload;
   }) => InputProjection<Value>;
 }
 
@@ -164,9 +167,9 @@ export interface BuiltinDomainViewBinding<
   readonly project: (input: {
     /** Closed with the successful ReadableAttempt resolution, never exposed as a capability. */
     readonly core: ClosedAttemptCore;
-    readonly payload: RecordAttachmentPayloadSnapshot<Payload>;
-    readonly blobs: RecordAttachmentBlobs;
-  }) => BuiltinDomainDetail<Kind>;
+    readonly payload: Payload;
+    readonly content: RecordAttachmentContentReader;
+  }) => Effect.Effect<BuiltinDomainDetail<Kind>, RecordReaderReadError>;
 }
 
 type DomainBindingPayload<Binding extends AnyBuiltinDomainViewBinding> =
@@ -271,10 +274,30 @@ const originSourcesFamily = fixedFamilyBinding({
   read: (reader, owner) => reader.read(owner, NiceEvalRecordAttachments.sources),
 });
 
-const emptyRecordBlobs: RecordAttachmentBlobs = Object.freeze({
-  refs: () => Object.freeze([]),
-  bytes: (_ref: RecordBlobRef) => Either.left(Object.freeze({ code: "record-blob-handle-invalid" as const })),
-});
+function combineContentReaders(
+  reads: readonly RecordAttachmentRead<unknown>[],
+): RecordAttachmentContentReader {
+  const readers = reads.flatMap((read) => read.state === "available" ? [read.content] : []);
+  const through = <Value>(
+    use: (reader: RecordAttachmentContentReader) => Effect.Effect<Value, RecordReaderReadError>,
+    index = 0,
+  ): Effect.Effect<Value, RecordReaderReadError> => {
+    const reader = readers[index];
+    if (reader === undefined) {
+      return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
+    }
+    return use(reader).pipe(
+      Effect.catchTag("RecordHandleInvalid", () => through(use, index + 1)),
+    );
+  };
+  return Object.freeze({
+    bytes: (handle: RecordContentHandle) => through((reader) => reader.bytes(handle)),
+    text: (handle: RecordTextContentHandle) => through((reader) => reader.text(handle)),
+    stream: (handle: RecordContentHandle) => Stream.fromEffect(
+      through((reader) => reader.bytes(handle)),
+    ),
+  });
+}
 
 function receiptSourceState<Payload extends {
   readonly collection: {
@@ -320,7 +343,7 @@ function readAttemptObservabilityView(
         runnerActivities: receiptSourceState(activities),
         runnerDiagnostics: receiptSourceState(diagnostics),
       }),
-      blobs: commands.state === "available" ? commands.blobs : emptyRecordBlobs,
+      content: combineContentReaders([turns, contexts, commands, activities, diagnostics]),
     });
   });
 }
@@ -341,7 +364,7 @@ function readSandboxHistoryView(
         runnerActivities: receiptSourceState(activities),
         runnerDiagnostics: receiptSourceState(diagnostics),
       }),
-      blobs: commands.state === "available" ? commands.blobs : emptyRecordBlobs,
+      content: combineContentReaders([commands, activities, diagnostics]),
     });
   });
 }
@@ -394,7 +417,7 @@ function assembleSourceNavigationRelation(
         return Object.freeze({
           turnId: context.turnId,
           sourceOrder: context.sourceOrder,
-          source: context.source,
+          source: "value" in context.source ? context.source.value : context.source,
           timing: intervalId === undefined
             ? Object.freeze({
                 state: "unavailable" as const,
@@ -404,7 +427,7 @@ function assembleSourceNavigationRelation(
         });
       })),
     }) as SourceNavigationRelation;
-    return Object.freeze({ state: "available" as const, value, blobs: contexts.blobs });
+    return Object.freeze({ state: "available" as const, value, content: contexts.content });
   });
 }
 
@@ -428,7 +451,7 @@ function readSourceNavigationView(
         runnerActivities: receiptSourceState(activities),
         originSources: completeSourceState(sources),
       }),
-      blobs: emptyRecordBlobs,
+      content: combineContentReaders([relation, contexts, activities, sources]),
     });
   });
 }
@@ -441,7 +464,7 @@ export const publishedAnalysisInputBindings = Object.freeze({
     project: ({ core, payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
-      readonly payload: RecordAttachmentPayloadSnapshot<AssertionsAttachment>;
+      readonly payload: AssertionsAttachment;
     }): InputProjection<boolean> => {
       const verdict = foldRecordedAttemptVerdict({ outcome: core.outcome, assertions: payload });
       return Object.freeze({ state: "value" as const, value: verdict === "passed" });
@@ -453,7 +476,7 @@ export const publishedAnalysisInputBindings = Object.freeze({
     project: ({ payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
-      readonly payload: RecordAttachmentPayloadSnapshot<AttemptRunnerActivitiesAttachment>;
+      readonly payload: AttemptRunnerActivitiesAttachment;
     }): InputProjection<number> => {
       if (payload.collection.state !== "complete") {
         return collectionProjection(payload.collection, "activity", "activity collection is incomplete");
@@ -484,7 +507,7 @@ export const publishedAnalysisInputBindings = Object.freeze({
     project: ({ payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
-      readonly payload: RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>;
+      readonly payload: AgentTurnsAttachment;
     }): InputProjection<number> => {
       if (payload.collection.state !== "complete") {
         return collectionProjection(payload.collection, "usage-observation", "usage collection is incomplete");
@@ -529,7 +552,7 @@ export const publishedAnalysisInputBindings = Object.freeze({
     project: ({ payload }: {
       readonly member: LogicalSlot;
       readonly core: ClosedAttemptCore;
-      readonly payload: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>;
+      readonly payload: SandboxCommandsAttachment;
     }): InputProjection<boolean> => {
       const failed = payload.segments.some((segment) =>
         segment.outcome.kind !== "exited" || segment.outcome.exitCode !== 0
@@ -547,11 +570,11 @@ export const attemptEvidenceDomainBinding = Object.freeze({
   id: "niceeval.domain.attempt-evidence",
   kind: "attempt-evidence" as const,
   source: assertionsFamily,
-  project: ({ core, payload, blobs }: {
+  project: ({ core, payload, content }: {
     readonly core: ClosedAttemptCore;
-    readonly payload: RecordAttachmentPayloadSnapshot<AssertionsAttachment>;
-    readonly blobs: RecordAttachmentBlobs;
-  }): AttemptEvidenceDomainDetail => closeAssertions(core, payload, blobs),
+    readonly payload: AssertionsAttachment;
+    readonly content: RecordAttachmentContentReader;
+  }) => closeAssertions(core, payload, content),
 }) satisfies BuiltinDomainViewBinding<
   "attempt-evidence",
   AssertionsAttachment,
@@ -562,10 +585,10 @@ export const attemptObservabilityDomainBinding = Object.freeze({
   id: "niceeval.domain.attempt-observability",
   kind: "attempt-observability" as const,
   source: attemptObservabilityViewSource,
-  project: ({ payload, blobs }: {
-    readonly payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>;
-    readonly blobs: RecordAttachmentBlobs;
-  }): AttemptObservabilityDomainDetail => closeObservability(payload, blobs),
+  project: ({ payload, content }: {
+    readonly payload: AttemptObservabilityReaderView;
+    readonly content: RecordAttachmentContentReader;
+  }) => closeObservability(payload, content),
 }) satisfies BuiltinDomainViewBinding<
   "attempt-observability",
   AttemptObservabilityReaderView,
@@ -576,10 +599,10 @@ export const fileChangesDomainBinding = Object.freeze({
   id: "niceeval.domain.file-changes",
   kind: "file-changes" as const,
   source: fileChangesFamily,
-  project: ({ payload, blobs }: {
-    readonly payload: RecordAttachmentPayloadSnapshot<FileChangesAttachment>;
-    readonly blobs: RecordAttachmentBlobs;
-  }): FileChangesDomainDetail => closeFileChanges(payload, blobs),
+  project: ({ payload, content }: {
+    readonly payload: FileChangesAttachment;
+    readonly content: RecordAttachmentContentReader;
+  }) => closeFileChanges(payload, content),
 }) satisfies BuiltinDomainViewBinding<
   "file-changes",
   FileChangesAttachment,
@@ -591,9 +614,9 @@ export const sourceNavigationDomainBinding = Object.freeze({
   kind: "source-navigation" as const,
   source: sourceNavigationViewSource,
   project: ({ payload }: {
-    readonly payload: RecordAttachmentPayloadSnapshot<SourceNavigationReaderView>;
-    readonly blobs: RecordAttachmentBlobs;
-  }): SourceNavigationDomainDetail => closeSourceNavigation(payload),
+    readonly payload: SourceNavigationReaderView;
+    readonly content: RecordAttachmentContentReader;
+  }): Effect.Effect<SourceNavigationDomainDetail> => Effect.succeed(closeSourceNavigation(payload)),
 }) satisfies BuiltinDomainViewBinding<
   "source-navigation",
   SourceNavigationReaderView,
@@ -604,10 +627,10 @@ export const sourcesDomainBinding = Object.freeze({
   id: "niceeval.domain.sources",
   kind: "sources" as const,
   source: originSourcesFamily,
-  project: ({ payload, blobs }: {
-    readonly payload: RecordAttachmentPayloadSnapshot<SourcesAttachment>;
-    readonly blobs: RecordAttachmentBlobs;
-  }): SourcesDomainDetail => closeSources(payload, blobs),
+  project: ({ payload, content }: {
+    readonly payload: SourcesAttachment;
+    readonly content: RecordAttachmentContentReader;
+  }) => closeSources(payload, content),
 }) satisfies BuiltinDomainViewBinding<
   "sources",
   SourcesAttachment,
@@ -618,10 +641,10 @@ export const sandboxHistoryDomainBinding = Object.freeze({
   id: "niceeval.domain.sandbox-history",
   kind: "sandbox-history" as const,
   source: sandboxHistoryViewSource,
-  project: ({ payload, blobs }: {
-    readonly payload: RecordAttachmentPayloadSnapshot<SandboxHistoryReaderView>;
-    readonly blobs: RecordAttachmentBlobs;
-  }): SandboxHistoryDomainDetail => closeSandboxHistory(payload, blobs),
+  project: ({ payload, content }: {
+    readonly payload: SandboxHistoryReaderView;
+    readonly content: RecordAttachmentContentReader;
+  }) => closeSandboxHistory(payload, content),
 }) satisfies BuiltinDomainViewBinding<
   "sandbox-history",
   SandboxHistoryReaderView,
@@ -650,64 +673,81 @@ export type { DomainBindingSource, DomainBindingPayload };
 
 function closeAssertions(
   core: ClosedAttemptCore,
-  payload: RecordAttachmentPayloadSnapshot<AssertionsAttachment>,
-  _blobs: RecordAttachmentBlobs,
-): AttemptEvidenceDomainDetail {
-  return Object.freeze({
-    outcome: core.outcome,
-    verdict: foldRecordedAttemptVerdict({ outcome: core.outcome, assertions: payload }),
-    entries: Object.freeze(payload.entries.map((entry) => Object.freeze({
-      entryId: entry.entryId,
-      display: Object.freeze({ ...entry.display, groupPath: Object.freeze([...entry.display.groupPath]) }),
-      source: Object.freeze({
-        kind: "fields" as const,
-        fields: Object.freeze([Object.freeze({
-          label: "input",
-          value: assertionMaterialFact(entry.materials.source),
-        }), ...(entry.materials.evidence.length === 0 ? [] : [Object.freeze({
-          label: "evidence",
-          value: Object.freeze({
-            kind: "list" as const,
-            items: Object.freeze(entry.materials.evidence.map(assertionMaterialFact)),
-          }),
-        })])]),
-        coverage: entry.materials.coverage,
-        limitations: entry.materials.limitations,
-      }),
-      check: entry.criterion.state === "available"
-        ? assertionFact(entry.criterion.value)
-        : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
-      observed: Object.freeze({
-        kind: "fields" as const,
-        fields: entry.evaluation.observed.kind === "fields"
-          ? entry.evaluation.observed.fields
-          : Object.freeze([Object.freeze({ label: "value", value: entry.evaluation.observed })]),
-        ...(entry.evaluation.receipt === undefined ? {} : { receipt: entry.evaluation.receipt }),
-      }),
-      expected: entry.policy.condition.state === "available"
-        ? assertionFact(entry.policy.condition.value)
-        : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
-      explanation: entry.explanationRetention.state === "retained"
-        ? entry.explanationRetention.value
-        : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
-      decision: Object.freeze({
-        result: entry.decision.result,
-        reason: entry.decision.reason,
-        gate: entry.decision.gate,
-        policy: entry.policy,
-        contribution: entry.contribution,
-      }),
-    }))),
-    sourceSites: Object.freeze(payload.sourceSites.map((site) => Object.freeze({
-      ...site,
-      start: Object.freeze({ ...site.start }),
-      end: Object.freeze({ ...site.end }),
-    }))),
+  payload: AssertionsAttachment,
+  content: RecordAttachmentContentReader,
+): Effect.Effect<AttemptEvidenceDomainDetail, RecordReaderReadError> {
+  return Effect.gen(function* () {
+    const entries = yield* Effect.forEach(payload.entries, (entry) => Effect.gen(function* () {
+      const source = yield* assertionMaterialFact(entry.materials.source, content);
+      const evidence = yield* Effect.forEach(
+        entry.materials.evidence,
+        (material) => assertionMaterialFact(material, content),
+      );
+      return Object.freeze({
+        entryId: entry.entryId,
+        display: Object.freeze({ ...entry.display, groupPath: Object.freeze([...entry.display.groupPath]) }),
+        source: Object.freeze({
+          kind: "fields" as const,
+          fields: Object.freeze([Object.freeze({
+            label: "input",
+            value: source,
+          }), ...(evidence.length === 0 ? [] : [Object.freeze({
+            label: "evidence",
+            value: Object.freeze({
+              kind: "list" as const,
+              items: Object.freeze(evidence),
+            }),
+          })])]),
+          coverage: entry.materials.coverage,
+          limitations: entry.materials.limitations,
+        }),
+        check: entry.criterion.state === "available"
+          ? assertionFact(entry.criterion.value)
+          : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+        observed: Object.freeze({
+          kind: "fields" as const,
+          fields: entry.evaluation.observed.kind === "fields"
+            ? entry.evaluation.observed.fields
+            : Object.freeze([Object.freeze({ label: "value", value: entry.evaluation.observed })]),
+          ...(entry.evaluation.receipt === undefined ? {} : { receipt: entry.evaluation.receipt }),
+        }),
+        expected: entry.policy.condition.state === "available"
+          ? assertionFact(entry.policy.condition.value)
+          : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+        explanation: entry.explanationRetention.state === "retained"
+          ? entry.explanationRetention.value
+          : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }),
+        decision: Object.freeze({
+          result: entry.decision.result,
+          reason: entry.decision.reason,
+          gate: entry.decision.gate,
+          policy: entry.policy,
+          contribution: entry.contribution,
+        }),
+      });
+    }));
+    return Object.freeze({
+      outcome: core.outcome,
+      verdict: foldRecordedAttemptVerdict({ outcome: core.outcome, assertions: payload }),
+      entries: Object.freeze(entries),
+      sourceSites: Object.freeze(payload.sourceSites.map((site) => {
+        const source = site.source.value;
+        return Object.freeze({
+          entryId: site.entryId,
+          sourceOrder: site.sourceOrder,
+          role: site.role,
+          sourceItemId: source.sourceItemId,
+          sha256: source.sha256,
+          start: Object.freeze({ ...site.start }),
+          end: Object.freeze({ ...site.end }),
+        });
+      })),
+    });
   });
 }
 
 function closeSourceNavigation(
-  payload: RecordAttachmentPayloadSnapshot<SourceNavigationReaderView>,
+  payload: SourceNavigationReaderView,
 ): SourceNavigationDomainDetail {
   const relation = payload.relation;
   return Object.freeze({
@@ -749,7 +789,7 @@ function closeSourceNavigation(
 }
 
 function closeSourceAnchorVerification(
-  sources: RecordAttachmentPayloadSnapshot<SourceNavigationReaderView>["originSources"],
+  sources: SourceNavigationReaderView["originSources"],
   sourceItemId: string,
   sha256: string,
 ): Extract<SourceNavigationDomainDetail["rows"][number]["source"], { readonly state: "mapped" }>["verification"] {
@@ -806,43 +846,47 @@ function isObservationLimitation(value: unknown, code: string, target: string): 
 }
 
 function closeObservability(
-  payload: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>,
-  blobs: RecordAttachmentBlobs,
-): AttemptObservabilityDomainDetail {
-  return Object.freeze({
-    sources: Object.freeze({
-      agentTurns: closeSourceDependency("niceeval.agent-turns", payload.agentTurns),
-      turnContexts: closeSourceDependency("niceeval.turn-contexts", payload.turnContexts),
-      sandboxCommands: closeSourceDependency("niceeval.sandbox-commands", payload.sandboxCommands),
-      runnerActivities: closeSourceDependency("niceeval.runner-activities", payload.runnerActivities),
-      runnerDiagnostics: closeSourceDependency("niceeval.runner-diagnostics", payload.runnerDiagnostics),
-    }),
-    conversation: closeConversation(payload.agentTurns),
-    commands: closeCommands(payload.sandboxCommands, blobs, false),
-    usage: closeUsage(payload.agentTurns),
-    timing: closeTiming(payload.runnerActivities, false),
-    diagnostics: closeDiagnostics(payload.runnerDiagnostics, false),
-  });
+  payload: AttemptObservabilityReaderView,
+  content: RecordAttachmentContentReader,
+): Effect.Effect<AttemptObservabilityDomainDetail, RecordReaderReadError> {
+  return Effect.map(closeCommands(payload.sandboxCommands, content, false), (commands) =>
+    Object.freeze({
+      sources: Object.freeze({
+        agentTurns: closeSourceDependency("niceeval.agent-turns", payload.agentTurns),
+        turnContexts: closeSourceDependency("niceeval.turn-contexts", payload.turnContexts),
+        sandboxCommands: closeSourceDependency("niceeval.sandbox-commands", payload.sandboxCommands),
+        runnerActivities: closeSourceDependency("niceeval.runner-activities", payload.runnerActivities),
+        runnerDiagnostics: closeSourceDependency("niceeval.runner-diagnostics", payload.runnerDiagnostics),
+      }),
+      conversation: closeConversation(payload.agentTurns),
+      commands,
+      usage: closeUsage(payload.agentTurns),
+      timing: closeTiming(payload.runnerActivities, false),
+      diagnostics: closeDiagnostics(payload.runnerDiagnostics, false),
+    })
+  );
 }
 
 function closeSandboxHistory(
-  payload: RecordAttachmentPayloadSnapshot<SandboxHistoryReaderView>,
-  blobs: RecordAttachmentBlobs,
-): SandboxHistoryDomainDetail {
-  return Object.freeze({
-    sources: Object.freeze({
-      sandboxCommands: closeSourceDependency("niceeval.sandbox-commands", payload.sandboxCommands),
-      runnerActivities: closeSourceDependency("niceeval.runner-activities", payload.runnerActivities),
-      runnerDiagnostics: closeSourceDependency("niceeval.runner-diagnostics", payload.runnerDiagnostics),
-    }),
-    commands: closeCommands(payload.sandboxCommands, blobs, true),
-    timing: closeTiming(payload.runnerActivities, true),
-    diagnostics: closeDiagnostics(payload.runnerDiagnostics, true),
-  });
+  payload: SandboxHistoryReaderView,
+  content: RecordAttachmentContentReader,
+): Effect.Effect<SandboxHistoryDomainDetail, RecordReaderReadError> {
+  return Effect.map(closeCommands(payload.sandboxCommands, content, true), (commands) =>
+    Object.freeze({
+      sources: Object.freeze({
+        sandboxCommands: closeSourceDependency("niceeval.sandbox-commands", payload.sandboxCommands),
+        runnerActivities: closeSourceDependency("niceeval.runner-activities", payload.runnerActivities),
+        runnerDiagnostics: closeSourceDependency("niceeval.runner-diagnostics", payload.runnerDiagnostics),
+      }),
+      commands,
+      timing: closeTiming(payload.runnerActivities, true),
+      diagnostics: closeDiagnostics(payload.runnerDiagnostics, true),
+    })
+  );
 }
 
 function closeConversation(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["agentTurns"],
+  value: AttemptObservabilityReaderView["agentTurns"],
 ): ClosedConversationDetail {
   const segments = value.state === "complete" || value.state === "partial"
     ? value.value.segments
@@ -862,7 +906,7 @@ function closeConversation(
 }
 
 function closeConversationItem(
-  value: RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>["segments"][number]["items"][number],
+  value: AgentTurnsAttachment["segments"][number]["items"][number],
   turnId: string,
 ): ClosedConversationItem {
   const base = {
@@ -898,43 +942,51 @@ function closeConversationItem(
 }
 
 function closeCommands(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["sandboxCommands"],
-  blobs: RecordAttachmentBlobs,
+  value: AttemptObservabilityReaderView["sandboxCommands"],
+  content: RecordAttachmentContentReader,
   sandboxOnly: boolean,
-): ClosedCommandsDetail {
+): Effect.Effect<ClosedCommandsDetail, RecordReaderReadError> {
   const segments = value.state === "complete" || value.state === "partial"
     ? value.value.segments
     : [];
-  return Object.freeze({
-    dependencies: Object.freeze(["niceeval.sandbox-commands"] as const),
-    collection: closeTraceCollection(value),
-    entries: Object.freeze(segments
-      .filter((command) => !sandboxOnly || isSandboxPhase(command.phase))
-      .map((command) => closeCommand(command, blobs))),
-  });
+  return Effect.map(
+    Effect.forEach(
+      segments.filter((command) => !sandboxOnly || isSandboxPhase(command.phase)),
+      (command) => closeCommand(command, content),
+    ),
+    (entries) => Object.freeze({
+      dependencies: Object.freeze(["niceeval.sandbox-commands"] as const),
+      collection: closeTraceCollection(value),
+      entries: Object.freeze(entries),
+    }),
+  );
 }
 
 function closeCommand(
-  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number],
-  blobs: RecordAttachmentBlobs,
+  value: SandboxCommandsAttachment["segments"][number],
+  content: RecordAttachmentContentReader,
 ) {
-  return Object.freeze({
-    commandId: value.commandId,
-    manifest: Object.freeze({
-      phase: value.phase,
-      invocation: closeCommandInvocation(value.invocation),
-      workingDirectory: closeWorkingDirectory(value.workingDirectory),
-    }),
-    result: Object.freeze({
-      outcome: closeCommandOutcome(value.outcome),
-      stdout: closeCommandStream(value.stdout, blobs),
-      stderr: closeCommandStream(value.stderr, blobs),
-    }),
+  return Effect.gen(function* () {
+    const stdout = yield* closeCommandStream(value.stdout, content);
+    const stderr = yield* closeCommandStream(value.stderr, content);
+    return Object.freeze({
+      commandId: value.commandId,
+      manifest: Object.freeze({
+        phase: value.phase,
+        invocation: closeCommandInvocation(value.invocation),
+        workingDirectory: closeWorkingDirectory(value.workingDirectory),
+      }),
+      result: Object.freeze({
+        outcome: closeCommandOutcome(value.outcome),
+        stdout,
+        stderr,
+      }),
+    });
   });
 }
 
 function closeCommandInvocation(
-  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number]["invocation"],
+  value: SandboxCommandsAttachment["segments"][number]["invocation"],
 ): ClosedCommandInvocation {
   return value.kind === "argv"
     ? Object.freeze({ kind: "argv" as const, executable: value.executable, arguments: Object.freeze([...value.arguments]) })
@@ -942,41 +994,35 @@ function closeCommandInvocation(
 }
 
 function closeWorkingDirectory(
-  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number]["workingDirectory"],
+  value: SandboxCommandsAttachment["segments"][number]["workingDirectory"],
 ): ClosedCommandWorkingDirectory {
   if (value.kind === "project-relative") return Object.freeze({ kind: value.kind, path: value.path });
   return Object.freeze({ kind: value.kind });
 }
 
 function closeCommandOutcome(
-  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number]["outcome"],
+  value: SandboxCommandsAttachment["segments"][number]["outcome"],
 ): ClosedCommandOutcome {
   if (value.kind === "exited") return Object.freeze({ kind: value.kind, exitCode: value.exitCode });
   return Object.freeze({ kind: value.kind, reason: value.reason });
 }
 
 function closeCommandStream(
-  value: RecordAttachmentPayloadSnapshot<SandboxCommandsAttachment>["segments"][number]["stdout"],
-  blobs: RecordAttachmentBlobs,
-): ClosedCommandStream {
-  if (value.storage.kind === "inline") {
-    return Object.freeze({
+  value: SandboxCommandsAttachment["segments"][number]["stdout"],
+  content: RecordAttachmentContentReader,
+): Effect.Effect<ClosedCommandStream, RecordReaderReadError> {
+  return Effect.map(content.text(value.content), (text) =>
+    Object.freeze({
       kind: "inline" as const,
-      text: value.storage.text,
+      text,
       retainedBytes: value.retainedBytes,
       totalSafeUtf8Bytes: value.totalSafeUtf8Bytes,
-    });
-  }
-  return Object.freeze({
-    kind: "blob" as const,
-    retainedBytes: value.retainedBytes,
-    totalSafeUtf8Bytes: value.totalSafeUtf8Bytes,
-    content: closeBlob(value.storage.ref, blobs),
-  });
+    })
+  );
 }
 
 function closeUsage(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["agentTurns"],
+  value: AttemptObservabilityReaderView["agentTurns"],
 ): ClosedUsageDetail {
   const observations = value.state === "complete" || value.state === "partial"
     ? value.value.segments.flatMap((segment) => segment.usage)
@@ -1012,7 +1058,7 @@ function closeUsage(
 }
 
 function closeTiming(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["runnerActivities"],
+  value: AttemptObservabilityReaderView["runnerActivities"],
   sandboxOnly: boolean,
 ): ClosedTimingDetail {
   const segments = value.state === "complete" || value.state === "partial"
@@ -1028,7 +1074,7 @@ function closeTiming(
 }
 
 function closeTimingInterval(
-  value: RecordAttachmentPayloadSnapshot<AttemptRunnerActivitiesAttachment>["segments"][number],
+  value: AttemptRunnerActivitiesAttachment["segments"][number],
 ) {
   return Object.freeze({
     intervalId: value.activityId,
@@ -1042,7 +1088,7 @@ function closeTimingInterval(
 }
 
 function closeDiagnostics(
-  value: RecordAttachmentPayloadSnapshot<AttemptObservabilityReaderView>["runnerDiagnostics"],
+  value: AttemptObservabilityReaderView["runnerDiagnostics"],
   sandboxOnly: boolean,
 ): ClosedDiagnosticsDetail {
   const segments = value.state === "complete" || value.state === "partial"
@@ -1058,8 +1104,9 @@ function closeDiagnostics(
 }
 
 function closeDiagnostic(
-  value: RecordAttachmentPayloadSnapshot<AttemptRunnerDiagnosticsAttachment>["segments"][number],
+  value: AttemptRunnerDiagnosticsAttachment["segments"][number],
 ) {
+  const sourceFrame = value.sourceFrame?.value ?? null;
   return Object.freeze({
     diagnosticId: value.diagnosticId,
     kind: value.kind,
@@ -1070,13 +1117,13 @@ function closeDiagnostic(
     redaction: value.redaction.state === "none"
       ? Object.freeze({ state: "none" as const })
       : Object.freeze({ state: "applied" as const, replacements: value.redaction.replacements }),
-    sourceFrame: value.sourceFrame === null
+    sourceFrame: sourceFrame === null
       ? null
       : Object.freeze({
-        sourceItemId: value.sourceFrame.sourceItemId,
-        sha256: value.sourceFrame.sha256,
-        start: Object.freeze({ ...value.sourceFrame.start }),
-        end: Object.freeze({ ...value.sourceFrame.end }),
+        sourceItemId: sourceFrame.sourceItemId,
+        sha256: sourceFrame.sha256,
+        start: Object.freeze({ ...sourceFrame.start }),
+        end: Object.freeze({ ...sourceFrame.end }),
       }),
   });
 }
@@ -1095,36 +1142,46 @@ function isSandboxPhase(phase: string): boolean {
 }
 
 function closeFileChanges(
-  payload: RecordAttachmentPayloadSnapshot<FileChangesAttachment>,
-  blobs: RecordAttachmentBlobs,
-): FileChangesDomainDetail {
-  return projectFileChangesDomainDetail({
-    attribution: Object.freeze({
-      kind: payload.attribution.kind,
-      policy: Object.freeze({
-        defaultPolicy: payload.attribution.policy.defaultPolicy,
-        include: Object.freeze([...payload.attribution.policy.include]),
-        ignore: Object.freeze([...payload.attribution.policy.ignore]),
+  payload: FileChangesAttachment,
+  content: RecordAttachmentContentReader,
+): Effect.Effect<FileChangesDomainDetail, RecordReaderReadError> {
+  return Effect.gen(function* () {
+    const windows = yield* Effect.forEach(payload.windows, (window) => Effect.gen(function* () {
+      const changes = yield* Effect.forEach(window.changes, (change) => Effect.gen(function* () {
+        const before = yield* closeFileChangesEndpoint(change.before, content);
+        const after = yield* closeFileChangesEndpoint(change.after, content);
+        return Object.freeze({
+          changeId: change.changeId,
+          path: change.path,
+          kind: change.kind,
+          before,
+          after,
+        });
+      }));
+      return Object.freeze({
+        windowId: window.windowId,
+        sequence: window.sequence,
+        changes: Object.freeze(changes),
+      });
+    }));
+    return projectFileChangesDomainDetail({
+      attribution: Object.freeze({
+        kind: payload.attribution.kind,
+        policy: Object.freeze({
+          defaultPolicy: payload.attribution.policy.defaultPolicy,
+          include: Object.freeze([...payload.attribution.policy.include]),
+          ignore: Object.freeze([...payload.attribution.policy.ignore]),
+        }),
       }),
-    }),
-    collection: closeFileChangesCollection(payload.collection),
-    windows: Object.freeze(payload.windows.map((window) => Object.freeze({
-      windowId: window.windowId,
-      sequence: window.sequence,
-      changes: Object.freeze(window.changes.map((change) => Object.freeze({
-        changeId: change.changeId,
-        path: change.path,
-        kind: change.kind,
-        before: closeFileChangesEndpoint(change.before, blobs),
-        after: closeFileChangesEndpoint(change.after, blobs),
-      }))),
-    }))),
-    structuralPartial: hasStructuralFileChangesPartial(payload.collection),
+      collection: closeFileChangesCollection(payload.collection),
+      windows: Object.freeze(windows),
+      structuralPartial: hasStructuralFileChangesPartial(payload.collection),
+    });
   });
 }
 
 function closeFileChangesCollection(
-  value: RecordAttachmentPayloadSnapshot<FileChangesAttachment>["collection"],
+  value: FileChangesAttachment["collection"],
 ): FileChangesProjectionInput["collection"] {
   return Object.freeze({
     state: value.state,
@@ -1132,11 +1189,7 @@ function closeFileChangesCollection(
   });
 }
 
-/**
- * The snapshot conditional type intentionally erases some Schema union
- * details. Re-establish the already-validated durable shape while closing it,
- * rather than letting an unknown limitation escape the DomainView.
- */
+/** Re-close the validated logical limitation before it reaches DomainView. */
 function closeFileChangesLimitation(
   limitation: unknown,
 ): ClosedFileChangesCollectionLimitation {
@@ -1158,9 +1211,10 @@ function closeFileChangesLimitation(
         stage: value.stage,
         atWindowId: value.atWindowId,
       });
-    case "collection-cap-reached":
+    case "collection-cap-reached": {
+      const target = closeFileChangesCapTarget(value.target);
       if (
-        !isFileChangesCapTarget(value.target)
+        target === undefined
         || !isPositiveSafeInteger(value.omittedAtLeast)
         || !(typeof value.atWindowId === "string" || value.atWindowId === null)
       ) {
@@ -1168,10 +1222,11 @@ function closeFileChangesLimitation(
       }
       return Object.freeze({
         code: "collection-cap-reached" as const,
-        target: value.target,
+        target,
         omittedAtLeast: value.omittedAtLeast,
         atWindowId: value.atWindowId,
       });
+    }
     case "unsupported-input":
       if (value.target !== "endpoint-metadata" || !isPositiveSafeInteger(value.omittedAtLeast)) {
         throw new TypeError("a File Changes unsupported-input limitation has an invalid durable shape");
@@ -1187,43 +1242,54 @@ function closeFileChangesLimitation(
 }
 
 function closeFileChangesEndpoint(
-  value: RecordAttachmentPayloadSnapshot<FileChangesAttachment>["windows"][number]["changes"][number]["before"],
-  blobs: RecordAttachmentBlobs,
-): FileChangesProjectionInput["windows"][number]["changes"][number]["before"] {
-  if (value.state === "absent") return Object.freeze({ state: "absent" as const });
+  value: FileChangesAttachment["windows"][number]["changes"][number]["before"],
+  content: RecordAttachmentContentReader,
+): Effect.Effect<
+  FileChangesProjectionInput["windows"][number]["changes"][number]["before"],
+  RecordReaderReadError
+> {
+  if (value.state === "absent") return Effect.succeed(Object.freeze({ state: "absent" as const }));
   const revision = value.revision;
   switch (revision.kind) {
     case "text":
-      return Object.freeze({
-        state: "present" as const,
-        revision: Object.freeze({
-          kind: "text" as const,
-          sha256: revision.sha256,
-          byteLength: revision.byteLength,
-          content: revision.content.state === "available"
-            ? Object.freeze({ state: "available" as const, content: closeBlob(revision.content.ref, blobs) })
-            : Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
-        }),
-      });
+      return revision.content.state === "available"
+        ? Effect.map(closeBlob(revision.content.content, content), (closed) => Object.freeze({
+          state: "present" as const,
+          revision: Object.freeze({
+            kind: "text" as const,
+            sha256: revision.sha256,
+            byteLength: revision.byteLength,
+            content: Object.freeze({ state: "available" as const, content: closed }),
+          }),
+        }))
+        : Effect.succeed(Object.freeze({
+          state: "present" as const,
+          revision: Object.freeze({
+            kind: "text" as const,
+            sha256: revision.sha256,
+            byteLength: revision.byteLength,
+            content: Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
+          }),
+        }));
     case "elided":
-      return Object.freeze({
+      return Effect.succeed(Object.freeze({
         state: "present" as const,
         revision: Object.freeze({
           kind: "elided" as const,
           reason: revision.reason,
           byteLength: revision.byteLength,
         }),
-      });
+      }));
     case "unavailable":
-      return Object.freeze({
+      return Effect.succeed(Object.freeze({
         state: "present" as const,
         revision: Object.freeze({ kind: "unavailable" as const, reason: revision.reason }),
-      });
+      }));
   }
 }
 
 function hasStructuralFileChangesPartial(
-  collection: RecordAttachmentPayloadSnapshot<FileChangesAttachment>["collection"],
+  collection: FileChangesAttachment["collection"],
 ): boolean {
   return collection.state === "partial" && collection.limitations
     .map(closeFileChangesLimitation)
@@ -1245,10 +1311,21 @@ function isCaptureLimitationStage(
   return value === "checkpoint" || value === "export" || value === "finalizer-export" || value === "normalize";
 }
 
-function isFileChangesCapTarget(
+function closeFileChangesCapTarget(
   value: unknown,
-): value is "window" | "change" | "content-blob" | "content-byte" | "json-byte" {
-  return value === "window" || value === "change" || value === "content-blob" || value === "content-byte" || value === "json-byte";
+): "window" | "change" | "content-blob" | "content-byte" | "json-byte" | undefined {
+  switch (value) {
+    case "window":
+    case "change":
+    case "content-byte":
+      return value;
+    case "content":
+      return "content-blob";
+    case "value":
+      return "json-byte";
+    default:
+      return undefined;
+  }
 }
 
 function isPositiveSafeInteger(value: unknown): value is number {
@@ -1256,17 +1333,20 @@ function isPositiveSafeInteger(value: unknown): value is number {
 }
 
 function closeSources(
-  payload: RecordAttachmentPayloadSnapshot<SourcesAttachment>,
-  blobs: RecordAttachmentBlobs,
-): SourcesDomainDetail {
-  return Object.freeze({
-    items: Object.freeze(payload.items.map((item) => Object.freeze({
-      sourceItemId: item.sourceItemId,
-      path: item.path,
-      sha256: item.sha256,
-      content: closeBlob(item.content, blobs),
-    }))),
-  });
+  payload: SourcesAttachment,
+  content: RecordAttachmentContentReader,
+): Effect.Effect<SourcesDomainDetail, RecordReaderReadError> {
+  return Effect.map(
+    Effect.forEach(payload.items, (item) =>
+      Effect.map(closeBlob(item.content, content), (closed) => Object.freeze({
+        sourceItemId: item.sourceItemId,
+        path: item.path,
+        sha256: item.sha256,
+        content: closed,
+      }))
+    ),
+    (items) => Object.freeze({ items: Object.freeze(items) }),
+  );
 }
 
 function assertionFact(value: unknown): ClosedAssertionFactValue {
@@ -1295,27 +1375,51 @@ function assertionFact(value: unknown): ClosedAssertionFactValue {
 
 function assertionMaterialFact(
   value: AssertionsAttachment["entries"][number]["materials"]["source"],
-): ClosedAssertionFactValue {
-  if (value.kind === "snapshot") {
-    return assertionFact(value.value);
-  }
+  content: RecordAttachmentContentReader,
+): Effect.Effect<ClosedAssertionFactValue, RecordReaderReadError> {
   if (value.kind === "unavailable") {
-    return Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const });
+    return Effect.succeed(Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" as const }));
   }
-  return assertionFact({ encoding: value.encoding, byteLength: value.byteLength, preview: value.preview });
+  return Effect.map(content.bytes(value.content), (bytes): ClosedAssertionFactValue => {
+    if (bytes.byteLength !== value.byteLength) {
+      return Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" as const });
+    }
+    if (value.encoding === "binary") {
+      return assertionFact({
+        encoding: value.encoding,
+        byteLength: value.byteLength,
+        preview: value.preview,
+      });
+    }
+    let text: string;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      return Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" as const });
+    }
+    if (value.encoding === "utf-8") return Object.freeze({ kind: "text" as const, text });
+    try {
+      return assertionFact(JSON.parse(text) as unknown);
+    } catch {
+      return Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" as const });
+    }
+  });
 }
 
-function closeBlob(ref: RecordBlobRef, blobs: RecordAttachmentBlobs): ClosedBlobContent {
-  const bytes = blobs.bytes(ref);
-  if (Either.isLeft(bytes)) return Object.freeze({ state: "unavailable" as const });
-  try {
-    return Object.freeze({
-      state: "available" as const,
-      text: new TextDecoder("utf-8", { fatal: true }).decode(bytes.right),
-    });
-  } catch {
-    return Object.freeze({ state: "binary" as const });
-  }
+function closeBlob(
+  handle: RecordContentHandle,
+  content: RecordAttachmentContentReader,
+): Effect.Effect<ClosedBlobContent, RecordReaderReadError> {
+  return Effect.map(content.bytes(handle), (bytes): ClosedBlobContent => {
+    try {
+      return Object.freeze({
+        state: "available" as const,
+        text: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      });
+    } catch {
+      return Object.freeze({ state: "binary" as const });
+    }
+  });
 }
 
 function closeJson(value: unknown): JsonValue {

@@ -2,35 +2,31 @@ import { createHash } from "node:crypto";
 import { Deferred, Effect, Either, Exit, Schema, Stream } from "effect";
 import { RecordCoordination } from "../../coordination/record-leases.ts";
 import {
-  getRecordAttachmentVersionWriteSpec,
-  makeFixedRecordAttachmentValueFromDecoded,
-  makeFixedRecordAttachmentWriteFromDrafts,
-  makeRecordAttachmentBlobDrafts,
-  recordAttachmentWriteContents,
-} from "../attachment/internal.ts";
-import {
-  RecordContent,
-  isRecordAttachmentCatalog,
-  isRecordAttachmentFamilyDefinition,
-  runRecordAttachmentMigration,
-  type AnyRecordAttachmentVersion,
+  isRecordAttachmentDefinition,
+  makeRecordAttachmentCatalog,
   type RecordAttachmentCatalog,
-  type RecordAttachmentFamilyDefinition,
-  type RecordAttachmentVersionValue,
+  type RecordAttachmentDefinition,
+  type RecordAttachmentPersistence,
 } from "../attachment/index.ts";
+import type { AnyRecordAttachmentPersistence } from "../attachment/catalog.ts";
+import {
+  hydrateRecordMigrationValue,
+  makeRecordMigrationContent,
+  mintRecordAttachmentReference,
+  recordAttachmentMigrationAt,
+  recordMigrationDocumentFromResult,
+  runRecordMigration,
+  RecordAttachmentReference,
+  RecordMigrationContent,
+  unwrapRecordMigrationTargetContent,
+  type RecordMigrationDocument,
+  type RecordMigrationImpact,
+} from "../attachment/protocol.ts";
 import {
   recordAttachmentClosureInvalid,
   recordAttachmentIssue,
   type RecordAttachmentPayloadInvalid,
 } from "../attachment/errors.ts";
-import type {
-  FixedAttachmentWriteSpec,
-  RecordAttachmentBlobDraft,
-  RecordAttachmentJson,
-  RecordAttachmentMaterializedBlob,
-  RecordAttachmentWrite,
-  RecordBlobRef,
-} from "../attachment/types.ts";
 import {
   AttemptIdSchema,
   CanonicalRunRelativePathSchema,
@@ -61,6 +57,10 @@ import {
 } from "../codec/index.ts";
 import type { SealManifestPublicationDocument } from "../codec/seal-manifest.ts";
 import {
+  decodeLegacyRecordAttachmentHeader,
+  encodeDurableRecordAttachmentEnvelope,
+} from "../codec/attachment.ts";
+import {
   RecordCoreInvalid,
   RecordReferenceInvalid,
   nonEmptyRecordIssues,
@@ -68,13 +68,7 @@ import {
   type RecordCodecError,
   type NonEmptyRecordIssues,
 } from "../errors/record-errors.ts";
-import {
-  decodeFixedRecordAttachmentEnvelope,
-  deriveRecordFamilyDescriptorCatalog,
-  NiceEvalRecordAttachmentCatalog,
-  type FixedRecordFamilyDescriptor,
-  type RecordFamilyDescriptorCatalog,
-} from "../family/catalog.ts";
+import { NiceEvalRecordAttachmentPersistences } from "../family/catalog.ts";
 import type {
   AttemptDocument,
   MemberDocument,
@@ -87,6 +81,7 @@ import type {
   RunCore,
   RunDocument,
 } from "../model/core.ts";
+import type { DurableRecordAttachmentEnvelope } from "../model/attachment.ts";
 import {
   canonicalizeRunContext,
   type RunContext,
@@ -160,8 +155,9 @@ import {
   readRecordFormatForMaintenance,
 } from "../reader/format.ts";
 import {
-  inspectFixedRecordAttachmentEnvelope,
-  readFixedRecordAttachment,
+  inspectRecordAttachmentEnvelope,
+  readCurrentRecordAttachment,
+  readVerifiedRecordAttachmentPhysical,
 } from "../reader/runtime.ts";
 import {
   recordAttachmentEncodeError,
@@ -171,10 +167,14 @@ import {
   type RecordDraftLifecycleState,
 } from "../writer/errors.ts";
 import {
-  attachmentPayloadStrings,
-  encodeAttachmentPayloadForStorage,
-  encodeRecordAttachmentJsonBytes,
-} from "../writer/attachment-payload.ts";
+  prepareCurrentRecordAttachment,
+  RECORD_ATTACHMENT_MAXIMUM_CONTENTS,
+  RECORD_ATTACHMENT_MAXIMUM_TOTAL_CONTENT_BYTES,
+  type AttachedContentError,
+  type AttachedContentRequirements,
+  type PreparedCurrentAttachment,
+  type RecordAttachmentSessionBuilder,
+} from "../writer/current-attachment.ts";
 import { RECORD_JSON_MAXIMUM_BYTES, encodeRecordJsonUtf8 } from "../writer/limits.ts";
 import type { RecordWriteError } from "../writer/types.ts";
 import {
@@ -217,6 +217,11 @@ import {
   type SelectedRunRef,
 } from "./types.ts";
 
+type AnyDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> =
+  RecordAttachmentDefinition<Owner, string, Schema.Schema.AnyNoContext>;
+type DefinitionValue<Definition extends AnyDefinition> = Schema.Schema.Type<Definition["schema"]>;
+type RecordFamilyDescriptorCatalog = RecordAttachmentCatalog;
+
 const MAXIMUM_RUN_ENTRIES = 100_000;
 const MAXIMUM_ATTEMPT_ENTRIES = 100_000;
 const MAXIMUM_CORE_BYTES = 1024 * 1024;
@@ -226,13 +231,6 @@ const MAXIMUM_SEAL_MANIFEST_BYTES = 32 * 1024 * 1024;
 const MAXIMUM_PUBLISH_RECOVERIES = 100_000;
 const MAXIMUM_STAGED_INVENTORY_ENTRIES = 400_000;
 const MAXIMUM_REFERENCE_CLOSURE_NODES = 1_024;
-
-function sameFixedAttachmentWrite(
-  actual: unknown,
-  expected: { readonly write: unknown },
-): boolean {
-  return actual === expected.write;
-}
 
 interface ReaderLifecycle {
   closed: boolean;
@@ -314,13 +312,8 @@ interface FixedAttachmentRuntime {
   readonly owner: RecordAttachmentOwner;
   readonly name: string;
   readonly baseSegments: readonly string[];
-  readonly descriptor: FixedRecordFamilyDescriptor<
-    string,
-    RecordAttachmentOwner,
-    unknown
-  >;
-  readonly write: RecordAttachmentWrite<RecordAttachmentOwner, unknown, unknown>;
-  readonly blobCount: number;
+  readonly persistence: AnyRecordAttachmentPersistence;
+  readonly prepared: PreparedCurrentAttachment;
   readonly physicalBlobCount: number;
   readonly attemptId: AttemptId | undefined;
 }
@@ -331,7 +324,6 @@ const selectedAttemptCapabilities = new WeakMap<
 >();
 const runSessions = new WeakMap<object, RunRuntime>();
 const attemptSessions = new WeakMap<AttemptWriteSession, AttemptRuntime>();
-const consumedFixedFamilyWrites = new WeakMap<object, object>();
 
 function recordPath(root: RecordRoot, ...segments: readonly string[]) {
   return recordPortablePath(root, ...segments);
@@ -1285,13 +1277,13 @@ function invalidAttachmentRead<Payload>(): RecordAttachmentRead<Payload> {
 function familyDefinitionRequired(input: {
   readonly owner: RecordAttachmentOwner;
   readonly family: string;
-  readonly schemaVersion?: number;
+  readonly revision?: number;
 }): FamilyDefinitionRequired {
   return new FamilyDefinitionRequired({
     code: "family-definition-required",
     owner: input.owner,
     family: input.family,
-    schemaVersion: input.schemaVersion ?? 0,
+    revision: input.revision ?? 0,
   });
 }
 
@@ -1313,21 +1305,22 @@ function referencedOwner(
   return owner.kind === "attempt" ? owner : undefined;
 }
 
-function readCatalogAttachment<Payload>(input: {
+function readCatalogAttachment<Definition extends AnyDefinition>(input: {
   readonly runtime: ReaderRuntime;
   readonly fileSystem: RecordFileSystemService;
   readonly owner: SelectedOwnerRuntime;
-  readonly descriptor: FixedRecordFamilyDescriptor<string, RecordAttachmentOwner, Payload>;
+  readonly persistence: RecordAttachmentPersistence<Definition, number>;
   readonly visited: Set<string>;
-}): Effect.Effect<RecordAttachmentRead<Payload>, RecordReaderReadError> {
+}): Effect.Effect<RecordAttachmentRead<DefinitionValue<Definition>>, RecordReaderReadError> {
   return Effect.gen(function* () {
-    const key = ownerClosureKey(input.owner, input.descriptor.family);
+    const definition = input.persistence.attachment;
+    const key = ownerClosureKey(input.owner, definition.family);
     if (input.visited.has(key)) {
       // A previously validated node closes a repeated/cyclic reference.
       return Object.freeze({ state: "not-recorded" as const });
     }
     if (input.visited.size >= MAXIMUM_REFERENCE_CLOSURE_NODES) {
-      return invalidAttachmentRead<Payload>();
+      return invalidAttachmentRead<DefinitionValue<Definition>>();
     }
     input.visited.add(key);
 
@@ -1335,22 +1328,23 @@ function readCatalogAttachment<Payload>(input: {
       runtime: input.runtime,
       fileSystem: input.fileSystem,
       owner: input.owner,
-      family: input.descriptor.family,
+      family: definition.family,
     });
     if (gate.state === "not-recorded") {
       return Object.freeze({ state: "not-recorded" as const });
     }
-    if (gate.state === "invalid") return invalidAttachmentRead<Payload>();
+    if (gate.state === "invalid") return invalidAttachmentRead<DefinitionValue<Definition>>();
 
     const read = input.owner.kind === "run"
-      ? yield* readFixedRecordAttachment({
+      ? yield* readCurrentRecordAttachment({
           fileSystem: input.fileSystem,
           root: input.runtime.root,
           location: Object.freeze({ owner: "run" as const, runId: input.owner.runId }),
-          descriptor: input.descriptor as FixedRecordFamilyDescriptor<string, "run", Payload>,
+          persistence: input.persistence as RecordAttachmentPersistence<AnyDefinition<"run">, number>,
+          lifecycle: input.runtime.lifecycle,
           expectedManifestEntries: gate.entries,
         })
-      : yield* readFixedRecordAttachment({
+      : yield* readCurrentRecordAttachment({
           fileSystem: input.fileSystem,
           root: input.runtime.root,
           location: Object.freeze({
@@ -1358,70 +1352,62 @@ function readCatalogAttachment<Payload>(input: {
             runId: input.owner.ref.originRunId,
             attemptId: input.owner.ref.attemptId,
           }),
-          descriptor: input.descriptor as FixedRecordFamilyDescriptor<string, "attempt", Payload>,
+          persistence: input.persistence as RecordAttachmentPersistence<AnyDefinition<"attempt">, number>,
+          lifecycle: input.runtime.lifecycle,
           expectedManifestEntries: gate.entries,
         });
     if (read.state !== "available") {
-      return read.state === "unavailable" ? invalidAttachmentRead<Payload>() : read;
+      return read.state === "unavailable"
+        ? invalidAttachmentRead<DefinitionValue<Definition>>()
+        : read as RecordAttachmentRead<DefinitionValue<Definition>>;
     }
 
-    let references: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
-    try {
-      references = input.descriptor.write.references?.(read.value as Payload) ?? [];
-    } catch {
-      return invalidAttachmentRead<Payload>();
-    }
-    if (
-      !Array.isArray(references) ||
-      references.length > (input.descriptor.write.maximumReferences ?? 0)
-    ) return invalidAttachmentRead<Payload>();
-
-    for (const reference of references) {
-      const dependency = input.runtime.attachmentCatalog.get(reference.owner, reference.family);
-      if (dependency === undefined) {
+    for (const reference of read.references) {
+      const dependency = input.runtime.attachmentCatalog.persistence(reference.definition);
+      if (
+        dependency === undefined ||
+        dependency.attachment !== reference.definition ||
+        input.runtime.attachmentCatalog.get(reference.owner, reference.family) !== dependency
+      ) {
         return yield* Effect.fail(familyDefinitionRequired(reference));
       }
       const dependencyOwner = referencedOwner(input.owner, reference.owner);
-      if (dependencyOwner === undefined) return invalidAttachmentRead<Payload>();
-      const dependencyKey = ownerClosureKey(dependencyOwner, dependency.family);
+      if (dependencyOwner === undefined) return invalidAttachmentRead<DefinitionValue<Definition>>();
+      const dependencyKey = ownerClosureKey(dependencyOwner, dependency.attachment.family);
       if (input.visited.has(dependencyKey)) continue;
       const dependencyRead = yield* readCatalogAttachment({
         runtime: input.runtime,
         fileSystem: input.fileSystem,
         owner: dependencyOwner,
-        descriptor: dependency,
+        persistence: dependency,
         visited: input.visited,
       });
       if (dependencyRead.state === "migration-required" || dependencyRead.state === "unsupported") {
-        return dependencyRead as RecordAttachmentRead<Payload>;
+        return dependencyRead as RecordAttachmentRead<DefinitionValue<Definition>>;
       }
-      if (dependencyRead.state !== "available") return invalidAttachmentRead<Payload>();
+      if (dependencyRead.state !== "available") return invalidAttachmentRead<DefinitionValue<Definition>>();
     }
-    return read;
+    return read as RecordAttachmentRead<DefinitionValue<Definition>>;
   });
 }
 
-function readFixedFamily<Payload>(input: {
+function readFixedFamily<Definition extends AnyDefinition>(input: {
   readonly runtime: ReaderRuntime;
   readonly fileSystem: RecordFileSystemService;
   readonly owner: SelectedOwnerRef;
-  readonly descriptor: FixedRecordFamilyDescriptor<
-    string,
-    RecordAttachmentOwner,
-    Payload
-  >;
-}): Effect.Effect<RecordAttachmentRead<Payload>, RecordReaderReadError> {
+  readonly persistence: RecordAttachmentPersistence<Definition, number>;
+}): Effect.Effect<RecordAttachmentRead<DefinitionValue<Definition>>, RecordReaderReadError> {
   return Effect.suspend(() => {
     if (input.runtime.lifecycle.closed) return Effect.fail(readerClosed());
     const owner = input.runtime.owners.get(input.owner);
-    if (owner === undefined || owner.kind !== input.descriptor.owner) {
+    if (owner === undefined || owner.kind !== input.persistence.attachment.owner) {
       return Effect.fail(handleInvalid());
     }
     return readCatalogAttachment({
       runtime: input.runtime,
       fileSystem: input.fileSystem,
       owner,
-      descriptor: input.descriptor,
+      persistence: input.persistence,
       visited: new Set(),
     });
   });
@@ -1432,10 +1418,10 @@ function readDescriptorForDefinition(input: {
   readonly owner: SelectedOwnerRuntime;
   readonly definition: unknown;
 }): Effect.Effect<
-  FixedRecordFamilyDescriptor<string, RecordAttachmentOwner, unknown>,
+  AnyRecordAttachmentPersistence,
   FamilyDefinitionRequired
 > {
-  if (!isRecordAttachmentFamilyDefinition(input.definition)) {
+  if (!isRecordAttachmentDefinition(input.definition)) {
     return Effect.fail(familyDefinitionRequired({
       owner: input.owner.kind,
       family: "unbranded.record-attachment",
@@ -1446,22 +1432,19 @@ function readDescriptorForDefinition(input: {
     return Effect.fail(familyDefinitionRequired({
       owner: input.owner.kind,
       family: definition.family,
-      schemaVersion: definition.schemaVersion,
+      revision: 0,
     }));
   }
-  const descriptor = input.runtime.attachmentCatalog.descriptor(definition);
+  const descriptor = input.runtime.attachmentCatalog.persistence(definition);
   if (
     descriptor === undefined ||
-    descriptor.owner !== definition.owner ||
-    descriptor.family !== definition.family ||
-    descriptor.schemaVersion !== definition.schemaVersion ||
-    input.runtime.attachmentCatalog.get(definition.owner, definition.family)?.definition !==
-      definition
+    descriptor.attachment !== definition ||
+    input.runtime.attachmentCatalog.get(definition.owner, definition.family) !== descriptor
   ) {
     return Effect.fail(familyDefinitionRequired({
       owner: definition.owner,
       family: definition.family,
-      schemaVersion: definition.schemaVersion,
+      revision: descriptor?.revision ?? 0,
     }));
   }
   return Effect.succeed(descriptor);
@@ -1570,36 +1553,36 @@ function requireCompleteSelection(input: {
           runtime: input.runtime,
           fileSystem: input.fileSystem,
           owner,
-          descriptor,
+          persistence: descriptor,
           visited: new Set(),
         });
         if (read.state === "migration-required") {
           return yield* Effect.fail(new RecordMigrationRequired({
             code: "record-migration-required",
-            source: `${read.family}@${read.fromSchemaVersion}`,
-            target: `${read.family}@${read.toSchemaVersion}`,
+            source: `${read.family}@${read.fromRevision}`,
+            target: `${read.family}@${read.toRevision}`,
             command: read.command,
           }));
         }
         if (read.state === "unsupported") {
           return yield* Effect.fail(new RecordMigrationRequired({
             code: "record-migration-required",
-            source: `${read.family}@${read.schemaVersion}`,
-            target: `${descriptor.family}@${descriptor.schemaVersion}`,
+            source: `${read.family}@${read.revision}`,
+            target: `${descriptor.attachment.family}@${descriptor.revision}`,
             command: "niceeval migrate",
           }));
         }
         if (read.state !== "available") {
           return yield* Effect.fail(sealIncomplete(
             read.state === "invalid" ? "attachment-invalid" : "reference-closure-invalid",
-            descriptor.family,
+            descriptor.attachment.family,
           ));
         }
       }
     }
     return Object.freeze({
       selection: input.selection,
-      attachments: input.runtime.attachmentCatalog.attachments,
+      attachments: input.runtime.attachmentCatalog,
     });
   });
 }
@@ -1687,13 +1670,12 @@ function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemSer
     }),
     read<
       Owner extends RecordAttachmentOwner,
-      Family extends string,
-      Current extends AnyRecordAttachmentVersion,
+      Definition extends AnyDefinition<Owner>,
     >(
       owner: SelectedOwnerRef<Owner>,
-      definition: RecordAttachmentFamilyDefinition<Owner, Family, Current>,
+      definition: Definition,
     ): Effect.Effect<
-      RecordAttachmentRead<RecordAttachmentVersionValue<Current>>,
+      RecordAttachmentRead<DefinitionValue<Definition>>,
       RecordReaderReadError
     > {
       return Effect.gen(function* () {
@@ -1709,8 +1691,8 @@ function makeReadSession(runtime: ReaderRuntime, fileSystem: RecordFileSystemSer
           runtime,
           fileSystem,
           owner,
-          descriptor,
-        })) as RecordAttachmentRead<RecordAttachmentVersionValue<Current>>;
+          persistence: descriptor as RecordAttachmentPersistence<Definition, number>,
+        })) as RecordAttachmentRead<DefinitionValue<Definition>>;
       });
     },
     requireComplete: (selection: RecordSelection) =>
@@ -1804,7 +1786,7 @@ function descriptorForRecoveredAttachment(
   catalog: RecordFamilyDescriptorCatalog,
   owner: RecordAttachmentOwner,
   family: string,
-): FixedRecordFamilyDescriptor<string, RecordAttachmentOwner, unknown> | undefined {
+): AnyRecordAttachmentPersistence | undefined {
   return catalog.get(owner, family);
 }
 
@@ -1826,14 +1808,16 @@ function validateRecoveredAttachmentClosures(input: {
         envelope.family,
       );
       if (descriptor === undefined) return false;
+      const lifecycle = { closed: false };
       const read = envelope.owner === "run"
-        ? yield* readFixedRecordAttachment({
+        ? yield* readCurrentRecordAttachment({
             fileSystem: input.fileSystem,
             root: input.root,
             location: Object.freeze({ owner: "run" as const, runId: input.runId }),
-            descriptor: descriptor as FixedRecordFamilyDescriptor<string, "run", unknown>,
+            persistence: descriptor as RecordAttachmentPersistence<AnyDefinition<"run">, number>,
+            lifecycle,
           })
-        : yield* readFixedRecordAttachment({
+        : yield* readCurrentRecordAttachment({
             fileSystem: input.fileSystem,
             root: input.root,
             location: Object.freeze({
@@ -1841,20 +1825,11 @@ function validateRecoveredAttachmentClosures(input: {
               runId: input.runId,
               attemptId: envelope.owner,
             }),
-            descriptor: descriptor as FixedRecordFamilyDescriptor<string, "attempt", unknown>,
+            persistence: descriptor as RecordAttachmentPersistence<AnyDefinition<"attempt">, number>,
+            lifecycle,
           });
       if (read.state !== "available") return false;
-      let references: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
-      try {
-        references = descriptor.write.references?.(read.value) ?? [];
-      } catch {
-        return false;
-      }
-      if (
-        !Array.isArray(references) ||
-        references.length > (descriptor.write.maximumReferences ?? 0)
-      ) return false;
-      for (const reference of references) {
+      for (const reference of read.references) {
         if (input.attachmentCatalog.get(reference.owner, reference.family) === undefined) {
           return false;
         }
@@ -2085,11 +2060,6 @@ function openCurrentRead(input: {
     const fileSystem = yield* RecordFileSystem;
     yield* coordination.enterRecordRead(input.root);
     const current = yield* readCurrentRecordFormat(fileSystem, input.root);
-    yield* ensureOrdinaryCurrentAttachments({
-      fileSystem,
-      root: input.root,
-      attachmentCatalog: input.attachmentCatalog,
-    });
     const lifecycle: ReaderLifecycle = { closed: false };
     const runtime: ReaderRuntime = {
       root: input.root,
@@ -2299,44 +2269,6 @@ function fixedFamilyWriteInvalid() {
   ]);
 }
 
-function attachmentEncodeFailure(
-  error: RecordAttachmentPayloadInvalid,
-) {
-  return recordAttachmentEncodeError(error);
-}
-
-function nextBlobKey(
-  entropy: RecordEntropyService,
-  forbidden: ReadonlySet<string>,
-  remaining = ENTROPY_RETRY_LIMIT,
-): Effect.Effect<string, RecordCoreInvalid> {
-  return Effect.flatMap(entropy.uuid, (candidate) => {
-    if (isPortableSegment(candidate) && !forbidden.has(candidate)) {
-      return Effect.succeed(candidate);
-    }
-    return remaining > 0
-      ? nextBlobKey(entropy, forbidden, remaining - 1)
-      : Effect.fail(coreInvalid());
-  });
-}
-
-function allocateBlobKeys(input: {
-  readonly entropy: RecordEntropyService;
-  readonly payload: RecordAttachmentJson;
-  readonly blobs: readonly { readonly ref: RecordBlobRef; readonly stream: unknown }[];
-}): Effect.Effect<ReadonlyMap<object, string>, RecordCoreInvalid> {
-  return Effect.gen(function* () {
-    const forbidden = new Set(attachmentPayloadStrings(input.payload));
-    const keys = new Map<object, string>();
-    for (const blob of input.blobs) {
-      const key = yield* nextBlobKey(input.entropy, forbidden);
-      forbidden.add(key);
-      keys.set(blob.ref, key);
-    }
-    return keys;
-  });
-}
-
 function concatByteChunks(chunks: readonly Uint8Array[], byteLength: number): Uint8Array {
   const bytes = new Uint8Array(byteLength);
   let offset = 0;
@@ -2392,13 +2324,11 @@ function reserveFixedAttachment(input: {
         return Effect.fail(stateError("record", input.run.state));
       }
       if (
-        input.target.attachments.has(input.attachment.name) ||
-        consumedFixedFamilyWrites.has(input.attachment.write)
+        input.target.attachments.has(input.attachment.name)
       ) {
         return Effect.fail(stateError("record", input.run.state));
       }
       input.target.attachments.set(input.attachment.name, input.attachment);
-      consumedFixedFamilyWrites.set(input.attachment.write, input.target);
       return Effect.void;
     }),
   );
@@ -2416,20 +2346,22 @@ function assertAttemptCollecting(
   );
 }
 
-function writeFixedAttachment<
-  Family extends string,
+function writeCurrentAttachment<
   Owner extends RecordAttachmentOwner,
-  Payload,
-  E,
-  R,
+  Definition extends AnyDefinition<Owner>,
+  Value extends DefinitionValue<Definition>,
 >(input: {
   readonly run: RunRuntime;
   readonly target: RunRuntime | AttemptRuntime;
   readonly owner: Owner;
   readonly baseSegments: readonly string[];
-  readonly descriptor: FixedRecordFamilyDescriptor<Family, Owner, Payload>;
-  readonly write: RecordAttachmentWrite<Owner, E, R>;
-}): Effect.Effect<void, RecordWriteError | E, R> {
+  readonly persistence: RecordAttachmentPersistence<Definition, number>;
+  readonly value: Value | ((build: RecordAttachmentSessionBuilder) => Value);
+}): Effect.Effect<
+  void,
+  RecordWriteError | AttachedContentError<Value>,
+  AttachedContentRequirements<Value>
+> {
   return Effect.flatMap(
     beginRunMutation(input.run, { operation: "record" }),
     (mutation) =>
@@ -2437,110 +2369,42 @@ function writeFixedAttachment<
         if (input.target !== input.run) {
           yield* assertAttemptCollecting(input.target as AttemptRuntime);
         }
-        const captured = recordAttachmentWriteContents(input.write);
-        if (Either.isLeft(captured)) return yield* Effect.fail(captured.left);
-        if (!sameFixedAttachmentWrite(captured.right.fixed, input.descriptor)) {
-          return yield* Effect.fail(fixedFamilyWriteInvalid());
-        }
-        const encodedPayload = input.descriptor.write.encodePayload(captured.right.payload as Payload);
-        if (Either.isLeft(encodedPayload)) {
-          return yield* Effect.fail(attachmentEncodeFailure(encodedPayload.left));
-        }
-        const blobKeys = yield* allocateBlobKeys({
-          entropy: input.run.entropy,
-          payload: encodedPayload.right,
-          blobs: captured.right.blobs,
+        const prepared = yield* prepareCurrentRecordAttachment({
+          definition: input.persistence.attachment,
+          value: input.value,
+          digest: sha256Bytes,
         });
-        const storedPayload = encodeAttachmentPayloadForStorage({
-          payload: encodedPayload.right,
-          blobKeys,
-        });
-        if (Either.isLeft(storedPayload)) {
-          return yield* Effect.fail(attachmentEncodeFailure(storedPayload.left));
-        }
-        const payloadBytes = encodeRecordAttachmentJsonBytes(storedPayload.right);
-        const payloadDigest = sha256Bytes(payloadBytes);
-        let totalBlobBytes = 0;
-        const contents: {
-          readonly key: RecordBlobKey;
-          readonly sha256: Sha256Digest;
-          readonly byteLength: number;
-          readonly bytes: Uint8Array;
-        }[] = [];
-        for (const blob of captured.right.blobs) {
-          const keyText = blobKeys.get(blob.ref);
-          const key = keyText === undefined ? undefined : recordBlobKey(keyText);
-          if (key === undefined) return yield* Effect.fail(fixedFamilyWriteInvalid());
-          const bytes = yield* collectAttachmentBlob({
-            stream: blob.stream,
-            maximumBytes: Math.min(
-              MAXIMUM_ATTACHMENT_BLOB_BYTES,
-              input.descriptor.write.budget.maximumBlobBytes,
-            ),
-            family: input.descriptor.family,
-          });
-          totalBlobBytes += bytes.byteLength;
-          if (totalBlobBytes > input.descriptor.write.budget.maximumTotalBytes) {
-            return yield* Effect.fail(new RecordResourceLimitExceeded({
-              code: "record-resource-limit-exceeded",
-              resource: "file-bytes",
-              maximum: input.descriptor.write.budget.maximumTotalBytes,
-              observedAtLeast: totalBlobBytes,
-              path: input.descriptor.family,
-            }));
-          }
-          contents.push(Object.freeze({
-            key,
-            sha256: sha256Bytes(bytes),
-            byteLength: bytes.byteLength,
-            bytes,
-          }));
-        }
-        contents.sort((left, right) => compareCanonicalIdentity(left.key, right.key));
-        let references: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
-        try {
-          references = Object.freeze([...(input.descriptor.write.references?.(captured.right.payload as Payload) ?? [])]
-            .sort((left, right) => compareCanonicalIdentity(
-              `${left.owner}\u0000${left.family}`,
-              `${right.owner}\u0000${right.family}`,
-            )));
-        } catch {
-          return yield* Effect.fail(fixedFamilyWriteInvalid());
-        }
-        const encodedEnvelope = encodeRecordAttachmentEnvelope({
+        const payloadDigest = sha256Bytes(prepared.payloadBytes);
+        const envelope: DurableRecordAttachmentEnvelope = Object.freeze({
           format: "niceeval.record-attachment",
           ownerKind: input.owner,
-          family: input.descriptor.family,
-          schemaVersion: input.descriptor.schemaVersion,
-          payload: Object.freeze({ sha256: payloadDigest, byteLength: payloadBytes.byteLength }),
-          contents: Object.freeze(contents.map(({ key, sha256, byteLength }) =>
-            Object.freeze({ key, sha256, byteLength })
+          family: input.persistence.attachment.family,
+          revision: input.persistence.revision,
+          payload: Object.freeze({ sha256: payloadDigest, byteLength: prepared.payloadBytes.byteLength }),
+          contents: Object.freeze(prepared.contents.map(({ key, sha256, bytes }) =>
+            Object.freeze({ key, sha256, byteLength: bytes.byteLength })
           )),
-          references,
+          references: prepared.references,
         });
+        const encodedEnvelope = encodeDurableRecordAttachmentEnvelope(envelope);
         if (Either.isLeft(encodedEnvelope)) {
           return yield* Effect.fail(fixedFamilyWriteInvalid());
         }
         const physicalContents = new Map<Sha256Digest, Uint8Array>();
-        for (const content of contents) physicalContents.set(content.sha256, content.bytes);
+        for (const content of prepared.contents) physicalContents.set(content.sha256, content.bytes);
         const attachment: FixedAttachmentRuntime = Object.freeze({
           owner: input.owner,
-          name: input.descriptor.family,
+          name: input.persistence.attachment.family,
           baseSegments: Object.freeze([...input.baseSegments]),
-          descriptor: input.descriptor as unknown as FixedAttachmentRuntime["descriptor"],
-          write: input.write as unknown as RecordAttachmentWrite<
-            RecordAttachmentOwner,
-            unknown,
-            unknown
-          >,
-          blobCount: captured.right.blobs.length,
+          persistence: input.persistence as AnyRecordAttachmentPersistence,
+          prepared,
           physicalBlobCount: physicalContents.size,
           attemptId: input.target === input.run
             ? undefined
             : (input.target as AttemptRuntime).attemptId,
         });
         yield* reserveFixedAttachment({ run: input.run, target: input.target, attachment });
-        const attachmentRoot = [...input.baseSegments, input.descriptor.family];
+        const attachmentRoot = [...input.baseSegments, input.persistence.attachment.family];
         yield* input.run.fileSystem.ensureStagingDirectory(
           stagedRunPath(input.run, ...input.baseSegments),
         );
@@ -2549,7 +2413,7 @@ function writeFixedAttachment<
         );
         yield* input.run.fileSystem.writeStagingFile({
           file: stagedRunPath(input.run, ...attachmentRoot, "payload", "sha256", payloadDigest),
-          bytes: payloadBytes,
+          bytes: prepared.payloadBytes,
           maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
           mode: "exclusive",
         });
@@ -2559,10 +2423,7 @@ function writeFixedAttachment<
             input.run.fileSystem.writeStagingFile({
               file: stagedRunPath(input.run, ...attachmentRoot, "content", "sha256", contentDigest),
               bytes,
-              maximumBytes: Math.min(
-                MAXIMUM_ATTACHMENT_BLOB_BYTES,
-                input.descriptor.write.budget.maximumBlobBytes,
-              ),
+              maximumBytes: MAXIMUM_ATTACHMENT_BLOB_BYTES,
               mode: "exclusive",
             }),
           { discard: true },
@@ -2575,7 +2436,7 @@ function writeFixedAttachment<
           mode: "exclusive",
         });
       }).pipe(Effect.onExit((exit) => finishRunMutation(input.run, mutation, exit))),
-  );
+  ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
 }
 
 function validateAndSyncFixedAttachment(
@@ -2583,18 +2444,6 @@ function validateAndSyncFixedAttachment(
   attachment: FixedAttachmentRuntime,
 ): Effect.Effect<void, RecordWriteError> {
   return Effect.gen(function* () {
-    const captured = recordAttachmentWriteContents(attachment.write);
-    if (Either.isLeft(captured) ||
-      !sameFixedAttachmentWrite(captured.right.fixed, attachment.descriptor) ||
-      captured.right.blobs.length !== attachment.blobCount) {
-      return yield* Effect.fail(
-        Either.isLeft(captured) ? captured.left : fixedFamilyWriteInvalid(),
-      );
-    }
-    const encodedPayload = attachment.descriptor.write.encodePayload(captured.right.payload);
-    if (Either.isLeft(encodedPayload)) {
-      return yield* Effect.fail(attachmentEncodeFailure(encodedPayload.left));
-    }
     const rootSegments = [...attachment.baseSegments, attachment.name];
     for (const suffix of [
       ["payload", "sha256"],
@@ -2615,7 +2464,8 @@ function validateAndSyncFixedAttachment(
       staging: run.staging,
       fileSystem: run.fileSystem,
     });
-    const materialized = yield* readFixedRecordAttachment({
+    const lifecycle = { closed: false };
+    const materialized = yield* readCurrentRecordAttachment({
       fileSystem: stagedFileSystem,
       root: run.root,
       location: attachment.owner === "run"
@@ -2625,23 +2475,25 @@ function validateAndSyncFixedAttachment(
             runId: run.runId,
             attemptId: attachment.attemptId!,
           }),
-      descriptor: attachment.descriptor,
+      persistence: attachment.persistence,
+      lifecycle,
     });
     if (materialized.state !== "available") {
       return yield* Effect.fail(fixedFamilyWriteInvalid());
     }
-    let references: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
-    try {
-      references = attachment.descriptor.write.references?.(materialized.value) ?? [];
-    } catch {
-      return yield* Effect.fail(fixedFamilyWriteInvalid());
-    }
-    if (
-      !Array.isArray(references) ||
-      references.length > (attachment.descriptor.write.maximumReferences ?? 0)
-    ) return yield* Effect.fail(fixedFamilyWriteInvalid());
-    for (const reference of references) {
-      if (run.attachmentCatalog.get(reference.owner, reference.family) === undefined) {
+    for (let index = 0; index < materialized.references.length; index += 1) {
+      const reference = materialized.references[index]!;
+      const referenceDefinition = attachment.prepared.referenceDefinitions[index];
+      const exactPersistence = referenceDefinition === undefined
+        ? undefined
+        : run.attachmentCatalog.persistence(referenceDefinition);
+      if (
+        exactPersistence === undefined ||
+        exactPersistence.attachment !== referenceDefinition ||
+        exactPersistence.attachment.owner !== reference.owner ||
+        exactPersistence.attachment.family !== reference.family ||
+        run.attachmentCatalog.get(reference.owner, reference.family) !== exactPersistence
+      ) {
         return yield* Effect.fail(familyDefinitionRequired(reference));
       }
       const dependency = reference.owner === "run"
@@ -2682,36 +2534,32 @@ function validateAndSyncFixedAttachments(
 }
 
 function writeRunFamily<
-  Family extends string,
-  Payload,
-  E,
-  R,
+  Definition extends AnyDefinition<"run">,
+  Value extends DefinitionValue<Definition>,
 >(input: {
   readonly run: RunRuntime;
-  readonly descriptor: FixedRecordFamilyDescriptor<Family, "run", Payload>;
-  readonly value: RecordAttachmentWrite<"run", E, R>;
-}): Effect.Effect<void, RecordWriteError | E, R> {
-  return writeFixedAttachment({
+  readonly persistence: RecordAttachmentPersistence<Definition, number>;
+  readonly value: Value | ((build: RecordAttachmentSessionBuilder) => Value);
+}): Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>> {
+  return writeCurrentAttachment({
     run: input.run,
     target: input.run,
     owner: "run",
     baseSegments: Object.freeze(["attachments"]),
-    descriptor: input.descriptor,
-    write: input.value,
+    persistence: input.persistence,
+    value: input.value,
   });
 }
 
 function writeAttemptFamily<
-  Family extends string,
-  Payload,
-  E,
-  R,
+  Definition extends AnyDefinition<"attempt">,
+  Value extends DefinitionValue<Definition>,
 >(input: {
   readonly attempt: AttemptRuntime;
-  readonly descriptor: FixedRecordFamilyDescriptor<Family, "attempt", Payload>;
-  readonly value: RecordAttachmentWrite<"attempt", E, R>;
-}): Effect.Effect<void, RecordWriteError | E, R> {
-  return writeFixedAttachment({
+  readonly persistence: RecordAttachmentPersistence<Definition, number>;
+  readonly value: Value | ((build: RecordAttachmentSessionBuilder) => Value);
+}): Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>> {
+  return writeCurrentAttachment({
     run: input.attempt.draft,
     target: input.attempt,
     owner: "attempt",
@@ -2720,8 +2568,8 @@ function writeAttemptFamily<
       input.attempt.attemptId,
       "attachments",
     ]),
-    descriptor: input.descriptor,
-    write: input.value,
+    persistence: input.persistence,
+    value: input.value,
   });
 }
 
@@ -2730,10 +2578,10 @@ function writeDescriptorForDefinition<Owner extends RecordAttachmentOwner>(input
   readonly expectedOwner: Owner;
   readonly definition: unknown;
 }): Effect.Effect<
-  FixedRecordFamilyDescriptor<string, Owner, unknown>,
+  RecordAttachmentPersistence<AnyDefinition<Owner>, number>,
   RecordWriteError
 > {
-  if (!isRecordAttachmentFamilyDefinition(input.definition)) {
+  if (!isRecordAttachmentDefinition(input.definition)) {
     return Effect.fail(familyDefinitionRequired({
       owner: input.expectedOwner,
       family: "unbranded.record-attachment",
@@ -2746,23 +2594,20 @@ function writeDescriptorForDefinition<Owner extends RecordAttachmentOwner>(input
       actual: definition.owner,
     }));
   }
-  const descriptor = input.run.attachmentCatalog.descriptor(definition);
+  const descriptor = input.run.attachmentCatalog.persistence(definition);
   if (
     descriptor === undefined ||
-    descriptor.owner !== input.expectedOwner ||
-    descriptor.family !== definition.family ||
-    descriptor.schemaVersion !== definition.schemaVersion ||
-    input.run.attachmentCatalog.get(definition.owner, definition.family)?.definition !==
-      definition
+    descriptor.attachment !== definition ||
+    input.run.attachmentCatalog.get(definition.owner, definition.family) !== descriptor
   ) {
     return Effect.fail(familyDefinitionRequired({
       owner: definition.owner,
       family: definition.family,
-      schemaVersion: definition.schemaVersion,
+      revision: descriptor?.revision ?? 0,
     }));
   }
   return Effect.succeed(
-    descriptor as FixedRecordFamilyDescriptor<string, Owner, unknown>,
+    descriptor as RecordAttachmentPersistence<AnyDefinition<Owner>, number>,
   );
 }
 
@@ -2865,16 +2710,10 @@ function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
         ? completeAttempt(attempt, outcome)
         : Effect.fail(recordWriterClosed());
     },
-    attach<Family extends string, Current extends AnyRecordAttachmentVersion, E, R>(
-      definition: RecordAttachmentFamilyDefinition<"attempt", Family, Current>,
-      preparedWrite: RecordAttachmentWrite<
-        "attempt",
-        E,
-        R,
-        Family,
-        Current["version"]
-      >,
-    ): Effect.Effect<void, RecordWriteError | E, R> {
+    attach<Definition extends AnyDefinition<"attempt">, Value extends DefinitionValue<Definition>>(
+      definition: Definition,
+      value: Value | ((build: RecordAttachmentSessionBuilder) => Value),
+    ): Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>> {
       if (attemptSessions.get(this) !== attempt) return Effect.fail(recordWriterClosed());
       return Effect.flatMap(
         writeDescriptorForDefinition({
@@ -2882,12 +2721,12 @@ function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
           expectedOwner: "attempt",
           definition,
         }),
-        (descriptor) => writeAttemptFamily({
+        (persistence) => writeAttemptFamily({
           attempt,
-          descriptor,
-          value: preparedWrite,
+          persistence: persistence as RecordAttachmentPersistence<Definition, number>,
+          value,
         }),
-      );
+      ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
     },
   });
   attempt.handle = session;
@@ -3510,15 +3349,19 @@ function makeRunSession(run: RunRuntime): RunWriteSession {
         ? recordTerminalMember(run, input)
         : Effect.fail(recordWriterClosed());
     },
-    attach<Family extends string, Current extends AnyRecordAttachmentVersion, E, R>(
-      definition: RecordAttachmentFamilyDefinition<"run", Family, Current>,
-      preparedWrite: RecordAttachmentWrite<"run", E, R, Family, Current["version"]>,
-    ): Effect.Effect<void, RecordWriteError | E, R> {
+    attach<Definition extends AnyDefinition<"run">, Value extends DefinitionValue<Definition>>(
+      definition: Definition,
+      value: Value | ((build: RecordAttachmentSessionBuilder) => Value),
+    ): Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>> {
       if (runSessions.get(this) !== run) return Effect.fail(recordWriterClosed());
       return Effect.flatMap(
         writeDescriptorForDefinition({ run, expectedOwner: "run", definition }),
-        (descriptor) => writeRunFamily({ run, descriptor, value: preparedWrite }),
-      );
+        (persistence) => writeRunFamily({
+          run,
+          persistence: persistence as RecordAttachmentPersistence<Definition, number>,
+          value,
+        }),
+      ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
     },
     seal(completion: RunCompletion) {
       return runSessions.get(this) === run
@@ -3560,15 +3403,19 @@ function makeReferenceRunSession(run: RunRuntime): ReferenceRunWriteSession {
         ? recordTerminalMember(run, input)
         : Effect.fail(recordWriterClosed());
     },
-    attach<Family extends string, Current extends AnyRecordAttachmentVersion, E, R>(
-      definition: RecordAttachmentFamilyDefinition<"run", Family, Current>,
-      preparedWrite: RecordAttachmentWrite<"run", E, R, Family, Current["version"]>,
-    ): Effect.Effect<void, RecordWriteError | E, R> {
+    attach<Definition extends AnyDefinition<"run">, Value extends DefinitionValue<Definition>>(
+      definition: Definition,
+      value: Value | ((build: RecordAttachmentSessionBuilder) => Value),
+    ): Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>> {
       if (runSessions.get(this) !== run) return Effect.fail(recordWriterClosed());
       return Effect.flatMap(
         writeDescriptorForDefinition({ run, expectedOwner: "run", definition }),
-        (descriptor) => writeRunFamily({ run, descriptor, value: preparedWrite }),
-      );
+        (persistence) => writeRunFamily({
+          run,
+          persistence: persistence as RecordAttachmentPersistence<Definition, number>,
+          value,
+        }),
+      ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
     },
     seal(completion: RunCompletion) {
       return runSessions.get(this) === run
@@ -3693,11 +3540,21 @@ function openNewReferenceRun(
   return Effect.map(openNewRuntime(request, attachmentCatalog), makeReferenceRunSession);
 }
 
-type AnyMigrationDescriptor = FixedRecordFamilyDescriptor<
-  string,
-  RecordAttachmentOwner,
-  unknown
->;
+interface AnyMigrationDescriptor {
+  readonly persistence: AnyRecordAttachmentPersistence;
+  readonly attachment: AnyRecordAttachmentPersistence["attachment"];
+  readonly family: string;
+}
+
+function migrationDescriptor(
+  persistence: AnyRecordAttachmentPersistence,
+): AnyMigrationDescriptor {
+  return Object.freeze({
+    persistence,
+    attachment: persistence.attachment,
+    family: persistence.attachment.family,
+  });
+}
 
 interface KnownMigrationAttachment {
   readonly owner: RecordAttachmentOwner;
@@ -3719,23 +3576,20 @@ interface MigrationContent {
 }
 
 interface MaterializedMigrationState {
-  readonly schemaVersion: number;
-  readonly value: unknown;
-  readonly drafts: readonly RecordAttachmentBlobDraft<unknown, unknown>[];
-  readonly keyByRef: ReadonlyMap<object, RecordBlobKey>;
+  readonly revision: number;
+  readonly document?: RecordMigrationDocument;
   readonly payloadBytes: Uint8Array;
   readonly contents: readonly MigrationContent[];
-  readonly envelope: RecordAttachmentEnvelope | undefined;
+  readonly envelope: DurableRecordAttachmentEnvelope | RecordAttachmentEnvelope | undefined;
   readonly envelopeBytes: Uint8Array;
   readonly legacyPhysical: boolean;
-  readonly opaque: boolean;
 }
 
 interface PlannedMigrationStep {
   readonly location: KnownMigrationAttachment;
   readonly target: RecordAttachmentMigrationTarget;
   readonly sourceEnvelopeBytes: Uint8Array;
-  readonly targetEnvelope: RecordAttachmentEnvelope;
+  readonly targetEnvelope: DurableRecordAttachmentEnvelope | RecordAttachmentEnvelope;
   readonly targetEnvelopeBytes: Uint8Array;
   readonly payloadBytes: Uint8Array;
   readonly contents: readonly MigrationContent[];
@@ -3796,7 +3650,7 @@ function migrationLocationKey(location: KnownMigrationAttachment): string {
     location.runId,
     location.owner === "run" ? "0" : "1",
     location.attemptId ?? "",
-    location.descriptor.family,
+    location.descriptor.attachment.family,
   ].join("\u0000");
 }
 
@@ -3810,7 +3664,7 @@ function migrationAttachmentDirectory(
         "runs",
         location.runId,
         "attachments",
-        location.descriptor.family,
+        location.descriptor.attachment.family,
       )
     : recordPortablePath(
         root,
@@ -3819,7 +3673,7 @@ function migrationAttachmentDirectory(
         "attempts",
         location.attemptId!,
         "attachments",
-        location.descriptor.family,
+        location.descriptor.attachment.family,
       );
 }
 
@@ -3835,8 +3689,8 @@ function migrationReaderLocation(location: KnownMigrationAttachment) {
 
 function migrationRunRelativeBase(location: KnownMigrationAttachment): string {
   return location.owner === "run"
-    ? "attachments/" + location.descriptor.family
-    : "attempts/" + location.attemptId + "/attachments/" + location.descriptor.family;
+    ? "attachments/" + location.descriptor.attachment.family
+    : "attempts/" + location.attemptId + "/attachments/" + location.descriptor.attachment.family;
 }
 
 function migrationPath(
@@ -3862,565 +3716,6 @@ function readMigrationBytes(input: {
       bytes === undefined ? Effect.fail(migrationInvalid(input.family)) : Effect.succeed(bytes)
     ),
   );
-}
-
-function hydrateMigrationPayload(
-  input: unknown,
-  refsByKey: ReadonlyMap<string, RecordBlobRef>,
-): { readonly value: unknown; readonly valid: boolean } {
-  const seen = new Set<string>();
-  let valid = true;
-  const hydrate = (value: unknown): unknown => {
-    if (value === null || typeof value !== "object") return value;
-    if (Array.isArray(value)) return value.map(hydrate);
-    const source = value as Record<string, unknown>;
-    const keys = Object.keys(source);
-    if (keys.length === 1 && keys[0] === "$niceeval.record.blob") {
-      const key = source["$niceeval.record.blob"];
-      const ref = typeof key === "string" ? refsByKey.get(key) : undefined;
-      if (ref === undefined) {
-        valid = false;
-        return source;
-      }
-      seen.add(key as string);
-      return ref;
-    }
-    const copy: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-    for (const key of keys) copy[key] = hydrate(source[key]);
-    return copy;
-  };
-  try {
-    const value = hydrate(input);
-    return Object.freeze({ value, valid: valid && seen.size === refsByKey.size });
-  } catch {
-    return Object.freeze({ value: input, valid: false });
-  }
-}
-
-function materializeMigrationState(input: {
-  readonly location: KnownMigrationAttachment;
-  readonly spec: FixedAttachmentWriteSpec<RecordAttachmentOwner, unknown>;
-  readonly schemaVersion: number;
-  readonly payloadBytes: Uint8Array;
-  readonly contents: readonly MigrationContent[];
-  readonly envelope: RecordAttachmentEnvelope | undefined;
-  readonly envelopeBytes: Uint8Array;
-  readonly legacyPhysical: boolean;
-}): Effect.Effect<MaterializedMigrationState, RecordMaintenanceError> {
-  return Effect.gen(function* () {
-    const json = parseJson(input.payloadBytes);
-    if (json === undefined) return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-    const drafts = makeRecordAttachmentBlobDrafts((builder) =>
-      Object.freeze(input.contents.map((content) => builder.add(RecordContent.bytes(content.bytes))))
-    ) as readonly RecordAttachmentBlobDraft<unknown, unknown>[];
-    const refsByKey = new Map<string, RecordBlobRef>();
-    const keyByRef = new Map<object, RecordBlobKey>();
-    const materialized: RecordAttachmentMaterializedBlob[] = [];
-    for (let index = 0; index < input.contents.length; index += 1) {
-      const content = input.contents[index];
-      const draft = drafts[index];
-      if (content === undefined || draft === undefined) {
-        return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-      }
-      refsByKey.set(content.key, draft.ref);
-      keyByRef.set(draft.ref, content.key);
-      materialized.push(Object.freeze({ ref: draft.ref, bytes: content.bytes }));
-    }
-    const hydrated = hydrateMigrationPayload(json, refsByKey);
-    if (!hydrated.valid) return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-    const decoded = input.spec.decodePayload(hydrated.value);
-    if (Either.isLeft(decoded)) {
-      return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-    }
-    const checked = makeFixedRecordAttachmentValueFromDecoded(
-      input.spec,
-      decoded.right,
-      materialized,
-    );
-    if (Either.isLeft(checked)) {
-      return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-    }
-    let references: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
-    try {
-      references = Object.freeze([...(input.spec.references?.(checked.right.value) ?? [])]
-        .sort((left, right) => compareCanonicalIdentity(
-          left.owner + "\u0000" + left.family,
-          right.owner + "\u0000" + right.family,
-        )));
-    } catch {
-      return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-    }
-    if (
-      input.envelope !== undefined &&
-      JSON.stringify(references) !== JSON.stringify(input.envelope.references)
-    ) {
-      return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-    }
-    return Object.freeze({
-      schemaVersion: input.schemaVersion,
-      value: checked.right.value,
-      drafts,
-      keyByRef,
-      payloadBytes: input.payloadBytes,
-      contents: input.contents,
-      envelope: input.envelope,
-      envelopeBytes: input.envelopeBytes,
-      legacyPhysical: input.legacyPhysical,
-      opaque: false,
-    });
-  });
-}
-
-function opaqueLegacyPayloadIsClosed(
-  payloadBytes: Uint8Array,
-  contents: readonly MigrationContent[],
-): boolean {
-  const json = parseJson(payloadBytes);
-  if (json === undefined) return false;
-  const keys = new Set<string>();
-  let valid = true;
-  const visit = (value: unknown): void => {
-    if (value === null || typeof value !== "object") return;
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    const object = value as Record<string, unknown>;
-    const names = Object.keys(object);
-    if (names.length === 1 && names[0] === "$niceeval.record.blob") {
-      const key = object["$niceeval.record.blob"];
-      if (typeof key !== "string" || !isPortableSegment(key)) valid = false;
-      else keys.add(key);
-      return;
-    }
-    names.forEach((name) => visit(object[name]));
-  };
-  try {
-    visit(json);
-  } catch {
-    return false;
-  }
-  const contentKeys = new Set<string>(contents.map((content) => content.key));
-  return valid && keys.size === contentKeys.size && [...keys].every((key) => contentKeys.has(key));
-}
-
-function loadMigrationAttachment(input: {
-  readonly fileSystem: RecordFileSystemService;
-  readonly root: RecordRoot;
-  readonly location: KnownMigrationAttachment;
-}): Effect.Effect<{
-  readonly state: MaterializedMigrationState;
-  readonly snapshots: readonly MigrationFileSnapshot[];
-}, RecordMaintenanceError> {
-  return Effect.gen(function* () {
-    const family = input.location.descriptor.family;
-    const envelopePath = migrationPath(input.root, input.location, "attachment.json");
-    const envelopeBytes = yield* readMigrationBytes({
-      fileSystem: input.fileSystem,
-      path: envelopePath,
-      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
-      family,
-    });
-    const envelopeJson = parseJson(envelopeBytes);
-    if (envelopeJson === undefined) return yield* Effect.fail(migrationInvalid(family));
-    const current = decodeRecordAttachmentEnvelope(envelopeJson);
-    const legacy = Either.isLeft(current)
-      ? decodeFixedRecordAttachmentEnvelope(envelopeJson)
-      : undefined;
-    let currentEnvelope: RecordAttachmentEnvelope | undefined;
-    let legacyEnvelope: { readonly family: string; readonly schemaVersion: number } | undefined;
-    if (Either.isRight(current)) currentEnvelope = current.right;
-    else if (legacy !== undefined && Either.isRight(legacy)) legacyEnvelope = legacy.right;
-    else return yield* Effect.fail(migrationInvalid(family));
-    const schemaVersion = currentEnvelope?.schemaVersion ?? legacyEnvelope!.schemaVersion;
-    const version = input.location.descriptor.definition.versions.find(
-      (candidate) => candidate.version === schemaVersion,
-    );
-    const spec = getRecordAttachmentVersionWriteSpec(
-      input.location.descriptor.definition,
-      schemaVersion,
-    );
-    if (version === undefined || spec === undefined) {
-      return yield* Effect.fail(new RecordFormatUnsupported({
-        code: "record-format-unsupported",
-        format: family + "@" + schemaVersion,
-      }));
-    }
-
-    const snapshots: MigrationFileSnapshot[] = [
-      Object.freeze({ path: envelopePath, bytes: envelopeBytes, maximumBytes: RECORD_JSON_MAXIMUM_BYTES }),
-    ];
-    let payloadBytes: Uint8Array;
-    const contents: MigrationContent[] = [];
-    let envelope: RecordAttachmentEnvelope | undefined;
-    let legacyPhysical = false;
-
-    if (currentEnvelope !== undefined) {
-      envelope = currentEnvelope;
-      if (
-        envelope.ownerKind !== input.location.owner ||
-        envelope.family !== family ||
-        envelope.contents.length > spec.budget.maximumBlobs
-      ) return yield* Effect.fail(migrationInvalid(family));
-      const payloadPath = migrationPath(
-        input.root,
-        input.location,
-        "payload",
-        "sha256",
-        envelope.payload.sha256,
-      );
-      payloadBytes = yield* readMigrationBytes({
-        fileSystem: input.fileSystem,
-        path: payloadPath,
-        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
-        family,
-      });
-      if (
-        payloadBytes.byteLength !== envelope.payload.byteLength ||
-        sha256Bytes(payloadBytes) !== envelope.payload.sha256
-      ) return yield* Effect.fail(migrationInvalid(family));
-      snapshots.push(Object.freeze({
-        path: payloadPath,
-        bytes: payloadBytes,
-        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
-      }));
-      let totalBytes = 0;
-      for (const pointer of envelope.contents) {
-        const path = migrationPath(
-          input.root,
-          input.location,
-          "content",
-          "sha256",
-          pointer.sha256,
-        );
-        const bytes = yield* readMigrationBytes({
-          fileSystem: input.fileSystem,
-          path,
-          maximumBytes: Math.min(MAXIMUM_ATTACHMENT_BLOB_BYTES, spec.budget.maximumBlobBytes),
-          family,
-        });
-        if (bytes.byteLength !== pointer.byteLength || sha256Bytes(bytes) !== pointer.sha256) {
-          return yield* Effect.fail(migrationInvalid(family));
-        }
-        totalBytes += bytes.byteLength;
-        if (totalBytes > spec.budget.maximumTotalBytes) {
-          return yield* Effect.fail(migrationInvalid(family));
-        }
-        contents.push(Object.freeze({ key: pointer.key, sha256: pointer.sha256, bytes }));
-        if (!snapshots.some((snapshot) => snapshot.path.segments.join("/") === path.segments.join("/"))) {
-          snapshots.push(Object.freeze({
-            path,
-            bytes,
-            maximumBytes: Math.min(MAXIMUM_ATTACHMENT_BLOB_BYTES, spec.budget.maximumBlobBytes),
-          }));
-        }
-      }
-    } else {
-      if (legacyEnvelope === undefined || legacyEnvelope.family !== family) {
-        return yield* Effect.fail(migrationInvalid(family));
-      }
-      legacyPhysical = true;
-      const payloadPath = migrationPath(input.root, input.location, "payload.json");
-      payloadBytes = yield* readMigrationBytes({
-        fileSystem: input.fileSystem,
-        path: payloadPath,
-        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
-        family,
-      });
-      snapshots.push(Object.freeze({
-        path: payloadPath,
-        bytes: payloadBytes,
-        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
-      }));
-      const blobDirectory = migrationPath(input.root, input.location, "blobs");
-      const kind = yield* input.fileSystem.pathKind(blobDirectory);
-      const entries = kind === "missing"
-        ? []
-        : kind === "directory"
-        ? yield* input.fileSystem.listDirectory({
-            directory: blobDirectory,
-            maximumEntries: spec.budget.maximumBlobs,
-          })
-        : undefined;
-      if (entries === undefined || entries.some((entry) => entry.kind !== "file")) {
-        return yield* Effect.fail(migrationInvalid(family));
-      }
-      let totalBytes = 0;
-      for (const entry of entries) {
-        const key = recordBlobKey(entry.name);
-        if (key === undefined) return yield* Effect.fail(migrationInvalid(family));
-        const path = migrationPath(input.root, input.location, "blobs", key);
-        const bytes = yield* readMigrationBytes({
-          fileSystem: input.fileSystem,
-          path,
-          maximumBytes: Math.min(MAXIMUM_ATTACHMENT_BLOB_BYTES, spec.budget.maximumBlobBytes),
-          family,
-        });
-        totalBytes += bytes.byteLength;
-        if (totalBytes > spec.budget.maximumTotalBytes) {
-          return yield* Effect.fail(migrationInvalid(family));
-        }
-        contents.push(Object.freeze({ key, sha256: sha256Bytes(bytes), bytes }));
-        snapshots.push(Object.freeze({
-          path,
-          bytes,
-          maximumBytes: Math.min(MAXIMUM_ATTACHMENT_BLOB_BYTES, spec.budget.maximumBlobBytes),
-        }));
-      }
-    }
-
-    contents.sort((left, right) => compareCanonicalIdentity(left.key, right.key));
-    const materialized = yield* Effect.either(materializeMigrationState({
-      location: input.location,
-      spec,
-      schemaVersion,
-      payloadBytes,
-      contents: Object.freeze(contents),
-      envelope,
-      envelopeBytes,
-      legacyPhysical,
-    }));
-    const state = Either.isRight(materialized)
-      ? materialized.right
-      : schemaVersion === input.location.descriptor.schemaVersion &&
-          opaqueLegacyPayloadIsClosed(payloadBytes, contents) &&
-          (envelope === undefined || envelope.references.length === 0)
-      ? Object.freeze({
-          schemaVersion,
-          value: undefined,
-          drafts: Object.freeze([]),
-          keyByRef: new Map<object, RecordBlobKey>(),
-          payloadBytes,
-          contents: Object.freeze(contents),
-          envelope,
-          envelopeBytes,
-          legacyPhysical,
-          opaque: true,
-        })
-      : undefined;
-    if (state === undefined) return yield* Effect.fail(migrationInvalid(family));
-    return Object.freeze({ state, snapshots: Object.freeze(snapshots) });
-  });
-}
-
-function deterministicContentKey(
-  digest: Sha256Digest,
-  used: Set<string>,
-): RecordBlobKey | undefined {
-  for (let suffix = 0; suffix < 100_000; suffix += 1) {
-    const candidate = suffix === 0 ? digest : digest + "-" + suffix;
-    if (used.has(candidate)) continue;
-    const decoded = Schema.decodeUnknownEither(RecordBlobKeySchema)(candidate);
-    if (Either.isRight(decoded)) return decoded.right;
-  }
-  return undefined;
-}
-
-function prepareMigrationCommit(input: {
-  readonly location: KnownMigrationAttachment;
-  readonly source: MaterializedMigrationState;
-  readonly toSchemaVersion: number;
-  readonly value: unknown;
-  readonly sources: readonly RecordAttachmentBlobDraft<unknown, unknown>[];
-}): Effect.Effect<{
-  readonly step: PlannedMigrationStep;
-  readonly next: MaterializedMigrationState;
-}, RecordMaintenanceError> {
-  return Effect.gen(function* () {
-    const family = input.location.descriptor.family;
-    const targetSpec = getRecordAttachmentVersionWriteSpec(
-      input.location.descriptor.definition,
-      input.toSchemaVersion,
-    );
-    if (targetSpec === undefined) return yield* Effect.fail(migrationInvalid(family));
-    const write = makeFixedRecordAttachmentWriteFromDrafts(
-      targetSpec,
-      input.value,
-      input.sources,
-    );
-    const captured = recordAttachmentWriteContents(write);
-    if (Either.isLeft(captured)) return yield* Effect.fail(migrationInvalid(family));
-    const encoded = targetSpec.encodePayload(captured.right.payload);
-    if (Either.isLeft(encoded)) return yield* Effect.fail(migrationInvalid(family));
-
-    let totalBytes = 0;
-    const materialized: {
-      readonly ref: RecordBlobRef;
-      readonly bytes: Uint8Array;
-      readonly sha256: Sha256Digest;
-    }[] = [];
-    for (const blob of captured.right.blobs) {
-      const bytes = yield* collectAttachmentBlob({
-        stream: blob.stream as Stream.Stream<Uint8Array, unknown, never>,
-        maximumBytes: Math.min(MAXIMUM_ATTACHMENT_BLOB_BYTES, targetSpec.budget.maximumBlobBytes),
-        family,
-      }).pipe(Effect.mapError(() => migrationInvalid(family)));
-      totalBytes += bytes.byteLength;
-      if (totalBytes > targetSpec.budget.maximumTotalBytes) {
-        return yield* Effect.fail(migrationInvalid(family));
-      }
-      materialized.push(Object.freeze({ ref: blob.ref, bytes, sha256: sha256Bytes(bytes) }));
-    }
-
-    const used = new Set<string>();
-    const keyByRef = new Map<object, string>();
-    for (const content of materialized) {
-      const preserved = input.source.keyByRef.get(content.ref);
-      const key = preserved !== undefined && !used.has(preserved)
-        ? preserved
-        : deterministicContentKey(content.sha256, used);
-      if (key === undefined) return yield* Effect.fail(migrationInvalid(family));
-      used.add(key);
-      keyByRef.set(content.ref, key);
-    }
-    const stored = encodeAttachmentPayloadForStorage({
-      payload: encoded.right,
-      blobKeys: keyByRef,
-    });
-    if (Either.isLeft(stored)) return yield* Effect.fail(migrationInvalid(family));
-    const payloadBytes = encodeRecordAttachmentJsonBytes(stored.right);
-    const payloadDigest = sha256Bytes(payloadBytes);
-    const contents: MigrationContent[] = [];
-    for (const content of materialized) {
-      const key = keyByRef.get(content.ref);
-      const decodedKey = key === undefined
-        ? undefined
-        : Schema.decodeUnknownEither(RecordBlobKeySchema)(key);
-      if (decodedKey === undefined || Either.isLeft(decodedKey)) {
-        return yield* Effect.fail(migrationInvalid(family));
-      }
-      contents.push(Object.freeze({
-        key: decodedKey.right,
-        sha256: content.sha256,
-        bytes: content.bytes,
-      }));
-    }
-    contents.sort((left, right) => compareCanonicalIdentity(left.key, right.key));
-
-    let references: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
-    try {
-      references = Object.freeze([...(targetSpec.references?.(captured.right.payload) ?? [])]
-        .sort((left, right) => compareCanonicalIdentity(
-          left.owner + "\u0000" + left.family,
-          right.owner + "\u0000" + right.family,
-        )));
-    } catch {
-      return yield* Effect.fail(migrationInvalid(family));
-    }
-    const envelope: RecordAttachmentEnvelope = Object.freeze({
-      format: "niceeval.record-attachment",
-      ownerKind: input.location.owner,
-      family,
-      schemaVersion: input.toSchemaVersion,
-      payload: Object.freeze({ sha256: payloadDigest, byteLength: payloadBytes.byteLength }),
-      contents: Object.freeze(contents.map((content) => Object.freeze({
-        key: content.key,
-        sha256: content.sha256,
-        byteLength: content.bytes.byteLength,
-      }))),
-      references,
-    });
-    const encodedEnvelope = encodeRecordAttachmentEnvelope(envelope);
-    if (Either.isLeft(encodedEnvelope)) return yield* Effect.fail(migrationInvalid(family));
-    const targetEnvelopeBytes = jsonBytes(encodedEnvelope.right);
-    const target: RecordAttachmentMigrationTarget = Object.freeze({
-      family,
-      owner: input.location.owner,
-      runId: input.location.runId,
-      ...(input.location.attemptId === undefined ? {} : { attemptId: input.location.attemptId }),
-      fromSchemaVersion: input.source.schemaVersion,
-      toSchemaVersion: input.toSchemaVersion,
-      retention: Object.freeze({
-        retainedFacts: Object.freeze([]),
-        droppedFacts: Object.freeze([]),
-        rerunRecommendation: null,
-      }),
-    });
-    const step: PlannedMigrationStep = Object.freeze({
-      location: input.location,
-      target,
-      sourceEnvelopeBytes: input.source.envelopeBytes,
-      targetEnvelope: envelope,
-      targetEnvelopeBytes,
-      payloadBytes,
-      contents: Object.freeze(contents),
-    });
-    const next = yield* materializeMigrationState({
-      location: input.location,
-      spec: targetSpec,
-      schemaVersion: input.toSchemaVersion,
-      payloadBytes,
-      contents: Object.freeze(contents),
-      envelope,
-      envelopeBytes: targetEnvelopeBytes,
-      legacyPhysical: false,
-    });
-    return Object.freeze({ step, next });
-  });
-}
-
-function prepareOpaquePhysicalCommit(input: {
-  readonly location: KnownMigrationAttachment;
-  readonly source: MaterializedMigrationState;
-}): Effect.Effect<{
-  readonly step: PlannedMigrationStep;
-  readonly next: MaterializedMigrationState;
-}, RecordMaintenanceError> {
-  return Effect.gen(function* () {
-    const family = input.location.descriptor.family;
-    const payloadDigest = sha256Bytes(input.source.payloadBytes);
-    const envelope: RecordAttachmentEnvelope = Object.freeze({
-      format: "niceeval.record-attachment",
-      ownerKind: input.location.owner,
-      family,
-      schemaVersion: input.source.schemaVersion,
-      payload: Object.freeze({
-        sha256: payloadDigest,
-        byteLength: input.source.payloadBytes.byteLength,
-      }),
-      contents: Object.freeze(input.source.contents.map((content) => Object.freeze({
-        key: content.key,
-        sha256: content.sha256,
-        byteLength: content.bytes.byteLength,
-      }))),
-      references: Object.freeze([]),
-    });
-    const encoded = encodeRecordAttachmentEnvelope(envelope);
-    if (Either.isLeft(encoded)) return yield* Effect.fail(migrationInvalid(family));
-    const envelopeBytes = jsonBytes(encoded.right);
-    const target: RecordAttachmentMigrationTarget = Object.freeze({
-      family,
-      owner: input.location.owner,
-      runId: input.location.runId,
-      ...(input.location.attemptId === undefined ? {} : { attemptId: input.location.attemptId }),
-      fromSchemaVersion: input.source.schemaVersion,
-      toSchemaVersion: input.source.schemaVersion,
-      retention: Object.freeze({
-        retainedFacts: Object.freeze([]),
-        droppedFacts: Object.freeze([]),
-        rerunRecommendation: null,
-      }),
-    });
-    const step: PlannedMigrationStep = Object.freeze({
-      location: input.location,
-      target,
-      sourceEnvelopeBytes: input.source.envelopeBytes,
-      targetEnvelope: envelope,
-      targetEnvelopeBytes: envelopeBytes,
-      payloadBytes: input.source.payloadBytes,
-      contents: input.source.contents,
-    });
-    return Object.freeze({
-      step,
-      next: Object.freeze({
-        ...input.source,
-        envelope,
-        envelopeBytes,
-        legacyPhysical: false,
-        opaque: true,
-      }),
-    });
-  });
 }
 
 function scanAttachmentShape(input: {
@@ -4471,9 +3766,11 @@ function finalAttachmentFiles(
     readonly location: KnownMigrationAttachment;
     readonly finalState: MaterializedMigrationState;
   },
-): readonly MigrationFileSnapshot[] {
+): Either.Either<readonly MigrationFileSnapshot[], RecordMigrationInvalid> {
   const envelope = attachment.finalState.envelope;
-  if (envelope === undefined) throw new Error("Planned final Attachment lacks its current envelope");
+  if (envelope === undefined) {
+    return Either.left(migrationInvalid(attachment.location.descriptor.family));
+  }
   const files: MigrationFileSnapshot[] = [
     Object.freeze({
       path: migrationPath(root, attachment.location, "attachment.json"),
@@ -4495,78 +3792,573 @@ function finalAttachmentFiles(
       maximumBytes: MAXIMUM_ATTACHMENT_BLOB_BYTES,
     }));
   }
-  return Object.freeze(files);
+  return Either.right(Object.freeze(files));
 }
 
-function planMigrationAttachment(input: {
+function migrationMarker(value: unknown, key: string): unknown | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== 1 || keys[0] !== key) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor !== undefined && descriptor.enumerable && "value" in descriptor
+    ? descriptor.value
+    : undefined;
+}
+
+interface VerifiedMigrationPhysical {
+  readonly payload: unknown;
+  readonly contents: ReadonlyMap<string, Uint8Array>;
+  readonly references: readonly {
+    readonly owner: RecordAttachmentOwner;
+    readonly family: string;
+  }[];
+}
+
+function migrationDocumentFromPhysical(input: {
+  readonly physical: VerifiedMigrationPhysical;
+  readonly catalog: RecordAttachmentCatalog;
+  readonly family: string;
+}): RecordMigrationDocument {
+  const contentByKey = new Map<string, import("../attachment/protocol.ts").RecordMigrationContent>();
+  const usedContent = new Set<string>();
+  const references: import("../attachment/protocol.ts").RecordAttachmentReference<any, unknown>[] = [];
+  const referenceIdentities = new Set<string>();
+  const visit = (value: unknown): unknown => {
+    const contentKey = migrationMarker(value, "$niceeval.record.content") ??
+      migrationMarker(value, "$niceeval.record.blob");
+    if (typeof contentKey === "string") {
+      const bytes = input.physical.contents.get(contentKey);
+      if (bytes === undefined || usedContent.has(contentKey)) throw migrationInvalid(input.family);
+      usedContent.add(contentKey);
+      let token = contentByKey.get(contentKey);
+      if (token === undefined) {
+        token = makeRecordMigrationContent(bytes);
+        contentByKey.set(contentKey, token);
+      }
+      return token;
+    }
+    const referenceMarker = migrationMarker(value, "$niceeval.record.reference");
+    if (referenceMarker !== undefined) {
+      if (typeof referenceMarker !== "object" || referenceMarker === null || Array.isArray(referenceMarker)) {
+        throw migrationInvalid(input.family);
+      }
+      const marker = referenceMarker as Record<string, unknown>;
+      if (
+        Reflect.ownKeys(marker).length !== 3 ||
+        (marker.owner !== "run" && marker.owner !== "attempt") ||
+        typeof marker.family !== "string" ||
+        !("value" in marker)
+      ) throw migrationInvalid(input.family);
+      const target = input.catalog.get(marker.owner, marker.family);
+      if (target === undefined) throw familyDefinitionRequired({ owner: marker.owner, family: marker.family });
+      const token = mintRecordAttachmentReference(
+        RecordAttachmentReference.to(target.attachment),
+        marker.value,
+      );
+      references.push(token);
+      referenceIdentities.add(`${marker.owner}\u0000${marker.family}`);
+      return token;
+    }
+    if (value === null || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value.map(visit);
+    const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      if (!("value" in descriptor) || !descriptor.enumerable) throw migrationInvalid(input.family);
+      output[key] = visit(descriptor.value);
+    }
+    return output;
+  };
+  const value = visit(input.physical.payload);
+  if (usedContent.size !== input.physical.contents.size) throw migrationInvalid(input.family);
+  const declaredReferences = input.physical.references.map(({ owner, family }) => `${owner}\u0000${family}`);
+  const observedReferences = [...referenceIdentities].sort(compareCanonicalIdentity);
+  if (!sameOrderedStrings(declaredReferences, observedReferences)) throw migrationInvalid(input.family);
+  const contents = Object.freeze([...contentByKey.values()]);
+  return Object.freeze({
+    value,
+    contents,
+    references: Object.freeze(references),
+    content: RecordMigrationContent.access(contents),
+  });
+}
+
+function verifyMigrationPhysicalAgainstSeal(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
   readonly location: KnownMigrationAttachment;
+  readonly snapshots: readonly MigrationFileSnapshot[];
+}): Effect.Effect<void, RecordMaintenanceError> {
+  return Effect.gen(function* () {
+    const family = input.location.descriptor.family;
+    const sealBytes = yield* readMigrationBytes({
+      fileSystem: input.fileSystem,
+      path: runPath(input.root, input.location.runId, "seal-manifest.json"),
+      maximumBytes: MAXIMUM_SEAL_MANIFEST_BYTES,
+      family,
+    });
+    const json = parseJson(sealBytes);
+    if (json === undefined) return yield* Effect.fail(migrationInvalid(family));
+    const current = decodeSealManifestDocument(json);
+    const legacy = Either.isLeft(current) ? decodeLegacySealManifestDocument(json) : undefined;
+    const manifest = Either.isRight(current)
+      ? current.right
+      : legacy !== undefined && Either.isRight(legacy)
+      ? legacy.right
+      : undefined;
+    if (manifest === undefined || manifest.runId !== input.location.runId) {
+      return yield* Effect.fail(migrationInvalid(family));
+    }
+    const expectedOwner = input.location.owner === "run" ? "run" : input.location.attemptId!;
+    const base = migrationRunRelativeBase(input.location);
+    const expectedPaths = new Set<string>();
+    for (const snapshot of input.snapshots) {
+      const suffix = snapshot.path.segments.slice(
+        migrationAttachmentDirectory(input.root, input.location).segments.length,
+      ).join("/");
+      const path = `${base}/${suffix}`;
+      expectedPaths.add(path);
+      const entry = manifest.entries.find((candidate) => candidate.path === path);
+      const kind: SealManifestEntry["kind"] = suffix === "attachment.json"
+        ? "attachment-envelope"
+        : suffix === "payload.json" || suffix.startsWith("payload/")
+        ? "payload"
+        : "blob";
+      if (
+        entry === undefined ||
+        entry.kind !== kind ||
+        entry.owner !== expectedOwner ||
+        entry.family !== family ||
+        entry.byteLength !== snapshot.bytes.byteLength ||
+        entry.sha256 !== sha256Bytes(snapshot.bytes)
+      ) return yield* Effect.fail(migrationInvalid(family));
+    }
+    const declared = manifest.entries.filter((entry) =>
+      entry.owner === expectedOwner && entry.family === family
+    );
+    if (
+      declared.length !== expectedPaths.size ||
+      declared.some((entry) => !expectedPaths.has(entry.path))
+    ) return yield* Effect.fail(migrationInvalid(family));
+  });
+}
+
+function loadLegacyMigrationAttachmentV2(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly location: KnownMigrationAttachment;
+  readonly catalog: RecordAttachmentCatalog;
+}): Effect.Effect<{
+  readonly state: MaterializedMigrationState;
+  readonly snapshots: readonly MigrationFileSnapshot[];
+}, RecordMaintenanceError> {
+  return Effect.gen(function* () {
+    const family = input.location.descriptor.family;
+    const envelopePath = migrationPath(input.root, input.location, "attachment.json");
+    const envelopeBytes = yield* readMigrationBytes({
+      fileSystem: input.fileSystem,
+      path: envelopePath,
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+      family,
+    });
+    const envelopeJson = parseJson(envelopeBytes);
+    if (envelopeJson === undefined) return yield* Effect.fail(migrationInvalid(family));
+    const addressed = decodeRecordAttachmentEnvelope(envelopeJson);
+    const legacy = Either.isLeft(addressed)
+      ? decodeLegacyRecordAttachmentHeader(envelopeJson)
+      : undefined;
+    const addressedEnvelope = Either.isRight(addressed) ? addressed.right : undefined;
+    const legacyEnvelope = legacy !== undefined && Either.isRight(legacy) ? legacy.right : undefined;
+    if (
+      addressedEnvelope === undefined && legacyEnvelope === undefined ||
+      addressedEnvelope !== undefined && (
+        addressedEnvelope.ownerKind !== input.location.owner ||
+        addressedEnvelope.family !== family
+      ) ||
+      legacyEnvelope !== undefined && legacyEnvelope.family !== family
+    ) return yield* Effect.fail(migrationInvalid(family));
+
+    const revision = addressedEnvelope?.schemaVersion ?? legacyEnvelope!.schemaVersion;
+    const snapshots: MigrationFileSnapshot[] = [Object.freeze({
+      path: envelopePath,
+      bytes: envelopeBytes,
+      maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+    })];
+    let payloadBytes: Uint8Array;
+    const contents = new Map<string, Uint8Array>();
+    const materialized: MigrationContent[] = [];
+    if (addressedEnvelope !== undefined) {
+      if (addressedEnvelope.contents.length > RECORD_ATTACHMENT_MAXIMUM_CONTENTS) {
+        return yield* Effect.fail(migrationInvalid(family));
+      }
+      const payloadPath = migrationPath(
+        input.root,
+        input.location,
+        "payload",
+        "sha256",
+        addressedEnvelope.payload.sha256,
+      );
+      payloadBytes = yield* readMigrationBytes({
+        fileSystem: input.fileSystem,
+        path: payloadPath,
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+        family,
+      });
+      if (
+        payloadBytes.byteLength !== addressedEnvelope.payload.byteLength ||
+        sha256Bytes(payloadBytes) !== addressedEnvelope.payload.sha256
+      ) return yield* Effect.fail(migrationInvalid(family));
+      snapshots.push(Object.freeze({
+        path: payloadPath,
+        bytes: payloadBytes,
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+      }));
+      let totalBytes = 0;
+      for (const pointer of addressedEnvelope.contents) {
+        if (contents.has(pointer.key) || pointer.byteLength > MAXIMUM_ATTACHMENT_BLOB_BYTES) {
+          return yield* Effect.fail(migrationInvalid(family));
+        }
+        const path = migrationPath(
+          input.root,
+          input.location,
+          "content",
+          "sha256",
+          pointer.sha256,
+        );
+        const bytes = yield* readMigrationBytes({
+          fileSystem: input.fileSystem,
+          path,
+          maximumBytes: MAXIMUM_ATTACHMENT_BLOB_BYTES,
+          family,
+        });
+        if (bytes.byteLength !== pointer.byteLength || sha256Bytes(bytes) !== pointer.sha256) {
+          return yield* Effect.fail(migrationInvalid(family));
+        }
+        totalBytes += bytes.byteLength;
+        if (totalBytes > RECORD_ATTACHMENT_MAXIMUM_TOTAL_CONTENT_BYTES) {
+          return yield* Effect.fail(migrationInvalid(family));
+        }
+        contents.set(pointer.key, bytes);
+        materialized.push(Object.freeze({ key: pointer.key, sha256: pointer.sha256, bytes }));
+        if (!snapshots.some((snapshot) => snapshot.path.segments.join("/") === path.segments.join("/"))) {
+          snapshots.push(Object.freeze({ path, bytes, maximumBytes: MAXIMUM_ATTACHMENT_BLOB_BYTES }));
+        }
+      }
+    } else {
+      const payloadPath = migrationPath(input.root, input.location, "payload.json");
+      payloadBytes = yield* readMigrationBytes({
+        fileSystem: input.fileSystem,
+        path: payloadPath,
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+        family,
+      });
+      snapshots.push(Object.freeze({
+        path: payloadPath,
+        bytes: payloadBytes,
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+      }));
+      const blobDirectory = migrationPath(input.root, input.location, "blobs");
+      const kind = yield* input.fileSystem.pathKind(blobDirectory);
+      const entries = kind === "missing"
+        ? []
+        : kind === "directory"
+        ? yield* input.fileSystem.listDirectory({
+            directory: blobDirectory,
+            maximumEntries: RECORD_ATTACHMENT_MAXIMUM_CONTENTS,
+          })
+        : undefined;
+      if (entries === undefined || entries.some((entry) => entry.kind !== "file")) {
+        return yield* Effect.fail(migrationInvalid(family));
+      }
+      let totalBytes = 0;
+      for (const entry of [...entries].sort((left, right) => compareCanonicalIdentity(left.name, right.name))) {
+        const key = recordBlobKey(entry.name);
+        if (key === undefined || contents.has(key)) return yield* Effect.fail(migrationInvalid(family));
+        const path = migrationPath(input.root, input.location, "blobs", key);
+        const bytes = yield* readMigrationBytes({
+          fileSystem: input.fileSystem,
+          path,
+          maximumBytes: MAXIMUM_ATTACHMENT_BLOB_BYTES,
+          family,
+        });
+        totalBytes += bytes.byteLength;
+        if (totalBytes > RECORD_ATTACHMENT_MAXIMUM_TOTAL_CONTENT_BYTES) {
+          return yield* Effect.fail(migrationInvalid(family));
+        }
+        const sha256 = sha256Bytes(bytes);
+        contents.set(key, bytes);
+        materialized.push(Object.freeze({ key, sha256, bytes }));
+        snapshots.push(Object.freeze({ path, bytes, maximumBytes: MAXIMUM_ATTACHMENT_BLOB_BYTES }));
+      }
+    }
+
+    const payload = parseJson(payloadBytes);
+    if (payload === undefined) return yield* Effect.fail(migrationInvalid(family));
+    yield* verifyMigrationPhysicalAgainstSeal({
+      fileSystem: input.fileSystem,
+      root: input.root,
+      location: input.location,
+      snapshots,
+    });
+    const references = addressedEnvelope?.references ?? Object.freeze([]);
+    const document = yield* Effect.try({
+      try: () => migrationDocumentFromPhysical({
+        physical: { payload, contents, references },
+        catalog: input.catalog,
+        family,
+      }),
+      catch: (cause) => cause instanceof FamilyDefinitionRequired ? cause : migrationInvalid(family),
+    });
+    return Object.freeze({
+      state: Object.freeze({
+        revision,
+        document,
+        payloadBytes,
+        contents: Object.freeze(materialized),
+        envelope: addressedEnvelope,
+        envelopeBytes,
+        legacyPhysical: true,
+      }),
+      snapshots: Object.freeze(snapshots),
+    });
+  });
+}
+
+function loadMigrationAttachmentV2(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly location: KnownMigrationAttachment;
+  readonly catalog: RecordAttachmentCatalog;
+}): Effect.Effect<{
+  readonly state: MaterializedMigrationState;
+  readonly snapshots: readonly MigrationFileSnapshot[];
+}, RecordMaintenanceError> {
+  return Effect.gen(function* () {
+    const persistence = input.location.descriptor.persistence;
+    const family = persistence.attachment.family;
+    const physical = yield* readVerifiedRecordAttachmentPhysical({
+      fileSystem: input.fileSystem,
+      root: input.root,
+      location: migrationReaderLocation(input.location),
+      family,
+    });
+    if (physical === undefined) return yield* loadLegacyMigrationAttachmentV2(input);
+    const contents: MigrationContent[] = physical.envelope.contents.map((pointer) => Object.freeze({
+      key: pointer.key,
+      sha256: pointer.sha256,
+      bytes: physical.contents.get(pointer.key)!,
+    }));
+    const snapshots: MigrationFileSnapshot[] = [
+      Object.freeze({
+        path: migrationPath(input.root, input.location, "attachment.json"),
+        bytes: physical.envelopeBytes,
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+      }),
+      Object.freeze({
+        path: migrationPath(input.root, input.location, "payload", "sha256", physical.envelope.payload.sha256),
+        bytes: physical.payloadBytes,
+        maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+      }),
+      ...[...new Map(contents.map((content) => [content.sha256, content.bytes] as const))].map(([sha256, bytes]) =>
+        Object.freeze({
+          path: migrationPath(input.root, input.location, "content", "sha256", sha256),
+          bytes,
+          maximumBytes: MAXIMUM_ATTACHMENT_BLOB_BYTES,
+        })
+      ),
+    ];
+    yield* verifyMigrationPhysicalAgainstSeal({
+      fileSystem: input.fileSystem,
+      root: input.root,
+      location: input.location,
+      snapshots,
+    });
+    const document = yield* Effect.try({
+      try: () => migrationDocumentFromPhysical({
+        physical: {
+          payload: physical.payload,
+          contents: physical.contents,
+          references: physical.envelope.references,
+        },
+        catalog: input.catalog,
+        family,
+      }),
+      catch: (cause) => cause instanceof FamilyDefinitionRequired ? cause : migrationInvalid(family),
+    });
+    return Object.freeze({
+      state: Object.freeze({
+        revision: physical.envelope.revision,
+        document,
+        payloadBytes: physical.payloadBytes,
+        contents: Object.freeze(contents),
+        envelope: physical.envelope,
+        envelopeBytes: physical.envelopeBytes,
+        legacyPhysical: false,
+      }),
+      snapshots: Object.freeze(snapshots),
+    });
+  });
+}
+
+function prepareMigrationCurrentV2(input: {
+  readonly location: KnownMigrationAttachment;
+  readonly source: MaterializedMigrationState;
+}): Effect.Effect<{ readonly step: PlannedMigrationStep; readonly next: MaterializedMigrationState }, RecordMaintenanceError> {
+  return Effect.gen(function* () {
+    const persistence = input.location.descriptor.persistence;
+    const family = persistence.attachment.family;
+    let revision = input.source.revision;
+    const initialDocument = input.source.document;
+    if (initialDocument === undefined) return yield* Effect.fail(migrationInvalid(family));
+    let document: RecordMigrationDocument = initialDocument;
+    const impacts: RecordMigrationImpact[] = [];
+    while (revision < persistence.revision) {
+      const migration = recordAttachmentMigrationAt(persistence, revision);
+      if (migration === undefined) return yield* Effect.fail(migrationInvalid(family));
+      const sourceDocument = document;
+      const migrated = yield* Effect.suspend(() => runRecordMigration(migration, sourceDocument)).pipe(
+        Effect.mapError(() => migrationInvalid(family)),
+        Effect.catchAllDefect(() => Effect.fail(migrationInvalid(family))),
+      );
+      impacts.push(...migrated.impact);
+      document = yield* Effect.try({
+        try: () => recordMigrationDocumentFromResult(migrated),
+        catch: () => migrationInvalid(family),
+      });
+      revision += 1;
+    }
+
+    const prepared = yield* (prepareCurrentRecordAttachment({
+      definition: persistence.attachment,
+      value: (build: RecordAttachmentSessionBuilder) => {
+        const hydrated = hydrateRecordMigrationValue(
+          persistence.attachment,
+          document!.value,
+          (token, declaration) => {
+            const bytes = unwrapRecordMigrationTargetContent(token);
+            if (bytes === undefined) return Either.left({ code: "migration-content-hydration-failed" as const });
+            if (declaration.kind === "bytes") return Either.right(build.content.bytes(bytes));
+            try {
+              return Either.right(build.content.text(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
+            } catch {
+              return Either.left({ code: "migration-content-hydration-failed" as const });
+            }
+          },
+        );
+        if (Either.isLeft(hydrated)) throw migrationInvalid(family);
+        return hydrated.right;
+      },
+      digest: sha256Bytes,
+    }).pipe(Effect.mapError(() => migrationInvalid(family))) as Effect.Effect<
+      import("../writer/current-attachment.ts").PreparedCurrentAttachment,
+      RecordMaintenanceError,
+      never
+    >);
+    const payloadDigest = sha256Bytes(prepared.payloadBytes);
+    const envelope: DurableRecordAttachmentEnvelope = Object.freeze({
+      format: "niceeval.record-attachment",
+      ownerKind: input.location.owner,
+      family,
+      revision: persistence.revision,
+      payload: Object.freeze({ sha256: payloadDigest, byteLength: prepared.payloadBytes.byteLength }),
+      contents: Object.freeze(prepared.contents.map(({ key, sha256, bytes }) => Object.freeze({
+        key,
+        sha256,
+        byteLength: bytes.byteLength,
+      }))),
+      references: prepared.references,
+    });
+    const encoded = encodeDurableRecordAttachmentEnvelope(envelope);
+    if (Either.isLeft(encoded)) return yield* Effect.fail(migrationInvalid(family));
+    const envelopeBytes = jsonBytes(encoded.right);
+    const contents: MigrationContent[] = prepared.contents.map(({ key, sha256, bytes }) =>
+      Object.freeze({ key, sha256, bytes })
+    );
+    const retainedFacts = impacts.filter(({ code }) => code === "migration-content-retained")
+      .map(({ path }) => path.join("."));
+    const droppedFacts = impacts.filter(({ code }) => code === "migration-content-dropped")
+      .map(({ path }) => path.join("."));
+    const target: RecordAttachmentMigrationTarget = Object.freeze({
+      family,
+      owner: input.location.owner,
+      runId: input.location.runId,
+      ...(input.location.attemptId === undefined ? {} : { attemptId: input.location.attemptId }),
+      fromRevision: input.source.revision,
+      toRevision: persistence.revision,
+      retention: Object.freeze({
+        retainedFacts: Object.freeze(retainedFacts),
+        droppedFacts: Object.freeze(droppedFacts),
+        rerunRecommendation: impacts.some(({ recommendation }) => recommendation === "rerun") ? "rerun" : null,
+      }),
+    });
+    const step: PlannedMigrationStep = Object.freeze({
+      location: input.location,
+      target,
+      sourceEnvelopeBytes: input.source.envelopeBytes,
+      targetEnvelope: envelope,
+      targetEnvelopeBytes: envelopeBytes,
+      payloadBytes: prepared.payloadBytes,
+      contents: Object.freeze(contents),
+    });
+    return Object.freeze({
+      step,
+      next: Object.freeze({
+        revision: persistence.revision,
+        document,
+        payloadBytes: prepared.payloadBytes,
+        contents: Object.freeze(contents),
+        envelope,
+        envelopeBytes,
+        legacyPhysical: false,
+      }),
+    });
+  });
+}
+
+function planMigrationAttachmentV2(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly location: KnownMigrationAttachment;
+  readonly catalog: RecordAttachmentCatalog;
 }): Effect.Effect<PlannedMigrationAttachment, RecordMaintenanceError> {
   return Effect.gen(function* () {
-    const loaded = yield* loadMigrationAttachment(input);
-    let current = loaded.state;
-    const steps: PlannedMigrationStep[] = [];
-    const required = input.location.descriptor.schemaVersion;
-    if (current.schemaVersion > required) {
+    const loaded = yield* loadMigrationAttachmentV2(input);
+    const persistence = input.location.descriptor.persistence;
+    if (loaded.state.revision > persistence.revision) {
       return yield* Effect.fail(new RecordFormatUnsupported({
         code: "record-format-unsupported",
-        format: input.location.descriptor.family + "@" + current.schemaVersion,
+        format: `${persistence.attachment.family}@${loaded.state.revision}`,
       }));
     }
-    while (current.schemaVersion < required) {
-      if (current.opaque) return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-      const migration = input.location.descriptor.definition.migrations.find(
-        (candidate) =>
-          candidate.from.version === current.schemaVersion &&
-          candidate.to.version === current.schemaVersion + 1,
-      );
-      if (migration === undefined) {
-        return yield* Effect.fail(migrationInvalid(input.location.descriptor.family));
-      }
-      const migrated = yield* runRecordAttachmentMigration(migration, {
-        value: current.value,
-        sources: current.drafts,
-      }).pipe(Effect.mapError(() => migrationInvalid(input.location.descriptor.family)));
-      const prepared = yield* prepareMigrationCommit({
-        location: input.location,
-        source: current,
-        toSchemaVersion: migration.to.version,
-        value: migrated.value,
-        sources: migrated.sources,
+    let current = loaded.state;
+    const steps: PlannedMigrationStep[] = [];
+    if (current.revision < persistence.revision || current.legacyPhysical) {
+      const prepared = yield* prepareMigrationCurrentV2({ location: input.location, source: current });
+      steps.push(prepared.step);
+      current = prepared.next;
+    } else {
+      const read = yield* readCurrentRecordAttachment({
+        fileSystem: input.fileSystem,
+        root: input.root,
+        location: migrationReaderLocation(input.location),
+        persistence,
+        lifecycle: { closed: false },
       });
-      steps.push(prepared.step);
-      current = prepared.next;
-    }
-    if (current.legacyPhysical) {
-      const prepared = current.opaque
-        ? yield* prepareOpaquePhysicalCommit({ location: input.location, source: current })
-        : yield* prepareMigrationCommit({
-            location: input.location,
-            source: current,
-            toSchemaVersion: current.schemaVersion,
-            value: current.value,
-            sources: current.drafts,
-          });
-      steps.push(prepared.step);
-      current = prepared.next;
+      if (read.state !== "available") return yield* Effect.fail(migrationInvalid(persistence.attachment.family));
     }
 
     const shape = yield* scanAttachmentShape(input);
-    const expectedFiles = new Set(
-      finalAttachmentFiles(input.root, { location: input.location, finalState: current })
-        .map((file) => file.path.segments.slice(
-          migrationAttachmentDirectory(input.root, input.location).segments.length,
-        ).join("/")),
-    );
+    const finalFiles = yield* finalAttachmentFiles(input.root, {
+      location: input.location,
+      finalState: current,
+    });
+    const expectedFiles = new Set(finalFiles.map((file) => file.path.segments.slice(
+      migrationAttachmentDirectory(input.root, input.location).segments.length,
+    ).join("/")));
     const expectedDirectories = new Set(expectedInventoryDirectories([...expectedFiles]));
-    const orphanFiles = shape.files
-      .filter((path) => !expectedFiles.has(path))
+    const orphanFiles = shape.files.filter((path) => !expectedFiles.has(path))
       .map((path) => migrationPath(input.root, input.location, ...path.split("/")));
-    const orphanDirectories = shape.directories
-      .filter((path) => !expectedDirectories.has(path))
-      .sort((left, right) => right.split("/").length - left.split("/").length ||
-        compareCanonicalIdentity(left, right))
+    const orphanDirectories = shape.directories.filter((path) => !expectedDirectories.has(path))
+      .sort((left, right) => right.split("/").length - left.split("/").length || compareCanonicalIdentity(left, right))
       .map((path) => migrationPath(input.root, input.location, ...path.split("/")));
     return Object.freeze({
       location: input.location,
@@ -4579,6 +4371,15 @@ function planMigrationAttachment(input: {
       cleanupRequired: orphanFiles.length > 0 || orphanDirectories.length > 0,
     });
   });
+}
+
+function planMigrationAttachment(input: {
+  readonly fileSystem: RecordFileSystemService;
+  readonly root: RecordRoot;
+  readonly location: KnownMigrationAttachment;
+  readonly catalog: RecordAttachmentCatalog;
+}): Effect.Effect<PlannedMigrationAttachment, RecordMaintenanceError> {
+  return planMigrationAttachmentV2(input);
 }
 
 function ensureOrdinaryCurrentAttachments(input: {
@@ -4610,26 +4411,26 @@ function ensureOrdinaryCurrentAttachments(input: {
           owner,
           runId,
           ...(attemptId === undefined ? {} : { attemptId }),
-          descriptor,
+          descriptor: migrationDescriptor(descriptor),
         });
-        const inspected = yield* inspectFixedRecordAttachmentEnvelope({
+        const inspected = yield* inspectRecordAttachmentEnvelope({
           fileSystem: input.fileSystem,
           root: input.root,
           location: migrationReaderLocation(location),
-          descriptor,
+          persistence: descriptor,
         });
         if (inspected.state === "migration-required") {
           return yield* Effect.fail(new RecordMigrationRequired({
             code: "record-migration-required",
-            source: inspected.family + "@" + inspected.fromSchemaVersion,
-            target: inspected.family + "@" + inspected.toSchemaVersion,
+            source: inspected.family + "@" + inspected.fromRevision,
+            target: inspected.family + "@" + inspected.toRevision,
             command: inspected.command,
           }));
         }
         if (inspected.state === "unsupported") {
           return yield* Effect.fail(new RecordFormatUnsupported({
             code: "record-format-unsupported",
-            format: inspected.family + "@" + inspected.schemaVersion,
+            format: inspected.family + "@" + inspected.revision,
           }));
         }
       }
@@ -4697,7 +4498,7 @@ function readKnownAttachmentLocations(input: {
           owner,
           runId,
           ...(attemptId === undefined ? {} : { attemptId }),
-          descriptor,
+          descriptor: migrationDescriptor(descriptor),
         }));
       }
     });
@@ -4882,7 +4683,7 @@ function planMigrationRun(input: {
       const base = migrationRunRelativeBase(attachment.location);
       const envelope = attachment.finalState.envelope;
       if (envelope === undefined) return yield* Effect.fail(migrationInvalid(attachment.location.descriptor.family));
-      const physical = finalAttachmentFiles(input.root, attachment);
+      const physical = yield* finalAttachmentFiles(input.root, attachment);
       for (const file of physical) {
         const suffix = file.path.segments.slice(
           migrationAttachmentDirectory(input.root, attachment.location).segments.length,
@@ -4939,8 +4740,8 @@ function migrationFingerprint(input: Omit<InternalMigrationPlan, "fingerprint">)
         sha256Bytes(file.bytes),
       ]),
       steps: attachment.steps.map((step) => [
-        step.target.fromSchemaVersion,
-        step.target.toSchemaVersion,
+        step.target.fromRevision,
+        step.target.toRevision,
         sha256Bytes(step.sourceEnvelopeBytes),
         sha256Bytes(step.targetEnvelopeBytes),
         sha256Bytes(step.payloadBytes),
@@ -4975,6 +4776,7 @@ function buildMigrationPlan(input: {
         fileSystem: input.fileSystem,
         root: input.root,
         location,
+        catalog: input.attachmentCatalog,
       }));
     }
 
@@ -5318,7 +5120,6 @@ function openMaintenance(input: {
                 step,
               });
             }
-            yield* cleanupMigratedAttachment({ fileSystem, attachment });
           }
           const rebuiltSeals: RunId[] = [];
           for (const run of internal.runs) {
@@ -5350,6 +5151,11 @@ function openMaintenance(input: {
               bytes: internal.rootTargetBytes,
               maximumBytes: RECORD_FORMAT_DOCUMENT_MAXIMUM_BYTES,
             });
+          }
+          // Keep old physical files recoverable until every authoritative seal
+          // and the root publication point at the new closure.
+          for (const attachment of internal.attachments) {
+            yield* cleanupMigratedAttachment({ fileSystem, attachment });
           }
           yield* validateAppliedMigration({
             fileSystem,
@@ -5393,6 +5199,7 @@ function closeMaintenanceFailure(
     return Object.freeze({
       _tag: "RecordMigrationInvalid" as const,
       code: "record-migration-invalid" as const,
+      family: error.family,
     });
   }
   if (error instanceof RecordFormatUnsupported) {
@@ -5515,12 +5322,13 @@ function applyMigrateOperation(input: {
 
 /** Bind one immutable, explicitly composed Attachment catalog to all sessions. */
 export function makeRecordHost(input: {
-  readonly attachments: RecordAttachmentCatalog;
+  readonly attachments: readonly AnyRecordAttachmentPersistence[];
 }): RecordHostSDK {
-  if (!isRecordAttachmentCatalog(input.attachments)) {
-    throw new TypeError("makeRecordHost requires a branded Record Attachment catalog");
+  const composed = makeRecordAttachmentCatalog(input.attachments);
+  if (Either.isLeft(composed)) {
+    throw new TypeError(`makeRecordHost rejected Attachment composition: ${composed.left.code}`);
   }
-  const attachmentCatalog = deriveRecordFamilyDescriptorCatalog(input.attachments);
+  const attachmentCatalog = composed.right;
   return Object.freeze({
     current: Object.freeze({
       openRead: (request: { readonly root: RecordRoot }) =>
@@ -5545,5 +5353,5 @@ export function makeRecordHost(input: {
 }
 
 export const recordHost: RecordHostSDK = makeRecordHost({
-  attachments: NiceEvalRecordAttachmentCatalog,
+  attachments: NiceEvalRecordAttachmentPersistences,
 });

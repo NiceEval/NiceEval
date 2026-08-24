@@ -41,7 +41,7 @@ origin Run 读取，不能改读 R2 或当前 worktree。origin Run 可以进入
 ## 不建立跨 Run blob pool
 
 即使两个 Run 的源码 bytes 和 digest 完全相同，每份 Sources Attachment 仍拥有自己的 closure。一个
-`RecordBlobRef` 只指向同一 Attachment directory 的 `content/sha256/`，不能指向另一个 Run、另一个 family 或
+每个 sealed content handle 只能在自己的 Attachment closure 中读取，不能指向另一个 Run、另一个 family 或
 全局 blob pool。
 
 改变为跨 Run blob pool、允许 root 外文件，或改变 Sources owner，会改变所有 reader 必须理解的
@@ -50,8 +50,8 @@ Core 公理。这不是 Sources payload 的小改，而是下一 Record format �
 ## 惰性读取不改变 ownership
 
 `RecordReadSession` 只在 source viewer 或 Analysis query 实际请求 Sources 时读取 payload 和
-closure。形成 `available` value 后，payload 已 deep-freeze，blob bytes 以 defensive copy 提供；后续展示继续
-消费内存值，不再触发磁盘 I/O。
+closure。形成 `available` value 后，payload 已 deep-freeze，content 经 Scope-owned reader 消费；
+读取完成或 Scope 关闭后不保留文件 handle 与 lease。
 
 ## 相关阅读
 

@@ -14,22 +14,6 @@ export type {
 } from "./model/agent-turns.ts";
 
 export {
-  CommandManifestSchema,
-  CommandObservationSchema,
-  CommandOutcomeSchema,
-  CommandResultSchema,
-  CommandStreamSchema,
-  CommandsAttachmentSchema,
-} from "./model/sandbox-commands.ts";
-export type {
-  CommandManifest,
-  CommandObservation,
-  CommandResult,
-  CommandStream,
-  CommandsAttachment,
-} from "./model/sandbox-commands.ts";
-
-export {
   AttemptTimingAttachmentSchema,
   AttemptTimingIntervalSchema,
   AttemptTimingPhaseSchema,

@@ -1,18 +1,24 @@
-import { defineRecordAttachment } from "../../attachment/index.ts";
-import { attemptArtifactsV1, runArtifactsV1 } from "./version.ts";
+import {
+  defineRecordAttachment,
+  RecordOwner,
+} from "../../attachment/index.ts";
+import {
+  ArtifactsAttachmentSchema,
+  validateArtifactsAttachment,
+} from "./schema.ts";
 
+/** Current Attempt-owned Artifacts fact; durable history is separate. */
 export const attemptArtifactsRecordAttachment = defineRecordAttachment({
-  owner: "attempt",
+  owner: RecordOwner.attempt,
   family: "niceeval.artifacts",
-  current: attemptArtifactsV1,
-  versions: [attemptArtifactsV1],
-  migrations: [],
+  schema: ArtifactsAttachmentSchema,
+  validate: validateArtifactsAttachment,
 });
 
+/** Current Run-owned Artifacts fact; it has the same logical value shape. */
 export const runArtifactsRecordAttachment = defineRecordAttachment({
-  owner: "run",
+  owner: RecordOwner.run,
   family: "niceeval.artifacts",
-  current: runArtifactsV1,
-  versions: [runArtifactsV1],
-  migrations: [],
+  schema: ArtifactsAttachmentSchema,
+  validate: validateArtifactsAttachment,
 });

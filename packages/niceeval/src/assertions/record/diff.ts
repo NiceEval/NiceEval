@@ -1,16 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { Either, Schema, Stream } from "effect";
-import {
-  makeFixedRecordAttachmentWrite,
-  makeRecordBlobSource,
-  validateRecordAttachmentWrite,
-  type RecordAttachmentBlobDraft,
-  type RecordAttachmentWrite,
-} from "../../record/attachment/index.ts";
-import { makeRecordBlobRef } from "../../record/attachment/internal.ts";
+import { Either, Schema } from "effect";
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
-import { fileChangesRecordFamily } from "../../record/family/catalog.ts";
 import {
   FileChangesAttachmentSchema,
   FileChangesLimits,
@@ -20,6 +11,7 @@ import {
   type FileChangesCollectionLimitation,
   type FileChangesCollectionState,
 } from "../../record/family/file-changes.ts";
+import type { RecordAttachmentSessionBuilder } from "../../record/writer/current-attachment.ts";
 import {
   agentSendWindowId,
   type AgentWorkspaceDiff,
@@ -75,7 +67,7 @@ interface CapturedWindow {
 
 /**
  * Attempt-owned frozen File Changes input. Change ids are minted exactly here,
- * before Record preflight or any write/retry can allocate blob refs.
+ * before Record preflight or any attach callback can mint content handles.
  */
 export interface FileChangesCapture {
   readonly attribution: FileChangesAttribution;
@@ -102,10 +94,9 @@ const encoder = new TextEncoder();
 // publication.
 const MAXIMUM_PRODUCED_CHANGES_PER_WINDOW = 1_000;
 const MAXIMUM_PRODUCED_CHANGES_PER_ATTACHMENT = 1_000;
-const blobBudgetProjection = Object.freeze({
-  "$niceeval.record.blob-ref": true,
+const contentBudgetProjection = Object.freeze({
+  "$niceeval.record.content": "content-000001",
 });
-const captureSchemaBlobRef = makeRecordBlobRef();
 
 function compareAscii(left: string, right: string): number {
   return left === right ? 0 : left < right ? -1 : 1;
@@ -204,7 +195,7 @@ function collectionState(
 }
 
 function capLimitation(
-  target: "window" | "change" | "content-blob" | "content-byte" | "json-byte",
+  target: "window" | "change" | "content" | "content-byte" | "value",
   omittedAtLeast: number,
   atWindowId: string | null,
 ): FileChangesCollectionLimitation {
@@ -449,13 +440,13 @@ function omitTextContent(endpoint: CaptureEndpoint): CaptureEndpoint {
   });
 }
 
-function withBlobCaps(
+function withContentCaps(
   windows: readonly CapturedWindow[],
 ): {
   readonly windows: readonly CapturedWindow[];
   readonly limitations: readonly FileChangesCollectionLimitation[];
 } {
-  let blobCount = 0;
+  let contentCount = 0;
   let totalBytes = 0;
   const limitations: FileChangesCollectionLimitation[] = [];
   const consume = (
@@ -469,18 +460,18 @@ function withBlobCaps(
     ) {
       return endpoint;
     }
-    if (endpoint.revision.byteLength > FileChangesLimits.maximumBlobBytes) {
-      throw new Error("File Changes producer retained a text revision beyond its blob limit");
+    if (endpoint.revision.byteLength > FileChangesLimits.maximumContentBytes) {
+      throw new Error("File Changes producer retained a text revision beyond its content limit");
     }
-    if (blobCount >= FileChangesLimits.maximumBlobs) {
-      limitations.push(capLimitation("content-blob", 1, windowId));
+    if (contentCount >= FileChangesLimits.maximumContents) {
+      limitations.push(capLimitation("content", 1, windowId));
       return omitTextContent(endpoint);
     }
-    if (totalBytes + endpoint.revision.byteLength > FileChangesLimits.maximumTotalBlobBytes) {
+    if (totalBytes + endpoint.revision.byteLength > FileChangesLimits.maximumTotalContentBytes) {
       limitations.push(capLimitation("content-byte", 1, windowId));
       return omitTextContent(endpoint);
     }
-    blobCount += 1;
+    contentCount += 1;
     totalBytes += endpoint.revision.byteLength;
     return endpoint;
   };
@@ -508,7 +499,7 @@ function previewEndpoint(endpoint: CaptureEndpoint): unknown {
           sha256: revision.sha256,
           byteLength: revision.byteLength,
           content: revision.content.state === "available"
-            ? Object.freeze({ state: "available" as const, ref: blobBudgetProjection })
+            ? Object.freeze({ state: "available" as const, content: contentBudgetProjection })
             : Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
         }),
       });
@@ -583,21 +574,21 @@ function captureFrom(
   let jsonAtWindowId: string | null = null;
 
   for (;;) {
-    const blobCapped = withBlobCaps(windows);
+    const contentCapped = withContentCaps(windows);
     const limitations = [
       ...callerLimitations,
       ...structural.limitations,
       ...unsupportedLimitationsFor(windows),
-      ...blobCapped.limitations,
-      ...(jsonOmitted === 0 ? [] : [capLimitation("json-byte", jsonOmitted, jsonAtWindowId)]),
+      ...contentCapped.limitations,
+      ...(jsonOmitted === 0 ? [] : [capLimitation("value", jsonOmitted, jsonAtWindowId)]),
     ];
     const capture = Object.freeze({
       attribution,
       collection: collectionState(limitations),
-      windows: blobCapped.windows,
+      windows: contentCapped.windows,
     }) as FileChangesCapture;
     if (jsonByteLength(capture) <= FileChangesLimits.maximumPayloadJsonBytes) {
-      assertFileChangesCaptureSchema(capture);
+      assertFileChangesCaptureIntegrity(capture);
       return capture;
     }
     const trimmed = trimLastChange(windows);
@@ -664,7 +655,33 @@ function durableEndpoint(
   }
 }
 
-function assertFileChangesCaptureSchema(capture: FileChangesCapture): void {
+function assertFileChangesCaptureIntegrity(capture: FileChangesCapture): void {
+  let contentCount = 0;
+  let totalContentBytes = 0;
+  const verifyRevision = (revision: CaptureRevision): void => {
+    if (revision.kind !== "text" || revision.content.state !== "available") return;
+    const bytes = encoder.encode(revision.content.text);
+    if (bytes.byteLength !== revision.byteLength || sha256(bytes) !== revision.sha256) {
+      throw new Error("File Changes producer lost frozen text revision integrity");
+    }
+    contentCount += 1;
+    totalContentBytes += bytes.byteLength;
+  };
+  for (const window of capture.windows) {
+    for (const change of window.changes) {
+      if (change.before.state === "present") verifyRevision(change.before.revision);
+      if (change.after.state === "present") verifyRevision(change.after.revision);
+    }
+  }
+  if (
+    contentCount > FileChangesLimits.maximumContents ||
+    totalContentBytes > FileChangesLimits.maximumTotalContentBytes
+  ) {
+    throw new Error("File Changes producer exceeded its current content budget");
+  }
+
+  // Validate every non-content field against the current logical schema. The
+  // real opaque handles can only be minted by the later owner Session.
   const preview = Object.freeze({
     attribution: capture.attribution,
     collection: capture.collection,
@@ -675,14 +692,12 @@ function assertFileChangesCaptureSchema(capture: FileChangesCapture): void {
         changeId: change.changeId,
         path: change.path,
         kind: change.kind,
-        before: durableEndpoint(change.before, () => Object.freeze({
-          state: "available" as const,
-          ref: captureSchemaBlobRef,
-        })),
-        after: durableEndpoint(change.after, () => Object.freeze({
-          state: "available" as const,
-          ref: captureSchemaBlobRef,
-        })),
+        before: durableEndpoint(change.before, () =>
+          Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const })
+        ),
+        after: durableEndpoint(change.after, () =>
+          Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const })
+        ),
       }))),
     }))),
   });
@@ -691,75 +706,72 @@ function assertFileChangesCaptureSchema(capture: FileChangesCapture): void {
     RecordExactParseOptions,
   )(preview);
   if (Either.isLeft(decoded)) {
-    throw new Error("File Changes producer generated an invalid fixed-family capture");
+    throw new Error("File Changes producer generated an invalid current capture");
   }
 }
 
-/** Convert a frozen capture to a fresh Record write without minting another change id. */
-export function createFileChangesCaptureAttachmentWrite(
+export type FileChangesAttachmentBuild = (
+  build: RecordAttachmentSessionBuilder,
+) => FileChangesAttachment;
+
+/** Build the current logical value in the Attempt owner Session. */
+export function createFileChangesCaptureAttachment(
   capture: FileChangesCapture,
-): RecordAttachmentWrite<"attempt", never, never> {
-  const write = makeFixedRecordAttachmentWrite(
-    fileChangesRecordFamily.write,
-    (blobs) => {
-      const drafts: RecordAttachmentBlobDraft<never, never>[] = [];
-      const availableContent = (
-        revision: Extract<CaptureRevision, { readonly kind: "text" }>,
-      ): unknown => {
-        const content = encoder.encode(revision.content.state === "available" ? revision.content.text : "");
-        if (
-          revision.content.state !== "available"
-          || content.byteLength !== revision.byteLength
-          || sha256(content) !== revision.sha256
-        ) {
-          throw new Error("File Changes producer lost frozen text revision integrity");
-        }
-        const draft = blobs.add(makeRecordBlobSource(Stream.succeed(content)));
-        drafts.push(draft);
-        return Object.freeze({ state: "available" as const, ref: draft.ref });
-      };
-      const payload = Object.freeze({
-        attribution: capture.attribution,
-        collection: capture.collection,
-        windows: freezeArray(capture.windows.map((window) => Object.freeze({
-          windowId: window.windowId,
-          sequence: window.sequence,
-          changes: freezeArray(window.changes.map((change) => Object.freeze({
-            changeId: change.changeId,
-            path: change.path,
-            kind: change.kind,
-            before: durableEndpoint(change.before, availableContent),
-            after: durableEndpoint(change.after, availableContent),
-          }))),
-        }))),
-      });
-      const decoded = Schema.validateEither(
-        FileChangesAttachmentSchema,
-        RecordExactParseOptions,
-      )(payload);
-      if (Either.isLeft(decoded)) {
-        throw new Error("File Changes producer generated an invalid fixed-family payload");
+): FileChangesAttachmentBuild {
+  assertFileChangesCaptureIntegrity(capture);
+  return (build) => {
+    const availableContent = (
+      revision: Extract<CaptureRevision, { readonly kind: "text" }>,
+    ): unknown => {
+      const content = encoder.encode(revision.content.state === "available" ? revision.content.text : "");
+      if (
+        revision.content.state !== "available"
+        || content.byteLength !== revision.byteLength
+        || sha256(content) !== revision.sha256
+      ) {
+        throw new Error("File Changes producer lost frozen text revision integrity");
       }
-      return Object.freeze({ payload: decoded.right, blobs: freezeArray(drafts) });
-    },
-  );
-  const closure = validateRecordAttachmentWrite(write);
-  if (Either.isLeft(closure)) {
-    throw new Error("File Changes producer generated an invalid owner-local closure");
-  }
-  return write;
+      return Object.freeze({
+        state: "available" as const,
+        content: build.content.text(revision.content.text),
+      });
+    };
+    const payload = Object.freeze({
+      attribution: capture.attribution,
+      collection: capture.collection,
+      windows: freezeArray(capture.windows.map((window) => Object.freeze({
+        windowId: window.windowId,
+        sequence: window.sequence,
+        changes: freezeArray(window.changes.map((change) => Object.freeze({
+          changeId: change.changeId,
+          path: change.path,
+          kind: change.kind,
+          before: durableEndpoint(change.before, availableContent),
+          after: durableEndpoint(change.after, availableContent),
+        }))),
+      }))),
+    });
+    const decoded = Schema.validateEither(
+      FileChangesAttachmentSchema,
+      RecordExactParseOptions,
+    )(payload);
+    if (Either.isLeft(decoded)) {
+      throw new Error("File Changes producer generated an invalid current value");
+    }
+    return decoded.right;
+  };
 }
 
 /** Preflight validates the same frozen ids and closure shape that the Attempt writer will publish. */
 export function assertFileChangesCaptureRecordable(capture: FileChangesCapture): void {
-  createFileChangesCaptureAttachmentWrite(capture);
+  assertFileChangesCaptureIntegrity(capture);
 }
 
 /** Internal assertion-seal bridge; Runner itself retains the frozen capture, never this convenience path. */
-export function createAgentWorkspaceDiffAttachmentWrite(
+export function createAgentWorkspaceDiffAttachment(
   document: AgentWorkspaceDiff,
-): RecordAttachmentWrite<"attempt", never, never> {
-  return createFileChangesCaptureAttachmentWrite(createFileChangesCapture({ document }));
+): FileChangesAttachmentBuild {
+  return createFileChangesCaptureAttachment(createFileChangesCapture({ document }));
 }
 
 /** Pure projection for consumers already holding a decoded durable payload. */

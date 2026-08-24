@@ -29,8 +29,8 @@ export const SourceRetentionTargetSchema = Schema.Literal(
   "activity",
   "diagnostic",
   "diagnostic-cause",
-  "payload-byte",
-  "blob-byte",
+  "value-byte",
+  "content-byte",
 );
 
 export const SourceReceiptLimitationSchema = Schema.Union(

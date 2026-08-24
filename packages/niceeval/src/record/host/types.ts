@@ -1,18 +1,21 @@
-import type { Effect } from "effect";
+import type { Effect, Schema, Stream } from "effect";
 import type {
-  AnyRecordAttachmentVersion,
   RecordAttachmentCatalog,
-  RecordAttachmentFamilyDefinition,
-  RecordAttachmentVersionValue,
+  RecordAttachmentDefinition,
 } from "../attachment/index.ts";
 import type {
-  RecordAttachmentBlobs,
-  RecordAttachmentPayloadSnapshot,
-  RecordAttachmentWrite,
-} from "../attachment/types.ts";
+  RecordContentHandle,
+  RecordTextContentHandle,
+} from "../attachment/content.ts";
+import type {
+  AttachedContentError,
+  AttachedContentRequirements,
+  RecordAttachmentSessionBuilder,
+} from "../writer/current-attachment.ts";
 import type {
   AttemptDocument,
   MemberDocument,
+  RecordAttachmentOwner,
   RecordSlotIdentity,
   RunDocument,
 } from "../model/core.ts";
@@ -53,6 +56,11 @@ export const attemptWriteSessionBrand: unique symbol = Symbol(
   "@niceeval/record/AttemptWriteSession",
 );
 
+type AnyDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> =
+  RecordAttachmentDefinition<Owner, string, Schema.Schema.AnyNoContext>;
+type DefinitionValue<Definition extends AnyDefinition> =
+  Schema.Schema.Type<Definition["schema"]>;
+
 /** Nominal ref issued only by one live RecordReadSession. */
 export interface SelectedRunRef {
   readonly runId: RunId;
@@ -75,27 +83,39 @@ export interface SelectedOwnerRef<out Owner extends "run" | "attempt" = "run" | 
 
 /**
  * The Host exposes current Attachment states without importing maintenance.
- * A reachable older version is migration-required. Any other well-formed,
- * non-current version remains unsupported data; malformed envelopes and
+ * A reachable older revision is migration-required. Any other well-formed,
+ * non-current revision remains unsupported data; malformed envelopes and
  * closures are invalid, never a reader-wide failure.
  */
+export interface RecordAttachmentContentReader {
+  readonly bytes: (
+    handle: RecordContentHandle,
+  ) => Effect.Effect<Uint8Array, RecordReaderReadError>;
+  readonly text: (
+    handle: RecordTextContentHandle,
+  ) => Effect.Effect<string, RecordReaderReadError>;
+  readonly stream: (
+    handle: RecordContentHandle,
+  ) => Stream.Stream<Uint8Array, RecordReaderReadError>;
+}
+
 export type RecordAttachmentRead<Payload> =
   | {
       readonly state: "migration-required";
       readonly family: string;
-      readonly fromSchemaVersion: number;
-      readonly toSchemaVersion: number;
+      readonly fromRevision: number;
+      readonly toRevision: number;
       readonly command: "niceeval migrate";
     }
   | {
       readonly state: "available";
       /** Direct business fields from the current owner value definition. */
-      readonly value: RecordAttachmentPayloadSnapshot<Payload>;
-      /** Owner-local blob closure for refs found inside `value`. */
-      readonly blobs: RecordAttachmentBlobs;
+      readonly value: Payload;
+      /** Scope-owned logical content consumption; it exposes no path or pointer. */
+      readonly content: RecordAttachmentContentReader;
     }
   | { readonly state: "not-recorded" }
-  | { readonly state: "unsupported"; readonly family: string; readonly schemaVersion: number }
+  | { readonly state: "unsupported"; readonly family: string; readonly revision: number }
   | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
 
 export type RecordSelectionProblem =
@@ -185,13 +205,12 @@ export interface RecordReadSession {
   ) => Effect.Effect<RecordCoreRead<ReadableAttempt>, RecordReaderReadError>;
   readonly read: <
     Owner extends "run" | "attempt",
-    Family extends string,
-    Current extends AnyRecordAttachmentVersion,
+    Definition extends AnyDefinition<Owner>,
   >(
     owner: SelectedOwnerRef<Owner>,
-    definition: RecordAttachmentFamilyDefinition<Owner, Family, Current>,
+    definition: Definition,
   ) => Effect.Effect<
-    RecordAttachmentRead<RecordAttachmentVersionValue<Current>>,
+    RecordAttachmentRead<DefinitionValue<Definition>>,
     RecordReaderReadError
   >;
   readonly requireComplete: (
@@ -236,10 +255,14 @@ export interface AttemptWriteSession {
 }
 
 export interface OwnerAttachmentWriter<Owner extends "run" | "attempt"> {
-  <Family extends string, Current extends AnyRecordAttachmentVersion, E, R>(
-    definition: RecordAttachmentFamilyDefinition<Owner, Family, Current>,
-    preparedWrite: RecordAttachmentWrite<Owner, E, R, Family, Current["version"]>,
-  ): Effect.Effect<void, RecordWriteError | E, R>;
+  <Definition extends AnyDefinition<Owner>, Value extends DefinitionValue<Definition>>(
+    definition: Definition,
+    value: Value | ((build: RecordAttachmentSessionBuilder) => Value),
+  ): Effect.Effect<
+    void,
+    RecordWriteError | AttachedContentError<Value>,
+    AttachedContentRequirements<Value>
+  >;
 }
 
 /** One session owns exactly one freshly exclusive RunId directory. */
@@ -294,8 +317,8 @@ export interface RecordAttachmentMigrationTarget {
   readonly owner: "attempt" | "run";
   readonly runId: RunId;
   readonly attemptId?: AttemptId;
-  readonly fromSchemaVersion: number;
-  readonly toSchemaVersion: number;
+  readonly fromRevision: number;
+  readonly toRevision: number;
   readonly retention: {
     readonly retainedFacts: readonly string[];
     readonly droppedFacts: readonly string[];
@@ -402,6 +425,7 @@ export type RecordMaintenanceOperationFailure =
   | {
       readonly _tag: "RecordMigrationInvalid";
       readonly code: "record-migration-invalid";
+      readonly family: string;
     }
   | {
       readonly _tag: "RecordFormatUnsupported";

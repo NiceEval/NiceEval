@@ -2,12 +2,12 @@
 
 ## 数据建模
 
-逻辑模型保持 `Attachment → RecordBlobRef → logical bytes`。
+逻辑模型保持 `Attachment → RecordContentHandle → logical bytes`。
 Record Host 可以把 logical bytes 写成一个或多个私有 segment，但 segment 不是 Attachment payload entity。
 
 ```text
 Attachment payload
-  └─ RecordBlobRef ──> LogicalBlob
+  └─ RecordContentHandle ──> LogicalContent
                          ├─ byteLength
                          ├─ sha256
                          └─ ordered private materialization
@@ -15,9 +15,9 @@ Attachment payload
                               └─ segment bytes
 ```
 
-`RecordBlobRef` 的身份域仍是 owner 与 family。
-两个逻辑 ref 即使内容相同，也不能互换 owner capability。
-Record Host 可以在同一 Attachment closure 内让它们复用私有 bytes，但 reader 仍按各自逻辑 ref 验证和授权。
+`RecordContentHandle` 的身份域仍是一次 owner Session 的 Attachment write。
+两个逻辑 handle 即使内容相同，也不能互换 capability。
+Record Host 可以在同一 Attachment closure 内让它们复用私有 bytes，但 reader 仍按各自逻辑 handle 验证和授权。
 
 manifest 是 Record Host 的物理实现事实，不是 Analysis input。
 它至少足以验证 segment 顺序、每段完整性、逻辑 byte length 与整体 SHA-256。
@@ -25,7 +25,7 @@ manifest 是 Record Host 的物理实现事实，不是 Analysis input。
 
 ## 写入数据流
 
-1. family producer 向 Record Host 提交逻辑 blob source，不预先拼成 payload 内联 JSON。
+1. family producer 通过 Session builder 提交逻辑 content source，不预先拼成 payload 内联 JSON。
 2. Record Host 增量读取 source，同时计算整体 byte length 与 SHA-256。
 3. Host 按私有分段策略写入 staging segment，并建立 staging manifest。
 4. Host 在 Attachment 作用域内查找可安全复用的相同内容，不把复用关系扩大到其它 owner。
@@ -37,8 +37,8 @@ producer 提供的预期长度或 digest 只能作为校验输入，不能替代
 
 ## 读取数据流
 
-1. Record Host 解码 payload 中的逻辑 `RecordBlobRef`。
-2. Host 验证该 ref 属于当前 owner、family 和完整 closure。
+1. Record Host 解码 payload 中的 sealed `RecordContentHandle`。
+2. Host 验证该 handle 属于当前 owner、family 和完整 closure。
 3. Host 按 manifest 顺序惰性读取 segment，并验证每段完整性。
 4. Host 对重组 stream 验证总长度与整体 digest。
 5. 上层只接收连续的逻辑 stream、逻辑 metadata 或具名失败。
@@ -49,7 +49,7 @@ Analysis 与 Report 不取得 manifest 或 segment handle。
 ## 不变量
 
 - 物理分段不得出现在作者 API、family payload schema或 Analysis domain model。
-- 一个逻辑 ref 只授权读取所属 Attachment closure 中的一条逻辑 bytes stream。
+- 一个逻辑 handle 只授权读取所属 Attachment closure 中的一条逻辑 bytes stream。
 - 分段和去重不改变逻辑 byte order、byte length、digest 或 family 语义。
 - 同一 Attachment closure 可以独立复制、校验和读取，不依赖外部对象库。
 - payload JSON、逻辑 blob、物理 segment 和整个 Attachment 各自保留明确预算。

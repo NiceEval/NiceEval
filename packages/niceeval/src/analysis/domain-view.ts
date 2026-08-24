@@ -386,7 +386,7 @@ export type ClosedFileChangeEndpoint =
       readonly revision: ClosedFileRevision;
     };
 
-/** The `available` alternative substitutes display-safe content for a RecordBlobRef. */
+/** The `available` alternative substitutes display-safe text for sealed Record content. */
 export type ClosedFileRevision =
   | {
       readonly kind: "text";

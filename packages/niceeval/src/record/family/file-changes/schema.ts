@@ -1,6 +1,10 @@
-import { createHash } from "node:crypto";
-
 import { Schema } from "effect";
+import {
+  RecordTextContentSchema,
+  recordAttachmentIssue,
+  recordContent,
+  type RecordAttachmentIssue,
+} from "../../attachment/index.ts";
 import {
   CanonicalProjectRelativePathSchema,
   FileChangeIdSchema,
@@ -8,13 +12,7 @@ import {
 } from "../../codec/identifiers.ts";
 import { compareCanonicalIdentity } from "../../model/identifiers.ts";
 import {
-  RecordBlobRefSchema,
-  type RecordBlobRef,
-} from "../../attachment/blob-ref.ts";
-import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/errors.ts";
-import {
   EmptyArraySchema,
-  FixedAttachmentValueLimits,
   NonNegativeSafeIntegerSchema,
   PositiveSafeIntegerSchema,
 } from "../common.ts";
@@ -25,18 +23,12 @@ export const FileChangesLimits = Object.freeze({
   maximumChangesPerWindow: 10_000,
   maximumRetainedChanges: 10_000,
   maximumTextRevisionBytes: 1024 * 1024,
-  maximumBlobs: 20_000,
-  maximumBlobBytes: 1024 * 1024,
-  maximumTotalBlobBytes: 128 * 1024 * 1024,
+  maximumContents: 20_000,
+  maximumContentBytes: 1024 * 1024,
+  maximumTotalContentBytes: 128 * 1024 * 1024,
   maximumPayloadJsonBytes: 16 * 1024 * 1024,
   maximumPolicyEntries: 256,
   maximumPolicyEntryUtf8Bytes: 4096,
-});
-
-/** File Changes preserves more endpoint nodes than the shared owner envelope. */
-export const FileChangesAttachmentValueLimits = Object.freeze({
-  ...FixedAttachmentValueLimits,
-  maximumNodes: 500_000,
 });
 
 const encoder = new TextEncoder();
@@ -119,7 +111,7 @@ export const FileChangesCollectionLimitationSchema = Schema.Union(
   }),
   Schema.Struct({
     code: Schema.Literal("collection-cap-reached"),
-    target: Schema.Literal("window", "change", "content-blob", "content-byte", "json-byte"),
+    target: Schema.Literal("window", "change", "content", "value", "content-byte"),
     omittedAtLeast: PositiveSafeIntegerSchema,
     atWindowId: Schema.NullOr(FileChangesWindowIdSchema),
   }),
@@ -182,6 +174,7 @@ export type FileChangesCollectionState = Schema.Schema.Type<
   typeof FileChangesCollectionStateSchema
 >;
 
+/** Text revision sha256 is a fact identity, never a physical content key. */
 export const FileRevisionSchema = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("text"),
@@ -198,7 +191,9 @@ export const FileRevisionSchema = Schema.Union(
     content: Schema.Union(
       Schema.Struct({
         state: Schema.Literal("available"),
-        ref: RecordBlobRefSchema,
+        content: RecordTextContentSchema.pipe(
+          recordContent.maximumBytes(FileChangesLimits.maximumContentBytes),
+        ),
       }),
       Schema.Struct({
         state: Schema.Literal("omitted"),
@@ -287,111 +282,51 @@ export const FileChangesAttachmentSchema = Schema.Struct({
   windows: Schema.propertySignature(Schema.Array(FileChangesWindowSchema)).pipe(
     Schema.fromKey("windows-data"),
   ),
-}).pipe(
-  Schema.filter(
-    (payload) => {
-      if (payload.windows.length > FileChangesLimits.maximumWindows) return false;
-      if (payload.windows.reduce((total, window) => total + window.changes.length, 0) > FileChangesLimits.maximumRetainedChanges) {
-        return false;
-      }
-
-      const windowIds = new Set<string>();
-      const changeIds = new Set<string>();
-      let previousSequence = 0;
-      for (const [index, window] of payload.windows.entries()) {
-        if (
-          window.sequence <= previousSequence ||
-          windowIds.has(window.windowId) ||
-          (payload.collection.state === "complete" && window.sequence !== index + 1)
-        ) {
-          return false;
-        }
-        previousSequence = window.sequence;
-        windowIds.add(window.windowId);
-        for (const change of window.changes) {
-          if (changeIds.has(change.changeId)) return false;
-          changeIds.add(change.changeId);
-        }
-      }
-      return true;
-    },
-    {
-      identifier: "FileChangesAttachment",
-      description: "a bounded coherent send-window trajectory with globally unique change ids",
-    },
-  ),
-);
+});
 
 export type FileChangesAttachment = Schema.Schema.Type<
   typeof FileChangesAttachmentSchema
 >;
 
-function endpointBlobRefs(endpoint: FileEndpoint): readonly RecordBlobRef[] {
-  return endpoint.state === "present" &&
-      endpoint.revision.kind === "text" &&
-      endpoint.revision.content.state === "available"
-    ? [endpoint.revision.content.ref]
-    : [];
+function invalid(path: readonly string[]): RecordAttachmentIssue {
+  return recordAttachmentIssue("record-attachment-schema-invalid", path);
 }
 
-export function fileChangesBlobRefs(
-  payload: FileChangesAttachment,
-): readonly RecordBlobRef[] {
-  return Object.freeze(
-    payload.windows.flatMap((window) =>
-      window.changes.flatMap((change) => [
-        ...endpointBlobRefs(change.before),
-        ...endpointBlobRefs(change.after),
-      ])
-    ),
-  );
-}
-
-/** Text revision metadata is meaningful only when its retained own blob matches. */
-export function fileChangesAttachmentIntegrityIssues(
-  payload: FileChangesAttachment,
-  blobs: readonly { readonly ref: RecordBlobRef; readonly bytes: Uint8Array }[],
+/**
+ * Core enforces each available content declaration limit and owns physical
+ * read integrity. This logical validator cannot open sealed content handles;
+ * producers must derive byteLength and sha256 from the same revision source.
+ */
+export function validateFileChangesAttachment(
+  value: FileChangesAttachment,
 ): readonly RecordAttachmentIssue[] {
-  const bytesByRef = new Map<RecordBlobRef, Uint8Array>(
-    blobs.map((blob) => [blob.ref, blob.bytes] as const),
-  );
   const issues: RecordAttachmentIssue[] = [];
-  const validateEndpoint = (
-    endpoint: FileEndpoint,
-    path: readonly string[],
-  ): void => {
-    if (
-      endpoint.state !== "present" ||
-      endpoint.revision.kind !== "text" ||
-      endpoint.revision.content.state !== "available"
-    ) {
-      return;
-    }
-    const bytes = bytesByRef.get(endpoint.revision.content.ref);
-    if (bytes === undefined) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", [...path, "revision", "content"]));
-      return;
-    }
-    if (bytes.byteLength !== endpoint.revision.byteLength) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", [...path, "revision", "byteLength"]));
-    }
-    if (createHash("sha256").update(bytes).digest("hex") !== endpoint.revision.sha256) {
-      issues.push(recordAttachmentIssue("record-attachment-materialized-invalid", [...path, "revision", "sha256"]));
-    }
-  };
+  if (value.windows.length > FileChangesLimits.maximumWindows) {
+    issues.push(invalid(["windows"]));
+  }
+  if (value.windows.reduce((total, window) => total + window.changes.length, 0) > FileChangesLimits.maximumRetainedChanges) {
+    issues.push(invalid(["windows", "changes"]));
+  }
 
-  for (const [windowIndex, window] of payload.windows.entries()) {
+  const windowIds = new Set<string>();
+  const changeIds = new Set<string>();
+  let previousSequence = 0;
+  for (const [index, window] of value.windows.entries()) {
+    if (
+      window.sequence <= previousSequence ||
+      windowIds.has(window.windowId) ||
+      (value.collection.state === "complete" && window.sequence !== index + 1)
+    ) {
+      issues.push(invalid(["windows", String(index)]));
+    }
+    previousSequence = window.sequence;
+    windowIds.add(window.windowId);
     for (const [changeIndex, change] of window.changes.entries()) {
-      const path = ["windows", String(windowIndex), "changes", String(changeIndex)];
-      validateEndpoint(change.before, [...path, "before"]);
-      validateEndpoint(change.after, [...path, "after"]);
+      if (changeIds.has(change.changeId)) {
+        issues.push(invalid(["windows", String(index), "changes", String(changeIndex), "changeId"]));
+      }
+      changeIds.add(change.changeId);
     }
   }
   return Object.freeze(issues);
 }
-
-export const FileChangesBlobBudget = Object.freeze({
-  maximumBlobs: FileChangesLimits.maximumBlobs,
-  maximumBlobBytes: FileChangesLimits.maximumBlobBytes,
-  maximumTotalBytes: FileChangesLimits.maximumTotalBlobBytes,
-});

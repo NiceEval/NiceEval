@@ -1,15 +1,28 @@
-import { Either } from "effect";
+import { Either, type Schema } from "effect";
 
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import type { RecordAttachmentSpiFailure } from "./errors.ts";
 import {
-  isRecordAttachmentFamilyDefinition,
-  type AnyRecordAttachmentFamilyDefinition,
-} from "./family.ts";
+  isRecordAttachmentDefinition,
+  isRecordAttachmentPersistence,
+  type RecordAttachmentDefinition,
+  type RecordAttachmentPersistence,
+} from "./protocol.ts";
 
 const recordAttachmentCatalogTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentCatalog",
+  "@niceeval/record/RecordAttachmentCatalog/v2",
 );
+
+type AnyDefinition = RecordAttachmentDefinition<
+  RecordAttachmentOwner,
+  string,
+  Schema.Schema.AnyNoContext
+>;
+
+export type AnyRecordAttachmentPersistence = RecordAttachmentPersistence<
+  AnyDefinition,
+  number
+>;
 
 const catalogs = new WeakSet<object>();
 
@@ -17,50 +30,70 @@ function identity(owner: RecordAttachmentOwner, family: string): string {
   return `${owner}\u0000${family}`;
 }
 
-/** Immutable, session-local composition. It is never a process-global registry. */
+/** Immutable authority indexed by exact Attachment brand and physical identity. */
 export interface RecordAttachmentCatalog {
-  readonly definitions: readonly AnyRecordAttachmentFamilyDefinition[];
+  readonly persistences: readonly AnyRecordAttachmentPersistence[];
+  readonly definitions: readonly AnyDefinition[];
   readonly get: (
     owner: RecordAttachmentOwner,
     family: string,
-  ) => AnyRecordAttachmentFamilyDefinition | undefined;
+  ) => AnyRecordAttachmentPersistence | undefined;
+  readonly persistence: (
+    definition: AnyDefinition,
+  ) => AnyRecordAttachmentPersistence | undefined;
   readonly [recordAttachmentCatalogTypeId]: () => void;
 }
 
+/** Pure, session-local composition. No module load can mutate an existing Host. */
 export function makeRecordAttachmentCatalog(
-  definitions: readonly AnyRecordAttachmentFamilyDefinition[],
+  persistences: readonly AnyRecordAttachmentPersistence[],
 ): Either.Either<RecordAttachmentCatalog, RecordAttachmentSpiFailure> {
-  const ordered = [...definitions].sort((left, right) => {
-    const owner = left.owner === right.owner ? 0 : left.owner < right.owner ? -1 : 1;
+  const ordered = [...persistences].sort((left, right) => {
+    const owner = left.attachment.owner === right.attachment.owner
+      ? 0
+      : left.attachment.owner < right.attachment.owner ? -1 : 1;
     return owner === 0
-      ? left.family === right.family ? 0 : left.family < right.family ? -1 : 1
+      ? left.attachment.family === right.attachment.family
+        ? 0
+        : left.attachment.family < right.attachment.family ? -1 : 1
       : owner;
   });
-  const byIdentity = new Map<string, AnyRecordAttachmentFamilyDefinition>();
-  for (const definition of ordered) {
-    if (!isRecordAttachmentFamilyDefinition(definition)) {
+  const byIdentity = new Map<string, AnyRecordAttachmentPersistence>();
+  const byDefinition = new WeakMap<object, AnyRecordAttachmentPersistence>();
+
+  for (const persistence of ordered) {
+    if (
+      !isRecordAttachmentPersistence(persistence) ||
+      !isRecordAttachmentDefinition(persistence.attachment)
+    ) {
       return Either.left(Object.freeze({ code: "invalid-family-definition" }));
     }
+    const definition = persistence.attachment;
     const key = identity(definition.owner, definition.family);
-    if (byIdentity.has(key)) {
+    if (byIdentity.has(key) || byDefinition.has(definition)) {
       return Either.left(Object.freeze({
         code: "duplicate-family",
         owner: definition.owner,
         family: definition.family,
       }));
     }
-    byIdentity.set(key, definition);
+    byIdentity.set(key, persistence);
+    byDefinition.set(definition, persistence);
   }
+
+  const frozenPersistences = Object.freeze(ordered);
   const catalog: RecordAttachmentCatalog = Object.freeze({
-    definitions: Object.freeze(ordered),
-    get: (owner: RecordAttachmentOwner, family: string) => byIdentity.get(identity(owner, family)),
+    persistences: frozenPersistences,
+    definitions: Object.freeze(frozenPersistences.map(({ attachment }) => attachment)),
+    get: (owner: RecordAttachmentOwner, family: string) =>
+      byIdentity.get(identity(owner, family)),
+    persistence: (definition: AnyDefinition) => byDefinition.get(definition),
     [recordAttachmentCatalogTypeId]: () => undefined,
   });
   catalogs.add(catalog);
   return Either.right(catalog);
 }
 
-/** Runtime authority check; copied catalog-shaped objects are not compositions. */
 export function isRecordAttachmentCatalog(
   value: unknown,
 ): value is RecordAttachmentCatalog {

@@ -65,7 +65,7 @@ export class FamilyDefinitionRequired extends Schema.TaggedError<FamilyDefinitio
   code: Schema.Literal("family-definition-required"),
   owner: Schema.Literal("run", "attempt"),
   family: Schema.String,
-  schemaVersion: Schema.Number,
+  revision: Schema.Number,
 }) {}
 
 /** A frozen selection cannot be certified as a complete current Seal. */

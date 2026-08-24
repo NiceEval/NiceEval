@@ -1,6 +1,10 @@
 import { Schema } from "effect";
 
 import {
+  recordAttachmentIssue,
+  type RecordAttachmentIssue,
+} from "../../attachment/index.ts";
+import {
   CallIdSchema,
   CurrencyCodeSchema,
   ItemIdSchema,
@@ -66,39 +70,87 @@ export const AgentTurnReceiptSchema = Schema.Struct({
 export const AgentTurnsAttachmentSchema = Schema.Struct({
   collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(Schema.fromKey("collection-data")),
   segments: Schema.propertySignature(Schema.Array(AgentTurnReceiptSchema)).pipe(Schema.fromKey("segments-data")),
-}).pipe(Schema.filter((value) => {
-  if (!hasCanonicalSourceSegments(value.segments)) return false;
+});
+
+export type AgentTurnsAttachment = Schema.Schema.Type<typeof AgentTurnsAttachmentSchema>;
+
+export function validateAgentTurnsAttachment(
+  value: AgentTurnsAttachment,
+): readonly RecordAttachmentIssue[] {
+  const issues: RecordAttachmentIssue[] = [];
+  if (!hasCanonicalSourceSegments(value.segments)) {
+    issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments"]));
+  }
   const turnIds = new Set<string>();
   const itemIds = new Set<string>();
   const usageIds = new Set<string>();
   let expectedItemSequence = 1;
-  for (const segment of value.segments) {
-    if (turnIds.has(segment.turnId)) return false;
+  for (const [segmentIndex, segment] of value.segments.entries()) {
+    if (turnIds.has(segment.turnId)) {
+      issues.push(recordAttachmentIssue(
+        "record-attachment-schema-invalid",
+        ["segments", String(segmentIndex), "turnId"],
+      ));
+    }
     turnIds.add(segment.turnId);
     const calls = new Map<string, number>();
     const results = new Set<string>();
-    for (const item of segment.items) {
-      if (itemIds.has(item.itemId) || item.sequence !== expectedItemSequence) return false;
+    for (const [itemIndex, item] of segment.items.entries()) {
+      if (itemIds.has(item.itemId) || item.sequence !== expectedItemSequence) {
+        issues.push(recordAttachmentIssue(
+          "record-attachment-schema-invalid",
+          ["segments", String(segmentIndex), "items", String(itemIndex)],
+        ));
+      }
       expectedItemSequence += 1;
       itemIds.add(item.itemId);
       if (item.kind === "tool-call") {
-        if (calls.has(item.callId)) return false;
+        if (calls.has(item.callId)) {
+          issues.push(recordAttachmentIssue(
+            "record-attachment-schema-invalid",
+            ["segments", String(segmentIndex), "items", String(itemIndex), "callId"],
+          ));
+        }
         calls.set(item.callId, item.sequence);
       } else if (item.kind === "tool-result") {
         const callSequence = calls.get(item.callId);
-        if (callSequence === undefined || callSequence >= item.sequence || results.has(item.callId)) return false;
+        if (
+          callSequence === undefined ||
+          callSequence >= item.sequence ||
+          results.has(item.callId)
+        ) {
+          issues.push(recordAttachmentIssue(
+            "record-attachment-schema-invalid",
+            ["segments", String(segmentIndex), "items", String(itemIndex), "callId"],
+          ));
+        }
         results.add(item.callId);
       }
     }
-    for (const usage of segment.usage) {
-      if (usageIds.has(usage.usageObservationId)) return false;
+    for (const [usageIndex, usage] of segment.usage.entries()) {
+      if (usageIds.has(usage.usageObservationId)) {
+        issues.push(recordAttachmentIssue(
+          "record-attachment-schema-invalid",
+          ["segments", String(segmentIndex), "usage", String(usageIndex), "usageObservationId"],
+        ));
+      }
       usageIds.add(usage.usageObservationId);
     }
   }
-  return value.collection.limitations.every((limitation) =>
-    (limitation.code !== "capture-failed" && limitation.code !== "capture-interrupted" || limitation.stage === "adapter" || limitation.stage === "attempt-finalizer") &&
-    ["turn", "turn-item", "usage-observation", "payload-byte"].includes(limitation.target)
-  );
-}, { identifier: "AgentTurnsAttachment", description: "canonical terminal Turn receipts owned by the Adapter boundary" }));
-
-export type AgentTurnsAttachment = Schema.Schema.Type<typeof AgentTurnsAttachmentSchema>;
+  value.collection.limitations.forEach((limitation, index) => {
+    if (
+      (limitation.code === "capture-failed" || limitation.code === "capture-interrupted") &&
+      limitation.stage !== "adapter" &&
+      limitation.stage !== "attempt-finalizer" ||
+      !["turn", "turn-item", "usage-observation", "value-byte"].includes(
+        limitation.target,
+      )
+    ) {
+      issues.push(recordAttachmentIssue(
+        "record-attachment-schema-invalid",
+        ["collection", "limitations", String(index)],
+      ));
+    }
+  });
+  return Object.freeze(issues);
+}

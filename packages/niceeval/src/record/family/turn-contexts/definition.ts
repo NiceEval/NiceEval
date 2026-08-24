@@ -1,13 +1,17 @@
-import { defineRecordAttachment } from "../../attachment/index.ts";
-import { turnContextsV1 } from "./version.ts";
+import {
+  defineRecordAttachment,
+  RecordOwner,
+} from "../../attachment/index.ts";
+import {
+  TurnContextsAttachmentSchema,
+  validateTurnContextsAttachment,
+} from "./schema.ts";
 
 export * from "./schema.ts";
-export { turnContextsV1 } from "./version.ts";
 
 export const turnContextsRecordAttachment = defineRecordAttachment({
-  owner: "attempt",
+  owner: RecordOwner.attempt,
   family: "niceeval.turn-contexts",
-  current: turnContextsV1,
-  versions: [turnContextsV1],
-  migrations: [],
+  schema: TurnContextsAttachmentSchema,
+  validate: validateTurnContextsAttachment,
 });

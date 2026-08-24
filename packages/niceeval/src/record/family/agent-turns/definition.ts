@@ -1,13 +1,17 @@
-import { defineRecordAttachment } from "../../attachment/index.ts";
-import { agentTurnsV1 } from "./version.ts";
+import {
+  defineRecordAttachment,
+  RecordOwner,
+} from "../../attachment/index.ts";
+import {
+  AgentTurnsAttachmentSchema,
+  validateAgentTurnsAttachment,
+} from "./schema.ts";
 
 export * from "./schema.ts";
-export { agentTurnsV1 } from "./version.ts";
 
 export const agentTurnsRecordAttachment = defineRecordAttachment({
-  owner: "attempt",
+  owner: RecordOwner.attempt,
   family: "niceeval.agent-turns",
-  current: agentTurnsV1,
-  versions: [agentTurnsV1],
-  migrations: [],
+  schema: AgentTurnsAttachmentSchema,
+  validate: validateAgentTurnsAttachment,
 });

@@ -1,5 +1,4 @@
 import type { AssertionEntryId } from "../identity.ts";
-import type { Sha256Digest } from "../../record/model/identifiers.ts";
 
 /**
  * `entryId` is only stable inside one Assertions Attachment. It is not an
@@ -16,7 +15,7 @@ export interface BoundedJsonObject {
   readonly [key: string]: BoundedJsonValue;
 }
 
-/** JSON-only material that is bounded by the Assertions v1 decoder. */
+/** JSON-only material bounded before it enters a Record content source. */
 export type BoundedJsonValue =
   | BoundedJsonPrimitive
   | readonly BoundedJsonValue[]
@@ -167,23 +166,19 @@ export type BuiltInCriterion =
 /** A v1 writer may only emit a known builtin or a versioned third-party schema. */
 export type WritableCriterionEnvelope = BuiltInCriterion | ThirdPartyCriterion;
 
-export type AssertionMaterial<BlobRef> =
+export type AssertionMaterial<Content> =
   | {
       readonly kind: "unavailable";
       readonly reason: "not-recorded";
     }
   | {
-      readonly kind: "snapshot";
-      readonly value: BoundedJsonValue;
-    }
-  | {
-      readonly kind: "blob";
-      readonly ref: BlobRef;
-      readonly encoding: "utf-8" | "binary";
+      readonly kind: "content";
+      readonly content: Content;
+      /** How the producer encoded the logical material into the sealed content. */
+      readonly encoding: "json" | "utf-8" | "binary";
       readonly byteLength: number;
-      /** SHA-256 of the exact retained blob bytes. */
-      readonly sha256: Sha256Digest;
-      readonly preview: string;
+      /** Safe retained display metadata from capture; null when none was declared. */
+      readonly preview: string | null;
     };
 
 export type AssertionCoverage =
@@ -303,9 +298,9 @@ export type AssertionCriterionRecordOuter =
   | { readonly state: "available"; readonly value: BoundedJsonObject }
   | { readonly state: "unavailable"; readonly reason: "not-recorded" };
 
-export interface AssertionMaterials<BlobRef> {
-  readonly source: AssertionMaterial<BlobRef>;
-  readonly evidence: readonly AssertionMaterial<BlobRef>[];
+export interface AssertionMaterials<Content> {
+  readonly source: AssertionMaterial<Content>;
+  readonly evidence: readonly AssertionMaterial<Content>[];
   readonly coverage: AssertionCoverage;
   readonly limitations: readonly AssertionLimitation[];
 }
@@ -351,11 +346,11 @@ export type ExplanationRetention =
   | { readonly state: "unavailable"; readonly reason: "not-recorded" };
 
 /** The sole current semantic entry. Each fact has exactly one durable owner. */
-export interface AssertionEntry<BlobRef> {
+export interface AssertionEntry<Content> {
   readonly entryId: AssertionEntryId;
   readonly display: AssertionDisplay;
   readonly criterion: AssertionCriterionRecord;
-  readonly materials: AssertionMaterials<BlobRef>;
+  readonly materials: AssertionMaterials<Content>;
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
   readonly policy: AssertionDecisionPolicy;
@@ -368,11 +363,11 @@ export interface AssertionEntry<BlobRef> {
  * lets a bad plugin or future criterion affect its entry only after every
  * other entry boundary has already been verified.
  */
-export interface AssertionEntryOuter<BlobRef> {
+export interface AssertionEntryOuter<Content> {
   readonly entryId: AssertionEntryId;
   readonly display: AssertionDisplay;
   readonly criterion: AssertionCriterionRecordOuter;
-  readonly materials: AssertionMaterials<BlobRef>;
+  readonly materials: AssertionMaterials<Content>;
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
   readonly policy: AssertionDecisionPolicy;
@@ -380,27 +375,27 @@ export interface AssertionEntryOuter<BlobRef> {
   readonly explanationRetention: ExplanationRetention;
 }
 
-export interface AssertionsDocument<BlobRef> {
-  readonly entries: readonly AssertionEntry<BlobRef>[];
+export interface AssertionsDocument<Content> {
+  readonly entries: readonly AssertionEntry<Content>[];
 }
 
-export interface AssertionsDocumentOuter<BlobRef> {
-  readonly entries: readonly AssertionEntryOuter<BlobRef>[];
+export interface AssertionsDocumentOuter<Content> {
+  readonly entries: readonly AssertionEntryOuter<Content>[];
 }
 
-export type AssertionEntryRead<BlobRef> =
-  | { readonly state: "available"; readonly entry: AssertionEntry<BlobRef> }
+export type AssertionEntryRead<Content> =
+  | { readonly state: "available"; readonly entry: AssertionEntry<Content> }
   | {
       readonly state: "unsupported";
-      readonly entry: AssertionEntryOuter<BlobRef>;
+      readonly entry: AssertionEntryOuter<Content>;
       readonly reason: "builtin-unknown" | "third-party-schema-unavailable";
     }
   | {
       readonly state: "invalid";
-      readonly entry: AssertionEntryOuter<BlobRef>;
+      readonly entry: AssertionEntryOuter<Content>;
       readonly reason: "criterion-envelope-invalid" | "criterion-data-invalid";
     };
 
-export interface AssertionsProjection<BlobRef> {
-  readonly entries: readonly AssertionEntryRead<BlobRef>[];
+export interface AssertionsProjection<Content> {
+  readonly entries: readonly AssertionEntryRead<Content>[];
 }

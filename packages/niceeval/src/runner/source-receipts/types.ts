@@ -10,7 +10,6 @@ import type {
 import type { SandboxCommandsAttachment } from "../../record/family/sandbox-commands/definition.ts";
 import type { SourceReceiptCollection } from "../../record/family/source-receipt/index.ts";
 import type { SafeText } from "../../record/family/source-receipt/model.ts";
-import type { CommandManifest } from "./model.ts";
 
 /**
  * Bytes have already crossed the Sandbox wrapper's decode/redact/limit
@@ -24,6 +23,11 @@ export interface StagedCommandStream {
 }
 
 type DurableSandboxCommandReceipt = SandboxCommandsAttachment["segments"][number];
+
+export type CommandManifest = Pick<
+  DurableSandboxCommandReceipt,
+  "phase" | "invocation" | "workingDirectory"
+>;
 
 export interface StagedSandboxCommandReceipt {
   readonly segmentId: DurableSandboxCommandReceipt["segmentId"];

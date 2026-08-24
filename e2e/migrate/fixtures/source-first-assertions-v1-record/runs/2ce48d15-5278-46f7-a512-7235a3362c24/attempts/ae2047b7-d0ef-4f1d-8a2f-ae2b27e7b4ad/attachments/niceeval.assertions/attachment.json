@@ -1,1 +1,1 @@
-{"family":"niceeval.assertions","schemaVersion":1}
+{"format":"niceeval.record-attachment","ownerKind":"attempt","family":"niceeval.assertions","revision":1,"payload":{"sha256":"0e14e25f756945efccfc160887d8c4a9dc4ce60e345315fe95439954ded4e76c","byteLength":1312},"contents":[{"key":"historical-source","sha256":"7df4c3a5d2d577e3d08a941a2c77ba83defcee03618320b2e3643854336df3e4","byteLength":14}],"references":[]}

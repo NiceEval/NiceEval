@@ -1,6 +1,5 @@
 import type { Brand } from "effect";
 import type { AssertionEntryId } from "../assertions/identity.ts";
-import type { RecordBlobRef } from "../record/attachment/index.ts";
 import type {
   Sha256Digest,
   SourceFileItemId,
@@ -26,24 +25,24 @@ export interface SourceFileItemRef {
   readonly sha256: Sha256Digest;
 }
 
-/** A persisted source file carries its bytes only through this Attachment's closure. */
-export interface SourceFile<BlobRef = RecordBlobRef> {
+/** A source file delegates content representation to its caller. */
+export interface SourceFile<Content> {
   readonly fileItemId: SourceFileItemId;
   readonly path: CanonicalSourcePath;
   readonly sha256: Sha256Digest;
-  readonly blob: BlobRef;
+  readonly content: Content;
 }
 
 /** A source package is a display grouping, never a cross-Run lookup key. */
-export interface SourcePackage<BlobRef = RecordBlobRef> {
+export interface SourcePackage<Content> {
   readonly packageItemId: SourcePackageItemId;
   readonly label: string;
-  readonly files: readonly SourceFile<BlobRef>[];
+  readonly files: readonly SourceFile<Content>[];
 }
 
-/** The Run-owned durable Sources payload. */
-export interface SourcesDocument<BlobRef = RecordBlobRef> {
-  readonly packages: readonly SourcePackage<BlobRef>[];
+/** A storage-neutral source capture document. */
+export interface SourcesDocument<Content> {
+  readonly packages: readonly SourcePackage<Content>[];
 }
 
 export interface SourceCoordinate {

@@ -95,6 +95,6 @@ Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session �
 change 通过包与 API 升级交付，不要求用户改写已封口的 Record。
 
 只有 `RecordAttachment` 的持久 schema 与跨进程 wire codec 使用版本号。Assertions current envelope 是
-schemaVersion `2`；持久 payload 规则见 [Architecture](../architecture.md)。
+persistence revision `3`；持久 payload 规则见 [Architecture](../architecture.md)。
 
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。

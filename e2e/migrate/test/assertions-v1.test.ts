@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/migrate.md#assertions-v1-to-v2
+// owner: docs/engineering/testing/e2e/migrate.md#assertions-v1-to-current
 
 import { join } from "node:path";
 import { only } from "@niceeval/testkit";
@@ -10,7 +10,7 @@ import {
 } from "./support.ts";
 
 test("Assertions v1 只经显式迁移后可由 current reader 读回", async () => {
-  await e2e.case("assertions-v1-to-v2", async ({ paths, commands: { candidate } }) => {
+  await e2e.case("assertions-v1-to-current", async ({ paths, commands: { candidate } }) => {
     const recordRoot = join(paths.projectRoot, ".niceeval", "record");
     copySourceFirstAssertionsV1Fixture(paths.sourceRoot, recordRoot);
 
@@ -26,7 +26,7 @@ test("Assertions v1 只经显式迁移后可由 current reader 读回", async ()
     const migrated = await candidate.run(["migrate", "--yes"]);
     expect(migrated.exitCode, migrated.diagnostic()).toBe(0);
     expect(migrated.stdout, migrated.diagnostic()).toContain(
-      "Record migration migrated: committed 2, skipped 0, failed 0.",
+      "Record migration migrated: committed 1, skipped 0, failed 0.",
     );
 
     const repeated = await candidate.run(["migrate", "--yes"]);
@@ -78,8 +78,6 @@ test("Assertions v1 只经显式迁移后可由 current reader 读回", async ()
     expect(shown).not.toContain("recorded v1 fact");
     expect(shown).not.toContain("historical source that migration must discard");
     expect(shown).not.toContain('"answer":42');
-    expect(shown).toContain("niceeval.agent-turns");
-    expect(shown).toContain("invalid");
     expect(evidence.verdict).toBe("errored");
     const requiredUnavailable = only(
       evidence.entries,

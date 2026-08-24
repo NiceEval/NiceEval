@@ -2,7 +2,7 @@
 
 NiceEval 不把运行事实放进开放 JSON bag。每份事实都属于一个 branded Attachment family、一个 owner 和一个
 exact logical value。调用方不能追加字段或绕过 definition 改变 durable shape；第三方 package 可以定义自己的
-family，但必须显式贡献给 Host catalog。
+family，但必须用 matching persistence 显式贡献给 Host。
 
 契约单源始终在 [SPI identity 与 owner brand](../architecture.md#spi-identity-与-owner-brand) 与
 [Record Library](../library.md#definition-identity)。
@@ -21,7 +21,7 @@ family，但必须显式贡献给 Host catalog。
 | Eval 与 loader 的源码闭包 | `niceeval.sources` | origin Run | 同 Run 的 Attempt 共用当时源码 |
 | 有媒体类型的大型文件 | `niceeval.artifacts` | `owners.attempt` 或 `owners.run` | 归属由文件生命周期决定 |
 
-owner 不是展示层的选择。它决定目录、identity、reference 和 blob closure。reference Member 不产生新
+owner 不是展示层的选择。它决定目录、identity、reference 和 content closure。reference Member 不产生新
 Attempt，也不复制任何 Attachment；读取时沿精确 origin Attempt 和 origin Run 追溯。
 
 Runner Activities、Runner Diagnostics 与 Artifacts 对 Run / Attempt 分别定义 owner-branded family value；
@@ -38,7 +38,7 @@ ASCII path 排序且不重复；这让读侧能保留 agent 的完整轨迹，�
 
 ```text
 attachments/<family>/
-├─ attachment.json              family、numeric schemaVersion、payload/content/reference pointers
+├─ attachment.json              family、durable revision、Core 私有 payload/content/reference pointers
 ├─ payload/sha256/<digest>      canonical logical value
 └─ content/sha256/<digest>      本 Attachment 私有的 immutable content object
 ```
@@ -50,18 +50,16 @@ attachments/<family>/
   "format": "niceeval.record-attachment",
   "ownerKind": "attempt",
   "family": "niceeval.assertions",
-  "schemaVersion": 2,
+  "revision": 2,
   "payload": { "sha256": "...", "byteLength": 123 },
   "contents": [],
   "references": []
 }
 ```
 
-logical value 中的每个 `RecordContentHandle` 都必须有且只有一份本 directory 的 content object。反过来，每个
-content object 也必须被当前 envelope inventory 引用。producer 不能提交 raw path、raw digest、raw storage bytes
-或另一个 owner 的 handle。
+Core compiler 从 sealed content/reference Schema declarations 生成完整 closure plan。每个 token 都必须有且只有一份本 directory 的 content object；每个 object 也必须被 envelope inventory 引用。producer 不能提交 raw path、raw digest、raw storage bytes 或另一个 owner 的 token。
 
-例如 command stdout、文件文本、源码和 Artifact 内容可成为各自 family 的 blob。一个 Sources blob
+例如 command stdout、文件文本、源码和 Artifact 内容由各自 family 的 sealed content field 持有。一个 Sources content token
 不能被 Attempt 直接引用；source site 只保存 source item identity 和 digest 的 semantic join（语义连接）。
 
 缺 key、多 key、重复 key、手写 key、跨 owner ref 或 root 外路径会让这份 Attachment 成为 `invalid`。
@@ -71,24 +69,24 @@ content object 也必须被当前 envelope inventory 引用。producer 不能提
 
 ```text
 capture authority
-  → family.prepare(exact value, own content drafts)
+  → owner session callback 构造 exact current logical value
   → Run seal validates closure
   → complete
   → RecordReadSession reads on demand
-  → deep-frozen value 与 owner-local blob closure
+  → deep-frozen value 与 Scope-owned content reader
   → Analysis query
 ```
 
 Adapter、Sandbox 和 Assertion producer 在各自 capture authority 内构造 definition 的 current value，再调用
-owner-scoped `attach(definition, preparedWrite)`。第三方 package / Plugin 使用同一边界；它们不能绕过 family
+owner-scoped `attach(definition, callback)`。callback 获得 `content` 与 `reference` builder；第三方 package / Plugin 使用同一边界；它们不能绕过 family
 schema、content closure 或 owner brand 写入物理文件。
 
 `RecordReadSession` 的 internal adapter 只在 Sample 的 `AnalysisInput` 或 `DomainView` 首次需要某份
-owner/family 时读取和验证它。`available` 包含 deep-frozen payload 和完整内存 blob closure；`bytes(ref)`
-返回 defensive copy，不重开文件。Scope 关闭后，已经形成的值仍可同步消费。
+owner/family 时读取和验证它。`available` 包含 deep-frozen logical value 与仅对该值 sealed handle 有效的
+content reader。读取受 session Scope 管理；调用方在 Scope 内读尽或显式关闭，finalizer 会关闭遗留 stream、handle 与 lease。
 
 历史 owner 缺少请求 family 时返回 `not-recorded`。`invalid` 只影响请求该事实的 query，不能把其它 Core 或
-family 伪装为失败。已知 family 的旧 schemaVersion 不进入 ordinary reader；只在完整相邻 chain 存在时可显式
+family 伪装为失败。已知 family 的旧 durable revision 不进入 ordinary reader；只在完整相邻 chain 存在时可显式
 migrate。未贡献 family 不阻塞无关局部读取；direct/reference closure 与 `requireComplete()` 返回
 `family-definition-required`。
 

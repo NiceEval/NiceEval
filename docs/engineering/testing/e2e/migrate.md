@@ -6,10 +6,13 @@ Attachment composition。该 Repo 归属 Record 域，不把目录布局变成�
 
 ## Third-party Attachment family composition
 
-`third-party-family.test.ts` 从安装后的 `niceeval/record` 定义两个 Run-owned family，并把它们显式组成 writer
-Host。另一个 reader Host 只贡献其中一个 definition：已贡献 family 仍可局部读回；直接读取未贡献 family 返回
-`family-definition-required`，`requireComplete()` 也 fail closed。这个 owner 证明第三方 definition 不依赖全局
-registry，局部读取不会因无关未知 inventory 失败，而完整操作不能把未知 bytes 当作成功。
+`third-party-family.test.ts` 从安装后的 `niceeval/record` 定义两个 Run-owned current logical family。
+每个 family 用 `defineRecordAttachmentPersistence` 绑定 exact definition brand、revision 与 private chain。
+writer Host 组合两项 persistence；reader Host 只贡献其中一项。
+
+已贡献 family 仍可局部读回。直接读取未贡献 family 返回 `family-definition-required`，
+`requireComplete()` 也 fail closed。这个 owner 证明第三方 persistence 不依赖全局 registry，且无关未知
+inventory 不阻塞局部读取或被完整操作当作成功。
 
 current root identity 固定为 `niceeval.record.attachments`。`niceeval.record.source-receipts` 是本 Repo 验证的
 受支持 predecessor；更早的 `niceeval.record` aggregate 是独立 beta legacy format，不进入这条 migration。
@@ -36,26 +39,24 @@ format，应由独立 attested producer 与独立 owner 定义；不能把 0.13.
 ## Source-first maintenance fixture
 
 `fixtures/source-first-assertions-v1-record/` 是审查过的 literal fixture。它包含 source-first root、current
-Core、Seal manifest、Assertions v1 envelope/payload、待迁移丢弃的 own blob，以及一份 schema-invalid 的
-Agent Turns source。manifest 对 Core、Attachment 与 source inventory 闭合；fixture 不在 test runtime 通过
-candidate 生成 expected。
+Core、Seal manifest、Assertions revision 1 envelope/payload，以及待迁移丢弃的 own content。manifest 对 Core
+与 Attachment physical closure 闭合；fixture 不在 test runtime 通过 candidate 生成 expected。
 
-这份 fixture 同时固定两个边界。Assertions 的 package-owned `1 → 2` 相邻迁移仍可执行。无效 Agent Turns
-只使该 source 为 `invalid`，不能把 Assertions migration、Run selection 或其它公开读面污染成整份 Record
-invalid。迁移必须同步维护 Seal manifest，并逐字保留不属于目标 family 的 inventory。它不得删除无效 source、
-把它伪装成 `not-recorded`，或从旧 aggregate 补造其它 source。
+这份 fixture 固定 Assertions persistence 的 package-owned `1 → 2 → 3` 相邻迁移，且 revision 2 只在内存流转。
+迁移必须同步重建 Seal manifest 与 content closure，不得把被明确丢弃的 revision 1 material 伪装成 current fact，
+也不得从旧 aggregate 补造其它 source。
 
-`fixtures/source-first-assertions-future-record/` 是独立 literal closure。它只把已知 Assertions family 固定为
-future schemaVersion，用于区分 `unsupported-format` 与 payload/schema invalid；测试不在运行时改写 envelope
+`fixtures/source-first-assertions-future-record/` 是独立 literal closure。它只把已知 Assertions persistence 固定为
+future revision，用于区分 `unsupported-format` 与 payload/schema invalid；测试不在运行时改写 envelope
 再由 candidate 生成自己的 manifest expected。
 
 `fixtures/source-first-unknown-family-record/` 则保存一个 manifest 与目录都闭合、但当前 catalog 不认识的
 `niceeval.energy` family。公开 `migrate` 与 `show` 必须在 Core reconstruction 前返回 `unsupported-format`；
 不能把未来 writer 的合法扩展误报为 `record-bootstrap-invalid`，也不能形成 selection。
 
-## Assertions v1 to v2
+## Assertions v1 to current
 
-`assertions-v1.test.ts` 经公开 `niceeval migrate --yes` 与 `show` 证明 Assertions v1 形成 current Assertions 事实。
+`assertions-v1.test.ts` 经公开 `niceeval migrate --yes` 与 `show` 证明 Assertions v1 经过内存中的 revision 2 形成 current revision 3 Assertions 事实。
 display、可证明 decision/policy/contribution 与 source sites 按声明保留；criterion、subject、evidence 与旧
 diagnostic 不可证明，因此丢弃并给出 rerun 建议。required-unavailable gate 迁移后仍公开显示为 errored。
 
@@ -85,7 +86,7 @@ write 前返回 `record-migration-invalid`，并保持整个 Record tree digest 
 
 ## Future or unknown family
 
-`future-version.test.ts` 使用 closed literal future fixture。known family 的 future schemaVersion 让 migration
+`future-version.test.ts` 使用 closed literal future fixture。known family 的 future revision 让 migration
 返回 `record-format-unsupported`；ordinary `show` 仍先要求 root migration。unknown future family 则让 migration
 返回 `family-definition-required`，证明 maintenance 不会从目录名猜 definition，也不误报 Core invalid。
 

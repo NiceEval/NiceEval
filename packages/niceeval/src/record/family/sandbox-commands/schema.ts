@@ -1,24 +1,17 @@
-import { createHash } from "node:crypto";
-
 import { Schema } from "effect";
 
+import {
+  RecordTextContentSchema,
+  recordAttachmentIssue,
+  recordContent,
+  type RecordAttachmentIssue,
+} from "../../attachment/index.ts";
 import {
   CanonicalProjectRelativePathSchema,
   Sha256DigestSchema,
 } from "../../codec/identifiers.ts";
-import {
-  type RecordBlobRef,
-} from "../../attachment/blob-ref.ts";
-import { RecordBlobRefSchema } from "../../attachment/blob-ref.ts";
-import {
-  recordAttachmentIssue,
-  type RecordAttachmentIssue,
-} from "../../attachment/errors.ts";
 import { TurnIdSchema } from "../source-receipt/codec.ts";
-import {
-  MAX_COMMAND_INLINE_STREAM_BYTES,
-  MAX_COMMAND_STREAM_BYTES,
-} from "../source-receipt/limits.ts";
+import { MAX_COMMAND_STREAM_BYTES } from "../source-receipt/limits.ts";
 import {
   NonNegativeSafeIntegerSchema,
   PositiveSafeIntegerSchema,
@@ -31,22 +24,18 @@ import {
   hasCanonicalSourceSegments,
 } from "../source-receipt/index.ts";
 
+/**
+ * Command text is a logical handle; inline/object placement belongs to Record
+ * Core. sha256 identifies the sanitized stream fact, not physical placement.
+ */
 export const SandboxCommandStreamSchema = Schema.Struct({
-  storage: Schema.Union(
-    Schema.Struct({ kind: Schema.Literal("inline"), text: SafeTextSchema }),
-    Schema.Struct({ kind: Schema.Literal("blob"), ref: RecordBlobRefSchema }),
+  content: RecordTextContentSchema.pipe(
+    recordContent.maximumBytes(MAX_COMMAND_STREAM_BYTES),
   ),
   retainedBytes: NonNegativeSafeIntegerSchema,
   totalSafeUtf8Bytes: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-}).pipe(Schema.filter((value) =>
-  value.totalSafeUtf8Bytes >= value.retainedBytes &&
-  value.retainedBytes <= MAX_COMMAND_STREAM_BYTES &&
-  (value.storage.kind !== "inline" || (
-    value.retainedBytes <= MAX_COMMAND_INLINE_STREAM_BYTES &&
-    new TextEncoder().encode(value.storage.text).byteLength === value.retainedBytes
-  ))
-));
+});
 
 export const SandboxCommandReceiptSchema = Schema.Struct({
   segmentId: SourceSegmentIdSchema,
@@ -79,97 +68,48 @@ export const SandboxCommandsAttachmentSchema = Schema.Struct({
   segments: Schema.propertySignature(Schema.Array(SandboxCommandReceiptSchema)).pipe(
     Schema.fromKey("segments-data"),
   ),
-}).pipe(
-  Schema.filter((value) =>
-    hasCanonicalSourceSegments(value.segments) &&
-    new Set(value.segments.map((segment) => segment.commandId)).size === value.segments.length &&
-    value.collection.limitations.every((limitation) =>
-      (limitation.code !== "capture-failed" && limitation.code !== "capture-interrupted" ||
-        limitation.stage === "sandbox-wrapper" || limitation.stage === "attempt-finalizer") &&
-      ["command", "stdout", "stderr", "payload-byte", "blob-byte"].includes(limitation.target)
-    ), {
-    identifier: "SandboxCommandsAttachment",
-    description: "canonical command receipts owned by the Sandbox wrapper",
-  }),
-);
+});
 
 export type SandboxCommandsAttachment = Schema.Schema.Type<
   typeof SandboxCommandsAttachmentSchema
 >;
 
-function streamRefs(
-  stream: SandboxCommandsAttachment["segments"][number]["stdout"],
-): readonly RecordBlobRef[] {
-  return stream.storage.kind === "blob" ? [stream.storage.ref] : [];
+function invalid(path: readonly string[]): RecordAttachmentIssue {
+  return recordAttachmentIssue("record-attachment-schema-invalid", path);
 }
 
-export function sandboxCommandBlobRefs(
-  payload: SandboxCommandsAttachment,
-): readonly RecordBlobRef[] {
-  return Object.freeze(payload.segments.flatMap((segment) => [
-    ...streamRefs(segment.stdout),
-    ...streamRefs(segment.stderr),
-  ]));
-}
-
-function streamIntegrityIssues(
-  stream: SandboxCommandsAttachment["segments"][number]["stdout"],
-  blobs: ReadonlyMap<RecordBlobRef, Uint8Array>,
-  path: readonly string[],
+/**
+ * Owner-local business invariants, deliberately independent of content
+ * storage. Core enforces the content declaration limit and owns physical read
+ * integrity. This validator cannot open sealed handles; producers must derive
+ * retainedBytes and sha256 from the same sanitized stream they seal.
+ */
+export function validateSandboxCommandsAttachment(
+  value: SandboxCommandsAttachment,
 ): readonly RecordAttachmentIssue[] {
-  const bytes = stream.storage.kind === "inline"
-    ? new TextEncoder().encode(stream.storage.text)
-    : blobs.get(stream.storage.ref);
-  if (
-    bytes === undefined ||
-    bytes.byteLength !== stream.retainedBytes ||
-    stream.totalSafeUtf8Bytes < bytes.byteLength
-  ) {
-    return Object.freeze([
-      recordAttachmentIssue("record-attachment-materialized-invalid", path),
-    ]);
+  const issues: RecordAttachmentIssue[] = [];
+  if (!hasCanonicalSourceSegments(value.segments)) {
+    issues.push(invalid(["segments"]));
   }
-  if (stream.storage.kind === "blob") {
-    try {
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) {
-        return Object.freeze([
-          recordAttachmentIssue("record-attachment-materialized-invalid", path),
-        ]);
+  if (new Set(value.segments.map((segment) => segment.commandId)).size !== value.segments.length) {
+    issues.push(invalid(["segments", "commandId"]));
+  }
+  for (const [index, segment] of value.segments.entries()) {
+    for (const [name, stream] of [["stdout", segment.stdout], ["stderr", segment.stderr]] as const) {
+      if (
+        stream.retainedBytes > MAX_COMMAND_STREAM_BYTES ||
+        stream.totalSafeUtf8Bytes < stream.retainedBytes
+      ) {
+        issues.push(invalid(["segments", String(index), name]));
       }
-    } catch {
-      return Object.freeze([
-        recordAttachmentIssue("record-attachment-materialized-invalid", path),
-      ]);
     }
   }
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  return "sha256" in stream && stream.sha256 !== sha256
-    ? Object.freeze([recordAttachmentIssue("record-attachment-materialized-invalid", path)])
-    : Object.freeze([]);
+  if (!value.collection.limitations.every((limitation) =>
+    (limitation.code !== "capture-failed" && limitation.code !== "capture-interrupted" ||
+      limitation.stage === "sandbox-wrapper" || limitation.stage === "attempt-finalizer") &&
+    ["command", "stdout", "stderr", "value-byte", "content-byte"].includes(limitation.target)
+  )) {
+    issues.push(invalid(["collection", "limitations"]));
+  }
+  return Object.freeze(issues);
 }
-
-export function sandboxCommandsIntegrityIssues(
-  payload: SandboxCommandsAttachment,
-  blobs: readonly { readonly ref: RecordBlobRef; readonly bytes: Uint8Array }[],
-): readonly RecordAttachmentIssue[] {
-  const byRef = new Map(blobs.map((blob) => [blob.ref, blob.bytes] as const));
-  return Object.freeze(payload.segments.flatMap((segment, index) => [
-    ...streamIntegrityIssues(
-      segment.stdout,
-      byRef,
-      ["segments", String(index), "stdout"],
-    ),
-    ...streamIntegrityIssues(
-      segment.stderr,
-      byRef,
-      ["segments", String(index), "stderr"],
-    ),
-  ]));
-}
-
-export const SandboxCommandsBlobBudget = Object.freeze({
-  maximumBlobs: 4_000,
-  maximumBlobBytes: 16 * 1024 * 1024,
-  maximumTotalBytes: 64 * 1024 * 1024,
-});

@@ -1,12 +1,9 @@
 import { createHash } from "node:crypto";
 
-import { Either } from "effect";
-import type {
-  RecordAttachmentBlobs,
-  RecordAttachmentPayloadSnapshot,
-} from "../record/attachment/index.ts";
-import { sourcesAttachmentWrite } from "./attachment.ts";
+import { Effect } from "effect";
 import type { SourcesAttachment } from "../record/family/sources.ts";
+import type { RecordAttachmentContentReader } from "../record/host/types.ts";
+import type { RecordReaderReadError } from "../record/reader/errors.ts";
 
 export interface SourceItemProjection {
   readonly sourceItemId: string;
@@ -31,45 +28,40 @@ const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
  * closure. It never reopens the Record or consults the consumer worktree.
  */
 export function projectSourcesAttachment(
-  value: RecordAttachmentPayloadSnapshot<SourcesAttachment>,
-  blobs: RecordAttachmentBlobs,
-): Either.Either<SourcesProjection, SourcesProjectionError> {
-  const items: SourceItemProjection[] = [];
-  for (const item of value.items) {
-    const bytes = blobs.bytes(item.content);
-    if (Either.isLeft(bytes)) {
-      return Either.left(Object.freeze({
-        code: "source-blob-unavailable" as const,
+  value: SourcesAttachment,
+  content: RecordAttachmentContentReader,
+): Effect.Effect<SourcesProjection, SourcesProjectionError | RecordReaderReadError> {
+  return Effect.gen(function* () {
+    const items: SourceItemProjection[] = [];
+    for (const item of value.items) {
+      const bytes = yield* content.bytes(item.content);
+      let text: string;
+      try {
+        text = strictUtf8.decode(bytes);
+      } catch {
+        return yield* Effect.fail(Object.freeze({
+          code: "source-blob-utf8-invalid" as const,
+          sourceItemId: item.sourceItemId,
+        }));
+      }
+      if (createHash("sha256").update(text, "utf8").digest("hex") !== item.sha256) {
+        return yield* Effect.fail(Object.freeze({
+          code: "source-blob-digest-mismatch" as const,
+          sourceItemId: item.sourceItemId,
+        }));
+      }
+      items.push(Object.freeze({
         sourceItemId: item.sourceItemId,
+        path: item.path,
+        sha256: item.sha256,
+        text,
       }));
     }
-    let text: string;
-    try {
-      text = strictUtf8.decode(bytes.right);
-    } catch {
-      return Either.left(Object.freeze({
-        code: "source-blob-utf8-invalid" as const,
-        sourceItemId: item.sourceItemId,
-      }));
-    }
-    if (createHash("sha256").update(text, "utf8").digest("hex") !== item.sha256) {
-      return Either.left(Object.freeze({
-        code: "source-blob-digest-mismatch" as const,
-        sourceItemId: item.sourceItemId,
-      }));
-    }
-    items.push(Object.freeze({
-      sourceItemId: item.sourceItemId,
-      path: item.path,
-      sha256: item.sha256,
-      text,
-    }));
-  }
-  return Either.right(Object.freeze({ items: Object.freeze(items) }));
+    return Object.freeze({ items: Object.freeze(items) });
+  });
 }
 
 /** A fixed descriptor for internal callers; it is not a generic projector API. */
 export const sourcesProjector = Object.freeze({
-  write: sourcesAttachmentWrite,
   project: projectSourcesAttachment,
 });

@@ -1,10 +1,16 @@
-import { defineRecordAttachment } from "../../attachment/index.ts";
-import { sourcesV1 } from "./version.ts";
+import {
+  defineRecordAttachment,
+  RecordOwner,
+} from "../../attachment/index.ts";
+import {
+  SourcesAttachmentSchema,
+  validateSourcesAttachment,
+} from "./schema.ts";
 
+/** Current Sources fact only; durable history is composed in persistence.ts. */
 export const sourcesRecordAttachment = defineRecordAttachment({
-  owner: "run",
+  owner: RecordOwner.run,
   family: "niceeval.sources",
-  current: sourcesV1,
-  versions: [sourcesV1],
-  migrations: [],
+  schema: SourcesAttachmentSchema,
+  validate: validateSourcesAttachment,
 });

@@ -1,5 +1,9 @@
 import { Schema } from "effect";
 
+import {
+  recordAttachmentIssue,
+  type RecordAttachmentIssue,
+} from "../../attachment/index.ts";
 import { TurnIdSchema } from "../source-receipt/codec.ts";
 import { isCanonicalTurnLabel } from "../../../shared/turn-label.ts";
 import {
@@ -84,57 +88,100 @@ interface ActivityForValidation {
   readonly turnId: string | null;
 }
 
-function canonicalActivities(input: {
+function validateRunnerActivities(input: {
   readonly collection: { readonly state: string; readonly limitations: readonly unknown[] };
   readonly segments: readonly ActivityForValidation[];
-}): boolean {
-  if (!hasCanonicalSourceSegments(input.segments)) return false;
+}): readonly RecordAttachmentIssue[] {
+  const issues: RecordAttachmentIssue[] = [];
+  if (!hasCanonicalSourceSegments(input.segments)) {
+    issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments"]));
+  }
   const byId = new Map<string, ActivityForValidation>();
   const turnIds = new Set<string>();
-  for (const activity of input.segments) {
-    if (byId.has(activity.activityId)) return false;
+  for (const [index, activity] of input.segments.entries()) {
+    if (byId.has(activity.activityId)) {
+      issues.push(recordAttachmentIssue(
+        "record-attachment-schema-invalid",
+        ["segments", String(index), "activityId"],
+      ));
+    }
     if (activity.phase === "agent.send") {
-      if (activity.turnId === null || turnIds.has(activity.turnId)) return false;
-      turnIds.add(activity.turnId);
+      if (activity.turnId === null || turnIds.has(activity.turnId)) {
+        issues.push(recordAttachmentIssue(
+          "record-attachment-schema-invalid",
+          ["segments", String(index), "turnId"],
+        ));
+      }
+      if (activity.turnId !== null) turnIds.add(activity.turnId);
     } else if (activity.turnId !== null) {
-      return false;
+      issues.push(recordAttachmentIssue(
+        "record-attachment-schema-invalid",
+        ["segments", String(index), "turnId"],
+      ));
     }
     byId.set(activity.activityId, activity);
   }
-  for (const activity of input.segments) {
+  for (const [index, activity] of input.segments.entries()) {
     const end = activity.startOffsetMs + activity.durationMs;
-    if (!Number.isSafeInteger(end)) return false;
+    if (!Number.isSafeInteger(end)) {
+      issues.push(recordAttachmentIssue(
+        "record-attachment-schema-invalid",
+        ["segments", String(index), "durationMs"],
+      ));
+    }
     const seen = new Set<string>([activity.activityId]);
     let child = activity;
     while (child.parentActivityId !== null) {
       const parent = byId.get(child.parentActivityId);
-      if (parent === undefined || seen.has(parent.activityId)) return false;
+      if (parent === undefined || seen.has(parent.activityId)) {
+        issues.push(recordAttachmentIssue(
+          "record-attachment-schema-invalid",
+          ["segments", String(index), "parentActivityId"],
+        ));
+        break;
+      }
       const parentEnd = parent.startOffsetMs + parent.durationMs;
       if (
         !Number.isSafeInteger(parentEnd) ||
         parent.startOffsetMs > child.startOffsetMs ||
         child.startOffsetMs + child.durationMs > parentEnd
-      ) return false;
+      ) {
+        issues.push(recordAttachmentIssue(
+          "record-attachment-schema-invalid",
+          ["segments", String(index), "parentActivityId"],
+        ));
+        break;
+      }
       seen.add(parent.activityId);
       child = parent;
     }
   }
-  return input.collection.state !== "complete" ||
-    input.segments.every((activity) => activity.outcome !== "unknown");
+  if (
+    input.collection.state === "complete" &&
+    input.segments.some((activity) => activity.outcome === "unknown")
+  ) {
+    issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["collection"]));
+  }
+  return Object.freeze(issues);
 }
 
-function sourceLimitations(value: {
+function validateSourceLimitations(value: {
   readonly collection: { readonly limitations: readonly {
     readonly code: string;
     readonly stage?: string;
     readonly target: string;
   }[] };
-}): boolean {
-  return value.collection.limitations.every((limitation) =>
+}): readonly RecordAttachmentIssue[] {
+  return Object.freeze(value.collection.limitations.flatMap((limitation, index) =>
     (limitation.stage === undefined || limitation.stage === "runner-clock" ||
-      limitation.stage === "attempt-finalizer" || limitation.stage === "run-teardown") &&
-    (limitation.target === "activity" || limitation.target === "payload-byte")
-  );
+        limitation.stage === "attempt-finalizer" || limitation.stage === "run-teardown") &&
+      (limitation.target === "activity" || limitation.target === "value-byte")
+      ? []
+      : [recordAttachmentIssue(
+          "record-attachment-schema-invalid",
+          ["collection", "limitations", String(index)],
+        )]
+  ));
 }
 
 export const AttemptRunnerActivitiesAttachmentSchema = Schema.Struct({
@@ -144,9 +191,7 @@ export const AttemptRunnerActivitiesAttachmentSchema = Schema.Struct({
   segments: Schema.propertySignature(Schema.Array(AttemptRunnerActivityReceiptSchema)).pipe(
     Schema.fromKey("segments-data"),
   ),
-}).pipe(
-  Schema.filter((value) => canonicalActivities(value) && sourceLimitations(value)),
-);
+});
 
 export const RunRunnerActivitiesAttachmentSchema = Schema.Struct({
   collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
@@ -155,9 +200,7 @@ export const RunRunnerActivitiesAttachmentSchema = Schema.Struct({
   segments: Schema.propertySignature(Schema.Array(RunRunnerActivityReceiptSchema)).pipe(
     Schema.fromKey("segments-data"),
   ),
-}).pipe(
-  Schema.filter((value) => canonicalActivities(value) && sourceLimitations(value)),
-);
+});
 
 export type AttemptRunnerActivitiesAttachment = Schema.Schema.Type<
   typeof AttemptRunnerActivitiesAttachmentSchema
@@ -165,3 +208,21 @@ export type AttemptRunnerActivitiesAttachment = Schema.Schema.Type<
 export type RunRunnerActivitiesAttachment = Schema.Schema.Type<
   typeof RunRunnerActivitiesAttachmentSchema
 >;
+
+export function validateAttemptRunnerActivitiesAttachment(
+  value: AttemptRunnerActivitiesAttachment,
+): readonly RecordAttachmentIssue[] {
+  return Object.freeze([
+    ...validateRunnerActivities(value),
+    ...validateSourceLimitations(value),
+  ]);
+}
+
+export function validateRunRunnerActivitiesAttachment(
+  value: RunRunnerActivitiesAttachment,
+): readonly RecordAttachmentIssue[] {
+  return Object.freeze([
+    ...validateRunnerActivities(value),
+    ...validateSourceLimitations(value),
+  ]);
+}

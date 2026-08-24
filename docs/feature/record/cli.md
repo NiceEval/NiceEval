@@ -47,7 +47,7 @@ query 只读取自己的 definitions 与 reference closure。inventory 中出现
 family-definition-required
 owner: attempt 01K...
 family: acme.energy
-schemaVersion: 1
+revision: 1
 next: enable the package or Plugin that defines this family
 ```
 
@@ -66,7 +66,7 @@ ordinary command 不在错误后改盘，也不自动重开 session。用户运�
 `not-recorded` 表示 owner 没有请求的已知 family。`invalid` 表示 current definition 已找到，但 envelope、logical
 value、reference 或 content closure 不合法。I/O、permission 与 budget 是 typed failure，不伪装成这两个状态。
 
-完整发布、export 或调用方要求完整库存时，Host 调用 `requireComplete()`。未知 definition、non-current version、
+完整发布、export 或调用方要求完整库存时，Host 调用 `requireComplete()`。未知 persistence、non-current revision、
 Seal 与 envelope inventory 不一致、invalid closure 与超预算都 fail closed。局部 `show` 成功不等于整份 Record 已完整验证。
 
 ## `exp` 与 `exp --dry`
@@ -79,10 +79,11 @@ Experiment Host 把官方 definitions 与启用 Plugin 的 contributions 显式�
 
 ```text
 Adapter / Sandbox / Runner capture
-            ↓ source draft
-definition.prepare(value, drafts)
-            ↓ prepared write
-owner.attach(definition, preparedWrite)
+            ↓ session callback
+owner.attach(definition, ({ content, reference }) => ({
+  report: content.text("..."),
+  source: reference.to(exactDefinition, semanticValue),
+}))
             ↓
 Core reads source + digest + budget + envelope commit
 ```

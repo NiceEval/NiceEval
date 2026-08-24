@@ -7,65 +7,34 @@ import { join } from "node:path";
 import { Effect, Either, Schema } from "effect";
 import {
   defineRecordAttachment,
-  makeRecordAttachmentCatalog,
+  defineRecordAttachmentPersistence,
   makeRecordHost,
   makeRecordRoot,
   NodeRecordLive,
-  recordAttachmentVersion,
 } from "niceeval/record";
 import { expect, test } from "vitest";
 
-const valueLimits = Object.freeze({
-  maximumJsonBytes: 4_096,
-  maximumDepth: 4,
-  maximumNodes: 64,
-  maximumObjectKeys: 16,
-  maximumArrayItems: 16,
-  maximumKeyUtf8Bytes: 128,
-  maximumStringUtf8Bytes: 1_024,
-});
-
-const noContent = Object.freeze({
-  select: () => Object.freeze([]),
-  valueLimits,
-  budget: Object.freeze({
-    maximumBlobs: 1,
-    maximumBlobBytes: 1,
-    maximumTotalBytes: 1,
-  }),
-});
-
 function family<const Name extends string>(name: Name) {
-  const version = recordAttachmentVersion({
-    version: 1,
-    schema: Schema.Struct({ value: Schema.String }),
-    invariants: () => Object.freeze([]),
-    contents: noContent,
-    references: Object.freeze({
-      select: () => Object.freeze([]),
-      maximumReferences: 0,
-    }),
-  });
-  return defineRecordAttachment({
+  const attachment = defineRecordAttachment({
     owner: "run",
     family: name,
-    current: version,
-    versions: [version],
+    schema: Schema.Struct({ value: Schema.String }),
+  });
+  const persistence = defineRecordAttachmentPersistence({
+    attachment,
+    revision: 1,
     migrations: [],
   });
-}
-
-function catalog(definitions: Parameters<typeof makeRecordAttachmentCatalog>[0]) {
-  const made = makeRecordAttachmentCatalog(definitions);
-  if (Either.isLeft(made)) throw new Error("catalog invalid");
-  return made.right;
+  return Object.freeze({ attachment, persistence });
 }
 
 test("第三方 family 显式组合后可局部读取，完整读取对未贡献 family fail closed", async () => {
   const visible = family("acme.visible-fact");
   const hidden = family("acme.hidden-fact");
-  const writerHost = makeRecordHost({ attachments: catalog([visible, hidden]) });
-  const readerHost = makeRecordHost({ attachments: catalog([visible]) });
+  const writerHost = makeRecordHost({
+    attachments: [visible.persistence, hidden.persistence],
+  });
+  const readerHost = makeRecordHost({ attachments: [visible.persistence] });
   const directory = mkdtempSync(join(tmpdir(), "niceeval-third-party-record-"));
 
   try {
@@ -91,13 +60,8 @@ test("第三方 family 显式组合后可局部读取，完整读取对未贡献
           startedAt: 1 as never,
           expectedSlots: [],
         });
-        const visibleWrite = visible.prepare({ value: "visible" }, []);
-        const hiddenWrite = hidden.prepare({ value: "hidden" }, []);
-        if (Either.isLeft(visibleWrite) || Either.isLeft(hiddenWrite)) {
-          return yield* Effect.die("third-party write preparation failed");
-        }
-        yield* run.attach(visible, visibleWrite.right);
-        yield* run.attach(hidden, hiddenWrite.right);
+        yield* run.attach(visible.attachment, { value: "visible" });
+        yield* run.attach(hidden.attachment, { value: "hidden" });
         yield* run.seal({ completedAt: 2 as never });
         return run.runId;
       }));
@@ -108,8 +72,8 @@ test("第三方 family 显式组合后可局部读取，完整读取对未贡献
         const run = yield* reader.readRun(selection.runRefs[0]!);
         if (run.state !== "available") return yield* Effect.die("sealed Run unavailable");
 
-        const visibleRead = yield* reader.read(run.value.owner, visible);
-        const hiddenRead = yield* Effect.either(reader.read(run.value.owner, hidden));
+        const visibleRead = yield* reader.read(run.value.owner, visible.attachment);
+        const hiddenRead = yield* Effect.either(reader.read(run.value.owner, hidden.attachment));
         const complete = yield* Effect.either(reader.requireComplete(selection));
         return { visibleRead, hiddenRead, complete };
       }));

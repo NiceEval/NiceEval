@@ -48,6 +48,12 @@ export interface RecordAttachmentEncodeError {
   readonly issues: NonEmptyRecordAttachmentIssues;
 }
 
+/** A synchronous session builder callback threw before any physical write. */
+export interface RecordAttachmentCallbackFailed {
+  readonly code: "record-attachment-callback-failed";
+  readonly cause: unknown;
+}
+
 /** A writer was paired with a definition for the other owner kind. */
 export interface RecordOwnerDefinitionMismatch {
   readonly code: "record-owner-definition-mismatch";

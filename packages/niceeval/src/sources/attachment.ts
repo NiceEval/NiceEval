@@ -1,35 +1,36 @@
 import { createHash } from "node:crypto";
 
-import { Either, Schema, Stream } from "effect";
-import {
-  makeFixedRecordAttachmentWrite,
-  makeRecordBlobSource,
-  validateRecordAttachmentWrite,
-  type RecordAttachmentBlobDraft,
-  type RecordAttachmentWrite,
-  type RecordBlobRef,
-} from "../record/attachment/index.ts";
+import { Either, Schema } from "effect";
+
 import { RecordExactParseOptions } from "../record/codec/core.ts";
-import { sourcesRecordFamily } from "../record/family/catalog.ts";
+import {
+  CanonicalProjectRelativePathSchema,
+  Sha256DigestSchema,
+  SourceItemIdSchema,
+} from "../record/codec/identifiers.ts";
+import { sourcesRecordAttachment } from "../record/family/sources/definition.ts";
 import {
   SourcesAttachmentSchema,
-  sourcesBlobRefs as fixedSourcesBlobRefs,
+  SourcesLimits,
   type SourcesAttachment,
-} from "../record/family/sources.ts";
+} from "../record/family/sources/schema.ts";
+import type {
+  CanonicalProjectRelativePath,
+  Sha256Digest,
+  SourceItemId,
+} from "../record/model/identifiers.ts";
 import {
   AssertionSourceSiteSchema,
   type AssertionSourceSite,
 } from "../record/family/assertions/definition.ts";
+import type { RecordAttachmentSessionBuilder } from "../record/writer/current-attachment.ts";
 import {
   canonicalizeSourceText,
   isStrictUnicodeText,
 } from "./codec.ts";
-import type {
-  AssertionSourceSitesDocument,
-  SourcesDocument,
-} from "./model.ts";
+import type { AssertionSourceSitesDocument } from "./model.ts";
 
-/** Capture input only. It is flattened before durable encoding. */
+/** Capture input only. It is flattened before the current logical value is built. */
 export interface SourceItemAttachmentInput {
   readonly sourceItemId: string;
   readonly path: string;
@@ -38,7 +39,7 @@ export interface SourceItemAttachmentInput {
 
 /**
  * `packages` remains an in-memory capture convenience for the existing
- * source collector. It never appears in the fixed Sources payload.
+ * source collector. It never appears in the current Sources value.
  */
 export interface SourcesAttachmentInput {
   readonly items?: readonly SourceItemAttachmentInput[];
@@ -51,30 +52,43 @@ export interface SourcesAttachmentInput {
   }[];
 }
 
-export type SourcesAttachmentWriteError = {
+export type SourcesAttachmentBuildError = {
   readonly code: "sources-attachment-input-invalid";
 };
 
-export type AssertionSourceSitesAttachmentWriteError = {
+export type AssertionSourceSitesAttachmentBuildError = {
   readonly code: "assertion-source-sites-input-invalid";
 };
 
-const sourcesInputInvalid: SourcesAttachmentWriteError = Object.freeze({
+const sourcesInputInvalid: SourcesAttachmentBuildError = Object.freeze({
   code: "sources-attachment-input-invalid" as const,
 });
-const sourceSitesInputInvalid: AssertionSourceSitesAttachmentWriteError = Object.freeze({
+const sourceSitesInputInvalid: AssertionSourceSitesAttachmentBuildError = Object.freeze({
   code: "assertion-source-sites-input-invalid" as const,
 });
 
-/** The fixed catalog, not this producer, owns schema and migration identity. */
-export const sourcesAttachmentWrite = sourcesRecordFamily.write;
+export type SourcesAttachmentBuild = (
+  build: RecordAttachmentSessionBuilder,
+) => SourcesAttachment;
 
-/** Complete closure projection for the one Run-owned Sources payload. */
-export function sourceBlobRefs(
-  document: SourcesAttachment,
-): readonly RecordBlobRef[] {
-  return fixedSourcesBlobRefs(document);
+export interface SourcesAttachmentItemCapture {
+  readonly sourceItemId: SourceItemId;
+  readonly path: CanonicalProjectRelativePath;
+  readonly text: string;
+  readonly byteLength: number;
+  readonly sha256: Sha256Digest;
 }
+
+export interface SourcesAttachmentPlan {
+  /** Exact current value constructor to pass to the Run owner's attach call. */
+  readonly value: SourcesAttachmentBuild;
+  /** Same canonical capture used by semantic joins before the attach callback runs. */
+  readonly items: readonly SourcesAttachmentItemCapture[];
+}
+
+export type AssertionSourceSitesBuild = (
+  build: RecordAttachmentSessionBuilder,
+) => readonly AssertionSourceSite[];
 
 function sourceItems(
   input: SourcesAttachmentInput,
@@ -93,114 +107,166 @@ function sourceItems(
   );
 }
 
-function digest(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
+function canonicalSourceItem(
+  input: SourceItemAttachmentInput,
+): SourcesAttachmentItemCapture | undefined {
+  if (!isStrictUnicodeText(input.text)) return undefined;
+  const sourceItemId = Schema.decodeUnknownEither(
+    SourceItemIdSchema,
+    RecordExactParseOptions,
+  )(input.sourceItemId);
+  const path = Schema.decodeUnknownEither(
+    CanonicalProjectRelativePathSchema,
+    RecordExactParseOptions,
+  )(input.path);
+  if (Either.isLeft(sourceItemId) || Either.isLeft(path)) return undefined;
+  const text = canonicalizeSourceText(input.text);
+  const bytes = new TextEncoder().encode(text);
+  const byteLength = bytes.byteLength;
+  if (byteLength > SourcesLimits.maximumContentBytes) return undefined;
+  const sha256 = Schema.decodeUnknownEither(Sha256DigestSchema)(
+    createHash("sha256").update(bytes).digest("hex"),
+  );
+  if (Either.isLeft(sha256)) return undefined;
+  return Object.freeze({
+    sourceItemId: sourceItemId.right,
+    path: path.right,
+    text,
+    byteLength,
+    sha256: sha256.right,
+  });
 }
 
 /**
- * Writes the exact source closure as a flat owner-local manifest. Text is
- * canonicalized before both digesting and blob creation, so reader validation
- * never relies on the current worktree or package installation.
+ * Builds the exact current Sources value inside the owner session. The
+ * producer retains only canonical text; Record Core owns content materialization.
  */
-export function createSourcesAttachmentWrite(
+export function createSourcesAttachment(
   input: SourcesAttachmentInput,
-): Either.Either<
-  RecordAttachmentWrite<"run", never, never>,
-  SourcesAttachmentWriteError
-> {
+): Either.Either<SourcesAttachmentPlan, SourcesAttachmentBuildError> {
   const items = sourceItems(input);
-  if (items === undefined || items.some((item) => !isStrictUnicodeText(item.text))) {
+  if (items === undefined || items.length > SourcesLimits.maximumItems) {
     return Either.left(sourcesInputInvalid);
   }
-
-  const write = makeFixedRecordAttachmentWrite(sourcesAttachmentWrite, (blobs) => {
-    const drafts: RecordAttachmentBlobDraft<never, never>[] = [];
-    const candidateItems = items.map((item) => {
-      const text = canonicalizeSourceText(item.text);
-      const content = new TextEncoder().encode(text);
-      const draft = blobs.add(makeRecordBlobSource(Stream.succeed(content)));
-      drafts.push(draft);
-      return Object.freeze({
-        sourceItemId: item.sourceItemId,
-        path: item.path,
-        byteLength: content.byteLength,
-        sha256: digest(text),
-        content: draft.ref,
-      });
-    });
-    candidateItems.sort((left, right) => left.sourceItemId.localeCompare(right.sourceItemId));
-    const decoded = Schema.validateEither(
-      SourcesAttachmentSchema,
-      RecordExactParseOptions,
-    )(Object.freeze({ items: Object.freeze(candidateItems) }));
-    if (Either.isLeft(decoded)) {
-      throw new Error("Sources collector produced an invalid fixed-family payload");
-    }
-    return Object.freeze({ payload: decoded.right, blobs: Object.freeze(drafts) });
-  });
-  const closure = validateRecordAttachmentWrite(write);
-  if (Either.isLeft(closure)) {
-    throw new Error("Sources collector produced an invalid owner-local closure");
+  const canonical: SourcesAttachmentItemCapture[] = [];
+  for (const item of items) {
+    const decoded = canonicalSourceItem(item);
+    if (decoded === undefined) return Either.left(sourcesInputInvalid);
+    canonical.push(decoded);
   }
-  return Either.right(write);
+  canonical.sort((left, right) => left.sourceItemId.localeCompare(right.sourceItemId));
+  if (
+    new Set(canonical.map((item) => item.sourceItemId)).size !== canonical.length ||
+    new Set(canonical.map((item) => item.path)).size !== canonical.length
+  ) {
+    return Either.left(sourcesInputInvalid);
+  }
+  const frozen = Object.freeze([...canonical]);
+  return Either.right(Object.freeze({
+    value: (build: RecordAttachmentSessionBuilder) => {
+      const candidate = Object.freeze({
+        items: Object.freeze(frozen.map((item) => Object.freeze({
+          sourceItemId: item.sourceItemId,
+          path: item.path,
+          byteLength: item.byteLength,
+          sha256: item.sha256,
+          content: build.content.text(item.text),
+        }))),
+      });
+      const decoded = Schema.validateEither(
+        SourcesAttachmentSchema,
+        RecordExactParseOptions,
+      )(candidate);
+      if (Either.isLeft(decoded)) {
+        throw new Error("Sources capture violated its current schema");
+      }
+      return decoded.right;
+    },
+    items: frozen,
+  }));
+}
+
+interface PendingAssertionSourceSite {
+  readonly entryId: AssertionSourceSite["entryId"];
+  readonly sourceOrder: number;
+  readonly role: AssertionSourceSite["role"];
+  readonly sourceItemId: SourceItemId;
+  readonly sha256: Sha256Digest;
+  readonly start: AssertionSourceSite["start"];
+  readonly end: AssertionSourceSite["end"];
 }
 
 /**
- * Converts the old runtime source journal to the semantic rows embedded in
- * `niceeval.assertions`. This is intentionally a pure adapter: source
- * sites are no longer an Attempt-owned attachment or writer path.
+ * Converts the old runtime source journal to the current semantic rows embedded
+ * in `niceeval.assertions`; the callback mints each exact Sources reference.
  */
 export function deriveAssertionSourceSites(
   input: AssertionSourceSitesDocument,
-): Either.Either<
-  readonly AssertionSourceSite[],
-  AssertionSourceSitesAttachmentWriteError
-> {
-  const rows: unknown[] = [];
+): Either.Either<AssertionSourceSitesBuild, AssertionSourceSitesAttachmentBuildError> {
+  const rows: PendingAssertionSourceSite[] = [];
   const orders = new Set<number>();
   for (const entry of input.entries) {
     for (const site of entry.sites) {
       const leaf = site.trace.frames.at(-1);
       if (
-        leaf === undefined
-        || leaf.target.kind !== "file"
-        || !("coordinate" in leaf)
+        leaf === undefined ||
+        leaf.target.kind !== "file" ||
+        !("coordinate" in leaf)
       ) continue;
+      const sourceItemId = Schema.decodeUnknownEither(
+        SourceItemIdSchema,
+        RecordExactParseOptions,
+      )(leaf.target.fileItemId);
+      const sha256 = Schema.decodeUnknownEither(Sha256DigestSchema)(leaf.target.sha256);
+      if (Either.isLeft(sourceItemId) || Either.isLeft(sha256)) {
+        return Either.left(sourceSitesInputInvalid);
+      }
       for (const occurrence of site.occurrences) {
         if (orders.has(occurrence.sourceOrder)) return Either.left(sourceSitesInputInvalid);
         orders.add(occurrence.sourceOrder);
+        const coordinate = Object.freeze({
+          line: leaf.coordinate.line,
+          column: leaf.coordinate.column,
+        });
         rows.push(Object.freeze({
           entryId: entry.entryId,
           sourceOrder: occurrence.sourceOrder,
           role: occurrence.role,
-          sourceItemId: leaf.target.fileItemId,
-          sha256: leaf.target.sha256,
-          start: Object.freeze({
-            line: leaf.coordinate.line,
-            column: leaf.coordinate.column,
-          }),
-          end: Object.freeze({
-            line: leaf.coordinate.line,
-            column: leaf.coordinate.column,
-          }),
+          sourceItemId: sourceItemId.right,
+          sha256: sha256.right,
+          start: coordinate,
+          end: coordinate,
         }));
       }
     }
   }
-  const decoded = Schema.decodeUnknownEither(
-    Schema.Array(AssertionSourceSiteSchema),
-    RecordExactParseOptions,
-  )(rows);
-  if (Either.isLeft(decoded)) return Either.left(sourceSitesInputInvalid);
-  const ordered = [...decoded.right].sort((left, right) => {
+  rows.sort((left, right) => {
     const byEntry = left.entryId.localeCompare(right.entryId);
     return byEntry === 0 ? left.sourceOrder - right.sourceOrder : byEntry;
   });
-  return Either.right(Object.freeze(ordered));
+  const frozen = Object.freeze([...rows]);
+  return Either.right((build) => {
+    const candidate = Object.freeze(frozen.map((row) => Object.freeze({
+      entryId: row.entryId,
+      sourceOrder: row.sourceOrder,
+      role: row.role,
+      source: build.reference.to(sourcesRecordAttachment, {
+        sourceItemId: row.sourceItemId,
+        sha256: row.sha256,
+      }),
+      start: row.start,
+      end: row.end,
+    })));
+    const decoded = Schema.validateEither(
+      Schema.Array(AssertionSourceSiteSchema),
+      RecordExactParseOptions,
+    )(candidate);
+    if (Either.isLeft(decoded)) {
+      throw new Error("Assertion source capture violated its current schema");
+    }
+    return Object.freeze(decoded.right);
+  });
 }
 
-/** A fixed Sources payload is the only durable source document in v1. */
+/** The current Sources payload is the only durable source document. */
 export type SourcesPayload = SourcesAttachment;
-
-/** Retained for domain-only callers while they migrate from the old grouping. */
-export type LegacySourcesDocument = SourcesDocument<RecordBlobRef>;

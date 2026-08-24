@@ -777,7 +777,7 @@ export function readRunDiagnosticsDomainView(
                   summary: String(cause.summary),
                 }))),
                 redaction: diagnostic.redaction,
-                sourceFrame: diagnostic.sourceFrame,
+                sourceFrame: diagnostic.sourceFrame?.value ?? null,
               }))),
             }),
           });
@@ -972,14 +972,15 @@ function readDomainEntry<
         !(cached.read.state === "not-recorded" && resolved.core.outcome !== "completed"),
       );
     }
+    const detail = yield* domain.project({
+      core: resolved.core,
+      payload: cached.read.value,
+      content: cached.read.content,
+    });
     return domainAvailable<Kind>(
       slot.attempt,
       domain.kind,
-      domain.project({
-        core: resolved.core,
-        payload: cached.read.value,
-        blobs: cached.read.blobs,
-      }),
+      detail,
     );
   });
   return Effect.catchAll(operation, (error) =>
@@ -994,11 +995,15 @@ function readDomainEntry<
 }
 
 function attemptCoreFailureMessage(
-  error: AttemptCoreUnavailable | AttemptReadFailed,
+  error: AttemptCoreUnavailable | AttemptReadFailed | RecordReaderReadError,
 ): string {
-  return error.code === "analysis-attempt-core-unavailable"
-    ? "the selected Attempt Core is unavailable"
-    : `the selected Attempt Core could not be read: ${error.message}`;
+  if (error.code === "analysis-attempt-core-unavailable") {
+    return "the selected Attempt Core is unavailable";
+  }
+  if (error.code === "analysis-attempt-read-failed") {
+    return `the selected Attempt Core could not be read: ${error.message}`;
+  }
+  return `the selected Record fact could not be projected: ${safeErrorMessage(error)}`;
 }
 
 function domainAvailable<Kind extends BuiltinDomainViewKind>(

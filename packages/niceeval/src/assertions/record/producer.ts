@@ -21,10 +21,10 @@ import type {
   WritableCriterionEnvelope,
 } from "./model.ts";
 
-export interface AssertionEntryInput<BlobRef> {
+export interface AssertionEntryInput<Content> {
   readonly display: AssertionDisplay;
   readonly criterion: AssertionCriterionRecord;
-  readonly materials: AssertionMaterials<BlobRef>;
+  readonly materials: AssertionMaterials<Content>;
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
   readonly policy: AssertionDecisionPolicy;
@@ -58,10 +58,10 @@ function encodedBytes(value: unknown): number {
   return UTF8.encode(JSON.stringify(value)).byteLength;
 }
 
-function compactEntries<BlobRef>(
-  entries: readonly AssertionEntry<BlobRef>[],
+function compactEntries<Content>(
+  entries: readonly AssertionEntry<Content>[],
   mode: "root" | "minimal",
-): readonly AssertionEntry<BlobRef>[] {
+): readonly AssertionEntry<Content>[] {
   const childState = (value: AssertionFactValue): string | undefined => {
     if (value.kind !== "fields") return undefined;
     const state = value.fields.find((field) => field.label === "state")?.value;
@@ -69,7 +69,7 @@ function compactEntries<BlobRef>(
   };
   const compactFact = (
     value: AssertionFactValue,
-    decision: AssertionEntry<BlobRef>["decision"],
+    decision: AssertionEntry<Content>["decision"],
   ): AssertionFactValue => {
     switch (value.kind) {
       case "unavailable":
@@ -151,10 +151,10 @@ function firstSchemaIssue(error: ParseResult.ParseError): string | undefined {
   }
 }
 
-export interface AssertionsDocumentBuilder<BlobRef> {
+export interface AssertionsDocumentBuilder<Content> {
   /** Appends exactly one completed Assertion in declaration/display order. */
   readonly append: (
-    entry: AssertionEntryInput<BlobRef>,
+    entry: AssertionEntryInput<Content>,
   ) => Either.Either<AssertionEntryId, AssertionsProducerError>;
   /**
    * Checks the writer-only exact document schema once and prevents subsequent
@@ -162,27 +162,28 @@ export interface AssertionsDocumentBuilder<BlobRef> {
    * an evaluator or minting another entry ID.
    */
   readonly seal: (input?: { readonly maximumBytes?: number }) => Either.Either<
-    AssertionsDocument<BlobRef>,
+    AssertionsDocument<Content>,
     AssertionsProducerError
   >;
 }
 
 /**
  * Assertion producers own normalization and ID allocation. This builder owns
- * neither Record paths nor blob streams: the later Attachment adapter supplies
- * Record's local builder, so an entry cannot borrow another Attachment's ref.
+ * neither Record paths nor content streams: the later Attachment adapter
+ * supplies Record's local builder, so an entry cannot borrow another
+ * Attachment's capability.
  */
-export function createAssertionsDocumentBuilder<BlobRef, Encoded>(input: {
-  readonly documentSchema: Schema.Schema<AssertionsDocument<BlobRef>, Encoded>;
+export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
+  readonly documentSchema: Schema.Schema<AssertionsDocument<Content>, Encoded>;
   readonly entryIds: AssertionsEntryIdSource;
-}): AssertionsDocumentBuilder<BlobRef> {
+}): AssertionsDocumentBuilder<Content> {
   const entryIds = new Set<string>();
-  const entries: AssertionEntry<BlobRef>[] = [];
-  let sealed: AssertionsDocument<BlobRef> | undefined;
+  const entries: AssertionEntry<Content>[] = [];
+  let sealed: AssertionsDocument<Content> | undefined;
 
-  const builder: AssertionsDocumentBuilder<BlobRef> = {
+  const builder: AssertionsDocumentBuilder<Content> = {
     append(
-      entry: AssertionEntryInput<BlobRef>,
+      entry: AssertionEntryInput<Content>,
     ): Either.Either<AssertionEntryId, AssertionsProducerError> {
       if (sealed !== undefined) {
         return Either.left({ code: "assertions-document-sealed" });
@@ -210,7 +211,7 @@ export function createAssertionsDocumentBuilder<BlobRef, Encoded>(input: {
     },
     seal(
       sealInput: { readonly maximumBytes?: number } = {},
-    ): Either.Either<AssertionsDocument<BlobRef>, AssertionsProducerError> {
+    ): Either.Either<AssertionsDocument<Content>, AssertionsProducerError> {
       if (sealed !== undefined) {
         return Either.right(sealed);
       }
@@ -221,7 +222,7 @@ export function createAssertionsDocumentBuilder<BlobRef, Encoded>(input: {
           "Reduce assertion source sites or assertion count and retry.",
         ));
       }
-      let document: AssertionsDocument<BlobRef> = Object.freeze({
+      let document: AssertionsDocument<Content> = Object.freeze({
         entries: Object.freeze([...entries]),
       });
       if (!isAssertionsRawDataGraph(document)) {
@@ -243,8 +244,8 @@ export function createAssertionsDocumentBuilder<BlobRef, Encoded>(input: {
         return Either.left(invalidDocument(
           `Assertions could not be saved after diagnostic compaction because entry framing is ` +
           `${documentBytes} bytes; ${maximumBytes} bytes remain after source sites within the ` +
-          `${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. Large source and evidence snapshots are already ` +
-          "stored as blobs; reduce assertion count or matcher/display identity and retry.",
+          `${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. Source and evidence material is already ` +
+          "stored as sealed content; reduce assertion count or matcher/display identity and retry.",
         ));
       }
       const encoded = Schema.encodeUnknownEither(

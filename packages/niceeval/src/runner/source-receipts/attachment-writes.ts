@@ -1,38 +1,32 @@
 import { createHash } from "node:crypto";
 
-import { Effect, Either, Schema, Stream } from "effect";
+import { Either, Schema } from "effect";
 
-import {
-  makeRecordAttachmentBlobDrafts,
-  RecordContent,
-  type RecordAttachmentBlobBuilder,
-  type RecordAttachmentBlobDraft,
-  type RecordAttachmentWrite,
-} from "../../record/attachment/index.ts";
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
-import { Sha256DigestSchema } from "../../record/codec/identifiers.ts";
 import {
-  agentTurnsRecordAttachment,
   AgentTurnsAttachmentSchema,
+  type AgentTurnsAttachment,
 } from "../../record/family/agent-turns/definition.ts";
 import {
-  attemptRunnerActivitiesRecordAttachment,
-  runRunnerActivitiesRecordAttachment,
   AttemptRunnerActivitiesAttachmentSchema,
   RunRunnerActivitiesAttachmentSchema,
+  type AttemptRunnerActivitiesAttachment,
+  type RunRunnerActivitiesAttachment,
 } from "../../record/family/runner-activities/definition.ts";
 import {
-  attemptRunnerDiagnosticsRecordAttachment,
-  runRunnerDiagnosticsRecordAttachment,
   AttemptRunnerDiagnosticsAttachmentSchema,
   RunRunnerDiagnosticsAttachmentSchema,
+  type AttemptRunnerDiagnosticsAttachment,
+  type RunRunnerDiagnosticsAttachment,
 } from "../../record/family/runner-diagnostics/definition.ts";
+import { sourcesRecordAttachment } from "../../record/family/sources/definition.ts";
 import {
-  sandboxCommandsRecordAttachment,
+  SandboxCommandReceiptSchema,
   SandboxCommandsAttachmentSchema,
   type SandboxCommandsAttachment,
 } from "../../record/family/sandbox-commands/definition.ts";
-import { MAX_COMMAND_INLINE_STREAM_BYTES } from "../../record/family/source-receipt/limits.ts";
+import { SourceReceiptCollectionSchema } from "../../record/family/source-receipt/index.ts";
+import type { RecordAttachmentSessionBuilder } from "../../record/writer/current-attachment.ts";
 import type {
   RunnerAttemptSourceReceiptsCapture,
   RunnerRunSourceReceiptsCapture,
@@ -66,89 +60,153 @@ function decode<Value, Encoded>(
   return Either.isLeft(decoded) ? Either.left(invalid(family)) : Either.right(decoded.right);
 }
 
-function commandStream(
-  stream: StagedCommandStream,
-  blobs: RecordAttachmentBlobBuilder,
-  drafts: RecordAttachmentBlobDraft<never, never>[],
-): SandboxCommandsAttachment["segments"][number]["stdout"] {
+function commandStreamIsValid(stream: StagedCommandStream): boolean {
   const bytes = new TextEncoder().encode(stream.text);
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  if (bytes.byteLength !== stream.retainedBytes || digest !== stream.sha256) {
-    throw new Error("Staged Sandbox Command stream closure was invalid");
+  const retainedBytes = bytes.byteLength;
+  return retainedBytes === stream.retainedBytes &&
+    createHash("sha256").update(bytes).digest("hex") === stream.sha256 &&
+    stream.totalSafeUtf8Bytes >= retainedBytes;
+}
+
+export type SandboxCommandsAttachmentBuild = (
+  build: RecordAttachmentSessionBuilder,
+) => SandboxCommandsAttachment;
+
+export type AttemptRunnerDiagnosticsAttachmentBuild = (
+  build: RecordAttachmentSessionBuilder,
+) => AttemptRunnerDiagnosticsAttachment;
+
+export type RunRunnerDiagnosticsAttachmentBuild = (
+  build: RecordAttachmentSessionBuilder,
+) => RunRunnerDiagnosticsAttachment;
+
+const StagedSandboxCommandsSchema = Schema.Struct({
+  collection: SourceReceiptCollectionSchema,
+  segments: Schema.Array(
+    SandboxCommandReceiptSchema.pipe(Schema.omit("stdout", "stderr")),
+  ),
+});
+
+function sandboxCommandsAttachment(
+  input: NonNullable<RunnerAttemptSourceReceiptsCapture["sandboxCommands"]>,
+): Either.Either<SandboxCommandsAttachmentBuild, SourceReceiptAttachmentBuildError> {
+  if (input.segments.some((segment) =>
+    !commandStreamIsValid(segment.stdout) || !commandStreamIsValid(segment.stderr)
+  )) {
+    return Either.left(invalid("sandbox-commands"));
   }
-  const decodedDigest = Schema.decodeUnknownEither(Sha256DigestSchema)(stream.sha256);
-  if (Either.isLeft(decodedDigest)) {
-    throw new Error("Staged Sandbox Command stream digest was invalid");
-  }
-  if (bytes.byteLength <= MAX_COMMAND_INLINE_STREAM_BYTES) {
-    return Object.freeze({
-      storage: Object.freeze({ kind: "inline" as const, text: stream.text }),
-      retainedBytes: stream.retainedBytes,
-      totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes,
-      sha256: decodedDigest.right,
+
+  const metadata = Schema.validateEither(
+    StagedSandboxCommandsSchema,
+    RecordExactParseOptions,
+  )({
+    collection: input.collection,
+    segments: input.segments.map((segment) => ({
+      segmentId: segment.segmentId,
+      commandId: segment.commandId,
+      sequence: segment.sequence,
+      turnId: segment.turnId,
+      phase: segment.phase,
+      invocation: segment.invocation,
+      workingDirectory: segment.workingDirectory,
+      outcome: segment.outcome,
+    })),
+  });
+  if (Either.isLeft(metadata)) return Either.left(invalid("sandbox-commands"));
+
+  return Either.right((build) => {
+    const candidate = Object.freeze({
+      collection: metadata.right.collection,
+      segments: Object.freeze(metadata.right.segments.map((segment, index) => Object.freeze({
+        ...segment,
+        stdout: Object.freeze({
+          content: build.content.text(input.segments[index]!.stdout.text),
+          retainedBytes: input.segments[index]!.stdout.retainedBytes,
+          totalSafeUtf8Bytes: input.segments[index]!.stdout.totalSafeUtf8Bytes,
+          sha256: input.segments[index]!.stdout.sha256,
+        }),
+        stderr: Object.freeze({
+          content: build.content.text(input.segments[index]!.stderr.text),
+          retainedBytes: input.segments[index]!.stderr.retainedBytes,
+          totalSafeUtf8Bytes: input.segments[index]!.stderr.totalSafeUtf8Bytes,
+          sha256: input.segments[index]!.stderr.sha256,
+        }),
+      }))),
     });
-  }
-  const draft = blobs.add(RecordContent.stream(Stream.fromEffect(Effect.sync(() => bytes))));
-  drafts.push(draft);
-  return Object.freeze({
-    storage: Object.freeze({ kind: "blob" as const, ref: draft.content }),
-    retainedBytes: stream.retainedBytes,
-    totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes,
-    sha256: decodedDigest.right,
+    const decoded = Schema.validateEither(
+      SandboxCommandsAttachmentSchema,
+      RecordExactParseOptions,
+    )(candidate);
+    if (Either.isLeft(decoded)) {
+      throw new Error("Sandbox Command capture violated its current schema");
+    }
+    return decoded.right;
   });
 }
 
-export interface AttemptSourceReceiptAttachmentWrites {
-  readonly agentTurns?: RecordAttachmentWrite<
-    "attempt",
-    never,
-    never,
-    "niceeval.agent-turns",
-    1
-  >;
-  readonly sandboxCommands?: RecordAttachmentWrite<
-    "attempt",
-    never,
-    never,
-    "niceeval.sandbox-commands",
-    1
-  >;
-  readonly runnerActivities: RecordAttachmentWrite<
-    "attempt",
-    never,
-    never,
-    "niceeval.runner-activities",
-    1
-  >;
-  readonly runnerDiagnostics: RecordAttachmentWrite<
-    "attempt",
-    never,
-    never,
-    "niceeval.runner-diagnostics",
-    1
-  >;
+function attemptRunnerDiagnosticsAttachment(
+  input: AttemptRunnerDiagnosticsAttachment,
+): AttemptRunnerDiagnosticsAttachmentBuild {
+  return (build) => {
+    const candidate = Object.freeze({
+      collection: input.collection,
+      segments: Object.freeze(input.segments.map((segment) => Object.freeze({
+        ...segment,
+        sourceFrame: segment.sourceFrame === null
+          ? null
+          : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
+      }))),
+    });
+    const decoded = Schema.validateEither(
+      AttemptRunnerDiagnosticsAttachmentSchema,
+      RecordExactParseOptions,
+    )(candidate);
+    if (Either.isLeft(decoded)) {
+      throw new Error("Attempt Runner Diagnostics capture violated its current schema");
+    }
+    return decoded.right;
+  };
 }
 
-export interface RunSourceReceiptAttachmentWrites {
-  readonly runnerActivities?: RecordAttachmentWrite<
-    "run",
-    never,
-    never,
-    "niceeval.runner-activities",
-    1
-  >;
-  readonly runnerDiagnostics?: RecordAttachmentWrite<
-    "run",
-    never,
-    never,
-    "niceeval.runner-diagnostics",
-    1
-  >;
+function runRunnerDiagnosticsAttachment(
+  input: RunRunnerDiagnosticsAttachment,
+): RunRunnerDiagnosticsAttachmentBuild {
+  return (build) => {
+    const candidate = Object.freeze({
+      collection: input.collection,
+      segments: Object.freeze(input.segments.map((segment) => Object.freeze({
+        ...segment,
+        sourceFrame: segment.sourceFrame === null
+          ? null
+          : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
+      }))),
+    });
+    const decoded = Schema.validateEither(
+      RunRunnerDiagnosticsAttachmentSchema,
+      RecordExactParseOptions,
+    )(candidate);
+    if (Either.isLeft(decoded)) {
+      throw new Error("Run Runner Diagnostics capture violated its current schema");
+    }
+    return decoded.right;
+  };
 }
 
-export function createAttemptSourceReceiptAttachmentWrites(
+export interface AttemptSourceReceiptAttachments {
+  readonly agentTurns?: AgentTurnsAttachment;
+  readonly sandboxCommands?: SandboxCommandsAttachmentBuild;
+  readonly runnerActivities: AttemptRunnerActivitiesAttachment;
+  readonly runnerDiagnostics: AttemptRunnerDiagnosticsAttachmentBuild;
+}
+
+export interface RunSourceReceiptAttachments {
+  readonly runnerActivities?: RunRunnerActivitiesAttachment;
+  readonly runnerDiagnostics?: RunRunnerDiagnosticsAttachmentBuild;
+}
+
+export function createAttemptSourceReceiptAttachments(
   input: RunnerAttemptSourceReceiptsCapture,
-): Either.Either<AttemptSourceReceiptAttachmentWrites, SourceReceiptAttachmentBuildError> {
+): Either.Either<AttemptSourceReceiptAttachments, SourceReceiptAttachmentBuildError> {
   const agentTurns = input.agentTurns === undefined
     ? undefined
     : decode(AgentTurnsAttachmentSchema, input.agentTurns, "agent-turns");
@@ -166,64 +224,24 @@ export function createAttemptSourceReceiptAttachmentWrites(
     "runner-diagnostics",
   );
   if (Either.isLeft(diagnostics)) return Either.left(diagnostics.left);
-
-  let sandboxPayload: SandboxCommandsAttachment | undefined;
-  const sandboxDrafts = input.sandboxCommands === undefined
+  const sandboxCommands = input.sandboxCommands === undefined
     ? undefined
-    : makeRecordAttachmentBlobDrafts((blobs) => {
-        const drafts: RecordAttachmentBlobDraft<never, never>[] = [];
-        const candidate = Object.freeze({
-          collection: input.sandboxCommands!.collection,
-          segments: Object.freeze(input.sandboxCommands!.segments.map((segment) => Object.freeze({
-            ...segment,
-            stdout: commandStream(segment.stdout, blobs, drafts),
-            stderr: commandStream(segment.stderr, blobs, drafts),
-          }))),
-        });
-        const decoded = decode(SandboxCommandsAttachmentSchema, candidate, "sandbox-commands");
-        if (Either.isLeft(decoded)) {
-          throw new Error("Sandbox Command capture violated its source schema");
-        }
-        sandboxPayload = decoded.right;
-        return Object.freeze(drafts);
-      });
-  const sandboxCommands = sandboxDrafts === undefined || sandboxPayload === undefined
-    ? undefined
-    : sandboxCommandsRecordAttachment.prepare(sandboxPayload, sandboxDrafts);
+    : sandboxCommandsAttachment(input.sandboxCommands);
   if (sandboxCommands !== undefined && Either.isLeft(sandboxCommands)) {
-    return Either.left(invalid("sandbox-commands"));
+    return Either.left(sandboxCommands.left);
   }
-
-  const preparedAgentTurns = agentTurns === undefined
-    ? undefined
-    : agentTurnsRecordAttachment.prepare(agentTurns.right, Object.freeze([]));
-  if (preparedAgentTurns !== undefined && Either.isLeft(preparedAgentTurns)) {
-    return Either.left(invalid("agent-turns"));
-  }
-  const preparedActivities = attemptRunnerActivitiesRecordAttachment.prepare(
-    activities.right,
-    Object.freeze([]),
-  );
-  if (Either.isLeft(preparedActivities)) return Either.left(invalid("runner-activities"));
-  const preparedDiagnostics = attemptRunnerDiagnosticsRecordAttachment.prepare(
-    diagnostics.right,
-    Object.freeze([]),
-  );
-  if (Either.isLeft(preparedDiagnostics)) return Either.left(invalid("runner-diagnostics"));
 
   return Either.right(Object.freeze({
-    ...(preparedAgentTurns === undefined ? {} : {
-      agentTurns: preparedAgentTurns.right,
-    }),
+    ...(agentTurns === undefined ? {} : { agentTurns: agentTurns.right }),
     ...(sandboxCommands === undefined ? {} : { sandboxCommands: sandboxCommands.right }),
-    runnerActivities: preparedActivities.right,
-    runnerDiagnostics: preparedDiagnostics.right,
+    runnerActivities: activities.right,
+    runnerDiagnostics: attemptRunnerDiagnosticsAttachment(diagnostics.right),
   }));
 }
 
-export function createRunSourceReceiptAttachmentWrites(
+export function createRunSourceReceiptAttachments(
   input: RunnerRunSourceReceiptsCapture,
-): Either.Either<RunSourceReceiptAttachmentWrites, SourceReceiptAttachmentBuildError> {
+): Either.Either<RunSourceReceiptAttachments, SourceReceiptAttachmentBuildError> {
   const activities = input.runnerActivities === undefined
     ? undefined
     : decode(RunRunnerActivitiesAttachmentSchema, input.runnerActivities, "runner-activities");
@@ -233,25 +251,10 @@ export function createRunSourceReceiptAttachmentWrites(
     : decode(RunRunnerDiagnosticsAttachmentSchema, input.runnerDiagnostics, "runner-diagnostics");
   if (diagnostics !== undefined && Either.isLeft(diagnostics)) return Either.left(diagnostics.left);
 
-  const preparedActivities = activities === undefined
-    ? undefined
-    : runRunnerActivitiesRecordAttachment.prepare(activities.right, Object.freeze([]));
-  if (preparedActivities !== undefined && Either.isLeft(preparedActivities)) {
-    return Either.left(invalid("runner-activities"));
-  }
-  const preparedDiagnostics = diagnostics === undefined
-    ? undefined
-    : runRunnerDiagnosticsRecordAttachment.prepare(diagnostics.right, Object.freeze([]));
-  if (preparedDiagnostics !== undefined && Either.isLeft(preparedDiagnostics)) {
-    return Either.left(invalid("runner-diagnostics"));
-  }
-
   return Either.right(Object.freeze({
-    ...(preparedActivities === undefined ? {} : {
-      runnerActivities: preparedActivities.right,
-    }),
-    ...(preparedDiagnostics === undefined ? {} : {
-      runnerDiagnostics: preparedDiagnostics.right,
+    ...(activities === undefined ? {} : { runnerActivities: activities.right }),
+    ...(diagnostics === undefined ? {} : {
+      runnerDiagnostics: runRunnerDiagnosticsAttachment(diagnostics.right),
     }),
   }));
 }
