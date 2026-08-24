@@ -212,17 +212,15 @@ type NumericFactMaterial =
   | {
       readonly state: "lower-bound";
       readonly value: number;
-      readonly reason: "usage-collection-partial";
     }
   | {
       readonly state: "unavailable";
       readonly reason:
         | "usage-not-recorded"
-        | "usage-collection-unavailable"
-        | "numeric-value-non-finite"
+        | "usage-input-invalid"
+        | "non-finite-number"
         | "model-not-recorded"
         | "price-source-not-found"
-        | "price-charge-not-found"
         | "pricing-input-invalid";
     };
 
@@ -237,7 +235,7 @@ type PricingEstimateReceipt = {
   readonly kind: "pricing-estimate";
   readonly model: string;
   readonly priceSource: {
-    readonly kind: "configured" | "builtin";
+    readonly kind: "configured-override" | "builtin";
     readonly selector: string;
   };
   readonly charges: readonly PricingChargeReceipt[];
@@ -245,7 +243,7 @@ type PricingEstimateReceipt = {
 };
 ```
 
-`NumericFactMaterial.value` 必须 finite；显式 value 可以是负数。Usage 的 exact／lower-bound value、charge 的数值和 `amountUSD` 都必须 finite 且不小于零，token 数还是 safe integer。number candidate 是 `NaN` 或正负 `Infinity` 时使用 `unavailable/numeric-value-non-finite`，不能把它写成 exact、作者错误或 mismatch。非 number candidate 可在调用边界作为作者错误拒绝。
+`NumericFactMaterial.value` 必须 finite；显式 value 可以是负数。Usage 的 exact／lower-bound value、charge 的数值和 `amountUSD` 都必须 finite 且不小于零，token 数还是 safe integer。number candidate 是 `NaN` 或正负 `Infinity` 时使用 `unavailable/non-finite-number`，不能把它写成 exact、作者错误或 mismatch。非 number candidate 可在调用边界作为作者错误拒绝。
 
 pricing receipt 最多四个 charge，每个 bucket 最多出现一次，`amountUSD` 等于这些已封口 charge amount 的精确和。producer 保存求值时实际使用的 model、price source kind 与 selector；selector 是选择收据，不是 reader 时重新查价的能力。
 

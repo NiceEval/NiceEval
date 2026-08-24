@@ -578,8 +578,9 @@ function numericConclusion(
     ? label(locale, "so it passes.", "所以通过。")
     : state === "mismatched"
     ? label(locale, "so it does not pass.", "所以未通过。")
-    : label(locale, "so the result is unavailable.", "所以无法判断。")
-  return `${knownPrefix} ${actual} ${relation} ${expected}, ${outcome}`;
+    : label(locale, "so the result is unavailable.", "所以无法判断。");
+  const separator = locale === "zh-CN" ? "，" : ", ";
+  return `${knownPrefix} ${actual} ${relation} ${expected}${separator}${outcome}`;
 }
 
 function chargeLabel(bucket: PricingChargeView["bucket"], locale: string): string {
@@ -891,9 +892,10 @@ function web(
     : isToolCriterion(content.check)
       ? <ToolEvidence observed={content.observed} diagnostic={diagnostic} locale={locale} />
       : <GenericEvidence content={content} input={input} diagnostic={diagnostic} locale={locale} />;
+  const rootDiagnostic = numeric === undefined ? diagnostic : null;
   return (
     <div className="niceeval-assertion-evidence">
-      <MatchNode label={name} state={state} diagnostic={diagnostic} locale={locale} root>
+      <MatchNode label={name} state={state} diagnostic={rootDiagnostic} locale={locale} root>
         <div className="niceeval-match-body">
           {content.matcherDebugger === undefined
             ? primary
