@@ -7,6 +7,14 @@ import { Cause, Effect, Exit, Option } from "effect";
 
 import type { Agent, AgentContext, AgentSendContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentSendContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import { entityIdFromEntropy, type TurnId } from "../o11y/record/model.ts";
+import {
+  ObservedEventIngestionCorrelator,
+  bindObservedSnapshotToTurn,
+  mintSessionScopeId,
+  type ObservedAttemptCut,
+  type ObservedSessionSnapshot,
+  type ObservedTurnSnapshot,
+} from "../o11y/observed.ts";
 import type { AgentOtelChannel, TurnSpans } from "../o11y/otlp/turn-otel.ts";
 import {
   downgradeEvidenceCoverage,
@@ -87,6 +95,30 @@ export function createAgentSession(): AgentSession {
  */
 export class RunSession implements AgentSession {
   private readonly session = createAgentSession();
+  readonly sessionScopeId = mintSessionScopeId();
+  private readonly observedTurnsValue: ObservedTurnSnapshot[] = [];
+
+  /** Inclusive per-Session cut in observed ingestion order. */
+  get throughSequence(): number {
+    return this.observedTurnsValue.at(-1)?.throughSessionSequence ?? 0;
+  }
+
+  /** Immutable snapshots sealed for this Session so far. */
+  observedSnapshot(): ObservedSessionSnapshot {
+    return Object.freeze({
+      sessionId: this.sessionScopeId,
+      throughSessionSequence: this.throughSequence,
+      turns: Object.freeze([...this.observedTurnsValue]),
+    });
+  }
+
+  /** @internal Only SessionManager may append a sealed physical-send cut. */
+  appendObservedTurn(snapshot: ObservedTurnSnapshot): void {
+    if (snapshot.sessionId !== this.sessionScopeId) {
+      throw new Error("Observed Turn belongs to a different Session scope");
+    }
+    this.observedTurnsValue.push(snapshot);
+  }
 
   get id(): string | undefined {
     return this.session.id;
@@ -165,6 +197,8 @@ export interface SessionDeps {
     outcome: "completed" | "failed" | "interrupted";
     /** The interpreted terminal Adapter events for this physical send only. */
     events: readonly StreamEvent[];
+    /** Exact source-owner snapshot consumed by Assertions and persistence. */
+    observed: ObservedTurnSnapshot;
     /** Present only when the Adapter returned a terminal Turn. */
     adapterStatus?: Turn["status"];
     /** Resolved Adapter-default plus Turn-local evidence coverage. */
@@ -184,11 +218,14 @@ export interface SessionDeps {
     /** Runs synchronously before ledger hooks or Adapter invocation. */
     readonly onStart?: (info: {
       readonly turnId: TurnId;
+      readonly sessionScopeId: RunSession["sessionScopeId"];
       readonly sessionIndex: number;
       readonly turnIndex: number;
       readonly loc?: ReturnType<typeof captureLoc>;
       readonly sourceOrder?: number;
     }) => void;
+    /** Attempt-local secret replacement used before observed rows are sealed. */
+    readonly normalizeObservedText?: (value: string) => string;
   };
   /** 路径推导出的实验 id(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
   experimentId?: string;
@@ -261,12 +298,23 @@ export class SessionManager {
   private readonly retryBudget: AttemptRetryBudget = createAttemptRetryBudget();
   private localSourceOrder = 0;
   private readonly nextSourceOrder: () => number;
+  private readonly observedIngestion: ObservedEventIngestionCorrelator;
 
   constructor(private readonly deps: SessionDeps) {
     this.nextSourceOrder = deps.nextSourceOrder ?? (() => ++this.localSourceOrder);
     this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
     this.evidenceCoverage = this.agentEvidenceCoverage;
+    this.observedIngestion = new ObservedEventIngestionCorrelator({
+      ...(deps.onTurn?.normalizeObservedText === undefined
+        ? {}
+        : { normalizeText: deps.onTurn.normalizeObservedText }),
+    });
     this.primary = this.newSession();
+  }
+
+  /** Stable vector cut for every Session that has begun observation. */
+  observedAttemptCut(): ObservedAttemptCut {
+    return this.observedIngestion.attemptCut();
   }
 
   private mintPhysicalTurnId(): TurnId {
@@ -284,6 +332,7 @@ export class SessionManager {
     const s = new RunSession();
     s.index = ++this.sessionCount;
     s.evidenceCoverage = this.agentEvidenceCoverage;
+    this.observedIngestion.registerSession(s.sessionScopeId);
     this.sessions.push(s);
     return s;
   }
@@ -366,8 +415,14 @@ export class SessionManager {
       const turnIndex = ++session.turnCount;
       const windowLabel = formatTurnLabel(session.index, turnIndex);
       const turnId = this.mintPhysicalTurnId();
+      const observedDraft = this.observedIngestion.beginTurn({
+        sessionId: session.sessionScopeId,
+        turnId,
+        userEvent,
+      });
       this.deps.onTurn?.onStart?.({
         turnId,
+        sessionScopeId: session.sessionScopeId,
         sessionIndex: session.index,
         turnIndex,
         ...(loc === undefined ? {} : { loc }),
@@ -468,6 +523,9 @@ export class SessionManager {
               const durationMs = Math.max(0, timingNow() - startOffsetMs);
               if (Exit.isSuccess(exit)) {
                 const { turn, traceId, attribution, window } = exit.value;
+                const observed = this.observedIngestion.finishTurn(observedDraft, turn.events);
+                session.appendObservedTurn(observed);
+                bindObservedSnapshotToTurn(turn, observed);
                 const traceAttribution = attribution ?? "none";
                 const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
                 const timingActivity = this.deps.onTurn?.({
@@ -477,6 +535,7 @@ export class SessionManager {
                   label: windowLabel,
                   outcome: turn.status === "failed" ? "failed" : "completed",
                   events: Object.freeze([...turn.events]),
+                  observed,
                   adapterStatus: turn.status,
                   evidenceCoverage: turnEvidenceCoverage,
                   startOffsetMs,
@@ -500,6 +559,11 @@ export class SessionManager {
               }
               const failure = Option.getOrUndefined(Cause.failureOption(exit.cause));
               const sendFailure = failure !== undefined && isSendFailure(failure) ? failure : undefined;
+              const observed = this.observedIngestion.finishTurn(
+                observedDraft,
+                sendFailure?.events ?? [],
+              );
+              session.appendObservedTurn(observed);
               if (sendFailure?.usage !== undefined) {
                 accumulateUsage(this.usage, sendFailure.usage);
                 accumulateUsage(session.usage, sendFailure.usage);
@@ -511,6 +575,7 @@ export class SessionManager {
                 label: windowLabel,
                 outcome: Cause.isInterruptedOnly(exit.cause) ? "interrupted" : "failed",
                 events: Object.freeze([userEvent, ...(sendFailure?.events ?? [])]),
+                observed,
                 startOffsetMs,
                 durationMs,
                 failed: true,

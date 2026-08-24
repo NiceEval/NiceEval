@@ -197,6 +197,11 @@ export function jsonUtf8ByteLength(value: object): number | undefined {
 export const TURN_ID__BRAND = "@niceeval/o11y/TurnId" as const;
 export const ITEM_ID__BRAND = "@niceeval/o11y/ItemId" as const;
 export const CALL_ID__BRAND = "@niceeval/o11y/CallId" as const;
+export const EVENT_ID__BRAND = "@niceeval/o11y/EventId" as const;
+export const TOOL_OCCURRENCE_ID__BRAND = "@niceeval/o11y/ToolOccurrenceId" as const;
+export const SESSION_SCOPE_ID__BRAND = "@niceeval/o11y/SessionScopeId" as const;
+export const LEGACY_SOURCE_LOCAL_CALL_ID__BRAND =
+  "@niceeval/o11y/LegacySourceLocalCallId" as const;
 export const COMMAND_ID__BRAND = "@niceeval/o11y/CommandId" as const;
 export const USAGE_OBSERVATION_ID__BRAND =
   "@niceeval/o11y/UsageObservationId" as const;
@@ -206,6 +211,13 @@ export const DIAGNOSTIC_ID__BRAND = "@niceeval/o11y/DiagnosticId" as const;
 export type TurnId = string & Brand.Brand<typeof TURN_ID__BRAND>;
 export type ItemId = string & Brand.Brand<typeof ITEM_ID__BRAND>;
 export type CallId = string & Brand.Brand<typeof CALL_ID__BRAND>;
+export type EventId = string & Brand.Brand<typeof EVENT_ID__BRAND>;
+export type ToolOccurrenceId = string & Brand.Brand<typeof TOOL_OCCURRENCE_ID__BRAND>;
+export type SessionScopeId = string & Brand.Brand<typeof SESSION_SCOPE_ID__BRAND>;
+/** A v1-only relation that cannot be assigned to current occurrence identity. */
+export type LegacySourceLocalCallId = string & Brand.Brand<
+  typeof LEGACY_SOURCE_LOCAL_CALL_ID__BRAND
+>;
 export type CommandId = string & Brand.Brand<typeof COMMAND_ID__BRAND>;
 export type UsageObservationId = string & Brand.Brand<
   typeof USAGE_OBSERVATION_ID__BRAND
@@ -217,6 +229,9 @@ export const OBSERVABILITY_ENTITY_KINDS = Object.freeze([
   "turn",
   "item",
   "call",
+  "event",
+  "tool-occurrence",
+  "session-scope",
   "command",
   "usage-observation",
   "interval",
@@ -230,6 +245,9 @@ export interface ObservabilityEntityIdByKind {
   readonly turn: TurnId;
   readonly item: ItemId;
   readonly call: CallId;
+  readonly event: EventId;
+  readonly "tool-occurrence": ToolOccurrenceId;
+  readonly "session-scope": SessionScopeId;
   readonly command: CommandId;
   readonly "usage-observation": UsageObservationId;
   readonly interval: IntervalId;
@@ -249,6 +267,9 @@ const OBSERVABILITY_ENTITY_PREFIXES = Object.freeze({
   turn: "turn_",
   item: "item_",
   call: "call_",
+  event: "event_",
+  "tool-occurrence": "tool_",
+  "session-scope": "session_",
   command: "command_",
   "usage-observation": "usage_",
   interval: "interval_",
@@ -264,6 +285,13 @@ function entityIdPattern(prefix: string): RegExp {
 const TURN_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.turn);
 const ITEM_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.item);
 const CALL_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.call);
+const EVENT_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.event);
+const TOOL_OCCURRENCE_ID_PATTERN = entityIdPattern(
+  OBSERVABILITY_ENTITY_PREFIXES["tool-occurrence"],
+);
+const SESSION_SCOPE_ID_PATTERN = entityIdPattern(
+  OBSERVABILITY_ENTITY_PREFIXES["session-scope"],
+);
 const COMMAND_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.command);
 const USAGE_OBSERVATION_ID_PATTERN = entityIdPattern(
   OBSERVABILITY_ENTITY_PREFIXES["usage-observation"],
@@ -282,6 +310,24 @@ export function isItemId(value: string): value is ItemId {
 }
 
 export function isCallId(value: string): value is CallId {
+  return CALL_ID_PATTERN.test(value);
+}
+
+export function isEventId(value: string): value is EventId {
+  return EVENT_ID_PATTERN.test(value);
+}
+
+export function isToolOccurrenceId(value: string): value is ToolOccurrenceId {
+  return TOOL_OCCURRENCE_ID_PATTERN.test(value);
+}
+
+export function isSessionScopeId(value: string): value is SessionScopeId {
+  return SESSION_SCOPE_ID_PATTERN.test(value);
+}
+
+export function isLegacySourceLocalCallId(
+  value: string,
+): value is LegacySourceLocalCallId {
   return CALL_ID_PATTERN.test(value);
 }
 
@@ -306,6 +352,9 @@ export function isObservabilityEntityId(value: string): value is ObservabilityEn
     isTurnId(value) ||
     isItemId(value) ||
     isCallId(value) ||
+    isEventId(value) ||
+    isToolOccurrenceId(value) ||
+    isSessionScopeId(value) ||
     isCommandId(value) ||
     isUsageObservationId(value) ||
     isIntervalId(value) ||
@@ -323,6 +372,26 @@ export function makeItemId(value: string): ItemId | undefined {
 
 export function makeCallId(value: string): CallId | undefined {
   return isCallId(value) ? (value as CallId) : undefined;
+}
+
+export function makeEventId(value: string): EventId | undefined {
+  return isEventId(value) ? (value as EventId) : undefined;
+}
+
+export function makeToolOccurrenceId(value: string): ToolOccurrenceId | undefined {
+  return isToolOccurrenceId(value) ? (value as ToolOccurrenceId) : undefined;
+}
+
+export function makeSessionScopeId(value: string): SessionScopeId | undefined {
+  return isSessionScopeId(value) ? (value as SessionScopeId) : undefined;
+}
+
+export function makeLegacySourceLocalCallId(
+  value: string,
+): LegacySourceLocalCallId | undefined {
+  return isLegacySourceLocalCallId(value)
+    ? (value as LegacySourceLocalCallId)
+    : undefined;
 }
 
 export function makeCommandId(value: string): CommandId | undefined {
@@ -353,6 +422,12 @@ export function isObservabilityEntityIdForKind<
       return isItemId(value);
     case "call":
       return isCallId(value);
+    case "event":
+      return isEventId(value);
+    case "tool-occurrence":
+      return isToolOccurrenceId(value);
+    case "session-scope":
+      return isSessionScopeId(value);
     case "command":
       return isCommandId(value);
     case "usage-observation":
@@ -464,6 +539,21 @@ export type ConversationCallReferenceTarget = {
   readonly kind: "call";
   readonly id: CallId;
 };
+export type ConversationEventReferenceTarget = {
+  readonly family: "niceeval.agent-turns";
+  readonly kind: "event";
+  readonly id: EventId;
+};
+export type ConversationToolOccurrenceReferenceTarget = {
+  readonly family: "niceeval.agent-turns";
+  readonly kind: "tool-occurrence";
+  readonly id: ToolOccurrenceId;
+};
+export type ConversationSessionScopeReferenceTarget = {
+  readonly family: "niceeval.agent-turns";
+  readonly kind: "session-scope";
+  readonly id: SessionScopeId;
+};
 export type CommandReferenceTarget = {
   readonly family: "niceeval.sandbox-commands";
   readonly kind: "command";
@@ -489,6 +579,9 @@ export type AttemptReferenceTarget =
   | ConversationTurnReferenceTarget
   | ConversationItemReferenceTarget
   | ConversationCallReferenceTarget
+  | ConversationEventReferenceTarget
+  | ConversationToolOccurrenceReferenceTarget
+  | ConversationSessionScopeReferenceTarget
   | CommandReferenceTarget
   | UsageObservationReferenceTarget
   | IntervalReferenceTarget
@@ -546,6 +639,12 @@ export function isAttemptReferenceTarget(
       return value.family === "niceeval.agent-turns" && isItemId(value.id);
     case "call":
       return value.family === "niceeval.agent-turns" && isCallId(value.id);
+    case "event":
+      return value.family === "niceeval.agent-turns" && isEventId(value.id);
+    case "tool-occurrence":
+      return value.family === "niceeval.agent-turns" && isToolOccurrenceId(value.id);
+    case "session-scope":
+      return value.family === "niceeval.agent-turns" && isSessionScopeId(value.id);
     case "command":
       return value.family === "niceeval.sandbox-commands" && isCommandId(value.id);
     case "usage-observation":

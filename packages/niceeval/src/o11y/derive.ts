@@ -24,6 +24,198 @@ import type {
   LogicalToolOccurrenceScopeTurn,
   OrphanToolOperationFinish,
 } from "../types.ts";
+import type {
+  EventId,
+  ItemId,
+  PositiveSafeInteger,
+  SessionScopeId,
+  ToolOccurrenceId,
+  TurnId,
+} from "./record/model.ts";
+import type {
+  ObservedSourceEvent,
+  ToolOccurrenceRelation,
+} from "./observed.ts";
+
+export interface ObservedSourceProjectionSegment {
+  readonly sessionId: SessionScopeId;
+  readonly turnId: TurnId;
+  readonly items: readonly ObservedSourceEvent[];
+}
+
+export interface ObservedEventLedgerRow {
+  readonly eventId: EventId;
+  readonly itemId: ItemId;
+  readonly sessionId: SessionScopeId;
+  readonly turnId: TurnId;
+  readonly sessionSequence: PositiveSafeInteger;
+  readonly event: ObservedSourceEvent;
+}
+
+export interface ObservedToolOccurrenceLedgerRow {
+  readonly toolOccurrenceId: ToolOccurrenceId;
+  readonly sessionId: SessionScopeId;
+  /** Logical Turn membership belongs only to the start event. */
+  readonly homeTurnId: TurnId;
+  readonly startEventId: EventId;
+  readonly startSessionSequence: PositiveSafeInteger;
+  readonly finish: null | {
+    readonly eventId: EventId;
+    /** The finish retains its actual physical Turn. */
+    readonly turnId: TurnId;
+    readonly sessionSequence: PositiveSafeInteger;
+  };
+}
+
+export type ObservedSourceProjectionIssue =
+  | "duplicate-event-id"
+  | "duplicate-item-id"
+  | "duplicate-session-sequence"
+  | "non-increasing-segment-sequence"
+  | "duplicate-tool-start"
+  | "exact-finish-without-start"
+  | "cross-session-tool-finish"
+  | "non-later-tool-finish"
+  | "duplicate-exact-tool-finish";
+
+export type ObservedSourceProjection =
+  | {
+      readonly state: "available";
+      readonly events: readonly ObservedEventLedgerRow[];
+      readonly toolOccurrences: readonly ObservedToolOccurrenceLedgerRow[];
+    }
+  | {
+      readonly state: "invalid";
+      readonly issues: readonly ObservedSourceProjectionIssue[];
+    };
+
+interface MutableObservedToolOccurrence {
+  readonly toolOccurrenceId: ToolOccurrenceId;
+  readonly sessionId: SessionScopeId;
+  readonly homeTurnId: TurnId;
+  readonly startEventId: EventId;
+  readonly startSessionSequence: PositiveSafeInteger;
+  finish: ObservedToolOccurrenceLedgerRow["finish"];
+}
+
+/**
+ * The sole pure projector for current observed source rows. It validates
+ * source-owned identity and lifecycle without access to Adapter operation IDs.
+ */
+export function projectObservedSourceEvents(
+  segments: readonly ObservedSourceProjectionSegment[],
+): ObservedSourceProjection {
+  const issues = new Set<ObservedSourceProjectionIssue>();
+  const eventIds = new Set<EventId>();
+  const itemIds = new Set<ItemId>();
+  const sequenceBySession = new Map<SessionScopeId, Set<number>>();
+  const events: ObservedEventLedgerRow[] = [];
+
+  for (const segment of segments) {
+    let previousSequence = 0;
+    const sessionSequences = sequenceBySession.get(segment.sessionId) ?? new Set<number>();
+    sequenceBySession.set(segment.sessionId, sessionSequences);
+    for (const event of segment.items) {
+      if (eventIds.has(event.eventId)) issues.add("duplicate-event-id");
+      if (itemIds.has(event.itemId)) issues.add("duplicate-item-id");
+      if (sessionSequences.has(event.sessionSequence)) issues.add("duplicate-session-sequence");
+      if (event.sessionSequence <= previousSequence) issues.add("non-increasing-segment-sequence");
+      eventIds.add(event.eventId);
+      itemIds.add(event.itemId);
+      sessionSequences.add(event.sessionSequence);
+      previousSequence = event.sessionSequence;
+      events.push(Object.freeze({
+        eventId: event.eventId,
+        itemId: event.itemId,
+        sessionId: segment.sessionId,
+        turnId: segment.turnId,
+        sessionSequence: event.sessionSequence,
+        event,
+      }));
+    }
+  }
+
+  const orderedEvents = [...events].sort(compareObservedEventRows);
+  const occurrences = new Map<ToolOccurrenceId, MutableObservedToolOccurrence>();
+  for (const row of orderedEvents) {
+    if (row.event.kind === "tool-start") {
+      if (occurrences.has(row.event.toolOccurrenceId)) {
+        issues.add("duplicate-tool-start");
+        continue;
+      }
+      occurrences.set(row.event.toolOccurrenceId, {
+        toolOccurrenceId: row.event.toolOccurrenceId,
+        sessionId: row.sessionId,
+        homeTurnId: row.turnId,
+        startEventId: row.eventId,
+        startSessionSequence: row.sessionSequence,
+        finish: null,
+      });
+      continue;
+    }
+    if (row.event.kind !== "tool-finish" || row.event.occurrence.state !== "exact") continue;
+    applyExactFinish(occurrences, row, row.event.occurrence, issues);
+  }
+
+  if (issues.size > 0) {
+    return Object.freeze({ state: "invalid" as const, issues: Object.freeze([...issues].sort()) });
+  }
+  return Object.freeze({
+    state: "available" as const,
+    events: Object.freeze(orderedEvents),
+    toolOccurrences: Object.freeze([...occurrences.values()]
+      .sort(compareOccurrenceRows)
+      .map((occurrence) => Object.freeze({ ...occurrence }))),
+  });
+}
+
+function applyExactFinish(
+  occurrences: Map<ToolOccurrenceId, MutableObservedToolOccurrence>,
+  row: ObservedEventLedgerRow,
+  relation: Extract<ToolOccurrenceRelation, { readonly state: "exact" }>,
+  issues: Set<ObservedSourceProjectionIssue>,
+): void {
+  const occurrence = occurrences.get(relation.toolOccurrenceId);
+  if (occurrence === undefined) {
+    issues.add("exact-finish-without-start");
+    return;
+  }
+  if (occurrence.sessionId !== row.sessionId) {
+    issues.add("cross-session-tool-finish");
+    return;
+  }
+  if (occurrence.startSessionSequence >= row.sessionSequence) {
+    issues.add("non-later-tool-finish");
+    return;
+  }
+  if (occurrence.finish !== null) {
+    issues.add("duplicate-exact-tool-finish");
+    return;
+  }
+  occurrence.finish = Object.freeze({
+    eventId: row.eventId,
+    turnId: row.turnId,
+    sessionSequence: row.sessionSequence,
+  });
+}
+
+function compareObservedEventRows(left: ObservedEventLedgerRow, right: ObservedEventLedgerRow): number {
+  return compareProjectionText(left.sessionId, right.sessionId) ||
+    left.sessionSequence - right.sessionSequence;
+}
+
+function compareOccurrenceRows(
+  left: MutableObservedToolOccurrence,
+  right: MutableObservedToolOccurrence,
+): number {
+  return compareProjectionText(left.sessionId, right.sessionId) ||
+    left.startSessionSequence - right.startSessionSequence ||
+    compareProjectionText(left.toolOccurrenceId, right.toolOccurrenceId);
+}
+
+function compareProjectionText(left: string, right: string): number {
+  return left === right ? 0 : left < right ? -1 : 1;
+}
 
 // ───────────────────────── 小工具 ─────────────────────────
 

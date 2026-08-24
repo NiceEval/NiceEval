@@ -1907,7 +1907,7 @@ async function runAttemptBody(
             runtime: observabilityRuntime,
             turnId: info.turnId,
             outcome: info.outcome,
-            events: info.events,
+            observed: info.observed,
             ...(info.adapterStatus === undefined ? {} : { adapterStatus: info.adapterStatus }),
             ...(info.evidenceCoverage === undefined ? {} : { evidenceCoverage: info.evidenceCoverage }),
           });
@@ -1928,8 +1928,14 @@ async function runAttemptBody(
           }));
         },
         {
+          normalizeObservedText: (value: string) =>
+            redactSensitiveText(value, sensitiveValues),
           onStart: (info: Parameters<NonNullable<NonNullable<SessionDeps["onTurn"]>["onStart"]>>[0]) => {
-            beginRunnerPhysicalConversationTurn(observabilityRuntime, info.turnId);
+            beginRunnerPhysicalConversationTurn(
+              observabilityRuntime,
+              info.turnId,
+              info.sessionScopeId,
+            );
             sourceCapture.onTurnStart(info);
           },
         },

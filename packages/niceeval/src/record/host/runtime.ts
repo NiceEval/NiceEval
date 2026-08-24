@@ -4160,7 +4160,7 @@ interface PlannedMigrationSources {
   readonly implementationIdentity: typeof RECORD_MIGRATION_IMPLEMENTATION_ID;
 }
 
-const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/current-attachments/v2" as const;
+const RECORD_MIGRATION_IMPLEMENTATION_ID = "niceeval.record/current-attachments/v3" as const;
 const migrationPlanSources = new WeakMap<object, PlannedMigrationSources>();
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -4770,9 +4770,63 @@ function rewriteMigratedSealManifest(input: {
         return yield* Effect.fail(migrationInvalid("niceeval.core"));
       }
     }
+    const sources: SourceReceiptManifestEntry[] = [];
+    for (const rawSource of input.planned.document.sources) {
+      const decodedSource = decodeSourceReceiptManifestEntry(rawSource);
+      if (Either.isLeft(decodedSource)) {
+        return yield* Effect.fail(migrationInvalid("niceeval.core"));
+      }
+      const source = decodedSource.right;
+      const owner = source.owner.kind === "run" ? "run" : source.owner.attemptId;
+      const key = migrationManifestAttachmentKey(owner, source.family);
+      const attachment = attachments.get(key);
+      if (attachment === undefined) {
+        sources.push(source);
+        continue;
+      }
+      const read = yield* readKnownMigrationAttachment(
+        input.fileSystem,
+        input.root,
+        attachment.location,
+      );
+      const segments = read.state === "available"
+        ? sourceSegmentIdentities(read.value)
+        : undefined;
+      const payload = entries.find((entry) =>
+        entry.owner === owner &&
+        entry.family === source.family &&
+        entry.kind === "payload"
+      );
+      if (segments === undefined || payload === undefined) {
+        return yield* Effect.fail(migrationInvalid(source.family));
+      }
+      const blobs: SourceReceiptManifestEntry["blobs"] = Object.freeze(entries
+        .filter((entry) =>
+          entry.owner === owner &&
+          entry.family === source.family &&
+          entry.kind === "blob"
+        )
+        .map((entry) => {
+          const key = recordBlobKey(entry.path.split("/").at(-1)!);
+          return key === undefined
+            ? undefined
+            : Object.freeze({ key, byteLength: entry.byteLength, sha256: entry.sha256 });
+        })
+        .filter((blob): blob is SourceReceiptManifestEntry["blobs"][number] => blob !== undefined)
+        .sort((left, right) => compareCanonicalIdentity(left.key, right.key)));
+      sources.push(Object.freeze({
+        owner: source.owner,
+        family: source.family,
+        schemaVersion: attachment.target.toSchemaVersion,
+        payload: Object.freeze({ byteLength: payload.byteLength, sha256: payload.sha256 }),
+        segments,
+        blobs,
+      }));
+    }
     const candidate = Object.freeze({
       ...input.planned.document,
       entries: Object.freeze(entries),
+      sources: Object.freeze(sources),
     });
     const validated = decodeSealManifestPublicationDocument(candidate);
     if (Either.isLeft(validated)) return yield* Effect.fail(migrationInvalid("niceeval.core"));
