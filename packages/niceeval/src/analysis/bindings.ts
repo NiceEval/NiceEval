@@ -20,6 +20,10 @@ import type { AttemptRunnerActivitiesAttachment } from "../record/family/runner-
 import type { AttemptRunnerDiagnosticsAttachment } from "../record/family/runner-diagnostics/definition.ts";
 import type { SandboxCommandsAttachment } from "../record/family/sandbox-commands/definition.ts";
 import type { SourcesAttachment } from "../record/family/sources.ts";
+import type {
+  SourceReceiptCollection,
+  SourceReceiptLimitation,
+} from "../record/family/source-receipt.ts";
 import type { TurnContextsAttachment } from "../record/family/turn-contexts/definition.ts";
 import type {
   FixedFamilyRead,
@@ -424,8 +428,9 @@ export const publishedAnalysisInputBindings = Object.freeze({
       readonly core: ClosedAttemptCore;
       readonly payload: RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>;
     }): InputProjection<number> => {
-      if (payload.collection.state !== "complete") {
-        return collectionProjection(payload.collection, "usage-observation", "usage collection is incomplete");
+      const usageCollection = agentTurnUsageCollection(payload);
+      if (usageCollection.state !== "complete") {
+        return collectionProjection(usageCollection, "usage-observation", "usage collection is incomplete");
       }
       const observations = payload.segments.flatMap((segment) => segment.usage);
       let input = 0;
@@ -921,7 +926,11 @@ function closeUsage(
     : [];
   return Object.freeze({
     dependencies: Object.freeze(["niceeval.agent-turns"] as const),
-    collection: closeTraceCollection(value),
+    collection: closeTraceCollection(
+      value.state === "complete" || value.state === "partial"
+        ? agentTurnUsageCollection(value.value)
+        : value,
+    ),
     observations: Object.freeze(observations.map((observation) => {
       switch (observation.kind) {
         case "token-bucket":
@@ -947,6 +956,31 @@ function closeUsage(
       }
     })),
   });
+}
+
+const usageCollectionTargets = new Set<SourceReceiptLimitation["target"]>([
+  "turn",
+  "usage-observation",
+  "payload-byte",
+]);
+
+/** @internal Projects the shared Agent Turns receipt onto its Usage subchannel. */
+export function agentTurnUsageCollection(
+  payload: RecordAttachmentPayloadSnapshot<AgentTurnsAttachment>,
+): SourceReceiptCollection {
+  const limitations = payload.collection.limitations.filter((limitation) =>
+    usageCollectionTargets.has(limitation.target)
+  );
+  const [first, ...rest] = limitations;
+  return first === undefined
+    ? Object.freeze({ state: "complete" as const, limitations: Object.freeze([]) as readonly [] })
+    : Object.freeze({
+        state: "partial" as const,
+        limitations: Object.freeze([first, ...rest]) as readonly [
+          SourceReceiptLimitation,
+          ...SourceReceiptLimitation[],
+        ],
+      });
 }
 
 function closeTiming(

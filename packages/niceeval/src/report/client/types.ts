@@ -17,6 +17,12 @@ export interface ReportPageManifest {
 export interface ReportManifest {
   readonly title: LocalizedText;
   readonly defaultRoute: string;
+  readonly experimentSelection?: {
+    readonly options: readonly {
+      readonly route: string;
+      readonly label: string;
+    }[];
+  };
   readonly pages: readonly ReportPageManifest[];
 }
 

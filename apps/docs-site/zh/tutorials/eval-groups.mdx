@@ -69,6 +69,8 @@ export default defineEvalGroup({
 `tag` 或 `selector`。NiceEval 也不会自动收集同目录文件；成员增删和顺序变化都会明确出现在
 `eval-group.ts` 的 diff 中。
 
+所有成员必须同型：要么全是 `defineEval()` 返回值，要么全是 `defineScoreEval()` 返回值。Discovery 会在 Experiment 筛选或 Sandbox 规划前拒绝 mixed Group，并列出两类 Eval ID 供拆分。
+
 `evals` 数组只声明成员，不声明业务顺序。Runner 始终按规范化评估用例 ID 稳定排序；只调整
 数组位置不会改变调度行为或组指纹。需要“先构建、后查询”这类结果依赖时，把两个步骤放进
 同一条评估用例。评估组的业务排序 API 还没有实现。

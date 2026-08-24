@@ -28,9 +28,9 @@ Report 有两条明确不同的执行路径。它们共享同一份作者定义�
 
 `show` 不调用参数 Page 的 `enumerate()`，不建立 `ClosedSiteRevision`，也不为未选 route 执行作者 callback。
 
-`project-current` 仍是整个项目的 Sample。只有一个实验组范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`。有多个范围时，标准 Report 内容交付各范围的普通 Page 链接；通用 Header 不理解实验组。Hero、通知、Summary、图表和 Table 都消费目标 Page 背后的同一 narrowed Sample。
+`project-current` 仍是整个项目的 Sample。只有一个实验组范围时，标准 Overview 直接从父 Sample 形成该范围的 `ExperimentComparisonScope`。有一个或多个范围时，Host 在站点关闭阶段把显式实验组 Page role 形成纯 route/label 导航投影；浏览器根入口默认进入稳定排序的第一个组 Page。两个及以上范围在 Header 显示原生实验选择器，一个范围则直接进入且不显示无意义的单项控件。Hero、通知、Summary、图表和 Table 都消费目标 Page 背后的同一 narrowed Sample。
 
-切换选项只改变根 document 的 hash，不新增 CLI 参数或 HTTP 路径。`show` 的多组默认输出仍是可复制命令的实验索引。每个 Page 把唯一 scope 交给具名比较组件；任何比较组件都不能跨范围。
+切换选项只改变根 document 的 hash，不新增 CLI 参数或 HTTP 路径。当前实验由基础组 Page 的 canonical route 唯一决定；详情 overlay 沿用其 background Page，真正的非组 Page 不伪造实验选择。`show` 的多组默认输出仍是可复制命令的实验索引。每个 Page 把唯一 scope 交给具名比较组件；任何比较组件都不能跨范围。
 `view` 与静态导出则必须完成全站枚举、链接校验、资源闭包和限额检查；它们只从同一个 revision 读取最终 bytes。
 
 [Report 成本投影](cost-projections/README.md) 是完整的成本契约。它只经 `ReportDefinition.pricing` 接入 Report，并以同一只读值暴露为
@@ -93,7 +93,7 @@ view 不注入只在本机有效的作者脚本。
 单组默认输出 `experiment-group`，多组 Overview 输出 `groups`，不建立跨组 leaderboard；实验组 Page 的 `comparison` 输出成员、各成员 distinct Eval coverage 与组内 Eval 并集大小。population 不同不会产生另一种状态。
 
 报告样式只有一个产品 owner：Report CSS 负责 reset、基础排版、theme token 消费和所有报告组件。View shell 左侧放品牌，中间居中整个
-Page router，右侧放实验与语言两个原生选择器；Page router 无论含一个还是多个 Page 都作为整体居中。Shell 不重绘 Report 内容。
+Page router，右侧先放 Host 已关闭的实验导航选择器、再放语言选择器；两者都是原生控件。Page router 无论含一个还是多个 Page 都作为整体居中。Shell 不解释 raw role、params 或 Analysis，也不重绘 Report 内容。
 
 每个报告只有一个根 document。作者可声明多个业务 Page；Hash router 把它们呈现在同一 document 中。Page 的 `presentation` 明确为 `page` 或 `overlay`。Attempt、Source 和 Diff 使用 `overlay`，不是独立业务 Page。overlay 使用半透明黑色 backdrop，保留当前业务 Page 作为可见上下文，内容面板保持不透明。点击内容外侧、按 Escape、点击关闭按钮或浏览器返回都会关闭 overlay 并恢复前一 hash。
 完整边界见 [Architecture](architecture.md#css、theme-与-view-shell)。

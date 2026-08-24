@@ -60,6 +60,7 @@ Experiment 与 Group 之间仍遵守唯一 template owner。Group Plugin 提供 
 | `eval-group-member-unresolved` | 成员不是 discovery 得到的原始 Eval definition |
 | `eval-group-member-overlap` | 成员重复，或同时归属多个 Group |
 | `eval-group-member-layer` | 成员持有 template 或实例级 lifecycle |
+| `eval-group-evaluation-kind-mixed` | 闭合成员集同时包含 Pass Eval 与 Score Eval |
 | `eval-group-sandbox-reuse-conflict` | 同一 Experiment 同时使用 Group 与 `sandboxReuse` |
 | `eval-group-direct-agent` | Group 被 Direct Agent 选中 |
 | `eval-group-incompatible` | 成员无法归一到相同的物理 Sandbox 计划 |

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { Clock, Effect, Either } from "effect";
+import { Clock, Data, Effect, Either } from "effect";
 
 import type { AnalysisSelectionRequest } from "../../analysis/contracts.ts";
 import { recordHost } from "../../record/host/index.ts";
@@ -9,7 +9,7 @@ import { acceptLocators } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
 import { computeExitCode } from "../../runner/feedback/json.ts";
 import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
-import { resolveExperimentEvals } from "../../runner/eval-selection.ts";
+import { resolveExperimentEvals, splitByEvaluationKind } from "../../runner/eval-selection.ts";
 import { planProjectTarget } from "../../runner/fingerprint.ts";
 import {
   prepareRunnerRecordReuse,
@@ -140,6 +140,28 @@ interface PreparedInvocationState {
   readonly shape: ExperimentHostInvocationShape;
   consumed: boolean;
 }
+
+class ExperimentEvaluationKindAdmissionError extends Data.TaggedError("ExperimentEvaluationKindAdmissionError")<{
+  readonly code: "experiment-evaluation-kind-mixed";
+  readonly message: string;
+  readonly issues: readonly {
+    readonly experimentId: string;
+    readonly passEvalIds: readonly string[];
+    readonly scoreEvalIds: readonly string[];
+  }[];
+}> {}
+
+type PreparedRuns =
+  | {
+      readonly status: "problem";
+      readonly selected: ClosedSelection;
+      readonly problem: ExperimentHostSelectionProblem;
+    }
+  | {
+      readonly status: "ready";
+      readonly selected: ClosedSelection;
+      readonly runs: readonly AgentRun[];
+    };
 
 const invocationPlans = new WeakMap<object, PreparedInvocationState>();
 
@@ -297,13 +319,42 @@ function sandboxSetupCacheOverrideOf(
 function prepareRuns(input: ExperimentHostSelectionInput & {
   readonly config: ExperimentHostInvocationPlanRequest["config"];
   readonly overrides?: ExperimentHostRunOverrides;
-}) {
-  return closeSelection(input).pipe(Effect.map((selected) => {
+}): Effect.Effect<PreparedRuns, unknown> {
+  return closeSelection(input).pipe(Effect.flatMap((selected): Effect.Effect<
+    PreparedRuns,
+    ExperimentEvaluationKindAdmissionError
+  > => {
     const problem = selectionProblem(input, selected);
-    if (problem !== undefined) return { status: "problem", selected, problem } as const;
+    if (problem !== undefined) return Effect.succeed({ status: "problem", selected, problem } as const);
+    const evalsById = new Map(selected.evals.map((definition) => [definition.id, definition]));
+    const issues = selected.selections.flatMap(({ experiment, selectedEvalIds }) => {
+      const evaluationKinds = splitByEvaluationKind(selectedEvalIds.flatMap((id) => {
+        const definition = evalsById.get(id);
+        return definition === undefined ? [] : [definition];
+      }));
+      return evaluationKinds.pass.length === 0 || evaluationKinds.score.length === 0
+        ? []
+        : [{
+            experimentId: experiment.id,
+            passEvalIds: Object.freeze([...evaluationKinds.pass]),
+            scoreEvalIds: Object.freeze([...evaluationKinds.score]),
+          }];
+    });
+    if (issues.length > 0) {
+      return Effect.fail(new ExperimentEvaluationKindAdmissionError({
+        code: "experiment-evaluation-kind-mixed",
+        message: issues.map((issue) =>
+          `Experiment ${JSON.stringify(issue.experimentId)} selects both pass and score Evals. ` +
+          `pass (${issue.passEvalIds.length}): ${issue.passEvalIds.join(", ")}; ` +
+          `score (${issue.scoreEvalIds.length}): ${issue.scoreEvalIds.join(", ")}. ` +
+          "Split the Experiment into one pass Experiment and one score Experiment, or narrow its Eval selection."
+        ).join("\n"),
+        issues: Object.freeze(issues.map((issue) => Object.freeze(issue))),
+      }));
+    }
     const overrides = input.overrides ?? {};
     const sandboxSetupCacheOverride = sandboxSetupCacheOverrideOf(overrides);
-    return {
+    return Effect.succeed({
       status: "ready",
       selected,
       runs: freezeArray(selected.selections.map(({ experiment, selectedEvalIds }) =>
@@ -314,7 +365,7 @@ function prepareRuns(input: ExperimentHostSelectionInput & {
           overrides,
           sandboxSetupCacheOverride,
         ))),
-    } as const;
+    } as const);
   }));
 }
 
@@ -468,11 +519,11 @@ export function planInvocation(
   input: ExperimentHostInvocationPlanRequest,
 ): Effect.Effect<ExperimentHostInvocationPlanResult, ExperimentHostError, ExperimentHostRequirements> {
   return closeOperation("invocation-plan", Effect.gen(function* () {
+    const prepared = yield* prepareRuns(input);
     // Invocation planning is the explicit `exp` / `exp --dry` boundary. Do
     // not move this to catalog, check, debug, teardown, or session reads: those
     // operations must remain migration-free observations.
     const automaticMigration = yield* ensureAutomaticMigration(input);
-    const prepared = yield* prepareRuns(input);
     if (prepared.status === "problem") {
       return Object.freeze({ ...prepared.problem, automaticMigration });
     }

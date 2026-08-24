@@ -68,6 +68,8 @@ export default defineEvalGroup({
 `glob`, `tag`, or `selector`. NiceEval does not collect files from the directory automatically either. Adding, removing, or reordering members is explicit in the
 `eval-group.ts` diff.
 
+Every member must have the same evaluation kind: all `defineEval()` results or all `defineScoreEval()` results. Discovery rejects a mixed group before Experiment filtering or Sandbox planning, and lists both sets of Eval IDs so you can split the group.
+
 The `evals` array declares members, not business order. The Runner always sorts normalized eval IDs stably; changing
 only the array positions does not change scheduling behavior or the group fingerprint. Put a result dependency such as “build first, then query” into
 one eval. Eval groups do not implement a business-order API.
