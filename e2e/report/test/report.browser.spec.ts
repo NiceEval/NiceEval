@@ -1,4 +1,5 @@
 // owner: docs/engineering/testing/e2e/report.md#report-browser-journey
+// regression: memory/report-header-experiment-selector-regression.md
 // rerun: pnpm e2e test --repo report -- --run test/report.browser.spec.ts
 //
 // This Journey observes only the installed candidate, exported files, HTTP,
@@ -6,7 +7,7 @@
 
 import { pollUntil, waitForOutput } from "@niceeval/testkit";
 import { createServer, type Server } from "node:http";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -48,6 +49,7 @@ test("静态站与 view 只交付 SPA shell；普通页面使用 hash 和 fragme
         try {
           await page.goto(new URL("index.html", staticServer.origin).href);
           await expect(page.getByRole("heading", { name: "Fixture overview" })).toBeVisible();
+          await expect(page.getByRole("combobox", { name: "Experiments" })).toHaveCount(0);
           const fragment = page.waitForRequest((request) =>
             request.url() === new URL("_niceeval/fragments/source.json", staticServer.origin).href,
           );
@@ -81,12 +83,28 @@ test("静态站与 view 只交付 SPA shell；普通页面使用 hash 和 fragme
 });
 
 // regression: memory/report-match-details-obscure-score-and-collection.md
-test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 overlay", async ({ browser }) => {
+test("经典报告默认并切换实验组，Attempt 作为可分享、可关闭并保留历史的 overlay", async ({ browser }) => {
   test.setTimeout(180_000);
   await reportE2E.case(
     "browser-classic-attempt-overlay",
     { artifacts: reportCaseArtifacts() },
-    async ({ commands: { niceeval } }) => {
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      await writeFile(
+        join(projectRoot, "experiments", "classic.ts"),
+        `import { defineExperiment } from "niceeval";
+import { deterministicAgent } from "../agents/deterministic.ts";
+
+const agent = deterministicAgent("report-group-label-collision", 0.00002);
+
+export default defineExperiment({
+  description: "classic: root Experiment that shares a label with the classic/* named group",
+  agent,
+  model: "report-fixture-v1",
+  evals: ["deliberate-fail"],
+});
+`,
+        "utf8",
+      );
       for (const id of [
         "classic/baseline",
         "classic/memory-a",
@@ -106,7 +124,60 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
       const page = await browser.newPage();
       try {
         await page.goto(origin!);
+        await expect(page).toHaveURL(/#\/group\/named\/classic$/);
         await expect(page.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+
+        // A single group is still the default comparison, without wasting
+        // Header space on a one-option selector.
+        await expect(page.getByRole("combobox", { name: "Experiments" })).toHaveCount(0);
+
+        // Adding a root Experiment creates a legal label collision with the
+        // classic/* named group. The live revision exposes two unambiguous,
+        // stable options and keeps the current group selected.
+        const collisionRun = await niceeval.run(["exp", "classic", "--rerun", "all", "--json"]);
+        expect(collisionRun.expReceipt(), collisionRun.diagnostic()).toMatchObject({ completion: "completed" });
+        const experimentSelector = page.getByRole("combobox", { name: "Experiments" });
+        await expect(experimentSelector).toBeVisible({ timeout: 15_000 });
+        await expect(experimentSelector.getByRole("option")).toHaveText([
+          "named/classic",
+          "singleton/classic",
+        ]);
+        await expect(experimentSelector).toHaveValue("/group/named/classic");
+
+        const comboboxes = page.getByRole("combobox");
+        await expect(comboboxes).toHaveCount(2);
+        await expect(comboboxes.nth(0)).toHaveAccessibleName("Experiments");
+        await expect(comboboxes.nth(1)).toHaveAccessibleName("Language");
+
+        const overview = page.getByRole("link", { name: "Overview" });
+        await expect(overview).toHaveAttribute("href", "#/group/named/classic");
+        await expect(overview).toHaveAttribute("aria-current", "page");
+
+        await experimentSelector.selectOption("/group/singleton/classic");
+        await expect(page).toHaveURL(/#\/group\/singleton\/classic$/);
+        await expect(experimentSelector).toHaveValue("/group/singleton/classic");
+        await expect(page.getByText("classic (1/1)", { exact: true })).toBeVisible();
+
+        await page.goBack();
+        await expect(page).toHaveURL(/#\/group\/named\/classic$/);
+        await expect(experimentSelector).toHaveValue("/group/named/classic");
+        await expect(page.getByText("classic/memory-a (9/9)", { exact: true })).toBeVisible();
+        await page.goForward();
+        await expect(page).toHaveURL(/#\/group\/singleton\/classic$/);
+        await expect(experimentSelector).toHaveValue("/group/singleton/classic");
+
+        await experimentSelector.selectOption("/group/named/classic");
+        await expect(page).toHaveURL(/#\/group\/named\/classic$/);
+        const englishRoute = page.url();
+        const languageSelector = page.getByRole("combobox", { name: "Language" });
+        await languageSelector.selectOption("zh-CN");
+        expect(page.url()).toBe(englishRoute);
+        await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+        await expect(page.getByRole("combobox", { name: "实验" })).toHaveValue("/group/named/classic");
+        await expect(page.getByRole("link", { name: "总览" })).toHaveAttribute("href", "#/group/named/classic");
+        await languageSelector.selectOption("en");
+        await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
         const experiment = page.locator('a[href^="#/experiment/"]').filter({
           has: page.locator("title").filter({ hasText: "classic/memory-a" }),
         });
@@ -128,6 +199,7 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         await expect(scoreExperimentSummary).toContainText("7");
         await expect(scoreExperimentSummary).not.toContainText("missed check");
         await expect(scoreExperimentSummary).not.toContainText("passed");
+
         await experiment.click();
         await expect(page).toHaveURL(/#\/experiment\//);
         await expect(dialog).toBeVisible();
@@ -190,7 +262,7 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
         const copiedUrl = page.url();
         await page.getByRole("button", { name: "Close" }).click();
         await expect(dialog).not.toBeVisible();
-        expect(new URL(page.url()).hash).toBe("");
+        expect(new URL(page.url()).hash).toBe("#/group/named/classic");
         expect(overlayRequests).toEqual([detail.href]);
 
         await page.goForward();
@@ -210,13 +282,21 @@ test("经典报告将 Attempt 作为可分享、可关闭并保留历史的 over
           await shared.goto(copiedUrl);
           await expect(shared.getByRole("dialog")).toBeVisible();
           await expect(shared.getByRole("heading", { name: "NiceEval overview" })).toBeVisible();
+          await shared.getByRole("button", { name: "Close" }).click();
+          await expect(shared.getByRole("dialog")).not.toBeVisible();
+          await expect(shared).toHaveURL(/#\/group\/named\/classic$/);
+          const directSelector = shared.getByRole("combobox", { name: "Experiments" });
+          await expect(directSelector).toHaveValue("/group/named/classic");
+          await directSelector.selectOption("/group/singleton/classic");
+          await expect(shared).toHaveURL(/#\/group\/singleton\/classic$/);
+          await expect(shared.getByRole("dialog")).not.toBeVisible();
         } finally {
           await shared.close();
         }
 
         await page.mouse.click(5, 5);
         await expect(dialog).not.toBeVisible();
-        expect(new URL(page.url()).hash).toBe("");
+        expect(new URL(page.url()).hash).toBe("#/group/named/classic");
 
         const baselineSummary = page.locator("summary").filter({ hasText: /^classic\/baseline \(9\/9\)/ }).first();
         if (await baselineSummary.locator("xpath=..").getAttribute("open") === null) await baselineSummary.click();

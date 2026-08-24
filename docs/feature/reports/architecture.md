@@ -24,7 +24,7 @@ enumerate every Page instance → execute every Page → validate site → Close
 `show` 只执行目标 Page。省略 `--page` 时使用 Report 的默认 route；带 `--page` 时使用精确 route。它不枚举参数 Page，
 不执行其它 Page，也不创建 site revision。
 
-`--experiment <selector>` 与 `niceeval exp <selector>` 使用同一实验选择规则并形成固定 Sample；Report 不增加另一套实验组 CLI selector。浏览器只沿 Report 内容交付的 Page 链接导航，不重新选择 Sample；通用 shell 不识别实验组。
+`--experiment <selector>` 与 `niceeval exp <selector>` 使用同一实验选择规则并形成固定 Sample；Report 不增加另一套实验组 CLI selector。浏览器不重新选择 Sample。全站关闭时，Host 把显式实验组 Page role 与已验证的 parameter identity 一次性投影成纯 route/label 选项；通用 shell 只呈现这份闭合导航值，不读取 raw role、params 或 Analysis。
 
 `view` 和 `view --out` 先要求固定 Sample 至少选中一个 logical Slot，再枚举全部普通 Page 与参数 Page 实例。零选中结果是
 `report-sample-empty` 输入错误，不形成 revision。只有所有页面、route、链接、下载、asset、问题表和预算通过校验，Host 才形成
@@ -82,7 +82,7 @@ target-execution manifest；它不能借用或伪造 revision identity。
 `theme.ts` 只定义 theme token 与 token 值；它不新增 reset、布局 selector 或组件样式。`styles.css` 是 token 的唯一消费者。
 作者通过结构化 `head` 提供的样式只能服务自己的具名内容，不能建立另一套 reset、theme 或 View shell。
 
-View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和通用 Page 导航。品牌位于左侧，完整 Page router 作为一个整体居中，右侧只承载语言选择。实验组选择属于标准 Report 的已闭合内容与链接，不由通用 shell 读取 `role` 或生成 selector。
+View shell 只拥有浏览器语言切换、reload 状态、Host 错误提示和通用 Page 导航。品牌位于左侧，完整 Page router 作为一个整体居中；右侧先呈现可选的闭合实验导航，再呈现语言选择。实验 selector 仅在至少两个选项且当前基础 Page 精确命中一个 option route 时出现。通用 shell 不读取 `role`、parameter identity 或 Analysis，也不自行生成实验分组。
 
 Shell 不读取 Analysis、不在浏览器计算比较范围、
 不注入第二份产品 CSS，也不重绘已关闭的 Report 内容。
