@@ -33,8 +33,9 @@ const setupPrefixDescriptor = {
   quiesceRevision: "quiesce/v1",
   slotAttestation: "independent-fixed-filesystem/v1",
   seedPolicy: "immutable-unmounted/v1",
-  publicationRevision: "journal-first-atomic-publish/v1",
-  recoveryRevision: "scrub-quarantine-cancel-restart/v1",
+  publicationRevision: "prepared-copy-client-commit-publish/v3",
+  recoveryRevision: "epoch-capsule-no-guess-recovery/v3",
+  manifestSchema: "niceeval-docker-profile-activation/v3",
   providerIdentity: "provider:test",
   executionDomain: "domain:test",
   filesystemSizeBytes,
@@ -66,7 +67,8 @@ const setupPrefixReservation: DockerProfileReservation = Object.freeze({
 const setupPrefixWireFields = Object.freeze([
   "protocol", "requiredState", "descriptorDigest", "setupPrefixKey", "setupManifestDigest",
   "providerIdentity", "baseIdentity", "executionDomain", "helperRevision", "copyProtocol",
-  "copyRevision", "quiesceRevision", "filesystemSizeBytes", "filesystemFeatures",
+  "copyRevision", "quiesceRevision", "publicationRevision", "recoveryRevision", "manifestSchema",
+  "filesystemSizeBytes", "filesystemFeatures",
   "daemonGeneration", "slotGeneration",
 ] as const);
 

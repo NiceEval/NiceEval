@@ -79,13 +79,12 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
     snapshot_identity = generator.filesystem_identity(str(snapshot_root))
     snapshot_host = {
         **common,
-        "securityLevel": "managed-rootless/v1",
+        "securityLevel": "raw-dind-storage/v1",
         "storage": {
             "size": "4G",
-            "backing": "existing-mount",
+            "backing": "fixed-image-ext4",
             "slotAttestation": "independent-fixed-filesystem/v1",
         },
-        "networkPolicy": managed_host["networkPolicy"],
         "setupPrefix": {
             "enabled": True,
             "protocol": "niceeval-docker-profile-state/docker-data-snapshot/v1",
@@ -93,12 +92,13 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
             "requiredState": "dockerData",
             "helperRevision": "niceeval-docker-profile-host/docker-data-snapshot/v1",
             "copyProtocol": "raw-image/v1",
-            "copyRevision": "niceeval-docker-profile-host/raw-image-copy/v1",
+            "copyRevision": "niceeval-docker-profile-host/raw-image-copy-reuuid/v2",
             "quiesceRevision": "niceeval-docker-profile-host/docker-data-quiesce/v1",
             "slotAttestation": "independent-fixed-filesystem/v1",
             "seedPolicy": "immutable-unmounted/v1",
-            "publicationRevision": "journal-first-atomic-publish/v1",
-            "recoveryRevision": "scrub-quarantine-cancel-restart/v1",
+            "publicationRevision": "prepared-copy-client-commit-publish/v3",
+            "recoveryRevision": "epoch-capsule-no-guess-recovery/v3",
+            "manifestSchema": "niceeval-docker-profile-activation/v3",
             "seedRegistryPath": str(snapshot_root / "seeds.json"),
             "imageRootPath": str(snapshot_root),
             "copyStrategy": "raw-image/v1",
@@ -117,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
     assert capability["coverage"] == "dockerData"
     assert capability["requiredState"] == "dockerData"
     assert capability["copyProtocol"] == "raw-image/v1"
-    assert capability["copyRevision"] == "niceeval-docker-profile-host/raw-image-copy/v1"
+    assert capability["copyRevision"] == "niceeval-docker-profile-host/raw-image-copy-reuuid/v2"
     assert capability["filesystemSizeBytes"] == 1024**3
     assert capability["filesystemFeatures"] == [
         "ext4", "fixed-size", "fully-allocated", "independent-image",
@@ -150,6 +150,20 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
     else:
         raise AssertionError("generic all-state capability must never be published")
 
+    for field, legacy in (
+        ("recoveryRevision", "no-guess-scrub-or-quarantine/v2"),
+        ("manifestSchema", "niceeval-docker-profile-activation/v2"),
+    ):
+        try:
+            generator.build_descriptor({
+                **snapshot_host,
+                "setupPrefix": {**snapshot_host["setupPrefix"], field: legacy},
+            })
+        except SystemExit as error:
+            assert field in str(error)
+        else:
+            raise AssertionError(f"legacy {field} must fail closed")
+
     try:
         generator.build_descriptor({
             **snapshot_host,
@@ -157,7 +171,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
                         "slotAttestation": "independent-fixed-filesystem/v1"},
         })
     except SystemExit as error:
-        assert "loop-ext4" in str(error)
+        assert "fixed-image-ext4" in str(error)
     else:
         raise AssertionError("shared loop-ext4 must never publish setup-prefix capability")
     generator.Path.is_socket = original_is_socket

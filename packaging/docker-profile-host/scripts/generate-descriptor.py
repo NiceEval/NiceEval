@@ -22,7 +22,7 @@ SETUP_PREFIX_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v1"
 SETUP_PREFIX_REQUIRED_STATE = "dockerData"
 SETUP_PREFIX_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v1"
 SETUP_PREFIX_COPY_PROTOCOL = "raw-image/v1"
-SETUP_PREFIX_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy/v1"
+SETUP_PREFIX_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy-reuuid/v2"
 SETUP_PREFIX_QUIESCE_REVISION = "niceeval-docker-profile-host/docker-data-quiesce/v1"
 SETUP_PREFIX_SLOT_ATTESTATION = "independent-fixed-filesystem/v1"
 SETUP_PREFIX_FILESYSTEM_FEATURES = [
@@ -32,8 +32,9 @@ SETUP_PREFIX_FILESYSTEM_FEATURES = [
     "independent-image",
 ]
 SETUP_PREFIX_SEED_POLICY = "immutable-unmounted/v1"
-SETUP_PREFIX_PUBLICATION_REVISION = "journal-first-atomic-publish/v1"
-SETUP_PREFIX_RECOVERY_REVISION = "scrub-quarantine-cancel-restart/v1"
+SETUP_PREFIX_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v3"
+SETUP_PREFIX_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v3"
+SETUP_PREFIX_MANIFEST_SCHEMA = "niceeval-docker-profile-activation/v3"
 
 def _load_validate_capacity():
     """Load sibling validate-capacity helper (source tree or installed libexec)."""
@@ -135,8 +136,11 @@ def setup_prefix_capability(
     if setup is None or setup.get("enabled") is not True:
         return None
     storage = host.get("storage", {})
-    if storage.get("backing") == "loop-ext4":
-        raise SystemExit("setupPrefix is forbidden for shared loop-ext4 storage")
+    if host.get("securityLevel") != "raw-dind-storage/v1" \
+            or storage.get("backing") != "fixed-image-ext4":
+        raise SystemExit(
+            "setupPrefix requires raw-dind-storage/v1 with storage.backing=fixed-image-ext4"
+        )
     if storage.get("slotAttestation") != SETUP_PREFIX_SLOT_ATTESTATION:
         raise SystemExit(
             "setupPrefix requires storage.slotAttestation=independent-fixed-filesystem/v1"
@@ -153,6 +157,7 @@ def setup_prefix_capability(
         "seedPolicy": SETUP_PREFIX_SEED_POLICY,
         "publicationRevision": SETUP_PREFIX_PUBLICATION_REVISION,
         "recoveryRevision": SETUP_PREFIX_RECOVERY_REVISION,
+        "manifestSchema": SETUP_PREFIX_MANIFEST_SCHEMA,
     }
     for field, value in expected.items():
         if setup.get(field) != value:
@@ -391,6 +396,7 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
                     "seedPolicy": SETUP_PREFIX_SEED_POLICY,
                     "publicationRevision": SETUP_PREFIX_PUBLICATION_REVISION,
                     "recoveryRevision": SETUP_PREFIX_RECOVERY_REVISION,
+                    "manifestSchema": SETUP_PREFIX_MANIFEST_SCHEMA,
                 },
             },
             sort_keys=True,

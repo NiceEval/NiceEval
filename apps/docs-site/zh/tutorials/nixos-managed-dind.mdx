@@ -102,6 +102,57 @@ watchdog 从中分配私有目录，并把目录挂到每个 Sandbox 的 `/var/l
 真实执行。只有 Host 另外具备独立、完整预分配、固定大小的 image slot 与 immutable seed 时，才可能发布
 这项覆盖范围；详见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
 
+## 为 raw Profile 启用 Docker-data 准备缓存
+
+需要保留 inner Docker image 与 volume 时，另建 raw Profile，并使用 fixed backing：
+
+```nix title="configuration.nix"
+services.niceeval.dockerProfiles.harness-raw = {
+  enable = true;
+  securityLevel = "raw-dind-storage/v1";
+  rawDockerSocket = "/run/docker.sock";
+  rawDockerRootDir = "/var/lib/docker";
+  capacity = {
+    cpus = 8; memory = "16G"; pids = 4096;
+    maxContainers = 2; maxBuilds = 1;
+    ephemeralDiskBytes = "4G";
+    dockerDataAllocationCount = 2;
+  };
+  aggregate = { cpus = 10; memory = "20G"; pids = 6144; };
+  storage = {
+    size = "80G";
+    backing = "fixed-image-ext4";
+    rootDir = "/data/niceeval/docker-profiles/harness-raw";
+  };
+  setupPrefix = { enable = true; seedCount = 10; };
+};
+```
+
+这个配置预分配 2 个 4 GiB slot、10 个 4 GiB immutable seed，以及 2 个最坏临时 clone，合计 56 GiB。
+80 GiB outer store 还要在扣除 ext4 metadata、reserved blocks 后，以 `f_bavail` 证明 recovery headroom。
+seed 没有自动 GC；用尽后 Profile 会拒绝新 publication，不覆盖旧 seed。
+
+`fixed-image-ext4` 只支持 raw Profile。它继续使用现有 daemon 的 `DockerRootDir`，但把 fixed store、
+host config 与 journal 放在独立的 `fixed-image-v1` 路径。
+
+切换前必须结束所有 Profile lease、reservation、queue、build 与 container。默认 daemon 上的 NiceEval proxy
+container 和 Attempt network 也必须清零。
+部署不会改写旧 `loop-ext4` image；旧 image、config 与 journal 会保留，供 cold rollback 使用。`rootDir`
+必须是非根绝对路径；module 从它统一派生 mount dependency、manifest 与 write paths。
+
+fixed activation 是显式部署事务，不属于 Nix switch 或 steady-state boot transaction。每个 committed epoch
+保存只读 capsule，`current` pointer 的原子替换是唯一 commit 点。先启动
+`niceeval-docker-profile-fixed-activation-harness-raw.service`。成功后再启动或重启
+`niceeval-docker-profile-fixed-watchdog-harness-raw.service`。
+
+正常开机从 `current` pointer 定位 capsule，复核 `rootDir` 父 mount、outer ext4、registry、epoch 与 digest，
+再恢复 data mount 并重建 `/run` drop-in。manifest/epoch/digest 不一致时，watchdog 不会 bind admission socket。
+数据盘缺失时不会在根盘创建同名目录继续运行。
+
+seed 用尽前先查看 activation status 中的 active remaining、retained、retirable 与 reclaimable 容量。rotation
+必须在 drain、admission closed 与 activation exclusive lock 下显式执行，并发布新 epoch/backing/registry。
+先显式 retire 非 current/previous epoch，才可另行 reclaim；reclaim 后该 epoch 不能再 cold rollback。
+
 ## 应用系统配置
 
 先检查配置能够求值，再切换系统：

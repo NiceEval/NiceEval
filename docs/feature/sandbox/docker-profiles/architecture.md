@@ -353,6 +353,34 @@ raw privileged 与 managed rootless Profile 把 `/var/lib/docker` 放在 outer w
 
 必须证明 seed 与每个 slot 都使用独立、fully allocated、fixed-size filesystem image。published seed 不挂进评估容器，source 与 target 只在 inner workload 已停止、dockerd/containerd quiesce 且 filesystem 已卸载时复制。shared loop-ext4/project-quota slot 无法提供独立 seed 与物理容量证明，固定报告 `Unsupported`。
 
+NixOS 的 `fixed-image-ext4` 只对 raw profile 开放。部署者提供 enable、seed 数量、allocation 数量/大小
+与 outer store 大小。可选 `storage.rootDir` 只选择 outer store 所在的绝对宿主目录。
+
+provisioner 从规范化根路径派生 image/registry、mount dependency、write-path class、ext4 identity、owner、
+limits 和协议常量。
+收养要求这些事实及两份 registry 完全一致。未知 image、部分 registry、size/UUID/owner/mount policy
+差异都 fail closed，不格式化或改写。outer store、slot 与 seed image 全部实际预分配，不能按 sparse
+apparent size 超卖。
+
+每个 committed epoch 有一个完整 fsync 后改成只读的 capsule。它绑定 config、descriptor、manifest、digest、
+两份 registry digest、outer image/ext4 identity、data mount 与 `rootDir` 父 mount filesystem identity。
+root-owned、非 symlink 的 `current` pointer 以 atomic replace 加父目录 fsync 成为唯一 commit 点；消费者只从
+pointer 定位 capsule。active 四文件只是从 capsule 复制出的兼容入口，不决定 committed epoch。
+
+watchdog 取得 alias shared lifetime lock，复核 manifest sidecar 与全部 digest 后才 bind socket。部署 activation
+持 exclusive lock，并先证明旧 admission、双 journal、Docker ownership、process/mount 与 systemd cgroup closure。
+失败时 socket 保持关闭。
+
+Nix switch 与 generic install 不切 backing mount。显式 activation 在 exclusive lock 内以
+`findmnt`、`losetup` 与 `blkid` 证明旧/新 backing，并在失败时恢复旧 mount。steady boot 从 current capsule
+校验父 mount 后恢复 data mount，并为本次 boot 重建绑定精确 epoch/digest 的 `/run` drop-in。旧 boot 文件与
+新 pointer 交错时只能 fail closed。
+
+capacity proof 同时使用 outer image allocated blocks、ext4 `f_bavail`、metadata/reserved blocks 与 recovery
+headroom。seed rotation 发布新的 epoch、registry 与 backing，不改写 published seed。retire 先提交 tombstone；
+独立 reclaim 只有排除 current/previous、detached cache、artifact、loop/mount/process 与其它 capsule 引用后才
+删除精确 rotated path 并提交 receipt。默认只报告 reclaimable，不自动删除。
+
 descriptor 声明 coverage、Host copier/copy/quiesce revision、filesystem format/features、fixed size 与 execution domain。control request 与 receipt 双向核对 required state、SetupPrefixKey、manifest digest、daemon/slot generation 与 provider-neutral artifact id。Host 拒绝缺失 state、`all`、identity mismatch 或仍在运行的 inner container/BuildKit session。
 
 capture 与 restore 共用 watchdog 的 lease、journal-first intent、原子发布、容量记账、scrub、quarantine 与 cancel/restart recovery。恢复为每个 Attempt 创建不同 writable slot，Agent/test 对 inner image 或 volume 的修改不能污染 immutable seed。

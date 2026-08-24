@@ -40,7 +40,9 @@ stdenvNoCC.mkDerivation {
       validate-capacity.py:validate-capacity \
       preload-verify-assets.py:preload-verify-assets \
       watchdog.py:docker-profile-watchdog \
-      install-quota-slots.py:install-quota-slots
+      install-quota-slots.py:install-quota-slots \
+      provision-fixed-images.py:provision-fixed-images \
+      activate-fixed-images.py:activate-fixed-images
     do
       src_name=''${pair%%:*}
       dst_name=''${pair##*:}
@@ -81,6 +83,10 @@ stdenvNoCC.mkDerivation {
 
     wrapProgram $out/libexec/niceeval/install-quota-slots \
       --prefix PATH : ${lib.makeBinPath [ util-linux e2fsprogs quota ]}
+    wrapProgram $out/libexec/niceeval/provision-fixed-images \
+      --prefix PATH : ${lib.makeBinPath [ util-linux e2fsprogs coreutils ]}
+    wrapProgram $out/libexec/niceeval/activate-fixed-images \
+      --prefix PATH : ${lib.makeBinPath [ util-linux e2fsprogs coreutils ]}
     wrapProgram $out/libexec/niceeval/docker-profile-watchdog \
       --prefix PATH : ${lib.makeBinPath [ coreutils util-linux e2fsprogs quota ]}
 
