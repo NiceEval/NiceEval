@@ -573,8 +573,7 @@ type CurrentMatcherOverlay =
     }
   | { readonly retention: "unavailable"; readonly reason: string };
 
-type CurrentMatcherFilterDebuggerView = DomainView & {
-  readonly kind: "matcher-filter-debugger";
+type CurrentMatcherFilterDebuggerView = {
   readonly state: "current";
   readonly source: {
     readonly final: CurrentMatcherLedgerCollection;
@@ -583,7 +582,7 @@ type CurrentMatcherFilterDebuggerView = DomainView & {
   readonly identityRelation:
     | { readonly state: "exact" }
     | { readonly state: "unavailable"; readonly reason: "source-unavailable" | "ambiguous" };
-  readonly overlay: CurrentMatcherOverlay;
+  readonly overlayRetention: CurrentMatcherOverlay["retention"];
 } & (
   | {
       readonly query: { readonly kind: "collection-filter"; readonly summary: MatcherCollectionQuerySummary };
@@ -595,8 +594,7 @@ type CurrentMatcherFilterDebuggerView = DomainView & {
     }
 );
 
-type LegacyMatcherFilterDebuggerView = DomainView & {
-  readonly kind: "matcher-filter-debugger";
+type LegacyMatcherFilterDebuggerView = {
   readonly state: "legacy";
   readonly query: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
   readonly source: {
@@ -605,7 +603,7 @@ type LegacyMatcherFilterDebuggerView = DomainView & {
   };
   readonly receipt: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
   readonly identityRelation: { readonly state: "unavailable"; readonly reason: "historical-not-recorded" };
-  readonly overlay: { readonly retention: "unavailable"; readonly reason: "historical-not-recorded" };
+  readonly overlayRetention: "unavailable";
   readonly legacyDiagnostic?: AssertionFactValue;
 };
 
@@ -613,10 +611,16 @@ type MatcherFilterDebuggerView =
   | CurrentMatcherFilterDebuggerView
   | LegacyMatcherFilterDebuggerView;
 
-declare const matcherFilterDebuggerView: DomainViewRequest<MatcherFilterDebuggerView>;
+type AttemptEvidenceDomainDetail = DomainView & {
+  readonly kind: "attempt-evidence";
+  readonly entries: readonly {
+    // ...该 assertion 的其它闭合证据字段
+    readonly matcherDebugger?: MatcherFilterDebuggerView;
+  }[];
+};
 ```
 
-`matcherFilterDebuggerView` 是 Assertions query artifact 与 Agent Turns source ledger 的具名 composite。Agent Turns 只提供一次归一、脱敏的 observed event rows。
+`attempt-evidence` 在对应 matcher assertion entry 下发布 `matcherDebugger` composite。entry 已经提供 assertion identity、decision 与材料，所以 Report 不需要先请求一份独立 debugger 再按 entry ID 做第二次关联。非 matcher entry 不带该字段。Agent Turns 只提供一次归一、脱敏的 observed event rows。
 
 package-owned source projector 先把 current rows闭合为 final event ledger 与 logical-occurrence ledger，再按 artifact 的 scope cut 纯投影 evaluation-cut ledger。source projector 独占 lifecycle pairing、home Turn、finish endpoint 与 ambiguous／unavailable relation。Analysis binding 不实现第二套配对。
 
@@ -630,7 +634,7 @@ package-owned assembler 只验证 locator 唯一且位于 exact scope/cut、witn
 
 current locator 只按 `eventId`／`toolOccurrenceId` 建立 relation。Agent Turns v1 的 `legacy-source-local` call/result关系与 Assertions 的 `legacyDiagnostic` 属于不相容类型。它们只能形成中立历史详情，不能进入 current overlay、witness／frontier或 exact navigation。
 
-`MatcherFilterDebuggerView` 直接返回已经查得的 conversation target，或具名 unavailable reason。Report 只滚动并短暂高亮这个 target。React 不再接收另一组 conversation rows 后按 ID、Turn、名称、位置或 DOM 邻近查找。
+entry 内的 `MatcherFilterDebuggerView` 直接返回已经查得的 conversation target，或具名 unavailable reason。Report 只滚动并短暂高亮这个 target。React 不再接收另一组 conversation rows 后按 ID、Turn、名称、位置或 DOM 邻近查找。
 
 最终 ledger 可以包含 evaluation cut 之后的 rows，但它们固定标为 outside evaluation snapshot，只是上下文。Query、receipt、overlay 与结果过滤只作用于 evaluation-cut ledger。
 

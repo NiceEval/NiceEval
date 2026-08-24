@@ -120,7 +120,7 @@ SemanticFrame（语义数据帧）
 
 ## Matcher Filter Debugger 的跨层闭合
 
-Matcher Filter Debugger 由 Analysis 发布具名 composite `MatcherFilterDebuggerView`。它一次组合 Assertions 的 query artifact 与 source owner 的 tool／event ledger。这个视图交付 Query summary、权威聚合计数、source-owned ledger、coverage-aware assertion overlay 和 selected-row detail。Report 只消费这一个闭合 DomainView。
+Matcher Filter Debugger 由 Analysis 在 `attempt-evidence` 对应 assertion entry 下发布闭合的 `matcherDebugger` composite。它一次组合 Assertions 的 query artifact 与 source owner 的 tool／event ledger。这个子视图交付 Query summary、权威聚合计数、source-owned ledger、coverage-aware assertion overlay 和 selected-row detail。Report 从该 entry 直接消费，不再另取 ledger 后按 assertion identity 关联。
 
 Record source owner 只持久化一次已经归一、脱敏的 observed event ledger。它在 event 对 Assertion runtime 可见前为每条独立事件封口 `eventId`、scope 与 per-Session sequence，并在 tool start 时 mint `toolOccurrenceId`。`operation.started` 和 `operation.finished` 的 `eventId` 不同；属于同一生命周期时，它们共享 `toolOccurrenceId`。Agent Turns 中 producer-minted `callId` 只表达 legacy source-local 配对输入，不能替代这些跨 family identity。
 
@@ -130,7 +130,7 @@ Assertions runtime 与 Analysis reader 都消费这一个 projector。writer 不
 
 Turn／Session cut 使用 inclusive per-Session sequence。Attempt collection 使用按稳定 Session identity 排序的 vector cut，不能产生跨 Session order。
 
-Analysis 只在 `eventId`、`toolOccurrenceId`、scope relation、cut 与 source-owned collection completeness 能精确验证时建立 overlay。它把四个完整性维度分别留在 `MatcherFilterDebuggerView` 中，并直接返回已经查得的 conversation target 或 unavailable reason。React component 不接收两组待 join 的数组，也不猜测关系。
+Analysis 只在 `eventId`、`toolOccurrenceId`、scope relation、cut 与 source-owned collection completeness 能精确验证时建立 overlay。它把四个完整性维度分别留在 entry 的 `matcherDebugger` 中，并直接返回已经查得的 conversation target 或 unavailable reason。React component 不接收两组待 join 的数组，也不猜测关系。
 
 历史 Record 若能形成 ledger，却没有 Assertion locator、准确 scope relation 或 cut，Analysis 仍返回中立 ledger，并把 identity relation 标为 unavailable。Agent Turns v1 的 `callId` 最多形成与 current identity 类型不相容的同 segment `legacy-source-local` 调用详情。Assertions v2 的旧解释只进入独立 `legacyDiagnostic`。
 
