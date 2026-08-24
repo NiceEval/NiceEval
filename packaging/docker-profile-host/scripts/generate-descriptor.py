@@ -13,6 +13,7 @@ import json
 import os
 import pwd
 import grp
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -118,9 +119,29 @@ def semantic_policy_revision(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()[:8]
 
 
-def filesystem_identity(mount_path: str) -> str:
+def filesystem_identity(mount_path: str, backing_image: str | None = None) -> str:
     st = os.stat(mount_path)
-    # device id + inode of the mount point is a stable local identity marker
+    if backing_image is not None:
+        uuid = subprocess.run(
+            ["blkid", "-s", "UUID", "-o", "value", backing_image],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if uuid.returncode != 0 or not uuid.stdout.strip():
+            raise SystemExit("fixed-image filesystem identity has no readable ext4 UUID")
+        return f"ext4-uuid:{uuid.stdout.strip().lower()}:ino={st.st_ino}"
+    mount = subprocess.run(
+        ["findmnt", "-n", "--raw", "-o", "SOURCE,FSTYPE", "-T", mount_path],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    fields = mount.stdout.split()
+    if mount.returncode == 0 and len(fields) == 2 and fields[1] == "ext4":
+        uuid = subprocess.run(
+            ["blkid", "-s", "UUID", "-o", "value", fields[0]],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if uuid.returncode == 0 and uuid.stdout.strip():
+            return f"ext4-uuid:{uuid.stdout.strip().lower()}:ino={st.st_ino}"
+    # Non-fixed backends retain their local mount identity.
     return f"dev={st.st_dev}:ino={st.st_ino}"
 
 
@@ -188,7 +209,9 @@ def setup_prefix_capability(
     image_root = Path(image_root_path)
     if image_root.is_symlink() or not image_root.is_dir():
         raise SystemExit("setupPrefix.imageRootPath must be an existing real directory")
-    actual_identity = filesystem_identity(str(image_root.resolve()))
+    backing_image = str(storage.get("outerImagePath")) \
+        if storage.get("backing") == "fixed-image-ext4" else None
+    actual_identity = filesystem_identity(str(image_root.resolve()), backing_image)
     if identity != actual_identity:
         raise SystemExit(
             "setupPrefix.filesystemIdentity must match the actual imageRootPath filesystem"

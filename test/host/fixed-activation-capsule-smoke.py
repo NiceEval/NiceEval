@@ -96,6 +96,17 @@ def assert_transition(paths: dict[str, Path], old: dict[str, bytes],
         )
 
 
+def assert_restored(paths: dict[str, Path], source: dict[str, bytes],
+                    baseline: dict[str, bytes], restored: set[str]) -> None:
+    actual = active_bindings(paths)
+    for name in BINDINGS:
+        expected = baseline[name] if name in restored else source[name]
+        assert actual[name] == expected, (
+            f"{name} differs after restored set {sorted(restored)}; "
+            f"baseline={actual[name] == baseline[name]} source={actual[name] == source[name]}"
+        )
+
+
 def write_kill_launcher(path: Path) -> None:
     # The launcher calls the production CLI main with real argv. Its only seam
     # stops the process immediately after one selected durable mutation.
@@ -338,7 +349,7 @@ def main() -> None:
                 assert current_epoch(paths["generation"]) == new_epoch
                 run(command(paths, verify=True))
                 assert_state(paths, new, new_epoch, new_backing)
-                run(command(paths, rollback=baseline_epoch, prepare=True))
+                run(command(paths, rollback=baseline_epoch))
                 # Rollback publishes a fresh epoch capsule rather than moving
                 # current backward to the historical epoch identifier.
                 baseline_epoch = current_epoch(paths["generation"])
@@ -350,7 +361,10 @@ def main() -> None:
 
         # Every recovery mutation is itself crashable. A clean retry and a
         # second clean retry must converge on byte-identical bindings/backing.
-        for index, phase in enumerate((*BINDINGS, "mount")):
+        # The recovery record is canonical JSON, so its files object is read in
+        # absolute-path key order rather than mutation order.
+        restore_order = tuple(sorted(BINDINGS, key=lambda name: str(paths[name])))
+        for index, phase in enumerate((*restore_order, "mount")):
             cutover = command(paths, source=source, rotate=True, prepare=True)
             kill(cutover, paths, launcher, receipts / f"restore-source-{phase}.json", "digest")
             new_epoch = pending_epoch(paths)
@@ -361,8 +375,8 @@ def main() -> None:
 
             recovery = command(paths, verify=True)
             kill(recovery, paths, launcher, receipts / f"restore-{phase}.json", phase)
-            restored = min(index + 1, len(BINDINGS))
-            assert_transition(paths, new, baseline, restored)
+            restored = set(restore_order[:min(index + 1, len(restore_order))])
+            assert_restored(paths, new, baseline, restored)
             assert current_epoch(paths["generation"]) == baseline_epoch
             expected_backing = baseline_backing if phase == "mount" else new_backing
             assert mounted_backing(data_mount) == expected_backing

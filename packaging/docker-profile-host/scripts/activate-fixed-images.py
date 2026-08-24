@@ -261,11 +261,32 @@ def recover_activation(path: Path) -> None:
     files = record.get("files")
     if not isinstance(files, dict):
         raise RuntimeError("activation recovery record is incomplete")
+    mount_path = record.get("dataMount")
+    expected_mount = record.get("mount")
+    if isinstance(mount_path, str):
+        current_mount = mounted_backing(Path(mount_path))
+        expected_backing = expected_mount.get("backingImage") \
+            if isinstance(expected_mount, dict) else None
+        if current_mount is not None and current_mount.get("backingImage") != expected_backing:
+            recovery_configs: set[str] = set()
+            for field in ("activeHostConfig", "targetHostConfig"):
+                config_path = record.get(field)
+                if not isinstance(config_path, str) or config_path in recovery_configs \
+                        or not Path(config_path).is_file():
+                    continue
+                recovery_configs.add(config_path)
+                active_config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+                if str(Path(str(active_config.get("dataMount", ""))).resolve()) != \
+                        str(Path(mount_path).resolve()):
+                    raise RuntimeError("activation recovery host config targets another data mount")
+                # A rotated epoch provisions its writable slot loop mounts below
+                # the new outer backing.  They must be released before that outer
+                # filesystem can be replaced with the pre-activation snapshot.
+                unmount_owned_slots(active_config)
     for name, snapshot in files.items():
         _restore_file(Path(name), snapshot)
-    mount_path = record.get("dataMount")
     if isinstance(mount_path, str):
-        restore_mount(Path(mount_path), record.get("mount"))
+        restore_mount(Path(mount_path), expected_mount)
     path.unlink()
     sync_directory(path.parent)
 
@@ -290,6 +311,19 @@ def run(*args: str, check: bool = True, pass_fds: tuple[int, ...] = ()) -> str:
     if check and result.returncode != 0:
         raise RuntimeError(f"{' '.join(args)} failed: {result.stderr.strip()}")
     return result.stdout.strip()
+
+
+def provision_fixed_images(config: Path, provisioner: str, lock_fd: int) -> None:
+    env = os.environ.copy()
+    env["NICEEVAL_FIXED_ACTIVATION"] = "1"
+    env["NICEEVAL_FIXED_ACTIVATION_LOCK_FD"] = str(lock_fd)
+    result = subprocess.run(
+        [sys.executable, provisioner, "--host-config", str(config)],
+        env=env, pass_fds=(lock_fd,), text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"fixed provisioner failed: {result.stderr.strip()}")
 
 
 def last_state(path: Path) -> dict[str, Any] | None:
@@ -525,6 +559,56 @@ def assert_cgroup_empty(config: dict[str, Any]) -> dict[str, Any]:
     return {"class": dependency_class, "cgroupPath": str(cgroup), "emptyAtActivation": True}
 
 
+def assert_no_process_owners(roots: tuple[str, ...], subject: str) -> None:
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        pid = entry.name
+        try:
+            before = (entry / "stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[19]
+        except OSError as error:
+            if vanished(error):
+                continue
+            raise RuntimeError(f"could not establish process identity: pid={pid}") from error
+        for kind in ("cwd", "root"):
+            target = read_proc_link(entry / kind, pid, kind)
+            if target is not None and storage_owner(target, roots):
+                raise RuntimeError(
+                    f"activation found process ownership of {subject}: pid={pid} {kind}={target}"
+                )
+        try:
+            for fd in (entry / "fd").iterdir():
+                target = read_proc_link(fd, pid, f"fd {fd.name}")
+                if target is not None and storage_owner(target, roots):
+                    raise RuntimeError(
+                        f"activation found process ownership of {subject}: pid={pid} fd={fd.name}"
+                    )
+        except OSError as error:
+            if vanished(error):
+                continue
+            raise RuntimeError(f"could not enumerate process file descriptors: pid={pid}") from error
+        try:
+            maps = (entry / "maps").read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as error:
+            if vanished(error):
+                continue
+            raise RuntimeError(f"could not inspect process mappings: pid={pid}") from error
+        for line in maps:
+            fields = line.split(None, 5)
+            if len(fields) == 6 and fields[5].startswith("/") and storage_owner(fields[5], roots):
+                raise RuntimeError(
+                    f"activation found process ownership of {subject}: pid={pid} path={fields[5]}"
+                )
+        try:
+            after = (entry / "stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[19]
+        except OSError as error:
+            if vanished(error):
+                continue
+            raise RuntimeError(f"could not revalidate process identity: pid={pid}") from error
+        if before != after:
+            raise RuntimeError(f"process identity changed during activation closure scan: pid={pid}")
+
+
 def assert_mount_and_process_closure(config: dict[str, Any]) -> None:
     data_mount = Path(str(config["dataMount"])).resolve()
     allowed = {data_mount}
@@ -543,53 +627,7 @@ def assert_mount_and_process_closure(config: dict[str, Any]) -> None:
         if target not in allowed:
             raise RuntimeError(f"activation found an unowned nested slot mount: {target}")
     roots = (str(data_mount), str(Path(config["journalDir"]).resolve()))
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit() or int(entry.name) == os.getpid():
-            continue
-        pid = entry.name
-        try:
-            before = (entry / "stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[19]
-        except OSError as error:
-            if vanished(error):
-                continue
-            raise RuntimeError(f"could not establish process identity: pid={pid}") from error
-        for kind in ("cwd", "root"):
-            target = read_proc_link(entry / kind, pid, kind)
-            if target is not None and storage_owner(target, roots):
-                raise RuntimeError(
-                    f"activation found process ownership of profile storage: pid={pid} {kind}={target}"
-                )
-        try:
-            for fd in (entry / "fd").iterdir():
-                target = read_proc_link(fd, pid, f"fd {fd.name}")
-                if target is not None and storage_owner(target, roots):
-                    raise RuntimeError(
-                        f"activation found process ownership of profile storage: pid={pid} fd={fd.name}"
-                    )
-        except OSError as error:
-            if vanished(error):
-                continue
-            raise RuntimeError(f"could not enumerate process file descriptors: pid={pid}") from error
-        try:
-            maps = (entry / "maps").read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError as error:
-            if vanished(error):
-                continue
-            raise RuntimeError(f"could not inspect process mappings: pid={pid}") from error
-        for line in maps:
-            fields = line.split(None, 5)
-            if len(fields) == 6 and fields[5].startswith("/") and storage_owner(fields[5], roots):
-                raise RuntimeError(
-                    f"activation found mapped profile storage: pid={pid} path={fields[5]}"
-                )
-        try:
-            after = (entry / "stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[19]
-        except OSError as error:
-            if vanished(error):
-                continue
-            raise RuntimeError(f"could not revalidate process identity: pid={pid}") from error
-        if before != after:
-            raise RuntimeError(f"process identity changed during activation closure scan: pid={pid}")
+    assert_no_process_owners(roots, "profile storage")
 
 
 def unmount_owned_slots(config: dict[str, Any]) -> None:
@@ -1014,6 +1052,12 @@ def main() -> None:
             atomic_text(digest_path, str(pointer["manifestDigest"]) + "\n")
             outer, data_mount = validate_store_paths(active)
             switch_mount(outer, data_mount)
+            # A reboot loses the writable slot loop mounts even though their
+            # immutable registry and image files remain in the outer store.
+            # Re-adopt that registry under the same exclusive activation lock
+            # before descriptor verification and watchdog admission.
+            provision_fixed_images(host_config, args.provisioner, lock_file.fileno())
+            active = json.loads(host_config.read_text(encoding="utf-8"))
             verify_manifest(manifest_path, digest_path, host_config, descriptor)
             digest = str(pointer["manifestDigest"])
             install_watchdog_dropin(active, generation, str(committed["epoch"]), digest,
@@ -1058,6 +1102,9 @@ def main() -> None:
                 encoded_state = canonical(active_state).decode("utf-8", errors="replace")
                 if target_epoch in encoded_state or str(outer) in encoded_state:
                     raise RuntimeError("retired epoch still has active artifact or journal ownership references")
+            assert_no_process_owners(
+                (str(outer), str(outer.parent)), "retired epoch backing",
+            )
             if run("losetup", "-j", str(outer), check=False):
                 raise RuntimeError("retired epoch backing still has a loop or mount reference")
             for other in (generation / "epochs").iterdir():
@@ -1122,15 +1169,17 @@ def main() -> None:
         snapshots = {str(path): _snapshot_file(path) for path in
                      (host_config, descriptor, manifest_path, digest_path)}
         mount_path = Path(str(config["dataMount"])).resolve()
+        staging = generation / "staging" / epoch
+        staging_config = staging / "host.json"
         atomic_json(recovery_path, {"schema": RECOVERY_SCHEMA,
                                     "state": "pending", "epoch": epoch,
                                     "files": snapshots, "dataMount": str(mount_path),
+                                    "activeHostConfig": str(host_config),
+                                    "targetHostConfig": str(staging_config),
                                     "mount": mounted_backing(mount_path),
                                     "currentPointer": str(current_pointer),
                                     "pendingMarker": str(marker)})
-        staging = generation / "staging" / epoch
         staging.mkdir(mode=0o700, parents=True)
-        staging_config = staging / "host.json"
         staging_descriptor = staging / "descriptor.json"
         config["activation"] = {
             "schema": SCHEMA,
@@ -1162,22 +1211,17 @@ def main() -> None:
         if args.prepare_store:
             prepare_store(config, args.prepare_helper)
         outer, data_mount = validate_store_paths(config)
+        # Preparing is only required to create/fully allocate a new outer
+        # image. Rollback targets already exist and must still become the
+        # active backing before their published registries are adopted.
+        switch_mount(outer, data_mount)
         intent = {"schema": SCHEMA, "state": "preparing", "epoch": epoch,
                   "previousEpoch": previous.get("epoch") if isinstance(previous, dict) else None,
                   "startedAtUnixNs": time.time_ns()}
         atomic_json(marker, intent)
         append_event(journal, intent)
         try:
-            env = os.environ.copy()
-            env["NICEEVAL_FIXED_ACTIVATION"] = "1"
-            env["NICEEVAL_FIXED_ACTIVATION_LOCK_FD"] = str(lock_file.fileno())
-            provision = subprocess.run(
-                [sys.executable, args.provisioner, "--host-config", str(staging_config)],
-                env=env, pass_fds=(lock_file.fileno(),), text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
-            )
-            if provision.returncode != 0:
-                raise RuntimeError(f"fixed provisioner failed: {provision.stderr.strip()}")
+            provision_fixed_images(staging_config, args.provisioner, lock_file.fileno())
             config = json.loads(staging_config.read_text(encoding="utf-8"))
             if source_descriptor is None:
                 generator = [sys.executable, args.generator, "--host-config", str(staging_config),

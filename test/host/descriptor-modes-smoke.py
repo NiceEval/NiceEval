@@ -7,6 +7,7 @@ import json
 import os
 import pwd
 import grp
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -76,13 +77,20 @@ with tempfile.TemporaryDirectory(prefix="niceeval-descriptor-") as raw:
 
     snapshot_root = root / "setup-prefix"
     snapshot_root.mkdir()
-    snapshot_identity = generator.filesystem_identity(str(snapshot_root))
+    snapshot_outer = root / "setup-prefix-outer.ext4"
+    subprocess.run(["fallocate", "-l", "16M", str(snapshot_outer)], check=True)
+    subprocess.run(
+        ["mkfs.ext4", "-F", "-m", "0", str(snapshot_outer)], check=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    snapshot_identity = generator.filesystem_identity(str(snapshot_root), str(snapshot_outer))
     snapshot_host = {
         **common,
         "securityLevel": "raw-dind-storage/v1",
         "storage": {
             "size": "4G",
             "backing": "fixed-image-ext4",
+            "outerImagePath": str(snapshot_outer),
             "slotAttestation": "independent-fixed-filesystem/v1",
         },
         "setupPrefix": {

@@ -40,6 +40,7 @@ for f in \
   test/host/fixed-systemd-manager-e2e.sh \
   test/host/activation-cgroup-smoke.py \
   test/host/fixed-activation-capsule-smoke.py \
+  test/host/fixed-activation-status-smoke.py \
   packaging/docker-profile-host/systemd/niceeval-docker-profile-watchdog@.socket \
   packaging/docker-profile-host/systemd/niceeval-docker-profile-default.slice \
   packaging/docker-profile-host/sysusers.d/niceeval-docker-profile.conf \
@@ -346,6 +347,11 @@ if python3 test/host/activation-cgroup-smoke.py; then
   pass "activation cgroup-v2 populated/empty facts are fail-closed"
 else
   fail "activation cgroup-v2 closure smoke"
+fi
+if python3 test/host/fixed-activation-status-smoke.py; then
+  pass "activation status reports durable seed capacity and exhaustion warnings"
+else
+  fail "activation durable seed status smoke"
 fi
 if python3 test/host/fixed-activation-capsule-smoke.py; then
   pass "activation pointer commit and idempotent recovery receipt"

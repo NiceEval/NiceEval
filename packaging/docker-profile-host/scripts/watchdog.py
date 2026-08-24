@@ -42,6 +42,31 @@ LABELS = {
     "attemptId": "niceeval.attempt-id",
 }
 
+
+def filesystem_identity(path: Path, backing_image: Path | None = None) -> str:
+    info = path.stat()
+    if backing_image is not None:
+        uuid = subprocess.run(
+            ["blkid", "-s", "UUID", "-o", "value", str(backing_image)],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if uuid.returncode != 0 or not uuid.stdout.strip():
+            raise RuntimeError("fixed-image filesystem identity has no readable ext4 UUID")
+        return f"ext4-uuid:{uuid.stdout.strip().lower()}:ino={info.st_ino}"
+    mount = subprocess.run(
+        ["findmnt", "-n", "--raw", "-o", "SOURCE,FSTYPE", "-T", str(path)],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    fields = mount.stdout.split()
+    if mount.returncode == 0 and len(fields) == 2 and fields[1] == "ext4":
+        uuid = subprocess.run(
+            ["blkid", "-s", "UUID", "-o", "value", fields[0]],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if uuid.returncode == 0 and uuid.stdout.strip():
+            return f"ext4-uuid:{uuid.stdout.strip().lower()}:ino={info.st_ino}"
+    return f"dev={info.st_dev}:ino={info.st_ino}"
+
 CREATE_KEYS = {"image", "command", "entrypoint", "environment", "workingDir", "user", "tmpfs", "attemptId"}
 FORBIDDEN_CREATE_KEYS = {"binds", "mounts", "volumes", "hostConfig", "devices", "networkMode", "ports", "extraHosts"}
 BUILD_KEYS = {"buildKey", "platform", "dockerfile", "buildArgs", "target", "retention"}
@@ -430,10 +455,9 @@ class Admission:
         if not image_root.is_absolute() or image_root.is_symlink() or not image_root.is_dir():
             raise RuntimeError("setupPrefix imageRootPath must be an existing real absolute directory")
         image_root = image_root.resolve()
-        image_root_stat = image_root.stat()
-        actual_filesystem_identity = (
-            f"dev={image_root_stat.st_dev}:ino={image_root_stat.st_ino}"
-        )
+        backing_image = Path(str(storage.get("outerImagePath", ""))) \
+            if storage.get("backing") == "fixed-image-ext4" else None
+        actual_filesystem_identity = filesystem_identity(image_root, backing_image)
         if raw.get("filesystemIdentity") != actual_filesystem_identity \
                 or capability.get("filesystemIdentity") != actual_filesystem_identity:
             raise RuntimeError(

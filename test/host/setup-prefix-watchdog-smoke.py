@@ -237,8 +237,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     docker_socket.touch()
     setup_root = root / "setup-prefix-fs"
     setup_root.mkdir()
-    root_stat = root.stat()
-    setup_identity = f"dev={root_stat.st_dev}:ino={root_stat.st_ino}"
+    setup_identity = watchdog.filesystem_identity(root)
     slot_root = root / "slots"
     slot_root.mkdir()
     slot_limit = 2 * 1024 * 1024

@@ -7,6 +7,7 @@ FIXTURE_ROOT="$(mktemp -d /tmp/niceeval-fixed-systemd-manager.XXXXXX)"
 PROFILE_ROOT="$(mktemp -d /tmp/niceeval-e2e-docker-profile-systemd.XXXXXX)"
 NSPAWN_PID=""
 PROFILE_READY=0
+PROFILE_BOUND=0
 
 cleanup() {
   if [[ -n "$NSPAWN_PID" ]] && kill -0 "$NSPAWN_PID" 2>/dev/null; then
@@ -15,11 +16,13 @@ cleanup() {
   fi
   if [[ "$PROFILE_READY" == 1 ]]; then
     sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 \
-      "$ROOT_DIR/e2e/lifecycle/fixtures/profile-host-fixture.py" cleanup \
+      "$ROOT_DIR/e2e/lifecycle/fixtures/profile-host-fixture.py" prepare-reboot \
       --root "$PROFILE_ROOT" >/dev/null 2>&1 || true
-  else
-    sudo -n python3 -c 'import os,shutil,sys; p=os.path.realpath(sys.argv[1]); assert p.startswith("/tmp/niceeval-e2e-docker-profile-systemd.") and p.count("/")==2; shutil.rmtree(p)' "$PROFILE_ROOT"
   fi
+  if [[ "$PROFILE_BOUND" == 1 ]]; then
+    sudo -n umount -- "$PROFILE_ROOT" >/dev/null 2>&1 || true
+  fi
+  sudo -n python3 -c 'import os,shutil,sys; p=os.path.realpath(sys.argv[1]); assert p.startswith("/tmp/niceeval-e2e-docker-profile-systemd.") and p.count("/")==2; shutil.rmtree(p)' "$PROFILE_ROOT"
   sudo -n python3 -c 'import os,shutil,sys; p=os.path.realpath(sys.argv[1]); assert p.startswith("/tmp/niceeval-fixed-systemd-manager.") and p.count("/")==2; shutil.rmtree(p)' "$FIXTURE_ROOT"
 }
 trap cleanup EXIT INT TERM
@@ -33,6 +36,14 @@ fixture_user="${USER:-${LOGNAME:-}}"
 [[ -n "$fixture_user" ]]
 fixture_group="$(id -gn "$fixture_user")"
 profile_name=probe
+
+# Keep the capsule's rootDir parent-mount identity identical inside and outside
+# the nspawn manager. Without this self-bind, nspawn creates an additional bind
+# layer only after the capsule was committed and the production attestation
+# correctly rejects the artificial identity drift.
+sudo -n mount --bind "$PROFILE_ROOT" "$PROFILE_ROOT"
+sudo -n mount --make-private "$PROFILE_ROOT"
+PROFILE_BOUND=1
 
 setup_receipt="$(sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 "$fixture_script" setup \
   --root "$PROFILE_ROOT" \
@@ -63,6 +74,8 @@ mkdir -p \
   "$FIXTURE_ROOT/run" "$FIXTURE_ROOT/proc" "$FIXTURE_ROOT/sys" "$FIXTURE_ROOT/dev"
 cp /etc/os-release "$FIXTURE_ROOT/etc/os-release"
 cp /etc/machine-id "$FIXTURE_ROOT/etc/machine-id"
+cp /etc/passwd "$FIXTURE_ROOT/etc/passwd"
+cp /etc/group "$FIXTURE_ROOT/etc/group"
 systemd_unit_root="$(dirname "$(readlink -f /etc/systemd/system/multi-user.target)")"
 ln -s "$(readlink -f /run/current-system/systemd/lib/systemd/systemd)" "$FIXTURE_ROOT/sbin/init"
 ln -s "$(readlink -f /run/current-system/sw/bin/sh)" "$FIXTURE_ROOT/bin/sh"
@@ -76,14 +89,14 @@ ln -s "$systemd_unit_root" "$FIXTURE_ROOT/usr/lib/systemd/system"
 # systemd invokes the real programs through ExecStart, rather than a probe or
 # an out-of-root symlink that PID 1 cannot execute.
 cp "$scripts/activate-fixed-images.py" "$FIXTURE_ROOT/usr/libexec/niceeval/activate-fixed-images"
+cp "$scripts/provision-fixed-images.py" "$FIXTURE_ROOT/usr/libexec/niceeval/provision-fixed-images.py"
 cp "$scripts/watchdog.py" "$FIXTURE_ROOT/usr/libexec/niceeval/docker-profile-watchdog"
 sed -i "1c\\#!$python_store_bin/python3" \
   "$FIXTURE_ROOT/usr/libexec/niceeval/activate-fixed-images" \
-  "$FIXTURE_ROOT/usr/libexec/niceeval/docker-profile-watchdog"
-sed -i "2i import os; os.environ['PATH'] = '$util_store_bin:$python_store_bin:/usr/bin:/bin'" \
-  "$FIXTURE_ROOT/usr/libexec/niceeval/activate-fixed-images" \
+  "$FIXTURE_ROOT/usr/libexec/niceeval/provision-fixed-images.py" \
   "$FIXTURE_ROOT/usr/libexec/niceeval/docker-profile-watchdog"
 chmod 0755 "$FIXTURE_ROOT/usr/libexec/niceeval/activate-fixed-images" \
+  "$FIXTURE_ROOT/usr/libexec/niceeval/provision-fixed-images.py" \
   "$FIXTURE_ROOT/usr/libexec/niceeval/docker-profile-watchdog"
 
 for unit_name in fixed-activation fixed-images fixed-descriptor fixed-watchdog; do
@@ -118,6 +131,7 @@ for unit in "$activation" "$attestation" "$descriptor_unit" "$watchdog"; do
     -e "s|/run/niceeval/docker-profiles/%i|$PROFILE_ROOT|g" \
     "$unit"
   sed -i '/^\[Unit\]$/a DefaultDependencies=no' "$unit"
+  sed -i "/^\[Service\]$/a StandardError=append:$PROFILE_ROOT/systemd-services.log\nStandardOutput=append:$PROFILE_ROOT/systemd-services.log" "$unit"
   sed -i "s|^ExecStart=|Environment=PATH=$util_store_bin:$python_store_bin:/usr/bin:/bin\\nExecStart=|" "$unit"
 done
 sed -i \
@@ -125,7 +139,7 @@ sed -i \
   -e '/^Delegate=/d' \
   -e "s|^Environment=HOME=.*|Environment=HOME=$PROFILE_ROOT/home|" \
   -e "s|^Environment=XDG_RUNTIME_DIR=.*|Environment=XDG_RUNTIME_DIR=$PROFILE_ROOT|" \
-  -e 's/chgrp niceeval-dp-%i-access/chgrp root/' \
+  -e 's/chgrp niceeval-dp-%i-access/chgrp 0/' \
   "$watchdog"
 mkdir -p "$PROFILE_ROOT/home"
 
@@ -166,13 +180,26 @@ managerctl() {
 managerexec() {
   local pid
   pid="$(manager_pid)"
-  sudo -n nsenter -t "$pid" -m -p -- /bin/sh -c "$1"
+  sudo -n nsenter -t "$pid" -m -p -- /bin/sh -c \
+    "PATH='$util_store_bin:$python_store_bin:/usr/bin:/bin'; export PATH; $1"
+}
+wait_active() {
+  local unit="$1"
+  for _ in $(seq 1 100); do
+    managerctl is-active --quiet "$unit" && return
+    sleep 0.05
+  done
+  managerctl status "$unit" --no-pager >&2 || true
+  return 1
 }
 start_manager() {
   rm -f -- "$ready_file"
   sudo -n systemd-nspawn --directory="$FIXTURE_ROOT" \
     --bind-ro=/nix/store --bind-ro="$ROOT_DIR" --bind="$PROFILE_ROOT" \
-    --bind=/run/docker.sock --register=no --boot --console=pipe \
+    --bind=/dev --bind=/run/docker.sock \
+    --property='DeviceAllow=block-loop rwm' \
+    --property='DeviceAllow=/dev/loop-control rwm' \
+    --register=no --boot --console=pipe \
     >"$FIXTURE_ROOT/nspawn.log" 2>&1 &
   NSPAWN_PID=$!
   for _ in $(seq 1 200); do
@@ -183,10 +210,13 @@ start_manager() {
   managerctl status niceeval-docker-profile-fixed-images@probe.service \
     niceeval-docker-profile-fixed-descriptor@probe.service \
     niceeval-docker-profile-fixed-watchdog@probe.service --no-pager >&2 || true
+  managerctl show niceeval-docker-profile-fixed-images@probe.service \
+    -p Environment -p ExecMainCode -p ExecMainStatus --no-pager >&2 || true
   pid="$(manager_pid || true)"
   [[ -n "$pid" ]] && sudo -n nsenter -t "$pid" -m -p -- "$journalctl_bin" -u niceeval-docker-profile-fixed-images@probe.service -n 80 --no-pager >&2 || true
   [[ -n "$pid" ]] && sudo -n nsenter -t "$pid" -m -p -- /bin/sh -c \
-    "/usr/libexec/niceeval/activate-fixed-images --host-config='$host_config' --descriptor='$descriptor' --boot-restore --systemd-drop-in-root=/run/systemd/system --systemd-watchdog-unit=niceeval-docker-profile-fixed-watchdog@probe.service --reload-systemd" >&2 || true
+    "PATH='$util_store_bin:$python_store_bin:/usr/bin:/bin'; export PATH; /usr/libexec/niceeval/activate-fixed-images --host-config='$host_config' --descriptor='$descriptor' --boot-restore --systemd-drop-in-root=/run/systemd/system --systemd-watchdog-unit=niceeval-docker-profile-fixed-watchdog@probe.service --reload-systemd" >&2 || true
+  sudo -n sed -n '1,260p' "$PROFILE_ROOT/systemd-services.log" >&2 || true
   sed -n '1,240p' "$FIXTURE_ROOT/nspawn.log" >&2
   return 1
 }
@@ -197,9 +227,9 @@ stop_manager() {
 }
 
 assert_production_boot() {
-  managerctl is-active --quiet niceeval-docker-profile-fixed-images@probe.service
-  managerctl is-active --quiet niceeval-docker-profile-fixed-descriptor@probe.service
-  managerctl is-active --quiet niceeval-docker-profile-fixed-watchdog@probe.service
+  wait_active niceeval-docker-profile-fixed-images@probe.service
+  wait_active niceeval-docker-profile-fixed-descriptor@probe.service
+  wait_active niceeval-docker-profile-fixed-watchdog@probe.service
   ! managerctl is-active --quiet niceeval-docker-profile-fixed-activation@probe.service
   managerexec "python3 -c 'import json; assert json.load(open(\"$current_pointer\"))[\"epoch\"] == \"$committed_epoch\"'"
   managerexec "python3 -c 'from pathlib import Path; import json; p=json.load(open(\"$current_pointer\")); c=Path(p[\"capsulePath\"]); assert Path(\"$descriptor\").read_bytes() == (c / \"descriptor.json\").read_bytes()'"
@@ -218,7 +248,7 @@ stop_manager
 # Model a fresh boot: /run is empty and no loop/ext4 mount survives. The only
 # durable authority is the committed capsule/current pointer under journal.
 sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 "$fixture_script" prepare-reboot --root "$PROFILE_ROOT"
-sudo -n python3 -c 'import os,shutil,sys; root=os.path.realpath(sys.argv[1]); target=os.path.realpath(sys.argv[2]); assert target.startswith(root+os.sep) and target != root; shutil.rmtree(target)' "$FIXTURE_ROOT" "$FIXTURE_ROOT/run/systemd/system"
+sudo -n python3 -c 'import os,shutil,sys; root=os.path.realpath(sys.argv[1]); target=os.path.realpath(sys.argv[2]); assert target.startswith(root+os.sep) and target != root; os.path.exists(target) and shutil.rmtree(target)' "$FIXTURE_ROOT" "$FIXTURE_ROOT/run/systemd/system"
 rm -f -- "$ready_file" "$control_socket"
 start_manager
 assert_production_boot

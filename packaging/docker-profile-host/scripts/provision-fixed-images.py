@@ -209,6 +209,11 @@ def ensure_image(image: Path, mountpoint: Path, *, size: int, uid: int, gid: int
         baseline = (filesystem.f_blocks - filesystem.f_bfree) * filesystem.f_frsize
         os.sync()
         run("umount", "--", str(tmp_mount))
+        # chown above applies to the mounted ext4 root.  Persist the same owner
+        # and mode on the outer filesystem's underlying mountpoint directory so
+        # reboot-time adoption can attest it before remounting the slot image.
+        os.chown(tmp_mount, uid, gid)
+        os.chmod(tmp_mount, 0o700)
         run("fallocate", "-l", str(size), "--", str(tmp_image))
         attest_regular_image(tmp_image, size)
         os.replace(tmp_image, image)
@@ -324,10 +329,25 @@ def validate_published_registry(
         if seed and source is not None:
             raise RuntimeError(f"published immutable seed is mounted: {expected_id}")
         if not seed:
+            mounted_here = False
+            if source is None:
+                if any(mountpoint.iterdir()):
+                    raise RuntimeError(
+                        f"published writable slot has a non-empty unmounted mountpoint: {expected_id}"
+                    )
+                run("mount", "-t", "ext4", "-o", "loop,rw,noatime,nodev,nosuid",
+                    "--", str(image), str(mountpoint))
+                run("mount", "--make-rprivate", "--", str(mountpoint))
+                mounted_here = True
+                source = mounted_source(mountpoint)
             loop_devices = run("losetup", "-j", str(image), check=False)
             if source is None or source not in loop_devices:
+                if mounted_here:
+                    run("umount", "--", str(mountpoint), check=False)
                 raise RuntimeError(f"published writable slot is not mounted from its image: {expected_id}")
             if not {"rw", "noatime", "nodev", "nosuid"}.issubset(mounted_options(mountpoint)):
+                if mounted_here:
+                    run("umount", "--", str(mountpoint), check=False)
                 raise RuntimeError(f"published writable slot mount policy differs for {expected_id}")
         result.append(raw)
     return result
@@ -378,7 +398,7 @@ def main() -> None:
     physical_filesystem_bytes = outer_filesystem.f_blocks * outer_filesystem.f_frsize
     available_bytes = outer_filesystem.f_bavail * outer_filesystem.f_frsize
     recovery_headroom = store_size // 8
-    if ledger > physical_filesystem_bytes or available_bytes < ledger + recovery_headroom:
+    if ledger > physical_filesystem_bytes:
         raise SystemExit(
             "fixed-image allocated blocks and f_bavail cannot prove slots + seeds + temporary clones "
             "+ recovery headroom after ext4 metadata/reserved blocks"
@@ -408,7 +428,7 @@ def main() -> None:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(directory, 0o700)
     identity_stat = image_root.stat()
-    image_root_identity = f"dev={identity_stat.st_dev}:ino={identity_stat.st_ino}"
+    image_root_identity = f"ext4-uuid:{ext4_uuid(outer_image)}:ino={identity_stat.st_ino}"
     desired = {
         "schemaVersion": 1,
         "provisionRevision": PROVISION_REVISION,
@@ -423,6 +443,17 @@ def main() -> None:
     registries_exist = slot_registry.exists() or seed_registry.exists()
     if registries_exist and not (slot_registry.is_file() and seed_registry.is_file()):
         raise SystemExit("fixed-image publication is partial; refusing to synthesize a missing registry")
+    # Published slots and seeds already consume their allocated blocks.  On
+    # recovery/adoption only the worst-case temporary slot clones plus recovery
+    # headroom must still be free; charging the full ledger again makes every
+    # correctly provisioned capsule fail its next activation.  A first publish
+    # still proves enough free blocks for the complete ledger.
+    required_available = recovery_headroom + (count * size if registries_exist else ledger)
+    if available_bytes < required_available:
+        raise SystemExit(
+            "fixed-image allocated blocks and f_bavail cannot prove slots + seeds + temporary clones "
+            "+ recovery headroom after ext4 metadata/reserved blocks"
+        )
     prior_intent = None
     if provision_journal.exists():
         prior_intent = json.loads(provision_journal.read_text(encoding="utf-8"))
