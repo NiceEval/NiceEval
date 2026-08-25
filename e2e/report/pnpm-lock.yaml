@@ -13,13 +13,13 @@ importers:
         version: 3.22.1
       niceeval:
         specifier: ^0.10.2
-        version: 0.10.2(ai@7.0.31(zod@3.25.76))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 0.10.2(ai@7.0.31(zod@3.25.76))(react-dom@19.2.8(react@19.2.7))(react@19.2.7)
       react:
         specifier: ^19.2.7
         version: 19.2.7
       react-dom:
-        specifier: ^19.2.7
-        version: 19.2.7(react@19.2.7)
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.7)
     devDependencies:
       '@playwright/test':
         specifier: ^1.61.1
@@ -1144,10 +1144,10 @@ packages:
   pure-rand@6.1.0:
     resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
 
-  react-dom@19.2.7:
-    resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
+  react-dom@19.2.8:
+    resolution: {integrity: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==}
     peerDependencies:
-      react: ^19.2.7
+      react: ^19.2.8
 
   react@19.2.7:
     resolution: {integrity: sha512-HNe9WslTbXmFK8o8cmwgAeJFSBvt1bPdHCVKtaaV+WlAN36mpT4hcRpwbf3fY56ar2oIXzsBpOAiIRHAdY0OlQ==}
@@ -2258,7 +2258,7 @@ snapshots:
 
   nanoid@3.3.17: {}
 
-  niceeval@0.10.2(ai@7.0.31(zod@3.25.76))(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  niceeval@0.10.2(ai@7.0.31(zod@3.25.76))(react-dom@19.2.8(react@19.2.7))(react@19.2.7):
     dependencies:
       '@vercel/analytics': 2.0.1(react@19.2.7)
       '@vercel/speed-insights': 2.0.0(react@19.2.7)
@@ -2270,7 +2270,7 @@ snapshots:
     optionalDependencies:
       ai: 7.0.31(zod@3.25.76)
       react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
+      react-dom: 19.2.8(react@19.2.7)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@remix-run/react'
@@ -2326,7 +2326,7 @@ snapshots:
 
   pure-rand@6.1.0: {}
 
-  react-dom@19.2.7(react@19.2.7):
+  react-dom@19.2.8(react@19.2.7):
     dependencies:
       react: 19.2.7
       scheduler: 0.27.0

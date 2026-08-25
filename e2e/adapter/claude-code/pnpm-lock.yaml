@@ -13,13 +13,13 @@ importers:
         version: 4.0.12
       niceeval:
         specifier: ^0.9.1
-        version: 0.9.1(dockerode@4.0.12)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 0.9.1(dockerode@4.0.12)(react-dom@19.2.8(react@19.2.7))(react@19.2.7)
       react:
         specifier: ^19.2.7
         version: 19.2.7
       react-dom:
-        specifier: ^19.2.7
-        version: 19.2.7(react@19.2.7)
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.7)
     devDependencies:
       '@types/dockerode':
         specifier: ^3.3.31
@@ -842,10 +842,10 @@ packages:
   pure-rand@6.1.0:
     resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
 
-  react-dom@19.2.7:
-    resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
+  react-dom@19.2.8:
+    resolution: {integrity: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==}
     peerDependencies:
-      react: ^19.2.7
+      react: ^19.2.8
 
   react@19.2.7:
     resolution: {integrity: sha512-HNe9WslTbXmFK8o8cmwgAeJFSBvt1bPdHCVKtaaV+WlAN36mpT4hcRpwbf3fY56ar2oIXzsBpOAiIRHAdY0OlQ==}
@@ -1697,7 +1697,7 @@ snapshots:
 
   nanoid@3.3.17: {}
 
-  niceeval@0.9.1(dockerode@4.0.12)(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  niceeval@0.9.1(dockerode@4.0.12)(react-dom@19.2.8(react@19.2.7))(react@19.2.7):
     dependencies:
       autoevals: 0.0.132
       effect: 3.22.0
@@ -1706,7 +1706,7 @@ snapshots:
     optionalDependencies:
       dockerode: 4.0.12
       react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
+      react-dom: 19.2.8(react@19.2.7)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -1759,7 +1759,7 @@ snapshots:
 
   pure-rand@6.1.0: {}
 
-  react-dom@19.2.7(react@19.2.7):
+  react-dom@19.2.8(react@19.2.7):
     dependencies:
       react: 19.2.7
       scheduler: 0.27.0
