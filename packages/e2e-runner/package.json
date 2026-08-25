@@ -28,7 +28,7 @@
     "@effect/printer-ansi": "0.51.0",
     "@effect/typeclass": "0.41.0",
     "effect": "3.22.1",
-    "ignore": "7.0.5",
+    "ignore": "7.0.6",
     "tar-stream": "^3.1.7",
     "yaml": "^2.9.0"
   },
