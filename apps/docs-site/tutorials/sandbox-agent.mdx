@@ -206,12 +206,12 @@ When a Sandbox or Adapter error appears during a run, the terminal prints an Att
 ```text
 ✗ @5TB8167MXJ30SYZCNAVRHPQ4D2 fixtures/button [local] errored · agent setup
     agent-install-failed: npm install my-agent exited with code 1
-    Inspect: niceeval show --run <runId> --page attempt-5TB8167MXJ30SYZCNAVRHPQ4D2
+    Inspect: niceeval view @5TB8167MXJ30SYZCNAVRHPQ4D2
 ```
 
-Run the displayed `show --run <runId> --page attempt-<attemptId>` command to inspect the structured error, diagnostics, and completed lifecycle stages. That page reads the timing channel, including queueing, Sandbox startup, shell work in setup and teardown, Agent CLI installation and startup, each send, correlated OTel model or tool work, and cleanup. It identifies the layer where an error or timeout occurred and where earlier time went.
+Run `niceeval view @<attempt-locator>` to inspect the structured error, diagnostics, and completed lifecycle stages. For AI, scripts, and CI, first use `niceeval query discover`, then send the fixed `attempt.trace` request to `query explain` or `query run`. The fixed result reads timing facts including queueing, Sandbox startup, shell work in setup and teardown, Agent CLI installation and startup, each send, correlated OTel model or tool work, and cleanup. It identifies the layer where an error or timeout occurred and where earlier time went.
 
-When the tree has more than 80 detail nodes, it retains failures, slow points, and head and tail samples, then reports how many nodes it omitted. To audit every node, choose the complete planned timing route from the same Sample's page index. An execution route uses events as its structure and attaches timing only to uniquely correlated events when OTel is present. Sandbox creation can fail before telemetry starts, so error review does not depend on a trace.
+When the tree has more than 80 detail nodes, it retains failures, slow points, and head and tail samples, then reports how many nodes it omitted. Use the complete fixed trace operation to audit every node. Sandbox creation can fail before telemetry starts, so error review does not depend on a trace.
 
 ## `ctx.model` and `ctx.flags`
 

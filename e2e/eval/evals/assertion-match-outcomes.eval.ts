@@ -246,7 +246,7 @@ export default defineScoreEval({
     turn.calledTool(commandMatch("missing"))
       .score(1)
       .label("commandMatch.executable:mismatched");
-    turn.calledTool(commandMatch("niceeval", { argsStart: ["show"] }))
+    turn.calledTool(commandMatch("niceeval", { argsStart: ["query"] }))
       .score(1)
       .label("commandMatch.argsStart:mismatched");
     turn.calledTool(commandMatch("niceeval", { excludes: ["fixture"] }))

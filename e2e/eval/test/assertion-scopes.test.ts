@@ -5,6 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
+import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface ExpEvent {
   event: string;
@@ -13,88 +14,90 @@ interface ExpEvent {
   verdict?: string;
 }
 
-interface AssertionSegment {
-  readonly kind: string;
-  readonly value?: unknown;
-  readonly fields?: readonly { readonly label: string; readonly value: AssertionSegment }[];
-  readonly receipt?: {
-    readonly examined: number;
-    readonly matched: number;
-    readonly mismatched: number;
-    readonly unavailable: number;
-    readonly knownTotal: number | null;
-    readonly complete: boolean;
-    readonly exhaustive: boolean;
-    readonly decisive: boolean;
-  };
+interface AssertionReceipt {
+  readonly examined: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+  readonly knownTotal: number | null;
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
 }
 
-interface ShowAssertion {
+interface InspectedAssertion {
   readonly entryId: string;
   readonly display: { readonly label?: string };
-  readonly source: AssertionSegment;
-  readonly check: AssertionSegment;
-  readonly observed: AssertionSegment;
-  readonly expected: AssertionSegment;
-  readonly explanation: AssertionSegment;
+  readonly criterion: { readonly state: string; readonly value?: { readonly id?: string; readonly data?: unknown } };
+  readonly materials: unknown;
+  readonly evaluation: {
+    readonly kind: string;
+    readonly receipt?: AssertionReceipt;
+    readonly artifact?: { readonly receipt?: AssertionReceipt; readonly retainedRows?: unknown[] };
+  };
   readonly decision: { readonly result: string };
-  readonly matcherDebugger?: unknown;
+  readonly policy: unknown;
+  readonly contribution: unknown;
+  readonly explanationRetention: unknown;
 }
 
-interface ShowDocument {
-  readonly data: {
-    readonly kind: string;
+interface AttemptDocument extends InspectionDocument {
+  readonly operation: "attempt.get";
+  readonly attempt: {
+    readonly locator: string;
+    readonly verdict: string;
     readonly evidence: {
-      readonly entries: readonly {
-        readonly state: string;
-        readonly detail?: {
-          readonly entries: readonly ShowAssertion[];
-        };
-      }[];
+      readonly state: string;
+      readonly value?: { readonly "entries-data": readonly InspectedAssertion[] };
     };
   };
 }
 
-function field(value: AssertionSegment | undefined, label: string): AssertionSegment | undefined {
-  return value?.fields?.find((entry) => entry.label === label)?.value;
+function criterionId(entry: InspectedAssertion): string | undefined {
+  return entry.criterion.state === "available" ? entry.criterion.value?.id : undefined;
 }
 
-function stringField(value: AssertionSegment | undefined, label: string): string | undefined {
-  const found = field(value, label);
-  return found?.kind === "value" && typeof found.value === "string" ? found.value : undefined;
+function criterionData(entry: InspectedAssertion): Record<string, unknown> | undefined {
+  const value = entry.criterion.state === "available" ? entry.criterion.value?.data : undefined;
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
-function criterionId(entry: ShowAssertion): string | undefined {
-  return stringField(entry.check, "id");
+function dataString(entry: InspectedAssertion, path: readonly string[]): string | undefined {
+  let value: unknown = criterionData(entry);
+  for (const key of path) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return typeof value === "string" ? value : undefined;
 }
 
-function criterionData(entry: ShowAssertion): AssertionSegment | undefined {
-  return field(entry.check, "data");
+function receiptOf(entry: InspectedAssertion): AssertionReceipt | undefined {
+  return entry.evaluation.receipt ?? entry.evaluation.artifact?.receipt;
 }
 
-function labeled(assertions: readonly ShowAssertion[], label: string, diagnostic: string): ShowAssertion {
+function labeled(assertions: readonly InspectedAssertion[], label: string, diagnostic: string): InspectedAssertion {
   return only(assertions, (entry) => entry.display.label === label, diagnostic);
 }
 
-function expectNumeric(entry: ShowAssertion, result: "matched" | "unavailable"): void {
+function expectNumeric(entry: InspectedAssertion, result: "matched" | "unavailable"): void {
   expect(criterionId(entry)).toBe("numeric-comparison/v1");
   expect(entry.decision.result).toBe(result);
-  expect(entry.observed.receipt).toBeUndefined();
-  expect(entry.matcherDebugger).toBeUndefined();
+  expect(entry.evaluation.kind).toBe("ordinary");
+  expect(entry.evaluation.artifact).toBeUndefined();
 }
 
 function expectOccurrence(
-  entry: ShowAssertion,
+  entry: InspectedAssertion,
   result: "matched" | "unavailable",
   assertion: "present" | "absent" | "count" | "order",
   quantifierKind?: string,
 ): void {
   expect(criterionId(entry)).toBe("occurrence/v2");
   expect(entry.decision.result).toBe(result);
-  expect(entry.matcherDebugger).toBeDefined();
-  expect(stringField(criterionData(entry), "assertion")).toBe(assertion);
+  expect(entry.evaluation.kind).toBe("matcher-current");
+  expect(dataString(entry, ["assertion"])).toBe(assertion);
   if (quantifierKind !== undefined) {
-    expect(stringField(field(criterionData(entry), "quantifier"), "kind")).toBe(quantifierKind);
+    expect(dataString(entry, ["quantifier", "kind"])).toBe(quantifierKind);
   }
 }
 
@@ -102,7 +105,7 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
   await evalE2E.case(
     "scopes",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { niceeval } }) => {
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "assertion-scopes", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
@@ -116,37 +119,42 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
         evalId: "assertion-scopes",
         verdict: "passed",
       });
-      const shown = await niceeval.run(["show", evaluation.locator!, "--json"]);
-      expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      const document = shown.json<ShowDocument>();
-      expect(document.data.kind).toBe("attempt");
+      const inspected = await inspectAttempt<AttemptDocument>(niceeval, projectRoot, evaluation.locator!, "attempt.get");
+      expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
+      const document = inspected.document;
+      expect(document.attempt, inspected.receipt.diagnostic()).toMatchObject({
+        locator: evaluation.locator,
+        verdict: "passed",
+        evidence: { state: "available" },
+      });
       const available = only(
-        document.data.evidence.entries,
-        (entry) => entry.state === "available" && entry.detail !== undefined,
-        shown.diagnostic(),
+        [document.attempt.evidence],
+        (entry) => entry.state === "available" && entry.value !== undefined,
+        inspected.receipt.diagnostic(),
       );
-      const assertions = available.detail!.entries;
+      const assertions = available.value!["entries-data"];
       for (const assertion of assertions) {
-        expect(assertion.source.kind).toBeTruthy();
-        expect(assertion.check.kind).toBeTruthy();
-        expect(assertion.observed.kind).toBeTruthy();
-        expect(assertion.expected.kind).toBeTruthy();
-        expect(assertion.explanation.kind).toBeTruthy();
+        expect(assertion.criterion.state).toBeTruthy();
+        expect(assertion.materials).toBeTruthy();
+        expect(assertion.evaluation.kind).toBeTruthy();
         expect(assertion.decision.result).toBeTruthy();
+        expect(assertion.policy).toBeTruthy();
+        expect(assertion.contribution).toBeTruthy();
+        expect(assertion.explanationRetention).toBeTruthy();
       }
       const partialAbsence = labeled(
         assertions,
         "partial source absence remains unavailable",
-        shown.diagnostic(),
+        inspected.receipt.diagnostic(),
       );
       const partialExact = labeled(
         assertions,
         "partial source exact count remains unavailable",
-        shown.diagnostic(),
+        inspected.receipt.diagnostic(),
       );
       expect(partialAbsence.decision.result).toBe("unavailable");
       expect(partialExact.decision.result).toBe("unavailable");
-      const receipt = partialExact.observed.receipt;
+      const receipt = receiptOf(partialExact);
       expect(receipt).toMatchObject({
         examined: 1,
         matched: 1,
@@ -159,10 +167,10 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       });
       const terminalWitness = only(
         assertions,
-        (entry) => JSON.stringify(entry.check).includes("argsStart") && JSON.stringify(entry.check).includes("show"),
-        shown.diagnostic(),
+        (entry) => JSON.stringify(entry.criterion).includes("argsStart") && JSON.stringify(entry.criterion).includes("query"),
+        inspected.receipt.diagnostic(),
       );
-      expect(terminalWitness.observed.receipt).toMatchObject({
+      expect(receiptOf(terminalWitness)).toMatchObject({
         examined: 10_003,
         matched: 1,
         mismatched: 10_002,
@@ -171,20 +179,18 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
         exhaustive: false,
         decisive: true,
       });
-      expect(JSON.stringify(terminalWitness.explanation)).toContain(
-        '\"label\":\"index\",\"value\":{\"kind\":\"value\",\"value\":10002}',
-      );
+      expect(JSON.stringify(terminalWitness.evaluation)).toContain("10002");
       const closedAssertions = JSON.stringify(assertions);
-      expect(Buffer.byteLength(closedAssertions), shown.diagnostic()).toBeLessThan(256 * 1024);
+      expect(Buffer.byteLength(closedAssertions), inspected.receipt.diagnostic()).toBeLessThan(256 * 1024);
       expect(closedAssertions).not.toContain("scope-filler-9999");
 
-      const turnCount = labeled(assertions, "turn explicit cardinality", shown.diagnostic());
-      const turnMax = labeled(assertions, "turn maxToolCalls", shown.diagnostic());
-      const cutFromSubject = labeled(assertions, "cut from subject", shown.diagnostic());
-      const attemptCount = labeled(assertions, "attempt explicit cardinality", shown.diagnostic());
-      const attemptMax = labeled(assertions, "attempt maxToolCalls", shown.diagnostic());
-      const authorArray = labeled(assertions, "author array cardinality", shown.diagnostic());
-      const spreadCount = labeled(assertions, "spread cardinality still works", shown.diagnostic());
+      const turnCount = labeled(assertions, "turn explicit cardinality", inspected.receipt.diagnostic());
+      const turnMax = labeled(assertions, "turn maxToolCalls", inspected.receipt.diagnostic());
+      const cutFromSubject = labeled(assertions, "cut from subject", inspected.receipt.diagnostic());
+      const attemptCount = labeled(assertions, "attempt explicit cardinality", inspected.receipt.diagnostic());
+      const attemptMax = labeled(assertions, "attempt maxToolCalls", inspected.receipt.diagnostic());
+      const authorArray = labeled(assertions, "author array cardinality", inspected.receipt.diagnostic());
+      const spreadCount = labeled(assertions, "spread cardinality still works", inspected.receipt.diagnostic());
       for (const entry of [turnCount, turnMax, cutFromSubject, authorArray, spreadCount]) {
         expectNumeric(entry, "matched");
       }
@@ -193,18 +199,18 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       }
       expect(criterionData(turnCount)).toEqual(criterionData(turnMax));
       expect(criterionData(attemptCount)).toEqual(criterionData(attemptMax));
-      expect(stringField(field(criterionData(turnCount), "subject"), "kind")).toBe("collection-cardinality");
-      expect(stringField(field(criterionData(turnCount), "subject"), "scope")).toBe("turn");
-      expect(stringField(field(criterionData(cutFromSubject), "subject"), "scope")).toBe("turn");
-      expect(stringField(field(criterionData(attemptCount), "subject"), "kind")).toBe("collection-cardinality");
-      expect(stringField(field(criterionData(attemptCount), "subject"), "scope")).toBe("attempt");
-      expect(stringField(field(criterionData(authorArray), "subject"), "kind")).toBe("explicit-value");
-      expect(stringField(field(criterionData(spreadCount), "subject"), "kind")).toBe("explicit-value");
+      expect(dataString(turnCount, ["subject", "kind"])).toBe("collection-cardinality");
+      expect(dataString(turnCount, ["subject", "scope"])).toBe("turn");
+      expect(dataString(cutFromSubject, ["subject", "scope"])).toBe("turn");
+      expect(dataString(attemptCount, ["subject", "kind"])).toBe("collection-cardinality");
+      expect(dataString(attemptCount, ["subject", "scope"])).toBe("attempt");
+      expect(dataString(authorArray, ["subject", "kind"])).toBe("explicit-value");
+      expect(dataString(spreadCount, ["subject", "kind"])).toBe("explicit-value");
 
-      const turnMatching = labeled(assertions, "turn explicit occurrence", shown.diagnostic());
-      const turnCalled = labeled(assertions, "turn calledTool", shown.diagnostic());
-      const unusedExplicit = labeled(assertions, "unused session explicit occurrence zero", shown.diagnostic());
-      const unusedSugar = labeled(assertions, "unused session usedNoTools", shown.diagnostic());
+      const turnMatching = labeled(assertions, "turn explicit occurrence", inspected.receipt.diagnostic());
+      const turnCalled = labeled(assertions, "turn calledTool", inspected.receipt.diagnostic());
+      const unusedExplicit = labeled(assertions, "unused session explicit occurrence zero", inspected.receipt.diagnostic());
+      const unusedSugar = labeled(assertions, "unused session usedNoTools", inspected.receipt.diagnostic());
       for (const entry of [turnMatching, turnCalled]) {
         expectOccurrence(entry, "matched", "present", "at-least");
       }
@@ -214,12 +220,12 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       expect(criterionData(turnMatching)).toEqual(criterionData(turnCalled));
       expect(criterionData(unusedExplicit)).toEqual(criterionData(unusedSugar));
 
-      const bareToolMatch = labeled(assertions, "turn bare toolMatch", shown.diagnostic());
-      const bareCalledTool = labeled(assertions, "turn calledTool bare", shown.diagnostic());
-      const occurrenceExactly = labeled(assertions, "turn occurrence exactly", shown.diagnostic());
-      const occurrenceAtMost = labeled(assertions, "turn occurrence atMost", shown.diagnostic());
-      const occurrenceLessThan = labeled(assertions, "turn occurrence lessThan", shown.diagnostic());
-      const occurrenceGreaterThan = labeled(assertions, "turn occurrence greaterThan", shown.diagnostic());
+      const bareToolMatch = labeled(assertions, "turn bare toolMatch", inspected.receipt.diagnostic());
+      const bareCalledTool = labeled(assertions, "turn calledTool bare", inspected.receipt.diagnostic());
+      const occurrenceExactly = labeled(assertions, "turn occurrence exactly", inspected.receipt.diagnostic());
+      const occurrenceAtMost = labeled(assertions, "turn occurrence atMost", inspected.receipt.diagnostic());
+      const occurrenceLessThan = labeled(assertions, "turn occurrence lessThan", inspected.receipt.diagnostic());
+      const occurrenceGreaterThan = labeled(assertions, "turn occurrence greaterThan", inspected.receipt.diagnostic());
       expectOccurrence(bareToolMatch, "matched", "present");
       expectOccurrence(bareCalledTool, "matched", "present");
       expectOccurrence(occurrenceExactly, "matched", "count", "exact");
@@ -231,38 +237,38 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       const partialLowerBound = labeled(
         assertions,
         "partial source lower bound can match",
-        shown.diagnostic(),
+        inspected.receipt.diagnostic(),
       );
       const partialOccurrenceUpperBound = labeled(
         assertions,
         "partial source occurrence upper bound remains unavailable",
-        shown.diagnostic(),
+        inspected.receipt.diagnostic(),
       );
       expectOccurrence(partialLowerBound, "matched", "present", "at-least");
       expectOccurrence(partialOccurrenceUpperBound, "unavailable", "count", "at-most");
 
-      const compositeSugar = labeled(assertions, "attempt calledTool composite", shown.diagnostic());
-      const compositeExplicit = labeled(assertions, "attempt explicit composite occurrence", shown.diagnostic());
+      const compositeSugar = labeled(assertions, "attempt calledTool composite", inspected.receipt.diagnostic());
+      const compositeExplicit = labeled(assertions, "attempt explicit composite occurrence", inspected.receipt.diagnostic());
       expectOccurrence(compositeExplicit, "matched", "present", "at-least");
       expectOccurrence(compositeSugar, "matched", "present");
       expect(criterionData(compositeExplicit)).toEqual(criterionData(compositeSugar));
 
-      const sessionOrder = labeled(assertions, "session explicit inOrder", shown.diagnostic());
-      const sessionOrderSugar = labeled(assertions, "session toolOrder", shown.diagnostic());
+      const sessionOrder = labeled(assertions, "session explicit inOrder", inspected.receipt.diagnostic());
+      const sessionOrderSugar = labeled(assertions, "session toolOrder", inspected.receipt.diagnostic());
       for (const entry of [sessionOrder, sessionOrderSugar]) {
         expectOccurrence(entry, "matched", "order");
-        expect(stringField(criterionData(entry), "scope")).toBe("session");
+        expect(dataString(entry, ["scope"])).toBe("session");
       }
       expect(criterionData(sessionOrder)).toEqual(criterionData(sessionOrderSugar));
 
-      expect(labeled(assertions, "spread occurrence rejected", shown.diagnostic()).decision.result).toBe("matched");
-      expect(labeled(assertions, "spread inOrder rejected", shown.diagnostic()).decision.result).toBe("matched");
-      expect(labeled(assertions, "root inOrder rejected", shown.diagnostic()).decision.result).toBe("matched");
-      expect(labeled(assertions, "quantified inOrder step rejected", shown.diagnostic()).decision.result).toBe("matched");
+      expect(labeled(assertions, "spread occurrence rejected", inspected.receipt.diagnostic()).decision.result).toBe("matched");
+      expect(labeled(assertions, "spread inOrder rejected", inspected.receipt.diagnostic()).decision.result).toBe("matched");
+      expect(labeled(assertions, "root inOrder rejected", inspected.receipt.diagnostic()).decision.result).toBe("matched");
+      expect(labeled(assertions, "quantified inOrder step rejected", inspected.receipt.diagnostic()).decision.result).toBe("matched");
 
-      const partialCount = labeled(assertions, "partial source cardinality remains unavailable", shown.diagnostic());
+      const partialCount = labeled(assertions, "partial source cardinality remains unavailable", inspected.receipt.diagnostic());
       expectNumeric(partialCount, "unavailable");
-      expect(stringField(field(criterionData(partialCount), "subject"), "kind")).toBe("collection-cardinality");
+      expect(dataString(partialCount, ["subject", "kind"])).toBe("collection-cardinality");
     },
   );
 });

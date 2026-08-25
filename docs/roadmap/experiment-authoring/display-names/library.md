@@ -88,8 +88,8 @@ writer 验证 Attachment 的 `experimentId` 与同一 Run Core 完全相等。
 `InvocationReceipt` 不指向 Experiment；它是 Run publication 的终态交接值。
 它只保留既定的 `invocationId`、canonical published `runIds`、`startedAt`、必填 `completedAt` 与 `completion`。
 
-因此 terminal JSON receipt 缺少 Experiment presentation 不是例外或缺字段：它的 `runIds` 是唯一身份集合，不复制 Attempt、Verdict、Usage、cost、Report 聚合或展示名称。
-需要名称映射的机器表面是 exp plan/progress/result 与 Run-owned Attachment；Report 则从所选 Run 的快照产生 summary。
+因此 terminal JSON receipt 缺少 Experiment presentation 不是例外或缺字段：它的 `runIds` 是唯一身份集合，不复制 Attempt、Verdict、Usage、cost、Inspection 摘要或展示名称。
+需要名称映射的机器表面是 exp plan/progress/result 与 Run-owned Attachment；query 与 View 则从所选 Run 的快照产生 summary。
 
 ## 旧 Run、迁移与生产入口验收
 

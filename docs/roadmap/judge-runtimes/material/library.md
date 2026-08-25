@@ -167,7 +167,7 @@ Selector 没有 output predicate、regex callback、`all`、`first`、`last`、`
 const publicResult = turn.material.actionResults(
   actionResultSelector.command({
     logicalExecutable: "niceeval",
-    argsStart: ["show"],
+    argsStart: ["query"],
     lifecycle: "completed",
     exactly: 1,
   }),

@@ -102,6 +102,28 @@ export interface PreparedCurrentAttachment {
   >[];
 }
 
+/**
+ * SQLite capture keeps the canonical logical payload in memory while leaving
+ * every Content source as a one-shot Stream. The Host consumes those Streams
+ * outside transactions and persists fixed-size chunks incrementally.
+ */
+export interface PreparedStreamingRecordAttachment<Error = unknown, Requirements = unknown> {
+  readonly payloadBytes: Uint8Array;
+  readonly contents: readonly {
+    readonly key: RecordBlobKey;
+    readonly logicalHandle: string;
+    readonly kind: "text" | "bytes";
+    readonly maximumBytes: number | undefined;
+    readonly stream: Stream.Stream<Uint8Array, Error, Requirements>;
+  }[];
+  readonly references: readonly { readonly owner: RecordAttachmentOwner; readonly family: string }[];
+  readonly referenceDefinitions: readonly RecordAttachmentDefinition<
+    RecordAttachmentOwner,
+    string,
+    Schema.Schema.AnyNoContext
+  >[];
+}
+
 export const RECORD_ATTACHMENT_MAXIMUM_CONTENTS = 100_000;
 export const RECORD_ATTACHMENT_MAXIMUM_CONTENT_BYTES = 64 * 1024 * 1024;
 export const RECORD_ATTACHMENT_MAXIMUM_TOTAL_CONTENT_BYTES = 128 * 1024 * 1024;
@@ -370,6 +392,130 @@ export function prepareCurrentRecordAttachment<
     Effect.catchAllDefect((cause) => Effect.fail(callbackFailed(cause))),
   ) as Effect.Effect<
     PreparedCurrentAttachment,
+    RecordWriteError | AttachedContentError<Value>,
+    AttachedContentRequirements<Value>
+  >;
+}
+
+/**
+ * Prepare one immutable logical snapshot without reading any Content bytes.
+ * The builder and Schema encoder run exactly once in the capture fiber.
+ */
+export function prepareStreamingRecordAttachment<
+  Definition extends AnyDefinition,
+  Value extends Schema.Schema.Type<Definition["schema"]>,
+>(input: {
+  readonly definition: Definition;
+  readonly value: Value | ((build: RecordAttachmentSessionBuilder) => Value);
+}): Effect.Effect<
+  PreparedStreamingRecordAttachment<
+    AttachedContentError<Value>,
+    AttachedContentRequirements<Value>
+  >,
+  RecordWriteError | AttachedContentError<Value>,
+  AttachedContentRequirements<Value>
+> {
+  const sources = new Map<object, CapturedSource>();
+  return Effect.gen(function* () {
+    const value = yield* Effect.try({
+      try: () => typeof input.value === "function"
+        ? (input.value as (build: RecordAttachmentSessionBuilder) => Value)(makeBuilder(sources))
+        : input.value,
+      catch: callbackFailed,
+    });
+    const encoded = yield* Effect.try({
+      try: () => encodeRecordAttachmentCurrent(input.definition, value),
+      catch: callbackFailed,
+    });
+    if (Either.isLeft(encoded)) return yield* Effect.fail(encodeFailed());
+    const inspected = yield* Effect.try({
+      try: () => inspectRecordAttachmentOpaqueClosure(input.definition, value),
+      catch: callbackFailed,
+    });
+    if (Either.isLeft(inspected)) return yield* Effect.fail(encodeFailed());
+
+    const contentEntries = inspected.right.filter(({ value }) => isRecordContentHandle(value));
+    const replacements = new Map<object, RecordJson>();
+    const contents: PreparedStreamingRecordAttachment["contents"][number][] = [];
+    for (let index = 0; index < contentEntries.length; index += 1) {
+      const entry = contentEntries[index]!;
+      const source = sources.get(entry.value);
+      const declaration = entry.metadata as {
+        readonly category?: string;
+        readonly kind?: "text" | "bytes";
+        readonly maximumBytes?: number;
+      };
+      if (source === undefined || declaration.category !== "content" || declaration.kind !== source.kind) {
+        return yield* Effect.fail(closureFailed());
+      }
+      const key = contentKey(index);
+      if (key === undefined) return yield* Effect.fail(closureFailed());
+      replacements.set(entry.value, Object.freeze({ "$niceeval.record.content": key }));
+      contents.push(Object.freeze({
+        key,
+        logicalHandle: key,
+        kind: source.kind,
+        maximumBytes: declaration.maximumBytes,
+        stream: source.stream,
+      }));
+    }
+    if (sources.size !== contentEntries.length) return yield* Effect.fail(closureFailed());
+
+    const referenceIdentities = new Map<string, {
+      readonly owner: RecordAttachmentOwner;
+      readonly family: string;
+      readonly definition: AnyDefinition;
+    }>();
+    for (const entry of inspected.right) {
+      if (!isRecordAttachmentReference(entry.value)) continue;
+      const wire = recordAttachmentReferenceWire(entry.value);
+      const referenceDefinition = recordAttachmentReferenceDefinition(entry.value);
+      if (wire === undefined || referenceDefinition === undefined) return yield* Effect.fail(closureFailed());
+      const referenceValue = canonicalizeRecordJson(wire.value, jsonLimits);
+      if (Either.isLeft(referenceValue)) return yield* Effect.fail(encodeFailed());
+      replacements.set(entry.value, Object.freeze({
+        "$niceeval.record.reference": Object.freeze({
+          owner: wire.owner,
+          family: wire.family,
+          value: referenceValue.right,
+        }),
+      }));
+      const identity = `${wire.owner}\u0000${wire.family}`;
+      const existing = referenceIdentities.get(identity);
+      if (existing !== undefined && existing.definition !== referenceDefinition) {
+        return yield* Effect.fail(closureFailed());
+      }
+      referenceIdentities.set(identity, Object.freeze({
+        owner: wire.owner,
+        family: wire.family,
+        definition: referenceDefinition,
+      }));
+    }
+
+    const replaced = yield* Effect.try({
+      try: () => replaceOpaque(encoded.right, replacements),
+      catch: callbackFailed,
+    });
+    const canonical = canonicalizeRecordJson(replaced, jsonLimits);
+    if (Either.isLeft(canonical)) return yield* Effect.fail(encodeFailed());
+    const payloadBytes = encodeRecordJsonUtf8(canonical.right);
+    if (payloadBytes.byteLength > RECORD_JSON_MAXIMUM_BYTES) return yield* Effect.fail(encodeFailed());
+    const orderedReferences = [...referenceIdentities.values()].sort((left, right) =>
+      `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`)
+    );
+    return Object.freeze({
+      payloadBytes,
+      contents: Object.freeze(contents),
+      references: Object.freeze(orderedReferences.map(({ owner, family }) => Object.freeze({ owner, family }))),
+      referenceDefinitions: Object.freeze(orderedReferences.map(({ definition }) => definition)),
+    });
+  }).pipe(
+    Effect.catchAllDefect((cause) => Effect.fail(callbackFailed(cause))),
+  ) as Effect.Effect<
+    PreparedStreamingRecordAttachment<
+      AttachedContentError<Value>,
+      AttachedContentRequirements<Value>
+    >,
     RecordWriteError | AttachedContentError<Value>,
     AttachedContentRequirements<Value>
   >;

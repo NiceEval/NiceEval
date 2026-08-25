@@ -7,27 +7,12 @@
 // 这样框架与被测项目都不需要编译步骤,也不挑宿主的模块形态。
 // NiceEval 自身始终执行已发布的 canonical CJS runtime；tsx 只负责随后动态装载用户项目的
 // TypeScript，绝不把已安装包回跳到 checkout 的 src/。
-// 两个 hook 必须早于 bootstrap：CLI 之后的 config、eval、experiment 与 report 动态 import
+// 两个 hook 必须早于 bootstrap：CLI 之后的 config、eval 与 experiment 动态 import
 // 立刻可用，同时 bootstrap 本身仍只加载预编译的 dist graph。
 const { register: registerCjs } = await import("tsx/cjs/api");
 const { register: registerEsm } = await import("tsx/esm/api");
 registerCjs();
 registerEsm();
-
-// The CLI is a production renderer even when the caller did not set NODE_ENV.
-// Preload React's production server/runtime branches before the Report graph is
-// imported, then restore the author's environment immediately. This avoids the
-// development JSX validators and element metadata for every static Report node
-// without making NODE_ENV="production" observable to config, report, or eval code.
-if (process.env.NODE_ENV === undefined) {
-  process.env.NODE_ENV = "production";
-  await Promise.all([
-    import("react"),
-    import("react/jsx-runtime"),
-    import("react-dom/server"),
-  ]);
-  delete process.env.NODE_ENV;
-}
 
 const cliUrl = new URL("../dist/cli/bootstrap.cjs", import.meta.url);
 await import(cliUrl.href);

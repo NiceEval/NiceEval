@@ -130,7 +130,7 @@ interface ExecutionGapSlot extends ExecutionReusePlanSlotBase {
 type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
 ```
 
-`slots` 与 target slots 一一对应，并保持 target 顺序。`reuse` 与 `gaps` 是互斥、保序子序列。所有 gap 都可执行；`invalid` 只属于 `Sample`，不进入 reuse planning。
+`slots` 与 target slots 一一对应，并保持 target 顺序。`reuse` 与 `gaps` 是互斥、保序子序列。所有 gap 都可执行；`invalid` 只属于固定 Inspection result，不进入 reuse planning。
 
 `effectiveOptions` 是 policy 实际使用的安全归一化值。它可以包含 rerun、keepSandbox 和 timeout 口径，不得包含 secret、进程变量值、`RecordReader`、文件路径、句柄或任意业务 Attachment 集合。
 
@@ -197,7 +197,7 @@ coordinator 最后把 target、reuse intents 与 executed outcomes 一起交给 
 
 - `project-target/v1` 的 reuse 写 Core reference Member，并以 Core `carried` action 封口；
 - 有 executed outcome 的 gap 写 Core origin Member 与新 Attempt，并以 Core `executed` action 封口；
-- 正常停止派发且从未 reserved 的 gap 以 Core `not-dispatched` action 封口，之后的 `Sample` 将它呈现为事实性的 `not-recorded`。
+- 正常停止派发且从未 reserved 的 gap 以 Core `not-dispatched` action 封口，之后的固定 Inspection result 将它呈现为事实性的 `not-recorded`。
 
 write session 只验证 Core 形状、引用、target 关联和 action 关联，再 seal 并以本 Run 的 `complete` 一次发布整个 Run。它不能重新读取 Assertions 或 Runner Activities、改写 reason 或作第二次资格判断。
 
@@ -251,7 +251,7 @@ policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为�
 的未封口目录不参与 candidate selection。`complete` 是每个 Run 独立的原子发布点，而不是 Invocation 级提交。
 
 执行去重、同一 Experiment 的 dispatch claim、`maxConcurrency` 和 build / lease 都属于 Coordination 的
-`.niceeval/` 本地状态，不属于 Record。`show`、`view` 与 `exp --dry` 只惰性读取已发布 Run，weak scan 不保证全局快照。只有 `clean` / `migrate` 的 maintenance lease 仍排他。
+`.niceeval/` 本地状态，不属于 Record。`query`、`view` 与 `exp --dry` 只惰性读取已发布 Run，weak scan 不保证全局快照。只有 `clean` / `migrate` 的 maintenance lease 仍排他。
 
 ## 相关阅读
 

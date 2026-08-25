@@ -210,7 +210,7 @@ export interface RunnerRecordCoordinator {
   ) => Effect.Effect<readonly RecordSealReceipt[], RunnerRecordWriteError>;
 }
 
-/** Current preview preserves the read Scope and never creates a Run directory. */
+/** Current preview preserves the read Scope and never creates a Run row. */
 export function withRunnerCurrentReusePreview<A, E, R>(input: {
   readonly recordRoot: RecordRoot;
   readonly startedAt: number;
@@ -244,15 +244,15 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
       runs: Object.freeze(previewRuns),
     });
     const fileSystem = yield* RecordFileSystem;
-    const recordDocument = recordPortablePath(input.recordRoot, "record.json");
-    if ((yield* fileSystem.pathKind(recordDocument)) === "missing") {
+    const recordDatabase = recordPortablePath(input.recordRoot, "record.sqlite");
+    if ((yield* fileSystem.pathKind(recordDatabase)) === "missing") {
       const reusePlan = yield* planProjectTargetReuseWithoutSources({ target, policy: input.reuse.policy });
       return yield* input.use({
         reusePlan,
         readReadbacks: () => Effect.succeed(Object.freeze([])),
       });
     }
-    const reader = yield* recordHost.current.openRead({ root: input.recordRoot });
+    const reader = yield* recordHost.openRead({ root: input.recordRoot });
     const reusePlan = yield* planProjectTargetReuse({ reader, target, policy: input.reuse.policy });
     return yield* input.use({
       reusePlan,
@@ -315,14 +315,14 @@ export function openRunnerRecordCoordinator(input: {
       evals: input.evals,
       reuse: input.reuse,
     }), { concurrency: 1 });
-    const openedRuns = yield* Effect.forEach(planned, (plan) => recordHost.current.createRun({
+    const openedRuns = yield* Effect.forEach(planned, (plan) => recordHost.createRun({
       root: input.recordRoot,
       experimentId: plan.experimentId,
       context: plan.context,
       startedAt: startedAt.right,
       expectedSlots: plan.expectedSlots,
     }).pipe(Effect.map((session) => Object.freeze({ plan, session }))), { concurrency: 1 });
-    const reader = yield* recordHost.current.openRead({ root: input.recordRoot });
+    const reader = yield* recordHost.openRead({ root: input.recordRoot });
 
     const byRun = new Map<AgentRun, RunnerRecordRun>();
     const byRecordRunId = new Map<RunId, RunnerRecordRun>();
@@ -409,7 +409,7 @@ export function openRunnerRecordCoordinator(input: {
         || current.plan.state !== "gap"
         || current.recordRun.gapActions.get(current.slotId) !== "pending"
       ) return false;
-      const freshReader = yield* recordHost.current.openRead({ root: input.recordRoot });
+      const freshReader = yield* recordHost.openRead({ root: input.recordRoot });
       const refreshed = yield* planProjectTargetReuse({
         reader: freshReader,
         target,
@@ -524,7 +524,7 @@ export function openRunnerRecordCoordinator(input: {
       recordRun: RunnerRecordRun,
       mode: "normal" | "interrupted",
     ): Effect.Effect<void, RunnerRecordWriteError> => Effect.gen(function* () {
-      const attach = (
+      const writeRecord = (
         effect: Effect.Effect<void, RecordWriteError, never>,
       ): Effect.Effect<void, RecordWriteError, never> => effect;
       const origins = [] as {
@@ -562,7 +562,7 @@ export function openRunnerRecordCoordinator(input: {
           issue: sources.left,
         }));
       }
-      yield* attach(recordRun.session.attach(
+      yield* writeRecord(recordRun.session.records.write(
         NiceEvalRecordAttachments.sources,
         sources.right.sources,
       ));
@@ -587,7 +587,7 @@ export function openRunnerRecordCoordinator(input: {
           sourceSites: sources.right.sourceSitesBySlot.get(slotId),
         });
         if (Either.isLeft(assertions)) return yield* Effect.fail(assertions.left);
-        yield* attach(active.session.attach(
+        yield* writeRecord(active.session.records.write(
           NiceEvalRecordAttachments.assertions,
           assertions.right.attachment,
         ));
@@ -597,22 +597,22 @@ export function openRunnerRecordCoordinator(input: {
           sealed,
         });
         if (sourceReceipts.agentTurns !== undefined) {
-          yield* attach(active.session.attach(
+          yield* writeRecord(active.session.records.write(
             NiceEvalRecordAttachments.agentTurns,
             sourceReceipts.agentTurns,
           ));
         }
         if (sourceReceipts.sandboxCommands !== undefined) {
-          yield* attach(active.session.attach(
+          yield* writeRecord(active.session.records.write(
             NiceEvalRecordAttachments.sandboxCommands,
             sourceReceipts.sandboxCommands,
           ));
         }
-        yield* attach(active.session.attach(
+        yield* writeRecord(active.session.records.write(
           NiceEvalRecordAttachments.runnerActivities.attempt,
           sourceReceipts.runnerActivities,
         ));
-        yield* attach(active.session.attach(
+        yield* writeRecord(active.session.records.write(
           NiceEvalRecordAttachments.runnerDiagnostics.attempt,
           sourceReceipts.runnerDiagnostics,
         ));
@@ -628,7 +628,7 @@ export function openRunnerRecordCoordinator(input: {
           }));
         }
         if (turnContexts.right !== undefined) {
-          yield* attach(active.session.attach(
+          yield* writeRecord(active.session.records.write(
             NiceEvalRecordAttachments.turnContexts,
             turnContexts.right,
           ));
@@ -636,7 +636,7 @@ export function openRunnerRecordCoordinator(input: {
 
         const fileChanges = createAttemptFileChangesAttachment(richResult);
         if (fileChanges !== undefined) {
-          yield* attach(active.session.attach(
+          yield* writeRecord(active.session.records.write(
             NiceEvalRecordAttachments.fileChanges,
             fileChanges,
           ));
@@ -644,7 +644,7 @@ export function openRunnerRecordCoordinator(input: {
 
         const artifacts = createAttemptArtifactsAttachment(richResult);
         if (artifacts !== undefined) {
-          yield* attach(active.session.attach(
+          yield* writeRecord(active.session.records.write(
             NiceEvalRecordAttachments.artifacts.attempt,
             artifacts,
           ));
@@ -655,18 +655,18 @@ export function openRunnerRecordCoordinator(input: {
 
       const sourceReceipts = yield* createRunObservabilityAttachments(recordRun.run);
       if (sourceReceipts.runnerActivities !== undefined) {
-        yield* attach(recordRun.session.attach(
+        yield* writeRecord(recordRun.session.records.write(
           NiceEvalRecordAttachments.runnerActivities.run,
           sourceReceipts.runnerActivities,
         ));
       }
       if (sourceReceipts.runnerDiagnostics !== undefined) {
-        yield* attach(recordRun.session.attach(
+        yield* writeRecord(recordRun.session.records.write(
           NiceEvalRecordAttachments.runnerDiagnostics.run,
           sourceReceipts.runnerDiagnostics,
         ));
       }
-      yield* attach(recordRun.session.attach(
+      yield* writeRecord(recordRun.session.records.write(
         NiceEvalRecordAttachments.artifacts.run,
         createRunArtifactsAttachment(),
       ));

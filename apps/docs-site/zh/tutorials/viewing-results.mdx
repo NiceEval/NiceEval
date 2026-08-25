@@ -1,131 +1,43 @@
 ---
-title: "查看 NiceEval 结果"
+title: "查看已封口的运行结果"
 sidebarTitle: "查看结果"
-description: "用 show 或 view 从已发布的 Record 选择固定 Sample，并读取一个页面或完整报告站。"
+description: "用固定的 View 审阅结果，并用 query 把闭合 Inspection operation 结果交给 AI、脚本和 CI。"
 ---
 
-运行结束后，从下面两条命令开始：
+评估完成后，receipt 中的 `runIds` 是稳定的读取边界。人用 `niceeval view` 审阅，AI、脚本和 CI 用 `niceeval query`。
+
+## 在浏览器中审阅
 
 ```sh
-pnpm exec niceeval show
-pnpm exec niceeval view
+niceeval view
+niceeval view --run <run-id>
+niceeval view @<attempt-locator>
 ```
 
-两条命令用相同选择规则形成固定 `Sample`，但执行范围不同。`show` 只读取一个目标 Page；`view` 会先构建完整站点，再把它托管在浏览器中。
+不带 selector 时，View 打开项目当前 sealed cutoff 的 overview。`--run` 选择一个或多个明确 Run。Attempt locator 打开一个明确 detail。View 是固定的第一方 Insight，不读取项目自定义页面、主题或组件。
 
-## 选择要看的结果
+可以使用 `--no-open` 保持浏览器不自动打开，或使用 `--port` 选择 loopback port。`--json` 只输出 lifecycle NDJSON；它不输出运行结果。
 
-选择一个明确 Run：
+新 Run 封口后，operational View 会提示用户确认 refresh。使用 `--record <RecordSnapshot>` 时，View 固定 Snapshot 的 exact Seal，不会 watch 或 refresh。
+
+## 让机器读取闭合结果
 
 ```sh
-pnpm exec niceeval show --run 7b8d2ea4-b840-4870-9840-f85a436a5527
+niceeval query discover
+niceeval query explain --request request.json
+niceeval query run --request request.json
 ```
 
-普通运行可从 `exp --json` 最后一条 receipt 的 `runIds` 读取 Run ID：
+从 `discover` 返回的 catalog 取得 operation schema，再构造 request。`run` 向 stdout 写一个 `niceeval.query/v1` document。不要解析 View 页面，也不要使用未公开的 Record 文件。
 
-```json
-{"type":"receipt","receipt":{"invocationId":"11c8fc15-8a9b-49a0-bb93-68205b52ffab","runIds":["7b8d2ea4-b840-4870-9840-f85a436a5527"],"startedAt":"2026-08-14T10:00:00.000Z","completedAt":"2026-08-14T10:01:00.000Z","completion":"completed"}}
-```
+常见读取任务由固定 operation 覆盖：列出 Run、取得 Run summary、读取 Attempt detail、trace、diff、sources、artifacts 或比较两个 Run。查看 [CLI](/zh/reference/cli) 获取完整说明。
 
-不带 locator、`--run` 或 `--experiment` 时，命令使用 `project-current`：它保留全部仍与当前项目身份匹配的已发布结果，而不是只选最新一条。需要阅读历史结果时，传入完整 `--run`；要限制当前项目结果时，重复传入完整的 `--experiment <id>`。
-
-`project-current` 按 Run 中的 slot occurrence 保留结果。它不会把多个 Run 里同名的 Experiment、评估用例和 Attempt 序号合并成一个位置。重复运行或分多次执行 `accept` 都可能增加当前 `Sample` 的分母。
-
-Sample 记录每个位置的状态：
-
-| 状态 | 含义 |
-| --- | --- |
-| `included` | 有可分析的 Attempt。 |
-| `not-recorded` | 计划中的位置没有结果。 |
-| `core-invalid` | 该位置的身份或引用不能可靠读取。 |
-| `excluded` | 本次选择排除了该位置。 |
-
-这些状态和 Measure 的分母在选择时固定。页面不能因为数据缺失、筛选或只显示一部分行而缩小 `total`。
-
-## 在终端读取一个 Page
+## 读取另一份封口事实
 
 ```sh
-pnpm exec niceeval show --run <run-id>
-pnpm exec niceeval show --run <run-id> --page /
-pnpm exec niceeval show @<attempt-locator>
-pnpm exec niceeval show --run <run-id> --report ./reports/quality.tsx --json
+niceeval record snapshot --output ./snapshots/baseline.record-snapshot
+niceeval view --record ./snapshots/baseline.record-snapshot
+niceeval query discover --record ./snapshots/baseline.record-snapshot
 ```
 
-省略 `--page` 时，`show` 使用 Report 的默认可导航页面。提供 `--page` 时，它只 decode、load、render 和关闭这一个精确 route。参数 Page 不会因此调用 `enumerate()`；其它 Page、Analysis 查询和作者 callback 也不会执行。
-
-显式 `--run` 在没有指定 `--report` 时使用内建 Run 结果页。例如，某个 Run 引用了历史 Attempt 时：
-
-```text
-Report run-membership-overview
-Sample: 1 run(s), 1 slot(s)
-
-Page /
-  Run results
-  Planned attempts
-  Experiment | Eval | Attempt | Result | Details
-  checkout | checkout/basic | #1 | using result @91DDC61BAE96 | @91DDC61BAE96
-
-Problems
-  none
-```
-
-`Result` 显示 `passed`、`failed`、`errored`、`not started` 或 `using result @<locator>`；`Details` 的 locator 可继续下钻。Attempt 创建前失败时，页面另外显示 `Run errors` 和该错误真正影响的未启动 Attempt 数。Human 页不显示 Slot 等内部字段；机器 `--json` 仍保留稳定 membership keys。
-
-Attempt 的 `failed` 只说明影响 Verdict 的断言未满足，不会自动把原因归给被测对象。按[排查手册](/zh/troubleshooting/debugging#attempt-判定为-failed)分别比较任务、实际产物与断言，再决定修哪一层。
-
-`show --json` 仍是同一个单目标操作。内建 Report 返回 Host 拥有的具名领域 JSON；自定义 Report 返回该 Page 的 route、标题、固定英语 80-column rendered text、下载摘要和问题表。
-两种 v1 JSON 都在顶层带有同一形状的 `projections` 对象，只包含目标 Page 捕获的闭合投影。
-
-每个成本 entry 都是 `{ page: { pageId, route }, measureId, row: { key, dimensions }, profileIdentity, projection }`。
-成本数组的 canonical key 是 `route`→`pageId`→`measureId`→`row.key`→`profileIdentity`。它只按这五项的 UTF-8 顺序排序；
-`dimensions` 与 `projection` 都不是额外排序键。
-
-同一 key 的 entry 只有 `row.dimensions` 和 `projection` 都为 byte-identical canonical JSON 时才去重。任一字段不同都以
-`report-cost-projection-conflict` typed conflict 失败。
-
-`pricingProfile` 是 Report 顶层已关闭的 `PricingProfile`，未声明 Profile 时为 `null`。每个 cost entry 的 `profileIdentity` 与
-`projection.profile.contentIdentity` 都必须等于顶层 `pricingProfile.contentIdentity`；没有 Profile 时，`costs` 必须为空。
-
-JSON 不包含其它 Page、HTML、React tree、站点 identity 或 Record 读取能力。
-
-## 按题型读取主读数
-
-默认报告按评估类型选择主读数：
-
-- 通过制评估显示通过率。
-- 计分制评估显示 earned score。
-- 启用混型准入前产生的历史 Record 仍可读取：计分制与通过制子行保留各自主读数，不把两者合成百分比。
-
-计分制评估上声明的 `points` 是评分项的贡献权重，不是 Experiment 的固定满分。动态执行、条件分支或不可用材料可能让评分项集合不同，因此默认报告不会自动把 earned score 除以所有源码里声明的 `points`。
-
-项目没有配置 Report 时，`project-current` 使用内建 `standard`。Overview 通过同一个 `ExperimentTable` 呈现通过制和分数制结果，
-并提供筛选、逐层展开与 Attempt 详情链接。`standard` 只额外包含由该表链接到的 Experiment 和 Attempt 详情 Page；两种详情
-不会改变 Score 或通过率的计算口径。
-
-Overview 的实验对比图使用同一题型判断：通过制画成本 × 通过率，分数制画成本 × 总分。两种题型同时存在时显示两张图，
-不会把 points 和 ratio 放进同一纵轴。通过率刻度显示百分比；内部的 `ratio` 量纲不会出现在图表文案里。
-
-## 在浏览器读取完整站点
-
-```sh
-pnpm exec niceeval view --experiment checkout --no-open
-pnpm exec niceeval view --run <run-id> --page / --no-open
-```
-
-view 在启动 server 前枚举所有显式声明的普通 Page 与参数 Page 的全部实例，并验证路径、链接、资源、下载、`_niceeval/data/projections.json` 和预算。`pages` 是唯一页面集合，Host 不会补建详情 route。`--page` 只决定初始打开的已存在 route，不能缩小构建范围。全站 projections 文件的 bytes 属于 revision identity。
-
-每次成功 rebuild 才原子替换当前完整站点。Report、主题、配置或已发布结果变化后，view 构建候选站点；失败时继续提供上一份可用内容。页面导航、刷新与 Source、Diff、Trace、下载都只读取已经生成的 bytes，不会让浏览器重新打开 Record 或调用 Analysis。
-
-浏览器 Report chrome 可以切换中文和英语。它只切换已交付的 LocalizedText 和浏览器词典，不改变 Sample、机器 JSON 或站点内容的事实含义。
-
-## 读懂不完整数据
-
-`MetricValue` 的 `samples` 是实际贡献数，`total` 是既定分母，`state` 和 `issues` 说明为什么数据不完整。自定义 Report 使用 `formatMetricValue()` 时仍可得到 `2 / 4 slot · partial` 这类紧凑格式；它表示四个已选位置中有两个提供该指标，不是 score，也不是“完成了一半”。默认 Overview 改用上面的独立覆盖区域。`partial` 可以有数值；`empty`、`unsupported` 与 `failed` 不是零。Evidence refs 保留可复核的定位信息。
-
-Analysis 数据问题继续作为页面内容显示。相反，选中 Page 的 callback、参数 key 或成员资格失败会让 `show` 返回单目标错误；任何全站 Page、路径、资源或预算失败都会阻止新的站点发布。
-
-## 下一步
-
-- [报告 API](/zh/reference/report-components)：编写 Page、组件与机器输出。
-- [发布静态报告](/zh/tutorials/publish-report)：导出完整站点给离线读者。
-- [排查结果与报告问题](/zh/troubleshooting/debugging)：根据选择、数据状态和 rebuild 反馈定位问题。
+只有 `record snapshot --output` 产生的 `RecordSnapshot` 能传给 `--record`。不要传入项目 SQLite database、它的副本或任意外部文件。

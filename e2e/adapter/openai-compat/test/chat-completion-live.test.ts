@@ -4,9 +4,10 @@ import { beforeAll, expect, test } from "vitest";
 import { assertExpEvalOutcomes } from "@niceeval/testkit";
 import {
   runOpenAiLiveEvidence,
-  showOpenAiLiveEvidence,
+  queryOpenAiLiveEvidence,
   type OpenAiLiveEvidence,
 } from "./support.ts";
+import type { InspectionDocument } from "./query.ts";
 
 let evidence!: OpenAiLiveEvidence;
 
@@ -15,7 +16,7 @@ beforeAll(async () => {
     experimentId: "chat-completion-live",
     evalId: "chat-completion-live",
     caseName: "chat-completion-live",
-    executionMarkers: ["lookup_live_chat_fixture", "chat-live-20260809"],
+    traceMarkers: ["lookup_live_chat_fixture", "chat-live-20260809"],
   });
 }, 5 * 60_000);
 
@@ -39,11 +40,14 @@ test("真实 OpenAI Chat Completion 一次请求以通过 verdict 完成", () =>
   );
 });
 
-test("show --execution 读回 OpenAI Chat Completion 的代表性证据", async () => {
-  const execution = await showOpenAiLiveEvidence(evidence, [
-    evidence.evalEvent.locator!,
-    "--execution",
-  ]);
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  for (const marker of evidence.executionMarkers) expect(execution.stdout).toContain(marker);
+test("attempt.trace 读回 OpenAI Chat Completion 的代表性证据", async () => {
+  const queried = await queryOpenAiLiveEvidence(evidence, {
+    kind: "attempt.trace",
+    locator: evidence.evalEvent.locator,
+  });
+  expect(queried.exitCode, queried.diagnostic()).toBe(0);
+  const document = queried.json<InspectionDocument>();
+  expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  const trace = JSON.stringify(document.trace);
+  for (const marker of evidence.traceMarkers) expect(trace).toContain(marker);
 });

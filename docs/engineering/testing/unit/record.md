@@ -5,7 +5,7 @@
 - [Record](../../../feature/record/README.md)
 - [Architecture](../../../feature/record/architecture.md)
 - [Library](../../../feature/record/library.md)
-- [Record → Analysis → Report](../../../feature/record-report/README.md)
+- [Record → Inspection → Delivery](../../../feature/record-report/README.md)
 
 Record 单元层只证明可稳定隔离的格式算法和 `recordHost` 边界。真实运行、CLI 读取、Report 接线与用户
 可见结果由 [E2E · Record 与 Reports 读面](../e2e/report.md) 验收。
@@ -24,7 +24,7 @@ JSON 与 content object 必须从已发布 persistence 形状构造，不能复�
 - **root 与导航**：精确 current root 可由 `recordHost.openRead()` 打开；损坏或旧 beta root 产生具名
   unsupported/open error。root 没有 numeric revision。
 - **身份与关系**：Attempt 永属 origin Run；Member 只引用已封口 Attempt，`origin | reference` 从关系
-  派生，executed/carried/accepted 是 Member action。expected slots 之外的 Member 由 Analysis 标成
+  派生，executed/carried/accepted 是 Member action。expected slots 之外的 Member 由固定 Inspection operation 标成
   `core-invalid`，不改写分母。
 - **definition 与 persistence**：`defineRecordAttachment` 只确定 current logical fact。
   `defineRecordAttachmentPersistence` 才绑定 exact definition brand、revision 与 private adjacent migration。
@@ -49,4 +49,4 @@ JSON 与 content object 必须从已发布 persistence 形状构造，不能复�
 - 不把 available、not-recorded、invalid、core-invalid、partial 和空值折叠成一态，也不把 unsupported-format
   降成某个 source 的局部状态。
 - 不断言私有目录遍历顺序或实现类名，只断言 Host error、公开状态、issue、文件可见边界与 bytes。
-- 不在单元层复制完整 Report；Record → Analysis → Report 的权限、次数与静态导出归 Report / E2E owner。
+- 不在单元层复制完整 Delivery；Record → Inspection → Delivery 的权限、次数与 View 生命周期归 Inspection/View E2E owner。

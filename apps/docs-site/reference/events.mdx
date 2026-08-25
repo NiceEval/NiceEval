@@ -277,7 +277,7 @@ events.push({
 });
 ```
 
-`commandProjection()` retains original tokens confirmed by the Adapter and uses the same `normalizeLogicalCommand()` to produce a `logical-command/v1` projection. `pnpm exec niceeval show` can be matched precisely by `commandMatch("niceeval", { argsStart: ["show"] })`.
+`commandProjection()` retains original tokens confirmed by the Adapter and uses the same `normalizeLogicalCommand()` to produce a `logical-command/v1` projection. `pnpm exec niceeval view` can be matched precisely by `commandMatch("niceeval", { argsStart: ["view"] })`.
 
 Mark the original command available only when the native protocol already supplies argv, or the protocol grammar can unambiguously produce one invocation. Use `opaqueCommandProjection(reason)` when the protocol supplies only shell source or when content is truncated or redacted. Use `notCommandProjection()` when you can confirm that it is not a command. When you cannot confirm command / not-command, downgrade actions coverage; do not guess from a tool name, input, or shell text.
 

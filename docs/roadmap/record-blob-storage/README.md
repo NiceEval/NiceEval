@@ -10,7 +10,7 @@ Record content 是 Attachment 拥有的一段逻辑 bytes，而不是单个磁�
 producer 声明逻辑材料，Record Host 决定怎样写入和保存；reader 仍读取一条连续且经过验证的逻辑 stream。
 
 payload 中的 sealed `RecordContentHandle` 始终表示逻辑 content；它不携带 path、digest 或物理位置。
-物理 segment、manifest、临时写入与去重索引只属于 Record Host，不进入 Eval、Assertion、Analysis、Report 或用户配置。
+物理 segment、manifest、临时写入与去重索引只属于 Record Host，不进入 Eval、Assertion、Inspection、query / View 或用户配置。
 复制一个 Attachment closure 时，它依赖的全部物理 bytes 必须随 closure 一起移动。
 
 ## 范围
@@ -35,7 +35,7 @@ frame、page、member、path、depth、count 与 wire integer仍受 storage revi
 
 作者仍只提交逻辑 snapshot、artifact 或其它 family material。
 family Schema 声明 Content 字段后，capture producer选择已有整体值的便利入口，或任意长度 bytes 的 stream入口；它不负责决定物理分段。
-CLI 与 Report 只呈现材料状态、逻辑 byte length、整体 digest、preview 与业务 limitation。
+CLI、query 与 View 只呈现材料状态、逻辑 byte length、整体 digest、preview 与业务 limitation。
 
 ```ts
 content.text(text)
@@ -47,7 +47,7 @@ reader 提供同一 logical handle 的 `byteLength`、`text`、`bytes` 与 `stre
 `byteLength` 不打开 Content；`stream` 是任意长度且 RSS 有界的规范读取路径。
 `text` / `bytes` 整体读取时可以因本机资源 admission 被拒绝，但 Attachment 仍保持 available，错误提示改用 `stream`。
 
-物理 segment 数量和边界不影响 Assertion result、Score、Gate、cache identity 或 Report 输出。
+物理 segment 数量和边界不影响 Assertion result、Score、Gate、cache identity、query document 或 View 输出。
 只要逻辑 bytes 相同，改变 Record Host 的分段与存储策略不能形成新的用户事实。
 
 ## 采用前挑战门
@@ -63,7 +63,7 @@ reader 提供同一 logical handle 的 `byteLength`、`text`、`bytes` 与 `stre
 - index、catalog 与 Seal metadata能独立 rollover，不形成新的单文件或单 JSON 容量墙；
 - 第一版不以去重、全局 CAS 或共享 lifetime 缩短 closure；未来增加复用必须重新挑战 capability、secret existence oracle 与删除语义；
 - Record 整体复制、未知 family 保留、maintenance 与相邻 schema migration 仍有确定语义；
-- 现有 producer、Analysis 和 Report 无需理解或分支处理物理分段。
+- 现有 producer、Inspection、query 与 View 无需理解或分支处理物理分段。
 - `text` / `bytes` 的本机 admission failure不把同一 published Record改判 invalid。
 
 无法同时满足这些性质的候选不得进入当前 Record 契约。

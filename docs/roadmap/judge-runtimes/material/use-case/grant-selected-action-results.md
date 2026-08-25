@@ -6,7 +6,7 @@
 const shown = turn.material.actionResults(
   actionResultSelector.command({
     logicalExecutable: "niceeval",
-    argsStart: ["show"],
+    argsStart: ["query"],
     lifecycle: "completed",
     exactly: 1,
   }),
@@ -25,7 +25,7 @@ t.judge.llm(check).atLeast(0.9).label("公开结果一致");
 
 Selector 先在完整 Action universe 上验证恰好一次命中，再只封口该 occurrence 的 result。它不会顺带授权其它命令输出。
 
-若 Adapter 只能提供混合 transcript，无法把 `niceeval show` 的 result 隔离到这一 occurrence，`shown` 为 `result-unisolatable`，Judge 不启动。系统不会退回整包 `toolCalls` 或全部 stdout。
+若 Adapter 只能提供混合 transcript，无法把 `niceeval query` 的 result 隔离到这一 occurrence，`shown` 为 `result-unisolatable`，Judge 不启动。系统不会退回整包 `toolCalls` 或全部 stdout。
 
 确定性事实仍由普通 Assertion 拥有。例如任务要求生成 regex verifier log，先检查文件确实改变，再把作者显式读取的 bytes 作为 custom file 交给 Judge：
 

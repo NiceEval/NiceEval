@@ -203,7 +203,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 采集限制 | limitation | partial collection 必有的 closed、非空原因；表达上限、截断、脱敏或采集不足 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | owner-local identity | owner-local identity | producer 为 Attachment 内 turn、item、call、command、usage、interval 与 diagnostic mint 的稳定身份 | [Observability Attachments](feature/record/architecture/observability-attachments.md) |
 | Source receipt | Source receipt | 一个 capture authority 在真实边界产生的已归一、脱敏且不可变事实 segment | [Observability Source receipts](feature/record/architecture/observability-attachments.md) |
-| 报告器 | Reporter | 运行中流式消费结果的插件;与运行后的 Report 不同 | [Observability](observability.md) |
 
 ### 结果落盘
 
@@ -213,7 +212,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Coordination SDK | Coordination SDK | execution claim、session 与 gate 位于项目 `.niceeval/`；Record 的 read / append / maintenance lease 位于 `.niceeval/coordination/records/<recordKey>/`（custom Record 位于其 parent 的同形目录），均不进入 portable Record | [三层总览](feature/record-report/README.md) |
 | Record 宿主 SDK | `RecordHostSDK` | 由 `makeRecordHost({ records })` 冻结 contributions，并提供 `openRead()`、`createRun()`、`createReferenceRun()` 与 `maintenance()` 的窄宿主能力 | [Record Library](feature/record/library.md) |
 | Record 读取会话 | `RecordReadSession` | Scope-bound 惰性 reader；先选择已封口 Run，再按需读取和验证 Run、Attempt、Attachment 或 blob | [Record Library](feature/record/library.md) |
-| Record 选择 | `RecordSelection` | 一次扫描后固定的 Run、Slot、预期分母与问题；不含完整 payload，也不携带 reader | [Record Library](feature/record/library.md) |
 | Run 写会话 | `RunWriteSession` | 只创建并封口一个新 RunId 的 Scope-bound 能力；Attempt / Run owner 通过窄 `record.write` 做 create-once staging mutation，不把 writer 暴露给普通 Eval `TestContext` | [Record Library](feature/record/library.md#owner-scoped-writer) |
 | Attempt 写会话 | `AttemptWriteSession` | 由 Host 创建并交给 capture producer 的 Attempt-owned 能力；提供 rich `record.write` 与简单 collection 的 `record.start` / `record.append`，普通 Eval `TestContext`、Adapter 和 Plugin 不取得它 | [Record Library](feature/record/library.md#owner-scoped-writer) |
 | Run | Run | 一个带完成标识的 immutable 运行单位；expected SlotId 定义分析分母 | [Record Architecture](feature/record/architecture.md) |
@@ -254,8 +252,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Insight | Insight | NiceEval 自己维护、供用户排查运行与证据的固定本地界面；不是网页作者平台 | [Inspection](feature/reports/README.md) |
-| Insight revision | `InsightRevision` | 一个 Insight 进程的 active 数据版本；完整刷新成功后才原子切换 | [Inspection Architecture](feature/reports/architecture.md#insight-revision) |
+| View | View | NiceEval 自己维护、供用户审阅已封口运行与证据的固定 loopback 界面；不是网页作者平台 | [Inspection](feature/reports/README.md) |
+| View revision | `ViewRevision` | 一个 View 进程的 active 数据版本；完整刷新成功后才原子切换 | [Inspection Architecture](feature/reports/architecture.md#delivery) |
 
 ### 配置与 CLI
 
@@ -292,9 +290,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Eval Trajectory | Eval trajectory | 由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG | [Eval Trajectory](roadmap/eval-trajectories/README.md) |
 | Workspace 访问证据 | Workspace access evidence | 可信 Sandbox producer 归因给 Agent 进程树的逻辑文件操作集合 | [Workspace 访问证据](roadmap/workspace-access-evidence/README.md) |
 | 发现边界 | Discovery boundary | 显式目录入口拥有的递归 Eval discovery 范围；父级扫描在入口处停止向内发现 | [发现边界](roadmap/discovery-boundaries/README.md) |
-| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供 Analysis cost Measure 投影成本的价格规则集合 | [CLI / Insight 迁移门](design/cli-insight/DECISION.md#迁移门) |
+| 价格配置 | Pricing profile (`PricingProfile`) | 带内容身份与 coverage、只供固定 Inspection cost operation 投影成本的价格规则集合 | [Inspection](feature/reports/README.md) |
 | Experiment 展示名 | Experiment display name (`displayName`) | 与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签 | [Experiment 展示名](roadmap/experiment-authoring/display-names/README.md) |
-| Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不构造 Sample 或推导最新结果 | [Record 库存](roadmap/record-inventory/README.md) |
+| Record 库存 | Record inventory | 在 frozen Record view 上按 canonical Run ID 枚举的只读库存；不推导最新结果 | [Record 库存](roadmap/record-inventory/README.md) |
 
 ## 禁用写法
 

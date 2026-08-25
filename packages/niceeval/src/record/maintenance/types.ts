@@ -6,6 +6,7 @@ import type {
 import type { RunId } from "../model/identifiers.ts";
 import type { RecordIncompleteRunWarning } from "../model/read-state.ts";
 import type { RecordRoot } from "../platform/root.ts";
+import type { SqliteRecordError } from "../sqlite/errors.ts";
 import type {
   RecordFileSystem,
 } from "../platform/services.ts";
@@ -28,9 +29,9 @@ export interface RecordCleanReceipt {
 }
 
 /** Scan failures come only from the real filesystem or shared maintenance lock. */
-export type RecordIncompleteRunScanError = RecordCoordinationError;
+export type RecordIncompleteRunScanError = RecordCoordinationError | SqliteRecordError;
 
-export type RecordCleanError = RecordCoordinationError;
+export type RecordCleanError = RecordCoordinationError | SqliteRecordError;
 
 export type InspectIncompleteRuns = (input: {
   readonly root: RecordRoot;

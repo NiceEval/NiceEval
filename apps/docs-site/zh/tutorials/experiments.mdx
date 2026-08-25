@@ -33,7 +33,7 @@ export default defineExperiment({
 npx niceeval exp models
 ```
 
-另一个模型写另一个文件。默认 `show` / `view` 直接比较当前结果范围里的 experiments，不需要额外分组字段。
+另一个模型写另一个文件。固定 Inspection operation 在声明的 request 范围内比较合格的 Run；View 打开选中的已封口结果，不接受 Experiment selector。
 
 多层目录只负责 id 和批量选择：
 
@@ -75,8 +75,8 @@ api-validation   claude-code             pass@3 = 1/3 (33%)    mean 41s
 除了 pass rate，还应该看平均耗时、token、成本和失败类型。
 
 ```bash
-pnpm exec niceeval show --experiment models
-pnpm exec niceeval view --experiment models
+pnpm exec niceeval view
+pnpm exec niceeval view --run <run-id>
 ```
 
 每个 experiment 用自己的 `evals` 选择评估用例。函数形式会遍历所有已发现的评估用例：

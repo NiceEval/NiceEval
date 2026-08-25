@@ -79,10 +79,10 @@ Contract: [adapters](../../../../feature/adapters/README.md)
   dispose 后测试真实重绑该端口，证明资源释放。
 - Vitest 保留默认文件级并行；不使用共享 `beforeAll`、固定端口、mutex、文件顺序或
   `maxConcurrency: 1`。
-- **CLI 读回**：`show` 默认报告列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的代表 Evidence Page 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
+- **CLI 读回**：固定 `query run --request <request>` 列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的代表 View detail 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
 - **Timing 边界**：本地 fixture 不接 OTel。`eval.run`、`agent.setup`、`agent.send` 是 Runner 的通用 timing，
-  只由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 读回；本 Repo 不再重复 `show --timing`。
-  当前公开 Record / `show` 不能把 OTel mapper 明确归因给这个 Adapter，因此 mapper-specific OTel 没有可核查的公开证据：
+  只由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 的 `attempt.trace` 读回；本 Repo 不再重复该 operation。
+  当前公开 Record / fixed query 不能把 OTel mapper 明确归因给这个 Adapter，因此 mapper-specific OTel 没有可核查的公开证据：
   不得用日志、私有 `.niceeval` 目录文件、`telemetry.collect` 或 `agent.send` 代替公开 seam。
 
 ## 与 live AI SDK 的边界

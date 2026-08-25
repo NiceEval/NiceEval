@@ -47,14 +47,14 @@ Every Journey runs this command:
 
 It then reads the result through public commands:
 
-- `niceeval show --run <run-id> --json`
-- `niceeval show @locator --source`
-- `niceeval show @locator --execution --json`
+- `niceeval query discover`
+- `niceeval query run --request <request>`
+- `niceeval view @<attempt-locator>`
 
 Generic `eval.run`, `agent.setup`, and `agent.send` timing belongs only to the
 [Runner owner](../runner.md#runner-generic-timing).
 
-- Record / `show` currently has no mapper-specific OTel attribution seam for a converter.
+- Record / fixed query currently has no mapper-specific OTel attribution seam for a converter.
 - This owner therefore has no public observation for that claim.
 - Logs, private result files, `telemetry.collect`, and a generic `agent.send` interval cannot stand in for it.
 

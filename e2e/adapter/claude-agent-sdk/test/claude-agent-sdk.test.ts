@@ -17,6 +17,7 @@ import {
   withTempDir,
 } from "@niceeval/testkit";
 import { beforeAll, expect, it } from "vitest";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const EVAL_ID = "bash-session";
 const REQUIRED_LIVE_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] as const;
@@ -126,14 +127,16 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => 
   );
 });
 
-it("show --execution 读回 Claude Agent SDK converter 的代表性证据", async () => {
-  const execution = await niceeval.run(["show", locator, "--execution", "--json"]);
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  // Conversation keeps the source-native tool, its unmodified input marker,
+it("attempt.trace 读回 Claude Agent SDK converter 的代表性证据", async () => {
+  const queried = await runInspectionQuery(niceeval, { kind: "attempt.trace", locator });
+  expect(queried.exitCode, queried.diagnostic()).toBe(0);
+  const document = queried.json<InspectionDocument>();
+  expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+  // Trace keeps the source-native tool, its unmodified input marker,
   // completed result, and resumed assistant response in the public machine view.
-  expect(execution.stdout).toContain('"conversation"');
-  expect(execution.stdout).toMatch(/"tool":"(?:shell|Bash)"/);
-  expect(execution.stdout).toContain('"kind":"tool-result"');
-  expect(execution.stdout).toContain(marker);
-  expect(execution.stdout).toContain(sentinel);
+  const trace = JSON.stringify(document.trace);
+  expect(trace).toMatch(/"tool":"(?:shell|Bash)"/);
+  expect(trace).toContain('"kind":"tool-result"');
+  expect(trace).toContain(marker);
+  expect(trace).toContain(sentinel);
 });

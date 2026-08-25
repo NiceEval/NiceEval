@@ -1,50 +1,27 @@
 ---
-title: "Record：已发布结果"
+title: "Record 与 Snapshot"
 sidebarTitle: "Record"
-description: "理解 Record 如何保存已发布的 Run，以及如何安全地选择、查看和分享结果。"
+description: "了解项目 SQLite Record 与可携带 RecordSnapshot 的不同职责。"
 ---
 
-Record 是 NiceEval 的已发布结果集。你可以整体复制它、放进 Git，或交给 `show`、`view`、`clean` 与 `migrate`；应用代码不需要也不能解析其中的实现细节。
+Record 保存 Run、Attempt、Attachment、Content 和 Seal。项目里的 operational Store 位于 `.niceeval/record/record.sqlite`，可同时包含正在写入和已经发布的运行事实。
 
-一个 Run 发布后不会修改。重新运行、自动沿用或人工采用都会形成新的 Run，因此历史结果仍可被明确查看和比较。
+只有 sealed Run 可供 Inspection、`query` 和 `view` 读取。发布后的事实不可修改。缓存、凭据、协调状态和 OS-user Service state 不属于 Record。
 
-## Record 保存什么
+## Snapshot 是唯一的可携带读取输入
 
-Record 保存每次运行的范围、每个预期位置是否有结果，以及结果实际来自哪个 Attempt。它还保存 NiceEval 收集的断言、诊断、事件、用量、文件变化和来源信息，以便之后在同一份历史结果上查看。
-
-这些事实由 NiceEval 写入并验证。应用、Adapter 和 Plugin 没有通用接口去添加任意持久数据、注册自定义数据族或改写历史结果。需要新的长期能力时，应使用已有的 NiceEval API，或让 NiceEval 提供相应支持。
-
-## 从选择到报告
-
-查看或生成报告时，数据沿一条固定链路前进：
-
-```text
-Record + CLI 选择条件
-        ↓
-Sample：已选范围与分母
-        ↓
-Analysis：Measure + aggregate() / query()
-        ↓
-ClosedRows / MetricValue / DomainView
-        ↓
-Report
-        ↓
-show：一个选中的 Page；view / static export：完整站点
+```sh
+niceeval record snapshot --output ./snapshots/baseline.record-snapshot
+niceeval query discover --record ./snapshots/baseline.record-snapshot
+niceeval view --record ./snapshots/baseline.record-snapshot
 ```
 
-不带 locator 或 `--run` 的命令选择仍匹配当前项目的结果；使用 locator 或 `--run` 可以查看明确的历史结果。`Sample` 保留完整分母，并标出 `included`、`not-recorded`、`core-invalid` 与 `excluded`，但它不会把底层结果读取能力交给页面。
+Snapshot 命令清除未发布 closure，验证 exact Seal，然后发布 sealed-only artifact。普通 SQLite copy、WAL、checkpoint 文件和任意外部文件都不能代替 Snapshot。
 
-Analysis 只在某个 Measure 或领域视图实际需要时取得相应事实，并将结果关闭为可显示的值。Report 可以呈现这些值，却不能更改历史结果、扩大选择范围或再次读取原始数据。
+Snapshot 固定 exact Seal。`query` 与 `view` 使用它时不会隐式迁移、watch 或 refresh。Snapshot 仍可能包含敏感业务内容；分享者负责权限、脱敏和保留策略。
 
-## 版本与维护
+## 读取边界
 
-NiceEval 负责识别已支持的结果格式。需要迁移时运行 `niceeval migrate`；无法安全解释的历史数据会在依赖它的查看内容中明确显示问题，而不是被猜成空值或零值。
+Record 不负责统计、比较或页面。固定 Inspection operation 读取封口事实后，才把闭合的结果交给 `query` 或第一方 `view`。读取路径不能把数据库、reader、Content handle 或 SQL 能力交给外部代码。
 
-写入没有完成的结果不会进入查看范围。可以运行 `niceeval clean` 清理这类未完成的残留，再重新运行受影响的评估。
-
-## 下一步
-
-- [查看结果](/zh/tutorials/viewing-results)：选择 Sample，并查看 `show` 与 `view` 的结果。
-- [结果数据 API](/zh/reference/results-data)：在 Report 中使用 Measure 和闭合结果。
-- [报告 API](/zh/reference/report-components)：定义 Page、组件与 Report。
-- [发布静态报告](/zh/tutorials/publish-report)：分享一份已关闭的完整报告站。
+查看 [CLI](/zh/reference/cli) 选择读取方式。

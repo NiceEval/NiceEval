@@ -17,8 +17,8 @@ Host SDK，Runner、reader、SQLite 与 browser transport 都在 Host 之后。
 | Eval catalog CLI | `packages/niceeval/src/eval/{host,cli}/` 拥有 `niceeval list` 的发现投影与呈现 |
 | Experiment 命令与 Invocation status | `packages/niceeval/src/experiment/host/` 的高层 typed operations 与 `cli/` contributions；Runner 与 session 存储保持 Host 私有 |
 | 项目初始化 | `packages/niceeval/src/project/` 的 Host operation、平台 capability 与 `init` contribution |
-| Record 打开、创建、封口与 maintenance | `packages/niceeval/src/record/host/{index,runtime,types}.ts` 的 `recordHost` |
-| 固定运行后 discovery、detail 与 comparison | `packages/niceeval/src/inspection/host/` 的 `inspectionHost` |
+| Record 打开、创建、封口与 maintenance | `packages/niceeval/src/record/host/{index,runtime,sqlite-host,types}.ts` 的 `recordHost` |
+| 固定运行后 discovery、detail 与 comparison | `packages/niceeval/src/inspection/{catalog,codec,host,source,sources}.ts` 的 `inspectionHost` |
 | Machine query 与 runtime View | `packages/niceeval/src/inspection/cli/` 与 `packages/niceeval/src/view/`；Delivery 不重新解释 Record facts |
 
 `packages/niceeval/src/cli/bootstrap.ts` 只能组合这些 Host 与 Feature contribution。它不直接调用 `packages/niceeval/src/runner/`、`packages/niceeval/src/record/reader/`、family decoder 或
@@ -45,13 +45,13 @@ Feedback 与 Memory 仍各自使用 `pnpm feedback` 与 `pnpm memory`。领域 h
 | Experiment 发现、调度、Invocation-local 并发、共享状态租约、Sandbox 生命周期、reuse 与 receipt | `packages/niceeval/src/runner/{run,lock,shared-state-lease}.ts` 及同目录协作者；由 `experimentHost` 调用 |
 | [Setup 前缀缓存](roadmap/sandbox-cache/setup-prefix/README.md) 的 Action state、DAG 线性化、前缀协调、capture 与 private clone | `packages/niceeval/src/sandbox/{action,backend,docker,docker-setup-prefix-cache}.ts`、`packages/niceeval/src/sandbox/docker-profile/` 与 `packages/niceeval/src/runner/attempt.ts`；Profile 的 raw-image artifact、lease、journal 与回收落在 `packaging/docker-profile-host/` |
 | execution claim 与 Record lease 协调 | `packages/niceeval/src/coordination/` 与 `packages/niceeval/src/record/` 的 Host 实现 |
-| Record Core、Logical Seal、SQLite schema、publication、snapshot 与 migration | `packages/niceeval/src/record/{model,storage,host}/`；`.niceeval/record/record.sqlite` 与 cache/coordination/user state 分离 |
+| Record Core、Logical Seal、SQLite schema、publication、snapshot 与 migration | `packages/niceeval/src/record/{model,sqlite,host}/`；`.niceeval/record/record.sqlite` 与 cache/coordination/user state 分离 |
 | 高层 Record 作者 API、nominal Definition、batch collection 与 `{ records }` composition | `packages/niceeval/src/record/{authoring.ts,index.ts,host/,writer/}`；`write`、`append`、`appendAll` 与 `close` 只进入 owner-scoped session |
 | 底层 Attachment logical definition、persistence revision、adapter、private migration parser 与 Core-owned content/reference declaration compiler | `packages/niceeval/src/record/family/`、`packages/niceeval/src/assertions/record/`、`packages/niceeval/src/sandbox/record/` 与 `packages/niceeval/src/sources/` |
 | Runner source-receipt capture authority 与 normalization | `packages/niceeval/src/runner/source-receipts/` 与 `packages/niceeval/src/runner/source-producer.ts` |
 | Observability 五个 source family | Adapter terminal Turn 进入 `niceeval.agent-turns`；SessionManager context 进入 `niceeval.turn-contexts`；Sandbox wrapper 进入 `niceeval.sandbox-commands`；Runner clock / diagnostic sink 分别进入 `niceeval.runner-activities` 与 `niceeval.runner-diagnostics`。实现落点以 `packages/niceeval/src/{adapters,agents,sandbox,runner,record}/` 的 capture boundary 与 family declaration 为准。 |
-| Observability reader-side fixed projection 与 source navigation | `packages/niceeval/src/inspection/operations/` 的 conversation、usage、commands、timing、diagnostics 与 source relation；不形成用户可注册的统计层 |
-| Assertions current semantic entry、v1→v2→v3 相邻迁移与有界 collection receipt | `packages/niceeval/src/assertions/{api,runtime,match}.ts`、`packages/niceeval/src/assertions/record/` 与 `packages/niceeval/src/record/family/assertions/{definition.ts,persistence.ts,migrate/}` |
+| Observability reader-side fixed projection 与 source navigation | `packages/niceeval/src/inspection/{catalog,host,sources}.ts` 与 `packages/niceeval/src/record/host/source-navigation-relation.ts` 形成 closed source result；不形成用户可注册的统计层 |
+| Assertions current semantic entry、v1→v2→v3→v4 相邻迁移与有界 collection receipt | `packages/niceeval/src/assertions/{api,runtime,match}.ts`、`packages/niceeval/src/assertions/record/` 与 `packages/niceeval/src/record/family/assertions/{definition.ts,persistence.ts,migrate/}` |
 | Scope-bound reader 与按需读取 | `packages/niceeval/src/record/reader/`；只能经 `recordHost` 到达 |
 
 Verdict、Score 和采用理由由 Assertions、Attempt outcome 与 Member Core 解释，不另建 durable family。
@@ -63,10 +63,9 @@ direct read、reference closure 或完整性检查需要它时返回 `family-def
 
 | 目标契约 owner | 源码边界 |
 |---|---|
-| [固定运行后检查](feature/reports/README.md) | `packages/niceeval/src/inspection/{contracts,operations,host}/` 拥有 operation catalog、selection audit、denominator、missing、Evidence 与 comparison。 |
-| Assertions 与 observability projection | `packages/niceeval/src/inspection/operations/` 从 Record family 形成具名 Attempt detail、trace、diff、source 与 artifact result；不向 Delivery 暴露 matcher codec 或 reader。 |
-| Machine CLI | `packages/niceeval/src/inspection/cli/` 提供 `query discover / explain / run`；codec 只消费 closed result。 |
-| Runtime View | `packages/niceeval/src/view/` 拥有 loopback server、session/Origin、active revision、last-good 与 fixed UI；detail 使用短 reader。 |
+| [固定运行后检查](feature/reports/README.md) | `packages/niceeval/src/inspection/{catalog,codec,host,source,sources}.ts` 拥有 operation catalog、closed document codec、selection audit、sealed source、missing、Evidence 与 comparison。 |
+| Machine CLI | `packages/niceeval/src/inspection/cli/contribution.ts` 路由 `query discover / explain / run`；它只输出 closed result 的 canonical codec。 |
+| Runtime View | `packages/niceeval/src/view/{browser,render,revision,server}.ts` 与 `view/cli/contribution.ts` 拥有 loopback server、session/Origin、active revision、last-good 与 fixed UI；detail 使用短 reader。 |
 
 实现时以对应 Feature 文档的 owner、输入和不变量为准。
 
@@ -77,6 +76,7 @@ direct read、reference closure 或完整性检查需要它时返回 `family-def
 | Eval 与公开定义类型 | `packages/niceeval/src/{index,types}.ts`、`packages/niceeval/src/eval/` |
 | Agent 与 Adapter public API | `packages/niceeval/src/agents/`、`packages/niceeval/src/adapters/` |
 | Sandbox provider 与生命周期 | `packages/niceeval/src/sandbox/` |
-| 第一方 browser shell 与运行时资源 | `packages/niceeval/src/view/`；只消费固定 Inspection result，不能成为作者 renderer 管线。 |
+| 用户 State、service module、SQLite worker 与迁移 | `packages/niceeval/src/state/{definition,composition,runtime,path,migrations,types,storage-worker,worker-protocol}.ts`；`state/cli/contribution.ts` 只挂载用户 State 迁移命令。 |
+| 第一方 browser View、loopback session 与运行时资源 | `packages/niceeval/src/view/`；只消费固定 Inspection result，不能成为作者 renderer 管线。 |
 
 修改任一公共行为前，先回到对应 Feature 入口确认契约，再用本页定位影响面。

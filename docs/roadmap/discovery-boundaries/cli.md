@@ -58,4 +58,4 @@ discovery 不占 Attempt 并发位。根可以并行读取，但 entry module �
 
 每次命令持有一个 frozen discovery snapshot。发现期间 root、entry、realpath 或已捕获 source 发生变化时，以 discovery.raced 失败，而不混合两个文件系统时刻的结果。
 
-niceeval show 只展示完成运行的 Attempt。发现 provenance 的审计入口是 list、check 和 dry；它们不递归列出被 folder entry 拦下的所有普通资产。
+`niceeval view` 只展示完成运行的 Attempt；机器读取使用 `niceeval query`。发现 provenance 的审计入口是 list、check 和 dry；它们不递归列出被 folder entry 拦下的所有普通资产。

@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import type { RecordCoordinationError } from "../../coordination/record-leases.ts";
 import type { RecordFileSystemError } from "../platform/errors.ts";
 import type { RecordWriteError } from "../writer/types.ts";
+import type { SqliteRecordError } from "../sqlite/errors.ts";
 
 /** `record.json` could not be safely recognized as a usable Record root. */
 export class RecordBootstrapInvalid extends Schema.TaggedError<RecordBootstrapInvalid>(
@@ -85,6 +86,7 @@ export class RecordSealIncomplete extends Schema.TaggedError<RecordSealIncomplet
 export type RecordReaderOpenError =
   | RecordCoordinationError
   | RecordFileSystemError
+  | SqliteRecordError
   | RecordBootstrapInvalid
   | RecordMigrationRequired
   | RecordFormatUnsupported;
@@ -103,6 +105,7 @@ export type RecordMaintenanceError =
 
 export type RecordReaderReadError =
   | RecordFileSystemError
+  | SqliteRecordError
   | RecordReaderClosed
   | RecordHandleInvalid
   | FamilyDefinitionRequired;

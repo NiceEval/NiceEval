@@ -39,11 +39,11 @@ export function failureDetailFromResult(
   // evaluator-originated Fact cause has been considered.
   const fallbackError = terminal === "errored" && fact === undefined ? result.error : undefined;
   // 执行错误只给一层可行动摘要(docs/feature/experiments/cli.md「运行反馈」):message 取首行
-  // ——多行 message 的后续行(如 diagnose 的 output tail)归 `show @locator` 展开,不进
+  // ——多行 message 的后续行(如 diagnose 的 output tail)归固定 query result 或 View detail 展开,不进
   // scrollback;再过 summaryText 剥控制字节并按摘要上限收口,adapter 组装的文本里混进
   // ANSI 着色时不泄漏进终端事实行。
   // 超时的那条 reason 后面直接接归属:哪层时限、上限多少、值从哪来。一行里说清「谁把它掐的」,
-  // 不让人先去 `show --timing` 才知道自己撞的是哪条线(见 docs/feature/sandbox/architecture.md
+  // 不让人先读 `attempt.get` / `attempt.trace` 或 View detail 才知道自己撞的是哪条线(见 docs/feature/sandbox/architecture.md
   // 「时限归属」)。
   const timeout = fallbackError?.timeout;
   const attribution = timeout

@@ -853,7 +853,7 @@ export function discoverExperiments(
   );
 }
 
-/** eval id 的裸字面前缀过滤；exp / show / view 共用 shared helper。 */
+/** eval id 的裸字面前缀过滤；exp 与固定读取面共用 shared helper。 */
 export function makeFilter(patterns: string[]): (id: string) => boolean {
   return evalPrefixPredicate(patterns.length > 0 ? patterns : undefined);
 }

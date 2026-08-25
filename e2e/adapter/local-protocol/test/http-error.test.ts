@@ -6,6 +6,11 @@ import { expect, test } from "vitest";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
+import {
+  inspectionRecords,
+  runInspectionQuery,
+  type InspectionDocument,
+} from "./query.ts";
 
 const EXPECTED = [{
   experimentId: "http-error",
@@ -34,34 +39,22 @@ test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async (
         assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
 
         const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-        const shown = await niceeval.run([
-          "show", event.locator, "--execution", "--json",
-        ]);
-        expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        const entries = shown.json<{
-          data: {
-            execution: {
-              entries: readonly {
-                detail: {
-                  diagnostics: {
-                    collection: { state: string; limitations: readonly unknown[] };
-                    diagnostics: readonly {
-                      code: string;
-                      phase: string;
-                      summary: string;
-                    }[];
-                  };
-                };
-              }[];
-            };
-          };
-        }>().data.execution.entries;
-        expect(entries, shown.diagnostic()).toHaveLength(1);
-        expect(entries[0]!.detail.diagnostics.collection, shown.diagnostic()).toEqual({
+        const queried = await runInspectionQuery(niceeval, {
+          kind: "attempt.trace",
+          locator: event.locator,
+        });
+        expect(queried.exitCode, queried.diagnostic()).toBe(0);
+        const document = queried.json<InspectionDocument>();
+        expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.trace" });
+        const records = inspectionRecords(document.trace);
+        expect(records, queried.diagnostic()).toContainEqual(expect.objectContaining({
           state: "complete",
           limitations: [],
-        });
-        expect(entries[0]!.detail.diagnostics.diagnostics, shown.diagnostic()).toEqual([
+        }));
+        expect(
+          records.filter((record) => record.code === "agent-send-failed"),
+          queried.diagnostic(),
+        ).toEqual([
           expect.objectContaining({
             code: "agent-send-failed",
             phase: "eval.run",

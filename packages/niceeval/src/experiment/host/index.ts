@@ -20,7 +20,6 @@ import {
   listInvocationStatus,
   planInvocation,
   planRename,
-  resolveProjectCurrentTarget,
   runInvocation,
   showInvocationStatus,
 } from "./operations.ts";
@@ -282,7 +281,6 @@ export const experimentHost: ExperimentHostSDK = Object.freeze({
   catalog,
   check,
   invocation: Object.freeze({ plan: planInvocation, run: runInvocation }),
-  resolveProjectCurrentTarget,
   invocationStatus: Object.freeze({ list: listInvocationStatus, show: showInvocationStatus }),
   rename: Object.freeze({ plan: planRename, apply: applyRename }),
   teardown: Object.freeze({ inspect: inspectTeardown, run: runTeardown }),

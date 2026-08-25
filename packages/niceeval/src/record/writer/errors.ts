@@ -78,6 +78,12 @@ export interface RecordAppendCommandInvalid {
   readonly code: "record-append-command-invalid";
 }
 
+/** Attempt completion cannot invent a collection's domain completion state. */
+export interface RecordCollectionNotClosed {
+  readonly code: "record-collection-not-closed";
+  readonly family: string;
+}
+
 const writerClosed: RecordWriterClosed = Object.freeze({
   code: "record-writer-closed",
 });
@@ -124,6 +130,10 @@ export function recordCollectionDefinitionInvalid(): RecordCollectionDefinitionI
 
 export function recordAppendCommandInvalid(): RecordAppendCommandInvalid {
   return appendCommandInvalid;
+}
+
+export function recordCollectionNotClosed(family: string): RecordCollectionNotClosed {
+  return Object.freeze({ code: "record-collection-not-closed", family });
 }
 
 export function recordDraftStateError(input: {

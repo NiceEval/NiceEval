@@ -19,7 +19,7 @@ niceeval exp compare --record .niceeval/record --max-concurrency 2
 ```
 
 每条命令独立规划、建立 Run、写 Attempt 并返回 receipt。两个并发上限各自生效；每个已封口 Run 都进入同一
-Record，之后由 analysis selection（分析选择）决定 Sample 与 Report 的范围。
+Record，之后由固定 Inspection operation 决定读取范围。
 
 ## 同一 root 怎样协作
 
@@ -27,7 +27,7 @@ Record，之后由 analysis selection（分析选择）决定 Sample 与 Report 
 incomplete（未发布不完整），不会被读取、展示或沿用。
 
 每条 Invocation 用 weak scan（弱扫描）形成自己的计划。A 在 B 扫描期间封口的 Run 可以整体被 B 看到，
-也可以留给 B 的下一次运行；没有一次扫描承诺全局快照。`show`、`view` 与 `exp --dry` 也遵守这条规则。
+也可以留给 B 的下一次运行；没有一次扫描承诺全局快照。`query`、`view` 与 `exp --dry` 也遵守这条规则。
 
 是否让两个 Invocation 派发同一 logical slot，由 Coordination 的 execution deduplication（执行去重）和
 dispatch claim（派发占用）决定。它们使用 `.niceeval/` 的本地状态，不读取另一个 writer 的目录或 local build。

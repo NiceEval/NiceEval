@@ -256,7 +256,7 @@ When an Experiment serves only these heavy Sandboxes, it can also set `maxConcur
 After a creation failure, use the Attempt locator printed by the terminal rather than inspecting run artifacts directly:
 
 ```bash
-pnpm exec niceeval show @1ABC234DEF
+pnpm exec niceeval view @1ABC234DEF
 ```
 
 Common errors and their fixes:
@@ -266,7 +266,7 @@ Common errors and their fixes:
 | `DOCKER_HOST must be unset` or `DOCKER_CONTEXT must be unset` | Remove endpoint/context environment variables from the image so the default endpoint is `/var/run/docker.sock`. |
 | `dind-image-incompatible: missing ...` | Derive from a pinned `docker:<version>-dind` and add the tool named by the error. |
 | `permission denied` | Add the Agent user corresponding to `user` to the image's `docker` group at build time. |
-| Docker access compatibility timeout | Inspect the bounded `dockerd.log` tail provided by `niceeval show` for daemon startup, socket, and storage-driver problems. |
+| Docker access compatibility timeout | Inspect the bounded `dockerd.log` tail from an Attempt detail or fixed `query` operation for daemon startup, socket, and storage-driver problems. |
 | Orphan Sandbox reported before startup | Inspect it read-only with `niceeval sandbox list --orphans`, then explicitly run `niceeval sandbox prune`. |
 
 ## Verify a Docker task in an eval

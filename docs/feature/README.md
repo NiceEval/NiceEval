@@ -4,9 +4,9 @@
 一个功能一个子目录，子目录按需拆成功能说明、Library 用法、CLI 反馈和架构。
 正文写产品最终满足的契约，不描述实现过程；代码不满足时属于实现缺口。
 
-跨 Record、Analysis 与 Report 的数据边界由
-[Record → Analysis → Report](record-report/README.md) 统一说明。Analysis 只交付闭合结果给
-Report；它们不是并列的 Feature 扩展槽。
+跨 Record、Inspection 与 Delivery 的数据边界由
+[Record → Inspection → Delivery](record-report/README.md) 统一说明。Inspection 关闭读取语义，再由固定
+query 或 View 交付；它不是作者可扩展的中间层。
 
 已经定稿但尚未被产品采用为当前契约的方向放 [`../roadmap/`](../roadmap/)。
 Feature 身份不声明同一时刻的源码状态；它表示后续实现与评审只能以这里的唯一目标为准。

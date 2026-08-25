@@ -54,7 +54,7 @@ candidate 数组先按规范化 Eval ID 的 Unicode code point 升序排列。
 
 Run 的 SampleManifest 强引用这份 manifest。
 `SampleManifest.candidateEvalIds` 必须等于 `candidateEvalIds`，而execution entries 的 Eval ID 必须来自 `selectedEvalIds`。
-Report 读取已保存的选择与 coverage，不重新执行抽样算法。
+query 与 View 读取已保存的选择与 coverage，不重新执行抽样算法。
 
 ## Completion 与 coverage
 

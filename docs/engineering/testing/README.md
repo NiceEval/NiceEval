@@ -20,7 +20,7 @@ Bug 修复统一从公开入口的 E2E 红灯开始；只有无法固定的外�
 
 真实场景 Repo 是表现和运行手段，不是新的测试语义。它就是一个普通用户项目，含自己的
 `package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务和测试。
-测试仍然要明确执行 `pnpm exec niceeval exp/show/view` 并断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
+测试仍然要明确执行 `pnpm exec niceeval exp`，再以 `query discover / explain / run` 或 `view` 断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
 
 功能测试与 Adapter 测试使用两组不同 Repo。CLI、Runner、Report、Package 与 Lifecycle 使用自己的确定性消费项目；
 `adapter/` 是协议 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与确定性 UI Message Stream fixture 都是独立叶子 Repo，
@@ -73,7 +73,7 @@ Bug 修复先从安装后的候选包和公开生产入口建立 E2E 红灯，�
 | 选择、聚合、归一、schema | 对应用户结果的 Journey 或单边界 E2E | 具名错误算法的最小等价类 |
 | 安装、exports、外部 cwd、CJS / ESM | Package 场景 Repo | 无 |
 | argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | 无法由真实 PTY 稳定制造的纯布局算法 |
-| show、view、HTTP、浏览器与视觉结果 | Report 场景 Repo | 无法由浏览器稳定穷举的纯组合算法 |
+| query、view、HTTP、浏览器与视觉结果 | Report 场景 Repo | 无法由浏览器稳定穷举的纯组合算法 |
 | 并发、取消、signal 与 orphan | Lifecycle E2E 拥有资源终态 | barrier / fake clock 拥有可控竞态次序 |
 | Adapter 产品语义 | 确定性 UI Message Stream E2E | NiceEval 自有词表上的纯归一或错误分类 |
 | 真实 Provider | live Adapter 兼容性检查 | 不接管确定性产品语义 |

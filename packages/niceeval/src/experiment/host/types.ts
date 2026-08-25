@@ -1,7 +1,6 @@
 import { Data, type Effect } from "effect";
 
 import type { Config } from "../../types.ts";
-import type { AnalysisCurrentSlotIdentity, AnalysisSelectionRequest } from "../../analysis/contracts.ts";
 import type { FeedbackCoordinator } from "../../runner/feedback/coordinator.ts";
 import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
@@ -30,7 +29,6 @@ export type ExperimentHostOperation =
   | "rename-plan"
   | "rename-apply"
   | "accept"
-  | "resolve-project-current"
   | "invocation-status-list"
   | "invocation-status-show"
   | "teardown-inspect"
@@ -226,26 +224,6 @@ export interface ExperimentHostInvocationRunRequest {
   readonly feedback?: ExperimentHostInvocationFeedback;
   /** Optional required JUnit reporter target, owned and invoked inside Host. */
   readonly junitPath?: string;
-}
-
-/**
- * Closed project-current selection issued by the Experiment Host.  It carries
- * identities, never a Runner, reader, or project discovery capability.
- */
-export interface ExperimentHostProjectCurrentTarget {
-  readonly selection: AnalysisSelectionRequest;
-  readonly currentSlots: readonly AnalysisCurrentSlotIdentity[];
-  /** Source files whose changes require a fresh project-current calculation. */
-  readonly watchInputs: readonly string[];
-}
-
-export interface ExperimentHostProjectCurrentRequest {
-  readonly cwd: string;
-  readonly config: Config;
-  /** Exact Experiment selectors supplied by a Report-facing caller. */
-  readonly experimentSelectors?: readonly string[];
-  /** Rebuild trusted definition modules before resolving the target. */
-  readonly freshImport?: boolean;
 }
 
 /**
@@ -496,9 +474,6 @@ export interface ExperimentHostHighLevelSDK {
       input: ExperimentHostInvocationRunRequest,
     ) => Effect.Effect<ExperimentHostInvocationResult, ExperimentHostError, ExperimentHostRequirements>;
   };
-  readonly resolveProjectCurrentTarget: (
-    input: ExperimentHostProjectCurrentRequest,
-  ) => Effect.Effect<ExperimentHostProjectCurrentTarget, ExperimentHostError, ExperimentHostRequirements>;
   readonly invocationStatus: {
     readonly list: (
       input: ExperimentHostInvocationStatusListRequest,

@@ -31,8 +31,8 @@ import {
   renderPanel,
   type PanelMode,
   type PanelRow,
-} from "../../report/model/panel.ts";
-import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth, wrapDisplay } from "../../report/model/text-layout.ts";
+} from "../../terminal/panel.ts";
+import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth, wrapDisplay } from "../../terminal/text-layout.ts";
 import type {
   CommandPlan,
   CommandPlanLane,
@@ -648,7 +648,7 @@ function buildSummaryLines(
   }
 
   // 留存授予块(--keep-sandbox,见 docs/feature/sandbox/cli.md「run 收尾输出」):
-  // 每条给 locator(接 niceeval show)、provider 与实例 id、进入现场的命令,下边框嵌批量清理。
+  // 每条给 locator(接 niceeval view)、provider 与实例 id、进入现场的命令,下边框嵌批量清理。
   if (state.kept.length > 0) {
     const keptRows: PanelRow[] = [];
     for (const k of state.kept) {
@@ -797,7 +797,7 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
   } else {
     rows.push(...labelledWrappedRows("error", boundedHumanError(failure.reason), contentWidth));
   }
-  rows.push(...labelledWrappedRows("details", `niceeval show ${failure.locator}`, contentWidth));
+  rows.push(...labelledWrappedRows("details", `niceeval view ${failure.locator}`, contentWidth));
   return rows;
 }
 
@@ -852,11 +852,11 @@ function buildReceiptLines(
   for (const [experimentId, runId] of state.runIdsByExperiment) {
     if (!published.has(runId)) continue;
     rows.push({ kind: "line", text: experimentId });
-    rows.push(...labelledWrappedRows("details", `niceeval show --run ${runId}`, panelContentWidth(panel.width, panel.mode)));
+    rows.push(...labelledWrappedRows("details", `niceeval view --run ${runId}`, panelContentWidth(panel.width, panel.mode)));
     emitted.add(runId);
   }
   for (const runId of event.receipt.runIds) {
-    if (!emitted.has(runId)) rows.push({ kind: "line", text: `details: niceeval show --run ${runId}` });
+    if (!emitted.has(runId)) rows.push({ kind: "line", text: `details: niceeval view --run ${runId}` });
   }
   if (rows.length === 0) {
     rows.push({ kind: "line", text: "No published Record Runs are available for this invocation." });
@@ -1937,7 +1937,7 @@ function renderPreviousResultDeltaGroups(input: HumanDryPlanInput): string[] {
       if (comparison !== undefined) out.push(...renderFingerprintComparisonDetails(comparison, "  "));
       const evidence = prior.evidenceState === "dangling" ? "evidence unavailable" : "evidence available";
       out.push(`  prior:  ${prior.locator} (${prior.verdict} · ${evidence})`);
-      if (prior.evidenceState !== "dangling") out.push(`  review: niceeval show ${prior.locator}`);
+      if (prior.evidenceState !== "dangling") out.push(`  review: niceeval view ${prior.locator}`);
       out.push(prior.acceptance === "available"
         ? `  accept: niceeval accept ${prior.locator}`
         : "  accept: unavailable (legacy locator; rerun to create an acceptable result)");

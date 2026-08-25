@@ -11,6 +11,7 @@ import {
 } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { siblingCompleteMarker } from "../experiments/interrupts/complete.ts";
+import { inspectAttempt, inspectRuns, type InspectionDocument } from "./inspection.ts";
 
 interface BackendInfo { pid: number; port: number }
 interface ProcessReceipt { diagnostic(): string }
@@ -21,6 +22,14 @@ interface ExpEvent {
   evalId?: string;
   verdict?: string;
   locator?: string;
+}
+interface AttemptDocument extends InspectionDocument {
+  readonly operation: "attempt.get";
+  readonly attempt: { readonly locator: string; readonly core: { readonly outcome: string } };
+}
+interface RunsDocument extends Omit<InspectionDocument, "operation"> {
+  readonly operation: "runs.list";
+  readonly runs: readonly { readonly runId: string }[];
 }
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([binary]);
@@ -202,17 +211,21 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
           ),
         ).toMatchObject({ status: "done" });
 
-        const completedAttempt = await niceeval.run([
-          "show",
-          completedBeforeInterrupt.locator!,
-          "--json",
-        ], { cwd: root });
-        expect(completedAttempt.exitCode, completedAttempt.diagnostic()).toBe(0);
-        expect(completedAttempt.json<{ data: { kind: string } }>().data.kind).toBe("attempt");
+        const completedAttempt = await inspectAttempt<AttemptDocument>(
+          niceeval, root, completedBeforeInterrupt.locator!, "attempt.get", { cwd: root },
+        );
+        expect(completedAttempt.receipt.exitCode, completedAttempt.receipt.diagnostic()).toBe(0);
+        expect(completedAttempt.document).toMatchObject({
+          protocol: "niceeval.query/v1",
+          operation: "attempt.get",
+          attempt: { locator: completedBeforeInterrupt.locator, core: { outcome: "completed" } },
+        });
 
-        const visibleInventory = await niceeval.run(["show", "--json"], { cwd: root });
-        expect(visibleInventory.exitCode, visibleInventory.diagnostic()).toBe(0);
-        expect(visibleInventory.stdout).toContain(completedBeforeInterrupt.locator!);
+        const visibleInventory = await inspectRuns<RunsDocument>(niceeval, root, { cwd: root });
+        expect(visibleInventory.receipt.exitCode, visibleInventory.receipt.diagnostic()).toBe(0);
+        expect(visibleInventory.document.runs.map((run) => run.runId)).toEqual(
+          expect.arrayContaining(interruptedReceipt.runIds),
+        );
 
         return {
           invocationPid,

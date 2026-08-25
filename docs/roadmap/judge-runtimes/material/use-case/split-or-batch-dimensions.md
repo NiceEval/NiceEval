@@ -6,7 +6,7 @@
 const shown = turn.material.actionResults(
   actionResultSelector.command({
     logicalExecutable: "niceeval",
-    argsStart: ["show"],
+    argsStart: ["query"],
     exactly: 1,
   }),
 );

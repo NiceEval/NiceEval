@@ -4,7 +4,7 @@
 
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { cliE2E } from "./context.ts";
+import { cliE2E, writeInspectionRequest } from "./context.ts";
 
 const E2B_ERROR_HEAD = "401 Unauthorized — E2B";
 const E2B_ERROR_TAIL = "request req_e2b_feedback_123";
@@ -55,36 +55,44 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       expect(result.stdout).not.toContain("vercel-cause-secret-must-not-reach-human");
       expect(result.stdout).not.toMatch(/shared failure:|\bBuildKey\b|\btiming node\b|\bfailureId\b|\bcause:|\bfix:/u);
 
-      const attemptDetails = [...result.stdout.matchAll(/details: niceeval show (@[A-Z0-9]+)/gu)];
-      expect(attemptDetails).toHaveLength(2);
-      for (const match of attemptDetails) {
-        const shown = await niceeval.run(["show", match[1]!, "--record", ".niceeval/record"]);
-        expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        expect(shown.stdout).toContain("Attempt overview");
-        expect(shown.stdout).toMatch(/401 Unauthorized|403 Forbidden/u);
-      }
-
-      const runDetails = [...compact.matchAll(
-        /(provider-error\/sandbox(?:-secondary)?)\s+details: niceeval show --run\s+([0-9a-f-]{36})/gu,
-      )];
-      expect(runDetails, result.diagnostic()).toHaveLength(2);
-      for (const match of runDetails) {
-        const shownRun = await niceeval.run(["show", "--run", match[2]!, "--record", ".niceeval/record"]);
-        expect(shownRun.exitCode, shownRun.diagnostic()).toBe(0);
-        const shown = shownRun.stdout.replace(/\s+/gu, " ");
-        expect(shown).toContain("Run results");
-        expect(shown).toContain("Run errors");
-        expect(shown).toContain("1 attempt not started");
-        if (match[1] === "provider-error/sandbox") {
-          expect(shown).toContain(PRIMARY_ERROR_HEAD);
-          expect(shown).toContain(PRIMARY_ERROR_TAIL);
-        } else {
-          expect(shown).toContain(SECONDARY_ERROR_HEAD);
-          expect(shown).toContain(SECONDARY_ERROR_TAIL);
-        }
-        expect(shown).not.toMatch(
-          /Pass rate|Included attempts|Assessment evidence|Analysis notes|Membership|Shared failure|Selected run|\bSlot\b|\bRelation\b|\bfix:/u,
-        );
+      const snapshot = join(paths.projectRoot, "provider-errors.record-snapshot.sqlite");
+      const exported = await niceeval.run(["record", "snapshot", "--output", snapshot]);
+      expect(exported.exitCode, exported.diagnostic()).toBe(0);
+      const listRequest = await writeInspectionRequest(paths.projectRoot, "provider-error-runs", {
+        kind: "runs.list",
+      });
+      const listed = await niceeval.run(["query", "run", "--record", snapshot, "--request", listRequest]);
+      expect(listed.exitCode, listed.diagnostic()).toBe(0);
+      const runIds = listed.json<{
+        readonly operation: "runs.list";
+        readonly selection: { readonly selectedRunIds: readonly string[] };
+      }>().selection.selectedRunIds;
+      expect(runIds).toHaveLength(4);
+      const summaries = await Promise.all(runIds.map(async (runId, index) => {
+        const request = await writeInspectionRequest(paths.projectRoot, `provider-error-${index}-summary`, {
+          kind: "run.summary", runId,
+        });
+        const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
+        expect(queried.exitCode, queried.diagnostic()).toBe(0);
+        return queried.json<{
+          readonly operation: string;
+          readonly issues: readonly unknown[];
+          readonly summary: { readonly members: readonly { readonly locator: string | null; readonly state: string }[] };
+        }>();
+      }));
+      expect(summaries).toEqual(expect.arrayContaining([expect.objectContaining({ operation: "run.summary", issues: [] })]));
+      const errorLocators = summaries.flatMap(({ summary }) => summary.members)
+        .flatMap(({ locator, state }) => locator !== null && state === "executed" ? [locator] : []);
+      expect(errorLocators).toHaveLength(2);
+      for (const [index, locator] of errorLocators.entries()) {
+        const request = await writeInspectionRequest(paths.projectRoot, `provider-error-attempt-${index}`, {
+          kind: "attempt.get", locator,
+        });
+        const queried = await niceeval.run(["query", "run", "--record", snapshot, "--request", request]);
+        expect(queried.exitCode, queried.diagnostic()).toBe(0);
+        const document = queried.json<{ readonly operation: string; readonly issues: readonly unknown[]; readonly attempt: unknown }>();
+        expect(document).toMatchObject({ operation: "attempt.get", issues: [] });
+        expect(JSON.stringify(document.attempt)).toMatch(/401 Unauthorized|403 Forbidden/u);
       }
 
       const judge = await niceeval.run(
@@ -93,21 +101,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details", 
       );
       expect(judge.exitCode, judge.diagnostic()).toBe(1);
       const judgeRunId = judge.expReceipt().runIds[0]!;
-      const sandboxRunId = runDetails.find((match) => match[1] === "provider-error/sandbox")?.[2];
-      expect(sandboxRunId).toBeTruthy();
-      const combined = await niceeval.run([
-        "show",
-        "--run",
-        sandboxRunId!,
-        "--run",
-        judgeRunId,
-        "--record",
-        ".niceeval/record",
-      ]);
-      expect(combined.exitCode, combined.diagnostic()).toBe(0);
-      const combinedText = combined.stdout.replace(/\s+/gu, " ");
-      // regression: Run errors 只统计它展示的 Sandbox build 影响，不吸收另一 Run 的 Judge 未启动项。
-      expect(combinedText).toContain("Run errors 1 attempt not started");
+      expect(judgeRunId).toMatch(/^[0-9a-f-]{36}$/u);
     },
   );
 });

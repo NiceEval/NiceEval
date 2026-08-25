@@ -1068,7 +1068,7 @@ export function commitExplicitAdoptionRunPlans(
         "adoption-target-invalid",
         "Adoption target Experiment",
       );
-      const writer = yield* recordHost.current.createReferenceRun({
+      const writer = yield* recordHost.createReferenceRun({
         root,
         experimentId,
         context: plan.target.context,
@@ -1137,7 +1137,7 @@ export function withAdoptionReader<A, E, R>(input: {
 }) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const reader = yield* recordHost.current.openRead({ root: input.root });
+      const reader = yield* recordHost.openRead({ root: input.root });
       return yield* input.use(reader);
     }),
   );

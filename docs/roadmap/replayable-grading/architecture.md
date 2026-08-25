@@ -68,4 +68,4 @@ GradingRun 是对一个 Experiment Run 的 `SampleManifest` 执行或复用全�
 
 ## 读取
 
-`show`、`view`、JSON 与 export 从所选 GradingRun 的 sealed Claims 离线投影，不重新运行 evaluator。读面分别显示声明、已定位 source、已交付材料与调查项；未启动 evaluator 时不伪造 presentation。
+`query` 与 `view` 从所选 GradingRun 的 sealed Claims 离线投影，不重新运行 evaluator。机器与人用读取面分别显示声明、已定位 source、已交付材料与调查项；未启动 evaluator 时不伪造 presentation。

@@ -206,12 +206,12 @@ export default defineSandboxAgent({
 ```text
 ✗ @5TB8167MXJ30SYZCNAVRHPQ4D2 fixtures/button [local] errored · agent setup
     agent-install-failed: npm install my-agent exited with code 1
-    Inspect: niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2
+    Inspect: niceeval view @5TB8167MXJ30SYZCNAVRHPQ4D2
 ```
 
-运行 `niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2` 可查看结构化错误、diagnostics 和已完成的生命周期阶段。该页面读取 timing 通道，包含排队、Sandbox 启动、setup/teardown hook 里的 shell、Agent CLI 安装与启动命令、每轮 send、可关联的 OTel model/tool 与收尾。它可直接看出错误或超时发生在哪一层，以及之前的时间花在哪里。
+运行 `niceeval view @5TB8167MXJ30SYZCNAVRHPQ4D2` 可查看结构化错误、diagnostics 和已完成的生命周期阶段。需要机器读取时，从 `query discover` 的固定 operation 选择 trace。它可直接看出错误或超时发生在哪一层。
 
-树超过 80 个细节节点时会保留失败、慢点和首尾样本，并提示省略数量。需要逐节点审计时，从同一 Sample 的页面索引选择完整 timing route；execution route 以事件为骨架查看 agent 做了什么，有 OTel 时只把时间贴到能唯一关联的事件旁。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
+树超过 80 个细节节点时会保留失败、慢点和首尾样本，并提示省略数量。需要逐节点审计时，使用 trace operation 的完整结果。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
 
 ## `ctx.model` 与 `ctx.flags`
 

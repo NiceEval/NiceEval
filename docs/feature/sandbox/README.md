@@ -48,8 +48,7 @@ conversation、usage、commands、timing 与 diagnostics 只在 reader side 从�
 由 Turn Contexts、Runner Activities 与 origin Run Sources 形成 relation，不是 durable family。Adapter 不向
 Record 交付 raw tape、frame、provider payload 或 secret。
 
-持久事实不由 Sandbox API 直接读取。Analysis 以 `query()` 闭合发布的 `DomainView`，例如命令历史使用
-`sandboxHistoryView`，文件变化使用 `fileChangesView`。这使 Sandbox 的运行能力与 Record 的读取能力保持分界。
+持久事实不由 Sandbox API 直接读取。固定 Inspection operation 闭合命令历史、文件变化与其它已发布事实。这使 Sandbox 的运行能力与 Record 的读取能力保持分界。
 
 ## provider 统一接口
 

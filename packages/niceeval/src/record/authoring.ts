@@ -146,7 +146,7 @@ export type RunRecordDefinition<
   ValueSchema extends AnySchema,
 > = RecordDefinition<"run", Family, ValueSchema>;
 
-type AttemptRecordCollectionLimitation =
+export type AttemptRecordCollectionLimitation =
   | {
       readonly code: "capture-interrupted";
       readonly stage: "attempt-finalizer";
@@ -367,6 +367,16 @@ export function defineAttemptRecordCollection<
   }));
   return definition;
 }
+
+/**
+ * The public authoring namespace. Definitions remain storage-neutral nominal
+ * capabilities; the SQLite Host is selected only when a scoped session opens.
+ */
+export const Record = Object.freeze({
+  attempt: defineAttemptRecord,
+  run: defineRunRecord,
+  attemptCollection: defineAttemptRecordCollection,
+});
 
 /** Explicitly adapts the low-level Attachment persistence SPI to Host composition. */
 export function recordContributionFromAttachmentPersistence<

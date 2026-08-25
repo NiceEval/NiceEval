@@ -94,5 +94,5 @@ private fetch lock 的范围仅限于同一物理 Sandbox 的同一 repo + commi
 | niceeval check | 完整 commit、repo locator 与 into 的静态拒绝语义 |
 | niceeval debug | 去凭据 plan；不执行 runtime callback 或创建 Sandbox，但 Provider planner 可做只读查询 |
 | niceeval exp | 精确 HEAD、祖先闭包、干净重复执行、并发锁与 cache 不可达 |
-| niceeval show | receipt 可审计，credential、private path 与未交付对象不泄露 |
+| niceeval query / view | receipt 可审计，credential、private path 与未交付对象不泄露 |
 | 真实 Git fixture | submodule、LFS pointer、认证失败、脏目标、symlink target 与 alternate 全部被拒绝 |

@@ -86,4 +86,4 @@ referencesAnyPath 从 niceeval/expect 与全部作者面删除。jsonMentionsAny
 | niceeval check | collection 预声明、selector 非空、rename 的 from/to/both 封闭分支、Agent 类型与 required Provider capability 在资源创建前有效 |
 | niceeval exp --dry --json | collection 模式与 required Provider capability 可审计，但没有伪造访问结果 |
 | niceeval exp | required 不完整、best-effort 三值、symlink escape、八种动作、并发 Attempt 与复用 Sandbox 隔离 |
-| niceeval show | sealed operation、limitation、unavailable reason 与执行错误可读，且不重新采集 |
+| niceeval query / view | sealed operation、limitation、unavailable reason 与执行错误可读，且不重新采集 |

@@ -1,15 +1,18 @@
+import { existsSync } from "node:fs";
+import type { SQLOutputValue } from "node:sqlite";
 import { Effect, Either, Schema } from "effect";
 import { RecordCoordination } from "../../coordination/record-leases.ts";
 import { RunIdSchema } from "../codec/identifiers.ts";
-import {
-  compareCanonicalIdentity,
-  type RunId,
-} from "../model/identifiers.ts";
+import { compareCanonicalIdentity, type RunId } from "../model/identifiers.ts";
 import type { RecordIncompleteRunWarning } from "../model/read-state.ts";
-import { recordPortablePath } from "../platform/services.ts";
+import { recordRootPaths } from "../platform/root.ts";
 import {
-  RecordFileSystem,
-} from "../platform/services.ts";
+  closeRecordDatabase,
+  openRecordMaintenance,
+  recordSqlitePath,
+  validateExactSchema,
+} from "../sqlite/database.ts";
+import { SqliteRecordError } from "../sqlite/errors.ts";
 import {
   RECORD_MAINTENANCE_MAXIMUM_RUNS,
   type CleanIncompleteRuns,
@@ -20,122 +23,97 @@ import {
 } from "./types.ts";
 
 function canonicalRunIds(runIds: readonly RunId[]): readonly RunId[] {
-  return Object.freeze(
-    [...new Set(runIds)].sort(compareCanonicalIdentity),
-  );
+  return Object.freeze([...new Set(runIds)].sort(compareCanonicalIdentity));
 }
 
 function incompleteRun(runId: RunId): RecordIncompleteRun {
   return Object.freeze({ runId });
 }
 
-function incompleteRunWarning(
-  runId: RunId,
-): RecordIncompleteRunWarning {
-  return Object.freeze({
-    code: "incomplete-run",
-    runId,
-    cleanupCommand: "niceeval clean",
-  });
+function sqliteFailure(operation: string, cause: unknown): SqliteRecordError {
+  return cause instanceof SqliteRecordError
+    ? cause
+    : new SqliteRecordError("record-sqlite-error", operation, "Record maintenance failed", { cause });
 }
 
-/**
- * Translate bounded discovery output into the exact warning model shared with
- * readers. The canonical ordering also makes this safe for a CLI that merges
- * results from multiple maintenance calls.
- */
-export function incompleteRunWarnings(
-  incompleteRuns: readonly RecordIncompleteRun[],
-): readonly RecordIncompleteRunWarning[] {
-  return Object.freeze(
-    canonicalRunIds(incompleteRuns.map((entry) => entry.runId)).map(
-      incompleteRunWarning,
-    ),
-  );
+function databasePath(root: Parameters<InspectIncompleteRuns>[0]["root"]): string {
+  const paths = recordRootPaths(root);
+  if (paths === undefined) throw new SqliteRecordError("record-database-invalid", "locate", "Record root is invalid");
+  return recordSqlitePath(paths.portableRoot);
 }
 
-/**
- * Discover incomplete Runs under the exclusive maintenance lease. This keeps
- * the scan truthful for a following clean/migrate decision and never shares a
- * lease with portable mutation.
- */
-export const inspectIncompleteRuns: InspectIncompleteRuns = ({ root }) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const fileSystem = yield* RecordFileSystem;
-      const coordination = yield* RecordCoordination;
-      yield* coordination.enterRecordMaintenance(root);
-
-      const entries = yield* fileSystem.listDirectory({
-        directory: recordPortablePath(root, "runs"),
-        maximumEntries: RECORD_MAINTENANCE_MAXIMUM_RUNS,
-      });
-      const incomplete: RecordIncompleteRun[] = [];
-
-      for (const entry of entries) {
-        if (entry.kind !== "directory") {
-          continue;
-        }
-
-        const decoded = Schema.decodeUnknownEither(RunIdSchema)(entry.name);
-        if (Either.isLeft(decoded)) {
-          continue;
-        }
-
-        if (!(yield* fileSystem.isCompleteMarker({ root, runId: decoded.right }))) {
-          incomplete.push(incompleteRun(decoded.right));
-        }
-      }
-
-      return Object.freeze(
-        canonicalRunIds(incomplete.map((entry) => entry.runId)).map(
-          incompleteRun,
-        ),
-      );
-    }),
-  );
-
-/** A convenience composition for reader and CLI layers that need warnings. */
-export const inspectIncompleteRunWarnings: InspectIncompleteRunWarnings = (
-  input,
-) => Effect.map(inspectIncompleteRuns(input), incompleteRunWarnings);
-
-function cleanReceipt(input: {
-  readonly deleted: readonly RunId[];
-  readonly skipped: readonly RunId[];
-}): RecordCleanReceipt {
-  return Object.freeze({
-    deleted: Object.freeze([...input.deleted]),
-    skipped: Object.freeze([...input.skipped]),
-  });
+function readIncomplete(path: string): readonly RecordIncompleteRun[] {
+  if (!existsSync(path)) return Object.freeze([]);
+  const connection = openRecordMaintenance(path);
+  try {
+    validateExactSchema(connection, "operational");
+    const rows = connection.db.prepare(
+      "SELECT run_id FROM runs WHERE status <> 'sealed' ORDER BY run_id LIMIT ?",
+    ).all(RECORD_MAINTENANCE_MAXIMUM_RUNS + 1) as unknown as readonly Record<string, SQLOutputValue>[];
+    if (rows.length > RECORD_MAINTENANCE_MAXIMUM_RUNS) {
+      throw new SqliteRecordError("record-resource-limit-exceeded", "inspect-incomplete", "incomplete Run discovery exceeded its bounded limit");
+    }
+    const result: RecordIncompleteRun[] = [];
+    for (const row of rows) {
+      const decoded = Schema.decodeUnknownEither(RunIdSchema)(row.run_id);
+      if (Either.isLeft(decoded)) throw new SqliteRecordError("record-database-invalid", "inspect-incomplete", "runs.run_id is invalid");
+      result.push(incompleteRun(decoded.right));
+    }
+    return Object.freeze(result);
+  } finally {
+    closeRecordDatabase(connection);
+  }
 }
 
-/**
- * Explicitly remove selected unpublished Run directories. The platform owns
- * the final `complete` recheck; one uninterruptible deletion keeps that check,
- * removal, and its directory sync within the maintenance-lease lifetime while an
- * interruption still propagates after the current deletion boundary.
- */
-export const cleanIncompleteRuns: CleanIncompleteRuns = ({ root, runIds }) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const fileSystem = yield* RecordFileSystem;
-      const coordination = yield* RecordCoordination;
-      yield* coordination.enterRecordMaintenance(root);
-
-      const deleted: RunId[] = [];
-      const skipped: RunId[] = [];
+function cleanRows(path: string, runIds: readonly RunId[]): RecordCleanReceipt {
+  if (!existsSync(path)) return Object.freeze({ deleted: Object.freeze([]), skipped: Object.freeze([...runIds]) });
+  const connection = openRecordMaintenance(path);
+  try {
+    validateExactSchema(connection, "operational");
+    const statement = connection.db.prepare("DELETE FROM runs WHERE run_id = ? AND status <> 'sealed'");
+    const reopenSealing = connection.db.prepare(`UPDATE runs SET status='open',candidate_seal_identity=NULL,
+      candidate_seal_entry_count=NULL WHERE run_id=? AND status='sealing'`);
+    const deleted: RunId[] = [];
+    const skipped: RunId[] = [];
+    connection.db.exec("BEGIN IMMEDIATE");
+    try {
       for (const runId of canonicalRunIds(runIds)) {
-        const outcome = yield* Effect.uninterruptible(
-          fileSystem.deleteIncompleteRun({ root, runId }),
-        );
-        if (outcome.state === "deleted") {
-          deleted.push(runId);
-        } else {
-          skipped.push(runId);
-        }
+        reopenSealing.run(runId);
+        const receipt = statement.run(runId);
+        if (receipt.changes === 1n) deleted.push(runId); else skipped.push(runId);
       }
+      connection.db.exec("COMMIT");
+    } catch (cause) {
+      connection.db.exec("ROLLBACK");
+      throw cause;
+    }
+    return Object.freeze({ deleted: Object.freeze(deleted), skipped: Object.freeze(skipped) });
+  } finally {
+    closeRecordDatabase(connection);
+  }
+}
 
-      return cleanReceipt({ deleted, skipped });
-    }),
-  );
+function incompleteRunWarning(runId: RunId): RecordIncompleteRunWarning {
+  return Object.freeze({ code: "incomplete-run", runId, cleanupCommand: "niceeval clean" });
+}
+
+export function incompleteRunWarnings(incompleteRuns: readonly RecordIncompleteRun[]): readonly RecordIncompleteRunWarning[] {
+  return Object.freeze(canonicalRunIds(incompleteRuns.map(({ runId }) => runId)).map(incompleteRunWarning));
+}
+
+export const inspectIncompleteRuns: InspectIncompleteRuns = ({ root }) =>
+  Effect.scoped(Effect.gen(function* () {
+    const coordination = yield* RecordCoordination;
+    yield* coordination.enterRecordMaintenance(root);
+    return yield* Effect.try({ try: () => readIncomplete(databasePath(root)), catch: (cause) => sqliteFailure("inspect-incomplete", cause) });
+  }));
+
+export const inspectIncompleteRunWarnings: InspectIncompleteRunWarnings = (input) =>
+  Effect.map(inspectIncompleteRuns(input), incompleteRunWarnings);
+
+export const cleanIncompleteRuns: CleanIncompleteRuns = ({ root, runIds }) =>
+  Effect.scoped(Effect.gen(function* () {
+    const coordination = yield* RecordCoordination;
+    yield* coordination.enterRecordMaintenance(root);
+    return yield* Effect.uninterruptible(Effect.try({ try: () => cleanRows(databasePath(root), runIds), catch: (cause) => sqliteFailure("clean-incomplete", cause) }));
+  }));

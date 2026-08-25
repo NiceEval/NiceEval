@@ -47,18 +47,15 @@ JUnit 和外部平台文件不拥有 Record。Verdict、Usage、断言和诊断�
 
 ## 用 receipt 关联后续步骤
 
-成功建立 Invocation 后，NDJSON 的最后一行包含 receipt。后续脚本可以读取它的 `runIds`，用明确 Run 选择查看或导出报告：
+成功建立 Invocation 后，NDJSON 的最后一行包含 receipt。后续脚本可以读取它的 `runIds`，用明确 Run 审阅或构造 query request：
 
 ```sh
-pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
-  --out ./report-site \
-  --no-open
+pnpm exec niceeval query discover
+pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
 ```
 
 如果命令在建立 Invocation 前就因输入错误退出，不会有 receipt。此时直接修复命令、Experiment 或选择条件；不要猜测 Run ID。
 
 ## 让反馈保持可读
 
-CI 日志适合阅读当前进程的 progress 和 diagnostic。需要检查业务结果时，用 receipt 的 `runIds` 运行 `show` 或 `view`；需要长期分享时，用 `view --out` 生成静态报告站。
-
-更多静态站点步骤见[发布静态报告](/zh/tutorials/publish-report)。
+CI 日志适合阅读当前进程的 progress 和 diagnostic。需要检查业务结果时，AI、脚本或 CI 先运行 `query discover`，人用 receipt 的 `runIds` 运行 `view`。

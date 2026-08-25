@@ -182,7 +182,7 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，�
 只有有限且确定的命令语法错误才附 `usage:`，有对应公开说明时可以附 `docs:`。CLI 不猜测 Provider、凭据、
 网络或宿主运行条件的修复办法。
 
-所有命令组和默认 Report 的 Human 输出遵守 [CLI Human 输出设计](feature/experiments/CLI-DESIGN.md)。机器 code、
+所有命令组的 Human 输出遵守 [CLI Human 输出设计](feature/experiments/CLI-DESIGN.md)。机器 code、
 内部身份和状态机字段只进入 JSON、Record 或明确的开发者诊断面，不能直接成为默认终端文案。
 
 ## 退出码

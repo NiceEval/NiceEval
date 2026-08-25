@@ -5,6 +5,7 @@ import {
   acquireCaseLockEffect,
 } from "../../runner/lock.ts";
 import { RecordCoordination } from "../record-leases.ts";
+import type { RecordCoordinationWaitRequest } from "../record-leases.ts";
 import type {
   ClaimExecutionRequest,
   CoordinationHostSDK,
@@ -57,5 +58,13 @@ export const coordinationHost: CoordinationHostSDK = Object.freeze({
   enterRecordMaintenance: (root: RecordRoot) =>
     Effect.flatMap(RecordCoordination, (coordination) =>
       coordination.enterRecordMaintenance(root),
+    ),
+  enterRecordWriteBatch: (request: RecordCoordinationWaitRequest) =>
+    Effect.flatMap(RecordCoordination, (coordination) =>
+      coordination.enterRecordWriteBatch(request),
+    ),
+  enterRecordSnapshotBarrier: (request: RecordCoordinationWaitRequest) =>
+    Effect.flatMap(RecordCoordination, (coordination) =>
+      coordination.enterRecordSnapshotBarrier(request),
     ),
 });

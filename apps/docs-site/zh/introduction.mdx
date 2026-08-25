@@ -9,7 +9,7 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 
 [NiceEval](https://niceeval.com/) 是一个 Agent 评估工具，帮助团队衡量、评估并改进生产环境中的 AI。借助 NiceEval，团队可以比较模型、迭代 Agent、发现回归问题，并利用真实用户数据持续改进 AI 应用。
 
-NiceEval 以本地优先为核心：你的评估在你自己的环境中运行。当团队需要分享评估结果、做回归跟踪时，可以通过 Report 上报到 BrainTrust 等平台，或者自定义报告导出。
+NiceEval 以本地优先为核心：你的评估在你自己的环境中运行。团队可用固定的 `query` 交给自动化流程，并用本地 `view` 审阅已封口事实。
 
 它既能评估用于 Claude Code / Codex 的 Plugins、Hook 和 Skill，也能直接评你自己的 AI Agent 应用。无论你的 Agent 基于 AI SDK、LangGraph、Pi 还是自研 Agent SDK，都可以通过 Adapter 接入同一套评估体系。
 
@@ -46,8 +46,8 @@ export default defineEval({
 
 ```sh
 pnpm exec niceeval exp local eval-tool-call  # 用 local experiment 只跑 eval-tool-call
-pnpm exec niceeval show             # 当前项目全部仍有效的结果，适合人和 AI
-pnpm exec niceeval view             # 在网页中浏览同一份 Sample
+pnpm exec niceeval query discover   # AI、脚本和 CI 先发现 operation
+pnpm exec niceeval view             # 人在网页中审阅结果
 ```
 
 ## 为什么有了 DeepEval、LangFuse、BrainTrust 还需要 NiceEval

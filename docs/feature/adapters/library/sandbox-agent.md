@@ -72,7 +72,7 @@ Sandbox 级二进制、预热和跨 attempt 资源属于 Experiment layer 的 `p
 2. CLI 为 resume 保存的完整 transcript/tape；
 3. 两者都没有时返回空事件，并说明负断言不可信。
 
-采集代码负责定位文件、执行命令和取得原始字符串；parser 只接受 raw string，逐行容错并返回标准事件与 raw usage。Runner 将它们写入具名 Attempt event channel；Reports 通过已声明 requirement 读取 usage、trace 与 timing，它们不进入 Attempt 核心。
+采集代码负责定位文件、执行命令和取得原始字符串；parser 只接受 raw string，逐行容错并返回标准事件与 raw usage。Runner 将它们写入具名 Attempt event channel；固定 Inspection operation 通过已声明 requirement 读取 usage、trace 与 timing，它们不进入 Attempt 核心。
 不要让 parser 读 Sandbox，也不要让 `send` 内联一百行方言状态机。
 
 ### 字段检查

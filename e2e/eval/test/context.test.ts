@@ -5,6 +5,7 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
+import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface ExpEvent {
   event: string;
@@ -13,11 +14,19 @@ interface ExpEvent {
   verdict?: string;
 }
 
+interface TraceDocument extends InspectionDocument {
+  readonly operation: "attempt.trace";
+  readonly trace: Record<string, {
+    readonly state: string;
+    readonly value?: { readonly "segments-data"?: readonly { readonly phase?: string; readonly label?: string }[] };
+  }>;
+}
+
 test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
     "context",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { niceeval } }) => {
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "context", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
@@ -31,11 +40,20 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () =
         evalId: "context-scopes",
         verdict: "passed",
       });
-      const timing = await niceeval.run(["show", attemptEvent.locator!, "--timing"]);
-      expect(timing.exitCode, timing.diagnostic()).toBe(0);
-      expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+session2\/turn1\b/);
-      expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+session2\/turn2\b/);
-      expect(timing.stdout, timing.diagnostic()).toMatch(/agent\.send\s+session3\/turn1\b/);
+      const inspected = await inspectAttempt<TraceDocument>(niceeval, projectRoot, attemptEvent.locator!, "attempt.trace");
+      expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
+      expect(inspected.document).toMatchObject({
+        protocol: "niceeval.query/v1",
+        operation: "attempt.trace",
+        behaviorVersion: expect.any(String),
+      });
+      const activities = Object.values(inspected.document.trace)
+        .flatMap((attachment) => attachment.state === "available" ? (attachment.value?.["segments-data"] ?? []) : []);
+      expect(activities).toEqual(expect.arrayContaining([
+        expect.objectContaining({ phase: "agent.send", label: "session2/turn1" }),
+        expect.objectContaining({ phase: "agent.send", label: "session2/turn2" }),
+        expect.objectContaining({ phase: "agent.send", label: "session3/turn1" }),
+      ]));
     },
   );
 });

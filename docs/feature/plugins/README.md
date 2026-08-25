@@ -38,7 +38,7 @@ export default defineExperiment({
 
 每个 Plugin 至少声明一个 fragment。`sandbox` 只能随实际 owner 自动投影，不成为第四种挂载点；只声明 sandbox fragment 的 Plugin 默认可挂到 Experiment、Eval Group 或 Eval，适合只负责 clone、上传或安装固定内容的工具链。只要同时声明 host fragment，可挂 owner 就由实际声明的 `experiment` / `group` / `eval` 集合收窄。
 
-Plugin 不按目录、Config 或注册表隐式继承，也不拥有 Sandbox template、Provider、Agent 替换、flags、labels、Assertion、Verdict 或 Report。
+Plugin 不按目录、Config 或注册表隐式继承，也不拥有 Sandbox template、Provider、Agent 替换、flags、labels、Assertion、Verdict 或 Inspection delivery。
 
 ## 生命周期范围
 
@@ -60,4 +60,4 @@ Experiment、Eval Group 和 Eval 都通过自己的 `plugins` 字段消费 attac
 - [Library](library.md) —— `definePlugin`、多 occurrence 与挂载语法。
 - [Architecture](architecture.md) —— 身份、自动 sandbox 投影与边界。
 - [Lifecycle](lifecycle.md) —— 四个 scope 的运行顺序和失败语义。
-- [Record → Analysis → Report](../record-report/README.md) —— Plugin callback 不取得 Record、Analysis 或 Report Host authority。
+- [Record → Inspection → Delivery](../record-report/README.md) —— Plugin callback 不取得 Record、Inspection 或 Delivery authority。

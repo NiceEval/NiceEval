@@ -9,7 +9,6 @@ updates:
       - "/"
       - "/e2e/*"
       - "/e2e/adapter/*"
-      - "/netlify-preview"
     schedule:
       interval: "weekly"
     groups:

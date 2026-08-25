@@ -16,6 +16,8 @@ import {
   TurnIdSchema,
   UsageObservationIdSchema,
 } from "../source-receipt/codec.ts";
+import { MAX_CONVERSATION_TEXT_BYTES } from "../source-receipt/limits.ts";
+import { isBoundedSafeText } from "../source-receipt/model.ts";
 import {
   recordAttachmentIssue,
   type RecordAttachmentIssue,
@@ -73,18 +75,56 @@ export const AgentTurnUsageObservationSchema = Schema.Union(
   Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("provider-cost"), provider: SafeIdentifierSchema, amount: Schema.String.pipe(Schema.filter((value) => /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value))), currency: CurrencyCodeSchema }),
 );
 
-export const AgentTurnTerminalSchema = Schema.Union(
+const AgentTurnCoverageStatusSchema = Schema.Literal("complete", "partial", "unavailable");
+const AgentTurnCoverageReasonSchema = Schema.String.pipe(
+  Schema.filter((value) => value.trim().length > 0 &&
+    Boolean(isBoundedSafeText(value, MAX_CONVERSATION_TEXT_BYTES)), {
+    identifier: "AgentTurnEvidenceCoverageReason",
+    description: "non-empty durable coverage reason within the conversation text limit",
+  }),
+);
+
+const AgentTurnEvidenceCoverageEntrySchema = Schema.Union(
+  Schema.Struct({ status: Schema.Literal("complete") }),
+  Schema.Struct({
+    status: Schema.Literal("partial", "unavailable"),
+    reason: AgentTurnCoverageReasonSchema,
+  }),
+);
+
+const AgentTurnEvidenceCoverageSchema = Schema.Struct({
+  events: AgentTurnEvidenceCoverageEntrySchema,
+  actions: AgentTurnEvidenceCoverageEntrySchema,
+  messages: AgentTurnEvidenceCoverageEntrySchema,
+  usage: AgentTurnEvidenceCoverageEntrySchema,
+  status: AgentTurnEvidenceCoverageEntrySchema,
+  data: AgentTurnEvidenceCoverageEntrySchema,
+});
+
+const AgentTurnsRevision3TerminalSchema = Schema.Union(
   Schema.Struct({
     state: Schema.Literal("recorded"),
     status: Schema.Literal("completed", "failed", "waiting"),
     evidenceCoverage: Schema.Struct({
-      events: Schema.Literal("complete", "partial", "unavailable"),
-      actions: Schema.Literal("complete", "partial", "unavailable"),
-      messages: Schema.Literal("complete", "partial", "unavailable"),
-      usage: Schema.Literal("complete", "partial", "unavailable"),
-      status: Schema.Literal("complete", "partial", "unavailable"),
-      data: Schema.Literal("complete", "partial", "unavailable"),
+      events: AgentTurnCoverageStatusSchema,
+      actions: AgentTurnCoverageStatusSchema,
+      messages: AgentTurnCoverageStatusSchema,
+      usage: AgentTurnCoverageStatusSchema,
+      status: AgentTurnCoverageStatusSchema,
+      data: AgentTurnCoverageStatusSchema,
     }),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("unavailable"),
+    reason: Schema.Literal("send-failed", "send-interrupted"),
+  }),
+);
+
+export const AgentTurnTerminalSchema = Schema.Union(
+  Schema.Struct({
+    state: Schema.Literal("recorded"),
+    status: Schema.Literal("completed", "failed", "waiting"),
+    evidenceCoverage: AgentTurnEvidenceCoverageSchema,
   }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
@@ -97,32 +137,67 @@ const AgentTurnReceiptBase = {
   turnId: TurnIdSchema,
   sequence: PositiveSafeIntegerSchema,
   outcome: Schema.Literal("completed", "failed", "cancelled", "interrupted"),
-  terminal: AgentTurnTerminalSchema,
   usage: Schema.Array(AgentTurnUsageObservationSchema),
 } as const;
 
 export const CurrentAgentTurnReceiptSchema = Schema.Struct({
   ...AgentTurnReceiptBase,
   sessionId: SessionScopeIdSchema,
+  terminal: AgentTurnTerminalSchema,
   items: Schema.Array(CurrentAgentTurnItemSchema),
 });
 
 export const LegacyAgentTurnReceiptSchema = Schema.Struct({
   ...AgentTurnReceiptBase,
+  terminal: AgentTurnTerminalSchema,
+  items: Schema.Array(LegacyAgentTurnItemSchema),
+});
+
+const AgentTurnsRevision3CurrentReceiptSchema = Schema.Struct({
+  ...AgentTurnReceiptBase,
+  sessionId: SessionScopeIdSchema,
+  terminal: AgentTurnsRevision3TerminalSchema,
+  items: Schema.Array(CurrentAgentTurnItemSchema),
+});
+
+const AgentTurnsRevision3LegacyReceiptSchema = Schema.Struct({
+  ...AgentTurnReceiptBase,
+  terminal: AgentTurnsRevision3TerminalSchema,
   items: Schema.Array(LegacyAgentTurnItemSchema),
 });
 
 /** Revision 2 receipt alias retained only for its adjacent migration. */
-export const AgentTurnReceiptSchema = LegacyAgentTurnReceiptSchema;
+export const AgentTurnReceiptSchema = AgentTurnsRevision3LegacyReceiptSchema;
 
 export const AgentTurnsRevision2AttachmentSchema = Schema.Struct({
   collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
     Schema.fromKey("collection-data"),
   ),
-  segments: Schema.propertySignature(Schema.Array(LegacyAgentTurnReceiptSchema)).pipe(
+  segments: Schema.propertySignature(Schema.Array(AgentTurnsRevision3LegacyReceiptSchema)).pipe(
     Schema.fromKey("segments-data"),
   ),
 });
+
+export const AgentTurnsRevision3AttachmentSchema = Schema.Union(
+  Schema.Struct({
+    state: Schema.Literal("current"),
+    collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
+      Schema.fromKey("collection-data"),
+    ),
+    segments: Schema.propertySignature(Schema.Array(AgentTurnsRevision3CurrentReceiptSchema)).pipe(
+      Schema.fromKey("segments-data"),
+    ),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("legacy"),
+    collection: Schema.propertySignature(SourceReceiptCollectionSchema).pipe(
+      Schema.fromKey("collection-data"),
+    ),
+    segments: Schema.propertySignature(Schema.Array(AgentTurnsRevision3LegacyReceiptSchema)).pipe(
+      Schema.fromKey("segments-data"),
+    ),
+  }),
+);
 
 const CurrentAgentTurnsAttachmentSchema = Schema.Struct({
   state: Schema.Literal("current"),
@@ -151,8 +226,10 @@ export const AgentTurnsAttachmentSchema = Schema.Union(
 
 export type AgentTurnsAttachment = typeof AgentTurnsAttachmentSchema.Type;
 export type AgentTurnsRevision2Attachment = typeof AgentTurnsRevision2AttachmentSchema.Type;
+export type AgentTurnsRevision3Attachment = typeof AgentTurnsRevision3AttachmentSchema.Type;
 export type CurrentAgentTurnReceipt = typeof CurrentAgentTurnReceiptSchema.Type;
 export type LegacyAgentTurnReceipt = typeof LegacyAgentTurnReceiptSchema.Type;
+type LegacyAgentTurnItem = typeof LegacyAgentTurnItemSchema.Type;
 
 function invalid(path: readonly string[]): RecordAttachmentIssue {
   return recordAttachmentIssue("record-attachment-schema-invalid", path);
@@ -208,7 +285,7 @@ function validateReceiptEnvelope(input: {
 }
 
 function validateLegacyItems(
-  segments: readonly LegacyAgentTurnReceipt[],
+  segments: readonly { readonly items: readonly LegacyAgentTurnItem[] }[],
 ): readonly RecordAttachmentIssue[] {
   const issues: RecordAttachmentIssue[] = [];
   const itemIds = new Set<string>();
@@ -249,6 +326,19 @@ export function validateAgentTurnsRevision2Attachment(
     ...validateReceiptEnvelope(value, "legacy"),
     ...validateLegacyItems(value.segments),
   ]);
+}
+
+export function validateAgentTurnsRevision3Attachment(
+  value: AgentTurnsRevision3Attachment,
+): readonly RecordAttachmentIssue[] {
+  const issues = [...validateReceiptEnvelope(value, value.state)];
+  if (value.state === "legacy") {
+    issues.push(...validateLegacyItems(value.segments));
+  } else if (projectObservedSourceEvents(value.segments.map(({ sessionId, turnId, items }) =>
+    Object.freeze({ sessionId, turnId, items }))).state !== "available") {
+    issues.push(invalid(["segments"]));
+  }
+  return Object.freeze(issues);
 }
 
 export function validateAgentTurnsAttachment(

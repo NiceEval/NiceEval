@@ -341,15 +341,18 @@ function scopedContentReader(
   lifecycle: { readonly closed: boolean },
   bytesByHandle: ReadonlyMap<object, Uint8Array>,
 ): RecordAttachmentContentReader {
-  const bytes = (handle: RecordContentHandle): Effect.Effect<Uint8Array, RecordReaderReadError> =>
+  const lookup = (handle: RecordContentHandle): Effect.Effect<Uint8Array, RecordReaderReadError> =>
     Effect.suspend((): Effect.Effect<Uint8Array, RecordReaderReadError> => {
       if (lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
       const content = isRecordContentHandle(handle) ? bytesByHandle.get(handle) : undefined;
       return content === undefined
         ? Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }))
-        : Effect.succeed(new Uint8Array(content));
+        : Effect.succeed(content);
     });
+  const bytes = (handle: RecordContentHandle): Effect.Effect<Uint8Array, RecordReaderReadError> =>
+    Effect.map(lookup(handle), (content) => new Uint8Array(content));
   return Object.freeze({
+    byteLength: (handle: RecordContentHandle) => Effect.map(lookup(handle), (content) => content.byteLength),
     bytes,
     text: (handle: RecordTextContentHandle) => Effect.flatMap(bytes(handle), (content) => {
       if (!isRecordTextContentHandle(handle)) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
@@ -359,7 +362,13 @@ function scopedContentReader(
         return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
       }
     }),
-    stream: (handle: RecordContentHandle) => Stream.fromEffect(bytes(handle)),
+    stream: (handle: RecordContentHandle) => Stream.unwrap(Effect.map(lookup(handle), (content) =>
+      Stream.fromIterable((function* () {
+        for (let offset = 0; offset < content.byteLength; offset += 256 * 1024) {
+          yield content.slice(offset, Math.min(content.byteLength, offset + 256 * 1024));
+        }
+      })()),
+    )),
   });
 }
 

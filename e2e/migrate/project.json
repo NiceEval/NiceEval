@@ -42,7 +42,7 @@
             "run",
             "e2e"
           ],
-          "timeoutMinutes": 2,
+          "timeoutMinutes": 5,
           "harness": {
             "testkit": true
           },

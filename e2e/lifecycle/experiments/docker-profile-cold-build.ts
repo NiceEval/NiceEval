@@ -2,7 +2,7 @@ import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { defineExperiment } from "niceeval";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 
-// Discovery and `show` import and physically plan every experiment in the Repo, including when
+// Discovery and fixed Inspection import physically plan every experiment in the Repo, including when
 // another owner is selected. The Docker profile owner injects the real alias before execution;
 // without it this fixture stays plannable and fails explicitly only if somebody actually runs it.
 const profile = process.env.NICEEVAL_E2E_DOCKER_PROFILE_ALIAS;

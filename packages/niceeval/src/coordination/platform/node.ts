@@ -16,6 +16,10 @@ import {
 import type { RecordRoot } from "../../record/platform/root.ts";
 import { recordCoordinationIdentity } from "../identity.ts";
 import {
+  enterRecordSnapshotBarrierNode,
+  enterRecordWriteBatchNode,
+} from "./node-record-admission.ts";
+import {
   RecordCoordination,
   issueRecordLease,
   recordCoordinationIdentityMismatch,
@@ -514,6 +518,8 @@ const nodeRecordCoordination: RecordCoordinationService = {
   enterRecordMaintenance: (root) =>
     Effect.acquireRelease(enterMaintenanceLease(root), (lease) => release(lease)),
   verifyRecordIdentity: verifyIdentity,
+  enterRecordWriteBatch: enterRecordWriteBatchNode,
+  enterRecordSnapshotBarrier: enterRecordSnapshotBarrierNode,
 };
 
 export const NodeRecordCoordinationLive = Layer.succeed(

@@ -1,6 +1,6 @@
 # Assertions —— evidence
 
-Assertion 的材料必须在 Attempt 发布前归一为 Assertions Attachment 自己 closure 中的 sealed content。producer 从不把“没有读到”解释成“没有发生”，Analysis 与 Report 也不在事后重新采集。
+Assertion 的材料必须在 Attempt 发布前归一为 Assertions Attachment 自己 closure 中的 sealed content。producer 从不把“没有读到”解释成“没有发生”，Inspection 也不在事后重新采集。
 
 ## family Host 与 entry coverage
 

@@ -2,11 +2,12 @@
 // regression: memory/ui-message-stream-missing-done-accepted.md
 // rerun: pnpm e2e test --repo adapter/local-protocol -- --run test/disconnect.test.ts
 
-import { assertExpEvalOutcomes, decodeShowAttemptDiagnostics } from "@niceeval/testkit";
+import { assertExpEvalOutcomes } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
+import { runInspectionQuery, type InspectionDocument } from "./query.ts";
 
 const CASES = [
   {
@@ -52,14 +53,18 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", asy
             () => run.diagnostic(),
           )[0]!;
 
-          const shown = await niceeval.run(["show", event.locator, "--json"]);
-          expect(shown.exitCode, shown.diagnostic()).toBe(0);
-          expect(decodeShowAttemptDiagnostics(shown)).toEqual([{
-            code: "agent-send-failed",
-            kind: "execution-error",
-            phase: "eval.run",
-            summary: expect.stringContaining(fault.summary),
-          }]);
+          const queried = await runInspectionQuery(niceeval, {
+            kind: "attempt.get",
+            locator: event.locator,
+          });
+          expect(queried.exitCode, queried.diagnostic()).toBe(0);
+          const document = queried.json<InspectionDocument>();
+          expect(document).toMatchObject({ protocol: "niceeval.query/v1", operation: "attempt.get" });
+          const attempt = JSON.stringify(document.attempt);
+          expect(attempt).toContain('"code":"agent-send-failed"');
+          expect(attempt).toContain('"kind":"execution-error"');
+          expect(attempt).toContain('"phase":"eval.run"');
+          expect(attempt).toContain(fault.summary);
         }
       });
     },

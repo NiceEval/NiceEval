@@ -108,7 +108,7 @@ function formatNonErrorThrown(value: unknown): string {
 
 /**
  * 截到第一个换行为止。`formatThrown()` 优先带完整 `.stack`(含本地绝对文件路径的多行调用栈)
- * 给需要按 file:line 定位问题的落盘产物(`EvalResult.error`、`niceeval show`);但机器消费的
+ * 给需要按 file:line 定位问题的落盘产物(`EvalResult.error`、固定 Inspection);但机器消费的
  * 单行 envelope(`FailureNotice.reason`、reporter 失败诊断的 `message`……)只要「一层可行动摘要」
  * ——`Error.stack` 的第一行恒为 `name: message`,不含栈帧,直接满足这个要求。完整栈仍然原样
  * 留在调用方各自的落盘字段里,这个函数只负责第二次、更短的那份表达,不是唯一出口。
@@ -120,7 +120,7 @@ export function firstLine(text: string): string {
 
 /**
  * 把 catch 到的 e 拆成 `AttemptError` 的三段:`message`(一层原因,Error.message,不带 name 前缀、
- * 不拼 stack)、`stack`(完整多行栈,供 `niceeval show` 展开)、`cause`(沿 `e.cause` 取一层结构化
+ * 不拼 stack)、`stack`(完整多行栈,供固定 `query` / `view` 展开)、`cause`(沿 `e.cause` 取一层结构化
  * 摘要 `{ name?, code?, message }`)。Node 的 `Error.stack` 不展开 cause 链,所以 cause 只能从
  * `e.cause` 单独取。非 Error 值只给 message。
  */

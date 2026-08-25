@@ -154,7 +154,7 @@ An Agent that answers correctly but burns ten times as many tokens should not re
 
 The full `Usage` fields also include optional `cacheReadTokens` / `cacheCreationTokens`, reasoning-token count `reasoningTokens`, request count `requests`, and `costUSD`. Fill `costUSD` only when a Provider or Adapter truthfully returns observed USD cost. Never put upstream estimates, a model-catalog price table, or a local calculation there. Fill each field only when the interface actually reports it. If the interface reports no usage, omit `usage` entirely; other assertions are unaffected.
 
-The Runner always calculates `estimatedCostUSD` independently from the `model`, reported token usage, and its Config/runtime price table; observed `costUSD` does not change that calculation. The Experiment budget and `t.maxCost()` use the estimate. A Report uses only an explicit `PricingProfile` and sealed Usage for Analysis cost projection; it never consumes the Runner estimate.
+The Runner always calculates `estimatedCostUSD` independently from the `model`, reported token usage, and its Config/runtime price table; observed `costUSD` does not change that calculation. The Experiment budget and `t.maxCost()` use the estimate. Fixed Inspection operations read sealed Usage and never consume the Runner estimate.
 
 When the Config/runtime price table cannot form a Runner estimate, `t.maxCost()` is `unavailable`; missing data must never become `0`. When an explicit zero rate truly produces `estimatedCostUSD: 0`, `0` is a valid estimate and is still evaluated against the limit.
 

@@ -28,19 +28,14 @@ function sh(cmd: string, expected: number | "nonzero" = 0): string {
 ```text
 exp --dry
   → exp
-  → show --run <runId> --json
-  → show --run <runId> --report <fixture-module> --page <fixture-route>
-  → view --run <runId> [--run <runId> ...] --out <new-directory>
-  → 断网浏览静态站
+  → query discover
+  → query explain --request <request>
+  → query run --request <request>
 ```
 
-`runId` 来自本次 Invocation receipt 的公开输出。测试使用签入代表 Report 的字面模块与目标 route 调用 `show --page`，再用单目标 JSON 验证该 route、page identity、固定 locale 和 marker。`show --json` 不枚举页面或提供站点索引；参数 route 也不能越过已选 Sample 打开任意 Attempt。
+`runId` 来自本次 Invocation receipt 的公开输出。测试先发现 catalog，再使用签入的完整 request 调用 `query explain` 和 `query run`，验证 operation identity、sealed cutoff、denominator、issues 与 Evidence。View 的启动、ready、浏览器断言、signal 与 `closed` lifecycle 由 [Report E2E owner](report.md)的 browser Journey 单独验收；它不提供机器协议或页面索引。
 
 ```ts
-const reportModule = "./reports/site.tsx";
-const overviewRoute = "/";
-const fixtureMarker = "Report fixture static site";
-
 sh("pnpm exec niceeval exp main --dry --json");
 const mainEvents = sh("pnpm exec niceeval exp main --rerun all --json");
 const sourceEvents = sh("pnpm exec niceeval exp source --rerun all --json");
@@ -48,42 +43,27 @@ const mainRunId = parseCompletedRunId(mainEvents);
 const sourceRunId = parseCompletedRunId(sourceEvents);
 
 const document = JSON.parse(
-  sh(
-    `pnpm exec niceeval show --run ${mainRunId} --report ${reportModule} --page ${overviewRoute} --json`,
-  ),
+  sh("pnpm exec niceeval query run --request ./overview.request.json"),
 );
-assert.equal(document.format, "niceeval.report-target-execution/v1");
-assert.equal(document.locale, "en");
-assert.equal(document.page.route, overviewRoute);
-assert.equal(document.page.pageId, "overview");
-assert.ok(document.page.renderedText.includes(fixtureMarker));
-
-const detail = sh(
-  `pnpm exec niceeval show --run ${mainRunId} --report ${reportModule} --page ${overviewRoute}`,
-);
-assert.ok(detail.includes(fixtureMarker));
-
-sh(`pnpm exec niceeval view --run ${mainRunId} --run ${sourceRunId} --report ${reportModule} --out ./report-site`);
-await assertStaticSiteWorksOffline("./report-site", overviewRoute);
+assert.equal(document.protocol, "niceeval.query/v1");
+assert.equal(document.operation, "run.summary");
+assert.ok(document.summary.denominator);
 ```
 
 显式比较多个 Run 时重复 flag：
 
 ```sh
-pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page /comparison
+pnpm exec niceeval query run --request ./comparison.request.json
 ```
 
-不带 locator 或 `--run` 的 `show` 以当前项目目标为准：扫描全部 published Run，保留每个身份仍匹配的 slot，不按时间缩成最后一个 Run。身份过期或无法验证的候选不进入当前 Sample；没有匹配结果时形成空 Sample。完整 `--run` 仍能读取历史 Run。
+## Record、Inspection 与 View 验收点
 
-## Record 与 Report 验收点
-
-- CLI 只进入 `reportHost`；它在内部经 `recordHost.openRead()` 和 `analysisHost.openSample()` 形成
-  Sample。同 root writer 可并发发布；Scope 关闭后才形成 execution，本机 view/static export 不再访问 Record。
-- Sample 保留 included、not-recorded、core-invalid、excluded 的完整分母；被请求 fixed family 的
+- CLI 的 Inspection Host 在短 `recordHost.openRead()` scope 内执行固定 operation。query 和 View 都只消费其 result；operation 返回前 reader 已关闭。
+- operation 保留 selected、not-recorded、invalid、excluded 的完整分母；被请求 fixed family 的
   available、not-recorded、unsupported、invalid 四态不折叠成零或空值。
 - Attempt 大内容从 owner-local blob closure 交付；family decoder 只能取得当前 owner 的 bytes，不能得到
   Record root 或实际路径。
-- 静态 export 的目标必须不存在；任一页面或下载失败时不发布目标。成功目录在断网 Sandbox 实例中只读取 manifest 列出的自有文件。
+- `RecordSnapshot` 只能由 `record snapshot` 形成；`query --record` 与 `view --record` 验证 exact Seal，不把 SQLite copy 当读取输入。
 - 已发布 Run immutable；外部损坏 fixed family 时，下一次命令呈现局部 invalid，不修改其它事实，也不建立 revision、history 或迁移结果。
 
 ## 缓存与补跑
@@ -96,7 +76,7 @@ pnpm exec niceeval show --run <baseline-run> --run <candidate-run> --page /compa
 
 ```sh
 pnpm exec niceeval exp cached --rerun all --json
-pnpm exec niceeval show --run <new-run-id> --page /adoption
+pnpm exec niceeval query run --request ./adoption.request.json
 ```
 
 ## 失败分类
@@ -105,7 +85,7 @@ pnpm exec niceeval show --run <new-run-id> --page /adoption
 
 ## 不这样验收
 
-- 不使用已删除的历史、位置 locator、独立 Attempt 或固定切片 flag；详情与切面都是 Report page。
+- 机器详情只通过固定 query request，深读只用 View；测试不为读取面增加 selector、作者配置或导出路径。
 - 不用后台监看或 session 查询恢复已退出 Invocation；长期事实必须已经进入 Run、Attempt Core 或固定 family。
-- 不让 fixture 重写 Core validator、family decoder 或 Report Host，形成第二套真相依据。
+- 不让 fixture 重写 Core validator、family decoder 或 Inspection Host，形成第二套真相依据。
 - 不把多个可独立失败的产品结果放入同一个 Journey；跨域身份接线留在 Journey，单一错误矩阵回到对应 owner。

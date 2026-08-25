@@ -1,5 +1,4 @@
 // owner: docs/engineering/testing/e2e/report.md#operational-revision-refresh
-// regression: memory/report-header-experiment-selector-regression.md
 // rerun: pnpm e2e test --repo report -- --run test/view-operational-refresh.browser.spec.ts
 
 import { only } from "@niceeval/testkit";
@@ -33,7 +32,11 @@ test("project view 发现新封口 Run，并在用户确认后原子切换 revis
       try {
         const ready = await waitForViewReady(view);
         await page.goto(expectLoopbackReadyUrl(ready.url).href);
+        await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "Run" })).toBeVisible();
         await expect(page.getByText(firstRunId, { exact: false }).first()).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Issues" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Evidence" })).toBeVisible();
 
         const second = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(second.exitCode, second.diagnostic()).toBe(0);
@@ -43,6 +46,7 @@ test("project view 发现新封口 Run，并在用户确认后原子切换 revis
         await expect(page.getByRole("status")).toContainText(/update|new run|refresh/i, {
           timeout: 15_000,
         });
+        await expect(page.getByText(secondRunId, { exact: false })).toHaveCount(0);
         await page.getByRole("button", { name: /refresh/i }).click();
         await expect(page.getByText(secondRunId, { exact: false }).first()).toBeVisible();
         await expect(page.getByText(firstRunId, { exact: false }).first()).toBeVisible();

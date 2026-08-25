@@ -8,9 +8,10 @@ kind:
   state: open
 promotions:
   - kind: feature
-    current:
-      - docs/feature/reports/library.md#中立组件与官方组合组件
-    history: []
+    current: []
+    history:
+      - target: docs/feature/reports/library.md#中立组件与官方组合组件
+        commit: 50cf5fce5ff0189caf6c55f27717f3b162f00b3d
 ---
 # Report 结果格泄露浮点尾数并混淆覆盖度
 

@@ -332,7 +332,7 @@ pnpm exec niceeval exp dind-managed --max-concurrency 2
 创建失败后使用终端给出的 Attempt 定位符，不要直接翻运行产物：
 
 ```bash
-pnpm exec niceeval show @1ABC234DEF
+pnpm exec niceeval view @1ABC234DEF
 ```
 
 常见错误与处理方式：
@@ -342,7 +342,7 @@ pnpm exec niceeval show @1ABC234DEF
 | `DOCKER_HOST must be unset` 或 `DOCKER_CONTEXT must be unset` | 删除镜像里的 endpoint/context 环境变量，让默认 endpoint 指向 `/var/run/docker.sock` |
 | `dind-image-incompatible: missing ...` | 从固定版本 `docker:<version>-dind` 派生，并补齐错误列出的工具 |
 | `permission denied` | 在构建期把 `user` 对应的 Agent 用户加入镜像内 `docker` 组 |
-| Docker access compatibility timeout | 从 `niceeval show` 给出的有界 `dockerd.log` 尾部检查 daemon 启动、socket 与 storage driver |
+| Docker access compatibility timeout | 用 Attempt detail 或固定 `query` operation 提供的有界 `dockerd.log` 尾部检查 daemon 启动、socket 与 storage driver |
 | 启动前提示 orphan Sandbox | 先用 `niceeval sandbox list --orphans` 只读核对，再显式运行 `niceeval sandbox prune` |
 
 ## 在评估用例里验证 Docker 任务

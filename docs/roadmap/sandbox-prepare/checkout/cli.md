@@ -1,6 +1,6 @@
 # Git 检出隔离 —— CLI
 
-本方向不新增 CLI 命令或 flag。checkout 继续由 niceeval check、niceeval exp、niceeval debug 和 niceeval show 观察。
+本方向不新增 CLI 命令或 flag。checkout 继续由 `niceeval check`、`niceeval exp`、`niceeval debug`、机器 `niceeval query` 与人用 `niceeval view` 观察。
 
 ## 人类输出
 
@@ -85,4 +85,4 @@ dry 显示声明的 commit，不能证明远端含有该对象，也不报告 li
 
 不同物理 Sandbox、Provider、Run、机器或 Agent namespace 不共享 cache、lock、credential、worktree 或对象目录。并发 Attempt 不会把一个目标的脏状态、remote refs 或删除结果传给另一个目标。
 
-niceeval show 读取 sealed command receipt。它不打开 private cache，不调用 Git 远端，也不在留存 Sandbox 上重新验证或修复 checkout。
+`niceeval view` 读取 sealed command receipt。机器读取通过 `niceeval query` 取得同一类 sealed facts；两者都不打开 private cache，不调用 Git 远端，也不在留存 Sandbox 上重新验证或修复 checkout。

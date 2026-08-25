@@ -1,6 +1,6 @@
 # Getting Started
 
-这一页从一个 Eval 运行到可查看、可分享的 Report。完整 API 见 [Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md) 与 [Reports](feature/reports/README.md)。
+这一页从一个 Eval 运行到可审阅、可搬运的 sealed Record。完整 API 见 [Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md) 与 [Inspection](feature/reports/README.md)。
 
 ## 安装
 
@@ -69,7 +69,7 @@ Inspection operation 保留 selection 已建立的完整分母：`--run` 使用�
 | `included` | 有合法 Member，能读取其采用的 Attempt。 |
 | `not-recorded` | expected slot 没有 Member。 |
 | `invalid` | Member、Attempt 或引用违反核心规则。 |
-| `excluded` | 选择器在既有 Sample 上排除了该 slot。 |
+| `excluded` | Inspection selector 在既有 Run 上排除了该 slot。 |
 
 Attachment 状态与 slot 状态分开。页面需要的 Attachment 若未采集，会显示 `unavailable`；当前 reader 不支持时显示 `unsupported`；损坏时显示具名 issue。
 

@@ -90,7 +90,7 @@ Overrides the project-level or CLI timeout for one Attempt, in milliseconds, for
 metadata?: globalThis.Record<string, JsonValue>;
 ```
 
-Arbitrary extra metadata stored as Attempt Provenance. It does not affect scheduling or scoring and is for custom Reporters to consume.
+Arbitrary extra metadata stored as Attempt Provenance. It does not affect scheduling or scoring. Fixed Inspection operations may expose only declared, sealed facts; metadata does not create a custom reporting surface.
 
 #### `diff`
 

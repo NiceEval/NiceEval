@@ -5,7 +5,7 @@
 或其它 Sandbox evidence 必需时才为对应 case 声明 Sandbox。
 
 每次 Repo invocation 都通过 `niceeval exp --rerun all` 完整生成自己的 `.niceeval`，再从退出码和
-`show` 的公开 Report 输出观察结果。
+固定 `query` Inspection 的 versioned JSON 观察结果。
 不签入预生成结果，不从 Adapter Repo 注入 Eval，也不伪造 `Turn.events`、session 或 Sandbox ledger。某个契约分支需要不同 evidence
 时，直接增加一条目的明确的 Eval。
 
@@ -38,9 +38,12 @@ Contract: [assertions](../../../feature/assertions/README.md)
 
 值 Match 在本轮确定性回复上登记并封口为 Assertion，随后折叠为 `passed` Verdict。
 这个 owner 明确接管 `niceeval/expect` 的全部 factory。
-每个 value、score、tool、command 与 event matcher 都以 matched 和 mismatched 两种结果运行，并从公开 Attempt readback 逐项核对结果。
+
+每个 value、score、tool、command 与 event matcher 都以 matched 和 mismatched 两种结果运行。
+测试从公开 Attempt readback 逐项核对结果。
 `calledTool` 还分别验证 name、input、output、status、exact count 与 at-least count；`notCalledTool` 与 `eventOrder` 也各自验证正反结果。
-公开 `show --json` 必须读到这些 Assertion 与 Verdict。
+
+公开 `query run --request <attempt.get request>` 必须读到这些 Assertion 与 Verdict。
 
 ## eval-assertion-scopes
 
@@ -54,8 +57,8 @@ turn、session 与 attempt scope 必须以同一批真实工具事件完成断�
 不能让已经完成的 Attempt 因 Assertions document 膨胀而无法发布。owner 至少产生 10,001 个真实 normalized
 tool occurrences，涉及末尾 decisive witness、absence/exact/at-least 与 partial source unavailable。
 
-公开
-`exp → show --json` 核对 O(1) receipt、typed 五段投影和有界 explanation，不读取私有 Record。
+公开 `exp → query run --request <attempt.get request>` 核对 O(1) receipt 和 Assertion 的 criterion/materials/evaluation。
+它还核对 decision、policy、contribution、explanationRetention 与有界 explanation，不读取私有 Record。
 
 ## eval-assertion-score
 
@@ -74,7 +77,7 @@ Contract: [assertions](../../../feature/assertions/README.md)
 
 Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用
 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试经
-`show` 或 Report 的已发布 DomainView 读取闭合 diff，不读私有落盘、固定 family bytes 或旧的投影声明。
+固定 `attempt.diff` Inspection 读取闭合 diff，固定 `attempt.get` Inspection 读取 Assertion；两者都不读私有落盘、SQLite 或旧投影声明。
 
 同一 owner 还让第二个 send 区间超过路径保留上限，证明 collector 发布带 `collection-cap-reached`
 的确定性 partial File Changes，而不是把证据降格成 `workspace-diff-unavailable`。确定性 Agent 用 POSIX shell
@@ -86,7 +89,7 @@ Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoi
 旧版 5,430,371-byte 整包导出因此红灯，候选必须靠自动分段通过。
 
 公开 Timing Page 中的 `workspace.diff` 阶段必须在 9 秒内完成。Repo 的 2 分钟预算包含整条
-`exp`、安装、两次 `show`、发布和资源回收；该生命周期预算负责发现卡死，不把共享 runner 的调度与进程回收时间
+`exp`、安装、两次 fixed Inspection、发布和资源回收；该生命周期预算负责发现卡死，不把共享 runner 的调度与进程回收时间
 误当成 Experiment 或 `workspace.diff` 的性能。
 
 ## eval-assertion-judge-unavailable

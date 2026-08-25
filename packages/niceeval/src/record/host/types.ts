@@ -43,6 +43,7 @@ import type {
   AnyRecordDefinition,
   AttemptRecordAppendCommand,
   AttemptRecordAppendReceipt,
+  AttemptRecordCollectionLimitation,
   AttemptRecordCollectionDefinition,
   RecordDefinitionValue,
   RecordWriteCommand,
@@ -96,6 +97,10 @@ export interface SelectedOwnerRef<out Owner extends "run" | "attempt" = "run" | 
  * closures are invalid, never a reader-wide failure.
  */
 export interface RecordAttachmentContentReader {
+  /** Exact persisted byte length without loading Content bytes. */
+  readonly byteLength: (
+    handle: RecordContentHandle,
+  ) => Effect.Effect<number, RecordReaderReadError>;
   readonly bytes: (
     handle: RecordContentHandle,
   ) => Effect.Effect<Uint8Array, RecordReaderReadError>;
@@ -249,6 +254,30 @@ export interface RecordReadSession {
       RecordReaderReadError
     >;
   };
+  readonly openCollection: <
+    Definition extends AttemptRecordCollectionDefinition<
+      string,
+      Schema.Schema.AnyNoContext
+    >,
+  >(
+    owner: SelectedOwnerRef<"attempt">,
+    definition: Definition,
+  ) => Effect.Effect<
+    | Exclude<
+        AttemptRecordCollectionRead<Schema.Schema.Type<Definition["schema"]>>,
+        { readonly state: "available" }
+      >
+    | {
+        readonly state: "available";
+        readonly collection: Schema.Schema.Type<Definition["schema"]>["collection"];
+        readonly logicalIdentity: string;
+        readonly logicalSealIdentity: string;
+        readonly count: number;
+        readonly digest: string;
+        readonly items: Stream.Stream<Schema.Schema.Type<Definition["item"]>, RecordReaderReadError>;
+      },
+    RecordReaderReadError
+  >;
   readonly requireComplete: (
     selection: RecordSelection,
   ) => Effect.Effect<RecordCompleteView, RecordCompletenessError>;
@@ -289,6 +318,52 @@ export interface AttemptWriteSession {
   ) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"attempt">;
   readonly record: AttemptRecordWriter;
+  readonly records: AttemptRecordsWriter;
+}
+
+export interface OwnerRecordsWriter<Owner extends "run" | "attempt"> {
+  readonly write: {
+    <Definition extends AnyRecordDefinition<Owner>>(
+      definition: Definition,
+      value: RecordDefinitionValue<Definition> |
+        ((build: RecordAttachmentSessionBuilder) => RecordDefinitionValue<Definition>),
+    ): Effect.Effect<
+      void,
+      RecordWriteError | AttachedContentError<RecordDefinitionValue<Definition>>,
+      AttachedContentRequirements<RecordDefinitionValue<Definition>>
+    >;
+    <Definition extends AnyDefinition<Owner>, Value extends DefinitionValue<Definition>>(
+      definition: Definition,
+      value: Value | ((build: RecordAttachmentSessionBuilder) => Value),
+    ): Effect.Effect<
+      void,
+      RecordWriteError | AttachedContentError<Value>,
+      AttachedContentRequirements<Value>
+    >;
+  };
+}
+
+export interface AttemptRecordsWriter extends OwnerRecordsWriter<"attempt"> {
+  readonly append: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>>(
+    definition: Definition,
+    item: Schema.Schema.Type<Definition["item"]>,
+  ) => Effect.Effect<AttemptRecordAppendReceipt, RecordWriteError>;
+  readonly appendAll: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>, Error, Requirements>(
+    definition: Definition,
+    items: Stream.Stream<Schema.Schema.Type<Definition["item"]>, Error, Requirements>,
+  ) => Effect.Effect<void, RecordWriteError | Error, Requirements>;
+  readonly close: <Definition extends AttemptRecordCollectionDefinition<string, Schema.Schema.AnyNoContext>>(
+    definition: Definition,
+    completion:
+      | { readonly state: "complete" }
+      | {
+          readonly state: "partial";
+          readonly limitations: readonly [
+            AttemptRecordCollectionLimitation,
+            ...AttemptRecordCollectionLimitation[],
+          ];
+        },
+  ) => Effect.Effect<void, RecordWriteError>;
 }
 
 export interface OwnerRecordWriter<Owner extends "run" | "attempt"> {
@@ -344,6 +419,7 @@ export interface RunWriteSession {
   }) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"run">;
   readonly record: OwnerRecordWriter<"run">;
+  readonly records: OwnerRecordsWriter<"run">;
   readonly seal: (
     completion: RunCompletion,
   ) => Effect.Effect<RecordSealReceipt, RecordWriteError>;
@@ -358,6 +434,7 @@ export interface ReferenceRunWriteSession {
   readonly recordTerminalMember: RunWriteSession["recordTerminalMember"];
   readonly attach: RunWriteSession["attach"];
   readonly record: RunWriteSession["record"];
+  readonly records: RunWriteSession["records"];
   readonly seal: RunWriteSession["seal"];
 }
 
@@ -503,6 +580,13 @@ export interface RecordMaintenanceSession {
 }
 
 export interface RecordHostSDK {
+  readonly openRead: RecordHostSDK["current"]["openRead"];
+  readonly createRun: (
+    request: CreateRunRequest | { readonly root: RecordRoot; readonly core: Omit<CreateRunRequest, "root"> },
+  ) => ReturnType<RecordHostSDK["current"]["createRun"]>;
+  readonly createReferenceRun: (
+    request: CreateReferenceRunRequest | { readonly root: RecordRoot; readonly core: Omit<CreateReferenceRunRequest, "root"> },
+  ) => ReturnType<RecordHostSDK["current"]["createReferenceRun"]>;
   readonly current: {
     readonly openRead: (input: {
       readonly root: RecordRoot;

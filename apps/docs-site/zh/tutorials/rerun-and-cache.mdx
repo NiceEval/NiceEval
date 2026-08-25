@@ -74,6 +74,6 @@ npx niceeval accept @1K1P0VJAPVJ12
 
 ## 发布后不可修改
 
-Attempt 发布后不可修改。每一次查看都读取当时 Record 中已发布的值；新 Run 或新事实只会以新的发布出现。若 Attempt 或引用无效，Sample 将该 slot 标为 `core-invalid`，而不是 `not-recorded`。
+Attempt 发布后不可修改。每一次读取都使用当时 Record 中已发布的值；新 Run 或新事实只会以新的发布出现。若 Attempt 或引用无效，固定 operation 将该位置标为 `core-invalid`，而不是 `not-recorded`。
 
 完成运行后，用 receipt 的 `runIds` 选择结果。查看步骤见[查看结果](/zh/tutorials/viewing-results)。

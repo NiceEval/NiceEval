@@ -13,19 +13,13 @@ import {
   useTimeline,
 } from "./site-terminal-shell";
 
-// Hero「给人看」的终端动画:一次真实的 `niceeval exp compare`,再用 `niceeval show` 打对照矩阵。
-// 每一行的版式都照抄 CLI 自己的人读面,不自创措辞:
-//   - PLAN / live / FAILED / FAILURES / NEXT 五个面板与框线嵌字 —— docs/feature/experiments/cli.md
-//   - 首行守恒计数与 active 行列序 —— src/runner/feedback/human.ts 的 countsText / formatActiveRow
-//   - 失败行的 locator / 断言两级缩进 —— src/assertions/display.ts 的 assertionSummaryLines
-//   - 对照矩阵的头两行与列组 —— src/show/index.ts 的 renderCompareSlice、show/compare.md
-// 动效规则也沿用 CLI 的契约:计数与 active 行动态覆盖,失败证据只追加,live 面板结束后被
-// 结论面板顶替。这段输出不做 i18n —— 终端里跑出来的就是这一套英文字面量。
+// Hero 终端动画:运行 Eval 后，机器先发现固定 Inspection operation，再执行固定 request；
+// 人需要连续阅读时在第一方 View 中打开相同结果。数字是自洽的演示值，终端内容不做 i18n。
 
 // ---- 一次自洽的运行:8 attempt = 4 eval × 2 config,2 条缓存携入,6 条本次派发。
 // 计数、成本、矩阵三处的数字彼此对得上:本次派发 330.5k tok / $0.51,矩阵覆盖全部 8 条。
 const CMD_RUN = "niceeval exp compare";
-const CMD_SHOW = "niceeval show --exp compare/gpt-5.4 --exp compare/sonnet-5";
+const CMD_SHOW = "niceeval query run --request runs-compare.json";
 const RUN_SECONDS = 127;
 const RUN_COST_USD = 0.51;
 const FAILED_LOCATOR = "@1bwcxxiy";
@@ -274,11 +268,11 @@ export default function TerminalDemo({ ariaLabel, replayLabel }: { ariaLabel: st
       {now >= T.next ? (
         <Appear>
           <Panel title="NEXT">
-            <PanelRow>{`Inspect: niceeval show ${FAILED_LOCATOR}`}</PanelRow>
-            <PanelRow>{`Eval:    niceeval show ${FAILED_LOCATOR} --source`}</PanelRow>
-            <PanelRow>{`Trace:   niceeval show ${FAILED_LOCATOR} --execution`}</PanelRow>
-            <PanelRow>{`Diff:    niceeval show ${FAILED_LOCATOR} --diff`}</PanelRow>
-            <PanelRow>Compare: niceeval view</PanelRow>
+            <PanelRow>Catalog: niceeval query discover</PanelRow>
+            <PanelRow>Runs:    niceeval query run --request runs-list.json</PanelRow>
+            <PanelRow>Attempt: niceeval query run --request attempt.json</PanelRow>
+            <PanelRow>Compare: niceeval query run --request runs-compare.json</PanelRow>
+            <PanelRow>{`Human:   niceeval view ${FAILED_LOCATOR}`}</PanelRow>
             <PanelDivider title="RESULTS" />
             <PanelRow className="soft">.niceeval/compare/gpt-5.4/2026-07-30T09-14-22-118Z-i080</PanelRow>
             <PanelRow className="soft">.niceeval/compare/sonnet-5/2026-07-30T09-14-22-140Z-b3kq</PanelRow>

@@ -10,6 +10,12 @@ export function deterministicAgent(): Agent {
       ctx.session.capture("inspection-fixture");
       return {
         status: "completed",
+        evidenceCoverage: {
+          messages: {
+            status: "partial",
+            reason: "fixture conversation history is intentionally partial",
+          },
+        },
         usage: {
           inputTokens: 10,
           outputTokens: 5,

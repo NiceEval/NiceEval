@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 
 import { Clock, Data, Effect, Either } from "effect";
 
-import type { AnalysisSelectionRequest } from "../../analysis/contracts.ts";
 import { recordHost } from "../../record/host/index.ts";
 import { makeRecordRoot, type RecordRoot } from "../../record/platform/root.ts";
 import { acceptLocators } from "../../runner/accept.ts";
@@ -19,7 +18,6 @@ import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
 import type { ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { runEvals } from "../../runner/run.ts";
 import { isCaseLockExpired, readCaseLockEffect } from "../../runner/lock.ts";
-import { loadProjectCurrent } from "../../runner/project-current.ts";
 import { JUnit } from "../../runner/reporters/json.ts";
 import {
   listSessions,
@@ -72,8 +70,6 @@ import type {
   ExperimentHostInvocationStatusListRequest,
   ExperimentHostInvocationStatusShow,
   ExperimentHostInvocationStatusShowRequest,
-  ExperimentHostProjectCurrentRequest,
-  ExperimentHostProjectCurrentTarget,
   ExperimentHostRenamePlan,
   ExperimentHostRenameRequest,
   ExperimentHostRenameResult,
@@ -381,36 +377,6 @@ export function check(
       experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
       evalIds: freezeArray(new Set(prepared.runs.flatMap((run) => run.selectedEvalIds))),
       pairCount: pairs.length,
-    });
-  }));
-}
-
-/**
- * Report-facing project-current resolution. Discovery, selection, identity
- * planning, and the resulting watch set close here so a CLI never reaches
- * into Runner to reconstruct the same target.
- */
-export function resolveProjectCurrentTarget(
-  input: ExperimentHostProjectCurrentRequest,
-): Effect.Effect<ExperimentHostProjectCurrentTarget, ExperimentHostError> {
-  return closeOperation("resolve-project-current", Effect.gen(function* () {
-    const loaded = yield* loadProjectCurrent(input.cwd, {
-      config: input.config,
-      ...(input.experimentSelectors === undefined ? {} : { experiments: input.experimentSelectors }),
-      ...(input.freshImport === undefined ? {} : { freshImport: input.freshImport }),
-    });
-    const experimentIds = input.experimentSelectors === undefined
-      ? undefined
-      : freezeArray(new Set(loaded.currentSlots.map((slot) => slot.experimentId)));
-    const selection: AnalysisSelectionRequest = Object.freeze({
-      policy: "project-current" as const,
-      currentSlots: loaded.currentSlots,
-      ...(experimentIds === undefined ? {} : { experimentIds }),
-    });
-    return Object.freeze({
-      selection,
-      currentSlots: loaded.currentSlots,
-      watchInputs: freezeArray(loaded.watchInputs),
     });
   }));
 }

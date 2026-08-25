@@ -11,6 +11,7 @@ export type {
 } from "./host/index.ts";
 
 export {
+  Record,
   defineAttemptRecord,
   defineAttemptRecordCollection,
   defineRunRecord,
@@ -19,6 +20,7 @@ export {
 export type {
   AttemptRecordAppendCommand,
   AttemptRecordAppendReceipt,
+  AttemptRecordCollectionLimitation,
   AttemptRecordCollectionDefinition,
   AttemptRecordDefinition,
   RecordContribution,

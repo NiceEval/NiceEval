@@ -25,7 +25,7 @@ import {
   type KeptSandboxEntry,
 } from "./keep-registry.ts";
 import { dockerOrphanCount, listOrphanCandidates, pruneOrphans, type OrphanCandidate } from "./orphans.ts";
-import { panelCapabilityOf, renderPanel, type PanelMode, type PanelRow } from "../report/model/panel.ts";
+import { panelCapabilityOf, renderPanel, type PanelMode, type PanelRow } from "../terminal/panel.ts";
 import { computeExpiresAt } from "./keep.ts";
 
 export interface SandboxCommandFlags {

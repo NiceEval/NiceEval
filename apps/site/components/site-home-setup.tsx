@@ -4,9 +4,8 @@ import React, { type KeyboardEvent, useState } from "react";
 import { Highlight, themes } from "prism-react-renderer";
 import { CheckCircle2, ChevronRight, MessageCircle } from "lucide-react";
 import { track } from "../src/analytics";
-import { evalExamples, type EvalExample } from "../src/eval-examples";
+import { evalExamples, type EvalExample, type EvalExampleTrace } from "../src/eval-examples";
 import type { Dictionary, Locale } from "../lib/content";
-import ExampleTurnTrace from "./site-example-turn-trace";
 
 const codeTheme = {
   ...themes.vsDark,
@@ -138,7 +137,7 @@ function EvalCard({
                     {noteKey && open ? (
                       isReply ? (
                         <div className="code-note code-note-trace">
-                          <ExampleTurnTrace trace={card.traces[noteKey]} locale={locale} />
+                          <TraceSummary trace={card.traces[noteKey]} locale={locale} />
                         </div>
                       ) : (
                         <div className="code-note">
@@ -182,5 +181,26 @@ function EvalCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function TraceSummary({ trace, locale }: { trace: EvalExampleTrace; locale: Locale }) {
+  const zh = locale === "zh";
+  return (
+    <section className="site-trace-summary" aria-label={zh ? "会话轨迹摘要" : "Session trace summary"}>
+      <header>
+        <span>{zh ? "会话轨迹" : "Session trace"}</span>
+        <span>{trace.duration} · {trace.calls} {zh ? "调用" : "calls"}</span>
+      </header>
+      <ol>
+        {trace.events.map((event, index) => (
+          <li key={`${event.kind}-${index}`}>
+            <code>{event.kind}</code>
+            <span>{event.summary}</span>
+            <span>{event.status}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

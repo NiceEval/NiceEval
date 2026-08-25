@@ -25,8 +25,8 @@ Score Eval 的显式 contribution 将 `points`、earned 与完整度输入封口
 rubric 在读侧汇总；缺少必要材料时保留 partial 或 unavailable，不写第二份持久化结果。两种 Eval 共享
 AssertionResult、evidence、snapshot 与读取协议，差别只在主读数和 score 规则。
 
-Report 与 Analysis 打开 `Sample` 后，以 `query()` 或 `aggregate()` 取得闭合结果及其中的 `MetricValue`。
-它们只读 Core 与 Assertions 的已封口事实，不重新执行 evaluator 或创建另一条结果通道。
+固定 Inspection operation 从已封口的 Core 与 Assertions 形成闭合结果及其中的 `MetricValue`。
+它不重新执行 evaluator、不创建另一条结果通道，也不向 Delivery 暴露通用查询对象。
 
 ## 文件传输与生命周期
 

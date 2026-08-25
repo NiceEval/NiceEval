@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import { inspectAttempt, type InspectionDocument } from "./inspection.ts";
 
 interface SetupPrefixEvidence {
   readonly baseVersion: string;
@@ -19,6 +20,11 @@ interface SetupPrefixEvidence {
   readonly fixture: string;
   readonly demand: string;
   readonly sandboxId: string;
+}
+
+interface TraceDocument extends InspectionDocument {
+  readonly operation: "attempt.trace";
+  readonly trace: unknown;
 }
 
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -35,7 +41,7 @@ function decodeEvidence(stdout: string): SetupPrefixEvidence {
   const encoded = new Set(
     [...stdout.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
   );
-  expect(encoded.size, "public execution view must expose exactly one Agent evidence payload").toBe(1);
+  expect(encoded.size, "public Inspection trace must expose exactly one Agent evidence payload").toBe(1);
   const value = JSON.parse(Buffer.from([...encoded][0]!, "base64url").toString("utf8")) as Partial<SetupPrefixEvidence>;
   for (const key of [
     "baseVersion",
@@ -133,12 +139,17 @@ async function invokeDetailed(
     passed: 1,
   });
 
-  const execution = await niceeval.run(["show", evaluation.locator, "--execution", "--json"], {
-    cwd: root,
-    env: invocationEnv,
+  const inspected = await inspectAttempt<TraceDocument>(
+    niceeval, root, evaluation.locator, "attempt.trace", { cwd: root, env: invocationEnv },
+  );
+  expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
+  expect(inspected.document).toMatchObject({
+    protocol: "niceeval.query/v1",
+    operation: "attempt.trace",
+    behaviorVersion: expect.any(String),
   });
-  expect(execution.exitCode, execution.diagnostic()).toBe(0);
-  const evidence = decodeEvidence(execution.stdout);
+  const execution = inspected.receipt.stdout;
+  const evidence = decodeEvidence(execution);
   expect(evidence).toMatchObject({
     demand,
     publicEnv,

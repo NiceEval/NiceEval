@@ -23,13 +23,13 @@ pnpm exec niceeval exp checkout --dry
 使用完整 locator 查看不可变结果：
 
 ```sh
-pnpm exec niceeval show @1K1P0VJAPVJ12
+pnpm exec niceeval view @1K1P0VJAPVJ12
 ```
 
 核对 Verdict、Assertion、用量、时间和详情页中的证据。需要回看来源 Run 的完整分母时，再使用：
 
 ```sh
-pnpm exec niceeval show --run <source-run-id>
+pnpm exec niceeval view --run <source-run-id>
 ```
 
 ## 一次采用需要的结果
@@ -53,7 +53,7 @@ NiceEval 会先预检全部输入。任一 locator 无效、不符合资格或�
 成功反馈会显示新 Run ID：
 
 ```sh
-pnpm exec niceeval show --run <accepted-run-id>
+pnpm exec niceeval view --run <accepted-run-id>
 ```
 
 这个 Run 保留当前 Experiment 的完整 expected-slot 分母。命令中选择的位置是 `accepted`；没有选择的 sibling slot 是 `not-dispatched`。一次只采用部分位置时，报告会如实显示结果覆盖不足。
@@ -64,7 +64,7 @@ pnpm exec niceeval show --run <accepted-run-id>
 
 | 错误 | 下一步 |
 | --- | --- |
-| `malformed-locator` | 从 `--dry` 或 `show` 复制完整的大写 locator，不使用旧 UUID 或模糊前缀。 |
+| `malformed-locator` | 从 `--dry` 或固定 query result 复制完整的大写 locator，不使用旧 UUID 或模糊前缀。 |
 | `locator-not-found` | 确认读取的是同一 Record；其它结果根显式传 `--record`。 |
 | `accept-ineligible` | 按提示检查 Verdict、timeout、身份或 Observability；不能证明仍成立时重新运行。 |
 | `duplicate-accept-member` | 每个目标 slot 只保留一个 locator，去掉重复或冲突输入。 |

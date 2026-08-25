@@ -33,7 +33,7 @@ export default defineExperiment({
 npx niceeval exp models
 ```
 
-Put another model in another file. By default, `show` / `view` compare Experiments in the current result scope, with no extra grouping field.
+Put another model in another file. Fixed Inspection operations compare eligible Runs in their declared request scope; View opens the selected sealed result without an Experiment selector.
 
 Nested directories provide only IDs and batch selection:
 
@@ -75,8 +75,8 @@ api-validation   claude-code             pass@3 = 1/3 (33%)    mean 41s
 Alongside pass rate, compare mean duration, tokens, cost, and failure types.
 
 ```bash
-pnpm exec niceeval show --experiment models
-pnpm exec niceeval view --experiment models
+pnpm exec niceeval view
+pnpm exec niceeval view --run <run-id>
 ```
 
 Every Experiment uses its own `evals` selection. A function form iterates over every discovered eval:
@@ -87,7 +87,7 @@ evals: (eval) =>
   eval.tags.includes("coding")
 ```
 
-`eval.id` is a project-local ID derived from the file path, not an absolute path, so you can test it with `startsWith` / `includes`. In [Authoring Evals](/tutorials/authoring#tags-and-sandbox), the `coding/fix-button` example satisfies both predicates. The parsed result becomes this run's plan. The Report reads actual physical Attempts and coverage facts.
+`eval.id` is a project-local ID derived from the file path, not an absolute path, so you can test it with `startsWith` / `includes`. In [Authoring Evals](/tutorials/authoring#tags-and-sandbox), the `coding/fix-button` example satisfies both predicates. The parsed result becomes this run's plan. Fixed Inspection operations read actual physical Attempts and coverage facts.
 
 ## Advice for Experiment design
 

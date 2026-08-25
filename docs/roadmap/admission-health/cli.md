@@ -28,7 +28,7 @@ identity、机器 reason code、请求 body、响应 body、token 或原始异�
 ```text
 admission  compare/codex  memory/recall  Attempt #1  endpoint/primary  healthy
 admission  compare/codex  memory/recall  Attempt #2  endpoint/primary  unhealthy
-  details: niceeval show --run 01J...
+  details: niceeval view --run 01J...
 admission  endpoint/primary  6 attempts not started
 ```
 
@@ -62,4 +62,4 @@ Attempt 并发计数或 Verdict 汇总。不同 occurrence 可以并发；同一
 探测中止，尚未开始的 slot 一律写 `occurrence-isolated`。
 
 CLI 只显示 Run-owned 回执的安全字段。完整诊断由 producer 明确写入自己的受控 attachment；终端、JSON 和
-Report 都不得从网络错误文本猜补缺失字段。
+query document 与 View 都不得从网络错误文本猜补缺失字段。

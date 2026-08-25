@@ -32,12 +32,12 @@ export function agentTurnTerminal(
       state: "recorded" as const,
       status: turn.adapterStatus,
       evidenceCoverage: Object.freeze({
-        events: turn.evidenceCoverage.events.status,
-        actions: turn.evidenceCoverage.actions.status,
-        messages: turn.evidenceCoverage.messages.status,
-        usage: turn.evidenceCoverage.usage.status,
-        status: turn.evidenceCoverage.status.status,
-        data: turn.evidenceCoverage.data.status,
+        events: Object.freeze({ ...turn.evidenceCoverage.events }),
+        actions: Object.freeze({ ...turn.evidenceCoverage.actions }),
+        messages: Object.freeze({ ...turn.evidenceCoverage.messages }),
+        usage: Object.freeze({ ...turn.evidenceCoverage.usage }),
+        status: Object.freeze({ ...turn.evidenceCoverage.status }),
+        data: Object.freeze({ ...turn.evidenceCoverage.data }),
       }),
     });
   }

@@ -247,31 +247,12 @@ export const en = {
     "  -h, --help       print this command index\n" +
     "  -v, --version    print the installed version\n" +
     "\nRun `niceeval <command> --help` for command-specific usage.\n",
-  "cli.show.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval show`.\n",
-  "cli.show.runDirMissing": "Record directory not found: {{dir}}\n",
-  "cli.show.noEvalMatch": "No results matched: {{pattern}}. Evals with results: {{evals}}\n",
-  "cli.show.noExperimentMatch": "No experiment matched --exp {{arg}}. Experiments with results: {{experiments}}\n",
-  "cli.show.expAmbiguous":
-    "error: --exp {{arg}} matched {{matched}} experiments: {{candidates}}\n  fix: use one of the exact ids above, or a longer prefix — each --exp in a compare must resolve to exactly one experiment\n",
-  "cli.show.locatorExpConflict":
-    "error: {{locator}} cannot combine with repeated --exp ({{exp}})\n  fix: drop the extra --exp flags — a locator already pins one attempt to one experiment; for a multi-condition comparison, drop the locator and use eval id prefixes with --exp instead\n",
-  "cli.show.statsLocatorConflict":
-    "error: --stats cannot combine with a locator ({{locator}}) — a single attempt has no stability to measure\n  fix: drop the locator and use eval id prefixes / --exp to select a range for --stats\n",
-  "cli.show.statsReportConflict":
-    "error: --stats cannot combine with --report ({{report}}) — --stats is a zero-config slice, it does not render a user report tree\n  fix: drop --report to use --stats, or drop --stats and put a StabilityMatrix in your own report file\n",
-  "cli.show.grepExecutionOnly":
-    "error: --grep only combines with --execution — it narrows that block's text rendering, not a slice of its own\n  fix: add --execution, or drop --grep\n",
-  "cli.show.grepInvalidPattern":
-    "error: --grep pattern is not a valid JS regular expression: \"{{pattern}}\" ({{message}})\n  fix: fix the pattern syntax (it is passed to `new RegExp(...)`)\n",
-  "cli.show.historyReportConflict":
-    "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for run-level trends, compose exp.runs inside your report file instead.\n",
-  "cli.show.jsonReportConflict":
-    "error: --json cannot combine with --report ({{report}}) — a report tree says how to look at the data, --json says what the data is\n  fix: drop --report to use --json, or drop --json and read the report tree as text/HTML\n",
-  "cli.show.jsonMultiEvidenceConflict":
-    "error: --json requires exactly one of --source/--execution/--timing/--diff at a time — the envelope's \"view\" is a single value, there is no combined shape for more than one\n  fix: drop the extra evidence flags, or make one --json call per flag\n",
-  "cli.show.locatorMalformed": "{{message}}\n",
-  "cli.show.locatorNotFound": "{{message}}\n",
-  "cli.show.locatorAmbiguous": "{{message}}\n",
+  "cli.record.snapshot.created": "Created RecordSnapshot: {{path}} ({{sealedRunCount}} sealed Runs)\n",
+  "cli.record.snapshot.outputRequired": "error: niceeval record snapshot requires --output <snapshot>",
+  "cli.record.snapshot.usage": "error: usage: niceeval record snapshot --output <snapshot>",
+  "cli.state.migrate.allRequired": "error: niceeval state migrate requires --all",
+  "cli.state.migrate.complete": "State migrations complete: {{path}}\n",
+  "cli.state.migrate.usage": "error: usage: niceeval state migrate --all",
   "cli.eval.noMatch": "No eval matched: {{patterns}}.\n",
   "cli.eval.noMatchHintExperiment": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.eval.noMatchKnown": "Discovered {{count}} evals: {{evals}}\n",
@@ -311,8 +292,6 @@ export const en = {
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "Discovered experiments: {{experiments}}\n",
-  "cli.view.exportedDir": "Exported static report site: {{out}} (serve the whole directory with any static host; opening index.html via file:// cannot fetch artifacts)\n",
-  "cli.view.hotReloadComplete": "{{time}} [niceeval view] hot reload complete\n",
   "cli.view.incompatible": "{{dir}}: written by niceeval {{producer}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nRun `{{command}}` to view it.\n",
   "cli.view.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval view`.\n",
   "cli.view.incompatibleForeign": "{{dir}}: written by {{name}} {{version}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nOpen this report with the tool that produced it.\n",
@@ -358,14 +337,14 @@ export const en = {
   "feedback.human.compare": "Compare: niceeval view",
   "feedback.human.counts":
     "{{total}} total · {{reused}} reused · {{running}} running · {{queued}} queued · {{passed}} passed · {{failed}} failed · {{errored}} errored · {{skipped}} skipped",
-  "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
-  "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
+  "feedback.human.diffHint": "Diff:    niceeval view {{locator}}",
+  "feedback.human.evalHint": "Eval:    niceeval view {{locator}}",
   "feedback.human.exampleLocator": "e.g. {{locator}}",
   "feedback.human.failuresHeader": "FAILURES",
   "feedback.human.failuresSoFar": "{{count}} so far",
   "feedback.human.failuresTotalKinds": "{{total}} total · {{kinds}} kinds",
   "feedback.human.heartbeat": "{{elapsed}} elapsed · {{counts}}",
-  "feedback.human.inspect": "Inspect: niceeval show {{locator}}",
+  "feedback.human.inspect": "Inspect: niceeval view {{locator}}",
   "feedback.human.keptSandboxesHeader": "KEPT SANDBOXES",
   "feedback.human.moreActive": "… {{count}} more active",
   "feedback.human.moreFailureKinds": "+{{count}} more kinds — niceeval view",
@@ -392,7 +371,7 @@ export const en = {
     "{{passed}} passed · {{failed}} failed · {{errored}} errored · {{unstarted}} unstarted  ({{reused}} reused)",
   "feedback.human.summaryAllReusedLine": "{{passed}} passed · {{failed}} failed · {{errored}} errored  (all {{reused}} reused)",
   "feedback.human.suppressedFailures": "… {{count}} more failures suppressed",
-  "feedback.human.trace": "Trace:   niceeval show {{locator}} --execution",
+  "feedback.human.trace": "Trace:   niceeval view {{locator}}",
   "feedback.human.warningsHeader": "WARNINGS",
   "feedback.phase.agentSetup": "agent setup",
   "feedback.phase.agentEnsure": "preparing agent",

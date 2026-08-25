@@ -38,7 +38,7 @@ export default defineEval({
 运行 `niceeval exp judge-smoke`。完整配置会先预检 endpoint；预检失败是 setup error，不会生成伪造的
 Judge 结果。
 
-预检通过后，show 显示一条 Judge AssertionResult，其中含 `[0,1]` measurement、threshold、理由和
+预检通过后，View 或固定 query 显示一条 Judge AssertionResult，其中含 `[0,1]` measurement、threshold、理由和
 裁剪后的材料。网络调用失败为 `unavailable`，无效响应为 evaluator `errored`；二者都不会显示为 `0`。
 
 开发机没有 model 或 key 时不会发出预检网络请求。结果保留 `judge-model-unresolved` 或

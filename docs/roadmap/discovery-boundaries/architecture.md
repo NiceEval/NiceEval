@@ -78,7 +78,7 @@ type DiscoveryFailureCode =
 
 ## 身份与结果沿用
 
-Discovery snapshot 保存 root identity、entry kind、entry path、cutoff、展开规则与 source closure。它是 Eval definition identity 的输入，而不是可由 Report 事后猜出的展示字段。
+Discovery snapshot 保存 root identity、entry kind、entry path、cutoff、展开规则与 source closure。它是 Eval definition identity 的输入，不由 query 或 View 事后猜出展示字段。
 
 folder entry 截止能改变哪些模块被定义为独立 Eval，因此改变 cutoff、root 或 entry kind 会使受影响 Eval 重新规划。普通目录中未被 import 的文件不因“被扫描过”进入 source closure。
 

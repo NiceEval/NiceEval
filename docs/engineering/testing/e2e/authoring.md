@@ -8,8 +8,8 @@ NiceEval 只提供候选包注入、场景 Repo 隔离与 Testkit 机械原语�
 一个文件只属于一个稳定结果 owner，并在第一行写唯一 `owner:`。历史缺陷凭据只贴在确实能杀死旧实现的 case 旁。
 
 ```ts
-// owner: docs/engineering/testing/e2e/report.md#show-json-pipe
-test("show --json 经 pipe 交付完整文档", async () => {
+// owner: docs/engineering/testing/e2e/report.md#inspection-query
+test("query run 经 pipe 交付完整文档", async () => {
   // 完整 argv、公开观察与独立 expected 留在这里。
 });
 ```
@@ -23,12 +23,12 @@ test("show --json 经 pipe 交付完整文档", async () => {
 
 ```ts
 const result = await runProcess([
-  "pnpm", "--silent", "exec", "niceeval", "show", locator, "--json",
+  "pnpm", "--silent", "exec", "niceeval", "query", "run", "--request", requestPath,
 ]);
 
 expect(result.exitCode, result.diagnostic()).toBe(0);
-const document = result.json<AttemptDocument>();
-expect(document.view).toBe("attempt");
+const document = result.json<InspectionDocument>();
+expect(document.operation).toBe("attempt.get");
 ```
 
 非零 exit、signal 与 timeout 都返回完整 ProcessReceipt。只有进程无法启动时抛 `ProcessStartError`。

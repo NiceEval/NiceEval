@@ -8,10 +8,10 @@ import {
 } from "../../../attachment/index.ts";
 import { RecordExactParseOptions } from "../../../codec/core.ts";
 import {
-  AgentTurnsAttachmentSchema,
   AgentTurnsRevision2AttachmentSchema,
-  validateAgentTurnsAttachment,
+  AgentTurnsRevision3AttachmentSchema,
   validateAgentTurnsRevision2Attachment,
+  validateAgentTurnsRevision3Attachment,
   type AgentTurnsRevision2Attachment,
 } from "../schema.ts";
 
@@ -66,11 +66,11 @@ export const agentTurnsV2ToV3 = defineRecordMigration({
       segments: previous.segments,
     });
     const decoded = Schema.validateEither(
-      AgentTurnsAttachmentSchema,
+      AgentTurnsRevision3AttachmentSchema,
       RecordExactParseOptions,
     )(value);
     if (Either.isLeft(decoded)) return yield* Effect.fail(invalid());
-    const [issue] = validateAgentTurnsAttachment(decoded.right);
+    const [issue] = validateAgentTurnsRevision3Attachment(decoded.right);
     if (issue !== undefined) return yield* Effect.fail(issue);
     return Object.freeze({
       value: decoded.right,

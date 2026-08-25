@@ -130,7 +130,7 @@ Verdict 只说明终局类别，不能独立证明命中了目标失败路径。
 8. 失败时附上原始 `ProcessReceipt.diagnostic()`；
 9. 返回原始 receipt 与 typed events，供 owner 验收具名原因和其它公开结果。
 
-它不隐藏 owner、Vitest 标题、完整 argv、退出码、completion、坐标 expected，以及 `failed`、`errored`、`skipped` 的具名证据。它也不接管 show、JUnit、execution、timing、资源终结或浏览器断言。
+它不隐藏 owner、Vitest 标题、完整 argv、退出码、completion、坐标 expected，以及 `failed`、`errored`、`skipped` 的具名证据。它也不接管 query、JUnit、固定 Inspection operation、资源终结或浏览器断言。
 
 ## 不把期望注解到 Eval
 
