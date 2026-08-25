@@ -1179,6 +1179,14 @@ def main() -> None:
                 storage_root / "fixed-image-v1" / "rotation-epochs" / epoch / "store.img"
             )
             config["storage"]["registryEpoch"] = epoch
+        elif previous_config is not None and source_host_config is not None \
+                and Path(str(previous_config["storage"]["outerImagePath"])).resolve() \
+                    != Path(str(config["storage"]["outerImagePath"])).resolve():
+            # A declarative backing cutover must publish its registries and
+            # provision intent in a fresh namespace.  The legacy root paths
+            # remain bound to the previous committed capsule and cannot
+            # describe a different slot count, size, or backing identity.
+            config["storage"]["registryEpoch"] = epoch
         marker = generation / "activation.pending.json"
         current_pointer = generation / "current"
         journal = generation / "activation.ndjson"
