@@ -3,10 +3,13 @@ import type { Effect } from "effect";
 import type {
   BooleanMatch,
   CollectionMatch,
+  ManagedToolCalls,
   MatchDiagnostic,
   NumericComparator,
+  NumericComparisonMatch,
   ScoreMatch,
   ThresholdedScoreMatch,
+  ToolMatch,
 } from "./match.ts";
 import type { AgentWorkspaceDiff } from "./workspace-diff.ts";
 
@@ -114,7 +117,10 @@ export type AssertionCriterion =
       readonly matcher?: string;
       readonly quantifier?:
         | { readonly kind: "absent" }
-        | { readonly kind: "at-least" | "exact"; readonly count: number };
+        | {
+            readonly kind: "at-least" | "less-than" | "at-most" | "greater-than" | "exact";
+            readonly count: number;
+          };
     }
   | {
       readonly kind: "judge-measurement";
@@ -605,6 +611,14 @@ export interface PassAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): PassBooleanAssertionHandle<Refined>;
+  check<Value extends readonly unknown[]>(
+    value: AssertionSubject<Value>,
+    match: NumericComparisonMatch,
+  ): PassBooleanAssertionHandle<Value>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedToolCalls<S>>,
+    match: ToolMatch,
+  ): PassBooleanAssertionHandle<ManagedToolCalls<S>>;
   check<Value>(
     value: AssertionSubject<Value>,
     match: CollectionMatch<NoInfer<Value>>,
@@ -625,6 +639,14 @@ export interface ScoreAssertionsContext extends AssertionGroupContext {
     value: AssertionSubject<Value>,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): ScoreBooleanAssertionHandle<Refined>;
+  check<Value extends readonly unknown[]>(
+    value: AssertionSubject<Value>,
+    match: NumericComparisonMatch,
+  ): ScoreBooleanAssertionHandle<Value>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedToolCalls<S>>,
+    match: ToolMatch,
+  ): ScoreBooleanAssertionHandle<ManagedToolCalls<S>>;
   check<Value>(
     value: AssertionSubject<Value>,
     match: CollectionMatch<NoInfer<Value>>,

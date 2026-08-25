@@ -5,8 +5,13 @@
 
 它还说明工具包装糖、值 refinement、Pass threshold、Score record-only、贡献 score、direct score、Usage `ifCovered` 与 `.orStop()`。
 
-正向示例说明允许的作者面。`@ts-expect-error` 说明禁止的参数数、handle 重用、Pass score、direct handle
-再配置、未 threshold 的 Pass measurement、展开后的 `matching`／`inOrder`、根 `inOrder`，以及旧 API。
+正向示例说明允许的作者面。`@ts-expect-error` 只说明当前 API 的结构性非法组合：
+
+- 参数数、handle 重用、Pass score 与 direct handle 再配置；
+- 未 threshold 的 measurement 与受管 collection 约束；
+- 量化 occurrence Match 再进入 `and`／`or`／`inOrder`，以及根 `inOrder`。
+
+它不为已经移除的作者语法保留守墓式类型断言。
 运行时数值范围不伪装成静态 literal 类型：
 `.score(n)` 在运行时拒绝非有限或不大于零的值，`t.score(n)` 拒绝非有限或负值。
 `calledTool` 的恰好次数为零时同样由运行时拒绝。
@@ -15,5 +20,5 @@
 从仓库根运行：
 
 ```sh
-pnpm exec tsc -p docs/feature/assertions/reference/tsconfig.json
+pnpm exec tsc6 -p docs/feature/assertions/reference/tsconfig.json
 ```

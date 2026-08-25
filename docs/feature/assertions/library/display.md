@@ -21,8 +21,8 @@ occurrence collection-filter 在 cardinality 为零且 matched 时，展开区�
 mismatched 时显示实际命中数、决定结果的 tool occurrence，以及命中输入内的位置。
 诊断采样或截断不能删除 sealed result 与决定性见证。
 
-`usedNoTools` 与显式 `matching(toolMatch({}), exactly(0))` 走同一展示。
-`count` 与 `maxToolCalls` 走 numeric／cardinality 主视图：写出 count、threshold、result 与 completeness，不展开 Matcher Filter Debugger 或 tool ledger。
+`usedNoTools` 与显式 `toolMatch({}).exactly(0)` 走同一展示。
+collection numeric Match 与 `maxToolCalls` 走 numeric／cardinality 主视图：写出 count、threshold、result 与 completeness，不展开 Matcher Filter Debugger 或 tool ledger。
 
 Web 详情把 matcher 自身作为可展开行：`matched`、`mismatched` 与 `unavailable` 分别使用成功、失败与警告色，并在每行视觉显示状态文字；颜色、图标或无障碍名称都不能成为状态的唯一表达。
 

@@ -136,6 +136,23 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "occurrence/v2";
+      readonly data: {
+        readonly scope: "turn" | "session" | "attempt";
+        readonly occurrence: "tool" | "skill" | "event";
+        readonly assertion: "present" | "absent" | "count" | "order";
+        /** Tool assertions retain the single managed matcher identity. */
+        readonly matcher?: string;
+        readonly quantifier?:
+          | { readonly kind: "absent" }
+          | {
+              readonly kind: "at-least" | "less-than" | "at-most" | "greater-than" | "exact";
+              readonly count: number;
+            };
+      };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "judge-measurement/v1";
       readonly data: {
         readonly recipe: "closed-qa" | "factuality" | "summarizes";

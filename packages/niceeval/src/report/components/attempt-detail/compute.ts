@@ -509,6 +509,9 @@ function matcherCollectionQuerySummary(value: ClosedAssertionFactValue): string 
   if (count?.kind !== "value" || typeof count.value !== "number") return closedFactText(value);
   if (kind.value === "exact") return `exactly ${count.value} × ${matcher}`;
   if (kind.value === "at-least") return `at least ${count.value} × ${matcher}`;
+  if (kind.value === "less-than") return `less than ${count.value} × ${matcher}`;
+  if (kind.value === "at-most") return `at most ${count.value} × ${matcher}`;
+  if (kind.value === "greater-than") return `greater than ${count.value} × ${matcher}`;
   return closedFactText(value);
 }
 

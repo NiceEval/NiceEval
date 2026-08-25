@@ -801,7 +801,8 @@ function sourceLimitationFact(limitation: SourceReceiptLimitation): ClosedAssert
 function matcherSubject(entry: MatcherAssertionEntry): "tool" | "event" | "source-row" {
   if (entry.criterion.state === "available") {
     const criterion = entry.criterion.value;
-    const data = criterion.kind === "builtin" && criterion.id === "occurrence/v1"
+    const data = criterion.kind === "builtin" &&
+      (criterion.id === "occurrence/v1" || criterion.id === "occurrence/v2")
       ? criterion.data
       : undefined;
     if (isReadonlyObject(data)) {

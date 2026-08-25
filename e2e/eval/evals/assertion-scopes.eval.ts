@@ -2,18 +2,24 @@ import { defineEval } from "niceeval";
 import {
   atMost,
   commandMatch,
-  count,
   eventMatch,
-  exactly,
   includes,
   inOrder,
   isTrue,
   jsonMatch,
-  matching,
   or,
   referencesAnyPath,
   toolMatch,
 } from "niceeval/expect";
+
+function authoringRejected(run: () => void): boolean {
+  try {
+    run();
+    return false;
+  } catch {
+    return true;
+  }
+}
 
 export default defineEval({
   description: "同一套确定性工具证据在 turn、session 与 t scope 的边界一致",
@@ -39,12 +45,22 @@ export default defineEval({
         { count: 1 },
       );
       mainTurn.notCalledTool("scope_branch_tool");
-      mainTurn.calledTool("scope_main_tool");
+      mainTurn.calledTool("scope_main_tool").label("turn calledTool bare");
       mainTurn.noFailedActions();
       mainTurn.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
       mainTurn.maxToolCalls(20_000).label("turn maxToolCalls");
-      mainTurn.check(mainTurn.toolCalls, count(atMost(20_000))).label("turn explicit count");
-      t.check(mainTurn.toolCalls, count(atMost(20_000))).label("cut from subject");
+      mainTurn.check(mainTurn.toolCalls, atMost(20_000)).label("turn explicit cardinality");
+      t.check(mainTurn.toolCalls, atMost(20_000)).label("cut from subject");
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool"))
+        .label("turn bare toolMatch");
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").exactly(1))
+        .label("turn occurrence exactly");
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").atMost(1))
+        .label("turn occurrence atMost");
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").lessThan(2))
+        .label("turn occurrence lessThan");
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").greaterThan(0))
+        .label("turn occurrence greaterThan");
     });
     await t.group("session scope", () => {
       branch.calledTool(
@@ -54,6 +70,8 @@ export default defineEval({
           status: "completed",
         }),
       );
+      branch.check(branch.toolCalls, toolMatch("scope_branch_tool").atLeast(1))
+        .label("partial source lower bound can match");
       branch.notCalledTool("scope_main_tool")
         .optional()
         .label("partial source absence remains unavailable");
@@ -64,18 +82,21 @@ export default defineEval({
         .label("turn calledTool");
       branchTurn.check(
         branchTurn.toolCalls,
-        matching(toolMatch("scope_branch_tool"), { atLeast: 1 }),
-      ).label("turn explicit matching");
+        toolMatch("scope_branch_tool").atLeast(1),
+      ).label("turn explicit occurrence");
       branch.noFailedActions().optional();
       branch.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
-      branch.check(branch.toolCalls, count(atMost(100)))
+      branch.check(branch.toolCalls, atMost(100))
         .optional()
-        .label("partial source count remains unavailable");
+        .label("partial source cardinality remains unavailable");
+      branch.check(branch.toolCalls, toolMatch("scope_branch_tool").atMost(1))
+        .optional()
+        .label("partial source occurrence upper bound remains unavailable");
       idle.usedNoTools().label("unused session usedNoTools");
       idle.check(
         idle.toolCalls,
-        matching(toolMatch({}), exactly(0)),
-      ).label("unused session explicit matching zero");
+        toolMatch({}).exactly(0),
+      ).label("unused session explicit occurrence zero");
     });
     await t.group("attempt scope", () => {
       t.calledTool(toolMatch("scope_main_tool", { status: "completed" }), {
@@ -92,10 +113,13 @@ export default defineEval({
       ).optional();
       t.noFailedActions().optional();
       t.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
-      t.calledTool(or(
+      const initCommand = or(
         commandMatch("niceeval", { argsStart: ["init"] }),
         toolMatch("shell", { input: referencesAnyPath(["node_modules/niceeval/INDEX.md"]) }),
-      ));
+      );
+      t.calledTool(initCommand).label("attempt calledTool composite");
+      t.check(t.toolCalls, initCommand.atLeast(1))
+        .label("attempt explicit composite occurrence");
       t.calledTool(or(
         commandMatch("niceeval", { argsStart: ["exp"], excludes: ["--dry", "--help"] }),
         toolMatch("shell", { input: referencesAnyPath(["niceeval.config.ts", "experiments"]) }),
@@ -107,35 +131,38 @@ export default defineEval({
       t.maxToolCalls(20_000)
         .optional()
         .label("attempt maxToolCalls");
-      t.check(t.toolCalls, count(atMost(20_000)))
+      t.check(t.toolCalls, atMost(20_000))
         .optional()
-        .label("attempt explicit count");
-      t.check([1, 2, 3], count(atMost(3))).label("author array count");
-      t.check([...mainTurn.toolCalls], count(atMost(20_000))).label("spread count still works");
-      let spreadMatchingRejected = false;
-      try {
-        t.check(
-          [...mainTurn.toolCalls],
-          matching(toolMatch("scope_main_tool"), exactly(1)),
-        );
-      } catch {
-        spreadMatchingRejected = true;
-      }
-      t.check(spreadMatchingRejected, isTrue()).label("spread matching rejected");
-      let spreadInOrderRejected = false;
-      try {
-        t.check([...mainTurn.toolCalls], inOrder(branchOrder));
-      } catch {
-        spreadInOrderRejected = true;
-      }
-      t.check(spreadInOrderRejected, isTrue()).label("spread inOrder rejected");
-      let rootInOrderRejected = false;
-      try {
-        t.check(t.toolCalls, inOrder(branchOrder));
-      } catch {
-        rootInOrderRejected = true;
-      }
-      t.check(rootInOrderRejected, isTrue()).label("root inOrder rejected");
+        .label("attempt explicit cardinality");
+      t.check([1, 2, 3], atMost(3)).label("author array cardinality");
+      t.check([...mainTurn.toolCalls], atMost(20_000)).label("spread cardinality still works");
+      t.check(
+        authoringRejected(() => {
+          t.check([...mainTurn.toolCalls], toolMatch("scope_main_tool").exactly(1));
+        }),
+        isTrue(),
+      ).label("spread occurrence rejected");
+      t.check(
+        authoringRejected(() => {
+          t.check([...mainTurn.toolCalls], inOrder(branchOrder));
+        }),
+        isTrue(),
+      ).label("spread inOrder rejected");
+      t.check(
+        authoringRejected(() => {
+          t.check(t.toolCalls, inOrder(branchOrder));
+        }),
+        isTrue(),
+      ).label("root inOrder rejected");
+      t.check(
+        authoringRejected(() => {
+          inOrder([
+            toolMatch("scope_main_tool").exactly(1) as never,
+            toolMatch("scope_main_tool"),
+          ]);
+        }),
+        isTrue(),
+      ).label("quantified inOrder step rejected");
     });
     await t.group("session order", async () => {
       const laterTurn = await branch.send("assertion/scopes-branch");

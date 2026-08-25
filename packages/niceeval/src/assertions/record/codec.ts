@@ -176,6 +176,13 @@ const PositiveIntegerSchema = Schema.JsonNumber.pipe(
   }),
 );
 
+const NonNegativeSafeIntegerSchema = Schema.JsonNumber.pipe(
+  Schema.filter((value) => Number.isSafeInteger(value) && value >= 0, {
+    identifier: "AssertionNonNegativeSafeInteger",
+    description: "a non-negative safe integer",
+  }),
+);
+
 const NonNegativeNumberSchema = Schema.JsonNumber.pipe(
   Schema.filter(isNonNegativeNumber, {
     identifier: "AssertionNonNegativeNumber",
@@ -433,7 +440,7 @@ const ScopeStatusCriterionSchema = Schema.Struct({
   }),
 });
 
-const OccurrenceCriterionSchema = Schema.Struct({
+const OccurrenceCriterionV1Schema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("occurrence/v1"),
   data: Schema.Struct({
@@ -446,6 +453,28 @@ const OccurrenceCriterionSchema = Schema.Struct({
       Schema.Struct({
         kind: Schema.Literal("at-least", "exact"),
         count: PositiveIntegerSchema,
+      }),
+    )),
+  }),
+});
+
+const OccurrenceCriterionV2Schema = Schema.Struct({
+  kind: Schema.Literal("builtin"),
+  id: Schema.Literal("occurrence/v2"),
+  data: Schema.Struct({
+    scope: Schema.Literal("turn", "session", "attempt"),
+    occurrence: Schema.Literal("tool", "skill", "event"),
+    assertion: Schema.Literal("present", "absent", "count", "order"),
+    matcher: Schema.optional(BoundedJsonStringSchema),
+    quantifier: Schema.optional(Schema.Union(
+      Schema.Struct({ kind: Schema.Literal("absent") }),
+      Schema.Struct({
+        kind: Schema.Literal("exact"),
+        count: PositiveIntegerSchema,
+      }),
+      Schema.Struct({
+        kind: Schema.Literal("at-least", "less-than", "at-most", "greater-than"),
+        count: NonNegativeSafeIntegerSchema,
       }),
     )),
   }),
@@ -516,7 +545,8 @@ export const BuiltInCriterionSchema: Schema.Schema<BuiltInCriterion> =
     ValueMatchCriterionSchema,
     NumericComparisonCriterionSchema,
     ScopeStatusCriterionSchema,
-    OccurrenceCriterionSchema,
+    OccurrenceCriterionV1Schema,
+    OccurrenceCriterionV2Schema,
     JudgeMeasurementCriterionSchema,
     SandboxResultCriterionSchema,
     DirectScoreCriterionSchema,
@@ -1299,6 +1329,7 @@ const KNOWN_BUILTIN_CRITERION_IDS: ReadonlySet<string> = new Set([
   "numeric-comparison/v1",
   "scope-status/v1",
   "occurrence/v1",
+  "occurrence/v2",
   "judge-measurement/v1",
   "sandbox-result/v1",
   "direct-score/v1",

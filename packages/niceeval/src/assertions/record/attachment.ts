@@ -316,7 +316,7 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
     case "occurrence":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "occurrence/v1" as const,
+        id: "occurrence/v2" as const,
         data: Object.freeze({
           scope: criterion.scope,
           occurrence: criterion.occurrence,

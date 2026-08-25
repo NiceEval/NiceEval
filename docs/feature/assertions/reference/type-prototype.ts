@@ -3,7 +3,6 @@ export {};
 declare const assertionHandleBrand: unique symbol;
 declare const measurementStateBrand: unique symbol;
 declare const managedToolCallsBrand: unique symbol;
-declare const exactCardinalityBrand: unique symbol;
 declare const toolMatchBrand: unique symbol;
 
 type EvaluationKind = "pass" | "score";
@@ -61,6 +60,10 @@ interface BooleanMatch<in T, out R extends T = T> {
   readonly refine: (value: T) => R;
 }
 
+interface NumericComparisonMatch extends BooleanMatch<number> {
+  readonly numericComparison: true;
+}
+
 interface CollectionMatch<in T> {
   readonly kind: "collection-match";
 }
@@ -80,7 +83,22 @@ interface ToolOccurrenceView {
   readonly name: string;
   readonly input?: unknown;
   readonly output?: unknown;
-  readonly status?: "pending" | "completed" | "failed" | "rejected";
+  readonly status?: ToolStatus;
+}
+
+type ToolStatus = "pending" | "completed" | "failed" | "rejected";
+type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+
+interface ToolMatchOptions {
+  readonly input?: BooleanMatch<JsonValue>;
+  readonly output?: BooleanMatch<JsonValue>;
+  readonly status?: ToolStatus;
+}
+
+interface CommandMatchOptions {
+  readonly argsStart?: readonly string[];
+  readonly excludes?: readonly string[];
+  readonly status?: ToolStatus;
 }
 
 interface ManagedToolCalls<
@@ -89,16 +107,21 @@ interface ManagedToolCalls<
   readonly [managedToolCallsBrand]: S;
 }
 
-interface ExactCardinality {
-  readonly [exactCardinalityBrand]: true;
-  readonly count: number;
-}
-
 type ToolMatch = BooleanMatch<ToolOccurrenceView> & {
   readonly [toolMatchBrand]: true;
+  atLeast(count: number): CollectionMatch<ManagedToolCalls>;
+  lessThan(count: number): CollectionMatch<ManagedToolCalls>;
+  atMost(count: number): CollectionMatch<ManagedToolCalls>;
+  greaterThan(count: number): CollectionMatch<ManagedToolCalls>;
+  exactly(count: number): CollectionMatch<ManagedToolCalls>;
 };
 
 interface PassScope {
+  check<V extends number | readonly unknown[]>(value: Subject<V>, match: NumericComparisonMatch): PassBooleanHandle<V>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: ManagedToolCalls<S>,
+    match: ToolMatch,
+  ): PassBooleanHandle<ManagedToolCalls<S>>;
   check<V, R extends V>(value: Subject<V>, match: BooleanMatch<NoInfer<V>, R>): PassBooleanHandle<R>;
   check<V>(value: Subject<V>, match: CollectionMatch<NoInfer<V>>): PassBooleanHandle<V>;
   check<V>(value: Subject<V>, match: MeasurementMatch<NoInfer<V>>): PassMeasurementHandle;
@@ -114,6 +137,11 @@ interface PassScope {
 }
 
 interface ScoreScope {
+  check<V extends number | readonly unknown[]>(value: Subject<V>, match: NumericComparisonMatch): ScoreBooleanHandle<V>;
+  check<S extends "turn" | "session" | "attempt">(
+    value: ManagedToolCalls<S>,
+    match: ToolMatch,
+  ): ScoreBooleanHandle<ManagedToolCalls<S>>;
   check<V, R extends V>(value: Subject<V>, match: BooleanMatch<NoInfer<V>, R>): ScoreBooleanHandle<R>;
   check<V>(value: Subject<V>, match: CollectionMatch<NoInfer<V>>): ScoreBooleanHandle<V>;
   check<V>(value: Subject<V>, match: MeasurementMatch<NoInfer<V>>): ScoreMeasurementHandle;
@@ -201,21 +229,18 @@ declare const hasId: BooleanMatch<unknown, { readonly id: string }>;
 declare const isTrue: BooleanMatch<boolean, true>;
 declare const quality: MeasurementMatch<string>;
 
-declare function lessThan(threshold: number): BooleanMatch<number>;
-declare function atMost(threshold: number): BooleanMatch<number>;
-declare function greaterThan(threshold: number): BooleanMatch<number>;
-declare function atLeast(threshold: number): BooleanMatch<number>;
-declare function exactly(count: number): ExactCardinality;
-declare function count(inner: BooleanMatch<number>): CollectionMatch<readonly unknown[]>;
-declare function matching(
-  item: ToolMatch,
-  cardinality: ExactCardinality | { readonly atLeast: number },
-): CollectionMatch<ManagedToolCalls>;
+declare function lessThan(threshold: number): NumericComparisonMatch;
+declare function atMost(threshold: number): NumericComparisonMatch;
+declare function greaterThan(threshold: number): NumericComparisonMatch;
+declare function atLeast(threshold: number): NumericComparisonMatch;
 declare function inOrder(
   matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
 ): CollectionMatch<ManagedToolCalls<"turn" | "session">>;
-declare function toolMatch(name: string): ToolMatch;
-declare function toolMatch(options: Record<string, never>): ToolMatch;
+declare function toolMatch(name: string, options?: ToolMatchOptions): ToolMatch;
+declare function toolMatch(options: ToolMatchOptions): ToolMatch;
+declare function commandMatch(executable: string, options?: CommandMatchOptions): ToolMatch;
+declare function and(first: ToolMatch, ...rest: readonly ToolMatch[]): ToolMatch;
+declare function or(first: ToolMatch, ...rest: readonly ToolMatch[]): ToolMatch;
 
 async function positiveAuthoringShapes(): Promise<void> {
   const refined = await pass.check(candidate, hasId)
@@ -242,15 +267,31 @@ async function positiveAuthoringShapes(): Promise<void> {
   pass.check(4, atLeast(4)).label("至少");
   pass.check(-1, lessThan(0)).label("负数比较");
 
-  pass.check(pass.toolCalls, count(atMost(2))).label("attempt 次数");
-  passTurn.check(passTurn.toolCalls, count(atMost(2))).label("turn 次数");
-  pass.check(passTurn.toolCalls, count(atMost(2))).label("cut 由 subject 携带");
-  passTurn.check(passTurn.toolCalls, matching(toolMatch("read"), exactly(2))).label("恰好两次");
-  passTurn.check(passTurn.toolCalls, matching(toolMatch("write"), exactly(0))).label("零次写");
-  passTurn.check(passTurn.toolCalls, matching(toolMatch("search"), { atLeast: 1 })).label("至少一次");
+  pass.check(pass.toolCalls, atMost(2)).label("attempt 次数");
+  passTurn.check(passTurn.toolCalls, atMost(2)).label("turn 次数");
+  pass.check(passTurn.toolCalls, atMost(2)).label("cut 由 subject 携带");
+  passTurn.check(passTurn.toolCalls, toolMatch("read").exactly(2)).label("恰好两次");
+  passTurn.check(passTurn.toolCalls, toolMatch("write").exactly(0)).label("零次写");
+  passTurn.check(passTurn.toolCalls, toolMatch("search")).label("至少一次");
+  passTurn.check(passTurn.toolCalls, toolMatch("search").atLeast(1)).label("显式至少一次");
+  passTurn.check(passTurn.toolCalls, toolMatch("search").lessThan(3)).label("少于三次");
+  passTurn.check(passTurn.toolCalls, toolMatch("search").atMost(2)).label("至多两次");
+  passTurn.check(passTurn.toolCalls, toolMatch("search").greaterThan(0)).label("多于零次");
   passTurn.check(
     passTurn.toolCalls,
-    matching(toolMatch({}), exactly(0)),
+    commandMatch("pnpm", { argsStart: ["test"] }).atMost(1),
+  ).label("至多一次测试命令");
+  passTurn.check(
+    passTurn.toolCalls,
+    and(commandMatch("pnpm"), toolMatch({ status: "completed" })).exactly(1),
+  ).label("完成一条 pnpm 命令");
+  passTurn.check(
+    passTurn.toolCalls,
+    or(toolMatch("read"), toolMatch("search")).atLeast(1),
+  ).label("组合后至少一次");
+  passTurn.check(
+    passTurn.toolCalls,
+    toolMatch({}).exactly(0),
   ).label("无任何工具");
   passTurn.check(
     passTurn.toolCalls,
@@ -260,8 +301,8 @@ async function positiveAuthoringShapes(): Promise<void> {
     passSession.toolCalls,
     inOrder([toolMatch("read"), toolMatch("write")]),
   ).label("会话顺序");
-  pass.check([1, 2, 3], count(atMost(2))).label("作者 array 计数");
-  pass.check([...passTurn.toolCalls], count(atMost(2))).label("展开后仍可 count");
+  pass.check([1, 2, 3], atMost(2)).label("作者 array 计数");
+  pass.check([...passTurn.toolCalls], atMost(2)).label("展开后仍可比较 cardinality");
 
   const thresholded = pass.check(reply, quality).gate(0.8).label("最低质量");
   await thresholded.orStop();
@@ -275,7 +316,7 @@ async function positiveAuthoringShapes(): Promise<void> {
   score.maxTokens(4_000).ifCovered().score(1);
   score.maxToolCalls(2).score(1);
   score.usedNoTools().score(1);
-  score.check(score.toolCalls, count(atMost(2))).score(1);
+  score.check(score.toolCalls, atMost(2)).score(1);
   score.score(5).key("manual").label("人工贡献");
 }
 void positiveAuthoringShapes;
@@ -317,37 +358,23 @@ function negativeAuthoringShapes(): void {
   scoreTurn.calledTool("search").score(0);
   scoreTurn.calledTool("search").score(-1);
 
-  // @ts-expect-error Removed author APIs are not part of this model.
-  pass.require(passBoolean);
-  // @ts-expect-error Usage coverage lives on the Usage Assertion handle.
-  pass.checkIfCovered(pass.maxTokens(100));
-  // @ts-expect-error Old numeric APIs are absent.
-  passBoolean.points(1);
-  // @ts-expect-error Old numeric APIs are absent.
-  passBoolean.weight(1);
   // @ts-expect-error Numeric Match candidates must be numbers.
   pass.check("4", atMost(4));
-  // @ts-expect-error Usage facts are not exposed as public selectors.
-  pass.tokens();
-  // @ts-expect-error Usage facts are not exposed as public selectors.
-  pass.cost();
-  // @ts-expect-error There is no generic metric selector.
-  pass.metric("tokens");
-  // @ts-expect-error Control API is named orStop.
-  passBoolean.stopOnFailure();
-  // @ts-expect-error There is no toolCallCount selector.
-  pass.toolCallCount();
-  // @ts-expect-error There is no public Fact envelope on toolCalls.
-  pass.toolCalls.value;
   // @ts-expect-error Root toolCalls cannot use inOrder.
   pass.check(pass.toolCalls, inOrder([toolMatch("read"), toolMatch("write")]));
-  // @ts-expect-error Spread toolCalls is an ordinary array and cannot use matching.
-  pass.check([...passTurn.toolCalls], matching(toolMatch("read"), exactly(1)));
+  // @ts-expect-error Spread toolCalls is an ordinary array and cannot use occurrence Match.
+  pass.check([...passTurn.toolCalls], toolMatch("read").exactly(1));
   // @ts-expect-error Spread toolCalls cannot use inOrder.
   pass.check([...passTurn.toolCalls], inOrder([toolMatch("read"), toolMatch("write")]));
+  // @ts-expect-error Quantified occurrence Match cannot be an inOrder step.
+  passTurn.check(passTurn.toolCalls, inOrder([toolMatch("read").atLeast(1), toolMatch("write")]));
+  // @ts-expect-error Quantified occurrence Match cannot be an and operand.
+  and(toolMatch("read").atLeast(1), toolMatch("write"));
+  // @ts-expect-error Quantified occurrence Match cannot be an or operand.
+  or(toolMatch("read"), toolMatch("write").atMost(1));
   // @ts-expect-error Root context has no toolOrder wrapper.
   pass.toolOrder([toolMatch("read"), toolMatch("write")]);
-  // Runtime checks reject calledTool count 0; zero uses notCalledTool or matching(..., exactly(0)).
+  // Runtime checks reject calledTool count 0; zero uses notCalledTool or toolMatch(...).exactly(0).
   passTurn.calledTool("read", { count: 0 });
 }
 void negativeAuthoringShapes;

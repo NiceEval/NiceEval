@@ -57,18 +57,14 @@ import {
   assertionEventOccurrence,
   assertManagedEventMatch,
   assertManagedToolMatch,
-  count,
   evaluateBooleanMatch,
-  exactly,
   inOrder,
   makeAssertionMessageEvent,
   makeAssertionToolEvent,
-  matching,
   toolMatch,
   type BooleanMatch,
   type BooleanMatchEvaluation,
   type EventMatch,
-  type ExactCardinality,
   type ManagedToolCalls,
   type MatchableEvent,
   type ToolMatch,
@@ -355,7 +351,9 @@ function occurrenceCriterion(
       ? "absent" as const
       : quantifier.kind === "exact"
         ? "count" as const
-        : "present" as const,
+        : quantifier.kind === "at-least" && quantifier.count === 1
+          ? "present" as const
+          : "count" as const,
     ...(matcher === undefined ? {} : { matcher }),
     quantifier: Object.freeze(
       quantifier.kind === "absent"
@@ -563,7 +561,9 @@ function resolveToolTarget(target: ToolMatch | string, label: "calledTool" | "no
   return assertManagedToolMatch(target, `${label}() match`);
 }
 
-function normalizeCalledToolOptions(value: CalledToolOptions | undefined): ToolMatchQuantifier {
+function normalizeCalledToolOptions(
+  value: CalledToolOptions | undefined,
+): Extract<ToolMatchQuantifier, { readonly kind: "at-least" | "exact" }> {
   if (value === undefined) return Object.freeze({ kind: "at-least" as const, count: 1 });
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("calledTool() options must be an object");
@@ -639,15 +639,6 @@ function unavailableMatcherCandidate(
   });
 }
 
-function calledToolCardinality(
-  options: CalledToolOptions | undefined,
-): ExactCardinality | { readonly atLeast: number } {
-  const quantifier = normalizeCalledToolOptions(options);
-  if (quantifier.kind === "at-least") return Object.freeze({ atLeast: quantifier.count });
-  if (quantifier.kind === "exact") return exactly(quantifier.count);
-  return exactly(0);
-}
-
 function registerCollectionCheck<Kind extends RuntimeKind, Subject>(
   runtime: AssertionsRuntime<Kind>,
   subject: Subject,
@@ -662,10 +653,17 @@ function calledToolHandle<Kind extends RuntimeKind>(input: {
   readonly target: ToolMatch | string;
   readonly options: CalledToolOptions | undefined;
 }): BooleanAssertionHandle<Kind, void> {
+  const match = resolveToolTarget(input.target, "calledTool");
+  const quantifier = normalizeCalledToolOptions(input.options);
+  const collectionMatch = quantifier.kind === "at-least"
+    ? quantifier.count === 1
+      ? match
+      : match.atLeast(quantifier.count)
+    : match.exactly(quantifier.count);
   return registerCollectionCheck(
     input.runtime,
     input.subject,
-    matching(resolveToolTarget(input.target, "calledTool"), calledToolCardinality(input.options)),
+    collectionMatch,
   );
 }
 
@@ -677,7 +675,7 @@ function notCalledToolHandle<Kind extends RuntimeKind>(input: {
   return registerCollectionCheck(
     input.runtime,
     input.subject,
-    matching(resolveToolTarget(input.target, "notCalledTool"), exactly(0)),
+    resolveToolTarget(input.target, "notCalledTool").exactly(0),
   );
 }
 
@@ -747,7 +745,7 @@ function usedNoToolsHandle<Kind extends RuntimeKind>(input: {
   return registerCollectionCheck(
     input.runtime,
     input.subject,
-    matching(toolMatch({}), exactly(0)),
+    toolMatch({}).exactly(0),
   );
 }
 
@@ -757,7 +755,7 @@ function maxToolCallsHandle<Kind extends RuntimeKind>(input: {
   readonly max: number;
 }): BooleanAssertionHandle<Kind, void> {
   assertNonNegativeSafeInteger(input.max, "maxToolCalls() max");
-  return registerCollectionCheck(input.runtime, input.subject, count(atMost(input.max)));
+  return registerCollectionCheck(input.runtime, input.subject, atMost(input.max));
 }
 
 function noFailedActionsHandle<Kind extends RuntimeKind>(input: {

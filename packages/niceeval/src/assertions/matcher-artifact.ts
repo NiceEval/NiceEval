@@ -151,6 +151,18 @@ function collectionResult(
     if (counts.matched >= quantifier.count) return "matched";
     return complete && counts.unavailable === 0 ? "mismatched" : "unavailable";
   }
+  if (quantifier.kind === "greater-than") {
+    if (counts.matched > quantifier.count) return "matched";
+    return complete && counts.unavailable === 0 ? "mismatched" : "unavailable";
+  }
+  if (quantifier.kind === "at-most") {
+    if (counts.matched > quantifier.count) return "mismatched";
+    return complete && counts.unavailable === 0 ? "matched" : "unavailable";
+  }
+  if (quantifier.kind === "less-than") {
+    if (counts.matched >= quantifier.count) return "mismatched";
+    return complete && counts.unavailable === 0 ? "matched" : "unavailable";
+  }
   if (counts.matched > quantifier.count) return "mismatched";
   if (complete && counts.unavailable === 0) {
     return counts.matched === quantifier.count ? "matched" : "mismatched";
@@ -175,7 +187,8 @@ export async function evaluateMatcherCollection<Candidate>(input: {
   const representatives: MatcherRetainedRow[] = [];
   let diagnostic: MatchDiagnostic | undefined;
 
-  for (const row of input.rows) {
+  const initialState = collectionResult(input.quantifier, { matched, unavailable }, false);
+  for (const row of initialState === "unavailable" ? input.rows : []) {
     const evaluation = await input.query.evaluate(row.candidate);
     const state = overlayResult(row.locator, evaluation);
     examined += 1;
@@ -184,11 +197,7 @@ export async function evaluateMatcherCollection<Candidate>(input: {
     else unavailable += 1;
 
     const current = collectionResult(input.quantifier, { matched, unavailable }, false);
-    const decisive = current !== "unavailable" && (
-      (input.quantifier.kind === "absent" && matched > 0) ||
-      (input.quantifier.kind === "at-least" && matched >= input.quantifier.count) ||
-      (input.quantifier.kind === "exact" && matched > input.quantifier.count)
-    );
+    const decisive = current !== "unavailable";
     retainRepresentative(
       representatives,
       row,

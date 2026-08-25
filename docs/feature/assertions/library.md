@@ -11,7 +11,7 @@ const config = t.check(rawConfig, matches(ConfigSchema))
 
 t.check(turn.message, includes("完成"))
   .label("说明完成");
-turn.check(turn.toolCalls, count(atMost(2)))
+turn.check(turn.toolCalls, atMost(2))
   .label("工具次数上限");
 ```
 

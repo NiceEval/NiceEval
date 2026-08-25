@@ -20,6 +20,8 @@ import {
   collectionMatchSpecOf,
   evaluateBooleanMatch,
   isManagedCollectionMatch,
+  isManagedToolMatch,
+  isNumericComparisonMatch,
   looksLikeCollectionMatch,
   type BooleanMatchEvaluation,
   type CollectionMatch,
@@ -206,7 +208,7 @@ function toolMatcherQuery(
 function occurrenceAssertion(quantifier: ToolMatchQuantifier): "present" | "absent" | "count" {
   if (quantifier.kind === "absent") return "absent";
   if (quantifier.kind === "exact") return "count";
-  return quantifier.count === 1 ? "present" : "count";
+  return quantifier.kind === "at-least" && quantifier.count === 1 ? "present" : "count";
 }
 
 function occurrenceCriterion(
@@ -255,15 +257,8 @@ export function collectionMatchRegistration<Subject>(
   subject: Subject,
   match: unknown,
 ): BooleanAssertionRegistration<Subject> {
-  if (!isManagedCollectionMatch(match)) {
-    if (looksLikeCollectionMatch(match)) {
-      throw new TypeError("t.check() match must be a collection Match created by niceeval/expect");
-    }
-    throw new TypeError("t.check() match must be a collection Match created by niceeval/expect");
-  }
-  const spec = collectionMatchSpecOf(match);
-  if (spec.kind === "count") {
-    const sidecar = managedToolCallsSidecarOf(subject);
+  const sidecar = managedToolCallsSidecarOf(subject);
+  if (isNumericComparisonMatch(match)) {
     if (sidecar !== undefined) {
       const captured = captureAssertionSnapshot(Object.freeze({
         ...sidecar.cardinality,
@@ -273,7 +268,7 @@ export function collectionMatchRegistration<Subject>(
         scope: sidecar.scope,
       }));
       return numericBooleanRegistration({
-        match: spec.inner,
+        match,
         criterionSubject: Object.freeze({
           kind: "collection-cardinality" as const,
           collection: "tool-calls" as const,
@@ -289,7 +284,7 @@ export function collectionMatchRegistration<Subject>(
       });
     }
     if (!Array.isArray(subject)) {
-      throw new TypeError("count() requires an array subject");
+      throw new TypeError("a numeric collection Match requires an array subject");
     }
     const material = Object.freeze({ state: "exact" as const, value: subject.length });
     const captured = captureAssertionSnapshot(Object.freeze({
@@ -299,7 +294,7 @@ export function collectionMatchRegistration<Subject>(
       derivation: Object.freeze({ kind: "explicit-value" as const }),
     }));
     return numericBooleanRegistration({
-      match: spec.inner,
+      match,
       criterionSubject: Object.freeze({ kind: "explicit-value" as const }),
       material,
       captured,
@@ -307,15 +302,29 @@ export function collectionMatchRegistration<Subject>(
     });
   }
 
-  const sidecar = managedToolCallsSidecarOf(subject);
+  const spec = isManagedToolMatch(match)
+    ? Object.freeze({
+        kind: "occurrence" as const,
+        item: match,
+        quantifier: Object.freeze({ kind: "at-least" as const, count: 1 }),
+      })
+    : (() => {
+        if (!isManagedCollectionMatch(match)) {
+          if (looksLikeCollectionMatch(match)) {
+            throw new TypeError("t.check() match must be a collection Match created by niceeval/expect");
+          }
+          throw new TypeError("t.check() match must be a ToolMatch or collection Match created by niceeval/expect");
+        }
+        return collectionMatchSpecOf(match);
+      })();
   if (sidecar === undefined) {
     throw new TypeError(
       spec.kind === "in-order"
         ? "inOrder() requires a managed toolCalls collection"
-        : "matching() requires a managed toolCalls collection",
+        : "ToolMatch occurrence checks require a managed toolCalls collection",
     );
   }
-  if (spec.kind === "matching") {
+  if (spec.kind === "occurrence") {
     const query = toolMatcherQuery(spec.item, Object.freeze({
       matcher: spec.item.name,
       quantifier: spec.quantifier,

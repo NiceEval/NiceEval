@@ -6,7 +6,16 @@
 
 ## 版本边界
 
-`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `3`。当前领域类型不带版本后缀；v1／v2／v3 只存在于 package-private wire codec 与相邻 migration identity。普通 reader 只接受 exact-current，普通 writer 只写 v3。
+`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `3`。当前领域类型不带版本后缀。Attachment 的 v1／v2／v3 只存在于 package-private wire codec 与相邻 migration identity；内建 criterion 的 `/vN` 则是该 criterion 自己的 schema identity，二者不能混为一谈。
+
+普通 writer 只写 schemaVersion `3` 的 envelope。它为新的 occurrence Assertion 统一写入 `occurrence/v2`；不会因作者调用了包装糖、未调用量词的 `ToolMatch`、量词或顺序查询而选择 `occurrence/v1`。reader 在同一个 v3 envelope 内双读下表的两个已知 occurrence criterion：
+
+| 已封口 criterion | current writer | reader | 历史 bytes 的处置 |
+|---|---|---|---|
+| `occurrence/v1` | 不写 | exact decode 已封口的 v1 data、evaluation 与 decision，并按其原有语义呈现 | 不升级、不重跑、不回写为 v2。 |
+| `occurrence/v2` | 所有新的 occurrence Assertion 都写入 | exact decode v2 data、evaluation 与 decision | 保持 sealed；reader 不从显示或 API 名推断另一个 criterion。 |
+
+因此 `occurrence/v1` 是 reader 支持的闭合历史 schema，不是 current writer 的候选。读取旧 v1 绝不触发 `v1→v2` transform、payload rewrite 或 Record maintenance；新 entry 也不能借旧 entry 的 id、criterion 或 material 重写历史。
 
 Record maintenance 独占历史 codec、blob closure、文件 I/O、Git restore point、sentinel、atomic physical rewrite 与最终 exact-current 验证。Assertions attachment 提供纯 `1→2` 与 `2→3` payload transform。未来升级必须继续扩展这条相邻链。
 
@@ -181,6 +190,29 @@ type BuiltInCriterion =
         readonly scope: "turn" | "session" | "attempt";
         readonly occurrence: "tool" | "skill" | "event";
         readonly assertion: "present" | "absent" | "count" | "order";
+        readonly matcher?: string;
+        readonly quantifier?:
+          | { readonly kind: "absent" }
+          | {
+              readonly kind: "at-least" | "exact";
+              readonly count: number;
+            };
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "occurrence/v2";
+      readonly data: {
+        readonly scope: "turn" | "session" | "attempt";
+        readonly occurrence: "tool" | "skill" | "event";
+        readonly assertion: "present" | "absent" | "count" | "order";
+        readonly matcher?: string;
+        readonly quantifier?:
+          | { readonly kind: "absent" }
+          | {
+              readonly kind: "less-than" | "at-most" | "greater-than" | "at-least" | "exact";
+              readonly count: number;
+            };
       };
     }
   | {
@@ -206,11 +238,11 @@ type BuiltInCriterion =
 这些 data 是可离线解释的闭合类别，不保存 `Match` object、predicate、regex、Judge client、collector 或作者 API 对象。第三方闭包不可序列化时，writer 使用诚实的 declared/unavailable 状态，不伪造 AST。criterion 以外的 materials、evaluation、decision、policy、contribution 与 explanation retention 提供本次检查的唯一审计事实。
 
 `numeric-comparison/v1` 的 `threshold` 必须 finite，并由 matcher 工厂在登记前验证。
-显式数值 matcher、Usage 上限包装，以及 `count`／`maxToolCalls` 都进入这个成员、同一个 evaluator 与同一次 entry registration。
+显式数值 matcher、直接用于 collection subject 的 numeric Match、Usage 上限包装，以及 `maxToolCalls` 都进入这个成员、同一个 evaluator 与同一次 entry registration。
 
 `subject` 是 `check` 已经提供的被检查事实描述，不是公开 selector。
 scope 包装把实际 receiver scope、metric 与 unit 封口进去。
-`count` 在受管 `toolCalls` 上使用 `collection-cardinality`；普通作者 array 使用 `explicit-value`。
+受管 `toolCalls` 直接交给 numeric Match 时使用 `collection-cardinality`；普通作者 array 使用 `explicit-value`。
 
 `value-match/v1` 没有推断迁移。旧 entry 即使 observed 是 number、matcher 名看似数值比较，或历史上由 `maxToolCalls` 写入，也仍按原 criterion 读取。
 Assertions current envelope 保持 `schemaVersion: 3`，不为 collection cardinality 升级到 v4。
@@ -340,26 +372,27 @@ scope Assertion 将 collection 已冻结的 vector cut 归一为 snapshot；它�
 
 - absence 只有 complete + exhaustive + matched=0 + unavailable=0 才 matched；找到 witness 可提前 mismatch。
 - exact 只有 exhaustive exact count 且 unavailable=0 才 matched；n+1 可提前 exceeded，too few 在不完整输入下 unavailable。
-- at-least 达到 n 可提前 matched；未达到 n 只有 exhaustive 且 unavailable=0 才 mismatch。
+- at-least／greater-than 达到下限可提前 matched；未达到下限只有 exhaustive 且 unavailable=0 才 mismatch。
+- at-most／less-than 超过上限可提前 mismatched；仍在上限内只有 exhaustive 且 unavailable=0 才 matched。
 
 evaluation/source coverage（语义）、persisted explanation retention（有界）与 display window（有界）是三个独立维度。裁剪 display 或 explanation 不得改变 evaluation、decision、gate、Verdict 或 score。
 
 受管 `toolCalls` 的公开元素是 logical occurrence 投影。
 locator、scope identity、cut 与 coverage 由 WeakMap sidecar 绑在整个 collection 对象上。
 公开数组与 sidecar matcher rows 同序、同基数。作者不填写 locator。
-复制或展开 collection 会丢失 sidecar；`matching` 与 `inOrder` 不得把丢失 sidecar 的 array 当成受管 collection 求值。
+复制或展开 collection 会丢失 sidecar；未调用量词或已经量化的 `ToolMatch` 与 `inOrder` 不得把丢失 sidecar 的 array 当成受管 collection 求值。
 
 Analysis 与 Report 只按 criterion id 与 `evaluation.artifact.kind` 路由。它们不识别包装方法名，也不把私有 snapshot 形状当成路由键。
 
 | 作者入口 | criterion | `occurrence` assertion | evaluation |
 |---|---|---|---|
-| `count`／`maxToolCalls` | `numeric-comparison/v1` | 无 | ordinary，无 matcher artifact |
-| `matching(..., { atLeast: 1 })` 或省略计数的 `calledTool` | `occurrence/v1` | `present` | `collection-filter` |
-| `matching(..., exactly(n))` 且 `n≥1`，或更大 `atLeast` | `occurrence/v1` | `count` | `collection-filter` |
-| `matching(..., exactly(0))`、`notCalledTool`、`usedNoTools` | `occurrence/v1` | `absent` | `collection-filter` |
-| `inOrder`／`toolOrder` | `occurrence/v1` | `order` | `ordered-sequence` |
+| collection numeric Match／`maxToolCalls` | `numeric-comparison/v1` | 无 | ordinary，无 matcher artifact |
+| 未调用量词的 `ToolMatch`、`.atLeast(1)` 或省略计数的 `calledTool` | `occurrence/v2` | `present` | `collection-filter` |
+| occurrence `.exactly(n)`、`.atMost(n)`、`.lessThan(n)`、`.greaterThan(n)` 或更大 `.atLeast(n)` | `occurrence/v2` | `count` | `collection-filter` |
+| `.exactly(0)`、`notCalledTool`、`usedNoTools` | `occurrence/v2` | `absent` | `collection-filter` |
+| `inOrder`／`toolOrder` | `occurrence/v2` | `order` | `ordered-sequence` |
 
-`count`／`maxToolCalls` 的 `evaluation.kind` 是 `ordinary`。`observed` 是已知长度。不写 collection `receipt`，也不写 matcher artifact。
+collection numeric Match／`maxToolCalls` 的 `evaluation.kind` 是 `ordinary`。`observed` 是已知长度。不写 collection `receipt`，也不写 matcher artifact。
 
 无法取得可信长度时，numeric 材料为 `unavailable`，reason 为 `source-unavailable`。
 可证明前缀但集合不完整时为 `lower-bound`，完整度写在 `materials.coverage`。
@@ -528,7 +561,7 @@ Assertions 只保存上面的有界 locator 与差异，不保存 tool ledger �
 
 tool lifecycle 可以跨 Turn。logical occurrence 的 Turn membership 只属于 operation.started 所在的 home Turn。finished event 保留自己的真实 finish Turn，却不会让 occurrence 成为第二个 Turn 的 tool candidate。
 
-Turn-scoped `matching`／`inOrder` 只检查该 Turn 发起的调用；跨 Turn 完成由 `event`／`eventOrder` 检查。
+Turn-scoped occurrence Match／`inOrder` 只检查该 Turn 发起的调用；跨 Turn 完成由 `event`／`eventOrder` 检查。
 Turn collection 使用 Turn 封口 cut。Session／Attempt collection 使用 getter 当时的 cut。
 `check` 读取 subject 已携带的 cut，不在登记时按调用 ctx 重裁。后续 finish 或新增 row 不能改写已冻结 collection。
 
@@ -657,7 +690,7 @@ type AssertionSourceSite = {
 
 source mapping 不能重新计算 criterion、points、gate、unavailable 或 Verdict。一个 entry 有多个 row 时，位置可以全部显示，但 Assertion summary 与 score contribution 仍按 `entryId` 只计算一次。没有 matching row、Sources 不是 `available`，或 join／坐标不成立时，source-navigation DomainView 仅把对应位置标为 `unmapped`。
 
-## v1 → v2 相邻迁移
+## Assertions payload v1 → payload v2 相邻迁移
 
 package-private v1 codec 只为 maintenance 存在。纯相邻 transform 只保留 v1 严格能证明的
 display、result/gate/score 与 sourceSites。
@@ -680,9 +713,9 @@ v1 `gate` 为 `satisfied`、`failed`、`unavailable` 或 `not-applicable` 已证
 
 物理 payload 与 envelope 的 rewrite、Git/sentinel/recovery 和最终验证由 Record maintenance 执行。transform 本身绝不读写磁盘。
 
-## v2 → v3 相邻迁移
+## Assertions payload v2 → envelope v3 相邻迁移
 
-v3 把 matcher artifact 从普通 explanation 中分离，放入 `evaluation` 的封闭联合。`matcher-current` 的权威 receipt 只存在于 artifact 内，不能再与 ordinary `evaluation.receipt` 双写。pure transform 先用 v2 的 published criterion 与 source snapshot discriminator 识别 matcher entry：
+本节的 v2 与 v3 是 Assertions payload／envelope 的相邻 migration identity，不是 `occurrence/v1` 到 `occurrence/v2` 的 criterion rewrite。v3 把 matcher artifact 从普通 explanation 中分离，放入 `evaluation` 的封闭联合。`matcher-current` 的权威 receipt 只存在于 artifact 内，不能再与 ordinary `evaluation.receipt` 双写。pure transform 先用旧 payload 的 published criterion 与 source snapshot discriminator 识别 matcher entry：
 
 - `occurrence/v1` 且 domain 是 tool 或 event，属于 collection matcher；
 - source snapshot 的 `assertion` 精确为 `tool-order` 或 `event-order`，属于 order matcher；

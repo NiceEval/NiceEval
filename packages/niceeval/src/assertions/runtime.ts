@@ -42,6 +42,7 @@ import {
   evaluateBooleanMatch,
   evaluateScoreMatch,
   isManagedCollectionMatch,
+  isManagedToolMatch,
   isNumericComparisonMatch,
   isManagedThresholdedScoreMatch,
   looksLikeCollectionMatch,
@@ -50,8 +51,11 @@ import {
   type BooleanMatch,
   type CollectionMatch,
   type MatchDiagnostic,
+  type ManagedToolCalls,
+  type NumericComparisonMatch,
   type ScoreMatch,
   type ThresholdedScoreMatch,
+  type ToolMatch,
 } from "./match.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 import { numericBooleanRegistration } from "./numeric.ts";
@@ -754,6 +758,8 @@ class AssertionsRuntimeImplementation {
     value: Value,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): BooleanHandle;
+  check<Value extends readonly unknown[]>(value: Value, match: NumericComparisonMatch): BooleanHandle;
+  check(value: ManagedToolCalls, match: ToolMatch): BooleanHandle;
   check<Value>(value: Value, match: CollectionMatch<NoInfer<Value>>): BooleanHandle;
   check<Value>(value: Value, match: ScoreMatch<NoInfer<Value>>): MeasurementHandle;
   check<Value>(value: Value, match: ThresholdedScoreMatch<NoInfer<Value>>): MeasurementHandle;
@@ -765,7 +771,12 @@ class AssertionsRuntimeImplementation {
     if (typeof value === "object" && value !== null && assertionHandleRegistry.has(value)) {
       throw new TypeError("t.check() cannot use an AssertionHandle as a subject");
     }
-    if (isManagedCollectionMatch(match) || looksLikeCollectionMatch(match)) {
+    if (
+      isManagedCollectionMatch(match) ||
+      looksLikeCollectionMatch(match) ||
+      isManagedToolMatch(match) ||
+      (Array.isArray(value) && isNumericComparisonMatch(match))
+    ) {
       return this.registerBoolean(collectionMatchRegistration(value, match));
     }
     const thresholded = isManagedThresholdedScoreMatch(match)

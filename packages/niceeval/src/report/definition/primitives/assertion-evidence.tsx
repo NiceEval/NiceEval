@@ -123,15 +123,34 @@ function matcherName(check: ClosedAssertionFactValue): string | undefined {
   }
   const valueMatcher = stringValue(field(field(data, "matcher"), "name"));
   if (valueMatcher !== undefined) return valueMatcher;
-  if (criterionId(check) !== "occurrence/v1" || stringValue(field(data, "occurrence")) !== "tool") {
+  if (
+    (criterionId(check) !== "occurrence/v1" && criterionId(check) !== "occurrence/v2") ||
+    stringValue(field(data, "occurrence")) !== "tool"
+  ) {
     return undefined;
   }
   const toolMatcher = stringValue(field(data, "matcher"));
   if (toolMatcher === undefined) return undefined;
   const assertion = stringValue(field(data, "assertion"));
   if (assertion === "order") return toolMatcher;
-  return assertion === "absent"
-    ? `notCalledTool(${toolMatcher})`
+  const quantifier = field(data, "quantifier");
+  const quantifierKind = stringValue(field(quantifier, "kind"));
+  const count = numberValue(field(quantifier, "count"));
+  if (assertion === "absent" || quantifierKind === "absent") return `notCalledTool(${toolMatcher})`;
+  if (quantifierKind === "at-least" && count === 1) return `calledTool(${toolMatcher})`;
+  const method = quantifierKind === "at-least"
+    ? "atLeast"
+    : quantifierKind === "less-than"
+    ? "lessThan"
+    : quantifierKind === "at-most"
+    ? "atMost"
+    : quantifierKind === "greater-than"
+    ? "greaterThan"
+    : quantifierKind === "exact"
+    ? "exactly"
+    : undefined;
+  return method !== undefined && count !== undefined
+    ? `${toolMatcher}.${method}(${count})`
     : `calledTool(${toolMatcher})`;
 }
 
@@ -170,7 +189,7 @@ function criterionId(check: ClosedAssertionFactValue): string | undefined {
 }
 
 function isToolCriterion(check: ClosedAssertionFactValue): boolean {
-  return criterionId(check) === "occurrence/v1" &&
+  return (criterionId(check) === "occurrence/v1" || criterionId(check) === "occurrence/v2") &&
     stringValue(field(field(check, "data"), "occurrence")) === "tool";
 }
 

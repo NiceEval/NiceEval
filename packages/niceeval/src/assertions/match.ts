@@ -89,6 +89,7 @@ const matchRefinementBrand: unique symbol = Symbol("niceeval.match.refinement");
 const matchEvaluatorBrand: unique symbol = Symbol("niceeval.match.evaluator");
 const positiveWitnessBrand: unique symbol = Symbol("niceeval.match.positive-witness");
 const thresholdedScoreMatchBrand: unique symbol = Symbol("niceeval.thresholdedScoreMatch");
+const numericComparisonMatchBrand: unique symbol = Symbol("niceeval.numericComparisonMatch");
 const assertionEventIdentityBrand: unique symbol = Symbol("niceeval.assertionEventIdentity");
 const assertionEventPositionBrand: unique symbol = Symbol("niceeval.assertionEventPosition");
 const toolOccurrenceIdentityBrand: unique symbol = Symbol("niceeval.toolOccurrenceIdentity");
@@ -132,6 +133,10 @@ export interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "va
   readonly [matchRefinementBrand]: () => R;
 }
 
+export interface NumericComparisonMatch extends BooleanMatch<number, number, "value"> {
+  readonly [numericComparisonMatchBrand]: true;
+}
+
 export interface ScoreMatch<in T> extends Match<T, "value"> {
   readonly kind: "score";
   atLeast(threshold: number): ThresholdedScoreMatch<T>;
@@ -148,11 +153,21 @@ export type LogicalCommandOccurrence = LogicalToolOccurrence & {
   readonly command: Extract<CommandProjection, { readonly kind: "command" }>;
 };
 
-export type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> = BooleanMatch<
-  LogicalToolOccurrence,
-  R,
-  "tool"
->;
+export interface ToolOccurrenceQuantifiers {
+  atLeast(count: number): CollectionMatch<ManagedToolCalls>;
+  lessThan(count: number): CollectionMatch<ManagedToolCalls>;
+  atMost(count: number): CollectionMatch<ManagedToolCalls>;
+  greaterThan(count: number): CollectionMatch<ManagedToolCalls>;
+  exactly(count: number): CollectionMatch<ManagedToolCalls>;
+}
+
+export type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> =
+  & BooleanMatch<LogicalToolOccurrence, R, "tool">
+  & ToolOccurrenceQuantifiers;
+
+type BooleanMatchForDomain<T, R extends T, D extends MatchDomain> =
+  & BooleanMatch<T, R, D>
+  & (D extends "tool" ? ToolOccurrenceQuantifiers : object);
 
 export type AssertionEventIdentity = string & { readonly [assertionEventIdentityBrand]: true };
 export type ToolOccurrenceIdentity = string & { readonly [toolOccurrenceIdentityBrand]: true };
@@ -334,7 +349,7 @@ export function numericComparisonOf(value: unknown): NumericComparison | undefin
 }
 
 /** @internal Nominal guard backed by the private managed-match registry. */
-export function isNumericComparisonMatch(value: unknown): value is BooleanMatch<number, number, "value"> {
+export function isNumericComparisonMatch(value: unknown): value is NumericComparisonMatch {
   return numericComparisonOf(value) !== undefined;
 }
 
@@ -362,7 +377,8 @@ function createBooleanMatch<T, R extends T, D extends MatchDomain>(
   name: string,
   evaluate: (candidate: T) => BooleanMatchEvaluation<R> | Promise<BooleanMatchEvaluation<R>>,
   options: CreateBooleanMatchOptions = {},
-): BooleanMatch<T, R, D> {
+): BooleanMatchForDomain<T, R, D> {
+  let match: BooleanMatchForDomain<T, R, D>;
   const result = {
     domain,
     name,
@@ -371,8 +387,17 @@ function createBooleanMatch<T, R extends T, D extends MatchDomain>(
     [matchRefinementBrand]: () => undefined as unknown as R,
     [matchEvaluatorBrand]: async (candidate: T) => evaluate(candidate),
     ...(options.positiveWitness === true ? { [positiveWitnessBrand]: true as const } : {}),
+    ...(domain === "tool"
+      ? {
+          atLeast: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "at-least", count),
+          lessThan: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "less-than", count),
+          atMost: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "at-most", count),
+          greaterThan: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "greater-than", count),
+          exactly: (count: number) => quantifiedToolMatch(match as unknown as ToolMatch, "exact", count),
+        }
+      : {}),
   };
-  const match = Object.freeze(result) as BooleanMatch<T, R, D>;
+  match = Object.freeze(result) as BooleanMatchForDomain<T, R, D>;
   matchBrands.add(match);
   return match;
 }
@@ -478,7 +503,7 @@ export function evaluateNumericComparison(
   );
 }
 
-function numericMatch(comparator: NumericComparator, threshold: number): BooleanMatch<number, number> {
+function numericMatch(comparator: NumericComparator, threshold: number): NumericComparisonMatch {
   if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
     throw new TypeError(`${comparator} threshold must be a finite number`);
   }
@@ -492,24 +517,24 @@ function numericMatch(comparator: NumericComparator, threshold: number): Boolean
         : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" }),
       comparison,
     ),
-  );
+  ) as NumericComparisonMatch;
   numericComparisons.set(match, comparison);
   return match;
 }
 
-export function lessThan(threshold: number): BooleanMatch<number, number> {
+export function lessThan(threshold: number): NumericComparisonMatch {
   return numericMatch("less-than", threshold);
 }
 
-export function atMost(threshold: number): BooleanMatch<number, number> {
+export function atMost(threshold: number): NumericComparisonMatch {
   return numericMatch("at-most", threshold);
 }
 
-export function greaterThan(threshold: number): BooleanMatch<number, number> {
+export function greaterThan(threshold: number): NumericComparisonMatch {
   return numericMatch("greater-than", threshold);
 }
 
-export function atLeast(threshold: number): BooleanMatch<number, number> {
+export function atLeast(threshold: number): NumericComparisonMatch {
   return numericMatch("at-least", threshold);
 }
 
@@ -678,22 +703,6 @@ function jsonPreview(value: JsonValue): string {
     : `${characters.slice(0, limit - 1).join("")}…`;
 }
 
-function commandTokenPreview(value: string): string {
-  return /^[A-Za-z0-9_@%+=:,./-]+$/u.test(value) ? value : quoted(value);
-}
-
-function commandPreview(projection: CommandProjection | undefined): string | undefined {
-  if (projection?.kind !== "command" || projection.logical.state !== "available") return undefined;
-  const rendered = [projection.logical.executable, ...projection.logical.args]
-    .map(commandTokenPreview)
-    .join(" ");
-  const characters = Array.from(rendered);
-  const limit = assertionRuntimeLimits.displayCodePoints;
-  return characters.length <= limit
-    ? rendered
-    : `${characters.slice(0, limit - 1).join("")}…`;
-}
-
 function resultChild(
   result: BooleanMatchEvaluation<unknown>,
   index: number,
@@ -802,7 +811,7 @@ export function and<
 >(
   first: BooleanMatch<T, R, D>,
   ...rest: Rest
-): BooleanMatch<T, T & R & RefinementIntersection<Rest>, D>;
+): BooleanMatchForDomain<T, T & R & RefinementIntersection<Rest>, D>;
 export function and(
   first: BooleanMatch<unknown, unknown, MatchDomain>,
   ...rest: readonly BooleanMatch<unknown, unknown, MatchDomain>[]
@@ -831,7 +840,7 @@ export function or<
 >(
   first: BooleanMatch<T, R, D>,
   ...rest: Rest
-): BooleanMatch<T, T & (R | RefinementOf<Rest[number]>), D>;
+): BooleanMatchForDomain<T, T & (R | RefinementOf<Rest[number]>), D>;
 export function or(
   first: BooleanMatch<unknown, unknown, MatchDomain>,
   ...rest: readonly BooleanMatch<unknown, unknown, MatchDomain>[]
@@ -1695,6 +1704,12 @@ export function assertManagedToolMatch(value: unknown, label = "match"): ToolMat
   return value as ToolMatch;
 }
 
+/** @internal Nominal guard for a managed tool-domain item predicate. */
+export function isManagedToolMatch(value: unknown): value is ToolMatch {
+  if (!isRecord(value) || !matchBrands.has(value)) return false;
+  return value.domain === "tool" && value.kind === "boolean";
+}
+
 /** @internal Assert-first accepts only branded event-domain matches. */
 export function assertManagedEventMatch(value: unknown, label = "match"): EventMatch {
   assertBooleanMatch(value, label, "event");
@@ -1703,196 +1718,11 @@ export function assertManagedEventMatch(value: unknown, label = "match"): EventM
 
 export type ToolMatchQuantifier =
   | { readonly kind: "at-least"; readonly count: number }
+  | { readonly kind: "less-than"; readonly count: number }
+  | { readonly kind: "at-most"; readonly count: number }
+  | { readonly kind: "greater-than"; readonly count: number }
   | { readonly kind: "exact"; readonly count: number }
   | { readonly kind: "absent" };
-
-export interface ToolMatchCollectionOptions {
-  readonly quantifier: ToolMatchQuantifier;
-  /** Scope-level action coverage that can hide additional candidates. */
-  readonly coverageReason?: string;
-}
-
-/**
- * The sole collection evaluator for scoped tool Assertions. It evaluates each
- * occurrence through ToolMatch, then folds exact / at-least / absent with the
- * same three-valued rule: a definite counterexample wins; incomplete evidence
- * cannot manufacture a positive count or an absence proof.
- */
-export async function evaluateToolMatchCollection(
-  match: ToolMatch,
-  occurrences: readonly LogicalToolOccurrence[],
-  options: ToolMatchCollectionOptions,
-): Promise<BooleanMatchEvaluation<LogicalToolOccurrence | undefined>> {
-  const sampledCandidates: CandidateResult<LogicalToolOccurrence>[] = [];
-  let matchCount = 0;
-  let mismatchCount = 0;
-  let unavailableCount = 0;
-  let examined = 0;
-  let firstMatch: CandidateResult<LogicalToolOccurrence> | undefined;
-  let firstUnavailable: CandidateResult<LogicalToolOccurrence> | undefined;
-  let exactOverage: CandidateResult<LogicalToolOccurrence> | undefined;
-  for (const [index, occurrence] of occurrences.entries()) {
-    const candidate = Object.freeze({
-      index,
-      candidate: occurrence,
-      result: await evaluateBooleanMatch(match, occurrence),
-    });
-    examined += 1;
-    if (sampledCandidates.length < assertionRuntimeLimits.collectionDiagnosticCandidates) {
-      sampledCandidates.push(candidate);
-    }
-    if (candidate.result.state === "matched") {
-      matchCount += 1;
-      firstMatch ??= candidate;
-      if (options.quantifier.kind === "exact" && matchCount === options.quantifier.count + 1) {
-        exactOverage = candidate;
-        break;
-      }
-      if (options.quantifier.kind === "absent") break;
-      if (options.quantifier.kind === "at-least" && matchCount === options.quantifier.count) break;
-    } else if (candidate.result.state === "unavailable") {
-      unavailableCount += 1;
-      firstUnavailable ??= candidate;
-    } else {
-      mismatchCount += 1;
-    }
-  }
-  const unavailableReason = firstUnavailable?.result.state === "unavailable"
-    ? firstUnavailable.result.reason
-    : options.coverageReason;
-  const incomplete = unavailableReason !== undefined;
-  const exhaustive = options.coverageReason === undefined && examined === occurrences.length;
-  const receipt = (decisive: boolean) => Object.freeze({
-    examined,
-    matched: matchCount,
-    mismatched: mismatchCount,
-    unavailable: unavailableCount,
-    knownTotal: occurrences.length,
-    complete: options.coverageReason === undefined,
-    exhaustive,
-    decisive,
-  });
-  const received = `${matchCount} definite match${matchCount === 1 ? "" : "es"}`;
-  const candidateLocator = (candidate: CandidateResult<LogicalToolOccurrence> | undefined) =>
-    candidate === undefined ? undefined : { kind: "tool-occurrence" as const, id: candidate.candidate.id };
-  const candidateChild = (candidate: CandidateResult<LogicalToolOccurrence>): MatchDiagnosticChild => {
-    const candidateName = candidate.candidate.name.canonical === undefined || candidate.candidate.name.canonical === "unknown"
-      ? candidate.candidate.name.original
-      : candidate.candidate.name.canonical;
-    const command = commandPreview(candidate.candidate.command);
-    const candidateKind = candidate.candidate.command?.kind === "command"
-      ? "command-candidate"
-      : "tool-candidate";
-    const subject = candidateKind === "command-candidate" ? command : candidateName;
-    const base = candidate.result.diagnostic;
-    return Object.freeze({
-      index: candidate.index,
-      label: candidateKind,
-      state: candidate.result.state,
-      ...(base === undefined
-        ? {}
-        : {
-            diagnostic: Object.freeze({
-              ...base,
-              ...(subject === undefined ? {} : { received: subject }),
-              locator: { kind: "tool-occurrence" as const, id: candidate.candidate.id },
-            }),
-          }),
-    });
-  };
-  const diagnosticSample = (
-    ...decisive: readonly (CandidateResult<LogicalToolOccurrence> | undefined)[]
-  ): Pick<MatchDiagnostic, "children" | "truncation"> => {
-    const byIndex = new Map<number, CandidateResult<LogicalToolOccurrence>>();
-    for (const candidate of [...sampledCandidates, ...decisive]) {
-      if (candidate !== undefined) byIndex.set(candidate.index, candidate);
-    }
-    const captured = [...byIndex.values()].sort((left, right) => left.index - right.index);
-    return Object.freeze({
-      children: Object.freeze(captured.map(candidateChild)),
-      ...(captured.length === occurrences.length
-        ? {}
-        : {
-            truncation: Object.freeze({
-              code: "diagnostic-truncated" as const,
-              reason: "sampled" as const,
-              captured: captured.length,
-              knownTotal: occurrences.length,
-            }),
-          }),
-    });
-  };
-
-  if (options.quantifier.kind === "absent") {
-    const first = firstMatch;
-    if (first !== undefined) {
-      return Object.freeze({ ...mismatched(diagnostic("tool-absence-mismatch", `notCalledTool(${match.name}) observed a matching tool`, {
-        expected: `no ${match.name}`,
-        received,
-        locator: candidateLocator(first),
-        ...diagnosticSample(first),
-      })), receipt: receipt(true) });
-    }
-    if (incomplete) {
-      return Object.freeze({ ...unavailable(unavailableReason, diagnostic("tool-absence-unavailable", `notCalledTool(${match.name}) cannot prove absence`, {
-        expected: `no ${match.name}`,
-        received,
-        reason: unavailableReason,
-        ...diagnosticSample(firstUnavailable),
-      })), receipt: receipt(false) });
-    }
-    return Object.freeze({ ...matched(undefined, diagnostic("tool-absence-match", `notCalledTool(${match.name}) observed no matching tool`, {
-      expected: `no ${match.name}`,
-      received,
-      ...diagnosticSample(),
-    })), receipt: receipt(true) });
-  }
-
-  const { kind, count } = options.quantifier;
-  const expected = kind === "exact" ? `exactly ${count} × ${match.name}` : `at least ${count} × ${match.name}`;
-  if (kind === "exact" && matchCount > count) {
-    const overage = exactOverage;
-    return Object.freeze({ ...mismatched(diagnostic("tool-count-exceeded", `calledTool(${match.name}) exceeded its exact count`, {
-      expected,
-      received,
-      locator: candidateLocator(overage),
-      ...diagnosticSample(overage),
-    })), receipt: receipt(true) });
-  }
-  if (kind === "at-least" && matchCount >= count) {
-    return Object.freeze({ ...matched(firstMatch?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its lower bound`, {
-      expected,
-      received,
-      ...diagnosticSample(firstMatch),
-    })), receipt: receipt(true) });
-  }
-  if (kind === "exact" && matchCount === count && !incomplete) {
-    return Object.freeze({ ...matched(firstMatch?.candidate, diagnostic("tool-count-match", `calledTool(${match.name}) satisfied its exact count`, {
-      expected,
-      received,
-      ...diagnosticSample(firstMatch),
-    })), receipt: receipt(true) });
-  }
-  if (incomplete) {
-    return Object.freeze({ ...unavailable(unavailableReason, diagnostic("tool-count-unavailable", `calledTool(${match.name}) cannot decide its count`, {
-      expected,
-      received,
-      reason: unavailableReason,
-      ...diagnosticSample(firstUnavailable),
-    })), receipt: receipt(false) });
-  }
-  return Object.freeze({ ...mismatched(diagnostic("tool-count-mismatch", `calledTool(${match.name}) did not satisfy its count`, {
-    expected,
-    received,
-    ...diagnosticSample(),
-  })), receipt: receipt(true) });
-}
-
-interface CandidateResult<T> {
-  readonly index: number;
-  readonly candidate: T;
-  readonly result: BooleanMatchEvaluation<unknown>;
-}
 
 function commandResult(
   occurrence: LogicalToolOccurrence,
@@ -2107,20 +1937,13 @@ export function eventMatch<K extends keyof EventOptionsByType>(
 }
 
 const collectionInputBrand: unique symbol = Symbol("niceeval.collection-match.input");
-const exactCardinalityBrand: unique symbol = Symbol("niceeval.exact-cardinality");
 const managedToolCallsBrand: unique symbol = Symbol("niceeval.managed-tool-calls");
 const collectionMatches = new WeakMap<object, CollectionMatchSpec>();
-const exactCardinalities = new WeakSet<object>();
 const MAX_ORDER_STEPS = 64;
 
 export interface CollectionMatch<in T> {
   readonly kind: "collection-match";
   readonly [collectionInputBrand]: (candidate: T) => void;
-}
-
-export interface ExactCardinality {
-  readonly [exactCardinalityBrand]: true;
-  readonly count: number;
 }
 
 export interface ToolOccurrenceView {
@@ -2138,11 +1961,7 @@ export type ManagedToolCalls<
 
 export type CollectionMatchSpec =
   | {
-      readonly kind: "count";
-      readonly inner: BooleanMatch<number, number, "value">;
-    }
-  | {
-      readonly kind: "matching";
+      readonly kind: "occurrence";
       readonly item: ToolMatch;
       readonly quantifier: ToolMatchQuantifier;
     }
@@ -2166,63 +1985,28 @@ function assertNonNegativeSafeInteger(value: unknown, label: string): asserts va
   }
 }
 
-function assertPositiveSafeInteger(value: unknown, label: string): asserts value is number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
-    throw new TypeError(`${label} must be a positive safe integer`);
-  }
-}
-
-export function exactly(count: number): ExactCardinality {
-  assertNonNegativeSafeInteger(count, "exactly() count");
-  const value = Object.freeze({
-    [exactCardinalityBrand]: true as const,
-    count,
-  });
-  exactCardinalities.add(value);
-  return value;
-}
-
-export function isExactCardinality(value: unknown): value is ExactCardinality {
-  return isRecord(value) && exactCardinalities.has(value);
-}
-
-export function count(
-  inner: BooleanMatch<number, number, "value">,
-): CollectionMatch<readonly unknown[]> {
-  if (!isNumericComparisonMatch(inner)) {
-    throw new TypeError("count() requires a numeric comparison Match");
-  }
-  return createCollectionMatch({ kind: "count", inner });
-}
-
-function matchingCardinality(
-  cardinality: ExactCardinality | { readonly atLeast: number },
-): ToolMatchQuantifier {
-  if (isExactCardinality(cardinality)) {
-    return cardinality.count === 0
-      ? Object.freeze({ kind: "absent" as const })
-      : Object.freeze({ kind: "exact" as const, count: cardinality.count });
-  }
-  if (!isRecord(cardinality) || Array.isArray(cardinality)) {
-    throw new TypeError("matching() cardinality must be exactly(n) or { atLeast: n }");
-  }
-  const keys = Object.keys(cardinality);
-  if (keys.length !== 1 || keys[0] !== "atLeast") {
-    throw new TypeError("matching() cardinality must be exactly(n) or { atLeast: n }");
-  }
-  assertPositiveSafeInteger(cardinality.atLeast, "matching() cardinality.atLeast");
-  return Object.freeze({ kind: "at-least" as const, count: cardinality.atLeast });
-}
-
-export function matching(
+function quantifiedToolMatch(
   item: ToolMatch,
-  cardinality: ExactCardinality | { readonly atLeast: number },
+  kind: Exclude<ToolMatchQuantifier["kind"], "absent">,
+  count: number,
 ): CollectionMatch<ManagedToolCalls> {
-  const match = assertManagedToolMatch(item, "matching() item");
+  const method = kind === "at-least"
+    ? "atLeast"
+    : kind === "less-than"
+    ? "lessThan"
+    : kind === "at-most"
+    ? "atMost"
+    : kind === "greater-than"
+    ? "greaterThan"
+    : "exactly";
+  assertNonNegativeSafeInteger(count, `ToolMatch.${method}() count`);
+  const match = assertManagedToolMatch(item, `ToolMatch.${method}() item`);
   return createCollectionMatch({
-    kind: "matching",
+    kind: "occurrence",
     item: match,
-    quantifier: matchingCardinality(cardinality),
+    quantifier: kind === "exact" && count === 0
+      ? Object.freeze({ kind: "absent" as const })
+      : Object.freeze({ kind, count }),
   });
 }
 
