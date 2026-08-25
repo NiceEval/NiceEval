@@ -29,7 +29,7 @@ niceeval exp <experiment> [eval...] --sandbox-setup-cache=bypass
 
 `bypass` 禁止 SetupPrefix lookup 与 publication，并真实 replay 全部 eligible before。BuildKey 的 lookup/build 仍照常执行；该选择不改变 BuildKey、SetupPrefixKey、CaseKey、Attempt fingerprint 或 result identity。该 flag 只用于冷路径验收、排障与绕开本机 cache，不是强制重跑历史结果的入口。
 
-`--dry` 无论取值都只计算计划和 identity，固定显示 `cacheLookup: "not-probed"`。运行反馈在 bypass 时显示 `replay · bypass`。这个准备缓存不新增 inventory、精确失效或 GC 命令；根级也不存在 `niceeval cache`。
+`--dry` 无论取值都只计算计划和 identity，固定显示 `cacheLookup: "not-probed"`。运行反馈在 bypass 时显示 `replay · bypass`。准备缓存只管理 NiceEval 创建并登记的 Docker image 与 E2B snapshot；它不接管用户声明的 image、template 或 snapshot。
 
 ## `--keep-sandbox`:跑完留下现场
 

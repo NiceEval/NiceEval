@@ -1776,6 +1776,7 @@ function plannedSetupPrefixActions(
   })}`;
   const planned: PlannedSetupPrefixAction[] = [];
   const actionManifest: JsonValue[] = [];
+  const replacementLineage: JsonValue[] = [];
   let cumulativeState: SandboxActionState | undefined;
   for (const entry of entries) {
     cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
@@ -1808,6 +1809,15 @@ function plannedSetupPrefixActions(
         steps: entry.data.plan.steps,
       },
     }) as unknown as JsonValue);
+    replacementLineage.push(Object.freeze({
+      owner: { kind: entry.owner.kind, id: entry.owner.id, ordinal: entry.ordinal },
+      order: entry.executionOrder.topologicalOrdinal,
+      action: {
+        id: entry.data.plan.id,
+        family: entry.data.plan.family,
+        declaredState: entry.data.plan.state,
+      },
+    }) as unknown as JsonValue);
     const declarationMetadata = Object.freeze({
       protocol: "niceeval.setup-prefix-manifest/v1",
       parentKey,
@@ -1829,6 +1839,27 @@ function plannedSetupPrefixActions(
         },
       },
       actionManifest: [...actionManifest],
+      // This deliberately excludes action input/fingerprint/steps. A later
+      // publication with the same lineage scope replaces this prefix's old
+      // artifact once no private clone still owns it.
+      replacementScope: Object.freeze({
+        protocol: "niceeval.setup-prefix-replacement/v1",
+        baseImageId,
+        provider: {
+          id: provider.provider,
+          plannerRevision: provider.plannerRevision,
+          caseKind: provider.caseKind,
+          caseKey: provider.build.caseKey,
+          identity: provider.identity,
+        },
+        occurrence: {
+          experimentId: attempt.plan.pair.experimentId,
+          evalId: attempt.plan.pair.evalId,
+          agentName: attempt.plan.pair.agentName,
+        },
+        target: targetIdentity,
+        lineage: [...replacementLineage],
+      }),
       requiredState: cumulativeState,
       target: targetIdentity,
       revisions: {
