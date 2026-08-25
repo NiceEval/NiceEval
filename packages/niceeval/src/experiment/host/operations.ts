@@ -37,11 +37,13 @@ import {
   renameExperiment,
   type ExperimentRenamePlan as RunnerExperimentRenamePlan,
 } from "../../runner/rename-experiment.ts";
-import type {
-  AgentRun,
-  DiscoveredEval,
-  DiscoveredExperiment,
-  InvocationSummary,
+import {
+  resolveSandboxSetupCache,
+  type AgentRun,
+  type DiscoveredEval,
+  type DiscoveredExperiment,
+  type InvocationSummary,
+  type SandboxSetupCache,
 } from "../../runner/types.ts";
 import { evalPrefixPredicate, matchExperimentSelector } from "../../shared/aggregate.ts";
 import { ExperimentHostError } from "./types.ts";
@@ -270,7 +272,9 @@ export function catalog(
 function agentRunFromExperiment(
   experiment: DiscoveredExperiment,
   selectedEvalIds: readonly string[],
+  config: ExperimentHostInvocationPlanRequest["config"],
   overrides: ExperimentHostRunOverrides,
+  sandboxSetupCacheOverride: SandboxSetupCache | undefined,
 ): AgentRun {
   return Object.freeze({
     agent: experiment.agent,
@@ -280,6 +284,11 @@ function agentRunFromExperiment(
     plugins: experiment.plugins,
     attempts: overrides.attempts ?? experiment.attempts ?? 1,
     earlyExit: overrides.earlyExit ?? experiment.earlyExit ?? false,
+    sandboxSetupCache: resolveSandboxSetupCache(
+      sandboxSetupCacheOverride,
+      experiment.sandboxCache,
+      config.sandboxCache,
+    ),
     sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
     ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
@@ -299,7 +308,16 @@ function agentRunFromExperiment(
   });
 }
 
+function sandboxSetupCacheOverrideOf(
+  overrides: ExperimentHostRunOverrides,
+): SandboxSetupCache | undefined {
+  const value: unknown = Reflect.get(overrides, "sandboxSetupCache");
+  if (value === undefined || value === "use" || value === "bypass") return value;
+  throw new TypeError("sandboxSetupCache override must be \"use\" or \"bypass\".");
+}
+
 function prepareRuns(input: ExperimentHostSelectionInput & {
+  readonly config: ExperimentHostInvocationPlanRequest["config"];
   readonly overrides?: ExperimentHostRunOverrides;
 }): Effect.Effect<PreparedRuns, unknown> {
   return closeSelection(input).pipe(Effect.flatMap((selected): Effect.Effect<
@@ -335,11 +353,18 @@ function prepareRuns(input: ExperimentHostSelectionInput & {
       }));
     }
     const overrides = input.overrides ?? {};
+    const sandboxSetupCacheOverride = sandboxSetupCacheOverrideOf(overrides);
     return Effect.succeed({
       status: "ready",
       selected,
       runs: freezeArray(selected.selections.map(({ experiment, selectedEvalIds }) =>
-        agentRunFromExperiment(experiment, selectedEvalIds, overrides))),
+        agentRunFromExperiment(
+          experiment,
+          selectedEvalIds,
+          input.config,
+          overrides,
+          sandboxSetupCacheOverride,
+        ))),
     } as const);
   }));
 }
@@ -641,7 +666,12 @@ function multiplexFeedbackSink(
     runActivity: (input) => forward((sink, value) => sink.runActivity(value), input),
     experimentProgress: (input) => forward((sink, value) => sink.experimentProgress(value), input),
     lifecycle: (event) => {
-      if (event.type === "attempt:start" || event.type === "attempt:complete" || event.type === "attempt:early-exit") {
+      if (
+        event.type === "attempt:queued" ||
+        event.type === "attempt:start" ||
+        event.type === "attempt:complete" ||
+        event.type === "attempt:early-exit"
+      ) {
         session?.onInvocationEvent(event);
       }
       forward((sink, value) => sink.lifecycle(value), event);

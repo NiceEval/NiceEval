@@ -23,6 +23,8 @@ import type {
   AssertionResult,
   AssertionSnapshotObject,
   AssertionSnapshotValue,
+  MatcherQueryArtifact as RuntimeMatcherQueryArtifact,
+  MatcherOrderPathNode as RuntimeMatcherOrderPathNode,
   SealedAssertionEntry,
 } from "../api.ts";
 import {
@@ -45,6 +47,7 @@ import {
 import type {
   AssertionEntryId,
   AssertionFactValue,
+  MatcherQueryArtifact as RecordMatcherQueryArtifact,
   AssertionEntry,
   AssertionEntryOuter,
   AssertionMaterial as RecordAssertionMaterial,
@@ -144,29 +147,133 @@ function encodeSnapshotObject(value: AssertionSnapshotObject): BoundedJsonObject
   return Object.freeze(encoded);
 }
 
-function explanationValue(value: unknown): AssertionFactValue {
+// AssertionFactValue adds an object/array envelope at every source nesting
+// level. Keep arbitrary matcher snapshots below the fixed Attachment depth
+// limit instead of letting an otherwise bounded diagnostic invalidate the
+// whole Assertions attachment.
+const MAX_EXPLANATION_SOURCE_DEPTH = 6;
+
+function explanationValue(
+  value: unknown,
+  depth = 0,
+  maximumSourceDepth = MAX_EXPLANATION_SOURCE_DEPTH,
+): AssertionFactValue {
   if (value === null || typeof value === "boolean" || typeof value === "string" ||
     (typeof value === "number" && Number.isFinite(value))) {
     return Object.freeze({ kind: "value" as const, value });
   }
+  if (depth >= maximumSourceDepth) {
+    return Object.freeze({
+      kind: "text" as const,
+      text: "Nested matcher detail was omitted at the retained fact depth limit.",
+    });
+  }
   if (Array.isArray(value)) {
-    return Object.freeze({ kind: "list" as const, items: Object.freeze(value.map(explanationValue)) });
+    return Object.freeze({
+      kind: "list" as const,
+      items: Object.freeze(value.map((item) =>
+        explanationValue(item, depth + 1, maximumSourceDepth)
+      )),
+    });
   }
   if (typeof value === "object" && value !== null) {
     return Object.freeze({
       kind: "fields" as const,
       fields: Object.freeze(Object.entries(value).map(([label, nested]) => Object.freeze({
         label,
-        value: explanationValue(nested),
+        value: explanationValue(nested, depth + 1, maximumSourceDepth),
       }))),
     });
   }
   return Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" as const });
 }
 
+function encodeRetainedRows(
+  rows: RuntimeMatcherQueryArtifact["retainedRows"],
+  maximumSourceDepth = MAX_EXPLANATION_SOURCE_DEPTH,
+): RecordMatcherQueryArtifact["retainedRows"] {
+  return Object.freeze(rows.map((row) => Object.freeze({
+    locator: row.locator,
+    result: row.result,
+    ...(row.difference === undefined
+      ? {}
+      : { difference: explanationValue(row.difference, 0, maximumSourceDepth) }),
+  })));
+}
+
+function encodeMatcherArtifact(
+  artifact: RuntimeMatcherQueryArtifact,
+): RecordMatcherQueryArtifact {
+  if (artifact.kind === "collection-filter") {
+    return Object.freeze({
+      kind: "collection-filter" as const,
+      sourceSnapshot: artifact.sourceSnapshot,
+      query: Object.freeze({
+        step: artifact.query.step,
+        summary: explanationValue(artifact.query.summary),
+      }),
+      receipt: artifact.receipt,
+      retainedRows: encodeRetainedRows(artifact.retainedRows),
+    });
+  }
+  const path = (nodes: readonly RuntimeMatcherOrderPathNode[]) =>
+    Object.freeze(nodes.map((node) => Object.freeze({ ...node })));
+  const result: Extract<RecordMatcherQueryArtifact, { readonly kind: "ordered-sequence" }>["result"] =
+    artifact.result.state === "matched"
+      ? Object.freeze({
+          state: "matched" as const,
+          witnessPath: path(artifact.result.witnessPath),
+        })
+      : artifact.result.state === "mismatched"
+      ? Object.freeze({
+          state: "mismatched" as const,
+          failureFrontier: Object.freeze({
+            longestDefinitePrefix: path(artifact.result.failureFrontier.longestDefinitePrefix),
+            longestPossiblePrefix: path(artifact.result.failureFrontier.longestPossiblePrefix),
+            firstBlockingStep: artifact.result.failureFrontier.firstBlockingStep,
+            suffixChecked: artifact.result.failureFrontier.suffixChecked,
+            representatives: encodeRetainedRows(
+              artifact.result.failureFrontier.representatives,
+              5,
+            ),
+          }),
+        })
+      : Object.freeze({
+          state: "unavailable" as const,
+          reason: artifact.result.reason,
+        });
+  return Object.freeze({
+    kind: "ordered-sequence" as const,
+    sourceSnapshot: artifact.sourceSnapshot,
+    querySteps: Object.freeze(artifact.querySteps.map((step) => Object.freeze({
+      step: step.step,
+      summary: explanationValue(step.summary),
+    }))),
+    receipt: Object.freeze({
+      ...artifact.receipt,
+      stepReceipts: Object.freeze(artifact.receipt.stepReceipts.map((step) =>
+        Object.freeze({ ...step })
+      )),
+    }),
+    result,
+    retainedRows: encodeRetainedRows(artifact.retainedRows),
+  });
+}
+
 function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelope {
   switch (criterion.kind) {
     case "value-match":
+      if ("numeric" in criterion) {
+        return Object.freeze({
+          kind: "builtin" as const,
+          id: "numeric-comparison/v1" as const,
+          data: Object.freeze({
+            comparator: criterion.numeric.comparator,
+            threshold: criterion.numeric.threshold,
+            subject: criterion.numeric.subject,
+          }),
+        });
+      }
       return Object.freeze({
         kind: "builtin" as const,
         id: "value-match/v1" as const,
@@ -181,7 +288,7 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
     case "occurrence":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "occurrence/v1" as const,
+        id: "occurrence/v2" as const,
         data: Object.freeze({
           scope: criterion.scope,
           occurrence: criterion.occurrence,
@@ -412,10 +519,17 @@ export function encodeSealedAssertionEntry(
       coverage: encodeCoverage(entry.coverage),
       limitations: encodeLimitations(entry.limitations),
     }),
-    evaluation: Object.freeze({
-      observed: explanationValue(entry.observed),
-      ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
-    }),
+    evaluation: entry.matcherArtifact === undefined
+      ? Object.freeze({
+          kind: "ordinary" as const,
+          observed: explanationValue(entry.observed),
+          ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
+        })
+      : Object.freeze({
+          kind: "matcher-current" as const,
+          observed: explanationValue(entry.observed),
+          artifact: encodeMatcherArtifact(entry.matcherArtifact),
+        }),
     decision: Object.freeze({
       result: result.state,
       reason: "reason" in result ? result.reason : null,
@@ -426,7 +540,9 @@ export function encodeSealedAssertionEntry(
       condition: Object.freeze({ state: "available" as const, value: entry.policy.condition }),
     }),
     contribution: result.score,
-    explanationRetention: result.diagnostic === undefined
+    explanationRetention: entry.matcherArtifact !== undefined
+      ? Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const })
+      : result.diagnostic === undefined
       ? Object.freeze({ state: "retained" as const, value: Object.freeze({
           kind: "unavailable" as const,
           reason: "not-declared" as const,

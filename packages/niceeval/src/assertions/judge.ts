@@ -7,6 +7,7 @@ import OpenAI from "openai";
 
 import { summaryText } from "./display.ts";
 import type { MeasurementAssertionEvaluation } from "./api.ts";
+import { defineScoreMatch, type ScoreMatch } from "./match.ts";
 import type { JudgeMaterial, ResolvedJudgeConfig } from "./types.ts";
 import { getEnv } from "../util.ts";
 
@@ -16,6 +17,46 @@ const PROBE_TIMEOUT_MS = 20_000;
 const PROBE_MAX_ATTEMPTS = 2;
 
 export type JudgeRecipe = "closedQA" | "factuality" | "summarizes";
+export interface JudgeMatchSpec {
+  readonly recipe: JudgeRecipe;
+  readonly reference: string;
+}
+
+const judgeMatches = new WeakMap<object, JudgeMatchSpec>();
+
+function judgeMatch(recipe: JudgeRecipe, reference: string): ScoreMatch<JudgeMaterial> {
+  if (typeof reference !== "string" || reference.trim() === "") {
+    throw new TypeError("Judge Match reference must be a non-empty string");
+  }
+  const match = defineScoreMatch<JudgeMaterial>({
+    name: `${recipe}(${JSON.stringify(reference)})`,
+    score: () => {
+      throw new TypeError("Judge Match evaluation requires an Eval context with Judge capability");
+    },
+  });
+  judgeMatches.set(match, Object.freeze({ recipe, reference }));
+  return match;
+}
+
+/** Creates a pure closed-question Judge Match. Registration occurs only in check(). */
+export function closedQA(question: string): ScoreMatch<JudgeMaterial> {
+  return judgeMatch("closedQA", question);
+}
+
+/** Creates a pure factuality Judge Match. Registration occurs only in check(). */
+export function factuality(expected: string): ScoreMatch<JudgeMaterial> {
+  return judgeMatch("factuality", expected);
+}
+
+/** Creates a pure summary-quality Judge Match. Registration occurs only in check(). */
+export function summarizes(source: string): ScoreMatch<JudgeMaterial> {
+  return judgeMatch("summarizes", source);
+}
+
+/** @internal Resolves a managed Judge Match without evaluating it. */
+export function judgeMatchSpecOf(value: unknown): JudgeMatchSpec | undefined {
+  return typeof value === "object" && value !== null ? judgeMatches.get(value) : undefined;
+}
 type AutoevalResult = { score?: number | null; metadata?: Record<string, unknown> };
 
 type JudgeMeasurementResult =
@@ -211,7 +252,7 @@ function bridgeAutoevalClient(client: OpenAI): { readonly client: AutoevalOpenAI
 
 export function freezeJudgeMaterial(material: JudgeMaterial): JudgeMaterial {
   if (typeof material !== "object" || material === null || typeof material.input !== "string" || typeof material.output !== "string") {
-    throw new TypeError("t.judge requires material { input: string, output: string }");
+    throw new TypeError("Judge Match requires material { input: string, output: string }");
   }
   return Object.freeze({ input: material.input, output: material.output });
 }

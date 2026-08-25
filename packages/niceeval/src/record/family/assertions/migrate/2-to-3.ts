@@ -80,7 +80,6 @@ function migrateMaterial(
   }
 }
 
-/** Lossless adjacent projection from the retired v2 shape into sealed v3 facts. */
 export const assertionsV2ToV3 = defineRecordMigration({
   from: 2,
   to: 3,

@@ -16,7 +16,7 @@ EvalDef
 
 Attempt
 ├── one resolved Sandbox Case
-├── Agent-visible materialization closure
+├── Agent-visible creation closure
 ├── send-window attribution ledger
 └── local transfer manifest
 ```

@@ -775,7 +775,7 @@ export type AnyEvalDefinition =
 const EVAL_GROUP_DEFINITION: unique symbol = Symbol("niceeval.evalGroupDefinition");
 
 /** A group member must not own a Sandbox template or instance lifecycle. Runtime discovery revalidates this. */
-export type EvalGroupMemberSandbox = SandboxLayer<"command-only", "prepare-only"> | undefined;
+export type EvalGroupMemberSandbox = SandboxLayer<"command-only"> | undefined;
 export type EvalGroupMember =
   | EvalDefinition<"pass", TestContext, EvalGroupMemberSandbox>
   | EvalDefinition<"score", ScoreTestContext, EvalGroupMemberSandbox>;
@@ -896,6 +896,25 @@ export interface SharedStateConfig {
   readonly key: string;
 }
 
+/** Host-only SetupPrefix cache policy. It is resolved per AgentRun and never participates in identity. */
+export type SandboxSetupCache = "use" | "bypass";
+
+export interface SandboxCacheConfig {
+  readonly setup?: SandboxSetupCache;
+}
+
+/**
+ * Resolve the one completed runtime policy without projecting it into any identity shape.
+ * The argument order mirrors the public precedence: CLI → Experiment → Config → default.
+ */
+export function resolveSandboxSetupCache(
+  cli: SandboxSetupCache | undefined,
+  experiment: SandboxCacheConfig | undefined,
+  config: SandboxCacheConfig | undefined,
+): SandboxSetupCache {
+  return cli ?? experiment?.setup ?? config?.setup ?? "use";
+}
+
 /** Experiment 作者自行选择的字段；不包含路径 id 与 factory 品牌。 */
 export interface ExperimentAuthorFields {
   /** 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。 */
@@ -948,6 +967,8 @@ export interface ExperimentAuthorFields {
    * 每个配对恰好一方提供 template-bearing layer。
    */
   sandbox?: SandboxLayer;
+  /** Host execution policy; unlike the Sandbox layer, this does not participate in identity. */
+  sandboxCache?: SandboxCacheConfig;
   /** Explicit Experiment Plugin occurrences, normalized by defineExperiment(). */
   plugins?: readonly PluginInstance<"experiment">[];
   /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
@@ -1025,6 +1046,7 @@ export interface ExperimentDefinition {
   readonly timeoutMs?: number;
   /** 省略本身是 link 阶段需要的来源事实，不能在 Definition 中归一成显式空 layer。 */
   readonly sandbox?: SandboxLayer;
+  readonly sandboxCache?: SandboxCacheConfig;
   readonly plugins: readonly PluginInstance<"experiment">[];
   readonly sandboxReuse: boolean;
   readonly sharedState?: SharedStateConfig;
@@ -1111,6 +1133,8 @@ export interface Config {
   maxConcurrency?: number;
   /** Run 级 Sandbox 镜像准备并发；与 attempt 并发独立，省略时安全默认 2。 */
   maxBuildConcurrency?: number;
+  /** 项目级 SetupPrefix cache 默认；Experiment 与显式 CLI flag 可覆盖。 */
+  sandboxCache?: SandboxCacheConfig;
   /** 项目级默认单次 attempt 超时(毫秒);CLI flag / experiment / EvalDef 的同名设置优先级更高。 */
   timeoutMs?: number;
   /**
@@ -1175,6 +1199,8 @@ export interface AgentRun {
   readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
   readonly attempts: number;
   readonly earlyExit: boolean;
+  /** 本次 Invocation 已按 CLI → Experiment → Config → default 归一的 Host cache 策略。 */
+  readonly sandboxSetupCache: SandboxSetupCache;
   /** Experiment 的作者 layer；省略在 link 输入归一为 command-only。 */
   readonly sandbox?: SandboxLayer;
   /** Experiment Plugin occurrences carried into zero-resource pair link. */
@@ -1357,7 +1383,7 @@ export interface AttemptRef {
   attempt: number;
 }
 
-/** `AttemptRef` 的确定性字符串编码,只作 `RunFeedbackState.active` 的 Map key 使用 ——
+/** `AttemptRef` 的确定性字符串编码,只作 RunFeedbackState attempt Map 的 key 使用 ——
  *  不是展示文本(那是 `who`),也不是 `AttemptLocator`(后者是 Record 的持久化身份)。 */
 export type AttemptKey = string & { readonly __brand: "AttemptKey" };
 
@@ -1385,6 +1411,17 @@ export interface ActiveAttempt {
    */
   startedAt: number;
   detail?: string;
+}
+
+/** Stable reason vocabulary for an Attempt that remains in the queued count. */
+export type AttemptQueueReason = "provider-capacity";
+
+/** A provider-admitted waiter is visible without being promoted to `active`/running. */
+export interface QueuedAttempt {
+  identity: AttemptRef;
+  who: string;
+  reason: AttemptQueueReason;
+  queuedAt: number;
 }
 
 /** 实验级钩子只有 setup 与它返回的 teardown 两员,同一实验内两者永不并发
@@ -1581,6 +1618,8 @@ export interface RunFeedbackState {
   /** 仅本次实际派发 attempt 的 `estimatedCostUSD` 累计(价目表估算口径,与 newTokenCount 同口径);observed cost 不进入这里。 */
   estimatedCostUSD?: number;
   active: ReadonlyMap<AttemptKey, ActiveAttempt>;
+  /** Provider-capacity waiters remain queued but expose a stable reason and identity. */
+  queuedAttempts: ReadonlyMap<AttemptKey, QueuedAttempt>;
   /** 在飞的 judge 预检运行级行(见 `DurableFeedbackEvent` 的 "precheck" 变体):`started` 置位、
    *  `done` 清空。预检发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何 attempt,
    *  也不参与五项恒等式计数——预检期间 attempt 保持 `queued`,
@@ -1638,7 +1677,7 @@ export interface RunFeedbackPlan {
  * `skipped`(见 reducer 实现)。
  */
 export type AttemptLifecycleEvent =
-  | { type: "attempt:queued"; at: number; identity: AttemptRef; who: string }
+  | { type: "attempt:queued"; at: number; identity: AttemptRef; who: string; reason: AttemptQueueReason }
   | { type: "attempt:start"; at: number; identity: AttemptRef; who: string; phase: LifecyclePhase }
   | { type: "attempt:phase"; at: number; identity: AttemptRef; phase: LifecyclePhase }
   | { type: "attempt:progress"; at: number; identity: AttemptRef; detail: string }

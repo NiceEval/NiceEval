@@ -7,6 +7,7 @@ import {
   linkSandboxLayers,
   attachSandboxPluginLifecycles,
   type LinkedSandboxLayerPair,
+  type SandboxBeforePlanningError,
   type SandboxLayerLinkError,
   type SandboxLayerPairInput,
 } from "../sandbox/link.ts";
@@ -86,6 +87,7 @@ export class SandboxRunPairDuplicateError extends Data.TaggedError(
 
 export type SandboxRunPlanningError =
   | SandboxLayerLinkError
+  | SandboxBeforePlanningError
   | SandboxPhysicalPlanningError
   | SandboxRunPlanningInvariantError
   | SandboxRunPairDuplicateError
@@ -135,7 +137,7 @@ export function linkRunSandboxes(
   runs: readonly AgentRun[],
 ): Effect.Effect<
   readonly LinkedRunPair[],
-  SandboxLayerLinkError | SandboxRunPlanningInvariantError | SandboxRunPairDuplicateError | PluginLinkError
+  SandboxLayerLinkError | SandboxBeforePlanningError | SandboxRunPlanningInvariantError | SandboxRunPairDuplicateError | PluginLinkError
 > {
   const records: Array<Readonly<{
     input: SandboxLayerPairInput;
@@ -213,7 +215,9 @@ export function linkRunSandboxes(
           layer: plugin.experimentLayer,
           declaredAt: { file: experimentSourcePath },
         },
-        agent: { kind: run.agent.kind, name: run.agent.name },
+        agent: run.agent.kind === "sandbox"
+          ? { kind: run.agent.kind, name: run.agent.name, sandbox: run.agent.sandbox }
+          : { kind: run.agent.kind, name: run.agent.name },
       };
       records.push(Object.freeze({
         input,

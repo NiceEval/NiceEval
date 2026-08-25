@@ -15,6 +15,11 @@ from pathlib import Path
 
 
 MARKER = ".niceeval-docker-profile-e2e"
+SETUP_PREFIX_FILESYSTEM_BYTES = 512 * 1024 * 1024
+SETUP_PREFIX_SLOT_COUNT = 2
+SETUP_PREFIX_SEED_COUNT = 4
+PROFILE_MEMORY = "2G"
+AGGREGATE_MEMORY = "4G"
 sys.dont_write_bytecode = True
 
 
@@ -42,10 +47,59 @@ def checked_root(raw: str) -> Path:
     return root
 
 
+def fixture_counts(marker: Path) -> tuple[int, int]:
+    try:
+        value = json.loads(marker.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return SETUP_PREFIX_SLOT_COUNT, SETUP_PREFIX_SEED_COUNT
+    setup_prefix = value.get("setupPrefix") if isinstance(value, dict) else None
+    if not isinstance(setup_prefix, dict):
+        return SETUP_PREFIX_SLOT_COUNT, SETUP_PREFIX_SEED_COUNT
+    slot_count = setup_prefix.get("slotCount")
+    seed_count = setup_prefix.get("seedCount")
+    if not isinstance(slot_count, int) or not 1 <= slot_count <= 1024 \
+            or not isinstance(seed_count, int) or not 1 <= seed_count <= 1024:
+        raise SystemExit(f"fixture marker has unsafe setup-prefix counts: {marker}")
+    return slot_count, seed_count
+
+
 def cleanup(root: Path, *, remove_root: bool) -> None:
     marker = root / MARKER
     if not marker.is_file():
         raise SystemExit(f"refusing to clean unmarked fixture root: {root}")
+    slot_count, seed_count = fixture_counts(marker)
+    fixed_mounts = [
+        *(root / "data" / "fixed-image-v1" / "seeds" / f"seed-{index:08d}"
+          for index in reversed(range(seed_count))),
+        *(root / "data" / "fixed-image-v1" / "slots" / f"slot-{index:04d}"
+          for index in reversed(range(slot_count))),
+    ]
+    for fixed_mount in fixed_mounts:
+        mounted = subprocess.run(
+            ["findmnt", "-n", "--mountpoint", str(fixed_mount)],
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode == 0
+        if mounted:
+            run("umount", str(fixed_mount))
+
+    def detach_loops_backed_by(prefix: Path) -> None:
+        devices = json.loads(run(
+            "losetup", "--list", "--json", "--output", "NAME,BACK-FILE",
+        ) or '{"loopdevices":[]}').get("loopdevices", [])
+        prefix_text = str(prefix.resolve()) + os.sep
+        for device in devices:
+            name = device.get("name") if isinstance(device, dict) else None
+            backing = device.get("back-file") if isinstance(device, dict) else None
+            if isinstance(name, str) and isinstance(backing, str) \
+                    and backing.removesuffix(" (deleted)").startswith(prefix_text):
+                run("losetup", "--detach", name)
+
+    # An unmounted inner ext4 loop still holds its image file open on the outer
+    # filesystem.  Detach those loops before attempting to unmount the outer
+    # store, then detach the outer image loop after the mount is gone.
+    detach_loops_backed_by(root / "data")
     mount = root / "data"
     mounted = subprocess.run(
         ["findmnt", "-n", "--mountpoint", str(mount)],
@@ -54,7 +108,11 @@ def cleanup(root: Path, *, remove_root: bool) -> None:
         stderr=subprocess.DEVNULL,
     ).returncode == 0
     if mounted:
-        run("umount", str(mount))
+        # Crash/recovery tests may leave a private slot mount below the outer
+        # fixture filesystem.  Unmount the marker-guarded fixture subtree
+        # deepest-first instead of relying on the nominal slot directory list.
+        run("umount", "--recursive", str(mount))
+    detach_loops_backed_by(root)
     if remove_root:
         shutil.rmtree(root)
 
@@ -63,22 +121,46 @@ def setup(args: argparse.Namespace) -> None:
     if os.geteuid() != 0:
         raise SystemExit("profile E2E host fixture setup requires root")
     root = checked_root(args.root)
+    filesystem_bytes = args.setup_prefix_filesystem_bytes
+    slot_count = args.setup_prefix_slot_count
+    seed_count = args.setup_prefix_seed_count
+    if filesystem_bytes <= 0 or slot_count <= 0 or seed_count <= 0:
+        raise SystemExit("setup-prefix filesystem bytes and slot/seed counts must be positive")
+    fixed_ledger = (slot_count + seed_count + slot_count) * filesystem_bytes
+    # The provisioner proves the complete ledger plus 1/8 of the outer image
+    # from f_bavail, after ext4 metadata and reserved blocks.  A bare 1/8 byte
+    # addition is therefore insufficient on the real loop filesystem.
+    fixed_store_bytes = max(
+        fixed_ledger + 2 * filesystem_bytes,
+        fixed_ledger * 3,
+    )
     scripts = Path(args.scripts).resolve()
     if not (scripts / "watchdog.py").is_file():
         raise SystemExit(f"actual Docker profile host scripts are absent: {scripts}")
     root.mkdir(mode=0o700, exist_ok=True)
-    (root / MARKER).write_text("isolated Docker profile E2E\n", encoding="utf-8")
+    (root / MARKER).write_text(json.dumps({
+        "schemaVersion": 1,
+        "setupPrefix": {"slotCount": slot_count, "seedCount": seed_count},
+    }) + "\n", encoding="utf-8")
     os.chmod(root / MARKER, 0o600)
     mount = root / "data"
-    image = root / "storage.img"
+    if args.setup_prefix:
+        storage_root = Path(args.storage_root).resolve() if args.storage_root else root
+        if storage_root != root and root not in storage_root.parents:
+            raise SystemExit("fixture storage override must remain inside its marked root")
+        image = storage_root / "fixed-image-v1" / "store.img"
+    else:
+        storage_root = root
+        image = root / "storage.img"
     try:
         run(
             str(scripts / "prepare-loop-storage.sh"),
             "--image", str(image),
-            "--size", str(1536 * 1024 * 1024),
+            "--size", str(fixed_store_bytes if args.setup_prefix else (1536 * 1024**2)),
             "--mount", str(mount),
+            *(["--fully-allocate"] if args.setup_prefix else []),
         )
-        run("mount", "-o", "loop,prjquota", str(image), str(mount))
+        run("mount", "-o", "loop" + ("" if args.setup_prefix else ",prjquota"), str(image), str(mount))
         run("mount", "--make-rprivate", str(mount))
 
         user = pwd.getpwnam(args.user)
@@ -93,7 +175,7 @@ def setup(args: argparse.Namespace) -> None:
             {"purpose": "doctor-buildkit", "reference": "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8", "platform": "linux/amd64"},
         ]}) + "\n", encoding="utf-8")
         config = {
-            "name": "e2e-cold-build",
+            "name": args.name,
             "securityLevel": "raw-dind-storage/v1",
             "userName": user.pw_name,
             "userGroup": group.gr_name,
@@ -104,46 +186,68 @@ def setup(args: argparse.Namespace) -> None:
             "dockerRootDir": args.docker_root,
             "journalDir": str(journal),
             "aggregateCgroupPath": "/sys/fs/cgroup/system.slice/docker.service",
+            "activationDependency": {
+                "class": "direct-exclusive-process-scan/v1",
+                "cgroupPath": None,
+            },
             "capacity": {
                 "cpus": 2,
-                "memory": "2G",
+                "memory": args.profile_memory,
                 "pids": 2048,
-                "maxContainers": 1,
+                "maxContainers": slot_count if args.setup_prefix else 1,
                 "maxBuilds": 1,
-                "ephemeralDiskBytes": "1G",
-                "dockerDataAllocationCount": 1,
+                "ephemeralDiskBytes": filesystem_bytes if args.setup_prefix else "1G",
+                "dockerDataAllocationCount": slot_count if args.setup_prefix else 1,
                 "memorySwapBytes": 0,
             },
             "aggregate": {
                 "cpus": 4,
-                "memory": "4G",
+                "memory": args.aggregate_memory,
                 "pids": 4096,
                 "memorySwapBytes": 0,
             },
             "storage": {
-                "size": "1536M",
-                "backing": "loop-ext4",
+                "size": fixed_store_bytes if args.setup_prefix else "1536M",
+                "backing": "fixed-image-ext4" if args.setup_prefix else "loop-ext4",
+                "outerImagePath": str(image),
+                "legacyOuterImagePath": str(root / "storage.img"),
+                "rootDir": str(storage_root),
                 "slotRootPath": str(mount / "quota-slots"),
                 "slotRegistryPath": str(journal / "quota-slots.json"),
             },
             "assets": {"manifestPath": str(assets)},
             "policy": {"hostLoopback": False, "tcpDockerEndpoint": False},
         }
+        if args.setup_prefix:
+            config["setupPrefix"] = {
+                "enable": True,
+                "seedCount": seed_count,
+            }
         host_config.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         os.chmod(host_config, 0o600)
-        run(
-            sys.executable, str(scripts / "generate-descriptor.py"),
-            "--host-config", str(host_config),
-            "--output", str(descriptor),
-        )
+        if args.setup_prefix:
+            run(
+                sys.executable, str(scripts / "activate-fixed-images.py"),
+                "--host-config", str(host_config),
+                "--descriptor", str(descriptor),
+                "--lock", str(root / "activation.lock"),
+            )
+        else:
+            run(
+                sys.executable, str(scripts / "generate-descriptor.py"),
+                "--host-config", str(host_config),
+                "--output", str(descriptor),
+            )
         os.chmod(descriptor, 0o600)
-        run(sys.executable, str(scripts / "install-quota-slots.py"), "--host-config", str(host_config))
+        if not args.setup_prefix:
+            run(sys.executable, str(scripts / "install-quota-slots.py"), "--host-config", str(host_config))
         print(json.dumps({
             "assets": str(assets),
             "controlSocket": str(root / "control.sock"),
             "descriptor": str(descriptor),
             "hostConfig": str(host_config),
-            "journal": str(journal / "events.ndjson"),
+            "journal": str(journal / ("fixed-image-v1/events.ndjson" if args.setup_prefix else "events.ndjson")),
+            "profileId": json.loads(descriptor.read_text(encoding="utf-8"))["profileId"],
             "readyFile": str(root / "ready"),
         }))
     except BaseException:
@@ -160,16 +264,38 @@ def main() -> None:
     create.add_argument("--docker-root", required=True)
     create.add_argument("--user", required=True)
     create.add_argument("--group", required=True)
+    create.add_argument("--name", default="e2e-cold-build")
+    create.add_argument("--profile-memory", default=PROFILE_MEMORY)
+    create.add_argument("--aggregate-memory", default=AGGREGATE_MEMORY)
+    create.add_argument("--setup-prefix", action="store_true")
+    create.add_argument("--storage-root")
+    create.add_argument(
+        "--setup-prefix-filesystem-bytes",
+        type=int,
+        default=SETUP_PREFIX_FILESYSTEM_BYTES,
+    )
+    create.add_argument(
+        "--setup-prefix-slot-count",
+        type=int,
+        default=SETUP_PREFIX_SLOT_COUNT,
+    )
+    create.add_argument(
+        "--setup-prefix-seed-count",
+        type=int,
+        default=SETUP_PREFIX_SEED_COUNT,
+    )
     remove = subparsers.add_parser("cleanup")
     remove.add_argument("--root", required=True)
+    reboot = subparsers.add_parser("prepare-reboot")
+    reboot.add_argument("--root", required=True)
     args = parser.parse_args()
     root = checked_root(args.root)
     if args.command == "setup":
         setup(args)
-    else:
+    elif args.command in ("cleanup", "prepare-reboot"):
         if os.geteuid() != 0:
             raise SystemExit("profile E2E host fixture cleanup requires root")
-        cleanup(root, remove_root=True)
+        cleanup(root, remove_root=args.command == "cleanup")
 
 
 if __name__ == "__main__":

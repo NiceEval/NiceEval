@@ -3,7 +3,7 @@
 Feature、Roadmap 与 Design 候选共用同一套 Feature Design Package。
 三者改变的是契约成熟度,不改变 README、Library、CLI、Architecture、Lifecycle 与 Use Case 的体裁分工。
 
-- [`feature-design/`](feature-design/README.md)：供目标命令 `pnpm feature create`、`pnpm roadmap create`、`pnpm use-case create` 与 Design Plan 创建使用。
+- [`feature-design/`](feature-design/README.md)：供目标命令 `pnpm run repo docs feature create`、`pnpm run repo docs roadmap create`、`pnpm run repo docs use-case create` 与 Design Plan 创建使用。
 - [`design-decision/`](design-decision/README.md)：供目标命令 `pnpm design create` 创建多个候选的决策外层。
 
 模板中的 `README.md` 必备。

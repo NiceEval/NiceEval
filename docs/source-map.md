@@ -28,20 +28,22 @@ Inspection operation。Host 内部才取得 Scope、Layer、lease、reader、wri
 
 | 目标行为 | 当前源码区域 |
 |---|---|
-| Effect CLI 根、argv/options、Layer 组装、统一输出与唯一 `NodeRuntime.runMain` | `packages/repo-tools/src/cli.ts` |
-| Feature/Test Trace Schema、compiler、固定投影与人读树 formatter | `packages/repo-tools/src/docs/trace/{model,compiler,index,presentation}.ts` |
-| canonical RepoRef、target validation 与关系 mutation 的共享锁/generation | `packages/repo-tools/src/docs/trace/{ref,relation-mutation}.ts` |
+| Repository root 的 argv、Layer、进程交付与唯一 `NodeRuntime.runMain` | `packages/repo-tools/src/cli.ts` |
+| `docs` contribution 的装配与显式 domain contribution protocol | `packages/repo-tools/src/docs/{command,contribution}.ts` |
+| Feature/Test Trace Schema、compiler、固定投影与各自 domain renderer | `packages/repo-tools/src/docs/{feature-command,test-command,trace}/` |
+| canonical RepoRef、target validation 与 Trace relation mutation 的共享锁/generation | `packages/repo-tools/src/docs/trace/{ref,relation-mutation}.ts` |
 | Feedback v2、adoption、Memory relation 与 Issue source | `packages/repo-tools/src/feedback/` |
 | structured Memory、promotion、supersession 与 E2E regression check | `packages/repo-tools/src/memory/` |
 
-这些命令属于仓库自身，不进入发布的 `niceeval` 产品 CLI。正式入口是根 `pnpm feature`、`pnpm test`、`pnpm feedback` 与 `pnpm memory`；
-领域 handler 返回结构化 receipt，只有根 `cli.ts` 读取 argv、写 stdout/stderr 和设置退出码。
+这些命令属于仓库自身，不进入发布的 `niceeval` 产品 CLI。文档查询与维护入口从 `pnpm run repo docs` 进入：Feature/Test 发现分别是 `pnpm run repo docs feature` 与 `pnpm run repo docs test`；
+Feedback 与 Memory 仍各自使用 `pnpm feedback` 与 `pnpm memory`。领域 handler 返回结构化 receipt，只有根 `cli.ts` 读取 argv、写 stdout/stderr 和设置退出码。
 
 ## 运行与持久事实
 
 | 目标行为 | 当前源码区域 |
 |---|---|
 | Experiment 发现、调度、Invocation-local 并发、共享状态租约、Sandbox 生命周期、reuse 与 receipt | `packages/niceeval/src/runner/{run,lock,shared-state-lease}.ts` 及同目录协作者；由 `experimentHost` 调用 |
+| [Setup 前缀缓存](roadmap/sandbox-cache/setup-prefix/README.md) 的 Action state、DAG 线性化、前缀协调、capture 与 private clone | `packages/niceeval/src/sandbox/{action,backend,docker,docker-setup-prefix-cache}.ts`、`packages/niceeval/src/sandbox/docker-profile/` 与 `packages/niceeval/src/runner/attempt.ts`；Profile 的 raw-image artifact、lease、journal 与回收落在 `packaging/docker-profile-host/` |
 | execution claim 与 Record lease 协调 | `packages/niceeval/src/coordination/` 与 `packages/niceeval/src/record/` 的 Host 实现 |
 | Record Core、Logical Seal、SQLite schema、publication、snapshot 与 migration | `packages/niceeval/src/record/{model,storage,host}/`；`.niceeval/record/record.sqlite` 与 cache/coordination/user state 分离 |
 | 高层 Record 作者 API、nominal Definition、batch collection 与 `{ records }` composition | `packages/niceeval/src/record/{authoring.ts,index.ts,host/,writer/}`；`write`、`append`、`appendAll` 与 `close` 只进入 owner-scoped session |

@@ -10,10 +10,6 @@ export default defineEval({
   description:
     "确定性 Sandbox Agent 的真实 diff、文件与 shell 证据由公开断言判定",
   async test(t) {
-    if (false) {
-      // @ts-expect-error Workspace-diff entries are post-run configuration only.
-      await t.sandbox.noChanges().orStop();
-    }
     await t.sandbox.writeText("fixture/changed.txt", "before-agent-change\n");
     await t.sandbox.writeText("fixture/delete-me.txt", "delete-me\n");
     t.check(
@@ -25,9 +21,9 @@ export default defineEval({
     turn.succeeded().label("Sandbox Agent completed");
 
     await t.group("Sandbox 结果断言", async () => {
-      turn.calledTool(
-        toolMatch("workspace_edit", { status: "completed" }),
-        { count: 1 },
+      turn.check(
+        turn.toolCalls,
+        toolMatch("workspace_edit", { status: "completed" }).exactly(1),
       );
       t.sandbox.changedPaths([
         "fixture/changed.txt",

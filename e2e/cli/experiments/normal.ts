@@ -10,4 +10,5 @@ export default defineExperiment({
   agent,
   model: "cli-deterministic-v1",
   evals: ["greet", "tool"],
+  sandboxCache: { setup: "use" },
 });

@@ -296,10 +296,14 @@ function sourceLimitation(
 
 export function sourceCollection(
   sources: readonly { readonly collection: Collection; readonly stage: SourceStage }[],
+  additional: readonly SourceReceiptLimitation[] = [],
 ): SourceReceiptCollection {
-  const limitations = sources.flatMap(({ collection, stage }) =>
-    collection.limitations.map((limitation) => sourceLimitation(limitation, stage))
-  );
+  const limitations = [
+    ...sources.flatMap(({ collection, stage }) =>
+      collection.limitations.map((limitation) => sourceLimitation(limitation, stage))
+    ),
+    ...additional,
+  ];
   const byKey = new Map(limitations.map((limitation) => [JSON.stringify(limitation), limitation] as const));
   const canonical = [...byKey.entries()]
     .sort(([left], [right]) => left === right ? 0 : left < right ? -1 : 1)

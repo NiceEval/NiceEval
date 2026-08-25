@@ -21,13 +21,17 @@ import type {
   BooleanAssertionHandle,
   BooleanAssertionEvaluation,
   DirectScoreAssertionHandle,
+  MatcherSourceLocator,
+  MatcherSourceSnapshot,
   MeasurementAssertionHandle,
   PostRunBooleanAssertionHandle,
 } from "../assertions/api.ts";
+import type { MatcherSourceRow } from "../assertions/matcher-artifact.ts";
 import {
   assertJudgeCapability,
   evaluateJudgeMeasurement,
   freezeJudgeMaterial,
+  judgeMatchSpecOf,
   type JudgeRecipe,
 } from "../assertions/judge.ts";
 import {
@@ -43,23 +47,52 @@ import {
   validateExpectedTouchedPaths,
 } from "../assertions/diff.ts";
 import {
-  assertionEventOccurrence,
+  freezeManagedEventOccurrences,
+  freezeManagedToolCalls,
+} from "../assertions/collection.ts";
+import {
+  atMost,
   assertManagedEventMatch,
   assertManagedToolMatch,
   evaluateBooleanMatch,
-  evaluateToolMatchCollection,
+  inOrder,
+  collectionMatchSpecOf,
+  isManagedCollectionMatch,
+  isManagedThresholdedScoreMatch,
+  thresholdedScoreMatchValue,
   makeAssertionMessageEvent,
   makeAssertionToolEvent,
   toolMatch,
   type BooleanMatch,
   type BooleanMatchEvaluation,
   type EventMatch,
-  type MatchableEvent,
+  type EventOccurrenceMatch,
+  type EventOccurrenceView,
+  type ManagedEventOccurrences,
+  type ManagedToolCalls,
   type ToolMatch,
+  type ToolOccurrenceMatch,
   type ToolMatchQuantifier,
 } from "../assertions/match.ts";
-import { buildO11ySummary, deriveRunFacts, deriveScopedLogicalToolOccurrences } from "../o11y/derive.ts";
-import { estimateCost } from "../o11y/cost.ts";
+import { numericBooleanRegistration } from "../assertions/numeric.ts";
+import {
+  buildO11ySummary,
+  deriveRunFacts,
+  deriveScopedLogicalToolOccurrences,
+  projectObservedSourceEvents,
+  type ObservedEventLedgerRow,
+  type ObservedToolOccurrenceLedgerRow,
+} from "../o11y/derive.ts";
+import {
+  observedSnapshotForTurn,
+  type ObservedEvaluationSegment,
+  type ObservedSourceEvent,
+  type ObservedTurnSnapshot,
+} from "../o11y/observed.ts";
+import {
+  pricingEstimate,
+  type PricingEstimateResult,
+} from "../o11y/cost.ts";
 import { UNCLASSIFIED_TOOL_ACTIONS_REASON } from "../o11y/command-projection.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
@@ -142,23 +175,6 @@ export interface AssertFirstContextDeps {
 type RuntimeKind = "pass" | "score";
 type AssertFirstRespondAnswer = { readonly request: InputRequest } & AnswerValue;
 
-export interface CalledToolAtLeast {
-  readonly atLeast: number;
-}
-
-export type CalledToolCount =
-  | number
-  | CalledToolAtLeast;
-
-export interface CalledToolOptions {
-  readonly count?: CalledToolCount;
-}
-
-export interface EventOptions {
-  /** An omitted count requires at least one matching event; a number is exact. */
-  readonly count?: number;
-}
-
 export interface FileChangedOptions {
   readonly status?: "added" | "modified" | "deleted";
   readonly before?: BooleanMatch<string, string, "value">;
@@ -181,44 +197,30 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind>
   ): PostRunBooleanAssertionHandle<Kind, void>;
 }
 
-export interface AssertFirstRootJudge<Kind extends RuntimeKind> {
-  readonly autoevals: {
-    closedQA(question: string, material: JudgeMaterial): MeasurementAssertionHandle<Kind>;
-    factuality(expected: string, material: JudgeMaterial): MeasurementAssertionHandle<Kind>;
-    summarizes(source: string, material: JudgeMaterial): MeasurementAssertionHandle<Kind>;
-  };
-}
-
-export interface AssertFirstTurnJudge<Kind extends RuntimeKind> {
-  readonly autoevals: {
-    closedQA(question: string): MeasurementAssertionHandle<Kind>;
-    factuality(expected: string): MeasurementAssertionHandle<Kind>;
-    summarizes(source: string): MeasurementAssertionHandle<Kind>;
-  };
-}
-
 export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
+  readonly input: string;
   readonly events: readonly StreamEvent[];
-  readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
+  readonly toolCalls: ManagedToolCalls<"turn">;
+  readonly eventOccurrences: ManagedEventOccurrences<"turn">;
   readonly status: "completed" | "failed" | "waiting";
   readonly message: string;
   readonly data?: JsonValue;
   readonly usage?: Usage;
+  check: AssertionsRuntime<Kind>["t"]["check"];
   succeeded(): BooleanAssertionHandle<Kind, void>;
-  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
-  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
+  calledTool(name: string): BooleanAssertionHandle<Kind, void>;
   notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
   notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
   toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
   usedNoTools(): BooleanAssertionHandle<Kind, void>;
   maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
   noFailedActions(): BooleanAssertionHandle<Kind, void>;
-  event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+  event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
   eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
   maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
   maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
-  readonly judge: AssertFirstTurnJudge<Kind>;
 }
 
 export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
@@ -231,16 +233,19 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
   readonly usage: Usage;
+  readonly toolCalls: ManagedToolCalls<"session">;
+  readonly eventOccurrences: ManagedEventOccurrences<"session">;
+  check: AssertionsRuntime<Kind>["t"]["check"];
   succeeded(): BooleanAssertionHandle<Kind, void>;
-  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
-  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
+  calledTool(name: string): BooleanAssertionHandle<Kind, void>;
   notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
   notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
   toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
   usedNoTools(): BooleanAssertionHandle<Kind, void>;
   maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
   noFailedActions(): BooleanAssertionHandle<Kind, void>;
-  event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+  event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
   eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
   maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
@@ -257,6 +262,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
   readonly reply: string;
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
+  readonly eventOccurrences: ManagedEventOccurrences<"attempt">;
   newSession(): AssertFirstSessionHandle<Kind>;
   readonly signal: AbortSignal;
   readonly model?: string;
@@ -271,22 +277,22 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  readonly toolCalls: ManagedToolCalls<"attempt">;
   readonly sandbox: AssertFirstSandbox<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
   readonly usage: Usage;
   succeeded(): BooleanAssertionHandle<Kind, void>;
-  calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
-  calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+  calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
+  calledTool(name: string): BooleanAssertionHandle<Kind, void>;
   notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
   notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
   usedNoTools(): BooleanAssertionHandle<Kind, void>;
   maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
   noFailedActions(): BooleanAssertionHandle<Kind, void>;
-  event(match: EventMatch, options?: EventOptions): BooleanAssertionHandle<Kind, void>;
+  event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
   maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
   maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
-  readonly judge: AssertFirstRootJudge<Kind>;
 } & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
 type AssertionScope = "turn" | "session" | "attempt";
@@ -318,7 +324,9 @@ function occurrenceCriterion(
       ? "absent" as const
       : quantifier.kind === "exact"
         ? "count" as const
-        : "present" as const,
+        : quantifier.kind === "at-least" && quantifier.count === 1
+          ? "present" as const
+          : "count" as const,
     ...(matcher === undefined ? {} : { matcher }),
     quantifier: Object.freeze(
       quantifier.kind === "absent"
@@ -367,22 +375,144 @@ function succeededHandle<Kind extends RuntimeKind>(input: {
   });
 }
 
+interface MatcherScopeTurn {
+  readonly observed: ObservedTurnSnapshot;
+  readonly events: readonly StreamEvent[];
+  readonly outcome: "completed" | "failed" | "waiting";
+}
+
+type ProjectedMatcherCandidate<Candidate> =
+  | { readonly state: "available"; readonly value: Candidate }
+  | { readonly state: "unavailable"; readonly reason: string };
+
+interface MatcherSourceProjection {
+  readonly state: "available" | "invalid";
+  readonly events: readonly ObservedEventLedgerRow[];
+  readonly toolOccurrences: readonly ObservedToolOccurrenceLedgerRow[];
+  readonly occurrenceCandidates: ReadonlyMap<string, LogicalToolOccurrence>;
+  readonly orphanFinishes: readonly OrphanToolOperationFinish[];
+}
+
+type ResolveObservedEvaluation = (
+  snapshot: ObservedTurnSnapshot,
+) => ObservedEvaluationSegment | undefined;
+
 interface ToolScopeSnapshot {
   readonly occurrences: readonly LogicalToolOccurrence[];
+  readonly rows: readonly MatcherSourceRow<ProjectedMatcherCandidate<LogicalToolOccurrence>>[];
   readonly orphanFinishes: readonly OrphanToolOperationFinish[];
+  readonly sourceSnapshot: MatcherSourceSnapshot;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }
 
+function unavailableSourceSnapshot(
+  snapshot: MatcherSourceSnapshot,
+): MatcherSourceSnapshot {
+  return Object.freeze({ ...snapshot, collectionAtCut: "unavailable" as const });
+}
+
+function projectMatcherSources(
+  turns: readonly MatcherScopeTurn[],
+  resolveEvaluation: ResolveObservedEvaluation,
+): MatcherSourceProjection {
+  const evaluation = turns.map((turn) => resolveEvaluation(turn.observed));
+  if (evaluation.some((segment) => segment === undefined)) {
+    return Object.freeze({
+      state: "invalid" as const,
+      events: Object.freeze([]),
+      toolOccurrences: Object.freeze([]),
+      occurrenceCandidates: new Map<string, LogicalToolOccurrence>(),
+      orphanFinishes: Object.freeze([]),
+    });
+  }
+  const segments = evaluation as readonly ObservedEvaluationSegment[];
+  const projected = projectObservedSourceEvents(segments);
+  const logicalTurns: readonly LogicalToolOccurrenceScopeTurn[] = Object.freeze(
+    segments.map((segment, index) => Object.freeze({
+      session: segment.sessionId,
+      turn: segment.turnId,
+      turnOrdinal: index + 1,
+      events: segment.events,
+      outcome: turns[index]!.outcome,
+    })),
+  );
+  const logical = deriveScopedLogicalToolOccurrences(logicalTurns);
+  if (projected.state === "invalid") {
+    return Object.freeze({
+      state: "invalid" as const,
+      events: Object.freeze([]),
+      toolOccurrences: Object.freeze([]),
+      occurrenceCandidates: new Map<string, LogicalToolOccurrence>(),
+      orphanFinishes: logical.orphanFinishes,
+    });
+  }
+
+  const occurrenceCandidates = new Map<string, LogicalToolOccurrence>();
+  for (const occurrence of logical.occurrences) {
+    const segment = segments[occurrence.start.turnOrdinal - 1];
+    const start = segment?.items[occurrence.start.eventOrdinal];
+    if (segment === undefined || start?.kind !== "tool-start") continue;
+    occurrenceCandidates.set(start.toolOccurrenceId, Object.freeze({
+      ...occurrence,
+      id: start.toolOccurrenceId,
+      session: segment.sessionId,
+      turn: segment.turnId,
+    }));
+  }
+  return Object.freeze({
+    state: "available" as const,
+    events: projected.events,
+    toolOccurrences: projected.toolOccurrences,
+    occurrenceCandidates,
+    orphanFinishes: logical.orphanFinishes,
+  });
+}
+
+function exactToolLocator(toolOccurrenceId: string): MatcherSourceLocator {
+  return Object.freeze({
+    kind: "tool-occurrence" as const,
+    toolOccurrenceId,
+    relation: Object.freeze({ state: "exact" as const }),
+  });
+}
+
 function projectToolScope(input: {
-  readonly turns: readonly LogicalToolOccurrenceScopeTurn[];
+  readonly turns: readonly MatcherScopeTurn[];
+  readonly sourceSnapshot: MatcherSourceSnapshot;
+  readonly homeTurnId?: string;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
+  readonly resolveEvaluation: ResolveObservedEvaluation;
 }): ToolScopeSnapshot {
-  const projection = deriveScopedLogicalToolOccurrences(input.turns);
+  const projection = projectMatcherSources(input.turns, input.resolveEvaluation);
+  const sourceSnapshot = projection.state === "invalid"
+    ? unavailableSourceSnapshot(input.sourceSnapshot)
+    : input.sourceSnapshot;
+  const sourceRows = input.homeTurnId === undefined
+    ? projection.toolOccurrences
+    : projection.toolOccurrences.filter((row) => row.homeTurnId === input.homeTurnId);
+  const rows = Object.freeze(sourceRows.map((row) => {
+    const candidate = projection.occurrenceCandidates.get(row.toolOccurrenceId);
+    return Object.freeze({
+      locator: exactToolLocator(row.toolOccurrenceId),
+      sessionId: row.sessionId,
+      sessionSequence: row.startSessionSequence,
+      candidate: candidate === undefined
+        ? Object.freeze({
+            state: "unavailable" as const,
+            reason: "source-occurrence-material-unavailable",
+          })
+        : Object.freeze({ state: "available" as const, value: candidate }),
+    });
+  }));
   return Object.freeze({
-    occurrences: projection.occurrences,
+    occurrences: Object.freeze(rows.flatMap((row) =>
+      row.candidate.state === "available" ? [row.candidate.value] : []
+    )),
+    rows,
     orphanFinishes: projection.orphanFinishes,
+    sourceSnapshot,
     coverage: input.coverage,
     snapshot: input.snapshot,
   });
@@ -391,49 +521,6 @@ function projectToolScope(input: {
 function resolveToolTarget(target: ToolMatch | string, label: "calledTool" | "notCalledTool"): ToolMatch {
   if (typeof target === "string") return toolMatch(target);
   return assertManagedToolMatch(target, `${label}() match`);
-}
-
-function normalizeCalledToolOptions(value: CalledToolOptions | undefined): ToolMatchQuantifier {
-  if (value === undefined) return Object.freeze({ kind: "at-least" as const, count: 1 });
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("calledTool() options must be an object");
-  }
-  const options = value as globalThis.Record<string, unknown>;
-  for (const key of Object.keys(options)) {
-    if (key !== "count") {
-      throw new TypeError(`calledTool() options does not support option ${JSON.stringify(key)}; put field constraints in toolMatch()`);
-    }
-  }
-  const count = options.count;
-  if (count === undefined) return Object.freeze({ kind: "at-least" as const, count: 1 });
-  if (count !== undefined) {
-    if (typeof count === "number") {
-      if (count === 0) {
-        throw new TypeError("calledTool() options.count must be a positive safe integer; use notCalledTool() for zero");
-      }
-      if (!Number.isSafeInteger(count) || count < 0) {
-        throw new TypeError("calledTool() options.count must be a positive safe integer");
-      }
-      return Object.freeze({ kind: "exact" as const, count });
-    }
-    if (typeof count !== "object" || count === null || Array.isArray(count)) {
-      throw new TypeError("calledTool() options.count must be a positive safe integer or { atLeast: positive safe integer }");
-    }
-    const lowerBound = count as globalThis.Record<string, unknown>;
-    for (const key of Object.keys(lowerBound)) {
-      if (key !== "atLeast") {
-        throw new TypeError(`calledTool() options.count does not support key ${JSON.stringify(key)}`);
-      }
-    }
-    if (lowerBound.atLeast === 0) {
-      throw new TypeError("calledTool() options.count.atLeast must be a positive safe integer; use notCalledTool() for zero");
-    }
-    if (!Number.isSafeInteger(lowerBound.atLeast) || typeof lowerBound.atLeast !== "number" || lowerBound.atLeast < 0) {
-      throw new TypeError("calledTool() options.count.atLeast must be a positive safe integer");
-    }
-    return Object.freeze({ kind: "at-least" as const, count: lowerBound.atLeast });
-  }
-  throw new TypeError("calledTool() options.count must be a positive safe integer or { atLeast: positive safe integer }");
 }
 
 function toolScopeCoverageReason(snapshot: ToolScopeSnapshot): string | undefined {
@@ -454,92 +541,49 @@ function toolScopeCoverageReason(snapshot: ToolScopeSnapshot): string | undefine
   return undefined;
 }
 
-function collectionAssertionEvaluation(
-  result: Awaited<ReturnType<typeof evaluateToolMatchCollection>>,
-): BooleanAssertionEvaluation<void> {
-  switch (result.state) {
-    case "matched":
-      return Object.freeze({ state: "matched" as const, value: undefined, diagnostic: result.diagnostic, receipt: result.receipt });
-    case "mismatched":
-      return Object.freeze({ state: "mismatched" as const, diagnostic: result.diagnostic, receipt: result.receipt });
-    case "unavailable":
-      return Object.freeze({
-        state: "unavailable" as const,
-        reason: "evidence-unavailable" as const,
-        diagnostic: result.diagnostic,
-        receipt: result.receipt,
-      });
-  }
-}
-
-function toolAssertionHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly match: ToolMatch;
-  readonly quantifier: ToolMatchQuantifier;
-  readonly snapshot: ToolScopeSnapshot;
-}): BooleanAssertionHandle<Kind, void> {
-  const captured = captureAssertionSnapshot({
-    scope: input.scope,
-    occurrence: "tool",
-    matcher: input.match.name,
-    quantifier: input.quantifier,
-    candidateCount: input.snapshot.occurrences.length,
-    orphanFinishCount: input.snapshot.orphanFinishes.length,
-    coverage: input.snapshot.coverage.actions,
-    snapshot: input.snapshot.snapshot,
-  });
-  return input.runtime.registerBoolean<void>({
-    criterion: occurrenceCriterion(input.scope, "tool", input.match.name, input.quantifier),
-    subject: captured.material,
-    coverage: captured.coverage,
-    limitations: captured.limitations,
-    evaluate: () => {
-      const coverageReason = toolScopeCoverageReason(input.snapshot);
-      return Effect.tryPromise({
-        try: async () => collectionAssertionEvaluation(await evaluateToolMatchCollection(
-          input.match,
-          input.snapshot.occurrences,
-          {
-            quantifier: input.quantifier,
-            ...(coverageReason === undefined ? {} : { coverageReason }),
-          },
-        )),
-        catch: (error) => error,
-      });
-    },
-  });
+function registerCollectionCheck<Kind extends RuntimeKind, Subject>(
+  runtime: AssertionsRuntime<Kind>,
+  subject: Subject,
+  match: unknown,
+): BooleanAssertionHandle<Kind, void> {
+  return (runtime.t.check as unknown as (subject: Subject, match: unknown) => BooleanAssertionHandle<Kind, void>)(subject, match);
 }
 
 function calledToolHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly target: ToolMatch | string;
-  readonly options: CalledToolOptions | undefined;
-  readonly snapshot: ToolScopeSnapshot;
+  readonly subject: ManagedToolCalls;
+  readonly target: ToolMatch | ToolOccurrenceMatch | string;
 }): BooleanAssertionHandle<Kind, void> {
-  return toolAssertionHandle({
-    runtime: input.runtime,
-    scope: input.scope,
-    match: resolveToolTarget(input.target, "calledTool"),
-    quantifier: normalizeCalledToolOptions(input.options),
-    snapshot: input.snapshot,
-  });
+  if (typeof input.target === "string") return registerCollectionCheck(input.runtime, input.subject, toolMatch(input.target));
+  if (!isManagedCollectionMatch(input.target)) {
+    return registerCollectionCheck(input.runtime, input.subject, assertManagedToolMatch(input.target, "calledTool() match"));
+  }
+  const spec = collectionMatchSpecOf(input.target);
+  if (spec.kind !== "occurrence" || spec.domain !== "tool") {
+    throw new TypeError("calledTool() accepts only a ToolMatch or positive ToolOccurrenceMatch");
+  }
+  if (
+    (spec.quantifier.kind === "exact" || spec.quantifier.kind === "at-least")
+    && spec.quantifier.count === 0
+  ) {
+    throw new TypeError("calledTool() requires a positive occurrence; exactly(0) and atLeast(0) are invalid");
+  }
+  if (spec.quantifier.kind === "at-most" || spec.quantifier.kind === "less-than" || spec.quantifier.kind === "absent") {
+    throw new TypeError("calledTool() does not accept an upper-bound occurrence Match");
+  }
+  return registerCollectionCheck(input.runtime, input.subject, input.target);
 }
 
 function notCalledToolHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
+  readonly subject: ManagedToolCalls;
   readonly target: ToolMatch | string;
-  readonly snapshot: ToolScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
-  return toolAssertionHandle({
-    runtime: input.runtime,
-    scope: input.scope,
-    match: resolveToolTarget(input.target, "notCalledTool"),
-    quantifier: Object.freeze({ kind: "absent" as const }),
-    snapshot: input.snapshot,
-  });
+  return registerCollectionCheck(
+    input.runtime,
+    input.subject,
+    resolveToolTarget(input.target, "notCalledTool").exactly(0),
+  );
 }
 
 function valueMatchCriterion(): AssertionCriterion {
@@ -566,6 +610,7 @@ function scopedBooleanHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
   readonly criterion: AssertionCriterion;
   readonly snapshot: unknown;
+  readonly interruptedMatcherArtifact?: import("../assertions/api.ts").MatcherQueryArtifact;
   readonly evaluate: () => Effect.Effect<BooleanAssertionEvaluation<void>, unknown, never>;
 }): BooleanAssertionHandle<Kind, void> {
   const captured = captureAssertionSnapshot(input.snapshot);
@@ -574,6 +619,9 @@ function scopedBooleanHandle<Kind extends RuntimeKind>(input: {
     subject: captured.material,
     coverage: captured.coverage,
     limitations: captured.limitations,
+    ...(input.interruptedMatcherArtifact === undefined
+      ? {}
+      : { interruptedMatcherArtifact: input.interruptedMatcherArtifact }),
     evaluate: input.evaluate,
   });
 }
@@ -599,60 +647,22 @@ function assertNonNegativeSafeInteger(value: unknown, label: string): asserts va
 
 function usedNoToolsHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly snapshot: ToolScopeSnapshot;
+  readonly subject: ManagedToolCalls;
 }): BooleanAssertionHandle<Kind, void> {
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: occurrenceCriterion(
-      input.scope,
-      "tool",
-      undefined,
-      Object.freeze({ kind: "absent" as const }),
-    ),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: "used-no-tools",
-      occurrenceCount: input.snapshot.occurrences.length,
-      orphanFinishCount: input.snapshot.orphanFinishes.length,
-      coverage: input.snapshot.coverage.actions,
-      snapshot: input.snapshot.snapshot,
-    }),
-    evaluate: () => Effect.sync(() => {
-      if (input.snapshot.occurrences.length > 0) return mismatchedVoid();
-      return toolScopeCoverageReason(input.snapshot) === undefined
-        ? matchedVoid()
-        : unavailableVoid();
-    }),
-  });
+  return registerCollectionCheck(
+    input.runtime,
+    input.subject,
+    toolMatch({}).exactly(0),
+  );
 }
 
 function maxToolCallsHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
+  readonly subject: ManagedToolCalls;
   readonly max: number;
-  readonly snapshot: ToolScopeSnapshot;
 }): BooleanAssertionHandle<Kind, void> {
   assertNonNegativeSafeInteger(input.max, "maxToolCalls() max");
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: valueMatchCriterion(),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: "max-tool-calls",
-      max: input.max,
-      occurrenceCount: input.snapshot.occurrences.length,
-      orphanFinishCount: input.snapshot.orphanFinishes.length,
-      coverage: input.snapshot.coverage.actions,
-      snapshot: input.snapshot.snapshot,
-    }),
-    evaluate: () => Effect.sync(() => {
-      if (input.snapshot.occurrences.length > input.max) return mismatchedVoid();
-      return toolScopeCoverageReason(input.snapshot) === undefined
-        ? matchedVoid()
-        : unavailableVoid();
-    }),
-  });
+  return registerCollectionCheck(input.runtime, input.subject, atMost(input.max));
 }
 
 function noFailedActionsHandle<Kind extends RuntimeKind>(input: {
@@ -687,368 +697,321 @@ function noFailedActionsHandle<Kind extends RuntimeKind>(input: {
 function usageLimitHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
   readonly scope: AssertionScope;
-  readonly metric: "tokens" | "cost";
   readonly maximum: number;
   readonly usage: Usage;
-  /** metric === "cost" 时的价目表估算(estimateCost(model, usage, pricing));observed usage.costUSD 不进入预算断言。 */
-  readonly estimatedCostUSD?: number;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
-}): BooleanAssertionHandle<Kind, void> {
-  assertNonNegativeFinite(input.maximum, input.metric === "tokens" ? "maxTokens() max" : "maxCost() usd");
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: valueMatchCriterion(),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: input.metric === "tokens" ? "max-tokens" : "max-cost",
-      maximum: input.maximum,
-      usage: Object.freeze({ ...input.usage }),
-      coverage: input.coverage.usage,
-      snapshot: input.snapshot,
-    }),
-    evaluate: () => Effect.sync(() => {
-      // 预算只认 estimatedCostUSD(价目表估算),never observed usage.costUSD:
-      // 两者独立并存,observed 存在也不改变估算口径(见 Usage.costUSD 单向字段契约)。
-      // 无 model / 无价格 / 无可计价 usage 时 estimate 不存在；缺测不能被当成零成本。
-      const actual = input.metric === "tokens"
-        ? (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0)
-        : input.estimatedCostUSD;
-      if (actual === undefined) return unavailableVoid();
-      if (actual > input.maximum) return mismatchedVoid();
-      return hasCompleteCoverage(input.coverage, "usage")
-        ? matchedVoid()
-        : unavailableVoid();
-    }),
-  });
-}
-
-function orderedMatchList<Match>(
-  value: readonly Match[],
-  label: string,
-  assertMatch: (value: unknown, label: string) => Match,
-): readonly Match[] {
-  if (!Array.isArray(value) || value.length < 2) {
-    throw new TypeError(`${label} requires at least two Match values`);
-  }
-  return Object.freeze(value.map((match, index) => assertMatch(match, `${label} match ${index + 1}`)));
-}
-
-function hasOrderedPath(
-  matrix: readonly (readonly BooleanMatchEvaluation<unknown>[])[],
-  allowed: (result: BooleanMatchEvaluation<unknown>) => boolean,
-): boolean {
-  let cursor = 0;
-  for (const row of matrix) {
-    let found = -1;
-    for (let index = cursor; index < row.length; index += 1) {
-      if (allowed(row[index]!)) {
-        found = index;
-        break;
-      }
+} & (
+  | { readonly metric: "tokens" }
+  | {
+      readonly metric: "cost";
+      /** observed usage.costUSD 不进入预算断言。 */
+      readonly pricing: PricingEstimateResult;
     }
-    if (found < 0) return false;
-    cursor = found + 1;
-  }
-  return true;
-}
-
-function toolMatchEvaluation(
-  occurrence: LogicalToolOccurrence,
-  result: BooleanMatchEvaluation<unknown>,
-): BooleanMatchEvaluation<unknown> {
-  if (occurrence.lifecycle.state === "opaque" && result.state === "matched") {
-    return Object.freeze({
-      state: "unavailable" as const,
-      reason: `tool-lifecycle-unavailable:${occurrence.lifecycle.reason}`,
-      diagnostic: Object.freeze({
-        code: "tool-lifecycle-unavailable",
-        message: "the matching tool lifecycle is incomplete",
-        path: Object.freeze([]),
-        reason: occurrence.lifecycle.reason,
-      }),
-    });
-  }
-  return result;
+)): BooleanAssertionHandle<Kind, void> {
+  assertNonNegativeFinite(input.maximum, input.metric === "tokens" ? "maxTokens() max" : "maxCost() usd");
+  // observed usage.costUSD intentionally never enters this material. Cost is
+  // sealed from the pricing receipt; tokens exclude cache buckets by contract.
+  const tokenBuckets = [input.usage.inputTokens, input.usage.outputTokens] as const;
+  const recordedTokenBuckets = tokenBuckets.filter((value): value is number => value !== undefined);
+  const tokenInputInvalid = recordedTokenBuckets.some((value) => !Number.isFinite(value) || value < 0);
+  const tokenValue = recordedTokenBuckets.reduce((sum, value) => sum + value, 0);
+  const tokenMaterial = tokenInputInvalid
+    ? Object.freeze({ state: "unavailable" as const, reason: "usage-input-invalid" })
+    : recordedTokenBuckets.length === 0
+    ? Object.freeze({ state: "unavailable" as const, reason: "usage-not-recorded" })
+    : recordedTokenBuckets.length === tokenBuckets.length && input.coverage.usage.status === "complete"
+    ? Object.freeze({ state: "exact" as const, value: tokenValue })
+    : Object.freeze({ state: "lower-bound" as const, value: tokenValue });
+  const material = input.metric === "tokens"
+    ? tokenMaterial
+    : input.pricing.state === "unavailable"
+    ? Object.freeze({ state: "unavailable" as const, reason: input.pricing.reason })
+    : input.pricing.receipt.charges.length === 4 && input.coverage.usage.status === "complete"
+    ? Object.freeze({ state: "exact" as const, value: input.pricing.receipt.amountUSD })
+    : Object.freeze({ state: "lower-bound" as const, value: input.pricing.receipt.amountUSD });
+  const derivation = input.metric === "tokens"
+    ? Object.freeze({
+        kind: "usage-token-sum" as const,
+        buckets: Object.freeze([
+          ...(input.usage.inputTokens === undefined ? [] : ["inputTokens"]),
+          ...(input.usage.outputTokens === undefined ? [] : ["outputTokens"]),
+        ]),
+        missingBuckets: Object.freeze([
+          ...(input.usage.inputTokens === undefined ? ["inputTokens"] : []),
+          ...(input.usage.outputTokens === undefined ? ["outputTokens"] : []),
+        ]),
+      })
+    : input.pricing.state === "available"
+    ? input.pricing.receipt
+    : Object.freeze({ kind: "pricing-estimate-unavailable" as const, reason: input.pricing.reason });
+  const captured = captureAssertionSnapshot(Object.freeze({
+    ...material,
+    cut: input.snapshot,
+    coverage: input.coverage.usage,
+    derivation,
+  }));
+  const semanticCapture = material.state === "unavailable"
+    ? Object.freeze({
+        ...captured,
+        coverage: Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const }),
+        limitations: Object.freeze([]),
+      })
+    : material.state === "lower-bound" && captured.coverage.state === "complete"
+    ? Object.freeze({
+        ...captured,
+        coverage: Object.freeze({ state: "partial" as const, reason: "provider-limited" as const }),
+        limitations: Object.freeze([{ kind: "provider-limited" as const }]),
+      })
+    : captured;
+  const criterionSubject = input.metric === "tokens"
+    ? Object.freeze({
+        kind: "scope-metric" as const,
+        metric: "tokens" as const,
+        scope: input.scope,
+        unit: "tokens" as const,
+      })
+    : Object.freeze({
+        kind: "scope-metric" as const,
+        metric: "cost" as const,
+        scope: input.scope,
+        unit: "usd" as const,
+      });
+  return input.runtime.registerBoolean(numericBooleanRegistration({
+    match: atMost(input.maximum),
+    criterionSubject,
+    material,
+    captured: semanticCapture,
+    matchedValue: () => undefined,
+  }));
 }
 
 function toolOrderHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly matches: readonly ToolMatch[];
-  readonly snapshot: ToolScopeSnapshot;
+  readonly subject: ManagedToolCalls<"turn"> | ManagedToolCalls<"session">;
+  readonly matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]];
 }): BooleanAssertionHandle<Kind, void> {
-  const matches = orderedMatchList(input.matches, "toolOrder()", assertManagedToolMatch);
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: valueMatchCriterion(),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: "tool-order",
-      matches: matches.map((match) => match.name),
-      occurrenceCount: input.snapshot.occurrences.length,
-      orphanFinishCount: input.snapshot.orphanFinishes.length,
-      coverage: input.snapshot.coverage.actions,
-      snapshot: input.snapshot.snapshot,
-    }),
-    evaluate: () => Effect.tryPromise({
-      try: async () => {
-        const matrix: BooleanMatchEvaluation<unknown>[][] = [];
-        for (const match of matches) {
-          const row: BooleanMatchEvaluation<unknown>[] = [];
-          for (const occurrence of input.snapshot.occurrences) {
-            row.push(toolMatchEvaluation(occurrence, await evaluateBooleanMatch(match, occurrence)));
-          }
-          matrix.push(row);
-        }
-        if (hasOrderedPath(matrix, (result) => result.state === "matched")) return matchedVoid();
-        if (
-          toolScopeCoverageReason(input.snapshot) !== undefined
-          || hasOrderedPath(matrix, (result) => result.state === "matched" || result.state === "unavailable")
-        ) {
-          return unavailableVoid();
-        }
-        return mismatchedVoid();
-      },
-      catch: (error) => error,
-    }),
+  return registerCollectionCheck(input.runtime, input.subject, inOrder(input.matches));
+}
+
+function managedToolCalls(
+  scope: AssertionScope,
+  snapshot: ToolScopeSnapshot,
+): ManagedToolCalls {
+  return freezeManagedToolCalls({
+    scope,
+    sourceSnapshot: snapshot.sourceSnapshot,
+    rows: snapshot.rows,
+    incompleteReason: toolScopeCoverageReason(snapshot),
+    actionsCoverage: snapshot.coverage.actions,
+    orphanFinishCount: snapshot.orphanFinishes.length,
+    snapshot: snapshot.snapshot,
   });
+}
+
+function managedEventOccurrences(
+  scope: AssertionScope,
+  snapshot: EventScopeSnapshot,
+): ManagedEventOccurrences {
+  return freezeManagedEventOccurrences({
+    scope,
+    sourceSnapshot: snapshot.sourceSnapshot,
+    rows: snapshot.rows,
+    coverage: snapshot.coverage.events,
+    snapshot: snapshot.snapshot,
+    unassociatedOperation: snapshot.unassociatedOperation,
+  });
+}
+
+function eventHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly subject: ManagedEventOccurrences;
+  readonly match: EventMatch | EventOccurrenceMatch;
+}): BooleanAssertionHandle<Kind, void> {
+  if (!isManagedCollectionMatch(input.match)) {
+    return registerCollectionCheck(input.runtime, input.subject, assertManagedEventMatch(input.match, "event() match"));
+  }
+  const spec = collectionMatchSpecOf(input.match);
+  if (spec.kind !== "occurrence" || spec.domain !== "event") {
+    throw new TypeError("event() accepts only an EventMatch or positive EventOccurrenceMatch");
+  }
+  if (
+    (spec.quantifier.kind === "exact" || spec.quantifier.kind === "at-least")
+    && spec.quantifier.count === 0
+  ) {
+    throw new TypeError("event() requires a positive occurrence; exactly(0) and atLeast(0) are invalid");
+  }
+  if (spec.quantifier.kind === "at-most" || spec.quantifier.kind === "less-than" || spec.quantifier.kind === "absent") {
+    throw new TypeError("event() does not accept an upper-bound occurrence Match");
+  }
+  return registerCollectionCheck(input.runtime, input.subject, input.match);
+}
+
+function notEventOccurrenceHandle<Kind extends RuntimeKind>(input: {
+  readonly runtime: AssertionsRuntime<Kind>;
+  readonly subject: ManagedEventOccurrences;
+  readonly match: EventMatch;
+}): BooleanAssertionHandle<Kind, void> {
+  return registerCollectionCheck(
+    input.runtime,
+    input.subject,
+    assertManagedEventMatch(input.match, "notEvent() match").exactly(0),
+  );
 }
 
 interface EventScopeSnapshot {
-  readonly events: readonly MatchableEvent[];
+  readonly events: readonly EventOccurrenceView[];
+  readonly rows: readonly MatcherSourceRow<{ readonly state: "available"; readonly value: EventOccurrenceView }>[];
   readonly unassociatedOperation: boolean;
+  readonly sourceSnapshot: MatcherSourceSnapshot;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
 }
 
-function eventPositionKey(position: { readonly turnOrdinal: number; readonly eventOrdinal: number }): string {
-  return `${position.turnOrdinal}:${position.eventOrdinal}`;
+function eventLocator(row: ObservedEventLedgerRow): MatcherSourceLocator {
+  if (row.event.kind === "tool-start") {
+    return Object.freeze({
+      kind: "event" as const,
+      eventId: row.eventId,
+      toolOccurrenceId: row.event.toolOccurrenceId,
+      relation: Object.freeze({ state: "exact" as const }),
+    });
+  }
+  if (row.event.kind === "tool-finish") {
+    return row.event.occurrence.state === "exact"
+      ? Object.freeze({
+          kind: "event" as const,
+          eventId: row.eventId,
+          toolOccurrenceId: row.event.occurrence.toolOccurrenceId,
+          relation: Object.freeze({ state: "exact" as const }),
+        })
+      : Object.freeze({
+          kind: "event" as const,
+          eventId: row.eventId,
+          relation: Object.freeze({
+            state: "unavailable" as const,
+            reason: "ambiguous" as const,
+          }),
+        });
+  }
+  return Object.freeze({
+    kind: "event" as const,
+    eventId: row.eventId,
+    relation: Object.freeze({ state: "exact" as const }),
+  });
 }
 
 function projectEventScope(input: {
-  readonly turns: readonly LogicalToolOccurrenceScopeTurn[];
+  readonly turns: readonly MatcherScopeTurn[];
+  readonly sourceSnapshot: MatcherSourceSnapshot;
   readonly coverage: ScopeCoverage;
   readonly snapshot: unknown;
+  readonly resolveEvaluation: ResolveObservedEvaluation;
 }): EventScopeSnapshot {
-  const derivation = deriveScopedLogicalToolOccurrences(input.turns);
-  const starts = new Map<string, LogicalToolOccurrence>();
-  const finishes = new Map<string, LogicalToolOccurrence>();
-  for (const occurrence of derivation.occurrences) {
-    starts.set(eventPositionKey(occurrence.start), occurrence);
-    if (occurrence.lifecycle.state === "available" && occurrence.lifecycle.status !== "pending") {
-      finishes.set(eventPositionKey(occurrence.lifecycle.finish), occurrence);
+  const projection = projectMatcherSources(input.turns, input.resolveEvaluation);
+  const baseSourceSnapshot = projection.state === "invalid"
+    ? unavailableSourceSnapshot(input.sourceSnapshot)
+    : input.sourceSnapshot;
+  const turnIndex = new Map(input.turns.map((turn, index) => [turn.observed.turnId, index]));
+  const toolNames = new Map(
+    projection.events.flatMap((row) => row.event.kind === "tool-start"
+      ? [[row.event.toolOccurrenceId, row.event.tool] as const]
+      : []),
+  );
+  const rows: MatcherSourceRow<{ readonly state: "available"; readonly value: EventOccurrenceView }>[] = [];
+  let omittedProjection = false;
+  let incompleteRelation = false;
+  for (const row of projection.events) {
+    if (row.event.kind !== "message" && row.event.kind !== "tool-start" && row.event.kind !== "tool-finish") {
+      continue;
     }
-  }
-  const events: MatchableEvent[] = [];
-  let unassociatedOperation = false;
-  for (const turn of [...input.turns].sort((left, right) => left.turnOrdinal - right.turnOrdinal)) {
-    for (const [eventOrdinal, event] of turn.events.entries()) {
-      const position = { turnOrdinal: turn.turnOrdinal, eventOrdinal };
-      if (event.type === "message") {
-        events.push(makeAssertionMessageEvent({
-          session: turn.session,
-          turn: turn.turn,
-          ...position,
-          role: event.role,
-          text: event.text,
-        }));
-      } else if (event.type === "operation.started" && event.operation.kind === "tool") {
-        const occurrence = starts.get(eventPositionKey(position));
-        if (occurrence === undefined) unassociatedOperation = true;
-        else {
-          events.push(makeAssertionToolEvent({
-            session: turn.session,
-            turn: turn.turn,
-            ...position,
-            type: "operation.started",
-            occurrence,
-          }));
-        }
-      } else if (event.type === "operation.finished" && event.kind === "tool") {
-        const occurrence = finishes.get(eventPositionKey(position));
-        if (occurrence === undefined) unassociatedOperation = true;
-        else {
-          events.push(makeAssertionToolEvent({
-            session: turn.session,
-            turn: turn.turn,
-            ...position,
-            type: "operation.finished",
-            occurrence,
-            status: event.status,
-          }));
-        }
+    const turnOrdinal = turnIndex.get(row.turnId);
+    const sourceTurn = turnOrdinal === undefined ? undefined : input.turns[turnOrdinal];
+    const segment = sourceTurn === undefined ? undefined : input.resolveEvaluation(sourceTurn.observed);
+    const eventOrdinal = segment?.items.findIndex((event) => event.eventId === row.eventId) ?? -1;
+    let publicView: EventOccurrenceView | undefined;
+    if (row.event.kind === "message") {
+      publicView = Object.freeze({ type: "message" as const, role: row.event.role, text: row.event.text });
+    } else if (row.event.kind === "tool-start") {
+      publicView = Object.freeze({
+        type: "operation.started" as const,
+        tool: Object.freeze({ name: row.event.tool }),
+      });
+    } else if (row.event.occurrence.state === "exact" && row.event.outcome !== "cancelled") {
+      const name = toolNames.get(row.event.occurrence.toolOccurrenceId);
+      if (name !== undefined) {
+        publicView = Object.freeze({
+          type: "operation.finished" as const,
+          tool: Object.freeze({ name }),
+          status: row.event.outcome,
+        });
       }
     }
+    if (publicView === undefined) {
+      omittedProjection = true;
+      continue;
+    }
+
+    let value: EventOccurrenceView = publicView;
+    if (sourceTurn !== undefined && eventOrdinal >= 0 && row.event.kind === "message") {
+      value = makeAssertionMessageEvent({
+        eventId: row.eventId,
+        session: row.sessionId,
+        turn: row.turnId,
+        turnOrdinal: (turnOrdinal ?? 0) + 1,
+        eventOrdinal,
+        role: row.event.role,
+        text: row.event.text,
+      });
+    } else if (sourceTurn !== undefined && eventOrdinal >= 0 && row.event.kind !== "message") {
+      const toolOccurrenceId = row.event.kind === "tool-start"
+        ? row.event.toolOccurrenceId
+        : row.event.occurrence.state === "exact"
+        ? row.event.occurrence.toolOccurrenceId
+        : undefined;
+      const occurrence = toolOccurrenceId === undefined
+        ? undefined
+        : projection.occurrenceCandidates.get(toolOccurrenceId);
+      if (occurrence !== undefined) {
+        value = makeAssertionToolEvent({
+          eventId: row.eventId,
+          toolOccurrenceId,
+          session: row.sessionId,
+          turn: row.turnId,
+          turnOrdinal: (turnOrdinal ?? 0) + 1,
+          eventOrdinal,
+          type: row.event.kind === "tool-start"
+            ? "operation.started" as const
+            : "operation.finished" as const,
+          occurrence,
+          ...(row.event.kind === "tool-finish" && row.event.outcome !== "cancelled"
+            ? { status: row.event.outcome }
+            : {}),
+        });
+      } else {
+        incompleteRelation = true;
+      }
+    } else {
+      incompleteRelation = true;
+    }
+    rows.push(Object.freeze({
+      locator: eventLocator(row),
+      sessionId: row.sessionId,
+      sessionSequence: row.sessionSequence,
+      candidate: Object.freeze({ state: "available" as const, value }),
+    }));
   }
+  const immutableRows = Object.freeze(rows);
+  const sourceSnapshot = omittedProjection && baseSourceSnapshot.collectionAtCut === "complete"
+    ? Object.freeze({ ...baseSourceSnapshot, collectionAtCut: "partial" as const })
+    : baseSourceSnapshot;
   return Object.freeze({
-    events: Object.freeze(events),
-    unassociatedOperation,
+    events: Object.freeze(immutableRows.map((row) => row.candidate.value)),
+    rows: immutableRows,
+    unassociatedOperation: projection.state === "invalid" || omittedProjection || incompleteRelation,
+    sourceSnapshot,
     coverage: input.coverage,
     snapshot: input.snapshot,
-  });
-}
-
-function eventMatchEvaluation(
-  event: MatchableEvent,
-  result: BooleanMatchEvaluation<unknown>,
-): BooleanMatchEvaluation<unknown> {
-  const occurrence = assertionEventOccurrence(event);
-  return occurrence === undefined ? result : toolMatchEvaluation(occurrence, result);
-}
-
-function eventCoverageComplete(snapshot: EventScopeSnapshot): boolean {
-  return hasCompleteCoverage(snapshot.coverage, "events") && !snapshot.unassociatedOperation;
-}
-
-function normalizeEventCount(value: EventOptions | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("event() options must be an object");
-  }
-  const options = value as globalThis.Record<string, unknown>;
-  for (const key of Object.keys(options)) {
-    if (key !== "count") throw new TypeError(`event() options does not support option ${JSON.stringify(key)}`);
-  }
-  if (options.count === undefined) return undefined;
-  if (!Number.isSafeInteger(options.count) || typeof options.count !== "number" || options.count <= 0) {
-    throw new TypeError("event() options.count must be a positive safe integer; use notEvent() for zero");
-  }
-  return options.count;
-}
-
-function eventCollectionEvaluation(
-  evaluations: readonly BooleanMatchEvaluation<unknown>[],
-  count: number | undefined,
-  complete: boolean,
-): BooleanAssertionEvaluation<void> {
-  const matched = evaluations.filter((evaluation) => evaluation.state === "matched").length;
-  const unavailable = evaluations.some((evaluation) => evaluation.state === "unavailable");
-  if (count === undefined) {
-    if (matched > 0) return matchedVoid();
-    return unavailable || !complete ? unavailableVoid() : mismatchedVoid();
-  }
-  if (matched > count) return mismatchedVoid();
-  if (matched === count && !unavailable && complete) return matchedVoid();
-  return unavailable || !complete ? unavailableVoid() : mismatchedVoid();
-}
-
-function eventAssertionHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly match: EventMatch;
-  readonly count: number | undefined;
-  readonly snapshot: EventScopeSnapshot;
-}): BooleanAssertionHandle<Kind, void> {
-  const quantifier: ToolMatchQuantifier = input.count === undefined
-    ? Object.freeze({ kind: "at-least" as const, count: 1 })
-    : Object.freeze({ kind: "exact" as const, count: input.count });
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: occurrenceCriterion(input.scope, "event", input.match.name, quantifier),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      occurrence: "event",
-      matcher: input.match.name,
-      quantifier,
-      candidateCount: input.snapshot.events.length,
-      unassociatedOperation: input.snapshot.unassociatedOperation,
-      coverage: input.snapshot.coverage.events,
-      snapshot: input.snapshot.snapshot,
-    }),
-    evaluate: () => Effect.tryPromise({
-      try: async () => {
-        const evaluations: BooleanMatchEvaluation<unknown>[] = [];
-        for (const event of input.snapshot.events) {
-          evaluations.push(eventMatchEvaluation(event, await evaluateBooleanMatch(input.match, event)));
-        }
-        return eventCollectionEvaluation(evaluations, input.count, eventCoverageComplete(input.snapshot));
-      },
-      catch: (error) => error,
-    }),
-  });
-}
-
-function notEventHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly match: EventMatch;
-  readonly snapshot: EventScopeSnapshot;
-}): BooleanAssertionHandle<Kind, void> {
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: occurrenceCriterion(
-      input.scope,
-      "event",
-      input.match.name,
-      Object.freeze({ kind: "absent" as const }),
-    ),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      occurrence: "event",
-      matcher: input.match.name,
-      quantifier: Object.freeze({ kind: "absent" as const }),
-      candidateCount: input.snapshot.events.length,
-      unassociatedOperation: input.snapshot.unassociatedOperation,
-      coverage: input.snapshot.coverage.events,
-      snapshot: input.snapshot.snapshot,
-    }),
-    evaluate: () => Effect.tryPromise({
-      try: async () => {
-        const evaluations: BooleanMatchEvaluation<unknown>[] = [];
-        for (const event of input.snapshot.events) {
-          evaluations.push(eventMatchEvaluation(event, await evaluateBooleanMatch(input.match, event)));
-        }
-        if (evaluations.some((evaluation) => evaluation.state === "matched")) return mismatchedVoid();
-        return evaluations.some((evaluation) => evaluation.state === "unavailable") || !eventCoverageComplete(input.snapshot)
-          ? unavailableVoid()
-          : matchedVoid();
-      },
-      catch: (error) => error,
-    }),
-  });
-}
-
-function eventOrderHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly matches: readonly EventMatch[];
-  readonly snapshot: EventScopeSnapshot;
-}): BooleanAssertionHandle<Kind, void> {
-  const matches = orderedMatchList(input.matches, "eventOrder()", assertManagedEventMatch);
-  return scopedBooleanHandle({
-    runtime: input.runtime,
-    criterion: valueMatchCriterion(),
-    snapshot: Object.freeze({
-      scope: input.scope,
-      assertion: "event-order",
-      matches: matches.map((match) => match.name),
-      candidateCount: input.snapshot.events.length,
-      unassociatedOperation: input.snapshot.unassociatedOperation,
-      coverage: input.snapshot.coverage.events,
-      snapshot: input.snapshot.snapshot,
-    }),
-    evaluate: () => Effect.tryPromise({
-      try: async () => {
-        const matrix: BooleanMatchEvaluation<unknown>[][] = [];
-        for (const match of matches) {
-          const row: BooleanMatchEvaluation<unknown>[] = [];
-          for (const event of input.snapshot.events) {
-            row.push(eventMatchEvaluation(event, await evaluateBooleanMatch(match, event)));
-          }
-          matrix.push(row);
-        }
-        if (hasOrderedPath(matrix, (result) => result.state === "matched")) return matchedVoid();
-        if (
-          !eventCoverageComplete(input.snapshot)
-          || hasOrderedPath(matrix, (result) => result.state === "matched" || result.state === "unavailable")
-        ) {
-          return unavailableVoid();
-        }
-        return mismatchedVoid();
-      },
-      catch: (error) => error,
-    }),
   });
 }
 
@@ -1067,6 +1030,7 @@ function judgeHandle<Kind extends RuntimeKind>(input: {
   readonly recipe: JudgeRecipe;
   readonly reference: string;
   readonly material: JudgeMaterial;
+  readonly threshold?: number;
 }): MeasurementAssertionHandle<Kind> {
   const judge = input.judge;
   assertJudgeCapability(judge);
@@ -1085,6 +1049,7 @@ function judgeHandle<Kind extends RuntimeKind>(input: {
     subject: captured.material,
     coverage: captured.coverage,
     limitations: captured.limitations,
+    ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
     evaluate: () => evaluateJudgeMeasurement({
       judge,
       recipe: input.recipe,
@@ -1376,6 +1341,10 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
       requireCapability();
       return input.sandbox.pathExists(path);
     },
+    upload: (content, targetPath) => {
+      requireCapability();
+      return input.sandbox.upload(content, targetPath);
+    },
     uploadFile: (source, targetPath) => {
       requireCapability();
       return input.sandbox.uploadFile(source, targetPath);
@@ -1544,20 +1513,41 @@ export function createAssertFirstEvalContext(
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
     ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
     : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop });
+  const check = ((subject: unknown, match: unknown, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("check() accepts exactly (subject, match)");
+    const thresholded = isManagedThresholdedScoreMatch(match)
+      ? thresholdedScoreMatchValue(match)
+      : undefined;
+    const judgeSpec = judgeMatchSpecOf(thresholded?.match ?? match);
+    if (judgeSpec === undefined) {
+      return (runtime.t.check as (subject: unknown, match: unknown) => unknown)(subject, match);
+    }
+    return judgeHandle({
+      runtime,
+      judge: deps.judge,
+      signal: deps.signal,
+      recipe: judgeSpec.recipe,
+      reference: judgeSpec.reference,
+      material: freezeJudgeMaterial(subject as JudgeMaterial),
+      ...(thresholded === undefined ? {} : { threshold: thresholded.threshold }),
+    });
+  }) as AssertionsRuntime<RuntimeKind>["t"]["check"];
   const state: AssertFirstContextState = {
     assertions: runtime,
     manager,
     late: { diff: Object.freeze({ state: "pending" as const }), scripts: {} },
   };
+  const resolveObservedEvaluation: ResolveObservedEvaluation = (snapshot) =>
+    manager.observedEvaluationSegment(snapshot);
 
   // maxCost 断言唯一认价目表估算(estimateCost);observed usage.costUSD 与之独立并存,
   // 存在也不改变估算(见 Usage.costUSD 单向字段契约)。
-  const estimatedCostFor = (usage: Usage): number | undefined =>
-    estimateCost(deps.model, usage, deps.pricing);
+  const pricingEstimateFor = (usage: Usage): PricingEstimateResult =>
+    pricingEstimate(deps.model, usage, deps.pricing);
 
   interface TurnScopeSnapshot {
     readonly events: readonly StreamEvent[];
-    readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
+    readonly toolCalls: ManagedToolCalls<"turn">;
     readonly toolScope: ToolScopeSnapshot;
     readonly status: "completed" | "failed" | "waiting";
     readonly coverage: ScopeCoverage;
@@ -1567,14 +1557,86 @@ export function createAssertFirstEvalContext(
 
   interface SessionScopeState {
     readonly session: RunSession;
-    readonly turns: LogicalToolOccurrenceScopeTurn[];
+    readonly turns: MatcherScopeTurn[];
     started: boolean;
     inFlight: number;
     failed: boolean;
   }
 
   const sessions: SessionScopeState[] = [];
-  let toolTurnOrdinal = 0;
+  const matcherSource = Object.freeze({
+    family: "niceeval.agent-turns" as const,
+    schemaVersion: 2,
+  });
+  const attemptScopeId = deps.attempt === undefined
+    ? JSON.stringify(["niceeval.attempt-scope/1", manager.primary.sessionScopeId])
+    : JSON.stringify([
+        "niceeval.attempt-scope/1",
+        deps.experimentId ?? null,
+        deps.attempt.id,
+        deps.attempt.index,
+      ]);
+
+  const collectionAtCut = (
+    turns: readonly MatcherScopeTurn[],
+    coverage: ScopeCoverage["actions" | "events"],
+    allowUnclassifiedActions = false,
+  ): "complete" | "partial" | "unavailable" => {
+    if (coverage.status === "unavailable") return "unavailable";
+    if (
+      coverage.status === "partial" &&
+      !(allowUnclassifiedActions && coverage.reason === UNCLASSIFIED_TOOL_ACTIONS_REASON)
+    ) {
+      return "partial";
+    }
+    return turns.every((turn) =>
+        resolveObservedEvaluation(turn.observed)?.collectionAtCut === "complete"
+      )
+      ? "complete"
+      : "unavailable";
+  };
+
+  const turnSourceSnapshot = (
+    turn: MatcherScopeTurn,
+    coverage: ScopeCoverage["actions" | "events"],
+    allowUnclassifiedActions = false,
+  ): Extract<MatcherSourceSnapshot, { readonly scope: "turn" }> => Object.freeze({
+    scope: "turn" as const,
+    sessionId: turn.observed.sessionId,
+    turnId: turn.observed.turnId,
+    scopeId: turn.observed.turnId,
+    throughSessionSequence: turn.observed.throughSessionSequence,
+    source: matcherSource,
+    collectionAtCut: collectionAtCut([turn], coverage, allowUnclassifiedActions),
+  });
+
+  const sessionSourceSnapshot = (
+    scope: SessionScopeState,
+    coverage: ScopeCoverage["actions" | "events"],
+    allowUnclassifiedActions = false,
+  ): Extract<MatcherSourceSnapshot, { readonly scope: "session" }> => {
+    const observed = scope.session.observedSnapshot();
+    return Object.freeze({
+      scope: "session" as const,
+      sessionId: observed.sessionId,
+      scopeId: observed.sessionId,
+      throughSessionSequence: observed.throughSessionSequence,
+      source: matcherSource,
+      collectionAtCut: collectionAtCut(scope.turns, coverage, allowUnclassifiedActions),
+    });
+  };
+
+  const attemptSourceSnapshot = (
+    turns: readonly MatcherScopeTurn[],
+    coverage: ScopeCoverage["actions" | "events"],
+    allowUnclassifiedActions = false,
+  ): Extract<MatcherSourceSnapshot, { readonly scope: "attempt" }> => Object.freeze({
+    scope: "attempt" as const,
+    scopeId: attemptScopeId,
+    sessions: manager.observedAttemptCut().sessions,
+    source: matcherSource,
+    collectionAtCut: collectionAtCut(turns, coverage, allowUnclassifiedActions),
+  });
 
   const coverageWhileInFlight = (coverage: ScopeCoverage): ScopeCoverage =>
     Object.freeze({
@@ -1634,6 +1696,7 @@ export function createAssertFirstEvalContext(
     const coverage = sessionCoverage(scope);
     return projectToolScope({
       turns: Object.freeze([...scope.turns]),
+      sourceSnapshot: sessionSourceSnapshot(scope, coverage.actions, true),
       coverage,
       snapshot: Object.freeze({
         sessionIndex: scope.session.index,
@@ -1641,14 +1704,17 @@ export function createAssertFirstEvalContext(
         status: sessionStatus(scope),
         coverage,
       }),
+      resolveEvaluation: resolveObservedEvaluation,
     });
   };
 
   const attemptToolScope = (): ToolScopeSnapshot => {
     const active = sessions.filter((scope) => scope.started);
     const coverage = attemptCoverage();
+    const turns = Object.freeze(active.flatMap((scope) => scope.turns));
     return projectToolScope({
-      turns: Object.freeze(active.flatMap((scope) => scope.turns)),
+      turns,
+      sourceSnapshot: attemptSourceSnapshot(turns, coverage.actions, true),
       coverage,
       snapshot: Object.freeze({
         sessions: Object.freeze(active.map((scope) => ({
@@ -1660,6 +1726,7 @@ export function createAssertFirstEvalContext(
         status: attemptStatus(),
         coverage,
       }),
+      resolveEvaluation: resolveObservedEvaluation,
     });
   };
 
@@ -1670,8 +1737,10 @@ export function createAssertFirstEvalContext(
     const coverage = sessionCoverage(scope);
     return projectEventScope({
       turns: Object.freeze([...scope.turns]),
+      sourceSnapshot: sessionSourceSnapshot(scope, coverage.events),
       coverage,
       snapshot: sessionSnapshot(scope),
+      resolveEvaluation: resolveObservedEvaluation,
     });
   };
 
@@ -1685,10 +1754,13 @@ export function createAssertFirstEvalContext(
   const attemptEventScope = (): EventScopeSnapshot => {
     const active = sessions.filter((scope) => scope.started);
     const coverage = attemptCoverage();
+    const turns = Object.freeze(active.flatMap((scope) => scope.turns));
     return projectEventScope({
-      turns: Object.freeze(active.flatMap((scope) => scope.turns)),
+      turns,
+      sourceSnapshot: attemptSourceSnapshot(turns, coverage.events),
       coverage,
       snapshot: attemptSnapshot(),
+      resolveEvaluation: resolveObservedEvaluation,
     });
   };
 
@@ -1702,31 +1774,40 @@ export function createAssertFirstEvalContext(
       Object.freeze({ type: "message" as const, role: "user" as const, text: input }),
       ...events,
     ]);
-    const toolCalls = Object.freeze([...deriveRunFacts(events).toolCalls]);
     const coverage = manager.resolveTurnEvidenceCoverage(turn);
-    const occurrenceTurn: LogicalToolOccurrenceScopeTurn = Object.freeze({
-      session: `session-${scope.session.index}`,
-      turn: `turn-${scope.session.turnCount}`,
-      turnOrdinal: ++toolTurnOrdinal,
+    const observed = observedSnapshotForTurn(turn);
+    if (observed === undefined) {
+      throw new Error("SessionManager returned a Turn without its sealed observed source snapshot");
+    }
+    const matcherTurn: MatcherScopeTurn = Object.freeze({
+      observed,
       events: scopedEvents,
       outcome: turn.status,
     });
-    scope.turns.push(occurrenceTurn);
+    scope.turns.push(matcherTurn);
     const scopeSnapshot = Object.freeze({
-      sessionIndex: scope.session.index,
-      turnIndex: scope.session.turnCount,
+      sessionId: observed.sessionId,
+      turnId: observed.turnId,
+      throughSessionSequence: observed.throughSessionSequence,
       events: scopedEvents.length,
     });
     const toolScope = projectToolScope({
-      turns: Object.freeze([occurrenceTurn]),
+      turns: Object.freeze([matcherTurn]),
+      sourceSnapshot: turnSourceSnapshot(matcherTurn, coverage.actions, true),
+      homeTurnId: observed.turnId,
       coverage,
       snapshot: scopeSnapshot,
+      resolveEvaluation: resolveObservedEvaluation,
     });
     const eventScope = projectEventScope({
-      turns: Object.freeze([occurrenceTurn]),
+      turns: Object.freeze([matcherTurn]),
+      sourceSnapshot: turnSourceSnapshot(matcherTurn, coverage.events),
       coverage,
       snapshot: scopeSnapshot,
+      resolveEvaluation: resolveObservedEvaluation,
     });
+    const toolCalls = managedToolCalls("turn", toolScope) as ManagedToolCalls<"turn">;
+    const eventOccurrences = managedEventOccurrences("turn", eventScope) as ManagedEventOccurrences<"turn">;
     const snapshot: TurnScopeSnapshot = Object.freeze({
       events,
       toolCalls,
@@ -1736,51 +1817,20 @@ export function createAssertFirstEvalContext(
       input,
       output: lastAssistantText(events) ?? "",
     });
-    const judge: AssertFirstTurnJudge<Kind> = Object.freeze({
-      autoevals: Object.freeze({
-        closedQA: (question: string) => judgeHandle({
-          runtime: runtime as AssertionsRuntime<Kind>,
-          judge: deps.judge,
-          signal: deps.signal,
-          recipe: "closedQA",
-          reference: question,
-          material: { input: snapshot.input, output: snapshot.output },
-        }),
-        factuality: (expected: string) => judgeHandle({
-          runtime: runtime as AssertionsRuntime<Kind>,
-          judge: deps.judge,
-          signal: deps.signal,
-          recipe: "factuality",
-          reference: expected,
-          material: { input: snapshot.input, output: snapshot.output },
-        }),
-        summarizes: (source: string) => judgeHandle({
-          runtime: runtime as AssertionsRuntime<Kind>,
-          judge: deps.judge,
-          signal: deps.signal,
-          recipe: "summarizes",
-          reference: source,
-          material: { input: snapshot.input, output: snapshot.output },
-        }),
-      }),
-    });
-    const calledTool = (target: ToolMatch | string, options?: CalledToolOptions, ...extra: readonly unknown[]) => {
-      if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
+    const calledTool = (target: ToolMatch | ToolOccurrenceMatch | string, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("calledTool() accepts exactly one match or name");
       return calledToolHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
+        subject: snapshot.toolCalls,
         target,
-        options,
-        snapshot: toolScope,
       });
     };
     const notCalledTool = (target: ToolMatch | string, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
       return notCalledToolHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
+        subject: snapshot.toolCalls,
         target,
-        snapshot: toolScope,
       });
     };
     const toolOrder = (
@@ -1790,46 +1840,42 @@ export function createAssertFirstEvalContext(
       if (extra.length > 0) throw new TypeError("toolOrder() accepts exactly one ordered match list");
       return toolOrderHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
+        subject: snapshot.toolCalls,
         matches,
-        snapshot: toolScope,
       });
     };
     const usedNoTools = (...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
-      return usedNoToolsHandle({ runtime: runtime as AssertionsRuntime<Kind>, scope: "turn", snapshot: toolScope });
+      return usedNoToolsHandle({ runtime: runtime as AssertionsRuntime<Kind>, subject: snapshot.toolCalls });
     };
     const maxToolCalls = (max: number, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
-      return maxToolCallsHandle({ runtime: runtime as AssertionsRuntime<Kind>, scope: "turn", max, snapshot: toolScope });
+      return maxToolCallsHandle({ runtime: runtime as AssertionsRuntime<Kind>, subject: snapshot.toolCalls, max });
     };
     const noFailedActions = (...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("noFailedActions() accepts no arguments");
       return noFailedActionsHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
-        events: occurrenceTurn.events,
+        events: matcherTurn.events,
         coverage,
         snapshot: scopeSnapshot,
       });
     };
-    const event = (match: EventMatch, options?: EventOptions, ...extra: readonly unknown[]) => {
-      if (extra.length > 0) throw new TypeError("event() accepts exactly (match, options)");
-      return eventAssertionHandle({
+    const event = (match: EventMatch | EventOccurrenceMatch, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("event() accepts exactly one match");
+      return eventHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
-        match: assertManagedEventMatch(match, "event() match"),
-        count: normalizeEventCount(options),
-        snapshot: eventScope,
+        subject: eventOccurrences,
+        match,
       });
     };
     const notEvent = (match: EventMatch, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("notEvent() accepts exactly one match");
-      return notEventHandle({
+      return notEventOccurrenceHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
-        match: assertManagedEventMatch(match, "notEvent() match"),
-        snapshot: eventScope,
+        subject: eventOccurrences,
+        match,
       });
     };
     const eventOrder = (
@@ -1837,12 +1883,7 @@ export function createAssertFirstEvalContext(
       ...extra: readonly unknown[]
     ) => {
       if (extra.length > 0) throw new TypeError("eventOrder() accepts exactly one ordered match list");
-      return eventOrderHandle({
-        runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
-        matches,
-        snapshot: eventScope,
-      });
+      return registerCollectionCheck(runtime as AssertionsRuntime<Kind>, eventOccurrences, inOrder(matches));
     };
     const maxTokens = (max: number, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
@@ -1864,18 +1905,21 @@ export function createAssertFirstEvalContext(
         metric: "cost",
         maximum: usd,
         usage: turn.usage ?? {},
-        estimatedCostUSD: estimatedCostFor(turn.usage === undefined ? {} : turn.usage),
+        pricing: pricingEstimateFor(turn.usage === undefined ? {} : turn.usage),
         coverage,
         snapshot: scopeSnapshot,
       });
     };
     return Object.freeze({
+      input: snapshot.input,
       events: snapshot.events,
       toolCalls: snapshot.toolCalls,
+      eventOccurrences,
       status: snapshot.status,
       message: snapshot.output,
       ...(turn.data === undefined ? {} : { data: turn.data }),
       ...(turn.usage === undefined ? {} : { usage: turn.usage }),
+      check: check as AssertionsRuntime<Kind>["t"]["check"],
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
@@ -1894,7 +1938,6 @@ export function createAssertFirstEvalContext(
       eventOrder,
       maxTokens,
       maxCost,
-      judge,
     });
   };
 
@@ -1933,6 +1976,10 @@ export function createAssertFirstEvalContext(
 
   const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandle<Kind> => {
     const session = scope.session;
+    const sessionCalls = (): ManagedToolCalls<"session"> =>
+      managedToolCalls("session", sessionToolScope(scope)) as ManagedToolCalls<"session">;
+    const sessionEventOccurrences = (): ManagedEventOccurrences<"session"> =>
+      managedEventOccurrences("session", sessionEventScope(scope)) as ManagedEventOccurrences<"session">;
     const toolOrder = (
       matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
       ...extra: readonly unknown[]
@@ -1940,26 +1987,23 @@ export function createAssertFirstEvalContext(
       if (extra.length > 0) throw new TypeError("toolOrder() accepts exactly one ordered match list");
       return toolOrderHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
+        subject: sessionCalls(),
         matches,
-        snapshot: sessionToolScope(scope),
       });
     };
     const usedNoTools = (...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
       return usedNoToolsHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
-        snapshot: sessionToolScope(scope),
+        subject: sessionCalls(),
       });
     };
     const maxToolCalls = (max: number, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
       return maxToolCallsHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
+        subject: sessionCalls(),
         max,
-        snapshot: sessionToolScope(scope),
       });
     };
     const noFailedActions = (...extra: readonly unknown[]) => {
@@ -1973,23 +2017,20 @@ export function createAssertFirstEvalContext(
         snapshot: sessionSnapshot(scope),
       });
     };
-    const event = (match: EventMatch, options?: EventOptions, ...extra: readonly unknown[]) => {
-      if (extra.length > 0) throw new TypeError("event() accepts exactly (match, options)");
-      return eventAssertionHandle({
+    const event = (match: EventMatch | EventOccurrenceMatch, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("event() accepts exactly one match");
+      return eventHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
-        match: assertManagedEventMatch(match, "event() match"),
-        count: normalizeEventCount(options),
-        snapshot: sessionEventScope(scope),
+        subject: sessionEventOccurrences(),
+        match,
       });
     };
     const notEvent = (match: EventMatch, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("notEvent() accepts exactly one match");
-      return notEventHandle({
+      return notEventOccurrenceHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
-        match: assertManagedEventMatch(match, "notEvent() match"),
-        snapshot: sessionEventScope(scope),
+        subject: sessionEventOccurrences(),
+        match,
       });
     };
     const eventOrder = (
@@ -1997,12 +2038,7 @@ export function createAssertFirstEvalContext(
       ...extra: readonly unknown[]
     ) => {
       if (extra.length > 0) throw new TypeError("eventOrder() accepts exactly one ordered match list");
-      return eventOrderHandle({
-        runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
-        matches,
-        snapshot: sessionEventScope(scope),
-      });
+      return registerCollectionCheck(runtime as AssertionsRuntime<Kind>, sessionEventOccurrences(), inOrder(matches));
     };
     const maxTokens = (max: number, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
@@ -2026,7 +2062,7 @@ export function createAssertFirstEvalContext(
         metric: "cost",
         maximum: usd,
         usage: session.usage,
-        estimatedCostUSD: estimatedCostFor(session.usage),
+        pricing: pricingEstimateFor(session.usage),
         coverage,
         snapshot: sessionSnapshot(scope),
       });
@@ -2078,6 +2114,13 @@ export function createAssertFirstEvalContext(
       get usage() {
         return Object.freeze({ ...session.usage });
       },
+      get toolCalls() {
+        return sessionCalls();
+      },
+      get eventOccurrences() {
+        return sessionEventOccurrences();
+      },
+      check: check as AssertionsRuntime<Kind>["t"]["check"],
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "session",
@@ -2085,23 +2128,20 @@ export function createAssertFirstEvalContext(
         coverage: sessionCoverage(scope),
         snapshot: sessionSnapshot(scope),
       }),
-      calledTool: (target: ToolMatch | string, options?: CalledToolOptions, ...extra: readonly unknown[]) => {
-        if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
+      calledTool: (target: ToolMatch | ToolOccurrenceMatch | string, ...extra: readonly unknown[]) => {
+        if (extra.length > 0) throw new TypeError("calledTool() accepts exactly one match or name");
         return calledToolHandle({
           runtime: runtime as AssertionsRuntime<Kind>,
-          scope: "session",
+          subject: sessionCalls(),
           target,
-          options,
-          snapshot: sessionToolScope(scope),
         });
       },
       notCalledTool: (target: ToolMatch | string, ...extra: readonly unknown[]) => {
         if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
         return notCalledToolHandle({
           runtime: runtime as AssertionsRuntime<Kind>,
-          scope: "session",
+          subject: sessionCalls(),
           target,
-          snapshot: sessionToolScope(scope),
         });
       },
       toolOrder,
@@ -2126,42 +2166,17 @@ export function createAssertFirstEvalContext(
   sessions.push(primaryScope);
   const primary = makeSession<RuntimeKind>(primaryScope);
 
-  const rootJudge: AssertFirstRootJudge<RuntimeKind> = Object.freeze({
-    autoevals: Object.freeze({
-      closedQA: (question: string, material: JudgeMaterial) => judgeHandle({
-        runtime,
-        judge: deps.judge,
-        signal: deps.signal,
-        recipe: "closedQA",
-        reference: question,
-        material,
-      }),
-      factuality: (expected: string, material: JudgeMaterial) => judgeHandle({
-        runtime,
-        judge: deps.judge,
-        signal: deps.signal,
-        recipe: "factuality",
-        reference: expected,
-        material,
-      }),
-      summarizes: (source: string, material: JudgeMaterial) => judgeHandle({
-        runtime,
-        judge: deps.judge,
-        signal: deps.signal,
-        recipe: "summarizes",
-        reference: source,
-        material,
-      }),
-    }),
-  });
-
+  const attemptCalls = (): ManagedToolCalls<"attempt"> =>
+    managedToolCalls("attempt", attemptToolScope()) as ManagedToolCalls<"attempt">;
+  const attemptEventOccurrences = (): ManagedEventOccurrences<"attempt"> =>
+    managedEventOccurrences("attempt", attemptEventScope()) as ManagedEventOccurrences<"attempt">;
   const rootUsedNoTools = (...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
-    return usedNoToolsHandle({ runtime, scope: "attempt", snapshot: attemptToolScope() });
+    return usedNoToolsHandle({ runtime, subject: attemptCalls() });
   };
   const rootMaxToolCalls = (max: number, ...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("maxToolCalls() accepts exactly one maximum");
-    return maxToolCallsHandle({ runtime, scope: "attempt", max, snapshot: attemptToolScope() });
+    return maxToolCallsHandle({ runtime, subject: attemptCalls(), max });
   };
   const rootNoFailedActions = (...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("noFailedActions() accepts no arguments");
@@ -2174,23 +2189,20 @@ export function createAssertFirstEvalContext(
       snapshot: attemptSnapshot(),
     });
   };
-  const rootEvent = (match: EventMatch, options?: EventOptions, ...extra: readonly unknown[]) => {
-    if (extra.length > 0) throw new TypeError("event() accepts exactly (match, options)");
-    return eventAssertionHandle({
+  const rootEvent = (match: EventMatch | EventOccurrenceMatch, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("event() accepts exactly one match");
+    return eventHandle({
       runtime,
-      scope: "attempt",
-      match: assertManagedEventMatch(match, "event() match"),
-      count: normalizeEventCount(options),
-      snapshot: attemptEventScope(),
+      subject: attemptEventOccurrences(),
+      match,
     });
   };
   const rootNotEvent = (match: EventMatch, ...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("notEvent() accepts exactly one match");
-    return notEventHandle({
+    return notEventOccurrenceHandle({
       runtime,
-      scope: "attempt",
-      match: assertManagedEventMatch(match, "notEvent() match"),
-      snapshot: attemptEventScope(),
+      subject: attemptEventOccurrences(),
+      match,
     });
   };
   const rootMaxTokens = (max: number, ...extra: readonly unknown[]) => {
@@ -2215,7 +2227,7 @@ export function createAssertFirstEvalContext(
       metric: "cost",
       maximum: usd,
       usage: manager.usage,
-      estimatedCostUSD: estimatedCostFor(manager.usage),
+      pricing: pricingEstimateFor(manager.usage),
       coverage,
       snapshot: attemptSnapshot(),
     });
@@ -2236,6 +2248,9 @@ export function createAssertFirstEvalContext(
     },
     get events() {
       return primary.events;
+    },
+    get eventOccurrences() {
+      return attemptEventOccurrences();
     },
     newSession: () => {
       const scope: SessionScopeState = {
@@ -2269,7 +2284,7 @@ export function createAssertFirstEvalContext(
       throw new EvalSkipped(reason);
     },
     group: runtime.t.group,
-    check: runtime.t.check,
+    check,
     sandbox: createAssertFirstSandbox({
       agent: deps.agent,
       sandbox: deps.sandbox,
@@ -2282,6 +2297,9 @@ export function createAssertFirstEvalContext(
     get usage() {
       return Object.freeze({ ...manager.usage });
     },
+    get toolCalls() {
+      return attemptCalls();
+    },
     succeeded: () => succeededHandle({
       runtime,
       scope: "attempt",
@@ -2289,23 +2307,20 @@ export function createAssertFirstEvalContext(
       coverage: attemptCoverage(),
       snapshot: attemptSnapshot(),
     }),
-    calledTool: (target: ToolMatch | string, options?: CalledToolOptions, ...extra: readonly unknown[]) => {
-      if (extra.length > 0) throw new TypeError("calledTool() accepts exactly (match, options)");
+    calledTool: (target: ToolMatch | ToolOccurrenceMatch | string, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("calledTool() accepts exactly one match or name");
       return calledToolHandle({
         runtime,
-        scope: "attempt",
+        subject: attemptCalls(),
         target,
-        options,
-        snapshot: attemptToolScope(),
       });
     },
     notCalledTool: (target: ToolMatch | string, ...extra: readonly unknown[]) => {
       if (extra.length > 0) throw new TypeError("notCalledTool() accepts exactly one match or name");
       return notCalledToolHandle({
         runtime,
-        scope: "attempt",
+        subject: attemptCalls(),
         target,
-        snapshot: attemptToolScope(),
       });
     },
     usedNoTools: rootUsedNoTools,
@@ -2315,7 +2330,6 @@ export function createAssertFirstEvalContext(
     notEvent: rootNotEvent,
     maxTokens: rootMaxTokens,
     maxCost: rootMaxCost,
-    judge: rootJudge,
   };
   const context = deps.evaluationKind === "score"
     ? Object.freeze({

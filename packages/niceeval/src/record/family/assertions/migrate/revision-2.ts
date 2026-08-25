@@ -56,7 +56,7 @@ export const AssertionsRevision2MaterialSchema = Schema.Union(
 
 const revision2Entries = createAssertionsRecordSchemas(
   AssertionsRevision2MaterialSchema,
-).entries;
+).historicalV2Entries;
 
 export const AssertionsRevision2SourceSiteSchema = Schema.Struct({
   entryId: AssertionEntryIdSchema,

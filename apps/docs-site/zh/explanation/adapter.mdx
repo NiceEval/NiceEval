@@ -122,7 +122,7 @@ interface Agent {
 `send` 是唯一要实现的函数。它的签名里只有三个类型，分开看。
 
 <Note>
-  这里的 `setup` / `teardown` 是 Agent 自己"怎么连自己"的私事（装 CLI、写鉴权配置）。按实验变化的环境准备（装某个实验专属的二进制、预热、跨 attempt 保存状态）不写在 Agent 上，挂在 `sandbox` 字段那个 Sandbox spec 自己的 `.setup()` / `.teardown()` 链式方法上，见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
+  这里的 `setup` / `teardown` 是 Agent 自己如何建立连接的生命周期。Sandbox Agent 还可以用自己的 `sandbox` 字段贡献 command-only `.before()` action，例如写 Adapter 的公开 `.env`。Experiment 或评估用例负责选择唯一的 Provider template。排序与缓存见 [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)。
 </Note>
 
 ### 传入：`TurnInput`
@@ -235,7 +235,7 @@ interface AgentSession {
 
 Runner 为 Agent 的 `setup`、每次 `send` 和 `teardown` 分别绑定 lifecycle scope。Adapter 只报告当前回调内部的 progress/diagnostic，不能传 phase、颜色或输出流。`progress` 不落盘。`diagnostic` 作为 Attempt-owned 诊断通道事件提交进 Record。无法继续时抛错；runner 会保存结构化 error，并在 `niceeval.verdict` 通道形成 `errored` Verdict。Attempt lifecycle state 只有 `active` / `completed` / `abandoned`，verdict token 不是 Attempt state。
 
-`ctx` 里没有要你检查的标志位。三个档位字段都是"透传"语义：`model`、`flags` 由 experiment 声明、运行器原样递过来，Adapter 只负责随请求转发给应用，不解释它们的含义。`telemetry` 仅在配置了 OTel 接入时出现，`send` 里只需要把 `headers` spread 进请求头——接收端点在 `defineConfig` 里固定、由应用启动时指向，不从这里传，见[OTel 接入](/zh/tutorials/connect-otel)。`experimentId` 是路径推导出的稳定标识，典型用途是在 Sandbox 的生命周期里按实验隔离跨 attempt 的状态（缓存目录名、Sandbox 快照 tag 按它分区），见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
+`ctx` 里没有要你检查的标志位。三个档位字段都是"透传"语义：`model`、`flags` 由 Experiment 声明、运行器原样递过来，Adapter 只负责随请求转发给应用，不解释它们的含义。`telemetry` 仅在配置了 OTel 接入时出现，`send` 里只需要把 `headers` spread 进请求头。接收端点在 `defineConfig` 里固定、由应用启动时指向，不从这里传，见[OTel 接入](/zh/tutorials/connect-otel)。`experimentId` 是路径推导出的稳定标识，可以在动态 Sandbox callback 中按实验隔离跨 Attempt 的状态，见 [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)。
 
 `session` 是本条会话线的自有状态，[NiceEval](https://niceeval.com/) 对它只承诺一件事：**同一条会话线的每次 `send` 拿到同一个 `ctx.session`，新会话线（评估用例的第一轮，或 `t.newSession()` 之后）拿到一个全新的。** 服务端历史用 `id` / `capture` 续接。客户端历史和 HITL 停轮现场由 Adapter 在模块作用域用 `createSessionSlot<T>(name)` 创建 typed slot，再经 `get` / `set` / `take` 存取。`take` 取到即清除。slot 按 symbol 身份隔离，即使名字相同也不会冲突。
 
@@ -298,7 +298,7 @@ Sandbox Agent，只有它的回调拿到带真实 `sandbox` 的 `SandboxAgentCon
 
 | `t` 上解锁什么 | 证据是什么 | 你写什么 |
 |---|---|---|
-| `t.send`、`t.sendFile`、`t.check`、`t.judge`… | 任何 Agent 都有 | 无 |
+| `t.send`、`t.sendFile`、`t.check`… | 任何 Agent 都有 | 无 |
 | 多次 `t.send()`、`t.reply`、`t.newSession()` | `send` 里接了 `ctx.session` 的续接存取器（typed slot 或 `id` + `capture()`）——没接则每轮各是新对话 | 无——存取器就在 `ctx` 上 |
 | `t.respond()`、状态检查等 HITL | send 返回过 `"waiting"` + `input.requested` 事件 | 无——做到了就是有 |
 | `turn.calledTool()` / `turn.toolOrder()` 等正断言 | events 里有配对的 `operation.started` / `operation.finished` | 无——有事件就能断 |

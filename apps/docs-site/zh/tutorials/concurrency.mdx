@@ -1,7 +1,7 @@
 ---
 title: "调好并发：吞吐、共享状态与固定执行顺序"
 sidebarTitle: "并发与执行顺序"
-description: "全局并发位和实验自己的 maxConcurrency 是两级并发限制。这一页说明各自管什么、共享状态怎么串行、执行顺序怎么固定，以及多开一个终端为什么能加速。"
+description: "全局并发、实验上限与 Provider capacity 共同限制实际吞吐。这一页说明排队状态、共享状态与固定顺序。"
 ---
 
 import { Picker, Schedule } from '/snippets/widgets.jsx';
@@ -44,8 +44,8 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
       tab: "起沙箱和装环境占大头",
       lead: "让多条 Attempt 共用 Sandbox",
       why: [
-        <>创建 Sandbox 与 Sandbox 级 <code>setup</code> 占了大部分墙钟、且整批评估都能互换顺序时，在 Experiment 里声明 <code>sandboxReuse: true</code>。只有几组兼容任务需要各自复用时，改用<a href="/zh/tutorials/eval-groups">评估组</a>，避免把其它任务一起降成串行。</>,
-        <>工作目录之外的状态会留下，见<a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>；结果仍按指纹沿用。稳定的重依赖应该先烘进镜像或模板。</>,
+        <>创建 Sandbox 与固定环境准备占了大部分墙钟、且整批评估都能互换顺序时，在 Experiment 里声明 <code>sandboxReuse: true</code>。只有几组兼容任务需要各自复用时，改用<a href="/zh/tutorials/eval-groups">评估组</a>，避免把其它任务一起降成串行。</>,
+        <>工作目录之外的状态会留下，见<a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>。固定准备还可以用低频 <code>.before()</code> action 形成跨 Invocation 的 Docker 缓存前缀。</>,
       ],
     },
     {
@@ -59,12 +59,13 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
   ]}
 />
 
-## 两级并发限制各管什么
+## 三类并发限制各管什么
 
 | 并发限制 | 写在哪 | 管什么 | 跨终端 |
 | --- | --- | --- | --- |
 | 全局并发位 | `--max-concurrency`，或 `niceeval.config.ts` 的 `maxConcurrency` | 本次运行的总吞吐 | 各算各的，两个终端的值相加 |
 | 实验并发上限 | 实验文件的 `maxConcurrency` | 这一个实验同时跑几条 | 各算各的，两个终端的值相加 |
+| Docker profile capacity | 宿主机 profile 配置 | 该 profile 同时允许多少容器与资源 | 同一宿主机跨终端共享 |
 | 共享状态租约 | 实验文件的 `sharedState.key` | 同一 checkpoint 的完整恢复、执行与回存区间 | 同 key 的区间串行 |
 
 全局值的解析顺序是 `--max-concurrency` → 配置里的 `maxConcurrency` → 当前 Sandbox Provider 的推荐默认值（`docker` 10、`e2b` 20、`vercel` 1）。推荐值反映的是 Provider 侧的约束。你自己 Agent 接口的限速用 `--max-concurrency` 压。
@@ -115,6 +116,8 @@ npx niceeval exp compare --max-concurrency 19
 
 等待实验级 `setup`（起隧道、起共享服务）的 Attempt 既不持有也不预留并发位，计数里保持 `queued`。启动慢的隧道不会让「0 running、N queued 长时间不动」变成一个并发配置问题。
 
+等待 Docker profile capacity 的 Attempt 同样保持 `queued`，queue reason 是 `provider-capacity`。它不会显示 `creating sandbox`，也不会占着普通 Sandbox、Experiment 或全局并发位。profile 释放后，它重新取得这些位；reservation granted 之后才进入 `running`。同批使用其它 Provider 的 Attempt 因此可以继续启动，不会被排在前面的 Docker waiter 卡住。
+
 ## 在 live 面板确认并发落到位
 
 `PLAN` 面板先告诉你本次开几路、这个数来自哪里。声明了 `maxConcurrency` 的实验跟在后面，各自列出自己的上限：
@@ -131,7 +134,7 @@ npx niceeval exp compare --max-concurrency 19
 │ 45 total · 6 reused · 19 running · 12 queued · 6 passed · 2 failed · 0 errored · 0 skipped │
 ```
 
-`running` 稳定顶在上限、`queued` 逐步消化，说明并发位就是瓶颈，还有余量就往上调。`running` 长期不满则瓶颈在别处：实验自己的并发上限（`PLAN` 行已列出）、Provider 的独占串行，或者在等实验级 `setup`。
+`running` 稳定顶在上限、`queued` 逐步消化，说明并发位就是瓶颈，还有余量就往上调。`running` 长期不满则瓶颈在别处：实验自己的并发上限、Provider capacity，或者在等实验级 `setup`。活动行会直接显示 `waiting for provider capacity`，不再把等待误报成正在创建 Sandbox。
 
 ## 跨 Attempt 共享状态时串行
 
@@ -147,7 +150,7 @@ export default defineExperiment({
 });
 ```
 
-`maxConcurrency: 1` 只串行本 Invocation 的 Attempt。`sharedState.key` 会在同一项目 Coordination 域内保护跨 Invocation 的同一 checkpoint。租约在 Experiment 与 Sandbox `setup` 前取得，直到 Sandbox `teardown`、Provider finalizer 和 Experiment `teardown` 全部完成才释放。等待方不会提前创建 Sandbox；拿到租约后继续自己的计划，不读取或沿用另一个 Run 的结果。
+`maxConcurrency: 1` 只串行本 Invocation 的 Attempt。`sharedState.key` 会在同一项目 Coordination 域内保护跨 Invocation 的同一 checkpoint。租约在 Experiment 与 Sandbox `.before()` 前取得，直到 Sandbox cleanup、Provider finalizer 和 Experiment `teardown` 全部完成才释放。等待方不会提前创建 Sandbox；拿到租约后继续自己的计划，不读取或沿用另一个 Run 的结果。
 
 `sharedState` 只提供互斥，不负责 checkpoint 存储、原子提交、回滚或强杀后的半次写入恢复。能原子回存时应原子回存，否则换新 key，从干净 cohort 重建。跨机器协调仍归外部编排。
 

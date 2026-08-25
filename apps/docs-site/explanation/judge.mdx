@@ -1,56 +1,69 @@
 ---
 title: "Judge in NiceEval: assess open-ended output"
 sidebarTitle: "Judge"
-description: "Register a Judge Assertion directly through t.judge or turn.judge, then configure a threshold or score on the same handle."
+description: "Create a pure Judge ScoreMatch, register it against explicit input and output with check, then gate or score the registered Assertion."
 ---
 
-Judge uses a separate model to assess quality that is hard to express with an exact Match, such as factual consistency, summary faithfulness, or clarity of explanation. Its three recipes each register a measurement Assertion directly. The score is a finite number in `[0, 1]`. Calling the recipe registers it; the returned handle only configures that same Assertion.
+Judge uses a separate model to assess quality that is hard to express with an exact Match, such as factual consistency, summary faithfulness, or clarity of explanation. Its three factories return pure managed `ScoreMatch` values from `niceeval/expect`. They do not read a context or register an Assertion. Register a Judge Match against explicit input and output with `check`; the measurement is a finite number in `[0, 1]`.
 
 ```ts
+import { closedQA, factuality, summarizes } from "niceeval/expect";
+
 const turn = await t.send("Explain the risk of this change in two sentences.");
-turn.judge.autoevals.closedQA("Does the answer explain the risk clearly?")
-  .gate(0.8)
+turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("Does the answer explain the risk clearly?").atLeast(0.8),
+)
+  .gate()
   .label("Risk explanation quality");
 ```
 
-## Three recipes
+## Three Judge factories
 
-| Recipe | Purpose |
+| Factory | Purpose |
 |---|---|
-| `closedQA(question, material)` | Decide whether output satisfies one open-ended criterion |
-| `factuality(reference, material)` | Decide whether output agrees with reference text |
-| `summarizes(source, material)` | Decide whether output faithfully summarizes source text |
+| `closedQA(question)` | Decide whether output satisfies one open-ended criterion |
+| `factuality(reference)` | Decide whether output agrees with reference text |
+| `summarizes(source)` | Decide whether output faithfully summarizes source text |
 
-`turn.judge.autoevals.*` is already bound to the Turn's original user input and assistant output, so pass only the criterion:
+For one Turn, pass its frozen input and assistant output to `turn.check`:
 
 ```ts
-turn.judge.autoevals.factuality("The refund period is 30 days.")
-  .atLeast(0.9)
+turn.check(
+  { input: turn.input, output: turn.message },
+  factuality("The refund period is 30 days.").atLeast(0.9),
+).gate()
   .label("Refund fact");
 ```
 
-Root-level `t.judge.autoevals.*` is for material across turns, files, or other custom sources. It must receive both strings explicitly:
+Use root-level `t.check` when material comes from files, several turns, or another custom source:
 
 ```ts
 const notes = await t.sandbox.readText("NOTES.md");
-t.judge.autoevals.closedQA("Does the document explain installation and rollback?", {
-  input: "Install the service and explain installation and rollback in NOTES.md.",
-  output: notes,
-}).gate(0.8).label("Operating instructions");
+t.check(
+  {
+    input: "Install the service and explain installation and rollback in NOTES.md.",
+    output: notes,
+  },
+  closedQA("Does the document explain installation and rollback?").atLeast(0.8),
+).gate().label("Operating instructions");
 ```
 
-Read files as strings through the public Sandbox API first. The Judge API does not accept paths, `{ on }`, an implicit last input, or a one-off model override. `session.judge` is not a public API either; authors explicitly combine material across sessions.
+Read files as strings through the public Sandbox API first. Judge Matches accept only their criterion or reference text. Authors always register explicit `{ input, output }` material through `check`, and model selection comes from the resolved Eval configuration.
 
 ## Declare capability and configure it
 
-Only an Eval that declares `judge` can create Judge Assertions:
+Only an Eval that declares `judge` can register Judge Matches:
 
 ```ts
 export default defineEval({
   judge: true,
   async test(t) {
     const turn = await t.send("Summarize the requirements.");
-    turn.judge.autoevals.summarizes("The original requirements").gate(0.8).label("Summary quality");
+    turn.check(
+      { input: turn.input, output: turn.message },
+      summarizes("The original requirements").atLeast(0.8),
+    ).gate().label("Summary quality");
   },
 });
 ```
@@ -75,21 +88,27 @@ Field precedence is the Eval object, then the Experiment, then project configura
 
 ## Thresholds and scores
 
-Pass-style Evals use `.gate(n)` to include a Judge measurement in `failed`; `.atLeast(n)` records only a local condition.
+Pass-style Evals call `.atLeast(n)` on the Judge `ScoreMatch` before registration. This forms the thresholded local condition. The returned Assertion handle's parameterless `.gate()` includes that condition in the Verdict.
 
 ```ts
-const quality = turn.judge.autoevals.closedQA("Is the answer accurate and complete?")
-  .gate(0.8)
+const quality = turn.check(
+  { input: turn.input, output: turn.message },
+  closedQA("Is the answer accurate and complete?").atLeast(0.8),
+)
+  .gate()
   .label("Answer quality");
 await quality.orStop();
 ```
 
 `.orStop()` is an async barrier on the same handle. If the value is below the threshold, it stops the current continuation. The Attempt still receives a `failed` Verdict after a normal stop.
 
-Score-style Evals call `.score(n)` directly. A measurement `m` contributes `m * n`. `.atLeast(n)` only adds a local condition; configure it separately or alongside `.score(n)` on the same Assertion.
+Score-style Evals call `.score(n)` on the registered handle. A measurement `m` contributes `m * n`. If control flow also needs a threshold, form it on the Match before registration.
 
 ```ts
-turn.judge.autoevals.closedQA("How good is the answer?").score(20).atLeast(0.5);
+t.check(
+  { input: turn.input, output: turn.message },
+  closedQA("How good is the answer?").atLeast(0.5),
+).score(20);
 ```
 
 Both configurations run the Judge evaluator once and write one AssertionResult. A Judge Assertion without `.score()` saves only the evaluation by default.
@@ -109,5 +128,5 @@ The Judge's reason goes in the general `explanation`. `evidence` stores only tri
 ## Related reading
 
 - [Assertions and Matches](/explanation/assert) — Registration at call time and the two Eval types.
-- [Pass-style and score-style Evals](/tutorials/evaluation-kinds) — Choosing `atLeast` or `score`.
+- [Pass-style and score-style Evals](/tutorials/evaluation-kinds) — Choosing a threshold, gate, or score contribution.
 - [Drive](/explanation/drive) — Turns, sessions, and material across turns.

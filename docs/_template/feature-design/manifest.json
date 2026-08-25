@@ -1,0 +1,28 @@
+{
+  "format": "niceeval.docs-template/v1",
+  "applicableKinds": [
+    "feature",
+    "roadmap",
+    "design-plan"
+  ],
+  "requiredFiles": [
+    "README.md"
+  ],
+  "optionalFiles": {
+    "library": [
+      "library.md"
+    ],
+    "cli": [
+      "cli.md"
+    ],
+    "architecture": [
+      "architecture.md"
+    ],
+    "lifecycle": [
+      "lifecycle.md"
+    ],
+    "use-case": [
+      "use-case/README.md"
+    ]
+  }
+}

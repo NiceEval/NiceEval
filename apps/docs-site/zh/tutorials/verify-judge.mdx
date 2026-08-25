@@ -27,27 +27,27 @@ export default defineConfig({
 export JUDGE_GATEWAY_KEY="..."
 ```
 
-配置文件只保存环境变量名，不保存密钥值。项目需要比较 Judge 模型时，在不同 Experiment 中覆盖 `judge.model`，不要添加单次 recipe model 参数。
+配置文件只保存环境变量名，不保存密钥值。项目需要比较 Judge 模型时，在不同 Experiment 中覆盖 `judge.model`，不要给单次 factory 调用添加 model 参数。
 
 ## 写一条最小真实判分
 
 ```ts title="evals/judge-smoke.eval.ts"
 import { defineEval } from "niceeval";
+import { closedQA } from "niceeval/expect";
 
 export default defineEval({
   judge: true,
   async test(t) {
-    t.judge.autoevals.closedQA("文本是否明确表达成功？", {
+    t.check({
       input: "operation completed successfully",
       output: "operation completed successfully",
-    })
-      .gate(0.8)
-      .label("成功表达");
+    }, closedQA("文本是否明确表达成功？").atLeast(0.8))
+      .gate().label("成功表达");
   },
 });
 ```
 
-`judge: true` 声明这条评估需要 Judge，并从 Experiment 与项目配置继承字段。`.gate(0.8)` 把 measurement 变成通过制要求；低于阈值时 Attempt 为 `failed`。
+`judge: true` 声明这条评估需要 Judge，并从 Experiment 与项目配置继承字段。Match 上的 `.atLeast(0.8)` 形成 threshold；无参 `.gate()` 把它变成通过制要求，低于阈值时 Attempt 为 `failed`。
 
 ## 只运行这条验证评估
 

@@ -8,13 +8,10 @@ export default defineEval({
     const turn = await t.send("langgraph core fixture");
     await turn.succeeded().orStop();
     t.check(turn.message, includes("langgraph-runtime-methods:lifecycle"));
-    turn.calledTool(
-      toolMatch("graph_lookup", {
+    turn.check(turn.toolCalls, toolMatch("graph_lookup", {
         input: jsonMatch({ query: "fixture" }),
         status: "completed",
-      }),
-      { count: 1 },
-    );
+      }).exactly(1));
     t.check(
       turn.events,
       satisfies<typeof turn.events>(

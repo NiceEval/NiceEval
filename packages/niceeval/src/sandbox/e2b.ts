@@ -34,6 +34,10 @@ import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { successfulCommandResult } from "./operations.ts";
 import { ManagedProcessOutput } from "./managed-process.ts";
 import { supportedBackendCapability, unsupportedBackendCapability, unsupportedBackendCapabilityBecause, type SandboxProviderBackend } from "./backend.ts";
+import {
+  makeE2BSetupPrefixCacheCapability,
+  type E2BSetupPrefixRootOwnership,
+} from "./e2b-setup-prefix-cache.ts";
 
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
@@ -395,7 +399,10 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   private readonly userOverride?: string;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
-  readonly sandboxId: string;
+  sandboxId: string;
+  /** The author-declared template, retained when a cache snapshot temporarily becomes the start point. */
+  private readonly baseTemplate?: string;
+  private setupPrefixRoot?: E2BSetupPrefixRootOwnership;
 
   private deadlineAt?: number;
   readonly capabilities = {
@@ -407,6 +414,32 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     managedProcess: unsupportedBackendCapabilityBecause(
       "E2B managed processes are not enabled until the provider boundary has a public installed-candidate E2E owner",
     ),
+    setupPrefixCache: supportedBackendCapability(makeE2BSetupPrefixCacheCapability({
+      eligibility: () => ({
+        _tag: "Eligible" as const,
+        persistence: "persistent" as const,
+        dependency: "parent-backed" as const,
+        coverage: "all" as const,
+        // E2B does not expose a digest for a template ref. The declared ref is
+        // still part of the complete Case identity, and snapshots never float.
+        baseImageId: `e2b-template:${this.baseTemplate ?? "base"}`,
+        keyScope: {
+          protocol: "niceeval-e2b-snapshot-setup-prefix/v1",
+          storageSchemaRevision: "niceeval.e2b-setup-prefix-storage/v1",
+          artifactFormatRevision: "niceeval.e2b-snapshot/v1",
+          semanticIdentity: { capture: "e2b-snapshot", baseTemplate: this.baseTemplate ?? "base" },
+        },
+      }),
+      captureSnapshot: async () => {
+        const snapshot = await this.sbx.createSnapshot({ apiKey: process.env.E2B_API_KEY });
+        if (snapshot.snapshotId.length === 0) throw new Error("E2B returned an empty snapshot identity");
+        return snapshot.snapshotId;
+      },
+      deleteSnapshot: (snapshotId) => E2BSdkSandbox.deleteSnapshot(snapshotId, { apiKey: process.env.E2B_API_KEY }),
+      rebaseToSnapshot: (snapshotId, signal) => this.rebaseTo(snapshotId, signal),
+      recoverCleanBase: (signal) => this.rebaseTo(this.baseTemplate, signal),
+      adoptSetupPrefixRoot: (root) => this.adoptSetupPrefixRoot(root),
+    })),
   };
 
   private async startManagedProcess(input: ManagedProcessStart): Promise<ManagedProcess> {
@@ -460,6 +493,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     userOverride: string | undefined,
     pathPrepend: readonly string[] = [],
     deadlineAt?: number,
+    baseTemplate?: string,
   ) {
     this.sbx = sbx;
     this.sandboxId = id;
@@ -468,6 +502,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     this.userOverride = userOverride;
     this.pathPrepend = pathPrepend;
     this.deadlineAt = deadlineAt;
+    this.baseTemplate = baseTemplate;
   }
 
   /** 复用下由池在每次借出时换成承接者自己的 deadline(见 sandbox/deadline.ts)。 */
@@ -560,7 +595,16 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     try {
       // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
       await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
-      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetime, opts.user, opts.pathPrepend ?? [], opts.deadlineAt);
+      return new E2BSandbox(
+        sbx,
+        sbx.sandboxId,
+        commandTimeoutMs,
+        opts.lifetime,
+        opts.user,
+        opts.pathPrepend ?? [],
+        opts.deadlineAt,
+        opts.template ?? "base",
+      );
     } catch (e) {
       await sbx.kill().catch(() => {});
       throw e;
@@ -814,6 +858,38 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     await this.retire();
   }
 
+  private adoptSetupPrefixRoot(root: E2BSetupPrefixRootOwnership): void {
+    if (this.setupPrefixRoot !== undefined) throw new Error("the previous E2B setup-prefix root has not been released");
+    this.setupPrefixRoot = root;
+  }
+
+  private async rebaseTo(template: string | undefined, signal: AbortSignal): Promise<{ readonly sandboxId: string }> {
+    signal.throwIfAborted();
+    if (template === undefined) throw new Error("E2B cache recovery has no Base template");
+    const previous = this.sbx;
+    const apiKey = process.env.E2B_API_KEY;
+    const next = await E2BSdkSandbox.create(template, {
+      apiKey,
+      ...(this.lifetime._tag === "Requested" ? { timeoutMs: this.lifetime.milliseconds } : {}),
+    });
+    try {
+      await next.commands.run(`mkdir -p ${E2B_WORKDIR}`);
+      signal.throwIfAborted();
+      await previous.kill().catch(() => undefined);
+      const root = this.setupPrefixRoot;
+      this.setupPrefixRoot = undefined;
+      await root?.release();
+      this.sbx = next;
+      this.sandboxId = next.sandboxId;
+      this.retired = false;
+      this.retirement = undefined;
+      return { sandboxId: next.sandboxId };
+    } catch (cause) {
+      await next.kill().catch(() => undefined);
+      throw cause;
+    }
+  }
+
   private retire(): Promise<void> {
     if (this.retired) return Promise.resolve();
     if (this.retirement !== undefined) return this.retirement;
@@ -821,7 +897,11 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     attempt = this.sbx.kill().then(
       () => {
         this.retired = true;
-        if (this.retirement === attempt) this.retirement = undefined;
+        const root = this.setupPrefixRoot;
+        this.setupPrefixRoot = undefined;
+        return root?.release().then(() => {
+          if (this.retirement === attempt) this.retirement = undefined;
+        });
       },
       (error: unknown) => {
         if (this.retirement === attempt) this.retirement = undefined;

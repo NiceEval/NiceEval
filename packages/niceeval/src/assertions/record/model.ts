@@ -86,6 +86,33 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "numeric-comparison/v1";
+      readonly data: {
+        readonly comparator: "less-than" | "at-most" | "greater-than" | "at-least";
+        readonly threshold: number;
+        readonly subject:
+          | { readonly kind: "explicit-value" }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "tokens";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "tokens";
+            }
+          | {
+              readonly kind: "scope-metric";
+              readonly metric: "cost";
+              readonly scope: "turn" | "session" | "attempt";
+              readonly unit: "usd";
+            }
+          | {
+              readonly kind: "collection-cardinality";
+              readonly collection: "tool-calls";
+              readonly scope: "turn" | "session" | "attempt";
+            };
+      };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "scope-status/v1";
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
@@ -98,12 +125,29 @@ export type BuiltInCriterion =
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
         readonly occurrence: "tool" | "skill" | "event";
-        readonly assertion: "present" | "absent" | "count";
+        readonly assertion: "present" | "absent" | "count" | "order";
         /** Tool assertions retain the single managed matcher identity. */
         readonly matcher?: string;
         readonly quantifier?:
           | { readonly kind: "absent" }
           | { readonly kind: "at-least" | "exact"; readonly count: number };
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "occurrence/v2";
+      readonly data: {
+        readonly scope: "turn" | "session" | "attempt";
+        readonly occurrence: "tool" | "skill" | "event";
+        readonly assertion: "present" | "absent" | "count" | "order";
+        /** Tool assertions retain the single managed matcher identity. */
+        readonly matcher?: string;
+        readonly quantifier?:
+          | { readonly kind: "absent" }
+          | {
+              readonly kind: "at-least" | "less-than" | "at-most" | "greater-than" | "exact";
+              readonly count: number;
+            };
       };
     }
   | {
@@ -248,6 +292,150 @@ export interface AssertionCollectionReceipt {
   readonly decisive: boolean;
 }
 
+export type MatcherRelationStatus =
+  | { readonly state: "exact" }
+  | {
+      readonly state: "unavailable";
+      readonly reason:
+        | "historical-not-recorded"
+        | "source-unavailable"
+        | "ambiguous";
+    };
+
+export type MatcherSourceLocator =
+  | {
+      readonly kind: "tool-occurrence";
+      readonly toolOccurrenceId: string;
+      readonly relation: MatcherRelationStatus;
+    }
+  | {
+      readonly kind: "event";
+      readonly eventId: string;
+      readonly toolOccurrenceId?: string;
+      readonly relation: MatcherRelationStatus;
+    };
+
+export type MatcherOverlayResult =
+  | "matched"
+  | "mismatched"
+  | "unavailable"
+  | "not-evaluated";
+
+export interface MatcherRetainedRow {
+  readonly locator: MatcherSourceLocator;
+  readonly result: MatcherOverlayResult;
+  readonly difference?: AssertionFactValue;
+}
+
+export interface MatcherQueryStep {
+  readonly step: number;
+  readonly summary: AssertionFactValue;
+}
+
+export type MatcherSourceSnapshot =
+  | {
+      readonly scope: "turn";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly scopeId: string;
+      readonly throughSessionSequence: number;
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    }
+  | {
+      readonly scope: "session";
+      readonly sessionId: string;
+      readonly scopeId: string;
+      readonly throughSessionSequence: number;
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    }
+  | {
+      readonly scope: "attempt";
+      readonly scopeId: string;
+      readonly sessions: readonly {
+        readonly sessionId: string;
+        readonly throughSessionSequence: number;
+      }[];
+      readonly source: {
+        readonly family: "niceeval.agent-turns";
+        readonly schemaVersion: number;
+      };
+      readonly collectionAtCut: "complete" | "partial" | "unavailable";
+    };
+
+export interface OrderStepReceipt {
+  readonly step: number;
+  readonly comparisons: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly unavailable: number;
+}
+
+export interface OrderEvaluationReceipt {
+  readonly sourceRows: number;
+  readonly comparisons: number;
+  readonly unavailableComparisons: number;
+  readonly definitePrefixLength: number;
+  readonly possiblePrefixLength: number;
+  readonly stepReceipts: readonly OrderStepReceipt[];
+  readonly complete: boolean;
+  readonly exhaustive: boolean;
+  readonly decisive: boolean;
+}
+
+export interface MatcherOrderPathNode {
+  readonly step: number;
+  readonly locator: MatcherSourceLocator;
+  readonly sessionId: string;
+  readonly sessionSequence: number;
+  readonly result: "matched" | "unavailable";
+}
+
+export interface MatcherFailureFrontier {
+  readonly longestDefinitePrefix: readonly MatcherOrderPathNode[];
+  readonly longestPossiblePrefix: readonly MatcherOrderPathNode[];
+  readonly firstBlockingStep: number;
+  readonly suffixChecked: AssertionCollectionReceipt;
+  readonly representatives: readonly MatcherRetainedRow[];
+}
+
+export type MatcherQueryArtifact =
+  | {
+      readonly kind: "collection-filter";
+      readonly sourceSnapshot: MatcherSourceSnapshot;
+      readonly query: MatcherQueryStep;
+      readonly receipt: AssertionCollectionReceipt;
+      readonly retainedRows: readonly MatcherRetainedRow[];
+    }
+  | {
+      readonly kind: "ordered-sequence";
+      readonly sourceSnapshot: Extract<
+        MatcherSourceSnapshot,
+        { readonly scope: "turn" | "session" }
+      >;
+      /** The current decoder proves this has between two and 64 entries. */
+      readonly querySteps: readonly MatcherQueryStep[];
+      readonly receipt: OrderEvaluationReceipt;
+      readonly result:
+        | {
+            readonly state: "matched";
+            readonly witnessPath: readonly MatcherOrderPathNode[];
+          }
+        | {
+            readonly state: "mismatched";
+            readonly failureFrontier: MatcherFailureFrontier;
+          }
+        | { readonly state: "unavailable"; readonly reason: string };
+      readonly retainedRows: readonly MatcherRetainedRow[];
+    };
+
 export type SealedAssertionResult =
   | {
       readonly state: "matched";
@@ -305,10 +493,26 @@ export interface AssertionMaterials<Content> {
   readonly limitations: readonly AssertionLimitation[];
 }
 
-export interface AssertionEvaluation {
-  readonly observed: AssertionFactValue;
-  readonly receipt?: AssertionCollectionReceipt;
-}
+export type AssertionEvaluation =
+  | {
+      readonly kind: "ordinary";
+      readonly observed: AssertionFactValue;
+      readonly receipt?: AssertionCollectionReceipt;
+    }
+  | {
+      readonly kind: "matcher-current";
+      readonly observed: AssertionFactValue;
+      readonly artifact: MatcherQueryArtifact;
+      /** Current matcher receipts live only inside `artifact`. */
+      readonly receipt?: never;
+    }
+  | {
+      readonly kind: "matcher-legacy";
+      readonly observed: AssertionFactValue;
+      readonly reason: "historical-not-recorded";
+      readonly legacyDiagnostic?: AssertionFactValue;
+      readonly receipt?: never;
+    };
 
 export interface AssertionDecision {
   readonly result: "matched" | "mismatched" | "unavailable" | "errored" | "not-applicable";
@@ -326,7 +530,12 @@ export interface AssertionDecision {
 }
 
 export function sealedAssertionResult(entry: Pick<AssertionEntry<unknown>, "decision" | "contribution" | "evaluation">): SealedAssertionResult {
-  const receipt = entry.evaluation.receipt === undefined ? {} : { receipt: entry.evaluation.receipt };
+  const evaluationReceipt = entry.evaluation.kind === "ordinary"
+    ? entry.evaluation.receipt
+    : entry.evaluation.kind === "matcher-current" && entry.evaluation.artifact.kind === "collection-filter"
+      ? entry.evaluation.artifact.receipt
+      : undefined;
+  const receipt = evaluationReceipt === undefined ? {} : { receipt: evaluationReceipt };
   switch (entry.decision.result) {
     case "matched":
       return Object.freeze({ state: "matched", gate: entry.decision.gate as "not-gate" | "satisfied", score: entry.contribution as NoScoreContribution | EarnedScoreContribution, ...receipt });

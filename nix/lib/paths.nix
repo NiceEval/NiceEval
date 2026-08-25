@@ -1,7 +1,15 @@
 # Stable host path layout for one docker execution profile.
-{ name }:
+{ lib, name }:
 let
   baseName = "niceeval/docker-profiles/${name}";
+  nameParts = lib.splitString "-" name;
+  profileSliceHierarchy = [
+    "niceeval.slice"
+    "niceeval-docker.slice"
+    "niceeval-docker-profile.slice"
+  ] ++ lib.imap1 (
+    index: _: "niceeval-docker-profile-${lib.concatStringsSep "-" (lib.take index nameParts)}.slice"
+  ) nameParts;
 in
 {
   # Dedicated system account / groups
@@ -35,5 +43,5 @@ in
   watchdogSocket = "niceeval-docker-profile-watchdog-${name}.socket";
   storageService = "niceeval-docker-profile-storage-${name}.service";
   descriptorService = "niceeval-docker-profile-descriptor-${name}.service";
-  aggregateCgroupPath = "/sys/fs/cgroup/niceeval-docker-profile-${name}.slice";
+  aggregateCgroupPath = "/sys/fs/cgroup/${lib.concatStringsSep "/" profileSliceHierarchy}";
 }

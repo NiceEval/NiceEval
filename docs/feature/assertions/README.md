@@ -6,7 +6,7 @@ relations: {}
 
 # Assertions
 
-Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（current persistence revision `3`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Analysis 只读取已封口的事实，不重新执行 matcher 或作者代码。
+Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 4`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Inspection 只读取已封口的事实，不重新执行 matcher 或作者代码。
 
 NiceEval 的默认 Record Host 组合九个官方 family。Assertions、File Changes、Sources 与 Artifacts 保存各自具名事实。Agent Turns、Turn Contexts、Sandbox Commands、Runner Activities、Runner Diagnostics 保存五类 source receipt。
 
@@ -32,7 +32,9 @@ conversation、usage 与 source navigation 都只在读侧投影。第三方既�
 
 内建 criterion 是包定义的封闭判别联合，例如值比较、scope 状态、事件 occurrence、Judge measurement 和 Sandbox result。第三方 criterion 只能以自己的 `name`、版本化 `schemaId` 与 exact JSON `data` 表示；它不能冒充内建成员，也不能借此写入另一种 durable family。
 
-`materials.source` 与 `materials.evidence` 只保存安全、有界的 sealed content。producer 通过 Session 的 `content.bytes()` 建立逻辑 handle；payload 不携带 inline/blob、digest path 或“最新状态”引用。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
+可解释的 number 比较统一使用 `numeric-comparison/v1`。显式值、`maxTokens`／`maxCost`，以及 collection numeric Match／`maxToolCalls` 的 cardinality，都由 `check` 提供被检查事实，由 Match 提供比较。领域包装不建立第二套 evaluator，也不公开事实 selector。
+
+`materials.source` 与 `materials.evidence` 只保存安全、有界的 sealed Content。producer 通过 Session 的 `content.bytes()` 建立逻辑 handle；payload 不携带 inline/blob、digest path 或“最新状态”引用。coverage 与 limitations 必须随材料保存，不能由 reader 事后猜测。
 
 高基数 collection 只保存计数与 complete/exhaustive/decisive receipt，并有界保留 decisive witness 与代表样本。native producer 不复制完整 candidates、tool occurrences、diff changes 或 Agent Judge trace。
 
@@ -46,7 +48,7 @@ Judge 的 measurement 属于 evaluation，输入属于 materials。只有 Judge 
 
 ## 源码导航
 
-Assertion source site 不是 Source Navigation 的 row。`sourceSites` 仍是 `niceeval.assertions` current payload（persistence revision `3`）的一部分。
+Assertion source site 不是 Source Navigation 的 row。`sourceSites` 仍是 `niceeval.assertions` payload（envelope `schemaVersion: 4`）的一部分。
 每一行只用本 Attachment 内的 `entryId` 关联一个已执行、role-tagged 的 source site，并以 `sourceItemId` 与 digest join 到 origin Run 的既有 Sources snapshot。它不复制 criterion、result、points、gate、source path、source blob 或控制流。
 
 一个 entry 有多个 source site 也不形成多条 check 或 score contribution；权威 decision 与 contribution 始终按 `entryId` 只计算一次。Sources 内容仍只属于 `niceeval.sources` family 的 own closure（current persistence revision `2`），不能用同 path、digest 或 item identity 假装配对另一个 Run。

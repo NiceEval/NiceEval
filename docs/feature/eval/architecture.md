@@ -33,7 +33,7 @@ Report 与 Analysis 打开 `Sample` 后，以 `query()` 或 `aggregate()` 取得
 起始文件在第一次 `send` 前通过普通 Sandbox API 上传。测试文件可在某个 `send` 返回后上传，随后下一轮
 会看见它。文件相对 send 的位置决定可见性。
 
-eval 的准备命令在 `sandbox.prepare` 运行，随后是 `eval.run` 与 Assertion evaluation。cleanup failure 只
+eval 的 before action 在 `sandbox.before` 运行，随后是 `eval.run` 与 Assertion evaluation。after failure 只
 追加 diagnostic，不自动改写已经可计算的 grading。execution outcome、Assertions 与 diagnostic 的归属分别见
 [Record · Core v1](../record/architecture.md#core-v1)、[Assertions](../assertions/README.md) 与
 [Observability · Diagnostics](../record/architecture/observability-attachments.md#diagnostics)。

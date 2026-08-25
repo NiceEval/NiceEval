@@ -29,7 +29,6 @@ import { recordTerminalCommandResult } from "./command-lifecycle.ts";
 import {
   agentTurnTerminal,
   decodeReceipt,
-  receiptConversationItem,
   receiptDiagnosticRedaction,
   segmentIds,
 } from "./receipt-helpers.ts";
@@ -87,17 +86,19 @@ function captureRunnerAttemptSourceSnapshot(
     const agentTurnsCandidate = runtime.conversationTurns.length === 0
       ? undefined
       : Object.freeze({
+          state: "current" as const,
           collection: sourceCollection([
             { collection: runtime.conversationLimitations.collection(), stage: "adapter" },
             { collection: runtime.usageLimitations.collection(), stage: "adapter" },
-          ]),
+          ], runtime.conversationTurns.flatMap((turn) => turn.observed?.limitations ?? [])),
           segments: Object.freeze(runtime.conversationTurns.map((turn) => Object.freeze({
             segmentId: turn.segmentId,
+            sessionId: turn.sessionId,
             turnId: turn.turnId,
             sequence: turn.sequence,
             outcome: turn.outcome ?? "interrupted",
             terminal: agentTurnTerminal(turn),
-            items: Object.freeze(turn.items.map(receiptConversationItem)),
+            items: Object.freeze(turn.observed?.items ?? []),
             usage: Object.freeze(turn.usage.map(({ refs: _refs, ...usage }) => Object.freeze(usage))),
           }))),
         });

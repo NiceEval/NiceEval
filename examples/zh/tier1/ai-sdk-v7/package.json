@@ -32,7 +32,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.0.0",
     "niceeval": "file:../../../..",
-    "tsx": "^4.19.2",
+    "tsx": "^4.23.12",
     "typescript": "^5.7.2",
     "vite": "^7.0.0",
     "wait-on": "^9.0.0"

@@ -17,7 +17,7 @@ export default defineExperiment({
   agent: codexAgent(),
   model: "gpt-5.6-luna",
   evals: ["terminal-bench/"],
-  plugins: [terminalBenchHarness()],
+  plugins: pluginStack().use(terminalBenchHarness()),
 });
 ```
 
@@ -38,11 +38,11 @@ Terminal-Bench 的 Oracle 会读取当前 `AgentContext.evalId`,上传该题的 
 export default defineExperiment({
   agent: tbOracle,
   model: "oracle",
-  plugins: [terminalBenchHarness()],
+  plugins: pluginStack().use(terminalBenchHarness()),
 });
 ```
 
-`tbOracle` 必须继续是完整 Agent。把它写成 `plugins: [oracle()]` 会让插件暗中替换 Agent,破坏调用点对“谁在产生 Turn”的判断,也绕过 Agent receiver 只扩展既有 Agent 的边界。
+`tbOracle` 必须继续是完整 Agent。把它写成 `plugins: pluginStack().use(oracle())` 会让插件暗中替换 Agent,破坏调用点对“谁在产生 Turn”的判断,也绕过 Agent receiver 只扩展既有 Agent 的边界。
 
 同理,模型实验继续显式写 `agent: codexAgent()`;harness plugin 可以向 Codex 的 receiver 贡献诊断或安装后扩展,不能把 Codex 变成 Oracle。
 
@@ -63,7 +63,7 @@ export default defineExperiment({
 Codex 与 Oracle 可以共享 plugin,但 Agent 选择保持一眼可见:
 
 ```ts
-const terminalBenchPlugins = [terminalBenchHarness()] as const;
+const terminalBenchPlugins = pluginStack().use(terminalBenchHarness());
 
 export const codexExperiment = defineExperiment({
   agent: codexAgent(),

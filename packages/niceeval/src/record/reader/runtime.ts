@@ -5,6 +5,7 @@ import {
   enumerateRecordAttachmentClosure,
   hydrateRecordAttachmentCurrent,
   mintRecordAttachmentReference,
+  recordAttachmentMigrationAt,
   recordAttachmentReferenceDefinition,
   recordAttachmentReferenceWire,
   RecordAttachmentReference,
@@ -196,6 +197,29 @@ function legacyEnvelopeRevision(
     : undefined;
 }
 
+/**
+ * A lower revision is actionable only when the selected persistence owns every
+ * adjacent step through its current revision. This mirrors maintenance's
+ * complete-chain execution, so a reader never advertises an impossible
+ * migration for Match/Assertions-era records.
+ */
+function hasReachableMigration(
+  persistence: AnyPersistence,
+  fromRevision: number,
+): boolean {
+  let revision = fromRevision;
+  while (revision < persistence.revision) {
+    const migration = recordAttachmentMigrationAt(persistence, revision);
+    if (
+      migration === undefined ||
+      migration.from !== revision ||
+      migration.to !== revision + 1
+    ) return false;
+    revision = migration.to;
+  }
+  return revision === persistence.revision;
+}
+
 export function inspectRecordAttachmentEnvelope(input: {
   readonly fileSystem: RecordFileSystemService;
   readonly root: RecordRoot;
@@ -221,7 +245,8 @@ export function inspectRecordAttachmentEnvelope(input: {
         input.persistence.attachment.family,
       );
       if (revision === undefined) return invalid();
-      return revision <= input.persistence.revision
+      return revision <= input.persistence.revision &&
+          (revision === input.persistence.revision || hasReachableMigration(input.persistence, revision))
         ? Object.freeze({
             state: "migration-required" as const,
             family: input.persistence.attachment.family,
@@ -242,7 +267,10 @@ export function inspectRecordAttachmentEnvelope(input: {
     if (envelope.right.revision === input.persistence.revision) {
       return Object.freeze({ state: "current" as const });
     }
-    if (envelope.right.revision < input.persistence.revision) {
+    if (
+      envelope.right.revision < input.persistence.revision &&
+      hasReachableMigration(input.persistence, envelope.right.revision)
+    ) {
       return Object.freeze({
         state: "migration-required" as const,
         family: envelope.right.family,

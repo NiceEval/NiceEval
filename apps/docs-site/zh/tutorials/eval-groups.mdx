@@ -142,24 +142,28 @@ npx niceeval exp codex
 | 声明位置 | 适合放什么 | 执行频次 |
 | --- | --- | --- |
 | Experiment 的 `sandbox` | 随 Agent 或模型配置变化的 Provider `template` | 每个组内 Sandbox 一次 |
-| 评估组的 `sandbox` + `.setup()` | 同组共用的工具链、公共 Checkout、构建缓存预热 | 每个组内 Sandbox 一次 |
-| 评估组的 `sandbox` + `.prepare()` | 每条 Attempt 都要恢复的组级 Fixture | 每条真实 Attempt 一次 |
-| 成员自己的 `sandbox` + `.prepare()` | 只属于这道题的 Starter、依赖和公开素材 | 每条真实 Attempt 一次 |
+| 评估组的 `sandbox` + `.before()` | 同组共用的工具链、公共 Checkout、构建缓存预热 | 按 action 指纹复用 |
+| 成员自己的 `sandbox` + `.before()` | 只属于这道题的 Starter、依赖和公开素材 | 每条真实 Attempt 的计划 |
 
 评估组可以提供自己的 `SandboxLayer`：
 
 ```ts
 import { defineEvalGroup } from "niceeval";
-import { sandboxLayer } from "niceeval/sandbox";
+import {
+  changeFrequency,
+  sandboxLayer,
+  shell,
+} from "niceeval/sandbox";
 import buildIndex from "./01-index/eval.ts";
 import queryIndex from "./02-query/eval.ts";
 
 export default defineEvalGroup({
   evals: [buildIndex, queryIndex],
-  sandbox: sandboxLayer().setup(async (sandbox, ctx) => {
-    ctx.progress({ message: "准备组内公共工具链" });
-    await sandbox.runCommandOrThrow("npm", ["install", "--global", "tsx@4.22.4"]);
-  }),
+  sandbox: sandboxLayer().before(shell({
+    id: "group-toolchain",
+    command: "npm install --global tsx@4.22.4",
+    changeFrequency: changeFrequency.rare,
+  })),
   onUnavailable: "stop-group",
 });
 ```
@@ -169,9 +173,7 @@ export default defineEvalGroup({
 保留为可选字段。需要在 `workdir` 外隔离缓存或服务命名空间时，先检查字段是否存在，再使用
 组 ID 派生键。
 
-成员不能提供 `template`，也不能声明 `.setup()` 或 `.teardown()`。把实例级生命周期移到
-评估组或 Experiment；成员只保留不含 `template` 与生命周期、仅声明 `.prepare()` 的
-`SandboxLayer`。
+成员不能提供 `template`，但可以贡献 command-only `.before()` / `.after()`。Experiment、评估组、成员与 Agent 的 action 会进入同一个依赖图。依赖满足后，数值较小的 `changeFrequency` 先执行。因此，评估组的稳定 action 可以排在 Experiment 的易变 action 前面。
 
 ## 不要把评估组当成任务依赖图
 
@@ -189,7 +191,7 @@ export default defineEvalGroup({
 | --- | --- |
 | `eval-group-member-unresolved` | 从评估入口导入工厂原本返回的默认对象，不要重建对象或写字符串 ID |
 | `eval-group-member-overlap` | 每条评估用例只放进一个组，并且只列一次 |
-| `eval-group-member-layer` | 把成员的 `template`、`.setup()` 和 `.teardown()` 移到评估组或 Experiment |
+| `eval-group-member-layer` | 从成员移除 Provider template；保留 command-only `.before()` / `.after()` |
 | 加载时提示缺少 `onUnavailable` | 显式选择 `"stop-group"` 或 `"replace-sandbox"`，不要省略失败策略 |
 | `eval-group-sandbox-reuse-conflict` | 从 Experiment 删除 `sandboxReuse: true` |
 | `eval-group-direct-agent` | 改用 Sandbox 型 Agent，或让这个 Experiment 不再选择分组评估 |

@@ -10,6 +10,14 @@
 3. 它与 NiceEval 的概念如何对应，哪些能力不能直接类比。
 4. 哪些做法值得吸收，哪些做法不应复制，以及下一步需要什么证据。
 
+## 当前闭环
+
+Research v1 只维护带边界的研究材料，不形成 Feature、Roadmap、Engineering 或 Design 的 Trace 节点，也不写 Trace relation。它从 `pnpm run repo docs research --help` 进入：`package` 建立一个研究包，`page` 建立一个研究页，`add-page` 把新页接入指定研究包，`check <exact-ref>` 只检查这个精确研究对象。
+
+`check` 不接受全库扫描、模糊 pattern 或空 selector。它核对归属、路径、标题、索引和所需的结构字段，使研究包可以被稳定导航；它不联网、不读取外部产品的实时状态，也不判断观察、引文或产品判断是否为真。事实真伪由作者在一手材料与观察日期上负责，不能用结构通过冒充研究判断已获验证。
+
+研究的启发要进入 Design、Roadmap 或 Feature 才能成为 NiceEval 的方向或当前目标。不要把 Research 加进 Trace 来取得可追溯外观，也不要把一次 `check` 成功解释为产品采纳。
+
 ## 研究方向
 
 一级目录按 NiceEval 要研究的问题划分，不按外部产品品牌划分。
@@ -24,5 +32,5 @@
 | Record storage | Eval/Artifact 平台、application file、事件与列式格式 | [Record 的逻辑写入怎样映射到物理存储](record-storage/README.md) |
 | Record → Report | Eval/tracing 平台、实验结果 store、历史查询、Experiment 比较与 Dashboard | [运行事实怎样被保存、看懂、比较并交付](record-to-report/README.md) |
 | Report design | TanStack Table / Charts 与 Vercel `design.md` | [已完成结果怎样进入表格、图表与报告网站](report-design/README.md) |
-| Sandbox | Harbor、Inspect AI、SWE-ReX、SWE-bench 与 Docker Agent | [容器进程模型](docker-sandbox-process-models.md) |
+| Sandbox | Harbor、Inspect AI、SWE-ReX、SWE-bench、Docker Sandboxes、Runloop、Incus、Sysbox 与 Firecracker | [容器进程模型](docker-sandbox-process-models.md)；[嵌套 Docker Sandbox](nested-docker-execution/README.md) |
 | Testing | Git、Cargo、Deno、pnpm、OpenTofu、kubectl、Vite、Vitest 与 Playwright | [复杂 CLI 测试体系](cli-testing/README.md)；[框架 E2E](framework-e2e/README.md) |

@@ -5,16 +5,16 @@ Experiment author setup
   -> Experiment Plugin setup (forward)
   -> Eval Group Plugin setup (forward)
   -> provider acquire
-  -> SandboxLayer author setup
+  -> scheduled physical SandboxLayer before
   -> automatically projected Sandbox Plugin setup (forward)
   -> reset anchor / attempt reset
-  -> author prepare commands
+  -> scheduled attempt SandboxLayer before
   -> Eval Plugin setup (forward)
   -> agent ensure / setup / test / teardown
   -> Eval Plugin teardown (reverse)
-  -> author cleanup
+  -> attempt SandboxLayer after (global LIFO)
   -> Sandbox Plugin teardown (reverse)
-  -> SandboxLayer author teardown
+  -> physical SandboxLayer after (global LIFO)
   -> provider finalizer
   -> Eval Group Plugin teardown (reverse)
   -> Experiment Plugin teardown (reverse)

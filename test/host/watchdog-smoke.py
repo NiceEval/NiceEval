@@ -253,6 +253,12 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     challenge = admission.handle({"kind": "challenge", "clientNonce": "nonce"})
     assert challenge["clientNonce"] == "nonce"
     assert challenge["descriptorDigest"].startswith("sha256:")
+    try:
+        admission.handle({"kind": "setup-prefix.restore"})
+    except watchdog.ProtocolError as error:
+        assert error.code == "setup-prefix-unsupported"
+    else:
+        raise AssertionError("legacy profile must keep setup-prefix Unsupported")
     created = admission.handle({
         "kind": "lease.create",
         "profileId": "profile-test",
@@ -378,6 +384,12 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     assert mount == f"type=bind,src={slot_path},dst=/var/lib/docker,bind-propagation=rprivate"
     for label in watchdog.LABELS.values():
         assert any(part.startswith(label + "=") for part in create_argv)
+    assert any(argv[:2] == ("ps", "-aq") and "--no-trunc" in argv
+               and any(str(item).startswith("label=niceeval.reservation-id=") for item in argv)
+               for argv in admission.fake_commands)
+    assert any(argv[:3] == ("network", "ls", "-q") and "--no-trunc" in argv
+               and any(str(item).startswith("label=niceeval.reservation-id=") for item in argv)
+               for argv in admission.fake_commands)
 
     admission.fake_query_failure = True
     try:
@@ -398,8 +410,8 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     assert outside.read_text(encoding="utf-8") == "preserve"
     assert admission.state["slots"]["slot-0000"]["generation"] == 1
     assert admission.handle({"kind": "status"})["availableQuotaSlots"] == 1
-    admission.handle({**common, "kind": "lease.drain"})
-    assert admission.state["leases"]["invocation-a"]["state"] == "recovered"
+    assert admission.handle({**common, "kind": "lease.drain"}) == {"state": "recovered"}
+    assert "invocation-a" not in admission.state["leases"]
     contents = journal.read_text(encoding="utf-8")
     assert token not in contents
     events = [json.loads(line)["event"] for line in contents.splitlines()]
@@ -429,7 +441,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     assert restarted.state["admissionOpen"] is False
     restarted.fake_query_failure = False
     restarted._recover_once()
-    assert restarted.state["leases"]["invocation-c"]["state"] == "recovered"
+    assert "invocation-c" not in restarted.state["leases"]
     assert not any(item.startswith("recovery blocked for reservation-c:")
                    for item in restarted.state["degraded"])
     assert restarted.state["slots"]["slot-0000"]["generation"] == 2
@@ -541,7 +553,7 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
     assert restarted.handle({**common_build, "kind": "reservation.release",
         "reservationId": "reservation-cancel"}) == {"released": True}
     assert restarted.handle({**common_build, "kind": "lease.drain"}) == {"state": "recovered"}
-    assert restarted.state["leases"]["invocation-build"]["state"] == "recovered"
+    assert "invocation-build" not in restarted.state["leases"]
 
     # Any uncertain activity quarantines durably and replay never re-grants it.
     lease_d = restarted.handle({"kind": "lease.create", "profileId": "profile-test",

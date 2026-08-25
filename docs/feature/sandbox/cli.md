@@ -1,7 +1,7 @@
-# Sandbox —— CLI:留存现场与销毁
+# Sandbox —— CLI：准备缓存、留存现场与销毁
 
 跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned Observability 的 command、timing 与 diagnostics。
-受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
+受管命令（各 owner 的 before、after/cleanup、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
 `niceeval show @<attempt-locator>` 通过 Analysis `query()` 闭合页面声明的 DomainView，并按 timing 顺序呈现。
 因此「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
 
@@ -16,6 +16,21 @@
 
 为此 CLI 提供一对能力,合起来是留存沙箱的完整生命周期:`--keep-sandbox` 在 run 侧**留下**现场,`niceeval sandbox` 命令组在事后**查看与销毁**它们。
 
+## `--sandbox-setup-cache`：选择本次优化路径
+
+`niceeval exp` 接受以下运行 flag：
+
+```bash
+niceeval exp <experiment> [eval...] --sandbox-setup-cache=use
+niceeval exp <experiment> [eval...] --sandbox-setup-cache=bypass
+```
+
+取值只有 `use | bypass`。优先级固定为 CLI flag → Experiment 的 `sandboxCache.setup` → `niceeval.config.ts` 的 `sandboxCache.setup` → 默认 `use`。Eval 与 Eval Group 没有同名字段；完整配置形状见 [Library](library.md#setup-prefix-cache-配置)。
+
+`bypass` 禁止 SetupPrefix lookup 与 publication，并真实 replay 全部 eligible before。BuildKey 的 lookup/build 仍照常执行；该选择不改变 BuildKey、SetupPrefixKey、CaseKey、Attempt fingerprint 或 result identity。该 flag 只用于冷路径验收、排障与绕开本机 cache，不是强制重跑历史结果的入口。
+
+`--dry` 无论取值都只计算计划和 identity，固定显示 `cacheLookup: "not-probed"`。运行反馈在 bypass 时显示 `replay · bypass`。准备缓存只管理 NiceEval 创建并登记的 Docker image、E2B snapshot 与 Incus prepared artifact；它不接管用户声明的 image、template、snapshot 或 trusted base。
+
 ## `--keep-sandbox`:跑完留下现场
 
 `--keep-sandbox` 是 `niceeval exp` 的运行 flag,不是独立命令——留存是"这次怎么跑"的一部分,挂在唯一会创建沙箱的命令上:
@@ -27,12 +42,11 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 
 - 两档语义：`failed`（默认值，单独使用 `--keep-sandbox` 等价）留 Verdict 为 `failed` / `errored` 的 Attempt。
   它包括被硬超时打断后形成 `errored` Verdict 的现场，这是最高价值的现场。
-  `all` 连 `passed` Verdict 也留，用于调 prepare 命令、核对通过现场的真实状态。
+  `all` 连 `passed` Verdict 也留，用于调 before action、核对通过现场的真实状态。
   默认（不带 flag）全部销毁；CI、并发与云资源管理不允许无主现场，留存永远是显式选择。
 - debug 流程的典型形态是「这条失败,重跑这一条」,配合 eval 前缀位置参数收窄范围,天然不会一次留下几十个容器。
 - 符合 CLI 输入模型:位置参数选 experiment 路径与 eval,flag 说怎么跑。
 - 留存只跳过销毁这一步：Agent teardown 与已登记 cleanup 照常执行，留下的现场是收尾完成后的状态。
-  该实例真正退休时才执行 lifecycle `teardown()` 回存 checkpoint。
   对应地，timing decoding 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目。
   留存提交后现场转入 provider 的休眠形态（docker 停驻容器、e2b pause、vercel stop 后可恢复），不白烧资源。
   suspend 失败时现场保持运行并写入诊断通道，仍被注册表管理。
@@ -47,6 +61,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 - `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](reuse.md) 互斥。
   复用的 Sandbox 由多条 Attempt 共享，最终现场不只属于其中一条；组合在创建 Sandbox 前报错。
   Sandbox 预热行为不变,未领用的预创建实例照常销毁。
+- `incusSandbox()` 是 DestroyOnly，与 `--keep-sandbox` 组合在创建资源前报错。nested Docker 的只读诊断入口是 [`niceeval sandbox provider doctor incus`](nested-docker/cli.md)，默认检查 reference domain。
 
 ### run 收尾输出
 
@@ -235,6 +250,7 @@ pruned 2 orphan sandboxes
 ## 相关阅读
 
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 三类问题各自的全流程展示。
+- [Nested Docker CLI](nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
 - [Record · Architecture](../record/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。

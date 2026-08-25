@@ -18,8 +18,7 @@ export default defineEval({
     await t.send("What's the weather like in Brooklyn today?");
     t.succeeded();
     t.calledTool(
-      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }),
-      { count: 1 },
+      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }).exactly(1),
     );
     t.check(t.reply, includes("sunny"));
   },
@@ -80,10 +79,10 @@ npx niceeval exp local weather/brooklyn
 
 <CardGroup cols={2}>
   <Card title="passed" icon="circle-check" color="#22c55e">
-    所有 Boolean Assertion 都 matched，所有 gated measurement 都达到 `.gate(n)` 阈值，并且没有执行错误。
+    所有 Boolean Assertion 都 matched，所有已 threshold 且 `.gate()` 的 measurement 都达到阈值，并且没有执行错误。
   </Card>
   <Card title="failed" icon="circle-xmark" color="#ef4444">
-    至少一个 Boolean condition mismatched，或 measurement 低于明确的 `.gate(n)` 阈值。
+    至少一个 Boolean condition mismatched，或已 threshold 且 `.gate()` 的 measurement 低于阈值。
   </Card>
   <Card title="errored" icon="triangle-exclamation" color="#f59e0b">
     执行异常、超时或作者错误，本次执行无法形成可信结论。
@@ -99,7 +98,7 @@ npx niceeval exp local weather/brooklyn
 
 ## 判定与测量值
 
-Boolean `matched` 默认进入 Verdict。连续测量值与 Judge 输出是 `[0, 1]` 的 measurement；通过制评估使用 `.gate(n)` 才把它纳入 failed，`.atLeast(n)` 只记录局部 condition。完整规则见 [Assert](/zh/explanation/assert)。
+Boolean `matched` 默认进入 Verdict。连续测量值与 Judge 输出是 `[0, 1]` 的 measurement；通过制评估先在 Match 上用 `.atLeast(n)` 形成 threshold，再对 handle 调用无参 `.gate()` 才把它纳入 failed。完整规则见 [Assert](/zh/explanation/assert)。
 
 ## `*.eval.ts` 约定
 

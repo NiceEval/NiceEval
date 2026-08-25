@@ -1,7 +1,7 @@
 ---
-title: "运行前检查生命周期计划"
-sidebarTitle: "检查生命周期计划"
-description: "用 niceeval debug 查看一个 Experiment 与评估用例配对的 Plugin、Sandbox、Agent、Fixture 和 teardown 顺序，而不创建任何运行资源。"
+title: "运行前检查 Sandbox 计划"
+sidebarTitle: "检查 Sandbox 计划"
+description: "用 niceeval debug 查看 Experiment、评估组、评估用例与 Agent 的实际 action 顺序和数值，而不创建运行资源。"
 ---
 
 `exp --dry` 适合确认运行矩阵。需要检查一条评估在 Sandbox 里会按什么顺序准备、安装、执行和收尾时，使用 `niceeval debug`。
@@ -14,20 +14,43 @@ pnpm exec niceeval debug compare/codex memory/commit0
 
 Experiment 和评估用例 selector 都必须唯一。精确 ID 优先；前缀命中多个候选时，CLI 会列出候选并停止。
 
-评估用例只能从该 Experiment 已选择的范围中匹配。选择一个评估组成员不会把其它成员加入计划，但输出仍会显示评估组生命周期包裹。
+评估用例只能从该 Experiment 已选择的范围中匹配。选择一个评估组成员不会把其它成员加入计划，但输出仍会显示评估组贡献的 action。
 
 ## 按顺序阅读计划
 
-计划会依次显示：
+Human 输出使用分层框，不把所有步骤压成一段文本。顶层是 Experiment，下面按 lane、slot 和生命周期节点展开。每个 `sandbox.before` action 都显示：
 
-1. Plugin lifecycle；
-2. 作者声明的 prepare；
-3. Agent ensure、setup 与 teardown；
-4. Sandbox materialize 与 Provider finalizer；
-5. 评估组和物理 Sandbox lifecycle；
-6. Fixture、test 与 cleanup。
+- owner 与 action ID；
+- 拓扑执行序号和 occurrence 路径；
+- 用户填写的 `changeFrequency` 数值、来源和匹配的 preset；
+- 依赖、排序原因与当前固定的 `attempt` occurrence；
+- Provider 的缓存能力，以及尚未探测的运行时状态；
+- 由已链接 Action、顺序、依赖、state 与 fingerprint 得出的 `prefixIdentity`；
+- `cache.state` 的 `declared`、`cumulative`、`providerCoverage` 和 `barrier`。
 
-静态 `shell()` 和 `command()` 会展开实际命令。普通 callback 标为 `Opaque`，因为它只能在运行时执行。路径、凭据、环境变量值和不安全的远端 locator 不会泄露到 Human 输出。
+```text
+╭─ sandbox.before ───────────────────────────────── EXACT ─╮
+│ owner: experiment:compare/codex                         │
+│ action: install-runtime                                 │
+│ family: @acme/install-runtime                           │
+│ execution order: #2 · compare/codex > memory/commit0    │
+│ change frequency: 20 · explicit                         │
+│ scheduled by: lowest ready changeFrequency              │
+│ occurrence: attempt                                     │
+│ cache: not-probed · persistent · runtime pending · final key not-probed │
+│ prefix identity: linked-prefix:…                                         │
+│ cache state: declared dockerData · cumulative dockerData                │
+│ provider coverage dockerData · barrier none                              │
+╰─────────────────────────────────────────────────────────╯
+```
+
+数字是最终 linked schedule 的数字，不是只显示声明引入顺序。依赖永远优先；两个 ready action 数值相同时，才按 owner 与声明序稳定决定顺序。评估组的低频 action 因此可以排在 Experiment 的高频 action 前面。
+
+`declared` 是这个 Action 的完整状态承诺，`cumulative` 包含它之前的准备链。`providerCoverage`
+说明 Provider 实际能恢复的范围。`barrier` 不是 `none` 时，输出还会给出 `barrierActionId`；它指出第一个
+默认 `all`、`opaque` 或不受支持的 Action。该 Action 和所有后缀会真实执行。
+
+固定 action 会展示安全的命令形状。普通 callback 标为 `OPAQUE`，因为它只能在运行时执行。环境变量只显示 key 和摘要，stdin 只显示摘要与字节数。凭据值、stdin 原文和不安全的远端 locator 不会泄露到 Human 或 JSON 输出。
 
 ## 给工具读取结构化计划
 
@@ -35,11 +58,18 @@ Experiment 和评估用例 selector 都必须唯一。精确 ID 优先；前缀�
 pnpm exec niceeval debug compare/codex memory/commit0 --json > debug-plan.json
 ```
 
-JSON 保留结构化步骤和精确度标记，不包含终端框线。`debug` 只接受 `--json`；预算、重跑、并发等运行 flag 不适用于这个命令。
+JSON 保留同一棵结构化计划，不包含终端框线。action 节点带 `declarationOrder`、`executionOrder`、
+`changeFrequency`、`dependencies`、`occurrence` 和 `cache`。
+
+`cache.state` 固定给出 `declared`、`cumulative`、`providerCoverage`、`barrier`，并在有 barrier 时给出
+`barrierActionId`；可确定的 Action 还给出 `cache.prefixIdentity`。`cache.lookup` 与
+`cache.runtime.finalKey` 固定是 `not-probed`，`cache.runtime.status` 是 `pending`，因为 debug 不读取运行时缓存 inventory。
+
+`debug` 只接受 `--json`；预算、重跑、并发等运行 flag 不适用于这个命令。
 
 ## 确认它不会执行资源操作
 
-`debug` 不运行 setup、test、teardown、ensure、materialize 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或构建任务。
+`debug` 不运行 before callback、test、after、ensure 或 Provider finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或构建任务。
 
 它会加载受信任定义并执行 Experiment 的选择 predicate。Provider planner 也可能读取本地文件、调用只读 CLI 或查询远端控制面，因此仍应只在可信项目中运行。
 

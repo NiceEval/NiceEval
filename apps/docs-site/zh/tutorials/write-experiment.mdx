@@ -126,7 +126,7 @@ npx niceeval exp prompts/concise
 | `budget` | 这一格配置的预算上限 |
 | `maxConcurrency` | 这一格配置的并发上限 |
 | `sharedState` | 跨 Invocation 共享 checkpoint 的独占 key。只协调状态，不提供存储 |
-| `sandbox` | 一条 `SandboxLayer`。具体 factory 一次声明 provider 原生 template，并可链 `.prepare()` / `.setup()` / `.teardown()` |
+| `sandbox` | 一条 `SandboxLayer`。具体 factory 声明唯一 Provider template，并可链 `.before()` / `.after()` |
 | `plugins` | 显式附着的 NiceEval Plugin occurrence；把一套 identity、flags、Sandbox 命令、生命周期或 Agent Extension 作为完整条件复用 |
 | `setup` | 实验级 Hook：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
 | `teardown` | 与 `setup` 成对的实验级 Hook：全部 Attempt 收尾后执行一次，当且仅当 `setup` 的时点已经走到（见下） |
@@ -135,7 +135,7 @@ npx niceeval exp prompts/concise
 
 `flags` 写的是实验条件，它整袋参与缓存判定：值一变，已经跑完的结果就要重跑。所以隧道地址不要写进 `flags`——隧道每次重启换一个 URL，写进去就等于每次重启都作废全部已完成结果。
 
-这个地址是 `setup` 跑起来才拿到的。把它留在生命周期闭包里，再由 Agent 工厂或 Sandbox Hook 使用；它不是实验条件，也没有通用 API 把它写成报告字段：
+这个地址是 `setup` 跑起来才拿到的。把它留在生命周期闭包里，再由 Agent 工厂或 Sandbox callback 使用；它不是实验条件，也没有通用 API 把它写成报告字段：
 
 ```ts
 let endpoint: string | undefined;
@@ -143,7 +143,7 @@ let endpoint: string | undefined;
 export default defineExperiment({
   agent: nowledgeAgent(() => ({ url: endpoint! })),
   sandbox: e2bSandbox({ template: "niceeval-agents" })
-    .setup(async sandbox => {
+    .before(async sandbox => {
       await sandbox.writeText(".nowledge/env", `NMEM_URL=${endpoint!}\n`);
     }),
   async setup(ctx) {
@@ -212,8 +212,12 @@ async teardown(ctx) {
 export default defineExperiment({
   agent: codexAgent({ mcpServers: [mempalMcp] }),
   sandbox: e2bSandbox({ template: "fasteval-agents" })
-    .setup(mempalSetup("codex"))        // 预检、写动态配置、预热、载入状态
-    .teardown(mempalTeardown("codex")), // 回存状态
+    .before(async (sandbox, context) => {
+      await mempalLoad(sandbox, "codex");
+      context.onCleanup(async (sandbox) => {
+        await mempalSave(sandbox, "codex");
+      });
+    }),
   sandboxReuse: true,
   maxConcurrency: 1,                    // 本 Invocation 内串行
   sharedState: { key: "mempal/codex/cohort-a" },
@@ -222,13 +226,13 @@ export default defineExperiment({
 
 `maxConcurrency: 1` 只串行本 Invocation。`sharedState.key` 在同一项目 Coordination 域内保护跨 Invocation 的 checkpoint。租约从 Experiment 与 Sandbox setup 前开始，到全部 Sandbox teardown、Provider finalizer 和 Experiment teardown 完成。它只提供互斥；存储、原子回存、强杀恢复与跨机器协调仍由作者负责。
 
-固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot。`.setup()` 不应在每个 Attempt 重建同一套环境。从官方 Docker 镜像、E2B 模板或 Vercel runtime 派生预制环境的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
+固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot，也可以声明为低频 `.before()` action。NiceEval 会复用未变化的 Docker 准备前缀，不必因为评估代码或最后一层 `.env` 改变而重跑固定安装。从官方 Docker 镜像、E2B template 或 Vercel runtime 派生预制环境的步骤见 [Sandbox · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
 
-Hook 的执行时机、多 Hook 顺序和失败语义见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
+Action 的排序、缓存、动态回调和收尾语义见 [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)。
 
-### 与 Sandbox Hook 协作
+### 与 Sandbox callback 协作
 
-实验级 Hook 起宿主机侧服务，Sandbox Hook 每个 Sandbox 把坐标写进去、收尾时回存状态——两层在同一个文件里靠模块变量衔接，时序由 runner 保证：实验级 `setup` 早于本实验任何 Sandbox Hook，Sandbox Hook 读到的变量一定已经赋好值：
+实验级 Hook 起宿主机侧服务，Sandbox callback 在 Attempt 前把坐标写进去，并立即登记回存收尾。两层在同一个文件里靠模块变量衔接，时序由 runner 保证：实验级 `setup` 早于本实验任何 Sandbox callback，callback 读到的变量一定已经赋好值：
 
 ```ts
 // experiments/compare/claude--nowledge.ts
@@ -245,16 +249,16 @@ export default defineExperiment({
   maxConcurrency: 1,
   sharedState: { key: "nowledge/claude/cohort-a" },
   sandbox: e2bSandbox({ template: "niceeval-agents" })
-    .setup(async (sandbox, ctx) => {
-      // 每沙箱一次，晚于实验级 setup：把宿主机侧坐标写进沙箱
+    .before(async (sandbox, ctx) => {
+      // 每条真实 Attempt 一次，晚于实验级 setup：把宿主机侧坐标写进 Sandbox
       await sandbox.writeText(
         ".nowledge/config.json",
         JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
       );
       await loadMemoryState(sandbox, ctx.experimentId);
-    })
-    .teardown(async (sandbox, ctx) => {
-      await saveMemoryState(sandbox, ctx.experimentId); // 每沙箱回存跨 attempt 状态
+      ctx.onCleanup(async (sandbox) => {
+        await saveMemoryState(sandbox, ctx.experimentId);
+      });
     }),
   async setup(ctx) {
     tunnel = await nowledgeTunnel({ signal: ctx.signal }); // 整场一次，宿主机侧
@@ -269,12 +273,12 @@ export default defineExperiment({
 
 ### 多个实验共享同一套生命周期代码
 
-对比组里常常是几个实验对着同一类基础设施——同一个记忆产品，claude 与 codex 各一格对照，起停机制完全一样。把起停写成一个**工厂函数**，返回共享同一闭包的整套件：实验级 Hook 对、给 agent / MCP 工厂读坐标的 getter、把坐标写进 Sandbox 的 sandbox Hook。每个实验文件各自调用一次工厂，同一套代码、各自的实例与坐标：
+对比组里常常是几个实验对着同一类基础设施——同一个记忆产品，claude 与 codex 各一格对照，起停机制完全一样。把起停写成一个**工厂函数**，返回共享同一闭包的整套件：实验级 Hook 对、给 agent / MCP 工厂读坐标的 getter、把坐标写进 Sandbox 的 command。每个实验文件各自调用一次工厂，同一套代码、各自的实例与坐标：
 
 ```ts
 // experiments/shared/nowledge.ts —— 启停一份代码。实例、坐标每实验一份
 import type { ExperimentHookContext } from "niceeval";
-import type { SandboxHook } from "niceeval/sandbox";
+import type { SandboxCommand } from "niceeval/sandbox";
 
 export function nowledgeLifecycle() {
   let instance: string | undefined;
@@ -296,8 +300,8 @@ export function nowledgeLifecycle() {
       await memctl("down", instance); // 释放是必达底线
     },
 
-    /** 每沙箱一次：把闭包坐标写进沙箱 */
-    sandboxSetup(): SandboxHook {
+    /** 每条真实 Attempt 一次：把闭包坐标写进 Sandbox */
+    sandboxBefore(): SandboxCommand {
       return async (sandbox) => {
         await sandbox.writeText(
           ".nowledge/env",
@@ -316,7 +320,7 @@ export function nowledgeLifecycle() {
 const nowledge = nowledgeLifecycle();
 export default defineExperiment({
   agent: codexAgent(nowledgeCodexConfig(nowledge.endpoint)),
-  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).setup(nowledge.sandboxSetup()),
+  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).before(nowledge.sandboxBefore()),
   setup: nowledge.setup,
   teardown: nowledge.teardown,
   maxConcurrency: 1, // 中心化记忆库，attempt 串行累积
@@ -387,6 +391,6 @@ export default defineExperiment({
 });
 ```
 
-没有 profile registry，也没有按 source kind 登记的 materializer 表。每个 factory 同时拥有支持声明与实现，physical planning 会在创建任何 Sandbox 前校验所有选中评估用例。重复 template 用普通 TypeScript 辅助函数共享。同一个 Experiment 仍能覆盖全部评估用例，link planning 会逐条把评估用例 layer 与 Experiment layer 配对。
+没有 profile registry，也没有按 source kind 登记的 Sandbox creator 表。每个 factory 同时拥有支持声明与实现，physical planning 会在创建任何 Sandbox 前校验所有选中评估用例。重复 template 用普通 TypeScript 辅助函数共享。同一个 Experiment 仍能覆盖全部评估用例，link planning 会逐条把评估用例 layer 与 Experiment layer 配对。
 
 跨配置比较的设计建议见[实验矩阵](/zh/tutorials/experiments)。Adapter 对 `ctx.model` 和 `ctx.flags` 的用法见 [Adapter](/zh/explanation/adapter)。

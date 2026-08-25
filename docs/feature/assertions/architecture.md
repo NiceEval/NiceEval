@@ -1,14 +1,23 @@
 # Assertions —— 架构
 
-`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 current persistence revision 是 `3`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
+`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 4`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
 
 它是 [Record architecture](../record/architecture.md) 定义的九个官方 durable family 之一。Record protocol 不提供全局 registry：第三方可以向自己的 Host 显式贡献独立 persistence，也可以在 Assertions entry 内提供可解释的 criterion schema，但不能扩写本 family。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与相关 sealed 事实读侧形成，不能各自变成新的持久 family。
 
 ## 版本边界
 
-`niceeval.assertions` 的 family identity 不带版本；current persistence revision 是 `3`。当前领域类型不带版本后缀；revision 1/2 只存在于 package-private 相邻 migration。普通 reader 只接受 exact-current，普通 writer 只写 revision 3。
+`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `4`。当前领域类型不带版本后缀。Attachment 的 v1／v2／v3／v4 只存在于 package-private wire codec 与相邻 migration identity；内建 criterion 的 `/vN` 则是该 criterion 自己的 schema identity，二者不能混为一谈。
 
-Record maintenance 独占 physical integrity、文件 I/O、migration 执行协议与最终 exact-current 验证；Git 负责 diff、restore 与 rollback。Assertions persistence 只提供私有的 `1→2`、`2→3` 相邻转换及其最小历史 parser。未来升级必须继续形成连续相邻链。
+普通 writer 只写 schemaVersion `4` 的 envelope。它为新的 occurrence Assertion 统一写入 `occurrence/v2`；不会因作者调用了包装糖、未调用量词的 `ToolMatch`、量词或顺序查询而选择 `occurrence/v1`。reader 在同一个 v4 envelope 内双读下表的两个已知 occurrence criterion：
+
+| 已封口 criterion | current writer | reader | 历史 bytes 的处置 |
+|---|---|---|---|
+| `occurrence/v1` | 不写 | exact decode 已封口的 v1 data、evaluation 与 decision，并按其原有语义呈现 | 不升级、不重跑、不回写为 v2。 |
+| `occurrence/v2` | 所有新的 occurrence Assertion 都写入 | exact decode v2 data、evaluation 与 decision | 保持 sealed；reader 不从显示或 API 名推断另一个 criterion。 |
+
+因此 `occurrence/v1` 是 reader 支持的闭合历史 schema，不是 current writer 的候选。读取旧 v1 绝不触发 `v1→v2` transform、payload rewrite 或 Record maintenance；新 entry 也不能借旧 entry 的 id、criterion 或 material 重写历史。
+
+Record maintenance 独占历史 codec、blob closure、文件 I/O、migration 执行协议与最终 exact-current 验证。Assertions attachment 提供纯 `1→2`、`2→3` 与 `3→4` payload transform。v3 在两条开发线中曾分别表达不相容的持久含义，v4 因此显式区分 ordinary evaluation 与无法在线重新执行的 historical matcher。迁移保留原 Content/reference closure；对后者标记 `matcher-legacy` 与 rerun recommendation，不猜测新 matcher 结果。未来升级必须继续扩展这条相邻链。
 
 ```text
 author calls / evaluator internals / producer control flow
@@ -20,9 +29,9 @@ author calls / evaluator internals / producer control flow
           │           policy, contribution, explanation retention
           └─ sourceSites: entryId → Sources item join
                     ↓
-    Verdict / Score / source navigation DomainView
+    Verdict / Score / source navigation Inspection
                     ↓
-          closed analysis or report output
+          closed Inspection output
 ```
 
 `sourceSites` 是 Assertions payload 的字段，不是物理 send Navigation Attachment。它只保存已执行 entry 的 source mapping；源码内容仍属于 origin Run-owned Sources family。精确 join 与显示规则见 [Source sites](architecture/source-sites.md)。
@@ -238,8 +247,8 @@ type AssertionLimitation =
 
 Sandbox diff Assertion 仍可保存实际检查过的路径、摘要和 evidence，但不能借用 FileChanges 的 content handle。完整 file revision
 只属于 FileChanges family；该 family 保存按 send 区间排列的端点轨迹，不保存 `net` 或 hunk。需要同时展示 trajectory
-与 Assertion 的 consumer 由 Analysis 组合两个已验证的官方 family，而不是建立跨 owner ref。collector 的 partial
-前缀不能被 Assertion 或 Report 补成完整事实。
+与 Assertion 的 consumer 由 Inspection 组合两个已验证的官方 family，而不是建立跨 owner ref。collector 的 partial
+前缀不能被 Assertion 或 Delivery 补成完整事实。
 
 scope Assertion 将 call-time vector cut 归一为 snapshot；它不保留一个可在 reader 时打开的 Session、Turn、Conversation 或其它 Attachment ref。
 
@@ -347,7 +356,7 @@ type AssertionSourceSite = {
 
 source mapping 不能重新计算 criterion、points、gate、unavailable 或 Verdict。一个 entry 有多个 row 时，位置可以全部显示，但 Assertion summary 与 score contribution 仍按 `entryId` 只计算一次。没有 matching row、Sources 不是 `available`，或 join／坐标不成立时，source-navigation DomainView 仅把对应位置标为 `unmapped`。
 
-## revision 1 → 2 → 3 相邻迁移
+## revision 1 → 2 → 3 → 4 相邻迁移
 
 package-private v1 codec 只为 maintenance 存在。纯相邻 transform 只保留 v1 严格能证明的
 display、result/gate/score 与 sourceSites。

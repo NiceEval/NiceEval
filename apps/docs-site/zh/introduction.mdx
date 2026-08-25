@@ -17,7 +17,7 @@ NiceEval 以本地优先为核心：你的评估在你自己的环境中运行�
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { closedQA, includes } from "niceeval/expect";
 
 export default defineEval({
   judge: true,
@@ -35,8 +35,10 @@ export default defineEval({
     const second = await t.send("上海明天天气怎么样?");
     t.check(second.message, includes("上海")).label("第二轮回答上海");
 
-    turn.judge.autoevals.closedQA("助手是否基于工具返回的天气数据作答？")
-      .gate(0.7)
+    t.check(
+      { input: turn.input, output: turn.message },
+      closedQA("助手是否基于工具返回的天气数据作答？").atLeast(0.7),
+    ).gate()
       .label("回答有依据");
   },
 });

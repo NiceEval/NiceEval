@@ -348,6 +348,9 @@ function linkedRunPublishableIdentity(plan: LinkedRunPlan): JsonValue {
     templateOwner: { kind: plan.pair.templateOwner.kind, id: plan.pair.templateOwner.id },
     template: sandboxTemplateIdentity(plan.pair.template),
     commands: plan.pair.fingerprint.commands.map(commandFingerprintIdentity),
+    ...((plan.pair.fingerprint.after?.length ?? 0) === 0
+      ? {}
+      : { after: plan.pair.fingerprint.after!.map(commandFingerprintIdentity) }),
     providerPlan: providerPlanRecordIdentity(plan.providerPlan),
   };
 }

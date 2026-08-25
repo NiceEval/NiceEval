@@ -1,15 +1,14 @@
 ---
-title: "复用 Sandbox：一批评估共用环境，公共准备只付一次"
+title: "在一批评估中复用 Sandbox"
 sidebarTitle: "复用 Sandbox"
-description: "在 Experiment 里声明 sandboxReuse 让多条 Attempt 共用 Sandbox：写对四层生命周期、配好 lifetimeMs。准备代码做不到幂等重放时改用并发，不要复用。"
+description: "在 Experiment 里声明 sandboxReuse 让多条 Attempt 共用 Sandbox，让 before/after 可安全重放，并配好 lifetimeMs。无法安全保留状态时改用并发。"
 ---
 
 import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
 
-一批评估共用同一套环境准备（同一个工具链、同一个仓库 checkout）时，每条 Attempt
-都新建 Sandbox 意味着这套准备要付 N 次。在 Experiment 里声明 `sandboxReuse: true`，
-多条 Attempt 依次共用同一个 Sandbox：Sandbox 创建和公共准备每个 Sandbox 只付一次，
-每道题之间 NiceEval 自动把工作目录 `git reset` 回公共准备完成时的状态。
+一批评估可以安全共用同一个运行环境时，每条 Attempt 都新建 Sandbox 会重复 Provider 启动。
+在 Experiment 里声明 `sandboxReuse: true`，多条 Attempt 依次共用同一个 Sandbox。每个复用实例只创建一次；
+每条真实 Attempt 仍有自己的 `.before()` / `.after()` 计划，题间 NiceEval 会重置工作目录。声明式 Docker action 可按指纹复用匹配的准备前缀。
 
 <Note>
   本页讲 Experiment 级的 `sandboxReuse`。只有几组兼容的评估需要各自的复用边界时，使用
@@ -25,7 +24,7 @@ import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
 
 - **复用运行的结果照常进缓存。** pair 具备稳定 carry identity 时，终态结果指纹匹配就直接
   沿用，不创建 Sandbox。Sandbox Plugin 的 attachment owner、name、instance key、behavior
-  revision、声明 identity、顺序与 setup/teardown 形状都属于 carry identity；任一项变化都会
+  revision、声明 identity、宿主生命周期形状与 Sandbox action 声明都属于 carry identity；任一项变化都会
   让 slot 变为 fresh。Callback 函数体仍是 opaque；行为变化时需同步修改声明 identity 或使用
   `--rerun all`。只有未沿用的 Attempt 才会在本次共用 Sandbox 中执行。
 - **中断不等于外部状态回滚。** 只在跨 Attempt 状态能回到最后一个终态提交边界时，续跑才是
@@ -68,20 +67,24 @@ Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实
 
 Record maintenance 是独占操作。`clean` 或其它维护命令报告 `record-maintenance-busy` 时，先停止占用该 root 的 reader 和 writer，再重试维护命令。正常并发运行不需要为了避开 writer 冲突而拆成多个 Record root。
 
-如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。Sandbox Hook 恢复、回存同一个外部 checkpoint 时，为 Experiment 声明稳定且不含秘密的 key：
+如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。动态 `.before()` 回调恢复、回存同一个外部 checkpoint 时，为 Experiment 声明稳定且不含秘密的 key：
 
 ```typescript
 export default defineExperiment({
   sandbox: e2bSandbox({ template: "mempal" })
-    .setup(restoreMempal)
-    .teardown(saveMempal),
+    .before(async (sandbox, context) => {
+      await restoreMempal(sandbox);
+      context.onCleanup(async (sandbox) => {
+        await saveMempal(sandbox);
+      });
+    }),
   sandboxReuse: true,
   maxConcurrency: 1,
   sharedState: { key: "mempal/codex/cohort-a" },
 });
 ```
 
-NiceEval 会在 Experiment setup 或创建 Sandbox 前取得这个 key，直到 Sandbox `teardown`、Provider finalizer 与 Experiment `teardown` 全部完成才释放。等待方不会创建 Sandbox；租约释放后，它继续自己的计划，不读取或采用另一条 Run 的结果。
+NiceEval 会在 Experiment setup 或创建 Sandbox 前取得这个 key，直到 Sandbox cleanup、Provider finalizer 与 Experiment `teardown` 全部完成才释放。等待方不会创建 Sandbox；租约释放后，它继续自己的计划，不读取或采用另一条 Run 的结果。
 
 key 会进入结果的配置身份。更换 key 就是更换状态 cohort，旧结果不会混进来。租约只保护外部 checkpoint，与 Record root 无关；普通 append writer 仍可并发使用同一个 root。不同机器或 working copy 仍需外部分布式锁。
 
@@ -90,7 +93,7 @@ key 会进入结果的配置身份。更换 key 就是更换状态 cohort，旧�
 | 阶段 | 复用时跑几次 |
 |---|---|
 | Sandbox 创建 / 停止 | 每个 Sandbox 一次 |
-| Sandbox 级 `setup` / `teardown` | 每个 Sandbox 一次，在题间重置点之前 |
+| Sandbox `.before()` / `.after()` action 与已登记 cleanup | 每条真实 Attempt 一次 |
 | Agent 级 `setup` / `teardown` | 每条 Attempt 一次 |
 | 评估用例的 `setup` / `teardown`、`test(t)` | 每条 Attempt 一次 |
 
@@ -108,9 +111,9 @@ key 会进入结果的配置身份。更换 key 就是更换状态 cohort，旧�
 ## 把准备代码写对：按「随什么变化」分层
 
 - **所有实验都要的重依赖**（Agent CLI、语言运行时）→ 烘进 Provider 的
-  image / template / snapshot，不进任何 `setup`。
-- **整批评估共用的准备**（装工具链、clone 共同仓库、预热构建缓存）→ Sandbox 级
-  `.setup()`。它每个 Sandbox 只跑一次，产物成为题间重置点的一部分，每道题白拿。
+  image / template / snapshot，或声明为最低频的 `.before()` action。
+- **整批评估共用的准备**（装工具链、clone 共同仓库、预热构建缓存）→ 低频
+  `.before()` action。Docker 可以跨 Invocation 复用匹配的准备前缀。当前 occurrence 仍是 `attempt`；作者不能要求 physical-instance promotion。
 - **只有这道题要的素材**（它自己的仓库、数据、依赖）→ 评估用例自己的 `setup` 或
   `test(t)`。每题重置后重放，所以必须是重放一遍还对的代码。每题各自 clone 时，
   整个 Experiment 使用同一个具名临时目录，例如 `.niceeval-task-clone`，并把它加进
@@ -154,15 +157,14 @@ npm install          # 调和到 package.json/lockfile 声明的状态，本身�
 - **插件数据放哪**。插件安装目录每条 Attempt 都被重装覆盖。插件运行时要留到下一题的数据，
   只能写在安装目录之外。留下的数据会不会污染下一题，是你的实验设计要回答的问题。
 
-收敛不等于省钱：插件安装每条 Attempt 照付，复用省的是 Sandbox 创建和 Sandbox 级
-`setup`。marketplace 拉取太慢时用 `sparse` 只拉插件路径，或把插件烘进 template
+收敛不等于省钱：插件安装每条 Attempt 照付，复用省的是 Sandbox 创建；声明式 `.before()` action 可另外复用匹配的 Docker 准备前缀。marketplace 拉取太慢时用 `sparse` 只拉插件路径，或把插件烘进 template
 并从 `plugins` 里拿掉声明——代价是安装 manifest 里就没有插件与解析版本的记录了。
 
 ## 一批里混了不同 Sandbox layer
 
 选中的评估用例声明不同 template-bearing `sandbox` layer 时，不需要拆命令。Link planning
 逐条解析评估用例 × Experiment 配对。物理 Sandbox identity 不同的 Attempt 不共享 Sandbox，
-也不共享 Sandbox 级 `setup` 产物；实验的 `maxConcurrency` 约束全部选中工作的同时执行数。
+也不共享正在运行的 Sandbox；实验的 `maxConcurrency` 约束全部选中工作的同时执行数。匹配的声明式准备前缀仍可由 Provider 缓存独立复用。
 
 ## 典型节奏
 

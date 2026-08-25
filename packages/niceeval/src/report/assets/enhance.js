@@ -1,6 +1,7 @@
 // niceeval 报告的渐进增强 runtime:纯 vanilla JS、零依赖、IIFE、幂等。
-// 只作用于 .niceeval-report DOM 与 data-niceeval-* 属性;六个行为——Tabs 单选切换、表格排序、
-// 行过滤、SVG 点 tooltip、警告命令复制、源码语法着色。全部只改浏览状态,不改数据、指标口径或初始 HTML 数值。
+// 只作用于 .niceeval-report DOM 与 data-niceeval-* 属性；包括 Tabs 单选切换、表格排序、
+// 行过滤、SVG 点 tooltip、警告命令复制、源码语法着色与精确证据定位。全部只改浏览状态，
+// 不改数据、指标口径或初始 HTML 数值。
 // fragment 的初始 HTML 保留语义结构：排序有数据侧预排、tooltip 保留原生 <title>、
 // Tabs 以原生 <details> 表达；app 挂载 fragment 后再增强浏览状态。
 // 全部经 document 级事件委托绑定,重复注入本文件只在首次生效(window.__nreEnhanced 守卫),
@@ -408,6 +409,58 @@
     if (e.key !== "Escape") return;
     var trace = traceByElement(e.target);
     if (trace) closeTurnTraceEvidence(trace);
+  });
+
+  // ───────────────────────── Matcher debugger → conversation ─────────────────────────
+  // Analysis has already resolved the exact target. The browser only reveals,
+  // scrolls to, and briefly highlights that row; it never joins by call name,
+  // Turn position, DOM proximity, or provider identity.
+
+  function conversationTargetIn(root, anchor) {
+    if (!root || !anchor || !root.querySelectorAll) return null;
+    var rows = root.querySelectorAll("[data-niceeval-conversation-anchor]");
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].getAttribute("data-niceeval-conversation-anchor") === anchor) return rows[i];
+    }
+    return null;
+  }
+
+  function revealConversationTarget(target) {
+    var ancestor = target.parentElement;
+    while (ancestor) {
+      if (ancestor.tagName === "DETAILS") ancestor.open = true;
+      ancestor = ancestor.parentElement;
+    }
+
+    var turn = target.closest("[data-niceeval-trace-turn]");
+    if (turn) setTurnCollapsed(turn, false);
+    var eventId = target.getAttribute("data-niceeval-trace-event");
+    var trace = traceByElement(target);
+    var evidence = trace && eventId
+      ? traceElementById(trace, "data-niceeval-trace-evidence", eventId)
+      : null;
+    if (trace && eventId && (!evidence || !evidence.open)) {
+      toggleTurnTraceEvidence(trace, eventId, false);
+    }
+
+    target.classList.remove("niceeval-conversation-target-highlight");
+    // Restart the CSS animation when the same target is selected repeatedly.
+    void target.offsetWidth;
+    target.classList.add("niceeval-conversation-target-highlight");
+    if (target.scrollIntoView) target.scrollIntoView({ block: "center", behavior: "smooth" });
+    window.setTimeout(function () {
+      target.classList.remove("niceeval-conversation-target-highlight");
+    }, 1800);
+  }
+
+  document.addEventListener("click", function (e) {
+    var control = closest(e.target, "[data-niceeval-match-target]");
+    if (!control) return;
+    var anchor = control.getAttribute("data-niceeval-match-target");
+    if (!anchor) return;
+    var local = control.closest(".niceeval-source-line-detail") || control.closest(".niceeval-report");
+    var target = conversationTargetIn(local, anchor) || conversationTargetIn(document, anchor);
+    if (target) revealConversationTarget(target);
   });
 
   // ───────────────────────── tooltip:.niceeval-chart-dot ─────────────────────────

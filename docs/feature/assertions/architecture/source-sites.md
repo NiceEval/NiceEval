@@ -1,6 +1,6 @@
 # Assertions —— source sites
 
-本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。Assertions current persistence revision 是 `3`，Sources 是 `2`；两者都保存已经发生的审计事实，不保存可执行的作者调用图。
+本页拥有 Assertions 的源码导航字段与 Sources join 规则。Assertion 的位置事实只在 Attempt-owned `niceeval.assertions` 的 `sourceSites` 中，源码内容只在 origin Run-owned `niceeval.sources` 中。Assertions 当前 envelope 是 `schemaVersion: 4`，Sources 是 `schemaVersion: 2`；两者都保存已经发生的审计事实，不保存可执行的作者调用图。
 
 NiceEval 默认 Host 组合九个官方 family。物理 send 到 source / timing 的 navigation 是 reader-side Fact relation，
 不拥有 durable family，也不拥有 Assertion source site。第三方 family 必须由另一项 persistence 显式贡献。完整 owner、closure 与 Sources
@@ -17,7 +17,7 @@ manifest 规则见 [Record architecture](../../record/architecture.md)。
 
 `sourceSites` 的 `entryId` 只能 join 同一 Attempt 的 Assertions entry。typed reference value 中的 `sourceItemId` 与 `sha256` 只能 join 该 Attempt exact origin Run 的 Sources manifest。它是 immutable semantic relation，不是 Attachment address、Record path、content handle 或读取 capability。
 
-一个 Run 只使用自己 sealed 的 Sources snapshot。后续 Run 展示历史 Attempt 时，沿该 Attempt 的 `originRunId` 读取 Sources；不能以相同 path、digest 或 item identity 假装配对另一个 Run。跨 Run 比较属于显式 Analysis 定义，不是 source-sites 的能力。
+一个 Run 只使用自己 sealed 的 Sources snapshot。后续 Run 展示历史 Attempt 时，沿该 Attempt 的 `originRunId` 读取 Sources；不能以相同 path、digest 或 item identity 假装配对另一个 Run。跨 Run 比较属于具名 Inspection operation，不是 source-sites 的能力。
 
 ## Assertions payload 中的 source sites
 
@@ -76,18 +76,18 @@ Sources family 拥有 `sourceItemId`、path、byteLength、sha256 与 content bl
 
 因此 Assertion source site 需要两种已验证 family value：Assertions 提供 entry 与位置 join，Sources 提供用于展示的 origin snapshot。物理 send navigation 由 Turn Contexts、Runner Activities 与同一 exact Sources manifest 形成 reader-side relation。这些 family 不复制彼此的 result、turn、duration 或 blob capability。
 
-## Analysis DomainView 与局部 unmapped
+## Inspection 与局部 unmapped
 
 consumer 通过固定的 [`attempt.sources`](../../reports/architecture.md#operation-与选择) operation 请求已发布的 source-navigation 结果。它从 frozen Record view 的 sealed source facts 形成闭合输出，不直接打开 Record、blob path 或当前 worktree，也不重新执行 Assertion。
 
 普通 Attachment read 保留 `available`、`not-recorded` 与 `invalid`；不相容或未知 durable bytes 在 session 形成前
-返回 `unsupported-format`。`unmapped` 不是 Host state，而是 DomainView 对某个可读 entry 或位置的局部导航结果：
+返回 `unsupported-format`。`unmapped` 不是 Host state，而是 Inspection 对某个可读 entry 或位置的局部导航结果：
 
 - Assertions 没有该 entry 的 `sourceSites` row；
 - Sources 是 `not-recorded` 或 `invalid`；
 - `sourceItemId` 找不到、digest 不匹配，或保存的坐标无法在 snapshot 中显示。
 
-上述情况只影响相应 location。Assertion 的 criterion 与 sealed result 仍按自己的规则读取；source mapping 不重复计算 check、points、missing／partial、gate 或 Verdict。若 Assertions family 本身不是 `available`，Analysis 仅保留相应问题，绝不补成成功、零分或空 Assertion。
+上述情况只影响相应 location。Assertion 的 criterion 与 sealed result 仍按自己的规则读取；source mapping 不重复计算 check、points、missing／partial、gate 或 Verdict。若 Assertions family 本身不是 `available`，Inspection 仅保留相应问题，绝不补成成功、零分或空 Assertion。
 
 ## 相关阅读
 

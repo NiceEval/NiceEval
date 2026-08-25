@@ -4761,7 +4761,11 @@ function prepareMigrationCurrentV2(input: {
     const impacts: RecordMigrationImpact[] = [];
     while (revision < persistence.revision) {
       const migration = recordAttachmentMigrationAt(persistence, revision);
-      if (migration === undefined) return yield* Effect.fail(migrationInvalid(family));
+      if (
+        migration === undefined ||
+        migration.from !== revision ||
+        migration.to !== revision + 1
+      ) return yield* Effect.fail(migrationInvalid(family));
       const sourceDocument = document;
       const migrated = yield* Effect.suspend(() => runRecordMigration(migration, sourceDocument)).pipe(
         Effect.mapError(() => migrationInvalid(family)),

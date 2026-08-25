@@ -28,6 +28,7 @@ import {
   type CapturedAssertionSnapshot,
   type MeasurementAssertionEvaluation,
   type MeasurementAssertionRegistration,
+  type MatcherQueryArtifact,
   type PassBooleanAssertionHandle,
   type PostRunBooleanAssertionHandle,
   type ScoreBooleanAssertionHandle,
@@ -35,19 +36,31 @@ import {
   type SealedAssertionEvaluation,
   type SealedAssertionsRuntime,
 } from "./api.ts";
+import { collectionMatchRegistration } from "./collection.ts";
 import {
   assertManagedValueMatch,
   evaluateBooleanMatch,
   evaluateScoreMatch,
+  isManagedCollectionMatch,
+  isManagedEventMatch,
+  isManagedToolMatch,
+  isNumericComparisonMatch,
   isManagedThresholdedScoreMatch,
+  looksLikeCollectionMatch,
   looksLikeThresholdedScoreMatch,
   thresholdedScoreMatchValue,
   type BooleanMatch,
+  type CollectionMatch,
   type MatchDiagnostic,
+  type ManagedToolCalls,
+  type ManagedEventOccurrences,
+  type NumericComparisonMatch,
   type ScoreMatch,
   type ThresholdedScoreMatch,
+  type ToolMatch,
 } from "./match.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
+import { numericBooleanRegistration } from "./numeric.ts";
 
 const UTF8 = new TextEncoder();
 
@@ -59,6 +72,7 @@ interface SettlementDiagnostic {
   readonly diagnostic?: MatchDiagnostic;
   readonly explanation?: AssertionSnapshotObject;
   readonly receipt?: AssertionCollectionReceipt;
+  readonly matcherArtifact?: MatcherQueryArtifact;
 }
 
 type AvailableResult =
@@ -94,6 +108,7 @@ interface AssertionEntry {
     groupPath: string[];
   };
   readonly directScorePoints: number | undefined;
+  readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
   optionalConfigured: boolean;
   gateConfigured: boolean;
   threshold: number | undefined;
@@ -568,8 +583,9 @@ class BooleanHandle extends HandleBase {
     return this;
   }
 
-  gate(value?: number): this {
-    this.runtime.configureGate(this.entry, value);
+  gate(...extra: readonly unknown[]): this {
+    if (extra.length > 0) throw new TypeError("gate() accepts no arguments");
+    this.runtime.configureGate(this.entry);
     return this;
   }
 
@@ -667,18 +683,9 @@ export function postRunBooleanAssertionHandle<
 class MeasurementHandle extends HandleBase {
   readonly kind = "measurement" as const;
 
-  optional(): this {
-    this.runtime.configureOptional(this.entry);
-    return this;
-  }
-
-  atLeast(value: number): this {
-    this.runtime.configureThreshold(this.entry, value);
-    return this;
-  }
-
-  gate(value: number): this {
-    this.runtime.configureGate(this.entry, value);
+  gate(...extra: readonly unknown[]): this {
+    if (extra.length > 0) throw new TypeError("gate() accepts no arguments; use ScoreMatch.atLeast() before check()");
+    this.runtime.configureGate(this.entry);
     return this;
   }
 
@@ -717,7 +724,7 @@ class AssertionsRuntimeImplementation {
       evaluationKind === "score"
         ? { ...base, score: this.directScore.bind(this) }
         : base,
-    ) as AssertionsContext<AssertionEvaluationKind>;
+    ) as unknown as AssertionsContext<AssertionEvaluationKind>;
   }
 
   private recordSourceOccurrence(
@@ -745,6 +752,10 @@ class AssertionsRuntimeImplementation {
     value: Value,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
   ): BooleanHandle;
+  check<Value extends readonly unknown[]>(value: Value, match: NumericComparisonMatch): BooleanHandle;
+  check(value: ManagedToolCalls, match: ToolMatch): BooleanHandle;
+  check(value: ManagedEventOccurrences, match: import("./match.ts").EventMatch): BooleanHandle;
+  check<Value>(value: Value, match: CollectionMatch<NoInfer<Value>>): BooleanHandle;
   check<Value>(value: Value, match: ScoreMatch<NoInfer<Value>>): MeasurementHandle;
   check<Value>(value: Value, match: ThresholdedScoreMatch<NoInfer<Value>>): MeasurementHandle;
   check(value: unknown, match: unknown, ...extra: readonly unknown[]): BooleanHandle | MeasurementHandle {
@@ -755,6 +766,15 @@ class AssertionsRuntimeImplementation {
     if (typeof value === "object" && value !== null && assertionHandleRegistry.has(value)) {
       throw new TypeError("t.check() cannot use an AssertionHandle as a subject");
     }
+    if (
+      isManagedCollectionMatch(match) ||
+      looksLikeCollectionMatch(match) ||
+      isManagedToolMatch(match) ||
+      isManagedEventMatch(match) ||
+      (Array.isArray(value) && isNumericComparisonMatch(match))
+    ) {
+      return this.registerBoolean(collectionMatchRegistration(value, match));
+    }
     const thresholded = isManagedThresholdedScoreMatch(match)
       ? thresholdedScoreMatchValue(match)
       : undefined;
@@ -762,8 +782,26 @@ class AssertionsRuntimeImplementation {
       throw new TypeError("t.check() match must be a threshold view created by ScoreMatch.atLeast()");
     }
     const managed = thresholded?.match ?? assertManagedValueMatch(match, "t.check() match");
-    const captured = captureAssertionSnapshot(value);
     if (managed.kind === "boolean") {
+      if (isNumericComparisonMatch(managed)) {
+        const material = typeof value === "number" && Number.isFinite(value)
+          ? Object.freeze({ state: "exact" as const, value })
+          : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" });
+        const captured = captureAssertionSnapshot(Object.freeze({
+          ...material,
+          cut: Object.freeze({ kind: "call-time" as const }),
+          coverage: Object.freeze({ state: "complete" as const }),
+          derivation: Object.freeze({ kind: "explicit-value" as const }),
+        }));
+        return this.registerBoolean(numericBooleanRegistration({
+          match: managed,
+          criterionSubject: Object.freeze({ kind: "explicit-value" as const }),
+          material,
+          captured,
+          matchedValue: (numericValue) => numericValue,
+        }));
+      }
+      const captured = captureAssertionSnapshot(value);
       const entry = this.createEntry({
         kind: "boolean",
         criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const, matcher: Object.freeze({ state: "declared" as const, name: managed.name }) }),
@@ -775,6 +813,7 @@ class AssertionsRuntimeImplementation {
       });
       return new BooleanHandle(this, entry);
     }
+    const captured = captureAssertionSnapshot(value);
     const entry = this.createEntry({
       kind: "measurement",
       criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const, matcher: Object.freeze({ state: "declared" as const, name: managed.name }) }),
@@ -800,9 +839,11 @@ class AssertionsRuntimeImplementation {
       evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
+      interruptedMatcherArtifact: definition.interruptedMatcherArtifact,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.booleanSettlement(evaluation)),
+          this.captureEvaluationFailure(definition.interruptedMatcherArtifact),
         ),
     });
     return new BooleanHandle(this, entry);
@@ -825,6 +866,7 @@ class AssertionsRuntimeImplementation {
           Effect.map((evaluation): EntrySettlement => this.measurementSettlement(evaluation)),
         ),
     });
+    if (definition.threshold !== undefined) this.configureThreshold(entry, definition.threshold);
     return new MeasurementHandle(this, entry);
   }
 
@@ -908,19 +950,16 @@ class AssertionsRuntimeImplementation {
     this.recordSourceOccurrence(entry, "optional");
   }
 
-  configureGate(entry: AssertionEntry, threshold?: number): void {
+  configureGate(entry: AssertionEntry): void {
     this.assertMutable(entry, "gate()");
     if (this.evaluationKind === "score") {
       throw new TypeError("gate() is not available in a Score Eval; normal scoring always passes");
     }
     if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot be a gate");
     if (entry.kind === "measurement") {
-      if (threshold === undefined) {
-        throw new TypeError("A measurement Assertion requires gate(threshold)");
+      if (entry.threshold === undefined) {
+        throw new TypeError("gate() requires a ThresholdedScoreMatch created before check()");
       }
-      assertUnitInterval(threshold, "gate() threshold");
-      if (entry.threshold !== undefined) throw new Error("An Assertion threshold is already configured");
-      entry.threshold = threshold;
     }
     if (entry.gateConfigured) throw new Error("An Assertion gate policy is already configured");
     entry.gateConfigured = true;
@@ -953,6 +992,9 @@ class AssertionsRuntimeImplementation {
   }
 
   requestStopMeasurement(entry: AssertionEntry): Promise<number> {
+    if (entry.threshold === undefined) {
+      return Promise.reject(new TypeError("orStop() requires a ThresholdedScoreMatch created before check()"));
+    }
     return this.observeStop(entry, this.requestStop(this.stopMeasurement(entry)));
   }
 
@@ -1028,22 +1070,17 @@ class AssertionsRuntimeImplementation {
         this.closing = true;
         for (const entry of this.entries) {
           if (entry.settled === undefined) {
-            entry.settled = Object.freeze({ state: "interrupted" as const });
+            entry.settled = Object.freeze({
+              state: "interrupted" as const,
+              ...(entry.interruptedMatcherArtifact === undefined
+                ? {}
+                : { matcherArtifact: entry.interruptedMatcherArtifact }),
+            });
           }
         }
         return Effect.sync(() => this.finishSeal({
           ...options,
           execution: "errored",
-        }));
-      }
-      const missingThreshold = this.entries.find(
-        (entry) => this.evaluationKind === "pass" && entry.kind === "measurement" && entry.threshold === undefined,
-      );
-      if (missingThreshold !== undefined) {
-        return Effect.fail(Object.freeze({
-          _tag: "AssertionSealError" as const,
-          code: "pass-measurement-threshold-missing" as const,
-          entryIndex: missingThreshold.index,
         }));
       }
       if (this.closing) throw new Error("Assertions are already sealing");
@@ -1066,6 +1103,7 @@ class AssertionsRuntimeImplementation {
     readonly limitations: readonly AssertionLimitation[];
     readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
     readonly directScorePoints?: number;
+    readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
   }): AssertionEntry {
     if (this.entries.length >= assertionRuntimeLimits.entries) {
       throw new Error(
@@ -1083,6 +1121,7 @@ class AssertionsRuntimeImplementation {
       evaluate: input.evaluate,
       display: { key: undefined, label: undefined, groupPath: [...this.groupStack] },
       directScorePoints: input.directScorePoints,
+      interruptedMatcherArtifact: input.interruptedMatcherArtifact,
       optionalConfigured: false,
       gateConfigured: false,
       threshold: undefined,
@@ -1171,14 +1210,19 @@ class AssertionsRuntimeImplementation {
     );
   }
 
-  private captureEvaluationFailure(): <Value>(
+  private captureEvaluationFailure(
+    matcherArtifact?: MatcherQueryArtifact,
+  ): <Value>(
     effect: Effect.Effect<Value, unknown, never>,
   ) => Effect.Effect<Value | EntrySettlement, never, never> {
     return (effect) => effect.pipe(
       Effect.catchAllCause((cause) =>
         Cause.isInterruptedOnly(cause)
           ? Effect.interrupt
-          : Effect.succeed(Object.freeze({ state: "errored" as const })),
+          : Effect.succeed(Object.freeze({
+              state: "errored" as const,
+              ...(matcherArtifact === undefined ? {} : { matcherArtifact }),
+            })),
       ),
     );
   }
@@ -1193,12 +1237,14 @@ class AssertionsRuntimeImplementation {
           value: evaluation.value,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
           ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
         });
       case "mismatched":
         return Object.freeze({
           state: "mismatched" as const,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
           ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
         });
       case "unavailable":
         return Object.freeze({
@@ -1206,11 +1252,13 @@ class AssertionsRuntimeImplementation {
           reason: evaluation.reason,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
           ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
         });
       case "not-applicable":
         return Object.freeze({
           state: "not-applicable" as const,
           ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
+          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
         });
     }
   }
@@ -1383,6 +1431,9 @@ class AssertionsRuntimeImplementation {
           : settlement.state === "measured"
             ? Object.freeze({ kind: "direct-score" as const, state: "available" as const, value: settlement.value })
             : Object.freeze({ kind: "direct-score" as const, state: "unavailable" as const }),
+      ...(settlement.matcherArtifact === undefined
+        ? {}
+        : { matcherArtifact: settlement.matcherArtifact }),
     });
   }
 

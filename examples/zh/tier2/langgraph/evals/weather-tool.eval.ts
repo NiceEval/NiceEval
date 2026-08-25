@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { jsonMatch, pattern, toolMatch } from "niceeval/expect";
+import { closedQA, jsonMatch, pattern, toolMatch } from "niceeval/expect";
 
 // 这条 eval 验证 agent 遇到实时天气问题时调 get_weather,而不是直接编一个答案。
 // get_weather 不是 gated 工具,它的 operation.started/operation.finished 完全来自 LangSmith span
@@ -17,8 +17,9 @@ export default defineEval({
       t.check(turn.message, pattern(/°C|气温|天气|晴|多云|雨|阴/));
     });
 
-    turn.judge.autoevals
-      .closedQA("助手是否给出了具体的天气数据(温度或天气状况),而不是拒绝回答或含糊其辞?")
-      .gate(0.7);
+    turn.check(
+      { input: turn.input, output: turn.message },
+      closedQA("助手是否给出了具体的天气数据(温度或天气状况),而不是拒绝回答或含糊其辞?").atLeast(0.7),
+    ).gate();
   },
 });

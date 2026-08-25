@@ -19,7 +19,7 @@ import {
 import type { ProjectCurrentTarget } from "./project-target.ts";
 import type { SandboxRunPlanningError } from "./sandbox-selection.ts";
 import { resolveAttemptTimeout, resolveRunTimeout } from "./timeout.ts";
-import type { AgentRun, Config } from "./types.ts";
+import { resolveSandboxSetupCache, type AgentRun, type Config } from "./types.ts";
 import { matchExperimentSelector } from "../shared/aggregate.ts";
 
 export interface LoadProjectCurrentOptions {
@@ -101,6 +101,11 @@ export function loadProjectCurrent(
           plugins: experiment.plugins,
           attempts: experiment.attempts ?? 1,
           earlyExit: experiment.earlyExit ?? false,
+          sandboxSetupCache: resolveSandboxSetupCache(
+            undefined,
+            experiment.sandboxCache,
+            config.sandboxCache,
+          ),
           sandbox: experiment.sandbox,
           sandboxReuse: experiment.sandboxReuse,
           ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),

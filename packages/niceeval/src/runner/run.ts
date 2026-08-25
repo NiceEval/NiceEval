@@ -17,7 +17,7 @@ import {
   runAttemptEffect,
   scoreFactOutcomeForAttemptError,
   type AttemptFailureDeclaration,
-  type FreshSandboxCleanupFailure,
+  type SandboxCleanupFailure,
 } from "./attempt.ts";
 import type {
   DiagnosticRecord,
@@ -1082,11 +1082,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     state: ExperimentLifecycle;
     readonly mutex: Effect.Semaphore;
     /**
-     * Fresh Sandbox scopes are Attempt-owned, but their terminal cleanup
-     * outcome belongs to this Experiment whenever it owns sharedState. Keep a
-     * monotonic ledger here until the one physical cleanup decision is made.
+     * Attempt cleanup is occurrence-owned, but its terminal outcome belongs to
+     * this Experiment whenever it owns sharedState. Keep a monotonic ledger
+     * until the Experiment makes its one lease-release decision.
      */
-    readonly physicalCleanupFailures: FreshSandboxCleanupFailure[];
+    readonly sandboxCleanupFailures: SandboxCleanupFailure[];
     sharedStateClaim?: SharedStateLeaseEffectClaim;
   }
   const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
@@ -1100,19 +1100,19 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       expLifecycles.set(a.run, {
         state: { _tag: "Dormant", pendingAttempts: new Set([a]) },
         mutex: yield* Effect.makeSemaphore(1),
-        physicalCleanupFailures: [],
+        sandboxCleanupFailures: [],
       });
     }
   }
 
-  const recordFreshSandboxCleanupFailure = (
+  const recordSandboxCleanupFailure = (
     run: AgentRun,
-    failure: FreshSandboxCleanupFailure,
+    failure: SandboxCleanupFailure,
   ): void => {
     if (run.sharedState === undefined) return;
     const cell = expLifecycles.get(run);
     if (cell === undefined) return;
-    cell.physicalCleanupFailures.push(failure);
+    cell.sandboxCleanupFailures.push(failure);
   };
 
   // 实验域诊断累积器(docs/runner.md「实验域诊断持久化」):只接无法归属单 Attempt 的实验
@@ -1392,28 +1392,26 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           });
         }
 
-        // Fresh Sandbox Scopes close inside their owning Attempt and have
-        // therefore already reached a real terminal state by the time the
-        // final Attempt settles. Runtime converts hook/provider failures into
-        // diagnostics to preserve the remaining finalizers, so consult the
-        // Experiment cell's physical ledger before deciding whether its
-        // sharedState lease can be released.
-        if (cell.physicalCleanupFailures.length > 0) {
+        // Attempt cleanup has reached a real terminal state by the time the
+        // final Attempt settles. The Attempt keeps cleanup failures diagnostic-
+        // only so later finalizers run, therefore this Experiment ledger owns
+        // the sharedState release decision.
+        if (cell.sandboxCleanupFailures.length > 0) {
           cleanupSucceeded = false;
-          const details = cell.physicalCleanupFailures
+          const details = cell.sandboxCleanupFailures
             .map((failure) => `${failure.stage}: ${failure.error.message}`)
             .join("; ");
-          const message = `Fresh Sandbox cleanup failed before Experiment teardown: ${details}`;
+          const message = `Sandbox cleanup failed before Experiment teardown: ${details}`;
           reportDiagnostic({
-            key: `sandbox-fresh-cleanup-failed:${experimentId}`,
-            code: "sandbox-fresh-cleanup-failed",
+            key: `sandbox-cleanup-failed:${experimentId}`,
+            code: "sandbox-cleanup-failed",
             severity: "warning",
             message,
-            data: { experimentId, failureCount: cell.physicalCleanupFailures.length },
+            data: { experimentId, failureCount: cell.sandboxCleanupFailures.length },
           });
           recordExperimentDiagnostic({
             experimentId: run.experimentId,
-            code: "sandbox-fresh-cleanup-failed",
+            code: "sandbox-cleanup-failed",
             level: "warning",
             message,
             phase: "experiment.teardown",
@@ -1988,6 +1986,41 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     reportHaltNotice(gate);
   };
 
+  const haltInvocationForEnvironment = (
+    failure: import("../sandbox/backend.ts").SandboxSetupPrefixCacheAmbiguityError,
+  ): void => {
+    const message =
+      `Sandbox environment is incomplete: setup-prefix operation ${JSON.stringify(failure.operationId)} ` +
+      `has no proven publish terminal. Run \`${failure.diagnosticCommand}\` before starting another Invocation.`;
+    const seen = new Set<HaltGate>();
+    for (const attempt of attempts) {
+      const gate = haltGateOf(attempt.run, undefined);
+      if (seen.has(gate)) continue;
+      seen.add(gate);
+      recordExperimentDiagnostic({
+        experimentId: gate.persistedExperimentId,
+        code: "sandbox-environment-incomplete",
+        level: "error",
+        message,
+        phase: "sandbox.prepare",
+        dedupeKey: `sandbox-environment-incomplete:${failure.operationId}`,
+        data: {
+          scope: "invocation",
+          operationId: failure.operationId,
+          terminal: failure.terminal,
+          diagnosticCommand: failure.diagnosticCommand,
+        },
+      });
+      if (!gate.halted) {
+        gate.message = message;
+        gate.phase = "sandbox.prepare";
+        gate.halted = true;
+        gate.latch.unsafeOpen();
+      }
+      reportHaltNotice(gate);
+    }
+  };
+
   /**
    * 未派发记账:与 run 级 fail-fast / budget 停派发同一条通路——每个未派发 attempt 各发一次
    * `attempt:early-exit`(queued → completed,反馈层五项计数守恒),再把当次累计的未派发数刷进
@@ -2363,6 +2396,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     readonly release: Effect.Effect<void>;
     readonly reacquire: Effect.Effect<void>;
   }
+  const detachedSlotHold: GlobalSlotHold = Object.freeze({
+    release: Effect.void,
+    reacquire: Effect.void,
+  });
 
   const withGlobalSlot = <E, R>(
     haltSignal: Effect.Effect<void>,
@@ -2411,10 +2448,27 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
    * 跨进程资源；共享外部状态必须由 `sharedState` 生命周期租约保护。 */
   const withExperimentGate = <E, R>(
     a: Attempt,
-    use: Effect.Effect<DispatchOutcome, E, R>,
-  ): Effect.Effect<DispatchOutcome, E | unknown, R> => {
+    use: (slot: GlobalSlotHold) => Effect.Effect<DispatchOutcome, E, R>,
+  ): Effect.Effect<DispatchOutcome, E, R> => {
     const localSem = gateLocalSems.get(a.run);
-    return localSem === undefined ? use : localSem.withPermits(1)(use);
+    if (localSem === undefined) return use(detachedSlotHold);
+    return Effect.uninterruptibleMask((restore) => {
+      const state = { held: false };
+      const release = Effect.suspend(() => state.held
+        ? localSem.release(1).pipe(Effect.tap(() => Effect.sync(() => {
+          state.held = false;
+        })))
+        : Effect.void);
+      const reacquire = Effect.suspend(() => state.held
+        ? Effect.void
+        : localSem.take(1).pipe(Effect.tap(() => Effect.sync(() => {
+          state.held = true;
+        }))));
+      return restore(reacquire).pipe(
+        Effect.flatMap(() => restore(use({ release, reacquire }))),
+        Effect.ensuring(release),
+      );
+    });
   };
 
   // earlyExit:为每个 key 各建一个 AbortController。某 attempt 通过或 errored 时 abort 它,
@@ -2537,8 +2591,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           });
 
         // body:许可链全部通过之后才跑,真正的执行段。
-        const body = (_slot: GlobalSlotHold) =>
+        const body = (globalSlot: GlobalSlotHold, experimentSlot: GlobalSlotHold) =>
           Effect.gen(function* () {
+            const concurrencySlot = {
+              release: globalSlot.release.pipe(Effect.zipRight(experimentSlot.release)),
+              reacquire: experimentSlot.reacquire.pipe(Effect.zipRight(globalSlot.reacquire)),
+            };
             // 合并全局信号与本 eval 的首过即停信号:任一 abort → 本 attempt 的信号 abort。
             const evalAc = evalAbortControllers.get(a.key);
             const attemptSignal = AbortSignal.any([
@@ -2615,30 +2673,48 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               }
             }
 
-            yield* reportMutex.withPermits(1)(
-              emitReporterEvent(reporters, {
-                type: "eval:start",
-                eval: { id: a.evalDef.id },
-                agent: a.run.agent,
-                model: a.run.model,
-                attempt: a.attempt,
-                experimentId: a.run.experimentId,
-              }),
-            );
-            // attempt:start 是这个 attempt 从 queued 移进 running 的唯一时刻(见
-            // src/runner/feedback/reducer.ts 的 attempt:start 分支),必须与 eval:start 同一
-            // 调用点、恰好发生一次 —— 否则 RunFeedbackState 的守恒计数会被破坏。phase 只是粗粒度
-            // 占位(sandbox 型 attempt 恒为 sandbox.queue,一定正确;非 sandbox 型给
-            // eval.run,attempt.ts 内部一旦跑到第一个真实边界会用 attempt:phase 立即纠正,见
-            // attempt.ts 的 enterPhase)——attempt.ts 自己不再发 attempt:start,只发
-            // attempt:phase,避免两处各发一次导致计数翻倍。
-            reportAttemptLifecycle({
-              type: "attempt:start",
-              at: Date.now(),
-              identity: feedbackIdentity(a),
-              who: feedbackWho(a),
-              phase: initialPhase,
-            });
+            let attemptStarted = false;
+            let providerQueued = false;
+            const startAttempt = (phase: LifecyclePhase): Effect.Effect<void> =>
+              Effect.uninterruptible(Effect.suspend(() => {
+                if (attemptStarted) return Effect.void;
+                attemptStarted = true;
+                return reportMutex.withPermits(1)(
+                  emitReporterEvent(reporters, {
+                    type: "eval:start",
+                    eval: { id: a.evalDef.id },
+                    agent: a.run.agent,
+                    model: a.run.model,
+                    attempt: a.attempt,
+                    experimentId: a.run.experimentId,
+                  }),
+                ).pipe(Effect.zipRight(Effect.sync(() => {
+                  reportAttemptLifecycle({
+                    type: "attempt:start",
+                    at: Date.now(),
+                    identity: feedbackIdentity(a),
+                    who: feedbackWho(a),
+                    phase,
+                  });
+                })));
+              }));
+            const queueForProvider = (reason: "provider-capacity"): Effect.Effect<void> =>
+              Effect.sync(() => {
+                if (attemptStarted || providerQueued) return;
+                providerQueued = true;
+                reportAttemptLifecycle({
+                  type: "attempt:queued",
+                  at: Date.now(),
+                  identity: feedbackIdentity(a),
+                  who: feedbackWho(a),
+                  reason,
+                });
+              });
+            const providerAdmission = {
+              queued: queueForProvider,
+              granted: startAttempt("sandbox.create"),
+              slot: concurrencySlot,
+            };
             const poolSelection: ReusePoolSelection = blockedError === undefined
               ? yield* reusePoolFor(a)
               : { _tag: "Fresh" };
@@ -2653,9 +2729,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             let sealedEvaluation: SealedAttemptAssertions | undefined;
             const completed = yield* Effect.scoped(Effect.gen(function* () {
               const leased = poolSelection._tag === "Reuse"
-              ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
+                ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
                   resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
                   buildLocators,
+                  providerAdmission,
                 )), {
                   onLeft: (error) => ({ _tag: "Failed" as const, error }),
                   onRight: (lease) => {
@@ -2678,6 +2755,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               recordEvalGroupPhysicalFailure(a, "sandbox.create", leased.error);
             }
             const failedBeforeDispatch = blockedError ?? leaseError;
+            if (
+              !providerQueued &&
+              !attemptStarted &&
+              (failedBeforeDispatch !== undefined || lease !== undefined || a.plan._tag === "Direct")
+            ) {
+              yield* startAttempt(initialPhase);
+            }
             const recordedAttempt = a;
             const evaluated = failedBeforeDispatch
               ? ({
@@ -2717,9 +2801,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     runTiming,
                     parentSignal: attemptSignal,
                     invocationSignal: opts.signal,
+                    concurrencySlot,
+                    providerAdmission,
                     ...(lease
                       ? {
                           reusedSandbox: {
+                            resourceSandbox: lease.resourceSandbox,
                             sandbox: lease.sandbox,
                             reuseSandbox: lease.reuseSandbox,
                             reuseOrdinal: lease.reuseOrdinal,
@@ -2730,10 +2817,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                     // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                     onFailureClass: (declaration) => closeHaltGate(a, declaration),
-                    ...(a.run.sharedState !== undefined && poolSelection._tag === "Fresh"
+                    onEnvironmentIncomplete: haltInvocationForEnvironment,
+                    ...(a.run.sharedState !== undefined
                       ? {
-                          onFreshSandboxCleanupFailure: (failure: FreshSandboxCleanupFailure) => {
-                            recordFreshSandboxCleanupFailure(a.run, failure);
+                          onSandboxCleanupFailure: (failure: SandboxCleanupFailure) => {
+                            recordSandboxCleanupFailure(a.run, failure);
                           },
                         }
                       : {}),
@@ -2772,6 +2860,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               }
             }
             const { result } = completed;
+            // A provider-capacity failure can terminate directly from queued;
+            // every other executed path retains the historical start/complete
+            // pairing even if it failed before reaching provider admission.
+            if (!attemptStarted && !providerQueued) yield* startAttempt(initialPhase);
             // A never-started blocked Slot has no origin Attempt. A reserved
             // setup/lease failure still closes its origin Attempt with the
             // errored result, without inventing unavailable rich families.
@@ -2787,10 +2879,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             } else if (!reservationAttempted) {
               recordCoordinator.markNotDispatched(a);
             }
-            // attempt:complete 与上面的 attempt:start 严格一一配对(同一个 body Effect,唯一
-            // 出口),覆盖每一个真正跑过 runAttemptEffect 的 attempt(包括之后被下面的并发去重
-            // 分支丢弃、不计入 results 的那些)——reducer 的 attempt:complete 无条件
-            // running-1/completed+1,少配对一次就会让 running 计数漂移。
+            // 唯一出口覆盖每一个真正执行过的 Attempt。正常路径与 attempt:start 配对；provider
+            // reservation 在 grant 前终结时则直接 queued→verdict，不能伪造瞬时 running。
             reportAttemptLifecycle({
               type: "attempt:complete",
               at: Date.now(),
@@ -2889,7 +2979,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // permit 只包真正触及 provider、Sandbox 与 Attempt body 的执行段。
         const exclusiveSem = exclusiveSemFor(a.plan);
         const arriveAtDispatchWave = dispatchWaveArrive.get(a)!;
-        const dispatch = withGlobalSlot(haltAwait(a), (slot) =>
+        const dispatch = (experimentSlot: GlobalSlotHold) => withGlobalSlot(haltAwait(a), (slot) =>
           Effect.gen(function* () {
             yield* arriveAtDispatchWave;
             // 拿到位子的这一刻再问一次闸:排在独占 provider 锁 / 实验闸本地信号量上的那段等待
@@ -2930,7 +3020,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               yield* ensureExperimentSetup(a);
               yield* slot.reacquire;
             }
-            const physicalBody = body(slot).pipe(Effect.as({ kind: "done" } as const));
+            const physicalBody = body(slot, experimentSlot).pipe(Effect.as({ kind: "done" } as const));
             if (exclusiveSem === undefined) return yield* physicalBody;
             // 保持原来的物理资源获取顺序：exclusive provider → 全局位 → body。先还全局位
             // 再等 provider，避免一个已完成 sharedState/setup 协调、却仍在排 exclusive lane 的

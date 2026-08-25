@@ -13,9 +13,29 @@ import json
 import os
 import pwd
 import grp
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+
+SETUP_PREFIX_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v1"
+SETUP_PREFIX_REQUIRED_STATE = "dockerData"
+SETUP_PREFIX_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v1"
+SETUP_PREFIX_COPY_PROTOCOL = "raw-image/v1"
+SETUP_PREFIX_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy-reuuid/v2"
+SETUP_PREFIX_QUIESCE_REVISION = "niceeval-docker-profile-host/docker-data-quiesce/v1"
+SETUP_PREFIX_SLOT_ATTESTATION = "independent-fixed-filesystem/v1"
+SETUP_PREFIX_FILESYSTEM_FEATURES = [
+    "ext4",
+    "fixed-size",
+    "fully-allocated",
+    "independent-image",
+]
+SETUP_PREFIX_SEED_POLICY = "immutable-unmounted/v1"
+SETUP_PREFIX_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v4"
+SETUP_PREFIX_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v3"
+SETUP_PREFIX_MANIFEST_SCHEMA = "niceeval-docker-profile-activation/v3"
 
 def _load_validate_capacity():
     """Load sibling validate-capacity helper (source tree or installed libexec)."""
@@ -99,10 +119,114 @@ def semantic_policy_revision(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()[:8]
 
 
-def filesystem_identity(mount_path: str) -> str:
+def filesystem_identity(mount_path: str, backing_image: str | None = None) -> str:
     st = os.stat(mount_path)
-    # device id + inode of the mount point is a stable local identity marker
+    if backing_image is not None:
+        uuid = subprocess.run(
+            ["blkid", "-s", "UUID", "-o", "value", backing_image],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if uuid.returncode != 0 or not uuid.stdout.strip():
+            raise SystemExit("fixed-image filesystem identity has no readable ext4 UUID")
+        return f"ext4-uuid:{uuid.stdout.strip().lower()}:ino={st.st_ino}"
+    mount = subprocess.run(
+        ["findmnt", "-n", "--raw", "-o", "SOURCE,FSTYPE", "-T", mount_path],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    fields = mount.stdout.split()
+    if mount.returncode == 0 and len(fields) == 2 and fields[1] == "ext4":
+        uuid = subprocess.run(
+            ["blkid", "-s", "UUID", "-o", "value", fields[0]],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if uuid.returncode == 0 and uuid.stdout.strip():
+            return f"ext4-uuid:{uuid.stdout.strip().lower()}:ino={st.st_ino}"
+    # Non-fixed backends retain their local mount identity.
     return f"dev={st.st_dev}:ino={st.st_ino}"
+
+
+def setup_prefix_capability(
+    host: dict[str, Any],
+    *,
+    provider_identity: str,
+    execution_domain: str,
+    filesystem_size_bytes: int,
+) -> dict[str, Any] | None:
+    """Return the path-free descriptor capability for an explicit host opt-in."""
+    setup = host.get("setupPrefix")
+    if setup is None or setup.get("enabled") is not True:
+        return None
+    storage = host.get("storage", {})
+    if host.get("securityLevel") != "raw-dind-storage/v1" \
+            or storage.get("backing") != "fixed-image-ext4":
+        raise SystemExit(
+            "setupPrefix requires raw-dind-storage/v1 with storage.backing=fixed-image-ext4"
+        )
+    if storage.get("slotAttestation") != SETUP_PREFIX_SLOT_ATTESTATION:
+        raise SystemExit(
+            "setupPrefix requires storage.slotAttestation=independent-fixed-filesystem/v1"
+        )
+    expected = {
+        "protocol": SETUP_PREFIX_PROTOCOL,
+        "coverage": SETUP_PREFIX_REQUIRED_STATE,
+        "requiredState": SETUP_PREFIX_REQUIRED_STATE,
+        "helperRevision": SETUP_PREFIX_HELPER_REVISION,
+        "copyProtocol": SETUP_PREFIX_COPY_PROTOCOL,
+        "copyRevision": SETUP_PREFIX_COPY_REVISION,
+        "quiesceRevision": SETUP_PREFIX_QUIESCE_REVISION,
+        "slotAttestation": SETUP_PREFIX_SLOT_ATTESTATION,
+        "seedPolicy": SETUP_PREFIX_SEED_POLICY,
+        "publicationRevision": SETUP_PREFIX_PUBLICATION_REVISION,
+        "recoveryRevision": SETUP_PREFIX_RECOVERY_REVISION,
+        "manifestSchema": SETUP_PREFIX_MANIFEST_SCHEMA,
+    }
+    for field, value in expected.items():
+        if setup.get(field) != value:
+            raise SystemExit(f"setupPrefix.{field} must be {value}")
+    seed_limit = parse_bytes(setup.get("seedLimitBytes", 0))
+    filesystem_limit = parse_bytes(setup.get("filesystemLimitBytes", 0))
+    configured_filesystem_size = parse_bytes(setup.get("filesystemSizeBytes", 0))
+    identity = setup.get("filesystemIdentity")
+    registry_path = setup.get("seedRegistryPath")
+    image_root_path = setup.get("imageRootPath")
+    copy_strategy = setup.get("copyStrategy")
+    if seed_limit <= 0 or filesystem_limit <= 0 or seed_limit > filesystem_limit:
+        raise SystemExit("setupPrefix seed/filesystem limits must be positive and seed <= filesystem")
+    if configured_filesystem_size != filesystem_size_bytes:
+        raise SystemExit(
+            "setupPrefix.filesystemSizeBytes must equal one fixed Docker data allocation"
+        )
+    if setup.get("filesystemFeatures") != SETUP_PREFIX_FILESYSTEM_FEATURES:
+        raise SystemExit(
+            "setupPrefix.filesystemFeatures must attest ext4 fixed-size fully-allocated independent images"
+        )
+    if not isinstance(identity, str) or not identity or not isinstance(registry_path, str) \
+            or not registry_path.startswith("/") or not isinstance(image_root_path, str) \
+            or not image_root_path.startswith("/"):
+        raise SystemExit(
+            "setupPrefix requires filesystemIdentity plus absolute seedRegistryPath and imageRootPath"
+        )
+    image_root = Path(image_root_path)
+    if image_root.is_symlink() or not image_root.is_dir():
+        raise SystemExit("setupPrefix.imageRootPath must be an existing real directory")
+    backing_image = str(storage.get("outerImagePath")) \
+        if storage.get("backing") == "fixed-image-ext4" else None
+    actual_identity = filesystem_identity(str(image_root.resolve()), backing_image)
+    if identity != actual_identity:
+        raise SystemExit(
+            "setupPrefix.filesystemIdentity must match the actual imageRootPath filesystem"
+        )
+    if copy_strategy != "raw-image/v1":
+        raise SystemExit("setupPrefix.copyStrategy must be raw-image/v1; inode tree copy is not supported")
+    return {
+        **expected,
+        "providerIdentity": provider_identity,
+        "executionDomain": execution_domain,
+        "filesystemSizeBytes": filesystem_size_bytes,
+        "filesystemFeatures": SETUP_PREFIX_FILESYSTEM_FEATURES,
+        "seedLimitBytes": seed_limit,
+        "filesystemIdentity": actual_identity,
+    }
 
 
 def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
@@ -216,7 +340,9 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
                 "dockerDataPool": {
                     "count": docker_data_allocation_count,
                     "bytesPerAllocation": bytes_per_docker_data_allocation,
-                    "attestation": "linux-project-quota/v1",
+                    "attestation": host["storage"].get(
+                        "slotAttestation", "linux-project-quota/v1"
+                    ),
                 },
             },
             "cgroup": {
@@ -268,6 +394,60 @@ def build_descriptor(host: dict[str, Any]) -> dict[str, Any]:
     }
     rev = semantic_policy_revision(draft)
     draft["semanticPolicyRevision"] = rev
+    provider_identity = "sha256:" + hashlib.sha256(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "profileId": profile_id,
+                "securityLevel": security_level,
+                "semanticPolicyRevision": rev,
+                "hostMachineIdentity": machine_id,
+                "backendMachineIdentity": machine_id,
+                "dockerDataFilesystemIdentity": draft["backend"]["filesystem"]["identity"],
+                "dockerDataPool": draft["backend"]["filesystem"]["dockerDataPool"],
+                "dockerDataSnapshot": {
+                    "protocol": SETUP_PREFIX_PROTOCOL,
+                    "coverage": SETUP_PREFIX_REQUIRED_STATE,
+                    "requiredState": SETUP_PREFIX_REQUIRED_STATE,
+                    "helperRevision": SETUP_PREFIX_HELPER_REVISION,
+                    "copyProtocol": SETUP_PREFIX_COPY_PROTOCOL,
+                    "copyRevision": SETUP_PREFIX_COPY_REVISION,
+                    "quiesceRevision": SETUP_PREFIX_QUIESCE_REVISION,
+                    "slotAttestation": SETUP_PREFIX_SLOT_ATTESTATION,
+                    "filesystemSizeBytes": bytes_per_docker_data_allocation,
+                    "filesystemFeatures": SETUP_PREFIX_FILESYSTEM_FEATURES,
+                    "seedPolicy": SETUP_PREFIX_SEED_POLICY,
+                    "publicationRevision": SETUP_PREFIX_PUBLICATION_REVISION,
+                    "recoveryRevision": SETUP_PREFIX_RECOVERY_REVISION,
+                    "manifestSchema": SETUP_PREFIX_MANIFEST_SCHEMA,
+                },
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    execution_domain = "sha256:" + hashlib.sha256(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "profileId": profile_id,
+                "hostMachineIdentity": machine_id,
+                "backendMachineIdentity": machine_id,
+                "dockerDataFilesystemIdentity": draft["backend"]["filesystem"]["identity"],
+                "slotAttestation": draft["backend"]["filesystem"]["dockerDataPool"]["attestation"],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    setup_prefix = setup_prefix_capability(
+        host,
+        provider_identity=provider_identity,
+        execution_domain=execution_domain,
+        filesystem_size_bytes=bytes_per_docker_data_allocation,
+    )
+    if setup_prefix is not None:
+        draft["backend"]["filesystem"]["setupPrefix"] = setup_prefix
     return draft
 
 

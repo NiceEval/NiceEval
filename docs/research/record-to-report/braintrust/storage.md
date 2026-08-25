@@ -91,7 +91,7 @@ Braintrust 官方 self-host architecture 把 object storage 定义成 AI data �
 | 物理 component | 已公开保存内容 | 分类 |
 | --- | --- | --- |
 | S3/GCS/Azure object storage | Brainstore WAL、processed/compacted index segments、AI payload；附件也使用 object storage | WAL/object 为 authority；segment/index 为 rebuildable persisted projection |
-| PostgreSQL | platform metadata、object-storage pointers、aggregate statistics | metadata 中有 authority；pointer 用于 lookup，aggregate 是可重建的统计结果；公开材料没有逐表分类 |
+| PostgreSQL | platform metadata、object-storage pointers、aggregate statistics | metadata 中有 authority；pointer/aggregate 是 lookup/loading；公开材料没有逐表分类 |
 | Redis | cache、coordination、rate/session state、Brainstore transaction-id assignment | cache/coordination；不是 durable history |
 | Brainstore node local NVMe | reader/writer runtime cache/work area | ephemeral cache；Terraform 明确要求 local NVMe，但不把它当 source of truth |
 

@@ -15,7 +15,7 @@ Content 已经是 Core-owned sealed declaration。
 producer 可以提交 text、bytes 或 byte Stream，但看不到 path、digest、object key 与物理布局。
 reader 得到的是 scope-owned logical Content。
 
-[Record blob Roadmap](../../roadmap/record-blob-materialization/README.md) 已经固定更长期的原则：
+[Record blob Roadmap](../../roadmap/record-blob-storage/README.md) 已经固定更长期的原则：
 
 - producer 只提交逻辑 blob；
 - Host 增量读取、计算总长度和整体 digest，并私有分段；

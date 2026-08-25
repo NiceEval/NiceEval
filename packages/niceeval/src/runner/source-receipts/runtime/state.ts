@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 
 import type { ResolvedEvidenceCoverage } from "../../../assertions/coverage.ts";
+import type { ObservedTurnSnapshot } from "../../../o11y/observed.ts";
 import type { AgentRun, EvalResult } from "../../types.ts";
 import {
   makeAttemptObservabilityCaptureIdentity,
@@ -13,11 +14,7 @@ import {
   type RegisteredCommandCapture,
   type RunObservabilityCaptureIdentity,
 } from "../capture-identity.ts";
-import type {
-  ConversationItem,
-  ConversationTurn,
-  UsageObservation,
-} from "../model.ts";
+import type { ConversationTurn, UsageObservation } from "../model.ts";
 import type {
   CommandManifest,
   RunnerAttemptSourceReceiptsCapture,
@@ -29,7 +26,6 @@ import {
   producerEntityIdInvalid,
   type RunnerObservabilityProducerError,
 } from "../support.ts";
-import type { EventProjectionRuntime } from "../event-projection.ts";
 import {
   entityIdFromEntropy,
   type AttemptReferenceTarget,
@@ -37,6 +33,7 @@ import {
   type CommandId,
   type CommandReferenceTarget,
   type DiagnosticId,
+  type EventId,
   type IntervalId,
   type ItemId,
   type ObservabilityEntityIdForKind,
@@ -44,6 +41,8 @@ import {
   type PositiveSafeInteger,
   type RunReferenceTarget,
   type SafeIdentifier,
+  type SessionScopeId,
+  type ToolOccurrenceId,
   type TurnId,
   type UsageObservationId,
 } from "../../../record/family/source-receipt/model.ts";
@@ -82,6 +81,24 @@ function attemptTargetForEntity<Kind extends ObservabilityEntityKind>(
         family: "niceeval.agent-turns" as const,
         kind: "call" as const,
         id: id as CallId,
+      });
+    case "event":
+      return Object.freeze({
+        family: "niceeval.agent-turns" as const,
+        kind: "event" as const,
+        id: id as EventId,
+      });
+    case "tool-occurrence":
+      return Object.freeze({
+        family: "niceeval.agent-turns" as const,
+        kind: "tool-occurrence" as const,
+        id: id as ToolOccurrenceId,
+      });
+    case "session-scope":
+      return Object.freeze({
+        family: "niceeval.agent-turns" as const,
+        kind: "session-scope" as const,
+        id: id as SessionScopeId,
       });
     case "command":
       return Object.freeze({
@@ -176,16 +193,19 @@ export interface RunnerAttemptObservabilityRuntimeState {
   /** One receipt slot is allocated at each physical SessionManager send start. */
   readonly conversationTurns: CapturedConversationTurn[];
   readonly conversationLimitations: RunnerCollectionLimitations;
+  readonly registeredSessionScopes: Set<SessionScopeId>;
+  readonly registeredToolOccurrences: Set<ToolOccurrenceId>;
   snapshot?: RunnerAttemptSourceReceiptsCapture;
   failure?: RunnerObservabilityProducerError;
 }
 
 export interface CapturedConversationTurn {
   readonly turnId: TurnId;
+  readonly sessionId: SessionScopeId;
   readonly segmentId: SafeIdentifier;
   readonly sequence: PositiveSafeInteger;
-  readonly items: ConversationItem[];
   readonly usage: UsageObservation[];
+  observed?: ObservedTurnSnapshot;
   outcome?: ConversationTurn["outcome"];
   adapterStatus?: "completed" | "failed" | "waiting";
   evidenceCoverage?: ResolvedEvidenceCoverage;
@@ -332,20 +352,6 @@ export function registerRuntimeEntity<Kind extends ObservabilityEntityKind>(
   return false;
 }
 
-export function eventProjectionRuntime(
-  runtime: RunnerAttemptObservabilityRuntimeState,
-): EventProjectionRuntime {
-  return Object.freeze({
-    providerName: runtime.providerName,
-    sensitiveValues: runtime.sensitiveValues,
-    commandLimitations: runtime.commandLimitations,
-    conversationTurns: runtime.conversationTurns,
-    conversationLimitations: runtime.conversationLimitations,
-    mintEntity: <Kind extends "call" | "item">(kind: Kind) =>
-      mintRuntimeEntity(runtime, kind),
-  });
-}
-
 export function mintRuntimeCommand(
   runtime: RunnerAttemptObservabilityRuntimeState,
 ): {
@@ -471,6 +477,8 @@ export function createRunnerAttemptObservabilityRuntime(input: {
     usageLimitations: new RunnerCollectionLimitations(),
     conversationTurns: [],
     conversationLimitations: new RunnerCollectionLimitations(),
+    registeredSessionScopes: new Set(),
+    registeredToolOccurrences: new Set(),
   });
   return runtime;
 }

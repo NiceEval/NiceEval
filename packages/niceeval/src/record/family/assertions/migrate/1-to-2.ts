@@ -31,11 +31,6 @@ import {
   AssertionSourceRoleSchema,
 } from "../reference.ts";
 
-/**
- * Revision 1 is the only place where Assertions understands its retired
- * inline/blob storage choices. Core has already replaced a verified old blob
- * pointer with a storage-neutral migration content token.
- */
 const HistoricalContentSchema: Schema.Schema<RecordMigrationContent> = Schema.declare(
   isRecordMigrationContent,
 );

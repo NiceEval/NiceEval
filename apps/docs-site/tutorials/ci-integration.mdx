@@ -8,7 +8,7 @@ When CI runs an Experiment, the process exit status decides whether the gate pas
 
 ## Basic command
 
-Whenever a Boolean condition is mismatched, a measurement falls below an explicit `.gate(n)` threshold, or execution errors, [NiceEval](https://niceeval.com/) exits with a nonzero status. `.atLeast(n)` records a local condition but does not affect the Verdict or exit status by itself. Put requirements that must block a merge directly in eval source so CI and local runs read the same Verdicts.
+Whenever a Boolean condition is mismatched, a gated measurement falls below the threshold defined by its Match, or execution errors, [NiceEval](https://niceeval.com/) exits with a nonzero status. A thresholded `ScoreMatch` records a local condition but does not affect the Verdict or exit status until the registered handle calls `.gate()`. Put requirements that must block a merge directly in eval source so CI and local runs read the same Verdicts.
 
 ```sh
 npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml

@@ -90,7 +90,7 @@ export default defineExperiment({
 
 {/* GENERATED:BEGIN agent-def */}
 
-{/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
 ### `DirectAgentDef`
 
@@ -176,6 +176,14 @@ evidenceCoverage: EvidenceCoverage;
 ```
 
 该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。
+
+#### `sandbox`
+
+```ts
+sandbox?: SandboxLayer<"command-only">;
+```
+
+Adapter 自有的 Sandbox action；Agent 不能选择或贡献 template。
 
 #### `ensure`
 
@@ -392,7 +400,7 @@ Sandbox 型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄。`
 
 {/* GENERATED:BEGIN sandbox-methods */}
 
-{/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
 ### `SandboxOperations`
 
@@ -486,6 +494,14 @@ pathExists(path: string): Promise<boolean>;
 检查 Sandbox 内文件或目录路径是否存在。
 
 ### `SandboxTransferOperations`
+
+#### `upload`
+
+```ts
+upload(content: SandboxContent, targetPath: string): Promise<void>;
+```
+
+传输已登记的不可变内容，不暴露其宿主路径。
 
 #### `uploadFile`
 

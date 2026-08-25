@@ -1,9 +1,12 @@
 import type { ResolvedEvidenceCoverage } from "../../../assertions/coverage.ts";
-import type { StreamEvent } from "../../../types.ts";
+import type { ObservedTurnSnapshot } from "../../../o11y/observed.ts";
 import { MAX_CONVERSATION_TURNS } from "../../../record/family/source-receipt/limits.ts";
-import type { TurnId } from "../../../record/family/source-receipt/model.ts";
+import type {
+  ObservabilityEntityIdForKind,
+  SessionScopeId,
+  TurnId,
+} from "../../../record/family/source-receipt/model.ts";
 import type { ConversationTurn } from "../model.ts";
-import { normalizeConversationTurn } from "../event-projection.ts";
 import {
   producerCaptureSealInvalid,
   producerEntityIdInvalid,
@@ -11,19 +14,18 @@ import {
 } from "../support.ts";
 import { sourceSegmentId } from "./receipt-helpers.ts";
 import {
-  eventProjectionRuntime,
   markRuntimeFailure,
   registerRuntimeEntity,
   runtimeState,
   type RunnerAttemptObservabilityRuntime,
+  type RunnerAttemptObservabilityRuntimeState,
 } from "./state.ts";
 
-/** Finishes the receipt slot allocated before the Adapter send began. */
 export function captureRunnerPhysicalConversationTurn(input: {
   readonly runtime: RunnerAttemptObservabilityRuntime;
   readonly turnId: TurnId;
   readonly outcome: ConversationTurn["outcome"];
-  readonly events: readonly StreamEvent[];
+  readonly observed: ObservedTurnSnapshot;
   readonly adapterStatus?: "completed" | "failed" | "waiting";
   readonly evidenceCoverage?: ResolvedEvidenceCoverage;
 }): void {
@@ -36,7 +38,16 @@ export function captureRunnerPhysicalConversationTurn(input: {
     return;
   }
   captured.outcome = input.outcome;
-  normalizeConversationTurn(eventProjectionRuntime(runtime), captured, input.events);
+  if (
+    input.observed.turnId !== input.turnId ||
+    input.observed.sessionId !== captured.sessionId ||
+    captured.observed !== undefined
+  ) {
+    markRuntimeFailure(runtime, producerCaptureSealInvalid("attempt"));
+    return;
+  }
+  captured.observed = input.observed;
+  registerObservedTurn(runtime, input.observed);
   if (input.adapterStatus !== undefined && input.evidenceCoverage !== undefined) {
     captured.adapterStatus = input.adapterStatus;
     captured.evidenceCoverage = input.evidenceCoverage;
@@ -52,10 +63,10 @@ export function captureRunnerPhysicalConversationTurn(input: {
   }
 }
 
-/** Allocates the stable physical-send identity before Adapter invocation. */
 export function beginRunnerPhysicalConversationTurn(
   runtimeHandle: RunnerAttemptObservabilityRuntime,
   turnId: TurnId,
+  sessionId: SessionScopeId,
 ): boolean {
   const runtime = runtimeState(runtimeHandle);
   if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return false;
@@ -67,6 +78,10 @@ export function beginRunnerPhysicalConversationTurn(
     return false;
   }
   if (!registerRuntimeEntity(runtime, "turn", turnId)) return false;
+  if (!runtime.registeredSessionScopes.has(sessionId)) {
+    if (!registerRuntimeEntity(runtime, "session-scope", sessionId)) return false;
+    runtime.registeredSessionScopes.add(sessionId);
+  }
   const segmentId = sourceSegmentId();
   if (segmentId === undefined) {
     markRuntimeFailure(runtime, producerEntityIdInvalid("turn"));
@@ -74,10 +89,35 @@ export function beginRunnerPhysicalConversationTurn(
   }
   runtime.conversationTurns.push({
     turnId,
+    sessionId,
     segmentId,
     sequence: requiredPositive(runtime.conversationTurns.length + 1),
-    items: [],
     usage: [],
   });
   return true;
+}
+
+function registerObservedTurn(
+  runtime: RunnerAttemptObservabilityRuntimeState,
+  observed: ObservedTurnSnapshot,
+): void {
+  const register = <Kind extends "item" | "event" | "tool-occurrence" | "session-scope">(
+    kind: Kind,
+    id: ObservabilityEntityIdForKind<Kind>,
+  ): boolean => registerRuntimeEntity(runtime, kind, id);
+
+  if (!runtime.registeredSessionScopes.has(observed.sessionId)) {
+    if (!register("session-scope", observed.sessionId)) return;
+    runtime.registeredSessionScopes.add(observed.sessionId);
+  }
+  for (const event of observed.items) {
+    if (!register("item", event.itemId) || !register("event", event.eventId)) return;
+    if (event.kind !== "tool-start") continue;
+    if (runtime.registeredToolOccurrences.has(event.toolOccurrenceId)) {
+      markRuntimeFailure(runtime, producerEntityIdInvalid("tool-occurrence"));
+      return;
+    }
+    if (!register("tool-occurrence", event.toolOccurrenceId)) return;
+    runtime.registeredToolOccurrences.add(event.toolOccurrenceId);
+  }
 }

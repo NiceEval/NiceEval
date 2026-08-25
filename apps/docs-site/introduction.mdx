@@ -18,7 +18,7 @@ It can evaluate Plugins, Hooks, and Skills for Claude Code / Codex, and it can a
 ```ts
 // evals/eval-tool-call.eval.ts
 import { defineEval } from "niceeval";
-import { includes } from "niceeval/expect";
+import { closedQA, includes } from "niceeval/expect";
 
 export default defineEval({
   judge: true,
@@ -36,8 +36,11 @@ export default defineEval({
     const second = await t.send("What's the weather like in Shanghai tomorrow?");
     t.check(second.message, includes("Shanghai")).label("Second answer mentions Shanghai");
 
-    turn.judge.autoevals.closedQA("Does the assistant answer using the weather data returned by the tool?")
-      .gate(0.7)
+    turn.check(
+      { input: turn.input, output: turn.message },
+      closedQA("Does the assistant answer using the weather data returned by the tool?").atLeast(0.7),
+    )
+      .gate()
       .label("Answer is grounded");
   },
 });

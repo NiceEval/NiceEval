@@ -20,7 +20,7 @@
 ## 通过制还是 Score Eval
 
 `defineEval` 使用 Pass Eval。Boolean mismatch 的 gate 在 Assertion 封口后参与 Core `outcome`、sealed
-Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结算。measurement 用 `.gate(n)` 才进入 failed。
+Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结算。measurement 先在 Match 上用 `.atLeast(n)` 形成 threshold，再用无参 `.gate()` 才进入 failed。
 
 `defineScoreEval` 使用 Score Eval。每条 Assertion 在 `niceeval.assertions` family 的 persistence revision `3` envelope 内封口 evaluation。
 `.score(points)` 和 `t.score(points)` 才将 points 与 earned contribution 加入同一份 sealed facts。Score 从
@@ -39,10 +39,10 @@ Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结�
 | API | 所在篇目 |
 |---|---|
 | `t.send` / `t.sendFile` / `t.reply` / `turn.message` / `turn.data` | [单轮](first-single-turn.md) |
-| `turn.succeeded` / `turn.judge` / `t.newSession()` / `session.*` | [多轮与并行会话](multi-turn-sessions.md) |
+| `turn.succeeded` / `turn.input` / `t.newSession()` / `session.*` | [多轮与并行会话](multi-turn-sessions.md) |
 | `calledTool` / `notCalledTool` / `toolOrder` / `event` | [过程与成本](process-and-cost.md) · [calledTool 匹配](calledtool.md) |
-| `t.check(value, match)` / `.orStop()` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
-| `t.judge` / `turn.judge` / `autoevals.*` | [裁判评质量](judge-quality.md) |
+| `t.check(subject, match)` / `.orStop()` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
+| `check({ input, output }, closedQA(...))` / `factuality` / `summarizes` | [裁判评质量](judge-quality.md) |
 | `.score(points)` / `t.score(points)` | [Score Eval](rubric-points.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集](dataset-fanout.md) |
 | `t.sandbox.*` | [沙箱 coding 任务](sandbox-coding.md) |

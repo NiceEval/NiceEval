@@ -30,7 +30,7 @@ relations: {}
    ```ts
    import { ExperimentFatalError } from "niceeval";
 
-   sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).prepare(async (sandbox, context) => {
+   sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).before(async (sandbox, context) => {
      const probe = await sandbox.runCommand("curl", ["-sf", `${serverUrl}/health`]);
      if (probe.exitCode !== 0) {
        throw new ExperimentFatalError(
@@ -47,7 +47,7 @@ relations: {}
    import { EvalFatalError } from "niceeval";
    import { sandboxLayer } from "niceeval/sandbox";
 
-   sandbox: sandboxLayer().prepare(async (_sandbox, _context) => {
+   sandbox: sandboxLayer().before(async (_sandbox, _context) => {
      if (!existsSync(fixturePath)) {
        throw new EvalFatalError(
          `fixture ${fixturePath} 缺失,所有 Attempt 同因必死——先跑 pnpm fixtures:sync`,

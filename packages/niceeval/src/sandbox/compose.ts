@@ -42,7 +42,7 @@ import {
 } from "./identity.ts";
 import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
-import type { CommandResult } from "./types.ts";
+import type { CommandResult, Sandbox } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
 import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
 import type { DockerSandbox } from "./docker.ts";
@@ -1352,7 +1352,7 @@ export function materializeDockerComposeProviderCase(
         catch: (cause) => cause,
       });
 
-      const attach =
+      const attach: (id: string) => Promise<Sandbox | DockerSandbox> =
         opts._testHooks?.attachMain ??
         ((id: string) =>
           DockerSandbox.attach(id, {
@@ -1363,10 +1363,14 @@ export function materializeDockerComposeProviderCase(
             ...(plan.user !== undefined ? { user: plan.user } : {}),
             ...(plan.pathPrepend !== undefined ? { pathPrepend: plan.pathPrepend } : {}),
           }));
-      const sandbox = yield* Effect.tryPromise({
+      const attached = yield* Effect.tryPromise({
         try: () => attach(containerId),
         catch: (cause) => cause,
       });
+      // Compose hands the raw provider backend to runtime.normalizeMaterialized(), which installs
+      // the public upload(content) facade before any author can observe it. Test hooks may already
+      // return a complete public Sandbox, so keep this pre-normalization bridge local to Compose.
+      const sandbox = attached as Sandbox;
 
       const services = createComposeServiceController({
         projectName: overlay.projectName,
@@ -1411,7 +1415,7 @@ export function materializeDockerComposeProviderCase(
         // author backend;测试 hook 注入的普通 Sandbox 走 customSandboxBackend 显式适配,不回读
         // provider 私有成员。
         authorBackend: opts._testHooks?.attachMain === undefined
-          ? (sandbox as DockerSandbox)
+          ? (attached as unknown as DockerSandbox)
           : customSandboxBackend(sandbox),
         services,
         group,

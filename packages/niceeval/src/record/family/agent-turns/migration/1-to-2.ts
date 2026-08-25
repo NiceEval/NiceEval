@@ -11,8 +11,8 @@ import { EmptyArraySchema, PositiveSafeIntegerSchema } from "../../common.ts";
 import { SourceReceiptStageSchema } from "../../source-receipt/index.ts";
 import {
   AgentTurnReceiptSchema,
-  AgentTurnsAttachmentSchema,
-  validateAgentTurnsAttachment,
+  AgentTurnsRevision2AttachmentSchema,
+  validateAgentTurnsRevision2Attachment,
 } from "../schema.ts";
 
 const HistoricalSourceRetentionTargetSchema = Schema.Literal(
@@ -147,11 +147,11 @@ function parseAgentTurnsRevision1(
   )(document.value);
   if (Either.isLeft(decoded)) return Either.left(invalid());
   const current = Schema.validateEither(
-    AgentTurnsAttachmentSchema,
+    AgentTurnsRevision2AttachmentSchema,
     RecordExactParseOptions,
   )(currentValue(decoded.right));
   if (Either.isLeft(current)) return Either.left(invalid());
-  const [issue] = validateAgentTurnsAttachment(current.right);
+  const [issue] = validateAgentTurnsRevision2Attachment(current.right);
   return issue === undefined ? Either.right(decoded.right) : Either.left(issue);
 }
 

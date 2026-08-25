@@ -1,4 +1,4 @@
-// SandboxLayer 作者声明面：不可变 prepare 链，以及由具体 factory 私下绑定的 Provider planner。
+// SandboxLayer 作者声明面：不可变 before/after 链，以及由具体 factory 私下绑定的 Provider planner。
 // Link 只消费 template 的纯数据 identity；planner callback 保存在 WeakMap 中，不进入声明或指纹。
 
 import { isAbsolute, resolve } from "node:path";
@@ -12,8 +12,20 @@ import type {
   ServiceController,
 } from "./case-types.ts";
 import type { Sandbox, SandboxHook, SandboxRuntime } from "./types.ts";
-import type { SandboxCommand, SandboxCommandDeclaration } from "./commands.ts";
+import type {
+  SandboxCleanupCommand,
+  SandboxCommand,
+  SandboxCommandDeclaration,
+} from "./commands.ts";
 import { sandboxCommandDeclarationOf } from "./commands.ts";
+import {
+  isSandboxAction,
+  isSandboxAfterAction,
+  sandboxState,
+  type SandboxAction,
+  type SandboxActionState,
+  type SandboxAfterAction,
+} from "./action.ts";
 import {
   collectComposeBuilds,
   COMPOSE_MATERIALIZER_REVISION,
@@ -46,10 +58,8 @@ import type { DockerProfileRuntimeBinding } from "./docker-profile/runtime.ts";
 import { dindSupervisorRevision } from "./dind-supervisor.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
-export type SandboxLayerLifecycle = "prepare-only" | "instance-lifecycle";
 
 const SANDBOX_LAYER: unique symbol = Symbol("niceeval.sandbox.layer");
-const SANDBOX_LAYER_LIFECYCLE: unique symbol = Symbol("niceeval.sandbox.layer.lifecycle");
 const SANDBOX_LAYERS = new WeakSet<object>();
 const SANDBOX_LAYER_STATES = new WeakMap<object, SandboxLayerState>();
 const SANDBOX_TEMPLATE_PLANNERS = new WeakMap<object, SandboxTemplatePlanner>();
@@ -62,15 +72,10 @@ const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-p
 const DOCKERFILE_PROVIDER_PLANNER_REVISION = "dockerfile-5";
 const DOCKER_IMAGE_PROVIDER_REVISION = "docker-image-4";
 
-export interface SandboxLayer<
-  Kind extends SandboxLayerKind = SandboxLayerKind,
-  Lifecycle extends SandboxLayerLifecycle = SandboxLayerLifecycle,
-> {
+export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [SANDBOX_LAYER]: Kind;
-  readonly [SANDBOX_LAYER_LIFECYCLE]: Lifecycle;
-  prepare(command: SandboxCommand): SandboxLayer<Kind, Lifecycle>;
-  setup(hook: SandboxHook): SandboxLayer<Kind, "instance-lifecycle">;
-  teardown(hook: SandboxHook): SandboxLayer<Kind, "instance-lifecycle">;
+  before(action: SandboxAction | SandboxCommand): SandboxLayer<Kind>;
+  after(action: SandboxAfterAction | SandboxCleanupCommand): SandboxLayer<Kind>;
 }
 
 export interface DockerComposeSandboxOptions {
@@ -391,6 +396,11 @@ export type SandboxRuntimeReuse =
   | { readonly _tag: "Supported" }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
+export type SandboxRuntimeSetupPrefix =
+  | { readonly _tag: "Persistent"; readonly coverage: SandboxActionState }
+  | { readonly _tag: "InvocationLocal" }
+  | { readonly _tag: "Unsupported"; readonly reason: string };
+
 export type SandboxRuntimeSessionLimit =
   | { readonly _tag: "Unlimited" }
   | { readonly _tag: "Bounded"; readonly milliseconds: number }
@@ -404,6 +414,8 @@ export type SandboxRuntimeSessionLimit =
 export interface SandboxProviderCapabilities {
   readonly retention: SandboxRuntimeRetention;
   readonly reuse: SandboxRuntimeReuse;
+  /** Static upper bound. The materialized backend still decides runtime eligibility. */
+  readonly setupPrefix: SandboxRuntimeSetupPrefix;
   readonly sessionLimit: SandboxRuntimeSessionLimit;
 }
 
@@ -429,6 +441,8 @@ export interface SandboxProviderModule<Plan> {
 export interface SandboxProviderBinding {
   readonly moduleId: string;
   readonly capabilities: SandboxProviderCapabilities;
+  /** The provider owns partial acquisition cleanup and may be interrupted before returning a Case. */
+  readonly interruptibleAcquisition: boolean;
   readonly materialize: (
     context: SandboxRuntimeMaterializeContext,
   ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
@@ -469,6 +483,8 @@ export interface SandboxProviderPlanInput<Plan> {
   readonly scheduling: SandboxProviderScheduling;
   readonly module: SandboxProviderModule<Plan>;
   readonly runtimePlan: Plan;
+  /** Enable only when `materialize` Scope-owns every partial resource before its first interruptible wait. */
+  readonly interruptibleAcquisition?: boolean;
   readonly build: SandboxProviderBuildPlan;
   /** 仅用于保留既有 provider fingerprint 的稳定身份投影；不参与携带裁决。 */
   readonly identityMarker?: JsonValue;
@@ -524,20 +540,22 @@ export interface BuiltinSandboxPlannerServices {
 export interface BuiltinSandboxFactories {
   readonly dockerComposeSandbox: (
     options: DockerComposeSandboxOptions,
-  ) => SandboxLayer<"template-bearing", "prepare-only">;
+  ) => SandboxLayer<"template-bearing">;
   readonly dockerfileSourceLayer: (
     options: DockerfileSourceOptions,
-  ) => SandboxLayer<"template-bearing", "prepare-only">;
+  ) => SandboxLayer<"template-bearing">;
   readonly dockerImageSourceLayer: (
     options: DockerImageSourceOptions,
-  ) => SandboxLayer<"template-bearing", "prepare-only">;
-  readonly e2bSandbox: (options: E2BSandboxOptions) => SandboxLayer<"template-bearing", "prepare-only">;
-  readonly vercelSandbox: (options: VercelSandboxOptions) => SandboxLayer<"template-bearing", "prepare-only">;
+  ) => SandboxLayer<"template-bearing">;
+  readonly e2bSandbox: (options: E2BSandboxOptions) => SandboxLayer<"template-bearing">;
+  readonly vercelSandbox: (options: VercelSandboxOptions) => SandboxLayer<"template-bearing">;
 }
 
 export interface CommandOnlySandboxLayerState {
   readonly kind: "command-only";
   readonly commands: readonly SandboxCommandDeclaration[];
+  readonly before: readonly SandboxBeforeDeclaration[];
+  readonly after: readonly SandboxAfterDeclaration[];
   readonly setupHooks: readonly SandboxHook[];
   readonly teardownHooks: readonly SandboxHook[];
 }
@@ -546,6 +564,8 @@ export interface TemplateBearingSandboxLayerState {
   readonly kind: "template-bearing";
   readonly template: SandboxTemplateDeclaration;
   readonly commands: readonly SandboxCommandDeclaration[];
+  readonly before: readonly SandboxBeforeDeclaration[];
+  readonly after: readonly SandboxAfterDeclaration[];
   readonly setupHooks: readonly SandboxHook[];
   readonly teardownHooks: readonly SandboxHook[];
 }
@@ -553,10 +573,16 @@ export interface TemplateBearingSandboxLayerState {
 export type SandboxLayerState<Kind extends SandboxLayerKind = SandboxLayerKind> =
   Kind extends "command-only" ? CommandOnlySandboxLayerState : TemplateBearingSandboxLayerState;
 
-type SandboxLayerRuntime<
-  Kind extends SandboxLayerKind,
-  Lifecycle extends SandboxLayerLifecycle = SandboxLayerLifecycle,
-> = SandboxLayer<Kind, Lifecycle>;
+export type SandboxBeforeDeclaration =
+  | { readonly kind: "action"; readonly action: SandboxAction }
+  | { readonly kind: "command"; readonly declaration: SandboxCommandDeclaration }
+  | { readonly kind: "hook"; readonly hook: SandboxHook };
+
+export type SandboxAfterDeclaration =
+  | { readonly kind: "action"; readonly action: SandboxAfterAction }
+  | { readonly kind: "command"; readonly command: SandboxCleanupCommand };
+
+type SandboxLayerRuntime<Kind extends SandboxLayerKind> = SandboxLayer<Kind>;
 
 function freezeJson(value: JsonValue): JsonValue {
   if (value === null || typeof value !== "object") return value;
@@ -783,6 +809,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
     capabilities: {
       retention: { _tag: capabilities.retention._tag },
       reuse: capabilities.reuse,
+      setupPrefix: capabilities.setupPrefix,
       sessionLimit: capabilities.sessionLimit,
     },
     // Keep the old identity slot stable while carry eligibility is no longer a
@@ -806,6 +833,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
   const binding = Object.freeze({
     moduleId,
     capabilities,
+    interruptibleAcquisition: input.interruptibleAcquisition === true,
     materialize: (context) => input.module.materialize(input.runtimePlan, context),
     collectBuildPreparation: (evalId) => input.module.collectBuildPreparation(input.runtimePlan, plan, evalId),
   } satisfies SandboxProviderBinding);
@@ -825,6 +853,13 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
   ) {
     throw new TypeError("sandbox provider bounded session limit must be a positive finite number");
   }
+  if (
+    capabilities.setupPrefix._tag === "Persistent" &&
+    capabilities.setupPrefix.coverage !== sandboxState.all &&
+    capabilities.setupPrefix.coverage !== sandboxState.dockerData
+  ) {
+    throw new TypeError("sandbox provider persistent setup-prefix coverage is not a supported sandboxState value");
+  }
   return Object.freeze({
     retention: Object.freeze({ _tag: capabilities.retention._tag }),
     reuse: capabilities.reuse._tag === "Supported"
@@ -833,6 +868,20 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
           _tag: "Unsupported" as const,
           reason: nonEmptyString(capabilities.reuse.reason, "sandbox provider capabilities.reuse.reason"),
         }),
+    setupPrefix: capabilities.setupPrefix._tag === "Persistent"
+      ? Object.freeze({
+          _tag: "Persistent" as const,
+          coverage: capabilities.setupPrefix.coverage,
+        })
+      : capabilities.setupPrefix._tag === "InvocationLocal"
+        ? Object.freeze({ _tag: "InvocationLocal" as const })
+        : Object.freeze({
+            _tag: "Unsupported" as const,
+            reason: nonEmptyString(
+              capabilities.setupPrefix.reason,
+              "sandbox provider capabilities.setupPrefix.reason",
+            ),
+          }),
     sessionLimit: capabilities.sessionLimit._tag === "Unlimited"
       ? Object.freeze({ _tag: "Unlimited" as const })
       : capabilities.sessionLimit._tag === "Bounded"
@@ -1304,62 +1353,144 @@ function providerPlanningError(
   });
 }
 
-function createLayer<Lifecycle extends SandboxLayerLifecycle>(
-  state: CommandOnlySandboxLayerState,
-  lifecycle: Lifecycle,
-): SandboxLayer<"command-only", Lifecycle>;
-function createLayer<Lifecycle extends SandboxLayerLifecycle>(
-  state: TemplateBearingSandboxLayerState,
-  lifecycle: Lifecycle,
-): SandboxLayer<"template-bearing", Lifecycle>;
-function createLayer(state: SandboxLayerState, lifecycle: SandboxLayerLifecycle): SandboxLayer {
+function createLayer(state: CommandOnlySandboxLayerState): SandboxLayer<"command-only">;
+function createLayer(state: TemplateBearingSandboxLayerState): SandboxLayer<"template-bearing">;
+function createLayer(state: SandboxLayerState): SandboxLayer {
   const frozenCommands = Object.freeze([...state.commands]);
+  const frozenBefore = Object.freeze([...state.before]);
+  const frozenAfter = Object.freeze([...state.after]);
   const setupHooks = Object.freeze([...state.setupHooks]);
   const teardownHooks = Object.freeze([...state.teardownHooks]);
   const frozenState = state.kind === "command-only"
-    ? Object.freeze({ kind: "command-only" as const, commands: frozenCommands, setupHooks, teardownHooks })
-    : Object.freeze({ kind: "template-bearing" as const, template: state.template, commands: frozenCommands, setupHooks, teardownHooks });
+    ? Object.freeze({
+        kind: "command-only" as const,
+        commands: frozenCommands,
+        before: frozenBefore,
+        after: frozenAfter,
+        setupHooks,
+        teardownHooks,
+      })
+    : Object.freeze({
+        kind: "template-bearing" as const,
+        template: state.template,
+        commands: frozenCommands,
+        before: frozenBefore,
+        after: frozenAfter,
+        setupHooks,
+        teardownHooks,
+      });
+
+  const recreate = (
+    next: {
+      readonly commands?: readonly SandboxCommandDeclaration[];
+      readonly before?: readonly SandboxBeforeDeclaration[];
+      readonly after?: readonly SandboxAfterDeclaration[];
+    },
+  ): SandboxLayer => frozenState.kind === "command-only"
+    ? createLayer({
+        kind: "command-only",
+        commands: next.commands ?? frozenCommands,
+        before: next.before ?? frozenBefore,
+        after: next.after ?? frozenAfter,
+        setupHooks,
+        teardownHooks,
+      })
+    : createLayer({
+        kind: "template-bearing",
+        template: frozenState.template,
+        commands: next.commands ?? frozenCommands,
+        before: next.before ?? frozenBefore,
+        after: next.after ?? frozenAfter,
+        setupHooks,
+        teardownHooks,
+      });
+
   const layer = {
-    prepare(command: SandboxCommand): SandboxLayer {
-      const declaration = sandboxCommandDeclarationOf(command);
-      return frozenState.kind === "command-only"
-        ? createLayer({ kind: "command-only", commands: [...frozenCommands, declaration], setupHooks, teardownHooks }, lifecycle)
-        : createLayer({
-            kind: "template-bearing",
-            template: frozenState.template,
-            commands: [...frozenCommands, declaration],
-            setupHooks,
-            teardownHooks,
-          }, lifecycle);
+    before(action: SandboxAction | SandboxCommand): SandboxLayer {
+      if (isSandboxAction(action)) {
+        return recreate({ before: [...frozenBefore, Object.freeze({ kind: "action" as const, action })] });
+      }
+      if (typeof action !== "function") {
+        throw new TypeError("sandbox before requires a SandboxAction or SandboxCommand callback");
+      }
+      const declaration = sandboxCommandDeclarationOf(action);
+      return recreate({
+        commands: [...frozenCommands, declaration],
+        before: [...frozenBefore, Object.freeze({ kind: "command" as const, declaration })],
+      });
     },
-    setup(hook: SandboxHook): SandboxLayer {
-      if (typeof hook !== "function") throw new TypeError("sandbox setup hook must be a function");
-      return frozenState.kind === "command-only"
-        ? createLayer({ kind: "command-only", commands: frozenCommands, setupHooks: [...setupHooks, hook], teardownHooks }, "instance-lifecycle")
-        : createLayer({ kind: "template-bearing", template: frozenState.template, commands: frozenCommands, setupHooks: [...setupHooks, hook], teardownHooks }, "instance-lifecycle");
+    after(action: SandboxAfterAction | SandboxCleanupCommand): SandboxLayer {
+      if (isSandboxAfterAction(action)) {
+        return recreate({ after: [...frozenAfter, Object.freeze({ kind: "action" as const, action })] });
+      }
+      if (typeof action !== "function") {
+        throw new TypeError("sandbox after requires a SandboxAfterAction or cleanup command");
+      }
+      return recreate({
+        after: [...frozenAfter, Object.freeze({ kind: "command" as const, command: action })],
+      });
     },
-    teardown(hook: SandboxHook): SandboxLayer {
-      if (typeof hook !== "function") throw new TypeError("sandbox teardown hook must be a function");
-      return frozenState.kind === "command-only"
-        ? createLayer({ kind: "command-only", commands: frozenCommands, setupHooks, teardownHooks: [...teardownHooks, hook] }, "instance-lifecycle")
-        : createLayer({ kind: "template-bearing", template: frozenState.template, commands: frozenCommands, setupHooks, teardownHooks: [...teardownHooks, hook] }, "instance-lifecycle");
-    },
-  } as SandboxLayerRuntime<SandboxLayerKind, SandboxLayerLifecycle>;
+  } as SandboxLayerRuntime<SandboxLayerKind>;
   Object.defineProperty(layer, SANDBOX_LAYER, { value: frozenState.kind });
-  Object.defineProperty(layer, SANDBOX_LAYER_LIFECYCLE, { value: lifecycle });
   SANDBOX_LAYERS.add(layer);
   SANDBOX_LAYER_STATES.set(layer, frozenState);
   return Object.freeze(layer);
 }
 
-export function sandboxLayer(): SandboxLayer<"command-only", "prepare-only"> {
-  return createLayer({ kind: "command-only", commands: [], setupHooks: [], teardownHooks: [] }, "prepare-only");
+export function sandboxLayer(): SandboxLayer<"command-only"> {
+  return createLayer({
+    kind: "command-only",
+    commands: [],
+    before: [],
+    after: [],
+    setupHooks: [],
+    teardownHooks: [],
+  });
+}
+
+/** @internal Append a branded command-only fragment without changing the base template or lifecycle. */
+export function appendCommandOnlySandboxLayer(
+  base: undefined,
+  addition: SandboxLayer<"command-only">,
+): SandboxLayer<"command-only">;
+export function appendCommandOnlySandboxLayer<
+  Kind extends SandboxLayerKind,
+>(
+  base: SandboxLayer<Kind>,
+  addition: SandboxLayer<"command-only">,
+): SandboxLayer<Kind>;
+export function appendCommandOnlySandboxLayer(
+  base: SandboxLayer | undefined,
+  addition: SandboxLayer<"command-only">,
+): SandboxLayer {
+  if (base !== undefined && !isSandboxLayer(base)) {
+    throw new TypeError("SandboxLayer composition base must be a branded SandboxLayer.");
+  }
+  if (!isSandboxLayer(addition)) {
+    throw new TypeError("SandboxLayer composition addition must be a branded SandboxLayer.");
+  }
+  const baseLayer = base ?? sandboxLayer();
+  const baseState = sandboxLayerStateOf(baseLayer);
+  const additionState = sandboxLayerStateOf(addition as SandboxLayer);
+  if (additionState.kind !== "command-only") {
+    throw new TypeError("SandboxLayer composition addition must be command-only.");
+  }
+  const combined = {
+    commands: [...baseState.commands, ...additionState.commands],
+    before: [...baseState.before, ...additionState.before],
+    after: [...baseState.after, ...additionState.after],
+    setupHooks: baseState.setupHooks,
+    teardownHooks: baseState.teardownHooks,
+  };
+  return baseState.kind === "command-only"
+    ? createLayer({ kind: "command-only", ...combined })
+    : createLayer({ kind: "template-bearing", template: baseState.template, ...combined });
 }
 
 /** @internal Provider factory 用它一次性绑定纯数据声明与 Effect planner。 */
 export function defineSandboxTemplate(
   definition: SandboxTemplateDefinition,
-): SandboxLayer<"template-bearing", "prepare-only"> {
+): SandboxLayer<"template-bearing"> {
   const provider = nonEmptyString(definition.provider, "sandbox template.provider");
   const kind = nonEmptyString(definition.kind, "sandbox template.kind");
   const declaration = Object.freeze({
@@ -1379,7 +1510,15 @@ export function defineSandboxTemplate(
     declaration,
     freezeCommandPlanLocator(definition.commandPlanLocator),
   );
-  return createLayer({ kind: "template-bearing", template: declaration, commands: [], setupHooks: [], teardownHooks: [] }, "prepare-only");
+  return createLayer({
+    kind: "template-bearing",
+    template: declaration,
+    commands: [],
+    before: [],
+    after: [],
+    setupHooks: [],
+    teardownHooks: [],
+  });
 }
 
 function sharedScheduling(laneKey: string, recommendedConcurrency: number): SandboxProviderScheduling {
@@ -1516,11 +1655,27 @@ function loadProviderRuntime() {
 const noBuildPreparation = (): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>> =>
   Effect.succeed(Option.none());
 
+function profileHasDockerDataSetupPrefixCoverage(
+  binding: DockerProfileRuntimeBinding | undefined,
+): boolean {
+  if (binding === undefined) return false;
+  const filesystem = binding.profile.backend.filesystem;
+  return filesystem.setupPrefix?.coverage === sandboxState.dockerData &&
+    filesystem.setupPrefix.requiredState === sandboxState.dockerData &&
+    filesystem.setupPrefix.slotAttestation === "independent-fixed-filesystem/v1" &&
+    filesystem.setupPrefix.filesystemSizeBytes === filesystem.dockerDataPool.bytesPerAllocation &&
+    filesystem.dockerDataPool.attestation === "independent-fixed-filesystem/v1";
+}
+
 const dockerComposeProviderModule = Object.freeze({
   id: "niceeval/docker-compose",
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "DestroyOnly" }),
     reuse: Object.freeze({ _tag: "Supported" }),
+    setupPrefix: Object.freeze({
+      _tag: "Unsupported",
+      reason: "Docker Compose state spans a container group and mounted resources.",
+    }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
   materialize: (plan, context) => Effect.flatMap(
@@ -1538,6 +1693,7 @@ const dockerfileProviderModule = Object.freeze({
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
+    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
   materialize: (plan, context) => Effect.flatMap(
@@ -1550,13 +1706,32 @@ const dockerfileProviderModule = Object.freeze({
   ),
 } satisfies SandboxProviderModule<DockerfileProviderPlan>);
 
-/** tmpfs / 只读 rootfs 的状态不会跨 stop/restart 保留，不能向 --keep-sandbox 宣称 Suspendable。 */
+const dockerEphemeralSetupPrefixUnsupported = Object.freeze({
+  _tag: "Unsupported" as const,
+  reason:
+    "Persistent setup-prefix cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.",
+});
+
+/** Profile、tmpfs / 只读 rootfs 的状态不能由普通 rootfs cache 完整保留。 */
 const dockerfileEphemeralProviderModule = Object.freeze({
   ...dockerfileProviderModule,
   id: "niceeval/dockerfile-ephemeral",
   capabilities: Object.freeze({
     ...dockerfileProviderModule.capabilities,
     retention: Object.freeze({ _tag: "DestroyOnly" }),
+    setupPrefix: dockerEphemeralSetupPrefixUnsupported,
+  }),
+} satisfies SandboxProviderModule<DockerfileProviderPlan>);
+
+const dockerfileProfileSetupPrefixProviderModule = Object.freeze({
+  ...dockerfileEphemeralProviderModule,
+  id: "niceeval/dockerfile-profile-docker-data",
+  capabilities: Object.freeze({
+    ...dockerfileEphemeralProviderModule.capabilities,
+    setupPrefix: Object.freeze({
+      _tag: "Persistent" as const,
+      coverage: sandboxState.dockerData,
+    }),
   }),
 } satisfies SandboxProviderModule<DockerfileProviderPlan>);
 
@@ -1565,6 +1740,7 @@ const dockerImageProviderModule = Object.freeze({
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
+    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
   materialize: (plan, context) => Effect.flatMap(
@@ -1580,6 +1756,19 @@ const dockerImageEphemeralProviderModule = Object.freeze({
   capabilities: Object.freeze({
     ...dockerImageProviderModule.capabilities,
     retention: Object.freeze({ _tag: "DestroyOnly" }),
+    setupPrefix: dockerEphemeralSetupPrefixUnsupported,
+  }),
+} satisfies SandboxProviderModule<DockerImageProviderPlan>);
+
+const dockerImageProfileSetupPrefixProviderModule = Object.freeze({
+  ...dockerImageEphemeralProviderModule,
+  id: "niceeval/docker-image-profile-docker-data",
+  capabilities: Object.freeze({
+    ...dockerImageEphemeralProviderModule.capabilities,
+    setupPrefix: Object.freeze({
+      _tag: "Persistent" as const,
+      coverage: sandboxState.dockerData,
+    }),
   }),
 } satisfies SandboxProviderModule<DockerImageProviderPlan>);
 
@@ -1588,6 +1777,7 @@ const e2bProviderModule = Object.freeze({
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
+    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({
       _tag: "ProviderValidated",
       reason: "E2B validates lifetimeMs against the active account tier when the sandbox is created or renewed.",
@@ -1605,6 +1795,10 @@ const vercelProviderModule = Object.freeze({
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
+    setupPrefix: Object.freeze({
+      _tag: "Unsupported",
+      reason: "Vercel Sandbox does not expose a NiceEval setup-prefix capture contract.",
+    }),
     sessionLimit: Object.freeze({
       _tag: "ProviderValidated",
       reason: "Vercel validates lifetimeMs against the active project plan when the sandbox session is created or extended.",
@@ -1626,6 +1820,10 @@ function customProviderModule(
     capabilities: Object.freeze({
       retention: Object.freeze({ _tag: "DestroyOnly" }),
       reuse: Object.freeze({ _tag: "Unsupported", reason: "custom provider has no reset contract" }),
+      setupPrefix: Object.freeze({
+        _tag: "Unsupported",
+        reason: "custom provider has no declared setup-prefix capture contract",
+      }),
       sessionLimit: Object.freeze({ _tag: "Unlimited" }),
     }),
     materialize: (plan, context) => Effect.flatMap(
@@ -1644,6 +1842,10 @@ function customCaseProviderModule(
     capabilities: Object.freeze({
       retention: Object.freeze({ _tag: "DestroyOnly" }),
       reuse: Object.freeze({ _tag: "Unsupported", reason: "custom case has no reset contract" }),
+      setupPrefix: Object.freeze({
+        _tag: "Unsupported",
+        reason: "custom case has no declared setup-prefix capture contract",
+      }),
       sessionLimit: Object.freeze({ _tag: "Unlimited" }),
     }),
     materialize: (plan, context) => Effect.flatMap(
@@ -1966,9 +2168,13 @@ export function createBuiltinSandboxFactories(
             caseKind: "on-demand-build",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: dockerRequiresDestroyOnly(resources)
-              ? dockerfileEphemeralProviderModule
-              : dockerfileProviderModule,
+            module: profileBinding !== undefined
+              ? profileHasDockerDataSetupPrefixCoverage(profileBinding)
+                ? dockerfileProfileSetupPrefixProviderModule
+                : dockerfileEphemeralProviderModule
+              : dockerRequiresDestroyOnly(resources)
+                ? dockerfileEphemeralProviderModule
+                : dockerfileProviderModule,
             build: providerBuildPlan({
               caseKind: "on-demand-build",
               materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
@@ -2007,6 +2213,7 @@ export function createBuiltinSandboxFactories(
               lifetime: plannedLifetime,
               pathPrepend,
             }),
+            ...(profileBinding === undefined ? {} : { interruptibleAcquisition: true }),
             publishableIdentity: {
               buildArgKeys: Object.keys(buildArgs).sort(),
               user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
@@ -2095,9 +2302,13 @@ export function createBuiltinSandboxFactories(
             caseKind: "prebuilt",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: dockerRequiresDestroyOnly(resources)
-              ? dockerImageEphemeralProviderModule
-              : dockerImageProviderModule,
+            module: profileBinding !== undefined
+              ? profileHasDockerDataSetupPrefixCoverage(profileBinding)
+                ? dockerImageProfileSetupPrefixProviderModule
+                : dockerImageEphemeralProviderModule
+              : dockerRequiresDestroyOnly(resources)
+                ? dockerImageEphemeralProviderModule
+                : dockerImageProviderModule,
             build: providerBuildPlan({
               caseKind: "prebuilt",
               materializerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
@@ -2129,6 +2340,7 @@ export function createBuiltinSandboxFactories(
               lifetime: plannedLifetime,
               pathPrepend,
             }),
+            ...(profileBinding === undefined ? {} : { interruptibleAcquisition: true }),
             publishableIdentity: {
               source: "configured-image",
               user: publishedUser,
@@ -2275,7 +2487,7 @@ export const vercelSandbox = LIVE_FACTORIES.vercelSandbox;
  * 统一的单容器 Docker factory。Docker access用判别联合选择显式socket、raw DinD或managed DinD；
  * 宿主路径/profile只保存到私有runtime binding。本函数不连接Docker，provider接线由后续层负责。
  */
-export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"template-bearing", "prepare-only"> {
+export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"template-bearing"> {
   assertRecord(options, "dockerSandbox options");
   assertOnlyKeys(
     options,
@@ -2328,7 +2540,7 @@ export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"temp
 
 export function customProviderSandbox(
   options: CustomProviderSandboxOptions,
-): SandboxLayer<"template-bearing", "prepare-only"> {
+): SandboxLayer<"template-bearing"> {
   assertRecord(options, "defineSandbox options");
   assertOnlyKeys(
     options,
@@ -2395,7 +2607,7 @@ export function customProviderSandbox(
 
 export function defineSandboxCase(
   options: CustomCaseSandboxOptions,
-): SandboxLayer<"template-bearing", "prepare-only"> {
+): SandboxLayer<"template-bearing"> {
   assertRecord(options, "defineSandboxCase options");
   assertOnlyKeys(options, ["identity", "targetPlatform", "services", "materialize"], "defineSandboxCase options");
   if (typeof options.materialize !== "function") {
@@ -2508,7 +2720,10 @@ export function isSandboxLayer(value: unknown): value is SandboxLayer {
     (kind === "command-only" || kind === "template-bearing") &&
     state?.kind === kind &&
     Array.isArray(state.commands) &&
-    typeof candidate.prepare === "function"
+    Array.isArray(state.before) &&
+    Array.isArray(state.after) &&
+    typeof candidate.before === "function" &&
+    typeof candidate.after === "function"
   );
 }
 

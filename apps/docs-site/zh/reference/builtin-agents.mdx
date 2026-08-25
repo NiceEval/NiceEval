@@ -20,7 +20,7 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 
 | Agent | 收发 | 事件流 | 会话续接 | HITL | tracing | 备注 |
 |---|---|---|---|---|---|---|
-| `claude-code` | ✅ | ✅ | ✅（`claude --resume <id>`） | ❌ | ✅（`http/protobuf` → OTLP，beta 开关） | 内置 parser 自动吐 `compaction` 原始事件，供报告和诊断读取；当前没有公开 `eventMatch` selector |
+| `claude-code` | ✅ | ✅ | ✅（`claude --resume <id>`） | ❌ | ✅（`http/protobuf` → OTLP，beta 开关） | 内置 parser 自动吐 `compaction` 原始事件，供报告、诊断与普通 `check(events, match)` 读取 |
 | `codex` | ✅ | ✅ | ✅（`codex exec resume <id>`） | ❌ | ✅（`http/json` → OTLP） | 内置 parser 自动吐 `compaction` 事件 |
 | `bub` | ✅ | ✅ | ✅（`--session-id` + tape 续接） | ❌ | ✅（`http/protobuf` → OTLP） | 内置 parser 自动吐 `compaction` 事件 |
 
@@ -58,7 +58,7 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 
 {/* GENERATED:BEGIN builtin-agent-config */}
 
-{/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
 ### `ClaudeCodeConfig`
 
@@ -369,7 +369,7 @@ export default uiMessageStreamAgent({
 
 {/* GENERATED:BEGIN ui-message-stream-options */}
 
-{/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
 #### `name`
 

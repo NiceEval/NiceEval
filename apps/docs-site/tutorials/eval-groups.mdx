@@ -141,34 +141,33 @@ The usual split is:
 | Declaration location | What belongs there | Execution frequency |
 | --- | --- | --- |
 | The Experiment's `sandbox` | Provider `template` that changes with the Agent or model configuration | Once per Sandbox in the group |
-| The eval group's `sandbox` + `.setup()` | Shared toolchain, common checkout, and warmed build cache | Once per Sandbox in the group |
-| The eval group's `sandbox` + `.prepare()` | Group-level Fixtures restored for every Attempt | Once per real Attempt |
-| A member's own `sandbox` + `.prepare()` | Starter files, dependencies, and public materials for only that task | Once per real Attempt |
+| The eval group's `sandbox` + `.before()` | Shared toolchain, common checkout, and warmed build cache | Reused by action fingerprint |
+| A member's own `sandbox` + `.before()` | Starter files, dependencies, and public materials for only that task | Planned for each real Attempt |
 
 An eval group can provide its own `SandboxLayer`:
 
 ```ts
 import { defineEvalGroup } from "niceeval";
-import { sandboxLayer } from "niceeval/sandbox";
+import { changeFrequency, sandboxLayer, shell } from "niceeval/sandbox";
 import buildIndex from "./01-index/eval.ts";
 import queryIndex from "./02-query/eval.ts";
 
 export default defineEvalGroup({
   evals: [buildIndex, queryIndex],
-  sandbox: sandboxLayer().setup(async (sandbox, ctx) => {
-    ctx.progress({ message: "Preparing the group's common toolchain" });
-    await sandbox.runCommandOrThrow("npm", ["install", "--global", "tsx@4.22.4"]);
-  }),
+  sandbox: sandboxLayer().before(shell({
+    id: "group-toolchain",
+    command: "npm install --global tsx@4.22.4",
+    changeFrequency: changeFrequency.rare,
+  })),
   onUnavailable: "stop-group",
 });
 ```
 
-The group lifecycle and Agent Context can both read `ctx.evalGroup.id` and
+The group command context and Agent Context can both read `ctx.evalGroup.id` and
 `ctx.evalGroup.definitionHash`. Shared functions can also serve ungrouped evals, so the type keeps `evalGroup`
 optional. When you need to isolate a cache or service namespace outside `workdir`, first check that the field exists, then derive a key from the group ID.
 
-Members cannot provide a `template` or declare `.setup()` or `.teardown()`. Move instance-level lifecycle to the eval group or Experiment;
-members retain only a `SandboxLayer` without a `template` or lifecycle and declare `.prepare()` only.
+Members cannot provide a `template`, but they can contribute command-only `.before()` / `.after()` actions. Experiment, group, member, and Agent actions enter the same dependency graph. Once dependencies are satisfied, the smallest `changeFrequency` runs first, so a stable group action can precede a more volatile Experiment action.
 
 ## Do not treat eval groups as task dependency graphs
 
@@ -184,7 +183,7 @@ When a later step must read a file from an earlier step, put both steps in one e
 | --- | --- |
 | `eval-group-member-unresolved` | Import the default object returned by the factory from the eval entry point; do not reconstruct it or write a string ID. |
 | `eval-group-member-overlap` | Put every eval in only one group and list it once. |
-| `eval-group-member-layer` | Move a member's `template`, `.setup()`, and `.teardown()` to the eval group or Experiment. |
+| `eval-group-member-layer` | Remove the Provider template from the member; keep command-only `.before()` / `.after()` actions. |
 | A load-time error says `onUnavailable` is missing | Explicitly choose `"stop-group"` or `"replace-sandbox"`; do not omit the failure policy. |
 | `eval-group-sandbox-reuse-conflict` | Remove `sandboxReuse: true` from the Experiment. |
 | `eval-group-direct-agent` | Use a Sandbox Agent or stop selecting grouped evals in this Experiment. |

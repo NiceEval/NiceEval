@@ -120,8 +120,10 @@ describe("Judge virtual-time lifecycle", () => {
       expect(result).toMatchObject({
         state: "unavailable",
         reason: "source-unavailable",
-        detail: "judge-call-failed",
-        evidence: expect.stringContaining("timed out after 5s"),
+        detail: {
+          failureDetail: "judge-call-failed",
+          failureEvidence: expect.stringContaining("timed out after 5s"),
+        },
       });
       expect(providerAborted).toBe(true);
     }));
