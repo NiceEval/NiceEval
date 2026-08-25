@@ -21,7 +21,7 @@
 # /usr/local/bin 与 /usr/local/lib/node_modules 对运行用户（node）可写。三条都在 base 里
 # 一次性落地，八个 target 全部继承，是发布前的构建自检项之一（见 ../../.github/workflows/docker-image.yml）。
 
-FROM node:24-slim AS base
+FROM node:26-slim AS base
 
 # 各 target 共用的系统依赖:git/curl(git+https 安装、uv 安装脚本)、ca-certificates、python3
 # （跨 provider 基线工具面统一，见上）。build-essential 仍只留给需要编译原生依赖的 target
