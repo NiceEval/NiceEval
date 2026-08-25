@@ -10,11 +10,7 @@
       "from": "examples/zh/origin/claude-sdk",
       "to": "examples/zh/tier1/claude-sdk",
       "contract": "verbatim",
-      "baseTree": "f404e6c89612c0b74f60c8b2442f857b5f8c1c74",
-      "pending": {
-        "upstreamTree": "1698e1b2ac5af0f3534877d1bae9d3831933ba76",
-        "needsInstall": true
-      }
+      "baseTree": "1698e1b2ac5af0f3534877d1bae9d3831933ba76"
     },
     {
       "from": "examples/zh/origin/pi-sdk",
@@ -74,7 +70,7 @@
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "1bd7e5b9b7dfce8f6b7eab6f0b67c49df0b20a10"
+      "baseTree": "ea4ddae79e998d0032613df83d23b54c1aa5c4f5"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
