@@ -278,6 +278,9 @@ class Admission:
         self._published_state: dict[str, Any] = {
             "schemaVersion": 1,
             "generation": self._generation(),
+            "fixedDescriptorDigest": self.descriptor_digest
+            if (self.host_config or {}).get("storage", {}).get("backing") == "fixed-image-ext4"
+            else None,
             "admissionOpen": True,
             "leases": {},
             "reservations": {},
@@ -289,6 +292,8 @@ class Admission:
         self._draft_state: dict[str, Any] | None = None
         initialization_scope = self._begin_transition_scope()
         self._load()
+        current = self._generation()
+        self._prepare_generation_change(current)
         self.state.setdefault("setupPrefix", {"artifacts": {}, "operations": {}, "seeds": {}})
         self._load_slots()
         self._load_setup_prefix_seeds()
@@ -305,7 +310,6 @@ class Admission:
         if not self.asset_facts or not all(item.get("present") is True for item in self.asset_facts):
             self.state["admissionOpen"] = False
             self.state["degraded"].append(asset_issue)
-        current = self._generation()
         if self.state.get("generation") != current:
             self.state["admissionOpen"] = False
             self.state["generation"] = current
@@ -639,7 +643,48 @@ class Admission:
             raise RuntimeError(f"Docker daemon identity is unavailable: {error}") from error
         sock = os.stat(self.docker_socket)
         asset_identity = canonical_digest(self.asset_facts if hasattr(self, "asset_facts") else [])
-        return hashlib.sha256(f"{daemon_id}:{sock.st_ino}:{sock.st_ctime_ns}:{asset_identity}".encode()).hexdigest()[:32]
+        fixed_descriptor = self.descriptor_digest \
+            if (self.host_config or {}).get("storage", {}).get("backing") == "fixed-image-ext4" \
+            else ""
+        return hashlib.sha256(
+            f"{daemon_id}:{sock.st_ino}:{sock.st_ctime_ns}:{asset_identity}:{fixed_descriptor}".encode()
+        ).hexdigest()[:32]
+
+    def _prepare_generation_change(self, current: str) -> None:
+        if self.state.get("generation") == current:
+            return
+        fixed_descriptor = self.descriptor_digest \
+            if (self.host_config or {}).get("storage", {}).get("backing") == "fixed-image-ext4" \
+            else None
+        # Docker/socket changes retain the existing recovery behavior.  Only a
+        # committed fixed descriptor/backing transition owns different slot
+        # and seed identities and therefore resets physical journal state.
+        if fixed_descriptor is None \
+                or self.state.get("fixedDescriptorDigest") == fixed_descriptor:
+            return
+        leases = self.state.get("leases", {})
+        setup_prefix = self.state.get("setupPrefix", {})
+        recovered_only = isinstance(leases, dict) and all(
+            isinstance(lease, dict) and lease.get("state") == "recovered"
+            for lease in leases.values()
+        )
+        if not recovered_only or self.state.get("reservations") or self.state.get("queue") \
+                or self.state.get("builds") or self.state.get("containers") \
+                or not isinstance(setup_prefix, dict) or setup_prefix.get("operations"):
+            raise RuntimeError("fixed activation generation changed with live journal ownership")
+        # Exclusive activation already proved the old generation drained.  Its
+        # slot, seed, artifact, and recovered-lease facts belong to the prior
+        # descriptor/backing and must not be reconciled against the new epoch.
+        # Keep the old generation value until the normal reconciliation below
+        # durably publishes the replacement state.
+        self.state["admissionOpen"] = False
+        self.state["leases"] = {}
+        self.state["reservations"] = {}
+        self.state["queue"] = []
+        self.state["degraded"] = []
+        self.state["slots"] = {}
+        self.state["setupPrefix"] = {"artifacts": {}, "operations": {}, "seeds": {}}
+        self.state["fixedDescriptorDigest"] = fixed_descriptor
 
     def _asset_facts(self) -> list[dict[str, Any]]:
         manifest_path = (self.host_config or {}).get("assets", {}).get("manifestPath")

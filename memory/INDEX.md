@@ -511,6 +511,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [fixed-image-capacity-assertion-omits-ext4-overhead](fixed-image-capacity-assertion-omits-ext4-overhead.md) — fixed-image module 曾把完整 1/8 envelope 都留给 recovery，未计 ext4 metadata/reserved blocks；ledger 现最多占 outer store 的 3/4
 - [fixed-watchdog-findmnt-duplicate-mount-rows](fixed-watchdog-findmnt-duplicate-mount-rows.md) — systemd `ReadWritePaths` namespace 会为同一 slot 暴露重复 `findmnt` 行；watchdog 现只去重完全相同的 mount identity，歧义仍 fail-closed
 - [fixed-backing-cutover-needs-epoch-registry-namespace](fixed-backing-cutover-needs-epoch-registry-namespace.md) — declarative backing 切换曾复用前一 capsule 的 root registry/provision 状态；forward cutover 现按新 activation epoch 隔离，rollback 仍采用 capsule 自带路径
+- [fixed-watchdog-journal-state-crosses-activation-generations](fixed-watchdog-journal-state-crosses-activation-generations.md) — fixed watchdog generation 曾遗漏 committed descriptor/backing，导致新 epoch 与旧 seed journal 被当成同代漂移；现只在旧 ownership 已 drained 时重建新代物理状态
 - [site-tailwind-magicui-integration-traps](site-tailwind-magicui-integration-traps.md) — 手写 CSS 的站点接 Tailwind v4 要跳过 preflight(否则博客正文列表符号与标题字重被静默重置),Magic UI 组件自带的 `grid`/`text-sm` 会把终端一行拆成三行
 - 已修 [init-md-site-copy-symlink](init-md-site-copy-symlink.md) — `site/public/INIT.md` 曾是根 `INIT.md` 的物理拷贝,靠手动 cp 同步,忘了就 CI diff 红;改成 symlink → `../../INIT.md`,根文件成唯一源、site build 跟随,不再手动 cp,diff 检查保留作 backstop
 
