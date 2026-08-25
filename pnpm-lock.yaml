@@ -60,8 +60,8 @@ importers:
         specifier: ^1.21.0
         version: 1.21.0(react@19.2.7)
       mermaid:
-        specifier: ^11.17.0
-        version: 11.17.0
+        specifier: ^11.17.1
+        version: 11.17.1
       mixpanel-browser:
         specifier: ^2.80.0
         version: 2.80.0
@@ -176,8 +176,8 @@ importers:
         specifier: 3.22.1
         version: 3.22.1
       mermaid:
-        specifier: ^11.17.0
-        version: 11.17.0
+        specifier: ^11.17.1
+        version: 11.17.1
       openai:
         specifier: ^6.49.0
         version: 6.49.0(ws@8.21.3)(zod@4.4.3)
@@ -3800,8 +3800,8 @@ packages:
     resolution: {integrity: sha512-Sz8FzjzI0kN13GK/6MVEsVzMZEPvOhnmmI1lU5+/1cGOiK3QUahntrNNtdVeihrO7t9JpoH75iMNXg6R6uWflQ==}
     engines: {node: '>=18.0.0'}
 
-  mermaid@11.17.0:
-    resolution: {integrity: sha512-Jo9N377Wb4MSnHFPTbLi2SxFpsQl4eVHoxnW5U1Md9EazvgMp3s+4ohDxr81YNTgbn5Kj7HJ3yslrSJ52kwpbA==}
+  mermaid@11.17.1:
+    resolution: {integrity: sha512-G1BP6qU4BRwEGk2SdsxgDk1cSuApimT32Nkb52YRSv+856FrmB8qo28BaNk9Ee8Fvuon3OxpXDJ4L6cD5AykXg==}
 
   micromark-core-commonmark@2.0.3:
     resolution: {integrity: sha512-RDBrHEMSxVFLg6xvnXmb1Ayr2WzLAWjeSATAoxwKYJV94TeNavgoIdA0a9ytzDSVzBy2YKFK+emCPOEibLeCrg==}
@@ -8102,7 +8102,7 @@ snapshots:
 
   meriyah@6.1.4: {}
 
-  mermaid@11.17.0:
+  mermaid@11.17.1:
     dependencies:
       '@braintree/sanitize-url': 7.1.2
       '@iconify/utils': 3.1.4
