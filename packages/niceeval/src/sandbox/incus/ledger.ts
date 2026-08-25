@@ -574,12 +574,17 @@ function readLockOwner(path: string): AllocationOwner | undefined {
 export async function acquireDomainAdmissionLock(
   executionDomainId: string,
   env: NodeJS.ProcessEnv = process.env,
+  options: { readonly waitMs?: number } = {},
 ): Promise<AdmissionLock> {
   const dir = join(allocationsDir(env), "locks");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = lockPath(executionDomainId, env);
   const owner = currentOwner();
-  const deadline = Date.now() + LOCK_WAIT_MS;
+  const waitMs = options.waitMs ?? LOCK_WAIT_MS;
+  if (!Number.isFinite(waitMs) || waitMs < 0) {
+    throw new TypeError("Incus admission lock waitMs must be a finite non-negative number.");
+  }
+  const deadline = Date.now() + waitMs;
   for (;;) {
     try {
       const fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);

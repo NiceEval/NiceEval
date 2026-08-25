@@ -54,8 +54,7 @@ import {
   decodeCommittedIncusArtifact,
   incusArtifactPreparationIdentity,
   lookupCommittedIncusArtifactForPrefixes,
-  publishIncusArtifact,
-  reserveIncusArtifact,
+  publishOrReuseIncusArtifact,
   type IncusArtifactLocator,
 } from "./artifact.ts";
 import { INCUS_GUEST_INIT_BLOCK_DOCKER_DATA } from "./image.ts";
@@ -169,7 +168,7 @@ function preparationSemanticIdentity(plan: IncusRuntimePlan): JsonValue {
   });
 }
 
-function artifactLocator(intent: Awaited<ReturnType<typeof publishIncusArtifact>>): IncusArtifactLocator {
+function artifactLocator(intent: Awaited<ReturnType<typeof publishOrReuseIncusArtifact>>): IncusArtifactLocator {
   return Object.freeze({
     artifactId: intent.artifactId,
     generation: intent.generation,
@@ -499,9 +498,8 @@ export function incusProviderModule(
               coverage: sandboxState.all,
               resourcesDigest: digestOf(preparationSemanticIdentity(plan)),
             });
-            const reserved = await reserveIncusArtifact(identity);
             const control = await IncusControl.connectMutation();
-            const committed = await publishIncusArtifact(control, reserved, {
+            const committed = await publishOrReuseIncusArtifact(control, {
               project: plan.project,
               instance: owned.sandbox.sandboxId,
               volume: dockerDataVolume,

@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { INCUS_METADATA, type IncusControl } from "./control.ts";
 import { incusError } from "./errors.ts";
-import { listArtifactIntents, requireCommittedArtifact, writeArtifactIntent, type ArtifactIntent } from "./artifact-ledger.ts";
+import { listArtifactIntents, readArtifactIntent, requireCommittedArtifact, writeArtifactIntent, type ArtifactIntent } from "./artifact-ledger.ts";
 import { acquireDomainAdmissionLock } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
 
@@ -21,6 +21,35 @@ export interface ArtifactIdentity {
 export interface ArtifactPreparationIdentityInput {
   readonly setupPrefixKey: string; readonly manifestDigest: string; readonly providerRevision: string;
   readonly guestInitRevision: string; readonly captureRevision: string; readonly coverage: string; readonly resourcesDigest: string;
+}
+
+const ARTIFACT_PUBLICATION_LOCK_WAIT_MS = 15 * 60 * 1_000;
+
+function samePreparationIdentity(intent: ArtifactIntent, identity: ArtifactIdentity): boolean {
+  return intent.executionDomainId === identity.executionDomainId
+    && intent.project === identity.artifactProject
+    && intent.runtimeProject === identity.runtimeProject
+    && intent.pool === identity.pool
+    && intent.baseFingerprint === identity.baseFingerprint
+    && intent.setupPrefixKey === identity.setupPrefixKey
+    && intent.manifestDigest === identity.manifestDigest
+    && intent.providerRevision === identity.providerRevision
+    && intent.guestInitRevision === identity.guestInitRevision
+    && intent.captureRevision === identity.captureRevision
+    && intent.coverage === identity.coverage
+    && intent.resourcesDigest === identity.resourcesDigest;
+}
+
+function exactPrefixLockId(identity: ArtifactIdentity): string {
+  const prefix = createHash("sha256")
+    .update(JSON.stringify({
+      executionDomainId: identity.executionDomainId,
+      project: identity.artifactProject,
+      setupPrefixKey: identity.setupPrefixKey,
+      manifestDigest: identity.manifestDigest,
+    }))
+    .digest("hex");
+  return `${identity.executionDomainId}:artifact-prefix:${prefix}`;
 }
 
 /** The Run coordinator constructs this once, before reserve. Host quota is deliberately absent. */
@@ -53,7 +82,7 @@ export async function reserveIncusArtifact(identity: ArtifactIdentity, env: Node
   const lock = await acquireDomainAdmissionLock(`${identity.executionDomainId}:artifact`, env);
   try {
     const existing = (await listArtifactIntents(env)).find((candidate) => candidate.executionDomainId === identity.executionDomainId && candidate.setupPrefixKey === identity.setupPrefixKey && candidate.manifestDigest === identity.manifestDigest && (candidate.state === "reserved" || candidate.state === "preparing" || candidate.state === "publishing"));
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) throw incusError("sandbox-artifact-unverified", "Another publisher already owns the exact Incus artifact prefix reservation.", ["Wait for the exact-prefix publisher and verify its committed artifact before reuse."]);
     const active = (await listArtifactIntents(env)).filter((candidate) => candidate.executionDomainId === identity.executionDomainId && candidate.project === identity.artifactProject && !["released", "quarantined", "invalid"].includes(candidate.state)).length;
     if (active >= identity.artifactMaxInstances) throw incusError("sandbox-capacity-unavailable", `Incus artifact project ${JSON.stringify(identity.artifactProject)} is at its artifactMaxInstances limit.`, ["Release stale non-committed artifacts or raise artifactMaxInstances after capacity review."]);
     const artifactId = randomUUID(); const now = new Date().toISOString();
@@ -88,7 +117,8 @@ export async function lookupCommittedIncusArtifactForPrefixes(
 
 /** Promote a stopped prepare VM plus its dependent volume. No image publish is used: Incus images lose the volume. */
 export async function publishIncusArtifact(control: IncusControl, artifact: ArtifactIntent, prepare: { readonly project: string; readonly instance: string; readonly volume: string }, identity: ArtifactIdentity, env: NodeJS.ProcessEnv = process.env): Promise<ArtifactIntent> {
-  if (artifact.state !== "reserved" || artifact.project !== identity.artifactProject) throw incusError("sandbox-artifact-unverified", "Artifact publication is fenced by its reserved generation and project.", ["Re-reserve after reconcile."]);
+  const current = await readArtifactIntent(artifact.artifactId, env);
+  if (current === undefined || current.generation !== artifact.generation || current.state !== "reserved" || !samePreparationIdentity(current, identity)) throw incusError("sandbox-artifact-unverified", "Artifact publication is fenced by its current reservation generation and preparation identity.", ["Re-run exact-prefix lookup or reconcile before reserving a new artifact."]);
   await quiesceIncusArtifact(control, prepare.project, prepare.instance);
   await control.stopInstance(prepare.project, prepare.instance);
   const sourceVm = await control.getInstance(prepare.project, prepare.instance); const sourceVolume = await control.getVolume(prepare.project, identity.pool, prepare.volume);
@@ -103,6 +133,59 @@ export async function publishIncusArtifact(control: IncusControl, artifact: Arti
     await writeArtifactIntent({ ...publishing, state: "quarantined" }, env); throw incusError("sandbox-artifact-unverified", "Published artifact tuple failed bidirectional metadata or stopped-state verification.", ["Reconcile and quarantine this artifact."]);
   }
   return writeArtifactIntent({ ...publishing, state: "committed" }, env);
+}
+
+/**
+ * Serialize publication for one exact prefix across control processes. Different
+ * prefixes remain independent. A loser verifies and adopts the winner's
+ * committed tuple; a dead publisher is reconciled by exact intent/object only.
+ */
+export async function publishOrReuseIncusArtifact(
+  control: IncusControl,
+  prepare: { readonly project: string; readonly instance: string; readonly volume: string },
+  identity: ArtifactIdentity,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ArtifactIntent> {
+  const lock = await acquireDomainAdmissionLock(
+    exactPrefixLockId(identity),
+    env,
+    { waitMs: ARTIFACT_PUBLICATION_LOCK_WAIT_MS },
+  );
+  try {
+    const candidates = (await listArtifactIntents(env)).filter((candidate) =>
+      samePreparationIdentity(candidate, identity)
+    );
+    const committed = candidates.filter((candidate) => candidate.state === "committed");
+    if (committed.length > 1) {
+      throw incusError("sandbox-artifact-unverified", "Multiple committed Incus artifacts claim the exact same setup prefix identity.", ["Quarantine duplicate committed artifacts before reuse."]);
+    }
+    if (committed[0] !== undefined) {
+      const verified = await reconcileIncusArtifact(control, committed[0], env);
+      if (verified.state !== "committed") {
+        throw incusError("sandbox-artifact-unverified", "The committed Incus artifact failed exact tuple verification.", ["Keep the drifted artifact quarantined and rebuild from a verified ancestor."]);
+      }
+      return verified;
+    }
+
+    const inFlight = candidates.filter((candidate) =>
+      candidate.state === "reserved" || candidate.state === "preparing" || candidate.state === "publishing"
+    );
+    if (inFlight.length > 1) {
+      throw incusError("sandbox-artifact-unverified", "Multiple in-flight Incus artifacts claim the exact same setup prefix identity.", ["Reconcile every exact intent before publishing another artifact."]);
+    }
+    if (inFlight[0] !== undefined) {
+      const reconciled = await reconcileIncusArtifact(control, inFlight[0], env);
+      if (reconciled.state === "committed") return reconciled;
+      if (reconciled.state === "quarantined") {
+        throw incusError("sandbox-artifact-unverified", "The previous exact-prefix publication was quarantined during reconcile.", ["Retry from a verified ancestor after reviewing the quarantined exact object."]);
+      }
+    }
+
+    const reserved = await reserveIncusArtifact(identity, env);
+    return publishIncusArtifact(control, reserved, prepare, identity, env);
+  } finally {
+    lock.release();
+  }
 }
 
 /** Guest-side barrier before the provider stop: no Docker workload may be captured live. */
@@ -161,6 +244,9 @@ export async function reconcileIncusArtifact(control: IncusControl, artifact: Ar
   if (artifact.state === "committed") {
     if (exactVm && exactVolume && vm.status.toLowerCase() === "stopped") return artifact;
     return writeArtifactIntent({ ...artifact, state: "quarantined" }, env);
+  }
+  if (artifact.state === "publishing" && exactVm && exactVolume && vm.status.toLowerCase() === "stopped") {
+    return writeArtifactIntent({ ...artifact, state: "committed" }, env);
   }
   if ((vm !== undefined && !exactVm) || (volume !== undefined && !exactVolume)) {
     return writeArtifactIntent({ ...artifact, state: "quarantined" }, env);
