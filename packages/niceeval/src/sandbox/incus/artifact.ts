@@ -94,8 +94,10 @@ export async function publishIncusArtifact(control: IncusControl, artifact: Arti
   const sourceVm = await control.getInstance(prepare.project, prepare.instance); const sourceVolume = await control.getVolume(prepare.project, identity.pool, prepare.volume);
   if (sourceVm === undefined || sourceVolume === undefined || sourceVm.status.toLowerCase() !== "stopped") throw incusError("sandbox-artifact-unverified", "Prepare tuple is not a stopped VM and dependent custom volume.", ["Quarantine the prepare allocation."]);
   const publishing = await writeArtifactIntent({ ...artifact, state: "publishing" }, env);
-  await control.copyVolume({ sourceProject: prepare.project, sourcePool: identity.pool, sourceName: prepare.volume, targetProject: artifact.project, targetPool: identity.pool, targetName: artifact.dockerDataVolume, config: artifactConfig(publishing) });
+  // The dependent device is copied atomically with the VM. Pre-creating the
+  // target volume makes Incus reject the instance copy as an existing volume.
   await control.copyInstance({ sourceProject: prepare.project, sourceName: prepare.instance, targetProject: artifact.project, targetName: artifact.instance, config: artifactConfig(publishing), devices: devices(identity.pool, artifact.dockerDataVolume, identity.network) });
+  await control.updateVolumeConfig(artifact.project, identity.pool, artifact.dockerDataVolume, artifactConfig(publishing));
   const vm = await control.getInstance(artifact.project, artifact.instance); const volume = await control.getVolume(artifact.project, identity.pool, artifact.dockerDataVolume);
   if (vm === undefined || volume === undefined || vm.status.toLowerCase() !== "stopped" || !matches(vm.config, publishing) || !matches(volume.config, publishing)) {
     await writeArtifactIntent({ ...publishing, state: "quarantined" }, env); throw incusError("sandbox-artifact-unverified", "Published artifact tuple failed bidirectional metadata or stopped-state verification.", ["Reconcile and quarantine this artifact."]);
@@ -105,7 +107,7 @@ export async function publishIncusArtifact(control: IncusControl, artifact: Arti
 
 /** Guest-side barrier before the provider stop: no Docker workload may be captured live. */
 export async function quiesceIncusArtifact(control: IncusControl, project: string, instance: string): Promise<void> {
-  const result = await control.exec(project, instance, ["/bin/sh", "-lc", "systemctl stop docker.service docker.socket containerd.service || exit 1; ! systemctl is-active --quiet docker.service; ! systemctl is-active --quiet containerd.service"]);
+  const result = await control.exec(project, instance, ["/bin/sh", "-lc", "systemctl stop docker.service docker.socket containerd.service || exit 1; ! systemctl is-active --quiet docker.service; ! systemctl is-active --quiet containerd.service; sync"]);
   if (result.exitCode !== 0) throw incusError("sandbox-artifact-unverified", `Artifact prepare VM ${JSON.stringify(instance)} did not pass the Docker/containerd quiesce barrier.`, ["Do not publish a live Docker daemon or its containers."]);
 }
 
@@ -145,8 +147,9 @@ export async function createIncusPrepareFromArtifact(control: IncusControl, pare
 export async function cloneIncusArtifactConsumer(control: IncusControl, artifact: IncusArtifactLocator, target: { readonly project: string; readonly pool: string; readonly network: string; readonly instance: string; readonly volume: string; readonly config: Readonly<Record<string, string>> }): Promise<void> {
   const vm = await control.getInstance(artifact.project, artifact.instance); const volume = await control.getVolume(artifact.project, target.pool, artifact.dockerDataVolume);
   if (vm === undefined || volume === undefined || vm.status.toLowerCase() !== "stopped" || vm.config[INCUS_METADATA.artifactState] !== "committed" || vm.config[INCUS_METADATA.manifestDigest] !== artifact.manifestDigest || volume.config[INCUS_METADATA.manifestDigest] !== artifact.manifestDigest) throw incusError("sandbox-artifact-unverified", "Committed artifact drifted or is missing; it is not consumable.", ["Invalidate and quarantine the artifact before retrying."]);
-  await control.copyVolume({ sourceProject: artifact.project, sourcePool: target.pool, sourceName: artifact.dockerDataVolume, targetProject: target.project, targetPool: target.pool, targetName: target.volume, config: target.config });
+  // Incus owns the dependent-volume copy as part of the instance operation.
   await control.copyInstance({ sourceProject: artifact.project, sourceName: artifact.instance, targetProject: target.project, targetName: target.instance, config: target.config, devices: devices(target.pool, target.volume, target.network) });
+  await control.updateVolumeConfig(target.project, target.pool, target.volume, target.config);
 }
 
 /** Reconcile is exact-object only. It never adopts similarly named objects or makes a drifted artifact warm. */

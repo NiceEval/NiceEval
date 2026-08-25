@@ -756,18 +756,54 @@ export class IncusControl {
     readonly targetName: string; readonly config: Readonly<Record<string, string>>;
     readonly devices: Readonly<Record<string, Readonly<Record<string, string>>>>;
   }): Promise<void> {
+    const source = await this.getInstance(spec.sourceProject, spec.sourceName);
+    const baseImage = source?.config["volatile.base_image"] ??
+      source?.config[INCUS_METADATA.baseFingerprint];
+    if (source === undefined || baseImage === undefined || !/^[a-f0-9]{64}$/u.test(baseImage)) {
+      throw incusError(
+        "sandbox-artifact-unverified",
+        `Incus copy source ${JSON.stringify(spec.sourceName)} has no exact base-image digest.`,
+        ["Quarantine the source tuple; artifact copies must retain their trusted base-image lineage."],
+      );
+    }
     await this.mutate("POST", this.projectPath("/1.0/instances", spec.targetProject), {
       name: spec.targetName, type: "virtual-machine",
-      source: { type: "copy", project: spec.sourceProject, source: spec.sourceName },
+      // Incus needs base-image to copy a VM's root-disk delta. Omitting it can
+      // produce a valid-looking target rooted at the base image and silently
+      // discard the source VM's prepared root filesystem state.
+      source: {
+        type: "copy",
+        project: spec.sourceProject,
+        source: spec.sourceName,
+        "base-image": baseImage,
+      },
       config: spec.config, devices: spec.devices,
     });
+  }
+
+  async updateVolumeConfig(
+    project: string,
+    pool: string,
+    name: string,
+    config: Readonly<Record<string, string>>,
+  ): Promise<void> {
+    await this.mutate(
+      "PATCH",
+      this.projectPath(
+        `/1.0/storage-pools/${encodeURIComponent(pool)}/volumes/custom/${encodeURIComponent(name)}`,
+        project,
+      ),
+      { config },
+    );
   }
 
   async stopInstance(project: string, name: string): Promise<void> {
     const instance = await this.getInstance(project, name);
     if (instance === undefined || instance.status.toLowerCase() === "stopped") return;
     await this.mutate("PUT", this.projectPath(`/1.0/instances/${encodeURIComponent(name)}/state`, project),
-      { action: "stop", force: true, timeout: 120 });
+      // Artifact capture must let the guest flush its root filesystem. Forced
+      // power-off is reserved for disposable allocation destruction below.
+      { action: "stop", force: false, timeout: 120 });
     const stopped = await this.getInstance(project, name);
     if (stopped === undefined || stopped.status.toLowerCase() !== "stopped") {
       throw incusError("sandbox-artifact-unverified", `Incus instance ${JSON.stringify(name)} did not stop for artifact capture.`, ["Do not publish a running artifact."]);

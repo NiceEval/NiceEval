@@ -478,6 +478,21 @@ export async function waitForReadiness(
       await new Promise((resolve) => setTimeout(resolve, 1000));
       continue;
     }
+    // Images can be published after their original multi-user target was
+    // already reached. A cloned VM then sees the enabled unit but systemd does
+    // not replay that target transaction. Readiness explicitly starts the
+    // idempotent guest-init unit so both base and artifact clones converge.
+    const guestInit = await control.exec(
+      plan.project,
+      instanceName,
+      ["systemctl", "start", "niceeval-docker-data.service"],
+      { user: 0, group: 0, timeoutMs: 60_000, signal },
+    );
+    if (guestInit.exitCode !== 0) {
+      last = guestInit.stderr.trim() || guestInit.stdout.trim() || "Docker data guest-init failed";
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      continue;
+    }
     const workspace = await control.exec(
       plan.project,
       instanceName,
