@@ -126,11 +126,11 @@ reuse: reset baseline -> before -> Agent/test -> after
 ```text
 BuildKey ready
   -> lookup longest verified SetupPrefix
-  -> create private staging from exact parent or Base
+  -> create private staging from exact parent image, E2B snapshot, or Base
   -> for each remaining eligible action:
        replay action
-       -> quiesce / commit / verify exact Docker image
-       -> create next staging from that exact image
+       -> quiesce / commit or snapshot / verify provider artifact
+       -> create next private staging from that exact artifact
   -> create final private writable clone
   -> runtime secret overlay
   -> agent.ensure / Adapter runtime / Agent / Eval test

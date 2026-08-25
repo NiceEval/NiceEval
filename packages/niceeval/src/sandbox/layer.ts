@@ -1777,10 +1777,7 @@ const e2bProviderModule = Object.freeze({
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    setupPrefix: Object.freeze({
-      _tag: "Unsupported",
-      reason: "E2B does not expose a NiceEval setup-prefix capture contract.",
-    }),
+    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({
       _tag: "ProviderValidated",
       reason: "E2B validates lifetimeMs against the active account tier when the sandbox is created or renewed.",
