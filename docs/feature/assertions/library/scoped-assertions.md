@@ -266,7 +266,7 @@ tool lifecycle 可以跨 Turn：started 与 finished 分别保留各自的 Turn 
 这套规则也要求 collection 的 actions 材料足以判定。材料不完整时，正断言、负断言和未达到的下限都保留 unavailable，而不是据空白认定结果。
 source `complete`、`partial`、orphan 或 invalid 时，结果仍走上述三值规则，不另造统一 Fact envelope。
 
-`count` 把已知长度当作 numeric 材料。完整 collection 形成 exact；可证明前缀但 source／orphan／invalid 使集合不完整时形成 lower-bound；无法取得可信长度时形成 unavailable。
+`count` 把已知长度当作 numeric 材料。完整 collection 形成 exact；partial／orphan source 仍有可证明前缀时形成 lower-bound。invalid source 或其它无法取得可信长度的情况形成 unavailable，不能补成 `lower-bound(0)`。
 `atMost` 在下界严格大于 threshold 时 mismatched；下界小于或等于 threshold 且集合不完整时 unavailable。
 其余 numeric comparator 沿用 [Architecture](../architecture.md#数值材料与-usage-pricing-receipt) 的 lower-bound 规则。
 普通作者 array 没有 sidecar coverage，长度按传入值精确计算。
