@@ -995,7 +995,6 @@ in
               KillMode = "mixed";
               UMask = "0007";
               ReadWritePaths = [
-                "${p.dataMount}/fixed-image-v1"
                 "${p.journalDir}/fixed-image-v1"
                 p.runtimeDir
               ];

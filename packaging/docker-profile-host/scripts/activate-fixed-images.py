@@ -985,8 +985,7 @@ def install_watchdog_dropin(config: dict[str, Any], generation: Path, epoch: str
         f"RequiresMountsFor={systemd_word(Path(config['storage']['rootDir']))} {systemd_word(Path(config['dataMount']))}",
         "[Service]",
         "ReadWritePaths=",
-        f"ReadWritePaths={systemd_word(Path(config['dataMount']) / 'fixed-image-v1')} "
-        f"{systemd_word(generation)} {systemd_word(runtime)}",
+        f"ReadWritePaths={systemd_word(generation)} {systemd_word(runtime)}",
         f"Environment=NICEEVAL_ACTIVATION_MANIFEST_DIGEST={digest}",
         f"Environment=NICEEVAL_ACTIVATION_EPOCH={epoch}",
         "",
