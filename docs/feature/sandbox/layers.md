@@ -45,7 +45,9 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 3. Experiment、Eval Group、Eval、Agent 使用同一种 `before()` / `after()`；owner 只保留声明出处与归因。
 4. before 按依赖与数值排队。成功取得资源后用 `context.onCleanup()` 登记释放；无条件 after 在入口登记，所有收尾按实际登记栈逆序退出。
 
-声明式 before action 可以形成缓存前缀。callback before、secret、租约与外部会话始终真实执行，并截断后续共享捕获。after 始终真实执行。完整资格、`verified` 边界与 Provider 降级见 [Architecture](architecture.md#准备前缀的身份与验证边界)。
+声明式 before action 可以形成缓存前缀。callback before、hook、plugin、secret / credential、租约、外部会话、
+`onCleanup()`、Agent layer 与 hidden input 始终真实执行，并截断后续共享捕获。after 始终真实执行。完整资格、
+`verified` 边界与 Provider 降级见 [Architecture](architecture.md#准备前缀的身份与验证边界)。
 
 当前 occurrence 固定为 `attempt`。作者 API 不暴露 scope，也不能靠 owner kind 或低频数值要求提升。把已证明稳定的前缀提升到 physical-instance 是后续性能工作，不属于当前 capability。
 完整时序与 fresh / reuse 次数表见 [三方准备时序](lifecycle.md)。
@@ -571,7 +573,21 @@ action 自动指纹包含 family `id`、canonical input、规范化后的 steps�
 
 definition 的可选 `cache.fingerprint` 接受 JSON 值，或接收已验证 input 并返回 JSON 值；instance options 也可 inline 传一个 JSON fingerprint。两者只补充自动观察不到的身份并共同规范化，不能替换自动指纹。最终 action 指纹固定为 `hash(auto, supplemental)`。省略补充值时使用规范化 absent sentinel；需要强制失效时可直接写 `cache: { fingerprint: "2" }`。state 属于自动身份，不能用 supplemental fingerprint 模拟或改写。
 
-linked prefix 再加入 owner、ordinal、本 occurrence 的 action id、频率、依赖、capability、cohort、Provider identity 与 `interpreterRevision`。Eval `test` 函数、Assertion 与只发生在 Agent/test 阶段的输入不进入未改变的 SetupPrefixKey；它们仍按各自契约改变 CaseKey 之外的 Attempt 与结果 identity。
+`SetupPrefixKey` 是跨 Provider 的单一 generic key。它纳入 exact trusted base、target、parent key、完整有序
+action manifest、coverage、revisions 与 Provider canonical preparation identity。
+
+Provider canonical preparation identity 至少包括：
+
+- execution domain（runtime project 与 artifact project）；
+- pool / driver、network 与 resources / device config；
+- guest-init、Provider 与 capture revision。
+
+action manifest 保留每个 action 的 owner、ordinal、action id、频率、依赖、capability 与完整 action fingerprint，
+并按实际 schedule 排序。
+
+`SetupPrefixKey` 不纳入 `CaseKey`、`BuildKey` 或 occurrence cohort 隔离代理；它们仍保有各自原本的职责，不能被
+拿来分裂同一业务 prefix。旧 key 只能 miss，不能被 adopt。Eval `test` 函数、Assertion 与只发生在 Agent/test
+阶段的输入不进入未改变的 SetupPrefixKey；它们仍按各自契约改变 Attempt 与结果 identity。
 
 只有自动观察不到的协议版本才写补充指纹：
 

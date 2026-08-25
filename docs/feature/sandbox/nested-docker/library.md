@@ -78,6 +78,8 @@ declare function incusSandbox(
 
 `image`、`project`、`storagePool` 必填。
 `image` 是 digest-pinned locator，例如 `name@sha256:<64 hex>`，不能用可变 alias。
+它始终指向 exact trusted base；业务 preparation cache 不改变它的含义，也不通过 `incusSandbox()`
+增加字段或另设公开 cache API。
 `acceptDevelopmentDomain` 是 `boolean`，省略时等于 `false`，只接受 reference domain。
 显式 `true` 才允许 development domain。
 该字段进入 identity 与 `--dry`；省略与显式 `false` 是同一份 identity。

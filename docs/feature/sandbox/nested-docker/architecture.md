@@ -19,14 +19,22 @@ Eval DockerExecutionRequirement
 
 | Owner | 拥有 | 不拥有 |
 |---|---|---|
-| NiceEval planning | requirement、capability check、CaseKey、BuildKey、SetupPrefixKey | Provider locator 与 mount |
-| NiceEval control plane | SandboxAllocation ledger、lease、generation、fencing、期望终态 | VM、host filesystem 与 Docker database |
-| Provider | instance、host storage pool、virtual disk、snapshot、clone、network、inventory | Attempt 结果与 Agent replay 决策 |
+| NiceEval planning | requirement、capability check、CaseKey、BuildKey、SetupPrefixKey、Run 级 prepare 协调 | Provider locator 与 mount |
+| NiceEval control plane | SandboxAllocation ledger、ArtifactIntent、lease、generation、fencing、期望终态 | VM、host filesystem 与 Docker database |
+| Provider | instance、host storage pool、virtual disk、snapshot、clone、network、artifact project inventory | Attempt 结果与 Agent replay 决策 |
 | guest init / agent | guest mount、dockerd、Unix socket、quiesce receipt | host mount、allocation admission 与 artifact promotion |
 
 host mount 的唯一 mutation owner 是 Provider daemon。
 guest filesystem mount 的唯一 owner 是 guest init。
-NiceEval 与 doctor 都不执行 mount、umount、loop attach、fsck、nft、sudo、build、import 或 pull image。
+NiceEval 与 doctor 都不执行 mount、umount、loop attach、fsck、nft、sudo、build、import 或 pull a base image。
+
+## Host trust 与 business cache
+
+NixOS 部署只拥有 host trust：Incus runtime project、artifact project、pool、network、quotas，以及
+`trustedBaseImages`。它不逐项登记、预建或拥有业务 cache。
+
+NiceEval control plane 才拥有 business cache 的意图、key、生命周期和消费决定；Provider 只拥有其原生
+对象与原子操作。这样 host 配置可以信任 exact base，而不需要了解某个 Eval、action 或 prefix 的业务语义。
 
 ## requirement 与 capability
 
@@ -57,11 +65,17 @@ loop-backed pool、稀疏文件或目录配额不能伪装成 reference。
 attestation 必须同时指向 allocationId、generation、block device identity 与 guest `statfs`。
 pathname 或 pool 总容量单独不构成证明。
 
+reference artifact 必须使用 dedicated block-backed CoW 与上述 attestation；不能以 development 的目录复制性能
+冒充它。
+
 本机唯一允许的非 reference 例外使用 project `niceeval-eval-dev` 与 storagePool `niceeval-sandbox-dev`。
 宿主目录是 `/data/niceeval-sandbox-dev`。
 它要求 Experiment 显式 `acceptDevelopmentDomain: true`。
-development domain 的 receipt 是 `Unattested`：explicit opt-in 只允许计划继续，不 attest 容量，结果与 reference 不可比。
+
+development domain 的 receipt 是 `Unattested`。
+explicit opt-in 只允许计划继续，不 attest 容量，结果与 reference 不可比。
 未写该字段时，development path 对这条 Experiment 不可见。
+development directory 只用于明确 opt-in 的 Unattested 功能 dogfood，不是 CoW 性能面，也不能生产 reference artifact。
 
 改变 execution domain 后，旧 artifact 是 foreign。
 系统可以只读列出，不能自动 adopt。
@@ -70,7 +84,8 @@ development domain 的 receipt 是 `Unattested`：explicit opt-in 只允许计�
 
 `incusSandbox({ image })` 指名一份 digest-pinned、已经受信任的 Provider origin。
 可变 alias 不是合法示例，也不能代替 digest。
-NiceEval 不 build、不 import、不 pull 该 image。
+NiceEval 不 build、不 import、不 pull 该 base image。它可从该 base 和完整 eligible SetupPrefix 创建
+Provider-native 派生 artifact；这不改变 base trust，也不把 artifact 伪装为 Incus image。
 
 Provider artifact 可以捕获 exact SetupPrefix，但只有受信任 prepare worker 能发布。
 prepare worker 没有模型 credential，不运行 Agent，不接收 Eval hidden input。
@@ -83,6 +98,26 @@ Provider 只对完整、可验证的 prepared Sandbox artifact 报告 coverage�
 共享加速只有三层：digest-pinned OCI catalog 或 mirror、trusted BuildKit external cache、
 Provider-native immutable artifact。
 它们都不能伪装成共享 container 或可写 volume。
+
+## Incus preparation artifact
+
+完整 Incus artifact 是 artifact project 中 content-addressed、stopped、immutable 的 template instance，
+加上它依赖的 custom block Docker data volume；它不是 Incus image。artifact 的 root 与 volume metadata
+相互指向同一 artifact digest、SetupPrefixKey 与 ArtifactIntent，任一方向缺失或不一致都不能消费。
+
+consumer 从 artifact project 跨 project copy template root；Docker data 必须生成新的 consumer source volume，
+随后才附着到自己的 allocation。任何 consumer 都不共享 artifact 的可写 root 或 data volume。
+
+`ArtifactIntent` 是 publication 的 committed record，也是消费线性化点。只有 root、volume 与 intent 的
+双向 metadata 验证完成后，intent 才提交并让 lookup 命中。创建或提交的 acceptance unknown 时，reconciler
+按 intent 和 metadata 查询，不能盲目重发。无 committed intent 的对象是 orphan；已提交但不再能验证的对象
+进入 quarantine，均不得被 warm lookup 采用。
+
+clean publication failure 可以回到最深的已提交 ancestor 或 exact base，重新执行后续 prefix。
+unknown acceptance、identity 漂移、metadata 不一致或无法删除 orphan 时一律 fail closed。
+
+公开 GC 与 inventory API 另行定义；当前只要求 reconcile exact intent/object。quota 满时返回结构化 fallback 或
+失败，而不删除未知对象或把 cache 当成 base。
 
 ## 安全边界
 

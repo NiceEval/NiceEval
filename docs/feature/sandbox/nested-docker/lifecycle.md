@@ -4,7 +4,7 @@ V1 是 DestroyOnly。
 每条 Attempt 使用一台一次性 Incus VM；成功、失败、中断与强杀后都销毁 instance、disk、network 与 lease。
 `--keep-sandbox` 与 `sandboxReuse` 在创建资源前失败。
 
-## Planning
+## Pre-dispatch planning and prepare
 
 ```text
 discover Eval and Experiment
@@ -13,10 +13,19 @@ discover Eval and Experiment
   -> Incus planner returns capability receipt
   -> compare requirement / capability
   -> compute BuildKey, CaseKey and SetupPrefixKey
-  -> reserve Provider capacity
+  -> judge/config precheck
+  -> compile each occurrence's continuous eligible serializable action prefix
+  -> Run-level prepare coordinator looks up or completes the artifact
+  -> reserve Provider capacity and dispatch Attempt
 ```
 
-capability 或 capacity 不满足时，尚未创建 Run resource、Sandbox、模型 session 或 Attempt execution。
+judge/config precheck 后、模型 session、Agent、hidden input 与 Attempt 之前，Runner 按既有唯一
+`SetupPrefixKey` 编译连续 eligible serializable actions。callback、hook、plugin、`onCleanup()`、credential、
+lease、Agent layer 与 hidden input 都是硬 barrier：它们真实执行，且不让其后的 action 加入共享捕获。
+
+Run 级 prepare coordinator 查找或补齐 artifact；capacity 为 1 时必须先完成全部 prepare，再开始任一 Attempt。
+prepare 不取得模型 credential、不运行 Agent、也不接收 hidden input。capability、capacity 或 prepare 不能满足时，
+尚未创建 Sandbox、模型 session 或 Attempt execution。
 排队等待 capacity 的成员显示 provider-capacity reason，不占已经执行中的 Attempt 位。
 
 `--dry` 与正常运行消费同一份比较结果。
@@ -64,13 +73,20 @@ NiceEval 不在 activation 中重建 Provider mount tree，也不把旧 pathname
 所有上次在飞 allocation 遵循 DestroyOnly。
 committed Provider artifact 保持 immutable，可供新的 Invocation clone。
 
-## artifact capture
+## Artifact capture, publication and reconcile
 
 prepare worker 取得独立 allocation 并执行 eligible SetupPrefix。
 成功后进入 quiesce barrier；任何进程、secret、外部 lease 或 state-surface 证明失败都取消 publication 并销毁 prepare allocation。
 
-Provider snapshot 成功且 manifest 双向验证后，才原子发布 artifactDigest。
-capture 中断留下的 snapshot 没有 committed manifest，reconciler 视为 orphan 并删除，不会让 warm lookup 命中。
+Provider 创建 stopped immutable template instance 及其 dependent custom block Docker data volume；两者先以
+同一 `ArtifactIntent` 写入准备中的 metadata。root 与 volume 的双向 metadata、完整 action manifest 与
+coverage/revisions 验证成功后，才提交 `ArtifactIntent` 并原子发布 artifactDigest。committed intent 是唯一
+消费线性化点；consumer 跨 project copy root，并为 data volume 生成新的 source。
+
+capture 或 publication acceptance unknown 时，按 intent 和 Provider inventory 对账，不重发。没有 committed
+intent 的 template/volume 是 orphan；committed 后 identity 或双向 metadata 漂移的对象进入 quarantine。两者都
+不能让 warm lookup 命中。clean failure 可以从最深 committed ancestor 或 base 重新执行 prepare；unknown、漂移或无法删除 orphan
+一律 fail closed。quota 满只给出结构化 fallback 或失败，不隐式 GC 或删除未归属对象。
 
 普通 Attempt 不发布 `sandboxState.dockerData`。
 Provider 只对完整、可验证的 prepared Sandbox artifact 声明缓存资格。
