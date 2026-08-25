@@ -35,7 +35,7 @@ export interface ApplyPrBodyInput {
 
 export interface CreatePrBodyInput {
   readonly command: "create";
-  readonly source: string;
+  readonly source?: string | undefined;
   readonly title: string;
   readonly base?: string | undefined;
   readonly budget?: number | undefined;

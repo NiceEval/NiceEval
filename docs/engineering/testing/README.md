@@ -3,6 +3,8 @@
 niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 本目录是仓库测试机制的唯一正式入口，不再维护并行的 Roadmap、候选方案或代码原型。
 
+用 `pnpm run repo docs test --help` 发现测试与产品契约的 Trace 投影；它不是代码测试 runner。
+
 ## 目标
 
 测试体系同时优化五件事：

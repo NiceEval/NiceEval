@@ -61,7 +61,7 @@
 - 链接示例必须指向真实存在的 `examples/` 目录；当前完整示例主要在 `examples/zh/`。
 - 第一次成功路径和现实任务都写进 `zh/tutorials/`；前者按 Tutorial 写，后者按 How-to 写。概念边界写进 `zh/explanation/`，字段全集写进 `zh/reference/`，按症状修复写进 `zh/troubleshooting/`。不要把一个页面同时写成教程、设计文档和 API 字典。
 - 命令、路径、flag、文件名、包名、代码标识用反引号。
-- `zh/reference/` 页里 `{/* GENERATED:BEGIN … */}` 到 `{/* GENERATED:END … */}` 之间的内容不要手改：它由 `pnpm docs:reference` 从源码紧邻注释生成（接口/函数取 TSDoc，CLI flag 取各 Feature/Host contribution 自有 option schema 的 help metadata；region 与源码的映射见 `packages/repo-tools/src/docs/reference-compiler.ts`）。要改这些文案，改 owner 源码后从仓库根跑 `pnpm docs:reference`；手改会被 `pnpm lint` 的漂移 lint 拦下。
+- `zh/reference/` 页里 `{/* GENERATED:BEGIN … */}` 到 `{/* GENERATED:END … */}` 之间的内容不要手改：它由 `pnpm run repo docs reference` 从源码紧邻注释生成（接口/函数取 TSDoc，CLI flag 取各 Feature/Host contribution 自有 option schema 的 help metadata；region 与源码的映射见 `packages/repo-tools/src/docs/reference-compiler.ts`）。要改这些文案，改 owner 源码后从仓库根跑 `pnpm run repo docs reference`；手改会被 `pnpm lint` 的漂移 lint 拦下。
 - 文案使用主动语态和短句。错误信息、限制和前置条件要直接说清楚下一步。
 - 机器规则只是最低门槛，通过 lint 不等于文案已经好读。提交前逐段朗读；遇到「传输粘合」「停轮判定」这类内部名词串，改写成明确的主语、动作和结果，例如「Adapter 请求应用接口」「当前 Turn 等待用户选择」。
 - `apps/docs-site/zh/` 与 `docs/` 共用 `docs/writing-rules.json` 的可读性上限：单句最多 140 字，一段最多 320 字。超长句拆成两句或列表，长段落按想法拆开。
@@ -78,4 +78,4 @@ PATH=/opt/homebrew/opt/node@24/bin:$PATH pnpm lint
 ```
 
 这一条统一执行 `lint/docs/` 与 `lint/docs-site/` 下的规则、Mintlify 构建校验和 Mintlify 断链检查。后两步调 Mint CLI，需要 LTS Node，所以要带
-`PATH` 前缀。只想单独验其中一项时用 `pnpm run docs:validate` 或 `pnpm run docs:links`。
+`PATH` 前缀。只想单独验其中一项时用 `pnpm run repo docs site validate` 或 `pnpm run repo docs site links`。

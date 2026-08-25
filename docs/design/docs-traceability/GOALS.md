@@ -13,7 +13,7 @@
 
 Feature 查询应列出 package 页面、直接子功能、本地与跨 Feature Use Case、直接相关的 Roadmap、Design、Engineering、E2E owner、测试文件、Feedback、Memory 与 Issue provenance。
 测试查询应列出 owner anchor、产品契约、所属 Features、regression Memory 与 Issue provenance。
-`feature list` 与 `test list` 输出的身份必须能原样交给各自的 `show`，不要求用户拼 qualified ref。
+`pnpm run repo docs feature list` 与 `pnpm run repo docs test list` 输出的身份必须能原样交给各自的 `show`，不要求用户拼 qualified ref。
 
 ### G2：关系只在 owner 处声明
 

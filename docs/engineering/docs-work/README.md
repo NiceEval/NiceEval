@@ -6,7 +6,7 @@ Docs Work 把已经定稿的文档目标切成互斥写集，并为每份交付�
 定稿的 docs scope
         │
         ▼
-docs:work prepare
+pnpm run repo docs work prepare
         │
         ├─ work item A ──▶ Agent A ──▶ scoped receipt
         ├─ work item B ──▶ Agent B ──▶ scoped receipt
@@ -79,11 +79,11 @@ type DocsCheck =
 ## 命令面
 
 ```text
-pnpm docs:work prepare --scope <path> [--base <commit>] [--json]
-pnpm docs:work show <run-id> [--json]
-pnpm docs:work check <run-id> <item-id> --report [--json]
-pnpm docs:work check <run-id> <item-id> --verify <receipt> [--json]
-pnpm docs:work finalize <run-id> [--json]
+pnpm run repo docs work prepare --scope <path> [--base <commit>] [--json]
+pnpm run repo docs work show <run-id> [--json]
+pnpm run repo docs work check <run-id> <item-id> --report [--json]
+pnpm run repo docs work check <run-id> <item-id> --verify <receipt> [--json]
+pnpm run repo docs work finalize <run-id> [--json]
 ```
 
 命令面不提供 `claim`、`start-agent`、`wait` 或 `finish`。这些动作会与 Herdr 的真实 agent / pane 状态形成第二套调度状态。work item 的“负责人”和执行状态由 Herdr 与父 Agent 管理；Docs Work 只保存可重新执行的输入和检查收据。

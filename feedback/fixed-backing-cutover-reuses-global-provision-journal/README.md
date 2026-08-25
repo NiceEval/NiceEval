@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: fixed-backing-cutover-reuses-global-provision-journal
 title: Declarative fixed backing cutover reuses the previous provision journal
 state: open
@@ -16,5 +16,8 @@ impact: A legitimate declarative capacity migration cannot publish a new epoch e
 memoryRelations:
   - kind: root-cause
     memory: fixed-backing-cutover-needs-epoch-registry-namespace
+adoptions:
+  current: []
+  history: []
 ---
 Only the explicit seed-rotation flag assigned registryEpoch; an ordinary source-config backing change did not isolate its registry and provision state.

@@ -454,9 +454,6 @@ function validateNodeRelations(
     if (!validNodePlacement(node)) {
       throw new TraceFormatError({ path: node.path, subject: "placement", message: `${node.kind} is not valid at this path` });
     }
-    if (node.kind === "design" && (node.relations.selectedPlan?.length ?? 0) !== 1) {
-      throw new TraceFormatError({ path: node.path, subject: "selectedPlan", message: "strict Design must select exactly one direct Design Plan" });
-    }
     if (node.kind === "use-case") {
       const composes = node.relations.composes ?? [];
       const crossFeature = node.path.startsWith("docs/feature/use-case/");

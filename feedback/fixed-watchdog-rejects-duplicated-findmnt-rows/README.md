@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: fixed-watchdog-rejects-duplicated-findmnt-rows
 title: Fixed watchdog rejects valid slot mounts in its systemd namespace
 state: open
@@ -16,5 +16,8 @@ impact: The fixed profile has a valid committed epoch and mounted storage but ad
 memoryRelations:
   - kind: root-cause
     memory: fixed-watchdog-findmnt-duplicate-mount-rows
+adoptions:
+  current: []
+  history: []
 ---
 The mount verifier treated duplicate identical rows as one newline-containing source instead of one unambiguous mount identity.
