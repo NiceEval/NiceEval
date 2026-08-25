@@ -340,7 +340,7 @@ const memory = Command.make("memory").pipe(
 
 const prNumberOption = Options.integer("pr").pipe(Options.withDescription("GitHub pull request number."));
 const sourceOption = Options.text("source").pipe(Options.withDescription(
-  "Authored Markdown draft path; defaults to a Git-private path selected from --pr or the current branch.",
+  "Authored Markdown draft path; when omitted, the command selects its matching Git-private draft.",
 ));
 const baseOption = Options.text("base").pipe(Options.withDescription("Locked base ref or target branch."));
 const budgetOption = Options.integer("budget").pipe(
