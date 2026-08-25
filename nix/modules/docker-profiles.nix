@@ -606,6 +606,14 @@ in
           loop = profile.storage.backing == "loop-ext4";
           fixed = c.fixed;
           moduleStore = loop;
+          watchdogSocketReady = pkgs.writeShellScript "niceeval-dp-watchdog-socket-ready-${name}" ''
+            for i in $(seq 1 30); do
+              if [ -S ${p.controlSocket} ]; then break; fi
+              sleep 0.2
+            done
+            chmod 660 ${p.controlSocket}
+            chgrp ${p.accessGroup} ${p.controlSocket}
+          '';
         in
         [
           (nameValuePair "niceeval-docker-profile-storage-${name}" (mkIf (enabled && moduleStore) {
@@ -880,14 +888,7 @@ in
                   --socket-mode=0o660 \
                   --ready-file=${p.runtimeDir}/watchdog.ready
               '';
-              ExecStartPost = "${pkgs.bash}/bin/bash -c ${lib.escapeShellArg ''
-                for i in $(seq 1 30); do
-                  if [ -S ${p.controlSocket} ]; then break; fi
-                  sleep 0.2
-                done
-                chmod 660 ${p.controlSocket}
-                chgrp ${p.accessGroup} ${p.controlSocket}
-              ''}";
+              ExecStartPost = watchdogSocketReady;
               Restart = "always";
               RestartSec = 1;
               TimeoutStopSec = 30;
@@ -939,14 +940,7 @@ in
                   --ready-file=${p.runtimeDir}/watchdog.ready \
                   --activation-manifest-digest="$NICEEVAL_ACTIVATION_MANIFEST_DIGEST"
               '';
-              ExecStartPost = "${pkgs.bash}/bin/bash -c ${lib.escapeShellArg ''
-                for i in $(seq 1 30); do
-                  if [ -S ${p.controlSocket} ]; then break; fi
-                  sleep 0.2
-                done
-                chmod 660 ${p.controlSocket}
-                chgrp ${p.accessGroup} ${p.controlSocket}
-              ''}";
+              ExecStartPost = watchdogSocketReady;
               Restart = "always";
               RestartSec = 1;
               TimeoutStopSec = 30;
