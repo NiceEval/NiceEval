@@ -1,7 +1,6 @@
 # Docker 执行配置 —— CLI
 
-运行命令从 raw DinD的 `dockerAccess.storageProfile`或 managed DinD的 `dockerAccess.profile`取得别名。CLI不要求额外 flag；它只提供 profile的
-只读发现与 doctor。宿主部署由 NixOS module或 systemd host package完成。
+运行命令从 raw DinD 的 `dockerAccess.storageProfile` 或 managed DinD 的 `dockerAccess.profile` 取得别名，不要求额外 profile flag。CLI 只提供 profile 的只读发现与 doctor。宿主部署由 NixOS module 或 systemd host package 完成。
 
 ## 运行
 
@@ -168,6 +167,40 @@ services.niceeval.dockerProfiles.default = {
 
 module原子产生 dedicated account/subids、systemd units、bounded filesystem、root-owned descriptor、
 socket ACL与开机 recovery。改变声明由 NixOS rebuild处理，不经过 `niceeval exp`。
+
+raw daemon 要启用 Docker-data Setup Prefix cache 时使用独立 fixed backing：
+
+```nix
+services.niceeval.dockerProfiles.harness-raw = {
+  enable = true;
+  securityLevel = "raw-dind-storage/v1";
+  rawDockerSocket = "/run/docker.sock";
+  rawDockerRootDir = "/var/lib/docker";
+  capacity = {
+    cpus = 8; memory = "16G"; pids = 4096;
+    maxContainers = 2; maxBuilds = 1;
+    ephemeralDiskBytes = "4G";
+    dockerDataAllocationCount = 2;
+  };
+  aggregate = { cpus = 10; memory = "20G"; pids = 6144; };
+  storage = {
+    size = "80G";
+    backing = "fixed-image-ext4";
+    rootDir = "/data/niceeval/docker-profiles/harness-raw";
+  };
+  setupPrefix = { enable = true; seedCount = 10; };
+};
+```
+
+该配置继续绑定既有 daemon 的 `DockerRootDir`，不修改或搬迁它。fixed store 位于版本化路径，和旧
+`loop-ext4` image/config/journal 分开。rebuild 前必须 drain profile 与默认 daemon 的 NiceEval 资源；
+activation/provisioner 会独立复核并 fail closed。切换 backing 只提交新的 activation epoch，不表示 daemon
+generation bump。`rootDir` 省略时仍使用 `/var/lib` 下的 profile state；相对路径、`/`、active mount 与旧 image 冲突均拒绝。
+
+Nix switch 与通用 package install 只安装候选材料，不隐式 activation。管理员显式 activation、
+`--rollback-to <epoch>` 与 `--rotate-seeds` 都走同一个 exclusive cutover。`--status` 分别报告 active seed
+remaining、retained epoch、retirable 与 reclaimable bytes。`--retire-epoch` 只提交 tombstone；
+`--reclaim-epoch` 另做全量引用 closure 并写 receipt，成功后该 epoch 不再可 cold rollback。
 
 ### Ubuntu、Debian与其它 systemd Linux
 

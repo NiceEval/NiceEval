@@ -2,21 +2,24 @@ import { Data } from "effect";
 import { relative, sep } from "node:path";
 import type { AgentRun, DiscoveredEval, ExperimentHookContext } from "../runner/types.ts";
 import type { JsonValue } from "../shared/types.ts";
-import type { SandboxLayer } from "../sandbox/layer.ts";
+import {
+  appendCommandOnlySandboxLayer,
+  type SandboxLayer,
+} from "../sandbox/layer.ts";
+import { sandboxLayerDefinitionIdentity } from "../sandbox/link.ts";
 import {
   linkPluginLifecycles,
   pluginLifecycleIdentity,
   pluginLifecycleProjection,
-  projectPluginLifecycles,
   type LinkedPluginLifecycle,
   type PluginInstance,
-  type PluginScope,
+  type PluginOwner,
 } from "./contracts.ts";
 
 export type PluginLinkIssueCode = "plugin-instance-invalid" | "plugin-owner-unsupported" | "plugin-pair-instance-conflict";
 
 export interface PluginOccurrenceProvenance {
-  readonly attachment: PluginScope;
+  readonly attachment: PluginOwner;
   readonly owner: { readonly id: string; readonly source: string; readonly position: number };
 }
 
@@ -87,9 +90,60 @@ function sourceLabel(path: string): string {
   return relative(process.cwd(), path).split(sep).join("/") || ".";
 }
 
+function sandboxDeclaration(lifecycle: LinkedPluginLifecycle): JsonValue | undefined {
+  return lifecycle.sandboxLayer === undefined
+    ? undefined
+    : Object.freeze({
+        present: true,
+        declaration: sandboxLayerDefinitionIdentity(lifecycle.sandboxLayer),
+      });
+}
+
+function pluginLifecycleAttachmentIdentity(lifecycle: LinkedPluginLifecycle): JsonValue {
+  const sandbox = sandboxDeclaration(lifecycle);
+  if (sandbox === undefined) return pluginLifecycleIdentity(lifecycle);
+  return Object.freeze({
+    scope: lifecycle.scope,
+    name: lifecycle.name,
+    behaviorRevision: lifecycle.behaviorRevision,
+    instanceKey: lifecycle.instanceKey,
+    identity: lifecycle.identity,
+    arrayPosition: lifecycle.arrayPosition,
+    hasSetup: lifecycle.hasSetup,
+    hasTeardown: lifecycle.hasTeardown,
+    sandbox,
+  });
+}
+
+function pluginOccurrenceProjection(lifecycle: LinkedPluginLifecycle): JsonValue {
+  const sandbox = sandboxDeclaration(lifecycle);
+  return Object.freeze({
+    // Keep the established occurrence field order for attachments without a
+    // sandbox fragment; some persisted projections are byte-sensitive.
+    scope: lifecycle.scope,
+    name: lifecycle.name,
+    instanceKey: lifecycle.instanceKey,
+    behaviorRevision: lifecycle.behaviorRevision,
+    identity: lifecycle.identity,
+    arrayPosition: lifecycle.arrayPosition,
+    hasSetup: lifecycle.hasSetup,
+    hasTeardown: lifecycle.hasTeardown,
+    ...(sandbox === undefined ? {} : { sandbox }),
+  });
+}
+
+function pluginAttachmentProjection(lifecycles: readonly LinkedPluginLifecycle[]): JsonValue {
+  if (lifecycles.every((lifecycle) => lifecycle.sandboxLayer === undefined)) {
+    return pluginLifecycleProjection(lifecycles);
+  }
+  const projection: JsonValue[] = lifecycles.map(pluginLifecycleAttachmentIdentity);
+  Object.freeze(projection);
+  return projection;
+}
+
 function occurrences(
   lifecycles: readonly LinkedPluginLifecycle[],
-  scope: PluginScope,
+  scope: PluginOwner,
   ownerId: string,
   sourcePath: string,
 ): readonly LinkedPluginOccurrence[] {
@@ -98,16 +152,12 @@ function occurrences(
       attachment: scope,
       owner: Object.freeze({ id: ownerId, source: sourceLabel(sourcePath), position: lifecycle.arrayPosition }),
     });
-    const projection = Object.freeze({
-      scope,
-      name: lifecycle.name,
-      instanceKey: lifecycle.instanceKey,
-      behaviorRevision: lifecycle.behaviorRevision,
-      identity: lifecycle.identity,
-      arrayPosition: lifecycle.arrayPosition,
-      hasSetup: lifecycle.hasSetup,
-      hasTeardown: lifecycle.hasTeardown,
-    }) as JsonValue;
+    const projection = pluginOccurrenceProjection(lifecycle);
+    const sandbox = sandboxDeclaration(lifecycle);
+    const contributions = [
+      ...(lifecycle.hostDeclared ? ["lifecycle"] : []),
+      ...(sandbox === undefined ? [] : ["sandbox"]),
+    ];
     return Object.freeze({
       name: lifecycle.name,
       instanceKey: lifecycle.instanceKey,
@@ -123,25 +173,26 @@ function occurrences(
         arrayPosition: lifecycle.arrayPosition,
         hasSetup: lifecycle.hasSetup,
         hasTeardown: lifecycle.hasTeardown,
+        ...(sandbox === undefined ? {} : { sandbox }),
         ownerSource: provenance.owner,
-        contributions: ["lifecycle"],
+        contributions,
       }) as JsonValue,
     });
   }));
 }
 
-function sandboxOccurrenceProjections(
+function appendPluginSandboxLayers(
+  base: SandboxLayer | undefined,
   lifecycles: readonly LinkedPluginLifecycle[],
-  ownerKind: "experiment" | "eval-group" | "eval",
-  ownerId: string,
-): JsonValue[] {
-  const owner = Object.freeze({ kind: ownerKind, id: ownerId });
-  const projections: JsonValue[] = lifecycles.map((lifecycle) => Object.freeze({
-    owner,
-    lifecycle: pluginLifecycleIdentity(lifecycle),
-  }) as JsonValue);
-  Object.freeze(projections);
-  return projections;
+): SandboxLayer | undefined {
+  let layer = base;
+  for (const lifecycle of lifecycles) {
+    if (lifecycle.sandboxLayer === undefined) continue;
+    layer = layer === undefined
+      ? appendCommandOnlySandboxLayer(undefined, lifecycle.sandboxLayer)
+      : appendCommandOnlySandboxLayer(layer, lifecycle.sandboxLayer);
+  }
+  return layer;
 }
 
 async function runTeardowns(
@@ -188,7 +239,7 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
         catch (error) { if (pluginFailure === undefined) throw error; throw new AggregateError([pluginFailure, error], "Experiment teardown failed."); }
         if (pluginFailure !== undefined) throw pluginFailure;
       };
-  const pluginBehavior = Object.freeze({ version: 1, lifecycles: pluginLifecycleProjection(lifecycles) }) as JsonValue;
+  const pluginBehavior = Object.freeze({ version: 1, lifecycles: pluginAttachmentProjection(lifecycles) }) as JsonValue;
   const effective = Object.freeze({ ...run, ...(setup === undefined ? {} : { setup }), ...(teardown === undefined ? {} : { teardown }), pluginBehavior }) as AgentRun;
   return Object.freeze({ sourceRun: run, run: effective, experimentOccurrences: linkedOccurrences, experimentLifecycles: lifecycles });
 }
@@ -199,49 +250,41 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
     const groupLifecycles = evalDef.evalGroup === undefined
       ? Object.freeze([]) as readonly LinkedPluginLifecycle[]
       : linkPluginLifecycles(evalDef.evalGroup.plugins ?? [], "group");
-    const experimentSandbox = projectPluginLifecycles(preparedRun.run.plugins ?? [], "sandbox");
-    const groupSandbox = evalDef.evalGroup === undefined
-      ? Object.freeze([]) as readonly LinkedPluginLifecycle[]
-      : projectPluginLifecycles(evalDef.evalGroup.plugins ?? [], "sandbox");
-    const evalSandbox = projectPluginLifecycles(evalDef.plugins, "sandbox");
-    const sandboxKeys = new Set<string>();
-    for (const lifecycle of [...experimentSandbox, ...groupSandbox, ...evalSandbox]) {
-      const key = JSON.stringify([lifecycle.name, lifecycle.instanceKey]);
-      if (sandboxKeys.has(key)) throw new TypeError(`Duplicate sandbox plugin occurrence (${JSON.stringify(lifecycle.name)}, ${JSON.stringify(lifecycle.instanceKey)}).`);
-      sandboxKeys.add(key);
-    }
-    if (preparedRun.run.agent.kind === "direct" && sandboxKeys.size > 0) {
-      throw new TypeError("Plugin sandbox lifecycle requires a Sandbox Agent and a physical Sandbox plan.");
+    const allLifecycles = [...preparedRun.experimentLifecycles, ...groupLifecycles, ...evalLifecycles];
+    if (preparedRun.run.agent.kind === "direct" && allLifecycles.some((entry) => entry.sandboxLayer !== undefined)) {
+      throw new TypeError("Plugin sandbox layer requires a Sandbox Agent and a physical Sandbox plan.");
     }
     const evalOccurrences = occurrences(evalLifecycles, "eval", evalDef.id, evalDef.sourcePath);
     const groupOccurrences = evalDef.evalGroup === undefined
       ? Object.freeze([]) as readonly LinkedPluginOccurrence[]
       : occurrences(groupLifecycles, "group", evalDef.evalGroup.id, evalDef.evalGroup.sourcePath);
     const all = Object.freeze([...preparedRun.experimentOccurrences, ...groupOccurrences, ...evalOccurrences]);
-    const sandboxOccurrences: JsonValue[] = [
-      ...sandboxOccurrenceProjections(experimentSandbox, "experiment", preparedRun.run.experimentId),
-      ...(evalDef.evalGroup === undefined
-        ? []
-        : sandboxOccurrenceProjections(groupSandbox, "eval-group", evalDef.evalGroup.id)),
-      ...sandboxOccurrenceProjections(evalSandbox, "eval", evalDef.id),
-    ];
-    Object.freeze(sandboxOccurrences);
+    const experimentLayer = appendPluginSandboxLayers(preparedRun.run.sandbox, preparedRun.experimentLifecycles);
+    const groupLayer = evalDef.evalGroup === undefined
+      ? undefined
+      : appendPluginSandboxLayers(evalDef.evalGroup.sandbox, groupLifecycles);
+    const evalLayer = appendPluginSandboxLayers(evalDef.sandbox, evalLifecycles);
+    const noSandboxLifecycles = Object.freeze({
+      experiment: Object.freeze([]),
+      group: Object.freeze([]),
+      eval: Object.freeze([]),
+    });
     return Object.freeze({
-      evalLayer: evalDef.sandbox,
-      ...(evalDef.evalGroup === undefined ? {} : { groupLayer: evalDef.evalGroup.sandbox }),
-      experimentLayer: preparedRun.run.sandbox,
+      ...(evalLayer === undefined ? {} : { evalLayer }),
+      ...(groupLayer === undefined ? {} : { groupLayer }),
+      ...(experimentLayer === undefined ? {} : { experimentLayer }),
       occurrences: all,
       resources: Object.freeze([]),
       experimentLifecycles: preparedRun.experimentLifecycles,
       groupLifecycles,
       evalLifecycles,
-      sandboxLifecycles: Object.freeze({ experiment: experimentSandbox, group: groupSandbox, eval: evalSandbox }),
+      // The runner field remains source-compatible while the old sandbox
+      // lifecycle data path is retired. Plugin layers are already composed
+      // into their actual owner layer above.
+      sandboxLifecycles: noSandboxLifecycles,
       pairProjection: Object.freeze({
         version: 1,
         occurrences: all.map((entry) => entry.projection),
-        // Preserve existing fingerprint bytes for pairs with no Sandbox Plugin;
-        // only histories whose identity coverage was incomplete must become fresh.
-        ...(sandboxOccurrences.length === 0 ? {} : { sandboxOccurrences }),
       }) as JsonValue,
     });
   } catch (error) {

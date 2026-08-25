@@ -32,7 +32,7 @@ Attachment envelope 的 `schemaVersion` 由对应 family 契约拥有：
 | Adapter 解释、脱敏后的 terminal Turn 与 provider usage observation | origin Attempt 的 `niceeval.agent-turns` |
 | 每个物理 `t.send` 当时已知的 source context | origin Attempt 的 `niceeval.turn-contexts` |
 | Sandbox 受管命令的 manifest、唯一终态与安全 stream | origin Attempt 的 `niceeval.sandbox-commands` |
-| 创建、prepare、命令与 Attempt / Run 阶段的 owner-local activity | origin Attempt 或 Run 的 `niceeval.runner-activities` |
+| 创建、before、命令与 Attempt / Run 阶段的 owner-local activity | origin Attempt 或 Run 的 `niceeval.runner-activities` |
 | advisory 与 execution error | origin Attempt 或 Run 的 `niceeval.runner-diagnostics` |
 | agent 归因的 workdir 文件变化轨迹、归因策略与采集状态 | origin Attempt 的 `niceeval.file-changes` |
 | source frame 与可复现输入所需的源码闭包 | origin Run 的 `niceeval.sources` |
@@ -78,6 +78,8 @@ interface Sandbox extends SandboxOperations, SandboxTransferOperations {
 eval 作者在 `test(t)` 里拿到的是 author-facing `EvalSandbox`:复用同一操作词汇，只增加归因断言声明，不暴露 `stop()` 或 provider 元数据。
 沙箱生命周期由 runner 统一管理。
 
+声明式 `before` action 还形成内容寻址的准备前缀。缓存是透明优化：命中只恢复经过身份、完整性与私有写入隔离验证的状态，未命中或不支持时执行同一 action。`defineSandboxAction()` 是作者的确定性承诺；NiceEval 不把 `verified` 解释成对任意 shell、网络或时间读取的自动证明。完整边界见 [Architecture](architecture.md#准备前缀的身份与验证边界) 与 [Lifecycle](lifecycle.md#准备前缀的运行时序)。
+
 文本读取只有一个 API:`readText(path)` 读一个文件。二进制读写使用 `readBytes` / `writeBytes`；`upload*` / `download*` 专指宿主机与 Sandbox 传输。
 
 批量读、按扩展名过滤、拼接全文这类聚合是普通代码。已知路径直接循环 `readText`；未知路径可用 `runShell` 调 `find` / `cat`。
@@ -102,10 +104,10 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 
 ## 相关阅读
 
-- [Sandbox Layer](layers.md) —— Eval / Experiment 的 `sandbox` 声明:template 配对、准备命令与顺序。
-- [三方准备时序](lifecycle.md) —— link 规划、owner 顺序、fresh / reuse 次数与错误归属。
-- [内置 prepare 命令](prepare-commands.md) —— `checkout()` / `installTool()` 官方写法与 `niceeval debug` 可证明边界。
-- [Library](library.md) —— 路径与 workdir、执行身份、Provider 选择、准备命令、自定义 provider。
+- [Sandbox Layer](layers.md) —— Eval / Experiment 的 `sandbox` 声明：template 配对、before action 与顺序。
+- [三方准备时序](lifecycle.md) —— link 规划、action schedule、fresh / reuse 次数与错误归属。
+- [内置 before action](prepare-commands.md) —— `gitCheckout()` / `shell()` 官方写法与 `niceeval debug` 可证明边界。
+- [Library](library.md) —— 路径与 workdir、执行身份、Provider 选择、before action、自定义 Provider。
 - [Case](case.md) —— 一份 Sandbox 声明的完整运行单位:五类 case、BuildKey / CaseKey、构建协调、Compose、能力矩阵。
 - [预制实例](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从中启动。
 - [Docker 执行配置](docker-profiles/README.md) —— raw与 managed DinD的 profile、私有 Docker data allocation、硬配额与故障回收。
@@ -115,5 +117,6 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 - [操作 Sandbox](library/operations.md) —— eval 里怎样读写文件和运行命令。
 - [断言 Sandbox 结果](library/asserting-results.md) —— 怎样判断 diff、文件和 shell 行为。
 - [Architecture](architecture.md) —— provider 内部实现、生命周期在 attempt 里的位置、性能与重试。
+- [准备前缀](architecture.md#准备前缀的身份与验证边界) —— SetupPrefixKey、Docker 支持边界、失败降级与观测。
 - [Sandbox Agent](../adapters/library/sandbox-agent.md) —— Adapter 如何通过 `Sandbox` 接口驱动 agent。
 - [Runner](../../runner.md) —— 并发、预热、复用的调度。

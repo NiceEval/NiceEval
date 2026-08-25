@@ -43,6 +43,8 @@ export class ExperimentHostError extends Data.TaggedError("ExperimentHostError")
   readonly operation: ExperimentHostOperation;
   readonly code: string;
   readonly message: string;
+  /** Structured typed failure retained for application/CLI attribution. */
+  readonly cause?: unknown;
 }> {}
 
 /** Inputs shared by discovery, link checking, and invocation planning. */

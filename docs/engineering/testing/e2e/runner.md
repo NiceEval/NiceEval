@@ -18,6 +18,7 @@
 | [`#runner-max-concurrency-invocation-local`](#runner-max-concurrency-invocation-local) | 两条 Invocation 各自拥有 Experiment `maxConcurrency` 额度，不互相占用或收紧 | Journey E2E | `e2e/runner/test/max-concurrency-invocation-local.test.ts` | PR |
 | [`#runner-shared-state-lifecycle`](#runner-shared-state-lifecycle) | 相同 `sharedState.key` 的不同 Experiment 不交错外部状态生命周期 | Journey E2E | `e2e/runner/test/shared-state-lifecycle.test.ts` | PR |
 | [`#runner-provider-lane`](#runner-provider-lane) | 等待 sharedState 不占用同一 exclusive Provider lane | Journey E2E | `e2e/runner/test/provider-lane.test.ts` | PR |
+| [`#runner-provider-capacity-queue`](#runner-provider-capacity-queue) | 等待 Docker profile 容量的 Attempt 保持 queued，且不阻塞其它 Provider | Journey E2E | `e2e/runner/test/provider-capacity-queue.test.ts` | PR |
 | [`#runner-shared-state-scheduler`](#runner-shared-state-scheduler) | 同 Invocation 的同 key waiter 不饿死 holder 的后继 Attempt | Journey E2E | `e2e/runner/test/shared-state-scheduler.test.ts` | PR |
 | [`#runner-shared-state-startup-authority`](#runner-shared-state-startup-authority) | 启动遗留 teardown 先取得同 key authority，健康等待不泄露 token | Journey E2E | `e2e/runner/test/shared-state-startup-authority.test.ts` | PR |
 | [`#runner-fresh-sandbox-provider-stop`](#runner-fresh-sandbox-provider-stop) | fresh custom Provider 的 group stop 失败保留 sharedState，公开输出不泄露 token | Journey E2E | `e2e/runner/test/fresh-sandbox-provider-stop.test.ts` | PR |
@@ -122,7 +123,7 @@ Contract: [串行保护共享状态](../../../feature/experiments/use-case/并�
 带 `sandboxReuse` 的切片还证明两个 Attempt 使用同一物理 Sandbox。最后一个 Attempt settle 后，Sandbox
 lifecycle/finalizer scope barrier 与 Experiment teardown barrier 都阻止第二 Invocation 的 setup。
 
-前者由 `SandboxLayer.teardown` hook 确定性阻塞。实际 provider finalizer 也由同一 `Scope.close` 等待，但 fixture
+前者由 `SandboxLayer.lifecycle().teardown` hook 确定性阻塞。实际 provider finalizer 也由同一 `Scope.close` 等待，但 fixture
 不直接注入它。该 Journey 经安装后的 `niceeval exp` 证明等待方没有在共享状态区间内运行 Hook 或执行 Eval。
 
 ### runner-provider-lane
@@ -134,6 +135,12 @@ Contract: [串行保护共享状态](../../../feature/experiments/use-case/并�
 Experiment 必须能先进入自己的 Sandbox 与 Agent body；Provider 的实际 Sandbox / Agent body 仍按 lane 串行。
 该 owner 使用仅测试的 custom exclusive Provider，并把 `HOME`、`CODEX_HOME` 与 `TMPDIR` 固定在 case 的隔离项目副本内；
 它只证明 generic exclusive scheduler，不代表任何公开 host Sandbox 产品能力。
+
+### runner-provider-capacity-queue
+
+可控 Docker profile fixture 先占满容量，再同时派发一个 Docker waiter 与一个不使用该 profile 的 Attempt。安装后的 `niceeval exp` 必须把 waiter 显示为 `queued`，reason 为 `provider-capacity`，顶部 queued/running 汇总来自同一状态；它在 reservation grant 前不能出现 `running` 或 `creating sandbox`。等待期间不占普通 sandbox semaphore，因此不相关 Provider 的 Attempt 仍能进入创建并完成。
+
+fixture 释放一个 profile slot 后，waiter 才迁移到 `running` / `creating sandbox`。Human 与 invocation-local JSON queue transition 断言同一顺序；测试不读取 reducer、Docker profile 私有状态或 `.niceeval/` 落盘。
 
 ### runner-shared-state-scheduler
 

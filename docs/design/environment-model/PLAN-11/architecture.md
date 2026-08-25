@@ -192,8 +192,8 @@ Eval Fixture 分成两个可见性区间。
 turn 前的 setup 与 Fixture 可以被 Agent 看到;隐藏 verifier、official tests 与 criteria 只能在最后一次 Agent turn 返回后挂载,再进入断言求值。
 Base build content 也不能携带本应隐藏的判分材料。
 
-隐藏 verifier 的资源准备与 cleanup 必须成对。
-资源准备一旦进入,无论 verifier、断言求值或后续阶段怎样退出,cleanup 都在 `finally` 中运行。
+隐藏 verifier 的 resource acquisition 与 cleanup 必须成对。
+resource acquisition 一旦进入,无论 verifier、断言求值或后续阶段怎样退出,cleanup 都在 `finally` 中运行。
 
 Library 的 `HiddenVerifierMaterializeContext.onCleanup()` 要求作者在取得每项外部资源前登记收尾,Runner 按 LIFO 执行并写入结果。
 cleanup 作用于 workdir 外的路径、mount、进程和临时凭据,并且必须在下一条 Attempt、state save 与 Sandbox reset 之前成功。
@@ -505,7 +505,7 @@ activity 至少写入 owner、Requirement name、阶段、时点、耗时与结�
 - 依赖阻塞链与资源等待时间。
 - 初始检查、成员复检和最终屏障结果。
 - AgentProvisioner 与 Agent runtime 各自的 target、actual identity 和最终检查。
-- 隐藏 verifier 资源准备、断言求值与 cleanup 的结果;不会落盘判分材料正文。
+- 隐藏 verifier acquisition、断言求值与 cleanup 的结果;不会落盘判分材料正文。
 - state declared identity、load/save checkpoint identity、digest、outcome 与 window identity。
 - Sandbox 复用 window identity、承接序号与资源修改代次。
 

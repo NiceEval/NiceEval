@@ -82,23 +82,23 @@ npx niceeval debug compare/codex memory/commit0 --json
 
 Both selectors must be unique. An exact ID takes precedence; otherwise you can use a unique prefix. An Eval can match only within the range selected by the Experiment. Zero or multiple matches list exact candidates.
 
-The plan includes Plugin lifecycle, author preparation, Agent ensure/setup/teardown, test, cleanup, and Provider finalizer. A statically declared `shell()` / `command()` expands to its actual command; an ordinary callback is marked `opaque`.
+The plan includes Plugin lifecycle, author `.before()` actions, Agent ensure/setup/teardown, test, cleanup, and Provider finalizer. A statically declared `shell()` / `command()` expands to its actual command; an ordinary callback is marked `opaque`. Dry inspection shows cache runtime status as `pending` and the final key as `not-probed`; it does not claim a runtime hit or eligibility result.
 
 When an Eval is in a Group, selecting only that member does not add the Group's other members back into the plan, but the output still retains one Group lifecycle wrapper. Human-readable output shows only `COMMAND PLAN`; `--json` outputs one `niceeval.debug-plan/v1` document.
 
 In a TTY, the overview, Experiment, lane, slot, and each lifecycle step use separate rounded region boxes like `show`; it does not put the entire tree in one outer box. Each Shell, Plugin occurrence, and phase without a command or whose command can only be known at runtime has its own box:
 
 ```text
-╭─ sandbox.materialize ─────────────────────────────────────── OPAQUE ─╮
+╭─ sandbox.create ──────────────────────────────────────────── OPAQUE ─╮
 │ position: lane eval-group:group · physical lifecycle template enter  │
 │ owner: provider:docker                                               │
 │ template: docker:image                                               │
 │ template owner: experiment:suite/one                                 │
 │ configured locator: exact · image="node@sha256:cd849..."             │
-│ reason: provider materialization is a runtime operation              │
+│ reason: provider provisioning is a runtime operation                 │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.prepare ──────────────────────────────────────────── EXACT ─╮
+╭─ sandbox.before ──────────────────────────────────────────── EXACT ─╮
 │ position: lane eval-group:group · slot group/first #0                │
 │ owner: eval:group/first                                              │
 │ command: shell "printf fixture-ready"                                │
@@ -108,7 +108,7 @@ In a TTY, the overview, Experiment, lane, slot, and each lifecycle step use sepa
 A multiline Shell appears in its own box as a code block with a gutter, rather than a one-line string containing `\n`. Indentation, blank lines, trailing newlines, and wrapped long lines are retained. Terminal control characters appear as escaped text:
 
 ```text
-╭─ sandbox.prepare ──────────────────────────────────────────────────── EXACT ─╮
+╭─ sandbox.before ──────────────────────────────────────────────────── EXACT ─╮
 │ position: lane eval:group/first · slot group/first #0                        │
 │ owner: eval:group/first                                                      │
 │ command: shell · 5 lines                                                     │
@@ -124,13 +124,13 @@ Piped output, `NO_COLOR`, or a terminal that is too narrow degrades each box int
 
 Within each lane, Human output always displays Group before-slot, physical enter, slots, physical exit, and Group after-slot in that order. Physical teardown and the Provider finalizer therefore appear after every slot that uses the instance.
 
-A Sandbox materialize node shows the template owner, Provider, kind, and safe configured locator. `Exact` means only that the author's configuration is displayed verbatim; it does not mean an image tag, remote content, or final instance has been frozen. Credentials, query strings, and fragments in a remote URL are redacted. A Docker image displays `Exact` only for a conservative credential-safe reference, optionally with a standard `sha256` digest. A URL, non-digest userinfo, or other unsafe syntax displays the whole item as `Opaque` and does not print its original string.
+A Sandbox create node shows the template owner, Provider, kind, and safe configured locator. `Exact` means only that the author's configuration is displayed verbatim; it does not mean an image tag, remote content, or final instance has been frozen. Credentials, query strings, and fragments in a remote URL are redacted. A Docker image displays `Exact` only for a conservative credential-safe reference, optionally with a standard `sha256` digest. A URL, non-digest userinfo, or other unsafe syntax displays the whole item as `Opaque` and does not print its original string.
 
 An author-supplied local path, `file:` URL, or Dockerfile file displays as `Opaque` as a whole; its original path never enters output. Environment values, credentials, stdin, build-argument values, and custom identity are not output.
 
 An E2B template name and Vercel snapshot ID are Provider-managed arbitrary strings, so the full locator likewise displays as `Opaque`. At the shared terminal boundary, the Human command plan renders C0, C1, ESC, tab, and carriage return as escaped text in both template metadata and Shell lines. JSON retains structured values and relies on JSON string escaping.
 
-`debug` does not execute runtime setup, test, teardown, ensure, materialization, or a finalizer. It creates no Invocation, Run, Record, lock, Sandbox, or build. It loads `.env` and trusted definitions, and evaluates the Experiment selection predicate. A Provider planner can also read files, call a read-only CLI, or query the Docker control plane and remote APIs.
+`debug` does not execute runtime setup, test, teardown, ensure, Sandbox creation, or a finalizer. It creates no Invocation, Run, Record, lock, Sandbox, or build. It loads `.env` and trusted definitions, and evaluates the Experiment selection predicate. A Provider planner can also read files, call a read-only CLI, or query the Docker control plane and remote APIs.
 
 The plan lists every Attempt configured by the Experiment as a candidate dispatch. A normal run can still skip a slot because of carry, early exit, or budget. `debug` accepts only optional `--json`; any other run flag exits as a usage error.
 

@@ -82,23 +82,23 @@ npx niceeval debug compare/codex memory/commit0 --json
 
 两个 selector 都必须唯一。精确 ID 优先，否则可以使用唯一前缀。评估用例只能从 Experiment 自己选中的范围里匹配；零命中或多命中会列出精确候选。
 
-计划包含 Plugin lifecycle、author prepare、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。能静态声明的 `shell()` / `command()` 展开为实际命令，普通 callback 标为 `opaque`。
+计划包含 Plugin lifecycle、作者 `.before(action)`、Agent ensure/setup/teardown、test、cleanup 与 Provider finalizer。能静态声明的 `shell()` / `command()` 展开为实际命令，普通 callback 标为 `opaque`。Human 与 `--json` 都会显示每个 Action 的 declared/cumulative state、Provider coverage 与 barrier；纯 dry 检查把缓存运行时状态显示为 `pending`，最终 key 显示为 `not-probed`，不声称运行时命中或资格结果。完整阅读方式见[运行前检查 Sandbox 计划](/zh/tutorials/debug-lifecycle-plan)。
 
 评估在 Group 内时，只选择这个成员不会把同组其它成员加回计划，但输出仍保留一次 Group lifecycle 包裹。人读输出只显示 `COMMAND PLAN`；`--json` 输出单个 `niceeval.debug-plan/v1` 文档。
 
 TTY 中，总览、Experiment、lane、slot 和每个 lifecycle step 都分别使用与 `show` 相同的圆角区域框，不会把整棵树放入一个总框。每条 Shell、每个 Plugin occurrence 和每个没有命令或只能运行期确定的阶段都有自己的框：
 
 ```text
-╭─ sandbox.materialize ─────────────────────────────────────── OPAQUE ─╮
+╭─ sandbox.create ──────────────────────────────────────────── OPAQUE ─╮
 │ position: lane eval-group:group · physical lifecycle template enter  │
 │ owner: provider:docker                                               │
 │ template: docker:image                                               │
 │ template owner: experiment:suite/one                                 │
 │ configured locator: exact · image="node@sha256:cd849..."             │
-│ reason: provider materialization is a runtime operation              │
+│ reason: provider provisioning is a runtime operation                 │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.prepare ──────────────────────────────────────────── EXACT ─╮
+╭─ sandbox.before ──────────────────────────────────────────── EXACT ─╮
 │ position: lane eval-group:group · slot group/first #0                │
 │ owner: eval:group/first                                              │
 │ command: shell "printf fixture-ready"                                │
@@ -108,7 +108,7 @@ TTY 中，总览、Experiment、lane、slot 和每个 lifecycle step 都分别�
 多行 Shell 会在自己的框内显示成带 gutter 的代码区，而不是压成带 `\n` 的单行字符串。缩进、空行、末尾换行和长行续行都会保留；终端控制字符显示为转义文本：
 
 ```text
-╭─ sandbox.prepare ──────────────────────────────────────────────────── EXACT ─╮
+╭─ sandbox.before ──────────────────────────────────────────────────── EXACT ─╮
 │ position: lane eval:group/first · slot group/first #0                        │
 │ owner: eval:group/first                                                      │
 │ command: shell · 5 lines                                                     │
@@ -124,13 +124,13 @@ TTY 中，总览、Experiment、lane、slot 和每个 lifecycle step 都分别�
 
 Human 输出在每条 lane 内固定依次显示 Group before-slot、physical enter、slots、physical exit 与 Group after-slot。Physical teardown 和 Provider finalizer 因而位于使用该实例的全部 slot 之后。
 
-Sandbox materialize 节点会显示 template owner、provider、kind 和安全的 configured locator。`Exact` 只代表原样显示作者配置，不代表 image tag、远端内容或最终实例已经冻结。远端 URL 的凭据、query 与 fragment 会脱敏。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`；URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，且不输出原字符串。
+Sandbox create 节点会显示 template owner、provider、kind 和安全的 configured locator。`Exact` 只代表原样显示作者配置，不代表 image tag、远端内容或最终实例已经冻结。远端 URL 的凭据、query 与 fragment 会脱敏。Docker image 只有保守的 credential-safe reference（可带标准 `sha256` digest）才显示 `Exact`；URL、非 digest userinfo 或其它不安全语法整项显示 `Opaque`，且不输出原字符串。
 
 作者提供的本地 path、`file:` URL 或 Dockerfile file 整项显示 `Opaque`，原路径不会进入输出。env value、credential、stdin、build arg value 和 custom identity 不输出。
 
 E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串，因此完整 locator 同样显示 `Opaque`。Human 命令计划在统一终端出口把 C0、C1、ESC、tab 与 carriage return 显示成转义文本，覆盖 template metadata 与 Shell 行。JSON 保留结构化值，并依靠 JSON string escaping。
 
-`debug` 不执行运行期 setup、test、teardown、ensure、materialize 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env` 和受信任定义，并执行 Experiment 的选择 predicate。Provider planner 也可能读取文件、调用只读 CLI，或查询 Docker control plane 和远端 API。
+`debug` 不执行运行期 setup、test、teardown、ensure、Sandbox creation 或 finalizer，也不创建 Invocation、Run、Record、锁、Sandbox 或 build。它会加载 `.env` 和受信任定义，并执行 Experiment 的选择 predicate。Provider planner 也可能读取文件、调用只读 CLI，或查询 Docker control plane 和远端 API。
 
 计划把 Experiment 配置的全部 Attempt 列作候选 dispatch。正常运行仍可能因 carry、首过即停或预算而不执行某个 slot。`debug` 只接受可选的 `--json`；其它运行 flag 会按用法错误退出。
 
@@ -157,6 +157,7 @@ E2B template name 与 Vercel snapshot ID 是 Provider 管理的任意字符串�
 | `--attempts` | `niceeval exp` | number | 让每个选中的评估用例运行指定次数。 |
 | `--max-concurrency` | `niceeval exp` | number | 限制同时执行的 Attempt 数量。 |
 | `--max-build-concurrency` | `niceeval exp` | number | 限制同时准备 Sandbox build 的数量。 |
+| `--sandbox-setup-cache` | `niceeval exp` | string | 使用或绕过 Sandbox 准备缓存。 |
 | `--timeout` | `niceeval exp` | number | 以毫秒设置每个 Attempt 的超时时间。 |
 | `--budget` | `niceeval exp` | number | 以美元设置本次 Invocation 的预算。 |
 | `--junit` | `niceeval exp` | string | 写出必需的 JUnit 报告。 |

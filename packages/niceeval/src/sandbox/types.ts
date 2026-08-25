@@ -2,6 +2,7 @@
 // 作者声明使用 layer.ts 的闭合 SandboxLayer；本文件不再保留旧 provider spec。
 
 import type { ScopedFeedback } from "../shared/types.ts";
+import type { SandboxContent } from "./content.ts";
 
 export interface CommandResult {
   stdout: string;
@@ -38,7 +39,7 @@ export interface SandboxHookContext extends ScopedFeedback {
   readonly signal: AbortSignal;
 }
 
-/** 沙箱级生命周期钩子(`SandboxLayer.setup()` / `.teardown()` 链式挂载)。 */
+/** @internal 旧物理生命周期执行面；公开 SandboxLayer callback 使用 SandboxCommand。 */
 export type SandboxHook = (
   sandbox: Sandbox,
   ctx: SandboxHookContext,
@@ -173,6 +174,8 @@ export interface SandboxOperations {
 
 /** 只用于宿主机与 Sandbox 之间真实传输；内存内容读写使用 read/writeText/Bytes。 */
 export interface SandboxTransferOperations {
+  /** 传输已登记的不可变内容，不暴露其宿主路径。 */
+  upload(content: SandboxContent, targetPath: string): Promise<void>;
   uploadFile(source: string | URL, targetPath: string): Promise<void>;
   uploadDirectory(
     sourceDir: string | URL,

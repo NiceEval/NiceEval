@@ -2,6 +2,7 @@
 
 import type {
   CommandResult,
+  Sandbox,
   SandboxOperations,
   SuccessfulCommandResult,
 } from "./types.ts";
@@ -134,11 +135,108 @@ async function ensureContentDirectory(sandbox: SandboxOperations, path: string):
   }
 }
 
-/** Layer callback 的窄视图；不带宿主传输、provider 元数据或生命周期方法。 */
-export function createSandboxCommandTarget(
+function modeArgument(mode: number): string {
+  return mode.toString(8).padStart(3, "0");
+}
+
+async function chmodContentPath(
   sandbox: SandboxOperations,
+  path: string,
+  mode: number,
+): Promise<void> {
+  const args = [modeArgument(mode), path] as const;
+  try {
+    await sandbox.runCommandOrThrow("chmod", args);
+  } catch (error) {
+    if (!isPermissionDeniedCommand(error)) throw error;
+    // Preserve the transfer primitive's narrow escalation rule: retry only a
+    // command exit that proves the current Sandbox user lacks permission.
+    await sandbox.runCommandOrThrow("chmod", args, { user: "root" });
+  }
+}
+
+async function replaceContentSymlink(
+  sandbox: SandboxOperations,
+  path: string,
+  target: string,
+): Promise<void> {
+  const replace = async (options?: { readonly user: "root" }): Promise<void> => {
+    // Both operations use argv. The immutable manifest already rejected
+    // absolute and out-of-root targets; the interpreter must not reparse or
+    // interpolate the target through a shell.
+    await sandbox.runCommandOrThrow("rm", ["-rf", path], options);
+    await sandbox.runCommandOrThrow("ln", ["-s", target, path], options);
+  };
+  try {
+    await replace();
+  } catch (error) {
+    if (!isPermissionDeniedCommand(error)) throw error;
+    await replace({ user: "root" });
+  }
+}
+
+/**
+ * Shared immutable-content interpreter for public upload() and Action transfer steps.
+ * Snapshot verification happens before the first provider operation; callers never
+ * reconstruct the private manifest or reread its live host locator themselves.
+ */
+export async function putSandboxContent(
+  sandbox: SandboxOperations,
+  content: RegisteredSandboxContent,
+  targetPath: string,
+): Promise<void> {
+  // 先完成 live source 复读、digest 校验和不可变快照，再发起任何 provider I/O。
+  const snapshot = registeredSandboxContentSnapshotOf(content);
+  if (snapshot.kind === "file") {
+    await putContentBytes(
+      sandbox,
+      targetPath,
+      Uint8Array.from(Buffer.from(snapshot.contentBase64, "base64")),
+      snapshot.digest,
+    );
+    await chmodContentPath(sandbox, targetPath, snapshot.mode);
+    return;
+  }
+
+  await ensureContentDirectory(sandbox, targetPath);
+  const directories: Array<{ readonly path: string; readonly mode: number }> = [];
+  // Snapshot 已按路径稳定排序；这里仍显式顺序消费，禁止 Promise.all 引入 provider I/O 乱序。
+  for (const entry of snapshot.entries) {
+    const path = `${targetPath.replace(/\/$/, "")}/${entry.path}`;
+    if (entry.kind === "directory") {
+      await ensureContentDirectory(sandbox, path);
+      directories.push({ path, mode: entry.mode });
+    } else if (entry.kind === "file") {
+      await putContentBytes(
+        sandbox,
+        path,
+        Uint8Array.from(Buffer.from(entry.contentBase64, "base64")),
+        snapshot.digest,
+      );
+      await chmodContentPath(sandbox, path, entry.mode);
+    } else {
+      await replaceContentSymlink(sandbox, path, entry.target);
+    }
+  }
+  // A captured directory may itself be read-only. Apply directory modes
+  // only after every child exists, deepest-first, with the root last.
+  for (let index = directories.length - 1; index >= 0; index--) {
+    const directory = directories[index]!;
+    await chmodContentPath(sandbox, directory.path, directory.mode);
+  }
+  await chmodContentPath(sandbox, targetPath, snapshot.mode);
+}
+
+/** Layer callback 的窄视图；只转发当前物理实例 ID，不带宿主传输或生命周期方法。 */
+export function createSandboxCommandTarget(
+  sandbox: SandboxOperations & Pick<Sandbox, "sandboxId">,
 ): import("./commands.ts").SandboxCommandTarget {
   return {
+    get sandboxId() {
+      // Docker setup-prefix restore can rebase the facade before an opaque callback starts.
+      // Resolve lazily so the callback, its cleanup, and standalone after see the current instance.
+      return sandbox.sandboxId;
+    },
     get workdir() {
       return sandbox.workdir;
     },
@@ -154,34 +252,7 @@ export function createSandboxCommandTarget(
     copyPath: async (sourcePath, targetPath) => {
       await sandbox.runCommandOrThrow("cp", ["-R", sourcePath, targetPath]);
     },
-    putContent: async (content: RegisteredSandboxContent, targetPath: string) => {
-      // 先完成 live source 复读、digest 校验和不可变快照，再发起任何 provider I/O。
-      const snapshot = registeredSandboxContentSnapshotOf(content);
-      if (snapshot.kind === "file") {
-        await putContentBytes(
-          sandbox,
-          targetPath,
-          Uint8Array.from(Buffer.from(snapshot.contentBase64, "base64")),
-          snapshot.digest,
-        );
-        return;
-      }
-
-      await ensureContentDirectory(sandbox, targetPath);
-      // Snapshot 已按路径稳定排序；这里仍显式顺序消费，禁止 Promise.all 引入 provider I/O 乱序。
-      for (const entry of snapshot.entries) {
-        const path = `${targetPath.replace(/\/$/, "")}/${entry.path}`;
-        if (entry.kind === "directory") {
-          await ensureContentDirectory(sandbox, path);
-        } else {
-          await putContentBytes(
-            sandbox,
-            path,
-            Uint8Array.from(Buffer.from(entry.contentBase64, "base64")),
-            snapshot.digest,
-          );
-        }
-      }
-    },
+    putContent: (content: RegisteredSandboxContent, targetPath: string) =>
+      putSandboxContent(sandbox, content, targetPath),
   };
 }

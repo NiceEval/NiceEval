@@ -29,9 +29,28 @@ let
 
   cfg = config.services.niceeval.dockerProfiles;
   capacityLib = import ../lib/capacity.nix { inherit lib; };
-  pathsFor = name: import ../lib/paths.nix { inherit name; };
+  pathsFor = name: import ../lib/paths.nix { inherit lib name; };
 
   hostPackage = pkgs.callPackage ../packages/docker-profile-host.nix { };
+  assetManifestPath = "/etc/niceeval/docker-profiles/assets-v1.json";
+  assetManifestFile = pkgs.writeText "niceeval-docker-profile-assets-v1.json" (
+    builtins.toJSON {
+      schemaVersion = 1;
+      platform = "linux/amd64";
+      images = [
+        {
+          purpose = "doctor-dind";
+          reference = "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c";
+          platform = "linux/amd64";
+        }
+        {
+          purpose = "doctor-buildkit";
+          reference = "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8";
+          platform = "linux/amd64";
+        }
+      ];
+    }
+  );
 
   profileType = types.submodule (
     { name, ... }:
@@ -150,16 +169,49 @@ let
                 type = types.enum [
                   "loop-ext4"
                   "existing-mount"
+                  "fixed-image-ext4"
                 ];
                 default = "loop-ext4";
                 description = ''
                   loop-ext4: module creates a sparse image and mounts it.
                   existing-mount: admin pre-mounts a bounded filesystem at the data path.
+                  fixed-image-ext4: raw profiles use a fully allocated outer ext4
+                  store containing independent fully allocated ext4 slot/seed images.
+                '';
+              };
+              rootDir = mkOption {
+                type = types.nullOr (types.addCheck types.str (value:
+                  lib.hasPrefix "/" value
+                  && value != "/"
+                  && !lib.hasInfix "/../" value
+                  && !lib.hasInfix "/./" value
+                  && !lib.hasSuffix "/.." value
+                  && !lib.hasSuffix "/." value
+                  && !lib.hasInfix "//" value));
+                default = null;
+                description = ''
+                  Optional absolute host directory for the versioned fixed-image
+                  outer store. Null keeps the profile state directory default.
                 '';
               };
             };
           };
           description = "Bounded data-root filesystem. Backing kind is host packaging only.";
+        };
+
+        setupPrefix = mkOption {
+          type = types.submodule {
+            options = {
+              enable = mkEnableOption "Docker-data Setup Prefix cache for this raw profile";
+              seedCount = mkOption {
+                type = types.ints.positive;
+                default = 10;
+                description = "Bounded immutable seed pool; published seeds have no automatic GC.";
+              };
+            };
+          };
+          default = { };
+          description = "Setup Prefix policy inputs; protocol, paths, identity, and limits are product-derived.";
         };
 
         network = mkOption {
@@ -234,6 +286,13 @@ let
       };
       storageBytes = capacityLib.parseBytes profile.storage.size;
       managed = profile.securityLevel == "managed-rootless/v1";
+      fixed = profile.storage.backing == "fixed-image-ext4";
+      storageRoot = if profile.storage.rootDir == null then p.stateDir else profile.storage.rootDir;
+      fixedRoot = "${storageRoot}/fixed-image-v1";
+      fixedOuterImage = "${fixedRoot}/store.img";
+      activeHostConfigPath = if fixed
+        then "${p.registryDir}/${name}.fixed-image-v1.host.json"
+        else "${p.registryDir}/${name}.host.json";
       dockerSocket = if managed then p.dockerSocket else profile.rawDockerSocket;
       dockerRootDir = if managed then p.dockerRootDir else profile.rawDockerRootDir;
       daemonSettings = {
@@ -272,6 +331,10 @@ let
         inherit dockerRootDir;
         journalDir = p.journalDir;
         aggregateCgroupPath = p.aggregateCgroupPath;
+        activationDependency = {
+          class = "systemd-profile-slice/v1";
+          cgroupPath = p.aggregateCgroupPath;
+        };
         capacity = {
           cpus = validated.capacity.cpus;
           memory = profile.capacity.memory;
@@ -294,13 +357,22 @@ let
           size = profile.storage.size;
           sizeBytes = storageBytes;
           backing = profile.storage.backing;
+          outerImagePath = if fixed then fixedOuterImage else p.loopImage;
+          legacyOuterImagePath = p.loopImage;
+          rootDir = storageRoot;
+        } // lib.optionalAttrs (!fixed) {
           slotRootPath = "${p.dataMount}/quota-slots";
           slotRegistryPath = "${p.journalDir}/quota-slots.json";
+        };
+        setupPrefix = {
+          enable = profile.setupPrefix.enable;
+          seedCount = profile.setupPrefix.seedCount;
         };
         policy = {
           hostLoopback = false;
           tcpDockerEndpoint = false;
         };
+        assets.manifestPath = assetManifestPath;
         # Host-local network hard policy (not a descriptor schema extension).
         networkPolicy = lib.optionalAttrs managed {
           rootlessPortDriver = "none";
@@ -343,6 +415,11 @@ let
         validated
         storageBytes
         managed
+        fixed
+        fixedOuterImage
+        storageRoot
+        activeHostConfigPath
+        assetManifestPath
         dockerSocket
         dockerRootDir
         daemonFile
@@ -403,13 +480,25 @@ in
           (!c.profile.enable)
           || ((c.validated.aggregate.cpus >= c.validated.capacity.cpus)
             && (c.profile.capacity.dockerDataAllocationCount >= c.profile.capacity.maxContainers)
-            && ((capacityLib.parseBytes c.profile.capacity.ephemeralDiskBytes) * c.profile.capacity.dockerDataAllocationCount <= c.storageBytes)
+            && (if c.fixed then
+              c.profile.setupPrefix.enable
+              && !c.managed
+              && lib.hasPrefix "/" c.storageRoot
+              && c.storageRoot != "/"
+              && c.storageRoot != c.p.loopImage
+              && c.storageRoot != c.p.dataMount
+              && c.fixedOuterImage != c.p.loopImage
+              && (((2 * c.profile.capacity.dockerDataAllocationCount + c.profile.setupPrefix.seedCount)
+                * (capacityLib.parseBytes c.profile.capacity.ephemeralDiskBytes) * 4) <= (c.storageBytes * 3))
+            else
+              (!c.profile.setupPrefix.enable
+                && ((capacityLib.parseBytes c.profile.capacity.ephemeralDiskBytes) * c.profile.capacity.dockerDataAllocationCount <= c.storageBytes)))
             && (c.managed || (c.profile.rawDockerSocket != null
               && lib.hasPrefix "/" c.profile.rawDockerSocket
               && c.profile.rawDockerRootDir != null
               && lib.hasPrefix "/" c.profile.rawDockerRootDir
               && c.profile.rawDaemonService != "")));
-        message = "docker profile ${name}: aggregate/quota capacity is invalid, or raw mode lacks absolute rawDockerSocket/rawDockerRootDir and rawDaemonService";
+        message = "docker profile ${name}: capacity/backing is invalid; fixed-image-ext4 requires raw mode, setupPrefix.enable, a non-root absolute storage.rootDir distinct from the legacy store, slots + seeds + slot-count temporary clones, recovery headroom, and ext4 metadata/reserved-block overhead; raw mode also requires absolute socket/root paths and daemon service";
       }
     ) profileNames;
 
@@ -460,14 +549,16 @@ in
       ) profileNames
     );
 
-    systemd.tmpfiles.rules = lib.flatten (
+    systemd.tmpfiles.rules = lib.optional (
+      lib.any (name: cfg.${name}.enable) profileNames
+    ) "C ${assetManifestPath} 0644 root root - ${assetManifestFile}" ++ lib.flatten (
       map (
         name:
         let
           c = profileContext name;
           p = c.p;
         in
-        lib.optionals c.profile.enable [
+        lib.optionals c.profile.enable ([
           "d /etc/niceeval 0755 root root - -"
           "d ${p.registryDir} 0755 root root - -"
           "d /run/niceeval 0755 root root - -"
@@ -479,9 +570,10 @@ in
           "d ${p.homeDir} 0750 ${p.userName} ${p.userGroup} - -"
           "d ${p.journalDir} 0750 ${p.userName} ${p.userGroup} - -"
           "d ${p.dataMount} 0755 root root - -"
-          "C ${p.registryDir}/${name}.host.json 0640 root ${p.accessGroup} - ${c.hostConfigFile}"
           "C ${p.registryDir}/${name}.daemon.json 0644 root root - ${c.daemonFile}"
-        ]
+        ] ++ lib.optional c.fixed "d ${c.storageRoot} 0700 root root - -" ++ [
+          "C ${c.activeHostConfigPath} 0640 root ${p.accessGroup} - ${c.hostConfigFile}"
+        ])
       ) profileNames
     );
 
@@ -535,10 +627,41 @@ in
           profile = c.profile;
           enabled = profile.enable;
           loop = profile.storage.backing == "loop-ext4";
+          fixed = c.fixed;
+          moduleStore = loop;
+          watchdogSocketReady = pkgs.writeShellScript "niceeval-dp-watchdog-socket-ready-${name}" ''
+            for i in $(seq 1 30); do
+              if [ -S ${p.controlSocket} ]; then break; fi
+              sleep 0.2
+            done
+            chmod 660 ${p.controlSocket}
+            chgrp ${p.accessGroup} ${p.controlSocket}
+          '';
         in
         [
-          (nameValuePair "niceeval-docker-profile-storage-${name}" (mkIf (enabled && loop) {
-            description = "NiceEval docker profile loop-ext4 image (${name})";
+          (nameValuePair "niceeval-docker-profile-assets-${name}" (mkIf enabled {
+            description = "NiceEval fixed Docker profile assets (${name})";
+            wantedBy = [ "multi-user.target" ];
+            after = [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
+            requires = [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
+            before = [
+              "niceeval-docker-profile-watchdog-${name}.service"
+              "niceeval-docker-profile-fixed-watchdog-${name}.service"
+            ];
+            path = [ profile.package ];
+            environment.DOCKER_HOST = "unix://${c.dockerSocket}";
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = concatStringsSep " " [
+                "${hostPackage}/libexec/niceeval/preload-verify-assets"
+                "--manifest ${c.assetManifestPath}"
+                "--pull"
+              ];
+            };
+          }))
+          (nameValuePair "niceeval-docker-profile-storage-${name}" (mkIf (enabled && moduleStore) {
+            description = "NiceEval docker profile ext4 store (${name})";
             wantedBy = [ "multi-user.target" ];
             before = [
               "niceeval-docker-profile-${name}.service"
@@ -549,17 +672,85 @@ in
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
-              ExecStart = concatStringsSep " " [
+              ExecStart = concatStringsSep " " ([
                 "${hostPackage}/libexec/niceeval/prepare-loop-storage"
-                "--image ${p.loopImage}"
+                "--image ${if fixed then c.fixedOuterImage else p.loopImage}"
                 "--size ${toString c.storageBytes}"
                 "--mount ${p.dataMount}"
+              ] ++ lib.optional fixed "--fully-allocate");
+            };
+          }))
+          (nameValuePair c.mountUnit (mkIf (enabled && moduleStore) {
+            requires = [ "niceeval-docker-profile-storage-${name}.service" ];
+            after = [ "niceeval-docker-profile-storage-${name}.service" ];
+          }))
+          (nameValuePair "niceeval-docker-profile-fixed-activation-${name}" (mkIf (enabled && fixed) {
+            description = "NiceEval exclusive fixed-image activation (${name})";
+            after = [
+              profile.rawDaemonService
+            ];
+            requires = [
+              profile.rawDaemonService
+              "niceeval-docker-profile-${name}.slice"
+            ];
+            before = [
+              "niceeval-docker-profile-fixed-images-${name}.service"
+              "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-fixed-watchdog-${name}.service"
+            ];
+            conflicts = [
+              "niceeval-docker-profile-watchdog-${name}.service"
+              "niceeval-docker-profile-fixed-watchdog-${name}.service"
+            ];
+            path = [ profile.package pkgs.util-linux pkgs.e2fsprogs pkgs.coreutils ];
+            unitConfig.RequiresMountsFor = [ c.storageRoot ];
+            serviceConfig = {
+              Type = "oneshot";
+              ExecStart = concatStringsSep " " [
+                "${hostPackage}/libexec/niceeval/activate-fixed-images"
+                "--host-config ${c.activeHostConfigPath}"
+                "--source-host-config ${c.hostConfigFile}"
+                "--descriptor ${p.descriptorPath}"
+                "--access-group ${p.accessGroup}"
+                "--inactive-unit niceeval-docker-profile-watchdog-${name}.service"
+                "--inactive-unit niceeval-docker-profile-fixed-watchdog-${name}.service"
+                "--prepare-store"
+                "--prepare-helper ${hostPackage}/libexec/niceeval/prepare-loop-storage"
+                "--systemd-drop-in-root /run/systemd/system"
+                "--systemd-watchdog-unit niceeval-docker-profile-fixed-watchdog-${name}.service"
+                "--reload-systemd"
               ];
             };
           }))
-          (nameValuePair c.mountUnit (mkIf (enabled && loop) {
-            requires = [ "niceeval-docker-profile-storage-${name}.service" ];
-            after = [ "niceeval-docker-profile-storage-${name}.service" ];
+          (nameValuePair "niceeval-docker-profile-fixed-images-${name}" (mkIf (enabled && fixed) {
+            description = "NiceEval fixed-image backing attestation (${name})";
+            wantedBy = [ "multi-user.target" ];
+            after = [
+              profile.rawDaemonService
+            ];
+            requires = [
+              profile.rawDaemonService
+              "niceeval-docker-profile-${name}.slice"
+            ];
+            before = [
+              "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-fixed-watchdog-${name}.service"
+            ];
+            path = [ profile.package pkgs.util-linux pkgs.e2fsprogs pkgs.coreutils ];
+            unitConfig.RequiresMountsFor = [ c.storageRoot ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = concatStringsSep " " [
+                "${hostPackage}/libexec/niceeval/activate-fixed-images"
+                "--host-config ${c.activeHostConfigPath}"
+                "--descriptor ${p.descriptorPath}"
+                "--boot-restore"
+                "--systemd-drop-in-root /run/systemd/system"
+                "--systemd-watchdog-unit niceeval-docker-profile-fixed-watchdog-${name}.service"
+                "--reload-systemd"
+              ];
+            };
           }))
           (nameValuePair "niceeval-docker-profile-descriptor-${name}" (mkIf enabled {
             description = "NiceEval docker profile descriptor (${name})";
@@ -568,37 +759,51 @@ in
               "local-fs.target"
               "systemd-tmpfiles-setup.service"
             ]
-            ++ optional loop "niceeval-docker-profile-storage-${name}.service"
-            ++ optional loop c.mountUnit
+            ++ optional moduleStore "niceeval-docker-profile-storage-${name}.service"
+            ++ optional moduleStore c.mountUnit
+            ++ optional fixed "niceeval-docker-profile-fixed-images-${name}.service"
+            ++ optional (!fixed) "niceeval-docker-profile-quota-slots-${name}.service"
             ++ optional (!c.managed) profile.rawDaemonService;
-            requires = optional (!c.managed) profile.rawDaemonService;
+            requires = optional fixed "niceeval-docker-profile-fixed-images-${name}.service"
+              ++ optional (!fixed) "niceeval-docker-profile-quota-slots-${name}.service"
+              ++ optional (!c.managed) profile.rawDaemonService;
             before = [
               "niceeval-docker-profile-${name}.service"
               "niceeval-docker-profile-watchdog-${name}.service"
+              "niceeval-docker-profile-fixed-watchdog-${name}.service"
             ];
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
-              ExecStart = concatStringsSep " " [
+              ExecStart = if fixed then concatStringsSep " " [
+                "${hostPackage}/libexec/niceeval/activate-fixed-images"
+                "--host-config ${c.activeHostConfigPath}"
+                "--descriptor ${p.descriptorPath}"
+                "--verify-only"
+              ] else concatStringsSep " " [
                 "${hostPackage}/libexec/niceeval/generate-descriptor"
-                "--host-config ${p.registryDir}/${name}.host.json"
+                "--host-config ${c.activeHostConfigPath}"
                 "--output ${p.descriptorPath}"
                 "--access-group ${p.accessGroup}"
               ];
             };
           }))
-          (nameValuePair "niceeval-docker-profile-quota-slots-${name}" (mkIf enabled {
+          (nameValuePair "niceeval-docker-profile-quota-slots-${name}" (mkIf (enabled && !fixed) {
             description = "NiceEval project-quota slots (${name})";
-            after = [ "niceeval-docker-profile-descriptor-${name}.service" ]
+            after = [ "local-fs.target" ]
               ++ optional loop c.mountUnit;
-            before = [ "niceeval-docker-profile-watchdog-${name}.service" ];
+            before = [
+              "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-watchdog-${name}.service"
+            ];
             requiredBy = [ "niceeval-docker-profile-watchdog-${name}.service" ];
+            conflicts = [ "niceeval-docker-profile-fixed-watchdog-${name}.service" ];
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
               ExecStart = concatStringsSep " " [
                 "${hostPackage}/libexec/niceeval/install-quota-slots"
-                "--host-config ${p.registryDir}/${name}.host.json"
+                "--host-config ${c.activeHostConfigPath}"
               ];
             };
           }))
@@ -691,17 +896,20 @@ in
               ];
             };
           }))
-          (nameValuePair "niceeval-docker-profile-watchdog-${name}" (mkIf enabled {
+          (nameValuePair "niceeval-docker-profile-watchdog-${name}" (mkIf (enabled && !fixed) {
             description = "NiceEval docker profile watchdog (${name})";
             wantedBy = [ "multi-user.target" ];
             after = [
               "niceeval-docker-profile-descriptor-${name}.service"
-              "niceeval-docker-profile-quota-slots-${name}.service"
-            ] ++ [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
+              "niceeval-docker-profile-assets-${name}.service"
+            ] ++ [ "niceeval-docker-profile-quota-slots-${name}.service" ]
+              ++ [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
             wants = [ (if c.managed then "niceeval-docker-profile-${name}.service" else profile.rawDaemonService) ];
             requires = [
               "niceeval-docker-profile-${name}.slice"
+              "niceeval-docker-profile-descriptor-${name}.service"
               "niceeval-docker-profile-quota-slots-${name}.service"
+              "niceeval-docker-profile-assets-${name}.service"
             ];
             path = [ profile.package ];
             environment = {
@@ -720,20 +928,13 @@ in
                 exec ${profile.watchdogPackage}/libexec/niceeval/docker-profile-watchdog \
                   --control-socket=${p.controlSocket} \
                   --descriptor=${p.descriptorPath} \
-                  --host-config=${p.registryDir}/${name}.host.json \
+                  --host-config=${c.activeHostConfigPath} \
                   --docker-socket=${c.dockerSocket} \
                   --journal=${p.journalDir}/events.ndjson \
                   --socket-mode=0o660 \
                   --ready-file=${p.runtimeDir}/watchdog.ready
               '';
-              ExecStartPost = "${pkgs.bash}/bin/bash -c ${lib.escapeShellArg ''
-                for i in $(seq 1 30); do
-                  if [ -S ${p.controlSocket} ]; then break; fi
-                  sleep 0.2
-                done
-                chmod 660 ${p.controlSocket}
-                chgrp ${p.accessGroup} ${p.controlSocket}
-              ''}";
+              ExecStartPost = watchdogSocketReady;
               Restart = "always";
               RestartSec = 1;
               TimeoutStopSec = 30;
@@ -745,6 +946,56 @@ in
                 p.runtimeDir
               ];
             };
+          }))
+          (nameValuePair "niceeval-docker-profile-fixed-watchdog-${name}" (mkIf (enabled && fixed) {
+            description = "NiceEval fixed-image docker profile watchdog (${name})";
+            wantedBy = [ "multi-user.target" ];
+            after = [
+              "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-assets-${name}.service"
+              profile.rawDaemonService
+            ];
+            wants = [ profile.rawDaemonService ];
+            requires = [
+              "niceeval-docker-profile-${name}.slice"
+              "niceeval-docker-profile-descriptor-${name}.service"
+              "niceeval-docker-profile-assets-${name}.service"
+            ];
+            conflicts = [ "niceeval-docker-profile-watchdog-${name}.service" ];
+            path = [ profile.package ];
+            environment = {
+              HOME = p.homeDir;
+              XDG_RUNTIME_DIR = p.runtimeDir;
+              NICEEVAL_ACTIVATION_MANIFEST_DIGEST = "uncommitted";
+              NICEEVAL_ACTIVATION_EPOCH = "uncommitted";
+            };
+            serviceConfig = {
+              Type = "simple";
+              User = "root";
+              Group = "root";
+              Slice = "niceeval-docker-profile-${name}.slice";
+              Delegate = true;
+              WorkingDirectory = "${p.journalDir}/fixed-image-v1";
+              ExecStart = pkgs.writeShellScript "niceeval-dp-fixed-watchdog-${name}" ''
+                set -euo pipefail
+                exec ${profile.watchdogPackage}/libexec/niceeval/docker-profile-watchdog \
+                  --control-socket=${p.controlSocket} \
+                  --descriptor=${p.descriptorPath} \
+                  --host-config=${c.activeHostConfigPath} \
+                  --docker-socket=${c.dockerSocket} \
+                  --journal=${p.journalDir}/fixed-image-v1/events.ndjson \
+                  --socket-mode=0o660 \
+                  --ready-file=${p.runtimeDir}/watchdog.ready \
+                  --activation-manifest-digest="$NICEEVAL_ACTIVATION_MANIFEST_DIGEST"
+              '';
+              ExecStartPost = watchdogSocketReady;
+              Restart = "always";
+              RestartSec = 1;
+              TimeoutStopSec = 30;
+              KillMode = "mixed";
+              UMask = "0007";
+            };
+            unitConfig.RequiresMountsFor = [ c.storageRoot ];
           }))
         ]
       ) profileNames

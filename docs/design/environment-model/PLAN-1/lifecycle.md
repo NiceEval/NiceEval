@@ -98,7 +98,7 @@ PLAN-1 只在 Provision 安装后复检 Provision 全组。
 Adapter 安装、状态载入或 Fixture 若破坏 Environment 或已通过的 Provision,没有跨 Owner 最终验证屏障再次发现。
 
 turn 后 verifier 仍由 Eval 作者在 `test(t)` 内自行挂载和 cleanup。
-Runner 没有独立的 verifier resource handle、cleanup 注册或活动,因此不能强制回收 workdir 外路径、mount 与进程,也不能据此自动退休复用周期。
+Runner 没有独立的 resource handle、cleanup 注册或活动,因此不能强制回收 workdir 外路径、mount 与进程,也不能据此自动退休复用周期。
 
 ## Fresh 与 Reuse
 

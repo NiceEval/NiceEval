@@ -93,14 +93,22 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | `t.sandbox` | EvalSandbox (`t.sandbox`) | 沙箱型 eval 的文件 IO、宿主传输、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把参照点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
 | Sandbox template | SandboxTemplate | 同时选择 Provider 并由其启动完整 Sandbox 实例的唯一起点；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [Sandbox Layer](feature/sandbox/layers.md#template-bearing-factory) |
+| Sandbox 能力要求 | Sandbox capability requirement | Eval 对 Sandbox 必须兑现的 provider-neutral 约束；它不选择 Provider，也不创建第二个 Sandbox origin | [Nested Docker PLAN-5](design/nested-docker-execution/PLAN-5/README.md#能力绑定) |
+| Docker 执行要求 | DockerExecutionRequirement | `docker/v1` 对私有 daemon、Compose、专用 kernel 与最低 Docker data 容量的穷尽要求 | [Nested Docker PLAN-5](design/nested-docker-execution/PLAN-5/README.md#library-调用面) |
+| 专用 kernel 隔离 | dedicated-kernel isolation (`dedicated-kernel/v1`) | Agent 的 Docker 权限止于当前 guest kernel，不能到达宿主 daemon、kernel 或其它 Attempt | [Nested Docker Architecture](design/nested-docker-execution/PLAN-5/architecture.md#四个-owner) |
 | Sandbox 实例 | Sandbox instance | Provider 启动的主 Sandbox；存在 sidecar、网络或服务时，同时点名这些伴随资源 | [Sandbox 实例与伴随资源](feature/sandbox/case.md) |
 | 主 Sandbox | —(`workspaceService` 对应实例) | Provider 启动的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#主-sandbox-不变量) |
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
+| 准备前缀 | SetupPrefix | Base 加上 occurrence 与 owner 包裹顺序规范化的零个或多个可缓存 before action 所形成的内容寻址 Sandbox 起点 | [准备前缀缓存](roadmap/sandbox-cache/setup-prefix/README.md) |
+| SetupPrefixKey | SetupPrefixKey | parent 前缀、规范化 steps、immutable inputs 与 Provider 捕获协议的链式内容身份 | [Setup Prefix Architecture](roadmap/sandbox-cache/setup-prefix/architecture.md#前缀身份) |
+| Provider artifact | Provider artifact | Provider 为 exact Sandbox template 或 SetupPrefix 捕获并验证的不可变 image、template、snapshot 或 volume 结果；物理 locator 不成为 Eval 语义 | [Nested Docker Cache](research/nested-docker-execution/cache.md#provider-artifact-不是第二个-sandbox-template) |
+| Sandbox 状态面 | Sandbox state surface | 一个 before action 承诺写入的完整可观察状态范围；V1 只有完整 Sandbox 与 inner Docker data 两种 | [Sandbox Layer](feature/sandbox/layers.md#action-family-与-step) |
 | CaseKey | CaseKey | 完整 attempt 运行条件身份,携带门的判据 | [Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
-| Provider cache | Provider cache | Provider 为后续 Sandbox 保留的 Agent npm tarball、任务构建结果或原生 build cache；不属于结果携带或留存 Sandbox | [Provider Cache Roadmap](roadmap/README.md) |
-| 受管 Cache Domain | Managed Cache Domain | 单一 cache backend 的所有权、命中、lease 与回收边界；identity 改变时形成新 Domain | [Provider Cache Architecture](roadmap/README.md) |
-| GC 计划 | GcPlan | 对一个受管 Cache Domain 的不可变回收授权预览；apply 只能因事实漂移缩减候选，不能扩大候选 | [Provider Cache CLI](roadmap/README.md) |
+| Provider cache | Provider cache | Provider 为后续 Sandbox 保留的 Agent npm tarball、任务构建结果或原生 build cache；不属于结果携带或留存 Sandbox | [Provider Cache 生命周期](roadmap/sandbox-cache/cache-lifecycle/README.md) |
+| Cache Domain | Cache Domain | 单一 cache backend 的所有权、命中、lease 与回收边界；identity 改变时形成新 Domain | [Provider Cache Architecture](roadmap/sandbox-cache/cache-lifecycle/architecture.md#cache-domain) |
+| GC 计划 | GcPlan | 对一个 Cache Domain 的不可变回收授权预览；apply 只能因事实漂移缩减候选，不能扩大候选 | [Provider Cache CLI](roadmap/sandbox-cache/cache-lifecycle/cli.md#两阶段回收) |
 | Sandbox 留存能力 | SandboxRetention | Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，跨进程由 detached provider inspect / wake / destroy | [Sandbox 实例与伴随资源](feature/sandbox/case.md#收尾留存与注册表) |
+| Sandbox allocation | SandboxAllocation | 一条 Attempt 对 Provider 实例、私有磁盘与网络的 durable ownership 事实；用 generation fencing 与期望终态支撑 detached recovery | [Nested Docker Architecture](design/nested-docker-execution/PLAN-5/architecture.md#sandboxallocation) |
 | Docker storage profile | Docker storage profile | raw DinD显式选择的宿主声明；只证明 Docker data allocation磁盘配额、跨进程准入与强杀恢复 | [Docker 执行配置](feature/sandbox/docker-profiles/README.md) |
 | Docker data allocation | Docker data allocation | 每 Attempt独占、带 project quota hard limit的磁盘配额分配；固定挂到 inner `/var/lib/docker`，内部可由预建目录池兑现 | [Docker profile architecture](feature/sandbox/docker-profiles/architecture.md#单容器资源) |
 
@@ -108,9 +116,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| template owner | template owner | 为当前配对提供 template 的 Eval 或 Experiment owner;它的 layer 命令先执行 | [Sandbox Layer](feature/sandbox/layers.md#顺序与依赖方向) |
-| owner stack | owner stack | template owner、另一 owner 与 Agent 在同一主 Sandbox 上的固定准备顺序 | [三方准备时序](feature/sandbox/lifecycle.md) |
-| Sandbox command | SandboxCommand | Eval 与 Experiment layer 共用的顺序执行单元；对 Sandbox 的效果只通过命令与文件 API 产生 | [Sandbox Layer](feature/sandbox/layers.md#command-形状与-identity) |
+| template owner | template owner | 为当前配对提供 template 的 Eval 或 Experiment owner；它只决定 Provider 起点，不形成 action 排序墙 | [Sandbox Layer](feature/sandbox/layers.md#顺序与依赖方向) |
+| action schedule | action schedule | 同一 occurrence 内根据显式依赖、typed capability 与 changeFrequency 形成的确定性 before 顺序 | [三方准备时序](feature/sandbox/lifecycle.md) |
+| Sandbox action | SandboxAction | 四类 owner 共用的 `before` / `after` 执行单元；声明位置保留 owner 与 ordinal，planning 再编译 occurrence | [Sandbox Layer](feature/sandbox/layers.md#command-形状与-identity) |
 | 探测 | 探测 | 只读探测命令,零副作用;退出码零为命中,非零是未命中而不是失败 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |
 | ensure | ensure | 「探测 → 缺失才 install → 复检」的循环语义;`installTool` 是工具版,`agent.ensure` 相位是 Agent 版 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |
 | 内置 prepare 命令 | —(`checkout` / `installTool`) | 官方提供、自带 探测、缓存与稳定 identity 的 prepare 命令 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |

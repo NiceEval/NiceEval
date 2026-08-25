@@ -257,7 +257,8 @@ type CommandStream = {
 collector 先执行非 fatal UTF-8 decode、已登记敏感值脱敏与 control removal，再按 stream 上限保留 prefix。
 seal 和 reader 读取都对 retained bytes 重算长度和 digest。inline 与 blob 只是同一事实的物理存储选择。
 
-## Runner Activity receipts
+seal 和 reader payload loading 都对实际 bytes 重算 byte length、digest 与 family budget；即使篡改后的
+blob 长度不变也使 Attachment `invalid`。projector 统一两种 storage，因此 consumer 看不到物理差异。
 
 Run 与 Attempt 各自使用 owner-monotonic clock。offset 的零点不含 epoch，不同 owner 的 offset 不能相减或拼接。
 OTel 只能作为 Runner capture input；只有能证明 exact owner、同一 clock、稳定 phase、label 与 anchor 的输入

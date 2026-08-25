@@ -183,7 +183,7 @@ VBG class、token 和 DOM child relationship 是页面 API 约束，但没有 se
 
 Calculator 的 default result 必须 pre-render。
 一个可由 formula 计算的值因而会进入初始 HTML，确保脚本交互开始前就可读。
-它在 request time 预渲染，或在 build time 生成；指令没有要求另存 durable row。
+它属于 request-time 或 build-time generation；指令没有要求另存 durable row。
 
 用户改变 calculator input 后，页面从 canonical full-precision state 重算 dependent output，再按显示精度格式化。
 响应式重排、theme 选择和 CSS layout 也在浏览器读取页面时生效。

@@ -177,6 +177,14 @@ evidenceCoverage: EvidenceCoverage;
 
 该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。
 
+#### `sandbox`
+
+```ts
+sandbox?: SandboxLayer<"command-only">;
+```
+
+Adapter 自有的 Sandbox action；Agent 不能选择或贡献 template。
+
 #### `ensure`
 
 ```ts
@@ -486,6 +494,14 @@ pathExists(path: string): Promise<boolean>;
 检查 Sandbox 内文件或目录路径是否存在。
 
 ### `SandboxTransferOperations`
+
+#### `upload`
+
+```ts
+upload(content: SandboxContent, targetPath: string): Promise<void>;
+```
+
+传输已登记的不可变内容，不暴露其宿主路径。
 
 #### `uploadFile`
 

@@ -1582,6 +1582,10 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
       requireCapability();
       return input.sandbox.pathExists(path);
     },
+    upload: (content, targetPath) => {
+      requireCapability();
+      return input.sandbox.upload(content, targetPath);
+    },
     uploadFile: (source, targetPath) => {
       requireCapability();
       return input.sandbox.uploadFile(source, targetPath);

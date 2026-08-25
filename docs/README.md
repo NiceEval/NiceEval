@@ -89,10 +89,11 @@ docs/
 │   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
 │   ├── judge-runtimes/                  Agent Judge 与原生 LLM Judge
 │   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── record-blob-materialization/       Record Host 透明分段、保存与读取逻辑 blob
+│   ├── report-chart-kernel/              中立图表的三面同事实语义内核
+│   ├── record-blob-storage/       Record Host 透明分段、保存与读取逻辑 blob
 │   ├── record-inventory/                receipt 前中断留下的只读 Record 库存
 │   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
-│   ├── sandbox-materialization/         Docker Image 与 Provider Cache 生命周期
+│   ├── sandbox-cache/         Docker Image 与 Provider Cache 生命周期
 │   ├── sandbox-prepare/                 checkout、Fixture 内容与官方命令瞬时重试
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
 │   ├── sandbox-reuse-feedback/          Sandbox 物理复用的运行级摘要
@@ -105,6 +106,7 @@ docs/
 │   ├── eval-suite-sharing/              原生 NiceEval 题集跨项目零发布改造复用
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
+│   ├── nested-docker-execution/          Sandbox 内 Docker/Compose：DinD、VM 与托管 Provider 选型
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
 │   ├── benchmark-web-consumption/       自定义 benchmark 网页使用数据、组件或分层能力的待选接入面
 │   ├── cli-insight/                     AI-native CLI、Human show 与第一方本地 Insight
@@ -125,6 +127,7 @@ docs/
 │   ├── experiments/                     Experiment：外部运行矩阵参照
 │   ├── record-to-report/                Record → Report：运行事实的查看、查询、比较与报告呈现
 │   ├── docker-sandbox-process-models.md Sandbox：容器启动、keeper、命令执行与 DinD
+│   ├── nested-docker-execution/          Sandbox：专用 daemon、VM/Devbox、快照、缓存与恢复
 │   ├── cli-testing/                     Testing：复杂 CLI 的测试体系
 │   └── framework-e2e/                   Testing：框架工具自身的 E2E 体系
 │

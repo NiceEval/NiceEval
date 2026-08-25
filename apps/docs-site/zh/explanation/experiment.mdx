@@ -29,7 +29,7 @@ Experiment 还有一对实验级 Hook `setup` / `teardown`：整个实验只跑�
 
 `setup` 在本实验第一个 Attempt 派发前执行。`teardown` 在全部 Attempt 收尾后执行（中断也执行），当且仅当 `setup` 的时点已经走到才触发。
 
-要按实验在 Sandbox 里准备环境，把操作挂在 `sandbox` 字段的 spec 上。`dockerSandbox({ source: { type: "image", image: "node:24-slim" } })` 等工厂返回的对象可以链 `.setup()` / `.teardown()`。两者的边界与写法见[写实验 · 启动 Experiment 共享服务](/zh/tutorials/write-experiment#启动-experiment-共享服务)与[Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
+要按实验在 Sandbox 里准备环境，把 action 挂在 `sandbox` 字段的 `.before()` 链上。稳定 action 会按指纹形成可复用准备前缀；动态回调可以用 `context.onCleanup()` 登记收尾。写法见[写实验 · 启动 Experiment 共享服务](/zh/tutorials/write-experiment#启动-experiment-共享服务)与[Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)。
 
 同一实验里的评估用例需要不同预制环境时，把对应的 template-bearing `sandbox` layer 直接放在各评估用例上，并让 Experiment 不再提供 template。重复 layer 用普通 TypeScript 辅助函数复用；这里没有 environment profile registry。同一个 Experiment 仍能覆盖全部评估用例，因为 link planning 会逐条把评估用例 layer 与 Experiment layer 配对。写法见[写实验 · 让不同评估用例使用不同预制环境](/zh/tutorials/write-experiment#让不同评估用例使用不同预制环境)。
 

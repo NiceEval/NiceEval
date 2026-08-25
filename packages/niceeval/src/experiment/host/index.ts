@@ -10,6 +10,7 @@ import type {
   DiscoveredEval,
   DiscoveredExperiment,
 } from "../../runner/types.ts";
+import { resolveSandboxSetupCache } from "../../runner/types.ts";
 import { matchExperimentSelector } from "../../shared/aggregate.ts";
 import {
   accept,
@@ -148,7 +149,11 @@ function uniqueExactOrPrefix<T>(
     : [exact];
 }
 
-function debugAgentRun(experiment: DiscoveredExperiment, evalId: string): AgentRun {
+function debugAgentRun(
+  experiment: DiscoveredExperiment,
+  evalId: string,
+  config: Config,
+): AgentRun {
   return {
     agent: experiment.agent,
     model: experiment.model,
@@ -157,6 +162,11 @@ function debugAgentRun(experiment: DiscoveredExperiment, evalId: string): AgentR
     plugins: experiment.plugins,
     attempts: experiment.attempts ?? 1,
     earlyExit: experiment.earlyExit ?? false,
+    sandboxSetupCache: resolveSandboxSetupCache(
+      undefined,
+      experiment.sandboxCache,
+      config.sandboxCache,
+    ),
     sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
     ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
@@ -230,7 +240,7 @@ function debug(
     }
 
     const evalDef = selectedEvals[0]!;
-    const run = debugAgentRun(experiment, evalDef.id);
+    const run = debugAgentRun(experiment, evalDef.id, input.config);
     const target = yield* planProjectTarget(
       listed.evals,
       [run],
@@ -259,6 +269,7 @@ function debug(
       ? String(Reflect.get(cause, "code"))
       : "experiment-host-operation-failed",
     message: cause instanceof Error ? cause.message : String(cause),
+    cause,
   })));
 }
 

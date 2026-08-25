@@ -1,6 +1,6 @@
 /*
  * 图：开了 sandboxReuse 之后，两条 Sandbox 泳道各自依次承接多条 Attempt，
- * 公共准备每条泳道只付一次，题与题之间只回滚工作目录。
+ * Sandbox 创建每条泳道只付一次，每条 Attempt 仍执行 before/after，题间回滚工作目录。
  * 一图一个组件，内容写死在组件里。样式在 styles/diagram-sandbox-lanes.css。
  *
  * 写法约束同 snippets/widgets.jsx：只写箭头函数、不写 import、模块作用域里不放未导出的
@@ -20,17 +20,14 @@ export const SandboxLanes = () => (
         <div className="ne-sbx-seg ne-sbx-once ne-lit" style={{ gridColumn: "2 / 3", animationDelay: "0s" }}>
           创建
         </div>
-        <div className="ne-sbx-seg ne-sbx-once ne-lit" style={{ gridColumn: "3 / 5", animationDelay: "1s" }}>
-          Sandbox setup
-        </div>
-        <div className="ne-sbx-seg ne-lit" style={{ gridColumn: "5 / 8", animationDelay: "3s" }}>
-          Attempt · range
+        <div className="ne-sbx-seg ne-lit" style={{ gridColumn: "3 / 8", animationDelay: "1s" }}>
+          before · range · after
         </div>
         <div className="ne-sbx-seg ne-sbx-reset ne-lit" style={{ gridColumn: "8 / 9", animationDelay: "6s" }}>
           重置
         </div>
         <div className="ne-sbx-seg ne-lit" style={{ gridColumn: "9 / 12", animationDelay: "7s" }}>
-          Attempt · locale
+          before · locale · after
         </div>
         <div className="ne-sbx-seg ne-sbx-once ne-lit" style={{ gridColumn: "12 / 13", animationDelay: "10s" }}>
           停止
@@ -43,17 +40,14 @@ export const SandboxLanes = () => (
         <div className="ne-sbx-seg ne-sbx-once ne-lit" style={{ gridColumn: "2 / 3", animationDelay: "0s" }}>
           创建
         </div>
-        <div className="ne-sbx-seg ne-sbx-once ne-lit" style={{ gridColumn: "3 / 5", animationDelay: "1s" }}>
-          Sandbox setup
-        </div>
-        <div className="ne-sbx-seg ne-lit" style={{ gridColumn: "5 / 9", animationDelay: "3s" }}>
-          Attempt · keyboard
+        <div className="ne-sbx-seg ne-lit" style={{ gridColumn: "3 / 9", animationDelay: "1s" }}>
+          before · keyboard · after
         </div>
         <div className="ne-sbx-seg ne-sbx-reset ne-lit" style={{ gridColumn: "9 / 10", animationDelay: "7s" }}>
           重置
         </div>
         <div className="ne-sbx-seg ne-lit" style={{ gridColumn: "10 / 13", animationDelay: "8s" }}>
-          Attempt · timezone
+          before · timezone · after
         </div>
       </div>
 
@@ -64,11 +58,11 @@ export const SandboxLanes = () => (
     <div className="ne-sbx-legend">
       <div className="ne-sbx-item">
         <span className="ne-sbx-key ne-sbx-once" />
-        每个 Sandbox 一次：创建、Sandbox 级 <code>setup</code> / <code>teardown</code>、停止
+        每个 Sandbox 一次：创建、停止
       </div>
       <div className="ne-sbx-item">
         <span className="ne-sbx-key" />
-        每条 Attempt 一次：Agent 级与评估用例的 <code>setup</code> / <code>teardown</code>、<code>test(t)</code>
+        每条 Attempt 一次：Sandbox <code>before</code> / <code>after</code>、Agent 与评估用例生命周期、<code>test(t)</code>
       </div>
       <div className="ne-sbx-item">
         <span className="ne-sbx-key ne-sbx-reset" />

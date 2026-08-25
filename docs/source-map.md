@@ -42,6 +42,7 @@ Report loader。Host 内部才取得 Scope、Layer、lease、reader、writer 或
 | 目标行为 | 当前源码区域 |
 |---|---|
 | Experiment 发现、调度、Invocation-local 并发、共享状态租约、Sandbox 生命周期、reuse 与 receipt | `packages/niceeval/src/runner/{run,lock,shared-state-lease}.ts` 及同目录协作者；由 `experimentHost` 调用 |
+| [Setup 前缀缓存](roadmap/sandbox-cache/setup-prefix/README.md) 的 Action state、DAG 线性化、前缀协调、capture 与 private clone | `packages/niceeval/src/sandbox/{action,backend,docker,docker-setup-prefix-cache}.ts`、`packages/niceeval/src/sandbox/docker-profile/` 与 `packages/niceeval/src/runner/attempt.ts`；Profile 的 raw-image artifact、lease、journal 与回收落在 `packaging/docker-profile-host/` |
 | execution claim 与 Record lease 协调 | `packages/niceeval/src/coordination/` 与 `packages/niceeval/src/record/` 的 Host 实现 |
 | Record Core、Seal manifest、staging / recovery、Run 原子发布与 migration 编解码 | `packages/niceeval/src/record/{model,codec,migration,host}/`；local sidecar 必须纳入 Core、manifest、payload 与 blob inventory |
 | fixed catalog declaration 与各 family collector / decoder | `packages/niceeval/src/record/family/`、`packages/niceeval/src/assertions/record/`、`packages/niceeval/src/o11y/record/`、`packages/niceeval/src/sandbox/record/`、`packages/niceeval/src/runner/source-producer.ts` 与 `packages/niceeval/src/sources/` |

@@ -128,6 +128,16 @@ dockerd逃逸，应使用专用 VM或远端 profile；本功能不把本机容�
 Invocation，profile admission再限制所有 Invocation的总资源。默认32 GiB filesystem配8 GiB allocation只
 开放2路；4路与8路分别至少晋升到64 GiB与128 GiB硬容量，不能用稀疏文件超卖。
 
+## Setup Prefix cache 边界
+
+普通单容器 Docker 可以把全部可变状态收进 outer writable rootfs，因而可以用 exact image 实现 Setup Prefix cache。raw 与 managed Docker Profile 的 private data-root 位于 project-quota slot，不在该 rootfs。
+
+只 commit outer image 会丢失 inner image 与 volume，因此 Profile 不能完整保存默认 `sandboxState.all`。只改变 inner `/var/lib/docker` 的 Action 可以显式声明 `sandboxState.dockerData`。Profile 只在 seed 与每个 slot 都是独立、fully allocated、fixed-size filesystem image 时发布该 coverage。
+
+published seed 保持 immutable 且不挂进评估容器。Host 在 inner workload 停止、dockerd/containerd quiesce 且 source/target 已卸载后复制 raw image，再为每个 Attempt 挂载不同 writable slot。lease、journal-first intent、原子发布、容量记账、scrub、quarantine 与 cancel/restart recovery 必须同时成立。
+
+shared loop-ext4/project-quota Profile 不满足独立 seed 与物理容量证明，因而继续报告 `Unsupported`。Runner 遇到第一个默认 `all`、opaque 或 Provider 不支持的 state 后，真实执行该 Action 与所有后缀，不会用缺少祖先状态的 Docker-data artifact 伪造命中。
+
 ## 范围
 
 本主题包含：
@@ -153,6 +163,7 @@ Invocation，profile admission再限制所有 Invocation的总资源。默认32 
 - Docker Compose outer sidecar/provider作为 DinD实现；
 - 仅凭 `docker info`出现 `rootless`就信任外部 endpoint；
 - rootless privileged Sandbox的 retention。
+- 保存 outer rootfs、workspace、home 或任意 mount 的通用 Sandbox snapshot。
 
 ## 两个独立交付门
 

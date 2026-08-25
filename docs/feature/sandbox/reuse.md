@@ -24,13 +24,13 @@ export default defineExperiment({
 
 - workdir 在 Attempt 之间回到复用 Sandbox 的题间重置点；
 - 题间 reset 只恢复 workdir，workdir 外的状态可能继续存在；
-- 两层作者 layer 的 `prepare()` 每条 Attempt 重新执行,昂贵动作靠真实检查快速命中(官方写法见[内置 prepare 命令](prepare-commands.md))；
+- before 与 after 固定为 attempt occurrence，每条 Attempt 各自满足；
 - agent.ensure 循环与 Agent runtime 每 Attempt 执行；
 - `maxConcurrency > 1` 时，不保证哪些 Attempt 共用同一个 Sandbox。
 
 如果结果依赖严格的跨 Attempt 顺序或累积状态，必须同时声明 `maxConcurrency: 1`。
 需要同一条连续实例时声明 `sandboxReuse: true`；结果依赖固定顺序时再显式声明 `maxConcurrency: 1`。
-跨 run checkpoint 的恢复与回存始终放在该物理 Sandbox 的 `setup()` / `teardown()`；多个 Invocation 指向同一 checkpoint 时再用 Experiment `sharedState.key` 标识独占边界。
+跨 run checkpoint 的恢复使用 callback before，成功后通过 `context.onCleanup()` 登记本条 Attempt 的回存；多个 Invocation 指向同一 checkpoint 时再用 Experiment `sharedState.key` 标识独占边界。
 
 如果 Attempt 不能接受 workdir 之外的状态残留，就不能声明 `sandboxReuse`。
 这里允许的是**已经成功 settle 的命令有意留下的任务服务**，不是超时或取消后失控的命令树。异常命令树必须先确认终止；Provider 做不到时整台 Sandbox 退休，绝不进入复用池。
@@ -55,7 +55,7 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 同一 Record root 不接受第二条 Invocation。需要同时运行两个进程时，为它们指定不同 Record root；每条 Invocation 各自创建 Sandbox、Run 与 Sample，结果不自动合并。
 
 两个不同 Record root 的池都会读写同一外部 checkpoint 时，Experiment 必须另行声明 `sharedState: { key }`。
-共享状态租约在创建任何 Sandbox 之前取得，并一直持有到所有 Sandbox lifecycle `teardown()` 和 Provider finalizer 完成。
+共享状态租约在创建任何 Sandbox 之前取得，并一直持有到所有 Attempt cleanup 与 Provider finalizer 完成。
 等待方不创建 Sandbox；租约释放后，它只继续自己已经形成的计划，不读取另一个 Record 的结果。
 完整场景见[并行 Invocation 与状态边界](use-case/Sandbox复用/并行Invocation与状态边界.md)。
 
@@ -65,28 +65,27 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 |---|---|
 | Experiment `setup` / `teardown` | 每 Invocation 成对一次 |
 | `createSandbox` / `stop` | 每个 Sandbox 成对一次 |
-| `SandboxLayer.setup()` / `teardown()` | 每个实际 Sandbox 成对一次；仅 Experiment hook 可跨 Eval 共用，Eval hook 隔离该 Eval |
-| 两层作者 layer 的 `prepare()` 与已登记 cleanup | 每 Attempt 成对 |
+| `before` / `after` | 每 Attempt occurrence 成对一次 |
 | agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
 | Agent runtime `setup` / `teardown` | 每 Attempt 成对一次 |
 | `test(t)`、断言求值与证据收集 | 每 Attempt 一次 |
 
 成对语义:
 
-- cleanup 只在 command 成功取得资源后经 `context.onCleanup()` 登记,按全局准备顺序逆序执行;
+- cleanup 只在 command 成功取得资源后经 `context.onCleanup()` 登记，只按实际登记栈 LIFO 执行；
 - Attempt 的 Agent 与 cleanup 收尾完成后,Sandbox 才能 reset、轮换或停止。
 
-Runner 不把 `prepare()` 提升成每个 Sandbox 一次；只有作者显式声明的 `setup()` / `teardown()` 是物理 Sandbox 的生命周期。
-稳定 Agent CLI 应进入预制实例;随 Experiment 变化的准备写在 Experiment layer 的 `prepare()`,由真实检查控制重新执行成本。
+Runner 不按 API 名猜次数；当前 planning 固定编译 attempt occurrence。physical promotion 属于后续性能工作。
+稳定 Agent CLI 应进入预制实例；其余准备写成所属 owner 的 `before()`，由前缀缓存控制重复成本。
 
 Agent CLI 先由 ensure 重新 探测；缺失或 identity 不符时由配对 Installer 安装并复检。
 随后 runtime setup 的扩展步骤按声明收敛，不假设 Sandbox 空白：同名 marketplace 注册与 Plugin 安装被替换成按声明出处与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
-「可重复执行」的作者义务只涉及作者自己写的代码:两层 layer 的 `prepare()` 与 Agent factory 的 `postSetup`。
+「可重复执行」的作者义务只涉及作者自己写的代码:layer action 与 Agent factory 的 `postSetup`。
 
 ## 复用池按物理身份分组
 
 一个 Experiment 的混合批次里,不同 Eval 的 template 可以各不相同。
-Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 lifecycle owner marker 分组。不同 Eval 即使 `prepare()` 命令不同，只要物理计划相同仍可共享同一个 Sandbox，prepare 会在每次领取时重新执行；Eval 声明 lifecycle hook 时带入 Eval marker，因此不会和其他 Eval 共享。
+Runner 按 Provider plan identity 与 Agent ensure identity 分组。不同 Eval 的 before 可以在同一物理 cohort 展开，但每条 action 仍在自己的 Attempt occurrence 内满足。
 
 - 同一个 Sandbox 只承接同键 Attempt；
 - 每组建立自己的题间重置点；
@@ -104,7 +103,7 @@ Case 就绪后,Runner 在分类账上建立 **复用 Sandbox 的题间重置点*
 
 1. `git reset --hard` 回到题间重置点；
 2. 按分类账排除清单执行 `git clean`；
-3. 按 owner 顺序重新执行两层作者 layer 的 `prepare()` 命令；
+3. 按 occurrence schedule 满足本次 Attempt 的 before action；
 4. 重新执行 agent.ensure 循环与 Agent runtime,再建立本 Attempt 的归因区间;`test(t)` 重新准备本 Attempt 的 Fixture。
 
 题间 reset 不是整台 Sandbox 归零。
@@ -200,12 +199,12 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 直接 command / lifecycle callback 不提供额外失效条件，也不阻断该 pair 的 carry；需要追踪其变化时由作者登记稳定 identity。
 
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
-- 真实派发的 Attempt 仍完整封入 prepare、命令、计时与诊断的 Observability。Sandbox 编号、承接序号与
+- 真实派发的 Attempt 仍完整封入 before、命令、计时与诊断的 Observability。Sandbox 编号、承接序号与
   租借状态是调度和留存注册表数据，不成为 portable Record family；它们不会因 Attempt 提前终结而伪造一份状态值。
 
 ## 复用污染的可观察性
 
-「prepare 可重复执行、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。
+「before 可重复执行、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。
 框架必须自己把线索说出来。
 Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接序号聚合判定。
 当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中形成 `errored` Verdict 且指向同一生命周期阶段时，结束反馈追加一条 Run-owned Runner Diagnostic，点名实例、序号区间与阶段，提示复用残留的可能性。
@@ -226,7 +225,7 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 
 ## 失败与收尾
 
-- prepare 命令失败：当前 Attempt 形成 `errored` Verdict，执行已登记 cleanup；reset 成功后 Sandbox 可以继续承接。
+- before action 失败：当前 Attempt 形成 `errored` Verdict，执行已登记 cleanup；reset 成功后 Sandbox 可以继续承接。
 - 领域判定的 Verdict 为 `failed`：照常执行 Agent 与 cleanup 收尾；命令树静止且 reset 成功后 Sandbox 可以继续。
 - Attempt 超时、取消、interruption 或 `agent-send-failed`：先确认 Agent driver 与受管命令树终止；任一项无法证明就停止该 Sandbox，不进入 reset / 复用。
 - reset 失败：停止该 Sandbox 并追加一条运行级 diagnostic（`sandbox-reset-failed`），后续 Attempt 等待替代 Sandbox。

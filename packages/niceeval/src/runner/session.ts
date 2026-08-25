@@ -11,6 +11,8 @@ import { Cause, Deferred, Effect, Exit, Fiber, Queue, Scope } from "effect";
 import { readAllEntryFilesEffect, writeEntryFileEffect } from "../shared/entry-file-store.ts";
 import type {
   CompletionStatus,
+  AttemptQueueReason,
+  AttemptRef,
   InvocationCompletion,
   InvocationReceipt,
   RunFeedbackEvent,
@@ -33,6 +35,15 @@ export interface SessionExperimentRecord {
   running?: number;
   queued?: number;
   elsewhere?: number;
+  /** Only currently queued Attempts with an actionable, stable reason are expanded. */
+  attempts?: SessionQueuedAttemptRecord[];
+}
+
+export interface SessionQueuedAttemptRecord {
+  evalId: string;
+  attempt: number;
+  state: "queued";
+  reason: AttemptQueueReason;
 }
 
 export interface SessionRecord {
@@ -89,8 +100,13 @@ export interface SessionCloseInput {
  */
 export type SessionInvocationEvent =
   | {
+      readonly type: "attempt:queued";
+      readonly identity?: AttemptRef;
+      readonly reason: AttemptQueueReason;
+    }
+  | {
       readonly type: "attempt:start" | "attempt:complete" | "attempt:early-exit";
-      readonly identity?: { readonly experimentId?: string };
+      readonly identity?: AttemptRef;
     }
   | {
       readonly type: "lock-wait";
@@ -143,6 +159,29 @@ function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
   const running = raw.running;
   const queued = raw.queued;
   const elsewhere = raw.elsewhere;
+  const attempts = raw.attempts === undefined
+    ? undefined
+    : Array.isArray(raw.attempts)
+      ? raw.attempts.map((value): SessionQueuedAttemptRecord | undefined => {
+        const attempt = asRecord(value);
+        if (
+          attempt === undefined ||
+          typeof attempt.evalId !== "string" ||
+          !isNonNegativeInteger(attempt.attempt) ||
+          attempt.state !== "queued" ||
+          attempt.reason !== "provider-capacity"
+        ) return undefined;
+        return {
+          evalId: attempt.evalId,
+          attempt: attempt.attempt,
+          state: "queued",
+          reason: attempt.reason,
+        };
+      })
+      : undefined;
+  if (raw.attempts !== undefined && (attempts === undefined || attempts.some((item) => item === undefined))) {
+    return undefined;
+  }
   return {
     experimentId: raw.experimentId,
     runId: raw.runId,
@@ -151,6 +190,7 @@ function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
     ...(running !== undefined ? { running: running as number } : {}),
     ...(queued !== undefined ? { queued: queued as number } : {}),
     ...(elsewhere !== undefined ? { elsewhere: elsewhere as number } : {}),
+    ...(attempts === undefined ? {} : { attempts: attempts as SessionQueuedAttemptRecord[] }),
   };
 }
 
@@ -199,7 +239,12 @@ function sessionStatusOf(status: CompletionStatus | SessionStatus | undefined): 
 function cloneRecord(record: SessionRecord): SessionRecord {
   return {
     ...record,
-    experiments: record.experiments.map((experiment) => ({ ...experiment })),
+    experiments: record.experiments.map((experiment) => ({
+      ...experiment,
+      ...(experiment.attempts === undefined
+        ? {}
+        : { attempts: experiment.attempts.map((attempt) => ({ ...attempt })) }),
+    })),
     ...(record.completion ? { completion: { ...record.completion, reporterErrors: [...record.completion.reporterErrors] } } : {}),
   };
 }
@@ -326,6 +371,7 @@ export class SessionTracker {
   onFeedback(event: RunFeedbackEvent, _state?: RunFeedbackState): void {
     if (
       event.type === "attempt:start" ||
+      event.type === "attempt:queued" ||
       event.type === "attempt:complete" ||
       event.type === "attempt:early-exit" ||
       event.type === "lock-wait" ||
@@ -348,16 +394,40 @@ export class SessionTracker {
       ? undefined
       : this.record.experiments.find((item) => item.experimentId === experimentId);
     let changed = false;
-    if (event.type === "attempt:start" && experiment) {
+    const removeQueuedAttempt = (): boolean => {
+      if (experiment === undefined || identity?.evalId === undefined || identity.attempt === undefined) return false;
+      const attempts = experiment.attempts ?? [];
+      const index = attempts.findIndex((attempt) =>
+        attempt.evalId === identity.evalId && attempt.attempt === identity.attempt
+      );
+      if (index < 0) return false;
+      attempts.splice(index, 1);
+      if (attempts.length === 0) delete experiment.attempts;
+      else experiment.attempts = attempts;
+      return true;
+    };
+    if (event.type === "attempt:queued" && experiment && identity) {
+      removeQueuedAttempt();
+      experiment.attempts = [
+        ...(experiment.attempts ?? []),
+        { evalId: identity.evalId, attempt: identity.attempt, state: "queued", reason: event.reason },
+      ];
+      this.refreshState(experiment);
+      changed = true;
+    } else if (event.type === "attempt:start" && experiment) {
+      removeQueuedAttempt();
       experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
       experiment.running = (experiment.running ?? 0) + 1;
       experiment.state = "running";
       changed = true;
     } else if (event.type === "attempt:complete" && experiment) {
-      experiment.running = Math.max(0, (experiment.running ?? 0) - 1);
+      const completedWhileQueued = removeQueuedAttempt();
+      if (completedWhileQueued) experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
+      else experiment.running = Math.max(0, (experiment.running ?? 0) - 1);
       this.refreshState(experiment);
       changed = true;
     } else if (event.type === "attempt:early-exit" && experiment) {
+      removeQueuedAttempt();
       experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
       this.refreshState(experiment);
       changed = true;
@@ -423,6 +493,7 @@ export class SessionTracker {
         delete experiment.running;
         delete experiment.queued;
         delete experiment.elsewhere;
+        delete experiment.attempts;
       }
       const snapshot = cloneRecord(this.record);
       const persistence = this.persistence;

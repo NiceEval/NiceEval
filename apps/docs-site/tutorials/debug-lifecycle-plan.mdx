@@ -23,11 +23,13 @@ The plan shows, in sequence:
 1. Plugin lifecycle;
 2. Author-declared preparation;
 3. Agent ensure, setup, and teardown;
-4. Sandbox materialization and Provider finalizer;
+4. Sandbox creation and Provider finalizer;
 5. Eval-group and physical Sandbox lifecycle;
 6. Fixture, test, and cleanup.
 
 Static `shell()` and `command()` calls expand into actual commands. Regular callbacks are marked `Opaque` because they can run only at execution time. Paths, credentials, environment-variable values, and unsafe remote locators never appear in human-readable output.
+
+Every author action currently has `attempt` occurrence. The plan shows the Provider's declared cache capability, but dry inspection does not probe a cache or resolve a final key. Human and JSON output therefore report runtime status as `pending` and the final key as `not-probed`.
 
 ## Give tools a structured plan
 
@@ -39,7 +41,7 @@ JSON retains the structured steps and precision markers without terminal box dra
 
 ## Confirm that it performs no resource operations
 
-`debug` does not run setup, test, teardown, ensure, materialize, or finalizers. It creates no Invocation, Run, Record, lock, Sandbox, or build task.
+`debug` does not run setup, test, teardown, ensure, Sandbox creation, or finalizers. It creates no Invocation, Run, Record, lock, Sandbox, or build task.
 
 It loads trusted definitions and executes the Experiment's selection predicate. A Provider planner can also read local files, invoke a read-only CLI, or query a remote control plane, so run it only in a trusted project.
 
