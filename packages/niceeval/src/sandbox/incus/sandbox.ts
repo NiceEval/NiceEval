@@ -39,6 +39,20 @@ const FILESYSTEM_FORMAT_OVERHEAD_RATIO = 0.1;
 
 export const INCUS_OTLP_HOST = null;
 
+function executionEnvironment(
+  mapped: { readonly user: number; readonly group: number },
+  overrides: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> {
+  const isRoot = mapped.user === 0;
+  const user = isRoot ? "root" : INCUS_USER;
+  return {
+    HOME: isRoot ? "/root" : `/home/${INCUS_USER}`,
+    USER: user,
+    LOGNAME: user,
+    ...overrides,
+  };
+}
+
 function commandLabel(argv: readonly string[]): string {
   const raw = argv[0];
   if (raw === undefined || raw.trim() === "") return "command";
@@ -113,7 +127,7 @@ export class IncusSandbox implements SandboxProviderBackend {
     ];
     const spawned = this.control.spawnExec(this.plan.project, this.instanceName, wrapped, {
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      env: opts.env,
+      env: executionEnvironment(mapped, opts.env),
       user: mapped.user,
       group: mapped.group,
     });
@@ -242,7 +256,7 @@ export class IncusSandbox implements SandboxProviderBackend {
     ];
     const spawned = this.control.spawnExec(this.plan.project, this.instanceName, wrapped, {
       cwd: resolveSandboxPath(this.workdir, input.cwd),
-      env: input.env,
+      env: executionEnvironment(mapped, input.env),
       user: mapped.user,
       group: mapped.group,
       keepStdin: true,

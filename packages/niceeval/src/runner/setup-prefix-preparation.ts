@@ -102,27 +102,35 @@ function executePreparationWork(
   work: PreparationWork,
   signal: AbortSignal,
 ): Effect.Effect<PreparedSetupPrefixUse, Error> {
-  const preparation = work.binding.setupPrefixPreparation;
-  if (preparation === undefined) {
-    return Effect.fail(new Error("Sandbox provider omitted its prepared setup-prefix runtime binding."));
-  }
-  const operationsDeepestFirst = [...work.planned].reverse().map((planned) => setupPrefixOperation(planned));
-  return Effect.flatMap(
-    preparation.lookup(operationsDeepestFirst).pipe(Effect.mapError(asError)),
-    (lookup) => {
-      const ancestor = lookup._tag === "Hit" ? lookup.artifact : undefined;
-      const ancestorIndex = ancestor === undefined ? -1 : operationIndex(work.planned, ancestor);
-      if (ancestor !== undefined && ancestorIndex < 0) {
-        return Effect.fail(new Error("Provider returned a setup-prefix artifact outside the requested lineage."));
-      }
-      if (ancestorIndex === work.planned.length - 1 && ancestor !== undefined) {
-        return Effect.succeed(Object.freeze({
-          artifact: ancestor,
-          satisfiedActionCount: work.planned.length,
-        }));
-      }
+  return Effect.gen(function* () {
+    const preparation = work.binding.setupPrefixPreparation;
+    if (preparation === undefined) {
+      return yield* Effect.fail(
+        new Error("Sandbox provider omitted its prepared setup-prefix runtime binding."),
+      );
+    }
+    const operationsDeepestFirst = [...work.planned]
+      .reverse()
+      .map((planned) => setupPrefixOperation(planned));
+    const lookup = yield* preparation.lookup(operationsDeepestFirst).pipe(Effect.mapError(asError));
+    let ancestor = lookup._tag === "Hit" ? lookup.artifact : undefined;
+    let ancestorIndex = ancestor === undefined ? -1 : operationIndex(work.planned, ancestor);
+    if (ancestor !== undefined && ancestorIndex < 0) {
+      return yield* Effect.fail(
+        new Error("Provider returned a setup-prefix artifact outside the requested lineage."),
+      );
+    }
+    if (ancestorIndex === work.planned.length - 1 && ancestor !== undefined) {
+      return Object.freeze({
+        artifact: ancestor,
+        satisfiedActionCount: work.planned.length,
+      });
+    }
 
-      const feedback = noFeedback();
+    const feedback = noFeedback();
+    for (let index = ancestorIndex + 1; index < work.planned.length; index++) {
+      const candidate = work.planned[index]!;
+      const parent = ancestor;
       const runtimeInput: SandboxRuntimeMaterializeInput = {
         plan: work.plan,
         evalId: work.representative.evalDef.id,
@@ -136,40 +144,48 @@ function executePreparationWork(
           diagnostic: feedback.diagnostic,
         },
         buildLocators: new Map<string, JsonValue>(),
-        ...(ancestor === undefined ? {} : { setupPrefixArtifact: ancestor.locator }),
+        ...(parent === undefined ? {} : { setupPrefixArtifact: parent.locator }),
         provisionSlot: { _tag: "Detached" },
         admission: { _tag: "Detached" },
         services: liveSandboxRuntimeServices,
         release: { _tag: "Stop" },
       };
-      return Effect.scoped(Effect.gen(function* () {
+      const captured = yield* Effect.scoped(Effect.gen(function* () {
         const owned = yield* acquireSandboxRunPlan(runtimeInput).pipe(Effect.mapError(asError));
         const commandTarget = createSandboxCommandTarget(owned.sandbox);
         const managed = sandboxCapabilities(owned.sandbox).managedProcess;
         const managedProcess = managed._tag === "Supported" ? managed.value : undefined;
-        for (let index = ancestorIndex + 1; index < work.planned.length; index++) {
-          const candidate = work.planned[index]!;
-          yield* Effect.tryPromise({
-            try: () => executeSandboxAction(candidate.entry.data, commandTarget, managedProcess, signal),
-            catch: asError,
-          });
-        }
-        const final = work.planned.at(-1)!;
-        const artifact = yield* preparation.capture(owned, setupPrefixOperation(final)).pipe(
+        yield* Effect.tryPromise({
+          try: () => executeSandboxAction(
+            candidate.entry.data,
+            commandTarget,
+            managedProcess,
+            signal,
+          ),
+          catch: asError,
+        });
+        return yield* preparation.capture(owned, setupPrefixOperation(candidate)).pipe(
           Effect.mapError(asError),
         );
-        if (operationIndex(work.planned, artifact) !== work.planned.length - 1) {
-          return yield* Effect.fail(new Error("Provider captured an artifact with the wrong setup-prefix identity."));
-        }
-        return Object.freeze({
-          artifact,
-          satisfiedActionCount: work.planned.length,
-        });
       }));
-    },
-  );
-}
+      if (operationIndex(work.planned, captured) !== index) {
+        return yield* Effect.fail(
+          new Error("Provider captured an artifact with the wrong setup-prefix identity."),
+        );
+      }
+      ancestor = captured;
+      ancestorIndex = index;
+    }
 
+    if (ancestor === undefined) {
+      return yield* Effect.fail(new Error("Prepared setup-prefix work produced no artifact."));
+    }
+    return Object.freeze({
+      artifact: ancestor,
+      satisfiedActionCount: work.planned.length,
+    });
+  });
+}
 /**
  * Compile and complete every unique provider-native prefix before any Attempt
  * dispatch. Work is serial so a capacity-one execution domain never deadlocks
