@@ -1179,14 +1179,22 @@ def main() -> None:
                 storage_root / "fixed-image-v1" / "rotation-epochs" / epoch / "store.img"
             )
             config["storage"]["registryEpoch"] = epoch
-        elif previous_config is not None and source_host_config is not None \
-                and Path(str(previous_config["storage"]["outerImagePath"])).resolve() \
-                    != Path(str(config["storage"]["outerImagePath"])).resolve():
-            # A declarative backing cutover must publish its registries and
-            # provision intent in a fresh namespace.  The legacy root paths
-            # remain bound to the previous committed capsule and cannot
-            # describe a different slot count, size, or backing identity.
-            config["storage"]["registryEpoch"] = epoch
+        elif previous_config is not None and source_host_config is not None:
+            previous_outer = Path(str(previous_config["storage"]["outerImagePath"])).resolve()
+            requested_outer = Path(str(config["storage"]["outerImagePath"])).resolve()
+            if previous_outer != requested_outer:
+                # A declarative backing cutover must publish its registries and
+                # provision intent in a fresh namespace.  The legacy root paths
+                # remain bound to the previous committed capsule and cannot
+                # describe a different slot count, size, or backing identity.
+                config["storage"]["registryEpoch"] = epoch
+            elif previous_config["storage"].get("registryEpoch") is not None:
+                # A same-backing policy update adopts the already published
+                # physical registry.  Source config is declarative and omits
+                # this activation-owned namespace, so carry it forward from
+                # the committed capsule instead of falling back to the legacy
+                # unversioned provision journal.
+                config["storage"]["registryEpoch"] = previous_config["storage"]["registryEpoch"]
         marker = generation / "activation.pending.json"
         current_pointer = generation / "current"
         journal = generation / "activation.ndjson"
