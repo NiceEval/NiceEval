@@ -22,11 +22,7 @@
       "from": "examples/zh/origin/ai-sdk-v7",
       "to": "examples/zh/tier1/ai-sdk-v7",
       "contract": "verbatim",
-      "baseTree": "d2931c614b3c7ff789625bfd67647f191a4e08f1",
-      "pending": {
-        "upstreamTree": "2a6982b394323b6bcae79913396154313b1a4aa0",
-        "needsInstall": true
-      }
+      "baseTree": "2a6982b394323b6bcae79913396154313b1a4aa0"
     },
     {
       "from": "examples/zh/origin/langgraph",
@@ -38,7 +34,7 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "0b743b13831538a6734872ae7dabb146eceb1706"
+      "baseTree": "ca1b0e6f7981cd418d59f3e2a94fd36d98b39fb8"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
@@ -56,7 +52,7 @@
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "3de8d41c3132b3c624b3e7f97959b0d35be17113"
+      "baseTree": "fe305150194ff2c09c17b3dd18719dad6845e25a"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
