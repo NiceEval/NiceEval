@@ -1,18 +1,14 @@
 version: 2
 updates:
   # The root workspace intentionally excludes E2E fixtures and examples. Keep
-  # their standalone pnpm lockfiles in the same updater entry without copying a
-  # configuration entry for every leaf directory.
+  # standalone E2E pnpm lockfiles in the same updater entry without copying a
+  # configuration entry for every leaf directory. Examples are maintained by
+  # their synchronization workflow instead of Dependabot.
   - package-ecosystem: "npm"
     directories:
       - "/"
       - "/e2e/*"
       - "/e2e/adapter/*"
-      - "/examples/zh/*"
-      - "/examples/zh/origin/*"
-      - "/examples/zh/tier1/*"
-      - "/examples/zh/tier2/*"
-      - "/examples/zh/tier3/*"
       - "/netlify-preview"
     schedule:
       interval: "weekly"
@@ -31,17 +27,6 @@ updates:
           - "major"
         group-by: "dependency-name"
 
-  - package-ecosystem: "pip"
-    directories:
-      - "/examples/zh/*/langgraph"
-    schedule:
-      interval: "weekly"
-    groups:
-      same-dependency:
-        patterns:
-          - "*"
-        group-by: "dependency-name"
-
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -56,18 +41,6 @@ updates:
       - "/e2e/adapter/codex-app-server"
       - "/e2e/cli/fixtures/deliberate-error"
       - "/sandbox/docker"
-    schedule:
-      interval: "weekly"
-    groups:
-      same-image:
-        patterns:
-          - "*"
-        group-by: "dependency-name"
-
-  - package-ecosystem: "docker-compose"
-    directories:
-      - "/examples/zh/ai-sdk/langfuse"
-      - "/examples/zh/*/langgraph"
     schedule:
       interval: "weekly"
     groups:

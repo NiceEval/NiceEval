@@ -72,7 +72,7 @@ jobs:
 
       # pnpm/setup 在 version 缺省时读取根 packageManager；不要在 workflow 重复版本真源。
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v1
+        uses: pnpm/setup@v2
         with:
           runtime: node@24
           cache: true
@@ -361,7 +361,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v1
+        uses: pnpm/setup@v2
         with:
           runtime: node@24
           cache: true
@@ -429,7 +429,7 @@ jobs:
 
       - name: Set up Python
         if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

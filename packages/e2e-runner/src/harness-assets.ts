@@ -4,7 +4,7 @@ import { FileSystem } from "@effect/platform";
 import { Data, Effect } from "effect";
 
 import type { HarnessAsset } from "./contracts.ts";
-import { lstatPath } from "./durable-path.ts";
+import { assertContainedRealDirectory, lstatPath } from "./durable-path.ts";
 
 interface HarnessAssetDefinition {
   readonly source: readonly string[];
@@ -185,6 +185,55 @@ export const materializeHarnessAssets = (
     const environments = yield* Effect.forEach(
       assets,
       (asset) => materializeOne(checkoutRoot, isolatedRepo, asset),
+      { concurrency: 1 },
+    );
+    return {
+      assets,
+      environment: Object.assign({}, ...environments),
+    };
+  });
+
+/** Reconstruct the same environment for assets already present in a retained copy. */
+export const inspectMaterializedHarnessAssets = (
+  isolatedRepo: string,
+  assets: readonly HarnessAsset[],
+): Effect.Effect<
+  MaterializedHarnessAssets,
+  HarnessAssetMaterializationError,
+  FileSystem.FileSystem
+> =>
+  Effect.gen(function* () {
+    const environments = yield* Effect.forEach(
+      assets,
+      (asset) => {
+        const definition = HARNESS_ASSETS[asset];
+        const destination = join(isolatedRepo, ...definition.destination);
+        return assertContainedRealDirectory(
+          isolatedRepo,
+          destination,
+          `retained harness asset ${asset}`,
+        ).pipe(
+          Effect.mapError((cause) =>
+            failure(
+              asset,
+              "verify",
+              destination,
+              destination,
+              cause,
+            ),
+          ),
+          Effect.map((realDestination) =>
+            Object.fromEntries(
+              Object.entries(definition.environment).map(
+                ([name, assetRelativePath]) => [
+                  name,
+                  join(realDestination, assetRelativePath),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
       { concurrency: 1 },
     );
     return {

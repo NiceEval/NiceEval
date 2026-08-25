@@ -5,13 +5,14 @@
 根 runner 不建立一套与真实场景平行的模拟系统，也不拥有 `test/unit/e2e-runner/`。发现、选择、注入、安装、收据和 cleanup
 通过真实 Repo 与根 CLI 运行验收；workflow 的发布顺序由真实 preflight / release 和 review 验收，不用 Vitest 对 YAML 或源码文本做 syntax parse。
 
-## 六命令接口
+## 七命令接口
 
-根 CLI 只有六个显式命令：高阶本地入口是 `test`；低阶生命周期命令是 `plan`、`pack`、`run`、`takeover` 与
-`verify-release`。无子命令的 `pnpm e2e` 只显示 Effect CLI help，不选择、打包或运行任何场景。
+根 CLI 只有七个显式命令：高阶本地入口是 `test`；本地诊断入口是带 `test` / `exec` 模式的 `diagnose`；低阶生命周期命令是
+`plan`、`pack`、`run`、`takeover` 与 `verify-release`。无子命令的 `pnpm e2e` 只显示 Effect CLI help，不选择、打包或运行任何场景。
 
 `test` 严格执行一次 plan → 对合法非空计划打包一次 candidate → 运行该 plan 的精确 Repo 集；合法空计划在 pack 之前成功短路。
 CI 与 `run --plan` 消费同一份当前 checkout 生成的 plan，不会在 run 阶段重新选择。
+`diagnose` 不参与这条正式生命周期；它只消费一次带 `--keep-workdir` 的正式本地运行所留下的 retained 场景。
 
 ## 高阶本地入口
 
@@ -42,9 +43,17 @@ pnpm --silent e2e plan --lane pr --json
 pnpm --silent e2e plan --lane pr --base <ancestor-sha> --head <checkout-sha> --json
 pnpm --silent e2e plan --lane main --no-diff --exclude-external-network --json
 pnpm --silent e2e plan --lane release --no-diff --json
-pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report --artifact-root artifacts/e2e/report
+# 本地正式红灯并保留场景；终态 summary 位于 durable artifact root
+pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report \
+  --artifact-root artifacts/e2e/report --keep-workdir
 pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
   --plan artifacts/e2e-plan.json --cell repo-batch-docker-1 --artifact-root artifacts/e2e/docker-1
+
+# 本地快速定位：只消费正式 --keep-workdir summary，不重新 pack / install
+pnpm e2e diagnose test --from artifacts/e2e/report/summary.json --repo report \
+  --timeout-seconds 15 -- --run test/report.browser.spec.ts -t "打开"
+pnpm e2e diagnose exec --from artifacts/e2e/report/summary.json --repo report \
+  --timeout-seconds 15 -- pnpm exec niceeval show <record> --json
 
 # Owner 接管可靠性收据：target 必须在 -- 后给出原生文件/标题参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo report \
@@ -66,6 +75,38 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 - 声明 browser capability 的 matrix cell 使用与根 `@playwright/test` 精确版本相同的官方 Playwright Noble container；
 - 浏览器与通用 Linux 系统依赖来自镜像，不运行 `playwright install --with-deps`。没有 browser requirement 的 host / docker cell 仍直接运行在普通 GitHub runner。plan cell 声明 `requires.hostCapabilities: ["linux-loop-project-quota"]` 时才安装 project-quota 工具与当前内核模块。脚本材料由 Repo 的 `harness.assets` 独立声明；
 - `plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；显式 `run --candidate` 不重新 pack。
+
+## 本地快速交付与 retained 诊断
+
+快速交付把本地完整 E2E 限定为少数正式检查点：首次公开入口红灯、生产修复后的 candidate 定点转绿，以及变更风险要求的
+takeover / 最终收据。CI 的 affected lane 与 main / nightly 负责执行最终线上完整矩阵，不用作逐步试探测试标题、DOM、时序、fixture
+或公开命令的交互式调试器。
+
+同一个 candidate 的正式本地流程只做一次 plan、一次 pack / install，并按需 build 一次 Testkit。能独立推进且不共享写入或重复这套
+昂贵准备的证据线立即并行；共享 retained 场景的可变动作则串行。完整运行出现红灯并需要定位时，先让该次 `test` / `run` 通过
+`--keep-workdir` 产出正式 summary，再使用：
+
+```sh
+pnpm e2e diagnose test --from <summary.json> --repo <id> [--timeout-seconds 15] -- <native target args>
+pnpm e2e diagnose exec --from <summary.json> --repo <id> [--timeout-seconds 15] -- <argv>
+```
+
+两种模式共享以下边界：
+
+- 只允许本地运行；存在 `CI` 时在读取场景、建副本或启动进程前拒绝。`--from` 必须指向正式根 runner 写出的 summary，且
+  `scratch.disposition` 必须为 `retained`；`--repo` 必须精确命中该 summary 中保留的一个 Repo，不猜测“最近一次”运行，也不接受任意消费项目目录。
+- 每次 diagnostic 都重新核对 summary 与 retained scratch。Repo 与已安装身份仍受原 durable / scratch root containment 约束。
+  目录链、内部 symlink、candidate / Testkit attestation 或 retained scene 身份不一致时 fail closed，不执行目标命令。
+- `diagnose test` 直接复用 retained Repo 的既有安装，用 `--` 后的原生文件 / 标题参数调用该 Repo 已声明的 test command；它不重新
+  plan、pack、build Testkit、install 或 prepare。默认 15 秒上限用于迅速验证单个假设，不得用该入口等待 Repo 的完整 timeout。
+- `diagnose exec` 从 retained Repo 建一个短命新副本，在其中按 `--` 后的 argv 原样启动一条 Library / CLI / HTTP / 浏览器或 Adapter
+  公开命令；不经过 shell 字符串求值，不允许并排启动多条命令。命令结束、超时、signal 或失败后都删除该副本并核对资源终态。
+- 两种模式继续使用 retained 正式运行的 candidate、Testkit、普通变量与 secret 白名单过滤，并把目标进程放进 runner owned detached
+  process group。超时与首次 signal 走有界 TERM / grace / KILL，并等待 `close`；group cleanup 结果写入收据。不得因快速诊断放宽 secret、路径或 orphan 边界。
+- 每次尝试都有新的 `NICEEVAL_E2E_INVOCATION_ID` 和独立 diagnostic receipt。receipt 绑定 source summary、Repo、candidate digest、模式与
+  argv，并保存 timeout、exit / signal、stdout / stderr 与 cleanup。它是定位证据，不改写原正式 summary、Repo receipt 或 disposition。
+- diagnostic 的 pass 只表示该短命观察在 retained 场景中成立，不能算作正式 E2E pass、候选转绿、takeover 或最终收据。candidate 输入
+  一旦变化，旧场景立即不可复用；必须重新 pack / install，并通过新的正式 `--keep-workdir` 运行取得 summary 后再诊断。
 
 `verify-release` 只接受 `mode` 合法且 cells 非空的 full `plan --json`、candidate `.tgz`、receipt root 与 tag。
 它要求 receipt 的 Repo ID 与 plan 精确且唯一对应，并且全部为 `pass`。
@@ -171,7 +212,7 @@ container、Sandbox 或场景另开 session 仍由所属 Repo 的资源 receipt 
 `--keep-workdir` 仅供显式本地诊断。它必须出现在根参数的 `--` 之前；分隔符
 之后的同名参数原样交给 Vitest。使用后，无论 pass、regression、infra 或首次
 signal cancellation，runner 都保留包含场景副本与 Testkit snapshot 的 scratch
-tree，并在 summary 写绝对路径。它不跳过进程、server 或 container cleanup。
+tree，并在 summary 写绝对路径，作为 `diagnose --from` 的唯一场景入口。它不跳过进程、server 或 container cleanup。
 
 只要子进程变量集合里存在 `CI`，runner 就在 plan、pack、建目录或启动进程前拒绝
 `--keep-workdir`。`--help` / `-h` 在分隔符前优先返回 0，并且不做上述副作用；

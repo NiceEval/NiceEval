@@ -1,4 +1,4 @@
-FROM node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f
+FROM node@sha256:bde0dae02f2b12d2bce5ee72b2432f0e511767b7b2dc4dd3b064df11ae422fee
 
 COPY --chown=node:node fixtures/bin/codex /usr/local/bin/codex
 RUN chmod 0755 /usr/local/bin/codex \
