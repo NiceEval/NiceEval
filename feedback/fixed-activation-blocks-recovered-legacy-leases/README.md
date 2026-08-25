@@ -11,10 +11,10 @@ source:
   commit: 7b40844b
 subject: product
 claim: defect
-observation: The first fixed-image activation rejected the legacy ownership journal as non-drained even though it contained 104 leases all in the terminal recovered state and zero reservations, queue entries, builds, containers, or setup-prefix operations.
+observation: The fixed-image activation and its provisioner each rejected the legacy ownership journal as non-drained even though it contained 104 leases all in the terminal recovered state and zero reservations, queue entries, builds, containers, or setup-prefix operations.
 impact: A host upgraded from the legacy transient watchdog cannot activate fixed-image storage without manually rewriting durable journal state, despite having no live ownership.
 memoryRelations:
   - kind: root-cause
     memory: fixed-activation-recovered-legacy-leases
 ---
-The production activation boundary failed closed on terminal receipts retained by the legacy watchdog.
+The production activation and provisioning boundaries failed closed on terminal receipts retained by the legacy watchdog.

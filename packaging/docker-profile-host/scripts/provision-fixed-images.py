@@ -258,7 +258,11 @@ def assert_drained(cfg: dict[str, Any], journals: tuple[Path, ...]) -> None:
             queue = last.get("queue", [])
             builds = [item for item in reservations.values() if item.get("kind") == "build"]
             containers = [item for item in reservations.values() if item.get("kind") == "container"]
-            if leases or reservations or queue or builds or containers:
+            recovered_only = isinstance(leases, dict) and all(
+                isinstance(lease, dict) and lease.get("state") == "recovered"
+                for lease in leases.values()
+            )
+            if not recovered_only or reservations or queue or builds or containers:
                 raise RuntimeError(
                     "fixed-image deployment requires zero leases, reservations, queue, builds, and containers"
                 )
