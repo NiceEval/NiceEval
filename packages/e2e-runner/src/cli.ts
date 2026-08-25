@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { Cause, Console, Data, Effect, Either, Exit, Fiber, Layer, Option, Queue } from "effect";
 
 import { decodePlanDocument, type SelectionReceipt } from "./contracts.ts";
+import { runDiagnostic, type DiagnosticMode } from "./diagnose.ts";
 import { repoRootDir } from "./discovery.ts";
 import { forceKillOwnedProcesses, OwnedProcessLive, stopOwnedProcesses } from "./owned-process.ts";
 import { packCandidate } from "./pack.ts";
@@ -72,6 +73,9 @@ const loadRootEnv: Effect.Effect<void, E2ECliError, FileSystem.FileSystem> = Eff
 });
 const rejectKeepWorkdirInCi = (requested: boolean): Effect.Effect<void, E2ECliError> => requested && process.env.CI !== undefined ? Effect.fail(new E2ECliError({ detail: "--keep-workdir is local-only and rejected in CI" })) : Effect.void;
 const printSummary = (summary: RunSummary): Effect.Effect<void, E2ECliError> => Console.log(JSON.stringify(summary, null, 2)).pipe(Effect.zipRight(summary.category === "pass" ? Effect.void : Effect.fail(new E2ECliError({ detail: summary.detail }))));
+const rejectDiagnosticInCi = process.env.CI !== undefined
+  ? Effect.fail(new E2ECliError({ detail: "diagnose is local-only and rejected in CI" }))
+  : Effect.void;
 
 const planned = (config: PlanConfig) => resolveConfiguredPlan(config).pipe(Effect.catchAll((error) => planFailure(error, config.json)));
 const planCommand = Command.make("plan", { lane, repoIds: repos, diffPaths, noDiff, base, head, capability, excludeExternalNetwork, batch, json }, (config) => planned(config).pipe(Effect.tap(printPlan))).pipe(Command.withDescription("Resolve selected scenario repositories without packing or running them."));
@@ -116,9 +120,24 @@ const runTakeoverCommand = (config: { readonly candidate: string; readonly repo:
     Effect.mapError((cause) => new E2ECliError({ detail: errorDetail(cause) })),
   );
 const takeoverCommand = Command.make("takeover", { candidate: Options.text("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), repo: Options.text("repo").pipe(Options.withDescription("Required scenario repository id.")), artifactRoot, nativeArgs }, runTakeoverCommand).pipe(Command.withDescription("Run the deterministic reliability takeover matrix for one repository."));
+const diagnoseFrom = Options.text("from").pipe(Options.withDescription("Formal retained run summary.json path."));
+const diagnoseRepo = Options.text("repo").pipe(Options.withDescription("Single retained scenario repository id."));
+const diagnoseTimeout = Options.integer("timeout-seconds").pipe(Options.withDefault(15), Options.withDescription("Positive diagnostic command timeout in seconds (default: 15)."));
+const runDiagnoseCommand = (mode: DiagnosticMode, config: { readonly from: string; readonly repo: string; readonly timeoutSeconds: number; readonly nativeArgs: readonly string[] }) =>
+  rejectDiagnosticInCi.pipe(
+    Effect.zipRight(loadRootEnv),
+    Effect.zipRight(Effect.scoped(runDiagnostic({ mode, summaryPath: config.from, repoId: config.repo, timeoutSeconds: config.timeoutSeconds, argv: config.nativeArgs }))),
+    Effect.flatMap((summary) => Console.log(JSON.stringify(summary, null, 2)).pipe(
+      Effect.zipRight(summary.ok ? Effect.void : Effect.fail(new E2ECliError({ detail: summary.detail }))),
+    )),
+    Effect.mapError((cause) => new E2ECliError({ detail: errorDetail(cause) })),
+  );
+const diagnoseTestCommand = Command.make("test", { from: diagnoseFrom, repo: diagnoseRepo, timeoutSeconds: diagnoseTimeout, nativeArgs }, (config) => runDiagnoseCommand("test", config)).pipe(Command.withDescription("Run native test targets in one retained formal scenario copy."));
+const diagnoseExecCommand = Command.make("exec", { from: diagnoseFrom, repo: diagnoseRepo, timeoutSeconds: diagnoseTimeout, nativeArgs }, (config) => runDiagnoseCommand("exec", config)).pipe(Command.withDescription("Run an argv command in a short-lived copy of one retained scenario."));
+const diagnoseCommand = Command.make("diagnose").pipe(Command.withDescription("Run local-only fast diagnostics from a retained formal run."), Command.withSubcommands([diagnoseTestCommand, diagnoseExecCommand]));
 const verifyReleaseCommand = Command.make("verify-release", { plan: Options.text("plan").pipe(Options.withDescription("Required release plan JSON path.")), candidate: Options.text("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), receiptRoot: Options.text("receipt-root").pipe(Options.withDescription("Required durable receipt root.")), tag: Options.text("tag").pipe(Options.withDescription("Required vX.Y.Z release tag.")) }, (config) => verifyRelease({ planPath: config.plan, candidatePath: config.candidate, receiptRoot: config.receiptRoot, tag: config.tag }).pipe(Effect.flatMap((verification) => Console.log(JSON.stringify(verification, null, 2))))).pipe(Command.withDescription("Verify a release candidate against a full plan and durable receipts."));
 
-export const e2eCommand = Command.make("e2e").pipe(Command.withDescription("NiceEval E2E planning, packing, execution, takeover, and release verification."), Command.withSubcommands([testCommand, planCommand, packCommand, runCommand, takeoverCommand, verifyReleaseCommand]));
+export const e2eCommand = Command.make("e2e").pipe(Command.withDescription("NiceEval E2E planning, packing, execution, diagnosis, takeover, and release verification."), Command.withSubcommands([testCommand, diagnoseCommand, planCommand, packCommand, runCommand, takeoverCommand, verifyReleaseCommand]));
 
 type ShutdownSignal = "SIGINT" | "SIGTERM";
 const signalState: { first: ShutdownSignal | undefined; offerEscalation: (() => void) | undefined } = { first: undefined, offerEscalation: undefined };

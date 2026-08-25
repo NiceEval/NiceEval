@@ -194,7 +194,13 @@ function shutdownRaw(active: Active, graceMs: number, reason: OwnedTermination, 
 
 /** All owners share one uninterruptible group shutdown, including the close tuple and descendant cleanup. */
 function shutdown(active: Active, graceMs: number, reason: OwnedTermination, firstSignal: NodeJS.Signals = "SIGTERM"): Effect.Effect<OwnedProcessResult> {
-  return Deferred.complete(active.shutdownResult, shutdownRaw(active, graceMs, reason, firstSignal)).pipe(Effect.zipRight(active.shutdownResult));
+  return Effect.gen(function* () {
+    const completed = yield* Deferred.poll(active.shutdownResult);
+    if (Option.isSome(completed)) return yield* completed.value;
+    const result = yield* shutdownRaw(active, graceMs, reason, firstSignal);
+    yield* Deferred.succeed(active.shutdownResult, result);
+    return yield* active.shutdownResult;
+  }).pipe(Effect.uninterruptible);
 }
 
 export function ownedProcessLayer(options: { readonly graceMs?: number } = {}): Layer.Layer<OwnedProcess, never, never> {
