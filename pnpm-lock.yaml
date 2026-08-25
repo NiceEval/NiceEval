@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@playwright/test':
-        specifier: 1.61.1
-        version: 1.61.1
+        specifier: 1.62.1
+        version: 1.62.1
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -22,7 +22,7 @@ importers:
         version: 9.1.7
       next:
         specifier: 16.3.2
-        version: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       nx:
         specifier: 23.1.1
         version: 23.1.1
@@ -49,10 +49,10 @@ importers:
         version: 4.3.3
       '@vercel/analytics':
         specifier: ^2.0.1
-        version: 2.0.1(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
+        version: 2.0.1(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
       '@vercel/speed-insights':
         specifier: ^2.0.0
-        version: 2.0.0(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
+        version: 2.0.0(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -70,7 +70,7 @@ importers:
         version: 12.42.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       next:
         specifier: 16.3.2
-        version: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       niceeval:
         specifier: workspace:*
         version: link:../../packages/niceeval
@@ -162,10 +162,10 @@ importers:
         version: 0.108.1(@effect/cluster@0.60.2(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.76.2(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/sql@0.52.1(@effect/experimental@0.61.1(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/workflow@0.19.1(@effect/experimental@0.61.1(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.76.2(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.76.2(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/sql@0.52.1(@effect/experimental@0.61.1(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)
       '@vercel/analytics':
         specifier: ^2.0.1
-        version: 2.0.1(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
+        version: 2.0.1(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
       '@vercel/speed-insights':
         specifier: ^2.0.0
-        version: 2.0.0(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
+        version: 2.0.0(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
       ai:
         specifier: '>=5.0.0'
         version: 7.0.9(zod@4.4.3)
@@ -219,8 +219,8 @@ importers:
         specifier: ^2.8.0
         version: 2.8.0(@opentelemetry/api@1.9.1)
       '@playwright/test':
-        specifier: 1.61.1
-        version: 1.61.1
+        specifier: 1.62.1
+        version: 1.62.1
       '@radix-ui/react-dialog':
         specifier: ^1.1.17
         version: 1.1.17(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -286,7 +286,7 @@ importers:
         version: 12.42.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       next:
         specifier: 16.3.2
-        version: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       prism-react-renderer:
         specifier: ^2.4.1
         version: 2.4.1(react@19.2.7)
@@ -1654,9 +1654,9 @@ packages:
     resolution: {integrity: sha512-7FNeNl8NCE7aINx7WXiKQrPYZWC/hvrTsmk6zmxbI7LTXE7hVek/n8AfVgpe2y82zl3w0HvCHN0bVKMBoJcC0w==}
     engines: {node: '>= 10.0.0'}
 
-  '@playwright/test@1.61.1':
-    resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
-    engines: {node: '>=18'}
+  '@playwright/test@1.62.1':
+    resolution: {integrity: sha512-DTcUc8qii+cpHvtOwggMtBRMjKZHXYWdw8syRYu2vtzuq4Wxphqq4NfCs5Zt44L6mA8rfDfj+PHnxFc/FeK6mQ==}
+    engines: {node: '>=20'}
     hasBin: true
 
   '@protobufjs/aspromise@1.1.2':
@@ -4163,14 +4163,14 @@ packages:
   platform@1.3.6:
     resolution: {integrity: sha512-fnWVljUchTro6RiCFvCXBbNhJc2NijN7oIQxbwsyL0buWJPG85v81ehlHI9fXrJsMNgTofEoWIQeClKpgxFLrg==}
 
-  playwright-core@1.61.1:
-    resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
-    engines: {node: '>=18'}
+  playwright-core@1.62.1:
+    resolution: {integrity: sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw==}
+    engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.61.1:
-    resolution: {integrity: sha512-DWnY5o3YbLWK4GovuAVwpqL+1VwGNdUGrRr++8j8PtQQzvAVZUIMjKQ90fY689sEJZJBbZVw1rXaOKSTitkzPQ==}
-    engines: {node: '>=18'}
+  playwright@1.62.1:
+    resolution: {integrity: sha512-0M+L3LAD8/nm554LOla9Ayx0j0tmFZ0FBcoQ7F1VuVHpM/XpiC8RcDzBQB8W5+hA8L22THxELzeF+2WcUzvcLg==}
+    engines: {node: '>=20'}
     hasBin: true
 
   pluralize@8.0.0:
@@ -5931,9 +5931,9 @@ snapshots:
       '@parcel/watcher-win32-arm64': 2.6.0
       '@parcel/watcher-win32-x64': 2.6.0
 
-  '@playwright/test@1.61.1':
+  '@playwright/test@1.62.1':
     dependencies:
-      playwright: 1.61.1
+      playwright: 1.62.1
 
   '@protobufjs/aspromise@1.1.2': {}
 
@@ -6548,9 +6548,9 @@ snapshots:
       d3-selection: 3.0.0
       d3-transition: 3.0.1(d3-selection@3.0.0)
 
-  '@vercel/analytics@2.0.1(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)':
+  '@vercel/analytics@2.0.1(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)':
     optionalDependencies:
-      next: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      next: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react: 19.2.7
 
   '@vercel/functions@1.6.0': {}
@@ -6574,9 +6574,9 @@ snapshots:
       - bare-abort-controller
       - react-native-b4a
 
-  '@vercel/speed-insights@2.0.0(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)':
+  '@vercel/speed-insights@2.0.0(next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)':
     optionalDependencies:
-      next: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      next: 16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react: 19.2.7
 
   '@vitejs/plugin-react@6.0.3(vite@8.1.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))':
@@ -8407,7 +8407,7 @@ snapshots:
 
   negotiator@1.0.0: {}
 
-  next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  next@16.3.2(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:
       '@next/env': 16.3.2
       '@swc/helpers': 0.5.23
@@ -8427,7 +8427,7 @@ snapshots:
       '@next/swc-win32-arm64-msvc': 16.3.2
       '@next/swc-win32-x64-msvc': 16.3.2
       '@opentelemetry/api': 1.9.1
-      '@playwright/test': 1.61.1
+      '@playwright/test': 1.62.1
       sharp: 0.35.3(@types/node@24.13.3)
     transitivePeerDependencies:
       - '@babel/core'
@@ -8687,11 +8687,11 @@ snapshots:
 
   platform@1.3.6: {}
 
-  playwright-core@1.61.1: {}
+  playwright-core@1.62.1: {}
 
-  playwright@1.61.1:
+  playwright@1.62.1:
     dependencies:
-      playwright-core: 1.61.1
+      playwright-core: 1.62.1
     optionalDependencies:
       fsevents: 2.3.2
 
