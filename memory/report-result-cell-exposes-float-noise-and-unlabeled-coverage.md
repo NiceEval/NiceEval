@@ -9,8 +9,7 @@ kind:
 promotions:
   - kind: feature
     current:
-      path: docs/feature/reports/library.md
-      anchor: 中立组件与官方组合组件
+      - docs/feature/reports/library.md#中立组件与官方组合组件
     history: []
 ---
 # Report 结果格泄露浮点尾数并混淆覆盖度

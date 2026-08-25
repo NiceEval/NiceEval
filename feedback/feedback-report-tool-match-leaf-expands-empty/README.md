@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: feedback-report-tool-match-leaf-expands-empty
 title: Report 的工具匹配叶子展开后为空
 state: open
@@ -12,9 +12,10 @@ subject: product
 claim: defect
 observation: 用户点击工具 matcher 的 name、input、output 或 status 叶子后，只出现额外空白区域，没有任何新证据。
 impact: 展开箭头承诺了可下钻内容，实际空白让读者误以为数据丢失或页面未加载完成，也增加了逐项试点成本。
-adoptedContract:
-  path: docs/feature/assertions/library/display.md
-  anchor: 单条-assertion
+adoptions:
+  current:
+    - docs/feature/assertions/library/display.md#单条-assertion
+  history: []
 memoryRelations:
   - kind: root-cause
     memory: report-tool-match-candidates-hide-human-evidence

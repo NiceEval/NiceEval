@@ -9,8 +9,7 @@ kind:
 promotions:
   - kind: feature
     current:
-      path: docs/feature/assertions/library/display.md
-      anchor: 单条-assertion
+      - docs/feature/assertions/library/display.md#单条-assertion
     history: []
 ---
 ## 问题

@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: feedback-report-command-match-candidates-hide-invocation-kind
 title: Report 的命令匹配候选隐藏实际调用身份
 state: open
@@ -12,9 +12,10 @@ subject: product
 claim: defect
 observation: commandMatch 的候选树把所有被检查的 tool occurrence 都显示成 `调用 N`。真实画面中的 `调用 1` 实际是普通工具 `lookup_fixture`，`调用 2` 才是命令 `node --version`；字段行仍显示英文 `command`、`status`。
 impact: 读者无法知道序号对应哪次实际调用，也无法分辨普通工具候选与命令候选，必须跳到完整轨迹并靠位置反推 matcher 为什么命中。
-adoptedContract:
-  path: docs/feature/assertions/library/display.md
-  anchor: 单条-assertion
+adoptions:
+  current:
+    - docs/feature/assertions/library/display.md#单条-assertion
+  history: []
 memoryRelations:
   - kind: root-cause
     memory: report-tool-match-candidates-hide-human-evidence

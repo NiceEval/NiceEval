@@ -1,5 +1,6 @@
 // owner: docs/engineering/testing/e2e/report.md#report-browser-journey
 // regression: memory/report-header-experiment-selector-regression.md
+// regression: memory/report-match-details-obscure-score-and-collection.md
 // rerun: pnpm e2e test --repo report -- --run test/report.browser.spec.ts
 //
 // This Journey observes only the installed candidate, exported files, HTTP,

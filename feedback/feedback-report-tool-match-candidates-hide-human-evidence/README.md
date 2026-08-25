@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: feedback-report-tool-match-candidates-hide-human-evidence
 title: Report 的工具匹配候选隐藏可读证据
 state: open
@@ -12,9 +12,10 @@ subject: product
 claim: defect
 observation: Attempt 源码详情把工具匹配候选显示成 `candidate [niceeval.logical-tool-occurrence/1,...]`，候选内只列出 `name`、`input`、`output`、`status`。字段是否命中只由颜色表达，折叠态不显示期望值、实际值或状态文字。
 impact: 读者无法直接判断每个候选是哪次工具调用、哪一字段不匹配，以及期望与实际相差什么；必须逐层展开并依赖颜色猜测，仍会被内部 occurrence identity 干扰。
-adoptedContract:
-  path: docs/feature/assertions/library/display.md
-  anchor: 单条-assertion
+adoptions:
+  current:
+    - docs/feature/assertions/library/display.md#单条-assertion
+  history: []
 memoryRelations:
   - kind: root-cause
     memory: report-tool-match-candidates-hide-human-evidence

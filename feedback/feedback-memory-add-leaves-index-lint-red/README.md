@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: feedback-memory-add-leaves-index-lint-red
 title: pnpm memory add 后旧 INDEX lint 仍要求手工双写
 state: open
@@ -12,9 +12,10 @@ subject: repository
 claim: friction
 observation: "`pnpm memory add` 成功创建结构化 Memory 后，`pnpm lint` 的 `memory-index.lint.ts` 仍以“每个 memory 条目都有索引行”失败，要求在 `memory/INDEX.md` 手工增加同一条目。"
 impact: 正式 Memory 命令与 Feedback/Memory 设计声明的单文件原子写入不闭合；贡献者必须违反“不逐条双写索引”的目标才能通过仓库门禁。
-adoptedContract:
-  path: docs/engineering/feedback-memory/README.md
-  anchor: memory
+adoptions:
+  current:
+    - docs/engineering/docs-traceability/README.md#feedbackmemory-与-issue-分层
+  history: []
 memoryRelations: []
 ---
 # pnpm memory add 后旧 INDEX lint 仍要求手工双写

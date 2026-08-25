@@ -15,8 +15,7 @@ kind:
 promotions:
   - kind: feature
     current:
-      path: docs/feature/assertions/library/display.md
-      anchor: 单条-assertion
+      - docs/feature/assertions/library/display.md#单条-assertion
     history: []
 ---
 # Report Match 详情混淆计分语义并摊平 collection

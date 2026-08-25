@@ -1,5 +1,5 @@
 ---
-format: niceeval.feedback/v1
+format: niceeval.feedback/v2
 id: feedback-report-match-details-obscure-score-and-collection
 title: Report 的 Match 详情混淆计分结果并摊平 collection 输入
 state: closed
@@ -12,9 +12,10 @@ subject: product
 claim: defect
 observation: Attempt 源码详情把带 points 的 Boolean mismatch 显示成 `soft failed +0 pts`，把 measurement 显示成 `soft passed +3 pts`，却没有同时显示声明的 points 与 measurement。`satisfies` 收到事件数组时，Input 又把元素字段连续摊开，元素边界和 collection 大小不可辨认。
 impact: 读者会把合法的零分贡献误解为 Attempt 失败，也无法快速核对 measurement、weight、earned 之间的关系；面对事件数组时还必须阅读大段原始字段才能确认 matcher 实际检查的材料。
-adoptedContract:
-  path: docs/feature/assertions/library/display.md
-  anchor: 单条-assertion
+adoptions:
+  current:
+    - docs/feature/assertions/library/display.md#单条-assertion
+  history: []
 memoryRelations:
   - kind: root-cause
     memory: report-match-details-obscure-score-and-collection
